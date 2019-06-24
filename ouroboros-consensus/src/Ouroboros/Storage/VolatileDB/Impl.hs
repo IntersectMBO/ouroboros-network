@@ -197,7 +197,7 @@ closeDBImpl VolatileDBEnv{..} = do
         case mbInternalState of
             Nothing -> return ()
             Just InternalState{..} ->
-                wrapFsError _dbErr $ hClose _currentWriteHandle
+                wrapFsError hasFsErr _dbErr $ hClose _currentWriteHandle
   where
     HasFS{..} = _dbHasFS
 
@@ -456,7 +456,7 @@ mkInternalStateDB :: (HasCallStack, MonadThrow m, MonadCatch m, Ord blockId, Sho
                   -> Parser e m blockId
                   -> Int
                   -> m (InternalState blockId h)
-mkInternalStateDB hasFS@HasFS{..} err parser maxBlocksPerFile = wrapFsError err $ do
+mkInternalStateDB hasFS@HasFS{..} err parser maxBlocksPerFile = wrapFsError hasFsErr err $ do
     allFiles <- do
         createDirectoryIfMissing True []
         listDirectory []
@@ -470,7 +470,7 @@ mkInternalState :: forall blockId m h e
                 -> Int
                 -> Set String
                 -> m (InternalState blockId h)
-mkInternalState hasFS@HasFS{..} err parser n files = wrapFsError err $ do
+mkInternalState hasFS@HasFS{..} err parser n files = wrapFsError hasFsErr err $ do
     lastFd <- findNextFd err files
     let
         go :: Index blockId
@@ -555,7 +555,7 @@ modifyState :: forall blockId m r
             -> (forall h. HasFS m h -> (InternalState blockId h) -> m (InternalState blockId h, r))
             -> m r
 modifyState VolatileDBEnv{_dbHasFS = hasFS :: HasFS m h, ..} action = do
-    (mr, ()) <- generalBracket open close (tryVolDB . mutation)
+    (mr, ()) <- generalBracket open close (tryVolDB hasFsErr _dbErr . mutation)
     case mr of
       Left  e      -> throwError e
       Right (_, r) -> return r
@@ -592,7 +592,7 @@ modifyState VolatileDBEnv{_dbHasFS = hasFS :: HasFS m h, ..} action = do
     -- TODO what if this fails?
     closeOpenHandle :: Maybe (InternalState blockId h) -> m ()
     closeOpenHandle Nothing                   = return ()
-    closeOpenHandle (Just InternalState {..}) = wrapFsError _dbErr $ hClose _currentWriteHandle
+    closeOpenHandle (Just InternalState {..}) = wrapFsError hasFsErr _dbErr $ hClose _currentWriteHandle
 
 reverseMap :: forall blockId
            .  Ord blockId

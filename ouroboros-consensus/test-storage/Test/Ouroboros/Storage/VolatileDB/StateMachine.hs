@@ -23,7 +23,7 @@ module Test.Ouroboros.Storage.VolatileDB.StateMachine
 import           Prelude hiding (elem)
 
 import           Control.Monad.Class.MonadSTM
-import           Control.Monad.Class.MonadThrow
+import           Control.Monad.Class.MonadThrow (MonadCatch)
 import           Control.Monad.Except
 import           Control.Monad.State
 import           Data.Bifunctor (bimap)
@@ -459,15 +459,17 @@ semanticsImplErr :: (MonadCatch m, MonadSTM m)
                  -> m (At Resp Concrete)
 semanticsImplErr errorsVar hasFS m env (At cmderr) = At . Resp <$> case cmderr of
     CmdErr cmd Nothing ->
-        tryVolDB (runDB (semanticsRestCmd hasFS env) m cmd)
+        try (runDB (semanticsRestCmd hasFS env) m cmd)
     CmdErr cmd (Just errors) -> do
         res <- withErrors errorsVar errors $
-            tryVolDB (runDB (semanticsRestCmd hasFS env) m cmd)
+            try (runDB (semanticsRestCmd hasFS env) m cmd)
         case res of
             Left (UserError ClosedDBError) -> return res
             _                              -> do
                 closeDB m
                 return $ Right $ SimulatedError res
+  where
+    try = tryVolDB EH.monadCatch EH.monadCatch
 
 semanticsRestCmd :: (MonadSTM m, MonadCatch m)
                  => HasFS m h

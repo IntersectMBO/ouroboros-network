@@ -10,6 +10,7 @@ module Ouroboros.Storage.ImmutableDB.Util
   , handleUnexpected
   , throwUserError
   , throwUnexpectedError
+  , tryImmDB
   , parseDBFile
   , validateIteratorRange
   , reconstructSlotOffsets
@@ -79,6 +80,25 @@ throwUserError = throwError . handleUser
 throwUnexpectedError :: ErrorHandling ImmutableDBError m
                      -> UnexpectedError -> m a
 throwUnexpectedError = throwError . handleUnexpected
+
+-- | Execute an action and catch the 'ImmutableDBError' and 'FsError' that can
+-- be thrown by it, and wrap the 'FsError' in an 'ImmutableDBError' using the
+-- 'FileSystemError' constructor.
+--
+-- This should be used whenever you want to run an action on the ImmutableDB
+-- and catch the 'ImmutableDBError' and the 'FsError' (wrapped in the former)
+-- it may thrown.
+tryImmDB :: Monad m
+         => ErrorHandling FsError          m
+         -> ErrorHandling ImmutableDBError m
+         -> m a -> m (Either ImmutableDBError a)
+tryImmDB fsErr immDBErr = fmap squash . EH.try fsErr . EH.try immDBErr
+  where
+    fromFS = UnexpectedError . FileSystemError
+
+    squash :: Either FsError (Either ImmutableDBError a)
+           -> Either ImmutableDBError a
+    squash = either (Left . fromFS) id
 
 -- | Parse the prefix and epoch number from the filename of an index or epoch
 -- file.

@@ -21,7 +21,7 @@ import           Prelude hiding (elem, notElem)
 import           Codec.Serialise (decode, encode)
 import           Control.Monad (forM_, when)
 import           Control.Monad.Class.MonadSTM
-import           Control.Monad.Class.MonadThrow
+import           Control.Monad.Class.MonadThrow (MonadCatch)
 import           Control.Monad.Except (ExceptT (..), runExceptT)
 import           Control.Monad.State.Strict (MonadState, State, evalState, gets,
                      modify, put, runState)
@@ -75,7 +75,7 @@ import           Ouroboros.Storage.FS.API.Types (FsError (..), FsPath)
 import qualified Ouroboros.Storage.FS.Sim.MockFS as Mock
 import           Ouroboros.Storage.ImmutableDB
 import           Ouroboros.Storage.ImmutableDB.Layout
-import           Ouroboros.Storage.ImmutableDB.Util (renderFile)
+import           Ouroboros.Storage.ImmutableDB.Util (renderFile, tryImmDB)
 import qualified Ouroboros.Storage.Util.ErrorHandling as EH
 
 
@@ -83,7 +83,7 @@ import           Test.Ouroboros.Storage.FS.Sim.Error (Errors, mkSimErrorHasFS,
                      withErrors)
 import           Test.Ouroboros.Storage.ImmutableDB.Model
 import           Test.Ouroboros.Storage.ImmutableDB.TestBlock hiding (tests)
-import           Test.Ouroboros.Storage.Util (collects, tryImmDB)
+import           Test.Ouroboros.Storage.Util (collects)
 
 import           Test.Util.Orphans.Arbitrary (genSmallEpochNo, genSmallSlotNo)
 import           Test.Util.RefEnv (RefEnv)
@@ -682,12 +682,12 @@ semantics :: TVar IO Errors
 semantics errorsVar hasFS db (At cmdErr) =
     At . fmap (reference . Opaque) . Resp <$> case opaque <$> cmdErr of
 
-      CmdErr Nothing       cmd its -> tryImmDB $
+      CmdErr Nothing       cmd its -> try $
         run (semanticsCorruption hasFS) its db cmd
 
       CmdErr (Just errors) cmd its -> do
         tipBefore <- getTip db
-        res       <- withErrors errorsVar errors $ tryImmDB $
+        res       <- withErrors errorsVar errors $ try $
           run (semanticsCorruption hasFS) its db cmd
         case res of
           -- If the command resulted in a 'UserError', we didn't even get the
@@ -711,7 +711,9 @@ semantics errorsVar hasFS db (At cmdErr) =
             -- Note that we might have created an iterator, make sure to close
             -- it as well
   where
-    truncateAndReopen cmd its tipBefore = tryImmDB $ do
+    try = tryImmDB EH.monadCatch EH.monadCatch
+
+    truncateAndReopen cmd its tipBefore = try $ do
       -- Close all open iterators as we will perform truncation
       mapM_ iteratorClose its
       -- Close the database in case no errors occurred and it wasn't

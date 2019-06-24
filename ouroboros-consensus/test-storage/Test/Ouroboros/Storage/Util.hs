@@ -8,8 +8,6 @@ module Test.Ouroboros.Storage.Util where
 
 import           Control.Exception (Exception, SomeException)
 import qualified Control.Exception as E
-import           Control.Monad.Class.MonadThrow (MonadCatch)
-import qualified Control.Monad.Class.MonadThrow as C
 
 import           Data.ByteString (ByteString)
 import qualified Data.ByteString.Char8 as C8
@@ -36,12 +34,13 @@ import qualified Ouroboros.Storage.FS.Sim.STM as Sim
 import           Ouroboros.Storage.ImmutableDB (ImmutableDBError (..),
                      prettyImmutableDBError, sameImmutableDBError)
 import qualified Ouroboros.Storage.ImmutableDB as Immutable
+import           Ouroboros.Storage.ImmutableDB.Util (tryImmDB)
 import           Ouroboros.Storage.IO (sameError)
 import           Ouroboros.Storage.Util.ErrorHandling (ErrorHandling)
 import qualified Ouroboros.Storage.Util.ErrorHandling as EH
 import           Ouroboros.Storage.VolatileDB (VolatileDBError (..),
                      sameVolatileDBError)
-import           Ouroboros.Storage.VolatileDB.Util
+import           Ouroboros.Storage.VolatileDB.Util (tryVolDB)
 
 {------------------------------------------------------------------------------
  Handy combinators
@@ -177,37 +176,23 @@ apiEquivalenceImmDB :: (HasCallStack, Eq a, Show a)
                     => (Either ImmutableDBError a -> Assertion)
                     -> (forall h. HasFS IO h -> ErrorHandling ImmutableDBError IO -> IO a)
                     -> Assertion
-apiEquivalenceImmDB = apiEquivalence tryImmDB prettyImmutableDBError sameImmutableDBError
+apiEquivalenceImmDB = apiEquivalence try prettyImmutableDBError sameImmutableDBError
+  where
+    try = tryImmDB EH.exceptions EH.exceptions
 
 apiEquivalenceVolDB :: (HasCallStack, Eq a, Show a, Show blockId, Typeable blockId, Eq blockId)
                     => (Either (VolatileDBError blockId) a -> Assertion)
                     -> (forall h. HasFS IO h -> ErrorHandling (VolatileDBError blockId) IO -> IO a)
                     -> Assertion
-apiEquivalenceVolDB = apiEquivalence tryVolDB show sameVolatileDBError
+apiEquivalenceVolDB = apiEquivalence try show sameVolatileDBError
+  where
+    try = tryVolDB EH.exceptions EH.exceptions
 
 tryAny :: IO a -> IO (Either SomeException a)
 tryAny = E.try
 
 tryFS :: IO a -> IO (Either FsError a)
 tryFS = E.try
-
-tryImmDB :: MonadCatch m => m a -> m (Either ImmutableDBError a)
-tryImmDB = tryDB (Immutable.UnexpectedError . Immutable.FileSystemError)
-
-tryDB :: forall e a m. (Exception e, MonadCatch m) => (FsError -> e) -> m a -> m (Either e a)
-tryDB fromFS = fmap squash . C.try . C.try
-  where
-    -- TODO: With the redesigned error handling I'm not sure whether it's
-    -- still necessary that e can wrap FsError, for either databases;
-    -- I think we can get rid of that. If we do, this function should become
-    --
-    -- > squash :: Either FsError (Either e x)
-    -- >        -> Either (Either FsError e) x
-    --
-    -- and the rest adjusted accordingly.
-    squash :: Either FsError (Either e x) -> Either e x
-    squash = either (Left . fromFS) id
-
 
 {-------------------------------------------------------------------------------
   QuickCheck auxiliary
