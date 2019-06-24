@@ -115,10 +115,11 @@ protocolHandlers
        , ApplyTx blk
        , ProtocolLedgerView blk
        , Condense (Header blk)
-       , Condense (ChainHash blk)
+       , Condense (HeaderHash blk)
        , Condense peer
        , Show (ApplyTxErr blk)  --TODO: consider using condense
        , Condense (GenTx blk)
+       , Eq (Header blk)
        )
     => NodeParams m peer blk  --TODO eliminate, merge relevant into NodeKernel
     -> NodeKernel m peer blk

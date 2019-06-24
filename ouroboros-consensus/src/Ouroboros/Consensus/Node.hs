@@ -202,7 +202,6 @@ initInternalState
        , Ord peer
        , TraceConstraints peer blk
        , ApplyTx blk
-       , Eq (Header blk)
        )
     => NodeParams m peer blk
     -> m (InternalState m peer blk)

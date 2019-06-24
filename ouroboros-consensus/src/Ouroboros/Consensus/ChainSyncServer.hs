@@ -98,8 +98,8 @@ chainSyncServerForReader _tracer chainDB rdr =
                        -- the producer's state to change.
 
     sendNext :: Point blk
-             -> ChainUpdate (Header blk)
-             -> ServerStNext (Header blk) (Point blk) m ()
+             -> ChainUpdate b
+             -> ServerStNext b (Point blk) m ()
     sendNext tip update = case update of
       AddBlock hdr -> SendMsgRollForward  hdr tip idle'
       RollBack pt  -> SendMsgRollBackward pt  tip idle'
