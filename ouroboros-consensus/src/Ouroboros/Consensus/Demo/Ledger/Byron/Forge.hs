@@ -86,13 +86,13 @@ forgeBlock cfg curSlot curNo prevHash txs () = do
       GenesisHash -> CC.Block.genesisHeaderHash pbftGenesisHash
       BlockHash h -> h
 
-    slotId :: CC.Slot.SlotId
-    slotId = CC.Slot.unflattenSlotId pbftEpochSlots $ coerce curSlot
+    epochAndSlotCount :: CC.Slot.EpochAndSlotCount
+    epochAndSlotCount = CC.Slot.fromSlotNumber pbftEpochSlots $ coerce curSlot
 
     toSign :: CC.Block.ToSign
     toSign = CC.Block.ToSign {
           CC.Block.tsHeaderHash      = prevHeaderHash
-        , CC.Block.tsSlot            = slotId
+        , CC.Block.tsSlot            = epochAndSlotCount
         , CC.Block.tsDifficulty      = coerce curNo
         , CC.Block.tsBodyProof       = proof
         , CC.Block.tsProtocolVersion = pbftProtocolVersion
@@ -107,8 +107,8 @@ forgeBlock cfg curSlot curNo prevHash txs () = do
       where
         dlgMap = CC.Genesis.unGenesisDelegation pbftGenesisDlg
         VerKeyCardanoDSIGN issuer = pbftVerKey $ encNodeConfigP cfg
-        findDelegate = fmap (\crt -> (Crypto.pskIssuerVK crt, crt))
-                      . find (\crt -> Crypto.pskDelegateVK crt == issuer)
+        findDelegate = fmap (\crt -> (CC.Delegation.issuerVK crt, crt))
+                      . find (\crt -> CC.Delegation.delegateVK crt == issuer)
                       $ Map.elems dlgMap
 
     forge :: PBftFields PBftCardanoCrypto CC.Block.ToSign

@@ -11,6 +11,7 @@ import qualified Data.Bimap as Bimap
 import           Data.Maybe (fromMaybe)
 
 import qualified Cardano.Chain.Block as CC.Block
+import qualified Cardano.Chain.Delegation as CC.Delegation
 import qualified Cardano.Crypto as Cardano
 
 import           Ouroboros.Consensus.NodeId (CoreNodeId (..))
@@ -63,7 +64,7 @@ instance HasCreator (ByronBlock ByronDemoConfig) where
           Bimap.lookup key pbftCoreNodes
       where
         key :: Cardano.VerificationKey
-        key = Cardano.pskIssuerVK
+        key = CC.Delegation.issuerVK
             . CC.Block.delegationCertificate
             . CC.Block.headerSignature
             . CC.Block.blockHeader
