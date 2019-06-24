@@ -68,7 +68,7 @@ epochFileParser epochSlots hasFS =
   where
   takeSlot :: Cardano.ABlockOrBoundary a -> SlotNo
   takeSlot blk = case blk of
-    Cardano.ABOBBlock    blk -> SlotNo $ Cardano.unFlatSlotId (Cardano.blockSlot blk)
+    Cardano.ABOBBlock    blk -> SlotNo $ Cardano.unSlotNumber (Cardano.blockSlot blk)
     Cardano.ABOBBoundary ebb -> SlotNo $ Cardano.boundaryEpoch ebb * Cardano.unEpochSlots epochSlots
   decoder :: forall s . CBOR.Decoder s (Cardano.ABlockOrBoundary ByteSpan)
   decoder = Cardano.fromCBORABlockOrBoundary epochSlots
@@ -282,10 +282,9 @@ dbAppendImpl err tracer epochSlots iwrite idb = DBAppend $ \blockToWrite -> do
       pure slot
     CardanoBlockToWrite (Annotated (Cardano.ABOBBlock blk) _) -> do
       let hash = Cardano.blockHashAnnotated blk
-          flatSlotId = Cardano.blockSlot blk
-          slot = Cardano.unFlatSlotId flatSlotId
-          slotId = Cardano.unflattenSlotId epochSlots flatSlotId
-          Cardano.EpochIndex epoch = Cardano.siEpoch slotId
+          slotNumber = Cardano.blockSlot blk
+          slot = Cardano.unSlotNumber slotNumber
+          Cardano.EpochNumber epoch = Cardano.slotNumberEpoch epochSlots slotNumber
       Index.updateTip iwrite (coerceHashToLegacy hash) (EpochNo epoch) (Index.RealSlot slot)
       Immutable.appendBinaryBlob idb (SlotNo slot) builder
       pure (SlotNo slot)

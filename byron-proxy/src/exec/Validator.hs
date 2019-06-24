@@ -3,10 +3,11 @@
 {-# LANGUAGE FlexibleInstances #-}
 
 import Codec.SerialiseTerm (CodecCBORTerm (..))
-import Control.Monad.Trans.Except (runExceptT)
-import Control.Tracer (Tracer (..), contramap, traceWith)
 import Control.Monad.Trans.Class (lift)
+import Control.Monad.Trans.Except (runExceptT)
+import Control.Monad.Trans.Reader (runReaderT)
 import Control.Monad.Trans.Resource (ResourceT)
+import Control.Tracer (Tracer (..), contramap, traceWith)
 import Data.Text (Text, pack)
 import qualified Options.Applicative as Opt
 
@@ -17,7 +18,8 @@ import qualified Cardano.Binary as Binary (unAnnotated)
 import Cardano.Chain.Block (ChainValidationState (..))
 import qualified Cardano.Chain.Block as Block
 import qualified Cardano.Chain.Genesis as Genesis
-import Cardano.Chain.Slotting (FlatSlotId(..))
+import Cardano.Chain.Slotting (SlotNumber(..))
+import Cardano.Chain.ValidationMode (fromBlockValidationMode)
 import Cardano.Crypto (RequiresNetworkMagic(..), decodeAbstractHash)
 
 import Cardano.Shell.Constants.Types (CardanoConfiguration (..), Core (..), Genesis (..))
@@ -51,14 +53,16 @@ clientFold
   -> Client.Fold (ResourceT IO) () -- Either ChainValidationError (t, ChainValidationState))
 clientFold tracer genesisConfig stopCondition cvs = Client.Fold $ pure $ Client.Continue
   (\block _ -> Client.Fold $ do
-    outcome <- lift $ runExceptT (Block.updateChainBlockOrBoundary genesisConfig cvs (Binary.unAnnotated block))
+    let validationMode = fromBlockValidationMode Block.BlockValidation
+    outcome <- lift $ (`runReaderT` validationMode) $ runExceptT
+      (Block.updateChainBlockOrBoundary genesisConfig cvs (Binary.unAnnotated block))
     case outcome of
       Left err   -> do
         let msg = pack $ mconcat ["Validation failed: ", show err]
         lift $ traceWith tracer msg
         pure $ Client.Stop ()
       Right cvs' -> do
-        let msg = pack $ mconcat ["Validated block at slot ", show (unFlatSlotId $ cvsLastSlot cvs')]
+        let msg = pack $ mconcat ["Validated block at slot ", show (unSlotNumber $ cvsLastSlot cvs')]
         lift $ traceWith tracer msg
         maybeStop <- lift $ stopCondition block
         case maybeStop of

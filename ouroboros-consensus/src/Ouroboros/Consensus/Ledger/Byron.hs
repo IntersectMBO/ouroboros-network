@@ -37,6 +37,7 @@ import           Codec.CBOR.Encoding (Encoding)
 import qualified Codec.CBOR.Read as CBOR
 import qualified Codec.CBOR.Write as CBOR
 import           Control.Monad.Except
+import           Control.Monad.Reader
 import qualified Data.Bimap as Bimap
 import qualified Data.ByteString.Lazy as Lazy
 import           Data.Coerce (coerce)
@@ -61,6 +62,7 @@ import qualified Cardano.Chain.Genesis as CC.Genesis
 import qualified Cardano.Chain.Slotting as CC.Slot
 import qualified Cardano.Chain.Update.Validation.Interface as CC.UPI
 import qualified Cardano.Chain.UTxO as CC.UTxO
+import           Cardano.Chain.ValidationMode (fromBlockValidationMode)
 import qualified Cardano.Crypto as Crypto
 
 import           Ouroboros.Network.Block
@@ -187,7 +189,9 @@ instance (ByronGiven, Typeable cfg, ConfigContainsGenesis cfg)
                    (ByronLedgerState state snapshots) = do
       CC.Block.BodyState { CC.Block.utxo, CC.Block.updateState
                          , CC.Block.delegationState }
-        <- CC.Block.updateBody bodyEnv bodyState block
+        <- runReaderT
+            (CC.Block.updateBody bodyEnv bodyState block)
+            (fromBlockValidationMode CC.Block.BlockValidation)
       let state' = state
             { CC.Block.cvsLastSlot        = CC.Block.blockSlot block
             , CC.Block.cvsPreviousHash    = Right $ CC.Block.blockHashAnnotated block
@@ -236,10 +240,9 @@ instance (ByronGiven, Typeable cfg, ConfigContainsGenesis cfg)
   applyLedgerHeader (ByronLedgerConfig cfg) (ByronHeader hdr)
                     (ByronLedgerState state snapshots) =
       mapExcept (fmap (\i -> ByronLedgerState i snapshots)) $ do
-        updateState <- CC.Block.updateHeader
-          headerEnv
-          (CC.Block.cvsUpdateState state)
-          hdr
+        updateState <- runReaderT
+          (CC.Block.updateHeader headerEnv (CC.Block.cvsUpdateState state) hdr)
+          (fromBlockValidationMode CC.Block.BlockValidation)
         return $ state
           { CC.Block.cvsLastSlot     = CC.Block.headerSlot hdr
           , CC.Block.cvsPreviousHash = Right $ headerHashAnnotated hdr
@@ -292,7 +295,7 @@ instance (ByronGiven, Typeable cfg)
       => HeaderSupportsPBft PBftCardanoCrypto (Header (ByronBlock cfg)) where
   headerPBftFields _ (ByronHeader hdr) = PBftFields {
         pbftIssuer    = VerKeyCardanoDSIGN
-                      . Crypto.pskDelegateVK
+                      . CC.Delegation.delegateVK
                       . CC.Block.delegationCertificate
                       . CC.Block.headerSignature
                       $ hdr
@@ -418,10 +421,13 @@ applyByronGenTx :: Bool -- ^ Have we verified this transaction previously?
 applyByronGenTx _reapply (ByronLedgerConfig cfg) genTx st@ByronLedgerState{..} =
     (\x -> st { blsCurrent = x }) <$> go genTx blsCurrent
   where
+    validationMode = fromBlockValidationMode CC.Block.BlockValidation
+
     go :: GenTx (ByronBlock cfg)
        -> CC.Block.ChainValidationState
        -> Except CC.UTxO.UTxOValidationError CC.Block.ChainValidationState
-    go (ByronTx tx) cvs = wrapCVS <$> CC.UTxO.updateUTxO env utxo [tx]
+    go (ByronTx tx) cvs = wrapCVS <$>
+        runReaderT (CC.UTxO.updateUTxO env utxo [tx]) validationMode
       where
         wrapCVS newUTxO = cvs { CC.Block.cvsUtxo = newUTxO }
         protocolMagic = fixPM $ CC.Genesis.configProtocolMagic cfg
@@ -437,7 +443,7 @@ applyByronGenTx _reapply (ByronLedgerConfig cfg) genTx st@ByronLedgerState{..} =
   Auxiliary
 -------------------------------------------------------------------------------}
 
-convertSlot :: CC.Slot.FlatSlotId -> SlotNo
+convertSlot :: CC.Slot.SlotNumber -> SlotNo
 convertSlot = coerce
 
 {-------------------------------------------------------------------------------
@@ -470,12 +476,12 @@ instance Condense (Header (ByronBlock cfg)) where
       ", delegate: "     <> condenseKey delegate <>
       ")"
     where
-      psigPsk = CC.Block.delegationCertificate
-              . CC.Block.headerSignature
-              . unByronHeader
-              $ hdr
-      issuer   = Crypto.pskIssuerVK   psigPsk
-      delegate = Crypto.pskDelegateVK psigPsk
+      psigCert = CC.Block.delegationCertificate
+               . CC.Block.headerSignature
+               . unByronHeader
+               $ hdr
+      issuer   = CC.Delegation.issuerVK   psigCert
+      delegate = CC.Delegation.delegateVK psigCert
 
       condenseKey :: Crypto.VerificationKey -> String
       condenseKey = T.unpack . sformat build
