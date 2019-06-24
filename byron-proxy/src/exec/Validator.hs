@@ -18,7 +18,6 @@ import qualified Cardano.Binary as Binary (unAnnotated)
 import Cardano.Chain.Block (ChainValidationState (..))
 import qualified Cardano.Chain.Block as Block
 import qualified Cardano.Chain.Genesis as Genesis
-import Cardano.Chain.Slotting (SlotNumber(..))
 import Cardano.Chain.ValidationMode (fromBlockValidationMode)
 import Cardano.Crypto (RequiresNetworkMagic(..), decodeAbstractHash)
 
