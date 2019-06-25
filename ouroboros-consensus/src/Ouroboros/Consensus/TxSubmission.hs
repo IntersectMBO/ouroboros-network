@@ -22,7 +22,7 @@ localTxSubmissionServer
      , Condense (GenTx blk)
      )
   => Tracer m String
-  -> Mempool m blk
+  -> Mempool m blk idx
   -> LocalTxSubmissionServer (GenTx blk) String m ()
 localTxSubmissionServer tracer Mempool{addTxs} =
     server

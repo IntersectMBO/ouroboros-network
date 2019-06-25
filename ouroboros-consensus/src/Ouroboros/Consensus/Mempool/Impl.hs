@@ -9,7 +9,6 @@ module Ouroboros.Consensus.Mempool.Impl (
 import           Control.Monad.Except
 import qualified Data.Foldable as Foldable
 import           Data.Sequence (Seq (..))
-import qualified Data.Sequence as Seq
 
 import           Control.Monad.Class.MonadSTM
 
@@ -21,6 +20,8 @@ import           Ouroboros.Storage.ChainDB.API
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Mempool.API
+import           Ouroboros.Consensus.Mempool.TxSeq (TicketNo, TxSeq (..), appendTx, fromTxSeq)
+import qualified Ouroboros.Consensus.Mempool.TxSeq as TxSeq
 import           Ouroboros.Consensus.Util (repeatedly)
 
 {-------------------------------------------------------------------------------
@@ -30,7 +31,7 @@ import           Ouroboros.Consensus.Util (repeatedly)
 openMempool :: (MonadSTM m, ApplyTx blk)
             => ChainDB m blk hdr
             -> LedgerConfig blk
-            -> m (Mempool m blk)
+            -> m (Mempool m blk TicketNo)
 openMempool chainDB cfg = do
     env <- initMempoolEnv chainDB cfg
     return Mempool {
@@ -45,7 +46,7 @@ openMempool chainDB cfg = do
 -- | Internal state in the mempool
 data InternalState blk = IS {
      -- | Transactions currently in the mempool
-      isTxs :: Seq (GenTx blk)
+      isTxs :: TxSeq (GenTx blk)
 
       -- | The tip of the chain that 'isTxs' was validated against
     , isTip :: ChainHash blk
@@ -58,7 +59,7 @@ data MempoolEnv m blk hdr = MempoolEnv {
     }
 
 initInternalState :: InternalState blk
-initInternalState = IS Seq.empty Block.GenesisHash
+initInternalState = IS TxSeq.Empty Block.GenesisHash
 
 initMempoolEnv :: MonadSTM m
                => ChainDB m blk hdr
@@ -94,7 +95,7 @@ implAddTxs mpEnv@MempoolEnv{mpEnvStateVar, mpEnvLedgerCfg} txs =
 
 implGetTxs :: (MonadSTM m, ApplyTx blk)
            => MempoolEnv m blk hdr
-           -> STM m (Seq (GenTx blk ))
+           -> STM m (Seq (GenTx blk, TicketNo))
 implGetTxs mpEnv@MempoolEnv{mpEnvStateVar} = do
     ValidationResult {
       vrBefore,
@@ -104,7 +105,7 @@ implGetTxs mpEnv@MempoolEnv{mpEnvStateVar} = do
     writeTVar mpEnvStateVar IS { isTxs = vrValid
                                , isTip = vrBefore
                                }
-    return vrValid
+    pure $ fromTxSeq vrValid
 
 {-------------------------------------------------------------------------------
   Validation
@@ -115,7 +116,7 @@ data ValidationResult blk = ValidationResult {
     vrBefore  :: ChainHash blk
 
     -- | The transactions that were found to be valid (oldest to newest)
-  , vrValid   :: Seq (GenTx blk)
+  , vrValid   :: TxSeq (GenTx blk)
 
     -- | The state of the ledger after 'vrValid'
     --
@@ -133,7 +134,7 @@ data ValidationResult blk = ValidationResult {
 -- transactions /known/ to be valid in that ledger state
 initVR :: forall blk. ApplyTx blk
        => LedgerConfig blk
-       -> Seq (GenTx blk)
+       -> TxSeq (GenTx blk)
        -> (ChainHash blk, LedgerState blk)
        -> ValidationResult blk
 initVR cfg = \knownValid (tip, st) -> ValidationResult {
@@ -166,7 +167,7 @@ extendVR cfg prevApplied tx
               | otherwise   = applyTx in
     case runExcept (apply cfg tx vrAfter) of
       Left err  -> vr { vrInvalid = (tx, err) : vrInvalid }
-      Right st' -> vr { vrValid   = vrValid :|> tx
+      Right st' -> vr { vrValid   = vrValid `appendTx` tx
                       , vrAfter   = st' }
 
 -- | Apply 'extendVR' to a list of transactions, in order
@@ -193,4 +194,4 @@ validateIS MempoolEnv{mpEnvChainDB, mpEnvLedgerCfg, mpEnvStateVar} =
     go tip st IS{isTxs, isTip}
       | tip == isTip = initVR mpEnvLedgerCfg isTxs (tip, st)
       | otherwise    = extendsVR mpEnvLedgerCfg True (Foldable.toList isTxs) $
-                         initVR mpEnvLedgerCfg Seq.empty (tip, st)
+                         initVR mpEnvLedgerCfg TxSeq.Empty (tip, st)

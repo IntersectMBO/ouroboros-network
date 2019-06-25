@@ -72,7 +72,7 @@ class UpdateLedger blk => ApplyTx blk where
 --   of transactions that fits in a block.
 -- * It supports wallets that submit dependent transactions (where later
 --   transaction depends on outputs from earlier ones).
-data Mempool m blk = Mempool {
+data Mempool m blk idx = Mempool {
       -- | Add a bunch of transactions (oldest to newest)
       --
       -- As long as we keep the mempool entirely in-memory this could live in
@@ -105,5 +105,5 @@ data Mempool m blk = Mempool {
       -- Guarantees that these transactions will be valid (when applied strictly
       -- in order) with respect to a call to 'getLedgerState' run /in the same
       -- transaction/.
-    , getTxs :: STM m (Seq (GenTx blk))
+    , getTxs :: STM m (Seq (GenTx blk, idx))
     }

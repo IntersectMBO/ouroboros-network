@@ -47,6 +47,7 @@ import           Ouroboros.Consensus.ChainSyncClient
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Mempool
+import           Ouroboros.Consensus.Mempool.TxSeq (TicketNo)
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util
 import           Ouroboros.Consensus.Util.Condense
@@ -69,7 +70,7 @@ data NodeKernel m peer blk = NodeKernel {
       getChainDB :: ChainDB m blk (Header blk)
 
       -- | The node's mempool
-    , getMempool :: Mempool m blk
+    , getMempool :: Mempool m blk TicketNo
 
       -- | The node's static configuration
     , getNodeConfig :: NodeConfig (BlockProtocol blk)
@@ -186,7 +187,7 @@ data InternalState m peer blk = IS {
     , varCandidates       :: TVar m (Map peer (TVar m (CandidateState blk)))
     , varState            :: TVar m (NodeState (BlockProtocol blk))
     , tracer              :: Tracer m String
-    , mempool             :: Mempool m blk
+    , mempool             :: Mempool m blk TicketNo
     }
 
 initInternalState
@@ -316,7 +317,7 @@ forkBlockProduction IS{..} =
                                        currentSlot
                                        (castPoint prevPoint)
                                        prevNo
-                                       (Foldable.toList txs)
+                                       (Foldable.toList . (fmap fst) $ txs)
             return $ Just newBlock
 
       whenJust mNewBlock $ \newBlock -> do

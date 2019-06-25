@@ -6,10 +6,14 @@ module Ouroboros.Consensus.Mempool.TxSeq (
     TicketNo
   , TxTicket(..)
   , TxSeq(Empty, (:>), (:<))
+  , appendTx
+  , fromTxSeq
   , lookupByTicketNo
   , splitAfterTicketNo
   ) where
 
+import           Data.Sequence (Seq)
+import qualified Data.Sequence as Seq
 import           Data.Word (Word64)
 import qualified Data.Foldable as Foldable
 import           Data.FingerTree (FingerTree)
@@ -144,3 +148,17 @@ splitAfterTicketNo (TxSeq txs) n =
     case FingerTree.split (\m -> mMaxTicket m > n) txs of
       (l, r) -> (TxSeq l, TxSeq r)
 
+-- | Convert a 'TxSeq' to the type which is expected to be returned from the
+-- 'Mempool' API.
+fromTxSeq :: TxSeq tx -> Seq (tx, TicketNo)
+fromTxSeq (TxSeq ftree) = fmap
+  (\(TxTicket tx tn) -> (tx, tn))
+  (Seq.fromList . Foldable.toList $ ftree)
+
+-- | Append a @tx@ to the back of a 'TxSeq'.
+-- n.b. This function also handles the incrementing of the newly added
+-- transaction's ticket number.
+appendTx :: TxSeq tx -> tx -> TxSeq tx
+appendTx ts tx = case viewBack ts of
+  Nothing                           -> Empty :> TxTicket tx (TicketNo 0)
+  Just (_, TxTicket _ (TicketNo n)) -> ts    :> TxTicket tx (TicketNo (n + 1))
