@@ -21,7 +21,8 @@ import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Mempool.API
 import           Ouroboros.Consensus.Mempool.TxSeq (TicketNo, TxSeq (..),
-                     appendTx, fromTxSeq, lookupByTicketNo, zeroTicketNo)
+                     appendTx, fromTxSeq, lookupByTicketNo, splitAfterTicketNo,
+                     zeroTicketNo)
 import qualified Ouroboros.Consensus.Mempool.TxSeq as TxSeq
 import           Ouroboros.Consensus.Util (repeatedly)
 
@@ -36,10 +37,11 @@ openMempool :: (MonadSTM m, ApplyTx blk)
 openMempool chainDB cfg = do
     env <- initMempoolEnv chainDB cfg
     return Mempool {
-        addTxs  = implAddTxs env
-      , getTxs  = implGetTxs env
-      , getTx   = implGetTx  env
-      , zeroIdx = zeroTicketNo
+        addTxs      = implAddTxs env
+      , getTxs      = implGetTxs env
+      , getTxsAfter = implGetTxsAfter env
+      , getTx       = implGetTx env
+      , zeroIdx     = zeroTicketNo
       }
 
 {-------------------------------------------------------------------------------
@@ -109,6 +111,14 @@ implGetTxs mpEnv@MempoolEnv{mpEnvStateVar} = do
                                , isTip = vrBefore
                                }
     pure $ fromTxSeq vrValid
+
+implGetTxsAfter :: (MonadSTM m, ApplyTx blk)
+                => MempoolEnv m blk hdr
+                -> TicketNo
+                -> STM m (Seq (GenTx blk, TicketNo))
+implGetTxsAfter mpEnv@MempoolEnv{mpEnvStateVar} tn = do
+  IS { isTxs } <- readTVar mpEnvStateVar
+  pure $ fromTxSeq $ snd $ splitAfterTicketNo isTxs tn
 
 implGetTx :: (MonadSTM m, ApplyTx blk)
           => MempoolEnv m blk hdr

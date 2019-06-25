@@ -107,6 +107,11 @@ data Mempool m blk idx = Mempool {
       -- transaction/.
     , getTxs :: STM m (Seq (GenTx blk, idx))
 
+      -- | Get all transactions in the mempool, along with their associated
+      -- ticket numbers, which are associated with a ticket number greater
+      -- than the one provided.
+    , getTxsAfter :: idx -> STM m (Seq (GenTx blk, idx))
+
       -- | Get a specific transaction from the mempool by its ticket number,
       -- if it exists.
     , getTx :: idx -> STM m (Maybe (GenTx blk))
