@@ -100,10 +100,14 @@ data Mempool m blk idx = Mempool {
       -- index of transaction hashes that have been included on the blockchain.)
       addTxs :: [GenTx blk] -> m [(GenTx blk, ApplyTxErr blk)]
 
-      -- | Get all transactions in the mempool (oldest to newest)
+      -- | Get all transactions in the mempool along with their associated
+      -- ticket numbers (oldest to newest).
       --
-      -- Guarantees that these transactions will be valid (when applied strictly
-      -- in order) with respect to a call to 'getLedgerState' run /in the same
+      -- n.b. This function provides /no guarantee/ that the resulting
+      -- transactions will be valid with respect to the ledger state of the
+      -- 'ChainDB'. However, it is guaranteed that these transactions will be
+      -- valid (with respect to the ledger state) if this function is called
+      -- immediately following a call to 'syncState', /within the same
       -- transaction/.
     , getTxs :: STM m (Seq (GenTx blk, idx))
 

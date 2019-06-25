@@ -101,22 +101,13 @@ implAddTxs mpEnv@MempoolEnv{mpEnvStateVar, mpEnvLedgerCfg} txs =
 implGetTxs :: (MonadSTM m, ApplyTx blk)
            => MempoolEnv m blk hdr
            -> STM m (Seq (GenTx blk, TicketNo))
-implGetTxs mpEnv@MempoolEnv{mpEnvStateVar} = do
-    ValidationResult {
-      vrBefore,
-      vrValid
-    } <- validateIS mpEnv
-    -- TODO (maybe): log the transactions that we silently discard
-    writeTVar mpEnvStateVar IS { isTxs = vrValid
-                               , isTip = vrBefore
-                               }
-    pure $ fromTxSeq vrValid
+implGetTxs = (flip implGetTxsAfter) zeroTicketNo
 
 implGetTxsAfter :: (MonadSTM m, ApplyTx blk)
                 => MempoolEnv m blk hdr
                 -> TicketNo
                 -> STM m (Seq (GenTx blk, TicketNo))
-implGetTxsAfter mpEnv@MempoolEnv{mpEnvStateVar} tn = do
+implGetTxsAfter MempoolEnv{mpEnvStateVar} tn = do
   IS { isTxs } <- readTVar mpEnvStateVar
   pure $ fromTxSeq $ snd $ splitAfterTicketNo isTxs tn
 
