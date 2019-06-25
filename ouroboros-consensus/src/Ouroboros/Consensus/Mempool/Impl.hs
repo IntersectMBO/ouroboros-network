@@ -21,7 +21,7 @@ import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Mempool.API
 import           Ouroboros.Consensus.Mempool.TxSeq (TicketNo, TxSeq (..),
-                     appendTx, fromTxSeq, zeroTicketNo)
+                     appendTx, fromTxSeq, lookupByTicketNo, zeroTicketNo)
 import qualified Ouroboros.Consensus.Mempool.TxSeq as TxSeq
 import           Ouroboros.Consensus.Util (repeatedly)
 
@@ -38,6 +38,7 @@ openMempool chainDB cfg = do
     return Mempool {
         addTxs  = implAddTxs env
       , getTxs  = implGetTxs env
+      , getTx   = implGetTx  env
       , zeroIdx = zeroTicketNo
       }
 
@@ -108,6 +109,13 @@ implGetTxs mpEnv@MempoolEnv{mpEnvStateVar} = do
                                , isTip = vrBefore
                                }
     pure $ fromTxSeq vrValid
+
+implGetTx :: (MonadSTM m, ApplyTx blk)
+          => MempoolEnv m blk hdr
+          -> TicketNo
+          -> STM m (Maybe (GenTx blk))
+implGetTx MempoolEnv{mpEnvStateVar} tn =
+  (`lookupByTicketNo` tn) . isTxs <$> readTVar mpEnvStateVar
 
 {-------------------------------------------------------------------------------
   Validation
