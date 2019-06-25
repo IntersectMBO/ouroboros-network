@@ -38,6 +38,7 @@ openMempool chainDB cfg = do
     env <- initMempoolEnv chainDB cfg
     return Mempool {
         addTxs      = implAddTxs env
+      , syncState   = implSyncState env
       , getTxs      = implGetTxs env
       , getTxsAfter = implGetTxsAfter env
       , getTx       = implGetTx env
@@ -97,6 +98,20 @@ implAddTxs mpEnv@MempoolEnv{mpEnvStateVar, mpEnvLedgerCfg} txs =
   where
     validateNew :: ValidationResult blk ->  ValidationResult blk
     validateNew = extendsVR mpEnvLedgerCfg False txs
+
+implSyncState :: (MonadSTM m, ApplyTx blk)
+              => MempoolEnv m blk hdr
+              -> STM m [(GenTx blk, ApplyTxErr blk)]
+implSyncState mpEnv@MempoolEnv{mpEnvStateVar} = do
+  ValidationResult {
+    vrBefore
+  , vrValid
+  , vrInvalid
+  } <- validateIS mpEnv
+  writeTVar mpEnvStateVar IS { isTxs = vrValid
+                             , isTip = vrBefore
+                             }
+  pure vrInvalid
 
 implGetTxs :: (MonadSTM m, ApplyTx blk)
            => MempoolEnv m blk hdr

@@ -100,6 +100,11 @@ data Mempool m blk idx = Mempool {
       -- index of transaction hashes that have been included on the blockchain.)
       addTxs :: [GenTx blk] -> m [(GenTx blk, ApplyTxErr blk)]
 
+      -- | Sync the transactions in the mempool with the ledger state of the
+      -- 'ChainDB'. Invalid transactions will be returned along with the
+      -- validation error.
+    , syncState :: STM m [(GenTx blk, ApplyTxErr blk)]
+
       -- | Get all transactions in the mempool along with their associated
       -- ticket numbers (oldest to newest).
       --
