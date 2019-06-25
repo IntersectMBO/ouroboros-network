@@ -309,6 +309,15 @@ forkBlockProduction IS{..} =
           Just proof -> do
             (prevPoint, prevNo) <- prevPointAndBlockNo currentSlot <$>
                                      ChainDB.getCurrentChain chainDB
+
+            -- In this circumstance, it is required that we call 'syncState'
+            -- before 'getTxs' within this 'STM' transaction since we need to
+            -- guarantee that the transactions returned from 'getTxs' are
+            -- valid with respect to the current ledger state of the
+            -- 'ChainDB'. Refer to the 'getTxs' documentation for more
+            -- information.
+            _invalidTxs         <- syncState mempool
+
             txs                 <- getTxs mempool
             newBlock            <- runProtocol varDRG $
                                      produceBlock
