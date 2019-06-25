@@ -20,7 +20,8 @@ import           Ouroboros.Storage.ChainDB.API
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Mempool.API
-import           Ouroboros.Consensus.Mempool.TxSeq (TicketNo, TxSeq (..), appendTx, fromTxSeq)
+import           Ouroboros.Consensus.Mempool.TxSeq (TicketNo, TxSeq (..),
+                     appendTx, fromTxSeq, zeroTicketNo)
 import qualified Ouroboros.Consensus.Mempool.TxSeq as TxSeq
 import           Ouroboros.Consensus.Util (repeatedly)
 
@@ -35,8 +36,9 @@ openMempool :: (MonadSTM m, ApplyTx blk)
 openMempool chainDB cfg = do
     env <- initMempoolEnv chainDB cfg
     return Mempool {
-        addTxs = implAddTxs env
-      , getTxs = implGetTxs env
+        addTxs  = implAddTxs env
+      , getTxs  = implGetTxs env
+      , zeroIdx = zeroTicketNo
       }
 
 {-------------------------------------------------------------------------------

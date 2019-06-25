@@ -10,6 +10,7 @@ module Ouroboros.Consensus.Mempool.TxSeq (
   , fromTxSeq
   , lookupByTicketNo
   , splitAfterTicketNo
+  , zeroTicketNo
   ) where
 
 import           Data.Sequence (Seq)
@@ -29,6 +30,10 @@ import qualified Data.FingerTree as FingerTree
 --
 newtype TicketNo = TicketNo Word64
   deriving (Eq, Ord, Bounded, Show)
+
+-- | The transaction ticket number from which our counter starts.
+zeroTicketNo :: TicketNo
+zeroTicketNo = TicketNo 1
 
 -- | We pair up transactions in the mempool with their ticket number.
 --
@@ -160,5 +165,5 @@ fromTxSeq (TxSeq ftree) = fmap
 -- transaction's ticket number.
 appendTx :: TxSeq tx -> tx -> TxSeq tx
 appendTx ts tx = case viewBack ts of
-  Nothing                           -> Empty :> TxTicket tx (TicketNo 0)
+  Nothing                           -> Empty :> TxTicket tx zeroTicketNo
   Just (_, TxTicket _ (TicketNo n)) -> ts    :> TxTicket tx (TicketNo (n + 1))

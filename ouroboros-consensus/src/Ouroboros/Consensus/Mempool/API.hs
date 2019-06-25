@@ -106,4 +106,8 @@ data Mempool m blk idx = Mempool {
       -- in order) with respect to a call to 'getLedgerState' run /in the same
       -- transaction/.
     , getTxs :: STM m (Seq (GenTx blk, idx))
+
+      -- | Represents the initial value at which the transaction ticket number
+      -- counter will start (i.e. the zeroth ticket number).
+    , zeroIdx :: idx
     }
