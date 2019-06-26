@@ -119,8 +119,8 @@ demo chain0 updates = do
                        (ChainSync.codecChainSync encode decode encode decode)
                        (ChainSync.chainSyncServerPeer server)
 
-    _ <- async $ Mx.runNetworkNodeWithPipe producerApp hndRead1 hndWrite2
-    _ <- async $ Mx.runNetworkNodeWithPipe consumerApp hndRead2 hndWrite1
+    _ <- async $ Mx.runMuxWithPipes producerApp hndRead1 hndWrite2
+    _ <- async $ Mx.runMuxWithPipes consumerApp hndRead2 hndWrite1
 
     void $ fork $ sequence_
         [ do threadDelay 10e-4 -- 1 milliseconds, just to provide interest

@@ -116,8 +116,8 @@ demo chain0 updates delay = do
                               (ChainSync.codecChainSync encode decode encode decode)
                               producerPeer)
 
-    clientAsync <- Mx.startMuxSTM consumerApp client_w client_r sduLen Nothing
-    serverAsync <- Mx.startMuxSTM producerApp server_w server_r sduLen Nothing
+    clientAsync <- async $ Mx.runMuxWithQueues consumerApp client_w client_r sduLen Nothing
+    serverAsync <- async $ Mx.runMuxWithQueues producerApp server_w server_r sduLen Nothing
 
     updateAid <- async $ sequence_
         [ do threadDelay delay -- X milliseconds, just to provide interest

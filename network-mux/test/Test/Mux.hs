@@ -307,8 +307,8 @@ prop_mux_snd_recv request response = ioProperty $ do
     (verify, clientApp, serverApp) <- setupMiniReqRsp
                                         (return ()) endMpsVar request response
 
-    clientAsync <- Mx.startMuxSTM (Mx.MuxInitiatorApplication $ \ReqResp1 -> clientApp) client_w client_r sduLen Nothing
-    serverAsync <- Mx.startMuxSTM (Mx.MuxResponderApplication $ \ReqResp1 -> serverApp) server_w server_r sduLen Nothing
+    clientAsync <- async $ Mx.runMuxWithQueues (Mx.MuxInitiatorApplication $ \ReqResp1 -> clientApp) client_w client_r sduLen Nothing
+    serverAsync <- async $ Mx.runMuxWithQueues (Mx.MuxResponderApplication $ \ReqResp1 -> serverApp) server_w server_r sduLen Nothing
 
     r <- waitBoth clientAsync serverAsync
     case r of
@@ -404,8 +404,8 @@ prop_mux_2_minis request0 response0 response1 request1 = ioProperty $ do
         serverApp ChainSync2  = server_mp0
         serverApp BlockFetch2 = server_mp1
 
-    clientAsync <- Mx.startMuxSTM (Mx.MuxInitiatorApplication clientApp) client_w client_r sduLen Nothing
-    serverAsync <- Mx.startMuxSTM (Mx.MuxResponderApplication serverApp) server_w server_r sduLen Nothing
+    clientAsync <- async $ Mx.runMuxWithQueues (Mx.MuxInitiatorApplication clientApp) client_w client_r sduLen Nothing
+    serverAsync <- async $ Mx.runMuxWithQueues (Mx.MuxResponderApplication serverApp) server_w server_r sduLen Nothing
 
 
     r <- waitBoth clientAsync serverAsync
@@ -454,8 +454,8 @@ prop_mux_starvation response0 response1 =
         serverApp BlockFetch2 = server_short
         serverApp ChainSync2  = server_long
 
-    clientAsync <- Mx.startMuxSTM (Mx.MuxInitiatorApplication clientApp) client_w client_r sduLen (Just traceQueueVar)
-    serverAsync <- Mx.startMuxSTM (Mx.MuxResponderApplication serverApp) server_w server_r sduLen Nothing
+    clientAsync <- async $ Mx.runMuxWithQueues (Mx.MuxInitiatorApplication clientApp) client_w client_r sduLen (Just traceQueueVar)
+    serverAsync <- async $ Mx.runMuxWithQueues (Mx.MuxResponderApplication serverApp) server_w server_r sduLen Nothing
 
     -- First verify that all messages where received correctly
     r <- waitBoth clientAsync serverAsync
@@ -589,7 +589,7 @@ prop_demux_sdu a = do
         server_w <- atomically $ newTBQueue 10
         server_r <- atomically $ newTBQueue 10
 
-        said <- Mx.startMuxSTM server_mps server_w server_r 1280 Nothing
+        said <- async $ Mx.runMuxWithQueues server_mps server_w server_r 1280 Nothing
 
         return (server_r, said)
 

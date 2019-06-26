@@ -5,7 +5,8 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Network.Mux.Bearer.Pipe (
-    runNetworkNodeWithPipe
+    pipeAsMuxBearer
+  , runMuxWithPipes
   ) where
 
 import           Control.Monad.Class.MonadSTM
@@ -83,14 +84,14 @@ pipeAsMuxBearer pcRead pcWrite = do
       sduSize :: IO Word16
       sduSize = return 32768
 
-runNetworkNodeWithPipe
+runMuxWithPipes
     :: ( Mx.ProtocolEnum ptcl, Ord ptcl, Enum ptcl, Bounded ptcl, Show ptcl
        , Mx.MiniProtocolLimits ptcl)
     => Mx.MuxApplication appType ptcl IO BL.ByteString a b
     -> Handle -- ^ read handle
     -> Handle -- ^ write handle
     -> IO ()
-runNetworkNodeWithPipe app pcRead pcWrite = do
+runMuxWithPipes app pcRead pcWrite = do
     bearer <- pipeAsMuxBearer pcRead pcWrite
     Mx.muxStart app bearer
 

@@ -3,7 +3,7 @@
 
 module Network.Mux.Bearer.Queues
   ( queuesAsMuxBearer
-  , startMuxSTM
+  , runMuxWithQueues
   ) where
 
 import qualified Data.ByteString.Lazy as BL
@@ -74,7 +74,7 @@ queuesAsMuxBearer writeQueue readQueue sduSize traceQueue = do
       sduSizeMux :: m Word16
       sduSizeMux = return $ sduSize
 
-startMuxSTM
+runMuxWithQueues
   :: ( MonadAsync m
      , MonadCatch m
      , MonadMask m
@@ -96,11 +96,10 @@ startMuxSTM
   -> TBQueue m BL.ByteString
   -> Word16
   -> Maybe (TBQueue m (Mx.MiniProtocolId ptcl, Mx.MiniProtocolMode, Time m))
-  -> m (Async m (Maybe SomeException))
-startMuxSTM app wq rq mtu trace = async spawn
-  where
-    spawn = bracket (queuesAsMuxBearer wq rq mtu trace) Mx.close $ \bearer -> do
-        res_e <- try $ Mx.muxStart app bearer
-        case res_e of
-             Left  e -> return (Just e)
-             Right _ -> return Nothing
+  -> m (Maybe SomeException)
+runMuxWithQueues app wq rq mtu trace =
+    bracket (queuesAsMuxBearer wq rq mtu trace) Mx.close $ \bearer -> do
+      res_e <- try $ Mx.muxStart app bearer
+      case res_e of
+            Left  e -> return (Just e)
+            Right _ -> return Nothing
