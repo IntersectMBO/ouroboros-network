@@ -4,7 +4,7 @@
 {-# LANGUAGE PolyKinds           #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module Ouroboros.Network.Protocol.PingPong.Codec where
+module Network.TypedProtocol.PingPong.Codec.Cbor where
 
 import           Control.Monad.Class.MonadST
 
@@ -18,7 +18,6 @@ import           Network.TypedProtocol.Core
 import           Network.TypedProtocol.Codec
 import           Network.TypedProtocol.PingPong.Type
 
-import           Ouroboros.Network.Codec
 
 codecPingPong
   :: forall m.

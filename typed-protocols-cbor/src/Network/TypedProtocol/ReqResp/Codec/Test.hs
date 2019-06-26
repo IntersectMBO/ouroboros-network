@@ -4,15 +4,19 @@
 {-# LANGUAGE FlexibleInstances   #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
-module Ouroboros.Network.Protocol.ReqResp.Test (tests) where
+module Network.TypedProtocol.ReqResp.Codec.Test
+  ( tests
+  -- TODO: only temporary
+  , splits2
+  , splits3
+  ) where
 
 import           Control.Monad.ST (runST)
+import qualified Data.ByteString.Lazy as LBS
 
 import           Network.TypedProtocol.Codec
 import           Network.TypedProtocol.ReqResp.Type
-import           Ouroboros.Network.Protocol.ReqResp.Codec
-
-import           Test.Ouroboros.Network.Testing.Utils (splits2, splits3)
+import           Network.TypedProtocol.ReqResp.Codec.Cbor
 
 import           Test.QuickCheck hiding (Result)
 import           Test.Tasty (TestTree, testGroup)
@@ -20,12 +24,26 @@ import           Test.Tasty.QuickCheck (testProperty)
 
 tests :: TestTree
 tests =
-  testGroup "Ouroboros.Network.Protocol.ReqResp"
+  testGroup "Network.TypedProtocol.ReqResp.Codec.Cbor"
   [ testProperty "codec"               prop_codec_ReqResp
   , testProperty "codec 2-splits"      prop_codec_splits2_ReqResp
   , testProperty "codec 3-splits"      $ withMaxSuccess 30 prop_codec_splits3_ReqResp
   ]
 
+-- | Generate all 2-splits of a string.
+--
+-- TODO: find a better palce for 'split2' and 'split3' (they are duplicated);
+-- possibly put them in 'ouroboros-network-testing'.
+--
+splits2 :: LBS.ByteString -> [[LBS.ByteString]]
+splits2 bs = zipWith (\a b -> [a,b]) (LBS.inits bs) (LBS.tails bs)
+
+-- | Generate all 3-splits of a string.
+splits3 :: LBS.ByteString -> [[LBS.ByteString]]
+splits3 bs =
+    [ [a,b,c]
+    | (a,bs') <- zip (LBS.inits bs)  (LBS.tails bs)
+    , (b,c)   <- zip (LBS.inits bs') (LBS.tails bs') ]
 
 --
 -- Codec properties

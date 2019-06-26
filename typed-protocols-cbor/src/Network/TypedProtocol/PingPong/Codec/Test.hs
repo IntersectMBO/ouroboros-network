@@ -4,15 +4,15 @@
 {-# LANGUAGE FlexibleInstances   #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
-module Ouroboros.Network.Protocol.PingPong.Test (tests) where
+module Network.TypedProtocol.PingPong.Codec.Test (tests) where
 
 import           Control.Monad.ST (runST)
 
 import           Network.TypedProtocol.Codec
 import           Network.TypedProtocol.PingPong.Type
-import           Ouroboros.Network.Protocol.PingPong.Codec
-
-import           Test.Ouroboros.Network.Testing.Utils (splits2, splits3)
+import           Network.TypedProtocol.PingPong.Codec.Cbor
+-- TODO: remove this import
+import           Network.TypedProtocol.ReqResp.Codec.Test (splits2, splits3)
 
 import           Test.QuickCheck hiding (Result)
 import           Test.Tasty (TestTree, testGroup)
@@ -20,7 +20,7 @@ import           Test.Tasty.QuickCheck (testProperty)
 
 tests :: TestTree
 tests =
-  testGroup "Ouroboros.Network.Protocol.PingPong"
+  testGroup "Network.Typed.Protocol.PingPong.Codec.Cbor"
   [ testProperty "codec"               prop_codec_PingPong
   , testProperty "codec 2-splits"      prop_codec_splits2_PingPong
   , testProperty "codec 3-splits"      $ withMaxSuccess 30 prop_codec_splits3_PingPong
