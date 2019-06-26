@@ -193,6 +193,8 @@ data InternalState m peer blk = IS {
 initInternalState
     :: forall m peer blk.
        ( MonadAsync m
+       , MonadFork m
+       , MonadMask m
        , ProtocolLedgerView blk
        , Ord peer
        , TraceConstraints peer blk
@@ -203,7 +205,7 @@ initInternalState
 initInternalState NodeParams {..} = do
     varCandidates  <- atomically $ newTVar mempty
     varState       <- atomically $ newTVar initState
-    mempool        <- openMempool chainDB (ledgerConfigView cfg)
+    mempool        <- openMempool threadRegistry chainDB (ledgerConfigView cfg)
 
     fetchClientRegistry <- newFetchClientRegistry
 

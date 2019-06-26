@@ -8,9 +8,11 @@ module Ouroboros.Consensus.Mempool.Impl (
 
 import           Control.Monad.Except
 import qualified Data.Foldable as Foldable
-import           Data.Sequence (Seq (..))
 
+import           Control.Monad.Class.MonadAsync
+import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadSTM
+import           Control.Monad.Class.MonadThrow
 
 import           Ouroboros.Network.Block (ChainHash)
 import qualified Ouroboros.Network.Block as Block
@@ -25,17 +27,26 @@ import           Ouroboros.Consensus.Mempool.TxSeq (TicketNo, TxSeq (..),
                      zeroTicketNo)
 import qualified Ouroboros.Consensus.Mempool.TxSeq as TxSeq
 import           Ouroboros.Consensus.Util (repeatedly)
+import           Ouroboros.Consensus.Util.STM (onEachChange)
+import           Ouroboros.Consensus.Util.ThreadRegistry (ThreadRegistry)
 
 {-------------------------------------------------------------------------------
   Top-level API
 -------------------------------------------------------------------------------}
 
-openMempool :: (MonadSTM m, ApplyTx blk)
-            => ChainDB m blk hdr
+openMempool :: ( MonadAsync m
+               , MonadFork m
+               , MonadMask m
+               , MonadSTM m
+               , ApplyTx blk
+               )
+            => ThreadRegistry m
+            -> ChainDB m blk hdr
             -> LedgerConfig blk
             -> m (Mempool m blk TicketNo)
-openMempool chainDB cfg = do
+openMempool registry chainDB cfg = do
     env <- initMempoolEnv chainDB cfg
+    forkSyncStateOnTipPointChange registry env
     return Mempool {
         addTxs      = implAddTxs env
       , syncState   = implSyncState env
@@ -74,6 +85,24 @@ initMempoolEnv :: MonadSTM m
 initMempoolEnv chainDB cfg = do
     isVar <- atomically $ newTVar initInternalState
     return $ MempoolEnv chainDB cfg isVar
+
+-- | Spawn a thread which syncs the 'Mempool' state whenever the 'ChainDB'
+-- tip point changes.
+forkSyncStateOnTipPointChange :: ( MonadAsync m
+                                 , MonadFork m
+                                 , MonadMask m
+                                 , ApplyTx blk
+                                 , Block.StandardHash blk
+                                 )
+                              => ThreadRegistry m
+                              -> MempoolEnv m blk hdr
+                              -> m ()
+forkSyncStateOnTipPointChange registry menv = do
+  initialTipPoint <- atomically $ getTipPoint mpEnvChainDB
+  onEachChange registry id initialTipPoint (getTipPoint mpEnvChainDB) action
+ where
+  action _ = atomically $ void $ implSyncState menv
+  MempoolEnv { mpEnvChainDB } = menv
 
 {-------------------------------------------------------------------------------
   Implementation
