@@ -27,7 +27,7 @@ localTxSubmissionServer
 localTxSubmissionServer tracer Mempool{addTxs} =
     server
   where
-    server = LocalTxSubmissionServer {
+    server = undefined {- LocalTxSubmissionServer {
       recvMsgSubmitTx = \tx -> do
         traceWith tracer (condense tx)
         res <- addTxs [tx]
@@ -38,5 +38,5 @@ localTxSubmissionServer tracer Mempool{addTxs} =
           _           -> return (Nothing,         server),
 
       recvMsgDone = ()
-    }
+    } -}
 

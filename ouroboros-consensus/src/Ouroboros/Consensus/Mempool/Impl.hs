@@ -1,3 +1,4 @@
+{-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections       #-}
@@ -23,7 +24,7 @@ import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Mempool.API
 import           Ouroboros.Consensus.Mempool.TxSeq (TicketNo, TxSeq (..),
-                     appendTx, fromTxSeq, lookupByTicketNo, splitAfterTicketNo,
+                     appendTx, lookupByTicketNo, splitAfterTicketNo,
                      zeroTicketNo)
 import qualified Ouroboros.Consensus.Mempool.TxSeq as TxSeq
 import           Ouroboros.Consensus.Util (repeatedly)
@@ -38,6 +39,7 @@ openMempool :: ( MonadAsync m
                , MonadFork m
                , MonadMask m
                , MonadSTM m
+               , Ord (GenTxId blk)
                , ApplyTx blk
                )
             => ThreadRegistry m
@@ -62,8 +64,8 @@ openMempool registry chainDB cfg = do
 
 -- | Internal state in the mempool
 data InternalState blk = IS {
-     -- | Transactions currently in the mempool
-      isTxs :: TxSeq (GenTx blk)
+      -- | Transactions currently in the mempool
+      isTxs :: TxSeq (GenTxId blk, GenTx blk)
 
       -- | The tip of the chain that 'isTxs' was validated against
     , isTip :: ChainHash blk
@@ -91,6 +93,7 @@ initMempoolEnv chainDB cfg = do
 forkSyncStateOnTipPointChange :: ( MonadAsync m
                                  , MonadFork m
                                  , MonadMask m
+                                 , Ord (GenTxId blk)
                                  , ApplyTx blk
                                  , Block.StandardHash blk
                                  )
@@ -109,9 +112,9 @@ forkSyncStateOnTipPointChange registry menv = do
 -------------------------------------------------------------------------------}
 
 -- TODO: This may return some transactions as invalid that aren't new. Remove?
-implAddTxs :: forall m blk hdr. (MonadSTM m, ApplyTx blk)
+implAddTxs :: forall m blk hdr. (MonadSTM m, Ord (GenTxId blk), ApplyTx blk)
            => MempoolEnv m blk hdr
-           -> [GenTx blk]
+           -> [(GenTxId blk, GenTx blk)]
            -> m [(GenTx blk, ApplyTxErr blk)]
 implAddTxs mpEnv@MempoolEnv{mpEnvStateVar, mpEnvLedgerCfg} txs =
     atomically $ do
@@ -120,15 +123,15 @@ implAddTxs mpEnv@MempoolEnv{mpEnvStateVar, mpEnvLedgerCfg} txs =
         vrValid,
         vrInvalid
       } <- validateNew <$> validateIS mpEnv
-      writeTVar mpEnvStateVar IS { isTxs = vrValid
-                                 , isTip = vrBefore
+      writeTVar mpEnvStateVar IS { isTxs   = vrValid
+                                 , isTip   = vrBefore
                                  }
       return vrInvalid
   where
     validateNew :: ValidationResult blk ->  ValidationResult blk
     validateNew = extendsVR mpEnvLedgerCfg False txs
 
-implSyncState :: (MonadSTM m, ApplyTx blk)
+implSyncState :: (MonadSTM m, Ord (GenTxId blk), ApplyTx blk)
               => MempoolEnv m blk hdr
               -> STM m [(GenTx blk, ApplyTxErr blk)]
 implSyncState mpEnv@MempoolEnv{mpEnvStateVar} = do
@@ -137,28 +140,32 @@ implSyncState mpEnv@MempoolEnv{mpEnvStateVar} = do
   , vrValid
   , vrInvalid
   } <- validateIS mpEnv
-  writeTVar mpEnvStateVar IS { isTxs = vrValid
-                             , isTip = vrBefore
+  writeTVar mpEnvStateVar IS { isTxs   = vrValid
+                             , isTip   = vrBefore
                              }
   pure vrInvalid
 
 implGetTxs :: (MonadSTM m, ApplyTx blk)
            => MempoolEnv m blk hdr
-           -> STM m [(GenTx blk, TicketNo)]
+           -> STM m [(GenTxId blk, GenTx blk, TicketNo)]
 implGetTxs = (flip implGetTxsAfter) zeroTicketNo
 
 implGetTxsAfter :: (MonadSTM m, ApplyTx blk)
                 => MempoolEnv m blk hdr
                 -> TicketNo
-                -> STM m [(GenTx blk, TicketNo)]
+                -> STM m [(GenTxId blk, GenTx blk, TicketNo)]
 implGetTxsAfter MempoolEnv{mpEnvStateVar} tn = do
   IS { isTxs } <- readTVar mpEnvStateVar
   pure $ fromTxSeq $ snd $ splitAfterTicketNo isTxs tn
+ where
+  fromTxSeq txSeq = fmap
+    (\(txid, tx) -> (txid, tx, tn))
+    (Foldable.toList txSeq)
 
 implGetTx :: (MonadSTM m, ApplyTx blk)
           => MempoolEnv m blk hdr
           -> TicketNo
-          -> STM m (Maybe (GenTx blk))
+          -> STM m (Maybe (GenTxId blk, GenTx blk))
 implGetTx MempoolEnv{mpEnvStateVar} tn =
   (`lookupByTicketNo` tn) . isTxs <$> readTVar mpEnvStateVar
 
@@ -168,34 +175,36 @@ implGetTx MempoolEnv{mpEnvStateVar} tn =
 
 data ValidationResult blk = ValidationResult {
     -- | The tip of the chain before applying these transactions
-    vrBefore  :: ChainHash blk
+    vrBefore   :: ChainHash blk
 
     -- | The transactions that were found to be valid (oldest to newest)
-  , vrValid   :: TxSeq (GenTx blk)
+  , vrValid    :: TxSeq (GenTxId blk, GenTx blk)
 
     -- | The state of the ledger after 'vrValid'
     --
     -- NOTE: This is intentionally not a strict field, so that we don't
     -- evaluate the final ledger state if we don't have to.
-  , vrAfter   :: LedgerState blk
+  , vrAfter    :: LedgerState blk
 
     -- | The transactions that were invalid, along with their errors
     --
     -- Order not guaranteed
-  , vrInvalid :: [(GenTx blk, ApplyTxErr blk)]
+  , vrInvalid  :: [(GenTx blk, ApplyTxErr blk)]
   }
 
 -- | Initialize 'ValidationResult' from a ledger state and a list of
 -- transactions /known/ to be valid in that ledger state
 initVR :: forall blk. ApplyTx blk
        => LedgerConfig blk
-       -> TxSeq (GenTx blk)
+       -> TxSeq (GenTxId blk, GenTx blk)
        -> (ChainHash blk, LedgerState blk)
        -> ValidationResult blk
 initVR cfg = \knownValid (tip, st) -> ValidationResult {
       vrBefore  = tip
     , vrValid   = knownValid
-    , vrAfter   = afterKnownValid (Foldable.toList knownValid) st
+    , vrAfter   = afterKnownValid
+                    (map snd (Foldable.toList knownValid))
+                    st
     , vrInvalid = []
     }
   where
@@ -213,23 +222,23 @@ initVR cfg = \knownValid (tip, st) -> ValidationResult {
 extendVR :: ApplyTx blk
          => LedgerConfig blk
          -> Bool -- ^ Were these transactions previously validated?
-         -> GenTx blk
+         -> (GenTxId blk, GenTx blk)
          -> ValidationResult blk
          -> ValidationResult blk
-extendVR cfg prevApplied tx
+extendVR cfg prevApplied (txid, tx)
          vr@ValidationResult{vrValid, vrAfter, vrInvalid} =
     let apply | prevApplied = reapplyTx
               | otherwise   = applyTx in
     case runExcept (apply cfg tx vrAfter) of
       Left err  -> vr { vrInvalid = (tx, err) : vrInvalid }
-      Right st' -> vr { vrValid   = vrValid `appendTx` tx
+      Right st' -> vr { vrValid   = vrValid `appendTx` (txid, tx)
                       , vrAfter   = st' }
 
 -- | Apply 'extendVR' to a list of transactions, in order
 extendsVR :: ApplyTx blk
           => LedgerConfig blk
           -> Bool -- ^ Were these transactions previously applied?
-          -> [GenTx blk]
+          -> [(GenTxId blk, GenTx blk)]
           -> ValidationResult blk
           -> ValidationResult blk
 extendsVR cfg prevApplied = repeatedly (extendVR cfg prevApplied)

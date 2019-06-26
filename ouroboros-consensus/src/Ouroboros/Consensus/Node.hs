@@ -134,6 +134,7 @@ nodeKernel
        , MonadFork  m
        , MonadMask  m
        , ProtocolLedgerView blk
+       , Ord (GenTxId blk)
        , Ord peer
        , TraceConstraints peer blk
        , ApplyTx blk
@@ -196,6 +197,7 @@ initInternalState
        , MonadFork m
        , MonadMask m
        , ProtocolLedgerView blk
+       , Ord (GenTxId blk)
        , Ord peer
        , TraceConstraints peer blk
        , ApplyTx blk
@@ -320,7 +322,8 @@ forkBlockProduction IS{..} =
             -- information.
             _invalidTxs         <- syncState mempool
 
-            txs                 <- getTxs mempool
+            txs                 <- Foldable.toList . (fmap sndOfTriple)
+                                     <$> getTxs mempool
             newBlock            <- runProtocol varDRG $
                                      produceBlock
                                        proof
@@ -328,7 +331,7 @@ forkBlockProduction IS{..} =
                                        currentSlot
                                        (castPoint prevPoint)
                                        prevNo
-                                       (Foldable.toList . (fmap fst) $ txs)
+                                       txs
             return $ Just newBlock
 
       whenJust mNewBlock $ \newBlock -> do
@@ -338,6 +341,9 @@ forkBlockProduction IS{..} =
         ChainDB.addBlock chainDB newBlock
   where
     NodeCallbacks{..} = callbacks
+
+    -- Return the second item in a triple.
+    sndOfTriple (_, b, _) = b
 
     -- Return the point and block number of the most recent block in the
     -- current chain with a slot < the given slot. These will either

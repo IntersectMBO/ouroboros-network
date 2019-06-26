@@ -21,6 +21,9 @@ class UpdateLedger blk => ApplyTx blk where
   -- also other kinds of things such as update proposals, delegations, etc.
   data family GenTx blk :: *
 
+  -- | A generalized transaction, 'GenTx', identifier.
+  data family GenTxId blk :: *
+
   -- | Updating the ledger with a single transaction may result in a different
   -- error type as when updating it with a block
   type family ApplyTxErr blk :: *
@@ -97,7 +100,7 @@ data Mempool m blk idx = Mempool {
       -- they have already been included. (Distinguishing between these two
       -- cases can be done in theory, but it is expensive unless we have an
       -- index of transaction hashes that have been included on the blockchain.)
-      addTxs :: [GenTx blk] -> m [(GenTx blk, ApplyTxErr blk)]
+      addTxs :: [(GenTxId blk, GenTx blk)] -> m [(GenTx blk, ApplyTxErr blk)]
 
       -- | Sync the transactions in the mempool with the ledger state of the
       -- 'ChainDB'. Invalid transactions will be returned along with the
@@ -113,16 +116,16 @@ data Mempool m blk idx = Mempool {
       -- valid (with respect to the ledger state) if this function is called
       -- immediately following a call to 'syncState', /within the same
       -- transaction/.
-    , getTxs :: STM m [(GenTx blk, idx)]
+    , getTxs :: STM m [(GenTxId blk, GenTx blk, idx)]
 
       -- | Get all transactions in the mempool, along with their associated
       -- ticket numbers, which are associated with a ticket number greater
       -- than the one provided.
-    , getTxsAfter :: idx -> STM m [(GenTx blk, idx)]
+    , getTxsAfter :: idx -> STM m [(GenTxId blk, GenTx blk, idx)]
 
       -- | Get a specific transaction from the mempool by its ticket number,
       -- if it exists.
-    , getTx :: idx -> STM m (Maybe (GenTx blk))
+    , getTx :: idx -> STM m (Maybe (GenTxId blk, GenTx blk))
 
       -- | Represents the initial value at which the transaction ticket number
       -- counter will start (i.e. the zeroth ticket number).
