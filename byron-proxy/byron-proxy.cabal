@@ -70,7 +70,8 @@ library
 
 executable byron-proxy
   main-is:             Main.hs
-  other-modules:       DB,
+  other-modules:       Byron,
+                       DB,
                        Logging,
                        Orphans,
                        Shelley.Client,
