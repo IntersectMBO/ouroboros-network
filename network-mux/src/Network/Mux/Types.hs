@@ -3,7 +3,7 @@
 {-# LANGUAGE RecordWildCards       #-}
 {-# LANGUAGE TypeFamilies          #-}
 
-module Ouroboros.Network.Mux.Types (
+module Network.Mux.Types (
       MiniProtocolDispatch (..)
     , MiniProtocolLimits (..)
     , ProtocolEnum (..)
@@ -207,8 +207,8 @@ data MuxBearerState = Larval
 -- | Low level access to underlying socket or pipe.  There are three smart
 -- constructors:
 --
--- * 'Ouroboros.Network.Socket.socketAsMuxBearer'
--- * 'Ouroboros.Network.Pipe.pipeAsMuxBearer'
+-- * 'Network.Socket.socketAsMuxBearer'
+-- * 'Network.Pipe.pipeAsMuxBearer'
 -- * @Test.Mux.queuesAsMuxBearer@
 --
 data MuxBearer ptcl m = MuxBearer {

@@ -4,7 +4,7 @@
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module Ouroboros.Network.Pipe (
+module Network.Mux.Bearer.Pipe (
     runNetworkNodeWithPipe
   ) where
 
@@ -16,11 +16,11 @@ import qualified Data.ByteString.Lazy as BL
 import           GHC.Stack
 import           System.IO (Handle, hClose, hFlush)
 
-import qualified Ouroboros.Network.Mux as Mx
-import qualified Ouroboros.Network.Mux.Interface as Mx
-import           Ouroboros.Network.Time
-import           Ouroboros.Network.Mux.Types (MuxBearer)
-import qualified Ouroboros.Network.Mux.Types as Mx
+import qualified Network.Mux as Mx
+import           Network.Mux.Types (MuxBearer)
+import qualified Network.Mux.Types as Mx
+import qualified Network.Mux.Interface as Mx
+import qualified Network.Mux.Time as Mx
 
 
 pipeAsMuxBearer
@@ -68,7 +68,7 @@ pipeAsMuxBearer pcRead pcWrite = do
                 -> IO (Time IO)
       writePipe sdu = do
           ts <- getMonotonicTime
-          let ts32 = timestampMicrosecondsLow32Bits ts
+          let ts32 = Mx.timestampMicrosecondsLow32Bits ts
               sdu' = sdu { Mx.msTimestamp = Mx.RemoteClockModel ts32 }
               buf  = Mx.encodeMuxSDU sdu'
           BL.hPut pcWrite buf

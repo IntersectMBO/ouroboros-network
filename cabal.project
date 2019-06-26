@@ -1,6 +1,7 @@
 packages: ./typed-protocols
 	  ./typed-protocols-cbor
           ./ouroboros-network-testing
+	  ./network-mux
           ./ouroboros-network
           ./ouroboros-consensus
           ./io-sim
@@ -13,6 +14,9 @@ package typed-protocols-cbor
   tests: True
 
 package ouroboros-network-testing
+  tests: True
+
+package mux
   tests: True
 
 package ouroboros-network

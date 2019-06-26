@@ -35,8 +35,7 @@ library
 
   -- At this experiment/prototype stage everything is exposed.
   -- This has to be tidied up once the design becomes clear.
-  exposed-modules:
-                       Codec.SerialiseTerm
+  exposed-modules:     Codec.SerialiseTerm
                        Ouroboros.Network.AnchoredFragment
                        Ouroboros.Network.Block
                        Ouroboros.Network.BlockFetch
@@ -57,7 +56,6 @@ library
                        Ouroboros.Network.Mux.Types
                        Ouroboros.Network.NodeToNode
                        Ouroboros.Network.NodeToClient
-                       Ouroboros.Network.Pipe
                        Ouroboros.Network.Server.Socket
                        Ouroboros.Network.Server.Version.CBOR
                        Ouroboros.Network.Server.Version.Protocol
@@ -108,7 +106,7 @@ library
                        io-sim-classes    >=0.1 && < 0.2,
                        contra-tracer,
 
-                       array             >=0.5 && <0.6,
+                       -- array             >=0.5 && <0.6,
                        async             >=2.2 && <2.3,
                        binary            >=0.8 && <0.9,
                        bytestring        >=0.10 && <0.11,
@@ -116,10 +114,10 @@ library
                        containers,
                        fingertree        >=0.1.4.2 && <0.2,
                        network,
-                       process           >=1.6 && <1.7,
+                       -- process           >=1.6 && <1.7,
                        serialise         >=0.2 && <0.3,
-                       stm               >=2.4 && <2.6,
-                       time              >=1.6 && <1.10
+                       stm               >=2.4 && <2.6
+                       -- time              >=1.6 && <1.10
 
   ghc-options:         -Wall
                        -Wno-unticked-promoted-constructors

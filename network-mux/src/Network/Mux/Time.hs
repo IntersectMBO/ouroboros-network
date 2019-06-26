@@ -1,5 +1,5 @@
 
-module Ouroboros.Network.Time (
+module Network.Mux.Time (
     -- * DiffTime
     DiffTime,
     diffTimeToMicroseconds,

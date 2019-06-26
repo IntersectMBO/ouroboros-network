@@ -5,7 +5,7 @@
 -- | An extension of 'Network.TypedProtocol.Channel', with additional 'Channel'
 -- implementations.
 --
-module Ouroboros.Network.Channel
+module Network.Mux.Channel
   ( module Network.TypedProtocol.Channel
   , createBufferConnectedChannels
   , createPipeConnectedChannels

@@ -28,7 +28,6 @@ import qualified Data.ByteString.Lazy as BL
 import qualified Data.ByteString.Lazy.Char8 as BL8 (pack)
 import           Data.Int
 import           Data.Word
-import           Test.ChainGenerators (TestBlockChainAndUpdates (..))
 import           Test.QuickCheck
 import           Test.QuickCheck.Gen
 import           Test.Tasty (TestTree, testGroup)
@@ -46,27 +45,15 @@ import           Control.Monad.Class.MonadTimer
 import           Control.Monad.IOSim (runSimStrictShutdown)
 import           Control.Tracer (nullTracer)
 
-import           Network.TypedProtocol.Core
 import           Network.TypedProtocol.Channel
 import           Network.TypedProtocol.Driver
 import           Network.TypedProtocol.ReqResp.Client
 import           Network.TypedProtocol.ReqResp.Server
+import           Network.TypedProtocol.ReqResp.Codec.Cbor
 
-import           Ouroboros.Network.Chain (Chain, ChainUpdate, Point)
-import qualified Ouroboros.Network.Chain as Chain
-import qualified Ouroboros.Network.ChainProducerState as CPS
-import qualified Ouroboros.Network.Protocol.ChainSync.Type     as ChainSync
-import qualified Ouroboros.Network.Protocol.ChainSync.Client   as ChainSync
-import qualified Ouroboros.Network.Protocol.ChainSync.Codec    as ChainSync
-import qualified Ouroboros.Network.Protocol.ChainSync.Examples as ChainSync
-import qualified Ouroboros.Network.Protocol.ChainSync.Server   as ChainSync
-
-import qualified Ouroboros.Network.Mux as Mx
-import qualified Ouroboros.Network.Mux.Interface as Mx
-import           Ouroboros.Network.Mux.Types (MuxBearer)
-import qualified Ouroboros.Network.Mux.Types as Mx
-import           Ouroboros.Network.Protocol.ReqResp.Codec
-import           Ouroboros.Network.Time
+import qualified Network.Mux as Mx
+import qualified Network.Mux.Interface as Mx
+import qualified Network.Mux.Bearer.Queues as Mx
 
 tests :: TestTree
 tests =
@@ -76,8 +63,6 @@ tests =
   , testProperty "starvation"           prop_mux_starvation
   , testProperty "demuxing (Sim)"       prop_demux_sdu_sim
   , testProperty "demuxing (IO)"        prop_demux_sdu_io
-  , testProperty "ChainSync Demo (IO)"  prop_mux_demo_io
-  , testProperty "ChainSync Demo (Sim)" prop_mux_demo_sim
   , testGroup "Generators"
     [ testProperty "genByteString"      prop_arbitrary_genByteString
     , testProperty "genLargeByteString" prop_arbitrary_genLargeByteString
@@ -302,74 +287,6 @@ instance Arbitrary Mx.MuxBearerState where
                           ]
 
 
-startMuxSTM :: ( MonadAsync m, MonadCatch m, MonadMask m, MonadSay m, MonadSTM m
-               , MonadThrow m , MonadThrow (STM m), MonadTime m , MonadTimer m, Ord ptcl
-               , Enum ptcl, Bounded ptcl , Mx.ProtocolEnum ptcl , Show ptcl
-               , Mx.MiniProtocolLimits ptcl)
-            => Mx.MuxApplication appType ptcl m BL.ByteString a b
-            -> TBQueue m BL.ByteString
-            -> TBQueue m BL.ByteString
-            -> Word16
-            -> Maybe (TBQueue m (Mx.MiniProtocolId ptcl, Mx.MiniProtocolMode, Time m))
-            -> m (Async m (Maybe SomeException))
-startMuxSTM app wq rq mtu trace = async spawn
-  where
-    spawn = bracket (queuesAsMuxBearer wq rq mtu trace) Mx.close $ \bearer -> do
-        res_e <- try $ Mx.muxStart app bearer
-        case res_e of
-             Left  e -> return (Just e)
-             Right _ -> return Nothing
-
-queuesAsMuxBearer
-  :: forall ptcl m.
-     ( MonadSTM   m
-     , MonadTime  m
-     , MonadThrow m
-     , Mx.ProtocolEnum ptcl
-     )
-  => TBQueue m BL.ByteString
-  -> TBQueue m BL.ByteString
-  -> Word16
-  -> Maybe (TBQueue m (Mx.MiniProtocolId ptcl, Mx.MiniProtocolMode, Time m))
-  -> m (MuxBearer ptcl m)
-queuesAsMuxBearer writeQueue readQueue sduSize traceQueue = do
-      mxState <- atomically $ newTVar Mx.Larval
-      return $ Mx.MuxBearer {
-          Mx.read    = readMux,
-          Mx.write   = writeMux,
-          Mx.close   = return (),
-          Mx.sduSize = sduSizeMux,
-          Mx.state   = mxState
-        }
-    where
-      readMux :: m (Mx.MuxSDU ptcl, Time m)
-      readMux = do
-          buf <- atomically $ readTBQueue readQueue
-          let (hbuf, payload) = BL.splitAt 8 buf
-          case Mx.decodeMuxSDUHeader hbuf of
-              Left  e      -> throwM e
-              Right header -> do
-                  ts <- getMonotonicTime
-                  case traceQueue of
-                        Just q  -> atomically $ do
-                            full <- isFullTBQueue q
-                            if full then return ()
-                                    else writeTBQueue q (Mx.msId header, Mx.msMode header, ts)
-                        Nothing -> return ()
-                  return (header {Mx.msBlob = payload}, ts)
-
-      writeMux :: Mx.MuxSDU ptcl
-               -> m (Time m)
-      writeMux sdu = do
-          ts <- getMonotonicTime
-          let ts32 = timestampMicrosecondsLow32Bits ts
-              sdu' = sdu { Mx.msTimestamp = Mx.RemoteClockModel ts32 }
-              buf  = Mx.encodeMuxSDU sdu'
-          atomically $ writeTBQueue writeQueue buf
-          return ts
-
-      sduSizeMux :: m Word16
-      sduSizeMux = return $ sduSize
 
 -- | Verify that an initiator and a responder can send and receive messages from each other.
 -- Large DummyPayloads will be split into sduLen sized messages and the testcases will verify
@@ -390,8 +307,8 @@ prop_mux_snd_recv request response = ioProperty $ do
     (verify, clientApp, serverApp) <- setupMiniReqRsp
                                         (return ()) endMpsVar request response
 
-    clientAsync <- startMuxSTM (Mx.MuxInitiatorApplication $ \ReqResp1 -> clientApp) client_w client_r sduLen Nothing
-    serverAsync <- startMuxSTM (Mx.MuxResponderApplication $ \ReqResp1 -> serverApp) server_w server_r sduLen Nothing
+    clientAsync <- Mx.startMuxSTM (Mx.MuxInitiatorApplication $ \ReqResp1 -> clientApp) client_w client_r sduLen Nothing
+    serverAsync <- Mx.startMuxSTM (Mx.MuxResponderApplication $ \ReqResp1 -> serverApp) server_w server_r sduLen Nothing
 
     r <- waitBoth clientAsync serverAsync
     case r of
@@ -487,8 +404,8 @@ prop_mux_2_minis request0 response0 response1 request1 = ioProperty $ do
         serverApp ChainSync2  = server_mp0
         serverApp BlockFetch2 = server_mp1
 
-    clientAsync <- startMuxSTM (Mx.MuxInitiatorApplication clientApp) client_w client_r sduLen Nothing
-    serverAsync <- startMuxSTM (Mx.MuxResponderApplication serverApp) server_w server_r sduLen Nothing
+    clientAsync <- Mx.startMuxSTM (Mx.MuxInitiatorApplication clientApp) client_w client_r sduLen Nothing
+    serverAsync <- Mx.startMuxSTM (Mx.MuxResponderApplication serverApp) server_w server_r sduLen Nothing
 
 
     r <- waitBoth clientAsync serverAsync
@@ -537,8 +454,8 @@ prop_mux_starvation response0 response1 =
         serverApp BlockFetch2 = server_short
         serverApp ChainSync2  = server_long
 
-    clientAsync <- startMuxSTM (Mx.MuxInitiatorApplication clientApp) client_w client_r sduLen (Just traceQueueVar)
-    serverAsync <- startMuxSTM (Mx.MuxResponderApplication serverApp) server_w server_r sduLen Nothing
+    clientAsync <- Mx.startMuxSTM (Mx.MuxInitiatorApplication clientApp) client_w client_r sduLen (Just traceQueueVar)
+    serverAsync <- Mx.startMuxSTM (Mx.MuxResponderApplication serverApp) server_w server_r sduLen Nothing
 
     -- First verify that all messages where received correctly
     r <- waitBoth clientAsync serverAsync
@@ -672,7 +589,7 @@ prop_demux_sdu a = do
         server_w <- atomically $ newTBQueue 10
         server_r <- atomically $ newTBQueue 10
 
-        said <- startMuxSTM server_mps server_w server_r 1280 Nothing
+        said <- Mx.startMuxSTM server_mps server_w server_r 1280 Nothing
 
         return (server_r, said)
 
@@ -740,111 +657,3 @@ prop_demux_sdu_sim badSdu =
 prop_demux_sdu_io :: ArbitrarySDU
                     -> Property
 prop_demux_sdu_io badSdu = ioProperty $ prop_demux_sdu badSdu
-
-demo :: forall m block.
-        ( MonadAsync m
-        , MonadCatch m
-        , MonadMask m
-        , MonadSay m
-        , MonadST m
-        , MonadSTM m
-        , MonadThrow (STM m)
-        , MonadTime m
-        , MonadTimer m
-        , Chain.HasHeader block
-        , Serialise (Chain.HeaderHash block)
-        , Serialise block
-        , Eq block
-        , Show block )
-     => Chain block -> [ChainUpdate block] -> DiffTime -> m Property
-demo chain0 updates delay = do
-    client_w <- atomically $ newTBQueue 10
-    client_r <- atomically $ newTBQueue 10
-    let sduLen = 1280
-    let server_w = client_r
-        server_r = client_w
-    producerVar <- atomically $ newTVar (CPS.initChainProducerState chain0)
-    consumerVar <- atomically $ newTVar chain0
-    done <- atomically newEmptyTMVar
-
-    let Just expectedChain = Chain.applyChainUpdates updates chain0
-        target = Chain.headPoint expectedChain
-
-        consumerPeer :: Peer (ChainSync.ChainSync block (Point block)) AsClient ChainSync.StIdle m ()
-        consumerPeer = ChainSync.chainSyncClientPeer
-                          (ChainSync.chainSyncClientExample consumerVar
-                          (consumerClient done target consumerVar))
-        consumerApp = Mx.simpleMuxInitiatorApplication
-                        (\ChainSync1 ->
-                            Mx.MuxPeer
-                              nullTracer
-                              (ChainSync.codecChainSync encode decode encode decode)
-                              (consumerPeer))
-
-        producerPeer :: Peer (ChainSync.ChainSync block (Point block)) AsServer ChainSync.StIdle m ()
-        producerPeer = ChainSync.chainSyncServerPeer (ChainSync.chainSyncServerExample () producerVar)
-        producerApp = Mx.simpleMuxResponderApplication
-                        (\ChainSync1 ->
-                            Mx.MuxPeer
-                              nullTracer
-                              (ChainSync.codecChainSync encode decode encode decode)
-                              producerPeer)
-
-    clientAsync <- startMuxSTM consumerApp client_w client_r sduLen Nothing
-    serverAsync <- startMuxSTM producerApp server_w server_r sduLen Nothing
-
-    updateAid <- async $ sequence_
-        [ do threadDelay delay -- X milliseconds, just to provide interest
-             atomically $ do
-                 p <- readTVar producerVar
-                 let Just p' = CPS.applyChainUpdate update p
-                 writeTVar producerVar p'
-             | update <- updates
-        ]
-
-    wait updateAid
-    r <- waitBoth clientAsync serverAsync
-    case r of
-         (Just _, _) -> return $ property False
-         (_, Just _) -> return $ property False
-         _           -> do
-             ret <- atomically $ takeTMVar done
-             return $ property ret
-
-  where
-    checkTip target consumerVar = atomically $ do
-          chain <- readTVar consumerVar
-          return (Chain.headPoint chain == target)
-
-    -- A simple chain-sync client which runs until it recieves an update to
-    -- a given point (either as a roll forward or as a roll backward).
-    consumerClient :: TMVar m Bool
-                   -> Point block
-                   -> TVar m (Chain block)
-                   -> ChainSync.Client block m ()
-    consumerClient done target chain =
-      ChainSync.Client
-        { ChainSync.rollforward = \_ -> checkTip target chain >>= \b ->
-            if b then do
-                    atomically $ putTMVar done True
-                    pure $ Left ()
-                 else
-                    pure $ Right $ consumerClient done target chain
-        , ChainSync.rollbackward = \_ _ -> checkTip target chain >>= \b ->
-            if b then do
-                    atomically $ putTMVar done True
-                    pure $ Left ()
-                 else
-                    pure $ Right $ consumerClient done target chain
-        , ChainSync.points = \_ -> pure $ consumerClient done target chain
-        }
-
-prop_mux_demo_io :: TestBlockChainAndUpdates -> Property
-prop_mux_demo_io (TestBlockChainAndUpdates chain updates) =
-    ioProperty $ demo chain updates 10e-4
-
-prop_mux_demo_sim :: TestBlockChainAndUpdates -> Property
-prop_mux_demo_sim (TestBlockChainAndUpdates chain updates) =
-    case runSimStrictShutdown $ demo chain updates 10e-3 of
-         Left  _ -> property  False
-         Right r -> r

@@ -5,7 +5,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies        #-}
 
-module Ouroboros.Network.Mux (
+module Network.Mux (
       MiniProtocolLimits (..)
     , ProtocolEnum (..)
     , MiniProtocolId (..)
@@ -31,11 +31,11 @@ import qualified Data.ByteString.Lazy as BL
 import           GHC.Stack
 import           Text.Printf
 
-import           Ouroboros.Network.Channel
-import           Ouroboros.Network.Mux.Interface
-import           Ouroboros.Network.Mux.Egress
-import           Ouroboros.Network.Mux.Ingress
-import           Ouroboros.Network.Mux.Types
+import           Network.Mux.Channel
+import           Network.Mux.Interface
+import           Network.Mux.Egress
+import           Network.Mux.Ingress
+import           Network.Mux.Types
 
 
 -- | muxStart starts a mux bearer for the specified protocols corresponding to

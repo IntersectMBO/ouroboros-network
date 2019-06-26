@@ -4,7 +4,7 @@
 {-# LANGUAGE TypeFamilies          #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
 
-module Ouroboros.Network.Mux.Ingress (
+module Network.Mux.Ingress (
       decodeMuxSDUHeader
     , demux
     , ingressQueue
@@ -23,7 +23,7 @@ import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
 
-import           Ouroboros.Network.Mux.Types
+import           Network.Mux.Types
 
 negMiniProtocolMode :: MiniProtocolMode -> MiniProtocolMode
 negMiniProtocolMode ModeInitiator = ModeResponder
@@ -110,7 +110,7 @@ demux :: (MonadSTM m, MonadSay m, MonadThrow (STM m), Ord ptcl, Enum ptcl, Show 
          , MiniProtocolLimits ptcl, HasCallStack)
       => PerMuxSharedState ptcl m -> m ()
 demux pmss = forever $ do
-    (sdu, _) <- Ouroboros.Network.Mux.Types.read $ bearer pmss
+    (sdu, _) <- Network.Mux.Types.read $ bearer pmss
     -- say $ printf "demuxing sdu on mid %s mode %s lenght %d " (show $ msId sdu) (show $ msMode sdu)
     --             (BL.length $ msBlob sdu)
     atomically $ do

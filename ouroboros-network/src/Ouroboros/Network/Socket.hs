@@ -16,12 +16,8 @@ module Ouroboros.Network.Socket (
     , connectToNode
 
     -- * Helper function for creating servers
-    , socketAsMuxBearer
     , fromSocket
     , beginConnection
-
-    -- * Auxiliary functions
-    , hexDump
     ) where
 
 import           Control.Concurrent.Async
@@ -29,9 +25,7 @@ import           Control.Monad (when)
 -- TODO: remove this, it will not be needed when `orElse` PR will be merged.
 import qualified Control.Monad.STM as STM
 import           Control.Monad.Class.MonadSTM
-import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadThrow
-import           Control.Monad.Class.MonadTime
 import           Control.Exception (throwIO)
 import qualified Codec.CBOR.Term     as CBOR
 import           Codec.Serialise (Serialise)
@@ -39,10 +33,8 @@ import           Data.Text (Text)
 import           Data.Typeable (Typeable)
 import qualified Data.ByteString.Lazy as BL
 import           Data.Int
-import           Data.Word
-import           GHC.Stack
+
 import qualified Network.Socket as Socket hiding (recv)
-import qualified Network.Socket.ByteString.Lazy as Socket (recv, sendAll)
 
 import           Control.Tracer (nullTracer)
 
@@ -58,8 +50,8 @@ import qualified Ouroboros.Network.Mux as Mx
 import qualified Ouroboros.Network.Mux.Types as Mx
 import           Ouroboros.Network.Mux.Types (MuxBearer)
 import           Ouroboros.Network.Mux.Interface
+import qualified Network.Mux.Bearer.Socket as Mx
 
-import           Text.Printf
 
 -- |
 -- We assume that a TCP segment size of 1440 bytes with initial window of size
@@ -69,81 +61,6 @@ import           Text.Printf
 --
 maxTransmissionUnit :: Int64
 maxTransmissionUnit = 4 * 1440
-
--- |
--- Create @'MuxBearer'@ from a socket.
---
-socketAsMuxBearer
-  :: forall ptcl.
-     Mx.ProtocolEnum ptcl
-  => Socket.Socket
-  -> IO (MuxBearer ptcl IO)
-socketAsMuxBearer sd = do
-      mxState <- atomically $ newTVar Mx.Larval
-      return $ Mx.MuxBearer {
-          Mx.read    = readSocket,
-          Mx.write   = writeSocket,
-          Mx.close   = closeSocket,
-          Mx.sduSize = sduSize,
-          Mx.state   = mxState
-        }
-    where
-      readSocket :: (HasCallStack) => IO (Mx.MuxSDU ptcl, Time IO)
-      readSocket = do
-          hbuf <- recvLen' 8 []
-          --say "read"
-          --hexDump hbuf ""
-          case Mx.decodeMuxSDUHeader hbuf of
-              Left  e      -> throwM e
-              Right header -> do
-                  -- say $ printf "decoded mux header, goint to read %d bytes" (Mx.msLength header)
-                  blob <- recvLen' (fromIntegral $ Mx.msLength header) []
-                  ts <- getMonotonicTime
-                  --hexDump blob ""
-                  return (header {Mx.msBlob = blob}, ts)
-
-      recvLen' :: Int64 -> [BL.ByteString] -> IO BL.ByteString
-      recvLen' 0 bufs = return (BL.concat $ reverse bufs)
-      recvLen' l bufs = do
-          buf <- Socket.recv sd l
-          if BL.null buf
-              then throwM $ Mx.MuxError Mx.MuxBearerClosed (show sd ++ " closed when reading data") callStack
-              else recvLen' (l - fromIntegral (BL.length buf)) (buf : bufs)
-
-      writeSocket :: Mx.MuxSDU ptcl -> IO (Time IO)
-      writeSocket sdu = do
-          --say "write"
-          ts <- getMonotonicTime
-          let ts32 = timestampMicrosecondsLow32Bits ts
-              sdu' = sdu { Mx.msTimestamp = Mx.RemoteClockModel ts32 }
-              buf  = Mx.encodeMuxSDU sdu'
-          --hexDump buf ""
-          Socket.sendAll sd buf
-          return ts
-
-      closeSocket :: IO ()
-      closeSocket = Socket.close sd
-
-      sduSize :: IO Word16
-#if defined(mingw32_HOST_OS)
-      sduSize = return 13000 -- MaxSegment isn't supported on Windows
-#else
-      sduSize = do
-          -- XXX it is really not acceptable to call getSocketOption for every SDU we want to send
-          {- getSocketOption for MaxSegment is not supported for AF_UNIX sockets -}
-          addr <- Socket.getSocketName sd
-          case addr of
-               Socket.SockAddrUnix _ -> return 0xffff
-               _                     -> do
-                    mss <- Socket.getSocketOption sd Socket.MaxSegment
-                    -- 1260 = IPv6 min MTU minus TCP header, 8 = mux header size
-                    return $ fromIntegral $ max (1260 - 8) (min 0xffff (15 * mss - 8))
-#endif
-
-
-hexDump :: BL.ByteString -> String -> IO ()
-hexDump buf out | BL.empty == buf = say out
-hexDump buf out = hexDump (BL.tail buf) (out ++ printf "0x%02x " (BL.head buf))
 
 -- |
 -- Connect to a remote node.  It is using bracket to enclose the underlying
@@ -188,7 +105,7 @@ connectToNode encodeData decodeData versions localAddr remoteAddr =
 #if !defined(mingw32_HOST_OS)
               Socket.setSocketOption sd Socket.ReusePort 1
 #endif
-          bearer <- socketAsMuxBearer sd
+          bearer <- Mx.socketAsMuxBearer sd
           case localAddr of
             Just addr -> Socket.bind sd (Socket.addrAddress addr)
             Nothing   -> return ()
@@ -266,7 +183,7 @@ beginConnection encodeData decodeData acceptVersion fn addr st = do
     accept <- fn addr st
     case accept of
       AcceptConnection st' versions -> pure $ Server.Accept st' $ \sd -> do
-        (bearer :: MuxBearer ptcl IO) <- socketAsMuxBearer sd
+        (bearer :: MuxBearer ptcl IO) <- Mx.socketAsMuxBearer sd
         Mx.muxBearerSetState bearer Mx.Connected
         mapp <- runPeerWithByteLimit
                 maxTransmissionUnit
