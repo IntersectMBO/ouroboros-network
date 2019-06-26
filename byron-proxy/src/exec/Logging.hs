@@ -6,6 +6,8 @@ import Control.Concurrent (myThreadId)
 import Control.Tracer (Tracer (..))
 import Data.Functor.Contravariant (contramap)
 import Data.Text (Text, pack)
+import qualified Data.Text.Lazy as Text (toStrict)
+import qualified Data.Text.Lazy.Builder as Text
 import Data.Time.Clock.POSIX (getCurrentTime)
 
 import qualified Cardano.BM.Configuration.Model as Monitoring (setupFromRepresentation)
@@ -58,12 +60,11 @@ convertTrace trace = case trace of
     f logObject
 
 convertTrace'
-  :: Monitoring.Trace IO a
-  -> Tracer IO (Monitoring.LoggerName, Monitoring.Severity, a)
+  :: Monitoring.Trace IO Text
+  -> Tracer IO (Monitoring.LoggerName, Monitoring.Severity, Text.Builder)
 convertTrace' = contramap f . convertTrace
   where
-  f (a, b, c) = (a, b, Monitoring.LogMessage c)
-
+  f (a, b, builder) = (a, b, Monitoring.LogMessage (Text.toStrict (Text.toLazyText builder)))
 
 -- | It's called `Representation` but is closely related to the `Configuration`
 -- from iohk-monitoring. The latter has to do with `MVar`s. It's all very

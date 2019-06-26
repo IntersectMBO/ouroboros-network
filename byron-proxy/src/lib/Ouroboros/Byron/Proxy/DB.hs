@@ -284,8 +284,10 @@ dbAppendImpl err tracer epochSlots iwrite idb = DBAppend $ \blockToWrite -> do
       let hash = Cardano.blockHashAnnotated blk
           slotNumber = Cardano.blockSlot blk
           slot = Cardano.unSlotNumber slotNumber
-          Cardano.EpochNumber epoch = Cardano.slotNumberEpoch epochSlots slotNumber
-      Index.updateTip iwrite (coerceHashToLegacy hash) (EpochNo epoch) (Index.RealSlot slot)
+          epochAndSlotCount = Cardano.fromSlotNumber epochSlots slotNumber
+          Cardano.EpochNumber epoch = Cardano.epochNo epochAndSlotCount
+          Cardano.SlotCount relSlot = Cardano.slotCount epochAndSlotCount
+      Index.updateTip iwrite (coerceHashToLegacy hash) (EpochNo epoch) (Index.RealSlot relSlot)
       Immutable.appendBinaryBlob idb (SlotNo slot) builder
       pure (SlotNo slot)
     CardanoBlockToWrite (Annotated (Cardano.ABOBBoundary ebb) _) -> do
