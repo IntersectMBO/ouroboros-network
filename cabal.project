@@ -21,7 +21,7 @@ source-repository-package
   type: git
   location: https://github.com/input-output-hk/iohk-monitoring-framework
   subdir: iohk-monitoring
-  tag: 3222ee56a08a5f041824b6e1026cd3751133a1fd
+  tag: 40f912272ff93a58135c0c748ba9f59766451c43
 
 source-repository-package
   type: git
