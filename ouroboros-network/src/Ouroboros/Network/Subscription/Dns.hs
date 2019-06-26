@@ -15,7 +15,7 @@ module Ouroboros.Network.Subscription.Dns
     , resolutionDelay
     ) where
 
-import           Control.Monad (forever, unless, when)
+import           Control.Monad (unless)
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadSTM
@@ -36,10 +36,6 @@ import           Ouroboros.Network.Subscription.Subscriber
 -- | Time to wait for an AAAA response after receiving an A response.
 resolutionDelay :: DiffTime
 resolutionDelay = 0.05 -- 50ms delay
-
--- | Minimum time to wait between dns lookups
-dnsRetryDelay :: DiffTime
-dnsRetryDelay = 10 -- 10s delay
 
 data DnsSubscriptionTarget = DnsSubscriptionTarget {
       dstDomain :: !DNS.Domain
@@ -193,31 +189,11 @@ dnsSubscriptionWorker'
     -> (Socket.Socket -> IO ())
     -> IO ()
 dnsSubscriptionWorker' subTracer dnsTracer resolver localPort connectionAttemptDelay dst k = do
-        valencyVar <- newTVarM (dstValeny dst)
-        let subTracer' = domainNameTracer (dstDomain dst) subTracer
-        let dnsTracer' = domainNameTracer (dstDomain dst) dnsTracer
-        traceWith dnsTracer' $ DnsTraceStart (dstValeny dst)
-        forever $ do
-            start <- getMonotonicTime
-            targets <- dnsResolve dnsTracer' resolver dst
-            subscribeTo subTracer' localPort connectionAttemptDelay valencyVar k targets
-            atomically $ do
-                v <- readTVar valencyVar
-                when (v == 0)
-                    retry
-            end <- getMonotonicTime
+    let subTracer' = domainNameTracer (dstDomain dst) subTracer
+    let dnsTracer' = domainNameTracer (dstDomain dst) dnsTracer
 
-            -- We allways wait at least dnsRetryDelay seconds between calls to dnsResolve, and
-            -- before trying resovlve the domain name and restart the subscriptions we
-            -- also wait 1 second so that if multiple subscription targets fail around
-            -- the same time we will try to restart with a valency higher than 1.
-            threadDelay 1
-            let duration = diffTime end start
-            valency <- atomically $ readTVar valencyVar
-            traceWith dnsTracer' $ DnsTraceRestart duration (dstValeny dst)
-                (dstValeny dst - valency)
-            when (duration < dnsRetryDelay) $
-                threadDelay $ dnsRetryDelay - duration
+    subscriptionWorker subTracer' localPort connectionAttemptDelay
+            (dnsResolve dnsTracer' resolver dst) (dstValeny dst) k
 
 dnsSubscriptionWorker
     :: Tracer IO (WithDomainName SubscriptionTrace)
@@ -273,19 +249,13 @@ data DnsTrace =
     | DnsTraceLookupIPv4First
     | DnsTraceLookupAResult [Socket.SockAddr]
     | DnsTraceLookupAAAAResult [Socket.SockAddr]
-    | DnsTraceStart Word16
-    | DnsTraceRestart DiffTime Word16 Word16
 
 instance Show DnsTrace where
-    show (DnsTraceLookupException e) = "lookup exception " ++ show e
-    show (DnsTraceLookupAError e) = "A lookup failed with " ++ show e
-    show (DnsTraceLookupAAAAError e) = "AAAA lookup failed with " ++ show e
-    show DnsTraceLookupIPv4First = "Returning IPv4 address first"
-    show DnsTraceLookupIPv6First = "Returning IPv6 address first"
-    show (DnsTraceLookupAResult as) = "Lookup A result: " ++ show as
+    show (DnsTraceLookupException e)   = "lookup exception " ++ show e
+    show (DnsTraceLookupAError e)      = "A lookup failed with " ++ show e
+    show (DnsTraceLookupAAAAError e)   = "AAAA lookup failed with " ++ show e
+    show DnsTraceLookupIPv4First       = "Returning IPv4 address first"
+    show DnsTraceLookupIPv6First       = "Returning IPv6 address first"
+    show (DnsTraceLookupAResult as)    = "Lookup A result: " ++ show as
     show (DnsTraceLookupAAAAResult as) = "Lookup AAAAA result: " ++ show as
-    show (DnsTraceStart val) = "Starting Dns Subscription Worker, valency " ++ show val
-    show (DnsTraceRestart duration desiredVal currentVal) =
-        "Restarting Dns Subscription after " ++ show duration ++ " desired valency " ++
-        show desiredVal ++ " current valency " ++ show currentVal
 

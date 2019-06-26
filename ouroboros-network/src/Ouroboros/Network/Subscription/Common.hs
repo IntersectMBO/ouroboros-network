@@ -8,6 +8,8 @@ module Ouroboros.Network.Subscription.Common
     ( subscribeTo
     , sockAddrFamily
     , minConnectionAttemptDelay
+    , ipSubscriptionWorker
+    , subscriptionWorker
     , SubscriberError (..)
     , SubscriptionTrace
     ) where
@@ -15,7 +17,7 @@ module Ouroboros.Network.Subscription.Common
 import           Control.Concurrent hiding (threadDelay)
 import           Control.Concurrent.Async
 
-import           Control.Monad (unless, when)
+import           Control.Monad (forever, unless, when)
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
@@ -41,6 +43,10 @@ minConnectionAttemptDelay = 0.010 -- 10ms delay
 -- | Maximum time to wait between connection attempts.
 maxConnectionAttemptDelay :: DiffTime
 maxConnectionAttemptDelay = 2 -- 2s delay
+
+-- | Minimum time to wait between ip reconnects
+ipRetryDelay :: DiffTime
+ipRetryDelay = 10 -- 10s delay
 
 sockAddrFamily
     :: Socket.SockAddr
@@ -170,6 +176,67 @@ subscribeTo tracer localPort connectionAttemptDelay valencyVar k ts = do
 
             )
 
+ipSubscriptionWorker
+    :: Tracer IO (WithIPList SubscriptionTrace)
+    -> Socket.PortNumber
+    -> (Socket.SockAddr -> Maybe DiffTime)
+    -> [Socket.SockAddr]
+    -> Word16
+    -> (Socket.Socket -> IO ())
+    -> IO ()
+ipSubscriptionWorker tracer localPort connectionAttemptDelay targets valency =
+    subscriptionWorker (ipListTracer targets tracer) localPort connectionAttemptDelay
+            (return $ listSubscriptionTarget targets) valency
+
+subscriptionWorker
+    :: Tracer IO SubscriptionTrace
+    -> Socket.PortNumber
+    -> (Socket.SockAddr -> Maybe DiffTime)
+    -> IO (SubscriptionTarget IO Socket.SockAddr)
+    -> Word16
+    -> (Socket.Socket -> IO ())
+    -> IO ()
+subscriptionWorker tracer localPort connectionAttemptDelay getTargets valency
+        k = do
+    valencyVar <- newTVarM valency
+    traceWith tracer $ SubscriptionTraceStart valency
+    forever $ do
+        start <- getMonotonicTime
+        targets <- getTargets
+        subscribeTo tracer localPort connectionAttemptDelay valencyVar k
+                targets
+        atomically $ do
+            v <- readTVar valencyVar
+            when (v == 0)
+                retry
+
+        {-
+         - We allways wait at least ipRetryDelay seconds between calls to getTargets, and
+         - before trying to restart the subscriptions we also wait 1 second so that if multiple
+         - subscription targets fail around the same time we will try to restart with a valency
+         - higher than 1.
+         -}
+        threadDelay 1
+        end <- getMonotonicTime
+        let duration = diffTime end start
+        currentValency <- atomically $ readTVar valencyVar
+        traceWith tracer $ SubscriptionTraceRestart duration currentValency
+            (valency - currentValency)
+
+        when (duration < ipRetryDelay) $
+            threadDelay $ ipRetryDelay - duration
+
+data WithIPList a = WithIPList {
+      wilIPs   :: ![Socket.SockAddr]
+    , wilEvent :: !a
+    }
+
+instance (Show a) => Show (WithIPList a) where
+    show WithIPList {..} = printf  "IPs: %s %s" (show wilIPs) (show wilEvent)
+
+ipListTracer :: [Socket.SockAddr] -> Tracer IO (WithIPList a) -> Tracer IO a
+ipListTracer ips tr = Tracer $ \s -> traceWith tr $ WithIPList ips s
+
 data SubscriberError = SubscriberError {
       seType    :: !SubscriberErrorType
     , seMessage :: !String
@@ -196,6 +263,8 @@ data SubscriptionTrace =
     | SubscriptionTraceSubscriptionWaiting Int
     | SubscriptionTraceSubscriptionFailed
     | SubscriptionTraceSubscriptionWaitingNewConnection DiffTime
+    | SubscriptionTraceStart Word16
+    | SubscriptionTraceRestart DiffTime Word16 Word16
 
 instance Show SubscriptionTrace where
     show (SubscriptionTraceConnectStart dst) =
@@ -214,4 +283,8 @@ instance Show SubscriptionTrace where
         "Failed to start all required subscriptions"
     show (SubscriptionTraceSubscriptionWaitingNewConnection delay) =
         "Waiting " ++ show delay ++ " before attempting a new connection"
+    show (SubscriptionTraceStart val) = "Starting Subscription Worker, valency " ++ show val
+    show (SubscriptionTraceRestart duration desiredVal currentVal) =
+        "Restarting Subscription after " ++ show duration ++ " desired valency " ++
+        show desiredVal ++ " current valency " ++ show currentVal
 
