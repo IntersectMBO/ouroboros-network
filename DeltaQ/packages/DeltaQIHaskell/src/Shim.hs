@@ -26,7 +26,7 @@ instance (RealFrac p) => Texy (DeltaQ p n d) where
       lrharp p
         = let r = approxRational p (fromRational $ toRational 1e-6)
           in (operatorname (commS "leftrightharpoons"))
-             !^ (texy $ numerator r, texy $ denominator r)
+             !^ (texy $ denominator r, texy $ numerator r)
 
       condBracket x =
         case x of
