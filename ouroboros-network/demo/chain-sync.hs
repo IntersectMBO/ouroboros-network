@@ -31,6 +31,7 @@ import System.Exit
 import System.Random
 import System.Random.SplitMix
 
+import           Codec.Serialise (DeserialiseFailure)
 import qualified Codec.Serialise as CBOR
 import           Codec.SerialiseTerm
 
@@ -42,8 +43,7 @@ import qualified Ouroboros.Network.ChainFragment as CF
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import Ouroboros.Network.Testing.ConcreteBlock
 import Ouroboros.Network.Socket
-import Ouroboros.Network.Mux.Interface
-import Ouroboros.Network.Codec (DeserialiseFailure)
+import Network.Mux.Interface
 import Ouroboros.Network.NodeToNode
 
 import Network.TypedProtocol.Channel
@@ -51,8 +51,11 @@ import Network.TypedProtocol.Driver
 import Network.TypedProtocol.Pipelined
 
 import Network.TypedProtocol.PingPong.Client as PingPong
+import Network.TypedProtocol.PingPong.Codec.Cbor
 import Network.TypedProtocol.PingPong.Server as PingPong
-import Ouroboros.Network.Protocol.PingPong.Codec
+
+import Ouroboros.Network.Protocol.Handshake.Type
+import Ouroboros.Network.Protocol.Handshake.Version
 
 import Ouroboros.Network.Protocol.ChainSync.Codec  as ChainSync
 import Ouroboros.Network.Protocol.ChainSync.Server as ChainSync

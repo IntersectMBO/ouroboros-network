@@ -40,17 +40,17 @@ import           Control.Tracer (nullTracer)
 
 import           Network.TypedProtocol.Driver.ByteLimit
 
-import           Ouroboros.Network.Time
+import qualified Network.Mux as Mx
+import qualified Network.Mux.Types as Mx
+import           Network.Mux.Types (MuxBearer)
+import           Network.Mux.Interface
+import qualified Network.Mux.Bearer.Socket as Mx
+
 import           Ouroboros.Network.Protocol.Handshake.Type
 import           Ouroboros.Network.Protocol.Handshake.Version
 import           Ouroboros.Network.Protocol.Handshake.Codec
-
 import qualified Ouroboros.Network.Server.Socket as Server
-import qualified Ouroboros.Network.Mux as Mx
-import qualified Ouroboros.Network.Mux.Types as Mx
-import           Ouroboros.Network.Mux.Types (MuxBearer)
-import           Ouroboros.Network.Mux.Interface
-import qualified Network.Mux.Bearer.Socket as Mx
+
 
 
 -- |

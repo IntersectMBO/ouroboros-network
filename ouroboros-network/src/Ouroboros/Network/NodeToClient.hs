@@ -34,11 +34,11 @@ import           Codec.Serialise (Serialise (..))
 import           Codec.SerialiseTerm
 
 import qualified Network.Socket as Socket
+import           Network.Mux.Types (ProtocolEnum(..), MiniProtocolLimits (..))
+import           Network.Mux.Interface
 
 import           Ouroboros.Network.Protocol.Handshake.Type
 import           Ouroboros.Network.Protocol.Handshake.Version
-import           Ouroboros.Network.Mux.Types (ProtocolEnum(..), MiniProtocolLimits (..))
-import           Ouroboros.Network.Mux.Interface
 import           Ouroboros.Network.Socket
 
 

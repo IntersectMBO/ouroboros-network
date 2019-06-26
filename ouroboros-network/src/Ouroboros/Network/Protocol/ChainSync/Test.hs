@@ -25,7 +25,8 @@ import           Control.Monad.IOSim (runSimOrThrow)
 import           Network.TypedProtocol.Codec
 import           Network.TypedProtocol.Driver
 import           Network.TypedProtocol.Proofs (connect)
-import           Ouroboros.Network.Channel
+
+import           Network.Mux.Channel
 
 import           Ouroboros.Network.Chain (Point)
 import qualified Ouroboros.Network.Chain as Chain

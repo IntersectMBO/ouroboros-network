@@ -27,7 +27,7 @@ import           Network.TypedProtocol.Codec
 import           Network.TypedProtocol.Channel
 import           Network.TypedProtocol.Driver
 import           Network.TypedProtocol.Proofs
-import           Ouroboros.Network.Channel
+import           Network.Mux.Channel
 
 import           Test.Ouroboros.Network.Testing.Utils (splits2, splits3)
 

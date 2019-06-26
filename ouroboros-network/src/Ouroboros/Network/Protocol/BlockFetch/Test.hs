@@ -20,7 +20,8 @@ import           Control.Tracer (nullTracer)
 import           Network.TypedProtocol.Driver
 import           Network.TypedProtocol.Codec
 import           Network.TypedProtocol.Proofs
-import           Ouroboros.Network.Channel
+
+import           Network.Mux.Channel
 
 import           Ouroboros.Network.Block (StandardHash)
 import           Ouroboros.Network.Chain (Chain, Point)

@@ -14,7 +14,7 @@ module Ouroboros.Network.Protocol.ChainSync.Codec
 import           Control.Monad.Class.MonadST
 
 import           Network.TypedProtocol.Codec
-import           Ouroboros.Network.Codec
+import           Network.TypedProtocol.Codec.Cbor
 import           Ouroboros.Network.Protocol.ChainSync.Type
 
 
