@@ -3,19 +3,15 @@
 \newbool{isRelease}
 \IfFileExists{.isRelease}{\booltrue{isRelease}}{\boolfalse{isRelease}}
 \usepackage[margin=2.5cm]{geometry}
-\usepackage{amsmath, amssymb, stmaryrd, latexsym, amsthm, mathtools}
-\usepackage{mathpazo, times}
+\usepackage{amssymb, latexsym, mathtools}
+\usepackage{times}
 \usepackage{float}
 \usepackage{listings}
-% \usepackage{url}
 \usepackage{natbib}
-% \usepackage{parskip} % very ugly with lemmas, invariants, etc without intervening text
-
 \ifbool{isRelease}
     {\usepackage[disable]{todonotes}}
     {\usepackage{todonotes}}
 
-\usepackage{slashed}
 \usepackage{tikz}
 \usetikzlibrary{automata, positioning, arrows}
 \tikzset{
@@ -29,8 +25,7 @@
            },
 }
 
-\usepackage{forest}
-%\usepackage{IEEEtrantools}
+
 \usepackage{microtype}
 \usepackage{graphicx,color}
 
@@ -45,11 +40,6 @@
   urlbordercolor={}
 }
 \usepackage[capitalise,noabbrev,nameinlink]{cleveref}
-
-% https://tex.stackexchange.com/questions/132823/ieeetrantools-clash-with-cleveref
-\makeatletter
-\let\if@IEEEissubequation\iffalse
-\makeatother
 
 \usetikzlibrary{arrows}
 
@@ -100,32 +90,13 @@
 \DeclareMathOperator*{\minimum}{min}
 \DeclareMathOperator*{\maximum}{max}
 
-% Number within sections, and don't have separate counters for separate environments
-\theoremstyle{definition}{
-  \newtheorem{lemma}{Lemma}[section] % Number within sections
-  \newtheorem{definition}[lemma]{Definition}
-}
-\theoremstyle{theorem}{
-  \newtheorem{invariant}[lemma]{Invariant}
-  \newtheorem{proofobligation}[lemma]{Proof Obligation}
-}
-
-\Crefname{invariant}{Invariant}{Invariants}
-
-\numberwithin{equation}{lemma}
-
-%\floatstyle{boxed}
-%\restylefloat{figure}
-
-\lstset{basicstyle=\ttfamily\small}
-
 \raggedbottom
 
 \begin{document}
 
 \title{Data Diffusion and Peer Networking in Shelley\\
-       {\small (Version 0.10)} \\
-       {\large \sc An IOHK technical report}}
+  {\small (Version 0.10 , Revision \input{revisioncount})} \\
+  {\large \sc An IOHK technical report}}
 \author{Duncan Coutts \\ {\small \texttt{duncan@well-typed.com}} \\
                          {\small \texttt{duncan.coutts@iohk.io}}
    \and Alex Vieth \\ {\small \texttt{alex@well-typed.com}}
@@ -153,6 +124,7 @@
 \item[Version 0.2, Jan 08, 2019 Structure and outline.]
 \item[Version 0.9, Apr 03, 2019 Clean-up todos and WIP remarks]
 \item[Version 0.10, Jun 07, 2019 Add handshake protocol]
+\item[Version 0.11, Jun 27 ]
 \end{description}
 
 \chapter{Overview}
@@ -1039,7 +1011,7 @@ following pieces of information:
       {} % no Haskell source ?
 
   \miniEntry
-      {Single Phase Chain Synchronisation Protocol}
+      {Chain Synchronisation Protocol}
       {chain-sync-protocol}
       {}
       {ouroboros-network/src/Ouroboros/Network/Protocol/ChainSync/Type.hs}
@@ -1159,7 +1131,7 @@ application of the protocol determines the types of the requests and responses.
   \Busy        & \Response          & $response$             & \Done     \\ \hline
 \end{tabular}
 
-\section{Single Phase Chain Synchronisation Protocol}
+\section{Chain Synchronisation Protocol}
 \label{chain-sync-protocol}
 \hsref{ouroboros-network/src/Ouroboros/Network/Protocol/ChainSync/Type.hs}
 \newcommand{\CanAwait}{\state{CanAwait}}
@@ -1194,7 +1166,7 @@ other node it communicates with.
   Server has Agency & \CanAwait, \MustReply, \Intersect \\ \hline
 \end{tabular}
 
-\begin{figure}[H]
+\begin{figure}[ht]
 \begin{tikzpicture}[->,>=stealth',shorten >=1pt,auto,node distance=4.5cm, semithick]
   \tikzstyle{every state}=[fill=red,draw=none,text=white]
   \node[state, green, initial]                            (Idle)      {\Idle};
@@ -1267,6 +1239,7 @@ The protocol uses the following messages:
 
 \end{tabular}
 
+\newcommand{\readpointer}{\emph{read-pointer}}
 \subsection{Implementation of the Chain Producer}
 \hide{The trade-offs between the robustness and efficiency of possible chain-sync protocols are
 discussed in Section~\ref{chain-sync-discussion}.
@@ -1280,22 +1253,24 @@ It uses a constant amount of memory to store the state that the producer maintai
 per chain consumer.  This protocol is only used to reproduce the producer
 chain locally by consumer.  By running many instances of this protocol against
 different peers, a node can reproduce chains in the network and
-do chain selection which by design is not part of this protocol.  An important
-note is that the consumer's chain described in this section is the chain
-reproduced by the client of chain-sync protocol, rather than the chain of that node.
+do chain selection which by design is not part of this protocol.
+Note, that when we refer to the consumer's chain in this section, we mean the
+the chain that is reproduced by the consumer with the instance of
+the chain-sync protocol under consideration and not the result of the chain selection algorithm.
 
-We call the state which the producer maintains about the consumer the $read~pointer$.
-The $read~pointer$ basically tracks what the producer knows about the head of
+We call the state which the producer maintains about the consumer the \readpointer{}.
+The \readpointer{} basically tracks what the producer knows about the head of
 the consumer's chain without storing it locally.
 It points to a block on the current chain of the chain producer.
-The $read~pointers$ are part of the shared state of the node (Figure~\ref{node-diagram-concurrency}) and
-$read~pointer$s are concurrently updated by the thread that runs the chain-sync mini-protocol and the
+The \readpointer{}s are part of the shared state of the node (Figure~\ref{node-diagram-concurrency}) and
+\readpointer{}s are concurrently updated by the thread that runs the chain-sync mini-protocol and the
 chain tracking logic of the node itself.
 
-We first describe how the mini-protocol updates a $read~pointer$ and later address what happens in case
+We first describe how the mini-protocol updates a \readpointer{} and later address what happens in case
 of a fork.
+\subparagraph{Initializing the \readpointer{}.}
 The chain producer assumes that a consumer, which has just connected,
-only knows the genesis block and initializes the $read~pointer$ of that consumer
+only knows the genesis block and initializes the \readpointer{} of that consumer
 with a pointer to the genesis block on its chain.
 
 \subparagraph{Downloading a chain of blocks}
@@ -1303,12 +1278,12 @@ A typical situation is when the consumer follows the chain of the producer but i
 chain (this also covers a consumer booting from genesis).
 In this case, the protocol follows a simple, consumer-driven, request-response pattern.
 The consumer sends \RequestNext{} messages to ask for the next block.
-If the $read~pointer$ is not yet at the head of the chain,
-the producer replies with a \RollForward{} and advances the $read~pointer$ to
+If the \readpointer{} is not yet at the head of the chain,
+the producer replies with a \RollForward{} and advances the \readpointer{} to
 the next block (optimistically assuming that the client will update its chain
 accordingly).
 The \RollForward{} message contains the next block and also the head-point of the producer.
-The protocol follows this pattern until the $read~pointer$ reaches the end of its chain.
+The protocol follows this pattern until the \readpointer{} reaches the end of its chain.
 
 \begin{figure}[ht]
 \pgfdeclareimage[height=7cm]{read-pointer-consumer-driver}{figure/read-pointer-consumer-driven.pdf}
@@ -1320,7 +1295,7 @@ The protocol follows this pattern until the $read~pointer$ reaches the end of it
 \end{figure}
 
 \subparagraph{Producer driven updates}
-If the $read~pointer$ points to the end of the chain and the producer receives
+If the \readpointer{} points to the end of the chain and the producer receives
 a \RequestNext{}
 the consumers chain is already up to date.
 The producer informs the consumer with an \AwaitReply{} that no new data is available.
@@ -1335,39 +1310,39 @@ The producer can also get unblocked when its node switches to a new chain fork.
 \subparagraph{Producer switches to a new fork}
 The node of the chain producer can switch to a new fork at any time, independent of the
 state machine.
-A chain switch can cause an update of the $read~pointer$,
+A chain switch can cause an update of the \readpointer{},
 which is part of the mutable state that is shared between the thread that runs
 the chain sync protocol and the thread that implements the chain following logic of the node.
 There are two cases:
 
-1) If the $read~pointer$ points to a block that is on the common prefix of the new
-fork and the old fork, no update of the $read~pointer$ is needed.
+1) If the \readpointer{} points to a block that is on the common prefix of the new
+fork and the old fork, no update of the \readpointer{} is needed.
 
-2) If the $read~pointer$ points to a block that is no longer part of the chain that is followed by the node,
-the $read~pointer$ is set to the last block that is common between the new and the old chain.
+2) If the \readpointer{} points to a block that is no longer part of the chain that is followed by the node,
+the \readpointer{} is set to the last block that is common between the new and the old chain.
 The node also sets a flag that signals the chain-sync thread to send a \RollBackward{} instead
 of a \RollForward.
 Finally the producer thread must unblock if it is in the \MustReply{} state.
 
-\begin{figure}[h]
+\begin{figure}[ht]
 \pgfdeclareimage[height=5cm]{read-pointer-rollback}{figure/read-pointer-rollback.pdf}
 \begin{center}
 \pgfuseimage{read-pointer-rollback}
 \end{center}
-\caption{$read~pointer$ update for a fork switch in case of a rollback.}
+\caption{\readpointer{} update for a fork switch in case of a rollback.}
 \label{read-pointer-rollback}
 \end{figure}
 
-Figure~\ref{read-pointer-rollback} illustrates a fork switch that requires an update of the $read~pointer$
+Figure~\ref{read-pointer-rollback} illustrates a fork switch that requires an update of the \readpointer{}
 for one of the chain consumers, i.e. an example for case 2.
-Before the switch, the $read~pointer$ of the consumer points to block $0x660f$.
+Before the switch, the \readpointer{} of the consumer points to block $0x660f$.
 The producer switches to a new chain with the head of the chain at block $0xcdf0$.
-The node must update the $read~pointer$ to block $0xfa40$ and the next message to the consumer
+The node must update the \readpointer{} to block $0xfa40$ and the next message to the consumer
 will be a \RollBackward.
 
 Note, that a node typically communicates with several consumers. For each consumer it runs an independent
-version of the chain-sync-protocol state machine in an independent thread and with its own $read~pointer$.
-Each of those $read~pointer$s has to be updated independently and for each consumer
+version of the chain-sync-protocol state machine in an independent thread and with its own \readpointer{}.
+Each of those \readpointer{}s has to be updated independently and for each consumer
 either case 1) or case 2) can apply.
 
 \subparagraph{Consumer starts with an arbitrary fork}
@@ -1380,7 +1355,7 @@ To do so, the consumer sends a \FindIntersect{} message with a list of chain
 points which belong to its node chain.
 If the producer does not know any of the points it replies with \IntersectUnchanged.
 Otherwise it replies with \IntersectFound{} and the best (i.e. the newest) of the points that it knows
-and also updates the $read~pointer$ accordingly.
+and also updates the \readpointer{} accordingly.
 For efficiency, the consumer should use a binary search scheme to search for the longest common
 prefix.
 
@@ -1702,9 +1677,9 @@ The buffer sizes are listed in Table~\ref{bla} in Section~\ref{blub}.
 \section{DeltaQ Mini Protocol}
 \wip{
   WIP : Explain DeltaQ measurement back pressure and how we deal with slow connection.
-  See Section~\ref{deltaq-discussion}.
+  See Section % ~\ref{deltaq-discussion}.
 The DeltaQ mini protocol does not transmit is own messages.
-Instead it relies on the time stamps that the multiplexing layer (Section~\ref{multiplexing}) adds
+Instead it relies on the time stamps that the multiplexing layer (Section~\ref{multiplexing-section}) adds
 to the messages of other mini protocols.
 }
 
@@ -1739,7 +1714,7 @@ The multiplexing protocol itself is completely agnostic to the structure of the 
 
 \subsection{Wire Format}
 \hsref{ouroboros-network/src/Ouroboros/Network/Mux/Egress.hs}
-\begin{table}[h]
+\begin{table}[ht]
 \centering
 \begingroup
 \setlength{\tabcolsep}{3pt}
@@ -1833,7 +1808,7 @@ Roughly the implementation performs the following tasks:
 \begin{itemize}
 \item Open a socket/ acquire resources from the OS.
 \item Negotiate the protocol version with the handshake mini protocol
-      (Section \ref{handshake-mini-protocol}.
+      (Section \ref{handshake-protocol}.
 \item Spawn the threads that run the mini protocols.
 \item Measure transmission times and amount of in-flight data.
 \item Catch exceptions that are thrown by the mini protocols.
@@ -1880,7 +1855,6 @@ A connection passes through several stages during its life cycle.
 \noindent\hsref{ouroboros-network/src/Ouroboros/Network/Mux/Types.hs}
 \newline\hsref{ouroboros-network/src/Ouroboros/Network/NodeToNode.hs}
 \newline\hsref{ouroboros-network/src/Ouroboros/Network/NodeToClient.hs}
-
 \hide{Update needed !}
 \begin{table}[ht]
 \centering
@@ -2190,7 +2164,7 @@ This means that there is no need to tag messages at all
 and the protocol can directly transmit the plain request and response data.
 
 \wip{TODO: test that haskell(message) => cddl(message) }
-\lstinputlisting{../ouroboros-network/test/messages.cddl}
+\lstinputlisting{messages.cddl.incl}
 \bibliographystyle{apalike}
 \bibliography{references}
 

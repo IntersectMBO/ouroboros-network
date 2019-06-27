@@ -18,23 +18,33 @@ let
     collection-fontsextra
     collection-fontsrecommended
     collection-mathscience
+    IEEEtran
     acmart
-    bibtex biblatex
+    bibtex
+    biblatex
     latexmk;
   };
+  cddl-spec = stdenv.mkDerivation {
+    name= "messages.cddl";
+    buildInputs = [ pkgs.cddl ];
+    src = pkgs.lib.sourceFilesBySuffices ../ouroboros-network/test [".cddl"];
+    buildPhase = ''
+      cddl messages.cddl generate 1
+    '';
+    installPhase = ''
+      install -Dt $out messages.cddl
+    '';
+  };
+
   document = isRelease: stdenv.mkDerivation {
     name = if isRelease then "network-pdf" else "network-pdf-wip";
     buildInputs = [ tex pkgs.cddl ];
-    # this is a hack :
-    # network.tex includes ../ouroboros-network/test/messages.cddl .
-    # Therefor the src also includes the parrent directory.
-    src = pkgs.lib.sourceFilesBySuffices ../. [ ".tex" ".bib" ".pdf" ".cddl"];
+    src = ./. ;
     buildPhase = ''
-       # run cddl to catch syntax errors in messages.cddl
-       cddl ouroboros-network/test/messages.cddl generate 1
-       cd doc
-       ${if isRelease then "echo >.isRelease" else "rm -f .isRelease"}
-       latexmk -view=pdf network;
+      rm -f messages.cddl.incl
+      cp ${cddl-spec}/messages.cddl messages.cddl.incl
+      ${if isRelease then "echo >.isRelease" else "rm -f .isRelease"}
+      make network.pdf
     '';
     installPhase = ''
       install -Dt $out network.pdf
@@ -46,4 +56,5 @@ in
 {
   network-pdf = document true;
   network-pdf-wip = document false;
+  inherit cddl-spec;
 }
