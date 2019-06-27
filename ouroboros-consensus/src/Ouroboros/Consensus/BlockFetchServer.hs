@@ -21,9 +21,9 @@ import qualified Ouroboros.Storage.ChainDB.API as ChainDB
 -- 'Ouroboros.Network.BlockFetch.Examples.mockBlockFetchServer1', but using
 -- the 'ChainDB'.
 blockFetchServer
-    :: forall m hdr blk. (MonadSTM m, MonadThrow m)
+    :: forall m blk. (MonadSTM m, MonadThrow m)
     => Tracer m String
-    -> ChainDB m blk hdr
+    -> ChainDB m blk
     -> BlockFetchServer blk m ()
 blockFetchServer _tracer chainDB = senderSide
   where

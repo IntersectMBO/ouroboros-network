@@ -1,5 +1,5 @@
+{-# LANGUAGE DeriveFunctor       #-}
 {-# LANGUAGE GADTs               #-}
-{-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving  #-}
 {-# LANGUAGE TypeFamilies        #-}
@@ -33,23 +33,20 @@ import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
 
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
-import           Ouroboros.Network.Block (ChainUpdate (..), HasHeader (..),
+import           Ouroboros.Network.Block (ChainUpdate, HasHeader (..),
                      HeaderHash, SlotNo, StandardHash)
 import           Ouroboros.Network.Chain (Chain (..), Point (..))
 import qualified Ouroboros.Network.Chain as Chain
 import           Ouroboros.Network.ChainProducerState (ReaderId)
 
+import           Ouroboros.Consensus.Block (GetHeader (..))
 import           Ouroboros.Consensus.Ledger.Extended
 
 import           Ouroboros.Storage.Common
 import           Ouroboros.Storage.FS.API.Types (FsError)
 import qualified Ouroboros.Storage.ImmutableDB as ImmDB
 
-data ChainDB m blk hdr =
-    ( HasHeader blk
-    , HasHeader hdr
-    , HeaderHash blk ~ HeaderHash hdr
-    ) => ChainDB {
+data ChainDB m blk = ChainDB {
       -- | Add a block to the heap of blocks
       --
       -- We do /not/ assume that the block is valid (under the legder rules);
@@ -91,7 +88,7 @@ data ChainDB m blk hdr =
       --
       -- NOTE: A direct consequence of this guarantee is that the anchor of the
       -- fragment will move as the chain grows.
-    , getCurrentChain    :: STM m (AnchoredFragment hdr)
+    , getCurrentChain    :: STM m (AnchoredFragment (Header blk))
 
       -- | Get current ledger
     , getCurrentLedger   :: STM m (ExtLedgerState blk)
@@ -108,7 +105,7 @@ data ChainDB m blk hdr =
       -- actually in memory, whereas the block never is.
       --
       -- Returns 'Nothing' if the database is empty.
-    , getTipHeader       :: m (Maybe hdr)
+    , getTipHeader       :: m (Maybe (Header blk))
 
       -- | Get point of the tip of the chain
       --
@@ -165,7 +162,7 @@ data ChainDB m blk hdr =
       -- Examples of users include the server side of the chain sync
       -- mini-protocol for the node-to-node protocol.
       --
-    , newHeaderReader    :: m (Reader m blk hdr)
+    , newHeaderReader    :: m (Reader m blk (Header blk))
 
       -- | This is the same as the reader 'newHeaderReader' but it provides a
       -- reader for /whole blocks/ rather than headers.
@@ -189,9 +186,9 @@ data ChainDB m blk hdr =
   Support for tests
 -------------------------------------------------------------------------------}
 
-toChain :: forall m blk hdr.
+toChain :: forall m blk.
            (MonadThrow m, HasHeader blk)
-        => ChainDB m blk hdr -> m (Chain blk)
+        => ChainDB m blk -> m (Chain blk)
 toChain chainDB = bracket
     (streamBlocks chainDB StreamFromGenesis StreamToEnd)
     iteratorClose
@@ -204,10 +201,10 @@ toChain chainDB = bracket
         IteratorExhausted  -> return chain
         IteratorResult blk -> go (Chain.addBlock blk chain) it
 
-fromChain :: forall m blk hdr. Monad m
-          => m (ChainDB m blk hdr)
+fromChain :: forall m blk. Monad m
+          => m (ChainDB m blk)
           -> Chain blk
-          -> m (ChainDB m blk hdr)
+          -> m (ChainDB m blk)
 fromChain openDB chain = do
     chainDB <- openDB
     mapM_ (addBlock chainDB) $ Chain.toOldestFirst chain
@@ -256,14 +253,16 @@ data IteratorResult blk =
 
 -- | Reader
 --
--- See 'newReader' for more info.
+-- See 'newHeaderReader' for more info.
+--
+-- The type parameter @a@ will be instantiated with @blk@ or @Header @blk@.
 data Reader m blk a = Reader {
       -- | The next chain update (if one exists)
       --
-      -- Does not live in @STM@ because might have to read the headers from
+      -- Not in @STM@ because might have to read the blocks or headers from
       -- disk.
       --
-      -- We may roll back more than @k@ only in case of data loss.
+      -- We may roll back more than @k@, but only in case of data loss.
       readerInstruction         :: m (Maybe (ChainUpdate blk a))
 
       -- | Blocking version of 'readerInstruction'
@@ -291,6 +290,7 @@ data Reader m blk a = Reader {
       -- expect to have more than one instance of the 'ChainDB', however.)
     , readerId                  :: ReaderId
     }
+  deriving (Functor)
 
 instance Eq (Reader m blk a) where
   (==) = (==) `on` readerId

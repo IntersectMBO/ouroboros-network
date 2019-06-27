@@ -26,7 +26,7 @@ module Ouroboros.Storage.ChainDB.Model (
   , streamBlocks
   , iteratorNext
     -- * Readers
-  , newReader
+  , readBlocks
   , readerInstruction
   , readerForward
   ) where
@@ -39,10 +39,10 @@ import           GHC.Stack (HasCallStack)
 
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import qualified Ouroboros.Network.AnchoredFragment as Fragment
-import           Ouroboros.Network.Block (ChainHash (..), ChainUpdate (..),
-                     HasHeader, HeaderHash, Point)
+import           Ouroboros.Network.Block (ChainHash (..), HasHeader, HeaderHash,
+                     Point)
 import qualified Ouroboros.Network.Block as Block
-import           Ouroboros.Network.Chain (Chain (..))
+import           Ouroboros.Network.Chain (Chain (..), ChainUpdate)
 import qualified Ouroboros.Network.Chain as Chain
 import qualified Ouroboros.Network.ChainProducerState as CPS
 
@@ -175,8 +175,8 @@ iteratorNext itrId m =
   Readers
 -------------------------------------------------------------------------------}
 
-newReader :: HasHeader blk => Model blk -> (CPS.ReaderId, Model blk)
-newReader m = (rdrId, m { cps = cps' })
+readBlocks :: HasHeader blk => Model blk -> (CPS.ReaderId, Model blk)
+readBlocks m = (rdrId, m { cps = cps' })
   where
     (cps', rdrId) = CPS.initReader Chain.genesisPoint (cps m)
 

@@ -46,7 +46,7 @@ prop_reader bt p = runSimOrThrow test
     test :: forall s. SimM s Property
     test = do
         db       <- openDB
-        reader   <- ChainDB.newHeaderReader db
+        reader   <- ChainDB.newBlockReader db
         chainVar <- atomically $ newTVar Genesis
 
         -- Fork a thread that applies all instructions from the reader
@@ -83,5 +83,5 @@ instance Exception InvalidUpdate
   Auxiliary
 -------------------------------------------------------------------------------}
 
-openDB :: forall s. SimM s (ChainDB (SimM s) TestBlock TestBlock)
-openDB = Mock.openDB singleNodeTestConfig testInitExtLedger id
+openDB :: forall s. SimM s (ChainDB (SimM s) TestBlock)
+openDB = Mock.openDB singleNodeTestConfig testInitExtLedger

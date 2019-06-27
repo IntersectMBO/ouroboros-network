@@ -225,7 +225,7 @@ broadcastNetwork registry btime numCoreNodes pInfo initRNG numSlots = do
             , produceDRG      = atomically $ simChaChaT varRNG id $ drgNew
             }
 
-      chainDB <- ChainDB.openDB pInfoConfig pInfoInitLedger simpleHeader
+      chainDB <- ChainDB.openDB pInfoConfig pInfoInitLedger
 
       let nodeParams = NodeParams
             { tracer             = nullTracer

@@ -1,4 +1,3 @@
-{-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies        #-}
 
@@ -11,11 +10,10 @@ import qualified Data.Set as Set
 
 import           Control.Monad.Class.MonadSTM
 
-import           Ouroboros.Network.Block (ChainUpdate (..), HasHeader (..),
-                     HeaderHash, Point (..))
-import qualified Ouroboros.Network.Block as Block
+import           Ouroboros.Network.Block (ChainUpdate)
 import qualified Ouroboros.Network.ChainProducerState as CPS
 
+import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Protocol.Abstract
@@ -26,17 +24,14 @@ import           Ouroboros.Storage.ChainDB.API
 import           Ouroboros.Storage.ChainDB.Model (Model)
 import qualified Ouroboros.Storage.ChainDB.Model as Model
 
-openDB :: forall m blk hdr.
+openDB :: forall m blk.
           ( MonadSTM m
-          , HasHeader hdr
-          , HeaderHash blk ~ HeaderHash hdr
           , ProtocolLedgerView blk
           )
        => NodeConfig (BlockProtocol blk)
        -> ExtLedgerState blk
-       -> (blk -> hdr)
-       -> m (ChainDB m blk hdr)
-openDB cfg initLedger blockHeader = do
+       -> m (ChainDB m blk)
+openDB cfg initLedger = do
     db :: TVar m (Model blk) <- atomically $ newTVar (Model.empty initLedger)
 
     let query :: (Model blk -> a) -> STM m a
@@ -64,57 +59,36 @@ openDB cfg initLedger blockHeader = do
             , iteratorId    = itrId
             }
 
-        blkReader :: CPS.ReaderId -> Reader m blk blk
-        blkReader rdrId = Reader {
-              readerInstruction = atomically $
-                updateSTM (Model.readerInstruction rdrId)
-            , readerInstructionBlocking = atomically $
-                blockUntilJust $ updateSTM (Model.readerInstruction rdrId)
-            , readerForward = \ps -> atomically $
-                updateSTM $ Model.readerForward rdrId ps
-            , readerId =
-                rdrId
-            }
-
-        hdrReader :: CPS.ReaderId -> Reader m blk hdr
-        hdrReader rdrId = Reader {
+        reader :: CPS.ReaderId -> Reader m blk blk
+        reader rdrId = Reader {
               readerInstruction = atomically $
                 updateSTM readerInstruction'
             , readerInstructionBlocking = atomically $
                 blockUntilJust $ updateSTM readerInstruction'
             , readerForward = \ps -> atomically $
-                updateSTM $ readerForward' ps
+                updateSTM $ Model.readerForward rdrId ps
             , readerId =
                 rdrId
             }
           where
             readerInstruction' :: Model blk
-                               -> (Maybe (ChainUpdate blk hdr), Model blk)
-            readerInstruction' =
-                  first (fmap (fmap blockHeader))
-                . Model.readerInstruction rdrId
-
-            readerForward' :: [Point blk]
-                           -> Model blk
-                           -> (Maybe (Point blk), Model blk)
-            readerForward' ps =
-                  first (fmap Block.castPoint)
-                . Model.readerForward rdrId (map Block.castPoint ps)
+                               -> (Maybe (ChainUpdate blk blk), Model blk)
+            readerInstruction' = Model.readerInstruction rdrId
 
     return ChainDB {
         addBlock            = update_ . Model.addBlock cfg
-      , getCurrentChain     = query   $ Model.lastK k blockHeader
+      , getCurrentChain     = query   $ Model.lastK k getHeader
       , getCurrentLedger    = query   $ Model.currentLedger
       , getBlock            = query'  . Model.getBlockByPoint
       , getTipBlock         = query'  $ Model.tipBlock
-      , getTipHeader        = query'  $ (fmap blockHeader . Model.tipBlock)
+      , getTipHeader        = query'  $ (fmap getHeader . Model.tipBlock)
       , getTipPoint         = query   $ Model.tipPoint
       , getIsFetched        = query   $ flip Model.hasBlockByPoint
       , knownInvalidBlocks  = query   $ const Set.empty -- TODO
       , pointOnChain        = query'  . flip Model.pointOnChain
       , streamBlocks        = update .: (first iterator ..: Model.streamBlocks)
-      , newHeaderReader     = update  $ (first hdrReader  . Model.newReader)
-      , newBlockReader      = update  $ (first blkReader  . Model.newReader)
+      , newBlockReader      = update  $ (first reader . Model.readBlocks)
+      , newHeaderReader     = update  $ (first (fmap getHeader . reader) . Model.readBlocks)
       }
   where
     k = protocolSecurityParam cfg

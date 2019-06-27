@@ -43,7 +43,7 @@ openMempool :: ( MonadAsync m
                , ApplyTx blk
                )
             => ThreadRegistry m
-            -> ChainDB m blk hdr
+            -> ChainDB m blk
             -> LedgerConfig blk
             -> m (Mempool m blk TicketNo)
 openMempool registry chainDB cfg = do
@@ -71,8 +71,8 @@ data InternalState blk = IS {
     , isTip :: ChainHash blk
     }
 
-data MempoolEnv m blk hdr = MempoolEnv {
-      mpEnvChainDB   :: ChainDB m blk hdr
+data MempoolEnv m blk = MempoolEnv {
+      mpEnvChainDB   :: ChainDB m blk
     , mpEnvLedgerCfg :: LedgerConfig blk
     , mpEnvStateVar  :: TVar m (InternalState blk)
     }
@@ -81,9 +81,9 @@ initInternalState :: InternalState blk
 initInternalState = IS TxSeq.Empty Block.GenesisHash
 
 initMempoolEnv :: MonadSTM m
-               => ChainDB m blk hdr
+               => ChainDB m blk
                -> LedgerConfig blk
-               -> m (MempoolEnv m blk hdr)
+               -> m (MempoolEnv m blk)
 initMempoolEnv chainDB cfg = do
     isVar <- atomically $ newTVar initInternalState
     return $ MempoolEnv chainDB cfg isVar
@@ -98,7 +98,7 @@ forkSyncStateOnTipPointChange :: ( MonadAsync m
                                  , Block.StandardHash blk
                                  )
                               => ThreadRegistry m
-                              -> MempoolEnv m blk hdr
+                              -> MempoolEnv m blk
                               -> m ()
 forkSyncStateOnTipPointChange registry menv = do
   initialTipPoint <- atomically $ getTipPoint mpEnvChainDB
@@ -112,8 +112,8 @@ forkSyncStateOnTipPointChange registry menv = do
 -------------------------------------------------------------------------------}
 
 -- TODO: This may return some transactions as invalid that aren't new. Remove?
-implAddTxs :: forall m blk hdr. (MonadSTM m, Ord (GenTxId blk), ApplyTx blk)
-           => MempoolEnv m blk hdr
+implAddTxs :: forall m blk. (MonadSTM m, Ord (GenTxId blk), ApplyTx blk)
+           => MempoolEnv m blk
            -> [(GenTxId blk, GenTx blk)]
            -> m [(GenTx blk, ApplyTxErr blk)]
 implAddTxs mpEnv@MempoolEnv{mpEnvStateVar, mpEnvLedgerCfg} txs =
@@ -132,7 +132,7 @@ implAddTxs mpEnv@MempoolEnv{mpEnvStateVar, mpEnvLedgerCfg} txs =
     validateNew = extendsVR mpEnvLedgerCfg False txs
 
 implSyncState :: (MonadSTM m, Ord (GenTxId blk), ApplyTx blk)
-              => MempoolEnv m blk hdr
+              => MempoolEnv m blk
               -> STM m [(GenTx blk, ApplyTxErr blk)]
 implSyncState mpEnv@MempoolEnv{mpEnvStateVar} = do
   ValidationResult {
@@ -146,12 +146,12 @@ implSyncState mpEnv@MempoolEnv{mpEnvStateVar} = do
   pure vrInvalid
 
 implGetTxs :: (MonadSTM m, ApplyTx blk)
-           => MempoolEnv m blk hdr
+           => MempoolEnv m blk
            -> STM m [(GenTxId blk, GenTx blk, TicketNo)]
 implGetTxs = (flip implGetTxsAfter) zeroTicketNo
 
 implGetTxsAfter :: (MonadSTM m, ApplyTx blk)
-                => MempoolEnv m blk hdr
+                => MempoolEnv m blk
                 -> TicketNo
                 -> STM m [(GenTxId blk, GenTx blk, TicketNo)]
 implGetTxsAfter MempoolEnv{mpEnvStateVar} tn = do
@@ -163,7 +163,7 @@ implGetTxsAfter MempoolEnv{mpEnvStateVar} tn = do
     (Foldable.toList txSeq)
 
 implGetTx :: (MonadSTM m, ApplyTx blk)
-          => MempoolEnv m blk hdr
+          => MempoolEnv m blk
           -> TicketNo
           -> STM m (Maybe (GenTxId blk, GenTx blk))
 implGetTx MempoolEnv{mpEnvStateVar} tn =
@@ -175,21 +175,21 @@ implGetTx MempoolEnv{mpEnvStateVar} tn =
 
 data ValidationResult blk = ValidationResult {
     -- | The tip of the chain before applying these transactions
-    vrBefore   :: ChainHash blk
+    vrBefore  :: ChainHash blk
 
     -- | The transactions that were found to be valid (oldest to newest)
-  , vrValid    :: TxSeq (GenTxId blk, GenTx blk)
+  , vrValid   :: TxSeq (GenTxId blk, GenTx blk)
 
     -- | The state of the ledger after 'vrValid'
     --
     -- NOTE: This is intentionally not a strict field, so that we don't
     -- evaluate the final ledger state if we don't have to.
-  , vrAfter    :: LedgerState blk
+  , vrAfter   :: LedgerState blk
 
     -- | The transactions that were invalid, along with their errors
     --
     -- Order not guaranteed
-  , vrInvalid  :: [(GenTx blk, ApplyTxErr blk)]
+  , vrInvalid :: [(GenTx blk, ApplyTxErr blk)]
   }
 
 -- | Initialize 'ValidationResult' from a ledger state and a list of
@@ -244,8 +244,8 @@ extendsVR :: ApplyTx blk
 extendsVR cfg prevApplied = repeatedly (extendVR cfg prevApplied)
 
 -- | Validate internal state
-validateIS :: forall m blk hdr. (MonadSTM m, ApplyTx blk)
-           => MempoolEnv m blk hdr -> STM m (ValidationResult blk)
+validateIS :: forall m blk. (MonadSTM m, ApplyTx blk)
+           => MempoolEnv m blk -> STM m (ValidationResult blk)
 validateIS MempoolEnv{mpEnvChainDB, mpEnvLedgerCfg, mpEnvStateVar} =
     go <$> (Block.pointHash <$> getTipPoint      mpEnvChainDB)
        <*> (ledgerState     <$> getCurrentLedger mpEnvChainDB)
