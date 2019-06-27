@@ -4,7 +4,7 @@
 {-# LANGUAGE PolyKinds           #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module Ouroboros.Network.Protocol.PingPong.Codec where
+module Network.TypedProtocol.PingPong.Codec.Cbor where
 
 import           Control.Monad.Class.MonadST
 
@@ -15,10 +15,10 @@ import qualified Codec.CBOR.Read     as CBOR
 import qualified Codec.CBOR.Decoding as CBOR (Decoder, decodeWord)
 
 import           Network.TypedProtocol.Core
-import           Network.TypedProtocol.Codec
 import           Network.TypedProtocol.PingPong.Type
+import           Network.TypedProtocol.Codec
+import           Network.TypedProtocol.Codec.Cbor
 
-import           Ouroboros.Network.Codec
 
 codecPingPong
   :: forall m.

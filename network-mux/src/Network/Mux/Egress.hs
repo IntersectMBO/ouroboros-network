@@ -2,7 +2,7 @@
 {-# LANGUAGE RankNTypes            #-}
 {-# LANGUAGE TypeFamilies          #-}
 
-module Ouroboros.Network.Mux.Egress (
+module Network.Mux.Egress (
       encodeMuxSDU
     , mux
     -- $egress
@@ -17,7 +17,7 @@ import           Data.Word
 
 import           Control.Monad.Class.MonadSTM
 
-import           Ouroboros.Network.Mux.Types
+import           Network.Mux.Types
 
 -- | Encode a 'MuxSDU' as a 'ByteString'.
 --

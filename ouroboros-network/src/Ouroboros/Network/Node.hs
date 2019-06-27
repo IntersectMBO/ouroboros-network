@@ -26,10 +26,11 @@ import           Control.Tracer (nullTracer)
 
 import           Network.TypedProtocol.Core
 import           Network.TypedProtocol.Driver
-import           Ouroboros.Network.Channel
-import           Ouroboros.Network.Codec
+import           Network.TypedProtocol.Codec.Cbor
 
-import           Ouroboros.Network.Time
+import           Network.Mux.Channel
+import           Network.Mux.Time
+
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.Chain (Chain (..), Point)
 import qualified Ouroboros.Network.Chain as Chain

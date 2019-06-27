@@ -19,7 +19,9 @@
         depends = [
           (hsPkgs.base)
           (hsPkgs.ouroboros-network)
+          (hsPkgs.network-mux)
           (hsPkgs.typed-protocols)
+          (hsPkgs.typed-protocols-cbor)
           (hsPkgs.io-sim-classes)
           (hsPkgs.contra-tracer)
           (hsPkgs.cardano-ledger-test)
@@ -57,6 +59,7 @@
           depends = [
             (hsPkgs.base)
             (hsPkgs.typed-protocols)
+            (hsPkgs.network-mux)
             (hsPkgs.ouroboros-network)
             (hsPkgs.ouroboros-consensus)
             (hsPkgs.io-sim-classes)

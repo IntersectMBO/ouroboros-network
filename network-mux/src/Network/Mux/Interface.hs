@@ -8,7 +8,7 @@
 {-# LANGUAGE TypeFamilies        #-}
 
 -- TODO: this module should be exposed as 'Ouorboros.Network'
-module Ouroboros.Network.Mux.Interface
+module Network.Mux.Interface
   (
   -- * High level interface for the multiplex layer
   -- $interface
@@ -24,14 +24,6 @@ module Ouroboros.Network.Mux.Interface
   , simpleMuxResponderApplication
   , ProtocolEnum (..)
   , MiniProtocolLimits (..)
-
-  -- * Version data
-  , Versions (..)
-  , simpleSingletonVersions
-  , acceptEq
-  , Sigma (..)
-  , Version
-  , DictVersion (..)
   ) where
 
 import           Data.Void (Void)
@@ -50,11 +42,9 @@ import           Network.TypedProtocol.Channel
 import           Network.TypedProtocol.Driver
 import           Network.TypedProtocol.Pipelined
 
-import           Ouroboros.Network.Protocol.Handshake.Type (acceptEq)
-import           Ouroboros.Network.Protocol.Handshake.Version
-import           Ouroboros.Network.Mux.Types ( MiniProtocolLimits (..)
-                                             , ProtocolEnum (..)
-                                             )
+import           Network.Mux.Types ( MiniProtocolLimits (..)
+                                   , ProtocolEnum (..)
+                                   )
 
 
 -- $interface

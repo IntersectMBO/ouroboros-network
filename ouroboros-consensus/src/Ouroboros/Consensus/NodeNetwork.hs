@@ -35,8 +35,8 @@ import           Control.Tracer
 
 import           Network.TypedProtocol.Channel
 import           Network.TypedProtocol.Driver
-import           Ouroboros.Network.Codec
-import           Ouroboros.Network.Mux.Interface
+import           Network.TypedProtocol.Codec.Cbor
+import           Network.Mux.Interface
 import           Ouroboros.Network.NodeToNode
 import           Ouroboros.Network.NodeToClient
 

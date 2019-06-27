@@ -25,7 +25,7 @@ import qualified Codec.CBOR.Decoding as CBOR
 import qualified Codec.CBOR.Encoding as CBOR
 import qualified Codec.CBOR.Read as CBOR
 import qualified Data.ByteString.Lazy as Lazy (ByteString)
-import Ouroboros.Network.Codec (Codec, SomeMessage (..), mkCodecCborLazyBS)
+import Network.TypedProtocol.Codec.Cbor (Codec, SomeMessage (..), mkCodecCborLazyBS)
 
 -- FIXME
 -- This is just an MVP draft alpha sort of thing. It does not deal properly

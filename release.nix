@@ -18,6 +18,8 @@ commonLib.pkgs.lib.mapAttrsRecursiveCond
   # packages from our stack.yaml or plan file (via nix/pkgs.nix) we
   # are interested in building on CI via nix-tools.
   packages = [ "typed-protocols"
+               "typed-protocols-cbor"
+               "network-mux"
                "ouroboros-network"
                "ouroboros-network-testing"
                "ouroboros-consensus"

@@ -4,7 +4,7 @@
 {-# LANGUAGE PolyKinds           #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module Ouroboros.Network.Protocol.ReqResp.Codec where
+module Network.TypedProtocol.ReqResp.Codec.Cbor where
 
 import           Control.Monad.Class.MonadST
 
@@ -20,7 +20,7 @@ import           Network.TypedProtocol.Core
 import           Network.TypedProtocol.Codec
 import           Network.TypedProtocol.ReqResp.Type
 
-import           Ouroboros.Network.Codec
+import           Network.TypedProtocol.Codec.Cbor
 
 codecReqResp
   :: forall req resp m.

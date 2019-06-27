@@ -22,9 +22,9 @@ import Codec.CBOR.Read
 import Ouroboros.Network.Protocol.ChainSync.Type as CS
 import Ouroboros.Network.Protocol.ChainSync.Codec (codecChainSync)
 import Network.TypedProtocol.ReqResp.Type as ReqResp
-import Ouroboros.Network.Protocol.ReqResp.Codec (codecReqResp)
-import Ouroboros.Network.Protocol.PingPong.Codec (codecPingPong)
+import Network.TypedProtocol.ReqResp.Codec.Cbor (codecReqResp)
 import Network.TypedProtocol.PingPong.Type as PingPong
+import Network.TypedProtocol.PingPong.Codec.Cbor (codecPingPong)
 import Ouroboros.Network.Protocol.BlockFetch.Codec (codecBlockFetch)
 import Ouroboros.Network.Protocol.BlockFetch.Type as BlockFetch
 import Ouroboros.Network.Protocol.Handshake.Codec (codecHandshake)

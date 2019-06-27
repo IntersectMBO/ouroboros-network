@@ -21,7 +21,7 @@ import qualified Codec.CBOR.Read     as CBOR
 import qualified Codec.CBOR.Decoding as CBOR (Decoder, decodeListLen, decodeWord)
 
 import           Network.TypedProtocol.Codec
-import           Ouroboros.Network.Codec
+import           Network.TypedProtocol.Codec.Cbor
 
 import           Ouroboros.Network.Block (HeaderHash, Point)
 import qualified Ouroboros.Network.Block as Block

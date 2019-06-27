@@ -3,6 +3,8 @@ resolver: https://raw.githubusercontent.com/input-output-hk/cardano-prelude/a21f
 packages:
   - ./typed-transitions
   - ./typed-protocols
+  - ./typed-protocols-cbor
+  - ./network-mux
   - ./ouroboros-network
   - ./ouroboros-network-testing
   - ./ouroboros-consensus

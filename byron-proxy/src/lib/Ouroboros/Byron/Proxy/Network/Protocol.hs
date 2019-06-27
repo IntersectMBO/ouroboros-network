@@ -26,8 +26,8 @@ import qualified Cardano.Chain.Slotting as Cardano
 import Network.TypedProtocol.Channel (hoistChannel)
 import Network.TypedProtocol.Codec (hoistCodec)
 import Network.TypedProtocol.Driver (runPeer)
-import Ouroboros.Network.Mux.Interface (AppType (..), MuxApplication (..))
-import Ouroboros.Network.Mux.Types (MiniProtocolLimits (..), ProtocolEnum (..))
+import Network.Mux.Interface (AppType (..), MuxApplication (..))
+import Network.Mux.Types (MiniProtocolLimits (..), ProtocolEnum (..))
 import Ouroboros.Network.Protocol.ChainSync.Client (ChainSyncClient, chainSyncClientPeer)
 import Ouroboros.Network.Protocol.ChainSync.Server (ChainSyncServer, chainSyncServerPeer)
 import Ouroboros.Network.Protocol.Handshake.Version

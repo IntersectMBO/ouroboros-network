@@ -30,6 +30,7 @@ import           Control.Monad.Class.MonadTimer
 import           Control.Monad.IOSim (runSimOrThrow)
 
 import           Network.TypedProtocol.Driver
+import           Network.Mux.Channel
 
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import qualified Ouroboros.Network.AnchoredFragment as AF
@@ -39,7 +40,6 @@ import qualified Ouroboros.Network.Chain as Chain
 import           Ouroboros.Network.ChainProducerState (chainState,
                      initChainProducerState)
 import qualified Ouroboros.Network.ChainProducerState as CPS
-import           Ouroboros.Network.Channel
 import           Ouroboros.Network.Protocol.ChainSync.Client
 import           Ouroboros.Network.Protocol.ChainSync.Codec (codecChainSyncId)
 import           Ouroboros.Network.Protocol.ChainSync.Examples

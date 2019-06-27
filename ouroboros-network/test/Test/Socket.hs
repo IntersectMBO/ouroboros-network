@@ -18,6 +18,7 @@ import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTimer
 import qualified Data.ByteString.Lazy as BL
 import           Data.Functor ((<$))
+import           Data.Int (Int64)
 import           Data.List (mapAccumL)
 import           Data.Void (Void)
 import qualified Network.Socket as Socket
@@ -28,16 +29,20 @@ import           System.IO.Error
 #endif
 
 import           Network.TypedProtocol.Core
+import           Network.TypedProtocol.Driver
 import qualified Network.TypedProtocol.ReqResp.Client as ReqResp
 import qualified Network.TypedProtocol.ReqResp.Server as ReqResp
 import qualified Network.TypedProtocol.ReqResp.Type as ReqResp
-import qualified Ouroboros.Network.Protocol.ReqResp.Codec as ReqResp
+import qualified Network.TypedProtocol.ReqResp.Codec.Cbor as ReqResp
+import qualified Network.TypedProtocol.ReqResp.Examples as ReqResp
 
 import           Codec.SerialiseTerm
 import           Control.Tracer
 
-import qualified Ouroboros.Network.Mux as Mx
-import           Ouroboros.Network.Mux.Interface
+import qualified Network.Mux as Mx
+import           Network.Mux.Interface
+import qualified Network.Mux.Bearer.Socket as Mx
+
 import           Ouroboros.Network.Socket
 
 import           Ouroboros.Network.Chain (Chain, ChainUpdate, Point)
@@ -48,11 +53,12 @@ import qualified Ouroboros.Network.Protocol.ChainSync.Client as ChainSync
 import qualified Ouroboros.Network.Protocol.ChainSync.Codec as ChainSync
 import qualified Ouroboros.Network.Protocol.ChainSync.Examples as ChainSync
 import qualified Ouroboros.Network.Protocol.ChainSync.Server as ChainSync
+import           Ouroboros.Network.Protocol.Handshake.Type (acceptEq)
+import           Ouroboros.Network.Protocol.Handshake.Version (simpleSingletonVersions)
 import           Ouroboros.Network.Testing.Serialise
 
 import           Test.ChainGenerators (TestBlockChainAndUpdates (..))
-import qualified Test.Mux as Mxt
-import           Test.Mux.ReqResp
+-- import           Test.Mux.ReqResp
 
 import           Test.QuickCheck
 import           Test.Tasty (DependencyType (..), TestTree, after, testGroup)
@@ -91,6 +97,38 @@ tests =
     testProperty "socket sync demo"                      prop_socket_demo
   ]
 #undef LAST_IP_TEST
+
+defaultMiniProtocolLimit :: Int64
+defaultMiniProtocolLimit = 3000000
+
+data TestProtocols1 = ChainSyncPr
+  deriving (Eq, Ord, Enum, Bounded, Show)
+
+instance Mx.ProtocolEnum TestProtocols1 where
+  fromProtocolEnum ChainSyncPr = 2
+
+  toProtocolEnum 2 = Just ChainSyncPr
+  toProtocolEnum _ = Nothing
+
+instance Mx.MiniProtocolLimits TestProtocols1 where
+  maximumMessageSize ChainSyncPr  = defaultMiniProtocolLimit
+  maximumIngressQueue ChainSyncPr = defaultMiniProtocolLimit
+
+-- |
+-- Allow to run a singly req-resp protocol.
+--
+data TestProtocols2 = ReqRespPr
+  deriving (Eq, Ord, Enum, Bounded, Show)
+
+instance Mx.ProtocolEnum TestProtocols2 where
+  fromProtocolEnum ReqRespPr = 4
+
+  toProtocolEnum 4 = Just ReqRespPr
+  toProtocolEnum _ = Nothing
+
+instance Mx.MiniProtocolLimits TestProtocols2 where
+  maximumMessageSize ReqRespPr  = defaultMiniProtocolLimit
+  maximumIngressQueue ReqRespPr = defaultMiniProtocolLimit
 
 --
 -- Properties
@@ -162,20 +200,24 @@ prop_socket_send_recv initiatorAddr responderAddr f xs = do
     sv <- newEmptyTMVarM
 
     let -- Server Node; only req-resp server
-        responderApp :: MuxApplication ResponderApp Mxt.TestProtocols3 IO BL.ByteString Void ()
-        responderApp = simpleMuxResponderApplication $
-          \Mxt.ReqResp1 ->
-            MuxPeer nullTracer
-                    ReqResp.codecReqResp
-                    (ReqResp.reqRespServerPeer (reqRespServerMapAccumL sv (\a -> pure . f a) 0))
+        responderApp :: MuxApplication ResponderApp TestProtocols2 IO BL.ByteString Void ()
+        responderApp = MuxResponderApplication $
+          \ReqRespPr channel -> do
+            r <- runPeer nullTracer
+                         ReqResp.codecReqResp
+                         channel
+                         (ReqResp.reqRespServerPeer (ReqResp.reqRespServerMapAccumL (\a -> pure . f a) 0))
+            atomically $ putTMVar sv r
 
         -- Client Node; only req-resp client
-        initiatorApp :: MuxApplication InitiatorApp Mxt.TestProtocols3 IO BL.ByteString () Void
-        initiatorApp = simpleMuxInitiatorApplication $
-          \Mxt.ReqResp1 ->
-            MuxPeer nullTracer
-                    ReqResp.codecReqResp
-                    (ReqResp.reqRespClientPeer (reqRespClientMap cv xs))
+        initiatorApp :: MuxApplication InitiatorApp TestProtocols2 IO BL.ByteString () Void
+        initiatorApp = MuxInitiatorApplication $
+          \ReqRespPr channel -> do
+            r <- runPeer nullTracer
+                         ReqResp.codecReqResp
+                         channel
+                         (ReqResp.reqRespClientPeer (ReqResp.reqRespClientMap xs))
+            atomically $ putTMVar cv r
 
     res <-
       withSimpleServerNode
@@ -206,12 +248,14 @@ prop_socket_recv_close f _ = ioProperty $ do
 
     sv   <- newEmptyTMVarM
 
-    let app :: MuxApplication ResponderApp Mxt.TestProtocols3 IO BL.ByteString Void ()
-        app = simpleMuxResponderApplication $
-          \Mxt.ReqResp1 ->
-            MuxPeer nullTracer
-                    ReqResp.codecReqResp
-                    (ReqResp.reqRespServerPeer (reqRespServerMapAccumL sv (\a -> pure . f a) 0))
+    let app :: MuxApplication ResponderApp TestProtocols2 IO BL.ByteString Void ()
+        app = MuxResponderApplication $
+          \ReqRespPr channel -> do
+            r <- runPeer nullTracer
+                         ReqResp.codecReqResp
+                         channel
+                         (ReqResp.reqRespServerPeer (ReqResp.reqRespServerMapAccumL (\a -> pure . f a) 0))
+            atomically $ putTMVar sv r
 
     bracket
       (Socket.socket Socket.AF_INET Socket.Stream Socket.defaultProtocol)
@@ -230,7 +274,7 @@ prop_socket_recv_close f _ = ioProperty $ do
                 (Socket.accept sd)
                 (\(sd',_) -> Socket.close sd')
                 $ \(sd',_) -> do
-                  bearer <- socketAsMuxBearer sd'
+                  bearer <- Mx.socketAsMuxBearer sd'
                   Mx.muxBearerSetState bearer Mx.Connected
                   Mx.muxStart app bearer
           )
@@ -261,14 +305,15 @@ prop_socket_client_connect_error _ xs = ioProperty $ do
 
     cv <- newEmptyTMVarM
 
-    let app :: MuxApplication InitiatorApp Mxt.TestProtocols3 IO BL.ByteString () Void
-        app = simpleMuxInitiatorApplication $
-                \Mxt.ReqResp1 ->
-                  MuxPeer nullTracer
+    let app :: MuxApplication InitiatorApp TestProtocols2 IO BL.ByteString () Void
+        app = MuxInitiatorApplication $
+                \ReqRespPr channel -> do
+                  _ <- runPeer nullTracer
                           ReqResp.codecReqResp
-                          (ReqResp.reqRespClientPeer (reqRespClientMap cv xs)
-                            :: Peer (ReqResp.ReqResp Int Int) AsClient ReqResp.StIdle IO ()
-                          )
+                          channel
+                          (ReqResp.reqRespClientPeer (ReqResp.reqRespClientMap xs)
+                                  :: Peer (ReqResp.ReqResp Int Int) AsClient ReqResp.StIdle IO [Int])
+                  atomically $ putTMVar cv ()
 
 
     (res :: Either IOException Bool)
@@ -298,9 +343,9 @@ demo chain0 updates = do
     let Just expectedChain = Chain.applyChainUpdates updates chain0
         target = Chain.headPoint expectedChain
 
-        initiatorApp :: MuxApplication InitiatorApp Mxt.TestProtocols1 IO BL.ByteString () Void
+        initiatorApp :: MuxApplication InitiatorApp TestProtocols1 IO BL.ByteString () Void
         initiatorApp = simpleMuxInitiatorApplication $
-          \Mxt.ChainSync1 ->
+          \ChainSyncPr ->
               MuxPeer nullTracer
                       (ChainSync.codecChainSync encode decode encode decode)
                       (ChainSync.chainSyncClientPeer
@@ -310,9 +355,9 @@ demo chain0 updates = do
         server :: ChainSync.ChainSyncServer block (Point block) IO ()
         server = ChainSync.chainSyncServerExample () producerVar
 
-        responderApp :: MuxApplication ResponderApp Mxt.TestProtocols1 IO BL.ByteString Void ()
+        responderApp :: MuxApplication ResponderApp TestProtocols1 IO BL.ByteString Void ()
         responderApp = simpleMuxResponderApplication $
-          \Mxt.ChainSync1 ->
+          \ChainSyncPr ->
             MuxPeer nullTracer
                     (ChainSync.codecChainSync encode decode encode decode)
                     (ChainSync.chainSyncServerPeer server)

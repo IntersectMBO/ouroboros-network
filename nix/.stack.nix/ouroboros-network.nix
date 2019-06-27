@@ -18,10 +18,11 @@
       "library" = {
         depends = [
           (hsPkgs.base)
+          (hsPkgs.network-mux)
           (hsPkgs.typed-protocols)
+          (hsPkgs.typed-protocols-cbor)
           (hsPkgs.io-sim-classes)
           (hsPkgs.contra-tracer)
-          (hsPkgs.array)
           (hsPkgs.async)
           (hsPkgs.binary)
           (hsPkgs.bytestring)
@@ -29,7 +30,6 @@
           (hsPkgs.containers)
           (hsPkgs.fingertree)
           (hsPkgs.network)
-          (hsPkgs.process)
           (hsPkgs.serialise)
           (hsPkgs.stm)
           (hsPkgs.time)
@@ -42,8 +42,10 @@
           depends = [
             (hsPkgs.base)
             (hsPkgs.directory)
+            (hsPkgs.network-mux)
             (hsPkgs.ouroboros-network)
             (hsPkgs.typed-protocols)
+            (hsPkgs.typed-protocols-cbor)
             (hsPkgs.async)
             (hsPkgs.bytestring)
             (hsPkgs.containers)
@@ -62,8 +64,10 @@
           depends = [
             (hsPkgs.base)
             (hsPkgs.typed-protocols)
+            (hsPkgs.typed-protocols-cbor)
             (hsPkgs.io-sim-classes)
             (hsPkgs.io-sim)
+            (hsPkgs.network-mux)
             (hsPkgs.ouroboros-network-testing)
             (hsPkgs.contra-tracer)
             (hsPkgs.array)
@@ -103,6 +107,7 @@
             (hsPkgs.text)
             (hsPkgs.io-sim-classes)
             (hsPkgs.typed-protocols)
+            (hsPkgs.typed-protocols-cbor)
             ];
           };
         };

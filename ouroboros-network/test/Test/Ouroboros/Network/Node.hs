@@ -34,7 +34,8 @@ import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
 import qualified Control.Monad.IOSim as Sim
 
-import           Ouroboros.Network.Time (microsecondsToDiffTime)
+import           Network.Mux.Time (microsecondsToDiffTime)
+
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.Chain (Chain (..))
 import qualified Ouroboros.Network.Chain as Chain

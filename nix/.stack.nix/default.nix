@@ -28,6 +28,8 @@
         } // {
         typed-transitions = ./typed-transitions.nix;
         typed-protocols = ./typed-protocols.nix;
+        typed-protocols-cbor = ./typed-protocols-cbor.nix;
+        network-mux = ./network-mux.nix;
         ouroboros-network = ./ouroboros-network.nix;
         ouroboros-network-testing = ./ouroboros-network-testing.nix;
         ouroboros-consensus = ./ouroboros-consensus.nix;
