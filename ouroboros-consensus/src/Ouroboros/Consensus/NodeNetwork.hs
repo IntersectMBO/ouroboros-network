@@ -112,6 +112,7 @@ protocolHandlers
        , MonadThrow (STM m)
        , MonadTime  m
        , MonadThrow m
+       , ApplyTx blk
        , ProtocolLedgerView blk
        , Condense (Header blk)
        , Condense (ChainHash blk)

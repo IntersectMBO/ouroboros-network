@@ -31,6 +31,7 @@ module Ouroboros.Consensus.Ledger.Mock.Block (
     -- * 'ApplyTx' (mempool support)
   , GenTx(..)
   , GenTxId(..)
+  , computeGenTxId
     -- * Crypto
   , SimpleCrypto
   , SimpleStandardCrypto
@@ -243,6 +244,8 @@ instance (SimpleCrypto c, Typeable ext, SupportedBlock (SimpleBlock c ext))
   newtype GenTxId (SimpleBlock c ext) = SimpleGenTxId
     { simpleGenTxId :: TxId
     } deriving (Eq, Ord)
+
+  computeGenTxId = SimpleGenTxId . hash . simpleGenTx
 
   type ApplyTxErr (SimpleBlock c ext) = MockError (SimpleBlock c ext)
 

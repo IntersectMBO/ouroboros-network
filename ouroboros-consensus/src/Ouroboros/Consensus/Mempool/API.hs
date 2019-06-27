@@ -24,6 +24,9 @@ class UpdateLedger blk => ApplyTx blk where
   -- | A generalized transaction, 'GenTx', identifier.
   data family GenTxId blk :: *
 
+  -- | Given a 'GenTx', compute its 'GenTxId'.
+  computeGenTxId :: GenTx blk -> GenTxId blk
+
   -- | Updating the ledger with a single transaction may result in a different
   -- error type as when updating it with a block
   type family ApplyTxErr blk :: *
