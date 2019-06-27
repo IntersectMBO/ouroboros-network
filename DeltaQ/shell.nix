@@ -14,11 +14,11 @@ let
   iHaskell = jupyter.kernels.iHaskellWith {
     name = "haskell";
     packages = p: with p;
-      let  dq1 = callPackage  ./packages/DeltaQIllustration {};
-           dq2 = callPackage  ./packages/DeltaQIHaskell {DeltaQIllustration = dq1;};
+      let  dq1 = callCabal2nix "DeltaQIllustration"  ./packages/DeltaQIllustration {};
+           dq2 = callCabal2nix "DeltaQIHaskell"      ./packages/DeltaQIHaskell {DeltaQIllustration = dq1;};
       in [
 #    ihaskell-charts
-#     ihaskell-plot
+#    ihaskell-plot
     ihaskell-hatex
 #     ihaskell-diagrams ihaskell-graphviz ihaskell-magic
 #     ihaskell-aeson ihaskell-gnuplot ihaskell-widgets
