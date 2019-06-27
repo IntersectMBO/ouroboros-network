@@ -250,12 +250,12 @@ txSubmissionServer tracer txId maxUnacked maxTxIdsToRequest maxTxToRequest =
           accum                      -- result if the client reports we're done
           (\txids -> do
               traceWith tracer (EventRequestTxIdsBlocking st (numTxsToAcknowledge st) numTxIdsToRequest)
-              return . handleReply accum Zero st {
-                         numTxsToAcknowledge    = 0,
-                         requestedTxIdsInFlight = numTxIdsToRequest
-                       }
-                     . CollectTxIds numTxIdsToRequest
-                     . NonEmpty.toList $ txids)
+              handleReply accum Zero st {
+                 numTxsToAcknowledge    = 0,
+                 requestedTxIdsInFlight = numTxIdsToRequest
+               }
+               . CollectTxIds numTxIdsToRequest
+               . NonEmpty.toList $ txids)
 
     serverIdle accum (Succ n) st
         -- We have replies in flight and we should eagerly collect them if
@@ -291,11 +291,11 @@ txSubmissionServer tracer txId maxUnacked maxTxIdsToRequest maxTxToRequest =
                 -> Nat n
                 -> ServerState txid tx
                 -> Collect txid tx
-                -> ServerStIdle n txid tx m [tx]
+                -> m (ServerStIdle n txid tx m [tx])
     handleReply accum n st (CollectTxIds reqNo txids) =
       -- Upon receiving a batch of new txids we extend our available set,
       -- and extended the unacknowledged sequence.
-      serverIdle accum n st {
+      return $ serverIdle accum n st {
         requestedTxIdsInFlight = requestedTxIdsInFlight st - reqNo,
         unacknowledgedTxIds    = unacknowledgedTxIds st
                               <> Seq.fromList (map fst txids),
@@ -314,7 +314,7 @@ txSubmissionServer tracer txId maxUnacked maxTxIdsToRequest maxTxToRequest =
       -- We have to update the unacknowledgedTxIds here eagerly and not delay it
       -- to serverReqTxs, otherwise we could end up blocking in serverIdle on
       -- more pipelined results rather than being able to move on.
-      serverIdle accum' n st {
+      return $ serverIdle accum' n st {
         bufferedTxs         = bufferedTxs'',
         unacknowledgedTxIds = unacknowledgedTxIds',
         numTxsToAcknowledge = numTxsToAcknowledge st

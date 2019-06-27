@@ -57,6 +57,7 @@ directPipelined (TxSubmissionServerPipelined server)
     directSender q (CollectPipelined (Just server') _) client =
       directSender q server' client
 
-    directSender (ConsQ c q) (CollectPipelined _ collect) client =
-      directSender q (collect c) client
+    directSender (ConsQ c q) (CollectPipelined _ collect) client = do
+      server' <- collect c
+      directSender q server' client
 
