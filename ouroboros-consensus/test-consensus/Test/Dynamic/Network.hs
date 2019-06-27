@@ -33,8 +33,8 @@ import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
 
-import           Ouroboros.Network.Channel
-import           Ouroboros.Network.Codec (AnyMessage (..))
+import           Network.TypedProtocol.Codec (AnyMessage (..))
+import           Network.Mux.Channel
 
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.Chain

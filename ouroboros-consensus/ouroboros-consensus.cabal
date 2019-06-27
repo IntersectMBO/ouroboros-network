@@ -190,7 +190,9 @@ library
 
   build-depends:       base              >=4.9 && <4.13,
                        ouroboros-network,
+                       network-mux,
                        typed-protocols,
+                       typed-protocols-cbor,
                        io-sim-classes,
                        contra-tracer,
 
@@ -257,6 +259,7 @@ test-suite test-consensus
                     Test.Util.TestBlock
   build-depends:    base,
                     typed-protocols,
+                    network-mux,
                     ouroboros-network,
                     ouroboros-consensus,
                     io-sim-classes,
