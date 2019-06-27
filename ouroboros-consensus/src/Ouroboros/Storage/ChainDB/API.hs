@@ -20,6 +20,8 @@ module Ouroboros.Storage.ChainDB.API (
   , Reader(..)
     -- * Recovery
   , ChainDbFailure(..)
+    -- * Exceptions
+  , ChainDbError(..)
   ) where
 
 import qualified Codec.CBOR.Read as CBOR
@@ -350,3 +352,22 @@ data ChainDbFailure blk =
 deriving instance StandardHash blk => Show (ChainDbFailure blk)
 
 instance (StandardHash blk, Typeable blk) => Exception (ChainDbFailure blk)
+
+
+{-------------------------------------------------------------------------------
+  Exceptions
+-------------------------------------------------------------------------------}
+
+-- | Database error.
+--
+-- Thrown upon incorrect use: invalid input.
+data ChainDbError blk =
+    -- | Thrown when requesting the genesis block from the database
+    --
+    -- Although the genesis block has a hash and a point associated with it,
+    -- it does not actually exist other than as a concept; we cannot read and
+    -- return it.
+    NoGenesisBlock
+  deriving (Eq, Show, Typeable)
+
+instance (StandardHash blk, Typeable blk) => Exception (ChainDbError blk)
