@@ -7,7 +7,6 @@ module Ouroboros.Consensus.Mempool.API (
   ) where
 
 import           Control.Monad.Except
-import           Data.Sequence (Seq)
 import           GHC.Stack (HasCallStack)
 
 import           Control.Monad.Class.MonadSTM
@@ -114,12 +113,12 @@ data Mempool m blk idx = Mempool {
       -- valid (with respect to the ledger state) if this function is called
       -- immediately following a call to 'syncState', /within the same
       -- transaction/.
-    , getTxs :: STM m (Seq (GenTx blk, idx))
+    , getTxs :: STM m [(GenTx blk, idx)]
 
       -- | Get all transactions in the mempool, along with their associated
       -- ticket numbers, which are associated with a ticket number greater
       -- than the one provided.
-    , getTxsAfter :: idx -> STM m (Seq (GenTx blk, idx))
+    , getTxsAfter :: idx -> STM m [(GenTx blk, idx)]
 
       -- | Get a specific transaction from the mempool by its ticket number,
       -- if it exists.

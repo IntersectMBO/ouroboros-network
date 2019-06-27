@@ -115,13 +115,13 @@ implSyncState mpEnv@MempoolEnv{mpEnvStateVar} = do
 
 implGetTxs :: (MonadSTM m, ApplyTx blk)
            => MempoolEnv m blk hdr
-           -> STM m (Seq (GenTx blk, TicketNo))
+           -> STM m [(GenTx blk, TicketNo)]
 implGetTxs = (flip implGetTxsAfter) zeroTicketNo
 
 implGetTxsAfter :: (MonadSTM m, ApplyTx blk)
                 => MempoolEnv m blk hdr
                 -> TicketNo
-                -> STM m (Seq (GenTx blk, TicketNo))
+                -> STM m [(GenTx blk, TicketNo)]
 implGetTxsAfter MempoolEnv{mpEnvStateVar} tn = do
   IS { isTxs } <- readTVar mpEnvStateVar
   pure $ fromTxSeq $ snd $ splitAfterTicketNo isTxs tn

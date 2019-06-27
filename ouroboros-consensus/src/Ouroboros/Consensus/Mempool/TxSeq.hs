@@ -13,8 +13,6 @@ module Ouroboros.Consensus.Mempool.TxSeq (
   , zeroTicketNo
   ) where
 
-import           Data.Sequence (Seq)
-import qualified Data.Sequence as Seq
 import           Data.Word (Word64)
 import qualified Data.Foldable as Foldable
 import           Data.FingerTree (FingerTree)
@@ -155,10 +153,10 @@ splitAfterTicketNo (TxSeq txs) n =
 
 -- | Convert a 'TxSeq' to the type which is expected to be returned from the
 -- 'Mempool' API.
-fromTxSeq :: TxSeq tx -> Seq (tx, TicketNo)
+fromTxSeq :: TxSeq tx -> [(tx, TicketNo)]
 fromTxSeq (TxSeq ftree) = fmap
   (\(TxTicket tx tn) -> (tx, tn))
-  (Seq.fromList . Foldable.toList $ ftree)
+  (Foldable.toList $ ftree)
 
 -- | Append a @tx@ to the back of a 'TxSeq'.
 -- n.b. This function also handles the incrementing of the newly added
