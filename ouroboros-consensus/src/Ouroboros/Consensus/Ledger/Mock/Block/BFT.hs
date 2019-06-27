@@ -17,14 +17,15 @@ module Ouroboros.Consensus.Ledger.Mock.Block.BFT (
 import           Codec.Serialise (Serialise (..))
 import           GHC.Generics (Generic)
 
+import           Cardano.Crypto.DSIGN
+import           Cardano.Crypto.Util (Empty)
+
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.Crypto.DSIGN
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Mock.Block
 import           Ouroboros.Consensus.Ledger.Mock.Forge
 import           Ouroboros.Consensus.Protocol.BFT
 import           Ouroboros.Consensus.Protocol.Signed
-import           Ouroboros.Consensus.Util (Empty)
 import           Ouroboros.Consensus.Util.Condense
 import qualified Ouroboros.Consensus.Util.SlotBounded as SB
 

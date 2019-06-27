@@ -1,4 +1,3 @@
-{-# LANGUAGE DeriveFunctor         #-}
 {-# LANGUAGE DeriveGeneric         #-}
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE FlexibleInstances     #-}
@@ -49,10 +48,12 @@ import           Data.Typeable (Typeable)
 import           Data.Word
 import           GHC.Generics (Generic)
 
+import           Cardano.Binary (ToCBOR(..))
+import           Cardano.Crypto.Hash
+
 import           Ouroboros.Network.Block
 
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.Crypto.Hash
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Mock.Address
 import           Ouroboros.Consensus.Ledger.Mock.State
@@ -321,6 +322,8 @@ instance (SimpleCrypto c, Serialise ext') => Serialise (SimpleBlock' c ext ext')
 instance (SimpleCrypto c) => Serialise (SimpleStdHeader c ext)
 instance Serialise SimpleBody
 deriving instance Serialise (GenTx (SimpleBlock p c))
+instance ToCBOR SimpleBody where
+  toCBOR = encode
 
 encodeSimpleHeader :: SimpleCrypto c
                    => (ext' -> CBOR.Encoding)

@@ -64,13 +64,14 @@ import qualified Cardano.Chain.Update.Validation.Interface as CC.UPI
 import qualified Cardano.Chain.UTxO as CC.UTxO
 import           Cardano.Chain.ValidationMode (fromBlockValidationMode)
 import qualified Cardano.Crypto as Crypto
+import           Cardano.Crypto.DSIGN
+import           Cardano.Crypto.Hash
 
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.Chain (genesisSlotNo)
 
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.Crypto.DSIGN
-import           Ouroboros.Consensus.Crypto.Hash
+import           Ouroboros.Consensus.Crypto.DSIGN.Cardano
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Mempool.API
 import           Ouroboros.Consensus.Protocol.Abstract

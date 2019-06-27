@@ -11,7 +11,6 @@ module Test.Util.Orphans.Arbitrary
     , genSmallSlotNo
     ) where
 
-import           Codec.Serialise (Serialise(..))
 import           Data.Time
 import           Data.Word (Word64)
 import           Test.QuickCheck hiding (Fixed (..))
@@ -20,12 +19,8 @@ import           Ouroboros.Network.Block (SlotNo (..))
 
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.ChainSyncClient (ClockSkew (..))
-import           Ouroboros.Consensus.Crypto.DSIGN.Class (DSIGNAlgorithm (..))
-import           Ouroboros.Consensus.Crypto.Hash.Class (Hash,
-                     HashAlgorithm (..), hash)
-import           Ouroboros.Consensus.Crypto.VRF.Class (VRFAlgorithm (..))
 import           Ouroboros.Consensus.Demo.Run
-import           Ouroboros.Consensus.Util.Random (Seed (..), withSeed)
+import           Ouroboros.Consensus.Util.Random (Seed (..))
 
 import           Ouroboros.Storage.ImmutableDB.Layout
 import           Ouroboros.Storage.Common (EpochNo (..),
@@ -113,55 +108,6 @@ instance Arbitrary Seed where
                 <$> gen <*> gen <*> gen <*> gen <*> gen
       where
         gen = arbitraryBoundedIntegral
-
-    shrink = const []
-
-instance DSIGNAlgorithm v => Arbitrary (SignKeyDSIGN v) where
-
-    arbitrary = do
-        seed <- arbitrary
-        return $ withSeed seed genKeyDSIGN
-
-    shrink = const []
-
-instance (Serialise a, Arbitrary a, HashAlgorithm h) => Arbitrary (Hash h a) where
-
-    arbitrary = hash <$> arbitrary
-    shrink = const []
-
-instance DSIGNAlgorithm v => Arbitrary (VerKeyDSIGN v) where
-    arbitrary = deriveVerKeyDSIGN <$> arbitrary
-    shrink = const []
-
-instance (Signable v Int, DSIGNAlgorithm v) => Arbitrary (SigDSIGN v) where
-
-    arbitrary = do
-        a    <- arbitrary :: Gen Int
-        sk   <- arbitrary
-        seed <- arbitrary
-        return $ withSeed seed $ signDSIGN encode a sk
-
-    shrink = const []
-
-instance VRFAlgorithm v => Arbitrary (SignKeyVRF v) where
-
-    arbitrary = do
-        seed <- arbitrary
-        return $ withSeed seed genKeyVRF
-
-    shrink = const []
-
-instance VRFAlgorithm v => Arbitrary (VerKeyVRF v) where
-    arbitrary = deriveVerKeyVRF <$> arbitrary
-    shrink = const []
-
-instance VRFAlgorithm v => Arbitrary (CertVRF v) where
-
-    arbitrary = do
-        a    <- arbitrary :: Gen Int
-        sk   <- arbitrary
-        seed <- arbitrary
-        return $ withSeed seed $ fmap snd $ evalVRF encode a sk
 
     shrink = const []
 

@@ -12,8 +12,9 @@ import           Codec.Serialise (Serialise)
 import qualified Codec.Serialise as Serialise
 import           Data.Typeable (Typeable)
 
+import           Cardano.Crypto.Hash
+
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.Crypto.Hash
 import           Ouroboros.Consensus.Demo.Run
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Mock

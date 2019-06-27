@@ -1,4 +1,5 @@
 {-# LANGUAGE FlexibleInstances    #-}
+{-# LANGUAGE PatternSynonyms      #-}
 {-# LANGUAGE TypeApplications     #-}
 {-# LANGUAGE UndecidableInstances #-}
 
@@ -17,9 +18,19 @@ import qualified Data.Map.Strict as Map
 import           Data.Proxy
 import           Data.Set (Set)
 import qualified Data.Set as Set
+import           Data.Text (Text, unpack)
 import           Data.Word
 import           Numeric.Natural
 import           Text.Printf (printf)
+
+import           Cardano.Crypto.DSIGN
+                   (SigDSIGN, SignedDSIGN(..), Ed448DSIGN,
+                    pattern SigEd448DSIGN, MockDSIGN, pattern SigMockDSIGN)
+import           Cardano.Crypto.Hash (Hash)
+import           Cardano.Crypto.KES
+                   (SigKES, SignedKES(..), MockKES, pattern SigMockKES,
+                    pattern SignKeyMockKES, pattern VerKeyMockKES, NeverKES,
+                    SimpleKES, pattern SigSimpleKES)
 
 import           Ouroboros.Consensus.Util.HList (All, HList (..))
 import qualified Ouroboros.Consensus.Util.HList as HList
@@ -40,6 +51,9 @@ condense1 = liftCondense condense
 
 instance Condense String where
   condense = id
+
+instance Condense Text where
+  condense = unpack
 
 instance Condense Bool where
   condense = show
@@ -116,3 +130,34 @@ instance Condense BS.Strict.ByteString where
 
 instance Condense BS.Lazy.ByteString where
   condense bs = show bs ++ "<" ++ show (BS.Lazy.length bs) ++ "b>"
+
+instance Condense (SigDSIGN v) => Condense (SignedDSIGN v a) where
+  condense (SignedDSIGN sig) = condense sig
+
+instance Condense (SigDSIGN Ed448DSIGN) where
+  condense (SigEd448DSIGN s) = show s
+
+instance Condense (SigDSIGN MockDSIGN) where
+  condense (SigMockDSIGN _ i) = show i
+
+instance Condense (SigKES v) => Condense (SignedKES v a) where
+  condense (SignedKES sig) = condense sig
+
+instance Condense (SigKES MockKES) where
+    condense (SigMockKES n (SignKeyMockKES (VerKeyMockKES v, j, d))) =
+           show n
+        <> ":"
+        <> show v
+        <> ":"
+        <> show j
+        <> ":"
+        <> show d
+
+instance Condense (SigKES NeverKES) where
+  condense = show
+
+instance Condense (SigDSIGN d) => Condense (SigKES (SimpleKES d)) where
+    condense (SigSimpleKES sig) = condense sig
+
+instance Condense (Hash h a) where
+    condense = show

@@ -35,11 +35,13 @@ module Ouroboros.Consensus.Util.HList (
   , afterFn
   ) where
 
+import           Cardano.Binary (ToCBOR(..))
 import           Codec.Serialise
 import           Codec.Serialise.Decoding
 import           Data.Kind (Constraint)
 import           Data.Monoid ((<>))
 import           Data.Proxy
+import           Data.Typeable (Typeable)
 import           Prelude hiding (foldMap, foldl, foldr)
 
 {-------------------------------------------------------------------------------
@@ -82,6 +84,10 @@ instance (IsList as, All Serialise as) => Serialise (HList as) where
         decode' :: All Serialise bs => SList bs -> Decoder s (HList bs)
         decode' SNil      = return Nil
         decode' (SCons s) = (:*) <$> decode <*> decode' s
+
+instance (IsList as, All ToCBOR as, Typeable as) => ToCBOR (HList as) where
+  toCBOR = foldMap (Proxy :: Proxy ToCBOR) toCBOR
+
 
 {-------------------------------------------------------------------------------
   Folding

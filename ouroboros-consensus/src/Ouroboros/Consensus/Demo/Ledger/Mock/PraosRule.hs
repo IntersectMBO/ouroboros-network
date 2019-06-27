@@ -6,8 +6,9 @@ module Ouroboros.Consensus.Demo.Ledger.Mock.PraosRule (
 import           Data.IntMap (IntMap)
 import qualified Data.IntMap as IntMap
 
-import           Ouroboros.Consensus.Crypto.KES
-import           Ouroboros.Consensus.Crypto.VRF
+import           Cardano.Crypto.KES
+import           Cardano.Crypto.VRF
+
 import           Ouroboros.Consensus.Demo.Run
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.Mock

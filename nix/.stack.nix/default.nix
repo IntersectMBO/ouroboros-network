@@ -38,6 +38,7 @@
         contra-tracer = ./contra-tracer.nix;
         cardano-binary = ./cardano-binary.nix;
         cardano-binary-test = ./cardano-binary-test.nix;
+        cardano-crypto-class = ./cardano-crypto-class.nix;
         cardano-ledger = ./cardano-ledger.nix;
         cardano-ledger-test = ./cardano-ledger-test.nix;
         cardano-crypto-wrapper = ./cardano-crypto-wrapper.nix;

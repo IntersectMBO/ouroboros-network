@@ -43,12 +43,12 @@ import           GHC.Generics (Generic)
 
 import qualified Cardano.Chain.Common as CC.Common
 import           Cardano.Crypto (ProtocolMagicId)
+import           Cardano.Crypto.DSIGN.Class
+import           Cardano.Crypto.DSIGN.Mock (MockDSIGN)
 
 import           Ouroboros.Network.Block
 
 import           Ouroboros.Consensus.Crypto.DSIGN.Cardano
-import           Ouroboros.Consensus.Crypto.DSIGN.Class
-import           Ouroboros.Consensus.Crypto.DSIGN.Mock (MockDSIGN)
 import           Ouroboros.Consensus.NodeId (NodeId (..))
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.Signed
@@ -235,6 +235,7 @@ deriving instance (Show (PBftLedgerView c), PBftCrypto c) => Show (PBftValidatio
 -- | Crypto primitives required by BFT
 class ( Typeable c
       , DSIGNAlgorithm (PBftDSIGN c)
+      , Condense (SigDSIGN (PBftDSIGN c))
       , Show (PBftVerKeyHash c)
       , Ord (PBftVerKeyHash c)
       , Eq (PBftVerKeyHash c)

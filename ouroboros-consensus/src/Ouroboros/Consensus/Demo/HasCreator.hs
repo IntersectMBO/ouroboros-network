@@ -13,10 +13,10 @@ import           Data.Maybe (fromMaybe)
 import qualified Cardano.Chain.Block as CC.Block
 import qualified Cardano.Chain.Delegation as CC.Delegation
 import qualified Cardano.Crypto as Cardano
+import           Cardano.Crypto.DSIGN
 
 import           Ouroboros.Consensus.NodeId (CoreNodeId (..))
 
-import           Ouroboros.Consensus.Crypto.DSIGN
 import           Ouroboros.Consensus.Demo.Ledger.Byron.Config
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Byron

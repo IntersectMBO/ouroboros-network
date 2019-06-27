@@ -3,9 +3,12 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 module Ouroboros.Consensus.Util.Orphans () where
 
+import           Codec.Serialise (Serialise(..))
 import           Control.Monad.Identity
 import           Control.Monad.Trans
 import           Crypto.Random
+
+import           Cardano.Crypto.Hash (Hash)
 
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import qualified Ouroboros.Network.AnchoredFragment as AF
@@ -41,3 +44,9 @@ instance (Condense block, HasHeader block, Condense (ChainHash block))
 
 instance MonadRandom m => MonadRandom (IdentityT m) where
      getRandomBytes = lift . getRandomBytes
+
+{-------------------------------------------------------------------------------
+  Serialise
+-------------------------------------------------------------------------------}
+
+instance Serialise (Hash h a) where

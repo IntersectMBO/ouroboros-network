@@ -23,7 +23,7 @@ import qualified Cardano.Chain.Update as Cardano.Update
 import qualified Cardano.Crypto as Cardano
 import qualified Cardano.Crypto.Signing as Cardano.KeyGen
 
-import           Ouroboros.Consensus.Crypto.DSIGN
+import           Ouroboros.Consensus.Crypto.DSIGN.Cardano
 import           Ouroboros.Consensus.Demo.Run
 import           Ouroboros.Consensus.Ledger.Byron
 import           Ouroboros.Consensus.Ledger.Extended

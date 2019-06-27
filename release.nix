@@ -68,7 +68,6 @@ commonLib.pkgs.lib.mapAttrsRecursiveCond
   required-targets = jobs: [
     # targets are specified using above nomenclature:
     jobs.nix-tools.tests.ouroboros-consensus.test-consensus.x86_64-linux
-    jobs.nix-tools.tests.ouroboros-consensus.test-crypto.x86_64-linux
     jobs.nix-tools.tests.ouroboros-consensus.test-storage.x86_64-linux
     jobs.nix-tools.tests.ouroboros-network.tests.x86_64-linux
     jobs.nix-tools.tests.ouroboros-network.cddl.x86_64-linux

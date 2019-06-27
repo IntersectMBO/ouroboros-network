@@ -17,10 +17,11 @@ module Ouroboros.Consensus.Ledger.Mock.Block.PraosRule (
 import           Codec.Serialise (Serialise (..))
 import           GHC.Generics (Generic)
 
+import           Cardano.Crypto.Hash
+import           Cardano.Crypto.KES
+import           Cardano.Crypto.VRF
+
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.Crypto.Hash
-import           Ouroboros.Consensus.Crypto.KES
-import           Ouroboros.Consensus.Crypto.VRF
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Mock.Block
 import           Ouroboros.Consensus.Ledger.Mock.Forge

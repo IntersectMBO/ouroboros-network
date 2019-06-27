@@ -5,7 +5,8 @@ module Ouroboros.Consensus.Demo.Ledger.Mock.PBFT (
 import qualified Data.Bimap as Bimap
 import qualified Data.Sequence as Seq
 
-import           Ouroboros.Consensus.Crypto.DSIGN
+import           Cardano.Crypto.DSIGN
+
 import           Ouroboros.Consensus.Demo.Run
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.Mock

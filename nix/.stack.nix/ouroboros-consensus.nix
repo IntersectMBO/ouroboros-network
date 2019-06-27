@@ -27,6 +27,7 @@
           (hsPkgs.bimap)
           (hsPkgs.bytestring)
           (hsPkgs.cardano-binary)
+          (hsPkgs.cardano-crypto-class)
           (hsPkgs.cardano-crypto-wrapper)
           (hsPkgs.cardano-ledger)
           (hsPkgs.cardano-prelude)
@@ -56,6 +57,7 @@
         "test-consensus" = {
           depends = [
             (hsPkgs.base)
+            (hsPkgs.cardano-crypto-class)
             (hsPkgs.typed-protocols)
             (hsPkgs.ouroboros-network)
             (hsPkgs.ouroboros-consensus)
@@ -78,23 +80,10 @@
             (hsPkgs.time)
             ];
           };
-        "test-crypto" = {
-          depends = [
-            (hsPkgs.base)
-            (hsPkgs.ouroboros-network-testing)
-            (hsPkgs.ouroboros-network)
-            (hsPkgs.ouroboros-consensus)
-            (hsPkgs.bytestring)
-            (hsPkgs.QuickCheck)
-            (hsPkgs.serialise)
-            (hsPkgs.tasty)
-            (hsPkgs.tasty-quickcheck)
-            (hsPkgs.time)
-            ];
-          };
         "test-storage" = {
           depends = [
             (hsPkgs.base)
+            (hsPkgs.cardano-crypto-class)
             (hsPkgs.ouroboros-network)
             (hsPkgs.ouroboros-network-testing)
             (hsPkgs.ouroboros-consensus)

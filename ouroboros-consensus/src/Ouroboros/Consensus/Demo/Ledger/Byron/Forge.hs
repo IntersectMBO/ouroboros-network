@@ -1,6 +1,5 @@
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE NamedFieldPuns      #-}
-{-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Ouroboros.Consensus.Demo.Ledger.Byron.Forge (
@@ -24,10 +23,11 @@ import qualified Cardano.Chain.Ssc as CC.Ssc
 import qualified Cardano.Chain.Update as CC.Update
 import qualified Cardano.Chain.UTxO as CC.UTxO
 import qualified Cardano.Crypto as Crypto
+import           Cardano.Crypto.DSIGN
 
 import           Ouroboros.Network.Block
 
-import           Ouroboros.Consensus.Crypto.DSIGN
+import           Ouroboros.Consensus.Crypto.DSIGN.Cardano
 import           Ouroboros.Consensus.Ledger.Byron
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.ExtNodeConfig
