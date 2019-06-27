@@ -22,7 +22,7 @@ module Ouroboros.Consensus.Ledger.Mock.UTxO (
   , genesisUtxo
   ) where
 
-import           Codec.Serialise (Serialise)
+import           Codec.Serialise (Serialise(..))
 import           Control.Monad.Except
 import           Data.Either (fromRight)
 import           Data.Map.Strict (Map)
@@ -32,13 +32,16 @@ import           Data.Set (Set)
 import qualified Data.Set as Set
 import           GHC.Generics (Generic)
 
+import           Cardano.Binary (ToCBOR(..))
+import           Cardano.Crypto.Hash
+
 import           Ouroboros.Network.Chain (Chain, toOldestFirst)
 
-import           Ouroboros.Consensus.Crypto.Hash
 import           Ouroboros.Consensus.Util
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.HList (All, HList)
 import qualified Ouroboros.Consensus.Util.HList as HList
+import           Ouroboros.Consensus.Util.Orphans ()
 
 import           Ouroboros.Consensus.Ledger.Mock.Address
 
@@ -48,6 +51,9 @@ import           Ouroboros.Consensus.Ledger.Mock.Address
 
 data Tx = Tx (Set TxIn) [TxOut]
   deriving (Show, Eq, Ord, Generic, Serialise)
+
+instance ToCBOR Tx where
+  toCBOR = encode
 
 instance Condense Tx where
   condense (Tx ins outs) = condense (ins, outs)

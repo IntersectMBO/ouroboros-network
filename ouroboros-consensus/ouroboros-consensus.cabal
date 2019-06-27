@@ -29,29 +29,7 @@ library
                        Ouroboros.Consensus.BlockFetchServer
                        Ouroboros.Consensus.ChainSyncClient
                        Ouroboros.Consensus.ChainSyncServer
-                       Ouroboros.Consensus.Crypto.DSIGN
                        Ouroboros.Consensus.Crypto.DSIGN.Cardano
-                       Ouroboros.Consensus.Crypto.DSIGN.Class
-                       Ouroboros.Consensus.Crypto.DSIGN.Ed448
-                       Ouroboros.Consensus.Crypto.DSIGN.Mock
-                       Ouroboros.Consensus.Crypto.DSIGN.NeverUsed
-                       Ouroboros.Consensus.Crypto.DSIGN.RSAPSS
-                       Ouroboros.Consensus.Crypto.Hash
-                       Ouroboros.Consensus.Crypto.Hash.Class
-                       Ouroboros.Consensus.Crypto.Hash.MD5
-                       Ouroboros.Consensus.Crypto.Hash.NeverUsed
-                       Ouroboros.Consensus.Crypto.Hash.SHA256
-                       Ouroboros.Consensus.Crypto.Hash.Short
-                       Ouroboros.Consensus.Crypto.KES
-                       Ouroboros.Consensus.Crypto.KES.Class
-                       Ouroboros.Consensus.Crypto.KES.Mock
-                       Ouroboros.Consensus.Crypto.KES.NeverUsed
-                       Ouroboros.Consensus.Crypto.KES.Simple
-                       Ouroboros.Consensus.Crypto.VRF
-                       Ouroboros.Consensus.Crypto.VRF.Class
-                       Ouroboros.Consensus.Crypto.VRF.Mock
-                       Ouroboros.Consensus.Crypto.VRF.NeverUsed
-                       Ouroboros.Consensus.Crypto.VRF.Simple
                        Ouroboros.Consensus.Demo
                        Ouroboros.Consensus.Demo.HasCreator
                        Ouroboros.Consensus.Demo.Ledger.Byron
@@ -102,7 +80,6 @@ library
                        Ouroboros.Consensus.Util.HList
                        Ouroboros.Consensus.Util.Orphans
                        Ouroboros.Consensus.Util.Random
-                       Ouroboros.Consensus.Util.Serialise
                        Ouroboros.Consensus.Util.Singletons
                        Ouroboros.Consensus.Util.SlotBounded
                        Ouroboros.Consensus.Util.STM
@@ -204,6 +181,7 @@ library
                        bimap             >=0.3   && <0.5,
                        bytestring        >=0.10  && <0.11,
                        cardano-binary,
+                       cardano-crypto-class,
                        cardano-crypto-wrapper,
                        cardano-ledger,
                        cardano-prelude,
@@ -258,6 +236,7 @@ test-suite test-consensus
                     Test.Util.Range
                     Test.Util.TestBlock
   build-depends:    base,
+                    cardano-crypto-class,
                     typed-protocols,
                     network-mux,
                     ouroboros-network,
@@ -279,33 +258,6 @@ test-suite test-consensus
                     tasty-hunit,
                     tasty-quickcheck,
                     text,
-                    time
-
-  ghc-options:      -Wall
-                    -fno-ignore-asserts
-
-test-suite test-crypto
-  type:             exitcode-stdio-1.0
-  hs-source-dirs:   test-crypto, test-util
-  default-language: Haskell2010
-  main-is:          Main.hs
-  other-modules:
-                    Test.Crypto.DSIGN
-                    Test.Crypto.Hash
-                    Test.Crypto.KES
-                    Test.Crypto.VRF
-                    Test.Util.Orphans.Arbitrary
-                    Test.Util.QuickCheck
-  build-depends:    base,
-                    ouroboros-network-testing,
-                    ouroboros-network,
-                    ouroboros-consensus,
-
-                    bytestring,
-                    QuickCheck,
-                    serialise,
-                    tasty,
-                    tasty-quickcheck,
                     time
 
   ghc-options:      -Wall
@@ -344,6 +296,7 @@ test-suite test-storage
                     Test.Util.RefEnv
                     Test.Util.TestBlock
   build-depends:    base,
+                    cardano-crypto-class,
                     ouroboros-network,
                     ouroboros-network-testing,
                     ouroboros-consensus,

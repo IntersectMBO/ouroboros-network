@@ -45,9 +45,10 @@ import           Ouroboros.Network.Protocol.ChainSync.Codec (codecChainSyncId)
 import           Ouroboros.Network.Protocol.ChainSync.Examples
 import           Ouroboros.Network.Protocol.ChainSync.Server
 
+import           Cardano.Crypto.DSIGN.Mock
+
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.ChainSyncClient
-import           Ouroboros.Consensus.Crypto.DSIGN.Mock
 import           Ouroboros.Consensus.Ledger.Extended hiding (ledgerState)
 import           Ouroboros.Consensus.NodeId
 import           Ouroboros.Consensus.Protocol.Abstract

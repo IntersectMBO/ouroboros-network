@@ -25,6 +25,7 @@ import qualified Cardano.Chain.UTxO as CC.UTxO
 import           Cardano.Crypto (ProtocolMagicId, SignTag (..), Signature,
                      SigningKey, VerificationKey, keyGen, signEncoded,
                      toVerification, verifySignature)
+import           Cardano.Crypto.DSIGN.Class
 import           Data.Coerce (coerce)
 import           Data.Constraint
 import           Data.Function (on)
@@ -32,7 +33,6 @@ import           Data.Proxy (Proxy (..))
 import           Data.Reflection (Given (..))
 import           GHC.Generics (Generic)
 
-import           Ouroboros.Consensus.Crypto.DSIGN.Class
 import           Ouroboros.Consensus.Util.Condense
 
 

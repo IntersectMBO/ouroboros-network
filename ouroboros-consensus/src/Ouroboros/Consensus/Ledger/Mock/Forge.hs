@@ -13,9 +13,10 @@ import           Crypto.Random (MonadRandom)
 import qualified Data.ByteString.Lazy as Lazy
 import           Data.Word
 
+import           Cardano.Crypto.Hash
+
 import           Ouroboros.Network.Block (BlockNo, ChainHash, SlotNo)
 
-import           Ouroboros.Consensus.Crypto.Hash
 import           Ouroboros.Consensus.Ledger.Mock.Block
 import           Ouroboros.Consensus.Protocol.Abstract
 

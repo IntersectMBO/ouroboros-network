@@ -29,6 +29,7 @@ module Ouroboros.Consensus.Protocol.Praos (
 --  , Payload(..)
   ) where
 
+import           Cardano.Binary (ToCBOR)
 import           Codec.CBOR.Encoding (Encoding)
 import           Codec.Serialise (Serialise (..))
 import           Control.Monad (unless)
@@ -43,23 +44,24 @@ import           Data.Word (Word64)
 import           GHC.Generics (Generic)
 import           Numeric.Natural
 
+import           Cardano.Crypto.DSIGN.Ed448 (Ed448DSIGN)
+import           Cardano.Crypto.Hash.Class (HashAlgorithm (..),
+                     fromHash, hash)
+import           Cardano.Crypto.Hash.MD5 (MD5)
+import           Cardano.Crypto.Hash.SHA256 (SHA256)
+import           Cardano.Crypto.KES.Class
+import           Cardano.Crypto.KES.Mock
+import           Cardano.Crypto.KES.Simple
+import           Cardano.Crypto.Util (Empty)
+import           Cardano.Crypto.VRF.Class
+import           Cardano.Crypto.VRF.Mock (MockVRF)
+import           Cardano.Crypto.VRF.Simple (SimpleVRF)
+
 import           Ouroboros.Network.Block (HasHeader (..), SlotNo (..))
 
-import           Ouroboros.Consensus.Crypto.DSIGN.Ed448 (Ed448DSIGN)
-import           Ouroboros.Consensus.Crypto.Hash.Class (HashAlgorithm (..),
-                     fromHash, hash)
-import           Ouroboros.Consensus.Crypto.Hash.MD5 (MD5)
-import           Ouroboros.Consensus.Crypto.Hash.SHA256 (SHA256)
-import           Ouroboros.Consensus.Crypto.KES.Class
-import           Ouroboros.Consensus.Crypto.KES.Mock
-import           Ouroboros.Consensus.Crypto.KES.Simple
-import           Ouroboros.Consensus.Crypto.VRF.Class
-import           Ouroboros.Consensus.Crypto.VRF.Mock (MockVRF)
-import           Ouroboros.Consensus.Crypto.VRF.Simple (SimpleVRF)
 import           Ouroboros.Consensus.NodeId (CoreNodeId (..), NodeId (..))
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.Signed
-import           Ouroboros.Consensus.Util (Empty)
 import qualified Ouroboros.Consensus.Util.AnchoredFragment as AF
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.HList (HList (..))
@@ -156,7 +158,7 @@ deriving instance PraosCrypto c => Show (PraosValidationError c)
 
 -- TODO: This type definition belongs elsewhere.
 newtype EpochNo = EpochNo { unEpochNo :: Word64 }
-    deriving (Eq, Num, Ord, Serialise)
+    deriving (Eq, Num, Ord, Serialise, ToCBOR)
 
 data BlockInfo c = BlockInfo
     { biSlot  :: SlotNo
@@ -389,6 +391,8 @@ class ( KESAlgorithm  (PraosKES  c)
       , VRFAlgorithm  (PraosVRF  c)
       , HashAlgorithm (PraosHash c)
       , Typeable c
+      , Typeable (PraosVRF c)
+      , Condense (SigKES (PraosKES c))
         -- TODO: For now we insist that everything must be signable
       , Signable (PraosKES c) ~ Empty
       ) => PraosCrypto (c :: *) where

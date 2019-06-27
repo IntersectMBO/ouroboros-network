@@ -1,12 +1,9 @@
-{-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE FlexibleInstances          #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE StandaloneDeriving         #-}
-{-# LANGUAGE TypeApplications           #-}
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE UndecidableInstances       #-}
 {-# LANGUAGE UndecidableSuperClasses    #-}
@@ -25,6 +22,9 @@ module Ouroboros.Consensus.Protocol.BFT (
   , NodeConfig(..)
   ) where
 
+import           Cardano.Crypto.DSIGN.Class
+import           Cardano.Crypto.DSIGN.Ed448 (Ed448DSIGN)
+import           Cardano.Crypto.DSIGN.Mock (MockDSIGN)
 import           Codec.CBOR.Encoding (Encoding)
 import           Control.Monad.Except
 import           Crypto.Random (MonadRandom)
@@ -36,9 +36,6 @@ import           Data.Word (Word64)
 
 import           Ouroboros.Network.Block
 
-import           Ouroboros.Consensus.Crypto.DSIGN.Class
-import           Ouroboros.Consensus.Crypto.DSIGN.Ed448 (Ed448DSIGN)
-import           Ouroboros.Consensus.Crypto.DSIGN.Mock (MockDSIGN)
 import           Ouroboros.Consensus.NodeId (NodeId (..))
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.Signed
@@ -158,7 +155,7 @@ data BftValidationErr = BftInvalidSignature String
 -------------------------------------------------------------------------------}
 
 -- | Crypto primitives required by BFT
-class (Typeable c, DSIGNAlgorithm (BftDSIGN c)) => BftCrypto c where
+class (Typeable c, DSIGNAlgorithm (BftDSIGN c), Condense (SigDSIGN (BftDSIGN c))) => BftCrypto c where
   type family BftDSIGN c :: *
 
 data BftStandardCrypto

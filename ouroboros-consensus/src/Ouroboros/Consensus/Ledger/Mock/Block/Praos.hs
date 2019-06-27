@@ -19,8 +19,11 @@ import qualified Codec.CBOR.Encoding as CBOR
 import           Codec.Serialise (Serialise (..))
 import           GHC.Generics (Generic)
 
+import           Cardano.Binary (FromCBOR(..), ToCBOR(..))
+import           Cardano.Crypto.KES
+import           Cardano.Crypto.Util (Empty)
+
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.Crypto.KES
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Mock.Address
 import           Ouroboros.Consensus.Ledger.Mock.Block
@@ -29,7 +32,6 @@ import           Ouroboros.Consensus.Ledger.Mock.Stake
 import           Ouroboros.Consensus.Protocol.ExtNodeConfig
 import           Ouroboros.Consensus.Protocol.Praos
 import           Ouroboros.Consensus.Protocol.Signed
-import           Ouroboros.Consensus.Util (Empty)
 import           Ouroboros.Consensus.Util.Condense
 import qualified Ouroboros.Consensus.Util.SlotBounded as SB
 
@@ -157,14 +159,14 @@ encodeSignedSimplePraos SignedSimplePraos{..} = mconcat [
 encodePraosExtraFields :: PraosCrypto c' => PraosExtraFields c' -> CBOR.Encoding
 encodePraosExtraFields PraosExtraFields{..} = mconcat [
       encode praosCreator
-    , encode praosRho
-    , encode praosY
+    , toCBOR praosRho
+    , toCBOR praosY
     ]
 
 decodePraosExtraFields :: forall s c'. PraosCrypto c'
                        => CBOR.Decoder s (PraosExtraFields c')
 decodePraosExtraFields = do
     praosCreator <- decode
-    praosRho     <- decode
-    praosY       <- decode
+    praosRho     <- fromCBOR
+    praosY       <- fromCBOR
     return PraosExtraFields{..}

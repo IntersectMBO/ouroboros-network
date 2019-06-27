@@ -43,13 +43,14 @@ import           Data.Word
 import qualified System.Random as R
 import           Test.QuickCheck
 
+import           Cardano.Crypto.DSIGN
+
 import           Ouroboros.Network.Block (ChainHash (..), HeaderHash)
 import qualified Ouroboros.Network.Block as Block
 import           Ouroboros.Network.Chain (Chain (..), Point)
 import qualified Ouroboros.Network.Chain as Chain
 
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.Crypto.DSIGN
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.NodeId (NodeId (..))

@@ -4,7 +4,8 @@ module Ouroboros.Consensus.Demo.Ledger.Mock.BFT (
 
 import qualified Data.Map as Map
 
-import           Ouroboros.Consensus.Crypto.DSIGN
+import           Cardano.Crypto.DSIGN
+
 import           Ouroboros.Consensus.Demo.Run
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.Mock

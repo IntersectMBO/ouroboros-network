@@ -15,12 +15,13 @@ import           Control.Monad.Except
 import           Data.Set (Set)
 import qualified Data.Set as Set
 
+import           Cardano.Crypto.Hash
+
 import           Ouroboros.Network.Block (ChainHash, HasHeader, Point (..),
                      StandardHash)
 import           Ouroboros.Network.Chain (genesisPoint)
 
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.Crypto.Hash
 import           Ouroboros.Consensus.Ledger.Mock.Address
 import           Ouroboros.Consensus.Ledger.Mock.UTxO
 
