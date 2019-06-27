@@ -40,6 +40,7 @@
           (hsPkgs.iohk-monitoring)
           (hsPkgs.lens)
           (hsPkgs.memory)
+          (hsPkgs.network-mux)
           (hsPkgs.ouroboros-consensus)
           (hsPkgs.ouroboros-network)
           (hsPkgs.resourcet)
