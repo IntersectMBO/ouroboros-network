@@ -15,6 +15,10 @@ module Ouroboros.Consensus.Util.ThreadRegistry
   , forkNonTerminating
   , withSubregistry
   , ExceptionInForkedThread (..)
+
+    -- * For contexts where a scoped 'withThreadRegistry' doesn't work
+  , new
+  , cancelAll
   ) where
 
 import           Control.Exception (asyncExceptionFromException,
