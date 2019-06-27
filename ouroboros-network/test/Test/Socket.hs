@@ -39,8 +39,8 @@ import qualified Network.TypedProtocol.ReqResp.Examples as ReqResp
 import           Codec.SerialiseTerm
 import           Control.Tracer
 
-import qualified Network.Mux as Mx
-import           Network.Mux.Interface
+-- TODO: remove Mx prefixes
+import           Ouroboros.Network.Mux as Mx
 import qualified Network.Mux.Bearer.Socket as Mx
 
 import           Ouroboros.Network.Socket
@@ -208,7 +208,7 @@ prop_socket_send_recv initiatorAddr responderAddr f xs = do
 
     let -- Server Node; only req-resp server
         responderApp :: MuxApplication ResponderApp () TestProtocols2 IO BL.ByteString Void ()
-        responderApp = MuxResponderApplication $
+        responderApp = Mx.MuxResponderApplication $
           \peerid ReqRespPr channel -> do
             r <- runPeer nullTracer
                          ReqResp.codecReqResp

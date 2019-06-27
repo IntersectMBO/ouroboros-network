@@ -24,8 +24,7 @@ import           Test.Tasty.QuickCheck (testProperty)
 
 import           Control.Tracer (nullTracer)
 
-import qualified Network.Mux as Mx
-import qualified Network.Mux.Interface as Mx
+import qualified Ouroboros.Network.Mux as Mx
 import qualified Network.Mux.Bearer.Pipe as Mx
 
 import           Ouroboros.Network.Chain (Chain, ChainUpdate, Point)

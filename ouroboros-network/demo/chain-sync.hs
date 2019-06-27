@@ -44,7 +44,7 @@ import qualified Ouroboros.Network.AnchoredFragment as AF
 import Ouroboros.Network.Point (WithOrigin (Origin))
 import Ouroboros.Network.Testing.ConcreteBlock
 import Ouroboros.Network.Socket
-import Network.Mux.Interface
+import Ouroboros.Network.Mux
 import Ouroboros.Network.NodeToNode
 
 import Network.TypedProtocol.Channel

@@ -40,8 +40,7 @@ import qualified Ouroboros.Network.Protocol.ChainSync.Codec    as ChainSync
 import qualified Ouroboros.Network.Protocol.ChainSync.Examples as ChainSync
 import qualified Ouroboros.Network.Protocol.ChainSync.Server   as ChainSync
 
-import qualified Network.Mux as Mx
-import qualified Network.Mux.Interface as Mx
+import qualified Ouroboros.Network.Mux as Mx
 import qualified Network.Mux.Bearer.Queues as Mx
 
 
