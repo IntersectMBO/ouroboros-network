@@ -106,7 +106,6 @@
             (hsPkgs.serialise)
             (hsPkgs.text)
             (hsPkgs.io-sim-classes)
-            (hsPkgs.mux)
             (hsPkgs.typed-protocols)
             (hsPkgs.typed-protocols-cbor)
             ];

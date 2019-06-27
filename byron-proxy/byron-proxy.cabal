@@ -51,6 +51,7 @@ library
                        iohk-monitoring,
                        lens,
                        memory,
+                       network-mux,
                        ouroboros-consensus,
                        ouroboros-network,
                        resourcet,
