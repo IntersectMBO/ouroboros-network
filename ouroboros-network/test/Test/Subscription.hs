@@ -25,6 +25,7 @@ import           Control.Monad.IOSim (runSimStrictShutdown)
 import           Control.Tracer
 import qualified Data.ByteString.Lazy as BL
 import           Data.Functor (void)
+import           Data.Int
 import qualified Data.IP as IP
 import           Data.List as L
 import qualified Data.Map as M
@@ -40,21 +41,64 @@ import           Text.Show.Functions ()
 
 import           Test.Tasty.QuickCheck (shuffle, testProperty)
 
+import qualified Network.Mux as Mx
+import           Network.Mux.Interface
+import qualified Network.Mux.Bearer.Socket as Mx
+import           Network.Mux.Time (microsecondsToDiffTime)
+
+import           Network.TypedProtocol.Core
+import           Network.TypedProtocol.Driver
 import qualified Network.TypedProtocol.ReqResp.Client as ReqResp
 import qualified Network.TypedProtocol.ReqResp.Server as ReqResp
-import qualified Ouroboros.Network.Protocol.ReqResp.Codec as ReqResp
+import qualified Network.TypedProtocol.ReqResp.Type as ReqResp
+import qualified Network.TypedProtocol.ReqResp.Codec.Cbor as ReqResp
+import qualified Network.TypedProtocol.ReqResp.Examples as ReqResp
+import           Ouroboros.Network.Protocol.Handshake.Type (acceptEq)
+import           Ouroboros.Network.Protocol.Handshake.Version (simpleSingletonVersions)
+
 
 import           Codec.SerialiseTerm
-import           Ouroboros.Network.Mux.Interface
 import           Ouroboros.Network.NodeToNode
 import           Ouroboros.Network.Socket
 import           Ouroboros.Network.Subscription.Common
 import           Ouroboros.Network.Subscription.Dns
 import           Ouroboros.Network.Subscription.Subscriber
-import           Ouroboros.Network.Time
+--import           Ouroboros.Network.Time
 
-import qualified Test.Mux as Mxt
-import           Test.Mux.ReqResp
+--import qualified Test.Mux as Mxt
+--import           Test.Mux.ReqResp
+
+defaultMiniProtocolLimit :: Int64
+defaultMiniProtocolLimit = 3000000
+
+data TestProtocols1 = ChainSyncPr
+  deriving (Eq, Ord, Enum, Bounded, Show)
+
+instance Mx.ProtocolEnum TestProtocols1 where
+  fromProtocolEnum ChainSyncPr = 2
+
+  toProtocolEnum 2 = Just ChainSyncPr
+  toProtocolEnum _ = Nothing
+
+instance Mx.MiniProtocolLimits TestProtocols1 where
+  maximumMessageSize ChainSyncPr  = defaultMiniProtocolLimit
+  maximumIngressQueue ChainSyncPr = defaultMiniProtocolLimit
+
+-- |
+-- Allow to run a singly req-resp protocol.
+--
+data TestProtocols2 = ReqRespPr
+  deriving (Eq, Ord, Enum, Bounded, Show)
+
+instance Mx.ProtocolEnum TestProtocols2 where
+  fromProtocolEnum ReqRespPr = 4
+
+  toProtocolEnum 4 = Just ReqRespPr
+  toProtocolEnum _ = Nothing
+
+instance Mx.MiniProtocolLimits TestProtocols2 where
+  maximumMessageSize ReqRespPr  = defaultMiniProtocolLimit
+  maximumIngressQueue ReqRespPr = defaultMiniProtocolLimit
 
 
 activeTracer :: Show a => Tracer IO a
@@ -468,20 +512,24 @@ prop_send_recv f xs first = ioProperty $ do
     sv <- newEmptyTMVarM
 
     let -- Server Node; only req-resp server
-        responderApp :: MuxApplication ResponderApp Mxt.TestProtocols3 IO BL.ByteString Void ()
-        responderApp = simpleMuxResponderApplication $
-          \Mxt.ReqResp1 ->
-            MuxPeer nullTracer
-                    ReqResp.codecReqResp
-                    (ReqResp.reqRespServerPeer (reqRespServerMapAccumL sv (\a -> pure . f a) 0))
+        responderApp :: MuxApplication ResponderApp TestProtocols2 IO BL.ByteString Void ()
+        responderApp = MuxResponderApplication $
+          \ReqRespPr channel -> do
+            r <- runPeer nullTracer
+                         ReqResp.codecReqResp
+                         channel
+                         (ReqResp.reqRespServerPeer (ReqResp.reqRespServerMapAccumL (\a -> pure . f a) 0))
+            atomically $ putTMVar sv r
 
         -- Client Node; only req-resp client
-        initiatorApp :: MuxApplication InitiatorApp Mxt.TestProtocols3 IO BL.ByteString () Void
-        initiatorApp = simpleMuxInitiatorApplication $
-          \Mxt.ReqResp1 ->
-            MuxPeer nullTracer
-                    ReqResp.codecReqResp
-                    (ReqResp.reqRespClientPeer (reqRespClientMap cv xs))
+        initiatorApp :: MuxApplication InitiatorApp TestProtocols2 IO BL.ByteString () Void
+        initiatorApp = MuxInitiatorApplication $
+          \ReqRespPr channel -> do
+            r <- runPeer nullTracer
+                         ReqResp.codecReqResp
+                         channel
+                         (ReqResp.reqRespClientPeer (ReqResp.reqRespClientMap xs))
+            atomically $ putTMVar cv r
 
     res <-
      withDummyServer faultyAddress $
@@ -578,8 +626,8 @@ _demo = ioProperty $ do
             (\_ -> threadDelay delay)
 
 
-    appReq = MuxInitiatorApplication (\Mxt.ChainSync1 -> error "req fail")
-    appRsp = MuxResponderApplication (\Mxt.ChainSync1 -> error "rsp fail")
+    appReq = MuxInitiatorApplication (\ChainSyncPr -> error "req fail")
+    appRsp = MuxResponderApplication (\ChainSyncPr -> error "rsp fail")
 
 
 data WithThreadAndTime a = WithThreadAndTime {

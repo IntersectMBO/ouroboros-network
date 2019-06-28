@@ -3,6 +3,7 @@
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 -- |
@@ -19,6 +20,9 @@ module Ouroboros.Network.Socket (
     -- * Helper function for creating servers
     , fromSocket
     , beginConnection
+
+    -- * Auxiliary functions
+    , refConnection
     ) where
 
 import           Control.Concurrent.Async
@@ -30,10 +34,12 @@ import           Control.Monad.Class.MonadThrow
 import           Control.Exception (throwIO)
 import qualified Codec.CBOR.Term     as CBOR
 import           Codec.Serialise (Serialise)
+import qualified Data.Map.Strict as M
 import           Data.Text (Text)
 import           Data.Typeable (Typeable)
 import qualified Data.ByteString.Lazy as BL
 import           Data.Int
+import qualified Data.Set as S
 
 import qualified Network.Socket as Socket hiding (recv)
 
@@ -62,6 +68,71 @@ import qualified Ouroboros.Network.Server.Socket as Server
 --
 maxTransmissionUnit :: Int64
 maxTransmissionUnit = 4 * 1440
+
+type ConnectionTable = M.Map Socket.SockAddr ConnectionTableEntry
+
+data ConnectionTableEntry = ConnectionTableEntry {
+      cteRefs           :: ![TVar IO Int]
+    , cteLocalAddresses :: !(S.Set Socket.SockAddr)
+    }
+
+addConnection
+    :: TVar IO ConnectionTable
+    -> Socket.SockAddr
+    -> Socket.SockAddr
+    -> [TVar IO Int]
+    -> IO ()
+addConnection tblVar remoteAddr localAddr refs =
+    atomically $ do
+        tbl <- readTVar tblVar
+        case M.lookup remoteAddr tbl of
+             Nothing -> do
+                 subRefs refs
+                 writeTVar tblVar $ M.insert remoteAddr (ConnectionTableEntry refs
+                         (S.singleton localAddr)) tbl
+             Just cte -> do
+                 let refs' = refs ++ cteRefs cte
+                 subRefs $ refs'
+                 let cte' = cte { cteRefs = refs'
+                                , cteLocalAddresses = S.insert localAddr (cteLocalAddresses cte)
+                                }
+                 writeTVar tblVar $ M.insert remoteAddr cte' tbl
+  where
+    subRefs = mapM_ (\a -> modifyTVar' a (\r -> r - 1))
+
+removeConnection
+    :: TVar IO ConnectionTable
+    -> Socket.SockAddr
+    -> Socket.SockAddr
+    -> IO ()
+removeConnection tblVar remoteAddr localAddr =
+    atomically $ do
+        tbl <- readTVar tblVar
+        case M.lookup remoteAddr tbl of
+             Nothing -> return () -- XXX removing non existant address
+             Just ConnectionTableEntry{..} ->  do
+                 mapM_ (\a -> modifyTVar' a (+ 1)) cteRefs
+                 let localAddresses' = S.delete localAddr cteLocalAddresses
+                 if null localAddresses'
+                     then writeTVar tblVar $ M.delete remoteAddr tbl
+                     else writeTVar tblVar $ M.insert remoteAddr
+                             (ConnectionTableEntry cteRefs localAddresses') tbl
+
+refConnection
+    :: TVar IO ConnectionTable
+    -> Socket.SockAddr
+    -> TVar IO Int
+    -> IO Bool
+refConnection tblVar remoteAddr ref = atomically $ do
+    tbl <- readTVar tblVar
+    case M.lookup remoteAddr tbl of
+         Nothing -> return False
+         Just cte -> do
+             let refs' = ref : (cteRefs cte)
+             mapM_ (\a -> modifyTVar' a (\r -> r - 1)) refs'
+             writeTVar tblVar $ M.insert remoteAddr
+                 (cte { cteRefs = refs' }) tbl
+             return True
 
 -- |
 -- Connect to a remote node.  It is using bracket to enclose the underlying
@@ -265,7 +336,6 @@ fromSocket sd = Server.Socket
         (sd', addr) <- Socket.accept sd
         pure (addr, sd', Socket.close sd')
     }
-
 
 -- |
 -- Thin wrapper around @'Server.run'@.
