@@ -34,6 +34,9 @@ module Ouroboros.Storage.ChainDB.Model (
   , between
   , blocks
   , chains
+  , garbageCollectable
+  , garbageCollectablePoint
+  , garbageCollect
   ) where
 
 import           Control.Monad (unless)
@@ -371,3 +374,36 @@ between (SecurityParam k) from to m = do
         -> return frag'
         | otherwise
         -> Left $ MissingBlock p
+
+-- Would the garbage collector (if run) be able to garbage collect the given
+-- block?
+garbageCollectable :: forall blk. HasHeader blk
+                   => SecurityParam -> Model blk -> blk -> Bool
+garbageCollectable secParam m@Model{..} b =
+    not onCurrentChain && olderThanK
+  where
+    onCurrentChain = Chain.pointOnChain (Block.blockPoint b) (currentChain m)
+    olderThanK     = Block.blockNo b <= immutableBlockNo secParam m
+
+-- Return 'True' when the model contains the block corresponding to the point
+-- and the block itself is eligible for garbage collection, i.e. the real
+-- implementation might have garbage collected it. In all other cases, return
+-- 'False'.
+garbageCollectablePoint :: forall blk. HasHeader blk
+                        => SecurityParam -> Model blk -> Point blk -> Bool
+garbageCollectablePoint secParam m@Model{..} pt
+    | BlockHash hash <- Block.pointHash pt
+    , Just blk <- getBlock hash m
+    = garbageCollectable secParam m blk
+    | otherwise
+    = False
+
+garbageCollect :: forall blk. HasHeader blk
+               => SecurityParam -> Model blk -> Model blk
+garbageCollect secParam m@Model{..} = m
+    { blocks = Map.filter (not . collectable) blocks
+    }
+    -- TODO what about iterators that will stream garbage collected blocks?
+  where
+    collectable :: blk -> Bool
+    collectable = garbageCollectable secParam m
