@@ -7,39 +7,24 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE ApplicativeDo #-}
 
-import Codec.SerialiseTerm (CodecCBORTerm (..))
-import Control.Concurrent (threadDelay)
-import Control.Concurrent.Async (wait, concurrently)
-import Control.Concurrent.STM (STM, atomically, retry)
-import Control.Exception (throwIO)
-import Control.Lens ((^.))
-import Control.Monad (forM_, unless, void)
-import Control.Monad.Trans.Class (lift)
-import Control.Monad.Trans.Resource (ResourceT)
-import Control.Tracer (Tracer (..), contramap, traceWith)
+import Control.Concurrent.Async (concurrently)
+import Control.Monad (void)
+import Control.Tracer (Tracer (..), contramap)
 import Data.Functor.Contravariant (Op (..))
 import Data.List (intercalate)
-import Data.List.NonEmpty (NonEmpty)
-import qualified Data.List.NonEmpty as NE
 import Data.String (fromString)
 import Data.Text (Text)
 import qualified Data.Text as Text
 import qualified Data.Text.Lazy.Builder as Text
 import qualified Options.Applicative as Opt
-import System.Random (StdGen, getStdGen, randomR)
 
 import qualified Cardano.BM.Data.Aggregated as Monitoring
 import qualified Cardano.BM.Data.LogItem as Monitoring
 import qualified Cardano.BM.Data.Severity as Monitoring
 
-import qualified Cardano.Binary as Binary
-import qualified Cardano.Chain.Block as Cardano
 import qualified Cardano.Chain.Slotting as Cardano
 
-import qualified Pos.Binary.Class as CSL (decodeFull)
-import qualified Pos.Chain.Block as CSL (Block, BlockHeader (..), GenesisBlock,
-                                         HeaderHash, MainBlock, gbHeader,
-                                         genesisBlock0, headerHash)
+import qualified Pos.Chain.Block as CSL (genesisBlock0)
 import qualified Pos.Chain.Lrc as CSL (genesisLeaders)
 import qualified Pos.Chain.Block as CSL (recoveryHeadersMessage, streamWindow)
 import qualified Pos.Chain.Update as CSL (lastKnownBlockVersion, updateConfiguration)
@@ -49,7 +34,6 @@ import qualified Pos.Chain.Genesis as CSL (configEpochSlots, configGenesisHash,
                                            configProtocolConstants, configProtocolMagic,
                                            configBlockVersionData)
 import qualified Pos.Diffusion.Full as CSL (FullDiffusionConfiguration (..))
-import qualified Pos.Infra.Diffusion.Types as CSL
 
 import qualified Pos.Infra.Network.CLI as CSL (NetworkConfigOpts (..),
                                                externalNetworkAddressOption,
@@ -67,167 +51,32 @@ import qualified Pos.Util.Trace.Named as Trace (LogNamed (..), appendName, named
 import qualified Pos.Util.Trace
 import qualified Pos.Util.Wlog as Wlog
 
-import qualified Network.Socket as Network
-
 import Ouroboros.Network.Block (SlotNo (..))
-import Ouroboros.Network.Socket
-import Ouroboros.Network.Protocol.Handshake.Type (Accept (..))
 
-import qualified Ouroboros.Byron.Proxy.ChainSync.Client as Client
-import qualified Ouroboros.Byron.Proxy.ChainSync.Server as Server
-import qualified Ouroboros.Byron.Proxy.ChainSync.Types as ChainSync
 import qualified Ouroboros.Byron.Proxy.DB as DB
 import Ouroboros.Byron.Proxy.Main
-import Ouroboros.Byron.Proxy.Network.Protocol
 
--- For orphan instances
-import qualified Control.Monad.Class.MonadThrow as NonStandard
-import qualified Control.Monad.Catch as Standard
-
+import qualified Byron
 import DB (DBConfig (..), withDB)
 import qualified Logging as Logging
+import qualified Shelley.Client
+import qualified Shelley.Server
 
--- | Download the best available chain from Byron peers and write to the
--- database, over and over again.
---
--- No exception handling is done.
-byronProxyDownload
-  :: Tracer IO Text.Builder
-  -> CSL.GenesisBlock -- ^ For use as checkpoint when DB is empty. Also will
-                      -- be put into an empty DB.
-                      -- Sadly, old Byron net API doesn't give any meaning to an
-                      -- empty checkpoint set; it'll just fall over.
-  -> Cardano.EpochSlots
-  -> DB.DB IO
-  -> ByronProxy
-  -> IO x
-byronProxyDownload tracer genesisBlock epochSlots db bp = getStdGen >>= mainLoop Nothing
+data ByronProxyOptions = ByronProxyOptions
+  { bpoDatabasePath                :: !FilePath
+  , bpoIndexPath                   :: !FilePath
+  , bpoLoggerConfigPath            :: !(Maybe FilePath)
+    -- ^ Optional file path; will use default configuration if none given.
+  , bpoCardanoConfigurationOptions :: !CSL.ConfigurationOptions
+  , bpoServerOptions               :: !Shelley.Server.Options
+  , bpoClientOptions               :: !ClientOptions
+  }
 
-  where
-
-  waitForNext
-    :: Maybe (BestTip CSL.BlockHeader)
-    -> STM (Either (BestTip CSL.BlockHeader) Atom)
-  waitForNext mBt = do
-    mBt' <- bestTip bp
-    if mBt == mBt'
-    -- If recvAtom retires then the whole STM will retry and we'll check again
-    -- for the best tip to have changed.
-    then fmap Right (recvAtom bp)
-    else case mBt' of
-        Nothing -> retry
-        Just bt -> pure (Left bt)
-
-  mainLoop :: Maybe (BestTip CSL.BlockHeader) -> StdGen -> IO x
-  mainLoop mBt rndGen = do
-    -- Wait until the best tip has changed from the last one we saw. That can
-    -- mean the header changed and/or the list of peers who announced it
-    -- changed.
-    next <- atomically $ waitForNext mBt
-    case next of
-      -- TODO we don't get to know from where it was received. Problem? Maybe
-      -- not.
-      Right atom -> do
-        traceWith tracer $ mconcat
-          [ "Got atom: "
-          , Text.fromString (show atom)
-          ]
-        mainLoop mBt rndGen
-      Left bt -> do
-        -- Get the tip from the database.
-        -- It must not be empty; the DB must be seeded with the genesis block.
-        -- FIXME throw exception, don't use error.
-        tip <- DB.readTip db
-        (isEBB, tipSlot, tipHash) <- case tip of
-          -- If the DB is empty, we use the genesis hash as our tip, but also
-          -- we need to put the genesis block into the database, because the
-          -- Byron peer _will not serve it to us_!
-          DB.TipGenesis -> do
-            DB.appendBlocks db $ \dbwrite ->
-              DB.appendBlock dbwrite (DB.LegacyBlockToWrite (Left genesisBlock))
-            pure (True, 0, CSL.headerHash genesisBlock)
-          DB.TipEBB   slot hash _ -> pure (True, slot, DB.coerceHashToLegacy hash)
-          DB.TipBlock slot bytes -> case Binary.decodeFullAnnotatedBytes "Block or boundary" (Cardano.fromCBORABlockOrBoundary epochSlots) bytes of
-            Left decoderError -> error $ "failed to decode block: " ++ show decoderError
-            Right (Cardano.ABOBBoundary _) -> error $ "Corrput DB: got EBB where block expected"
-            -- We have a cardano-ledger `HeaderHash` but we need a cardano-sl
-            -- `HeaderHash`.
-            -- FIXME should not come from DB module
-            Right (Cardano.ABOBBlock blk) ->
-              pure (False, slot, DB.coerceHashToLegacy (Cardano.blockHashAnnotated blk))
-        -- Pick a peer from the list of announcers at random and download
-        -- the chain.
-        let (peer, rndGen') = pickRandom rndGen (btPeers bt)
-        traceWith tracer $ mconcat
-          [ "Using tip with hash "
-          , Text.fromString (show tipHash)
-          , " at slot "
-          , Text.fromString (show tipSlot)
-          , if isEBB then " (EBB)" else ""
-          ]
-        traceWith tracer $ mconcat
-          [ "Downloading the chain with tip hash "
-          , Text.fromString (show tipHash)
-          , " from "
-          , Text.fromString (show peer)
-          ]
-        _ <- downloadChain
-              bp
-              peer
-              (CSL.headerHash (btTip bt))
-              [tipHash]
-              streamer
-        mainLoop (Just bt) rndGen'
-
-  -- If it ends at an EBB, the EBB will _not_ be written. The tip will be the
-  -- parent of the EBB.
-  -- This should be OK.
-  streamer :: CSL.StreamBlocks CSL.Block IO ()
-  streamer = CSL.StreamBlocks
-    { CSL.streamBlocksMore = \blocks -> DB.appendBlocks db $ \dbwrite -> do
-        -- List comes in newest-to-oldest order.
-        let orderedBlocks = NE.toList (NE.reverse blocks)
-        forM_ orderedBlocks (DB.appendBlock dbwrite . DB.LegacyBlockToWrite)
-        pure streamer
-    , CSL.streamBlocksDone = pure ()
-    }
-
-  pickRandom :: StdGen -> NonEmpty t -> (t, StdGen)
-  pickRandom rndGen ne =
-    let (idx, rndGen') = randomR (0, NE.length ne - 1) rndGen
-    in  (ne NE.!! idx, rndGen')
-
--- | Repeatedly check the database for the latest block, and announce it
--- whenever it changes.
--- NB: only proper main blocks can be announced, not EBBs.
--- The poll interval is hard-coded to 10 seconds.
--- FIXME polling won't be needed, once we have a DB layer that can notify on
--- tip change.
--- No exception handling is done.
-byronProxyAnnounce
-  :: Tracer IO Text.Builder
-  -> Maybe CSL.HeaderHash -- ^ Of block most recently announced.
-  -> DB.DB IO
-  -> ByronProxy
-  -> IO x
-byronProxyAnnounce tracer mHashOfLatest db bp = do
-  tip <- DB.readTip db
-  mHashOfLatest' <- case tip of
-    -- Genesis means empty database. Announce nothing.
-    DB.TipGenesis         -> pure mHashOfLatest
-    -- EBBs are not announced.
-    DB.TipEBB   _ _ _     -> pure mHashOfLatest
-    -- Main blocks must be decoded to CSL blocks.
-    DB.TipBlock _   bytes -> case CSL.decodeFull bytes of
-      Left txt                               -> error "byronProxyAnnounce: could not decode block"
-      Right (Left (ebb :: CSL.GenesisBlock)) -> error "byronProxyAnnounce: ebb where block expected"
-      Right (Right (blk :: CSL.MainBlock))   -> do
-        let header = blk ^. CSL.gbHeader
-            hash   = Just (CSL.headerHash header)
-        unless (hash == mHashOfLatest) (announceChain bp header)
-        pure hash
-  threadDelay 10000000
-  byronProxyAnnounce tracer mHashOfLatest' db bp
+data ByronClientOptions = ByronClientOptions
+  { bcoCardanoNetworkOptions       :: !CSL.NetworkConfigOpts
+    -- ^ To use with `intNetworkConfigOpts` to get a `NetworkConfig` from
+    -- cardano-sl, required in order to run a diffusion layer.
+  }
 
 -- | `Tracer` comes from the `contra-tracer` package, but cardano-sl still
 -- works with the cardano-sl-util definition of the same thing.
@@ -251,21 +100,6 @@ mkCSLTrace tracer = case tracer of
     Wlog.Warning -> Monitoring.Warning
     Wlog.Error   -> Monitoring.Error
 
-data ByronProxyOptions = ByronProxyOptions
-  { bpoDatabasePath                :: !FilePath
-  , bpoIndexPath                   :: !FilePath
-  , bpoLoggerConfigPath            :: !(Maybe FilePath)
-    -- ^ Optional file path; will use default configuration if none given.
-  , bpoCardanoConfigurationOptions :: !CSL.ConfigurationOptions
-  , bpoServerOptions               :: !ServerOptions
-  , bpoClientOptions               :: !ClientOptions
-  }
-
-data ServerOptions = ServerOptions
-  { soHostName    :: !Network.HostName
-  , soServiceName :: !Network.ServiceName
-  }
-
 -- | Until we have a storage layer which can deal with multiple sources, a
 -- Shelley source for blocks will supercede a Byron source. You can still run
 -- both a Byron server and a Shelley server (must run a Shelley server) but if
@@ -275,21 +109,8 @@ data ServerOptions = ServerOptions
 -- need to give Byron client options. That's because the diffusion layer for
 -- Byron bundles both of these.
 data ClientOptions = ClientOptions
-  { coShelley :: !(Maybe ShelleyClientOptions)
+  { coShelley :: !(Maybe Shelley.Client.Options)
   , coByron   :: !(Maybe ByronClientOptions)
-  }
-
-data ByronClientOptions = ByronClientOptions
-  { bcoCardanoNetworkOptions       :: !CSL.NetworkConfigOpts
-    -- ^ To use with `intNetworkConfigOpts` to get a `NetworkConfig` from
-    -- cardano-sl, required in order to run a diffusion layer.
-  }
-
-data ShelleyClientOptions = ShelleyClientOptions
-  { scoHostName          :: !Network.HostName
-    -- ^ Of remote peer
-  , scoServiceName       :: !Network.ServiceName
-    -- ^ Of remote peer
   }
 
 -- | Parser for command line options.
@@ -323,7 +144,7 @@ cliParser = ByronProxyOptions
 
   cliCardanoConfigurationOptions = CSL.configurationOptionsParser
 
-  cliServerOptions = ServerOptions
+  cliServerOptions = Shelley.Server.Options
     <$> cliHostName ["server"]
     <*> cliServiceName ["server"]
 
@@ -344,8 +165,8 @@ cliParser = ByronProxyOptions
   cliByronClientOptions = Opt.optional $
     ByronClientOptions <$> cliNetworkConfig
 
-  cliShelleyClientOptions :: Opt.Parser (Maybe ShelleyClientOptions)
-  cliShelleyClientOptions = Opt.optional $ ShelleyClientOptions
+  cliShelleyClientOptions :: Opt.Parser (Maybe Shelley.Client.Options)
+  cliShelleyClientOptions = Opt.optional $ Shelley.Client.Options
     <$> cliHostName ["remote"]
     <*> cliServiceName ["remote"]
 
@@ -420,49 +241,6 @@ cliParserInfo = Opt.info cliParser infoMod
     <> Opt.progDesc "Store and forward blocks from a Byron or Shelley server"
     <> Opt.fullDesc
 
-runServer
-  :: Tracer IO (Monitoring.LoggerName, Monitoring.Severity, Text.Builder)
-  -> ServerOptions
-  -> Cardano.EpochSlots
-  -> DB.DB IO
-  -> IO ()
-runServer tracer serverOptions epochSlots db = do
-  addrInfos <- Network.getAddrInfo (Just addrInfoHints) (Just host) (Just port)
-  case addrInfos of
-    [] -> error "no getAddrInfo"
-    (addrInfo : _) -> withServerNode
-      addrInfo
-      encodeTerm
-      decodeTerm
-      (\_ _ _ -> Accept)
-      (fmap AnyMuxResponderApp (responderVersions epochSlots chainSyncServer))
-      wait
-
-  where
-  host = soHostName serverOptions
-  port = soServiceName serverOptions
-  addrInfoHints = Network.defaultHints
-
-  chainSyncServer = Server.chainSyncServer epochSlots err poll db
-  err =  throwIO
-  poll :: Server.PollT IO
-  poll p m = do
-    s <- m
-    mbT <- p s
-    case mbT of
-      Nothing -> lift (threadDelay usPoll) >> poll p m
-      Just t  -> pure t
-
-  -- TODO configure this
-  -- microsecond polling time of the DB. Needed until there is a proper
-  -- storage layer.
-  usPoll = 1000000
-
-  textTracer :: Tracer IO Text.Builder
-  textTracer = contramap
-    (\tbuilder -> (Text.pack "main.server", Monitoring.Info, tbuilder))
-    tracer
-
 -- | The reflections constraints are needed for the cardano-sl configuration
 -- stuff, because the client may need to hit a Byron server using the logic
 -- and diffusion layer. This is OK: run it under a `withConfigurations`.
@@ -531,97 +309,13 @@ runClient tracer clientOptions genesisConfig epochSlots db =
   -- Always announce the header to Byron peers.
   byronClient genesisBlock bp = case coShelley clientOptions of
     Nothing -> void $ concurrently
-      (byronProxyDownload textTracer genesisBlock epochSlots db bp)
-      (byronProxyAnnounce textTracer Nothing                 db bp)
-    Just _  -> byronProxyAnnounce textTracer Nothing db bp
+      (Byron.download textTracer genesisBlock epochSlots db bp)
+      (Byron.announce textTracer Nothing                 db bp)
+    Just _  -> Byron.announce textTracer Nothing db bp
 
   shelleyClient = case coShelley clientOptions of
     Nothing -> pure ()
-    Just shelleyClientOptions -> do
-      addrInfosLocal  <- Network.getAddrInfo (Just addrInfoHints) (Just "127.0.0.1") (Just "0")
-      addrInfosRemote <- Network.getAddrInfo (Just addrInfoHints) (Just host) (Just port)
-      case (addrInfosLocal, addrInfosRemote) of
-        (addrInfoLocal : _, addrInfoRemote : _) -> connectToNode
-          encodeTerm
-          decodeTerm
-          (initiatorVersions epochSlots chainSyncClient)
-          (Just addrInfoLocal)
-          addrInfoRemote
-        _ -> error "no getAddrInfo"
-      where
-      host = scoHostName shelleyClientOptions
-      port = scoServiceName shelleyClientOptions
-      addrInfoHints = Network.defaultHints
-      -- | This chain sync client will first try to improve the read pointer to
-      -- the tip of the database, and then will roll forward forever, stopping
-      -- if there is a roll-back.
-      -- It makes sense given that we only have an immutable database and one
-      -- source for blocks: one read pointer improve is always enough.
-      chainSyncClient = Client.chainSyncClient fold
-        where
-        fold :: Client.Fold (ResourceT IO) ()
-        fold = Client.Fold $ do
-          tip <- lift $ DB.readTip db
-          mPoint <- case tip of
-            -- DB is empty. Can go without improving read pointer.
-            DB.TipGenesis -> pure Nothing
-            -- EBB is nice because we already have the header hash.
-            DB.TipEBB   slotNo hhash _     -> pure $ Just $ ChainSync.Point
-              { ChainSync.pointSlot = slotNo
-              , ChainSync.pointHash = hhash
-              }
-            DB.TipBlock slotNo       bytes -> pure $ Just $ ChainSync.Point
-              { ChainSync.pointSlot = slotNo
-              , ChainSync.pointHash = hhash
-              }
-              where
-              hhash = case Binary.decodeFullAnnotatedBytes "Block or boundary" (Cardano.fromCBORABlockOrBoundary epochSlots) bytes of
-                Left cborError -> error "failed to decode block"
-                Right blk -> case blk of
-                  Cardano.ABOBBoundary _ -> error "Corrupt DB: expected block but got EBB"
-                  Cardano.ABOBBlock blk  -> Cardano.blockHashAnnotated blk
-          case mPoint of
-            Nothing -> Client.runFold roll
-            -- We don't need to do anything with the result; the point is that
-            -- the server now knows the proper read pointer.
-            Just point -> pure $ Client.Improve [point] $ \_ _ -> roll
-        roll :: Client.Fold (ResourceT IO) ()
-        roll = Client.Fold $ pure $ Client.Continue forward backward
-        forward :: ChainSync.Block -> ChainSync.Point -> Client.Fold (ResourceT IO) ()
-        forward blk point = Client.Fold $ do
-          lift $ traceWith (contramap chainSyncShow textTracer) (Right blk, point)
-          -- FIXME
-          -- Write one block at a time. CPS doesn't mix well with the typed
-          -- protocol style.
-          -- This will give terrible performance for the SQLite index as it is
-          -- currently defined. As a workaround, the SQLite index is set to use
-          -- non-synchronous writes (per connection).
-          -- Possible solution: do the batching automatically, within the index
-          -- itself?
-          lift $ DB.appendBlocks db $ \dbAppend ->
-            DB.appendBlock dbAppend (DB.CardanoBlockToWrite blk)
-          Client.runFold roll
-        backward :: ChainSync.Point -> ChainSync.Point -> Client.Fold (ResourceT IO) ()
-        backward point1 point2 = Client.Fold $ do
-          lift $ traceWith (contramap chainSyncShow textTracer) (Left point1, point2)
-          pure $ Client.Stop ()
-
-  chainSyncShow
-    :: (Either ChainSync.Point ChainSync.Block, ChainSync.Point)
-    -> Text.Builder
-  chainSyncShow = \(roll, _tip) -> case roll of
-    Left  back    -> mconcat
-      [ "Roll back to\n"
-      , Text.fromString (show back)
-      ]
-    Right forward -> mconcat
-      [ "Roll forward to\n"
-      , case Binary.unAnnotated forward of
-          Cardano.ABOBBoundary ebb -> Text.fromString (show ebb)
-          Cardano.ABOBBlock    blk -> Cardano.renderHeader
-            epochSlots
-            (Cardano.blockHeader (fmap (const ()) blk))
-      ]
+    Just options -> Shelley.Client.runClient options textTracer epochSlots db
 
   textTracer :: Tracer IO Text.Builder
   textTracer = contramap
@@ -654,21 +348,7 @@ main = do
           dbTracer = flip contramap (Logging.convertTrace trace) $ \(DB.DBWrite (SlotNo count)) ->
             ("db", Monitoring.Info, Monitoring.LogValue "block count" (Monitoring.PureI (fromIntegral count)))
       withDB dbc dbTracer $ \db -> do
-        let server = runServer (Logging.convertTrace' trace) (bpoServerOptions bpo) epochSlots db
+        let server = Shelley.Server.runServer (bpoServerOptions bpo) epochSlots db
             client = runClient (Logging.convertTrace' trace) (bpoClientOptions bpo) genesisConfig epochSlots db
         _ <- concurrently server client
         pure ()
-
--- Orphan, forced upon me because of the IO sim stuff.
--- Required because we use ResourceT in the chain sync server, and `runPeer`
--- demands this non-standard `MonadThrow`. That could be fixed by returning
--- the failure reason rather than throwing it...
-
-instance NonStandard.MonadThrow (ResourceT IO) where
-  throwM = Standard.throwM
-  -- There's a default definition fo this which requires
-  -- NonStandard.MonadCatch (ResourceT IO). To avoid having to give those,
-  -- we'll just use the standard definition.
-  -- NB: it's weird huh? This implementation uses the _standard_ MonadMask
-  -- constraint, but the non-standard one is not defined.
-  bracket = Standard.bracket
