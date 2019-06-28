@@ -9,6 +9,7 @@
 module Ouroboros.Consensus.Ledger.Mock.UTxO (
     -- * Basic definitions
     Tx(..)
+  , TxId
   , TxIn
   , TxOut
   , Addr
@@ -58,7 +59,8 @@ instance ToCBOR Tx where
 instance Condense Tx where
   condense (Tx ins outs) = condense (ins, outs)
 
-type TxIn  = (Hash ShortHash Tx, Int)
+type TxId  = Hash ShortHash Tx
+type TxIn  = (TxId, Int)
 type TxOut = (Addr, Int)
 type Utxo  = Map TxIn TxOut
 
@@ -72,7 +74,7 @@ newtype InvalidInputs = InvalidInputs (Set TxIn)
 class HasUtxo a where
   txIns      :: a -> Set TxIn
   txOuts     :: a -> Utxo
-  confirmed  :: a -> Set (Hash ShortHash Tx)
+  confirmed  :: a -> Set TxId
   updateUtxo :: Monad m => a -> Utxo -> ExceptT InvalidInputs m Utxo
 
 utxo :: (Monad m, HasUtxo a) => a -> ExceptT InvalidInputs m Utxo

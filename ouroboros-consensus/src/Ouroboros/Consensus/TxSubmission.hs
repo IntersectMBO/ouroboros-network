@@ -19,10 +19,11 @@ import           Ouroboros.Consensus.Util.Condense
 localTxSubmissionServer
   :: ( Monad m
      , Show (ApplyTxErr blk) -- TODO: consider using condense
+     , ApplyTx blk
      , Condense (GenTx blk)
      )
   => Tracer m String
-  -> Mempool m blk
+  -> Mempool m blk idx
   -> LocalTxSubmissionServer (GenTx blk) String m ()
 localTxSubmissionServer tracer Mempool{addTxs} =
     server
@@ -30,7 +31,8 @@ localTxSubmissionServer tracer Mempool{addTxs} =
     server = LocalTxSubmissionServer {
       recvMsgSubmitTx = \tx -> do
         traceWith tracer (condense tx)
-        res <- addTxs [tx]
+        let txid = computeGenTxId tx
+        res <- addTxs [(txid, tx)]
         -- The 'addTxs' action returns the failing ones, whereas the protocol
         -- returns a Maybe failure for a single tx, so we must convert here.
         case res of

@@ -7,7 +7,6 @@ module Ouroboros.Consensus.Mempool.API (
   ) where
 
 import           Control.Monad.Except
-import           Data.Sequence (Seq)
 import           GHC.Stack (HasCallStack)
 
 import           Control.Monad.Class.MonadSTM
@@ -21,6 +20,12 @@ class UpdateLedger blk => ApplyTx blk where
   -- transactions"; this could be "proper" transactions (transferring funds) but
   -- also other kinds of things such as update proposals, delegations, etc.
   data family GenTx blk :: *
+
+  -- | A generalized transaction, 'GenTx', identifier.
+  data family GenTxId blk :: *
+
+  -- | Given a 'GenTx', compute its 'GenTxId'.
+  computeGenTxId :: GenTx blk -> GenTxId blk
 
   -- | Updating the ledger with a single transaction may result in a different
   -- error type as when updating it with a block
@@ -72,7 +77,7 @@ class UpdateLedger blk => ApplyTx blk where
 --   of transactions that fits in a block.
 -- * It supports wallets that submit dependent transactions (where later
 --   transaction depends on outputs from earlier ones).
-data Mempool m blk = Mempool {
+data Mempool m blk idx = Mempool {
       -- | Add a bunch of transactions (oldest to newest)
       --
       -- As long as we keep the mempool entirely in-memory this could live in
@@ -98,12 +103,34 @@ data Mempool m blk = Mempool {
       -- they have already been included. (Distinguishing between these two
       -- cases can be done in theory, but it is expensive unless we have an
       -- index of transaction hashes that have been included on the blockchain.)
-      addTxs :: [GenTx blk] -> m [(GenTx blk, ApplyTxErr blk)]
+      addTxs :: [(GenTxId blk, GenTx blk)] -> m [(GenTx blk, ApplyTxErr blk)]
 
-      -- | Get all transactions in the mempool (oldest to newest)
+      -- | Sync the transactions in the mempool with the ledger state of the
+      -- 'ChainDB'. Invalid transactions will be returned along with the
+      -- validation error.
+    , syncState :: STM m [(GenTx blk, ApplyTxErr blk)]
+
+      -- | Get all transactions in the mempool along with their associated
+      -- ticket numbers (oldest to newest).
       --
-      -- Guarantees that these transactions will be valid (when applied strictly
-      -- in order) with respect to a call to 'getLedgerState' run /in the same
+      -- n.b. This function provides /no guarantee/ that the resulting
+      -- transactions will be valid with respect to the ledger state of the
+      -- 'ChainDB'. However, it is guaranteed that these transactions will be
+      -- valid (with respect to the ledger state) if this function is called
+      -- immediately following a call to 'syncState', /within the same
       -- transaction/.
-    , getTxs :: STM m (Seq (GenTx blk))
+    , getTxs :: STM m [(GenTxId blk, GenTx blk, idx)]
+
+      -- | Get all transactions in the mempool, along with their associated
+      -- ticket numbers, which are associated with a ticket number greater
+      -- than the one provided.
+    , getTxsAfter :: idx -> STM m [(GenTxId blk, GenTx blk, idx)]
+
+      -- | Get a specific transaction from the mempool by its ticket number,
+      -- if it exists.
+    , getTx :: idx -> STM m (Maybe (GenTxId blk, GenTx blk))
+
+      -- | Represents the initial value at which the transaction ticket number
+      -- counter will start (i.e. the zeroth ticket number).
+    , zeroIdx :: idx
     }

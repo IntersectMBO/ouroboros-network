@@ -30,6 +30,8 @@ module Ouroboros.Consensus.Ledger.Mock.Block (
   , genesisSimpleLedgerState
     -- * 'ApplyTx' (mempool support)
   , GenTx(..)
+  , GenTxId(..)
+  , computeGenTxId
     -- * Crypto
   , SimpleCrypto
   , SimpleStandardCrypto
@@ -238,6 +240,13 @@ genesisSimpleLedgerState = SimpleLedgerState . genesisMockState
 instance (SimpleCrypto c, Typeable ext, SupportedBlock (SimpleBlock c ext))
       => ApplyTx (SimpleBlock c ext) where
   newtype GenTx   (SimpleBlock c ext) = SimpleGenTx { simpleGenTx :: Tx }
+
+  newtype GenTxId (SimpleBlock c ext) = SimpleGenTxId
+    { simpleGenTxId :: TxId
+    } deriving (Eq, Ord)
+
+  computeGenTxId = SimpleGenTxId . hash . simpleGenTx
+
   type ApplyTxErr (SimpleBlock c ext) = MockError (SimpleBlock c ext)
 
   applyTx            = \_ -> updateSimpleLedgerState

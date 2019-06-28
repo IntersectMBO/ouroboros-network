@@ -47,6 +47,7 @@ import           Ouroboros.Consensus.ChainSyncClient
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Mempool
+import           Ouroboros.Consensus.Mempool.TxSeq (TicketNo)
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util
 import           Ouroboros.Consensus.Util.Condense
@@ -69,7 +70,7 @@ data NodeKernel m peer blk = NodeKernel {
       getChainDB :: ChainDB m blk (Header blk)
 
       -- | The node's mempool
-    , getMempool :: Mempool m blk
+    , getMempool :: Mempool m blk TicketNo
 
       -- | The node's static configuration
     , getNodeConfig :: NodeConfig (BlockProtocol blk)
@@ -133,6 +134,7 @@ nodeKernel
        , MonadFork  m
        , MonadMask  m
        , ProtocolLedgerView blk
+       , Ord (GenTxId blk)
        , Ord peer
        , TraceConstraints peer blk
        , ApplyTx blk
@@ -186,13 +188,16 @@ data InternalState m peer blk = IS {
     , varCandidates       :: TVar m (Map peer (TVar m (CandidateState blk)))
     , varState            :: TVar m (NodeState (BlockProtocol blk))
     , tracer              :: Tracer m String
-    , mempool             :: Mempool m blk
+    , mempool             :: Mempool m blk TicketNo
     }
 
 initInternalState
     :: forall m peer blk.
        ( MonadAsync m
+       , MonadFork m
+       , MonadMask m
        , ProtocolLedgerView blk
+       , Ord (GenTxId blk)
        , Ord peer
        , TraceConstraints peer blk
        , ApplyTx blk
@@ -202,7 +207,7 @@ initInternalState
 initInternalState NodeParams {..} = do
     varCandidates  <- atomically $ newTVar mempty
     varState       <- atomically $ newTVar initState
-    mempool        <- openMempool chainDB (ledgerConfigView cfg)
+    mempool        <- openMempool threadRegistry chainDB (ledgerConfigView cfg)
 
     fetchClientRegistry <- newFetchClientRegistry
 
@@ -308,7 +313,17 @@ forkBlockProduction IS{..} =
           Just proof -> do
             (prevPoint, prevNo) <- prevPointAndBlockNo currentSlot <$>
                                      ChainDB.getCurrentChain chainDB
-            txs                 <- getTxs mempool
+
+            -- In this circumstance, it is required that we call 'syncState'
+            -- before 'getTxs' within this 'STM' transaction since we need to
+            -- guarantee that the transactions returned from 'getTxs' are
+            -- valid with respect to the current ledger state of the
+            -- 'ChainDB'. Refer to the 'getTxs' documentation for more
+            -- information.
+            _invalidTxs         <- syncState mempool
+
+            txs                 <- Foldable.toList . (fmap sndOfTriple)
+                                     <$> getTxs mempool
             newBlock            <- runProtocol varDRG $
                                      produceBlock
                                        proof
@@ -316,7 +331,7 @@ forkBlockProduction IS{..} =
                                        currentSlot
                                        (castPoint prevPoint)
                                        prevNo
-                                       (Foldable.toList txs)
+                                       txs
             return $ Just newBlock
 
       whenJust mNewBlock $ \newBlock -> do
@@ -326,6 +341,9 @@ forkBlockProduction IS{..} =
         ChainDB.addBlock chainDB newBlock
   where
     NodeCallbacks{..} = callbacks
+
+    -- Return the second item in a triple.
+    sndOfTriple (_, b, _) = b
 
     -- Return the point and block number of the most recent block in the
     -- current chain with a slot < the given slot. These will either

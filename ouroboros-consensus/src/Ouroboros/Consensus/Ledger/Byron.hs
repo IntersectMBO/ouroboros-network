@@ -18,6 +18,8 @@ module Ouroboros.Consensus.Ledger.Byron
   , ConfigContainsGenesis(..)
     -- * Mempool integration
   , GenTx (..)
+  , GenTxId (..)
+  , computeGenTxId
     -- * Ledger
   , LedgerState (..)
   , LedgerConfig (..)
@@ -399,6 +401,10 @@ instance (ByronGiven, Typeable cfg, ConfigContainsGenesis cfg)
   -- TODO #514: This is still missing the other cases (this shouldn't be a
   -- newtype)
   data GenTx (ByronBlock cfg) = ByronTx { unByronTx :: CC.UTxO.ATxAux ByteString }
+
+  data GenTxId (ByronBlock cfg) = ByronTxId { unByronTxId :: CC.UTxO.TxId }
+
+  computeGenTxId = ByronTxId . Crypto.hash . CC.UTxO.taTx . unByronTx
 
   type ApplyTxErr (ByronBlock cfg) = CC.UTxO.UTxOValidationError
 

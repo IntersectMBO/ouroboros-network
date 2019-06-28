@@ -31,7 +31,7 @@ import           Ouroboros.Consensus.Ledger.Mock.UTxO
 
 data MockState blk = MockState {
       mockUtxo      :: Utxo
-    , mockConfirmed :: Set (Hash ShortHash Tx)
+    , mockConfirmed :: Set TxId
     , mockTip       :: Point blk
     }
   deriving (Show)
