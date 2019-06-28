@@ -367,33 +367,33 @@ unit_bracketSyncWithFetchClient step = do
 
     step "Starting fetch before sync"
     checkResult =<< testSkeleton
-      (\action -> threadDelay 0.01 >> action (threadDelay 0.02))
-      (\action -> threadDelay 0.02 >> action (threadDelay 0.02))
+      (\action -> threadDelay 0.1 >> action (threadDelay 0.2))
+      (\action -> threadDelay 0.2 >> action (threadDelay 0.2))
 
     step "Starting sync before fetch"
     checkResult =<< testSkeleton
-      (\action -> threadDelay 0.02 >> action (threadDelay 0.02))
-      (\action -> threadDelay 0.01 >> action (threadDelay 0.02))
+      (\action -> threadDelay 0.2 >> action (threadDelay 0.2))
+      (\action -> threadDelay 0.1 >> action (threadDelay 0.2))
 
     step "Stopping fetch before sync"
     checkResult =<< testSkeleton
-      (\action -> action (threadDelay 0.01))
-      (\action -> action (threadDelay 0.02))
+      (\action -> action (threadDelay 0.1))
+      (\action -> action (threadDelay 0.2))
 
     step "Stopping sync before fetch"
     checkResult =<< testSkeleton
-      (\action -> action (threadDelay 0.02))
-      (\action -> action (threadDelay 0.01))
+      (\action -> action (threadDelay 0.2))
+      (\action -> action (threadDelay 0.1))
 
     step "Exception in fetch"
     Left (Left _) <- testSkeleton
-      (\action -> action (threadDelay 0.01 >> throwM AsyncCancelled))
-      (\action -> action (threadDelay 0.02))
+      (\action -> action (threadDelay 0.1 >> throwM AsyncCancelled))
+      (\action -> action (threadDelay 0.2))
 
     step "Exception in sync"
     Right (Left _) <- testSkeleton
-      (\action -> action (threadDelay 0.02))
-      (\action -> action (threadDelay 0.01 >> throwM AsyncCancelled))
+      (\action -> action (threadDelay 0.2))
+      (\action -> action (threadDelay 0.1 >> throwM AsyncCancelled))
 
     return ()
 
@@ -458,7 +458,7 @@ unit_bracketSyncWithFetchClient step = do
                 Just (Left  e)  -> throwM e
                 Just (Right ()) -> error "impossible"
 
-            threadDelay 0.01
+            threadDelay 0.1
             -- give the logic thread a chance to detect any final problems
             atomically $ do
               x <- pollSTM logicAsync
