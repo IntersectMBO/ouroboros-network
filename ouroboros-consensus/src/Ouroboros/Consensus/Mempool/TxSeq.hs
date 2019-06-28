@@ -161,6 +161,22 @@ fromTxSeq (TxSeq ftree) = fmap
 -- | Append a @tx@ to the back of a 'TxSeq'.
 -- n.b. This function also handles the incrementing of the newly added
 -- transaction's ticket number.
+--
+-- TODO FIXME:
+-- This does not work correctly in a couple scenarios:
+--   * If the mempool becomes empty during operation. In this case, the
+--     'TicketNo' counter would "reset" to 'zeroTicketNo'. Clients interacting
+--     with the mempool likely won't account for this.
+--
+--   * The transaction at the "back" of the mempool becomes invalid and is
+--     removed. In this case, the next transaction to be appended would take
+--     on the 'TicketNo' of the removed transaction (since this function only
+--     increments the 'TicketNo' associated with the transaction at the back
+--     of the mempool). Clients interacting with the mempool likely won't
+--     account for this.
+--
+-- Solution: Maintain a 'TicketNo' counter in the mempool implementation.
+--
 appendTx :: TxSeq tx -> tx -> TxSeq tx
 appendTx ts tx = case viewBack ts of
   Nothing                           -> Empty :> TxTicket tx zeroTicketNo
