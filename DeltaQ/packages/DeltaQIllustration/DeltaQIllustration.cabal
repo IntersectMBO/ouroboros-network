@@ -20,9 +20,9 @@ library
                     , DeltaQ.Numeric.FirstToFinish
                     , DeltaQ.QTA.Support
                     , DeltaQ.RationalProbabilityDoubleDelay
---                    , DeltaQ.Visualisation.ChartPlot
+                    , DeltaQ.Visualisation.ChartPlot
   build-depends:      base >= 4
---                    , Chart >= 1.9.1
+                    , Chart >= 1.9.1
                     , containers
                     , data-default
                     , ieee754
