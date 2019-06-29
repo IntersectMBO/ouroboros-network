@@ -85,7 +85,7 @@ prop_length_Empty :: Bool
 prop_length_Empty =
     AF.length (Empty anchor :: AnchoredFragment Block) == 0
   where
-    anchor = Chain.genesisPoint
+    anchor = GenesisPoint
 
 prop_dropNewest_Empty :: TestBlockAnchoredFragment -> Bool
 prop_dropNewest_Empty (TestBlockAnchoredFragment chain) =
@@ -249,7 +249,7 @@ prop_toChain_fromChain (TestBlockChain ch) =
 prop_anchorNewest :: NonNegative Int -> TestBlockChain -> Property
 prop_anchorNewest (NonNegative n') (TestBlockChain ch) =
     AF.length af === min (Chain.length ch) (fromIntegral n) .&&.
-    take n1 (map blockPoint (Chain.toNewestFirst ch) ++ [Chain.genesisPoint]) ===
+    take n1 (map blockPoint (Chain.toNewestFirst ch) ++ [GenesisPoint]) ===
              map blockPoint (AF.toNewestFirst af)    ++ [AF.anchorPoint af]
   where
     af = AF.anchorNewest n ch

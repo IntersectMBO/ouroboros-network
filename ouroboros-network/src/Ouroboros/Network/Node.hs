@@ -82,7 +82,7 @@ chainValidation :: forall block m. (HasHeader block, MonadSTM m)
                 -> TVar m (Maybe (Chain block))
                 -> m ()
 chainValidation peerChainVar candidateChainVar = do
-    st <- atomically (newTVar Chain.genesisPoint)
+    st <- atomically (newTVar GenesisPoint)
     forever (atomically (update st))
   where
     update :: TVar m (Point block) -> STM m ()
@@ -202,7 +202,7 @@ observeChainProducerState
   -> TVar m (ChainProducerState block)
   -> m ()
 observeChainProducerState nid probe cpsVar = do
-    st <- atomically (newTVar Chain.genesisPoint)
+    st <- atomically (newTVar GenesisPoint)
     forever (update st)
   where
     update :: TVar m (Point block) -> m ()

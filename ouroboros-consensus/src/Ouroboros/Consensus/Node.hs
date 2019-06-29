@@ -354,7 +354,8 @@ forkBlockProduction IS{..} =
                         -> AnchoredFragment (Header blk)
                         -> (Point blk, BlockNo)
     prevPointAndBlockNo slot c = case c of
-        Empty _   -> (Chain.genesisPoint, Chain.genesisBlockNo)
+         --TODO: it's not clear that genesisBlockNo is meaningful
+        Empty _   -> (GenesisPoint, Chain.genesisBlockNo)
         c' :> hdr -> case blockSlot hdr `compare` slot of
           LT -> (headerPoint hdr, blockNo hdr)
           -- The block at the tip of our chain has a slot that lies in the
@@ -366,7 +367,8 @@ forkBlockProduction IS{..} =
              -> (headerPoint hdr', blockNo hdr')
              | otherwise
                -- If there is no block before it, so use genesis.
-             -> (Chain.genesisPoint, Chain.genesisBlockNo)
+               --TODO: it's not clear that genesisBlockNo is meaningful
+             -> (GenesisPoint, Chain.genesisBlockNo)
 
     runProtocol :: TVar m ChaChaDRG -> ProtocolM blk m a -> STM m a
     runProtocol varDRG = simOuroborosStateT varState

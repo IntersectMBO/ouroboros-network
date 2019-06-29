@@ -804,7 +804,7 @@ mkTestFetchedBlockHeap points = do
 --
 
 genesisChainFragment :: AF.AnchoredFragment BlockHeader
-genesisChainFragment = AF.Empty (Point 0 GenesisHash)
+genesisChainFragment = AF.Empty GenesisPoint
 
 shiftAnchoredFragment :: HasHeader block
                       => Int

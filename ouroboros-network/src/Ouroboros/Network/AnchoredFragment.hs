@@ -93,7 +93,7 @@ import qualified Ouroboros.Network.ChainFragment as CF
 -- The fact that it is an /exclusive/ bound is particularly convenient when
 -- dealing with Genesis. Genesis is the start of the chain, but not an actual
 -- block, so we cannot use it an inclusive bound. However, there /is/ a
--- 'Point' that refers to Genesis ('Chain.genesisPoint'), which can be used as
+-- 'Point' that refers to Genesis ('GenesisPoint'), which can be used as
 -- the anchor point, acting as an exclusive bound.
 --
 -- An 'AnchoredFragment' anchored at Genesis, can thus be converted to a
@@ -402,17 +402,17 @@ applyChainUpdates (u:us) c = applyChainUpdates us =<< applyChainUpdate u c
 
 -- | Convert a 'Chain' to an 'AnchoredFragment'.
 --
--- The anchor of the fragment will be 'Chain.genesisPoint'.
+-- The anchor of the fragment will be 'GenesisPoint'.
 fromChain :: HasHeader block => Chain block -> AnchoredFragment block
-fromChain = mkAnchoredFragment Chain.genesisPoint . CF.unvalidatedFromChain
+fromChain = mkAnchoredFragment GenesisPoint . CF.unvalidatedFromChain
 
 -- | Convert an 'AnchoredFragment' to a 'Chain'.
 --
--- The anchor of the fragment must be 'Chain.genesisPoint', otherwise
+-- The anchor of the fragment must be 'GenesisPoint', otherwise
 -- 'Nothing' is returned.
 toChain :: HasHeader block => AnchoredFragment block -> Maybe (Chain block)
 toChain af@(AnchoredFragment a _)
-    | a == Chain.genesisPoint
+    | a == GenesisPoint
     = Just $ Chain.fromNewestFirst $ toNewestFirst af
     | otherwise
     = Nothing
@@ -431,7 +431,7 @@ anchorNewest = go CF.Empty
     -- Walk back over the chain, building up a chain fragment until k = 0 or
     -- we encountered genesis, then anchor the built-up chain fragment
     go :: ChainFragment block -> Word64 -> Chain block -> AnchoredFragment block
-    go cf _ Chain.Genesis   = mkAnchoredFragment Chain.genesisPoint cf
+    go cf _ Chain.Genesis   = mkAnchoredFragment GenesisPoint cf
     go cf 0 (_  Chain.:> b) = mkAnchoredFragment (blockPoint b)     cf
     go cf n (ch Chain.:> b) = go (b CF.:< cf) (n - 1) ch
 

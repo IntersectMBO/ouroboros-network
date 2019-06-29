@@ -110,12 +110,12 @@ instance Arbitrary ConcreteHeaderHash where
 instance Arbitrary (Point BlockHeader) where
   arbitrary =
       -- Sometimes pick the genesis point
-      frequency [ (1, pure (Point (SlotNo 0) GenesisHash))
-                , (4, Point <$> arbitrary <*> (BlockHash <$> arbitrary)) ]
-  shrink (Point _ GenesisHash)   = []
-  shrink (Point s (BlockHash h)) =
-      Point (SlotNo 0) GenesisHash
-    : [ Point s' (BlockHash h') | (s', h') <- shrink (s, h), s > SlotNo 0 ]
+      frequency [ (1, pure GenesisPoint)
+                , (4, Point <$> arbitrary <*> arbitrary) ]
+  shrink GenesisPoint   = []
+  shrink (Point s h) =
+      GenesisPoint
+    : [ Point s' h' | (s', h') <- shrink (s, h), s > SlotNo 0 ]
 
 instance Arbitrary (Point Block) where
   arbitrary = (castPoint :: Point BlockHeader -> Point Block) <$> arbitrary
@@ -529,7 +529,7 @@ instance Arbitrary TestChainAndPoints where
           , (5, return Nothing)
           ]
         points = map Chain.blockPoint (Chain.chainToList chain)
-                  ++ [Chain.genesisPoint]
+                  ++ [GenesisPoint]
     points' <- catMaybes <$> mapM fn points
     return $ TestChainAndPoints chain points'
 

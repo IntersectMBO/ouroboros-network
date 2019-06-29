@@ -25,7 +25,6 @@ module Ouroboros.Network.Chain (
   -- * Chain construction and inspection
   -- ** Genesis
   genesis,
-  genesisPoint,
   genesisSlotNo,
 --  genesisHash, -- TODO: currently (temporarily) exported by HasHeader
   genesisBlockNo,
@@ -108,9 +107,6 @@ genesisSlotNo = SlotNo 0
 genesisBlockNo :: BlockNo
 genesisBlockNo = BlockNo 0
 
-genesisPoint :: Point block
-genesisPoint = Point genesisSlotNo GenesisHash
-
 valid :: HasHeader block => Chain block -> Bool
 valid Genesis  = True
 valid (c :> b) = valid c && validExtension c b
@@ -126,7 +122,7 @@ head Genesis  = Nothing
 head (_ :> b) = Just b
 
 headPoint :: HasHeader block => Chain block -> Point block
-headPoint Genesis  = genesisPoint
+headPoint Genesis  = GenesisPoint
 headPoint (_ :> b) = blockPoint b
 
 headSlot :: HasHeader block => Chain block -> SlotNo
@@ -179,7 +175,7 @@ addBlock b c = assert (validExtension c b) $
                c :> b
 
 pointOnChain :: HasHeader block => Point block -> Chain block -> Bool
-pointOnChain p Genesis        = p == genesisPoint
+pointOnChain p Genesis        = p == GenesisPoint
 pointOnChain p (c :> b)
   | pointSlot p >  blockSlot b = False
   | pointSlot p == blockSlot b = pointHash p == BlockHash (blockHash b)
@@ -188,7 +184,7 @@ pointOnChain p (c :> b)
 rollback :: HasHeader block => Point block -> Chain block -> Maybe (Chain block)
 rollback p (c :> b) | blockPoint b == p = Just (c :> b)
                     | otherwise         = rollback p c
-rollback p Genesis  | p == genesisPoint = Just Genesis
+rollback p Genesis  | p == GenesisPoint = Just Genesis
                     | otherwise         = Nothing
 
 successorBlock :: HasHeader block => Point block -> Chain block -> Maybe block
@@ -197,7 +193,7 @@ successorBlock p c0 = go c0
   where
     go (c :> b' :> b) | blockPoint b' == p = Just b
                       | otherwise          = go (c :> b')
-    go (Genesis :> b) | p == genesisPoint  = Just b
+    go (Genesis :> b) | p == GenesisPoint  = Just b
     go _ = error "successorBlock: point not on chain"
 
 selectChain

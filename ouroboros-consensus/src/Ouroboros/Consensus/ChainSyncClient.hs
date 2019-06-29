@@ -31,7 +31,6 @@ import           Control.Monad.Class.MonadThrow
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment (..))
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block
-import           Ouroboros.Network.Chain (genesisPoint, genesisSlotNo)
 import           Ouroboros.Network.Protocol.ChainSync.Client
 
 import           Ouroboros.Consensus.Block
@@ -143,7 +142,7 @@ chainSyncClient
        , MonadThrow (STM m)
        , ProtocolLedgerView blk
        , Condense (Header blk)
-       , Condense (ChainHash blk)
+       , Condense (HeaderHash blk)
        )
     => Tracer m String
     -> NodeConfig (BlockProtocol blk)
@@ -297,13 +296,14 @@ chainSyncClient tracer cfg btime (ClockSkew maxSkew)
       -- server/candidate. If not, the server/candidate is on a fork that
       -- forked off too far in the past so that we do not intersect with them
       -- within the last @k@ blocks, so we don't want to sync with them.
-      unless (AF.withinFragmentBounds genesisPoint candidateChain) $
-        disconnect $ ForkTooDeep genesisPoint theirHead
+      unless (AF.withinFragmentBounds GenesisPoint candidateChain) $
+        disconnect $ ForkTooDeep GenesisPoint theirHead
 
       -- Get the 'ChainState' at genesis.
-      let candidateChain' = Empty genesisPoint
-      candidateChainState' <- case rewindChainState cfg curChainState genesisSlotNo of
-        Nothing -> disconnect $ ForkTooDeep genesisPoint theirHead
+      let candidateChain' = Empty GenesisPoint
+      --TODO: it is not clear that SlotNo 0 is correct for genesis
+      candidateChainState' <- case rewindChainState cfg curChainState (SlotNo 0) of
+        Nothing -> disconnect $ ForkTooDeep GenesisPoint theirHead
         Just c  -> pure c
 
       writeTVar varCandidate CandidateState

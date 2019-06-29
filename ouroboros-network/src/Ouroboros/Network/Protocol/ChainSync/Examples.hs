@@ -180,7 +180,7 @@ chainSyncServerExample recvMsgDoneClient chainvar = ChainSyncServer $
     newReader :: m ReaderId
     newReader = atomically $ do
       cps <- readTVar chainvar
-      let (cps', rid) = ChainProducerState.initReader Chain.genesisPoint cps
+      let (cps', rid) = ChainProducerState.initReader GenesisPoint cps
       writeTVar chainvar cps'
       return rid
 

@@ -18,8 +18,7 @@ import qualified Data.Set as Set
 import           Cardano.Crypto.Hash
 
 import           Ouroboros.Network.Block (ChainHash, HasHeader, Point (..),
-                     StandardHash)
-import           Ouroboros.Network.Chain (genesisPoint)
+                     pointHash, StandardHash)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Ledger.Mock.Address
@@ -67,5 +66,5 @@ genesisMockState :: AddrDist -> MockState blk
 genesisMockState addrDist = MockState {
       mockUtxo      = genesisUtxo addrDist
     , mockConfirmed = Set.singleton (hash (genesisTx addrDist))
-    , mockTip       = genesisPoint
+    , mockTip       = GenesisPoint
     }

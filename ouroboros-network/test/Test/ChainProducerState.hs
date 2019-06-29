@@ -15,8 +15,8 @@ import           Test.QuickCheck
 import           Test.Tasty
 import           Test.Tasty.QuickCheck
 
-import           Ouroboros.Network.Chain (Chain, ChainUpdate (..), Point (..),
-                     genesisPoint, headPoint, pointOnChain)
+import           Ouroboros.Network.Block (ChainUpdate (..), Point (..), pointSlot)
+import           Ouroboros.Network.Chain (Chain, headPoint, pointOnChain)
 import qualified Ouroboros.Network.Chain as Chain
 import           Ouroboros.Network.ChainProducerState
 import           Ouroboros.Network.Testing.ConcreteBlock (Block (..))
@@ -209,7 +209,7 @@ instance Arbitrary ChainProducerStateTest where
     rs <- fixupReaderStates <$> listOf1 (genReaderState n c)
     rid <- choose (0, length rs - 1)
     p <- if n == 0
-         then return genesisPoint
+         then return GenesisPoint
          else mkRollbackPoint c <$> choose (0, n)
     return (ChainProducerStateTest (ChainProducerState c rs) rid p)
 

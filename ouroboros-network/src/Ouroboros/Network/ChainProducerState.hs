@@ -3,8 +3,9 @@
 
 module Ouroboros.Network.ChainProducerState where
 
-import           Ouroboros.Network.Chain (Chain, ChainUpdate (..), HasHeader,
-                     Point (..), blockPoint, genesisPoint, pointOnChain)
+import           Ouroboros.Network.Block (ChainUpdate (..), HasHeader,
+                     Point (..), pointSlot, blockPoint)
+import           Ouroboros.Network.Chain (Chain, pointOnChain)
 import qualified Ouroboros.Network.Chain as Chain
 
 import           Control.Exception (assert)
@@ -187,7 +188,7 @@ switchFork :: HasHeader block
 switchFork c (ChainProducerState c' rs) =
     ChainProducerState c (map update rs)
   where
-    ipoint = fromMaybe genesisPoint $ Chain.intersectChains c c'
+    ipoint = fromMaybe GenesisPoint $ Chain.intersectChains c c'
 
     update r@ReaderState{readerPoint} =
       if pointOnChain readerPoint c

@@ -40,7 +40,7 @@ import           GHC.Stack (HasCallStack)
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import qualified Ouroboros.Network.AnchoredFragment as Fragment
 import           Ouroboros.Network.Block (ChainHash (..), ChainUpdate (..),
-                     HasHeader, HeaderHash, Point)
+                     HasHeader, HeaderHash, Point(..))
 import qualified Ouroboros.Network.Block as Block
 import           Ouroboros.Network.Chain (Chain (..))
 import qualified Ouroboros.Network.Chain as Chain
@@ -89,7 +89,7 @@ tipBlock :: Model blk -> Maybe blk
 tipBlock = Chain.head . currentChain
 
 tipPoint :: HasHeader blk => Model blk -> Point blk
-tipPoint = maybe Chain.genesisPoint Block.blockPoint . tipBlock
+tipPoint = maybe GenesisPoint Block.blockPoint . tipBlock
 
 lastK :: HasHeader a
       => SecurityParam
@@ -177,7 +177,7 @@ iteratorNext itrId m =
 newReader :: HasHeader blk => Model blk -> (CPS.ReaderId, Model blk)
 newReader m = (rdrId, m { cps = cps' })
   where
-    (cps', rdrId) = CPS.initReader Chain.genesisPoint (cps m)
+    (cps', rdrId) = CPS.initReader GenesisPoint (cps m)
 
 readerInstruction :: forall blk. HasHeader blk
                   => CPS.ReaderId

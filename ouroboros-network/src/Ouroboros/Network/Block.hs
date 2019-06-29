@@ -19,6 +19,8 @@ module Ouroboros.Network.Block (
   , ChainHash(..)
   , castHash
   , Point(..)
+  , pointSlot
+  , pointHash
   , castPoint
   , blockPoint
   , ChainUpdate(..)
@@ -114,21 +116,26 @@ castHash (BlockHash b) = BlockHash b
 -- as a check, or in some contexts it disambiguates blocks from different forks
 -- that were in the same slot.
 --
-data Point block = Point {
-       pointSlot :: SlotNo,
-       pointHash :: ChainHash block
-     }
-   deriving (Eq, Ord, Show)
+data Point block = GenesisPoint | Point !SlotNo !(HeaderHash block)
+
+deriving instance StandardHash block => Eq   (Point block)
+deriving instance StandardHash block => Ord  (Point block)
+deriving instance StandardHash block => Show (Point block)
+
+pointSlot :: Point block -> SlotNo
+pointSlot GenesisPoint   = SlotNo 0
+pointSlot (Point slot _) = slot
+
+pointHash :: Point block -> ChainHash block
+pointHash GenesisPoint   = GenesisHash
+pointHash (Point _ hash) = BlockHash hash
 
 castPoint :: (HeaderHash a ~ HeaderHash b) => Point a -> Point b
-castPoint (Point a b) = Point a (castHash b)
+castPoint GenesisPoint = GenesisPoint
+castPoint (Point a b)  = Point a b
 
 blockPoint :: HasHeader block => block -> Point block
-blockPoint b =
-    Point {
-      pointSlot = blockSlot b,
-      pointHash = BlockHash (blockHash b)
-    }
+blockPoint b = Point (blockSlot b) (blockHash b)
 
 {-------------------------------------------------------------------------------
   ChainUpdate type
@@ -175,19 +182,24 @@ decodeChainHash decodeHash = do
       1 -> BlockHash <$> decodeHash
       _ -> fail "decodeChainHash: invalid tag"
 
-encodePoint :: (ChainHash block -> Encoding)
-            -> (Point     block -> Encoding)
-encodePoint encodeHash Point { pointSlot = s, pointHash = h } =
+encodePoint :: (HeaderHash block -> Encoding)
+            -> (Point      block -> Encoding)
+encodePoint _ GenesisPoint =
+       Enc.encodeListLen 0
+encodePoint encodeHash (Point s h) =
        Enc.encodeListLen 2
     <> encode s
     <> encodeHash h
 
-decodePoint :: (forall s. Decoder s (ChainHash block))
-            -> (forall s. Decoder s (Point     block))
+decodePoint :: (forall s. Decoder s (HeaderHash block))
+            -> (forall s. Decoder s (Point      block))
 decodePoint decodeHash = do
-      Dec.decodeListLenOf 2
-      Point <$> decode
-            <*> decodeHash
+      len <- Dec.decodeListLen
+      case len of
+        0 -> pure GenesisPoint
+        2 -> Point <$> decode
+                   <*> decodeHash
+        _ -> fail "decodePoint: invalid tag"
 
 {-------------------------------------------------------------------------------
   Finger Tree Measure

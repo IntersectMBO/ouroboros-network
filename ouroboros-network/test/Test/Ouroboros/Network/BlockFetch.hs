@@ -137,7 +137,7 @@ prop_blockFetchStaticWithOverlap (TestChainFork _common fork1 fork2) =
                     (contramap TraceFetchDecision       dynamicTracer)
                     (contramap TraceFetchClientState    dynamicTracer)
                     (contramap TraceFetchClientSendRecv dynamicTracer)
-                    (AnchoredFragment.Empty Chain.genesisPoint) forks
+                    (AnchoredFragment.Empty GenesisPoint) forks
 
      in counterexample ("\nTrace:\n" ++ unlines (map show trace)) $
 
@@ -160,7 +160,7 @@ prop_blockFetchStaticWithOverlap (TestChainFork _common fork1 fork2) =
 
 chainToAnchoredFragment :: Chain.Chain Block -> AnchoredFragment Block
 chainToAnchoredFragment =
-    AnchoredFragment.fromNewestFirst Chain.genesisPoint
+    AnchoredFragment.fromNewestFirst GenesisPoint
   . Chain.chainToList
 
 -- TODO: move elsewhere and generalise
