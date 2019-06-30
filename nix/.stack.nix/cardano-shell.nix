@@ -30,15 +30,14 @@
           (hsPkgs.directory)
           (hsPkgs.formatting)
           (hsPkgs.iohk-monitoring)
+          (hsPkgs.optparse-applicative)
           (hsPkgs.process)
           (hsPkgs.QuickCheck)
           (hsPkgs.safe-exceptions)
           (hsPkgs.stm)
           (hsPkgs.text)
           (hsPkgs.transformers)
-          ] ++ (if system.isWindows
-          then [ (hsPkgs.Win32) ]
-          else [ (hsPkgs.unix) ]);
+          ];
         };
       exes = {
         "cardano-shell-exe" = {
@@ -46,6 +45,7 @@
             (hsPkgs.base)
             (hsPkgs.cardano-shell)
             (hsPkgs.cardano-prelude)
+            (hsPkgs.optparse-applicative)
             (hsPkgs.safe-exceptions)
             (hsPkgs.stm)
             (hsPkgs.iohk-monitoring)
@@ -56,6 +56,8 @@
             (hsPkgs.base)
             (hsPkgs.cardano-shell)
             (hsPkgs.cardano-prelude)
+            (hsPkgs.optparse-applicative)
+            (hsPkgs.safe-exceptions)
             ];
           };
         "cardano-launcher" = {
@@ -71,10 +73,8 @@
             (hsPkgs.filepath)
             (hsPkgs.formatting)
             (hsPkgs.safe-exceptions)
-            (hsPkgs.turtle)
-            ] ++ (if system.isWindows
-            then [ (hsPkgs.Win32) ]
-            else [ (hsPkgs.unix) ]);
+            (hsPkgs.optparse-applicative)
+            ];
           };
         };
       tests = {
@@ -102,7 +102,7 @@
     } // {
     src = (pkgs.lib).mkDefault (pkgs.fetchgit {
       url = "https://github.com/input-output-hk/cardano-shell";
-      rev = "de45bf135fc0c575753613ee157378a28f9261e2";
-      sha256 = "0j3imc9c80904ybhbrl4mb0v6h9j3c7c9l6pij6idg3adh0rla9z";
+      rev = "d2ab3fdc2ad69d6b2b9ab8897010ee731a14b403";
+      sha256 = "1vlgcqf6mmm9c57y81cdjwdf9m156n8vkwrnfxgd9fb93lkmxm12";
       });
     }
