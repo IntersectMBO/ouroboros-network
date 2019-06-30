@@ -225,14 +225,14 @@ a `isPrefixOf` b = reverse (toNewestFirst a) `L.isPrefixOf` reverse (toNewestFir
 
 
 applyChainUpdate :: HasHeader block
-                 => ChainUpdate block
+                 => ChainUpdate block block
                  -> Chain block
                  -> Maybe (Chain block)
 applyChainUpdate (AddBlock b) c = Just (addBlock b c)
 applyChainUpdate (RollBack p) c =       rollback p c
 
 applyChainUpdates :: HasHeader block
-                  => [ChainUpdate block]
+                  => [ChainUpdate block block]
                   -> Chain block
                   -> Maybe (Chain block)
 applyChainUpdates []     c = Just c

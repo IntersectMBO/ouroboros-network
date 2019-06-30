@@ -82,7 +82,7 @@ demo :: forall m block.
         , Serialise block
         , Eq block
         , Show block )
-     => Chain block -> [ChainUpdate block] -> DiffTime -> m Property
+     => Chain block -> [ChainUpdate block block] -> DiffTime -> m Property
 demo chain0 updates delay = do
     client_w <- atomically $ newTBQueue 10
     client_r <- atomically $ newTBQueue 10

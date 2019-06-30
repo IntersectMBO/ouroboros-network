@@ -183,12 +183,12 @@ newReader m = (rdrId, m { cps = cps' })
 readerInstruction :: forall blk. HasHeader blk
                   => CPS.ReaderId
                   -> Model blk
-                  -> (Maybe (ChainUpdate blk), Model blk)
+                  -> (Maybe (ChainUpdate blk blk), Model blk)
 readerInstruction rdrId m =
     rewrap $ CPS.readerInstruction rdrId (cps m)
   where
-    rewrap :: Maybe (ChainUpdate blk, CPS.ChainProducerState blk)
-           -> (Maybe (ChainUpdate blk), Model blk)
+    rewrap :: Maybe (ChainUpdate blk blk, CPS.ChainProducerState blk)
+           -> (Maybe (ChainUpdate blk blk), Model blk)
     rewrap Nothing            = (Nothing, m)
     rewrap (Just (upd, cps')) = (Just upd, m { cps = cps' })
 

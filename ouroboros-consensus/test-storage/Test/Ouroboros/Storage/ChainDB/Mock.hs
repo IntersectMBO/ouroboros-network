@@ -64,7 +64,7 @@ prop_reader bt p = runSimOrThrow test
         return $ current === reconstructed
 
     monitorReader :: TVar (SimM s) (Chain TestBlock)
-                  -> ChainDB.Reader (SimM s) TestBlock
+                  -> ChainDB.Reader (SimM s) TestBlock TestBlock
                   -> SimM s ()
     monitorReader chainVar reader = forever $ do
         upd <- ChainDB.readerInstructionBlocking reader
@@ -74,7 +74,7 @@ prop_reader bt p = runSimOrThrow test
             Just chain' -> writeTVar chainVar chain'
             Nothing     -> throwM $ InvalidUpdate chain upd
 
-data InvalidUpdate = InvalidUpdate (Chain TestBlock) (ChainUpdate TestBlock)
+data InvalidUpdate = InvalidUpdate (Chain TestBlock) (ChainUpdate TestBlock TestBlock)
   deriving (Show)
 
 instance Exception InvalidUpdate

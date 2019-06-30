@@ -389,14 +389,14 @@ findFirstPoint ps c = find (`withinFragmentBounds` c) ps
 
 
 applyChainUpdate :: HasHeader block
-                 => ChainUpdate block
+                 => ChainUpdate block block
                  -> AnchoredFragment block
                  -> Maybe (AnchoredFragment block)
 applyChainUpdate (AddBlock b) c = Just (addBlock b c)
 applyChainUpdate (RollBack p) c =       rollback p c
 
 applyChainUpdates :: HasHeader block
-                  => [ChainUpdate block]
+                  => [ChainUpdate block block]
                   -> AnchoredFragment block
                   -> Maybe (AnchoredFragment block)
 applyChainUpdates []     c = Just c

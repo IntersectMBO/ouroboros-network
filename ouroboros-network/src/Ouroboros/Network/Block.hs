@@ -1,4 +1,5 @@
 {-# LANGUAGE DeriveGeneric              #-}
+{-# LANGUAGE DeriveTraversable          #-}
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE RankNTypes                 #-}
@@ -22,7 +23,6 @@ module Ouroboros.Network.Block (
   , castPoint
   , blockPoint
   , ChainUpdate(..)
-  , mapChainUpdate
   , BlockMeasure(..)
   , blockMeasure
     -- * Serialisation
@@ -137,14 +137,11 @@ blockPoint b =
 -- | A representation of two actions to update a chain: add a block or roll
 -- back to a previous point.
 --
-data ChainUpdate block = AddBlock block
-                       | RollBack (Point block)
-  deriving (Eq, Show)
-
-mapChainUpdate :: HeaderHash a ~ HeaderHash b
-               => (a -> b) -> ChainUpdate a -> ChainUpdate b
-mapChainUpdate f (AddBlock b) = AddBlock $ f b
-mapChainUpdate _ (RollBack p) = RollBack $ castPoint p
+-- The type parameter @a@ is there to allow a 'Functor' instance. Typically,
+-- it will be instantiated with @block@ itself.
+data ChainUpdate block a = AddBlock a
+                         | RollBack (Point block)
+  deriving (Eq, Show, Functor, Foldable, Traversable)
 
 {-------------------------------------------------------------------------------
   Serialisation

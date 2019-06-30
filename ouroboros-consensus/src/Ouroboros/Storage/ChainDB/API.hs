@@ -165,7 +165,7 @@ data ChainDB m blk hdr =
       -- Examples of users include the server side of the chain sync
       -- mini-protocol for the node-to-node protocol.
       --
-    , newHeaderReader    :: m (Reader m hdr)
+    , newHeaderReader    :: m (Reader m blk hdr)
 
       -- | This is the same as the reader 'newHeaderReader' but it provides a
       -- reader for /whole blocks/ rather than headers.
@@ -173,7 +173,7 @@ data ChainDB m blk hdr =
       -- Examples of users include the server side of the chain sync
       -- mini-protocol for the node-to-client protocol.
       --
-    , newBlockReader     :: m (Reader m blk)
+    , newBlockReader     :: m (Reader m blk blk)
 
       -- | Known to be invalid blocks
     , knownInvalidBlocks :: STM m (Set (Point blk))
@@ -257,19 +257,17 @@ data IteratorResult blk =
 -- | Reader
 --
 -- See 'newReader' for more info.
-data Reader m hdr = Reader {
+data Reader m blk a = Reader {
       -- | The next chain update (if one exists)
       --
-      -- > data ChainUpdate hdr = AddBlock hdr
-      -- >                      | RollBack (Point hdr)
-      --
-      -- Does not live in @STM@ because might have to read the headers from disk.
+      -- Does not live in @STM@ because might have to read the headers from
+      -- disk.
       --
       -- We may roll back more than @k@ only in case of data loss.
-      readerInstruction         :: m (Maybe (ChainUpdate hdr))
+      readerInstruction         :: m (Maybe (ChainUpdate blk a))
 
       -- | Blocking version of 'readerInstruction'
-    , readerInstructionBlocking :: m (ChainUpdate hdr)
+    , readerInstructionBlocking :: m (ChainUpdate blk a)
 
       -- | Move the iterator forward
       --
@@ -284,7 +282,7 @@ data Reader m hdr = Reader {
       --
       -- Cannot live in @STM@ because the points specified might live in the
       -- immutable DB.
-    , readerForward             :: [Point hdr] -> m (Maybe (Point hdr))
+    , readerForward             :: [Point blk] -> m (Maybe (Point blk))
 
       -- | Per-database reader ID
       --
@@ -294,7 +292,7 @@ data Reader m hdr = Reader {
     , readerId                  :: ReaderId
     }
 
-instance Eq (Reader m hdr) where
+instance Eq (Reader m blk a) where
   (==) = (==) `on` readerId
 
 {-------------------------------------------------------------------------------

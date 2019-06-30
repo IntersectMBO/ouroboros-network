@@ -11,8 +11,8 @@ module Ouroboros.Consensus.ChainSyncServer
 import           Control.Monad.Class.MonadSTM
 import           Control.Tracer
 
-import           Ouroboros.Network.Block (Point (..), castPoint, HeaderHash)
-import           Ouroboros.Network.Chain (ChainUpdate (..))
+import           Ouroboros.Network.Block (ChainUpdate (..), HeaderHash,
+                     Point (..), castPoint)
 import           Ouroboros.Network.Protocol.ChainSync.Server
 
 import           Ouroboros.Storage.ChainDB.API (ChainDB, Reader)
@@ -69,7 +69,7 @@ chainSyncServerForReader
     => HeaderHash blk ~ HeaderHash b -- b is used at either type blk or hdr
     => Tracer m String
     -> ChainDB m blk hdr
-    -> Reader  m b
+    -> Reader  m blk b
     -> ChainSyncServer b (Point blk) m ()
 chainSyncServerForReader _tracer chainDB rdr =
     idle'
@@ -89,7 +89,7 @@ chainSyncServerForReader _tracer chainDB rdr =
                                 (m (ServerStNext b (Point blk) m ())))
     handleRequestNext = do
       mupdate <- ChainDB.readerInstruction rdr
-      tip     <- atomically $ castPoint <$> ChainDB.getTipPoint chainDB
+      tip     <- atomically $ ChainDB.getTipPoint chainDB
       return $ case mupdate of
         Just update -> Left  $ sendNext tip update
         Nothing     -> Right $ sendNext tip <$>
@@ -98,7 +98,7 @@ chainSyncServerForReader _tracer chainDB rdr =
                        -- the producer's state to change.
 
     sendNext :: Point blk
-             -> ChainUpdate b
+             -> ChainUpdate blk b
              -> ServerStNext b (Point blk) m ()
     sendNext tip update = case update of
       AddBlock hdr -> SendMsgRollForward   hdr           tip idle'

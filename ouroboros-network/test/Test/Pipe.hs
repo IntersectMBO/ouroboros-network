@@ -87,7 +87,7 @@ instance Mx.MiniProtocolLimits DemoProtocols where
 --
 demo :: forall block .
         (Chain.HasHeader block, Serialise (Chain.HeaderHash block), Serialise block, Eq block )
-     => Chain block -> [ChainUpdate block] -> IO Bool
+     => Chain block -> [ChainUpdate block block] -> IO Bool
 demo chain0 updates = do
 
     (hndRead1, hndWrite1) <- createPipe

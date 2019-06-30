@@ -331,7 +331,7 @@ prop_socket_client_connect_error _ xs = ioProperty $ do
 demo :: forall block .
         ( Chain.HasHeader block, Serialise (Chain.HeaderHash block)
         , Serialise block, Eq block, Show block )
-     => Chain block -> [ChainUpdate block] -> IO Bool
+     => Chain block -> [ChainUpdate block block] -> IO Bool
 demo chain0 updates = do
     producerAddress:_ <- Socket.getAddrInfo Nothing (Just "127.0.0.1") (Just "6061")
     consumerAddress:_ <- Socket.getAddrInfo Nothing (Just "127.0.0.1") (Just "0")
