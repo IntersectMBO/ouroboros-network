@@ -20,8 +20,7 @@ import           Ouroboros.Network.Protocol.BlockFetch.Server
                      BlockFetchServer (..))
 import           Ouroboros.Network.Protocol.BlockFetch.Type (ChainRange (..))
 
-import           Ouroboros.Storage.ChainDB (ChainDB, IteratorResult (..),
-                     UnknownRange)
+import           Ouroboros.Storage.ChainDB (ChainDB, IteratorResult (..))
 import qualified Ouroboros.Storage.ChainDB as ChainDB
 
 data BlockFetchServerException blk =
@@ -64,7 +63,13 @@ blockFetchServer _tracer chainDB = senderSide
 
     receiveReq :: ChainRange blk
                -> m (BlockFetchBlockSender blk m ())
-    receiveReq chainRange = withIter chainRange $ \errIt ->
+    receiveReq (ChainRange start end) = do
+      -- TODO close this iterator in case of an exception, use something like
+      -- ResourceT
+      errIt <- ChainDB.streamBlocks
+        chainDB
+        (ChainDB.StreamFromInclusive start)
+        (ChainDB.StreamToInclusive   end)
       return $ case errIt of
         -- The range is not in the ChainDB or it forks off more than @k@
         -- blocks back.
@@ -80,16 +85,10 @@ blockFetchServer _tracer chainDB = senderSide
     sendBlocks it = do
       next <- ChainDB.iteratorNext it
       case next of
-        IteratorExhausted      -> return $ SendMsgBatchDone $ return senderSide
         IteratorResult blk     -> return $ SendMsgBlock blk (sendBlocks it)
-        IteratorBlockGCed hash -> throwM $ BlockGCed @blk hash
-
-    withIter :: ChainRange blk
-             -> (Either (UnknownRange blk) (ChainDB.Iterator m blk) -> m a)
-             -> m a
-    withIter (ChainRange start end) = bracket
-        (ChainDB.streamBlocks
-          chainDB
-          (ChainDB.StreamFromInclusive start)
-          (ChainDB.StreamToInclusive   end))
-        (mapM_ ChainDB.iteratorClose)
+        IteratorExhausted      -> do
+          ChainDB.iteratorClose it
+          return $ SendMsgBatchDone $ return senderSide
+        IteratorBlockGCed hash -> do
+          ChainDB.iteratorClose it
+          throwM $ BlockGCed @blk hash
