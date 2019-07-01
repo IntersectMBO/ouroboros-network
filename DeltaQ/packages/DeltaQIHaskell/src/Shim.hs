@@ -52,19 +52,20 @@ instance (RealFloat r) => Texy (SimpleUniform r) where
    where
       fmt x = fromString $ showGFloatAlt (Just 2) x ""
 
-{-
--- | Plotting support for DeltaQ
 
-iCDFPlot :: MonadIO m
-         => String -- ^ title
+-- | Plotting support for DeltaQ
+iCDFPlot ::
+            String -- ^ title
          -> String -- ^ x axis label
          -> String -- ^ y axis label
          -> Concrete.DeltaQ
-         -> m (Renderable ())
+         -> IO (Renderable ())
 iCDFPlot title x'label y'label dq = do
-  gen <- liftIO $ createSystemRandom
-  layout_title .= title
-  v <- (flip runReaderT) def $ generateCDFPlot gen "" dq
-  
-  return $ toRenderable v
--}
+  gen <- createSystemRandom
+  icdf <- runReaderT (generateCDFPlot gen "" dq) (def {_maxDelay = RelativeDelayExtension 0.1})
+  pure $ toRenderable $ do
+    layout_title .= title
+    layout_x_axis . laxis_title .= x'label
+    layout_y_axis . laxis_title .= y'label
+    layout_y_axis . laxis_generate .= scaledAxis def (0,1)
+    plot icdf
