@@ -1,12 +1,17 @@
 {-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Test.Consensus.Mempool (tests) where
 
+import           Control.Monad (foldM, forM, void)
 import           Control.Monad.Except (Except, runExcept)
-import           Data.List (find, foldl', isSuffixOf, sort)
+import           Control.Monad.State (State, evalState, get, modify)
+import           Data.List (find, foldl', isSuffixOf, nub, sort)
+import           Data.Map (Map)
+import qualified Data.Map as Map
 import           Data.Maybe (isJust, isNothing)
 import           Data.Set (Set)
 import qualified Data.Set as Set
@@ -44,6 +49,7 @@ tests = testGroup "Mempool"
   , testProperty "Added valid transactions are traced"     prop_Mempool_TraceValidTxs
   , testProperty "Rejected invalid txs are traced"         prop_Mempool_TraceRejectedTxs
   , testProperty "Removed invalid txs are traced"          prop_Mempool_TraceRemovedTxs
+  , testProperty "idx consistency"                         prop_Mempool_idx_consistency
   ]
 
 {-------------------------------------------------------------------------------
@@ -436,3 +442,174 @@ prop_TxSeq_lookupByTicketNo xs =
     txseq :: TxSeq Int
     txseq = foldl' (TxSeq.:>) TxSeq.Empty
                    (zipWith TxTicket xs (map TicketNo [0..]))
+
+{-------------------------------------------------------------------------------
+  TicketNo Properties
+-------------------------------------------------------------------------------}
+
+-- Testing plan:
+--
+-- * Perform a number of actions: either add a new valid transaction to the
+--   Mempool (invalid transactions have no effect on the @idx@s) or remove an
+--   existing transaction from the Mempool.
+--
+-- * Adding a transaction is easy. Removing one is harder: we do this by
+--   adding that transaction to the ledger and syncing the Mempool with the
+--   ledger. As the transaction is now in the ledger, it is no longer valid
+--   and must be removed from the Mempool.
+--
+-- * After executing each action, check whether the current ticket assignment
+--   is still consistent with the expected ticket assignment. The ticket
+--   assignment is a mapping from 'TicketNo' (@idx@) to transaction. The same
+--   ticket may never be reused for another transaction, which is exactly what
+--   we're testing here.
+--
+-- Ignore the "100% empty Mempool" label in the test output, that is there
+-- because we reuse 'withTestMempool' and always start with an empty Mempool
+-- and 'LedgerState'. This makes it easier to generate 'Actions', because they
+-- don't have to take the initial contents of the Mempool and 'LedgerState'
+-- into account.
+prop_Mempool_idx_consistency :: Actions -> Property
+prop_Mempool_idx_consistency (Actions actions) =
+    withTestMempool emptyTestSetup $ \testMempool@TestMempool { mempool } ->
+      fmap conjoin $ forM actions $ \action -> do
+        txsInMempool      <- map (unTestGenTx . fst) . snapshotTxs <$>
+                             atomically (getSnapshot mempool)
+        actionProp        <- executeAction testMempool action
+        currentAssignment <- currentTicketAssignment mempool
+        return $
+          --  #692, fixed in #742: if the mempool becomes empty during
+          -- operation. In this case, the 'TicketNo' counter would "reset" to
+          -- 'zeroTicketNo'. Clients interacting with the mempool likely won't
+          -- account for this.
+          classify
+            (Map.null currentAssignment)
+            "Mempool became empty" $
+          -- #692, fixed in #742: the transaction at the "back" of the mempool
+          -- becomes invalid and is removed. In this case, the next
+          -- transaction to be appended would take on the 'TicketNo' of the
+          -- removed transaction (since this function only increments the
+          -- 'TicketNo' associated with the transaction at the back of the
+          -- mempool). Clients interacting with the mempool likely won't
+          -- account for this.
+          classify
+            (lastOfMempoolRemoved txsInMempool action)
+            "The last transaction in the mempool is removed" $
+          actionProp .&&.
+          currentAssignment `isConsistentWith` expectedAssignment
+  where
+    expectedAssignment = expectedTicketAssignment actions
+
+    emptyTestSetup = TestSetup
+      { testLedgerState = testInitLedger
+      , testInitialTxs  = []
+      }
+
+    lastOfMempoolRemoved txsInMempool = \case
+      AddTx    _  -> False
+      RemoveTx tx -> last txsInMempool == tx
+
+    isConsistentWith curAsgn expAsgn
+      | curAsgn `Map.isSubmapOf` expAsgn
+      = property True
+      | otherwise
+      = counterexample
+        ("Current tickets assignments: "  <> show curAsgn <>
+         "\ninconsistent with expected: " <> show expAsgn)
+        False
+
+{-------------------------------------------------------------------------------
+  TicketAssignment & Actions
+-------------------------------------------------------------------------------}
+
+data Action
+  = AddTx    TestTx
+  | RemoveTx TestTx
+  deriving (Show)
+
+newtype Actions = Actions [Action]
+  deriving (Show)
+
+-- | Track to which ticket number each transaction is assigned.
+--
+-- * We don't want multiple transaction to be assigned the same ticket number.
+-- * We want each transaction to be always assigned the same ticket number.
+type TicketAssignment = Map TicketNo TestTxId
+
+-- | Compute the expected 'TicketAssignment' for the given actions.
+expectedTicketAssignment :: [Action] -> TicketAssignment
+expectedTicketAssignment actions =
+    evalState (foldM addMapping mempty actions) (succ zeroTicketNo)
+  where
+    addMapping :: TicketAssignment -> Action -> State TicketNo TicketAssignment
+    addMapping mapping (RemoveTx _tx) = return mapping
+    addMapping mapping (AddTx     tx) = do
+      nextTicketNo <- get
+      modify succ
+      return $ Map.insert nextTicketNo (testTxId tx) mapping
+
+-- | Executes the action and verifies that it is actually executed using the
+-- tracer, hence the 'Property' in the return type.
+executeAction :: forall m. MonadSTM m => TestMempool m -> Action -> m Property
+executeAction testMempool action = case action of
+    AddTx tx -> do
+      void $ addTxs [TestGenTx tx]
+      expectTraceEvent $ \case
+        TraceMempoolAddTxs { _txs = [TestGenTx tx'] }
+          | tx == tx'
+          -> property True
+        _ -> counterexample ("Transaction not added: " <> condense tx) False
+
+    RemoveTx tx -> do
+      void $ addTxToLedger tx
+      -- Synchronise the Mempool with the updated chain
+      withSyncState $ \_snapshot -> return ()
+      expectTraceEvent $ \case
+        TraceMempoolRemoveTxs { _txs = [TestGenTx tx'] }
+          | tx == tx'
+          -> property True
+        _ -> counterexample ("Transaction not removed: " <> condense tx) False
+  where
+    TestMempool
+      { mempool
+      , eraseTraceEvents
+      , getTraceEvents
+      , addTxToLedger
+      } = testMempool
+    Mempool { addTxs, withSyncState } = mempool
+
+    expectTraceEvent :: (TraceEventMempool TestBlock -> Property) -> m Property
+    expectTraceEvent checker = do
+      evs <- getTraceEvents
+      eraseTraceEvents
+      return $ case evs of
+        [ev] -> checker ev
+        []   -> counterexample "No events traced"       False
+        _    -> counterexample "Multiple events traced" False
+
+currentTicketAssignment :: MonadSTM m
+                        => Mempool m TestBlock TicketNo -> m TicketAssignment
+currentTicketAssignment Mempool { withSyncState } =
+    withSyncState $ \MempoolSnapshot { snapshotTxs } -> return $ Map.fromList
+      [ (ticketNo, testTxId (unTestGenTx tx)) | (tx, ticketNo) <- snapshotTxs ]
+
+instance Arbitrary Actions where
+  arbitrary = sized $ \n -> do
+      -- Note the use of 'nub' to avoid duplicates, because that would lead to
+      -- collisions in the map.
+      txsToAdd <- shuffle . nub . fst =<< genValidTxs n testInitLedger
+      go n [] txsToAdd []
+    where
+      go :: Int       -- ^ Number of actions left to generate
+         -> [Action]  -- ^ Already generated actions
+         -> [TestTx]  -- ^ Transactions that can still be added
+         -> [TestTx]  -- ^ Transactions that can still be removed
+         -> Gen Actions
+      go n actions toAdd toRem = case (toAdd, toRem) of
+        _ | n <= 0                   -> return $ Actions (reverse actions)
+        ([],           [])           -> return $ Actions (reverse actions)
+        ([],           txRem:toRem') -> go (n - 1) (RemoveTx txRem:actions) [txRem] toRem'
+        (txAdd:toAdd', [])           -> go (n - 1) (AddTx    txAdd:actions) toAdd'  [txAdd]
+        (txAdd:toAdd', txRem:toRem') -> arbitrary >>= \case
+          True  -> go (n - 1) (AddTx    txAdd:actions) toAdd' toRem
+          False -> go (n - 1) (RemoveTx txRem:actions) toAdd  toRem'
