@@ -73,6 +73,9 @@ library
                        Ouroboros.Network.Protocol.LocalTxSubmission.Client
                        Ouroboros.Network.Protocol.LocalTxSubmission.Server
                        Ouroboros.Network.Protocol.LocalTxSubmission.Codec
+                       Ouroboros.Network.TxSubmission.Inbound
+                       Ouroboros.Network.TxSubmission.Outbound
+
   default-language:    Haskell2010
   other-extensions:    BangPatterns,
                        DataKinds,
@@ -184,6 +187,8 @@ test-suite tests
                        Ouroboros.Network.Protocol.LocalTxSubmission.Test
                        Ouroboros.Network.Socket
                        Ouroboros.Network.Server.Socket
+                       Ouroboros.Network.TxSubmission.Inbound
+                       Ouroboros.Network.TxSubmission.Outbound
 
                        Test.AnchoredFragment
                        Test.Chain
