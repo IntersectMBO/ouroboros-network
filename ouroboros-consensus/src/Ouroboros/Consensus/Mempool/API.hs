@@ -3,6 +3,7 @@
 
 module Ouroboros.Consensus.Mempool.API (
     Mempool(..)
+  , MempoolSnapshot(..)
   , ApplyTx(..)
   ) where
 
@@ -110,27 +111,40 @@ data Mempool m blk idx = Mempool {
       -- validation error.
     , syncState :: STM m [(GenTx blk, ApplyTxErr blk)]
 
-      -- | Get all transactions in the mempool along with their associated
-      -- ticket numbers (oldest to newest).
-      --
-      -- n.b. This function provides /no guarantee/ that the resulting
-      -- transactions will be valid with respect to the ledger state of the
-      -- 'ChainDB'. However, it is guaranteed that these transactions will be
-      -- valid (with respect to the ledger state) if this function is called
-      -- immediately following a call to 'syncState', /within the same
-      -- transaction/.
-    , getTxs :: STM m [(GenTxId blk, GenTx blk, idx)]
-
-      -- | Get all transactions in the mempool, along with their associated
-      -- ticket numbers, which are associated with a ticket number greater
-      -- than the one provided.
-    , getTxsAfter :: idx -> STM m [(GenTxId blk, GenTx blk, idx)]
-
-      -- | Get a specific transaction from the mempool by its ticket number,
-      -- if it exists.
-    , getTx :: idx -> STM m (Maybe (GenTxId blk, GenTx blk))
+      -- | Get a snapshot of the current mempool state. This allows for
+      -- further pure queries on the snapshot.
+    , getSnapshot :: STM m (MempoolSnapshot (GenTxId blk) (GenTx blk) idx)
 
       -- | Represents the initial value at which the transaction ticket number
       -- counter will start (i.e. the zeroth ticket number).
     , zeroIdx :: idx
     }
+
+-- | A pure snapshot of the contents of the mempool. It allows fetching
+-- information about transactions in the mempool, and fetching individual
+-- transactions.
+--
+-- This uses a transaction sequence number type for identifying transactions
+-- within the mempool sequence. The sequence number is local to this mempool,
+-- unlike the transaction hash. This allows us to ask for all transactions
+-- after a known sequence number, to get new transactions. It is also used to
+-- look up individual transactions.
+--
+-- Note that it is expected that 'getTx' will often return 'Nothing'
+-- even for tx sequence numbers returned in previous snapshots. This happens
+-- when the transaction has been removed from the mempool between snapshots.
+--
+data MempoolSnapshot txid tx idx = MempoolSnapshot {
+    -- | Get all transactions in the mempool snapshot along with their
+    -- associated ticket numbers (oldest to newest).
+    getTxs :: [(txid, tx, idx)]
+
+    -- | Get all transactions in the mempool snapshot, along with their
+    -- associated ticket numbers, which are associated with a ticket number
+    -- greater than the one provided.
+  , getTxsAfter :: idx -> [(txid, tx, idx)]
+
+    -- | Get a specific transaction from the mempool snapshot by its ticket
+    -- number, if it exists.
+  , getTx :: idx -> Maybe (txid, tx)
+  }
