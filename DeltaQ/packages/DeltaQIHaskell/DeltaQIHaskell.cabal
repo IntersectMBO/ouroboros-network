@@ -22,9 +22,12 @@ library
   -- other-modules:
   -- other-extensions:
   build-depends:       base >= 4
+                     , Chart >= 1.9.1
                      , DeltaQIllustration
                      , HaTeX
                      , ihaskell
-                     , ihaskell-hatex
+                     , ihaskell-hatex 
+                     , mtl
+                     , mwc-random
   hs-source-dirs:      src
   default-language:    Haskell2010

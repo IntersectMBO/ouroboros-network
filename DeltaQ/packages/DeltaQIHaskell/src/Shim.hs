@@ -1,21 +1,26 @@
 {-# LANGUAGE OverloadedStrings #-}
-module Shim ()
+module Shim 
+-- (asICDF, asICDF', DelayExtension(..))
 where
 
-import Data.Ratio
-import DeltaQ.Algebra.Class
-import DeltaQ.Algebra.DelayModel.SimpleUniform
-import IHaskell.Display
-import IHaskell.Display.Hatex()
-import Text.LaTeX hiding (Bottom)
-import Numeric
-import Text.LaTeX.Base.Class
-import Text.LaTeX.Packages.AMSMath
+import           Control.Monad.Reader
+import           Data.Ratio
+import           DeltaQ.Algebra.Class
+import           DeltaQ.Algebra.DelayModel.SimpleUniform
+import qualified DeltaQ.RationalProbabilityDoubleDelay as Concrete
+import           DeltaQ.Visualisation.ChartPlot
+import           Graphics.Rendering.Chart.Easy
+import           IHaskell.Display
+import           IHaskell.Display.Hatex ()
+import           Numeric
+import           System.Random.MWC
+import           Text.LaTeX hiding (Bottom)
+import           Text.LaTeX.Base.Class
+import           Text.LaTeX.Packages.AMSMath
 
-
+-- | Basic (textual) display of DeltaQ values in expression style
 instance (RealFrac p, Texy (n d)) => IHaskellDisplay (DeltaQ p n d) where
   display = display . execLaTeXM . mathDisplay . texy
-
 
 instance (RealFrac p, Texy (n d)) => Texy (DeltaQ p n d) where
   texy x
@@ -47,3 +52,19 @@ instance (RealFloat r) => Texy (SimpleUniform r) where
    where
       fmt x = fromString $ showGFloatAlt (Just 2) x ""
 
+{-
+-- | Plotting support for DeltaQ
+
+iCDFPlot :: MonadIO m
+         => String -- ^ title
+         -> String -- ^ x axis label
+         -> String -- ^ y axis label
+         -> Concrete.DeltaQ
+         -> m (Renderable ())
+iCDFPlot title x'label y'label dq = do
+  gen <- liftIO $ createSystemRandom
+  layout_title .= title
+  v <- (flip runReaderT) def $ generateCDFPlot gen "" dq
+  
+  return $ toRenderable v
+-}

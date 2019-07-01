@@ -12,8 +12,13 @@ let
   iHaskell = jupyter.kernels.iHaskellWith {
     name = "haskell";
     packages = p: with p;
+      #
+      # I realise that this is a load of hand-knitted depdendencies
+      # and that overlays would be "better" - but how to effectively
+      # use overlays in this context eludes me
+      #
       let  dq1 = callCabal2nix "DeltaQIllustration"  ./packages/DeltaQIllustration {Chart=Chart;};
-           dq2 = callCabal2nix "DeltaQIHaskell"      ./packages/DeltaQIHaskell {DeltaQIllustration = dq1;};
+           dq2 = callCabal2nix "DeltaQIHaskell"      ./packages/DeltaQIHaskell {DeltaQIllustration = dq1; Chart=Chart;};
            Chart = (callHackageDirect {pkg    = "Chart";
                                        ver    = "1.9.1";
                                        sha256 = "0aiq9r78yhma1xzhwl2xlzwqb2c59k6a4jjvdpninwm6lngac3s7";}) {};
@@ -29,7 +34,7 @@ let
     # note next line may have more "broken" dependencies in them
     #  ihaskell-plot ihaskell-gnuplot ihaskell-widgets
     # current special case for Chart and its dependencies
-    Chart ih-charts
+    Chart Chart-cairo ih-charts
     formatting hvega
     dq1
     dq2
