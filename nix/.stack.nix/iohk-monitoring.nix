@@ -3,14 +3,18 @@
     flags = {
       disable-aggregation = false;
       disable-ekg = false;
+      disable-graylog = false;
       disable-prometheus = false;
       disable-gui = false;
       disable-monitoring = false;
       disable-observables = false;
+      disable-syslog = false;
+      disable-examples = false;
+      queue-flush = false;
       };
     package = {
       specVersion = "1.10";
-      identifier = { name = "iohk-monitoring"; version = "0.1.8.0"; };
+      identifier = { name = "iohk-monitoring"; version = "0.1.9.0"; };
       license = "MIT";
       copyright = "2018 IOHK";
       maintainer = "";
@@ -23,7 +27,7 @@
       };
     components = {
       "library" = {
-        depends = (((([
+        depends = ((((([
           (hsPkgs.base)
           (hsPkgs.contra-tracer)
           (hsPkgs.aeson)
@@ -61,9 +65,11 @@
           (hsPkgs.ekg-prometheus-adapter)
           (hsPkgs.prometheus)
           (hsPkgs.warp)
-          ]) ++ (pkgs.lib).optional (!flags.disable-gui) (hsPkgs.threepenny-gui)) ++ (if system.isWindows
+          ]) ++ (pkgs.lib).optional (!flags.disable-graylog) (hsPkgs.network)) ++ (pkgs.lib).optional (!flags.disable-gui) (hsPkgs.threepenny-gui)) ++ (if system.isWindows
           then [ (hsPkgs.Win32) ]
-          else [ (hsPkgs.unix) ])) ++ (pkgs.lib).optionals (system.isLinux) [
+          else [
+            (hsPkgs.unix)
+            ])) ++ (pkgs.lib).optionals (system.isLinux && !flags.disable-syslog) [
           (hsPkgs.hsyslog)
           (hsPkgs.libsystemd-journal)
           ];
@@ -138,8 +144,8 @@
     } // {
     src = (pkgs.lib).mkDefault (pkgs.fetchgit {
       url = "https://github.com/input-output-hk/iohk-monitoring-framework";
-      rev = "3222ee56a08a5f041824b6e1026cd3751133a1fd";
-      sha256 = "08hwabqap03sqkds5kjy3g20zcsr5ppnamm458nq9v5b3axig57p";
+      rev = "9cb21a3ebf0f45bfb94ece3e6d62e613eca8b17b";
+      sha256 = "1nms4gap3j6qc0gs4rk8kpqm6zdqcp5hchsd1wv459wvhfq4f20p";
       });
     postUnpack = "sourceRoot+=/iohk-monitoring; echo source root reset to \$sourceRoot";
     }

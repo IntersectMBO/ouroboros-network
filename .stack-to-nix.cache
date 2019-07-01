@@ -146,3 +146,6 @@ https://github.com/input-output-hk/cardano-ledger ccb81fc69285c127c47ce622c49963
 https://github.com/input-output-hk/cardano-ledger ccb81fc69285c127c47ce622c4996317556aff42 cardano-ledger/test 0ayq8f7dgdgwbgjn7wvh7m94sa7nbgm5633hm62z3frp02l2zgfl cardano-ledger-test cardano-ledger-test.nix
 https://github.com/input-output-hk/cardano-ledger ccb81fc69285c127c47ce622c4996317556aff42 crypto 0ayq8f7dgdgwbgjn7wvh7m94sa7nbgm5633hm62z3frp02l2zgfl cardano-crypto-wrapper cardano-crypto-wrapper.nix
 https://github.com/input-output-hk/cardano-ledger ccb81fc69285c127c47ce622c4996317556aff42 crypto/test 0ayq8f7dgdgwbgjn7wvh7m94sa7nbgm5633hm62z3frp02l2zgfl cardano-crypto-test cardano-crypto-test.nix
+https://github.com/input-output-hk/iohk-monitoring-framework 9cb21a3ebf0f45bfb94ece3e6d62e613eca8b17b iohk-monitoring 1nms4gap3j6qc0gs4rk8kpqm6zdqcp5hchsd1wv459wvhfq4f20p iohk-monitoring iohk-monitoring.nix
+https://github.com/input-output-hk/iohk-monitoring-framework 9cb21a3ebf0f45bfb94ece3e6d62e613eca8b17b contra-tracer 1nms4gap3j6qc0gs4rk8kpqm6zdqcp5hchsd1wv459wvhfq4f20p contra-tracer contra-tracer.nix
+https://github.com/input-output-hk/cardano-shell d2ab3fdc2ad69d6b2b9ab8897010ee731a14b403 . 1vlgcqf6mmm9c57y81cdjwdf9m156n8vkwrnfxgd9fb93lkmxm12 cardano-shell cardano-shell.nix
