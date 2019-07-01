@@ -1,11 +1,12 @@
-{-# LANGUAGE GADTs                #-}
 {-# LANGUAGE DataKinds            #-}
 {-# LANGUAGE FlexibleContexts     #-}
+{-# LANGUAGE GADTs                #-}
 {-# LANGUAGE NamedFieldPuns       #-}
 {-# LANGUAGE RankNTypes           #-}
 {-# LANGUAGE RecordWildCards      #-}
 {-# LANGUAGE ScopedTypeVariables  #-}
 {-# LANGUAGE TupleSections        #-}
+{-# LANGUAGE TypeApplications     #-}
 {-# LANGUAGE TypeFamilies         #-}
 {-# LANGUAGE UndecidableInstances #-}
 
@@ -21,6 +22,7 @@ import           Crypto.Random (ChaChaDRG, drgNew)
 import           Data.Foldable (traverse_)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
+import           Data.Proxy (Proxy (..))
 import qualified Data.Set as Set
 import           Data.Typeable (Typeable)
 
@@ -33,14 +35,14 @@ import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
 
-import           Network.TypedProtocol.Codec (AnyMessage (..))
 import           Network.Mux.Channel
+import           Network.TypedProtocol.Codec (AnyMessage (..))
 
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.Chain
 
-import           Ouroboros.Network.Protocol.ChainSync.Type
 import           Ouroboros.Network.Protocol.BlockFetch.Type
+import           Ouroboros.Network.Protocol.ChainSync.Type
 
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.ChainSyncClient (ClockSkew (..))
@@ -49,19 +51,24 @@ import           Ouroboros.Consensus.Demo.Run
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.Mock
-import           Ouroboros.Consensus.NodeId
 import           Ouroboros.Consensus.Node
+import           Ouroboros.Consensus.NodeId
 import           Ouroboros.Consensus.NodeNetwork
-import           Ouroboros.Consensus.Protocol.Abstract (NodeConfig)
+import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Orphans ()
 import           Ouroboros.Consensus.Util.Random
 import           Ouroboros.Consensus.Util.STM
 import           Ouroboros.Consensus.Util.ThreadRegistry
 
-import qualified Ouroboros.Storage.ChainDB.API as ChainDB
-import qualified Ouroboros.Storage.ChainDB.Mock as ChainDB
-
+import qualified Ouroboros.Storage.ChainDB as ChainDB
+import           Ouroboros.Storage.ChainDB.Impl (ChainDbArgs (..))
+import qualified Ouroboros.Storage.FS.Sim.MockFS as Mock
+import           Ouroboros.Storage.FS.Sim.STM (simHasFS)
+import qualified Ouroboros.Storage.ImmutableDB as ImmDB
+import qualified Ouroboros.Storage.LedgerDB.DiskPolicy as LgrDB
+import qualified Ouroboros.Storage.LedgerDB.MemPolicy as LgrDB
+import qualified Ouroboros.Storage.Util.ErrorHandling as EH
 
 -- | Interface provided by 'ouroboros-network'.  At the moment
 -- 'ouroboros-network' only provides this interface in 'IO' backed by sockets,
@@ -70,7 +77,7 @@ import qualified Ouroboros.Storage.ChainDB.Mock as ChainDB
 data NetworkInterface m peer = NetworkInterface {
       -- | Like 'Ouroboros.Network.NodeToNode.nodeToNodeConnectTo'
       --
-      niConnectTo :: peer -> m ()
+      niConnectTo      :: peer -> m ()
 
       -- | Like 'Ouroboros.Network.NodeToNode.withServerNodeToNode'
       --
@@ -180,10 +187,11 @@ broadcastNetwork :: forall m c ext.
                  -> (CoreNodeId -> ProtocolInfo (SimpleBlock c ext))
                  -> ChaChaDRG
                  -> NumSlots
+                 -> DiffTime
                  -> m (Map NodeId ( NodeConfig (BlockProtocol (SimpleBlock c ext))
                                   , Chain (SimpleBlock c ext)
                                   ))
-broadcastNetwork registry btime numCoreNodes pInfo initRNG numSlots = do
+broadcastNetwork registry btime numCoreNodes pInfo initRNG numSlots slotLen = do
 
     -- all known addresses
     let addrs :: [Addr]
@@ -225,7 +233,8 @@ broadcastNetwork registry btime numCoreNodes pInfo initRNG numSlots = do
             , produceDRG      = atomically $ simChaChaT varRNG id $ drgNew
             }
 
-      chainDB <- ChainDB.openDB pInfoConfig pInfoInitLedger
+      args    <- mkArgs pInfoConfig pInfoInitLedger
+      chainDB <- ChainDB.openDB args
 
       let nodeParams = NodeParams
             { tracer             = nullTracer
@@ -289,6 +298,50 @@ broadcastNetwork registry btime numCoreNodes pInfo initRNG numSlots = do
         (blockFetchConsumer, blockFetchProducer) <- createConnectedChannels
         return (them, NodeChan {..})
 
+    mkArgs :: NodeConfig (BlockProtocol (SimpleBlock c ext))
+           -> ExtLedgerState (SimpleBlock c ext)
+           -> m (ChainDbArgs m (SimpleBlock c ext))
+    mkArgs cfg initLedger = do
+      (immDbFsVar, volDbFsVar, lgrDbFsVar) <- atomically $
+        (,,) <$> newTVar Mock.empty
+             <*> newTVar Mock.empty
+             <*> newTVar Mock.empty
+      return ChainDbArgs
+        { -- Decoders
+          cdbDecodeHash       = demoDecodeHeaderHash
+        , cdbDecodeBlock      = demoDecodeBlock cfg
+        , cdbDecodeLedger     = demoDecodeLedgerState cfg
+        , cdbDecodeChainState = demoDecodeChainState (Proxy @(SimpleBlock c ext))
+          -- Encoders
+        , cdbEncodeBlock      = demoEncodeBlock cfg
+        , cdbEncodeHash       = demoEncodeHeaderHash
+        , cdbEncodeLedger     = demoEncodeLedgerState cfg
+        , cdbEncodeChainState = demoEncodeChainState (Proxy @(SimpleBlock c ext))
+          -- Error handling
+        , cdbErrImmDb         = EH.monadCatch
+        , cdbErrVolDb         = EH.monadCatch
+        , cdbErrVolDbSTM      = EH.throwSTM
+          -- HasFS instances
+        , cdbHasFSImmDb       = simHasFS EH.monadCatch immDbFsVar
+        , cdbHasFSVolDb       = simHasFS EH.monadCatch volDbFsVar
+        , cdbHasFSLgrDB       = simHasFS EH.monadCatch lgrDbFsVar
+          -- Policy
+        , cdbValidation       = ImmDB.ValidateAllEpochs
+        , cdbBlocksPerFile    = 4
+        , cdbMemPolicy        = LgrDB.defaultMemPolicy  (protocolSecurityParam cfg)
+        , cdbDiskPolicy       = LgrDB.defaultDiskPolicy (protocolSecurityParam cfg) slotLen
+          -- Integration
+        , cdbNodeConfig       = cfg
+        , cdbEpochSize        = demoEpochSize (Proxy @(SimpleBlock c ext))
+        , cdbIsEBB            = \blk -> if demoIsEBB blk
+                                        then Just (blockHash blk)
+                                        else Nothing
+        , cdbGenesis          = return initLedger
+        -- Misc
+        , cdbTracer           = nullTracer
+        , cdbThreadRegistry   = registry
+        , cdbGcDelay          = 0
+        }
 
 {-------------------------------------------------------------------------------
   Internal auxiliary
