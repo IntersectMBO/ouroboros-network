@@ -109,22 +109,30 @@ forkSyncStateOnTipPointChange registry menv = do
 -- TODO: This may return some transactions as invalid that aren't new. Remove?
 implAddTxs :: forall m blk. (MonadSTM m, ApplyTx blk)
            => MempoolEnv m blk
-           -> [(GenTxId blk, GenTx blk)]
-           -> m [(GenTx blk, ApplyTxErr blk)]
+           -> [GenTx blk]
+           -> m [(GenTx blk, Maybe (ApplyTxErr blk))]
 implAddTxs mpEnv@MempoolEnv{mpEnvStateVar, mpEnvLedgerCfg} txs =
     atomically $ do
       ValidationResult {
         vrBefore,
         vrValid,
+        vrNewValid,
         vrInvalid
       } <- validateNew <$> validateIS mpEnv
       writeTVar mpEnvStateVar IS { isTxs   = vrValid
                                  , isTip   = vrBefore
                                  }
-      return vrInvalid
+      pure $ (vrInvalidMaybeErr vrInvalid) ++ zip vrNewValid (repeat Nothing)
   where
     validateNew :: ValidationResult blk ->  ValidationResult blk
-    validateNew = extendsVR mpEnvLedgerCfg False txs
+    validateNew = extendsVR
+        mpEnvLedgerCfg
+        False
+        (map (\tx -> (computeGenTxId tx, tx)) txs)
+
+    vrInvalidMaybeErr :: [(GenTx blk, ApplyTxErr blk)]
+                      -> [(GenTx blk, Maybe (ApplyTxErr blk))]
+    vrInvalidMaybeErr = map (\(tx, err) -> (tx, Just err))
 
 implSyncState :: (MonadSTM m, ApplyTx blk)
               => MempoolEnv m blk
@@ -185,21 +193,29 @@ implSnapshotGetTx IS{isTxs} tn = isTxs `lookupByTicketNo` tn
 
 data ValidationResult blk = ValidationResult {
     -- | The tip of the chain before applying these transactions
-    vrBefore  :: ChainHash blk
+    vrBefore       :: ChainHash blk
 
     -- | The transactions that were found to be valid (oldest to newest)
-  , vrValid   :: TxSeq (GenTxId blk, GenTx blk)
+  , vrValid        :: TxSeq (GenTxId blk, GenTx blk)
+
+    -- | New transactions (not previously known) which were found to be valid.
+    --
+    -- n.b. This will only contain valid transactions which were /newly/ added
+    -- to the mempool (not previously known valid transactions).
+    --
+    -- Order not guaranteed.
+  , vrNewValid     :: [GenTx blk]
 
     -- | The state of the ledger after 'vrValid'
     --
     -- NOTE: This is intentionally not a strict field, so that we don't
     -- evaluate the final ledger state if we don't have to.
-  , vrAfter   :: LedgerState blk
+  , vrAfter        :: LedgerState blk
 
     -- | The transactions that were invalid, along with their errors
     --
     -- Order not guaranteed
-  , vrInvalid :: [(GenTx blk, ApplyTxErr blk)]
+  , vrInvalid      :: [(GenTx blk, ApplyTxErr blk)]
   }
 
 -- | Initialize 'ValidationResult' from a ledger state and a list of
@@ -210,12 +226,13 @@ initVR :: forall blk. ApplyTx blk
        -> (ChainHash blk, LedgerState blk)
        -> ValidationResult blk
 initVR cfg = \knownValid (tip, st) -> ValidationResult {
-      vrBefore  = tip
-    , vrValid   = knownValid
-    , vrAfter   = afterKnownValid
-                    (map snd (Foldable.toList knownValid))
-                    st
-    , vrInvalid = []
+      vrBefore   = tip
+    , vrValid    = knownValid
+    , vrNewValid = []
+    , vrAfter    = afterKnownValid
+                     (map snd (Foldable.toList knownValid))
+                     st
+    , vrInvalid  = []
     }
   where
     afterKnownValid :: [GenTx blk] -> LedgerState blk -> LedgerState blk
@@ -236,13 +253,18 @@ extendVR :: ApplyTx blk
          -> ValidationResult blk
          -> ValidationResult blk
 extendVR cfg prevApplied (txid, tx)
-         vr@ValidationResult{vrValid, vrAfter, vrInvalid} =
+         vr@ValidationResult{vrValid, vrNewValid, vrAfter, vrInvalid} =
     let apply | prevApplied = reapplyTx
               | otherwise   = applyTx in
     case runExcept (apply cfg tx vrAfter) of
-      Left err  -> vr { vrInvalid = (tx, err) : vrInvalid }
-      Right st' -> vr { vrValid   = vrValid `appendTx` (txid, tx)
-                      , vrAfter   = st' }
+      Left err  -> vr { vrInvalid  = (tx, err) : vrInvalid
+                      }
+      Right st' -> vr { vrValid    = vrValid `appendTx` (txid, tx)
+                      , vrAfter    = st'
+                      , vrNewValid = if not prevApplied
+                                     then tx : vrNewValid
+                                     else vrNewValid
+                      }
 
 -- | Apply 'extendVR' to a list of transactions, in order
 extendsVR :: ApplyTx blk

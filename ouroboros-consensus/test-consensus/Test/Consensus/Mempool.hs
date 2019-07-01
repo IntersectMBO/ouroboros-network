@@ -130,7 +130,7 @@ testAddTxsWithMempoolAndSnapshot bc txs prop =
   tabulate "Transactions" (map constrName txs) $
   runSimOrThrow $
   withOpenMempool bc $ \mempool -> do
-    let genTxs = testTxsToGenTxPairs txs
+    let genTxs = map TestGenTx txs
         Mempool
           { addTxs
           , getSnapshot
