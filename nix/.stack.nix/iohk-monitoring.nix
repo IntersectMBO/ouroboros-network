@@ -8,13 +8,13 @@
       disable-gui = false;
       disable-monitoring = false;
       disable-observables = false;
-      disable-syslog = false;
+      disable-systemd = false;
       disable-examples = false;
-      queue-flush = false;
+      performance-test-queue = false;
       };
     package = {
       specVersion = "1.10";
-      identifier = { name = "iohk-monitoring"; version = "0.1.9.0"; };
+      identifier = { name = "iohk-monitoring"; version = "0.1.10.0"; };
       license = "MIT";
       copyright = "2018 IOHK";
       maintainer = "";
@@ -69,7 +69,7 @@
           then [ (hsPkgs.Win32) ]
           else [
             (hsPkgs.unix)
-            ])) ++ (pkgs.lib).optionals (system.isLinux && !flags.disable-syslog) [
+            ])) ++ (pkgs.lib).optionals (system.isLinux && !flags.disable-systemd) [
           (hsPkgs.hsyslog)
           (hsPkgs.libsystemd-journal)
           ];
@@ -78,6 +78,7 @@
         "example-simple" = {
           depends = [
             (hsPkgs.base)
+            (hsPkgs.aeson)
             (hsPkgs.iohk-monitoring)
             (hsPkgs.async)
             (hsPkgs.bytestring)
@@ -101,6 +102,16 @@
             else [
               (hsPkgs.unix)
               ])) ++ (pkgs.lib).optional (system.isLinux) (hsPkgs.download);
+          };
+        "example-performance" = {
+          depends = [
+            (hsPkgs.base)
+            (hsPkgs.iohk-monitoring)
+            (hsPkgs.async)
+            (hsPkgs.criterion)
+            (hsPkgs.text)
+            (hsPkgs.unordered-containers)
+            ];
           };
         };
       tests = {
@@ -144,8 +155,8 @@
     } // {
     src = (pkgs.lib).mkDefault (pkgs.fetchgit {
       url = "https://github.com/input-output-hk/iohk-monitoring-framework";
-      rev = "9cb21a3ebf0f45bfb94ece3e6d62e613eca8b17b";
-      sha256 = "1nms4gap3j6qc0gs4rk8kpqm6zdqcp5hchsd1wv459wvhfq4f20p";
+      rev = "3ac2191fc4c68b46b7f6c08e2873f71949cc68e7";
+      sha256 = "1yajic3x46jichj57vz3cqyvn5cdnayc4pccmcmds902wg7nqgia";
       });
     postUnpack = "sourceRoot+=/iohk-monitoring; echo source root reset to \$sourceRoot";
     }

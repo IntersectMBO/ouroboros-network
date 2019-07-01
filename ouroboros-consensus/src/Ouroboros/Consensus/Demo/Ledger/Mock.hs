@@ -18,6 +18,7 @@ import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Demo.Run
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Mock
+import           Ouroboros.Consensus.Protocol.Abstract (ChainState)
 import           Ouroboros.Consensus.Util.Condense
 
 {-------------------------------------------------------------------------------
@@ -40,14 +41,21 @@ instance ( ProtocolLedgerView (SimpleBlock SimpleMockCrypto ext)
          , ForgeExt (BlockProtocol (SimpleBlock SimpleMockCrypto ext))
                     SimpleMockCrypto
                     ext
+         , Serialise (ChainState (BlockProtocol (SimpleBlock SimpleMockCrypto ext)))
          ) => RunDemo (SimpleBlock  SimpleMockCrypto ext) where
   demoForgeBlock         = forgeSimple
   demoBlockMatchesHeader = matchesSimpleHeader
   demoBlockFetchSize     = fromIntegral . simpleBlockSize . simpleHeaderStd
+  demoIsEBB              = const False
+  demoEpochSize          = \_ _ -> return 21600
   demoEncodeBlock        = const Serialise.encode
   demoEncodeHeader       = const Serialise.encode
   demoEncodeGenTx        =       Serialise.encode
+  demoEncodeLedgerState  = const Serialise.encode
+  demoEncodeChainState   = const Serialise.encode
   demoDecodeBlock        = const Serialise.decode
   demoDecodeHeader       = const Serialise.decode
   demoDecodeGenTx        =       Serialise.decode
+  demoDecodeLedgerState  = const Serialise.decode
+  demoDecodeChainState   = const Serialise.decode
   demoMockTx             = \_ -> SimpleGenTx

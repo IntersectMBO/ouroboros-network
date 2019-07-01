@@ -239,8 +239,8 @@ broadcastNetwork registry btime numCoreNodes pInfo initRNG numSlots = do
             , btime
             , chainDB
             , callbacks
-            , blockFetchSize     = fromIntegral . simpleBlockSize . simpleHeaderStd
-            , blockMatchesHeader = matchesSimpleHeader
+            , blockFetchSize     = demoBlockFetchSize
+            , blockMatchesHeader = demoBlockMatchesHeader
             }
 
       node <- nodeKernel nodeParams

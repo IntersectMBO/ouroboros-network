@@ -1,3 +1,4 @@
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 module Ouroboros.Consensus.Ledger.Mock.Stake (
     -- * Stakeholders
     StakeHolder(..)
@@ -12,6 +13,7 @@ module Ouroboros.Consensus.Ledger.Mock.Stake (
   , genesisStakeDist
   ) where
 
+import           Codec.Serialise (Serialise)
 import           Data.IntMap.Strict (IntMap)
 import qualified Data.IntMap.Strict as IntMap
 import           Data.Map.Strict (Map)
@@ -39,7 +41,7 @@ data StakeHolder =
 -------------------------------------------------------------------------------}
 
 newtype StakeDist = StakeDist { stakeDistToIntMap :: IntMap Rational }
-  deriving (Show, Eq)
+  deriving (Show, Eq, Serialise)
 
 stakeWithDefault :: Rational -> Int -> StakeDist -> Rational
 stakeWithDefault d n = IntMap.findWithDefault d n . stakeDistToIntMap

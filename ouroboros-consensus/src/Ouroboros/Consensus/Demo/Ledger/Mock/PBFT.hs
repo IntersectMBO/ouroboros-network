@@ -1,7 +1,11 @@
+{-# LANGUAGE FlexibleInstances #-}
+
+{-# OPTIONS_GHC -Wno-orphans #-}
 module Ouroboros.Consensus.Demo.Ledger.Mock.PBFT (
     protocolInfoMockPBFT
   ) where
 
+import           Codec.Serialise (Serialise (..))
 import qualified Data.Bimap as Bimap
 import qualified Data.Sequence as Seq
 
@@ -42,3 +46,7 @@ protocolInfoMockPBFT (NumCoreNodes numCoreNodes) (CoreNodeId nid) params =
   where
     addrDist :: AddrDist
     addrDist = mkAddrDist numCoreNodes
+
+instance Serialise (VerKeyDSIGN MockDSIGN) where
+  encode = encodeVerKeyDSIGN
+  decode = decodeVerKeyDSIGN

@@ -1,5 +1,8 @@
-{-# LANGUAGE FlexibleContexts   #-}
-{-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE DeriveAnyClass       #-}
+{-# LANGUAGE DeriveGeneric        #-}
+{-# LANGUAGE FlexibleContexts     #-}
+{-# LANGUAGE StandaloneDeriving   #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 module Ouroboros.Consensus.Ledger.Mock.State (
     -- * State of the mock ledger
@@ -11,14 +14,16 @@ module Ouroboros.Consensus.Ledger.Mock.State (
   , genesisMockState
   ) where
 
+import           Codec.Serialise (Serialise)
 import           Control.Monad.Except
 import           Data.Set (Set)
 import qualified Data.Set as Set
+import           GHC.Generics (Generic)
 
 import           Cardano.Crypto.Hash
 
-import           Ouroboros.Network.Block (ChainHash, HasHeader, Point (..),
-                     StandardHash, pointHash)
+import           Ouroboros.Network.Block (ChainHash, HasHeader, HeaderHash,
+                     Point, StandardHash, pointHash)
 import           Ouroboros.Network.Chain (genesisPoint)
 
 import           Ouroboros.Consensus.Block
@@ -34,7 +39,9 @@ data MockState blk = MockState {
     , mockConfirmed :: Set TxId
     , mockTip       :: Point blk
     }
-  deriving (Show, Eq)
+  deriving (Show, Eq, Generic)
+
+deriving instance Serialise (HeaderHash blk) => Serialise (MockState blk)
 
 data MockError blk =
     MockInvalidInputs InvalidInputs
