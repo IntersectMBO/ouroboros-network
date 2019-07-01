@@ -24,6 +24,9 @@ module Ouroboros.Network.BlockFetch.Decision (
 
 import qualified Data.Set as Set
 
+import           Data.List (sortBy, groupBy, transpose)
+import           Data.Function (on)
+
 import           Control.Exception (assert)
 import           Control.Monad (guard)
 
@@ -41,7 +44,9 @@ import           Ouroboros.Network.BlockFetch.ClientState
 import           Ouroboros.Network.BlockFetch.DeltaQ
                    ( PeerGSV(..), SizeInBytes
                    , PeerFetchInFlightLimits(..)
-                   , calculatePeerFetchInFlightLimits )
+                   , calculatePeerFetchInFlightLimits
+                   , estimateResponseDeadlineProbability
+                   , estimateExpectedResponseDuration )
 
 
 data FetchDecisionPolicy header = FetchDecisionPolicy {
@@ -62,8 +67,26 @@ data FetchDecisionPolicy header = FetchDecisionPolicy {
 
 
 data FetchMode =
+       -- | Use this mode when we are catching up on the chain but are stil
+       -- well behind. In this mode the fetch logic will optimise for
+       -- throughput rather than latency.
+       --
        FetchModeBulkSync
+
+       -- | Use this mode for block-producing nodes that have a known deadline
+       -- to produce a block and need to get the best chain before that. In
+       -- this mode the fetch logic will optimise for picking the best chain
+       -- within the given deadline.
      | FetchModeDeadline
+
+       -- TODO: add an additional mode for in-between: when we are a core node
+       -- following the chain but do not have an imminent deadline, or are a
+       -- relay forwarding chains within the network.
+       --
+       -- This is a mixed mode because we have to combine the distribution of
+       -- time to next block under praos, with the distribution of latency of
+       -- our peers, and also the consensus preference.
+
   deriving (Eq, Show)
 
 
@@ -148,6 +171,7 @@ fetchDecisions fetchDecisionPolicy@FetchDecisionPolicy {
 
     -- Reorder chains based on consensus policy and network timing data.
   . prioritisePeerChains
+      fetchMode
       compareCandidateChains
       blockFetchSize
   . map swizzleIG
@@ -170,10 +194,10 @@ fetchDecisions fetchDecisionPolicy@FetchDecisionPolicy {
       currentChain
   where
     -- Data swizzling functions to get the right info into each stage.
-    swizzleI   (c, p@(_,     inflight,_,   _)) = (        c,         inflight,       p)
-    swizzleIG  (c, p@(_,     inflight,gsvs,_)) = (        c,         inflight, gsvs, p)
-    swizzleSI  (c, p@(status,inflight,_,   _)) = (snd <$> c, status, inflight,       p)
-    swizzleSIG (c, p@(status,inflight,gsvs,_)) = (        c, status, inflight, gsvs, p)
+    swizzleI   (c, p@(_,     inflight,_,   _)) = (c,         inflight,       p)
+    swizzleIG  (c, p@(_,     inflight,gsvs,_)) = (c,         inflight, gsvs, p)
+    swizzleSI  (c, p@(status,inflight,_,   _)) = (c, status, inflight,       p)
+    swizzleSIG (c, p@(status,inflight,gsvs,_)) = (c, status, inflight, gsvs, p)
 
 {-
 We have the node's /current/ or /adopted/ chain. This is the node's chain in
@@ -525,15 +549,157 @@ filterNotAlreadyInFlightWithOtherPeers FetchModeBulkSync chains =
 
 
 prioritisePeerChains
-  :: HasHeader header
-  => (AnchoredFragment header -> AnchoredFragment header -> Ordering)
+  :: forall header peer. HasHeader header
+  => FetchMode
+  -> (AnchoredFragment header -> AnchoredFragment header -> Ordering)
   -> (header -> SizeInBytes)
   -> [(FetchDecision (CandidateFragments header), PeerFetchInFlight header,
                                                   PeerGSV,
                                                   peer)]
-  -> [(FetchDecision (CandidateFragments header), peer)]
-prioritisePeerChains _compareCandidateChains _blockFetchSize =
-    map (\(c,_,_,p) -> (c,p))
+  -> [(FetchDecision [ChainFragment header],      peer)]
+prioritisePeerChains FetchModeDeadline compareCandidateChains blockFetchSize =
+    --TODO: last tie-breaker is still original order (which is probably
+    -- peerid order). We should use a random tie breaker so that adversaries
+    -- cannot get any advantage.
+
+    map (\(decision, peer) ->
+            (fmap (\(_,_,fragment) -> fragment) decision, peer))
+  . concatMap ( concat
+              . transpose
+              . groupBy (equatingFst
+                          (equatingRight
+                            ((==) `on` chainHeadPoint)))
+              . sortBy  (comparingFst
+                          (comparingRight
+                            (compare `on` chainHeadPoint)))
+              )
+  . groupBy (equatingFst
+              (equatingRight
+                (equatingPair
+                   -- compare on probability band first, then preferred chain
+                   (==)
+                   (equateCandidateChains `on` getChainSuffix)
+                 `on`
+                   (\(band, chain, _fragments) -> (band, chain)))))
+  . sortBy  (descendingOrder
+              (comparingFst
+                (comparingRight
+                  (comparingPair
+                     -- compare on probability band first, then preferred chain
+                     compare
+                     (compareCandidateChains `on` getChainSuffix)
+                   `on`
+                      (\(band, chain, _fragments) -> (band, chain))))))
+  . map annotateProbabilityBand
+  where
+    annotateProbabilityBand (Left decline, _, _, peer) = (Left decline, peer)
+    annotateProbabilityBand (Right (chain,fragments), inflight, gsvs, peer) =
+        (Right (band, chain, fragments), peer)
+      where
+        band = probabilityBand $
+                 estimateResponseDeadlineProbability
+                   gsvs
+                   (peerFetchBytesInFlight inflight)
+                   (totalFetchSize blockFetchSize fragments)
+                   deadline
+
+    deadline = 2 -- seconds -- TODO: get this from external info
+
+    equateCandidateChains chain1 chain2
+      | EQ <- compareCandidateChains chain1 chain2 = True
+      | otherwise                                  = False
+
+    chainHeadPoint (_,ChainSuffix c,_) = AnchoredFragment.headPoint c
+
+prioritisePeerChains FetchModeBulkSync compareCandidateChains blockFetchSize =
+    map (\(decision, peer) ->
+            (fmap (\(_, _, fragment) -> fragment) decision, peer))
+  . sortBy (comparingFst
+             (comparingRight
+               (comparingPair
+                  -- compare on preferred chain first, then duration
+                  (compareCandidateChains `on` getChainSuffix)
+                  compare
+                `on`
+                  (\(duration, chain, _fragments) -> (chain, duration)))))
+  . map annotateDuration
+  where
+    annotateDuration (Left decline, _, _, peer) = (Left decline, peer)
+    annotateDuration (Right (chain,fragments), inflight, gsvs, peer) =
+        (Right (duration, chain, fragments), peer)
+      where
+        -- TODO: consider if we should put this into bands rather than just
+        -- taking the full value.
+        duration = estimateExpectedResponseDuration
+                     gsvs
+                     (peerFetchBytesInFlight inflight)
+                     (totalFetchSize blockFetchSize fragments)
+
+totalFetchSize :: HasHeader header
+               => (header -> SizeInBytes)
+               -> [ChainFragment header]
+               -> SizeInBytes
+totalFetchSize blockFetchSize fragments =
+  sum [ blockFetchSize header
+      | fragment <- fragments
+      , header   <- ChainFragment.toOldestFirst fragment ]
+
+type Comparing a = a -> a -> Ordering
+type Equating  a = a -> a -> Bool
+
+descendingOrder :: Comparing a -> Comparing a
+descendingOrder cmp = flip cmp
+
+comparingPair :: Comparing a -> Comparing b -> Comparing (a, b)
+comparingPair cmpA cmpB (a1, b1) (a2, b2) = cmpA a1 a2 <> cmpB b1 b2
+
+equatingPair :: Equating a -> Equating b -> Equating (a, b)
+equatingPair eqA eqB (a1, b1) (a2, b2) = eqA a1 a2 && eqB b1 b2
+
+comparingEither :: Comparing a -> Comparing b -> Comparing (Either a b)
+comparingEither _ _    (Left  _) (Right _) = LT
+comparingEither cmpA _ (Left  x) (Left  y) = cmpA x y
+comparingEither _ cmpB (Right x) (Right y) = cmpB x y
+comparingEither _ _    (Right _) (Left  _) = GT
+
+equatingEither :: Equating a -> Equating b -> Equating (Either a b)
+equatingEither _ _   (Left  _) (Right _) = False
+equatingEither eqA _ (Left  x) (Left  y) = eqA x y
+equatingEither _ eqB (Right x) (Right y) = eqB x y
+equatingEither _ _   (Right _) (Left  _) = False
+
+comparingFst :: Comparing a -> Comparing (a, b)
+comparingFst cmp = cmp `on` fst
+
+equatingFst :: Equating a -> Equating (a, b)
+equatingFst eq = eq `on` fst
+
+comparingRight :: Comparing b -> Comparing (Either a b)
+comparingRight = comparingEither mempty
+
+equatingRight :: Equating b -> Equating (Either a b)
+equatingRight = equatingEither (\_ _ -> True)
+
+-- | Given the probability of the download completing within the deadline,
+-- classify that into one of three broad bands: high, medium and low.
+--
+-- The bands are
+--
+-- * high:    98% -- 100%
+-- * medium:  75% --  98%
+-- * low:      0% --  75%
+--
+probabilityBand :: Double -> ProbabilityBand
+probabilityBand p
+  | p > 0.98  = ProbabilityHigh
+  | p > 0.75  = ProbabilityModerate
+  | otherwise = ProbabilityLow
+ -- TODO: for hysteresis, increase probability if we're already using this peer
+
+data ProbabilityBand = ProbabilityLow
+                     | ProbabilityModerate
+                     | ProbabilityHigh
+  deriving (Eq, Ord, Show)
 
 
 {-
