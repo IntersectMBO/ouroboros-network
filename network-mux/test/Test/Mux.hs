@@ -113,22 +113,6 @@ instance Mx.MiniProtocolLimits TestProtocolsSmall where
   maximumMessageSize ReqRespSmall  = smallMiniProtocolLimit
   maximumIngressQueue ReqRespSmall = smallMiniProtocolLimit
 
--- |
--- Allow to run a singly req-resp protocol.
---
-data TestProtocols3 = ReqResp4
-  deriving (Eq, Ord, Enum, Bounded, Show)
-
-instance Mx.ProtocolEnum TestProtocols3 where
-  fromProtocolEnum ReqResp4 = 4
-
-  toProtocolEnum 4 = Just ReqResp4
-  toProtocolEnum _ = Nothing
-
-instance Mx.MiniProtocolLimits TestProtocols3 where
-  maximumMessageSize ReqResp4  = defaultMiniProtocolLimit
-  maximumIngressQueue ReqResp4 = defaultMiniProtocolLimit
-
 newtype DummyPayload = DummyPayload {
       unDummyPayload :: BL.ByteString
     } deriving Eq
@@ -302,8 +286,12 @@ prop_mux_snd_recv request response = ioProperty $ do
     (verify, clientApp, serverApp) <- setupMiniReqRsp
                                         (return ()) endMpsVar request response
 
-    clientAsync <- async $ Mx.runMuxWithQueues "client" (Mx.MuxInitiatorApplication $ \_ ReqResp4 -> clientApp) client_w client_r sduLen Nothing
-    serverAsync <- async $ Mx.runMuxWithQueues "server" (Mx.MuxResponderApplication $ \_ ReqResp4 -> serverApp) server_w server_r sduLen Nothing
+    clientAsync <-
+      async $ Mx.runMuxWithQueues "client" (Mx.MuxInitiatorApplication
+        $ \_ ReqResp1 -> clientApp) client_w client_r sduLen Nothing
+    serverAsync <-
+      async $ Mx.runMuxWithQueues "server" (Mx.MuxResponderApplication
+        $ \_ ReqResp1 -> serverApp) server_w server_r sduLen Nothing
 
     r <- waitBoth clientAsync serverAsync
     case r of
