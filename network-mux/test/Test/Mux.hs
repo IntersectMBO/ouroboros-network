@@ -6,6 +6,7 @@
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE TupleSections              #-}
 {-# LANGUAGE TypeApplications           #-}
 
 {-# OPTIONS_GHC -Wno-orphans            #-}
@@ -24,6 +25,7 @@ import qualified Data.ByteString.Lazy as BL
 import qualified Data.ByteString.Lazy.Char8 as BL8 (pack)
 import           Data.List (dropWhileEnd)
 import           Data.Int
+import           Data.Tuple (swap)
 import           Data.Word
 import           Test.QuickCheck
 import           Test.QuickCheck.Gen
@@ -275,6 +277,29 @@ instance Arbitrary Mx.MuxBearerState where
 
 
 
+-- | A pair of two bytestrings which lengths are unevenly distributed
+--
+data Uneven = Uneven DummyPayload DummyPayload
+  deriving (Eq, Show)
+
+instance Arbitrary Uneven where
+    arbitrary = do
+      n <- choose (1, 128)
+      b <- arbitrary
+      (l, k) <- (if b then swap else id) <$>
+                oneof [ (n,) <$> choose (2 * n, defaultMiniProtocolLimit - cborOverhead)
+                      , let k = defaultMiniProtocolLimit - n - cborOverhead
+                        in (k,) <$> choose (1, k `div` 2)
+                      , do
+                          k <- choose (1, defaultMiniProtocolLimit - cborOverhead)
+                          return (k, k `div` 2)
+                      ]
+      Uneven <$> (DummyPayload <$> genLargeByteString 1024 l)
+             <*> (DummyPayload <$> genLargeByteString 1024 k)
+      where
+        cborOverhead = 7 -- XXX Bytes needed by CBOR to encode the dummy payload
+
+
 --
 -- QuickChekc Properties
 --
@@ -433,11 +458,10 @@ prop_mux_2_minis request0 response0 response1 request1 = ioProperty $ do
 -- miniprotocols and the corresponding responders each send a large reply back.
 -- The Mux bearer should alternate between sending data for the two responders.
 --
-prop_mux_starvation :: DummyPayload
-                    -> DummyPayload
+prop_mux_starvation :: Uneven
                     -> Property
-prop_mux_starvation response0 response1 =
-    let sduLen        = 1260 in
+prop_mux_starvation (Uneven response0 response1) =
+    let sduLen = 1260 in
     (BL.length (unDummyPayload response0) > 2 * fromIntegral sduLen) &&
     (BL.length (unDummyPayload response1) > 2 * fromIntegral sduLen) ==>
     ioProperty $ do
