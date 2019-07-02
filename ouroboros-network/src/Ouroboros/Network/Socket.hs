@@ -72,7 +72,7 @@ maxTransmissionUnit = 4 * 1440
 --
 -- Exceptions thrown by @'MuxApplication'@ are rethrown by @'connectTo'@.
 connectToNode
-  :: forall ptcl vNumber extra a b.
+  :: forall appType ptcl vNumber extra a b.
      ( Mx.ProtocolEnum ptcl
      , Ord ptcl
      , Enum ptcl
@@ -84,10 +84,11 @@ connectToNode
      , Show vNumber
      , Show ptcl
      , Mx.MiniProtocolLimits ptcl
+     , HasInitiator appType ~ True
      )
   => (forall vData. extra vData -> vData -> CBOR.Term)
   -> (forall vData. extra vData -> CBOR.Term -> Either Text vData)
-  -> Versions vNumber extra (MuxApplication InitiatorApp ptcl IO BL.ByteString a b)
+  -> Versions vNumber extra (MuxApplication appType ptcl IO BL.ByteString a b)
   -- ^ application to run over the connection
   -> Maybe Socket.AddrInfo
   -- ^ local address; the created socket will bind to it
