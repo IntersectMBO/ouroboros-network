@@ -398,7 +398,7 @@ data Reader m blk a = Reader {
       -- | Blocking version of 'readerInstruction'
     , readerInstructionBlocking :: m (ChainUpdate blk a)
 
-      -- | Move the iterator forward
+      -- | Move the reader forward
       --
       -- Must be given a list of points in order of preference; the iterator
       -- will move forward to the first point on the list that is on the current
@@ -412,6 +412,14 @@ data Reader m blk a = Reader {
       -- Cannot live in @STM@ because the points specified might live in the
       -- immutable DB.
     , readerForward             :: [Point blk] -> m (Maybe (Point blk))
+
+      -- | Close the reader.
+      --
+      -- Idempotent.
+      --
+      -- After closing, all other operations on the reader will throw
+      -- 'ClosedReaderError'.
+    , readerClose               :: m ()
 
       -- | Per-database reader ID
       --
@@ -502,6 +510,12 @@ data ChainDbError blk =
     -- This will be thrown when performing any operation on the ChainDB except
     -- for 'isOpen' and 'closeDB'.
   | ClosedDBError
+
+    -- | The reader is closed.
+    --
+    -- This will be thrown when performing any operation on a closed readers,
+    -- except for 'readerClose'.
+  | ClosedReaderError ReaderId
 
     -- | When there is no chain/fork that satisfies the bounds passed to
     -- 'streamBlocks'.
