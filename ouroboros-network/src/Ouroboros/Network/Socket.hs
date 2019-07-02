@@ -97,21 +97,20 @@ addConnection
     -> [TVar IO Int]
     -> STM IO ()
 addConnection tblVar remoteAddr localAddr refs =
-    do
-        tbl <- readTVar tblVar
-        case M.lookup remoteAddr tbl of
-             Nothing -> do
-                 subRefs refs
-                 writeTVar tblVar $ M.insert remoteAddr (ConnectionTableEntry refs
-                         (S.singleton localAddr)) tbl
-             Just cte -> do
-                 let refs' = refs ++ cteRefs cte
-                 subRefs $ refs'
-                 let cte' = cte { cteRefs = refs'
-                                , cteLocalAddresses = S.insert localAddr (cteLocalAddresses cte)
-                                }
-                 writeTVar tblVar $ M.insert remoteAddr cte' tbl
+    readTVar tblVar >>= M.alterF fn remoteAddr >>= writeTVar tblVar
   where
+    fn :: Maybe ConnectionTableEntry -> STM IO (Maybe ConnectionTableEntry)
+    fn Nothing = do
+        subRefs refs
+        return $ Just $ (ConnectionTableEntry refs (S.singleton localAddr))
+    fn (Just cte) = do
+          let refs' = refs ++ cteRefs cte
+          subRefs $ refs'
+          return $ Just $ cte {
+                cteRefs = refs'
+              , cteLocalAddresses = S.insert localAddr (cteLocalAddresses cte)
+              }
+
     subRefs = mapM_ (\a -> modifyTVar' a (\r -> r - 1))
 
 removeConnection
@@ -119,18 +118,17 @@ removeConnection
     -> Socket.SockAddr
     -> Socket.SockAddr
     -> IO ()
-removeConnection tblVar remoteAddr localAddr =
-    atomically $ do
-        tbl <- readTVar tblVar
-        case M.lookup remoteAddr tbl of
-             Nothing -> return () -- XXX removing non existant address
-             Just ConnectionTableEntry{..} ->  do
-                 mapM_ (\a -> modifyTVar' a (+ 1)) cteRefs
-                 let localAddresses' = S.delete localAddr cteLocalAddresses
-                 if null localAddresses'
-                     then writeTVar tblVar $ M.delete remoteAddr tbl
-                     else writeTVar tblVar $ M.insert remoteAddr
-                             (ConnectionTableEntry cteRefs localAddresses') tbl
+removeConnection tblVar remoteAddr localAddr = atomically $
+    readTVar tblVar >>= M.alterF fn remoteAddr >>= writeTVar tblVar
+  where
+    fn :: Maybe ConnectionTableEntry -> STM IO (Maybe ConnectionTableEntry)
+    fn Nothing = return Nothing -- XXX removing non existant address
+    fn (Just ConnectionTableEntry{..}) = do
+        mapM_ (\a -> modifyTVar' a (+ 1)) cteRefs
+        let localAddresses' = S.delete localAddr cteLocalAddresses
+        if null localAddresses'
+            then return Nothing
+            else return $ Just $ ConnectionTableEntry cteRefs localAddresses'
 
 refConnection
     :: ConnectionTable
@@ -146,6 +144,9 @@ refConnection tblVar remoteAddr refVar = atomically $ do
              Just cte -> do
                  let refs' = refVar : (cteRefs cte)
                  mapM_ (\a -> modifyTVar' a (\r -> r - 1)) refs'
+                 -- XXX We look up remoteAddr twice, is it possible
+                 -- to use M.alterF given that we need to be able to return
+                 -- ConnectionTableCreate or ConnectionTableExist?
                  writeTVar tblVar $ M.insert remoteAddr
                      (cte { cteRefs = refs' }) tbl
                  return ConnectionTableExist
