@@ -3,8 +3,8 @@ module Ouroboros.Storage.LedgerDB.DiskPolicy (
   , defaultDiskPolicy
   ) where
 
-import           Data.Time.Clock (DiffTime)
 import           Control.Monad.Class.MonadSTM
+import           Data.Time.Clock (DiffTime)
 
 import           Ouroboros.Consensus.Protocol.Abstract (SecurityParam (..))
 
@@ -58,10 +58,8 @@ data DiskPolicy m = DiskPolicy {
 defaultDiskPolicy :: MonadSTM m
                   => SecurityParam     -- ^ Maximum rollback
                   -> DiffTime          -- ^ Slot length
-                  -> STM m (DiskPolicy m)
-defaultDiskPolicy (SecurityParam k) slotLength = do
-    constantDelay <- newTVar (fromIntegral k * slotLength)
-    return DiskPolicy {
-        onDiskNumSnapshots  = 2
-      , onDiskWriteInterval = readTVar constantDelay
-      }
+                  -> DiskPolicy m
+defaultDiskPolicy (SecurityParam k) slotLength = DiskPolicy {
+      onDiskNumSnapshots  = 2
+    , onDiskWriteInterval = return (fromIntegral k * slotLength)
+    }
