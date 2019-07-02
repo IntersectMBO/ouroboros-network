@@ -1,13 +1,10 @@
-{-# LANGUAGE DeriveFunctor              #-}
-{-# LANGUAGE DeriveGeneric              #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE KindSignatures             #-}
-{-# LANGUAGE LambdaCase                 #-}
-{-# LANGUAGE MultiWayIf                 #-}
-{-# LANGUAGE RankNTypes                 #-}
-{-# LANGUAGE RecordWildCards            #-}
-{-# LANGUAGE ScopedTypeVariables        #-}
-{-# LANGUAGE TupleSections              #-}
+{-# LANGUAGE DeriveGeneric       #-}
+{-# LANGUAGE KindSignatures      #-}
+{-# LANGUAGE LambdaCase          #-}
+{-# LANGUAGE MultiWayIf          #-}
+{-# LANGUAGE RankNTypes          #-}
+{-# LANGUAGE RecordWildCards     #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 module Ouroboros.Storage.LedgerDB.OnDisk (
     -- * Opening the database
@@ -19,6 +16,7 @@ module Ouroboros.Storage.LedgerDB.OnDisk (
   , StreamAPI(..)
     -- * Write to disk
   , takeSnapshot
+  , trimSnapshots
     -- * Low-level API (primarily exposed for testing)
   , DiskSnapshot -- opaque
   , deleteSnapshot
@@ -48,6 +46,7 @@ import           Ouroboros.Storage.FS.API
 import           Ouroboros.Storage.FS.API.Types
 
 import           Ouroboros.Storage.LedgerDB.Conf
+import           Ouroboros.Storage.LedgerDB.DiskPolicy
 import           Ouroboros.Storage.LedgerDB.InMemory
 import           Ouroboros.Storage.LedgerDB.MemPolicy
 
@@ -264,6 +263,22 @@ takeSnapshot hasFS encLedger encRef db = do
   where
     oldest :: ChainSummary l r
     oldest = ledgerDbTail db
+
+-- | Trim the number of on disk snapshots so that at most 'onDiskNumSnapshots'
+-- snapshots are stored on disk. The oldest snapshots are deleted.
+--
+-- The deleted snapshots are returned.
+trimSnapshots :: Monad m
+              => HasFS m h
+              -> DiskPolicy m
+              -> m [DiskSnapshot]
+trimSnapshots hasFS DiskPolicy{..} = do
+    snapshots <- listSnapshots hasFS
+    -- The snapshot are most recent first, so we can simply drop from the
+    -- front to get the snapshots that are "too" old.
+    forM (drop (fromIntegral onDiskNumSnapshots) snapshots) $ \snapshot -> do
+      deleteSnapshot hasFS snapshot
+      return snapshot
 
 {-------------------------------------------------------------------------------
   Internal: reading from disk
