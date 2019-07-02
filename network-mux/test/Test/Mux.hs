@@ -46,11 +46,7 @@ import           Control.Monad.Class.MonadTimer
 import           Control.Monad.IOSim (runSimStrictShutdown)
 import           Control.Tracer (nullTracer)
 
-import           Network.TypedProtocol.Channel
-import           Network.TypedProtocol.Driver
-import           Network.TypedProtocol.ReqResp.Client
-import           Network.TypedProtocol.ReqResp.Server
-import           Network.TypedProtocol.ReqResp.Codec.Cbor
+import           Test.Mux.ReqResp
 
 import qualified Network.Mux as Mx
 import qualified Network.Mux.Codec as Mx
@@ -290,15 +286,6 @@ instance Arbitrary Mx.MuxBearerState where
                           ]
 
 
-toChannel :: Mx.Channel m
-          -> Channel m BL.ByteString
-toChannel Mx.Channel {Mx.send, Mx.recv} = Channel {
-    send = send,
-    recv = recv
-  }
-
-
-
 -- | Verify that an initiator and a responder can send and receive messages from each other.
 -- Large DummyPayloads will be split into sduLen sized messages and the testcases will verify
 -- that they are correctly reassembled into the original message.
@@ -318,8 +305,8 @@ prop_mux_snd_recv request response = ioProperty $ do
     (verify, clientApp, serverApp) <- setupMiniReqRsp
                                         (return ()) endMpsVar request response
 
-    clientAsync <- async $ Mx.runMuxWithQueues "client" (Mx.MuxInitiatorApplication $ \_ ReqResp1 -> clientApp . toChannel) client_w client_r sduLen Nothing
-    serverAsync <- async $ Mx.runMuxWithQueues "server" (Mx.MuxResponderApplication $ \_ ReqResp1 -> serverApp . toChannel) server_w server_r sduLen Nothing
+    clientAsync <- async $ Mx.runMuxWithQueues "client" (Mx.MuxInitiatorApplication $ \_ ReqResp1 -> clientApp) client_w client_r sduLen Nothing
+    serverAsync <- async $ Mx.runMuxWithQueues "server" (Mx.MuxResponderApplication $ \_ ReqResp1 -> serverApp) server_w server_r sduLen Nothing
 
     r <- waitBoth clientAsync serverAsync
     case r of
@@ -334,40 +321,49 @@ setupMiniReqRsp :: IO ()        -- | Action performed by responder before proces
                 -> DummyPayload -- | Request, sent from initiator.
                 -> DummyPayload -- | Response, sent from responder after receive the request.
                 -> IO ( IO Bool
-                      , Channel IO BL.ByteString -> IO ()
-                      , Channel IO BL.ByteString -> IO ()
+                      , Mx.Channel IO -> IO ()
+                      , Mx.Channel IO -> IO ()
                       )
 setupMiniReqRsp serverAction mpsEndVar request response = do
     serverResultVar <- newEmptyTMVarM
     clientResultVar <- newEmptyTMVarM
 
-    return (verifyCallback serverResultVar clientResultVar, clientApp clientResultVar, serverApp serverResultVar)
+    return ( verifyCallback serverResultVar clientResultVar
+           , clientApp clientResultVar
+           , serverApp serverResultVar
+           )
   where
     verifyCallback serverResultVar clientResultVar =
         atomically $ (&&) <$> takeTMVar serverResultVar <*> takeTMVar clientResultVar
 
-    plainServer :: [DummyPayload] -> ReqRespServer DummyPayload DummyPayload IO Bool
-    plainServer reqs = ReqRespServer {
-        recvMsgReq  = \req -> serverAction >> return (response, plainServer (req:reqs)),
-        recvMsgDone = pure $ reverse reqs == [request]
-    }
-
-    plainClient :: [DummyPayload] -> ReqRespClient DummyPayload DummyPayload IO Bool
-    plainClient = go []
+    reqRespServer :: ReqRespServer DummyPayload DummyPayload IO Bool
+    reqRespServer = go []
       where
-        go resps []         = Network.TypedProtocol.ReqResp.Client.SendMsgDone (pure $ reverse resps == [response])
+        go reqs = ReqRespServer {
+            recvMsgReq  = \req -> serverAction >> return (response, go (req:reqs)),
+            recvMsgDone = pure $ reverse reqs == [request]
+          }
+
+    reqRespClient :: [DummyPayload]
+                  -> ReqRespClient DummyPayload DummyPayload IO Bool
+    reqRespClient = go []
+      where
+        go resps []         = SendMsgDone (pure $ reverse resps == [response])
         go resps (req:reqs) = SendMsgReq req $ \resp -> return (go (resp:resps) reqs)
 
-    serverPeer = reqRespServerPeer (plainServer [])
-    clientPeer = reqRespClientPeer (plainClient [request])
-
+    clientApp :: TMVar IO Bool
+              -> Mx.Channel IO
+              -> IO ()
     clientApp clientResultVar clientChan = do
-        result <- runPeer nullTracer codecReqResp "client" clientChan clientPeer
+        result <- runClient nullTracer clientChan (reqRespClient [request])
         atomically (putTMVar clientResultVar result)
         end
 
+    serverApp :: TMVar IO Bool
+              -> Mx.Channel IO
+              -> IO ()
     serverApp serverResultVar serverChan = do
-        result <- runPeer nullTracer codecReqResp "server" serverChan serverPeer
+        result <- runServer nullTracer serverChan reqRespServer
         atomically (putTMVar serverResultVar result)
         end
 
@@ -409,11 +405,11 @@ prop_mux_2_minis request0 response0 response1 request1 = ioProperty $ do
     (verify_1, client_mp1, server_mp1) <-
         setupMiniReqRsp (return ()) endMpsVar request1 response1
 
-    let clientApp _ ChainSync2  = client_mp0 . toChannel
-        clientApp _ BlockFetch2 = client_mp1 . toChannel
+    let clientApp _ ChainSync2  = client_mp0
+        clientApp _ BlockFetch2 = client_mp1
 
-        serverApp _ ChainSync2  = server_mp0 . toChannel
-        serverApp _ BlockFetch2 = server_mp1 . toChannel
+        serverApp _ ChainSync2  = server_mp0
+        serverApp _ BlockFetch2 = server_mp1
 
     clientAsync <- async $ Mx.runMuxWithQueues "client" (Mx.MuxInitiatorApplication clientApp) client_w client_r sduLen Nothing
     serverAsync <- async $ Mx.runMuxWithQueues "server" (Mx.MuxResponderApplication serverApp) server_w server_r sduLen Nothing
@@ -459,11 +455,11 @@ prop_mux_starvation response0 response1 =
         setupMiniReqRsp (waitOnAllClients activeMpsVar 2)
                         endMpsVar request response1
 
-    let clientApp _ BlockFetch2 = client_short . toChannel
-        clientApp _ ChainSync2  = client_long . toChannel
+    let clientApp _ BlockFetch2 = client_short
+        clientApp _ ChainSync2  = client_long
 
-        serverApp _ BlockFetch2 = server_short . toChannel
-        serverApp _ ChainSync2  = server_long . toChannel
+        serverApp _ BlockFetch2 = server_short
+        serverApp _ ChainSync2  = server_long
 
     clientAsync <- async $ Mx.runMuxWithQueues "client" (Mx.MuxInitiatorApplication clientApp) client_w client_r sduLen (Just traceQueueVar)
     serverAsync <- async $ Mx.runMuxWithQueues "server" (Mx.MuxResponderApplication serverApp) server_w server_r sduLen Nothing
@@ -538,7 +534,7 @@ prop_demux_sdu a = do
         -- To trigger MuxIngressQueueOverRun we use a special test protocol with
         -- an ingress queue which is less than 0xffff so that it can be triggered by a
         -- single segment.
-        let server_mps = Mx.MuxResponderApplication (\_ ChainSyncSmall -> serverRsp stopVar . toChannel)
+        let server_mps = Mx.MuxResponderApplication (\_ ChainSyncSmall -> serverRsp stopVar)
 
         (client_w, said) <- plainServer server_mps
         setup state client_w
@@ -558,7 +554,7 @@ prop_demux_sdu a = do
     run (ArbitraryValidSDU sdu state err_m) = do
         stopVar <- newEmptyTMVarM
 
-        let server_mps = Mx.MuxResponderApplication (\_ ChainSync1 -> serverRsp stopVar . toChannel)
+        let server_mps = Mx.MuxResponderApplication (\_ ChainSync1 -> serverRsp stopVar)
 
         (client_w, said) <- plainServer server_mps
 
@@ -580,7 +576,7 @@ prop_demux_sdu a = do
     run (ArbitraryInvalidSDU badSdu state err) = do
         stopVar <- newEmptyTMVarM
 
-        let server_mps = Mx.MuxResponderApplication (\_ ChainSync1 -> serverRsp stopVar . toChannel)
+        let server_mps = Mx.MuxResponderApplication (\_ ChainSync1 -> serverRsp stopVar)
 
         (client_w, said) <- plainServer server_mps
 
@@ -611,7 +607,7 @@ prop_demux_sdu a = do
       where
         loop e | e == BL.empty = return ()
         loop e = do
-            msg_m <- recv chan
+            msg_m <- Mx.recv chan
             case msg_m of
                  Just msg ->
                      case BL.stripPrefix msg e of
