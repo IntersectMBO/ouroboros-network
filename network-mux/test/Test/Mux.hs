@@ -2,6 +2,7 @@
 {-# LANGUAGE DataKinds                  #-}
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
@@ -53,6 +54,7 @@ import           Network.TypedProtocol.ReqResp.Codec.Cbor
 
 import qualified Network.Mux as Mx
 import qualified Network.Mux.Codec as Mx
+import qualified Network.Mux.Channel as Mx
 import qualified Network.Mux.Interface as Mx
 import qualified Network.Mux.Bearer.Queues as Mx
 
@@ -288,6 +290,14 @@ instance Arbitrary Mx.MuxBearerState where
                           ]
 
 
+toChannel :: Mx.Channel m
+          -> Channel m BL.ByteString
+toChannel Mx.Channel {Mx.send, Mx.recv} = Channel {
+    send = send,
+    recv = recv
+  }
+
+
 
 -- | Verify that an initiator and a responder can send and receive messages from each other.
 -- Large DummyPayloads will be split into sduLen sized messages and the testcases will verify
@@ -308,8 +318,8 @@ prop_mux_snd_recv request response = ioProperty $ do
     (verify, clientApp, serverApp) <- setupMiniReqRsp
                                         (return ()) endMpsVar request response
 
-    clientAsync <- async $ Mx.runMuxWithQueues "client" (Mx.MuxInitiatorApplication $ \_ ReqResp1 -> clientApp) client_w client_r sduLen Nothing
-    serverAsync <- async $ Mx.runMuxWithQueues "server" (Mx.MuxResponderApplication $ \_ ReqResp1 -> serverApp) server_w server_r sduLen Nothing
+    clientAsync <- async $ Mx.runMuxWithQueues "client" (Mx.MuxInitiatorApplication $ \_ ReqResp1 -> clientApp . toChannel) client_w client_r sduLen Nothing
+    serverAsync <- async $ Mx.runMuxWithQueues "server" (Mx.MuxResponderApplication $ \_ ReqResp1 -> serverApp . toChannel) server_w server_r sduLen Nothing
 
     r <- waitBoth clientAsync serverAsync
     case r of
@@ -399,11 +409,11 @@ prop_mux_2_minis request0 response0 response1 request1 = ioProperty $ do
     (verify_1, client_mp1, server_mp1) <-
         setupMiniReqRsp (return ()) endMpsVar request1 response1
 
-    let clientApp _ ChainSync2  = client_mp0
-        clientApp _ BlockFetch2 = client_mp1
+    let clientApp _ ChainSync2  = client_mp0 . toChannel
+        clientApp _ BlockFetch2 = client_mp1 . toChannel
 
-        serverApp _ ChainSync2  = server_mp0
-        serverApp _ BlockFetch2 = server_mp1
+        serverApp _ ChainSync2  = server_mp0 . toChannel
+        serverApp _ BlockFetch2 = server_mp1 . toChannel
 
     clientAsync <- async $ Mx.runMuxWithQueues "client" (Mx.MuxInitiatorApplication clientApp) client_w client_r sduLen Nothing
     serverAsync <- async $ Mx.runMuxWithQueues "server" (Mx.MuxResponderApplication serverApp) server_w server_r sduLen Nothing
@@ -449,11 +459,11 @@ prop_mux_starvation response0 response1 =
         setupMiniReqRsp (waitOnAllClients activeMpsVar 2)
                         endMpsVar request response1
 
-    let clientApp _ BlockFetch2 = client_short
-        clientApp _ ChainSync2  = client_long
+    let clientApp _ BlockFetch2 = client_short . toChannel
+        clientApp _ ChainSync2  = client_long . toChannel
 
-        serverApp _ BlockFetch2 = server_short
-        serverApp _ ChainSync2  = server_long
+        serverApp _ BlockFetch2 = server_short . toChannel
+        serverApp _ ChainSync2  = server_long . toChannel
 
     clientAsync <- async $ Mx.runMuxWithQueues "client" (Mx.MuxInitiatorApplication clientApp) client_w client_r sduLen (Just traceQueueVar)
     serverAsync <- async $ Mx.runMuxWithQueues "server" (Mx.MuxResponderApplication serverApp) server_w server_r sduLen Nothing
@@ -528,7 +538,7 @@ prop_demux_sdu a = do
         -- To trigger MuxIngressQueueOverRun we use a special test protocol with
         -- an ingress queue which is less than 0xffff so that it can be triggered by a
         -- single segment.
-        let server_mps = Mx.MuxResponderApplication (\_ ChainSyncSmall -> serverRsp stopVar)
+        let server_mps = Mx.MuxResponderApplication (\_ ChainSyncSmall -> serverRsp stopVar . toChannel)
 
         (client_w, said) <- plainServer server_mps
         setup state client_w
@@ -548,7 +558,7 @@ prop_demux_sdu a = do
     run (ArbitraryValidSDU sdu state err_m) = do
         stopVar <- newEmptyTMVarM
 
-        let server_mps = Mx.MuxResponderApplication (\_ ChainSync1 -> serverRsp stopVar)
+        let server_mps = Mx.MuxResponderApplication (\_ ChainSync1 -> serverRsp stopVar . toChannel)
 
         (client_w, said) <- plainServer server_mps
 
@@ -570,7 +580,7 @@ prop_demux_sdu a = do
     run (ArbitraryInvalidSDU badSdu state err) = do
         stopVar <- newEmptyTMVarM
 
-        let server_mps = Mx.MuxResponderApplication (\_ ChainSync1 -> serverRsp stopVar)
+        let server_mps = Mx.MuxResponderApplication (\_ ChainSync1 -> serverRsp stopVar . toChannel)
 
         (client_w, said) <- plainServer server_mps
 

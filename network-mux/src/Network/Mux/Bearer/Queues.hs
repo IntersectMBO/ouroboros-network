@@ -81,7 +81,7 @@ runMuxWithQueues
      , MonadMask m
      , MonadSay m
      , MonadSTM m
-     , MonadThrow m 
+     , MonadThrow m
      , MonadThrow (STM m)
      , MonadTime m
      , MonadTimer m
@@ -93,7 +93,7 @@ runMuxWithQueues
      , Mx.MiniProtocolLimits ptcl
      )
   => peerid
-  -> Mx.MuxApplication appType peerid ptcl m BL.ByteString a b
+  -> Mx.MuxApplication appType peerid ptcl m a b
   -> TBQueue m BL.ByteString
   -> TBQueue m BL.ByteString
   -> Word16

@@ -87,7 +87,7 @@ muxStart
        , MiniProtocolLimits ptcl
        )
     => peerid
-    -> MuxApplication appType peerid ptcl m BL.ByteString a b
+    -> MuxApplication appType peerid ptcl m a b
     -> MuxBearer ptcl m
     -> m ()
 muxStart peerid app bearer = do
@@ -188,7 +188,7 @@ muxChannel
     -> MiniProtocolId ptcl
     -> MiniProtocolMode
     -> TVar m Int
-    -> m (Channel m BL.ByteString)
+    -> m (Channel m)
 muxChannel pmss mid md cnt = do
     w <- newEmptyTMVarM
     return $ Channel { send = send (Wanton w)
