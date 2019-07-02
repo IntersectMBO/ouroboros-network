@@ -173,13 +173,15 @@ pingPongClientCount 0 = PingPong.SendMsgDone ()
 pingPongClientCount n = SendMsgPing (pure (pingPongClientCount (n-1)))
 
 serverPingPong :: IO ()
-serverPingPong =
+serverPingPong = do
+    tbl <- newConnectionTable
     withSimpleServerNode
+      tbl
       defaultLocalSocketAddrInfo
       (\(DictVersion codec)-> encodeTerm codec)
       (\(DictVersion codec)-> decodeTerm codec)
       (\(DictVersion _) -> acceptEq)
-      (simpleSingletonVersions (0::Int) (NodeToNodeVersionData 0) (DictVersion nodeToNodeCodecCBORTerm) muxApplication) $ \serverAsync ->
+      (simpleSingletonVersions (0::Int) (NodeToNodeVersionData 0) (DictVersion nodeToNodeCodecCBORTerm) muxApplication) $ \_ serverAsync ->
         wait serverAsync   -- block until async exception
   where
     muxApplication :: MuxApplication ResponderApp DemoProtocol0 IO LBS.ByteString Void ()
@@ -267,13 +269,15 @@ pingPongClientPipelinedMax c =
                           (\n' -> go (Right n' : acc) o n)
 
 serverPingPong2 :: IO ()
-serverPingPong2 =
+serverPingPong2 = do
+    tbl <- newConnectionTable
     withSimpleServerNode
+      tbl
       defaultLocalSocketAddrInfo
       (\(DictVersion codec)-> encodeTerm codec)
       (\(DictVersion codec)-> decodeTerm codec)
       (\(DictVersion _) -> acceptEq)
-      (simpleSingletonVersions (0::Int) (NodeToNodeVersionData 0) (DictVersion nodeToNodeCodecCBORTerm) muxApplication) $ \serverAsync ->
+      (simpleSingletonVersions (0::Int) (NodeToNodeVersionData 0) (DictVersion nodeToNodeCodecCBORTerm) muxApplication) $ \_ serverAsync ->
         wait serverAsync   -- block until async exception
   where
     muxApplication :: MuxApplication ResponderApp DemoProtocol1 IO LBS.ByteString Void ()
@@ -335,13 +339,15 @@ clientChainSync sockAddrs =
 
 
 serverChainSync :: FilePath -> IO ()
-serverChainSync sockAddr =
+serverChainSync sockAddr = do
+    tbl <- newConnectionTable
     withSimpleServerNode
+      tbl
       (mkLocalSocketAddrInfo sockAddr)
       (\(DictVersion codec)-> encodeTerm codec)
       (\(DictVersion codec)-> decodeTerm codec)
       (\(DictVersion _) -> acceptEq)
-      (simpleSingletonVersions (0::Int) (NodeToNodeVersionData 0) (DictVersion nodeToNodeCodecCBORTerm) muxApplication) $ \serverAsync ->
+      (simpleSingletonVersions (0::Int) (NodeToNodeVersionData 0) (DictVersion nodeToNodeCodecCBORTerm) muxApplication) $ \_ serverAsync ->
         wait serverAsync   -- block until async exception
   where
     prng = mkSMGen 0
@@ -514,13 +520,15 @@ clientBlockFetch sockAddrs = do
 
 
 serverBlockFetch :: FilePath -> IO ()
-serverBlockFetch sockAddr =
+serverBlockFetch sockAddr = do
+    tbl <- newConnectionTable
     withSimpleServerNode
+      tbl
       (mkLocalSocketAddrInfo sockAddr)
       (\(DictVersion codec)-> encodeTerm codec)
       (\(DictVersion codec)-> decodeTerm codec)
       (\(DictVersion _) -> acceptEq)
-      (simpleSingletonVersions (0::Int) (NodeToNodeVersionData 0) (DictVersion nodeToNodeCodecCBORTerm) muxApplication) $ \serverAsync ->
+      (simpleSingletonVersions (0::Int) (NodeToNodeVersionData 0) (DictVersion nodeToNodeCodecCBORTerm) muxApplication) $ \_ serverAsync ->
         wait serverAsync   -- block until async exception
   where
     prng = mkSMGen 0

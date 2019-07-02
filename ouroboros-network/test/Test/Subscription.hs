@@ -14,7 +14,7 @@
 module Test.Subscription (tests) where
 
 import           Control.Concurrent hiding (threadDelay)
-import           Control.Monad (replicateM, unless, when)
+import           Control.Monad (replicateM, unless, when, replicateM_)
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadSTM
@@ -43,14 +43,11 @@ import           Test.Tasty.QuickCheck (shuffle, testProperty)
 
 import qualified Network.Mux as Mx
 import           Network.Mux.Interface
-import qualified Network.Mux.Bearer.Socket as Mx
 import           Network.Mux.Time (microsecondsToDiffTime)
 
-import           Network.TypedProtocol.Core
 import           Network.TypedProtocol.Driver
 import qualified Network.TypedProtocol.ReqResp.Client as ReqResp
 import qualified Network.TypedProtocol.ReqResp.Server as ReqResp
-import qualified Network.TypedProtocol.ReqResp.Type as ReqResp
 import qualified Network.TypedProtocol.ReqResp.Codec.Cbor as ReqResp
 import qualified Network.TypedProtocol.ReqResp.Examples as ReqResp
 import           Ouroboros.Network.Protocol.Handshake.Type (acceptEq)
@@ -102,8 +99,8 @@ instance Mx.MiniProtocolLimits TestProtocols2 where
 
 
 activeTracer :: Show a => Tracer IO a
-activeTracer = nullTracer
---activeTracer = _verboseTracer -- Dump log messages to stdout.
+--activeTracer = nullTracer
+activeTracer = _verboseTracer -- Dump log messages to stdout.
 
 --
 -- The list of all tests
@@ -113,11 +110,12 @@ tests :: TestTree
 tests =
     testGroup "Subscription"
         [
-          testProperty "Resolve (Sim)"      prop_resolv_sim
+        {-  testProperty "Resolve (Sim)"      prop_resolv_sim
         --, testProperty "Resolve (IO)"      _prop_resolv_io
         -- ^ takes about 10 minutes to run due to delays in realtime.
         , testProperty "Resolve Subscribe (IO)" prop_sub_io
-        , testProperty "Send Recive with Dns worker (IO)" prop_send_recv
+        , testProperty "Send Recive with Dns worker (IO)" prop_send_recv-}
+          testProperty "asdf" prop_conx
         -- , testProperty "subscription demo" _demo
         ]
 
@@ -133,7 +131,7 @@ data LookupResultIO = LookupResultIO {
       lrioIpv4Result :: !(Either DNS.DNSError [Word16])
     , lrioIpv6Result :: !(Either DNS.DNSError [Word16])
     , lrioFirst      :: !Socket.Family
-    , lrioValency    :: !Word16
+    , lrioValency    :: !Int
     }
 
 mockResolver :: forall m. (MonadTimer m) => LookupResult -> Resolver m
@@ -402,6 +400,7 @@ prop_sub_io lr = ioProperty $ do
     observerdConnectionOrderVar <- newTVarM []
     firstDoneVar <- newEmptyTMVarM
     serverWaitVar <- newTVarM False
+    clientTbl <- newConnectionTable
 
     ipv4Servers <- replicateM (length serverIdsv4) (head <$> Socket.getAddrInfo Nothing (Just "127.0.0.1")
                             (Just "0"))
@@ -416,7 +415,7 @@ prop_sub_io lr = ioProperty $ do
         when (c > 0) retry
 
     serverPortMap <- atomically $ readTVar serverPortMapVar
-    workerAid <- async $ dnsSubscriptionWorker' activeTracer activeTracer
+    workerAid <- async $ dnsSubscriptionWorker' clientTbl activeTracer activeTracer
             (mockResolverIO firstDoneVar serverPortMap lr)
             0
             (\_ -> Just minConnectionAttemptDelay)
@@ -510,6 +509,8 @@ prop_send_recv f xs first = ioProperty $ do
 
     cv <- newEmptyTMVarM
     sv <- newEmptyTMVarM
+    tbl <- newConnectionTable
+    clientTbl <- newConnectionTable
 
     let -- Server Node; only req-resp server
         responderApp :: MuxApplication ResponderApp TestProtocols2 IO BL.ByteString Void ()
@@ -534,13 +535,15 @@ prop_send_recv f xs first = ioProperty $ do
     res <-
      withDummyServer faultyAddress $
       withSimpleServerNode
+        tbl
         responderAddr
         (\(DictVersion codec) -> encodeTerm codec)
         (\(DictVersion codec) -> decodeTerm codec)
         (\(DictVersion _) -> acceptEq)
         (simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData 0) (DictVersion nodeToNodeCodecCBORTerm) responderApp)
-        $ \_ -> do
+        $ \_ _ -> do
           worker <- async $ dnsSubscriptionWorker'
+            clientTbl
             activeTracer activeTracer
             (mockResolverIO firstDoneVar serverPortMap lr)
             0
@@ -569,6 +572,143 @@ prop_send_recv f xs first = ioProperty $ do
                 k
             )
 
+prop_conx
+    :: (Int -> Int -> (Int, Int))
+    -> [Int]
+    -> Property
+prop_conx f xsA = ioProperty $ do
+
+    let xs = [0,1,2] -- XXX
+    responderAddr4A:_ <- Socket.getAddrInfo Nothing (Just "127.0.0.1") (Just "6062")
+    responderAddr4B:_ <- Socket.getAddrInfo Nothing (Just "127.0.0.1") (Just "6063")
+
+    x <- Socket.getAddrInfo (Just $ Socket.defaultHints {Socket.addrFlags = [Socket.AI_PASSIVE]}) Nothing (Just "6062")
+    printf "x: %s\n" $ show x
+
+    let targetA = IPSubscriptionTarget [Socket.addrAddress responderAddr4A] 1
+    let targetB = IPSubscriptionTarget [Socket.addrAddress responderAddr4B] 1
+
+    cvA <- newEmptyTMVarM
+    svA <- newEmptyTMVarM
+    cvB <- newEmptyTMVarM
+    svB <- newEmptyTMVarM
+    doneA <- newEmptyTMVarM
+    doneB <- newEmptyTMVarM
+
+    tblA <- newConnectionTable
+    tblB <- newConnectionTable
+
+    let -- Server Node; only req-resp server
+        responderApp :: TMVar IO Int -> MuxApplication ResponderApp TestProtocols2 IO BL.ByteString Void ()
+        responderApp sv = MuxResponderApplication $
+          \ReqRespPr channel -> do
+            r <- runPeer nullTracer
+                         ReqResp.codecReqResp
+                         channel
+                         (ReqResp.reqRespServerPeer (ReqResp.reqRespServerMapAccumL
+                           (\a -> pure . f a) 0))
+            atomically $ putTMVar sv r
+
+        -- Client Node; only req-resp client
+        initiatorApp :: TMVar IO [Int] -> MuxApplication InitiatorApp TestProtocols2 IO BL.ByteString () Void
+        initiatorApp cv = MuxInitiatorApplication $
+          \ReqRespPr channel -> do
+            r <- runPeer nullTracer
+                         ReqResp.codecReqResp
+                         channel
+                         (ReqResp.reqRespClientPeer (ReqResp.reqRespClientMap xs))
+            atomically $ putTMVar cv r
+        appX :: TMVar IO Int -> TMVar IO [Int] -> MuxApplication InitiatorAndResponderApp TestProtocols2 IO BL.ByteString () ()
+        appX sv cv = MuxInitiatorAndResponderApplication
+            (\ReqRespPr channel -> do
+             r <- runPeer nullTracer
+                         ReqResp.codecReqResp
+                         channel
+                         (ReqResp.reqRespClientPeer (ReqResp.reqRespClientMap xs))
+             atomically $ putTMVar cv r
+            )
+            (\ReqRespPr channel -> do
+             r <- runPeer nullTracer
+                         ReqResp.codecReqResp
+                         channel
+                         (ReqResp.reqRespServerPeer (ReqResp.reqRespServerMapAccumL
+                           (\a -> pure . f a) 0))
+             atomically $ putTMVar sv r
+            )
+
+
+    a_aid <- async $
+      withServerNode
+        tblA
+        responderAddr4A
+        (\(DictVersion codec) -> encodeTerm codec)
+        (\(DictVersion codec) -> decodeTerm codec)
+        (\(DictVersion _) -> acceptEq)
+        (AnyMuxResponderApp <$> (simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData 0) (DictVersion nodeToNodeCodecCBORTerm) (appX svA cvA)))
+        $ \_ _ -> do
+          worker <- async $ ipSubscriptionWorker
+            tblA
+            activeTracer
+            6062 -- XXX shouldn't be hard coded
+            (\_ -> Just minConnectionAttemptDelay)
+            targetB
+            (connectToNode' (\(DictVersion codec) -> encodeTerm codec)
+                (\(DictVersion codec) -> decodeTerm codec)
+                (simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData 0)
+                (DictVersion nodeToNodeCodecCBORTerm) $ initiatorApp cvA))
+
+          replicateM_ 5 $ do
+              cvA_m <- atomically $ tryReadTMVar cvA
+              svB_m <- atomically $ tryReadTMVar svB
+              printf "cvA %s svB %s\n" (show cvA_m) (show svB_m)
+              threadDelay 5
+
+          r <- atomically $ (,) <$> takeTMVar svB <*> takeTMVar cvA
+          printf "A done, waiting on B\n"
+          atomically $ putTMVar doneA ()
+          --cancel worker
+          atomically $ takeTMVar doneB
+          return r
+
+    threadDelay 1
+
+    b_aid <- async $
+      withServerNode
+        tblB
+        responderAddr4B
+        (\(DictVersion codec) -> encodeTerm codec)
+        (\(DictVersion codec) -> decodeTerm codec)
+        (\(DictVersion _) -> acceptEq)
+        --(simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData 0) (DictVersion nodeToNodeCodecCBORTerm) (responderApp svB))
+        (AnyMuxResponderApp <$> (simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData 0) (DictVersion nodeToNodeCodecCBORTerm) (appX svB cvB)))
+        $ \_ _ -> do
+          {-worker <- async $ ipSubscriptionWorker
+            tblB
+            activeTracer
+            6063 -- XXX
+            (\_ -> Just minConnectionAttemptDelay)
+            targetA
+            (connectToNode' (\(DictVersion codec) -> encodeTerm codec)
+                (\(DictVersion codec) -> decodeTerm codec)
+                (simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData 0)
+                (DictVersion nodeToNodeCodecCBORTerm) $ initiatorApp cvB))
+          -}
+          replicateM_ 5 $ do
+              cvB_m <- atomically $ tryReadTMVar cvB
+              svA_m <- atomically $ tryReadTMVar svA
+              printf "cvB %s svA %s\n" (show cvB_m) (show svA_m)
+              threadDelay 5
+
+          r <- atomically $ (,) <$> takeTMVar svA <*> takeTMVar cvB
+          printf "B done, waiting on A\n"
+          atomically $ putTMVar doneB ()
+          --cancel worker
+          atomically $ takeTMVar doneA
+          return r
+
+    (resA, resB) <- waitBoth a_aid b_aid
+    return $ (resA == mapAccumL f 0 xs) && (resB == mapAccumL f 0 xs)
+
 
 {-
  - XXX Doesn't really test anything, doesn't exit in a resonable time.
@@ -591,12 +731,15 @@ _demo = ioProperty $ do
     server6:_ <- Socket.getAddrInfo Nothing (Just "::1") (Just "6062")
     server6':_ <- Socket.getAddrInfo Nothing (Just "::1") (Just "6064")
 
-    spawnServer server 10000
-    spawnServer server' 10000
-    spawnServer server6 100
-    spawnServer server6' 45
+    tbl <- newConnectionTable
+    clientTbl <- newConnectionTable
 
-    _ <- async $ dnsSubscriptionWorker activeTracer activeTracer 6061
+    spawnServer tbl server 10000
+    spawnServer tbl server' 10000
+    spawnServer tbl server6 100
+    spawnServer tbl server6' 45
+
+    _ <- async $ dnsSubscriptionWorker clientTbl activeTracer activeTracer 6061
             (\_ -> Just minConnectionAttemptDelay)
             [ DnsSubscriptionTarget "shelley-0.iohk.example" 6064 1
             , DnsSubscriptionTarget "shelley-1.iohk.example" 6062 2
@@ -609,21 +752,23 @@ _demo = ioProperty $ do
 
     threadDelay 130
     -- bring the servers back again
-    spawnServer server6 10000
-    spawnServer server6' 10000
+    spawnServer tbl server6 10000
+    spawnServer tbl server6' 10000
     threadDelay 1000
     return ()
 
   where
 
-    spawnServer addr delay =
-        void $ async $ withSimpleServerNode addr
+    spawnServer tbl addr delay =
+        void $ async $ withSimpleServerNode
+            tbl
+            addr
             (\(DictVersion codec) -> encodeTerm codec)
             (\(DictVersion codec) -> decodeTerm codec)
             (\(DictVersion _) -> acceptEq)
             (simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData 0)
                 (DictVersion nodeToNodeCodecCBORTerm) appRsp)
-            (\_ -> threadDelay delay)
+            (\_ _ -> threadDelay delay)
 
 
     appReq = MuxInitiatorApplication (\ChainSyncPr -> error "req fail")

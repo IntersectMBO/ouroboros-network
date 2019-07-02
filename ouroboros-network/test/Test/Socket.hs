@@ -198,6 +198,7 @@ prop_socket_send_recv initiatorAddr responderAddr f xs = do
 
     cv <- newEmptyTMVarM
     sv <- newEmptyTMVarM
+    tbl <- newConnectionTable
 
     {- The siblingVar is used by the initiator and responder to wait on each other before exiting.
      - Without this wait there is a risk that one side will finish first causing the Muxbearer to
@@ -229,12 +230,13 @@ prop_socket_send_recv initiatorAddr responderAddr f xs = do
 
     res <-
       withSimpleServerNode
+        tbl
         responderAddr
         (\(DictVersion codec) -> encodeTerm codec)
         (\(DictVersion codec) -> decodeTerm codec)
         (\(DictVersion _) -> acceptEq)
         (simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData 0) (DictVersion nodeToNodeCodecCBORTerm) responderApp)
-        $ \_ -> do
+        $ \_ _ -> do
           connectToNode
             (\(DictVersion codec) -> encodeTerm codec)
             (\(DictVersion codec) -> decodeTerm codec)
@@ -354,6 +356,7 @@ demo chain0 updates = do
     producerVar <- newTVarM (CPS.initChainProducerState chain0)
     consumerVar <- newTVarM chain0
     done <- atomically newEmptyTMVar
+    tbl <- newConnectionTable
 
     let Just expectedChain = Chain.applyChainUpdates updates chain0
         target = Chain.headPoint expectedChain
@@ -378,12 +381,13 @@ demo chain0 updates = do
                     (ChainSync.chainSyncServerPeer server)
 
     withSimpleServerNode
+      tbl
       producerAddress
       (\(DictVersion codec)-> encodeTerm codec)
       (\(DictVersion codec)-> decodeTerm codec)
       (\(DictVersion _) -> acceptEq)
       (simpleSingletonVersions (0::Int) (NodeToNodeVersionData 0) (DictVersion nodeToNodeCodecCBORTerm) responderApp)
-      $ \_ -> do
+      $ \_ _ -> do
       withAsync
         (connectToNode
           (\(DictVersion codec) -> encodeTerm codec)
@@ -391,7 +395,7 @@ demo chain0 updates = do
           (simpleSingletonVersions (0::Int) (NodeToNodeVersionData 0) (DictVersion nodeToNodeCodecCBORTerm) initiatorApp)
           (Just consumerAddress)
           producerAddress)
-        $ \_connAsync -> do
+        $ \ _connAsync -> do
           void $ fork $ sequence_
               [ do
                   threadDelay 10e-4 -- just to provide interest

@@ -12,6 +12,7 @@ module Ouroboros.Network.Subscription.Common
     , subscriptionWorker
     , SubscriberError (..)
     , SubscriptionTrace
+    , IPSubscriptionTarget (..)
     ) where
 
 import           Control.Concurrent hiding (threadDelay)
@@ -24,11 +25,11 @@ import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
 import           Control.Tracer
 import           Data.List (delete)
-import           Data.Word
 import           GHC.Stack
 import qualified Network.Socket as Socket
 import           Text.Printf
 
+import           Ouroboros.Network.Socket
 import           Ouroboros.Network.Subscription.Subscriber
 
 
@@ -62,14 +63,15 @@ data ConnectResult = ConnectSuccess
 
 subscribeTo
     :: HasCallStack
-    => Tracer IO SubscriptionTrace
+    => ConnectionTable
+    -> Tracer IO SubscriptionTrace
     -> Socket.PortNumber
     -> (Socket.SockAddr -> Maybe DiffTime)
-    -> TVar IO Word16
+    -> TVar IO Int
     -> (Socket.Socket -> IO ())
     -> SubscriptionTarget IO Socket.SockAddr
     -> IO ()
-subscribeTo tracer localPort connectionAttemptDelay valencyVar k ts = do
+subscribeTo tbl tracer localPort connectionAttemptDelay valencyVar k ts = do
      x <- newTVarM []
      doSubscribeTo x ts
 
@@ -79,9 +81,9 @@ subscribeTo tracer localPort connectionAttemptDelay valencyVar k ts = do
         target_m <- getSubscriptionTarget targets
         case target_m of
             Just (target, nextTargets) -> do
-                valencyLeft <- atomically $ readTVar valencyVar
-                if valencyLeft > 0
-                    then do
+                ref <- refConnection tbl target valencyVar
+                case ref of
+                     ConnectionTableCreate -> do
                         caid <- async $ doConnect conThreads target
                         atomically $ modifyTVar' conThreads (\t -> asyncThreadId caid:t)
 
@@ -95,7 +97,11 @@ subscribeTo tracer localPort connectionAttemptDelay valencyVar k ts = do
                         traceWith tracer $ SubscriptionTraceSubscriptionWaitingNewConnection delay
                         threadDelay delay
                         doSubscribeTo conThreads nextTargets
-                    else do
+                     ConnectionTableExist -> do
+                         {- We already have a connection to this address. -}
+                         traceWith tracer $ SubscriptionTraceConnectionExist target
+                         doSubscribeTo conThreads nextTargets
+                     ConnectionTableDone -> do
                         traceWith tracer SubscriptionTraceSubscriptionRunning
                         return ()
             Nothing -> do
@@ -126,13 +132,17 @@ subscribeTo tracer localPort connectionAttemptDelay valencyVar k ts = do
             )
             (\(sd,hasRefVar) -> do
                 traceWith tracer $ SubscriptionTraceConnectCleanup remoteAddr
-                Socket.close sd
 
                 tid <- myThreadId
                 atomically $ modifyTVar' conThreads (delete tid)
                 hasRef <- atomically $ readTVar hasRefVar
-                when hasRef $
-                    atomically $ modifyTVar' valencyVar (+ 1)
+                when hasRef $ do
+                    localAddr' <- Socket.getSocketName sd
+                    removeConnection tbl remoteAddr localAddr'
+                    --atomically $ modifyTVar' valencyVar (+ 1)
+
+                Socket.close sd
+
             )
             (\(sd,hasRefVar)  -> do
                 Socket.setSocketOption sd Socket.ReuseAddr 1
@@ -152,11 +162,14 @@ subscribeTo tracer localPort connectionAttemptDelay valencyVar k ts = do
                             throwM e
                         Right _ -> return ()
 
+                localAddr' <- Socket.getSocketName sd
+
                 -- We successfully connected, increase valency and start the app
                 result <- atomically $ do
                         v <- readTVar valencyVar
                         if v > 0 then do
-                                    modifyTVar' valencyVar (\a -> a - 1)
+                                    --modifyTVar' valencyVar (\a -> a - 1)
+                                    addConnection tbl remoteAddr localAddr' [valencyVar]
                                     writeTVar hasRefVar True
                                     modifyTVar' conThreads (delete tid)
                                     if v == 1 then return ConnectSuccessLast
@@ -176,38 +189,45 @@ subscribeTo tracer localPort connectionAttemptDelay valencyVar k ts = do
 
             )
 
+data IPSubscriptionTarget = IPSubscriptionTarget {
+      ispIps     :: ![Socket.SockAddr]
+    , ispValency :: !Int
+    } deriving (Eq, Show)
+
 ipSubscriptionWorker
-    :: Tracer IO (WithIPList SubscriptionTrace)
+    :: ConnectionTable
+    -> Tracer IO (WithIPList SubscriptionTrace)
     -> Socket.PortNumber
     -> (Socket.SockAddr -> Maybe DiffTime)
-    -> [Socket.SockAddr]
-    -> Word16
+    -> IPSubscriptionTarget
     -> (Socket.Socket -> IO ())
     -> IO ()
-ipSubscriptionWorker tracer localPort connectionAttemptDelay targets valency =
-    subscriptionWorker (ipListTracer targets tracer) localPort connectionAttemptDelay
-            (return $ listSubscriptionTarget targets) valency
+ipSubscriptionWorker tbl tracer localPort connectionAttemptDelay ips =
+    subscriptionWorker tbl (ipListTracer localPort (ispIps ips) tracer) localPort
+            connectionAttemptDelay
+            (return $ listSubscriptionTarget (ispIps ips)) (ispValency ips)
 
 subscriptionWorker
-    :: Tracer IO SubscriptionTrace
+    :: ConnectionTable
+    -> Tracer IO SubscriptionTrace
     -> Socket.PortNumber
     -> (Socket.SockAddr -> Maybe DiffTime)
     -> IO (SubscriptionTarget IO Socket.SockAddr)
-    -> Word16
+    -> Int
     -> (Socket.Socket -> IO ())
     -> IO ()
-subscriptionWorker tracer localPort connectionAttemptDelay getTargets valency
+subscriptionWorker tbl tracer localPort connectionAttemptDelay getTargets valency
         k = do
     valencyVar <- newTVarM valency
     traceWith tracer $ SubscriptionTraceStart valency
     forever $ do
         start <- getMonotonicTime
         targets <- getTargets
-        subscribeTo tracer localPort connectionAttemptDelay valencyVar k
+        subscribeTo tbl tracer localPort connectionAttemptDelay valencyVar k
                 targets
         atomically $ do
             v <- readTVar valencyVar
-            when (v == 0)
+            when (v <= 0)
                 retry
 
         {-
@@ -227,15 +247,16 @@ subscriptionWorker tracer localPort connectionAttemptDelay getTargets valency
             threadDelay $ ipRetryDelay - duration
 
 data WithIPList a = WithIPList {
-      wilIPs   :: ![Socket.SockAddr]
+      wilSrc    :: !Socket.PortNumber
+    , wilDsts   :: ![Socket.SockAddr]
     , wilEvent :: !a
     }
 
 instance (Show a) => Show (WithIPList a) where
-    show WithIPList {..} = printf  "IPs: %s %s" (show wilIPs) (show wilEvent)
+    show WithIPList {..} = printf  "IPs: %s %s %s" (show wilSrc) (show wilDsts) (show wilEvent)
 
-ipListTracer :: [Socket.SockAddr] -> Tracer IO (WithIPList a) -> Tracer IO a
-ipListTracer ips tr = Tracer $ \s -> traceWith tr $ WithIPList ips s
+ipListTracer :: Socket.PortNumber -> [Socket.SockAddr] -> Tracer IO (WithIPList a) -> Tracer IO a
+ipListTracer src ips tr = Tracer $ \s -> traceWith tr $ WithIPList src ips s
 
 data SubscriberError = SubscriberError {
       seType    :: !SubscriberErrorType
@@ -263,8 +284,9 @@ data SubscriptionTrace =
     | SubscriptionTraceSubscriptionWaiting Int
     | SubscriptionTraceSubscriptionFailed
     | SubscriptionTraceSubscriptionWaitingNewConnection DiffTime
-    | SubscriptionTraceStart Word16
-    | SubscriptionTraceRestart DiffTime Word16 Word16
+    | SubscriptionTraceStart Int
+    | SubscriptionTraceRestart DiffTime Int Int
+    | SubscriptionTraceConnectionExist Socket.SockAddr
 
 instance Show SubscriptionTrace where
     show (SubscriptionTraceConnectStart dst) =
@@ -287,4 +309,7 @@ instance Show SubscriptionTrace where
     show (SubscriptionTraceRestart duration desiredVal currentVal) =
         "Restarting Subscription after " ++ show duration ++ " desired valency " ++
         show desiredVal ++ " current valency " ++ show currentVal
+    show (SubscriptionTraceConnectionExist dst) =
+        "Connection Existed to " ++ show dst
+
 
