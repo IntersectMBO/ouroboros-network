@@ -69,6 +69,10 @@ defaultMiniProtocolLimit = 3000000
 smallMiniProtocolLimit :: Int64
 smallMiniProtocolLimit = 16*1024
 
+--
+-- Various ProtocolEnum instances used in tests
+--
+
 data TestProtocols1 = ReqResp1
   deriving (Eq, Ord, Enum, Bounded, Show)
 
@@ -112,6 +116,10 @@ instance Mx.ProtocolEnum TestProtocolsSmall where
 instance Mx.MiniProtocolLimits TestProtocolsSmall where
   maximumMessageSize ReqRespSmall  = smallMiniProtocolLimit
   maximumIngressQueue ReqRespSmall = smallMiniProtocolLimit
+
+--
+-- Generators
+--
 
 newtype DummyPayload = DummyPayload {
       unDummyPayload :: BL.ByteString
@@ -263,6 +271,12 @@ instance Arbitrary Mx.MuxBearerState where
                           , Mx.Dying
                           , Mx.Dead
                           ]
+
+
+
+--
+-- QuickChekc Properties
+--
 
 
 -- | Verify that an initiator and a responder can send and receive messages
