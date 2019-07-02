@@ -1,6 +1,5 @@
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TemplateHaskell     #-}
 {-# LANGUAGE TypeFamilies        #-}
 
 module Ouroboros.Network.ChainProducerState where
@@ -12,7 +11,8 @@ import           Ouroboros.Network.Chain (Chain, ChainUpdate (..), HasHeader,
 import qualified Ouroboros.Network.Chain as Chain
 
 import           Control.Exception (assert)
-import           Data.List (find, group, sort)
+import           Data.Map (Map)
+import qualified Data.Map as Map
 import           Data.Maybe (fromMaybe)
 
 
@@ -21,13 +21,14 @@ import           Data.Maybe (fromMaybe)
 
 data ChainProducerState block = ChainProducerState {
        chainState   :: Chain block,
-       chainReaders :: ReaderStates block
+       chainReaders :: ReaderStates block,
+       nextReaderId :: ReaderId
      }
   deriving (Eq, Show)
 
 -- | Readers are represented here as a relation.
 --
-type ReaderStates block = [ReaderState block]
+type ReaderStates block = Map ReaderId (ReaderState block)
 
 type ReaderId     = Int
 -- |
@@ -62,9 +63,9 @@ type ReaderId     = Int
 --     side are synchornized, the producer will send @'MsgAwaitResponse'@ and
 --     will wait until its chain is updated: either by a fork or by a new block.
 --
--- In this implementation a list of @'ReaderState'@ is shared between all
--- producers running on a single node; hence the unique identifier @'ReaderId'@
--- for each reader: this is an implementation detail.
+-- In this implementation a map from @'ReaderId'@ to @'ReaderState'@ is shared
+-- between all producers running on a single node; hence the unique identifier
+-- @'ReaderId'@ for each reader: this is an implementation detail.
 data ReaderState block = ReaderState {
        -- | Where the chain of the consumer and producer intersect. If the
        -- consumer is on the chain then this is the consumer's chain head,
@@ -74,10 +75,7 @@ data ReaderState block = ReaderState {
 
        -- | Where the will go next, roll back to the reader point, or roll
        -- forward from the reader point.
-       readerNext  :: ReaderNext,
-
-       -- | A unique tag per reader, to distinguish different readers.
-       readerId    :: ReaderId
+       readerNext  :: ReaderNext
      }
   deriving (Eq, Show)
 
@@ -89,18 +87,14 @@ data ReaderNext = ReaderBackTo | ReaderForwardFrom
 --
 
 invChainProducerState :: HasHeader block => ChainProducerState block -> Bool
-invChainProducerState (ChainProducerState c rs) =
+invChainProducerState (ChainProducerState c rs nrid) =
     Chain.valid c
  && invReaderStates c rs
+ && all (< nrid) (Map.keys rs)
 
 invReaderStates :: HasHeader block => Chain block -> ReaderStates block -> Bool
 invReaderStates c rs =
-    and [ pointOnChain readerPoint c | ReaderState{readerPoint} <- rs ]
- && noDuplicates [ readerId | ReaderState{readerId} <- rs ]
-
-noDuplicates :: Ord a => [a] -> Bool
-noDuplicates = all ((== 1) . length) . group . sort
-
+    and [ pointOnChain readerPoint c | ReaderState{readerPoint} <- Map.elems rs ]
 
 --
 -- Operations
@@ -111,24 +105,22 @@ noDuplicates = all ((== 1) . length) . group . sort
 -- readers.
 --
 initChainProducerState :: Chain block -> ChainProducerState block
-initChainProducerState c = ChainProducerState c []
-
+initChainProducerState c = ChainProducerState c Map.empty 0
 
 -- | Get the recorded state of a chain consumer. The 'ReaderId' is assumed to
 -- exist.
 --
 lookupReader :: ChainProducerState block -> ReaderId -> ReaderState block
-lookupReader (ChainProducerState _ rs) rid =
-    assert (rid `elem` map readerId rs) $
-    st
-  where
-    Just st = find (\r -> readerId r == rid) rs
+lookupReader (ChainProducerState _ rs _) rid = rs Map.! rid
 
+-- | Return 'True' when a reader with the given 'ReaderId' exists.
+readerExists :: ReaderId -> ChainProducerState block -> Bool
+readerExists rid (ChainProducerState _ rs _) = rid `Map.member` rs
 
 -- | Extract @'Chain'@ from @'ChainProducerState'@.
 --
 producerChain :: ChainProducerState block -> Chain block
-producerChain (ChainProducerState c _) = c
+producerChain (ChainProducerState c _ _) = c
 
 findFirstPoint :: HasHeader block
                => [Point block]
@@ -144,23 +136,22 @@ initReader :: HasHeader block
            => Point block
            -> ChainProducerState block
            -> (ChainProducerState block, ReaderId)
-initReader point (ChainProducerState c rs) =
+initReader point (ChainProducerState c rs nrid) =
     assert (pointOnChain point c) $
-    (ChainProducerState c (r:rs), readerId r)
+    (ChainProducerState c (Map.insert nrid r rs) (succ nrid), nrid)
   where
     r = ReaderState {
           readerPoint = point,
-          readerNext  = ReaderBackTo,
-          readerId    = freshReaderId rs
+          readerNext  = ReaderBackTo
         }
 
 
 -- | Delete an existing reader. The 'ReaderId' is assumed to exist.
 --
 deleteReader :: ReaderId -> ChainProducerState block -> ChainProducerState block
-deleteReader rid (ChainProducerState c rs) =
-    assert (rid `elem` map readerId rs) $
-    ChainProducerState c [ r | r <- rs, readerId r /= rid ]
+deleteReader rid (ChainProducerState c rs nrid) =
+    assert (rid `Map.member` rs) $
+    ChainProducerState c (Map.delete rid rs) nrid
 
 
 -- | Change the intersection point of a reader. This also puts it into
@@ -171,14 +162,11 @@ updateReader :: HasHeader block
              -> Point block    -- ^ new reader intersection point
              -> ChainProducerState block
              -> ChainProducerState block
-updateReader rid point (ChainProducerState c rs) =
+updateReader rid point (ChainProducerState c rs nrid) =
     assert (pointOnChain point c) $
-    ChainProducerState c (map update rs)
+    ChainProducerState c (Map.adjust update rid rs) nrid
   where
-    update r | readerId r == rid = r { readerPoint = point,
-                                       readerNext  = ReaderBackTo }
-             | otherwise         = r
-
+    update r = r { readerPoint = point, readerNext  = ReaderBackTo }
 
 -- | Switch chains and update readers; if a reader point falls out of the chain,
 -- replace it with the intersection of both chains and put it in the
@@ -188,8 +176,8 @@ switchFork :: HasHeader block
            => Chain block
            -> ChainProducerState block
            -> ChainProducerState block
-switchFork c (ChainProducerState c' rs) =
-    ChainProducerState c (map update rs)
+switchFork c (ChainProducerState c' rs nrid) =
+    ChainProducerState c (update <$> rs) nrid
   where
     ipoint = fromMaybe genesisPoint $ Chain.intersectChains c c'
 
@@ -207,7 +195,7 @@ readerInstruction :: HasHeader block
                   => ReaderId
                   -> ChainProducerState block
                   -> Maybe (ChainUpdate block block, ChainProducerState block)
-readerInstruction rid cps@(ChainProducerState c rs) =
+readerInstruction rid cps@(ChainProducerState c rs nrid) =
     let ReaderState {readerPoint, readerNext} = lookupReader cps rid in
     case readerNext of
       ReaderForwardFrom ->
@@ -218,17 +206,13 @@ readerInstruction rid cps@(ChainProducerState c rs) =
 
             Just b -> Just (AddBlock b, cps')
               where
-                cps' = ChainProducerState c (map setPoint rs)
-                setPoint r
-                  | readerId r == rid = r { readerPoint = blockPoint b }
-                  | otherwise         = r
+                cps' = ChainProducerState c (Map.adjust setPoint rid rs) nrid
+                setPoint r = r { readerPoint = blockPoint b }
 
       ReaderBackTo -> Just (RollBack readerPoint, cps')
         where
-          cps' = ChainProducerState c (map setForwardFrom rs)
-          setForwardFrom r
-            | readerId r == rid = r { readerNext = ReaderForwardFrom }
-            | otherwise         = r
+          cps' = ChainProducerState c (Map.adjust setForwardFrom rid rs) nrid
+          setForwardFrom r = r { readerNext = ReaderForwardFrom }
 
 
 -- | Add a block to the chain. It does not require any reader's state changes.
@@ -237,8 +221,8 @@ addBlock :: HasHeader block
          => block
          -> ChainProducerState block
          -> ChainProducerState block
-addBlock b (ChainProducerState c rs) =
-    ChainProducerState (Chain.addBlock b c) rs
+addBlock b (ChainProducerState c rs nrid) =
+    ChainProducerState (Chain.addBlock b c) rs nrid
 
 
 -- | Rollback producer chain. It requires to update reader states, since some
@@ -248,15 +232,15 @@ rollback :: (HasHeader block, HeaderHash block ~ HeaderHash block')
          => Point block'
          -> ChainProducerState block
          -> Maybe (ChainProducerState block)
-rollback p (ChainProducerState c rs) =
-    ChainProducerState <$> Chain.rollback (castPoint p) c
-                       <*> pure rs'
+rollback p (ChainProducerState c rs nrid) = do
+    c' <- Chain.rollback (castPoint p) c
+    return $ ChainProducerState c' (rollbackReader <$> rs) nrid
   where
-    rs' = [ if pointSlot p' > pointSlot p
-              then r { readerPoint = (castPoint p), readerNext = ReaderBackTo }
-              else r
-          | r@ReaderState { readerPoint = p' } <- rs ]
-
+    rollbackReader r@ReaderState { readerPoint = p' }
+      | pointSlot p' > pointSlot p
+      = r { readerPoint = (castPoint p), readerNext = ReaderBackTo }
+      | otherwise
+      = r
 
 -- | Convenient function which combines both @'addBlock'@ and @'rollback'@.
 --
@@ -276,14 +260,3 @@ applyChainUpdates :: (HasHeader block, HeaderHash block ~ HeaderHash block')
                   -> Maybe (ChainProducerState block)
 applyChainUpdates []     c = Just c
 applyChainUpdates (u:us) c = applyChainUpdates us =<< applyChainUpdate u c
-
-
---
--- Helpers
---
-
--- | Get a new unique @'ReaderId'@.
---
-freshReaderId :: ReaderStates block -> ReaderId
-freshReaderId [] = 0
-freshReaderId rs = 1 + maximum [ readerId | ReaderState{readerId} <- rs ]

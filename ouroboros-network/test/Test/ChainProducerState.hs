@@ -11,6 +11,7 @@ module Test.ChainProducerState
  where
 
 import           Data.List (unfoldr)
+import qualified Data.Map as Map
 
 import           Test.QuickCheck
 import           Test.Tasty
@@ -23,12 +24,9 @@ import qualified Ouroboros.Network.Chain as Chain
 import           Ouroboros.Network.ChainProducerState
 import           Ouroboros.Network.Testing.ConcreteBlock (Block (..))
 
-import           Test.ChainGenerators
-                  ( TestBlockChain (..)
-                  , TestBlockChainAndUpdates (..)
-                  , TestChainFork (..)
-                  , mkRollbackPoint
-                  )
+import           Test.ChainGenerators (TestBlockChain (..),
+                     TestBlockChainAndUpdates (..), TestChainFork (..),
+                     mkRollbackPoint)
 
 tests :: TestTree
 tests =
@@ -59,7 +57,7 @@ tests =
 prop_init_lookup :: ChainProducerStateTest -> Bool
 prop_init_lookup (ChainProducerStateTest c _ p) =
     let (c', rid) = initReader p c in
-    lookupReader c' rid == ReaderState p ReaderBackTo rid
+    lookupReader c' rid == ReaderState p ReaderBackTo
 
 -- | As above but check that when we move the reader on by one, from the
 -- rollback state, they stay at the same point but are now in the forward state.
@@ -69,7 +67,7 @@ prop_init_next_lookup (ChainProducerStateTest c _ p) =
     let (c', rid)     = initReader p c
         Just (u, c'') = readerInstruction rid c'
     in u == RollBack p
-    && lookupReader c'' rid == ReaderState p ReaderForwardFrom rid
+    && lookupReader c'' rid == ReaderState p ReaderForwardFrom
 
 -- | Check that after moving the reader point that the reader is in the
 -- expected state, at the right point and in the rollback state.
@@ -77,7 +75,7 @@ prop_init_next_lookup (ChainProducerStateTest c _ p) =
 prop_update_lookup :: ChainProducerStateTest -> Bool
 prop_update_lookup (ChainProducerStateTest c rid p) =
     let c' = updateReader rid p c in
-    lookupReader c' rid == ReaderState p ReaderBackTo rid
+    lookupReader c' rid == ReaderState p ReaderBackTo
 
 -- | As above but check that when we move the reader on by one, from the
 -- rollback state, they stay at the same point but are now in the forward state.
@@ -87,7 +85,7 @@ prop_update_next_lookup (ChainProducerStateTest c rid p) =
     let c'            = updateReader rid p c
         Just (u, c'') = readerInstruction rid c'
     in u == RollBack p
-    && lookupReader c'' rid == ReaderState p ReaderForwardFrom rid
+    && lookupReader c'' rid == ReaderState p ReaderForwardFrom
 
 -- | This says that if we take a chain producer and apply a bunch of updates
 -- and initialise a consumer to the producer's initial chain, then by
@@ -154,14 +152,12 @@ prop_switchFork (ChainProducerStateForkTest cps f) =
       invChainProducerState cps'
       && all
         (uncurry readerInv)
-        (zip (chainReaders cps) (chainReaders cps'))
+        (zip (readerStates cps) (readerStates cps'))
   where
     readerInv :: ReaderState block -> ReaderState block -> Bool
     readerInv r r'
-      -- the order of readers has not changed
-       = readerId r == readerId r'
       -- points only move backward
-      && pointSlot (readerPoint r') <= pointSlot (readerPoint r)
+       = pointSlot (readerPoint r') <= pointSlot (readerPoint r)
       -- if reader's point moves back, `readerNext` is changed to `ReaderBackTo`
       && ((pointSlot (readerPoint r') < pointSlot (readerPoint r)) `implies` (readerNext r' == ReaderBackTo))
       -- if reader's point is not changed, also next instruction is not changed
@@ -170,6 +166,8 @@ prop_switchFork (ChainProducerStateForkTest cps f) =
     implies :: Bool -> Bool -> Bool
     implies a b = not a || b
 
+    readerStates :: ChainProducerState block -> [ReaderState block]
+    readerStates = map snd . Map.toAscList . chainReaders
 
 --
 -- Generators
@@ -195,25 +193,18 @@ genReaderState n c = do
       [ return ReaderForwardFrom
       , return ReaderBackTo
       ]
-    readerId <- arbitrary
-    return $ ReaderState{readerPoint, readerNext, readerId}
-
-fixupReaderStates :: [ReaderState block] -> [ReaderState block]
-fixupReaderStates = go 0
-  where
-  go _ []       = []
-  go n (r : rs) = r { readerId = n } : go (n + 1) rs
+    return $ ReaderState{readerPoint, readerNext}
 
 instance Arbitrary ChainProducerStateTest where
   arbitrary = do
     TestBlockChain c <- arbitrary
     let n = Chain.length c
-    rs <- fixupReaderStates <$> listOf1 (genReaderState n c)
+    rs <- Map.fromList . zip [0..] <$> listOf1 (genReaderState n c)
     rid <- choose (0, length rs - 1)
     p <- if n == 0
          then return genesisPoint
          else mkRollbackPoint c <$> choose (0, n)
-    return (ChainProducerStateTest (ChainProducerState c rs) rid p)
+    return (ChainProducerStateTest (ChainProducerState c rs (length rs)) rid p)
 
 data ChainProducerStateForkTest
     = ChainProducerStateForkTest
@@ -225,20 +216,20 @@ instance Arbitrary ChainProducerStateForkTest where
   arbitrary = do
     TestChainFork _ c f <- arbitrary
     let l = Chain.length c
-    rs <- fixupReaderStates <$> listOf (genReaderState l c)
-    return $ ChainProducerStateForkTest (ChainProducerState c rs) f
+    rs <- Map.fromList . zip [0..] <$> listOf (genReaderState l c)
+    return $ ChainProducerStateForkTest (ChainProducerState c rs (length rs)) f
 
-  shrink (ChainProducerStateForkTest (ChainProducerState c rs) f)
+  shrink (ChainProducerStateForkTest (ChainProducerState c rs nr) f)
     -- shrink readers
-     = [ ChainProducerStateForkTest (ChainProducerState c rs') f
-       | rs' <- shrinkList (const []) rs
+     = [ ChainProducerStateForkTest (ChainProducerState c rs' nr) f
+       | rs' <- map Map.fromList . shrinkList (const []) . Map.toList $ rs
        ]
     -- shrink the fork chain
-    ++ [ ChainProducerStateForkTest (ChainProducerState c rs) f'
+    ++ [ ChainProducerStateForkTest (ChainProducerState c rs nr) f'
        | TestBlockChain f' <- shrink (TestBlockChain f)
        ]
     -- shrink chain and fix up readers
-    ++ [ ChainProducerStateForkTest (ChainProducerState c' (fixupReaderPointer c' `map` rs)) f
+    ++ [ ChainProducerStateForkTest (ChainProducerState c' (fixupReaderPointer c' <$> rs) nr) f
        | TestBlockChain c' <- shrink (TestBlockChain c)
        ]
     where
