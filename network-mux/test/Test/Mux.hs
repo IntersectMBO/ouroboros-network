@@ -276,8 +276,8 @@ instance Arbitrary ArbitrarySDU where
                                          Mx.MuxDecodeError
 
 instance Arbitrary Mx.MuxBearerState where
-     -- XXX Larval and Connected test behaviour is dependant on version negotation
-     -- so they are disabled for now.
+     -- XXX Larval and Connected test behaviour is dependant on version
+     -- negotation so they are disabled for now.
      arbitrary = elements [ -- Mx.Larval
                             -- , Mx.Connected
                             Mx.Mature
@@ -286,9 +286,11 @@ instance Arbitrary Mx.MuxBearerState where
                           ]
 
 
--- | Verify that an initiator and a responder can send and receive messages from each other.
--- Large DummyPayloads will be split into sduLen sized messages and the testcases will verify
--- that they are correctly reassembled into the original message.
+-- | Verify that an initiator and a responder can send and receive messages
+-- from each other.  Large DummyPayloads will be split into sduLen sized
+-- messages and the testcases will verify that they are correctly reassembled
+-- into the original message.
+--
 prop_mux_snd_recv :: DummyPayload
                   -> DummyPayload
                   -> Property
@@ -314,8 +316,10 @@ prop_mux_snd_recv request response = ioProperty $ do
          (_, Just _) -> return $ property False
          _           -> property <$> verify
 
--- | Create a verification function, a MiniProtocolDescription for the client side and a
--- MiniProtocolDescription for the server side for a RequestResponce protocol.
+-- | Create a verification function, a MiniProtocolDescription for the client
+-- side and a MiniProtocolDescription for the server side for a RequestResponce
+-- protocol.
+--
 setupMiniReqRsp :: IO ()        -- | Action performed by responder before processing the response
                 -> TVar IO Int  -- | Total number of miniprotocols.
                 -> DummyPayload -- | Request, sent from initiator.
@@ -385,6 +389,7 @@ waitOnAllClients clientVar clientTot = do
 
 -- | Verify that it is possible to run two miniprotocols over the same bearer.
 -- Makes sure that messages are delivered to the correct miniprotocol in order.
+--
 prop_mux_2_minis :: DummyPayload
                  -> DummyPayload
                  -> DummyPayload
@@ -425,10 +430,11 @@ prop_mux_2_minis request0 response0 response1 request1 = ioProperty $ do
 
              return $ property $ res0 .&&. res1
 
--- | Attempt to verify that capacity is diveded fairly between two active miniprotocols.
--- Two initiators send a request over two different miniprotocols and the corresponding responders
--- each send a large reply back. The Mux bearer should alternate between sending data for the two
--- responders.
+-- | Attempt to verify that capacity is diveded fairly between two active
+-- miniprotocols.  Two initiators send a request over two different
+-- miniprotocols and the corresponding responders each send a large reply back.
+-- The Mux bearer should alternate between sending data for the two responders.
+--
 prop_mux_starvation :: DummyPayload
                     -> DummyPayload
                     -> Property
@@ -442,8 +448,10 @@ prop_mux_starvation response0 response1 =
     client_w <- atomically $ newTBQueue 10
     client_r <- atomically $ newTBQueue 10
     activeMpsVar <- atomically $ newTVar 0
-    endMpsVar <- atomically $ newTVar 4          -- 2 active initiators and 2 active responders
-    traceQueueVar <- atomically $ newTBQueue 100 -- At most track 100 packets per test run
+    -- 2 active initiators and 2 active responders
+    endMpsVar <- atomically $ newTVar 4
+    -- At most track 100 packets per test run
+    traceQueueVar <- atomically $ newTBQueue 100
 
     let server_w = client_r
         server_r = client_w
@@ -481,9 +489,9 @@ prop_mux_starvation response0 response1 =
                  fair = verifyStarvation ls
              return $ property $ res_short .&&. res_long .&&. fair
   where
-   -- We can't make 100% sure that both servers start responding at the same time
-   -- but once they are both up and running messages should alternate between
-   -- Mx.BlockFetch and Mx.ChainSync
+   -- We can't make 100% sure that both servers start responding at the same
+   -- time but once they are both up and running messages should alternate
+   -- between Mx.BlockFetch and Mx.ChainSync
     verifyStarvation :: Eq ptcl => [Mx.MiniProtocolId ptcl] -> Bool
     verifyStarvation []     = True
     verifyStarvation [_]    = True
@@ -511,6 +519,7 @@ encodeInvalidMuxSDU sdu =
         Bin.putWord16be $ isLength sdu
 
 -- | Verify ingress processing of valid and invalid SDUs.
+--
 prop_demux_sdu :: forall m.
                     ( MonadAsync m
                     , MonadCatch m
@@ -531,9 +540,9 @@ prop_demux_sdu a = do
     run (ArbitraryValidSDU sdu state (Just Mx.MuxIngressQueueOverRun)) = do
         stopVar <- newEmptyTMVarM
 
-        -- To trigger MuxIngressQueueOverRun we use a special test protocol with
-        -- an ingress queue which is less than 0xffff so that it can be triggered by a
-        -- single segment.
+        -- To trigger MuxIngressQueueOverRun we use a special test protocol
+        -- with an ingress queue which is less than 0xffff so that it can be
+        -- triggered by a single segment.
         let server_mps = Mx.MuxResponderApplication (\_ ChainSyncSmall -> serverRsp stopVar)
 
         (client_w, said) <- plainServer server_mps
