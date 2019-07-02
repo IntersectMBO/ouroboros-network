@@ -85,7 +85,7 @@ data ChainSyncClientException blk =
     -- the upstream node responded with an intersection point that is not on
     -- our chain fragment, and thus not among the points we sent.
     --
-    -- We store the intersection piont the upstream node sent us.
+    -- We store the intersection point the upstream node sent us.
     | InvalidIntersection (Point blk)
 
 deriving instance SupportedBlock blk => Show (ChainSyncClientException blk)

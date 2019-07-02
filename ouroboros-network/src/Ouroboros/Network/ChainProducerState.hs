@@ -1,10 +1,14 @@
-{-# LANGUAGE NamedFieldPuns  #-}
-{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TemplateHaskell     #-}
+{-# LANGUAGE TypeFamilies        #-}
 
 module Ouroboros.Network.ChainProducerState where
 
+import           Ouroboros.Network.Block (castPoint)
 import           Ouroboros.Network.Chain (Chain, ChainUpdate (..), HasHeader,
-                     Point (..), blockPoint, genesisPoint, pointOnChain)
+                     HeaderHash, Point (..), blockPoint, genesisPoint,
+                     pointOnChain)
 import qualified Ouroboros.Network.Chain as Chain
 
 import           Control.Exception (assert)
@@ -202,7 +206,7 @@ switchFork c (ChainProducerState c' rs) =
 readerInstruction :: HasHeader block
                   => ReaderId
                   -> ChainProducerState block
-                  -> Maybe (ChainUpdate block, ChainProducerState block)
+                  -> Maybe (ChainUpdate block block, ChainProducerState block)
 readerInstruction rid cps@(ChainProducerState c rs) =
     let ReaderState {readerPoint, readerNext} = lookupReader cps rid in
     case readerNext of
@@ -240,24 +244,24 @@ addBlock b (ChainProducerState c rs) =
 -- | Rollback producer chain. It requires to update reader states, since some
 -- @'readerPoint'@s may not be on the new chain; in this case find intersection
 -- of the two chains and set @'readerNext'@ to @'ReaderBackTo'@.
-rollback :: HasHeader block
-         => Point block
+rollback :: (HasHeader block, HeaderHash block ~ HeaderHash block')
+         => Point block'
          -> ChainProducerState block
          -> Maybe (ChainProducerState block)
 rollback p (ChainProducerState c rs) =
-    ChainProducerState <$> Chain.rollback p c
+    ChainProducerState <$> Chain.rollback (castPoint p) c
                        <*> pure rs'
   where
     rs' = [ if pointSlot p' > pointSlot p
-              then r { readerPoint = p, readerNext = ReaderBackTo }
+              then r { readerPoint = (castPoint p), readerNext = ReaderBackTo }
               else r
           | r@ReaderState { readerPoint = p' } <- rs ]
 
 
 -- | Convenient function which combines both @'addBlock'@ and @'rollback'@.
 --
-applyChainUpdate :: HasHeader block
-                 => ChainUpdate block
+applyChainUpdate :: (HasHeader block, HeaderHash block ~ HeaderHash block')
+                 => ChainUpdate block' block
                  -> ChainProducerState block
                  -> Maybe (ChainProducerState block)
 applyChainUpdate (AddBlock b) c = Just (addBlock b c)
@@ -266,8 +270,8 @@ applyChainUpdate (RollBack p) c =       rollback p c
 
 -- | Apply a list of @'ChainUpdate'@s.
 --
-applyChainUpdates :: HasHeader block
-                  => [ChainUpdate block]
+applyChainUpdates :: (HasHeader block, HeaderHash block ~ HeaderHash block')
+                  => [ChainUpdate block' block]
                   -> ChainProducerState block
                   -> Maybe (ChainProducerState block)
 applyChainUpdates []     c = Just c

@@ -2,7 +2,6 @@
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeApplications    #-}
 
 {-# OPTIONS_GHC -Wredundant-constraints #-}
 
@@ -107,7 +106,7 @@ forkLinked threadRegistry action = do
       action `catch` \e -> do
         case fromException e of
           Just AsyncCancelled{} -> return ()
-          Nothing               -> throwTo me e
+          Nothing               -> throwTo me $ ExceptionInForkedThread e
         throwM e
 
 -- | Variant of 'forkLinked' intented to fork a new thread that will run a

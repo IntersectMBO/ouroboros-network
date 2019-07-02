@@ -17,8 +17,7 @@ import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
 import           Text.Show.Functions ()
 
-import           Ouroboros.Network.AnchoredFragment
-                     (AnchoredFragment(..))
+import           Ouroboros.Network.AnchoredFragment (AnchoredFragment (..))
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block
 import qualified Ouroboros.Network.Chain as Chain
@@ -70,6 +69,7 @@ tests = testGroup "AnchoredFragment"
   , testProperty "pointOnFragment"                    prop_pointOnFragment
   , testProperty "selectPoints"                       prop_selectPoints
   , testProperty "splitAfterPoint"                    prop_splitAfterPoint
+  , testProperty "splitBeforePoint"                   prop_splitBeforePoint
   , testProperty "join"                               prop_join
   , testProperty "intersect"                          prop_intersect
   , testProperty "intersect when within bounds"       prop_intersect_bounds
@@ -209,6 +209,15 @@ prop_splitAfterPoint (TestAnchoredFragmentAndPoint c pt) =
       .&&. AF.join p s      === Just c
     Nothing -> property $ not $ AF.withinFragmentBounds pt c
 
+prop_splitBeforePoint :: TestAnchoredFragmentAndPoint -> Property
+prop_splitBeforePoint (TestAnchoredFragmentAndPoint c pt) =
+  case AF.splitBeforePoint c pt of
+    Just (p, s) ->
+         AF.pointOnFragment pt c
+      .&&. (blockPoint <$> AF.last s) === Right pt
+      .&&. AF.join p s                === Just c
+    Nothing -> property $ not $ AF.pointOnFragment pt c
+
 prop_join :: TestJoinableAnchoredFragments -> Property
 prop_join t@(TestJoinableAnchoredFragments c1 c2) = case AF.join c1 c2 of
     Just joined -> joinable t .&&.
@@ -246,13 +255,13 @@ prop_toChain_fromChain :: TestBlockChain -> Property
 prop_toChain_fromChain (TestBlockChain ch) =
     AF.toChain (AF.fromChain ch) === Just ch
 
-prop_anchorNewest :: NonNegative Int -> TestBlockChain -> Property
-prop_anchorNewest (NonNegative n') (TestBlockChain ch) =
-    AF.length af === min (Chain.length ch) (fromIntegral n) .&&.
-    take n1 (map blockPoint (Chain.toNewestFirst ch) ++ [Chain.genesisPoint]) ===
-             map blockPoint (AF.toNewestFirst af)    ++ [AF.anchorPoint af]
+prop_anchorNewest :: NonNegative Int -> TestBlockAnchoredFragment -> Property
+prop_anchorNewest (NonNegative n') (TestBlockAnchoredFragment c) =
+    AF.length c' === min (AF.length c) (fromIntegral n) .&&.
+             map blockPoint (AF.toNewestFirst c') ++ [anchorPoint c'] ===
+    take n1 (map blockPoint (AF.toNewestFirst c)  ++ [anchorPoint c])
   where
-    af = AF.anchorNewest n ch
+    c' = AF.anchorNewest n c
 
     -- For testing purposes, we take a @'NonNegative' 'Int'@ instead of a
     -- 'Word64' because large 'Word64's can't be converted to 'Int', which we
@@ -260,8 +269,8 @@ prop_anchorNewest (NonNegative n') (TestBlockChain ch) =
     n :: Word64
     n = fromIntegral n'
 
-    -- Avoid an overflow in n' + 1 by just using n', as the chain will never
-    -- be that long in the tests.
+    -- Avoid an overflow in n' + 1 by just using n', as the fragment will
+    -- never be that long in the tests.
     n1 = if n' == maxBound then n' else n' + 1
 
 

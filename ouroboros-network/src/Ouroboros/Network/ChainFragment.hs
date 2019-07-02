@@ -729,14 +729,14 @@ intersectChainFragments initC1 initC2 =
 
 -- This is the key operation on chains in this model
 applyChainUpdate :: HasHeader block
-                 => ChainUpdate block
+                 => ChainUpdate block block
                  -> ChainFragment block
                  -> Maybe (ChainFragment block)
 applyChainUpdate (AddBlock b) c = Just (addBlock b c)
 applyChainUpdate (RollBack p) c =       rollback p c
 
 applyChainUpdates :: HasHeader block
-                  => [ChainUpdate block]
+                  => [ChainUpdate block block]
                   -> ChainFragment block
                   -> Maybe (ChainFragment block)
 applyChainUpdates []     c = Just c

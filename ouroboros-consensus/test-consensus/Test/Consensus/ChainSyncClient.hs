@@ -34,7 +34,7 @@ import           Network.Mux.Channel
 
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import qualified Ouroboros.Network.AnchoredFragment as AF
-import           Ouroboros.Network.Block
+import           Ouroboros.Network.Block hiding (ChainUpdate)
 import           Ouroboros.Network.Chain (Chain (Genesis))
 import qualified Ouroboros.Network.Chain as Chain
 import           Ouroboros.Network.ChainProducerState (chainState,
@@ -115,7 +115,7 @@ prop_chainSync ChainSyncClientSetup {..} =
       runChainSync securityParam maxClockSkew clientUpdates serverUpdates
                    startSlot
 
-    clientFragment = AF.anchorNewest k clientChain
+    clientFragment = AF.anchorNewest k $ AF.fromChain clientChain
 
 -- | Check whether the anchored fragment is a suffix of the chain.
 isSuffix :: AnchoredFragment TestBlock -> Chain TestBlock -> Property
@@ -164,6 +164,7 @@ lastSlot = fromMaybe (SlotNo 0) . maxKey
     maxKey :: forall k v. Map k v -> Maybe k
     maxKey = fmap (fst . fst) . Map.maxViewWithKey
 
+type ChainUpdate b = Chain.ChainUpdate b b
 
 newtype ClientUpdates =
   ClientUpdates { getClientUpdates :: Schedule [ChainUpdate TestBlock] }
@@ -229,7 +230,7 @@ runChainSync securityParam maxClockSkew (ClientUpdates clientUpdates)
 
     let getCurrentChain :: STM m (AnchoredFragment TestBlock)
         getCurrentChain =
-          AF.anchorNewest k . fst <$>
+          AF.anchorNewest k . AF.fromChain . fst <$>
           readTVar varClientState
         getLedgerState :: STM m (ExtLedgerState TestBlock)
         getLedgerState  = snd <$> readTVar varClientState
@@ -264,7 +265,7 @@ runChainSync securityParam maxClockSkew (ClientUpdates clientUpdates)
         whenJust (Map.lookup slot serverUpdates) $ \chainUpdates ->
           atomically $ do
             chainProducerState <- readTVar varChainProducerState
-            case CPS.applyChainUpdates (map (mapChainUpdate TestHeader) chainUpdates) chainProducerState of
+            case CPS.applyChainUpdates (map (fmap TestHeader) chainUpdates) chainProducerState of
               Just chainProducerState' ->
                 writeTVar varChainProducerState chainProducerState'
               Nothing                  ->

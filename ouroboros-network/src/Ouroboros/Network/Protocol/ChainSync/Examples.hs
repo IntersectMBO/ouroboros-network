@@ -161,7 +161,7 @@ chainSyncServerExample recvMsgDoneClient chainvar = ChainSyncServer $
                        -- the producer's state to change.
 
     sendNext :: ReaderId
-             -> (Point blk, ChainUpdate header)
+             -> (Point blk, ChainUpdate header header)
              -> ServerStNext header (Point blk) m a
     sendNext r (tip, AddBlock b) = SendMsgRollForward  b             tip (idle' r)
     sendNext r (tip, RollBack p) = SendMsgRollBackward (castPoint p) tip (idle' r)
@@ -195,7 +195,7 @@ chainSyncServerExample recvMsgDoneClient chainvar = ChainSyncServer $
             writeTVar chainvar cps'
             pure (Just (castPoint ipoint), castPoint (Chain.headPoint (ChainProducerState.chainState cps')))
 
-    tryReadChainUpdate :: ReaderId -> m (Maybe (Point blk, ChainUpdate header))
+    tryReadChainUpdate :: ReaderId -> m (Maybe (Point blk, ChainUpdate header header))
     tryReadChainUpdate rid =
       atomically $ do
         cps <- readTVar chainvar
@@ -205,7 +205,7 @@ chainSyncServerExample recvMsgDoneClient chainvar = ChainSyncServer $
             writeTVar chainvar cps'
             return $ Just (castPoint (Chain.headPoint (ChainProducerState.chainState cps')), u)
 
-    readChainUpdate :: ReaderId -> m (Point blk, ChainUpdate header)
+    readChainUpdate :: ReaderId -> m (Point blk, ChainUpdate header header)
     readChainUpdate rid =
       atomically $ do
         cps <- readTVar chainvar

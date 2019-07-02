@@ -67,19 +67,19 @@ import qualified Ouroboros.Storage.ChainDB.API as ChainDB
 -- | Interface against running relay node
 data NodeKernel m peer blk = NodeKernel {
       -- | The 'ChainDB' of the node
-      getChainDB :: ChainDB m blk (Header blk)
+      getChainDB             :: ChainDB m blk
 
       -- | The node's mempool
-    , getMempool :: Mempool m blk TicketNo
+    , getMempool             :: Mempool m blk TicketNo
 
       -- | The node's static configuration
-    , getNodeConfig :: NodeConfig (BlockProtocol blk)
+    , getNodeConfig          :: NodeConfig (BlockProtocol blk)
 
       -- | The fetch client registry, used for the block fetch clients.
     , getFetchClientRegistry :: FetchClientRegistry peer (Header blk) blk m
 
       -- | Read the current candidates
-    , getNodeCandidates :: TVar m (Map peer (TVar m (CandidateState blk)))
+    , getNodeCandidates      :: TVar m (Map peer (TVar m (CandidateState blk)))
     }
 
 -- | Monad that we run protocol specific functions in
@@ -122,7 +122,7 @@ data NodeParams m peer blk = NodeParams {
     , cfg                :: NodeConfig (BlockProtocol blk)
     , initState          :: NodeState (BlockProtocol blk)
     , btime              :: BlockchainTime m
-    , chainDB            :: ChainDB m blk (Header blk)
+    , chainDB            :: ChainDB m blk
     , callbacks          :: NodeCallbacks m blk
     , blockFetchSize     :: Header blk -> SizeInBytes
     , blockMatchesHeader :: Header blk -> blk -> Bool
@@ -182,7 +182,7 @@ data InternalState m peer blk = IS {
     , threadRegistry      :: ThreadRegistry m
     , btime               :: BlockchainTime m
     , callbacks           :: NodeCallbacks m blk
-    , chainDB             :: ChainDB m blk (Header blk)
+    , chainDB             :: ChainDB m blk
     , blockFetchInterface :: BlockFetchConsensusInterface peer (Header blk) blk m
     , fetchClientRegistry :: FetchClientRegistry peer (Header blk) blk m
     , varCandidates       :: TVar m (Map peer (TVar m (CandidateState blk)))
@@ -239,7 +239,7 @@ initBlockFetchConsensusInterface
        )
     => Tracer m String
     -> NodeConfig (BlockProtocol blk)
-    -> ChainDB m blk (Header blk)
+    -> ChainDB m blk
     -> STM m (Map peer (AnchoredFragment (Header blk)))
     -> (Header blk -> SizeInBytes)
     -> (Header blk -> blk -> Bool)

@@ -2,7 +2,7 @@
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE DeriveGeneric       #-}
 {-# LANGUAGE GADTs               #-}
-{-# LANGUAGE KindSignatures      #-}
+{-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -24,6 +24,11 @@ module Ouroboros.Storage.LedgerDB.InMemory (
    , ledgerDbTip
    , ledgerDbIsSaturated
    , ledgerDbTail
+     -- ** Result types
+   , PushManyResult (..)
+   , SwitchResult (..)
+   , pushManyResultToEither
+   , switchResultToEither
      -- ** Updates
    , Apply(..)
    , Err
@@ -243,8 +248,6 @@ ledgerDbCurrent (Skip   _ _) = error "ledgerDbCurrent: not stored"
 ledgerDbCurrent (Tail _ cs)  = csLedger cs
 
 -- | Reference to the block at the tip of the chain
---
--- Returns 'Nothing' if genesis
 ledgerDbTip :: LedgerDB l r -> Tip r
 ledgerDbTip (Snap r _ _) = Tip r
 ledgerDbTip (Skip r   _) = Tip r
@@ -267,6 +270,55 @@ ledgerDbTail :: LedgerDB l r -> ChainSummary l r
 ledgerDbTail (Snap _ _ ss) = ledgerDbTail ss
 ledgerDbTail (Skip _   ss) = ledgerDbTail ss
 ledgerDbTail (Tail _ cs)   = cs
+
+{-------------------------------------------------------------------------------
+  Result types
+-------------------------------------------------------------------------------}
+
+-- | The result of 'ledgerDbPushMany', i.e. when validating a number of new
+-- blocks.
+--
+-- About the boolean type index: if all blocks given to 'ledgerDbPushMany' are
+-- 'Reapply', and so @ap ~ 'True@, then the result /must/ be 'ValidBlocks'.
+data PushManyResult e l r :: Bool -> * where
+  -- | A block is invalid. We return the 'LedgerDB' corresponding to the block
+  -- before it. We also return the validation error and include a reference to
+  -- the invalid block.
+  InvalidBlock :: e -> r -> LedgerDB l r -> PushManyResult e l r 'False
+
+  -- | All blocks were valid, a 'LedgerDB' corresponding to the last valid
+  -- block is returned.
+  ValidBlocks ::            LedgerDB l r -> PushManyResult e l r ap
+
+-- | The result of 'ledgerDbSwitch', i.e. when validating a fork of the
+-- current chain.
+--
+-- First, we roll back @m@ blocks and then apply @n@ new blocks. It is
+-- important that @n >= m@, because we cannot return a valid 'LedgerDB' that
+-- is \"older\" (corresponds to an older block) than the given one.
+--
+-- We divide the new blocks in the /prefix/, the first @m@ new blocks, and the
+-- /suffix/, the @n-m@ last blocks, which are pushed using 'ledgerDbPushMany'.
+data SwitchResult e l r :: Bool -> * where
+  -- | When a block in the prefix is invalid, we cannot return a valid
+  -- 'LedgerDB'. We return the validation error and include a reference to the
+  -- invalid block.
+  InvalidBlockInPrefix :: e -> r                  -> SwitchResult e l r 'False
+
+  -- | The result of pushing the blocks in the suffix with 'ledgerDbPushMany'.
+  PushSuffix           :: PushManyResult e l r ap -> SwitchResult e l r ap
+
+pushManyResultToEither :: PushManyResult e l r ap
+                       -> Either (Err ap e) (LedgerDB l r)
+pushManyResultToEither = \case
+    InvalidBlock e _ _ -> Left e
+    ValidBlocks      l -> Right l
+
+switchResultToEither :: SwitchResult e l r ap
+                     -> Either (Err ap e) (LedgerDB l r)
+switchResultToEither = \case
+    InvalidBlockInPrefix e _ -> Left e
+    PushSuffix pm            -> pushManyResultToEither pm
 
 {-------------------------------------------------------------------------------
   Updates
@@ -309,12 +361,27 @@ ledgerDbReapply :: Monad m
 ledgerDbReapply cfg b = fmap mustBeRight . ledgerDbPush cfg (Reapply @'True, b)
 
 -- | Push a bunch of blocks (oldest first)
-ledgerDbPushMany :: Monad m
+ledgerDbPushMany :: forall ap m l r b e. Monad m
                  => LedgerDbConf m l r b e
                  -> [(Apply ap, RefOrVal r b)]
                  -> LedgerDB l r
-                 -> m (Either (Err ap e) (LedgerDB l r))
-ledgerDbPushMany cfg = runExceptT .: repeatedlyM (ExceptT .: ledgerDbPush cfg)
+                 -> m (PushManyResult e l r ap)
+ledgerDbPushMany cfg = flip go
+  where
+    go :: LedgerDB l r
+       -> [(Apply ap, RefOrVal r b)]
+       -> m (PushManyResult e l r ap)
+    go l = \case
+      [] -> return $ ValidBlocks l
+      b@(ap, rov):bs -> case ap of
+        Apply   -> ledgerDbPush cfg b l >>= \case
+          Left  e  -> return $ InvalidBlock e (ref rov) l
+          Right l' -> go l' bs
+        -- We have Reapply @'False, so 'ledgerDbPush' returns a non-Void
+        -- error, but we know it can't happen, so just use Reapply @'True.
+        Reapply -> ledgerDbPush cfg (Reapply @'True, rov) l >>= \case
+          Left  e  -> absurd e
+          Right l' -> go l' bs
 
 -- | Switch to a fork
 --
@@ -330,7 +397,7 @@ ledgerDbSwitch :: ( Monad m
                -> Word64                      -- ^ How many blocks to roll back
                -> [(Apply ap, RefOrVal r b)]  -- ^ New blocks to apply
                -> LedgerDB l r
-               -> m (Either (Err ap e) (LedgerDB l r))
+               -> m (SwitchResult e l r ap)
 ledgerDbSwitch cfg numRollbacks newBlocks ss =
     case runExcept $ rollbackMany numRollbacks (toSuffix ss) of
       Right suffix -> fromSuffix cfg newBlocks suffix
@@ -376,32 +443,46 @@ ledgerDbComputeCurrent cfg = go
     go (Skip r   ss) = go ss >>= reapplyBlock cfg (Ref r)
     go (Tail _ cs)   = return (csLedger cs)
 
-fromSuffix :: forall m l r b e ap. Monad m
+fromSuffix :: forall m l r b e ap. (Monad m, HasCallStack)
            => LedgerDbConf m l r b e
            -> [(Apply ap, RefOrVal r b)]
            -> Suffix l r
-           -> m (Either (Err ap e) (LedgerDB l r))
-fromSuffix cfg = \bs suffix -> runExceptT $ do
+           -> m (SwitchResult e l r ap)
+fromSuffix cfg = \bs suffix -> do
     -- Here we /must/ call 'ledgerDbComputeCurrent', not 'ledgerDbGetCurrent':
     -- only if we are /very/ lucky would we roll back to a point where we happen
     -- to store a snapshot.
-    l <- lift $ ledgerDbComputeCurrent cfg (suffixRemaining suffix)
+    l <- ledgerDbComputeCurrent cfg (suffixRemaining suffix)
     go bs suffix l
   where
     go :: [(Apply ap, RefOrVal r b)]
-       -> Suffix l r -> l -> ExceptT (Err ap e) m (LedgerDB l r)
+       -> Suffix l r -> l -> m (SwitchResult e l r ap)
     go bs (Suffix ss SNone) _ =
-        ExceptT $ ledgerDbPushMany cfg bs ss
-    go ((ap,b):bs) (Suffix ss (SSnap m)) l = do
-        l' <- applyBlock cfg (ap, b) l
-        go bs (Suffix (Snap (ref b) l' ss) m) l'
-    go ((ap,b):bs) (Suffix ss (SSkip m)) l = do
-        l' <- applyBlock cfg (ap, b) l
-        go bs (Suffix (Skip (ref b) ss) m) l'
+        PushSuffix <$> ledgerDbPushMany cfg bs ss
+    go ((ap,b):bs) (Suffix ss (SSnap m)) l =
+        applyBlock' ap b l
+          (\e -> return $ InvalidBlockInPrefix e (ref b))
+          (\l' -> go bs (Suffix (Snap (ref b) l' ss) m) l')
+    go ((ap,b):bs) (Suffix ss (SSkip m)) l =
+        applyBlock' ap b l
+          (\e  -> return $ InvalidBlockInPrefix e (ref b))
+          (\l' -> go bs (Suffix (Skip (ref b) ss) m) l')
     go [] (Suffix _  (SSnap _)) _ =
         error "fromSuffix: too few blocks"
     go [] (Suffix _  (SSkip _)) _ =
         error "fromSuffix: too few blocks"
+
+    applyBlock' :: forall a. Apply ap -> RefOrVal r b -> l
+                -> (ap ~ 'False => e -> m a)
+                -> (l -> m a)
+                -> m a
+    applyBlock' ap b l kErr kOk = case ap of
+      Apply   -> runExceptT (applyBlock cfg (ap, b) l) >>= \case
+        Left  e  -> kErr e
+        Right l' -> kOk l'
+      Reapply -> runExceptT (applyBlock cfg (Reapply @'True, b) l) >>= \case
+        Left  e  -> absurd e
+        Right l' -> kOk l'
 
 rollback :: Suffix l r -> Except String (Suffix l r)
 rollback (Suffix (Snap _ _ ss) missing) = return $ Suffix ss (SSnap missing)
@@ -437,8 +518,14 @@ instance (Typeable l, Typeable r, Show r, Show l)
   Pure variations (primarily for testing)
 -------------------------------------------------------------------------------}
 
-fromIdentity :: Identity (Either Void l) -> l
-fromIdentity = mustBeRight . runIdentity
+fromEither :: Identity (Either Void l) -> l
+fromEither = mustBeRight . runIdentity
+
+fromPushManyResult :: Identity (PushManyResult Void l b 'False) -> LedgerDB l b
+fromPushManyResult = mustBeRight . pushManyResultToEither . runIdentity
+
+fromSwitchResult :: Identity (SwitchResult Void l b 'False) -> LedgerDB l b
+fromSwitchResult = mustBeRight . switchResultToEither . runIdentity
 
 pureBlock :: b -> (Apply 'False, RefOrVal b b)
 pureBlock b = (Apply, Val b b)
@@ -447,18 +534,18 @@ ledgerDbComputeCurrent' :: PureLedgerDbConf l b -> LedgerDB l b -> l
 ledgerDbComputeCurrent' cfg = runIdentity . ledgerDbComputeCurrent cfg
 
 ledgerDbPush' :: PureLedgerDbConf l b -> b -> LedgerDB l b -> LedgerDB l b
-ledgerDbPush' cfg b = fromIdentity . ledgerDbPush cfg (pureBlock b)
+ledgerDbPush' cfg b = fromEither . ledgerDbPush cfg (pureBlock b)
 
 ledgerDbPushMany' :: PureLedgerDbConf l b -> [b] -> LedgerDB l b -> LedgerDB l b
-ledgerDbPushMany' cfg bs = fromIdentity . ledgerDbPushMany cfg (map pureBlock bs)
+ledgerDbPushMany' cfg bs = fromPushManyResult . ledgerDbPushMany cfg (map pureBlock bs)
 
 ledgerDbSwitch' :: (HasCallStack, Show l, Show b, Typeable l, Typeable b)
                 => PureLedgerDbConf l b
                 -> Word64 -> [b] -> LedgerDB l b -> LedgerDB l b
-ledgerDbSwitch' cfg n bs = fromIdentity . ledgerDbSwitch cfg n (map pureBlock bs)
+ledgerDbSwitch' cfg n bs = fromSwitchResult . ledgerDbSwitch cfg n (map pureBlock bs)
 
 fromSuffix' :: PureLedgerDbConf l b -> [b] -> Suffix l b -> LedgerDB l b
-fromSuffix' cfg bs = fromIdentity . fromSuffix cfg (map pureBlock bs)
+fromSuffix' cfg bs = fromSwitchResult . fromSuffix cfg (map pureBlock bs)
 
 {-------------------------------------------------------------------------------
   Shape
@@ -559,7 +646,7 @@ demo = db0 : go 1 8 db0
         let blockInfos = [ (Apply, Val (DR ('b', n-1)) (DB ('b', n-1)))
                          , (Apply, Val (DR ('b', n-0)) (DB ('b', n-0)))
                          ]
-            Identity (Right db') = ledgerDbSwitch demoConf 1 blockInfos db
+            Identity (PushSuffix (ValidBlocks db')) = ledgerDbSwitch demoConf 1 blockInfos db
         in [db']
       else
         let blockInfo = (Apply, Val (DR ('a', n)) (DB ('a', n)))

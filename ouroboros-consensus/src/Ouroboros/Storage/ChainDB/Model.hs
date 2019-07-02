@@ -21,28 +21,36 @@ module Ouroboros.Storage.ChainDB.Model (
   , getBlockByPoint
   , hasBlock
   , hasBlockByPoint
-  , pointOnChain
+  , immutableBlockNo
     -- * Iterators
   , streamBlocks
   , iteratorNext
+  , iteratorClose
     -- * Readers
-  , newReader
+  , readBlocks
   , readerInstruction
   , readerForward
+    -- * Exported for testing purposes
+  , between
+  , blocks
+  , chains
+  , garbageCollectable
+  , garbageCollectablePoint
+  , garbageCollect
   ) where
 
+import           Control.Monad (unless)
 import           Control.Monad.Except (runExcept)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (fromMaybe, isJust, mapMaybe)
-import           GHC.Stack (HasCallStack)
 
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import qualified Ouroboros.Network.AnchoredFragment as Fragment
-import           Ouroboros.Network.Block (ChainHash (..), ChainUpdate (..),
-                     HasHeader, HeaderHash, Point)
+import           Ouroboros.Network.Block (ChainHash (..), HasHeader, HeaderHash,
+                     Point)
 import qualified Ouroboros.Network.Block as Block
-import           Ouroboros.Network.Chain (Chain (..))
+import           Ouroboros.Network.Chain (Chain (..), ChainUpdate)
 import qualified Ouroboros.Network.Chain as Chain
 import qualified Ouroboros.Network.ChainProducerState as CPS
 
@@ -50,9 +58,11 @@ import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util (repeatedly)
+import qualified Ouroboros.Consensus.Util.AnchoredFragment as Fragment
 
-import           Ouroboros.Storage.ChainDB.API (IteratorId (..),
-                     IteratorResult (..), StreamFrom (..), StreamTo (..))
+import           Ouroboros.Storage.ChainDB.API (ChainDbError (..),
+                     IteratorId (..), IteratorResult (..), StreamFrom (..),
+                     StreamTo (..), UnknownRange (..), validBounds)
 
 -- | Model of the chain DB
 data Model blk = Model {
@@ -77,13 +87,18 @@ getBlock hash Model{..} = Map.lookup hash blocks
 hasBlock :: HasHeader blk => HeaderHash blk -> Model blk -> Bool
 hasBlock hash = isJust . getBlock hash
 
-getBlockByPoint :: (HasHeader blk, HasCallStack)
-                => Point blk -> Model blk -> Maybe blk
-getBlockByPoint = getBlock . notGenesis
+getBlockByPoint :: HasHeader blk
+                => Point blk -> Model blk
+                -> Either (ChainDbError blk) (Maybe blk)
+getBlockByPoint pt = case Chain.pointHash pt of
+    GenesisHash    -> const $ Left NoGenesisBlock
+    BlockHash hash -> Right . getBlock hash
 
-hasBlockByPoint :: (HasHeader blk, HasCallStack)
+hasBlockByPoint :: HasHeader blk
                 => Point blk -> Model blk -> Bool
-hasBlockByPoint = hasBlock . notGenesis
+hasBlockByPoint pt = case Chain.pointHash pt of
+    GenesisHash    -> const False
+    BlockHash hash -> hasBlock hash
 
 tipBlock :: Model blk -> Maybe blk
 tipBlock = Chain.head . currentChain
@@ -98,11 +113,21 @@ lastK :: HasHeader a
       -> AnchoredFragment a
 lastK (SecurityParam k) f =
       Fragment.anchorNewest k
+    . Fragment.fromChain
     . fmap f
     . currentChain
 
-pointOnChain :: HasHeader blk => Model blk -> Point blk -> Bool
-pointOnChain m p = Chain.pointOnChain p (currentChain m)
+-- | The block number of the most recent \"immutable\" block, i.e. the oldest
+-- block we can roll back to. We cannot roll back the block itself.
+--
+-- In the real implementation this will correspond to the block number of the
+-- block at the tip of the Immutable DB.
+immutableBlockNo :: HasHeader blk
+                 => SecurityParam -> Model blk -> Block.BlockNo
+immutableBlockNo (SecurityParam k) =
+        Chain.headBlockNo
+      . Chain.drop (fromIntegral k)
+      . currentChain
 
 {-------------------------------------------------------------------------------
   Construction
@@ -119,7 +144,11 @@ empty initLedger = Model {
 
 addBlock :: forall blk. ProtocolLedgerView blk
          => NodeConfig (BlockProtocol blk) -> blk -> Model blk -> Model blk
-addBlock cfg blk m = Model {
+addBlock cfg blk m
+    -- If the block is as old as the tip of the ImmutableDB, i.e. older than
+    -- @k@, we ignore it, as we can never switch to it.
+  | Block.blockNo blk <= immutableBlockNo secParam m = m
+  | otherwise = Model {
       blocks        = blocks'
     , cps           = CPS.switchFork newChain (cps m)
     , currentLedger = newLedger
@@ -127,6 +156,8 @@ addBlock cfg blk m = Model {
     , iterators     = iterators  m
     }
   where
+    secParam = protocolSecurityParam cfg
+
     blocks' :: Map (HeaderHash blk) blk
     blocks' = Map.insert (Block.blockHash blk) blk (blocks m)
 
@@ -147,14 +178,18 @@ addBlocks cfg = repeatedly (addBlock cfg)
 -------------------------------------------------------------------------------}
 
 streamBlocks :: HasHeader blk
-             => StreamFrom blk -> StreamTo blk
-             -> Model blk -> (IteratorId, Model blk)
-streamBlocks from to m = (itrId, m {
-      iterators = Map.insert
-                    itrId
-                    (between from to (currentChain m))
-                    (iterators m)
-    })
+             => SecurityParam
+             -> StreamFrom blk -> StreamTo blk
+             -> Model blk
+             -> Either (ChainDbError blk)
+                       (Either (UnknownRange blk) IteratorId, Model blk)
+streamBlocks securityParam from to m = do
+    unless (validBounds from to) $ Left (InvalidIteratorRange from to)
+    case between securityParam from to m of
+      Left  e    -> return (Left e,      m)
+      Right blks -> return (Right itrId, m {
+          iterators = Map.insert itrId blks (iterators m)
+        })
   where
     itrId :: IteratorId
     itrId = IteratorId (Map.size (iterators m)) -- we never delete iterators
@@ -170,24 +205,29 @@ iteratorNext itrId m =
                      )
       Nothing      -> error "iteratorNext: unknown iterator ID"
 
+-- We never delete iterators such that we can use the size of the map as the
+-- next iterator id.
+iteratorClose :: IteratorId -> Model blk -> Model blk
+iteratorClose itrId m = m { iterators = Map.insert itrId [] (iterators m) }
+
 {-------------------------------------------------------------------------------
   Readers
 -------------------------------------------------------------------------------}
 
-newReader :: HasHeader blk => Model blk -> (CPS.ReaderId, Model blk)
-newReader m = (rdrId, m { cps = cps' })
+readBlocks :: HasHeader blk => Model blk -> (CPS.ReaderId, Model blk)
+readBlocks m = (rdrId, m { cps = cps' })
   where
     (cps', rdrId) = CPS.initReader Chain.genesisPoint (cps m)
 
 readerInstruction :: forall blk. HasHeader blk
                   => CPS.ReaderId
                   -> Model blk
-                  -> (Maybe (ChainUpdate blk), Model blk)
+                  -> (Maybe (ChainUpdate blk blk), Model blk)
 readerInstruction rdrId m =
     rewrap $ CPS.readerInstruction rdrId (cps m)
   where
-    rewrap :: Maybe (ChainUpdate blk, CPS.ChainProducerState blk)
-           -> (Maybe (ChainUpdate blk), Model blk)
+    rewrap :: Maybe (ChainUpdate blk blk, CPS.ChainProducerState blk)
+           -> (Maybe (ChainUpdate blk blk), Model blk)
     rewrap Nothing            = (Nothing, m)
     rewrap (Just (upd, cps')) = (Just upd, m { cps = cps' })
 
@@ -207,12 +247,6 @@ readerForward rdrId points m =
   Internal auxiliary
 -------------------------------------------------------------------------------}
 
-notGenesis :: HasCallStack => Point blk -> HeaderHash blk
-notGenesis p =
-    case Block.pointHash p of
-      GenesisHash -> error "Ouroboros.Storage.ChainDB.Model: notGenesis"
-      BlockHash h -> h
-
 validate :: forall blk. ProtocolLedgerView blk
          => NodeConfig (BlockProtocol blk)
          -> ExtLedgerState blk
@@ -223,6 +257,7 @@ validate cfg initLedger chain =
     . runExcept
     $ chainExtLedgerState cfg chain initLedger
   where
+    -- TODO remember the invalid blocks
     fromEither :: Either (ExtValidationError blk) (ExtLedgerState blk)
                -> Maybe (Chain blk, ExtLedgerState blk)
     fromEither (Left _err) = Nothing
@@ -259,25 +294,116 @@ successors = Map.unionsWith Map.union . map single
                              (Map.singleton (Block.blockHash b) b)
 
 between :: forall blk. HasHeader blk
-        => StreamFrom blk -> StreamTo blk -> Chain blk -> [blk]
-between from to =
-      (reverse . dropAfterTo to . reverse)
-    . dropBeforeFrom from
-    . Chain.toOldestFirst
+        => SecurityParam -> StreamFrom blk -> StreamTo blk -> Model blk
+        -> Either (UnknownRange blk) [blk]
+between (SecurityParam k) from to m = do
+    fork <- errFork
+    if Fragment.forksAtMostKBlocks k currentFrag fork
+      then return $ Fragment.toOldestFirst fork
+           -- We cannot stream from an old fork
+      else Left $ ForkTooOld from
   where
-    -- Drop everything before the start point
-    -- This runs on the list /from oldest to newest/
-    dropBeforeFrom :: StreamFrom blk -> [blk] -> [blk]
-    dropBeforeFrom StreamFromGenesis       = id
-    dropBeforeFrom (StreamFromInclusive p) = dropWhile (isNot p)
-    dropBeforeFrom (StreamFromExclusive p) = tail . dropWhile (isNot p)
+    currentFrag :: AnchoredFragment blk
+    currentFrag = Fragment.fromChain (currentChain m)
 
-    -- Drop everything after the end point
-    -- This runs on the /reversed/ list (from newest to oldest)
-    dropAfterTo :: StreamTo blk -> [blk] -> [blk]
-    dropAfterTo StreamToEnd           = id
-    dropAfterTo (StreamToInclusive p) = dropWhile (isNot p)
-    dropAfterTo (StreamToExclusive p) = tail . dropWhile (isNot p)
+    -- A fragment for each possible chain in the database
+    fragments :: [AnchoredFragment blk]
+    fragments = map Fragment.fromChain
+              . chains
+              . blocks
+              $ m
 
-    isNot :: Point blk -> blk -> Bool
-    p `isNot` b = p /= Block.blockPoint b
+    -- The fork that contained the start and end point, i.e. the fork to
+    -- stream from. This relies on the fact that each block uniquely
+    -- determines its prefix.
+    errFork :: Either (UnknownRange blk) (AnchoredFragment blk)
+    errFork = do
+      -- The error refers to @to@, because if the list is empty, @to@ was not
+      -- found on any chain
+      let err = MissingBlock $ case to of
+            StreamToInclusive p -> p
+            StreamToExclusive p -> p
+      -- Note that any chain that contained @to@, must have an identical
+      -- prefix because the hashes of the blocks enforce this. So we can just
+      -- pick any fork.
+      afterTo <- anyFork (map cutOffAfterTo fragments) err
+      cutOffBeforeFrom afterTo
+
+    -- Select the first 'Right' in the list, otherwise return the last 'Left'.
+    -- If the list is empty, return the error given as second argument.
+    --
+    -- See 'errFork' for why it doesn't matter which fork we return.
+    anyFork :: [Either (UnknownRange blk) (AnchoredFragment blk)]
+            ->  UnknownRange blk
+            ->  Either (UnknownRange blk) (AnchoredFragment blk)
+    anyFork (Right f : _ ) _ = Right f
+    anyFork (Left  u : []) _ = Left u
+    anyFork (Left  _ : fs) e = anyFork fs e
+    anyFork []             e = Left e
+
+    -- If @to@ is on the fragment, remove all blocks after it, including @to@
+    -- itself in case of 'StreamToExclusive'. If it is not on the fragment,
+    -- return a 'MissingBlock' error.
+    cutOffAfterTo :: AnchoredFragment blk
+                  -> Either (UnknownRange blk) (AnchoredFragment blk)
+    cutOffAfterTo frag = case to of
+      StreamToInclusive p
+        | Just frag' <- fst <$> Fragment.splitAfterPoint frag p
+        -> return frag'
+        | otherwise
+        -> Left $ MissingBlock p
+      StreamToExclusive p
+        | Just frag' <- fst <$> Fragment.splitAfterPoint frag p
+        -> return $ Fragment.dropNewest 1 frag'
+        | otherwise
+        -> Left $ MissingBlock p
+
+    -- If @from@ is on the fragment, remove all blocks before it, including
+    -- @from@ itself in case of 'StreamFromExclusive'. It it is not on the
+    -- fragment, return a 'MissingBlock' error.
+    cutOffBeforeFrom :: AnchoredFragment blk
+                     -> Either (UnknownRange blk) (AnchoredFragment blk)
+    cutOffBeforeFrom frag = case from of
+      StreamFromInclusive p
+        | Just frag' <- snd <$> Fragment.splitBeforePoint frag p
+        -> return frag'
+        | otherwise
+        -> Left $ MissingBlock p
+      StreamFromExclusive p
+        | Just frag' <- snd <$> Fragment.splitAfterPoint frag p
+        -> return frag'
+        | otherwise
+        -> Left $ MissingBlock p
+
+-- Would the garbage collector (if run) be able to garbage collect the given
+-- block?
+garbageCollectable :: forall blk. HasHeader blk
+                   => SecurityParam -> Model blk -> blk -> Bool
+garbageCollectable secParam m@Model{..} b =
+    not onCurrentChain && olderThanK
+  where
+    onCurrentChain = Chain.pointOnChain (Block.blockPoint b) (currentChain m)
+    olderThanK     = Block.blockNo b <= immutableBlockNo secParam m
+
+-- Return 'True' when the model contains the block corresponding to the point
+-- and the block itself is eligible for garbage collection, i.e. the real
+-- implementation might have garbage collected it. In all other cases, return
+-- 'False'.
+garbageCollectablePoint :: forall blk. HasHeader blk
+                        => SecurityParam -> Model blk -> Point blk -> Bool
+garbageCollectablePoint secParam m@Model{..} pt
+    | BlockHash hash <- Block.pointHash pt
+    , Just blk <- getBlock hash m
+    = garbageCollectable secParam m blk
+    | otherwise
+    = False
+
+garbageCollect :: forall blk. HasHeader blk
+               => SecurityParam -> Model blk -> Model blk
+garbageCollect secParam m@Model{..} = m
+    { blocks = Map.filter (not . collectable) blocks
+    }
+    -- TODO what about iterators that will stream garbage collected blocks?
+  where
+    collectable :: blk -> Bool
+    collectable = garbageCollectable secParam m

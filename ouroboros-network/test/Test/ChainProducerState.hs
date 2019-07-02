@@ -1,5 +1,6 @@
 {-# LANGUAGE DataKinds      #-}
 {-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE TypeFamilies   #-}
 {-# LANGUAGE TypeOperators  #-}
 
 module Test.ChainProducerState

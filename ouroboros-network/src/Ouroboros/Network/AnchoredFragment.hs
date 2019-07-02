@@ -54,6 +54,7 @@ module Ouroboros.Network.AnchoredFragment (
   selectPoints,
   isPrefixOf,
   splitAfterPoint,
+  splitBeforePoint,
   join,
   intersect,
   intersectionPoint,
@@ -71,6 +72,7 @@ module Ouroboros.Network.AnchoredFragment (
 import           Prelude hiding (head, last, length, null)
 
 import           Control.Exception (assert)
+import           Data.Functor ((<&>))
 import           Data.List (find)
 import           Data.Word (Word64)
 import           GHC.Stack
@@ -387,14 +389,14 @@ findFirstPoint ps c = find (`withinFragmentBounds` c) ps
 
 
 applyChainUpdate :: HasHeader block
-                 => ChainUpdate block
+                 => ChainUpdate block block
                  -> AnchoredFragment block
                  -> Maybe (AnchoredFragment block)
 applyChainUpdate (AddBlock b) c = Just (addBlock b c)
 applyChainUpdate (RollBack p) c =       rollback p c
 
 applyChainUpdates :: HasHeader block
-                  => [ChainUpdate block]
+                  => [ChainUpdate block block]
                   -> AnchoredFragment block
                   -> Maybe (AnchoredFragment block)
 applyChainUpdates []     c = Just c
@@ -417,23 +419,27 @@ toChain af@(AnchoredFragment a _)
     | otherwise
     = Nothing
 
--- | Take the @n@ newest blocks from the chain and turn them into an
--- 'AnchoredFragment'.
+-- | Take the @n@ newest blocks from the fragment.
 --
--- When the chain itself is shorter than @n@ blocks, the fragment will also be
--- shorter than @n@ blocks (and anchored at genesis).
+-- WARNING: this may change the anchor of the fragment!
+--
+-- When the fragment itself is shorter than @n@ blocks, the fragment will be
+-- returned unmodified.
 anchorNewest :: forall block. HasHeader block
              => Word64  -- ^ @n@
-             -> Chain block
              -> AnchoredFragment block
-anchorNewest = go CF.Empty
+             -> AnchoredFragment block
+anchorNewest n c = case c of
+    Empty _       -> c
+    _ | n >= len  -> c
+      | otherwise -> dropOldest (len - n) c
   where
-    -- Walk back over the chain, building up a chain fragment until k = 0 or
-    -- we encountered genesis, then anchor the built-up chain fragment
-    go :: ChainFragment block -> Word64 -> Chain block -> AnchoredFragment block
-    go cf _ Chain.Genesis   = mkAnchoredFragment Chain.genesisPoint cf
-    go cf 0 (_  Chain.:> b) = mkAnchoredFragment (blockPoint b)     cf
-    go cf n (ch Chain.:> b) = go (b CF.:< cf) (n - 1) ch
+    len = fromIntegral $ length c
+
+    dropOldest :: Word64 -> AnchoredFragment block -> AnchoredFragment block
+    dropOldest _ (Empty a) = Empty a
+    dropOldest 0 c'        = c'
+    dropOldest m (_ :< c') = dropOldest (m - 1) c'
 
 -- | \( O(\max(n_1, n_2)) \). Check whether the first anchored fragment is a
 -- prefix of the second.
@@ -467,6 +473,30 @@ splitAfterPoint c pt = case CF.splitAfterPoint (unanchorFragment c) pt of
      -> Just (mkAnchoredFragment (anchorPoint c) CF.Empty, c)
      | otherwise
      -> Nothing
+
+-- | \( O(\log(\min(i,n-i)) \). Split the 'AnchoredFragment' before the given
+--  'Point'. Return 'Nothing' if given 'Point' is not on the fragment
+--  ('pointOnFragment').
+--
+-- This means that 'Nothing' is returned if the given 'Point' is the anchor
+-- point of the fragment.
+--
+-- POSTCONDITION: joining ('join') the two fragments gives back the original
+-- fragment.
+--
+-- POSTCONDITION: the last block (oldest) on the second fragment corresponds
+-- to the given point.
+splitBeforePoint
+   :: forall block1 block2.
+      (HasHeader block1, HasHeader block2, HeaderHash block1 ~ HeaderHash block2)
+   => AnchoredFragment block1
+   -> Point block2
+   -> Maybe (AnchoredFragment block1, AnchoredFragment block1)
+splitBeforePoint (AnchoredFragment ap cf) pt =
+    CF.splitBeforePoint cf pt <&> \(cp, cs) ->
+      let before = mkAnchoredFragment ap                 cp
+          after  = mkAnchoredFragment (headPoint before) cs
+      in (before, after)
 
 -- | \( O(\log(\min(n_1, n_2))) \). Join two anchored fragments if the anchor
 -- of the second fragment is the head (newest block) of the first fragment.

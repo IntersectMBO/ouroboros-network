@@ -1,5 +1,5 @@
+{-# LANGUAGE DeriveFunctor       #-}
 {-# LANGUAGE GADTs               #-}
-{-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving  #-}
 {-# LANGUAGE TypeFamilies        #-}
@@ -16,10 +16,15 @@ module Ouroboros.Storage.ChainDB.API (
   , Iterator(..)
   , IteratorId(..)
   , IteratorResult(..)
+  , UnknownRange(..)
+  , validBounds
+  , streamAll
     -- * Readers
   , Reader(..)
     -- * Recovery
   , ChainDbFailure(..)
+    -- * Exceptions
+  , ChainDbError(..)
   ) where
 
 import qualified Codec.CBOR.Read as CBOR
@@ -33,23 +38,40 @@ import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
 
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
-import           Ouroboros.Network.Block (ChainUpdate (..), HasHeader (..),
-                     HeaderHash, SlotNo, StandardHash)
-import           Ouroboros.Network.Chain (Chain (..), Point (..))
+import           Ouroboros.Network.Block (ChainHash (..), ChainUpdate,
+                     HasHeader (..), HeaderHash, SlotNo, StandardHash)
+import           Ouroboros.Network.Chain (Chain (..), Point (..), genesisPoint)
 import qualified Ouroboros.Network.Chain as Chain
 import           Ouroboros.Network.ChainProducerState (ReaderId)
 
+import           Ouroboros.Consensus.Block (GetHeader (..))
 import           Ouroboros.Consensus.Ledger.Extended
 
 import           Ouroboros.Storage.Common
 import           Ouroboros.Storage.FS.API.Types (FsError)
 import qualified Ouroboros.Storage.ImmutableDB as ImmDB
 
-data ChainDB m blk hdr =
-    ( HasHeader blk
-    , HasHeader hdr
-    , HeaderHash blk ~ HeaderHash hdr
-    ) => ChainDB {
+-- | The chain database
+--
+-- The chain database provides a unified interface on top of:
+--
+-- * The ImmutableDB, storing the part of the chain that can't roll back.
+-- * The VolatileDB, storing the blocks near the tip of the chain, possibly in
+--   multiple competing forks.
+-- * The LedgerDB, storing snapshots of the ledger state for blocks in the
+--   ImmutableDB (and in-memory snapshots for the rest).
+--
+-- In addition to providing a unifying interface on top of these disparate
+-- components, the main responsibilities that the ChainDB itself has are:
+--
+-- * Chain selection (on initialization and whenever a block is added)
+-- * Trigger full recovery whenever we detect disk failure in any component
+-- * Provide iterators across fixed fragments of the current chain
+-- * Provide readers that track the status of the current chain
+--
+-- The ChainDB instantiates all the various type parameters of these databases
+-- to conform to the unified interface we provide here.
+data ChainDB m blk = ChainDB {
       -- | Add a block to the heap of blocks
       --
       -- We do /not/ assume that the block is valid (under the legder rules);
@@ -91,7 +113,7 @@ data ChainDB m blk hdr =
       --
       -- NOTE: A direct consequence of this guarantee is that the anchor of the
       -- fragment will move as the chain grows.
-    , getCurrentChain    :: STM m (AnchoredFragment hdr)
+    , getCurrentChain    :: STM m (AnchoredFragment (Header blk))
 
       -- | Get current ledger
     , getCurrentLedger   :: STM m (ExtLedgerState blk)
@@ -108,7 +130,7 @@ data ChainDB m blk hdr =
       -- actually in memory, whereas the block never is.
       --
       -- Returns 'Nothing' if the database is empty.
-    , getTipHeader       :: m (Maybe hdr)
+    , getTipHeader       :: m (Maybe (Header blk))
 
       -- | Get point of the tip of the chain
       --
@@ -129,10 +151,16 @@ data ChainDB m blk hdr =
 
       -- | Stream blocks
       --
-      -- Streaming is not restricted to the current fork, but there must be
-      -- an unbroken path from the starting point to the end point /at the time
+      -- Streaming is not restricted to the current fork, but there must be an
+      -- unbroken path from the starting point to the end point /at the time
       -- of initialization/ of the iterator. Once the iterator has been
-      -- initialized, it will not be affected by subsequent calls to 'addBlock'.
+      -- initialized, it will not be affected by subsequent calls to
+      -- 'addBlock'. To track the current chain, use a 'Reader' instead.
+      --
+      -- Streaming blocks older than @k@ is permitted, but only when they are
+      -- part of the current fork (at the time of initialization). Streaming a
+      -- fork that forks off more than @k@ blocks in the past is not permitted
+      -- and an 'UnknownRange' error will be returned in that case.
       --
       -- The iterator /does/ have a limited lifetime, however. The chain DB
       -- internally partitions the chain into an " immutable " part and a
@@ -148,7 +176,17 @@ data ChainDB m blk hdr =
       -- then the first block on that fork will become unavailable as soon as
       -- another block is pushed to the current chain and the subsequent
       -- time delay expires.
-    , streamBlocks       :: StreamFrom blk -> StreamTo blk -> m (Iterator m blk)
+      --
+      -- When the given bounds are nonsensical, an 'InvalidIteratorRange' is
+      -- thrown.
+      --
+      -- When the given bounds are not part of the chain DB, an 'UnknownRange'
+      -- error is returned.
+      --
+      -- To stream all blocks from the current chain, use 'streamAll', as it
+      -- correctly handles an empty ChainDB.
+    , streamBlocks       :: StreamFrom blk -> StreamTo blk
+                         -> m (Either (UnknownRange blk) (Iterator m blk))
 
       -- | Chain reader
       --
@@ -165,7 +203,7 @@ data ChainDB m blk hdr =
       -- Examples of users include the server side of the chain sync
       -- mini-protocol for the node-to-node protocol.
       --
-    , newHeaderReader    :: m (Reader m hdr)
+    , newHeaderReader    :: m (Reader m blk (Header blk))
 
       -- | This is the same as the reader 'newHeaderReader' but it provides a
       -- reader for /whole blocks/ rather than headers.
@@ -173,41 +211,49 @@ data ChainDB m blk hdr =
       -- Examples of users include the server side of the chain sync
       -- mini-protocol for the node-to-client protocol.
       --
-    , newBlockReader     :: m (Reader m blk)
+    , newBlockReader     :: m (Reader m blk blk)
 
       -- | Known to be invalid blocks
     , knownInvalidBlocks :: STM m (Set (Point blk))
 
-      -- | Check if the specified point is on the current chain
+      -- | Close the ChainDB
       --
-      -- This lives in @m@, not @STM m@, because if the point is not on the
-      -- current chain fragment, it might have to query the immutable DB.
-    , pointOnChain       :: Point blk -> m Bool
+      -- Idempotent.
+      --
+      -- Should only be called on shutdown.
+    , closeDB            :: m ()
+
+      -- | Return 'True' when the database is open.
+      --
+      -- 'False' when the database is closed.
+    , isOpen             :: STM m Bool
     }
 
 {-------------------------------------------------------------------------------
   Support for tests
 -------------------------------------------------------------------------------}
 
-toChain :: forall m blk hdr.
-           (MonadThrow m, HasHeader blk)
-        => ChainDB m blk hdr -> m (Chain blk)
+toChain :: forall m blk.
+           (MonadThrow m, HasHeader blk, MonadSTM m)
+        => ChainDB m blk -> m (Chain blk)
 toChain chainDB = bracket
-    (streamBlocks chainDB StreamFromGenesis StreamToEnd)
-    iteratorClose
-    (go Genesis)
+    (streamAll chainDB)
+    (mapM_ iteratorClose)
+    (maybe (return Genesis) (go Genesis))
   where
     go :: Chain blk -> Iterator m blk -> m (Chain blk)
     go chain it = do
       next <- iteratorNext it
       case next of
-        IteratorExhausted  -> return chain
-        IteratorResult blk -> go (Chain.addBlock blk chain) it
+        IteratorResult blk  -> go (Chain.addBlock blk chain) it
+        IteratorExhausted   -> return chain
+        IteratorBlockGCed _ ->
+          error "block on the current chain was garbage-collected"
 
-fromChain :: forall m blk hdr. Monad m
-          => m (ChainDB m blk hdr)
+fromChain :: forall m blk. Monad m
+          => m (ChainDB m blk)
           -> Chain blk
-          -> m (ChainDB m blk hdr)
+          -> m (ChainDB m blk)
 fromChain openDB chain = do
     chainDB <- openDB
     mapM_ (addBlock chainDB) $ Chain.toOldestFirst chain
@@ -217,15 +263,19 @@ fromChain openDB chain = do
   Iterator API
 -------------------------------------------------------------------------------}
 
+-- | The lower bound for a ChainDB iterator.
+--
+-- Hint: use @'StreamFromExclusive' 'genesisPoint'@ to start streaming from
+-- Genesis.
 data StreamFrom blk =
     StreamFromInclusive (Point blk)
   | StreamFromExclusive (Point blk)
-  | StreamFromGenesis
+  deriving (Show, Eq)
 
 data StreamTo blk =
     StreamToInclusive (Point blk)
   | StreamToExclusive (Point blk)
-  | StreamToEnd
+  deriving (Show, Eq)
 
 data Iterator m blk = Iterator {
       iteratorNext  :: m (IteratorResult blk)
@@ -249,6 +299,68 @@ newtype IteratorId = IteratorId Int
 data IteratorResult blk =
     IteratorExhausted
   | IteratorResult blk
+  | IteratorBlockGCed (HeaderHash blk)
+    -- ^ The block that was supposed to be streamed was garbage-collected from
+    -- the VolatileDB, but not added to the ImmutableDB.
+    --
+    -- This will only happen when streaming very old forks very slowly.
+
+data UnknownRange blk =
+    -- | The block at the given point was not found in the ChainDB.
+    MissingBlock (Point blk)
+    -- | The requested range forks off too far in the past, i.e. it doesn't
+    -- fit on the tip of the ImmutableDB.
+  | ForkTooOld (StreamFrom blk)
+  deriving (Eq, Show)
+
+-- | Check whether the bounds make sense
+--
+-- An example of bounds that don't make sense:
+--
+-- > StreamFromExclusive (Point { pointSlot = SlotNo 3 , .. }
+-- > StreamToInclusive   (Point { pointSlot = SlotNo 3 , .. }
+validBounds :: StreamFrom blk -> StreamTo blk -> Bool
+validBounds from to = case from of
+  StreamFromInclusive (Point { pointHash = GenesisHash }) -> False
+
+  StreamFromInclusive (Point { pointSlot = sfrom }) -> case to of
+    StreamToInclusive (Point { pointSlot = sto }) -> sfrom <= sto
+    StreamToExclusive (Point { pointSlot = sto }) -> sfrom <  sto
+
+  StreamFromExclusive (Point { pointSlot = sfrom }) -> case to of
+    StreamToInclusive (Point { pointSlot = sto }) -> sfrom <  sto
+    StreamToExclusive (Point { pointSlot = sto }) -> sfrom <  sto
+
+-- | Stream all blocks from the current chain.
+--
+-- To stream all blocks from the current chain from the ChainDB, one would use
+-- @'StreamFromExclusive' 'genesisPoint'@ as the lower bound and
+-- @'StreamToInclusive' tip@ as the upper bound where @tip@ is retrieved with
+-- 'getTipPoint'.
+--
+-- However, when the ChainDB is empty, @tip@ will be 'genesisPoint' too, in
+-- which case the bounds don't make sense. This function correctly handles
+-- this case.
+--
+-- Note that this is not a 'Reader', so the stream will not include blocks
+-- that are added to the current chain after starting the stream.
+streamAll :: (MonadSTM m, StandardHash blk) => ChainDB m blk
+          -> m (Maybe (Iterator m blk))
+streamAll chainDB = do
+    tip <- atomically $ getTipPoint chainDB
+    if tip == genesisPoint
+      then return Nothing
+      else do
+        errIt <- streamBlocks
+                   chainDB
+                   (StreamFromExclusive genesisPoint)
+                   (StreamToInclusive tip)
+        case errIt of
+          -- TODO this is theoretically possible if the current chain has
+          -- changed significantly between getting the tip and asking for the
+          -- stream.
+          Left  e  -> error (show e)
+          Right it -> return $ Just it
 
 {-------------------------------------------------------------------------------
   Readers
@@ -256,20 +368,20 @@ data IteratorResult blk =
 
 -- | Reader
 --
--- See 'newReader' for more info.
-data Reader m hdr = Reader {
+-- See 'newHeaderReader' for more info.
+--
+-- The type parameter @a@ will be instantiated with @blk@ or @Header @blk@.
+data Reader m blk a = Reader {
       -- | The next chain update (if one exists)
       --
-      -- > data ChainUpdate hdr = AddBlock hdr
-      -- >                      | RollBack (Point hdr)
+      -- Not in @STM@ because might have to read the blocks or headers from
+      -- disk.
       --
-      -- Does not live in @STM@ because might have to read the headers from disk.
-      --
-      -- We may roll back more than @k@ only in case of data loss.
-      readerInstruction         :: m (Maybe (ChainUpdate hdr))
+      -- We may roll back more than @k@, but only in case of data loss.
+      readerInstruction         :: m (Maybe (ChainUpdate blk a))
 
       -- | Blocking version of 'readerInstruction'
-    , readerInstructionBlocking :: m (ChainUpdate hdr)
+    , readerInstructionBlocking :: m (ChainUpdate blk a)
 
       -- | Move the iterator forward
       --
@@ -284,7 +396,7 @@ data Reader m hdr = Reader {
       --
       -- Cannot live in @STM@ because the points specified might live in the
       -- immutable DB.
-    , readerForward             :: [Point hdr] -> m (Maybe (Point hdr))
+    , readerForward             :: [Point blk] -> m (Maybe (Point blk))
 
       -- | Per-database reader ID
       --
@@ -293,8 +405,9 @@ data Reader m hdr = Reader {
       -- expect to have more than one instance of the 'ChainDB', however.)
     , readerId                  :: ReaderId
     }
+  deriving (Functor)
 
-instance Eq (Reader m hdr) where
+instance Eq (Reader m blk a) where
   (==) = (==) `on` readerId
 
 {-------------------------------------------------------------------------------
@@ -352,3 +465,36 @@ data ChainDbFailure blk =
 deriving instance StandardHash blk => Show (ChainDbFailure blk)
 
 instance (StandardHash blk, Typeable blk) => Exception (ChainDbFailure blk)
+
+
+{-------------------------------------------------------------------------------
+  Exceptions
+-------------------------------------------------------------------------------}
+
+-- | Database error.
+--
+-- Thrown upon incorrect use: invalid input.
+data ChainDbError blk =
+    -- | Thrown when requesting the genesis block from the database
+    --
+    -- Although the genesis block has a hash and a point associated with it,
+    -- it does not actually exist other than as a concept; we cannot read and
+    -- return it.
+    NoGenesisBlock
+
+    -- | The ChainDB is closed.
+    --
+    -- This will be thrown when performing any operation on the ChainDB except
+    -- for 'isOpen' and 'closeDB'.
+  | ClosedDBError
+
+    -- | When there is no chain/fork that satisfies the bounds passed to
+    -- 'streamBlocks'.
+    --
+    -- * The lower and upper bound are not on the same chain.
+    -- * The bounds don't make sense, e.g., the lower bound starts after the
+    --   upper bound, or the lower bound starts from genesis, /inclusive/.
+  | InvalidIteratorRange (StreamFrom blk) (StreamTo blk)
+  deriving (Eq, Show, Typeable)
+
+instance (StandardHash blk, Typeable blk) => Exception (ChainDbError blk)

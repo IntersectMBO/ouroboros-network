@@ -512,7 +512,7 @@ prop_shrink_TestAddBlock t =
 -- to it.
 --
 data TestBlockChainFragmentAndUpdates =
-       TestBlockChainFragmentAndUpdates (ChainFragment Block) [ChainUpdate Block]
+       TestBlockChainFragmentAndUpdates (ChainFragment Block) [ChainUpdate Block Block]
   deriving Show
 
 instance Arbitrary TestBlockChainFragmentAndUpdates where
@@ -523,7 +523,7 @@ instance Arbitrary TestBlockChainFragmentAndUpdates where
     return (TestBlockChainFragmentAndUpdates chain updates)
 
 genChainFragmentUpdate :: ChainFragment Block
-               -> Gen (ChainUpdate Block)
+               -> Gen (ChainUpdate Block Block)
 genChainFragmentUpdate chain =
     frequency $
       -- To ensure we make progress on average w must ensure the weight of
@@ -555,7 +555,7 @@ mkRollbackPoint chain n = CF.headPoint $ CF.dropNewest n chain
 
 genChainFragmentUpdates :: ChainFragment Block
                 -> Int
-                -> Gen [ChainUpdate Block]
+                -> Gen [ChainUpdate Block Block]
 genChainFragmentUpdates _     0 = return []
 genChainFragmentUpdates chain n = do
     update  <- genChainFragmentUpdate chain
@@ -590,7 +590,7 @@ prop_arbitrary_TestBlockChainFragmentAndUpdates (TestBlockChainFragmentAndUpdate
 countChainFragmentUpdateNetProgress
   :: HasHeader block
   => ChainFragment block
-  -> [ChainUpdate block]
+  -> [ChainUpdate block block]
   -> Int
 countChainFragmentUpdateNetProgress = go 0
   where

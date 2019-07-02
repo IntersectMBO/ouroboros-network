@@ -635,7 +635,8 @@ runDB standalone@DB{..} cmd =
     go _ (Switch n bs) = do
         atomically $ modifyTVar dbBlocks $
           repeatedly (uncurry Map.insert) (map refValPair bs)
-        upd (switch n bs) $ ledgerDbSwitch conf n (map new bs)
+        upd (switch n bs) $
+          fmap switchResultToEither . ledgerDbSwitch conf n (map new bs)
     go hasFS Snap = do
         (_, db) <- atomically $ readTVar dbState
         Snapped <$> takeSnapshot hasFS S.encode S.encode db

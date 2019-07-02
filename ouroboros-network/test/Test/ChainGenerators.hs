@@ -310,7 +310,7 @@ k = 5
 -- to it.
 --
 data TestBlockChainAndUpdates =
-       TestBlockChainAndUpdates (Chain Block) [ChainUpdate Block]
+       TestBlockChainAndUpdates (Chain Block) [ChainUpdate Block Block]
   deriving Show
 
 instance Arbitrary TestBlockChainAndUpdates where
@@ -321,7 +321,7 @@ instance Arbitrary TestBlockChainAndUpdates where
     return (TestBlockChainAndUpdates chain updates)
 
 genChainUpdate :: Chain Block
-               -> Gen (ChainUpdate Block)
+               -> Gen (ChainUpdate Block Block)
 genChainUpdate chain =
     frequency $
       -- To ensure we make progress on average w must ensure the weight of
@@ -352,7 +352,7 @@ mkRollbackPoint chain n = Chain.headPoint $ Chain.drop n chain
 
 genChainUpdates :: Chain Block
                 -> Int
-                -> Gen [ChainUpdate Block]
+                -> Gen [ChainUpdate Block Block]
 genChainUpdates _     0 = return []
 genChainUpdates chain n = do
     update  <- genChainUpdate chain
@@ -384,7 +384,7 @@ prop_arbitrary_TestBlockChainAndUpdates (TestBlockChainAndUpdates c us) =
 --
 countChainUpdateNetProgress :: HasHeader block
                             => Chain block
-                            -> [ChainUpdate block]
+                            -> [ChainUpdate block block]
                             -> Int
 countChainUpdateNetProgress = go 0
   where
