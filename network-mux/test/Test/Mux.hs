@@ -22,6 +22,7 @@ import qualified Data.Binary.Put as Bin
 import           Data.Bits
 import qualified Data.ByteString.Lazy as BL
 import qualified Data.ByteString.Lazy.Char8 as BL8 (pack)
+import           Data.List (dropWhileEnd)
 import           Data.Int
 import           Data.Word
 import           Test.QuickCheck
@@ -484,19 +485,37 @@ prop_mux_starvation response0 response1 =
              let es = map (\(e, _, _) -> e) trace
                  ls = dropWhile (\e -> e == head es) es
                  fair = verifyStarvation ls
-             return $ property $ res_short .&&. res_long .&&. fair
+             return $ res_short .&&. res_long .&&. fair
   where
    -- We can't make 100% sure that both servers start responding at the same
    -- time but once they are both up and running messages should alternate
    -- between Mx.ReqResp2 and Mx.ReqResp3
-    verifyStarvation :: Eq ptcl => [Mx.MiniProtocolId ptcl] -> Bool
-    verifyStarvation []     = True
-    verifyStarvation [_]    = True
-    verifyStarvation (m:ms) =
-        let longRun = takeWhile (\e -> e /= m) ms in
-        if length longRun > 1 && elem m ms
-           then False
-           else verifyStarvation ms
+    verifyStarvation :: [Mx.MiniProtocolId TestProtocols2] -> Property
+    verifyStarvation [] = property True
+    verifyStarvation ms =
+      let ms' = dropWhileEnd (\e -> e == last ms)
+                  (head ms : dropWhile (\e -> e == head ms) ms)
+                ++ [last ms]
+      in
+        label ("length " ++ labelPr_ ((length ms' * 100) `div` length ms) ++ "%")
+        $ label ("length " ++ label_ (length ms')) $ alternates ms'
+
+      where
+        alternates []     = True
+        alternates (_:[]) = True
+        alternates (a : b : as) = a /= b && alternates (b : as)
+
+    label_ :: Int -> String
+    label_ n = mconcat
+      [ show $ n `div` 10 * 10
+      , "-"
+      , show $ n `div` 10 * 10 + 10 - 1
+      ]
+
+    labelPr_ :: Int -> String
+    labelPr_ n | n >= 100  = "100"
+               | otherwise = label_ n
+
 
     flushTBQueue q acc = do
         e <- isEmptyTBQueue q
