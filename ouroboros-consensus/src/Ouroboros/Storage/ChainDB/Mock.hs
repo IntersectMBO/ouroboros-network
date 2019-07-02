@@ -53,16 +53,20 @@ openDB cfg initLedger = do
             writeTVar db m'
             return a
 
-        update :: (Model blk -> (a, Model blk)) -> m a
-        update = atomically . updateSTM
-
-        updateE :: (Model blk -> (Either (ChainDbError blk) (a, Model blk)))
-                -> m a
-        updateE f = atomically $ do
+        updateSTME :: (Model blk -> Either (ChainDbError blk) (a, Model blk))
+                   -> STM m a
+        updateSTME f = do
             err <- f <$> readTVar db
             case err of
               Left e        -> throwM e
               Right (a, m') -> writeTVar db m' >> return a
+
+        update :: (Model blk -> (a, Model blk)) -> m a
+        update = atomically . updateSTM
+
+        updateE :: (Model blk -> Either (ChainDbError blk) (a, Model blk))
+                -> m a
+        updateE = atomically . updateSTME
 
         update_ :: (Model blk -> Model blk) -> m ()
         update_ f = update (\m -> ((), f m))
@@ -76,18 +80,21 @@ openDB cfg initLedger = do
 
         reader :: CPS.ReaderId -> Reader m blk blk
         reader rdrId = Reader {
-              readerInstruction = atomically $
-                updateSTM readerInstruction'
+              readerInstruction =
+                updateE readerInstruction'
             , readerInstructionBlocking = atomically $
-                blockUntilJust $ updateSTM readerInstruction'
-            , readerForward = \ps -> atomically $
-                updateSTM $ Model.readerForward rdrId ps
+                blockUntilJust $ updateSTME readerInstruction'
+            , readerForward = \ps ->
+                updateE $ Model.readerForward rdrId ps
+            , readerClose =
+                update_ $ Model.readerClose rdrId
             , readerId =
                 rdrId
             }
           where
             readerInstruction' :: Model blk
-                               -> (Maybe (ChainUpdate blk blk), Model blk)
+                               -> Either (ChainDbError blk)
+                                         (Maybe (ChainUpdate blk blk), Model blk)
             readerInstruction' = Model.readerInstruction rdrId
 
     return ChainDB {

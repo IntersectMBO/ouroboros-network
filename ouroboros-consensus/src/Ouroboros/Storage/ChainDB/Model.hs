@@ -30,6 +30,7 @@ module Ouroboros.Storage.ChainDB.Model (
   , readBlocks
   , readerInstruction
   , readerForward
+  , readerClose
     -- * Exported for testing purposes
   , between
   , blocks
@@ -214,6 +215,18 @@ iteratorClose itrId m = m { iterators = Map.insert itrId [] (iterators m) }
   Readers
 -------------------------------------------------------------------------------}
 
+readerExists :: CPS.ReaderId -> Model blk -> Bool
+readerExists rdrId = CPS.readerExists rdrId . cps
+
+checkIfReaderExists :: CPS.ReaderId -> Model blk
+                    -> a
+                    -> Either (ChainDbError blk) a
+checkIfReaderExists rdrId m a
+    | readerExists rdrId m
+    = Right a
+    | otherwise
+    = Left $ ClosedReaderError rdrId
+
 readBlocks :: HasHeader blk => Model blk -> (CPS.ReaderId, Model blk)
 readBlocks m = (rdrId, m { cps = cps' })
   where
@@ -222,8 +235,9 @@ readBlocks m = (rdrId, m { cps = cps' })
 readerInstruction :: forall blk. HasHeader blk
                   => CPS.ReaderId
                   -> Model blk
-                  -> (Maybe (ChainUpdate blk blk), Model blk)
-readerInstruction rdrId m =
+                  -> Either (ChainDbError blk)
+                            (Maybe (ChainUpdate blk blk), Model blk)
+readerInstruction rdrId m = checkIfReaderExists rdrId m $
     rewrap $ CPS.readerInstruction rdrId (cps m)
   where
     rewrap :: Maybe (ChainUpdate blk blk, CPS.ChainProducerState blk)
@@ -235,13 +249,23 @@ readerForward :: HasHeader blk
               => CPS.ReaderId
               -> [Point blk]
               -> Model blk
-              -> (Maybe (Point blk), Model blk)
-readerForward rdrId points m =
+              -> Either (ChainDbError blk)
+                        (Maybe (Point blk), Model blk)
+readerForward rdrId points m = checkIfReaderExists rdrId m $
     case CPS.findFirstPoint points (cps m) of
       Nothing     -> (Nothing, m)
       Just ipoint -> (Just ipoint, m { cps = cps' })
         where
           cps' = CPS.updateReader rdrId ipoint (cps m)
+
+readerClose :: CPS.ReaderId
+            -> Model blk
+            -> Model blk
+readerClose rdrId m
+    | readerExists rdrId m
+    = m { cps = CPS.deleteReader rdrId (cps m) }
+    | otherwise
+    = m
 
 {-------------------------------------------------------------------------------
   Internal auxiliary
