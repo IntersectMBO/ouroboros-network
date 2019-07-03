@@ -525,6 +525,9 @@ instance Condense (GenTx (ByronBlock cfg)) where
       ", witness: " <> show (CC.UTxO.aTaWitness tx) <>
       ")"
 
+instance Show (GenTx (ByronBlock cfg)) where
+    show tx = condense tx
+
 {-------------------------------------------------------------------------------
   Serialisation
 -------------------------------------------------------------------------------}

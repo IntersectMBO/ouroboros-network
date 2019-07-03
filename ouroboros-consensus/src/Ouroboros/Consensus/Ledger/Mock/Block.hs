@@ -265,6 +265,9 @@ instance HasUtxo (GenTx (SimpleBlock p c)) where
 instance Condense (GenTx (SimpleBlock p c)) where
     condense (SimpleGenTx tx) = condense tx
 
+instance Show (GenTx (SimpleBlock p c)) where
+    show (SimpleGenTx tx) = condense tx
+
 {-------------------------------------------------------------------------------
   Crypto needed for simple blocks
 -------------------------------------------------------------------------------}
