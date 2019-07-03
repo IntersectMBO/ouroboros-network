@@ -650,6 +650,7 @@ genChainUpdates securityParam n =
               , tbPrevHash = prevHash
               , tbNo       = succ (Chain.headBlockNo chain)
               , tbSlot     = slot
+              , tbTxs      = []
               }
         modify (addBlock b)
         return b
