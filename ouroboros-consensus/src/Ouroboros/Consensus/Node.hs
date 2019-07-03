@@ -133,7 +133,6 @@ nodeKernel
        , MonadFork  m
        , MonadMask  m
        , ProtocolLedgerView blk
-       , Ord (GenTxId blk)
        , Ord peer
        , TraceConstraints peer blk
        , ApplyTx blk
@@ -196,7 +195,6 @@ initInternalState
        , MonadFork m
        , MonadMask m
        , ProtocolLedgerView blk
-       , Ord (GenTxId blk)
        , Ord peer
        , TraceConstraints peer blk
        , ApplyTx blk

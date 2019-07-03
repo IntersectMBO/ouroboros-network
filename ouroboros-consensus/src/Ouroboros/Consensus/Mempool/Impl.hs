@@ -39,7 +39,6 @@ openMempool :: ( MonadAsync m
                , MonadFork m
                , MonadMask m
                , MonadSTM m
-               , Ord (GenTxId blk)
                , ApplyTx blk
                )
             => ThreadRegistry m
@@ -91,9 +90,7 @@ initMempoolEnv chainDB cfg = do
 forkSyncStateOnTipPointChange :: ( MonadAsync m
                                  , MonadFork m
                                  , MonadMask m
-                                 , Ord (GenTxId blk)
                                  , ApplyTx blk
-                                 , Block.StandardHash blk
                                  )
                               => ThreadRegistry m
                               -> MempoolEnv m blk
@@ -110,7 +107,7 @@ forkSyncStateOnTipPointChange registry menv = do
 -------------------------------------------------------------------------------}
 
 -- TODO: This may return some transactions as invalid that aren't new. Remove?
-implAddTxs :: forall m blk. (MonadSTM m, Ord (GenTxId blk), ApplyTx blk)
+implAddTxs :: forall m blk. (MonadSTM m, ApplyTx blk)
            => MempoolEnv m blk
            -> [(GenTxId blk, GenTx blk)]
            -> m [(GenTx blk, ApplyTxErr blk)]
@@ -129,7 +126,7 @@ implAddTxs mpEnv@MempoolEnv{mpEnvStateVar, mpEnvLedgerCfg} txs =
     validateNew :: ValidationResult blk ->  ValidationResult blk
     validateNew = extendsVR mpEnvLedgerCfg False txs
 
-implSyncState :: (MonadSTM m, Ord (GenTxId blk), ApplyTx blk)
+implSyncState :: (MonadSTM m, ApplyTx blk)
               => MempoolEnv m blk
               -> STM m [(GenTx blk, ApplyTxErr blk)]
 implSyncState mpEnv@MempoolEnv{mpEnvStateVar} = do
@@ -144,7 +141,6 @@ implSyncState mpEnv@MempoolEnv{mpEnvStateVar} = do
   pure vrInvalid
 
 implGetSnapshot :: ( MonadSTM m
-                   , Ord (GenTxId blk)
                    , ApplyTx blk
                    )
                 => MempoolEnv m blk
