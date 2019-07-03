@@ -90,13 +90,13 @@ hasBlock hash = isJust . getBlock hash
 getBlockByPoint :: HasHeader blk
                 => Point blk -> Model blk
                 -> Either (ChainDbError blk) (Maybe blk)
-getBlockByPoint pt = case Chain.pointHash pt of
+getBlockByPoint pt = case Block.pointHash pt of
     GenesisHash    -> const $ Left NoGenesisBlock
     BlockHash hash -> Right . getBlock hash
 
 hasBlockByPoint :: HasHeader blk
                 => Point blk -> Model blk -> Bool
-hasBlockByPoint pt = case Chain.pointHash pt of
+hasBlockByPoint pt = case Block.pointHash pt of
     GenesisHash    -> const False
     BlockHash hash -> hasBlock hash
 

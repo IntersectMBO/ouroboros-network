@@ -143,7 +143,7 @@ chainSyncClient
        , MonadThrow (STM m)
        , ProtocolLedgerView blk
        , Condense (Header blk)
-       , Condense (ChainHash blk)
+       , Condense (HeaderHash blk)
        )
     => Tracer m String
     -> NodeConfig (BlockProtocol blk)

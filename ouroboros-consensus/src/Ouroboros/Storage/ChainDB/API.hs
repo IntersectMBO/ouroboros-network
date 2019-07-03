@@ -38,11 +38,13 @@ import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
 
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
-import           Ouroboros.Network.Block (ChainHash (..), ChainUpdate,
-                     HasHeader (..), HeaderHash, SlotNo, StandardHash)
+import           Ouroboros.Network.Block (ChainUpdate, HasHeader (..),
+                     HeaderHash, SlotNo, StandardHash)
 import           Ouroboros.Network.Chain (Chain (..), Point (..), genesisPoint)
 import qualified Ouroboros.Network.Chain as Chain
 import           Ouroboros.Network.ChainProducerState (ReaderId)
+import           Ouroboros.Network.Point (WithOrigin (..))
+import qualified Ouroboros.Network.Point as Point (Block (..))
 
 import           Ouroboros.Consensus.Block (GetHeader (..))
 import           Ouroboros.Consensus.Ledger.Extended
@@ -319,17 +321,30 @@ data UnknownRange blk =
 --
 -- > StreamFromExclusive (Point { pointSlot = SlotNo 3 , .. }
 -- > StreamToInclusive   (Point { pointSlot = SlotNo 3 , .. }
+--
+-- FIXME StreamFrom and StreamTo can be refined to not admit origin points
+-- in cases where it doesn't make sense.
 validBounds :: StreamFrom blk -> StreamTo blk -> Bool
 validBounds from to = case from of
-  StreamFromInclusive (Point { pointHash = GenesisHash }) -> False
 
-  StreamFromInclusive (Point { pointSlot = sfrom }) -> case to of
-    StreamToInclusive (Point { pointSlot = sto }) -> sfrom <= sto
-    StreamToExclusive (Point { pointSlot = sto }) -> sfrom <  sto
+  StreamFromInclusive (Point Origin) -> False
 
-  StreamFromExclusive (Point { pointSlot = sfrom }) -> case to of
-    StreamToInclusive (Point { pointSlot = sto }) -> sfrom <  sto
-    StreamToExclusive (Point { pointSlot = sto }) -> sfrom <  sto
+  StreamFromExclusive (Point Origin) -> case to of
+    StreamToInclusive (Point Origin) -> False
+    StreamToExclusive (Point Origin) -> False
+    _                                -> True
+
+  StreamFromInclusive (Point (At (Point.Block { Point.blockPointSlot = sfrom }))) -> case to of
+    StreamToInclusive (Point Origin)                                            -> False
+    StreamToExclusive (Point Origin)                                            -> False
+    StreamToInclusive (Point (At (Point.Block { Point.blockPointSlot = sto }))) -> sfrom <= sto
+    StreamToExclusive (Point (At (Point.Block { Point.blockPointSlot = sto }))) -> sfrom <  sto
+
+  StreamFromExclusive (Point (At (Point.Block { Point.blockPointSlot = sfrom }))) -> case to of
+    StreamToInclusive (Point Origin)                                            -> False
+    StreamToExclusive (Point Origin)                                            -> False
+    StreamToInclusive (Point (At (Point.Block { Point.blockPointSlot = sto }))) -> sfrom <  sto
+    StreamToExclusive (Point (At (Point.Block { Point.blockPointSlot = sto }))) -> sfrom <  sto
 
 -- | Stream all blocks from the current chain.
 --
