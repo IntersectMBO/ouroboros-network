@@ -63,9 +63,11 @@ class ( ProtocolLedgerView blk
       , Condense (ChainHash blk)
       , Condense blk
       , Condense [blk]
+      , Show blk
       , ApplyTx blk
       , Show (ApplyTxErr blk)
       , Condense (GenTx blk)
+      , Show (GenTx blk)
       ) => RunDemo blk where
   demoForgeBlock         :: (HasNodeState (BlockProtocol blk) m, MonadRandom m)
                          => NodeConfig (BlockProtocol blk)

@@ -34,6 +34,7 @@ instance ( ProtocolLedgerView (SimpleBlock SimpleMockCrypto ext)
            -- @-O0@ it is perfectly fine. ghc bug?!
          , SupportedBlock (SimpleBlock SimpleMockCrypto ext)
          , Condense ext
+         , Show ext
          , Typeable ext
          , Serialise ext
          , ForgeExt (BlockProtocol (SimpleBlock SimpleMockCrypto ext))
