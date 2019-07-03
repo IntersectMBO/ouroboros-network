@@ -22,6 +22,7 @@ module Ouroboros.Storage.ChainDB.Model (
   , hasBlock
   , hasBlockByPoint
   , immutableBlockNo
+  , isOpen
     -- * Iterators
   , streamBlocks
   , iteratorNext
@@ -38,6 +39,8 @@ module Ouroboros.Storage.ChainDB.Model (
   , garbageCollectable
   , garbageCollectablePoint
   , garbageCollect
+  , closeDB
+  , reopen
   ) where
 
 import           Control.Monad (unless)
@@ -72,6 +75,11 @@ data Model blk = Model {
     , currentLedger :: ExtLedgerState blk
     , initLedger    :: ExtLedgerState blk
     , iterators     :: Map IteratorId [blk]
+    , isOpen        :: Bool
+      -- ^ While the model tracks whether it is closed or not, the queries and
+      -- other functions in this module ignore this for simplicity. The mock
+      -- ChainDB that wraps this model will throw a 'ClosedDBError' whenever
+      -- it is used while closed.
     }
   deriving (Show)
 
@@ -141,6 +149,7 @@ empty initLedger = Model {
     , currentLedger = initLedger
     , initLedger    = initLedger
     , iterators     = Map.empty
+    , isOpen        = True
     }
 
 addBlock :: forall blk. ProtocolLedgerView blk
@@ -155,6 +164,7 @@ addBlock cfg blk m
     , currentLedger = newLedger
     , initLedger    = initLedger m
     , iterators     = iterators  m
+    , isOpen        = True
     }
   where
     secParam = protocolSecurityParam cfg
@@ -431,3 +441,13 @@ garbageCollect secParam m@Model{..} = m
   where
     collectable :: blk -> Bool
     collectable = garbageCollectable secParam m
+
+closeDB :: Model blk -> Model blk
+closeDB m@Model{..} = m
+    { isOpen    = False
+    , cps       = cps { CPS.chainReaders = Map.empty }
+    , iterators = Map.empty
+    }
+
+reopen :: Model blk -> Model blk
+reopen m = m { isOpen = True }

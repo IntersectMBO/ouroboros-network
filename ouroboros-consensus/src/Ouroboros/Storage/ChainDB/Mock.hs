@@ -1,5 +1,6 @@
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications    #-}
 {-# LANGUAGE TypeFamilies        #-}
 
 module Ouroboros.Storage.ChainDB.Mock (
@@ -38,28 +39,36 @@ openDB :: forall m blk.
 openDB cfg initLedger = do
     db :: TVar m (Model blk) <- atomically $ newTVar (Model.empty initLedger)
 
-    let query :: (Model blk -> a) -> STM m a
-        query f = f <$> readTVar db
+    let querySTM :: (Model blk -> a) -> STM m a
+        querySTM f = readTVar db >>= \m ->
+          if Model.isOpen m
+            then return (f m)
+            else throwM $ ClosedDBError @blk
 
-        query' :: (Model blk -> a) -> m a
-        query' = atomically . query
+        query :: (Model blk -> a) -> m a
+        query = atomically . querySTM
 
-        queryE' :: (Model blk -> Either (ChainDbError blk) a) -> m a
-        queryE' f = query' f >>= either throwM return
+        queryE :: (Model blk -> Either (ChainDbError blk) a) -> m a
+        queryE f = query f >>= either throwM return
 
         updateSTM :: (Model blk -> (a, Model blk)) -> STM m a
         updateSTM f = do
-            (a, m') <- f <$> readTVar db
-            writeTVar db m'
-            return a
+          m <- readTVar db
+          if Model.isOpen m
+            then let (a, m') = f m in writeTVar db m' >> return a
+            else
+              throwM $ ClosedDBError @blk
 
         updateSTME :: (Model blk -> Either (ChainDbError blk) (a, Model blk))
                    -> STM m a
         updateSTME f = do
-            err <- f <$> readTVar db
-            case err of
-              Left e        -> throwM e
-              Right (a, m') -> writeTVar db m' >> return a
+            m <- readTVar db
+            if Model.isOpen m
+              then case f m of
+                Left e        -> throwM e
+                Right (a, m') -> writeTVar db m' >> return a
+              else
+                throwM $ ClosedDBError @blk
 
         update :: (Model blk -> (a, Model blk)) -> m a
         update = atomically . updateSTM
@@ -98,21 +107,21 @@ openDB cfg initLedger = do
             readerInstruction' = Model.readerInstruction rdrId
 
     return ChainDB {
-        addBlock            = update_ . Model.addBlock cfg
-      , getCurrentChain     = query   $ Model.lastK k getHeader
-      , getCurrentLedger    = query   $ Model.currentLedger
-      , getBlock            = queryE' . Model.getBlockByPoint
-      , getTipBlock         = query'  $ Model.tipBlock
-      , getTipHeader        = query'  $ (fmap getHeader . Model.tipBlock)
-      , getTipPoint         = query   $ Model.tipPoint
-      , getIsFetched        = query   $ flip Model.hasBlockByPoint
-      , knownInvalidBlocks  = query   $ const Set.empty -- TODO
-      , streamBlocks        = updateE .: (fmap (first (fmap iterator)) ..: Model.streamBlocks k)
-      , newBlockReader      = update  $ (first reader . Model.readBlocks)
-      , newHeaderReader     = update  $ (first (fmap getHeader . reader) . Model.readBlocks)
-        -- A no-op
-      , closeDB             = return ()
-      , isOpen              = return True
+        addBlock            = update_  . Model.addBlock cfg
+      , getCurrentChain     = querySTM $ Model.lastK k getHeader
+      , getCurrentLedger    = querySTM $ Model.currentLedger
+      , getBlock            = queryE   . Model.getBlockByPoint
+      , getTipBlock         = query    $ Model.tipBlock
+      , getTipHeader        = query    $ (fmap getHeader . Model.tipBlock)
+      , getTipPoint         = querySTM $ Model.tipPoint
+      , getIsFetched        = querySTM $ flip Model.hasBlockByPoint
+      , knownInvalidBlocks  = querySTM $ const Set.empty -- TODO
+      , streamBlocks        = updateE  .: (fmap (first (fmap iterator)) ..: Model.streamBlocks k)
+      , newBlockReader      = update   $ (first reader . Model.readBlocks)
+      , newHeaderReader     = update   $ (first (fmap getHeader . reader) . Model.readBlocks)
+
+      , closeDB             = atomically $ modifyTVar' db Model.closeDB
+      , isOpen              = Model.isOpen <$> readTVar db
       }
   where
     k = protocolSecurityParam cfg
