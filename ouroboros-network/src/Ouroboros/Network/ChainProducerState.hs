@@ -5,7 +5,7 @@
 
 module Ouroboros.Network.ChainProducerState where
 
-import           Ouroboros.Network.Block (castPoint)
+import           Ouroboros.Network.Block (castPoint, pointSlot)
 import           Ouroboros.Network.Chain (Chain, ChainUpdate (..), HasHeader,
                      HeaderHash, Point (..), blockPoint, genesisPoint,
                      pointOnChain)

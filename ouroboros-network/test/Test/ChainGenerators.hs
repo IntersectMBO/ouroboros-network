@@ -39,6 +39,8 @@ import           Ouroboros.Network.Testing.ConcreteBlock
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.Chain (Chain (..))
 import qualified Ouroboros.Network.Chain as Chain
+import           Ouroboros.Network.Point (WithOrigin (..), block, blockPointHash,
+                   blockPointSlot, origin)
 import           Ouroboros.Network.Protocol.BlockFetch.Type (ChainRange (..))
 
 import           Test.QuickCheck
@@ -110,12 +112,15 @@ instance Arbitrary ConcreteHeaderHash where
 instance Arbitrary (Point BlockHeader) where
   arbitrary =
       -- Sometimes pick the genesis point
-      frequency [ (1, pure (Point (SlotNo 0) GenesisHash))
-                , (4, Point <$> arbitrary <*> (BlockHash <$> arbitrary)) ]
-  shrink (Point _ GenesisHash)   = []
-  shrink (Point s (BlockHash h)) =
-      Point (SlotNo 0) GenesisHash
-    : [ Point s' (BlockHash h') | (s', h') <- shrink (s, h), s > SlotNo 0 ]
+      frequency [ (1, pure (Point Origin))
+                , (4, Point <$> (block <$> arbitrary <*> arbitrary)) ]
+  shrink (Point Origin)   = []
+  shrink (Point (At blk)) =
+      Point origin
+    : [ Point (block s' h') | (s', h') <- shrink (s, h), s > SlotNo 0 ]
+    where
+    h = blockPointHash blk
+    s = blockPointSlot blk
 
 instance Arbitrary (Point Block) where
   arbitrary = (castPoint :: Point BlockHeader -> Point Block) <$> arbitrary
@@ -268,8 +273,8 @@ data TestAddBlock = TestAddBlock (Chain Block) Block
 instance Arbitrary TestAddBlock where
   arbitrary = do
     TestBlockChain chain <- arbitrary
-    block <- genAddBlock chain
-    return (TestAddBlock chain block)
+    blk <- genAddBlock chain
+    return (TestAddBlock chain blk)
 
   shrink (TestAddBlock c b) =
     [ TestAddBlock c' b'
