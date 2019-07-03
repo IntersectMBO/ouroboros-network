@@ -24,7 +24,6 @@ module Ouroboros.Consensus.Node (
 
 import           Control.Monad (void)
 import           Crypto.Random (ChaChaDRG)
-import qualified Data.Foldable as Foldable
 import           Data.Functor.Contravariant (contramap)
 import           Data.Map.Strict (Map)
 
@@ -321,9 +320,9 @@ forkBlockProduction IS{..} =
             -- 'ChainDB'. Refer to the 'getTxs' documentation for more
             -- information.
             _invalidTxs         <- syncState mempool
+            mempoolSnapshot     <- getSnapshot mempool
 
-            txs                 <- Foldable.toList . (fmap sndOfTriple)
-                                     <$> getTxs mempool
+            let txs             =  map sndOfTriple (getTxs mempoolSnapshot)
             newBlock            <- runProtocol varDRG $
                                      produceBlock
                                        proof

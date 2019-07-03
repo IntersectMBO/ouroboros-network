@@ -52,9 +52,7 @@ openMempool registry chainDB cfg = do
     return Mempool {
         addTxs      = implAddTxs env
       , syncState   = implSyncState env
-      , getTxs      = implGetTxs env
-      , getTxsAfter = implGetTxsAfter env
-      , getTx       = implGetTx env
+      , getSnapshot = implGetSnapshot env
       , zeroIdx     = zeroTicketNo
       }
 
@@ -108,7 +106,7 @@ forkSyncStateOnTipPointChange registry menv = do
   MempoolEnv { mpEnvChainDB } = menv
 
 {-------------------------------------------------------------------------------
-  Implementation
+  Mempool Implementation
 -------------------------------------------------------------------------------}
 
 -- TODO: This may return some transactions as invalid that aren't new. Remove?
@@ -145,29 +143,45 @@ implSyncState mpEnv@MempoolEnv{mpEnvStateVar} = do
                              }
   pure vrInvalid
 
-implGetTxs :: (MonadSTM m, ApplyTx blk)
-           => MempoolEnv m blk
-           -> STM m [(GenTxId blk, GenTx blk, TicketNo)]
-implGetTxs = (flip implGetTxsAfter) zeroTicketNo
-
-implGetTxsAfter :: (MonadSTM m, ApplyTx blk)
+implGetSnapshot :: ( MonadSTM m
+                   , Ord (GenTxId blk)
+                   , ApplyTx blk
+                   )
                 => MempoolEnv m blk
-                -> TicketNo
-                -> STM m [(GenTxId blk, GenTx blk, TicketNo)]
-implGetTxsAfter MempoolEnv{mpEnvStateVar} tn = do
-  IS { isTxs } <- readTVar mpEnvStateVar
-  pure $ fromTxSeq $ snd $ splitAfterTicketNo isTxs tn
+                -> STM m (MempoolSnapshot (GenTxId blk) (GenTx blk) TicketNo)
+implGetSnapshot MempoolEnv{mpEnvStateVar} = do
+  is <- readTVar mpEnvStateVar
+  pure MempoolSnapshot
+    { getTxs      = implSnapshotGetTxs      is
+    , getTxsAfter = implSnapshotGetTxsAfter is
+    , getTx       = implSnapshotGetTx       is
+    }
+
+{-------------------------------------------------------------------------------
+  MempoolSnapshot Implementation
+-------------------------------------------------------------------------------}
+
+implSnapshotGetTxs :: ApplyTx blk
+                   => InternalState blk
+                   -> [(GenTxId blk, GenTx blk, TicketNo)]
+implSnapshotGetTxs = (flip implSnapshotGetTxsAfter) zeroTicketNo
+
+implSnapshotGetTxsAfter :: ApplyTx blk
+                        => InternalState blk
+                        -> TicketNo
+                        -> [(GenTxId blk, GenTx blk, TicketNo)]
+implSnapshotGetTxsAfter IS{isTxs} tn = do
+  fromTxSeq $ snd $ splitAfterTicketNo isTxs tn
  where
   fromTxSeq txSeq = fmap
     (\(txid, tx) -> (txid, tx, tn))
     (Foldable.toList txSeq)
 
-implGetTx :: (MonadSTM m, ApplyTx blk)
-          => MempoolEnv m blk
-          -> TicketNo
-          -> STM m (Maybe (GenTxId blk, GenTx blk))
-implGetTx MempoolEnv{mpEnvStateVar} tn =
-  (`lookupByTicketNo` tn) . isTxs <$> readTVar mpEnvStateVar
+implSnapshotGetTx :: ApplyTx blk
+                  => InternalState blk
+                  -> TicketNo
+                  -> Maybe (GenTxId blk, GenTx blk)
+implSnapshotGetTx IS{isTxs} tn = isTxs `lookupByTicketNo` tn
 
 {-------------------------------------------------------------------------------
   Validation
