@@ -1,49 +1,69 @@
 let
-  jupyter = import (builtins.fetchGit {
+  # The tweag repository sources
+  jupyterSrc = builtins.fetchGit {
     url = https://github.com/tweag/jupyterWith;
-    rev = "";
-    }) { };
+    rev = "1176b9e8d173f2d2789705ad55c7b53a06155e0f";
+    };
 
+  # the jupyter build enviroment
+  jupyter = (import jupyterSrc) {};
+  
+  nixpkgsPath = jupyterSrc + "/nix";
+
+  # the pkgs in that environment
+  pkgs = import nixpkgsPath {};
+
+  # The ability to override pacakages for the jupter build.
+  haskellPackages = pkgs.haskellPackages.override (old: {
+    overrides = pkgs.lib.composeExtensions old.overrides
+        (self: hspkgs: {
+           # version 1.9 is broken
+           Chart = (hspkgs.callHackageDirect {pkg    = "Chart";
+                                       ver    = "1.9.1";
+                                       sha256 = "0aiq9r78yhma1xzhwl2xlzwqb2c59k6a4jjvdpninwm6lngac3s7";}) {};
+           # see above
+           Chart-cairo = (hspkgs.callHackageDirect {pkg    = "Chart-cairo";
+                                       ver    = "1.9.1";
+                                       sha256 = "0ambbkxbndjqxr0c4pysn87b3z0f8zpgvldj4qjbyazadna9k807";}) {};
+           # dq1 = callCabal2nix "DeltaQIllustration"  ./packages/DeltaQIllustration {Chart=Chart;};
+           # dq2 = callCabal2nix "DeltaQIHaskell"      ./packages/DeltaQIHaskell {DeltaQIllustration = dq1; Chart=Chart;};
+          
+        });
+      });
+      
   iPython = jupyter.kernels.iPythonWith {
     name = "python";
     packages = p: with p; [ numpy ];
   };
 
   iHaskell = jupyter.kernels.iHaskellWith {
-    name = "haskell";
-    packages = p: with p;
-      #
-      # I realise that this is a load of hand-knitted depdendencies
-      # and that overlays would be "better" - but how to effectively
-      # use overlays in this context eludes me
-      #
-      let  dq1 = callCabal2nix "DeltaQIllustration"  ./packages/DeltaQIllustration {Chart=Chart;};
-           dq2 = callCabal2nix "DeltaQIHaskell"      ./packages/DeltaQIHaskell {DeltaQIllustration = dq1; Chart=Chart;};
-           Chart = (callHackageDirect {pkg    = "Chart";
-                                       ver    = "1.9.1";
-                                       sha256 = "0aiq9r78yhma1xzhwl2xlzwqb2c59k6a4jjvdpninwm6lngac3s7";}) {};
-
-           Chart-cairo = (callHackageDirect {pkg    = "Chart-cairo";
-                                       ver    = "1.9.1";
-                                       sha256 = "0ambbkxbndjqxr0c4pysn87b3z0f8zpgvldj4qjbyazadna9k807";}) {Chart=Chart;};
-          # ihaskell-charts needs some special treatment to get around broken packages
-          ih-charts = callHackage "ihaskell-charts" "0.3.0.1" {Chart=Chart;Chart-cairo=Chart-cairo;};
-      in [
+    haskellPackages = haskellPackages;
+    name = "Chart";
+    packages = p: with p; [
     # the pretty renders
-    ihaskell-hatex ihaskell-diagrams ihaskell-graphviz ihaskell-aeson ihaskell-hvega ihaskell-magic
-    # note next line may have more "broken" dependencies in them
-    #  ihaskell-plot ihaskell-gnuplot ihaskell-widgets
-    # current special case for Chart and its dependencies
-    Chart Chart-cairo ih-charts
+    ihaskell-charts ihaskell-hatex ihaskell-diagrams ihaskell-graphviz ihaskell-aeson ihaskell-hvega ihaskell-magic
+    Chart HaTeX diagrams graphviz diagrams-graphviz
     formatting hvega
-    dq1
-    dq2
+#    dq1
+#    dq2
    ];
   };
-
+ 
+  # Creats a nix-shell
   jupyterEnvironment =
     jupyter.jupyterlabWith {
       kernels = [ iPython iHaskell ];
+      # note - may need to perform an initial action to create the
+      # appropriate template for extentions.
+##      directory = ./jupyterlab;
     };
-in
-  jupyterEnvironment.env
+
+  build = jupyterEnvironment;
+
+  shell = jupyterEnvironment.env;
+
+# docker = mkDockerImage {inherit build};
+# {inherit build shell; }
+in {inherit build shell; }
+     
+
