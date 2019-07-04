@@ -13,12 +13,17 @@ module Network.TypedProtocol.Channel
   , createConnectedBufferedChannels
   , createPipelineTestChannels
   , channelEffect
+  , delayChannel
+  , loggingChannel
   ) where
 
 import           Control.Monad ((>=>))
+import           Control.Monad.Class.MonadSay
+import           Control.Monad.Class.MonadTimer
 import qualified Data.ByteString      as BS
 import qualified Data.ByteString.Lazy as LBS
 import           Data.ByteString.Lazy.Internal (smallChunkSize)
+import           Data.Time.Clock (DiffTime)
 import           Numeric.Natural
 
 import qualified System.IO as IO
@@ -235,3 +240,43 @@ channelEffect beforeSend afterRecv Channel{send, recv} =
         return mx
     }
 
+-- | Delay a channel on the receiver end.
+--
+-- This is intended for testing, as a crude approximation of network delays.
+-- More accurate models along these lines are of course possible.
+--
+delayChannel :: ( MonadSTM m
+                , MonadTimer m
+                )
+             => DiffTime
+             -> Channel m a
+             -> Channel m a
+delayChannel delay = channelEffect (\_ -> return ())
+                                   (\_ -> threadDelay delay)
+
+
+-- | Channel which logs sent and received messages.
+--
+loggingChannel :: ( MonadSay m
+                  , Show id
+                  , Show a
+                  )
+               => id
+               -> Channel m a
+               -> Channel m a
+loggingChannel ident Channel{send,recv} =
+  Channel {
+    send = loggingSend,
+    recv = loggingRecv
+  }
+ where
+  loggingSend a = do
+    say (show ident ++ ":send:" ++ show a)
+    send a
+
+  loggingRecv = do
+    msg <- recv
+    case msg of
+      Nothing -> return ()
+      Just a  -> say (show ident ++ ":recv:" ++ show a)
+    return msg
