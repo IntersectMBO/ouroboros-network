@@ -1,3 +1,8 @@
+{-# LANGUAGE DeriveFunctor     #-}
+{-# LANGUAGE DeriveFoldable    #-}
+{-# LANGUAGE DeriveGeneric     #-}
+{-# LANGUAGE DeriveTraversable #-}
+
 module Ouroboros.Network.Point
   ( WithOrigin (..)
   , Block (..)
@@ -6,12 +11,10 @@ module Ouroboros.Network.Point
   , block
   ) where
 
-data WithOrigin t = Origin | At t
-  deriving (Eq, Ord, Show)
+import GHC.Generics (Generic)
 
-instance Functor WithOrigin where
-  fmap _ Origin    = Origin
-  fmap f (At t) = At (f t)
+data WithOrigin t = Origin | At t
+  deriving (Eq, Ord, Show, Generic, Functor, Foldable, Traversable)
 
 data Block slot hash = Block
   { blockPointSlot :: !slot
