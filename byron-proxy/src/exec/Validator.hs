@@ -139,14 +139,16 @@ main = do
           Just fp -> fp
         rnm = requiresNetworkMagic opts
     -- Copied from validate-mainnet in cardano-ledger.
-    let (Right genHash) = decodeAbstractHash
+    let genHash = either (error . show) id $
+                          decodeAbstractHash
                           . geGenesisHash
                           . coGenesis
                           . ccCore
                           $ cc
-    Right genesisConfig <-
+    genesisConfig <- either (error . show) id <$>
       runExceptT (Genesis.mkConfigFromFile rnm mainnetGenFilepath genHash)
-    Right cvs <- runExceptT $ Block.initialChainValidationState genesisConfig
+    cvs <- either (error . show) id <$>
+      runExceptT (Block.initialChainValidationState genesisConfig)
     genesisConfig `seq` cvs `seq` pure ()
     addrInfoLocal  : _ <- Socket.getAddrInfo
       (Just Socket.defaultHints)
