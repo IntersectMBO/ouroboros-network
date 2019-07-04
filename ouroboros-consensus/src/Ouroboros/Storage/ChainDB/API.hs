@@ -3,6 +3,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving  #-}
 {-# LANGUAGE TypeFamilies        #-}
+{-# LANGUAGE PatternSynonyms     #-}
 
 module Ouroboros.Storage.ChainDB.API (
     -- * Main ChainDB API
@@ -39,12 +40,11 @@ import           Control.Monad.Class.MonadThrow
 
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import           Ouroboros.Network.Block (ChainUpdate, HasHeader (..),
-                     HeaderHash, SlotNo, StandardHash)
+                     HeaderHash, SlotNo, StandardHash, pattern GenesisPoint,
+                     pattern BlockPoint, atSlot)
 import           Ouroboros.Network.Chain (Chain (..), Point (..), genesisPoint)
 import qualified Ouroboros.Network.Chain as Chain
 import           Ouroboros.Network.ChainProducerState (ReaderId)
-import           Ouroboros.Network.Point (WithOrigin (..))
-import qualified Ouroboros.Network.Point as Point (Block (..))
 
 import           Ouroboros.Consensus.Block (GetHeader (..))
 import           Ouroboros.Consensus.Ledger.Extended
@@ -327,24 +327,24 @@ data UnknownRange blk =
 validBounds :: StreamFrom blk -> StreamTo blk -> Bool
 validBounds from to = case from of
 
-  StreamFromInclusive (Point Origin) -> False
+  StreamFromInclusive GenesisPoint -> False
 
-  StreamFromExclusive (Point Origin) -> case to of
-    StreamToInclusive (Point Origin) -> False
-    StreamToExclusive (Point Origin) -> False
-    _                                -> True
+  StreamFromExclusive GenesisPoint -> case to of
+    StreamToInclusive GenesisPoint -> False
+    StreamToExclusive GenesisPoint -> False
+    _                              -> True
 
-  StreamFromInclusive (Point (At (Point.Block { Point.blockPointSlot = sfrom }))) -> case to of
-    StreamToInclusive (Point Origin)                                            -> False
-    StreamToExclusive (Point Origin)                                            -> False
-    StreamToInclusive (Point (At (Point.Block { Point.blockPointSlot = sto }))) -> sfrom <= sto
-    StreamToExclusive (Point (At (Point.Block { Point.blockPointSlot = sto }))) -> sfrom <  sto
+  StreamFromInclusive (BlockPoint { atSlot = sfrom }) -> case to of
+    StreamToInclusive GenesisPoint                    -> False
+    StreamToExclusive GenesisPoint                    -> False
+    StreamToInclusive (BlockPoint { atSlot = sto })   -> sfrom <= sto
+    StreamToExclusive (BlockPoint { atSlot = sto })   -> sfrom <  sto
 
-  StreamFromExclusive (Point (At (Point.Block { Point.blockPointSlot = sfrom }))) -> case to of
-    StreamToInclusive (Point Origin)                                            -> False
-    StreamToExclusive (Point Origin)                                            -> False
-    StreamToInclusive (Point (At (Point.Block { Point.blockPointSlot = sto }))) -> sfrom <  sto
-    StreamToExclusive (Point (At (Point.Block { Point.blockPointSlot = sto }))) -> sfrom <  sto
+  StreamFromExclusive (BlockPoint { atSlot = sfrom }) -> case to of
+    StreamToInclusive GenesisPoint                    -> False
+    StreamToExclusive GenesisPoint                    -> False
+    StreamToInclusive (BlockPoint { atSlot = sto })   -> sfrom <= sto
+    StreamToExclusive (BlockPoint { atSlot = sto })   -> sfrom <  sto
 
 -- | Stream all blocks from the current chain.
 --

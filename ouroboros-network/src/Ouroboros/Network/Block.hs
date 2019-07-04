@@ -6,6 +6,7 @@
 {-# LANGUAGE StandaloneDeriving         #-}
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE UndecidableInstances       #-}
+{-# LANGUAGE PatternSynonyms            #-}
 
 -- | Abstract view over blocks
 --
@@ -32,6 +33,11 @@ module Ouroboros.Network.Block (
   , encodeChainHash
   , decodePoint
   , decodeChainHash
+
+  , pattern GenesisPoint
+  , pattern BlockPoint
+  , atSlot
+  , withHash
   ) where
 
 import           Codec.CBOR.Decoding (Decoder)
@@ -128,6 +134,14 @@ newtype Point block = Point
 deriving instance StandardHash block => Eq   (Point block)
 deriving instance StandardHash block => Ord  (Point block)
 deriving instance StandardHash block => Show (Point block)
+
+pattern GenesisPoint :: Point block
+pattern GenesisPoint = Point Origin
+
+pattern BlockPoint :: SlotNo -> HeaderHash block -> Point block
+pattern BlockPoint { atSlot, withHash } = Point (At (Point.Block atSlot withHash))
+
+{-# COMPLETE GenesisPoint, BlockPoint #-}
 
 -- Should be
 -- pointSlot :: Point block -> WithOrigin SlotNo
