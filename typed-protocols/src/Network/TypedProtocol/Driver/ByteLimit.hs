@@ -71,7 +71,7 @@ runPeerWithByteLimit
   -- ^ message size limit
   -> (bytes -> Int64)
   -- ^ byte size
-  -> Tracer m (TraceSendRecv ps)
+  -> Tracer m (TraceSendRecv ps (DecoderFailureOrTooMuchInput failure))
   -> Codec ps failure m bytes
   -> Channel m bytes
   -> Peer ps pr st m a
@@ -99,5 +99,6 @@ runPeerWithByteLimit limit byteLength tr Codec{encode, decode} channel@Channel{s
         Right (SomeMessage msg, trailing') -> do
           traceWith tr (TraceRecvMsg (AnyMessage msg))
           go trailing' (k msg)
-        Left failure ->
+        Left failure -> do
+          traceWith tr (TraceDecoderFailure stok failure)
           throwM failure

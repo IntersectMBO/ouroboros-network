@@ -7,6 +7,7 @@
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE TypeInType #-}
 {-# LANGUAGE EmptyCase #-}
+{-# LANGUAGE QuantifiedConstraints #-}
 -- @UndecidableInstances@ extensions is required for defining @Show@ instance
 -- of @'TraceSendRecv'@.
 {-# LANGUAGE UndecidableInstances #-}
@@ -77,13 +78,32 @@ import Control.Tracer (Tracer (..), traceWith)
 
 -- | Structured 'Tracer' output for 'runPeer' and derivitives.
 --
-data TraceSendRecv ps = TraceSendMsg (AnyMessage ps)
-                      | TraceRecvMsg (AnyMessage ps)
+data TraceSendRecv ps failure where
+     TraceSendMsg
+       :: AnyMessage ps
+       -> TraceSendRecv ps failure
+     TraceRecvMsg
+       :: AnyMessage ps
+       -> TraceSendRecv ps failure
+     TraceDecoderFailure
+       :: forall (pr :: PeerRole) (st :: ps) failure.
+          PeerHasAgency pr st
+       -> failure
+       -> TraceSendRecv ps failure
 
 -- requires @UndecidableInstances@ extension
-instance Show (AnyMessage ps) => Show (TraceSendRecv ps) where
+instance ( Show (AnyMessage ps)
+         , forall (pr :: PeerRole) (st :: ps). Show (PeerHasAgency pr st)
+         , Show failure
+         ) => Show (TraceSendRecv ps failure) where
   show (TraceSendMsg msg) = "Send " ++ show msg
   show (TraceRecvMsg msg) = "Recv " ++ show msg
+  show (TraceDecoderFailure stok err) = mconcat
+    [ "DecoderFailure "
+    , show stok
+    , " "
+    , show err
+    ]
 
 
 --
@@ -97,7 +117,7 @@ instance Show (AnyMessage ps) => Show (TraceSendRecv ps) where
 runPeer
   :: forall ps (st :: ps) pr failure bytes m a .
      (MonadThrow m, Exception failure)
-  => Tracer m (TraceSendRecv ps)
+  => Tracer m (TraceSendRecv ps failure)
   -> Codec ps failure m bytes
   -> Channel m bytes
   -> Peer ps pr st m a
@@ -162,7 +182,7 @@ runPeer tr Codec{encode, decode} channel@Channel{send} =
 runPipelinedPeer
   :: forall ps (st :: ps) pr failure bytes m a.
      (MonadSTM m, MonadAsync m, MonadThrow m, Exception failure)
-  => Tracer m (TraceSendRecv ps)
+  => Tracer m (TraceSendRecv ps failure)
   -> Codec ps failure m bytes
   -> Channel m bytes
   -> PeerPipelined ps pr st m a
@@ -240,7 +260,7 @@ data MaybeTrailing bytes (n :: N) where
 runPipelinedPeerSender
   :: forall ps (st :: ps) pr failure bytes c m a.
      (MonadSTM m, MonadThrow m, Exception failure)
-  => Tracer m (TraceSendRecv ps)
+  => Tracer m (TraceSendRecv ps failure)
   -> TQueue m (ReceiveHandler bytes ps pr m c)
   -> TQueue m (c, Maybe bytes)
   -> Codec ps failure m bytes
@@ -272,7 +292,8 @@ runPipelinedPeerSender tr receiveQueue collectQueue
         Right (SomeMessage msg, trailing') -> do
           traceWith tr (TraceRecvMsg (AnyMessage msg))
           go Zero (MaybeTrailing trailing') (k msg)
-        Left failure ->
+        Left failure -> do
+          traceWith tr (TraceDecoderFailure stok failure)
           throwM failure
 
     go n trailing (SenderPipeline stok msg receiver k) = do
@@ -302,7 +323,7 @@ runPipelinedPeerSender tr receiveQueue collectQueue
 runPipelinedPeerReceiverQueue
   :: forall ps pr failure bytes m c.
      (MonadSTM m, MonadThrow m, Exception failure)
-  => Tracer m (TraceSendRecv ps)
+  => Tracer m (TraceSendRecv ps failure)
   -> TQueue m (ReceiveHandler bytes ps pr m c)
   -> TQueue m (c, Maybe bytes)
   -> Codec ps failure m bytes
@@ -326,7 +347,7 @@ runPipelinedPeerReceiverQueue tr receiveQueue collectQueue codec channel =
 runPipelinedPeerReceiver
   :: forall ps (st :: ps) (stdone :: ps) pr failure bytes m c.
      (MonadThrow m, Exception failure)
-  => Tracer m (TraceSendRecv ps)
+  => Tracer m (TraceSendRecv ps failure)
   -> Codec ps failure m bytes
   -> Channel m bytes
   -> Maybe bytes
@@ -384,7 +405,7 @@ runDecoderWithChannel Channel{recv} = go
 runConnectedPeers :: (MonadSTM m, MonadAsync m, MonadCatch m,
                       Exception failure)
                   => m (Channel m bytes, Channel m bytes)
-                  -> Tracer m (TraceSendRecv ps)
+                  -> Tracer m (TraceSendRecv ps failure)
                   -> Codec ps failure m bytes
                   -> Peer ps pr st m a
                   -> Peer ps (FlipAgency pr) st m b
@@ -400,7 +421,7 @@ runConnectedPeers createChannels tr codec client server =
 runConnectedPeersPipelined :: (MonadSTM m, MonadAsync m, MonadCatch m,
                                Exception failure)
                            => m (Channel m bytes, Channel m bytes)
-                           -> Tracer m (TraceSendRecv ps)
+                           -> Tracer m (TraceSendRecv ps failure)
                            -> Codec ps failure m bytes
                            -> PeerPipelined ps pr st m a
                            -> Peer          ps (FlipAgency pr) st m b

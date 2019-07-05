@@ -90,3 +90,10 @@ instance (Show block, StandardHash block)
   show MsgNoBlocks             = "MsgNoBlocks"
   show MsgBatchDone            = "MsgBatchDone"
   show MsgClientDone           = "MsgClientDone"
+
+instance Show (ClientHasAgency (st :: BlockFetch block)) where
+  show TokIdle = "TokIdle" 
+
+instance Show (ServerHasAgency (st :: BlockFetch block)) where
+  show TokBusy      = "TokBusy"
+  show TokStreaming = "TokStreaming"

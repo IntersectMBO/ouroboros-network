@@ -132,13 +132,13 @@ responderApplication (MuxInitiatorAndResponderApplication _ app) = app
 -- This type is only necessary to use the @'simpleMuxClient'@ and
 -- @'simpleMuxServer'@ smart constructors.
 data MuxPeer failure m bytes a where
-    MuxPeer :: Tracer m (TraceSendRecv ps)
+    MuxPeer :: Tracer m (TraceSendRecv ps failure)
             -> Codec ps failure m bytes
             -> Peer ps pr st m a
             -> MuxPeer failure m bytes a
 
     MuxPeerPipelined
-            :: Tracer m (TraceSendRecv ps)
+            :: Tracer m (TraceSendRecv ps failure)
             -> Codec ps failure m bytes
             -> PeerPipelined ps pr st m a
             -> MuxPeer failure m bytes a

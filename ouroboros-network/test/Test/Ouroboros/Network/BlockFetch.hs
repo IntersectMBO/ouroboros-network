@@ -12,6 +12,7 @@ import           Test.Tasty.HUnit
 import           Test.Tasty.QuickCheck (testProperty)
 import           Test.ChainGenerators (TestChainFork(..))
 
+import           Codec.CBOR.Read (DeserialiseFailure)
 import           Data.List
 import qualified Data.Set as Set
 import           Data.Set (Set)
@@ -174,7 +175,7 @@ data Example1TraceEvent =
    | TraceFetchClientState    (TraceLabelPeer Int
                                 (TraceFetchClientState BlockHeader))
    | TraceFetchClientSendRecv (TraceLabelPeer Int
-                                (TraceSendRecv (BlockFetch Block)))
+                                (TraceSendRecv (BlockFetch Block) DeserialiseFailure))
 
 instance Show Example1TraceEvent where
   show (TraceFetchDecision       x) = "TraceFetchDecision " ++ show x

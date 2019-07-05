@@ -2,6 +2,7 @@
 {-# LANGUAGE EmptyCase          #-}
 {-# LANGUAGE FlexibleInstances  #-}
 {-# LANGUAGE GADTs              #-}
+{-# LANGUAGE PolyKinds          #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TypeFamilies       #-}
 
@@ -106,3 +107,8 @@ deriving instance (Eq tx, Eq reject) =>
 deriving instance (Show tx, Show reject) =>
                    Show (Message (LocalTxSubmission tx reject) from to)
 
+instance Show (ClientHasAgency (st :: LocalTxSubmission tx reject)) where
+  show TokIdle = "TokIdle"
+
+instance Show (ServerHasAgency (st :: LocalTxSubmission tx reject)) where
+  show TokBusy = "TokBusy"

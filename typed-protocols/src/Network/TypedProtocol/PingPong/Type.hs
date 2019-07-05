@@ -79,3 +79,8 @@ instance Protocol PingPong where
 
 deriving instance Show (Message PingPong from to)
 
+instance Show (ClientHasAgency (st :: PingPong)) where
+  show TokIdle = "TokIdle"
+
+instance Show (ServerHasAgency (st :: PingPong)) where
+  show TokBusy = "TokBusy"
