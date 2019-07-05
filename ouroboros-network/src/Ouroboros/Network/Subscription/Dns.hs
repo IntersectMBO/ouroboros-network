@@ -184,41 +184,45 @@ dnsSubscriptionWorker'
     -> Tracer IO (WithDomainName SubscriptionTrace)
     -> Tracer IO (WithDomainName DnsTrace)
     -> Resolver IO
-    -> Socket.PortNumber
+    -> Maybe Socket.SockAddr
+    -> Maybe Socket.SockAddr
     -> (Socket.SockAddr -> Maybe DiffTime)
     -> DnsSubscriptionTarget
     -> (Socket.Socket -> IO ())
-    -> IO ()
-dnsSubscriptionWorker' tbl subTracer dnsTracer resolver localPort connectionAttemptDelay dst k = do
-    let subTracer' = domainNameTracer (dstDomain dst) subTracer
-    let dnsTracer' = domainNameTracer (dstDomain dst) dnsTracer
+    -> (Async IO () -> IO t)
+    -> IO t
+dnsSubscriptionWorker' tbl subTracer dnsTracer resolver localIPv4 localIPv6
+  connectionAttemptDelay dst cb
+    = withAsync
+        (do
+            let subTracer' = domainNameTracer (dstDomain dst) subTracer
+            let dnsTracer' = domainNameTracer (dstDomain dst) dnsTracer
 
-    subscriptionWorker tbl subTracer' localPort connectionAttemptDelay
-            (dnsResolve dnsTracer' resolver dst) (dstValency dst) k
+            subscriptionWorker tbl subTracer' localIPv4 localIPv6 connectionAttemptDelay
+                    (dnsResolve dnsTracer' resolver dst) (dstValency dst) cb
+        )
 
 dnsSubscriptionWorker
     :: ConnectionTable
     -> Tracer IO (WithDomainName SubscriptionTrace)
     -> Tracer IO (WithDomainName DnsTrace)
-    -> Socket.PortNumber
+    -> Maybe Socket.SockAddr
+    -> Maybe Socket.SockAddr
     -> (Socket.SockAddr -> Maybe DiffTime)
-    -> [DnsSubscriptionTarget]
+    -> DnsSubscriptionTarget
     -> (Socket.Socket -> IO ())
-    -> IO ()
-dnsSubscriptionWorker tbl subTracer dnsTracer localPort connectionAttemptDelay dsts k = do
+    -> (Async IO () -> IO t)
+    -> IO t
+dnsSubscriptionWorker tbl subTracer dnsTracer localIPv4 localIPv6 connectionAttemptDelay dst cb
+  k = do
     rs <- DNS.makeResolvSeed DNS.defaultResolvConf
 
-    void $ DNS.withResolver rs $ \dnsResolver ->
-        mask $ \unmask -> do
-            workers <- traverse (async . unmask . spawnResolver dnsResolver) dsts
-            unmask (void $ waitAnyCancel workers)
-  where
-    spawnResolver :: DNS.Resolver -> DnsSubscriptionTarget -> IO ()
-    spawnResolver dnsResolver dst =
+    DNS.withResolver rs $ \dnsResolver ->
         let resolver = Resolver (ipv4ToSockAddr (dstPort dst) dnsResolver)
                                 (ipv6ToSockAddr (dstPort dst) dnsResolver) in
-        dnsSubscriptionWorker' tbl subTracer dnsTracer resolver localPort connectionAttemptDelay dst k
-
+        dnsSubscriptionWorker' tbl subTracer dnsTracer resolver localIPv4 localIPv6
+                               connectionAttemptDelay dst cb k
+  where
     ipv4ToSockAddr port dnsResolver dst = do
         r <- DNS.lookupA dnsResolver dst
         case r of
