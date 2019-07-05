@@ -18,9 +18,9 @@ module Ouroboros.Consensus.NodeNetwork (
   , protocolCodecsId
   , NetworkApplication(..)
   , consensusNetworkApps
-  , muxInitiatorNetworkApplication
-  , muxResponderNetworkApplication
-  , muxLocalResponderNetworkApplication
+  , initiatorNetworkApplication
+  , responderNetworkApplication
+  , localResponderNetworkApplication
   ) where
 
 import           Control.Monad (void)
@@ -45,10 +45,10 @@ import           Ouroboros.Network.Block
 import           Ouroboros.Network.BlockFetch
 import           Ouroboros.Network.BlockFetch.Client (BlockFetchClient,
                      blockFetchClient)
-import           Ouroboros.Network.Protocol.BlockFetch.Codec (codecBlockFetchId)
-import           Ouroboros.Network.Protocol.BlockFetch.Server (BlockFetchServer,
-                     blockFetchServerPeer)
+import           Ouroboros.Network.Mux
+import           Ouroboros.Network.Protocol.BlockFetch.Server (BlockFetchServer, blockFetchServerPeer)
 import           Ouroboros.Network.Protocol.BlockFetch.Type (BlockFetch (..))
+import           Ouroboros.Network.Protocol.BlockFetch.Codec (codecBlockFetchId)
 import           Ouroboros.Network.Protocol.ChainSync.Client
 import           Ouroboros.Network.Protocol.ChainSync.Codec (codecChainSyncId)
 import           Ouroboros.Network.Protocol.ChainSync.Server
@@ -258,11 +258,11 @@ data NetworkApplication m peer
 -- | A projection from 'NetworkApplication' to a client-side 'MuxApplication'
 -- for the 'NodeToNodeProtocols'.
 --
-muxInitiatorNetworkApplication
+initiatorNetworkApplication
   :: NetworkApplication m peer bytes bytes bytes bytes bytes a
-  -> MuxApplication 'InitiatorApp peer NodeToNodeProtocols m bytes a Void
-muxInitiatorNetworkApplication NetworkApplication {..} =
-    MuxInitiatorApplication $ \them ptcl -> case ptcl of
+  -> OuroborosApplication InitiatorApp peer NodeToNodeProtocols m bytes a Void
+initiatorNetworkApplication NetworkApplication {..} =
+    OuroborosInitiatorApplication $ \them ptcl -> case ptcl of
       ChainSyncWithHeadersPtcl -> naChainSyncClient them
       BlockFetchPtcl           -> naBlockFetchClient them
       TxSubmissionPtcl         -> naTxSubmissionClient them
@@ -270,11 +270,11 @@ muxInitiatorNetworkApplication NetworkApplication {..} =
 -- | A projection from 'NetworkApplication' to a server-side 'MuxApplication'
 -- for the 'NodeToNodeProtocols'.
 --
-muxResponderNetworkApplication
+responderNetworkApplication
   :: NetworkApplication m peer bytes bytes bytes bytes bytes a
-  -> AnyMuxResponderApp peer NodeToNodeProtocols m bytes
-muxResponderNetworkApplication NetworkApplication {..} =
-    AnyMuxResponderApp $ MuxResponderApplication $ \them ptcl -> case ptcl of
+  -> AnyResponderApp peer NodeToNodeProtocols m bytes
+responderNetworkApplication NetworkApplication {..} =
+    AnyResponderApp $ OuroborosResponderApplication $ \them ptcl -> case ptcl of
       ChainSyncWithHeadersPtcl -> naChainSyncServer them
       BlockFetchPtcl           -> naBlockFetchServer them
       TxSubmissionPtcl         -> naTxSubmissionServer them
@@ -282,11 +282,11 @@ muxResponderNetworkApplication NetworkApplication {..} =
 -- | A projection from 'NetworkApplication' to a server-side 'MuxApplication'
 -- for the 'NodeToClientProtocols'.
 --
-muxLocalResponderNetworkApplication
+localResponderNetworkApplication
   :: NetworkApplication m peer bytes bytes bytes bytes bytes a
-  -> AnyMuxResponderApp peer NodeToClientProtocols m bytes
-muxLocalResponderNetworkApplication NetworkApplication {..} =
-    AnyMuxResponderApp $ MuxResponderApplication $ \peer ptcl -> case ptcl of
+  -> AnyResponderApp peer NodeToClientProtocols m bytes
+localResponderNetworkApplication NetworkApplication {..} =
+    AnyResponderApp $ OuroborosResponderApplication $ \peer  ptcl -> case ptcl of
       ChainSyncWithBlocksPtcl -> naLocalChainSyncServer peer
       LocalTxSubmissionPtcl   -> naLocalTxSubmissionServer peer
 
