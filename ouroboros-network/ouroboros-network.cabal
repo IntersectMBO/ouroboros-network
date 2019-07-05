@@ -47,6 +47,7 @@ library
                        Ouroboros.Network.BlockFetch.DeltaQ
                        Ouroboros.Network.BlockFetch.State
                        Ouroboros.Network.ChainFragment
+                       Ouroboros.Network.Channel
                        Ouroboros.Network.DeltaQ
                        Ouroboros.Network.Mux
                        Ouroboros.Network.NodeToNode
@@ -159,6 +160,7 @@ test-suite tests
                        Ouroboros.Network.Chain
                        Ouroboros.Network.ChainFragment
                        Ouroboros.Network.ChainProducerState
+                       Ouroboros.Network.Channel
                        Ouroboros.Network.DeltaQ
                        Ouroboros.Network.Mux
                        Ouroboros.Network.Node

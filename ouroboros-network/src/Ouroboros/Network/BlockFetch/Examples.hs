@@ -40,10 +40,9 @@ import           Ouroboros.Network.Protocol.BlockFetch.Type
 import           Ouroboros.Network.Protocol.BlockFetch.Server
 import           Ouroboros.Network.Protocol.BlockFetch.Codec
 import           Network.TypedProtocol.Core
+import           Network.TypedProtocol.Channel
 import           Network.TypedProtocol.Pipelined
 import           Network.TypedProtocol.Driver
-
-import           Network.Mux.Channel
 
 import           Ouroboros.Network.DeltaQ
 import           Ouroboros.Network.BlockFetch.Client

@@ -23,10 +23,11 @@ import           Control.Tracer (nullTracer)
 import           Control.Monad.IOSim (runSimOrThrow)
 
 import           Network.TypedProtocol.Codec
+import           Network.TypedProtocol.Channel
 import           Network.TypedProtocol.Driver
 import           Network.TypedProtocol.Proofs (connect)
 
-import           Network.Mux.Channel
+import           Ouroboros.Network.Channel
 
 import           Ouroboros.Network.Chain (Point)
 import qualified Ouroboros.Network.Chain as Chain

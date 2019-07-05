@@ -24,7 +24,8 @@ import           Test.Tasty.QuickCheck (testProperty)
 
 import           Control.Tracer (nullTracer)
 
-import qualified Ouroboros.Network.Mux as Mx
+import           Ouroboros.Network.Mux
+import qualified Network.Mux.Types as Mx
 import qualified Network.Mux.Bearer.Pipe as Mx
 
 import           Ouroboros.Network.Chain (Chain, ChainUpdate, Point)
@@ -99,27 +100,27 @@ demo chain0 updates = do
     let Just expectedChain = Chain.applyChainUpdates updates chain0
         target = Chain.headPoint expectedChain
 
-        consumerApp :: Mx.MuxApplication Mx.InitiatorApp String DemoProtocols IO BL.ByteString () Void
-        consumerApp = Mx.simpleMuxInitiatorApplication $
+        consumerApp :: OuroborosApplication InitiatorApp String DemoProtocols IO BL.ByteString () Void
+        consumerApp = simpleInitiatorApplication $
           \ChainSync ->
-            Mx.MuxPeer nullTracer
-                       (ChainSync.codecChainSync encode decode encode decode)
-                       (ChainSync.chainSyncClientPeer
-                          (ChainSync.chainSyncClientExample consumerVar
-                            (consumerClient done target consumerVar)))
+            MuxPeer nullTracer
+                    (ChainSync.codecChainSync encode decode encode decode)
+                    (ChainSync.chainSyncClientPeer
+                      (ChainSync.chainSyncClientExample consumerVar
+                      (consumerClient done target consumerVar)))
 
         server :: ChainSyncServer block (Point block) IO ()
         server = ChainSync.chainSyncServerExample () producerVar
 
-        producerApp :: Mx.MuxApplication Mx.ResponderApp String DemoProtocols IO BL.ByteString Void ()
-        producerApp = Mx.simpleMuxResponderApplication $
+        producerApp ::OuroborosApplication ResponderApp String DemoProtocols IO BL.ByteString Void ()
+        producerApp = simpleResponderApplication $
           \ChainSync ->
-            Mx.MuxPeer nullTracer
-                       (ChainSync.codecChainSync encode decode encode decode)
-                       (ChainSync.chainSyncServerPeer server)
+            MuxPeer nullTracer
+                    (ChainSync.codecChainSync encode decode encode decode)
+                    (ChainSync.chainSyncServerPeer server)
 
-    _ <- async $ Mx.runMuxWithPipes "producer" producerApp hndRead1 hndWrite2
-    _ <- async $ Mx.runMuxWithPipes "consumer" consumerApp hndRead2 hndWrite1
+    _ <- async $ Mx.runMuxWithPipes "producer" (toApplication producerApp) hndRead1 hndWrite2
+    _ <- async $ Mx.runMuxWithPipes "consumer" (toApplication consumerApp) hndRead2 hndWrite1
 
     void $ fork $ sequence_
         [ do threadDelay 10e-4 -- 1 milliseconds, just to provide interest

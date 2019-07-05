@@ -19,9 +19,10 @@ import           Control.Tracer (nullTracer)
 
 import           Network.TypedProtocol.Driver
 import           Network.TypedProtocol.Codec
+import           Network.TypedProtocol.Channel
 import           Network.TypedProtocol.Proofs
 
-import           Network.Mux.Channel
+import           Ouroboros.Network.Channel
 
 import           Ouroboros.Network.Block (StandardHash)
 import           Ouroboros.Network.Chain (Chain, Point)

@@ -11,7 +11,7 @@
 --
 module Ouroboros.Network.Socket (
     -- * High level socket interface
-      AnyMuxResponderApp (..)
+      AnyResponderApp (..)
     , ConnectionTable
     , ConnectionTableRef (..)
     , ValencyCounter
@@ -65,6 +65,7 @@ import qualified Network.Mux.Bearer.Socket as Mx
 import           Ouroboros.Network.Protocol.Handshake.Type
 import           Ouroboros.Network.Protocol.Handshake.Version
 import           Ouroboros.Network.Protocol.Handshake.Codec
+import           Ouroboros.Network.Mux
 import qualified Ouroboros.Network.Server.Socket as Server
 import           Ouroboros.Network.Server.ConnectionTable
 
@@ -104,7 +105,7 @@ connectToNode
   => (forall vData. extra vData -> vData -> CBOR.Term)
   -> (forall vData. extra vData -> CBOR.Term -> Either Text vData)
   -> (Socket.SockAddr -> Socket.SockAddr -> peerid)
-  -> Versions vNumber extra (MuxApplication appType peerid ptcl IO BL.ByteString a b)
+  -> Versions vNumber extra (OuroborosApplication appType peerid ptcl IO BL.ByteString a b)
   -- ^ application to run over the connection
   -> Maybe Socket.AddrInfo
   -- ^ local address; the created socket will bind to it
@@ -155,7 +156,7 @@ connectToNode'
   => (forall vData. extra vData -> vData -> CBOR.Term)
   -> (forall vData. extra vData -> CBOR.Term -> Either Text vData)
   -> (Socket.SockAddr -> Socket.SockAddr -> peerid)
-  -> Versions vNumber extra (MuxApplication appType peerid ptcl IO BL.ByteString a b)
+  -> Versions vNumber extra (OuroborosApplication appType peerid ptcl IO BL.ByteString a b)
   -- ^ application to run over the connection
   -> Socket.Socket
   -> IO ()
@@ -175,17 +176,17 @@ connectToNode' encodeData decodeData peeridFn versions sd = do
          Left err -> throwIO err
          Right app -> do
              Mx.muxBearerSetState bearer Mx.Mature
-             Mx.muxStart peerid app bearer
+             Mx.muxStart peerid (toApplication app) bearer
 
 -- |
 -- A mux application which has a server component.
 --
-data AnyMuxResponderApp peerid ptcl m bytes where
-      AnyMuxResponderApp
+data AnyResponderApp peerid ptcl m bytes where
+      AnyResponderApp
         :: forall appType peerid ptcl m bytes a b.
            HasResponder appType ~ True
-        => MuxApplication appType peerid ptcl m bytes a b
-        -> AnyMuxResponderApp peerid ptcl m bytes
+        => OuroborosApplication appType peerid ptcl m bytes a b
+        -> AnyResponderApp peerid ptcl m bytes
 
 
 -- |
@@ -204,7 +205,7 @@ data AcceptConnection st vNumber extra peerid ptcl m bytes where
     AcceptConnection
       :: !st
       -> !peerid
-      -> Versions vNumber extra (AnyMuxResponderApp peerid ptcl m bytes)
+      -> Versions vNumber extra (AnyResponderApp peerid ptcl m bytes)
       -> AcceptConnection st vNumber extra peerid ptcl m bytes
 
     RejectConnection
@@ -253,9 +254,9 @@ beginConnection encodeData decodeData acceptVersion fn addr st = do
                 (handshakeServerPeer encodeData decodeData acceptVersion versions)
         case mapp of
           Left err -> throwIO err
-          Right (AnyMuxResponderApp app) -> do
+          Right (AnyResponderApp app) -> do
             Mx.muxBearerSetState bearer Mx.Mature
-            Mx.muxStart peerid app bearer
+            Mx.muxStart peerid (toApplication app) bearer
       RejectConnection st' _peerid -> pure $ Server.Reject st'
 
 
@@ -370,7 +371,7 @@ withServerNode
     -> (forall vData. extra vData -> CBOR.Term -> Either Text vData)
     -> (Socket.SockAddr -> Socket.SockAddr -> peerid)
     -> (forall vData. extra vData -> vData -> vData -> Accept)
-    -> Versions vNumber extra (AnyMuxResponderApp peerid ptcl IO BL.ByteString)
+    -> Versions vNumber extra (AnyResponderApp peerid ptcl IO BL.ByteString)
     -- ^ The mux application that will be run on each incoming connection from
     -- a given address.  Note that if @'MuxClientAndServerApplication'@ is
     -- returned, the connection will run a full duplex set of mini-protocols.
@@ -436,7 +437,7 @@ withSimpleServerNode
     -> (Socket.SockAddr -> Socket.SockAddr -> peerid)
     -- ^ create peerid from local address and remote address
     -> (forall vData. extra vData -> vData -> vData -> Accept)
-    -> Versions vNumber extra (MuxApplication ResponderApp peerid ptcl IO BL.ByteString a b)
+    -> Versions vNumber extra (OuroborosApplication ResponderApp peerid ptcl IO BL.ByteString a b)
     -- ^ The mux server application that will be run on each incoming
     -- connection.
     -> (Socket.SockAddr -> Async () -> IO t)
@@ -446,4 +447,4 @@ withSimpleServerNode
     -- Note: the server thread will terminate when the callback returns or
     -- throws an exception.
     -> IO t
-withSimpleServerNode tbl addr encodeData decodeData peeridFn acceptVersion versions k = withServerNode tbl addr encodeData decodeData peeridFn acceptVersion (AnyMuxResponderApp <$> versions) k
+withSimpleServerNode tbl addr encodeData decodeData peeridFn acceptVersion versions k = withServerNode tbl addr encodeData decodeData peeridFn acceptVersion (AnyResponderApp <$> versions) k
