@@ -2,6 +2,7 @@
 {-# LANGUAGE EmptyCase          #-}
 {-# LANGUAGE FlexibleInstances  #-}
 {-# LANGUAGE GADTs              #-}
+{-# LANGUAGE PolyKinds          #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TypeFamilies       #-}
 
@@ -251,3 +252,10 @@ deriving instance (Eq txid, Eq tx) =>
 deriving instance (Show txid, Show tx) =>
                   Show (Message (TxSubmission txid tx) from to)
 
+instance Show (ClientHasAgency (st :: TxSubmission txid tx)) where
+  show (TokTxIds TokBlocking)    = "TokTxIds TokBlocking"
+  show (TokTxIds TokNonBlocking) = "TokTxIds TokNonBlocking"
+  show TokTxs                    = "TokTxs"
+
+instance Show (ServerHasAgency (st :: TxSubmission txid tx)) where
+  show TokIdle = "TokIdle"

@@ -4,6 +4,7 @@
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE EmptyCase #-}
+{-# LANGUAGE PolyKinds #-}
 
 
 module Network.TypedProtocol.ReqResp.Type where
@@ -42,3 +43,9 @@ deriving instance (Show req, Show resp)
 
 deriving instance (Eq req, Eq resp)
                => Eq (Message (ReqResp req resp) from to)
+
+instance Show (ClientHasAgency (st :: ReqResp req resp)) where
+    show TokIdle = "TokIdle"
+
+instance Show (ServerHasAgency (st :: ReqResp req resp)) where
+    show TokBusy = "TokBusy"

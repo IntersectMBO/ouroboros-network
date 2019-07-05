@@ -4,6 +4,7 @@
 {-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE TypeInType #-}
+{-# LANGUAGE QuantifiedConstraints #-}
 
 
 -- | This module defines the core of the typed protocol framework.
@@ -324,6 +325,12 @@ data PeerRole = AsClient | AsServer
 data PeerHasAgency (pr :: PeerRole) (st :: ps) where
   ClientAgency :: !(ClientHasAgency st) -> PeerHasAgency AsClient st
   ServerAgency :: !(ServerHasAgency st) -> PeerHasAgency AsServer st
+
+instance ( forall (st' :: ps). Show (ClientHasAgency st')
+         , forall (st' :: ps). Show (ServerHasAgency st')
+         ) => Show (PeerHasAgency pr (st :: ps)) where
+    show (ClientAgency stok) = "ClientAgency " ++ show stok
+    show (ServerAgency stok) = "ServerAgency " ++ show stok
 
 -- | A synonym for an state token in which \"our\" peer has agency. This is
 -- parametrised over the client or server roles. In either case the peer in

@@ -54,4 +54,3 @@ instance Show (PingPongMessage from to) where
   show MsgPing = "MsgPing"
   show MsgPong = "MsgPong"
   show MsgDone = "MsgDone"
-

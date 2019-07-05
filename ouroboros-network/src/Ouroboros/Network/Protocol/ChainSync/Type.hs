@@ -3,6 +3,7 @@
 {-# LANGUAGE DataKinds         #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE EmptyCase         #-}
+{-# LANGUAGE PolyKinds         #-}
 
 -- | The type of the chain synchronisation protocol.
 --
@@ -153,3 +154,11 @@ instance (Show header, Show point) => Show (Message (ChainSync header point) fro
   show (MsgIntersectImproved p tip) = "MsgIntersectImproved " ++ show p ++ " " ++ show tip
   show (MsgIntersectUnchanged p)    = "MsgIntersectUnchanged " ++ show p
   show MsgDone{}                    = "MsgDone"
+
+instance Show (ClientHasAgency (st :: ChainSync header point)) where
+    show TokIdle = "TokIdle"
+
+instance Show (ServerHasAgency (st :: ChainSync header point)) where
+    show (TokNext TokCanAwait)  = "TokNext TokCanAwait"
+    show (TokNext TokMustReply) = "TokNext TokMustReply"
+    show TokIntersect           = "TokIntersect"

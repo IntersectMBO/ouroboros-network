@@ -5,6 +5,7 @@
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE GADTs                 #-}
 {-# LANGUAGE NamedFieldPuns        #-}
+{-# LANGUAGE PolyKinds             #-}
 {-# LANGUAGE RankNTypes            #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
@@ -149,6 +150,12 @@ instance Protocol (Handshake vNumber vParams) where
 
 deriving instance (Show vNumber, Show vParams)
     => Show (Message (Handshake vNumber vParams) from to)
+
+instance Show (ClientHasAgency (st :: Handshake vNumber vParams)) where
+    show TokPropose = "TokPropose"
+
+instance Show (ServerHasAgency (st :: Handshake vNumber vParams)) where
+    show TokConfirm = "TokConfirm"
 
 encodeVersions
   :: forall vNumber extra r vParams.

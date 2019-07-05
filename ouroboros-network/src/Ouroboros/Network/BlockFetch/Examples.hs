@@ -17,6 +17,7 @@ import qualified Data.Set as Set
 import           Data.Set (Set)
 import qualified Data.ByteString.Lazy as LBS
 import           Codec.Serialise (Serialise(..))
+import           Codec.CBOR.Read (DeserialiseFailure)
 
 import           Control.Monad (forever)
 import           Control.Monad.Class.MonadSTM
@@ -75,7 +76,7 @@ blockFetchExample1 :: forall m.
                    -> Tracer m (TraceLabelPeer Int
                                  (TraceFetchClientState BlockHeader))
                    -> Tracer m (TraceLabelPeer Int
-                                 (TraceSendRecv (BlockFetch Block)))
+                                 (TraceSendRecv (BlockFetch Block) DeserialiseFailure))
                    -> AnchoredFragment Block   -- ^ Fixed current chain
                    -> [AnchoredFragment Block] -- ^ Fixed candidate chains
                    -> m ()
@@ -187,7 +188,7 @@ exampleFixedPeerGSVs =
 
 runFetchClient :: (MonadCatch m, MonadAsync m, MonadFork m, MonadST m,
                    Ord peerid, Serialise block, Serialise (HeaderHash block))
-                => Tracer m (TraceSendRecv (BlockFetch block))
+                => Tracer m (TraceSendRecv (BlockFetch block) DeserialiseFailure)
                 -> FetchClientRegistry peerid header block m
                 -> peerid
                 -> Channel m LBS.ByteString
@@ -204,7 +205,7 @@ runFetchClient tracer registry peerid channel client =
 runFetchServer :: (MonadThrow m, MonadST m,
                    Serialise block,
                    Serialise (HeaderHash block))
-                => Tracer m (TraceSendRecv (BlockFetch block))
+                => Tracer m (TraceSendRecv (BlockFetch block) DeserialiseFailure)
                 -> Channel m LBS.ByteString
                 -> BlockFetchServer block m a
                 -> m a
@@ -219,8 +220,8 @@ runFetchClientAndServerAsync
                    MonadST m, Ord peerid,
                    Serialise header, Serialise block,
                    Serialise (HeaderHash block))
-                => Tracer m (TraceSendRecv (BlockFetch block))
-                -> Tracer m (TraceSendRecv (BlockFetch block))
+                => Tracer m (TraceSendRecv (BlockFetch block) DeserialiseFailure)
+                -> Tracer m (TraceSendRecv (BlockFetch block) DeserialiseFailure)
                 -> FetchClientRegistry peerid header block m
                 -> peerid
                 -> (  FetchClientContext header block m

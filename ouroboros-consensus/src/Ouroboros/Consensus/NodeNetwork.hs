@@ -265,8 +265,8 @@ consensusNetworkApps
        , Ord peer
        , Exception failure
        )
-    => Tracer m (TraceSendRecv (ChainSync (Header blk) (Point blk)))
-    -> Tracer m (TraceSendRecv (BlockFetch blk))
+    => Tracer m (TraceSendRecv (ChainSync (Header blk) (Point blk)) failure)
+    -> Tracer m (TraceSendRecv (BlockFetch blk) failure)
     -> NodeKernel m peer blk
     -> ProtocolCodecs blk failure m bytesCS bytesBF bytesLCS bytesTX
     -> ProtocolHandlers m peer blk
