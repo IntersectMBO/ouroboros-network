@@ -2,11 +2,12 @@ name:                typed-protocols
 version:             0.1.0.0
 synopsis:            A framework for strongly typed protocols
 -- description:
-license:             MIT
-license-file:        LICENSE
+license:             Apache-2.0
+license-files:
+  LICENSE
+  NOTICE
 author:              Alexander Vieth, Duncan Coutts, Marcin Szamotulski
 maintainer:          alex@well-typed.com, duncan@well-typed.com, marcin.szamotulski@iohk.io
-copyright:           2018-2019 IOHK
 category:            Control
 build-type:          Simple
 

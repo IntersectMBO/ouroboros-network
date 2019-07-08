@@ -8,11 +8,12 @@ version:             0.1.0.0
 -- synopsis:
 -- description:
 -- bug-reports:
-license:             MIT
-license-file:        LICENSE
+license:             Apache-2.0
+license-files:
+  LICENSE
+  NOTICE
 author:              Alexander Vieth, Duncan Coutts, Marcin Szamotulski
 maintainer:          alex@well-typed.com, duncan@well-typed.com, marcin.szamotulski@iohk.io
--- copyright:
 -- category:
 build-type:          Simple
 extra-source-files:  CHANGELOG.md

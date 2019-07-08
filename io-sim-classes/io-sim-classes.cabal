@@ -2,11 +2,12 @@ name:                io-sim-classes
 version:             0.1.0.0
 synopsis:            Type classes for concurrency with STM, ST and timing
 -- description:
-license:             MIT
-license-file:        LICENSE
+license:             Apache-2.0
+license-files:
+  LICENSE
+  NOTICE
 author:              Alexander Vieth, Marcin Szamotulski, Duncan Coutts
 maintainer:
-copyright:           2018 IOHK
 category:            Control
 build-type:          Simple
 cabal-version:       >=1.10

@@ -1,11 +1,12 @@
 name:                ouroboros-network-testing
 version:             0.1.0.0
 synopsis:            Common modules used for testing in ouroboros-network and ouroboros-consensus
-license:             MIT
-license-file:        LICENSE
+license:             Apache-2.0
+license-files:
+  LICENSE
+  NOTICE
 author:              Alexander Vieth, Marcin Szamotulski, Duncan Coutts, Karl Knuttson
 maintainer:
-copyright:           2018 IOHK
 category:            Network
 build-type:          Simple
 extra-source-files:  ChangeLog.md

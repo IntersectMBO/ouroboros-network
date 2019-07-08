@@ -4,8 +4,8 @@
     package = {
       specVersion = "1.10";
       identifier = { name = "network-mux"; version = "0.1.0.0"; };
-      license = "MIT";
-      copyright = "2019 IOHK";
+      license = "Apache-2.0";
+      copyright = "";
       maintainer = "duncan@well-typed.com, marcin.szamotulski@iohk.io, marc.fontaine@iohk.io, karl.knutsson@iohk.io, alex@well-typed.com";
       author = "Duncan Coutts, Marc Fontaine, Karl Knutsson, Marcin Szamotulski, Alexander Vieth";
       homepage = "";
