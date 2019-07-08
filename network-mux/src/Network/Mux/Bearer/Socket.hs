@@ -7,6 +7,7 @@ module Network.Mux.Bearer.Socket
   , hexDump
   ) where
 
+import           Control.Monad (when)
 import qualified Data.ByteString.Lazy as BL
 import           Data.Int
 import           Data.Word
@@ -18,6 +19,7 @@ import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
+import           Control.Monad.Class.MonadTimer
 
 import qualified Network.Socket as Socket hiding (recv)
 import qualified Network.Socket.ByteString.Lazy as Socket (recv, sendAll)
@@ -52,25 +54,34 @@ socketAsMuxBearer sd = do
     where
       readSocket :: (HasCallStack) => IO (Mx.MuxSDU ptcl, Time IO)
       readSocket = do
-          hbuf <- recvLen' 8 []
+          hbuf <- recvLen' True 8 []
           --say "read"
           --hexDump hbuf ""
           case Mx.decodeMuxSDUHeader hbuf of
               Left  e      -> throwM e
               Right header -> do
                   -- say $ printf "decoded mux header, goint to read %d bytes" (Mx.msLength header)
-                  blob <- recvLen' (fromIntegral $ Mx.msLength header) []
+                  blob <- recvLen' False (fromIntegral $ Mx.msLength header) []
                   ts <- getMonotonicTime
                   --hexDump blob ""
                   return (header {Mx.msBlob = blob}, ts)
 
-      recvLen' :: Int64 -> [BL.ByteString] -> IO BL.ByteString
-      recvLen' 0 bufs = return (BL.concat $ reverse bufs)
-      recvLen' l bufs = do
+      recvLen' :: Bool -> Int64 -> [BL.ByteString] -> IO BL.ByteString
+      recvLen' _ 0 bufs = return (BL.concat $ reverse bufs)
+      recvLen' waitingOnNxtHeader l bufs = do
           buf <- Socket.recv sd l
           if BL.null buf
-              then throwM $ Mx.MuxError Mx.MuxBearerClosed (show sd ++ " closed when reading data") callStack
-              else recvLen' (l - fromIntegral (BL.length buf)) (buf : bufs)
+              then do
+                  when (waitingOnNxtHeader) $
+                      {- This may not be an error, but could be an orderly shutdown.
+                       - We wait 5 seconds to give the mux protocols time to perform
+                       - a clean up and exit.
+                       -}
+                      threadDelay 5
+                  throwM $ Mx.MuxError Mx.MuxBearerClosed (show sd ++
+                      " closed when reading data, waiting on next header " ++
+                      show waitingOnNxtHeader) callStack
+              else recvLen' False (l - fromIntegral (BL.length buf)) (buf : bufs)
 
       writeSocket :: Mx.MuxSDU ptcl -> IO (Time IO)
       writeSocket sdu = do
