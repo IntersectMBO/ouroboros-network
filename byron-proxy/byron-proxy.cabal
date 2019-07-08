@@ -3,11 +3,12 @@ version:             0.1.0.0
 synopsis:            Adapter for the Byron net
 -- description:
 homepage:            https://github.com/input-output-hk/ouroboros-network
-license:             BSD3
-license-file:        LICENSE
+license:             Apache-2.0
+license-files:
+  LICENSE
+  NOTICE
 author:              Alexander Vieth
 maintainer:          alex@well-typed.com
--- copyright:
 category:            Ouroboros
 build-type:          Simple
 extra-source-files:  ChangeLog.md

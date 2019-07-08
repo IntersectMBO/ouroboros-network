@@ -2,11 +2,12 @@ name:                ouroboros-network
 version:             0.1.0.0
 synopsis:            A networking layer for the Ouroboros blockchain protocol
 -- description:
-license:             MIT
-license-file:        LICENSE
+license:             Apache-2.0
+license-files:
+  LICENSE
+  NOTICE
 author:              Alexander Vieth, Marcin Szamotulski, Duncan Coutts
 maintainer:
-copyright:           2018 IOHK
 category:            Network
 build-type:          Simple
 extra-source-files:

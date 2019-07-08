@@ -4,8 +4,8 @@
     package = {
       specVersion = "1.10";
       identifier = { name = "io-sim"; version = "0.1.0.0"; };
-      license = "MIT";
-      copyright = "2018 IOHK";
+      license = "Apache-2.0";
+      copyright = "";
       maintainer = "";
       author = "Alexander Vieth, Marcin Szamotulski, Duncan Coutts";
       homepage = "";
