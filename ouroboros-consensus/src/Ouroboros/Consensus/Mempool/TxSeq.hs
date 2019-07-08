@@ -31,7 +31,7 @@ newtype TicketNo = TicketNo Word64
 
 -- | The transaction ticket number from which our counter starts.
 zeroTicketNo :: TicketNo
-zeroTicketNo = TicketNo 1
+zeroTicketNo = TicketNo 0
 
 -- | We pair up transactions in the mempool with their ticket number.
 --
@@ -179,5 +179,5 @@ fromTxSeq (TxSeq ftree) = fmap
 --
 appendTx :: TxSeq tx -> tx -> TxSeq tx
 appendTx ts tx = case viewBack ts of
-  Nothing                           -> Empty :> TxTicket tx zeroTicketNo
+  Nothing                           -> Empty :> TxTicket tx (TicketNo 1)
   Just (_, TxTicket _ (TicketNo n)) -> ts    :> TxTicket tx (TicketNo (n + 1))

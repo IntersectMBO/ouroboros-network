@@ -25,6 +25,11 @@ module Test.Util.TestBlock (
     -- * Ledger infrastructure
   , testInitExtLedger
   , singleNodeTestConfig
+    -- * Mempool integration
+  , GenTx (..)
+  , GenTxId (..)
+  , ApplyTxErr
+  , computeGenTxId
     -- * Support for tests
   , Permutation(..)
   , permute
@@ -53,6 +58,7 @@ import qualified Ouroboros.Network.Chain as Chain
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
+import           Ouroboros.Consensus.Mempool (ApplyTx (..))
 import           Ouroboros.Consensus.NodeId (NodeId (..))
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.BFT
@@ -60,6 +66,8 @@ import           Ouroboros.Consensus.Protocol.Signed
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Orphans ()
 import qualified Ouroboros.Consensus.Util.SlotBounded as SB
+
+import           Test.Util.TestTx (TestTx (..), TestTxId)
 
 {-------------------------------------------------------------------------------
   Test infrastructure: test block
@@ -73,6 +81,7 @@ data TestBlock = TestBlock {
     , tbPrevHash :: ChainHash TestBlock
     , tbNo       :: Block.BlockNo
     , tbSlot     :: Block.SlotNo
+    , tbTxs      :: [TestTx]
     }
   deriving (Show, Eq)
 
@@ -210,6 +219,52 @@ singleNodeTestConfig = BftNodeConfig {
     k = SecurityParam 4
 
 {-------------------------------------------------------------------------------
+  Test infrastructure: mempool support
+-------------------------------------------------------------------------------}
+
+newtype TestTxError = TestTxErrorInvalid TestTx
+  deriving (Show)
+
+instance ApplyTx TestBlock where
+  newtype GenTx TestBlock = TestGenTx
+    { testGenTx :: TestTx
+    } deriving (Show, Eq)
+
+  newtype GenTxId TestBlock = TestGenTxId
+    { testGenTxId :: TestTxId
+    } deriving (Show, Eq, Ord)
+
+  computeGenTxId (TestGenTx (ValidTestTx txid))   = TestGenTxId txid
+  computeGenTxId (TestGenTx (InvalidTestTx txid)) = TestGenTxId txid
+
+  type ApplyTxErr TestBlock = TestTxError
+
+  applyTx = \_ (TestGenTx tx) st -> case tx of
+    ValidTestTx _   -> pure st
+    InvalidTestTx _ -> throwError $ TestTxErrorInvalid tx
+
+  reapplyTx = applyTx
+
+  reapplyTxSameState = \_ _ st -> st
+
+instance Arbitrary (Chain TestBlock) where
+  arbitrary = sized $ \n ->
+    pure $ Chain.fromOldestFirst $
+      go 1 GenesisHash (map TestHash [1 .. fromIntegral n])
+   where
+    go :: Word64 -> ChainHash TestBlock -> [TestHash] -> [TestBlock]
+    go _ _    []          = []
+    go n prev (this:rest) = b : go (n + 1) (BlockHash this) rest
+      where
+        b :: TestBlock
+        b = TestBlock { tbHash     = this
+                      , tbPrevHash = prev
+                      , tbNo       = Block.BlockNo n
+                      , tbSlot     = Block.SlotNo  n
+                      , tbTxs      = []
+                      }
+
+{-------------------------------------------------------------------------------
   Chain of blocks
 -------------------------------------------------------------------------------}
 
@@ -231,6 +286,7 @@ chainToBlocks (BlockChain c) = go 1 GenesisHash c
                       , tbPrevHash = prev
                       , tbNo       = Block.BlockNo n
                       , tbSlot     = Block.SlotNo  n
+                      , tbTxs      = []
                       }
 
 instance Arbitrary BlockChain where
@@ -257,6 +313,7 @@ blockTree (BlockTree t) = go 1 GenesisHash t
                       , tbPrevHash = prev
                       , tbNo       = Block.BlockNo n
                       , tbSlot     = Block.SlotNo  n
+                      , tbTxs      = []
                       }
 
 treeToBlocks :: BlockTree -> [TestBlock]
