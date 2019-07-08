@@ -23,7 +23,6 @@ import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
 import           Control.Tracer
-import           Data.Functor (void)
 import qualified Data.IP as IP
 import qualified Network.DNS as DNS
 import qualified Network.Socket as Socket
@@ -223,15 +222,15 @@ dnsSubscriptionWorker tbl subTracer dnsTracer localIPv4 localIPv6 connectionAtte
         dnsSubscriptionWorker' tbl subTracer dnsTracer resolver localIPv4 localIPv6
                                connectionAttemptDelay dst cb k
   where
-    ipv4ToSockAddr port dnsResolver dst = do
-        r <- DNS.lookupA dnsResolver dst
+    ipv4ToSockAddr port dnsResolver d = do
+        r <- DNS.lookupA dnsResolver d
         case r of
              (Right ips) -> return $ Right $ map (Socket.SockAddrInet (fromIntegral port) .
                                                   IP.toHostAddress) ips
              (Left e)    -> return $ Left e
 
-    ipv6ToSockAddr port dnsResolver dst = do
-        r <- DNS.lookupAAAA dnsResolver dst
+    ipv6ToSockAddr port dnsResolver d = do
+        r <- DNS.lookupAAAA dnsResolver d
         case r of
              (Right ips) -> return $ Right $ map (\ip -> Socket.SockAddrInet6 (fromIntegral port) 0 (IP.toHostAddress6 ip) 0) ips
              (Left e)    -> return $ Left e
