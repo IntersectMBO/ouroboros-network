@@ -199,6 +199,12 @@ prop_socket_send_recv initiatorAddr responderAddr f xs = do
     cv <- newEmptyTMVarM
     sv <- newEmptyTMVarM
 
+    {- The siblingVar is used by the initiator and responder to wait on each other before exiting.
+     - Without this wait there is a risk that one side will finish first causing the Muxbearer to
+     - be torn down and the other side exiting before it has a chance to write to its result TMVar.
+     -}
+    siblingVar <- newTVarM 2
+
     let -- Server Node; only req-resp server
         responderApp :: MuxApplication ResponderApp TestProtocols2 IO BL.ByteString Void ()
         responderApp = MuxResponderApplication $
@@ -208,6 +214,7 @@ prop_socket_send_recv initiatorAddr responderAddr f xs = do
                          channel
                          (ReqResp.reqRespServerPeer (ReqResp.reqRespServerMapAccumL (\a -> pure . f a) 0))
             atomically $ putTMVar sv r
+            waitSibling siblingVar
 
         -- Client Node; only req-resp client
         initiatorApp :: MuxApplication InitiatorApp TestProtocols2 IO BL.ByteString () Void
@@ -218,6 +225,7 @@ prop_socket_send_recv initiatorAddr responderAddr f xs = do
                          channel
                          (ReqResp.reqRespClientPeer (ReqResp.reqRespClientMap xs))
             atomically $ putTMVar cv r
+            waitSibling siblingVar
 
     res <-
       withSimpleServerNode
@@ -237,6 +245,13 @@ prop_socket_send_recv initiatorAddr responderAddr f xs = do
 
     return (res == mapAccumL f 0 xs)
 
+  where
+    waitSibling :: TVar IO Int -> IO ()
+    waitSibling cntVar = do
+        atomically $ modifyTVar' cntVar (\a -> a - 1)
+        atomically $ do
+            cnt <- readTVar cntVar
+            unless (cnt == 0) retry
 
 -- |
 -- Verify that we raise the correct exception in case a socket closes during
