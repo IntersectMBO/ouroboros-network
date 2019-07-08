@@ -81,6 +81,8 @@ defaultLoggerConfig = Monitoring.Representation
   , Monitoring.hasPrometheus   = Nothing
   , Monitoring.hasGUI          = Nothing
   , Monitoring.options         = mempty
+  , Monitoring.hasGraylog      = Nothing
+  , Monitoring.logOutput       = Nothing
   }
   where
   stdoutScribe = Monitoring.ScribeDefinition
