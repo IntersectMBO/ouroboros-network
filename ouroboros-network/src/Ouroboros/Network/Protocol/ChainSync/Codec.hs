@@ -56,17 +56,20 @@ codecChainSync encodeHeader decodeHeader encodePoint decodePoint =
     encode (ServerAgency TokNext{}) (MsgRollBackward p1 p2) =
       encodeListLen 3 <> encodeWord 3 <> encodePoint p1 <> encodePoint p2
 
+    encode (ServerAgency TokNext{}) (MsgNoData p) =
+      encodeListLen 2 <> encodeWord 4 <> encodePoint p
+
     encode (ClientAgency TokIdle) (MsgFindIntersect ps) =
-      encodeListLen 2 <> encodeWord 4 <> encodeList encodePoint ps
+      encodeListLen 2 <> encodeWord 5 <> encodeList encodePoint ps
 
     encode (ServerAgency TokIntersect) (MsgIntersectImproved p1 p2) =
-      encodeListLen 3 <> encodeWord 5 <> encodePoint p1 <> encodePoint p2
+      encodeListLen 3 <> encodeWord 6 <> encodePoint p1 <> encodePoint p2
 
     encode (ServerAgency TokIntersect) (MsgIntersectUnchanged p) =
-      encodeListLen 2 <> encodeWord 6 <> encodePoint p
+      encodeListLen 2 <> encodeWord 7 <> encodePoint p
 
     encode (ClientAgency TokIdle) MsgDone =
-      encodeListLen 1 <> encodeWord 7
+      encodeListLen 1 <> encodeWord 8
 
     decode :: forall (pr :: PeerRole) (st :: ChainSync header point) s.
               PeerHasAgency pr st
@@ -91,20 +94,24 @@ codecChainSync encodeHeader decodeHeader encodePoint decodePoint =
           p2 <- decodePoint
           return (SomeMessage (MsgRollBackward p1 p2))
 
-        (4, 2, ClientAgency TokIdle) -> do
+        (4, 2, ServerAgency (TokNext TokMustReply)) -> do
+          p <- decodePoint
+          return (SomeMessage (MsgNoData p))
+
+        (5, 2, ClientAgency TokIdle) -> do
           ps <- decodeList decodePoint
           return (SomeMessage (MsgFindIntersect ps))
 
-        (5, 3, ServerAgency TokIntersect) -> do
+        (6, 3, ServerAgency TokIntersect) -> do
           p1 <- decodePoint
           p2 <- decodePoint
           return (SomeMessage (MsgIntersectImproved p1 p2))
 
-        (6, 2, ServerAgency TokIntersect) -> do
+        (7, 2, ServerAgency TokIntersect) -> do
           p <- decodePoint
           return (SomeMessage (MsgIntersectUnchanged p))
 
-        (7, 1, ClientAgency TokIdle) ->
+        (8, 1, ClientAgency TokIdle) ->
           return (SomeMessage MsgDone)
 
         _ -> fail ("codecChainSync: unexpected key " ++ show (key, len))

@@ -1,4 +1,5 @@
 {-# LANGUAGE BangPatterns        #-}
+{-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -20,6 +21,7 @@ import qualified Ouroboros.Network.Chain as Chain
 import           Ouroboros.Network.ChainProducerState (ChainProducerState,
                      ReaderId)
 import qualified Ouroboros.Network.ChainProducerState as ChainProducerState
+import           Ouroboros.Network.Protocol.ChainSync.Type
 import           Ouroboros.Network.Protocol.ChainSync.Client
 import           Ouroboros.Network.Protocol.ChainSync.Server
 
@@ -92,6 +94,9 @@ chainSyncClientExample chainvar client = ChainSyncClient $
           pure $ case choice of
             Left a         -> SendMsgDone a
             Right client'' -> requestNext client''
+
+      , recvMsgNoData = \_pHead -> ChainSyncClient $
+          pure $ requestNext client'
       }
 
     getChainPoints :: m ([Point header], Client header m a)
@@ -150,21 +155,27 @@ chainSyncServerExample recvMsgDoneClient chainvar = ChainSyncServer $
     idle' = ChainSyncServer . pure . idle
 
     handleRequestNext :: ReaderId
-                      -> m (Either (ServerStNext header (Point blk) m a)
-                                (m (ServerStNext header (Point blk) m a)))
+                      -> m (Either (ServerStNext StCanAwait  header (Point blk) m a)
+                                (m (ServerStNext StMustReply header (Point blk) m a)))
     handleRequestNext r = do
       mupdate <- tryReadChainUpdate r
       case mupdate of
         Just update -> return (Left  (sendNext r update))
-        Nothing     -> return (Right (sendNext r <$> readChainUpdate r))
+        Nothing     -> return (Right $ (sendNext' r <$> readChainUpdate r))
                        -- Reader is at the head, have to block and wait for
                        -- the producer's state to change.
 
     sendNext :: ReaderId
              -> (Point blk, ChainUpdate header header)
-             -> ServerStNext header (Point blk) m a
+             -> ServerStNext k header (Point blk) m a
     sendNext r (tip, AddBlock b) = SendMsgRollForward  b             tip (idle' r)
     sendNext r (tip, RollBack p) = SendMsgRollBackward (castPoint p) tip (idle' r)
+
+    sendNext' :: ReaderId
+              -> Either (Point blk) (Point blk, ChainUpdate header header)
+              -> ServerStNext StMustReply header (Point blk) m a
+    sendNext' r (Right update) = sendNext r update
+    sendNext' r (Left  tip)    = SendMsgNoData tip (idle' r)
 
     handleFindIntersect :: ReaderId
                         -> [Point blk]
@@ -195,6 +206,8 @@ chainSyncServerExample recvMsgDoneClient chainvar = ChainSyncServer $
             writeTVar chainvar cps'
             pure (Just (castPoint ipoint), castPoint (Chain.headPoint (ChainProducerState.chainState cps')))
 
+    -- read current chain and provide next instruction to the reader, no
+    -- blocking operation
     tryReadChainUpdate :: ReaderId -> m (Maybe (Point blk, ChainUpdate header header))
     tryReadChainUpdate rid =
       atomically $ do
@@ -205,7 +218,11 @@ chainSyncServerExample recvMsgDoneClient chainvar = ChainSyncServer $
             writeTVar chainvar cps'
             return $ Just (castPoint (Chain.headPoint (ChainProducerState.chainState cps')), u)
 
-    readChainUpdate :: ReaderId -> m (Point blk, ChainUpdate header header)
+
+    -- read the chain and provide next instruction to the reader within
+    -- pre-defined timeout, this reader will always return, but we include the
+    -- 'Left' case to get a sense how this could work.
+    readChainUpdate :: ReaderId -> m (Either (Point blk) (Point blk, ChainUpdate header header))
     readChainUpdate rid =
       atomically $ do
         cps <- readTVar chainvar
@@ -213,4 +230,4 @@ chainSyncServerExample recvMsgDoneClient chainvar = ChainSyncServer $
           Nothing        -> retry
           Just (u, cps') -> do
             writeTVar chainvar cps'
-            return (castPoint (Chain.headPoint (ChainProducerState.chainState cps')), u)
+            return $ Right (castPoint (Chain.headPoint (ChainProducerState.chainState cps')), u)

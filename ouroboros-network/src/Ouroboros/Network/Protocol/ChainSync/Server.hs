@@ -1,5 +1,6 @@
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE KindSignatures      #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
@@ -47,8 +48,8 @@ newtype ChainSyncServer header point m a = ChainSyncServer {
 --
 data ServerStIdle header point m a = ServerStIdle {
 
-       recvMsgRequestNext   :: m (Either (ServerStNext header point m a)
-                                      (m (ServerStNext header point m a))),
+       recvMsgRequestNext   :: m (Either (ServerStNext StCanAwait  header point m a)
+                                      (m (ServerStNext StMustReply header point m a))),
 
        recvMsgFindIntersect :: [point]
                             -> m (ServerStIntersect header point m a),
@@ -62,14 +63,18 @@ data ServerStIdle header point m a = ServerStIdle {
 --  * a roll back message
 --  * a termination message
 --
-data ServerStNext header point m a where
+data ServerStNext (k :: StNextKind) header point m a where
   SendMsgRollForward  :: header -> point
                       -> ChainSyncServer header point m a
-                      -> ServerStNext header point m a
+                      -> ServerStNext k header point m a
 
   SendMsgRollBackward :: point -> point
                       -> ChainSyncServer header point m a
-                      -> ServerStNext header point m a
+                      -> ServerStNext k header point m a
+
+  SendMsgNoData       :: point
+                      -> ChainSyncServer header point m a
+                      -> ServerStNext StMustReply header point m a
 
 -- | In the 'StIntersect' protocol state, the server has agency and must send
 -- either:
@@ -125,6 +130,11 @@ chainSyncServerPeer (ChainSyncServer mterm) = Effect $ mterm >>=
       Yield (ServerAgency (TokNext toknextkind))
             (MsgRollBackward pIntersect pHead)
             (chainSyncServerPeer next)
+
+    handleStNext tok@TokMustReply (SendMsgNoData pHead next) =
+      Yield (ServerAgency (TokNext tok))
+        (MsgNoData pHead)
+        (chainSyncServerPeer next)
 
     handleStIntersect (SendMsgIntersectImproved pIntersect pHead next) =
       Yield (ServerAgency TokIntersect)

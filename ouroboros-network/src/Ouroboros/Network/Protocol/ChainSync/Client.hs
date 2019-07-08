@@ -79,7 +79,8 @@ data ClientStIdle header point m a where
 data ClientStNext header point m a =
      ClientStNext {
        recvMsgRollForward  :: header -> point -> ChainSyncClient header point m a,
-       recvMsgRollBackward :: point  -> point -> ChainSyncClient header point m a
+       recvMsgRollBackward :: point  -> point -> ChainSyncClient header point m a,
+       recvMsgNoData       ::           point -> ChainSyncClient header point m a
      }
 
 -- | In the 'StIntersect' protocol state, the client does not have agency and
@@ -130,13 +131,15 @@ chainSyncClientPeer (ChainSyncClient mclient) =
           -- to put both roll forward and back under a single constructor.
           MsgAwaitReply ->
             Effect $ do
-              ClientStNext{recvMsgRollForward, recvMsgRollBackward} <- stAwait
+              ClientStNext{recvMsgRollForward, recvMsgRollBackward, recvMsgNoData} <- stAwait
               pure $ Await (ServerAgency (TokNext TokMustReply)) $ \resp' ->
                 case resp' of
                   MsgRollForward header pHead ->
                     chainSyncClientPeer (recvMsgRollForward header pHead)
                   MsgRollBackward pRollback pHead ->
                     chainSyncClientPeer (recvMsgRollBackward pRollback pHead)
+                  MsgNoData pHead ->
+                    chainSyncClientPeer (recvMsgNoData pHead)
 
     chainSyncClientPeer_ (SendMsgFindIntersect points stIntersect) =
         Yield (ClientAgency TokIdle) (MsgFindIntersect points) $

@@ -86,6 +86,17 @@ instance Protocol (ChainSync header point) where
                     -> Message (ChainSync header point)
                                (StNext any) StIdle
 
+    -- | The the consumer that we don't have the date.  This gives the chance
+    -- to the consumer to either await further by requestiong next update or an
+    -- orderly shutdown of the mini-protocol.  This allows us to have a timeout
+    -- between 'MessageAwaitReply' and next update, if the other side feels it
+    -- will not deliver on time, it is supposed to send 'MsgNoData', otherwise
+    -- the client will tear down the mini-protocol.
+    --
+    MsgNoData :: point
+              -> Message (ChainSync header point)
+                         (StNext StMustReply) StIdle
+
     -- | Ask the producer to try to find an improved intersection point between
     -- the consumer and producer's chains. The consumer sends a sequence of
     -- points and it is up to the producer to find the first intersection point
