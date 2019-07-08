@@ -16,7 +16,7 @@ import Ouroboros.Byron.Proxy.DB (DB)
 import Ouroboros.Byron.Proxy.Network.Protocol (responderVersions)
 import Ouroboros.Byron.Proxy.ChainSync.Server (PollT, chainSyncServer)
 import Ouroboros.Network.Protocol.Handshake.Type (Accept (..))
-import Ouroboros.Network.Socket (AnyMuxResponderApp (..), withServerNode)
+import Ouroboros.Network.Socket (AnyMuxResponderApp (..), newConnectionTable, withServerNode)
 
 import Orphans ()
 
@@ -33,15 +33,17 @@ runServer
   -> IO ()
 runServer serverOptions epochSlots db = do
   addrInfos <- Network.getAddrInfo (Just addrInfoHints) (Just host) (Just port)
+  tbl <- newConnectionTable
   case addrInfos of
     [] -> error "no getAddrInfo"
     (addrInfo : _) -> withServerNode
+      tbl
       addrInfo
       encodeTerm
       decodeTerm
       (\_ _ _ -> Accept)
       (fmap AnyMuxResponderApp (responderVersions epochSlots app))
-      wait
+      (\_ -> wait)
 
   where
 
