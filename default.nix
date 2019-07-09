@@ -1,4 +1,6 @@
-{ customConfig ? {}, ... }:
+{ customConfig ? {}
+, withHoogle ? true
+, ... }:
 #
 # The default.nix file. This will generate targets for all
 # buildables (see release.nix for nomenclature, excluding
@@ -55,4 +57,24 @@ in {
   inherit (nixTools) nix-tools;
   network-pdf-wip = documents.network-pdf-wip;
   network-pdf = documents.network-pdf;
+
+  shell = nixTools.nix-tools.shellFor {
+    inherit withHoogle;
+    packages = pkgs: with pkgs; [
+      io-sim
+      io-sim-classes
+      ouroboros-consensus
+      ouroboros-network
+      typed-transitions
+    ];
+    buildInputs = with nixTools.nix-tools._raw; [
+      cabal-install.components.exes.cabal
+      commonLib.stack-hpc-coveralls
+    ] ++ (with commonLib.pkgs; [
+      git
+      pkgconfig
+      stack
+      systemd
+    ]);
+  };
 }

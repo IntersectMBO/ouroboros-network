@@ -67,6 +67,7 @@ commonLib.pkgs.lib.mapAttrsRecursiveCond
     network-pdf-wip = default.network-pdf-wip;
     network-pdf = default.network-pdf;
   };
+  builds-on-supported-systems = [ "shell" ];
   required-targets = jobs: [
     # targets are specified using above nomenclature:
     jobs.nix-tools.tests.ouroboros-consensus.test-consensus.x86_64-linux
