@@ -86,20 +86,15 @@ muxStart app bearer = do
       -> m [m ()]
     mpsJob cnt pmss mpdId = do
 
-        w_i <- atomically newEmptyTMVar
-        w_r <- atomically newEmptyTMVar
+        initiatorChannel <- muxChannel pmss
+                              (AppProtocolId mpdId)
+                              ModeInitiator
+                              cnt
 
-        let initiatorChannel :: Channel m BL.ByteString
-            initiatorChannel = muxChannel pmss
-                                (AppProtocolId mpdId)
-                                ModeInitiator
-                                w_i cnt
-
-            responderChannel :: Channel m BL.ByteString
-            responderChannel = muxChannel pmss
-                                (AppProtocolId mpdId)
-                                ModeResponder
-                                w_r cnt
+        responderChannel <- muxChannel pmss
+                              (AppProtocolId mpdId)
+                              ModeResponder
+                              cnt
 
         return $ case app of
           MuxInitiatorApplication initiator -> [ initiator mpdId initiatorChannel >> mpsJobExit cnt ]
@@ -138,13 +133,14 @@ muxChannel :: (MonadSTM m, MonadSay m, MonadThrow m, Ord ptcl, Enum ptcl, Show p
     PerMuxSharedState ptcl m ->
     MiniProtocolId ptcl ->
     MiniProtocolMode ->
-    TMVar m BL.ByteString ->
     TVar m Int ->
-    Channel m BL.ByteString
-muxChannel pmss mid md w cnt =
-    Channel {send, recv}
+    m (Channel m BL.ByteString)
+muxChannel pmss mid md cnt = do
+    w <- newEmptyTMVarM
+    return $ Channel { send = send (Wanton w)
+                     , recv}
   where
-    send encoding = do
+    send want@(Wanton w) encoding = do
         -- We send CBOR encoded messages by encoding them into by ByteString
         -- forwarding them to the 'mux' thread, see 'Desired servicing semantics'.
         -- This check is dependant on the good will of the sender and a receiver can't
@@ -157,7 +153,7 @@ muxChannel pmss mid md w cnt =
                 callStack
         atomically $ modifyTVar' cnt (+ 1)
         atomically $ putTMVar w encoding
-        atomically $ writeTBQueue (tsrQueue pmss) (TLSRDemand mid md (Wanton w))
+        atomically $ writeTBQueue (tsrQueue pmss) (TLSRDemand mid md want)
     recv = do
         -- We receive CBOR encoded messages as ByteStrings (possibly partial) from the
         -- matching ingress queueu. This is the same queue the 'demux' thread writes to.
