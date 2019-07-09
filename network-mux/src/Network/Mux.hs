@@ -6,19 +6,19 @@
 {-# LANGUAGE TypeFamilies        #-}
 
 module Network.Mux (
-      MiniProtocolLimits (..)
+      muxStart
+    , muxBearerSetState
+    , MuxSDU (..)
+    , MiniProtocolLimits (..)
     , ProtocolEnum (..)
     , MiniProtocolId (..)
     , MiniProtocolMode (..)
     , MuxBearerState (..)
     , MuxError (..)
     , MuxErrorType (..)
-    , MuxSDU (..)
     , RemoteClockModel (..)
     , encodeMuxSDU
     , decodeMuxSDUHeader
-    , muxBearerSetState
-    , muxStart
     ) where
 
 import           Control.Monad
@@ -40,15 +40,42 @@ import           Network.Mux.Types
 
 -- | muxStart starts a mux bearer for the specified protocols corresponding to
 -- one of the provided Versions.
+--
+-- __Isometric flow control: analysis of head-of-line blocking of the ingress side of the multiplexer__
+--
+-- For each mini-protocol (enumeratated by @ptcl@), mux will create two
+-- channels. One for initiator and one for the responder.  Each channel will use
+-- a single 'Wanton'.  When it is filled, it is put in a common queue
+-- 'tsrQueue'.  This means that the queue is bound by @2 * |ptcl|@.  Every side
+-- of a mini-protocol is served by a single 'Wanton': when an applicaiton sends
+-- data, the channel will try to put it into the 'Wanton' (which might block).
+-- 'Wanton's are taken from the 'tsrQueue' queue by one of mux threads.  This
+-- elimnates head of line blocking: each mini-protocol thread can block on
+-- puting more bytes into its 'Wanton', but it cannot block the other
+-- mini-protocols or the thread that is reading the 'tsrQueue' queue.  This is
+-- ensured since the 'muxChannel' will put only a non-empty 'Wanton' to the
+-- 'tsrQueue' queue, and on such wantons the queue is never blocked.  This means
+-- that  the only way the queue can block is when its empty, which means that
+-- none of the mini-protocols wanted to send.  The egress part will read
+-- a 'Wanton', take a fixed amount of bytes encode them in as an 'MuxSDU'; if
+-- there are leftovers it will put them back in the 'Wanton' and place it at the
+-- end of the queue (reading and writting to it will happen in a single STM
+-- transaction which assures that the order of requests from a mini-protocol is
+-- preserved.
+--
+-- Properties:
+--
+-- * at any given time the 'tsrQueue' contains at most one
+--   'TranslocationServiceRequest' from a given mini-protocol of the given
+--   'MiniProtocolMode', thus the queue contains at most @2 * |ptcl|@
+--   translocation requests.
+-- * at any given time each @TranslocationServiceRequest@ contains a non-empty
+-- 'Wanton'
+--
 -- TODO: replace MonadSay with iohk-monitoring-framework.
-muxStart
-    :: forall m appType ptcl a b.
-       ( MonadAsync m
-       , MonadSay m
-       , MonadSTM m
-       , MonadThrow m
-       , MonadThrow (STM m)
-       , MonadMask m
+--
+muxStart :: forall m appType ptcl a b.  ( MonadAsync m , MonadSay m , MonadSTM
+         m , MonadThrow m , MonadThrow (STM m) , MonadMask m
        , Ord ptcl
        , Enum ptcl
        , Bounded ptcl
