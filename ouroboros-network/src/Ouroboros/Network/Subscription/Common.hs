@@ -24,7 +24,8 @@ import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
 import           Control.Tracer
-import           Data.List (delete)
+import Data.Set (Set)
+import qualified Data.Set as Set
 import           GHC.Stack
 import qualified Network.Socket as Socket
 import           Text.Printf
@@ -63,6 +64,7 @@ data ConnectResult = ConnectSuccess
 subscribeTo
     :: HasCallStack
     => ConnectionTable
+    -> TVar IO (Set ThreadId)
     -> Tracer IO SubscriptionTrace
     -> Maybe Socket.SockAddr
     -> Maybe Socket.SockAddr
@@ -71,8 +73,9 @@ subscribeTo
     -> (Socket.Socket -> IO ())
     -> SubscriptionTarget IO Socket.SockAddr
     -> IO ()
-subscribeTo tbl tracer localIPv4_m localIPv6_m connectionAttemptDelay valencyVar k ts = do
-     x <- newTVarM []
+subscribeTo tbl threadPool tracer localIPv4_m localIPv6_m connectionAttemptDelay
+  valencyVar k ts = do
+     x <- newTVarM Set.empty
      doSubscribeTo x ts
 
   where
@@ -94,7 +97,7 @@ subscribeTo tbl tracer localIPv4_m localIPv6_m connectionAttemptDelay valencyVar
         traceWith tracer $ SubscriptionTraceUnsupportedRemoteAddr a
         return Nothing
 
-    doSubscribeTo :: TVar IO [ThreadId] -> SubscriptionTarget IO Socket.SockAddr -> IO ()
+    doSubscribeTo :: TVar IO (Set ThreadId) -> SubscriptionTarget IO Socket.SockAddr -> IO ()
     doSubscribeTo conThreads targets = do
         target_m <- getSubscriptionTarget targets
         case target_m of
@@ -107,8 +110,8 @@ subscribeTo tbl tracer localIPv4_m localIPv6_m connectionAttemptDelay valencyVar
                              Nothing -> -- No usable local address continue with next
                                         doSubscribeTo conThreads nextTargets
                              Just localAddr -> do
-                                 caid <- async $ doConnect conThreads localAddr target
-                                 atomically $ modifyTVar' conThreads (\t -> asyncThreadId caid:t)
+                                 -- TODO use asyncWith instead?
+                                 _ <- async (doConnect conThreads localAddr target)
 
                                  {- The time to wait depends on available deltaQ information for the
                                  -- destination address and max/min values from RFC8305.
@@ -149,6 +152,10 @@ subscribeTo tbl tracer localIPv4_m localIPv6_m connectionAttemptDelay valencyVar
     doConnect conThreads localAddr remoteAddr =
         bracket
             ( do
+                tid <- myThreadId
+                atomically $ do
+                    modifyTVar' conThreads (Set.insert tid)
+                    modifyTVar' threadPool (Set.insert tid)
                 sd <- Socket.socket (sockAddrFamily remoteAddr) Socket.Stream
                         Socket.defaultProtocol
                 hasRefVar <- newTVarM False
@@ -158,7 +165,9 @@ subscribeTo tbl tracer localIPv4_m localIPv6_m connectionAttemptDelay valencyVar
                 traceWith tracer $ SubscriptionTraceConnectCleanup remoteAddr
 
                 tid <- myThreadId
-                atomically $ modifyTVar' conThreads (delete tid)
+                atomically $ do
+                    modifyTVar' conThreads (Set.delete tid)
+                    modifyTVar' threadPool (Set.delete tid)
                 hasRef <- atomically $ readTVar hasRefVar
                 when hasRef $ do
                     localAddr' <- Socket.getSocketName sd
@@ -188,10 +197,9 @@ subscribeTo tbl tracer localIPv4_m localIPv6_m connectionAttemptDelay valencyVar
                 result <- atomically $ do
                         v <- readTVar valencyVar
                         if v > 0 then do
-                                    --modifyTVar' valencyVar (\a -> a - 1)
                                     addConnection tbl remoteAddr localAddr' [valencyVar]
                                     writeTVar hasRefVar True
-                                    modifyTVar' conThreads (delete tid)
+                                    modifyTVar' conThreads (Set.delete tid)
                                     if v == 1 then return ConnectSuccessLast
                                               else return ConnectSuccess
                                 else return ConnectFail
@@ -224,9 +232,8 @@ ipSubscriptionWorker
     -> (Socket.Socket -> IO ())
     -> (Async () -> IO t)
     -> IO t
-ipSubscriptionWorker tbl tracer localIPv4 localIPv6 connectionAttemptDelay ips cb=
-    withAsync
-        (subscriptionWorker
+ipSubscriptionWorker tbl tracer localIPv4 localIPv6 connectionAttemptDelay ips cb k =
+    subscriptionWorker
             tbl
             (ipListTracer localIPv4 localIPv6 (ispIps ips) tracer)
             localIPv4
@@ -234,7 +241,7 @@ ipSubscriptionWorker tbl tracer localIPv4 localIPv6 connectionAttemptDelay ips c
             connectionAttemptDelay
             (return $ listSubscriptionTarget (ispIps ips))
             (ispValency ips)
-            cb)
+            cb k
 
 subscriptionWorker
     :: ConnectionTable
@@ -245,36 +252,49 @@ subscriptionWorker
     -> IO (SubscriptionTarget IO Socket.SockAddr)
     -> Int
     -> (Socket.Socket -> IO ())
-    -> IO ()
+    -> (Async () -> IO t)
+    -> IO t
 subscriptionWorker tbl tracer localIPv4 localIPv6 connectionAttemptDelay getTargets valency
-        k = do
-    valencyVar <- newTVarM valency
-    traceWith tracer $ SubscriptionTraceStart valency
-    forever $ do
-        start <- getMonotonicTime
-        targets <- getTargets
-        subscribeTo tbl tracer localIPv4 localIPv6 connectionAttemptDelay valencyVar k
-                targets
-        atomically $ do
-            v <- readTVar valencyVar
-            when (v <= 0)
-                retry
+        cb k = do
+    childrenVar <- newTVarM Set.empty
+    withAsync (worker childrenVar)
+              (\aid -> (k aid) `finally` (do
+                  children <- atomically $ readTVar childrenVar
+                  mapM_ (\a -> throwTo a
+                                   (SubscriberError SubscriberWorkerCancelled
+                                    "SubscriptionWorker exiting"
+                                    callStack)) $ Set.toList children
+              ))
+  where
+    worker :: TVar IO (Set ThreadId) -> IO ()
+    worker childrenVar = do
+        valencyVar <- newTVarM valency
+        traceWith tracer $ SubscriptionTraceStart valency
+        forever $ do
+            start <- getMonotonicTime
+            targets <- getTargets
+            subscribeTo tbl childrenVar tracer localIPv4 localIPv6 connectionAttemptDelay
+                    valencyVar cb targets
+            atomically $ do
+                v <- readTVar valencyVar
+                when (v <= 0)
+                    retry
 
-        {-
-         - We allways wait at least ipRetryDelay seconds between calls to getTargets, and
-         - before trying to restart the subscriptions we also wait 1 second so that if multiple
-         - subscription targets fail around the same time we will try to restart with a valency
-         - higher than 1.
-         -}
-        threadDelay 1
-        end <- getMonotonicTime
-        let duration = diffTime end start
-        currentValency <- atomically $ readTVar valencyVar
-        traceWith tracer $ SubscriptionTraceRestart duration currentValency
-            (valency - currentValency)
+            {-
+            - We allways wait at least ipRetryDelay seconds between calls to getTargets, and
+            - before trying to restart the subscriptions we also wait 1 second so that if multiple
+            - subscription targets fail around the same time we will try to restart with a valency
+            - higher than 1.
+            -}
+            threadDelay 1
+            end <- getMonotonicTime
+            let duration = diffTime end start
+            currentValency <- atomically $ readTVar valencyVar
+            traceWith tracer $ SubscriptionTraceRestart duration currentValency
+                (valency - currentValency)
 
-        when (duration < ipRetryDelay) $
-            threadDelay $ ipRetryDelay - duration
+            when (duration < ipRetryDelay) $
+                threadDelay $ ipRetryDelay - duration
 
 data WithIPList a = WithIPList {
       wilIPv4  :: !(Maybe Socket.SockAddr)
@@ -308,6 +328,7 @@ data SubscriberError = SubscriberError {
 -- | Enumeration of error conditions.
 --
 data SubscriberErrorType = SubscriberParrallelConnectionCancelled
+                         | SubscriberWorkerCancelled
                          deriving (Eq, Show)
 
 instance Exception SubscriberError where

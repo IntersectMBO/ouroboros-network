@@ -191,15 +191,14 @@ dnsSubscriptionWorker'
     -> (Async IO () -> IO t)
     -> IO t
 dnsSubscriptionWorker' tbl subTracer dnsTracer resolver localIPv4 localIPv6
-  connectionAttemptDelay dst cb
-    = withAsync
-        (do
-            let subTracer' = domainNameTracer (dstDomain dst) subTracer
-            let dnsTracer' = domainNameTracer (dstDomain dst) dnsTracer
+  connectionAttemptDelay dst cb k = do
+    let subTracer' = domainNameTracer (dstDomain dst) subTracer
+    let dnsTracer' = domainNameTracer (dstDomain dst) dnsTracer
 
-            subscriptionWorker tbl subTracer' localIPv4 localIPv6 connectionAttemptDelay
-                    (dnsResolve dnsTracer' resolver dst) (dstValency dst) cb
-        )
+    subscriptionWorker tbl subTracer' localIPv4 localIPv6
+           connectionAttemptDelay
+           (dnsResolve dnsTracer' resolver dst) (dstValency dst) cb k
+
 
 dnsSubscriptionWorker
     :: ConnectionTable
