@@ -142,7 +142,8 @@ muxControl pmss md = do
 -- 'MiniProtocolMode'.
 --
 muxChannel
-    :: ( MonadSTM m
+    :: forall m ptcl.
+       ( MonadSTM m
        , MonadSay m
        , MonadThrow m
        , Ord ptcl
@@ -161,6 +162,9 @@ muxChannel pmss mid md cnt = do
     return $ Channel { send = send (Wanton w)
                      , recv}
   where
+    send :: Wanton m
+         -> BL.ByteString
+         -> m ()
     send want@(Wanton w) encoding = do
         -- We send CBOR encoded messages by encoding them into by ByteString
         -- forwarding them to the 'mux' thread, see 'Desired servicing semantics'.
@@ -175,6 +179,8 @@ muxChannel pmss mid md cnt = do
         atomically $ modifyTVar' cnt (+ 1)
         atomically $ putTMVar w encoding
         atomically $ writeTBQueue (tsrQueue pmss) (TLSRDemand mid md want)
+
+    recv :: m (Maybe BL.ByteString)
     recv = do
         -- We receive CBOR encoded messages as ByteStrings (possibly partial) from the
         -- matching ingress queueu. This is the same queue the 'demux' thread writes to.
