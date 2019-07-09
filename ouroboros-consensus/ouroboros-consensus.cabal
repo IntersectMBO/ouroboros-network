@@ -32,7 +32,6 @@ library
                        Ouroboros.Consensus.ChainSyncServer
                        Ouroboros.Consensus.Crypto.DSIGN.Cardano
                        Ouroboros.Consensus.Demo
-                       Ouroboros.Consensus.Demo.HasCreator
                        Ouroboros.Consensus.Demo.Ledger.Byron
                        Ouroboros.Consensus.Demo.Ledger.Byron.Config
                        Ouroboros.Consensus.Demo.Ledger.Byron.Elaborate
@@ -247,6 +246,7 @@ test-suite test-consensus
                     Test.Dynamic.Util
                     Test.Ouroboros
                     Test.Util.DepFn
+                    Test.Util.HasCreator
                     Test.Util.Orphans.Arbitrary
                     Test.Util.Range
                     Test.Util.TestBlock
