@@ -1,7 +1,6 @@
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TupleSections       #-}
 
 module Ouroboros.Consensus.Mempool.Impl (
     openMempool
@@ -9,11 +8,14 @@ module Ouroboros.Consensus.Mempool.Impl (
 
 import           Control.Monad.Except
 import qualified Data.Foldable as Foldable
+import           Data.Word (Word64)
 
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
+
+import           Control.Tracer
 
 import           Ouroboros.Network.Block (ChainHash)
 import qualified Ouroboros.Network.Block as Block
@@ -44,9 +46,10 @@ openMempool :: ( MonadAsync m
             => ThreadRegistry m
             -> ChainDB m blk
             -> LedgerConfig blk
+            -> Tracer m (TraceEventMempool blk)
             -> m (Mempool m blk TicketNo)
-openMempool registry chainDB cfg = do
-    env <- initMempoolEnv chainDB cfg
+openMempool registry chainDB cfg tracer = do
+    env <- initMempoolEnv chainDB cfg tracer
     forkSyncStateOnTipPointChange registry env
     return Mempool {
         addTxs      = implAddTxs env
@@ -72,6 +75,7 @@ data MempoolEnv m blk = MempoolEnv {
       mpEnvChainDB   :: ChainDB m blk
     , mpEnvLedgerCfg :: LedgerConfig blk
     , mpEnvStateVar  :: TVar m (InternalState blk)
+    , mpEnvTracer    :: Tracer m (TraceEventMempool blk)
     }
 
 initInternalState :: InternalState blk
@@ -80,10 +84,11 @@ initInternalState = IS TxSeq.Empty Block.GenesisHash
 initMempoolEnv :: MonadSTM m
                => ChainDB m blk
                -> LedgerConfig blk
+               -> Tracer m (TraceEventMempool blk)
                -> m (MempoolEnv m blk)
-initMempoolEnv chainDB cfg = do
+initMempoolEnv chainDB cfg tracer = do
     isVar <- atomically $ newTVar initInternalState
-    return $ MempoolEnv chainDB cfg isVar
+    return $ MempoolEnv chainDB cfg isVar tracer
 
 -- | Spawn a thread which syncs the 'Mempool' state whenever the 'ChainDB'
 -- tip point changes.
@@ -96,57 +101,64 @@ forkSyncStateOnTipPointChange :: ( MonadAsync m
                               -> MempoolEnv m blk
                               -> m ()
 forkSyncStateOnTipPointChange registry menv = do
-  initialTipPoint <- atomically $ getTipPoint mpEnvChainDB
-  onEachChange registry id initialTipPoint (getTipPoint mpEnvChainDB) action
- where
-  action _ = atomically $ void $ implSyncState menv
-  MempoolEnv { mpEnvChainDB } = menv
+    initialTipPoint <- atomically $ getTipPoint mpEnvChainDB
+    onEachChange registry id initialTipPoint (getTipPoint mpEnvChainDB) action
+  where
+    action _tipPoint = implSyncState menv
+    MempoolEnv { mpEnvChainDB } = menv
 
 {-------------------------------------------------------------------------------
   Mempool Implementation
 -------------------------------------------------------------------------------}
 
--- TODO: This may return some transactions as invalid that aren't new. Remove?
 implAddTxs :: forall m blk. (MonadSTM m, ApplyTx blk)
            => MempoolEnv m blk
            -> [GenTx blk]
            -> m [(GenTx blk, Maybe (ApplyTxErr blk))]
-implAddTxs mpEnv@MempoolEnv{mpEnvStateVar, mpEnvLedgerCfg} txs =
-    atomically $ do
-      ValidationResult {
-        vrBefore,
-        vrValid,
-        vrNewValid,
-        vrInvalid
-      } <- validateNew <$> validateIS mpEnv
-      writeTVar mpEnvStateVar IS { isTxs   = vrValid
-                                 , isTip   = vrBefore
-                                 }
-      pure $ (vrInvalidMaybeErr vrInvalid) ++ zip vrNewValid (repeat Nothing)
+implAddTxs mpEnv@MempoolEnv{mpEnvStateVar, mpEnvLedgerCfg, mpEnvTracer} txs = do
+    (removed, accepted, rejected, mempoolSize) <- atomically $ do
+      -- First sync the state, which might remove some transactions
+      syncRes@ValidationResult { vrInvalid = removed } <- validateIS mpEnv
+      -- Then validate the new transactions
+      let ValidationResult
+            { vrBefore, vrValid
+            , vrNewValid = accepted
+            , vrInvalid  = rejected
+            } = validateNew syncRes
+      writeTVar mpEnvStateVar IS { isTxs = vrValid, isTip = vrBefore }
+      mempoolSize <- getMempoolSize mpEnv
+      return (removed, accepted, rejected, mempoolSize)
+
+    trace $ TraceMempoolRemoveTxs   (map fst removed)  mempoolSize
+    trace $ TraceMempoolAddTxs      accepted           mempoolSize
+    trace $ TraceMempoolRejectedTxs (map fst rejected) mempoolSize
+
+    return $ [(tx, Just err) | (tx, err) <- rejected] ++
+             zip accepted (repeat Nothing)
   where
-    validateNew :: ValidationResult blk ->  ValidationResult blk
-    validateNew = extendsVR
+    trace = traceWith mpEnvTracer
+
+    -- | We first reset 'vrInvalid' to an empty list such that afterwards it
+    -- will only contain the /new/ invalid transactions.
+    validateNew :: ValidationResult blk -> ValidationResult blk
+    validateNew res = extendsVR
         mpEnvLedgerCfg
         False
         (map (\tx -> (computeGenTxId tx, tx)) txs)
-
-    vrInvalidMaybeErr :: [(GenTx blk, ApplyTxErr blk)]
-                      -> [(GenTx blk, Maybe (ApplyTxErr blk))]
-    vrInvalidMaybeErr = map (\(tx, err) -> (tx, Just err))
+        res { vrInvalid = [] }
 
 implSyncState :: (MonadSTM m, ApplyTx blk)
               => MempoolEnv m blk
-              -> STM m [(GenTx blk, ApplyTxErr blk)]
-implSyncState mpEnv@MempoolEnv{mpEnvStateVar} = do
-  ValidationResult {
-    vrBefore
-  , vrValid
-  , vrInvalid
-  } <- validateIS mpEnv
-  writeTVar mpEnvStateVar IS { isTxs   = vrValid
-                             , isTip   = vrBefore
-                             }
-  pure vrInvalid
+              -> m ()
+implSyncState mpEnv@MempoolEnv{mpEnvTracer, mpEnvStateVar} = do
+    (removed, mempoolSize) <- atomically $ do
+      ValidationResult { vrBefore, vrValid, vrInvalid } <- validateIS mpEnv
+      writeTVar mpEnvStateVar IS { isTxs = vrValid, isTip = vrBefore }
+      -- The number of transactions in the mempool /after/ removing invalid
+      -- transactions.
+      mempoolSize <- getMempoolSize mpEnv
+      return (map fst vrInvalid, mempoolSize)
+    traceWith mpEnvTracer $ TraceMempoolRemoveTxs removed mempoolSize
 
 implGetSnapshot :: ( MonadSTM m
                    , ApplyTx blk
@@ -160,6 +172,11 @@ implGetSnapshot MempoolEnv{mpEnvStateVar} = do
     , getTxsAfter = implSnapshotGetTxsAfter is
     , getTx       = implSnapshotGetTx       is
     }
+
+-- | Return the number of transactions in the Mempool.
+getMempoolSize :: MonadSTM m => MempoolEnv m blk -> STM m Word64
+getMempoolSize MempoolEnv{mpEnvStateVar} =
+    fromIntegral . Foldable.length . isTxs <$> readTVar mpEnvStateVar
 
 {-------------------------------------------------------------------------------
   MempoolSnapshot Implementation

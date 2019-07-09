@@ -17,6 +17,10 @@ import           Control.Monad.Class.MonadSTM (MonadSTM, STM, atomically)
 import           Control.Monad.Class.MonadThrow (MonadMask, MonadThrow)
 import           Control.Monad.IOSim (runSimOrThrow)
 
+import           Control.Tracer (nullTracer)
+
+import           Data.Maybe (isJust)
+
 import           Ouroboros.Consensus.Ledger.Abstract (ledgerConfigView)
 import           Ouroboros.Consensus.Mempool (Mempool (..),
                      MempoolSnapshot (..), openMempool)
@@ -135,7 +139,8 @@ testAddTxsWithMempoolAndSnapshot bc txs prop =
           { addTxs
           , getSnapshot
           } = mempool
-    invalidTxs <- addTxs genTxs
+    attemptedTxs <- addTxs genTxs
+    let invalidTxs = map (isJust . snd) attemptedTxs
     snapshot@MempoolSnapshot{getTxs} <- atomically getSnapshot
     pure $
       counterexampleMempoolInfo genTxs invalidTxs getTxs $
@@ -167,7 +172,7 @@ withOpenMempool bc action = do
   chainDb <- ChainDB.fromChain openDB bc
   withThreadRegistry $ \registry -> do
     let cfg = ledgerConfigView singleNodeTestConfig
-    action =<< openMempool registry chainDb cfg
+    action =<< openMempool registry chainDb cfg nullTracer
 
 -- | Classify whether we're testing against an empty or non-empty 'Mempool' in
 -- each test case.

@@ -116,6 +116,7 @@ data NodeCallbacks m blk = NodeCallbacks {
 -- | Parameters required when initializing a node
 data NodeParams m peer blk = NodeParams {
       tracer             :: Tracer m String
+    , mempoolTracer      :: Tracer m (TraceEventMempool blk)
     , threadRegistry     :: ThreadRegistry m
     , maxClockSkew       :: ClockSkew
     , cfg                :: NodeConfig (BlockProtocol blk)
@@ -204,7 +205,10 @@ initInternalState
 initInternalState NodeParams {..} = do
     varCandidates  <- atomically $ newTVar mempty
     varState       <- atomically $ newTVar initState
-    mempool        <- openMempool threadRegistry chainDB (ledgerConfigView cfg)
+    mempool        <- openMempool threadRegistry
+                                  chainDB
+                                  (ledgerConfigView cfg)
+                                  mempoolTracer
 
     fetchClientRegistry <- newFetchClientRegistry
 
@@ -317,7 +321,7 @@ forkBlockProduction IS{..} =
             -- valid with respect to the current ledger state of the
             -- 'ChainDB'. Refer to the 'getTxs' documentation for more
             -- information.
-            _invalidTxs         <- syncState mempool
+            _                   <- pure $ syncState mempool
             mempoolSnapshot     <- getSnapshot mempool
 
             let txs             =  map sndOfTriple (getTxs mempoolSnapshot)
