@@ -58,7 +58,7 @@ socketAsMuxBearer sd = do
           hbuf <- recvLen' True 8 []
           --say "read"
           --hexDump hbuf ""
-          case Mx.decodeMuxSDUHeader hbuf of
+          case Mx.decodeMuxSDU hbuf of
               Left  e      -> throwM e
               Right header -> do
                   -- say $ printf "decoded mux header, goint to read %d bytes" (Mx.msLength header)

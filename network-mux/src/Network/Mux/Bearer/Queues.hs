@@ -50,7 +50,7 @@ queuesAsMuxBearer writeQueue readQueue sduSize traceQueue = do
       readMux = do
           buf <- atomically $ readTBQueue readQueue
           let (hbuf, payload) = BL.splitAt 8 buf
-          case Mx.decodeMuxSDUHeader hbuf of
+          case Mx.decodeMuxSDU hbuf of
               Left  e      -> throwM e
               Right header -> do
                   ts <- getMonotonicTime

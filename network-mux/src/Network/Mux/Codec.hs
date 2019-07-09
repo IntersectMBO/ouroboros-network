@@ -40,11 +40,11 @@ encodeMuxSDU sdu =
     putMode ModeResponder = 0x8000
 
 
--- | Decode a 'MuSDU' header
+-- | Decode a 'MuSDU' header.  A left inverse of 'encodeMuxSDU'.
 --
-decodeMuxSDUHeader :: (HasCallStack , ProtocolEnum ptcl)
+decodeMuxSDU :: (HasCallStack , ProtocolEnum ptcl)
                    => BL.ByteString -> Either MuxError (MuxSDU ptcl)
-decodeMuxSDUHeader buf =
+decodeMuxSDU buf =
     case Bin.runGetOrFail dec buf of
          Left  (_, _, e)  -> Left $ MuxError MuxDecodeError e callStack
          Right (_, _, ph) ->

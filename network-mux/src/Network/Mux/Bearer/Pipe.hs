@@ -49,7 +49,7 @@ pipeAsMuxBearer pcRead pcWrite = do
                => IO (Mx.MuxSDU ptcl, Time IO)
       readPipe = do
           hbuf <- recvLen' pcRead 8 []
-          case Mx.decodeMuxSDUHeader hbuf of
+          case Mx.decodeMuxSDU hbuf of
               Left e     -> throwM e
               Right header -> do
                   --say $ printf "decoded mux header, goint to read %d bytes" (Mx.msLength header)
