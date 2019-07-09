@@ -20,6 +20,8 @@ import           System.IO (Handle, hClose, hFlush)
 import qualified Network.Mux as Mx
 import           Network.Mux.Types (MuxBearer)
 import qualified Network.Mux.Types as Mx
+import qualified Network.Mux.Egress as Mx
+import qualified Network.Mux.Ingress as Mx
 import qualified Network.Mux.Interface as Mx
 import qualified Network.Mux.Time as Mx
 

@@ -17,8 +17,6 @@ module Network.Mux (
     , MuxError (..)
     , MuxErrorType (..)
     , RemoteClockModel (..)
-    , encodeMuxSDU
-    , decodeMuxSDUHeader
     ) where
 
 import           Control.Monad
