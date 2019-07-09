@@ -41,12 +41,23 @@ import           Network.Mux.Types
 -- | muxStart starts a mux bearer for the specified protocols corresponding to
 -- one of the provided Versions.
 -- TODO: replace MonadSay with iohk-monitoring-framework.
-muxStart :: forall m appType ptcl a b.
-            ( MonadAsync m, MonadSay m, MonadSTM m, MonadThrow m, MonadThrow (STM m)
-            , MonadMask m , Ord ptcl, Enum ptcl, Bounded ptcl, Show ptcl, MiniProtocolLimits ptcl)
-         => MuxApplication appType ptcl m BL.ByteString a b
-         -> MuxBearer ptcl m
-         -> m ()
+muxStart
+    :: forall m appType ptcl a b.
+       ( MonadAsync m
+       , MonadSay m
+       , MonadSTM m
+       , MonadThrow m
+       , MonadThrow (STM m)
+       , MonadMask m
+       , Ord ptcl
+       , Enum ptcl
+       , Bounded ptcl
+       , Show ptcl
+       , MiniProtocolLimits ptcl
+       )
+    => MuxApplication appType ptcl m BL.ByteString a b
+    -> MuxBearer ptcl m
+    -> m ()
 muxStart app bearer = do
     tbl <- setupTbl
     tq <- atomically $ newTBQueue 100
@@ -127,14 +138,24 @@ muxControl pmss md = do
             retry
     throwM $ MuxError MuxControlProtocolError "MuxControl message on mature MuxBearer" callStack
 
--- | muxChannel creates a duplex channel for a specific 'MiniProtocolId' and 'MiniProtocolMode'.
-muxChannel :: (MonadSTM m, MonadSay m, MonadThrow m, Ord ptcl, Enum ptcl, Show ptcl
-              , MiniProtocolLimits ptcl , HasCallStack) =>
-    PerMuxSharedState ptcl m ->
-    MiniProtocolId ptcl ->
-    MiniProtocolMode ->
-    TVar m Int ->
-    m (Channel m BL.ByteString)
+-- | muxChannel creates a duplex channel for a specific 'MiniProtocolId' and
+-- 'MiniProtocolMode'.
+--
+muxChannel
+    :: ( MonadSTM m
+       , MonadSay m
+       , MonadThrow m
+       , Ord ptcl
+       , Enum ptcl
+       , Show ptcl
+       , MiniProtocolLimits ptcl
+       , HasCallStack
+       )
+    => PerMuxSharedState ptcl m
+    -> MiniProtocolId ptcl
+    -> MiniProtocolMode
+    -> TVar m Int
+    -> m (Channel m BL.ByteString)
 muxChannel pmss mid md cnt = do
     w <- newEmptyTMVarM
     return $ Channel { send = send (Wanton w)
