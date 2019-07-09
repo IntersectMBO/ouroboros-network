@@ -93,6 +93,7 @@ tests = testGroup "ChainFragment"
   , testProperty "rollback/head"                             prop_rollback_head
   , testProperty "successorBlock"                            prop_successorBlock
   , testProperty "lookupBySlot"                              prop_lookupBySlot
+  , testProperty "lookupBySlot2"                             prop_lookupBySlot2
   , testProperty "intersectChainFragments"                   prop_intersectChainFragments
   , testProperty "serialise chain"                           prop_serialise_chain
   , testProperty "slotOnChainFragment"                       prop_slotOnChainFragment
@@ -231,6 +232,14 @@ prop_lookupBySlot (TestChainFragmentAndPoint c p) =
     Just b  -> CF.slotOnChainFragment (blockSlot b) c
             && CF.blockSlot b == slot
     Nothing -> not (CF.slotOnChainFragment slot c)
+
+prop_lookupBySlot2 :: TestBlockChainFragment -> Bool
+prop_lookupBySlot2 (TestBlockChainFragment c) =
+  and [ case CF.lookupBySlot c slot of
+          Just b' -> b == b'
+          Nothing -> False
+      | b <- CF.toNewestFirst c
+      , let slot = pointSlot (blockPoint b) ]
 
 prop_intersectChainFragments :: TestChainFragmentFork -> Property
 prop_intersectChainFragments (TestChainFragmentFork origL1 origL2 c1 c2) =

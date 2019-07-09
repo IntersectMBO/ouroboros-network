@@ -421,7 +421,7 @@ lookupBySlotFT :: HasHeader block
                -> SlotNo
                -> FT.SearchResult BlockMeasure block
 lookupBySlotFT (ChainFragment t) s =
-    FT.search (\vl vr -> bmMaxSlot vl >= s && bmMinSlot vr >= s) t
+    FT.search (\vl vr -> bmMaxSlot vl >= s && bmMinSlot vr > s) t
 
 -- | \( O(\log(\min(i,n-i)) \). Find the oldest block in the chain fragment
 -- with a slot equal to the given slot.
