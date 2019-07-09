@@ -50,6 +50,7 @@ library
                        Ouroboros.Network.DeltaQ
                        Ouroboros.Network.NodeToNode
                        Ouroboros.Network.NodeToClient
+                       Ouroboros.Network.Point
                        Ouroboros.Network.Server.Socket
                        Ouroboros.Network.Server.Version.CBOR
                        Ouroboros.Network.Server.Version.Protocol
@@ -154,6 +155,7 @@ test-suite tests
                        Ouroboros.Network.DeltaQ
                        Ouroboros.Network.Node
                        Ouroboros.Network.NodeToNode
+                       Ouroboros.Network.Point
                        Ouroboros.Network.Protocol.BlockFetch.Client
                        Ouroboros.Network.Protocol.BlockFetch.Codec
                        Ouroboros.Network.Protocol.BlockFetch.Direct
@@ -254,6 +256,7 @@ test-suite cddl
                        Ouroboros.Network.Block
                        Ouroboros.Network.Chain
                        Ouroboros.Network.ChainFragment
+                       Ouroboros.Network.Point
                        Ouroboros.Network.Protocol.BlockFetch.Codec
                        Ouroboros.Network.Protocol.BlockFetch.Type
                        Ouroboros.Network.Protocol.ChainSync.Codec

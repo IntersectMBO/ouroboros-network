@@ -40,6 +40,8 @@ import qualified Ouroboros.Network.Chain as Chain
 import           Ouroboros.Network.ChainProducerState (chainState,
                      initChainProducerState)
 import qualified Ouroboros.Network.ChainProducerState as CPS
+import           Ouroboros.Network.Point (WithOrigin (..), blockPointHash,
+                     blockPointSlot)
 import           Ouroboros.Network.Protocol.ChainSync.Client
 import           Ouroboros.Network.Protocol.ChainSync.Codec (codecChainSyncId)
 import           Ouroboros.Network.Protocol.ChainSync.Examples
@@ -684,8 +686,12 @@ ppBlock TestBlock { tbSlot = SlotNo s, tbHash = h, tbPrevHash = p } =
       BlockHash hash -> show hash
 
 ppPoint :: Point TestBlock -> String
-ppPoint Point { pointSlot = SlotNo s, pointHash = h } =
+ppPoint (Point Origin)   = "Origin"
+ppPoint (Point (At blk)) =
     "(S:" <> show s <> "; H:" <> show h <> ")"
+  where
+    SlotNo s = blockPointSlot blk
+    h        = blockPointHash blk
 
 
 ppChain :: Chain TestBlock -> String

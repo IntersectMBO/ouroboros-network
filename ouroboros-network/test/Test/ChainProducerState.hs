@@ -16,6 +16,7 @@ import           Test.QuickCheck
 import           Test.Tasty
 import           Test.Tasty.QuickCheck
 
+import           Ouroboros.Network.Block (pointSlot)
 import           Ouroboros.Network.Chain (Chain, ChainUpdate (..), Point (..),
                      genesisPoint, headPoint, pointOnChain)
 import qualified Ouroboros.Network.Chain as Chain

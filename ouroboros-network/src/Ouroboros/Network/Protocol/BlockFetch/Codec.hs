@@ -42,10 +42,10 @@ codecBlockFetch encodeBody encodeHeaderHash
     mkCodecCborLazyBS encode decode
  where
   encodePoint' :: Point block -> CBOR.Encoding
-  encodePoint' = Block.encodePoint $ Block.encodeChainHash encodeHeaderHash
+  encodePoint' = Block.encodePoint encodeHeaderHash
 
   decodePoint' :: forall s. CBOR.Decoder s (Point block)
-  decodePoint' = Block.decodePoint $ Block.decodeChainHash decodeHeaderHash
+  decodePoint' = Block.decodePoint decodeHeaderHash
 
   encode :: forall (pr :: PeerRole) st st'.
             PeerHasAgency pr st

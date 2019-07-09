@@ -226,7 +226,7 @@ mkAnchoredFragment anchorpoint anchorblockno =
 
 mkAnchoredFragmentSimple :: [BlockBody] -> AnchoredFragment Block
 mkAnchoredFragmentSimple =
-    mkAnchoredFragment (Point 0 GenesisHash) (BlockNo 0) . zip [1..]
+    mkAnchoredFragment C.genesisPoint (BlockNo 0) . zip [1..]
 
 
 mkPartialBlock :: SlotNo -> BlockBody -> Block

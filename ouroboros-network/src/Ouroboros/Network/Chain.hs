@@ -78,6 +78,7 @@ import           Control.Exception (assert)
 import qualified Data.List as L
 
 import           Ouroboros.Network.Block
+import           Ouroboros.Network.Point (origin)
 
 --
 -- Blockchain type
@@ -109,7 +110,7 @@ genesisBlockNo :: BlockNo
 genesisBlockNo = BlockNo 0
 
 genesisPoint :: Point block
-genesisPoint = Point genesisSlotNo GenesisHash
+genesisPoint = Point origin
 
 valid :: HasHeader block => Chain block -> Bool
 valid Genesis  = True

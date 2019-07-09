@@ -41,6 +41,7 @@ import Ouroboros.Network.Block
 import qualified Ouroboros.Network.Chain as Chain
 import qualified Ouroboros.Network.ChainFragment as CF
 import qualified Ouroboros.Network.AnchoredFragment as AF
+import Ouroboros.Network.Point (WithOrigin (Origin))
 import Ouroboros.Network.Testing.ConcreteBlock
 import Ouroboros.Network.Socket
 import Network.Mux.Interface
@@ -804,7 +805,7 @@ mkTestFetchedBlockHeap points = do
 --
 
 genesisChainFragment :: AF.AnchoredFragment BlockHeader
-genesisChainFragment = AF.Empty (Point 0 GenesisHash)
+genesisChainFragment = AF.Empty (Point Origin)
 
 shiftAnchoredFragment :: HasHeader block
                       => Int

@@ -71,6 +71,7 @@ import           Cardano.Crypto.Hash
 
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.Chain (genesisSlotNo)
+import qualified Ouroboros.Network.Point as Point (block, origin)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Crypto.DSIGN.Cardano
@@ -264,12 +265,13 @@ instance (ByronGiven, Typeable cfg, ConfigContainsGenesis cfg)
 
       fixPMI pmi = reAnnotate $ Annotated pmi ()
 
-  ledgerTipPoint (ByronLedgerState state _) = Point
-    { pointSlot = convertSlot (CC.Block.cvsLastSlot state)
-    , pointHash = case CC.Block.cvsPreviousHash state of
-                    Left _genHash -> GenesisHash
-                    Right hdrHash -> BlockHash hdrHash
-    }
+  ledgerTipPoint (ByronLedgerState state _) = case CC.Block.cvsPreviousHash state of
+      -- In this case there are no blocks in the ledger state. The genesis
+      -- block does not occupy a slot, so its point is Origin.
+      Left _genHash -> Point Point.origin
+      Right hdrHash -> Point (Point.block slot hdrHash)
+        where
+          slot = convertSlot (CC.Block.cvsLastSlot state)
 
 numGenKeys :: CC.Genesis.Config -> Word8
 numGenKeys cfg = case length genKeys of

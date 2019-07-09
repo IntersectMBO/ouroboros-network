@@ -84,11 +84,9 @@ msgNoBlocks     = [3]
 msgBlock        = [4, bfBody]
 msgBatchDone    = [5]
 
-bfPoint         = [slotNo, chainHash]
+bfPoint         = origin / [slotNo, dummyBlockHash]
+origin          = []
 slotNo          = uint ; word64
-chainHash       = blockHash / genesisHash
-genesisHash     = []
-blockHash       = [dummyBlockHash]
 dummyBlockHash  = null
 bfBody          = bytes .cbor any
 

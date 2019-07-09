@@ -6,6 +6,7 @@
 {-# LANGUAGE StandaloneDeriving         #-}
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE UndecidableInstances       #-}
+{-# LANGUAGE PatternSynonyms            #-}
 
 -- | Abstract view over blocks
 --
@@ -20,6 +21,8 @@ module Ouroboros.Network.Block (
   , ChainHash(..)
   , castHash
   , Point(..)
+  , pointSlot
+  , pointHash
   , castPoint
   , blockPoint
   , ChainUpdate(..)
@@ -30,6 +33,11 @@ module Ouroboros.Network.Block (
   , encodeChainHash
   , decodePoint
   , decodeChainHash
+
+  , pattern GenesisPoint
+  , pattern BlockPoint
+  , atSlot
+  , withHash
   ) where
 
 import           Codec.CBOR.Decoding (Decoder)
@@ -41,6 +49,9 @@ import           Data.FingerTree (Measured)
 import           Data.Typeable (Typeable)
 import           Data.Word (Word64)
 import           GHC.Generics (Generic)
+
+import           Ouroboros.Network.Point (WithOrigin (..), origin, block)
+import qualified Ouroboros.Network.Point as Point (Block (..))
 
 -- | The 0-based index for the Ourboros time slot.
 newtype SlotNo = SlotNo { unSlotNo :: Word64 }
@@ -114,21 +125,42 @@ castHash (BlockHash b) = BlockHash b
 -- as a check, or in some contexts it disambiguates blocks from different forks
 -- that were in the same slot.
 --
-data Point block = Point {
-       pointSlot :: SlotNo,
-       pointHash :: ChainHash block
-     }
-   deriving (Eq, Ord, Show)
+-- It's a newtype rather than a type synonym, because using a type synonym
+-- would lead to ambiguity, since HeaderHash is a non-injective type family.
+newtype Point block = Point
+    { getPoint :: WithOrigin (Point.Block SlotNo (HeaderHash block))
+    }
+
+deriving instance StandardHash block => Eq   (Point block)
+deriving instance StandardHash block => Ord  (Point block)
+deriving instance StandardHash block => Show (Point block)
+
+pattern GenesisPoint :: Point block
+pattern GenesisPoint = Point Origin
+
+pattern BlockPoint :: SlotNo -> HeaderHash block -> Point block
+pattern BlockPoint { atSlot, withHash } = Point (At (Point.Block atSlot withHash))
+
+{-# COMPLETE GenesisPoint, BlockPoint #-}
+
+-- Should be
+-- pointSlot :: Point block -> WithOrigin SlotNo
+-- pointSlot (Point pt) = fmap Point.blockPointSlot pt
+pointSlot :: Point block -> SlotNo
+pointSlot (Point Origin)   = SlotNo 0
+pointSlot (Point (At blk)) = Point.blockPointSlot blk
+
+pointHash :: Point block -> ChainHash block
+pointHash (Point pt) = case pt of
+    Origin -> GenesisHash
+    At blk -> BlockHash (Point.blockPointHash blk)
 
 castPoint :: (HeaderHash a ~ HeaderHash b) => Point a -> Point b
-castPoint (Point a b) = Point a (castHash b)
+castPoint (Point Origin)                       = Point Origin
+castPoint (Point (At (Point.Block slot hash))) = Point (block slot hash)
 
 blockPoint :: HasHeader block => block -> Point block
-blockPoint b =
-    Point {
-      pointSlot = blockSlot b,
-      pointHash = BlockHash (blockHash b)
-    }
+blockPoint b = Point (block (blockSlot b) (blockHash b))
 
 {-------------------------------------------------------------------------------
   ChainUpdate type
@@ -172,19 +204,26 @@ decodeChainHash decodeHash = do
       1 -> BlockHash <$> decodeHash
       _ -> fail "decodeChainHash: invalid tag"
 
-encodePoint :: (ChainHash block -> Encoding)
-            -> (Point     block -> Encoding)
-encodePoint encodeHash Point { pointSlot = s, pointHash = h } =
-       Enc.encodeListLen 2
-    <> encode s
-    <> encodeHash h
+encodePoint :: (HeaderHash block -> Encoding)
+            -> (Point      block -> Encoding)
+encodePoint encodeHash (Point pt) = case pt of
+    Origin -> Enc.encodeListLen 0
+    At blk ->
+           Enc.encodeListLen 2
+        <> encode     (Point.blockPointSlot blk)
+        <> encodeHash (Point.blockPointHash blk)
 
-decodePoint :: (forall s. Decoder s (ChainHash block))
-            -> (forall s. Decoder s (Point     block))
+decodePoint :: (forall s. Decoder s (HeaderHash block))
+            -> (forall s. Decoder s (Point      block))
 decodePoint decodeHash = do
-      Dec.decodeListLenOf 2
-      Point <$> decode
-            <*> decodeHash
+    tag <- Dec.decodeListLen
+    case tag of
+      0 -> return (Point origin)
+      2 -> do
+        slot <- decode
+        hash <- decodeHash
+        return (Point (block slot hash))
+      _ -> fail "decodePoint: invalid tag"
 
 {-------------------------------------------------------------------------------
   Finger Tree Measure

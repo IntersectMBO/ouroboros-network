@@ -18,7 +18,7 @@ import qualified Data.Set as Set
 import           Cardano.Crypto.Hash
 
 import           Ouroboros.Network.Block (ChainHash, HasHeader, Point (..),
-                     StandardHash)
+                     StandardHash, pointHash)
 import           Ouroboros.Network.Chain (genesisPoint)
 
 import           Ouroboros.Consensus.Block
