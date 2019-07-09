@@ -1,6 +1,6 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE ViewPatterns          #-}
 {-# LANGUAGE PatternSynonyms       #-}
+{-# LANGUAGE ViewPatterns          #-}
 
 module Ouroboros.Consensus.Mempool.TxSeq (
     TicketNo(..)
@@ -13,10 +13,10 @@ module Ouroboros.Consensus.Mempool.TxSeq (
   , zeroTicketNo
   ) where
 
-import           Data.Word (Word64)
-import qualified Data.Foldable as Foldable
 import           Data.FingerTree (FingerTree)
 import qualified Data.FingerTree as FingerTree
+import qualified Data.Foldable as Foldable
+import           Data.Word (Word64)
 
 
 {-------------------------------------------------------------------------------
@@ -58,6 +58,7 @@ newtype TxSeq tx = TxSeq (FingerTree TxSeqMeasure (TxTicket tx))
 instance Foldable TxSeq where
   foldMap f (TxSeq txs) = Foldable.foldMap (f . (\(TxTicket tx _) -> tx)) txs
   null      (TxSeq txs) = Foldable.null txs
+  length    (TxSeq txs) = mSize $ FingerTree.measure txs
 
 -- | The 'FingerTree' relies on a \"measure\" for subsequences in the tree.
 -- A measure of the size of the subsequence allows for efficient sequence
