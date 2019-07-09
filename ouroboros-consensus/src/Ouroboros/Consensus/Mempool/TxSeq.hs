@@ -3,7 +3,7 @@
 {-# LANGUAGE PatternSynonyms       #-}
 
 module Ouroboros.Consensus.Mempool.TxSeq (
-    TicketNo
+    TicketNo(..)
   , TxTicket(..)
   , TxSeq(Empty, (:>), (:<))
   , appendTx
@@ -137,7 +137,7 @@ infixl 5 :>, :<
 lookupByTicketNo :: TxSeq tx -> TicketNo -> Maybe tx
 lookupByTicketNo (TxSeq txs) n =
     case FingerTree.search (\ml mr -> mMaxTicket ml >= n
-                                   && mMinTicket mr >= n) txs of
+                                   && mMinTicket mr >  n) txs of
       FingerTree.Position _ (TxTicket tx _) _ -> Just tx
       _                                       -> Nothing
 

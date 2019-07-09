@@ -4,6 +4,8 @@
 
 module Test.Consensus.Mempool (tests) where
 
+import           Data.List (foldl')
+
 import           Test.QuickCheck (Property, Testable, classify, counterexample,
                      tabulate, (===))
 import           Test.Tasty (TestTree, testGroup)
@@ -18,7 +20,7 @@ import           Control.Monad.IOSim (runSimOrThrow)
 import           Ouroboros.Consensus.Ledger.Abstract (ledgerConfigView)
 import           Ouroboros.Consensus.Mempool (Mempool (..),
                      MempoolSnapshot (..), openMempool)
-import           Ouroboros.Consensus.Mempool.TxSeq (TicketNo)
+import           Ouroboros.Consensus.Mempool.TxSeq as TxSeq
 import           Ouroboros.Consensus.Util.ThreadRegistry (withThreadRegistry)
 
 import           Ouroboros.Network.Chain (Chain (..))
@@ -31,9 +33,13 @@ import           Test.Util.TestBlock (GenTx (..), GenTxId (..), TestBlock,
                      computeGenTxId, singleNodeTestConfig, testInitExtLedger)
 import           Test.Util.TestTx (TestTx (..))
 
+
 tests :: TestTree
 tests = testGroup "Mempool"
-  [ testProperty "getTxs == getTxsAfter zeroIdx"        prop_Mempool_getTxs_getTxsAfter
+  [ testGroup "TxSeq"
+      [ testProperty "lookupByTicketNo"                 prop_TxSeq_lookupByTicketNo
+      ]
+  , testProperty "getTxs == getTxsAfter zeroIdx"        prop_Mempool_getTxs_getTxsAfter
   , testProperty "addedTxs == getTxs"                   prop_Mempool_addTxs_getTxs
   , testProperty "Invalid transactions are never added" prop_Mempool_InvalidTxsNeverAdded
   ]
@@ -191,3 +197,19 @@ counterexampleMempoolInfo txsToAdd invalidTxs txsInMempool prop =
 -- TODO: Should be replaced by solution for issue #709.
 constrName :: Show a => a -> String
 constrName = head . words . show
+
+{-------------------------------------------------------------------------------
+  TxSeq
+-------------------------------------------------------------------------------}
+
+prop_TxSeq_lookupByTicketNo :: [Int] -> Bool
+prop_TxSeq_lookupByTicketNo xs =
+    and [ case TxSeq.lookupByTicketNo txseq tn of
+            Just tx' -> tx == tx'
+            Nothing  -> False
+        | (tx, tn) <- TxSeq.fromTxSeq txseq ]
+  where
+    txseq :: TxSeq Int
+    txseq = foldl' (TxSeq.:>) TxSeq.Empty
+                   (zipWith TxTicket xs (map TicketNo [0..]))
+
