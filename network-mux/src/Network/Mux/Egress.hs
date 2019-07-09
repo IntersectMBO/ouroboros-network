@@ -3,49 +3,18 @@
 {-# LANGUAGE TypeFamilies          #-}
 
 module Network.Mux.Egress (
-      encodeMuxSDU
-    , mux
+      mux
     -- $egress
     -- $servicingsSemantics
     ) where
 
 import           Control.Monad
-import qualified Data.Binary.Put as Bin
-import           Data.Bits
 import qualified Data.ByteString.Lazy as BL
-import           Data.Word
 
 import           Control.Monad.Class.MonadSTM
 
 import           Network.Mux.Types
-
--- | Encode a 'MuxSDU' as a 'ByteString'.
---
--- > Binary format used by 'encodeMuxSDU' and 'decodeMuxSDUHeader'
--- >  0                   1                   2                   3
--- >  0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
--- > +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
--- > |              transmission time                                |
--- > +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
--- > |M|    conversation id          |              length           |
--- > +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
---
--- All fields are in big endian byteorder.
-encodeMuxSDU :: ProtocolEnum ptcl => MuxSDU ptcl -> BL.ByteString
-encodeMuxSDU sdu =
-  let hdr = Bin.runPut enc in
-  BL.append hdr $ msBlob sdu
-  where
-    enc = do
-        Bin.putWord32be $ unRemoteClockModel $ msTimestamp sdu
-        putId (msId sdu) (putMode $ msMode sdu)
-        Bin.putWord16be $ fromIntegral $ BL.length $ msBlob sdu
-
-    putId ptcl mode = Bin.putWord16be $ fromProtocolEnum ptcl .|. mode
-
-    putMode :: MiniProtocolMode -> Word16
-    putMode ModeInitiator = 0
-    putMode ModeResponder = 0x8000
+import           Network.Mux.Codec
 
 -- $servicingsSemantics
 -- = Desired Servicing Semantics

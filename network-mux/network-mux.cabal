@@ -38,6 +38,7 @@ library
   hs-source-dirs:      src
   exposed-modules:     Network.Mux
                        Network.Mux.Channel
+                       Network.Mux.Codec
                        Network.Mux.Egress
                        Network.Mux.Ingress
                        Network.Mux.Interface
@@ -54,6 +55,7 @@ test-suite test-network-mux
   main-is:             Main.hs
   other-modules:       Network.Mux
                        Network.Mux.Channel
+                       Network.Mux.Codec
                        Network.Mux.Egress
                        Network.Mux.Ingress
                        Network.Mux.Interface
