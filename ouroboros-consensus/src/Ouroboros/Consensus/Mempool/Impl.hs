@@ -65,7 +65,7 @@ openMempool registry chainDB cfg tracer = do
 -- | Internal state in the mempool
 data InternalState blk = IS {
       -- | Transactions currently in the mempool
-      isTxs :: TxSeq (GenTxId blk, GenTx blk)
+      isTxs :: TxSeq (GenTx blk)
 
       -- | The tip of the chain that 'isTxs' was validated against
     , isTip :: ChainHash blk
@@ -144,7 +144,7 @@ implAddTxs mpEnv@MempoolEnv{mpEnvStateVar, mpEnvLedgerCfg, mpEnvTracer} txs = do
     validateNew res = extendsVR
         mpEnvLedgerCfg
         False
-        (map (\tx -> (computeGenTxId tx, tx)) txs)
+        txs
         res { vrInvalid = [] }
 
 implSyncState :: (MonadSTM m, ApplyTx blk)
@@ -191,18 +191,18 @@ implSnapshotGetTxsAfter :: ApplyTx blk
                         => InternalState blk
                         -> TicketNo
                         -> [(GenTxId blk, GenTx blk, TicketNo)]
-implSnapshotGetTxsAfter IS{isTxs} tn = do
-  fromTxSeq $ snd $ splitAfterTicketNo isTxs tn
- where
-  fromTxSeq txSeq = fmap
-    (\(txid, tx) -> (txid, tx, tn))
-    (Foldable.toList txSeq)
+implSnapshotGetTxsAfter IS{isTxs} tn = map
+  (\(tx, txTn) -> (computeGenTxId tx, tx, txTn))
+  (TxSeq.fromTxSeq $ snd $ splitAfterTicketNo isTxs tn)
 
 implSnapshotGetTx :: ApplyTx blk
                   => InternalState blk
                   -> TicketNo
                   -> Maybe (GenTxId blk, GenTx blk)
-implSnapshotGetTx IS{isTxs} tn = isTxs `lookupByTicketNo` tn
+implSnapshotGetTx IS{isTxs} tn =
+  case isTxs `lookupByTicketNo` tn of
+    Nothing -> Nothing
+    Just tx -> Just (computeGenTxId tx, tx)
 
 {-------------------------------------------------------------------------------
   Validation
@@ -213,7 +213,7 @@ data ValidationResult blk = ValidationResult {
     vrBefore       :: ChainHash blk
 
     -- | The transactions that were found to be valid (oldest to newest)
-  , vrValid        :: TxSeq (GenTxId blk, GenTx blk)
+  , vrValid        :: TxSeq (GenTx blk)
 
     -- | New transactions (not previously known) which were found to be valid.
     --
@@ -239,7 +239,7 @@ data ValidationResult blk = ValidationResult {
 -- transactions /known/ to be valid in that ledger state
 initVR :: forall blk. ApplyTx blk
        => LedgerConfig blk
-       -> TxSeq (GenTxId blk, GenTx blk)
+       -> TxSeq (GenTx blk)
        -> (ChainHash blk, LedgerState blk)
        -> ValidationResult blk
 initVR cfg = \knownValid (tip, st) -> ValidationResult {
@@ -247,7 +247,7 @@ initVR cfg = \knownValid (tip, st) -> ValidationResult {
     , vrValid    = knownValid
     , vrNewValid = []
     , vrAfter    = afterKnownValid
-                     (map snd (Foldable.toList knownValid))
+                     (Foldable.toList knownValid)
                      st
     , vrInvalid  = []
     }
@@ -266,17 +266,17 @@ initVR cfg = \knownValid (tip, st) -> ValidationResult {
 extendVR :: ApplyTx blk
          => LedgerConfig blk
          -> Bool -- ^ Were these transactions previously validated?
-         -> (GenTxId blk, GenTx blk)
+         -> GenTx blk
          -> ValidationResult blk
          -> ValidationResult blk
-extendVR cfg prevApplied (txid, tx)
+extendVR cfg prevApplied tx
          vr@ValidationResult{vrValid, vrNewValid, vrAfter, vrInvalid} =
     let apply | prevApplied = reapplyTx
               | otherwise   = applyTx in
     case runExcept (apply cfg tx vrAfter) of
       Left err  -> vr { vrInvalid  = (tx, err) : vrInvalid
                       }
-      Right st' -> vr { vrValid    = vrValid `appendTx` (txid, tx)
+      Right st' -> vr { vrValid    = vrValid `appendTx` tx
                       , vrAfter    = st'
                       , vrNewValid = if not prevApplied
                                      then tx : vrNewValid
@@ -287,7 +287,7 @@ extendVR cfg prevApplied (txid, tx)
 extendsVR :: ApplyTx blk
           => LedgerConfig blk
           -> Bool -- ^ Were these transactions previously applied?
-          -> [(GenTxId blk, GenTx blk)]
+          -> [GenTx blk]
           -> ValidationResult blk
           -> ValidationResult blk
 extendsVR cfg prevApplied = repeatedly (extendVR cfg prevApplied)
