@@ -61,6 +61,7 @@ class ( ProtocolLedgerView blk
       , DemoHeaderHash (HeaderHash blk)
       , Condense (Header blk)
       , Condense (ChainHash blk)
+      , Condense (HeaderHash blk)
       , Condense blk
       , Condense [blk]
       , Show blk
