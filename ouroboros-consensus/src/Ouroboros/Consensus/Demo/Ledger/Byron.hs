@@ -17,6 +17,8 @@ import           Data.Coerce
 import           Data.Maybe (fromJust)
 import qualified Data.Sequence as Seq
 
+import           Formatting (formatToString)
+
 import qualified Cardano.Chain.Block as Cardano.Block
 import qualified Cardano.Chain.Genesis as Cardano.Genesis
 import qualified Cardano.Chain.Update as Cardano.Update
@@ -30,6 +32,7 @@ import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.NodeId (CoreNodeId (..), NodeId (..))
 import           Ouroboros.Consensus.Protocol.ExtNodeConfig
 import           Ouroboros.Consensus.Protocol.PBFT
+import           Ouroboros.Consensus.Util.Condense
 
 import           Ouroboros.Consensus.Demo.Ledger.Byron.Config
 import           Ouroboros.Consensus.Demo.Ledger.Byron.Elaborate
@@ -107,6 +110,9 @@ protocolInfoByron (NumCoreNodes numCoreNodes) (CoreNodeId nid) params gc =
   RunDemo instance
 -------------------------------------------------------------------------------}
 
+instance Condense Cardano.Block.HeaderHash where
+  condense = formatToString Cardano.Block.headerHashF
+  
 instance DemoHeaderHash Cardano.Block.HeaderHash where
   demoEncodeHeaderHash = encodeByronHeaderHash
   demoDecodeHeaderHash = decodeByronHeaderHash
