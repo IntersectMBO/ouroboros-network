@@ -1,7 +1,7 @@
 {-# LANGUAGE RecordWildCards #-}
 
 -- | Elaboration from our mock transactions into transactions on the real ledger
-module Ouroboros.Consensus.Demo.Ledger.Byron.Elaborate (
+module Ouroboros.Consensus.Demo.Byron.Elaborate (
     elaborateTx
   ) where
 
@@ -26,7 +26,7 @@ import qualified Ouroboros.Consensus.Ledger.Mock as Mock
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.ExtNodeConfig
 
-import           Ouroboros.Consensus.Demo.Ledger.Byron.Config
+import           Ouroboros.Consensus.Ledger.Byron.Config
 
 -- | Elaborate a mock transaction to a real one
 --

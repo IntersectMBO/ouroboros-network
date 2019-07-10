@@ -1,6 +1,6 @@
-{-# LANGUAGE DerivingVia        #-}
-{-# LANGUAGE NumericUnderscores #-}
-{-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE DerivingVia          #-}
+{-# LANGUAGE NumericUnderscores   #-}
+{-# LANGUAGE StandaloneDeriving   #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
@@ -19,12 +19,11 @@ import           Ouroboros.Network.Block (SlotNo (..))
 
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.ChainSyncClient (ClockSkew (..))
-import           Ouroboros.Consensus.Demo.Run
+import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Util.Random (Seed (..))
 
+import           Ouroboros.Storage.Common (EpochNo (..), EpochSize (..))
 import           Ouroboros.Storage.ImmutableDB.Layout
-import           Ouroboros.Storage.Common (EpochNo (..),
-                     EpochSize (..))
 
 
 minNumCoreNodes, minNumSlots :: Int

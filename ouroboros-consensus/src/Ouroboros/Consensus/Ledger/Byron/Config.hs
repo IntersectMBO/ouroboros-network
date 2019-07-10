@@ -1,8 +1,7 @@
 {-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE RecordWildCards   #-}
 
-module Ouroboros.Consensus.Demo.Ledger.Byron.Config (
-    ByronDemoConfig(..)
+module Ouroboros.Consensus.Ledger.Byron.Config (
+    ByronConfig(..)
   , ByronExtNodeConfig
   ) where
 
@@ -18,8 +17,8 @@ import           Ouroboros.Consensus.NodeId (CoreNodeId)
 import           Ouroboros.Consensus.Protocol.ExtNodeConfig
 import           Ouroboros.Consensus.Protocol.PBFT
 
--- | Extended configuration we need for the demo
-data ByronDemoConfig = ByronDemoConfig {
+-- | Extended configuration we need for Byron
+data ByronConfig = ByronConfig {
       -- | Mapping from generic keys to core node IDs
       --
       -- The keys in this map are the verification keys of the core nodes - that
@@ -35,7 +34,7 @@ data ByronDemoConfig = ByronDemoConfig {
     , pbftSecrets         :: CC.Genesis.GeneratedSecrets
     }
 
-type ByronExtNodeConfig = ExtNodeConfig ByronDemoConfig (PBft PBftCardanoCrypto)
+type ByronExtNodeConfig = ExtNodeConfig ByronConfig (PBft PBftCardanoCrypto)
 
-instance ConfigContainsGenesis ByronDemoConfig where
+instance ConfigContainsGenesis ByronConfig where
   genesisConfig = pbftGenesisConfig

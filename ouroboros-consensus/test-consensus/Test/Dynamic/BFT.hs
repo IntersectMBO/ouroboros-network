@@ -24,11 +24,10 @@ import           Test.Tasty.QuickCheck
 
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Demo
-import           Ouroboros.Consensus.Demo.Run
 import           Ouroboros.Consensus.Ledger.Mock
+import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.NodeId
-import           Ouroboros.Consensus.Protocol.Abstract
-import           Ouroboros.Consensus.Protocol.BFT
+import           Ouroboros.Consensus.Protocol
 import           Ouroboros.Consensus.Util.Random
 import           Ouroboros.Network.Chain (Chain)
 
@@ -53,12 +52,12 @@ prop_simple_bft_convergence :: SecurityParam
                             -> Property
 prop_simple_bft_convergence k numCoreNodes =
     prop_simple_protocol_convergence
-      (\nid -> protocolInfo numCoreNodes nid (DemoBFT k))
+      (\nid -> protocolInfo numCoreNodes nid (ProtocolMockBFT k))
       isValid
       numCoreNodes
   where
     isValid :: [NodeId]
-            -> Map NodeId ( NodeConfig DemoBFT
+            -> Map NodeId ( NodeConfig ProtocolMockBFT
                           , Chain (SimpleBftBlock SimpleMockCrypto BftMockCrypto)
                           )
             -> Property

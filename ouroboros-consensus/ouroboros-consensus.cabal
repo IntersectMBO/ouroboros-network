@@ -26,24 +26,18 @@ library
 
   exposed-modules:
                        Ouroboros.Consensus.Block
-                       Ouroboros.Consensus.BlockchainTime
                        Ouroboros.Consensus.BlockFetchServer
+                       Ouroboros.Consensus.BlockchainTime
                        Ouroboros.Consensus.ChainSyncClient
                        Ouroboros.Consensus.ChainSyncServer
                        Ouroboros.Consensus.Crypto.DSIGN.Cardano
                        Ouroboros.Consensus.Demo
-                       Ouroboros.Consensus.Demo.Ledger.Byron
-                       Ouroboros.Consensus.Demo.Ledger.Byron.Config
-                       Ouroboros.Consensus.Demo.Ledger.Byron.Elaborate
-                       Ouroboros.Consensus.Demo.Ledger.Byron.Forge
-                       Ouroboros.Consensus.Demo.Ledger.Mock
-                       Ouroboros.Consensus.Demo.Ledger.Mock.BFT
-                       Ouroboros.Consensus.Demo.Ledger.Mock.PBFT
-                       Ouroboros.Consensus.Demo.Ledger.Mock.Praos
-                       Ouroboros.Consensus.Demo.Ledger.Mock.PraosRule
+                       Ouroboros.Consensus.Demo.Byron.Elaborate
                        Ouroboros.Consensus.Demo.Run
                        Ouroboros.Consensus.Ledger.Abstract
                        Ouroboros.Consensus.Ledger.Byron
+                       Ouroboros.Consensus.Ledger.Byron.Config
+                       Ouroboros.Consensus.Ledger.Byron.Forge
                        Ouroboros.Consensus.Ledger.Extended
                        Ouroboros.Consensus.Ledger.Mock
                        Ouroboros.Consensus.Ledger.Mock.Address
@@ -61,8 +55,20 @@ library
                        Ouroboros.Consensus.Mempool.Impl
                        Ouroboros.Consensus.Mempool.TxSeq
                        Ouroboros.Consensus.Node
+                       Ouroboros.Consensus.Node.ProtocolInfo
+                       Ouroboros.Consensus.Node.ProtocolInfo.Abstract
+                       Ouroboros.Consensus.Node.ProtocolInfo.Byron
+                       Ouroboros.Consensus.Node.ProtocolInfo.Mock.BFT
+                       Ouroboros.Consensus.Node.ProtocolInfo.Mock.PBFT
+                       Ouroboros.Consensus.Node.ProtocolInfo.Mock.Praos
+                       Ouroboros.Consensus.Node.ProtocolInfo.Mock.PraosRule
+                       Ouroboros.Consensus.Node.Run
+                       Ouroboros.Consensus.Node.Run.Abstract
+                       Ouroboros.Consensus.Node.Run.Byron
+                       Ouroboros.Consensus.Node.Run.Mock
                        Ouroboros.Consensus.NodeId
                        Ouroboros.Consensus.NodeNetwork
+                       Ouroboros.Consensus.Protocol
                        Ouroboros.Consensus.Protocol.Abstract
                        Ouroboros.Consensus.Protocol.BFT
                        Ouroboros.Consensus.Protocol.ExtNodeConfig
@@ -81,9 +87,9 @@ library
                        Ouroboros.Consensus.Util.HList
                        Ouroboros.Consensus.Util.Orphans
                        Ouroboros.Consensus.Util.Random
+                       Ouroboros.Consensus.Util.STM
                        Ouroboros.Consensus.Util.Singletons
                        Ouroboros.Consensus.Util.SlotBounded
-                       Ouroboros.Consensus.Util.STM
                        Ouroboros.Consensus.Util.ThreadRegistry
 
                        -- Storing things on disk

@@ -1,5 +1,5 @@
 -- | Test the Praos chain selection rule but with explicit leader schedule
-module Ouroboros.Consensus.Demo.Ledger.Mock.PraosRule (
+module Ouroboros.Consensus.Node.ProtocolInfo.Mock.PraosRule (
     protocolInfoPraosRule
   ) where
 
@@ -9,9 +9,9 @@ import qualified Data.IntMap as IntMap
 import           Cardano.Crypto.KES
 import           Cardano.Crypto.VRF
 
-import           Ouroboros.Consensus.Demo.Run
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.Mock
+import           Ouroboros.Consensus.Node.ProtocolInfo.Abstract
 import           Ouroboros.Consensus.NodeId (CoreNodeId (..), NodeId (..))
 import           Ouroboros.Consensus.Protocol.LeaderSchedule
 import           Ouroboros.Consensus.Protocol.Praos

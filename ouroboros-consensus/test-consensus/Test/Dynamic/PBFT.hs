@@ -2,15 +2,10 @@
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE GADTs                 #-}
-{-# LANGUAGE KindSignatures        #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE NamedFieldPuns        #-}
 {-# LANGUAGE RankNTypes            #-}
-{-# LANGUAGE RecordWildCards       #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
-{-# LANGUAGE StandaloneDeriving    #-}
-{-# LANGUAGE TupleSections         #-}
-{-# LANGUAGE TypeApplications      #-}
 {-# LANGUAGE TypeFamilies          #-}
 {-# LANGUAGE UndecidableInstances  #-}
 
@@ -29,11 +24,10 @@ import           Test.Tasty.QuickCheck
 
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Demo
-import           Ouroboros.Consensus.Demo.Run
 import           Ouroboros.Consensus.Ledger.Mock
+import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.NodeId
-import           Ouroboros.Consensus.Protocol.Abstract
-import           Ouroboros.Consensus.Protocol.PBFT
+import           Ouroboros.Consensus.Protocol
 import           Ouroboros.Consensus.Util.Random
 import           Ouroboros.Network.Chain (Chain)
 
@@ -58,7 +52,7 @@ prop_simple_pbft_convergence :: SecurityParam
                              -> Property
 prop_simple_pbft_convergence sp numCoreNodes@(NumCoreNodes nn) =
     prop_simple_protocol_convergence
-      (\nid -> protocolInfo numCoreNodes nid (DemoMockPBFT params))
+      (\nid -> protocolInfo numCoreNodes nid (ProtocolMockPBFT params))
       isValid
       numCoreNodes
   where
@@ -66,7 +60,7 @@ prop_simple_pbft_convergence sp numCoreNodes@(NumCoreNodes nn) =
     sigThd = (1.0 / fromIntegral nn) + 0.1
     params = PBftParams sp (fromIntegral nn) sigWin sigThd
     isValid :: [NodeId]
-            -> Map NodeId ( NodeConfig DemoMockPBFT
+            -> Map NodeId ( NodeConfig ProtocolMockPBFT
                           , Chain (SimplePBftBlock SimpleMockCrypto PBftMockCrypto)
                           )
             -> Property
