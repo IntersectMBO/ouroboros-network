@@ -27,6 +27,7 @@ import qualified Network.Socket.ByteString.Lazy as Socket (recv, sendAll)
 import qualified Network.Mux as Mx
 import           Network.Mux.Types (MuxBearer)
 import qualified Network.Mux.Types as Mx
+import qualified Network.Mux.Codec as Mx
 import qualified Network.Mux.Time as Mx
 
 hexDump :: BL.ByteString -> String -> IO ()
@@ -57,7 +58,7 @@ socketAsMuxBearer sd = do
           hbuf <- recvLen' True 8 []
           --say "read"
           --hexDump hbuf ""
-          case Mx.decodeMuxSDUHeader hbuf of
+          case Mx.decodeMuxSDU hbuf of
               Left  e      -> throwM e
               Right header -> do
                   -- say $ printf "decoded mux header, goint to read %d bytes" (Mx.msLength header)

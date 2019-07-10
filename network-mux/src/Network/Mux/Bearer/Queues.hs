@@ -20,6 +20,7 @@ import qualified Network.Mux as Mx
 import qualified Network.Mux.Interface as Mx
 import           Network.Mux.Types (MuxBearer)
 import qualified Network.Mux.Types as Mx
+import qualified Network.Mux.Codec as Mx
 import           Network.Mux.Time as Mx
 
 
@@ -49,7 +50,7 @@ queuesAsMuxBearer writeQueue readQueue sduSize traceQueue = do
       readMux = do
           buf <- atomically $ readTBQueue readQueue
           let (hbuf, payload) = BL.splitAt 8 buf
-          case Mx.decodeMuxSDUHeader hbuf of
+          case Mx.decodeMuxSDU hbuf of
               Left  e      -> throwM e
               Right header -> do
                   ts <- getMonotonicTime

@@ -20,6 +20,7 @@ import           System.IO (Handle, hClose, hFlush)
 import qualified Network.Mux as Mx
 import           Network.Mux.Types (MuxBearer)
 import qualified Network.Mux.Types as Mx
+import qualified Network.Mux.Codec as Mx
 import qualified Network.Mux.Interface as Mx
 import qualified Network.Mux.Time as Mx
 
@@ -48,7 +49,7 @@ pipeAsMuxBearer pcRead pcWrite = do
                => IO (Mx.MuxSDU ptcl, Time IO)
       readPipe = do
           hbuf <- recvLen' pcRead 8 []
-          case Mx.decodeMuxSDUHeader hbuf of
+          case Mx.decodeMuxSDU hbuf of
               Left e     -> throwM e
               Right header -> do
                   --say $ printf "decoded mux header, goint to read %d bytes" (Mx.msLength header)
