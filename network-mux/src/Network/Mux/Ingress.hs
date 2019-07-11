@@ -20,7 +20,6 @@ import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
 
 import           Network.Mux.Types
-import           Network.Mux.Codec
 
 negMiniProtocolMode :: MiniProtocolMode -> MiniProtocolMode
 negMiniProtocolMode ModeInitiator = ModeResponder
