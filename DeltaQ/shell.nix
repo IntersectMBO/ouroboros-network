@@ -29,6 +29,9 @@ let
            # 2019-07-08 - doesn't pass test suite: suppress test suite. Needed for pandoc.
            Diff = pkgs.haskell.lib.dontCheck (hspkgs.callHackage "Diff" "0.3.4" {});
 
+           # 2019-07-11 - needs more relaxed upper bound for fgl
+           diagrams-graphviz = pkgs.haskell.lib.doJailbreak (hspkgs.callHackage "diagrams-graphviz" "1.4.1" {});
+
            DeltaQIllustration = hspkgs.callCabal2nix "DeltaQIllustration" ./packages/DeltaQIllustration {};
            DeltaQIHaskell = hspkgs.callCabal2nix "DeltaQIHaskell" ./packages/DeltaQIHaskell {};
         });
@@ -45,9 +48,10 @@ let
     packages = p: with p; [
     # the pretty renders
     ihaskell-charts ihaskell-hatex ihaskell-diagrams ihaskell-graphviz ihaskell-aeson ihaskell-hvega ihaskell-magic
-    Chart HaTeX diagrams graphviz # diagrams-graphviz - marked as broken
-    formatting hvega pandoc
+    # DeltaQ stuff
     DeltaQIllustration DeltaQIHaskell
+    # other haskell packages
+    Chart HaTeX diagrams graphviz diagrams-graphviz formatting hvega pandoc foldl Frames
    ];
   };
 
@@ -64,7 +68,7 @@ let
 
   shell = pkgs.stdenv.mkDerivation {
     name = "my-env";
-    buildInputs = [ build pkgs.graphviz haskellPackages.pandoc] ;
+    buildInputs = [ build pkgs.graphviz haskellPackages.pandoc ];
     };
 
 in shell
