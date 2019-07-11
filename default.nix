@@ -1,4 +1,6 @@
-{ customConfig ? {}, ... }:
+{ customConfig ? {}
+, withHoogle ? true
+, ... }:
 #
 # The default.nix file. This will generate targets for all
 # buildables (see release.nix for nomenclature, excluding
@@ -52,7 +54,7 @@ let
   documents = import ./doc/default.nix {inherit commonLib; };
 in {
   inherit scripts tests;
-  inherit (nixTools) nix-tools;
+  inherit (nixTools) nix-tools shell;
   network-pdf-wip = documents.network-pdf-wip;
   network-pdf = documents.network-pdf;
 }
