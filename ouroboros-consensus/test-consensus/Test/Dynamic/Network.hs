@@ -76,11 +76,11 @@ import qualified Ouroboros.Storage.Util.ErrorHandling as EH
 -- we cook up here one using 'NodeChans'.
 --
 data NetworkInterface m peer = NetworkInterface {
-      -- | Like 'Ouroboros.Network.NodeToNode.nodeToNodeConnectTo'
+      -- | Like 'Ouroboros.Network.NodeToNode.connectTo'
       --
       niConnectTo      :: peer -> m ()
 
-      -- | Like 'Ouroboros.Network.NodeToNode.withServerNodeToNode'
+      -- | Like 'Ouroboros.Network.NodeToNode.withServer'
       --
     , niWithServerNode :: forall t.  (Async m () -> m t) -> m t
     }
