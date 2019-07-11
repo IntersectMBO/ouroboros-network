@@ -4,7 +4,7 @@
 
 module Test.Consensus.Mempool (tests) where
 
-import           Data.List (foldl')
+import           Data.List (find, foldl', sort)
 
 import           Test.QuickCheck (Property, Testable, classify, counterexample,
                      tabulate, (===))
@@ -15,11 +15,17 @@ import           Control.Monad.Class.MonadAsync (MonadAsync)
 import           Control.Monad.Class.MonadFork (MonadFork)
 import           Control.Monad.Class.MonadSTM (MonadSTM, STM, atomically)
 import           Control.Monad.Class.MonadThrow (MonadMask, MonadThrow)
-import           Control.Monad.IOSim (runSimOrThrow)
+import           Control.Monad.IOSim (SimM, runSimOrThrow, runSimTrace,
+                     selectTraceEventsDynamic, traceM)
+
+import           Control.Tracer (Tracer (..), nullTracer)
+
+import           Data.Maybe (isJust)
+import           Data.Typeable (Typeable)
 
 import           Ouroboros.Consensus.Ledger.Abstract (ledgerConfigView)
 import           Ouroboros.Consensus.Mempool (Mempool (..),
-                     MempoolSnapshot (..), openMempool)
+                     MempoolSnapshot (..), TraceEventMempool (..), openMempool)
 import           Ouroboros.Consensus.Mempool.TxSeq as TxSeq
 import           Ouroboros.Consensus.Util.ThreadRegistry (withThreadRegistry)
 
@@ -42,6 +48,8 @@ tests = testGroup "Mempool"
   , testProperty "getTxs == getTxsAfter zeroIdx"        prop_Mempool_getTxs_getTxsAfter
   , testProperty "addedTxs == getTxs"                   prop_Mempool_addTxs_getTxs
   , testProperty "Invalid transactions are never added" prop_Mempool_InvalidTxsNeverAdded
+  , testProperty "Added valid transactions are traced"  prop_Mempool_TraceValidTxs
+  , testProperty "Rejected invalid txs are traced"      prop_Mempool_TraceRejectedTxs
   ]
 
 {-------------------------------------------------------------------------------
@@ -104,6 +112,60 @@ prop_Mempool_InvalidTxsNeverAdded bc txs =
     genTxIsInvalid (TestGenTx (InvalidTestTx _)) = True
     genTxIsInvalid _                             = False
 
+-- | Test that all valid transactions added to a 'Mempool' via 'addTxs' are
+-- appropriately represented in the trace of events.
+prop_Mempool_TraceValidTxs :: Chain TestBlock
+                           -> [TestTx]
+                           -> Property
+prop_Mempool_TraceValidTxs bc txs =
+    testAddTxsWithTrace bc txs traceProp
+  where
+    traceProp :: [GenTx TestBlock] -> [TraceEventMempool TestBlock] -> Property
+    traceProp genTxs es =
+        let addedTxs = maybe
+                (error "prop_Mempool_TraceValidTxs: No TraceMempoolAddTxs traces")
+                (\(TraceMempoolAddTxs ts _) -> ts)
+                (find isAddTxsEvent es)
+        in sort (filter genTxIsValid genTxs) === sort addedTxs
+    --
+    genTxIsValid :: GenTx TestBlock -> Bool
+    genTxIsValid (TestGenTx (ValidTestTx _)) = True
+    genTxIsValid _                           = False
+    --
+    isAddTxsEvent :: TraceEventMempool blk -> Bool
+    isAddTxsEvent (TraceMempoolAddTxs _ _) = True
+    isAddTxsEvent _                        = False
+
+-- | Test that all invalid rejected transactions returned from 'addTxs' are
+-- appropriately represented in the trace of events.
+prop_Mempool_TraceRejectedTxs :: Chain TestBlock
+                              -> [TestTx]
+                              -> Property
+prop_Mempool_TraceRejectedTxs bc txs =
+    testAddTxsWithTrace bc txs traceProp
+  where
+    traceProp :: [GenTx TestBlock] -> [TraceEventMempool TestBlock] -> Property
+    traceProp genTxs es =
+        let rejectedTxs = maybe
+                (error "prop_Mempool_TraceRejectedTxs: No TraceMempoolRejectedTxs traces")
+                (\(TraceMempoolRejectedTxs ts _) -> ts)
+                (find isRejectedTxsEvent es)
+        in sort (filter genTxIsInvalid genTxs) === sort rejectedTxs
+    --
+    genTxIsInvalid :: GenTx TestBlock -> Bool
+    genTxIsInvalid (TestGenTx (InvalidTestTx _)) = True
+    genTxIsInvalid _                             = False
+    --
+    isRejectedTxsEvent :: TraceEventMempool blk -> Bool
+    isRejectedTxsEvent (TraceMempoolRejectedTxs _ _) = True
+    isRejectedTxsEvent _                             = False
+
+-- TODO: Need to add a property which also tests 'TraceRemovedTxs' traces.
+--       However, the 'TestTx' implementation must be extended before we can
+--       do so as there is currently no way for 'ValidTestTx' transactions in
+--       the 'Mempool' to become invalid and, therefore, removed from the
+--       'Mempool'.
+
 {-------------------------------------------------------------------------------
   Helpers
 -------------------------------------------------------------------------------}
@@ -129,18 +191,35 @@ testAddTxsWithMempoolAndSnapshot
 testAddTxsWithMempoolAndSnapshot bc txs prop =
   tabulate "Transactions" (map constrName txs) $
   runSimOrThrow $
-  withOpenMempool bc $ \mempool -> do
-    let genTxs = testTxsToGenTxPairs txs
+  withOpenMempool bc nullTracer $ \mempool -> do
+    let genTxs = map TestGenTx txs
         Mempool
           { addTxs
           , getSnapshot
           } = mempool
-    invalidTxs <- addTxs genTxs
+    attemptedTxs <- addTxs genTxs
+    let invalidTxs = map (isJust . snd) attemptedTxs
     snapshot@MempoolSnapshot{getTxs} <- atomically getSnapshot
     pure $
       counterexampleMempoolInfo genTxs invalidTxs getTxs $
       classifyMempoolSize getTxs $
       prop mempool snapshot
+
+testAddTxsWithTrace
+  :: Testable prop
+  => Chain TestBlock
+  -> [TestTx]
+  -> ([GenTx TestBlock] -> [TraceEventMempool TestBlock] -> prop)
+  -> Property
+testAddTxsWithTrace bc txs prop = do
+  let genTxs = map TestGenTx txs
+      trace  = selectTraceEventsDynamic $
+               runSimTrace $
+               withOpenMempool bc dynamicTracer $ \mempool -> do
+                 let Mempool{addTxs} = mempool
+                 addTxs genTxs
+  counterexample ("\nTrace:\n" ++ unlines (map show trace)) $
+    prop genTxs trace
 
 openDB :: forall m.
           ( MonadSTM m
@@ -161,13 +240,14 @@ withOpenMempool :: ( MonadSTM m
                    , MonadAsync m
                    )
                 => Chain TestBlock
+                -> Tracer m (TraceEventMempool TestBlock)
                 -> (Mempool m TestBlock TicketNo -> m a)
                 -> m a
-withOpenMempool bc action = do
+withOpenMempool bc tracer action = do
   chainDb <- ChainDB.fromChain openDB bc
   withThreadRegistry $ \registry -> do
     let cfg = ledgerConfigView singleNodeTestConfig
-    action =<< openMempool registry chainDb cfg
+    action =<< openMempool registry chainDb cfg tracer
 
 -- | Classify whether we're testing against an empty or non-empty 'Mempool' in
 -- each test case.
@@ -198,8 +278,11 @@ counterexampleMempoolInfo txsToAdd invalidTxs txsInMempool prop =
 constrName :: Show a => a -> String
 constrName = head . words . show
 
+dynamicTracer :: Typeable a => Tracer (SimM s) a
+dynamicTracer = Tracer traceM
+
 {-------------------------------------------------------------------------------
-  TxSeq
+  TxSeq Properties
 -------------------------------------------------------------------------------}
 
 prop_TxSeq_lookupByTicketNo :: [Int] -> Bool
@@ -212,4 +295,3 @@ prop_TxSeq_lookupByTicketNo xs =
     txseq :: TxSeq Int
     txseq = foldl' (TxSeq.:>) TxSeq.Empty
                    (zipWith TxTicket xs (map TicketNo [0..]))
-

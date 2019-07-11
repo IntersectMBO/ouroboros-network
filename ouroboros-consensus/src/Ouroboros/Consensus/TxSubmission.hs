@@ -31,8 +31,7 @@ localTxSubmissionServer tracer Mempool{addTxs} =
     server = LocalTxSubmissionServer {
       recvMsgSubmitTx = \tx -> do
         traceWith tracer (condense tx)
-        let txid = computeGenTxId tx
-        res <- addTxs [(txid, tx)]
+        res <- addTxs [tx]
         -- The 'addTxs' action returns the failing ones, whereas the protocol
         -- returns a Maybe failure for a single tx, so we must convert here.
         case res of

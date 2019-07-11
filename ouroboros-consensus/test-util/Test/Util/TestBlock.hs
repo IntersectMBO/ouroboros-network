@@ -228,7 +228,7 @@ newtype TestTxError = TestTxErrorInvalid TestTx
 instance ApplyTx TestBlock where
   newtype GenTx TestBlock = TestGenTx
     { testGenTx :: TestTx
-    } deriving (Show, Eq)
+    } deriving (Show, Eq, Ord)
 
   newtype GenTxId TestBlock = TestGenTxId
     { testGenTxId :: TestTxId

@@ -229,6 +229,7 @@ broadcastNetwork registry btime numCoreNodes pInfo initRNG numSlots = do
 
       let nodeParams = NodeParams
             { tracer             = nullTracer
+            , mempoolTracer      = nullTracer
             , threadRegistry     = registry
             , maxClockSkew       = ClockSkew 1
             , cfg                = pInfoConfig

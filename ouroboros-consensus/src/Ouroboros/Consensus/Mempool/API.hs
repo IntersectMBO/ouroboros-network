@@ -1,13 +1,18 @@
+{-# LANGUAGE FlexibleContexts        #-}
+{-# LANGUAGE StandaloneDeriving      #-}
 {-# LANGUAGE TypeFamilies            #-}
+{-# LANGUAGE UndecidableInstances    #-}
 {-# LANGUAGE UndecidableSuperClasses #-}
 
 module Ouroboros.Consensus.Mempool.API (
     Mempool(..)
   , MempoolSnapshot(..)
   , ApplyTx(..)
+  , TraceEventMempool(..)
   ) where
 
 import           Control.Monad.Except
+import           Data.Word (Word64)
 import           GHC.Stack (HasCallStack)
 
 import           Control.Monad.Class.MonadSTM
@@ -26,6 +31,8 @@ class UpdateLedger blk => ApplyTx blk where
   data family GenTxId blk :: *
 
   -- | Given a 'GenTx', compute its 'GenTxId'.
+  --
+  -- Should be cheap as this will be called often.
   computeGenTxId :: GenTx blk -> GenTxId blk
 
   -- | Updating the ledger with a single transaction may result in a different
@@ -85,14 +92,52 @@ data Mempool m blk idx = Mempool {
       -- @STM m@; we keep it in @m@ instead to leave open the possibility of
       -- persistence.
       --
-      -- The transactions will be validated, /in order/, before they are added
-      -- to the mempool. Invalid transactions will be returned along with the
-      -- validation error. In principle it is possible that such validation
-      -- errors are transient; for example, it is possible that a transaction is
-      -- rejected because one of its inputs is not /yet/ available in the UTxO
-      -- (the transaction it depends on is not yet in the chain, nor in the
-      -- mempool). In practice however it is likely that rejected transactions
-      -- will still be rejected later, and should just be dropped.
+      -- The following validation steps will be performed when adding
+      -- transactions to the mempool:
+      --
+      -- * Transactions which already exist in the mempool are revalidated,
+      --   /in order/, against the current ledger state. Existing transactions
+      --   which are found to be invalid, with respect to the current ledger
+      --   state, are dropped from the mempool, whereas valid transactions
+      --   remain in the mempool.
+      -- * The new transactions provided will be validated, /in order/,
+      --   against the current ledger state. Transactions which are found to
+      --   be invalid, with respect to the current ledger state, are dropped,
+      --   whereas valid transactions are added to the mempool.
+      --
+      -- Note that transactions that are invalid, with respect to the current
+      -- ledger state, will /never/ be added to the mempool. However, it is
+      -- possible that, at a given point in time, transactions which were once
+      -- valid but are now invalid, with respect to the current ledger state,
+      -- could exist within the mempool until they are revalidated and dropped
+      -- from the mempool via a call to either 'addTxs' or 'syncState'.
+      --
+      -- This function will return a list containing the following
+      -- transactions:
+      --
+      -- * Those transactions provided which were found to be valid, along
+      --   with 'Nothing' for their accompanying @Maybe (ApplyTxErr blk)@
+      --   values.
+      -- * Those transactions provided which were found to be invalid, along
+      --   with their accompanying validation errors.
+      --
+      -- The order of this returned list is undefined.
+      --
+      -- Note that previously valid transaction that are now invalid with
+      -- respect to the current ledger state are dropped from the mempool, but
+      -- are not part of the returned list.
+      --
+      -- POSTCONDITION: given some ordering @txOrd@ on @'GenTx' blk@:
+      --
+      -- > addTxs inTxs >>= \outTxs ->
+      -- >   sortBy txOrd inTxs == sortBy txOrd (map fst outTxs)
+      --
+      -- In principle it is possible that validation errors are transient; for
+      -- example, it is possible that a transaction is rejected because one of
+      -- its inputs is not /yet/ available in the UTxO (the transaction it
+      -- depends on is not yet in the chain, nor in the mempool). In practice
+      -- however it is likely that rejected transactions will still be
+      -- rejected later, and should just be dropped.
       --
       -- It is important to note one important special case of transactions
       -- being "invalid": a transaction will /also/ be considered invalid if
@@ -101,15 +146,27 @@ data Mempool m blk idx = Mempool {
       -- Rejected transactions are therefore not necessarily a sign of
       -- malicious behaviour. Indeed, we would expect /most/ transactions that
       -- are reported as invalid by 'addTxs' to be invalid precisely because
-      -- they have already been included. (Distinguishing between these two
+      -- they have already been included. Distinguishing between these two
       -- cases can be done in theory, but it is expensive unless we have an
-      -- index of transaction hashes that have been included on the blockchain.)
-      addTxs :: [(GenTxId blk, GenTx blk)] -> m [(GenTx blk, ApplyTxErr blk)]
+      -- index of transaction hashes that have been included on the blockchain.
+      addTxs      :: [GenTx blk] -> m [(GenTx blk, Maybe (ApplyTxErr blk))]
 
-      -- | Sync the transactions in the mempool with the ledger state of the
-      -- 'ChainDB'. Invalid transactions will be returned along with the
-      -- validation error.
-    , syncState :: STM m [(GenTx blk, ApplyTxErr blk)]
+      -- | Sync the transactions in the mempool with the current ledger state
+      --  of the 'ChainDB'.
+      --
+      -- The transactions that exist within the mempool will be revalidated
+      -- against the current ledger state. Transactions which are found to be
+      -- invalid, with respect to the current ledger state, will be dropped
+      -- from the mempool, whereas valid transactions will remain.
+      --
+      -- We keep this in @m@ instead of @STM m@ to leave open the possibility
+      -- of persistence. Additionally, this makes it possible to trace the
+      -- removal of invalid transactions.
+      --
+      -- n.b. in our current implementation, when one opens a mempool, we
+      -- spawn a thread which performs this action whenever the 'ChainDB' tip
+      -- point changes.
+    , syncState   :: m ()
 
       -- | Get a snapshot of the current mempool state. This allows for
       -- further pure queries on the snapshot.
@@ -148,3 +205,31 @@ data MempoolSnapshot txid tx idx = MempoolSnapshot {
     -- number, if it exists.
   , getTx :: idx -> Maybe (txid, tx)
   }
+
+-- | Events traced by the Mempool.
+data TraceEventMempool blk
+   = TraceMempoolAddTxs
+     { _txs          :: [GenTx blk]
+       -- ^ New, valid transaction were added to the Mempool.
+     , _txsInMempool :: Word64
+       -- ^ The total number of transactions now in the Mempool.
+     }
+
+   | TraceMempoolRejectedTxs
+     { _txs          :: [GenTx blk]
+       -- ^ New, invalid transaction were rejected and thus not added to the
+       -- Mempool.
+     , _txsInMempool :: Word64
+       -- ^ The total number of transactions now in the Mempool.
+     }
+   | TraceMempoolRemoveTxs
+     { _txs          :: [GenTx blk]
+       -- ^ Previously valid transactions that are no longer valid because of
+       -- changes in the ledger state. These transactions have been removed
+       -- from the Mempool.
+     , _txsInMempool :: Word64
+       -- ^ The total number of transactions now in the Mempool.
+     }
+
+deriving instance Eq   (GenTx blk) => Eq   (TraceEventMempool blk)
+deriving instance Show (GenTx blk) => Show (TraceEventMempool blk)
