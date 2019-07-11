@@ -174,13 +174,12 @@ data Example1TraceEvent =
                                 (FetchDecision [Point BlockHeader])]
    | TraceFetchClientState    (TraceLabelPeer Int
                                 (TraceFetchClientState BlockHeader))
-   | TraceFetchClientSendRecv (TraceLabelPeer Int
-                                (TraceSendRecv (BlockFetch Block) DeserialiseFailure))
+   | TraceFetchClientSendRecv (TraceSendRecv (BlockFetch Block) Int DeserialiseFailure)
 
 instance Show Example1TraceEvent where
   show (TraceFetchDecision       x) = "TraceFetchDecision " ++ show x
   show (TraceFetchClientState    x) = show x
-  show (TraceFetchClientSendRecv x) = show (fmap (\_ -> "msg") x)
+  show (TraceFetchClientSendRecv x) = show x
 
 
 -- | Check the execution trace for a particular property: we observe all the

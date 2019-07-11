@@ -92,15 +92,16 @@ runMuxWithQueues
      , Show ptcl
      , Mx.MiniProtocolLimits ptcl
      )
-  => Mx.MuxApplication appType ptcl m BL.ByteString a b
+  => peerid
+  -> Mx.MuxApplication appType peerid ptcl m BL.ByteString a b
   -> TBQueue m BL.ByteString
   -> TBQueue m BL.ByteString
   -> Word16
   -> Maybe (TBQueue m (Mx.MiniProtocolId ptcl, Mx.MiniProtocolMode, Time m))
   -> m (Maybe SomeException)
-runMuxWithQueues app wq rq mtu trace =
+runMuxWithQueues peerid app wq rq mtu trace =
     bracket (queuesAsMuxBearer wq rq mtu trace) Mx.close $ \bearer -> do
-      res_e <- try $ Mx.muxStart app bearer
+      res_e <- try $ Mx.muxStart peerid app bearer
       case res_e of
             Left  e -> return (Just e)
             Right _ -> return Nothing

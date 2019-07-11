@@ -146,13 +146,15 @@ createNetworkInterface chans nodeIds us
               let nodeChan = chans Map.! us Map.! them
 
               aCS <- async $ unmask
-                          $ void $ naChainSyncServer
-                          $ loggingChannel (TalkingToConsumer us them)
-                          $ chainSyncConsumer nodeChan
+                           $ void $ naChainSyncServer
+                             them
+                             (loggingChannel (TalkingToConsumer us them)
+                               (chainSyncConsumer nodeChan))
               aBF <- async $ unmask
-                          $ void $ naBlockFetchServer
-                          $ loggingChannel (TalkingToConsumer us them)
-                          $ blockFetchConsumer nodeChan
+                           $ void $ naBlockFetchServer
+                             them
+                             (loggingChannel (TalkingToConsumer us them)
+                               (blockFetchConsumer nodeChan))
 
               return [aCS, aBF]
 

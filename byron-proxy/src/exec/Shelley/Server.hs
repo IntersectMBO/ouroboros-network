@@ -41,6 +41,8 @@ runServer serverOptions epochSlots db = do
       addrInfo
       encodeTerm
       decodeTerm
+      -- TODO: this should be some proper type rather than a tuple
+      (,)
       (\_ _ _ -> Accept)
       (fmap AnyMuxResponderApp (responderVersions epochSlots app))
       (\_ -> wait)

@@ -207,22 +207,24 @@ prop_socket_send_recv initiatorAddr responderAddr f xs = do
     siblingVar <- newTVarM 2
 
     let -- Server Node; only req-resp server
-        responderApp :: MuxApplication ResponderApp TestProtocols2 IO BL.ByteString Void ()
+        responderApp :: MuxApplication ResponderApp () TestProtocols2 IO BL.ByteString Void ()
         responderApp = MuxResponderApplication $
-          \ReqRespPr channel -> do
+          \peerid ReqRespPr channel -> do
             r <- runPeer nullTracer
                          ReqResp.codecReqResp
+                         peerid
                          channel
                          (ReqResp.reqRespServerPeer (ReqResp.reqRespServerMapAccumL (\a -> pure . f a) 0))
             atomically $ putTMVar sv r
             waitSibling siblingVar
 
         -- Client Node; only req-resp client
-        initiatorApp :: MuxApplication InitiatorApp TestProtocols2 IO BL.ByteString () Void
+        initiatorApp :: MuxApplication InitiatorApp () TestProtocols2 IO BL.ByteString () Void
         initiatorApp = MuxInitiatorApplication $
-          \ReqRespPr channel -> do
+          \peerid ReqRespPr channel -> do
             r <- runPeer nullTracer
                          ReqResp.codecReqResp
+                         peerid
                          channel
                          (ReqResp.reqRespClientPeer (ReqResp.reqRespClientMap xs))
             atomically $ putTMVar cv r
@@ -234,12 +236,14 @@ prop_socket_send_recv initiatorAddr responderAddr f xs = do
         responderAddr
         (\(DictVersion codec) -> encodeTerm codec)
         (\(DictVersion codec) -> decodeTerm codec)
+        (\_ _ -> ())
         (\(DictVersion _) -> acceptEq)
         (simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData 0) (DictVersion nodeToNodeCodecCBORTerm) responderApp)
         $ \_ _ -> do
           connectToNode
             (\(DictVersion codec) -> encodeTerm codec)
             (\(DictVersion codec) -> decodeTerm codec)
+            (\_ _ -> ())
             (simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData 0) (DictVersion nodeToNodeCodecCBORTerm) initiatorApp)
             (Just initiatorAddr)
             responderAddr
@@ -265,11 +269,12 @@ prop_socket_recv_close f _ = ioProperty $ do
 
     sv   <- newEmptyTMVarM
 
-    let app :: MuxApplication ResponderApp TestProtocols2 IO BL.ByteString Void ()
+    let app :: MuxApplication ResponderApp () TestProtocols2 IO BL.ByteString Void ()
         app = MuxResponderApplication $
-          \ReqRespPr channel -> do
+          \peerid ReqRespPr channel -> do
             r <- runPeer nullTracer
                          ReqResp.codecReqResp
+                         peerid
                          channel
                          (ReqResp.reqRespServerPeer (ReqResp.reqRespServerMapAccumL (\a -> pure . f a) 0))
             atomically $ putTMVar sv r
@@ -293,7 +298,7 @@ prop_socket_recv_close f _ = ioProperty $ do
                 $ \(sd',_) -> do
                   bearer <- Mx.socketAsMuxBearer sd'
                   Mx.muxBearerSetState bearer Mx.Connected
-                  Mx.muxStart app bearer
+                  Mx.muxStart () app bearer
           )
           $ \muxAsync -> do
 
@@ -322,11 +327,12 @@ prop_socket_client_connect_error _ xs = ioProperty $ do
 
     cv <- newEmptyTMVarM
 
-    let app :: MuxApplication InitiatorApp TestProtocols2 IO BL.ByteString () Void
+    let app :: MuxApplication InitiatorApp (Socket.SockAddr, Socket.SockAddr) TestProtocols2 IO BL.ByteString () Void
         app = MuxInitiatorApplication $
-                \ReqRespPr channel -> do
+                \peerid ReqRespPr channel -> do
                   _ <- runPeer nullTracer
                           ReqResp.codecReqResp
+                          peerid
                           channel
                           (ReqResp.reqRespClientPeer (ReqResp.reqRespClientMap xs)
                                   :: Peer (ReqResp.ReqResp Int Int) AsClient ReqResp.StIdle IO [Int])
@@ -337,6 +343,7 @@ prop_socket_client_connect_error _ xs = ioProperty $ do
       <- try $ False <$ connectToNode
         (\(DictVersion codec) -> encodeTerm codec)
         (\(DictVersion codec) -> decodeTerm codec)
+        (,)
         (simpleSingletonVersions (0::Int) (NodeToNodeVersionData 0) (DictVersion nodeToNodeCodecCBORTerm) app)
         (Just clientAddr)
         serverAddr
@@ -361,7 +368,7 @@ demo chain0 updates = do
     let Just expectedChain = Chain.applyChainUpdates updates chain0
         target = Chain.headPoint expectedChain
 
-        initiatorApp :: MuxApplication InitiatorApp TestProtocols1 IO BL.ByteString () Void
+        initiatorApp :: MuxApplication InitiatorApp (Socket.SockAddr, Socket.SockAddr) TestProtocols1 IO BL.ByteString () Void
         initiatorApp = simpleMuxInitiatorApplication $
           \ChainSyncPr ->
               MuxPeer nullTracer
@@ -373,7 +380,7 @@ demo chain0 updates = do
         server :: ChainSync.ChainSyncServer block (Point block) IO ()
         server = ChainSync.chainSyncServerExample () producerVar
 
-        responderApp :: MuxApplication ResponderApp TestProtocols1 IO BL.ByteString Void ()
+        responderApp :: MuxApplication ResponderApp (Socket.SockAddr, Socket.SockAddr)TestProtocols1 IO BL.ByteString Void ()
         responderApp = simpleMuxResponderApplication $
           \ChainSyncPr ->
             MuxPeer nullTracer
@@ -385,6 +392,7 @@ demo chain0 updates = do
       producerAddress
       (\(DictVersion codec)-> encodeTerm codec)
       (\(DictVersion codec)-> decodeTerm codec)
+      (,)
       (\(DictVersion _) -> acceptEq)
       (simpleSingletonVersions (0::Int) (NodeToNodeVersionData 0) (DictVersion nodeToNodeCodecCBORTerm) responderApp)
       $ \_ _ -> do
@@ -392,6 +400,7 @@ demo chain0 updates = do
         (connectToNode
           (\(DictVersion codec) -> encodeTerm codec)
           (\(DictVersion codec) -> decodeTerm codec)
+          (,)
           (simpleSingletonVersions (0::Int) (NodeToNodeVersionData 0) (DictVersion nodeToNodeCodecCBORTerm) initiatorApp)
           (Just consumerAddress)
           producerAddress)
