@@ -64,7 +64,13 @@ class ( ProtocolLedgerView blk
       , Condense (HeaderHash blk)
       , Condense blk
       , Condense [blk]
+      -- TODO: the show constraints are needed when using a tracer which logs
+      -- a mini-protocol messages, or the fetch client decisions, we should
+      -- rethink where the condense class lives so that we can provide
+      -- 'Condenese' instances for data structures defined in ouroboros-network
+      -- or provide them in the module where 'Condense' is defined.
       , Show blk
+      , Show (Header blk)
       , ApplyTx blk
       , Show (ApplyTxErr blk)
       , Condense (GenTx blk)
