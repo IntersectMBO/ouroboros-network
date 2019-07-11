@@ -117,6 +117,8 @@ data NodeCallbacks m blk = NodeCallbacks {
 data NodeParams m peer blk = NodeParams {
       tracer             :: Tracer m String
     , mempoolTracer      :: Tracer m (TraceEventMempool blk)
+    , decisionTracer     :: Tracer m [TraceLabelPeer peer (FetchDecision [Point (Header blk)])]
+    , fetchClientTracer  :: Tracer m (TraceLabelPeer peer (TraceFetchClientState (Header blk)))
     , threadRegistry     :: ThreadRegistry m
     , maxClockSkew       :: ClockSkew
     , cfg                :: NodeConfig (BlockProtocol blk)
@@ -140,7 +142,7 @@ nodeKernel
        )
     => NodeParams m peer blk
     -> m (NodeKernel m peer blk)
-nodeKernel params@NodeParams { threadRegistry, cfg } = do
+nodeKernel params@NodeParams { threadRegistry, cfg, decisionTracer, fetchClientTracer } = do
     st <- initInternalState params
 
     forkBlockProduction st
@@ -151,8 +153,8 @@ nodeKernel params@NodeParams { threadRegistry, cfg } = do
     -- Run the block fetch logic in the background. This will call
     -- 'addFetchedBlock' whenever a new block is downloaded.
     void $ forkLinked threadRegistry $ blockFetchLogic
-        nullTracer            -- fetch decision tracer
-        nullTracer            -- fetch client state tracer
+        decisionTracer
+        fetchClientTracer
         blockFetchInterface
         fetchClientRegistry
 
