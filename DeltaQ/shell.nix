@@ -7,13 +7,13 @@ let
 
   # the jupyter build enviroment
   jupyter = (import jupyterSrc) {};
-  
+
   nixpkgsPath = jupyterSrc + "/nix";
 
   # the pkgs in that environment
   pkgs = import nixpkgsPath {};
 
-  # The ability to override pacakages for the jupter build.
+  # Override for packages included in the jupyter build.
   haskellPackages = pkgs.haskellPackages.override (old: {
     overrides = pkgs.lib.composeExtensions old.overrides
         (self: hspkgs: {
@@ -25,12 +25,15 @@ let
            Chart-cairo = (hspkgs.callHackageDirect {pkg    = "Chart-cairo";
                                        ver    = "1.9.1";
                                        sha256 = "0ambbkxbndjqxr0c4pysn87b3z0f8zpgvldj4qjbyazadna9k807";}) {};
-           # dq1 = callCabal2nix "DeltaQIllustration"  ./packages/DeltaQIllustration {Chart=Chart;};
-           # dq2 = callCabal2nix "DeltaQIHaskell"      ./packages/DeltaQIHaskell {DeltaQIllustration = dq1; Chart=Chart;};
-          
+
+           # 2019-07-08 - doesn't pass test suite: suppress test suite. Needed for pandoc.
+           Diff = pkgs.haskell.lib.dontCheck (hspkgs.callHackage "Diff" "0.3.4" {});
+
+           DeltaQIllustration = hspkgs.callCabal2nix "DeltaQIllustration" ./packages/DeltaQIllustration {};
+           DeltaQIHaskell = hspkgs.callCabal2nix "DeltaQIHaskell" ./packages/DeltaQIHaskell {};
         });
       });
-      
+
   iPython = jupyter.kernels.iPythonWith {
     name = "python";
     packages = p: with p; [ numpy ];
@@ -42,28 +45,26 @@ let
     packages = p: with p; [
     # the pretty renders
     ihaskell-charts ihaskell-hatex ihaskell-diagrams ihaskell-graphviz ihaskell-aeson ihaskell-hvega ihaskell-magic
-    Chart HaTeX diagrams graphviz diagrams-graphviz
-    formatting hvega
-#    dq1
-#    dq2
+    Chart HaTeX diagrams graphviz # diagrams-graphviz - marked as broken
+    formatting hvega pandoc
+    DeltaQIllustration DeltaQIHaskell
    ];
   };
- 
+
   # Creats a nix-shell
   jupyterEnvironment =
     jupyter.jupyterlabWith {
       kernels = [ iPython iHaskell ];
       # note - may need to perform an initial action to create the
       # appropriate template for extentions.
-##      directory = ./jupyterlab;
+      # directory = ./jupyterlab;
     };
 
   build = jupyterEnvironment;
 
-  shell = jupyterEnvironment.env;
+  shell = pkgs.stdenv.mkDerivation {
+    name = "my-env";
+    buildInputs = [ build pkgs.graphviz haskellPackages.pandoc] ;
+    };
 
-# docker = mkDockerImage {inherit build};
-# {inherit build shell; }
-in {inherit build shell; }
-     
-
+in shell
