@@ -59,7 +59,9 @@ import           Ouroboros.Consensus.Util.Condense
 -------------------------------------------------------------------------------}
 
 data PBftFields c toSign = PBftFields {
+      -- | The actual issuer of a block
       pbftIssuer    :: VerKeyDSIGN (PBftDSIGN c)
+      -- | The stakeholder on whose behalf the block is being issued
     , pbftGenKey    :: VerKeyDSIGN (PBftDSIGN c)
     , pbftSignature :: SignedDSIGN (PBftDSIGN c) toSign
     }
