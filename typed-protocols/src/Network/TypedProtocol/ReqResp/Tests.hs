@@ -164,7 +164,7 @@ prop_channel :: (MonadSTM m, MonadAsync m, MonadCatch m)
 prop_channel f xs = do
     (c, s) <- runConnectedPeers createConnectedChannels
                                 nullTracer
-                                codecReqResp client server
+                                codecReqResp "client" "server" client server
     return ((s, c) == mapAccumL f 0 xs)
   where
     client = reqRespClientPeer (reqRespClientMap xs)
@@ -200,9 +200,9 @@ prop_runPeerWithByteLimit limit reqPayloads = do
       (c1, c2) <- createConnectedChannels
 
       res <- try $
-        runPeerWithByteLimit limit (fromIntegral . length) nullTracer codecReqResp c1 recvPeer
+        runPeerWithByteLimit limit (fromIntegral . length) nullTracer codecReqResp "receiver" c1 recvPeer
           `concurrently`
-        void (runPeer nullTracer codecReqResp c2 sendPeer)
+        void (runPeer nullTracer codecReqResp "sender" c2 sendPeer)
 
       case res :: Either (DecoderFailureOrTooMuchInput CodecFailure) ([String], ()) of
         Right _           -> pure $ not shouldFail
