@@ -421,8 +421,11 @@ garbageCollectable secParam m@Model{..} b =
 
 -- Return 'True' when the model contains the block corresponding to the point
 -- and the block itself is eligible for garbage collection, i.e. the real
--- implementation might have garbage collected it. In all other cases, return
--- 'False'.
+-- implementation might have garbage collected it.
+--
+-- If the block is not in the model, return 'True', as it has likely been
+-- garbage-collected from the model too. Note that we cannot distinguish this
+-- case from a block that was never added to the model in the first place.
 garbageCollectablePoint :: forall blk. HasHeader blk
                         => SecurityParam -> Model blk -> Point blk -> Bool
 garbageCollectablePoint secParam m@Model{..} pt
@@ -430,7 +433,7 @@ garbageCollectablePoint secParam m@Model{..} pt
     , Just blk <- getBlock hash m
     = garbageCollectable secParam m blk
     | otherwise
-    = False
+    = True
 
 garbageCollect :: forall blk. HasHeader blk
                => SecurityParam -> Model blk -> Model blk
