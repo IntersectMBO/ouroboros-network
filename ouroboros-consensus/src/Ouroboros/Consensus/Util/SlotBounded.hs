@@ -1,4 +1,6 @@
-{-# LANGUAGE DeriveFunctor #-}
+{-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE DeriveFunctor  #-}
+{-# LANGUAGE DeriveGeneric  #-}
 
 -- | Intended for qualified import
 module Ouroboros.Consensus.Util.SlotBounded (
@@ -8,6 +10,9 @@ module Ouroboros.Consensus.Util.SlotBounded (
   , at
   ) where
 
+import           Codec.Serialise (Serialise)
+import           GHC.Generics (Generic)
+
 import           Ouroboros.Network.Block (SlotNo)
 
 -- | An item bounded to be valid within particular slots
@@ -15,7 +20,7 @@ data SlotBounded a = SlotBounded
   { sbLower   :: !SlotNo
   , sbUpper   :: !SlotNo
   , sbContent :: !a
-  } deriving (Eq, Functor, Show)
+  } deriving (Eq, Functor, Show, Generic, Serialise)
 
 -- | Construct a slot bounded item.
 --

@@ -1,13 +1,13 @@
-{-# LANGUAGE DeriveGeneric         #-}
-{-# LANGUAGE FlexibleContexts      #-}
-{-# LANGUAGE FlexibleInstances     #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE RankNTypes            #-}
-{-# LANGUAGE RecordWildCards       #-}
-{-# LANGUAGE StandaloneDeriving    #-}
-{-# LANGUAGE TypeFamilies          #-}
-{-# LANGUAGE UndecidableInstances  #-}
+{-# LANGUAGE DeriveGeneric              #-}
+{-# LANGUAGE FlexibleContexts           #-}
+{-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE MultiParamTypeClasses      #-}
+{-# LANGUAGE RankNTypes                 #-}
+{-# LANGUAGE RecordWildCards            #-}
+{-# LANGUAGE StandaloneDeriving         #-}
+{-# LANGUAGE TypeFamilies               #-}
+{-# LANGUAGE UndecidableInstances       #-}
 
 -- | Simple block to go with the mock ledger
 --
@@ -207,7 +207,7 @@ instance (SimpleCrypto c, Typeable ext, SupportedBlock (SimpleBlock c ext))
   newtype LedgerState (SimpleBlock c ext) = SimpleLedgerState {
         simpleLedgerState :: MockState (SimpleBlock c ext)
       }
-    deriving (Show, Eq)
+    deriving (Generic, Show, Eq)
 
   data LedgerConfig (SimpleBlock c ext) =
       SimpleLedgerConfig
@@ -336,6 +336,7 @@ instance Serialise SimpleBody
 deriving instance Serialise (GenTx (SimpleBlock p c))
 instance ToCBOR SimpleBody where
   toCBOR = encode
+deriving instance Serialise (LedgerState (SimpleBlock c ext))
 
 encodeSimpleHeader :: SimpleCrypto c
                    => (ext' -> CBOR.Encoding)

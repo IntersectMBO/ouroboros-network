@@ -112,7 +112,7 @@ protocolInfoByron (NumCoreNodes numCoreNodes) (CoreNodeId nid) params gc =
 
 instance Condense Cardano.Block.HeaderHash where
   condense = formatToString Cardano.Block.headerHashF
-  
+
 instance DemoHeaderHash Cardano.Block.HeaderHash where
   demoEncodeHeaderHash = encodeByronHeaderHash
   demoDecodeHeaderHash = decodeByronHeaderHash
@@ -121,10 +121,16 @@ instance ByronGiven => RunDemo (ByronBlock ByronDemoConfig) where
   demoForgeBlock         = forgeBlock
   demoBlockMatchesHeader = \_hdr _blk -> True -- TODO #595
   demoBlockFetchSize     = const 2000 -- TODO #593
+  demoIsEBB              = const False -- TODO #704
+  demoEpochSize          = \_ _ -> return 21600 -- TODO #226
   demoEncodeBlock        = encodeByronBlock  . pbftEpochSlots . encNodeConfigExt
   demoEncodeHeader       = encodeByronHeader . pbftEpochSlots . encNodeConfigExt
   demoEncodeGenTx        = encodeByronGenTx
+  demoEncodeLedgerState  = const encodeByronLedgerState
+  demoEncodeChainState   = const encodeByronChainState
   demoDecodeBlock        = decodeByronBlock  . pbftEpochSlots . encNodeConfigExt
   demoDecodeHeader       = decodeByronHeader . pbftEpochSlots . encNodeConfigExt
   demoDecodeGenTx        = decodeByronGenTx
+  demoDecodeLedgerState  = const decodeByronLedgerState
+  demoDecodeChainState   = const decodeByronChainState
   demoMockTx             = elaborateTx

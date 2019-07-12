@@ -89,13 +89,17 @@ test_simple_protocol_convergence :: forall m c ext.
                                  -> m Property
 test_simple_protocol_convergence pInfo isValid numCoreNodes numSlots seed =
     fmap (isValid nodeIds) $ withThreadRegistry $ \registry -> do
-      btime <- testBlockchainTime registry numSlots 100000
+      btime <- testBlockchainTime registry numSlots slotLen
       broadcastNetwork registry
                        btime
                        numCoreNodes
                        pInfo
                        (seedToChaCha seed)
                        numSlots
+                       slotLen
   where
     nodeIds :: [NodeId]
     nodeIds = map fromCoreNodeId $ enumCoreNodes numCoreNodes
+
+    slotLen :: DiffTime
+    slotLen = 100000

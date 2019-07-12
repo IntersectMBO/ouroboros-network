@@ -20,6 +20,7 @@ module Ouroboros.Consensus.Demo.Run (
 import           Codec.CBOR.Decoding (Decoder)
 import           Codec.CBOR.Encoding (Encoding)
 import           Crypto.Random (MonadRandom)
+import           Data.Proxy (Proxy)
 
 import           Ouroboros.Network.Block (BlockNo, ChainHash (..), HeaderHash,
                      SlotNo)
@@ -33,6 +34,8 @@ import           Ouroboros.Consensus.Ledger.Mock
 import           Ouroboros.Consensus.Mempool
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util.Condense
+
+import           Ouroboros.Storage.Common (EpochNo, EpochSize)
 
 {-------------------------------------------------------------------------------
   ProtocolInfo
@@ -75,6 +78,7 @@ class ( ProtocolLedgerView blk
       , Show (ApplyTxErr blk)
       , Condense (GenTx blk)
       , Show (GenTx blk)
+      , Show (Header blk)
       ) => RunDemo blk where
   demoForgeBlock         :: (HasNodeState (BlockProtocol blk) m, MonadRandom m)
                          => NodeConfig (BlockProtocol blk)
@@ -86,16 +90,23 @@ class ( ProtocolLedgerView blk
                          -> m blk
   demoBlockMatchesHeader :: Header blk -> blk -> Bool
   demoBlockFetchSize     :: Header blk -> SizeInBytes
+  demoIsEBB              :: blk -> Bool
+  demoEpochSize          :: Monad m
+                         => Proxy blk  -> EpochNo -> m EpochSize
 
   -- Encoders
-  demoEncodeBlock  :: NodeConfig (BlockProtocol blk) -> blk -> Encoding
-  demoEncodeHeader :: NodeConfig (BlockProtocol blk) -> Header blk -> Encoding
-  demoEncodeGenTx  ::                                   GenTx  blk -> Encoding
+  demoEncodeBlock       :: NodeConfig (BlockProtocol blk) -> blk                            -> Encoding
+  demoEncodeHeader      :: NodeConfig (BlockProtocol blk) -> Header blk                     -> Encoding
+  demoEncodeGenTx       ::                                   GenTx  blk                     -> Encoding
+  demoEncodeLedgerState :: NodeConfig (BlockProtocol blk) -> LedgerState blk                -> Encoding
+  demoEncodeChainState  :: Proxy blk                      -> ChainState (BlockProtocol blk) -> Encoding
 
   -- Decoders
-  demoDecodeHeader :: forall s. NodeConfig (BlockProtocol blk) -> Decoder s (Header blk)
-  demoDecodeBlock  :: forall s. NodeConfig (BlockProtocol blk) -> Decoder s blk
-  demoDecodeGenTx  :: forall s.                                   Decoder s (GenTx blk)
+  demoDecodeHeader      :: forall s. NodeConfig (BlockProtocol blk) -> Decoder s (Header blk)
+  demoDecodeBlock       :: forall s. NodeConfig (BlockProtocol blk) -> Decoder s blk
+  demoDecodeGenTx       :: forall s.                                   Decoder s (GenTx blk)
+  demoDecodeLedgerState :: forall s. NodeConfig (BlockProtocol blk) -> Decoder s (LedgerState blk)
+  demoDecodeChainState  :: forall s. Proxy blk                      -> Decoder s (ChainState (BlockProtocol blk))
 
   -- | Construct transaction from mock transaction
   --

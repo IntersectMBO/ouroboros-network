@@ -1,14 +1,17 @@
-{-# LANGUAGE ConstraintKinds       #-}
-{-# LANGUAGE FlexibleContexts      #-}
-{-# LANGUAGE FlexibleInstances     #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE NamedFieldPuns        #-}
-{-# LANGUAGE RecordWildCards       #-}
-{-# LANGUAGE TypeFamilies          #-}
-{-# LANGUAGE TypeOperators         #-}
-{-# LANGUAGE UndecidableInstances  #-}
+{-# LANGUAGE ConstraintKinds            #-}
+{-# LANGUAGE FlexibleContexts           #-}
+{-# LANGUAGE FlexibleInstances          #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE MultiParamTypeClasses      #-}
+{-# LANGUAGE NamedFieldPuns             #-}
+{-# LANGUAGE RecordWildCards            #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE StandaloneDeriving         #-}
+{-# LANGUAGE TypeFamilies               #-}
+{-# LANGUAGE TypeOperators              #-}
+{-# LANGUAGE UndecidableInstances       #-}
 
-{-# OPTIONS_GHC -Wredundant-constraints #-}
+{-# OPTIONS_GHC -Wredundant-constraints -Wno-orphans #-}
 
 module Ouroboros.Consensus.Ledger.Byron
   ( -- * Byron blocks and headers
@@ -28,16 +31,21 @@ module Ouroboros.Consensus.Ledger.Byron
   , encodeByronBlock
   , encodeByronHeaderHash
   , encodeByronGenTx
+  , encodeByronLedgerState
+  , encodeByronChainState
   , decodeByronHeader
   , decodeByronBlock
   , decodeByronHeaderHash
   , decodeByronGenTx
+  , decodeByronLedgerState
+  , decodeByronChainState
   ) where
 
-import           Codec.CBOR.Decoding (Decoder)
-import           Codec.CBOR.Encoding (Encoding)
+import           Codec.CBOR.Decoding (Decoder, decodeListLenOf)
+import           Codec.CBOR.Encoding (Encoding, encodeListLen)
 import qualified Codec.CBOR.Read as CBOR
 import qualified Codec.CBOR.Write as CBOR
+import           Codec.Serialise (Serialise, decode, encode)
 import           Control.Monad.Except
 import           Control.Monad.Reader
 import qualified Data.Bimap as Bimap
@@ -53,8 +61,8 @@ import           Data.Typeable
 import           Data.Word (Word8)
 import           Formatting
 
-import           Cardano.Binary (Annotated (..), ByteSpan, fromCBOR, reAnnotate,
-                     slice, toCBOR)
+import           Cardano.Binary (Annotated (..), ByteSpan, FromCBOR (..),
+                     ToCBOR (..), reAnnotate, slice)
 import qualified Cardano.Chain.Block as CC.Block
 import qualified Cardano.Chain.Common as CC.Common
 import qualified Cardano.Chain.Delegation as CC.Delegation
@@ -534,6 +542,14 @@ instance Show (GenTx (ByronBlock cfg)) where
   Serialisation
 -------------------------------------------------------------------------------}
 
+instance Serialise CC.Block.ChainValidationState where
+  encode = toCBOR
+  decode = fromCBOR
+
+instance Serialise CC.Common.KeyHash where
+  encode = toCBOR
+  decode = fromCBOR
+
 encodeByronHeader :: CC.Slot.EpochSlots -> Header (ByronBlock cfg) -> Encoding
 encodeByronHeader epochSlots =
     CC.Block.toCBORHeader epochSlots . void . unByronHeader
@@ -547,6 +563,16 @@ encodeByronHeaderHash = toCBOR
 
 encodeByronGenTx :: GenTx (ByronBlock cfg) -> Encoding
 encodeByronGenTx (ByronTx tx) = toCBOR (void tx)
+
+encodeByronLedgerState :: LedgerState (ByronBlock cfg) -> Encoding
+encodeByronLedgerState ByronLedgerState{..} = mconcat
+    [ encodeListLen 2
+    , encode blsCurrent
+    , encode blsSnapshots
+    ]
+
+encodeByronChainState :: ChainState (BlockProtocol (ByronBlock cfg)) -> Encoding
+encodeByronChainState = encode
 
 decodeByronHeader :: CC.Slot.EpochSlots -> Decoder s (Header (ByronBlock cfg))
 decodeByronHeader epochSlots =
@@ -584,6 +610,14 @@ decodeByronGenTx =
         aTaTx      = reAnnotate aTaTx,
         aTaWitness = reAnnotate aTaWitness
       }
+
+decodeByronLedgerState :: Decoder s (LedgerState (ByronBlock cfg))
+decodeByronLedgerState = do
+    decodeListLenOf 2
+    ByronLedgerState <$> decode <*> decode
+
+decodeByronChainState :: Decoder s (ChainState (BlockProtocol (ByronBlock cfg)))
+decodeByronChainState = decode
 
 {-------------------------------------------------------------------------------
   Internal auxiliary
