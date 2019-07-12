@@ -208,27 +208,27 @@ data MempoolSnapshot txid tx idx = MempoolSnapshot {
 
 -- | Events traced by the Mempool.
 data TraceEventMempool blk
-   = TraceMempoolAddTxs
-     { _txs          :: [GenTx blk]
-       -- ^ New, valid transaction were added to the Mempool.
-     , _txsInMempool :: Word64
-       -- ^ The total number of transactions now in the Mempool.
+   = TraceMempoolAddTx
+     { _txsInMempool :: Word64
+       -- ^ The total number of transactions now in the Mempool
+     , _tx           :: (GenTx blk)
+       -- ^ A new, valid transaction was added to the Mempool..
      }
 
-   | TraceMempoolRejectedTxs
-     { _txs          :: [GenTx blk]
-       -- ^ New, invalid transaction were rejected and thus not added to the
-       -- Mempool.
-     , _txsInMempool :: Word64
-       -- ^ The total number of transactions now in the Mempool.
+   | TraceMempoolRejectedTx
+     { _txsInMempool :: Word64
+       -- ^ The total number of transactions now in the Mempool
+     , _tx           :: (GenTx blk)
+       -- ^ A new, invalid transaction was rejected and thus not added to the
+       -- Mempool..
      }
-   | TraceMempoolRemoveTxs
-     { _txs          :: [GenTx blk]
-       -- ^ Previously valid transactions that are no longer valid because of
-       -- changes in the ledger state. These transactions have been removed
-       -- from the Mempool.
-     , _txsInMempool :: Word64
-       -- ^ The total number of transactions now in the Mempool.
+   | TraceMempoolRemoveTx
+     { _txsInMempool :: Word64
+       -- ^ The total number of transactions now in the Mempool
+     , _tx           :: (GenTx blk)
+       -- ^ A previously valid transaction that is no longer valid because of
+       -- changes in the ledger state. This transaction has been removed from
+       -- the Mempool..
      }
 
 deriving instance Eq   (GenTx blk) => Eq   (TraceEventMempool blk)
