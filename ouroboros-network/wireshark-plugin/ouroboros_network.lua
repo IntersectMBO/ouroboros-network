@@ -96,7 +96,10 @@ dissectOuroboros = function (tvbuf, pktinfo, root, offset)
 
  	local subtree = root:add(ouroboros, tvbuf(), "Ouroboros")
 	local conv = tvbuf:range(offset + 4, 2)
-	local convId = bit32.band(0x7fff, conv:uint())
+	local convId = conv:uint()
+
+	if (convId > 0x8000) then convId = convId - 0x8000
+	end
 
 	subtree:add(on_transmission_time, tvbuf:range(offset, 4))
 	subtree:add(on_conversation, conv)
