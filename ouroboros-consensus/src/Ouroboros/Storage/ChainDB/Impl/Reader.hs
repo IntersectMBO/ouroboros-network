@@ -466,16 +466,17 @@ switchFork ipoint newChain readerState =
         -- fork won't affect it at all
         ReaderInImmDB {} -> readerState
         ReaderInMem   rollState
-          | pointSlot (currentPoint rollState) > pointSlot ipoint
-            -- If the reader point is more recent than the interseciton point,
+          | pointSlot (readerRollStatePoint rollState) > pointSlot ipoint
+            -- If the reader point is more recent than the intersection point,
             -- we have to roll back the reader to the intersection point.
           -> ReaderInMem $ RollBackTo ipoint
           | otherwise
-            -- We can keep rolling forward.
-          -> assert (AF.withinFragmentBounds (currentPoint rollState) newChain)
-             readerState
-  where
-    currentPoint = castPoint . readerRollStatePoint
+            -- We can keep rolling forward. Note that this does not mean the
+            -- reader point is still on the current fragment, as headers older
+            -- than @k@ might have been moved from the fragment to the
+            -- ImmutableDB. This will be noticed when the next instruction is
+            -- requested; we'll switch to the 'ReaderInImmDB' state.
+          -> readerState
 
 -- | Close all open 'Reader's.
 closeAllReaders
