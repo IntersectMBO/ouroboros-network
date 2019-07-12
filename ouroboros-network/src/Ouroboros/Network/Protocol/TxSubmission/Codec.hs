@@ -8,6 +8,7 @@
 
 module Ouroboros.Network.Protocol.TxSubmission.Codec (
     codecTxSubmission
+  , codecTxSubmissionId
   ) where
 
 import           Control.Monad.Class.MonadST
@@ -139,3 +140,28 @@ codecTxSubmission encodeTxId decodeTxId
         (ClientAgency TokTxs,     _, _) ->
           fail "codecTxSubmission.Tx: unexpected message key"
 
+codecTxSubmissionId
+  :: forall txid tx m. Monad m
+  => Codec (TxSubmission txid tx) CodecFailure m (AnyMessage (TxSubmission txid tx))
+codecTxSubmissionId = Codec encode decode
+ where
+  encode :: forall (pr :: PeerRole) st st'.
+            PeerHasAgency pr st
+         -> Message (TxSubmission txid tx) st st'
+         -> AnyMessage (TxSubmission txid tx)
+  encode _ = AnyMessage
+
+  decode :: forall (pr :: PeerRole) st.
+            PeerHasAgency pr st
+         -> m (DecodeStep (AnyMessage (TxSubmission txid tx))
+                          CodecFailure m (SomeMessage st))
+  decode stok = return $ DecodePartial $ \bytes -> return $ case (stok, bytes) of
+    (ServerAgency TokIdle,      Just (AnyMessage msg@(MsgRequestTxIds {}))) -> DecodeDone (SomeMessage msg) Nothing
+    (ServerAgency TokIdle,      Just (AnyMessage msg@(MsgRequestTxs {})))   -> DecodeDone (SomeMessage msg) Nothing
+    (ClientAgency TokTxs,       Just (AnyMessage msg@(MsgReplyTxs {})))     -> DecodeDone (SomeMessage msg) Nothing
+    (ClientAgency (TokTxIds b), Just (AnyMessage msg)) -> case (b, msg) of
+      (TokBlocking,    MsgReplyTxIds (BlockingReply {}))    -> DecodeDone (SomeMessage msg) Nothing
+      (TokNonBlocking, MsgReplyTxIds (NonBlockingReply {})) -> DecodeDone (SomeMessage msg) Nothing
+      (TokBlocking,    MsgDone {})                          -> DecodeDone (SomeMessage msg) Nothing
+      (_, _) -> DecodeFail (CodecFailure "codecTxSubmissionId: no matching message")
+    (_, _) -> DecodeFail (CodecFailure "codecTxSubmissionId: no matching message")
