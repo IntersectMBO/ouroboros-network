@@ -6,6 +6,7 @@
 module Ouroboros.Consensus.BlockchainTime (
     -- * Abstract definition
     BlockchainTime(..)
+  , onLaterSlot
   , onSlot
     -- * Use in testing
   , NumSlots(..)
@@ -27,6 +28,7 @@ module Ouroboros.Consensus.BlockchainTime (
   , SlotNo (..)
   ) where
 
+import           Control.Exception (Exception (..))
 import           Control.Monad (forever, replicateM_, void, when)
 import           Data.Fixed
 import           Data.Time
@@ -59,10 +61,34 @@ data BlockchainTime m = BlockchainTime {
     , onSlotChange   :: (SlotNo -> m ()) -> m ()
     }
 
--- | Execute action on specific slot
-onSlot :: MonadSTM m => BlockchainTime m -> SlotNo -> m () -> m ()
-onSlot BlockchainTime{..} slot act = onSlotChange $ \slot' ->
+-- | Execute action on specific slot.
+--
+-- Discards the action unless the given slot is after the current slot.
+onLaterSlot :: MonadSTM m => BlockchainTime m -> SlotNo -> m () -> m ()
+onLaterSlot BlockchainTime{..} slot act = onSlotChange $ \slot' ->
     when (slot == slot') act
+
+-- | Execute action on specific slot.
+--
+-- If the given slot and current slot are equal,
+-- then this action equals the given action (e.g. runs immediately in the current thread).
+-- If the slot is in the future, it delegates to 'onLaterSlot'.
+-- If the slot is in the past, it raises 'OnSlotTooLate'.
+onSlot :: (MonadSTM m, MonadThrow m) => BlockchainTime m -> SlotNo -> m () -> m ()
+onSlot btime slot@(SlotNo wSlot) m = do
+    now@(SlotNo wNow) <- atomically (getCurrentSlot btime)
+    case compare wSlot wNow of
+        LT -> throwM $ OnSlotTooLate slot now
+        EQ -> m
+        GT -> onLaterSlot btime slot m
+
+data OnSlotException =
+    -- | An action was scheduled via 'onSlot' for a slot in the past.
+    -- First slot is requested, second slot is current as of raising.
+    OnSlotTooLate SlotNo SlotNo
+  deriving (Eq, Show)
+
+instance Exception OnSlotException
 
 {-------------------------------------------------------------------------------
   Use in testing
