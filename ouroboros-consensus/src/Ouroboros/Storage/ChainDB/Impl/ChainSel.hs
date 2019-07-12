@@ -615,7 +615,7 @@ validateCandidate lgrDB tracer cfg invalidPoints
         let lastValid  = castPoint $ LgrDB.currentPoint ledger'
             candidate' = fromMaybe
               (error "cannot rollback to point on fragment") $
-              AF.rollback lastValid candidate'
+              AF.rollback lastValid candidate
         let invalidPointsInCand = Set.fromList $ pointsStartingFrom pt
         atomically $ modifyTVar' invalidPoints (Set.union invalidPointsInCand)
         trace (InvalidBlock e pt)
