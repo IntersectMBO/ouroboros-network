@@ -100,15 +100,18 @@ forgeBlock cfg curSlot curNo prevHash txs () = do
         }
 
     headerGenesisKey :: Crypto.VerificationKey
+    VerKeyCardanoDSIGN headerGenesisKey = pbftGenVerKey $ encNodeConfigP cfg
+
     dlgCertificate :: CC.Delegation.Certificate
-    (headerGenesisKey, dlgCertificate) = case findDelegate of
+    dlgCertificate = case findDelegate of
         Just x  -> x
         Nothing -> error "Issuer is not a valid genesis key delegate."
       where
         dlgMap = CC.Genesis.unGenesisDelegation pbftGenesisDlg
-        VerKeyCardanoDSIGN issuer = pbftVerKey $ encNodeConfigP cfg
-        findDelegate = fmap (\crt -> (CC.Delegation.issuerVK crt, crt))
-                      . find (\crt -> CC.Delegation.delegateVK crt == issuer)
+        VerKeyCardanoDSIGN delegate = pbftVerKey $ encNodeConfigP cfg
+        findDelegate = find (\crt -> CC.Delegation.delegateVK crt == delegate
+                                   && CC.Delegation.issuerVK crt == headerGenesisKey
+                             )
                       $ Map.elems dlgMap
 
     forge :: PBftFields PBftCardanoCrypto CC.Block.ToSign
