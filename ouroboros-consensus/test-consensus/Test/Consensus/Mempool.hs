@@ -185,7 +185,7 @@ testAddTxsWithMempoolAndSnapshot
   -> [TestTx]
   -> (   forall m.
          Mempool m TestBlock TicketNo
-      -> MempoolSnapshot (GenTxId TestBlock) (GenTx TestBlock) TicketNo
+      -> MempoolSnapshot TestBlock TicketNo
       -> prop
      )
   -> Property
