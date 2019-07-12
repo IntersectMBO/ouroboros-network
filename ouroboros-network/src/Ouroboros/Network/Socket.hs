@@ -3,6 +3,7 @@
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 -- |
@@ -11,13 +12,22 @@
 module Ouroboros.Network.Socket (
     -- * High level socket interface
       AnyMuxResponderApp (..)
+    , ConnectionTable
+    , ConnectionTableRef (..)
     , withServerNode
     , withSimpleServerNode
     , connectToNode
+    , connectToNode'
 
     -- * Helper function for creating servers
     , fromSocket
     , beginConnection
+
+    -- * Auxiliary functions
+    , newConnectionTable
+    , refConnection
+    , addConnection
+    , removeConnection
     ) where
 
 import           Control.Concurrent.Async
@@ -29,10 +39,12 @@ import           Control.Monad.Class.MonadThrow
 import           Control.Exception (throwIO)
 import qualified Codec.CBOR.Term     as CBOR
 import           Codec.Serialise (Serialise)
+import qualified Data.Map.Strict as M
 import           Data.Text (Text)
 import           Data.Typeable (Typeable)
 import qualified Data.ByteString.Lazy as BL
 import           Data.Int
+import qualified Data.Set as S
 
 import qualified Network.Socket as Socket hiding (recv)
 
@@ -61,6 +73,84 @@ import qualified Ouroboros.Network.Server.Socket as Server
 --
 maxTransmissionUnit :: Int64
 maxTransmissionUnit = 4 * 1440
+
+type ConnectionTable = TVar IO (M.Map Socket.SockAddr ConnectionTableEntry)
+
+data ConnectionTableEntry = ConnectionTableEntry {
+      cteRefs           :: ![TVar IO Int]
+    , cteLocalAddresses :: !(S.Set Socket.SockAddr)
+    }
+
+data ConnectionTableRef =
+      ConnectionTableCreate
+    | ConnectionTableExist
+    | ConnectionTableDone
+    deriving Show
+
+newConnectionTable :: IO (ConnectionTable)
+newConnectionTable =  newTVarM M.empty
+
+addConnection
+    :: ConnectionTable
+    -> Socket.SockAddr
+    -> Socket.SockAddr
+    -> [TVar IO Int]
+    -> STM IO ()
+addConnection tblVar remoteAddr localAddr refs =
+    readTVar tblVar >>= M.alterF fn remoteAddr >>= writeTVar tblVar
+  where
+    fn :: Maybe ConnectionTableEntry -> STM IO (Maybe ConnectionTableEntry)
+    fn Nothing = do
+        subRefs refs
+        return $ Just $ (ConnectionTableEntry refs (S.singleton localAddr))
+    fn (Just cte) = do
+          let refs' = refs ++ cteRefs cte
+          subRefs $ refs'
+          return $ Just $ cte {
+                cteRefs = refs'
+              , cteLocalAddresses = S.insert localAddr (cteLocalAddresses cte)
+              }
+
+    subRefs = mapM_ (\a -> modifyTVar' a (\r -> r - 1))
+
+removeConnection
+    :: ConnectionTable
+    -> Socket.SockAddr
+    -> Socket.SockAddr
+    -> IO ()
+removeConnection tblVar remoteAddr localAddr = atomically $
+    readTVar tblVar >>= M.alterF fn remoteAddr >>= writeTVar tblVar
+  where
+    fn :: Maybe ConnectionTableEntry -> STM IO (Maybe ConnectionTableEntry)
+    fn Nothing = return Nothing -- XXX removing non existant address
+    fn (Just ConnectionTableEntry{..}) = do
+        mapM_ (\a -> modifyTVar' a (+ 1)) cteRefs
+        let localAddresses' = S.delete localAddr cteLocalAddresses
+        if null localAddresses'
+            then return Nothing
+            else return $ Just $ ConnectionTableEntry cteRefs localAddresses'
+
+refConnection
+    :: ConnectionTable
+    -> Socket.SockAddr
+    -> TVar IO Int
+    -> IO ConnectionTableRef
+refConnection tblVar remoteAddr refVar = atomically $ do
+    tbl <- readTVar tblVar
+    ref <- readTVar refVar
+    if ref > 0
+        then case M.lookup remoteAddr tbl of
+             Nothing -> return ConnectionTableCreate
+             Just cte -> do
+                 let refs' = refVar : (cteRefs cte)
+                 mapM_ (\a -> modifyTVar' a (\r -> r - 1)) refs'
+                 -- XXX We look up remoteAddr twice, is it possible
+                 -- to use M.alterF given that we need to be able to return
+                 -- ConnectionTableCreate or ConnectionTableExist?
+                 writeTVar tblVar $ M.insert remoteAddr
+                     (cte { cteRefs = refs' }) tbl
+                 return ConnectionTableExist
+        else return ConnectionTableDone
 
 -- |
 -- Connect to a remote node.  It is using bracket to enclose the underlying
@@ -106,25 +196,57 @@ connectToNode encodeData decodeData versions localAddr remoteAddr =
 #if !defined(mingw32_HOST_OS)
               Socket.setSocketOption sd Socket.ReusePort 1
 #endif
-          bearer <- Mx.socketAsMuxBearer sd
           case localAddr of
             Just addr -> Socket.bind sd (Socket.addrAddress addr)
             Nothing   -> return ()
           Socket.connect sd (Socket.addrAddress remoteAddr)
-          Mx.muxBearerSetState bearer Mx.Connected
-          mapp <- runPeerWithByteLimit
-                    maxTransmissionUnit
-                    BL.length
-                    nullTracer
-                    codecHandshake
-                    (Mx.muxBearerAsControlChannel bearer Mx.ModeInitiator)
-                    (handshakeClientPeer encodeData decodeData versions)
-          case mapp of
-            Left err -> throwIO err
-            Right app -> do
-              Mx.muxBearerSetState bearer Mx.Mature
-              Mx.muxStart app bearer
+          connectToNode' encodeData decodeData versions sd
       )
+
+-- |
+-- Connect to a remote node using an existing socket. It us up to to caller to
+-- ensure that the socket is closed in case of an exception.
+--
+-- The connection will start with handshake protocol sending @Versions@ to the
+-- remote peer.  It must fit into @'maxTransmissionUnit'@ (~5k bytes).
+--
+-- Exceptions thrown by @'MuxApplication'@ are rethrown by @'connectTo'@.
+connectToNode'
+  :: forall appType ptcl vNumber extra a b.
+     ( Mx.ProtocolEnum ptcl
+     , Ord ptcl
+     , Enum ptcl
+     , Bounded ptcl
+     , Ord vNumber
+     , Enum vNumber
+     , Serialise vNumber
+     , Typeable vNumber
+     , Show vNumber
+     , Show ptcl
+     , Mx.MiniProtocolLimits ptcl
+     , HasInitiator appType ~ True
+     )
+  => (forall vData. extra vData -> vData -> CBOR.Term)
+  -> (forall vData. extra vData -> CBOR.Term -> Either Text vData)
+  -> Versions vNumber extra (MuxApplication appType ptcl IO BL.ByteString a b)
+  -- ^ application to run over the connection
+  -> Socket.Socket
+  -> IO ()
+connectToNode' encodeData decodeData versions sd = do
+    bearer <- Mx.socketAsMuxBearer sd
+    Mx.muxBearerSetState bearer Mx.Connected
+    mapp <- runPeerWithByteLimit
+              maxTransmissionUnit
+              BL.length
+              nullTracer
+              codecHandshake
+              (Mx.muxBearerAsControlChannel bearer Mx.ModeInitiator)
+              (handshakeClientPeer encodeData decodeData versions)
+    case mapp of
+         Left err -> throwIO err
+         Right app -> do
+             Mx.muxBearerSetState bearer Mx.Mature
+             Mx.muxStart app bearer
 
 -- |
 -- A mux application which has a server component.
@@ -226,13 +348,20 @@ mkListeningSocket addrFamily_ addr = do
 -- Make a server-compatible socket from a network socket.
 --
 fromSocket
-    :: Socket.Socket
+    :: ConnectionTable
+    -> Socket.Socket
     -> Server.Socket Socket.SockAddr Socket.Socket
-fromSocket sd = Server.Socket
+fromSocket tblVar sd = Server.Socket
     { Server.acceptConnection = do
-        (sd', addr) <- Socket.accept sd
-        pure (addr, sd', Socket.close sd')
+        (sd', remoteAddr) <- Socket.accept sd
+        localAddr <- Socket.getSocketName sd'
+        atomically $ addConnection tblVar remoteAddr localAddr []
+        pure (remoteAddr, sd', close remoteAddr localAddr sd')
     }
+  where
+    close remoteAddr localAddr sd' = do
+        removeConnection tblVar remoteAddr localAddr
+        Socket.close sd'
 
 
 -- |
@@ -252,7 +381,8 @@ runNetworkNode'
        , Typeable vNumber
        , Show vNumber
        )
-    => Socket.Socket
+    => ConnectionTable
+    -> Socket.Socket
     -> (forall vData. extra vData -> vData -> CBOR.Term)
     -> (forall vData. extra vData -> CBOR.Term -> Either Text vData)
     -> (forall vData. extra vData -> vData -> vData -> Accept)
@@ -263,8 +393,9 @@ runNetworkNode'
     -> Server.Main st t
     -> st
     -> IO t
-runNetworkNode' sd encodeData decodeData acceptVersion acceptException acceptConn complete main st =
-    Server.run (fromSocket sd) acceptException (beginConnection encodeData decodeData acceptVersion acceptConn) complete main st
+runNetworkNode' tbl sd encodeData decodeData acceptVersion acceptException acceptConn complete
+    main st = Server.run (fromSocket tbl sd) acceptException (beginConnection encodeData decodeData
+        acceptVersion acceptConn) complete main st
 
 
 -- |
@@ -297,7 +428,8 @@ withServerNode
        , Typeable vNumber
        , Show vNumber
        )
-    => Socket.AddrInfo
+    => ConnectionTable
+    -> Socket.AddrInfo
     -> (forall vData. extra vData -> vData -> CBOR.Term)
     -> (forall vData. extra vData -> CBOR.Term -> Either Text vData)
     -> (forall vData. extra vData -> vData -> vData -> Accept)
@@ -305,15 +437,17 @@ withServerNode
     -- ^ The mux application that will be run on each incoming connection from
     -- a given address.  Note that if @'MuxClientAndServerApplication'@ is
     -- returned, the connection will run a full duplex set of mini-protocols.
-    -> (Async () -> IO t)
+    -> (Socket.SockAddr -> Async () -> IO t)
     -- ^ callback which takes the @Async@ of the thread that is running the server.
     -- Note: the server thread will terminate when the callback returns or
     -- throws an exception.
     -> IO t
-withServerNode addr encodeData decodeData acceptVersion versions k =
-    bracket (mkListeningSocket (Socket.addrFamily addr) (Just $ Socket.addrAddress addr)) Socket.close $ \sd ->
+withServerNode tbl addr encodeData decodeData acceptVersion versions k =
+    bracket (mkListeningSocket (Socket.addrFamily addr) (Just $ Socket.addrAddress addr)) Socket.close $ \sd -> do
+      addr' <- Socket.getSocketName sd
       withAsync
         (runNetworkNode'
+          tbl
           sd
           encodeData
           decodeData
@@ -322,7 +456,7 @@ withServerNode addr encodeData decodeData acceptVersion versions k =
           (\_connAddr st -> pure $ AcceptConnection st versions)
           complete
           main
-          ()) k
+          ()) (k addr')
 
     where
       main :: Server.Main () ()
@@ -354,16 +488,17 @@ withSimpleServerNode
        , Typeable vNumber
        , Show vNumber
        )
-    => Socket.AddrInfo
+    => ConnectionTable
+    -> Socket.AddrInfo
     -> (forall vData. extra vData -> vData -> CBOR.Term)
     -> (forall vData. extra vData -> CBOR.Term -> Either Text vData)
     -> (forall vData. extra vData -> vData -> vData -> Accept)
     -> Versions vNumber extra (MuxApplication ResponderApp ptcl IO BL.ByteString a b)
     -- ^ The mux server application that will be run on each incoming
     -- connection.
-    -> (Async () -> IO t)
+    -> (Socket.SockAddr -> Async () -> IO t)
     -- ^ callback which takes the @Async@ of the thread that is running the server.
     -- Note: the server thread will terminate when the callback returns or
     -- throws an exception.
     -> IO t
-withSimpleServerNode addr encodeData decodeData acceptVersion versions k = withServerNode addr encodeData decodeData acceptVersion (AnyMuxResponderApp <$> versions) k
+withSimpleServerNode tbl addr encodeData decodeData acceptVersion versions k = withServerNode tbl addr encodeData decodeData acceptVersion (AnyMuxResponderApp <$> versions) k
