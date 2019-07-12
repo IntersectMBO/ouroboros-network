@@ -326,7 +326,7 @@ forkBlockProduction IS{..} =
             _                   <- pure $ syncState mempool
             mempoolSnapshot     <- getSnapshot mempool
 
-            let txs             =  map sndOfTriple (getTxs mempoolSnapshot)
+            let txs             =  map fst (getTxs mempoolSnapshot)
             newBlock            <- runProtocol varDRG $
                                      produceBlock
                                        proof
@@ -344,9 +344,6 @@ forkBlockProduction IS{..} =
         ChainDB.addBlock chainDB newBlock
   where
     NodeCallbacks{..} = callbacks
-
-    -- Return the second item in a triple.
-    sndOfTriple (_, b, _) = b
 
     -- Return the point and block number of the most recent block in the
     -- current chain with a slot < the given slot. These will either

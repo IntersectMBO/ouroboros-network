@@ -50,7 +50,7 @@ import           Data.Typeable (Typeable)
 import           Data.Word
 import           GHC.Generics (Generic)
 
-import           Cardano.Binary (ToCBOR(..))
+import           Cardano.Binary (ToCBOR (..))
 import           Cardano.Crypto.Hash
 
 import           Ouroboros.Network.Block
@@ -246,6 +246,8 @@ instance (SimpleCrypto c, Typeable ext, SupportedBlock (SimpleBlock c ext))
     } deriving (Eq, Ord)
 
   computeGenTxId = SimpleGenTxId . hash . simpleGenTx
+
+  txSize _ = 2000  -- TODO #745
 
   type ApplyTxErr (SimpleBlock c ext) = MockError (SimpleBlock c ext)
 

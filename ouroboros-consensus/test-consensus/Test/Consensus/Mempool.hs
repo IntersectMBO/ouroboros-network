@@ -85,11 +85,8 @@ prop_Mempool_addTxs_getTxs bc txs =
         txs
         (\_ MempoolSnapshot{getTxs} ->
           filter (genTxIsValid . snd) (testTxsToGenTxPairs txs)
-              === dropThd getTxs)
+              === map (\(tx, _) -> (computeGenTxId tx, tx)) getTxs)
   where
-    dropThd :: [(a, b, c)] -> [(a, b)]
-    dropThd = map (\(a, b, _) -> (a, b))
-    --
     genTxIsValid :: GenTx TestBlock -> Bool
     genTxIsValid (TestGenTx (ValidTestTx _)) = True
     genTxIsValid _                           = False
@@ -107,7 +104,7 @@ prop_Mempool_InvalidTxsNeverAdded bc txs =
         bc
         txs
         (\_ MempoolSnapshot{getTxs} ->
-          filter (\(_, tx, _) -> genTxIsInvalid tx) getTxs === [])
+          filter (\(tx, _) -> genTxIsInvalid tx) getTxs === [])
   where
     genTxIsInvalid :: GenTx TestBlock -> Bool
     genTxIsInvalid (TestGenTx (InvalidTestTx _)) = True

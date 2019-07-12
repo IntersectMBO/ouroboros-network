@@ -9,6 +9,8 @@ module Ouroboros.Consensus.Mempool.API (
   , MempoolSnapshot(..)
   , ApplyTx(..)
   , TraceEventMempool(..)
+    -- * Re-exports
+  , TxSizeInBytes
   ) where
 
 import           Control.Monad.Except
@@ -16,6 +18,8 @@ import           Data.Word (Word64)
 import           GHC.Stack (HasCallStack)
 
 import           Control.Monad.Class.MonadSTM
+
+import           Ouroboros.Network.Protocol.TxSubmission.Type (TxSizeInBytes)
 
 import           Ouroboros.Consensus.Ledger.Abstract
 
@@ -34,6 +38,9 @@ class UpdateLedger blk => ApplyTx blk where
   --
   -- Should be cheap as this will be called often.
   computeGenTxId :: GenTx blk -> GenTxId blk
+
+  -- | Return the post-serialization size in bytes of a 'GenTx'.
+  txSize :: GenTx blk -> TxSizeInBytes
 
   -- | Updating the ledger with a single transaction may result in a different
   -- error type as when updating it with a block
@@ -192,14 +199,14 @@ data Mempool m blk idx = Mempool {
 -- when the transaction has been removed from the mempool between snapshots.
 --
 data MempoolSnapshot blk idx = MempoolSnapshot {
-    -- | Get all transactions in the mempool snapshot along with their
-    -- associated ticket numbers (oldest to newest).
-    getTxs      :: [(GenTxId blk, GenTx blk, idx)]
+    -- | Get all transactions (oldest to newest) in the mempool snapshot along
+    -- with their ticket number.
+    getTxs      :: [(GenTx blk, idx)]
 
-    -- | Get all transactions in the mempool snapshot, along with their
-    -- associated ticket numbers, which are associated with a ticket number
-    -- greater than the one provided.
-  , getTxsAfter :: idx -> [(GenTxId blk, GenTx blk, idx)]
+    -- | Get all transactions (oldest to newest) in the mempool snapshot,
+    -- along with their ticket number, which are associated with a ticket
+    -- number greater than the one provided.
+  , getTxsAfter :: idx -> [(GenTx blk, idx)]
 
     -- | Get a specific transaction from the mempool snapshot by its ticket
     -- number, if it exists.

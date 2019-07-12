@@ -187,16 +187,15 @@ getMempoolSize MempoolEnv{mpEnvStateVar} =
 
 implSnapshotGetTxs :: ApplyTx blk
                    => InternalState blk
-                   -> [(GenTxId blk, GenTx blk, TicketNo)]
+                   -> [(GenTx blk, TicketNo)]
 implSnapshotGetTxs = (flip implSnapshotGetTxsAfter) zeroTicketNo
 
 implSnapshotGetTxsAfter :: ApplyTx blk
                         => InternalState blk
                         -> TicketNo
-                        -> [(GenTxId blk, GenTx blk, TicketNo)]
-implSnapshotGetTxsAfter IS{isTxs} tn = map
-  (\(tx, txTn) -> (computeGenTxId tx, tx, txTn))
-  (TxSeq.fromTxSeq $ snd $ splitAfterTicketNo isTxs tn)
+                        -> [(GenTx blk, TicketNo)]
+implSnapshotGetTxsAfter IS{isTxs} tn =
+    TxSeq.fromTxSeq $ snd $ splitAfterTicketNo isTxs tn
 
 implSnapshotGetTx :: ApplyTx blk
                   => InternalState blk
