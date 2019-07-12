@@ -243,7 +243,7 @@ instance (SimpleCrypto c, Typeable ext, SupportedBlock (SimpleBlock c ext))
 
   newtype GenTxId (SimpleBlock c ext) = SimpleGenTxId
     { simpleGenTxId :: TxId
-    } deriving (Eq, Ord)
+    } deriving (Show, Eq, Ord)
 
   computeGenTxId = SimpleGenTxId . hash . simpleGenTx
 

@@ -1,13 +1,12 @@
-{-# LANGUAGE ConstraintKinds            #-}
-{-# LANGUAGE DataKinds                  #-}
-{-# LANGUAGE DuplicateRecordFields      #-}
-{-# LANGUAGE FlexibleContexts           #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE NamedFieldPuns             #-}
-{-# LANGUAGE RankNTypes                 #-}
-{-# LANGUAGE RecordWildCards            #-}
-{-# LANGUAGE ScopedTypeVariables        #-}
-{-# LANGUAGE TypeFamilies               #-}
+{-# LANGUAGE ConstraintKinds       #-}
+{-# LANGUAGE DataKinds             #-}
+{-# LANGUAGE DuplicateRecordFields #-}
+{-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE NamedFieldPuns        #-}
+{-# LANGUAGE RankNTypes            #-}
+{-# LANGUAGE RecordWildCards       #-}
+{-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE TypeFamilies          #-}
 
 {-# OPTIONS_GHC -Wredundant-constraints -Werror=missing-fields #-}
 
@@ -18,6 +17,8 @@ module Ouroboros.Consensus.Node (
   , NodeParams (..)
   , TraceConstraints
   , nodeKernel
+  , getMempoolReader
+  , getMempoolWriter
     -- * Auxiliary functions
   , tracePrefix
   ) where
@@ -26,6 +27,8 @@ import           Control.Monad (void)
 import           Crypto.Random (ChaChaDRG)
 import           Data.Functor.Contravariant (contramap)
 import           Data.Map.Strict (Map)
+import           Data.Maybe (isNothing)
+import           Data.Word (Word16)
 
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork (MonadFork)
@@ -39,6 +42,10 @@ import           Ouroboros.Network.Block
 import           Ouroboros.Network.BlockFetch
 import           Ouroboros.Network.BlockFetch.State (FetchMode (..))
 import qualified Ouroboros.Network.Chain as Chain
+import           Ouroboros.Network.TxSubmission.Inbound
+import           Ouroboros.Network.TxSubmission.Outbound hiding
+                     (MempoolSnapshot)
+import qualified Ouroboros.Network.TxSubmission.Outbound as Outbound
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
@@ -119,6 +126,8 @@ data NodeParams m peer blk = NodeParams {
     , mempoolTracer      :: Tracer m (TraceEventMempool blk)
     , decisionTracer     :: Tracer m [TraceLabelPeer peer (FetchDecision [Point (Header blk)])]
     , fetchClientTracer  :: Tracer m (TraceLabelPeer peer (TraceFetchClientState (Header blk)))
+    , txInboundTracer    :: Tracer m (TraceTxSubmissionInbound  (GenTxId blk) (GenTx blk))
+    , txOutboundTracer   :: Tracer m (TraceTxSubmissionOutbound (GenTxId blk) (GenTx blk))
     , threadRegistry     :: ThreadRegistry m
     , maxClockSkew       :: ClockSkew
     , cfg                :: NodeConfig (BlockProtocol blk)
@@ -128,6 +137,7 @@ data NodeParams m peer blk = NodeParams {
     , callbacks          :: NodeCallbacks m blk
     , blockFetchSize     :: Header blk -> SizeInBytes
     , blockMatchesHeader :: Header blk -> blk -> Bool
+    , maxUnackTxs        :: Word16
     }
 
 nodeKernel
@@ -373,3 +383,40 @@ forkBlockProduction IS{..} =
                        $ simChaChaT varDRG
                        $ id
 
+
+{-------------------------------------------------------------------------------
+  TxSubmission integration
+-------------------------------------------------------------------------------}
+
+getMempoolReader
+  :: forall m blk.
+     (MonadSTM m, ApplyTx blk)
+  => Mempool m blk TicketNo
+  -> TxSubmissionMempoolReader (GenTxId blk) (GenTx blk) TicketNo m
+getMempoolReader mempool = TxSubmissionMempoolReader
+    { mempoolZeroIdx     = zeroIdx mempool
+    , mempoolGetSnapshot = convertSnapshot <$> getSnapshot mempool
+    }
+  where
+    convertSnapshot
+      :: MempoolSnapshot          blk                       TicketNo
+      -> Outbound.MempoolSnapshot (GenTxId blk) (GenTx blk) TicketNo
+    convertSnapshot MempoolSnapshot{snapshotTxsAfter, snapshotLookupTx} =
+      Outbound.MempoolSnapshot
+        { mempoolTxIdsAfter = \idx ->
+            [ (computeGenTxId tx, idx', txSize tx)
+            | (tx, idx') <- snapshotTxsAfter idx
+            ]
+        , mempoolLookupTx   = snapshotLookupTx
+        }
+
+getMempoolWriter
+  :: (Monad m, ApplyTx blk)
+  => Mempool m blk TicketNo
+  -> TxSubmissionMempoolWriter (GenTxId blk) (GenTx blk) TicketNo m
+getMempoolWriter mempool = TxSubmissionMempoolWriter
+    { txId          = computeGenTxId
+    , mempoolAddTxs = \txs ->
+        map (computeGenTxId . fst) . filter (isNothing . snd) <$>
+        addTxs mempool txs
+    }
