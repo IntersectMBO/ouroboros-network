@@ -129,14 +129,16 @@ implAddTxs mpEnv@MempoolEnv{mpEnvStateVar, mpEnvLedgerCfg, mpEnvTracer} txs = do
       mempoolSize <- getMempoolSize mpEnv
       return (removed, accepted, rejected, mempoolSize)
 
-    trace $ TraceMempoolRemoveTxs   (map fst removed)  mempoolSize
-    trace $ TraceMempoolAddTxs      accepted           mempoolSize
-    trace $ TraceMempoolRejectedTxs (map fst rejected) mempoolSize
+    traceBatch TraceMempoolRemoveTxs   mempoolSize (map fst removed)
+    traceBatch TraceMempoolAddTxs      mempoolSize accepted
+    traceBatch TraceMempoolRejectedTxs mempoolSize (map fst rejected)
 
     return $ [(tx, Just err) | (tx, err) <- rejected] ++
              zip accepted (repeat Nothing)
   where
-    trace = traceWith mpEnvTracer
+    traceBatch mkEv size batch
+      | null batch = return ()
+      | otherwise  = traceWith mpEnvTracer (mkEv batch size)
 
     -- | We first reset 'vrInvalid' to an empty list such that afterwards it
     -- will only contain the /new/ invalid transactions.
@@ -158,7 +160,8 @@ implSyncState mpEnv@MempoolEnv{mpEnvTracer, mpEnvStateVar} = do
       -- transactions.
       mempoolSize <- getMempoolSize mpEnv
       return (map fst vrInvalid, mempoolSize)
-    traceWith mpEnvTracer $ TraceMempoolRemoveTxs removed mempoolSize
+    unless (null removed) $
+      traceWith mpEnvTracer $ TraceMempoolRemoveTxs removed mempoolSize
 
 implGetSnapshot :: ( MonadSTM m
                    , ApplyTx blk

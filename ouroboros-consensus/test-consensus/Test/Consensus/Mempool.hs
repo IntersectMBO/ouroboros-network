@@ -124,7 +124,7 @@ prop_Mempool_TraceValidTxs bc txs =
     traceProp :: [GenTx TestBlock] -> [TraceEventMempool TestBlock] -> Property
     traceProp genTxs es =
         let addedTxs = maybe
-                (error "prop_Mempool_TraceValidTxs: No TraceMempoolAddTxs traces")
+                []
                 (\(TraceMempoolAddTxs ts _) -> ts)
                 (find isAddTxsEvent es)
         in sort (filter genTxIsValid genTxs) === sort addedTxs
@@ -148,7 +148,7 @@ prop_Mempool_TraceRejectedTxs bc txs =
     traceProp :: [GenTx TestBlock] -> [TraceEventMempool TestBlock] -> Property
     traceProp genTxs es =
         let rejectedTxs = maybe
-                (error "prop_Mempool_TraceRejectedTxs: No TraceMempoolRejectedTxs traces")
+                []
                 (\(TraceMempoolRejectedTxs ts _) -> ts)
                 (find isRejectedTxsEvent es)
         in sort (filter genTxIsInvalid genTxs) === sort rejectedTxs
