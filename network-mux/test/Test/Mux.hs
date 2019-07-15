@@ -52,6 +52,7 @@ import           Network.TypedProtocol.ReqResp.Server
 import           Network.TypedProtocol.ReqResp.Codec.Cbor
 
 import qualified Network.Mux as Mx
+import qualified Network.Mux.Codec as Mx
 import qualified Network.Mux.Interface as Mx
 import qualified Network.Mux.Bearer.Queues as Mx
 
