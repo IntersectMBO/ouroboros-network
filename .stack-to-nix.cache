@@ -164,3 +164,5 @@ https://github.com/input-output-hk/cardano-base 6b808ad5506cb097cdf5832e1cd5cad0
 https://github.com/input-output-hk/cardano-prelude d673b92f2a2d9354d102514d0a0fa74f8248b14a . 1zdri9jh1ws3b4jzmv6ywhpic6imcfp8ixgi33hh5rzz7ph76gzn cardano-prelude cardano-prelude.nix
 https://github.com/input-output-hk/cardano-prelude d673b92f2a2d9354d102514d0a0fa74f8248b14a test 1zdri9jh1ws3b4jzmv6ywhpic6imcfp8ixgi33hh5rzz7ph76gzn cardano-prelude-test cardano-prelude-test.nix
 https://github.com/input-output-hk/cardano-sl-x509 ec96c64c665b741c17b4e38f611315bae9b0b054 . 0jfh07cp9kry7h5xdxy26ddm4zz00fckj3hvg2iqm4gy151s567q cardano-sl-x509 cardano-sl-x509.nix
+https://github.com/input-output-hk/iohk-monitoring-framework bd31cd2f3922010ddb76bb869f29c4e63bb8001b iohk-monitoring 1dfk505qbpk6p3gcpxa31wmg98qvx9hlrxlf0khaj7hizf3b8b60 iohk-monitoring iohk-monitoring.nix
+https://github.com/input-output-hk/iohk-monitoring-framework bd31cd2f3922010ddb76bb869f29c4e63bb8001b contra-tracer 1dfk505qbpk6p3gcpxa31wmg98qvx9hlrxlf0khaj7hizf3b8b60 contra-tracer contra-tracer.nix
