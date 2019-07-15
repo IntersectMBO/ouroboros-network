@@ -3,8 +3,7 @@
 
 module Ouroboros.Consensus.Util.Random (
       -- * Producing values in MonadRandom
-      nonNegIntR
-    , generateElement
+      generateElement
       -- * Connecting MonadRandom to Gen
     , Seed (..)
     , withSeed
@@ -24,7 +23,6 @@ import           Control.Monad.State
 import           Crypto.Number.Generate (generateBetween)
 import           Crypto.Random (ChaChaDRG, MonadPseudoRandom, MonadRandom (..),
                      drgNewTest, randomBytesGenerate, withDRG)
-import           Data.ByteString (ByteString, unpack)
 import           Data.List (genericLength)
 import           Data.Word (Word64)
 
@@ -33,14 +31,6 @@ import           Control.Monad.Class.MonadSay
 {-------------------------------------------------------------------------------
   Producing values in MonadRandom
 -------------------------------------------------------------------------------}
-
-nonNegIntR :: MonadRandom m => m Int
-nonNegIntR = toInt <$> getRandomBytes 4
-  where
-    toInt :: ByteString -> Int
-    toInt bs =
-        let [a, b, c, d] = map fromIntegral $ unpack bs
-        in  a + 256 * b + 65536 * c + 16777216 * d
 
 generateElement :: MonadRandom m => [a] -> m (Maybe a)
 generateElement [] = return Nothing
