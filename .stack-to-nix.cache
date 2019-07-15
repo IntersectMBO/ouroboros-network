@@ -163,3 +163,4 @@ https://github.com/input-output-hk/cardano-base 6b808ad5506cb097cdf5832e1cd5cad0
 https://github.com/input-output-hk/cardano-base 6b808ad5506cb097cdf5832e1cd5cad0c83c58d6 cardano-crypto-class 1cpn117lnyjxfnc18i0pawzf4cd60my7z9ifmgyjvzg6xaiv8v6a cardano-crypto-class cardano-crypto-class.nix
 https://github.com/input-output-hk/cardano-prelude d673b92f2a2d9354d102514d0a0fa74f8248b14a . 1zdri9jh1ws3b4jzmv6ywhpic6imcfp8ixgi33hh5rzz7ph76gzn cardano-prelude cardano-prelude.nix
 https://github.com/input-output-hk/cardano-prelude d673b92f2a2d9354d102514d0a0fa74f8248b14a test 1zdri9jh1ws3b4jzmv6ywhpic6imcfp8ixgi33hh5rzz7ph76gzn cardano-prelude-test cardano-prelude-test.nix
+https://github.com/input-output-hk/cardano-sl-x509 ec96c64c665b741c17b4e38f611315bae9b0b054 . 0jfh07cp9kry7h5xdxy26ddm4zz00fckj3hvg2iqm4gy151s567q cardano-sl-x509 cardano-sl-x509.nix
