@@ -207,8 +207,10 @@ run ChainDB{..} ChainDB.Internal{..} = \case
     ignore _ = Unit ()
 
     runBgTasks = do
-      slotNo <- intCopyToImmDB
-      intGarbageCollect slotNo
+      mSlotNo <- intCopyToImmDB
+      case mSlotNo of
+        Point.Origin    -> pure ()
+        Point.At slotNo -> intGarbageCollect slotNo
       intUpdateLedgerSnapshots
 
 -- | Result type for 'getBlock'. Note that the real implementation of

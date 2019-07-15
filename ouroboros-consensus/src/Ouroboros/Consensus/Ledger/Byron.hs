@@ -84,8 +84,8 @@ import           Cardano.Crypto.DSIGN
 import           Cardano.Crypto.Hash
 
 import           Ouroboros.Network.Block
-import           Ouroboros.Network.Chain (genesisSlotNo)
 import qualified Ouroboros.Network.Point as Point (block, origin)
+import           Ouroboros.Network.Point (WithOrigin (..))
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Crypto.DSIGN.Cardano

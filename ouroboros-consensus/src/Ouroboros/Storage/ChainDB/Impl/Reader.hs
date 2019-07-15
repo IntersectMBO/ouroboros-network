@@ -32,6 +32,7 @@ import           Ouroboros.Network.Block (ChainUpdate (..), HasHeader,
                      HeaderHash, Point, SlotNo, blockPoint, castPoint,
                      pointSlot)
 import           Ouroboros.Network.Chain (genesisPoint)
+import           Ouroboros.Network.Point (WithOrigin (..))
 
 import           Ouroboros.Consensus.Block (GetHeader (..), headerPoint)
 import           Ouroboros.Consensus.Util.STM (blockUntilJust)
@@ -415,7 +416,7 @@ forward CDB{..} varReader = \pts -> do
     findFirstPointOnChain
       :: HasCallStack
       => AnchoredFragment (Header blk)
-      -> SlotNo
+      -> WithOrigin SlotNo
       -> [Point blk]
       -> m (Maybe (Point blk))
     findFirstPointOnChain curChain slotNoAtImmDBTip = \case

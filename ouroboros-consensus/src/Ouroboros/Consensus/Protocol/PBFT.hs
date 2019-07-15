@@ -47,6 +47,7 @@ import           Cardano.Crypto.DSIGN.Class
 import           Cardano.Crypto.DSIGN.Mock (MockDSIGN)
 
 import           Ouroboros.Network.Block
+import           Ouroboros.Network.Point (WithOrigin (..))
 
 import           Ouroboros.Consensus.Crypto.DSIGN.Cardano
 import           Ouroboros.Consensus.NodeId (NodeId (..))
@@ -213,8 +214,9 @@ instance (PBftCrypto c, Typeable c) => OuroborosTag (PBft c) where
       takeR :: Integral i => i -> Seq a -> Seq a
       takeR (fromIntegral -> n) s = Seq.drop (Seq.length s - n - 1) s
 
-  rewindChainState _ cs slot = if slot == SlotNo 0 then Just Seq.empty else
-    case Seq.takeWhileL (\(_, s) -> s <= slot) cs of
+  rewindChainState _ cs mSlot = case mSlot of
+    Origin  -> Just Seq.empty
+    At slot -> case Seq.takeWhileL (\(_, s) -> s <= slot) cs of
         _ Seq.:<| _ -> Just cs
         _           -> Nothing
 

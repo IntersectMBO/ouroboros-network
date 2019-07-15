@@ -55,11 +55,12 @@ import           Control.Monad.Class.MonadST
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
 
-import           Ouroboros.Network.Block (pattern BlockPoint, ChainHash (..),
+import           Ouroboros.Network.Block (pattern BlockPoint,
                      pattern GenesisPoint, HasHeader (..), HeaderHash, Point,
-                     SlotNo, atSlot, blockPoint, pointHash, pointSlot,
+                     SlotNo, atSlot, blockPoint, pointSlot,
                      withHash)
-import           Ouroboros.Network.Chain (genesisPoint, genesisSlotNo)
+import           Ouroboros.Network.Chain (genesisPoint)
+import           Ouroboros.Network.Point (WithOrigin (..))
 
 import qualified Ouroboros.Consensus.Util.CBOR as Util.CBOR
 
@@ -206,13 +207,13 @@ getPointAtTip = fmap mbBlockToPoint . getBlockAtTip
     mbBlockToPoint (Just blk) = blockPoint blk
 
 getSlotNoAtTip :: (MonadCatch m, HasHeader blk)
-               => ImmDB m blk -> m SlotNo
+               => ImmDB m blk -> m (WithOrigin SlotNo)
 getSlotNoAtTip db = do
     immTip <- withDB db $ \imm -> ImmDB.getTip imm
     case immTip of
-      TipGen             -> return genesisSlotNo
-      Tip (Left epochNo) -> epochInfoFirst epochNo
-      Tip (Right slotNo) -> return slotNo
+      TipGen             -> return Origin
+      Tip (Left epochNo) -> At <$> epochInfoFirst epochNo
+      Tip (Right slotNo) -> return (At slotNo)
   where
     EpochInfo{..} = immEpochInfo db
 
@@ -400,9 +401,9 @@ streamBlobsAfter db low = withDB db $ \imm -> do
     return itr
   where
     low' :: Maybe (SlotNo, HeaderHash blk)
-    low' = case pointHash low of
-             GenesisHash -> Nothing
-             BlockHash h -> Just (pointSlot low, h)
+    low' = case low of
+      GenesisPoint         -> Nothing
+      BlockPoint slot hash -> Just (slot, hash)
 
     -- Skip the first block (if any) to provide an /exclusive/ lower bound
     --

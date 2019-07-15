@@ -53,6 +53,7 @@ import           Control.Tracer
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import           Ouroboros.Network.Block (BlockNo, HasHeader, HeaderHash, Point,
                      SlotNo, StandardHash)
+import           Ouroboros.Network.Point (WithOrigin)
 
 import           Ouroboros.Consensus.Block (BlockProtocol, Header)
 import           Ouroboros.Consensus.Ledger.Abstract (ProtocolLedgerView)
@@ -236,7 +237,7 @@ data Internal m blk = Internal
     --
     -- The 'Bool' arguments indicates whether the background tasks should be
     -- relaunched after reopening the ChainDB.
-  , intCopyToImmDB           :: m SlotNo
+  , intCopyToImmDB           :: m (WithOrigin SlotNo)
     -- ^ Copy the blocks older than @k@ from to the VolatileDB to the
     -- ImmutableDB and update the in-memory chain fragment correspondingly.
     --
@@ -441,14 +442,14 @@ data TraceReaderEvent blk
 
   | ReaderSwitchToMem
     { _readerPoint      :: Point blk
-    , _slotNoAtImmDBTip :: SlotNo
+    , _slotNoAtImmDBTip :: WithOrigin SlotNo
     }
     -- ^ The reader was in the 'ReaderInImmDB' state and is switched to the
     -- 'ReaderInMem' state.
 
   | ReaderNewImmIterator
     { _readerPoint      :: Point blk
-    , _slotNoAtImmDBTip :: SlotNo
+    , _slotNoAtImmDBTip :: WithOrigin SlotNo
     }
     -- ^ The reader is in the 'ReaderInImmDB' state but the iterator is
     -- exhausted while the ImmutableDB has grown, so we open a new iterator to
