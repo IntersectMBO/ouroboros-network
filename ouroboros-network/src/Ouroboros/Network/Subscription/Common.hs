@@ -69,7 +69,7 @@ subscribeTo
     -> Maybe Socket.SockAddr
     -> Maybe Socket.SockAddr
     -> (Socket.SockAddr -> Maybe DiffTime)
-    -> TVar IO Int
+    -> ValencyCounter
     -> (Socket.Socket -> IO ())
     -> SubscriptionTarget IO Socket.SockAddr
     -> IO ()
@@ -99,6 +99,7 @@ subscribeTo tbl threadPool tracer localIPv4_m localIPv6_m connectionAttemptDelay
 
     doSubscribeTo :: TVar IO (Set ThreadId) -> SubscriptionTarget IO Socket.SockAddr -> IO ()
     doSubscribeTo conThreads targets = do
+        atomically $ waitValencyCounter valencyVar
         target_m <- getSubscriptionTarget targets
         case target_m of
             Just (target, nextTargets) -> do
@@ -125,12 +126,13 @@ subscribeTo tbl threadPool tracer localIPv4_m localIPv6_m connectionAttemptDelay
                                  threadDelay delay
                                  doSubscribeTo conThreads nextTargets
                      ConnectionTableExist -> do
-                         {- We already have a connection to this address. -}
+                         -- We already have a connection to this address.
                          traceWith tracer $ SubscriptionTraceConnectionExist target
                          doSubscribeTo conThreads nextTargets
-                     ConnectionTableDone -> do
-                        traceWith tracer SubscriptionTraceSubscriptionRunning
-                        return ()
+                     ConnectionTableDuplicate -> do
+                         -- This subscription worker has a connection to this address
+                         doSubscribeTo conThreads nextTargets
+
             Nothing -> do
                 len <- fmap length $ atomically $ readTVar conThreads
                 when (len > 0) $
@@ -143,11 +145,10 @@ subscribeTo tbl threadPool tracer localIPv4_m localIPv6_m connectionAttemptDelay
                     activeCons  <- readTVar conThreads
                     unless (null activeCons) retry
 
-                valencyLeft <- atomically $ readTVar valencyVar
+                valencyLeft <- atomically $ readValencyCounter valencyVar
                 if valencyLeft == 0
                    then traceWith tracer SubscriptionTraceSubscriptionRunning
                    else traceWith tracer SubscriptionTraceSubscriptionFailed
-
 
     doConnect conThreads localAddr remoteAddr =
         bracket
@@ -195,9 +196,9 @@ subscribeTo tbl threadPool tracer localIPv4_m localIPv6_m connectionAttemptDelay
                 -- We successfully connected, increase valency and start the app
                 tid <- myThreadId
                 result <- atomically $ do
-                        v <- readTVar valencyVar
+                        v <- readValencyCounter valencyVar
                         if v > 0 then do
-                                    addConnection tbl remoteAddr localAddr' [valencyVar]
+                                    addConnection tbl remoteAddr localAddr' $ Just valencyVar
                                     writeTVar hasRefVar True
                                     modifyTVar' conThreads (Set.delete tid)
                                     if v == 1 then return ConnectSuccessLast
@@ -268,17 +269,14 @@ subscriptionWorker tbl tracer localIPv4 localIPv6 connectionAttemptDelay getTarg
   where
     worker :: TVar IO (Set ThreadId) -> IO ()
     worker childrenVar = do
-        valencyVar <- newTVarM valency
+        valencyVar <- atomically $ newValencyCounter tbl valency
         traceWith tracer $ SubscriptionTraceStart valency
         forever $ do
             start <- getMonotonicTime
             targets <- getTargets
             subscribeTo tbl childrenVar tracer localIPv4 localIPv6 connectionAttemptDelay
                     valencyVar cb targets
-            atomically $ do
-                v <- readTVar valencyVar
-                when (v <= 0)
-                    retry
+            atomically $ waitValencyCounter valencyVar
 
             {-
             - We allways wait at least ipRetryDelay seconds between calls to getTargets, and
@@ -289,7 +287,7 @@ subscriptionWorker tbl tracer localIPv4 localIPv6 connectionAttemptDelay getTarg
             threadDelay 1
             end <- getMonotonicTime
             let duration = diffTime end start
-            currentValency <- atomically $ readTVar valencyVar
+            currentValency <- atomically $ readValencyCounter valencyVar
             traceWith tracer $ SubscriptionTraceRestart duration currentValency
                 (valency - currentValency)
 

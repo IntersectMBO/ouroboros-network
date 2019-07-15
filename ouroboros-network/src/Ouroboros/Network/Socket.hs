@@ -14,6 +14,7 @@ module Ouroboros.Network.Socket (
       AnyMuxResponderApp (..)
     , ConnectionTable
     , ConnectionTableRef (..)
+    , ValencyCounter
     , withServerNode
     , withSimpleServerNode
     , connectToNode
@@ -28,6 +29,11 @@ module Ouroboros.Network.Socket (
     , refConnection
     , addConnection
     , removeConnection
+    , newValencyCounter
+    , addValencyCounter
+    , remValencyCounter
+    , waitValencyCounter
+    , readValencyCounter
     ) where
 
 import           Control.Concurrent.Async
@@ -44,6 +50,7 @@ import           Data.Text (Text)
 import           Data.Typeable (Typeable)
 import qualified Data.ByteString.Lazy as BL
 import           Data.Int
+import           Data.Set (Set)
 import qualified Data.Set as S
 
 import qualified Network.Socket as Socket hiding (recv)
@@ -63,7 +70,7 @@ import           Ouroboros.Network.Protocol.Handshake.Version
 import           Ouroboros.Network.Protocol.Handshake.Codec
 import qualified Ouroboros.Network.Server.Socket as Server
 
-
+import           Text.Printf
 
 -- |
 -- We assume that a TCP segment size of 1440 bytes with initial window of size
@@ -74,57 +81,118 @@ import qualified Ouroboros.Network.Server.Socket as Server
 maxTransmissionUnit :: Int64
 maxTransmissionUnit = 4 * 1440
 
-type ConnectionTable = TVar IO (M.Map Socket.SockAddr ConnectionTableEntry)
+data ConnectionTable = ConnectionTable {
+      ctTable     :: TVar IO (M.Map Socket.SockAddr (ConnectionTableEntry))
+    , ctLastRefId :: TVar IO Int
+    }
+
+newValencyCounter :: ConnectionTable -> Int -> STM IO ValencyCounter
+newValencyCounter tbl valency =  do
+    lr <- readTVar $ ctLastRefId tbl
+    let lr' = lr + 1
+    writeTVar (ctLastRefId tbl) lr'
+    v <- newTVar valency
+    return $ ValencyCounter lr' v
+
+data ValencyCounter = ValencyCounter {
+      vcId :: Int
+    , vcRef :: TVar IO Int
+    }
+
+instance Ord ValencyCounter where
+    compare a b = compare (vcId a) (vcId b)
+
+instance Eq ValencyCounter where
+    (==) a b = vcId a == vcId b
+
+addValencyCounter :: ValencyCounter -> STM IO ()
+addValencyCounter vc = modifyTVar' (vcRef vc) (\r -> r - 1)
+
+remValencyCounter :: ValencyCounter -> STM IO ()
+remValencyCounter vc = modifyTVar' (vcRef vc) (\r -> r + 1)
+
+waitValencyCounter :: ValencyCounter -> STM IO ()
+waitValencyCounter vc = do
+    v <- readTVar $ vcRef vc
+    when (v <= 0)
+        retry
+
+readValencyCounter :: ValencyCounter -> STM IO Int
+readValencyCounter vc = readTVar $ vcRef vc
 
 data ConnectionTableEntry = ConnectionTableEntry {
-      cteRefs           :: ![TVar IO Int]
-    , cteLocalAddresses :: !(S.Set Socket.SockAddr)
+      cteRefs           :: !(Set ValencyCounter)
+    , cteLocalAddresses :: !(Set Socket.SockAddr)
     }
 
 data ConnectionTableRef =
       ConnectionTableCreate
     | ConnectionTableExist
-    | ConnectionTableDone
+    | ConnectionTableDuplicate
     deriving Show
 
 newConnectionTable :: IO (ConnectionTable)
-newConnectionTable =  newTVarM M.empty
+newConnectionTable =  do
+    tbl <- newTVarM M.empty
+    li <- newTVarM 0
+    return $ ConnectionTable tbl li
 
 addConnection
     :: ConnectionTable
     -> Socket.SockAddr
     -> Socket.SockAddr
-    -> [TVar IO Int]
+    -> Maybe ValencyCounter
     -> STM IO ()
-addConnection tblVar remoteAddr localAddr refs =
-    readTVar tblVar >>= M.alterF fn remoteAddr >>= writeTVar tblVar
+addConnection ConnectionTable{..} remoteAddr localAddr ref_m =
+    readTVar (ctTable) >>= M.alterF fn remoteAddr >>= writeTVar (ctTable)
   where
     fn :: Maybe ConnectionTableEntry -> STM IO (Maybe ConnectionTableEntry)
     fn Nothing = do
-        subRefs refs
+        refs <- case ref_m of
+                     Just ref -> do
+                         addValencyCounter ref
+                         return $ S.singleton ref
+                     Nothing -> return S.empty
         return $ Just $ (ConnectionTableEntry refs (S.singleton localAddr))
     fn (Just cte) = do
-          let refs' = refs ++ cteRefs cte
-          subRefs $ refs'
+          let refs' = case ref_m of
+                           Just ref -> S.insert ref (cteRefs cte)
+                           Nothing  -> cteRefs cte
+          mapM_ addValencyCounter refs'
           return $ Just $ cte {
                 cteRefs = refs'
               , cteLocalAddresses = S.insert localAddr (cteLocalAddresses cte)
               }
 
-    subRefs = mapM_ (\a -> modifyTVar' a (\r -> r - 1))
+{- XXX This should use Control.Tracer' -}
+_dumpConnectionTable
+    :: ConnectionTable
+    -> IO ()
+_dumpConnectionTable ConnectionTable{..} = do
+    tbl <- atomically $ readTVar ctTable
+    printf "Dumping Table:\n"
+    mapM_ dumpTableEntry (M.toList tbl)
+  where
+    dumpTableEntry :: (Socket.SockAddr, ConnectionTableEntry) -> IO ()
+    dumpTableEntry (remoteAddr, ce) = do
+        refs <- mapM (\vc -> atomically $ readTVar $ vcRef vc) (S.elems $ cteRefs ce)
+        let rids = map vcId $ S.elems $ cteRefs ce
+            refids = zip rids refs
+        printf "Remote Address: %s\nLocal Addresses %s\nReferenses %s\n"
+            (show remoteAddr) (show $ cteLocalAddresses ce) (show refids)
 
 removeConnection
     :: ConnectionTable
     -> Socket.SockAddr
     -> Socket.SockAddr
     -> IO ()
-removeConnection tblVar remoteAddr localAddr = atomically $
-    readTVar tblVar >>= M.alterF fn remoteAddr >>= writeTVar tblVar
+removeConnection ConnectionTable{..} remoteAddr localAddr = atomically $
+    readTVar ctTable >>= M.alterF fn remoteAddr >>= writeTVar ctTable
   where
     fn :: Maybe ConnectionTableEntry -> STM IO (Maybe ConnectionTableEntry)
     fn Nothing = return Nothing -- XXX removing non existant address
     fn (Just ConnectionTableEntry{..}) = do
-        mapM_ (\a -> modifyTVar' a (+ 1)) cteRefs
+        mapM_ remValencyCounter cteRefs
         let localAddresses' = S.delete localAddr cteLocalAddresses
         if null localAddresses'
             then return Nothing
@@ -133,24 +201,25 @@ removeConnection tblVar remoteAddr localAddr = atomically $
 refConnection
     :: ConnectionTable
     -> Socket.SockAddr
-    -> TVar IO Int
+    -> ValencyCounter
     -> IO ConnectionTableRef
-refConnection tblVar remoteAddr refVar = atomically $ do
-    tbl <- readTVar tblVar
-    ref <- readTVar refVar
-    if ref > 0
-        then case M.lookup remoteAddr tbl of
-             Nothing -> return ConnectionTableCreate
-             Just cte -> do
-                 let refs' = refVar : (cteRefs cte)
-                 mapM_ (\a -> modifyTVar' a (\r -> r - 1)) refs'
-                 -- XXX We look up remoteAddr twice, is it possible
-                 -- to use M.alterF given that we need to be able to return
-                 -- ConnectionTableCreate or ConnectionTableExist?
-                 writeTVar tblVar $ M.insert remoteAddr
-                     (cte { cteRefs = refs' }) tbl
-                 return ConnectionTableExist
-        else return ConnectionTableDone
+refConnection ConnectionTable{..} remoteAddr refVar = atomically $ do
+    tbl <- readTVar ctTable
+    case M.lookup remoteAddr tbl of
+         Nothing -> return ConnectionTableCreate
+         Just cte -> do
+             if S.member refVar $ cteRefs cte
+                 then return ConnectionTableDuplicate
+                 else do
+                     -- XXX We look up remoteAddr twice, is it possible
+                     -- to use M.alterF given that we need to be able to return
+                     -- ConnectionTableCreate or ConnectionTableExist?
+                     let refs' = S.insert refVar (cteRefs cte)
+                     mapM_ addValencyCounter $ S.toList refs'
+
+                     writeTVar ctTable $ M.insert remoteAddr
+                         (cte { cteRefs = refs'}) tbl
+                     return ConnectionTableExist
 
 -- |
 -- Connect to a remote node.  It is using bracket to enclose the underlying
@@ -366,7 +435,7 @@ fromSocket tblVar sd = Server.Socket
     { Server.acceptConnection = do
         (sd', remoteAddr) <- Socket.accept sd
         localAddr <- Socket.getSocketName sd'
-        atomically $ addConnection tblVar remoteAddr localAddr []
+        atomically $ addConnection tblVar remoteAddr localAddr Nothing
         pure (remoteAddr, sd', close remoteAddr localAddr sd')
     }
   where
