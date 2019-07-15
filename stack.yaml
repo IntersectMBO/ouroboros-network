@@ -44,7 +44,7 @@ extra-deps:
     commit: 92e6b42167d1399971df788b691423222722c2f6
 
   - git: https://github.com/input-output-hk/cardano-sl-x509
-    commit: 9ca2634392159c19b2093b2b8416bccaf5725118
+    commit: ec96c64c665b741c17b4e38f611315bae9b0b054
 
   - bimap-0.4.0
   - time-units-1.0.0
