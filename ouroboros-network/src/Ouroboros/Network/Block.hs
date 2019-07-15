@@ -144,11 +144,8 @@ pattern BlockPoint { atSlot, withHash } = Point (At (Point.Block atSlot withHash
 {-# COMPLETE GenesisPoint, BlockPoint #-}
 
 -- Should be
--- pointSlot :: Point block -> WithOrigin SlotNo
--- pointSlot (Point pt) = fmap Point.blockPointSlot pt
-pointSlot :: Point block -> SlotNo
-pointSlot (Point Origin)   = SlotNo 0
-pointSlot (Point (At blk)) = Point.blockPointSlot blk
+pointSlot :: Point block -> WithOrigin SlotNo
+pointSlot (Point pt) = fmap Point.blockPointSlot pt
 
 pointHash :: Point block -> ChainHash block
 pointHash (Point pt) = case pt of

@@ -1,5 +1,6 @@
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE PatternSynonyms #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
@@ -288,7 +289,10 @@ genAddBlock :: (HasHeader block, HeaderHash block ~ ConcreteHeaderHash)
 genAddBlock chain = do
     slotGap <- genSlotGap
     body    <- arbitrary
-    let pb = mkPartialBlock (addSlotGap slotGap (Chain.headSlot chain)) body
+    let nextSlotNo = case Chain.headSlot chain of
+          Origin    -> SlotNo (fromIntegral {- Int -> Word64 -} slotGap)
+          At slotNo -> addSlotGap slotGap slotNo
+        pb = mkPartialBlock nextSlotNo body
         b  = fixupBlock (Chain.headHash chain)
                         (Chain.headBlockNo chain) pb
     return b
@@ -434,8 +438,9 @@ genPointOnChain chain =
     len = Chain.length chain
 
 fixupPoint :: HasHeader block => Chain block -> Point block -> Point block
-fixupPoint c p =
-  case Chain.lookupBySlot c (pointSlot p) of
+fixupPoint c GenesisPoint         = Chain.headPoint c
+fixupPoint c (BlockPoint bslot _) =
+  case Chain.lookupBySlot c bslot of
     Just b  -> Chain.blockPoint b
     Nothing -> Chain.headPoint c
 

@@ -2,6 +2,7 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE GADTs            #-}
 {-# LANGUAGE TypeOperators    #-}
+{-# LANGUAGE PatternSynonyms  #-}
 
 module Test.Chain
   ( tests
@@ -14,7 +15,8 @@ import           Test.QuickCheck
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
 
-import           Ouroboros.Network.Block (blockPrevHash, pointHash, pointSlot)
+import           Ouroboros.Network.Block (blockPrevHash, pointHash,
+                     pattern GenesisPoint, pattern BlockPoint)
 import           Ouroboros.Network.Chain (Chain (..), genesisPoint)
 import qualified Ouroboros.Network.Chain as Chain
 import           Ouroboros.Network.Testing.Serialise (prop_serialise)
@@ -104,8 +106,9 @@ prop_successorBlock (TestChainAndPoint c p) =
     Just b  -> property $ Chain.pointOnChain (Chain.blockPoint b) c
 
 prop_lookupBySlot :: TestChainAndPoint -> Bool
-prop_lookupBySlot (TestChainAndPoint c p) =
-  case Chain.lookupBySlot c (pointSlot p) of
+prop_lookupBySlot (TestChainAndPoint _ GenesisPoint)           = True
+prop_lookupBySlot (TestChainAndPoint c p@(BlockPoint bslot _)) =
+  case Chain.lookupBySlot c bslot of
     Just b  -> Chain.pointOnChain (Chain.blockPoint b) c
     Nothing | p == genesisPoint -> True
             | otherwise         -> not (Chain.pointOnChain p c)

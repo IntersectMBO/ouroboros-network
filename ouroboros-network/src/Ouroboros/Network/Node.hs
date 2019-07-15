@@ -34,6 +34,7 @@ import           Network.Mux.Time
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.Chain (Chain (..), Point)
 import qualified Ouroboros.Network.Chain as Chain
+import           Ouroboros.Network.Point (WithOrigin (At))
 import           Ouroboros.Network.ChainProducerState (ChainProducerState (..),
                                                        initChainProducerState,
                                                        producerChain,
@@ -366,7 +367,7 @@ forkCoreKernel slotDuration gchain fixupBlock cpsVar = do
 
     addBlock :: Chain block -> block -> Chain block
     addBlock c b =
-      case blockSlot b `compare` Chain.headSlot c of
+      case At (blockSlot b) `compare` Chain.headSlot c of
         -- the block is OK
         GT -> let r = Chain.addBlock (fixupBlock c b) c in
               assert (Chain.valid r) r

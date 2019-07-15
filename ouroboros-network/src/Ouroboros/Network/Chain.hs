@@ -3,6 +3,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving  #-}
 {-# LANGUAGE TypeApplications    #-}
+{-# LANGUAGE PatternSynonyms     #-}
 
 -- | Reference implementation of a representation of a block chain
 --
@@ -26,7 +27,6 @@ module Ouroboros.Network.Chain (
   -- ** Genesis
   genesis,
   genesisPoint,
-  genesisSlotNo,
 --  genesisHash, -- TODO: currently (temporarily) exported by HasHeader
   genesisBlockNo,
 
@@ -79,7 +79,7 @@ import qualified Data.List as L
 import           GHC.Stack
 
 import           Ouroboros.Network.Block
-import           Ouroboros.Network.Point (origin)
+import           Ouroboros.Network.Point (WithOrigin (At), origin)
 
 --
 -- Blockchain type
@@ -104,9 +104,6 @@ prettyPrintChain nl ppBlock = foldChain (\s b -> s ++ nl ++ "    " ++ ppBlock b)
 genesis :: Chain b
 genesis = Genesis
 
-genesisSlotNo :: SlotNo
-genesisSlotNo = SlotNo 0
-
 genesisBlockNo :: BlockNo
 genesisBlockNo = BlockNo 0
 
@@ -122,8 +119,8 @@ validExtension
   => Chain block -> block -> Bool
 validExtension c b = blockInvariant b
                   && headHash c == blockPrevHash b
-                  && headSlot c <  blockSlot b
-                  -- TODO This is a hack which should be addressed through 'WithOrigin'
+                  -- The Ord instance for WithOrigin puts At _ after Origin.
+                  && headSlot c <  At (blockSlot b)
                   -- The empty chain has block number 0, but this is also the block
                   -- number of the genesis block.
                   && (headBlockNo c == 0 || succ (headBlockNo c) == blockNo b)
@@ -136,7 +133,7 @@ headPoint :: HasHeader block => Chain block -> Point block
 headPoint Genesis  = genesisPoint
 headPoint (_ :> b) = blockPoint b
 
-headSlot :: HasHeader block => Chain block -> SlotNo
+headSlot :: HasHeader block => Chain block -> WithOrigin SlotNo
 headSlot = pointSlot . headPoint
 
 headHash :: HasHeader block => Chain block -> ChainHash block
@@ -186,11 +183,12 @@ addBlock b c = assert (validExtension c b) $
                c :> b
 
 pointOnChain :: HasHeader block => Point block -> Chain block -> Bool
-pointOnChain p Genesis        = p == genesisPoint
-pointOnChain p (c :> b)
-  | pointSlot p >  blockSlot b = False
-  | pointSlot p == blockSlot b = pointHash p == BlockHash (blockHash b)
-  | otherwise                  = pointOnChain p c
+pointOnChain GenesisPoint               _       = True
+pointOnChain (BlockPoint _ _)           Genesis = False
+pointOnChain p@(BlockPoint pslot phash) (c :> b)
+  | pslot >  blockSlot b = False
+  | pslot == blockSlot b = phash == blockHash b
+  | otherwise             = pointOnChain p c
 
 rollback :: HasHeader block => Point block -> Chain block -> Maybe (Chain block)
 rollback p (c :> b) | blockPoint b == p = Just (c :> b)
