@@ -75,6 +75,7 @@ commonLib.pkgs.lib.mapAttrsRecursiveCond
     jobs.nix-tools.tests.ouroboros-network.tests.x86_64-linux
     jobs.nix-tools.tests.ouroboros-network.cddl.x86_64-linux
     jobs.nix-tools.tests.typed-protocols.tests.x86_64-linux
+    jobs.nix-tools.tests.network-mux.test-network-mux.x86_64-linux
     jobs.nix-tools.tests.io-sim.tests.x86_64-linux
 
     jobs.nix-tools.exes.ouroboros-network.x86_64-linux

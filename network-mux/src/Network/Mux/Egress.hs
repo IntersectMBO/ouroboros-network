@@ -14,7 +14,6 @@ import qualified Data.ByteString.Lazy as BL
 import           Control.Monad.Class.MonadSTM
 
 import           Network.Mux.Types
-import           Network.Mux.Codec
 
 -- $servicingsSemantics
 -- = Desired Servicing Semantics
