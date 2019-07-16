@@ -101,8 +101,7 @@ import qualified Ouroboros.Consensus.Util.SlotBounded as SB
 --
 -- The phantom type parameter is there to record the additional information
 -- we need to work with this block. Most of the code here does not care,
--- but we may need different additional information when running the chain
--- for real as when we are running the demo.
+-- but we may need different additional information when running the chain.
 newtype ByronBlock cfg = ByronBlock
   { unByronBlock :: CC.Block.ABlock ByteString
   }
@@ -152,9 +151,7 @@ instance (ByronGiven, Typeable cfg) => HasHeader (Header (ByronBlock cfg)) where
   -- We distinguish the genesis hash
   --
   -- Note that on the actual chain, for real blocks the previous hash will
-  -- never be genesis, only for EBBs can it be genesis. We don't enforce that
-  -- here (makes stuff like the demo easier, and also means we could for
-  -- example run a shelley-only chain).
+  -- never be genesis, only for EBBs can it be genesis.
   blockPrevHash (ByronHeader h) = case CC.Block.headerPrevHash h of
     h' | h' == given -> GenesisHash
     _                -> BlockHash $ CC.Block.headerPrevHash h

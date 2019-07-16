@@ -35,7 +35,6 @@ import           Ouroboros.Network.Chain (Chain (..))
 import qualified Ouroboros.Network.Chain as Chain
 
 import           Ouroboros.Consensus.BlockchainTime
-import           Ouroboros.Consensus.Demo.HasCreator
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.NodeId
 import           Ouroboros.Consensus.Protocol.Abstract (NodeConfig)
@@ -44,6 +43,8 @@ import           Ouroboros.Consensus.Protocol.LeaderSchedule
 import qualified Ouroboros.Consensus.Util.Chain as Chain
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Orphans ()
+
+import           Test.Util.HasCreator
 
 allEqual :: forall b. (Condense b, Eq b, HasHeader b) => [Chain b] -> Property
 allEqual []             = property True

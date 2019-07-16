@@ -30,12 +30,13 @@ import           Control.Monad.IOSim (runSimOrThrow)
 import           Ouroboros.Network.Chain
 
 import           Ouroboros.Consensus.BlockchainTime
-import           Ouroboros.Consensus.Demo
-import           Ouroboros.Consensus.Demo.Run
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Mock
+import           Ouroboros.Consensus.Node.ProtocolInfo
+import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.NodeId
-import           Ouroboros.Consensus.Protocol.Abstract (NodeConfig)
+import           Ouroboros.Consensus.Protocol (NodeConfig)
+import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Orphans ()
 import           Ouroboros.Consensus.Util.Random
 import           Ouroboros.Consensus.Util.ThreadRegistry
@@ -43,9 +44,10 @@ import           Ouroboros.Consensus.Util.ThreadRegistry
 import           Test.Dynamic.Network
 
 prop_simple_protocol_convergence :: forall c ext.
-                                   ( RunDemo (SimpleBlock c ext)
+                                   ( RunNode (SimpleBlock c ext)
                                    , SimpleCrypto c
                                    , Show ext
+                                   , Condense ext
                                    , Typeable ext
                                    )
                                  => (CoreNodeId -> ProtocolInfo (SimpleBlock c ext))
@@ -72,9 +74,10 @@ test_simple_protocol_convergence :: forall m c ext.
                                     , MonadTime  m
                                     , MonadTimer m
                                     , MonadThrow (STM m)
-                                    , RunDemo (SimpleBlock c ext)
+                                    , RunNode (SimpleBlock c ext)
                                     , SimpleCrypto c
                                     , Show ext
+                                    , Condense ext
                                     , Typeable ext
                                     )
                                  => (CoreNodeId -> ProtocolInfo (SimpleBlock c ext))

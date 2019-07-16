@@ -1,7 +1,7 @@
 {-# LANGUAGE FlexibleInstances #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
-module Ouroboros.Consensus.Demo.Ledger.Mock.PBFT (
+module Ouroboros.Consensus.Node.ProtocolInfo.Mock.PBFT (
     protocolInfoMockPBFT
   ) where
 
@@ -11,9 +11,9 @@ import qualified Data.Sequence as Seq
 
 import           Cardano.Crypto.DSIGN
 
-import           Ouroboros.Consensus.Demo.Run
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.Mock
+import           Ouroboros.Consensus.Node.ProtocolInfo.Abstract
 import           Ouroboros.Consensus.NodeId (CoreNodeId (..), NodeId (..))
 import           Ouroboros.Consensus.Protocol.ExtNodeConfig
 import           Ouroboros.Consensus.Protocol.PBFT

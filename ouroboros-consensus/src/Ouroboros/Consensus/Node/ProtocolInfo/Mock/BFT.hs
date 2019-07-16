@@ -1,4 +1,4 @@
-module Ouroboros.Consensus.Demo.Ledger.Mock.BFT (
+module Ouroboros.Consensus.Node.ProtocolInfo.Mock.BFT (
     protocolInfoBft
   ) where
 
@@ -6,9 +6,9 @@ import qualified Data.Map as Map
 
 import           Cardano.Crypto.DSIGN
 
-import           Ouroboros.Consensus.Demo.Run
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.Mock
+import           Ouroboros.Consensus.Node.ProtocolInfo.Abstract
 import           Ouroboros.Consensus.NodeId (CoreNodeId (..), NodeId (..))
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.BFT

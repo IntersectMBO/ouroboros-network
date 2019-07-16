@@ -2,15 +2,11 @@
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE GADTs                 #-}
-{-# LANGUAGE KindSignatures        #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE NamedFieldPuns        #-}
 {-# LANGUAGE RankNTypes            #-}
 {-# LANGUAGE RecordWildCards       #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
-{-# LANGUAGE StandaloneDeriving    #-}
-{-# LANGUAGE TupleSections         #-}
-{-# LANGUAGE TypeApplications      #-}
 {-# LANGUAGE TypeFamilies          #-}
 {-# LANGUAGE UndecidableInstances  #-}
 
@@ -35,11 +31,10 @@ import qualified Ouroboros.Network.Chain as Chain
 
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Demo
-import           Ouroboros.Consensus.Demo.Run
 import           Ouroboros.Consensus.Ledger.Mock
+import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.NodeId (NodeId)
-import           Ouroboros.Consensus.Protocol.Abstract
-import           Ouroboros.Consensus.Protocol.Praos
+import           Ouroboros.Consensus.Protocol
 import           Ouroboros.Consensus.Util.Chain (dropLastBlocks, lastSlot)
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Random
@@ -86,7 +81,7 @@ prop_simple_praos_convergence :: PraosParams
                               -> Property
 prop_simple_praos_convergence params numCoreNodes numSlots =
     prop_simple_protocol_convergence
-      (\nid -> protocolInfo numCoreNodes nid (DemoPraos params))
+      (\nid -> protocolInfo numCoreNodes nid (ProtocolMockPraos params))
       isValid
       numCoreNodes
       numSlots
@@ -94,7 +89,7 @@ prop_simple_praos_convergence params numCoreNodes numSlots =
     PraosParams{..} = params
 
     isValid :: [NodeId]
-            -> Map NodeId ( NodeConfig DemoPraos
+            -> Map NodeId ( NodeConfig ProtocolMockPraos
                           , Chain (SimplePraosBlock SimpleMockCrypto PraosMockCrypto)
                           )
             -> Property

@@ -2,7 +2,7 @@
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module Ouroboros.Consensus.Demo.Ledger.Byron.Forge (
+module Ouroboros.Consensus.Ledger.Byron.Forge (
     forgeBlock
   ) where
 
@@ -33,7 +33,7 @@ import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.ExtNodeConfig
 import           Ouroboros.Consensus.Protocol.PBFT
 
-import           Ouroboros.Consensus.Demo.Ledger.Byron.Config
+import           Ouroboros.Consensus.Ledger.Byron.Config
 
 forgeBlock
   :: forall m cfg.
@@ -48,24 +48,21 @@ forgeBlock
   -> ChainHash (ByronBlock cfg)   -- ^ Previous hash
   -> [GenTx (ByronBlock cfg)]     -- ^ Txs to add in the block
   -> ()                           -- ^ Leader proof ('IsLeader')
-  -> m (ByronBlock ByronDemoConfig)
+  -> m (ByronBlock ByronConfig)
 forgeBlock cfg curSlot curNo prevHash txs () = do
     ouroborosPayload <- give (VerKeyCardanoDSIGN headerGenesisKey)
       $ forgePBftFields (encNodeConfigP cfg) toCBOR toSign
     return $ forge ouroborosPayload
   where
-    -- TODO: If we reconsider 'ByronDemoConfig', we can probably move this whole
-    -- function to the real Byron module (instead of the demo). None of the
-    -- fields here are demo specific.
-    --
     -- TODO: Might be sufficient to add 'ConfigContainsGenesis' constraint.
-    ByronDemoConfig { pbftGenesisHash
-                    , pbftEpochSlots
-                    , pbftProtocolVersion
-                    , pbftSoftwareVersion
-                    , pbftGenesisDlg
-                    , pbftProtocolMagic
-                    } = encNodeConfigExt cfg
+    ByronConfig
+      { pbftGenesisHash
+      , pbftEpochSlots
+      , pbftProtocolVersion
+      , pbftSoftwareVersion
+      , pbftGenesisDlg
+      , pbftProtocolMagic
+      } = encNodeConfigExt cfg
 
     txPayload :: CC.UTxO.TxPayload
     txPayload = CC.UTxO.mkTxPayload (map (void . unByronTx) txs)
@@ -115,7 +112,7 @@ forgeBlock cfg curSlot curNo prevHash txs () = do
                       $ Map.elems dlgMap
 
     forge :: PBftFields PBftCardanoCrypto CC.Block.ToSign
-          -> ByronBlock ByronDemoConfig
+          -> ByronBlock ByronConfig
     forge ouroborosPayload =
         annotateByronBlock pbftEpochSlots block
       where

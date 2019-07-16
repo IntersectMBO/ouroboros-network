@@ -46,12 +46,12 @@ import           Ouroboros.Network.Protocol.ChainSync.Type
 
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.ChainSyncClient (ClockSkew (..))
-import           Ouroboros.Consensus.Demo
-import           Ouroboros.Consensus.Demo.Run
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.Mock
 import           Ouroboros.Consensus.Node
+import           Ouroboros.Consensus.Node.ProtocolInfo
+import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.NodeId
 import           Ouroboros.Consensus.NodeNetwork
 import           Ouroboros.Consensus.Protocol.Abstract
@@ -178,9 +178,10 @@ broadcastNetwork :: forall m c ext.
                     , MonadTime  m
                     , MonadTimer m
                     , MonadThrow (STM m)
-                    , RunDemo (SimpleBlock c ext)
+                    , RunNode (SimpleBlock c ext)
                     , SimpleCrypto c
                     , Show ext
+                    , Condense ext
                     , Typeable ext
                     )
                  => ThreadRegistry m
@@ -225,7 +226,7 @@ broadcastNetwork registry btime numCoreNodes pInfo initRNG numSlots slotLen = do
                 -- We ignore the transactions from the mempool (which will be
                 -- empty), and instead produce some random transactions
                 txs <- genTxs addrs (getUtxo l)
-                demoForgeBlock pInfoConfig
+                nodeForgeBlock pInfoConfig
                                slot
                                curNo
                                prevHash
@@ -250,8 +251,8 @@ broadcastNetwork registry btime numCoreNodes pInfo initRNG numSlots slotLen = do
             , btime
             , chainDB
             , callbacks
-            , blockFetchSize     = demoBlockFetchSize
-            , blockMatchesHeader = demoBlockMatchesHeader
+            , blockFetchSize     = nodeBlockFetchSize
+            , blockMatchesHeader = nodeBlockMatchesHeader
             }
 
       node <- nodeKernel nodeParams
@@ -310,15 +311,15 @@ broadcastNetwork registry btime numCoreNodes pInfo initRNG numSlots slotLen = do
              <*> newTVar Mock.empty
       return ChainDbArgs
         { -- Decoders
-          cdbDecodeHash       = demoDecodeHeaderHash
-        , cdbDecodeBlock      = demoDecodeBlock cfg
-        , cdbDecodeLedger     = demoDecodeLedgerState cfg
-        , cdbDecodeChainState = demoDecodeChainState (Proxy @(SimpleBlock c ext))
+          cdbDecodeHash       = nodeDecodeHeaderHash (Proxy @(SimpleBlock c ext))
+        , cdbDecodeBlock      = nodeDecodeBlock cfg
+        , cdbDecodeLedger     = nodeDecodeLedgerState cfg
+        , cdbDecodeChainState = nodeDecodeChainState (Proxy @(SimpleBlock c ext))
           -- Encoders
-        , cdbEncodeBlock      = demoEncodeBlock cfg
-        , cdbEncodeHash       = demoEncodeHeaderHash
-        , cdbEncodeLedger     = demoEncodeLedgerState cfg
-        , cdbEncodeChainState = demoEncodeChainState (Proxy @(SimpleBlock c ext))
+        , cdbEncodeBlock      = nodeEncodeBlock cfg
+        , cdbEncodeHash       = nodeEncodeHeaderHash (Proxy @(SimpleBlock c ext))
+        , cdbEncodeLedger     = nodeEncodeLedgerState cfg
+        , cdbEncodeChainState = nodeEncodeChainState (Proxy @(SimpleBlock c ext))
           -- Error handling
         , cdbErrImmDb         = EH.monadCatch
         , cdbErrVolDb         = EH.monadCatch
@@ -334,8 +335,8 @@ broadcastNetwork registry btime numCoreNodes pInfo initRNG numSlots slotLen = do
         , cdbDiskPolicy       = LgrDB.defaultDiskPolicy (protocolSecurityParam cfg) slotLen
           -- Integration
         , cdbNodeConfig       = cfg
-        , cdbEpochSize        = demoEpochSize (Proxy @(SimpleBlock c ext))
-        , cdbIsEBB            = \blk -> if demoIsEBB blk
+        , cdbEpochSize        = nodeEpochSize (Proxy @(SimpleBlock c ext))
+        , cdbIsEBB            = \blk -> if nodeIsEBB blk
                                         then Just (blockHash blk)
                                         else Nothing
         , cdbGenesis          = return initLedger

@@ -2,7 +2,7 @@
 {-# LANGUAGE RecordWildCards   #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
-module Ouroboros.Consensus.Demo.Ledger.Mock.Praos (
+module Ouroboros.Consensus.Node.ProtocolInfo.Mock.Praos (
     protocolInfoPraos
   ) where
 
@@ -16,9 +16,9 @@ import           Cardano.Binary (fromCBOR, toCBOR)
 import           Cardano.Crypto.KES
 import           Cardano.Crypto.VRF
 
-import           Ouroboros.Consensus.Demo.Run
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.Mock
+import           Ouroboros.Consensus.Node.ProtocolInfo.Abstract
 import           Ouroboros.Consensus.NodeId (CoreNodeId (..), NodeId (..))
 import           Ouroboros.Consensus.Protocol.ExtNodeConfig
 import           Ouroboros.Consensus.Protocol.Praos

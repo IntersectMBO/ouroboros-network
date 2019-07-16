@@ -2,15 +2,11 @@
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE GADTs                 #-}
-{-# LANGUAGE KindSignatures        #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE NamedFieldPuns        #-}
 {-# LANGUAGE RankNTypes            #-}
 {-# LANGUAGE RecordWildCards       #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
-{-# LANGUAGE StandaloneDeriving    #-}
-{-# LANGUAGE TupleSections         #-}
-{-# LANGUAGE TypeApplications      #-}
 {-# LANGUAGE TypeFamilies          #-}
 {-# LANGUAGE UndecidableInstances  #-}
 
@@ -33,12 +29,10 @@ import           Ouroboros.Network.Chain (Chain)
 
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Demo
-import           Ouroboros.Consensus.Demo.Run
 import           Ouroboros.Consensus.Ledger.Mock
+import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.NodeId
-import           Ouroboros.Consensus.Protocol.Abstract
-import           Ouroboros.Consensus.Protocol.LeaderSchedule
-import           Ouroboros.Consensus.Protocol.Praos
+import           Ouroboros.Consensus.Protocol
 import           Ouroboros.Consensus.Util.Condense (Condense (..))
 import           Ouroboros.Consensus.Util.Random
 
@@ -76,14 +70,14 @@ prop_simple_leader_schedule_convergence numSlots numCoreNodes params seed =
             in    counterexample ("schedule: " <> condense schedule <> "\n" <> show longest)
                 $ label ("longest crowded run " <> show (crowdedRunLength longest))
                 $ prop_simple_protocol_convergence
-                    (\nid -> protocolInfo numCoreNodes nid (DemoLeaderSchedule params schedule))
+                    (\nid -> protocolInfo numCoreNodes nid (ProtocolLeaderSchedule params schedule))
                     isValid
                     numCoreNodes
                     numSlots
                     seed
   where
     isValid :: [NodeId]
-            -> Map NodeId ( NodeConfig DemoLeaderSchedule
+            -> Map NodeId ( NodeConfig ProtocolLeaderSchedule
                           , Chain (SimplePraosRuleBlock SimpleMockCrypto)
                           )
             -> Property
