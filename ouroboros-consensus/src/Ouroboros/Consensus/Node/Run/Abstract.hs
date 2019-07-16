@@ -26,12 +26,7 @@ import           Ouroboros.Consensus.Protocol.Abstract
 
 import           Ouroboros.Storage.Common (EpochNo, EpochSize)
 
-class ( ProtocolLedgerView blk
-      , ApplyTx blk
-      , Show blk
-      , Show (ApplyTxErr blk)
-      , Show (GenTx blk)
-      ) => RunNode blk where
+class (ProtocolLedgerView blk, ApplyTx blk) => RunNode blk where
 
   nodeForgeBlock         :: (HasNodeState (BlockProtocol blk) m, MonadRandom m)
                          => NodeConfig (BlockProtocol blk)
