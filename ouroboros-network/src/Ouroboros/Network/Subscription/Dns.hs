@@ -179,7 +179,7 @@ dnsResolve tracer resolver (DnsSubscriptionTarget domain _ _) = do
                  return Nothing
 
 dnsSubscriptionWorker'
-    :: ConnectionTable
+    :: ConnectionTable IO
     -> Tracer IO (WithDomainName SubscriptionTrace)
     -> Tracer IO (WithDomainName DnsTrace)
     -> Resolver IO
@@ -201,7 +201,7 @@ dnsSubscriptionWorker' tbl subTracer dnsTracer resolver localIPv4 localIPv6
 
 
 dnsSubscriptionWorker
-    :: ConnectionTable
+    :: ConnectionTable IO
     -> Tracer IO (WithDomainName SubscriptionTrace)
     -> Tracer IO (WithDomainName DnsTrace)
     -> Maybe Socket.SockAddr

@@ -63,13 +63,13 @@ data ConnectResult = ConnectSuccess
 
 subscribeTo
     :: HasCallStack
-    => ConnectionTable
+    => ConnectionTable IO
     -> TVar IO (Set ThreadId)
     -> Tracer IO SubscriptionTrace
     -> Maybe Socket.SockAddr
     -> Maybe Socket.SockAddr
     -> (Socket.SockAddr -> Maybe DiffTime)
-    -> ValencyCounter
+    -> ValencyCounter IO
     -> (Socket.Socket -> IO ())
     -> SubscriptionTarget IO Socket.SockAddr
     -> IO ()
@@ -224,7 +224,7 @@ data IPSubscriptionTarget = IPSubscriptionTarget {
     } deriving (Eq, Show)
 
 ipSubscriptionWorker
-    :: ConnectionTable
+    :: ConnectionTable IO
     -> Tracer IO (WithIPList SubscriptionTrace)
     -> Maybe Socket.SockAddr
     -> Maybe Socket.SockAddr
@@ -245,7 +245,7 @@ ipSubscriptionWorker tbl tracer localIPv4 localIPv6 connectionAttemptDelay ips c
             cb k
 
 subscriptionWorker
-    :: ConnectionTable
+    :: ConnectionTable IO
     -> Tracer IO SubscriptionTrace
     -> Maybe Socket.SockAddr
     -> Maybe Socket.SockAddr

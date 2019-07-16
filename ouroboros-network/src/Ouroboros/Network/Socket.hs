@@ -24,7 +24,7 @@ module Ouroboros.Network.Socket (
     , fromSocket
     , beginConnection
 
-    -- * Auxiliary functions
+    -- * Re-export connection table functions
     , newConnectionTable
     , refConnection
     , addConnection
@@ -45,13 +45,10 @@ import           Control.Monad.Class.MonadThrow
 import           Control.Exception (throwIO)
 import qualified Codec.CBOR.Term     as CBOR
 import           Codec.Serialise (Serialise)
-import qualified Data.Map.Strict as M
 import           Data.Text (Text)
 import           Data.Typeable (Typeable)
 import qualified Data.ByteString.Lazy as BL
 import           Data.Int
-import           Data.Set (Set)
-import qualified Data.Set as S
 
 import qualified Network.Socket as Socket hiding (recv)
 
@@ -69,8 +66,7 @@ import           Ouroboros.Network.Protocol.Handshake.Type
 import           Ouroboros.Network.Protocol.Handshake.Version
 import           Ouroboros.Network.Protocol.Handshake.Codec
 import qualified Ouroboros.Network.Server.Socket as Server
-
-import           Text.Printf
+import           Ouroboros.Network.Server.ConnectionTable
 
 -- |
 -- We assume that a TCP segment size of 1440 bytes with initial window of size
@@ -80,146 +76,6 @@ import           Text.Printf
 --
 maxTransmissionUnit :: Int64
 maxTransmissionUnit = 4 * 1440
-
-data ConnectionTable = ConnectionTable {
-      ctTable     :: TVar IO (M.Map Socket.SockAddr (ConnectionTableEntry))
-    , ctLastRefId :: TVar IO Int
-    }
-
-newValencyCounter :: ConnectionTable -> Int -> STM IO ValencyCounter
-newValencyCounter tbl valency =  do
-    lr <- readTVar $ ctLastRefId tbl
-    let lr' = lr + 1
-    writeTVar (ctLastRefId tbl) lr'
-    v <- newTVar valency
-    return $ ValencyCounter lr' v
-
-data ValencyCounter = ValencyCounter {
-      vcId :: Int
-    , vcRef :: TVar IO Int
-    }
-
-instance Ord ValencyCounter where
-    compare a b = compare (vcId a) (vcId b)
-
-instance Eq ValencyCounter where
-    (==) a b = vcId a == vcId b
-
-addValencyCounter :: ValencyCounter -> STM IO ()
-addValencyCounter vc = modifyTVar' (vcRef vc) (\r -> r - 1)
-
-remValencyCounter :: ValencyCounter -> STM IO ()
-remValencyCounter vc = modifyTVar' (vcRef vc) (\r -> r + 1)
-
-waitValencyCounter :: ValencyCounter -> STM IO ()
-waitValencyCounter vc = do
-    v <- readTVar $ vcRef vc
-    when (v <= 0)
-        retry
-
-readValencyCounter :: ValencyCounter -> STM IO Int
-readValencyCounter vc = readTVar $ vcRef vc
-
-data ConnectionTableEntry = ConnectionTableEntry {
-      cteRefs           :: !(Set ValencyCounter)
-    , cteLocalAddresses :: !(Set Socket.SockAddr)
-    }
-
-data ConnectionTableRef =
-      ConnectionTableCreate
-    | ConnectionTableExist
-    | ConnectionTableDuplicate
-    deriving Show
-
-newConnectionTable :: IO (ConnectionTable)
-newConnectionTable =  do
-    tbl <- newTVarM M.empty
-    li <- newTVarM 0
-    return $ ConnectionTable tbl li
-
-addConnection
-    :: ConnectionTable
-    -> Socket.SockAddr
-    -> Socket.SockAddr
-    -> Maybe ValencyCounter
-    -> STM IO ()
-addConnection ConnectionTable{..} remoteAddr localAddr ref_m =
-    readTVar (ctTable) >>= M.alterF fn remoteAddr >>= writeTVar (ctTable)
-  where
-    fn :: Maybe ConnectionTableEntry -> STM IO (Maybe ConnectionTableEntry)
-    fn Nothing = do
-        refs <- case ref_m of
-                     Just ref -> do
-                         addValencyCounter ref
-                         return $ S.singleton ref
-                     Nothing -> return S.empty
-        return $ Just $ (ConnectionTableEntry refs (S.singleton localAddr))
-    fn (Just cte) = do
-          let refs' = case ref_m of
-                           Just ref -> S.insert ref (cteRefs cte)
-                           Nothing  -> cteRefs cte
-          mapM_ addValencyCounter refs'
-          return $ Just $ cte {
-                cteRefs = refs'
-              , cteLocalAddresses = S.insert localAddr (cteLocalAddresses cte)
-              }
-
-{- XXX This should use Control.Tracer' -}
-_dumpConnectionTable
-    :: ConnectionTable
-    -> IO ()
-_dumpConnectionTable ConnectionTable{..} = do
-    tbl <- atomically $ readTVar ctTable
-    printf "Dumping Table:\n"
-    mapM_ dumpTableEntry (M.toList tbl)
-  where
-    dumpTableEntry :: (Socket.SockAddr, ConnectionTableEntry) -> IO ()
-    dumpTableEntry (remoteAddr, ce) = do
-        refs <- mapM (\vc -> atomically $ readTVar $ vcRef vc) (S.elems $ cteRefs ce)
-        let rids = map vcId $ S.elems $ cteRefs ce
-            refids = zip rids refs
-        printf "Remote Address: %s\nLocal Addresses %s\nReferenses %s\n"
-            (show remoteAddr) (show $ cteLocalAddresses ce) (show refids)
-
-removeConnection
-    :: ConnectionTable
-    -> Socket.SockAddr
-    -> Socket.SockAddr
-    -> IO ()
-removeConnection ConnectionTable{..} remoteAddr localAddr = atomically $
-    readTVar ctTable >>= M.alterF fn remoteAddr >>= writeTVar ctTable
-  where
-    fn :: Maybe ConnectionTableEntry -> STM IO (Maybe ConnectionTableEntry)
-    fn Nothing = return Nothing -- XXX removing non existant address
-    fn (Just ConnectionTableEntry{..}) = do
-        mapM_ remValencyCounter cteRefs
-        let localAddresses' = S.delete localAddr cteLocalAddresses
-        if null localAddresses'
-            then return Nothing
-            else return $ Just $ ConnectionTableEntry cteRefs localAddresses'
-
-refConnection
-    :: ConnectionTable
-    -> Socket.SockAddr
-    -> ValencyCounter
-    -> IO ConnectionTableRef
-refConnection ConnectionTable{..} remoteAddr refVar = atomically $ do
-    tbl <- readTVar ctTable
-    case M.lookup remoteAddr tbl of
-         Nothing -> return ConnectionTableCreate
-         Just cte -> do
-             if S.member refVar $ cteRefs cte
-                 then return ConnectionTableDuplicate
-                 else do
-                     -- XXX We look up remoteAddr twice, is it possible
-                     -- to use M.alterF given that we need to be able to return
-                     -- ConnectionTableCreate or ConnectionTableExist?
-                     let refs' = S.insert refVar (cteRefs cte)
-                     mapM_ addValencyCounter $ S.toList refs'
-
-                     writeTVar ctTable $ M.insert remoteAddr
-                         (cte { cteRefs = refs'}) tbl
-                     return ConnectionTableExist
 
 -- |
 -- Connect to a remote node.  It is using bracket to enclose the underlying
@@ -428,7 +284,7 @@ mkListeningSocket addrFamily_ addr = do
 -- Make a server-compatible socket from a network socket.
 --
 fromSocket
-    :: ConnectionTable
+    :: ConnectionTable IO
     -> Socket.Socket
     -> Server.Socket Socket.SockAddr Socket.Socket
 fromSocket tblVar sd = Server.Socket
@@ -461,7 +317,7 @@ runNetworkNode'
        , Typeable vNumber
        , Show vNumber
        )
-    => ConnectionTable
+    => ConnectionTable IO
     -> Socket.Socket
     -> (forall vData. extra vData -> vData -> CBOR.Term)
     -> (forall vData. extra vData -> CBOR.Term -> Either Text vData)
@@ -508,7 +364,7 @@ withServerNode
        , Typeable vNumber
        , Show vNumber
        )
-    => ConnectionTable
+    => ConnectionTable IO
     -> Socket.AddrInfo
     -> (forall vData. extra vData -> vData -> CBOR.Term)
     -> (forall vData. extra vData -> CBOR.Term -> Either Text vData)
@@ -573,7 +429,7 @@ withSimpleServerNode
        , Typeable vNumber
        , Show vNumber
        )
-    => ConnectionTable
+    => ConnectionTable IO
     -> Socket.AddrInfo
     -> (forall vData. extra vData -> vData -> CBOR.Term)
     -> (forall vData. extra vData -> CBOR.Term -> Either Text vData)
