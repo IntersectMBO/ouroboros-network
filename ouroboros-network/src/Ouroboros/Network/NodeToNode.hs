@@ -119,9 +119,11 @@ nodeToNodeCodecCBORTerm = CodecCBORTerm {encodeTerm, decodeTerm}
 -- | A specialised version of @'Ouroboros.Network.Socket.connectToNode'@.
 --
 connectTo
-  :: Versions NodeToNodeVersion
+  :: (Socket.SockAddr -> Socket.SockAddr -> peerid)
+  -- ^ create peerid from local address and remote address
+  -> Versions NodeToNodeVersion
               DictVersion
-              (MuxApplication InitiatorApp NodeToNodeProtocols IO BL.ByteString a b)
+              (MuxApplication InitiatorApp peerid NodeToNodeProtocols IO BL.ByteString a b)
   -> Maybe Socket.AddrInfo
   -> Socket.AddrInfo
   -> IO ()
@@ -135,16 +137,19 @@ connectTo =
 withServer
   :: ConnectionTable
   -> Socket.AddrInfo
+  -> (Socket.SockAddr -> Socket.SockAddr -> peerid)
+  -- ^ create peerid from local address and remote address
   -> (forall vData. DictVersion vData -> vData -> vData -> Accept)
-  -> Versions NodeToNodeVersion DictVersion (AnyMuxResponderApp NodeToNodeProtocols IO BL.ByteString)
+  -> Versions NodeToNodeVersion DictVersion (AnyMuxResponderApp peerid NodeToNodeProtocols IO BL.ByteString)
   -> (Async () -> IO t)
   -> IO t
-withServer tbl addr acceptVersion versions k =
+withServer tbl addr peeridFn acceptVersion versions k =
   withServerNode
     tbl
     addr
     (\(DictVersion codec) -> encodeTerm codec)
     (\(DictVersion codec) -> decodeTerm codec)
+    peeridFn
     acceptVersion
     versions
     (\_ -> k)

@@ -1,4 +1,5 @@
 {-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE DeriveFunctor       #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE KindSignatures      #-}
 {-# LANGUAGE NamedFieldPuns      #-}
@@ -24,6 +25,7 @@ module Network.Mux.Interface
   , simpleMuxResponderApplication
   , ProtocolEnum (..)
   , MiniProtocolLimits (..)
+  , TraceLabelPeer (..)
   ) where
 
 import           Data.Void (Void)
@@ -45,6 +47,13 @@ import           Network.TypedProtocol.Pipelined
 import           Network.Mux.Types ( MiniProtocolLimits (..)
                                    , ProtocolEnum (..)
                                    )
+
+
+-- | A peer label for use in 'Tracer's. This annotates tracer output as being
+-- associated with a given peer identifier.
+--
+data TraceLabelPeer peerid a = TraceLabelPeer peerid a
+  deriving (Eq, Functor, Show)
 
 
 -- $interface
@@ -87,61 +96,61 @@ type family HasResponder (appType :: AppType) :: Bool where
 --   serving downstream peers using server side of each protocol and getting
 --   updates from upstream peers using client side of each of the protocols.
 --
-data MuxApplication (appType :: AppType) ptcl m bytes a b where
+data MuxApplication (appType :: AppType) peerid ptcl m bytes a b where
   MuxInitiatorApplication
     -- Initiator application; most simple application will be @'runPeer'@ or
     -- @'runPipelinedPeer'@ supplied with a codec and a @'Peer'@ for each
     -- @ptcl@.  But it allows to handle resources if just application of
     -- @'runPeer'@ is not enough.  It will be run as @'ModeInitiator'@.
-    :: (ptcl -> Channel m bytes ->  m a)
-    -> MuxApplication InitiatorApp ptcl m bytes a Void
+    :: (peerid -> ptcl -> Channel m bytes ->  m a)
+    -> MuxApplication InitiatorApp peerid ptcl m bytes a Void
 
   MuxResponderApplication
     -- Responder application; similarly to the @'MuxInitiatorApplication'@ but it
     -- will be run using @'ModeResponder'@.
-    :: (ptcl -> Channel m bytes ->  m a)
-    -> MuxApplication ResponderApp ptcl m bytes Void a
+    :: (peerid -> ptcl -> Channel m bytes ->  m a)
+    -> MuxApplication ResponderApp peerid ptcl m bytes Void a
 
   MuxInitiatorAndResponderApplication
     -- Initiator and server applications.
-    :: (ptcl -> Channel m bytes ->  m a)
-    -> (ptcl -> Channel m bytes ->  m b)
-    -> MuxApplication InitiatorAndResponderApp ptcl m bytes a b
+    :: (peerid -> ptcl -> Channel m bytes ->  m a)
+    -> (peerid -> ptcl -> Channel m bytes ->  m b)
+    -> MuxApplication InitiatorAndResponderApp peerid ptcl m bytes a b
 
 -- |
 -- Accessor for the client side of a @'MuxApplication'@.
 --
 initiatorApplication
   :: HasInitiator appType ~ True
-  => MuxApplication appType ptcl m bytes a b
-  -> (ptcl -> Channel m bytes ->  m a)
-initiatorApplication (MuxInitiatorApplication app) = \ptcl channel -> app ptcl channel
-initiatorApplication (MuxInitiatorAndResponderApplication app _) = \ptcl channel -> app ptcl channel
+  => MuxApplication appType peerid ptcl m bytes a b
+  -> (peerid -> ptcl -> Channel m bytes ->  m a)
+initiatorApplication (MuxInitiatorApplication app) = \peerid ptcl channel -> app peerid ptcl channel
+initiatorApplication (MuxInitiatorAndResponderApplication app _) = \peerid ptcl channel -> app peerid ptcl channel
 
 -- |
 -- Accessor for the client side of a @'MuxApplication'@.
 --
 responderApplication
   :: HasResponder appType ~ True
-  => MuxApplication appType ptcl m bytes a b
-  -> (ptcl -> Channel m bytes ->  m b)
+  => MuxApplication appType peerid ptcl m bytes a b
+  -> (peerid -> ptcl -> Channel m bytes ->  m b)
 responderApplication (MuxResponderApplication app) = app
 responderApplication (MuxInitiatorAndResponderApplication _ app) = app
 
 -- |
 -- This type is only necessary to use the @'simpleMuxClient'@ and
 -- @'simpleMuxServer'@ smart constructors.
-data MuxPeer failure m bytes a where
-    MuxPeer :: Tracer m (TraceSendRecv ps failure)
+data MuxPeer peerid failure m bytes a where
+    MuxPeer :: Tracer m (TraceSendRecv ps peerid failure)
             -> Codec ps failure m bytes
             -> Peer ps pr st m a
-            -> MuxPeer failure m bytes a
+            -> MuxPeer peerid failure m bytes a
 
     MuxPeerPipelined
-            :: Tracer m (TraceSendRecv ps failure)
+            :: Tracer m (TraceSendRecv ps peerid failure)
             -> Codec ps failure m bytes
             -> PeerPipelined ps pr st m a
-            -> MuxPeer failure m bytes a
+            -> MuxPeer peerid failure m bytes a
 
 
 -- |
@@ -153,14 +162,15 @@ runMuxPeer
      , MonadAsync m
      , Exception failure
      )
-  => MuxPeer failure m bytes a
+  => MuxPeer peerid failure m bytes a
+  -> peerid
   -> Channel m bytes
   -> m a
-runMuxPeer (MuxPeer tracer codec peer) channel =
-    runPeer tracer codec channel peer
+runMuxPeer (MuxPeer tracer codec peer) peerid channel =
+    runPeer tracer codec peerid channel peer
 
-runMuxPeer (MuxPeerPipelined tracer codec peer) channel =
-    runPipelinedPeer tracer codec channel peer
+runMuxPeer (MuxPeerPipelined tracer codec peer) peerid channel =
+    runPipelinedPeer tracer codec peerid channel peer
 
 
 -- |
@@ -173,10 +183,10 @@ simpleMuxInitiatorApplication
   => MonadCatch m
   => MonadAsync m
   => Exception failure
-  => (ptcl -> MuxPeer failure m bytes a)
-  -> MuxApplication InitiatorApp ptcl m bytes a Void
-simpleMuxInitiatorApplication fn = MuxInitiatorApplication $ \ptcl channel ->
-  runMuxPeer (fn ptcl) channel
+  => (ptcl -> MuxPeer peerid failure m bytes a)
+  -> MuxApplication InitiatorApp peerid ptcl m bytes a Void
+simpleMuxInitiatorApplication fn = MuxInitiatorApplication $ \peerid ptcl channel ->
+  runMuxPeer (fn ptcl) peerid channel
 
 
 -- |
@@ -187,7 +197,7 @@ simpleMuxResponderApplication
   => MonadCatch m
   => MonadAsync m
   => Exception failure
-  => (ptcl -> MuxPeer failure m bytes a)
-  -> MuxApplication ResponderApp ptcl m bytes Void a
-simpleMuxResponderApplication fn = MuxResponderApplication $ \ptcl channel ->
-  runMuxPeer (fn ptcl) channel
+  => (ptcl -> MuxPeer peerid failure m bytes a)
+  -> MuxApplication ResponderApp peerid ptcl m bytes Void a
+simpleMuxResponderApplication fn = MuxResponderApplication $ \peerid ptcl channel ->
+  runMuxPeer (fn ptcl) peerid channel

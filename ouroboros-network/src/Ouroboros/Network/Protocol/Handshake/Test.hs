@@ -375,6 +375,8 @@ prop_channel createChannels clientVersions serverVersions =
     (clientRes', serverRes') <-
       runConnectedPeers
         createChannels nullTracer codecHandshake
+        "client"
+        "server"
         (handshakeClientPeer
           (\(DictVersion codec) -> encodeTerm codec)
           (\(DictVersion codec) -> decodeTerm codec)

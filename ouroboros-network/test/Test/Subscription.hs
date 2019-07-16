@@ -516,22 +516,24 @@ prop_send_recv f xs first = ioProperty $ do
     clientTbl <- newConnectionTable
 
     let -- Server Node; only req-resp server
-        responderApp :: MuxApplication ResponderApp TestProtocols2 IO BL.ByteString Void ()
+        responderApp :: MuxApplication ResponderApp (Socket.SockAddr, Socket.SockAddr) TestProtocols2 IO BL.ByteString Void ()
         responderApp = MuxResponderApplication $
-          \ReqRespPr channel -> do
+          \peerid ReqRespPr channel -> do
             r <- runPeer (tagTrace "Responder" activeTracer)
                          ReqResp.codecReqResp
+                         peerid
                          channel
                          (ReqResp.reqRespServerPeer (ReqResp.reqRespServerMapAccumL (\a -> pure . f a) 0))
             atomically $ putTMVar sv r
             waitSiblingSub siblingVar
 
         -- Client Node; only req-resp client
-        initiatorApp :: MuxApplication InitiatorApp TestProtocols2 IO BL.ByteString () Void
+        initiatorApp :: MuxApplication InitiatorApp (Socket.SockAddr, Socket.SockAddr) TestProtocols2 IO BL.ByteString () Void
         initiatorApp = MuxInitiatorApplication $
-          \ReqRespPr channel -> do
+          \peerid ReqRespPr channel -> do
             r <- runPeer (tagTrace "Initiator" activeTracer)
                          ReqResp.codecReqResp
+                         peerid
                          channel
                          (ReqResp.reqRespClientPeer (ReqResp.reqRespClientMap xs))
             atomically $ putTMVar cv r
@@ -544,6 +546,7 @@ prop_send_recv f xs first = ioProperty $ do
         responderAddr
         (\(DictVersion codec) -> encodeTerm codec)
         (\(DictVersion codec) -> decodeTerm codec)
+        (,)
         (\(DictVersion _) -> acceptEq)
         (simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData 0) (DictVersion nodeToNodeCodecCBORTerm) responderApp)
         $ \_ _ ->
@@ -555,8 +558,10 @@ prop_send_recv f xs first = ioProperty $ do
             (Just $ Socket.addrAddress initiatorAddr6)
             (\_ -> Just minConnectionAttemptDelay)
             (DnsSubscriptionTarget "shelley-0.iohk.example" 6062 1)
-            (connectToNode' (\(DictVersion codec) -> encodeTerm codec)
+            (connectToNode'
+                (\(DictVersion codec) -> encodeTerm codec)
                 (\(DictVersion codec) -> decodeTerm codec)
+                (,)
                 (simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData 0)
                 (DictVersion nodeToNodeCodecCBORTerm) initiatorApp))
             (\_ -> do
@@ -634,12 +639,13 @@ prop_send_recv_init_and_rsp f xs = ioProperty $ do
 
   where
 
-    appX :: ReqRspCfg -> MuxApplication InitiatorAndResponderApp TestProtocols2 IO BL.ByteString () ()
+    appX :: ReqRspCfg -> MuxApplication InitiatorAndResponderApp (Socket.SockAddr, Socket.SockAddr) TestProtocols2 IO BL.ByteString () ()
     appX ReqRspCfg {..} = MuxInitiatorAndResponderApplication
             -- Initiator
-            (\ReqRespPr channel -> do
+            (\peerid ReqRespPr channel -> do
              r <- runPeer (tagTrace (rrcTag ++ " Initiator") activeTracer)
                          ReqResp.codecReqResp
+                         peerid
                          channel
                          (ReqResp.reqRespClientPeer (ReqResp.reqRespClientMap xs))
              atomically $ putTMVar rrcClientVar r
@@ -647,9 +653,10 @@ prop_send_recv_init_and_rsp f xs = ioProperty $ do
              waitSiblingSub rrcSiblingVar
             )
             -- Responder
-            (\ReqRespPr channel -> do
+            (\peerid ReqRespPr channel -> do
              r <- runPeer (tagTrace (rrcTag ++ " Responder") activeTracer)
                          ReqResp.codecReqResp
+                         peerid
                          channel
                          (ReqResp.reqRespServerPeer (ReqResp.reqRespServerMapAccumL
                            (\a -> pure . f a) 0))
@@ -663,6 +670,7 @@ prop_send_recv_init_and_rsp f xs = ioProperty $ do
         responderAddr
         (\(DictVersion codec) -> encodeTerm codec)
         (\(DictVersion codec) -> decodeTerm codec)
+        (,)
         (\(DictVersion _) -> acceptEq)
         (AnyMuxResponderApp <$> simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData 0) (DictVersion nodeToNodeCodecCBORTerm) (appX rrcfg))
         $ \localAddr _ -> do
@@ -677,6 +685,7 @@ prop_send_recv_init_and_rsp f xs = ioProperty $ do
         responderAddr
         (\(DictVersion codec) -> encodeTerm codec)
         (\(DictVersion codec) -> decodeTerm codec)
+        (,)
         (\(DictVersion _) -> acceptEq)
         (AnyMuxResponderApp <$> (simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData 0) (DictVersion nodeToNodeCodecCBORTerm) (appX rrcfg)))
         $ \localAddr _ -> do
@@ -689,8 +698,10 @@ prop_send_recv_init_and_rsp f xs = ioProperty $ do
             Nothing
             (\_ -> Just minConnectionAttemptDelay)
             (IPSubscriptionTarget [remoteAddr] 1)
-            (connectToNode' (\(DictVersion codec) -> encodeTerm codec)
+            (connectToNode'
+                (\(DictVersion codec) -> encodeTerm codec)
                 (\(DictVersion codec) -> decodeTerm codec)
+                (,)
                 (simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData 0)
                 (DictVersion nodeToNodeCodecCBORTerm) $ appX rrcfg))
             (\_ -> do
@@ -746,8 +757,10 @@ _demo = ioProperty $ do
             (Just $ Socket.addrAddress client6)
             (\_ -> Just minConnectionAttemptDelay)
             (DnsSubscriptionTarget "shelley-0.iohk.example" 6064 1)
-            (connectToNode' (\(DictVersion codec) -> encodeTerm codec)
+            (connectToNode'
+                (\(DictVersion codec) -> encodeTerm codec)
                 (\(DictVersion codec) -> decodeTerm codec)
+                (,)
                 (simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData 0)
                 (DictVersion nodeToNodeCodecCBORTerm) appReq))
             wait
@@ -767,14 +780,15 @@ _demo = ioProperty $ do
             addr
             (\(DictVersion codec) -> encodeTerm codec)
             (\(DictVersion codec) -> decodeTerm codec)
+            (,)
             (\(DictVersion _) -> acceptEq)
             (simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData 0)
                 (DictVersion nodeToNodeCodecCBORTerm) appRsp)
             (\_ _ -> threadDelay delay)
 
 
-    appReq = MuxInitiatorApplication (\ChainSyncPr -> error "req fail")
-    appRsp = MuxResponderApplication (\ChainSyncPr -> error "rsp fail")
+    appReq = MuxInitiatorApplication (\_ ChainSyncPr -> error "req fail")
+    appRsp = MuxResponderApplication (\_ ChainSyncPr -> error "rsp fail")
 
 
 data WithThreadAndTime a = WithThreadAndTime {

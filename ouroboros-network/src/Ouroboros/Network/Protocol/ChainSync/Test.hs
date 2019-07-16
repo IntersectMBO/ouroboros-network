@@ -236,8 +236,8 @@ chainSyncDemo clientChan serverChan (ChainProducerStateForkTest cps chain) = do
 
       client = ChainSyncExamples.chainSyncClientExample chainVar (testClient doneVar (Chain.headPoint pchain))
 
-  void $ fork (void $ runPeer nullTracer (codecChainSync S.encode S.decode S.encode S.decode) serverChan (chainSyncServerPeer server))
-  void $ fork (void $ runPeer nullTracer (codecChainSync S.encode S.decode S.encode S.decode) clientChan (chainSyncClientPeer client))
+  void $ fork (void $ runPeer nullTracer (codecChainSync S.encode S.decode S.encode S.decode) "server" serverChan (chainSyncServerPeer server))
+  void $ fork (void $ runPeer nullTracer (codecChainSync S.encode S.decode S.encode S.decode) "client" clientChan (chainSyncClientPeer client))
 
   atomically $ do
     done <- readTVar doneVar

@@ -264,7 +264,9 @@ prop_channel :: (MonadAsync m, MonadCatch m, MonadST m)
 prop_channel createChannels chain points = do
     (bodies, ()) <-
       runConnectedPeers
-        createChannels nullTracer (codecBlockFetch S.encode S.encode S.decode S.decode)
+        createChannels nullTracer
+        (codecBlockFetch S.encode S.encode S.decode S.decode)
+        "client" "server"
         (blockFetchClientPeer (testClient chain points))
         (blockFetchServerPeer (testServer chain))
     return $ reverse bodies === concat (receivedBlockBodies chain points)

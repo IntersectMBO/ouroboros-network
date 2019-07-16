@@ -88,11 +88,12 @@ pipeAsMuxBearer pcRead pcWrite = do
 runMuxWithPipes
     :: ( Mx.ProtocolEnum ptcl, Ord ptcl, Enum ptcl, Bounded ptcl, Show ptcl
        , Mx.MiniProtocolLimits ptcl)
-    => Mx.MuxApplication appType ptcl IO BL.ByteString a b
+    => peerid
+    -> Mx.MuxApplication appType peerid ptcl IO BL.ByteString a b
     -> Handle -- ^ read handle
     -> Handle -- ^ write handle
     -> IO ()
-runMuxWithPipes app pcRead pcWrite = do
+runMuxWithPipes peerid app pcRead pcWrite = do
     bearer <- pipeAsMuxBearer pcRead pcWrite
-    Mx.muxStart app bearer
+    Mx.muxStart peerid app bearer
 

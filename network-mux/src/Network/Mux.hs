@@ -72,18 +72,25 @@ import           Network.Mux.Types
 --
 -- TODO: replace MonadSay with iohk-monitoring-framework.
 --
-muxStart :: forall m appType ptcl a b.  ( MonadAsync m , MonadSay m , MonadSTM
-         m , MonadThrow m , MonadThrow (STM m) , MonadMask m
+muxStart
+    :: forall m appType peerid ptcl a b.
+       ( MonadAsync m
+       , MonadSay m
+       , MonadSTM m
+       , MonadThrow m
+       , MonadThrow (STM m)
+       , MonadMask m
        , Ord ptcl
        , Enum ptcl
        , Bounded ptcl
        , Show ptcl
        , MiniProtocolLimits ptcl
        )
-    => MuxApplication appType ptcl m BL.ByteString a b
+    => peerid
+    -> MuxApplication appType peerid ptcl m BL.ByteString a b
     -> MuxBearer ptcl m
     -> m ()
-muxStart app bearer = do
+muxStart peerid app bearer = do
     tbl <- setupTbl
     tq <- atomically $ newTBQueue 100
     cnt <- newTVarM 0
@@ -133,11 +140,11 @@ muxStart app bearer = do
                               cnt
 
         return $ case app of
-          MuxInitiatorApplication initiator -> [ initiator mpdId initiatorChannel >> mpsJobExit cnt ]
-          MuxResponderApplication responder -> [ responder mpdId responderChannel >> mpsJobExit cnt ]
+          MuxInitiatorApplication initiator -> [ initiator peerid mpdId initiatorChannel >> mpsJobExit cnt ]
+          MuxResponderApplication responder -> [ responder peerid mpdId responderChannel >> mpsJobExit cnt ]
           MuxInitiatorAndResponderApplication initiator responder
-                                            -> [ initiator mpdId initiatorChannel >> mpsJobExit cnt
-                                               , responder mpdId responderChannel >> mpsJobExit cnt
+                                            -> [ initiator peerid mpdId initiatorChannel >> mpsJobExit cnt
+                                               , responder peerid mpdId responderChannel >> mpsJobExit cnt
                                                ]
 
     -- cnt represent the number of SDUs that are queued but not yet sent.  Job

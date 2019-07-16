@@ -65,19 +65,20 @@ runDecoderWithByteLimit limit byteLength Channel{recv} mbytes = go 0 mbytes
 -- @limit@ bytes; if the limit is exceeded throw @'TooMuchInput'@ exception.
 --
 runPeerWithByteLimit
-  :: forall ps (st :: ps) pr bytes failure m a .
+  :: forall ps (st :: ps) pr bytes peerid failure m a .
      (MonadThrow m, Exception failure)
   => Int64
   -- ^ message size limit
   -> (bytes -> Int64)
   -- ^ byte size
-  -> Tracer m (TraceSendRecv ps (DecoderFailureOrTooMuchInput failure))
+  -> Tracer m (TraceSendRecv ps peerid (DecoderFailureOrTooMuchInput failure))
   -> Codec ps failure m bytes
+  -> peerid
   -> Channel m bytes
   -> Peer ps pr st m a
   -> m a
 
-runPeerWithByteLimit limit byteLength tr Codec{encode, decode} channel@Channel{send} =
+runPeerWithByteLimit limit byteLength tr Codec{encode, decode} peerid channel@Channel{send} =
     go Nothing
   where
     go :: forall st'.
@@ -88,7 +89,7 @@ runPeerWithByteLimit limit byteLength tr Codec{encode, decode} channel@Channel{s
     go _        (Done _ x) = return x
 
     go trailing (Yield stok msg k) = do
-      traceWith tr (TraceSendMsg (AnyMessage msg))
+      traceWith tr (TraceSendMsg peerid (AnyMessage msg))
       send (encode stok msg)
       go trailing k
 
@@ -97,8 +98,8 @@ runPeerWithByteLimit limit byteLength tr Codec{encode, decode} channel@Channel{s
       res <- runDecoderWithByteLimit limit byteLength channel trailing decoder
       case res of
         Right (SomeMessage msg, trailing') -> do
-          traceWith tr (TraceRecvMsg (AnyMessage msg))
+          traceWith tr (TraceRecvMsg peerid (AnyMessage msg))
           go trailing' (k msg)
         Left failure -> do
-          traceWith tr (TraceDecoderFailure stok failure)
+          traceWith tr (TraceDecoderFailure peerid stok failure)
           throwM failure

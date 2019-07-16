@@ -162,7 +162,7 @@ refConnection tblVar remoteAddr refVar = atomically $ do
 --
 -- Exceptions thrown by @'MuxApplication'@ are rethrown by @'connectTo'@.
 connectToNode
-  :: forall appType ptcl vNumber extra a b.
+  :: forall appType peerid ptcl vNumber extra a b.
      ( Mx.ProtocolEnum ptcl
      , Ord ptcl
      , Enum ptcl
@@ -178,14 +178,15 @@ connectToNode
      )
   => (forall vData. extra vData -> vData -> CBOR.Term)
   -> (forall vData. extra vData -> CBOR.Term -> Either Text vData)
-  -> Versions vNumber extra (MuxApplication appType ptcl IO BL.ByteString a b)
+  -> (Socket.SockAddr -> Socket.SockAddr -> peerid)
+  -> Versions vNumber extra (MuxApplication appType peerid ptcl IO BL.ByteString a b)
   -- ^ application to run over the connection
   -> Maybe Socket.AddrInfo
   -- ^ local address; the created socket will bind to it
   -> Socket.AddrInfo
   -- ^ remote address
   -> IO ()
-connectToNode encodeData decodeData versions localAddr remoteAddr =
+connectToNode encodeData decodeData peeridFn versions localAddr remoteAddr =
     bracket
       (Socket.socket (Socket.addrFamily remoteAddr) Socket.Stream Socket.defaultProtocol)
       Socket.close
@@ -200,7 +201,7 @@ connectToNode encodeData decodeData versions localAddr remoteAddr =
             Just addr -> Socket.bind sd (Socket.addrAddress addr)
             Nothing   -> return ()
           Socket.connect sd (Socket.addrAddress remoteAddr)
-          connectToNode' encodeData decodeData versions sd
+          connectToNode' encodeData decodeData peeridFn versions sd
       )
 
 -- |
@@ -212,7 +213,7 @@ connectToNode encodeData decodeData versions localAddr remoteAddr =
 --
 -- Exceptions thrown by @'MuxApplication'@ are rethrown by @'connectTo'@.
 connectToNode'
-  :: forall appType ptcl vNumber extra a b.
+  :: forall appType peerid ptcl vNumber extra a b.
      ( Mx.ProtocolEnum ptcl
      , Ord ptcl
      , Enum ptcl
@@ -228,11 +229,13 @@ connectToNode'
      )
   => (forall vData. extra vData -> vData -> CBOR.Term)
   -> (forall vData. extra vData -> CBOR.Term -> Either Text vData)
-  -> Versions vNumber extra (MuxApplication appType ptcl IO BL.ByteString a b)
+  -> (Socket.SockAddr -> Socket.SockAddr -> peerid)
+  -> Versions vNumber extra (MuxApplication appType peerid ptcl IO BL.ByteString a b)
   -- ^ application to run over the connection
   -> Socket.Socket
   -> IO ()
-connectToNode' encodeData decodeData versions sd = do
+connectToNode' encodeData decodeData peeridFn versions sd = do
+    peerid <- peeridFn <$> Socket.getSocketName sd <*> Socket.getPeerName sd
     bearer <- Mx.socketAsMuxBearer sd
     Mx.muxBearerSetState bearer Mx.Connected
     mapp <- runPeerWithByteLimit
@@ -240,19 +243,24 @@ connectToNode' encodeData decodeData versions sd = do
               BL.length
               nullTracer
               codecHandshake
+              peerid
               (Mx.muxBearerAsControlChannel bearer Mx.ModeInitiator)
               (handshakeClientPeer encodeData decodeData versions)
     case mapp of
          Left err -> throwIO err
          Right app -> do
              Mx.muxBearerSetState bearer Mx.Mature
-             Mx.muxStart app bearer
+             Mx.muxStart peerid app bearer
 
 -- |
 -- A mux application which has a server component.
 --
-data AnyMuxResponderApp ptcl m bytes where
-      AnyMuxResponderApp :: forall appType ptcl m bytes a b. HasResponder appType ~ True => MuxApplication appType ptcl m bytes a b -> AnyMuxResponderApp ptcl m bytes
+data AnyMuxResponderApp peerid ptcl m bytes where
+      AnyMuxResponderApp
+        :: forall appType peerid ptcl m bytes a b.
+           HasResponder appType ~ True
+        => MuxApplication appType peerid ptcl m bytes a b
+        -> AnyMuxResponderApp peerid ptcl m bytes
 
 
 -- |
@@ -266,16 +274,18 @@ data AnyMuxResponderApp ptcl m bytes where
 -- connection, the whole connection will terminate.  We might want to be more
 -- admissible in this scenario: leave the server thread running and let only
 -- the client thread to die.
-data AcceptConnection st vNumber extra ptcl m bytes where
+data AcceptConnection st vNumber extra peerid ptcl m bytes where
 
     AcceptConnection
       :: !st
-      -> Versions vNumber extra (AnyMuxResponderApp ptcl m bytes)
-      -> AcceptConnection st vNumber extra ptcl m bytes
+      -> !peerid
+      -> Versions vNumber extra (AnyMuxResponderApp peerid ptcl m bytes)
+      -> AcceptConnection st vNumber extra peerid ptcl m bytes
 
     RejectConnection
       :: !st
-      -> AcceptConnection st vNumber extra ptcl m bytes
+      -> !peerid
+      -> AcceptConnection st vNumber extra peerid ptcl m bytes
 
 
 -- |
@@ -283,7 +293,7 @@ data AcceptConnection st vNumber extra ptcl m bytes where
 -- of the incoming connection.
 --
 beginConnection
-    :: forall ptcl vNumber extra addr st.
+    :: forall peerid ptcl vNumber extra addr st.
        ( Mx.ProtocolEnum ptcl
        , Ord ptcl
        , Enum ptcl
@@ -299,13 +309,13 @@ beginConnection
     => (forall vData. extra vData -> vData -> CBOR.Term)
     -> (forall vData. extra vData -> CBOR.Term -> Either Text vData)
     -> (forall vData. extra vData -> vData -> vData -> Accept)
-    -> (addr -> st -> STM.STM (AcceptConnection st vNumber extra ptcl IO BL.ByteString))
+    -> (addr -> st -> STM.STM (AcceptConnection st vNumber extra peerid ptcl IO BL.ByteString))
     -- ^ either accept or reject a connection.
     -> Server.BeginConnection addr Socket.Socket st ()
 beginConnection encodeData decodeData acceptVersion fn addr st = do
     accept <- fn addr st
     case accept of
-      AcceptConnection st' versions -> pure $ Server.Accept st' $ \sd -> do
+      AcceptConnection st' peerid versions -> pure $ Server.Accept st' $ \sd -> do
         (bearer :: MuxBearer ptcl IO) <- Mx.socketAsMuxBearer sd
         Mx.muxBearerSetState bearer Mx.Connected
         mapp <- runPeerWithByteLimit
@@ -313,14 +323,15 @@ beginConnection encodeData decodeData acceptVersion fn addr st = do
                 BL.length
                 nullTracer
                 codecHandshake
+                peerid
                 (Mx.muxBearerAsControlChannel bearer Mx.ModeResponder)
                 (handshakeServerPeer encodeData decodeData acceptVersion versions)
         case mapp of
           Left err -> throwIO err
           Right (AnyMuxResponderApp app) -> do
             Mx.muxBearerSetState bearer Mx.Mature
-            Mx.muxStart app bearer
-      RejectConnection st' -> pure $ Server.Reject st'
+            Mx.muxStart peerid app bearer
+      RejectConnection st' _peerid -> pure $ Server.Reject st'
 
 
 -- Make the server listening socket
@@ -368,7 +379,7 @@ fromSocket tblVar sd = Server.Socket
 -- Thin wrapper around @'Server.run'@.
 --
 runNetworkNode'
-    :: forall ptcl st vNumber extra t.
+    :: forall peerid ptcl st vNumber extra t.
        ( Mx.ProtocolEnum ptcl
        , Ord ptcl
        , Enum ptcl
@@ -388,7 +399,7 @@ runNetworkNode'
     -> (forall vData. extra vData -> vData -> vData -> Accept)
     -- -> Versions vNumber extra (MuxApplication ServerApp ptcl IO)
     -> (SomeException -> IO ())
-    -> (Socket.SockAddr -> st -> STM.STM (AcceptConnection st vNumber extra ptcl IO BL.ByteString))
+    -> (Socket.SockAddr -> st -> STM.STM (AcceptConnection st vNumber extra peerid ptcl IO BL.ByteString))
     -> Server.CompleteConnection st ()
     -> Server.Main st t
     -> st
@@ -415,7 +426,7 @@ runNetworkNode' tbl sd encodeData decodeData acceptVersion acceptException accep
 -- thread which runs the server.  This makes it useful for testing, where we
 -- need to guarantee that a socket is open before we try to connect to it.
 withServerNode
-    :: forall ptcl vNumber extra t.
+    :: forall peerid ptcl vNumber extra t.
        ( Mx.ProtocolEnum ptcl
        , Ord ptcl
        , Enum ptcl
@@ -432,8 +443,9 @@ withServerNode
     -> Socket.AddrInfo
     -> (forall vData. extra vData -> vData -> CBOR.Term)
     -> (forall vData. extra vData -> CBOR.Term -> Either Text vData)
+    -> (Socket.SockAddr -> Socket.SockAddr -> peerid)
     -> (forall vData. extra vData -> vData -> vData -> Accept)
-    -> Versions vNumber extra (AnyMuxResponderApp ptcl IO BL.ByteString)
+    -> Versions vNumber extra (AnyMuxResponderApp peerid ptcl IO BL.ByteString)
     -- ^ The mux application that will be run on each incoming connection from
     -- a given address.  Note that if @'MuxClientAndServerApplication'@ is
     -- returned, the connection will run a full duplex set of mini-protocols.
@@ -442,7 +454,7 @@ withServerNode
     -- Note: the server thread will terminate when the callback returns or
     -- throws an exception.
     -> IO t
-withServerNode tbl addr encodeData decodeData acceptVersion versions k =
+withServerNode tbl addr encodeData decodeData peeridFn acceptVersion versions k =
     bracket (mkListeningSocket (Socket.addrFamily addr) (Just $ Socket.addrAddress addr)) Socket.close $ \sd -> do
       addr' <- Socket.getSocketName sd
       withAsync
@@ -453,7 +465,11 @@ withServerNode tbl addr encodeData decodeData acceptVersion versions k =
           decodeData
           acceptVersion
           throwIO
-          (\_connAddr st -> pure $ AcceptConnection st versions)
+          (\connAddr st ->
+            pure $ AcceptConnection
+                    st
+                    (peeridFn addr' connAddr)
+                    versions)
           complete
           main
           ()) (k addr')
@@ -475,7 +491,7 @@ withServerNode tbl addr encodeData decodeData acceptVersion versions k =
 -- connection.
 --
 withSimpleServerNode
-    :: forall ptcl vNumber extra t a b.
+    :: forall peerid ptcl vNumber extra t a b.
        ( Mx.ProtocolEnum ptcl
        , Ord ptcl
        , Enum ptcl
@@ -492,8 +508,10 @@ withSimpleServerNode
     -> Socket.AddrInfo
     -> (forall vData. extra vData -> vData -> CBOR.Term)
     -> (forall vData. extra vData -> CBOR.Term -> Either Text vData)
+    -> (Socket.SockAddr -> Socket.SockAddr -> peerid)
+    -- ^ create peerid from local address and remote address
     -> (forall vData. extra vData -> vData -> vData -> Accept)
-    -> Versions vNumber extra (MuxApplication ResponderApp ptcl IO BL.ByteString a b)
+    -> Versions vNumber extra (MuxApplication ResponderApp peerid ptcl IO BL.ByteString a b)
     -- ^ The mux server application that will be run on each incoming
     -- connection.
     -> (Socket.SockAddr -> Async () -> IO t)
@@ -501,4 +519,4 @@ withSimpleServerNode
     -- Note: the server thread will terminate when the callback returns or
     -- throws an exception.
     -> IO t
-withSimpleServerNode tbl addr encodeData decodeData acceptVersion versions k = withServerNode tbl addr encodeData decodeData acceptVersion (AnyMuxResponderApp <$> versions) k
+withSimpleServerNode tbl addr encodeData decodeData peeridFn acceptVersion versions k = withServerNode tbl addr encodeData decodeData peeridFn acceptVersion (AnyMuxResponderApp <$> versions) k

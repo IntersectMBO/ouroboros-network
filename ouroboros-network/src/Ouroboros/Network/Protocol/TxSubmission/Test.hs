@@ -192,6 +192,8 @@ prop_channel createChannels params@TxSubmissionTestParams{testTransactions} =
       createChannels
       nullTracer
       codec
+      "client"
+      "producer"
       (txSubmissionServerPeerPipelined $
        testServer nullTracer params)
       (txSubmissionClientPeer $

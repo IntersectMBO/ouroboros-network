@@ -27,7 +27,7 @@ import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
-import           Control.Tracer (Tracer, contramap, nullTracer)
+import           Control.Tracer (Tracer, nullTracer)
 import           Control.Exception (assert)
 
 import           Ouroboros.Network.Block
@@ -75,8 +75,7 @@ blockFetchExample1 :: forall m.
                                  (FetchDecision [Point BlockHeader])]
                    -> Tracer m (TraceLabelPeer Int
                                  (TraceFetchClientState BlockHeader))
-                   -> Tracer m (TraceLabelPeer Int
-                                 (TraceSendRecv (BlockFetch Block) DeserialiseFailure))
+                   -> Tracer m ((TraceSendRecv (BlockFetch Block) Int DeserialiseFailure))
                    -> AnchoredFragment Block   -- ^ Fixed current chain
                    -> [AnchoredFragment Block] -- ^ Fixed candidate chains
                    -> m ()
@@ -88,14 +87,12 @@ blockFetchExample1 decisionTracer clientStateTracer clientMsgTracer
 
     peerAsyncs  <- sequence
                     [ runFetchClientAndServerAsync
-                        clientMsgTracer'
+                        clientMsgTracer
                         serverMsgTracer
                         registry peerno
                         blockFetchClient
                         (mockBlockFetchServer1 (unanchorFragment candidateChain))
                     | (peerno, candidateChain) <- zip [1..] candidateChains
-                    , let clientMsgTracer'   = contramap (TraceLabelPeer peerno)
-                                                         clientMsgTracer
                     ]
     fetchAsync  <- async $ blockFetch registry blockHeap
     driverAsync <- async $ driver blockHeap
@@ -188,7 +185,7 @@ exampleFixedPeerGSVs =
 
 runFetchClient :: (MonadCatch m, MonadAsync m, MonadFork m, MonadST m,
                    Ord peerid, Serialise block, Serialise (HeaderHash block))
-                => Tracer m (TraceSendRecv (BlockFetch block) DeserialiseFailure)
+                => Tracer m (TraceSendRecv (BlockFetch block) peerid DeserialiseFailure)
                 -> FetchClientRegistry peerid header block m
                 -> peerid
                 -> Channel m LBS.ByteString
@@ -197,7 +194,7 @@ runFetchClient :: (MonadCatch m, MonadAsync m, MonadFork m, MonadST m,
                 -> m a
 runFetchClient tracer registry peerid channel client =
     bracketFetchClient registry peerid $ \clientCtx ->
-      runPipelinedPeer tracer codec channel $
+      runPipelinedPeer tracer codec peerid channel $
         client clientCtx
   where
     codec = codecBlockFetch encode encode decode decode
@@ -205,12 +202,13 @@ runFetchClient tracer registry peerid channel client =
 runFetchServer :: (MonadThrow m, MonadST m,
                    Serialise block,
                    Serialise (HeaderHash block))
-                => Tracer m (TraceSendRecv (BlockFetch block) DeserialiseFailure)
+                => Tracer m (TraceSendRecv (BlockFetch block) peerid DeserialiseFailure)
+                -> peerid
                 -> Channel m LBS.ByteString
                 -> BlockFetchServer block m a
                 -> m a
-runFetchServer tracer channel server =
-    runPeer tracer codec channel $
+runFetchServer tracer peerid channel server =
+    runPeer tracer codec peerid channel $
       blockFetchServerPeer server
   where
     codec = codecBlockFetch encode encode decode decode
@@ -220,8 +218,8 @@ runFetchClientAndServerAsync
                    MonadST m, Ord peerid,
                    Serialise header, Serialise block,
                    Serialise (HeaderHash block))
-                => Tracer m (TraceSendRecv (BlockFetch block) DeserialiseFailure)
-                -> Tracer m (TraceSendRecv (BlockFetch block) DeserialiseFailure)
+                => Tracer m (TraceSendRecv (BlockFetch block) peerid DeserialiseFailure)
+                -> Tracer m (TraceSendRecv (BlockFetch block) peerid DeserialiseFailure)
                 -> FetchClientRegistry peerid header block m
                 -> peerid
                 -> (  FetchClientContext header block m
@@ -238,9 +236,12 @@ runFetchClientAndServerAsync clientTracer serverTracer
                              clientChannel client
 
     serverAsync <- async $ runFetchServer
-                             serverTracer
+                             serverTracer peerid
                              serverChannel server
 
+    -- we are tagging messages with the current peerid, not the target
+    -- one, this is different than what's intended but it's fine to do that in
+    -- these examples; 
     syncClientAsync <- async $ bracketSyncWithFetchClient
                                  registry peerid
                                  (forever (threadDelay 1000) >> return ())

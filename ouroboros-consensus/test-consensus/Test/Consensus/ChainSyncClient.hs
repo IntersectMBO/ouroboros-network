@@ -296,14 +296,14 @@ runChainSync securityParam maxClockSkew (ClientUpdates clientUpdates)
            serverId $ \varCandidate curChain -> do
              atomically $ modifyTVar' varFinalCandidates $
                Map.insert serverId varCandidate
-             runPeer nullTracer codecChainSyncId clientChannel
+             runPeer nullTracer codecChainSyncId serverId clientChannel
                     (chainSyncClientPeer (client varCandidate curChain))
         `catch` \(e :: ChainSyncException) -> do
           atomically $ writeTVar varClientException (Just e)
           -- Rethrow, but it will be ignored anyway.
           throwM e
       void $ forkLinked registry $
-        runPeer nullTracer codecChainSyncId serverChannel
+        runPeer nullTracer codecChainSyncId clientId serverChannel
                 (chainSyncServerPeer server)
 
     -- STM variable to record the final synched candidate chain

@@ -70,26 +70,26 @@ initiatorVersions
   :: ( Monad m, MonadST m, MonadUnliftIO m, MonadThrow m, MonadThrow (ResourceT m) )
   => Cardano.EpochSlots -- ^ Needed for the codec, sadly
   -> ChainSyncClient Block Point (ResourceT m) ()
-  -> Versions VNumber (CodecCBORTerm Text) (MuxApplication InitiatorApp Ptcl m LBS.ByteString () Void)
+  -> Versions VNumber (CodecCBORTerm Text) (MuxApplication InitiatorApp peer Ptcl m LBS.ByteString () Void)
 initiatorVersions epochSlots client = Versions $ Map.fromList
   [ (VNumber 0, Sigma () (Version clientMuxApp unitCodecCBORTerm))
   ]
   where
   clientPeer = chainSyncClientPeer client
   codec = hoistCodec lift (ChainSync.codec epochSlots)
-  clientMuxApp = Application $ \_ _ -> MuxInitiatorApplication $ \ptcl channel -> case ptcl of
-    PtclChainSync -> runResourceT $ runPeer nullTracer codec (hoistChannel lift channel) clientPeer
+  clientMuxApp = Application $ \_ _ -> MuxInitiatorApplication $ \peer ptcl channel -> case ptcl of
+    PtclChainSync -> runResourceT $ runPeer nullTracer codec peer (hoistChannel lift channel) clientPeer
 
 responderVersions
   :: ( Monad m, MonadST m, MonadUnliftIO m, MonadThrow m, MonadThrow (ResourceT m) )
   => Cardano.EpochSlots -- ^ Needed for the codec; must match that of the initiator.
   -> ChainSyncServer Block Point (ResourceT m) ()
-  -> Versions VNumber (CodecCBORTerm Text) (MuxApplication ResponderApp Ptcl m LBS.ByteString Void ())
+  -> Versions VNumber (CodecCBORTerm Text) (MuxApplication ResponderApp peer Ptcl m LBS.ByteString Void ())
 responderVersions epochSlots server = Versions $ Map.fromList
   [ (VNumber 0, Sigma () (Version serverMuxApp unitCodecCBORTerm))
   ]
   where
   serverPeer = chainSyncServerPeer server
   codec = hoistCodec lift (ChainSync.codec epochSlots)
-  serverMuxApp = Application $ \_ _ -> MuxResponderApplication $ \ptcl channel -> case ptcl of
-    PtclChainSync -> runResourceT $ runPeer nullTracer codec (hoistChannel lift channel) serverPeer
+  serverMuxApp = Application $ \_ _ -> MuxResponderApplication $ \peer ptcl channel -> case ptcl of
+    PtclChainSync -> runResourceT $ runPeer nullTracer codec peer (hoistChannel lift channel) serverPeer

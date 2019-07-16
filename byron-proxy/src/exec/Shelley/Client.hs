@@ -48,6 +48,8 @@ runClient options tracer epochSlots db = do
     (addrInfoLocal : _, addrInfoRemote : _) -> connectToNode
       encodeTerm
       decodeTerm
+      -- TODO: this should be some proper type rather than a tuple
+      (,)
       (initiatorVersions epochSlots chainSyncClient)
       (Just addrInfoLocal)
       addrInfoRemote

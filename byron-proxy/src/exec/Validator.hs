@@ -164,6 +164,8 @@ main = do
     connectToNode
       encodeTerm
       decodeTerm
+      -- TODO: this should be some proper type rather than a tuple
+      (,)
       (initiatorVersions epochSlots client)
       (Just addrInfoLocal)
       addrInfoRemote
