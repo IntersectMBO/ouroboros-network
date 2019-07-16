@@ -311,7 +311,9 @@ forkBlockProduction
 forkBlockProduction IS{..} =
     onSlotChange btime $ \currentSlot -> do
       drg  <- produceDRG
-      mNewBlock <- atomically $ do
+      -- See the docstring of 'withSyncState' for why we're using it instead
+      -- of 'atomically'.
+      mNewBlock <- withSyncState mempool $ \MempoolSnapshot{snapshotTxs} -> do
         varDRG <- newTVar drg
         l@ExtLedgerState{..} <- ChainDB.getCurrentLedger chainDB
         mIsLeader            <- runProtocol varDRG $
@@ -326,27 +328,23 @@ forkBlockProduction IS{..} =
           Just proof -> do
             (prevPoint, prevNo) <- prevPointAndBlockNo currentSlot <$>
                                      ChainDB.getCurrentChain chainDB
-
-            -- In this circumstance, it is required that we call 'syncState'
-            -- before 'getTxs' within this 'STM' transaction since we need to
-            -- guarantee that the transactions returned from 'getTxs' are
-            -- valid with respect to the current ledger state of the
-            -- 'ChainDB'. Refer to the 'getTxs' documentation for more
-            -- information.
-            _                   <- pure $ syncState mempool
-            mempoolSnapshot     <- getSnapshot mempool
-
-            let txs             =  map fst (snapshotTxs mempoolSnapshot)
             newBlock            <- runProtocol varDRG $
                                      produceBlock
                                        proof
                                        l
                                        currentSlot
-                                       (castPoint prevPoint)
+                                       prevPoint
                                        prevNo
-                                       txs
+                                       (map fst snapshotTxs)
             return $ Just newBlock
 
+      -- Note that there is a possible race condition here: we have produced a
+      -- block containing valid transactions w.r.t. the current ledger state
+      -- (this was race-free), but the current chain might change before we
+      -- complete adding the block to the ChainDB. If the current chain has
+      -- changed to a longer chain (than the one at the time of producing the
+      -- block), chain selection will not select the block we just produced
+      -- ourselves, as it would mean switching to a shorter chain.
       whenJust mNewBlock $ \newBlock -> do
         traceWith tracer $
           "As leader of slot " <> condense currentSlot <> " I produce: " <>

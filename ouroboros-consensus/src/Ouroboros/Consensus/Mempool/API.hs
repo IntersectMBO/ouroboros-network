@@ -1,4 +1,5 @@
 {-# LANGUAGE FlexibleContexts        #-}
+{-# LANGUAGE RankNTypes              #-}
 {-# LANGUAGE StandaloneDeriving      #-}
 {-# LANGUAGE TypeFamilies            #-}
 {-# LANGUAGE UndecidableInstances    #-}
@@ -156,15 +157,28 @@ data Mempool m blk idx = Mempool {
       -- they have already been included. Distinguishing between these two
       -- cases can be done in theory, but it is expensive unless we have an
       -- index of transaction hashes that have been included on the blockchain.
-      addTxs      :: [GenTx blk] -> m [(GenTx blk, Maybe (ApplyTxErr blk))]
+      addTxs        :: [GenTx blk] -> m [(GenTx blk, Maybe (ApplyTxErr blk))]
 
       -- | Sync the transactions in the mempool with the current ledger state
       --  of the 'ChainDB'.
       --
       -- The transactions that exist within the mempool will be revalidated
       -- against the current ledger state. Transactions which are found to be
-      -- invalid, with respect to the current ledger state, will be dropped
+      -- invalid with respect to the current ledger state, will be dropped
       -- from the mempool, whereas valid transactions will remain.
+      --
+      -- The given function will be applied to a snapshot of the mempool that
+      -- is in sync with the current ledger state. This function will be
+      -- executed in the same 'STM' transaction that performs the
+      -- synchronisation. The main use case for this is a function that
+      -- produces a block containing the valid transactions in the mempool
+      -- snapshot.
+      --
+      -- Using this approach, we avoid the following race condition: the
+      -- current ledger state changes while we're producing a block, which
+      -- means that some of the transactions in the new block might no longer
+      -- be valid with respect to the current ledger state. Consequently, we
+      -- produce an invalid block, wasting our leadership slot.
       --
       -- We keep this in @m@ instead of @STM m@ to leave open the possibility
       -- of persistence. Additionally, this makes it possible to trace the
@@ -173,15 +187,15 @@ data Mempool m blk idx = Mempool {
       -- n.b. in our current implementation, when one opens a mempool, we
       -- spawn a thread which performs this action whenever the 'ChainDB' tip
       -- point changes.
-    , syncState   :: m ()
+    , withSyncState :: forall a. (MempoolSnapshot blk idx -> STM m a) -> m a
 
       -- | Get a snapshot of the current mempool state. This allows for
       -- further pure queries on the snapshot.
-    , getSnapshot :: STM m (MempoolSnapshot blk idx)
+    , getSnapshot   :: STM m (MempoolSnapshot blk idx)
 
       -- | Represents the initial value at which the transaction ticket number
       -- counter will start (i.e. the zeroth ticket number).
-    , zeroIdx     :: idx
+    , zeroIdx       :: idx
     }
 
 -- | A pure snapshot of the contents of the mempool. It allows fetching
