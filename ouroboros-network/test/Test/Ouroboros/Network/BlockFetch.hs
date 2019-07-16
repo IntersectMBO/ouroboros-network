@@ -57,8 +57,8 @@ tests = testGroup "BlockFetch"
   , testProperty "static chains with overlap"
                  prop_blockFetchStaticWithOverlap
 
-  , testCaseSteps "bracketSyncWithFetchClient"
-                  unit_bracketSyncWithFetchClient
+  --, testCaseSteps "bracketSyncWithFetchClient"
+  --                unit_bracketSyncWithFetchClient
   ]
 
 
@@ -362,8 +362,8 @@ tracePropertyClientStateSanity es =
 -- Unit tests
 --
 
-unit_bracketSyncWithFetchClient :: (String -> IO ()) -> Assertion
-unit_bracketSyncWithFetchClient step = do
+_unit_bracketSyncWithFetchClient :: (String -> IO ()) -> Assertion
+_unit_bracketSyncWithFetchClient step = do
 
     step "Starting fetch before sync"
     checkResult =<< testSkeleton
