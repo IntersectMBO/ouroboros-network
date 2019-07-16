@@ -130,7 +130,7 @@ connectToNode encodeData decodeData peeridFn versions localAddr remoteAddr =
       )
 
 -- |
--- Connect to a remote node using an existing socket. It us up to to caller to
+-- Connect to a remote node using an existing socket. It is up to to caller to
 -- ensure that the socket is closed in case of an exception.
 --
 -- The connection will start with handshake protocol sending @Versions@ to the
@@ -440,7 +440,9 @@ withSimpleServerNode
     -- ^ The mux server application that will be run on each incoming
     -- connection.
     -> (Socket.SockAddr -> Async () -> IO t)
-    -- ^ callback which takes the @Async@ of the thread that is running the server.
+    -- ^ callback which takes the local address that the server bound to along with the @Async@ of
+    -- the thread that is running the server
+    --
     -- Note: the server thread will terminate when the callback returns or
     -- throws an exception.
     -> IO t
