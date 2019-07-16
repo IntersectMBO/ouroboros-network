@@ -15,6 +15,11 @@ module Ouroboros.Network.Subscription.Common
     , IPSubscriptionTarget (..)
     ) where
 
+
+{- The parallel connection attemps implemented in this module is inspired by
+ - RFC8305, https://tools.ietf.org/html/rfc8305 .
+ -}
+
 import           Control.Concurrent hiding (threadDelay)
 import           Control.Concurrent.Async
 
@@ -56,10 +61,15 @@ sockAddrFamily (Socket.SockAddrInet  _ _    ) = Socket.AF_INET
 sockAddrFamily (Socket.SockAddrInet6 _ _ _ _) = Socket.AF_INET6
 sockAddrFamily _                              = Socket.AF_UNSPEC
 
-data ConnectResult = ConnectSuccess
-                   | ConnectSuccessLast
-                   | ConnectFail
-                   deriving (Eq, Ord, Show)
+data ConnectResult =
+      ConnectSuccess
+    -- ^ We successfully created a connection.
+    | ConnectSuccessLast
+    -- ^ We succesfully created a connection, and reached the valency target. Other ongoing
+    -- connection attempts should be killed.
+    | ConnectFail
+    -- ^ Someone else manged to create the final connection to the target before us.
+    deriving (Eq, Ord, Show)
 
 subscribeTo
     :: HasCallStack
@@ -67,14 +77,18 @@ subscribeTo
     -> TVar IO (Set ThreadId)
     -> Tracer IO SubscriptionTrace
     -> Maybe Socket.SockAddr
+    -- ^ Local IPv4 address to use, Nothing indicates don't use IPv4
     -> Maybe Socket.SockAddr
+    -- ^ Local IPv6 address to use, Nothing indicates don't use IPv6
     -> (Socket.SockAddr -> Maybe DiffTime)
+    -- ^ Lookup function, should return expected delay for the given address
     -> ValencyCounter IO
-    -> (Socket.Socket -> IO ())
+    -- ^ Tracks the number of connections left to create
     -> SubscriptionTarget IO Socket.SockAddr
+    -> (Socket.Socket -> IO ())
     -> IO ()
 subscribeTo tbl threadPool tracer localIPv4_m localIPv6_m connectionAttemptDelay
-  valencyVar k ts = do
+  valencyVar ts k = do
      x <- newTVarM Set.empty
      doSubscribeTo x ts
 
@@ -112,7 +126,10 @@ subscribeTo tbl threadPool tracer localIPv4_m localIPv6_m connectionAttemptDelay
                                         doSubscribeTo conThreads nextTargets
                              Just localAddr -> do
                                  -- TODO use asyncWith instead?
-                                 _ <- async (doConnect conThreads localAddr target)
+                                 _ <- async (bracket
+                                         (allocateSocket conThreads target)
+                                         (closeSocket conThreads target)
+                                         (doConnect conThreads localAddr target))
 
                                  {- The time to wait depends on available deltaQ information for the
                                  -- destination address and max/min values from RFC8305.
@@ -150,34 +167,13 @@ subscribeTo tbl threadPool tracer localIPv4_m localIPv6_m connectionAttemptDelay
                    then traceWith tracer SubscriptionTraceSubscriptionRunning
                    else traceWith tracer SubscriptionTraceSubscriptionFailed
 
-    doConnect conThreads localAddr remoteAddr =
-        bracket
-            ( do
-                tid <- myThreadId
-                atomically $ do
-                    modifyTVar' conThreads (Set.insert tid)
-                    modifyTVar' threadPool (Set.insert tid)
-                sd <- Socket.socket (sockAddrFamily remoteAddr) Socket.Stream
-                        Socket.defaultProtocol
-                hasRefVar <- newTVarM False
-                return (sd, hasRefVar)
-            )
-            (\(sd,hasRefVar) -> do
-                traceWith tracer $ SubscriptionTraceConnectCleanup remoteAddr
-
-                tid <- myThreadId
-                atomically $ do
-                    modifyTVar' conThreads (Set.delete tid)
-                    modifyTVar' threadPool (Set.delete tid)
-                hasRef <- atomically $ readTVar hasRefVar
-                when hasRef $ do
-                    localAddr' <- Socket.getSocketName sd
-                    removeConnection tbl remoteAddr localAddr'
-
-                Socket.close sd
-
-            )
-            (\(sd,hasRefVar)  -> do
+    doConnect
+        :: TVar IO (Set ThreadId)
+        -> Socket.SockAddr
+        -> Socket.SockAddr
+        -> (Socket.Socket, TVar IO Bool)
+        -> IO ()
+    doConnect conThreads localAddr remoteAddr (sd,hasRefVar) = do
                 Socket.setSocketOption sd Socket.ReuseAddr 1
 #if !defined(mingw32_HOST_OS)
                 Socket.setSocketOption sd Socket.ReusePort 1
@@ -206,7 +202,7 @@ subscribeTo tbl threadPool tracer localIPv4_m localIPv6_m connectionAttemptDelay
                                 else return ConnectFail
                 traceWith tracer $ SubscriptionTraceConnectEnd remoteAddr result
                 case result of
-                    ConnectSuccess -> k sd
+                    ConnectSuccess -> k sd -- TODO catch all application exception.
                     ConnectSuccessLast -> do
                             outstandingConThreads <- atomically $ readTVar conThreads
                             mapM_ (\a -> throwTo a
@@ -216,19 +212,58 @@ subscribeTo tbl threadPool tracer localIPv4_m localIPv6_m connectionAttemptDelay
                             k sd
                     ConnectFail -> return ()
 
-            )
+    allocateSocket
+        :: TVar IO (Set ThreadId)
+        -> Socket.SockAddr
+        -> IO (Socket.Socket, TVar IO Bool)
+    allocateSocket conThreads remoteAddr = do
+        tid <- myThreadId
+        atomically $ do
+            modifyTVar' conThreads (Set.insert tid)
+            modifyTVar' threadPool (Set.insert tid)
+        sd <- Socket.socket (sockAddrFamily remoteAddr) Socket.Stream Socket.defaultProtocol
+        hasRefVar <- newTVarM False
+        return (sd, hasRefVar)
+
+    closeSocket
+        :: TVar IO (Set ThreadId)
+        -> Socket.SockAddr
+        -> (Socket.Socket, TVar IO Bool)
+        -> IO ()
+    closeSocket conThreads remoteAddr (sd, hasRefVar)= do
+        traceWith tracer $ SubscriptionTraceConnectCleanup remoteAddr
+
+        tid <- myThreadId
+        atomically $ do
+            modifyTVar' conThreads (Set.delete tid)
+            modifyTVar' threadPool (Set.delete tid)
+        hasRef <- atomically $ readTVar hasRefVar
+        when hasRef $ do
+            localAddr <- Socket.getSocketName sd
+            removeConnection tbl remoteAddr localAddr
+
+        Socket.close sd
+
+
 
 data IPSubscriptionTarget = IPSubscriptionTarget {
+    -- | List of destinations to possibly connect to
       ispIps     :: ![Socket.SockAddr]
+    -- | Number of parallel connections to keep actice.
     , ispValency :: !Int
     } deriving (Eq, Show)
 
+-- | Spawns a subscription worker which will attempt to keep the specified number
+-- of connections (Valency) active towards the list of IP addresses given in IPSubscriptionTarget.
 ipSubscriptionWorker
     :: ConnectionTable IO
     -> Tracer IO (WithIPList SubscriptionTrace)
     -> Maybe Socket.SockAddr
+    -- ^ Local IPv4 address to use, Nothing indicates don't use IPv4
     -> Maybe Socket.SockAddr
+    -- ^ Local IPv6 address to use, Nothing indicates don't use IPv6
     -> (Socket.SockAddr -> Maybe DiffTime)
+    -- ^ Lookup function, should return expected delay for the given address
     -> IPSubscriptionTarget
     -> (Socket.Socket -> IO ())
     -> (Async () -> IO t)
@@ -275,7 +310,7 @@ subscriptionWorker tbl tracer localIPv4 localIPv6 connectionAttemptDelay getTarg
             start <- getMonotonicTime
             targets <- getTargets
             subscribeTo tbl childrenVar tracer localIPv4 localIPv6 connectionAttemptDelay
-                    valencyVar cb targets
+                    valencyVar targets cb
             atomically $ waitValencyCounter valencyVar
 
             {-
