@@ -863,8 +863,9 @@ genBlk Model{..} = do
     testHash@(TestHash h) <- genHash
     let slot = 2 * fromIntegral (length h)
     return $ TestBlock
-      { tbHash = testHash
-      , tbSlot = SlotNo slot
+      { tbHash  = testHash
+      , tbSlot  = SlotNo slot
+      , tbValid = isValid testHash
       }
   where
     hashesInDB :: [TestHash]
@@ -876,6 +877,24 @@ genBlk Model{..} = do
     -- If the maximum fork number is @n@, it means that only @n + 1@ different
     -- forks may "fork off" after each block.
     maxForkNo = 2
+
+    -- We say that a block with most recent fork number 2 is invalid.
+    --
+    -- The hash (point) of an invalid block is remembered to ignore that block
+    -- in the future, this means that for each hash, the value of 'tbValid'
+    -- must always be the same. In other words, we can never generate an
+    -- invalid block with hash @h@ and also generate a valid block with the
+    -- same hash @h@. Formally:
+    --
+    -- > forall b1 b2. (tbHash b1 == tbHash b2) <=> (tbValid b1 == tbValid b2)
+    --
+    -- To enforce this, we reserve the most recent fork number for invalid
+    -- blocks, e.g., [2], [2,0], [2,0,1,0], [2,0,0,2,0] (since 2 occured
+    -- before, this block is already on an invalid chain). Note that valid
+    -- blocks may fit onto an invalid chain, e.g., [0,2,0].
+    isValid :: TestHash -> Bool
+    isValid (TestHash (2 NE.:| _)) = False
+    isValid _                      = True
 
     genForkNo :: Gen Word64
     genForkNo = frequency
@@ -1094,8 +1113,9 @@ tests = testGroup "ChainDB q-s-m"
 
 _mkBlk :: [Word64] -> TestBlock
 _mkBlk h = TestBlock
-    { tbHash = mkTestHash h
-    , tbSlot = SlotNo $ fromIntegral $ 2 * length h
+    { tbHash  = mkTestHash h
+    , tbSlot  = SlotNo $ fromIntegral $ 2 * length h
+    , tbValid = True
     }
 
 -- | Debugging utility: run some commands against the real implementation.
