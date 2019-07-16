@@ -336,6 +336,7 @@ instance (SimpleCrypto c, Serialise ext') => Serialise (SimpleBlock' c ext ext')
 instance (SimpleCrypto c) => Serialise (SimpleStdHeader c ext)
 instance Serialise SimpleBody
 deriving instance Serialise (GenTx (SimpleBlock p c))
+deriving instance Serialise (GenTxId (SimpleBlock p c))
 instance ToCBOR SimpleBody where
   toCBOR = encode
 deriving instance Serialise (LedgerState (SimpleBlock c ext))

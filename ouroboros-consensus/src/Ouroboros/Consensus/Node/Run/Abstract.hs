@@ -47,6 +47,7 @@ class (ProtocolLedgerView blk, ApplyTx blk) => RunNode blk where
   nodeEncodeBlock        :: NodeConfig (BlockProtocol blk) -> blk -> Encoding
   nodeEncodeHeader       :: NodeConfig (BlockProtocol blk) -> Header blk -> Encoding
   nodeEncodeGenTx        :: GenTx  blk -> Encoding
+  nodeEncodeGenTxId      :: GenTxId blk -> Encoding
   nodeEncodeHeaderHash   :: Proxy blk -> HeaderHash blk -> Encoding
   nodeEncodeLedgerState  :: NodeConfig (BlockProtocol blk) -> LedgerState blk -> Encoding
   nodeEncodeChainState   :: Proxy blk -> ChainState (BlockProtocol blk) -> Encoding
@@ -56,6 +57,7 @@ class (ProtocolLedgerView blk, ApplyTx blk) => RunNode blk where
   nodeDecodeHeader       :: forall s. NodeConfig (BlockProtocol blk) -> Decoder s (Header blk)
   nodeDecodeBlock        :: forall s. NodeConfig (BlockProtocol blk) -> Decoder s blk
   nodeDecodeGenTx        :: forall s. Decoder s (GenTx blk)
+  nodeDecodeGenTxId      :: forall s. Decoder s (GenTxId blk)
   nodeDecodeHeaderHash   :: forall s. Proxy blk -> Decoder s (HeaderHash blk)
   nodeDecodeLedgerState  :: forall s. NodeConfig (BlockProtocol blk) -> Decoder s (LedgerState blk)
   nodeDecodeChainState   :: forall s. Proxy blk -> Decoder s (ChainState (BlockProtocol blk))
