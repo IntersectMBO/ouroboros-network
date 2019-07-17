@@ -79,7 +79,7 @@ readValencyCounter vc = readTVar $ vcRef vc
 
 data ConnectionTableEntry m = ConnectionTableEntry {
     -- | Set of ValencyCounter's for subscriptions interested in this peer.
-    cteRefs           :: !(Set (ValencyCounter m))
+      cteRefs           :: !(Set (ValencyCounter m))
     -- | Set of local SockAddr connected to this peer.
     , cteLocalAddresses :: !(Set Socket.SockAddr)
     }
@@ -142,6 +142,8 @@ addConnection ConnectionTable{..} remoteAddr localAddr ref_m =
           let refs' = case ref_m of
                            Just ref -> S.insert ref (cteRefs cte)
                            Nothing  -> cteRefs cte
+          -- Signal to all parties (dnsSubscriptionWorkers) that are interested in tracking the
+          -- number of connections to this particlar peer that we've created a new connection.
           mapM_ addValencyCounter refs'
           return $ Just $ cte {
                 cteRefs = refs'
@@ -191,7 +193,7 @@ refConnection
     => ConnectionTable m
     -> Socket.SockAddr
     -> ValencyCounter m
-   -> m ConnectionTableRef
+    -> m ConnectionTableRef
 refConnection ConnectionTable{..} remoteAddr refVar = atomically $ do
     tbl <- readTVar ctTable
     case M.lookup remoteAddr tbl of

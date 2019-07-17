@@ -174,43 +174,43 @@ subscribeTo tbl threadPool tracer localIPv4_m localIPv6_m connectionAttemptDelay
         -> (Socket.Socket, TVar IO Bool)
         -> IO ()
     doConnect conThreads localAddr remoteAddr (sd,hasRefVar) = do
-                Socket.setSocketOption sd Socket.ReuseAddr 1
+        Socket.setSocketOption sd Socket.ReuseAddr 1
 #if !defined(mingw32_HOST_OS)
-                Socket.setSocketOption sd Socket.ReusePort 1
+        Socket.setSocketOption sd Socket.ReusePort 1
 #endif
-                Socket.bind sd localAddr
-                traceWith tracer $ SubscriptionTraceConnectStart remoteAddr
-                res <- try $ Socket.connect sd remoteAddr
-                case res of
-                        Left (e :: SomeException) -> do
-                            traceWith tracer $ SubscriptionTraceConnectException remoteAddr e
-                            throwM e
-                        Right _ -> return ()
+        Socket.bind sd localAddr
+        traceWith tracer $ SubscriptionTraceConnectStart remoteAddr
+        res <- try $ Socket.connect sd remoteAddr
+        case res of
+                Left (e :: SomeException) -> do
+                    traceWith tracer $ SubscriptionTraceConnectException remoteAddr e
+                    throwM e
+                Right _ -> return ()
 
-                localAddr' <- Socket.getSocketName sd
+        localAddr' <- Socket.getSocketName sd
 
-                -- We successfully connected, increase valency and start the app
-                tid <- myThreadId
-                result <- atomically $ do
-                        v <- readValencyCounter valencyVar
-                        if v > 0 then do
-                                    addConnection tbl remoteAddr localAddr' $ Just valencyVar
-                                    writeTVar hasRefVar True
-                                    modifyTVar' conThreads (Set.delete tid)
-                                    if v == 1 then return ConnectSuccessLast
-                                              else return ConnectSuccess
-                                else return ConnectFail
-                traceWith tracer $ SubscriptionTraceConnectEnd remoteAddr result
-                case result of
-                    ConnectSuccess -> k sd -- TODO catch all application exception.
-                    ConnectSuccessLast -> do
-                            outstandingConThreads <- atomically $ readTVar conThreads
-                            mapM_ (\a -> throwTo a
-                                   (SubscriberError SubscriberParrallelConnectionCancelled
-                                    "Parrallel connection cancelled"
-                                    callStack)) outstandingConThreads
-                            k sd
-                    ConnectFail -> return ()
+        -- We successfully connected, increase valency and start the app
+        tid <- myThreadId
+        result <- atomically $ do
+                v <- readValencyCounter valencyVar
+                if v > 0 then do
+                            addConnection tbl remoteAddr localAddr' $ Just valencyVar
+                            writeTVar hasRefVar True
+                            modifyTVar' conThreads (Set.delete tid)
+                            if v == 1 then return ConnectSuccessLast
+                                        else return ConnectSuccess
+                        else return ConnectFail
+        traceWith tracer $ SubscriptionTraceConnectEnd remoteAddr result
+        case result of
+            ConnectSuccess -> k sd -- TODO catch all application exception.
+            ConnectSuccessLast -> do
+                    outstandingConThreads <- atomically $ readTVar conThreads
+                    mapM_ (\a -> throwTo a
+                            (SubscriberError SubscriberParrallelConnectionCancelled
+                            "Parrallel connection cancelled"
+                            callStack)) outstandingConThreads
+                    k sd
+            ConnectFail -> return ()
 
     allocateSocket
         :: TVar IO (Set ThreadId)
