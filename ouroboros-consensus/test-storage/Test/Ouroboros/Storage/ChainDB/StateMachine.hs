@@ -673,7 +673,8 @@ precondition Model {..} (At cmd) =
     curChain = Model.currentChain dbModel
 
     forks :: [Chain blk]
-    forks = Model.chains $ Model.blocks dbModel
+    (_, forks) = map fst <$>
+      Model.validChains cfg (Model.initLedger dbModel) (Model.blocks dbModel)
 
     equallyPreferableFork :: Logic
     equallyPreferableFork = exists forks $ \fork ->

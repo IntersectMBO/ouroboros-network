@@ -14,12 +14,12 @@ module Ouroboros.Storage.ChainDB.Impl.Query
   , getTipPoint
   , getBlock
   , getIsFetched
-  , knownInvalidBlocks
+  , getIsInvalidBlock
     -- * Low-level queries
   , getAnyKnownBlock
   ) where
 
-import           Data.Set (Set)
+import qualified Data.Map as Map
 
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
@@ -148,9 +148,10 @@ getIsFetched CDB{..} = basedOnHash <$> VolDB.getIsMember cdbVolDB
           BlockHash hash -> f hash
           GenesisHash    -> False
 
-knownInvalidBlocks :: MonadSTM m => ChainDbEnv m blk -> STM m (Set (Point blk))
-knownInvalidBlocks CDB{..} = readTVar cdbInvalid
-
+getIsInvalidBlock
+  :: forall m blk. (MonadSTM m, HasHeader blk)
+  => ChainDbEnv m blk -> STM m (HeaderHash blk -> Bool)
+getIsInvalidBlock CDB{..} = flip Map.member <$> readTVar cdbInvalid
 
 {-------------------------------------------------------------------------------
   Unifying interface over the immutable DB and volatile DB, but independent

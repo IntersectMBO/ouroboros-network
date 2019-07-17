@@ -1,5 +1,6 @@
 {-# LANGUAGE DeriveGeneric        #-}
 {-# LANGUAGE FlexibleContexts     #-}
+{-# LANGUAGE PatternSynonyms      #-}
 {-# LANGUAGE RecordWildCards      #-}
 {-# LANGUAGE ScopedTypeVariables  #-}
 {-# LANGUAGE StandaloneDeriving   #-}
@@ -27,6 +28,7 @@ module Ouroboros.Storage.ChainDB.Model (
   , hasBlockByPoint
   , immutableBlockNo
   , isOpen
+  , invalidBlocks
     -- * Iterators
   , streamBlocks
   , iteratorNext
@@ -39,7 +41,8 @@ module Ouroboros.Storage.ChainDB.Model (
     -- * Exported for testing purposes
   , between
   , blocks
-  , chains
+  , validChains
+  , initLedger
   , garbageCollectable
   , garbageCollectablePoint
   , garbageCollect
@@ -54,14 +57,13 @@ import qualified Data.List.NonEmpty as NE
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (fromMaybe, isJust)
-import           Data.Set (Set)
-import qualified Data.Set as Set
 import           GHC.Generics (Generic)
 
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import qualified Ouroboros.Network.AnchoredFragment as Fragment
-import           Ouroboros.Network.Block (ChainHash (..), HasHeader, HeaderHash,
-                     Point)
+import           Ouroboros.Network.Block (pattern BlockPoint, ChainHash (..),
+                     pattern GenesisPoint, HasHeader, HeaderHash, Point,
+                     SlotNo)
 import qualified Ouroboros.Network.Block as Block
 import           Ouroboros.Network.Chain (Chain (..), ChainUpdate)
 import qualified Ouroboros.Network.Chain as Chain
@@ -84,7 +86,7 @@ data Model blk = Model {
     , currentLedger :: ExtLedgerState blk
     , initLedger    :: ExtLedgerState blk
     , iterators     :: Map IteratorId [blk]
-    , invalidBlocks :: Set (Point blk)
+    , invalidBlocks :: Map (HeaderHash blk) SlotNo
     , isOpen        :: Bool
       -- ^ While the model tracks whether it is closed or not, the queries and
       -- other functions in this module ignore this for simplicity. The mock
@@ -166,7 +168,7 @@ empty initLedger = Model {
     , currentLedger = initLedger
     , initLedger    = initLedger
     , iterators     = Map.empty
-    , invalidBlocks = Set.empty
+    , invalidBlocks = Map.empty
     , isOpen        = True
     }
 
@@ -191,16 +193,9 @@ addBlock cfg blk m
     blocks' :: Map (HeaderHash blk) blk
     blocks' = Map.insert (Block.blockHash blk) blk (blocks m)
 
-    invalidBlocks' :: Set (Point blk)
+    invalidBlocks' :: Map (HeaderHash blk) SlotNo
     candidates     :: [(Chain blk, ExtLedgerState blk)]
-    (invalidBlocks', candidates) =
-      foldMap (classify . validate cfg (initLedger m)) $ chains blocks'
-
-    classify :: ValidationResult blk
-             -> (Set (Point blk), [(Chain blk, ExtLedgerState blk)])
-    classify (ValidChain chain ledger) = (mempty, [(chain, ledger)])
-    classify (InvalidChain _ invalid chain ledger) =
-      (Set.fromList (NE.toList invalid), [(chain, ledger)])
+    (invalidBlocks', candidates) = validChains cfg (initLedger m) blocks'
 
     newChain  :: Chain blk
     newLedger :: ExtLedgerState blk
@@ -363,6 +358,29 @@ chains bs = go Chain.Genesis
 
     fwd :: Map (ChainHash blk) (Map (HeaderHash blk) blk)
     fwd = successors (Map.elems bs)
+
+validChains :: forall blk. ProtocolLedgerView blk
+            => NodeConfig (BlockProtocol blk)
+            -> ExtLedgerState blk
+            -> Map (HeaderHash blk) blk
+            -> ( Map (HeaderHash blk) SlotNo
+               , [(Chain blk, ExtLedgerState blk)]
+               )
+validChains cfg initLedger bs =
+    foldMap (classify . validate cfg initLedger) $ chains bs
+  where
+    classify :: ValidationResult blk
+             -> ( Map (HeaderHash blk) SlotNo
+                , [(Chain blk, ExtLedgerState blk)]
+                )
+    classify (ValidChain chain ledger) = (mempty, [(chain, ledger)])
+    classify (InvalidChain _ invalid chain ledger) =
+        ( Map.fromList . map pointToHashAndSlot . NE.toList $ invalid
+        , [(chain, ledger)]
+        )
+
+    pointToHashAndSlot GenesisPoint    = error "genesis cannot be invalid"
+    pointToHashAndSlot BlockPoint {..} = (withHash, atSlot)
 
 -- Map (HeaderHash blk) blk maps a block's hash to the block itself
 successors :: forall blk. HasHeader blk

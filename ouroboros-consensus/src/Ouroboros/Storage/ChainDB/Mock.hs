@@ -8,7 +8,7 @@ module Ouroboros.Storage.ChainDB.Mock (
   ) where
 
 import           Data.Bifunctor (first)
-import qualified Data.Set as Set
+import qualified Data.Map as Map
 
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
@@ -115,7 +115,7 @@ openDB cfg initLedger = do
       , getTipHeader        = query    $ (fmap getHeader . Model.tipBlock)
       , getTipPoint         = querySTM $ Model.tipPoint
       , getIsFetched        = querySTM $ flip Model.hasBlockByPoint
-      , knownInvalidBlocks  = querySTM $ const Set.empty -- TODO
+      , getIsInvalidBlock   = querySTM $ flip Map.member . Model.invalidBlocks
       , streamBlocks        = updateE  .: (fmap (first (fmap iterator)) ..: Model.streamBlocks k)
       , newBlockReader      = update   $ (first reader . Model.readBlocks)
       , newHeaderReader     = update   $ (first (fmap getHeader . reader) . Model.readBlocks)

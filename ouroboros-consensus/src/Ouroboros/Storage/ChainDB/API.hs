@@ -35,7 +35,6 @@ import qualified Codec.CBOR.Read as CBOR
 import           Control.Exception (Exception)
 import qualified Data.ByteString.Lazy as Lazy
 import           Data.Function (on)
-import           Data.Set (Set)
 import           Data.Typeable (Typeable)
 import           GHC.Stack
 
@@ -220,8 +219,13 @@ data ChainDB m blk = ChainDB {
       --
     , newBlockReader     :: m (Reader m blk blk)
 
-      -- | Known to be invalid blocks
-    , knownInvalidBlocks :: STM m (Set (Point blk))
+      -- | Function to check whether a block is known to be invalid.
+      --
+      -- Blocks unknown to the ChainDB will result in 'False'.
+      --
+      -- If the hash corresponds to a block that is known to be invalid, but
+      -- is now older than @k@, this function may return 'False'.
+    , getIsInvalidBlock :: STM m (HeaderHash blk -> Bool)
 
       -- | Close the ChainDB
       --

@@ -46,10 +46,9 @@ import           Control.Tracer (Tracer, contramap, traceWith)
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment (..))
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block (BlockNo, HasHeader (..), HeaderHash,
-                     Point, blockPoint, castPoint, pointHash)
+                     Point, SlotNo, blockPoint, castPoint, pointHash)
 
-import           Ouroboros.Consensus.Block (BlockProtocol, GetHeader (..),
-                     headerPoint)
+import           Ouroboros.Consensus.Block (BlockProtocol, GetHeader (..))
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Protocol.Abstract
 
@@ -80,9 +79,9 @@ initialChainSelection
   -> LgrDB m blk
   -> Tracer m (TraceEvent blk)
   -> NodeConfig (BlockProtocol blk)
-  -> TVar m (Set (Point blk)) -- ^ 'cdbInvalid'
+  -> TVar m (Map (HeaderHash blk) SlotNo) -- ^ 'cdbInvalid'
   -> m (ChainAndLedger blk)
-initialChainSelection immDB volDB lgrDB tracer cfg invalidPoints = do
+initialChainSelection immDB volDB lgrDB tracer cfg varInvalid = do
     -- We follow the steps from section "## Initialization" in ChainDB.md
 
     i :: Point blk <- ImmDB.getPointAtTip immDB
@@ -145,7 +144,7 @@ initialChainSelection immDB volDB lgrDB tracer cfg invalidPoints = do
         lgrDB
         (contramap (TraceInitChainSelEvent . InitChainSelValidation) tracer)
         cfg
-        invalidPoints
+        varInvalid
         curChainAndLedger
         (fmap (mkCandidateSuffix 0) candidates)
 
@@ -220,7 +219,7 @@ addBlock cdb@CDB{..} b = do
     -- ### Ignore
     unless ((blockNo b <= immBlockNo && blockNo b /= 0) ||
             isMember (blockHash b)  ||
-            Set.member (blockPoint b) invalid) $ do
+            Map.member (blockHash b) invalid) $ do
 
       -- Write the block to the VolatileDB in all other cases
       VolDB.putBlock cdbVolDB b
@@ -508,14 +507,14 @@ chainSelection
   => LgrDB m blk
   -> Tracer m (TraceValidationEvent blk)
   -> NodeConfig (BlockProtocol blk)
-  -> TVar m (Set (Point blk))  -- ^ The invalid points
-  -> ChainAndLedger blk              -- ^ The current chain and ledger
-  -> NonEmpty (CandidateSuffix blk)  -- ^ Candidates
+  -> TVar m (Map (HeaderHash blk) SlotNo)  -- ^ The invalid Blocks
+  -> ChainAndLedger blk                    -- ^ The current chain and ledger
+  -> NonEmpty (CandidateSuffix blk)        -- ^ Candidates
   -> m (Maybe (ChainAndLedger blk))
      -- ^ The (valid) chain and corresponding LedgerDB that was selected, or
      -- 'Nothing' if there is no valid chain preferred over the current
      -- chain.
-chainSelection lgrDB tracer cfg invalidPoints
+chainSelection lgrDB tracer cfg invalid
                curChainAndLedger@(ChainAndLedger curChain _) candidates =
   assert (all (isJust . fitCandidateSuffixOn curChain) candidates) $
     go (sortCandidates (NE.toList candidates))
@@ -527,7 +526,7 @@ chainSelection lgrDB tracer cfg invalidPoints
     validate :: ChainAndLedger  blk  -- ^ Current chain and ledger
              -> CandidateSuffix blk  -- ^ Candidate fragment
              -> m (Maybe (ChainAndLedger blk))
-    validate = validateCandidate lgrDB tracer cfg invalidPoints
+    validate = validateCandidate lgrDB tracer cfg invalid
 
     -- 1. Take the first candidate from the list of sorted candidates
     -- 2. Validate it
@@ -597,16 +596,16 @@ validateCandidate
   => LgrDB m blk
   -> Tracer m (TraceValidationEvent blk)
   -> NodeConfig (BlockProtocol blk)
-  -> TVar m (Set (Point blk))  -- ^ The invalid points
-  -> ChainAndLedger  blk       -- ^ Current chain and ledger
-  -> CandidateSuffix blk       -- ^ Candidate fragment
+  -> TVar m (Map (HeaderHash blk) SlotNo)  -- ^ The invalid blocks
+  -> ChainAndLedger  blk                   -- ^ Current chain and ledger
+  -> CandidateSuffix blk                   -- ^ Candidate fragment
   -> m (Maybe (ChainAndLedger blk))
-validateCandidate lgrDB tracer cfg invalidPoints
+validateCandidate lgrDB tracer cfg invalid
                   (ChainAndLedger curChain curLedger) candSuffix =
     LgrDB.validate lgrDB curLedger rollback newBlocks >>= \case
       LgrDB.InvalidBlockInPrefix e pt -> do
-        let invalidPointsInCand = Set.fromList $ pointsStartingFrom pt
-        atomically $ modifyTVar' invalidPoints (Set.union invalidPointsInCand)
+        let invalidBlocksInCand = hashesStartingFrom pt
+        atomically $ modifyTVar' invalid (Map.union invalidBlocksInCand)
         trace (InvalidBlock e pt)
         trace (InvalidCandidate (_suffix candSuffix) InvalidBlockInPrefix)
         return Nothing
@@ -615,8 +614,8 @@ validateCandidate lgrDB tracer cfg invalidPoints
             candidate' = fromMaybe
               (error "cannot rollback to point on fragment") $
               AF.rollback lastValid candidate
-        let invalidPointsInCand = Set.fromList $ pointsStartingFrom pt
-        atomically $ modifyTVar' invalidPoints (Set.union invalidPointsInCand)
+        let invalidBlocksInCand = hashesStartingFrom pt
+        atomically $ modifyTVar' invalid (Map.union invalidBlocksInCand)
         trace (InvalidBlock e pt)
 
         -- The candidate is now a prefix of the original candidate. We
@@ -644,14 +643,17 @@ validateCandidate lgrDB tracer cfg invalidPoints
       fitCandidateSuffixOn curChain candSuffix
 
     -- | Make a list of all the points after from the given point (inclusive)
-    -- in the candidate fragment.
+    -- in the candidate fragment and turn it into a map from hash to slot that
+    -- can be added to 'cdbInvalid'.
     --
     -- PRECONDITON: the given point is on the candidate fragment.
-    pointsStartingFrom :: HasCallStack => Point blk -> [Point blk]
-    pointsStartingFrom pt = case AF.splitBeforePoint suffix pt of
+    hashesStartingFrom :: HasCallStack
+                       => Point blk -> Map (HeaderHash blk) SlotNo
+    hashesStartingFrom pt = case AF.splitBeforePoint suffix pt of
         Nothing                  -> error "point not on fragment"
-        Just (_, startingFromPt) ->
-          map headerPoint $ AF.toOldestFirst startingFromPt
+        Just (_, startingFromPt) -> Map.fromList $
+          map (\hdr -> (blockHash hdr, blockSlot hdr)) $
+          AF.toOldestFirst startingFromPt
 
 {-------------------------------------------------------------------------------
   Auxiliary data types for 'cdbAddBlock'
