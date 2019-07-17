@@ -933,7 +933,7 @@ genBlk Model{..} = do
         [ (1, genRandomHash)
         , (5, genAppendToCurrentChain)
         , (if empty then 0 else 3, genFitsOnSomewhere)
-        , (if empty then 0 else 3, genGapAfterExistingBlock)
+        , (3, genGap)
         ]
 
     -- A random hash: random length and random fork numbers
@@ -965,13 +965,20 @@ genBlk Model{..} = do
         return $ TestHash $ NE.cons forkNo hashInDB
 
     -- A hash that doesn't fit onto a block in the ChainDB, but it creates a
-    -- gap of a couple of blocks between an existing block in the ChainDB
-    genGapAfterExistingBlock :: Gen TestHash
-    genGapAfterExistingBlock = do
-        TestHash hashInDB <- elements hashesInDB
+    -- gap of a couple of blocks between genesis or an existing block in the
+    -- ChainDB.
+    genGap :: Gen TestHash
+    genGap = do
+        hash <- frequency
+          [ (if empty then 0 else 3,
+             NE.toList . unTestHash <$> elements hashesInDB)
+            -- Genesis
+          , (1, return [])
+          ]
         gapSize <- choose (1, 2) -- TODO relate it to @k@?
+        -- ForkNos for the gap
         forkNos <- replicateM gapSize genForkNo
-        return $ TestHash $ foldr NE.cons hashInDB forkNos
+        return $ TestHash $ NE.fromList $ foldr (:) hash forkNos
 
 {-------------------------------------------------------------------------------
   Top-level tests
