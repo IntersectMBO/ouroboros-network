@@ -25,7 +25,7 @@
       };
     } // {
     src = (pkgs.lib).mkDefault (pkgs.fetchgit {
-      url = "https://github.com/input-output-hk/transformers-lift.git";
+      url = "https://github.com/input-output-hk/transformers-lift";
       rev = "c830bc7e7e41895e3c50488a92d34405b68b4ad8";
       sha256 = "022iiq9bg3kczv1awqzjllz6rd1dzcai9kivz26i8adnicp9b8xl";
       });

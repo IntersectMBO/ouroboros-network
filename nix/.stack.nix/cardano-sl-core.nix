@@ -24,7 +24,6 @@
           (hsPkgs.base58-bytestring)
           (hsPkgs.bytestring)
           (hsPkgs.canonical-json)
-          (hsPkgs.cardano-report-server)
           (hsPkgs.cardano-sl-binary)
           (hsPkgs.cardano-sl-crypto)
           (hsPkgs.cardano-sl-util)
@@ -42,7 +41,7 @@
           (hsPkgs.hashable)
           (hsPkgs.http-api-data)
           (hsPkgs.lens)
-          (hsPkgs.parsec)
+          (hsPkgs.megaparsec)
           (hsPkgs.memory)
           (hsPkgs.mmorph)
           (hsPkgs.monad-control)
@@ -110,8 +109,8 @@
     } // {
     src = (pkgs.lib).mkDefault (pkgs.fetchgit {
       url = "https://github.com/input-output-hk/cardano-sl";
-      rev = "16f5095cbf5d1128e379b44c10ff4114253cefb9";
-      sha256 = "1qhrf2mmnmmjvl325ha8vghc6mnm72q9vab0x0df70sxcknhv5ay";
+      rev = "95c03f565e6f1ab1b863bcfb13638333851e6c75";
+      sha256 = "1xb70dzc6lj9xrzw54afnrna6a3hl1v60jxz43958llkij8ixrn1";
       });
     postUnpack = "sourceRoot+=/core; echo source root reset to \$sourceRoot";
     }

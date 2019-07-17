@@ -33,7 +33,7 @@
           (hsPkgs.microlens-mtl)
           (hsPkgs.mtl)
           (hsPkgs.o-clock)
-          (hsPkgs.parsec)
+          (hsPkgs.megaparsec)
           (hsPkgs.process)
           (hsPkgs.QuickCheck)
           (hsPkgs.quickcheck-instances)
@@ -62,14 +62,16 @@
             (hsPkgs.unordered-containers)
             (hsPkgs.vector)
             ];
-          build-tools = [ ((hsPkgs.buildPackages).hspec-discover) ];
+          build-tools = [
+            (hsPkgs.buildPackages.hspec-discover or (pkgs.buildPackages.hspec-discover))
+            ];
           };
         };
       };
     } // {
     src = (pkgs.lib).mkDefault (pkgs.fetchgit {
-      url = "https://github.com/input-output-hk/serokell-util.git";
-      rev = "42586f5ea157b4a5411fbcbe41d1bf28bd942438";
-      sha256 = "16arrlxjkz9f8rd8v3l0yj70f2ij51didsxcz54jdv3j14pzmb5s";
+      url = "https://github.com/input-output-hk/serokell-util";
+      rev = "457f1d149c6e238841f283a1faf7bc8fb021b27d";
+      sha256 = "0llbryqna9p03db3ka4933vzf4jw1yxdbsf7cqi2pivsy1vp6kp0";
       });
     }

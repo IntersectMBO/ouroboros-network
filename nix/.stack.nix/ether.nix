@@ -62,7 +62,7 @@
       };
     } // {
     src = (pkgs.lib).mkDefault (pkgs.fetchgit {
-      url = "https://github.com/input-output-hk/ether.git";
+      url = "https://github.com/input-output-hk/ether";
       rev = "a311878ae17ed5f201421bdcd5392a24b746ff0b";
       sha256 = "0xvbsap7brpyvac6v5k59vv7lfpdr9ridyz7nd8p27rwdlsn3ip9";
       });

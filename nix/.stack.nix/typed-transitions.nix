@@ -30,4 +30,4 @@
           };
         };
       };
-    } // rec { src = (pkgs.lib).mkDefault ../../././typed-transitions; }
+    } // rec { src = (pkgs.lib).mkDefault ../.././typed-transitions; }

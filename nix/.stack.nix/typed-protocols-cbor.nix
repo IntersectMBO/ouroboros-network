@@ -41,4 +41,4 @@
           };
         };
       };
-    } // rec { src = (pkgs.lib).mkDefault ../../././typed-protocols-cbor; }
+    } // rec { src = (pkgs.lib).mkDefault ../.././typed-protocols-cbor; }

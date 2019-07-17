@@ -38,4 +38,4 @@
           };
         };
       };
-    } // rec { src = (pkgs.lib).mkDefault ../../././typed-protocols; }
+    } // rec { src = (pkgs.lib).mkDefault ../.././typed-protocols; }

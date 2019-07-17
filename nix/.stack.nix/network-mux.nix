@@ -59,4 +59,4 @@
           };
         };
       };
-    } // rec { src = (pkgs.lib).mkDefault ../../././network-mux; }
+    } // rec { src = (pkgs.lib).mkDefault ../.././network-mux; }

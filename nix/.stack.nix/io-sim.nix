@@ -40,4 +40,4 @@
           };
         };
       };
-    } // rec { src = (pkgs.lib).mkDefault ../../././io-sim; }
+    } // rec { src = (pkgs.lib).mkDefault ../.././io-sim; }

@@ -12,6 +12,7 @@
         "splitmix" = (((hackage.splitmix)."0.0.2").revisions).default;
         "libsystemd-journal" = (((hackage.libsystemd-journal)."1.4.4").revisions).default;
         "tasty-hedgehog" = (((hackage.tasty-hedgehog)."1.0.0.1").revisions).default;
+        "generic-monoid" = (((hackage.generic-monoid)."0.1.0.0").revisions).default;
         "Win32" = (((hackage.Win32)."2.5.4.1").revisions).default;
         "aeson-options" = (((hackage.aeson-options)."0.1.0").revisions).default;
         "pvss" = (((hackage.pvss)."0.2.0").revisions).default;
@@ -67,7 +68,6 @@
         cardano-sl-crypto = ./cardano-sl-crypto.nix;
         cardano-sl-crypto-test = ./cardano-sl-crypto-test.nix;
         cardano-sl-networking = ./cardano-sl-networking.nix;
-        cardano-report-server = ./cardano-report-server.nix;
         log-warper = ./log-warper.nix;
         rocksdb-haskell-ng = ./rocksdb-haskell-ng.nix;
         kademlia = ./kademlia.nix;
@@ -85,6 +85,6 @@
       compiler.version = "8.6.5";
       compiler.nix-name = "ghc865";
       };
-  resolver = "lts-13.26";
+  resolver = "lts-13.28";
   compiler = "ghc-8.6.5";
   }

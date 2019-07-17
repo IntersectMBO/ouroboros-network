@@ -69,8 +69,8 @@
       };
     } // {
     src = (pkgs.lib).mkDefault (pkgs.fetchgit {
-      url = "https://github.com/input-output-hk/universum.git";
-      rev = "7f1b2483f71cacdfd032fe447064d6e0a1df50fc";
-      sha256 = "12ppiszywj0dsspwlhb8bzhsrlgszk8rvlhcy8il3ppz99mlnw5g";
+      url = "https://github.com/input-output-hk/universum";
+      rev = "15f7db758ff5a24b874de2247f6f7a4576562da5";
+      sha256 = "127bs29zpjcc40777dv7figk05gd00b9ja57sp11w440qr5h72hk";
       });
     }

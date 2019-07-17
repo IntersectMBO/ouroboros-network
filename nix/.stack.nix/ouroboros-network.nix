@@ -116,4 +116,4 @@
           };
         };
       };
-    } // rec { src = (pkgs.lib).mkDefault ../../././ouroboros-network; }
+    } // rec { src = (pkgs.lib).mkDefault ../.././ouroboros-network; }
