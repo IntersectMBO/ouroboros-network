@@ -85,9 +85,11 @@ initialChainSelection immDB volDB lgrDB tracer cfg varInvalid = do
     -- We follow the steps from section "## Initialization" in ChainDB.md
 
     i :: Point blk <- ImmDB.getPointAtTip immDB
-    (succsOf, ledger) <- atomically $
-      (,) <$> VolDB.getSuccessors volDB
-          <*> LgrDB.getCurrent    lgrDB
+    (succsOf, ledger) <- atomically $ do
+      invalid <- readTVar varInvalid
+      (,) <$> (ignoreInvalidSuc volDB invalid <$> VolDB.getSuccessors volDB)
+          <*> LgrDB.getCurrent lgrDB
+
     chains <- constructChains i succsOf
 
     -- We use the empty fragment anchored at @i@ as the current chain (and
@@ -226,10 +228,10 @@ addBlock cdb@CDB{..} b = do
       trace (AddedBlockToVolDB (blockPoint b))
 
       -- We need to get these after adding the block to the VolatileDB
-      (isMember', predecessor, succsOf) <- atomically $
-         (,,) <$> VolDB.getIsMember    cdbVolDB
+      (isMember', succsOf, predecessor) <- atomically $
+         (,,) <$> (ignoreInvalid    cdb invalid <$> VolDB.getIsMember    cdbVolDB)
+              <*> (ignoreInvalidSuc cdb invalid <$> VolDB.getSuccessors  cdbVolDB)
               <*> VolDB.getPredecessor cdbVolDB
-              <*> VolDB.getSuccessors  cdbVolDB
 
       -- The block @b@ fits onto the end of our current chain
       if | pointHash tipPoint == blockPrevHash b -> do
@@ -758,6 +760,30 @@ intersectCandidateSuffix curChain candChain =
 {-------------------------------------------------------------------------------
   Helpers
 -------------------------------------------------------------------------------}
+
+
+-- | Wrap an @isMember@ function so that it returns 'False' for invalid
+-- blocks.
+ignoreInvalid
+  :: HasHeader blk
+  => proxy blk
+  -> Map (HeaderHash blk) SlotNo  -- ^ 'cdbInvalid'
+  -> (HeaderHash blk -> Bool)
+  -> (HeaderHash blk -> Bool)
+ignoreInvalid _ invalid isMember hash
+    | Map.member hash invalid = False
+    | otherwise               = isMember hash
+
+-- | Wrap a @successors@ function so that invalid blocks are not returned as
+-- successors.
+ignoreInvalidSuc
+  :: HasHeader blk
+  => proxy blk
+  -> Map (HeaderHash blk) SlotNo  -- ^ 'cdbInvalid'
+  -> (Maybe (HeaderHash blk) -> Set (HeaderHash blk))
+  -> (Maybe (HeaderHash blk) -> Set (HeaderHash blk))
+ignoreInvalidSuc _ invalid succsOf =
+    Set.filter (`Map.notMember` invalid) . succsOf
 
 -- | Get the 'BlockNo' corresponding to the block @k@ blocks back in the given
 -- new chain, i.e. the most recent \"immutable\" block.
