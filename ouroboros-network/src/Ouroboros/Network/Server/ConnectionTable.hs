@@ -148,7 +148,7 @@ addConnection ConnectionTable{..} remoteAddr localAddr ref_m =
               , cteLocalAddresses = S.insert localAddr (cteLocalAddresses cte)
               }
 
-{- XXX This should use Control.Tracer -}
+-- TODO This should use Control.Tracer
 _dumpConnectionTable
     :: ConnectionTable IO
     -> IO ()
@@ -200,7 +200,7 @@ refConnection ConnectionTable{..} remoteAddr refVar = atomically $ do
              if S.member refVar $ cteRefs cte
                  then return ConnectionTableDuplicate
                  else do
-                     -- XXX We look up remoteAddr twice, is it possible
+                     -- TODO We look up remoteAddr twice, is it possible
                      -- to use M.alterF given that we need to be able to return
                      -- ConnectionTableCreate or ConnectionTableExist?
                      let refs' = S.insert refVar (cteRefs cte)
