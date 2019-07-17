@@ -132,7 +132,6 @@ protocolHandlers
        , Condense (HeaderHash blk)
        , Condense peer
        , Show (ApplyTxErr blk)  --TODO: consider using condense
-       , Ord (GenTxId blk)
        , Condense (GenTx blk)
        )
     => NodeParams m peer blk  --TODO eliminate, merge relevant into NodeKernel

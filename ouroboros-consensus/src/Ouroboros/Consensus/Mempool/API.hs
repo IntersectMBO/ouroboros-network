@@ -24,7 +24,7 @@ import           Ouroboros.Network.Protocol.TxSubmission.Type (TxSizeInBytes)
 
 import           Ouroboros.Consensus.Ledger.Abstract
 
-class UpdateLedger blk => ApplyTx blk where
+class (UpdateLedger blk, Ord (GenTxId blk)) => ApplyTx blk where
   -- | Generalized transaction
   --
   -- The mempool (and, accordingly, blocks) consist of "generalized
