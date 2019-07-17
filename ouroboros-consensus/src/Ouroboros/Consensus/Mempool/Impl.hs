@@ -52,10 +52,10 @@ openMempool registry chainDB cfg tracer = do
     env <- initMempoolEnv chainDB cfg tracer
     forkSyncStateOnTipPointChange registry env
     return Mempool {
-        addTxs      = implAddTxs env
-      , syncState   = implSyncState env
-      , getSnapshot = implGetSnapshot env
-      , zeroIdx     = zeroTicketNo
+        addTxs        = implAddTxs env
+      , withSyncState = implWithSyncState env
+      , getSnapshot   = implGetSnapshot env
+      , zeroIdx       = zeroTicketNo
       }
 
 {-------------------------------------------------------------------------------
@@ -104,7 +104,7 @@ forkSyncStateOnTipPointChange registry menv = do
     initialTipPoint <- atomically $ getTipPoint mpEnvChainDB
     onEachChange registry id initialTipPoint (getTipPoint mpEnvChainDB) action
   where
-    action _tipPoint = implSyncState menv
+    action _tipPoint = implWithSyncState menv (const (return ()))
     MempoolEnv { mpEnvChainDB } = menv
 
 {-------------------------------------------------------------------------------
@@ -149,19 +149,24 @@ implAddTxs mpEnv@MempoolEnv{mpEnvStateVar, mpEnvLedgerCfg, mpEnvTracer} txs = do
         txs
         res { vrInvalid = [] }
 
-implSyncState :: (MonadSTM m, ApplyTx blk)
-              => MempoolEnv m blk
-              -> m ()
-implSyncState mpEnv@MempoolEnv{mpEnvTracer, mpEnvStateVar} = do
-    (removed, mempoolSize) <- atomically $ do
+implWithSyncState
+  :: (MonadSTM m, ApplyTx blk)
+  => MempoolEnv m blk
+  -> (MempoolSnapshot blk TicketNo -> STM m a)
+  -> m a
+implWithSyncState mpEnv@MempoolEnv{mpEnvTracer, mpEnvStateVar} f = do
+    (removed, mempoolSize, res) <- atomically $ do
       ValidationResult { vrBefore, vrValid, vrInvalid } <- validateIS mpEnv
       writeTVar mpEnvStateVar IS { isTxs = vrValid, isTip = vrBefore }
       -- The number of transactions in the mempool /after/ removing invalid
       -- transactions.
       mempoolSize <- getMempoolSize mpEnv
-      return (map fst vrInvalid, mempoolSize)
+      snapshot    <- implGetSnapshot mpEnv
+      res         <- f snapshot
+      return (map fst vrInvalid, mempoolSize, res)
     unless (null removed) $
       traceWith mpEnvTracer $ TraceMempoolRemoveTxs removed mempoolSize
+    return res
 
 implGetSnapshot :: ( MonadSTM m
                    , ApplyTx blk
