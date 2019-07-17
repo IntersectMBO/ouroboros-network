@@ -1,5 +1,6 @@
 {-# LANGUAGE FlexibleContexts        #-}
 {-# LANGUAGE FlexibleInstances       #-}
+{-# LANGUAGE MonoLocalBinds          #-}
 {-# LANGUAGE UndecidableInstances    #-}
 {-# LANGUAGE UndecidableSuperClasses #-}
 -- | Infrastructure required to run the demo
@@ -47,5 +48,5 @@ instance ( ProtocolLedgerView (SimpleBlock SimpleMockCrypto ext)
          ) => RunDemo (SimpleBlock SimpleMockCrypto ext) where
   demoMockTx _ = SimpleGenTx
 
-instance ByronGiven => RunDemo (ByronBlockOrEBB ByronConfig) where
+instance RunNode (ByronBlockOrEBB ByronConfig) => RunDemo (ByronBlockOrEBB ByronConfig) where
   demoMockTx = Byron.elaborateTx
