@@ -5,14 +5,10 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE NamedFieldPuns        #-}
 {-# LANGUAGE OverloadedStrings     #-}
-{-# LANGUAGE QuantifiedConstraints #-}
 {-# LANGUAGE RecordWildCards       #-}
-{-# LANGUAGE ScopedTypeVariables   #-}
 {-# LANGUAGE TypeApplications      #-}
 {-# LANGUAGE TypeFamilies          #-}
-{-# LANGUAGE TypeOperators         #-}
 {-# LANGUAGE UndecidableInstances  #-}
-{-# LANGUAGE ViewPatterns          #-}
 
 {-# OPTIONS_GHC -Wredundant-constraints -Wno-orphans #-}
 
@@ -71,8 +67,8 @@ import           Data.Typeable
 import           Data.Word (Word8)
 import           Formatting
 
-import           Cardano.Binary (Annotated (..), ByteSpan, enforceSize, fromCBOR, reAnnotate,
-                     slice, toCBOR)
+import           Cardano.Binary (Annotated (..), ByteSpan, enforceSize,
+                     fromCBOR, reAnnotate, slice, toCBOR)
 import qualified Cardano.Chain.Block as CC.Block
 import qualified Cardano.Chain.Common as CC.Common
 import qualified Cardano.Chain.Delegation as CC.Delegation
@@ -423,7 +419,7 @@ instance (ByronGiven, Typeable cfg) => HasHeader (Header (ByronBlockOrEBB cfg)) 
   blockPrevHash b = case unByronHeaderOrEBB b of
     Right mb -> BlockHash . CC.Block.headerPrevHash $ mb
     Left ebb -> case CC.Block.boundaryPrevHash ebb of
-      Left _ -> GenesisHash
+      Left _  -> GenesisHash
       Right h -> BlockHash h
 
   blockSlot b = case unByronHeaderOrEBB b of
@@ -482,7 +478,7 @@ instance ( ByronGiven
     Left ebb ->
       mapExcept (fmap (\i -> ByronEBBLedgerState $ ByronLedgerState i snapshots)) $ do
         return $ state
-          { CC.Block.cvsPreviousHash = Right $ CC.Block.boundaryHashAnnotated ebb 
+          { CC.Block.cvsPreviousHash = Right $ CC.Block.boundaryHashAnnotated ebb
           , CC.Block.cvsLastSlot = CC.Slot.SlotNumber $ epochSlots * (CC.Block.boundaryEpoch ebb)
           }
       where
@@ -523,12 +519,12 @@ condenseBVD bvd =
 
       condensedPrevHash
         = T.unpack $ case CC.Block.boundaryPrevHash bvd of
-            Left _ -> "Genesis"
+            Left _  -> "Genesis"
             Right h -> sformat CC.Block.headerHashF h
 
 instance Condense (Header (ByronBlockOrEBB cfg)) where
   condense (ByronHeaderOrEBB (Right hdr)) = condense (ByronHeader hdr)
-  condense (ByronHeaderOrEBB (Left bvd)) = condenseBVD bvd
+  condense (ByronHeaderOrEBB (Left bvd))  = condenseBVD bvd
 
 instance Condense CC.Block.HeaderHash where
   condense = formatToString CC.Block.headerHashF
@@ -558,16 +554,16 @@ instance Serialise CC.Common.KeyHash where
   encode = toCBOR
   decode = fromCBOR
 
-encodeByronHeader 
-  :: Crypto.ProtocolMagicId 
-  -> CC.Slot.EpochSlots 
-  -> Header (ByronBlockOrEBB cfg) 
+encodeByronHeader
+  :: Crypto.ProtocolMagicId
+  -> CC.Slot.EpochSlots
+  -> Header (ByronBlockOrEBB cfg)
   -> Encoding
 encodeByronHeader pm epochSlots (ByronHeaderOrEBB h) = toCBORAHeaderOrBoundary pm epochSlots h
 
 encodeByronBlock :: Crypto.ProtocolMagicId -> CC.Slot.EpochSlots -> ByronBlockOrEBB cfg -> Encoding
 encodeByronBlock pm epochSlots bob = case unByronBlockOrEBB bob of
-  CC.Block.ABOBBlock b -> CC.Block.toCBORABOBBlock epochSlots . void $ b
+  CC.Block.ABOBBlock b      -> CC.Block.toCBORABOBBlock epochSlots . void $ b
   CC.Block.ABOBBoundary ebb -> CC.Block.toCBORABOBBoundary pm . void $ ebb
 
 encodeByronHeaderHash :: HeaderHash (ByronBlockOrEBB cfg) -> Encoding
@@ -602,7 +598,7 @@ decodeByronBlock pm epochSlots =
       <$> CC.Block.fromCBORABlockOrBoundary epochSlots
   where
     mapABOB f g abob = case abob of
-      CC.Block.ABOBBlock x -> CC.Block.ABOBBlock $ f x
+      CC.Block.ABOBBlock x    -> CC.Block.ABOBBlock $ f x
       CC.Block.ABOBBoundary x -> CC.Block.ABOBBoundary $ g x
     -- TODO #560: Re-annotation can be done but requires some rearranging in
     -- the codecs Original ByteSpan's refer to bytestring we don't have, so
@@ -717,7 +713,7 @@ annotateBoundary pm =
       (Lazy.toStrict . slice bs) <$> boundary
 
 fromCBORAHeaderOrBoundary
-  :: CC.Slot.EpochSlots 
+  :: CC.Slot.EpochSlots
   -> Decoder s (Either (CC.Block.BoundaryValidationData ByteSpan) (CC.Block.AHeader ByteSpan))
 fromCBORAHeaderOrBoundary epochSlots = do
   enforceSize "Block" 2
@@ -728,7 +724,7 @@ fromCBORAHeaderOrBoundary epochSlots = do
 
 toCBORAHeaderOrBoundary
   :: Crypto.ProtocolMagicId
-  -> CC.Slot.EpochSlots 
+  -> CC.Slot.EpochSlots
   -> (Either (CC.Block.BoundaryValidationData a) (CC.Block.AHeader a))
   -> Encoding
 toCBORAHeaderOrBoundary pm epochSlots abob =
