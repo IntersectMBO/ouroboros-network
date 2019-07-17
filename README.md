@@ -9,7 +9,8 @@
 * `typed-protocols` - session type framework with support of [protocol pipelining](https://en.wikipedia.org/wiki/Protocol_pipelining)
 * `ouroboros-network`- ouroboros network package which implements protocols
   which to run ouroboros family of protocols, multiplexing layer.
-* `byron-proxy` - proxy between Byron and Shelley nodes.
+* The [`byron-proxy`](https://github.com/input-output-hk/cardano-byron-proxy) is a network protocol proxy between Byron and Shelley.
+  It now lives in a seaprate repository.
 
 ## Design Specification
 
