@@ -10,7 +10,6 @@ packages:
   - ./ouroboros-consensus
   - ./io-sim
   - ./io-sim-classes
-  - ./byron-proxy
 
 extra-deps:
   - git: https://github.com/input-output-hk/iohk-monitoring-framework
@@ -61,73 +60,6 @@ extra-deps:
 
   # Windows only
   - Win32-2.5.4.1
-
-  # The following are required only for byron-proxy
-  # They will be removed when that package is factored out to its own
-  # repository.
-  - git: https://github.com/input-output-hk/cardano-sl
-    commit: 16f5095cbf5d1128e379b44c10ff4114253cefb9
-    subdirs:
-      - lib
-      - binary
-      - binary/test
-      - util
-      - util/test
-      - infra
-      - infra/test
-      - core
-      - core/test
-      - chain
-      - chain/test
-      - db
-      - db/test
-      - crypto
-      - crypto/test
-      - networking
-
-  - git: https://github.com/input-output-hk/cardano-report-server
-    commit: 93f2246c54436e7f98cc363b4e0f8f1cb5e78717
-
-  - git: https://github.com/input-output-hk/log-warper
-    commit: 16246d4fbf16da7984f2a4b6c42f2ed5098182e4
-
-  - git: https://github.com/input-output-hk/rocksdb-haskell-ng
-    commit: 49f501a082d745f3b880677220a29cafaa181452
-
-  - git: https://github.com/avieth/kademlia
-    commit: 38a0575bb303804461f4b6176ca38eba81adbd79
-
-  - git: https://github.com/serokell/network-transport
-    commit: 018a50b9042c2115c3ec9c9fd5ca5f28737dd29c
-
-  - git: https://github.com/avieth/network-transport-tcp
-    commit: 2634e5e32178bb0456d800d133f8664321daa2ef
-
-  - git: https://github.com/avieth/network-transport-inmemory
-    commit: 5d8ff2b07b9df35cf61329a3d975e2c8cf95c12a
-
-  - git: https://github.com/input-output-hk/universum.git
-    commit: 7f1b2483f71cacdfd032fe447064d6e0a1df50fc
-
-  - git: https://github.com/input-output-hk/serokell-util.git
-    commit: 42586f5ea157b4a5411fbcbe41d1bf28bd942438
-
-  - git: https://github.com/input-output-hk/ether.git
-    commit: a311878ae17ed5f201421bdcd5392a24b746ff0b
-
-  - git: https://github.com/input-output-hk/transformers-lift.git
-    commit: c830bc7e7e41895e3c50488a92d34405b68b4ad8
-  - aeson-options-0.1.0
-  - pvss-0.2.0
-  - lrucache-1.2.0.1
-  - writer-cps-mtl-0.1.1.6
-  - writer-cps-transformers-0.5.6.0
-  - o-clock-1.0.0.1
-  - ekg-wai-0.1.0.3
-  - lzma-clib-5.2.2
-  # End of byron-proxy-induced dependencies.
-
-
 
 nix:
   shell-file: nix/stack-shell.nix

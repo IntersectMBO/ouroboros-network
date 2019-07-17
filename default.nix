@@ -40,21 +40,10 @@ let
 # parameterize this file when targetting different
 # hosts.
   nixTools = import ./nix/nix-tools.nix {};
-  # TODO: move scripts to cardano-shell at some point.
-  # Usage:
-  # nix-build -A scripts.byron.proxy.mainnet -o proxy
-  # nix-build -A scripts.byron.validator.mainnet -o validator
-  # ./proxy
-  # ./validator
-  scripts = import ./nix/scripts.nix {
-    inherit commonLib nixTools;
-    inherit customConfig;
-  };
-  tests = import ./nix/nixos/tests { inherit (commonLib) pkgs; };
   documents = import ./doc/default.nix {inherit commonLib; };
 in {
-  inherit scripts tests;
   inherit (nixTools) nix-tools shell;
   network-pdf-wip = documents.network-pdf-wip;
   network-pdf = documents.network-pdf;
+  tests = {};
 }
