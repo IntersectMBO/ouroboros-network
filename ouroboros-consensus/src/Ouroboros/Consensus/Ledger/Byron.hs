@@ -530,9 +530,12 @@ instance Condense (Header (ByronBlockOrEBB cfg)) where
   condense (ByronHeaderOrEBB (Right hdr)) = condense (ByronHeader hdr)
   condense (ByronHeaderOrEBB (Left bvd)) = condenseBVD bvd
 
+instance Condense CC.Block.HeaderHash where
+  condense = formatToString CC.Block.headerHashF
+
 instance Condense (ChainHash (ByronBlockOrEBB cfg)) where
   condense GenesisHash   = "genesis"
-  condense (BlockHash h) = show h
+  condense (BlockHash h) = condense h
 
 instance Condense (GenTx (ByronBlockOrEBB cfg)) where
     condense (ByronTx tx) =
