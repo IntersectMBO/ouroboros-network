@@ -1,4 +1,5 @@
 
+{-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE RecordWildCards     #-}
@@ -60,7 +61,7 @@ newValencyCounter
   -> STM m (ValencyCounter m)
 newValencyCounter tbl valency =  do
   lr <- readTVar $ ctLastRefId tbl
-  let lr' = lr + 1
+  let !lr' = lr + 1
   writeTVar (ctLastRefId tbl) lr'
   v <- newTVar valency
   return $ ValencyCounter lr' v
