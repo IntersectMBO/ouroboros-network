@@ -9,6 +9,8 @@ module Ouroboros.Consensus.Mempool.API (
   , MempoolSnapshot(..)
   , ApplyTx(..)
   , TraceEventMempool(..)
+    -- * Re-exports
+  , TxSizeInBytes
   ) where
 
 import           Control.Monad.Except
@@ -16,6 +18,8 @@ import           Data.Word (Word64)
 import           GHC.Stack (HasCallStack)
 
 import           Control.Monad.Class.MonadSTM
+
+import           Ouroboros.Network.Protocol.TxSubmission.Type (TxSizeInBytes)
 
 import           Ouroboros.Consensus.Ledger.Abstract
 
@@ -34,6 +38,9 @@ class UpdateLedger blk => ApplyTx blk where
   --
   -- Should be cheap as this will be called often.
   computeGenTxId :: GenTx blk -> GenTxId blk
+
+  -- | Return the post-serialization size in bytes of a 'GenTx'.
+  txSize :: GenTx blk -> TxSizeInBytes
 
   -- | Updating the ledger with a single transaction may result in a different
   -- error type as when updating it with a block
@@ -170,11 +177,11 @@ data Mempool m blk idx = Mempool {
 
       -- | Get a snapshot of the current mempool state. This allows for
       -- further pure queries on the snapshot.
-    , getSnapshot :: STM m (MempoolSnapshot (GenTxId blk) (GenTx blk) idx)
+    , getSnapshot :: STM m (MempoolSnapshot blk idx)
 
       -- | Represents the initial value at which the transaction ticket number
       -- counter will start (i.e. the zeroth ticket number).
-    , zeroIdx :: idx
+    , zeroIdx     :: idx
     }
 
 -- | A pure snapshot of the contents of the mempool. It allows fetching
@@ -191,19 +198,19 @@ data Mempool m blk idx = Mempool {
 -- even for tx sequence numbers returned in previous snapshots. This happens
 -- when the transaction has been removed from the mempool between snapshots.
 --
-data MempoolSnapshot txid tx idx = MempoolSnapshot {
-    -- | Get all transactions in the mempool snapshot along with their
-    -- associated ticket numbers (oldest to newest).
-    getTxs :: [(txid, tx, idx)]
+data MempoolSnapshot blk idx = MempoolSnapshot {
+    -- | Get all transactions (oldest to newest) in the mempool snapshot along
+    -- with their ticket number.
+    getTxs      :: [(GenTx blk, idx)]
 
-    -- | Get all transactions in the mempool snapshot, along with their
-    -- associated ticket numbers, which are associated with a ticket number
-    -- greater than the one provided.
-  , getTxsAfter :: idx -> [(txid, tx, idx)]
+    -- | Get all transactions (oldest to newest) in the mempool snapshot,
+    -- along with their ticket number, which are associated with a ticket
+    -- number greater than the one provided.
+  , getTxsAfter :: idx -> [(GenTx blk, idx)]
 
     -- | Get a specific transaction from the mempool snapshot by its ticket
     -- number, if it exists.
-  , getTx :: idx -> Maybe (txid, tx)
+  , getTx       :: idx -> Maybe (GenTx blk)
   }
 
 -- | Events traced by the Mempool.

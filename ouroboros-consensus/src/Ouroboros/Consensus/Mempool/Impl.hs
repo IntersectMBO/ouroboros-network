@@ -167,7 +167,7 @@ implGetSnapshot :: ( MonadSTM m
                    , ApplyTx blk
                    )
                 => MempoolEnv m blk
-                -> STM m (MempoolSnapshot (GenTxId blk) (GenTx blk) TicketNo)
+                -> STM m (MempoolSnapshot blk TicketNo)
 implGetSnapshot MempoolEnv{mpEnvStateVar} = do
   is <- readTVar mpEnvStateVar
   pure MempoolSnapshot
@@ -187,25 +187,21 @@ getMempoolSize MempoolEnv{mpEnvStateVar} =
 
 implSnapshotGetTxs :: ApplyTx blk
                    => InternalState blk
-                   -> [(GenTxId blk, GenTx blk, TicketNo)]
+                   -> [(GenTx blk, TicketNo)]
 implSnapshotGetTxs = (flip implSnapshotGetTxsAfter) zeroTicketNo
 
 implSnapshotGetTxsAfter :: ApplyTx blk
                         => InternalState blk
                         -> TicketNo
-                        -> [(GenTxId blk, GenTx blk, TicketNo)]
-implSnapshotGetTxsAfter IS{isTxs} tn = map
-  (\(tx, txTn) -> (computeGenTxId tx, tx, txTn))
-  (TxSeq.fromTxSeq $ snd $ splitAfterTicketNo isTxs tn)
+                        -> [(GenTx blk, TicketNo)]
+implSnapshotGetTxsAfter IS{isTxs} tn =
+    TxSeq.fromTxSeq $ snd $ splitAfterTicketNo isTxs tn
 
 implSnapshotGetTx :: ApplyTx blk
                   => InternalState blk
                   -> TicketNo
-                  -> Maybe (GenTxId blk, GenTx blk)
-implSnapshotGetTx IS{isTxs} tn =
-  case isTxs `lookupByTicketNo` tn of
-    Nothing -> Nothing
-    Just tx -> Just (computeGenTxId tx, tx)
+                  -> Maybe (GenTx blk)
+implSnapshotGetTx IS{isTxs} tn = isTxs `lookupByTicketNo` tn
 
 {-------------------------------------------------------------------------------
   Validation

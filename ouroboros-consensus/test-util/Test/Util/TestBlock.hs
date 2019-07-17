@@ -297,6 +297,8 @@ instance ApplyTx TestBlock where
   computeGenTxId (TestGenTx (ValidTestTx txid))   = TestGenTxId txid
   computeGenTxId (TestGenTx (InvalidTestTx txid)) = TestGenTxId txid
 
+  txSize _ = 2000 -- TODO #745
+
   type ApplyTxErr TestBlock = TestTxError
 
   applyTx = \_ (TestGenTx tx) st -> case tx of

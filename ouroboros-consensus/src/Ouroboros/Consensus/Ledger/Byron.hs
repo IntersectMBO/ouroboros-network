@@ -49,6 +49,7 @@ import           Codec.Serialise (Serialise, decode, encode)
 import           Control.Monad.Except
 import           Control.Monad.Reader
 import qualified Data.Bimap as Bimap
+import qualified Data.ByteString as Strict
 import qualified Data.ByteString.Lazy as Lazy
 import           Data.Coerce (coerce)
 import           Data.FingerTree (Measured (..))
@@ -412,6 +413,13 @@ instance (ByronGiven, Typeable cfg, ConfigContainsGenesis cfg)
   data GenTxId (ByronBlock cfg) = ByronTxId { unByronTxId :: CC.UTxO.TxId }
 
   computeGenTxId = ByronTxId . Crypto.hash . CC.UTxO.taTx . unByronTx
+
+  txSize (ByronTx atxaux) = fromIntegral txByteSize
+    where
+      -- TODO cardano-ledger#576 will provide a function for this
+      txByteSize = 1 -- To account for @encodeListLen 2@
+                 + (Strict.length . annotation . CC.UTxO.aTaTx      $ atxaux)
+                 + (Strict.length . annotation . CC.UTxO.aTaWitness $ atxaux)
 
   type ApplyTxErr (ByronBlock cfg) = CC.UTxO.UTxOValidationError
 
