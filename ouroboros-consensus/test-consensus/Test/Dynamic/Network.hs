@@ -43,6 +43,7 @@ import           Ouroboros.Network.Chain
 
 import           Ouroboros.Network.Protocol.BlockFetch.Type
 import           Ouroboros.Network.Protocol.ChainSync.Type
+import           Ouroboros.Network.Protocol.TxSubmission.Type
 
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.ChainSyncClient (ClockSkew (..))
@@ -97,6 +98,8 @@ createNetworkInterface
        , StandardHash blk
        , Show blk
        , Show (Header blk)
+       , Show (GenTx blk)
+       , Show (GenTxId blk)
        , Ord peer
        , Show peer
        )
@@ -106,6 +109,7 @@ createNetworkInterface
     -> NetworkApplication m peer
         (AnyMessage (ChainSync (Header blk) (Point blk)))
         (AnyMessage (BlockFetch blk))
+        (AnyMessage (TxSubmission (GenTxId blk) (GenTx blk)))
         unused1 -- the local node-to-client channel types
         unused2
         ()
@@ -115,7 +119,9 @@ createNetworkInterface chans nodeIds us
                          naChainSyncClient,
                          naChainSyncServer,
                          naBlockFetchClient,
-                         naBlockFetchServer
+                         naBlockFetchServer,
+                         naTxSubmissionClient,
+                         naTxSubmissionServer
                          -- Note that this test is not intended to cover the
                          -- mini-protocols in the node-to-client bundle, so
                          -- we don't pull those handlers out here.
@@ -136,10 +142,14 @@ createNetworkInterface chans nodeIds us
                         $ loggingChannel (TalkingToProducer us them)
                         $ blockFetchProducer nodeChan)
                   $ \aBF ->
-                  -- wait for all the threads, if any throws an exception, cancel all
-                  -- of them; this is consistent with
-                  -- 'Ouroboros.Network.Socket.connectTo'.
-                  void $ waitAny [aCS, aBF]
+            withAsync (naTxSubmissionClient them
+                        $ loggingChannel (TalkingToProducer us them)
+                        $ txSubmissionProducer nodeChan)
+                  $ \aTX ->
+                    -- wait for all the threads, if any throws an exception, cancel all
+                    -- of them; this is consistent with
+                    -- 'Ouroboros.Network.Socket.connectTo'.
+                    void $ waitAny [aCS, aBF, aTX]
 
       , niWithServerNode = \k -> mask $ \unmask -> do
         ts :: [Async m ()] <- fmap concat $ forM (filter (/= us) nodeIds) $ \them -> do
@@ -155,8 +165,13 @@ createNetworkInterface chans nodeIds us
                              them
                              (loggingChannel (TalkingToConsumer us them)
                                (blockFetchConsumer nodeChan))
+              aTX <- async $ unmask
+                           $ void $ naTxSubmissionServer
+                             them
+                             (loggingChannel (TalkingToConsumer us them)
+                               (txSubmissionConsumer nodeChan))
 
-              return [aCS, aBF]
+              return [aCS, aBF, aTX]
 
         -- if any thread raises an exception, kill all of them;
         -- if an exception is thrown to this thread, cancel all threads;
@@ -244,6 +259,8 @@ broadcastNetwork registry btime numCoreNodes pInfo initRNG numSlots slotLen = do
             , mempoolTracer      = nullTracer
             , decisionTracer     = nullTracer
             , fetchClientTracer  = nullTracer
+            , txInboundTracer    = nullTracer
+            , txOutboundTracer   = nullTracer
             , threadRegistry     = registry
             , maxClockSkew       = ClockSkew 1
             , cfg                = pInfoConfig
@@ -253,6 +270,7 @@ broadcastNetwork registry btime numCoreNodes pInfo initRNG numSlots slotLen = do
             , callbacks
             , blockFetchSize     = nodeBlockFetchSize
             , blockMatchesHeader = nodeBlockMatchesHeader
+            , maxUnackTxs        = 1000 -- TODO
             }
 
       node <- nodeKernel nodeParams
@@ -297,8 +315,9 @@ broadcastNetwork registry btime numCoreNodes pInfo initRNG numSlots slotLen = do
     createCommunicationChannels :: m (NodeChans m NodeId (SimpleBlock c ext))
     createCommunicationChannels = fmap Map.fromList $ forM nodeIds $ \us ->
       fmap ((us, ) . Map.fromList) $ forM (filter (/= us) nodeIds) $ \them -> do
-        (chainSyncConsumer,  chainSyncProducer)  <- createConnectedChannels
-        (blockFetchConsumer, blockFetchProducer) <- createConnectedChannels
+        (chainSyncConsumer,    chainSyncProducer)    <- createConnectedChannels
+        (blockFetchConsumer,   blockFetchProducer)   <- createConnectedChannels
+        (txSubmissionConsumer, txSubmissionProducer) <- createConnectedChannels
         return (them, NodeChan {..})
 
     mkArgs :: NodeConfig (BlockProtocol (SimpleBlock c ext))
@@ -356,12 +375,17 @@ type ChainSyncChannel m blk = Channel m (AnyMessage (ChainSync (Header blk) (Poi
 -- | Communication channel used for the Block Fetch protocol
 type BlockFetchChannel m blk = Channel m (AnyMessage (BlockFetch blk))
 
+-- | Communication channel used for the Tx Submission protocol
+type TxSubmissionChannel m blk = Channel m (AnyMessage (TxSubmission (GenTxId blk) (GenTx blk)))
+
 -- | The communication channels from and to each node
 data NodeChan m blk = NodeChan
-  { chainSyncConsumer  :: ChainSyncChannel  m blk
-  , chainSyncProducer  :: ChainSyncChannel  m blk
-  , blockFetchConsumer :: BlockFetchChannel m blk
-  , blockFetchProducer :: BlockFetchChannel m blk
+  { chainSyncConsumer    :: ChainSyncChannel    m blk
+  , chainSyncProducer    :: ChainSyncChannel    m blk
+  , blockFetchConsumer   :: BlockFetchChannel   m blk
+  , blockFetchProducer   :: BlockFetchChannel   m blk
+  , txSubmissionConsumer :: TxSubmissionChannel m blk
+  , txSubmissionProducer :: TxSubmissionChannel m blk
   }
 
 -- | All connections between all nodes

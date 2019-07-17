@@ -201,16 +201,16 @@ data Mempool m blk idx = Mempool {
 data MempoolSnapshot blk idx = MempoolSnapshot {
     -- | Get all transactions (oldest to newest) in the mempool snapshot along
     -- with their ticket number.
-    getTxs      :: [(GenTx blk, idx)]
+    snapshotTxs      :: [(GenTx blk, idx)]
 
     -- | Get all transactions (oldest to newest) in the mempool snapshot,
     -- along with their ticket number, which are associated with a ticket
     -- number greater than the one provided.
-  , getTxsAfter :: idx -> [(GenTx blk, idx)]
+  , snapshotTxsAfter :: idx -> [(GenTx blk, idx)]
 
     -- | Get a specific transaction from the mempool snapshot by its ticket
     -- number, if it exists.
-  , getTx       :: idx -> Maybe (GenTx blk)
+  , snapshotLookupTx :: idx -> Maybe (GenTx blk)
   }
 
 -- | Events traced by the Mempool.

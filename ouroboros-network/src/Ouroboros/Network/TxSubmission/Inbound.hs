@@ -52,8 +52,9 @@ data TxSubmissionMempoolWriter txid tx idx m =
        -- | Supply a batch of transactions to the mempool. They are either
        -- accepted or rejected individually, but in the order supplied.
        --
-       mempoolAddTxs :: [tx] -> m ()
-       -- TODO: we will need the txids of the ones that were added successfully
+       -- The 'txid's of all transactions that were added successfully are
+       -- returned.
+       mempoolAddTxs :: [tx] -> m [txid]
     }
 
 data TraceTxSubmissionInbound txid tx = TraceTxSubmissionInbound --TODO
@@ -249,7 +250,7 @@ txSubmissionInbound _tracer maxUnacked TxSubmissionMempoolWriter{..} =
           bufferedTxs'' = foldl' (flip Map.delete)
                                  bufferedTxs' acknowledgedTxIds
 
-      mempoolAddTxs txsReady
+      _ <- mempoolAddTxs txsReady
 
       return $ serverIdle n st {
         bufferedTxs         = bufferedTxs'',

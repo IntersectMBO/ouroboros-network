@@ -65,8 +65,8 @@ prop_Mempool_getTxs_getTxsAfter bc txs =
   testAddTxsWithMempoolAndSnapshot
     bc
     txs
-    (\Mempool{zeroIdx} MempoolSnapshot{getTxs, getTxsAfter} ->
-      getTxs === getTxsAfter zeroIdx)
+    (\Mempool{zeroIdx} MempoolSnapshot{snapshotTxs, snapshotTxsAfter} ->
+      snapshotTxs === snapshotTxsAfter zeroIdx)
 
 -- | Test that all valid transactions added to a 'Mempool' can be retrieved
 -- afterward.
@@ -83,9 +83,9 @@ prop_Mempool_addTxs_getTxs bc txs =
     testAddTxsWithMempoolAndSnapshot
         bc
         txs
-        (\_ MempoolSnapshot{getTxs} ->
+        (\_ MempoolSnapshot{snapshotTxs} ->
           filter (genTxIsValid . snd) (testTxsToGenTxPairs txs)
-              === map (\(tx, _) -> (computeGenTxId tx, tx)) getTxs)
+              === map (\(tx, _) -> (computeGenTxId tx, tx)) snapshotTxs)
   where
     genTxIsValid :: GenTx TestBlock -> Bool
     genTxIsValid (TestGenTx (ValidTestTx _)) = True
@@ -103,8 +103,8 @@ prop_Mempool_InvalidTxsNeverAdded bc txs =
     testAddTxsWithMempoolAndSnapshot
         bc
         txs
-        (\_ MempoolSnapshot{getTxs} ->
-          filter (\(tx, _) -> genTxIsInvalid tx) getTxs === [])
+        (\_ MempoolSnapshot{snapshotTxs} ->
+          filter (\(tx, _) -> genTxIsInvalid tx) snapshotTxs === [])
   where
     genTxIsInvalid :: GenTx TestBlock -> Bool
     genTxIsInvalid (TestGenTx (InvalidTestTx _)) = True
@@ -197,10 +197,10 @@ testAddTxsWithMempoolAndSnapshot bc txs prop =
           } = mempool
     attemptedTxs <- addTxs genTxs
     let invalidTxs = map (isJust . snd) attemptedTxs
-    snapshot@MempoolSnapshot{getTxs} <- atomically getSnapshot
+    snapshot@MempoolSnapshot{snapshotTxs} <- atomically getSnapshot
     pure $
-      counterexampleMempoolInfo genTxs invalidTxs getTxs $
-      classifyMempoolSize getTxs $
+      counterexampleMempoolInfo genTxs invalidTxs snapshotTxs $
+      classifyMempoolSize snapshotTxs $
       prop mempool snapshot
 
 testAddTxsWithTrace

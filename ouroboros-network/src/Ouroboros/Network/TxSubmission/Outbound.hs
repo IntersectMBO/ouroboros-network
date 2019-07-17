@@ -9,6 +9,7 @@ module Ouroboros.Network.TxSubmission.Outbound (
     TxSubmissionMempoolReader(..),
     TraceTxSubmissionOutbound(..),
     TxSubmissionProtocolError(..),
+    MempoolSnapshot(..),
   ) where
 
 import           Data.Word (Word16)

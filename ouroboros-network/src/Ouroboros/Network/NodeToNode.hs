@@ -49,7 +49,7 @@ import           Ouroboros.Network.Socket
 --
 data NodeToNodeProtocols = ChainSyncWithHeadersPtcl
                          | BlockFetchPtcl
-                         -- TxSubmissionPtcl
+                         | TxSubmissionPtcl
   deriving (Eq, Ord, Enum, Bounded, Show)
 
 -- These protocol numbers end up in the wire format so it is vital that they
@@ -71,11 +71,11 @@ instance ProtocolEnum NodeToNodeProtocols where
 
   fromProtocolEnum ChainSyncWithHeadersPtcl = 2
   fromProtocolEnum BlockFetchPtcl           = 3
-  -- fromProtocolEnum TxSubmissionPtcl         = 4
+  fromProtocolEnum TxSubmissionPtcl         = 4
 
   toProtocolEnum 2 = Just ChainSyncWithHeadersPtcl
   toProtocolEnum 3 = Just BlockFetchPtcl
-  -- toProtocolEnum 4 = Just TxSubmissionPtcl
+  toProtocolEnum 4 = Just TxSubmissionPtcl
   toProtocolEnum _ = Nothing
 
 instance MiniProtocolLimits NodeToNodeProtocols where

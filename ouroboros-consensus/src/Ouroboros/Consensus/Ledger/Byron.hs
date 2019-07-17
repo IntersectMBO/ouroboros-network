@@ -1,15 +1,13 @@
-{-# LANGUAGE ConstraintKinds            #-}
-{-# LANGUAGE FlexibleContexts           #-}
-{-# LANGUAGE FlexibleInstances          #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE MultiParamTypeClasses      #-}
-{-# LANGUAGE NamedFieldPuns             #-}
-{-# LANGUAGE RecordWildCards            #-}
-{-# LANGUAGE ScopedTypeVariables        #-}
-{-# LANGUAGE StandaloneDeriving         #-}
-{-# LANGUAGE TypeFamilies               #-}
-{-# LANGUAGE TypeOperators              #-}
-{-# LANGUAGE UndecidableInstances       #-}
+{-# LANGUAGE ConstraintKinds       #-}
+{-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE FlexibleInstances     #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE NamedFieldPuns        #-}
+{-# LANGUAGE RecordWildCards       #-}
+{-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE TypeFamilies          #-}
+{-# LANGUAGE TypeOperators         #-}
+{-# LANGUAGE UndecidableInstances  #-}
 
 {-# OPTIONS_GHC -Wredundant-constraints -Wno-orphans #-}
 
@@ -31,12 +29,14 @@ module Ouroboros.Consensus.Ledger.Byron
   , encodeByronBlock
   , encodeByronHeaderHash
   , encodeByronGenTx
+  , encodeByronGenTxId
   , encodeByronLedgerState
   , encodeByronChainState
   , decodeByronHeader
   , decodeByronBlock
   , decodeByronHeaderHash
   , decodeByronGenTx
+  , decodeByronGenTxId
   , decodeByronLedgerState
   , decodeByronChainState
   ) where
@@ -410,7 +410,8 @@ instance (ByronGiven, Typeable cfg, ConfigContainsGenesis cfg)
   -- newtype)
   data GenTx (ByronBlock cfg) = ByronTx { unByronTx :: CC.UTxO.ATxAux ByteString }
 
-  data GenTxId (ByronBlock cfg) = ByronTxId { unByronTxId :: CC.UTxO.TxId }
+  newtype GenTxId (ByronBlock cfg) = ByronTxId { unByronTxId :: CC.UTxO.TxId }
+    deriving (Eq, Ord)
 
   computeGenTxId = ByronTxId . Crypto.hash . CC.UTxO.taTx . unByronTx
 
@@ -569,6 +570,9 @@ encodeByronHeaderHash = toCBOR
 encodeByronGenTx :: GenTx (ByronBlock cfg) -> Encoding
 encodeByronGenTx (ByronTx tx) = toCBOR (void tx)
 
+encodeByronGenTxId :: GenTxId (ByronBlock cfg) -> Encoding
+encodeByronGenTxId (ByronTxId txid) = toCBOR txid
+
 encodeByronLedgerState :: LedgerState (ByronBlock cfg) -> Encoding
 encodeByronLedgerState ByronLedgerState{..} = mconcat
     [ encodeListLen 2
@@ -615,6 +619,9 @@ decodeByronGenTx =
         aTaTx      = reAnnotate aTaTx,
         aTaWitness = reAnnotate aTaWitness
       }
+
+decodeByronGenTxId :: Decoder s (GenTxId (ByronBlock cfg))
+decodeByronGenTxId = ByronTxId <$> fromCBOR
 
 decodeByronLedgerState :: Decoder s (LedgerState (ByronBlock cfg))
 decodeByronLedgerState = do
