@@ -137,7 +137,31 @@ data Cmd blk it rdr
   | RunBgTasks
   deriving (Generic, Show, Functor, Foldable, Traversable)
 
--- TODO knownInvalidBlocks, see #625
+-- We don't test 'getIsInvalidBlock' because the simple chain selection in the
+-- model and the incremental chain selection in the real implementation differ
+-- non-trivially.
+--
+-- In the real chain selection, if a block is invalid, no chains containing
+-- that block will be validated again. So if a successor of the block is added
+-- afterwards, it will never be validated, as any chain it would be part of
+-- would also contain the block we know to be invalid. So if the successor is
+-- also invalid, we would never discover and record it (as there is no need
+-- from the point of chain selection, as we'll never use it in a candidate
+-- chain anyway). In the model implementation of chain selection, all possible
+-- chains are (re)validated each time, including previously invalid chains, so
+-- new invalid blocks that are successors of known invalid blocks /are/ being
+-- validated and recorded as invalid blocks.
+--
+-- Further complicating this is the fact that the recorded invalid blocks are
+-- also garbage-collected. We can work around this, just like for 'getBlock'.
+--
+-- While it is certainly possible to overcome the issues described above,
+-- e.g., we could change the model to closer match the real implementation
+-- (but at the cost of more complexity), it is not worth the effort. The whole
+-- point of recording invalid blocks is to avoid constructing candidates
+-- containing known invalid blocks and needlessly validating them, which is
+-- something we are testing in 'prop_trace', see
+-- 'invalidBlockNeverValidatedAgain'.
 
 deriving instance SOP.Generic         (Cmd blk it rdr)
 deriving instance SOP.HasDatatypeInfo (Cmd blk it rdr)
@@ -1006,10 +1030,10 @@ prop_sequential = forAllCommands smUnused Nothing $ \cmds -> QC.monadicIO $ do
       let sm' = sm db internal genBlk testCfg testInitLedger
       (hist, model, res) <- runCommands sm' cmds
       (realChain, realChain', trace) <- QC.run $ do
+        trace <- getTrace
         open <- atomically $ isOpen db
         unless open $ intReopen internal False
         realChain <- toChain db
-        trace <- getTrace
         closeDB db
         -- We already generate a command to test 'reopenDB', but since that
         -- code path differs slightly from 'openDB', we test that code path
@@ -1030,10 +1054,44 @@ prop_sequential = forAllCommands smUnused Nothing $ \cmds -> QC.monadicIO $ do
             tabulate "TraceEvents" (map traceEventName trace)            $
             res === Ok               .&&.
             realChain =:= modelChain .&&.
+            prop_trace trace         .&&.
             -- Another equally preferable fork may be selected when opening
             -- the DB.
             equallyPreferable (cdbNodeConfig args) realChain realChain'
       return (hist, prop)
+
+prop_trace :: [TraceEvent Blk] -> Property
+prop_trace trace = invalidBlockNeverValidatedAgain
+  where
+    -- Whenever we validate a block that turns out to be invalid, check that
+    -- we never again validate the same block.
+    invalidBlockNeverValidatedAgain =
+      whenOccurs trace  invalidBlock $ \trace' invalidPoint  ->
+      whenOccurs trace' invalidBlock $ \_      invalidPoint' ->
+        counterexample "An invalid block is validated twice" $
+        invalidPoint =/= invalidPoint'
+
+    invalidBlock :: TraceEvent blk -> Maybe (Point blk)
+    invalidBlock = \case
+        TraceAddBlockEvent (AddBlockValidation ev)         -> extract ev
+        TraceInitChainSelEvent (InitChainSelValidation ev) -> extract ev
+        _                                                  -> Nothing
+      where
+        extract (ChainDB.InvalidBlock _ pt) = Just pt
+        extract _                           = Nothing
+
+-- | Given a trace of events, for each event in the trace for which the
+-- predicate yields a @Just a@, call the continuation function with the
+-- remaining events and @a@.
+whenOccurs :: [ev] -> (ev -> Maybe a) -> ([ev] -> a -> Property) -> Property
+whenOccurs evs occurs k = go evs
+  where
+    go [] = property True
+    go (ev:evs')
+      | Just a <- occurs ev
+      = k evs' a .&&. go evs'
+      | otherwise
+      = go evs'
 
 traceEventName :: TraceEvent blk -> String
 traceEventName = \case
