@@ -171,9 +171,9 @@ implGetSnapshot :: ( MonadSTM m
 implGetSnapshot MempoolEnv{mpEnvStateVar} = do
   is <- readTVar mpEnvStateVar
   pure MempoolSnapshot
-    { getTxs      = implSnapshotGetTxs      is
-    , getTxsAfter = implSnapshotGetTxsAfter is
-    , getTx       = implSnapshotGetTx       is
+    { snapshotTxs      = implSnapshotGetTxs      is
+    , snapshotTxsAfter = implSnapshotGetTxsAfter is
+    , snapshotLookupTx = implSnapshotGetTx       is
     }
 
 -- | Return the number of transactions in the Mempool.

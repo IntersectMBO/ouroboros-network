@@ -326,7 +326,7 @@ forkBlockProduction IS{..} =
             _                   <- pure $ syncState mempool
             mempoolSnapshot     <- getSnapshot mempool
 
-            let txs             =  map fst (getTxs mempoolSnapshot)
+            let txs             =  map fst (snapshotTxs mempoolSnapshot)
             newBlock            <- runProtocol varDRG $
                                      produceBlock
                                        proof
