@@ -1,11 +1,33 @@
-packages: ./typed-protocols
-	  ./typed-protocols-cbor
-          ./ouroboros-network-testing
-	  ./network-mux
-          ./ouroboros-network
-          ./ouroboros-consensus
-          ./io-sim
-          ./io-sim-classes
+packages:
+  typed-protocols
+  typed-protocols-cbor
+  ouroboros-network-testing
+  network-mux
+  ouroboros-network
+  ouroboros-consensus
+  io-sim
+  io-sim-classes
+  byron-proxy
+
+constraints:
+    ip < 1.5
+  , ekg-prometheus-adapter >= 0.1.0.4
+  , hedgehog >= 1.0
+  , libsystemd-journal >= 1.4.4
+  , bimap >= 0.4.0
+  , primitive < 0.7
+
+  -- Needed for cardano-sl
+  , servant == 0.15
+  , servant-swagger == 1.1.7.1
+  , servant-swagger-ui == 0.3.4.3.22.2
+  , servant-swagger-ui-core == 0.3.3
+  , servant-swagger-ui-redoc == 0.3.3.1.22.2
+  , swagger2 == 2.3.1.1
+  , type-operators == 0.1.0.4
+
+package contra-tracer
+  tests: False
 
 package typed-protocols
   tests: True
@@ -82,13 +104,13 @@ source-repository-package
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-prelude
-  tag: d673b92f2a2d9354d102514d0a0fa74f8248b14a
+  tag: faf5ba333c7e6f1710a355d5af0abbaec696dfd1
   subdir: .
 
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-prelude
-  tag: d673b92f2a2d9354d102514d0a0fa74f8248b14a
+  tag: faf5ba333c7e6f1710a355d5af0abbaec696dfd1
   subdir: test
 
 source-repository-package
@@ -118,13 +140,148 @@ source-repository-package
   tag: ddfe3593b80b5ceb88842bb7a6f2268df75d2c2f
 
 
-package contra-tracer
-  tests: False
+source-repository-package
+  type: git
+  location: https://github.com/input-output-hk/cardano-sl
+  tag: 95c03f565e6f1ab1b863bcfb13638333851e6c75
+  subdir: lib
 
-constraints:
-  ip < 1.5,
-  ekg-prometheus-adapter >= 0.1.0.4,
-  hedgehog >= 1.0,
-  libsystemd-journal >= 1.4.4,
-  bimap >= 0.4.0,
-  primitive < 0.7
+source-repository-package
+  type: git
+  location: https://github.com/input-output-hk/cardano-sl
+  tag: 95c03f565e6f1ab1b863bcfb13638333851e6c75
+  subdir: binary
+
+source-repository-package
+  type: git
+  location: https://github.com/input-output-hk/cardano-sl
+  tag: 95c03f565e6f1ab1b863bcfb13638333851e6c75
+  subdir: binary/test
+
+source-repository-package
+  type: git
+  location: https://github.com/input-output-hk/cardano-sl
+  tag: 95c03f565e6f1ab1b863bcfb13638333851e6c75
+  subdir: util
+
+source-repository-package
+  type: git
+  location: https://github.com/input-output-hk/cardano-sl
+  tag: 95c03f565e6f1ab1b863bcfb13638333851e6c75
+  subdir: util/test
+
+source-repository-package
+  type: git
+  location: https://github.com/input-output-hk/cardano-sl
+  tag: 95c03f565e6f1ab1b863bcfb13638333851e6c75
+  subdir: infra
+
+source-repository-package
+  type: git
+  location: https://github.com/input-output-hk/cardano-sl
+  tag: 95c03f565e6f1ab1b863bcfb13638333851e6c75
+  subdir: infra/test
+
+source-repository-package
+  type: git
+  location: https://github.com/input-output-hk/cardano-sl
+  tag: 95c03f565e6f1ab1b863bcfb13638333851e6c75
+  subdir: core
+
+source-repository-package
+  type: git
+  location: https://github.com/input-output-hk/cardano-sl
+  tag: 95c03f565e6f1ab1b863bcfb13638333851e6c75
+  subdir: core/test
+
+source-repository-package
+  type: git
+  location: https://github.com/input-output-hk/cardano-sl
+  tag: 95c03f565e6f1ab1b863bcfb13638333851e6c75
+  subdir: chain
+
+source-repository-package
+  type: git
+  location: https://github.com/input-output-hk/cardano-sl
+  tag: 95c03f565e6f1ab1b863bcfb13638333851e6c75
+  subdir: chain/test
+
+source-repository-package
+  type: git
+  location: https://github.com/input-output-hk/cardano-sl
+  tag: 95c03f565e6f1ab1b863bcfb13638333851e6c75
+  subdir: db
+
+source-repository-package
+  type: git
+  location: https://github.com/input-output-hk/cardano-sl
+  tag: 95c03f565e6f1ab1b863bcfb13638333851e6c75
+  subdir: db/test
+
+source-repository-package
+  type: git
+  location: https://github.com/input-output-hk/cardano-sl
+  tag: 95c03f565e6f1ab1b863bcfb13638333851e6c75
+  subdir: crypto
+
+source-repository-package
+  type: git
+  location: https://github.com/input-output-hk/cardano-sl
+  tag: 95c03f565e6f1ab1b863bcfb13638333851e6c75
+  subdir: crypto/test
+
+source-repository-package
+  type: git
+  location: https://github.com/input-output-hk/cardano-sl
+  tag: 95c03f565e6f1ab1b863bcfb13638333851e6c75
+  subdir: networking
+
+source-repository-package
+  type: git
+  location: https://github.com/input-output-hk/log-warper
+  tag: 16246d4fbf16da7984f2a4b6c42f2ed5098182e4
+
+source-repository-package
+  type: git
+  location: https://github.com/input-output-hk/rocksdb-haskell-ng
+  tag: 49f501a082d745f3b880677220a29cafaa181452
+
+source-repository-package
+  type: git
+  location: https://github.com/avieth/kademlia
+  tag: 38a0575bb303804461f4b6176ca38eba81adbd79
+
+source-repository-package
+  type: git
+  location: https://github.com/serokell/network-transport
+  tag: 018a50b9042c2115c3ec9c9fd5ca5f28737dd29c
+
+source-repository-package
+  type: git
+  location: https://github.com/avieth/network-transport-tcp
+  tag: 2634e5e32178bb0456d800d133f8664321daa2ef
+
+source-repository-package
+  type: git
+  location: https://github.com/avieth/network-transport-inmemory
+  tag: 5d8ff2b07b9df35cf61329a3d975e2c8cf95c12a
+
+source-repository-package
+  type: git
+  location: https://github.com/input-output-hk/universum
+  tag: 15f7db758ff5a24b874de2247f6f7a4576562da5
+
+source-repository-package
+  type: git
+  location: https://github.com/input-output-hk/serokell-util
+  tag: 457f1d149c6e238841f283a1faf7bc8fb021b27d
+
+source-repository-package
+  type: git
+  location: https://github.com/input-output-hk/ether
+  tag: a311878ae17ed5f201421bdcd5392a24b746ff0b
+
+source-repository-package
+  type: git
+  location: https://github.com/input-output-hk/transformers-lift
+  tag: c830bc7e7e41895e3c50488a92d34405b68b4ad8

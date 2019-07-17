@@ -1,16 +1,16 @@
-resolver: https://raw.githubusercontent.com/input-output-hk/cardano-prelude/d673b92f2a2d9354d102514d0a0fa74f8248b14a/snapshot.yaml
+resolver: https://raw.githubusercontent.com/input-output-hk/cardano-prelude/faf5ba333c7e6f1710a355d5af0abbaec696dfd1/snapshot.yaml
 
 packages:
-  - ./typed-transitions
-  - ./typed-protocols
-  - ./typed-protocols-cbor
-  - ./network-mux
-  - ./ouroboros-network
-  - ./ouroboros-network-testing
-  - ./ouroboros-consensus
-  - ./io-sim
-  - ./io-sim-classes
-  - ./byron-proxy
+  - typed-transitions
+  - typed-protocols
+  - typed-protocols-cbor
+  - network-mux
+  - ouroboros-network
+  - ouroboros-network-testing
+  - ouroboros-consensus
+  - io-sim
+  - io-sim-classes
+  - byron-proxy
 
 extra-deps:
   - git: https://github.com/input-output-hk/iohk-monitoring-framework
@@ -35,7 +35,7 @@ extra-deps:
       - crypto/test
 
   - git: https://github.com/input-output-hk/cardano-prelude
-    commit: d673b92f2a2d9354d102514d0a0fa74f8248b14a
+    commit: faf5ba333c7e6f1710a355d5af0abbaec696dfd1
     subdirs:
       - .
       - test
@@ -58,6 +58,7 @@ extra-deps:
   - splitmix-0.0.2
   - libsystemd-journal-1.4.4
   - tasty-hedgehog-1.0.0.1
+  - generic-monoid-0.1.0.0
 
   # Windows only
   - Win32-2.5.4.1
@@ -66,7 +67,7 @@ extra-deps:
   # They will be removed when that package is factored out to its own
   # repository.
   - git: https://github.com/input-output-hk/cardano-sl
-    commit: 16f5095cbf5d1128e379b44c10ff4114253cefb9
+    commit: 95c03f565e6f1ab1b863bcfb13638333851e6c75
     subdirs:
       - lib
       - binary
@@ -84,9 +85,6 @@ extra-deps:
       - crypto
       - crypto/test
       - networking
-
-  - git: https://github.com/input-output-hk/cardano-report-server
-    commit: 93f2246c54436e7f98cc363b4e0f8f1cb5e78717
 
   - git: https://github.com/input-output-hk/log-warper
     commit: 16246d4fbf16da7984f2a4b6c42f2ed5098182e4
@@ -106,17 +104,18 @@ extra-deps:
   - git: https://github.com/avieth/network-transport-inmemory
     commit: 5d8ff2b07b9df35cf61329a3d975e2c8cf95c12a
 
-  - git: https://github.com/input-output-hk/universum.git
-    commit: 7f1b2483f71cacdfd032fe447064d6e0a1df50fc
+  - git: https://github.com/input-output-hk/universum
+    commit: 15f7db758ff5a24b874de2247f6f7a4576562da5
 
-  - git: https://github.com/input-output-hk/serokell-util.git
-    commit: 42586f5ea157b4a5411fbcbe41d1bf28bd942438
+  - git: https://github.com/input-output-hk/serokell-util
+    commit: 457f1d149c6e238841f283a1faf7bc8fb021b27d
 
-  - git: https://github.com/input-output-hk/ether.git
+  - git: https://github.com/input-output-hk/ether
     commit: a311878ae17ed5f201421bdcd5392a24b746ff0b
 
-  - git: https://github.com/input-output-hk/transformers-lift.git
+  - git: https://github.com/input-output-hk/transformers-lift
     commit: c830bc7e7e41895e3c50488a92d34405b68b4ad8
+
   - aeson-options-0.1.0
   - pvss-0.2.0
   - lrucache-1.2.0.1
@@ -126,8 +125,6 @@ extra-deps:
   - ekg-wai-0.1.0.3
   - lzma-clib-5.2.2
   # End of byron-proxy-induced dependencies.
-
-
 
 nix:
   shell-file: nix/stack-shell.nix
