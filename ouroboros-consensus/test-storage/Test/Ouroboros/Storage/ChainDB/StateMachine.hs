@@ -527,16 +527,16 @@ generator :: forall       blk m.
           -> Model        blk m Symbolic
           -> Gen (At Cmd  blk m Symbolic)
 generator genBlock m@Model {..} = At <$> frequency
-    [ (10, AddBlock <$> genBlock m)
-    , (10, return GetCurrentChain)
-    , (10, return GetCurrentLedger)
-    , (10, return GetTipBlock)
+    [ (20, AddBlock <$> genBlock m)
+    , (if empty then 1 else 10, return GetCurrentChain)
+    , (if empty then 1 else 10, return GetCurrentLedger)
+    , (if empty then 1 else 10, return GetTipBlock)
       -- To check that we're on the right chain
-    , (10, return GetTipPoint)
+    , (if empty then 1 else 10, return GetTipPoint)
     , (10, genGetBlock)
 
     -- Iterators
-    , (10, uncurry StreamBlocks <$> genBounds)
+    , (if empty then 1 else 10, uncurry StreamBlocks <$> genBounds)
     , (if null iterators then 0 else 20, genIteratorNext)
       -- Use a lower frequency for closing, so that the chance increases that
       -- we can stream multiple blocks from an iterator.
@@ -550,11 +550,11 @@ generator genBlock m@Model {..} = At <$> frequency
       -- we can read multiple blocks from a reader
     , (if null readers then 0 else 2, genReaderClose)
 
-    , (10, return Close)
-    , (10, return Reopen)
+    , (if empty then 1 else 10, return Close)
+    , (if empty then 1 else 10, return Reopen)
 
       -- Internal
-    , (10, return RunBgTasks)
+    , (if empty then 1 else 10, return RunBgTasks)
     ]
     -- TODO adjust the frequencies after labelling
   where
