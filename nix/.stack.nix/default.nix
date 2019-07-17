@@ -3,8 +3,10 @@
     {
       packages = {
         "bimap" = (((hackage.bimap)."0.4.0").revisions).default;
+        "binary" = (((hackage.binary)."0.8.7.0").revisions).default;
         "time-units" = (((hackage.time-units)."1.0.0").revisions).default;
         "ekg-prometheus-adapter" = (((hackage.ekg-prometheus-adapter)."0.1.0.4").revisions).default;
+        "generic-monoid" = (((hackage.generic-monoid)."0.1.0.0").revisions).default;
         "prometheus" = (((hackage.prometheus)."2.1.1").revisions).default;
         "containers" = (((hackage.containers)."0.5.11.0").revisions).default;
         "splitmix" = (((hackage.splitmix)."0.0.2").revisions).default;

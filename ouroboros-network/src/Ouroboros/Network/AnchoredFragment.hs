@@ -209,7 +209,10 @@ validExtension af bSucc =
     blockInvariant bSucc &&
     case head af of
       Left  p -> pointHash p == blockPrevHash bSucc &&
-                 pointSlot p <  blockSlot     bSucc
+                 -- Note that this inequality would be strict, but for epoch
+                 -- boundary blocks, which occupy the same slot as a regular
+                 -- block.
+                 pointSlot p <=  blockSlot     bSucc
       Right b -> bSucc `CF.isValidSuccessorOf` b
 
 -- | \( O(1) \). When the fragment is empty, return the anchor point,

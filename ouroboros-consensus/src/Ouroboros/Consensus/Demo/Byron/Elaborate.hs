@@ -25,6 +25,7 @@ import           Ouroboros.Consensus.Ledger.Byron
 import qualified Ouroboros.Consensus.Ledger.Mock as Mock
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.ExtNodeConfig
+import           Ouroboros.Consensus.Protocol.WithEBBs
 
 import           Ouroboros.Consensus.Ledger.Byron.Config
 
@@ -41,9 +42,9 @@ import           Ouroboros.Consensus.Ledger.Byron.Config
 --
 -- This is adapted from 'Test.Cardano.Chain.Elaboration.UTxO.elaborateTxWits'
 elaborateTx :: HasCallStack
-            => NodeConfig ByronExtNodeConfig
-            -> Mock.Tx -> GenTx (ByronBlock cfg)
-elaborateTx cfg (Mock.Tx ins outs) =
+            => NodeConfig ByronEBBExtNodeConfig
+            -> Mock.Tx -> GenTx (ByronBlockOrEBB cfg)
+elaborateTx (WithEBBNodeConfig cfg) (Mock.Tx ins outs) =
     ByronTx $ CC.UTxO.ATxAux (annotate tx) (annotate witness)
   where
     annotate x = reAnnotate $ Annotated x ()

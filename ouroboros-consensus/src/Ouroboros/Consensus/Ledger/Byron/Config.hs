@@ -3,6 +3,7 @@
 module Ouroboros.Consensus.Ledger.Byron.Config (
     ByronConfig(..)
   , ByronExtNodeConfig
+  , ByronEBBExtNodeConfig
   ) where
 
 import           Data.Bimap (Bimap)
@@ -16,6 +17,7 @@ import           Ouroboros.Consensus.Ledger.Byron
 import           Ouroboros.Consensus.NodeId (CoreNodeId)
 import           Ouroboros.Consensus.Protocol.ExtNodeConfig
 import           Ouroboros.Consensus.Protocol.PBFT
+import           Ouroboros.Consensus.Protocol.WithEBBs
 
 -- | Extended configuration we need for Byron
 data ByronConfig = ByronConfig {
@@ -35,6 +37,7 @@ data ByronConfig = ByronConfig {
     }
 
 type ByronExtNodeConfig = ExtNodeConfig ByronConfig (PBft PBftCardanoCrypto)
+type ByronEBBExtNodeConfig = WithEBBs ByronExtNodeConfig
 
 instance ConfigContainsGenesis ByronConfig where
   genesisConfig = pbftGenesisConfig

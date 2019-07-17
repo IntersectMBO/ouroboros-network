@@ -28,6 +28,7 @@ result*
 **/TAGS
 
 .stack-work/
+stack.yaml.lock
 *.tix
 
 db-byron-proxy-*

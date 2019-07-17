@@ -1,13 +1,18 @@
 {-# LANGUAGE ConstraintKinds       #-}
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE FlexibleInstances     #-}
+{-# LANGUAGE LambdaCase            #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE NamedFieldPuns        #-}
+{-# LANGUAGE OverloadedStrings     #-}
+{-# LANGUAGE QuantifiedConstraints #-}
 {-# LANGUAGE RecordWildCards       #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE TypeApplications      #-}
 {-# LANGUAGE TypeFamilies          #-}
 {-# LANGUAGE TypeOperators         #-}
 {-# LANGUAGE UndecidableInstances  #-}
+{-# LANGUAGE ViewPatterns          #-}
 
 {-# OPTIONS_GHC -Wredundant-constraints -Wno-orphans #-}
 
@@ -39,6 +44,9 @@ module Ouroboros.Consensus.Ledger.Byron
   , decodeByronGenTxId
   , decodeByronLedgerState
   , decodeByronChainState
+    -- * EBBs
+  , ByronBlockOrEBB (..)
+  , annotateBoundary
   ) where
 
 import           Codec.CBOR.Decoding (Decoder, decodeListLenOf)
@@ -47,7 +55,8 @@ import qualified Codec.CBOR.Read as CBOR
 import qualified Codec.CBOR.Write as CBOR
 import           Codec.Serialise (Serialise, decode, encode)
 import           Control.Monad.Except
-import           Control.Monad.Reader
+import           Control.Monad.Trans.Reader (runReaderT)
+import           Data.Bifunctor (bimap)
 import qualified Data.Bimap as Bimap
 import qualified Data.ByteString as Strict
 import qualified Data.ByteString.Lazy as Lazy
@@ -62,8 +71,8 @@ import           Data.Typeable
 import           Data.Word (Word8)
 import           Formatting
 
-import           Cardano.Binary (Annotated (..), ByteSpan, FromCBOR (..),
-                     ToCBOR (..), reAnnotate, slice)
+import           Cardano.Binary (Annotated (..), ByteSpan, enforceSize, fromCBOR, reAnnotate,
+                     slice, toCBOR)
 import qualified Cardano.Chain.Block as CC.Block
 import qualified Cardano.Chain.Common as CC.Common
 import qualified Cardano.Chain.Delegation as CC.Delegation
@@ -90,6 +99,7 @@ import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.ExtNodeConfig
 import           Ouroboros.Consensus.Protocol.PBFT
 import           Ouroboros.Consensus.Protocol.Signed
+import           Ouroboros.Consensus.Protocol.WithEBBs
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.SlotBounded (SlotBounded (..))
 import qualified Ouroboros.Consensus.Util.SlotBounded as SB
@@ -97,6 +107,14 @@ import qualified Ouroboros.Consensus.Util.SlotBounded as SB
 {-------------------------------------------------------------------------------
   Byron blocks and headers
 -------------------------------------------------------------------------------}
+
+-- | Unfortunate Byron requires some information that is morally static but
+-- actually comes from configuration files on startup. We use reflection to
+-- provide this to type class instances.
+type ByronGiven = (
+    Given Crypto.ProtocolMagicId
+  , Given CC.Slot.EpochSlots
+  )
 
 -- | Newtype wrapper to avoid orphan instances
 --
@@ -108,15 +126,6 @@ newtype ByronBlock cfg = ByronBlock
   }
   deriving (Eq, Show)
 
--- | Unfortunate Byron requires some information that is morally static but
--- actually comes from configuration files on startup. We use reflection to
--- provide this to type class instances.
-type ByronGiven = (
-    Given CC.Block.HeaderHash
-  , Given Crypto.ProtocolMagicId
-  , Given CC.Slot.EpochSlots
-  )
-
 instance GetHeader (ByronBlock cfg) where
   newtype Header (ByronBlock cfg) = ByronHeader {
       unByronHeader :: CC.Block.AHeader ByteString
@@ -125,13 +134,6 @@ instance GetHeader (ByronBlock cfg) where
   getHeader (ByronBlock b) = ByronHeader (CC.Block.blockHeader b)
 
 instance (ByronGiven, Typeable cfg) => SupportedBlock (ByronBlock cfg)
-
--- | Construct Byron block from unannotated 'CC.Block.Block'
---
--- This should be used only when forging blocks (not when receiving blocks
--- over the wire).
-annotateByronBlock :: CC.Slot.EpochSlots -> CC.Block.Block -> ByronBlock cfg
-annotateByronBlock epochSlots = ByronBlock . annotateBlock epochSlots
 
 {-------------------------------------------------------------------------------
   HasHeader instances
@@ -147,15 +149,9 @@ instance (ByronGiven, Typeable cfg) => HasHeader (ByronBlock cfg) where
   blockInvariant = const True
 
 instance (ByronGiven, Typeable cfg) => HasHeader (Header (ByronBlock cfg)) where
-  blockHash = headerHashAnnotated . unByronHeader
+  blockHash = CC.Block.headerHashAnnotated . unByronHeader
 
-  -- We distinguish the genesis hash
-  --
-  -- Note that on the actual chain, for real blocks the previous hash will
-  -- never be genesis, only for EBBs can it be genesis.
-  blockPrevHash (ByronHeader h) = case CC.Block.headerPrevHash h of
-    h' | h' == given -> GenesisHash
-    _                -> BlockHash $ CC.Block.headerPrevHash h
+  blockPrevHash (ByronHeader h) = BlockHash $ CC.Block.headerPrevHash h
 
   blockSlot      = convertSlot
                  . CC.Block.headerSlot
@@ -255,7 +251,7 @@ instance (ByronGiven, Typeable cfg, ConfigContainsGenesis cfg)
           (fromBlockValidationMode CC.Block.BlockValidation)
         return $ state
           { CC.Block.cvsLastSlot     = CC.Block.headerSlot hdr
-          , CC.Block.cvsPreviousHash = Right $ headerHashAnnotated hdr
+          , CC.Block.cvsPreviousHash = Right $ CC.Block.headerHashAnnotated hdr
           , CC.Block.cvsUpdateState  = updateState
           }
     where
@@ -295,6 +291,9 @@ numGenKeys cfg = case length genKeys of
   Support for PBFT consensus algorithm
 -------------------------------------------------------------------------------}
 
+type instance BlockProtocol (ByronBlock cfg) =
+  ExtNodeConfig cfg (PBft PBftCardanoCrypto)
+
 instance ByronGiven => SignedHeader (Header (ByronBlock cfg)) where
   type Signed (Header (ByronBlock cfg)) = CC.Block.ToSign
   encodeSigned = const toCBOR
@@ -319,148 +318,6 @@ instance (ByronGiven, Typeable cfg)
                       . CC.Block.headerSignature
                       $ hdr
       }
-
-type instance BlockProtocol (ByronBlock cfg) =
-  ExtNodeConfig cfg (PBft PBftCardanoCrypto)
-
-instance (ByronGiven, Typeable cfg, ConfigContainsGenesis cfg)
-      => ProtocolLedgerView (ByronBlock cfg) where
-  protocolLedgerView _ns (ByronLedgerState ls _)
-    = PBftLedgerView
-    . CC.Delegation.unMap
-    . V.Interface.delegationMap
-    . CC.Block.cvsDelegationState
-    $ ls
-
-  -- There are two cases here:
-  --
-  -- - The view we want is in the past. In this case, we attempt to find a
-  --   snapshot which contains the relevant slot, and extract the delegation
-  --   map from that.
-  --
-  -- - The view we want is in the future. In this case, we need to check the
-  --   upcoming delegations to see what new delegations will be made in the
-  --   future, and update the current delegation map based on that.
-  anachronisticProtocolLedgerView cfg (ByronLedgerState ls ss) slot =
-      case find (containsSlot slot) ss of
-        -- We can find a snapshot which supports this slot
-        Just sb -> Just
-                 $  PBftLedgerView
-                 .  CC.Delegation.unMap
-                 .  V.Interface.delegationMap
-                 .  CC.Block.cvsDelegationState
-                <$> sb
-        -- No snapshot - we could be in the past or in the future
-        Nothing
-          | slot >= lvLB && slot <= lvUB
-          -> Just $ PBftLedgerView <$>
-             case Seq.takeWhileL
-                    (\sd -> convertSlot (V.Scheduling.sdSlot sd) <= slot)
-                    dsScheduled of
-                -- No updates to apply. So the current ledger state is valid
-                -- from the end of the last snapshot to the first scheduled
-                -- update.
-               Seq.Empty              -> SB.bounded lb ub dsNow
-               toApply@(_ Seq.:|> la) ->
-                 SB.bounded lb (convertSlot . V.Scheduling.sdSlot $ la) $
-                 foldl'
-                   (\acc x -> Bimap.insert (V.Scheduling.sdDelegator x)
-                                           (V.Scheduling.sdDelegate x)
-                                           acc)
-                   dsNow toApply
-          | otherwise
-          -> Nothing
-    where
-      lb = case ss of
-        _ Seq.:|> s -> max lvLB (sbUpper s)
-        Seq.Empty   -> lvLB
-      ub = case dsScheduled of
-        s Seq.:<| _ -> min lvUB (convertSlot $ V.Scheduling.sdSlot s)
-        Seq.Empty   -> lvUB
-
-      SecurityParam paramK = pbftSecurityParam . pbftParams . encNodeConfigP $ cfg
-
-      lvUB = SlotNo $ unSlotNo currentSlot + (2 * paramK)
-      lvLB
-        | 2 * paramK > unSlotNo currentSlot
-        = genesisSlotNo
-        | otherwise
-        = SlotNo $ unSlotNo currentSlot - (2 * paramK)
-
-      dsNow = CC.Delegation.unMap
-            . V.Interface.delegationMap
-            . CC.Block.cvsDelegationState
-            $ ls
-      dsScheduled = V.Scheduling.scheduledDelegations
-                  . V.Interface.schedulingState
-                  . CC.Block.cvsDelegationState
-                  $ ls
-      currentSlot = convertSlot $ CC.Block.cvsLastSlot ls
-      containsSlot s sb = sbLower sb <= s && sbUpper sb >= s
-
-{-------------------------------------------------------------------------------
-  Mempool integration
--------------------------------------------------------------------------------}
-
-instance (ByronGiven, Typeable cfg, ConfigContainsGenesis cfg)
-      => ApplyTx (ByronBlock cfg) where
-  -- | Generalized transactions in Byron
-  --
-  -- TODO #514: This is still missing the other cases (this shouldn't be a
-  -- newtype)
-  data GenTx (ByronBlock cfg) = ByronTx { unByronTx :: CC.UTxO.ATxAux ByteString }
-
-  newtype GenTxId (ByronBlock cfg) = ByronTxId { unByronTxId :: CC.UTxO.TxId }
-    deriving (Eq, Ord)
-
-  computeGenTxId = ByronTxId . Crypto.hash . CC.UTxO.taTx . unByronTx
-
-  txSize (ByronTx atxaux) = fromIntegral txByteSize
-    where
-      -- TODO cardano-ledger#576 will provide a function for this
-      txByteSize = 1 -- To account for @encodeListLen 2@
-                 + (Strict.length . annotation . CC.UTxO.aTaTx      $ atxaux)
-                 + (Strict.length . annotation . CC.UTxO.aTaWitness $ atxaux)
-
-  type ApplyTxErr (ByronBlock cfg) = CC.UTxO.UTxOValidationError
-
-  applyTx   = applyByronGenTx False
-  reapplyTx = applyByronGenTx True
-
-  -- TODO #440: We need explicit support for this from the ledger
-  -- (though during testing we might still want to actually verify that we
-  -- didn't get any errors)
-  reapplyTxSameState cfg tx st =
-    case runExcept (applyByronGenTx True cfg tx st) of
-      Left  err -> error $ "unexpected error: " <> show err
-      Right st' -> st'
-
-applyByronGenTx :: Bool -- ^ Have we verified this transaction previously?
-                -> LedgerConfig (ByronBlock cfg)
-                -> GenTx (ByronBlock cfg)
-                -> LedgerState (ByronBlock cfg)
-                -> Except CC.UTxO.UTxOValidationError
-                          (LedgerState (ByronBlock cfg))
-applyByronGenTx _reapply (ByronLedgerConfig cfg) genTx st@ByronLedgerState{..} =
-    (\x -> st { blsCurrent = x }) <$> go genTx blsCurrent
-  where
-    validationMode = fromBlockValidationMode CC.Block.BlockValidation
-
-    go :: GenTx (ByronBlock cfg)
-       -> CC.Block.ChainValidationState
-       -> Except CC.UTxO.UTxOValidationError CC.Block.ChainValidationState
-    go (ByronTx tx) cvs = wrapCVS <$>
-        runReaderT (CC.UTxO.updateUTxO env utxo [tx]) validationMode
-      where
-        wrapCVS newUTxO = cvs { CC.Block.cvsUtxo = newUTxO }
-        protocolMagic = fixPM $ CC.Genesis.configProtocolMagic cfg
-        utxo = CC.Block.cvsUtxo cvs
-        updateState = CC.Block.cvsUpdateState cvs
-        env = CC.UTxO.Environment
-          { CC.UTxO.protocolMagic = protocolMagic
-          , CC.UTxO.protocolParameters = CC.UPI.adoptedProtocolParameters updateState
-          }
-        fixPM (Crypto.AProtocolMagic a b) = Crypto.AProtocolMagic (reAnnotate a) b
 
 {-------------------------------------------------------------------------------
   Auxiliary
@@ -531,17 +388,159 @@ instance Condense (Header (ByronBlock cfg)) where
         . unByronHeader
         $ hdr
 
-instance Condense (ChainHash (ByronBlock cfg)) where
+{-------------------------------------------------------------------------------
+  Epoch Boundary Blocks
+-------------------------------------------------------------------------------}
+
+newtype ByronBlockOrEBB cfg = ByronBlockOrEBB
+  { unByronBlockOrEBB :: CC.Block.ABlockOrBoundary ByteString
+  } deriving (Eq, Show)
+
+instance GetHeader (ByronBlockOrEBB cfg) where
+  newtype Header (ByronBlockOrEBB cfg) = ByronHeaderOrEBB {
+      unByronHeaderOrEBB :: Either (CC.Block.BoundaryValidationData ByteString) (CC.Block.AHeader ByteString)
+    } deriving (Eq, Show)
+
+  getHeader (ByronBlockOrEBB (CC.Block.ABOBBlock b)) = ByronHeaderOrEBB . Right $ CC.Block.blockHeader b
+  getHeader (ByronBlockOrEBB (CC.Block.ABOBBoundary b)) = ByronHeaderOrEBB . Left $ b
+
+type instance HeaderHash (ByronBlockOrEBB  cfg) = CC.Block.HeaderHash
+
+instance (ByronGiven, Typeable cfg) => SupportedBlock (ByronBlockOrEBB cfg)
+
+instance (ByronGiven, Typeable cfg) => HasHeader (ByronBlockOrEBB cfg) where
+  blockHash      =            blockHash     . getHeader
+  blockPrevHash  = castHash . blockPrevHash . getHeader
+  blockSlot      =            blockSlot     . getHeader
+  blockNo        =            blockNo       . getHeader
+  blockInvariant = const True
+
+instance (ByronGiven, Typeable cfg) => HasHeader (Header (ByronBlockOrEBB cfg)) where
+  blockHash b = case unByronHeaderOrEBB b of
+    Left ebb -> CC.Block.boundaryHashAnnotated ebb
+    Right mb -> CC.Block.headerHashAnnotated mb
+
+  blockPrevHash b = case unByronHeaderOrEBB b of
+    Right mb -> BlockHash . CC.Block.headerPrevHash $ mb
+    Left ebb -> case CC.Block.boundaryPrevHash ebb of
+      Left _ -> GenesisHash
+      Right h -> BlockHash h
+
+  blockSlot b = case unByronHeaderOrEBB b of
+    Right mb -> convertSlot . CC.Block.headerSlot $ mb
+    Left ebb -> SlotNo $ CC.Slot.unEpochSlots given * CC.Block.boundaryEpoch ebb
+
+  blockNo b = case unByronHeaderOrEBB b of
+    Right mb -> BlockNo
+      . CC.Common.unChainDifficulty
+      . CC.Block.headerDifficulty
+      $ mb
+    Left ebb -> BlockNo
+      . CC.Common.unChainDifficulty
+      . CC.Block.boundaryDifficulty
+      $ ebb
+
+  blockInvariant = const True
+
+instance (ByronGiven, Typeable cfg) => Measured BlockMeasure (ByronBlockOrEBB cfg) where
+  measure = blockMeasure
+
+instance StandardHash (ByronBlockOrEBB cfg)
+
+instance (ByronGiven, Typeable cfg)
+  => HeaderSupportsWithEBB (ExtNodeConfig cfg (PBft PBftCardanoCrypto)) (Header (ByronBlockOrEBB cfg)) where
+  type HeaderOfBlock (Header (ByronBlockOrEBB cfg)) = Header (ByronBlock cfg)
+  type HeaderOfEBB (Header (ByronBlockOrEBB cfg)) = CC.Block.BoundaryValidationData ByteString
+
+  eitherHeaderOrEbb _ = fmap ByronHeader . unByronHeaderOrEBB
+
+type instance BlockProtocol (ByronBlockOrEBB cfg) =
+  WithEBBs (ExtNodeConfig cfg (PBft PBftCardanoCrypto))
+
+instance ( ByronGiven
+         , Typeable cfg
+         , ConfigContainsGenesis cfg
+         )
+     => UpdateLedger (ByronBlockOrEBB cfg) where
+
+  newtype LedgerState (ByronBlockOrEBB cfg) = ByronEBBLedgerState (LedgerState (ByronBlock cfg))
+    deriving (Eq, Show)
+  type LedgerError (ByronBlockOrEBB cfg) = LedgerError (ByronBlock cfg)
+
+  newtype LedgerConfig (ByronBlockOrEBB cfg) = ByronEBBLedgerConfig (LedgerConfig (ByronBlock cfg))
+
+  ledgerConfigView = ByronEBBLedgerConfig . ledgerConfigView . unWithEBBNodeConfig
+
+  applyLedgerBlock (ByronEBBLedgerConfig cfg) (ByronBlockOrEBB block)
+                   (ByronEBBLedgerState state) =
+    case block of
+      CC.Block.ABOBBlock b -> ByronEBBLedgerState <$> applyLedgerBlock cfg (ByronBlock b) state
+      CC.Block.ABOBBoundary _ -> return $ ByronEBBLedgerState state
+
+  applyLedgerHeader (ByronEBBLedgerConfig cfg) (ByronHeaderOrEBB hdr)
+                    (ByronEBBLedgerState bs@(ByronLedgerState state snapshots)) = case hdr of
+    Left ebb ->
+      mapExcept (fmap (\i -> ByronEBBLedgerState $ ByronLedgerState i snapshots)) $ do
+        return $ state
+          { CC.Block.cvsPreviousHash = Right $ CC.Block.boundaryHashAnnotated ebb 
+          , CC.Block.cvsLastSlot = CC.Slot.SlotNumber $ epochSlots * (CC.Block.boundaryEpoch ebb)
+          }
+      where
+        CC.Slot.EpochSlots epochSlots = given
+
+    Right h -> ByronEBBLedgerState <$> applyLedgerHeader cfg (ByronHeader h) bs
+
+  ledgerTipPoint (ByronEBBLedgerState state) = castPoint $ ledgerTipPoint state
+
+-- | Construct Byron block from unannotated 'CC.Block.Block'
+--
+-- This should be used only when forging blocks (not when receiving blocks
+-- over the wire).
+annotateByronBlock :: CC.Slot.EpochSlots -> CC.Block.Block -> ByronBlockOrEBB cfg
+annotateByronBlock epochSlots = ByronBlockOrEBB . CC.Block.ABOBBlock . annotateBlock epochSlots
+
+{-------------------------------------------------------------------------------
+  Condense instances
+-------------------------------------------------------------------------------}
+
+instance Condense (ByronBlockOrEBB cfg) where
+  condense (ByronBlockOrEBB (CC.Block.ABOBBlock blk)) = condense (ByronBlock blk)
+  condense (ByronBlockOrEBB (CC.Block.ABOBBoundary bvd)) = condenseBVD bvd
+
+condenseBVD :: CC.Block.BoundaryValidationData ByteString -> String
+condenseBVD bvd =
+      "( ebb: true" <>
+      ", hash: " <> condensedHash <>
+      ", previousHash: " <> condensedPrevHash <>
+      ")"
+    where
+      condensedHash
+        = T.unpack
+        . sformat CC.Block.headerHashF
+        . coerce
+        . Crypto.hashDecoded . fmap CC.Block.wrapBoundaryBytes
+        $ bvd
+
+      condensedPrevHash
+        = T.unpack $ case CC.Block.boundaryPrevHash bvd of
+            Left _ -> "Genesis"
+            Right h -> sformat CC.Block.headerHashF h
+
+instance Condense (Header (ByronBlockOrEBB cfg)) where
+  condense (ByronHeaderOrEBB (Right hdr)) = condense (ByronHeader hdr)
+  condense (ByronHeaderOrEBB (Left bvd)) = condenseBVD bvd
+
+instance Condense (ChainHash (ByronBlockOrEBB cfg)) where
   condense GenesisHash   = "genesis"
   condense (BlockHash h) = show h
 
-instance Condense (GenTx (ByronBlock cfg)) where
+instance Condense (GenTx (ByronBlockOrEBB cfg)) where
     condense (ByronTx tx) =
       "(tx: "       <> show (CC.UTxO.aTaTx tx) <>
       ", witness: " <> show (CC.UTxO.aTaWitness tx) <>
       ")"
 
-instance Show (GenTx (ByronBlock cfg)) where
+instance Show (GenTx (ByronBlockOrEBB cfg)) where
     show tx = condense tx
 
 {-------------------------------------------------------------------------------
@@ -556,25 +555,23 @@ instance Serialise CC.Common.KeyHash where
   encode = toCBOR
   decode = fromCBOR
 
-encodeByronHeader :: CC.Slot.EpochSlots -> Header (ByronBlock cfg) -> Encoding
-encodeByronHeader epochSlots =
-    CC.Block.toCBORHeader epochSlots . void . unByronHeader
+encodeByronHeader 
+  :: Crypto.ProtocolMagicId 
+  -> CC.Slot.EpochSlots 
+  -> Header (ByronBlockOrEBB cfg) 
+  -> Encoding
+encodeByronHeader pm epochSlots (ByronHeaderOrEBB h) = toCBORAHeaderOrBoundary pm epochSlots h
 
-encodeByronBlock :: CC.Slot.EpochSlots -> ByronBlock cfg -> Encoding
-encodeByronBlock epochSlots =
-    CC.Block.toCBORBlock epochSlots . void . unByronBlock
+encodeByronBlock :: Crypto.ProtocolMagicId -> CC.Slot.EpochSlots -> ByronBlockOrEBB cfg -> Encoding
+encodeByronBlock pm epochSlots bob = case unByronBlockOrEBB bob of
+  CC.Block.ABOBBlock b -> CC.Block.toCBORABOBBlock epochSlots . void $ b
+  CC.Block.ABOBBoundary ebb -> CC.Block.toCBORABOBBoundary pm . void $ ebb
 
-encodeByronHeaderHash :: HeaderHash (ByronBlock cfg) -> Encoding
+encodeByronHeaderHash :: HeaderHash (ByronBlockOrEBB cfg) -> Encoding
 encodeByronHeaderHash = toCBOR
 
-encodeByronGenTx :: GenTx (ByronBlock cfg) -> Encoding
-encodeByronGenTx (ByronTx tx) = toCBOR (void tx)
-
-encodeByronGenTxId :: GenTxId (ByronBlock cfg) -> Encoding
-encodeByronGenTxId (ByronTxId txid) = toCBOR txid
-
-encodeByronLedgerState :: LedgerState (ByronBlock cfg) -> Encoding
-encodeByronLedgerState ByronLedgerState{..} = mconcat
+encodeByronLedgerState :: LedgerState (ByronBlockOrEBB cfg) -> Encoding
+encodeByronLedgerState (ByronEBBLedgerState ByronLedgerState{..}) = mconcat
     [ encodeListLen 2
     , encode blsCurrent
     , encode blsSnapshots
@@ -583,30 +580,46 @@ encodeByronLedgerState ByronLedgerState{..} = mconcat
 encodeByronChainState :: ChainState (BlockProtocol (ByronBlock cfg)) -> Encoding
 encodeByronChainState = encode
 
-decodeByronHeader :: CC.Slot.EpochSlots -> Decoder s (Header (ByronBlock cfg))
-decodeByronHeader epochSlots =
-    ByronHeader . annotate <$> CC.Block.fromCBORAHeader epochSlots
+decodeByronHeader :: Crypto.ProtocolMagicId -> CC.Slot.EpochSlots -> Decoder s (Header (ByronBlockOrEBB cfg))
+decodeByronHeader pm epochSlots =
+    ByronHeaderOrEBB . bimap annotateBo annotateH <$> fromCBORAHeaderOrBoundary epochSlots
   where
     -- TODO #560: Re-annotation can be done but requires some rearranging in
     -- the codecs Original ByteSpan's refer to bytestring we don't have, so
     -- we'll ignore them
-    annotate :: CC.Block.AHeader a -> CC.Block.AHeader ByteString
-    annotate = annotateHeader epochSlots . void
+    annotateH :: CC.Block.AHeader a -> CC.Block.AHeader ByteString
+    annotateH = annotateHeader epochSlots . void
 
-decodeByronBlock :: CC.Slot.EpochSlots -> Decoder s (ByronBlock cfg)
-decodeByronBlock epochSlots =
-    ByronBlock . annotate <$> CC.Block.fromCBORABlock epochSlots
+    annotateBo :: CC.Block.BoundaryValidationData a -> CC.Block.BoundaryValidationData ByteString
+    annotateBo = annotateBoundary pm . void
+
+decodeByronBlock :: Crypto.ProtocolMagicId -> CC.Slot.EpochSlots -> Decoder s (ByronBlockOrEBB cfg)
+decodeByronBlock pm epochSlots =
+    ByronBlockOrEBB . mapABOB annotateBl annotateBo
+      <$> CC.Block.fromCBORABlockOrBoundary epochSlots
   where
+    mapABOB f g abob = case abob of
+      CC.Block.ABOBBlock x -> CC.Block.ABOBBlock $ f x
+      CC.Block.ABOBBoundary x -> CC.Block.ABOBBoundary $ g x
     -- TODO #560: Re-annotation can be done but requires some rearranging in
     -- the codecs Original ByteSpan's refer to bytestring we don't have, so
     -- we'll ignore them
-    annotate :: CC.Block.ABlock a -> CC.Block.ABlock ByteString
-    annotate = annotateBlock epochSlots . void
+    annotateBl :: CC.Block.ABlock a -> CC.Block.ABlock ByteString
+    annotateBl = annotateBlock epochSlots . void
 
-decodeByronHeaderHash :: Decoder s (HeaderHash (ByronBlock cfg))
+    annotateBo :: CC.Block.BoundaryValidationData a -> CC.Block.BoundaryValidationData ByteString
+    annotateBo = annotateBoundary pm . void
+
+decodeByronHeaderHash :: Decoder s (HeaderHash (ByronBlockOrEBB cfg))
 decodeByronHeaderHash = fromCBOR
 
-decodeByronGenTx :: Decoder s (GenTx (ByronBlock cfg))
+encodeByronGenTx :: GenTx (ByronBlockOrEBB cfg) -> Encoding
+encodeByronGenTx (ByronTx tx) = toCBOR (void tx)
+
+encodeByronGenTxId :: GenTxId (ByronBlockOrEBB cfg) -> Encoding
+encodeByronGenTxId (ByronTxId txid) = toCBOR txid
+
+decodeByronGenTx :: Decoder s (GenTx (ByronBlockOrEBB cfg))
 decodeByronGenTx =
     ByronTx . annotate <$> fromCBOR
   where
@@ -620,11 +633,11 @@ decodeByronGenTx =
         aTaWitness = reAnnotate aTaWitness
       }
 
-decodeByronGenTxId :: Decoder s (GenTxId (ByronBlock cfg))
+decodeByronGenTxId :: Decoder s (GenTxId (ByronBlockOrEBB cfg))
 decodeByronGenTxId = ByronTxId <$> fromCBOR
 
-decodeByronLedgerState :: Decoder s (LedgerState (ByronBlock cfg))
-decodeByronLedgerState = do
+decodeByronLedgerState :: Decoder s (LedgerState (ByronBlockOrEBB cfg))
+decodeByronLedgerState = ByronEBBLedgerState <$> do
     decodeListLenOf 2
     ByronLedgerState <$> decode <*> decode
 
@@ -673,12 +686,193 @@ annotateHeader epochSlots =
     splice bs (Right (_leftover, txAux)) =
       (Lazy.toStrict . slice bs) <$> txAux
 
--- Implementation of 'blockHash' derived from
---
--- > blockHashAnnotated :: ABlock ByteString -> HeaderHash
--- > blockHashAnnotated = hashDecoded . fmap wrapHeaderBytes . blockHeader
---
--- I couldn't find a version for headers
-headerHashAnnotated :: CC.Block.AHeader ByteString
-                    -> Crypto.Hash CC.Block.Header
-headerHashAnnotated = Crypto.hashDecoded . fmap CC.Block.wrapHeaderBytes
+{-------------------------------------------------------------------------------
+  Internal auxiliary
+
+  Since we will not be creating further boundary blocks, these utilities do not
+  exist in the cardano-ledger repo, but we need them for the genesis case in the
+  demo.
+  -------------------------------------------------------------------------------}
+
+annotateBoundary :: Crypto.ProtocolMagicId
+                 -> CC.Block.BoundaryValidationData ()
+                 -> CC.Block.BoundaryValidationData ByteString
+annotateBoundary pm =
+      (\bs -> splice bs (CBOR.deserialiseFromBytes
+                           CC.Block.dropBoundaryBlock
+                           bs))
+    . CBOR.toLazyByteString
+    . CC.Block.toCBORBoundaryBlock pm
+  where
+    splice :: Show err
+           => Lazy.ByteString
+           -> Either err (Lazy.ByteString, CC.Block.BoundaryValidationData ByteSpan)
+           -> CC.Block.BoundaryValidationData ByteString
+    splice _ (Left err) =
+      error $ "annotateBoundary: serialization roundtrip failure: " <> show err
+    splice bs (Right (_leftover, boundary)) =
+      (Lazy.toStrict . slice bs) <$> boundary
+
+fromCBORAHeaderOrBoundary
+  :: CC.Slot.EpochSlots 
+  -> Decoder s (Either (CC.Block.BoundaryValidationData ByteSpan) (CC.Block.AHeader ByteSpan))
+fromCBORAHeaderOrBoundary epochSlots = do
+  enforceSize "Block" 2
+  fromCBOR @Word >>= \case
+    0 -> Left <$> CC.Block.dropBoundaryBlock
+    1 -> Right <$> CC.Block.fromCBORAHeader epochSlots
+    t -> error $ "Unknown tag in encoded HeaderOrBoundary" <> show t
+
+toCBORAHeaderOrBoundary
+  :: Crypto.ProtocolMagicId
+  -> CC.Slot.EpochSlots 
+  -> (Either (CC.Block.BoundaryValidationData a) (CC.Block.AHeader a))
+  -> Encoding
+toCBORAHeaderOrBoundary pm epochSlots abob =
+  encodeListLen 2 <>
+  case abob of
+    Right mh -> toCBOR (1 :: Word) <> (CC.Block.toCBORHeader epochSlots . void $ mh)
+    Left ebb -> toCBOR (0 :: Word) <> (CC.Block.toCBORBoundaryBlock pm . void $ ebb)
+
+{-------------------------------------------------------------------------------
+  Mempool integration
+-------------------------------------------------------------------------------}
+
+instance (ByronGiven, Typeable cfg, ConfigContainsGenesis cfg)
+      => ApplyTx (ByronBlockOrEBB cfg) where
+  -- | Generalized transactions in Byron
+  --
+  -- TODO #514: This is still missing the other cases (this shouldn't be a
+  -- newtype)
+  data GenTx (ByronBlockOrEBB cfg) = ByronTx { unByronTx :: CC.UTxO.ATxAux ByteString }
+
+  data GenTxId (ByronBlockOrEBB cfg) = ByronTxId { unByronTxId :: CC.UTxO.TxId }
+
+  computeGenTxId = ByronTxId . Crypto.hash . CC.UTxO.taTx . unByronTx
+
+  txSize (ByronTx atxaux) = fromIntegral txByteSize
+    where
+      -- TODO cardano-ledger#576 will provide a function for this
+      txByteSize = 1 -- To account for @encodeListLen 2@
+                 + (Strict.length . annotation . CC.UTxO.aTaTx      $ atxaux)
+                 + (Strict.length . annotation . CC.UTxO.aTaWitness $ atxaux)
+
+  type ApplyTxErr (ByronBlockOrEBB cfg) = CC.UTxO.UTxOValidationError
+
+  applyTx   = applyByronGenTx False
+  reapplyTx = applyByronGenTx True
+
+  -- TODO #440: We need explicit support for this from the ledger
+  -- (though during testing we might still want to actually verify that we
+  -- didn't get any errors)
+  reapplyTxSameState cfg tx st =
+    case runExcept (applyByronGenTx True cfg tx st) of
+      Left  err -> error $ "unexpected error: " <> show err
+      Right st' -> st'
+
+applyByronGenTx :: Bool -- ^ Have we verified this transaction previously?
+                -> LedgerConfig (ByronBlockOrEBB cfg)
+                -> GenTx (ByronBlockOrEBB cfg)
+                -> LedgerState (ByronBlockOrEBB cfg)
+                -> Except CC.UTxO.UTxOValidationError
+                          (LedgerState (ByronBlockOrEBB cfg))
+applyByronGenTx _reapply (ByronEBBLedgerConfig (ByronLedgerConfig cfg)) genTx (ByronEBBLedgerState st@ByronLedgerState{..}) =
+    (\x -> ByronEBBLedgerState $ st { blsCurrent = x }) <$> go genTx blsCurrent
+  where
+    validationMode = fromBlockValidationMode CC.Block.BlockValidation
+    go :: GenTx (ByronBlockOrEBB cfg)
+       -> CC.Block.ChainValidationState
+       -> Except CC.UTxO.UTxOValidationError CC.Block.ChainValidationState
+    go (ByronTx tx) cvs = wrapCVS <$>
+        runReaderT (CC.UTxO.updateUTxO env utxo [tx]) validationMode
+      where
+        wrapCVS newUTxO = cvs { CC.Block.cvsUtxo = newUTxO }
+        protocolMagic = fixPM $ CC.Genesis.configProtocolMagic cfg
+        utxo = CC.Block.cvsUtxo cvs
+        updateState = CC.Block.cvsUpdateState cvs
+        env = CC.UTxO.Environment
+          { CC.UTxO.protocolMagic = protocolMagic
+          , CC.UTxO.protocolParameters = CC.UPI.adoptedProtocolParameters updateState
+          }
+        fixPM (Crypto.AProtocolMagic a b) = Crypto.AProtocolMagic (reAnnotate a) b
+
+{-------------------------------------------------------------------------------
+  PBFT integration
+-------------------------------------------------------------------------------}
+
+instance (ByronGiven, Typeable cfg, ConfigContainsGenesis cfg)
+      => ProtocolLedgerView (ByronBlockOrEBB cfg) where
+  protocolLedgerView _ns (ByronEBBLedgerState (ByronLedgerState ls _))
+    = PBftLedgerView
+    . CC.Delegation.unMap
+    . V.Interface.delegationMap
+    . CC.Block.cvsDelegationState
+    $ ls
+
+  -- There are two cases here:
+  --
+  -- - The view we want is in the past. In this case, we attempt to find a
+  --   snapshot which contains the relevant slot, and extract the delegation
+  --   map from that.
+  --
+  -- - The view we want is in the future. In this case, we need to check the
+  --   upcoming delegations to see what new delegations will be made in the
+  --   future, and update the current delegation map based on that.
+  anachronisticProtocolLedgerView
+    (WithEBBNodeConfig cfg)
+    (ByronEBBLedgerState (ByronLedgerState ls ss)) slot =
+      case find (containsSlot slot) ss of
+        -- We can find a snapshot which supports this slot
+        Just sb -> Just
+                 $  PBftLedgerView
+                 .  CC.Delegation.unMap
+                 .  V.Interface.delegationMap
+                 .  CC.Block.cvsDelegationState
+                <$> sb
+        -- No snapshot - we could be in the past or in the future
+        Nothing
+          | slot >= lvLB && slot <= lvUB
+          -> Just $ PBftLedgerView <$>
+             case Seq.takeWhileL
+                    (\sd -> convertSlot (V.Scheduling.sdSlot sd) <= slot)
+                    dsScheduled of
+                -- No updates to apply. So the current ledger state is valid
+                -- from the end of the last snapshot to the first scheduled
+                -- update.
+               Seq.Empty              -> SB.bounded lb ub dsNow
+               toApply@(_ Seq.:|> la) ->
+                 SB.bounded lb (convertSlot . V.Scheduling.sdSlot $ la) $
+                 foldl'
+                   (\acc x -> Bimap.insert (V.Scheduling.sdDelegator x)
+                                           (V.Scheduling.sdDelegate x)
+                                           acc)
+                   dsNow toApply
+          | otherwise
+          -> Nothing
+    where
+      lb = case ss of
+        _ Seq.:|> s -> max lvLB (sbUpper s)
+        Seq.Empty   -> lvLB
+      ub = case dsScheduled of
+        s Seq.:<| _ -> min lvUB (convertSlot $ V.Scheduling.sdSlot s)
+        Seq.Empty   -> lvUB
+
+      SecurityParam paramK = pbftSecurityParam . pbftParams . encNodeConfigP $ cfg
+
+      lvUB = SlotNo $ unSlotNo currentSlot + (2 * paramK)
+      lvLB
+        | 2 * paramK > unSlotNo currentSlot
+        = genesisSlotNo
+        | otherwise
+        = SlotNo $ unSlotNo currentSlot - (2 * paramK)
+
+      dsNow = CC.Delegation.unMap
+            . V.Interface.delegationMap
+            . CC.Block.cvsDelegationState
+            $ ls
+      dsScheduled = V.Scheduling.scheduledDelegations
+                  . V.Interface.schedulingState
+                  . CC.Block.cvsDelegationState
+                  $ ls
+      currentSlot = convertSlot $ CC.Block.cvsLastSlot ls
+      containsSlot s sb = sbLower sb <= s && sbUpper sb >= s

@@ -63,7 +63,6 @@ import           Ouroboros.Storage.ChainDB.Impl.Types
 import           Ouroboros.Storage.ChainDB.Impl.VolDB (VolDB)
 import qualified Ouroboros.Storage.ChainDB.Impl.VolDB as VolDB
 
-
 -- | Perform the initial chain selection based on the tip of the ImmutableDB
 -- and the contents of the VolatileDB.
 --
@@ -219,7 +218,7 @@ addBlock cdb@CDB{..} b = do
     -- We follow the steps from section "## Adding a block" in ChainDB.md
 
     -- ### Ignore
-    unless (blockNo b <= immBlockNo ||
+    unless ((blockNo b <= immBlockNo && blockNo b /= 0) ||
             isMember (blockHash b)  ||
             Set.member (blockPoint b) invalid) $ do
 

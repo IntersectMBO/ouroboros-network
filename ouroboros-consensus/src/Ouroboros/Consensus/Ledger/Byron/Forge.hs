@@ -4,6 +4,7 @@
 
 module Ouroboros.Consensus.Ledger.Byron.Forge (
     forgeBlock
+  , forgeBlockOrEBB
   ) where
 
 import           Control.Monad (void)
@@ -32,8 +33,59 @@ import           Ouroboros.Consensus.Ledger.Byron
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.ExtNodeConfig
 import           Ouroboros.Consensus.Protocol.PBFT
+import           Ouroboros.Consensus.Protocol.WithEBBs
 
 import           Ouroboros.Consensus.Ledger.Byron.Config
+
+forgeBlockOrEBB
+  :: forall m cfg.
+     ( HasNodeState_ () m  -- @()@ is the @NodeState@ of PBFT
+     , MonadRandom m
+       -- TODO: This 'Given' constraint should not be needed (present in config)
+     , Given Crypto.ProtocolMagicId
+     )
+  => NodeConfig ByronEBBExtNodeConfig
+  -> SlotNo                       -- ^ Current slot
+  -> BlockNo                      -- ^ Current block number
+  -> ChainHash (ByronBlockOrEBB cfg)   -- ^ Previous hash
+  -> [GenTx (ByronBlockOrEBB cfg)]     -- ^ Txs to add in the block
+  -> ()                           -- ^ Leader proof ('IsLeader')
+  -> m (ByronBlockOrEBB ByronConfig)
+forgeBlockOrEBB cfg curSlot curNo prevHash txs () = case prevHash of
+  GenesisHash -> forgeGenesisEBB cfg curSlot
+  BlockHash _ -> forgeBlock cfg curSlot curNo prevHash txs ()
+
+forgeGenesisEBB
+  :: forall m.
+     ( HasNodeState_ () m  -- @()@ is the @NodeState@ of PBFT
+     , MonadRandom m
+       -- TODO: This 'Given' constraint should not be needed (present in config)
+     , Given Crypto.ProtocolMagicId
+     )
+  => NodeConfig ByronEBBExtNodeConfig
+  -> SlotNo
+  -> m (ByronBlockOrEBB ByronConfig)
+forgeGenesisEBB (WithEBBNodeConfig cfg) curSlot = do
+    return
+      . ByronBlockOrEBB
+      . CC.Block.ABOBBoundary
+      . annotateBoundary given
+      $ boundaryData
+  where
+    boundaryData = CC.Block.BoundaryValidationData
+                   boundaryLength
+                   (Left pbftGenesisHash)
+                   epoch
+                   (CC.Common.ChainDifficulty 0)
+                   ()
+    boundaryLength = 0 -- Since this is a demo and we ignore the length, set this
+                       -- to 0
+    ByronConfig { pbftGenesisHash
+                    , pbftEpochSlots
+                    } = encNodeConfigExt cfg
+    CC.Slot.EpochNumber epoch = CC.Slot.epochNo
+                                . CC.Slot.fromSlotNumber pbftEpochSlots
+                                $ coerce curSlot
 
 forgeBlock
   :: forall m cfg.
@@ -42,14 +94,14 @@ forgeBlock
        -- TODO: This 'Given' constraint should not be needed (present in config)
      , Given Crypto.ProtocolMagicId
      )
-  => NodeConfig ByronExtNodeConfig
+  => NodeConfig ByronEBBExtNodeConfig
   -> SlotNo                       -- ^ Current slot
   -> BlockNo                      -- ^ Current block number
-  -> ChainHash (ByronBlock cfg)   -- ^ Previous hash
-  -> [GenTx (ByronBlock cfg)]     -- ^ Txs to add in the block
+  -> ChainHash (ByronBlockOrEBB cfg)   -- ^ Previous hash
+  -> [GenTx (ByronBlockOrEBB cfg)]     -- ^ Txs to add in the block
   -> ()                           -- ^ Leader proof ('IsLeader')
-  -> m (ByronBlock ByronConfig)
-forgeBlock cfg curSlot curNo prevHash txs () = do
+  -> m (ByronBlockOrEBB ByronConfig)
+forgeBlock (WithEBBNodeConfig cfg) curSlot curNo prevHash txs () = do
     ouroborosPayload <- give (VerKeyCardanoDSIGN headerGenesisKey)
       $ forgePBftFields (encNodeConfigP cfg) toCBOR toSign
     return $ forge ouroborosPayload
@@ -112,9 +164,9 @@ forgeBlock cfg curSlot curNo prevHash txs () = do
                       $ Map.elems dlgMap
 
     forge :: PBftFields PBftCardanoCrypto CC.Block.ToSign
-          -> ByronBlock ByronConfig
+          -> ByronBlockOrEBB ByronConfig
     forge ouroborosPayload =
-        annotateByronBlock pbftEpochSlots block
+       annotateByronBlock pbftEpochSlots block
       where
         block :: CC.Block.Block
         block = CC.Block.ABlock {

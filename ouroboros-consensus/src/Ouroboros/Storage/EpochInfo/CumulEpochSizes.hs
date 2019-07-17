@@ -23,6 +23,7 @@ import           Data.Sequence (Seq (..))
 import qualified Data.Sequence as Seq
 
 import           GHC.Generics (Generic)
+import           GHC.Stack
 
 import           Ouroboros.Network.Block (SlotNo (..))
 
@@ -79,7 +80,7 @@ lastEpoch (CES ces) = fromIntegral (Seq.length ces) - 1
 
 -- | \( O(1) \). Return the last slot that a blob could be stored at, i.e. the
 -- slot corresponding to the last relative slot of the last epoch.
-maxSlot :: CumulEpochSizes -> SlotNo
+maxSlot :: HasCallStack => CumulEpochSizes -> SlotNo
 maxSlot (CES Empty)          = error "Impossible: empty CumulEpochSizes"
 maxSlot (CES (_ :|> lastEs)) = coerce $ pred lastEs
 

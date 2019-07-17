@@ -10,12 +10,9 @@ module Ouroboros.Consensus.Demo (
   , runDemo
   ) where
 
-import           Data.Coerce
 import           Data.Reflection (give)
 
-import qualified Cardano.Chain.Block as Cardano.Block
 import qualified Cardano.Chain.Genesis as Cardano.Genesis
-import qualified Cardano.Crypto as Cardano
 
 import           Ouroboros.Consensus.Demo.Run
 import           Ouroboros.Consensus.Protocol
@@ -59,5 +56,4 @@ runDemo ProtocolLeaderSchedule{} = Dict
 runDemo ProtocolMockPBFT{}       = Dict
 runDemo ProtocolRealPBFT{}       = give (Dummy.dummyEpochSlots)
                                  $ give (Cardano.Genesis.gdProtocolMagicId Dummy.dummyGenesisData)
-                                 $ give (coerce @_ @Cardano.Block.HeaderHash Dummy.dummyGenesisHash)
                                  $ Dict

@@ -76,6 +76,7 @@ import           Codec.CBOR.Encoding (encodeListLen)
 import           Codec.Serialise (Serialise (..))
 import           Control.Exception (assert)
 import qualified Data.List as L
+import           GHC.Stack
 
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.Point (origin)
@@ -116,11 +117,16 @@ valid :: HasHeader block => Chain block -> Bool
 valid Genesis  = True
 valid (c :> b) = valid c && validExtension c b
 
-validExtension ::  HasHeader block => Chain block -> block -> Bool
+validExtension 
+  :: (HasCallStack, HasHeader block) 
+  => Chain block -> block -> Bool
 validExtension c b = blockInvariant b
                   && headHash c == blockPrevHash b
                   && headSlot c <  blockSlot b
-                  && headBlockNo c == pred (blockNo b)
+                  -- TODO This is a hack which should be addressed through 'WithOrigin'
+                  -- The empty chain has block number 0, but this is also the block
+                  -- number of the genesis block.
+                  && (headBlockNo c == 0 || succ (headBlockNo c) == blockNo b)
 
 head :: Chain b -> Maybe b
 head Genesis  = Nothing
@@ -175,7 +181,7 @@ null :: Chain block -> Bool
 null Genesis = True
 null _       = False
 
-addBlock :: HasHeader block => block -> Chain block -> Chain block
+addBlock :: (HasCallStack, HasHeader block) => block -> Chain block -> Chain block
 addBlock b c = assert (validExtension c b) $
                c :> b
 

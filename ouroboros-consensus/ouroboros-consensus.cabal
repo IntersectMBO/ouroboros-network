@@ -77,6 +77,7 @@ library
                        Ouroboros.Consensus.Protocol.PBFT
                        Ouroboros.Consensus.Protocol.Praos
                        Ouroboros.Consensus.Protocol.Signed
+                       Ouroboros.Consensus.Protocol.WithEBBs
                        Ouroboros.Consensus.TxSubmission
                        Ouroboros.Consensus.Util
                        Ouroboros.Consensus.Util.AnchoredFragment

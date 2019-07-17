@@ -227,7 +227,10 @@ isValidSuccessorOf' bSucc b
       , ") at "
       , prettyCallStack callStack
       ]
-  | pointSlot p >= blockSlot bSucc
+    -- Note that this inequality would be loose, but for epoch
+    -- boundary blocks, which occupy the same slot as a regular
+    -- block.
+  | pointSlot p > blockSlot bSucc
   = Left $ concat [
         "Slot of tip ("
       , show (pointSlot p)
@@ -235,7 +238,7 @@ isValidSuccessorOf' bSucc b
       , show (blockSlot bSucc)
       , ")"
       ]
-  | blockNo b /= pred (blockNo bSucc)
+  | succ (blockNo b) /= blockNo bSucc
   = Left $ concat [
         "BlockNo ("
       , show (blockNo bSucc)

@@ -20,11 +20,10 @@ module Ouroboros.Consensus.Crypto.DSIGN.Cardano
 
 import           Cardano.Binary
 import qualified Cardano.Chain.Block as CC.Block
-import qualified Cardano.Chain.Delegation as CC.Delegation
 import qualified Cardano.Chain.UTxO as CC.UTxO
-import           Cardano.Crypto (ProtocolMagicId, SignTag (..), Signature,
-                     SigningKey, VerificationKey, keyGen, signEncoded,
-                     toVerification, verifySignature)
+import           Cardano.Crypto (ProtocolMagicId,
+                     SignTag (..), Signature, SigningKey, VerificationKey,
+                     keyGen, signEncoded, toVerification, verifySignature)
 import           Cardano.Crypto.DSIGN.Class
 import           Data.Coerce (coerce)
 import           Data.Constraint
@@ -65,9 +64,6 @@ instance Given (VerKeyDSIGN CardanoDSIGN) => HasSignTag CC.Block.ToSign where
 -- reconstruct the `HasSignTag` constraint using the relevant `Given` constraint.
 instance Given (VerKeyDSIGN CardanoDSIGN) :=> HasSignTag CC.Block.ToSign where
   ins = Sub Dict
-
-instance HasSignTag CC.Delegation.Certificate where
-  signTag = const SignCertificate
 
 data CardanoDSIGN
 

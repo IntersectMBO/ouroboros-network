@@ -37,6 +37,7 @@ import qualified Data.ByteString.Lazy as Lazy
 import           Data.Function (on)
 import           Data.Set (Set)
 import           Data.Typeable (Typeable)
+import           GHC.Stack
 
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
@@ -240,7 +241,7 @@ data ChainDB m blk = ChainDB {
 -------------------------------------------------------------------------------}
 
 toChain :: forall m blk.
-           (MonadThrow m, HasHeader blk, MonadSTM m)
+           (HasCallStack, MonadThrow m, HasHeader blk, MonadSTM m)
         => ChainDB m blk -> m (Chain blk)
 toChain chainDB = bracket
     (streamAll chainDB)
