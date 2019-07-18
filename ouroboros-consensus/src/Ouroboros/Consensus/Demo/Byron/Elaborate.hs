@@ -116,6 +116,8 @@ elaborateTx (WithEBBNodeConfig cfg) (Mock.Tx ins outs) =
     richmen =
         zip [0..] $
           CC.Genesis.gsRichSecrets $ pbftSecrets (encNodeConfigExt cfg)
+        --TODO: this is the only use of pbftSecrets, and it can be removed
+        --as soon as we no longer need tx elaboration.
 
     fromCompactTxInTxOutList :: [(CC.UTxO.CompactTxIn, CC.UTxO.CompactTxOut)]
                              -> [(CC.UTxO.TxIn, CC.UTxO.TxOut)]

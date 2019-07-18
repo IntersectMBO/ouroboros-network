@@ -69,6 +69,9 @@ protocolInfoByron (NumCoreNodes numCoreNodes) (CoreNodeId nid) params gc =
               , pbftEpochSlots      = Cardano.Genesis.configEpochSlots gc
               , pbftGenesisDlg      = Cardano.Genesis.configHeavyDelegation gc
               , pbftSecrets         = Dummy.dummyGeneratedSecrets
+                --TODO: These "richmen" secrets ^^ are here to support demos
+                -- where we need to elaborate from mock transactions to real
+                -- ones. It should be removed when we can eliminate elaboration.
               }
           }
       , pInfoInitLedger = ExtLedgerState {
