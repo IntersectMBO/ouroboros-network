@@ -12,7 +12,6 @@ module Ouroboros.Consensus.Node.ProtocolInfo.Byron (
   ) where
 
 import           Control.Monad.Except
-import qualified Data.Bimap as Bimap
 import           Data.Coerce
 import           Data.Maybe (fromJust)
 import qualified Data.Sequence as Seq
@@ -62,11 +61,7 @@ protocolInfoByron (NumCoreNodes numCoreNodes) (CoreNodeId nid) params gc =
                 , pbftGenVerKey = VerKeyCardanoDSIGN (lookupGenKey nid)
                 }
           , encNodeConfigExt = ByronConfig {
-                pbftCoreNodes = Bimap.fromList [
-                    (fst (lookupKey n), CoreNodeId n)
-                    | n <- [0 .. numCoreNodes]
-                    ]
-              , pbftProtocolMagic   = Cardano.Genesis.configProtocolMagic gc
+                pbftProtocolMagic   = Cardano.Genesis.configProtocolMagic gc
               , pbftProtocolVersion = Cardano.Update.ProtocolVersion 1 0 0
               , pbftSoftwareVersion = Cardano.Update.SoftwareVersion (Cardano.Update.ApplicationName "Cardano Demo") 1
               , pbftGenesisConfig   = gc
