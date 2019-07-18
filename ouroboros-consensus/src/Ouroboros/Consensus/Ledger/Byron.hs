@@ -747,7 +747,7 @@ instance (ByronGiven, Typeable cfg, ConfigContainsGenesis cfg)
   newtype GenTxId (ByronBlockOrEBB cfg) = ByronTxId { unByronTxId :: CC.UTxO.TxId }
     deriving (Eq, Ord)
 
-  computeGenTxId = ByronTxId . Crypto.hash . CC.UTxO.taTx . unByronTx
+  txId = ByronTxId . Crypto.hash . CC.UTxO.taTx . unByronTx
 
   txSize (ByronTx atxaux) = fromIntegral txByteSize
     where

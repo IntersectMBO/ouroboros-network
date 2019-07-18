@@ -35,10 +35,10 @@ class (UpdateLedger blk, Ord (GenTxId blk)) => ApplyTx blk where
   -- | A generalized transaction, 'GenTx', identifier.
   data family GenTxId blk :: *
 
-  -- | Given a 'GenTx', compute its 'GenTxId'.
+  -- | Return the 'GenTxId' of a 'GenTx'.
   --
   -- Should be cheap as this will be called often.
-  computeGenTxId :: GenTx blk -> GenTxId blk
+  txId :: GenTx blk -> GenTxId blk
 
   -- | Return the post-serialization size in bytes of a 'GenTx'.
   txSize :: GenTx blk -> TxSizeInBytes

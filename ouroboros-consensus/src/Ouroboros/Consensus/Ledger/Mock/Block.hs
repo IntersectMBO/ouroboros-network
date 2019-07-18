@@ -244,7 +244,7 @@ instance (SimpleCrypto c, Typeable ext, SupportedBlock (SimpleBlock c ext))
     { simpleGenTxId :: TxId
     } deriving (Show, Eq, Ord)
 
-  computeGenTxId = SimpleGenTxId . hash . simpleGenTx
+  txId = SimpleGenTxId . hash . simpleGenTx
 
   txSize _ = 2000  -- TODO #745
 

@@ -85,7 +85,7 @@ prop_Mempool_addTxs_getTxs bc txs =
         txs
         (\_ MempoolSnapshot{snapshotTxs} ->
           filter (genTxIsValid . snd) (testTxsToGenTxPairs txs)
-              === map (\(tx, _) -> (computeGenTxId tx, tx)) snapshotTxs)
+              === map (\(tx, _) -> (txId tx, tx)) snapshotTxs)
   where
     genTxIsValid :: GenTx TestBlock -> Bool
     genTxIsValid (TestGenTx (ValidTestTx _)) = True
@@ -172,7 +172,7 @@ testTxsToGenTxPairs :: [TestTx] -> [(GenTxId TestBlock, GenTx TestBlock)]
 testTxsToGenTxPairs = map testTxToGenTxPair
 
 testTxToGenTxPair :: TestTx -> (GenTxId TestBlock, GenTx TestBlock)
-testTxToGenTxPair tx = (computeGenTxId genTx, genTx)
+testTxToGenTxPair tx = (txId genTx, genTx)
   where
     genTx = TestGenTx tx
 
