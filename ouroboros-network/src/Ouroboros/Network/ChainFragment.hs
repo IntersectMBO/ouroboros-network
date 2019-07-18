@@ -262,8 +262,6 @@ validExtension' :: (HasHeader block, HasCallStack)
 validExtension' c bSucc
   | not (blockInvariant bSucc)
   = Left $ "blockInvariant failed for bSucc"
-  | blockSlot bSucc == SlotNo 0
-  = Left $ "blockSlot was 0"
   | otherwise
   = case head c of
       Nothing -> Right ()
