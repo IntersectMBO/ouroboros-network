@@ -46,6 +46,8 @@ module Ouroboros.Consensus.Ledger.Byron
   , pattern ByronHeaderOrEBB
   , unByronHeaderOrEBB
   , annotateBoundary
+    -- * Secrets
+  , StaticKeyMaterialByronPbft (..)
   ) where
 
 import           Codec.CBOR.Decoding (Decoder, decodeListLenOf)
@@ -164,6 +166,15 @@ instance (ByronGiven, Typeable cfg) => Measured BlockMeasure (ByronBlock cfg) wh
   measure = blockMeasure
 
 instance StandardHash (ByronBlock cfg)
+
+{-------------------------------------------------------------------------------
+  Key material
+-------------------------------------------------------------------------------}
+
+data StaticKeyMaterialByronPbft = StaticKeyMaterialByronPbft {
+      skmbpSignKey     :: Crypto.SigningKey
+    , skmbpDlgCert     :: CC.Delegation.Certificate
+    }
 
 {-------------------------------------------------------------------------------
   Ledger

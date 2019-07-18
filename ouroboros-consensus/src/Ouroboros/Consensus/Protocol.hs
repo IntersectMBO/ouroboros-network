@@ -79,6 +79,7 @@ data Protocol blk where
   ProtocolRealPBFT
     :: PBftParams
     -> Cardano.Genesis.Config
+    -> StaticKeyMaterialByronPbft
     -> Protocol (ByronBlockOrEBB ByronConfig)
 
 {-------------------------------------------------------------------------------
