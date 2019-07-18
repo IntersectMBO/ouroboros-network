@@ -16,6 +16,7 @@ in pkgs // {
     ];
     buildInputs = with pkgs.nix-tools._raw; [
       cabal-install.components.exes.cabal
+      ghcid.components.exes.ghcid
       commonLib.stack-hpc-coveralls
     ] ++ (with commonLib.pkgs; [
       git
