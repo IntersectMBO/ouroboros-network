@@ -84,7 +84,7 @@ instance Protocol (BlockFetch block) where
 
 instance (Show block, StandardHash block)
       => Show (Message (BlockFetch block) from to) where
-  show (MsgRequestRange range) = "MsgRequestRange" ++ show range
+  show (MsgRequestRange range) = "MsgRequestRange " ++ show range
   show MsgStartBatch           = "MsgStartBatch"
   show (MsgBlock block)        = "MsgBlock " ++ show block
   show MsgNoBlocks             = "MsgNoBlocks"
