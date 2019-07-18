@@ -9,6 +9,7 @@
 {-# LANGUAGE TypeApplications      #-}
 {-# LANGUAGE TypeFamilies          #-}
 {-# LANGUAGE UndecidableInstances  #-}
+{-# LANGUAGE PatternSynonyms       #-}
 
 {-# OPTIONS_GHC -Wredundant-constraints -Wno-orphans #-}
 
@@ -42,6 +43,8 @@ module Ouroboros.Consensus.Ledger.Byron
   , decodeByronChainState
     -- * EBBs
   , ByronBlockOrEBB (..)
+  , pattern ByronHeaderOrEBB
+  , unByronHeaderOrEBB
   , annotateBoundary
   ) where
 
