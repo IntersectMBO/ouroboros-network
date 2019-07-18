@@ -31,9 +31,9 @@ import           Test.Tasty.QuickCheck (testProperty)
 
 import           Network.TypedProtocol.Core
 
-import           Ouroboros.Network.Chain (Chain, ChainUpdate, Point)
-import qualified Ouroboros.Network.Chain as Chain
-import qualified Ouroboros.Network.ChainProducerState as CPS
+import           Ouroboros.Network.MockChain.Chain (Chain, ChainUpdate, Point)
+import qualified Ouroboros.Network.MockChain.Chain as Chain
+import qualified Ouroboros.Network.MockChain.ProducerState as CPS
 import qualified Ouroboros.Network.Protocol.ChainSync.Type     as ChainSync
 import qualified Ouroboros.Network.Protocol.ChainSync.Client   as ChainSync
 import qualified Ouroboros.Network.Protocol.ChainSync.Codec    as ChainSync

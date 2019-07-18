@@ -2,13 +2,12 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies        #-}
 
-module Ouroboros.Network.ChainProducerState where
+module Ouroboros.Network.MockChain.ProducerState where
 
-import           Ouroboros.Network.Block (castPoint, pointSlot)
-import           Ouroboros.Network.Chain (Chain, ChainUpdate (..), HasHeader,
-                     HeaderHash, Point (..), blockPoint, genesisPoint,
-                     pointOnChain)
-import qualified Ouroboros.Network.Chain as Chain
+import           Ouroboros.Network.Block (castPoint, genesisPoint, pointSlot)
+import           Ouroboros.Network.MockChain.Chain (Chain, ChainUpdate (..), HasHeader,
+                     HeaderHash, Point (..), blockPoint, pointOnChain)
+import qualified Ouroboros.Network.MockChain.Chain as Chain
 
 import           Control.Exception (assert)
 import           Data.Map (Map)

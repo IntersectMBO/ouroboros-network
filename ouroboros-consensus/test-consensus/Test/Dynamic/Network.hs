@@ -39,7 +39,7 @@ import           Network.TypedProtocol.Codec (AnyMessage (..))
 import           Network.TypedProtocol.Channel
 
 import           Ouroboros.Network.Block
-import           Ouroboros.Network.Chain
+import           Ouroboros.Network.MockChain.Chain
 
 import           Ouroboros.Network.Protocol.BlockFetch.Type
 import           Ouroboros.Network.Protocol.ChainSync.Type

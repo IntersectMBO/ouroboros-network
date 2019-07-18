@@ -14,8 +14,8 @@ import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTimer
 import           Control.Monad.IOSim
 
-import           Ouroboros.Network.Chain (Chain (..), ChainUpdate)
-import qualified Ouroboros.Network.Chain as Chain
+import           Ouroboros.Network.MockChain.Chain (Chain (..), ChainUpdate)
+import qualified Ouroboros.Network.MockChain.Chain as Chain
 
 import           Ouroboros.Storage.ChainDB.API (ChainDB)
 import qualified Ouroboros.Storage.ChainDB.API as ChainDB

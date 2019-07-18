@@ -3,11 +3,10 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving  #-}
 {-# LANGUAGE TypeApplications    #-}
-{-# LANGUAGE PatternSynonyms     #-}
 
 -- | Reference implementation of a representation of a block chain
 --
-module Ouroboros.Network.Chain (
+module Ouroboros.Network.MockChain.Chain (
   -- * Chain type and fundamental operations
   Chain(..),
   valid,
@@ -26,9 +25,6 @@ module Ouroboros.Network.Chain (
   -- * Chain construction and inspection
   -- ** Genesis
   genesis,
-  genesisPoint,
---  genesisHash, -- TODO: currently (temporarily) exported by HasHeader
-  genesisBlockNo,
 
   -- ** Head inspection
   headPoint,
@@ -65,6 +61,15 @@ module Ouroboros.Network.Chain (
   intersectChains,
   isPrefixOf,
 
+  -- * Conversion to/from ChainFragment
+  toChainFragment,
+  fromChainFragment,
+  unvalidatedToChainFragment,
+
+  -- * Conversion to/from AnchoredFragment
+  fromAnchoredFragment,
+  toAnchoredFragment,
+
   -- * Helper functions
   prettyPrintChain
   ) where
@@ -75,11 +80,14 @@ import           Codec.CBOR.Decoding (decodeListLen)
 import           Codec.CBOR.Encoding (encodeListLen)
 import           Codec.Serialise (Serialise (..))
 import           Control.Exception (assert)
+import qualified Data.FingerTree as FT
 import qualified Data.List as L
 import           GHC.Stack
 
+import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block
-import           Ouroboros.Network.Point (WithOrigin (At), origin)
+import qualified Ouroboros.Network.ChainFragment as CF
+import           Ouroboros.Network.Point (WithOrigin(..))
 
 --
 -- Blockchain type
@@ -103,12 +111,6 @@ prettyPrintChain nl ppBlock = foldChain (\s b -> s ++ nl ++ "    " ++ ppBlock b)
 
 genesis :: Chain b
 genesis = Genesis
-
-genesisBlockNo :: BlockNo
-genesisBlockNo = BlockNo 0
-
-genesisPoint :: Point block
-genesisPoint = Point origin
 
 valid :: HasHeader block => Chain block -> Bool
 valid Genesis  = True
@@ -312,7 +314,39 @@ intersectChains c (bs :> b) =
        then Just p
        else intersectChains c bs
 
+-- * Conversions to/from 'ChainFrament'
 
+-- | Convert a 'ChainFragment' to a 'Chain'.
+fromChainFragment :: HasHeader block => CF.ChainFragment block -> Chain block
+fromChainFragment = fromNewestFirst . CF.toNewestFirst
+
+-- | Convert a 'Chain' to a 'ChainFragment'.
+toChainFragment :: HasHeader block => Chain block -> CF.ChainFragment block
+toChainFragment = CF.fromNewestFirst . toNewestFirst
+
+-- | Variant of 'toChainFragment' that assumes a valid chain and will not validate
+-- the constructed 'ChainFragment'.
+unvalidatedToChainFragment :: HasHeader block => Chain block -> CF.ChainFragment block
+unvalidatedToChainFragment = unvalidatedFromNewestFirst . toNewestFirst
+  where
+    unvalidatedFromNewestFirst = CF.ChainFragment . foldr (flip (FT.|>)) FT.empty
+
+-- | Convert a 'Chain' to an 'AnchoredFragment'.
+--
+-- The anchor of the fragment will be 'Chain.genesisPoint'.
+toAnchoredFragment :: HasHeader block => Chain block -> AF.AnchoredFragment block
+toAnchoredFragment = AF.mkAnchoredFragment genesisPoint . unvalidatedToChainFragment
+
+-- | Convert an 'AnchoredFragment' to a 'Chain'.
+--
+-- The anchor of the fragment must be 'Chain.genesisPoint', otherwise
+-- 'Nothing' is returned.
+fromAnchoredFragment :: HasHeader block => AF.AnchoredFragment block -> Maybe (Chain block)
+fromAnchoredFragment af
+    | AF.anchorPoint af == genesisPoint
+    = Just $ fromNewestFirst $ AF.toNewestFirst af
+    | otherwise
+    = Nothing
 
 --
 -- Serialisation

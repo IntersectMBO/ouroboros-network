@@ -39,8 +39,7 @@ import           Control.Monad.Class.MonadTimer
 import           Control.Tracer
 
 import qualified Ouroboros.Network.AnchoredFragment as AF
-import           Ouroboros.Network.Block (blockNo, castPoint)
-import           Ouroboros.Network.Chain (genesisBlockNo)
+import           Ouroboros.Network.Block (blockNo, castPoint, genesisBlockNo)
 
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Protocol.Abstract

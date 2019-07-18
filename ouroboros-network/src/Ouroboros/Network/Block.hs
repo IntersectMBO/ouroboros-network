@@ -28,6 +28,9 @@ module Ouroboros.Network.Block (
   , ChainUpdate(..)
   , BlockMeasure(..)
   , blockMeasure
+  , genesisPoint
+  , genesisSlotNo
+  , genesisBlockNo
     -- * Serialisation
   , encodePoint
   , encodeChainHash
@@ -62,6 +65,15 @@ newtype SlotNo = SlotNo { unSlotNo :: Word64 }
 -- for every slot where N <= SlotNo.
 newtype BlockNo = BlockNo { unBlockNo :: Word64 }
   deriving (Show, Eq, Ord, Enum, Bounded, Num, Serialise, Generic)
+
+genesisSlotNo :: SlotNo
+genesisSlotNo = SlotNo 0
+
+genesisBlockNo :: BlockNo
+genesisBlockNo = BlockNo 0
+
+genesisPoint :: Point block
+genesisPoint = Point origin
 
 -- | Header hash
 type family HeaderHash b :: *

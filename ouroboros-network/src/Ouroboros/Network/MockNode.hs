@@ -40,10 +40,12 @@ import           Network.TypedProtocol.Codec.Cbor
 import           Network.Mux.Time
 
 import           Ouroboros.Network.Block
-import           Ouroboros.Network.Chain (Chain (..), Point)
-import qualified Ouroboros.Network.Chain as Chain
+
+-- TODO Should this be impored here
+import           Ouroboros.Network.MockChain.Chain (Chain (..), Point)
+import qualified Ouroboros.Network.MockChain.Chain as Chain
 import           Ouroboros.Network.Point (WithOrigin (At))
-import           Ouroboros.Network.ChainProducerState (ChainProducerState (..),
+import           Ouroboros.Network.MockChain.ProducerState (ChainProducerState (..),
                                                        initChainProducerState,
                                                        producerChain,
                                                        switchFork)
@@ -91,7 +93,7 @@ chainValidation :: forall block m. (HasHeader block, MonadSTM m)
                 -> TVar m (Maybe (Chain block))
                 -> m ()
 chainValidation peerChainVar candidateChainVar = do
-    st <- atomically (newTVar Chain.genesisPoint)
+    st <- atomically (newTVar genesisPoint)
     forever (atomically (update st))
   where
     update :: TVar m (Point block) -> STM m ()
@@ -211,7 +213,7 @@ observeChainProducerState
   -> TVar m (ChainProducerState block)
   -> m ()
 observeChainProducerState nid probe cpsVar = do
-    st <- atomically (newTVar Chain.genesisPoint)
+    st <- atomically (newTVar genesisPoint)
     forever (update st)
   where
     update :: TVar m (Point block) -> m ()

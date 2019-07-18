@@ -30,10 +30,8 @@ import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block (ChainUpdate (..), HasHeader,
                      HeaderHash, Point, SlotNo, blockPoint, castPoint,
-                     pointSlot)
-import           Ouroboros.Network.Chain (genesisPoint)
+                     genesisPoint, pointSlot)
 import           Ouroboros.Network.Point (WithOrigin (..))
-
 import           Ouroboros.Consensus.Block (GetHeader (..), headerPoint)
 import           Ouroboros.Consensus.Util.STM (blockUntilJust)
 

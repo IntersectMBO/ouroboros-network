@@ -25,7 +25,7 @@ import           Test.Tasty
 import           Test.Tasty.QuickCheck
 
 import           Ouroboros.Network.Block (SlotNo (..))
-import           Ouroboros.Network.Chain (Chain)
+import           Ouroboros.Network.MockChain.Chain (Chain)
 
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Demo

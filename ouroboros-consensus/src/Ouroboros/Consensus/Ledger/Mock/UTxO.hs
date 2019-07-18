@@ -36,7 +36,7 @@ import           GHC.Generics (Generic)
 import           Cardano.Binary (ToCBOR(..))
 import           Cardano.Crypto.Hash
 
-import           Ouroboros.Network.Chain (Chain, toOldestFirst)
+import           Ouroboros.Network.MockChain.Chain (Chain, toOldestFirst)
 
 import           Ouroboros.Consensus.Util
 import           Ouroboros.Consensus.Util.Condense

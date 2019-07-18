@@ -5,7 +5,7 @@
 
 module Ouroboros.Network.ChainFragment (
   -- * ChainFragment type and fundamental operations
-  ChainFragment(Empty, (:>), (:<)),
+  ChainFragment(ChainFragment, Empty, (:>), (:<)),
   valid,
   validExtension,
   validExtension',
@@ -71,11 +71,6 @@ module Ouroboros.Network.ChainFragment (
   isPrefixOf,
   joinChainFragments,
 
-  -- * Conversion to/from Chain
-  toChain,
-  fromChain,
-  unvalidatedFromChain,
-
   -- * Helper functions
   prettyPrintChainFragment,
 
@@ -101,8 +96,6 @@ import           Codec.CBOR.Encoding (encodeListLen)
 import           Codec.CBOR.Decoding (decodeListLen)
 
 import           Ouroboros.Network.Block
-import           Ouroboros.Network.Chain (Chain)
-import qualified Ouroboros.Network.Chain as Chain
 import           Ouroboros.Network.Point (WithOrigin (At))
 
 --
@@ -770,21 +763,6 @@ joinChainFragments c1@(ChainFragment t1) c2@(ChainFragment t2) =
       (_ FT.:> b1, b2 FT.:< _) | b2 `isValidSuccessorOf` b1
                                -> Just (ChainFragment (t1 FT.>< t2))
       _                        -> Nothing
-
--- | Convert a 'ChainFragment' to a 'Chain'.
-toChain :: HasHeader block => ChainFragment block -> Chain block
-toChain = Chain.fromNewestFirst . toNewestFirst
-
--- | Convert a 'Chain' to a 'ChainFragment'.
-fromChain :: HasHeader block => Chain block -> ChainFragment block
-fromChain = fromNewestFirst . Chain.toNewestFirst
-
--- | Variant of 'fromChain' that assumes a valid chain and will not validate
--- the construct 'ChainFragment'.
-unvalidatedFromChain :: HasHeader block => Chain block -> ChainFragment block
-unvalidatedFromChain = unvalidatedFromNewestFirst . Chain.toNewestFirst
-  where
-    unvalidatedFromNewestFirst = ChainFragment . foldr (flip (FT.|>)) FT.empty
 
 --
 -- Serialisation

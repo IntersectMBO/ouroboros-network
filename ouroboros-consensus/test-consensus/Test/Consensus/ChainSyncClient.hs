@@ -33,11 +33,11 @@ import           Network.TypedProtocol.Channel
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block hiding (ChainUpdate)
-import           Ouroboros.Network.Chain (Chain (Genesis))
-import qualified Ouroboros.Network.Chain as Chain
-import           Ouroboros.Network.ChainProducerState (chainState,
+import           Ouroboros.Network.MockChain.Chain (Chain (Genesis))
+import qualified Ouroboros.Network.MockChain.Chain as Chain
+import           Ouroboros.Network.MockChain.ProducerState (chainState,
                      initChainProducerState)
-import qualified Ouroboros.Network.ChainProducerState as CPS
+import qualified Ouroboros.Network.MockChain.ProducerState as CPS
 import           Ouroboros.Network.Point (WithOrigin (..), blockPointHash,
                      blockPointSlot)
 import           Ouroboros.Network.Protocol.ChainSync.Client
@@ -116,7 +116,7 @@ prop_chainSync ChainSyncClientSetup {..} =
       runChainSync securityParam maxClockSkew clientUpdates serverUpdates
                    startSlot
 
-    clientFragment = AF.anchorNewest k $ AF.fromChain clientChain
+    clientFragment = AF.anchorNewest k $ Chain.toAnchoredFragment clientChain
 
 -- | Check whether the anchored fragment is a suffix of the chain.
 isSuffix :: AnchoredFragment TestBlock -> Chain TestBlock -> Property
@@ -132,7 +132,7 @@ isSuffix fragment chain =
 -- | Check whether the anchored fragment intersects with the chain.
 intersects :: AnchoredFragment TestBlock -> Chain TestBlock -> Bool
 intersects fragment chain =
-    isJust (AF.intersectionPoint fragment (AF.fromChain chain))
+    isJust (AF.intersectionPoint fragment (Chain.toAnchoredFragment chain))
 
 {-------------------------------------------------------------------------------
   Infastructure to run a Chain Sync test
@@ -231,7 +231,7 @@ runChainSync securityParam maxClockSkew (ClientUpdates clientUpdates)
 
     let getCurrentChain :: STM m (AnchoredFragment TestBlock)
         getCurrentChain =
-          AF.anchorNewest k . AF.fromChain . fst <$>
+          AF.anchorNewest k . Chain.toAnchoredFragment . fst <$>
           readTVar varClientState
         getLedgerState :: STM m (ExtLedgerState TestBlock)
         getLedgerState  = snd <$> readTVar varClientState
@@ -381,7 +381,7 @@ updateClientState cfg chain ledgerState chainUpdates =
       -- scratch
         | Just chain' <- Chain.applyChainUpdates chainUpdates chain
         -> let ledgerState' = runValidate $
-                 chainExtLedgerState cfg chain' testInitExtLedger
+                 foldExtLedgerState cfg (Chain.toOldestFirst chain') testInitExtLedger
            in (chain', ledgerState')
         | otherwise
         -> error "Client chain update failed"
@@ -646,7 +646,7 @@ ppPoint (Point (At blk)) =
     h        = blockPointHash blk
 
 ppChain :: Chain TestBlock -> String
-ppChain = ppBlocks Chain.genesisPoint . Chain.toOldestFirst
+ppChain = ppBlocks genesisPoint . Chain.toOldestFirst
 
 ppFragment :: AnchoredFragment TestBlock -> String
 ppFragment f = ppBlocks (AF.anchorPoint f) (AF.toOldestFirst f)

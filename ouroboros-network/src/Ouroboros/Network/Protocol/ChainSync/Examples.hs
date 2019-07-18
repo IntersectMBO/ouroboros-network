@@ -13,13 +13,13 @@ module Ouroboros.Network.Protocol.ChainSync.Examples (
 
 import           Control.Monad.Class.MonadSTM
 
-import           Ouroboros.Network.Block (HasHeader (..), HeaderHash, castPoint)
-import           Ouroboros.Network.Chain (Chain (..), ChainUpdate (..),
+import           Ouroboros.Network.Block (HasHeader (..), HeaderHash, castPoint, genesisPoint)
+import           Ouroboros.Network.MockChain.Chain (Chain (..), ChainUpdate (..),
                      Point (..))
-import qualified Ouroboros.Network.Chain as Chain
-import           Ouroboros.Network.ChainProducerState (ChainProducerState,
+import qualified Ouroboros.Network.MockChain.Chain as Chain
+import           Ouroboros.Network.MockChain.ProducerState (ChainProducerState,
                      ReaderId)
-import qualified Ouroboros.Network.ChainProducerState as ChainProducerState
+import qualified Ouroboros.Network.MockChain.ProducerState as ChainProducerState
 import           Ouroboros.Network.Protocol.ChainSync.Client
 import           Ouroboros.Network.Protocol.ChainSync.Server
 
@@ -180,7 +180,7 @@ chainSyncServerExample recvMsgDoneClient chainvar = ChainSyncServer $
     newReader :: m ReaderId
     newReader = atomically $ do
       cps <- readTVar chainvar
-      let (cps', rid) = ChainProducerState.initReader Chain.genesisPoint cps
+      let (cps', rid) = ChainProducerState.initReader genesisPoint cps
       writeTVar chainvar cps'
       return rid
 

@@ -65,13 +65,14 @@ import           Ouroboros.Network.Block (pattern BlockPoint, ChainHash (..),
                      pattern GenesisPoint, HasHeader, HeaderHash, Point,
                      SlotNo)
 import qualified Ouroboros.Network.Block as Block
-import           Ouroboros.Network.Chain (Chain (..), ChainUpdate)
-import qualified Ouroboros.Network.Chain as Chain
-import qualified Ouroboros.Network.ChainProducerState as CPS
+import           Ouroboros.Network.MockChain.Chain (Chain (..), ChainUpdate)
+import qualified Ouroboros.Network.MockChain.Chain as Chain
+import qualified Ouroboros.Network.MockChain.ProducerState as CPS
 
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Protocol.Abstract
+import           Ouroboros.Consensus.Protocol.MockChainSel
 import           Ouroboros.Consensus.Util (repeatedly)
 import qualified Ouroboros.Consensus.Util.AnchoredFragment as Fragment
 
@@ -132,7 +133,7 @@ tipBlock :: Model blk -> Maybe blk
 tipBlock = Chain.head . currentChain
 
 tipPoint :: HasHeader blk => Model blk -> Point blk
-tipPoint = maybe Chain.genesisPoint Block.blockPoint . tipBlock
+tipPoint = maybe Block.genesisPoint Block.blockPoint . tipBlock
 
 lastK :: HasHeader a
       => SecurityParam
@@ -141,7 +142,7 @@ lastK :: HasHeader a
       -> AnchoredFragment a
 lastK (SecurityParam k) f =
       Fragment.anchorNewest k
-    . Fragment.fromChain
+    . Chain.toAnchoredFragment
     . fmap f
     . currentChain
 
@@ -200,7 +201,7 @@ addBlock cfg blk m
     newChain  :: Chain blk
     newLedger :: ExtLedgerState blk
     (newChain, newLedger) = fromMaybe (currentChain m, currentLedger m) $
-                               selectChain cfg (currentChain m) candidates
+                              selectChain cfg (currentChain m) candidates
 
 addBlocks :: ProtocolLedgerView blk
           => NodeConfig (BlockProtocol blk) -> [blk] -> Model blk -> Model blk
@@ -262,7 +263,7 @@ checkIfReaderExists rdrId m a
 readBlocks :: HasHeader blk => Model blk -> (CPS.ReaderId, Model blk)
 readBlocks m = (rdrId, m { cps = cps' })
   where
-    (cps', rdrId) = CPS.initReader Chain.genesisPoint (cps m)
+    (cps', rdrId) = CPS.initReader Block.genesisPoint (cps m)
 
 readerInstruction :: forall blk. HasHeader blk
                   => CPS.ReaderId
@@ -402,11 +403,11 @@ between (SecurityParam k) from to m = do
       else Left $ ForkTooOld from
   where
     currentFrag :: AnchoredFragment blk
-    currentFrag = Fragment.fromChain (currentChain m)
+    currentFrag = Chain.toAnchoredFragment (currentChain m)
 
     -- A fragment for each possible chain in the database
     fragments :: [AnchoredFragment blk]
-    fragments = map Fragment.fromChain
+    fragments = map Chain.toAnchoredFragment
               . chains
               . blocks
               $ m

@@ -3,8 +3,8 @@
 -- | Utility functions on chains
 --
 -- Intended for qualified import
--- > import qualified Ouroboros.Consensus.Util.Chain as Chain
-module Ouroboros.Consensus.Util.Chain (
+-- > import qualified Test.Util.MockChain as Chain
+module Test.Util.MockChain (
     lastSlot
   , commonPrefix
   , dropLastBlocks
@@ -14,7 +14,7 @@ import           Data.Foldable (foldl')
 import           Data.Sequence (Seq (..))
 
 import           Ouroboros.Network.Block
-import           Ouroboros.Network.Chain
+import           Ouroboros.Network.MockChain.Chain
 
 {-------------------------------------------------------------------------------
   Utility functions on chains

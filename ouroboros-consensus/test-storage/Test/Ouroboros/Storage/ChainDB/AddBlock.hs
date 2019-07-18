@@ -20,8 +20,8 @@ import           Control.Monad.IOSim
 
 import           Control.Tracer
 
-import qualified Ouroboros.Network.AnchoredFragment as AF
-import           Ouroboros.Network.Chain (Chain)
+import           Ouroboros.Network.MockChain.Chain (Chain)
+import qualified Ouroboros.Network.MockChain.Chain as Chain
 
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
@@ -114,7 +114,7 @@ prop_addBlock_multiple_threads bpt =
 
     equallyPreferable :: Chain TestBlock -> Chain TestBlock -> Bool
     equallyPreferable chain1 chain2 =
-      compareCandidates cfg (AF.fromChain chain1) (AF.fromChain chain2) == EQ
+      compareCandidates cfg (Chain.toAnchoredFragment chain1) (Chain.toAnchoredFragment chain2) == EQ
 
     cfg :: NodeConfig (BlockProtocol TestBlock)
     cfg = singleNodeTestConfig

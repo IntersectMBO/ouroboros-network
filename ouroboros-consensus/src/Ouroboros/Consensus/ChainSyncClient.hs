@@ -31,7 +31,6 @@ import           Control.Monad.Class.MonadThrow
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment (..))
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block
-import           Ouroboros.Network.Chain (genesisPoint)
 import           Ouroboros.Network.Point (WithOrigin (..))
 import           Ouroboros.Network.Protocol.ChainSync.Client
 

@@ -33,7 +33,7 @@ import           Control.Exception (SomeException, AssertionFailed(..))
 --TODO: could re-export some of the trace types from more convenient places:
 import           Ouroboros.Network.Block
 import           Network.TypedProtocol.Driver (TraceSendRecv)
-import qualified Ouroboros.Network.Chain            as Chain
+import qualified Ouroboros.Network.MockChain.Chain as Chain
 import qualified Ouroboros.Network.ChainFragment    as ChainFragment
 import qualified Ouroboros.Network.AnchoredFragment as AnchoredFragment
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
@@ -138,7 +138,7 @@ prop_blockFetchStaticWithOverlap (TestChainFork _common fork1 fork2) =
                     (contramap TraceFetchDecision       dynamicTracer)
                     (contramap TraceFetchClientState    dynamicTracer)
                     (contramap TraceFetchClientSendRecv dynamicTracer)
-                    (AnchoredFragment.Empty Chain.genesisPoint) forks
+                    (AnchoredFragment.Empty genesisPoint) forks
 
      in counterexample ("\nTrace:\n" ++ unlines (map show trace)) $
 
@@ -161,7 +161,7 @@ prop_blockFetchStaticWithOverlap (TestChainFork _common fork1 fork2) =
 
 chainToAnchoredFragment :: Chain.Chain Block -> AnchoredFragment Block
 chainToAnchoredFragment =
-    AnchoredFragment.fromNewestFirst Chain.genesisPoint
+    AnchoredFragment.fromNewestFirst genesisPoint
   . Chain.chainToList
 
 -- TODO: move elsewhere and generalise

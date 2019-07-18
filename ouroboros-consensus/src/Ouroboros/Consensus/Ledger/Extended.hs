@@ -10,8 +10,6 @@ module Ouroboros.Consensus.Ledger.Extended (
   , ExtValidationError(..)
   , applyExtLedgerState
   , foldExtLedgerState
-  , chainExtLedgerState
-  , verifyChain
     -- * Serialisation
   , encodeExtLedgerState
   , decodeExtLedgerState
@@ -21,8 +19,6 @@ import           Codec.CBOR.Decoding (Decoder)
 import           Codec.CBOR.Encoding (Encoding)
 import           Control.Monad.Except
 import           GHC.Stack
-
-import           Ouroboros.Network.Chain (Chain, toOldestFirst)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Ledger.Abstract
@@ -84,24 +80,6 @@ foldExtLedgerState :: (ProtocolLedgerView blk, HasCallStack)
                    -> ExtLedgerState blk
                    -> Except (ExtValidationError blk) (ExtLedgerState blk)
 foldExtLedgerState = repeatedlyM . applyExtLedgerState
-
-chainExtLedgerState :: (ProtocolLedgerView blk, HasCallStack)
-                    => NodeConfig (BlockProtocol blk)
-                    -> Chain blk
-                    -> ExtLedgerState blk
-                    -> Except (ExtValidationError blk) (ExtLedgerState blk)
-chainExtLedgerState cfg = foldExtLedgerState cfg . toOldestFirst
-
--- | Validation of an entire chain
-verifyChain :: (ProtocolLedgerView blk, HasCallStack)
-            => NodeConfig (BlockProtocol blk)
-            -> ExtLedgerState blk
-            -> Chain blk
-            -> Bool
-verifyChain cfg initSt c =
-    case runExcept (chainExtLedgerState cfg c initSt) of
-      Left  _err -> False
-      Right _st' -> True
 
 {-------------------------------------------------------------------------------
   Serialisation

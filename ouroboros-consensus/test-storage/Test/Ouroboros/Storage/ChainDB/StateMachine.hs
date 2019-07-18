@@ -68,11 +68,11 @@ import           Ouroboros.Network.Block (BlockNo (..), ChainHash (..),
                      ChainUpdate, HasHeader, HeaderHash, Point, SlotNo (..),
                      StandardHash)
 import qualified Ouroboros.Network.Block as Block
-import           Ouroboros.Network.Chain (Chain (..), genesisPoint)
-import qualified Ouroboros.Network.Chain as Chain
-import           Ouroboros.Network.ChainProducerState (ChainProducerState,
+import           Ouroboros.Network.MockChain.Chain (Chain (..))
+import qualified Ouroboros.Network.MockChain.Chain as Chain
+import           Ouroboros.Network.MockChain.ProducerState (ChainProducerState,
                      ReaderNext, ReaderState)
-import qualified Ouroboros.Network.ChainProducerState as CPS
+import qualified Ouroboros.Network.MockChain.ProducerState as CPS
 import qualified Ouroboros.Network.Point as Point
 
 import           Ouroboros.Consensus.Block (getHeader)
@@ -581,7 +581,7 @@ generator genBlock m@Model {..} = At <$> frequency
 
     genPoint :: Gen (Point blk)
     genPoint = frequency
-      [ (1, return genesisPoint)
+      [ (1, return Block.genesisPoint)
       , (2, genRandomPoint)
       , (if empty then 0 else 7, elements pointsInDB)
       ]
@@ -721,7 +721,7 @@ equallyPreferable :: (OuroborosTag (BlockProtocol blk), HasHeader blk)
                   => NodeConfig (BlockProtocol blk)
                   -> Chain blk -> Chain blk -> Bool
 equallyPreferable cfg chain1 chain2 =
-    compareCandidates cfg (AF.fromChain chain1) (AF.fromChain chain2) == EQ
+    compareCandidates cfg (Chain.toAnchoredFragment chain1) (Chain.toAnchoredFragment chain2) == EQ
 
 
 transition :: (TestConstraints blk, Show1 r, Eq1 r)

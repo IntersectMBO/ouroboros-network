@@ -16,9 +16,9 @@ import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
 
 import           Ouroboros.Network.Block (blockPrevHash, pointHash,
-                     pattern GenesisPoint, pattern BlockPoint)
-import           Ouroboros.Network.Chain (Chain (..), genesisPoint)
-import qualified Ouroboros.Network.Chain as Chain
+                     pattern GenesisPoint, pattern BlockPoint, genesisPoint)
+import           Ouroboros.Network.MockChain.Chain (Chain (..))
+import qualified Ouroboros.Network.MockChain.Chain as Chain
 import           Ouroboros.Network.Testing.Serialise (prop_serialise)
 
 import           Test.ChainGenerators hiding (tests)
@@ -135,4 +135,3 @@ prop_intersectChains (TestChainFork c l r) =
 prop_serialise_chain :: TestBlockChain -> Property
 prop_serialise_chain (TestBlockChain chain) =
   prop_serialise chain
-

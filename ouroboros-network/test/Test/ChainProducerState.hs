@@ -17,11 +17,11 @@ import           Test.QuickCheck
 import           Test.Tasty
 import           Test.Tasty.QuickCheck
 
-import           Ouroboros.Network.Block (pointSlot)
-import           Ouroboros.Network.Chain (Chain, ChainUpdate (..), Point (..),
-                     genesisPoint, headPoint, pointOnChain)
-import qualified Ouroboros.Network.Chain as Chain
-import           Ouroboros.Network.ChainProducerState
+import           Ouroboros.Network.Block (pointSlot, genesisPoint)
+import           Ouroboros.Network.MockChain.Chain (Chain, ChainUpdate (..), Point (..),
+                     headPoint, pointOnChain)
+import qualified Ouroboros.Network.MockChain.Chain as Chain
+import           Ouroboros.Network.MockChain.ProducerState
 import           Ouroboros.Network.Testing.ConcreteBlock (Block (..))
 
 import           Test.ChainGenerators (TestBlockChain (..),

@@ -67,8 +67,8 @@ import           GHC.Generics (Generic)
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block
-import           Ouroboros.Network.Chain (Chain)
-import qualified Ouroboros.Network.Chain as C
+import           Ouroboros.Network.MockChain.Chain (Chain)
+import qualified Ouroboros.Network.MockChain.Chain as C
 import           Ouroboros.Network.ChainFragment (ChainFragment)
 import qualified Ouroboros.Network.ChainFragment as CF
 
@@ -226,7 +226,7 @@ mkAnchoredFragment anchorpoint anchorblockno =
 
 mkAnchoredFragmentSimple :: [BlockBody] -> AnchoredFragment Block
 mkAnchoredFragmentSimple =
-    mkAnchoredFragment C.genesisPoint (BlockNo 0) . zip [1..]
+    mkAnchoredFragment genesisPoint (BlockNo 0) . zip [1..]
 
 
 mkPartialBlock :: SlotNo -> BlockBody -> Block

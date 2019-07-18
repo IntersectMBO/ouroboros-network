@@ -15,8 +15,8 @@ import           Test.Tasty.QuickCheck
 import           Ouroboros.Consensus.Protocol.Abstract
 import qualified Ouroboros.Consensus.Util.AnchoredFragment as AF
 import qualified Ouroboros.Network.AnchoredFragment as AF
-import           Ouroboros.Network.Block (HasHeader (..))
-import           Ouroboros.Network.Chain (genesisPoint)
+import           Ouroboros.Network.Block (HasHeader (..), genesisPoint)
+import qualified Ouroboros.Network.MockChain.Chain as Chain
 import           Ouroboros.Storage.ChainDB.API (StreamFrom (..), StreamTo (..))
 import qualified Ouroboros.Storage.ChainDB.Model as M
 import           Test.Ouroboros.Storage.ChainDB.TestBlock
@@ -58,7 +58,7 @@ prop_alwaysPickPreferredChain bt p =
     model   = M.addBlocks singleNodeTestConfig blocks (M.empty testInitExtLedger)
     current = M.currentChain model
 
-    curFragment = AF.fromChain current
+    curFragment = Chain.toAnchoredFragment current
 
     SecurityParam k = protocolSecurityParam singleNodeTestConfig
 
@@ -66,12 +66,12 @@ prop_alwaysPickPreferredChain bt p =
         preferCandidate singleNodeTestConfig curFragment candFragment &&
         AF.forksAtMostKBlocks k curFragment candFragment
       where
-        candFragment = AF.fromChain candidate
+        candFragment = Chain.toAnchoredFragment candidate
 
 -- TODO add properties about forks too
 prop_between_currentChain :: BlockTree -> Property
 prop_between_currentChain bt =
-    Right (AF.toOldestFirst $ AF.fromChain $ M.currentChain model) ===
+    Right (AF.toOldestFirst $ Chain.toAnchoredFragment $ M.currentChain model) ===
     M.between secParam from to model
   where
     blocks   = treeToBlocks bt
