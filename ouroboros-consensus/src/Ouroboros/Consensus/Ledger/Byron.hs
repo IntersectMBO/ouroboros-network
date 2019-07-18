@@ -862,7 +862,7 @@ instance (ByronGiven, Typeable cfg, ConfigContainsGenesis cfg)
       lvUB = SlotNo $ unSlotNo currentSlot + (2 * paramK)
       lvLB
         | 2 * paramK > unSlotNo currentSlot
-        = genesisSlotNo
+        = SlotNo 0
         | otherwise
         = SlotNo $ unSlotNo currentSlot - (2 * paramK)
 
