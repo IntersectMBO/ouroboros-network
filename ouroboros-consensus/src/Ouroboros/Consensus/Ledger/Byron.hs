@@ -831,10 +831,10 @@ instance (ByronGiven, Typeable cfg, ConfigContainsGenesis cfg)
                 <$> sb
         -- No snapshot - we could be in the past or in the future
         Nothing
-          | slot >= lvLB && slot <= lvUB
+          | slot >= At lvLB && slot <= At lvUB
           -> Just $ PBftLedgerView <$>
              case Seq.takeWhileL
-                    (\sd -> convertSlot (V.Scheduling.sdSlot sd) <= slot)
+                    (\sd -> At (convertSlot (V.Scheduling.sdSlot sd)) <= slot)
                     dsScheduled of
                 -- No updates to apply. So the current ledger state is valid
                 -- from the end of the last snapshot to the first scheduled
@@ -875,4 +875,4 @@ instance (ByronGiven, Typeable cfg, ConfigContainsGenesis cfg)
                   . CC.Block.cvsDelegationState
                   $ ls
       currentSlot = convertSlot $ CC.Block.cvsLastSlot ls
-      containsSlot s sb = sbLower sb <= s && sbUpper sb >= s
+      containsSlot s sb = At (sbLower sb) <= s && At (sbUpper sb) >= s
