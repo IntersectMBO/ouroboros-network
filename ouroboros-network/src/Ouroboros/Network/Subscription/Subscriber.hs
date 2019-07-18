@@ -1,5 +1,3 @@
--- | Definition of a modular subscriber action, which maintains subscriptions
--- through failures etc.
 
 module Ouroboros.Network.Subscription.Subscriber
     ( SubscriptionTarget (..)
@@ -8,9 +6,11 @@ module Ouroboros.Network.Subscription.Subscriber
     ) where
 
 -- | Generate subscription targets in some monad.
--- TBD any value in using a streaming solution like conduit?
+-- Examples include obtaining targets from a fixed list, or from a DNS lookup.
 newtype SubscriptionTarget m target = SubscriptionTarget
     { getSubscriptionTarget :: m (Maybe (target, SubscriptionTarget m target))
+      -- ^ This should be used with the exception that implementations can block on
+      -- the order of seconds.
     }
 
 constantSubscriptionTarget :: Applicative m => target -> SubscriptionTarget m target

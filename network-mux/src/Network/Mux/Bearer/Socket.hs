@@ -75,10 +75,10 @@ socketAsMuxBearer sd = do
               then do
                   when (waitingOnNxtHeader) $
                       {- This may not be an error, but could be an orderly shutdown.
-                       - We wait 5 seconds to give the mux protocols time to perform
+                       - We wait 1 seconds to give the mux protocols time to perform
                        - a clean up and exit.
                        -}
-                      threadDelay 5
+                      threadDelay 1
                   throwM $ Mx.MuxError Mx.MuxBearerClosed (show sd ++
                       " closed when reading data, waiting on next header " ++
                       show waitingOnNxtHeader) callStack

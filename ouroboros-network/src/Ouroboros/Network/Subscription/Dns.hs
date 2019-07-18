@@ -5,6 +5,10 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies        #-}
 
+{- Partial implementation of RFC8305, https://tools.ietf.org/html/rfc8305 .
+ - Prioritization of destination addresses doesn't implement longest prefix matching
+ - and doesn't take address scope etc. into account.
+ -}
 
 module Ouroboros.Network.Subscription.Dns
     ( DnsSubscriptionTarget (..)
@@ -68,27 +72,26 @@ dnsResolve tracer resolver (DnsSubscriptionTarget domain _ _) = do
     aid_ipv4 <- async $ resolveA gotIpv6Rsp ipv4Rsps
 
     rd_e <- waitEitherCatch aid_ipv6 aid_ipv4
-    case rd_e of
-         Left r_ipv6 -> -- AAAA lookup finished first
-             case r_ipv6 of
-                  Left e_ipv6 -> do -- AAAA lookup failed
-                      traceWith tracer $ DnsTraceLookupException e_ipv6
-                      return $ SubscriptionTarget $ listTargets (Right ipv4Rsps) (Left [])
-                  Right _ -> do
-                      -- Try to use IPv6 result first.
-                      traceWith tracer DnsTraceLookupIPv6First
-                      ipv6Res <- atomically $ takeTMVar ipv6Rsps
-                      return $ SubscriptionTarget $ listTargets (Left ipv6Res) (Right ipv4Rsps)
-         Right r_ipv4 ->
-              case r_ipv4 of
-                  Left e_ipv4 -> do -- A lookup failed
-                      traceWith tracer $ DnsTraceLookupException e_ipv4
-                      return $ SubscriptionTarget $ listTargets (Right ipv6Rsps) (Left [])
-                  Right _ -> do
-                      traceWith tracer DnsTraceLookupIPv4First
-                      return $ SubscriptionTarget $ listTargets (Right ipv4Rsps) (Right ipv6Rsps)
+    handleResult ipv6Rsps ipv4Rsps rd_e
 
   where
+    handleResult _ ipv4Rsps (Left (Left e_ipv6)) = do
+        -- AAAA lookup finished first, but with an error.
+        traceWith tracer $ DnsTraceLookupException e_ipv6
+        return $ SubscriptionTarget $ listTargets (Right ipv4Rsps) (Left [])
+    handleResult ipv6Rsps ipv4Rsps (Left (Right _)) = do
+        -- Try to use IPv6 result first.
+        traceWith tracer DnsTraceLookupIPv6First
+        ipv6Res <- atomically $ takeTMVar ipv6Rsps
+        return $ SubscriptionTarget $ listTargets (Left ipv6Res) (Right ipv4Rsps)
+    handleResult ipv6Rsps _ (Right (Left e_ipv4)) = do
+        -- A lookup finished first, but with an error.
+        traceWith tracer $ DnsTraceLookupException e_ipv4
+        return $ SubscriptionTarget $ listTargets (Right ipv6Rsps) (Left [])
+    handleResult ipv6Rsps ipv4Rsps (Right (Right _)) = do
+        -- Try to use IPv4 result first.
+        traceWith tracer DnsTraceLookupIPv4First
+        return $ SubscriptionTarget $ listTargets (Right ipv4Rsps) (Right ipv6Rsps)
 
     {-
      - Returns a series of SockAddr, where the address family will alternate
@@ -110,6 +113,7 @@ dnsResolve tracer resolver (DnsSubscriptionTarget domain _ _) = do
 
     -- No result for either family yet.
     listTargets (Right addrsVarA) (Right addrsVarB) = do
+        -- TODO: can be implemented with orElse once support for it is added to MonadSTM.
         addrsRes <- atomically $ do
             a_m <- tryReadTMVar addrsVarA
             b_m <- tryReadTMVar addrsVarB
@@ -179,7 +183,7 @@ dnsResolve tracer resolver (DnsSubscriptionTarget domain _ _) = do
                  return Nothing
 
 dnsSubscriptionWorker'
-    :: ConnectionTable
+    :: ConnectionTable IO
     -> Tracer IO (WithDomainName SubscriptionTrace)
     -> Tracer IO (WithDomainName DnsTrace)
     -> Resolver IO
@@ -201,7 +205,7 @@ dnsSubscriptionWorker' tbl subTracer dnsTracer resolver localIPv4 localIPv6
 
 
 dnsSubscriptionWorker
-    :: ConnectionTable
+    :: ConnectionTable IO
     -> Tracer IO (WithDomainName SubscriptionTrace)
     -> Tracer IO (WithDomainName DnsTrace)
     -> Maybe Socket.SockAddr

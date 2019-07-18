@@ -14,6 +14,7 @@ module Ouroboros.Network.Socket (
       AnyMuxResponderApp (..)
     , ConnectionTable
     , ConnectionTableRef (..)
+    , ValencyCounter
     , withServerNode
     , withSimpleServerNode
     , connectToNode
@@ -23,11 +24,16 @@ module Ouroboros.Network.Socket (
     , fromSocket
     , beginConnection
 
-    -- * Auxiliary functions
+    -- * Re-export connection table functions
     , newConnectionTable
     , refConnection
     , addConnection
     , removeConnection
+    , newValencyCounter
+    , addValencyCounter
+    , remValencyCounter
+    , waitValencyCounter
+    , readValencyCounter
     ) where
 
 import           Control.Concurrent.Async
@@ -39,12 +45,10 @@ import           Control.Monad.Class.MonadThrow
 import           Control.Exception (throwIO)
 import qualified Codec.CBOR.Term     as CBOR
 import           Codec.Serialise (Serialise)
-import qualified Data.Map.Strict as M
 import           Data.Text (Text)
 import           Data.Typeable (Typeable)
 import qualified Data.ByteString.Lazy as BL
 import           Data.Int
-import qualified Data.Set as S
 
 import qualified Network.Socket as Socket hiding (recv)
 
@@ -62,8 +66,7 @@ import           Ouroboros.Network.Protocol.Handshake.Type
 import           Ouroboros.Network.Protocol.Handshake.Version
 import           Ouroboros.Network.Protocol.Handshake.Codec
 import qualified Ouroboros.Network.Server.Socket as Server
-
-
+import           Ouroboros.Network.Server.ConnectionTable
 
 -- |
 -- We assume that a TCP segment size of 1440 bytes with initial window of size
@@ -73,84 +76,6 @@ import qualified Ouroboros.Network.Server.Socket as Server
 --
 maxTransmissionUnit :: Int64
 maxTransmissionUnit = 4 * 1440
-
-type ConnectionTable = TVar IO (M.Map Socket.SockAddr ConnectionTableEntry)
-
-data ConnectionTableEntry = ConnectionTableEntry {
-      cteRefs           :: ![TVar IO Int]
-    , cteLocalAddresses :: !(S.Set Socket.SockAddr)
-    }
-
-data ConnectionTableRef =
-      ConnectionTableCreate
-    | ConnectionTableExist
-    | ConnectionTableDone
-    deriving Show
-
-newConnectionTable :: IO (ConnectionTable)
-newConnectionTable =  newTVarM M.empty
-
-addConnection
-    :: ConnectionTable
-    -> Socket.SockAddr
-    -> Socket.SockAddr
-    -> [TVar IO Int]
-    -> STM IO ()
-addConnection tblVar remoteAddr localAddr refs =
-    readTVar tblVar >>= M.alterF fn remoteAddr >>= writeTVar tblVar
-  where
-    fn :: Maybe ConnectionTableEntry -> STM IO (Maybe ConnectionTableEntry)
-    fn Nothing = do
-        subRefs refs
-        return $ Just $ (ConnectionTableEntry refs (S.singleton localAddr))
-    fn (Just cte) = do
-          let refs' = refs ++ cteRefs cte
-          subRefs $ refs'
-          return $ Just $ cte {
-                cteRefs = refs'
-              , cteLocalAddresses = S.insert localAddr (cteLocalAddresses cte)
-              }
-
-    subRefs = mapM_ (\a -> modifyTVar' a (\r -> r - 1))
-
-removeConnection
-    :: ConnectionTable
-    -> Socket.SockAddr
-    -> Socket.SockAddr
-    -> IO ()
-removeConnection tblVar remoteAddr localAddr = atomically $
-    readTVar tblVar >>= M.alterF fn remoteAddr >>= writeTVar tblVar
-  where
-    fn :: Maybe ConnectionTableEntry -> STM IO (Maybe ConnectionTableEntry)
-    fn Nothing = return Nothing -- XXX removing non existant address
-    fn (Just ConnectionTableEntry{..}) = do
-        mapM_ (\a -> modifyTVar' a (+ 1)) cteRefs
-        let localAddresses' = S.delete localAddr cteLocalAddresses
-        if null localAddresses'
-            then return Nothing
-            else return $ Just $ ConnectionTableEntry cteRefs localAddresses'
-
-refConnection
-    :: ConnectionTable
-    -> Socket.SockAddr
-    -> TVar IO Int
-    -> IO ConnectionTableRef
-refConnection tblVar remoteAddr refVar = atomically $ do
-    tbl <- readTVar tblVar
-    ref <- readTVar refVar
-    if ref > 0
-        then case M.lookup remoteAddr tbl of
-             Nothing -> return ConnectionTableCreate
-             Just cte -> do
-                 let refs' = refVar : (cteRefs cte)
-                 mapM_ (\a -> modifyTVar' a (\r -> r - 1)) refs'
-                 -- XXX We look up remoteAddr twice, is it possible
-                 -- to use M.alterF given that we need to be able to return
-                 -- ConnectionTableCreate or ConnectionTableExist?
-                 writeTVar tblVar $ M.insert remoteAddr
-                     (cte { cteRefs = refs' }) tbl
-                 return ConnectionTableExist
-        else return ConnectionTableDone
 
 -- |
 -- Connect to a remote node.  It is using bracket to enclose the underlying
@@ -205,7 +130,7 @@ connectToNode encodeData decodeData peeridFn versions localAddr remoteAddr =
       )
 
 -- |
--- Connect to a remote node using an existing socket. It us up to to caller to
+-- Connect to a remote node using an existing socket. It is up to to caller to
 -- ensure that the socket is closed in case of an exception.
 --
 -- The connection will start with handshake protocol sending @Versions@ to the
@@ -359,14 +284,14 @@ mkListeningSocket addrFamily_ addr = do
 -- Make a server-compatible socket from a network socket.
 --
 fromSocket
-    :: ConnectionTable
+    :: ConnectionTable IO
     -> Socket.Socket
     -> Server.Socket Socket.SockAddr Socket.Socket
 fromSocket tblVar sd = Server.Socket
     { Server.acceptConnection = do
         (sd', remoteAddr) <- Socket.accept sd
         localAddr <- Socket.getSocketName sd'
-        atomically $ addConnection tblVar remoteAddr localAddr []
+        atomically $ addConnection tblVar remoteAddr localAddr Nothing
         pure (remoteAddr, sd', close remoteAddr localAddr sd')
     }
   where
@@ -392,7 +317,7 @@ runNetworkNode'
        , Typeable vNumber
        , Show vNumber
        )
-    => ConnectionTable
+    => ConnectionTable IO
     -> Socket.Socket
     -> (forall vData. extra vData -> vData -> CBOR.Term)
     -> (forall vData. extra vData -> CBOR.Term -> Either Text vData)
@@ -439,7 +364,7 @@ withServerNode
        , Typeable vNumber
        , Show vNumber
        )
-    => ConnectionTable
+    => ConnectionTable IO
     -> Socket.AddrInfo
     -> (forall vData. extra vData -> vData -> CBOR.Term)
     -> (forall vData. extra vData -> CBOR.Term -> Either Text vData)
@@ -504,7 +429,7 @@ withSimpleServerNode
        , Typeable vNumber
        , Show vNumber
        )
-    => ConnectionTable
+    => ConnectionTable IO
     -> Socket.AddrInfo
     -> (forall vData. extra vData -> vData -> CBOR.Term)
     -> (forall vData. extra vData -> CBOR.Term -> Either Text vData)
@@ -515,7 +440,9 @@ withSimpleServerNode
     -- ^ The mux server application that will be run on each incoming
     -- connection.
     -> (Socket.SockAddr -> Async () -> IO t)
-    -- ^ callback which takes the @Async@ of the thread that is running the server.
+    -- ^ callback which takes the local address that the server bound to along with the @Async@ of
+    -- the thread that is running the server
+    --
     -- Note: the server thread will terminate when the callback returns or
     -- throws an exception.
     -> IO t
