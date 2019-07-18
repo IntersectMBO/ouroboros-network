@@ -245,7 +245,7 @@ broadcastNetwork registry btime numCoreNodes pInfo initRNG numSlots slotLen = do
                                slot
                                curNo
                                prevHash
-                               (map SimpleGenTx txs)
+                               (map mkSimpleGenTx txs)
                                proof
 
             , produceDRG      = atomically $ simChaChaT varRNG id $ drgNew

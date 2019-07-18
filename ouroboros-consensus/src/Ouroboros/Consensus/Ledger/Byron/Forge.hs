@@ -117,7 +117,7 @@ forgeBlock (WithEBBNodeConfig cfg) curSlot curNo prevHash txs () = do
       } = encNodeConfigExt cfg
 
     txPayload :: CC.UTxO.TxPayload
-    txPayload = CC.UTxO.mkTxPayload (map (void . unByronTx) txs)
+    txPayload = CC.UTxO.mkTxPayload (map (void . byronTx) txs)
 
     body :: CC.Block.Body
     body = CC.Block.ABody {
