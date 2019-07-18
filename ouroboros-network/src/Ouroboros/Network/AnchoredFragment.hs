@@ -252,7 +252,7 @@ lastPoint :: HasHeader block => AnchoredFragment block -> Point block
 lastPoint = either id blockPoint . last
 
 -- | \( O(1) \). When the fragment is empty, the slot of the anchor point is
--- returned, which may be the origin and therefore have to slot.
+-- returned, which may be the origin and therefore have no slot.
 lastSlot :: HasHeader block => AnchoredFragment block -> WithOrigin SlotNo
 lastSlot = either pointSlot (At . blockSlot) . last
 

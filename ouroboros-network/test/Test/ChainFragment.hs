@@ -284,16 +284,16 @@ prop_splitAfterPoint :: TestChainFragmentAndPoint -> Bool
 prop_splitAfterPoint (TestChainFragmentAndPoint c p) =
   case CF.splitAfterPoint c p of
     Just (l, r) ->
-         CF.pointOnChainFragment p c
-      && not (CF.pointOnChainFragment p r)
-      && CF.headPoint l == Just p
-      && CF.joinChainFragments l r == Just c
-      && all (<= slot) (slots l)
-      && all (>  slot) (slots r)
+           CF.pointOnChainFragment p c
+        && not (CF.pointOnChainFragment p r)
+        && CF.headPoint l == Just p
+        && CF.joinChainFragments l r == Just c
+        && all (<= slot) (slots l)
+        && all (>  slot) (slots r)
       where
-      -- If this were Origin, then p must be Origin, in which case
-      -- CF.splitAfterPoint c p would be Nothing.
-      At slot = pointSlot p
+        -- If this were Origin, then p must be Origin, in which case
+        -- CF.splitAfterPoint c p would be Nothing.
+        At slot = pointSlot p
     Nothing ->
          not (CF.pointOnChainFragment p c)
   where
@@ -315,16 +315,16 @@ prop_splitBeforePoint :: TestChainFragmentAndPoint -> Bool
 prop_splitBeforePoint (TestChainFragmentAndPoint c p) =
   case CF.splitBeforePoint c p of
     Just (l, r) ->
-        CF.pointOnChainFragment p c
-     && not (CF.pointOnChainFragment p l)
-     && CF.lastPoint r == Just p
-     && CF.joinChainFragments l r == Just c
-     && all (<  slot) (slots l)
-     && all (>= slot) (slots r)
+          CF.pointOnChainFragment p c
+       && not (CF.pointOnChainFragment p l)
+       && CF.lastPoint r == Just p
+       && CF.joinChainFragments l r == Just c
+       && all (<  slot) (slots l)
+       && all (>= slot) (slots r)
      where
-     -- If this were Origin, then p must be Origin, in which case
-     -- CF.splitBeforePoint c p would be Nothing.
-     At slot = pointSlot p
+       -- If this were Origin, then p must be Origin, in which case
+       -- CF.splitBeforePoint c p would be Nothing.
+       At slot = pointSlot p
     Nothing ->
         not (CF.pointOnChainFragment p c)
   where

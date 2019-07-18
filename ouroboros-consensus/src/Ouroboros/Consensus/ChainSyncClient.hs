@@ -393,12 +393,12 @@ chainSyncClient tracer cfg btime (ClockSkew maxSkew)
           case anachronisticProtocolLedgerView cfg curLedger (pointSlot hdrPoint) of
             Nothing   -> retry
             Just view -> case view `SB.at` hdrSlot of
-              Nothing -> error "anachronisticProtocolLedgerView invariant violated"
-              Just lv -> return lv
+                Nothing -> error "anachronisticProtocolLedgerView invariant violated"
+                Just lv -> return lv
               where
-              hdrSlot = case pointSlot hdrPoint of
-                Origin      -> SlotNo 0
-                At thisSlot -> thisSlot
+                hdrSlot = case pointSlot hdrPoint of
+                  Origin      -> SlotNo 0
+                  At thisSlot -> thisSlot
 
       -- Check for clock skew
       wallclock <- getCurrentSlot btime
