@@ -31,11 +31,12 @@ import qualified Network.Socket as Socket
 import           Text.Printf
 
 -- A ConnectionTable represent a set of connections that is shared between
--- servers and subscription workers. Its main purpose is to avoid the creation of duplicate
+-- servers and subscription workers. It's main purpose is to avoid the creation of duplicate
 -- connections (especially connections with identical source address, destination address, source
 -- port and destination port which would be rejected by the kernel anyway.).
 -- It is only used for bookkeeping, the sockets represented by the connections are not accessable
 -- through this structure.
+--
 data ConnectionTable m = ConnectionTable {
     ctTable     :: TVar m (M.Map Socket.SockAddr (ConnectionTableEntry m))
   , ctLastRefId :: TVar m Int
@@ -46,6 +47,7 @@ data ConnectionTable m = ConnectionTable {
 -- subscription worker. It can become negative, for example if a peer opens multiple connections
 -- to us.
 -- The vcId is unique per ConnectionTable and ensures that we won't count the same connection twice.
+--
 data ValencyCounter m = ValencyCounter {
     vcId  :: Int
   , vcRef :: TVar m Int
@@ -178,7 +180,7 @@ removeConnection ConnectionTable{..} remoteAddr localAddr = atomically $
     readTVar ctTable >>= M.alterF fn remoteAddr >>= writeTVar ctTable
   where
     fn :: Maybe (ConnectionTableEntry m) -> STM m (Maybe (ConnectionTableEntry m))
-    fn Nothing = return Nothing -- XXX removing non existant address
+    fn Nothing = return Nothing -- XXX removing non existent address
     fn (Just ConnectionTableEntry{..}) = do
         mapM_ remValencyCounter cteRefs
         let localAddresses' = S.delete localAddr cteLocalAddresses
@@ -188,6 +190,7 @@ removeConnection ConnectionTable{..} remoteAddr localAddr = atomically $
 
 -- | Try to see if it is possible to reference an existing connection rather
 -- than creating a new one to the provied peer.
+--
 refConnection
     :: MonadSTM m
     => ConnectionTable m
