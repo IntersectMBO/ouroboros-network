@@ -26,7 +26,7 @@ import           Ouroboros.Consensus.Crypto.DSIGN.Cardano
 import           Ouroboros.Consensus.Ledger.Byron
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Node.ProtocolInfo.Abstract
-import           Ouroboros.Consensus.NodeId (CoreNodeId (..), NodeId (..))
+import           Ouroboros.Consensus.NodeId (CoreNodeId (..))
 import           Ouroboros.Consensus.Protocol.ExtNodeConfig
 import           Ouroboros.Consensus.Protocol.PBFT
 import           Ouroboros.Consensus.Protocol.WithEBBs
@@ -50,15 +50,18 @@ protocolInfoByron (NumCoreNodes numCoreNodes) (CoreNodeId nid) params gc =
     ProtocolInfo {
         pInfoConfig = WithEBBNodeConfig $ EncNodeConfig {
             encNodeConfigP = PBftNodeConfig {
-                  pbftParams  = params
+                  pbftParams   = params
                     { pbftNumNodes = fromIntegral numCoreNodes
                       -- Set the signature window to be short for the demo.
                     , pbftSignatureWindow = 7
                     }
-                , pbftNodeId  = CoreId nid
-                , pbftSignKey = SignKeyCardanoDSIGN (snd (lookupKey nid))
-                , pbftVerKey  = VerKeyCardanoDSIGN  (fst (lookupKey nid))
-                , pbftGenVerKey = VerKeyCardanoDSIGN (lookupGenKey nid)
+                  --TODO: also allow not being a BFT leader:
+                , pbftIsLeader = Just PBftIsLeader {
+                      pbftCoreNodeId = CoreNodeId nid
+                    , pbftSignKey    = SignKeyCardanoDSIGN (snd (lookupKey nid))
+                    , pbftVerKey     = VerKeyCardanoDSIGN  (fst (lookupKey nid))
+                    , pbftGenVerKey  = VerKeyCardanoDSIGN (lookupGenKey nid)
+                    }
                 }
           , encNodeConfigExt = ByronConfig {
                 pbftProtocolMagic   = Cardano.Genesis.configProtocolMagic gc
