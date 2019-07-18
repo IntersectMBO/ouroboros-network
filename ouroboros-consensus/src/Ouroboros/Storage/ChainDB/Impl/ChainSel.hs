@@ -516,7 +516,7 @@ chainSelection
      -- ^ The (valid) chain and corresponding LedgerDB that was selected, or
      -- 'Nothing' if there is no valid chain preferred over the current
      -- chain.
-chainSelection lgrDB tracer cfg invalid
+chainSelection lgrDB tracer cfg varInvalid
                curChainAndLedger@(ChainAndLedger curChain _) candidates =
   assert (all (isJust . fitCandidateSuffixOn curChain) candidates) $
     go (sortCandidates (NE.toList candidates))
@@ -528,7 +528,7 @@ chainSelection lgrDB tracer cfg invalid
     validate :: ChainAndLedger  blk  -- ^ Current chain and ledger
              -> CandidateSuffix blk  -- ^ Candidate fragment
              -> m (Maybe (ChainAndLedger blk))
-    validate = validateCandidate lgrDB tracer cfg invalid
+    validate = validateCandidate lgrDB tracer cfg varInvalid
 
     -- 1. Take the first candidate from the list of sorted candidates
     -- 2. Validate it
@@ -542,22 +542,40 @@ chainSelection lgrDB tracer cfg invalid
     go []                                           = return Nothing
     go (cand@(CandidateSuffix _ candSuffix):cands') =
       validate curChainAndLedger cand >>= \case
-        Nothing ->
-          go cands'
+        Nothing -> do
+          cands'' <- truncateInvalidCandidates cands'
+          go (sortCandidates cands'')
         Just newChainAndLedger@(ChainAndLedger candChain _)
             | validatedHead == AF.headPoint candSuffix
               -- Unchanged candidate
             -> return $ Just newChainAndLedger
             | otherwise
-              -- Prefix of the candidate because it contained invalid blocks
-              -- TODO spec says go back to candidate selection, see
-              -- [^whyGoBack], because now there might still be some
-              -- candidates that contain the same invalid block.
-            -> go (sortCandidates (candSuffix':cands'))
+              -- Prefix of the candidate because it contained invalid blocks.
+              -- Note that the spec says go back to candidate selection, see
+              -- [^whyGoBack], because there might still be some candidates
+              -- that contain the same invalid block. To simplify the control
+              -- flow, We do it differently: instead of recomputing the
+              -- candidates taking invalid blocks into account, we just
+              -- truncate the remaining candidates that contain invalid
+              -- blocks.
+            -> do
+              cands'' <- truncateInvalidCandidates cands'
+              go (sortCandidates (candSuffix':cands''))
           where
             validatedHead = AF.headPoint candChain
             candSuffix'   = rollbackCandidateSuffix
               (castPoint validatedHead) cand
+
+    -- | Truncate the given (remaining) candidates that contain invalid
+    -- blocks. Discard them if they are truncated so much that they are no
+    -- longer preferred over the current chain.
+    truncateInvalidCandidates :: [CandidateSuffix blk]
+                              -> m [CandidateSuffix blk]
+    truncateInvalidCandidates cands = do
+      isInvalid <- flip Map.member <$> atomically (readTVar varInvalid)
+      return $ filter (preferCandidate cfg curChain . _suffix)
+             $ mapMaybe (truncateInvalidCandidate isInvalid) cands
+
     -- [Ouroboros]
     --
     -- Ouroboros says that when we are given an invalid chain by a peer, we
@@ -743,8 +761,8 @@ rollbackCandidateSuffix pt (CandidateSuffix rollback suffix)
 -- fragment.
 intersectCandidateSuffix
   :: (HasHeader (Header blk), HasCallStack)
-  => AnchoredFragment (Header blk)          -- ^ Current chain
-  -> AnchoredFragment (Header blk)          -- ^ Candidate chain
+  => AnchoredFragment (Header blk)  -- ^ Current chain
+  -> AnchoredFragment (Header blk)  -- ^ Candidate chain
   -> Maybe (CandidateSuffix   blk)  -- ^ Candidate suffix
 intersectCandidateSuffix curChain candChain =
   case AF.intersect curChain candChain of
@@ -756,6 +774,24 @@ intersectCandidateSuffix curChain candChain =
     -- Precondition violated.
     _ -> error "candidate fragment doesn't intersect with current chain"
 
+-- | If any invalid blocks occur in the candidate suffix, truncate it so that
+-- it only contains valid blocks.
+--
+-- If the suffix becomes too short, return 'Nothing'.
+truncateInvalidCandidate
+  :: HasHeader (Header blk)
+  => (HeaderHash blk -> Bool)  -- ^ Check whether a block is invalid
+  -> CandidateSuffix blk
+  -> Maybe (CandidateSuffix blk)
+truncateInvalidCandidate isInvalid (CandidateSuffix rollback suffix)
+    | truncatedLength >= rollback
+    , truncatedLength > 0 -- No point in having an empty suffix
+    = Just $ mkCandidateSuffix rollback truncated
+    | otherwise
+    = Nothing
+  where
+    truncatedLength = fromIntegral (AF.length truncated)
+    truncated = AF.takeWhileOldest (not . isInvalid . blockHash) suffix
 
 {-------------------------------------------------------------------------------
   Helpers
