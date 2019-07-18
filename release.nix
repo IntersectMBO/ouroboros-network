@@ -40,8 +40,8 @@ commonLib.pkgs.lib.mapAttrsRecursiveCond
   # follow the following naming convention:
   #
   #   namespace                      optional cross compilation prefix                 build machine
-  #   .-------.                              .-----------------.                .--------------------------.
-  #   nix-tools.{libs,exes,tests,benchmarks}.{x86_64-pc-mingw-,}$pkg.$component.{x86_64-linux,x86_64-darwin}
+  #   .-------.                              .----------------.                .--------------------------.
+  #   nix-tools.{libs,exes,tests,benchmarks}.[x86_64-pc-mingw-]$pkg.$component.{x86_64-linux,x86_64-darwin}
   #             '--------------------------'                    '-------------'
   #                 component type                          cabal pkg and component*
   #
@@ -51,6 +51,16 @@ commonLib.pkgs.lib.mapAttrsRecursiveCond
   #   it provides all exes under a single result directory.
   #   To  specify a single executable component to build, use
   #   `cexes` as component type.
+  # 
+  # Aggregates of all components of a given type accross all
+  # specified packages are also available:
+  #
+  #   namespace                              component aggregate type
+  #   .-------.                            .--------------------------.
+  #   nix-tools.[x86_64-pc-mingw-]packages-{libs,exes,tests,benchmarks}.{x86_64-linux,x86_64-darwin}
+  #             '----------------'                                      '--------------------------'
+  #     optional cross compilation prefix                                      build machine
+
   #
   # Example:
   #
@@ -58,27 +68,21 @@ commonLib.pkgs.lib.mapAttrsRecursiveCond
   #   nix-tools.libs.x86_64-pc-mingw32-ouroboros-network.x86_64-linux -- will build the ouroboros-network library on linux for windows.
   #   nix-tools.tests.ouroboros-consensus.test-crypto.x86_64-linux -- will build and run the test-crypto from the
   #                                                          ouroboros-consensus package on linux.
+  #   nix-tools.packages-tests.x86_64-linux -- will build and run all the tests from all the packages specified above.
 
-  # The required jobs that must pass for ci not to fail:
-  required-name = "ouroboros-network-required-checks";
   extraBuilds = {
     tests = default.tests;
     network-pdf-wip = default.network-pdf-wip;
     network-pdf = default.network-pdf;
   };
   builds-on-supported-systems = [ "shell" ];
+  # The required jobs that must pass for ci not to fail:
+  required-name = "ouroboros-network-required-checks";
   required-targets = jobs: [
     # targets are specified using above nomenclature:
-    jobs.nix-tools.tests.ouroboros-consensus.test-consensus.x86_64-linux
-    jobs.nix-tools.tests.ouroboros-consensus.test-storage.x86_64-linux
-    jobs.nix-tools.tests.ouroboros-network.tests.x86_64-linux
-    jobs.nix-tools.tests.ouroboros-network.cddl.x86_64-linux
-    jobs.nix-tools.tests.typed-protocols.tests.x86_64-linux
-    jobs.nix-tools.tests.network-mux.test-network-mux.x86_64-linux
-    jobs.nix-tools.tests.io-sim.tests.x86_64-linux
+    jobs.nix-tools.packages-tests.x86_64-linux
+    jobs.nix-tools.packages-exes.x86_64-linux
 
-    jobs.nix-tools.exes.ouroboros-network.x86_64-linux
     jobs.network-pdf
-    (builtins.concatLists (map builtins.attrValues (builtins.attrValues jobs.tests)))
   ];
 } (builtins.removeAttrs args ["ouroboros-network"]))
