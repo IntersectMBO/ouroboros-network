@@ -511,7 +511,7 @@ selectPointsSpec offsets c =
 -- | \( O(\log(\min(i,n-i)) \). Find the block after the given point.
 successorBlock :: HasHeader block
                => Point block -> ChainFragment block -> Maybe block
-successorBlock GenesisPoint           c = Nothing
+successorBlock GenesisPoint           _ = Nothing
 successorBlock p@(BlockPoint bslot _) c = case lookupBySlotFT c bslot of
   FT.Position _ b ft'
     | blockPoint b == p
