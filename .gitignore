@@ -26,6 +26,7 @@ dist/
 result*
 **/tags
 **/TAGS
+.stack-to-nix.cache
 
 .stack-work/
 stack.yaml.lock
