@@ -31,7 +31,6 @@ module Ouroboros.Consensus.Ledger.Mock.Block (
     -- * 'ApplyTx' (mempool support)
   , GenTx(..)
   , GenTxId(..)
-  , computeGenTxId
     -- * Crypto
   , SimpleCrypto
   , SimpleStandardCrypto

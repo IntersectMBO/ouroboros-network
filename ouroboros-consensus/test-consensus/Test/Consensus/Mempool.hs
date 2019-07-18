@@ -26,7 +26,7 @@ import           Data.Typeable (Typeable)
 import qualified Ouroboros.Network.Chain as Chain
 
 import           Ouroboros.Consensus.Ledger.Abstract (ledgerConfigView)
-import           Ouroboros.Consensus.Mempool (Mempool (..),
+import           Ouroboros.Consensus.Mempool (ApplyTx (..), Mempool (..),
                      MempoolSnapshot (..), TraceEventMempool (..), openMempool)
 import           Ouroboros.Consensus.Mempool.TxSeq as TxSeq
 import           Ouroboros.Consensus.Util.ThreadRegistry (withThreadRegistry)
@@ -36,8 +36,8 @@ import qualified Ouroboros.Storage.ChainDB.API as ChainDB
 import qualified Ouroboros.Storage.ChainDB.Mock as Mock
 
 import           Test.Util.TestBlock (BlockChain, GenTx (..), GenTxId (..),
-                     TestBlock, chainToBlocks, computeGenTxId,
-                     singleNodeTestConfig, testInitExtLedger)
+                     TestBlock, chainToBlocks, singleNodeTestConfig,
+                     testInitExtLedger)
 import           Test.Util.TestTx (TestTx (..))
 
 

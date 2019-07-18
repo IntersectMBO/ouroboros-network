@@ -36,7 +36,6 @@ module Test.Util.TestBlock (
   , GenTx (..)
   , GenTxId (..)
   , ApplyTxErr
-  , computeGenTxId
     -- * Support for tests
   , Permutation(..)
   , permute

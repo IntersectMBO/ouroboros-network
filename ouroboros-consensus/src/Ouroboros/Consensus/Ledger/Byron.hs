@@ -21,7 +21,6 @@ module Ouroboros.Consensus.Ledger.Byron
     -- * Mempool integration
   , GenTx (..)
   , GenTxId (..)
-  , computeGenTxId
     -- * Ledger
   , LedgerState (..)
   , LedgerConfig (..)
