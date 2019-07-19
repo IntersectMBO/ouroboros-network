@@ -202,15 +202,24 @@ subscribeTo tbl threadPool tracer localIPv4_m localIPv6_m connectionAttemptDelay
                         else return ConnectFail
         traceWith tracer $ SubscriptionTraceConnectEnd remoteAddr result
         case result of
-            ConnectSuccess -> k sd -- TODO catch all application exception.
+            ConnectSuccess -> runApplication sd
             ConnectSuccessLast -> do
                     outstandingConThreads <- atomically $ readTVar conThreads
                     mapM_ (\a -> throwTo a
                             (SubscriberError SubscriberParrallelConnectionCancelled
                             "Parrallel connection cancelled"
                             callStack)) outstandingConThreads
-                    k sd
+                    runApplication sd
             ConnectFail -> return ()
+
+    runApplication :: Socket.Socket -> IO ()
+    runApplication sd = do
+        k sd `catch` \e -> do
+            traceWith tracer $ SubscriptionApplicationException e
+            -- TODO: Fatal/Permanent errors such as filesystem corruption should be
+            -- permitted to trickle up instead of just causing the creation of a new
+            -- connection.
+            throwM e
 
     allocateSocket
         :: TVar IO (Set ThreadId)
@@ -384,6 +393,7 @@ data SubscriptionTrace =
     | SubscriptionTraceConnectionExist Socket.SockAddr
     | SubscriptionTraceUnsupportedRemoteAddr Socket.SockAddr
     | SubscriptionTraceMissingLocalAddress Socket.Family
+    | SubscriptionApplicationException SomeException
 
 instance Show SubscriptionTrace where
     show (SubscriptionTraceConnectStart dst) =
@@ -412,5 +422,6 @@ instance Show SubscriptionTrace where
         "Unsupported remote target address " ++ show dst
     show (SubscriptionTraceMissingLocalAddress fam) =
         "Missing local address for " ++ show fam
-
+    show (SubscriptionApplicationException e) =
+        "Application Exception: " ++ show e
 
