@@ -171,3 +171,7 @@ https://github.com/input-output-hk/cardano-ledger b4881612b9bccb28a486c84f2d2f15
 https://github.com/input-output-hk/cardano-ledger b4881612b9bccb28a486c84f2d2f150e617e0df4 crypto 05xxb74d76rrskdc05d6hccwqnliq875f4xlr1y0z8aa3j1l75yh cardano-crypto-wrapper cardano-crypto-wrapper.nix
 https://github.com/input-output-hk/cardano-ledger b4881612b9bccb28a486c84f2d2f150e617e0df4 crypto/test 05xxb74d76rrskdc05d6hccwqnliq875f4xlr1y0z8aa3j1l75yh cardano-crypto-test cardano-crypto-test.nix
 https://github.com/input-output-hk/cardano-shell c0c55abd52058514a3d272e913e6c91dbc951a86 . 18d0p0vfasf6imjq6cvfkxn2r4nn2vv54ywbnl5chx2crmrywd7y cardano-shell cardano-shell.nix
+https://github.com/input-output-hk/cardano-ledger 7d9fd48f4d8e4cd0658c7839a4d02c44d5706ac7 cardano-ledger 1pp2i4w8074mlzmch3a7fdjiyqvjhimvbx9hv573dprwfh358l7j cardano-ledger cardano-ledger.nix
+https://github.com/input-output-hk/cardano-ledger 7d9fd48f4d8e4cd0658c7839a4d02c44d5706ac7 cardano-ledger/test 1pp2i4w8074mlzmch3a7fdjiyqvjhimvbx9hv573dprwfh358l7j cardano-ledger-test cardano-ledger-test.nix
+https://github.com/input-output-hk/cardano-ledger 7d9fd48f4d8e4cd0658c7839a4d02c44d5706ac7 crypto 1pp2i4w8074mlzmch3a7fdjiyqvjhimvbx9hv573dprwfh358l7j cardano-crypto-wrapper cardano-crypto-wrapper.nix
+https://github.com/input-output-hk/cardano-ledger 7d9fd48f4d8e4cd0658c7839a4d02c44d5706ac7 crypto/test 1pp2i4w8074mlzmch3a7fdjiyqvjhimvbx9hv573dprwfh358l7j cardano-crypto-test cardano-crypto-test.nix

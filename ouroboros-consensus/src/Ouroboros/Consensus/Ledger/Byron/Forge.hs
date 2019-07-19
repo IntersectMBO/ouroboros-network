@@ -78,6 +78,7 @@ forgeGenesisEBB (WithEBBNodeConfig cfg) curSlot = do
                    epoch
                    (CC.Common.ChainDifficulty 0)
                    ()
+                   ()
     boundaryLength = 0 -- Since this is a demo and we ignore the length, set this
                        -- to 0
     ByronConfig { pbftGenesisHash
