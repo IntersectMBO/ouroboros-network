@@ -64,7 +64,6 @@ import qualified Data.Sequence as Seq
 import           Data.Set (Set)
 import qualified Data.Text as T
 import           Data.Typeable
-import           Data.Word (Word8)
 import           Formatting
 
 import           Cardano.Binary (Annotated (..), ByteSpan, enforceSize,
@@ -222,7 +221,7 @@ instance (ByronGiven, Typeable cfg, ConfigContainsGenesis cfg)
       bodyEnv = CC.Block.BodyEnvironment
         { CC.Block.protocolMagic      = fixPM $ CC.Genesis.configProtocolMagic cfg
         , CC.Block.k                  = CC.Genesis.configK cfg
-        , CC.Block.numGenKeys         = numGenKeys         cfg
+        , CC.Block.allowedDelegators  = allowedDelegators cfg
         , CC.Block.protocolParameters = protocolParameters
         , CC.Block.currentEpoch       = CC.Slot.slotNumberEpoch
                                           (CC.Genesis.configEpochSlots cfg)
@@ -254,7 +253,7 @@ instance (ByronGiven, Typeable cfg, ConfigContainsGenesis cfg)
       headerEnv = CC.Block.HeaderEnvironment
         { CC.Block.protocolMagic = fixPMI $ CC.Genesis.configProtocolMagicId cfg
         , CC.Block.k             = CC.Genesis.configK cfg
-        , CC.Block.numGenKeys    = numGenKeys         cfg
+        , CC.Block.allowedDelegators = allowedDelegators cfg
         , CC.Block.delegationMap = delegationMap
         , CC.Block.lastSlot      = CC.Block.cvsLastSlot state
         }
@@ -271,17 +270,10 @@ instance (ByronGiven, Typeable cfg, ConfigContainsGenesis cfg)
         where
           slot = convertSlot (CC.Block.cvsLastSlot state)
 
-numGenKeys :: CC.Genesis.Config -> Word8
-numGenKeys cfg = case length genKeys of
-    n | n > fromIntegral (maxBound :: Word8)
-      -> error "updateBody: Too many genesis keys"
-      | otherwise
-      -> fromIntegral n
-  where
-    genKeys :: Set CC.Common.KeyHash
-    genKeys = CC.Genesis.unGenesisKeyHashes
-            . CC.Genesis.configGenesisKeyHashes
-            $ cfg
+allowedDelegators :: CC.Genesis.Config -> Set CC.Common.KeyHash
+allowedDelegators 
+  = CC.Genesis.unGenesisKeyHashes
+  . CC.Genesis.configGenesisKeyHashes
 
 {-------------------------------------------------------------------------------
   Support for PBFT consensus algorithm
