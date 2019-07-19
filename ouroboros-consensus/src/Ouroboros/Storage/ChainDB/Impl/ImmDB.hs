@@ -83,6 +83,7 @@ data ImmDB m blk = ImmDB {
     , encBlock     :: blk -> Encoding
     , immEpochInfo :: EpochInfo m
     , isEBB        :: blk -> Maybe (HeaderHash blk)
+    , err          :: ErrorHandling ImmDB.ImmutableDBError m
     }
 
 {-------------------------------------------------------------------------------
@@ -148,6 +149,7 @@ openDB args@ImmDbArgs{..} = do
       , encBlock     = immEncodeBlock
       , immEpochInfo = immEpochInfo
       , isEBB        = immIsEBB
+      , err          = immErr
       }
 
 {-------------------------------------------------------------------------------
@@ -533,16 +535,16 @@ processEpochs _ = \(bs, mErr) ->
 -- disk failure and should therefore trigger recovery
 withDB :: forall m blk x. (MonadCatch m, HasHeader blk)
        => ImmDB m blk -> (ImmutableDB (HeaderHash blk) m -> m x) -> m x
-withDB ImmDB{..} k = catch (k immDB) rethrow
+withDB ImmDB{..} k = EH.catchError err (k immDB) rethrow
   where
     rethrow :: ImmDB.ImmutableDBError -> m x
-    rethrow err = case wrap err of
-                    Just err' -> throwM err'
-                    Nothing   -> throwM err
+    rethrow e = case wrap e of
+                    Just e' -> throwM e'
+                    Nothing -> throwM e
 
     wrap :: ImmDB.ImmutableDBError -> Maybe (ChainDbFailure blk)
-    wrap (ImmDB.UnexpectedError err) = Just (ImmDbFailure err)
-    wrap ImmDB.UserError{}           = Nothing
+    wrap (ImmDB.UnexpectedError e) = Just (ImmDbFailure e)
+    wrap ImmDB.UserError{}         = Nothing
 
 mustExist :: Either EpochNo SlotNo
           -> Maybe blk
