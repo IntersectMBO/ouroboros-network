@@ -188,7 +188,7 @@ pointOnChain (BlockPoint _ _)           Genesis = False
 pointOnChain p@(BlockPoint pslot phash) (c :> b)
   | pslot >  blockSlot b = False
   | pslot == blockSlot b = phash == blockHash b
-  | otherwise             = pointOnChain p c
+  | otherwise            = pointOnChain p c
 
 rollback :: HasHeader block => Point block -> Chain block -> Maybe (Chain block)
 rollback p (c :> b) | blockPoint b == p = Just (c :> b)
