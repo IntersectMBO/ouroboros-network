@@ -55,9 +55,9 @@ protocolInfoByron :: NumCoreNodes
                   -> CoreNodeId
                   -> PBftParams
                   -> Cardano.Genesis.Config
-                  -> PbftLeaderCredentials
+                  -> Maybe PbftLeaderCredentials
                   -> ProtocolInfo (ByronBlockOrEBB ByronConfig)
-protocolInfoByron (NumCoreNodes numCoreNodes) (CoreNodeId nid) params gc (PbftLeaderCredentials sk dlg) =
+protocolInfoByron (NumCoreNodes numCoreNodes) nid params gc mLeader =
     ProtocolInfo {
         pInfoConfig = WithEBBNodeConfig $ EncNodeConfig {
             encNodeConfigP = PBftNodeConfig {
@@ -66,13 +66,7 @@ protocolInfoByron (NumCoreNodes numCoreNodes) (CoreNodeId nid) params gc (PbftLe
                       -- Set the signature window to be short for the demo.
                     , pbftSignatureWindow = 7
                     }
-                  --TODO: also allow not being a BFT leader:
-                , pbftIsLeader = Just PBftIsLeader {
-                      pbftCoreNodeId = CoreNodeId nid
-                    , pbftSignKey    = SignKeyCardanoDSIGN sk
-                    , pbftVerKey     = VerKeyCardanoDSIGN  vk
-                    , pbftGenVerKey  = VerKeyCardanoDSIGN (Cardano.Delegation.issuerVK dlg)
-                    }
+                , pbftIsLeader = proofOfCredentials nid <$> mLeader
                 }
           , encNodeConfigExt = ByronConfig {
                 pbftProtocolMagic   = Cardano.Genesis.configProtocolMagic gc
@@ -98,6 +92,13 @@ protocolInfoByron (NumCoreNodes numCoreNodes) (CoreNodeId nid) params gc (PbftLe
       , pInfoInitState  = ()
       }
   where
-    vk = Cardano.toVerification sk
+    proofOfCredentials :: CoreNodeId -> PbftLeaderCredentials -> PBftIsLeader PBftCardanoCrypto
+    proofOfCredentials nid' (PbftLeaderCredentials sk dlg) =
+      PBftIsLeader
+      { pbftCoreNodeId = nid'
+      , pbftSignKey    = SignKeyCardanoDSIGN sk
+      , pbftVerKey     = VerKeyCardanoDSIGN (Cardano.toVerification sk)
+      , pbftGenVerKey  = VerKeyCardanoDSIGN (Cardano.Delegation.issuerVK dlg)
+      }
     initState :: Cardano.Block.ChainValidationState
     Right initState = runExcept $ Cardano.Block.initialChainValidationState gc

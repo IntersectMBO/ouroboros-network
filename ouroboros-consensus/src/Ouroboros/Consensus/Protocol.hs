@@ -80,7 +80,7 @@ data Protocol blk where
   ProtocolRealPBFT
     :: PBftParams
     -> Cardano.Genesis.Config
-    -> PbftLeaderCredentials
+    -> Maybe PbftLeaderCredentials
     -> Protocol (ByronBlockOrEBB ByronConfig)
 
 {-------------------------------------------------------------------------------
