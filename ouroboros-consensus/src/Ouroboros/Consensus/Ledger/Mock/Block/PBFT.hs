@@ -90,9 +90,9 @@ instance ( SimpleCrypto c
          ) => ForgeExt (ExtNodeConfig ext (PBft c'))
                        c
                        (SimplePBftExt c c') where
-  forgeExt cfg () SimpleBlock{..} = do
+  forgeExt _cfg isLeader SimpleBlock{..} = do
       ext :: SimplePBftExt c c' <- fmap SimplePBftExt $
-        forgePBftFields (encNodeConfigP cfg) encode $
+        forgePBftFields isLeader encode $
           SignedSimplePBft {
               signedSimplePBft = simpleHeaderStd
             }

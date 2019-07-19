@@ -3,6 +3,7 @@
 {-# LANGUAGE FlexibleContexts        #-}
 {-# LANGUAGE FlexibleInstances       #-}
 {-# LANGUAGE MultiParamTypeClasses   #-}
+{-# LANGUAGE NamedFieldPuns          #-}
 {-# LANGUAGE RecordWildCards         #-}
 {-# LANGUAGE ScopedTypeVariables     #-}
 {-# LANGUAGE StandaloneDeriving      #-}
@@ -17,6 +18,7 @@ module Ouroboros.Consensus.Protocol.PBFT (
   , PBftLedgerView(..)
   , PBftFields(..)
   , PBftParams(..)
+  , PBftIsLeader(..)
   , forgePBftFields
     -- * Classes
   , PBftCrypto(..)
@@ -50,7 +52,7 @@ import           Ouroboros.Network.Block
 import           Ouroboros.Network.Point (WithOrigin (..))
 
 import           Ouroboros.Consensus.Crypto.DSIGN.Cardano
-import           Ouroboros.Consensus.NodeId (NodeId (..))
+import           Ouroboros.Consensus.NodeId (CoreNodeId(..))
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.Signed
 import           Ouroboros.Consensus.Util.Condense
@@ -81,11 +83,11 @@ forgePBftFields :: ( MonadRandom m
                    , PBftCrypto c
                    , Signable (PBftDSIGN c) toSign
                    )
-                => NodeConfig (PBft c)
+                => IsLeader (PBft c)
                 -> (toSign -> Encoding)
                 -> toSign
                 -> m (PBftFields c toSign)
-forgePBftFields PBftNodeConfig{..} encodeToSign toSign = do
+forgePBftFields PBftIsLeader{..} encodeToSign toSign = do
     signature <- signedDSIGN encodeToSign toSign pbftSignKey
     return $ PBftFields {
         pbftIssuer    = pbftVerKey
@@ -135,16 +137,24 @@ data PBftParams = PBftParams {
     , pbftSignatureThreshold :: Double
     }
 
+-- | If we are a core node (i.e. a block producing node) we know which core
+-- node we are, and we have the operational key pair and delegation certificate.
+--
+data PBftIsLeader c = PBftIsLeader {
+      pbftCoreNodeId :: CoreNodeId
+    , pbftSignKey    :: SignKeyDSIGN (PBftDSIGN c)
+    , pbftVerKey     :: VerKeyDSIGN (PBftDSIGN c)
+      -- Verification key for the genesis stakeholder
+      -- This is unfortunately needed during the Byron era
+    , pbftGenVerKey  :: VerKeyDSIGN (PBftDSIGN c)
+      -- TODO: We should have a delegation certificate here.
+    }
+
 instance (PBftCrypto c, Typeable c) => OuroborosTag (PBft c) where
   -- | (Static) node configuration
   data NodeConfig (PBft c) = PBftNodeConfig {
         pbftParams   :: PBftParams
-      , pbftNodeId   :: NodeId
-      , pbftSignKey  :: SignKeyDSIGN (PBftDSIGN c)
-      , pbftVerKey   :: VerKeyDSIGN (PBftDSIGN c)
-        -- Verification key for the genesis stakeholder
-        -- This is unfortunately needed during the Byron era
-      , pbftGenVerKey :: VerKeyDSIGN (PBftDSIGN c)
+      , pbftIsLeader :: Maybe (PBftIsLeader c)
       }
 
   type ValidationErr   (PBft c) = PBftValidationErr c
@@ -157,7 +167,7 @@ instance (PBftCrypto c, Typeable c) => OuroborosTag (PBft c) where
   --   - The delegation map.
   type LedgerView     (PBft c) = PBftLedgerView c
 
-  type IsLeader       (PBft c) = ()
+  type IsLeader       (PBft c) = PBftIsLeader c
 
   -- | Chain state consists of two things:
   --   - a list of the last 'pbftSignatureWindow' signatures.
@@ -167,14 +177,15 @@ instance (PBftCrypto c, Typeable c) => OuroborosTag (PBft c) where
 
   protocolSecurityParam = pbftSecurityParam . pbftParams
 
-  checkIsLeader PBftNodeConfig{..} (SlotNo n) _l _cs = do
-      return $ case pbftNodeId of
-                 RelayId _ -> Nothing -- relays are never leaders
-                 CoreId  i -> if n `mod` pbftNumNodes == fromIntegral i
-                                then Just ()
-                                else Nothing
-    where
-      PBftParams{..}  = pbftParams
+  checkIsLeader PBftNodeConfig{pbftIsLeader, pbftParams} (SlotNo n) _l _cs =
+      case pbftIsLeader of
+        Nothing                                    -> return Nothing
+        Just credentials
+          | n `mod` pbftNumNodes == fromIntegral i -> return (Just credentials)
+          | otherwise                              -> return Nothing
+          where
+            PBftIsLeader{pbftCoreNodeId = CoreNodeId i} = credentials
+            PBftParams{pbftNumNodes}                    = pbftParams
 
   applyChainState cfg@PBftNodeConfig{..} lv@(PBftLedgerView dms) (b :: hdr) chainState = do
       -- Check that the issuer signature verifies, and that it's a delegate of a

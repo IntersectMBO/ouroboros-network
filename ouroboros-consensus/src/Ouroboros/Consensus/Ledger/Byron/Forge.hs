@@ -49,11 +49,11 @@ forgeBlockOrEBB
   -> BlockNo                      -- ^ Current block number
   -> ChainHash (ByronBlockOrEBB cfg)   -- ^ Previous hash
   -> [GenTx (ByronBlockOrEBB cfg)]     -- ^ Txs to add in the block
-  -> ()                           -- ^ Leader proof ('IsLeader')
+  -> PBftIsLeader PBftCardanoCrypto    -- ^ Leader proof ('IsLeader')
   -> m (ByronBlockOrEBB ByronConfig)
-forgeBlockOrEBB cfg curSlot curNo prevHash txs () = case prevHash of
+forgeBlockOrEBB cfg curSlot curNo prevHash txs isLeader = case prevHash of
   GenesisHash -> forgeGenesisEBB cfg curSlot
-  BlockHash _ -> forgeBlock cfg curSlot curNo prevHash txs ()
+  BlockHash _ -> forgeBlock cfg curSlot curNo prevHash txs isLeader
 
 forgeGenesisEBB
   :: forall m.
@@ -100,11 +100,11 @@ forgeBlock
   -> BlockNo                      -- ^ Current block number
   -> ChainHash (ByronBlockOrEBB cfg)   -- ^ Previous hash
   -> [GenTx (ByronBlockOrEBB cfg)]     -- ^ Txs to add in the block
-  -> ()                           -- ^ Leader proof ('IsLeader')
+  -> PBftIsLeader PBftCardanoCrypto    -- ^ Leader proof ('IsLeader')
   -> m (ByronBlockOrEBB ByronConfig)
-forgeBlock (WithEBBNodeConfig cfg) curSlot curNo prevHash txs () = do
+forgeBlock (WithEBBNodeConfig cfg) curSlot curNo prevHash txs isLeader = do
     ouroborosPayload <- give (VerKeyCardanoDSIGN headerGenesisKey)
-      $ forgePBftFields (encNodeConfigP cfg) toCBOR toSign
+      $ forgePBftFields isLeader toCBOR toSign
     return $ forge ouroborosPayload
   where
     -- TODO: Might be sufficient to add 'ConfigContainsGenesis' constraint.
@@ -150,7 +150,7 @@ forgeBlock (WithEBBNodeConfig cfg) curSlot curNo prevHash txs () = do
         }
 
     headerGenesisKey :: Crypto.VerificationKey
-    VerKeyCardanoDSIGN headerGenesisKey = pbftGenVerKey $ encNodeConfigP cfg
+    VerKeyCardanoDSIGN headerGenesisKey = pbftGenVerKey isLeader
 
     dlgCertificate :: CC.Delegation.Certificate
     dlgCertificate = case findDelegate of
@@ -158,7 +158,7 @@ forgeBlock (WithEBBNodeConfig cfg) curSlot curNo prevHash txs () = do
         Nothing -> error "Issuer is not a valid genesis key delegate."
       where
         dlgMap = CC.Genesis.unGenesisDelegation pbftGenesisDlg
-        VerKeyCardanoDSIGN delegate = pbftVerKey $ encNodeConfigP cfg
+        VerKeyCardanoDSIGN delegate = pbftVerKey isLeader
         findDelegate = find (\crt -> CC.Delegation.delegateVK crt == delegate
                                    && CC.Delegation.issuerVK crt == headerGenesisKey
                              )

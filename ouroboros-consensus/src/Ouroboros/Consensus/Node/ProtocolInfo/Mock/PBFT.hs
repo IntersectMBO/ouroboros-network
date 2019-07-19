@@ -14,7 +14,7 @@ import           Cardano.Crypto.DSIGN
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.Mock
 import           Ouroboros.Consensus.Node.ProtocolInfo.Abstract
-import           Ouroboros.Consensus.NodeId (CoreNodeId (..), NodeId (..))
+import           Ouroboros.Consensus.NodeId (CoreNodeId (..))
 import           Ouroboros.Consensus.Protocol.ExtNodeConfig
 import           Ouroboros.Consensus.Protocol.PBFT
 
@@ -28,11 +28,13 @@ protocolInfoMockPBFT (NumCoreNodes numCoreNodes) (CoreNodeId nid) params =
         pInfoConfig = EncNodeConfig {
             encNodeConfigP = PBftNodeConfig {
                 pbftParams   = params {pbftNumNodes = fromIntegral numCoreNodes}
-              , pbftNodeId   = CoreId nid
-              , pbftSignKey  = SignKeyMockDSIGN nid
-              , pbftVerKey   = VerKeyMockDSIGN nid
-                -- For Mock PBFT, we use our key as the genesis key.
-              , pbftGenVerKey = VerKeyMockDSIGN nid
+              , pbftIsLeader = Just PBftIsLeader {
+                    pbftCoreNodeId = CoreNodeId nid
+                  , pbftSignKey    = SignKeyMockDSIGN nid
+                  , pbftVerKey     = VerKeyMockDSIGN nid
+                    -- For Mock PBFT, we use our key as the genesis key.
+                  , pbftGenVerKey  = VerKeyMockDSIGN nid
+                  }
               }
             , encNodeConfigExt = PBftLedgerView $
                 Bimap.fromList [ (VerKeyMockDSIGN n, VerKeyMockDSIGN n)

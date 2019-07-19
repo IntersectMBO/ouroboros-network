@@ -12,7 +12,6 @@ module Ouroboros.Consensus.Node.ProtocolInfo.Byron (
   ) where
 
 import           Control.Monad.Except
-import qualified Data.Bimap as Bimap
 import           Data.Coerce
 import           Data.Maybe (fromJust)
 import qualified Data.Sequence as Seq
@@ -27,7 +26,7 @@ import           Ouroboros.Consensus.Crypto.DSIGN.Cardano
 import           Ouroboros.Consensus.Ledger.Byron
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Node.ProtocolInfo.Abstract
-import           Ouroboros.Consensus.NodeId (CoreNodeId (..), NodeId (..))
+import           Ouroboros.Consensus.NodeId (CoreNodeId (..))
 import           Ouroboros.Consensus.Protocol.ExtNodeConfig
 import           Ouroboros.Consensus.Protocol.PBFT
 import           Ouroboros.Consensus.Protocol.WithEBBs
@@ -51,22 +50,21 @@ protocolInfoByron (NumCoreNodes numCoreNodes) (CoreNodeId nid) params gc =
     ProtocolInfo {
         pInfoConfig = WithEBBNodeConfig $ EncNodeConfig {
             encNodeConfigP = PBftNodeConfig {
-                  pbftParams  = params
+                  pbftParams   = params
                     { pbftNumNodes = fromIntegral numCoreNodes
                       -- Set the signature window to be short for the demo.
                     , pbftSignatureWindow = 7
                     }
-                , pbftNodeId  = CoreId nid
-                , pbftSignKey = SignKeyCardanoDSIGN (snd (lookupKey nid))
-                , pbftVerKey  = VerKeyCardanoDSIGN  (fst (lookupKey nid))
-                , pbftGenVerKey = VerKeyCardanoDSIGN (lookupGenKey nid)
+                  --TODO: also allow not being a BFT leader:
+                , pbftIsLeader = Just PBftIsLeader {
+                      pbftCoreNodeId = CoreNodeId nid
+                    , pbftSignKey    = SignKeyCardanoDSIGN (snd (lookupKey nid))
+                    , pbftVerKey     = VerKeyCardanoDSIGN  (fst (lookupKey nid))
+                    , pbftGenVerKey  = VerKeyCardanoDSIGN (lookupGenKey nid)
+                    }
                 }
           , encNodeConfigExt = ByronConfig {
-                pbftCoreNodes = Bimap.fromList [
-                    (fst (lookupKey n), CoreNodeId n)
-                    | n <- [0 .. numCoreNodes]
-                    ]
-              , pbftProtocolMagic   = Cardano.Genesis.configProtocolMagic gc
+                pbftProtocolMagic   = Cardano.Genesis.configProtocolMagic gc
               , pbftProtocolVersion = Cardano.Update.ProtocolVersion 1 0 0
               , pbftSoftwareVersion = Cardano.Update.SoftwareVersion (Cardano.Update.ApplicationName "Cardano Demo") 1
               , pbftGenesisConfig   = gc
@@ -74,6 +72,9 @@ protocolInfoByron (NumCoreNodes numCoreNodes) (CoreNodeId nid) params gc =
               , pbftEpochSlots      = Cardano.Genesis.configEpochSlots gc
               , pbftGenesisDlg      = Cardano.Genesis.configHeavyDelegation gc
               , pbftSecrets         = Dummy.dummyGeneratedSecrets
+                --TODO: These "richmen" secrets ^^ are here to support demos
+                -- where we need to elaborate from mock transactions to real
+                -- ones. It should be removed when we can eliminate elaboration.
               }
           }
       , pInfoInitLedger = ExtLedgerState {
