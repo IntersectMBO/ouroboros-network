@@ -24,6 +24,7 @@ import qualified Cardano.Crypto as Cardano
 import           Ouroboros.Consensus.Ledger.Byron
 import           Ouroboros.Consensus.Ledger.Byron.Config
 import           Ouroboros.Consensus.Ledger.Mock
+import           Ouroboros.Consensus.Node.ProtocolInfo.Byron
 import           Ouroboros.Consensus.Node.ProtocolInfo.Mock.PBFT ()
 import           Ouroboros.Consensus.Node.ProtocolInfo.Mock.Praos ()
 import           Ouroboros.Consensus.Node.Run
@@ -79,7 +80,7 @@ data Protocol blk where
   ProtocolRealPBFT
     :: PBftParams
     -> Cardano.Genesis.Config
-    -> StaticKeyMaterialByronPbft
+    -> PbftLeaderCredentials
     -> Protocol (ByronBlockOrEBB ByronConfig)
 
 {-------------------------------------------------------------------------------

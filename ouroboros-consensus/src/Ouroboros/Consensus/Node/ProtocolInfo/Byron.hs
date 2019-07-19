@@ -9,15 +9,16 @@
 module Ouroboros.Consensus.Node.ProtocolInfo.Byron (
     protocolInfoByron
   , ByronConfig
+    -- * Secrets
+  , PbftLeaderCredentials (..)
   ) where
 
 import           Control.Monad.Except
 import           Data.Coerce
-import           Data.Maybe (fromJust)
 import qualified Data.Sequence as Seq
 
 import qualified Cardano.Chain.Block as Cardano.Block
-import qualified Cardano.Chain.Common as Cardano.Common
+import qualified Cardano.Chain.Delegation as Cardano.Delegation
 import qualified Cardano.Chain.Genesis as Cardano.Genesis
 import qualified Cardano.Chain.Update as Cardano.Update
 import qualified Cardano.Crypto as Cardano
@@ -36,6 +37,15 @@ import           Ouroboros.Consensus.Ledger.Byron.Config
 import qualified Test.Cardano.Chain.Genesis.Dummy as Dummy
 
 {-------------------------------------------------------------------------------
+  Credentials
+-------------------------------------------------------------------------------}
+
+data PbftLeaderCredentials = PbftLeaderCredentials {
+      plcSignKey     :: Cardano.SigningKey
+    , plcDlgCert     :: Cardano.Delegation.Certificate
+    }
+
+{-------------------------------------------------------------------------------
   ProtocolInfo
 -------------------------------------------------------------------------------}
 
@@ -45,9 +55,9 @@ protocolInfoByron :: NumCoreNodes
                   -> CoreNodeId
                   -> PBftParams
                   -> Cardano.Genesis.Config
-                  -> StaticKeyMaterialByronPbft
+                  -> PbftLeaderCredentials
                   -> ProtocolInfo (ByronBlockOrEBB ByronConfig)
-protocolInfoByron (NumCoreNodes numCoreNodes) (CoreNodeId nid) params gc (StaticKeyMaterialByronPbft sk dlg) =
+protocolInfoByron (NumCoreNodes numCoreNodes) (CoreNodeId nid) params gc (PbftLeaderCredentials sk dlg) =
     ProtocolInfo {
         pInfoConfig = WithEBBNodeConfig $ EncNodeConfig {
             encNodeConfigP = PBftNodeConfig {
