@@ -1,5 +1,6 @@
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE LambdaCase          #-}
+{-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
@@ -8,6 +9,9 @@
 module Ouroboros.Storage.ChainDB.Impl.Iterator
   ( streamBlocks
   , closeAllIterators
+    -- * Exported for testing purposes
+  , IteratorEnv (..)
+  , newIterator
   ) where
 
 import           Control.Monad (unless, when)
@@ -15,6 +19,7 @@ import           Control.Monad.Except (ExceptT (..), lift, runExceptT,
                      throwError)
 import           Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
+import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           GHC.Stack (HasCallStack)
 
@@ -31,8 +36,10 @@ import           Ouroboros.Storage.ChainDB.API (ChainDbError (..),
                      StreamFrom (..), StreamTo (..), UnknownRange (..),
                      validBounds)
 
+import           Ouroboros.Storage.ChainDB.Impl.ImmDB (ImmDB)
 import qualified Ouroboros.Storage.ChainDB.Impl.ImmDB as ImmDB
 import           Ouroboros.Storage.ChainDB.Impl.Types
+import           Ouroboros.Storage.ChainDB.Impl.VolDB (VolDB)
 import qualified Ouroboros.Storage.ChainDB.Impl.VolDB as VolDB
 
 -- | Stream blocks
@@ -164,7 +171,38 @@ streamBlocks
   -> StreamFrom      blk
   -> StreamTo        blk
   -> m (Either (UnknownRange blk) (Iterator m blk))
-streamBlocks h from to = getEnv h $ \cdb -> newIterator cdb h from to
+streamBlocks h from to = getEnv h $ \cdb ->
+    newIterator (fromChainDbEnv cdb) getItEnv from to
+  where
+    getItEnv :: forall r. (IteratorEnv m blk -> m r) -> m r
+    getItEnv f = getEnv h (f . fromChainDbEnv)
+
+{-------------------------------------------------------------------------------
+  Iterator environment
+-------------------------------------------------------------------------------}
+
+-- | Environment containing everything needed to implement iterators.
+--
+-- The main purpose of bundling these things in a separate record is to make
+-- it easier to test this code: no need to set up a whole ChainDB, just
+-- provide this record.
+data IteratorEnv m blk = IteratorEnv
+  { itImmDB          :: ImmDB m blk
+  , itVolDB          :: VolDB m blk
+  , itIterators      :: TVar m (Map IteratorId (m ()))
+  , itNextIteratorId :: TVar m IteratorId
+  , itTracer         :: Tracer m (TraceIteratorEvent blk)
+  }
+
+-- | Obtain an 'IteratorEnv' from a 'ChainDbEnv'.
+fromChainDbEnv :: ChainDbEnv m blk -> IteratorEnv m blk
+fromChainDbEnv CDB{..} = IteratorEnv
+  { itImmDB          = cdbImmDB
+  , itVolDB          = cdbVolDB
+  , itIterators      = cdbIterators
+  , itNextIteratorId = cdbNextIteratorId
+  , itTracer         = contramap TraceIteratorEvent cdbTracer
+  }
 
 -- | See 'streamBlocks'.
 newIterator
@@ -175,15 +213,17 @@ newIterator
      , HasHeader blk
      , HasCallStack
      )
-  => ChainDbEnv    m blk
-  -> ChainDbHandle m blk
-     -- ^ We need the handle to pass it on to the 'Iterator', so that each
-     -- time a function is called on the 'Iterator', we check whether the
-     -- ChainDB is actually open.
+  => IteratorEnv   m blk
+  -> (forall r. (IteratorEnv m blk -> m r) -> m r)
+     -- ^ Function with which the operations on the returned iterator should
+     -- obtain their 'IteratorEnv'. This function should check whether the
+     -- ChainDB is still open or throw an exception otherwise. This makes sure
+     -- that when we call 'iteratorNext', we first check whether the ChainDB
+     -- is still open.
   -> StreamFrom      blk
   -> StreamTo        blk
   -> m (Either (UnknownRange blk) (Iterator m blk))
-newIterator cdb@CDB{..} h from to = do
+newIterator itEnv@IteratorEnv{..} getItEnv from to = do
     unless (validBounds from to) $
       throwM $ InvalidIteratorRange from to
     res <- runExceptT start
@@ -192,14 +232,11 @@ newIterator cdb@CDB{..} h from to = do
       _      -> return ()
     return res
   where
-    tracer :: Tracer m (TraceIteratorEvent blk)
-    tracer = contramap TraceIteratorEvent cdbTracer
-
-    trace = traceWith tracer
+    trace = traceWith itTracer
 
     start :: HasCallStack => ExceptT (UnknownRange blk) m (Iterator m blk)
     start = do
-      path <- lift $ atomically $ VolDB.computePathSTM cdbVolDB from to
+      path <- lift $ atomically $ VolDB.computePathSTM itVolDB from to
       case path of
         VolDB.NotInVolDB        _hash           -> streamFromImmDB
         VolDB.PartiallyInVolDB  predHash hashes -> streamFromBoth predHash hashes
@@ -225,15 +262,15 @@ newIterator cdb@CDB{..} h from to = do
         -- First check whether the block in the ImmDB at the end bound has the
         -- correct hash.
         when checkUpperBound $ do
-          slotNoAtTip <- lift $ ImmDB.getSlotNoAtTip cdbImmDB
+          slotNoAtTip <- lift $ ImmDB.getSlotNoAtTip itImmDB
           when (pointSlot endPoint > slotNoAtTip) $
             throwError $ MissingBlock endPoint
-          lift (ImmDB.getBlockWithPoint cdbImmDB endPoint) >>= \case
+          lift (ImmDB.getBlockWithPoint itImmDB endPoint) >>= \case
             Just _  -> return ()
             Nothing -> throwError $ MissingBlock endPoint
         -- 'ImmDB.streamBlocksFrom' will check the hash of the block at the
         -- start bound.
-        immIt <- ExceptT $ ImmDB.streamBlocksFrom cdbImmDB from
+        immIt <- ExceptT $ ImmDB.streamBlocksFrom itImmDB from
         lift $ createIterator $ InImmDB from immIt (StreamTo to)
       where
         endPoint = case to of
@@ -252,7 +289,7 @@ newIterator cdb@CDB{..} h from to = do
                    -> ExceptT (UnknownRange blk) m (Iterator m blk)
     streamFromBoth predHash hashes = do
         lift $ trace $ StreamFromBoth from to hashes
-        lift (ImmDB.getBlockAtTip cdbImmDB) >>= \case
+        lift (ImmDB.getBlockAtTip itImmDB) >>= \case
           -- The ImmutableDB is empty
           Nothing -> throwError $ ForkTooOld from
           -- The incomplete path fits onto the tip of the ImmutableDB.
@@ -286,7 +323,7 @@ newIterator cdb@CDB{..} h from to = do
       where
         stream pt hashes' = do
           let immEnd = SwitchToVolDBFrom (StreamToInclusive pt) hashes'
-          immIt <- ExceptT $ ImmDB.streamBlocksFrom cdbImmDB from
+          immIt <- ExceptT $ ImmDB.streamBlocksFrom itImmDB from
           lift $ createIterator $ InImmDB from immIt immEnd
 
     makeIterator :: Bool  -- ^ Register the iterator in 'cdbIterators'?
@@ -295,14 +332,14 @@ newIterator cdb@CDB{..} h from to = do
     makeIterator register itState = do
       iteratorId <- makeNewIteratorId
       varItState <- newTVarM itState
-      when register $ atomically $ modifyTVar' cdbIterators $
-        -- Note that we don't use 'getEnv' here, because that would mean that
+      when register $ atomically $ modifyTVar' itIterators $
+        -- Note that we don't use 'itEnv' here, because that would mean that
         -- invoking the function only works when the database is open, which
         -- probably won't be the case.
-        Map.insert iteratorId (implIteratorClose varItState iteratorId cdb)
+        Map.insert iteratorId (implIteratorClose varItState iteratorId itEnv)
       return Iterator {
-          iteratorNext  = getEnv h $ implIteratorNext  varItState
-        , iteratorClose = getEnv h $ implIteratorClose varItState iteratorId
+          iteratorNext  = getItEnv $ implIteratorNext  varItState
+        , iteratorClose = getItEnv $ implIteratorClose varItState iteratorId
         , iteratorId    = iteratorId
         }
 
@@ -315,21 +352,21 @@ newIterator cdb@CDB{..} h from to = do
 
     makeNewIteratorId :: m IteratorId
     makeNewIteratorId = atomically $ do
-      newIteratorId <- readTVar cdbNextIteratorId
-      modifyTVar' cdbNextIteratorId succ
+      newIteratorId <- readTVar itNextIteratorId
+      modifyTVar' itNextIteratorId succ
       return newIteratorId
 
--- | Close the iterator and remove it from the map of iterators
--- ('cdbIterators').
+-- | Close the iterator and remove it from the map of iterators ('itIterators'
+-- and thus 'cdbIterators').
 implIteratorClose
   :: MonadSTM m
   => TVar m (IteratorState m blk)
   -> IteratorId
-  -> ChainDbEnv m blk
+  -> IteratorEnv m blk
   -> m ()
-implIteratorClose varItState itrId CDB{..} = do
+implIteratorClose varItState itrId IteratorEnv{..} = do
     mbImmIt <- atomically $ do
-      modifyTVar' cdbIterators (Map.delete itrId)
+      modifyTVar' itIterators (Map.delete itrId)
       mbImmIt <- iteratorStateImmIt <$> readTVar varItState
       writeTVar varItState Closed
       return mbImmIt
@@ -435,9 +472,9 @@ implIteratorNext :: forall m blk.
                     , HasHeader blk
                     )
                  => TVar m (IteratorState m blk)
-                 -> ChainDbEnv m blk
+                 -> IteratorEnv m blk
                  -> m (IteratorResult blk)
-implIteratorNext varItState CDB{..} =
+implIteratorNext varItState IteratorEnv{..} =
     atomically (readTVar varItState) >>= \case
       Closed ->
         return IteratorExhausted
@@ -448,7 +485,7 @@ implIteratorNext varItState CDB{..} =
       InVolDB continueAfter volHashes ->
         nextInVolDB continueAfter volHashes
   where
-    trace = traceWith (contramap TraceIteratorEvent cdbTracer)
+    trace = traceWith itTracer
 
     -- | Read the next block while in the 'InVolDB' state.
     nextInVolDB :: StreamFrom blk
@@ -459,7 +496,7 @@ implIteratorNext varItState CDB{..} =
                 -> NonEmpty (HeaderHash blk)
                 -> m (IteratorResult blk)
     nextInVolDB continueFrom (hash NE.:| hashes) =
-      VolDB.getBlock cdbVolDB hash >>= \case
+      VolDB.getBlock itVolDB hash >>= \case
         -- Block is missing
         Nothing -> do
             trace $ BlockMissingFromVolDB hash
@@ -472,7 +509,7 @@ implIteratorNext varItState CDB{..} =
             -- 'ReadFutureEBBError' because if the block is missing, it /must/
             -- have been garbage-collected, which means that its slot was
             -- older than the slot of the tip of the ImmutableDB.
-            immIt <- ImmDB.streamBlocksFromUnchecked cdbImmDB continueFrom
+            immIt <- ImmDB.streamBlocksFromUnchecked itImmDB continueFrom
             nextInImmDBRetry Nothing immIt (hash NE.:| hashes)
 
         -- Block is there
