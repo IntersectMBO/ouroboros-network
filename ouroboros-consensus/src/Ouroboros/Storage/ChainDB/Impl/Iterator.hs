@@ -322,7 +322,7 @@ newIterator cdb@CDB{..} h from to = do
 -- | Close the iterator and remove it from the map of iterators
 -- ('cdbIterators').
 implIteratorClose
-  :: MonadSTM m
+  :: (MonadSTM m, MonadCatch m, HasHeader blk)
   => TVar m (IteratorState m blk)
   -> IteratorId
   -> ChainDbEnv m blk
@@ -333,7 +333,7 @@ implIteratorClose varItState itrId CDB{..} = do
       mbImmIt <- iteratorStateImmIt <$> readTVar varItState
       writeTVar varItState Closed
       return mbImmIt
-    mapM_ ImmDB.iteratorClose mbImmIt
+    mapM_ (ImmDB.iteratorClose cdbImmDB) mbImmIt
 
 -- | Possible states of an iterator.
 --
@@ -491,8 +491,8 @@ implIteratorNext varItState CDB{..} =
                 -> InImmDBEnd blk
                 -> m (IteratorResult blk)
     nextInImmDB continueFrom immIt immEnd = do
-      immRes <- selectResult immEnd <$> ImmDB.iteratorNext    immIt
-                                    <*> ImmDB.iteratorHasNext immIt
+      immRes <- selectResult immEnd <$> ImmDB.iteratorNext    cdbImmDB immIt
+                                    <*> ImmDB.iteratorHasNext cdbImmDB immIt
       case immRes of
         NotDone blk -> do
           let continueFrom' = StreamFromExclusive (blockPoint blk)
@@ -527,8 +527,8 @@ implIteratorNext varItState CDB{..} =
                      -> NonEmpty (HeaderHash blk)
                      -> m (IteratorResult blk)
     nextInImmDBRetry mbContinueFrom immIt (hash NE.:| hashes) =
-      selectResult StreamAll <$> ImmDB.iteratorNext    immIt
-                             <*> ImmDB.iteratorHasNext immIt >>= \case
+      selectResult StreamAll <$> ImmDB.iteratorNext    cdbImmDB immIt
+                             <*> ImmDB.iteratorHasNext cdbImmDB immIt >>= \case
         NotDone blk | blockHash blk == hash -> do
           trace $ BlockWasCopiedToImmDB hash
           let continueFrom' = StreamFromExclusive (blockPoint blk)
