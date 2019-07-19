@@ -31,7 +31,8 @@ import           Control.Monad.Class.MonadThrow
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment (..))
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block
-import           Ouroboros.Network.Chain (genesisPoint, genesisSlotNo)
+import           Ouroboros.Network.Chain (genesisPoint)
+import           Ouroboros.Network.Point (WithOrigin (..))
 import           Ouroboros.Network.Protocol.ChainSync.Client
 
 import           Ouroboros.Consensus.Block
@@ -302,7 +303,7 @@ chainSyncClient tracer cfg btime (ClockSkew maxSkew)
 
       -- Get the 'ChainState' at genesis.
       let candidateChain' = Empty genesisPoint
-      candidateChainState' <- case rewindChainState cfg curChainState genesisSlotNo of
+      candidateChainState' <- case rewindChainState cfg curChainState Origin of
         Nothing -> disconnect $ ForkTooDeep genesisPoint theirHead
         Just c  -> pure c
 
@@ -391,13 +392,17 @@ chainSyncClient tracer cfg btime (ClockSkew maxSkew)
           -- TODO: Chain sync Client: Reuse anachronistic ledger view? #581
           case anachronisticProtocolLedgerView cfg curLedger (pointSlot hdrPoint) of
             Nothing   -> retry
-            Just view -> case view `SB.at` pointSlot hdrPoint of
-              Nothing -> error "anachronisticProtocolLedgerView invariant violated"
-              Just lv -> return lv
+            Just view -> case view `SB.at` hdrSlot of
+                Nothing -> error "anachronisticProtocolLedgerView invariant violated"
+                Just lv -> return lv
+              where
+                hdrSlot = case pointSlot hdrPoint of
+                  Origin      -> SlotNo 0
+                  At thisSlot -> thisSlot
 
       -- Check for clock skew
       wallclock <- getCurrentSlot btime
-      when (unSlotNo (pointSlot hdrPoint) > unSlotNo wallclock + maxSkew) $
+      when (fmap unSlotNo (pointSlot hdrPoint) > At (unSlotNo wallclock + maxSkew)) $
         disconnect $ HeaderExceedsClockSkew hdrPoint wallclock
 
       -- Validate header

@@ -103,6 +103,7 @@ import           Codec.CBOR.Decoding (decodeListLen)
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.Chain (Chain)
 import qualified Ouroboros.Network.Chain as Chain
+import           Ouroboros.Network.Point (WithOrigin (At))
 
 --
 -- Blockchain fragment data type.
@@ -113,8 +114,8 @@ import qualified Ouroboros.Network.Chain as Chain
 -- The chain grows to the right. The oldest block is the left-most block and
 -- the newest block is the right-most block.
 --
--- Invariant: a chain fragment should never contain a block with slot @0@.
--- That is the slot number reserved for genesis.
+-- Invariant: a chain fragment should never contain the origin point.
+-- That is the point reserved for genesis.
 --
 -- It will not be possible to find it with 'lookupBySlot',
 -- since @minBound \@Word == 0@.
@@ -230,7 +231,7 @@ isValidSuccessorOf' bSucc b
     -- Note that this inequality would be loose, but for epoch
     -- boundary blocks, which occupy the same slot as a regular
     -- block.
-  | pointSlot p > blockSlot bSucc
+  | pointSlot p >= At (blockSlot bSucc)
   = Left $ concat [
         "Slot of tip ("
       , show (pointSlot p)
@@ -261,8 +262,6 @@ validExtension' :: (HasHeader block, HasCallStack)
 validExtension' c bSucc
   | not (blockInvariant bSucc)
   = Left $ "blockInvariant failed for bSucc"
-  | blockSlot bSucc == SlotNo 0
-  = Left $ "blockSlot was 0"
   | otherwise
   = case head c of
       Nothing -> Right ()
@@ -512,7 +511,8 @@ selectPointsSpec offsets c =
 -- | \( O(\log(\min(i,n-i)) \). Find the block after the given point.
 successorBlock :: HasHeader block
                => Point block -> ChainFragment block -> Maybe block
-successorBlock p c = case lookupBySlotFT c (pointSlot p) of
+successorBlock GenesisPoint           _ = Nothing
+successorBlock p@(BlockPoint bslot _) c = case lookupBySlotFT c bslot of
   FT.Position _ b ft'
     | blockPoint b == p
     , n FT.:< _ <- FT.viewl ft' -- O(1)
@@ -544,8 +544,9 @@ splitAfterPoint :: (HasHeader block1, HasHeader block2,
                 => ChainFragment block1
                 -> Point block2
                 -> Maybe (ChainFragment block1, ChainFragment block1)
-splitAfterPoint c p
-  | (l@(ChainFragment lt), r) <- splitAfterSlot c (pointSlot p)
+splitAfterPoint _ GenesisPoint           = Nothing
+splitAfterPoint c p@(BlockPoint bslot _)
+  | (l@(ChainFragment lt), r) <- splitAfterSlot c bslot
   , _ FT.:> b <- FT.viewr lt  -- O(1)
   , blockPoint b == castPoint p
   = Just (l, r)
@@ -571,8 +572,9 @@ splitBeforePoint :: (HasHeader block1, HasHeader block2,
                  => ChainFragment block1
                  -> Point block2
                  -> Maybe (ChainFragment block1, ChainFragment block1)
-splitBeforePoint c p
-  | (l, r@(ChainFragment rt)) <- splitBeforeSlot c (pointSlot p)
+splitBeforePoint _ GenesisPoint           = Nothing
+splitBeforePoint c p@(BlockPoint bslot _)
+  | (l, r@(ChainFragment rt)) <- splitBeforeSlot c bslot
   , b FT.:< _ <- FT.viewl rt  -- O(1)
   , blockPoint b == castPoint p
   = Just (l, r)
@@ -628,7 +630,8 @@ slotOnChainFragmentSpec slot = go
 
 -- | \( O(\log(\min(i,n-i)) \).
 pointOnChainFragment :: HasHeader block => Point block -> ChainFragment block -> Bool
-pointOnChainFragment p c = case lookupBySlot c (pointSlot p) of
+pointOnChainFragment GenesisPoint           _ = False
+pointOnChainFragment p@(BlockPoint bslot _) c = case lookupBySlot c bslot of
   Just b | blockPoint b == p -> True
   _                          -> False
 

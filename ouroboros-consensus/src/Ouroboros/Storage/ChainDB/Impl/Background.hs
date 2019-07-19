@@ -46,6 +46,7 @@ import           Ouroboros.Network.AnchoredFragment (AnchoredFragment (..))
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block (ChainHash (..), HasHeader, Point,
                      SlotNo, StandardHash, pointHash, pointSlot)
+import           Ouroboros.Network.Point (WithOrigin (..))
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Ledger.Abstract (ProtocolLedgerView)
@@ -118,7 +119,7 @@ copyToImmDB
      , HasCallStack
      )
   => ChainDbEnv m blk
-  -> m SlotNo
+  -> m (WithOrigin SlotNo)
 copyToImmDB CDB{..} = withCopyLock $ do
     toCopy <- atomically $ do
       curChain <- readTVar cdbChain
@@ -206,8 +207,10 @@ copyToImmDBRunner cdb@CDB{..} gcSchedule = forever $ do
       curChain <- readTVar cdbChain
       check $ fromIntegral (AF.length curChain) > k
 
-    slotNo <- copyToImmDB cdb
-    scheduleGC (contramap TraceGCEvent cdbTracer) slotNo cdbGcDelay gcSchedule
+    mSlotNo <- copyToImmDB cdb
+    case mSlotNo of
+      Origin    -> pure ()
+      At slotNo -> scheduleGC (contramap TraceGCEvent cdbTracer) slotNo cdbGcDelay gcSchedule
   where
     SecurityParam k = protocolSecurityParam cdbNodeConfig
 
@@ -238,7 +241,7 @@ garbageCollect CDB{..} slotNo = do
     VolDB.garbageCollect cdbVolDB slotNo
     atomically $ do
       LgrDB.garbageCollectPrevApplied cdbLgrDB slotNo
-      modifyTVar' cdbInvalid $ Set.filter ((<= slotNo) . pointSlot)
+      modifyTVar' cdbInvalid $ Set.filter ((<= At slotNo) . pointSlot)
     traceWith cdbTracer $ TraceGCEvent $ PerformedGC slotNo
 
 {-------------------------------------------------------------------------------

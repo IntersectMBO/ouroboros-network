@@ -57,6 +57,7 @@ import           Cardano.Crypto.VRF.Mock (MockVRF)
 import           Cardano.Crypto.VRF.Simple (SimpleVRF)
 
 import           Ouroboros.Network.Block (HasHeader (..), SlotNo (..))
+import           Ouroboros.Network.Point (WithOrigin (At))
 
 import           Ouroboros.Consensus.NodeId (CoreNodeId (..), NodeId (..))
 import           Ouroboros.Consensus.Protocol.Abstract
@@ -293,7 +294,7 @@ instance PraosCrypto c => OuroborosTag (Praos c) where
   -- filled; instead we roll back the the block just before it.
   rewindChainState PraosNodeConfig{..} cs rewindTo =
       -- This may drop us back to the empty list if we go back to genesis
-      Just $ dropWhile (\bi -> biSlot bi > rewindTo) cs
+      Just $ dropWhile (\bi -> At (biSlot bi) > rewindTo) cs
 
   -- NOTE: We redefine `preferCandidate` but NOT `compareCandidates`
   -- NOTE: See note regarding clock skew.

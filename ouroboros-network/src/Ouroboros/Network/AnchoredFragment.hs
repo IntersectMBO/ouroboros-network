@@ -82,6 +82,7 @@ import           Ouroboros.Network.Chain (Chain)
 import qualified Ouroboros.Network.Chain as Chain
 import           Ouroboros.Network.ChainFragment (ChainFragment)
 import qualified Ouroboros.Network.ChainFragment as CF
+import           Ouroboros.Network.Point (WithOrigin (At))
 
 -- | An 'AnchoredFragment' is a 'ChainFragment' that is anchored to some
 -- 'Point': the point right before the first, leftmost block in the fragment.
@@ -212,7 +213,7 @@ validExtension af bSucc =
                  -- Note that this inequality would be strict, but for epoch
                  -- boundary blocks, which occupy the same slot as a regular
                  -- block.
-                 pointSlot p <=  blockSlot     bSucc
+                 pointSlot p <= At (blockSlot bSucc)
       Right b -> bSucc `CF.isValidSuccessorOf` b
 
 -- | \( O(1) \). When the fragment is empty, return the anchor point,
@@ -226,9 +227,9 @@ headPoint :: HasHeader block => AnchoredFragment block -> Point block
 headPoint = either id blockPoint . head
 
 -- | \( O(1) \). When the fragment is empty, the slot of the anchor point is
--- returned.
-headSlot :: HasHeader block => AnchoredFragment block -> SlotNo
-headSlot = either pointSlot blockSlot . head
+-- returned, which may be origin (no slot).
+headSlot :: HasHeader block => AnchoredFragment block -> WithOrigin SlotNo
+headSlot = either pointSlot (At . blockSlot) . head
 
 -- | \( O(1) \). When the fragment is empty, the hash of the anchor point is
 -- returned.
@@ -251,9 +252,9 @@ lastPoint :: HasHeader block => AnchoredFragment block -> Point block
 lastPoint = either id blockPoint . last
 
 -- | \( O(1) \). When the fragment is empty, the slot of the anchor point is
--- returned.
-lastSlot :: HasHeader block => AnchoredFragment block -> SlotNo
-lastSlot = either pointSlot blockSlot . last
+-- returned, which may be the origin and therefore have no slot.
+lastSlot :: HasHeader block => AnchoredFragment block -> WithOrigin SlotNo
+lastSlot = either pointSlot (At . blockSlot) . last
 
 -- | TODO. Make a list of blocks from a 'AnchoredFragment', in newest-to-oldest
 -- order.

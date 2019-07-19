@@ -43,7 +43,7 @@ import Ouroboros.Network.Block
 import qualified Ouroboros.Network.Chain as Chain
 import qualified Ouroboros.Network.ChainFragment as CF
 import qualified Ouroboros.Network.AnchoredFragment as AF
-import Ouroboros.Network.Point (WithOrigin (Origin))
+import Ouroboros.Network.Point (WithOrigin (..))
 import Ouroboros.Network.Testing.ConcreteBlock
 import Ouroboros.Network.Socket
 import Ouroboros.Network.Mux
@@ -703,7 +703,7 @@ splitBeforePoint :: Point Block -> [Block] -> Maybe ([Block], [Block])
 splitBeforePoint pt = go []
   where
     go acc (b:bs) =
-      case compare (blockSlot b) (pointSlot pt) of
+      case compare (At (blockSlot b)) (pointSlot pt) of
         LT -> go (b:acc) bs
         EQ | pt == castPoint (blockPoint b)
            -> Just (reverse acc, b:bs)

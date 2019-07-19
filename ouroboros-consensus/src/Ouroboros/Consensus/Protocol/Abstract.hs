@@ -46,6 +46,7 @@ import           Ouroboros.Network.AnchoredFragment (AnchoredFragment (..))
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block (HasHeader (..), SlotNo (..))
 import           Ouroboros.Network.Chain (Chain)
+import           Ouroboros.Network.Point (WithOrigin)
 
 import qualified Ouroboros.Consensus.Util.AnchoredFragment as AF
 import           Ouroboros.Consensus.Util.Random
@@ -177,7 +178,7 @@ class ( Show (ChainState    p)
   -- blocks.
   --
   -- This function should attempt to rewind the chain state to the state at some
-  -- given slot.
+  -- given slot, or Origin to rewind to the state with no blocks.
   --
   -- Implementers should take care that this function accurately reflects the
   -- slot number, rather than the number of blocks, since naively the
@@ -197,7 +198,7 @@ class ( Show (ChainState    p)
   -- and will yield 'Nothing'.
   rewindChainState :: NodeConfig p
                    -> ChainState p
-                   -> SlotNo -- ^ Slot to rewind to.
+                   -> WithOrigin SlotNo -- ^ Slot to rewind to.
                    -> Maybe (ChainState p)
 
 -- | Protocol security parameter

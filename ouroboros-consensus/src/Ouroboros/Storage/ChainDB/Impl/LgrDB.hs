@@ -61,6 +61,7 @@ import           Control.Tracer
 import           Ouroboros.Network.Block (HasHeader (..), HeaderHash, Point,
                      SlotNo, StandardHash, blockPoint, castPoint)
 import qualified Ouroboros.Network.Block as Block
+import           Ouroboros.Network.Point (WithOrigin (At))
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Ledger.Abstract
@@ -383,7 +384,7 @@ garbageCollectPrevApplied :: MonadSTM m
                           -> SlotNo
                           -> STM m ()
 garbageCollectPrevApplied LgrDB{..} slotNo = modifyTVar' varPrevApplied $
-    Set.filter ((<= slotNo) . Block.pointSlot)
+    Set.filter ((<= (At slotNo)) . Block.pointSlot)
 
 {-------------------------------------------------------------------------------
   Error handling

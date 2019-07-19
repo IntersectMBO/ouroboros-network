@@ -13,6 +13,7 @@ module Ouroboros.Consensus.Ledger.Abstract (
 import           Control.Monad.Except
 
 import           Ouroboros.Network.Block (Point, SlotNo)
+import           Ouroboros.Network.Point (WithOrigin)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Protocol.Abstract
@@ -115,5 +116,5 @@ class UpdateLedger blk => ProtocolLedgerView blk where
   anachronisticProtocolLedgerView
     :: NodeConfig (BlockProtocol blk)
     -> LedgerState blk
-    -> SlotNo -- ^ Slot for which you would like a ledger view
+    -> WithOrigin SlotNo -- ^ Slot for which you would like a ledger view
     -> Maybe (SlotBounded (LedgerView (BlockProtocol blk)))

@@ -42,6 +42,7 @@ import           Ouroboros.Network.Block
 import           Ouroboros.Network.BlockFetch
 import           Ouroboros.Network.BlockFetch.State (FetchMode (..))
 import qualified Ouroboros.Network.Chain as Chain
+import           Ouroboros.Network.Point (WithOrigin (..))
 import           Ouroboros.Network.TxSubmission.Inbound
 import           Ouroboros.Network.TxSubmission.Outbound hiding
                      (MempoolSnapshot)
@@ -271,7 +272,11 @@ initBlockFetchConsensusInterface tracer cfg chainDB getCandidates blockFetchSize
     readFetchMode = do
       curSlot      <- getCurrentSlot btime
       curChainSlot <- headSlot <$> ChainDB.getCurrentChain chainDB
-      let slotsBehind = unSlotNo curSlot - unSlotNo curChainSlot
+      let slotsBehind = case curChainSlot of
+            -- There's nothing in the chain. If the current slot is 0, then
+            -- we're 1 slot behind.
+            Origin  -> unSlotNo curSlot + 1
+            At slot -> unSlotNo curSlot - unSlotNo slot
           maxBlocksBehind = 5
           -- Convert from blocks to slots. This is more or less the @f@
           -- parameter, the frequency of blocks. TODO should be 10 for Praos,

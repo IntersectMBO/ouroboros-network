@@ -83,8 +83,8 @@ import           Cardano.Crypto.DSIGN
 import           Cardano.Crypto.Hash
 
 import           Ouroboros.Network.Block
-import           Ouroboros.Network.Chain (genesisSlotNo)
 import qualified Ouroboros.Network.Point as Point (block, origin)
+import           Ouroboros.Network.Point (WithOrigin (..))
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Crypto.DSIGN.Cardano
@@ -823,10 +823,10 @@ instance (ByronGiven, Typeable cfg, ConfigContainsGenesis cfg)
                 <$> sb
         -- No snapshot - we could be in the past or in the future
         Nothing
-          | slot >= lvLB && slot <= lvUB
+          | slot >= At lvLB && slot <= At lvUB
           -> Just $ PBftLedgerView <$>
              case Seq.takeWhileL
-                    (\sd -> convertSlot (V.Scheduling.sdSlot sd) <= slot)
+                    (\sd -> At (convertSlot (V.Scheduling.sdSlot sd)) <= slot)
                     dsScheduled of
                 -- No updates to apply. So the current ledger state is valid
                 -- from the end of the last snapshot to the first scheduled
@@ -854,7 +854,7 @@ instance (ByronGiven, Typeable cfg, ConfigContainsGenesis cfg)
       lvUB = SlotNo $ unSlotNo currentSlot + (2 * paramK)
       lvLB
         | 2 * paramK > unSlotNo currentSlot
-        = genesisSlotNo
+        = SlotNo 0
         | otherwise
         = SlotNo $ unSlotNo currentSlot - (2 * paramK)
 
@@ -867,4 +867,4 @@ instance (ByronGiven, Typeable cfg, ConfigContainsGenesis cfg)
                   . CC.Block.cvsDelegationState
                   $ ls
       currentSlot = convertSlot $ CC.Block.cvsLastSlot ls
-      containsSlot s sb = sbLower sb <= s && sbUpper sb >= s
+      containsSlot s sb = At (sbLower sb) <= s && At (sbUpper sb) >= s
