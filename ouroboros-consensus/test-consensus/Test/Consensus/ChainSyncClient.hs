@@ -27,8 +27,8 @@ import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
 import           Control.Monad.IOSim (runSimOrThrow)
 
-import           Network.Mux.Channel
 import           Network.TypedProtocol.Driver
+import           Network.TypedProtocol.Channel
 
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import qualified Ouroboros.Network.AnchoredFragment as AF

@@ -19,7 +19,7 @@ module Ouroboros.Network.NodeToNode (
   , withServer
 
   -- * Re-exports
-  , AnyMuxResponderApp (..)
+  , AnyResponderApp (..)
   ) where
 
 import           Control.Concurrent.Async (Async)
@@ -39,6 +39,7 @@ import qualified Network.Socket as Socket
 import           Network.Mux.Types (ProtocolEnum(..), MiniProtocolLimits (..))
 import           Network.Mux.Interface
 
+import           Ouroboros.Network.Mux
 import           Ouroboros.Network.Protocol.Handshake.Type
 import           Ouroboros.Network.Protocol.Handshake.Version
 import           Ouroboros.Network.Socket
@@ -123,7 +124,7 @@ connectTo
   -- ^ create peerid from local address and remote address
   -> Versions NodeToNodeVersion
               DictVersion
-              (MuxApplication InitiatorApp peerid NodeToNodeProtocols IO BL.ByteString a b)
+              (OuroborosApplication InitiatorApp peerid NodeToNodeProtocols IO BL.ByteString a b)
   -> Maybe Socket.AddrInfo
   -> Socket.AddrInfo
   -> IO ()
@@ -140,7 +141,7 @@ withServer
   -> (Socket.SockAddr -> Socket.SockAddr -> peerid)
   -- ^ create peerid from local address and remote address
   -> (forall vData. DictVersion vData -> vData -> vData -> Accept)
-  -> Versions NodeToNodeVersion DictVersion (AnyMuxResponderApp peerid NodeToNodeProtocols IO BL.ByteString)
+  -> Versions NodeToNodeVersion DictVersion (AnyResponderApp peerid NodeToNodeProtocols IO BL.ByteString)
   -> (Async () -> IO t)
   -> IO t
 withServer tbl addr peeridFn acceptVersion versions k =

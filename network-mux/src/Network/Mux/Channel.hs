@@ -6,12 +6,13 @@
 -- implementations.
 --
 module Network.Mux.Channel
-  ( module Network.TypedProtocol.Channel
+  ( Channel (..)
   , createBufferConnectedChannels
   , createPipeConnectedChannels
   , createSocketConnectedChannels
   , withFifosAsChannel
   , socketAsChannel
+  , channelEffect
   , delayChannel
   , loggingChannel
   ) where
@@ -22,7 +23,7 @@ import qualified Data.ByteString.Lazy.Internal as LBS (smallChunkSize)
 import           Data.Time.Clock (DiffTime)
 import qualified System.Process as IO (createPipe)
 import qualified System.IO      as IO
-                   ( withFile, IOMode(..) )
+                   ( Handle, withFile, IOMode(..), hFlush, hIsEOF )
 import qualified Network.Socket            as Socket hiding (send, recv)
 import qualified Network.Socket.ByteString as Socket
 
@@ -30,8 +31,53 @@ import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadTimer
 import           Control.Monad.Class.MonadSay
 
-import           Network.TypedProtocol.Channel
 
+data Channel m = Channel {
+
+    -- | Write bytes to the channel.
+    --
+    -- It maybe raise exceptions.
+    --
+    send :: LBS.ByteString -> m (),
+
+    -- | Read some input from the channel, or @Nothing@ to indicate EOF.
+    --
+    -- Note that having received EOF it is still possible to send.
+    -- The EOF condition is however monotonic.
+    --
+    -- It may raise exceptions (as appropriate for the monad and kind of
+    -- channel).
+    --
+    recv :: m (Maybe LBS.ByteString)
+  }
+
+
+-- | Make a 'Channel' from a pair of IO 'Handle's, one for reading and one
+-- for writing.
+--
+-- The Handles should be open in the appropriate read or write mode, and in
+-- binary mode. Writes are flushed after each write, so it is safe to use
+-- a buffering mode.
+--
+-- For bidirectional handles it is safe to pass the same handle for both.
+--
+handlesAsChannel :: IO.Handle -- ^ Read handle
+                 -> IO.Handle -- ^ Write handle
+                 -> Channel IO
+handlesAsChannel hndRead hndWrite =
+    Channel{send, recv}
+  where
+    send :: LBS.ByteString -> IO ()
+    send chunk = do
+      LBS.hPut hndWrite chunk
+      IO.hFlush hndWrite
+
+    recv :: IO (Maybe LBS.ByteString)
+    recv = do
+      eof <- IO.hIsEOF hndRead
+      if eof
+        then return Nothing
+        else Just . LBS.fromStrict <$> BS.hGetSome hndRead LBS.smallChunkSize
 
 -- | Create a pair of 'Channel's that are connected internally.
 --
@@ -43,8 +89,8 @@ import           Network.TypedProtocol.Channel
 -- takes place on the /writer side and not the reader side/.
 --
 createBufferConnectedChannels :: forall m. MonadSTM m
-                              => m (Channel m LBS.ByteString,
-                                    Channel m LBS.ByteString)
+                              => m (Channel m,
+                                    Channel m)
 createBufferConnectedChannels = do
     bufferA <- newEmptyTMVarM
     bufferB <- newEmptyTMVarM
@@ -70,8 +116,8 @@ createBufferConnectedChannels = do
 --
 -- This is primarily for testing purposes since it does not allow actual IPC.
 --
-createPipeConnectedChannels :: IO (Channel IO LBS.ByteString,
-                                   Channel IO LBS.ByteString)
+createPipeConnectedChannels :: IO (Channel IO,
+                                   Channel IO)
 createPipeConnectedChannels = do
     -- Create two pipes (each one is unidirectional) to make both ends of
     -- a bidirectional channel
@@ -91,7 +137,7 @@ createPipeConnectedChannels = do
 --
 withFifosAsChannel :: FilePath -- ^ FIFO for reading
                    -> FilePath -- ^ FIFO for writing
-                   -> (Channel IO LBS.ByteString -> IO a) -> IO a
+                   -> (Channel IO -> IO a) -> IO a
 withFifosAsChannel fifoPathRead fifoPathWrite action =
     IO.withFile fifoPathRead  IO.ReadMode  $ \hndRead  ->
     IO.withFile fifoPathWrite IO.WriteMode $ \hndWrite ->
@@ -102,7 +148,7 @@ withFifosAsChannel fifoPathRead fifoPathWrite action =
 -- | Make a 'Channel' from a 'Socket'. The socket must be a stream socket
 --- type and status connected.
 ---
-socketAsChannel :: Socket.Socket -> Channel IO LBS.ByteString
+socketAsChannel :: Socket.Socket -> Channel IO
 socketAsChannel socket =
     Channel{send, recv}
   where
@@ -128,8 +174,8 @@ socketAsChannel socket =
 --- This is primarily for testing purposes since it does not allow actual IPC.
 ---
 createSocketConnectedChannels :: Socket.Family -- ^ Usually AF_UNIX or AF_INET
-                              -> IO (Channel IO LBS.ByteString,
-                                     Channel IO LBS.ByteString)
+                              -> IO (Channel IO,
+                                     Channel IO)
 createSocketConnectedChannels family = do
    -- Create a socket pair to make both ends of a bidirectional channel
    (socketA, socketB) <- Socket.socketPair family Socket.Stream
@@ -138,6 +184,24 @@ createSocketConnectedChannels family = do
    return (socketAsChannel socketA,
            socketAsChannel socketB)
 
+
+channelEffect :: forall m.
+                 Monad m
+              => (LBS.ByteString -> m ())       -- ^ Action before 'send'
+              -> (Maybe LBS.ByteString -> m ()) -- ^ Action after 'recv'
+              -> Channel m
+              -> Channel m
+channelEffect beforeSend afterRecv Channel{send, recv} =
+    Channel{
+      send = \x -> do
+        beforeSend x
+        send x
+
+    , recv = do
+        mx <- recv
+        afterRecv mx
+        return mx
+    }
 
 -- | Delay a channel on the receiver end.
 --
@@ -148,22 +212,19 @@ delayChannel :: ( MonadSTM m
                 , MonadTimer m
                 )
              => DiffTime
-             -> Channel m a
-             -> Channel m a
+             -> Channel m
+             -> Channel m
 delayChannel delay = channelEffect (\_ -> return ())
                                    (\_ -> threadDelay delay)
 
-
 -- | Channel which logs sent and received messages.
 --
--- TODO: use a proper logger rather than @'MonadSay'@ constraint.
 loggingChannel :: ( MonadSay m
                   , Show id
-                  , Show a
                   )
                => id
-               -> Channel m a
-               -> Channel m a
+               -> Channel m
+               -> Channel m
 loggingChannel ident Channel{send,recv} =
   Channel {
     send = loggingSend,
@@ -180,4 +241,3 @@ loggingChannel ident Channel{send,recv} =
       Nothing -> return ()
       Just a  -> say (show ident ++ ":recv:" ++ show a)
     return msg
-

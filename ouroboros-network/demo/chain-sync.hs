@@ -35,6 +35,8 @@ import           Codec.Serialise (DeserialiseFailure)
 import qualified Codec.Serialise as CBOR
 import           Codec.SerialiseTerm
 
+import           Network.Mux
+
 import qualified Network.Socket as Socket
 
 import Ouroboros.Network.Block
@@ -44,7 +46,7 @@ import qualified Ouroboros.Network.AnchoredFragment as AF
 import Ouroboros.Network.Point (WithOrigin (Origin))
 import Ouroboros.Network.Testing.ConcreteBlock
 import Ouroboros.Network.Socket
-import Network.Mux.Interface
+import Ouroboros.Network.Mux
 import Ouroboros.Network.NodeToNode
 
 import Network.TypedProtocol.Channel
@@ -116,7 +118,7 @@ defaultLocalSocketAddrPath :: FilePath
 defaultLocalSocketAddrPath =  "./demo-chain-sync.sock"
 
 defaultLocalSocketAddrInfo :: Socket.AddrInfo
-defaultLocalSocketAddrInfo = 
+defaultLocalSocketAddrInfo =
     mkLocalSocketAddrInfo defaultLocalSocketAddrPath
 
 rmIfExists :: FilePath -> IO ()
@@ -147,13 +149,12 @@ clientPingPong pipelined =
       (\(DictVersion codec) -> encodeTerm codec)
       (\(DictVersion codec) -> decodeTerm codec)
       (,)
-      (simpleSingletonVersions (0::Int) (NodeToNodeVersionData 0) (DictVersion nodeToNodeCodecCBORTerm) muxApplication)
+      (simpleSingletonVersions (0::Int) (NodeToNodeVersionData 0) (DictVersion nodeToNodeCodecCBORTerm) app)
       Nothing
       defaultLocalSocketAddrInfo
   where
-    muxApplication :: MuxApplication InitiatorApp (Socket.SockAddr, Socket.SockAddr) DemoProtocol0 IO LBS.ByteString () Void
-    muxApplication =
-      simpleMuxInitiatorApplication protocols
+    app :: OuroborosApplication InitiatorApp (Socket.SockAddr, Socket.SockAddr) DemoProtocol0 IO LBS.ByteString () Void
+    app = simpleInitiatorApplication protocols
 
     protocols :: DemoProtocol0 -> MuxPeer (Socket.SockAddr, Socket.SockAddr) DeserialiseFailure IO LBS.ByteString ()
     protocols PingPong0 | pipelined =
@@ -183,12 +184,11 @@ serverPingPong = do
       (\(DictVersion codec)-> decodeTerm codec)
       (,)
       (\(DictVersion _) -> acceptEq)
-      (simpleSingletonVersions (0::Int) (NodeToNodeVersionData 0) (DictVersion nodeToNodeCodecCBORTerm) muxApplication) $ \_ serverAsync ->
+      (simpleSingletonVersions (0::Int) (NodeToNodeVersionData 0) (DictVersion nodeToNodeCodecCBORTerm) app) $ \_ serverAsync ->
         wait serverAsync   -- block until async exception
   where
-    muxApplication :: MuxApplication ResponderApp (Socket.SockAddr, Socket.SockAddr) DemoProtocol0 IO LBS.ByteString Void ()
-    muxApplication =
-      simpleMuxResponderApplication protocols
+    app :: OuroborosApplication ResponderApp (Socket.SockAddr, Socket.SockAddr) DemoProtocol0 IO LBS.ByteString Void ()
+    app = simpleResponderApplication protocols
 
     protocols :: DemoProtocol0 -> MuxPeer (Socket.SockAddr, Socket.SockAddr) DeserialiseFailure IO LBS.ByteString ()
     protocols PingPong0 =
@@ -232,16 +232,12 @@ clientPingPong2 =
       (\(DictVersion codec) -> encodeTerm codec)
       (\(DictVersion codec) -> decodeTerm codec)
       (,)
-      (simpleSingletonVersions (0::Int) (NodeToNodeVersionData 0) (DictVersion nodeToNodeCodecCBORTerm) muxApplication)
+      (simpleSingletonVersions (0::Int) (NodeToNodeVersionData 0) (DictVersion nodeToNodeCodecCBORTerm) app)
       Nothing
       defaultLocalSocketAddrInfo
   where
-    muxApplication :: MuxApplication
-                        InitiatorApp
-                        (Socket.SockAddr, Socket.SockAddr)
-                        DemoProtocol1 IO LBS.ByteString () Void
-    muxApplication =
-      simpleMuxInitiatorApplication protocols
+    app :: OuroborosApplication InitiatorApp (Socket.SockAddr, Socket.SockAddr) DemoProtocol1 IO LBS.ByteString () Void
+    app = simpleInitiatorApplication protocols
 
     protocols :: DemoProtocol1 -> MuxPeer
                                     (Socket.SockAddr, Socket.SockAddr)
@@ -286,14 +282,11 @@ serverPingPong2 = do
       (\(DictVersion codec)-> decodeTerm codec)
       (,)
       (\(DictVersion _) -> acceptEq)
-      (simpleSingletonVersions (0::Int) (NodeToNodeVersionData 0) (DictVersion nodeToNodeCodecCBORTerm) muxApplication) $ \_ serverAsync ->
+      (simpleSingletonVersions (0::Int) (NodeToNodeVersionData 0) (DictVersion nodeToNodeCodecCBORTerm) app) $ \_ serverAsync ->
         wait serverAsync   -- block until async exception
   where
-    muxApplication :: MuxApplication ResponderApp
-                                     (Socket.SockAddr, Socket.SockAddr)
-                                     DemoProtocol1 IO LBS.ByteString Void ()
-    muxApplication =
-      simpleMuxResponderApplication protocols
+    app :: OuroborosApplication ResponderApp (Socket.SockAddr, Socket.SockAddr) DemoProtocol1 IO LBS.ByteString Void ()
+    app = simpleResponderApplication protocols
 
     protocols :: DemoProtocol1 -> MuxPeer (Socket.SockAddr, Socket.SockAddr)
                                            DeserialiseFailure IO LBS.ByteString ()
@@ -335,15 +328,12 @@ clientChainSync sockAddrs =
         (\(DictVersion codec) -> encodeTerm codec)
         (\(DictVersion codec) -> decodeTerm codec)
         (,)
-        (simpleSingletonVersions (0::Int) (NodeToNodeVersionData 0) (DictVersion nodeToNodeCodecCBORTerm) muxApplication)
+        (simpleSingletonVersions (0::Int) (NodeToNodeVersionData 0) (DictVersion nodeToNodeCodecCBORTerm) app)
         Nothing
         (mkLocalSocketAddrInfo sockAddr)
   where
-    muxApplication :: MuxApplication InitiatorApp
-                                     (Socket.SockAddr, Socket.SockAddr)
-                                     DemoProtocol2 IO LBS.ByteString () Void
-    muxApplication =
-      simpleMuxInitiatorApplication protocols
+    app :: OuroborosApplication InitiatorApp (Socket.SockAddr, Socket.SockAddr) DemoProtocol2 IO LBS.ByteString () Void
+    app = simpleInitiatorApplication protocols
 
     protocols :: DemoProtocol2 -> MuxPeer (Socket.SockAddr, Socket.SockAddr)
                                           DeserialiseFailure IO LBS.ByteString ()
@@ -364,16 +354,13 @@ serverChainSync sockAddr = do
       (\(DictVersion codec)-> decodeTerm codec)
       (,)
       (\(DictVersion _) -> acceptEq)
-      (simpleSingletonVersions (0::Int) (NodeToNodeVersionData 0) (DictVersion nodeToNodeCodecCBORTerm) muxApplication) $ \_ serverAsync ->
+      (simpleSingletonVersions (0::Int) (NodeToNodeVersionData 0) (DictVersion nodeToNodeCodecCBORTerm) app) $ \_ serverAsync ->
         wait serverAsync   -- block until async exception
   where
     prng = mkSMGen 0
 
-    muxApplication :: MuxApplication ResponderApp
-                                     (Socket.SockAddr, Socket.SockAddr)
-                                     DemoProtocol2 IO LBS.ByteString Void ()
-    muxApplication =
-      simpleMuxResponderApplication protocols
+    app :: OuroborosApplication ResponderApp (Socket.SockAddr, Socket.SockAddr) DemoProtocol2 IO LBS.ByteString Void ()
+    app = simpleResponderApplication protocols
 
     protocols :: DemoProtocol2 -> MuxPeer (Socket.SockAddr, Socket.SockAddr)
                                           DeserialiseFailure IO LBS.ByteString ()
@@ -413,11 +400,8 @@ clientBlockFetch sockAddrs = do
     candidateChainsVar <- newTVarIO Map.empty
     currentChainVar    <- newTVarIO genesisChainFragment
 
-    let muxApplication :: MuxApplication InitiatorApp
-                                         (Socket.SockAddr, Socket.SockAddr) 
-                                         DemoProtocol3 IO LBS.ByteString () Void
-        muxApplication =
-          MuxInitiatorApplication protocols
+    let app :: OuroborosApplication InitiatorApp (Socket.SockAddr, Socket.SockAddr) DemoProtocol3 IO LBS.ByteString () Void
+        app = OuroborosInitiatorApplication protocols
 
         protocols :: (Socket.SockAddr, Socket.SockAddr)
                   -> DemoProtocol3
@@ -512,7 +496,7 @@ clientBlockFetch sockAddrs = do
                           (\(DictVersion codec) -> encodeTerm codec)
                           (\(DictVersion codec) -> decodeTerm codec)
                           (,)
-                          (simpleSingletonVersions (0::Int) (NodeToNodeVersionData 0) (DictVersion nodeToNodeCodecCBORTerm) muxApplication)
+                          (simpleSingletonVersions (0::Int) (NodeToNodeVersionData 0) (DictVersion nodeToNodeCodecCBORTerm) app)
                           Nothing
                           (mkLocalSocketAddrInfo sockAddr)
                     | sockAddr <- sockAddrs ]
@@ -553,14 +537,13 @@ serverBlockFetch sockAddr = do
       (\(DictVersion codec)-> decodeTerm codec)
       (,)
       (\(DictVersion _) -> acceptEq)
-      (simpleSingletonVersions (0::Int) (NodeToNodeVersionData 0) (DictVersion nodeToNodeCodecCBORTerm) muxApplication) $ \_ serverAsync ->
+      (simpleSingletonVersions (0::Int) (NodeToNodeVersionData 0) (DictVersion nodeToNodeCodecCBORTerm) app) $ \_ serverAsync ->
         wait serverAsync   -- block until async exception
   where
     prng = mkSMGen 0
 
-    muxApplication :: MuxApplication ResponderApp (Socket.SockAddr, Socket.SockAddr) DemoProtocol3 IO LBS.ByteString Void ()
-    muxApplication =
-      simpleMuxResponderApplication protocols
+    app :: OuroborosApplication ResponderApp (Socket.SockAddr, Socket.SockAddr) DemoProtocol3 IO LBS.ByteString Void ()
+    app = simpleResponderApplication protocols
 
     protocols :: DemoProtocol3 -> MuxPeer (Socket.SockAddr, Socket.SockAddr)
                                           DeserialiseFailure IO LBS.ByteString ()
@@ -746,7 +729,7 @@ chainGenerator g =
 genBlockChain :: RandomGen g => g -> Maybe BlockHeader -> [Block]
 genBlockChain !g prevHeader =
     block : genBlockChain g'' (Just (blockHeader block))
-  where 
+  where
     block     = genBlock g' prevHeader
     (g', g'') = split g
 

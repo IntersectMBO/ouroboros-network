@@ -55,6 +55,7 @@ import           Ouroboros.Network.Protocol.Handshake.Version (simpleSingletonVe
 
 
 import           Codec.SerialiseTerm
+import           Ouroboros.Network.Mux
 import           Ouroboros.Network.NodeToNode
 import           Ouroboros.Network.Socket
 import           Ouroboros.Network.Subscription.Common
@@ -516,8 +517,8 @@ prop_send_recv f xs first = ioProperty $ do
     clientTbl <- newConnectionTable
 
     let -- Server Node; only req-resp server
-        responderApp :: MuxApplication ResponderApp (Socket.SockAddr, Socket.SockAddr) TestProtocols2 IO BL.ByteString Void ()
-        responderApp = MuxResponderApplication $
+        responderApp :: OuroborosApplication ResponderApp (Socket.SockAddr, Socket.SockAddr) TestProtocols2 IO BL.ByteString Void ()
+        responderApp = OuroborosResponderApplication $
           \peerid ReqRespPr channel -> do
             r <- runPeer (tagTrace "Responder" activeTracer)
                          ReqResp.codecReqResp
@@ -528,8 +529,8 @@ prop_send_recv f xs first = ioProperty $ do
             waitSiblingSub siblingVar
 
         -- Client Node; only req-resp client
-        initiatorApp :: MuxApplication InitiatorApp (Socket.SockAddr, Socket.SockAddr) TestProtocols2 IO BL.ByteString () Void
-        initiatorApp = MuxInitiatorApplication $
+        initiatorApp :: OuroborosApplication InitiatorApp (Socket.SockAddr, Socket.SockAddr) TestProtocols2 IO BL.ByteString () Void
+        initiatorApp = OuroborosInitiatorApplication $
           \peerid ReqRespPr channel -> do
             r <- runPeer (tagTrace "Initiator" activeTracer)
                          ReqResp.codecReqResp
@@ -639,8 +640,8 @@ prop_send_recv_init_and_rsp f xs = ioProperty $ do
 
   where
 
-    appX :: ReqRspCfg -> MuxApplication InitiatorAndResponderApp (Socket.SockAddr, Socket.SockAddr) TestProtocols2 IO BL.ByteString () ()
-    appX ReqRspCfg {..} = MuxInitiatorAndResponderApplication
+    appX :: ReqRspCfg -> OuroborosApplication InitiatorAndResponderApp (Socket.SockAddr, Socket.SockAddr) TestProtocols2 IO BL.ByteString () ()
+    appX ReqRspCfg {..} = OuroborosInitiatorAndResponderApplication
             -- Initiator
             (\peerid ReqRespPr channel -> do
              r <- runPeer (tagTrace (rrcTag ++ " Initiator") activeTracer)
@@ -672,7 +673,7 @@ prop_send_recv_init_and_rsp f xs = ioProperty $ do
         (\(DictVersion codec) -> decodeTerm codec)
         (,)
         (\(DictVersion _) -> acceptEq)
-        (AnyMuxResponderApp <$> simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData 0) (DictVersion nodeToNodeCodecCBORTerm) (appX rrcfg))
+        (AnyResponderApp <$> simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData 0) (DictVersion nodeToNodeCodecCBORTerm) (appX rrcfg))
         $ \localAddr _ -> do
           atomically $ putTMVar localAddrVar localAddr
           r <- atomically $ (,) <$> takeTMVar (rrcServerVar rrcfg)
@@ -687,7 +688,7 @@ prop_send_recv_init_and_rsp f xs = ioProperty $ do
         (\(DictVersion codec) -> decodeTerm codec)
         (,)
         (\(DictVersion _) -> acceptEq)
-        (AnyMuxResponderApp <$> (simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData 0) (DictVersion nodeToNodeCodecCBORTerm) (appX rrcfg)))
+        (AnyResponderApp <$> (simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData 0) (DictVersion nodeToNodeCodecCBORTerm) (appX rrcfg)))
         $ \localAddr _ -> do
           atomically $ putTMVar localAddrVar localAddr
           remoteAddr <- atomically $ takeTMVar remoteAddrVar
@@ -787,8 +788,8 @@ _demo = ioProperty $ do
             (\_ _ -> threadDelay delay)
 
 
-    appReq = MuxInitiatorApplication (\_ ChainSyncPr -> error "req fail")
-    appRsp = MuxResponderApplication (\_ ChainSyncPr -> error "rsp fail")
+    appReq = OuroborosInitiatorApplication (\_ ChainSyncPr -> error "req fail")
+    appRsp = OuroborosResponderApplication (\_ ChainSyncPr -> error "rsp fail")
 
 
 data WithThreadAndTime a = WithThreadAndTime {

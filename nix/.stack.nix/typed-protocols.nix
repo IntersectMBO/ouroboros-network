@@ -21,6 +21,7 @@
           (hsPkgs.io-sim-classes)
           (hsPkgs.bytestring)
           (hsPkgs.contra-tracer)
+          (hsPkgs.time)
           ];
         };
       tests = {
@@ -34,6 +35,7 @@
             (hsPkgs.QuickCheck)
             (hsPkgs.tasty)
             (hsPkgs.tasty-quickcheck)
+            (hsPkgs.time)
             ];
           };
         };

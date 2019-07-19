@@ -35,8 +35,8 @@ import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
 
-import           Network.Mux.Channel
 import           Network.TypedProtocol.Codec (AnyMessage (..))
+import           Network.TypedProtocol.Channel
 
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.Chain
@@ -177,7 +177,6 @@ createNetworkInterface chans nodeIds us
         -- if an exception is thrown to this thread, cancel all threads;
         (waitAnyCancel ts `onException` traverse_ cancel ts) >>= k . fst
     }
-
 
 -- | Setup fully-connected topology, where every node is both a producer
 -- and a consumer

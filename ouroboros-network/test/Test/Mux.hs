@@ -40,9 +40,9 @@ import qualified Ouroboros.Network.Protocol.ChainSync.Codec    as ChainSync
 import qualified Ouroboros.Network.Protocol.ChainSync.Examples as ChainSync
 import qualified Ouroboros.Network.Protocol.ChainSync.Server   as ChainSync
 
-import qualified Network.Mux as Mx
-import qualified Network.Mux.Interface as Mx
+import qualified Network.Mux.Types as Mx
 import qualified Network.Mux.Bearer.Queues as Mx
+import qualified Ouroboros.Network.Mux as Mx
 
 
 tests :: TestTree
@@ -100,7 +100,7 @@ demo chain0 updates delay = do
         consumerPeer = ChainSync.chainSyncClientPeer
                           (ChainSync.chainSyncClientExample consumerVar
                           (consumerClient done target consumerVar))
-        consumerApp = Mx.simpleMuxInitiatorApplication
+        consumerApp = Mx.simpleInitiatorApplication
                         (\ChainSyncPr ->
                             Mx.MuxPeer
                               nullTracer
@@ -109,15 +109,15 @@ demo chain0 updates delay = do
 
         producerPeer :: Peer (ChainSync.ChainSync block (Point block)) AsServer ChainSync.StIdle m ()
         producerPeer = ChainSync.chainSyncServerPeer (ChainSync.chainSyncServerExample () producerVar)
-        producerApp = Mx.simpleMuxResponderApplication
+        producerApp = Mx.simpleResponderApplication
                         (\ChainSyncPr ->
                             Mx.MuxPeer
                               nullTracer
                               (ChainSync.codecChainSync encode decode encode decode)
                               producerPeer)
 
-    clientAsync <- async $ Mx.runMuxWithQueues "consumer" consumerApp client_w client_r sduLen Nothing
-    serverAsync <- async $ Mx.runMuxWithQueues "producer" producerApp server_w server_r sduLen Nothing
+    clientAsync <- async $ Mx.runMuxWithQueues "consumer" (Mx.toApplication consumerApp) client_w client_r sduLen Nothing
+    serverAsync <- async $ Mx.runMuxWithQueues "producer" (Mx.toApplication producerApp) server_w server_r sduLen Nothing
 
     updateAid <- async $ sequence_
         [ do threadDelay delay -- X milliseconds, just to provide interest
