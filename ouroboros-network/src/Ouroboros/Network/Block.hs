@@ -143,7 +143,6 @@ pattern BlockPoint { atSlot, withHash } = Point (At (Point.Block atSlot withHash
 
 {-# COMPLETE GenesisPoint, BlockPoint #-}
 
--- Should be
 pointSlot :: Point block -> WithOrigin SlotNo
 pointSlot (Point pt) = fmap Point.blockPointSlot pt
 
