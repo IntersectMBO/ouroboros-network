@@ -50,6 +50,9 @@ newtype SimplePBftExt c c' = SimplePBftExt {
     }
   deriving (Generic, Condense, Show, Eq)
 
+instance SerialiseTag (SimplePBftExt c c') where
+  serialiseTag = 1
+
 -- | Part of the block that gets signed
 --
 -- We just sign the standard header, i.e., without the PBFT extensions.

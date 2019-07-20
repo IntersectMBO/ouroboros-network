@@ -2,6 +2,7 @@
 {-# LANGUAGE DeriveTraversable          #-}
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE StandaloneDeriving         #-}
 {-# LANGUAGE TypeFamilies               #-}
@@ -19,8 +20,10 @@ module Ouroboros.Network.Block (
   , HasHeader(..)
   , StandardHash
   , ChainHash(..)
+  , fmapChainHash
   , castHash
   , Point(..)
+  , fmapPoint
   , pointSlot
   , pointHash
   , castPoint
@@ -127,6 +130,10 @@ deriving instance StandardHash block => Eq   (ChainHash block)
 deriving instance StandardHash block => Ord  (ChainHash block)
 deriving instance StandardHash block => Show (ChainHash block)
 
+fmapChainHash :: (HeaderHash a -> HeaderHash b) -> ChainHash a -> ChainHash b
+fmapChainHash _ GenesisHash = GenesisHash
+fmapChainHash f (BlockHash a) = BlockHash (f a)
+
 castHash :: HeaderHash b ~ HeaderHash b' => ChainHash b -> ChainHash b'
 castHash GenesisHash   = GenesisHash
 castHash (BlockHash b) = BlockHash b
@@ -158,6 +165,10 @@ pattern BlockPoint :: SlotNo -> HeaderHash block -> Point block
 pattern BlockPoint { atSlot, withHash } = Point (At (Point.Block atSlot withHash))
 
 {-# COMPLETE GenesisPoint, BlockPoint #-}
+
+fmapPoint :: (HeaderHash a -> HeaderHash b) -> Point a -> Point b
+fmapPoint _ GenesisPoint = GenesisPoint
+fmapPoint f (BlockPoint slot hash) = BlockPoint slot (f hash)
 
 pointSlot :: Point block -> WithOrigin SlotNo
 pointSlot (Point pt) = fmap Point.blockPointSlot pt

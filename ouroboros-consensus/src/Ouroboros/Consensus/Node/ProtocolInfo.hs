@@ -10,11 +10,12 @@ module Ouroboros.Consensus.Node.ProtocolInfo (
 import           Ouroboros.Consensus.Node.ProtocolInfo.Abstract as X
 import           Ouroboros.Consensus.Node.ProtocolInfo.Byron as X
 import           Ouroboros.Consensus.Node.ProtocolInfo.Mock.BFT as X
+import           Ouroboros.Consensus.Node.ProtocolInfo.Mock.HardFork as X
 import           Ouroboros.Consensus.Node.ProtocolInfo.Mock.PBFT as X
 import           Ouroboros.Consensus.Node.ProtocolInfo.Mock.Praos as X
 import           Ouroboros.Consensus.Node.ProtocolInfo.Mock.PraosRule as X
 import           Ouroboros.Consensus.NodeId (CoreNodeId (..))
-import           Ouroboros.Consensus.Protocol
+import           Ouroboros.Consensus.Protocol hiding (pbftParams, praosParams)
 
 {-------------------------------------------------------------------------------
   Data required to run a protocol
@@ -31,3 +32,5 @@ protocolInfo nodes nid demoProtocol = case demoProtocol of
     ProtocolLeaderSchedule params schedule      -> protocolInfoPraosRule nodes nid params schedule
     ProtocolMockPBFT       params               -> protocolInfoMockPBFT  nodes nid params
     ProtocolRealPBFT       gc mthr prv swv mplc -> protocolInfoByron     gc mthr prv swv mplc
+    ProtocolMockHardFork pbftParams praosParams ->
+      protocolInfoMockHardFork nodes nid pbftParams praosParams

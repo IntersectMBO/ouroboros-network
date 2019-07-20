@@ -57,3 +57,4 @@ runDemo ProtocolMockPBFT{}       = Dict
 runDemo ProtocolRealPBFT{}       = give (Dummy.dummyEpochSlots)
                                  $ give (Cardano.Genesis.gdProtocolMagicId Dummy.dummyGenesisData)
                                  $ Dict
+runDemo ProtocolMockHardFork{}   = Dict

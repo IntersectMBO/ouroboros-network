@@ -19,6 +19,7 @@ import           Ouroboros.Consensus.Ledger.Byron.Config
 import           Ouroboros.Consensus.Ledger.Mock
 import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.Protocol.Abstract
+import           Ouroboros.Consensus.Protocol.HardFork
 
 {-------------------------------------------------------------------------------
   Additional functionality required to run the demo
@@ -41,12 +42,21 @@ instance ( ProtocolLedgerView (SimpleBlock SimpleMockCrypto ext)
          , Show ext
          , Typeable ext
          , Serialise ext
+         , SerialiseTag ext
          , ForgeExt (BlockProtocol (SimpleBlock SimpleMockCrypto ext))
                     SimpleMockCrypto
                     ext
          , Serialise (ChainState (BlockProtocol (SimpleBlock SimpleMockCrypto ext)))
          ) => RunDemo (SimpleBlock SimpleMockCrypto ext) where
   demoMockTx _ = mkSimpleGenTx
+
+instance
+  (RunNode (Forked blk1 blk2), RunDemo blk1, RunDemo blk2)
+  => RunDemo (Forked blk1 blk2) where
+
+  -- TODO: Something need to be different here because we need to be able to
+  -- generate values from before and after the fork
+  demoMockTx = undefined
 
 instance RunNode (ByronBlockOrEBB ByronConfig) => RunDemo (ByronBlockOrEBB ByronConfig) where
   demoMockTx = Byron.elaborateTx

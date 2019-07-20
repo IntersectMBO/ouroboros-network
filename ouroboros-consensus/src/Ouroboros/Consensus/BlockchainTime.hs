@@ -1,9 +1,10 @@
-{-# LANGUAGE LambdaCase          #-}
-{-# LANGUAGE NamedFieldPuns      #-}
-{-# LANGUAGE NumericUnderscores  #-}
-{-# LANGUAGE RankNTypes          #-}
-{-# LANGUAGE RecordWildCards     #-}
-{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE LambdaCase                 #-}
+{-# LANGUAGE NamedFieldPuns             #-}
+{-# LANGUAGE NumericUnderscores         #-}
+{-# LANGUAGE RankNTypes                 #-}
+{-# LANGUAGE RecordWildCards            #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
 
 module Ouroboros.Consensus.BlockchainTime (
     -- * Abstract definition
@@ -133,7 +134,7 @@ instance Exception OnSlotException
 
 -- | Number of slots
 newtype NumSlots = NumSlots Int
-  deriving (Show)
+  deriving (Show, Eq, Ord, Enum, Bounded, Num, Real, Integral)
 
 -- | The current time during a test run.
 data TestClock =

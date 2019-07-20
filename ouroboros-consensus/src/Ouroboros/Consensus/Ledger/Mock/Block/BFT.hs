@@ -49,6 +49,9 @@ newtype SimpleBftExt c c' = SimpleBftExt {
     }
   deriving (Condense, Show, Eq)
 
+instance SerialiseTag (SimpleBftExt c c') where
+  serialiseTag = 0
+
 -- | Part of the block that gets signed
 data SignedSimpleBft c c' = SignedSimpleBft {
       signedSimpleBft :: SimpleStdHeader c (SimpleBftExt c c')

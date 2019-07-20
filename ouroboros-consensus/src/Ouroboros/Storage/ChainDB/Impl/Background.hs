@@ -59,6 +59,8 @@ import qualified Ouroboros.Storage.ChainDB.Impl.LgrDB as LgrDB
 import           Ouroboros.Storage.ChainDB.Impl.Types
 import qualified Ouroboros.Storage.ChainDB.Impl.VolDB as VolDB
 
+import Debug.Trace hiding (trace)
+
 {-------------------------------------------------------------------------------
   Launch background tasks
 -------------------------------------------------------------------------------}
@@ -75,13 +77,18 @@ launchBgTasks
   => ChainDbEnv m blk
   -> m ()
 launchBgTasks cdb@CDB{..} = do
+    traceM "1!"
     gcSchedule <- newGcSchedule
+    traceM "2!"
     gcThread   <- launch $
       gcScheduleRunner gcSchedule $ garbageCollect cdb
+    traceM "3!"
     copyThread <- launch $
       copyToImmDBRunner cdb gcSchedule
+    traceM "4!"
     lgrSnapshotThread <- launch $
       updateLedgerSnapshotsRunner cdb
+    traceM "5!"
     atomically $ writeTVar cdbBgThreads
       [gcThread, copyThread, lgrSnapshotThread]
   where
@@ -206,7 +213,11 @@ copyToImmDBRunner
 copyToImmDBRunner cdb@CDB{..} gcSchedule = forever $ do
     atomically $ do
       curChain <- readTVar cdbChain
-      check $ fromIntegral (AF.length curChain) > k
+      traceM "Checking the chain"
+      check $ traceShow "test" $ fromIntegral (AF.length curChain) > k
+      traceM "something ese"
+
+    traceM "in the runner"
 
     mSlotNo <- copyToImmDB cdb
     case mSlotNo of

@@ -1,6 +1,7 @@
 {-# LANGUAGE GADTs            #-}
 {-# LANGUAGE NamedFieldPuns   #-}
 {-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE TypeOperators    #-}
 module Ouroboros.Consensus.Protocol (
     -- * Supported protocols
     ProtocolMockBFT
@@ -8,6 +9,7 @@ module Ouroboros.Consensus.Protocol (
   , ProtocolLeaderSchedule
   , ProtocolMockPBFT
   , ProtocolRealPBFT
+  , ProtocolMockHardFork
     -- * Abstract over the various protocols
   , Protocol(..)
     -- * Evidence that we can run all the supported protocols
@@ -33,6 +35,7 @@ import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.Protocol.Abstract as X
 import           Ouroboros.Consensus.Protocol.BFT as X
 import           Ouroboros.Consensus.Protocol.ExtNodeConfig as X
+import           Ouroboros.Consensus.Protocol.HardFork as X
 import           Ouroboros.Consensus.Protocol.LeaderSchedule as X
 import           Ouroboros.Consensus.Protocol.PBFT as X
 import           Ouroboros.Consensus.Protocol.Praos as X
@@ -48,6 +51,7 @@ type ProtocolMockPraos      = ExtNodeConfig AddrDist (Praos PraosMockCrypto)
 type ProtocolLeaderSchedule = WithLeaderSchedule (Praos PraosCryptoUnused)
 type ProtocolMockPBFT       = ExtNodeConfig (PBftLedgerView PBftMockCrypto) (PBft PBftMockCrypto)
 type ProtocolRealPBFT       = ExtNodeConfig ByronConfig (PBft PBftCardanoCrypto)
+type ProtocolMockHardFork   = ProtocolMockPBFT `HardForksTo` ProtocolMockPraos
 
 {-------------------------------------------------------------------------------
   Abstract over the various protocols
@@ -85,6 +89,16 @@ data Protocol blk where
     -> Maybe PBftLeaderCredentials
     -> Protocol (ByronBlockOrEBB ByronConfig)
 
+  -- | Run PBFT and then Praos against the mock ledger
+  ProtocolMockHardFork
+    :: PBftParams
+    -> PraosParams
+    -> Protocol
+         ( Forked
+             (SimplePBftBlock SimpleMockCrypto PBftMockCrypto)
+             (SimplePraosBlock SimpleMockCrypto PraosMockCrypto)
+         )
+
 {-------------------------------------------------------------------------------
   Evidence that we can run all the supported protocols
 -------------------------------------------------------------------------------}
@@ -103,3 +117,4 @@ runProtocol (ProtocolRealPBFT
      $ give gdProtocolMagicId
      $ give (coerce @_ @Block.HeaderHash configGenesisHash)
      $ Dict
+runProtocol ProtocolMockHardFork{}   = Dict

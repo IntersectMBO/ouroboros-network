@@ -4,4 +4,5 @@ module Ouroboros.Consensus.Node.Run
 
 import           Ouroboros.Consensus.Node.Run.Abstract as X
 import           Ouroboros.Consensus.Node.Run.Byron ()
+import           Ouroboros.Consensus.Node.Run.HardFork ()
 import           Ouroboros.Consensus.Node.Run.Mock ()

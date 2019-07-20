@@ -78,6 +78,9 @@ import qualified Ouroboros.Storage.Util.ErrorHandling as EH
 
 import           Test.Dynamic.TxGen
 
+import Debug.Trace
+import Data.Maybe (catMaybes)
+
 -- | Interface provided by 'ouroboros-network'.  At the moment
 -- 'ouroboros-network' only provides this interface in 'IO' backed by sockets,
 -- we cook up here one using 'NodeChans'.
@@ -238,13 +241,15 @@ broadcastNetwork registry testBtime numCoreNodes pInfo initRNG slotLen = do
                -> Mempool m blk TicketNo
                -> m ()
     txProducer registry' cfg produceDRG getExtLedger mempool =
-      onSlotChange btime registry' $ \_registry' _curSlotNo -> do
+      onSlotChange btime registry' $ \_registry' curSlotNo -> do
         drg <- produceDRG
         txs <- atomically $ do
           ledger <- ledgerState <$> getExtLedger
           varDRG <- newTVar drg
-          simChaChaT varDRG id $ testGenTxs numCoreNodes cfg ledger
-        void $ addTxs mempool txs
+          simChaChaT varDRG id $ testGenTxs numCoreNodes cfg curSlotNo ledger
+        res <- addTxs mempool txs
+        let errs = catMaybes $ snd <$> res
+        unless (Prelude.null errs) $ traceShowM errs
 
     createCommunicationChannels :: m (NodeChans m NodeId blk)
     createCommunicationChannels = fmap Map.fromList $ forM nodeIds $ \us ->
@@ -292,7 +297,7 @@ broadcastNetwork registry testBtime numCoreNodes pInfo initRNG slotLen = do
                                         else Nothing
         , cdbGenesis          = return initLedger
         -- Misc
-        , cdbTracer           = nullTracer
+        , cdbTracer           = showTracing (Tracer traceM)
         , cdbRegistry         = registry
         , cdbGcDelay          = 0
         }
@@ -474,4 +479,5 @@ type TracingConstraints blk =
   ( Show blk
   , Show (Header blk)
   , Show (GenTx blk)
+  , Show (ApplyTxErr blk)
   )

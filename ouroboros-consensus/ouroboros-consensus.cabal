@@ -40,6 +40,7 @@ library
                        Ouroboros.Consensus.Ledger.Byron.Config
                        Ouroboros.Consensus.Ledger.Byron.Forge
                        Ouroboros.Consensus.Ledger.Extended
+                       Ouroboros.Consensus.Ledger.HardFork
                        Ouroboros.Consensus.Ledger.Mock
                        Ouroboros.Consensus.Ledger.Mock.Address
                        Ouroboros.Consensus.Ledger.Mock.Block
@@ -60,12 +61,14 @@ library
                        Ouroboros.Consensus.Node.ProtocolInfo.Abstract
                        Ouroboros.Consensus.Node.ProtocolInfo.Byron
                        Ouroboros.Consensus.Node.ProtocolInfo.Mock.BFT
+                       Ouroboros.Consensus.Node.ProtocolInfo.Mock.HardFork
                        Ouroboros.Consensus.Node.ProtocolInfo.Mock.PBFT
                        Ouroboros.Consensus.Node.ProtocolInfo.Mock.Praos
                        Ouroboros.Consensus.Node.ProtocolInfo.Mock.PraosRule
                        Ouroboros.Consensus.Node.Run
                        Ouroboros.Consensus.Node.Run.Abstract
                        Ouroboros.Consensus.Node.Run.Byron
+                       Ouroboros.Consensus.Node.Run.HardFork
                        Ouroboros.Consensus.Node.Run.Mock
                        Ouroboros.Consensus.Node.Tracers
                        Ouroboros.Consensus.NodeId
@@ -75,6 +78,7 @@ library
                        Ouroboros.Consensus.Protocol.Abstract
                        Ouroboros.Consensus.Protocol.BFT
                        Ouroboros.Consensus.Protocol.ExtNodeConfig
+                       Ouroboros.Consensus.Protocol.HardFork
                        Ouroboros.Consensus.Protocol.LeaderSchedule
                        Ouroboros.Consensus.Protocol.MockChainSel
                        Ouroboros.Consensus.Protocol.ModChainSel
@@ -254,6 +258,7 @@ test-suite test-consensus
                     Test.Consensus.Protocol.PBFT
                     Test.Dynamic.BFT
                     Test.Dynamic.General
+                    Test.Dynamic.HardFork
                     Test.Dynamic.LeaderSchedule
                     Test.Dynamic.Network
                     Test.Dynamic.PBFT
@@ -298,7 +303,8 @@ test-suite test-consensus
                     tasty-hunit,
                     tasty-quickcheck,
                     text,
-                    time
+                    time,
+                    transformers
 
   ghc-options:      -Wall
                     -fno-ignore-asserts

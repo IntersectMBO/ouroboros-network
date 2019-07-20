@@ -1,3 +1,4 @@
+{-# LANGUAGE AllowAmbiguousTypes        #-}
 {-# LANGUAGE DeriveAnyClass             #-}
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE DerivingStrategies         #-}
@@ -7,6 +8,8 @@
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE RecordWildCards            #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE TypeApplications           #-}
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE UndecidableInstances       #-}
 
@@ -40,6 +43,7 @@ module Ouroboros.Consensus.Ledger.Mock.Block (
     -- * Serialisation
   , encodeSimpleHeader
   , decodeSimpleHeader
+  , SerialiseTag(..)
   ) where
 
 import qualified Codec.CBOR.Decoding as CBOR
@@ -81,7 +85,22 @@ data SimpleBlock' c ext ext' = SimpleBlock {
     , simpleBody   :: SimpleBody
     }
   deriving stock    (Generic, Show, Eq)
-  deriving anyclass (Serialise)
+
+class SerialiseTag a where
+  serialiseTag :: Word8
+
+instance (SimpleCrypto c, Serialise ext', SerialiseTag ext') => Serialise (SimpleBlock' c ext ext') where
+
+  encode block =
+    encode (serialiseTag @ext') <>
+      CBOR.encodeListLen 2 <>
+      encode (simpleHeader block) <>
+      encode (simpleBody block)
+
+  decode = do
+    void (decode :: CBOR.Decoder s Word8)
+    CBOR.decodeListLenOf 2
+    SimpleBlock <$> decode <*> decode
 
 instance GetHeader (SimpleBlock' c ext ext') where
   data Header (SimpleBlock' c ext ext') = SimpleHeader {

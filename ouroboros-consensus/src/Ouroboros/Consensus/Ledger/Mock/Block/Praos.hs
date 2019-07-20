@@ -53,6 +53,9 @@ newtype SimplePraosExt c c' = SimplePraosExt {
   }
   deriving (Generic, Condense, Show, Eq)
 
+instance SerialiseTag (SimplePraosExt c c') where
+  serialiseTag = 2
+
 -- | Part of the block that gets signed
 --
 -- TODO: Right now we sign all of the extra Praos fields. This may or may not

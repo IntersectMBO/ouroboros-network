@@ -56,6 +56,9 @@ newtype SimplePraosRuleExt = SimplePraosRuleExt {
     }
   deriving (Generic, Condense, Show, Eq)
 
+instance SerialiseTag SimplePraosRuleExt where
+  serialiseTag = 3
+
 type instance BlockProtocol (SimplePraosRuleBlock c) =
    WithLeaderSchedule (Praos PraosCryptoUnused)
 
