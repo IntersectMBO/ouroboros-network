@@ -36,6 +36,8 @@ module Ouroboros.Storage.ChainDB.Impl.ImmDB (
   , IteratorResult(..)
   , ImmDB.ValidationPolicy(..)
   , ImmDB.ImmutableDBError
+    -- * Exported for testing purposes
+  , mkImmDB
   ) where
 
 import           Codec.CBOR.Decoding (Decoder)
@@ -149,6 +151,15 @@ openDB args@ImmDbArgs{..} = do
       , immEpochInfo = immEpochInfo
       , isEBB        = immIsEBB
       }
+
+-- | For testing purposes
+mkImmDB :: ImmutableDB (HeaderHash blk) m
+        -> (forall s. Decoder s blk)
+        -> (blk -> Encoding)
+        -> EpochInfo m
+        -> (blk -> Maybe (HeaderHash blk))
+        -> ImmDB m blk
+mkImmDB immDB decBlock encBlock immEpochInfo isEBB = ImmDB {..}
 
 {-------------------------------------------------------------------------------
   Getting and parsing blocks
