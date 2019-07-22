@@ -1,7 +1,7 @@
 {-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE OverloadedStrings   #-}
-{-# LANGUAGE RecordWildCards     #-}
+{-# LANGUAGE NamedFieldPuns      #-}
 
 {-# LANGUAGE CPP                 #-}
 {-# LANGUAGE DataKinds           #-}
@@ -641,7 +641,7 @@ prop_send_recv_init_and_rsp f xs = ioProperty $ do
   where
 
     appX :: ReqRspCfg -> OuroborosApplication InitiatorAndResponderApp (Socket.SockAddr, Socket.SockAddr) TestProtocols2 IO BL.ByteString () ()
-    appX ReqRspCfg {..} = OuroborosInitiatorAndResponderApplication
+    appX ReqRspCfg {rrcTag, rrcServerVar, rrcClientVar, rrcSiblingVar} = OuroborosInitiatorAndResponderApplication
             -- Initiator
             (\peerid ReqRespPr channel -> do
              r <- runPeer (tagTrace (rrcTag ++ " Initiator") activeTracer)
@@ -799,7 +799,7 @@ data WithThreadAndTime a = WithThreadAndTime {
     }
 
 instance (Show a) => Show (WithThreadAndTime a) where
-    show WithThreadAndTime {..} =
+    show WithThreadAndTime {wtatOccuredAt, wtatWithinThread, wtatEvent} =
         printf "%s: %s: %s" (show wtatOccuredAt) (show wtatWithinThread) (show wtatEvent)
 
 _verboseTracer :: Show a => Tracer IO a
@@ -817,7 +817,7 @@ data WithTag a = WithTag {
     }
 
 instance (Show a) => Show (WithTag a) where
-    show WithTag {..} =
+    show WithTag {wtTag, wtEvent} =
         printf "%s: %s" wtTag (show wtEvent)
 
 tagTrace :: String -> Tracer IO (WithTag a) -> Tracer IO a

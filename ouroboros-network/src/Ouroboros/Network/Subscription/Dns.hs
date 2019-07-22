@@ -1,7 +1,7 @@
 {-# LANGUAGE CPP                 #-}
 {-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE RankNTypes          #-}
-{-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies        #-}
 
@@ -243,8 +243,8 @@ data WithDomainName a = WithDomainName {
     , wdnEvent  :: !a
     }
 
-instance (Show a) => Show (WithDomainName a) where
-    show WithDomainName {..} = printf  "Domain: %s %s" (show wdnDomain) (show wdnEvent)
+instance Show a => Show (WithDomainName a) where
+    show WithDomainName {wdnDomain, wdnEvent} = printf  "Domain: %s %s" (show wdnDomain) (show wdnEvent)
 
 domainNameTracer :: DNS.Domain -> Tracer IO (WithDomainName a) -> Tracer IO a
 domainNameTracer domain tr = Tracer $ \s -> traceWith tr $ WithDomainName domain s

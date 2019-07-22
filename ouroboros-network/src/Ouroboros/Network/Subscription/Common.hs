@@ -1,7 +1,7 @@
 {-# LANGUAGE CPP                 #-}
 {-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE RankNTypes          #-}
-{-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Ouroboros.Network.Subscription.Common
@@ -350,8 +350,9 @@ instance (Show a) => Show (WithIPList a) where
         printf "IPs: %s %s %s" (show wilIPv6) (show wilDsts) (show wilEvent)
     show (WithIPList (Just wilIPv4) Nothing wilDsts wilEvent) =
         printf "IPs: %s %s %s" (show wilIPv4) (show wilDsts) (show wilEvent)
-    show WithIPList {..} = printf  "IPs: %s %s %s %s" (show wilIPv4) (show wilIPv6)
-                                                      (show wilDsts) (show wilEvent)
+    show WithIPList {wilIPv4, wilIPv6, wilDsts, wilEvent}
+      = printf  "IPs: %s %s %s %s" (show wilIPv4) (show wilIPv6)
+                                   (show wilDsts) (show wilEvent)
 
 ipListTracer
     :: Maybe Socket.SockAddr
@@ -374,7 +375,8 @@ data SubscriberErrorType = SubscriberParrallelConnectionCancelled
                          deriving (Eq, Show)
 
 instance Exception SubscriberError where
-    displayException SubscriberError{..} = printf "%s %s at %s"
+    displayException SubscriberError{seType, seMessage, seStack}
+      = printf "%s %s at %s"
          (show seType)
          (show seMessage)
          (prettyCallStack seStack)
