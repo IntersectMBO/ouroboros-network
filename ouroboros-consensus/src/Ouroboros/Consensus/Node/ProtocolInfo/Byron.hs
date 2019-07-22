@@ -66,7 +66,6 @@ protocolInfoByron (NumCoreNodes numCoreNodes) nid params gc mLeader =
                       pbftNumNodes = fromIntegral numCoreNodes
                       -- Set the signature window to be short for the demo.
                       -- TODO: Is it always 'k'?
-                    , pbftSignatureWindow = 7
                       -- TODO: make pbftSignatureThreshold default to a value computed from pbftNumNodes,
                       --       but configurable?
                     }

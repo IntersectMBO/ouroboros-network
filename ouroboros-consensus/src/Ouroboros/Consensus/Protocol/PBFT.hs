@@ -207,9 +207,10 @@ instance (PBftCrypto c, Typeable c) => OuroborosTag (PBft c) where
       case Bimap.lookupR (hashVerKey pbftIssuer) dms of
         Nothing -> throwError $ PBftNotGenesisDelegate (hashVerKey pbftIssuer) lv
         Just gk -> do
-          when (Seq.length signers >= winSize
-                && Seq.length (Seq.filter (== gk) signers) > wt)
-            $ do throwError PBftExceededSignThreshold
+          let totalSigners = Seq.length signers
+              gkSigners = Seq.length (Seq.filter (== gk) signers)
+          when (totalSigners >= winSize && gkSigners > wt)
+            $ do throwError (PBftExceededSignThreshold totalSigners gkSigners)
           return $! takeR (winSize + 2*k) chainState Seq.|> (gk, blockSlot b)
     where
       PBftParams{..} = pbftParams
@@ -234,7 +235,7 @@ instance (PBftCrypto c, Typeable c) => OuroborosTag (PBft c) where
 data PBftValidationErr c
   = PBftInvalidSignature String
   | PBftNotGenesisDelegate (PBftVerKeyHash c) (PBftLedgerView c)
-  | PBftExceededSignThreshold
+  | PBftExceededSignThreshold Int Int
   | PBftInvalidSlot
 
 deriving instance (Show (PBftLedgerView c), PBftCrypto c) => Show (PBftValidationErr c)
