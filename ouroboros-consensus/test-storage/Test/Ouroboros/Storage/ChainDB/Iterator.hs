@@ -30,7 +30,8 @@ import           Ouroboros.Consensus.Util.Condense (condense)
 import           Ouroboros.Storage.ChainDB.API (Iterator (..), IteratorId (..),
                      IteratorResult (..), StreamFrom (..), StreamTo (..),
                      UnknownRange)
-import           Ouroboros.Storage.ChainDB.Impl.ImmDB (ImmDB, mkImmDB)
+import           Ouroboros.Storage.ChainDB.Impl.ImmDB (ImmDB, getPointAtTip,
+                     mkImmDB)
 import           Ouroboros.Storage.ChainDB.Impl.Iterator (IteratorEnv (..),
                      newIterator)
 import           Ouroboros.Storage.ChainDB.Impl.Types (TraceIteratorEvent (..))
@@ -265,6 +266,7 @@ initIteratorEnv TestSetup { immutable, volatile } tracer = do
     return IteratorEnv
       { itImmDB          = immDB
       , itVolDB          = volDB
+      , itGetImmDBTip    = getPointAtTip immDB
       , itIterators      = iters
       , itNextIteratorId = nextIterId
       , itTracer         = tracer

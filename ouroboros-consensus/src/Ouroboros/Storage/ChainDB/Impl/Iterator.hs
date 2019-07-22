@@ -1,5 +1,6 @@
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE LambdaCase          #-}
+{-# LANGUAGE PatternSynonyms     #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -28,8 +29,10 @@ import           Control.Monad.Class.MonadThrow
 
 import           Control.Tracer
 
-import           Ouroboros.Network.Block (HasHeader, HeaderHash, blockHash,
-                     blockPoint, pointSlot)
+import qualified Ouroboros.Network.AnchoredFragment as AF
+import           Ouroboros.Network.Block (pattern BlockPoint,
+                     pattern GenesisPoint, HasHeader, HeaderHash, Point,
+                     blockHash, blockPoint, castPoint, pointSlot, withHash)
 
 import           Ouroboros.Storage.ChainDB.API (ChainDbError (..),
                      Iterator (..), IteratorId (..), IteratorResult (..),
@@ -120,14 +123,20 @@ import qualified Ouroboros.Storage.ChainDB.Impl.VolDB as VolDB
 --
 -- = Bounds checking
 --
+-- The VolatileDB is hash-based instead of point-based. While the bounds of a
+-- stream are /point/s, we can simply check whether the hashes of the bounds
+-- match the hashes stored in the points.
+--
 -- The ImmutableDB is slot-based instead of point-based, which means that
 -- before we know whether a block in the ImmutableDB matches a given point, we
--- must first read that block to obtain its hash, after which we can then
--- verify whether it matches the hash of the point. This is important for the
--- start and end bounds (both points) of a stream: we must first read the
--- blocks corresponding to the bounds to be sure the range is valid. Note that
--- these reads happen before the first call to 'iteratorNext' (which will
--- trigger a second read of the first block).
+-- must first read the block at the point's slot to obtain its hash, after
+-- which we can then verify whether it matches the hash of the point. This is
+-- important for the start and end bounds (both points) of a stream in case
+-- they are in the ImmutableDB (i.e., their slots are <= the tip of the
+-- ImmutableDB): we must first read the blocks corresponding to the bounds to
+-- be sure the range is valid. Note that these reads happen before the first
+-- call to 'iteratorNext' (which will trigger a second read of the first
+-- block).
 --
 -- Note that when streaming to an /exclusive/ bound, the block corresponding
 -- to that bound ('Point') must exist in the ChainDB.
@@ -141,16 +150,17 @@ import qualified Ouroboros.Storage.ChainDB.Impl.VolDB as VolDB
 --   read from disk.
 --
 -- * When blocks have to be streamed both from the ImmutableDB and the
---   VolatileDB, the blocks corresponding to the two bound will have to be
---   read upfront, as described in the previous bullet point. Since the tip of
---   the ImmutableDB must be the switchover point between the two, it will be
---   the upper bound.
+--   VolatileDB, only the block corresponding to the lower bound will have to
+--   be read from the ImmutableDB upfront, as described in the previous bullet
+--   point. Note that the block corresponding to the upper bound does not have
+--   to be read from disk, since it will be in the VolatileDB, which means
+--   that we know its hash already from the in-memory index.
 --
 -- In summary:
 --
 -- * Only streaming from the VolatileDB: 0 blocks read upfront.
 -- * Only streaming from the ImmutableDB: 2 blocks read upfront.
--- * Streaming from both the ImmutableDB and the VolatileDB: 2 blocks read
+-- * Streaming from both the ImmutableDB and the VolatileDB: 1 block read
 --   upfront.
 --
 -- Additionally, when we notice during streaming that a block is no longer in
@@ -189,16 +199,22 @@ streamBlocks h from to = getEnv h $ \cdb ->
 data IteratorEnv m blk = IteratorEnv
   { itImmDB          :: ImmDB m blk
   , itVolDB          :: VolDB m blk
+  , itGetImmDBTip    :: m (Point blk)
+    -- ^ This should preferably be cheap.
   , itIterators      :: TVar m (Map IteratorId (m ()))
   , itNextIteratorId :: TVar m IteratorId
   , itTracer         :: Tracer m (TraceIteratorEvent blk)
   }
 
 -- | Obtain an 'IteratorEnv' from a 'ChainDbEnv'.
-fromChainDbEnv :: ChainDbEnv m blk -> IteratorEnv m blk
+fromChainDbEnv :: MonadSTM m
+               => ChainDbEnv m blk -> IteratorEnv m blk
 fromChainDbEnv CDB{..} = IteratorEnv
   { itImmDB          = cdbImmDB
   , itVolDB          = cdbVolDB
+    -- See the invariant of 'cdbChain'.
+  , itGetImmDBTip    = castPoint . AF.anchorPoint <$>
+                       atomically (readTVar cdbChain)
   , itIterators      = cdbIterators
   , itNextIteratorId = cdbNextIteratorId
   , itTracer         = contramap TraceIteratorEvent cdbTracer
@@ -289,37 +305,39 @@ newIterator itEnv@IteratorEnv{..} getItEnv from to = do
                    -> ExceptT (UnknownRange blk) m (Iterator m blk)
     streamFromBoth predHash hashes = do
         lift $ trace $ StreamFromBoth from to hashes
-        lift (ImmDB.getBlockAtTip itImmDB) >>= \case
+        lift itGetImmDBTip >>= \case
           -- The ImmutableDB is empty
-          Nothing -> throwError $ ForkTooOld from
+          GenesisPoint -> throwError $ ForkTooOld from
           -- The incomplete path fits onto the tip of the ImmutableDB.
-          Just blk | blockHash blk == predHash -> case NE.nonEmpty hashes of
-            Just hashes' -> stream (blockPoint blk) hashes'
-            -- The path is actually empty, but the exclusive upper bound was
-            -- in the VolatileDB. Just stream from the ImmutableDB without
-            -- checking the upper bound (which might not be in the
-            -- ImmutableDB)
-            Nothing      -> streamFromImmDBHelper False
-          -- The incomplete path doesn't fit onto the tip of the ImmutableDB.
-          -- Note that since we have constructed the incomplete path through
-          -- the VolatileDB, blocks might have moved from the VolatileDB to
-          -- the ImmutableDB so that the tip of the ImmutableDB has changed.
-          -- Either the path used to fit onto the tip but the tip has changed,
-          -- or the path simply never fitted onto the tip.
-          Just blk -> case dropWhile (/= blockHash blk) hashes of
-            -- The current tip is not in the path, this means that the path
-            -- never fitted onto the tip of the ImmutableDB. We refuse this
-            -- stream.
-            []                    -> throwError $ ForkTooOld from
-            -- The current tip is in the path, with some hashes after it, this
-            -- means that some blocks in our path have moved from the
-            -- VolatileDB to the ImmutableDB. We can shift the switchover
-            -- point to the current tip.
-            _tipHash:hash:hashes' -> stream (blockPoint blk) (hash NE.:| hashes')
-            -- The current tip is the end of the path, this means we can
-            -- actually stream everything from just the ImmutableDB. No need
-            -- to check the hash at the upper bound again.
-            [_tipHash]            -> streamFromImmDBHelper False
+          pt@BlockPoint { withHash = tipHash }
+            | tipHash == predHash
+            -> case NE.nonEmpty hashes of
+                 Just hashes' -> stream pt hashes'
+                 -- The path is actually empty, but the exclusive upper bound was
+                 -- in the VolatileDB. Just stream from the ImmutableDB without
+                 -- checking the upper bound (which might not be in the
+                 -- ImmutableDB)
+                 Nothing      -> streamFromImmDBHelper False
+            -- The incomplete path doesn't fit onto the tip of the ImmutableDB.
+            -- Note that since we have constructed the incomplete path through
+            -- the VolatileDB, blocks might have moved from the VolatileDB to
+            -- the ImmutableDB so that the tip of the ImmutableDB has changed.
+            -- Either the path used to fit onto the tip but the tip has changed,
+            -- or the path simply never fitted onto the tip.
+            | otherwise  -> case dropWhile (/= tipHash) hashes of
+              -- The current tip is not in the path, this means that the path
+              -- never fitted onto the tip of the ImmutableDB. We refuse this
+              -- stream.
+              []                    -> throwError $ ForkTooOld from
+              -- The current tip is in the path, with some hashes after it, this
+              -- means that some blocks in our path have moved from the
+              -- VolatileDB to the ImmutableDB. We can shift the switchover
+              -- point to the current tip.
+              _tipHash:hash:hashes' -> stream pt (hash NE.:| hashes')
+              -- The current tip is the end of the path, this means we can
+              -- actually stream everything from just the ImmutableDB. No need
+              -- to check the hash at the upper bound again.
+              [_tipHash]            -> streamFromImmDBHelper False
       where
         stream pt hashes' = do
           let immEnd = SwitchToVolDBFrom (StreamToInclusive pt) hashes'
