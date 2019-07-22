@@ -163,7 +163,7 @@ test-suite tests
                        Ouroboros.Network.Channel
                        Ouroboros.Network.DeltaQ
                        Ouroboros.Network.Mux
-                       Ouroboros.Network.Node
+                       Ouroboros.Network.MockNode
                        Ouroboros.Network.NodeToNode
                        Ouroboros.Network.Point
                        Ouroboros.Network.Protocol.BlockFetch.Client
@@ -214,7 +214,7 @@ test-suite tests
                        Test.ChainProducerState
                        Test.Ouroboros.Network.Testing.Utils
                        Test.Ouroboros.Network.BlockFetch
-                       Test.Ouroboros.Network.Node
+                       Test.Ouroboros.Network.MockNode
                        Test.Mux
                        Test.Pipe
                        Test.Socket
