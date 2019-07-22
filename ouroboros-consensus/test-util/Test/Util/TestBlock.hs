@@ -37,7 +37,6 @@ module Test.Util.TestBlock (
   , GenTx (..)
   , GenTxId (..)
   , ApplyTxErr
-  , computeGenTxId
     -- * Support for tests
   , Permutation(..)
   , permute
@@ -304,8 +303,8 @@ instance ApplyTx TestBlock where
     { testGenTxId :: TestTxId
     } deriving (Show, Eq, Ord)
 
-  computeGenTxId (TestGenTx (ValidTestTx txid))   = TestGenTxId txid
-  computeGenTxId (TestGenTx (InvalidTestTx txid)) = TestGenTxId txid
+  txId (TestGenTx (ValidTestTx   txid)) = TestGenTxId txid
+  txId (TestGenTx (InvalidTestTx txid)) = TestGenTxId txid
 
   txSize _ = 2000 -- TODO #745
 

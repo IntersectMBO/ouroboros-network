@@ -22,7 +22,7 @@ module Ouroboros.Consensus.Ledger.Byron
     -- * Mempool integration
   , GenTx (..)
   , GenTxId (..)
-  , computeGenTxId
+  , mkByronTx
     -- * Ledger
   , LedgerState (..)
   , LedgerConfig (..)
@@ -529,7 +529,7 @@ instance Condense (ChainHash (ByronBlockOrEBB cfg)) where
   condense (BlockHash h) = condense h
 
 instance Condense (GenTx (ByronBlockOrEBB cfg)) where
-    condense (ByronTx tx) =
+    condense (ByronTx { byronTx = tx }) =
       "(tx: "       <> show (CC.UTxO.aTaTx tx) <>
       ", witness: " <> show (CC.UTxO.aTaWitness tx) <>
       ")"
@@ -608,14 +608,14 @@ decodeByronHeaderHash :: Decoder s (HeaderHash (ByronBlockOrEBB cfg))
 decodeByronHeaderHash = fromCBOR
 
 encodeByronGenTx :: GenTx (ByronBlockOrEBB cfg) -> Encoding
-encodeByronGenTx (ByronTx tx) = toCBOR (void tx)
+encodeByronGenTx (ByronTx {byronTx = tx }) = toCBOR (void tx)
 
 encodeByronGenTxId :: GenTxId (ByronBlockOrEBB cfg) -> Encoding
 encodeByronGenTxId (ByronTxId txid) = toCBOR txid
 
 decodeByronGenTx :: Decoder s (GenTx (ByronBlockOrEBB cfg))
 decodeByronGenTx =
-    ByronTx . annotate <$> fromCBOR
+    mkByronTx . annotate <$> fromCBOR
   where
     -- TODO #560: Re-annotation can be done but requires some rearranging in
     -- the codecs Original ByteSpan's refer to bytestring we don't have, so
@@ -738,14 +738,19 @@ instance (ByronGiven, Typeable cfg, ConfigContainsGenesis cfg)
   --
   -- TODO #514: This is still missing the other cases (this shouldn't be a
   -- newtype)
-  data GenTx (ByronBlockOrEBB cfg) = ByronTx { unByronTx :: CC.UTxO.ATxAux ByteString }
+  data GenTx (ByronBlockOrEBB cfg) = ByronTx
+    { byronTx   :: !(CC.UTxO.ATxAux ByteString)
+    , byronTxId :: CC.UTxO.TxId
+      -- ^ This field is lazy on purpose so that the TxId is computed on
+      -- demand.
+    }
 
   newtype GenTxId (ByronBlockOrEBB cfg) = ByronTxId { unByronTxId :: CC.UTxO.TxId }
     deriving (Eq, Ord)
 
-  computeGenTxId = ByronTxId . Crypto.hash . CC.UTxO.taTx . unByronTx
+  txId = ByronTxId . byronTxId
 
-  txSize (ByronTx atxaux) = fromIntegral txByteSize
+  txSize (ByronTx { byronTx = atxaux }) = fromIntegral txByteSize
     where
       -- TODO cardano-ledger#576 will provide a function for this
       txByteSize = 1 -- To account for @encodeListLen 2@
@@ -778,7 +783,7 @@ applyByronGenTx _reapply (ByronEBBLedgerConfig (ByronLedgerConfig cfg)) genTx (B
     go :: GenTx (ByronBlockOrEBB cfg)
        -> CC.Block.ChainValidationState
        -> Except CC.UTxO.UTxOValidationError CC.Block.ChainValidationState
-    go (ByronTx tx) cvs = wrapCVS <$>
+    go (ByronTx { byronTx = tx }) cvs = wrapCVS <$>
         runReaderT (CC.UTxO.updateUTxO env utxo [tx]) validationMode
       where
         wrapCVS newUTxO = cvs { CC.Block.cvsUtxo = newUTxO }
@@ -790,6 +795,14 @@ applyByronGenTx _reapply (ByronEBBLedgerConfig (ByronLedgerConfig cfg)) genTx (B
           , CC.UTxO.protocolParameters = CC.UPI.adoptedProtocolParameters updateState
           }
         fixPM (Crypto.AProtocolMagic a b) = Crypto.AProtocolMagic (reAnnotate a) b
+
+mkByronTx :: CC.UTxO.ATxAux ByteString -> GenTx (ByronBlockOrEBB cfg)
+mkByronTx tx = ByronTx
+    { byronTx   = tx
+    , byronTxId = Crypto.hash $ CC.UTxO.taTx tx
+      -- TODO replace this with a function from cardano-ledger, see
+      -- cardano-ledger#581
+    }
 
 {-------------------------------------------------------------------------------
   PBFT integration

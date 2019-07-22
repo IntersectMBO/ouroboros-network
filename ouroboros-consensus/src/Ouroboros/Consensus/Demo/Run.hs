@@ -46,7 +46,7 @@ instance ( ProtocolLedgerView (SimpleBlock SimpleMockCrypto ext)
                     ext
          , Serialise (ChainState (BlockProtocol (SimpleBlock SimpleMockCrypto ext)))
          ) => RunDemo (SimpleBlock SimpleMockCrypto ext) where
-  demoMockTx _ = SimpleGenTx
+  demoMockTx _ = mkSimpleGenTx
 
 instance RunNode (ByronBlockOrEBB ByronConfig) => RunDemo (ByronBlockOrEBB ByronConfig) where
   demoMockTx = Byron.elaborateTx

@@ -1,11 +1,12 @@
+{-# LANGUAGE DeriveAnyClass             #-}
 {-# LANGUAGE DeriveGeneric              #-}
+{-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE RecordWildCards            #-}
-{-# LANGUAGE StandaloneDeriving         #-}
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE UndecidableInstances       #-}
 
@@ -31,7 +32,7 @@ module Ouroboros.Consensus.Ledger.Mock.Block (
     -- * 'ApplyTx' (mempool support)
   , GenTx(..)
   , GenTxId(..)
-  , computeGenTxId
+  , mkSimpleGenTx
     -- * Crypto
   , SimpleCrypto
   , SimpleStandardCrypto
@@ -79,7 +80,8 @@ data SimpleBlock' c ext ext' = SimpleBlock {
       simpleHeader :: Header (SimpleBlock' c ext ext')
     , simpleBody   :: SimpleBody
     }
-  deriving (Generic, Show, Eq)
+  deriving stock    (Generic, Show, Eq)
+  deriving anyclass (Serialise)
 
 instance GetHeader (SimpleBlock' c ext ext') where
   data Header (SimpleBlock' c ext ext') = SimpleHeader {
@@ -112,12 +114,14 @@ data SimpleStdHeader c ext = SimpleStdHeader {
     , simpleBodyHash  :: Hash (SimpleHash c) SimpleBody
     , simpleBlockSize :: Word64
     }
-  deriving (Generic, Show, Eq)
+  deriving stock    (Generic, Show, Eq)
+  deriving anyclass (Serialise)
 
 data SimpleBody = SimpleBody {
       simpleTxs :: [Tx]
     }
-  deriving (Generic, Show, Eq)
+  deriving stock    (Generic, Show, Eq)
+  deriving anyclass (Serialise)
 
 {-------------------------------------------------------------------------------
   Working with 'SimpleBlock'
@@ -207,7 +211,8 @@ instance (SimpleCrypto c, Typeable ext, SupportedBlock (SimpleBlock c ext))
   newtype LedgerState (SimpleBlock c ext) = SimpleLedgerState {
         simpleLedgerState :: MockState (SimpleBlock c ext)
       }
-    deriving (Generic, Show, Eq)
+    deriving stock   (Generic, Show, Eq)
+    deriving newtype (Serialise)
 
   data LedgerConfig (SimpleBlock c ext) =
       SimpleLedgerConfig
@@ -239,13 +244,20 @@ genesisSimpleLedgerState = SimpleLedgerState . genesisMockState
 
 instance (SimpleCrypto c, Typeable ext, SupportedBlock (SimpleBlock c ext))
       => ApplyTx (SimpleBlock c ext) where
-  newtype GenTx   (SimpleBlock c ext) = SimpleGenTx { simpleGenTx :: Tx }
+  data GenTx (SimpleBlock c ext) = SimpleGenTx
+    { simpleGenTx   :: Tx
+    , simpleGenTxId :: TxId
+      -- ^ This field is lazy on purpose so that the TxId is computed on
+      -- demand.
+    } deriving stock    (Generic)
+      deriving anyclass (Serialise)
 
   newtype GenTxId (SimpleBlock c ext) = SimpleGenTxId
-    { simpleGenTxId :: TxId
-    } deriving (Show, Eq, Ord)
+    { unSimpleGenTxId :: TxId
+    } deriving stock   (Generic)
+      deriving newtype (Show, Eq, Ord, Serialise)
 
-  computeGenTxId = SimpleGenTxId . hash . simpleGenTx
+  txId = SimpleGenTxId . simpleGenTxId
 
   txSize _ = 2000  -- TODO #745
 
@@ -265,10 +277,16 @@ instance HasUtxo (GenTx (SimpleBlock p c)) where
   updateUtxo = updateUtxo . simpleGenTx
 
 instance Condense (GenTx (SimpleBlock p c)) where
-    condense (SimpleGenTx tx) = condense tx
+    condense = condense . simpleGenTx
 
 instance Show (GenTx (SimpleBlock p c)) where
-    show (SimpleGenTx tx) = condense tx
+    show = show . simpleGenTx
+
+mkSimpleGenTx :: Tx -> GenTx (SimpleBlock c ext)
+mkSimpleGenTx tx = SimpleGenTx
+    { simpleGenTx   = tx
+    , simpleGenTxId = hash tx
+    }
 
 {-------------------------------------------------------------------------------
   Crypto needed for simple blocks
@@ -332,14 +350,8 @@ instance Condense (ChainHash (SimpleBlock' c ext ext')) where
   Serialise instances
 -------------------------------------------------------------------------------}
 
-instance (SimpleCrypto c, Serialise ext') => Serialise (SimpleBlock' c ext ext')
-instance (SimpleCrypto c) => Serialise (SimpleStdHeader c ext)
-instance Serialise SimpleBody
-deriving instance Serialise (GenTx (SimpleBlock p c))
-deriving instance Serialise (GenTxId (SimpleBlock p c))
 instance ToCBOR SimpleBody where
   toCBOR = encode
-deriving instance Serialise (LedgerState (SimpleBlock c ext))
 
 encodeSimpleHeader :: SimpleCrypto c
                    => (ext' -> CBOR.Encoding)

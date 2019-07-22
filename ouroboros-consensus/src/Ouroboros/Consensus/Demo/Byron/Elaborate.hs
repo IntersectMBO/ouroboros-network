@@ -45,7 +45,7 @@ elaborateTx :: HasCallStack
             => NodeConfig ByronEBBExtNodeConfig
             -> Mock.Tx -> GenTx (ByronBlockOrEBB cfg)
 elaborateTx (WithEBBNodeConfig cfg) (Mock.Tx ins outs) =
-    ByronTx $ CC.UTxO.ATxAux (annotate tx) (annotate witness)
+    mkByronTx $ CC.UTxO.ATxAux (annotate tx) (annotate witness)
   where
     annotate x = reAnnotate $ Annotated x ()
     -- mockInp and mockOut in [0 .. 3] (index of rich actor)

@@ -44,8 +44,10 @@ import           Ouroboros.Network.BlockFetch.State (FetchMode (..))
 import qualified Ouroboros.Network.Chain as Chain
 import           Ouroboros.Network.Point (WithOrigin (..))
 import           Ouroboros.Network.TxSubmission.Inbound
-import           Ouroboros.Network.TxSubmission.Outbound hiding
-                     (MempoolSnapshot)
+                     (TraceTxSubmissionInbound, TxSubmissionMempoolWriter)
+import qualified Ouroboros.Network.TxSubmission.Inbound as Inbound
+import           Ouroboros.Network.TxSubmission.Outbound
+                     (TraceTxSubmissionOutbound, TxSubmissionMempoolReader)
 import qualified Ouroboros.Network.TxSubmission.Outbound as Outbound
 
 import           Ouroboros.Consensus.Block
@@ -396,7 +398,7 @@ getMempoolReader
      (MonadSTM m, ApplyTx blk)
   => Mempool m blk TicketNo
   -> TxSubmissionMempoolReader (GenTxId blk) (GenTx blk) TicketNo m
-getMempoolReader mempool = TxSubmissionMempoolReader
+getMempoolReader mempool = Outbound.TxSubmissionMempoolReader
     { mempoolZeroIdx     = zeroIdx mempool
     , mempoolGetSnapshot = convertSnapshot <$> getSnapshot mempool
     }
@@ -407,7 +409,7 @@ getMempoolReader mempool = TxSubmissionMempoolReader
     convertSnapshot MempoolSnapshot{snapshotTxsAfter, snapshotLookupTx} =
       Outbound.MempoolSnapshot
         { mempoolTxIdsAfter = \idx ->
-            [ (computeGenTxId tx, idx', txSize tx)
+            [ (txId tx, idx', txSize tx)
             | (tx, idx') <- snapshotTxsAfter idx
             ]
         , mempoolLookupTx   = snapshotLookupTx
@@ -417,9 +419,9 @@ getMempoolWriter
   :: (Monad m, ApplyTx blk)
   => Mempool m blk TicketNo
   -> TxSubmissionMempoolWriter (GenTxId blk) (GenTx blk) TicketNo m
-getMempoolWriter mempool = TxSubmissionMempoolWriter
-    { txId          = computeGenTxId
+getMempoolWriter mempool = Inbound.TxSubmissionMempoolWriter
+    { Inbound.txId          = txId
     , mempoolAddTxs = \txs ->
-        map (computeGenTxId . fst) . filter (isNothing . snd) <$>
+        map (txId . fst) . filter (isNothing . snd) <$>
         addTxs mempool txs
     }
