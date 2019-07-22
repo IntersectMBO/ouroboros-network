@@ -1,17 +1,10 @@
+
+{ ouroboros-network ? { outPath = ./.; rev = "acdef"; }, ... }@args:
 let
   commonLib = import ./nix/iohk-common.nix;
   default = import ./default.nix {};
-  # Path of nix-tools jobs that we want to evict from release.nix:
-  disabled = [
-    # FIXME: those tests freeze on darwin hydra agents:
-    ["nix-tools" "tests" "ouroboros-consensus" "test-storage" "x86_64-darwin"]
-  ];
-in
-{ ouroboros-network ? { outPath = ./.; rev = "acdef"; }, ... }@args:
-commonLib.pkgs.lib.mapAttrsRecursiveCond
-(as: !(as ? "type" && as.type == "derivation"))
-(path: v: if (builtins.elem path disabled) then null else v)
-(commonLib.nix-tools.release-nix {
+
+in commonLib.nix-tools.release-nix {
   package-set-path = ./nix/nix-tools.nix;
   _this = ouroboros-network;
 
@@ -75,14 +68,41 @@ commonLib.pkgs.lib.mapAttrsRecursiveCond
     network-pdf-wip = default.network-pdf-wip;
     network-pdf = default.network-pdf;
   };
+  # so that the shell is also built for darwin:
   builds-on-supported-systems = [ "shell" ];
+  # FIXME: some jobs currently don't build:
+  disabled-jobs = [
+    # "Please use win32/Makefile.gcc instead.":
+    "nix-tools.tests.x86_64-pc-mingw32-ouroboros-network.cddl.x86_64-linux"
+    # hangs at Socket tests:
+    "nix-tools.tests.x86_64-pc-mingw32-ouroboros-network.tests.x86_64-linux"
+    # 'Network.Socket.bind: permission denied (Operation not permitted)' at Socket tests:
+    "nix-tools.tests.ouroboros-network.tests.x86_64-darwin"
+    # 'Storage.HasFS.HasFS' test failing:
+    "nix-tools.tests.ouroboros-consensus.test-storage.x86_64-darwin"
+  ];
   # The required jobs that must pass for ci not to fail:
   required-name = "ouroboros-network-required-checks";
   required-targets = jobs: [
     # targets are specified using above nomenclature:
+    jobs.nix-tools.packages-libs.x86_64-linux
     jobs.nix-tools.packages-tests.x86_64-linux
     jobs.nix-tools.packages-exes.x86_64-linux
+    
+    jobs.nix-tools.packages-libs.x86_64-darwin
+    jobs.nix-tools.packages-tests.x86_64-darwin
+    jobs.nix-tools.packages-exes.x86_64-darwin
 
+    # windows cross compilation targets
+    jobs.nix-tools.x86_64-pc-mingw32-packages-libs.x86_64-linux
+    jobs.nix-tools.x86_64-pc-mingw32-packages-tests.x86_64-linux
+    jobs.nix-tools.x86_64-pc-mingw32-packages-exes.x86_64-linux
+
+    # additional required jobs:
     jobs.network-pdf
+    jobs.shell.x86_64-linux
+    
+    # FIXME: https://github.com/NixOS/nix/issues/2311
+    # jobs.shell.x86_64-darwin
   ];
-} (builtins.removeAttrs args ["ouroboros-network"]))
+} (builtins.removeAttrs args ["ouroboros-network"])
