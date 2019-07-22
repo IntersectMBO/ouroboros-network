@@ -201,7 +201,10 @@ instance (PBftCrypto c, Typeable c) => OuroborosTag (PBft c) where
                                 , maybe (SlotNo 0) snd $ Seq.lookup (Seq.length chainState) chainState
                                 )
 
-      unless (blockSlot b > lastSlot)
+      -- FIXME confirm that non-strict inequality is ok in general.
+      -- It's here because EBBs have the same slot as the first block of their
+      -- epoch.
+      unless (blockSlot b >= lastSlot)
         $ throwError PBftInvalidSlot
 
       case Bimap.lookupR (hashVerKey pbftIssuer) dms of
