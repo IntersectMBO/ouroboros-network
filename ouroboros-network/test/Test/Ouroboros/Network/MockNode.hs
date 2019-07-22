@@ -7,7 +7,7 @@
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 
-module Test.Ouroboros.Network.Node where
+module Test.Ouroboros.Network.MockNode where
 
 import           Control.Monad (forM, forM_, replicateM, filterM, unless)
 import           Control.Monad.State (execStateT, lift, modify')
@@ -40,7 +40,7 @@ import           Ouroboros.Network.Block
 import           Ouroboros.Network.Chain (Chain (..))
 import qualified Ouroboros.Network.Chain as Chain
 import           Ouroboros.Network.ChainProducerState (ChainProducerState (..))
-import           Ouroboros.Network.Node
+import           Ouroboros.Network.MockNode
 import           Ouroboros.Network.Testing.ConcreteBlock as ConcreteBlock
 
 import           Test.ChainGenerators (TestBlockChain (..))
@@ -48,7 +48,7 @@ import           Test.ChainGenerators (TestBlockChain (..))
 
 tests :: TestTree
 tests =
-  testGroup "Node"
+  testGroup "MockNode"
   [ testGroup "fixed graph topology"
     [ testProperty "core -> relay" prop_coreToRelay
     , testProperty "core -> relay -> relay" prop_coreToRelay2

@@ -6,7 +6,15 @@
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE PolyKinds           #-}
 
-module Ouroboros.Network.Node where
+-- | A mock (and naive) node implentation.  It only implements the @chain-sync@
+-- protocol using the 'Ouroboros.Network.MockChain.Chain' module.  The module
+-- is used to build tests on randomly generated graphs of nodes, see
+-- 'Test.Ouroboros.Network.MockNoder'.
+--
+-- A historical note: this was the very first node implemntation that pre-dates
+-- 'typed-protocols'.
+--
+module Ouroboros.Network.MockNode where
 
 import           Control.Exception (assert)
 import           Control.Monad
