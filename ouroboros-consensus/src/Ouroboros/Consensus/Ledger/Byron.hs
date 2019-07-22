@@ -46,6 +46,7 @@ module Ouroboros.Consensus.Ledger.Byron
   , pattern ByronHeaderOrEBB
   , unByronHeaderOrEBB
   , annotateBoundary
+  , fromCBORAHeaderOrBoundary
   ) where
 
 import           Codec.CBOR.Decoding (Decoder, decodeListLenOf)
