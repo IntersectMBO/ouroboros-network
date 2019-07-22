@@ -1,8 +1,8 @@
 
 {-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE RankNTypes          #-}
-{-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Ouroboros.Network.Server.ConnectionTable (
@@ -129,7 +129,7 @@ addConnection
     -- ^ Optional ValencyCounter, used by subscription worker and set to Nothing when
     -- called by a local server.
     -> STM m ()
-addConnection ConnectionTable{..} remoteAddr localAddr ref_m =
+addConnection ConnectionTable{ctTable} remoteAddr localAddr ref_m =
     readTVar ctTable >>= M.alterF fn remoteAddr >>= writeTVar ctTable
   where
     fn :: Maybe (ConnectionTableEntry m) -> STM m (Maybe (ConnectionTableEntry m))
@@ -156,7 +156,7 @@ addConnection ConnectionTable{..} remoteAddr localAddr ref_m =
 _dumpConnectionTable
     :: ConnectionTable IO
     -> IO ()
-_dumpConnectionTable ConnectionTable{..} = do
+_dumpConnectionTable ConnectionTable{ctTable} = do
     tbl <- atomically $ readTVar ctTable
     printf "Dumping Table:\n"
     mapM_ dumpTableEntry (M.toList tbl)
@@ -176,12 +176,12 @@ removeConnection
     -> Socket.SockAddr
     -> Socket.SockAddr
     -> m ()
-removeConnection ConnectionTable{..} remoteAddr localAddr = atomically $
+removeConnection ConnectionTable{ctTable} remoteAddr localAddr = atomically $
     readTVar ctTable >>= M.alterF fn remoteAddr >>= writeTVar ctTable
   where
     fn :: Maybe (ConnectionTableEntry m) -> STM m (Maybe (ConnectionTableEntry m))
     fn Nothing = return Nothing -- XXX removing non existent address
-    fn (Just ConnectionTableEntry{..}) = do
+    fn (Just ConnectionTableEntry{cteRefs, cteLocalAddresses}) = do
         mapM_ remValencyCounter cteRefs
         let localAddresses' = S.delete localAddr cteLocalAddresses
         if null localAddresses'
@@ -197,7 +197,7 @@ refConnection
     -> Socket.SockAddr
     -> ValencyCounter m
     -> m ConnectionTableRef
-refConnection ConnectionTable{..} remoteAddr refVar = atomically $ do
+refConnection ConnectionTable{ctTable} remoteAddr refVar = atomically $ do
     tbl <- readTVar ctTable
     case M.lookup remoteAddr tbl of
          Nothing -> return ConnectionTableCreate
