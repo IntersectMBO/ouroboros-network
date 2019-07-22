@@ -26,8 +26,7 @@ module Ouroboros.Storage.ChainDB.Impl (
   ) where
 
 import           Control.Monad (when)
-import qualified Data.Map as Map
-import qualified Data.Set as Set
+import qualified Data.Map.Strict as Map
 
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork
@@ -102,7 +101,7 @@ openDBInternal args launchBgTasks = do
                             (Query.getAnyKnownBlock immDB volDB)
                             lgrTracer
 
-    varInvalid <- atomically $ newTVar Set.empty
+    varInvalid <- atomically $ newTVar Map.empty
 
     chainAndLedger <- ChainSel.initialChainSelection
       immDB
@@ -163,7 +162,7 @@ openDBInternal args launchBgTasks = do
           , streamBlocks       = Iterator.streamBlocks  h
           , newHeaderReader    = Reader.newHeaderReader h
           , newBlockReader     = Reader.newBlockReader  h
-          , knownInvalidBlocks = getEnvSTM  h Query.knownInvalidBlocks
+          , getIsInvalidBlock  = getEnvSTM  h Query.getIsInvalidBlock
           , closeDB            = Reopen.closeDB h
           , isOpen             = Reopen.isOpen  h
           }

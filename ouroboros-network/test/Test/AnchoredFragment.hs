@@ -62,6 +62,7 @@ tests = testGroup "AnchoredFragment"
   , testProperty "dropNewest"                         prop_dropNewest
   , testProperty "takeOldest"                         prop_takeOldest
   , testProperty "dropWhileNewest"                    prop_dropWhileNewest
+  , testProperty "takeWhileOldest"                    prop_takeWhileOldest
   , testProperty "addBlock"                           prop_addBlock
   , testProperty "rollback"                           prop_rollback
   , testProperty "rollback/head"                      prop_rollback_head
@@ -141,6 +142,13 @@ prop_dropWhileNewest :: (Block -> Bool) -> TestBlockAnchoredFragment -> Bool
 prop_dropWhileNewest p (TestBlockAnchoredFragment chain) =
     AF.dropWhileNewest p chain ==
     (AF.fromNewestFirst anchor . L.dropWhile p . AF.toNewestFirst) chain
+  where
+    anchor = AF.anchorPoint chain
+
+prop_takeWhileOldest :: (Block -> Bool) -> TestBlockAnchoredFragment -> Bool
+prop_takeWhileOldest p (TestBlockAnchoredFragment chain) =
+    AF.takeWhileOldest p chain ==
+    (AF.fromOldestFirst anchor . L.takeWhile p . AF.toOldestFirst) chain
   where
     anchor = AF.anchorPoint chain
 

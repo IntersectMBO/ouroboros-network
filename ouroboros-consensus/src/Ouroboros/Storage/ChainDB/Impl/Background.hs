@@ -28,8 +28,8 @@ module Ouroboros.Storage.ChainDB.Impl.Background
 
 import           Control.Exception (assert)
 import           Control.Monad (forM_, forever)
+import qualified Data.Map.Strict as Map
 import           Data.Maybe (fromMaybe)
-import qualified Data.Set as Set
 import           Data.Typeable (Typeable)
 import           GHC.Stack (HasCallStack)
 
@@ -241,7 +241,7 @@ garbageCollect CDB{..} slotNo = do
     VolDB.garbageCollect cdbVolDB slotNo
     atomically $ do
       LgrDB.garbageCollectPrevApplied cdbLgrDB slotNo
-      modifyTVar' cdbInvalid $ Set.filter ((<= At slotNo) . pointSlot)
+      modifyTVar' cdbInvalid $ Map.filter (> slotNo)
     traceWith cdbTracer $ TraceGCEvent $ PerformedGC slotNo
 
 {-------------------------------------------------------------------------------

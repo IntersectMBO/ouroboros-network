@@ -30,8 +30,8 @@ import           Data.Function (on)
 import           Data.List (sortBy)
 import           Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
-import           Data.Map (Map)
-import qualified Data.Map as Map
+import           Data.Map.Strict (Map)
+import qualified Data.Map.Strict as Map
 import           Data.Maybe (fromMaybe, isJust, mapMaybe)
 import           Data.Set (Set)
 import qualified Data.Set as Set
@@ -46,10 +46,9 @@ import           Control.Tracer (Tracer, contramap, traceWith)
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment (..))
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block (BlockNo, HasHeader (..), HeaderHash,
-                     Point, blockPoint, castPoint, pointHash)
+                     Point, SlotNo, blockPoint, castPoint, pointHash)
 
-import           Ouroboros.Consensus.Block (BlockProtocol, GetHeader (..),
-                     headerPoint)
+import           Ouroboros.Consensus.Block (BlockProtocol, GetHeader (..))
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Protocol.Abstract
 
@@ -80,15 +79,17 @@ initialChainSelection
   -> LgrDB m blk
   -> Tracer m (TraceEvent blk)
   -> NodeConfig (BlockProtocol blk)
-  -> TVar m (Set (Point blk)) -- ^ 'cdbInvalid'
+  -> TVar m (Map (HeaderHash blk) SlotNo) -- ^ 'cdbInvalid'
   -> m (ChainAndLedger blk)
-initialChainSelection immDB volDB lgrDB tracer cfg invalidPoints = do
+initialChainSelection immDB volDB lgrDB tracer cfg varInvalid = do
     -- We follow the steps from section "## Initialization" in ChainDB.md
 
     i :: Point blk <- ImmDB.getPointAtTip immDB
-    (succsOf, ledger) <- atomically $
-      (,) <$> VolDB.getSuccessors volDB
-          <*> LgrDB.getCurrent    lgrDB
+    (succsOf, ledger) <- atomically $ do
+      invalid <- readTVar varInvalid
+      (,) <$> (ignoreInvalidSuc volDB invalid <$> VolDB.getSuccessors volDB)
+          <*> LgrDB.getCurrent lgrDB
+
     chains <- constructChains i succsOf
 
     -- We use the empty fragment anchored at @i@ as the current chain (and
@@ -145,7 +146,7 @@ initialChainSelection immDB volDB lgrDB tracer cfg invalidPoints = do
         lgrDB
         (contramap (TraceInitChainSelEvent . InitChainSelValidation) tracer)
         cfg
-        invalidPoints
+        varInvalid
         curChainAndLedger
         (fmap (mkCandidateSuffix 0) candidates)
 
@@ -220,17 +221,17 @@ addBlock cdb@CDB{..} b = do
     -- ### Ignore
     unless ((blockNo b <= immBlockNo && blockNo b /= 0) ||
             isMember (blockHash b)  ||
-            Set.member (blockPoint b) invalid) $ do
+            Map.member (blockHash b) invalid) $ do
 
       -- Write the block to the VolatileDB in all other cases
       VolDB.putBlock cdbVolDB b
       trace (AddedBlockToVolDB (blockPoint b))
 
       -- We need to get these after adding the block to the VolatileDB
-      (isMember', predecessor, succsOf) <- atomically $
-         (,,) <$> VolDB.getIsMember    cdbVolDB
+      (isMember', succsOf, predecessor) <- atomically $
+         (,,) <$> (ignoreInvalid    cdb invalid <$> VolDB.getIsMember    cdbVolDB)
+              <*> (ignoreInvalidSuc cdb invalid <$> VolDB.getSuccessors  cdbVolDB)
               <*> VolDB.getPredecessor cdbVolDB
-              <*> VolDB.getSuccessors  cdbVolDB
 
       -- The block @b@ fits onto the end of our current chain
       if | pointHash tipPoint == blockPrevHash b -> do
@@ -508,14 +509,14 @@ chainSelection
   => LgrDB m blk
   -> Tracer m (TraceValidationEvent blk)
   -> NodeConfig (BlockProtocol blk)
-  -> TVar m (Set (Point blk))  -- ^ The invalid points
-  -> ChainAndLedger blk              -- ^ The current chain and ledger
-  -> NonEmpty (CandidateSuffix blk)  -- ^ Candidates
+  -> TVar m (Map (HeaderHash blk) SlotNo)  -- ^ The invalid Blocks
+  -> ChainAndLedger blk                    -- ^ The current chain and ledger
+  -> NonEmpty (CandidateSuffix blk)        -- ^ Candidates
   -> m (Maybe (ChainAndLedger blk))
      -- ^ The (valid) chain and corresponding LedgerDB that was selected, or
      -- 'Nothing' if there is no valid chain preferred over the current
      -- chain.
-chainSelection lgrDB tracer cfg invalidPoints
+chainSelection lgrDB tracer cfg varInvalid
                curChainAndLedger@(ChainAndLedger curChain _) candidates =
   assert (all (isJust . fitCandidateSuffixOn curChain) candidates) $
     go (sortCandidates (NE.toList candidates))
@@ -527,7 +528,7 @@ chainSelection lgrDB tracer cfg invalidPoints
     validate :: ChainAndLedger  blk  -- ^ Current chain and ledger
              -> CandidateSuffix blk  -- ^ Candidate fragment
              -> m (Maybe (ChainAndLedger blk))
-    validate = validateCandidate lgrDB tracer cfg invalidPoints
+    validate = validateCandidate lgrDB tracer cfg varInvalid
 
     -- 1. Take the first candidate from the list of sorted candidates
     -- 2. Validate it
@@ -541,22 +542,40 @@ chainSelection lgrDB tracer cfg invalidPoints
     go []                                           = return Nothing
     go (cand@(CandidateSuffix _ candSuffix):cands') =
       validate curChainAndLedger cand >>= \case
-        Nothing ->
-          go cands'
+        Nothing -> do
+          cands'' <- truncateInvalidCandidates cands'
+          go (sortCandidates cands'')
         Just newChainAndLedger@(ChainAndLedger candChain _)
             | validatedHead == AF.headPoint candSuffix
               -- Unchanged candidate
             -> return $ Just newChainAndLedger
             | otherwise
-              -- Prefix of the candidate because it contained invalid blocks
-              -- TODO spec says go back to candidate selection, see
-              -- [^whyGoBack], because now there might still be some
-              -- candidates that contain the same invalid block.
-            -> go (sortCandidates (candSuffix':cands'))
+              -- Prefix of the candidate because it contained invalid blocks.
+              -- Note that the spec says go back to candidate selection, see
+              -- [^whyGoBack], because there might still be some candidates
+              -- that contain the same invalid block. To simplify the control
+              -- flow, We do it differently: instead of recomputing the
+              -- candidates taking invalid blocks into account, we just
+              -- truncate the remaining candidates that contain invalid
+              -- blocks.
+            -> do
+              cands'' <- truncateInvalidCandidates cands'
+              go (sortCandidates (candSuffix':cands''))
           where
             validatedHead = AF.headPoint candChain
             candSuffix'   = rollbackCandidateSuffix
               (castPoint validatedHead) cand
+
+    -- | Truncate the given (remaining) candidates that contain invalid
+    -- blocks. Discard them if they are truncated so much that they are no
+    -- longer preferred over the current chain.
+    truncateInvalidCandidates :: [CandidateSuffix blk]
+                              -> m [CandidateSuffix blk]
+    truncateInvalidCandidates cands = do
+      isInvalid <- flip Map.member <$> atomically (readTVar varInvalid)
+      return $ filter (preferCandidate cfg curChain . _suffix)
+             $ mapMaybe (truncateInvalidCandidate isInvalid) cands
+
     -- [Ouroboros]
     --
     -- Ouroboros says that when we are given an invalid chain by a peer, we
@@ -597,16 +616,16 @@ validateCandidate
   => LgrDB m blk
   -> Tracer m (TraceValidationEvent blk)
   -> NodeConfig (BlockProtocol blk)
-  -> TVar m (Set (Point blk))  -- ^ The invalid points
-  -> ChainAndLedger  blk       -- ^ Current chain and ledger
-  -> CandidateSuffix blk       -- ^ Candidate fragment
+  -> TVar m (Map (HeaderHash blk) SlotNo)  -- ^ The invalid blocks
+  -> ChainAndLedger  blk                   -- ^ Current chain and ledger
+  -> CandidateSuffix blk                   -- ^ Candidate fragment
   -> m (Maybe (ChainAndLedger blk))
-validateCandidate lgrDB tracer cfg invalidPoints
+validateCandidate lgrDB tracer cfg invalid
                   (ChainAndLedger curChain curLedger) candSuffix =
     LgrDB.validate lgrDB curLedger rollback newBlocks >>= \case
       LgrDB.InvalidBlockInPrefix e pt -> do
-        let invalidPointsInCand = Set.fromList $ pointsStartingFrom pt
-        atomically $ modifyTVar' invalidPoints (Set.union invalidPointsInCand)
+        let invalidBlocksInCand = hashesStartingFrom pt
+        atomically $ modifyTVar' invalid (Map.union invalidBlocksInCand)
         trace (InvalidBlock e pt)
         trace (InvalidCandidate (_suffix candSuffix) InvalidBlockInPrefix)
         return Nothing
@@ -615,8 +634,8 @@ validateCandidate lgrDB tracer cfg invalidPoints
             candidate' = fromMaybe
               (error "cannot rollback to point on fragment") $
               AF.rollback lastValid candidate
-        let invalidPointsInCand = Set.fromList $ pointsStartingFrom pt
-        atomically $ modifyTVar' invalidPoints (Set.union invalidPointsInCand)
+        let invalidBlocksInCand = hashesStartingFrom pt
+        atomically $ modifyTVar' invalid (Map.union invalidBlocksInCand)
         trace (InvalidBlock e pt)
 
         -- The candidate is now a prefix of the original candidate. We
@@ -644,14 +663,17 @@ validateCandidate lgrDB tracer cfg invalidPoints
       fitCandidateSuffixOn curChain candSuffix
 
     -- | Make a list of all the points after from the given point (inclusive)
-    -- in the candidate fragment.
+    -- in the candidate fragment and turn it into a map from hash to slot that
+    -- can be added to 'cdbInvalid'.
     --
     -- PRECONDITON: the given point is on the candidate fragment.
-    pointsStartingFrom :: HasCallStack => Point blk -> [Point blk]
-    pointsStartingFrom pt = case AF.splitBeforePoint suffix pt of
+    hashesStartingFrom :: HasCallStack
+                       => Point blk -> Map (HeaderHash blk) SlotNo
+    hashesStartingFrom pt = case AF.splitBeforePoint suffix pt of
         Nothing                  -> error "point not on fragment"
-        Just (_, startingFromPt) ->
-          map headerPoint $ AF.toOldestFirst startingFromPt
+        Just (_, startingFromPt) -> Map.fromList $
+          map (\hdr -> (blockHash hdr, blockSlot hdr)) $
+          AF.toOldestFirst startingFromPt
 
 {-------------------------------------------------------------------------------
   Auxiliary data types for 'cdbAddBlock'
@@ -739,8 +761,8 @@ rollbackCandidateSuffix pt (CandidateSuffix rollback suffix)
 -- fragment.
 intersectCandidateSuffix
   :: (HasHeader (Header blk), HasCallStack)
-  => AnchoredFragment (Header blk)          -- ^ Current chain
-  -> AnchoredFragment (Header blk)          -- ^ Candidate chain
+  => AnchoredFragment (Header blk)  -- ^ Current chain
+  -> AnchoredFragment (Header blk)  -- ^ Candidate chain
   -> Maybe (CandidateSuffix   blk)  -- ^ Candidate suffix
 intersectCandidateSuffix curChain candChain =
   case AF.intersect curChain candChain of
@@ -752,10 +774,52 @@ intersectCandidateSuffix curChain candChain =
     -- Precondition violated.
     _ -> error "candidate fragment doesn't intersect with current chain"
 
+-- | If any invalid blocks occur in the candidate suffix, truncate it so that
+-- it only contains valid blocks.
+--
+-- If the suffix becomes too short, return 'Nothing'.
+truncateInvalidCandidate
+  :: HasHeader (Header blk)
+  => (HeaderHash blk -> Bool)  -- ^ Check whether a block is invalid
+  -> CandidateSuffix blk
+  -> Maybe (CandidateSuffix blk)
+truncateInvalidCandidate isInvalid (CandidateSuffix rollback suffix)
+    | truncatedLength >= rollback
+    , truncatedLength > 0 -- No point in having an empty suffix
+    = Just $ mkCandidateSuffix rollback truncated
+    | otherwise
+    = Nothing
+  where
+    truncatedLength = fromIntegral (AF.length truncated)
+    truncated = AF.takeWhileOldest (not . isInvalid . blockHash) suffix
 
 {-------------------------------------------------------------------------------
   Helpers
 -------------------------------------------------------------------------------}
+
+
+-- | Wrap an @isMember@ function so that it returns 'False' for invalid
+-- blocks.
+ignoreInvalid
+  :: HasHeader blk
+  => proxy blk
+  -> Map (HeaderHash blk) SlotNo  -- ^ 'cdbInvalid'
+  -> (HeaderHash blk -> Bool)
+  -> (HeaderHash blk -> Bool)
+ignoreInvalid _ invalid isMember hash
+    | Map.member hash invalid = False
+    | otherwise               = isMember hash
+
+-- | Wrap a @successors@ function so that invalid blocks are not returned as
+-- successors.
+ignoreInvalidSuc
+  :: HasHeader blk
+  => proxy blk
+  -> Map (HeaderHash blk) SlotNo  -- ^ 'cdbInvalid'
+  -> (Maybe (HeaderHash blk) -> Set (HeaderHash blk))
+  -> (Maybe (HeaderHash blk) -> Set (HeaderHash blk))
+ignoreInvalidSuc _ invalid succsOf =
+    Set.filter (`Map.notMember` invalid) . succsOf
 
 -- | Get the 'BlockNo' corresponding to the block @k@ blocks back in the given
 -- new chain, i.e. the most recent \"immutable\" block.

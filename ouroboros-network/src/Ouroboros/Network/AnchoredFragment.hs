@@ -36,6 +36,7 @@ module Ouroboros.Network.AnchoredFragment (
   dropNewest,
   takeOldest,
   dropWhileNewest,
+  takeWhileOldest,
   length,
   null,
 
@@ -304,6 +305,15 @@ dropWhileNewest :: HasHeader block
                 -> AnchoredFragment block
 dropWhileNewest p (AnchoredFragment a c) =
     AnchoredFragment a (CF.dropWhileNewest p c)
+
+-- | \( O(n) \). Take the oldest blocks that satisfy the predicate. The anchor
+-- point is not changed.
+takeWhileOldest :: HasHeader block
+                => (block -> Bool)
+                -> AnchoredFragment block
+                -> AnchoredFragment block
+takeWhileOldest p (AnchoredFragment a c) =
+    AnchoredFragment a (CF.takeWhileOldest p c)
 
 -- | \( O(1) \). Return the number of blocks. The anchor point is not counted.
 length :: HasHeader block => AnchoredFragment block -> Int

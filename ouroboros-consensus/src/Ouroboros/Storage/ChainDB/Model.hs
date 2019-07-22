@@ -1,5 +1,6 @@
 {-# LANGUAGE DeriveGeneric        #-}
 {-# LANGUAGE FlexibleContexts     #-}
+{-# LANGUAGE PatternSynonyms      #-}
 {-# LANGUAGE RecordWildCards      #-}
 {-# LANGUAGE ScopedTypeVariables  #-}
 {-# LANGUAGE StandaloneDeriving   #-}
@@ -27,6 +28,7 @@ module Ouroboros.Storage.ChainDB.Model (
   , hasBlockByPoint
   , immutableBlockNo
   , isOpen
+  , invalidBlocks
     -- * Iterators
   , streamBlocks
   , iteratorNext
@@ -39,7 +41,8 @@ module Ouroboros.Storage.ChainDB.Model (
     -- * Exported for testing purposes
   , between
   , blocks
-  , chains
+  , validChains
+  , initLedger
   , garbageCollectable
   , garbageCollectablePoint
   , garbageCollect
@@ -49,15 +52,18 @@ module Ouroboros.Storage.ChainDB.Model (
 
 import           Control.Monad (unless)
 import           Control.Monad.Except (runExcept)
+import           Data.List.NonEmpty (NonEmpty)
+import qualified Data.List.NonEmpty as NE
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
-import           Data.Maybe (fromMaybe, isJust, mapMaybe)
+import           Data.Maybe (fromMaybe, isJust)
 import           GHC.Generics (Generic)
 
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import qualified Ouroboros.Network.AnchoredFragment as Fragment
-import           Ouroboros.Network.Block (ChainHash (..), HasHeader, HeaderHash,
-                     Point)
+import           Ouroboros.Network.Block (pattern BlockPoint, ChainHash (..),
+                     pattern GenesisPoint, HasHeader, HeaderHash, Point,
+                     SlotNo)
 import qualified Ouroboros.Network.Block as Block
 import           Ouroboros.Network.Chain (Chain (..), ChainUpdate)
 import qualified Ouroboros.Network.Chain as Chain
@@ -80,6 +86,7 @@ data Model blk = Model {
     , currentLedger :: ExtLedgerState blk
     , initLedger    :: ExtLedgerState blk
     , iterators     :: Map IteratorId [blk]
+    , invalidBlocks :: Map (HeaderHash blk) SlotNo
     , isOpen        :: Bool
       -- ^ While the model tracks whether it is closed or not, the queries and
       -- other functions in this module ignore this for simplicity. The mock
@@ -161,6 +168,7 @@ empty initLedger = Model {
     , currentLedger = initLedger
     , initLedger    = initLedger
     , iterators     = Map.empty
+    , invalidBlocks = Map.empty
     , isOpen        = True
     }
 
@@ -176,6 +184,7 @@ addBlock cfg blk m
     , currentLedger = newLedger
     , initLedger    = initLedger m
     , iterators     = iterators  m
+    , invalidBlocks = invalidBlocks'
     , isOpen        = True
     }
   where
@@ -184,8 +193,9 @@ addBlock cfg blk m
     blocks' :: Map (HeaderHash blk) blk
     blocks' = Map.insert (Block.blockHash blk) blk (blocks m)
 
-    candidates :: [(Chain blk, ExtLedgerState blk)]
-    candidates = mapMaybe (validate cfg (initLedger m)) $ chains blocks'
+    invalidBlocks' :: Map (HeaderHash blk) SlotNo
+    candidates     :: [(Chain blk, ExtLedgerState blk)]
+    (invalidBlocks', candidates) = validChains cfg (initLedger m) blocks'
 
     newChain  :: Chain blk
     newLedger :: ExtLedgerState blk
@@ -293,21 +303,40 @@ readerClose rdrId m
   Internal auxiliary
 -------------------------------------------------------------------------------}
 
+data ValidationResult blk
+  = -- | The chain was valid, the ledger corresponds to the tip of the chain.
+    ValidChain (Chain blk) (ExtLedgerState blk)
+  | InvalidChain
+      (ExtValidationError blk)
+      -- ^ The validation error of the invalid block.
+      (NonEmpty (Point blk))
+      -- ^ The point corresponding to the invalid block is the first in this
+      -- list. The remaining elements in the list are the points after the
+      -- invalid block.
+      (Chain blk)
+      -- ^ The valid prefix of the chain.
+      (ExtLedgerState blk)
+      -- ^ The ledger state corresponding to the tip of the valid prefix of
+      -- the chain.
+
 validate :: forall blk. ProtocolLedgerView blk
          => NodeConfig (BlockProtocol blk)
          -> ExtLedgerState blk
          -> Chain blk
-         -> Maybe (Chain blk, ExtLedgerState blk)
+         -> ValidationResult blk
 validate cfg initLedger chain =
-      fromEither
-    . runExcept
-    $ chainExtLedgerState cfg chain initLedger
+    go initLedger Genesis (Chain.toOldestFirst chain)
   where
-    -- TODO remember the invalid blocks
-    fromEither :: Either (ExtValidationError blk) (ExtLedgerState blk)
-               -> Maybe (Chain blk, ExtLedgerState blk)
-    fromEither (Left _err) = Nothing
-    fromEither (Right l)   = Just (chain, l)
+    go :: ExtLedgerState blk  -- ^ Corresponds to the tip of the valid prefix
+       -> Chain blk           -- ^ Valid prefix
+       -> [blk]               -- ^ Remaining blocks to validate
+       -> ValidationResult blk
+    go ledger validPrefix bs = case bs of
+      []    -> ValidChain validPrefix ledger
+      b:bs' -> case runExcept (applyExtLedgerState cfg b ledger) of
+        Right ledger' -> go ledger' (validPrefix :> b) bs'
+        Left  e       -> InvalidChain e (fmap Block.blockPoint (b NE.:| bs'))
+                           validPrefix ledger
 
 chains :: forall blk. (HasHeader blk)
        => Map (HeaderHash blk) blk -> [Chain blk]
@@ -329,6 +358,29 @@ chains bs = go Chain.Genesis
 
     fwd :: Map (ChainHash blk) (Map (HeaderHash blk) blk)
     fwd = successors (Map.elems bs)
+
+validChains :: forall blk. ProtocolLedgerView blk
+            => NodeConfig (BlockProtocol blk)
+            -> ExtLedgerState blk
+            -> Map (HeaderHash blk) blk
+            -> ( Map (HeaderHash blk) SlotNo
+               , [(Chain blk, ExtLedgerState blk)]
+               )
+validChains cfg initLedger bs =
+    foldMap (classify . validate cfg initLedger) $ chains bs
+  where
+    classify :: ValidationResult blk
+             -> ( Map (HeaderHash blk) SlotNo
+                , [(Chain blk, ExtLedgerState blk)]
+                )
+    classify (ValidChain chain ledger) = (mempty, [(chain, ledger)])
+    classify (InvalidChain _ invalid chain ledger) =
+        ( Map.fromList . map pointToHashAndSlot . NE.toList $ invalid
+        , [(chain, ledger)]
+        )
+
+    pointToHashAndSlot GenesisPoint    = error "genesis cannot be invalid"
+    pointToHashAndSlot BlockPoint {..} = (withHash, atSlot)
 
 -- Map (HeaderHash blk) blk maps a block's hash to the block itself
 successors :: forall blk. HasHeader blk

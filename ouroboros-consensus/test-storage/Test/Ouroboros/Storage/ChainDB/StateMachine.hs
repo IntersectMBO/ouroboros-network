@@ -137,7 +137,31 @@ data Cmd blk it rdr
   | RunBgTasks
   deriving (Generic, Show, Functor, Foldable, Traversable)
 
--- TODO knownInvalidBlocks, see #625
+-- We don't test 'getIsInvalidBlock' because the simple chain selection in the
+-- model and the incremental chain selection in the real implementation differ
+-- non-trivially.
+--
+-- In the real chain selection, if a block is invalid, no chains containing
+-- that block will be validated again. So if a successor of the block is added
+-- afterwards, it will never be validated, as any chain it would be part of
+-- would also contain the block we know to be invalid. So if the successor is
+-- also invalid, we would never discover and record it (as there is no need
+-- from the point of chain selection, as we'll never use it in a candidate
+-- chain anyway). In the model implementation of chain selection, all possible
+-- chains are (re)validated each time, including previously invalid chains, so
+-- new invalid blocks that are successors of known invalid blocks /are/ being
+-- validated and recorded as invalid blocks.
+--
+-- Further complicating this is the fact that the recorded invalid blocks are
+-- also garbage-collected. We can work around this, just like for 'getBlock'.
+--
+-- While it is certainly possible to overcome the issues described above,
+-- e.g., we could change the model to closer match the real implementation
+-- (but at the cost of more complexity), it is not worth the effort. The whole
+-- point of recording invalid blocks is to avoid constructing candidates
+-- containing known invalid blocks and needlessly validating them, which is
+-- something we are testing in 'prop_trace', see
+-- 'invalidBlockNeverValidatedAgain'.
 
 deriving instance SOP.Generic         (Cmd blk it rdr)
 deriving instance SOP.HasDatatypeInfo (Cmd blk it rdr)
@@ -503,16 +527,16 @@ generator :: forall       blk m.
           -> Model        blk m Symbolic
           -> Gen (At Cmd  blk m Symbolic)
 generator genBlock m@Model {..} = At <$> frequency
-    [ (10, AddBlock <$> genBlock m)
-    , (10, return GetCurrentChain)
-    , (10, return GetCurrentLedger)
-    , (10, return GetTipBlock)
+    [ (20, AddBlock <$> genBlock m)
+    , (if empty then 1 else 10, return GetCurrentChain)
+    , (if empty then 1 else 10, return GetCurrentLedger)
+    , (if empty then 1 else 10, return GetTipBlock)
       -- To check that we're on the right chain
-    , (10, return GetTipPoint)
+    , (if empty then 1 else 10, return GetTipPoint)
     , (10, genGetBlock)
 
     -- Iterators
-    , (10, uncurry StreamBlocks <$> genBounds)
+    , (if empty then 1 else 10, uncurry StreamBlocks <$> genBounds)
     , (if null iterators then 0 else 20, genIteratorNext)
       -- Use a lower frequency for closing, so that the chance increases that
       -- we can stream multiple blocks from an iterator.
@@ -526,11 +550,11 @@ generator genBlock m@Model {..} = At <$> frequency
       -- we can read multiple blocks from a reader
     , (if null readers then 0 else 2, genReaderClose)
 
-    , (10, return Close)
-    , (10, return Reopen)
+    , (if empty then 1 else 10, return Close)
+    , (if empty then 1 else 10, return Reopen)
 
       -- Internal
-    , (10, return RunBgTasks)
+    , (if empty then 1 else 10, return RunBgTasks)
     ]
     -- TODO adjust the frequencies after labelling
   where
@@ -673,7 +697,8 @@ precondition Model {..} (At cmd) =
     curChain = Model.currentChain dbModel
 
     forks :: [Chain blk]
-    forks = Model.chains $ Model.blocks dbModel
+    (_, forks) = map fst <$>
+      Model.validChains cfg (Model.initLedger dbModel) (Model.blocks dbModel)
 
     equallyPreferableFork :: Logic
     equallyPreferableFork = exists forks $ \fork ->
@@ -863,8 +888,9 @@ genBlk Model{..} = do
     testHash@(TestHash h) <- genHash
     let slot = 2 * fromIntegral (length h)
     return $ TestBlock
-      { tbHash = testHash
-      , tbSlot = SlotNo slot
+      { tbHash  = testHash
+      , tbSlot  = SlotNo slot
+      , tbValid = isValid testHash
       }
   where
     hashesInDB :: [TestHash]
@@ -876,6 +902,24 @@ genBlk Model{..} = do
     -- If the maximum fork number is @n@, it means that only @n + 1@ different
     -- forks may "fork off" after each block.
     maxForkNo = 2
+
+    -- We say that a block with most recent fork number 2 is invalid.
+    --
+    -- The hash (point) of an invalid block is remembered to ignore that block
+    -- in the future, this means that for each hash, the value of 'tbValid'
+    -- must always be the same. In other words, we can never generate an
+    -- invalid block with hash @h@ and also generate a valid block with the
+    -- same hash @h@. Formally:
+    --
+    -- > forall b1 b2. (tbHash b1 == tbHash b2) <=> (tbValid b1 == tbValid b2)
+    --
+    -- To enforce this, we reserve the most recent fork number for invalid
+    -- blocks, e.g., [2], [2,0], [2,0,1,0], [2,0,0,2,0] (since 2 occured
+    -- before, this block is already on an invalid chain). Note that valid
+    -- blocks may fit onto an invalid chain, e.g., [0,2,0].
+    isValid :: TestHash -> Bool
+    isValid (TestHash (2 NE.:| _)) = False
+    isValid _                      = True
 
     genForkNo :: Gen Word64
     genForkNo = frequency
@@ -889,7 +933,7 @@ genBlk Model{..} = do
         [ (1, genRandomHash)
         , (5, genAppendToCurrentChain)
         , (if empty then 0 else 3, genFitsOnSomewhere)
-        , (if empty then 0 else 3, genGapAfterExistingBlock)
+        , (3, genGap)
         ]
 
     -- A random hash: random length and random fork numbers
@@ -921,13 +965,20 @@ genBlk Model{..} = do
         return $ TestHash $ NE.cons forkNo hashInDB
 
     -- A hash that doesn't fit onto a block in the ChainDB, but it creates a
-    -- gap of a couple of blocks between an existing block in the ChainDB
-    genGapAfterExistingBlock :: Gen TestHash
-    genGapAfterExistingBlock = do
-        TestHash hashInDB <- elements hashesInDB
+    -- gap of a couple of blocks between genesis or an existing block in the
+    -- ChainDB.
+    genGap :: Gen TestHash
+    genGap = do
+        hash <- frequency
+          [ (if empty then 0 else 3,
+             NE.toList . unTestHash <$> elements hashesInDB)
+            -- Genesis
+          , (1, return [])
+          ]
         gapSize <- choose (1, 2) -- TODO relate it to @k@?
+        -- ForkNos for the gap
         forkNos <- replicateM gapSize genForkNo
-        return $ TestHash $ foldr NE.cons hashInDB forkNos
+        return $ TestHash $ NE.fromList $ foldr (:) hash forkNos
 
 {-------------------------------------------------------------------------------
   Top-level tests
@@ -986,10 +1037,10 @@ prop_sequential = forAllCommands smUnused Nothing $ \cmds -> QC.monadicIO $ do
       let sm' = sm db internal genBlk testCfg testInitLedger
       (hist, model, res) <- runCommands sm' cmds
       (realChain, realChain', trace) <- QC.run $ do
+        trace <- getTrace
         open <- atomically $ isOpen db
         unless open $ intReopen internal False
         realChain <- toChain db
-        trace <- getTrace
         closeDB db
         -- We already generate a command to test 'reopenDB', but since that
         -- code path differs slightly from 'openDB', we test that code path
@@ -1010,10 +1061,44 @@ prop_sequential = forAllCommands smUnused Nothing $ \cmds -> QC.monadicIO $ do
             tabulate "TraceEvents" (map traceEventName trace)            $
             res === Ok               .&&.
             realChain =:= modelChain .&&.
+            prop_trace trace         .&&.
             -- Another equally preferable fork may be selected when opening
             -- the DB.
             equallyPreferable (cdbNodeConfig args) realChain realChain'
       return (hist, prop)
+
+prop_trace :: [TraceEvent Blk] -> Property
+prop_trace trace = invalidBlockNeverValidatedAgain
+  where
+    -- Whenever we validate a block that turns out to be invalid, check that
+    -- we never again validate the same block.
+    invalidBlockNeverValidatedAgain =
+      whenOccurs trace  invalidBlock $ \trace' invalidPoint  ->
+      whenOccurs trace' invalidBlock $ \_      invalidPoint' ->
+        counterexample "An invalid block is validated twice" $
+        invalidPoint =/= invalidPoint'
+
+    invalidBlock :: TraceEvent blk -> Maybe (Point blk)
+    invalidBlock = \case
+        TraceAddBlockEvent (AddBlockValidation ev)         -> extract ev
+        TraceInitChainSelEvent (InitChainSelValidation ev) -> extract ev
+        _                                                  -> Nothing
+      where
+        extract (ChainDB.InvalidBlock _ pt) = Just pt
+        extract _                           = Nothing
+
+-- | Given a trace of events, for each event in the trace for which the
+-- predicate yields a @Just a@, call the continuation function with the
+-- remaining events and @a@.
+whenOccurs :: [ev] -> (ev -> Maybe a) -> ([ev] -> a -> Property) -> Property
+whenOccurs evs occurs k = go evs
+  where
+    go [] = property True
+    go (ev:evs')
+      | Just a <- occurs ev
+      = k evs' a .&&. go evs'
+      | otherwise
+      = go evs'
 
 traceEventName :: TraceEvent blk -> String
 traceEventName = \case
@@ -1094,8 +1179,9 @@ tests = testGroup "ChainDB q-s-m"
 
 _mkBlk :: [Word64] -> TestBlock
 _mkBlk h = TestBlock
-    { tbHash = mkTestHash h
-    , tbSlot = SlotNo $ fromIntegral $ 2 * length h
+    { tbHash  = mkTestHash h
+    , tbSlot  = SlotNo $ fromIntegral $ 2 * length h
+    , tbValid = True
     }
 
 -- | Debugging utility: run some commands against the real implementation.

@@ -38,8 +38,7 @@ module Ouroboros.Storage.ChainDB.Impl.Types (
   ) where
 
 import           Data.List.NonEmpty (NonEmpty)
-import           Data.Map (Map)
-import           Data.Set (Set)
+import           Data.Map.Strict (Map)
 import           Data.Time.Clock (DiffTime)
 import           Data.Typeable (Typeable)
 import           GHC.Generics (Generic)
@@ -195,14 +194,15 @@ data ChainDbEnv m blk = CDB
     -- of the current chain fragment (retrieved 'cdbGetCurrentChain', not by
     -- reading 'cdbChain' directly).
   , cdbNodeConfig     :: NodeConfig (BlockProtocol blk)
-  , cdbInvalid        :: TVar m (Set (Point blk))
-    -- ^ Points corresponding to invalid blocks. This is used to ignore these
+  , cdbInvalid        :: TVar m (Map (HeaderHash blk) SlotNo)
+    -- ^ Hashes corresponding to invalid blocks. This is used to ignore these
     -- blocks during chain selection.
     --
-    -- Whenever a garbage collection is performed on the VolatileDB for some
-    -- slot @s@, the points older or equal to @s@ are removed from this set.
+    -- The slot number of the block is stored too, so that whenever a garbage
+    -- collection is performed on the VolatileDB for some slot @s@, the hashes
+    -- older or equal to @s@ can be removed from this map.
     --
-    -- See #730.
+    -- TODO #730.
   , cdbNextIteratorId :: TVar m IteratorId
   , cdbNextReaderId   :: TVar m ReaderId
   , cdbCopyLock       :: TMVar m ()

@@ -14,6 +14,7 @@ module Test.Util.TestBlock (
     TestHash(..)
   , mkTestHash
   , TestBlock(..)
+  , TestBlockError(..)
   , Header(..)
   , firstBlock
   , successorBlock
@@ -134,13 +135,16 @@ instance Condense TestHash where
   condense = condense . reverse . NE.toList . unTestHash
 
 data TestBlock = TestBlock {
-      tbHash :: TestHash
-    , tbSlot :: Block.SlotNo
+      tbHash  :: TestHash
+    , tbSlot  :: Block.SlotNo
       -- ^ We store a separate 'Block.SlotNo', as slots can have gaps between
       -- them, unlike block numbers.
       --
       -- Note that when generating a 'TestBlock', you must make sure that
       -- blocks with the same 'TestHash' have the same slot number.
+    , tbValid :: Bool
+      -- ^ Note that when generating a 'TestBlock', you must make sure that
+      -- blocks with the same 'TestHash' have the same value for 'tbValid'.
     }
   deriving stock    (Show, Eq, Generic)
   deriving anyclass (Serialise)
@@ -220,11 +224,14 @@ instance HeaderSupportsBft BftMockCrypto (Header TestBlock) where
       signKey BftNodeConfig{bftParams = BftParams{..}} (Block.SlotNo n) =
           SignKeyMockDSIGN $ fromIntegral (n `mod` bftNumNodes)
 
--- | The only error possible is that hashes don't line up
-data InvalidHash = InvalidHash {
-      expectedHash :: ChainHash TestBlock
-    , invalidHash  :: ChainHash TestBlock
+data TestBlockError
+  = InvalidHash
+    { _expectedHash :: ChainHash TestBlock
+    , _invalidHash  :: ChainHash TestBlock
     }
+    -- ^ The hashes don't line up
+  | InvalidBlock
+    -- ^ The block itself is invalid
   deriving (Show)
 
 instance SupportedBlock TestBlock
@@ -238,14 +245,17 @@ instance UpdateLedger TestBlock where
     deriving (Show, Eq, Generic, Serialise)
 
   data LedgerConfig TestBlock = LedgerConfig
-  type LedgerError  TestBlock = InvalidHash
+  type LedgerError  TestBlock = TestBlockError
 
   ledgerConfigView _ = LedgerConfig
 
-  applyLedgerBlock _ tb@TestBlock{..} TestLedger{..} =
-      if Block.blockPrevHash tb == snd lastApplied
-        then return     $ TestLedger (Chain.blockPoint tb, BlockHash (Block.blockHash tb))
-        else throwError $ InvalidHash (snd lastApplied) (Block.blockPrevHash tb)
+  applyLedgerBlock _ tb@TestBlock{..} TestLedger{..}
+    | Block.blockPrevHash tb /= snd lastApplied
+    = throwError $ InvalidHash (snd lastApplied) (Block.blockPrevHash tb)
+    | not tbValid
+    = throwError $ InvalidBlock
+    | otherwise
+    = return     $ TestLedger (Chain.blockPoint tb, BlockHash (Block.blockHash tb))
 
   applyLedgerHeader _ _ = return
 
@@ -331,8 +341,9 @@ instance Arbitrary BlockChain where
 -- The 'SlotNo' will be 1.
 firstBlock :: Word64 -> TestBlock
 firstBlock forkNo = TestBlock
-    { tbHash = TestHash (forkNo NE.:| [])
-    , tbSlot = 1
+    { tbHash  = TestHash (forkNo NE.:| [])
+    , tbSlot  = 1
+    , tbValid = True
     }
 
 -- Create the successor of the given block without forking:
@@ -342,8 +353,9 @@ firstBlock forkNo = TestBlock
 -- In Zipper parlance, this corresponds to going down in a tree.
 successorBlock :: TestBlock -> TestBlock
 successorBlock TestBlock{..} = TestBlock
-    { tbHash = TestHash (NE.cons 0 (unTestHash tbHash))
-    , tbSlot = succ tbSlot
+    { tbHash  = TestHash (NE.cons 0 (unTestHash tbHash))
+    , tbSlot  = succ tbSlot
+    , tbValid = True
     }
 
 -- Modify the (last) fork number of the given block:
