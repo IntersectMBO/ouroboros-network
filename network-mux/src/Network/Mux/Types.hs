@@ -1,6 +1,6 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE NamedFieldPuns        #-}
 {-# LANGUAGE RankNTypes            #-}
-{-# LANGUAGE RecordWildCards       #-}
 {-# LANGUAGE TypeFamilies          #-}
 
 module Network.Mux.Types (
@@ -282,8 +282,9 @@ data MuxErrorType = MuxUnknownMiniProtocol
                   deriving (Show, Eq)
 
 instance Exception MuxError where
-    displayException MuxError{..} = printf "%s %s at %s"
-        (show errorType)
-        (show errorMsg)
-        (prettyCallStack errorStack)
+    displayException MuxError{errorType, errorMsg, errorStack}
+      = printf "%s %s at %s"
+          (show errorType)
+          (show errorMsg)
+          (prettyCallStack errorStack)
 
