@@ -296,6 +296,7 @@ test-suite test-storage
                     Test.Ouroboros.Storage
                     Test.Ouroboros.Storage.ChainDB
                     Test.Ouroboros.Storage.ChainDB.AddBlock
+                    Test.Ouroboros.Storage.ChainDB.Iterator
                     Test.Ouroboros.Storage.ChainDB.Mock
                     Test.Ouroboros.Storage.ChainDB.Model
                     Test.Ouroboros.Storage.ChainDB.StateMachine
