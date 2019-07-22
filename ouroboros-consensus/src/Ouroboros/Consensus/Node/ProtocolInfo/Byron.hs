@@ -9,18 +9,19 @@
 module Ouroboros.Consensus.Node.ProtocolInfo.Byron (
     protocolInfoByron
   , ByronConfig
+    -- * Secrets
+  , PbftLeaderCredentials (..)
   ) where
 
 import           Control.Monad.Except
 import           Data.Coerce
-import           Data.Maybe (fromJust)
 import qualified Data.Sequence as Seq
 
 import qualified Cardano.Chain.Block as Cardano.Block
+import qualified Cardano.Chain.Delegation as Cardano.Delegation
 import qualified Cardano.Chain.Genesis as Cardano.Genesis
 import qualified Cardano.Chain.Update as Cardano.Update
 import qualified Cardano.Crypto as Cardano
-import qualified Cardano.Crypto.Signing as Cardano.KeyGen
 
 import           Ouroboros.Consensus.Crypto.DSIGN.Cardano
 import           Ouroboros.Consensus.Ledger.Byron
@@ -36,6 +37,15 @@ import           Ouroboros.Consensus.Ledger.Byron.Config
 import qualified Test.Cardano.Chain.Genesis.Dummy as Dummy
 
 {-------------------------------------------------------------------------------
+  Credentials
+-------------------------------------------------------------------------------}
+
+data PbftLeaderCredentials = PbftLeaderCredentials {
+      plcSignKey     :: Cardano.SigningKey
+    , plcDlgCert     :: Cardano.Delegation.Certificate
+    }
+
+{-------------------------------------------------------------------------------
   ProtocolInfo
 -------------------------------------------------------------------------------}
 
@@ -45,26 +55,26 @@ protocolInfoByron :: NumCoreNodes
                   -> CoreNodeId
                   -> PBftParams
                   -> Cardano.Genesis.Config
+                  -> Maybe PbftLeaderCredentials
                   -> ProtocolInfo (ByronBlockOrEBB ByronConfig)
-protocolInfoByron (NumCoreNodes numCoreNodes) (CoreNodeId nid) params gc =
+protocolInfoByron (NumCoreNodes numCoreNodes) nid params gc mLeader =
     ProtocolInfo {
         pInfoConfig = WithEBBNodeConfig $ EncNodeConfig {
             encNodeConfigP = PBftNodeConfig {
                   pbftParams   = params
-                    { pbftNumNodes = fromIntegral numCoreNodes
+                    { -- TODO (Duncan): compute (from numGenesisKeys)
+                      pbftNumNodes = fromIntegral numCoreNodes
                       -- Set the signature window to be short for the demo.
+                      -- TODO: Is it always 'k'?
                     , pbftSignatureWindow = 7
+                      -- TODO: make pbftSignatureThreshold default to a value computed from pbftNumNodes,
+                      --       but configurable?
                     }
-                  --TODO: also allow not being a BFT leader:
-                , pbftIsLeader = Just PBftIsLeader {
-                      pbftCoreNodeId = CoreNodeId nid
-                    , pbftSignKey    = SignKeyCardanoDSIGN (snd (lookupKey nid))
-                    , pbftVerKey     = VerKeyCardanoDSIGN  (fst (lookupKey nid))
-                    , pbftGenVerKey  = VerKeyCardanoDSIGN (lookupGenKey nid)
-                    }
+                , pbftIsLeader = proofOfCredentials nid <$> mLeader
                 }
           , encNodeConfigExt = ByronConfig {
                 pbftProtocolMagic   = Cardano.Genesis.configProtocolMagic gc
+                -- TODO (Duncan): get versions from external config
               , pbftProtocolVersion = Cardano.Update.ProtocolVersion 1 0 0
               , pbftSoftwareVersion = Cardano.Update.SoftwareVersion (Cardano.Update.ApplicationName "Cardano Demo") 1
               , pbftGenesisConfig   = gc
@@ -87,19 +97,13 @@ protocolInfoByron (NumCoreNodes numCoreNodes) (CoreNodeId nid) params gc =
       , pInfoInitState  = ()
       }
   where
+    proofOfCredentials :: CoreNodeId -> PbftLeaderCredentials -> PBftIsLeader PBftCardanoCrypto
+    proofOfCredentials nid' (PbftLeaderCredentials sk dlg) =
+      PBftIsLeader
+      { pbftCoreNodeId = nid' -- TODO (Duncan): compute this based on the genesis verification key
+      , pbftSignKey    = SignKeyCardanoDSIGN sk
+      , pbftVerKey     = VerKeyCardanoDSIGN (Cardano.toVerification sk)
+      , pbftGenVerKey  = VerKeyCardanoDSIGN (Cardano.Delegation.issuerVK dlg)
+      }
     initState :: Cardano.Block.ChainValidationState
     Right initState = runExcept $ Cardano.Block.initialChainValidationState gc
-
-    lookupKey :: Int -> (Cardano.VerificationKey, Cardano.SigningKey)
-    lookupKey n = (\x -> (Cardano.KeyGen.toVerification x, x))
-                . (!! n)
-                . Cardano.Genesis.gsRichSecrets
-                . fromJust
-                $ Cardano.Genesis.configGeneratedSecrets gc
-
-    lookupGenKey :: Int -> Cardano.VerificationKey
-    lookupGenKey n = Cardano.KeyGen.toVerification
-                   . (!! n)
-                   . Cardano.Genesis.gsDlgIssuersSecrets
-                   . fromJust
-                   $ Cardano.Genesis.configGeneratedSecrets gc
