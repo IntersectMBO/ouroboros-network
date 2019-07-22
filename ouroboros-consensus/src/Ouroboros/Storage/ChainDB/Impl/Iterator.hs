@@ -15,7 +15,7 @@ import           Control.Monad.Except (ExceptT (..), lift, runExceptT,
                      throwError)
 import           Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
-import qualified Data.Map as Map
+import qualified Data.Map.Strict as Map
 import           GHC.Stack (HasCallStack)
 
 import           Control.Monad.Class.MonadSTM

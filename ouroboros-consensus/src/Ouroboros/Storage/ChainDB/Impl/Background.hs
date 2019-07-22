@@ -28,7 +28,7 @@ module Ouroboros.Storage.ChainDB.Impl.Background
 
 import           Control.Exception (assert)
 import           Control.Monad (forM_, forever)
-import qualified Data.Map as Map
+import qualified Data.Map.Strict as Map
 import           Data.Maybe (fromMaybe)
 import           Data.Typeable (Typeable)
 import           GHC.Stack (HasCallStack)

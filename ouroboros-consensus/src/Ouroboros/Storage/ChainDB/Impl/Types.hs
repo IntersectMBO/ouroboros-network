@@ -38,7 +38,7 @@ module Ouroboros.Storage.ChainDB.Impl.Types (
   ) where
 
 import           Data.List.NonEmpty (NonEmpty)
-import           Data.Map (Map)
+import           Data.Map.Strict (Map)
 import           Data.Time.Clock (DiffTime)
 import           Data.Typeable (Typeable)
 import           GHC.Generics (Generic)

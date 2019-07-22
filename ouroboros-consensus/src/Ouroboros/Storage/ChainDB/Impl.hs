@@ -26,7 +26,7 @@ module Ouroboros.Storage.ChainDB.Impl (
   ) where
 
 import           Control.Monad (when)
-import qualified Data.Map as Map
+import qualified Data.Map.Strict as Map
 
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork
