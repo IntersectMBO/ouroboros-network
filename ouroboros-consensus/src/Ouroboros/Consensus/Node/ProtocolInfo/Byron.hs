@@ -62,14 +62,19 @@ protocolInfoByron (NumCoreNodes numCoreNodes) nid params gc mLeader =
         pInfoConfig = WithEBBNodeConfig $ EncNodeConfig {
             encNodeConfigP = PBftNodeConfig {
                   pbftParams   = params
-                    { pbftNumNodes = fromIntegral numCoreNodes
+                    { -- TODO (Duncan): compute (from numGenesisKeys)
+                      pbftNumNodes = fromIntegral numCoreNodes
                       -- Set the signature window to be short for the demo.
+                      -- TODO: Is it always 'k'?
                     , pbftSignatureWindow = 7
+                      -- TODO: make pbftSignatureThreshold default to a value computed from pbftNumNodes,
+                      --       but configurable?
                     }
                 , pbftIsLeader = proofOfCredentials nid <$> mLeader
                 }
           , encNodeConfigExt = ByronConfig {
                 pbftProtocolMagic   = Cardano.Genesis.configProtocolMagic gc
+                -- TODO (Duncan): get versions from external config
               , pbftProtocolVersion = Cardano.Update.ProtocolVersion 1 0 0
               , pbftSoftwareVersion = Cardano.Update.SoftwareVersion (Cardano.Update.ApplicationName "Cardano Demo") 1
               , pbftGenesisConfig   = gc
@@ -95,7 +100,7 @@ protocolInfoByron (NumCoreNodes numCoreNodes) nid params gc mLeader =
     proofOfCredentials :: CoreNodeId -> PbftLeaderCredentials -> PBftIsLeader PBftCardanoCrypto
     proofOfCredentials nid' (PbftLeaderCredentials sk dlg) =
       PBftIsLeader
-      { pbftCoreNodeId = nid'
+      { pbftCoreNodeId = nid' -- TODO (Duncan): compute this based on the genesis verification key
       , pbftSignKey    = SignKeyCardanoDSIGN sk
       , pbftVerKey     = VerKeyCardanoDSIGN (Cardano.toVerification sk)
       , pbftGenVerKey  = VerKeyCardanoDSIGN (Cardano.Delegation.issuerVK dlg)
