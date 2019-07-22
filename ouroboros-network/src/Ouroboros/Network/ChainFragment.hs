@@ -223,12 +223,25 @@ isValidSuccessorOf' bSucc b
       , show (blockSlot bSucc)
       , ")"
       ]
-  | succ (blockNo b) /= blockNo bSucc
+  -- The block number of the next block cannot be less than that of the tip,
+  -- or more than that of the tip plus 1. It _can_ be the same as the tip,
+  -- in the case of EBBs.
+  -- TODO consider abstracting this and deferring to the HasHeader class
+  -- instead (or similar)?
+  | blockNo bSucc < blockNo b
   = Left $ concat [
         "BlockNo ("
       , show (blockNo bSucc)
-      , ") is not BlockNo of tip ("
-      , show (blockNo   b)
+      , ") is less than BlockNo of tip ("
+      , show (blockNo b)
+      , ")"
+      ]
+  | blockNo bSucc > succ (blockNo b)
+  = Left $ concat [
+        "BlockNo ("
+      , show (blockNo bSucc)
+      , ") is greater than BlockNo of tip ("
+      , show (blockNo b)
       , ") + 1"
       ]
   | otherwise
