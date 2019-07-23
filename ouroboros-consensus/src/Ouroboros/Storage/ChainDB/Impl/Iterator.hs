@@ -32,7 +32,8 @@ import           Control.Tracer
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block (pattern BlockPoint,
                      pattern GenesisPoint, HasHeader, HeaderHash, Point,
-                     blockHash, blockPoint, castPoint, pointSlot, withHash)
+                     atSlot, blockHash, blockPoint, castPoint, pointSlot,
+                     withHash)
 
 import           Ouroboros.Storage.ChainDB.API (ChainDbError (..),
                      Iterator (..), IteratorId (..), IteratorResult (..),
@@ -250,11 +251,37 @@ newIterator itEnv@IteratorEnv{..} getItEnv from to = do
   where
     trace = traceWith itTracer
 
+    endPoint :: Point blk
+    endPoint = case to of
+      StreamToInclusive pt -> pt
+      StreamToExclusive pt -> pt
+
+    -- | Use the tip of the ImmutableDB to determine whether to look directly
+    -- in the ImmutableDB (the range is <= the tip) or first try the
+    -- VolatileDB (in the other cases).
     start :: HasCallStack => ExceptT (UnknownRange blk) m (Iterator m blk)
-    start = do
+    start = lift itGetImmDBTip >>= \tip -> case tip of
+      GenesisPoint -> findPathInVolDB
+      BlockPoint { atSlot = tipSlot, withHash = tipHash } ->
+        case atSlot endPoint `compare` tipSlot of
+          -- The end point is < the tip of the ImmutableDB
+          LT -> streamFromImmDB
+          EQ | withHash endPoint == tipHash
+                -- The end point == the tip of the ImmutableDB
+             -> streamFromImmDB
+             | otherwise
+                -- The end point /= the tip of the ImmutableDB
+             -> throwError $ ForkTooOld from
+          -- The end point is > the tip of the ImmutableDB
+          GT -> findPathInVolDB
+
+    -- | PRECONDITION: the upper bound > the tip of the ImmutableDB
+    findPathInVolDB :: HasCallStack
+                    => ExceptT (UnknownRange blk) m (Iterator m blk)
+    findPathInVolDB = do
       path <- lift $ atomically $ VolDB.computePathSTM itVolDB from to
       case path of
-        VolDB.NotInVolDB        _hash           -> streamFromImmDB
+        VolDB.NotInVolDB        _hash           -> throwError $ ForkTooOld from
         VolDB.PartiallyInVolDB  predHash hashes -> streamFromBoth predHash hashes
         VolDB.CompletelyInVolDB hashes          -> case NE.nonEmpty hashes of
           Just hashes' -> lift $ streamFromVolDB hashes'
@@ -288,10 +315,6 @@ newIterator itEnv@IteratorEnv{..} getItEnv from to = do
         -- start bound.
         immIt <- ExceptT $ ImmDB.streamBlocksFrom itImmDB from
         lift $ createIterator $ InImmDB from immIt (StreamTo to)
-      where
-        endPoint = case to of
-          StreamToInclusive pt -> pt
-          StreamToExclusive pt -> pt
 
     -- | If we have to stream from both the ImmutableDB and the VolatileDB, we
     -- only allow the (current) tip of the ImmutableDB to be the switchover
