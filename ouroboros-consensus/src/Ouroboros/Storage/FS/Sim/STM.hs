@@ -7,6 +7,7 @@ module Ouroboros.Storage.FS.Sim.STM (
     , simHasFS
     ) where
 
+import           Control.Monad.Except
 import           Control.Monad.State
 import           Data.Proxy
 
@@ -63,12 +64,16 @@ simHasFS err var = HasFS {
     , hasFsErr                 = err
     }
   where
-    sim :: StateT MockFS m a -> m a
-    sim (StateT f) = do
-        st       <- atomically $ readTVar var
-        (a, st') <- f st
-        atomically $ writeTVar var st'
-        return a
+    sim :: StateT MockFS (Except FsError) a -> m a
+    sim m = do
+      eOrA <- atomically $ do
+        st <- readTVar var
+        case runExcept (runStateT m st) of
+          Left e -> return $ Left e
+          Right (a, st') -> do
+            writeTVar var st'
+            return $ Right a
+      either (EH.throwError err) return eOrA
 
-    err' :: ErrorHandling FsError (StateT MockFS m)
-    err' = EH.liftErrState (Proxy @MockFS) err
+    err' :: ErrorHandling FsError (StateT MockFS (Except FsError))
+    err' = EH.liftErrState (Proxy @MockFS) EH.exceptT
