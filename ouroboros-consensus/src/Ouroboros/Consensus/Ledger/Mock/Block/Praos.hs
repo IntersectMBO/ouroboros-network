@@ -21,7 +21,6 @@ import           GHC.Generics (Generic)
 
 import           Cardano.Binary (FromCBOR(..), ToCBOR(..))
 import           Cardano.Crypto.KES
-import           Cardano.Crypto.Util (Empty)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Ledger.Abstract
@@ -86,22 +85,21 @@ instance (SimpleCrypto c, PraosCrypto c')
       , signedPraosFields = praosExtraFields (simplePraosExt simpleHeaderExt)
       }
 
-  encodeSigned = const encodeSignedSimplePraos
-
 instance ( SimpleCrypto c
          , PraosCrypto c'
-         , Signable (PraosKES c') ~ Empty
+         , Signable (PraosKES c') (SignedSimplePraos c c')
          ) => HeaderSupportsPraos c' (SimplePraosHeader c c') where
   headerPraosFields _ = simplePraosExt . simpleHeaderExt
 
 instance ( SimpleCrypto c
          , PraosCrypto c'
+         , Signable (PraosKES c') (SignedSimplePraos c c')
          ) => ForgeExt (ExtNodeConfig ext (Praos c')) c (SimplePraosExt c c') where
   forgeExt cfg isLeader SimpleBlock{..} = do
       ext :: SimplePraosExt c c' <- fmap SimplePraosExt $
         forgePraosFields (encNodeConfigP cfg)
                          isLeader
-                         encodeSignedSimplePraos $ \praosExtraFields ->
+                         $ \praosExtraFields ->
           SignedSimplePraos {
               signedSimplePraos = simpleHeaderStd
             , signedPraosFields = praosExtraFields
@@ -115,6 +113,7 @@ instance ( SimpleCrypto c
 
 instance ( SimpleCrypto c
          , PraosCrypto c'
+         , Signable (PraosKES c') (SignedSimplePraos c c')
          ) => SupportedBlock (SimpleBlock c (SimplePraosExt c c'))
 
 -- | Praos needs a ledger that can give it the "active stake distribution"
@@ -127,7 +126,7 @@ instance ( SimpleCrypto c
 -- the Shelley rules, we'll have a proper instance anyway.
 instance ( SimpleCrypto c
          , PraosCrypto c'
-         , Signable (PraosKES c') ~ Empty
+         , Signable (PraosKES c') (SignedSimplePraos c c')
          ) => ProtocolLedgerView (SimplePraosBlock c c') where
   protocolLedgerView (EncNodeConfig _ addrDist) _ =
       equalStakeDist addrDist
@@ -149,12 +148,12 @@ instance PraosCrypto c' => Serialise (SimplePraosExt c c') where
       praosExtraFields <- decodePraosExtraFields
       return $ SimplePraosExt PraosFields{..}
 
-encodeSignedSimplePraos :: (SimpleCrypto c, PraosCrypto c')
-                        => SignedSimplePraos c c' -> CBOR.Encoding
-encodeSignedSimplePraos SignedSimplePraos{..} = mconcat [
-      encode                 signedSimplePraos
-    , encodePraosExtraFields signedPraosFields
-    ]
+instance (SimpleCrypto c, PraosCrypto c')
+                        => ToCBOR (SignedSimplePraos c c') where
+  toCBOR SignedSimplePraos{..} = mconcat [
+        encode                 signedSimplePraos
+      , encodePraosExtraFields signedPraosFields
+      ]
 
 encodePraosExtraFields :: PraosCrypto c' => PraosExtraFields c' -> CBOR.Encoding
 encodePraosExtraFields PraosExtraFields{..} = mconcat [

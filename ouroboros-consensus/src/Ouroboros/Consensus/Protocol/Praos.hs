@@ -29,13 +29,12 @@ module Ouroboros.Consensus.Protocol.Praos (
   , BlockInfo(..)
   ) where
 
-import           Cardano.Binary (ToCBOR)
+import           Cardano.Binary (ToCBOR(..))
 import           Codec.CBOR.Encoding (Encoding)
 import           Codec.Serialise (Serialise (..))
 import           Control.Monad (unless)
 import           Control.Monad.Except (throwError)
 import           Crypto.Random (MonadRandom)
-import           Data.Functor.Identity
 import           Data.IntMap.Strict (IntMap)
 import qualified Data.IntMap.Strict as IntMap
 import           Data.Proxy (Proxy (..))
@@ -51,7 +50,6 @@ import           Cardano.Crypto.Hash.SHA256 (SHA256)
 import           Cardano.Crypto.KES.Class
 import           Cardano.Crypto.KES.Mock
 import           Cardano.Crypto.KES.Simple
-import           Cardano.Crypto.Util (Empty)
 import           Cardano.Crypto.VRF.Class
 import           Cardano.Crypto.VRF.Mock (MockVRF)
 import           Cardano.Crypto.VRF.Simple (SimpleVRF)
@@ -88,20 +86,20 @@ data PraosExtraFields c = PraosExtraFields {
 
 class ( HasHeader hdr
       , SignedHeader hdr
-      , Signable (PraosKES c) (Signed hdr)
+      , Cardano.Crypto.KES.Class.Signable (PraosKES c) (Signed hdr)
       ) => HeaderSupportsPraos c hdr where
   headerPraosFields :: proxy (Praos c) -> hdr -> PraosFields c (Signed hdr)
 
 forgePraosFields :: ( HasNodeState (Praos c) m
                     , MonadRandom m
                     , PraosCrypto c
+                    , Cardano.Crypto.KES.Class.Signable (PraosKES c) toSign
                     )
                  => NodeConfig (Praos c)
                  -> PraosProof c
-                 -> (toSign -> Encoding)
                  -> (PraosExtraFields c -> toSign)
                  -> m (PraosFields c toSign)
-forgePraosFields PraosNodeConfig{..} PraosProof{..} encodeToSign mkToSign = do
+forgePraosFields PraosNodeConfig{..} PraosProof{..} mkToSign = do
     keyKES <- getNodeState
     let signedFields = PraosExtraFields {
           praosCreator = praosLeader
@@ -109,7 +107,6 @@ forgePraosFields PraosNodeConfig{..} PraosProof{..} encodeToSign mkToSign = do
         , praosY       = praosProofY
         }
     m <- signedKES
-           encodeToSign
            (fromIntegral (unSlotNo praosProofSlot))
            (mkToSign signedFields)
            keyKES
@@ -131,6 +128,10 @@ data VRFType = NONCE | TEST
 
 instance Serialise VRFType
   -- use generic instance
+
+instance ToCBOR VRFType where
+  -- This is a cheat, and at some point we probably want to decide on Serialise/ToCBOR
+  toCBOR = encode
 
 deriving instance PraosCrypto c => Show (PraosExtraFields c)
 deriving instance PraosCrypto c => Eq   (PraosExtraFields c)
@@ -207,8 +208,8 @@ instance PraosCrypto c => OuroborosTag (Praos c) where
         RelayId _  -> return Nothing
         CoreId nid -> do
           let (rho', y', t) = rhoYT cfg cs slot nid
-          rho <- evalCertified encode rho' praosSignKeyVRF
-          y   <- evalCertified encode y'   praosSignKeyVRF
+          rho <- evalCertified rho' praosSignKeyVRF
+          y   <- evalCertified y'   praosSignKeyVRF
           return $ if fromIntegral (certifiedNatural y) < t
               then Just PraosProof {
                        praosProofRho  = rho
@@ -237,9 +238,7 @@ instance PraosCrypto c => OuroborosTag (Praos c) where
         Just vks -> return vks
 
     -- verify block signature
-    let proxy = Identity b
     case verifySignedKES
-           (encodeSigned proxy)
            vkKES
            (fromIntegral $ unSlotNo slot)
            toSign
@@ -254,18 +253,18 @@ instance PraosCrypto c => OuroborosTag (Praos c) where
     let (rho', y', t) = rhoYT cfg cs slot nid
 
     -- verify rho proof
-    unless (verifyCertified encode vkVRF rho' praosRho) $
+    unless (verifyCertified vkVRF rho' praosRho) $
         throwError $ PraosInvalidCert
             vkVRF
-            (encode rho')
+            (toCBOR rho')
             (certifiedNatural praosRho)
             (certifiedProof praosRho)
 
     -- verify y proof
-    unless (verifyCertified encode vkVRF y' praosY) $
+    unless (verifyCertified vkVRF y' praosY) $
         throwError $ PraosInvalidCert
             vkVRF
-            (encode y')
+            (toCBOR y')
             (certifiedNatural praosY)
             (certifiedProof praosY)
 
@@ -394,8 +393,7 @@ class ( KESAlgorithm  (PraosKES  c)
       , Typeable c
       , Typeable (PraosVRF c)
       , Condense (SigKES (PraosKES c))
-        -- TODO: For now we insist that everything must be signable
-      , Signable (PraosKES c) ~ Empty
+      , Cardano.Crypto.VRF.Class.Signable (PraosVRF c) (HList '[Natural, SlotNo, VRFType])
       ) => PraosCrypto (c :: *) where
   type family PraosKES  c :: *
   type family PraosVRF  c :: *

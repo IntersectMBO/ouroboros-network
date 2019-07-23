@@ -15,10 +15,11 @@ module Ouroboros.Consensus.Ledger.Mock.Block.PBFT (
   ) where
 
 import           Codec.Serialise (Serialise (..))
+import           Data.Typeable (Typeable)
 import           GHC.Generics (Generic)
 
+import           Cardano.Binary (ToCBOR(..))
 import           Cardano.Crypto.DSIGN
-import           Cardano.Crypto.Util (Empty)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Ledger.Abstract
@@ -77,22 +78,21 @@ instance SimpleCrypto c => SignedHeader (SimplePBftHeader c c') where
   type Signed (SimplePBftHeader c c') = SignedSimplePBft c c'
 
   headerSigned = SignedSimplePBft . simpleHeaderStd
-  encodeSigned = const encode
 
 instance ( SimpleCrypto c
-         , Signable MockDSIGN ~ Empty
+         , Signable MockDSIGN (SignedSimplePBft c PBftMockCrypto)
          ) => HeaderSupportsPBft PBftMockCrypto (SimplePBftHeader c PBftMockCrypto) where
   headerPBftFields _ = simplePBftExt . simpleHeaderExt
 
 instance ( SimpleCrypto c
          , PBftCrypto c'
-         , Signable (PBftDSIGN c') ~ Empty
+         , Signable (PBftDSIGN c') (SignedSimplePBft c c')
          ) => ForgeExt (ExtNodeConfig ext (PBft c'))
                        c
                        (SimplePBftExt c c') where
   forgeExt _cfg isLeader SimpleBlock{..} = do
       ext :: SimplePBftExt c c' <- fmap SimplePBftExt $
-        forgePBftFields isLeader encode $
+        forgePBftFields isLeader $
           SignedSimplePBft {
               signedSimplePBft = simpleHeaderStd
             }
@@ -104,13 +104,13 @@ instance ( SimpleCrypto c
       SimpleHeader{..} = simpleHeader
 
 instance ( SimpleCrypto c
-         , Signable MockDSIGN ~ Empty
+         , Signable MockDSIGN (SignedSimplePBft c PBftMockCrypto)
          ) => SupportedBlock (SimplePBftBlock c PBftMockCrypto)
 
 -- | The ledger view is constant for the mock instantiation of PBFT
 -- (mock blocks cannot change delegation)
 instance ( SimpleCrypto c
-         , Signable MockDSIGN ~ Empty
+         , Signable MockDSIGN (SignedSimplePBft c PBftMockCrypto)
          ) => ProtocolLedgerView (SimplePBftBlock c PBftMockCrypto) where
   protocolLedgerView (EncNodeConfig _ pbftParams) _ls =
       pbftParams
@@ -134,3 +134,5 @@ instance PBftCrypto c' => Serialise (SimplePBftExt c c') where
       return $ SimplePBftExt PBftFields{..}
 
 instance SimpleCrypto c => Serialise (SignedSimplePBft c c')
+instance (Typeable c', SimpleCrypto c) => ToCBOR (SignedSimplePBft c c') where
+  toCBOR = encode

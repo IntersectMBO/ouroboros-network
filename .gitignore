@@ -35,3 +35,7 @@ stack.yaml.lock
 db-byron-proxy-*
 index-byron-proxy-*
 launch-*
+
+# Local development
+stack.yaml.local.lock
+stack.yaml.local

@@ -9,12 +9,13 @@ module Ouroboros.Consensus.Ledger.Byron.Forge (
 
 import           Control.Monad (void)
 import           Crypto.Random (MonadRandom)
+import           Data.ByteString (ByteString)
 import           Data.Coerce (coerce)
 import           Data.Foldable (find)
 import qualified Data.Map.Strict as Map
 import           Data.Reflection (Given (..), give)
 
-import           Cardano.Binary (Annotated (..), toCBOR)
+import           Cardano.Binary (Annotated (..), reAnnotate)
 import qualified Cardano.Chain.Block as CC.Block
 import qualified Cardano.Chain.Common as CC.Common
 import qualified Cardano.Chain.Delegation as CC.Delegation
@@ -104,7 +105,7 @@ forgeBlock
   -> m (ByronBlockOrEBB ByronConfig)
 forgeBlock (WithEBBNodeConfig cfg) curSlot curNo prevHash txs isLeader = do
     ouroborosPayload <- give (VerKeyCardanoDSIGN headerGenesisKey)
-      $ forgePBftFields isLeader toCBOR toSign
+      $ forgePBftFields isLeader (reAnnotate $ Annotated toSign ())
     return $ forge ouroborosPayload
   where
     -- TODO: Might be sufficient to add 'ConfigContainsGenesis' constraint.
@@ -164,7 +165,7 @@ forgeBlock (WithEBBNodeConfig cfg) curSlot curNo prevHash txs isLeader = do
                              )
                       $ Map.elems dlgMap
 
-    forge :: PBftFields PBftCardanoCrypto CC.Block.ToSign
+    forge :: PBftFields PBftCardanoCrypto (Annotated CC.Block.ToSign ByteString)
           -> ByronBlockOrEBB ByronConfig
     forge ouroborosPayload =
        annotateByronBlock pbftEpochSlots block

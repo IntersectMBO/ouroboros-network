@@ -5,8 +5,6 @@ module Ouroboros.Consensus.Protocol.Signed (
     SignedHeader(..)
   ) where
 
-import           Codec.CBOR.Encoding (Encoding)
-
 -- | Header that contain a signed part
 --
 -- This class enforces that signatures are computed over the header only
@@ -20,11 +18,3 @@ class SignedHeader hdr where
 
   -- | Extract the part of the header that the signature should be computed over
   headerSigned :: hdr -> Signed hdr
-
-  -- | Signatures are computed of the serialized form
-  --
-  -- NOTE: This encoding is important: it determines what the signature looks
-  -- like. For backwards compatibility, the encoding of the parts of the
-  -- header that are signed may in fact be different from the encoding of the
-  -- header itself.
-  encodeSigned :: proxy hdr -> Signed hdr -> Encoding

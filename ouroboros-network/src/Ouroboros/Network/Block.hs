@@ -43,6 +43,7 @@ module Ouroboros.Network.Block (
   , withHash
   ) where
 
+import           Cardano.Binary (ToCBOR(..))
 import           Codec.CBOR.Decoding (Decoder)
 import qualified Codec.CBOR.Decoding as Dec
 import           Codec.CBOR.Encoding (Encoding)
@@ -59,6 +60,9 @@ import qualified Ouroboros.Network.Point as Point (Block (..))
 -- | The 0-based index for the Ourboros time slot.
 newtype SlotNo = SlotNo { unSlotNo :: Word64 }
   deriving (Show, Eq, Ord, Enum, Bounded, Num, Serialise, Generic)
+
+instance ToCBOR SlotNo where
+  toCBOR = encode
 
 -- | The 0-based index of the block in the blockchain.
 -- BlockNo is <= SlotNo and is only equal at slot N if there is a block
