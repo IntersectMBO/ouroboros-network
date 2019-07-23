@@ -39,6 +39,8 @@ module Ouroboros.Storage.ChainDB.Impl.VolDB (
   , garbageCollect
     -- * Re-exports
   , VolatileDBError
+    -- * Exported for testing purposes
+  , mkVolDB
   ) where
 
 import           Codec.CBOR.Decoding (Decoder)
@@ -135,6 +137,13 @@ openDB args@VolDbArgs{..} = do
       , decBlock = volDecodeBlock
       , encBlock = volEncodeBlock
       }
+
+-- | For testing purposes
+mkVolDB :: VolatileDB (HeaderHash blk) m
+        -> (forall s. Decoder s blk)
+        -> (blk -> Encoding)
+        -> VolDB m blk
+mkVolDB volDB decBlock encBlock = VolDB {..}
 
 {-------------------------------------------------------------------------------
   Wrappers

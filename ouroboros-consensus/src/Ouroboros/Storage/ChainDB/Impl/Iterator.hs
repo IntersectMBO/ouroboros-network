@@ -1,5 +1,7 @@
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE LambdaCase          #-}
+{-# LANGUAGE PatternSynonyms     #-}
+{-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
@@ -8,6 +10,9 @@
 module Ouroboros.Storage.ChainDB.Impl.Iterator
   ( streamBlocks
   , closeAllIterators
+    -- * Exported for testing purposes
+  , IteratorEnv (..)
+  , newIterator
   ) where
 
 import           Control.Monad (unless, when)
@@ -15,6 +20,7 @@ import           Control.Monad.Except (ExceptT (..), lift, runExceptT,
                      throwError)
 import           Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
+import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           GHC.Stack (HasCallStack)
 
@@ -23,16 +29,21 @@ import           Control.Monad.Class.MonadThrow
 
 import           Control.Tracer
 
-import           Ouroboros.Network.Block (HasHeader, HeaderHash, blockHash,
-                     blockPoint, pointSlot)
+import qualified Ouroboros.Network.AnchoredFragment as AF
+import           Ouroboros.Network.Block (pattern BlockPoint,
+                     pattern GenesisPoint, HasHeader, HeaderHash, Point,
+                     atSlot, blockHash, blockPoint, castPoint, pointSlot,
+                     withHash)
 
 import           Ouroboros.Storage.ChainDB.API (ChainDbError (..),
                      Iterator (..), IteratorId (..), IteratorResult (..),
                      StreamFrom (..), StreamTo (..), UnknownRange (..),
                      validBounds)
 
+import           Ouroboros.Storage.ChainDB.Impl.ImmDB (ImmDB)
 import qualified Ouroboros.Storage.ChainDB.Impl.ImmDB as ImmDB
 import           Ouroboros.Storage.ChainDB.Impl.Types
+import           Ouroboros.Storage.ChainDB.Impl.VolDB (VolDB)
 import qualified Ouroboros.Storage.ChainDB.Impl.VolDB as VolDB
 
 -- | Stream blocks
@@ -113,14 +124,20 @@ import qualified Ouroboros.Storage.ChainDB.Impl.VolDB as VolDB
 --
 -- = Bounds checking
 --
+-- The VolatileDB is hash-based instead of point-based. While the bounds of a
+-- stream are /point/s, we can simply check whether the hashes of the bounds
+-- match the hashes stored in the points.
+--
 -- The ImmutableDB is slot-based instead of point-based, which means that
 -- before we know whether a block in the ImmutableDB matches a given point, we
--- must first read that block to obtain its hash, after which we can then
--- verify whether it matches the hash of the point. This is important for the
--- start and end bounds (both points) of a stream: we must first read the
--- blocks corresponding to the bounds to be sure the range is valid. Note that
--- these reads happen before the first call to 'iteratorNext' (which will
--- trigger a second read of the first block).
+-- must first read the block at the point's slot to obtain its hash, after
+-- which we can then verify whether it matches the hash of the point. This is
+-- important for the start and end bounds (both points) of a stream in case
+-- they are in the ImmutableDB (i.e., their slots are <= the tip of the
+-- ImmutableDB): we must first read the blocks corresponding to the bounds to
+-- be sure the range is valid. Note that these reads happen before the first
+-- call to 'iteratorNext' (which will trigger a second read of the first
+-- block).
 --
 -- Note that when streaming to an /exclusive/ bound, the block corresponding
 -- to that bound ('Point') must exist in the ChainDB.
@@ -134,16 +151,17 @@ import qualified Ouroboros.Storage.ChainDB.Impl.VolDB as VolDB
 --   read from disk.
 --
 -- * When blocks have to be streamed both from the ImmutableDB and the
---   VolatileDB, the blocks corresponding to the two bound will have to be
---   read upfront, as described in the previous bullet point. Since the tip of
---   the ImmutableDB must be the switchover point between the two, it will be
---   the upper bound.
+--   VolatileDB, only the block corresponding to the lower bound will have to
+--   be read from the ImmutableDB upfront, as described in the previous bullet
+--   point. Note that the block corresponding to the upper bound does not have
+--   to be read from disk, since it will be in the VolatileDB, which means
+--   that we know its hash already from the in-memory index.
 --
 -- In summary:
 --
 -- * Only streaming from the VolatileDB: 0 blocks read upfront.
 -- * Only streaming from the ImmutableDB: 2 blocks read upfront.
--- * Streaming from both the ImmutableDB and the VolatileDB: 2 blocks read
+-- * Streaming from both the ImmutableDB and the VolatileDB: 1 block read
 --   upfront.
 --
 -- Additionally, when we notice during streaming that a block is no longer in
@@ -164,7 +182,44 @@ streamBlocks
   -> StreamFrom      blk
   -> StreamTo        blk
   -> m (Either (UnknownRange blk) (Iterator m blk))
-streamBlocks h from to = getEnv h $ \cdb -> newIterator cdb h from to
+streamBlocks h from to = getEnv h $ \cdb ->
+    newIterator (fromChainDbEnv cdb) getItEnv from to
+  where
+    getItEnv :: forall r. (IteratorEnv m blk -> m r) -> m r
+    getItEnv f = getEnv h (f . fromChainDbEnv)
+
+{-------------------------------------------------------------------------------
+  Iterator environment
+-------------------------------------------------------------------------------}
+
+-- | Environment containing everything needed to implement iterators.
+--
+-- The main purpose of bundling these things in a separate record is to make
+-- it easier to test this code: no need to set up a whole ChainDB, just
+-- provide this record.
+data IteratorEnv m blk = IteratorEnv
+  { itImmDB          :: ImmDB m blk
+  , itVolDB          :: VolDB m blk
+  , itGetImmDBTip    :: m (Point blk)
+    -- ^ This should preferably be cheap.
+  , itIterators      :: TVar m (Map IteratorId (m ()))
+  , itNextIteratorId :: TVar m IteratorId
+  , itTracer         :: Tracer m (TraceIteratorEvent blk)
+  }
+
+-- | Obtain an 'IteratorEnv' from a 'ChainDbEnv'.
+fromChainDbEnv :: MonadSTM m
+               => ChainDbEnv m blk -> IteratorEnv m blk
+fromChainDbEnv CDB{..} = IteratorEnv
+  { itImmDB          = cdbImmDB
+  , itVolDB          = cdbVolDB
+    -- See the invariant of 'cdbChain'.
+  , itGetImmDBTip    = castPoint . AF.anchorPoint <$>
+                       atomically (readTVar cdbChain)
+  , itIterators      = cdbIterators
+  , itNextIteratorId = cdbNextIteratorId
+  , itTracer         = contramap TraceIteratorEvent cdbTracer
+  }
 
 -- | See 'streamBlocks'.
 newIterator
@@ -175,15 +230,17 @@ newIterator
      , HasHeader blk
      , HasCallStack
      )
-  => ChainDbEnv    m blk
-  -> ChainDbHandle m blk
-     -- ^ We need the handle to pass it on to the 'Iterator', so that each
-     -- time a function is called on the 'Iterator', we check whether the
-     -- ChainDB is actually open.
+  => IteratorEnv   m blk
+  -> (forall r. (IteratorEnv m blk -> m r) -> m r)
+     -- ^ Function with which the operations on the returned iterator should
+     -- obtain their 'IteratorEnv'. This function should check whether the
+     -- ChainDB is still open or throw an exception otherwise. This makes sure
+     -- that when we call 'iteratorNext', we first check whether the ChainDB
+     -- is still open.
   -> StreamFrom      blk
   -> StreamTo        blk
   -> m (Either (UnknownRange blk) (Iterator m blk))
-newIterator cdb@CDB{..} h from to = do
+newIterator itEnv@IteratorEnv{..} getItEnv from to = do
     unless (validBounds from to) $
       throwM $ InvalidIteratorRange from to
     res <- runExceptT start
@@ -192,16 +249,39 @@ newIterator cdb@CDB{..} h from to = do
       _      -> return ()
     return res
   where
-    tracer :: Tracer m (TraceIteratorEvent blk)
-    tracer = contramap TraceIteratorEvent cdbTracer
+    trace = traceWith itTracer
 
-    trace = traceWith tracer
+    endPoint :: Point blk
+    endPoint = case to of
+      StreamToInclusive pt -> pt
+      StreamToExclusive pt -> pt
 
+    -- | Use the tip of the ImmutableDB to determine whether to look directly
+    -- in the ImmutableDB (the range is <= the tip) or first try the
+    -- VolatileDB (in the other cases).
     start :: HasCallStack => ExceptT (UnknownRange blk) m (Iterator m blk)
-    start = do
-      path <- lift $ atomically $ VolDB.computePathSTM cdbVolDB from to
+    start = lift itGetImmDBTip >>= \tip -> case tip of
+      GenesisPoint -> findPathInVolDB
+      BlockPoint { atSlot = tipSlot, withHash = tipHash } ->
+        case atSlot endPoint `compare` tipSlot of
+          -- The end point is < the tip of the ImmutableDB
+          LT -> streamFromImmDB
+          EQ | withHash endPoint == tipHash
+                -- The end point == the tip of the ImmutableDB
+             -> streamFromImmDB
+             | otherwise
+                -- The end point /= the tip of the ImmutableDB
+             -> throwError $ ForkTooOld from
+          -- The end point is > the tip of the ImmutableDB
+          GT -> findPathInVolDB
+
+    -- | PRECONDITION: the upper bound > the tip of the ImmutableDB
+    findPathInVolDB :: HasCallStack
+                    => ExceptT (UnknownRange blk) m (Iterator m blk)
+    findPathInVolDB = do
+      path <- lift $ atomically $ VolDB.computePathSTM itVolDB from to
       case path of
-        VolDB.NotInVolDB        _hash           -> streamFromImmDB
+        VolDB.NotInVolDB        _hash           -> throwError $ ForkTooOld from
         VolDB.PartiallyInVolDB  predHash hashes -> streamFromBoth predHash hashes
         VolDB.CompletelyInVolDB hashes          -> case NE.nonEmpty hashes of
           Just hashes' -> lift $ streamFromVolDB hashes'
@@ -225,20 +305,16 @@ newIterator cdb@CDB{..} h from to = do
         -- First check whether the block in the ImmDB at the end bound has the
         -- correct hash.
         when checkUpperBound $ do
-          slotNoAtTip <- lift $ ImmDB.getSlotNoAtTip cdbImmDB
+          slotNoAtTip <- lift $ ImmDB.getSlotNoAtTip itImmDB
           when (pointSlot endPoint > slotNoAtTip) $
             throwError $ MissingBlock endPoint
-          lift (ImmDB.getBlockWithPoint cdbImmDB endPoint) >>= \case
+          lift (ImmDB.getBlockWithPoint itImmDB endPoint) >>= \case
             Just _  -> return ()
             Nothing -> throwError $ MissingBlock endPoint
         -- 'ImmDB.streamBlocksFrom' will check the hash of the block at the
         -- start bound.
-        immIt <- ExceptT $ ImmDB.streamBlocksFrom cdbImmDB from
+        immIt <- ExceptT $ ImmDB.streamBlocksFrom itImmDB from
         lift $ createIterator $ InImmDB from immIt (StreamTo to)
-      where
-        endPoint = case to of
-          StreamToInclusive pt -> pt
-          StreamToExclusive pt -> pt
 
     -- | If we have to stream from both the ImmutableDB and the VolatileDB, we
     -- only allow the (current) tip of the ImmutableDB to be the switchover
@@ -252,41 +328,43 @@ newIterator cdb@CDB{..} h from to = do
                    -> ExceptT (UnknownRange blk) m (Iterator m blk)
     streamFromBoth predHash hashes = do
         lift $ trace $ StreamFromBoth from to hashes
-        lift (ImmDB.getBlockAtTip cdbImmDB) >>= \case
+        lift itGetImmDBTip >>= \case
           -- The ImmutableDB is empty
-          Nothing -> throwError $ ForkTooOld from
+          GenesisPoint -> throwError $ ForkTooOld from
           -- The incomplete path fits onto the tip of the ImmutableDB.
-          Just blk | blockHash blk == predHash -> case NE.nonEmpty hashes of
-            Just hashes' -> stream (blockPoint blk) hashes'
-            -- The path is actually empty, but the exclusive upper bound was
-            -- in the VolatileDB. Just stream from the ImmutableDB without
-            -- checking the upper bound (which might not be in the
-            -- ImmutableDB)
-            Nothing      -> streamFromImmDBHelper False
-          -- The incomplete path doesn't fit onto the tip of the ImmutableDB.
-          -- Note that since we have constructed the incomplete path through
-          -- the VolatileDB, blocks might have moved from the VolatileDB to
-          -- the ImmutableDB so that the tip of the ImmutableDB has changed.
-          -- Either the path used to fit onto the tip but the tip has changed,
-          -- or the path simply never fitted onto the tip.
-          Just blk -> case dropWhile (/= blockHash blk) hashes of
-            -- The current tip is not in the path, this means that the path
-            -- never fitted onto the tip of the ImmutableDB. We refuse this
-            -- stream.
-            []                    -> throwError $ ForkTooOld from
-            -- The current tip is in the path, with some hashes after it, this
-            -- means that some blocks in our path have moved from the
-            -- VolatileDB to the ImmutableDB. We can shift the switchover
-            -- point to the current tip.
-            _tipHash:hash:hashes' -> stream (blockPoint blk) (hash NE.:| hashes')
-            -- The current tip is the end of the path, this means we can
-            -- actually stream everything from just the ImmutableDB. No need
-            -- to check the hash at the upper bound again.
-            [_tipHash]            -> streamFromImmDBHelper False
+          pt@BlockPoint { withHash = tipHash }
+            | tipHash == predHash
+            -> case NE.nonEmpty hashes of
+                 Just hashes' -> stream pt hashes'
+                 -- The path is actually empty, but the exclusive upper bound was
+                 -- in the VolatileDB. Just stream from the ImmutableDB without
+                 -- checking the upper bound (which might not be in the
+                 -- ImmutableDB)
+                 Nothing      -> streamFromImmDBHelper False
+            -- The incomplete path doesn't fit onto the tip of the ImmutableDB.
+            -- Note that since we have constructed the incomplete path through
+            -- the VolatileDB, blocks might have moved from the VolatileDB to
+            -- the ImmutableDB so that the tip of the ImmutableDB has changed.
+            -- Either the path used to fit onto the tip but the tip has changed,
+            -- or the path simply never fitted onto the tip.
+            | otherwise  -> case dropWhile (/= tipHash) hashes of
+              -- The current tip is not in the path, this means that the path
+              -- never fitted onto the tip of the ImmutableDB. We refuse this
+              -- stream.
+              []                    -> throwError $ ForkTooOld from
+              -- The current tip is in the path, with some hashes after it, this
+              -- means that some blocks in our path have moved from the
+              -- VolatileDB to the ImmutableDB. We can shift the switchover
+              -- point to the current tip.
+              _tipHash:hash:hashes' -> stream pt (hash NE.:| hashes')
+              -- The current tip is the end of the path, this means we can
+              -- actually stream everything from just the ImmutableDB. No need
+              -- to check the hash at the upper bound again.
+              [_tipHash]            -> streamFromImmDBHelper False
       where
         stream pt hashes' = do
           let immEnd = SwitchToVolDBFrom (StreamToInclusive pt) hashes'
-          immIt <- ExceptT $ ImmDB.streamBlocksFrom cdbImmDB from
+          immIt <- ExceptT $ ImmDB.streamBlocksFrom itImmDB from
           lift $ createIterator $ InImmDB from immIt immEnd
 
     makeIterator :: Bool  -- ^ Register the iterator in 'cdbIterators'?
@@ -295,14 +373,14 @@ newIterator cdb@CDB{..} h from to = do
     makeIterator register itState = do
       iteratorId <- makeNewIteratorId
       varItState <- newTVarM itState
-      when register $ atomically $ modifyTVar' cdbIterators $
-        -- Note that we don't use 'getEnv' here, because that would mean that
+      when register $ atomically $ modifyTVar' itIterators $
+        -- Note that we don't use 'itEnv' here, because that would mean that
         -- invoking the function only works when the database is open, which
         -- probably won't be the case.
-        Map.insert iteratorId (implIteratorClose varItState iteratorId cdb)
+        Map.insert iteratorId (implIteratorClose varItState iteratorId itEnv)
       return Iterator {
-          iteratorNext  = getEnv h $ implIteratorNext  varItState
-        , iteratorClose = getEnv h $ implIteratorClose varItState iteratorId
+          iteratorNext  = getItEnv $ implIteratorNext  varItState
+        , iteratorClose = getItEnv $ implIteratorClose varItState iteratorId
         , iteratorId    = iteratorId
         }
 
@@ -315,21 +393,21 @@ newIterator cdb@CDB{..} h from to = do
 
     makeNewIteratorId :: m IteratorId
     makeNewIteratorId = atomically $ do
-      newIteratorId <- readTVar cdbNextIteratorId
-      modifyTVar' cdbNextIteratorId succ
+      newIteratorId <- readTVar itNextIteratorId
+      modifyTVar' itNextIteratorId succ
       return newIteratorId
 
--- | Close the iterator and remove it from the map of iterators
--- ('cdbIterators').
+-- | Close the iterator and remove it from the map of iterators ('itIterators'
+-- and thus 'cdbIterators').
 implIteratorClose
   :: MonadSTM m
   => TVar m (IteratorState m blk)
   -> IteratorId
-  -> ChainDbEnv m blk
+  -> IteratorEnv m blk
   -> m ()
-implIteratorClose varItState itrId CDB{..} = do
+implIteratorClose varItState itrId IteratorEnv{..} = do
     mbImmIt <- atomically $ do
-      modifyTVar' cdbIterators (Map.delete itrId)
+      modifyTVar' itIterators (Map.delete itrId)
       mbImmIt <- iteratorStateImmIt <$> readTVar varItState
       writeTVar varItState Closed
       return mbImmIt
@@ -435,9 +513,9 @@ implIteratorNext :: forall m blk.
                     , HasHeader blk
                     )
                  => TVar m (IteratorState m blk)
-                 -> ChainDbEnv m blk
+                 -> IteratorEnv m blk
                  -> m (IteratorResult blk)
-implIteratorNext varItState CDB{..} =
+implIteratorNext varItState IteratorEnv{..} =
     atomically (readTVar varItState) >>= \case
       Closed ->
         return IteratorExhausted
@@ -448,7 +526,7 @@ implIteratorNext varItState CDB{..} =
       InVolDB continueAfter volHashes ->
         nextInVolDB continueAfter volHashes
   where
-    trace = traceWith (contramap TraceIteratorEvent cdbTracer)
+    trace = traceWith itTracer
 
     -- | Read the next block while in the 'InVolDB' state.
     nextInVolDB :: StreamFrom blk
@@ -459,7 +537,7 @@ implIteratorNext varItState CDB{..} =
                 -> NonEmpty (HeaderHash blk)
                 -> m (IteratorResult blk)
     nextInVolDB continueFrom (hash NE.:| hashes) =
-      VolDB.getBlock cdbVolDB hash >>= \case
+      VolDB.getBlock itVolDB hash >>= \case
         -- Block is missing
         Nothing -> do
             trace $ BlockMissingFromVolDB hash
@@ -472,7 +550,7 @@ implIteratorNext varItState CDB{..} =
             -- 'ReadFutureEBBError' because if the block is missing, it /must/
             -- have been garbage-collected, which means that its slot was
             -- older than the slot of the tip of the ImmutableDB.
-            immIt <- ImmDB.streamBlocksFromUnchecked cdbImmDB continueFrom
+            immIt <- ImmDB.streamBlocksFromUnchecked itImmDB continueFrom
             nextInImmDBRetry Nothing immIt (hash NE.:| hashes)
 
         -- Block is there

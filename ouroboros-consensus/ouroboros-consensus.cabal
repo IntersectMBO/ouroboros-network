@@ -296,6 +296,7 @@ test-suite test-storage
                     Test.Ouroboros.Storage
                     Test.Ouroboros.Storage.ChainDB
                     Test.Ouroboros.Storage.ChainDB.AddBlock
+                    Test.Ouroboros.Storage.ChainDB.Iterator
                     Test.Ouroboros.Storage.ChainDB.Mock
                     Test.Ouroboros.Storage.ChainDB.Model
                     Test.Ouroboros.Storage.ChainDB.StateMachine
@@ -305,6 +306,7 @@ test-suite test-storage
                     Test.Ouroboros.Storage.FS.StateMachine
                     Test.Ouroboros.Storage.ImmutableDB
                     Test.Ouroboros.Storage.ImmutableDB.CumulEpochSizes
+                    Test.Ouroboros.Storage.ImmutableDB.Mock
                     Test.Ouroboros.Storage.ImmutableDB.Model
                     Test.Ouroboros.Storage.ImmutableDB.StateMachine
                     Test.Ouroboros.Storage.ImmutableDB.TestBlock
@@ -322,6 +324,7 @@ test-suite test-storage
                     Test.Util.RefEnv
                     Test.Util.TestBlock
                     Test.Util.TestTx
+                    Test.Util.Tracer
   build-depends:    base,
                     cardano-crypto-class,
                     ouroboros-network,
