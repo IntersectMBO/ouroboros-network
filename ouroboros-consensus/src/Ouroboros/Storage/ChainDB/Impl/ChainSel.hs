@@ -289,14 +289,28 @@ addBlock cdb@CDB{..} b = do
                   NE.toList hashes
                 return $ AF.fromOldestFirst curHead (hdr : hdrs)
 
-          let candidateSuffixes = fmap (mkCandidateSuffix 0) candidates
-          -- Since all candidates are longer than the current chain, they will
-          -- /always/ be preferred over it.
-          assert (all (preferCandidate cdbNodeConfig curChain . _suffix)
-                      candidateSuffixes) $
-            chainSelection' curChainAndLedger candidateSuffixes >>= \case
-              Nothing                -> return ()
-              Just newChainAndLedger -> trySwitchTo newChainAndLedger
+          let candidateSuffixes = NE.nonEmpty
+                $ NE.filter (preferCandidate cdbNodeConfig curChain . _suffix)
+                $ fmap (mkCandidateSuffix 0) candidates
+          -- All candidates are longer than the current chain, so they will be
+          -- preferred over it, /unless/ the block we just added is an EBB,
+          -- which has the same 'BlockNo' as the block before it, so when
+          -- using the 'BlockNo' as the proxy for the length (note that some
+          -- protocols might do it differently), the candidate with the EBB
+          -- appended will not be preferred over the current chain.
+          --
+          -- The consequence of this is that when adding an EBB, it will not
+          -- be selected by chain selection and thus not appended to the chain
+          -- until the block after it is added, which will again result in a
+          -- candidate preferred over the current chain. In this case, the
+          -- candidate will be a two-block (the EBB and the new block)
+          -- extension of the current chain.
+          case candidateSuffixes of
+            Nothing                 -> return ()
+            Just candidateSuffixes' ->
+              chainSelection' curChainAndLedger candidateSuffixes' >>= \case
+                Nothing                -> return ()
+                Just newChainAndLedger -> trySwitchTo newChainAndLedger
       where
         curHead = AF.headPoint curChain
         hdr     = getHeader b
