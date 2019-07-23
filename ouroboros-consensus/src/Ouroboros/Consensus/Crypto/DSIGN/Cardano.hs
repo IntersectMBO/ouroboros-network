@@ -1,3 +1,4 @@
+{-# LANGUAGE ConstraintKinds            #-}
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE FlexibleInstances          #-}
@@ -23,8 +24,10 @@ import qualified Cardano.Chain.Block as CC.Block
 import qualified Cardano.Chain.UTxO as CC.UTxO
 import           Cardano.Crypto (ProtocolMagicId,
                      SignTag (..), Signature, SigningKey, VerificationKey,
-                     keyGen, signEncoded, toVerification, verifySignature)
+                     keyGen, signRaw, toVerification, verifySignatureRaw)
+import qualified Cardano.Crypto.Signing as Crypto
 import           Cardano.Crypto.DSIGN.Class
+import           Data.ByteString (ByteString)
 import           Data.Coerce (coerce)
 import           Data.Constraint
 import           Data.Function (on)
@@ -34,6 +37,8 @@ import           GHC.Generics (Generic)
 
 import           Ouroboros.Consensus.Util.Condense
 
+class (HasSignTag a, Decoded a) => ByronSignable a
+instance (HasSignTag a, Decoded a) => ByronSignable a
 
 class HasSignTag a where
   signTag :: proxy a -> SignTag
@@ -54,7 +59,8 @@ instance HasSignTag CC.UTxO.TxSigData where
 --
 -- - Require a given constraint here containing the relevant verification key
 -- - Use a class reifying this instance head/body relationship to propagate this constraint.
-instance Given (VerKeyDSIGN CardanoDSIGN) => HasSignTag CC.Block.ToSign where
+instance Given (VerKeyDSIGN CardanoDSIGN) 
+        => HasSignTag (Annotated CC.Block.ToSign ByteString) where
   signTag = const $ SignBlock vk
     where VerKeyCardanoDSIGN vk = given
 
@@ -62,7 +68,8 @@ instance Given (VerKeyDSIGN CardanoDSIGN) => HasSignTag CC.Block.ToSign where
 --
 -- This instance reflects the instance head/body relationship, and allows us to
 -- reconstruct the `HasSignTag` constraint using the relevant `Given` constraint.
-instance Given (VerKeyDSIGN CardanoDSIGN) :=> HasSignTag CC.Block.ToSign where
+instance Given (VerKeyDSIGN CardanoDSIGN) 
+        :=> HasSignTag (Annotated CC.Block.ToSign ByteString) where
   ins = Sub Dict
 
 data CardanoDSIGN
@@ -78,7 +85,7 @@ instance Given ProtocolMagicId => DSIGNAlgorithm CardanoDSIGN where
     newtype SigDSIGN CardanoDSIGN = SigCardanoDSIGN (Signature CC.Block.ToSign)
         deriving (Show, Eq, Generic)
 
-    type Signable CardanoDSIGN = HasSignTag
+    type Signable CardanoDSIGN = ByronSignable
 
     encodeVerKeyDSIGN (VerKeyCardanoDSIGN pk) = toCBOR pk
     decodeVerKeyDSIGN = VerKeyCardanoDSIGN <$> fromCBOR
@@ -93,11 +100,13 @@ instance Given ProtocolMagicId => DSIGNAlgorithm CardanoDSIGN where
 
     deriveVerKeyDSIGN (SignKeyCardanoDSIGN sk) = VerKeyCardanoDSIGN $ toVerification sk
 
-    signDSIGN toEnc a (SignKeyCardanoDSIGN sk) = do
-        return $ SigCardanoDSIGN $ signEncoded given (signTagFor a) sk (toEnc a)
+    signDSIGN a (SignKeyCardanoDSIGN sk) = return 
+        . SigCardanoDSIGN 
+        . coerce 
+        $ signRaw given (Just $ signTagFor a) sk (recoverBytes a)
 
-    verifyDSIGN toEnc (VerKeyCardanoDSIGN vk) a (SigCardanoDSIGN sig) =
-        if verifySignature toEnc given (signTagFor a) vk a $ coerce sig
+    verifyDSIGN (VerKeyCardanoDSIGN vk) a (SigCardanoDSIGN sig) =
+        if verifySignatureRaw vk (Crypto.signTag given (signTagFor a) <> recoverBytes a) $ coerce sig
           then Right ()
           else Left "Verification failed"
 

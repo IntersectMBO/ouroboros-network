@@ -25,10 +25,8 @@ module Ouroboros.Consensus.Protocol.BFT (
 import           Cardano.Crypto.DSIGN.Class
 import           Cardano.Crypto.DSIGN.Ed448 (Ed448DSIGN)
 import           Cardano.Crypto.DSIGN.Mock (MockDSIGN)
-import           Codec.CBOR.Encoding (Encoding)
 import           Control.Monad.Except
 import           Crypto.Random (MonadRandom)
-import           Data.Functor.Identity
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Typeable (Typeable)
@@ -63,11 +61,10 @@ forgeBftFields :: ( MonadRandom m
                   , Signable (BftDSIGN c) toSign
                   )
                => NodeConfig (Bft c)
-               -> (toSign -> Encoding)
                -> toSign
                -> m (BftFields c toSign)
-forgeBftFields BftNodeConfig{..} encodeToSign toSign = do
-      signature <- signedDSIGN encodeToSign toSign bftSignKey
+forgeBftFields BftNodeConfig{..} toSign = do
+      signature <- signedDSIGN toSign bftSignKey
       return $ BftFields {
           bftSignature = signature
         }
@@ -127,9 +124,7 @@ instance BftCrypto c => OuroborosTag (Bft c) where
 
   applyChainState cfg@BftNodeConfig{..} _l b _cs = do
       -- TODO: Should deal with unknown node IDs
-      let proxy = Identity b
       case verifySignedDSIGN
-           (encodeSigned proxy)
            (bftVerKeys Map.! expectedLeader)
            (headerSigned b)
            bftSignature of

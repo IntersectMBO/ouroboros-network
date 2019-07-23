@@ -29,13 +29,11 @@ module Ouroboros.Consensus.Protocol.PBFT (
   , NodeConfig(..)
   ) where
 
-import           Codec.CBOR.Encoding (Encoding)
 import           Control.Monad.Except
 import           Crypto.Random (MonadRandom)
 import           Data.Bimap (Bimap)
 import qualified Data.Bimap as Bimap
 import           Data.Constraint
-import           Data.Functor.Identity
 import           Data.Reflection (Given (..), give)
 import           Data.Sequence (Seq)
 import qualified Data.Sequence as Seq
@@ -43,6 +41,7 @@ import           Data.Typeable (Proxy(..), Typeable)
 import           Data.Word (Word64)
 import           GHC.Generics (Generic)
 
+import           Cardano.Binary (Decoded)
 import qualified Cardano.Chain.Common as CC.Common
 import           Cardano.Crypto (ProtocolMagicId)
 import           Cardano.Crypto.DSIGN.Class
@@ -84,11 +83,10 @@ forgePBftFields :: ( MonadRandom m
                    , Signable (PBftDSIGN c) toSign
                    )
                 => IsLeader (PBft c)
-                -> (toSign -> Encoding)
                 -> toSign
                 -> m (PBftFields c toSign)
-forgePBftFields PBftIsLeader{..} encodeToSign toSign = do
-    signature <- signedDSIGN encodeToSign toSign pbftSignKey
+forgePBftFields PBftIsLeader{..} toSign = do
+    signature <- signedDSIGN toSign pbftSignKey
     return $ PBftFields {
         pbftIssuer    = pbftVerKey
       , pbftGenKey    = pbftGenVerKey
@@ -190,11 +188,9 @@ instance (PBftCrypto c, Typeable c) => OuroborosTag (PBft c) where
   applyChainState cfg@PBftNodeConfig{..} lv@(PBftLedgerView dms) (b :: hdr) chainState = do
       -- Check that the issuer signature verifies, and that it's a delegate of a
       -- genesis key, and that genesis key hasn't voted too many times.
-      let proxy = Identity b
       case verifyPBftSigned
              (Proxy :: Proxy (c, hdr))
              pbftGenKey
-             (encodeSigned proxy)
              pbftIssuer
              (headerSigned b)
              pbftSignature of
@@ -276,7 +272,6 @@ class ( Typeable c
   verifyPBftSigned :: forall hdr proxy. (PBftSigningConstraints c hdr)
                    => proxy (c, hdr)
                    -> VerKeyDSIGN (PBftDSIGN c) -- Genesis key - only used in the real impl
-                   -> (Signed hdr -> Encoding)
                    -> VerKeyDSIGN (PBftDSIGN c)
                    -> Signed hdr
                    -> SignedDSIGN (PBftDSIGN c) (Signed hdr) -> Either String ()
@@ -300,7 +295,9 @@ instance (Given ProtocolMagicId) => PBftCrypto PBftCardanoCrypto where
   type PBftVerKeyHash PBftCardanoCrypto = CC.Common.KeyHash
 
   type PBftSigningConstraints PBftCardanoCrypto hdr
-    = Given (VerKeyDSIGN CardanoDSIGN) :=> Signable CardanoDSIGN (Signed hdr)
+    = ( Decoded (Signed hdr)
+      , Given (VerKeyDSIGN CardanoDSIGN) :=> HasSignTag (Signed hdr)
+      )
 
   hashVerKey (VerKeyCardanoDSIGN pk) = CC.Common.hashKey pk
 
@@ -311,14 +308,13 @@ instance (Given ProtocolMagicId) => PBftCrypto PBftCardanoCrypto where
   -- See
   -- https://hackage.haskell.org/package/constraints-0.10.1/docs/Data-Constraint.html#v:-92--92-
   -- for details.
-  verifyPBftSigned (_ :: proxy (PBftCardanoCrypto, hdr)) gkVerKey pSig issuer hSig sig
+  verifyPBftSigned (_ :: proxy (PBftCardanoCrypto, hdr)) gkVerKey issuer hSig sig
     = give gkVerKey $
       (verifySignedDSIGN
-        pSig
         issuer
         hSig
         sig \\
-        (ins :: Given (VerKeyDSIGN CardanoDSIGN) :- Signable CardanoDSIGN (Signed hdr) ))
+        (ins :: Given (VerKeyDSIGN CardanoDSIGN) :- HasSignTag (Signed hdr) ))
 
 {-------------------------------------------------------------------------------
   Condense

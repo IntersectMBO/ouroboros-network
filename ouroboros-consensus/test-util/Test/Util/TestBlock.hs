@@ -42,7 +42,7 @@ module Test.Util.TestBlock (
   , permute
   ) where
 
-import           Codec.Serialise (Serialise (encode))
+import           Codec.Serialise (Serialise)
 import           Control.Monad.Except (throwError)
 import           Data.FingerTree (Measured (..))
 import           Data.Int
@@ -205,13 +205,11 @@ type instance BlockProtocol TestBlock = Bft BftMockCrypto
 instance SignedHeader (Header TestBlock) where
   type Signed (Header TestBlock) = ()
   headerSigned _ = ()
-  encodeSigned _ = encode
 
 instance HeaderSupportsBft BftMockCrypto (Header TestBlock) where
   headerBftFields cfg (TestHeader tb) = BftFields {
         bftSignature = SignedDSIGN $
                          mockSign
-                           encode
                            ()
                            (signKey cfg (tbSlot tb))
       }

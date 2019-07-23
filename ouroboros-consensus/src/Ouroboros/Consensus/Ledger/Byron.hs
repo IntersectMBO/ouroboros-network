@@ -286,10 +286,8 @@ type instance BlockProtocol (ByronBlock cfg) =
   ExtNodeConfig cfg (PBft PBftCardanoCrypto)
 
 instance ByronGiven => SignedHeader (Header (ByronBlock cfg)) where
-  type Signed (Header (ByronBlock cfg)) = CC.Block.ToSign
-  encodeSigned = const toCBOR
-  headerSigned = unAnnotated
-               . CC.Block.recoverSignedBytes given
+  type Signed (Header (ByronBlock cfg)) = Annotated CC.Block.ToSign ByteString
+  headerSigned = CC.Block.recoverSignedBytes given
                . unByronHeader
 
 instance (ByronGiven, Typeable cfg)

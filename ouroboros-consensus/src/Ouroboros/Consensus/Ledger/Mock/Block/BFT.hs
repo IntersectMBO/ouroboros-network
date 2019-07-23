@@ -15,10 +15,11 @@ module Ouroboros.Consensus.Ledger.Mock.Block.BFT (
   ) where
 
 import           Codec.Serialise (Serialise (..))
+import           Data.Typeable (Typeable)
 import           GHC.Generics (Generic)
 
+import           Cardano.Binary (ToCBOR(..))
 import           Cardano.Crypto.DSIGN
-import           Cardano.Crypto.Util (Empty)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Ledger.Abstract
@@ -69,22 +70,21 @@ instance SimpleCrypto c => SignedHeader (SimpleBftHeader c c') where
   type Signed (SimpleBftHeader c c') = SignedSimpleBft c c'
 
   headerSigned = SignedSimpleBft . simpleHeaderStd
-  encodeSigned = const encode
 
 instance ( SimpleCrypto c
          , BftCrypto c'
-         , Signable (BftDSIGN c') ~ Empty
+         , Signable (BftDSIGN c') (SignedSimpleBft c c')
          ) => HeaderSupportsBft c' (SimpleBftHeader c c') where
   headerBftFields _ = simpleBftExt . simpleHeaderExt
 
 instance ( SimpleCrypto c
          , BftCrypto c'
-         , Signable (BftDSIGN c') ~ Empty
+         , Signable (BftDSIGN c') (SignedSimpleBft c c')
          )
       => ForgeExt (Bft c') c (SimpleBftExt c c') where
   forgeExt cfg () SimpleBlock{..} = do
       ext :: SimpleBftExt c c' <- fmap SimpleBftExt $
-        forgeBftFields cfg encode $
+        forgeBftFields cfg $
           SignedSimpleBft {
               signedSimpleBft = simpleHeaderStd
             }
@@ -97,12 +97,12 @@ instance ( SimpleCrypto c
 
 instance ( SimpleCrypto c
          , BftCrypto c'
-         , Signable (BftDSIGN c') ~ Empty
+         , Signable (BftDSIGN c') (SignedSimpleBft c c')
          ) => SupportedBlock (SimpleBftBlock c c')
 
 instance ( SimpleCrypto c
          , BftCrypto c'
-         , Signable (BftDSIGN c') ~ Empty
+         , Signable (BftDSIGN c') (SignedSimpleBft c c')
          ) => ProtocolLedgerView (SimpleBftBlock c c') where
   protocolLedgerView _ _ = ()
   anachronisticProtocolLedgerView _ _ _ = Just $ SB.unbounded ()
@@ -120,3 +120,5 @@ instance BftCrypto c' => Serialise (SimpleBftExt c c') where
       return $ SimpleBftExt BftFields{..}
 
 instance SimpleCrypto c => Serialise (SignedSimpleBft c c')
+instance (Typeable c', SimpleCrypto c) => ToCBOR (SignedSimpleBft c c') where
+  toCBOR = encode
