@@ -42,6 +42,7 @@ import qualified Ouroboros.Storage.ImmutableDB as ImmDB
 import qualified Ouroboros.Storage.Util.ErrorHandling as EH
 import qualified Ouroboros.Storage.VolatileDB as VolDB
 
+import           Test.Util.Tracer (recordingTracerTVar)
 
 import           Test.Ouroboros.Storage.ChainDB.TestBlock
 import qualified Test.Ouroboros.Storage.ImmutableDB.Mock as ImmDB (openDBMock)
@@ -219,7 +220,7 @@ runIterator
   -> StreamTo   TestBlock
   -> ([TraceIteratorEvent TestBlock], IterRes)
 runIterator setup from to = runSimOrThrow $ do
-    (tracer, getTrace) <- recordTrace
+    (tracer, getTrace) <- recordingTracerTVar
     itEnv <- initIteratorEnv setup tracer
     res <- runExceptT $ do
       it <- ExceptT $ newIterator itEnv ($ itEnv) from to
@@ -238,12 +239,6 @@ runIterator setup from to = runSimOrThrow $ do
       IteratorExhausted -> do
         iteratorClose it
         return []
-
-recordTrace :: MonadSTM m => m (Tracer m ev, m [ev])
-recordTrace = newTVarM [] >>= \ref -> return
-    ( Tracer $ \ev -> atomically $ modifyTVar' ref (ev:)
-    , atomically $ reverse <$> readTVar ref
-    )
 
 {-------------------------------------------------------------------------------
   Setting up a mock IteratorEnv

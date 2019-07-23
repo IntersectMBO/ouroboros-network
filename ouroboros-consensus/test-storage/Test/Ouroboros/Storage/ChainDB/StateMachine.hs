@@ -33,7 +33,6 @@ import           Data.Bifunctor
 import qualified Data.Bifunctor.TH as TH
 import           Data.Bitraversable
 import           Data.Functor.Classes (Eq1, Show1)
-import           Data.IORef
 import           Data.List (sortOn)
 import qualified Data.List.NonEmpty as NE
 import qualified Data.Map as Map
@@ -103,7 +102,7 @@ import           Test.Ouroboros.Storage.Util ((=:=))
 
 import           Test.Util.RefEnv (RefEnv)
 import qualified Test.Util.RefEnv as RE
-
+import           Test.Util.Tracer (recordingTracerIORef)
 
 {-------------------------------------------------------------------------------
   Abstract model
@@ -1008,12 +1007,6 @@ internalUnused = error "ChainDB.Internal used during command generation"
 smUnused :: StateMachine (Model Blk IO) (At Cmd Blk IO) IO (At Resp Blk IO)
 smUnused = sm dbUnused internalUnused genBlk testCfg testInitLedger
 
-recordTrace :: IO (Tracer IO ev, IO [ev])
-recordTrace = newIORef [] >>= \ref -> return
-    ( Tracer $ \ev -> atomicModifyIORef' ref $ \evs -> (ev:evs, ())
-    , reverse <$> readIORef ref
-    )
-
 prop_sequential :: Property
 prop_sequential = forAllCommands smUnused Nothing $ \cmds -> QC.monadicIO $ do
     (hist, prop) <- test cmds
@@ -1026,7 +1019,7 @@ prop_sequential = forAllCommands smUnused Nothing $ \cmds -> QC.monadicIO $ do
             , Property
             )
     test cmds = do
-      (tracer, getTrace) <- QC.run recordTrace
+      (tracer, getTrace) <- QC.run recordingTracerIORef
       registry           <- QC.run $ atomically ThreadRegistry.new
       args               <- QC.run $ mkArgs
                                        testCfg

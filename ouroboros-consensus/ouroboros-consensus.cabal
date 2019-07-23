@@ -324,6 +324,7 @@ test-suite test-storage
                     Test.Util.RefEnv
                     Test.Util.TestBlock
                     Test.Util.TestTx
+                    Test.Util.Tracer
   build-depends:    base,
                     cardano-crypto-class,
                     ouroboros-network,
