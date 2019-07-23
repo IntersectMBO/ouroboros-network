@@ -20,7 +20,7 @@ import           Text.Show.Functions ()
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment (..))
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block
-import qualified Ouroboros.Network.Chain as Chain
+import qualified Ouroboros.Network.MockChain.Chain as Chain
 import           Ouroboros.Network.ChainFragment (ChainFragment)
 import qualified Ouroboros.Network.ChainFragment as CF
 import           Ouroboros.Network.Testing.ConcreteBlock
@@ -86,7 +86,7 @@ prop_length_Empty :: Bool
 prop_length_Empty =
     AF.length (Empty anchor :: AnchoredFragment Block) == 0
   where
-    anchor = Chain.genesisPoint
+    anchor = genesisPoint
 
 prop_dropNewest_Empty :: TestBlockAnchoredFragment -> Bool
 prop_dropNewest_Empty (TestBlockAnchoredFragment chain) =
@@ -261,7 +261,7 @@ prop_intersect_bounds (TestAnchoredFragmentFork _ _ c1 c2) =
 
 prop_toChain_fromChain :: TestBlockChain -> Property
 prop_toChain_fromChain (TestBlockChain ch) =
-    AF.toChain (AF.fromChain ch) === Just ch
+    Chain.fromAnchoredFragment (Chain.toAnchoredFragment ch) === Just ch
 
 prop_anchorNewest :: NonNegative Int -> TestBlockAnchoredFragment -> Property
 prop_anchorNewest (NonNegative n') (TestBlockAnchoredFragment c) =

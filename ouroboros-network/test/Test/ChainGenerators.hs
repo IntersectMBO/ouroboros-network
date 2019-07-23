@@ -38,8 +38,8 @@ import           Data.Maybe (catMaybes, listToMaybe)
 
 import           Ouroboros.Network.Testing.ConcreteBlock
 import           Ouroboros.Network.Block
-import           Ouroboros.Network.Chain (Chain (..))
-import qualified Ouroboros.Network.Chain as Chain
+import           Ouroboros.Network.MockChain.Chain (Chain (..))
+import qualified Ouroboros.Network.MockChain.Chain as Chain
 import           Ouroboros.Network.Point (WithOrigin (..), block, blockPointHash,
                    blockPointSlot, origin)
 import           Ouroboros.Network.Protocol.BlockFetch.Type (ChainRange (..))
@@ -539,7 +539,7 @@ instance Arbitrary TestChainAndPoints where
           , (5, return Nothing)
           ]
         points = map Chain.blockPoint (Chain.chainToList chain)
-                  ++ [Chain.genesisPoint]
+                  ++ [genesisPoint]
     points' <- catMaybes <$> mapM fn points
     return $ TestChainAndPoints chain points'
 

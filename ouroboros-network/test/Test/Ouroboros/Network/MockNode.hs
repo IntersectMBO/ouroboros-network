@@ -37,9 +37,9 @@ import qualified Control.Monad.IOSim as Sim
 import           Network.Mux.Time (microsecondsToDiffTime)
 
 import           Ouroboros.Network.Block
-import           Ouroboros.Network.Chain (Chain (..))
-import qualified Ouroboros.Network.Chain as Chain
-import           Ouroboros.Network.ChainProducerState (ChainProducerState (..))
+import           Ouroboros.Network.MockChain.Chain (Chain (..))
+import qualified Ouroboros.Network.MockChain.Chain as Chain
+import           Ouroboros.Network.MockChain.ProducerState (ChainProducerState (..))
 import           Ouroboros.Network.MockNode
 import           Ouroboros.Network.Testing.ConcreteBlock as ConcreteBlock
 
@@ -462,4 +462,3 @@ withProbe action = do
 
 probeOutput :: MonadSTM m => Probe m x -> x -> m ()
 probeOutput probe x = atomically (modifyTVar probe (x:))
-

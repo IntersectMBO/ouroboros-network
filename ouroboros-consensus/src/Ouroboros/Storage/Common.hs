@@ -25,8 +25,7 @@ import           Codec.Serialise (Serialise (..))
 import           Data.Word
 import           GHC.Generics
 
-import           Ouroboros.Network.Block (Point)
-import qualified Ouroboros.Network.Chain as Chain
+import           Ouroboros.Network.Block (Point, genesisPoint)
 
 {-------------------------------------------------------------------------------
   Epochs
@@ -59,7 +58,7 @@ tipIsGenesis TipGen  = True
 tipIsGenesis (Tip _) = False
 
 tipToPoint :: Tip (Point blk) -> Point blk
-tipToPoint TipGen  = Chain.genesisPoint
+tipToPoint TipGen  = genesisPoint
 tipToPoint (Tip p) = p
 
 {-------------------------------------------------------------------------------

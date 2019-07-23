@@ -14,7 +14,7 @@ import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block (HasHeader, HeaderHash, Point (..),
                      SlotNo (..))
-import           Ouroboros.Network.Chain (Chain (..))
+import           Ouroboros.Network.MockChain.Chain (Chain (..))
 import           Ouroboros.Network.Point (WithOrigin (..), blockPointHash,
                      blockPointSlot)
 

@@ -29,9 +29,9 @@ import           Network.TypedProtocol.Proofs (connect)
 
 import           Ouroboros.Network.Channel
 
-import           Ouroboros.Network.Chain (Point)
-import qualified Ouroboros.Network.Chain as Chain
-import qualified Ouroboros.Network.ChainProducerState as ChainProducerState
+import           Ouroboros.Network.MockChain.Chain (Point)
+import qualified Ouroboros.Network.MockChain.Chain as Chain
+import qualified Ouroboros.Network.MockChain.ProducerState as ChainProducerState
 
 import           Ouroboros.Network.Protocol.ChainSync.Client
 import           Ouroboros.Network.Protocol.ChainSync.Codec

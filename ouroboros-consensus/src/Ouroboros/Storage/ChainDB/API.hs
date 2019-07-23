@@ -42,13 +42,9 @@ import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
 
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
-import           Ouroboros.Network.Block (pattern BlockPoint, ChainUpdate,
+import           Ouroboros.Network.Block (Point, pattern BlockPoint, ChainUpdate,
                      pattern GenesisPoint, HasHeader (..), HeaderHash, SlotNo,
-                     StandardHash, atSlot)
-import           Ouroboros.Network.Chain (Chain (..), Point (..), genesisPoint)
-import qualified Ouroboros.Network.Chain as Chain
-import           Ouroboros.Network.ChainProducerState (ReaderId)
-
+                     StandardHash, atSlot, genesisPoint)
 import           Ouroboros.Consensus.Block (GetHeader (..))
 import           Ouroboros.Consensus.Ledger.Extended
 
@@ -56,6 +52,10 @@ import           Ouroboros.Storage.Common
 import           Ouroboros.Storage.FS.API.Types (FsError)
 import qualified Ouroboros.Storage.ImmutableDB as ImmDB
 import qualified Ouroboros.Storage.VolatileDB as VolDB
+
+-- Support for tests
+import           Ouroboros.Network.MockChain.Chain (Chain(..))
+import qualified Ouroboros.Network.MockChain.Chain as Chain
 
 -- | The chain database
 --
@@ -392,6 +392,8 @@ streamAll chainDB = do
 {-------------------------------------------------------------------------------
   Readers
 -------------------------------------------------------------------------------}
+
+type ReaderId = Int
 
 -- | Reader
 --

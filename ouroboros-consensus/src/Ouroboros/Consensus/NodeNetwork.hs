@@ -260,7 +260,7 @@ data NetworkApplication m peer
 --
 initiatorNetworkApplication
   :: NetworkApplication m peer bytes bytes bytes bytes bytes a
-  -> OuroborosApplication InitiatorApp peer NodeToNodeProtocols m bytes a Void
+  -> OuroborosApplication 'InitiatorApp peer NodeToNodeProtocols m bytes a Void
 initiatorNetworkApplication NetworkApplication {..} =
     OuroborosInitiatorApplication $ \them ptcl -> case ptcl of
       ChainSyncWithHeadersPtcl -> naChainSyncClient them

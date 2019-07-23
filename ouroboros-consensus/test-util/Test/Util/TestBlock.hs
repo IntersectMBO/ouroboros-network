@@ -62,8 +62,8 @@ import           Cardano.Crypto.DSIGN
 
 import           Ouroboros.Network.Block (ChainHash (..), HeaderHash)
 import qualified Ouroboros.Network.Block as Block
-import           Ouroboros.Network.Chain (Chain (..), Point)
-import qualified Ouroboros.Network.Chain as Chain
+import           Ouroboros.Network.MockChain.Chain (Chain (..), Point)
+import qualified Ouroboros.Network.MockChain.Chain as Chain
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Ledger.Abstract
@@ -71,6 +71,7 @@ import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Mempool (ApplyTx (..))
 import           Ouroboros.Consensus.NodeId (NodeId (..))
 import           Ouroboros.Consensus.Protocol.Abstract
+import           Ouroboros.Consensus.Protocol.MockChainSel
 import           Ouroboros.Consensus.Protocol.BFT
 import           Ouroboros.Consensus.Protocol.Signed
 import           Ouroboros.Consensus.Util.Condense
@@ -265,7 +266,7 @@ instance ProtocolLedgerView TestBlock where
   anachronisticProtocolLedgerView _ _ _ = Just $ SB.unbounded ()
 
 testInitLedger :: LedgerState TestBlock
-testInitLedger = TestLedger (Chain.genesisPoint, GenesisHash)
+testInitLedger = TestLedger (Block.genesisPoint, GenesisHash)
 
 testInitExtLedger :: ExtLedgerState TestBlock
 testInitExtLedger = ExtLedgerState {

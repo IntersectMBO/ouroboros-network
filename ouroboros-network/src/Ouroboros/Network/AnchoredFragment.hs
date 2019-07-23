@@ -61,9 +61,6 @@ module Ouroboros.Network.AnchoredFragment (
   intersectionPoint,
   mapAnchoredFragment,
 
-  -- * Conversion to/from Chain
-  fromChain,
-  toChain,
   anchorNewest,
 
   -- * Helper functions
@@ -79,8 +76,6 @@ import           Data.Word (Word64)
 import           GHC.Stack
 
 import           Ouroboros.Network.Block
-import           Ouroboros.Network.Chain (Chain)
-import qualified Ouroboros.Network.Chain as Chain
 import           Ouroboros.Network.ChainFragment (ChainFragment)
 import qualified Ouroboros.Network.ChainFragment as CF
 import           Ouroboros.Network.Point (WithOrigin (At))
@@ -415,23 +410,6 @@ applyChainUpdates :: HasHeader block
                   -> Maybe (AnchoredFragment block)
 applyChainUpdates []     c = Just c
 applyChainUpdates (u:us) c = applyChainUpdates us =<< applyChainUpdate u c
-
--- | Convert a 'Chain' to an 'AnchoredFragment'.
---
--- The anchor of the fragment will be 'Chain.genesisPoint'.
-fromChain :: HasHeader block => Chain block -> AnchoredFragment block
-fromChain = mkAnchoredFragment Chain.genesisPoint . CF.unvalidatedFromChain
-
--- | Convert an 'AnchoredFragment' to a 'Chain'.
---
--- The anchor of the fragment must be 'Chain.genesisPoint', otherwise
--- 'Nothing' is returned.
-toChain :: HasHeader block => AnchoredFragment block -> Maybe (Chain block)
-toChain af@(AnchoredFragment a _)
-    | a == Chain.genesisPoint
-    = Just $ Chain.fromNewestFirst $ toNewestFirst af
-    | otherwise
-    = Nothing
 
 -- | Take the @n@ newest blocks from the fragment.
 --

@@ -73,6 +73,7 @@ library
                        Ouroboros.Consensus.Protocol.BFT
                        Ouroboros.Consensus.Protocol.ExtNodeConfig
                        Ouroboros.Consensus.Protocol.LeaderSchedule
+                       Ouroboros.Consensus.Protocol.MockChainSel
                        Ouroboros.Consensus.Protocol.ModChainSel
                        Ouroboros.Consensus.Protocol.PBFT
                        Ouroboros.Consensus.Protocol.Praos
@@ -82,7 +83,6 @@ library
                        Ouroboros.Consensus.Util
                        Ouroboros.Consensus.Util.AnchoredFragment
                        Ouroboros.Consensus.Util.CBOR
-                       Ouroboros.Consensus.Util.Chain
                        Ouroboros.Consensus.Util.Classify
                        Ouroboros.Consensus.Util.Condense
                        Ouroboros.Consensus.Util.HList
@@ -254,6 +254,7 @@ test-suite test-consensus
                     Test.Ouroboros
                     Test.Util.DepFn
                     Test.Util.HasCreator
+                    Test.Util.MockChain
                     Test.Util.Orphans.Arbitrary
                     Test.Util.Range
                     Test.Util.TestBlock

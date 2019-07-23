@@ -24,8 +24,8 @@ import           Test.Tasty.QuickCheck (testProperty)
 import           Text.Show.Functions ()
 
 import           Ouroboros.Network.Block
-import           Ouroboros.Network.Chain (ChainUpdate (..), Point (..))
-import qualified Ouroboros.Network.Chain as Chain
+import           Ouroboros.Network.MockChain.Chain (ChainUpdate (..), Point (..))
+import qualified Ouroboros.Network.MockChain.Chain as Chain
 import           Ouroboros.Network.ChainFragment (ChainFragment(..))
 import qualified Ouroboros.Network.ChainFragment as CF
 import           Ouroboros.Network.Point (WithOrigin (At))
@@ -399,7 +399,7 @@ prop_prepend (TestBlockChainFragment c) = case c of
 prop_fromChain_toChain :: TestBlockChainFragment -> Property
 prop_fromChain_toChain (TestBlockChainFragment c) =
     startsFromGenesis ==>
-    CF.fromChain (CF.toChain c) === c
+    Chain.toChainFragment (Chain.fromChainFragment c) === c
   where
     startsFromGenesis = case c of
       CF.Empty  -> True
@@ -407,7 +407,7 @@ prop_fromChain_toChain (TestBlockChainFragment c) =
 
 prop_toChain_fromChain :: TestBlockChain -> Property
 prop_toChain_fromChain (TestBlockChain c) =
-    CF.toChain (CF.fromChain c) === c
+    Chain.fromChainFragment (Chain.toChainFragment c) === c
 
 prop_fixupBlock :: TestBlockChainFragment -> Bool
 prop_fixupBlock (TestBlockChainFragment chain) =

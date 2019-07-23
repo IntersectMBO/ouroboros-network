@@ -27,8 +27,7 @@ import           Control.Monad.Class.MonadThrow
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment (..))
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block (ChainHash (..), HasHeader, HeaderHash,
-                     Point, castPoint, pointHash, pointSlot)
-import           Ouroboros.Network.Chain (genesisPoint)
+                     Point, castPoint, genesisPoint, pointHash, pointSlot)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Ledger.Extended

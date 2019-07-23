@@ -41,8 +41,7 @@ import           Ouroboros.Network.AnchoredFragment (AnchoredFragment (..),
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.BlockFetch
 import           Ouroboros.Network.BlockFetch.State (FetchMode (..))
-import qualified Ouroboros.Network.Chain as Chain
-import           Ouroboros.Network.Point (WithOrigin (..))
+import           Ouroboros.Network.Point (WithOrigin(..))
 import           Ouroboros.Network.TxSubmission.Inbound
                      (TraceTxSubmissionInbound, TxSubmissionMempoolWriter)
 import qualified Ouroboros.Network.TxSubmission.Inbound as Inbound
@@ -369,7 +368,7 @@ forkBlockProduction IS{..} =
                         -> AnchoredFragment (Header blk)
                         -> (Point blk, BlockNo)
     prevPointAndBlockNo slot c = case c of
-        Empty _   -> (Chain.genesisPoint, Chain.genesisBlockNo)
+        Empty _   -> (genesisPoint, genesisBlockNo)
         c' :> hdr -> case blockSlot hdr `compare` slot of
           LT -> (headerPoint hdr, blockNo hdr)
           -- The block at the tip of our chain has a slot that lies in the
@@ -381,7 +380,7 @@ forkBlockProduction IS{..} =
              -> (headerPoint hdr', blockNo hdr')
              | otherwise
                -- If there is no block before it, so use genesis.
-             -> (Chain.genesisPoint, Chain.genesisBlockNo)
+             -> (genesisPoint, genesisBlockNo)
 
     runProtocol :: TVar m ChaChaDRG -> ProtocolM blk m a -> STM m a
     runProtocol varDRG = simOuroborosStateT varState

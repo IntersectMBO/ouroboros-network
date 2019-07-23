@@ -23,8 +23,7 @@ import           GHC.Generics (Generic)
 import           Cardano.Crypto.Hash
 
 import           Ouroboros.Network.Block (ChainHash, HasHeader, HeaderHash,
-                     Point, StandardHash, pointHash)
-import           Ouroboros.Network.Chain (genesisPoint)
+                     Point, StandardHash, genesisPoint, pointHash)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Ledger.Mock.Address

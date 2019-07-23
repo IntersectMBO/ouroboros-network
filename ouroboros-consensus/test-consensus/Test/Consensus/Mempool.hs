@@ -23,7 +23,7 @@ import           Control.Tracer (Tracer (..), nullTracer)
 import           Data.Maybe (isJust)
 import           Data.Typeable (Typeable)
 
-import qualified Ouroboros.Network.Chain as Chain
+import qualified Ouroboros.Network.MockChain.Chain as Chain
 
 import           Ouroboros.Consensus.Ledger.Abstract (ledgerConfigView)
 import           Ouroboros.Consensus.Mempool (ApplyTx (..), Mempool (..),

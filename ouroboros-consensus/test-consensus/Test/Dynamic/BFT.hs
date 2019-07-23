@@ -29,7 +29,7 @@ import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.NodeId
 import           Ouroboros.Consensus.Protocol
 import           Ouroboros.Consensus.Util.Random
-import           Ouroboros.Network.Chain (Chain)
+import           Ouroboros.Network.MockChain.Chain (Chain)
 
 import           Test.Dynamic.General
 import           Test.Dynamic.Util

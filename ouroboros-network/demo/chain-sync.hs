@@ -40,7 +40,7 @@ import           Network.Mux
 import qualified Network.Socket as Socket
 
 import Ouroboros.Network.Block
-import qualified Ouroboros.Network.Chain as Chain
+import qualified Ouroboros.Network.MockChain.Chain as Chain
 import qualified Ouroboros.Network.ChainFragment as CF
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import Ouroboros.Network.Point (WithOrigin (..))
@@ -834,4 +834,3 @@ shiftAnchoredFragment n b af =
     cf@(b0 CF.:< cf') | CF.length cf >= n
       -> AF.mkAnchoredFragment (blockPoint b0) (CF.addBlock b cf')
     _ -> AF.addBlock b af
-

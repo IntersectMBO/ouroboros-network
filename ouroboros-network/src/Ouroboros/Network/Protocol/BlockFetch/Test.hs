@@ -24,9 +24,9 @@ import           Network.TypedProtocol.Proofs
 
 import           Ouroboros.Network.Channel
 
-import           Ouroboros.Network.Block (StandardHash)
-import           Ouroboros.Network.Chain (Chain, Point)
-import qualified Ouroboros.Network.Chain as Chain
+import           Ouroboros.Network.Block (StandardHash, genesisPoint)
+import           Ouroboros.Network.MockChain.Chain (Chain, Point)
+import qualified Ouroboros.Network.MockChain.Chain as Chain
 import           Ouroboros.Network.Testing.ConcreteBlock (Block)
 
 import           Ouroboros.Network.Protocol.BlockFetch.Type
@@ -364,7 +364,7 @@ pointsToRanges chain points =
           Nothing -> ChainRange x y : go (y : ys)
           Just x' -> ChainRange (Chain.blockPoint x') y : go (y : ys)
         else ChainRange x y : go (y : ys)
-    go [x] = [ChainRange Chain.genesisPoint x]
+    go [x] = [ChainRange genesisPoint x]
     go []  = []
 
 -- | Compute list of received block bodies from a chain and points.

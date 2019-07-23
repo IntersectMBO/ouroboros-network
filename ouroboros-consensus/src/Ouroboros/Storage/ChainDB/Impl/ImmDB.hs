@@ -57,9 +57,8 @@ import           Control.Monad.Class.MonadThrow
 
 import           Ouroboros.Network.Block (pattern BlockPoint,
                      pattern GenesisPoint, HasHeader (..), HeaderHash, Point,
-                     SlotNo, atSlot, blockPoint, pointSlot,
+                     SlotNo, atSlot, blockPoint, genesisPoint, pointSlot,
                      withHash)
-import           Ouroboros.Network.Chain (genesisPoint)
 import           Ouroboros.Network.Point (WithOrigin (..))
 
 import qualified Ouroboros.Consensus.Util.CBOR as Util.CBOR

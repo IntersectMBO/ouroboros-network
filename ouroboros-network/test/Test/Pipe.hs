@@ -28,9 +28,9 @@ import           Ouroboros.Network.Mux
 import qualified Network.Mux.Types as Mx
 import qualified Network.Mux.Bearer.Pipe as Mx
 
-import           Ouroboros.Network.Chain (Chain, ChainUpdate, Point)
-import qualified Ouroboros.Network.Chain as Chain
-import qualified Ouroboros.Network.ChainProducerState as CPS
+import           Ouroboros.Network.MockChain.Chain (Chain, ChainUpdate, Point)
+import qualified Ouroboros.Network.MockChain.Chain as Chain
+import qualified Ouroboros.Network.MockChain.ProducerState as CPS
 import           Ouroboros.Network.Protocol.ChainSync.Client as ChainSync
 import           Ouroboros.Network.Protocol.ChainSync.Codec as ChainSync
 import           Ouroboros.Network.Protocol.ChainSync.Examples as ChainSync

@@ -134,8 +134,8 @@ library
 
   -- Still in the lib for now as they're used in ouroboros-consensus.
   -- They should be moved to the separate test lib if they're still needed.
-  exposed-modules:     Ouroboros.Network.Chain
-                       Ouroboros.Network.ChainProducerState
+  exposed-modules:     Ouroboros.Network.MockChain.Chain
+                       Ouroboros.Network.MockChain.ProducerState
                        Ouroboros.Network.Testing.ConcreteBlock
   build-depends:       hashable          >=1.2 && <1.3,
                        text              >=1.2 && <1.3
@@ -157,9 +157,9 @@ test-suite tests
                        Ouroboros.Network.BlockFetch.DeltaQ
                        Ouroboros.Network.BlockFetch.Examples
                        Ouroboros.Network.BlockFetch.State
-                       Ouroboros.Network.Chain
                        Ouroboros.Network.ChainFragment
-                       Ouroboros.Network.ChainProducerState
+                       Ouroboros.Network.MockChain.Chain
+                       Ouroboros.Network.MockChain.ProducerState
                        Ouroboros.Network.Channel
                        Ouroboros.Network.DeltaQ
                        Ouroboros.Network.Mux
@@ -272,7 +272,7 @@ test-suite cddl
                        Ouroboros.Network.Protocol.ChainSync.Codec
                        Ouroboros.Network.Protocol.ChainSync.Type
                        Ouroboros.Network.Block
-                       Ouroboros.Network.Chain
+                       Ouroboros.Network.MockChain.Chain
                        Ouroboros.Network.ChainFragment
                        Ouroboros.Network.Point
                        Ouroboros.Network.Protocol.BlockFetch.Codec
@@ -284,7 +284,6 @@ test-suite cddl
                        Ouroboros.Network.Protocol.Handshake.Version
                        Ouroboros.Network.Testing.ConcreteBlock
                        Ouroboros.Network.Block
-                       Ouroboros.Network.Chain
   default-language:    Haskell2010
   build-depends:       base,
                        bytestring,
@@ -324,4 +323,3 @@ executable demo-chain-sync
                        QuickCheck
   default-language:    Haskell2010
   ghc-options:         -Wall
-

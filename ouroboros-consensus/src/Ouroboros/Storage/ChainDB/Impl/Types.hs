@@ -266,7 +266,7 @@ data ReaderState m blk
   | ReaderInMem   !(ReaderRollState blk)
     -- ^ The 'Reader' is reading from the in-memory current chain fragment.
 
--- | Similar to 'Ouroboros.Network.ChainProducerState.ReaderState'.
+-- | Similar to 'Ouroboros.Network.MockChain.ProducerState.ReaderState'.
 data ReaderRollState blk
   = RollBackTo      !(Point blk)
     -- ^ The reader should roll back to this point.

@@ -26,8 +26,8 @@ import           Test.Tasty
 import           Test.Tasty.QuickCheck
 
 import           Ouroboros.Network.Block
-import           Ouroboros.Network.Chain
-import qualified Ouroboros.Network.Chain as Chain
+import           Ouroboros.Network.MockChain.Chain
+import qualified Ouroboros.Network.MockChain.Chain as Chain
 
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Demo
@@ -35,13 +35,13 @@ import           Ouroboros.Consensus.Ledger.Mock
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.NodeId (NodeId)
 import           Ouroboros.Consensus.Protocol
-import           Ouroboros.Consensus.Util.Chain (dropLastBlocks, lastSlot)
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Random
 
 import           Test.Dynamic.General
 import           Test.Dynamic.Util
 
+import           Test.Util.MockChain (dropLastBlocks, lastSlot)
 import           Test.Util.Orphans.Arbitrary ()
 import           Test.Util.Range
 
