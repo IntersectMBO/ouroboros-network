@@ -124,8 +124,9 @@ validExtension c b = blockInvariant b
                   -- the loose inequality.
                   && headSlot c <= At (blockSlot b)
                   -- The block number must be non-strictly increasing. An EBB
-                  -- has the same block number as its parent.
-                  && headBlockNo c <= blockNo b
+                  -- has the same block number as its parent. It can increase
+                  -- by at most one.
+                  && (headBlockNo c == blockNo b || succ (headBlockNo c) == blockNo b)
 
 head :: Chain b -> Maybe b
 head Genesis  = Nothing
