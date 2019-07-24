@@ -116,8 +116,8 @@ valid :: HasHeader block => Chain block -> Bool
 valid Genesis  = True
 valid (c :> b) = valid c && validExtension c b
 
-validExtension 
-  :: (HasCallStack, HasHeader block) 
+validExtension
+  :: (HasCallStack, HasHeader block)
   => Chain block -> block -> Bool
 validExtension c b = blockInvariant b
                   && headHash c == blockPrevHash b
@@ -314,7 +314,7 @@ intersectChains c (bs :> b) =
        then Just p
        else intersectChains c bs
 
--- * Conversions to/from 'ChainFrament'
+-- * Conversions to/from 'ChainFragment'
 
 -- | Convert a 'ChainFragment' to a 'Chain'.
 fromChainFragment :: HasHeader block => CF.ChainFragment block -> Chain block
