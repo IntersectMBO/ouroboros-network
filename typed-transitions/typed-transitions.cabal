@@ -9,6 +9,7 @@ license:             Apache-2.0
 license-files:
   LICENSE
   NOTICE
+copyright:           2019 Input Output (Hong Kong) Ltd.
 author:              Alexander Vieth
 maintainer:          alex@well-typed.com
 category:            Control

@@ -5,7 +5,7 @@
       specVersion = "1.10";
       identifier = { name = "ouroboros-consensus"; version = "0.1.0.0"; };
       license = "Apache-2.0";
-      copyright = "";
+      copyright = "2019 Input Output (Hong Kong) Ltd.";
       maintainer = "operations@iohk.io";
       author = "IOHK Engineering Team";
       homepage = "";
