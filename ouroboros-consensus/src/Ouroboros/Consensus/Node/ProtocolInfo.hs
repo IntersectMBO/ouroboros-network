@@ -26,8 +26,8 @@ protocolInfo :: NumCoreNodes
              -> Protocol blk
              -> ProtocolInfo blk
 protocolInfo nodes nid demoProtocol = case demoProtocol of
-    ProtocolMockBFT        params          -> protocolInfoBft       nodes nid params
-    ProtocolMockPraos      params          -> protocolInfoPraos     nodes nid params
-    ProtocolLeaderSchedule params schedule -> protocolInfoPraosRule nodes nid params schedule
-    ProtocolMockPBFT       params          -> protocolInfoMockPBFT  nodes nid params
-    ProtocolRealPBFT       params gc mplc  -> protocolInfoByron     nodes nid params gc mplc
+    ProtocolMockBFT        params               -> protocolInfoBft       nodes nid params
+    ProtocolMockPraos      params               -> protocolInfoPraos     nodes nid params
+    ProtocolLeaderSchedule params schedule      -> protocolInfoPraosRule nodes nid params schedule
+    ProtocolMockPBFT       params               -> protocolInfoMockPBFT  nodes nid params
+    ProtocolRealPBFT       gc mplc mthr prv swv -> protocolInfoByron     gc mplc mthr prv swv
