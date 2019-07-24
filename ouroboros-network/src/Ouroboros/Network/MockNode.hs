@@ -378,15 +378,10 @@ forkCoreKernel slotDuration gchain fixupBlock cpsVar = do
     addBlock :: Chain block -> block -> Chain block
     addBlock c b =
       case At (blockSlot b) `compare` Chain.headSlot c of
-        -- the block is OK
-        GT -> let r = Chain.addBlock (fixupBlock c b) c in
-              assert (Chain.valid r) r
-        -- the slot @s@ is already taken; replace the previous block
-        EQ -> let c' = Chain.drop 1 c
-                  b' = fixupBlock c' b
-                  r  = Chain.addBlock b' c'
-              in assert (Chain.valid r) r
         LT -> error "blockGenerator invariant vaiolation: generated block is for slot in the past"
+        -- the block is OK (slot number _can_ be equal).
+        _ -> let r = Chain.addBlock (fixupBlock c b) c in
+              assert (Chain.valid r) r
 
 -- | Core node simulation.  Given a chain it will generate a @block@ at its
 -- slot time (i.e. @slotDuration * blockSlot block@).  When the node finds out
