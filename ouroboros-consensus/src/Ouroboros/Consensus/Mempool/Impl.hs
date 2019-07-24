@@ -4,6 +4,8 @@
 
 module Ouroboros.Consensus.Mempool.Impl (
     openMempool
+  , LedgerInterface (..)
+  , chainDBLedgerInterface
   ) where
 
 import           Control.Monad.Except
@@ -20,7 +22,8 @@ import           Control.Tracer
 import           Ouroboros.Network.Block (ChainHash)
 import qualified Ouroboros.Network.Block as Block
 
-import           Ouroboros.Storage.ChainDB.API
+import           Ouroboros.Storage.ChainDB (ChainDB)
+import qualified Ouroboros.Storage.ChainDB.API as ChainDB
 
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
@@ -44,12 +47,12 @@ openMempool :: ( MonadAsync m
                , ApplyTx blk
                )
             => ThreadRegistry m
-            -> ChainDB m blk
+            -> LedgerInterface m blk
             -> LedgerConfig blk
             -> Tracer m (TraceEventMempool blk)
             -> m (Mempool m blk TicketNo)
-openMempool registry chainDB cfg tracer = do
-    env <- initMempoolEnv chainDB cfg tracer
+openMempool registry ledger cfg tracer = do
+    env <- initMempoolEnv ledger cfg tracer
     forkSyncStateOnTipPointChange registry env
     return Mempool {
         addTxs        = implAddTxs env
@@ -57,6 +60,17 @@ openMempool registry chainDB cfg tracer = do
       , getSnapshot   = implGetSnapshot env
       , zeroIdx       = zeroTicketNo
       }
+
+-- | Abstract interface needed to run a Mempool.
+data LedgerInterface m blk = LedgerInterface
+  { getCurrentLedgerState :: STM m (LedgerState blk)
+  }
+
+-- | Create a 'LedgerInterface' from a 'ChainDB'.
+chainDBLedgerInterface :: MonadSTM m => ChainDB m blk -> LedgerInterface m blk
+chainDBLedgerInterface chainDB = LedgerInterface
+    { getCurrentLedgerState = ledgerState <$> ChainDB.getCurrentLedger chainDB
+    }
 
 {-------------------------------------------------------------------------------
   Internal state
@@ -72,7 +86,7 @@ data InternalState blk = IS {
     }
 
 data MempoolEnv m blk = MempoolEnv {
-      mpEnvChainDB   :: ChainDB m blk
+      mpEnvLedger    :: LedgerInterface m blk
     , mpEnvLedgerCfg :: LedgerConfig blk
     , mpEnvStateVar  :: TVar m (InternalState blk)
     , mpEnvTracer    :: Tracer m (TraceEventMempool blk)
@@ -82,16 +96,21 @@ initInternalState :: InternalState blk
 initInternalState = IS TxSeq.Empty Block.GenesisHash
 
 initMempoolEnv :: MonadSTM m
-               => ChainDB m blk
+               => LedgerInterface m blk
                -> LedgerConfig blk
                -> Tracer m (TraceEventMempool blk)
                -> m (MempoolEnv m blk)
-initMempoolEnv chainDB cfg tracer = do
+initMempoolEnv ledgerInterface cfg tracer = do
     isVar <- atomically $ newTVar initInternalState
-    return $ MempoolEnv chainDB cfg isVar tracer
+    return MempoolEnv
+      { mpEnvLedger    = ledgerInterface
+      , mpEnvLedgerCfg = cfg
+      , mpEnvStateVar  = isVar
+      , mpEnvTracer    = tracer
+      }
 
--- | Spawn a thread which syncs the 'Mempool' state whenever the 'ChainDB'
--- tip point changes.
+-- | Spawn a thread which syncs the 'Mempool' state whenever the 'LedgerState'
+-- changes.
 forkSyncStateOnTipPointChange :: ( MonadAsync m
                                  , MonadFork m
                                  , MonadMask m
@@ -101,11 +120,13 @@ forkSyncStateOnTipPointChange :: ( MonadAsync m
                               -> MempoolEnv m blk
                               -> m ()
 forkSyncStateOnTipPointChange registry menv = do
-    initialTipPoint <- atomically $ getTipPoint mpEnvChainDB
-    onEachChange registry id initialTipPoint (getTipPoint mpEnvChainDB) action
+    initialTipPoint <- atomically getCurrentTip
+    onEachChange registry id initialTipPoint getCurrentTip action
   where
     action _tipPoint = implWithSyncState menv (const (return ()))
-    MempoolEnv { mpEnvChainDB } = menv
+    MempoolEnv { mpEnvLedger } = menv
+    -- Using the tip ('Point') allows for quicker equality checks
+    getCurrentTip = ledgerTipPoint <$> getCurrentLedgerState mpEnvLedger
 
 {-------------------------------------------------------------------------------
   Mempool Implementation
@@ -214,10 +235,10 @@ implSnapshotGetTx IS{isTxs} tn = isTxs `lookupByTicketNo` tn
 
 data ValidationResult blk = ValidationResult {
     -- | The tip of the chain before applying these transactions
-    vrBefore       :: ChainHash blk
+    vrBefore   :: ChainHash blk
 
     -- | The transactions that were found to be valid (oldest to newest)
-  , vrValid        :: TxSeq (GenTx blk)
+  , vrValid    :: TxSeq (GenTx blk)
 
     -- | New transactions (not previously known) which were found to be valid.
     --
@@ -225,18 +246,18 @@ data ValidationResult blk = ValidationResult {
     -- to the mempool (not previously known valid transactions).
     --
     -- Order not guaranteed.
-  , vrNewValid     :: [GenTx blk]
+  , vrNewValid :: [GenTx blk]
 
     -- | The state of the ledger after 'vrValid'
     --
     -- NOTE: This is intentionally not a strict field, so that we don't
     -- evaluate the final ledger state if we don't have to.
-  , vrAfter        :: LedgerState blk
+  , vrAfter    :: LedgerState blk
 
     -- | The transactions that were invalid, along with their errors
     --
     -- Order not guaranteed
-  , vrInvalid      :: [(GenTx blk, ApplyTxErr blk)]
+  , vrInvalid  :: [(GenTx blk, ApplyTxErr blk)]
   }
 
 -- | Initialize 'ValidationResult' from a ledger state and a list of
@@ -299,16 +320,17 @@ extendsVR cfg prevApplied = repeatedly (extendVR cfg prevApplied)
 -- | Validate internal state
 validateIS :: forall m blk. (MonadSTM m, ApplyTx blk)
            => MempoolEnv m blk -> STM m (ValidationResult blk)
-validateIS MempoolEnv{mpEnvChainDB, mpEnvLedgerCfg, mpEnvStateVar} =
-    go <$> (Block.pointHash <$> getTipPoint      mpEnvChainDB)
-       <*> (ledgerState     <$> getCurrentLedger mpEnvChainDB)
-       <*> readTVar mpEnvStateVar
+validateIS MempoolEnv{mpEnvLedger, mpEnvLedgerCfg, mpEnvStateVar} =
+    go <$> getCurrentLedgerState mpEnvLedger <*> readTVar mpEnvStateVar
   where
-    go :: ChainHash        blk
-       -> LedgerState      blk
+    go :: LedgerState      blk
        -> InternalState    blk
        -> ValidationResult blk
-    go tip st IS{isTxs, isTip}
-      | tip == isTip = initVR mpEnvLedgerCfg isTxs (tip, st)
-      | otherwise    = extendsVR mpEnvLedgerCfg True (Foldable.toList isTxs) $
-                         initVR mpEnvLedgerCfg TxSeq.Empty (tip, st)
+    go st IS{isTxs, isTip}
+        | tip == isTip
+        = initVR mpEnvLedgerCfg isTxs (tip, st)
+        | otherwise
+        = extendsVR mpEnvLedgerCfg True (Foldable.toList isTxs)
+        $ initVR mpEnvLedgerCfg TxSeq.Empty (tip, st)
+      where
+        tip = Block.pointHash $ ledgerTipPoint st

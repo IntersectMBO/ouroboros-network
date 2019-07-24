@@ -27,7 +27,8 @@ import qualified Ouroboros.Network.MockChain.Chain as Chain
 
 import           Ouroboros.Consensus.Ledger.Abstract (ledgerConfigView)
 import           Ouroboros.Consensus.Mempool (ApplyTx (..), Mempool (..),
-                     MempoolSnapshot (..), TraceEventMempool (..), openMempool)
+                     MempoolSnapshot (..), TraceEventMempool (..),
+                     chainDBLedgerInterface, openMempool)
 import           Ouroboros.Consensus.Mempool.TxSeq as TxSeq
 import           Ouroboros.Consensus.Util.ThreadRegistry (withThreadRegistry)
 
@@ -245,7 +246,8 @@ withOpenMempool bc tracer action = do
   chainDb <- ChainDB.fromChain openDB (Chain.fromOldestFirst (chainToBlocks bc))
   withThreadRegistry $ \registry -> do
     let cfg = ledgerConfigView singleNodeTestConfig
-    action =<< openMempool registry chainDb cfg tracer
+        ledgerInterface = chainDBLedgerInterface chainDb
+    action =<< openMempool registry ledgerInterface cfg tracer
 
 -- | Classify whether we're testing against an empty or non-empty 'Mempool' in
 -- each test case.

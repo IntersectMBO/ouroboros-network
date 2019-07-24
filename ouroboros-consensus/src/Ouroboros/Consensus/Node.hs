@@ -220,7 +220,7 @@ initInternalState NodeParams {..} = do
     varCandidates  <- atomically $ newTVar mempty
     varState       <- atomically $ newTVar initState
     mempool        <- openMempool threadRegistry
-                                  chainDB
+                                  (chainDBLedgerInterface chainDB)
                                   (ledgerConfigView cfg)
                                   mempoolTracer
 
