@@ -232,9 +232,11 @@ selectChain
   -> Chain block
   -> Chain block
 selectChain c1 c2 =
-  -- Cannot use headBlockNo, because the block number could be less than the
-  -- length (it is non-striclty increasing).
-  if length c1 >= length c2
+  -- NB: it's not true in general that headBlockNo c = length c, since the
+  -- block number is non-strictly increasing. A chain c2 can be shorter in
+  -- _length_ i.e. number of blocks than c1, but still have a higher block
+  -- number than c1.
+  if headBlockNo c1 >= headBlockNo c2
     then c1
     else c2
 
