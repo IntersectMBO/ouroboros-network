@@ -1,8 +1,8 @@
 {-# LANGUAGE DataKinds        #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE GADTs            #-}
-{-# LANGUAGE TypeOperators    #-}
 {-# LANGUAGE PatternSynonyms  #-}
+{-# LANGUAGE TypeOperators    #-}
 
 module Test.Chain
   ( tests
@@ -15,8 +15,8 @@ import           Test.QuickCheck
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
 
-import           Ouroboros.Network.Block (blockPrevHash, pointHash,
-                     pattern GenesisPoint, pattern BlockPoint, genesisPoint)
+import           Ouroboros.Network.Block (pattern GenesisPoint, blockPrevHash,
+                     pointHash)
 import           Ouroboros.Network.MockChain.Chain (Chain (..))
 import qualified Ouroboros.Network.MockChain.Chain as Chain
 import           Ouroboros.Network.Testing.Serialise (prop_serialise)
@@ -36,10 +36,11 @@ tests = testGroup "Chain"
   , testProperty "toList/head"     prop_toList_head
   , testProperty "drop"            prop_drop
   , testProperty "addBlock"        prop_addBlock
+  , testProperty "pointOnChain"    prop_pointOnChain
+  , testProperty "pointIsAfter"    prop_pointIsAfter
   , testProperty "rollback"        prop_rollback
   , testProperty "rollback/head"   prop_rollback_head
   , testProperty "successorBlock"  prop_successorBlock
-  , testProperty "lookupBySlot"    prop_lookupBySlot
   , testProperty "intersectChains" prop_intersectChains
   , testProperty "selectBlockRange"prop_selectBlockRange
   , testProperty "serialise chain" prop_serialise_chain
@@ -84,6 +85,26 @@ prop_addBlock (TestAddBlock c b) =
     -- chain is one longer
  && Chain.length c' == Chain.length c + 1
 
+prop_pointOnChain :: TestChainAndPoint -> Bool
+prop_pointOnChain (TestChainAndPoint c p) =
+    spec p c == Chain.pointOnChain p c
+  where
+    spec GenesisPoint = const True
+    spec pt           = any ((== pt) . Chain.blockPoint) . Chain.chainToList
+
+prop_pointIsAfter :: TestChainAndPoint -> Property
+prop_pointIsAfter (TestChainAndPoint c p) =
+  Chain.pointOnChain p c && p /= GenesisPoint ==>
+  let (beforeP, _p:afterP) =
+        break (== p) $ map Chain.blockPoint $ Chain.chainToList c
+  in    all (\before -> not (Chain.pointIsAfter p before c) &&
+                             Chain.pointIsAfter before p c)
+            beforeP
+     && not (Chain.pointIsAfter p p c)
+     && all (\after ->      Chain.pointIsAfter p after c &&
+                       not (Chain.pointIsAfter after p c))
+            afterP
+
 prop_rollback :: TestChainAndPoint -> Bool
 prop_rollback (TestChainAndPoint c p) =
     case Chain.rollback p c of
@@ -104,14 +125,6 @@ prop_successorBlock (TestChainAndPoint c p) =
   case Chain.successorBlock p c of
     Nothing -> Chain.headPoint c === p
     Just b  -> property $ Chain.pointOnChain (Chain.blockPoint b) c
-
-prop_lookupBySlot :: TestChainAndPoint -> Bool
-prop_lookupBySlot (TestChainAndPoint _ GenesisPoint)           = True
-prop_lookupBySlot (TestChainAndPoint c p@(BlockPoint bslot _)) =
-  case Chain.lookupBySlot c bslot of
-    Just b  -> Chain.pointOnChain (Chain.blockPoint b) c
-    Nothing | p == genesisPoint -> True
-            | otherwise         -> not (Chain.pointOnChain p c)
 
 prop_selectBlockRange :: TestChainAndRange -> Bool
 prop_selectBlockRange (TestChainAndRange c p1 p2) =

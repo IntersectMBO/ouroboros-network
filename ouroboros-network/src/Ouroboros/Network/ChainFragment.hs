@@ -1,7 +1,7 @@
 {-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE PatternSynonyms #-}
-{-# LANGUAGE ViewPatterns #-}
+{-# LANGUAGE PatternSynonyms  #-}
+{-# LANGUAGE TypeFamilies     #-}
+{-# LANGUAGE ViewPatterns     #-}
 
 module Ouroboros.Network.ChainFragment (
   -- * ChainFragment type and fundamental operations
@@ -54,13 +54,9 @@ module Ouroboros.Network.ChainFragment (
   applyChainUpdates,
 
   -- * Special operations
-  slotOnChainFragment,
   pointOnChainFragment,
   successorBlock,
-  lookupBySlot,
-  splitAfterSlot,
   splitAfterPoint,
-  splitBeforeSlot,
   splitBeforePoint,
   sliceRange,
   lookupByIndexFromEnd, FT.SearchResult(..),
@@ -76,24 +72,22 @@ module Ouroboros.Network.ChainFragment (
 
   -- * Reference implementations for testing
   foldChainFragmentSpec,
-  slotOnChainFragmentSpec,
   pointOnChainFragmentSpec,
   selectPointsSpec,
   ) where
 
-import           Prelude hiding (drop, head, last, length, null, filter)
+import           Prelude hiding (drop, filter, head, last, length, null)
 
+import           Codec.CBOR.Decoding (decodeListLen)
+import           Codec.CBOR.Encoding (encodeListLen)
+import           Codec.Serialise (Serialise (..))
 import           Control.Exception (assert)
 import           Data.Either (isRight)
 import           Data.FingerTree (FingerTree)
 import qualified Data.FingerTree as FT
 import qualified Data.Foldable as Foldable
 import qualified Data.List as L
-import           Data.Maybe (isJust)
 import           GHC.Stack
-import           Codec.Serialise (Serialise (..))
-import           Codec.CBOR.Encoding (encodeListLen)
-import           Codec.CBOR.Decoding (decodeListLen)
 
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.Point (WithOrigin (At))
@@ -109,9 +103,6 @@ import           Ouroboros.Network.Point (WithOrigin (At))
 --
 -- Invariant: a chain fragment should never contain the origin point.
 -- That is the point reserved for genesis.
---
--- It will not be possible to find it with 'lookupBySlot',
--- since @minBound \@Word == 0@.
 --
 -- A fragment is represented by a finger tree for efficient searching based on
 -- the 'SlotNo' (or 'Point') of a block.
@@ -188,7 +179,7 @@ mapChainFragment f (ChainFragment c) = ChainFragment (FT.fmap' f c)
 
 -- | \( O(n) \).
 valid :: HasHeader block => ChainFragment block -> Bool
-valid Empty = True
+valid Empty    = True
 valid (c :> b) = valid c && validExtension c b
 
 -- | Checks whether the first block @bSucc@ is a valid successor of the second
@@ -221,14 +212,14 @@ isValidSuccessorOf' bSucc b
       , ") at "
       , prettyCallStack callStack
       ]
-    -- Note that this inequality would be loose, but for epoch
+    -- Note that this inequality would be strict, but for epoch
     -- boundary blocks, which occupy the same slot as a regular
     -- block.
-  | pointSlot p >= At (blockSlot bSucc)
+  | pointSlot p > At (blockSlot bSucc)
   = Left $ concat [
         "Slot of tip ("
       , show (pointSlot p)
-      , ") >= slot ("
+      , ") > slot ("
       , show (blockSlot bSucc)
       , ")"
       ]
@@ -418,15 +409,32 @@ lookupBySlotFT :: HasHeader block
 lookupBySlotFT (ChainFragment t) s =
     FT.search (\vl vr -> bmMaxSlot vl >= s && bmMinSlot vr > s) t
 
--- | \( O(\log(\min(i,n-i)) \). Find the oldest block in the chain fragment
--- with a slot equal to the given slot.
+-- | \( O(\log(\min(i,n-i) + s) \) where /s/ is the number of blocks with the
+-- same slot. Return all blocks in the chain fragment with a slot equal to the
+-- given slot. The blocks will be ordered from oldest to newest.
 lookupBySlot :: HasHeader block
              => ChainFragment block
              -> SlotNo
-             -> Maybe block
+             -> [block]
 lookupBySlot c s = case lookupBySlotFT c s of
-  FT.Position _ b _ | blockSlot b == s -> Just b
-  _                                    -> Nothing
+    FT.Position before b _after
+      | blockSlot b == s
+        -- We have found the rightmost block with the given slot, we still
+        -- have to look at the blocks before it with the same slot.
+      -> blocksBefore before [b]
+    _ -> []
+  where
+    -- Look to the left of the block we found for more blocks with the same
+    -- slot.
+    blocksBefore before acc = case FT.viewr before of
+      before' FT.:> b
+        | blockSlot b == s
+        -> blocksBefore before' (b:acc)
+           -- Note that we're prepending an older block each time, so the
+           -- final list of blocks will be ordered from oldest to newest. No
+           -- need to reverse the accumulator.
+      _ -> acc
+
 
 -- | \( O(\log(\min(i,n-i)) \). Look up a block in the 'ChainFragment' based
 -- on the given index, i.e. the offset starting from the newest/rightmost
@@ -455,11 +463,11 @@ filter :: HasHeader block
 filter p = go [] Empty
   where
     go cs c'    (b :< c) | p b = go     cs (c' :> b) c
-    go cs Empty (_ :< c)       = go     cs  Empty    c
-    go cs c'    (_ :< c)       = go (c':cs) Empty    c
+    go cs Empty (_ :< c) = go     cs  Empty    c
+    go cs c'    (_ :< c) = go (c':cs) Empty    c
 
-    go cs Empty  Empty         = reverse     cs
-    go cs c'     Empty         = reverse (c':cs)
+    go cs Empty  Empty   = reverse     cs
+    go cs c'     Empty   = reverse (c':cs)
 
 -- | \( O(o \log(\min(i,n-i))) \). Select a bunch of 'Point's based on offsets
 -- from the head of the chain fragment. This is used in the chain consumer
@@ -504,31 +512,18 @@ selectPointsSpec offsets c =
 -- | \( O(\log(\min(i,n-i)) \). Find the block after the given point.
 successorBlock :: HasHeader block
                => Point block -> ChainFragment block -> Maybe block
-successorBlock GenesisPoint           _ = Nothing
-successorBlock p@(BlockPoint bslot _) c = case lookupBySlotFT c bslot of
-  FT.Position _ b ft'
-    | blockPoint b == p
-    , n FT.:< _ <- FT.viewl ft' -- O(1)
-    -> Just n
-  _ -> Nothing
-
--- | \( O(\log(\min(i,n-i)) \). Split the 'ChainFragment' after the block with
--- given slot. Or, if there is no block with the given slot in the chain
--- fragment, split at the location where it would have been.
---
--- If the chain fragment contained such a block, it will be the head
--- (newest/rightmost) block on the first returned chain.
-splitAfterSlot :: HasHeader block
-               => ChainFragment block
-               -> SlotNo
-               -> (ChainFragment block, ChainFragment block)
-splitAfterSlot (ChainFragment t) s = (ChainFragment l, ChainFragment r)
+successorBlock p c = splitAfterPoint c p >>= extractSuccessor
   where
-   (l, r) = FT.split (\v -> bmMaxSlot v > s) t
+    extractSuccessor (_, ChainFragment r)
+      | b FT.:< _ <- FT.viewl r
+      = Just b
+      | otherwise
+      = Nothing
 
--- | \( O(\log(\min(i,n-i)) \). Split the 'ChainFragment' after the block at
---  the given 'Point'. Return Nothing if the 'ChainFragment' does not contain
---  a block at the given 'Point'.
+-- | \( O(\log(\min(i,n-i)) + s \) where /s/ is the number of blocks with the
+-- same slot. Split the 'ChainFragment' after the block at the given 'Point'.
+-- Return Nothing if the 'ChainFragment' does not contain a block at the given
+-- 'Point'.
 --
 -- If the chain fragment contained a block at the given 'Point', it will be
 -- the (newest\/rightmost) block of the first returned chain.
@@ -537,43 +532,53 @@ splitAfterPoint :: (HasHeader block1, HasHeader block2,
                 => ChainFragment block1
                 -> Point block2
                 -> Maybe (ChainFragment block1, ChainFragment block1)
-splitAfterPoint _ GenesisPoint           = Nothing
-splitAfterPoint c p@(BlockPoint bslot _)
-  | (l@(ChainFragment lt), r) <- splitAfterSlot c bslot
-  , _ FT.:> b <- FT.viewr lt  -- O(1)
-  , blockPoint b == castPoint p
-  = Just (l, r)
-  | otherwise
-  = Nothing
-
--- | \( O(\log(\min(i,n-i)) \). Split the 'ChainFragment' before the block with
--- the given slot. Or, if there is no block with the given slot in the chain
--- fragment, split at the location where it would have been.
---
--- If the chain fragment contained such a block, it will be the last
--- (oldest\/leftmost) block on the second returned chain.
-splitBeforeSlot :: HasHeader block
-               => ChainFragment block
-               -> SlotNo
-               -> (ChainFragment block, ChainFragment block)
-splitBeforeSlot (ChainFragment t) s = (ChainFragment l, ChainFragment r)
+splitAfterPoint _                 GenesisPoint           = Nothing
+splitAfterPoint (ChainFragment t) p@(BlockPoint bslot _)
+    | (l, r) <- FT.split (\v -> bmMaxSlot v > bslot) t
+      -- @l@ contains blocks with a slot <= the given slot. There could be
+      -- multiple with the given slot, so try them one by one.
+    = go l r
+    | otherwise
+    = Nothing
   where
-   (l, r) = FT.split (\v -> bmMaxSlot v >= s) t
+    go l r = case FT.viewr l of
+      l' FT.:> b
+        | blockPoint b == castPoint p
+        -> Just (ChainFragment l, ChainFragment r)
+        | blockSlot b == bslot
+        -> go l' (b FT.<| r)
+      -- Empty tree or the slot number doesn't match anymore
+      _ -> Nothing
 
+-- | \( O(\log(\min(i,n-i)) + s \) where /s/ is the number of blocks with the
+-- same slot. Split the 'ChainFragment' before the block at the given 'Point'.
+-- Return Nothing if the 'ChainFragment' does not contain a block at the given
+-- 'Point'.
+--
+-- If the chain fragment contained a block at the given 'Point', it will be
+-- the (oldest\/leftmost) block of the second returned chain.
 splitBeforePoint :: (HasHeader block1, HasHeader block2,
                     HeaderHash block1 ~ HeaderHash block2)
                  => ChainFragment block1
                  -> Point block2
                  -> Maybe (ChainFragment block1, ChainFragment block1)
-splitBeforePoint _ GenesisPoint           = Nothing
-splitBeforePoint c p@(BlockPoint bslot _)
-  | (l, r@(ChainFragment rt)) <- splitBeforeSlot c bslot
-  , b FT.:< _ <- FT.viewl rt  -- O(1)
-  , blockPoint b == castPoint p
-  = Just (l, r)
-  | otherwise
-  = Nothing
-
+splitBeforePoint _                 GenesisPoint           = Nothing
+splitBeforePoint (ChainFragment t) p@(BlockPoint bslot _)
+    | (l, r) <- FT.split (\v -> bmMaxSlot v >= bslot) t
+      -- @r@ contains blocks with a slot >= the given slot. There could be
+      -- multiple with the given slot, so try them one by one.
+    = go l r
+    | otherwise
+    = Nothing
+  where
+    go l r = case FT.viewl r of
+      b FT.:< r'
+        | blockPoint b == castPoint p
+        -> Just (ChainFragment l, ChainFragment r)
+        | blockSlot b == bslot
+        -> go (l FT.|> b) r'
+      -- Empty tree or the slot number doesn't match anymore
+      _ -> Nothing
 
 -- | Select a slice of a chain fragment between two points, inclusive.
 --
@@ -593,9 +598,9 @@ sliceRange c from to
   = Nothing
 
 
--- | \( O(p \log(\min(i,n-i)) \). Find the first 'Point' in the list of points
--- that is on the given 'ChainFragment'. Return 'Nothing' if none of them are
--- on the 'ChainFragment'. TODO test?
+-- | \( O(p (\log(\min(i,n-i)) \). Find the first 'Point' in the list of
+-- points that is on the given 'ChainFragment'. Return 'Nothing' if none of
+-- them are on the 'ChainFragment'. TODO test?
 findFirstPoint
   :: HasHeader block
   => [Point block]
@@ -603,30 +608,13 @@ findFirstPoint
   -> Maybe (Point block)
 findFirstPoint ps c = L.find (`pointOnChainFragment` c) ps
 
--- | \( O(\log(\min(i,n-i)) \).
-slotOnChainFragment :: HasHeader block => SlotNo -> ChainFragment block -> Bool
-slotOnChainFragment slot c = isJust (lookupBySlot c slot)
-
--- | \( O(n) \). Specification of 'slotOnChainFragment'.
---
--- Use 'slotOnChainFragment', as it should be faster.
---
--- This function is used to verify whether 'slotOnChainFragment' behaves as
--- expected.
-slotOnChainFragmentSpec :: HasHeader block => SlotNo -> ChainFragment block -> Bool
-slotOnChainFragmentSpec slot = go
-  where
-    -- Recursively search the fingertree from the right
-    go Empty = False
-    go (c' :> b) | blockSlot b == slot = True
-                 | otherwise           = go c'
-
--- | \( O(\log(\min(i,n-i)) \).
-pointOnChainFragment :: HasHeader block => Point block -> ChainFragment block -> Bool
-pointOnChainFragment GenesisPoint           _ = False
-pointOnChainFragment p@(BlockPoint bslot _) c = case lookupBySlot c bslot of
-  Just b | blockPoint b == p -> True
-  _                          -> False
+-- | \( O(\log(\min(i,n-i)) + s \) where /s/ is the number of blocks with the
+-- same slot.
+pointOnChainFragment :: HasHeader block
+                     => Point block -> ChainFragment block -> Bool
+pointOnChainFragment p c = case p of
+    GenesisPoint       -> False
+    BlockPoint bslot _ -> any ((== p) . blockPoint) $ lookupBySlot c bslot
 
 -- | \( O(n) \). Specification of 'pointOnChainFragment'.
 --
@@ -638,10 +626,10 @@ pointOnChainFragmentSpec :: HasHeader block
                          => Point block -> ChainFragment block -> Bool
 pointOnChainFragmentSpec p = go
     where
-    -- Recursively search the fingertree from the right
-    go Empty = False
-    go (c' :> b) | blockPoint b == p = True
-                 | otherwise         = go c'
+      -- Recursively search the fingertree from the right
+      go Empty = False
+      go (c' :> b) | blockPoint b == p = True
+                   | otherwise         = go c'
 
 -- | \( O(n_2 \log(n_1)) \). Look for the intersection of the two
 -- 'ChainFragment's @c1@ and @c2@.

@@ -4,9 +4,10 @@
 
 module Ouroboros.Network.MockChain.ProducerState where
 
-import           Ouroboros.Network.Block (castPoint, genesisPoint, pointSlot)
-import           Ouroboros.Network.MockChain.Chain (Chain, ChainUpdate (..), HasHeader,
-                     HeaderHash, Point (..), blockPoint, pointOnChain)
+import           Ouroboros.Network.Block (castPoint, genesisPoint)
+import           Ouroboros.Network.MockChain.Chain (Chain, ChainUpdate (..),
+                     HasHeader, HeaderHash, Point (..), blockPoint,
+                     pointOnChain)
 import qualified Ouroboros.Network.MockChain.Chain as Chain
 
 import           Control.Exception (assert)
@@ -236,8 +237,8 @@ rollback p (ChainProducerState c rs nrid) = do
     return $ ChainProducerState c' (rollbackReader <$> rs) nrid
   where
     rollbackReader r@ReaderState { readerPoint = p' }
-      | pointSlot p' > pointSlot p
-      = r { readerPoint = (castPoint p), readerNext = ReaderBackTo }
+      | Chain.pointIsAfter p' (castPoint p) c
+      = r { readerPoint = castPoint p, readerNext = ReaderBackTo }
       | otherwise
       = r
 

@@ -17,9 +17,9 @@ import           Test.QuickCheck
 import           Test.Tasty
 import           Test.Tasty.QuickCheck
 
-import           Ouroboros.Network.Block (pointSlot, genesisPoint)
-import           Ouroboros.Network.MockChain.Chain (Chain, ChainUpdate (..), Point (..),
-                     headPoint, pointOnChain)
+import           Ouroboros.Network.Block (HasHeader, genesisPoint, pointSlot)
+import           Ouroboros.Network.MockChain.Chain (Chain, ChainUpdate (..),
+                     Point (..), headPoint, pointOnChain)
 import qualified Ouroboros.Network.MockChain.Chain as Chain
 import           Ouroboros.Network.MockChain.ProducerState
 import           Ouroboros.Network.Testing.ConcreteBlock (Block (..))
@@ -154,14 +154,15 @@ prop_switchFork (ChainProducerStateForkTest cps f) =
         (uncurry readerInv)
         (zip (readerStates cps) (readerStates cps'))
   where
-    readerInv :: ReaderState block -> ReaderState block -> Bool
+    readerInv :: HasHeader block
+              => ReaderState block -> ReaderState block -> Bool
     readerInv r r'
       -- points only move backward
        = pointSlot (readerPoint r') <= pointSlot (readerPoint r)
       -- if reader's point moves back, `readerNext` is changed to `ReaderBackTo`
       && ((pointSlot (readerPoint r') < pointSlot (readerPoint r)) `implies` (readerNext r' == ReaderBackTo))
       -- if reader's point is not changed, also next instruction is not changed
-      && ((pointSlot (readerPoint r') == pointSlot (readerPoint r)) `implies` (readerNext r' == readerNext r))
+      && ((readerPoint r' == readerPoint r) `implies` (readerNext r' == readerNext r))
 
     implies :: Bool -> Bool -> Bool
     implies a b = not a || b

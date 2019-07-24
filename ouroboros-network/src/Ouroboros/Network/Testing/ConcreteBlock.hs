@@ -67,10 +67,10 @@ import           GHC.Generics (Generic)
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block
-import           Ouroboros.Network.MockChain.Chain (Chain)
-import qualified Ouroboros.Network.MockChain.Chain as C
 import           Ouroboros.Network.ChainFragment (ChainFragment)
 import qualified Ouroboros.Network.ChainFragment as CF
+import           Ouroboros.Network.MockChain.Chain (Chain)
+import qualified Ouroboros.Network.MockChain.Chain as C
 
 {-------------------------------------------------------------------------------
   Concrete block shape used currently in the network layer
@@ -172,7 +172,6 @@ instance HasHeader BlockHeader where
     blockInvariant b =
         hashHeader b == headerHash b
      && blockNo    b >  BlockNo 0  -- we reserve 0 for genesis
-     && blockSlot  b >  SlotNo  0  -- we reserve 0 for genesis
 
 instance HasHeader Block where
     blockHash      =            headerHash     . blockHeader

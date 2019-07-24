@@ -1,8 +1,6 @@
 {-# LANGUAGE DeriveFunctor       #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE StandaloneDeriving  #-}
-{-# LANGUAGE TypeApplications    #-}
 
 -- | Reference implementation of a representation of a block chain
 --
@@ -51,8 +49,8 @@ module Ouroboros.Network.MockChain.Chain (
 
   -- * Special operations
   pointOnChain,
+  pointIsAfter,
   successorBlock,
-  lookupBySlot,
   selectChain,
   selectPoints,
   findBlock,
@@ -87,7 +85,7 @@ import           GHC.Stack
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block
 import qualified Ouroboros.Network.ChainFragment as CF
-import           Ouroboros.Network.Point (WithOrigin(..))
+import           Ouroboros.Network.Point (WithOrigin (..))
 
 --
 -- Blockchain type
@@ -116,13 +114,15 @@ valid :: HasHeader block => Chain block -> Bool
 valid Genesis  = True
 valid (c :> b) = valid c && validExtension c b
 
-validExtension 
-  :: (HasCallStack, HasHeader block) 
+validExtension
+  :: (HasCallStack, HasHeader block)
   => Chain block -> block -> Bool
 validExtension c b = blockInvariant b
                   && headHash c == blockPrevHash b
                   -- The Ord instance for WithOrigin puts At _ after Origin.
-                  && headSlot c <  At (blockSlot b)
+                  -- An EBB has the same SlotNo as the block after it, hence
+                  -- the loose inequality.
+                  && headSlot c <= At (blockSlot b)
                   -- The empty chain has block number 0, but this is also the block
                   -- number of the genesis block.
                   && (headBlockNo c == 0 || succ (headBlockNo c) == blockNo b)
@@ -189,8 +189,27 @@ pointOnChain GenesisPoint               _       = True
 pointOnChain (BlockPoint _ _)           Genesis = False
 pointOnChain p@(BlockPoint pslot phash) (c :> b)
   | pslot >  blockSlot b = False
-  | pslot == blockSlot b = phash == blockHash b
+  | phash == blockHash b = True
   | otherwise            = pointOnChain p c
+
+-- | Check whether the first point is after the second point on the chain.
+-- Usually, this can simply be checked using the 'SlotNo's, but some blocks
+-- may have the same 'SlotNo'.
+--
+-- When the first point equals the second point, the answer will be 'False'.
+--
+-- PRECONDITION: both points are on the chain.
+pointIsAfter :: HasHeader block
+             => Point block -> Point block -> Chain block -> Bool
+pointIsAfter pt1 pt2 c =
+    assert (pointOnChain pt1 c && pointOnChain pt2 c) $
+    case pointSlot pt1 `compare` pointSlot pt2 of
+      LT -> False
+      GT -> True
+      EQ | Just (_, afterPt2) <- CF.splitAfterPoint (toChainFragment c) pt2
+         -> CF.pointOnChainFragment pt1 afterPt2
+         | otherwise
+         -> False
 
 rollback :: HasHeader block => Point block -> Chain block -> Maybe (Chain block)
 rollback p (c :> b) | blockPoint b == p = Just (c :> b)
@@ -216,16 +235,6 @@ selectChain c1 c2 =
   if headBlockNo c1 >= headBlockNo c2
     then c1
     else c2
-
-lookupBySlot
-  :: HasHeader block
-  => Chain block
-  -> SlotNo
-  -> Maybe block
-lookupBySlot Genesis _slot = Nothing
-lookupBySlot (c :> b) slot | blockSlot b == slot = Just b
-                           | blockSlot b < slot  = Nothing
-                           | otherwise           = lookupBySlot c slot
 
 isPrefixOf :: Eq block => Chain block -> Chain block -> Bool
 a `isPrefixOf` b = reverse (toNewestFirst a) `L.isPrefixOf` reverse (toNewestFirst b)
@@ -314,7 +323,7 @@ intersectChains c (bs :> b) =
        then Just p
        else intersectChains c bs
 
--- * Conversions to/from 'ChainFrament'
+-- * Conversions to/from 'ChainFragment'
 
 -- | Convert a 'ChainFragment' to a 'Chain'.
 fromChainFragment :: HasHeader block => CF.ChainFragment block -> Chain block
