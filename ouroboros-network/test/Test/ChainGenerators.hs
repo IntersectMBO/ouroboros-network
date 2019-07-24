@@ -1,6 +1,6 @@
-{-# LANGUAGE GADTs #-}
 {-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE PatternSynonyms #-}
+{-# LANGUAGE GADTs             #-}
+{-# LANGUAGE PatternSynonyms   #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
@@ -36,13 +36,13 @@ module Test.ChainGenerators
 import qualified Data.List as L
 import           Data.Maybe (catMaybes, listToMaybe)
 
-import           Ouroboros.Network.Testing.ConcreteBlock
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.MockChain.Chain (Chain (..))
 import qualified Ouroboros.Network.MockChain.Chain as Chain
-import           Ouroboros.Network.Point (WithOrigin (..), block, blockPointHash,
-                   blockPointSlot, origin)
+import           Ouroboros.Network.Point (WithOrigin (..), block,
+                     blockPointHash, blockPointSlot, origin)
 import           Ouroboros.Network.Protocol.BlockFetch.Type (ChainRange (..))
+import           Ouroboros.Network.Testing.ConcreteBlock
 
 import           Test.QuickCheck
 import           Test.Tasty (TestTree, testGroup)
@@ -159,7 +159,14 @@ instance Arbitrary Block where
       return b
 
 genSlotGap :: Gen Int
-genSlotGap = frequency [(25, pure 1), (5, pure 2), (1, pure 3)]
+genSlotGap = frequency
+    [ (25, pure 1)
+      -- EBBs have the same SlotNo as the block after it, so the gap is 0 in
+      -- that case.
+    , (5,  pure 0)
+    , (5,  pure 2)
+    , (1,  pure 3)
+    ]
 
 addSlotGap :: Int -> SlotNo -> SlotNo
 addSlotGap g (SlotNo n) = SlotNo (n + fromIntegral g)
@@ -440,7 +447,7 @@ genPointOnChain chain =
 fixupPoint :: HasHeader block => Chain block -> Point block -> Point block
 fixupPoint c GenesisPoint         = Chain.headPoint c
 fixupPoint c (BlockPoint bslot _) =
-  case Chain.lookupBySlot c bslot of
+  case L.find ((== bslot) . blockSlot) (Chain.chainToList c) of
     Just b  -> Chain.blockPoint b
     Nothing -> Chain.headPoint c
 

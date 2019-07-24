@@ -16,7 +16,6 @@ module Test.ChainFragment
 import qualified Data.List as L
 import           Data.Maybe (fromJust, fromMaybe, isNothing, listToMaybe, maybe,
                      maybeToList)
-import qualified Data.Set as Set
 
 import           Test.QuickCheck
 import           Test.Tasty (TestTree, testGroup)
@@ -24,18 +23,18 @@ import           Test.Tasty.QuickCheck (testProperty)
 import           Text.Show.Functions ()
 
 import           Ouroboros.Network.Block
-import           Ouroboros.Network.MockChain.Chain (ChainUpdate (..), Point (..))
-import qualified Ouroboros.Network.MockChain.Chain as Chain
-import           Ouroboros.Network.ChainFragment (ChainFragment(..))
+import           Ouroboros.Network.ChainFragment (ChainFragment (..))
 import qualified Ouroboros.Network.ChainFragment as CF
+import           Ouroboros.Network.MockChain.Chain (ChainUpdate (..),
+                     Point (..))
+import qualified Ouroboros.Network.MockChain.Chain as Chain
 import           Ouroboros.Network.Point (WithOrigin (At))
 import           Ouroboros.Network.Testing.ConcreteBlock
 import           Ouroboros.Network.Testing.Serialise (prop_serialise)
 import           Test.Chain ()
-import           Test.ChainGenerators
-                   ( TestBlockChain (..), TestChainAndRange (..)
-                   , genNonNegative, genChainAnchor, mkPartialBlock
-                   , addSlotGap, genSlotGap)
+import           Test.ChainGenerators (TestBlockChain (..),
+                     TestChainAndRange (..), addSlotGap, genChainAnchor,
+                     genNonNegative, genSlotGap, mkPartialBlock)
 
 
 --
@@ -93,18 +92,13 @@ tests = testGroup "ChainFragment"
   , testProperty "rollback"                                  prop_rollback
   , testProperty "rollback/head"                             prop_rollback_head
   , testProperty "successorBlock"                            prop_successorBlock
-  , testProperty "lookupBySlot"                              prop_lookupBySlot
-  , testProperty "lookupBySlot2"                             prop_lookupBySlot2
   , testProperty "intersectChainFragments"                   prop_intersectChainFragments
   , testProperty "serialise chain"                           prop_serialise_chain
-  , testProperty "slotOnChainFragment"                       prop_slotOnChainFragment
   , testProperty "pointOnChainFragment"                      prop_pointOnChainFragment
   , testProperty "lookupByIndexFromEnd"                      prop_lookupByIndexFromEnd
   , testProperty "filter"                                    prop_filter
   , testProperty "selectPoints"                              prop_selectPoints
-  , testProperty "splitAfterSlot"                            prop_splitAfterSlot
   , testProperty "splitAfterPoint"                           prop_splitAfterPoint
-  , testProperty "splitBeforeSlot"                           prop_splitBeforeSlot
   , testProperty "splitBeforePoint"                          prop_splitBeforePoint
   , testProperty "prop_sliceRange"                           prop_sliceRange
   , testProperty "foldChainFragment"                         prop_foldChainFragment
@@ -226,24 +220,6 @@ prop_successorBlock (TestChainFragmentAndPoint c p) =
     Just b  -> property $ CF.pointOnChainFragment (CF.blockPoint b) c
           .&&. blockPrevHash b === pointHash p
 
-prop_lookupBySlot :: TestChainFragmentAndPoint -> Bool
-prop_lookupBySlot (TestChainFragmentAndPoint _ GenesisPoint)        = True
-prop_lookupBySlot (TestChainFragmentAndPoint c (BlockPoint slot _)) =
-  case CF.lookupBySlot c slot of
-    Just b  -> CF.slotOnChainFragment (blockSlot b) c
-            && CF.blockSlot b == slot
-    Nothing -> not (CF.slotOnChainFragment slot c)
-
-prop_lookupBySlot2 :: TestBlockChainFragment -> Bool
-prop_lookupBySlot2 (TestBlockChainFragment c) =
-  and [ case CF.lookupBySlot c slot of
-          Just b' -> b == b'
-          Nothing -> False
-      | b <- CF.toNewestFirst c
-      -- This pattern match is total. Obvious from the definition of blockPoint
-      -- and pointSlot
-      , let At slot = pointSlot (blockPoint b) ]
-
 prop_intersectChainFragments :: TestChainFragmentFork -> Property
 prop_intersectChainFragments (TestChainFragmentFork origL1 origL2 c1 c2) =
   let intersection = CF.intersectChainFragments c1 c2 in
@@ -260,25 +236,9 @@ prop_serialise_chain :: TestBlockChainFragment -> Property
 prop_serialise_chain (TestBlockChainFragment chain) =
   prop_serialise chain
 
-prop_slotOnChainFragment :: TestChainFragmentAndPoint -> Bool
-prop_slotOnChainFragment (TestChainFragmentAndPoint _ GenesisPoint)        = True
-prop_slotOnChainFragment (TestChainFragmentAndPoint c (BlockPoint slot _)) =
-  CF.slotOnChainFragment slot c == CF.slotOnChainFragmentSpec slot c
-
 prop_pointOnChainFragment :: TestChainFragmentAndPoint -> Bool
 prop_pointOnChainFragment (TestChainFragmentAndPoint c p) =
   CF.pointOnChainFragment p c == CF.pointOnChainFragmentSpec p c
-
-prop_splitAfterSlot :: TestChainFragmentAndPoint -> Bool
-prop_splitAfterSlot (TestChainFragmentAndPoint _ GenesisPoint)        = True
-prop_splitAfterSlot (TestChainFragmentAndPoint c (BlockPoint slot _)) =
-    let (l, r) = CF.splitAfterSlot c slot
-    in CF.joinChainFragments l r == Just c
-    && all (<= slot) (slots l)
-    && all (>  slot) (slots r)
-  where
-    slots :: ChainFragment Block -> [SlotNo]
-    slots = map blockSlot . CF.toOldestFirst
 
 prop_splitAfterPoint :: TestChainFragmentAndPoint -> Bool
 prop_splitAfterPoint (TestChainFragmentAndPoint c p) =
@@ -289,24 +249,13 @@ prop_splitAfterPoint (TestChainFragmentAndPoint c p) =
         && CF.headPoint l == Just p
         && CF.joinChainFragments l r == Just c
         && all (<= slot) (slots l)
-        && all (>  slot) (slots r)
+        && all (>= slot) (slots r)
       where
         -- If this were Origin, then p must be Origin, in which case
         -- CF.splitAfterPoint c p would be Nothing.
         At slot = pointSlot p
     Nothing ->
-         not (CF.pointOnChainFragment p c)
-  where
-    slots :: ChainFragment Block -> [SlotNo]
-    slots = map blockSlot . CF.toOldestFirst
-
-prop_splitBeforeSlot :: TestChainFragmentAndPoint -> Bool
-prop_splitBeforeSlot (TestChainFragmentAndPoint _ GenesisPoint)        = True
-prop_splitBeforeSlot (TestChainFragmentAndPoint c (BlockPoint slot _)) =
-    let (l, r) = CF.splitBeforeSlot c slot
-    in CF.joinChainFragments l r == Just c
-    && all (<  slot) (slots l)
-    && all (>= slot) (slots r)
+         not (CF.pointOnChainFragmentSpec p c)
   where
     slots :: ChainFragment Block -> [SlotNo]
     slots = map blockSlot . CF.toOldestFirst
@@ -319,7 +268,7 @@ prop_splitBeforePoint (TestChainFragmentAndPoint c p) =
        && not (CF.pointOnChainFragment p l)
        && CF.lastPoint r == Just p
        && CF.joinChainFragments l r == Just c
-       && all (<  slot) (slots l)
+       && all (<= slot) (slots l)
        && all (>= slot) (slots r)
      where
        -- If this were Origin, then p must be Origin, in which case
@@ -363,19 +312,14 @@ prop_filter p (TestBlockChainFragment chain) =
       cover 70 (length fragments > 1) "multiple fragments" $
       counterexample ("fragments: " ++ show fragments) $
 
-      -- The fragments contain exactly the blocks where p holds
-      (   Set.fromList (L.map CF.blockPoint (L.filter p (CF.toNewestFirst chain)))
+      -- The fragments contain exactly the blocks where p holds, in order
+      (   L.map CF.blockPoint (L.filter p (CF.toOldestFirst chain))
        ===
-          Set.fromList (L.map CF.blockPoint (concatMap CF.toNewestFirst fragments))
+          L.map CF.blockPoint (concatMap CF.toOldestFirst fragments)
       )
    .&&.
       -- The fragments are non-empty
       all (not . CF.null) fragments
-   .&&.
-      -- The fragments are in order
-      (let fragmentPoints = map (\c -> (CF.blockPoint <$> CF.last c,
-                                        CF.blockPoint <$> CF.head c)) fragments
-        in fragmentPoints == L.sort fragmentPoints)
    .&&.
       -- The fragments are of maximum size
       and [ isNothing (CF.joinChainFragments a b)
@@ -666,7 +610,7 @@ fixupPoint :: HasHeader block
            => ChainFragment block -> Point block -> Maybe (Point block)
 fixupPoint c GenesisPoint         = CF.headPoint c
 fixupPoint c (BlockPoint bslot _) =
-  case CF.lookupBySlot c bslot of
+  case L.find ((== bslot) . blockSlot) (CF.toOldestFirst c) of
     Just b  -> Just (CF.blockPoint b)
     Nothing -> CF.headPoint c
 
