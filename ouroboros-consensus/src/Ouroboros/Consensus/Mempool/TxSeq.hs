@@ -1,6 +1,7 @@
-{-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE PatternSynonyms       #-}
-{-# LANGUAGE ViewPatterns          #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE MultiParamTypeClasses      #-}
+{-# LANGUAGE PatternSynonyms            #-}
+{-# LANGUAGE ViewPatterns               #-}
 
 module Ouroboros.Consensus.Mempool.TxSeq (
     TicketNo(..)
@@ -27,7 +28,7 @@ import           Data.Word (Word64)
 -- as it enters the mempool.
 --
 newtype TicketNo = TicketNo Word64
-  deriving (Eq, Ord, Bounded, Show)
+  deriving (Eq, Ord, Enum, Bounded, Show)
 
 -- | The transaction ticket number from which our counter starts.
 zeroTicketNo :: TicketNo
