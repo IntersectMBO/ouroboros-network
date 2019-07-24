@@ -275,7 +275,7 @@ runChainSync securityParam maxClockSkew (ClientUpdates clientUpdates)
         atomically $ writeTVar varLastUpdate slot
 
     -- Connect client to server and run the chain sync protocol
-    onSlot btime startSyncingAt $ do
+    onLaterSlot btime startSyncingAt $ do
       -- When updates are planned at the same slot that we start syncing, we
       -- wait until these updates are done before we start syncing.
       when (isJust (Map.lookup startSyncingAt clientUpdates) ||
@@ -309,7 +309,7 @@ runChainSync securityParam maxClockSkew (ClientUpdates clientUpdates)
     -- STM variable to record the final synched candidate chain
     varCandidateChain <- atomically $ newTVar Nothing
 
-    onSlot btime (finalSlot numSlots) $ do
+    onLaterSlot btime (finalSlot numSlots) $ do
       -- Wait a random amount of time after the final slot for the chain sync
       -- to finish
       threadDelay 2000
