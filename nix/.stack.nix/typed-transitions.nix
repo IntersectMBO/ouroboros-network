@@ -5,7 +5,7 @@
       specVersion = "1.10";
       identifier = { name = "typed-transitions"; version = "0.1.0.0"; };
       license = "Apache-2.0";
-      copyright = "";
+      copyright = "2019 Input Output (Hong Kong) Ltd.";
       maintainer = "alex@well-typed.com";
       author = "Alexander Vieth";
       homepage = "";

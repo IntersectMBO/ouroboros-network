@@ -6,6 +6,7 @@ license:             Apache-2.0
 license-files:
   LICENSE
   NOTICE
+copyright:           2019 Input Output (Hong Kong) Ltd.
 author:              Alexander Vieth, Duncan Coutts, Marcin Szamotulski
 maintainer:          alex@well-typed.com, duncan@well-typed.com, marcin.szamotulski@iohk.io
 category:            Control
