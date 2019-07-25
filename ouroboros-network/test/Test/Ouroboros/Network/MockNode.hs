@@ -34,8 +34,6 @@ import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
 import qualified Control.Monad.IOSim as Sim
 
-import           Network.Mux.Time (microsecondsToDiffTime)
-
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.MockChain.Chain (Chain (..))
 import qualified Ouroboros.Network.MockChain.Chain as Chain
@@ -55,7 +53,6 @@ tests =
     ]
   , testProperty "arbtirary node graph" (withMaxSuccess 50 prop_networkGraph)
   , testProperty "blockGenerator invariant SimM" prop_blockGenerator_ST
-  , testProperty "blockGenerator invariant IO" prop_blockGenerator_IO
   ]
 
 
@@ -114,14 +111,6 @@ prop_blockGenerator_ST :: TestBlockChain -> Positive Micro -> Property
 prop_blockGenerator_ST (TestBlockChain chain) (Positive slotDuration) =
     Sim.runSimOrThrow $
       test_blockGenerator chain (realToFrac slotDuration)
-
-prop_blockGenerator_IO :: TestBlockChain -> Positive Int -> Property
-prop_blockGenerator_IO (TestBlockChain chain) (Positive slotDuration) =
-    ioProperty $
-      test_blockGenerator chain slotDuration'
-  where
-    slotDuration' :: DiffTime
-    slotDuration' = microsecondsToDiffTime (100 * fromIntegral slotDuration)
 
 coreToRelaySim :: ( MonadSTM m
                   , MonadFork m
