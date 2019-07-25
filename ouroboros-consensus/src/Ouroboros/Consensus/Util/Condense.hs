@@ -88,6 +88,10 @@ instance {-# OVERLAPPING #-} Condense [String] where
 instance {-# OVERLAPPABLE #-} Condense a => Condense [a] where
   condense = condense1
 
+instance Condense a => Condense (Maybe a) where
+  condense (Just a) = "Just " ++ condense a
+  condense Nothing  = "Nothing"
+
 instance Condense a => Condense (Set a) where
   condense = condense1
 
