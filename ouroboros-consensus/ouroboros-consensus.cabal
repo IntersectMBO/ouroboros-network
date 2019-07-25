@@ -361,3 +361,26 @@ test-suite test-storage
 
   ghc-options:      -Wall
                     -fno-ignore-asserts
+
+executable byron-db-converter
+   hs-source-dirs:     tools/db-convert
+   build-depends:      base
+                     , bytestring
+                     , cardano-binary
+                     , cardano-crypto-wrapper
+                     , cardano-ledger
+                     , containers
+                     , contra-tracer
+                     , mtl
+                     , optparse-applicative
+                     , optparse-generic
+                     , ouroboros-consensus
+                     , path
+                     , path-io
+                     , reflection
+                     , resourcet
+                     , streaming
+                     , text
+                     , time
+   default-language:   Haskell2010
+   main-is:            Main.hs
