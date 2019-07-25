@@ -1,3 +1,4 @@
+{-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NumericUnderscores  #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE RecordWildCards     #-}
@@ -99,7 +100,15 @@ newtype NumSlots = NumSlots Int
   deriving (Show)
 
 finalSlot :: NumSlots -> SlotNo
-finalSlot (NumSlots n) = SlotNo (fromIntegral n)
+finalSlot (NumSlots n) =
+  if n <= 0 then error "finalSlot"
+  else SlotNo (fromIntegral (n - 1))
+
+-- | The current time during a test run.
+data TestClock =
+    Initializing
+  | Running !SlotNo
+  deriving (Eq)
 
 -- | Construct new blockchain time that ticks at the specified slot duration
 --
@@ -109,6 +118,11 @@ finalSlot (NumSlots n) = SlotNo (fromIntegral n)
 --
 -- NOTE: The number of slots is only there to make sure we terminate the
 -- thread (otherwise the system will keep waiting).
+--
+-- NOTE: Any code not passed to 'onSlotChange' may run \"before\" the first
+-- slot @SlotNo 0@, i.e. during 'Initializing'. This is likely only appropriate
+-- for initialization code etc. In contrast, the argument to 'onSlotChange' is
+-- blocked at least until @SlotNo 0@ begins.
 testBlockchainTime
     :: forall m. (MonadAsync m, MonadTimer m, MonadMask m, MonadFork m)
     => ThreadRegistry m
@@ -116,16 +130,21 @@ testBlockchainTime
     -> DiffTime           -- ^ Slot duration
     -> m (BlockchainTime m)
 testBlockchainTime registry (NumSlots numSlots) slotLen = do
-    slotVar <- atomically $ newTVar firstSlot
+    slotVar <- atomically $ newTVar initVal
     void $ forkLinked registry $ replicateM_ numSlots $ do
+        atomically $ modifyTVar slotVar $ Running . \case
+            Initializing -> SlotNo 0
+            Running slot -> succ slot
         threadDelay slotLen
-        atomically $ modifyTVar slotVar succ
+    let get = readTVar slotVar >>= \case
+            Initializing -> retry
+            Running slot -> pure slot
     return BlockchainTime {
-        getCurrentSlot = readTVar slotVar
-      , onSlotChange   = onEachChange registry id firstSlot (readTVar slotVar)
+        getCurrentSlot = get
+      , onSlotChange   = onEachChange registry Running initVal get
       }
   where
-    firstSlot = SlotNo 0
+    initVal = Initializing
 
 {-------------------------------------------------------------------------------
   "Real" blockchain time
