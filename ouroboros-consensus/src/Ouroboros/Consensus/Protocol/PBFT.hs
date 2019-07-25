@@ -213,7 +213,7 @@ instance (PBftCrypto c, Typeable c) => OuroborosTag (PBft c) where
           let totalSigners = Seq.length signers
               gkSigners = Seq.length (Seq.filter (== gk) signers)
           when (totalSigners >= winSize && gkSigners > wt)
-            $ do throwError (PBftExceededSignThreshold totalSigners gkSigners)
+            $ throwError (PBftExceededSignThreshold totalSigners gkSigners)
           return $! takeR (winSize + 2*k) chainState Seq.|> (gk, blockSlot b)
     where
       PBftParams{..} = pbftParams
@@ -238,6 +238,12 @@ instance (PBftCrypto c, Typeable c) => OuroborosTag (PBft c) where
 data PBftValidationErr c
   = PBftInvalidSignature String
   | PBftNotGenesisDelegate (PBftVerKeyHash c) (PBftLedgerView c)
+  -- | The first number is the total number of signers observed.
+  -- The second is the number of genesis key signers.
+  -- This is given if both
+  -- - The former is greater than or equal to the PBFT signature window.
+  -- - The latter exceeds (strictly) the PBFT signature window multiplied by
+  --   the PBFT signature threshold (rounded down).
   | PBftExceededSignThreshold Int Int
   | PBftInvalidSlot
 
