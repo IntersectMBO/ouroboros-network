@@ -328,9 +328,9 @@ validateIS MempoolEnv{mpEnvLedger, mpEnvLedgerCfg, mpEnvStateVar} =
        -> ValidationResult blk
     go st IS{isTxs, isTip}
         | tip == isTip
-        = initVR mpEnvLedgerCfg isTxs (tip, st)
-        | otherwise
         = extendsVR mpEnvLedgerCfg True (Foldable.toList isTxs)
         $ initVR mpEnvLedgerCfg TxSeq.Empty (tip, st)
+        | otherwise
+        = initVR mpEnvLedgerCfg isTxs (tip, st)
       where
         tip = Block.pointHash $ ledgerTipPoint st
