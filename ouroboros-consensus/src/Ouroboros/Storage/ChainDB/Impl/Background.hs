@@ -143,7 +143,7 @@ copyToImmDB CDB{..} = withCopyLock $ do
               GenesisHash -> error "genesis block on current chain"
         -- This call is cheap
         slotNoAtImmDBTip <- ImmDB.getSlotNoAtTip cdbImmDB
-        assert (pointSlot pt > slotNoAtImmDBTip) $ return ()
+        assert (pointSlot pt >= slotNoAtImmDBTip) $ return ()
         blk <- VolDB.getKnownBlock cdbVolDB hash
         -- We're the only one modifying the ImmutableDB, so the tip cannot
         -- have changed since we last checked it.

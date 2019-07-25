@@ -201,15 +201,19 @@ instance (PBftCrypto c, Typeable c) => OuroborosTag (PBft c) where
                                 , maybe (SlotNo 0) snd $ Seq.lookup (Seq.length chainState) chainState
                                 )
 
-      unless (blockSlot b > lastSlot)
+      -- FIXME confirm that non-strict inequality is ok in general.
+      -- It's here because EBBs have the same slot as the first block of their
+      -- epoch.
+      unless (blockSlot b >= lastSlot)
         $ throwError PBftInvalidSlot
 
       case Bimap.lookupR (hashVerKey pbftIssuer) dms of
         Nothing -> throwError $ PBftNotGenesisDelegate (hashVerKey pbftIssuer) lv
         Just gk -> do
-          when (Seq.length signers >= winSize
-                && Seq.length (Seq.filter (== gk) signers) > wt)
-            $ do throwError PBftExceededSignThreshold
+          let totalSigners = Seq.length signers
+              gkSigners = Seq.length (Seq.filter (== gk) signers)
+          when (totalSigners >= winSize && gkSigners > wt)
+            $ throwError (PBftExceededSignThreshold totalSigners gkSigners)
           return $! takeR (winSize + 2*k) chainState Seq.|> (gk, blockSlot b)
     where
       PBftParams{..} = pbftParams
@@ -234,7 +238,13 @@ instance (PBftCrypto c, Typeable c) => OuroborosTag (PBft c) where
 data PBftValidationErr c
   = PBftInvalidSignature String
   | PBftNotGenesisDelegate (PBftVerKeyHash c) (PBftLedgerView c)
-  | PBftExceededSignThreshold
+  -- | The first number is the total number of signers observed.
+  -- The second is the number of genesis key signers.
+  -- This is given if both
+  -- - The former is greater than or equal to the PBFT signature window.
+  -- - The latter exceeds (strictly) the PBFT signature window multiplied by
+  --   the PBFT signature threshold (rounded down).
+  | PBftExceededSignThreshold Int Int
   | PBftInvalidSlot
 
 deriving instance (Show (PBftLedgerView c), PBftCrypto c) => Show (PBftValidationErr c)
