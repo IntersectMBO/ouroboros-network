@@ -66,6 +66,8 @@ import           Ouroboros.Consensus.Util.HList (HList (..))
 
 import           Ouroboros.Consensus.Ledger.Mock.Stake
 
+import           Ouroboros.Storage.Common (EpochNo (..))
+
 {-------------------------------------------------------------------------------
   Fields required by Praos in the header
 -------------------------------------------------------------------------------}
@@ -156,10 +158,6 @@ data PraosValidationError c =
     | PraosInsufficientStake Double Natural
 
 deriving instance PraosCrypto c => Show (PraosValidationError c)
-
--- TODO: This type definition belongs elsewhere.
-newtype EpochNo = EpochNo { unEpochNo :: Word64 }
-    deriving (Eq, Num, Ord, Serialise, ToCBOR)
 
 data BlockInfo c = BlockInfo
     { biSlot  :: SlotNo
