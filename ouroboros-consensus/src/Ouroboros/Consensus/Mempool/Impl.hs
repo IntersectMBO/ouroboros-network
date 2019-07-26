@@ -388,9 +388,9 @@ validateIS MempoolEnv{mpEnvLedger, mpEnvLedgerCfg, mpEnvStateVar} =
        -> ValidationResult blk
     go st IS{isTxs, isTip, isLastTicketNo}
         | tip == isTip
+        = initVR mpEnvLedgerCfg isTxs (tip, st) isLastTicketNo
+        | otherwise
         = repeatedly (extendVRPrevApplied mpEnvLedgerCfg) (fromTxSeq isTxs)
         $ initVR mpEnvLedgerCfg TxSeq.Empty (tip, st) isLastTicketNo
-        | otherwise
-        = initVR mpEnvLedgerCfg isTxs (tip, st) isLastTicketNo
       where
         tip = Block.pointHash $ ledgerTipPoint st
