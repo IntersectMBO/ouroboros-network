@@ -55,7 +55,6 @@ import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.BFT
 import           Ouroboros.Consensus.Util (whenJust)
 import           Ouroboros.Consensus.Util.Condense
-import           Ouroboros.Consensus.Util.STM
 import           Ouroboros.Consensus.Util.ThreadRegistry
 
 import           Test.Util.Orphans.Arbitrary ()
@@ -217,7 +216,8 @@ runChainSync :: forall m.
 runChainSync securityParam maxClockSkew (ClientUpdates clientUpdates)
     (ServerUpdates serverUpdates) startSyncingAt = withThreadRegistry $ \registry -> do
 
-    btime <- testBlockchainTime registry numSlots slotDuration
+    testBtime <- newTestBlockchainTime registry numSlots slotDuration
+    let btime = testBlockchainTime testBtime
 
     -- Set up the client
     varCandidates      <- newTVarM Map.empty
@@ -306,22 +306,17 @@ runChainSync securityParam maxClockSkew (ClientUpdates clientUpdates)
         runPeer nullTracer codecChainSyncId clientId serverChannel
                 (chainSyncServerPeer server)
 
-    -- STM variable to record the final synched candidate chain
-    varCandidateChain <- atomically $ newTVar Nothing
-
-    onLaterSlot btime (finalSlot numSlots) $ do
-      -- Wait a random amount of time after the final slot for the chain sync
-      -- to finish
-      threadDelay 2000
-      atomically $ do
-        candidate <- readTVar varFinalCandidates >>= readTVar . (Map.! serverId)
-        writeTVar varCandidateChain $ Just (candidateChain candidate)
+    testBlockchainTimeDone testBtime
+    -- Wait a random amount of time after the final slot for the chain sync
+    -- to finish
+    threadDelay 2000
 
     -- Collect the return values
     atomically $ do
       clientChain       <- fst <$> readTVar varClientState
       serverChain       <- chainState <$> readTVar varChainProducerState
-      candidateFragment <- blockUntilJust $ readTVar varCandidateChain
+      candidateFragment <- fmap candidateChain $
+          readTVar varFinalCandidates >>= readTVar . (Map.! serverId)
       clientException   <- readTVar varClientException
       return (
           clientChain
