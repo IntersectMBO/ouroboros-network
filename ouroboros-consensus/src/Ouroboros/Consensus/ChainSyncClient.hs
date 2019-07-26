@@ -391,13 +391,7 @@ chainSyncClient tracer cfg btime (ClockSkew maxSkew)
           -- TODO: Chain sync Client: Reuse anachronistic ledger view? #581
           case anachronisticProtocolLedgerView cfg curLedger (pointSlot hdrPoint) of
             Nothing   -> retry
-            Just view -> case view `SB.at` hdrSlot of
-                Nothing -> error "anachronisticProtocolLedgerView invariant violated"
-                Just lv -> return lv
-              where
-                hdrSlot = case pointSlot hdrPoint of
-                  Origin      -> SlotNo 0
-                  At thisSlot -> thisSlot
+            Just view -> return (SB.sbContent view)
 
       -- Check for clock skew
       wallclock <- getCurrentSlot btime
