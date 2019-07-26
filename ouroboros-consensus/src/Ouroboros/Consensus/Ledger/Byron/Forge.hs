@@ -67,7 +67,7 @@ forgeGenesisEBB (WithEBBNodeConfig cfg) curSlot = do
     return
       . ByronBlockOrEBB
       . CC.Block.ABOBBoundary
-      . annotateBoundaryBlock given
+      . annotateBoundary given
       $ boundaryBlock
   where
     boundaryBlock :: CC.Block.ABoundaryBlock ()
