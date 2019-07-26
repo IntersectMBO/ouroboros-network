@@ -199,16 +199,16 @@ broadcastNetwork :: forall m c ext.
                     , Typeable ext
                     )
                  => ThreadRegistry m
-                 -> BlockchainTime m
+                 -> TestBlockchainTime m
                  -> NumCoreNodes
                  -> (CoreNodeId -> ProtocolInfo (SimpleBlock c ext))
                  -> ChaChaDRG
-                 -> NumSlots
                  -> DiffTime
                  -> m (Map NodeId ( NodeConfig (BlockProtocol (SimpleBlock c ext))
                                   , Chain (SimpleBlock c ext)
                                   ))
-broadcastNetwork registry btime numCoreNodes pInfo initRNG numSlots slotLen = do
+broadcastNetwork registry testBtime numCoreNodes pInfo initRNG slotLen = do
+    let btime = testBlockchainTime testBtime
 
     -- all known addresses
     let addrs :: [Addr]
@@ -288,19 +288,14 @@ broadcastNetwork registry btime numCoreNodes pInfo initRNG numSlots slotLen = do
 
       return (coreNodeId, node)
 
-    -- STM variable to record the final chains of the nodes
-    varRes <- atomically $ newTVar Nothing
+    -- Wait a random amount of time after the final slot for the block fetch
+    -- and chain sync to finish
+    testBlockchainTimeDone testBtime
+    threadDelay 2000
 
-    onSlot btime (finalSlot numSlots) $ do
-      -- Wait a random amount of time after the final slot for the block fetch
-      -- and chain sync to finish
-      threadDelay 2000
-      res <- fmap Map.fromList $ forM nodes $ \(cid, node) ->
+    fmap Map.fromList $ forM nodes $ \(cid, node) ->
         (\ch -> (fromCoreNodeId cid, (pInfoConfig (pInfo cid), ch))) <$>
         ChainDB.toChain (getChainDB node)
-      atomically $ writeTVar varRes (Just res)
-
-    atomically $ blockUntilJust (readTVar varRes)
   where
     nodeIds :: [NodeId]
     nodeIds = map fromCoreNodeId coreNodeIds

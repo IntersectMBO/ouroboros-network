@@ -11,8 +11,8 @@ module Ouroboros.Consensus.BlockchainTime (
   , onSlot
     -- * Use in testing
   , NumSlots(..)
-  , finalSlot
-  , testBlockchainTime
+  , TestBlockchainTime(..)
+  , newTestBlockchainTime
     -- * Real blockchain time
   , realBlockchainTime
     -- * Time to slots and back again
@@ -99,16 +99,18 @@ instance Exception OnSlotException
 newtype NumSlots = NumSlots Int
   deriving (Show)
 
-finalSlot :: NumSlots -> SlotNo
-finalSlot (NumSlots n) =
-  if n <= 0 then error "finalSlot"
-  else SlotNo (fromIntegral (n - 1))
-
 -- | The current time during a test run.
 data TestClock =
     Initializing
+    -- ^ This phase has a non-zero but negligible duration.
   | Running !SlotNo
   deriving (Eq)
+
+data TestBlockchainTime m = TestBlockchainTime
+  { testBlockchainTime :: BlockchainTime m
+  , testBlockchainTimeDone :: m ()
+    -- ^ Blocks until the end of the final requested slot.
+  }
 
 -- | Construct new blockchain time that ticks at the specified slot duration
 --
@@ -119,29 +121,43 @@ data TestClock =
 -- NOTE: The number of slots is only there to make sure we terminate the
 -- thread (otherwise the system will keep waiting).
 --
--- NOTE: Any code not passed to 'onSlotChange' may run \"before\" the first
--- slot @SlotNo 0@, i.e. during 'Initializing'. This is likely only appropriate
--- for initialization code etc. In contrast, the argument to 'onSlotChange' is
--- blocked at least until @SlotNo 0@ begins.
-testBlockchainTime
+-- NOTE: Any code not passed to 'onSlotChange' may start running \"before\" the
+-- first slot @SlotNo 0@, i.e. during 'Initializing'. This is likely only
+-- appropriate for initialization code etc. In contrast, the argument to
+-- 'onSlotChange' is blocked at least until @SlotNo 0@ begins.
+newTestBlockchainTime
     :: forall m. (MonadAsync m, MonadTimer m, MonadMask m, MonadFork m)
     => ThreadRegistry m
     -> NumSlots           -- ^ Number of slots
     -> DiffTime           -- ^ Slot duration
-    -> m (BlockchainTime m)
-testBlockchainTime registry (NumSlots numSlots) slotLen = do
+    -> m (TestBlockchainTime m)
+newTestBlockchainTime registry (NumSlots numSlots) slotLen = do
     slotVar <- atomically $ newTVar initVal
-    void $ forkLinked registry $ replicateM_ numSlots $ do
-        atomically $ modifyTVar slotVar $ Running . \case
-            Initializing -> SlotNo 0
-            Running slot -> succ slot
-        threadDelay slotLen
-    let get = readTVar slotVar >>= \case
-            Initializing -> retry
-            Running slot -> pure slot
-    return BlockchainTime {
-        getCurrentSlot = get
-      , onSlotChange   = onEachChange registry Running initVal get
+    doneVar <- atomically $ newEmptyTMVar
+
+    void $ forkLinked registry $ do
+        -- count off each requested slot
+        replicateM_ numSlots $ do
+            atomically $ modifyTVar slotVar $ Running . \case
+                Initializing -> SlotNo 0
+                Running slot -> succ slot
+            threadDelay slotLen
+        -- signal the end of the final slot
+        atomically $ putTMVar doneVar ()
+
+    let get = blockUntilJust $
+                (\case
+                    Initializing -> Nothing
+                    Running slot -> Just slot)
+            <$> readTVar slotVar
+        btime = BlockchainTime {
+            getCurrentSlot = get
+          , onSlotChange   = onEachChange registry Running initVal get
+          }
+
+    return $ TestBlockchainTime
+      { testBlockchainTime = btime
+      , testBlockchainTimeDone = atomically (readTMVar doneVar)
       }
   where
     initVal = Initializing
