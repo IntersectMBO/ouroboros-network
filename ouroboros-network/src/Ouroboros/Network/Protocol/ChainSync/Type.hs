@@ -95,13 +95,12 @@ instance Protocol (ChainSync header point) where
                      -> Message (ChainSync header point)
                                 StIdle StIntersect
 
-    -- | The reply to the consumer about an intersection found, but /only/ if this
-    -- is an improvement over previously established intersection point. The
-    -- consumer can decide weather to send more points.
+    -- | The reply to the consumer about an intersection found.
+    -- The consumer can decide weather to send more points.
     --
     -- The message also tells the consumer about the head point of the producer.
     --
-    MsgIntersectImproved  :: point -> point
+    MsgIntersectFound  :: point -> point
                           -> Message (ChainSync header point)
                                      StIntersect StIdle
 
@@ -151,7 +150,7 @@ instance (Show header, Show point) => Show (Message (ChainSync header point) fro
   show (MsgRollForward h tip)       = "MsgRollForward " ++ show h ++ " " ++ show tip
   show (MsgRollBackward p tip)      = "MsgRollBackward " ++ show p ++ " " ++ show tip
   show (MsgFindIntersect ps)        = "MsgFindIntersect " ++ show ps
-  show (MsgIntersectImproved p tip) = "MsgIntersectImproved " ++ show p ++ " " ++ show tip
+  show (MsgIntersectFound p tip)    = "MsgIntersectFound " ++ show p ++ " " ++ show tip
   show (MsgIntersectUnchanged p)    = "MsgIntersectUnchanged " ++ show p
   show MsgDone{}                    = "MsgDone"
 

@@ -27,7 +27,7 @@ local chainsync_msg_codes = {
 	[2] = "MsgRollForward",
 	[3] = "MsgRollBackward",
 	[4] = "MsgFindIntersect",
-	[5] = "MsgIntersectImproved",
+	[5] = "MsgIntersectFound",
 	[6] = "MsgIntersectUnchanged",
 	[7] = "MsgDone"
 }
