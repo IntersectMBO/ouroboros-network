@@ -363,12 +363,12 @@ streamAPI immDB = StreamAPI streamAfter
         then k Nothing
         else bracket
           (ImmDB.streamBlocksAfter immDB (tipToPoint tip))
-          ImmDB.iteratorClose
+          (ImmDB.iteratorClose immDB)
           (k . Just . getNext)
 
     getNext :: ImmDB.Iterator (HeaderHash blk) m blk
             -> m (NextBlock (Point blk) blk)
-    getNext itr = ImmDB.iteratorNext itr <&> \case
+    getNext itr = ImmDB.iteratorNext immDB itr <&> \case
       ImmDB.IteratorExhausted    -> NoMoreBlocks
       ImmDB.IteratorResult _ blk -> NextBlock (Block.blockPoint blk, blk)
       ImmDB.IteratorEBB  _ _ blk -> NextBlock (Block.blockPoint blk, blk)

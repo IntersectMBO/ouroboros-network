@@ -453,17 +453,13 @@ instance Eq (Reader m blk a) where
 
 -- | Database failure
 --
--- This exception wraps any kind of unexpected problem with the on-disk storage
--- of the chain. It is primarily for monitoring purposes:
+-- This exception wraps any kind of unexpected problem with the on-disk
+-- storage of the chain.
 --
--- * It should never be thrown outside the scope of the Chain DB; it is the
---   responsibility of the Chain DB itself to catch these exceptions and
---   trigger data recovery. The exception type is part of the public API because
---   these exceptions will be logged.
--- * The various constructors only serve to give more detailed information about
---   what went wrong, in case sysadmins want to investigate the disk failure.
---   The Chain DB itself does not differentiate; all disk failures are treated
---   equal and all trigger the same recovery procedure.
+-- The various constructors only serve to give more detailed information about
+-- what went wrong, in case sysadmins want to investigate the disk failure.
+-- The Chain DB itself does not differentiate; all disk failures are treated
+-- equal and all trigger the same recovery procedure.
 data ChainDbFailure blk =
     -- | A block in the immutable DB failed to parse
     ImmDbParseFailure (Either EpochNo SlotNo) CBOR.DeserialiseFailure
@@ -534,7 +530,7 @@ instance (StandardHash blk, Typeable blk) => Exception (ChainDbFailure blk)
   Exceptions
 -------------------------------------------------------------------------------}
 
--- | Database error.
+-- | Database error
 --
 -- Thrown upon incorrect use: invalid input.
 data ChainDbError blk =

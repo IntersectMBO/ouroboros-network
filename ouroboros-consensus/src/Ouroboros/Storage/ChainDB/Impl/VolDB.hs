@@ -89,6 +89,8 @@ data VolDB m blk = VolDB {
       volDB    :: VolatileDB (HeaderHash blk) m
     , decBlock :: forall s. Decoder s blk
     , encBlock :: blk -> Encoding
+    , err      :: ErrorHandling (VolatileDBError (HeaderHash blk)) m
+    , errSTM   :: ThrowCantCatch (VolatileDBError (HeaderHash blk)) (STM m)
     }
 
 {-------------------------------------------------------------------------------
@@ -134,6 +136,8 @@ openDB args@VolDbArgs{..} = do
                volBlocksPerFile
     return VolDB
       { volDB    = volDB
+      , err      = volErr
+      , errSTM   = volErrSTM
       , decBlock = volDecodeBlock
       , encBlock = volEncodeBlock
       }
@@ -435,20 +439,20 @@ blockFileParser VolDbArgs{..} =
 
 -- | Wrap calls to the VolatileDB and rethrow exceptions that may indicate
 -- disk failure and should therefore trigger recovery
-withDB :: forall m blk x. (MonadCatch m, StandardHash blk, Typeable blk)
+withDB :: forall m blk x. (MonadThrow m, StandardHash blk, Typeable blk)
        => VolDB m blk
        -> (VolatileDB (HeaderHash blk) m -> m x)
        -> m x
-withDB VolDB{..} k = catch (k volDB) rethrow
+withDB VolDB{..} k = EH.catchError err (k volDB) rethrow
   where
     rethrow :: VolatileDBError (HeaderHash blk) -> m x
-    rethrow err = case wrap err of
-                    Just err' -> throwM err'
-                    Nothing   -> throwM err
+    rethrow e = case wrap e of
+                  Just e' -> throwM e'
+                  Nothing -> throwM e
 
     wrap :: VolatileDBError (HeaderHash blk) -> Maybe (ChainDbFailure blk)
-    wrap (VolDB.UnexpectedError err) = Just (VolDbFailure err)
-    wrap VolDB.UserError{}           = Nothing
+    wrap (VolDB.UnexpectedError e) = Just (VolDbFailure e)
+    wrap VolDB.UserError{}         = Nothing
 
 -- | STM actions, by definition, cannot access the disk and therefore we don't
 -- have to worry about catching exceptions here: any exceptions that may be

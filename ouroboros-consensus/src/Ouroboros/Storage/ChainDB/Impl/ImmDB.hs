@@ -31,8 +31,12 @@ module Ouroboros.Storage.ChainDB.Impl.ImmDB (
     -- * Wrappers
   , closeDB
   , reopen
+  , iteratorNext
+  , iteratorHasNext
+  , iteratorPeek
+  , iteratorClose
     -- * Re-exports
-  , Iterator(..)
+  , Iterator
   , IteratorResult(..)
   , ImmDB.ValidationPolicy(..)
   , ImmDB.ImmutableDBError
@@ -72,8 +76,8 @@ import           Ouroboros.Storage.EpochInfo (EpochInfo (..), newEpochInfo)
 import           Ouroboros.Storage.FS.API (HasFS, createDirectoryIfMissing)
 import           Ouroboros.Storage.FS.API.Types (MountPoint (..))
 import           Ouroboros.Storage.FS.IO (ioHasFS)
-import           Ouroboros.Storage.ImmutableDB (ImmutableDB, Iterator (..),
-                     IteratorResult (..))
+import           Ouroboros.Storage.ImmutableDB (ImmutableDB,
+                     Iterator (Iterator), IteratorResult (..))
 import qualified Ouroboros.Storage.ImmutableDB as ImmDB
 import           Ouroboros.Storage.Util.ErrorHandling (ErrorHandling)
 import qualified Ouroboros.Storage.Util.ErrorHandling as EH
@@ -85,6 +89,7 @@ data ImmDB m blk = ImmDB {
     , encBlock     :: blk -> Encoding
     , immEpochInfo :: EpochInfo m
     , isEBB        :: blk -> Maybe (HeaderHash blk)
+    , err          :: ErrorHandling ImmDB.ImmutableDBError m
     }
 
 {-------------------------------------------------------------------------------
@@ -150,6 +155,7 @@ openDB args@ImmDbArgs{..} = do
       , encBlock     = immEncodeBlock
       , immEpochInfo = immEpochInfo
       , isEBB        = immIsEBB
+      , err          = immErr
       }
 
 -- | For testing purposes
@@ -302,22 +308,22 @@ streamBlocksFrom db from = withDB db $ \imm -> runExceptT $ case from of
     StreamFromExclusive pt@BlockPoint { atSlot = slot, withHash = hash } -> do
       checkFutureSlot pt
       it    <- stream imm (Just (slot, hash)) Nothing
-      itRes <- lift $ iteratorNext it
+      itRes <- lift $ iteratorNext db it
       if blockMatchesPoint itRes pt
         then return it
         else do
-          lift $ iteratorClose it
+          lift $ iteratorClose db it
           throwError $ MissingBlock pt
     StreamFromExclusive    GenesisPoint ->
       stream imm Nothing Nothing
     StreamFromInclusive pt@BlockPoint { atSlot = slot, withHash = hash } -> do
       checkFutureSlot pt
       it    <- stream imm (Just (slot, hash)) Nothing
-      itRes <- lift $ iteratorPeek it
+      itRes <- lift $ iteratorPeek db it
       if blockMatchesPoint itRes pt
         then return it
         else do
-          lift $ iteratorClose it
+          lift $ iteratorClose db it
           throwError $ MissingBlock pt
     StreamFromInclusive    GenesisPoint ->
       throwM $ NoGenesisBlock @blk
@@ -367,7 +373,7 @@ streamBlocksFromUnchecked  :: forall m blk.
 streamBlocksFromUnchecked db from = withDB db $ \imm -> case from of
     StreamFromExclusive BlockPoint { atSlot = slot, withHash = hash } -> do
       it    <- ImmDB.streamBinaryBlobs imm (Just (slot, hash)) Nothing
-      void $ iteratorNext it
+      void $ iteratorNext db it
       return $ parseIterator db it
     StreamFromExclusive    GenesisPoint ->
       stream imm Nothing Nothing
@@ -424,7 +430,7 @@ streamBlobsAfter db low = withDB db $ \imm -> do
         case low' of
           Nothing           -> return ()
           Just (slot, hash) -> do
-            skipped <- parseIteratorResult db =<< iteratorNext itr
+            skipped <- parseIteratorResult db =<< iteratorNext db itr
             case skipped of
               IteratorResult slot' blk ->
                   unless (hash == hash' && slot == slot') $
@@ -441,16 +447,16 @@ streamBlobsAfter db low = withDB db $ \imm -> do
                   throwM $ ImmDbUnexpectedIteratorExhausted low
 
 -- | Parse the bytestrings returned by an iterator as blocks.
-parseIterator :: (MonadThrow m, HasHeader blk)
+parseIterator :: (MonadCatch m, HasHeader blk)
               => ImmDB m blk
               -> Iterator (HeaderHash blk) m Lazy.ByteString
               -> Iterator (HeaderHash blk) m blk
 parseIterator db itr = Iterator {
-      iteratorNext    = parseIteratorResult db =<< iteratorNext itr
-    , iteratorPeek    = parseIteratorResult db =<< iteratorPeek itr
-    , iteratorHasNext = iteratorHasNext itr
-    , iteratorClose   = iteratorClose   itr
-    , iteratorID      = ImmDB.DerivedIteratorID $ iteratorID itr
+      iteratorNext    = parseIteratorResult db =<< iteratorNext db itr
+    , iteratorPeek    = parseIteratorResult db =<< iteratorPeek db itr
+    , iteratorHasNext = iteratorHasNext db itr
+    , iteratorClose   = iteratorClose   db itr
+    , iteratorID      = ImmDB.DerivedIteratorID $ ImmDB.iteratorID itr
     }
 
 parseIteratorResult :: (MonadThrow m, HasHeader blk)
@@ -544,16 +550,16 @@ processEpochs _ = \(bs, mErr) ->
 -- disk failure and should therefore trigger recovery
 withDB :: forall m blk x. (MonadCatch m, HasHeader blk)
        => ImmDB m blk -> (ImmutableDB (HeaderHash blk) m -> m x) -> m x
-withDB ImmDB{..} k = catch (k immDB) rethrow
+withDB ImmDB{..} k = EH.catchError err (k immDB) rethrow
   where
     rethrow :: ImmDB.ImmutableDBError -> m x
-    rethrow err = case wrap err of
-                    Just err' -> throwM err'
-                    Nothing   -> throwM err
+    rethrow e = case wrap e of
+                    Just e' -> throwM e'
+                    Nothing -> throwM e
 
     wrap :: ImmDB.ImmutableDBError -> Maybe (ChainDbFailure blk)
-    wrap (ImmDB.UnexpectedError err) = Just (ImmDbFailure err)
-    wrap ImmDB.UserError{}           = Nothing
+    wrap (ImmDB.UnexpectedError e) = Just (ImmDbFailure e)
+    wrap ImmDB.UserError{}         = Nothing
 
 mustExist :: Either EpochNo SlotNo
           -> Maybe blk
@@ -588,3 +594,29 @@ reopen :: (MonadCatch m, HasHeader blk, HasCallStack)
        => ImmDB m blk -> m ()
 reopen db = withDB db $ \imm ->
     ImmDB.reopen imm ImmDB.ValidateMostRecentEpoch
+
+-- These wrappers ensure that we correctly rethrow exceptions using 'withDB'.
+
+iteratorNext :: (HasCallStack, MonadCatch m, HasHeader blk)
+             => ImmDB m blk
+             -> ImmDB.Iterator (HeaderHash blk) m a
+             -> m (ImmDB.IteratorResult (HeaderHash blk) a)
+iteratorNext db it = withDB db $ const $ ImmDB.iteratorNext it
+
+iteratorHasNext :: (HasCallStack, MonadCatch m, HasHeader blk)
+                => ImmDB m blk
+                -> ImmDB.Iterator (HeaderHash blk) m a
+                -> m Bool
+iteratorHasNext db it = withDB db $ const $ ImmDB.iteratorHasNext it
+
+iteratorPeek :: (HasCallStack, MonadCatch m, HasHeader blk)
+             => ImmDB m blk
+             -> ImmDB.Iterator (HeaderHash blk) m a
+             -> m (ImmDB.IteratorResult (HeaderHash blk) a)
+iteratorPeek db it = withDB db $ const $ ImmDB.iteratorPeek it
+
+iteratorClose :: (HasCallStack, MonadCatch m, HasHeader blk)
+              => ImmDB m blk
+              -> ImmDB.Iterator (HeaderHash blk) m a
+              -> m ()
+iteratorClose db it = withDB db $ const $ ImmDB.iteratorClose it

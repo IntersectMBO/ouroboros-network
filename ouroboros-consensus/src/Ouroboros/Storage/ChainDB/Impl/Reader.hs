@@ -194,7 +194,7 @@ makeNewBlockOrHeaderReader h readerId = Reader {..}
 
 close
   :: forall m blk.
-     ( MonadSTM m )
+     (MonadSTM m, MonadCatch m, HasHeader blk)
   => ReaderId
   -> ChainDbEnv m blk
   -> m ()
@@ -206,7 +206,7 @@ close readerId CDB{..} = do
       traverse readTVar mbReader
     -- If the ReaderId is not present in the map, the Reader must have been
     -- closed already.
-    mapM_ closeReaderState mbReaderState
+    mapM_ (closeReaderState cdbImmDB) mbReaderState
   where
     -- | Delete the entry corresponding to the given key from the map. If it
     -- existed, return it, otherwise, return 'Nothing'. The updated map is of
@@ -216,12 +216,13 @@ close readerId CDB{..} = do
 
 -- | Close the given 'ReaderState' by closing any 'ImmDB.Iterator' it might
 -- contain.
-closeReaderState :: Monad m => ReaderState m blk -> m ()
-closeReaderState = \case
+closeReaderState :: (MonadCatch m, HasHeader blk)
+                 => ImmDB.ImmDB m blk -> ReaderState m blk -> m ()
+closeReaderState immDB = \case
      ReaderInMem _         -> return ()
      -- IMPORTANT: the main reason we're closing readers: to close this open
      -- iterator, which contains a reference to a file handle.
-     ReaderInImmDB _ immIt -> ImmDB.iteratorClose immIt
+     ReaderInImmDB _ immIt -> ImmDB.iteratorClose immDB immIt
 
 
 type BlockOrHeader blk = Either (Header blk) blk
@@ -316,7 +317,7 @@ instructionHelper fromMaybeSTM fromPure CDB{..} varReader = do
     trace = traceWith (contramap TraceReaderEvent cdbTracer)
 
     nextBlock :: ImmDB.Iterator (HeaderHash blk) m blk -> m (Maybe blk)
-    nextBlock immIt = ImmDB.iteratorNext immIt <&> \case
+    nextBlock immIt = ImmDB.iteratorNext cdbImmDB immIt <&> \case
       ImmDB.IteratorResult _ blk -> Just blk
       ImmDB.IteratorEBB  _ _ blk -> Just blk
       ImmDB.IteratorExhausted    -> Nothing
@@ -479,7 +480,7 @@ switchFork ipoint newChain readerState =
 
 -- | Close all open 'Reader's.
 closeAllReaders
-  :: MonadSTM m
+  :: (MonadSTM m, MonadCatch m, HasHeader blk)
   => ChainDbEnv m blk
   -> m ()
 closeAllReaders CDB{..} = do
@@ -487,4 +488,4 @@ closeAllReaders CDB{..} = do
       readerStates <- readTVar cdbReaders >>= traverse readTVar . Map.elems
       writeTVar cdbReaders Map.empty
       return readerStates
-    mapM_ closeReaderState readerStates
+    mapM_ (closeReaderState cdbImmDB) readerStates
