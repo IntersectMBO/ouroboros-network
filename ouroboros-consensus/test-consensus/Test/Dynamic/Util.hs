@@ -241,6 +241,60 @@ incCrowdedRun :: SlotNo -> CrowdedRun -> CrowdedRun
 incCrowdedRun slot (CrowdedRun Nothing)          = CrowdedRun (Just (slot, 1))
 incCrowdedRun _    (CrowdedRun (Just (slot, n))) = CrowdedRun (Just (slot, n + 1))
 
+-- | The longest 'CrowdedRun' of a 'LeaderSchedule'. The tiebreaker favors
+-- earlier runs. The \"length\" of a run is the number of slots in it that have
+-- more than one leader. The run may also have slots with no leader in it, but
+-- these don't make it longer. A run has no slots with exactly one leader.
+--
+-- Such a run can drive a network away from consensus. If its long enough, it
+-- might even prevent consensus thereafter. The length of the run is defined as
+-- a number of slots, but it is also interpreted as an upper bound on the
+-- number of blocks that can differ among the competing chains' suffixes at the
+-- end of the run. Thus, if the length of a run exceeds the security parameter
+-- @k@, then that part of the leader schedule itself may be enough to prevent
+-- the network from ever re-establishing consensus. The method of failure is as
+-- follows.
+--
+-- * Assume the network is in consensus as of slot @s - 1@: all nodes have the
+-- same current chain. Call that chain C.
+--
+-- * Let the slot @s@ have @N > 1@ leaders. Each leader forges a block that
+-- fits onto C. It's most likely that each leader will add the block that it
+-- forged to its own chain; a race condition between ChainSync/BlockFetch and
+-- forging makes it possible, though less likely, that a leader would have
+-- received another leader's new block before it forges its own. The @N@
+-- leaders have thereby created (from 1 to) @N@ competing current chains D1 ..
+-- DN amongst the network; each non-leader will adopt one of these new chains
+-- because they're all longer than C. Thus the network is likely no longer in
+-- consensus.
+--
+-- * If the slot @s + 1@ has exactly one leader, then the leader will forge a
+-- block onto whichever of the @N@ chains it happens to have adopted. All
+-- non-leaders will switch to this new chain E, because it is longer than each
+-- of D1 .. DN. The network has reestablished consensus.
+--
+-- * If the slot @s + 1@ instead has @M > 1@ leaders, then the pattern from
+-- slot @s@ will repeat, and the competing chains will grow by one block. Now
+-- instead of the competing chains disagreeing on only the last block, they
+-- could disagree on the last two blocks. (If all the @M@ leaders happened to
+-- have adopted the same one of the @N@ chains from slot @s@, then all new
+-- chains in slot @s + 1@ would again disagree on only the last block. But that
+-- is the least common possibility.)
+--
+-- * If the slot @s + 1@ instead has no leader, then all nodes will retain
+-- their chains. The network is still not in consensus.
+--
+-- Consider a run beginning with a slot @s@ that has multiple leaders, and the
+-- subsequent slots include @q@ many slots with multiple leaders before the
+-- next slot @s + i@ that has exactly one leader. If @q > k@, then the security
+-- parameter @k@ might prevent the network from being able to reach consensus
+-- at slot @s + i@ and beyond. Note that @i >= q@, because some of the
+-- intervening slots may have no leader; leaderless slots increase the
+-- \"duration\" (number of slots) of the run but not its \"length\" (number of
+-- potentially-disagreed-upon blocks).
+--
+-- To be careful, this function assumes that any multi-leader slot will indeed
+-- create multiple competing chains in the network as described above.
 longestCrowdedRun :: LeaderSchedule -> CrowdedRun
 longestCrowdedRun (LeaderSchedule m) = fst
                                      $ foldl' go (noRun, noRun)
