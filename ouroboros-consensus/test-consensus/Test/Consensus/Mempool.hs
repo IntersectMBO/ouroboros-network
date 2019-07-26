@@ -1,6 +1,7 @@
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE PatternSynonyms     #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
@@ -27,6 +28,10 @@ import           Control.Monad.Class.MonadThrow (MonadMask)
 import           Control.Monad.IOSim (runSimOrThrow)
 
 import           Control.Tracer (Tracer (..))
+
+import           Ouroboros.Network.Block (pattern BlockPoint, SlotNo (..),
+                     atSlot, pointSlot, withHash)
+import           Ouroboros.Network.Point (WithOrigin (..))
 
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Mempool
@@ -299,8 +304,17 @@ genInvalidTx invalidTxIds TestLedger { tlTxIds } = frequency
 applyTxToLedger :: LedgerState TestBlock
                 -> TestTx
                 -> Except TestTxError (LedgerState TestBlock)
-applyTxToLedger ledgerState tx =
-  applyTx LedgerConfig (TestGenTx tx) ledgerState
+applyTxToLedger = \ledgerState tx ->
+    -- We need to change the 'ledgerTipPoint' because that is used to check
+    -- whether the ledger state has changed.
+    updateLedgerTipPoint <$> applyTx LedgerConfig (TestGenTx tx) ledgerState
+  where
+    updateLedgerTipPoint ledgerState = ledgerState
+        { tlLastApplied = BlockPoint { withHash = unSlotNo slot', atSlot = slot' } }
+      where
+        slot' = case pointSlot (ledgerTipPoint ledgerState) of
+          Origin  -> SlotNo 0
+          At slot -> succ slot
 
 {-------------------------------------------------------------------------------
   TestSetupWithTxs

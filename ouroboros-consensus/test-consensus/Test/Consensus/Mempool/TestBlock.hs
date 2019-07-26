@@ -26,7 +26,9 @@ module Test.Consensus.Mempool.TestBlock
   , singleNodeTestConfig
   ) where
 
+import           Control.Monad.Except (runExcept)
 import           Data.FingerTree (Measured (..))
+import           Data.Word (Word64)
 import           GHC.Stack (HasCallStack)
 
 import           Ouroboros.Network.Block (pattern GenesisPoint, HasHeader (..),
@@ -63,7 +65,7 @@ instance GetHeader TestBlock where
     deriving (Eq, Show)
   getHeader = notNeeded
 
-type instance HeaderHash TestBlock = ()
+type instance HeaderHash TestBlock = Word64
 
 instance HasHeader TestBlock where
   blockHash      = notNeeded
@@ -152,4 +154,6 @@ instance ApplyTx TestBlock where
 
   reapplyTx = applyTx
 
-  reapplyTxSameState _ _ st = st
+  reapplyTxSameState cfg tx ledger = mustBeRight $ applyTx cfg tx ledger
+    where
+      mustBeRight = either (error "cannot fail") id . runExcept
