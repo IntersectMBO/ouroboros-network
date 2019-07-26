@@ -20,6 +20,7 @@ import           Data.Reflection (give)
 import qualified Cardano.Chain.Block as Cardano.Block
 import qualified Cardano.Chain.Genesis as Cardano.Genesis
 import qualified Cardano.Crypto as Cardano
+import qualified Cardano.Chain.Update as Cardano.Update
 
 import           Ouroboros.Consensus.Ledger.Byron
 import           Ouroboros.Consensus.Ledger.Byron.Config
@@ -78,9 +79,11 @@ data Protocol blk where
 
   -- | Run PBFT against the real ledger
   ProtocolRealPBFT
-    :: PBftParams
-    -> Cardano.Genesis.Config
-    -> Maybe PbftLeaderCredentials
+    :: Cardano.Genesis.Config
+    -> Maybe PBftSignatureThreshold
+    -> Cardano.Update.ProtocolVersion
+    -> Cardano.Update.SoftwareVersion
+    -> Maybe PBftLeaderCredentials
     -> Protocol (ByronBlockOrEBB ByronConfig)
 
 {-------------------------------------------------------------------------------
