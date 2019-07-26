@@ -4,38 +4,37 @@
 {-# LANGUAGE NamedFieldPuns        #-}
 {-# LANGUAGE OverloadedStrings     #-}
 {-# LANGUAGE UndecidableInstances  #-}
-{-# LANGUAGE ViewPatterns            #-}
 
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module Ouroboros.Consensus.Node.ProtocolInfo.Byron (
     protocolInfoByron
   , ByronConfig
-  , ByronProtocolSetupError (..)
   , PBftSignatureThreshold(..)
     -- * Secrets
   , PBftLeaderCredentials
+  , PBftLeaderCredentialsError
   , mkPBftLeaderCredentials
   ) where
 
-import           Control.Exception (Exception, throw)
+import           Control.Exception (Exception)
 import           Control.Monad.Except
-import           Data.Coerce
 import qualified Data.Sequence as Seq
 import qualified Data.Set as Set
 import           Data.Maybe
 
-import qualified Cardano.Chain.Block as Cardano.Block
-import qualified Cardano.Chain.Common as Cardano.Common
-import qualified Cardano.Chain.Delegation as Cardano.Delegation
-import qualified Cardano.Chain.Genesis as Cardano.Genesis
-import qualified Cardano.Chain.Update as Cardano.Update
-import qualified Cardano.Crypto as Cardano
+import qualified Cardano.Chain.Block as Block
+import           Cardano.Chain.Common (BlockCount(..))
+import qualified Cardano.Chain.Delegation as Delegation
+import qualified Cardano.Chain.Genesis as Genesis
+import qualified Cardano.Chain.Update as Update
+import qualified Cardano.Crypto as Crypto
 
 import           Ouroboros.Consensus.Crypto.DSIGN.Cardano
-import           Ouroboros.Consensus.Ledger.Byron
+import           Ouroboros.Consensus.Ledger.Byron hiding (genesisConfig)
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Node.ProtocolInfo.Abstract
+import           Ouroboros.Consensus.NodeId (CoreNodeId)
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.ExtNodeConfig
 import           Ouroboros.Consensus.Protocol.PBFT
@@ -46,33 +45,51 @@ import           Ouroboros.Consensus.Ledger.Byron.Config
 import qualified Test.Cardano.Chain.Genesis.Dummy as Dummy
 
 {-------------------------------------------------------------------------------
-  Conditions
--------------------------------------------------------------------------------}
-
-data ByronProtocolSetupError =
-      ByronInconsistentLeaderCredentials
-        Cardano.VerificationKey
-        Cardano.Delegation.Certificate
-      deriving (Eq, Show)
-
-instance Exception ByronProtocolSetupError
-
-{-------------------------------------------------------------------------------
   Credentials
 -------------------------------------------------------------------------------}
 
 data PBftLeaderCredentials = PBftLeaderCredentials {
-      plcSignKey     :: Cardano.SigningKey
-    , plcDlgCert     :: Cardano.Delegation.Certificate
+      plcSignKey     :: Crypto.SigningKey
+    , plcDlgCert     :: Delegation.Certificate
+    , plcCodeNodeId  :: CoreNodeId
     } deriving (Eq, Show)
 
-mkPBftLeaderCredentials :: Cardano.SigningKey
-                        -> Cardano.Delegation.Certificate
-                        -> Maybe PBftLeaderCredentials
-mkPBftLeaderCredentials (sk@(Cardano.toVerification -> vk)) cert =
-  if Cardano.Delegation.delegateVK cert == vk
-  then Just $ PBftLeaderCredentials sk cert
-  else Nothing
+-- | Make the 'PBftLeaderCredentials', with a couple sanity checks:
+--
+-- * That the block signing key and the delegation certificate match.
+-- * That the delegation certificate does correspond to one of the genesis
+--   keys from the genesis file.
+--
+mkPBftLeaderCredentials :: Genesis.Config
+                        -> Crypto.SigningKey
+                        -> Delegation.Certificate
+                        -> Either PBftLeaderCredentialsError
+                                  PBftLeaderCredentials
+mkPBftLeaderCredentials gc sk cert = do
+    guard (Delegation.delegateVK cert == Crypto.toVerification sk)
+      ?! NodeSigningKeyDoesNotMatchDelegationCertificate
+
+    let vkGenesis = Delegation.issuerVK cert
+    nid <- genesisKeyCoreNodeId gc (VerKeyCardanoDSIGN vkGenesis)
+             ?! DelegationCertificateNotFromGenesisKey
+
+    return PBftLeaderCredentials {
+      plcSignKey     = sk
+    , plcDlgCert     = cert
+    , plcCodeNodeId  = nid
+    }
+  where
+    (?!) :: Maybe a -> e -> Either e a
+    Just x  ?! _ = Right x
+    Nothing ?! e = Left  e
+
+data PBftLeaderCredentialsError =
+       NodeSigningKeyDoesNotMatchDelegationCertificate
+     | DelegationCertificateNotFromGenesisKey
+  deriving (Eq, Show)
+
+instance Exception PBftLeaderCredentialsError
+
 
 {-------------------------------------------------------------------------------
   ProtocolInfo
@@ -83,37 +100,61 @@ mkPBftLeaderCredentials (sk@(Cardano.toVerification -> vk)) cert =
 newtype PBftSignatureThreshold =
         PBftSignatureThreshold { unSignatureThreshold :: Double }
 
--- TODO This is currently configured for the demo. Parameterise so it can work
--- both for a real node and a demo node.
-protocolInfoByron :: Cardano.Genesis.Config
-                  -> Maybe PBftLeaderCredentials
+-- | See chapter 4.1 of
+--   https://hydra.iohk.io/job/Cardano/cardano-ledger-specs/byronChainSpec/latest/download-by-type/doc-pdf/blockchain-spec
+defaultPBftSignatureThreshold :: PBftSignatureThreshold
+defaultPBftSignatureThreshold = PBftSignatureThreshold 0.22
+
+protocolInfoByron :: Genesis.Config
                   -> Maybe PBftSignatureThreshold
-                  -> Cardano.Update.ProtocolVersion
-                  -> Cardano.Update.SoftwareVersion
+                  -> Update.ProtocolVersion
+                  -> Update.SoftwareVersion
+                  -> Maybe PBftLeaderCredentials
                   -> ProtocolInfo (ByronBlockOrEBB ByronConfig)
-protocolInfoByron gc mLeader mSigThresh pVer sVer =
+protocolInfoByron genesisConfig@Genesis.Config {
+                    Genesis.configGenesisHash = genesisHash
+                  , Genesis.configGenesisData =
+                      Genesis.GenesisData {
+                        Genesis.gdK                = BlockCount kParam
+                      , Genesis.gdGenesisKeyHashes = genesisKeyHashes
+                      , Genesis.gdHeavyDelegation  = genesisDelegation
+                      }
+                  }
+                  mSigThresh pVer sVer mLeader =
     ProtocolInfo {
         pInfoConfig = WithEBBNodeConfig $ EncNodeConfig {
             encNodeConfigP   = PBftNodeConfig {
                 pbftParams          =  PBftParams
-                  { pbftSecurityParam      = SecurityParam (fromIntegral k)
-                  , pbftNumNodes           =
-                      fromIntegral . Set.size . Cardano.Genesis.unGenesisKeyHashes
-                      $ gdGenesisKeyHashes
-                  , pbftSignatureWindow    = fromIntegral k
+                  { pbftSecurityParam      = SecurityParam (fromIntegral kParam)
+                  , pbftNumNodes           = fromIntegral . Set.size
+                                           . Genesis.unGenesisKeyHashes
+                                           $ genesisKeyHashes
+                  , pbftSignatureWindow    = fromIntegral kParam
                   , pbftSignatureThreshold = unSignatureThreshold $
-                      fromMaybe mainnetPBftSignatureThreshold mSigThresh
+                      fromMaybe defaultPBftSignatureThreshold mSigThresh
                   }
-              , pbftIsLeader        = proofOfCredentials <$> mLeader
+              , pbftIsLeader =
+                  case mLeader of
+                    Nothing                                  -> Nothing
+                    Just (PBftLeaderCredentials sk cert nid) ->
+                      Just PBftIsLeader {
+                        pbftCoreNodeId = nid
+                      , pbftSignKey    = SignKeyCardanoDSIGN sk
+                      , pbftVerKey     = VerKeyCardanoDSIGN vk
+                      , pbftGenVerKey  = VerKeyCardanoDSIGN vkGenesis
+                      }
+                      where
+                        vk        = Crypto.toVerification sk
+                        vkGenesis = Delegation.issuerVK cert
             }
           , encNodeConfigExt = ByronConfig {
-                pbftProtocolMagic   = Cardano.Genesis.configProtocolMagic gc
+                pbftProtocolMagic   = Genesis.configProtocolMagic genesisConfig
               , pbftProtocolVersion = pVer
               , pbftSoftwareVersion = sVer
-              , pbftGenesisConfig   = gc
-              , pbftGenesisHash     = coerce Cardano.Genesis.configGenesisHeaderHash gc
-              , pbftEpochSlots      = Cardano.Genesis.configEpochSlots gc
-              , pbftGenesisDlg      = Cardano.Genesis.configHeavyDelegation gc
+              , pbftGenesisConfig   = genesisConfig
+              , pbftGenesisHash     = genesisHash
+              , pbftEpochSlots      = Genesis.configEpochSlots genesisConfig
+              , pbftGenesisDlg      = genesisDelegation
               , pbftSecrets         = Dummy.dummyGeneratedSecrets
                 --TODO: These "richmen" secrets ^^ are here to support demos
                 -- where we need to elaborate from mock transactions to real
@@ -130,31 +171,6 @@ protocolInfoByron gc mLeader mSigThresh pVer sVer =
       , pInfoInitState  = ()
       }
   where
-    Cardano.Genesis.GenesisData
-      { Cardano.Genesis.gdGenesisKeyHashes
-      , Cardano.Genesis.gdK = Cardano.Common.BlockCount k
-    } = Cardano.Genesis.configGenesisData gc
+    initState :: Block.ChainValidationState
+    Right initState = runExcept $ Block.initialChainValidationState genesisConfig
 
-    proofOfCredentials :: PBftLeaderCredentials
-                       -> PBftIsLeader PBftCardanoCrypto
-    proofOfCredentials (PBftLeaderCredentials sk cert) =
-      PBftIsLeader
-      { pbftCoreNodeId =
-        fromMaybe (throw $ ByronInconsistentLeaderCredentials vk cert)
-        (genesisKeyCoreNodeId gc (VerKeyCardanoDSIGN issuerVK))
-      , pbftSignKey    = SignKeyCardanoDSIGN sk
-      , pbftVerKey     = VerKeyCardanoDSIGN vk
-      , pbftGenVerKey  = VerKeyCardanoDSIGN issuerVK
-      }
-      where
-        vk = Cardano.toVerification sk
-        Cardano.Delegation.UnsafeACertificate
-          { Cardano.Delegation.issuerVK = issuerVK } = cert
-
-    initState :: Cardano.Block.ChainValidationState
-    Right initState = runExcept $ Cardano.Block.initialChainValidationState gc
-
-    -- | See chapter 4.1 of
-    --   https://hydra.iohk.io/job/Cardano/cardano-ledger-specs/byronChainSpec/latest/download-by-type/doc-pdf/blockchain-spec
-    mainnetPBftSignatureThreshold :: PBftSignatureThreshold
-    mainnetPBftSignatureThreshold = PBftSignatureThreshold 0.22

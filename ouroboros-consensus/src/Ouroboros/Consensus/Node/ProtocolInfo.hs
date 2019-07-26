@@ -30,4 +30,4 @@ protocolInfo nodes nid demoProtocol = case demoProtocol of
     ProtocolMockPraos      params               -> protocolInfoPraos     nodes nid params
     ProtocolLeaderSchedule params schedule      -> protocolInfoPraosRule nodes nid params schedule
     ProtocolMockPBFT       params               -> protocolInfoMockPBFT  nodes nid params
-    ProtocolRealPBFT       gc mplc mthr prv swv -> protocolInfoByron     gc mplc mthr prv swv
+    ProtocolRealPBFT       gc mthr prv swv mplc -> protocolInfoByron     gc mthr prv swv mplc

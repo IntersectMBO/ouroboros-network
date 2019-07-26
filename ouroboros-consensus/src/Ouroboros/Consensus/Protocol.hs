@@ -80,10 +80,10 @@ data Protocol blk where
   -- | Run PBFT against the real ledger
   ProtocolRealPBFT
     :: Cardano.Genesis.Config
-    -> Maybe PBftLeaderCredentials
     -> Maybe PBftSignatureThreshold
     -> Cardano.Update.ProtocolVersion
     -> Cardano.Update.SoftwareVersion
+    -> Maybe PBftLeaderCredentials
     -> Protocol (ByronBlockOrEBB ByronConfig)
 
 {-------------------------------------------------------------------------------
