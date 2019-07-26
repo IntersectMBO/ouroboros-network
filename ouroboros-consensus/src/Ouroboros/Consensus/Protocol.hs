@@ -1,4 +1,5 @@
 {-# LANGUAGE GADTs            #-}
+{-# LANGUAGE NamedFieldPuns   #-}
 {-# LANGUAGE TypeApplications #-}
 module Ouroboros.Consensus.Protocol (
     -- * Supported protocols
@@ -17,10 +18,10 @@ module Ouroboros.Consensus.Protocol (
 import           Data.Coerce
 import           Data.Reflection (give)
 
-import qualified Cardano.Chain.Block as Cardano.Block
-import qualified Cardano.Chain.Genesis as Cardano.Genesis
-import qualified Cardano.Crypto as Cardano
-import qualified Cardano.Chain.Update as Cardano.Update
+import qualified Cardano.Chain.Block as Block
+import qualified Cardano.Chain.Genesis as Genesis
+import qualified Cardano.Crypto as Crypto
+import qualified Cardano.Chain.Update as Update
 
 import           Ouroboros.Consensus.Ledger.Byron
 import           Ouroboros.Consensus.Ledger.Byron.Config
@@ -36,8 +37,6 @@ import           Ouroboros.Consensus.Protocol.LeaderSchedule as X
 import           Ouroboros.Consensus.Protocol.PBFT as X
 import           Ouroboros.Consensus.Protocol.Praos as X
 import           Ouroboros.Consensus.Util
-
-import qualified Test.Cardano.Chain.Genesis.Dummy as Dummy
 
 
 {-------------------------------------------------------------------------------
@@ -79,10 +78,10 @@ data Protocol blk where
 
   -- | Run PBFT against the real ledger
   ProtocolRealPBFT
-    :: Cardano.Genesis.Config
+    :: Genesis.Config
     -> Maybe PBftSignatureThreshold
-    -> Cardano.Update.ProtocolVersion
-    -> Cardano.Update.SoftwareVersion
+    -> Update.ProtocolVersion
+    -> Update.SoftwareVersion
     -> Maybe PBftLeaderCredentials
     -> Protocol (ByronBlockOrEBB ByronConfig)
 
@@ -95,7 +94,12 @@ runProtocol ProtocolMockBFT{}        = Dict
 runProtocol ProtocolMockPraos{}      = Dict
 runProtocol ProtocolLeaderSchedule{} = Dict
 runProtocol ProtocolMockPBFT{}       = Dict
-runProtocol ProtocolRealPBFT{}       = give (Dummy.dummyEpochSlots)
-                                     $ give (Cardano.Genesis.gdProtocolMagicId Dummy.dummyGenesisData)
-                                     $ give (coerce @_ @Cardano.Block.HeaderHash Dummy.dummyGenesisHash)
-                                     $ Dict
+runProtocol (ProtocolRealPBFT
+             gc@Genesis.Config{ Genesis.configGenesisData
+                              , Genesis.configGenesisHash}
+             _msigthd _pv _sv _mplc) =
+  let Genesis.GenesisData{Genesis.gdProtocolMagicId} = configGenesisData
+  in give (Genesis.configEpochSlots gc)
+     $ give gdProtocolMagicId
+     $ give (coerce @_ @Block.HeaderHash configGenesisHash)
+     $ Dict
