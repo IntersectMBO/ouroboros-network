@@ -164,8 +164,9 @@ mkImmDB :: ImmutableDB (HeaderHash blk) m
         -> (blk -> Encoding)
         -> EpochInfo m
         -> (blk -> Maybe (HeaderHash blk))
+        -> ErrorHandling ImmDB.ImmutableDBError m
         -> ImmDB m blk
-mkImmDB immDB decBlock encBlock immEpochInfo isEBB = ImmDB {..}
+mkImmDB immDB decBlock encBlock immEpochInfo isEBB err = ImmDB {..}
 
 {-------------------------------------------------------------------------------
   Getting and parsing blocks

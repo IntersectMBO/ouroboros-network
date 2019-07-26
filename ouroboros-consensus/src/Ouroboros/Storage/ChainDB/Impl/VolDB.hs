@@ -146,8 +146,10 @@ openDB args@VolDbArgs{..} = do
 mkVolDB :: VolatileDB (HeaderHash blk) m
         -> (forall s. Decoder s blk)
         -> (blk -> Encoding)
+        -> ErrorHandling (VolatileDBError (HeaderHash blk)) m
+        -> ThrowCantCatch (VolatileDBError (HeaderHash blk)) (STM m)
         -> VolDB m blk
-mkVolDB volDB decBlock encBlock = VolDB {..}
+mkVolDB volDB decBlock encBlock err errSTM = VolDB {..}
 
 {-------------------------------------------------------------------------------
   Wrappers
