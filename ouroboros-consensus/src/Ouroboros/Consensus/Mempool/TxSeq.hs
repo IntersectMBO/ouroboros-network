@@ -1,12 +1,12 @@
-{-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE PatternSynonyms       #-}
-{-# LANGUAGE ViewPatterns          #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE MultiParamTypeClasses      #-}
+{-# LANGUAGE PatternSynonyms            #-}
+{-# LANGUAGE ViewPatterns               #-}
 
 module Ouroboros.Consensus.Mempool.TxSeq (
     TicketNo(..)
   , TxTicket(..)
   , TxSeq(Empty, (:>), (:<))
-  , appendTx
   , fromTxSeq
   , lookupByTicketNo
   , splitAfterTicketNo
@@ -27,7 +27,7 @@ import           Data.Word (Word64)
 -- as it enters the mempool.
 --
 newtype TicketNo = TicketNo Word64
-  deriving (Eq, Ord, Bounded, Show)
+  deriving (Eq, Ord, Enum, Bounded, Show)
 
 -- | The transaction ticket number from which our counter starts.
 zeroTicketNo :: TicketNo
@@ -152,33 +152,9 @@ splitAfterTicketNo (TxSeq txs) n =
     case FingerTree.split (\m -> mMaxTicket m > n) txs of
       (l, r) -> (TxSeq l, TxSeq r)
 
--- | Convert a 'TxSeq' to the type which is expected to be returned from the
--- 'Mempool' API.
+-- | Convert a 'TxSeq' to a list of pairs of transactions and their
+-- associated 'TicketNo's.
 fromTxSeq :: TxSeq tx -> [(tx, TicketNo)]
 fromTxSeq (TxSeq ftree) = fmap
   (\(TxTicket tx tn) -> (tx, tn))
   (Foldable.toList $ ftree)
-
--- | Append a @tx@ to the back of a 'TxSeq'.
--- n.b. This function also handles the incrementing of the newly added
--- transaction's ticket number.
---
--- TODO FIXME:
--- This does not work correctly in a couple scenarios:
---   * If the mempool becomes empty during operation. In this case, the
---     'TicketNo' counter would "reset" to 'zeroTicketNo'. Clients interacting
---     with the mempool likely won't account for this.
---
---   * The transaction at the "back" of the mempool becomes invalid and is
---     removed. In this case, the next transaction to be appended would take
---     on the 'TicketNo' of the removed transaction (since this function only
---     increments the 'TicketNo' associated with the transaction at the back
---     of the mempool). Clients interacting with the mempool likely won't
---     account for this.
---
--- Solution: Maintain a 'TicketNo' counter in the mempool implementation.
---
-appendTx :: TxSeq tx -> tx -> TxSeq tx
-appendTx ts tx = case viewBack ts of
-  Nothing                           -> Empty :> TxTicket tx (TicketNo 1)
-  Just (_, TxTicket _ (TicketNo n)) -> ts    :> TxTicket tx (TicketNo (n + 1))
