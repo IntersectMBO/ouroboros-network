@@ -250,21 +250,27 @@ instance (ByronGiven, Typeable cfg, ConfigContainsGenesis cfg)
   applyLedgerHeader (ByronLedgerConfig cfg) (ByronHeader hdr)
                     (ByronLedgerState state snapshots) =
       mapExcept (fmap (\i -> ByronLedgerState i snapshots)) $ do
-        updateState <- runReaderT
-          (CC.Block.updateHeader headerEnv (CC.Block.cvsUpdateState state) hdr)
+        let updateState' = CC.Block.epochTransition
+              epochEnv
+              (CC.Block.cvsUpdateState state)
+              (CC.Block.headerSlot hdr)
+        () <- runReaderT
+          (CC.Block.headerIsValid updateState' hdr)
           (fromBlockValidationMode CC.Block.BlockValidation)
         return $ state
           { CC.Block.cvsLastSlot     = CC.Block.headerSlot hdr
           , CC.Block.cvsPreviousHash = Right $ CC.Block.headerHashAnnotated hdr
-          , CC.Block.cvsUpdateState  = updateState
+          , CC.Block.cvsUpdateState  = updateState'
           }
     where
-      headerEnv = CC.Block.HeaderEnvironment
+      epochEnv = CC.Block.EpochEnvironment
         { CC.Block.protocolMagic = fixPMI $ CC.Genesis.configProtocolMagicId cfg
         , CC.Block.k             = CC.Genesis.configK cfg
         , CC.Block.allowedDelegators = allowedDelegators cfg
         , CC.Block.delegationMap = delegationMap
-        , CC.Block.lastSlot      = CC.Block.cvsLastSlot state
+        , CC.Block.currentEpoch  = CC.Slot.slotNumberEpoch
+                                     (CC.Genesis.configEpochSlots cfg)
+                                     (CC.Block.cvsLastSlot state)
         }
       delegationMap = V.Interface.delegationMap
                     $ CC.Block.cvsDelegationState state
