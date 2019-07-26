@@ -34,6 +34,7 @@ import           Codec.CBOR.Encoding (Encoding)
 import           Codec.Serialise (Serialise (..))
 import           Control.Monad (unless)
 import           Control.Monad.Except (throwError)
+import           Control.Monad.Identity (runIdentity)
 import           Crypto.Random (MonadRandom)
 import           Data.IntMap.Strict (IntMap)
 import qualified Data.IntMap.Strict as IntMap
@@ -66,7 +67,9 @@ import           Ouroboros.Consensus.Util.HList (HList (..))
 
 import           Ouroboros.Consensus.Ledger.Mock.Stake
 
-import           Ouroboros.Storage.Common (EpochNo (..))
+import           Ouroboros.Storage.Common (EpochNo (..), EpochSize (..))
+import           Ouroboros.Storage.EpochInfo (EpochInfo (..),
+                     fixedSizeEpochInfo)
 
 {-------------------------------------------------------------------------------
   Fields required by Praos in the header
@@ -306,16 +309,19 @@ instance PraosCrypto c => OuroborosTag (Praos c) where
 
 slotEpoch :: NodeConfig (Praos c) -> SlotNo -> EpochNo
 slotEpoch PraosNodeConfig{..} s =
-    EpochNo $ 1 + div (unSlotNo s - 1) praosSlotsPerEpoch
+    runIdentity $ epochInfoEpoch epochInfo s
   where
+    epochInfo = fixedSizeEpochInfo (EpochSize praosSlotsPerEpoch)
     PraosParams{..} = praosParams
 
 blockInfoEpoch :: NodeConfig (Praos c) -> BlockInfo c -> EpochNo
 blockInfoEpoch l = slotEpoch l . biSlot
 
-epochStart :: NodeConfig (Praos c) -> EpochNo -> SlotNo
-epochStart PraosNodeConfig{..} e = SlotNo $ (unEpochNo e - 1) * praosSlotsPerEpoch + 1
+epochFirst :: NodeConfig (Praos c) -> EpochNo -> SlotNo
+epochFirst PraosNodeConfig{..} e =
+    runIdentity $ epochInfoFirst epochInfo e
   where
+    epochInfo = fixedSizeEpochInfo (EpochSize praosSlotsPerEpoch)
     PraosParams{..} = praosParams
 
 infosSlice :: SlotNo -> SlotNo -> [BlockInfo c] -> [BlockInfo c]
@@ -327,13 +333,13 @@ infosEta :: forall c. (PraosCrypto c)
          -> [BlockInfo c]
          -> EpochNo
          -> Natural
-infosEta l _  1 = praosInitialEta l
+infosEta l _  0 = praosInitialEta l
 infosEta l xs e =
     let e'   = e - 1
         eta' = infosEta l xs e'
-        from = epochStart l e'
+        from = epochFirst l e'
         n    = div (2 * praosSlotsPerEpoch) 3
-        to   = SlotNo $ unSlotNo from + fromIntegral (n - 1)
+        to   = SlotNo $ unSlotNo from + fromIntegral n
         rhos = reverse [biRho b | b <- infosSlice from to xs]
     in  fromHash $ hash @(PraosHash c) $ eta' :* e :* rhos :* Nil
   where
