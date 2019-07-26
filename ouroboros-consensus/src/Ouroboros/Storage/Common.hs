@@ -17,6 +17,7 @@ module Ouroboros.Storage.Common (
   , decodeTip
   ) where
 
+import           Cardano.Binary (ToCBOR (..))
 import           Codec.CBOR.Decoding (Decoder)
 import qualified Codec.CBOR.Decoding as Dec
 import           Codec.CBOR.Encoding (Encoding)
@@ -33,7 +34,7 @@ import           Ouroboros.Network.Block (Point, genesisPoint)
 
 -- | An epoch, i.e. the number of the epoch.
 newtype EpochNo = EpochNo { unEpochNo :: Word64 }
-  deriving (Eq, Ord, Enum, Num, Show, Generic)
+  deriving (Eq, Ord, Enum, Num, Show, Generic, Serialise, ToCBOR)
 
 newtype EpochSize = EpochSize { unEpochSize :: Word64 }
   deriving (Eq, Ord, Enum, Num, Show, Generic, Real, Integral)
