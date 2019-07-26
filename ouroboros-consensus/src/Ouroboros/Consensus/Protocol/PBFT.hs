@@ -20,6 +20,7 @@ module Ouroboros.Consensus.Protocol.PBFT (
   , PBftParams(..)
   , PBftIsLeader(..)
   , forgePBftFields
+  , genesisKeyCoreNodeId
     -- * Classes
   , PBftCrypto(..)
   , PBftMockCrypto
@@ -35,6 +36,7 @@ import           Data.Bimap (Bimap)
 import qualified Data.Bimap as Bimap
 import           Data.Constraint
 import           Data.Reflection (Given (..), give)
+import qualified Data.Set as Set
 import           Data.Sequence (Seq)
 import qualified Data.Sequence as Seq
 import           Data.Typeable (Proxy(..), Typeable)
@@ -43,6 +45,7 @@ import           GHC.Generics (Generic)
 
 import           Cardano.Binary (Decoded)
 import qualified Cardano.Chain.Common as CC.Common
+import qualified Cardano.Chain.Genesis as CC.Genesis
 import           Cardano.Crypto (ProtocolMagicId)
 import           Cardano.Crypto.DSIGN.Class
 import           Cardano.Crypto.DSIGN.Mock (MockDSIGN)
@@ -178,6 +181,10 @@ instance (PBftCrypto c, Typeable c) => OuroborosTag (PBft c) where
   checkIsLeader PBftNodeConfig{pbftIsLeader, pbftParams} (SlotNo n) _l _cs =
       case pbftIsLeader of
         Nothing                                    -> return Nothing
+
+        -- We are the slot leader based on our node index, and the current
+        -- slot number. Our node index depends which genesis key has delegated
+        -- to us, see 'genesisKeyCoreNodeId'.
         Just credentials
           | n `mod` pbftNumNodes == fromIntegral i -> return (Just credentials)
           | otherwise                              -> return Nothing
@@ -230,6 +237,28 @@ instance (PBftCrypto c, Typeable c) => OuroborosTag (PBft c) where
     At slot -> case Seq.takeWhileL (\(_, s) -> s <= slot) cs of
         _ Seq.:<| _ -> Just cs
         _           -> Nothing
+
+{-------------------------------------------------------------------------------
+  PBFT node order
+-------------------------------------------------------------------------------}
+
+-- | Determine the 'CoreNodeId' for a code node, based on the genesis key it
+-- will sign blocks on behalf of.
+--
+-- In PBFT, the 'CoreNodeId' index is determined by the 0-based position in
+-- the sort order of the genesis key hashes.
+genesisKeyCoreNodeId :: CC.Genesis.Config
+                     -> VerKeyDSIGN CardanoDSIGN
+                        -- ^ The genesis verification key
+                     -> Maybe CoreNodeId
+genesisKeyCoreNodeId gc vkey =
+  Data.Reflection.give (CC.Genesis.configProtocolMagicId gc) $
+  CoreNodeId <$> Set.lookupIndex (hashVerKey vkey) genesisKeyHashes
+  where
+    genesisKeyHashes :: Set.Set CC.Common.KeyHash
+    genesisKeyHashes = CC.Genesis.unGenesisKeyHashes
+                     . CC.Genesis.configGenesisKeyHashes
+                     $ gc
 
 {-------------------------------------------------------------------------------
   PBFT specific types
