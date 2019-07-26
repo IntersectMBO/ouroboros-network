@@ -123,9 +123,10 @@ validExtension c b = blockInvariant b
                   -- An EBB has the same SlotNo as the block after it, hence
                   -- the loose inequality.
                   && headSlot c <= At (blockSlot b)
-                  -- The empty chain has block number 0, but this is also the block
-                  -- number of the genesis block.
-                  && (headBlockNo c == 0 || succ (headBlockNo c) == blockNo b)
+                  -- The block number must be non-strictly increasing. An EBB
+                  -- has the same block number as its parent. It can increase
+                  -- by at most one.
+                  && (headBlockNo c == blockNo b || succ (headBlockNo c) == blockNo b)
 
 head :: Chain b -> Maybe b
 head Genesis  = Nothing
@@ -232,6 +233,10 @@ selectChain
   -> Chain block
   -> Chain block
 selectChain c1 c2 =
+  -- NB: it's not true in general that headBlockNo c = length c, since the
+  -- block number is non-strictly increasing. A chain c2 can be shorter in
+  -- _length_ i.e. number of blocks than c1, but still have a higher block
+  -- number than c1.
   if headBlockNo c1 >= headBlockNo c2
     then c1
     else c2
