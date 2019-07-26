@@ -73,13 +73,16 @@ forgeGenesisEBB (WithEBBNodeConfig cfg) curSlot = do
       . annotateBoundary given
       $ boundaryData
   where
-    boundaryData = CC.Block.BoundaryValidationData
+    boundaryData = CC.Block.ABoundaryBlock
                    boundaryLength
-                   (Left pbftGenesisHash)
-                   epoch
-                   (CC.Common.ChainDifficulty 0)
+                   boundaryHeader
+                   (CC.Block.ABoundaryBody ())
                    ()
-                   ()
+    boundaryHeader = CC.Block.ABoundaryHeader
+                     (Left pbftGenesisHash)
+                     epoch
+                     (CC.Common.ChainDifficulty 0)
+                     ()
     boundaryLength = 0 -- Since this is a demo and we ignore the length, set this
                        -- to 0
     ByronConfig { pbftGenesisHash

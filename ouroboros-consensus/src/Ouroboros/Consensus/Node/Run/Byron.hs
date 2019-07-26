@@ -9,8 +9,6 @@ import           Data.Reflection (given)
 import qualified Cardano.Chain.Block as Cardano.Block
 import           Ouroboros.Consensus.Ledger.Byron
 import           Ouroboros.Consensus.Node.Run.Abstract
-import           Ouroboros.Consensus.Protocol.ExtNodeConfig
-import           Ouroboros.Consensus.Protocol.WithEBBs
 
 import           Ouroboros.Consensus.Ledger.Byron.Config
 import           Ouroboros.Consensus.Ledger.Byron.Forge
@@ -28,16 +26,16 @@ instance ByronGiven => RunNode (ByronBlockOrEBB ByronConfig) where
     Cardano.Block.ABOBBoundary _ -> True
   nodeEpochSize          = \_ _ -> return 21600 -- TODO #226
 
-  nodeEncodeBlock        = encodeByronBlock given . pbftEpochSlots . encNodeConfigExt . unWithEBBNodeConfig
-  nodeEncodeHeader       = encodeByronHeader given . pbftEpochSlots . encNodeConfigExt . unWithEBBNodeConfig
+  nodeEncodeBlock        = const encodeByronBlock
+  nodeEncodeHeader       = const encodeByronHeader
   nodeEncodeGenTx        = encodeByronGenTx
   nodeEncodeGenTxId      = encodeByronGenTxId
   nodeEncodeHeaderHash   = const encodeByronHeaderHash
   nodeEncodeLedgerState  = const encodeByronLedgerState
   nodeEncodeChainState   = const encodeByronChainState
 
-  nodeDecodeBlock        = decodeByronBlock given . pbftEpochSlots . encNodeConfigExt . unWithEBBNodeConfig 
-  nodeDecodeHeader       = decodeByronHeader given . pbftEpochSlots . encNodeConfigExt . unWithEBBNodeConfig 
+  nodeDecodeBlock        = const (decodeByronBlock given)
+  nodeDecodeHeader       = const (decodeByronHeader given)
   nodeDecodeGenTx        = decodeByronGenTx
   nodeDecodeGenTxId      = decodeByronGenTxId
   nodeDecodeHeaderHash   = const decodeByronHeaderHash
