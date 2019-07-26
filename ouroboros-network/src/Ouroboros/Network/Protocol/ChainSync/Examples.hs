@@ -64,7 +64,7 @@ chainSyncClientExample chainvar client = ChainSyncClient $
       --  rejecting the server if there is no intersection in the last K blocks
       --
       ClientStIntersect {
-        recvMsgIntersectImproved  = \_ _ -> ChainSyncClient (return (requestNext client')),
+        recvMsgIntersectFound     = \_ _ -> ChainSyncClient (return (requestNext client')),
         recvMsgIntersectUnchanged = \  _ -> ChainSyncClient (return (requestNext client'))
       }
 
@@ -174,7 +174,7 @@ chainSyncServerExample recvMsgDoneClient chainvar = ChainSyncServer $
       -- Find the first point that is on our chain
       changed <- improveReadPoint r points
       case changed of
-        (Just pt, tip) -> return $ SendMsgIntersectImproved  pt tip (idle' r)
+        (Just pt, tip) -> return $ SendMsgIntersectFound     pt tip (idle' r)
         (Nothing, tip) -> return $ SendMsgIntersectUnchanged    tip (idle' r)
 
     newReader :: m ReaderId

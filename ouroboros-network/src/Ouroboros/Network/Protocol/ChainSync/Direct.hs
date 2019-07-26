@@ -41,12 +41,12 @@ direct_  ServerStIdle{recvMsgRequestNext}
 
 direct_  ServerStIdle{recvMsgFindIntersect}
         (Client.SendMsgFindIntersect points
-          ClientStIntersect{recvMsgIntersectImproved,
+          ClientStIntersect{recvMsgIntersectFound,
                             recvMsgIntersectUnchanged}) = do
     sIntersect <- recvMsgFindIntersect points
     case sIntersect of
-      SendMsgIntersectImproved  pIntersect pHead server' ->
-        direct server' (recvMsgIntersectImproved pIntersect pHead)
+      SendMsgIntersectFound  pIntersect pHead server' ->
+        direct server' (recvMsgIntersectFound pIntersect pHead)
 
       SendMsgIntersectUnchanged            pHead server' ->
         direct server' (recvMsgIntersectUnchanged pHead)

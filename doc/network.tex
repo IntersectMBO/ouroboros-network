@@ -1170,7 +1170,7 @@ application of the protocol determines the types of the requests and responses.
 \newcommand{\RollForward}{\msg{RollForward}}
 \newcommand{\RollBackward}{\msg{RollBackward}}
 \newcommand{\FindIntersect}{\msg{FindIntersect}}
-\newcommand{\IntersectImproved}{\msg{IntersectImproved}}
+\newcommand{\IntersectFound}{\msg{IntersectFound}}
 \newcommand{\IntersectUnchanged}{\msg{IntersectUnchanged}}
 
 \subsection{Description}
@@ -1210,7 +1210,7 @@ other node it communicates with.
   \draw (CanAwait)     edge[above,bend right=80]     node{\RollBackward}          (Idle);
   \draw (MustReply)    edge[right,bend right=80]     node{\RollBackward}          (Idle);
   \draw (Idle)         edge[right, bend right]    node{\FindIntersect}         (Intersect);
-  \draw (Intersect)    edge[above, bend right=45]    node[below = 4mm]{\IntersectImproved}     (Idle);
+  \draw (Intersect)    edge[above, bend right=45]    node[below = 4mm]{\IntersectFound}     (Idle);
   \draw (Intersect)    edge[above, bend right=80]    node[above = 4mm]{\IntersectUnchanged}    (Idle);
   \draw (Idle)         edge[above]                node{\MsgDone}                  (Done);
 \end{tikzpicture}
@@ -1238,9 +1238,8 @@ The protocol uses the following messages:
       The consumer sends a sequence {\boldmath $\langle point \rangle $}
       and it is up to the producer
       to find the first intersection point on its chain and send it back to the consumer.
-\item [\IntersectImproved{} {\boldmath $(point_{intersect},point_{head})$}]
-      The reply to the consumer about an intersection found, but {\bf only} if this
-      is an improvement over the previously established intersection point.
+\item [\IntersectFound{} {\boldmath $(point_{intersect},point_{head})$}]
+      The producer replies with the first point of the request that is on his current chain.
       The consumer can decide whether to send more points.
       The message also tells the consumer about the head point of the producer.
 \item [\IntersectUnchanged{} {\boldmath $(point_{head})$}]
@@ -1263,7 +1262,7 @@ The protocol uses the following messages:
   \CanAwait  & \RollBackward       & $header$, $point_{head}$            & \Idle       \\ \hline
   \MustReply & \RollForward        & $header$, $point_{head}$            & \Idle       \\ \hline
   \MustReply & \RollBackward       & $point_{old}$, $point_{head}$       & \Idle       \\ \hline
-  \Intersect & \IntersectImproved  & $point_{intersect}$, $point_{head}$ & \Idle       \\ \hline
+  \Intersect & \IntersectFound     & $point_{intersect}$, $point_{head}$ & \Idle       \\ \hline
   \Intersect & \IntersectUnchanged & $point_{head}$                      & \Idle       \\ \hline
 
 \end{tabular}
@@ -1380,7 +1379,7 @@ between the fork of the producer and the fork that is known to the consumer.
 To do so, the consumer sends a \FindIntersect{} message with a list of chain
 points which belong to its node chain.
 If the producer does not know any of the points it replies with \IntersectUnchanged.
-Otherwise it replies with \IntersectImproved{} and the best (i.e. the newest) of the points that it knows
+Otherwise it replies with \IntersectFound{} and the best (i.e. the newest) of the points that it knows
 and also updates the $read~pointer$ accordingly.
 For efficiency, the consumer should use a binary search scheme to search for the longest common
 prefix.

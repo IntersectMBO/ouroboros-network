@@ -93,7 +93,7 @@ data ClientStNext header point m a =
 --
 data ClientStIntersect header point m a =
      ClientStIntersect {
-       recvMsgIntersectImproved  :: point -> point -> ChainSyncClient header point m a,
+       recvMsgIntersectFound     :: point -> point -> ChainSyncClient header point m a,
        recvMsgIntersectUnchanged ::          point -> ChainSyncClient header point m a
      }
 
@@ -142,14 +142,14 @@ chainSyncClientPeer (ChainSyncClient mclient) =
         Yield (ClientAgency TokIdle) (MsgFindIntersect points) $
         Await (ServerAgency TokIntersect) $ \resp ->
         case resp of
-          MsgIntersectImproved pIntersect pHead ->
-            chainSyncClientPeer (recvMsgIntersectImproved pIntersect pHead)
+          MsgIntersectFound pIntersect pHead ->
+            chainSyncClientPeer (recvMsgIntersectFound pIntersect pHead)
 
           MsgIntersectUnchanged pHead ->
             chainSyncClientPeer (recvMsgIntersectUnchanged pHead)
       where
         ClientStIntersect {
-          recvMsgIntersectImproved,
+          recvMsgIntersectFound,
           recvMsgIntersectUnchanged
         } = stIntersect
 

@@ -230,17 +230,17 @@ chainSyncClient tracer cfg btime (ClockSkew maxSkew)
       -- means the candidate is no longer eligible after all.
       let points = AF.selectPoints (map fromIntegral offsets) curChain
       return $ SendMsgFindIntersect (map castPoint points) $ ClientStIntersect
-        { recvMsgIntersectImproved  =
-            ChainSyncClient .: intersectImproved
+        { recvMsgIntersectFound  =
+            ChainSyncClient .: intersectFound
         , recvMsgIntersectUnchanged =
             ChainSyncClient .  intersectUnchanged
         }
 
     -- One of the points we sent intersected our chain. This intersection
     -- point will become the new tip of the candidate chain.
-    intersectImproved :: Point blk -> Point blk
+    intersectFound :: Point blk -> Point blk
                       -> m (Consensus ClientStIdle blk m)
-    intersectImproved intersection _theirHead = atomically $ do
+    intersectFound intersection _theirHead = atomically $ do
 
       CandidateState { candidateChain, candidateChainState } <- readTVar varCandidate
       -- Roll back the candidate to the @intersection@.

@@ -59,7 +59,7 @@ codecChainSync encodeHeader decodeHeader encodePoint decodePoint =
     encode (ClientAgency TokIdle) (MsgFindIntersect ps) =
       encodeListLen 2 <> encodeWord 4 <> encodeList encodePoint ps
 
-    encode (ServerAgency TokIntersect) (MsgIntersectImproved p1 p2) =
+    encode (ServerAgency TokIntersect) (MsgIntersectFound p1 p2) =
       encodeListLen 3 <> encodeWord 5 <> encodePoint p1 <> encodePoint p2
 
     encode (ServerAgency TokIntersect) (MsgIntersectUnchanged p) =
@@ -98,7 +98,7 @@ codecChainSync encodeHeader decodeHeader encodePoint decodePoint =
         (5, 3, ServerAgency TokIntersect) -> do
           p1 <- decodePoint
           p2 <- decodePoint
-          return (SomeMessage (MsgIntersectImproved p1 p2))
+          return (SomeMessage (MsgIntersectFound p1 p2))
 
         (6, 2, ServerAgency TokIntersect) -> do
           p <- decodePoint
@@ -153,7 +153,7 @@ codecChainSyncId = Codec encode decode
 
     (ClientAgency TokIdle, Just (AnyMessage (MsgFindIntersect ps))) -> return (DecodeDone (SomeMessage (MsgFindIntersect ps)) Nothing)
 
-    (ServerAgency TokIntersect, Just (AnyMessage (MsgIntersectImproved p1 p2))) -> return (DecodeDone (SomeMessage (MsgIntersectImproved p1 p2)) Nothing)
+    (ServerAgency TokIntersect, Just (AnyMessage (MsgIntersectFound p1 p2))) -> return (DecodeDone (SomeMessage (MsgIntersectFound p1 p2)) Nothing)
 
     (ServerAgency TokIntersect, Just (AnyMessage (MsgIntersectUnchanged p))) -> return (DecodeDone (SomeMessage (MsgIntersectUnchanged p)) Nothing)
 

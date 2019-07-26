@@ -166,8 +166,8 @@ instance Arbitrary (AnyMessageAndAgency (ChainSync BlockHeader (Point BlockHeade
         <$> arbitrary
 
     , AnyMessageAndAgency (ServerAgency TokIntersect)
-        <$> (MsgIntersectImproved <$> arbitrary
-                                  <*> arbitrary)
+        <$> (MsgIntersectFound <$> arbitrary
+                               <*> arbitrary)
 
     , AnyMessageAndAgency (ServerAgency TokIntersect) . MsgIntersectUnchanged
         <$> arbitrary
@@ -184,7 +184,7 @@ instance (Eq header, Eq point) => Eq (AnyMessage (ChainSync header point)) where
   AnyMessage (MsgRollForward h1 p1)       == AnyMessage (MsgRollForward h2 p2)       = h1 == h2 && p1 == p2
   AnyMessage (MsgRollBackward p1 h1)      == AnyMessage (MsgRollBackward p2 h2)      = p1 == p2 && h1 == h2
   AnyMessage (MsgFindIntersect ps1)       == AnyMessage (MsgFindIntersect ps2)       = ps1 == ps2
-  AnyMessage (MsgIntersectImproved p1 h1) == AnyMessage (MsgIntersectImproved p2 h2) = p1 == p2 && h1 == h2
+  AnyMessage (MsgIntersectFound p1 h1)    == AnyMessage (MsgIntersectFound p2 h2) = p1 == p2 && h1 == h2
   AnyMessage (MsgIntersectUnchanged h1)   == AnyMessage (MsgIntersectUnchanged h2)   = h1 == h2
   AnyMessage MsgDone                      == AnyMessage MsgDone                      = True
   _                                       == _                                       = False
