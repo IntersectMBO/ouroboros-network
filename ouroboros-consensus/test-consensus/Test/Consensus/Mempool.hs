@@ -6,7 +6,7 @@
 
 module Test.Consensus.Mempool (tests) where
 
-import           Control.Monad (foldM, forM, void)
+import           Control.Monad (foldM, forM, forM_, void)
 import           Control.Monad.Except (Except, runExcept)
 import           Control.Monad.State (State, evalState, get, modify)
 import           Data.List (find, foldl', isSuffixOf, nub, sort)
@@ -43,6 +43,7 @@ tests = testGroup "Mempool"
       ]
   , testProperty "snapshotTxs == snapshotTxsAfter zeroIdx" prop_Mempool_snapshotTxs_snapshotTxsAfter
   , testProperty "valid added txs == getTxs"               prop_Mempool_addTxs_getTxs
+  , testProperty "addTxs txs == mapM (addTxs . pure) txs"  prop_Mempool_addTxs_one_vs_multiple
   , testProperty "result of addTxs"                        prop_Mempool_addTxs_result
   , testProperty "Invalid transactions are never added"    prop_Mempool_InvalidTxsNeverAdded
   , testProperty "Added valid transactions are traced"     prop_Mempool_TraceValidTxs
@@ -70,6 +71,17 @@ prop_Mempool_addTxs_getTxs setup =
     withTestMempool (testSetup setup) $ \TestMempool { mempool } -> do
       let Mempool { addTxs, getSnapshot } = mempool
       _ <- addTxs (allTxs setup)
+      MempoolSnapshot { snapshotTxs } <- atomically getSnapshot
+      return $ counterexample (ppTxs (txs setup)) $
+        validTxs setup `isSuffixOf` map fst snapshotTxs
+
+-- | Same as 'prop_Mempool_addTxs_getTxs', but add the transactions one-by-one
+-- instead of all at once.
+prop_Mempool_addTxs_one_vs_multiple :: TestSetupWithTxs -> Property
+prop_Mempool_addTxs_one_vs_multiple setup =
+    withTestMempool (testSetup setup) $ \TestMempool { mempool } -> do
+      let Mempool { addTxs, getSnapshot } = mempool
+      forM_ (allTxs setup) $ \tx -> addTxs [tx]
       MempoolSnapshot { snapshotTxs } <- atomically getSnapshot
       return $ counterexample (ppTxs (txs setup)) $
         validTxs setup `isSuffixOf` map fst snapshotTxs
