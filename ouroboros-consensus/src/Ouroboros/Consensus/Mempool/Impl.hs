@@ -6,6 +6,8 @@ module Ouroboros.Consensus.Mempool.Impl (
     openMempool
   , LedgerInterface (..)
   , chainDBLedgerInterface
+    -- * For testing purposes
+  , openMempoolWithoutSyncThread
   ) where
 
 import           Control.Monad.Except
@@ -54,12 +56,34 @@ openMempool :: ( MonadAsync m
 openMempool registry ledger cfg tracer = do
     env <- initMempoolEnv ledger cfg tracer
     forkSyncStateOnTipPointChange registry env
-    return Mempool {
-        addTxs        = implAddTxs env
-      , withSyncState = implWithSyncState env
-      , getSnapshot   = implGetSnapshot env
-      , zeroIdx       = zeroTicketNo
-      }
+    return $ mkMempool env
+
+-- | Unlike 'openMempool', this function does not fork a background thread
+-- that synchronises with the ledger state whenever the later changes.
+--
+-- Intended for testing purposes.
+openMempoolWithoutSyncThread
+  :: ( MonadAsync m
+     , MonadFork m
+     , MonadMask m
+     , MonadSTM m
+     , ApplyTx blk
+     )
+  => LedgerInterface m blk
+  -> LedgerConfig blk
+  -> Tracer m (TraceEventMempool blk)
+  -> m (Mempool m blk TicketNo)
+openMempoolWithoutSyncThread ledger cfg tracer =
+    mkMempool <$> initMempoolEnv ledger cfg tracer
+
+mkMempool :: (MonadSTM m, ApplyTx blk)
+          => MempoolEnv m blk -> Mempool m blk TicketNo
+mkMempool env = Mempool
+    { addTxs        = implAddTxs env
+    , withSyncState = implWithSyncState env
+    , getSnapshot   = implGetSnapshot env
+    , zeroIdx       = zeroTicketNo
+    }
 
 -- | Abstract interface needed to run a Mempool.
 data LedgerInterface m blk = LedgerInterface

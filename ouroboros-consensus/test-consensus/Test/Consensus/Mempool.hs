@@ -33,7 +33,6 @@ import           Ouroboros.Consensus.Mempool
 import           Ouroboros.Consensus.Mempool.TxSeq as TxSeq
 import           Ouroboros.Consensus.Util (whenJust)
 import           Ouroboros.Consensus.Util.Condense (condense)
-import           Ouroboros.Consensus.Util.ThreadRegistry (withThreadRegistry)
 
 import           Test.Consensus.Mempool.TestBlock
 
@@ -386,7 +385,7 @@ withTestMempool setup@TestSetup { testLedgerState, testInitialTxs } prop =
 
     setUpAndRun :: forall m. (MonadAsync m, MonadMask m, MonadFork m)
                 => m Property
-    setUpAndRun = withThreadRegistry $ \registry -> do
+    setUpAndRun = do
 
       -- Set up the LedgerInterface
       varCurrentLedgerState <- atomically $ newTVar testLedgerState
@@ -400,7 +399,7 @@ withTestMempool setup@TestSetup { testLedgerState, testInitialTxs } prop =
       let tracer = Tracer $ \ev -> atomically $ modifyTVar' varEvents (ev:)
 
       -- Open the mempool and add the initial transactions
-      mempool <- openMempool registry ledgerInterface cfg tracer
+      mempool <- openMempoolWithoutSyncThread ledgerInterface cfg tracer
       result  <- addTxs mempool (map TestGenTx testInitialTxs)
       whenJust (find (isJust . snd) result) $ \(invalidTx, _) -> error $
         "Invalid initial transaction: " <> condense invalidTx
