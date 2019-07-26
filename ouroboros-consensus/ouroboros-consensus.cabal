@@ -245,6 +245,8 @@ test-suite test-consensus
                     Test.Consensus.BlockchainTime
                     Test.Consensus.ChainSyncClient
                     Test.Consensus.Mempool
+                    Test.Consensus.Mempool.TestBlock
+                    Test.Consensus.Mempool.TestTx
                     Test.Dynamic.BFT
                     Test.Dynamic.General
                     Test.Dynamic.LeaderSchedule
@@ -259,7 +261,6 @@ test-suite test-consensus
                     Test.Util.Orphans.Arbitrary
                     Test.Util.Range
                     Test.Util.TestBlock
-                    Test.Util.TestTx
   build-depends:    base,
                     cardano-crypto-class,
                     typed-protocols,
@@ -324,7 +325,6 @@ test-suite test-storage
                     Test.Util.Range
                     Test.Util.RefEnv
                     Test.Util.TestBlock
-                    Test.Util.TestTx
                     Test.Util.Tracer
   build-depends:    base,
                     cardano-crypto-class,
