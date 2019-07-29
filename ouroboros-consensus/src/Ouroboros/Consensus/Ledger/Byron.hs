@@ -45,7 +45,8 @@ module Ouroboros.Consensus.Ledger.Byron
   , ByronBlockOrEBB (..)
   , pattern ByronHeaderOrEBB
   , unByronHeaderOrEBB
-  , annotateBoundary
+  , annotateBoundaryBlock
+  , annotateBoundaryHeader
   , fromCBORAHeaderOrBoundary
   ) where
 
@@ -389,11 +390,11 @@ newtype ByronBlockOrEBB cfg = ByronBlockOrEBB
 
 instance GetHeader (ByronBlockOrEBB cfg) where
   newtype Header (ByronBlockOrEBB cfg) = ByronHeaderOrEBB {
-      unByronHeaderOrEBB :: Either (CC.Block.BoundaryValidationData ByteString) (CC.Block.AHeader ByteString)
+      unByronHeaderOrEBB :: Either (CC.Block.ABoundaryHeader ByteString) (CC.Block.AHeader ByteString)
     } deriving (Eq, Show)
 
-  getHeader (ByronBlockOrEBB (CC.Block.ABOBBlock b)) = ByronHeaderOrEBB . Right $ CC.Block.blockHeader b
-  getHeader (ByronBlockOrEBB (CC.Block.ABOBBoundary b)) = ByronHeaderOrEBB . Left $ b
+  getHeader (ByronBlockOrEBB (CC.Block.ABOBBlock b))    = ByronHeaderOrEBB . Right $ CC.Block.blockHeader    b
+  getHeader (ByronBlockOrEBB (CC.Block.ABOBBoundary b)) = ByronHeaderOrEBB . Left  $ CC.Block.boundaryHeader b
 
 type instance HeaderHash (ByronBlockOrEBB  cfg) = CC.Block.HeaderHash
 
@@ -408,7 +409,7 @@ instance (ByronGiven, Typeable cfg) => HasHeader (ByronBlockOrEBB cfg) where
 
 instance (ByronGiven, Typeable cfg) => HasHeader (Header (ByronBlockOrEBB cfg)) where
   blockHash b = case unByronHeaderOrEBB b of
-    Left ebb -> CC.Block.boundaryHashAnnotated ebb
+    Left ebb -> CC.Block.boundaryHeaderHashAnnotated ebb
     Right mb -> CC.Block.headerHashAnnotated mb
 
   blockPrevHash b = case unByronHeaderOrEBB b of
@@ -441,7 +442,7 @@ instance StandardHash (ByronBlockOrEBB cfg)
 instance (ByronGiven, Typeable cfg)
   => HeaderSupportsWithEBB (ExtNodeConfig cfg (PBft PBftCardanoCrypto)) (Header (ByronBlockOrEBB cfg)) where
   type HeaderOfBlock (Header (ByronBlockOrEBB cfg)) = Header (ByronBlock cfg)
-  type HeaderOfEBB (Header (ByronBlockOrEBB cfg)) = CC.Block.BoundaryValidationData ByteString
+  type HeaderOfEBB (Header (ByronBlockOrEBB cfg)) = CC.Block.ABoundaryHeader ByteString
 
   eitherHeaderOrEbb _ = fmap ByronHeader . unByronHeaderOrEBB
 
@@ -473,7 +474,7 @@ instance ( ByronGiven
     Left ebb ->
       mapExcept (fmap (\i -> ByronEBBLedgerState $ ByronLedgerState i snapshots)) $ do
         return $ state
-          { CC.Block.cvsPreviousHash = Right $ CC.Block.boundaryHashAnnotated ebb
+          { CC.Block.cvsPreviousHash = Right $ CC.Block.boundaryHeaderHashAnnotated ebb
           , CC.Block.cvsLastSlot = CC.Slot.SlotNumber $ epochSlots * (CC.Block.boundaryEpoch ebb)
           }
       where
@@ -495,10 +496,10 @@ annotateByronBlock epochSlots = ByronBlockOrEBB . CC.Block.ABOBBlock . annotateB
 -------------------------------------------------------------------------------}
 
 instance Condense (ByronBlockOrEBB cfg) where
-  condense (ByronBlockOrEBB (CC.Block.ABOBBlock blk)) = condense (ByronBlock blk)
-  condense (ByronBlockOrEBB (CC.Block.ABOBBoundary bvd)) = condenseBVD bvd
+  condense (ByronBlockOrEBB (CC.Block.ABOBBlock blk))    = condense (ByronBlock blk)
+  condense (ByronBlockOrEBB (CC.Block.ABOBBoundary bvd)) = condenseBVD (CC.Block.boundaryHeader bvd)
 
-condenseBVD :: CC.Block.BoundaryValidationData ByteString -> String
+condenseBVD :: CC.Block.ABoundaryHeader ByteString -> String
 condenseBVD bvd =
       "( ebb: true" <>
       ", hash: " <> condensedHash <>
@@ -576,7 +577,7 @@ encodeByronChainState = encode
 
 decodeByronHeader :: Crypto.ProtocolMagicId -> CC.Slot.EpochSlots -> Decoder s (Header (ByronBlockOrEBB cfg))
 decodeByronHeader pm epochSlots =
-    ByronHeaderOrEBB . bimap annotateBo annotateH <$> fromCBORAHeaderOrBoundary epochSlots
+    ByronHeaderOrEBB . bimap annotateE annotateH <$> fromCBORAHeaderOrBoundary epochSlots
   where
     -- TODO #560: Re-annotation can be done but requires some rearranging in
     -- the codecs Original ByteSpan's refer to bytestring we don't have, so
@@ -584,8 +585,8 @@ decodeByronHeader pm epochSlots =
     annotateH :: CC.Block.AHeader a -> CC.Block.AHeader ByteString
     annotateH = annotateHeader epochSlots . void
 
-    annotateBo :: CC.Block.BoundaryValidationData a -> CC.Block.BoundaryValidationData ByteString
-    annotateBo = annotateBoundary pm . void
+    annotateE :: CC.Block.ABoundaryHeader a -> CC.Block.ABoundaryHeader ByteString
+    annotateE = annotateBoundaryHeader pm . void
 
 decodeByronBlock :: Crypto.ProtocolMagicId -> CC.Slot.EpochSlots -> Decoder s (ByronBlockOrEBB cfg)
 decodeByronBlock pm epochSlots =
@@ -601,8 +602,8 @@ decodeByronBlock pm epochSlots =
     annotateBl :: CC.Block.ABlock a -> CC.Block.ABlock ByteString
     annotateBl = annotateBlock epochSlots . void
 
-    annotateBo :: CC.Block.BoundaryValidationData a -> CC.Block.BoundaryValidationData ByteString
-    annotateBo = annotateBoundary pm . void
+    annotateBo :: CC.Block.ABoundaryBlock a -> CC.Block.ABoundaryBlock ByteString
+    annotateBo = annotateBoundaryBlock pm . void
 
 decodeByronHeaderHash :: Decoder s (HeaderHash (ByronBlockOrEBB cfg))
 decodeByronHeaderHash = fromCBOR
@@ -688,45 +689,65 @@ annotateHeader epochSlots =
   demo.
   -------------------------------------------------------------------------------}
 
-annotateBoundary :: Crypto.ProtocolMagicId
-                 -> CC.Block.BoundaryValidationData ()
-                 -> CC.Block.BoundaryValidationData ByteString
-annotateBoundary pm =
+annotateBoundaryHeader :: Crypto.ProtocolMagicId
+                       -> CC.Block.ABoundaryHeader ()
+                       -> CC.Block.ABoundaryHeader ByteString
+annotateBoundaryHeader pm =
       (\bs -> splice bs (CBOR.deserialiseFromBytes
-                           CC.Block.dropBoundaryBlock
+                           CC.Block.fromCBORABoundaryHeader
                            bs))
     . CBOR.toLazyByteString
-    . CC.Block.toCBORBoundaryBlock pm
+    . CC.Block.toCBORABoundaryHeader pm
   where
     splice :: Show err
            => Lazy.ByteString
-           -> Either err (Lazy.ByteString, CC.Block.BoundaryValidationData ByteSpan)
-           -> CC.Block.BoundaryValidationData ByteString
+           -> Either err (Lazy.ByteString, CC.Block.ABoundaryHeader ByteSpan)
+           -> CC.Block.ABoundaryHeader ByteString
     splice _ (Left err) =
-      error $ "annotateBoundary: serialization roundtrip failure: " <> show err
+      error $ "annotateBoundaryHeader: serialization roundtrip failure: " <> show err
+    splice bs (Right (_leftover, boundary)) =
+      (Lazy.toStrict . slice bs) <$> boundary
+
+
+annotateBoundaryBlock :: Crypto.ProtocolMagicId
+                      -> CC.Block.ABoundaryBlock ()
+                      -> CC.Block.ABoundaryBlock ByteString
+annotateBoundaryBlock pm =
+      (\bs -> splice bs (CBOR.deserialiseFromBytes
+                           CC.Block.fromCBORABoundaryBlock
+                           bs))
+    . CBOR.toLazyByteString
+    . CC.Block.toCBORABoundaryBlock pm
+  where
+    splice :: Show err
+           => Lazy.ByteString
+           -> Either err (Lazy.ByteString, CC.Block.ABoundaryBlock ByteSpan)
+           -> CC.Block.ABoundaryBlock ByteString
+    splice _ (Left err) =
+      error $ "annotateBoundaryBlock: serialization roundtrip failure: " <> show err
     splice bs (Right (_leftover, boundary)) =
       (Lazy.toStrict . slice bs) <$> boundary
 
 fromCBORAHeaderOrBoundary
   :: CC.Slot.EpochSlots
-  -> Decoder s (Either (CC.Block.BoundaryValidationData ByteSpan) (CC.Block.AHeader ByteSpan))
+  -> Decoder s (Either (CC.Block.ABoundaryHeader ByteSpan) (CC.Block.AHeader ByteSpan))
 fromCBORAHeaderOrBoundary epochSlots = do
   enforceSize "Block" 2
   fromCBOR @Word >>= \case
-    0 -> Left <$> CC.Block.dropBoundaryBlock
+    0 -> Left <$> CC.Block.fromCBORABoundaryHeader
     1 -> Right <$> CC.Block.fromCBORAHeader epochSlots
     t -> error $ "Unknown tag in encoded HeaderOrBoundary" <> show t
 
 toCBORAHeaderOrBoundary
   :: Crypto.ProtocolMagicId
   -> CC.Slot.EpochSlots
-  -> (Either (CC.Block.BoundaryValidationData a) (CC.Block.AHeader a))
+  -> (Either (CC.Block.ABoundaryHeader a) (CC.Block.AHeader a))
   -> Encoding
 toCBORAHeaderOrBoundary pm epochSlots abob =
   encodeListLen 2 <>
   case abob of
-    Right mh -> toCBOR (1 :: Word) <> (CC.Block.toCBORHeader epochSlots . void $ mh)
-    Left ebb -> toCBOR (0 :: Word) <> (CC.Block.toCBORBoundaryBlock pm . void $ ebb)
+    Right mh -> toCBOR (1 :: Word) <> (CC.Block.toCBORHeader epochSlots  . void $ mh)
+    Left ebb -> toCBOR (0 :: Word) <> (CC.Block.toCBORABoundaryHeader pm . void $ ebb)
 
 {-------------------------------------------------------------------------------
   Mempool integration
