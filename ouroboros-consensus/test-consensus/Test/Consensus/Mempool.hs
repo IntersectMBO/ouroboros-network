@@ -1,12 +1,13 @@
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE PatternSynonyms     #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Test.Consensus.Mempool (tests) where
 
-import           Control.Monad (foldM, forM, void)
+import           Control.Monad (foldM, forM, forM_, void)
 import           Control.Monad.Except (Except, runExcept)
 import           Control.Monad.State (State, evalState, get, modify)
 import           Data.List (find, foldl', isSuffixOf, nub, sort)
@@ -28,12 +29,15 @@ import           Control.Monad.IOSim (runSimOrThrow)
 
 import           Control.Tracer (Tracer (..))
 
+import           Ouroboros.Network.Block (pattern BlockPoint, SlotNo (..),
+                     atSlot, pointSlot, withHash)
+import           Ouroboros.Network.Point (WithOrigin (..))
+
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Mempool
 import           Ouroboros.Consensus.Mempool.TxSeq as TxSeq
 import           Ouroboros.Consensus.Util (whenJust)
 import           Ouroboros.Consensus.Util.Condense (condense)
-import           Ouroboros.Consensus.Util.ThreadRegistry (withThreadRegistry)
 
 import           Test.Consensus.Mempool.TestBlock
 
@@ -44,6 +48,7 @@ tests = testGroup "Mempool"
       ]
   , testProperty "snapshotTxs == snapshotTxsAfter zeroIdx" prop_Mempool_snapshotTxs_snapshotTxsAfter
   , testProperty "valid added txs == getTxs"               prop_Mempool_addTxs_getTxs
+  , testProperty "addTxs txs == mapM (addTxs . pure) txs"  prop_Mempool_addTxs_one_vs_multiple
   , testProperty "result of addTxs"                        prop_Mempool_addTxs_result
   , testProperty "Invalid transactions are never added"    prop_Mempool_InvalidTxsNeverAdded
   , testProperty "Added valid transactions are traced"     prop_Mempool_TraceValidTxs
@@ -71,6 +76,17 @@ prop_Mempool_addTxs_getTxs setup =
     withTestMempool (testSetup setup) $ \TestMempool { mempool } -> do
       let Mempool { addTxs, getSnapshot } = mempool
       _ <- addTxs (allTxs setup)
+      MempoolSnapshot { snapshotTxs } <- atomically getSnapshot
+      return $ counterexample (ppTxs (txs setup)) $
+        validTxs setup `isSuffixOf` map fst snapshotTxs
+
+-- | Same as 'prop_Mempool_addTxs_getTxs', but add the transactions one-by-one
+-- instead of all at once.
+prop_Mempool_addTxs_one_vs_multiple :: TestSetupWithTxs -> Property
+prop_Mempool_addTxs_one_vs_multiple setup =
+    withTestMempool (testSetup setup) $ \TestMempool { mempool } -> do
+      let Mempool { addTxs, getSnapshot } = mempool
+      forM_ (allTxs setup) $ \tx -> addTxs [tx]
       MempoolSnapshot { snapshotTxs } <- atomically getSnapshot
       return $ counterexample (ppTxs (txs setup)) $
         validTxs setup `isSuffixOf` map fst snapshotTxs
@@ -288,8 +304,17 @@ genInvalidTx invalidTxIds TestLedger { tlTxIds } = frequency
 applyTxToLedger :: LedgerState TestBlock
                 -> TestTx
                 -> Except TestTxError (LedgerState TestBlock)
-applyTxToLedger ledgerState tx =
-  applyTx LedgerConfig (TestGenTx tx) ledgerState
+applyTxToLedger = \ledgerState tx ->
+    -- We need to change the 'ledgerTipPoint' because that is used to check
+    -- whether the ledger state has changed.
+    updateLedgerTipPoint <$> applyTx LedgerConfig (TestGenTx tx) ledgerState
+  where
+    updateLedgerTipPoint ledgerState = ledgerState
+        { tlLastApplied = BlockPoint { withHash = unSlotNo slot', atSlot = slot' } }
+      where
+        slot' = case pointSlot (ledgerTipPoint ledgerState) of
+          Origin  -> SlotNo 0
+          At slot -> succ slot
 
 {-------------------------------------------------------------------------------
   TestSetupWithTxs
@@ -386,7 +411,7 @@ withTestMempool setup@TestSetup { testLedgerState, testInitialTxs } prop =
 
     setUpAndRun :: forall m. (MonadAsync m, MonadMask m, MonadFork m)
                 => m Property
-    setUpAndRun = withThreadRegistry $ \registry -> do
+    setUpAndRun = do
 
       -- Set up the LedgerInterface
       varCurrentLedgerState <- atomically $ newTVar testLedgerState
@@ -400,7 +425,7 @@ withTestMempool setup@TestSetup { testLedgerState, testInitialTxs } prop =
       let tracer = Tracer $ \ev -> atomically $ modifyTVar' varEvents (ev:)
 
       -- Open the mempool and add the initial transactions
-      mempool <- openMempool registry ledgerInterface cfg tracer
+      mempool <- openMempoolWithoutSyncThread ledgerInterface cfg tracer
       result  <- addTxs mempool (map TestGenTx testInitialTxs)
       whenJust (find (isJust . snd) result) $ \(invalidTx, _) -> error $
         "Invalid initial transaction: " <> condense invalidTx
