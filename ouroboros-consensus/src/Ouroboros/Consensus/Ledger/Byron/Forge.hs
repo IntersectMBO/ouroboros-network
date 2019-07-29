@@ -70,24 +70,35 @@ forgeGenesisEBB (WithEBBNodeConfig cfg) curSlot = do
     return
       . ByronBlockOrEBB
       . CC.Block.ABOBBoundary
-      . annotateBoundary given
-      $ boundaryData
+      . annotateBoundaryBlock given
+      $ boundaryBlock
   where
-    boundaryData = CC.Block.BoundaryValidationData
-                   boundaryLength
-                   (Left pbftGenesisHash)
-                   epoch
-                   (CC.Common.ChainDifficulty 0)
-                   ()
-                   ()
-    boundaryLength = 0 -- Since this is a demo and we ignore the length, set this
-                       -- to 0
-    ByronConfig { pbftGenesisHash
+    boundaryBlock :: CC.Block.ABoundaryBlock ()
+    boundaryBlock =
+      CC.Block.ABoundaryBlock {
+        CC.Block.boundaryBlockLength = 0 -- Since this is a demo and we
+                                         -- ignore the length, set this to 0
+      , CC.Block.boundaryHeader
+      , CC.Block.boundaryBody        = CC.Block.ABoundaryBody ()
+      , CC.Block.boundaryAnnotation  = ()
+      }
+
+    boundaryHeader :: CC.Block.ABoundaryHeader ()
+    boundaryHeader =
+      CC.Block.ABoundaryHeader {
+        CC.Block.boundaryPrevHash         = Left pbftGenesisHash
+      , CC.Block.boundaryEpoch            = epoch
+      , CC.Block.boundaryDifficulty       = CC.Common.ChainDifficulty 0
+      , CC.Block.boundaryHeaderAnnotation = ()
+      }
+      where
+        ByronConfig { pbftGenesisHash
                     , pbftEpochSlots
                     } = encNodeConfigExt cfg
-    CC.Slot.EpochNumber epoch = CC.Slot.epochNo
-                                . CC.Slot.fromSlotNumber pbftEpochSlots
-                                $ coerce curSlot
+        CC.Slot.EpochNumber epoch =
+            CC.Slot.epochNo
+          . CC.Slot.fromSlotNumber pbftEpochSlots
+          $ coerce curSlot
 
 forgeBlock
   :: forall m cfg.
