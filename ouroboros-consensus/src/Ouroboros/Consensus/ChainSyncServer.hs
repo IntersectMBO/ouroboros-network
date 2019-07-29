@@ -1,3 +1,4 @@
+{-# LANGUAGE EmptyDataDeriving   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies        #-}
 
@@ -5,6 +6,8 @@
 module Ouroboros.Consensus.ChainSyncServer
   ( chainSyncHeadersServer
   , chainSyncBlocksServer
+    -- * Trace events
+  , TraceChainSyncServerEvent
   ) where
 
 import           Control.Monad.Class.MonadSTM
@@ -26,7 +29,7 @@ import           Ouroboros.Consensus.Block
 --
 chainSyncHeadersServer
     :: forall m blk. MonadSTM m
-    => Tracer m String
+    => Tracer m (TraceChainSyncServerEvent blk)
     -> ChainDB m blk
     -> ChainSyncServer (Header blk) (Point blk) m ()
 chainSyncHeadersServer tracer chainDB =
@@ -42,7 +45,7 @@ chainSyncHeadersServer tracer chainDB =
 --
 chainSyncBlocksServer
     :: forall m blk. MonadSTM m
-    => Tracer m String
+    => Tracer m (TraceChainSyncServerEvent blk)
     -> ChainDB m blk
     -> ChainSyncServer blk (Point blk) m ()
 chainSyncBlocksServer tracer chainDB =
@@ -63,7 +66,7 @@ chainSyncBlocksServer tracer chainDB =
 --
 chainSyncServerForReader
     :: forall m blk b. MonadSTM m
-    => Tracer m String
+    => Tracer m (TraceChainSyncServerEvent blk)
     -> ChainDB m blk
     -> Reader  m blk b
     -> ChainSyncServer b (Point blk) m ()
@@ -109,3 +112,13 @@ chainSyncServerForReader _tracer chainDB rdr =
       return $ case changed of
         Just pt -> SendMsgIntersectFound    pt tip idle'
         Nothing -> SendMsgIntersectUnchanged   tip idle'
+
+{-------------------------------------------------------------------------------
+  Trace events
+-------------------------------------------------------------------------------}
+
+-- | Events traced by the Chain Sync Server.
+data TraceChainSyncServerEvent blk
+   -- TODO no events yet. Tracing the messages send/received over the network
+   -- might be all we need?
+  deriving (Eq, Show)

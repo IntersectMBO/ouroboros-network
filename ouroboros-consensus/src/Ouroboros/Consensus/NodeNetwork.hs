@@ -6,7 +6,6 @@
 {-# LANGUAGE RankNTypes            #-}
 {-# LANGUAGE RecordWildCards       #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
-{-# LANGUAGE TypeApplications      #-}
 {-# LANGUAGE TypeFamilies          #-}
 
 {-# OPTIONS_GHC -Wredundant-constraints -Werror=missing-fields #-}
@@ -16,6 +15,10 @@ module Ouroboros.Consensus.NodeNetwork (
   , protocolHandlers
   , ProtocolCodecs (..)
   , protocolCodecsId
+  , ProtocolTracers
+  , ProtocolTracers' (..)
+  , nullProtocolTracers
+  , showProtocolTracers
   , NetworkApplication(..)
   , consensusNetworkApps
   , initiatorNetworkApplication
@@ -46,9 +49,10 @@ import           Ouroboros.Network.BlockFetch
 import           Ouroboros.Network.BlockFetch.Client (BlockFetchClient,
                      blockFetchClient)
 import           Ouroboros.Network.Mux
-import           Ouroboros.Network.Protocol.BlockFetch.Server (BlockFetchServer, blockFetchServerPeer)
-import           Ouroboros.Network.Protocol.BlockFetch.Type (BlockFetch (..))
 import           Ouroboros.Network.Protocol.BlockFetch.Codec (codecBlockFetchId)
+import           Ouroboros.Network.Protocol.BlockFetch.Server (BlockFetchServer,
+                     blockFetchServerPeer)
+import           Ouroboros.Network.Protocol.BlockFetch.Type (BlockFetch (..))
 import           Ouroboros.Network.Protocol.ChainSync.Client
 import           Ouroboros.Network.Protocol.ChainSync.Codec (codecChainSyncId)
 import           Ouroboros.Network.Protocol.ChainSync.Server
@@ -69,8 +73,8 @@ import           Ouroboros.Consensus.ChainSyncClient
 import           Ouroboros.Consensus.ChainSyncServer
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Mempool.API
+import           Ouroboros.Consensus.Node.Tracers
 import           Ouroboros.Consensus.TxSubmission
-import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Orphans ()
 
 import qualified Ouroboros.Storage.ChainDB.API as ChainDB
@@ -128,17 +132,12 @@ protocolHandlers
        , MonadThrow m
        , ApplyTx blk
        , ProtocolLedgerView blk
-       , Condense (Header blk)
-       , Condense (HeaderHash blk)
-       , Condense peer
        , Show (ApplyTxErr blk)  --TODO: consider using condense
-       , Condense (GenTx blk)
        )
     => NodeParams m peer blk  --TODO eliminate, merge relevant into NodeKernel
     -> NodeKernel m peer blk
     -> ProtocolHandlers m peer blk
-protocolHandlers NodeParams {btime, maxClockSkew, tracer, maxUnackTxs,
-                             txInboundTracer, txOutboundTracer}
+protocolHandlers NodeParams {btime, maxClockSkew, tracers, maxUnackTxs}
                  NodeKernel {getChainDB, getMempool, getNodeConfig} =
     --TODO: bundle needed NodeParams into the NodeKernel
     -- so we do not have to pass it separately
@@ -147,38 +146,38 @@ protocolHandlers NodeParams {btime, maxClockSkew, tracer, maxUnackTxs,
     ProtocolHandlers {
       phChainSyncClient =
         chainSyncClient
-          (tracePrefix "CSClient" (Nothing :: Maybe peer) tracer)
+          (chainSyncClientTracer tracers)
           getNodeConfig
           btime
           maxClockSkew
           (ChainDB.getCurrentLedger getChainDB)
     , phChainSyncServer =
         chainSyncHeadersServer
-          (tracePrefix "CSServer" (Nothing :: Maybe peer) tracer)
+          (chainSyncServerTracer tracers)
           getChainDB
     , phBlockFetchClient = blockFetchClient
     , phBlockFetchServer =
         blockFetchServer
-          (tracePrefix "BFServer" (Nothing :: Maybe peer) tracer)
+          (blockFetchServerTracer tracers)
           getChainDB
     , phTxSubmissionClient =
         txSubmissionOutbound
-          txOutboundTracer
+          (txOutboundTracer tracers)
           maxUnackTxs
           (getMempoolReader getMempool)
     , phTxSubmissionServer =
         txSubmissionInbound
-          txInboundTracer
+          (txInboundTracer tracers)
           maxUnackTxs
           (getMempoolWriter getMempool)
 
     , phLocalChainSyncServer =
         chainSyncBlocksServer
-          (tracePrefix "CSLocalServer" (Nothing :: Maybe peer) tracer)
+          (chainSyncServerTracer tracers)
           getChainDB
     , phLocalTxSubmissionServer =
         localTxSubmissionServer
-          (tracePrefix "TxSubmitServer" (Nothing :: Maybe peer) tracer)
+          (localTxSubmissionServerTracer tracers)
           getMempool
     }
 
@@ -216,6 +215,44 @@ protocolCodecsId = ProtocolCodecs {
     , pcLocalChainSyncCodec    = codecChainSyncId
     , pcLocalTxSubmissionCodec = codecLocalTxSubmissionId
     }
+
+-- | A record of 'Tracer's for the different protocols.
+type ProtocolTracers m peer blk failure = ProtocolTracers' peer blk failure (Tracer m)
+
+data ProtocolTracers' peer blk failure f = ProtocolTracers {
+    ptChainSyncTracer         :: f (TraceSendRecv (ChainSync (Header blk) (Point blk))     peer failure)
+  , ptBlockFetchTracer        :: f (TraceSendRecv (BlockFetch blk)                         peer failure)
+  , ptTxSubmissionTracer      :: f (TraceSendRecv (TxSubmission (GenTxId blk) (GenTx blk)) peer failure)
+  , ptLocalChainSyncTracer    :: f (TraceSendRecv (ChainSync blk (Point blk))              peer failure)
+  , ptLocalTxSubmissionTracer :: f (TraceSendRecv (LocalTxSubmission (GenTx blk) String)   peer failure)
+  }
+
+-- | Use a 'nullTracer' for each protocol.
+nullProtocolTracers :: Monad m => ProtocolTracers m peer blk failure
+nullProtocolTracers = ProtocolTracers {
+    ptChainSyncTracer         = nullTracer
+  , ptBlockFetchTracer        = nullTracer
+  , ptTxSubmissionTracer      = nullTracer
+  , ptLocalChainSyncTracer    = nullTracer
+  , ptLocalTxSubmissionTracer = nullTracer
+  }
+
+showProtocolTracers :: ( StandardHash blk
+                       , Show blk
+                       , Show (Header blk)
+                       , Show peer
+                       , Show failure
+                       , Show (GenTx blk)
+                       , Show (GenTxId blk)
+                       )
+                    => Tracer m String -> ProtocolTracers m peer blk failure
+showProtocolTracers tr = ProtocolTracers {
+    ptChainSyncTracer         = showTracing tr
+  , ptBlockFetchTracer        = showTracing tr
+  , ptTxSubmissionTracer      = showTracing tr
+  , ptLocalChainSyncTracer    = showTracing tr
+  , ptLocalTxSubmissionTracer = showTracing tr
+  }
 
 -- | Consensus provides a chains sync, block fetch applications.  This data
 -- type can be mapped to 'MuxApplication' under the assumption that 'bytesCS'
@@ -303,15 +340,12 @@ consensusNetworkApps
        , Ord peer
        , Exception failure
        )
-    => Tracer m (TraceSendRecv (ChainSync (Header blk) (Point blk)) peer failure)
-    -> Tracer m (TraceSendRecv (BlockFetch blk) peer failure)
-    -> NodeKernel m peer blk
+    => NodeKernel m peer blk
+    -> ProtocolTracers m peer blk failure
     -> ProtocolCodecs blk failure m bytesCS bytesBF bytesTX bytesLCS bytesLTX
     -> ProtocolHandlers m peer blk
     -> NetworkApplication m peer bytesCS bytesBF bytesTX bytesLCS bytesLTX ()
-
-consensusNetworkApps traceChainSync traceBlockFetch kernel
-                     ProtocolCodecs {..} ProtocolHandlers {..} =
+consensusNetworkApps kernel ProtocolTracers {..} ProtocolCodecs {..} ProtocolHandlers {..} =
     NetworkApplication {
       naChainSyncClient,
       naChainSyncServer,
@@ -342,7 +376,7 @@ consensusNetworkApps traceChainSync traceBlockFetch kernel
           (getNodeCandidates kernel)
           them $ \varCandidate curChain ->
         runPeer
-          traceChainSync
+          ptChainSyncTracer
           pcChainSyncCodec
           them
           channel
@@ -355,7 +389,7 @@ consensusNetworkApps traceChainSync traceBlockFetch kernel
       -> m ()
     naChainSyncServer them channel =
       runPeer
-        traceChainSync
+        ptChainSyncTracer
         pcChainSyncCodec
         them
         channel
@@ -369,7 +403,7 @@ consensusNetworkApps traceChainSync traceBlockFetch kernel
     naBlockFetchClient them channel =
       bracketFetchClient (getFetchClientRegistry kernel) them $ \clientCtx ->
         runPipelinedPeer
-          traceBlockFetch
+          ptBlockFetchTracer
           pcBlockFetchCodec
           them
           channel
@@ -381,7 +415,7 @@ consensusNetworkApps traceChainSync traceBlockFetch kernel
       -> m ()
     naBlockFetchServer them channel =
       runPeer
-        traceBlockFetch
+        ptBlockFetchTracer
         pcBlockFetchCodec
         them
         channel
@@ -394,7 +428,7 @@ consensusNetworkApps traceChainSync traceBlockFetch kernel
       -> m ()
     naTxSubmissionClient them channel =
       runPeer
-        nullTracer  --TODO
+        ptTxSubmissionTracer
         pcTxSubmissionCodec
         them
         channel
@@ -406,7 +440,7 @@ consensusNetworkApps traceChainSync traceBlockFetch kernel
       -> m ()
     naTxSubmissionServer them channel =
       runPipelinedPeer
-        nullTracer  --TODO
+        ptTxSubmissionTracer
         pcTxSubmissionCodec
         them
         channel
@@ -418,7 +452,7 @@ consensusNetworkApps traceChainSync traceBlockFetch kernel
       -> m ()
     naLocalChainSyncServer them channel =
       runPeer
-        nullTracer  --TODO
+        ptLocalChainSyncTracer
         pcLocalChainSyncCodec
         them
         channel
@@ -430,7 +464,7 @@ consensusNetworkApps traceChainSync traceBlockFetch kernel
       -> m ()
     naLocalTxSubmissionServer them channel =
       runPeer
-        nullTracer  --TODO
+        ptLocalTxSubmissionTracer
         pcLocalTxSubmissionCodec
         them
         channel

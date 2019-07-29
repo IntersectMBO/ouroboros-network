@@ -15,17 +15,14 @@ module Ouroboros.Consensus.Node (
     NodeKernel (..)
   , NodeCallbacks (..)
   , NodeParams (..)
-  , TraceConstraints
+  , TraceForgeEvent (..)
   , nodeKernel
   , getMempoolReader
   , getMempoolWriter
-    -- * Auxiliary functions
-  , tracePrefix
   ) where
 
 import           Control.Monad (void)
 import           Crypto.Random (ChaChaDRG)
-import           Data.Functor.Contravariant (contramap)
 import           Data.Map.Strict (Map)
 import           Data.Maybe (isNothing)
 import           Data.Word (Word16)
@@ -41,12 +38,12 @@ import           Ouroboros.Network.AnchoredFragment (AnchoredFragment (..),
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.BlockFetch
 import           Ouroboros.Network.BlockFetch.State (FetchMode (..))
-import           Ouroboros.Network.Point (WithOrigin(..))
+import           Ouroboros.Network.Point (WithOrigin (..))
 import           Ouroboros.Network.TxSubmission.Inbound
-                     (TraceTxSubmissionInbound, TxSubmissionMempoolWriter)
+                     (TxSubmissionMempoolWriter)
 import qualified Ouroboros.Network.TxSubmission.Inbound as Inbound
 import           Ouroboros.Network.TxSubmission.Outbound
-                     (TraceTxSubmissionOutbound, TxSubmissionMempoolReader)
+                     (TxSubmissionMempoolReader)
 import qualified Ouroboros.Network.TxSubmission.Outbound as Outbound
 
 import           Ouroboros.Consensus.Block
@@ -56,9 +53,9 @@ import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Mempool
 import           Ouroboros.Consensus.Mempool.TxSeq (TicketNo)
+import           Ouroboros.Consensus.Node.Tracers
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util
-import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Orphans ()
 import           Ouroboros.Consensus.Util.Random
 import           Ouroboros.Consensus.Util.STM
@@ -124,12 +121,7 @@ data NodeCallbacks m blk = NodeCallbacks {
 
 -- | Parameters required when initializing a node
 data NodeParams m peer blk = NodeParams {
-      tracer             :: Tracer m String
-    , mempoolTracer      :: Tracer m (TraceEventMempool blk)
-    , decisionTracer     :: Tracer m [TraceLabelPeer peer (FetchDecision [Point (Header blk)])]
-    , fetchClientTracer  :: Tracer m (TraceLabelPeer peer (TraceFetchClientState (Header blk)))
-    , txInboundTracer    :: Tracer m (TraceTxSubmissionInbound  (GenTxId blk) (GenTx blk))
-    , txOutboundTracer   :: Tracer m (TraceTxSubmissionOutbound (GenTxId blk) (GenTx blk))
+      tracers            :: Tracers m peer blk
     , threadRegistry     :: ThreadRegistry m
     , maxClockSkew       :: ClockSkew
     , cfg                :: NodeConfig (BlockProtocol blk)
@@ -149,12 +141,11 @@ nodeKernel
        , MonadMask  m
        , ProtocolLedgerView blk
        , Ord peer
-       , TraceConstraints peer blk
        , ApplyTx blk
        )
     => NodeParams m peer blk
     -> m (NodeKernel m peer blk)
-nodeKernel params@NodeParams { threadRegistry, cfg, decisionTracer, fetchClientTracer } = do
+nodeKernel params@NodeParams { threadRegistry, cfg, tracers } = do
     st <- initInternalState params
 
     forkBlockProduction st
@@ -165,8 +156,8 @@ nodeKernel params@NodeParams { threadRegistry, cfg, decisionTracer, fetchClientT
     -- Run the block fetch logic in the background. This will call
     -- 'addFetchedBlock' whenever a new block is downloaded.
     void $ forkLinked threadRegistry $ blockFetchLogic
-        decisionTracer
-        fetchClientTracer
+        (blockFetchDecisionTracer tracers)
+        (blockFetchClientTracer   tracers)
         blockFetchInterface
         fetchClientRegistry
 
@@ -182,16 +173,9 @@ nodeKernel params@NodeParams { threadRegistry, cfg, decisionTracer, fetchClientT
   Internal node components
 -------------------------------------------------------------------------------}
 
--- | Constraints required to trace nodes, block, headers, etc.
-type TraceConstraints peer blk =
-  ( Condense peer
-  , Condense blk
-  , Condense (ChainHash blk)
-  , Condense (Header blk)
-  )
-
 data InternalState m peer blk = IS {
-      cfg                 :: NodeConfig (BlockProtocol blk)
+      tracers             :: Tracers m peer blk
+    , cfg                 :: NodeConfig (BlockProtocol blk)
     , threadRegistry      :: ThreadRegistry m
     , btime               :: BlockchainTime m
     , callbacks           :: NodeCallbacks m blk
@@ -200,7 +184,6 @@ data InternalState m peer blk = IS {
     , fetchClientRegistry :: FetchClientRegistry peer (Header blk) blk m
     , varCandidates       :: TVar m (Map peer (TVar m (CandidateState blk)))
     , varState            :: TVar m (NodeState (BlockProtocol blk))
-    , tracer              :: Tracer m String
     , mempool             :: Mempool m blk TicketNo
     }
 
@@ -211,18 +194,19 @@ initInternalState
        , MonadMask m
        , ProtocolLedgerView blk
        , Ord peer
-       , TraceConstraints peer blk
        , ApplyTx blk
        )
     => NodeParams m peer blk
     -> m (InternalState m peer blk)
-initInternalState NodeParams {..} = do
+initInternalState NodeParams { tracers, chainDB, threadRegistry, cfg,
+                               blockFetchSize, blockMatchesHeader, btime,
+                               callbacks, initState } = do
     varCandidates  <- atomically $ newTVar mempty
     varState       <- atomically $ newTVar initState
     mempool        <- openMempool threadRegistry
                                   (chainDBLedgerInterface chainDB)
                                   (ledgerConfigView cfg)
-                                  mempoolTracer
+                                  (mempoolTracer tracers)
 
     fetchClientRegistry <- newFetchClientRegistry
 
@@ -232,35 +216,23 @@ initInternalState NodeParams {..} = do
 
         blockFetchInterface :: BlockFetchConsensusInterface peer (Header blk) blk m
         blockFetchInterface = initBlockFetchConsensusInterface
-          (tracePrefix "ChainDB" (Nothing :: Maybe peer) tracer)
           cfg chainDB getCandidates blockFetchSize blockMatchesHeader btime
 
     return IS {..}
 
-tracePrefix :: Condense peer
-            => String
-            -> Maybe peer
-            -> Tracer m String
-            -> Tracer m String
-tracePrefix p mbUp tr =
-  let prefix = p <> maybe "" ((" " <>) . condense) mbUp <> " | "
-  in contramap (prefix <>) tr
-
 initBlockFetchConsensusInterface
     :: forall m peer blk.
        ( MonadSTM m
-       , TraceConstraints peer blk
        , SupportedBlock blk
        )
-    => Tracer m String
-    -> NodeConfig (BlockProtocol blk)
+    => NodeConfig (BlockProtocol blk)
     -> ChainDB m blk
     -> STM m (Map peer (AnchoredFragment (Header blk)))
     -> (Header blk -> SizeInBytes)
     -> (Header blk -> blk -> Bool)
     -> BlockchainTime m
     -> BlockFetchConsensusInterface peer (Header blk) blk m
-initBlockFetchConsensusInterface tracer cfg chainDB getCandidates blockFetchSize
+initBlockFetchConsensusInterface cfg chainDB getCandidates blockFetchSize
     blockMatchesHeader btime = BlockFetchConsensusInterface {..}
   where
     readCandidateChains :: STM m (Map peer (AnchoredFragment (Header blk)))
@@ -293,9 +265,7 @@ initBlockFetchConsensusInterface tracer cfg chainDB getCandidates blockFetchSize
     readFetchedBlocks = ChainDB.getIsFetched chainDB
 
     addFetchedBlock :: Point blk -> blk -> m ()
-    addFetchedBlock _pt blk = do
-      ChainDB.addBlock chainDB blk
-      traceWith tracer $ "Downloaded block: " <> condense blk
+    addFetchedBlock _pt = ChainDB.addBlock chainDB
 
     plausibleCandidateChain :: AnchoredFragment (Header blk)
                             -> AnchoredFragment (Header blk)
@@ -311,7 +281,6 @@ forkBlockProduction
     :: forall m peer blk.
        ( MonadAsync m
        , ProtocolLedgerView blk
-       , TraceConstraints peer blk
        )
     => InternalState m peer blk -> m ()
 forkBlockProduction IS{..} =
@@ -352,9 +321,7 @@ forkBlockProduction IS{..} =
       -- block), chain selection will not select the block we just produced
       -- ourselves, as it would mean switching to a shorter chain.
       whenJust mNewBlock $ \newBlock -> do
-        traceWith tracer $
-          "As leader of slot " <> condense currentSlot <> " I produce: " <>
-          condense newBlock
+        traceWith (forgeTracer tracers) $ TraceForgeEvent currentSlot newBlock
         ChainDB.addBlock chainDB newBlock
   where
     NodeCallbacks{..} = callbacks

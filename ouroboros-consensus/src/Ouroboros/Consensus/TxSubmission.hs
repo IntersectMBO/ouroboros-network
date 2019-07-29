@@ -1,9 +1,13 @@
-{-# LANGUAGE TypeFamilies        #-}
-{-# LANGUAGE NamedFieldPuns      #-}
-{-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE FlexibleContexts     #-}
+{-# LANGUAGE NamedFieldPuns       #-}
+{-# LANGUAGE StandaloneDeriving   #-}
+{-# LANGUAGE TypeFamilies         #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 module Ouroboros.Consensus.TxSubmission
   ( localTxSubmissionServer
+    -- * Trace events
+  , TraceLocalTxSubmissionServerEvent (..)
   ) where
 
 import           Control.Tracer
@@ -11,18 +15,16 @@ import           Control.Tracer
 import           Ouroboros.Network.Protocol.LocalTxSubmission.Server
 
 import           Ouroboros.Consensus.Mempool.API
-import           Ouroboros.Consensus.Util.Condense
 
 
 -- | Local transaction submission server, for adding txs to the 'Mempool'
 --
 localTxSubmissionServer
   :: ( Monad m
-     , Show (ApplyTxErr blk) -- TODO: consider using condense
+     , Show (ApplyTxErr blk)
      , ApplyTx blk
-     , Condense (GenTx blk)
      )
-  => Tracer m String
+  => Tracer m (TraceLocalTxSubmissionServerEvent blk)
   -> Mempool m blk idx
   -> LocalTxSubmissionServer (GenTx blk) String m ()
 localTxSubmissionServer tracer Mempool{addTxs} =
@@ -30,7 +32,7 @@ localTxSubmissionServer tracer Mempool{addTxs} =
   where
     server = LocalTxSubmissionServer {
       recvMsgSubmitTx = \tx -> do
-        traceWith tracer (condense tx)
+        traceWith tracer $ TraceReceivedTx tx
         res <- addTxs [tx]
         -- The 'addTxs' action returns the failing ones, whereas the protocol
         -- returns a Maybe failure for a single tx, so we must convert here.
@@ -41,3 +43,16 @@ localTxSubmissionServer tracer Mempool{addTxs} =
       recvMsgDone = ()
     }
 
+
+{-------------------------------------------------------------------------------
+  Trace events
+-------------------------------------------------------------------------------}
+
+data TraceLocalTxSubmissionServerEvent blk
+  = TraceReceivedTx (GenTx blk)
+    -- ^ A transaction was received.
+
+deriving instance Eq   (GenTx blk)
+               => Eq   (TraceLocalTxSubmissionServerEvent blk)
+deriving instance Show (GenTx blk)
+               => Show (TraceLocalTxSubmissionServerEvent blk)

@@ -15,6 +15,8 @@ module Ouroboros.Consensus.ChainSyncClient (
   , ChainSyncClientException (..)
   , ClockSkew (..)
   , CandidateState (..)
+    -- * Trace events
+  , TraceChainSyncClientEvent (..)
   ) where
 
 import           Control.Monad
@@ -40,8 +42,6 @@ import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util
-import           Ouroboros.Consensus.Util.Condense
-import           Ouroboros.Consensus.Util.Orphans ()
 import           Ouroboros.Consensus.Util.SlotBounded as SB
 
 
@@ -142,10 +142,8 @@ chainSyncClient
        ( MonadSTM m
        , MonadThrow (STM m)
        , ProtocolLedgerView blk
-       , Condense (Header blk)
-       , Condense (HeaderHash blk)
        )
-    => Tracer m String
+    => Tracer m (TraceChainSyncClientEvent blk)
     -> NodeConfig (BlockProtocol blk)
     -> BlockchainTime m
     -> ClockSkew                                   -- ^ Maximum clock skew
@@ -320,10 +318,10 @@ chainSyncClient tracer cfg btime (ClockSkew maxSkew)
     handleNext :: Consensus ClientStNext blk m
     handleNext = ClientStNext
       { recvMsgRollForward  = \hdr theirHead -> ChainSyncClient $ do
-          traceWith tracer $ "Downloaded header: " <> condense hdr
+          traceWith tracer $ TraceDownloadedHeader hdr
           rollForward hdr theirHead
       , recvMsgRollBackward = \intersection theirHead -> ChainSyncClient $ do
-          traceWith tracer $ "Rolling back to: " <> condense intersection
+          traceWith tracer $ TraceRolledBack intersection
           rollBackward intersection theirHead
       }
 
@@ -526,3 +524,20 @@ chainSyncClient tracer cfg btime (ClockSkew maxSkew)
        pick the denser one, and ignore the other
        PROBLEM: what if the denser node has invalid block bodies??
 -------------------------------------------------------------------------------}
+
+{-------------------------------------------------------------------------------
+  Trace events
+-------------------------------------------------------------------------------}
+
+-- | Events traced by the Chain Sync Client.
+data TraceChainSyncClientEvent blk
+  = TraceDownloadedHeader (Header blk)
+    -- ^ While following a candidate chain, we rolled forward by downloading a
+    -- header.
+  | TraceRolledBack (Point blk)
+    -- ^ While following a candidate chain, we rolled back to the given point.
+
+deriving instance (StandardHash blk, Eq   (Header blk))
+               => Eq   (TraceChainSyncClientEvent blk)
+deriving instance (StandardHash blk, Show (Header blk))
+               => Show (TraceChainSyncClientEvent blk)
