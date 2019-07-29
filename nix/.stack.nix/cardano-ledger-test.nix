@@ -47,8 +47,8 @@
     } // {
     src = (pkgs.lib).mkDefault (pkgs.fetchgit {
       url = "https://github.com/input-output-hk/cardano-ledger";
-      rev = "7d9fd48f4d8e4cd0658c7839a4d02c44d5706ac7";
-      sha256 = "1pp2i4w8074mlzmch3a7fdjiyqvjhimvbx9hv573dprwfh358l7j";
+      rev = "cdef85fb9ca98c3ccb61a98f6081d4e5060ff920";
+      sha256 = "0aczbsrwaj74959dgyb3ys29m12lc69dndlknd7dmsh3dl2x14j6";
       });
     postUnpack = "sourceRoot+=/cardano-ledger/test; echo source root reset to \$sourceRoot";
     }
