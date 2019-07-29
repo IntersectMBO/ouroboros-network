@@ -13,6 +13,7 @@ module Ouroboros.Network.Subscription.Common
     , SubscriberError (..)
     , SubscriptionTrace
     , IPSubscriptionTarget (..)
+    , WithIPList
     ) where
 
 
