@@ -16,7 +16,7 @@ module Test.Dynamic.Network (
   ) where
 
 import           Control.Monad
-import           Control.Tracer (nullTracer)
+import           Control.Tracer
 import           Crypto.Number.Generate (generateBetween)
 import           Crypto.Random (ChaChaDRG, drgNew)
 import           Data.Foldable (traverse_)
@@ -50,6 +50,7 @@ import           Ouroboros.Consensus.ChainSyncClient (ClockSkew (..))
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.Mock
+import           Ouroboros.Consensus.Mempool
 import           Ouroboros.Consensus.Node
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Node.Run
@@ -209,8 +210,6 @@ broadcastNetwork :: forall m c ext.
                                   , Chain (SimpleBlock c ext)
                                   ))
 broadcastNetwork registry testBtime numCoreNodes pInfo initRNG slotLen = do
-    let btime = testBlockchainTime testBtime
-
     -- all known addresses
     let addrs :: [Addr]
         addrs = Set.toList . Set.fromList . concat
@@ -231,21 +230,18 @@ broadcastNetwork registry testBtime numCoreNodes pInfo initRNG slotLen = do
 
       let callbacks :: NodeCallbacks m (SimpleBlock c ext)
           callbacks = NodeCallbacks {
-              produceBlock = \proof l slot prevPoint prevNo _txs -> do
+              produceBlock = \proof _l slot prevPoint prevNo txs -> do
                 let curNo :: BlockNo
                     curNo = succ prevNo
 
                 let prevHash :: ChainHash (SimpleBlock c ext)
                     prevHash = castHash (pointHash prevPoint)
 
-                -- We ignore the transactions from the mempool (which will be
-                -- empty), and instead produce some random transactions
-                txs <- genTxs addrs (getUtxo l)
                 nodeForgeBlock pInfoConfig
                                slot
                                curNo
                                prevHash
-                               (map mkSimpleGenTx txs)
+                               txs
                                proof
 
             , produceDRG      = atomically $ simChaChaT varRNG id $ drgNew
@@ -279,7 +275,14 @@ broadcastNetwork registry testBtime numCoreNodes pInfo initRNG slotLen = do
           ni = createNetworkInterface chans nodeIds us app
 
       void $ forkLinked registry (niWithServerNode ni wait)
-      forM_ (filter (/= us) nodeIds) $ \them -> forkLinked registry (niConnectTo ni them)
+      void $ forkLinked registry $ txProducer
+        addrs
+        (produceDRG callbacks)
+        (ChainDB.getCurrentLedger chainDB)
+        (getMempool node)
+
+      forM_ (filter (/= us) nodeIds) $ \them ->
+        forkLinked registry (niConnectTo ni them)
 
       return (coreNodeId, node)
 
@@ -292,11 +295,31 @@ broadcastNetwork registry testBtime numCoreNodes pInfo initRNG slotLen = do
         (\ch -> (fromCoreNodeId cid, (pInfoConfig (pInfo cid), ch))) <$>
         ChainDB.toChain (getChainDB node)
   where
+    btime = testBlockchainTime testBtime
+
     nodeIds :: [NodeId]
     nodeIds = map fromCoreNodeId coreNodeIds
 
     coreNodeIds :: [CoreNodeId]
     coreNodeIds = enumCoreNodes numCoreNodes
+
+    -- | Produce transactions every time the slot changes and submit them to
+    -- the mempool.
+    txProducer :: [Addr]
+               -> m ChaChaDRG
+                  -- ^ How to get a DRG
+               -> STM m (ExtLedgerState (SimpleBlock c ext))
+                  -- ^ How to get the current ledger state
+               -> Mempool m (SimpleBlock c ext) TicketNo
+               -> m ()
+    txProducer addrs produceDRG getLedger mempool =
+      onSlotChange btime $ \_curSlotNo -> do
+        drg <- produceDRG
+        txs <- atomically $ do
+          ledger <- getLedger
+          varDRG <- newTVar drg
+          simChaChaT varDRG id $ genTxs addrs (getUtxo ledger)
+        void $ addTxs mempool (map mkSimpleGenTx txs)
 
     getUtxo :: ExtLedgerState (SimpleBlock c ext) -> Utxo
     getUtxo = mockUtxo . simpleLedgerState . ledgerState

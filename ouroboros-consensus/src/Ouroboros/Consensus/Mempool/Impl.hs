@@ -6,6 +6,7 @@ module Ouroboros.Consensus.Mempool.Impl (
     openMempool
   , LedgerInterface (..)
   , chainDBLedgerInterface
+  , TicketNo
     -- * For testing purposes
   , openMempoolWithoutSyncThread
   ) where

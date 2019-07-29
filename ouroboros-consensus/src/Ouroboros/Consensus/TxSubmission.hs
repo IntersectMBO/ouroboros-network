@@ -34,13 +34,12 @@ localTxSubmissionServer tracer Mempool{addTxs} =
       recvMsgSubmitTx = \tx -> do
         traceWith tracer $ TraceReceivedTx tx
         res <- addTxs [tx]
-        -- The 'addTxs' action returns the failing ones, whereas the protocol
-        -- returns a Maybe failure for a single tx, so we must convert here.
         case res of
-          [(_tx,rej)] -> return (Just (show rej), server)
-          _           -> return (Nothing,         server),
+          [(_tx, mbErr)] -> return (show <$> mbErr, server)
+          -- The output list of addTxs has the same length as the input list.
+          _              -> error "addTxs: unexpected result"
 
-      recvMsgDone = ()
+    , recvMsgDone = ()
     }
 
 
