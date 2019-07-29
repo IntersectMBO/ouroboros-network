@@ -393,8 +393,11 @@ instance GetHeader (ByronBlockOrEBB cfg) where
       unByronHeaderOrEBB :: Either (CC.Block.ABoundaryHeader ByteString) (CC.Block.AHeader ByteString)
     } deriving (Eq, Show)
 
-  getHeader (ByronBlockOrEBB (CC.Block.ABOBBlock b))    = ByronHeaderOrEBB . Right $ CC.Block.blockHeader    b
-  getHeader (ByronBlockOrEBB (CC.Block.ABOBBoundary b)) = ByronHeaderOrEBB . Left  $ CC.Block.boundaryHeader b
+  getHeader (ByronBlockOrEBB (CC.Block.ABOBBlock    b)) =
+    ByronHeaderOrEBB . Right $ CC.Block.blockHeader b
+
+  getHeader (ByronBlockOrEBB (CC.Block.ABOBBoundary b)) =
+    ByronHeaderOrEBB . Left $ CC.Block.boundaryHeader b
 
 type instance HeaderHash (ByronBlockOrEBB  cfg) = CC.Block.HeaderHash
 
@@ -496,31 +499,35 @@ annotateByronBlock epochSlots = ByronBlockOrEBB . CC.Block.ABOBBlock . annotateB
 -------------------------------------------------------------------------------}
 
 instance Condense (ByronBlockOrEBB cfg) where
-  condense (ByronBlockOrEBB (CC.Block.ABOBBlock blk))    = condense (ByronBlock blk)
-  condense (ByronBlockOrEBB (CC.Block.ABOBBoundary bvd)) = condenseBVD (CC.Block.boundaryHeader bvd)
+  condense (ByronBlockOrEBB (CC.Block.ABOBBlock    blk)) = condense (ByronBlock blk)
+  condense (ByronBlockOrEBB (CC.Block.ABOBBoundary ebb)) = condenseABoundaryBlock ebb
 
-condenseBVD :: CC.Block.ABoundaryHeader ByteString -> String
-condenseBVD bvd =
-      "( ebb: true" <>
-      ", hash: " <> condensedHash <>
-      ", previousHash: " <> condensedPrevHash <>
-      ")"
-    where
-      condensedHash
-        = T.unpack
-        . sformat CC.Block.headerHashF
-        . coerce
-        . Crypto.hashDecoded . fmap CC.Block.wrapBoundaryBytes
-        $ bvd
+condenseABoundaryBlock :: CC.Block.ABoundaryBlock ByteString -> String
+condenseABoundaryBlock CC.Block.ABoundaryBlock{boundaryHeader} =
+  condenseABoundaryHeader boundaryHeader
 
-      condensedPrevHash
-        = T.unpack $ case CC.Block.boundaryPrevHash bvd of
-            Left _  -> "Genesis"
-            Right h -> sformat CC.Block.headerHashF h
+condenseABoundaryHeader :: CC.Block.ABoundaryHeader ByteString -> String
+condenseABoundaryHeader hdr =
+    "( ebb: true" <>
+    ", hash: " <> condensedHash <>
+    ", previousHash: " <> condensedPrevHash <>
+    ")"
+  where
+    condensedHash
+      = T.unpack
+      . sformat CC.Block.headerHashF
+      . coerce
+      . Crypto.hashDecoded . fmap CC.Block.wrapBoundaryBytes
+      $ hdr
+
+    condensedPrevHash
+      = T.unpack $ case CC.Block.boundaryPrevHash hdr of
+          Left _  -> "Genesis"
+          Right h -> sformat CC.Block.headerHashF h
 
 instance Condense (Header (ByronBlockOrEBB cfg)) where
-  condense (ByronHeaderOrEBB (Right hdr)) = condense (ByronHeader hdr)
-  condense (ByronHeaderOrEBB (Left bvd))  = condenseBVD bvd
+  condense (ByronHeaderOrEBB (Right   hdr)) = condense (ByronHeader hdr)
+  condense (ByronHeaderOrEBB (Left ebbhdr)) = condenseABoundaryHeader ebbhdr
 
 instance Condense CC.Block.HeaderHash where
   condense = formatToString CC.Block.headerHashF
