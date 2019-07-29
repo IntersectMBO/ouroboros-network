@@ -67,6 +67,7 @@ library
                        Ouroboros.Consensus.Node.Run.Abstract
                        Ouroboros.Consensus.Node.Run.Byron
                        Ouroboros.Consensus.Node.Run.Mock
+                       Ouroboros.Consensus.Node.Tracers
                        Ouroboros.Consensus.NodeId
                        Ouroboros.Consensus.NodeNetwork
                        Ouroboros.Consensus.Protocol

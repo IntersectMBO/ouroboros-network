@@ -1,3 +1,4 @@
+{-# LANGUAGE EmptyDataDeriving    #-}
 {-# LANGUAGE FlexibleContexts     #-}
 {-# LANGUAGE ScopedTypeVariables  #-}
 {-# LANGUAGE StandaloneDeriving   #-}
@@ -6,6 +7,8 @@
 {-# LANGUAGE UndecidableInstances #-}
 module Ouroboros.Consensus.BlockFetchServer
   ( blockFetchServer
+    -- * Trace events
+  , TraceBlockFetchServerEvent
   ) where
 
 import           Data.Typeable (Typeable)
@@ -53,7 +56,7 @@ blockFetchServer
        , StandardHash blk
        , Typeable     blk
        )
-    => Tracer m String
+    => Tracer m (TraceBlockFetchServerEvent blk)
     -> ChainDB m blk
     -> BlockFetchServer blk m ()
 blockFetchServer _tracer chainDB = senderSide
@@ -92,3 +95,14 @@ blockFetchServer _tracer chainDB = senderSide
         IteratorBlockGCed hash -> do
           ChainDB.iteratorClose it
           throwM $ BlockGCed @blk hash
+
+
+{-------------------------------------------------------------------------------
+  Trace events
+-------------------------------------------------------------------------------}
+
+-- | Events traced by the Block Fetch Server.
+data TraceBlockFetchServerEvent blk
+   -- TODO no events yet. Tracing the messages send/received over the network
+   -- might be all we need?
+  deriving (Eq, Show)

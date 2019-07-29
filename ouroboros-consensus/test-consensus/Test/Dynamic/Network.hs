@@ -35,8 +35,8 @@ import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
 
-import           Network.TypedProtocol.Codec (AnyMessage (..))
 import           Network.TypedProtocol.Channel
+import           Network.TypedProtocol.Codec (AnyMessage (..))
 
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.MockChain.Chain
@@ -53,6 +53,7 @@ import           Ouroboros.Consensus.Ledger.Mock
 import           Ouroboros.Consensus.Node
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Node.Run
+import           Ouroboros.Consensus.Node.Tracers
 import           Ouroboros.Consensus.NodeId
 import           Ouroboros.Consensus.NodeNetwork
 import           Ouroboros.Consensus.Protocol.Abstract
@@ -254,12 +255,7 @@ broadcastNetwork registry testBtime numCoreNodes pInfo initRNG slotLen = do
       chainDB <- ChainDB.openDB args
 
       let nodeParams = NodeParams
-            { tracer             = nullTracer
-            , mempoolTracer      = nullTracer
-            , decisionTracer     = nullTracer
-            , fetchClientTracer  = nullTracer
-            , txInboundTracer    = nullTracer
-            , txOutboundTracer   = nullTracer
+            { tracers            = nullTracers
             , threadRegistry     = registry
             , maxClockSkew       = ClockSkew 1
             , cfg                = pInfoConfig
@@ -274,9 +270,8 @@ broadcastNetwork registry testBtime numCoreNodes pInfo initRNG slotLen = do
 
       node <- nodeKernel nodeParams
       let app = consensusNetworkApps
-                  nullTracer
-                  nullTracer
                   node
+                  nullProtocolTracers
                   protocolCodecsId
                   (protocolHandlers nodeParams node)
 

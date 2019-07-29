@@ -17,6 +17,8 @@ module Ouroboros.Network.Subscription.Dns
     , dnsSubscriptionWorker
     , dnsResolve
     , resolutionDelay
+
+    , DnsTrace
     ) where
 
 import           Control.Monad (unless)
