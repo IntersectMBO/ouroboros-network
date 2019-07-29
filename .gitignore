@@ -39,3 +39,8 @@ launch-*
 # Local development
 stack.yaml.local.lock
 stack.yaml.local
+
+# latex files
+doc/*.fdb_latexmk
+doc/*.fls
+doc/*.synctex.gz
