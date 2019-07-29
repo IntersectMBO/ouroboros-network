@@ -103,6 +103,7 @@ import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.SlotBounded (SlotBounded (..))
 import qualified Ouroboros.Consensus.Util.SlotBounded as SB
 
+
 {-------------------------------------------------------------------------------
   Byron blocks and headers
 -------------------------------------------------------------------------------}
@@ -840,15 +841,16 @@ instance (ByronGiven, Typeable cfg, ConfigContainsGenesis cfg)
         Nothing
           | slot >= At lvLB && slot <= At lvUB
           -> Just $ PBftLedgerView <$>
-             case Seq.takeWhileL
-                    (\sd -> At (convertSlot (V.Scheduling.sdSlot sd)) <= slot)
-                    dsScheduled of
+             case intermediateUpdates of
                 -- No updates to apply. So the current ledger state is valid
                 -- from the end of the last snapshot to the first scheduled
                 -- update.
                Seq.Empty              -> SB.bounded lb ub dsNow
-               toApply@(_ Seq.:|> la) ->
-                 SB.bounded lb (convertSlot . V.Scheduling.sdSlot $ la) $
+                -- Updates to apply. So we must apply them, and then the ledger
+                -- state is valid from the end of the last update until the next
+                -- scheduled update in the future.
+               toApply@(_ Seq.:|> la) -> 
+                 SB.bounded (convertSlot . V.Scheduling.sdSlot $ la) ub $
                  foldl'
                    (\acc x -> Bimap.insert (V.Scheduling.sdDelegator x)
                                            (V.Scheduling.sdDelegate x)
@@ -860,9 +862,13 @@ instance (ByronGiven, Typeable cfg, ConfigContainsGenesis cfg)
       lb = case ss of
         _ Seq.:|> s -> max lvLB (sbUpper s)
         Seq.Empty   -> lvLB
-      ub = case dsScheduled of
+      ub = case futureUpdates of
         s Seq.:<| _ -> min lvUB (convertSlot $ V.Scheduling.sdSlot s)
         Seq.Empty   -> lvUB
+      
+      (intermediateUpdates, futureUpdates) = Seq.spanl 
+                    (\sd -> At (convertSlot (V.Scheduling.sdSlot sd)) <= slot)
+                    dsScheduled
 
       SecurityParam paramK = pbftSecurityParam . pbftParams . encNodeConfigP $ cfg
 
