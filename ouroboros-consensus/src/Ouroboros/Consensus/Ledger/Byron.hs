@@ -6,6 +6,7 @@
 {-# LANGUAGE NamedFieldPuns        #-}
 {-# LANGUAGE OverloadedStrings     #-}
 {-# LANGUAGE RecordWildCards       #-}
+{-# LANGUAGE ScopedTypeVariables   #-}
 {-# LANGUAGE TypeApplications      #-}
 {-# LANGUAGE TypeFamilies          #-}
 {-# LANGUAGE UndecidableInstances  #-}
@@ -192,8 +193,37 @@ instance (ByronGiven, Typeable cfg, ConfigContainsGenesis cfg)
   ledgerConfigView EncNodeConfig{..} = ByronLedgerConfig $
     genesisConfig encNodeConfigExt
 
+  applyChainTick (ByronLedgerConfig cfg) slotNo
+                 (ByronLedgerState state snapshots) = do
+      let updateState' = CC.Block.epochTransition
+            epochEnv
+            (CC.Block.cvsUpdateState state)
+            (coerce slotNo)
+      let state' = state { CC.Block.cvsUpdateState = updateState' }
+      return $ ByronLedgerState state' snapshots
+    where
+      epochEnv = CC.Block.EpochEnvironment
+        { CC.Block.protocolMagic = fixPMI $ CC.Genesis.configProtocolMagicId cfg
+        , CC.Block.k             = CC.Genesis.configK cfg
+        , CC.Block.allowedDelegators = allowedDelegators cfg
+        , CC.Block.delegationMap = delegationMap
+        , CC.Block.currentEpoch  = CC.Slot.slotNumberEpoch
+                                     (CC.Genesis.configEpochSlots cfg)
+                                     (CC.Block.cvsLastSlot state)
+        }
+      delegationMap = V.Interface.delegationMap
+                    $ CC.Block.cvsDelegationState state
+
+      fixPMI pmi = reAnnotate $ Annotated pmi ()
+
   applyLedgerBlock (ByronLedgerConfig cfg) (ByronBlock block)
                    (ByronLedgerState state snapshots) = do
+      runReaderT
+        (CC.Block.headerIsValid
+          (CC.Block.cvsUpdateState state)
+          (CC.Block.blockHeader block)
+        )
+        (fromBlockValidationMode CC.Block.BlockValidation)
       CC.Block.BodyState { CC.Block.utxo, CC.Block.updateState
                          , CC.Block.delegationState }
         <- runReaderT
@@ -244,36 +274,6 @@ instance (ByronGiven, Typeable cfg, ConfigContainsGenesis cfg)
       trimSnapshots = Seq.dropWhileL $ \ss ->
         sbUpper ss < convertSlot (CC.Block.blockSlot block) - 2 * coerce k
 
-  applyLedgerHeader (ByronLedgerConfig cfg) (ByronHeader hdr)
-                    (ByronLedgerState state snapshots) =
-      mapExcept (fmap (\i -> ByronLedgerState i snapshots)) $ do
-        let updateState' = CC.Block.epochTransition
-              epochEnv
-              (CC.Block.cvsUpdateState state)
-              (CC.Block.headerSlot hdr)
-        () <- runReaderT
-          (CC.Block.headerIsValid updateState' hdr)
-          (fromBlockValidationMode CC.Block.BlockValidation)
-        return $ state
-          { CC.Block.cvsLastSlot     = CC.Block.headerSlot hdr
-          , CC.Block.cvsPreviousHash = Right $ CC.Block.headerHashAnnotated hdr
-          , CC.Block.cvsUpdateState  = updateState'
-          }
-    where
-      epochEnv = CC.Block.EpochEnvironment
-        { CC.Block.protocolMagic = fixPMI $ CC.Genesis.configProtocolMagicId cfg
-        , CC.Block.k             = CC.Genesis.configK cfg
-        , CC.Block.allowedDelegators = allowedDelegators cfg
-        , CC.Block.delegationMap = delegationMap
-        , CC.Block.currentEpoch  = CC.Slot.slotNumberEpoch
-                                     (CC.Genesis.configEpochSlots cfg)
-                                     (CC.Block.cvsLastSlot state)
-        }
-      delegationMap = V.Interface.delegationMap
-                    $ CC.Block.cvsDelegationState state
-
-      fixPMI pmi = reAnnotate $ Annotated pmi ()
-
   ledgerTipPoint (ByronLedgerState state _) = case CC.Block.cvsPreviousHash state of
       -- In this case there are no blocks in the ledger state. The genesis
       -- block does not occupy a slot, so its point is Origin.
@@ -283,7 +283,7 @@ instance (ByronGiven, Typeable cfg, ConfigContainsGenesis cfg)
           slot = convertSlot (CC.Block.cvsLastSlot state)
 
 allowedDelegators :: CC.Genesis.Config -> Set CC.Common.KeyHash
-allowedDelegators 
+allowedDelegators
   = CC.Genesis.unGenesisKeyHashes
   . CC.Genesis.configGenesisKeyHashes
 
@@ -472,24 +472,22 @@ instance ( ByronGiven
 
   ledgerConfigView = ByronEBBLedgerConfig . ledgerConfigView . unWithEBBNodeConfig
 
+  applyChainTick (ByronEBBLedgerConfig cfg) slotNo (ByronEBBLedgerState state) =
+    ByronEBBLedgerState <$> applyChainTick cfg slotNo state
+
   applyLedgerBlock (ByronEBBLedgerConfig cfg) (ByronBlockOrEBB block)
-                   (ByronEBBLedgerState state) =
+                   (ByronEBBLedgerState bs@(ByronLedgerState state snapshots)) =
     case block of
-      CC.Block.ABOBBlock b -> ByronEBBLedgerState <$> applyLedgerBlock cfg (ByronBlock b) state
-      CC.Block.ABOBBoundary _ -> return $ ByronEBBLedgerState state
-
-  applyLedgerHeader (ByronEBBLedgerConfig cfg) (ByronHeaderOrEBB hdr)
-                    (ByronEBBLedgerState bs@(ByronLedgerState state snapshots)) = case hdr of
-    Left ebb ->
-      mapExcept (fmap (\i -> ByronEBBLedgerState $ ByronLedgerState i snapshots)) $ do
-        return $ state
-          { CC.Block.cvsPreviousHash = Right $ CC.Block.boundaryHeaderHashAnnotated ebb
-          , CC.Block.cvsLastSlot = CC.Slot.SlotNumber $ epochSlots * (CC.Block.boundaryEpoch ebb)
-          }
-      where
-        CC.Slot.EpochSlots epochSlots = given
-
-    Right h -> ByronEBBLedgerState <$> applyLedgerHeader cfg (ByronHeader h) bs
+      CC.Block.ABOBBlock b -> ByronEBBLedgerState <$> applyLedgerBlock cfg (ByronBlock b) bs
+      CC.Block.ABOBBoundary b ->
+        mapExcept (fmap (\i -> ByronEBBLedgerState $ ByronLedgerState i snapshots)) $
+          return $ state
+            { CC.Block.cvsPreviousHash = Right $ CC.Block.boundaryHeaderHashAnnotated hdr
+            , CC.Block.cvsLastSlot = CC.Slot.SlotNumber $ epochSlots * CC.Block.boundaryEpoch hdr
+            }
+        where
+          hdr = CC.Block.boundaryHeader b
+          CC.Slot.EpochSlots epochSlots = given
 
   ledgerTipPoint (ByronEBBLedgerState state) = castPoint $ ledgerTipPoint state
 
@@ -883,7 +881,7 @@ instance (ByronGiven, Typeable cfg, ConfigContainsGenesis cfg)
                 -- Updates to apply. So we must apply them, and then the ledger
                 -- state is valid from the end of the last update until the next
                 -- scheduled update in the future.
-               toApply@(_ Seq.:|> la) -> 
+               toApply@(_ Seq.:|> la) ->
                  SB.bounded (convertSlot . V.Scheduling.sdSlot $ la) ub $
                  foldl'
                    (\acc x -> Bimap.insert (V.Scheduling.sdDelegator x)
@@ -899,8 +897,8 @@ instance (ByronGiven, Typeable cfg, ConfigContainsGenesis cfg)
       ub = case futureUpdates of
         s Seq.:<| _ -> min lvUB (convertSlot $ V.Scheduling.sdSlot s)
         Seq.Empty   -> lvUB
-      
-      (intermediateUpdates, futureUpdates) = Seq.spanl 
+
+      (intermediateUpdates, futureUpdates) = Seq.spanl
                     (\sd -> At (convertSlot (V.Scheduling.sdSlot sd)) <= slot)
                     dsScheduled
 

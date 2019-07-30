@@ -20,6 +20,8 @@ import           Codec.CBOR.Encoding (Encoding)
 import           Control.Monad.Except
 import           GHC.Stack
 
+import           Ouroboros.Network.Block (blockSlot)
+
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Protocol.Abstract
@@ -57,21 +59,21 @@ applyExtLedgerState :: ( UpdateLedger blk
                     -> Except (ExtValidationError blk) (ExtLedgerState blk)
 applyExtLedgerState cfg blk ExtLedgerState{..} = do
     ledgerState'         <- withExcept ExtValidationErrorLedger $
-                              applyLedgerHeader
+                              applyChainTick
                                 (ledgerConfigView cfg)
-                                (getHeader blk)
+                                (blockSlot blk)
                                 ledgerState
-    ouroborosChainState' <- withExcept ExtValidationErrorOuroboros $
-                              applyChainState
-                                cfg
-                                (protocolLedgerView cfg ledgerState')
-                                (getHeader blk)
-                                ouroborosChainState
     ledgerState''        <- withExcept ExtValidationErrorLedger $
                               applyLedgerBlock
                                 (ledgerConfigView cfg)
                                 blk
                                 ledgerState'
+    ouroborosChainState' <- withExcept ExtValidationErrorOuroboros $
+                              applyChainState
+                                cfg
+                                (protocolLedgerView cfg ledgerState'')
+                                (getHeader blk)
+                                ouroborosChainState
     return $ ExtLedgerState ledgerState'' ouroborosChainState'
 
 foldExtLedgerState :: (ProtocolLedgerView blk, HasCallStack)

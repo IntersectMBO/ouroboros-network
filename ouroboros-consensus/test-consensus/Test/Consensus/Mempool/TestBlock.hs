@@ -113,9 +113,9 @@ instance UpdateLedger TestBlock where
 
   ledgerConfigView _ = LedgerConfig
 
-  applyLedgerBlock = notNeeded
+  applyChainTick _ _ = notNeeded
 
-  applyLedgerHeader _ _ = notNeeded
+  applyLedgerBlock = notNeeded
 
   ledgerTipPoint = tlLastApplied
 

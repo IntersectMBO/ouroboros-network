@@ -39,26 +39,19 @@ class ( SupportedBlock blk
   ledgerConfigView :: NodeConfig (BlockProtocol blk)
                    -> LedgerConfig blk
 
-  -- | Apply a block header to the ledger state.
-  --
-  -- Used in 'applyExtLedgerState' to update the ledger state in 3 steps:
-  --
-  -- 1. 'applyLedgerHeader' updates the ledger with information from the header
-  -- 2. 'applyChainState' updates the the consensus-specific chain state
-  --    This gets passed the updated ledger from step (1) as an argument
-  -- 3. 'applyLedgerBlock' updates the ledger with information from the body
-  --
-  -- TODO: Explain why this ordering is correct and why we need the split;
-  -- (3) does not seem to rely on (2), and so we could do (1), (3), (2), and if
-  -- that is indeed possible, we could just combine (1) and (3) into a single
-  -- step..?
-  -- <https://github.com/input-output-hk/ouroboros-network/issues/596>
-  applyLedgerHeader :: LedgerConfig blk
-                    -> Header blk
-                    -> LedgerState blk
-                    -> Except (LedgerError blk) (LedgerState blk)
+  -- | Apply state transformations that might occur when encountering a new
+  --   block, but happen before full header and body processing. In the Byron
+  --   era this is used to perform epoch transitions on receipt of the first
+  --   block in the new epoch.
+  applyChainTick :: LedgerConfig blk
+                 -> SlotNo
+                 -> LedgerState blk
+                 -> Except (LedgerError blk) (LedgerState blk)
 
-  -- | Apply a block to the ledger state
+  -- | Apply a block to the ledger state.
+  --
+  --   TODO: Update <https://github.com/input-output-hk/ouroboros-network/issues/596>
+  --   with change to applyLedgerBlock
   applyLedgerBlock :: LedgerConfig blk
                    -> blk
                    -> LedgerState blk
