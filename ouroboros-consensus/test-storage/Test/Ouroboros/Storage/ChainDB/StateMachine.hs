@@ -42,6 +42,7 @@ import           Data.TreeDiff (ToExpr)
 import           Data.Typeable
 import           Data.Word (Word64)
 import           GHC.Generics (Generic)
+import           GHC.Stack (prettyCallStack)
 
 import qualified Generics.SOP as SOP
 
@@ -81,6 +82,7 @@ import           Ouroboros.Consensus.NodeId (NodeId (..))
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.BFT
 import           Ouroboros.Consensus.Util.Condense (condense)
+import           Ouroboros.Consensus.Util.NormalForm (checkResult)
 import           Ouroboros.Consensus.Util.ThreadRegistry (ThreadRegistry,
                      withThreadRegistry)
 import qualified Ouroboros.Consensus.Util.ThreadRegistry as ThreadRegistry
@@ -362,7 +364,11 @@ runIO :: TestConstraints blk
       -> ChainDB.Internal IO blk
       ->     Cmd  blk (Iterator IO blk) (Reader IO blk blk)
       -> IO (Resp blk (Iterator IO blk) (Reader IO blk blk))
-runIO db internal cmd = Resp <$> try (run db internal cmd)
+runIO db internal cmd = do
+    res <- Resp <$> try (run db internal cmd)
+    intIsStateInNormalForm internal >>= checkResult >>= \case
+      Left  cs -> fail $ "state not in normal form: " <> prettyCallStack cs
+      Right () -> return res
 
 {-------------------------------------------------------------------------------
   Collect arguments

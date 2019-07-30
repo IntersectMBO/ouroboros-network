@@ -1,7 +1,9 @@
 {-# LANGUAGE BangPatterns              #-}
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE FlexibleContexts          #-}
+{-# LANGUAGE FlexibleInstances         #-}
 {-# LANGUAGE LambdaCase                #-}
+{-# LANGUAGE MultiParamTypeClasses     #-}
 {-# LANGUAGE MultiWayIf                #-}
 {-# LANGUAGE NamedFieldPuns            #-}
 {-# LANGUAGE RankNTypes                #-}
@@ -164,6 +166,8 @@ import           Data.Word
 import           GHC.Stack (HasCallStack, callStack)
 
 import           Ouroboros.Consensus.Util (SomePair (..))
+import           Ouroboros.Consensus.Util.NormalForm (NormalForm)
+import qualified Ouroboros.Consensus.Util.NormalForm as NF
 
 import           Ouroboros.Storage.Common
 import           Ouroboros.Storage.EpochInfo
@@ -297,7 +301,8 @@ mkDBRecord dbEnv = ImmutableDB
     , appendBinaryBlob  = appendBinaryBlobImpl  dbEnv
     , appendEBB         = appendEBBImpl         dbEnv
     , streamBinaryBlobs = streamBinaryBlobsImpl dbEnv
-    , immutableDBErr    = _dbErr dbEnv
+    , isNormalForm      = NF.custom             dbEnv
+    , immutableDBErr    = _dbErr                dbEnv
     }
 
 openDBImpl :: forall m h hash e.
@@ -1825,3 +1830,30 @@ reconstructIndex epochFile epochFileParser epochInfo = do
     slotsToRelSlots = mapM $ \(offset, (size, slot)) -> do
       relSlot <- _relativeSlot <$> epochInfoBlockRelative epochInfo slot
       return (offset, (size, relSlot))
+
+{------------------------------------------------------------------------------
+  Normal form
+------------------------------------------------------------------------------}
+
+instance MonadSTM m => NormalForm m (ImmutableDBEnv m hash) where
+  custom ImmutableDBEnv{..} = NF.checkMultiple
+    [ NF.ignore _dbHasFS           -- A record of functions
+    , NF.ignore _dbErr             -- A record of functions
+    , NF.tmvar  _dbInternalState $ \case
+        Left  cst -> NF.ignore cst
+        Right ost -> NF.custom ost
+    , NF.ignore _dbEpochFileParser -- Newtype around a function
+    , NF.ignore _dbHashDecoder     -- Parameterised over s
+    , NF.ignore _dbHashEncoder     -- A function
+    ]
+
+instance MonadSTM m => NormalForm m (OpenState m hash h) where
+  custom OpenState{..} = NF.checkMultiple
+    [ NF.standard _currentEpoch
+    , NF.standard _currentEpochWriteHandle
+    , NF.ignore _currentEpochOffsets -- TODO
+    , NF.standard _currentEBBHash
+    , NF.standard _currentTip
+    , NF.ignore   _epochInfo -- A record of functions
+    , NF.standard _nextIteratorID
+    ]

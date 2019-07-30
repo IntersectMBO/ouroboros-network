@@ -1,7 +1,9 @@
 {-# LANGUAGE DataKinds                 #-}
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE FlexibleContexts          #-}
+{-# LANGUAGE FlexibleInstances         #-}
 {-# LANGUAGE LambdaCase                #-}
+{-# LANGUAGE MultiParamTypeClasses     #-}
 {-# LANGUAGE RankNTypes                #-}
 {-# LANGUAGE RecordWildCards           #-}
 {-# LANGUAGE ScopedTypeVariables       #-}
@@ -68,6 +70,8 @@ import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util ((.:))
+import           Ouroboros.Consensus.Util.NormalForm (NormalForm)
+import qualified Ouroboros.Consensus.Util.NormalForm as NF
 
 import           Ouroboros.Storage.Common
 import           Ouroboros.Storage.FS.API (HasFS (hasFsErr),
@@ -109,6 +113,14 @@ data LgrDB m blk = LgrDB {
       -- ^ The arguments used to open the 'LgrDB'. Needed for 'reopen'ing the
       -- 'LgrDB'.
     }
+
+instance MonadSTM m => NormalForm m (LgrDB m blk) where
+  custom LgrDB{..} = NF.checkMultiple
+    [ NF.ignore conf -- A record of functions
+    , NF.ignore  varDB -- TODO NF.tvar'
+    , NF.tvar'  varPrevApplied
+    , NF.ignore args -- Static
+    ]
 
 -- | Shorter synonym for the instantiated 'LedgerDB.LedgerDB'.
 type LedgerDB blk = LedgerDB.LedgerDB (ExtLedgerState blk) (Point blk)

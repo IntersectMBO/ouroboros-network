@@ -1,6 +1,8 @@
-{-# LANGUAGE DeriveFunctor #-}
-{-# LANGUAGE DeriveGeneric #-}
-{-# LANGUAGE RankNTypes    #-}
+{-# LANGUAGE DeriveFunctor         #-}
+{-# LANGUAGE DeriveGeneric         #-}
+{-# LANGUAGE FlexibleInstances     #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE RankNTypes            #-}
 module Ouroboros.Storage.ImmutableDB.API
   ( ImmutableDB (..)
   , withDB
@@ -23,6 +25,8 @@ import           GHC.Generics (Generic)
 import           GHC.Stack (HasCallStack)
 
 import           Pipes (Producer, lift, yield)
+
+import           Ouroboros.Consensus.Util.NormalForm (NFCheck, NormalForm (..))
 
 import           Ouroboros.Storage.Common
 import           Ouroboros.Storage.ImmutableDB.Types
@@ -203,9 +207,15 @@ data ImmutableDB hash m = ImmutableDB
       -> m (Iterator hash m ByteString)
       -- TODO inclusive + exclusive bounds
 
+    -- | Internal: check whether the state is in normal form
+  , isNormalForm :: m NFCheck
+
     -- | Throw 'ImmutableDB' errors
   , immutableDBErr :: ErrorHandling ImmutableDBError m
   }
+
+instance NormalForm m (ImmutableDB hash m) where
+  custom = isNormalForm
 
 -- | An 'Iterator' is a handle which can be used to efficiently stream binary
 -- blobs. Slots not containing a blob and missing EBBs are skipped.

@@ -1,5 +1,7 @@
 {-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE FlexibleInstances         #-}
 {-# LANGUAGE LambdaCase                #-}
+{-# LANGUAGE MultiParamTypeClasses     #-}
 {-# LANGUAGE PatternSynonyms           #-}
 {-# LANGUAGE RankNTypes                #-}
 {-# LANGUAGE RecordWildCards           #-}
@@ -68,6 +70,8 @@ import           Ouroboros.Network.Block (pattern BlockPoint,
 import           Ouroboros.Network.Point (WithOrigin (..))
 
 import qualified Ouroboros.Consensus.Util.CBOR as Util.CBOR
+import           Ouroboros.Consensus.Util.NormalForm (NormalForm)
+import qualified Ouroboros.Consensus.Util.NormalForm as NF
 
 import           Ouroboros.Storage.ChainDB.API (ChainDbError (..),
                      ChainDbFailure (..), StreamFrom (..), UnknownRange (..))
@@ -91,6 +95,16 @@ data ImmDB m blk = ImmDB {
     , isEBB        :: blk -> Maybe (HeaderHash blk)
     , err          :: ErrorHandling ImmDB.ImmutableDBError m
     }
+
+instance MonadSTM m => NormalForm m (ImmDB m blk) where
+  custom ImmDB{..} = NF.checkMultiple
+    [ NF.custom immDB
+    , NF.ignore decBlock     -- Parameterised over s
+    , NF.ignore encBlock     -- A function
+    , NF.ignore immEpochInfo -- A record of functions
+    , NF.ignore isEBB        -- A function
+    , NF.ignore err          -- A record of functions
+    ]
 
 {-------------------------------------------------------------------------------
   Initialization

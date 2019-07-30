@@ -1,4 +1,5 @@
 {-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 {-# OPTIONS_GHC -Wredundant-constraints #-}
@@ -43,6 +44,7 @@ import           Ouroboros.Network.Block (blockNo, castPoint, genesisBlockNo)
 
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Protocol.Abstract
+import qualified Ouroboros.Consensus.Util.NormalForm as NF
 
 import           Ouroboros.Storage.ChainDB.API
 
@@ -148,8 +150,9 @@ openDBInternal args launchBgTasks = do
                   , cdbGcDelay        = Args.cdbGcDelay        args
                   , cdbBgThreads      = varBgThreads
                   }
-    h <- fmap CDBHandle $ atomically $ newTVar $ ChainDbOpen env
-    let chainDB = ChainDB
+    varState <- atomically $ newTVar $ ChainDbOpen env
+    let h = CDBHandle varState
+        chainDB = ChainDB
           { addBlock           = getEnv1    h ChainSel.addBlock
           , getCurrentChain    = getEnvSTM  h Query.getCurrentChain
           , getCurrentLedger   = getEnvSTM  h Query.getCurrentLedger
@@ -171,6 +174,10 @@ openDBInternal args launchBgTasks = do
           , intGarbageCollect        = getEnv1 h Background.garbageCollect
           , intUpdateLedgerSnapshots = getEnv  h Background.updateLedgerSnapshots
           , intBgThreads             = varBgThreads
+          , intIsStateInNormalForm   = atomically (readTVar varState) >>= \case
+              ChainDbOpen cdb -> NF.custom cdb
+              -- Ignore other states
+              _               ->  return mempty
           }
 
     traceWith (Args.cdbTracer args) $ TraceOpenEvent $ OpenedDB

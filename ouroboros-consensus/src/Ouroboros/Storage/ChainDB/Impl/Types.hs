@@ -1,10 +1,13 @@
-{-# LANGUAGE DeriveGeneric        #-}
-{-# LANGUAGE FlexibleContexts     #-}
-{-# LANGUAGE LambdaCase           #-}
-{-# LANGUAGE ScopedTypeVariables  #-}
-{-# LANGUAGE StandaloneDeriving   #-}
-{-# LANGUAGE TypeApplications     #-}
-{-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE DeriveGeneric         #-}
+{-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE FlexibleInstances     #-}
+{-# LANGUAGE LambdaCase            #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE RecordWildCards       #-}
+{-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE StandaloneDeriving    #-}
+{-# LANGUAGE TypeApplications      #-}
+{-# LANGUAGE UndecidableInstances  #-}
 
 {-# OPTIONS_GHC -Wredundant-constraints #-}
 -- | Types used throughout the implementation: handle, state, environment,
@@ -58,6 +61,8 @@ import           Ouroboros.Consensus.Block (BlockProtocol, Header)
 import           Ouroboros.Consensus.Ledger.Abstract (ProtocolLedgerView)
 import           Ouroboros.Consensus.Ledger.Extended (ExtValidationError)
 import           Ouroboros.Consensus.Protocol.Abstract (NodeConfig)
+import           Ouroboros.Consensus.Util.NormalForm (NFCheck, NormalForm)
+import qualified Ouroboros.Consensus.Util.NormalForm as NF
 import           Ouroboros.Consensus.Util.ThreadRegistry (ThreadRegistry)
 
 import           Ouroboros.Storage.ChainDB.API (ChainDbError (..), IteratorId,
@@ -222,6 +227,30 @@ data ChainDbEnv m blk = CDB
     -- ^ The background threads.
   }
 
+instance MonadSTM m => NormalForm m (ChainDbEnv m blk) where
+  custom CDB{..} = NF.checkMultiple
+    [ NF.custom   cdbImmDB
+    , NF.custom   cdbVolDB
+    , NF.custom   cdbLgrDB
+    , NF.tvar'    cdbChain
+    , NF.tvar'    cdbImmBlockNo
+    , NF.ignore   cdbIterators
+      -- 'cdbIterators' contains closures as values, so it is not in normal
+      -- form. However, we have audited the current use of it: we always use
+      -- @modifyTVar'@ and functions from "Data.Map.Strict".
+    , NF.tvar     cdbReaders NF.tvarMap
+    , NF.standard cdbNodeConfig
+    , NF.tvar'    cdbInvalid
+    , NF.tvar'    cdbNextIteratorId
+    , NF.tvar'    cdbNextReaderId
+    , NF.tmvar'   cdbCopyLock
+    , NF.ignore   cdbTracer
+      -- A newtype around a function
+    , NF.custom   cdbThreadRegistry
+    , NF.standard cdbGcDelay
+    , NF.tvar'    cdbBgThreads
+    ]
+
 {-------------------------------------------------------------------------------
   Exposed internals for testing purposes
 -------------------------------------------------------------------------------}
@@ -248,7 +277,10 @@ data Internal m blk = Internal
   , intUpdateLedgerSnapshots :: m ()
     -- ^ Write a new LedgerDB snapshot to disk and remove the oldest one(s).
   , intBgThreads             :: TVar m [Async m ()]
-      -- ^ The background threads.
+    -- ^ The background threads.
+  , intIsStateInNormalForm   :: m NFCheck
+    -- ^ Return a 'NFCheck' that will check whether the internal state is in
+    -- normal form. This is used in the tests to check for space leaks.
   }
 
 {-------------------------------------------------------------------------------

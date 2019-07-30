@@ -1,7 +1,9 @@
 {-# LANGUAGE ExistentialQuantification  #-}
 {-# LANGUAGE FlexibleContexts           #-}
+{-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase                 #-}
+{-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE MultiWayIf                 #-}
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE RankNTypes                 #-}
@@ -92,8 +94,8 @@ import           Control.Monad.Class.MonadThrow
 import qualified Data.ByteString.Builder as BS
 import           Data.ByteString.Lazy (ByteString)
 import           Data.List (sortOn)
-import           Data.Map (Map)
-import qualified Data.Map as Map
+import           Data.Map.Strict (Map)
+import qualified Data.Map.Strict as Map
 import           Data.Maybe
 import           Data.Set (Set)
 import qualified Data.Set as Set
@@ -102,6 +104,8 @@ import           Data.Word (Word64)
 import           GHC.Stack
 
 import           Ouroboros.Consensus.Util (SomePair (..))
+import           Ouroboros.Consensus.Util.NormalForm (NormalForm)
+import qualified Ouroboros.Consensus.Util.NormalForm as NF
 
 import           Ouroboros.Storage.FS.API
 import           Ouroboros.Storage.FS.API.Types
@@ -168,6 +172,7 @@ openDBFull hasFS err errSTM parser maxBlocksPerFile = do
         , getBlockIds    = getBlockIdsImpl env
         , getSuccessors  = getSuccessorsImpl env
         , getPredecessor = getPredecessorImpl env
+        , isNormalForm   = NF.custom env
         }
     return (db, env)
 
@@ -623,3 +628,30 @@ findNextFd err files = foldM go Nothing files
         go fd file = case parseFd file of
             Nothing -> EH.throwError err $ UnexpectedError . ParserError $ InvalidFilename file
             Just fd' -> return $ Just $ maxMaybe fd fd'
+
+{------------------------------------------------------------------------------
+  Normal form
+------------------------------------------------------------------------------}
+
+instance MonadSTM m => NormalForm m (VolatileDBEnv m hash) where
+  custom VolatileDBEnv{..} = NF.checkMultiple
+    [ NF.ignore   _dbHasFS  -- A record of functions
+    , NF.ignore   _dbErr    -- A record of functions
+    , NF.ignore   _dbErrSTM -- A record of functions
+    , NF.tmvar    _dbInternalState $ \case
+        Nothing  -> return mempty
+        Just ist -> NF.custom ist
+    , NF.standard _maxBlocksPerFile
+    , NF.ignore   _parser   -- A newtype around a function
+    ]
+
+instance MonadSTM m => NormalForm m (InternalState blockId h) where
+  custom InternalState{..} = NF.checkMultiple
+    [ NF.standard _currentWriteHandle
+    , NF.ignore _currentWritePath -- TODO
+    , NF.standard _currentWriteOffset
+    , NF.standard _nextWriteFiles
+    , NF.ignore _currentMap -- TODO
+    , NF.standard _currentRevMap
+    , NF.ignore _currentSuccMap -- TODO
+    ]

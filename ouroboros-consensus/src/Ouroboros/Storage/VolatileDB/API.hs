@@ -1,5 +1,7 @@
-{-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE RankNTypes       #-}
+{-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE FlexibleInstances     #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE RankNTypes            #-}
 module Ouroboros.Storage.VolatileDB.API
   ( VolatileDB(..)
   , withDB
@@ -15,6 +17,7 @@ import           Data.ByteString.Lazy (ByteString)
 import           Data.Set (Set)
 import           GHC.Stack (HasCallStack)
 
+import           Ouroboros.Consensus.Util.NormalForm (NFCheck, NormalForm (..))
 import           Ouroboros.Storage.VolatileDB.Types
 
 -- | Open the database using the given function, perform the given action
@@ -55,4 +58,9 @@ data VolatileDB blockId m = VolatileDB {
     , getPredecessor :: HasCallStack => STM m (blockId -> Maybe blockId)
     , garbageCollect :: HasCallStack => SlotNo -> m ()
     , getIsMember    :: HasCallStack => STM m (blockId -> Bool)
+      -- | Internal: check whether the state is in normal form
+    , isNormalForm   :: m NFCheck
 }
+
+instance NormalForm m (VolatileDB blockId m) where
+  custom = isNormalForm

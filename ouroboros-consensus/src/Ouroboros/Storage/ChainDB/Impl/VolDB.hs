@@ -1,5 +1,7 @@
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE FlexibleContexts          #-}
+{-# LANGUAGE FlexibleInstances         #-}
+{-# LANGUAGE MultiParamTypeClasses     #-}
 {-# LANGUAGE PatternSynonyms           #-}
 {-# LANGUAGE RankNTypes                #-}
 {-# LANGUAGE RecordWildCards           #-}
@@ -69,6 +71,8 @@ import qualified Ouroboros.Network.Block as Block
 import           Ouroboros.Consensus.Block (GetHeader, Header)
 import qualified Ouroboros.Consensus.Block as Block
 import qualified Ouroboros.Consensus.Util.CBOR as Util.CBOR
+import           Ouroboros.Consensus.Util.NormalForm (NormalForm)
+import qualified Ouroboros.Consensus.Util.NormalForm as NF
 
 import           Ouroboros.Storage.ChainDB.API (ChainDbError (..),
                      ChainDbFailure (..), StreamFrom (..), StreamTo (..))
@@ -92,6 +96,15 @@ data VolDB m blk = VolDB {
     , err      :: ErrorHandling (VolatileDBError (HeaderHash blk)) m
     , errSTM   :: ThrowCantCatch (VolatileDBError (HeaderHash blk)) (STM m)
     }
+
+instance MonadSTM m => NormalForm m (VolDB m blk) where
+  custom VolDB{..} = NF.checkMultiple
+    [ NF.custom volDB
+    , NF.ignore decBlock -- Parameterised over s
+    , NF.ignore encBlock -- A function
+    , NF.ignore err      -- A record of functions
+    , NF.ignore errSTM   -- A record of functions
+    ]
 
 {-------------------------------------------------------------------------------
   Initialization

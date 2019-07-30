@@ -1,7 +1,9 @@
-{-# LANGUAGE GADTs               #-}
-{-# LANGUAGE LambdaCase          #-}
-{-# LANGUAGE NamedFieldPuns      #-}
-{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE FlexibleInstances     #-}
+{-# LANGUAGE GADTs                 #-}
+{-# LANGUAGE LambdaCase            #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE NamedFieldPuns        #-}
+{-# LANGUAGE ScopedTypeVariables   #-}
 
 {-# OPTIONS_GHC -Wredundant-constraints #-}
 
@@ -34,6 +36,9 @@ import           Control.Monad.Class.MonadFork hiding (fork)
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow hiding (handle)
 
+import           Ouroboros.Consensus.Util.NormalForm (NormalForm)
+import qualified Ouroboros.Consensus.Util.NormalForm as NF
+
 {-------------------------------------------------------------------------------
   Public API
 -------------------------------------------------------------------------------}
@@ -49,6 +54,12 @@ data ThreadRegistry m = ThreadRegistry
     -- ^ The value to use for the next 'RegisteredID' that will be added to
     -- '_registered'.
   }
+
+instance MonadSTM m => NormalForm m (ThreadRegistry m) where
+  custom ThreadRegistry { _registered, _nextRegisteredID } = NF.checkMultiple
+    [ NF.tvar' _registered
+    , NF.tvar' _nextRegisteredID
+    ]
 
 -- | Create a new 'ThreadRegistry' and pass it to the supplied function.
 --
