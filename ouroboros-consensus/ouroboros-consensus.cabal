@@ -89,6 +89,7 @@ library
                        Ouroboros.Consensus.Util.Condense
                        Ouroboros.Consensus.Util.HList
                        Ouroboros.Consensus.Util.Orphans
+                       Ouroboros.Consensus.Util.NormalForm
                        Ouroboros.Consensus.Util.Random
                        Ouroboros.Consensus.Util.STM
                        Ouroboros.Consensus.Util.Singletons
