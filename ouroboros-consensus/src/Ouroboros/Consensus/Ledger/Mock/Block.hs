@@ -220,20 +220,28 @@ instance (SimpleCrypto c, Typeable ext, SupportedBlock (SimpleBlock c ext))
 
   type LedgerError (SimpleBlock c ext) = MockError (SimpleBlock c ext)
 
-  applyLedgerHeader _cfg hdr (SimpleLedgerState st) =
-      SimpleLedgerState <$> updateMockTip hdr st
-  applyLedgerBlock  _cfg = updateSimpleLedgerState
+  applyChainTick _ _ = return
+  applyLedgerBlock _cfg = updateSimpleLedgerState
   ledgerTipPoint (SimpleLedgerState st) = mockTip st
   ledgerConfigView _ = SimpleLedgerConfig
 
-updateSimpleLedgerState :: (Monad m, HasUtxo a)
-                        => a
+updateSimpleLedgerState :: (Monad m, SimpleCrypto c, Typeable ext)
+                        => SimpleBlock c ext
                         -> LedgerState (SimpleBlock c ext)
                         -> ExceptT (MockError (SimpleBlock c ext))
                                    m
                                    (LedgerState (SimpleBlock c ext))
 updateSimpleLedgerState b (SimpleLedgerState st) =
     SimpleLedgerState <$> updateMockState b st
+
+updateSimpleUTxO :: (Monad m, HasUtxo a)
+                 => a
+                 -> LedgerState (SimpleBlock c ext)
+                 -> ExceptT (MockError (SimpleBlock c ext))
+                            m
+                            (LedgerState (SimpleBlock c ext))
+updateSimpleUTxO b (SimpleLedgerState st) =
+    SimpleLedgerState <$> updateMockUTxO b st
 
 genesisSimpleLedgerState :: AddrDist -> LedgerState (SimpleBlock c ext)
 genesisSimpleLedgerState = SimpleLedgerState . genesisMockState
@@ -263,9 +271,9 @@ instance (SimpleCrypto c, Typeable ext, SupportedBlock (SimpleBlock c ext))
 
   type ApplyTxErr (SimpleBlock c ext) = MockError (SimpleBlock c ext)
 
-  applyTx            = \_ -> updateSimpleLedgerState
-  reapplyTx          = \_ -> updateSimpleLedgerState
-  reapplyTxSameState = \_ -> (mustSucceed . runExcept) .: updateSimpleLedgerState
+  applyTx            = \_ -> updateSimpleUTxO
+  reapplyTx          = \_ -> updateSimpleUTxO
+  reapplyTxSameState = \_ -> (mustSucceed . runExcept) .: updateSimpleUTxO
     where
       mustSucceed (Left  _)  = error "reapplyTxSameState: unexpected error"
       mustSucceed (Right st) = st

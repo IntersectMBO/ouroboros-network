@@ -10,6 +10,7 @@ module Ouroboros.Consensus.Ledger.Mock.State (
   , MockError(..)
   , updateMockState
   , updateMockTip
+  , updateMockUTxO
     -- * Genesis state
   , genesisMockState
   ) where
@@ -48,13 +49,18 @@ data MockError blk =
 
 deriving instance StandardHash blk => Show (MockError blk)
 
-updateMockState :: (Monad m, HasUtxo a)
-                => a
+updateMockState :: ( Monad m
+                  , GetHeader blk
+                  , HasHeader (Header blk)
+                  , StandardHash blk
+                  , HasUtxo blk
+                  )
+                => blk
                 -> MockState blk
                 -> ExceptT (MockError blk) m (MockState blk)
-updateMockState b (MockState u c t) = do
-    u' <- withExceptT MockInvalidInputs $ updateUtxo b u
-    return $ MockState u' (c `Set.union` confirmed b) t
+updateMockState b st = do
+    st' <- updateMockTip (getHeader b) st
+    updateMockUTxO b st'
 
 updateMockTip :: (Monad m, HasHeader (Header blk), StandardHash blk)
               => Header blk
@@ -64,6 +70,14 @@ updateMockTip hdr (MockState u c t) = ExceptT $ return $
     if headerPrevHash hdr == pointHash t
       then Right $ MockState u c (headerPoint hdr)
       else Left  $ MockInvalidHash (headerPrevHash hdr) (pointHash t)
+
+updateMockUTxO :: (Monad m, HasUtxo a)
+               => a
+               -> MockState blk
+               -> ExceptT (MockError blk) m (MockState blk)
+updateMockUTxO b (MockState u c t) = do
+    u' <- withExceptT MockInvalidInputs $ updateUtxo b u
+    return $ MockState u' (c `Set.union` confirmed b) t
 
 {-------------------------------------------------------------------------------
   Genesis
