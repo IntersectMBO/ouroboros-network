@@ -48,8 +48,8 @@ direct_  ServerStIdle{recvMsgFindIntersect}
       SendMsgIntersectFound  pIntersect pHead server' ->
         direct server' (recvMsgIntersectFound pIntersect pHead)
 
-      SendMsgIntersectNotFound            pHead server' ->
-        direct server' (recvMsgIntersectNotFound pHead)
+      SendMsgIntersectNotFound          pHead server' ->
+        direct server' (recvMsgIntersectNotFound         pHead)
 
 direct_ ServerStIdle{recvMsgDoneClient}
        (Client.SendMsgDone clientDone) = do
