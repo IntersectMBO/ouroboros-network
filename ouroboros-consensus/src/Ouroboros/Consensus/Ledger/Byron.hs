@@ -94,7 +94,7 @@ import qualified Cardano.Chain.Genesis as CC.Genesis
 import qualified Cardano.Chain.Slotting as CC.Slot
 import qualified Cardano.Chain.Update.Validation.Interface as CC.UPI
 import qualified Cardano.Chain.UTxO as CC.UTxO
-import           Cardano.Chain.ValidationMode (fromBlockValidationMode)
+import           Cardano.Chain.ValidationMode (ValidationMode (..), fromBlockValidationMode)
 import qualified Cardano.Crypto as Crypto
 import           Cardano.Crypto.DSIGN
 import           Cardano.Crypto.Hash
@@ -227,63 +227,21 @@ instance (ByronGiven, Typeable cfg, ConfigContainsGenesis cfg)
 
       fixPMI pmi = reAnnotate $ Annotated pmi ()
 
-  applyLedgerBlock (ByronLedgerConfig cfg) (ByronBlock block)
-                   (ByronLedgerState state snapshots) = do
-      runReaderT
-        (CC.Block.headerIsValid
-          (CC.Block.cvsUpdateState state)
-          (CC.Block.blockHeader block)
-        )
-        (fromBlockValidationMode CC.Block.BlockValidation)
-      CC.Block.BodyState { CC.Block.utxo, CC.Block.updateState
-                         , CC.Block.delegationState }
-        <- runReaderT
-            (CC.Block.updateBody bodyEnv bodyState block)
-            (fromBlockValidationMode CC.Block.BlockValidation)
-      let state' = state
-            { CC.Block.cvsLastSlot        = CC.Block.blockSlot block
-            , CC.Block.cvsPreviousHash    = Right $ CC.Block.blockHashAnnotated block
-            , CC.Block.cvsUtxo            = utxo
-            , CC.Block.cvsUpdateState     = updateState
-            , CC.Block.cvsDelegationState = delegationState
-            }
-          snapshots'
-              | CC.Block.cvsDelegationState state' ==
-                 CC.Block.cvsDelegationState state
-              = snapshots
-              | otherwise
-              = snapshots Seq.|> SB.bounded startOfSnapshot slot state'
-            where
-              startOfSnapshot = case snapshots of
-                _ Seq.:|> a -> sbUpper a
-                Seq.Empty   -> SlotNo 0
-              slot = convertSlot $ CC.Block.blockSlot block
-      return $ ByronLedgerState state' (trimSnapshots snapshots')
-    where
-      bodyState = CC.Block.BodyState
-        { CC.Block.utxo            = CC.Block.cvsUtxo state
-        , CC.Block.updateState     = CC.Block.cvsUpdateState state
-        , CC.Block.delegationState = CC.Block.cvsDelegationState state
-        }
-      bodyEnv = CC.Block.BodyEnvironment
-        { CC.Block.protocolMagic      = fixPM $ CC.Genesis.configProtocolMagic cfg
-        , CC.Block.k                  = CC.Genesis.configK cfg
-        , CC.Block.allowedDelegators  = allowedDelegators cfg
-        , CC.Block.protocolParameters = protocolParameters
-        , CC.Block.currentEpoch       = CC.Slot.slotNumberEpoch
-                                          (CC.Genesis.configEpochSlots cfg)
-                                          (CC.Block.blockSlot block)
-        }
+  applyLedgerBlock = applyByronLedgerBlock
+    (fromBlockValidationMode CC.Block.BlockValidation)
 
-      protocolParameters = CC.UPI.adoptedProtocolParameters . CC.Block.cvsUpdateState
-                         $ state
-
-      fixPM (Crypto.AProtocolMagic a b) = Crypto.AProtocolMagic (reAnnotate a) b
-
-      k = CC.Genesis.configK cfg
-
-      trimSnapshots = Seq.dropWhileL $ \ss ->
-        sbUpper ss < convertSlot (CC.Block.blockSlot block) - 2 * coerce k
+  reapplyLedgerBlock cfg blk st =
+    let validationMode = fromBlockValidationMode CC.Block.NoBlockValidation
+    -- Given a 'BlockValidationMode' of 'NoBlockValidation', a call to
+    -- 'applyByronLedgerBlock' shouldn't fail since the ledger layer won't be
+    -- performing any block validation checks.
+    -- However, because 'applyByronLedgerBlock' can fail in the event it is
+    -- given a 'BlockValidationMode' of 'BlockValidation', it still /looks/
+    -- like it can fail (since its type doesn't change based on the
+    -- 'ValidationMode') and we must still treat it as such.
+    in case runExcept (applyByronLedgerBlock validationMode cfg blk st) of
+      Left  err -> error ("reapplyLedgerBlock: unexpected error: " <> show err)
+      Right st' -> st'
 
   ledgerTipPoint (ByronLedgerState state _) = case CC.Block.cvsPreviousHash state of
       -- In this case there are no blocks in the ledger state. The genesis
@@ -292,6 +250,72 @@ instance (ByronGiven, Typeable cfg, ConfigContainsGenesis cfg)
       Right hdrHash -> Point (Point.block slot hdrHash)
         where
           slot = convertSlot (CC.Block.cvsLastSlot state)
+
+applyByronLedgerBlock :: ValidationMode
+                      -> LedgerConfig (ByronBlock cfg)
+                      -> ByronBlock cfg
+                      -> LedgerState (ByronBlock cfg)
+                      -> Except (LedgerError (ByronBlock cfg))
+                                (LedgerState (ByronBlock cfg))
+applyByronLedgerBlock validationMode
+                      (ByronLedgerConfig cfg)
+                      (ByronBlock block)
+                      (ByronLedgerState state snapshots) = do
+    runReaderT
+      (CC.Block.headerIsValid
+        (CC.Block.cvsUpdateState state)
+        (CC.Block.blockHeader block)
+      )
+      validationMode
+    CC.Block.BodyState { CC.Block.utxo, CC.Block.updateState
+                        , CC.Block.delegationState }
+      <- runReaderT
+          (CC.Block.updateBody bodyEnv bodyState block)
+          validationMode
+    let state' = state
+          { CC.Block.cvsLastSlot        = CC.Block.blockSlot block
+          , CC.Block.cvsPreviousHash    = Right $ CC.Block.blockHashAnnotated block
+          , CC.Block.cvsUtxo            = utxo
+          , CC.Block.cvsUpdateState     = updateState
+          , CC.Block.cvsDelegationState = delegationState
+          }
+        snapshots'
+            | CC.Block.cvsDelegationState state' ==
+                CC.Block.cvsDelegationState state
+            = snapshots
+            | otherwise
+            = snapshots Seq.|> SB.bounded startOfSnapshot slot state'
+          where
+            startOfSnapshot = case snapshots of
+              _ Seq.:|> a -> sbUpper a
+              Seq.Empty   -> SlotNo 0
+            slot = convertSlot $ CC.Block.blockSlot block
+    return $ ByronLedgerState state' (trimSnapshots snapshots')
+  where
+    bodyState = CC.Block.BodyState
+      { CC.Block.utxo            = CC.Block.cvsUtxo state
+      , CC.Block.updateState     = CC.Block.cvsUpdateState state
+      , CC.Block.delegationState = CC.Block.cvsDelegationState state
+      }
+    bodyEnv = CC.Block.BodyEnvironment
+      { CC.Block.protocolMagic      = fixPM $ CC.Genesis.configProtocolMagic cfg
+      , CC.Block.k                  = CC.Genesis.configK cfg
+      , CC.Block.allowedDelegators  = allowedDelegators cfg
+      , CC.Block.protocolParameters = protocolParameters
+      , CC.Block.currentEpoch       = CC.Slot.slotNumberEpoch
+                                        (CC.Genesis.configEpochSlots cfg)
+                                        (CC.Block.blockSlot block)
+      }
+
+    protocolParameters = CC.UPI.adoptedProtocolParameters . CC.Block.cvsUpdateState
+                        $ state
+
+    fixPM (Crypto.AProtocolMagic a b) = Crypto.AProtocolMagic (reAnnotate a) b
+
+    k = CC.Genesis.configK cfg
+
+    trimSnapshots = Seq.dropWhileL $ \ss ->
+      sbUpper ss < convertSlot (CC.Block.blockSlot block) - 2 * coerce k
 
 allowedDelegators :: CC.Genesis.Config -> Set CC.Common.KeyHash
 allowedDelegators
@@ -486,21 +510,47 @@ instance ( ByronGiven
   applyChainTick (ByronEBBLedgerConfig cfg) slotNo (ByronEBBLedgerState state) =
     ByronEBBLedgerState <$> applyChainTick cfg slotNo state
 
-  applyLedgerBlock (ByronEBBLedgerConfig cfg) (ByronBlockOrEBB block)
-                   (ByronEBBLedgerState bs@(ByronLedgerState state snapshots)) =
-    case block of
-      CC.Block.ABOBBlock b -> ByronEBBLedgerState <$> applyLedgerBlock cfg (ByronBlock b) bs
-      CC.Block.ABOBBoundary b ->
-        mapExcept (fmap (\i -> ByronEBBLedgerState $ ByronLedgerState i snapshots)) $
-          return $ state
-            { CC.Block.cvsPreviousHash = Right $ CC.Block.boundaryHeaderHashAnnotated hdr
-            , CC.Block.cvsLastSlot = CC.Slot.SlotNumber $ epochSlots * CC.Block.boundaryEpoch hdr
-            }
-        where
-          hdr = CC.Block.boundaryHeader b
-          CC.Slot.EpochSlots epochSlots = given
+  applyLedgerBlock = applyByronLedgerBlockOrEBB
+    (fromBlockValidationMode CC.Block.BlockValidation)
+
+  reapplyLedgerBlock cfg blk st =
+    let validationMode = fromBlockValidationMode CC.Block.NoBlockValidation
+    -- Given a 'BlockValidationMode' of 'NoBlockValidation', a call to
+    -- 'applyByronLedgerBlockOrEBB' shouldn't fail since the ledger layer
+    -- won't be performing any block validation checks.
+    -- However, because 'applyByronLedgerBlockOrEBB' can fail in the event it
+    -- is given a 'BlockValidationMode' of 'BlockValidation', it still /looks/
+    -- like it can fail (since its type doesn't change based on the
+    -- 'ValidationMode') and we must still treat it as such.
+    in case runExcept (applyByronLedgerBlockOrEBB validationMode cfg blk st) of
+      Left  err -> error ("reapplyLedgerBlock: unexpected error: " <> show err)
+      Right st' -> st'
 
   ledgerTipPoint (ByronEBBLedgerState state) = castPoint $ ledgerTipPoint state
+
+applyByronLedgerBlockOrEBB :: Given CC.Slot.EpochSlots
+                           => ValidationMode
+                           -> LedgerConfig (ByronBlockOrEBB cfg)
+                           -> ByronBlockOrEBB cfg
+                           -> LedgerState (ByronBlockOrEBB cfg)
+                           -> Except (LedgerError (ByronBlockOrEBB cfg))
+                                     (LedgerState (ByronBlockOrEBB cfg))
+applyByronLedgerBlockOrEBB validationMode
+                           (ByronEBBLedgerConfig cfg)
+                           (ByronBlockOrEBB block)
+                           (ByronEBBLedgerState bs@(ByronLedgerState state snapshots)) =
+  case block of
+    CC.Block.ABOBBlock b ->
+      ByronEBBLedgerState <$> applyByronLedgerBlock validationMode cfg (ByronBlock b) bs
+    CC.Block.ABOBBoundary b ->
+      mapExcept (fmap (\i -> ByronEBBLedgerState $ ByronLedgerState i snapshots)) $
+        return $ state
+          { CC.Block.cvsPreviousHash = Right $ CC.Block.boundaryHeaderHashAnnotated hdr
+          , CC.Block.cvsLastSlot = CC.Slot.SlotNumber $ epochSlots * CC.Block.boundaryEpoch hdr
+          }
+      where
+        hdr = CC.Block.boundaryHeader b
+        CC.Slot.EpochSlots epochSlots = given
 
 -- | Construct Byron block from unannotated 'CC.Block.Block'
 --
@@ -827,27 +877,27 @@ instance (ByronGiven, Typeable cfg, ConfigContainsGenesis cfg)
 
   type ApplyTxErr (ByronBlockOrEBB cfg) = CC.UTxO.UTxOValidationError
 
-  applyTx   = applyByronGenTx False
-  reapplyTx = applyByronGenTx True
+  applyTx = applyByronGenTx
+    (ValidationMode CC.Block.BlockValidation CC.UTxO.TxValidation)
 
-  -- TODO #440: We need explicit support for this from the ledger
-  -- (though during testing we might still want to actually verify that we
-  -- didn't get any errors)
+  reapplyTx = applyByronGenTx
+    (ValidationMode CC.Block.NoBlockValidation CC.UTxO.TxValidationNoCrypto)
+
   reapplyTxSameState cfg tx st =
-    case runExcept (applyByronGenTx True cfg tx st) of
+    let validationMode = ValidationMode CC.Block.NoBlockValidation CC.UTxO.NoTxValidation
+    in case runExcept (applyByronGenTx validationMode cfg tx st) of
       Left  err -> error $ "unexpected error: " <> show err
       Right st' -> st'
 
-applyByronGenTx :: Bool -- ^ Have we verified this transaction previously?
+applyByronGenTx :: ValidationMode
                 -> LedgerConfig (ByronBlockOrEBB cfg)
                 -> GenTx (ByronBlockOrEBB cfg)
                 -> LedgerState (ByronBlockOrEBB cfg)
                 -> Except CC.UTxO.UTxOValidationError
                           (LedgerState (ByronBlockOrEBB cfg))
-applyByronGenTx _reapply (ByronEBBLedgerConfig (ByronLedgerConfig cfg)) genTx (ByronEBBLedgerState st@ByronLedgerState{..}) =
+applyByronGenTx validationMode (ByronEBBLedgerConfig (ByronLedgerConfig cfg)) genTx (ByronEBBLedgerState st@ByronLedgerState{..}) =
     (\x -> ByronEBBLedgerState $ st { blsCurrent = x }) <$> go genTx blsCurrent
   where
-    validationMode = fromBlockValidationMode CC.Block.BlockValidation
     go :: GenTx (ByronBlockOrEBB cfg)
        -> CC.Block.ChainValidationState
        -> Except CC.UTxO.UTxOValidationError CC.Block.ChainValidationState

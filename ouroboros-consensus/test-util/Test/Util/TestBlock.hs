@@ -250,6 +250,9 @@ instance UpdateLedger TestBlock where
     | otherwise
     = return     $ TestLedger (Chain.blockPoint tb, BlockHash (Block.blockHash tb))
 
+  reapplyLedgerBlock _ tb _ =
+    TestLedger (Chain.blockPoint tb, BlockHash (Block.blockHash tb))
+
   ledgerTipPoint = fst . lastApplied
 
 instance ProtocolLedgerView TestBlock where

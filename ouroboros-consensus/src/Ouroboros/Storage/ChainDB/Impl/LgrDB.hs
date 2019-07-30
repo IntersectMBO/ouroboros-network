@@ -202,12 +202,12 @@ openDB args@LgrDbArgs{..} immDB getBlock tracer = do
     apply :: blk
           -> ExtLedgerState blk
           -> Either (ExtValidationError blk) (ExtLedgerState blk)
-    apply = runExcept .: applyExtLedgerState lgrNodeConfig
+    apply = runExcept .: applyExtLedgerState BlockNotPreviouslyApplied lgrNodeConfig
 
     reapply :: blk
             -> ExtLedgerState blk
             -> ExtLedgerState blk
-    reapply b l = case apply b l of  -- TODO skip some checks, see #440
+    reapply b l = case runExcept (applyExtLedgerState BlockPreviouslyApplied lgrNodeConfig b l) of
       Left  e  -> error $ "reapply failed: " <> show e
       Right l' -> l'
 

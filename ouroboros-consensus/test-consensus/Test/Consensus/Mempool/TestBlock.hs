@@ -117,6 +117,8 @@ instance UpdateLedger TestBlock where
 
   applyLedgerBlock = notNeeded
 
+  reapplyLedgerBlock = notNeeded
+
   ledgerTipPoint = tlLastApplied
 
 testInitLedger :: LedgerState TestBlock
