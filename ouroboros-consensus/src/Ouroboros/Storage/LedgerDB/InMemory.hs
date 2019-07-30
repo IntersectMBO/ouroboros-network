@@ -129,13 +129,13 @@ ref (Val r _) = r
 -- | Summary of the chain at a particular point in time
 data ChainSummary l r = ChainSummary {
       -- | The tip of the chain
-      csTip    :: Tip r
+      csTip    :: !(Tip r)
 
       -- | Length of the chain
-    , csLength :: Word64
+    , csLength :: !Word64
 
       -- | Ledger state
-    , csLedger :: l
+    , csLedger :: !l
     }
   deriving (Show, Eq, Generic)
 
@@ -160,16 +160,16 @@ genesisChainSummary l = ChainSummary TipGen 0 l
 -- * as well as one at offset @k@ (so that we can roll back at most @k@ blocks)
 data LedgerDB l r =
     -- | Apply block @r@ and take a snapshot of the resulting ledger state @l@
-    Snap r l (LedgerDB l r)
+    Snap !r !l !(LedgerDB l r)
 
     -- | Apply block @r@ without taking a snapshot
-  | Skip r (LedgerDB l r)
+  | Skip !r !(LedgerDB l r)
 
     -- | The tail of the chain that is outside the scope of the snapshots
     --
     -- We record a summary of the chain tail /at this point/ as well as the
     -- missing snapshots, if any.
-  | Tail Missing (ChainSummary l r)
+  | Tail !Missing !(ChainSummary l r)
   deriving (Show, Eq)
 
 -- | Are we still missing some snapshots?
