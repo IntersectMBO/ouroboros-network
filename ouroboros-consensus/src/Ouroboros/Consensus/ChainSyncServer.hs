@@ -111,7 +111,7 @@ chainSyncServerForReader _tracer chainDB rdr =
       tip     <- atomically $ ChainDB.getTipPoint chainDB
       return $ case changed of
         Just pt -> SendMsgIntersectFound    pt tip idle'
-        Nothing -> SendMsgIntersectUnchanged   tip idle'
+        Nothing -> SendMsgIntersectNotFound tip idle'
 
 {-------------------------------------------------------------------------------
   Trace events

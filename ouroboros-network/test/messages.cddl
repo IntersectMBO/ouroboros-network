@@ -20,7 +20,7 @@ chainSyncMessage
     / msgRollBackward
     / msgFindIntersect
     / msgIntersectFound
-    / msgIntersectUnchanged
+    / msgIntersectNotFound
     / chainSyncMsgDone
 
 ; these records use fixed length list encodings TODO: lookup CDDL syntax for that
@@ -30,8 +30,8 @@ msgRollForward         = [2, header, point]
 msgRollBackward        = [3, header, point]
 msgFindIntersect       = [4, points]
 msgIntersectFound      = [5, point, point]
-msgIntersectUnchanged  = [6, point]
-chainSyncMsgDone   = [7]
+msgIntersectNotFound   = [6, point]
+chainSyncMsgDone       = [7]
 
 points = [point]
 

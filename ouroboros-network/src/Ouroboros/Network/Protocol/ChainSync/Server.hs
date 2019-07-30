@@ -83,7 +83,7 @@ data ServerStIntersect header point m a where
                             -> ChainSyncServer header point m a
                             -> ServerStIntersect header point m a
 
-  SendMsgIntersectUnchanged :: point
+  SendMsgIntersectNotFound  :: point
                             -> ChainSyncServer header point m a
                             -> ServerStIntersect header point m a
 
@@ -131,7 +131,7 @@ chainSyncServerPeer (ChainSyncServer mterm) = Effect $ mterm >>=
             (MsgIntersectFound pIntersect pHead)
             (chainSyncServerPeer next)
 
-    handleStIntersect (SendMsgIntersectUnchanged pHead next) =
+    handleStIntersect (SendMsgIntersectNotFound pHead next) =
       Yield (ServerAgency TokIntersect)
-            (MsgIntersectUnchanged pHead)
+            (MsgIntersectNotFound pHead)
             (chainSyncServerPeer next)

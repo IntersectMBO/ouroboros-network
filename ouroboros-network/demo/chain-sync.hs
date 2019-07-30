@@ -656,7 +656,7 @@ chainSyncServer seed =
     intersectState :: [Block]
                    -> ServerStIntersect BlockHeader (Point BlockHeader) IO ()
     intersectState blocks =
-      SendMsgIntersectUnchanged
+      SendMsgIntersectNotFound
          -- pretend chain head is next one:
         (blockPoint (blockHeader (head blocks)))
         (ChainSyncServer (return (idleState blocks)))

@@ -230,8 +230,8 @@ chainSyncClient tracer cfg btime (ClockSkew maxSkew)
       return $ SendMsgFindIntersect (map castPoint points) $ ClientStIntersect
         { recvMsgIntersectFound  =
             ChainSyncClient .: intersectFound
-        , recvMsgIntersectUnchanged =
-            ChainSyncClient .  intersectUnchanged
+        , recvMsgIntersectNotFound =
+            ChainSyncClient .  intersectNotFound
         }
 
     -- One of the points we sent intersected our chain. This intersection
@@ -283,9 +283,9 @@ chainSyncClient tracer cfg btime (ClockSkew maxSkew)
     -- we later optimise this client to also find intersections after
     -- start-up, this code will have to be adapted, as it assumes it is only
     -- called at start-up.
-    intersectUnchanged :: Point blk
+    intersectNotFound :: Point blk
                        -> m (Consensus ClientStIdle blk m)
-    intersectUnchanged theirHead = atomically $ do
+    intersectNotFound theirHead = atomically $ do
       curChainState <- ouroborosChainState <$> getCurrentLedger
 
       CandidateState { candidateChain } <- readTVar varCandidate
