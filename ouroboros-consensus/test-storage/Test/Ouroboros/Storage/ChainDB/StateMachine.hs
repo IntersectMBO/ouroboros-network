@@ -35,7 +35,7 @@ import           Data.Bitraversable
 import           Data.Functor.Classes (Eq1, Show1)
 import           Data.List (sortOn)
 import qualified Data.List.NonEmpty as NE
-import qualified Data.Map as Map
+import qualified Data.Map.Strict as Map
 import           Data.Ord (Down (..))
 import           Data.Proxy
 import           Data.TreeDiff (ToExpr)

@@ -148,10 +148,10 @@ data ChainDbState m blk
     -- 'ChainDB', it should /never/ be used.
 
 data ChainDbEnv m blk = CDB
-  { cdbImmDB          :: ImmDB m blk
-  , cdbVolDB          :: VolDB m blk
-  , cdbLgrDB          :: LgrDB m blk
-  , cdbChain          :: TVar m (AnchoredFragment (Header blk))
+  { cdbImmDB          :: !(ImmDB m blk)
+  , cdbVolDB          :: !(VolDB m blk)
+  , cdbLgrDB          :: !(LgrDB m blk)
+  , cdbChain          :: !(TVar m (AnchoredFragment (Header blk)))
     -- ^ Contains the current chain fragment.
     --
     -- INVARIANT: the anchor point of this fragment is the tip of the
@@ -164,7 +164,7 @@ data ChainDbEnv m blk = CDB
     -- Note that this fragment might also be /longer/ than @k@ headers,
     -- because the oldest blocks from the fragment might not yet have been
     -- copied from the VolatileDB to the ImmutableDB.
-  , cdbImmBlockNo     :: TVar m BlockNo
+  , cdbImmBlockNo     :: !(TVar m BlockNo)
     -- ^ The block number corresponding to the block @k@ blocks back. This is
     -- the most recent \"immutable\" block according to the protocol, i.e., a
     -- block that cannot be rolled back.
@@ -184,7 +184,7 @@ data ChainDbEnv m blk = CDB
     --
     -- Note that the \"immutable\" block will /never/ be /more/ than @k@
     -- blocks back, as opposed to the anchor point of 'cdbChain'.
-  , cdbIterators      :: TVar m (Map IteratorId (m ()))
+  , cdbIterators      :: !(TVar m (Map IteratorId (m ())))
     -- ^ The iterators.
     --
     -- This maps the 'IteratorId's of each open 'Iterator' to a function that,
@@ -192,14 +192,14 @@ data ChainDbEnv m blk = CDB
     -- ChainDB: the open file handles used by iterators can be closed, and the
     -- iterators themselves are closed so that it is impossible to use an
     -- iterator after closing the ChainDB itself.
-  , cdbReaders        :: TVar m (Map ReaderId (TVar m (ReaderState m blk)))
+  , cdbReaders        :: !(TVar m (Map ReaderId (TVar m (ReaderState m blk))))
     -- ^ The readers.
     --
     -- INVARIANT: the 'readerPoint' of each reader is 'withinFragmentBounds'
     -- of the current chain fragment (retrieved 'cdbGetCurrentChain', not by
     -- reading 'cdbChain' directly).
-  , cdbNodeConfig     :: NodeConfig (BlockProtocol blk)
-  , cdbInvalid        :: TVar m (Map (HeaderHash blk) SlotNo)
+  , cdbNodeConfig     :: !(NodeConfig (BlockProtocol blk))
+  , cdbInvalid        :: !(TVar m (Map (HeaderHash blk) SlotNo))
     -- ^ Hashes corresponding to invalid blocks. This is used to ignore these
     -- blocks during chain selection.
     --
@@ -208,22 +208,22 @@ data ChainDbEnv m blk = CDB
     -- older or equal to @s@ can be removed from this map.
     --
     -- TODO #730.
-  , cdbNextIteratorId :: TVar m IteratorId
-  , cdbNextReaderId   :: TVar m ReaderId
-  , cdbCopyLock       :: TMVar m ()
+  , cdbNextIteratorId :: !(TVar m IteratorId)
+  , cdbNextReaderId   :: !(TVar m ReaderId)
+  , cdbCopyLock       :: !(TMVar m ())
     -- ^ Lock used to ensure that 'copyToImmDB' is not executed more than
     -- once concurrentlycopyToImmDB.
     --
     -- Note that 'copyToImmDB' can still be executed concurrently with all
     -- others functions, just not with itself.
-  , cdbTracer         :: Tracer m (TraceEvent blk)
-  , cdbThreadRegistry :: ThreadRegistry m
+  , cdbTracer         :: !(Tracer m (TraceEvent blk))
+  , cdbThreadRegistry :: !(ThreadRegistry m)
     -- ^ Thread registry that will be used to (re)start the background
     -- threads, see 'cdbBgThreads'.
-  , cdbGcDelay        :: DiffTime
+  , cdbGcDelay        :: !DiffTime
     -- ^ How long to wait between copying a block from the VolatileDB to
     -- ImmutableDB and garbage collecting it from the VolatileDB
-  , cdbBgThreads      :: TVar m [Async m ()]
+  , cdbBgThreads      :: !(TVar m [Async m ()])
     -- ^ The background threads.
   }
 

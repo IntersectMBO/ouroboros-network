@@ -44,7 +44,7 @@ import           Ouroboros.Consensus.Util.Condense
 -------------------------------------------------------------------------------}
 
 data BftFields c toSign = BftFields {
-      bftSignature :: SignedDSIGN (BftDSIGN c) toSign
+      bftSignature :: !(SignedDSIGN (BftDSIGN c) toSign)
     }
 
 deriving instance BftCrypto c => Show (BftFields c toSIgn)
@@ -89,19 +89,19 @@ data BftParams = BftParams {
       --
       -- Although the protocol proper does not have such a security parameter,
       -- we insist on it.
-      bftSecurityParam :: SecurityParam
+      bftSecurityParam :: !SecurityParam
 
       -- | Number of core nodes
-    , bftNumNodes      :: Word64
+    , bftNumNodes      :: !Word64
     }
 
 instance BftCrypto c => OuroborosTag (Bft c) where
   -- | (Static) node configuration
   data NodeConfig (Bft c) = BftNodeConfig {
-        bftParams   :: BftParams
-      , bftNodeId   :: NodeId
-      , bftSignKey  :: SignKeyDSIGN (BftDSIGN c)
-      , bftVerKeys  :: Map NodeId (VerKeyDSIGN (BftDSIGN c))
+        bftParams   :: !BftParams
+      , bftNodeId   :: !NodeId
+      , bftSignKey  :: !(SignKeyDSIGN (BftDSIGN c))
+      , bftVerKeys  :: !(Map NodeId (VerKeyDSIGN (BftDSIGN c)))
       }
 
   type ValidationErr   (Bft c) = BftValidationErr

@@ -34,6 +34,7 @@ import           Codec.CBOR.Decoding (Decoder)
 import           Codec.CBOR.Encoding (Encoding)
 import           Codec.CBOR.Read (DeserialiseFailure, deserialiseFromBytes)
 import           Codec.CBOR.Write (toLazyByteString)
+import           Control.DeepSeq (force)
 import           Control.Exception (assert)
 import           Control.Monad (void, when)
 import           Control.Monad.Class.MonadThrow
@@ -184,7 +185,7 @@ indexFromSlotOffsets = MkIndex . V.fromList . reverse . NE.toList
 indexToSlotOffsets :: Index hash -> NonEmpty SlotOffset
 indexToSlotOffsets (MkIndex offsets _)
   | Just sos <- NE.nonEmpty $ V.toList $ V.reverse offsets
-  = sos
+  = force sos
   | otherwise
   = 0 NE.:| []
 

@@ -8,7 +8,7 @@ module Ouroboros.Consensus.NodeId (
   ) where
 
 import           Codec.Serialise (Serialise)
-import           Ouroboros.Consensus.Util.Condense (Condense(..))
+import           Ouroboros.Consensus.Util.Condense (Condense (..))
 
 
 {-------------------------------------------------------------------------------
@@ -17,8 +17,8 @@ import           Ouroboros.Consensus.Util.Condense (Condense(..))
 
 -- TODO: It is not at all clear that this makes any sense anymore. The network
 -- layer does not use or provide node ids (it uses addresses).
-data NodeId = CoreId Int
-            | RelayId Int
+data NodeId = CoreId !Int
+            | RelayId !Int
   deriving (Eq, Ord, Show)
 
 instance Condense NodeId where

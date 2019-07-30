@@ -35,8 +35,8 @@ import           Ouroboros.Consensus.Util (repeatedlyM)
 --
 -- This is the combination of the ouroboros state and the ledger state proper.
 data ExtLedgerState blk = ExtLedgerState {
-      ledgerState         :: LedgerState blk
-    , ouroborosChainState :: ChainState (BlockProtocol blk)
+      ledgerState         :: !(LedgerState blk)
+    , ouroborosChainState :: !(ChainState (BlockProtocol blk))
     }
 
 data ExtValidationError blk =

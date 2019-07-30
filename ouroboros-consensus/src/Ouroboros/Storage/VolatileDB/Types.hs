@@ -13,7 +13,7 @@ module Ouroboros.Storage.VolatileDB.Types
     ) where
 
 import           Control.Exception (Exception (..))
-import           Data.Map (Map)
+import           Data.Map.Strict (Map)
 import           Data.Set (Set)
 import           Data.Typeable
 import           Data.Word (Word64)
@@ -100,23 +100,23 @@ newtype Parser e m blockId = Parser {
 
 -- This is the information a user has to provide for each new block.
 data BlockInfo blockId = BlockInfo {
-      bbid    :: blockId
-    , bslot   :: SlotNo
-    , bpreBid :: Maybe blockId
+      bbid    :: !blockId
+    , bslot   :: !SlotNo
+    , bpreBid :: !(Maybe blockId)
     } deriving Show
 
 -- The Internal information the db keeps for each block.
 data InternalBlockInfo blockId = InternalBlockInfo {
-      ibFile       :: String
-    , ibSlotOffset :: SlotOffset
-    , ibBlockSize  :: BlockSize
-    , ibSlot       :: SlotNo
-    , ibPreBid     :: Maybe blockId
+      ibFile       :: !String
+    , ibSlotOffset :: !SlotOffset
+    , ibBlockSize  :: !BlockSize
+    , ibSlot       :: !SlotNo
+    , ibPreBid     :: !(Maybe blockId)
     } deriving Show
 
 -- The Internal information the db keeps for each file.
 data FileInfo blockId = FileInfo {
-      fLatestSlot :: Maybe SlotNo
-    , fNBlocks    :: Int
-    , fContents   :: Map SlotOffset (BlockSize, blockId)
+      fLatestSlot :: !(Maybe SlotNo)
+    , fNBlocks    :: !Int
+    , fContents   :: !(Map SlotOffset (BlockSize, blockId))
     } deriving Show
