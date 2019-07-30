@@ -180,9 +180,9 @@ instance (ByronGiven, Typeable cfg, ConfigContainsGenesis cfg)
      => UpdateLedger (ByronBlock cfg) where
 
   data LedgerState (ByronBlock cfg) = ByronLedgerState
-      { blsCurrent :: CC.Block.ChainValidationState
+      { blsCurrent :: !CC.Block.ChainValidationState
         -- | Slot-bounded snapshots of the chain state
-      , blsSnapshots :: Seq.Seq (SlotBounded CC.Block.ChainValidationState)
+      , blsSnapshots :: !(Seq.Seq (SlotBounded CC.Block.ChainValidationState))
       }
     deriving (Eq, Show)
 
