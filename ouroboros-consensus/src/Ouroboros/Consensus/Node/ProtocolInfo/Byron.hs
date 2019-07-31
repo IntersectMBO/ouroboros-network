@@ -117,7 +117,6 @@ protocolInfoByron genesisConfig@Genesis.Config {
                       Genesis.GenesisData {
                         Genesis.gdK                = BlockCount kParam
                       , Genesis.gdGenesisKeyHashes = genesisKeyHashes
-                      , Genesis.gdHeavyDelegation  = genesisDelegation
                       }
                   }
                   mSigThresh pVer sVer mLeader =
@@ -140,12 +139,8 @@ protocolInfoByron genesisConfig@Genesis.Config {
                       Just PBftIsLeader {
                         pbftCoreNodeId = nid
                       , pbftSignKey    = SignKeyCardanoDSIGN sk
-                      , pbftVerKey     = VerKeyCardanoDSIGN vk
-                      , pbftGenVerKey  = VerKeyCardanoDSIGN vkGenesis
+                      , pbftDlgCert    = cert
                       }
-                      where
-                        vk        = Crypto.toVerification sk
-                        vkGenesis = Delegation.issuerVK cert
             }
           , encNodeConfigExt = ByronConfig {
                 pbftProtocolMagic   = Genesis.configProtocolMagic genesisConfig
@@ -154,7 +149,6 @@ protocolInfoByron genesisConfig@Genesis.Config {
               , pbftGenesisConfig   = genesisConfig
               , pbftGenesisHash     = genesisHash
               , pbftEpochSlots      = Genesis.configEpochSlots genesisConfig
-              , pbftGenesisDlg      = genesisDelegation
               , pbftSecrets         = Dummy.dummyGeneratedSecrets
                 --TODO: These "richmen" secrets ^^ are here to support demos
                 -- where we need to elaborate from mock transactions to real
@@ -173,4 +167,3 @@ protocolInfoByron genesisConfig@Genesis.Config {
   where
     initState :: Block.ChainValidationState
     Right initState = runExcept $ Block.initialChainValidationState genesisConfig
-

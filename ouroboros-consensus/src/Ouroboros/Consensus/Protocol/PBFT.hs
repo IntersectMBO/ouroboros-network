@@ -45,6 +45,7 @@ import           GHC.Generics (Generic)
 
 import           Cardano.Binary (Decoded)
 import qualified Cardano.Chain.Common as CC.Common
+import qualified Cardano.Chain.Delegation as CC.Delegation
 import qualified Cardano.Chain.Genesis as CC.Genesis
 import           Cardano.Crypto (ProtocolMagicId)
 import           Cardano.Crypto.DSIGN.Class
@@ -91,8 +92,8 @@ forgePBftFields :: ( MonadRandom m
 forgePBftFields PBftIsLeader{..} toSign = do
     signature <- signedDSIGN toSign pbftSignKey
     return $ PBftFields {
-        pbftIssuer    = pbftVerKey
-      , pbftGenKey    = pbftGenVerKey
+        pbftIssuer    = dlgCertDlgVerKey pbftDlgCert
+      , pbftGenKey    = dlgCertGenVerKey pbftDlgCert
       , pbftSignature = signature
       }
 
@@ -144,11 +145,7 @@ data PBftParams = PBftParams {
 data PBftIsLeader c = PBftIsLeader {
       pbftCoreNodeId :: CoreNodeId
     , pbftSignKey    :: SignKeyDSIGN (PBftDSIGN c)
-    , pbftVerKey     :: VerKeyDSIGN (PBftDSIGN c)
-      -- Verification key for the genesis stakeholder
-      -- This is unfortunately needed during the Byron era
-    , pbftGenVerKey  :: VerKeyDSIGN (PBftDSIGN c)
-      -- TODO: We should have a delegation certificate here.
+    , pbftDlgCert    :: PBftDelegationCert c
     }
 
 instance (PBftCrypto c, Typeable c) => OuroborosTag (PBft c) where
@@ -293,6 +290,11 @@ class ( Typeable c
       ) => PBftCrypto c where
   type family PBftDSIGN c :: *
 
+  type family PBftDelegationCert c = (d :: *) | d -> c
+
+  dlgCertGenVerKey :: PBftDelegationCert c -> VerKeyDSIGN (PBftDSIGN c)
+  dlgCertDlgVerKey :: PBftDelegationCert c -> VerKeyDSIGN (PBftDSIGN c)
+
   -- Cardano stores a map of stakeholder IDs rather than the verification key
   -- directly. We make this family injective for convenience - whilst it's
   -- _possible_ that there could be non-injective instances, the chances of there
@@ -319,6 +321,12 @@ data PBftMockCrypto
 
 instance PBftCrypto PBftMockCrypto where
   type PBftDSIGN      PBftMockCrypto = MockDSIGN
+
+  type PBftDelegationCert PBftMockCrypto = (VerKeyDSIGN MockDSIGN, VerKeyDSIGN MockDSIGN)
+
+  dlgCertGenVerKey = fst
+  dlgCertDlgVerKey = snd
+
   type PBftVerKeyHash PBftMockCrypto = VerKeyDSIGN MockDSIGN
 
   type PBftSigningConstraints PBftMockCrypto hdr = Signable MockDSIGN (Signed hdr)
@@ -331,6 +339,12 @@ data PBftCardanoCrypto
 
 instance (Given ProtocolMagicId) => PBftCrypto PBftCardanoCrypto where
   type PBftDSIGN PBftCardanoCrypto      = CardanoDSIGN
+
+  type PBftDelegationCert PBftCardanoCrypto = CC.Delegation.Certificate
+
+  dlgCertGenVerKey = VerKeyCardanoDSIGN . CC.Delegation.issuerVK
+  dlgCertDlgVerKey = VerKeyCardanoDSIGN . CC.Delegation.delegateVK
+
   type PBftVerKeyHash PBftCardanoCrypto = CC.Common.KeyHash
 
   type PBftSigningConstraints PBftCardanoCrypto hdr
