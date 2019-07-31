@@ -549,6 +549,12 @@ instance Condense (GenTx (ByronBlockOrEBB cfg)) where
 instance Show (GenTx (ByronBlockOrEBB cfg)) where
     show tx = condense tx
 
+instance Condense (GenTxId (ByronBlockOrEBB cfg)) where
+  condense = condense . unByronTxId
+
+instance Show (GenTxId (ByronBlockOrEBB cfg)) where
+  show = condense
+
 {-------------------------------------------------------------------------------
   Serialisation
 -------------------------------------------------------------------------------}
