@@ -1,3 +1,4 @@
+{-# LANGUAGE ConstraintKinds      #-}
 {-# LANGUAGE DataKinds            #-}
 {-# LANGUAGE FlexibleContexts     #-}
 {-# LANGUAGE GADTs                #-}
@@ -13,22 +14,19 @@
 -- | Setup network
 module Test.Dynamic.Network (
     broadcastNetwork
+  , TracingConstraints
   ) where
 
 import           Control.Monad
 import           Control.Tracer
-import           Crypto.Number.Generate (generateBetween)
 import           Crypto.Random (ChaChaDRG, drgNew)
 import           Data.Foldable (traverse_)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Proxy (Proxy (..))
-import qualified Data.Set as Set
-import           Data.Typeable (Typeable)
 
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork (MonadFork)
-import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadST
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
@@ -58,9 +56,7 @@ import           Ouroboros.Consensus.Node.Tracers
 import           Ouroboros.Consensus.NodeId
 import           Ouroboros.Consensus.NodeNetwork
 import           Ouroboros.Consensus.Protocol.Abstract
-import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Orphans ()
-import           Ouroboros.Consensus.Util.Random
 import           Ouroboros.Consensus.Util.STM
 import           Ouroboros.Consensus.Util.ThreadRegistry
 
@@ -72,6 +68,8 @@ import qualified Ouroboros.Storage.ImmutableDB as ImmDB
 import qualified Ouroboros.Storage.LedgerDB.DiskPolicy as LgrDB
 import qualified Ouroboros.Storage.LedgerDB.MemPolicy as LgrDB
 import qualified Ouroboros.Storage.Util.ErrorHandling as EH
+
+import           Test.Dynamic.TxGen
 
 -- | Interface provided by 'ouroboros-network'.  At the moment
 -- 'ouroboros-network' only provides this interface in 'IO' backed by sockets,
@@ -94,16 +92,8 @@ data NetworkInterface m peer = NetworkInterface {
 createNetworkInterface
     :: forall m peer blk unused1 unused2.
        ( MonadAsync m
-       , MonadFork  m
        , MonadMask  m
-       , MonadSay   m
-       , StandardHash blk
-       , Show blk
-       , Show (Header blk)
-       , Show (GenTx blk)
-       , Show (GenTxId blk)
        , Ord peer
-       , Show peer
        )
     => NodeChans m peer blk -- ^ map of channels between nodes
     -> [peer]               -- ^ list of nodes which we want to serve
@@ -137,15 +127,12 @@ createNetworkInterface chans nodeIds us
         -- error, 'waitAny' will terminate and both threads will be killed (thus
         -- there's no need to use 'waitAnyCancel').
         withAsync (void $ naChainSyncClient them
-                        $ loggingChannel (TalkingToProducer us them)
                         $ chainSyncProducer nodeChan)
                   $ \aCS ->
           withAsync (naBlockFetchClient them
-                        $ loggingChannel (TalkingToProducer us them)
                         $ blockFetchProducer nodeChan)
                   $ \aBF ->
             withAsync (naTxSubmissionClient them
-                        $ loggingChannel (TalkingToProducer us them)
                         $ txSubmissionProducer nodeChan)
                   $ \aTX ->
                     -- wait for all the threads, if any throws an exception, cancel all
@@ -160,18 +147,15 @@ createNetworkInterface chans nodeIds us
               aCS <- async $ unmask
                            $ void $ naChainSyncServer
                              them
-                             (loggingChannel (TalkingToConsumer us them)
-                               (chainSyncConsumer nodeChan))
+                             (chainSyncConsumer nodeChan)
               aBF <- async $ unmask
                            $ void $ naBlockFetchServer
                              them
-                             (loggingChannel (TalkingToConsumer us them)
-                               (blockFetchConsumer nodeChan))
+                             (blockFetchConsumer nodeChan)
               aTX <- async $ unmask
                            $ void $ naTxSubmissionServer
                              them
-                             (loggingChannel (TalkingToConsumer us them)
-                               (txSubmissionConsumer nodeChan))
+                             (txSubmissionConsumer nodeChan)
 
               return [aCS, aBF, aTX]
 
@@ -185,47 +169,34 @@ createNetworkInterface chans nodeIds us
 --
 -- We run for the specified number of blocks, then return the final state of
 -- each node.
-broadcastNetwork :: forall m c ext.
+broadcastNetwork :: forall m blk.
                     ( MonadAsync m
                     , MonadFork  m
                     , MonadMask  m
-                    , MonadSay   m
                     , MonadST    m
                     , MonadTime  m
                     , MonadTimer m
                     , MonadThrow (STM m)
-                    , RunNode (SimpleBlock c ext)
-                    , SimpleCrypto c
-                    , Show ext
-                    , Condense ext
-                    , Typeable ext
+                    , RunNode blk
+                    , TxGen blk
+                    , TracingConstraints blk
                     )
                  => ThreadRegistry m
                  -> TestBlockchainTime m
                  -> NumCoreNodes
-                 -> (CoreNodeId -> ProtocolInfo (SimpleBlock c ext))
+                 -> (CoreNodeId -> ProtocolInfo blk)
                  -> ChaChaDRG
                  -> DiffTime
-                 -> m (Map NodeId ( NodeConfig (BlockProtocol (SimpleBlock c ext))
-                                  , Chain (SimpleBlock c ext)
+                 -> m (Map NodeId ( NodeConfig (BlockProtocol blk)
+                                  , Chain blk
                                   ))
 broadcastNetwork registry testBtime numCoreNodes pInfo initRNG slotLen = do
-    -- all known addresses
-    let addrs :: [Addr]
-        addrs = Set.toList . Set.fromList . concat
-              $ [ nodeAddrs
-                | node <- coreNodeIds
-                , let nodeLedger = pInfoInitLedger (pInfo node)
-                      nodeUtxo   = getUtxo nodeLedger
-                      nodeAddrs  = map fst (Map.elems nodeUtxo)
-                ]
-
-    chans :: NodeChans m NodeId (SimpleBlock c ext) <- createCommunicationChannels
+    chans :: NodeChans m NodeId blk <- createCommunicationChannels
 
     varRNG <- atomically $ newTVar initRNG
 
     nodes <- forM coreNodeIds $ \coreNodeId -> do
-      node <- createAndConnectNode addrs chans varRNG coreNodeId
+      node <- createAndConnectNode chans varRNG coreNodeId
       return (coreNodeId, node)
 
     -- Wait a random amount of time after the final slot for the block fetch
@@ -247,26 +218,23 @@ broadcastNetwork registry testBtime numCoreNodes pInfo initRNG slotLen = do
 
     -- | Produce transactions every time the slot changes and submit them to
     -- the mempool.
-    txProducer :: [Addr]
+    txProducer :: NodeConfig (BlockProtocol blk)
                -> m ChaChaDRG
                   -- ^ How to get a DRG
-               -> STM m (ExtLedgerState (SimpleBlock c ext))
+               -> STM m (ExtLedgerState blk)
                   -- ^ How to get the current ledger state
-               -> Mempool m (SimpleBlock c ext) TicketNo
+               -> Mempool m blk TicketNo
                -> m ()
-    txProducer addrs produceDRG getLedger mempool =
+    txProducer cfg produceDRG getExtLedger mempool =
       onSlotChange btime $ \_curSlotNo -> do
         drg <- produceDRG
         txs <- atomically $ do
-          ledger <- getLedger
+          ledger <- ledgerState <$> getExtLedger
           varDRG <- newTVar drg
-          simChaChaT varDRG id $ genTxs addrs (getUtxo ledger)
-        void $ addTxs mempool (map mkSimpleGenTx txs)
+          simChaChaT varDRG id $ testGenTxs numCoreNodes cfg ledger
+        void $ addTxs mempool txs
 
-    getUtxo :: ExtLedgerState (SimpleBlock c ext) -> Utxo
-    getUtxo = mockUtxo . simpleLedgerState . ledgerState
-
-    createCommunicationChannels :: m (NodeChans m NodeId (SimpleBlock c ext))
+    createCommunicationChannels :: m (NodeChans m NodeId blk)
     createCommunicationChannels = fmap Map.fromList $ forM nodeIds $ \us ->
       fmap ((us, ) . Map.fromList) $ forM (filter (/= us) nodeIds) $ \them -> do
         (chainSyncConsumer,    chainSyncProducer)    <- createConnectedChannels
@@ -274,9 +242,9 @@ broadcastNetwork registry testBtime numCoreNodes pInfo initRNG slotLen = do
         (txSubmissionConsumer, txSubmissionProducer) <- createConnectedChannels
         return (them, NodeChan {..})
 
-    mkArgs :: NodeConfig (BlockProtocol (SimpleBlock c ext))
-           -> ExtLedgerState (SimpleBlock c ext)
-           -> m (ChainDbArgs m (SimpleBlock c ext))
+    mkArgs :: NodeConfig (BlockProtocol blk)
+           -> ExtLedgerState blk
+           -> m (ChainDbArgs m blk)
     mkArgs cfg initLedger = do
       (immDbFsVar, volDbFsVar, lgrDbFsVar) <- atomically $
         (,,) <$> newTVar Mock.empty
@@ -284,15 +252,15 @@ broadcastNetwork registry testBtime numCoreNodes pInfo initRNG slotLen = do
              <*> newTVar Mock.empty
       return ChainDbArgs
         { -- Decoders
-          cdbDecodeHash       = nodeDecodeHeaderHash (Proxy @(SimpleBlock c ext))
+          cdbDecodeHash       = nodeDecodeHeaderHash (Proxy @blk)
         , cdbDecodeBlock      = nodeDecodeBlock cfg
         , cdbDecodeLedger     = nodeDecodeLedgerState cfg
-        , cdbDecodeChainState = nodeDecodeChainState (Proxy @(SimpleBlock c ext))
+        , cdbDecodeChainState = nodeDecodeChainState (Proxy @blk)
           -- Encoders
         , cdbEncodeBlock      = nodeEncodeBlock cfg
-        , cdbEncodeHash       = nodeEncodeHeaderHash (Proxy @(SimpleBlock c ext))
+        , cdbEncodeHash       = nodeEncodeHeaderHash (Proxy @blk)
         , cdbEncodeLedger     = nodeEncodeLedgerState cfg
-        , cdbEncodeChainState = nodeEncodeChainState (Proxy @(SimpleBlock c ext))
+        , cdbEncodeChainState = nodeEncodeChainState (Proxy @blk)
           -- Error handling
         , cdbErrImmDb         = EH.monadCatch
         , cdbErrVolDb         = EH.monadCatch
@@ -308,7 +276,7 @@ broadcastNetwork registry testBtime numCoreNodes pInfo initRNG slotLen = do
         , cdbDiskPolicy       = LgrDB.defaultDiskPolicy (protocolSecurityParam cfg) slotLen
           -- Integration
         , cdbNodeConfig       = cfg
-        , cdbEpochSize        = nodeEpochSize (Proxy @(SimpleBlock c ext))
+        , cdbEpochSize        = nodeEpochSize (Proxy @blk)
         , cdbIsEBB            = \blk -> if nodeIsEBB blk
                                         then Just (blockHash blk)
                                         else Nothing
@@ -319,23 +287,22 @@ broadcastNetwork registry testBtime numCoreNodes pInfo initRNG slotLen = do
         , cdbGcDelay          = 0
         }
 
-    createAndConnectNode ::
-           [Addr]
-        -> NodeChans m NodeId (SimpleBlock c ext)
-        -> TVar m ChaChaDRG
-        -> CoreNodeId
-        -> m (NodeKernel m NodeId (SimpleBlock c ext))
-    createAndConnectNode addrs chans varRNG coreNodeId = do
+    createAndConnectNode
+      :: NodeChans m NodeId blk
+      -> TVar m ChaChaDRG
+      -> CoreNodeId
+      -> m (NodeKernel m NodeId blk)
+    createAndConnectNode chans varRNG coreNodeId = do
       let us               = fromCoreNodeId coreNodeId
           ProtocolInfo{..} = pInfo coreNodeId
 
-      let callbacks :: NodeCallbacks m (SimpleBlock c ext)
+      let callbacks :: NodeCallbacks m blk
           callbacks = NodeCallbacks {
               produceBlock = \proof _l slot prevPoint prevNo txs -> do
                 let curNo :: BlockNo
                     curNo = succ prevNo
 
-                let prevHash :: ChainHash (SimpleBlock c ext)
+                let prevHash :: ChainHash blk
                     prevHash = castHash (pointHash prevPoint)
 
                 nodeForgeBlock pInfoConfig
@@ -377,7 +344,7 @@ broadcastNetwork registry testBtime numCoreNodes pInfo initRNG slotLen = do
 
       void $ forkLinked registry (niWithServerNode ni wait)
       void $ forkLinked registry $ txProducer
-        addrs
+        pInfoConfig
         (produceDRG callbacks)
         (ChainDB.getCurrentLedger chainDB)
         (getMempool node)
@@ -415,59 +382,13 @@ type NodeChans m peer blk = Map peer (Map peer (NodeChan m blk))
 
 
 {-------------------------------------------------------------------------------
-  Internal: generating random transactions
+  Constraints needed for verbose tracing
 -------------------------------------------------------------------------------}
 
-genTxs :: MonadRandom m => [Addr] -> Utxo -> m [Tx]
-genTxs addr u = do
-    b <- generateBetween 0 1
-    if b == 0
-        then return []
-        else do
-            tx <- genTx addr u
-            return [tx]
-
-genTx :: MonadRandom m => [Addr] -> Utxo -> m Tx
-genTx addrs u = do
-    let senders = Set.toList . Set.fromList . map fst . Map.elems $ u -- people with funds
-    sender    <- genElt senders
-    recipient <- genElt $ filter (/= sender) addrs
-    let assets  = filter (\(_, (a, _)) -> a == sender) $ Map.toList u
-        fortune = sum [c | (_, (_, c)) <- assets]
-        ins     = Set.fromList $ map fst assets
-    amount <- fromIntegral <$> generateBetween 1 (fromIntegral fortune)
-    let outRecipient = (recipient, amount)
-        outs         = if amount == fortune
-            then [outRecipient]
-            else [outRecipient, (sender, fortune - amount)]
-    return $ Tx ins outs
-  where
-    genElt xs = do
-        m <- generateElement xs
-        case m of
-            Nothing -> error "expected nonempty list"
-            Just x  -> return x
-
-{-------------------------------------------------------------------------------
-  Internal: logging
--------------------------------------------------------------------------------}
-
--- | Message sent by or to a producer
-data TalkingToProducer peer pid = TalkingToProducer {
-      producerUs   :: peer
-    , producerThem :: pid
-    }
-  deriving (Show)
-
--- | Message sent by or to a consumer
-data TalkingToConsumer peer cid = TalkingToConsumer {
-      consumerUs   :: peer
-    , consumerThem :: cid
-    }
-  deriving (Show)
-
-instance (Condense peer, Condense pid) => Condense (TalkingToProducer peer pid) where
-  condense TalkingToProducer{..} = condense (producerUs, producerThem)
-
-instance (Condense peer, Condense pid) => Condense (TalkingToConsumer peer pid) where
-  condense TalkingToConsumer{..} = condense (consumerUs, consumerThem)
+-- These constraints are when using @showTracer(s) debugTracer@ instead of
+-- @nullTracer(s)@.
+type TracingConstraints blk =
+  ( Show blk
+  , Show (Header blk)
+  , Show (GenTx blk)
+  )

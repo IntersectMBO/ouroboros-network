@@ -9,17 +9,16 @@
 {-# LANGUAGE ScopedTypeVariables   #-}
 {-# LANGUAGE UndecidableInstances  #-}
 
+{-# OPTIONS_GHC -Wredundant-constraints #-}
 module Test.Dynamic.General (
     prop_simple_protocol_convergence
   ) where
 
 import           Data.Map.Strict (Map)
-import           Data.Typeable (Typeable)
 import           Test.QuickCheck
 
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork (MonadFork)
-import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadST
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
@@ -31,29 +30,26 @@ import           Ouroboros.Network.MockChain.Chain
 
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Ledger.Abstract
-import           Ouroboros.Consensus.Ledger.Mock
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.NodeId
 import           Ouroboros.Consensus.Protocol (NodeConfig)
-import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Orphans ()
 import           Ouroboros.Consensus.Util.Random
 import           Ouroboros.Consensus.Util.ThreadRegistry
 
 import           Test.Dynamic.Network
+import           Test.Dynamic.TxGen
 
-prop_simple_protocol_convergence :: forall c ext.
-                                   ( RunNode (SimpleBlock c ext)
-                                   , SimpleCrypto c
-                                   , Show ext
-                                   , Condense ext
-                                   , Typeable ext
+prop_simple_protocol_convergence :: forall blk.
+                                   ( RunNode blk
+                                   , TxGen blk
+                                   , TracingConstraints blk
                                    )
-                                 => (CoreNodeId -> ProtocolInfo (SimpleBlock c ext))
+                                 => (CoreNodeId -> ProtocolInfo blk)
                                  -> (   [NodeId]
-                                     -> Map NodeId ( NodeConfig (BlockProtocol (SimpleBlock c ext))
-                                                   , Chain (SimpleBlock c ext)
+                                     -> Map NodeId ( NodeConfig (BlockProtocol blk)
+                                                   , Chain blk
                                                    )
                                      -> Property)
                                  -> NumCoreNodes
@@ -65,25 +61,22 @@ prop_simple_protocol_convergence pInfo isValid numCoreNodes numSlots seed =
       test_simple_protocol_convergence pInfo isValid numCoreNodes numSlots seed
 
 -- Run protocol on the broadcast network, and check resulting chains on all nodes.
-test_simple_protocol_convergence :: forall m c ext.
+test_simple_protocol_convergence :: forall m blk.
                                     ( MonadAsync m
                                     , MonadFork  m
                                     , MonadMask  m
-                                    , MonadSay   m
                                     , MonadST    m
                                     , MonadTime  m
                                     , MonadTimer m
                                     , MonadThrow (STM m)
-                                    , RunNode (SimpleBlock c ext)
-                                    , SimpleCrypto c
-                                    , Show ext
-                                    , Condense ext
-                                    , Typeable ext
+                                    , RunNode blk
+                                    , TxGen blk
+                                    , TracingConstraints blk
                                     )
-                                 => (CoreNodeId -> ProtocolInfo (SimpleBlock c ext))
+                                 => (CoreNodeId -> ProtocolInfo blk)
                                  -> (   [NodeId]
-                                     -> Map NodeId ( NodeConfig (BlockProtocol (SimpleBlock c ext))
-                                                   , Chain (SimpleBlock c ext)
+                                     -> Map NodeId ( NodeConfig (BlockProtocol blk)
+                                                   , Chain blk
                                                    )
                                      -> Property)
                                  -> NumCoreNodes
