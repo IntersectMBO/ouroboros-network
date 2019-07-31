@@ -93,8 +93,8 @@ data ClientStNext header point m a =
 --
 data ClientStIntersect header point m a =
      ClientStIntersect {
-       recvMsgIntersectFound     :: point -> point -> ChainSyncClient header point m a,
-       recvMsgIntersectUnchanged ::          point -> ChainSyncClient header point m a
+       recvMsgIntersectFound    :: point -> point -> ChainSyncClient header point m a,
+       recvMsgIntersectNotFound ::          point -> ChainSyncClient header point m a
      }
 
 
@@ -145,12 +145,12 @@ chainSyncClientPeer (ChainSyncClient mclient) =
           MsgIntersectFound pIntersect pHead ->
             chainSyncClientPeer (recvMsgIntersectFound pIntersect pHead)
 
-          MsgIntersectUnchanged pHead ->
-            chainSyncClientPeer (recvMsgIntersectUnchanged pHead)
+          MsgIntersectNotFound pHead ->
+            chainSyncClientPeer (recvMsgIntersectNotFound pHead)
       where
         ClientStIntersect {
           recvMsgIntersectFound,
-          recvMsgIntersectUnchanged
+          recvMsgIntersectNotFound
         } = stIntersect
 
     chainSyncClientPeer_ (SendMsgDone a) =

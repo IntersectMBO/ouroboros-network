@@ -109,9 +109,9 @@ instance Protocol (ChainSync header point) where
     --
     -- The message also tells the consumer about the head point of the producer.
     --
-    MsgIntersectUnchanged :: point
-                          -> Message (ChainSync header point)
-                                     StIntersect StIdle
+    MsgIntersectNotFound :: point
+                         -> Message (ChainSync header point)
+                                    StIntersect StIdle
 
     -- | Terminating messages
     --
@@ -151,7 +151,7 @@ instance (Show header, Show point) => Show (Message (ChainSync header point) fro
   show (MsgRollBackward p tip)      = "MsgRollBackward " ++ show p ++ " " ++ show tip
   show (MsgFindIntersect ps)        = "MsgFindIntersect " ++ show ps
   show (MsgIntersectFound p tip)    = "MsgIntersectFound " ++ show p ++ " " ++ show tip
-  show (MsgIntersectUnchanged p)    = "MsgIntersectUnchanged " ++ show p
+  show (MsgIntersectNotFound p)     = "MsgIntersectNotFound " ++ show p
   show MsgDone{}                    = "MsgDone"
 
 instance Show (ClientHasAgency (st :: ChainSync header point)) where

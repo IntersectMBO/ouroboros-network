@@ -1143,7 +1143,7 @@ application of the protocol determines the types of the requests and responses.
 \newcommand{\RollBackward}{\msg{RollBackward}}
 \newcommand{\FindIntersect}{\msg{FindIntersect}}
 \newcommand{\IntersectFound}{\msg{IntersectFound}}
-\newcommand{\IntersectUnchanged}{\msg{IntersectUnchanged}}
+\newcommand{\IntersectNotFound}{\msg{IntersectNotFound}}
 
 \subsection{Description}
 The chain synchronisation protocol is used by the block chain consumer
@@ -1183,7 +1183,7 @@ other node it communicates with.
   \draw (MustReply)    edge[right,bend right=80]     node{\RollBackward}          (Idle);
   \draw (Idle)         edge[right, bend right]    node{\FindIntersect}         (Intersect);
   \draw (Intersect)    edge[above, bend right=45]    node[below = 4mm]{\IntersectFound}     (Idle);
-  \draw (Intersect)    edge[above, bend right=80]    node[above = 4mm]{\IntersectUnchanged}    (Idle);
+  \draw (Intersect)    edge[above, bend right=80]    node[above = 4mm]{\IntersectNotFound}  (Idle);
   \draw (Idle)         edge[above]                node{\MsgDone}                  (Done);
 \end{tikzpicture}
 \caption{State machine of the chain sync protocol.}
@@ -1214,7 +1214,7 @@ The protocol uses the following messages:
       The producer replies with the first point of the request that is on his current chain.
       The consumer can decide whether to send more points.
       The message also tells the consumer about the head point of the producer.
-\item [\IntersectUnchanged{} {\boldmath $(point_{head})$}]
+\item [\IntersectNotFound{} {\boldmath $(point_{head})$}]
       The reply to the consumer that no intersection was found: none of the
       points the consumer supplied are on the producer chain.
       The message also tells the consumer about the head point of the producer.
@@ -1235,7 +1235,7 @@ The protocol uses the following messages:
   \MustReply & \RollForward        & $header$, $point_{head}$            & \Idle       \\ \hline
   \MustReply & \RollBackward       & $point_{old}$, $point_{head}$       & \Idle       \\ \hline
   \Intersect & \IntersectFound     & $point_{intersect}$, $point_{head}$ & \Idle       \\ \hline
-  \Intersect & \IntersectUnchanged & $point_{head}$                      & \Idle       \\ \hline
+  \Intersect & \IntersectNotFound  & $point_{head}$                      & \Idle       \\ \hline
 
 \end{tabular}
 
@@ -1353,7 +1353,7 @@ between the fork of the producer and the fork that is known to the consumer.
 
 To do so, the consumer sends a \FindIntersect{} message with a list of chain
 points which belong to its node chain.
-If the producer does not know any of the points it replies with \IntersectUnchanged.
+If the producer does not know any of the points it replies with \IntersectNotFound.
 Otherwise it replies with \IntersectFound{} and the best (i.e. the newest) of the points that it knows
 and also updates the \readpointer{} accordingly.
 For efficiency, the consumer should use a binary search scheme to search for the longest common
