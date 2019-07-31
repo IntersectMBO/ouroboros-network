@@ -11,6 +11,7 @@
 {-# LANGUAGE TypeFamilies          #-}
 {-# LANGUAGE UndecidableInstances  #-}
 {-# LANGUAGE PatternSynonyms       #-}
+{-# LANGUAGE GADTSyntax            #-}
 
 {-# OPTIONS_GHC -Wredundant-constraints -Wno-orphans #-}
 
@@ -42,23 +43,26 @@ module Ouroboros.Consensus.Ledger.Byron
   , decodeByronGenTxId
   , decodeByronLedgerState
   , decodeByronChainState
+  , blockBytes
+  , headerBytes
     -- * EBBs
   , ByronBlockOrEBB (..)
   , pattern ByronHeaderOrEBB
   , unByronHeaderOrEBB
-  , annotateBoundaryBlock
-  , annotateBoundaryHeader
+  , annotateBoundary
+  , toCBORAHeaderOrBoundary
   , fromCBORAHeaderOrBoundary
   ) where
 
-import           Codec.CBOR.Decoding (Decoder, decodeListLenOf)
-import           Codec.CBOR.Encoding (Encoding, encodeListLen)
-import qualified Codec.CBOR.Read as CBOR
+import           Codec.CBOR.Decoding (Decoder)
+import           Codec.CBOR.Encoding (Encoding)
+import qualified Codec.CBOR.Decoding as CBOR
+import qualified Codec.CBOR.Encoding as CBOR
+import qualified Codec.CBOR.Read  as CBOR
 import qualified Codec.CBOR.Write as CBOR
 import           Codec.Serialise (Serialise, decode, encode)
 import           Control.Monad.Except
 import           Control.Monad.Trans.Reader (runReaderT)
-import           Data.Bifunctor (bimap)
 import qualified Data.Bimap as Bimap
 import qualified Data.ByteString as Strict
 import qualified Data.ByteString.Lazy as Lazy
@@ -72,8 +76,10 @@ import qualified Data.Text as T
 import           Data.Typeable
 import           Formatting
 
-import           Cardano.Binary (Annotated (..), ByteSpan, enforceSize,
-                     fromCBOR, reAnnotate, slice, toCBOR)
+import           Cardano.Binary (Annotated (..), ByteSpan,
+                     decodeFullAnnotatedBytes, decodeNestedCborBytes,
+                     encodeNestedCborBytes, enforceSize, fromCBOR,
+                     reAnnotate, slice, toCBOR, serializeEncoding)
 import qualified Cardano.Chain.Block as CC.Block
 import qualified Cardano.Chain.Common as CC.Common
 import qualified Cardano.Chain.Delegation as CC.Delegation
@@ -561,60 +567,111 @@ instance Serialise CC.Common.KeyHash where
   encode = toCBOR
   decode = fromCBOR
 
-encodeByronHeader
-  :: Crypto.ProtocolMagicId
-  -> CC.Slot.EpochSlots
-  -> Header (ByronBlockOrEBB cfg)
-  -> Encoding
-encodeByronHeader pm epochSlots (ByronHeaderOrEBB h) = toCBORAHeaderOrBoundary pm epochSlots h
+-- Codec for blocks and headers using CBOR-in-CBOR. This style is needed
+-- because the cardano-ledger decoders drop information that must be
+-- retained if we are to communicate with Byron peers.
+-- Re-annotating in the cardano-ledger style, i.e. re-encoding then using those
+-- bytes to annotate, does not work, because information is lost in the
+-- initial decoding.
+-- This codec must be used for network exchange _and_ for the database.
 
-encodeByronBlock :: Crypto.ProtocolMagicId -> CC.Slot.EpochSlots -> ByronBlockOrEBB cfg -> Encoding
-encodeByronBlock pm epochSlots bob = case unByronBlockOrEBB bob of
-  CC.Block.ABOBBlock b      -> CC.Block.toCBORABOBBlock epochSlots . void $ b
-  CC.Block.ABOBBoundary ebb -> CC.Block.toCBORABOBBoundary pm . void $ ebb
+-- | Get the encoded bytes of a block. A legacy Byron node (cardano-sl) would
+-- successfully decode a block from these.
+blockBytes :: ByronBlockOrEBB cfg -> Lazy.ByteString
+blockBytes blk =
+    serializeEncoding $
+        CBOR.encodeListLen 2
+     <> case unByronBlockOrEBB blk of
+          CC.Block.ABOBBoundary b ->
+              CBOR.encodeWord 0
+           <> CBOR.encodePreEncoded (CC.Block.boundaryAnnotation b)
+
+          CC.Block.ABOBBlock b ->
+              CBOR.encodeWord 1
+           <> CBOR.encodePreEncoded (CC.Block.blockAnnotation b)
+
+-- | Encode a block using CBOR-in-CBOR tag 24.
+encodeByronBlock :: ByronBlockOrEBB cfg -> Encoding
+encodeByronBlock = encodeNestedCborBytes . blockBytes
+
+-- | Inversion of `encodeByronBlock`. The annotation will be correct, because
+-- the full bytes are available thanks to the CBOR-in-CBOR encoding.
+decodeByronBlock :: CC.Slot.EpochSlots -> Decoder s (ByronBlockOrEBB cfg)
+decodeByronBlock epochSlots = do
+  theBytes <- decodeNestedCborBytes
+  case decodeFullAnnotatedBytes "Block" internalDecoder (Lazy.fromStrict theBytes) of
+    Right it  -> pure $ ByronBlockOrEBB it
+    -- FIXME
+    --   err :: DecodeError
+    -- but AFAICT the only way to make the decoder fail is to give a `String`
+    -- to `fail`...
+    Left  err -> fail (show err)
+  where
+  internalDecoder :: Decoder s (CC.Block.ABlockOrBoundary ByteSpan)
+  internalDecoder = CC.Block.fromCBORABlockOrBoundary epochSlots
+
+-- | Get the encoded bytes of a header. A legacy Byron node (cardano-sl) would
+-- successfully decode a header from these.
+headerBytes :: Header (ByronBlockOrEBB cfg) -> Lazy.ByteString
+headerBytes blk =
+    serializeEncoding $
+        CBOR.encodeListLen 2
+     <> case unByronHeaderOrEBB blk of
+          Left ebb ->
+              CBOR.encodeWord 0
+           <> CBOR.encodePreEncoded (CC.Block.boundaryHeaderAnnotation ebb)
+
+          Right hdr ->
+              CBOR.encodeWord 1
+           <> CBOR.encodePreEncoded (CC.Block.headerAnnotation hdr)
+
+-- | Encode a header using CBOR-in-CBOR tag 24.
+encodeByronHeader :: Header (ByronBlockOrEBB cfg) -> Encoding
+encodeByronHeader = encodeNestedCborBytes . headerBytes
+
+-- | Inversion of `encodeByronHeader`. The annotation will be correct, because
+-- the full bytes are available thanks to the CBOR-in-CBOR encoding.
+decodeByronHeader :: CC.Slot.EpochSlots -> Decoder s (Header (ByronBlockOrEBB cfg))
+decodeByronHeader epochSlots = do
+  theBytes <- decodeNestedCborBytes
+  -- We can use decodeFullAnnotatedBytes by using it at the EitherF type, which
+  -- only works for an f ByteSpan
+  case decodeFullAnnotatedBytes "Header" internalDecoder (Lazy.fromStrict theBytes) of
+    Right (LeftF ebb)  -> pure $ ByronHeaderOrEBB (Left ebb)
+    Right (RightF hdr) -> pure $ ByronHeaderOrEBB (Right hdr)
+    Left  err          -> fail (show err)
+  where
+  -- cardano-ledger does not export a decoder for genesis or main header with
+  -- the list length and tag bytes. It _does_ export one for blocks, used in
+  -- decodeByronBlock (fromCBORABlockOrBoundary)
+  internalDecoder :: Decoder s (EitherF CC.Block.ABoundaryHeader CC.Block.AHeader ByteSpan)
+  internalDecoder = fromEither <$> fromCBORAHeaderOrBoundary epochSlots
+
+-- | Defined only for use by decodeHeader.
+data EitherF g h t where
+  LeftF  :: g t -> EitherF g h t
+  RightF :: h t -> EitherF g h t
+
+instance (Functor g, Functor h) => Functor (EitherF g h) where
+  fmap f (LeftF g)  = LeftF  (fmap f g)
+  fmap f (RightF h) = RightF (fmap f h)
+
+fromEither :: Either (g t) (h t) -> EitherF g h t
+fromEither (Left  g) = LeftF  g
+fromEither (Right h) = RightF h
 
 encodeByronHeaderHash :: HeaderHash (ByronBlockOrEBB cfg) -> Encoding
 encodeByronHeaderHash = toCBOR
 
 encodeByronLedgerState :: LedgerState (ByronBlockOrEBB cfg) -> Encoding
 encodeByronLedgerState (ByronEBBLedgerState ByronLedgerState{..}) = mconcat
-    [ encodeListLen 2
+    [ CBOR.encodeListLen 2
     , encode blsCurrent
     , encode blsSnapshots
     ]
 
 encodeByronChainState :: ChainState (BlockProtocol (ByronBlock cfg)) -> Encoding
 encodeByronChainState = encode
-
-decodeByronHeader :: Crypto.ProtocolMagicId -> CC.Slot.EpochSlots -> Decoder s (Header (ByronBlockOrEBB cfg))
-decodeByronHeader pm epochSlots =
-    ByronHeaderOrEBB . bimap annotateE annotateH <$> fromCBORAHeaderOrBoundary epochSlots
-  where
-    -- TODO #560: Re-annotation can be done but requires some rearranging in
-    -- the codecs Original ByteSpan's refer to bytestring we don't have, so
-    -- we'll ignore them
-    annotateH :: CC.Block.AHeader a -> CC.Block.AHeader ByteString
-    annotateH = annotateHeader epochSlots . void
-
-    annotateE :: CC.Block.ABoundaryHeader a -> CC.Block.ABoundaryHeader ByteString
-    annotateE = annotateBoundaryHeader pm . void
-
-decodeByronBlock :: Crypto.ProtocolMagicId -> CC.Slot.EpochSlots -> Decoder s (ByronBlockOrEBB cfg)
-decodeByronBlock pm epochSlots =
-    ByronBlockOrEBB . mapABOB annotateBl annotateBo
-      <$> CC.Block.fromCBORABlockOrBoundary epochSlots
-  where
-    mapABOB f g abob = case abob of
-      CC.Block.ABOBBlock x    -> CC.Block.ABOBBlock $ f x
-      CC.Block.ABOBBoundary x -> CC.Block.ABOBBoundary $ g x
-    -- TODO #560: Re-annotation can be done but requires some rearranging in
-    -- the codecs Original ByteSpan's refer to bytestring we don't have, so
-    -- we'll ignore them
-    annotateBl :: CC.Block.ABlock a -> CC.Block.ABlock ByteString
-    annotateBl = annotateBlock epochSlots . void
-
-    annotateBo :: CC.Block.ABoundaryBlock a -> CC.Block.ABoundaryBlock ByteString
-    annotateBo = annotateBoundaryBlock pm . void
 
 decodeByronHeaderHash :: Decoder s (HeaderHash (ByronBlockOrEBB cfg))
 decodeByronHeaderHash = fromCBOR
@@ -644,7 +701,7 @@ decodeByronGenTxId = ByronTxId <$> fromCBOR
 
 decodeByronLedgerState :: Decoder s (LedgerState (ByronBlockOrEBB cfg))
 decodeByronLedgerState = ByronEBBLedgerState <$> do
-    decodeListLenOf 2
+    CBOR.decodeListLenOf 2
     ByronLedgerState <$> decode <*> decode
 
 decodeByronChainState :: Decoder s (ChainState (BlockProtocol (ByronBlock cfg)))
@@ -674,24 +731,6 @@ annotateBlock epochSlots =
     splice bs (Right (_leftover, txAux)) =
       (Lazy.toStrict . slice bs) <$> txAux
 
-annotateHeader :: CC.Slot.EpochSlots
-               -> CC.Block.AHeader ()
-               -> CC.Block.AHeader ByteString
-annotateHeader epochSlots =
-      (\bs -> splice bs (CBOR.deserialiseFromBytes
-                           (CC.Block.fromCBORAHeader epochSlots)
-                           bs))
-    . CBOR.toLazyByteString
-    . CC.Block.toCBORHeader epochSlots
-  where
-    splice :: Lazy.ByteString
-           -> Either err (Lazy.ByteString, CC.Block.AHeader ByteSpan)
-           -> CC.Block.AHeader ByteString
-    splice _ (Left _err) =
-      error "annotateBlock: serialization roundtrip failure"
-    splice bs (Right (_leftover, txAux)) =
-      (Lazy.toStrict . slice bs) <$> txAux
-
 {-------------------------------------------------------------------------------
   Internal auxiliary
 
@@ -700,30 +739,10 @@ annotateHeader epochSlots =
   demo.
   -------------------------------------------------------------------------------}
 
-annotateBoundaryHeader :: Crypto.ProtocolMagicId
-                       -> CC.Block.ABoundaryHeader ()
-                       -> CC.Block.ABoundaryHeader ByteString
-annotateBoundaryHeader pm =
-      (\bs -> splice bs (CBOR.deserialiseFromBytes
-                           CC.Block.fromCBORABoundaryHeader
-                           bs))
-    . CBOR.toLazyByteString
-    . CC.Block.toCBORABoundaryHeader pm
-  where
-    splice :: Show err
-           => Lazy.ByteString
-           -> Either err (Lazy.ByteString, CC.Block.ABoundaryHeader ByteSpan)
-           -> CC.Block.ABoundaryHeader ByteString
-    splice _ (Left err) =
-      error $ "annotateBoundaryHeader: serialization roundtrip failure: " <> show err
-    splice bs (Right (_leftover, boundary)) =
-      (Lazy.toStrict . slice bs) <$> boundary
-
-
-annotateBoundaryBlock :: Crypto.ProtocolMagicId
-                      -> CC.Block.ABoundaryBlock ()
-                      -> CC.Block.ABoundaryBlock ByteString
-annotateBoundaryBlock pm =
+annotateBoundary :: Crypto.ProtocolMagicId
+                 -> CC.Block.ABoundaryBlock ()
+                 -> CC.Block.ABoundaryBlock ByteString
+annotateBoundary pm =
       (\bs -> splice bs (CBOR.deserialiseFromBytes
                            CC.Block.fromCBORABoundaryBlock
                            bs))
@@ -735,7 +754,7 @@ annotateBoundaryBlock pm =
            -> Either err (Lazy.ByteString, CC.Block.ABoundaryBlock ByteSpan)
            -> CC.Block.ABoundaryBlock ByteString
     splice _ (Left err) =
-      error $ "annotateBoundaryBlock: serialization roundtrip failure: " <> show err
+      error $ "annotateBoundary: serialization roundtrip failure: " <> show err
     splice bs (Right (_leftover, boundary)) =
       (Lazy.toStrict . slice bs) <$> boundary
 
@@ -755,7 +774,7 @@ toCBORAHeaderOrBoundary
   -> (Either (CC.Block.ABoundaryHeader a) (CC.Block.AHeader a))
   -> Encoding
 toCBORAHeaderOrBoundary pm epochSlots abob =
-  encodeListLen 2 <>
+  CBOR.encodeListLen 2 <>
   case abob of
     Right mh -> toCBOR (1 :: Word) <> (CC.Block.toCBORHeader epochSlots  . void $ mh)
     Left ebb -> toCBOR (0 :: Word) <> (CC.Block.toCBORABoundaryHeader pm . void $ ebb)
