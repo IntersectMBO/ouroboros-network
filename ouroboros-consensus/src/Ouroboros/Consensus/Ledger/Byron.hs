@@ -54,9 +54,11 @@ module Ouroboros.Consensus.Ledger.Byron
   , fromCBORAHeaderOrBoundary
   ) where
 
-import           Codec.CBOR.Decoding (Decoder, decodeListLenOf)
-import           Codec.CBOR.Encoding (Encoding, encodeListLen)
-import qualified Codec.CBOR.Read as CBOR
+import           Codec.CBOR.Decoding (Decoder)
+import           Codec.CBOR.Encoding (Encoding)
+import qualified Codec.CBOR.Decoding as CBOR
+import qualified Codec.CBOR.Encoding as CBOR
+import qualified Codec.CBOR.Read  as CBOR
 import qualified Codec.CBOR.Write as CBOR
 import           Codec.Serialise (Serialise, decode, encode)
 import           Control.Monad.Except
@@ -75,9 +77,9 @@ import           Data.Typeable
 import           Formatting
 
 import           Cardano.Binary (Annotated (..), ByteSpan,
-                     decodeFullAnnotatedBytes, decodeUnknownCborDataItem,
-                     encodeUnknownCborDataItem, enforceSize, fromCBOR,
-                     reAnnotate, slice, toCBOR)
+                     decodeFullAnnotatedBytes, decodeNestedCborBytes,
+                     encodeNestedCborBytes, enforceSize, fromCBOR,
+                     reAnnotate, slice, toCBOR, serializeEncoding)
 import qualified Cardano.Chain.Block as CC.Block
 import qualified Cardano.Chain.Common as CC.Common
 import qualified Cardano.Chain.Delegation as CC.Delegation
@@ -576,40 +578,27 @@ instance Serialise CC.Common.KeyHash where
 -- | Get the encoded bytes of a block. A legacy Byron node (cardano-sl) would
 -- successfully decode a block from these.
 blockBytes :: ByronBlockOrEBB cfg -> Lazy.ByteString
-blockBytes blk = Lazy.pack [listLengthByte, discriminatorByte] `Lazy.append` Lazy.fromStrict mainBytes
-  where
-  -- Here's how it would look if we could use CBOR encoding.
-  --
-  --  enc = CBOR.encodeListLen 2 <> blockBytes
-  --  blockEnc = case unByronBlockOrEBB blk of
-  --    CC.Block.ABOBBoundary b -> toCBOR (0 :: Word) <> toCBOR
-  --    CC.Block.ABOBBlock b    -> toCBOR (1 :: Word) <> toCBORBlock epochSlots b
-  --
-  -- But since we don't carry an annotation for the _entire_ block, and we
-  -- can't put a bytestring representing a _part_ of the encoding into an
-  -- encoding, we have to work directly with bytes. Here's how it goes:
-  --
-  --   0b100_00010 for list length (major type 4) value 2
-  --   0b000_0000x where x is 1 for EBB, 0 for main block. Unsigned integer (major type 0)
-  --
-  -- No binary literals so we'll write them hex.
-  listLengthByte = 0x82
-  discriminatorByte = case unByronBlockOrEBB blk of
-    CC.Block.ABOBBoundary _ -> 0x00
-    CC.Block.ABOBBlock    _ -> 0x01
-  mainBytes = case unByronBlockOrEBB blk of
-    CC.Block.ABOBBlock    b -> CC.Block.blockAnnotation b
-    CC.Block.ABOBBoundary b -> CC.Block.boundaryAnnotation b
+blockBytes blk =
+    serializeEncoding $
+        CBOR.encodeListLen 2
+     <> case unByronBlockOrEBB blk of
+          CC.Block.ABOBBoundary b ->
+              CBOR.encodeWord 0
+           <> CBOR.encodePreEncoded (CC.Block.boundaryAnnotation b)
+
+          CC.Block.ABOBBlock b ->
+              CBOR.encodeWord 1
+           <> CBOR.encodePreEncoded (CC.Block.blockAnnotation b)
 
 -- | Encode a block using CBOR-in-CBOR tag 24.
 encodeByronBlock :: ByronBlockOrEBB cfg -> Encoding
-encodeByronBlock = encodeUnknownCborDataItem . blockBytes
+encodeByronBlock = encodeNestedCborBytes . blockBytes
 
 -- | Inversion of `encodeByronBlock`. The annotation will be correct, because
 -- the full bytes are available thanks to the CBOR-in-CBOR encoding.
 decodeByronBlock :: CC.Slot.EpochSlots -> Decoder s (ByronBlockOrEBB cfg)
 decodeByronBlock epochSlots = do
-  theBytes <- decodeUnknownCborDataItem
+  theBytes <- decodeNestedCborBytes
   case decodeFullAnnotatedBytes "Block" internalDecoder (Lazy.fromStrict theBytes) of
     Right it  -> pure $ ByronBlockOrEBB it
     -- FIXME
@@ -624,27 +613,29 @@ decodeByronBlock epochSlots = do
 -- | Get the encoded bytes of a header. A legacy Byron node (cardano-sl) would
 -- successfully decode a header from these.
 headerBytes :: Header (ByronBlockOrEBB cfg) -> Lazy.ByteString
-headerBytes blk = Lazy.pack [listLengthByte, discriminatorByte] `Lazy.append` Lazy.fromStrict mainBytes
-  where
-  listLengthByte = 0x82
-  discriminatorByte = case unByronHeaderOrEBB blk of
-    Left  _ -> 0x00
-    Right _ -> 0x01
-  mainBytes = case unByronHeaderOrEBB blk of
-    Left  ebb -> CC.Block.boundaryHeaderAnnotation ebb
-    Right hdr -> CC.Block.headerAnnotation hdr
+headerBytes blk =
+    serializeEncoding $
+        CBOR.encodeListLen 2
+     <> case unByronHeaderOrEBB blk of
+          Left ebb ->
+              CBOR.encodeWord 0
+           <> CBOR.encodePreEncoded (CC.Block.boundaryHeaderAnnotation ebb)
+
+          Right hdr ->
+              CBOR.encodeWord 1
+           <> CBOR.encodePreEncoded (CC.Block.headerAnnotation hdr)
 
 -- | Encode a header using CBOR-in-CBOR tag 24.
 encodeByronHeader :: Header (ByronBlockOrEBB cfg) -> Encoding
-encodeByronHeader = encodeUnknownCborDataItem . headerBytes
+encodeByronHeader = encodeNestedCborBytes . headerBytes
 
 -- | Inversion of `encodeByronHeader`. The annotation will be correct, because
 -- the full bytes are available thanks to the CBOR-in-CBOR encoding.
 decodeByronHeader :: CC.Slot.EpochSlots -> Decoder s (Header (ByronBlockOrEBB cfg))
 decodeByronHeader epochSlots = do
-  theBytes <- decodeUnknownCborDataItem
-  -- Would use decodeFullAnnotatedBytes, but we can't because it only works for
-  -- an f ByteSpan
+  theBytes <- decodeNestedCborBytes
+  -- We can use decodeFullAnnotatedBytes by using it at the EitherF type, which
+  -- only works for an f ByteSpan
   case decodeFullAnnotatedBytes "Header" internalDecoder (Lazy.fromStrict theBytes) of
     Right (LeftF ebb)  -> pure $ ByronHeaderOrEBB (Left ebb)
     Right (RightF hdr) -> pure $ ByronHeaderOrEBB (Right hdr)
@@ -674,7 +665,7 @@ encodeByronHeaderHash = toCBOR
 
 encodeByronLedgerState :: LedgerState (ByronBlockOrEBB cfg) -> Encoding
 encodeByronLedgerState (ByronEBBLedgerState ByronLedgerState{..}) = mconcat
-    [ encodeListLen 2
+    [ CBOR.encodeListLen 2
     , encode blsCurrent
     , encode blsSnapshots
     ]
@@ -710,7 +701,7 @@ decodeByronGenTxId = ByronTxId <$> fromCBOR
 
 decodeByronLedgerState :: Decoder s (LedgerState (ByronBlockOrEBB cfg))
 decodeByronLedgerState = ByronEBBLedgerState <$> do
-    decodeListLenOf 2
+    CBOR.decodeListLenOf 2
     ByronLedgerState <$> decode <*> decode
 
 decodeByronChainState :: Decoder s (ChainState (BlockProtocol (ByronBlock cfg)))
@@ -783,7 +774,7 @@ toCBORAHeaderOrBoundary
   -> (Either (CC.Block.ABoundaryHeader a) (CC.Block.AHeader a))
   -> Encoding
 toCBORAHeaderOrBoundary pm epochSlots abob =
-  encodeListLen 2 <>
+  CBOR.encodeListLen 2 <>
   case abob of
     Right mh -> toCBOR (1 :: Word) <> (CC.Block.toCBORHeader epochSlots  . void $ mh)
     Left ebb -> toCBOR (0 :: Word) <> (CC.Block.toCBORABoundaryHeader pm . void $ ebb)
