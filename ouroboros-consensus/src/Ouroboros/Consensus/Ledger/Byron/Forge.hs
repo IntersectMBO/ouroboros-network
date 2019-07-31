@@ -11,15 +11,12 @@ import           Control.Monad (void)
 import           Crypto.Random (MonadRandom)
 import           Data.ByteString (ByteString)
 import           Data.Coerce (coerce)
-import           Data.Foldable (find)
-import qualified Data.Map.Strict as Map
 import           Data.Reflection (Given (..), give)
 
 import           Cardano.Binary (Annotated (..), reAnnotate)
 import qualified Cardano.Chain.Block as CC.Block
 import qualified Cardano.Chain.Common as CC.Common
 import qualified Cardano.Chain.Delegation as CC.Delegation
-import qualified Cardano.Chain.Genesis as CC.Genesis
 import qualified Cardano.Chain.Slotting as CC.Slot
 import qualified Cardano.Chain.Ssc as CC.Ssc
 import qualified Cardano.Chain.Update as CC.Update
@@ -125,7 +122,6 @@ forgeBlock (WithEBBNodeConfig cfg) curSlot curNo prevHash txs isLeader = do
       , pbftEpochSlots
       , pbftProtocolVersion
       , pbftSoftwareVersion
-      , pbftGenesisDlg
       , pbftProtocolMagic
       } = encNodeConfigExt cfg
 
@@ -162,19 +158,10 @@ forgeBlock (WithEBBNodeConfig cfg) curSlot curNo prevHash txs isLeader = do
         }
 
     headerGenesisKey :: Crypto.VerificationKey
-    VerKeyCardanoDSIGN headerGenesisKey = pbftGenVerKey isLeader
+    VerKeyCardanoDSIGN headerGenesisKey = dlgCertGenVerKey $ pbftDlgCert isLeader
 
     dlgCertificate :: CC.Delegation.Certificate
-    dlgCertificate = case findDelegate of
-        Just x  -> x
-        Nothing -> error "Issuer is not a valid genesis key delegate."
-      where
-        dlgMap = CC.Genesis.unGenesisDelegation pbftGenesisDlg
-        VerKeyCardanoDSIGN delegate = pbftVerKey isLeader
-        findDelegate = find (\crt -> CC.Delegation.delegateVK crt == delegate
-                                   && CC.Delegation.issuerVK crt == headerGenesisKey
-                             )
-                      $ Map.elems dlgMap
+    dlgCertificate = pbftDlgCert isLeader
 
     forge :: PBftFields PBftCardanoCrypto (Annotated CC.Block.ToSign ByteString)
           -> ByronBlockOrEBB ByronConfig

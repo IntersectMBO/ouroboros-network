@@ -24,8 +24,6 @@ data ByronConfig = ByronConfig {
     , pbftEpochSlots      :: CC.Slot.EpochSlots
     , pbftGenesisConfig   :: CC.Genesis.Config
     , pbftGenesisHash     :: CC.Genesis.GenesisHash
-    , pbftGenesisDlg      :: CC.Genesis.GenesisDelegation
-
       -- | This is only needed by "Ouroboros.Consensus.Demo.Byron.Elaborate"
       -- to elaborate from mock transactions to real ones. This obviously only
       -- works for demos. This can be removed as soon as the elaboration is
