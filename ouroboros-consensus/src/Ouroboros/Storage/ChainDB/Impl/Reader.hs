@@ -14,11 +14,10 @@ module Ouroboros.Storage.ChainDB.Impl.Reader
   ) where
 
 import           Control.Exception (assert)
-import           Control.Monad (when)
 import           Data.Functor ((<&>))
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
-import           Data.Maybe (isJust, isNothing)
+import           Data.Maybe (isJust)
 import           GHC.Stack (HasCallStack)
 
 import           Control.Monad.Class.MonadSTM
@@ -32,6 +31,7 @@ import           Ouroboros.Network.Block (ChainUpdate (..), HasHeader,
                      HeaderHash, Point, SlotNo, blockPoint, castPoint,
                      genesisPoint, pointSlot)
 import           Ouroboros.Network.Point (WithOrigin (..))
+
 import           Ouroboros.Consensus.Block (GetHeader (..), headerPoint)
 import           Ouroboros.Consensus.Util.STM (blockUntilJust)
 
@@ -306,8 +306,9 @@ instructionHelper fromMaybeSTM fromPure CDB{..} varReader = do
               ImmDB.streamBlocksAfter cdbImmDB pt
           rollForwardImmDB immIt pt
         RollBackTo      pt -> do
-          when (isNothing mbImmIt) $
-            trace $ ReaderNoLongerInMem rollState
+          case mbImmIt of
+            Just immIt -> ImmDB.iteratorClose cdbImmDB immIt
+            Nothing    -> trace $ ReaderNoLongerInMem rollState
           -- COST: the block at @pt@ is read.
           immIt' <- ImmDB.streamBlocksAfter cdbImmDB pt
           let readerState' = ReaderInImmDB (RollForwardFrom pt) immIt'
@@ -423,8 +424,8 @@ forward CDB{..} varReader = \pts -> do
       pt:pts
         | AF.withinFragmentBounds (castPoint pt) curChain
         -> do
-          -- It's in the in-memory chain fragment
-          atomically $ writeTVar varReader $ ReaderInMem $ RollBackTo pt
+          -- It's in the in-memory chain fragment.
+          updateState $ ReaderInMem $ RollBackTo pt
           return $ Just pt
 
         | pointSlot pt > slotNoAtImmDBTip
@@ -442,10 +443,22 @@ forward CDB{..} varReader = \pts -> do
               -- TODO combine block checking with opening the iterator to
               -- avoid reading the same block twice
               immIt <- ImmDB.streamBlocksAfter cdbImmDB pt
-              let readerState = ReaderInImmDB (RollBackTo pt) immIt
-              atomically $ writeTVar varReader readerState
+              updateState $ ReaderInImmDB (RollBackTo pt) immIt
               return $ Just pt
             else findFirstPointOnChain curChain slotNoAtImmDBTip pts
+
+    -- | Update the state of the reader to the given state. If the current
+    -- state is 'ReaderInImmDB', close the ImmutableDB iterator to avoid
+    -- leaking the file handles.
+    updateState :: ReaderState m blk -> m ()
+    updateState newReaderState = do
+      mbImmIt <- atomically $ do
+        mbImmIt <- readTVar varReader <&> \case
+          ReaderInImmDB _ immIt -> Just immIt
+          ReaderInMem   _       -> Nothing
+        writeTVar varReader newReaderState
+        return mbImmIt
+      mapM_ (ImmDB.iteratorClose cdbImmDB) mbImmIt
 
 -- | Update the given 'ReaderState' to account for switching the current
 -- chain to the given fork (which might just be an extension of the

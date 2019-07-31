@@ -18,6 +18,7 @@ module Ouroboros.Storage.ChainDB.Impl.Iterator
 import           Control.Monad (unless, when)
 import           Control.Monad.Except (ExceptT (..), lift, runExceptT,
                      throwError)
+import           Data.Functor (($>))
 import           Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
 import           Data.Map.Strict (Map)
@@ -568,10 +569,8 @@ implIteratorNext varItState IteratorEnv{..} =
                 -> ImmDB.Iterator (HeaderHash blk) m blk
                 -> InImmDBEnd blk
                 -> m (IteratorResult blk)
-    nextInImmDB continueFrom immIt immEnd = do
-      immRes <- selectResult immEnd <$> ImmDB.iteratorNext    itImmDB immIt
-                                    <*> ImmDB.iteratorHasNext itImmDB immIt
-      case immRes of
+    nextInImmDB continueFrom immIt immEnd =
+      selectResult immEnd immIt >>= \case
         NotDone blk -> do
           let continueFrom' = StreamFromExclusive (blockPoint blk)
           atomically $ writeTVar varItState (InImmDB continueFrom' immIt immEnd)
@@ -605,8 +604,7 @@ implIteratorNext varItState IteratorEnv{..} =
                      -> NonEmpty (HeaderHash blk)
                      -> m (IteratorResult blk)
     nextInImmDBRetry mbContinueFrom immIt (hash NE.:| hashes) =
-      selectResult StreamAll <$> ImmDB.iteratorNext    itImmDB immIt
-                             <*> ImmDB.iteratorHasNext itImmDB immIt >>= \case
+      selectResult StreamAll immIt >>= \case
         NotDone blk | blockHash blk == hash -> do
           trace $ BlockWasCopiedToImmDB hash
           let continueFrom' = StreamFromExclusive (blockPoint blk)
@@ -644,39 +642,45 @@ implIteratorNext varItState IteratorEnv{..} =
             trace SwitchBackToVolDB
             nextInVolDB continueFrom (hash NE.:| hashes)
 
-    -- | Return a 'Done' based on the 'InImmDBEnd'. See the documentation of
-    -- 'Done'. The 'Bool' argument should be the result of
-    -- 'ImmDB.iteratorHasNext' and indicates whether the iterator is able to
-    -- stream more blocks ('True') or whether it is exhausted ('False') after
-    -- returning the last result.
+    -- | Given an 'InImmDBEnd' and an ImmutableDB iterator, try to stream a
+    -- value from it and convert it to a 'Done'. See the documentation of
+    -- 'Done' for more details.
     --
     -- We're doing this because we're streaming from the ImmutableDB with an
     -- open upper bound, because the ImmutableDB doesn't support streaming to
     -- an exclusive upper bound.
+    --
+    -- Note that this function closes the iterator when necessary, i.e., when
+    -- the return value is 'Done' or 'DoneAfter'.
     selectResult :: InImmDBEnd blk
-                 -> ImmDB.IteratorResult (HeaderHash blk) blk
-                 -> Bool  -- ^ has the iterator a next element
-                 -> Done blk
-    selectResult immEnd itRes hasNext = case itRes of
-        ImmDB.IteratorResult _ blk -> select blk
-        ImmDB.IteratorEBB  _ _ blk -> select blk
-        ImmDB.IteratorExhausted    -> Done
+                 -> ImmDB.Iterator (HeaderHash blk) m blk
+                 -> m (Done blk)
+    selectResult immEnd immIt = do
+        itRes   <- ImmDB.iteratorNext    itImmDB immIt
+        hasNext <- ImmDB.iteratorHasNext itImmDB immIt
+        case itRes of
+          ImmDB.IteratorResult _ blk -> select blk hasNext
+          ImmDB.IteratorEBB  _ _ blk -> select blk hasNext
+          ImmDB.IteratorExhausted    -> return Done
       where
-        select blk = case immEnd of
+        close = ImmDB.iteratorClose itImmDB immIt
+
+        select blk hasNext = case immEnd of
           StreamAll
-            | hasNext             -> NotDone   blk
-            | otherwise           -> DoneAfter blk
-          StreamTo          to'   -> checkUpperBound blk to'
-          SwitchToVolDBFrom to' _ -> checkUpperBound blk to'
-        checkUpperBound blk = \case
+            | hasNext             -> return $ NotDone   blk
+            | otherwise           -> close $> DoneAfter blk
+          StreamTo          to'   -> checkUpperBound blk hasNext to'
+          SwitchToVolDBFrom to' _ -> checkUpperBound blk hasNext to'
+
+        checkUpperBound blk hasNext = \case
           StreamToExclusive pt
-            | pt == blockPoint blk -> Done
-            | hasNext              -> NotDone   blk
-            | otherwise            -> DoneAfter blk
+            | pt == blockPoint blk -> close  $> Done
+            | hasNext              -> return $  NotDone   blk
+            | otherwise            -> close  $> DoneAfter blk
           StreamToInclusive pt
-            | pt == blockPoint blk -> DoneAfter blk
-            | hasNext              -> NotDone   blk
-            | otherwise            -> DoneAfter blk
+            | pt == blockPoint blk -> close  $> DoneAfter blk
+            | hasNext              -> return $  NotDone   blk
+            | otherwise            -> close  $> DoneAfter blk
 
 -- | Auxiliary data type used for 'selectResult' in 'implIteratorNext'.
 data Done blk
