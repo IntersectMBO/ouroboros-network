@@ -21,12 +21,11 @@ import           Ouroboros.Consensus.Mempool.API
 --
 localTxSubmissionServer
   :: ( Monad m
-     , Show (ApplyTxErr blk)
      , ApplyTx blk
      )
   => Tracer m (TraceLocalTxSubmissionServerEvent blk)
   -> Mempool m blk idx
-  -> LocalTxSubmissionServer (GenTx blk) String m ()
+  -> LocalTxSubmissionServer (GenTx blk) (ApplyTxErr blk) m ()
 localTxSubmissionServer tracer Mempool{addTxs} =
     server
   where
@@ -35,7 +34,7 @@ localTxSubmissionServer tracer Mempool{addTxs} =
         traceWith tracer $ TraceReceivedTx tx
         res <- addTxs [tx]
         case res of
-          [(_tx, mbErr)] -> return (show <$> mbErr, server)
+          [(_tx, mbErr)] -> return (mbErr, server)
           -- The output list of addTxs has the same length as the input list.
           _              -> error "addTxs: unexpected result"
 
