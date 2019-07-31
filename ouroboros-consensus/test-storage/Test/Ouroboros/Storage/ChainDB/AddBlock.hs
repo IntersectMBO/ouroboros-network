@@ -34,6 +34,7 @@ import           Ouroboros.Storage.ChainDB (TraceAddBlockEvent (..), addBlock,
                      closeDB, openDB, toChain)
 import qualified Ouroboros.Storage.ChainDB as ChainDB
 import qualified Ouroboros.Storage.ChainDB.Model as Model
+import qualified Ouroboros.Storage.FS.Sim.MockFS as Mock
 
 import           Test.Ouroboros.Storage.ChainDB.StateMachine (constrName,
                      mkArgs)
@@ -93,8 +94,12 @@ prop_addBlock_multiple_threads bpt =
     trace       :: [TraceAddBlockEvent TestBlock]
     (actualChain, trace) = run $ do
         -- Open the DB
+        fsVars   <- atomically $ (,,)
+          <$> newTVar Mock.empty
+          <*> newTVar Mock.empty
+          <*> newTVar Mock.empty
         registry <- atomically ThreadRegistry.new
-        args     <- mkArgs cfg initLedger dynamicTracer registry
+        let args = mkArgs cfg initLedger dynamicTracer registry fsVars
         db       <- openDB args
         -- Add blocks concurrently
         mapConcurrently_ (mapM_ (addBlock db)) $ blocksPerThread bpt

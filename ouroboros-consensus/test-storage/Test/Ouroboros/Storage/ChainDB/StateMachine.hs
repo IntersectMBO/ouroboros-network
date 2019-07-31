@@ -88,6 +88,7 @@ import qualified Ouroboros.Consensus.Util.ThreadRegistry as ThreadRegistry
 import           Ouroboros.Storage.ChainDB
 import qualified Ouroboros.Storage.ChainDB as ChainDB
 import qualified Ouroboros.Storage.ChainDB.Model as Model
+import           Ouroboros.Storage.FS.Sim.MockFS (MockFS)
 import qualified Ouroboros.Storage.FS.Sim.MockFS as Mock
 import           Ouroboros.Storage.FS.Sim.STM (simHasFS)
 import           Ouroboros.Storage.ImmutableDB
@@ -1021,15 +1022,15 @@ prop_sequential = forAllCommands smUnused Nothing $ \cmds -> QC.monadicIO $ do
     test cmds = do
       (tracer, getTrace) <- QC.run recordingTracerIORef
       registry           <- QC.run $ atomically ThreadRegistry.new
-      args               <- QC.run $ mkArgs
-                                       testCfg
-                                       testInitLedger
-                                       tracer
-                                       registry
+      fsVars             <- QC.run $ atomically $ (,,)
+        <$> newTVar Mock.empty
+        <*> newTVar Mock.empty
+        <*> newTVar Mock.empty
+      let args = mkArgs testCfg testInitLedger tracer registry fsVars
       (db, internal)     <- QC.run $ openDBInternal args False
       let sm' = sm db internal genBlk testCfg testInitLedger
       (hist, model, res) <- runCommands sm' cmds
-      (realChain, realChain', trace) <- QC.run $ do
+      (realChain, realChain', trace, immDbFs, volDbFs, lgrDbFs) <- QC.run $ do
         trace <- getTrace
         open <- atomically $ isOpen db
         unless open $ intReopen internal False
@@ -1044,7 +1045,16 @@ prop_sequential = forAllCommands smUnused Nothing $ \cmds -> QC.monadicIO $ do
         closeDB db'
 
         ThreadRegistry.cancelAll registry
-        return (realChain, realChain', trace)
+
+        -- Read the final MockFS of each database
+        let (immDbFsVar, volDbFsVar, lgrDbFsVar) = fsVars
+        (immDbFs, volDbFs, lgrDbFs) <- atomically $ (,,)
+          <$> readTVar immDbFsVar
+          <*> readTVar volDbFsVar
+          <*> readTVar lgrDbFsVar
+
+        return (realChain, realChain', trace, immDbFs, volDbFs, lgrDbFs)
+
       let modelChain = Model.currentChain $ dbModel model
           prop =
             counterexample ("Real  chain: " <> condense realChain)       $
@@ -1057,7 +1067,13 @@ prop_sequential = forAllCommands smUnused Nothing $ \cmds -> QC.monadicIO $ do
             prop_trace trace         .&&.
             -- Another equally preferable fork may be selected when opening
             -- the DB.
-            equallyPreferable (cdbNodeConfig args) realChain realChain'
+            equallyPreferable (cdbNodeConfig args) realChain realChain' .&&.
+            counterexample "ImmutableDB is leaking file handles"
+                           (Mock.numOpenHandles immDbFs === 0) .&&.
+            counterexample "VolatileDB is leaking file handles"
+                           (Mock.numOpenHandles volDbFs === 0) .&&.
+            counterexample "LedgerDB is leaking file handles"
+                           (Mock.numOpenHandles lgrDbFs === 0)
       return (hist, prop)
 
 prop_trace :: [TraceEvent Blk] -> Property
@@ -1114,52 +1130,50 @@ mkArgs :: (MonadSTM m, MonadCatch m, MonadThrow (STM m))
        -> ExtLedgerState Blk
        -> Tracer m (TraceEvent Blk)
        -> ThreadRegistry m
-       -> m (ChainDbArgs m Blk)
-mkArgs cfg initLedger tracer registry = do
-    (immDbFsVar, volDbFsVar, lgrDbFsVar) <- atomically $
-      (,,) <$> newTVar Mock.empty
-           <*> newTVar Mock.empty
-           <*> newTVar Mock.empty
-    return ChainDbArgs
-      { -- Decoders
-        cdbDecodeHash       = decode
-      , cdbDecodeBlock      = decode
-      , cdbDecodeLedger     = decode
-      , cdbDecodeChainState = decode
+       -> (TVar m MockFS, TVar m MockFS, TVar m MockFS)
+          -- ^ ImmutableDB, VolatileDB, LedgerDB
+       -> ChainDbArgs m Blk
+mkArgs cfg initLedger tracer registry
+       (immDbFsVar, volDbFsVar, lgrDbFsVar) = ChainDbArgs
+    { -- Decoders
+      cdbDecodeHash       = decode
+    , cdbDecodeBlock      = decode
+    , cdbDecodeLedger     = decode
+    , cdbDecodeChainState = decode
 
-        -- Encoders
-      , cdbEncodeBlock      = encode
-      , cdbEncodeHash       = encode
-      , cdbEncodeLedger     = encode
-      , cdbEncodeChainState = encode
+      -- Encoders
+    , cdbEncodeBlock      = encode
+    , cdbEncodeHash       = encode
+    , cdbEncodeLedger     = encode
+    , cdbEncodeChainState = encode
 
-        -- Error handling
-      , cdbErrImmDb         = EH.monadCatch
-      , cdbErrVolDb         = EH.monadCatch
-      , cdbErrVolDbSTM      = EH.throwSTM
+      -- Error handling
+    , cdbErrImmDb         = EH.monadCatch
+    , cdbErrVolDb         = EH.monadCatch
+    , cdbErrVolDbSTM      = EH.throwSTM
 
-        -- HasFS instances
-      , cdbHasFSImmDb       = simHasFS EH.monadCatch immDbFsVar
-      , cdbHasFSVolDb       = simHasFS EH.monadCatch volDbFsVar
-      , cdbHasFSLgrDB       = simHasFS EH.monadCatch lgrDbFsVar
+      -- HasFS instances
+    , cdbHasFSImmDb       = simHasFS EH.monadCatch immDbFsVar
+    , cdbHasFSVolDb       = simHasFS EH.monadCatch volDbFsVar
+    , cdbHasFSLgrDB       = simHasFS EH.monadCatch lgrDbFsVar
 
-        -- Policy
-      , cdbValidation       = ValidateAllEpochs
-      , cdbBlocksPerFile    = 4
-      , cdbMemPolicy        = defaultMemPolicy  (protocolSecurityParam cfg)
-      , cdbDiskPolicy       = defaultDiskPolicy (protocolSecurityParam cfg) 10000
+      -- Policy
+    , cdbValidation       = ValidateAllEpochs
+    , cdbBlocksPerFile    = 4
+    , cdbMemPolicy        = defaultMemPolicy  (protocolSecurityParam cfg)
+    , cdbDiskPolicy       = defaultDiskPolicy (protocolSecurityParam cfg) 10000
 
-        -- Integration
-      , cdbNodeConfig       = cfg
-      , cdbEpochSize        = const (return 10)
-      , cdbIsEBB            = const Nothing -- TODO
-      , cdbGenesis          = return initLedger
+      -- Integration
+    , cdbNodeConfig       = cfg
+    , cdbEpochSize        = const (return 10)
+    , cdbIsEBB            = const Nothing -- TODO
+    , cdbGenesis          = return initLedger
 
-      -- Misc
-      , cdbTracer           = tracer
-      , cdbThreadRegistry   = registry
-      , cdbGcDelay          = 0
-      }
+    -- Misc
+    , cdbTracer           = tracer
+    , cdbThreadRegistry   = registry
+    , cdbGcDelay          = 0
+    }
 
 tests :: TestTree
 tests = testGroup "ChainDB q-s-m"
@@ -1180,11 +1194,16 @@ _mkBlk h = TestBlock
 -- | Debugging utility: run some commands against the real implementation.
 _runCmds :: [Cmd Blk IteratorId ReaderId] -> IO [Resp Blk IteratorId ReaderId]
 _runCmds cmds = withThreadRegistry $ \registry -> do
-    args           <- mkArgs
-                        testCfg
-                        testInitLedger
-                        (showTracing stdoutTracer)
-                        registry
+    fsVars <- atomically $ (,,)
+      <$> newTVar Mock.empty
+      <*> newTVar Mock.empty
+      <*> newTVar Mock.empty
+    let args = mkArgs
+          testCfg
+          testInitLedger
+          (showTracing stdoutTracer)
+          registry
+          fsVars
     (db, internal) <- openDBInternal args False
     evalStateT (mapM (go db internal) cmds) emptyRunCmdState
   where
