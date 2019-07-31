@@ -35,6 +35,7 @@
           (hsPkgs.cryptonite)
           (hsPkgs.Cabal)
           (hsPkgs.deepseq)
+          (hsPkgs.digest)
           (hsPkgs.directory)
           (hsPkgs.filepath)
           (hsPkgs.formatting)
@@ -115,8 +116,8 @@
     } // {
     src = (pkgs.lib).mkDefault (pkgs.fetchgit {
       url = "https://github.com/input-output-hk/cardano-ledger";
-      rev = "29902b163eb3dad1d6aed1e3efc08ee6258fa9e7";
-      sha256 = "0y0py7rgl4yly2cq0ls5hcgif2bk1a10js0d0grixpvnpwds4l12";
+      rev = "4fab23bda24a119f4a4bc08f907caedde1d19b4f";
+      sha256 = "16p16h1l5qfwn1yc382pvr61xbm1fhias5r6g2lyn0wqsr9h2d0f";
       });
     postUnpack = "sourceRoot+=/cardano-ledger; echo source root reset to \$sourceRoot";
     }

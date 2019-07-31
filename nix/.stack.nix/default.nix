@@ -17,6 +17,8 @@
         "hedgehog" = (((hackage.hedgehog)."1.0").revisions).default;
         "micro-recursion-schemes" = (((hackage.micro-recursion-schemes)."5.0.2.2").revisions).default;
         "streaming-binary" = (((hackage.streaming-binary)."0.3.0.1").revisions).default;
+        "cborg" = (((hackage.cborg)."0.2.2.0").revisions).default;
+        "canonical-json" = (((hackage.canonical-json)."0.6.0.0").revisions).default;
         "graphviz" = (((hackage.graphviz)."2999.20.0.3").revisions)."cde383c356bc41136ed53cd27e0800f46dbd2185600dd0de18d66d5c49739d94";
         "quickcheck-state-machine" = (((hackage.quickcheck-state-machine)."0.6.0").revisions)."3e4f8df0f6b5d415e3c8840dc75034a63e37f56f5f8cfa1035ded16345235ac4";
         } // {
@@ -42,9 +44,7 @@
         cardano-prelude-test = ./cardano-prelude-test.nix;
         cardano-shell = ./cardano-shell.nix;
         cardano-sl-x509 = ./cardano-sl-x509.nix;
-        cborg = ./cborg.nix;
         cardano-crypto = ./cardano-crypto.nix;
-        canonical-json = ./canonical-json.nix;
         };
       compiler.version = "8.6.5";
       compiler.nix-name = "ghc865";
