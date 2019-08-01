@@ -225,65 +225,7 @@ broadcastNetwork registry testBtime numCoreNodes pInfo initRNG slotLen = do
     varRNG <- atomically $ newTVar initRNG
 
     nodes <- forM coreNodeIds $ \coreNodeId -> do
-      let us               = fromCoreNodeId coreNodeId
-          ProtocolInfo{..} = pInfo coreNodeId
-
-      let callbacks :: NodeCallbacks m (SimpleBlock c ext)
-          callbacks = NodeCallbacks {
-              produceBlock = \proof _l slot prevPoint prevNo txs -> do
-                let curNo :: BlockNo
-                    curNo = succ prevNo
-
-                let prevHash :: ChainHash (SimpleBlock c ext)
-                    prevHash = castHash (pointHash prevPoint)
-
-                nodeForgeBlock pInfoConfig
-                               slot
-                               curNo
-                               prevHash
-                               txs
-                               proof
-
-            , produceDRG      = atomically $ simChaChaT varRNG id $ drgNew
-            }
-
-      args    <- mkArgs pInfoConfig pInfoInitLedger
-      chainDB <- ChainDB.openDB args
-
-      let nodeParams = NodeParams
-            { tracers            = nullTracers
-            , threadRegistry     = registry
-            , maxClockSkew       = ClockSkew 1
-            , cfg                = pInfoConfig
-            , initState          = pInfoInitState
-            , btime
-            , chainDB
-            , callbacks
-            , blockFetchSize     = nodeBlockFetchSize
-            , blockMatchesHeader = nodeBlockMatchesHeader
-            , maxUnackTxs        = 1000 -- TODO
-            }
-
-      node <- nodeKernel nodeParams
-      let app = consensusNetworkApps
-                  node
-                  nullProtocolTracers
-                  protocolCodecsId
-                  (protocolHandlers nodeParams node)
-
-          ni :: NetworkInterface m NodeId
-          ni = createNetworkInterface chans nodeIds us app
-
-      void $ forkLinked registry (niWithServerNode ni wait)
-      void $ forkLinked registry $ txProducer
-        addrs
-        (produceDRG callbacks)
-        (ChainDB.getCurrentLedger chainDB)
-        (getMempool node)
-
-      forM_ (filter (/= us) nodeIds) $ \them ->
-        forkLinked registry (niConnectTo ni them)
-
+      node <- createAndConnectNode addrs chans varRNG coreNodeId
       return (coreNodeId, node)
 
     -- Wait a random amount of time after the final slot for the block fetch
@@ -376,6 +318,74 @@ broadcastNetwork registry testBtime numCoreNodes pInfo initRNG slotLen = do
         , cdbThreadRegistry   = registry
         , cdbGcDelay          = 0
         }
+
+    createAndConnectNode ::
+           [Addr]
+        -> NodeChans m NodeId (SimpleBlock c ext)
+        -> TVar m ChaChaDRG
+        -> CoreNodeId
+        -> m (NodeKernel m NodeId (SimpleBlock c ext))
+    createAndConnectNode addrs chans varRNG coreNodeId = do
+      let us               = fromCoreNodeId coreNodeId
+          ProtocolInfo{..} = pInfo coreNodeId
+
+      let callbacks :: NodeCallbacks m (SimpleBlock c ext)
+          callbacks = NodeCallbacks {
+              produceBlock = \proof _l slot prevPoint prevNo txs -> do
+                let curNo :: BlockNo
+                    curNo = succ prevNo
+
+                let prevHash :: ChainHash (SimpleBlock c ext)
+                    prevHash = castHash (pointHash prevPoint)
+
+                nodeForgeBlock pInfoConfig
+                               slot
+                               curNo
+                               prevHash
+                               txs
+                               proof
+
+            , produceDRG      = atomically $ simChaChaT varRNG id $ drgNew
+            }
+
+      args    <- mkArgs pInfoConfig pInfoInitLedger
+      chainDB <- ChainDB.openDB args
+
+      let nodeParams = NodeParams
+            { tracers            = nullTracers
+            , threadRegistry     = registry
+            , maxClockSkew       = ClockSkew 1
+            , cfg                = pInfoConfig
+            , initState          = pInfoInitState
+            , btime
+            , chainDB
+            , callbacks
+            , blockFetchSize     = nodeBlockFetchSize
+            , blockMatchesHeader = nodeBlockMatchesHeader
+            , maxUnackTxs        = 1000 -- TODO
+            }
+
+      node <- nodeKernel nodeParams
+      let app = consensusNetworkApps
+                  node
+                  nullProtocolTracers
+                  protocolCodecsId
+                  (protocolHandlers nodeParams node)
+
+          ni :: NetworkInterface m NodeId
+          ni = createNetworkInterface chans nodeIds us app
+
+      void $ forkLinked registry (niWithServerNode ni wait)
+      void $ forkLinked registry $ txProducer
+        addrs
+        (produceDRG callbacks)
+        (ChainDB.getCurrentLedger chainDB)
+        (getMempool node)
+
+      forM_ (filter (/= us) nodeIds) $ \them ->
+        forkLinked registry (niConnectTo ni them)
+
+      return node
 
 {-------------------------------------------------------------------------------
   Internal auxiliary
