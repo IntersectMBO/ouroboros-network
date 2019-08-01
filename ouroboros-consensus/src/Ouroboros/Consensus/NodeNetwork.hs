@@ -121,7 +121,7 @@ data ProtocolHandlers m peer blk = ProtocolHandlers {
         :: ChainSyncServer blk (Point blk) m ()
 
     , phLocalTxSubmissionServer
-        :: LocalTxSubmissionServer (GenTx blk) String m ()
+        :: LocalTxSubmissionServer (GenTx blk) (ApplyTxErr blk) m ()
     }
 
 protocolHandlers
@@ -132,7 +132,6 @@ protocolHandlers
        , MonadThrow m
        , ApplyTx blk
        , ProtocolLedgerView blk
-       , Show (ApplyTxErr blk)  --TODO: consider using condense
        )
     => NodeParams m peer blk  --TODO eliminate, merge relevant into NodeKernel
     -> NodeKernel m peer blk
@@ -195,7 +194,7 @@ data ProtocolCodecs blk failure m
                                       failure m bytesTX
   , pcLocalChainSyncCodec    :: Codec (ChainSync blk (Point blk))
                                       failure m bytesLCS
-  , pcLocalTxSubmissionCodec :: Codec (LocalTxSubmission (GenTx blk) String)
+  , pcLocalTxSubmissionCodec :: Codec (LocalTxSubmission (GenTx blk) (ApplyTxErr blk))
                                       failure m bytesLTX
   }
 
@@ -207,7 +206,7 @@ protocolCodecsId :: Monad m
                       (AnyMessage (BlockFetch blk))
                       (AnyMessage (TxSubmission (GenTxId blk) (GenTx blk)))
                       (AnyMessage (ChainSync blk (Point blk)))
-                      (AnyMessage (LocalTxSubmission (GenTx blk) String))
+                      (AnyMessage (LocalTxSubmission (GenTx blk) (ApplyTxErr blk)))
 protocolCodecsId = ProtocolCodecs {
       pcChainSyncCodec         = codecChainSyncId
     , pcBlockFetchCodec        = codecBlockFetchId
@@ -220,11 +219,11 @@ protocolCodecsId = ProtocolCodecs {
 type ProtocolTracers m peer blk failure = ProtocolTracers' peer blk failure (Tracer m)
 
 data ProtocolTracers' peer blk failure f = ProtocolTracers {
-    ptChainSyncTracer         :: f (TraceSendRecv (ChainSync (Header blk) (Point blk))     peer failure)
-  , ptBlockFetchTracer        :: f (TraceSendRecv (BlockFetch blk)                         peer failure)
-  , ptTxSubmissionTracer      :: f (TraceSendRecv (TxSubmission (GenTxId blk) (GenTx blk)) peer failure)
-  , ptLocalChainSyncTracer    :: f (TraceSendRecv (ChainSync blk (Point blk))              peer failure)
-  , ptLocalTxSubmissionTracer :: f (TraceSendRecv (LocalTxSubmission (GenTx blk) String)   peer failure)
+    ptChainSyncTracer         :: f (TraceSendRecv (ChainSync (Header blk) (Point blk))             peer failure)
+  , ptBlockFetchTracer        :: f (TraceSendRecv (BlockFetch blk)                                 peer failure)
+  , ptTxSubmissionTracer      :: f (TraceSendRecv (TxSubmission (GenTxId blk) (GenTx blk))         peer failure)
+  , ptLocalChainSyncTracer    :: f (TraceSendRecv (ChainSync blk (Point blk))                      peer failure)
+  , ptLocalTxSubmissionTracer :: f (TraceSendRecv (LocalTxSubmission (GenTx blk) (ApplyTxErr blk)) peer failure)
   }
 
 -- | Use a 'nullTracer' for each protocol.
@@ -244,6 +243,7 @@ showProtocolTracers :: ( StandardHash blk
                        , Show failure
                        , Show (GenTx blk)
                        , Show (GenTxId blk)
+                       , Show (ApplyTxErr blk)
                        )
                     => Tracer m String -> ProtocolTracers m peer blk failure
 showProtocolTracers tr = ProtocolTracers {
