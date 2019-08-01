@@ -290,6 +290,9 @@ instance Condense (GenTx (SimpleBlock p c)) where
 instance Show (GenTx (SimpleBlock p c)) where
     show = show . simpleGenTx
 
+instance Condense (GenTxId (SimpleBlock p c)) where
+    condense = condense . unSimpleGenTxId
+
 mkSimpleGenTx :: Tx -> GenTx (SimpleBlock c ext)
 mkSimpleGenTx tx = SimpleGenTx
     { simpleGenTx   = tx

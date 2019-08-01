@@ -20,9 +20,13 @@ import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Text (Text, unpack)
 import           Data.Word
+import           Formatting (sformat)
 import           Numeric.Natural
 import           Text.Printf (printf)
 
+import qualified Cardano.Chain.UTxO as CC.UTxO
+
+import           Cardano.Crypto (shortHashF)
 import           Cardano.Crypto.DSIGN
                    (SigDSIGN, SignedDSIGN(..), Ed448DSIGN,
                     pattern SigEd448DSIGN, MockDSIGN, pattern SigMockDSIGN)
@@ -165,3 +169,6 @@ instance Condense (SigDSIGN d) => Condense (SigKES (SimpleKES d)) where
 
 instance Condense (Hash h a) where
     condense = show
+
+instance Condense CC.UTxO.TxId where
+  condense hash = "txid:" <> unpack (sformat shortHashF hash)
