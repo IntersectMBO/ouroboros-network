@@ -149,6 +149,7 @@ hGetExactly hasFS h n = go n []
               fsErrorType   = FsReachedEOF
             , fsErrorPath   = path
             , fsErrorString = "hGetExactly found eof before reading " ++ show n ++ " bytes"
+            , fsErrorNo     = Nothing
             , fsErrorStack  = callStack
             , fsLimitation  = False
             }

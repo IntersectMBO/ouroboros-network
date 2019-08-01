@@ -1,5 +1,8 @@
-{-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE RecordWildCards    #-}
+{-# LANGUAGE StandaloneDeriving #-}
 
+-- For Show Errno
+{-# OPTIONS_GHC -Wno-orphans #-}
 module Ouroboros.Storage.FS.API.Types (
     -- * Modes
     OpenMode(..)
@@ -18,12 +21,14 @@ module Ouroboros.Storage.FS.API.Types (
   , isFsErrorType
   , prettyFsError
     -- * From 'IOError' to 'FsError'
-  , FsUnexpectedException
   , ioToFsError
+  , ioToFsErrorType
   ) where
 
 import           Control.Exception
 import           Data.List (stripPrefix)
+import           Foreign.C.Error (Errno (..))
+import qualified Foreign.C.Error as C
 import qualified GHC.IO.Exception as GHC
 import           GHC.Stack
 import           System.FilePath
@@ -93,6 +98,10 @@ data FsError = FsError {
       -- | Human-readable string giving additional information about the error
     , fsErrorString :: String
 
+      -- | The 'Errno', if available. This is more precise than the
+      -- 'FsErrorType'.
+    , fsErrorNo     :: Maybe Errno
+
       -- | Call stack
     , fsErrorStack  :: CallStack
 
@@ -105,6 +114,8 @@ data FsError = FsError {
     }
   deriving Show
 
+deriving instance Show Errno
+
 data FsErrorType
   = FsIllegalOperation
   | FsResourceInappropriateType
@@ -114,8 +125,11 @@ data FsErrorType
   | FsResourceAlreadyExist
   | FsReachedEOF
   | FsDeviceFull
+  | FsTooManyOpenFiles
   | FsInsufficientPermissions
   | FsInvalidArgument
+  | FsOther
+    -- ^ Used for all other error types
   deriving (Show, Eq)
 
 instance Exception FsError where
@@ -123,7 +137,7 @@ instance Exception FsError where
 
 -- | Check if two errors are semantically the same error
 --
--- This ignores the error string and the callstack.
+-- This ignores the error string, the errno, and the callstack.
 sameFsError :: FsError -> FsError -> Bool
 sameFsError e e' = fsErrorType e == fsErrorType e'
                 && fsErrorPath e == fsErrorPath e'
@@ -146,51 +160,72 @@ prettyFsError FsError{..} = concat [
   From 'IOError' to 'FsError'
 -------------------------------------------------------------------------------}
 
--- | IO exception that cannot be mapped to 'FsError'
-data FsUnexpectedException = FsUnexpectedException IOException CallStack
-  deriving Show
-
-instance Exception FsUnexpectedException
-
 -- | Translate exceptions thrown by IO functions to 'FsError'
 --
--- We take the 'FsPath' as an argument. We could try to translate back from
--- a 'FilePath' to an 'FsPath' (given a 'MountPoint'), but we know the 'FsPath'
+-- We take the 'FsPath' as an argument. We could try to translate back from a
+-- 'FilePath' to an 'FsPath' (given a 'MountPoint'), but we know the 'FsPath'
 -- at all times anyway and not all IO exceptions actually include a filepath.
 ioToFsError :: HasCallStack
-            => FsPath -> IOError -> Either FsUnexpectedException FsError
-ioToFsError fp ioErr
-    -- Errors for which there is an explicit predicate
-    | IO.isAlreadyExistsErrorType eType =
-        Right $ mkErr FsResourceAlreadyExist
-    | IO.isDoesNotExistErrorType eType =
-        Right $ mkErr FsResourceDoesNotExist
-    | IO.isAlreadyInUseErrorType eType =
-        Right $ mkErr FsResourceAlreadyInUse
-    | IO.isFullErrorType eType =
-        Right $ mkErr FsDeviceFull
-    | IO.isEOFErrorType eType =
-        Right $ mkErr FsReachedEOF
-    | IO.isIllegalOperationErrorType eType =
-        Right $ mkErr FsIllegalOperation
-    | IO.isPermissionErrorType eType =
-        Right $ mkErr FsInsufficientPermissions
-    -- Other errors
-    | eType == GHC.InappropriateType =
-        Right $ mkErr FsResourceInappropriateType
-    | eType == GHC.InvalidArgument =
-        Right $ mkErr FsInvalidArgument
-    | otherwise =
-        Left $ FsUnexpectedException ioErr callStack
+            => FsPath -> IOError -> FsError
+ioToFsError fp ioErr = FsError
+    { fsErrorType   = ioToFsErrorType ioErr
+    , fsErrorPath   = fp
+    , fsErrorString = IO.ioeGetErrorString ioErr
+    , fsErrorNo     = Errno <$> GHC.ioe_errno ioErr
+    , fsErrorStack  = callStack
+    , fsLimitation  = False
+    }
+
+-- | Assign an 'FsErrorType' to the given 'IOError'.
+--
+-- Note that we don't always use the classification made by
+-- 'Foreign.C.Error.errnoToIOError' (also see 'System.IO.Error') because it
+-- combines some errors into one 'IOErrorType', e.g., @EMFILE@ (too many open
+-- files) and @ENOSPC@ (no space left on device) both result in
+-- 'ResourceExhausted' while we want to keep them separate. For this reason,
+-- we do a classification of our own based on the @errno@ while sometimes
+-- deferring to the existing classification.
+--
+-- See the ERRNO(3) man page for the meaning of the different errnos.
+ioToFsErrorType :: IOError -> FsErrorType
+ioToFsErrorType ioErr = case Errno <$> GHC.ioe_errno ioErr of
+    Just errno
+      |  errno == C.eACCES
+      || errno == C.eROFS
+      || errno == C.ePERM
+      -> FsInsufficientPermissions
+
+      |  errno == C.eNOSPC
+      -> FsDeviceFull
+
+      |  errno == C.eMFILE
+      || errno == C.eNFILE
+      -> FsTooManyOpenFiles
+
+      |  errno == C.eNOENT
+      || errno == C.eNXIO
+      -> FsResourceDoesNotExist
+
+    _ | IO.isAlreadyInUseErrorType eType
+      -> FsResourceAlreadyInUse
+
+      | IO.isAlreadyExistsErrorType eType
+      -> FsResourceAlreadyExist
+
+      | IO.isEOFErrorType eType
+      -> FsReachedEOF
+
+      | IO.isIllegalOperationErrorType eType
+      -> FsIllegalOperation
+
+      | eType == GHC.InappropriateType
+      -> FsResourceInappropriateType
+
+      | eType == GHC.InvalidArgument
+      -> FsInvalidArgument
+
+      | otherwise
+      -> FsOther
   where
     eType :: IO.IOErrorType
     eType = IO.ioeGetErrorType ioErr
-
-    mkErr :: FsErrorType -> FsError
-    mkErr ty = FsError {
-                   fsErrorType   = ty
-                 , fsErrorPath   = fp
-                 , fsErrorString = IO.ioeGetErrorString ioErr
-                 , fsErrorStack  = callStack
-                 , fsLimitation  = False
-                 }
