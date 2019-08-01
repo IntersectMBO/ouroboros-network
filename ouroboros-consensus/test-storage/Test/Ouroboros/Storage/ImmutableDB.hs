@@ -8,17 +8,15 @@
 module Test.Ouroboros.Storage.ImmutableDB (tests) where
 
 import qualified Codec.Serialise as S
-import           Control.Monad (forM_, void)
 import           Control.Monad.Class.MonadSTM (MonadSTM)
 import           Control.Monad.Class.MonadThrow (MonadCatch)
 
 import           Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
-import qualified Data.ByteString.Builder as BS
 import           Data.Coerce (coerce)
 import           Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
-import           Data.Maybe (isJust, isNothing, maybeToList)
+import           Data.Maybe (maybeToList)
 import           Data.Word (Word64)
 
 import qualified Test.Ouroboros.Storage.ImmutableDB.CumulEpochSizes as CumulEpochSizes
@@ -45,8 +43,8 @@ import qualified Ouroboros.Storage.FS.Sim.STM as Sim
 import           Ouroboros.Storage.ImmutableDB
 import           Ouroboros.Storage.ImmutableDB.Index
 import           Ouroboros.Storage.ImmutableDB.Layout
-import           Ouroboros.Storage.ImmutableDB.Util (cborEpochFileParser',
-                     reconstructSlotOffsets, tryImmDB)
+import           Ouroboros.Storage.ImmutableDB.Util (reconstructSlotOffsets,
+                     tryImmDB)
 import           Ouroboros.Storage.Util (decodeIndexEntryAt)
 import           Ouroboros.Storage.Util.ErrorHandling (ErrorHandling)
 import qualified Ouroboros.Storage.Util.ErrorHandling as EH
@@ -72,7 +70,6 @@ tests = testGroup "ImmutableDB"
       ]
     , testCase     "reconstructSlotOffsets" test_reconstructSlotOffsets
     , testCase     "reconstructSlotOffsets empty slots" test_reconstructSlotOffsets_empty_slots
-    , testCase     "cborEpochFileParser" test_cborEpochFileParser
     , TestBlock.tests
     , StateMachine.tests
     , CumulEpochSizes.tests
@@ -336,51 +333,3 @@ test_reconstructSlotOffsets_empty_slots = reconstructSlotOffsets input @?= outpu
   where
     input  = [(0, (10, 2)), (10, (10, 4))]
     output = NE.fromList [20, 10, 10, 0, 0, 0]
-
-
-
-{------------------------------------------------------------------------------
-  cborEpochFileParser
-------------------------------------------------------------------------------}
-
-test_cborEpochFileParser :: Assertion
-test_cborEpochFileParser = forM_ ["junk", ""] $ \junk -> runFS $ \hasFS -> do
-    -- Test once with junk at the end and once without
-    let HasFS{..} = hasFS
-
-    withFile hasFS fp (AppendMode MustBeNew) $ \h -> do
-      forM_ blocks $ \block ->
-        hPut hasFS h (S.serialiseIncremental block)
-      void $ hPut hasFS h (BS.string8 junk)
-
-    (offsetsAndSizesAndBlocks', ebbHash, mbErr) <-
-      runEpochFileParser (cborEpochFileParser' hasFS S.decode (const getEBBHash)) fp
-
-    ebbHash @?= Just "ebb"
-    offsetsAndSizesAndBlocks' @?= offsetsAndSizesAndBlocks
-
-    if null junk
-      then assertBool "Unexpected error"  (isNothing mbErr)
-      else assertBool "Expected an error" (isJust    mbErr)
-  where
-    blocks :: [ByteString]
-    blocks = map (snd . snd) offsetsAndSizesAndBlocks
-
-    offsetsAndSizesAndBlocks :: [(SlotOffset, (Word64, ByteString))]
-    offsetsAndSizesAndBlocks =
-      [ (0, (4, "ebb"))
-        -- Note that "ebb" is encoded as "Cebb", hence the size of 4
-      , (4, (4, "bar"))
-      , (8, (4, "baz"))
-      ]
-
-    fp = ["test"]
-
-    getEBBHash :: ByteString -> Maybe String
-    getEBBHash "ebb" = Just "ebb"
-    getEBBHash _     = Nothing
-
-    err = EH.exceptions
-
-    runFS :: (HasFS IO Mock.Handle -> IO a) -> IO a
-    runFS = fmap fst . Sim.runSimFS err Mock.empty
