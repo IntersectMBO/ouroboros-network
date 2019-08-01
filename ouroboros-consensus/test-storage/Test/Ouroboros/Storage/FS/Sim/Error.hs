@@ -69,11 +69,6 @@ import qualified Ouroboros.Storage.Util.ErrorHandling as EH
 
 import           Test.Ouroboros.Storage.Util (Blob (..))
 
-
-
--- TODO what about FsUnexpectedException? Should we generate those too?
-
-
 {-------------------------------------------------------------------------------
   Streams
 -------------------------------------------------------------------------------}
@@ -369,7 +364,7 @@ genErrors genPartialWrites genSubstituteWithJunk = do
     _hOpen <- streamGen 1
       [ FsResourceDoesNotExist, FsResourceInappropriateType
       , FsResourceAlreadyInUse, FsResourceAlreadyExist
-      , FsInsufficientPermissions ]
+      , FsInsufficientPermissions, FsTooManyOpenFiles ]
     _hSeek      <- streamGen 3 [ FsReachedEOF ]
     _hGetSome   <- mkStreamGen 20 $ QC.frequency
       [ (1, return $ Left FsReachedEOF)
@@ -545,6 +540,7 @@ withErr ErrorHandling {..} errorsVar path action msg getter setter = do
         { fsErrorType   = errType
         , fsErrorPath   = path
         , fsErrorString = "simulated error: " <> msg
+        , fsErrorNo     = Nothing
         , fsErrorStack  = callStack
         , fsLimitation  = False
         }
@@ -583,6 +579,7 @@ hGetSome' ErrorHandling{..} fsVar errorsVar hGetSomeWrapped handle n = do
         { fsErrorType   = errType
         , fsErrorPath   = handleFsPath mockFS handle
         , fsErrorString = "simulated error: hGetSome"
+        , fsErrorNo     = Nothing
         , fsErrorStack  = callStack
         , fsLimitation  = False
         }
@@ -611,6 +608,7 @@ hPutSome' ErrorHandling{..} fsVar errorsVar hPutSomeWrapped handle bs = do
           , fsErrorString = "simulated error: hPutSome" <> case mbCorr of
               Nothing   -> ""
               Just corr -> " with corruption: " <> show corr
+          , fsErrorNo     = Nothing
           , fsErrorStack  = callStack
           , fsLimitation  = False
           }

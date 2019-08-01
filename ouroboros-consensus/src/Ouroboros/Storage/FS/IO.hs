@@ -82,7 +82,4 @@ rethrowFsError fp action = do
       Right a  -> return a
   where
     handleError :: HasCallStack => IOError -> IO a
-    handleError ioErr =
-      case ioToFsError fp ioErr of
-        Left  unexpected -> E.throwIO unexpected
-        Right err        -> E.throwIO err
+    handleError ioErr = E.throwIO $ ioToFsError fp ioErr

@@ -128,6 +128,7 @@ putBlockModel err cmdErr BlockInfo{..} bs = do
                       fsErrorType = fsErrT
                     , fsErrorPath = [currentFile]
                     , fsErrorString = ""
+                    , fsErrorNo    = Nothing
                     , fsErrorStack = EmptyCallStack
                     , fsLimitation = False
                 }
@@ -191,6 +192,7 @@ garbageCollectModel err cmdErr sl = do
                               fsErrorType = e
                             , fsErrorPath = [currentFile]
                             , fsErrorString = ""
+                            , fsErrorNo    = Nothing
                             , fsErrorStack = EmptyCallStack
                             , fsLimitation = False
                         }
@@ -202,6 +204,7 @@ garbageCollectModel err cmdErr sl = do
                               fsErrorType = e
                             , fsErrorPath = [currentFile]
                             , fsErrorString = ""
+                            , fsErrorNo    = Nothing
                             , fsErrorStack = EmptyCallStack
                             , fsLimitation = False
                         }
