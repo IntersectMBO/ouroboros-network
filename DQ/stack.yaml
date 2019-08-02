@@ -1,0 +1,3 @@
+resolver: lts-13.11
+packages:
+- .
