@@ -15,18 +15,11 @@ module Ouroboros.Storage.ImmutableDB.Util
   , validateIteratorRange
   , reconstructSlotOffsets
   , indexBackfill
-  , cborEpochFileParser
-  , cborEpochFileParser'
   ) where
 
-import qualified Codec.CBOR.Decoding as CBOR
 import           Control.Exception (assert)
 import           Control.Monad (when)
-import           Control.Monad.Class.MonadST (MonadST)
-import           Control.Monad.Class.MonadThrow (MonadThrow)
 
-import           Data.ByteString.Builder.Extra (defaultChunkSize)
-import qualified Data.ByteString.Lazy as BSL (ByteString)
 import           Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
 import qualified Data.Text as T
@@ -38,12 +31,9 @@ import           Text.Printf (printf)
 import           Text.Read (readMaybe)
 
 import           Ouroboros.Consensus.Util (whenJust)
-import           Ouroboros.Consensus.Util.CBOR (ReadIncrementalErr (..),
-                     readIncrementalOffsetsEBB)
 
 import           Ouroboros.Storage.Common
 import           Ouroboros.Storage.EpochInfo.API
-import           Ouroboros.Storage.FS.API
 import           Ouroboros.Storage.FS.API.Types
 import           Ouroboros.Storage.Util.ErrorHandling (ErrorHandling (..))
 import qualified Ouroboros.Storage.Util.ErrorHandling as EH
@@ -229,37 +219,3 @@ indexBackfill (RelativeSlot slot) (RelativeSlot nextExpected) lastOffset =
     replicate gap lastOffset
   where
     gap = fromIntegral $ slot - nextExpected
-
-
--- | CBOR-based 'EpochFileParser' that can be used with
--- 'Ouroboros.Storage.ImmutableDB.Impl.openDB'.
---
--- TODO remove this function when the ChainDB is available.
-cborEpochFileParser :: forall m hash h a. (MonadST m, MonadThrow m)
-                    => Word64  -- ^ Chunk size
-                    -> HasFS m h
-                    -> (forall s . CBOR.Decoder s a)
-                    -> (BSL.ByteString -> a -> Maybe hash)
-                       -- ^ In case the given @a@ is an EBB, return its
-                       -- @hash@.
-                    -> EpochFileParser ReadIncrementalErr hash m (Word64, a)
-                       -- ^ The 'Word' is the size in bytes of the
-                       -- corresponding @a@.
-cborEpochFileParser chunkSize hasFS decoder getEBBHash = EpochFileParser $
-    readIncrementalOffsetsEBB chunkSize hasFS decoder getEBBHash
-
--- | Variant of 'cborEpochFileParser' that uses 'defaultChunkSize' as the
--- chunk size.
---
--- TODO remove this function when the ChainDB is available.
-cborEpochFileParser' :: forall m hash h a. (MonadST m, MonadThrow m)
-                     => HasFS m h
-                     -> (forall s . CBOR.Decoder s a)
-                     -> (BSL.ByteString -> a -> Maybe hash)
-                        -- ^ In case the given @a@ is an EBB, return its
-                        -- @hash@. You also get the bytes from which it was
-                        -- decoded.
-                     -> EpochFileParser ReadIncrementalErr hash m (Word64, a)
-                        -- ^ The 'Word' is the size in bytes of the
-                        -- corresponding @a@.
-cborEpochFileParser' = cborEpochFileParser (fromIntegral defaultChunkSize)
