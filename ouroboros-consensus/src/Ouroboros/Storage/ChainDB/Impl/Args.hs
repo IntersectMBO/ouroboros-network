@@ -34,7 +34,7 @@ import           Ouroboros.Storage.Util.ErrorHandling (ErrorHandling,
 
 import qualified Ouroboros.Storage.ChainDB.Impl.ImmDB as ImmDB
 import qualified Ouroboros.Storage.ChainDB.Impl.LgrDB as LgrDB
-import           Ouroboros.Storage.ChainDB.Impl.Types (TraceEvent(..))
+import           Ouroboros.Storage.ChainDB.Impl.Types (TraceEvent (..))
 import qualified Ouroboros.Storage.ChainDB.Impl.VolDB as VolDB
 
 {-------------------------------------------------------------------------------
@@ -140,7 +140,7 @@ fromChainDbArgs ChainDbArgs{..} = (
         , immValidation       = cdbValidation
         , immIsEBB            = cdbIsEBB
         , immHasFS            = cdbHasFSImmDb
-        , immDbTracer         = contramap TraceImmDBEvent cdbTracer
+        , immTracer           = contramap TraceImmDBEvent cdbTracer
         }
     , VolDB.VolDbArgs {
           volHasFS            = cdbHasFSVolDb

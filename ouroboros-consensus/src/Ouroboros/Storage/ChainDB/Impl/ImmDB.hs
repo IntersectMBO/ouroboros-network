@@ -113,7 +113,7 @@ data ImmDbArgs m blk = forall h. ImmDbArgs {
     , immValidation  :: ImmDB.ValidationPolicy
     , immIsEBB       :: blk -> Maybe (HeaderHash blk)
     , immHasFS       :: HasFS m h
-    , immDbTracer    :: Tracer m ImmDB.TraceEvent
+    , immTracer      :: Tracer m ImmDB.TraceEvent
     }
 
 -- | Default arguments when using the 'IO' monad
@@ -139,7 +139,7 @@ defaultArgs fp = ImmDbArgs{
     , immEpochSize   = error "no default for immEpochSize"
     , immValidation  = error "no default for immValidation"
     , immIsEBB       = error "no default for immIsEBB"
-    , immDbTracer    = nullTracer
+    , immTracer      = nullTracer
     }
 
 openDB :: (MonadSTM m, MonadST m, MonadCatch m, HasHeader blk)
@@ -155,7 +155,7 @@ openDB args@ImmDbArgs{..} = do
                immEpochInfo
                immValidation
                (epochFileParser args)
-               immDbTracer
+               immTracer
     return ImmDB
       { immDB        = immDB
       , decBlock     = immDecodeBlock
