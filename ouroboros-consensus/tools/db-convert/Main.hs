@@ -179,9 +179,7 @@ convertEpochFile
 convertEpochFile es inFile outDir =
   let inStream = CC.parseEpochFileWithBoundary es (toFilePath inFile)
       dbDir = outDir </> [reldir|immutable|]
-      encode blk = case blk of
-        CC.ABOBBlock b -> CC.blockAnnotation b
-        CC.ABOBBoundary b -> CC.boundaryAnnotation b
+      encode = CB.serializeEncoding' . Byron.encodeByronBlock . Byron.ByronBlockOrEBB
    in do
         createDirIfMissing True dbDir
         outFileName <-
@@ -221,11 +219,11 @@ validateChainDb dbDir cfg verbose =
           args registry =
             (ChainDB.defaultArgs @blk (toFilePath dbDir))
               { ChainDB.cdbGenesis = return initLedgerState
-              , ChainDB.cdbDecodeBlock = Byron.decodeByronBlock protocolMagicId epochSlots
+              , ChainDB.cdbDecodeBlock = Byron.decodeByronBlock epochSlots
               , ChainDB.cdbDecodeChainState = Byron.decodeByronChainState
               , ChainDB.cdbDecodeHash = Byron.decodeByronHeaderHash
               , ChainDB.cdbDecodeLedger = Byron.decodeByronLedgerState
-              , ChainDB.cdbEncodeBlock = Byron.encodeByronBlock protocolMagicId epochSlots
+              , ChainDB.cdbEncodeBlock = Byron.encodeByronBlock
               , ChainDB.cdbEncodeChainState = Byron.encodeByronChainState
               , ChainDB.cdbEncodeHash = Byron.encodeByronHeaderHash
               , ChainDB.cdbEncodeLedger = Byron.encodeByronLedgerState
@@ -254,11 +252,14 @@ validateChainDb dbDir cfg verbose =
                   , pbftGenesisConfig = cfg
                   , pbftGenesisHash = CC.Genesis.configGenesisHash cfg
                   , pbftEpochSlots = epochSlots
-                  , pbftGenesisDlg = CC.Genesis.gdHeavyDelegation . CC.Genesis.configGenesisData $ cfg
-                  , pbftSecrets = undefined
+                    -- These aren't needed here, because this part of the code will never be exercised.
+                  , pbftSecrets = error "Attempt to use PBFT secrets in DB validation!"
                   }
                 }
               , ChainDB.cdbEpochSize = const (return . EpochSize . unEpochSlots $ epochSlots)
+              , ChainDB.cdbIsEBB = \blk -> case Byron.unByronBlockOrEBB blk of
+                  CC.ABOBBlock _    -> Nothing
+                  CC.ABOBBoundary ebb -> Just (CC.boundaryHashAnnotated ebb)
               , -- Misc
               ChainDB.cdbTracer = if verbose
               then

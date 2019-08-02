@@ -1536,7 +1536,6 @@ validate :: forall m hash h e.
 validate hashDecoder hashEncoder hasFS@HasFS{..} err epochInfo valPol epochFileParser tracer = do
     filesInDBFolder <- listDirectory []
     let epochFiles = fst $ dbFilesOnDisk filesInDBFolder
-    traceWith tracer $ ValidatingEpochFiles epochFiles
     case Set.lookupMax epochFiles of
       Nothing              -> do
         -- Remove left-over index files

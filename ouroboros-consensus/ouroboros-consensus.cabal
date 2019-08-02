@@ -369,7 +369,6 @@ executable byron-db-converter
                      , cardano-binary
                      , cardano-crypto-wrapper
                      , cardano-ledger
-                     , cborg >= 0.2.2.0
                      , containers
                      , contra-tracer
                      , mtl

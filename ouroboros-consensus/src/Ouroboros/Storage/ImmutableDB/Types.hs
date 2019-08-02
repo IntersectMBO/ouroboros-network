@@ -25,7 +25,6 @@ module Ouroboros.Storage.ImmutableDB.Types
 
 import           Codec.Serialise (DeserialiseFailure)
 import           Control.Exception (Exception (..))
-import qualified Data.Set as Set
 
 import           GHC.Generics (Generic)
 import           GHC.Stack (CallStack, prettyCallStack)
@@ -261,7 +260,6 @@ data TraceEvent
     = NoValidLastLocation
     | ValidatedLastLocation
       -- Validation of previous DB
-    | ValidatingEpochFiles (Set.Set EpochNo)
     | ValidatingEpochMissing EpochNo
     | ValidatingEpochErrorParsing String
     | ReconstructIndexLastSlotMissing
