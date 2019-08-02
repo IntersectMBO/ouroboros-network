@@ -3,7 +3,6 @@
 {-# LANGUAGE DataKinds            #-}
 {-# LANGUAGE FlexibleContexts     #-}
 {-# LANGUAGE GADTs                #-}
-{-# LANGUAGE KindSignatures       #-}
 {-# LANGUAGE RankNTypes           #-}
 {-# LANGUAGE ScopedTypeVariables  #-}
 {-# LANGUAGE TypeApplications     #-}
@@ -35,13 +34,9 @@ module Ouroboros.Consensus.Util.HList (
   , afterFn
   ) where
 
-import           Cardano.Binary (ToCBOR(..))
-import           Codec.Serialise
-import           Codec.Serialise.Decoding
 import           Data.Kind (Constraint)
 import           Data.Monoid ((<>))
 import           Data.Proxy
-import           Data.Typeable (Typeable)
 import           Prelude hiding (foldMap, foldl, foldr)
 
 {-------------------------------------------------------------------------------
@@ -74,20 +69,6 @@ instance (IsList as, All Eq as, All Ord as) => Ord (HList as) where
         cmp :: All Ord bs => SList bs -> HList bs -> HList bs -> Ordering
         cmp SNil      _         _         = EQ
         cmp (SCons s) (x :* xs) (y :* ys) = compare x y <> cmp s xs ys
-
-instance (IsList as, All Serialise as) => Serialise (HList as) where
-
-    encode = foldMap (Proxy :: Proxy Serialise) encode
-
-    decode = decode' isList
-      where
-        decode' :: All Serialise bs => SList bs -> Decoder s (HList bs)
-        decode' SNil      = return Nil
-        decode' (SCons s) = (:*) <$> decode <*> decode' s
-
-instance (IsList as, All ToCBOR as, Typeable as) => ToCBOR (HList as) where
-  toCBOR = foldMap (Proxy :: Proxy ToCBOR) toCBOR
-
 
 {-------------------------------------------------------------------------------
   Folding
