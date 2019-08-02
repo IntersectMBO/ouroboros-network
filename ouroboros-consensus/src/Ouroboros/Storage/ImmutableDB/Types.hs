@@ -258,8 +258,9 @@ prettyUnexpectedError = \case
 
 data TraceEvent e
     = NoValidLastLocation
-    | ValidatedLastLocation
+    | ValidatedLastLocation EpochNo ImmTip
       -- Validation of previous DB
+    | ValidatingEpoch EpochNo
     | ValidatingEpochMissing EpochNo
     | ValidatingEpochErrorParsing e
     | ReconstructIndexLastSlotMissing

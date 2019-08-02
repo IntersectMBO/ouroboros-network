@@ -1226,9 +1226,9 @@ validateAndReopen
         traceWith tracer $ NoValidLastLocation
         mkOpenStateNewEpoch hasFS 0 epochInfo nextIteratorID TipGen
       Just (lastValidLocation, index) -> do
-        traceWith tracer $ ValidatedLastLocation
         tip <- epochSlotToTip epochInfo lastValidLocation
         let epoch = _epoch lastValidLocation
+        traceWith tracer $ ValidatedLastLocation epoch tip
         mkOpenState hasFS epoch epochInfo nextIteratorID tip index
 
 -- | Create the internal open state based on an epoch with the given 'Index'.
@@ -1618,6 +1618,7 @@ validate hashDecoder hashEncoder hasFS@HasFS{..} err epochInfo valPol epochFileP
     validateAllEpochs = go Nothing
       where
         go lastValid epoch = do
+          traceWith tracer $ ValidatingEpoch epoch
           validateRes <- validateEpoch epoch
 
           let continueIfPossible lastValid'
