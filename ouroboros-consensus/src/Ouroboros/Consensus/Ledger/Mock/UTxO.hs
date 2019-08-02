@@ -3,7 +3,6 @@
 {-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
-{-# LANGUAGE TypeApplications           #-}
 {-# LANGUAGE UndecidableInstances       #-}
 
 module Ouroboros.Consensus.Ledger.Mock.UTxO (
@@ -23,25 +22,22 @@ module Ouroboros.Consensus.Ledger.Mock.UTxO (
   , genesisUtxo
   ) where
 
-import           Codec.Serialise (Serialise(..))
+import           Codec.Serialise (Serialise (..))
 import           Control.Monad.Except
 import           Data.Either (fromRight)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
-import           Data.Proxy
 import           Data.Set (Set)
 import qualified Data.Set as Set
 import           GHC.Generics (Generic)
 
-import           Cardano.Binary (ToCBOR(..))
+import           Cardano.Binary (ToCBOR (..))
 import           Cardano.Crypto.Hash
 
 import           Ouroboros.Network.MockChain.Chain (Chain, toOldestFirst)
 
 import           Ouroboros.Consensus.Util
 import           Ouroboros.Consensus.Util.Condense
-import           Ouroboros.Consensus.Util.HList (All, HList)
-import qualified Ouroboros.Consensus.Util.HList as HList
 import           Ouroboros.Consensus.Util.Orphans ()
 
 import           Ouroboros.Consensus.Ledger.Mock.Address
@@ -104,12 +100,6 @@ instance HasUtxo a => HasUtxo [a] where
   txOuts     = foldr (Map.union . txOuts)    Map.empty
   confirmed  = foldr (Set.union . confirmed) Set.empty
   updateUtxo = repeatedlyM updateUtxo
-
-instance All HasUtxo as => HasUtxo (HList as) where
-  txIns      = HList.foldr (Proxy @HasUtxo) (Set.union . txIns)     Set.empty
-  txOuts     = HList.foldr (Proxy @HasUtxo) (Map.union . txOuts)    Map.empty
-  confirmed  = HList.foldr (Proxy @HasUtxo) (Set.union . confirmed) Set.empty
-  updateUtxo = HList.repeatedlyM (Proxy @HasUtxo) updateUtxo
 
 instance HasUtxo a => HasUtxo (Chain a) where
   txIns      = txIns      . toOldestFirst
