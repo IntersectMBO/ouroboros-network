@@ -1,16 +1,15 @@
-{-# LANGUAGE DataKinds                  #-}
-{-# LANGUAGE DeriveGeneric              #-}
-{-# LANGUAGE FlexibleContexts           #-}
-{-# LANGUAGE FlexibleInstances          #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE MultiParamTypeClasses      #-}
-{-# LANGUAGE RecordWildCards            #-}
-{-# LANGUAGE ScopedTypeVariables        #-}
-{-# LANGUAGE StandaloneDeriving         #-}
-{-# LANGUAGE TypeApplications           #-}
-{-# LANGUAGE TypeFamilies               #-}
-{-# LANGUAGE UndecidableInstances       #-}
-{-# LANGUAGE UndecidableSuperClasses    #-}
+{-# LANGUAGE DataKinds               #-}
+{-# LANGUAGE DeriveGeneric           #-}
+{-# LANGUAGE FlexibleContexts        #-}
+{-# LANGUAGE FlexibleInstances       #-}
+{-# LANGUAGE MultiParamTypeClasses   #-}
+{-# LANGUAGE RecordWildCards         #-}
+{-# LANGUAGE ScopedTypeVariables     #-}
+{-# LANGUAGE StandaloneDeriving      #-}
+{-# LANGUAGE TypeApplications        #-}
+{-# LANGUAGE TypeFamilies            #-}
+{-# LANGUAGE UndecidableInstances    #-}
+{-# LANGUAGE UndecidableSuperClasses #-}
 
 -- | Proof of concept implementation of Praos
 module Ouroboros.Consensus.Protocol.Praos (
@@ -29,7 +28,7 @@ module Ouroboros.Consensus.Protocol.Praos (
   , BlockInfo(..)
   ) where
 
-import           Cardano.Binary (ToCBOR(..))
+import           Cardano.Binary (ToCBOR (..))
 import           Codec.CBOR.Encoding (Encoding)
 import           Codec.Serialise (Serialise (..))
 import           Control.Monad (unless)
@@ -63,7 +62,6 @@ import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.Signed
 import qualified Ouroboros.Consensus.Util.AnchoredFragment as AF
 import           Ouroboros.Consensus.Util.Condense
-import           Ouroboros.Consensus.Util.HList (HList (..))
 
 import           Ouroboros.Consensus.Ledger.Mock.Stake
 
@@ -84,9 +82,9 @@ data PraosFields c toSign = PraosFields {
 
 -- | Fields that should be included in the signature
 data PraosExtraFields c = PraosExtraFields {
-      praosCreator   :: CoreNodeId
-    , praosRho       :: CertifiedVRF (PraosVRF c) (HList [Natural, SlotNo, VRFType])
-    , praosY         :: CertifiedVRF (PraosVRF c) (HList [Natural, SlotNo, VRFType])
+      praosCreator :: CoreNodeId
+    , praosRho     :: CertifiedVRF (PraosVRF c) (Natural, SlotNo, VRFType)
+    , praosY       :: CertifiedVRF (PraosVRF c) (Natural, SlotNo, VRFType)
     }
 
 class ( HasHeader hdr
@@ -147,8 +145,8 @@ deriving instance PraosCrypto c => Eq   (PraosFields c toSign)
 deriving instance PraosCrypto c => Ord  (PraosFields c toSign)
 
 data PraosProof c = PraosProof {
-      praosProofRho  :: CertifiedVRF (PraosVRF c) (HList [Natural, SlotNo, VRFType])
-    , praosProofY    :: CertifiedVRF (PraosVRF c) (HList [Natural, SlotNo, VRFType])
+      praosProofRho  :: CertifiedVRF (PraosVRF c) (Natural, SlotNo, VRFType)
+    , praosProofY    :: CertifiedVRF (PraosVRF c) (Natural, SlotNo, VRFType)
     , praosLeader    :: CoreNodeId
     , praosProofSlot :: SlotNo
     }
@@ -164,7 +162,7 @@ deriving instance PraosCrypto c => Show (PraosValidationError c)
 
 data BlockInfo c = BlockInfo
     { biSlot  :: SlotNo
-    , biRho   :: CertifiedVRF (PraosVRF c) (HList [Natural, SlotNo, VRFType])
+    , biRho   :: CertifiedVRF (PraosVRF c) (Natural, SlotNo, VRFType)
     , biStake :: StakeDist
     }
 
@@ -341,7 +339,7 @@ infosEta l xs e =
         n    = div (2 * praosSlotsPerEpoch) 3
         to   = SlotNo $ unSlotNo from + fromIntegral n
         rhos = reverse [biRho b | b <- infosSlice from to xs]
-    in  fromHash $ hash @(PraosHash c) $ eta' :* e :* rhos :* Nil
+    in  fromHash $ hash @(PraosHash c) (eta', e, rhos)
   where
     PraosParams{..} = praosParams l
 
@@ -375,15 +373,15 @@ rhoYT :: PraosCrypto c
       -> [BlockInfo c]
       -> SlotNo
       -> Int
-      -> ( HList '[Natural, SlotNo, VRFType]
-         , HList '[Natural, SlotNo, VRFType]
+      -> ( (Natural, SlotNo, VRFType)
+         , (Natural, SlotNo, VRFType)
          , Double
          )
 rhoYT st xs s n =
     let e   = slotEpoch st s
         eta = infosEta st xs e
-        rho = eta :* s :* NONCE :* Nil
-        y   = eta :* s :* TEST  :* Nil
+        rho = (eta, s, NONCE)
+        y   = (eta, s, TEST)
         t   = leaderThreshold st xs s n
     in  (rho, y, t)
 
@@ -397,7 +395,7 @@ class ( KESAlgorithm  (PraosKES  c)
       , Typeable c
       , Typeable (PraosVRF c)
       , Condense (SigKES (PraosKES c))
-      , Cardano.Crypto.VRF.Class.Signable (PraosVRF c) (HList '[Natural, SlotNo, VRFType])
+      , Cardano.Crypto.VRF.Class.Signable (PraosVRF c) (Natural, SlotNo, VRFType)
       ) => PraosCrypto (c :: *) where
   type family PraosKES  c :: *
   type family PraosVRF  c :: *
