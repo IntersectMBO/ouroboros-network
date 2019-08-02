@@ -33,6 +33,7 @@ instance ByronGiven => RunNode (ByronBlockOrEBB ByronConfig) where
   nodeEncodeHeaderHash   = const encodeByronHeaderHash
   nodeEncodeLedgerState  = const encodeByronLedgerState
   nodeEncodeChainState   = const encodeByronChainState
+  nodeEncodeApplyTxError = const encodeByronApplyTxError
 
   nodeDecodeBlock        = const (decodeByronBlock given)
   nodeDecodeHeader       = const (decodeByronHeader given)
@@ -41,3 +42,4 @@ instance ByronGiven => RunNode (ByronBlockOrEBB ByronConfig) where
   nodeDecodeHeaderHash   = const decodeByronHeaderHash
   nodeDecodeLedgerState  = const decodeByronLedgerState
   nodeDecodeChainState   = const decodeByronChainState
+  nodeDecodeApplyTxError = const decodeByronApplyTxError

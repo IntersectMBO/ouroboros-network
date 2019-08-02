@@ -51,7 +51,7 @@ class (ProtocolLedgerView blk, ApplyTx blk) => RunNode blk where
   nodeEncodeHeaderHash   :: Proxy blk -> HeaderHash blk -> Encoding
   nodeEncodeLedgerState  :: NodeConfig (BlockProtocol blk) -> LedgerState blk -> Encoding
   nodeEncodeChainState   :: Proxy blk -> ChainState (BlockProtocol blk) -> Encoding
-
+  nodeEncodeApplyTxError :: Proxy blk -> ApplyTxErr blk -> Encoding
 
   -- Decoders
   nodeDecodeHeader       :: forall s. NodeConfig (BlockProtocol blk) -> Decoder s (Header blk)
@@ -61,3 +61,4 @@ class (ProtocolLedgerView blk, ApplyTx blk) => RunNode blk where
   nodeDecodeHeaderHash   :: forall s. Proxy blk -> Decoder s (HeaderHash blk)
   nodeDecodeLedgerState  :: forall s. NodeConfig (BlockProtocol blk) -> Decoder s (LedgerState blk)
   nodeDecodeChainState   :: forall s. Proxy blk -> Decoder s (ChainState (BlockProtocol blk))
+  nodeDecodeApplyTxError :: forall s. Proxy blk -> Decoder s (ApplyTxErr blk)
