@@ -10,7 +10,6 @@
 -- | Thin wrapper around the ImmutableDB
 module Ouroboros.Storage.ChainDB.Impl.ImmDB (
     ImmDB -- Opaque
-  , ImmDB.TraceEvent
     -- * Initialization
   , ImmDbArgs(..)
   , defaultArgs
@@ -36,6 +35,9 @@ module Ouroboros.Storage.ChainDB.Impl.ImmDB (
   , iteratorHasNext
   , iteratorPeek
   , iteratorClose
+    -- * Tracing
+  , ImmDB.TraceEvent
+  , EpochFileError
     -- * Re-exports
   , Iterator
   , IteratorResult(..)
@@ -113,7 +115,7 @@ data ImmDbArgs m blk = forall h. ImmDbArgs {
     , immValidation  :: ImmDB.ValidationPolicy
     , immIsEBB       :: blk -> Maybe (HeaderHash blk)
     , immHasFS       :: HasFS m h
-    , immTracer      :: Tracer m ImmDB.TraceEvent
+    , immTracer      :: Tracer m (ImmDB.TraceEvent EpochFileError)
     }
 
 -- | Default arguments when using the 'IO' monad
@@ -491,7 +493,7 @@ parseIteratorResult db result =
 data EpochFileError =
     EpochErrRead Util.CBOR.ReadIncrementalErr
   | EpochErrUnexpectedEBB
-  deriving Show
+  deriving (Eq, Show)
 
 epochFileParser :: forall m blk. (MonadST m, MonadThrow m, HasHeader blk)
                 => ImmDbArgs m blk

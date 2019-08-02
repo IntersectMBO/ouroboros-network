@@ -256,12 +256,12 @@ prettyUnexpectedError = \case
       "DeserialisationError (" <> displayException df <> "): " <>
       prettyCallStack cs
 
-data TraceEvent
+data TraceEvent e
     = NoValidLastLocation
     | ValidatedLastLocation
       -- Validation of previous DB
     | ValidatingEpochMissing EpochNo
-    | ValidatingEpochErrorParsing String
+    | ValidatingEpochErrorParsing e
     | ReconstructIndexLastSlotMissing
     | ValidatingEpochIndexIncomplete EpochNo
       -- Delete after

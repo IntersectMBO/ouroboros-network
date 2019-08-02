@@ -186,14 +186,14 @@ import           Ouroboros.Storage.ImmutableDB.Util
 
 
 -- | The environment used by the immutable database.
-data ImmutableDBEnv m hash = forall h e. Show e => ImmutableDBEnv
+data ImmutableDBEnv m hash = forall h e. ImmutableDBEnv
     { _dbHasFS           :: !(HasFS m h)
     , _dbErr             :: !(ErrorHandling ImmutableDBError m)
     , _dbInternalState   :: !(TMVar m (Either (ClosedState m) (OpenState m hash h)))
     , _dbEpochFileParser :: !(EpochFileParser e hash m (Word64, SlotNo))
     , _dbHashDecoder     :: !(forall s . Decoder s hash)
     , _dbHashEncoder     :: !(hash -> Encoding)
-    , _dbTracer          :: !(Tracer m TraceEvent)
+    , _dbTracer          :: !(Tracer m (TraceEvent e))
     }
 
 -- | Internal state when the database is open.
@@ -256,7 +256,7 @@ data ClosedState m = ClosedState
 --
 -- __Note__: To be used in conjunction with 'withDB'.
 openDB
-  :: (HasCallStack, MonadSTM m, MonadCatch m, Eq hash, Show e)
+  :: (HasCallStack, MonadSTM m, MonadCatch m, Eq hash)
   => (forall s . Decoder s hash)
   -> (hash -> Encoding)
   -> HasFS m h
@@ -264,7 +264,7 @@ openDB
   -> EpochInfo m
   -> ValidationPolicy
   -> EpochFileParser e hash m (Word64, SlotNo)
-  -> Tracer m TraceEvent
+  -> Tracer m (TraceEvent e)
   -> m (ImmutableDB hash m)
 openDB = openDBImpl
 
@@ -290,7 +290,7 @@ mkDBRecord dbEnv = ImmutableDB
     }
 
 openDBImpl :: forall m h hash e.
-              (HasCallStack, MonadSTM m, MonadCatch m, Eq hash, Show e)
+              (HasCallStack, MonadSTM m, MonadCatch m, Eq hash)
            => (forall s . Decoder s hash)
            -> (hash -> Encoding)
            -> HasFS m h
@@ -298,7 +298,7 @@ openDBImpl :: forall m h hash e.
            -> EpochInfo m
            -> ValidationPolicy
            -> EpochFileParser e hash m (Word64, SlotNo)
-           -> Tracer m TraceEvent
+           -> Tracer m (TraceEvent e)
            -> m (ImmutableDB hash m)
 openDBImpl hashDecoder hashEncoder hasFS@HasFS{..} err epochInfo valPol epochFileParser tracer = do
     !ost  <- validateAndReopen hashDecoder hashEncoder hasFS err epochInfo
@@ -369,12 +369,13 @@ deleteAfterImpl :: forall m hash.
                 => ImmutableDBEnv m hash
                 -> ImmTip
                 -> m ()
-deleteAfterImpl dbEnv tip = modifyOpenState dbEnv $ \hasFS@HasFS{..} -> do
+deleteAfterImpl dbEnv@ImmutableDBEnv { _dbErr, _dbTracer } tip =
+  modifyOpenState dbEnv $ \hasFS@HasFS{..} -> do
     st@OpenState {..} <- get
     currentEpochSlot <- lift $ tipToEpochSlot _epochInfo _currentTip
     newEpochSlot     <- lift $ tipToEpochSlot _epochInfo tip
 
-    lift . traceWith (_dbTracer dbEnv) $ DeletingAfter currentEpochSlot newEpochSlot
+    lift $ traceWith _dbTracer $ DeletingAfter currentEpochSlot newEpochSlot
 
     case (currentEpochSlot, newEpochSlot) of
       -- If we're already at genesis we don't have to do anything
@@ -395,8 +396,6 @@ deleteAfterImpl dbEnv tip = modifyOpenState dbEnv $ \hasFS@HasFS{..} -> do
                 _nextIteratorID newTip index
           put ost
   where
-    ImmutableDBEnv { _dbErr } = dbEnv
-
     -- | The current tip as a 'TipEpochSlot'
     tipToEpochSlot :: EpochInfo m -> ImmTip -> m TipEpochSlot
     tipToEpochSlot epochInfo currentTip = case currentTip of
@@ -1198,7 +1197,7 @@ onException fsErr err onErr m =
 -- | Perform validation as per the 'ValidationPolicy' using 'validate' and
 -- create an 'OpenState' corresponding to its outcome.
 validateAndReopen :: forall m hash h e.
-                     (HasCallStack, MonadThrow m, Eq hash, Show e)
+                     (HasCallStack, MonadThrow m, Eq hash)
                   => (forall s . Decoder s hash)
                   -> (hash -> Encoding)
                   -> HasFS m h
@@ -1207,7 +1206,7 @@ validateAndReopen :: forall m hash h e.
                   -> ValidationPolicy
                   -> EpochFileParser e hash m (Word64, SlotNo)
                   -> BaseIteratorID
-                  -> Tracer m TraceEvent
+                  -> Tracer m (TraceEvent e)
                   -> m (OpenState m hash h)
 validateAndReopen
   hashDecoder
@@ -1520,7 +1519,7 @@ data ValidateResult hash
 --   but the last slot of each epoch is filled, we can reconstruct all index
 --   files from the epochs without needing any truncation.
 validate :: forall m hash h e.
-            (HasCallStack, MonadThrow m, Eq hash, Show e)
+            (HasCallStack, MonadThrow m, Eq hash)
          => (forall s . Decoder s hash)
          -> (hash -> Encoding)
          -> HasFS m h
@@ -1528,7 +1527,7 @@ validate :: forall m hash h e.
          -> EpochInfo m
          -> ValidationPolicy
          -> EpochFileParser e hash m (Word64, SlotNo)
-         -> Tracer m TraceEvent
+         -> Tracer m (TraceEvent e)
          -> m (Maybe (EpochSlot, Index hash))
             -- ^ The 'EpochSlot' pointing at the last valid block or EBB on
             -- disk and the 'Index' of the corresponding epoch. 'Nothing' if
@@ -1723,7 +1722,7 @@ validate hashDecoder hashEncoder hasFS@HasFS{..} err epochInfo valPol epochFileP
           case mbErr of
             -- If there was an error parsing the epoch file, truncate it
             Just _err -> do
-              traceWith tracer $ ValidatingEpochErrorParsing (show _err)
+              traceWith tracer $ ValidatingEpochErrorParsing _err
               withFile hasFS epochFile (AppendMode AllowExisting) $ \eHnd ->
                 hTruncate eHnd (lastSlotOffset reconstructedIndex)
             -- If not, check that the last offset matches the epoch file size.
