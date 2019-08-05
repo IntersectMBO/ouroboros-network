@@ -19,7 +19,7 @@ import           Ouroboros.Consensus.Ledger.Byron.Forge
 
 instance ByronGiven => RunNode (ByronBlockOrEBB ByronConfig) where
   nodeForgeBlock         = forgeBlockOrEBB
-  nodeBlockMatchesHeader = \_hdr _blk -> True -- TODO #595
+  nodeBlockMatchesHeader = byronBlockOrEBBMatchesHeader
   nodeBlockFetchSize     = const 2000 -- TODO #593
   nodeIsEBB              = \blk -> case unByronBlockOrEBB blk of
     Cardano.Block.ABOBBlock _    -> False

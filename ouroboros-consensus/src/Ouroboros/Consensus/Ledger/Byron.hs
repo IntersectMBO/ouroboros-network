@@ -25,6 +25,8 @@ module Ouroboros.Consensus.Ledger.Byron
   , GenTx (..)
   , GenTxId (..)
   , mkByronTx
+    -- * Block Fetch integration
+  , byronBlockOrEBBMatchesHeader
     -- * Ledger
   , LedgerState (..)
   , LedgerConfig (..)
@@ -69,6 +71,7 @@ import qualified Data.Bimap as Bimap
 import qualified Data.ByteString as Strict
 import qualified Data.ByteString.Lazy as Lazy
 import           Data.Coerce (coerce)
+import           Data.Either (isRight)
 import           Data.FingerTree (Measured (..))
 import           Data.Foldable (find, foldl')
 import           Data.Reflection (Given (..))
@@ -868,6 +871,29 @@ mkByronTx tx = ByronTx
       -- TODO replace this with a function from cardano-ledger, see
       -- cardano-ledger#581
     }
+
+{-------------------------------------------------------------------------------
+  Block Fetch integration
+-------------------------------------------------------------------------------}
+
+byronBlockOrEBBMatchesHeader :: Header (ByronBlockOrEBB cfg)
+                             -> ByronBlockOrEBB cfg
+                             -> Bool
+byronBlockOrEBBMatchesHeader blkOrEbbHdr blkOrEbb =
+    case unByronHeaderOrEBB blkOrEbbHdr of
+        -- For EBBs, we're currently being more permissive here and not
+        -- performing any header-body validation but only checking whether an
+        -- EBB header and EBB block were provided. This seems to be fine as it
+        -- won't cause any loss of consensus with the old `cardano-sl` nodes.
+        Left _ebbHdr -> isEbb (unByronBlockOrEBB blkOrEbb)
+        Right hdr    -> isBlockAndHeaderMatchesBody (unByronBlockOrEBB blkOrEbb) hdr
+  where
+    isEbb (CC.Block.ABOBBoundary _) = True
+    isEbb (CC.Block.ABOBBlock _)    = False
+    --
+    isBlockAndHeaderMatchesBody (CC.Block.ABOBBoundary _) _  = False
+    isBlockAndHeaderMatchesBody (CC.Block.ABOBBlock blk) hdr = isRight $
+        CC.Block.validateHeaderMatchesBody hdr (CC.Block.blockBody blk)
 
 {-------------------------------------------------------------------------------
   PBFT integration
