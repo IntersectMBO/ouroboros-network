@@ -81,12 +81,19 @@ data ChainSyncClientException blk =
       -- upstream node.
     | InvalidRollBack (Point blk) (Point blk)
 
-    -- | We send the upstream node a bunch of points from a chain fragment and
-    -- the upstream node responded with an intersection point that is not on
-    -- our chain fragment, and thus not among the points we sent.
-    --
-    -- We store the intersection point the upstream node sent us.
+      -- | We send the upstream node a bunch of points from a chain fragment and
+      -- the upstream node responded with an intersection point that is not on
+      -- our chain fragment, and thus not among the points we sent.
+      --
+      -- We store the intersection point the upstream node sent us.
     | InvalidIntersection (Point blk)
+
+      -- | The received header to roll forward doesn't fit onto the previous
+      -- one.
+      --
+      -- The first 'ChainHash' is the previous hash of the received header and
+      -- the second 'ChainHash' is that of the previous one.
+    | DoesntFit (ChainHash blk) (ChainHash blk)
 
 deriving instance SupportedBlock blk => Show (ChainSyncClientException blk)
 
@@ -404,6 +411,12 @@ chainSyncClient tracer cfg btime (ClockSkew maxSkew)
 
       -- Validate header
       CandidateState {..} <- readTVar varCandidate
+
+      let expectPrevHash = castHash (AF.headHash candidateChain)
+          actualPrevHash = headerPrevHash hdr
+      when (actualPrevHash /= expectPrevHash) $
+        disconnect $ DoesntFit actualPrevHash expectPrevHash
+
       candidateChainState' <-
         case runExcept $ applyChainState cfg ledgerView hdr candidateChainState of
           Left vErr                  -> disconnect $ ChainError vErr
