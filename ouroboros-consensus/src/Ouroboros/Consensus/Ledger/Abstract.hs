@@ -50,9 +50,6 @@ class ( SupportedBlock blk
                  -> Except (LedgerError blk) (LedgerState blk)
 
   -- | Apply a block to the ledger state.
-  --
-  --   TODO: Update <https://github.com/input-output-hk/ouroboros-network/issues/596>
-  --   with change to applyLedgerBlock
   applyLedgerBlock :: LedgerConfig blk
                    -> blk
                    -> LedgerState blk
