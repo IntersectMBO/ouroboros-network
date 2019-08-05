@@ -25,7 +25,6 @@ import           Test.Tasty
 import           Test.Tasty.QuickCheck
 
 import           Ouroboros.Network.Block (SlotNo (..))
-import           Ouroboros.Network.MockChain.Chain (Chain)
 
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Demo
@@ -77,11 +76,9 @@ prop_simple_leader_schedule_convergence numSlots numCoreNodes params seed =
                     seed
   where
     isValid :: [NodeId]
-            -> Map NodeId ( NodeConfig ProtocolLeaderSchedule
-                          , Chain (SimplePraosRuleBlock SimpleMockCrypto)
-                          )
+            -> TestOutput (SimplePraosRuleBlock SimpleMockCrypto)
             -> Property
-    isValid nodeIds final =
+    isValid nodeIds TestOutput{testOutputNodes = final} =
             counterexample (tracesToDot final)
        $    tabulate "shortestLength"
             [show (rangeK (praosSecurityParam params) (shortestLength final'))]

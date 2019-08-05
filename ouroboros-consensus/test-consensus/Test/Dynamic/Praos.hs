@@ -17,7 +17,6 @@ module Test.Dynamic.Praos (
   , prop_all_common_prefix
   ) where
 
-import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Word (Word64)
 import           Test.QuickCheck
@@ -89,11 +88,9 @@ prop_simple_praos_convergence params numCoreNodes numSlots =
     PraosParams{..} = params
 
     isValid :: [NodeId]
-            -> Map NodeId ( NodeConfig ProtocolMockPraos
-                          , Chain (SimplePraosBlock SimpleMockCrypto PraosMockCrypto)
-                          )
+            -> TestOutput (SimplePraosBlock SimpleMockCrypto PraosMockCrypto)
             -> Property
-    isValid nodeIds final
+    isValid nodeIds TestOutput{testOutputNodes = final}
        = counterexample (show final')
        $ counterexample (tracesToDot final)
        $ counterexample (condense schedule)
