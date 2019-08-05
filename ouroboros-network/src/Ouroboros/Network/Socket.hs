@@ -44,6 +44,7 @@ import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
 import           Control.Exception (throwIO)
 import qualified Codec.CBOR.Term     as CBOR
+import           Codec.CBOR.Read (DeserialiseFailure)
 import           Codec.Serialise (Serialise)
 import           Data.Text (Text)
 import           Data.Typeable (Typeable)
@@ -52,9 +53,10 @@ import           Data.Int
 
 import qualified Network.Socket as Socket hiding (recv)
 
-import           Control.Tracer (nullTracer)
+import           Control.Tracer (nullTracer, Tracer)
 
 import           Network.TypedProtocol.Driver.ByteLimit
+import           Network.TypedProtocol.Driver (TraceSendRecv)
 
 import qualified Network.Mux as Mx
 import qualified Network.Mux.Types as Mx
@@ -104,6 +106,7 @@ connectToNode
      )
   => (forall vData. extra vData -> vData -> CBOR.Term)
   -> (forall vData. extra vData -> CBOR.Term -> Either Text vData)
+  -> Tracer IO (TraceSendRecv (Handshake vNumber CBOR.Term) peerid (DecoderFailureOrTooMuchInput DeserialiseFailure))
   -> (Socket.SockAddr -> Socket.SockAddr -> peerid)
   -> Versions vNumber extra (OuroborosApplication appType peerid ptcl IO BL.ByteString a b)
   -- ^ application to run over the connection
@@ -112,7 +115,7 @@ connectToNode
   -> Socket.AddrInfo
   -- ^ remote address
   -> IO ()
-connectToNode encodeData decodeData peeridFn versions localAddr remoteAddr =
+connectToNode encodeData decodeData tracer peeridFn versions localAddr remoteAddr =
     bracket
       (Socket.socket (Socket.addrFamily remoteAddr) Socket.Stream Socket.defaultProtocol)
       Socket.close
@@ -127,7 +130,7 @@ connectToNode encodeData decodeData peeridFn versions localAddr remoteAddr =
             Just addr -> Socket.bind sd (Socket.addrAddress addr)
             Nothing   -> return ()
           Socket.connect sd (Socket.addrAddress remoteAddr)
-          connectToNode' encodeData decodeData peeridFn versions sd
+          connectToNode' encodeData decodeData tracer peeridFn versions sd
       )
 
 -- |
@@ -155,19 +158,20 @@ connectToNode'
      )
   => (forall vData. extra vData -> vData -> CBOR.Term)
   -> (forall vData. extra vData -> CBOR.Term -> Either Text vData)
+  -> Tracer IO (TraceSendRecv (Handshake vNumber CBOR.Term) peerid (DecoderFailureOrTooMuchInput DeserialiseFailure))
   -> (Socket.SockAddr -> Socket.SockAddr -> peerid)
   -> Versions vNumber extra (OuroborosApplication appType peerid ptcl IO BL.ByteString a b)
   -- ^ application to run over the connection
   -> Socket.Socket
   -> IO ()
-connectToNode' encodeData decodeData peeridFn versions sd = do
+connectToNode' encodeData decodeData tracer peeridFn versions sd = do
     peerid <- peeridFn <$> Socket.getSocketName sd <*> Socket.getPeerName sd
     bearer <- Mx.socketAsMuxBearer sd
     Mx.muxBearerSetState bearer Mx.Connected
     mapp <- runPeerWithByteLimit
               maxTransmissionUnit
               BL.length
-              nullTracer
+              tracer
               codecHandshake
               peerid
               (Mx.muxBearerAsControlChannel bearer Mx.ModeInitiator)
