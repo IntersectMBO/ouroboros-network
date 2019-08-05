@@ -65,6 +65,7 @@
             (hsPkgs.cardano-ledger)
             (hsPkgs.containers)
             (hsPkgs.contra-tracer)
+            (hsPkgs.directory)
             (hsPkgs.mtl)
             (hsPkgs.optparse-applicative)
             (hsPkgs.optparse-generic)

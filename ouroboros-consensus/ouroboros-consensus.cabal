@@ -371,6 +371,7 @@ executable byron-db-converter
                      , cardano-ledger
                      , containers
                      , contra-tracer
+                     , directory
                      , mtl
                      , optparse-applicative
                      , optparse-generic

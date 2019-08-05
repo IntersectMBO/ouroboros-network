@@ -43,7 +43,6 @@ import Data.Time (UTCTime)
 import Data.Typeable (Typeable)
 import Data.Word (Word64)
 import qualified Options.Applicative as Options
-import qualified Options.Applicative.Types as Options
 import Options.Generic
 import qualified Ouroboros.Consensus.Ledger.Byron as Byron
 import Ouroboros.Consensus.Ledger.Byron (ByronBlockOrEBB)
@@ -59,35 +58,10 @@ import Ouroboros.Storage.Common (EpochSize (..))
 import qualified Ouroboros.Storage.LedgerDB.DiskPolicy as LgrDB
 import qualified Ouroboros.Storage.LedgerDB.MemPolicy as LgrDB
 import Path
-import Path.IO
+import Path.IO (listDir, createDirIfMissing)
 import qualified Streaming.Prelude as S
+import System.Directory (makeAbsolute)
 import qualified System.IO as IO
-
-instance ParseField (Path Abs Dir) where
-
-  readField =
-    parseAbsDir <$> Options.readerAsk >>= \case
-      Just p -> return p
-      Nothing -> Options.readerAbort Options.ShowHelpText
-
-instance ParseFields (Path Abs Dir)
-
-instance ParseRecord (Path Abs Dir) where
-
-  parseRecord = fmap getOnly parseRecord
-
-instance ParseField (Path Abs File) where
-
-  readField =
-    parseAbsFile <$> Options.readerAsk >>= \case
-      Just p -> return p
-      Nothing -> Options.readerAbort Options.ShowHelpText
-
-instance ParseFields (Path Abs File)
-
-instance ParseRecord (Path Abs File) where
-
-  parseRecord = fmap getOnly parseRecord
 
 instance ParseField UTCTime
 
@@ -109,13 +83,13 @@ instance ParseRecord (Hash CB.Raw) where
 
 data Args w
   = Convert
-      { epochDir :: w ::: Path Abs Dir <?> "Path to the directory containing old epoch files"
-      , dbDir :: w ::: Path Abs Dir <?> "Path to the new database directory"
+      { epochDir :: w ::: FilePath <?> "Path to the directory containing old epoch files"
+      , dbDir :: w ::: FilePath <?> "Path to the new database directory"
       , epochSlots :: w ::: Word64 <?> "Slots per epoch"
       }
   | Validate
-      { dbDir :: w ::: Path Abs Dir <?> "Path to the new database directory"
-      , configFile :: w ::: Path Abs File <?> "Configuration file (e.g. mainnet-genesis.json)"
+      { dbDir :: w ::: FilePath <?> "Path to the new database directory"
+      , configFile :: w ::: FilePath <?> "Configuration file (e.g. mainnet-genesis.json)"
       , systemStart :: w ::: Maybe UTCTime <?> "System start time"
       , requiresNetworkMagic :: w ::: Bool <?> "Expecto patronum?"
       , genesisHash :: w ::: Hash CB.Raw <?> "Expected genesis hash"
@@ -138,13 +112,13 @@ main = do
   (cmd :: Args Unwrapped) <- unwrapRecord "Byron DB converter"
   case cmd of
     Convert {epochDir, dbDir, epochSlots} -> do
-
-      (_, files) <- listDir epochDir
+      dbDir' <- parseAbsDir =<< makeAbsolute dbDir
+      (_, files) <- listDir =<< parseAbsDir =<< makeAbsolute epochDir
       let epochFiles = filter (\f -> fileExtension f == ".epoch") files
       putStrLn $ "Writing to " ++ show dbDir
       for_ epochFiles $ \f -> do
         putStrLn $ "Converting file " ++ show f
-        convertEpochFile (EpochSlots epochSlots) f dbDir
+        convertEpochFile (EpochSlots epochSlots) f dbDir'
     Validate
       { dbDir
       , configFile
@@ -152,15 +126,16 @@ main = do
       , genesisHash
       , verbose
       } -> do
+        dbDir' <- parseAbsDir =<< makeAbsolute dbDir
         econfig <-
           runExceptT $
             CC.Genesis.mkConfigFromFile
               (if requiresNetworkMagic then RequiresMagic else RequiresNoMagic)
-              (toFilePath configFile)
+              configFile
               genesisHash
         case econfig of
           Left err -> throwIO $ MkConfigError err
-          Right config -> validateChainDb dbDir config verbose
+          Right config -> validateChainDb dbDir' config verbose
 
 convertEpochFile
   :: EpochSlots
