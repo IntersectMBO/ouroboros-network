@@ -270,4 +270,4 @@ data TraceEvent e
       -- Closing the DB
     | DBAlreadyClosed
     | DBClosed
-  deriving (Eq, Show)
+  deriving (Eq, Generic, Show)

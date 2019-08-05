@@ -25,6 +25,7 @@ import           Control.Monad.Class.MonadThrow (MonadCatch)
 import           Control.Monad.Except (ExceptT (..), runExceptT)
 import           Control.Monad.State.Strict (MonadState, State, evalState, gets,
                      modify, put, runState)
+import           Control.Tracer (nullTracer)
 import           Data.Functor.Identity
 
 import           Data.Bifunctor (first)
@@ -1081,9 +1082,9 @@ prop_sequential = forAllCommands smUnused Nothing $ \cmds -> QC.monadicIO $ do
                   )
         test errorsVar hasFS = do
           let parser = testBlockEpochFileParser' hasFS
-          db <- QC.run $
-            openDB decode encode hasFS EH.monadCatch (fixedSizeEpochInfo fixedEpochSize) ValidateMostRecentEpoch
-              parser
+          db <- QC.run $ openDB decode encode hasFS EH.monadCatch
+                          (fixedSizeEpochInfo fixedEpochSize) ValidateMostRecentEpoch
+                          parser nullTracer
           let sm' = sm errorsVar hasFS db dbm mdb
           (hist, model, res) <- runCommands sm' cmds
           QC.run $ closeDB db >> reopen db ValidateAllEpochs

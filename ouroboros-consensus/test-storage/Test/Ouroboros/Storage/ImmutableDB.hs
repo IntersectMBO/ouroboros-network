@@ -10,7 +10,7 @@ module Test.Ouroboros.Storage.ImmutableDB (tests) where
 import qualified Codec.Serialise as S
 import           Control.Monad.Class.MonadSTM (MonadSTM)
 import           Control.Monad.Class.MonadThrow (MonadCatch)
-
+import           Control.Tracer (nullTracer)
 import           Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import           Data.Coerce (coerce)
@@ -87,7 +87,7 @@ openTestDB :: (HasCallStack, MonadSTM m, MonadCatch m)
            -> ErrorHandling ImmutableDBError m
            -> m (ImmutableDB Hash m)
 openTestDB hasFS err =
-    openDB S.decode S.encode hasFS err (fixedSizeEpochInfo fixedEpochSize) ValidateMostRecentEpoch parser
+    openDB S.decode S.encode hasFS err (fixedSizeEpochInfo fixedEpochSize) ValidateMostRecentEpoch parser nullTracer
   where
     parser = TestBlock.testBlockEpochFileParser' hasFS
 

@@ -93,6 +93,7 @@ import qualified Ouroboros.Storage.FS.Sim.MockFS as Mock
 import           Ouroboros.Storage.FS.Sim.STM (simHasFS)
 import           Ouroboros.Storage.ImmutableDB
                      (ValidationPolicy (ValidateAllEpochs))
+import qualified Ouroboros.Storage.ImmutableDB as ImmDB
 import           Ouroboros.Storage.LedgerDB.DiskPolicy (defaultDiskPolicy)
 import           Ouroboros.Storage.LedgerDB.MemPolicy (defaultMemPolicy)
 import qualified Ouroboros.Storage.LedgerDB.OnDisk as LedgerDB
@@ -874,6 +875,8 @@ deriving instance SOP.Generic         (TraceLedgerEvent blk)
 deriving instance SOP.HasDatatypeInfo (TraceLedgerEvent blk)
 deriving instance SOP.Generic         (LedgerDB.InitLog r)
 deriving instance SOP.HasDatatypeInfo (LedgerDB.InitLog r)
+deriving instance SOP.Generic         (ImmDB.TraceEvent e)
+deriving instance SOP.HasDatatypeInfo (ImmDB.TraceEvent e)
 
 -- TODO labelling
 
@@ -1124,6 +1127,7 @@ traceEventName = \case
     TraceLedgerEvent         ev    -> "Ledger."       <> case ev of
       InitLog                ev' -> constrName ev'
       _                          -> constrName ev
+    TraceImmDBEvent          ev    -> "ImmDB."        <> constrName ev
 
 mkArgs :: (MonadSTM m, MonadCatch m, MonadThrow (STM m))
        => NodeConfig (BlockProtocol Blk)
