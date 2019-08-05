@@ -20,7 +20,6 @@ module Main where
 import qualified Cardano.Binary as CB
 import qualified Cardano.Chain.Block as CC
 import qualified Cardano.Chain.Common as CC
-import qualified Cardano.Chain.Delegation.Validation.Scheduling as Scheduling
 import qualified Cardano.Chain.Epoch.File as CC
 import qualified Cardano.Chain.Genesis as CC.Genesis
 import Cardano.Chain.Slotting (EpochSlots (..))
@@ -37,10 +36,8 @@ import Control.Monad.Trans.Resource (runResourceT)
 import Control.Tracer (contramap, debugTracer, nullTracer)
 import Data.Bifunctor (first)
 import qualified Data.ByteString as BS
-import Data.Coerce (coerce)
 import Data.Foldable (for_)
 import Data.Reflection (give)
-import qualified Data.Sequence as Seq
 import qualified Data.Text as Text
 import Data.Time (UTCTime)
 import Data.Typeable (Typeable)
@@ -51,15 +48,9 @@ import Options.Generic
 import qualified Ouroboros.Consensus.Ledger.Byron as Byron
 import Ouroboros.Consensus.Ledger.Byron (ByronBlockOrEBB)
 import Ouroboros.Consensus.Ledger.Byron.Config (ByronConfig (..))
-import Ouroboros.Consensus.Ledger.Extended
-  ( ExtLedgerState (..)
-  , ledgerState
-  , ouroborosChainState
-  )
+import Ouroboros.Consensus.Node.ProtocolInfo.Abstract (pInfoConfig, pInfoInitLedger)
+import Ouroboros.Consensus.Node.ProtocolInfo.Byron
 import Ouroboros.Consensus.Protocol.Abstract (SecurityParam (..))
-import Ouroboros.Consensus.Protocol.ExtNodeConfig (NodeConfig (..))
-import Ouroboros.Consensus.Protocol.PBFT (NodeConfig (..), PBftParams (..))
-import Ouroboros.Consensus.Protocol.WithEBBs (NodeConfig (..))
 import Ouroboros.Consensus.Util.Condense (condense)
 import Ouroboros.Consensus.Util.ThreadRegistry (withThreadRegistry)
 import qualified Ouroboros.Storage.ChainDB as ChainDB
@@ -138,7 +129,6 @@ deriving instance Show (Args Unwrapped)
 
 data ValidationError
   = MkConfigError CC.Genesis.ConfigurationError
-  | InitialChainStateError Scheduling.Error
   deriving (Show, Typeable)
 
 instance Exception ValidationError
@@ -148,7 +138,8 @@ main = do
   (cmd :: Args Unwrapped) <- unwrapRecord "Byron DB converter"
   case cmd of
     Convert {epochDir, dbDir, epochSlots} -> do
-      (_, files) <- listDir $ epochDir
+
+      (_, files) <- listDir epochDir
       let epochFiles = filter (\f -> fileExtension f == ".epoch") files
       putStrLn $ "Writing to " ++ show dbDir
       for_ epochFiles $ \f -> do
@@ -182,6 +173,7 @@ convertEpochFile es inFile outDir =
       encode = CB.serializeEncoding' . Byron.encodeByronBlock . Byron.ByronBlockOrEBB
    in do
         createDirIfMissing True dbDir
+        -- Old filename format is XXXXX.dat, new is epoch-XXX.dat
         outFileName <-
           parseRelFile $ "epoch-" <>
             drop 2 (toFilePath (filename inFile))
@@ -196,80 +188,58 @@ validateChainDb
   -> Bool -- Verbose
   -> IO ()
 validateChainDb dbDir cfg verbose =
-  do
-    initialCVS <- runExceptT $ CC.initialChainValidationState cfg
-    case initialCVS of
-      Left err -> throwIO $ InitialChainStateError err
-      Right cvs ->
-        withThreadRegistry $ \registry -> do
-          chaindb <- give protocolMagicId $ give epochSlots $ ChainDB.openDB $ args registry
-          blk <- ChainDB.getTipBlock chaindb
-          putStrLn $ "DB tip: " ++ condense blk
-          ChainDB.closeDB chaindb
-        where
-          initLedgerState = ExtLedgerState
-            { ledgerState = Byron.ByronEBBLedgerState $
-                Byron.ByronLedgerState cvs Seq.empty
-            , ouroborosChainState = Seq.empty
-            }
-          protocolMagicId = CB.unAnnotated . getAProtocolMagicId $ CC.Genesis.configProtocolMagic cfg
-          epochSlots = CC.Genesis.configEpochSlots cfg
-          securityParam = SecurityParam $ CC.unBlockCount k
-          k = CC.Genesis.configK cfg
-          args registry =
-            (ChainDB.defaultArgs @blk (toFilePath dbDir))
-              { ChainDB.cdbGenesis = return initLedgerState
-              , ChainDB.cdbDecodeBlock = Byron.decodeByronBlock epochSlots
-              , ChainDB.cdbDecodeChainState = Byron.decodeByronChainState
-              , ChainDB.cdbDecodeHash = Byron.decodeByronHeaderHash
-              , ChainDB.cdbDecodeLedger = Byron.decodeByronLedgerState
-              , ChainDB.cdbEncodeBlock = Byron.encodeByronBlock
-              , ChainDB.cdbEncodeChainState = Byron.encodeByronChainState
-              , ChainDB.cdbEncodeHash = Byron.encodeByronHeaderHash
-              , ChainDB.cdbEncodeLedger = Byron.encodeByronLedgerState
-              , -- Policy
-              ChainDB.cdbValidation = ImmDB.ValidateAllEpochs
-              , ChainDB.cdbBlocksPerFile = 10
-              , ChainDB.cdbMemPolicy = LgrDB.defaultMemPolicy securityParam
-              , ChainDB.cdbDiskPolicy = LgrDB.defaultDiskPolicy securityParam 20000
-              , -- Integration
-              ChainDB.cdbNodeConfig = WithEBBNodeConfig $ EncNodeConfig
-                { encNodeConfigP = PBftNodeConfig
-                    { pbftParams = PBftParams
-                        { pbftSecurityParam = securityParam
-                        , pbftNumNodes = 7
-                        , pbftSignatureWindow = coerce k
-                        , pbftSignatureThreshold = 0.22
-                        }
-                    , pbftIsLeader = Nothing
-                    }
-                , encNodeConfigExt = ByronConfig
-                  { pbftProtocolMagic = CC.Genesis.configProtocolMagic cfg
-                  , pbftProtocolVersion = CC.Update.ProtocolVersion 1 0 0
-                  , pbftSoftwareVersion = CC.Update.SoftwareVersion
-                    (CC.Update.ApplicationName "Cardano SL")
-                    2
-                  , pbftGenesisConfig = cfg
-                  , pbftGenesisHash = CC.Genesis.configGenesisHash cfg
-                  , pbftEpochSlots = epochSlots
-                    -- These aren't needed here, because this part of the code will never be exercised.
-                  , pbftSecrets = error "Attempt to use PBFT secrets in DB validation!"
-                  }
-                }
-              , ChainDB.cdbEpochSize = const (return . EpochSize . unEpochSlots $ epochSlots)
-              , ChainDB.cdbIsEBB = \blk -> case Byron.unByronBlockOrEBB blk of
-                  CC.ABOBBlock _    -> Nothing
-                  CC.ABOBBoundary ebb -> Just (CC.boundaryHashAnnotated ebb)
-              , -- Misc
-              ChainDB.cdbTracer = if verbose
-              then
-                contramap
-                  ( give protocolMagicId $
-                    give epochSlots $
-                    show
-                  )
-                  debugTracer
-              else nullTracer
-              , ChainDB.cdbThreadRegistry = registry
-              , ChainDB.cdbGcDelay = 0
-              }
+  withThreadRegistry $ \registry -> do
+    chaindb <- give protocolMagicId $ give epochSlots $ ChainDB.openDB $ args registry
+    blk <- ChainDB.getTipBlock chaindb
+    putStrLn $ "DB tip: " ++ condense blk
+    ChainDB.closeDB chaindb
+  where
+    byronProtocolInfo =
+      protocolInfoByron
+        cfg
+        (Just $ PBftSignatureThreshold 0.22) -- PBFT signature threshold
+        (CC.Update.ProtocolVersion 1 0 0)
+        ( CC.Update.SoftwareVersion
+          (CC.Update.ApplicationName "Cardano SL")
+          2
+        )
+        Nothing
+    protocolMagicId = CB.unAnnotated . getAProtocolMagicId $ CC.Genesis.configProtocolMagic cfg
+    epochSlots = CC.Genesis.configEpochSlots cfg
+    securityParam = SecurityParam $ CC.unBlockCount k
+    k = CC.Genesis.configK cfg
+    args registry =
+      (ChainDB.defaultArgs @blk (toFilePath dbDir))
+        { ChainDB.cdbGenesis = return $ pInfoInitLedger byronProtocolInfo
+        , ChainDB.cdbDecodeBlock = Byron.decodeByronBlock epochSlots
+        , ChainDB.cdbDecodeChainState = Byron.decodeByronChainState
+        , ChainDB.cdbDecodeHash = Byron.decodeByronHeaderHash
+        , ChainDB.cdbDecodeLedger = Byron.decodeByronLedgerState
+        , ChainDB.cdbEncodeBlock = Byron.encodeByronBlock
+        , ChainDB.cdbEncodeChainState = Byron.encodeByronChainState
+        , ChainDB.cdbEncodeHash = Byron.encodeByronHeaderHash
+        , ChainDB.cdbEncodeLedger = Byron.encodeByronLedgerState
+        , -- Policy
+        ChainDB.cdbValidation = ImmDB.ValidateAllEpochs
+        , ChainDB.cdbBlocksPerFile = 10
+        , ChainDB.cdbMemPolicy = LgrDB.defaultMemPolicy securityParam
+        , ChainDB.cdbDiskPolicy = LgrDB.defaultDiskPolicy securityParam 20000
+        , -- Integration
+        ChainDB.cdbNodeConfig = pInfoConfig byronProtocolInfo
+        , ChainDB.cdbEpochSize = const (return . EpochSize . unEpochSlots $ epochSlots)
+        , ChainDB.cdbIsEBB = \blk -> case Byron.unByronBlockOrEBB blk of
+          CC.ABOBBlock _ -> Nothing
+          CC.ABOBBoundary ebb -> Just (CC.boundaryHashAnnotated ebb)
+        , -- Misc
+        ChainDB.cdbTracer = if verbose
+          then
+            contramap
+              ( give protocolMagicId $
+                give epochSlots $
+                show
+              )
+              debugTracer
+          else nullTracer
+          , ChainDB.cdbThreadRegistry = registry
+          , ChainDB.cdbGcDelay = 0
+        }
