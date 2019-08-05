@@ -148,6 +148,7 @@ clientPingPong pipelined =
     connectToNode
       (\(DictVersion codec) -> encodeTerm codec)
       (\(DictVersion codec) -> decodeTerm codec)
+      nullTracer
       (,)
       (simpleSingletonVersions (0::Int) (NodeToNodeVersionData 0) (DictVersion nodeToNodeCodecCBORTerm) app)
       Nothing
@@ -231,6 +232,7 @@ clientPingPong2 =
     connectToNode
       (\(DictVersion codec) -> encodeTerm codec)
       (\(DictVersion codec) -> decodeTerm codec)
+      nullTracer
       (,)
       (simpleSingletonVersions (0::Int) (NodeToNodeVersionData 0) (DictVersion nodeToNodeCodecCBORTerm) app)
       Nothing
@@ -327,6 +329,7 @@ clientChainSync sockAddrs =
       connectToNode
         (\(DictVersion codec) -> encodeTerm codec)
         (\(DictVersion codec) -> decodeTerm codec)
+        nullTracer
         (,)
         (simpleSingletonVersions (0::Int) (NodeToNodeVersionData 0) (DictVersion nodeToNodeCodecCBORTerm) app)
         Nothing
@@ -495,6 +498,7 @@ clientBlockFetch sockAddrs = do
                         connectToNode
                           (\(DictVersion codec) -> encodeTerm codec)
                           (\(DictVersion codec) -> decodeTerm codec)
+                          nullTracer
                           (,)
                           (simpleSingletonVersions (0::Int) (NodeToNodeVersionData 0) (DictVersion nodeToNodeCodecCBORTerm) app)
                           Nothing

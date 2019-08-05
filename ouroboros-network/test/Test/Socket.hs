@@ -243,6 +243,7 @@ prop_socket_send_recv initiatorAddr responderAddr f xs = do
           connectToNode
             (\(DictVersion codec) -> encodeTerm codec)
             (\(DictVersion codec) -> decodeTerm codec)
+            nullTracer
             (\_ _ -> ())
             (simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData 0) (DictVersion nodeToNodeCodecCBORTerm) initiatorApp)
             (Just initiatorAddr)
