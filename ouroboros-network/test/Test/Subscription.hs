@@ -562,6 +562,7 @@ prop_send_recv f xs first = ioProperty $ do
             (connectToNode'
                 (\(DictVersion codec) -> encodeTerm codec)
                 (\(DictVersion codec) -> decodeTerm codec)
+                nullTracer
                 (,)
                 (simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData 0)
                 (DictVersion nodeToNodeCodecCBORTerm) initiatorApp))
@@ -702,6 +703,7 @@ prop_send_recv_init_and_rsp f xs = ioProperty $ do
             (connectToNode'
                 (\(DictVersion codec) -> encodeTerm codec)
                 (\(DictVersion codec) -> decodeTerm codec)
+                nullTracer
                 (,)
                 (simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData 0)
                 (DictVersion nodeToNodeCodecCBORTerm) $ appX rrcfg))
@@ -761,6 +763,7 @@ _demo = ioProperty $ do
             (connectToNode'
                 (\(DictVersion codec) -> encodeTerm codec)
                 (\(DictVersion codec) -> decodeTerm codec)
+                nullTracer
                 (,)
                 (simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData 0)
                 (DictVersion nodeToNodeCodecCBORTerm) appReq))

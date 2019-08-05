@@ -243,6 +243,7 @@ prop_socket_send_recv initiatorAddr responderAddr f xs = do
           connectToNode
             (\(DictVersion codec) -> encodeTerm codec)
             (\(DictVersion codec) -> decodeTerm codec)
+            nullTracer
             (\_ _ -> ())
             (simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData 0) (DictVersion nodeToNodeCodecCBORTerm) initiatorApp)
             (Just initiatorAddr)
@@ -343,6 +344,7 @@ prop_socket_client_connect_error _ xs = ioProperty $ do
       <- try $ False <$ connectToNode
         (\(DictVersion codec) -> encodeTerm codec)
         (\(DictVersion codec) -> decodeTerm codec)
+        nullTracer
         (,)
         (simpleSingletonVersions (0::Int) (NodeToNodeVersionData 0) (DictVersion nodeToNodeCodecCBORTerm) app)
         (Just clientAddr)
@@ -400,6 +402,7 @@ demo chain0 updates = do
         (connectToNode
           (\(DictVersion codec) -> encodeTerm codec)
           (\(DictVersion codec) -> decodeTerm codec)
+          nullTracer
           (,)
           (simpleSingletonVersions (0::Int) (NodeToNodeVersionData 0) (DictVersion nodeToNodeCodecCBORTerm) initiatorApp)
           (Just consumerAddress)

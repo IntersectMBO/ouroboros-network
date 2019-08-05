@@ -31,7 +31,7 @@ import           Data.Word
 import qualified Codec.CBOR.Encoding as CBOR
 import qualified Codec.CBOR.Decoding as CBOR
 import qualified Codec.CBOR.Term as CBOR
-import           Codec.Serialise (Serialise (..))
+import           Codec.Serialise (Serialise (..), DeserialiseFailure)
 import           Codec.SerialiseTerm
 
 import qualified Network.Socket as Socket
@@ -43,6 +43,9 @@ import           Ouroboros.Network.Mux
 import           Ouroboros.Network.Protocol.Handshake.Type
 import           Ouroboros.Network.Protocol.Handshake.Version
 import           Ouroboros.Network.Socket
+import           Network.TypedProtocol.Driver.ByteLimit (DecoderFailureOrTooMuchInput)
+import           Network.TypedProtocol.Driver (TraceSendRecv)
+import           Control.Tracer (Tracer)
 
 
 -- | An index type used with the mux to enumerate all the mini-protocols that
@@ -120,7 +123,8 @@ nodeToNodeCodecCBORTerm = CodecCBORTerm {encodeTerm, decodeTerm}
 -- | A specialised version of @'Ouroboros.Network.Socket.connectToNode'@.
 --
 connectTo
-  :: (Socket.SockAddr -> Socket.SockAddr -> peerid)
+  :: Tracer IO (TraceSendRecv (Handshake NodeToNodeVersion CBOR.Term) peerid (DecoderFailureOrTooMuchInput DeserialiseFailure))
+  -> (Socket.SockAddr -> Socket.SockAddr -> peerid)
   -- ^ create peerid from local address and remote address
   -> Versions NodeToNodeVersion
               DictVersion
