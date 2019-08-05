@@ -45,6 +45,7 @@ instance ( ProtocolLedgerView (SimpleBlock SimpleMockCrypto ext)
   nodeEncodeHeaderHash   = const encode
   nodeEncodeLedgerState  = const encode
   nodeEncodeChainState   = const encode
+  nodeEncodeApplyTxError = const encode
 
   nodeDecodeBlock        = const decode
   nodeDecodeHeader       = const decode
@@ -53,3 +54,4 @@ instance ( ProtocolLedgerView (SimpleBlock SimpleMockCrypto ext)
   nodeDecodeHeaderHash   = const decode
   nodeDecodeLedgerState  = const decode
   nodeDecodeChainState   = const decode
+  nodeDecodeApplyTxError = const decode

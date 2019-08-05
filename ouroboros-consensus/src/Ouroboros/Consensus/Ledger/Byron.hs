@@ -1,17 +1,17 @@
 {-# LANGUAGE ConstraintKinds       #-}
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE FlexibleInstances     #-}
+{-# LANGUAGE GADTSyntax            #-}
 {-# LANGUAGE LambdaCase            #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE NamedFieldPuns        #-}
 {-# LANGUAGE OverloadedStrings     #-}
+{-# LANGUAGE PatternSynonyms       #-}
 {-# LANGUAGE RecordWildCards       #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
 {-# LANGUAGE TypeApplications      #-}
 {-# LANGUAGE TypeFamilies          #-}
 {-# LANGUAGE UndecidableInstances  #-}
-{-# LANGUAGE PatternSynonyms       #-}
-{-# LANGUAGE GADTSyntax            #-}
 
 {-# OPTIONS_GHC -Wredundant-constraints -Wno-orphans #-}
 
@@ -36,6 +36,7 @@ module Ouroboros.Consensus.Ledger.Byron
   , encodeByronGenTxId
   , encodeByronLedgerState
   , encodeByronChainState
+  , encodeByronApplyTxError
   , decodeByronHeader
   , decodeByronBlock
   , decodeByronHeaderHash
@@ -43,6 +44,7 @@ module Ouroboros.Consensus.Ledger.Byron
   , decodeByronGenTxId
   , decodeByronLedgerState
   , decodeByronChainState
+  , decodeByronApplyTxError
   , blockBytes
   , headerBytes
     -- * EBBs
@@ -55,10 +57,10 @@ module Ouroboros.Consensus.Ledger.Byron
   ) where
 
 import           Codec.CBOR.Decoding (Decoder)
-import           Codec.CBOR.Encoding (Encoding)
 import qualified Codec.CBOR.Decoding as CBOR
+import           Codec.CBOR.Encoding (Encoding)
 import qualified Codec.CBOR.Encoding as CBOR
-import qualified Codec.CBOR.Read  as CBOR
+import qualified Codec.CBOR.Read as CBOR
 import qualified Codec.CBOR.Write as CBOR
 import           Codec.Serialise (Serialise, decode, encode)
 import           Control.Monad.Except
@@ -78,8 +80,8 @@ import           Formatting
 
 import           Cardano.Binary (Annotated (..), ByteSpan,
                      decodeFullAnnotatedBytes, decodeNestedCborBytes,
-                     encodeNestedCborBytes, enforceSize, fromCBOR,
-                     reAnnotate, slice, toCBOR, serializeEncoding)
+                     encodeNestedCborBytes, enforceSize, fromCBOR, reAnnotate,
+                     serializeEncoding, slice, toCBOR)
 import qualified Cardano.Chain.Block as CC.Block
 import qualified Cardano.Chain.Common as CC.Common
 import qualified Cardano.Chain.Delegation as CC.Delegation
@@ -95,8 +97,8 @@ import           Cardano.Crypto.DSIGN
 import           Cardano.Crypto.Hash
 
 import           Ouroboros.Network.Block
-import qualified Ouroboros.Network.Point as Point (block, origin)
 import           Ouroboros.Network.Point (WithOrigin (..))
+import qualified Ouroboros.Network.Point as Point (block, origin)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Crypto.DSIGN.Cardano
@@ -688,6 +690,9 @@ encodeByronGenTx (ByronTx {byronTx = tx }) = toCBOR (void tx)
 encodeByronGenTxId :: GenTxId (ByronBlockOrEBB cfg) -> Encoding
 encodeByronGenTxId (ByronTxId txid) = toCBOR txid
 
+encodeByronApplyTxError :: ApplyTxErr (ByronBlockOrEBB cfg) -> Encoding
+encodeByronApplyTxError = toCBOR
+
 decodeByronGenTx :: Decoder s (GenTx (ByronBlockOrEBB cfg))
 decodeByronGenTx =
     mkByronTx . annotate <$> fromCBOR
@@ -712,6 +717,9 @@ decodeByronLedgerState = ByronEBBLedgerState <$> do
 
 decodeByronChainState :: Decoder s (ChainState (BlockProtocol (ByronBlock cfg)))
 decodeByronChainState = decode
+
+decodeByronApplyTxError :: Decoder s (ApplyTxErr (ByronBlockOrEBB cfg))
+decodeByronApplyTxError = fromCBOR
 
 {-------------------------------------------------------------------------------
   Internal auxiliary
