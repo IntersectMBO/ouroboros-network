@@ -7,7 +7,7 @@ module Ouroboros.Consensus.Node.ProtocolInfo.Mock.PBFT (
 
 import           Codec.Serialise (Serialise (..))
 import qualified Data.Bimap as Bimap
-import qualified Data.Sequence as Seq
+import qualified Data.Map.Strict as Map
 
 import           Cardano.Crypto.DSIGN
 
@@ -41,7 +41,7 @@ protocolInfoMockPBFT (NumCoreNodes numCoreNodes) (CoreNodeId nid) params =
                                ]
           }
       , pInfoInitLedger = ExtLedgerState (genesisSimpleLedgerState addrDist)
-                                         Seq.empty
+                                         Map.empty
       , pInfoInitState  = ()
       }
   where
