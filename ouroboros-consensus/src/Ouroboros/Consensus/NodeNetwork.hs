@@ -129,7 +129,7 @@ protocolHandlers
        ( MonadSTM   m
        , MonadThrow (STM m)
        , MonadTime  m
-       , MonadThrow m
+       , MonadCatch m
        , ApplyTx blk
        , ProtocolLedgerView blk
        )

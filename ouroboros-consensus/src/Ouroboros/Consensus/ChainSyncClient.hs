@@ -96,7 +96,8 @@ data ChainSyncClientException blk =
     | DoesntFit (ChainHash blk) (ChainHash blk)
 
 deriving instance SupportedBlock blk => Show (ChainSyncClientException blk)
-
+deriving instance (SupportedBlock blk, Eq (ValidationErr (BlockProtocol blk)))
+               => Eq (ChainSyncClientException blk)
 instance SupportedBlock blk => Exception (ChainSyncClientException blk)
 
 -- | The state of the candidate chain synched with an upstream node.
@@ -146,7 +147,8 @@ bracketChainSyncClient getCurrentChain getCurrentLedger
 -- corresponding peer will never be chosen again.
 chainSyncClient
     :: forall m blk.
-       ( MonadSTM m
+       ( MonadSTM   m
+       , MonadCatch m
        , MonadThrow (STM m)
        , ProtocolLedgerView blk
        )
@@ -244,8 +246,8 @@ chainSyncClient tracer cfg btime (ClockSkew maxSkew)
     -- One of the points we sent intersected our chain. This intersection
     -- point will become the new tip of the candidate chain.
     intersectFound :: Point blk -> Point blk
-                      -> m (Consensus ClientStIdle blk m)
-    intersectFound intersection _theirHead = atomically $ do
+                   -> m (Consensus ClientStIdle blk m)
+    intersectFound intersection _theirHead = traceException $ atomically $ do
 
       CandidateState { candidateChain, candidateChainState } <- readTVar varCandidate
       -- Roll back the candidate to the @intersection@.
@@ -292,7 +294,7 @@ chainSyncClient tracer cfg btime (ClockSkew maxSkew)
     -- called at start-up.
     intersectNotFound :: Point blk
                        -> m (Consensus ClientStIdle blk m)
-    intersectNotFound theirHead = atomically $ do
+    intersectNotFound theirHead = traceException $ atomically $ do
       curChainState <- ouroborosChainState <$> getCurrentLedger
 
       CandidateState { candidateChain } <- readTVar varCandidate
@@ -334,7 +336,7 @@ chainSyncClient tracer cfg btime (ClockSkew maxSkew)
 
     rollForward :: Header blk -> Point blk
                 -> m (Consensus ClientStIdle blk m)
-    rollForward hdr _theirHead = atomically $ do
+    rollForward hdr _theirHead = traceException $ atomically $ do
       -- To validate the block, we need the consensus chain state (updated using
       -- headers only, and kept as part of the candidate state) and the
       -- (anachronistic) ledger view. We read the latter as the first thing in
@@ -430,7 +432,7 @@ chainSyncClient tracer cfg btime (ClockSkew maxSkew)
 
     rollBackward :: Point blk -> Point blk
                  -> m (Consensus ClientStIdle blk m)
-    rollBackward intersection theirHead = atomically $ do
+    rollBackward intersection theirHead = traceException $ atomically $ do
       CandidateState {..} <- readTVar varCandidate
 
       (candidateChain', candidateChainState') <-
@@ -473,6 +475,12 @@ chainSyncClient tracer cfg btime (ClockSkew maxSkew)
     -- The cleanup is handled in 'bracketChainSyncClient'.
     disconnect :: ChainSyncClientException blk -> STM m a
     disconnect = throwM
+
+    -- | Trace any 'ChainSyncClientException' if thrown.
+    traceException :: m a -> m a
+    traceException m = m `catch` \(e :: ChainSyncClientException blk) -> do
+      traceWith tracer $ TraceException e
+      throwM e
 
     -- Recent offsets
     --
@@ -549,8 +557,11 @@ data TraceChainSyncClientEvent blk
     -- header.
   | TraceRolledBack (Point blk)
     -- ^ While following a candidate chain, we rolled back to the given point.
+  | TraceException (ChainSyncClientException blk)
+    -- ^ An exception was thrown by the Chain Sync Client.
 
-deriving instance (StandardHash blk, Eq   (Header blk))
+deriving instance (SupportedBlock blk, Eq (ValidationErr (BlockProtocol blk)),
+                   Eq (Header blk))
                => Eq   (TraceChainSyncClientEvent blk)
-deriving instance (StandardHash blk, Show (Header blk))
+deriving instance (SupportedBlock blk, Show (Header blk))
                => Show (TraceChainSyncClientEvent blk)
