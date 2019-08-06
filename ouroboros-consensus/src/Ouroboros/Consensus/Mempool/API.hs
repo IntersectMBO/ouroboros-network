@@ -15,7 +15,6 @@ module Ouroboros.Consensus.Mempool.API (
   ) where
 
 import           Control.Monad.Except
-import           Data.Word (Word64)
 import           GHC.Stack (HasCallStack)
 
 import           Ouroboros.Network.Protocol.TxSubmission.Type (TxSizeInBytes)
@@ -159,6 +158,18 @@ data Mempool m blk idx = Mempool {
       -- they have already been included. Distinguishing between these two
       -- cases can be done in theory, but it is expensive unless we have an
       -- index of transaction hashes that have been included on the blockchain.
+      --
+      -- It is also worth noting that, if the mempool capacity is reached,
+      -- this function will block until it's able to at least attempt
+      -- validating and adding each of the provided transactions to the
+      -- mempool. In the event that we block, we also commit any useful work
+      -- done up to that point. For example, if we tried to add 5 valid
+      -- transactions but there is only space for 3, we would validate and add
+      -- 3 to the mempool and then block until more space becomes available,
+      -- at which point we would then re-attempt with the remaining 2
+      -- transactions. This process would continue until it is able to at
+      -- least attempt validating and adding each of the provided transactions
+      -- to the mempool.
       addTxs        :: [GenTx blk] -> m [(GenTx blk, Maybe (ApplyTxErr blk))]
 
       -- | Sync the transactions in the mempool with the current ledger state
@@ -234,20 +245,20 @@ data TraceEventMempool blk
   = TraceMempoolAddTxs
       ![GenTx blk]
       -- ^ New, valid transaction were added to the Mempool.
-      !Word64
+      !Word
       -- ^ The total number of transactions now in the Mempool.
   | TraceMempoolRejectedTxs
       ![(GenTx blk, ApplyTxErr blk)]
       -- ^ New, invalid transaction were rejected and thus not added to the
       -- Mempool.
-      !Word64
+      !Word
       -- ^ The total number of transactions now in the Mempool.
   | TraceMempoolRemoveTxs
       ![GenTx blk]
       -- ^ Previously valid transactions that are no longer valid because of
       -- changes in the ledger state. These transactions have been removed
       -- from the Mempool.
-      !Word64
+      !Word
       -- ^ The total number of transactions now in the Mempool.
 
 deriving instance ( Eq (GenTx blk)

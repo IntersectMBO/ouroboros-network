@@ -9,16 +9,17 @@
 module Ouroboros.Consensus.Mempool.Impl (
     openMempool
   , LedgerInterface (..)
+  , MempoolCapacity (..)
   , chainDBLedgerInterface
   , TicketNo
     -- * For testing purposes
   , openMempoolWithoutSyncThread
   ) where
 
+import           Control.Exception (assert)
 import           Control.Monad.Except
 import qualified Data.Foldable as Foldable
 import           Data.Typeable
-import           Data.Word (Word64)
 import           GHC.Generics (Generic)
 
 import           Control.Tracer
@@ -49,10 +50,11 @@ openMempool :: (IOLike m, ApplyTx blk)
             => ResourceRegistry m
             -> LedgerInterface m blk
             -> LedgerConfig blk
+            -> MempoolCapacity
             -> Tracer m (TraceEventMempool blk)
             -> m (Mempool m blk TicketNo)
-openMempool registry ledger cfg tracer = do
-    env <- initMempoolEnv ledger cfg tracer
+openMempool registry ledger cfg capacity tracer = do
+    env <- initMempoolEnv ledger cfg capacity tracer
     forkSyncStateOnTipPointChange registry env
     return $ mkMempool env
 
@@ -64,15 +66,16 @@ openMempoolWithoutSyncThread
   :: (IOLike m, ApplyTx blk)
   => LedgerInterface m blk
   -> LedgerConfig blk
+  -> MempoolCapacity
   -> Tracer m (TraceEventMempool blk)
   -> m (Mempool m blk TicketNo)
-openMempoolWithoutSyncThread ledger cfg tracer =
-    mkMempool <$> initMempoolEnv ledger cfg tracer
+openMempoolWithoutSyncThread ledger cfg capacity tracer =
+    mkMempool <$> initMempoolEnv ledger cfg capacity tracer
 
 mkMempool :: (IOLike m, ApplyTx blk)
           => MempoolEnv m blk -> Mempool m blk TicketNo
 mkMempool env = Mempool
-    { addTxs        = implAddTxs env
+    { addTxs        = implAddTxs env []
     , withSyncState = implWithSyncState env
     , getSnapshot   = implGetSnapshot env
     , zeroIdx       = zeroTicketNo
@@ -82,6 +85,11 @@ mkMempool env = Mempool
 data LedgerInterface m blk = LedgerInterface
   { getCurrentLedgerState :: STM m (LedgerState blk)
   }
+
+-- | Represents the maximum number of transactions that a 'Mempool' can
+-- contain.
+newtype MempoolCapacity = MempoolCapacity Word
+  deriving (Show)
 
 -- | Create a 'LedgerInterface' from a 'ChainDB'.
 chainDBLedgerInterface :: IOLike m => ChainDB m blk -> LedgerInterface m blk
@@ -116,6 +124,7 @@ deriving instance ( NoUnexpectedThunks (GenTx blk)
 data MempoolEnv m blk = MempoolEnv {
       mpEnvLedger    :: LedgerInterface m blk
     , mpEnvLedgerCfg :: LedgerConfig blk
+    , mpEnvCapacity  :: !MempoolCapacity
     , mpEnvStateVar  :: StrictTVar m (InternalState blk)
     , mpEnvTracer    :: Tracer m (TraceEventMempool blk)
     }
@@ -126,13 +135,15 @@ initInternalState = IS TxSeq.Empty Block.GenesisHash zeroTicketNo
 initMempoolEnv :: (IOLike m, ApplyTx blk)
                => LedgerInterface m blk
                -> LedgerConfig blk
+               -> MempoolCapacity
                -> Tracer m (TraceEventMempool blk)
                -> m (MempoolEnv m blk)
-initMempoolEnv ledgerInterface cfg tracer = do
+initMempoolEnv ledgerInterface cfg capacity tracer = do
     isVar <- newTVarM initInternalState
     return MempoolEnv
       { mpEnvLedger    = ledgerInterface
       , mpEnvLedgerCfg = cfg
+      , mpEnvCapacity  = capacity
       , mpEnvStateVar  = isVar
       , mpEnvTracer    = tracer
       }
@@ -155,45 +166,207 @@ forkSyncStateOnTipPointChange registry menv =
   Mempool Implementation
 -------------------------------------------------------------------------------}
 
+-- | Add a bunch of transactions (oldest to newest)
+--
+-- If the mempool capacity is reached, this function will block until it's
+-- able to at least attempt validating and adding each of the provided
+-- transactions to the mempool.
+--
+-- Steps taken by this function (much of this information can also be found
+-- in comments throughout the code):
+--
+-- * Attempt to sync the mempool with the ledger state, removing transactions
+--   from the mempool as necessary.
+--
+--   In the event that some work is done here, we should update the mempool
+--   state and commit the STM transaction. From the STM transaction, we'll
+--   return the provided transactions which weren't yet validated (all of
+--   them) and 'implAddTxs' will call itself given these remaining unvalidated
+--   transactions.
+--
+--   If the sync resulted in no work being done, we don't have to worry about
+--   losing any changes in the event of a 'retry'. So we continue by calling
+--   'validateNew', providing the new transactions as an argument.
+--
+-- * In 'validateNew', we first attempt to individually validate the first
+--   transaction of the provided list.
+--
+--   If this is successful and we haven't reached the mempool capacity, we
+--   continue by attempting to validate each of the remaining new transactions
+--   with the function 'validateNewUntilMempoolFull'.
+--
+--   If this fails due to the mempool capacity being reached, we 'retry' the
+--   STM transaction. We've done very little work up to this point so this
+--   is quite cheap.
+--
+-- * In 'validateNewUntilMempoolFull', we attempt to recursively validate and
+--   add each of the provided transactions, one-by-one. If at any point the
+--   mempool capacity is reached, we return the last 'ValidationResult' along
+--   with the remaining unvalidated transactions (those which we weren't able
+--   to attempt yet).
+--
+-- * Given the result from 'validateNewUntilMempoolFull', 'validateNew'
+--   updates the mempool state and returns the same result back up to
+--   'implAddTxs'.
+--
+-- * Given the result from 'validateNew', commit the STM transaction and
+--   'implAddTxs' checks whether there are any remaining transactions which
+--   are yet to be validated. If no transactions remain, we return the result.
+--   On the other hand, if there are still remaining transactions,
+--   'implAddTxs' calls itself given an accumulation of its results thus far
+--   along with the remaining transactions.
 implAddTxs :: forall m blk. (IOLike m, ApplyTx blk)
            => MempoolEnv m blk
+           -> [(GenTx blk, Maybe (ApplyTxErr blk))]
+           -- ^ An accumulator of the results from each call to 'implAddTxs'.
+           --
+           -- Because this function will recurse until it's able to at least
+           -- attempt validating and adding each transaction provided, we keep
+           -- this accumulator of the results. 'implAddTxs' will recurse in
+           -- the event that it wasn't able to attempt adding all of the
+           -- provided transactions due to the mempool being at its capacity.
            -> [GenTx blk]
+           -- ^ Transactions to validate and add to the mempool.
            -> m [(GenTx blk, Maybe (ApplyTxErr blk))]
-implAddTxs mpEnv@MempoolEnv{mpEnvStateVar, mpEnvLedgerCfg, mpEnvTracer} txs = do
-    (removed, accepted, rejected, mempoolSize) <- atomically $ do
+implAddTxs mpEnv accum txs = do
+    (vr, removed, rejected, unvalidated, mempoolSize) <- atomically $ do
+      IS{isTip = initialISTip} <- readTVar mpEnvStateVar
+
       -- First sync the state, which might remove some transactions
-      syncRes@ValidationResult { vrInvalid = removed } <- validateIS mpEnv
-      -- Then validate the new transactions
-      let ValidationResult
-            { vrBefore, vrValid, vrLastTicketNo
-            , vrNewValid = accepted
-            , vrInvalid  = rejected
-            } = validateNew syncRes
-      writeTVar mpEnvStateVar IS { isTxs          = vrValid
-                                 , isTip          = vrBefore
-                                 , isLastTicketNo = vrLastTicketNo
-                                 }
-      mempoolSize <- getMempoolSize mpEnv
-      return (removed, accepted, rejected, mempoolSize)
+      syncRes@ValidationResult
+        { vrBefore
+        , vrValid
+        , vrInvalid = removed
+        , vrLastTicketNo
+        } <- validateIS mpEnv
+
+      -- Determine whether the tip was updated after a call to 'validateIS'
+      --
+      -- If the tip was updated, instead of immediately going on to call
+      -- 'validateNew' which can potentially 'retry', we should commit this
+      -- STM transaction to ensure that we don't lose any of the changes
+      -- brought about by 'validateIS' thus far.
+      --
+      -- On the other hand, if the tip wasn't updated, we don't have to worry
+      -- about losing any changes in the event that we have to 'retry' this
+      -- STM transaction. So we should continue by validating the provided new
+      -- transactions.
+      if initialISTip /= vrBefore
+        then do
+          -- The tip changed.
+          -- Because 'validateNew' can 'retry', we'll commit this STM
+          -- transaction here to ensure that we don't lose any of the changes
+          -- brought about by 'validateIS' thus far.
+          writeTVar mpEnvStateVar IS { isTxs          = vrValid
+                                     , isTip          = vrBefore
+                                     , isLastTicketNo = vrLastTicketNo
+                                     }
+          mempoolSize <- getMempoolSize mpEnv
+          pure (syncRes, removed, [], txs, mempoolSize)
+        else do
+          -- The tip was unchanged.
+          -- Therefore, we don't have to worry about losing any changes in the
+          -- event that we have to 'retry' this STM transaction. Continue by
+          -- validating the provided new transactions.
+          (vr, unvalidated) <- validateNew syncRes
+          mempoolSize       <- getMempoolSize mpEnv
+          pure (vr, removed, (vrInvalid vr), unvalidated, mempoolSize)
+
+    let ValidationResult { vrNewValid = accepted } = vr
 
     traceBatch TraceMempoolRemoveTxs   mempoolSize (map fst removed)
     traceBatch TraceMempoolAddTxs      mempoolSize accepted
     traceBatch TraceMempoolRejectedTxs mempoolSize rejected
 
-    return $ [(tx, Just err) | (tx, err) <- rejected] ++
-             zip accepted (repeat Nothing)
+    case unvalidated of
+      -- All of the provided transactions have been validated.
+      [] -> return (mkRes accum accepted rejected)
+
+      -- There are still transactions that remain which need to be validated.
+      _  -> implAddTxs mpEnv (mkRes accum accepted rejected) unvalidated
   where
+    MempoolEnv
+      { mpEnvStateVar
+      , mpEnvTracer
+      , mpEnvLedgerCfg
+      , mpEnvCapacity = MempoolCapacity mempoolCap
+      } = mpEnv
+
     traceBatch mkEv size batch
       | null batch = return ()
       | otherwise  = traceWith mpEnvTracer (mkEv batch size)
 
-    -- | We first reset 'vrInvalid' to an empty list such that afterwards it
-    -- will only contain the /new/ invalid transactions.
-    validateNew :: ValidationResult blk -> ValidationResult blk
-    validateNew res = repeatedly
-        (extendVRNew mpEnvLedgerCfg)
-        txs
-        res { vrInvalid = [] }
+    mkRes acc accepted rejected =
+         [(tx, Just err) | (tx, err) <- rejected]
+      ++ zip accepted (repeat Nothing)
+      ++ acc
+
+    -- | Attempt to validate and add as many new transactions to the mempool as
+    -- possible, returning the last 'ValidationResult' and the remaining
+    -- transactions which couldn't be added due to the mempool capacity being
+    -- reached.
+    validateNew :: (IOLike m, ApplyTx blk)
+                => ValidationResult blk
+                -> STM m (ValidationResult blk, [GenTx blk])
+    validateNew res =
+        let res' = res { vrInvalid = [] }
+        in case txs of
+          []                  -> return (res', [])
+          headTx:remainingTxs -> do
+            -- First, attempt to individually validate the first new transaction.
+            --
+            -- If this is successful, we should continue to validate all of the
+            -- other new transactions one-by-one. If the mempool capacity would be
+            -- reached at any step, we update the 'InternalState' with the work
+            -- that we've already done and return the last 'ValidationResult' along
+            -- with the remaining unvalidated transactions.
+            --
+            -- If, however, this fails due to the mempool capacity being met, we
+            -- should simply 'retry' as it will be cheap due to the fact that
+            -- we've done very little work in this STM transaction.
+            --
+            -- It makes sense to do this due to the fact that a 'retry' at this
+            -- point is likely to be more efficient than simply returning the
+            -- result and constantly recursing until there's at least one space in
+            -- the mempool (if remaining unvalidated transactions are returned up
+            -- to 'implAddTxs', 'implAddTxs' will recurse).
+            headTxValidationRes <- validateNewUntilMempoolFull [headTx] res'
+            case headTxValidationRes of
+              -- Mempool capacity hasn't been reached (no remaining unvalidated
+              -- transactions were returned).
+              (vr, []) -> do
+                -- Continue validating the remaining transactions.
+                (vr', unvalidatedTxs) <- validateNewUntilMempoolFull remainingTxs vr
+                writeTVar mpEnvStateVar IS { isTxs          = vrValid        vr'
+                                           , isTip          = vrBefore       vr'
+                                           , isLastTicketNo = vrLastTicketNo vr'
+                                           }
+                pure (vr', unvalidatedTxs)
+
+              -- The mempool capacity has been reached.
+              _ -> retry
+
+    validateNewUntilMempoolFull
+      :: [GenTx blk]
+      -- ^ The new transactions to validate.
+      -> ValidationResult blk
+      -- ^ The 'ValidationResult' from which to begin validating.
+      -> STM m (ValidationResult blk, [GenTx blk])
+      -- ^ The last 'ValidationResult' along with the remaining transactions
+      -- (those not yet validated due to the mempool capacity being reached).
+    validateNewUntilMempoolFull []      vr = pure (vr, [])
+    validateNewUntilMempoolFull (t:ts)  vr = do
+      mempoolSize <- getMempoolSize mpEnv
+      -- The size of a mempool should never be greater than its capacity.
+      assert (mempoolSize <= mempoolCap) $
+        -- Here, we check whether we're at the mempool's capacity /before/
+        -- attempting to validate another transaction.
+        if (mempoolSize + fromIntegral (length (vrNewValid vr))) < mempoolCap
+          then validateNewUntilMempoolFull ts (extendVRNew mpEnvLedgerCfg t vr)
+          else pure (vr, t:ts) -- if we're at mempool capacity, we return the
+                               -- last 'ValidationResult' as well as the
+                               -- remaining transactions (those not yet
+                               -- validated).
 
 implWithSyncState
   :: (IOLike m, ApplyTx blk)
@@ -235,7 +408,7 @@ implGetSnapshot MempoolEnv{mpEnvStateVar} = do
     }
 
 -- | Return the number of transactions in the Mempool.
-getMempoolSize :: IOLike m => MempoolEnv m blk -> STM m Word64
+getMempoolSize :: IOLike m => MempoolEnv m blk -> STM m Word
 getMempoolSize MempoolEnv{mpEnvStateVar} =
     fromIntegral . Foldable.length . isTxs <$> readTVar mpEnvStateVar
 
