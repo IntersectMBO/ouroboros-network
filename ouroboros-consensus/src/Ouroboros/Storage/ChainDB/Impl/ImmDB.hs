@@ -35,6 +35,9 @@ module Ouroboros.Storage.ChainDB.Impl.ImmDB (
   , iteratorHasNext
   , iteratorPeek
   , iteratorClose
+    -- * Tracing
+  , ImmDB.TraceEvent
+  , EpochFileError
     -- * Re-exports
   , Iterator
   , IteratorResult(..)
@@ -42,6 +45,8 @@ module Ouroboros.Storage.ChainDB.Impl.ImmDB (
   , ImmDB.ImmutableDBError
     -- * Exported for testing purposes
   , mkImmDB
+    -- * Exported for utilities
+  , epochFileParser
   ) where
 
 import           Codec.CBOR.Decoding (Decoder)
@@ -50,6 +55,7 @@ import qualified Codec.CBOR.Read as CBOR
 import qualified Codec.CBOR.Write as CBOR
 import           Control.Monad
 import           Control.Monad.Except
+import           Control.Tracer (Tracer, nullTracer)
 import           Data.Bifunctor (first)
 import qualified Data.ByteString.Lazy as Lazy
 import           Data.Proxy
@@ -109,6 +115,7 @@ data ImmDbArgs m blk = forall h. ImmDbArgs {
     , immValidation  :: ImmDB.ValidationPolicy
     , immIsEBB       :: blk -> Maybe (HeaderHash blk)
     , immHasFS       :: HasFS m h
+    , immTracer      :: Tracer m (ImmDB.TraceEvent EpochFileError)
     }
 
 -- | Default arguments when using the 'IO' monad
@@ -134,6 +141,7 @@ defaultArgs fp = ImmDbArgs{
     , immEpochSize   = error "no default for immEpochSize"
     , immValidation  = error "no default for immValidation"
     , immIsEBB       = error "no default for immIsEBB"
+    , immTracer      = nullTracer
     }
 
 openDB :: (MonadSTM m, MonadST m, MonadCatch m, HasHeader blk)
@@ -149,6 +157,7 @@ openDB args@ImmDbArgs{..} = do
                immEpochInfo
                immValidation
                (epochFileParser args)
+               immTracer
     return ImmDB
       { immDB        = immDB
       , decBlock     = immDecodeBlock
@@ -484,6 +493,7 @@ parseIteratorResult db result =
 data EpochFileError =
     EpochErrRead Util.CBOR.ReadIncrementalErr
   | EpochErrUnexpectedEBB
+  deriving (Eq, Show)
 
 epochFileParser :: forall m blk. (MonadST m, MonadThrow m, HasHeader blk)
                 => ImmDbArgs m blk

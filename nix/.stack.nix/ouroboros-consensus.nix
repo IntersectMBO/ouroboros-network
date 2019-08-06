@@ -55,6 +55,31 @@
           then [ (hsPkgs.Win32) ]
           else [ (hsPkgs.unix) ]);
         };
+      exes = {
+        "byron-db-converter" = {
+          depends = [
+            (hsPkgs.base)
+            (hsPkgs.bytestring)
+            (hsPkgs.cardano-binary)
+            (hsPkgs.cardano-crypto-wrapper)
+            (hsPkgs.cardano-ledger)
+            (hsPkgs.containers)
+            (hsPkgs.contra-tracer)
+            (hsPkgs.directory)
+            (hsPkgs.mtl)
+            (hsPkgs.optparse-applicative)
+            (hsPkgs.optparse-generic)
+            (hsPkgs.ouroboros-consensus)
+            (hsPkgs.path)
+            (hsPkgs.path-io)
+            (hsPkgs.reflection)
+            (hsPkgs.resourcet)
+            (hsPkgs.streaming)
+            (hsPkgs.text)
+            (hsPkgs.time)
+            ];
+          };
+        };
       tests = {
         "test-consensus" = {
           depends = [

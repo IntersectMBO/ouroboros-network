@@ -294,6 +294,7 @@ data TraceEvent blk
   | TraceOpenEvent         (TraceOpenEvent         blk)
   | TraceIteratorEvent     (TraceIteratorEvent     blk)
   | TraceLedgerEvent       (TraceLedgerEvent       blk)
+  | TraceImmDBEvent        (ImmDB.TraceEvent ImmDB.EpochFileError)
   deriving (Generic)
 
 deriving instance

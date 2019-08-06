@@ -17,7 +17,7 @@ import           Data.Time.Clock (DiffTime, secondsToDiffTime)
 
 import           Control.Monad.Class.MonadSTM
 
-import           Control.Tracer (Tracer)
+import           Control.Tracer (Tracer, contramap)
 
 import           Ouroboros.Network.Block (HeaderHash, StandardHash)
 
@@ -34,7 +34,7 @@ import           Ouroboros.Storage.Util.ErrorHandling (ErrorHandling,
 
 import qualified Ouroboros.Storage.ChainDB.Impl.ImmDB as ImmDB
 import qualified Ouroboros.Storage.ChainDB.Impl.LgrDB as LgrDB
-import           Ouroboros.Storage.ChainDB.Impl.Types (TraceEvent)
+import           Ouroboros.Storage.ChainDB.Impl.Types (TraceEvent (..))
 import qualified Ouroboros.Storage.ChainDB.Impl.VolDB as VolDB
 
 {-------------------------------------------------------------------------------
@@ -140,6 +140,7 @@ fromChainDbArgs ChainDbArgs{..} = (
         , immValidation       = cdbValidation
         , immIsEBB            = cdbIsEBB
         , immHasFS            = cdbHasFSImmDb
+        , immTracer           = contramap TraceImmDBEvent cdbTracer
         }
     , VolDB.VolDbArgs {
           volHasFS            = cdbHasFSVolDb

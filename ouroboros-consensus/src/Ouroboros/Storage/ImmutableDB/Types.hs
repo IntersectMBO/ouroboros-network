@@ -5,6 +5,7 @@
 module Ouroboros.Storage.ImmutableDB.Types
   ( SlotNo (..)
   , ImmTip
+  , TipEpochSlot (..)
   , TruncateTo (..)
   , EpochFileParser (..)
   , ValidationPolicy (..)
@@ -19,6 +20,7 @@ module Ouroboros.Storage.ImmutableDB.Types
   , UnexpectedError (..)
   , sameUnexpectedError
   , prettyUnexpectedError
+  , TraceEvent(..)
   ) where
 
 import           Codec.Serialise (DeserialiseFailure)
@@ -32,8 +34,23 @@ import           Ouroboros.Network.Block (SlotNo (..))
 import           Ouroboros.Storage.Common
 import           Ouroboros.Storage.FS.API.Types (FsError, FsPath, prettyFsError,
                      sameFsError)
+import           Ouroboros.Storage.ImmutableDB.Layout
 
 type ImmTip = Tip (Either EpochNo SlotNo)
+
+-- | Variant of 'Tip' that uses 'EpochSlot' instead of 'EpochNo' or 'SlotNo'.
+data TipEpochSlot
+  = TipEpochSlotGenesis
+  | TipEpochSlot EpochSlot
+  deriving (Eq, Show)
+
+instance Ord TipEpochSlot where
+  compare te1 te2 = case (te1, te2) of
+    (TipEpochSlotGenesis, TipEpochSlotGenesis) -> EQ
+    (TipEpochSlotGenesis, _)                   -> LT
+    (_,                   TipEpochSlotGenesis) -> GT
+    (TipEpochSlot es1,    TipEpochSlot es2)    -> compare es1 es2
+
 
 -- | Truncate the database to some 'Tip'. This means that everything in the
 -- database that comes after the 'Tip' will be removed, excluding the EBB or
@@ -238,3 +255,19 @@ prettyUnexpectedError = \case
     DeserialisationError df cs ->
       "DeserialisationError (" <> displayException df <> "): " <>
       prettyCallStack cs
+
+data TraceEvent e
+    = NoValidLastLocation
+    | ValidatedLastLocation EpochNo ImmTip
+      -- Validation of previous DB
+    | ValidatingEpoch EpochNo
+    | ValidatingEpochMissing EpochNo
+    | ValidatingEpochErrorParsing e
+    | ReconstructIndexLastSlotMissing
+    | ValidatingEpochIndexIncomplete EpochNo
+      -- Delete after
+    | DeletingAfter TipEpochSlot TipEpochSlot
+      -- Closing the DB
+    | DBAlreadyClosed
+    | DBClosed
+  deriving (Eq, Generic, Show)
