@@ -15,7 +15,6 @@ module Test.Dynamic.PBFT (
     tests
   ) where
 
-import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Test.QuickCheck
 
@@ -60,12 +59,11 @@ prop_simple_pbft_convergence sp numCoreNodes@(NumCoreNodes nn) =
     sigThd = (1.0 / fromIntegral nn) + 0.1
     params = PBftParams sp (fromIntegral nn) sigWin sigThd
     isValid :: [NodeId]
-            -> Map NodeId ( NodeConfig ProtocolMockPBFT
-                          , Chain (SimplePBftBlock SimpleMockCrypto PBftMockCrypto)
-                          )
+            -> TestOutput (SimplePBftBlock SimpleMockCrypto PBftMockCrypto)
             -> Property
-    isValid nodeIds final = counterexample (show final') $
-          tabulate "shortestLength" [show (rangeK sp (shortestLength final'))]
+    isValid nodeIds TestOutput{testOutputNodes = final} =
+          counterexample (show final')
+     $    tabulate "shortestLength" [show (rangeK sp (shortestLength final'))]
      $    Map.keys final === nodeIds
      .&&. allEqual (takeChainPrefix <$> Map.elems final')
       where

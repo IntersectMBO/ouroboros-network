@@ -6,7 +6,8 @@
 
 module Ouroboros.Consensus.Ledger.Extended (
     -- * Extended ledger state
-    ExtLedgerState(..)
+    BlockPreviouslyApplied(..)
+  , ExtLedgerState(..)
   , ExtValidationError(..)
   , applyExtLedgerState
   , foldExtLedgerState
@@ -49,25 +50,41 @@ deriving instance ProtocolLedgerView blk => Show (ExtValidationError blk)
 deriving instance (ProtocolLedgerView blk, Eq (ChainState (BlockProtocol blk)))
                => Eq (ExtLedgerState blk)
 
+data BlockPreviouslyApplied =
+    BlockPreviouslyApplied
+  -- ^ The block has been previously applied and validated against the given
+  -- ledger state and no block validations should be performed.
+  | BlockNotPreviouslyApplied
+  -- ^ The block has not been previously applied to the given ledger state and
+  -- all block validations should be performed.
+
 applyExtLedgerState :: ( UpdateLedger blk
                        , ProtocolLedgerView blk
                        , HasCallStack
                        )
-                    => NodeConfig (BlockProtocol blk)
+                    => BlockPreviouslyApplied
+                    -> NodeConfig (BlockProtocol blk)
                     -> blk
                     -> ExtLedgerState blk
                     -> Except (ExtValidationError blk) (ExtLedgerState blk)
-applyExtLedgerState cfg blk ExtLedgerState{..} = do
+applyExtLedgerState prevApplied cfg blk ExtLedgerState{..} = do
     ledgerState'         <- withExcept ExtValidationErrorLedger $
                               applyChainTick
                                 (ledgerConfigView cfg)
                                 (blockSlot blk)
                                 ledgerState
-    ledgerState''        <- withExcept ExtValidationErrorLedger $
-                              applyLedgerBlock
-                                (ledgerConfigView cfg)
-                                blk
-                                ledgerState'
+    ledgerState''        <- case prevApplied of
+                              BlockNotPreviouslyApplied ->
+                                withExcept ExtValidationErrorLedger $
+                                  applyLedgerBlock
+                                    (ledgerConfigView cfg)
+                                    blk
+                                    ledgerState'
+                              BlockPreviouslyApplied -> pure $
+                                reapplyLedgerBlock
+                                  (ledgerConfigView cfg)
+                                  blk
+                                  ledgerState'
     ouroborosChainState' <- withExcept ExtValidationErrorOuroboros $
                               applyChainState
                                 cfg
@@ -77,11 +94,12 @@ applyExtLedgerState cfg blk ExtLedgerState{..} = do
     return $ ExtLedgerState ledgerState'' ouroborosChainState'
 
 foldExtLedgerState :: (ProtocolLedgerView blk, HasCallStack)
-                   => NodeConfig (BlockProtocol blk)
+                   => BlockPreviouslyApplied
+                   -> NodeConfig (BlockProtocol blk)
                    -> [blk] -- ^ Blocks to apply, oldest first
                    -> ExtLedgerState blk
                    -> Except (ExtValidationError blk) (ExtLedgerState blk)
-foldExtLedgerState = repeatedlyM . applyExtLedgerState
+foldExtLedgerState prevApplied = repeatedlyM . (applyExtLedgerState prevApplied)
 
 {-------------------------------------------------------------------------------
   Serialisation

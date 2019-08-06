@@ -222,6 +222,10 @@ instance (SimpleCrypto c, Typeable ext, SupportedBlock (SimpleBlock c ext))
 
   applyChainTick _ _ = return
   applyLedgerBlock _cfg = updateSimpleLedgerState
+  reapplyLedgerBlock _cfg = (mustSucceed . runExcept) .: updateSimpleLedgerState
+    where
+      mustSucceed (Left  err) = error ("reapplyLedgerBlock: unexpected error: " <> show err)
+      mustSucceed (Right st)  = st
   ledgerTipPoint (SimpleLedgerState st) = mockTip st
   ledgerConfigView _ = SimpleLedgerConfig
 

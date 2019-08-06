@@ -12,9 +12,10 @@
 {-# OPTIONS_GHC -Wredundant-constraints #-}
 module Test.Dynamic.General (
     prop_simple_protocol_convergence
+    -- * Re-exports
+  , TestOutput (..)
   ) where
 
-import           Data.Map.Strict (Map)
 import           Test.QuickCheck
 
 import           Control.Monad.Class.MonadAsync
@@ -26,14 +27,10 @@ import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
 import           Control.Monad.IOSim (runSimOrThrow)
 
-import           Ouroboros.Network.MockChain.Chain
-
 import           Ouroboros.Consensus.BlockchainTime
-import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.NodeId
-import           Ouroboros.Consensus.Protocol (NodeConfig)
 import           Ouroboros.Consensus.Util.Orphans ()
 import           Ouroboros.Consensus.Util.Random
 import           Ouroboros.Consensus.Util.ThreadRegistry
@@ -48,9 +45,7 @@ prop_simple_protocol_convergence :: forall blk.
                                    )
                                  => (CoreNodeId -> ProtocolInfo blk)
                                  -> (   [NodeId]
-                                     -> Map NodeId ( NodeConfig (BlockProtocol blk)
-                                                   , Chain blk
-                                                   )
+                                     -> TestOutput blk
                                      -> Property)
                                  -> NumCoreNodes
                                  -> NumSlots
@@ -75,9 +70,7 @@ test_simple_protocol_convergence :: forall m blk.
                                     )
                                  => (CoreNodeId -> ProtocolInfo blk)
                                  -> (   [NodeId]
-                                     -> Map NodeId ( NodeConfig (BlockProtocol blk)
-                                                   , Chain blk
-                                                   )
+                                     -> TestOutput blk
                                      -> Property)
                                  -> NumCoreNodes
                                  -> NumSlots

@@ -334,7 +334,7 @@ validate cfg initLedger chain =
        -> ValidationResult blk
     go ledger validPrefix bs = case bs of
       []    -> ValidChain validPrefix ledger
-      b:bs' -> case runExcept (applyExtLedgerState cfg b ledger) of
+      b:bs' -> case runExcept (applyExtLedgerState BlockNotPreviouslyApplied cfg b ledger) of
         Right ledger' -> go ledger' (validPrefix :> b) bs'
         Left  e       -> InvalidChain e (fmap Block.blockPoint (b NE.:| bs'))
                            validPrefix ledger

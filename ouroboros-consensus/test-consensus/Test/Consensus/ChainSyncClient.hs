@@ -370,13 +370,13 @@ updateClientState cfg chain ledgerState chainUpdates =
         where
           chain'       = foldl' (flip Chain.addBlock) chain bs
           ledgerState' = runValidate $
-            foldExtLedgerState cfg bs ledgerState
+            foldExtLedgerState BlockNotPreviouslyApplied cfg bs ledgerState
       Nothing
       -- There was a roll back in the updates, so validate the chain from
       -- scratch
         | Just chain' <- Chain.applyChainUpdates chainUpdates chain
         -> let ledgerState' = runValidate $
-                 foldExtLedgerState cfg (Chain.toOldestFirst chain') testInitExtLedger
+                 foldExtLedgerState BlockNotPreviouslyApplied cfg (Chain.toOldestFirst chain') testInitExtLedger
            in (chain', ledgerState')
         | otherwise
         -> error "Client chain update failed"

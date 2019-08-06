@@ -11,6 +11,7 @@ module Ouroboros.Consensus.Ledger.Abstract (
   ) where
 
 import           Control.Monad.Except
+import           GHC.Stack (HasCallStack)
 
 import           Ouroboros.Network.Block (Point, SlotNo)
 import           Ouroboros.Network.Point (WithOrigin)
@@ -49,13 +50,25 @@ class ( SupportedBlock blk
                  -> Except (LedgerError blk) (LedgerState blk)
 
   -- | Apply a block to the ledger state.
-  --
-  --   TODO: Update <https://github.com/input-output-hk/ouroboros-network/issues/596>
-  --   with change to applyLedgerBlock
   applyLedgerBlock :: LedgerConfig blk
                    -> blk
                    -> LedgerState blk
                    -> Except (LedgerError blk) (LedgerState blk)
+
+  -- | Re-apply a block to the very same ledger state it was applied in before.
+  --
+  -- Since a block can only be applied to a single, specific, ledger state,
+  -- if we apply a previously applied block again it will be applied in the
+  -- very same ledger state, and therefore can't possibly fail.
+  --
+  -- It is worth noting that since we already know that the block is valid in
+  -- the provided ledger state, the ledger layer should not perform /any/
+  -- validation checks.
+  reapplyLedgerBlock :: HasCallStack
+                     => LedgerConfig blk
+                     -> blk
+                     -> LedgerState blk
+                     -> LedgerState blk
 
   -- | Point of the most recently applied block
   --

@@ -2,6 +2,7 @@
 {-# LANGUAGE DataKinds            #-}
 {-# LANGUAGE FlexibleContexts     #-}
 {-# LANGUAGE GADTs                #-}
+{-# LANGUAGE LambdaCase           #-}
 {-# LANGUAGE NamedFieldPuns       #-}
 {-# LANGUAGE RankNTypes           #-}
 {-# LANGUAGE RecordWildCards      #-}
@@ -15,6 +16,8 @@
 module Test.Dynamic.Network (
     broadcastNetwork
   , TracingConstraints
+    -- * Test Output
+  , TestOutput (..)
   ) where
 
 import           Control.Monad
@@ -187,9 +190,7 @@ broadcastNetwork :: forall m blk.
                  -> (CoreNodeId -> ProtocolInfo blk)
                  -> ChaChaDRG
                  -> DiffTime
-                 -> m (Map NodeId ( NodeConfig (BlockProtocol blk)
-                                  , Chain blk
-                                  ))
+                 -> m (TestOutput blk)
 broadcastNetwork registry testBtime numCoreNodes pInfo initRNG slotLen = do
     chans :: NodeChans m NodeId blk <- createCommunicationChannels
 
@@ -197,16 +198,14 @@ broadcastNetwork registry testBtime numCoreNodes pInfo initRNG slotLen = do
 
     nodes <- forM coreNodeIds $ \coreNodeId -> do
       node <- createAndConnectNode chans varRNG coreNodeId
-      return (coreNodeId, node)
+      return (coreNodeId, pInfoConfig (pInfo coreNodeId), node)
 
     -- Wait a random amount of time after the final slot for the block fetch
     -- and chain sync to finish
     testBlockchainTimeDone testBtime
     threadDelay 2000
 
-    fmap Map.fromList $ forM nodes $ \(cid, node) ->
-        (\ch -> (fromCoreNodeId cid, (pInfoConfig (pInfo cid), ch))) <$>
-        ChainDB.toChain (getChainDB node)
+    getTestOutput nodes
   where
     btime = testBlockchainTime testBtime
 
@@ -353,6 +352,40 @@ broadcastNetwork registry testBtime numCoreNodes pInfo initRNG slotLen = do
         forkLinked registry (niConnectTo ni them)
 
       return node
+
+{-------------------------------------------------------------------------------
+  Test Output - records of how each node's chain changed
+-------------------------------------------------------------------------------}
+
+newtype TestOutput blk = TestOutput
+    { testOutputNodes :: Map NodeId
+          ( NodeConfig (BlockProtocol blk)
+          , Chain blk
+          )
+      -- ^ Each node's config and final chain.
+    }
+
+-- | Gather the test output from the nodes
+getTestOutput ::
+    forall m blk.
+       ( MonadSTM m
+       , MonadThrow m
+       , HasHeader blk
+       )
+    => [( CoreNodeId
+        , NodeConfig (BlockProtocol blk)
+        , NodeKernel m NodeId blk
+        )]
+    -> m (TestOutput blk)
+getTestOutput nodes = do
+    nodes' <- fmap Map.fromList $ forM nodes $
+        \(cid, cfg, node) ->
+                (\ch -> (fromCoreNodeId cid, (cfg, ch)))
+            <$> ChainDB.toChain (getChainDB node)
+
+    pure $ TestOutput
+        { testOutputNodes = nodes'
+        }
 
 {-------------------------------------------------------------------------------
   Internal auxiliary

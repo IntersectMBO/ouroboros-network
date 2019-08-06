@@ -15,7 +15,6 @@ module Test.Dynamic.BFT (
     tests
   ) where
 
-import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 
 import           Test.QuickCheck
@@ -57,12 +56,11 @@ prop_simple_bft_convergence k numCoreNodes =
       numCoreNodes
   where
     isValid :: [NodeId]
-            -> Map NodeId ( NodeConfig ProtocolMockBFT
-                          , Chain (SimpleBftBlock SimpleMockCrypto BftMockCrypto)
-                          )
+            -> TestOutput (SimpleBftBlock SimpleMockCrypto BftMockCrypto)
             -> Property
-    isValid nodeIds final = counterexample (show final') $
-          tabulate "shortestLength" [show (rangeK k (shortestLength final'))]
+    isValid nodeIds TestOutput{testOutputNodes = final} =
+          counterexample (show final')
+     $    tabulate "shortestLength" [show (rangeK k (shortestLength final'))]
      $    Map.keys final === nodeIds
      .&&. allEqual (takeChainPrefix <$> Map.elems final')
       where
