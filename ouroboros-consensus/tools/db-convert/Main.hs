@@ -37,6 +37,7 @@ import Control.Tracer (contramap, debugTracer, nullTracer)
 import Data.Bifunctor (first)
 import qualified Data.ByteString as BS
 import Data.Foldable (for_)
+import Data.List (sort)
 import Data.Reflection (give)
 import qualified Data.Text as Text
 import Data.Time (UTCTime)
@@ -60,7 +61,7 @@ import qualified Ouroboros.Storage.LedgerDB.MemPolicy as LgrDB
 import Path
 import Path.IO (listDir, createDirIfMissing)
 import qualified Streaming.Prelude as S
-import System.Directory (makeAbsolute)
+import System.Directory (canonicalizePath)
 import qualified System.IO as IO
 
 instance ParseField UTCTime
@@ -112,11 +113,11 @@ main = do
   (cmd :: Args Unwrapped) <- unwrapRecord "Byron DB converter"
   case cmd of
     Convert {epochDir, dbDir, epochSlots} -> do
-      dbDir' <- parseAbsDir =<< makeAbsolute dbDir
-      (_, files) <- listDir =<< parseAbsDir =<< makeAbsolute epochDir
+      dbDir' <- parseAbsDir =<< canonicalizePath dbDir
+      (_, files) <- listDir =<< parseAbsDir =<< canonicalizePath epochDir
       let epochFiles = filter (\f -> fileExtension f == ".epoch") files
       putStrLn $ "Writing to " ++ show dbDir
-      for_ epochFiles $ \f -> do
+      for_ (sort epochFiles) $ \f -> do
         putStrLn $ "Converting file " ++ show f
         convertEpochFile (EpochSlots epochSlots) f dbDir'
     Validate
@@ -126,7 +127,7 @@ main = do
       , genesisHash
       , verbose
       } -> do
-        dbDir' <- parseAbsDir =<< makeAbsolute dbDir
+        dbDir' <- parseAbsDir =<< canonicalizePath dbDir
         econfig <-
           runExceptT $
             CC.Genesis.mkConfigFromFile
@@ -194,27 +195,27 @@ validateChainDb dbDir cfg verbose =
         , ChainDB.cdbEncodeChainState = Byron.encodeByronChainState
         , ChainDB.cdbEncodeHash = Byron.encodeByronHeaderHash
         , ChainDB.cdbEncodeLedger = Byron.encodeByronLedgerState
-        , -- Policy
-        ChainDB.cdbValidation = ImmDB.ValidateAllEpochs
+          -- Policy
+        , ChainDB.cdbValidation = ImmDB.ValidateAllEpochs
         , ChainDB.cdbBlocksPerFile = 10
         , ChainDB.cdbMemPolicy = LgrDB.defaultMemPolicy securityParam
         , ChainDB.cdbDiskPolicy = LgrDB.defaultDiskPolicy securityParam 20000
-        , -- Integration
-        ChainDB.cdbNodeConfig = pInfoConfig byronProtocolInfo
+          -- Integration
+        , ChainDB.cdbNodeConfig = pInfoConfig byronProtocolInfo
         , ChainDB.cdbEpochSize = const (return . EpochSize . unEpochSlots $ epochSlots)
         , ChainDB.cdbIsEBB = \blk -> case Byron.unByronBlockOrEBB blk of
           CC.ABOBBlock _ -> Nothing
           CC.ABOBBoundary ebb -> Just (CC.boundaryHashAnnotated ebb)
-        , -- Misc
-        ChainDB.cdbTracer = if verbose
-          then
-            contramap
-              ( give protocolMagicId $
-                give epochSlots $
-                show
-              )
-              debugTracer
-          else nullTracer
-          , ChainDB.cdbThreadRegistry = registry
-          , ChainDB.cdbGcDelay = 0
+          -- Misc
+        , ChainDB.cdbTracer = if verbose
+            then
+              contramap
+                ( give protocolMagicId $
+                  give epochSlots $
+                  show
+                )
+                debugTracer
+            else nullTracer
+        , ChainDB.cdbThreadRegistry = registry
+        , ChainDB.cdbGcDelay = 0
         }
