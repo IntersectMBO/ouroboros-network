@@ -149,7 +149,8 @@ protocolHandlers NodeParams {btime, maxClockSkew, tracers, maxUnackTxs}
           getNodeConfig
           btime
           maxClockSkew
-          (ChainDB.getCurrentLedger getChainDB)
+          (ChainDB.getCurrentLedger  getChainDB)
+          (ChainDB.getIsInvalidBlock getChainDB)
     , phChainSyncServer =
         chainSyncHeadersServer
           (chainSyncServerTracer tracers)
@@ -336,9 +337,10 @@ consensusNetworkApps
     :: forall m peer blk failure bytesCS bytesBF bytesTX bytesLCS bytesLTX.
        ( MonadAsync m
        , MonadFork m
-       , MonadCatch m
+       , MonadMask m
        , Ord peer
        , Exception failure
+       , SupportedBlock blk
        )
     => NodeKernel m peer blk
     -> ProtocolTracers m peer blk failure
@@ -371,8 +373,10 @@ consensusNetworkApps kernel ProtocolTracers {..} ProtocolCodecs {..} ProtocolHan
       bracketSyncWithFetchClient
         (getFetchClientRegistry kernel) them $
       bracketChainSyncClient
-          (ChainDB.getCurrentChain  (getChainDB kernel))
-          (ChainDB.getCurrentLedger (getChainDB kernel))
+          (chainSyncClientTracer     (getTracers kernel))
+          (ChainDB.getCurrentChain   (getChainDB kernel))
+          (ChainDB.getCurrentLedger  (getChainDB kernel))
+          (ChainDB.getIsInvalidBlock (getChainDB kernel))
           (getNodeCandidates kernel)
           them $ \varCandidate curChain ->
         runPeer

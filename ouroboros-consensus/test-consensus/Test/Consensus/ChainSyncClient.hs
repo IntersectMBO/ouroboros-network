@@ -27,8 +27,8 @@ import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
 import           Control.Monad.IOSim (runSimOrThrow)
 
-import           Network.TypedProtocol.Driver
 import           Network.TypedProtocol.Channel
+import           Network.TypedProtocol.Driver
 
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import qualified Ouroboros.Network.AnchoredFragment as AF
@@ -55,6 +55,7 @@ import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.BFT
 import           Ouroboros.Consensus.Util (whenJust)
 import           Ouroboros.Consensus.Util.Condense
+import           Ouroboros.Consensus.Util.STM (Fingerprint (..))
 import           Ouroboros.Consensus.Util.ThreadRegistry
 
 import           Test.Util.Orphans.Arbitrary ()
@@ -235,12 +236,15 @@ runChainSync securityParam maxClockSkew (ClientUpdates clientUpdates)
           readTVar varClientState
         getLedgerState :: STM m (ExtLedgerState TestBlock)
         getLedgerState  = snd <$> readTVar varClientState
+        getIsInvalidBlock :: STM m (HeaderHash TestBlock -> Bool, Fingerprint)
+        getIsInvalidBlock = return (const False, Fingerprint 0)
         client = chainSyncClient
                    nullTracer
                    (nodeCfg clientId)
                    btime
                    maxClockSkew
                    getLedgerState
+                   getIsInvalidBlock
 
     -- Set up the server
     varChainProducerState <- newTVarM $ initChainProducerState Genesis
@@ -290,8 +294,10 @@ runChainSync securityParam maxClockSkew (ClientUpdates clientUpdates)
       -- we want a "regular ending".
       void $ fork registry $
         bracketChainSyncClient
+           nullTracer
            (AF.mapAnchoredFragment coerce <$> getCurrentChain)
            getLedgerState
+           getIsInvalidBlock
            varCandidates
            serverId $ \varCandidate curChain -> do
              atomically $ modifyTVar' varFinalCandidates $
