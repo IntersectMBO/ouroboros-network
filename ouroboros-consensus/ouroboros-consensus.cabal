@@ -255,6 +255,7 @@ test-suite test-consensus
                     Test.Dynamic.Network
                     Test.Dynamic.PBFT
                     Test.Dynamic.Praos
+                    Test.Dynamic.RealPBFT
                     Test.Dynamic.TxGen
                     Test.Dynamic.Util
                     Test.Dynamic.Util.Expectations
@@ -267,7 +268,11 @@ test-suite test-consensus
                     Test.Util.Range
                     Test.Util.TestBlock
   build-depends:    base,
+                    cardano-binary,
                     cardano-crypto-class,
+                    cardano-crypto-wrapper,
+                    cardano-ledger,
+                    cardano-ledger-test,
                     typed-protocols,
                     network-mux,
                     ouroboros-network,
@@ -284,6 +289,7 @@ test-suite test-consensus
                     mtl,
                     QuickCheck,
                     random,
+                    reflection,
                     serialise,
                     tasty,
                     tasty-hunit,

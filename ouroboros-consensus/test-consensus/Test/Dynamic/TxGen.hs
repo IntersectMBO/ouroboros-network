@@ -13,6 +13,8 @@ import           GHC.Stack (HasCallStack)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Ledger.Abstract
+import           Ouroboros.Consensus.Ledger.Byron
+import           Ouroboros.Consensus.Ledger.Byron.Config
 import           Ouroboros.Consensus.Ledger.Mock hiding (utxo)
 import           Ouroboros.Consensus.Node.ProtocolInfo (NumCoreNodes (..))
 import           Ouroboros.Consensus.Protocol.Abstract
@@ -83,3 +85,12 @@ genSimpleTx addrs u = do
         case m of
             Nothing -> error "expected non-empty list"
             Just x  -> return x
+
+{-------------------------------------------------------------------------------
+  TxGen ByronBlockOrEBB
+-------------------------------------------------------------------------------}
+
+instance TxGen (ByronBlockOrEBB ByronConfig) where
+  testGenTx = error "TODO #855 testGenTx"
+  -- 'testGenTxs' is used by the tests, not 'testGenTx'.
+  testGenTxs _ _ _ = return []

@@ -9,6 +9,7 @@ import qualified Test.Dynamic.BFT (tests)
 import qualified Test.Dynamic.LeaderSchedule (tests)
 import qualified Test.Dynamic.PBFT (tests)
 import qualified Test.Dynamic.Praos (tests)
+import qualified Test.Dynamic.RealPBFT (tests)
 import qualified Test.Dynamic.Util.Tests (tests)
 
 main :: IO ()
@@ -25,4 +26,5 @@ tests =
   , Test.Dynamic.LeaderSchedule.tests
   , Test.Dynamic.PBFT.tests
   , Test.Dynamic.Praos.tests
+  , Test.Dynamic.RealPBFT.tests
   ]
