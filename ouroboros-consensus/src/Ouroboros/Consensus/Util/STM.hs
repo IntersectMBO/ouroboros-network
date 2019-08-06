@@ -1,5 +1,6 @@
-{-# LANGUAGE RankNTypes          #-}
-{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE RankNTypes                 #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
 
 module Ouroboros.Consensus.Util.STM (
     -- * Misc
@@ -7,6 +8,7 @@ module Ouroboros.Consensus.Util.STM (
   , onEachChange
   , blockUntilJust
   , blockUntilAllJust
+  , Fingerprint (..)
     -- * Simulate various monad stacks in STM
   , Sim
   , simId
@@ -22,6 +24,7 @@ import           Control.Monad.State
 import           Control.Monad.Writer
 
 import           Data.Void (Void)
+import           Data.Word (Word64)
 
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork (MonadFork)
@@ -67,6 +70,11 @@ blockUntilJust getMaybeA = do
 
 blockUntilAllJust :: MonadSTM m => [STM m (Maybe a)] -> STM m [a]
 blockUntilAllJust = mapM blockUntilJust
+
+-- | Simple type that can be used to indicate something in a 'TVar' is
+-- changed.
+newtype Fingerprint = Fingerprint Word64
+  deriving (Show, Eq, Enum)
 
 {-------------------------------------------------------------------------------
   Simulate monad stacks

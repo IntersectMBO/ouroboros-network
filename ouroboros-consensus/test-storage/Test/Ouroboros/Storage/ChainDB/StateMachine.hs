@@ -81,6 +81,7 @@ import           Ouroboros.Consensus.NodeId (NodeId (..))
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.BFT
 import           Ouroboros.Consensus.Util.Condense (condense)
+import           Ouroboros.Consensus.Util.STM (Fingerprint (..))
 import           Ouroboros.Consensus.Util.ThreadRegistry (ThreadRegistry,
                      withThreadRegistry)
 import qualified Ouroboros.Consensus.Util.ThreadRegistry as ThreadRegistry
@@ -803,6 +804,7 @@ instance CommandNames (At Cmd blk m) where
   cmdNames (_ :: Proxy (At Cmd blk m r)) =
     constrNames (Proxy @(Cmd blk () ()))
 
+deriving instance Generic Fingerprint
 deriving instance Generic ReaderNext
 deriving instance Generic IteratorId
 deriving instance Generic (Point blk)
@@ -816,6 +818,7 @@ deriving instance ( ToExpr (ChainState (BlockProtocol blk))
                   , ToExpr (LedgerState blk)
                   )
                  => ToExpr (ExtLedgerState blk)
+deriving instance ToExpr Fingerprint
 deriving instance ToExpr BlockNo
 deriving instance ToExpr SlotNo
 deriving instance ToExpr ReaderNext

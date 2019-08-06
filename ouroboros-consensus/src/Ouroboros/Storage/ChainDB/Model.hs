@@ -28,7 +28,7 @@ module Ouroboros.Storage.ChainDB.Model (
   , hasBlockByPoint
   , immutableBlockNo
   , isOpen
-  , invalidBlocks
+  , invalid
     -- * Iterators
   , streamBlocks
   , iteratorNext
@@ -75,6 +75,7 @@ import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.MockChainSel
 import           Ouroboros.Consensus.Util (repeatedly)
 import qualified Ouroboros.Consensus.Util.AnchoredFragment as Fragment
+import           Ouroboros.Consensus.Util.STM (Fingerprint (..))
 
 import           Ouroboros.Storage.ChainDB.API (ChainDbError (..),
                      IteratorId (..), IteratorResult (..), StreamFrom (..),
@@ -87,7 +88,7 @@ data Model blk = Model {
     , currentLedger :: ExtLedgerState blk
     , initLedger    :: ExtLedgerState blk
     , iterators     :: Map IteratorId [blk]
-    , invalidBlocks :: Map (HeaderHash blk) SlotNo
+    , invalid       :: (Map (HeaderHash blk) SlotNo, Fingerprint)
     , isOpen        :: Bool
       -- ^ While the model tracks whether it is closed or not, the queries and
       -- other functions in this module ignore this for simplicity. The mock
@@ -169,7 +170,7 @@ empty initLedger = Model {
     , currentLedger = initLedger
     , initLedger    = initLedger
     , iterators     = Map.empty
-    , invalidBlocks = Map.empty
+    , invalid       = (Map.empty, Fingerprint 0)
     , isOpen        = True
     }
 
@@ -185,7 +186,7 @@ addBlock cfg blk m
     , currentLedger = newLedger
     , initLedger    = initLedger m
     , iterators     = iterators  m
-    , invalidBlocks = invalidBlocks'
+    , invalid       = (invalidBlocks', fingerprint')
     , isOpen        = True
     }
   where
@@ -197,6 +198,14 @@ addBlock cfg blk m
     invalidBlocks' :: Map (HeaderHash blk) SlotNo
     candidates     :: [(Chain blk, ExtLedgerState blk)]
     (invalidBlocks', candidates) = validChains cfg (initLedger m) blocks'
+
+    -- The fingerprint only changes when there are new invalid blocks
+    fingerprint'
+      | Map.null $ Map.difference invalidBlocks' invalidBlocks
+      = fingerprint
+      | otherwise
+      = succ fingerprint
+    (invalidBlocks, fingerprint) = invalid m
 
     newChain  :: Chain blk
     newLedger :: ExtLedgerState blk

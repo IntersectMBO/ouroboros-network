@@ -42,11 +42,13 @@ import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
 
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
-import           Ouroboros.Network.Block (Point, pattern BlockPoint, ChainUpdate,
-                     pattern GenesisPoint, HasHeader (..), HeaderHash, SlotNo,
-                     StandardHash, atSlot, genesisPoint)
+import           Ouroboros.Network.Block (pattern BlockPoint, ChainUpdate,
+                     pattern GenesisPoint, HasHeader (..), HeaderHash, Point,
+                     SlotNo, StandardHash, atSlot, genesisPoint)
+
 import           Ouroboros.Consensus.Block (GetHeader (..))
 import           Ouroboros.Consensus.Ledger.Extended
+import           Ouroboros.Consensus.Util.STM (Fingerprint (..))
 
 import           Ouroboros.Storage.Common
 import           Ouroboros.Storage.FS.API.Types (FsError)
@@ -54,7 +56,7 @@ import qualified Ouroboros.Storage.ImmutableDB as ImmDB
 import qualified Ouroboros.Storage.VolatileDB as VolDB
 
 -- Support for tests
-import           Ouroboros.Network.MockChain.Chain (Chain(..))
+import           Ouroboros.Network.MockChain.Chain (Chain (..))
 import qualified Ouroboros.Network.MockChain.Chain as Chain
 
 -- | The chain database
@@ -225,7 +227,15 @@ data ChainDB m blk = ChainDB {
       --
       -- If the hash corresponds to a block that is known to be invalid, but
       -- is now older than @k@, this function may return 'False'.
-    , getIsInvalidBlock :: STM m (HeaderHash blk -> Bool)
+      --
+      -- Whenever a new invalid block is added, the 'Fingerprint' will be
+      -- changed. This is useful when \"watching\" this function in a
+      -- transaction.
+      --
+      -- Note that when invalid blocks are garbage collected and thus no
+      -- longer detected by this function, the 'Fingerprint' doesn't have to
+      -- change, since the function will not detect new invalid blocks.
+    , getIsInvalidBlock :: STM m (HeaderHash blk -> Bool, Fingerprint)
 
       -- | Close the ChainDB
       --
