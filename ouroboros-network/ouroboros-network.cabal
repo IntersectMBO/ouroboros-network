@@ -230,6 +230,7 @@ test-suite tests
                        Test.Pipe
                        Test.Socket
                        Test.Subscription
+                       Test.PeerState
   default-language:    Haskell2010
   build-depends:       base,
                        array,
