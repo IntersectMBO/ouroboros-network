@@ -3,7 +3,6 @@
 -- | Transaction generator for testing
 module Test.Dynamic.TxGen
   ( TxGen (..)
-  , testGenTxs
   ) where
 
 import           Control.Monad (replicateM)
@@ -32,16 +31,22 @@ class TxGen blk where
             -> LedgerState blk
             -> m (GenTx blk)
 
--- | Generate multiple transactions using 'testGenTx'.
-testGenTxs :: (MonadRandom m, TxGen blk)
-           => NumCoreNodes
-           -> NodeConfig (BlockProtocol blk)
-           -> LedgerState blk
-           -> m [GenTx blk]
-testGenTxs numCoreNodes cfg ledger = do
+  -- | Generate a number of transactions, valid or invalid, that can be
+  -- submitted to a node's Mempool.
+  --
+  -- This function (not 'testGenTx') will be called to generate transactions
+  -- in consensus tests.
+  testGenTxs :: MonadRandom m
+             => NumCoreNodes
+             -> NodeConfig (BlockProtocol blk)
+             -> LedgerState blk
+             -> m [GenTx blk]
+  testGenTxs  numCoreNodes cfg ledger = do
     -- Currently 0 to 1 txs
     n <- generateBetween 0 1
     replicateM (fromIntegral n) $ testGenTx numCoreNodes cfg ledger
+
+  {-# MINIMAL testGenTx #-}
 
 {-------------------------------------------------------------------------------
   TxGen SimpleBlock
