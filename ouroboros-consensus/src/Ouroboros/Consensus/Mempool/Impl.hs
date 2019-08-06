@@ -149,9 +149,8 @@ forkSyncStateOnTipPointChange :: ( MonadAsync m
                               => ThreadRegistry m
                               -> MempoolEnv m blk
                               -> m ()
-forkSyncStateOnTipPointChange registry menv = do
-    initialTipPoint <- atomically getCurrentTip
-    onEachChange registry id initialTipPoint getCurrentTip action
+forkSyncStateOnTipPointChange registry menv =
+    onEachChange registry id Nothing getCurrentTip action
   where
     action _tipPoint = implWithSyncState menv (const (return ()))
     MempoolEnv { mpEnvLedger } = menv

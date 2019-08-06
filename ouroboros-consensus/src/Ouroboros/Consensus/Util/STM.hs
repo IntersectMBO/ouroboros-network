@@ -49,11 +49,24 @@ blockUntilChanged f b getA = do
       then retry
       else return (a, b')
 
--- | Spawn a new thread that executes an action each time a TVar changes
+-- | Spawn a new thread that executes an action each time a 'TVar' changes.
 onEachChange :: forall m a b. (MonadAsync m, MonadMask m, MonadFork m, Eq b)
              => ThreadRegistry m
-             -> (a -> b) -> b -> STM m a -> (a -> m ()) -> m ()
-onEachChange registry f initB getA notify = void $ forkLinked registry $ go initB
+             -> (a -> b)  -- ^ Obtain a fingerprint
+             -> Maybe b   -- ^ Optional initial fingerprint, if 'Nothing', the
+                          -- action is executed once immediately to obtain the
+                          -- initial fingerprint.
+             -> STM m a
+             -> (a -> m ())
+             -> m ()
+onEachChange registry f mbInitB getA notify = do
+    initB <- case mbInitB of
+      Just initB -> return initB
+      Nothing    -> do
+        a <- atomically getA
+        notify a
+        return $ f a
+    void $ forkLinked registry $ go initB
   where
     go :: b -> m Void
     go b = do
