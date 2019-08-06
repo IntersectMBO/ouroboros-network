@@ -91,7 +91,7 @@ instance Serialise NodeToClientVersion where
 -- | Version data for NodeToClient protocol v1
 --
 newtype NodeToClientVersionData = NodeToClientVersionData
-  { networkMagic :: Word16 }
+  { networkMagic :: Word32 }
   deriving (Eq, Show, Typeable)
 
 nodeToClientCodecCBORTerm :: CodecCBORTerm Text NodeToClientVersionData

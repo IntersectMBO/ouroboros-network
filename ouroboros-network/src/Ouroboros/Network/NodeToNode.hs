@@ -104,7 +104,7 @@ instance Serialise NodeToNodeVersion where
 -- | Version data for NodeToNode protocol v1
 --
 newtype NodeToNodeVersionData = NodeToNodeVersionData
-  { networkMagic :: Word16 }
+  { networkMagic :: Word32 }
   deriving (Eq, Show, Typeable)
 
 nodeToNodeCodecCBORTerm :: CodecCBORTerm Text NodeToNodeVersionData
