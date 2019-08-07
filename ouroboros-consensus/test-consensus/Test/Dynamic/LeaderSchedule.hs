@@ -83,7 +83,7 @@ genLeaderSchedule k (NumSlots numSlots) (NumCoreNodes numCoreNodes) =
             , ( 1, pick 2)
             , ( 1, pick 3)
             ]
-        return $ LeaderSchedule $ Map.fromList $ zip [1..] leaders
+        return $ LeaderSchedule $ Map.fromList $ zip [0..] leaders
   where
     pick :: Int -> Gen [CoreNodeId]
     pick = go [0 .. numCoreNodes - 1]
@@ -99,7 +99,7 @@ genLeaderSchedule k (NumSlots numSlots) (NumCoreNodes numCoreNodes) =
 shrinkLeaderSchedule :: NumSlots -> LeaderSchedule -> [LeaderSchedule]
 shrinkLeaderSchedule (NumSlots numSlots) (LeaderSchedule m) =
     [ LeaderSchedule m'
-    | slot <- [1 .. fromIntegral numSlots]
+    | slot <- [0 .. fromIntegral numSlots - 1]
     , m'   <- reduceSlot slot m
     ]
   where
