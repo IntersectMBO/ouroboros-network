@@ -139,8 +139,8 @@ lookupByTicketNo :: TxSeq tx -> TicketNo -> Maybe tx
 lookupByTicketNo (TxSeq txs) n =
     case FingerTree.search (\ml mr -> mMaxTicket ml >= n
                                    && mMinTicket mr >  n) txs of
-      FingerTree.Position _ (TxTicket tx _) _ -> Just tx
-      _                                       -> Nothing
+      FingerTree.Position _ (TxTicket tx n') _ | n' == n -> Just tx
+      _                                                  -> Nothing
 
 -- | \( O(\log(n) \). Split the sequence of transactions into two parts
 -- based on the given 'TicketNo'. The first part has transactions with tickets
