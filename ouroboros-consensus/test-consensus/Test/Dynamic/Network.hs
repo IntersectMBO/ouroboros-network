@@ -2,7 +2,6 @@
 {-# LANGUAGE DataKinds            #-}
 {-# LANGUAGE FlexibleContexts     #-}
 {-# LANGUAGE GADTs                #-}
-{-# LANGUAGE LambdaCase           #-}
 {-# LANGUAGE NamedFieldPuns       #-}
 {-# LANGUAGE RankNTypes           #-}
 {-# LANGUAGE RecordWildCards      #-}
@@ -18,6 +17,8 @@ module Test.Dynamic.Network (
   , TracingConstraints
     -- * Test Output
   , TestOutput (..)
+  , NodeOutput (..)
+  , NodeInfo (..)
   ) where
 
 import           Control.Monad
@@ -66,7 +67,8 @@ import           Ouroboros.Consensus.Util.STM
 
 import qualified Ouroboros.Storage.ChainDB as ChainDB
 import           Ouroboros.Storage.ChainDB.Impl (ChainDbArgs (..))
-import           Ouroboros.Storage.EpochInfo (newEpochInfo)
+import           Ouroboros.Storage.EpochInfo (EpochInfo, newEpochInfo)
+import           Ouroboros.Storage.FS.Sim.MockFS (MockFS)
 import qualified Ouroboros.Storage.FS.Sim.MockFS as Mock
 import           Ouroboros.Storage.FS.Sim.STM (simHasFS)
 import qualified Ouroboros.Storage.ImmutableDB as ImmDB
@@ -200,13 +202,19 @@ broadcastNetwork registry testBtime numCoreNodes pInfo initRNG slotLen = do
     varRNG <- atomically $ newTVar initRNG
 
     nodes <- forM coreNodeIds $ \coreNodeId -> do
-      node <- createAndConnectNode chans varRNG coreNodeId
-      return (coreNodeId, pInfoConfig (pInfo coreNodeId), node)
+      (node, nodeInfo) <- createAndConnectNode chans varRNG coreNodeId
+      return (coreNodeId, pInfoConfig (pInfo coreNodeId), node, nodeInfo)
 
     -- Wait a random amount of time after the final slot for the block fetch
     -- and chain sync to finish
     testBlockchainTimeDone testBtime
     threadDelay 2000
+
+    -- Close the 'ResourceRegistry': this shuts down the background threads of
+    -- a node. This is important because we close the ChainDBs in
+    -- 'getTestOutput' and if background threads that use the ChainDB are
+    -- still running at that point, they will throw a 'CloseDBError'.
+    close registry
 
     getTestOutput nodes
   where
@@ -248,14 +256,11 @@ broadcastNetwork registry testBtime numCoreNodes pInfo initRNG slotLen = do
 
     mkArgs :: NodeConfig (BlockProtocol blk)
            -> ExtLedgerState blk
-           -> m (ChainDbArgs m blk)
-    mkArgs cfg initLedger = do
-      (immDbFsVar, volDbFsVar, lgrDbFsVar) <- atomically $
-        (,,) <$> newTVar Mock.empty
-             <*> newTVar Mock.empty
-             <*> newTVar Mock.empty
-      epochInfo <- newEpochInfo $ nodeEpochSize (Proxy @blk)
-      return ChainDbArgs
+           -> EpochInfo m
+           -> (TVar m MockFS, TVar m MockFS, TVar m MockFS)
+              -- ^ ImmutableDB, VolatileDB, LedgerDB
+           -> ChainDbArgs m blk
+    mkArgs cfg initLedger epochInfo (immDbFsVar, volDbFsVar, lgrDbFsVar) = ChainDbArgs
         { -- Decoders
           cdbDecodeHash       = nodeDecodeHeaderHash (Proxy @blk)
         , cdbDecodeBlock      = nodeDecodeBlock cfg
@@ -297,7 +302,7 @@ broadcastNetwork registry testBtime numCoreNodes pInfo initRNG slotLen = do
       => NodeChans m NodeId blk
       -> TVar m ChaChaDRG
       -> CoreNodeId
-      -> m (NodeKernel m NodeId blk)
+      -> m (NodeKernel m NodeId blk, NodeInfo blk (TVar m MockFS))
     createAndConnectNode chans varRNG coreNodeId = do
       let us               = fromCoreNodeId coreNodeId
           ProtocolInfo{..} = pInfo coreNodeId
@@ -321,7 +326,10 @@ broadcastNetwork registry testBtime numCoreNodes pInfo initRNG slotLen = do
             , produceDRG      = atomically $ simChaChaT varRNG id $ drgNew
             }
 
-      args    <- mkArgs pInfoConfig pInfoInitLedger
+      epochInfo <- newEpochInfo $ nodeEpochSize (Proxy @blk)
+      fsVars@(immDbFsVar, volDbFsVar, lgrDbFsVar)  <- atomically $ (,,)
+        <$> newTVar Mock.empty <*> newTVar Mock.empty <*> newTVar Mock.empty
+      let args = mkArgs pInfoConfig pInfoInitLedger epochInfo fsVars
       chainDB <- ChainDB.openDB args
 
       let nodeParams = NodeParams
@@ -359,18 +367,43 @@ broadcastNetwork registry testBtime numCoreNodes pInfo initRNG slotLen = do
       forM_ (filter (/= us) nodeIds) $ \them ->
         forkLinked registry (niConnectTo ni them)
 
-      return node
+      let nodeInfo = NodeInfo
+            { nodeInfoImmDbFs = immDbFsVar
+            , nodeInfoVolDbFs = volDbFsVar
+            , nodeInfoLgrDbFs = lgrDbFsVar
+            }
+      return (node, nodeInfo)
+
+{-------------------------------------------------------------------------------
+  Node Info
+-------------------------------------------------------------------------------}
+
+data NodeInfo blk fs = NodeInfo
+  { nodeInfoImmDbFs :: fs
+  , nodeInfoVolDbFs :: fs
+  , nodeInfoLgrDbFs :: fs
+  }
+
+readFsTVars :: MonadSTM m
+            => NodeInfo blk (TVar m MockFS)
+            -> m (NodeInfo blk MockFS)
+readFsTVars tvars = atomically $ NodeInfo
+    <$> readTVar (nodeInfoImmDbFs tvars)
+    <*> readTVar (nodeInfoVolDbFs tvars)
+    <*> readTVar (nodeInfoLgrDbFs tvars)
 
 {-------------------------------------------------------------------------------
   Test Output - records of how each node's chain changed
 -------------------------------------------------------------------------------}
 
+data NodeOutput blk = NodeOutput
+  { nodeOutputCfg        :: NodeConfig (BlockProtocol blk)
+  , nodeOutputFinalChain :: Chain blk
+  , nodeOutputNodeInfo   :: NodeInfo blk MockFS
+  }
+
 newtype TestOutput blk = TestOutput
-    { testOutputNodes :: Map NodeId
-          ( NodeConfig (BlockProtocol blk)
-          , Chain blk
-          )
-      -- ^ Each node's config and final chain.
+    { testOutputNodes :: Map NodeId (NodeOutput blk)
     }
 
 -- | Gather the test output from the nodes
@@ -384,13 +417,21 @@ getTestOutput ::
     => [( CoreNodeId
         , NodeConfig (BlockProtocol blk)
         , NodeKernel m NodeId blk
+        , NodeInfo blk (TVar m MockFS)
         )]
     -> m (TestOutput blk)
 getTestOutput nodes = do
-    nodes' <- fmap Map.fromList $ forM nodes $
-        \(cid, cfg, node) ->
-                (\ch -> (fromCoreNodeId cid, (cfg, ch)))
-            <$> ChainDB.toChain (getChainDB node)
+    nodes' <- fmap Map.fromList $ forM nodes $ \(cid, cfg, node, nodeInfo) -> do
+      let chainDB = getChainDB node
+      ch <- ChainDB.toChain chainDB
+      ChainDB.closeDB chainDB
+      nodeInfo' <- readFsTVars nodeInfo
+      let nodeOutput = NodeOutput
+            { nodeOutputCfg        = cfg
+            , nodeOutputFinalChain = ch
+            , nodeOutputNodeInfo   = nodeInfo'
+            }
+      return (fromCoreNodeId cid, nodeOutput)
 
     pure $ TestOutput
         { testOutputNodes = nodes'
