@@ -47,15 +47,16 @@ tests = testGroup "Dynamic chain generation"
             prop
     ]
   where
-    params@PraosParams{..} = defaultDemoPraosParams
+    params@PraosParams{praosSecurityParam = k, praosSlotsPerEpoch} =
+        defaultDemoPraosParams
     numCoreNodes = NumCoreNodes 3
     numSlots  = NumSlots $ fromEnum $
-        maxRollbacks praosSecurityParam * praosSlotsPerEpoch * numEpochs
+        maxRollbacks k * praosSlotsPerEpoch * numEpochs
     numEpochs = 3
 
     prop seed =
         forAllShrink
-            (genLeaderSchedule numSlots numCoreNodes params)
+            (genLeaderSchedule k numSlots numCoreNodes)
             (shrinkLeaderSchedule numSlots)
             $ \schedule ->
                 prop_simple_leader_schedule_convergence
@@ -94,11 +95,11 @@ prop_simple_leader_schedule_convergence
   Dependent generation and shrinking of leader schedules
 -------------------------------------------------------------------------------}
 
-genLeaderSchedule :: NumSlots
+genLeaderSchedule :: SecurityParam
+                  -> NumSlots
                   -> NumCoreNodes
-                  -> PraosParams
                   -> Gen LeaderSchedule
-genLeaderSchedule (NumSlots numSlots) (NumCoreNodes numCoreNodes) PraosParams{..} =
+genLeaderSchedule k (NumSlots numSlots) (NumCoreNodes numCoreNodes) =
     flip suchThat notTooCrowded $ do
         leaders <- replicateM numSlots $ frequency
             [ ( 4, pick 0)
@@ -107,21 +108,21 @@ genLeaderSchedule (NumSlots numSlots) (NumCoreNodes numCoreNodes) PraosParams{..
             , ( 1, pick 3)
             ]
         return $ LeaderSchedule $ Map.fromList $ zip [1..] leaders
+  where
+    pick :: Int -> Gen [CoreNodeId]
+    pick = go [0 .. numCoreNodes - 1]
       where
-        pick :: Int -> Gen [CoreNodeId]
-        pick = go [0 .. numCoreNodes - 1]
-          where
-            go :: [Int] -> Int -> Gen [CoreNodeId]
-            go []   _ = return []
-            go _    0 = return []
-            go nids n = do
-                nid <- elements nids
-                xs  <- go (filter (/= nid) nids) (n - 1)
-                return $ CoreNodeId nid : xs
+        go :: [Int] -> Int -> Gen [CoreNodeId]
+        go []   _ = return []
+        go _    0 = return []
+        go nids n = do
+            nid <- elements nids
+            xs  <- go (filter (/= nid) nids) (n - 1)
+            return $ CoreNodeId nid : xs
 
-        notTooCrowded :: LeaderSchedule -> Bool
-        notTooCrowded schedule =
-            crowdedRunLength (longestCrowdedRun schedule) <= maxRollbacks praosSecurityParam
+    notTooCrowded :: LeaderSchedule -> Bool
+    notTooCrowded schedule =
+        crowdedRunLength (longestCrowdedRun schedule) <= maxRollbacks k
 
 shrinkLeaderSchedule :: NumSlots -> LeaderSchedule -> [LeaderSchedule]
 shrinkLeaderSchedule (NumSlots numSlots) (LeaderSchedule m) =
