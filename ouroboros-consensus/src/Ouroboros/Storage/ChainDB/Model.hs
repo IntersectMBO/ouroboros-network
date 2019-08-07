@@ -28,7 +28,7 @@ module Ouroboros.Storage.ChainDB.Model (
   , hasBlockByPoint
   , immutableBlockNo
   , isOpen
-  , invalidBlocks
+  , invalid
     -- * Iterators
   , streamBlocks
   , iteratorNext
@@ -52,6 +52,8 @@ module Ouroboros.Storage.ChainDB.Model (
 
 import           Control.Monad (unless)
 import           Control.Monad.Except (runExcept)
+import           Data.Function (on)
+import           Data.List (sortBy)
 import           Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
 import           Data.Map.Strict (Map)
@@ -75,6 +77,7 @@ import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.MockChainSel
 import           Ouroboros.Consensus.Util (repeatedly)
 import qualified Ouroboros.Consensus.Util.AnchoredFragment as Fragment
+import           Ouroboros.Consensus.Util.STM (Fingerprint (..))
 
 import           Ouroboros.Storage.ChainDB.API (ChainDbError (..),
                      IteratorId (..), IteratorResult (..), StreamFrom (..),
@@ -87,7 +90,7 @@ data Model blk = Model {
     , currentLedger :: ExtLedgerState blk
     , initLedger    :: ExtLedgerState blk
     , iterators     :: Map IteratorId [blk]
-    , invalidBlocks :: Map (HeaderHash blk) SlotNo
+    , invalid       :: (Map (HeaderHash blk) SlotNo, Fingerprint)
     , isOpen        :: Bool
       -- ^ While the model tracks whether it is closed or not, the queries and
       -- other functions in this module ignore this for simplicity. The mock
@@ -169,7 +172,7 @@ empty initLedger = Model {
     , currentLedger = initLedger
     , initLedger    = initLedger
     , iterators     = Map.empty
-    , invalidBlocks = Map.empty
+    , invalid       = (Map.empty, Fingerprint 0)
     , isOpen        = True
     }
 
@@ -185,7 +188,7 @@ addBlock cfg blk m
     , currentLedger = newLedger
     , initLedger    = initLedger m
     , iterators     = iterators  m
-    , invalidBlocks = invalidBlocks'
+    , invalid       = (invalidBlocks', fingerprint')
     , isOpen        = True
     }
   where
@@ -197,6 +200,14 @@ addBlock cfg blk m
     invalidBlocks' :: Map (HeaderHash blk) SlotNo
     candidates     :: [(Chain blk, ExtLedgerState blk)]
     (invalidBlocks', candidates) = validChains cfg (initLedger m) blocks'
+
+    -- The fingerprint only changes when there are new invalid blocks
+    fingerprint'
+      | Map.null $ Map.difference invalidBlocks' invalidBlocks
+      = fingerprint
+      | otherwise
+      = succ fingerprint
+    (invalidBlocks, fingerprint) = invalid m
 
     newChain  :: Chain blk
     newLedger :: ExtLedgerState blk
@@ -368,8 +379,29 @@ validChains :: forall blk. ProtocolLedgerView blk
                , [(Chain blk, ExtLedgerState blk)]
                )
 validChains cfg initLedger bs =
-    foldMap (classify . validate cfg initLedger) $ chains bs
+    foldMap (classify . validate cfg initLedger) $
+    -- Note that we sort here to make sure we pick the same chain as the real
+    -- chain selection in case there are multiple equally preferable chains
+    -- after detecting invalid blocks. For example:
+    --
+    -- We add the following blocks: B, B', C', A where C' is invalid. Without
+    -- sorting here (in the model), this results in the following two
+    -- unvalidated chains: A->B and A->B'->C'. After validation, this results
+    -- in the following two validated chains: A->B and A->B'. The first of
+    -- these two will be chosen.
+    --
+    -- In the real implementation, we sort the candidate chains before
+    -- validation so that in the best case (no invalid blocks) we only have to
+    -- validate the most preferable candidate chain. So A->B'->C' is validated
+    -- first, which results in the valid chain A->B', which is then chosen
+    -- over the equally preferable A->B as it will be the first in the list
+    -- after a stable sort.
+    sortChains $
+    chains bs
   where
+    sortChains :: [Chain blk] -> [Chain blk]
+    sortChains = sortBy (flip (compareCandidates cfg `on` Chain.toAnchoredFragment))
+
     classify :: ValidationResult blk
              -> ( Map (HeaderHash blk) SlotNo
                 , [(Chain blk, ExtLedgerState blk)]

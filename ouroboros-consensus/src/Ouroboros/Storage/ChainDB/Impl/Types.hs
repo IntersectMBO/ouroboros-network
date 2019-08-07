@@ -58,6 +58,7 @@ import           Ouroboros.Consensus.Block (BlockProtocol, Header)
 import           Ouroboros.Consensus.Ledger.Abstract (ProtocolLedgerView)
 import           Ouroboros.Consensus.Ledger.Extended (ExtValidationError)
 import           Ouroboros.Consensus.Protocol.Abstract (NodeConfig)
+import           Ouroboros.Consensus.Util.STM (Fingerprint)
 import           Ouroboros.Consensus.Util.ThreadRegistry (ThreadRegistry)
 
 import           Ouroboros.Storage.ChainDB.API (ChainDbError (..), IteratorId,
@@ -194,7 +195,7 @@ data ChainDbEnv m blk = CDB
     -- of the current chain fragment (retrieved 'cdbGetCurrentChain', not by
     -- reading 'cdbChain' directly).
   , cdbNodeConfig     :: NodeConfig (BlockProtocol blk)
-  , cdbInvalid        :: TVar m (Map (HeaderHash blk) SlotNo)
+  , cdbInvalid        :: TVar m (Map (HeaderHash blk) SlotNo, Fingerprint)
     -- ^ Hashes corresponding to invalid blocks. This is used to ignore these
     -- blocks during chain selection.
     --
@@ -202,7 +203,8 @@ data ChainDbEnv m blk = CDB
     -- collection is performed on the VolatileDB for some slot @s@, the hashes
     -- older or equal to @s@ can be removed from this map.
     --
-    -- TODO #730.
+    -- The 'Fingerprint' changes every time a hash is added to the map, but
+    -- not when hashes are garbage-collected from the map.
   , cdbNextIteratorId :: TVar m IteratorId
   , cdbNextReaderId   :: TVar m ReaderId
   , cdbCopyLock       :: TMVar m ()

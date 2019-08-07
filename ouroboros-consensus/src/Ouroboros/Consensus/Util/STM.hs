@@ -1,5 +1,6 @@
-{-# LANGUAGE RankNTypes          #-}
-{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE RankNTypes                 #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
 
 module Ouroboros.Consensus.Util.STM (
     -- * Misc
@@ -7,6 +8,7 @@ module Ouroboros.Consensus.Util.STM (
   , onEachChange
   , blockUntilJust
   , blockUntilAllJust
+  , Fingerprint (..)
     -- * Simulate various monad stacks in STM
   , Sim
   , simId
@@ -22,6 +24,7 @@ import           Control.Monad.State
 import           Control.Monad.Writer
 
 import           Data.Void (Void)
+import           Data.Word (Word64)
 
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork (MonadFork)
@@ -46,11 +49,24 @@ blockUntilChanged f b getA = do
       then retry
       else return (a, b')
 
--- | Spawn a new thread that executes an action each time a TVar changes
+-- | Spawn a new thread that executes an action each time a 'TVar' changes.
 onEachChange :: forall m a b. (MonadAsync m, MonadMask m, MonadFork m, Eq b)
              => ThreadRegistry m
-             -> (a -> b) -> b -> STM m a -> (a -> m ()) -> m ()
-onEachChange registry f initB getA notify = void $ forkLinked registry $ go initB
+             -> (a -> b)  -- ^ Obtain a fingerprint
+             -> Maybe b   -- ^ Optional initial fingerprint, if 'Nothing', the
+                          -- action is executed once immediately to obtain the
+                          -- initial fingerprint.
+             -> STM m a
+             -> (a -> m ())
+             -> m ()
+onEachChange registry f mbInitB getA notify = do
+    initB <- case mbInitB of
+      Just initB -> return initB
+      Nothing    -> do
+        a <- atomically getA
+        notify a
+        return $ f a
+    void $ forkLinked registry $ go initB
   where
     go :: b -> m Void
     go b = do
@@ -67,6 +83,11 @@ blockUntilJust getMaybeA = do
 
 blockUntilAllJust :: MonadSTM m => [STM m (Maybe a)] -> STM m [a]
 blockUntilAllJust = mapM blockUntilJust
+
+-- | Simple type that can be used to indicate something in a 'TVar' is
+-- changed.
+newtype Fingerprint = Fingerprint Word64
+  deriving (Show, Eq, Enum)
 
 {-------------------------------------------------------------------------------
   Simulate monad stacks

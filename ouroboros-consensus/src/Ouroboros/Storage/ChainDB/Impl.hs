@@ -43,6 +43,7 @@ import           Ouroboros.Network.Block (blockNo, castPoint, genesisBlockNo)
 
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Protocol.Abstract
+import           Ouroboros.Consensus.Util.STM (Fingerprint (..))
 
 import           Ouroboros.Storage.ChainDB.API
 
@@ -100,7 +101,7 @@ openDBInternal args launchBgTasks = do
                             (Query.getAnyKnownBlock immDB volDB)
                             lgrTracer
 
-    varInvalid <- atomically $ newTVar Map.empty
+    varInvalid <- atomically $ newTVar (Map.empty, Fingerprint 0)
 
     chainAndLedger <- ChainSel.initialChainSelection
       immDB

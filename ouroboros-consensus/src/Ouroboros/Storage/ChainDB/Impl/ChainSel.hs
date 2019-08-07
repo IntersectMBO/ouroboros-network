@@ -51,6 +51,7 @@ import           Ouroboros.Network.Block (BlockNo, HasHeader (..), HeaderHash,
 import           Ouroboros.Consensus.Block (BlockProtocol, GetHeader (..))
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Protocol.Abstract
+import           Ouroboros.Consensus.Util.STM (Fingerprint)
 
 import           Ouroboros.Storage.ChainDB.Impl.ImmDB (ImmDB)
 import qualified Ouroboros.Storage.ChainDB.Impl.ImmDB as ImmDB
@@ -79,14 +80,14 @@ initialChainSelection
   -> LgrDB m blk
   -> Tracer m (TraceEvent blk)
   -> NodeConfig (BlockProtocol blk)
-  -> TVar m (Map (HeaderHash blk) SlotNo) -- ^ 'cdbInvalid'
+  -> TVar m (Map (HeaderHash blk) SlotNo, Fingerprint) -- ^ 'cdbInvalid'
   -> m (ChainAndLedger blk)
 initialChainSelection immDB volDB lgrDB tracer cfg varInvalid = do
     -- We follow the steps from section "## Initialization" in ChainDB.md
 
     i :: Point blk <- ImmDB.getPointAtTip immDB
     (succsOf, ledger) <- atomically $ do
-      invalid <- readTVar varInvalid
+      (invalid, _fingerprint) <- readTVar varInvalid
       (,) <$> (ignoreInvalidSuc volDB invalid <$> VolDB.getSuccessors volDB)
           <*> LgrDB.getCurrent lgrDB
 
@@ -204,7 +205,7 @@ addBlock cdb@CDB{..} b = do
         <*> Query.getCurrentChain cdb
         <*> Query.getTipPoint     cdb
         <*> LgrDB.getCurrent      cdbLgrDB
-        <*> readTVar              cdbInvalid
+        <*> (fst <$> readTVar     cdbInvalid)
         <*> readTVar              cdbImmBlockNo
     let curChainAndLedger =
           -- The current chain we're working with here is not longer than @k@
@@ -523,7 +524,7 @@ chainSelection
   => LgrDB m blk
   -> Tracer m (TraceValidationEvent blk)
   -> NodeConfig (BlockProtocol blk)
-  -> TVar m (Map (HeaderHash blk) SlotNo)  -- ^ The invalid Blocks
+  -> TVar m (Map (HeaderHash blk) SlotNo, Fingerprint)  -- ^ The invalid blocks
   -> ChainAndLedger blk                    -- ^ The current chain and ledger
   -> NonEmpty (CandidateSuffix blk)        -- ^ Candidates
   -> m (Maybe (ChainAndLedger blk))
@@ -586,7 +587,7 @@ chainSelection lgrDB tracer cfg varInvalid
     truncateInvalidCandidates :: [CandidateSuffix blk]
                               -> m [CandidateSuffix blk]
     truncateInvalidCandidates cands = do
-      isInvalid <- flip Map.member <$> atomically (readTVar varInvalid)
+      isInvalid <- flip Map.member . fst <$> atomically (readTVar varInvalid)
       return $ filter (preferCandidate cfg curChain . _suffix)
              $ mapMaybe (truncateInvalidCandidate isInvalid) cands
 
@@ -630,16 +631,15 @@ validateCandidate
   => LgrDB m blk
   -> Tracer m (TraceValidationEvent blk)
   -> NodeConfig (BlockProtocol blk)
-  -> TVar m (Map (HeaderHash blk) SlotNo)  -- ^ The invalid blocks
+  -> TVar m (Map (HeaderHash blk) SlotNo, Fingerprint)  -- ^ The invalid blocks
   -> ChainAndLedger  blk                   -- ^ Current chain and ledger
   -> CandidateSuffix blk                   -- ^ Candidate fragment
   -> m (Maybe (ChainAndLedger blk))
-validateCandidate lgrDB tracer cfg invalid
+validateCandidate lgrDB tracer cfg varInvalid
                   (ChainAndLedger curChain curLedger) candSuffix =
     LgrDB.validate lgrDB curLedger rollback newBlocks >>= \case
       LgrDB.InvalidBlockInPrefix e pt -> do
-        let invalidBlocksInCand = hashesStartingFrom pt
-        atomically $ modifyTVar' invalid (Map.union invalidBlocksInCand)
+        addInvalidBlocks (hashesStartingFrom pt)
         trace (InvalidBlock e pt)
         trace (InvalidCandidate (_suffix candSuffix) InvalidBlockInPrefix)
         return Nothing
@@ -648,8 +648,7 @@ validateCandidate lgrDB tracer cfg invalid
             candidate' = fromMaybe
               (error "cannot rollback to point on fragment") $
               AF.rollback lastValid candidate
-        let invalidBlocksInCand = hashesStartingFrom pt
-        atomically $ modifyTVar' invalid (Map.union invalidBlocksInCand)
+        addInvalidBlocks (hashesStartingFrom pt)
         trace (InvalidBlock e pt)
 
         -- The candidate is now a prefix of the original candidate. We
@@ -675,6 +674,13 @@ validateCandidate lgrDB tracer cfg invalid
     candidate = fromMaybe
       (error "candidate suffix doesn't fit on the current chain") $
       fitCandidateSuffixOn curChain candSuffix
+
+    -- | Add the given map of invalid points to 'cdbInvalid' and change its
+    -- fingerprint.
+    addInvalidBlocks :: Map (HeaderHash blk) SlotNo -> m ()
+    addInvalidBlocks invalidBlocksInCand = atomically $
+      modifyTVar' varInvalid $ \(invalid, fp) ->
+        (Map.union invalid invalidBlocksInCand, succ fp)
 
     -- | Make a list of all the points after from the given point (inclusive)
     -- in the candidate fragment and turn it into a map from hash to slot that

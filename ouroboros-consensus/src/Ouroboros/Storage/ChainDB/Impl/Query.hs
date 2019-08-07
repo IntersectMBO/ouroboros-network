@@ -19,6 +19,7 @@ module Ouroboros.Storage.ChainDB.Impl.Query
   , getAnyKnownBlock
   ) where
 
+import           Data.Bifunctor (first)
 import qualified Data.Map.Strict as Map
 
 import           Control.Monad.Class.MonadSTM
@@ -32,6 +33,7 @@ import           Ouroboros.Network.Block (ChainHash (..), HasHeader, HeaderHash,
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Protocol.Abstract
+import           Ouroboros.Consensus.Util.STM (Fingerprint)
 
 import           Ouroboros.Storage.ChainDB.API (ChainDbError (..),
                      ChainDbFailure (..))
@@ -149,8 +151,8 @@ getIsFetched CDB{..} = basedOnHash <$> VolDB.getIsMember cdbVolDB
 
 getIsInvalidBlock
   :: forall m blk. (MonadSTM m, HasHeader blk)
-  => ChainDbEnv m blk -> STM m (HeaderHash blk -> Bool)
-getIsInvalidBlock CDB{..} = flip Map.member <$> readTVar cdbInvalid
+  => ChainDbEnv m blk -> STM m (HeaderHash blk -> Bool, Fingerprint)
+getIsInvalidBlock CDB{..} = first (flip Map.member) <$> readTVar cdbInvalid
 
 {-------------------------------------------------------------------------------
   Unifying interface over the immutable DB and volatile DB, but independent

@@ -152,7 +152,7 @@ newTestBlockchainTime registry (NumSlots numSlots) slotLen = do
             <$> readTVar slotVar
         btime = BlockchainTime {
             getCurrentSlot = get
-          , onSlotChange   = onEachChange registry Running initVal get
+          , onSlotChange   = onEachChange registry Running (Just initVal) get
           }
 
     return $ TestBlockchainTime
@@ -184,7 +184,7 @@ realBlockchainTime registry slotLen start = do
       atomically $ writeTVar slotVar next
     return BlockchainTime {
         getCurrentSlot = readTVar slotVar
-      , onSlotChange   = onEachChange registry id first (readTVar slotVar)
+      , onSlotChange   = onEachChange registry id (Just first) (readTVar slotVar)
       }
 
 {-------------------------------------------------------------------------------

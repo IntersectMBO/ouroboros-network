@@ -85,6 +85,9 @@ data NodeKernel m peer blk = NodeKernel {
 
       -- | Read the current candidates
     , getNodeCandidates      :: TVar m (Map peer (TVar m (CandidateState blk)))
+
+      -- | The node's tracers
+    , getTracers             :: Tracers m peer blk
     }
 
 -- | Monad that we run protocol specific functions in
@@ -161,12 +164,13 @@ nodeKernel params@NodeParams { threadRegistry, cfg, tracers } = do
         blockFetchInterface
         fetchClientRegistry
 
-    return NodeKernel {
-        getChainDB    = chainDB
-      , getMempool    = mempool
-      , getNodeConfig = cfg
+    return NodeKernel
+      { getChainDB             = chainDB
+      , getMempool             = mempool
+      , getNodeConfig          = cfg
       , getFetchClientRegistry = fetchClientRegistry
       , getNodeCandidates      = varCandidates
+      , getTracers             = tracers
       }
 
 {-------------------------------------------------------------------------------

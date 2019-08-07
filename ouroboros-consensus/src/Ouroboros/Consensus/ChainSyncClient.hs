@@ -22,11 +22,14 @@ module Ouroboros.Consensus.ChainSyncClient (
 import           Control.Monad
 import           Control.Monad.Except
 import           Control.Tracer
+import           Data.List (find)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Void (Void)
 import           Data.Word (Word64)
 
+import           Control.Monad.Class.MonadAsync
+import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
 
@@ -43,6 +46,9 @@ import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util
 import           Ouroboros.Consensus.Util.SlotBounded as SB
+import           Ouroboros.Consensus.Util.STM (Fingerprint, onEachChange)
+import           Ouroboros.Consensus.Util.ThreadRegistry (ThreadRegistry)
+import qualified Ouroboros.Consensus.Util.ThreadRegistry as ThreadRegistry
 
 
 -- | Clock skew: the number of slots the chain of an upstream node may be
@@ -95,8 +101,12 @@ data ChainSyncClientException blk =
       -- the second 'ChainHash' is that of the previous one.
     | DoesntFit (ChainHash blk) (ChainHash blk)
 
-deriving instance SupportedBlock blk => Show (ChainSyncClientException blk)
+      -- | The upstream node's chain contained a block that we know is invalid.
+    | InvalidBlock (Point blk)
 
+deriving instance SupportedBlock blk => Show (ChainSyncClientException blk)
+deriving instance (SupportedBlock blk, Eq (ValidationErr (BlockProtocol blk)))
+               => Eq (ChainSyncClientException blk)
 instance SupportedBlock blk => Exception (ChainSyncClientException blk)
 
 -- | The state of the candidate chain synched with an upstream node.
@@ -108,21 +118,34 @@ data CandidateState blk = CandidateState
     }
 
 bracketChainSyncClient
-    :: ( MonadSTM m
-       , MonadThrow m
+    :: ( MonadAsync m
+       , MonadFork  m
+       , MonadMask  m
        , Ord peer
+       , SupportedBlock blk
        )
-    => STM m (AnchoredFragment (Header blk))  -- ^ Get the current chain
-    -> STM m (ExtLedgerState blk)             -- ^ Get the current ledger state
+    => Tracer m (TraceChainSyncClientEvent blk)
+    -> STM m (AnchoredFragment (Header blk))
+       -- ^ Get the current chain
+    -> STM m (ExtLedgerState blk)
+       -- ^ Get the current ledger state
+    -> STM m (HeaderHash blk -> Bool, Fingerprint)
+       -- ^ Get the invalid block checker
     -> TVar m (Map peer (TVar m (CandidateState blk)))
        -- ^ The candidate chains, we need the whole map because we
        -- (de)register nodes (@peer@).
     -> peer
     -> (TVar m (CandidateState blk) -> AnchoredFragment (Header blk) -> m a)
     -> m a
-bracketChainSyncClient getCurrentChain getCurrentLedger
-                       varCandidates peer body =
-    bracket register unregister (uncurry body)
+bracketChainSyncClient tracer getCurrentChain getCurrentLedger
+                       getIsInvalidBlock varCandidates peer body =
+    bracket register unregister $ \(registry, varCandidate, curChain) -> do
+      rejectInvalidBlocks
+        tracer
+        registry
+        getIsInvalidBlock
+        (readTVar varCandidate)
+      body varCandidate curChain
   where
     register = atomically $ do
       curChain      <- getCurrentChain
@@ -134,10 +157,12 @@ bracketChainSyncClient getCurrentChain getCurrentLedger
         , candidateChainState  = curChainState
         }
       modifyTVar' varCandidates $ Map.insert peer varCandidate
-      return (varCandidate, curChain)
+      registry <- ThreadRegistry.new
+      return (registry, varCandidate, curChain)
 
-    unregister _ = atomically $
-      modifyTVar' varCandidates $ Map.delete peer
+    unregister (registry, _, _) = do
+      ThreadRegistry.cancelAll registry
+      atomically $ modifyTVar' varCandidates $ Map.delete peer
 
 -- | Chain sync client
 --
@@ -146,20 +171,22 @@ bracketChainSyncClient getCurrentChain getCurrentLedger
 -- corresponding peer will never be chosen again.
 chainSyncClient
     :: forall m blk.
-       ( MonadSTM m
+       ( MonadSTM   m
+       , MonadCatch m
        , MonadThrow (STM m)
        , ProtocolLedgerView blk
        )
     => Tracer m (TraceChainSyncClientEvent blk)
     -> NodeConfig (BlockProtocol blk)
     -> BlockchainTime m
-    -> ClockSkew                                   -- ^ Maximum clock skew
-    -> STM m (ExtLedgerState blk)                  -- ^ Get the current ledger state
-    -> TVar m (CandidateState blk)                 -- ^ Our peer's state var
-    -> AnchoredFragment (Header blk)               -- ^ The current chain
+    -> ClockSkew                                    -- ^ Maximum clock skew
+    -> STM m (ExtLedgerState blk)                   -- ^ Get the current ledger state
+    -> STM m (HeaderHash blk -> Bool, Fingerprint)  -- ^ Get the invalid block checker
+    -> TVar m (CandidateState blk)                  -- ^ Our peer's state var
+    -> AnchoredFragment (Header blk)                -- ^ The current chain
     -> Consensus ChainSyncClient blk m
 chainSyncClient tracer cfg btime (ClockSkew maxSkew)
-                getCurrentLedger varCandidate =
+                getCurrentLedger getIsInvalidBlock varCandidate =
     \curChain -> ChainSyncClient (initialise curChain)
   where
     -- Our task: after connecting to an upstream node, try to maintain an
@@ -206,11 +233,6 @@ chainSyncClient tracer cfg btime (ClockSkew maxSkew)
     -- TODO #465 Simplification for now: we don't trim candidate chains, so
     -- they might grow indefinitely.
     --
-    -- TODO #466 the 'ChainDB' exposes through 'knownInvalidBlocks :: STM m
-    -- (Set (Point blk))' the invalid points. Whenever an upstream node has
-    -- such a block in its chain, we must disconnect from it with an
-    -- appropriate exception.
-    --
     -- TODO #423 rate-limit switching chains, otherwise we can't place blame (we
     -- don't know which candidate's chain included the point that was
     -- poisoned). E.g. two rollbacks per time slot -> make it configurable ->
@@ -244,8 +266,8 @@ chainSyncClient tracer cfg btime (ClockSkew maxSkew)
     -- One of the points we sent intersected our chain. This intersection
     -- point will become the new tip of the candidate chain.
     intersectFound :: Point blk -> Point blk
-                      -> m (Consensus ClientStIdle blk m)
-    intersectFound intersection _theirHead = atomically $ do
+                   -> m (Consensus ClientStIdle blk m)
+    intersectFound intersection _theirHead = traceException $ atomically $ do
 
       CandidateState { candidateChain, candidateChainState } <- readTVar varCandidate
       -- Roll back the candidate to the @intersection@.
@@ -292,7 +314,7 @@ chainSyncClient tracer cfg btime (ClockSkew maxSkew)
     -- called at start-up.
     intersectNotFound :: Point blk
                        -> m (Consensus ClientStIdle blk m)
-    intersectNotFound theirHead = atomically $ do
+    intersectNotFound theirHead = traceException $ atomically $ do
       curChainState <- ouroborosChainState <$> getCurrentLedger
 
       CandidateState { candidateChain } <- readTVar varCandidate
@@ -334,17 +356,22 @@ chainSyncClient tracer cfg btime (ClockSkew maxSkew)
 
     rollForward :: Header blk -> Point blk
                 -> m (Consensus ClientStIdle blk m)
-    rollForward hdr _theirHead = atomically $ do
+    rollForward hdr _theirHead = traceException $ atomically $ do
+      -- Reject the block if invalid
+      let hdrHash  = headerHash hdr
+          hdrPoint = headerPoint hdr
+      (isInvalidBlock, _fingerprint) <- getIsInvalidBlock
+      when (isInvalidBlock hdrHash) $
+        disconnect $ InvalidBlock hdrPoint
+
       -- To validate the block, we need the consensus chain state (updated using
       -- headers only, and kept as part of the candidate state) and the
       -- (anachronistic) ledger view. We read the latter as the first thing in
       -- the transaction, because we might have to retry the transaction if the
       -- ledger state is too far behind the upstream peer (see below).
       curLedger <- ledgerState <$> getCurrentLedger
-
-      let hdrPoint, ourTip :: Point blk
-          hdrPoint = headerPoint hdr
-          ourTip   = ledgerTipPoint curLedger
+      let ourTip :: Point blk
+          ourTip = ledgerTipPoint curLedger
 
       -- NOTE: Low density chains
       --
@@ -430,7 +457,7 @@ chainSyncClient tracer cfg btime (ClockSkew maxSkew)
 
     rollBackward :: Point blk -> Point blk
                  -> m (Consensus ClientStIdle blk m)
-    rollBackward intersection theirHead = atomically $ do
+    rollBackward intersection theirHead = traceException $ atomically $ do
       CandidateState {..} <- readTVar varCandidate
 
       (candidateChain', candidateChainState') <-
@@ -474,6 +501,12 @@ chainSyncClient tracer cfg btime (ClockSkew maxSkew)
     disconnect :: ChainSyncClientException blk -> STM m a
     disconnect = throwM
 
+    -- | Trace any 'ChainSyncClientException' if thrown.
+    traceException :: m a -> m a
+    traceException m = m `catch` \(e :: ChainSyncClientException blk) -> do
+      traceWith tracer $ TraceException e
+      throwM e
+
     -- Recent offsets
     --
     -- These offsets are used to find an intersection point between our chain
@@ -495,6 +528,50 @@ chainSyncClient tracer cfg btime (ClockSkew maxSkew)
 
     k :: Word64
     k = maxRollbacks $ protocolSecurityParam cfg
+
+-- | Watch the invalid block checker function for changes (using its
+-- fingerprint). Whenever it changes, i.e., a new invalid block is detected,
+-- check whether the current candidate fragment contains any header that is
+-- invalid, if so, disconnect by throwing an 'InvalidBlock' exception.
+--
+-- Note that it is possible, yet unlikely, that the candidate fragment
+-- contains a header that corresponds to an invalid block, but before we have
+-- discovered this (after downloading and validating the block), the upstream
+-- node could have rolled back such that its candidate chain no longer
+-- contains the invalid block, in which case we do not disconnect from it.
+--
+-- This function spawns a background thread using the given 'ThreadRegistry'.
+--
+-- The cost of this check is \( O(cand * check) \) where /cand/ is the size of
+-- the candidate fragment and /check/ is the cost of checking whether a block
+-- is invalid (typically \( O(\log(invalid)) \) where /invalid/ is the number
+-- of invalid blocks).
+rejectInvalidBlocks
+    :: forall m blk.
+       ( MonadAsync m
+       , MonadFork  m
+       , MonadMask  m
+       , SupportedBlock blk
+       )
+    => Tracer m (TraceChainSyncClientEvent blk)
+    -> ThreadRegistry m
+    -> STM m (HeaderHash blk -> Bool, Fingerprint)
+       -- ^ Get the invalid block checker
+    -> STM m (CandidateState blk)
+    -> m ()
+rejectInvalidBlocks tracer registry getIsInvalidBlock getCandidateState =
+    onEachChange registry snd Nothing getIsInvalidBlock $ \(isInvalidBlock, _) -> do
+      candChain <- candidateChain <$> atomically getCandidateState
+      -- The invalid block is likely to be a more recent block, so check from
+      -- newest to oldest.
+      mapM_ disconnect $
+        find (isInvalidBlock . headerHash) (AF.toNewestFirst candChain)
+  where
+    disconnect :: Header blk -> m ()
+    disconnect invalidHeader = do
+      let ex = InvalidBlock (headerPoint invalidHeader)
+      traceWith tracer $ TraceException ex
+      throwM ex
 
 {-------------------------------------------------------------------------------
   TODO #221: Implement genesis
@@ -549,8 +626,11 @@ data TraceChainSyncClientEvent blk
     -- header.
   | TraceRolledBack (Point blk)
     -- ^ While following a candidate chain, we rolled back to the given point.
+  | TraceException (ChainSyncClientException blk)
+    -- ^ An exception was thrown by the Chain Sync Client.
 
-deriving instance (StandardHash blk, Eq   (Header blk))
+deriving instance (SupportedBlock blk, Eq (ValidationErr (BlockProtocol blk)),
+                   Eq (Header blk))
                => Eq   (TraceChainSyncClientEvent blk)
-deriving instance (StandardHash blk, Show (Header blk))
+deriving instance (SupportedBlock blk, Show (Header blk))
                => Show (TraceChainSyncClientEvent blk)
