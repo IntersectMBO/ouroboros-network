@@ -78,7 +78,7 @@ chainSyncServerForReader _tracer chainDB rdr =
       ServerStIdle {
         recvMsgRequestNext   = handleRequestNext,
         recvMsgFindIntersect = handleFindIntersect,
-        recvMsgDoneClient    = return ()
+        recvMsgDoneClient    = ChainDB.readerClose rdr
       }
 
     idle' :: ChainSyncServer b (Point blk) m ()
