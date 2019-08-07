@@ -44,7 +44,8 @@ import           Test.Consensus.Mempool.TestBlock
 tests :: TestTree
 tests = testGroup "Mempool"
   [ testGroup "TxSeq"
-      [ testProperty "lookupByTicketNo"                    prop_TxSeq_lookupByTicketNo
+      [ testProperty "lookupByTicketNo complete"           prop_TxSeq_lookupByTicketNo_complete
+      , testProperty "lookupByTicketNo sound"              prop_TxSeq_lookupByTicketNo_sound
       ]
   , testProperty "snapshotTxs == snapshotTxsAfter zeroIdx" prop_Mempool_snapshotTxs_snapshotTxsAfter
   , testProperty "valid added txs == getTxs"               prop_Mempool_addTxs_getTxs
@@ -457,8 +458,9 @@ withTestMempool setup@TestSetup { testLedgerState, testInitialTxs } prop =
   TxSeq Properties
 -------------------------------------------------------------------------------}
 
-prop_TxSeq_lookupByTicketNo :: [Int] -> Bool
-prop_TxSeq_lookupByTicketNo xs =
+-- | Finds elements in the sequence
+prop_TxSeq_lookupByTicketNo_complete :: [Int] -> Bool
+prop_TxSeq_lookupByTicketNo_complete xs =
     and [ case TxSeq.lookupByTicketNo txseq tn of
             Just tx' -> tx == tx'
             Nothing  -> False
@@ -467,6 +469,35 @@ prop_TxSeq_lookupByTicketNo xs =
     txseq :: TxSeq Int
     txseq = foldl' (TxSeq.:>) TxSeq.Empty
                    (zipWith TxTicket xs (map TicketNo [0..]))
+
+-- | Only finds elements in the sequence
+prop_TxSeq_lookupByTicketNo_sound ::
+    [Small Int] -> Small Int -> Property
+prop_TxSeq_lookupByTicketNo_sound smalls small =
+    case TxSeq.lookupByTicketNo txseq (mkTicketNo needle) of
+      Just tx' ->
+        label "successful hit" $
+        counterexample ("needle: " ++ show needle) $
+        counterexample ("haystack: " ++ show haystack) $
+        tx' === needle
+      Nothing  ->
+        label "successful miss" $
+        property $ needle `Set.notMember` haystack'
+  where
+    -- an ascending haystack of nonnegatives
+    haystack = Set.toAscList haystack'
+    haystack' = Set.fromList $ map (abs . getSmall) smalls
+
+    -- a nonnegative needle
+    needle = abs (getSmall small)
+
+    -- the identity mapping over haystack
+    txseq :: TxSeq Int
+    txseq =
+        foldl' (TxSeq.:>) TxSeq.Empty $ map mkTicket haystack
+
+    mkTicket x = TxTicket x (mkTicketNo x)
+    mkTicketNo = TicketNo . toEnum
 
 {-------------------------------------------------------------------------------
   TicketNo Properties
