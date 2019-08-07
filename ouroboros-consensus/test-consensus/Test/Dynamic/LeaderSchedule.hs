@@ -35,9 +35,9 @@ import           Ouroboros.Consensus.Util.Condense (Condense (..))
 import           Ouroboros.Consensus.Util.Random
 
 import           Test.Dynamic.General
-import           Test.Dynamic.Praos (prop_all_common_prefix)
 import           Test.Dynamic.Util
 
+import           Test.Util.Orphans.Arbitrary ()
 import           Test.Util.Range
 
 tests :: TestTree
