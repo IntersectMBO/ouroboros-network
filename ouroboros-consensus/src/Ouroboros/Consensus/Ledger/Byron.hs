@@ -299,6 +299,7 @@ applyByronLedgerBlock validationMode
       }
     bodyEnv = CC.Block.BodyEnvironment
       { CC.Block.protocolMagic      = fixPM $ CC.Genesis.configProtocolMagic cfg
+      , CC.Block.utxoConfiguration  = CC.Genesis.configUTxOConfiguration cfg
       , CC.Block.k                  = CC.Genesis.configK cfg
       , CC.Block.allowedDelegators  = allowedDelegators cfg
       , CC.Block.protocolParameters = protocolParameters
@@ -911,6 +912,7 @@ applyByronGenTx validationMode (ByronEBBLedgerConfig (ByronLedgerConfig cfg)) ge
         env = CC.UTxO.Environment
           { CC.UTxO.protocolMagic = protocolMagic
           , CC.UTxO.protocolParameters = CC.UPI.adoptedProtocolParameters updateState
+          , CC.UTxO.utxoConfiguration = CC.Genesis.configUTxOConfiguration cfg
           }
         fixPM (Crypto.AProtocolMagic a b) = Crypto.AProtocolMagic (reAnnotate a) b
 
