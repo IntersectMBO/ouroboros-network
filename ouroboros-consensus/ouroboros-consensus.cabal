@@ -256,6 +256,7 @@ test-suite test-consensus
                     Test.Dynamic.Praos
                     Test.Dynamic.TxGen
                     Test.Dynamic.Util
+                    Test.Dynamic.Util.Expectations
                     Test.Ouroboros
                     Test.Util.DepFn
                     Test.Util.HasCreator

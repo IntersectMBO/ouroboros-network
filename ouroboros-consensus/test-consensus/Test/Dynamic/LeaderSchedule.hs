@@ -72,16 +72,13 @@ prop_simple_leader_schedule_convergence :: PraosParams
 prop_simple_leader_schedule_convergence
   params@PraosParams{praosSecurityParam = k}
   numCoreNodes numSlots schedule seed =
-    counterexample ("schedule: " <> condense schedule <> "\n" <> show longest) $
-    label ("longest crowded run " <> show (crowdedRunLength longest)) $
+    counterexample ("schedule: " <> condense schedule) $
     counterexample (tracesToDot final) $
     tabulate "shortestLength" [show (rangeK k (shortestLength final'))] $
     prop_all_common_prefix
         (maxRollbacks k)
         (Map.elems final')
   where
-    longest = longestCrowdedRun schedule
-
     TestOutput{testOutputNodes = final} =
         runTestNetwork
             (\nid -> protocolInfo numCoreNodes nid
@@ -100,7 +97,7 @@ genLeaderSchedule :: SecurityParam
                   -> NumCoreNodes
                   -> Gen LeaderSchedule
 genLeaderSchedule k (NumSlots numSlots) (NumCoreNodes numCoreNodes) =
-    flip suchThat notTooCrowded $ do
+    flip suchThat (notTooCrowded k) $ do
         leaders <- replicateM numSlots $ frequency
             [ ( 4, pick 0)
             , ( 2, pick 1)
@@ -119,10 +116,6 @@ genLeaderSchedule k (NumSlots numSlots) (NumCoreNodes numCoreNodes) =
             nid <- elements nids
             xs  <- go (filter (/= nid) nids) (n - 1)
             return $ CoreNodeId nid : xs
-
-    notTooCrowded :: LeaderSchedule -> Bool
-    notTooCrowded schedule =
-        crowdedRunLength (longestCrowdedRun schedule) <= maxRollbacks k
 
 shrinkLeaderSchedule :: NumSlots -> LeaderSchedule -> [LeaderSchedule]
 shrinkLeaderSchedule (NumSlots numSlots) (LeaderSchedule m) =

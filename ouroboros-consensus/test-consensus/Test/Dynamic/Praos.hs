@@ -74,10 +74,8 @@ prop_simple_praos_convergence
     counterexample (show final') $
     counterexample (tracesToDot final) $
     counterexample (condense schedule) $
-    counterexample (show longest) $
-    label ("longest crowded run " <> show crowded) $
     tabulate "shortestLength" [show (rangeK k (shortestLength final'))] $
-    if crowded > maxRollbacks k
+    if maxForkLength > maxRollbacks k
       then label "too crowded"     $ property True
       else label "not too crowded" $
                prop_all_common_prefix
@@ -92,5 +90,5 @@ prop_simple_praos_convergence
     -- Without the 'NodeConfig's
     final'   = snd <$> final
     schedule = leaderScheduleFromTrace numSlots final
-    longest  = longestCrowdedRun schedule
-    crowded  = crowdedRunLength longest
+
+    NumBlocks maxForkLength = determineForkLength k schedule
