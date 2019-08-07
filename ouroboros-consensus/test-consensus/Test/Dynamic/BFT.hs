@@ -25,7 +25,6 @@ import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Demo
 import           Ouroboros.Consensus.Ledger.Mock
 import           Ouroboros.Consensus.Node.ProtocolInfo
-import           Ouroboros.Consensus.NodeId
 import           Ouroboros.Consensus.Protocol
 import           Ouroboros.Consensus.Util.Random
 import           Ouroboros.Network.MockChain.Chain (Chain)
@@ -55,14 +54,12 @@ prop_simple_bft_convergence k numCoreNodes =
       isValid
       numCoreNodes
   where
-    isValid :: [NodeId]
-            -> TestOutput (SimpleBftBlock SimpleMockCrypto BftMockCrypto)
+    isValid :: TestOutput (SimpleBftBlock SimpleMockCrypto BftMockCrypto)
             -> Property
-    isValid nodeIds TestOutput{testOutputNodes = final} =
-          counterexample (show final')
-     $    tabulate "shortestLength" [show (rangeK k (shortestLength final'))]
-     $    Map.keys final === nodeIds
-     .&&. allEqual (takeChainPrefix <$> Map.elems final')
+    isValid TestOutput{testOutputNodes = final} =
+        counterexample (show final') $
+        tabulate "shortestLength" [show (rangeK k (shortestLength final'))] $
+        allEqual (takeChainPrefix <$> Map.elems final')
       where
         -- Without the 'NodeConfig's
         final' = snd <$> final

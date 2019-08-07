@@ -60,7 +60,8 @@ prop_simple_leader_schedule_convergence :: NumSlots
                                         -> PraosParams
                                         -> Seed
                                         -> Property
-prop_simple_leader_schedule_convergence numSlots numCoreNodes params seed =
+prop_simple_leader_schedule_convergence
+  numSlots numCoreNodes params@PraosParams{praosSecurityParam = k} seed =
     forAllShrink
         (genLeaderSchedule numSlots numCoreNodes params)
         (shrinkLeaderSchedule numSlots)
@@ -75,17 +76,14 @@ prop_simple_leader_schedule_convergence numSlots numCoreNodes params seed =
                     numSlots
                     seed
   where
-    isValid :: [NodeId]
-            -> TestOutput (SimplePraosRuleBlock SimpleMockCrypto)
+    isValid :: TestOutput (SimplePraosRuleBlock SimpleMockCrypto)
             -> Property
-    isValid nodeIds TestOutput{testOutputNodes = final} =
-            counterexample (tracesToDot final)
-       $    tabulate "shortestLength"
-            [show (rangeK (praosSecurityParam params) (shortestLength final'))]
-       $    Map.keys final === nodeIds
-       .&&. prop_all_common_prefix
-              (maxRollbacks $ praosSecurityParam params)
-              (Map.elems final')
+    isValid TestOutput{testOutputNodes = final} =
+       counterexample (tracesToDot final) $
+       tabulate "shortestLength" [show (rangeK k (shortestLength final'))] $
+       prop_all_common_prefix
+           (maxRollbacks k)
+           (Map.elems final')
       where
         -- Without the 'NodeConfig's
         final' = snd <$> final

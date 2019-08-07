@@ -44,8 +44,7 @@ prop_simple_protocol_convergence :: forall blk.
                                    , TracingConstraints blk
                                    )
                                  => (CoreNodeId -> ProtocolInfo blk)
-                                 -> (   [NodeId]
-                                     -> TestOutput blk
+                                 -> (   TestOutput blk
                                      -> Property)
                                  -> NumCoreNodes
                                  -> NumSlots
@@ -69,15 +68,14 @@ test_simple_protocol_convergence :: forall m blk.
                                     , TracingConstraints blk
                                     )
                                  => (CoreNodeId -> ProtocolInfo blk)
-                                 -> (   [NodeId]
-                                     -> TestOutput blk
+                                 -> (   TestOutput blk
                                      -> Property)
                                  -> NumCoreNodes
                                  -> NumSlots
                                  -> Seed
                                  -> m Property
 test_simple_protocol_convergence pInfo isValid numCoreNodes numSlots seed =
-    fmap (isValid nodeIds) $ withThreadRegistry $ \registry -> do
+    fmap isValid $ withThreadRegistry $ \registry -> do
       testBtime <- newTestBlockchainTime registry numSlots slotLen
       broadcastNetwork registry
                        testBtime
@@ -86,8 +84,5 @@ test_simple_protocol_convergence pInfo isValid numCoreNodes numSlots seed =
                        (seedToChaCha seed)
                        slotLen
   where
-    nodeIds :: [NodeId]
-    nodeIds = map fromCoreNodeId $ enumCoreNodes numCoreNodes
-
     slotLen :: DiffTime
     slotLen = 100000

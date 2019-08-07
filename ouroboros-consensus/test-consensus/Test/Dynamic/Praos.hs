@@ -32,7 +32,6 @@ import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Demo
 import           Ouroboros.Consensus.Ledger.Mock
 import           Ouroboros.Consensus.Node.ProtocolInfo
-import           Ouroboros.Consensus.NodeId (NodeId)
 import           Ouroboros.Consensus.Protocol
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Random
@@ -85,26 +84,24 @@ prop_simple_praos_convergence params numCoreNodes numSlots =
       numCoreNodes
       numSlots
   where
-    PraosParams{..} = params
+    PraosParams{praosSecurityParam = k} = params
 
-    isValid :: [NodeId]
-            -> TestOutput (SimplePraosBlock SimpleMockCrypto PraosMockCrypto)
+    isValid :: TestOutput (SimplePraosBlock SimpleMockCrypto PraosMockCrypto)
             -> Property
-    isValid nodeIds TestOutput{testOutputNodes = final}
+    isValid TestOutput{testOutputNodes = final}
        = counterexample (show final')
        $ counterexample (tracesToDot final)
        $ counterexample (condense schedule)
        $ counterexample (show longest)
        $ label ("longest crowded run " <> show crowded)
        $ tabulate "shortestLength"
-         [show (rangeK praosSecurityParam (shortestLength final'))]
-       $ (Map.keys final === nodeIds)
-         .&&. if crowded > maxRollbacks praosSecurityParam
-               then label "too crowded"     $ property True
-               else label "not too crowded" $
-                       prop_all_common_prefix
-                         (maxRollbacks praosSecurityParam)
-                         (Map.elems final')
+         [show (rangeK k (shortestLength final'))]
+       $ if crowded > maxRollbacks k
+           then label "too crowded"     $ property True
+           else label "not too crowded" $
+                   prop_all_common_prefix
+                       (maxRollbacks k)
+                       (Map.elems final')
       where
         -- Without the 'NodeConfig's
         final'   = snd <$> final
