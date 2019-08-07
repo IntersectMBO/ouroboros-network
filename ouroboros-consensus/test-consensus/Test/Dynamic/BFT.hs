@@ -48,21 +48,18 @@ prop_simple_bft_convergence :: SecurityParam
                             -> NumSlots
                             -> Seed
                             -> Property
-prop_simple_bft_convergence k numCoreNodes =
-    prop_simple_protocol_convergence
-      (\nid -> protocolInfo numCoreNodes nid (ProtocolMockBFT k))
-      isValid
-      numCoreNodes
+prop_simple_bft_convergence k numCoreNodes numSlots seed =
+    counterexample (show final') $
+    tabulate "shortestLength" [show (rangeK k (shortestLength final'))] $
+    allEqual (takeChainPrefix <$> Map.elems final')
   where
-    isValid :: TestOutput (SimpleBftBlock SimpleMockCrypto BftMockCrypto)
-            -> Property
-    isValid TestOutput{testOutputNodes = final} =
-        counterexample (show final') $
-        tabulate "shortestLength" [show (rangeK k (shortestLength final'))] $
-        allEqual (takeChainPrefix <$> Map.elems final')
-      where
-        -- Without the 'NodeConfig's
-        final' = snd <$> final
-        takeChainPrefix :: Chain (SimpleBftBlock SimpleMockCrypto BftMockCrypto)
-                        -> Chain (SimpleBftBlock SimpleMockCrypto BftMockCrypto)
-        takeChainPrefix = id -- in BFT, chains should indeed all be equal.
+    TestOutput{testOutputNodes = final} =
+        runTestNetwork
+            (\nid -> protocolInfo numCoreNodes nid (ProtocolMockBFT k))
+            numCoreNodes numSlots seed
+
+    -- Without the 'NodeConfig's
+    final' = snd <$> final
+    takeChainPrefix :: Chain (SimpleBftBlock SimpleMockCrypto BftMockCrypto)
+                    -> Chain (SimpleBftBlock SimpleMockCrypto BftMockCrypto)
+    takeChainPrefix = id -- in BFT, chains should indeed all be equal.

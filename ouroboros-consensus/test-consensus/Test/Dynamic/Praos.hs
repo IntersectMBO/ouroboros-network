@@ -30,7 +30,6 @@ import qualified Ouroboros.Network.MockChain.Chain as Chain
 
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Demo
-import           Ouroboros.Consensus.Ledger.Mock
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Protocol
 import           Ouroboros.Consensus.Util.Condense
@@ -77,37 +76,31 @@ prop_simple_praos_convergence :: PraosParams
                               -> NumSlots
                               -> Seed
                               -> Property
-prop_simple_praos_convergence params numCoreNodes numSlots =
-    prop_simple_protocol_convergence
-      (\nid -> protocolInfo numCoreNodes nid (ProtocolMockPraos params))
-      isValid
-      numCoreNodes
-      numSlots
+prop_simple_praos_convergence
+  params@PraosParams{praosSecurityParam = k} numCoreNodes numSlots seed =
+    counterexample (show final') $
+    counterexample (tracesToDot final) $
+    counterexample (condense schedule) $
+    counterexample (show longest) $
+    label ("longest crowded run " <> show crowded) $
+    tabulate "shortestLength" [show (rangeK k (shortestLength final'))] $
+    if crowded > maxRollbacks k
+      then label "too crowded"     $ property True
+      else label "not too crowded" $
+               prop_all_common_prefix
+                   (maxRollbacks k)
+                   (Map.elems final')
   where
-    PraosParams{praosSecurityParam = k} = params
+    TestOutput{testOutputNodes = final} =
+        runTestNetwork
+            (\nid -> protocolInfo numCoreNodes nid (ProtocolMockPraos params))
+            numCoreNodes numSlots seed
 
-    isValid :: TestOutput (SimplePraosBlock SimpleMockCrypto PraosMockCrypto)
-            -> Property
-    isValid TestOutput{testOutputNodes = final}
-       = counterexample (show final')
-       $ counterexample (tracesToDot final)
-       $ counterexample (condense schedule)
-       $ counterexample (show longest)
-       $ label ("longest crowded run " <> show crowded)
-       $ tabulate "shortestLength"
-         [show (rangeK k (shortestLength final'))]
-       $ if crowded > maxRollbacks k
-           then label "too crowded"     $ property True
-           else label "not too crowded" $
-                   prop_all_common_prefix
-                       (maxRollbacks k)
-                       (Map.elems final')
-      where
-        -- Without the 'NodeConfig's
-        final'   = snd <$> final
-        schedule = leaderScheduleFromTrace numSlots final
-        longest  = longestCrowdedRun schedule
-        crowded  = crowdedRunLength longest
+    -- Without the 'NodeConfig's
+    final'   = snd <$> final
+    schedule = leaderScheduleFromTrace numSlots final
+    longest  = longestCrowdedRun schedule
+    crowded  = crowdedRunLength longest
 
 prop_all_common_prefix :: (HasHeader b, Condense b, Eq b)
                        => Word64 -> [Chain b] -> Property

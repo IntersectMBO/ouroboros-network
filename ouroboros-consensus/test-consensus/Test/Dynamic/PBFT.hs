@@ -48,25 +48,23 @@ prop_simple_pbft_convergence :: SecurityParam
                              -> NumSlots
                              -> Seed
                              -> Property
-prop_simple_pbft_convergence k numCoreNodes@(NumCoreNodes nn) =
-    prop_simple_protocol_convergence
-      (\nid -> protocolInfo numCoreNodes nid (ProtocolMockPBFT params))
-      isValid
-      numCoreNodes
+prop_simple_pbft_convergence
+  k numCoreNodes@(NumCoreNodes nn) numSlots seed =
+    counterexample (show final') $
+    tabulate "shortestLength" [show (rangeK k (shortestLength final'))] $
+    allEqual (takeChainPrefix <$> Map.elems final')
   where
     sigWin = fromIntegral $ nn * 10
     sigThd = (1.0 / fromIntegral nn) + 0.1
     params = PBftParams k (fromIntegral nn) sigWin sigThd
 
-    isValid :: TestOutput (SimplePBftBlock SimpleMockCrypto PBftMockCrypto)
-            -> Property
-    isValid TestOutput{testOutputNodes = final} =
-        counterexample (show final') $
-        tabulate "shortestLength" [show (rangeK k (shortestLength final'))] $
-        allEqual (takeChainPrefix <$> Map.elems final')
-      where
-        -- Without the 'NodeConfig's
-        final' = snd <$> final
-        takeChainPrefix :: Chain (SimplePBftBlock SimpleMockCrypto PBftMockCrypto)
-                        -> Chain (SimplePBftBlock SimpleMockCrypto PBftMockCrypto)
-        takeChainPrefix = id -- in PBFT, chains should indeed all be equal.
+    TestOutput{testOutputNodes = final} =
+        runTestNetwork
+            (\nid -> protocolInfo numCoreNodes nid (ProtocolMockPBFT params))
+            numCoreNodes numSlots seed
+
+    -- Without the 'NodeConfig's
+    final' = snd <$> final
+    takeChainPrefix :: Chain (SimplePBftBlock SimpleMockCrypto PBftMockCrypto)
+                    -> Chain (SimplePBftBlock SimpleMockCrypto PBftMockCrypto)
+    takeChainPrefix = id -- in PBFT, chains should indeed all be equal.
