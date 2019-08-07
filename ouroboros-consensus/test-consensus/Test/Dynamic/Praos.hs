@@ -16,7 +16,6 @@ module Test.Dynamic.Praos (
     tests
   ) where
 
-import qualified Data.Map.Strict as Map
 import           Test.QuickCheck
 
 import           Test.Tasty
@@ -26,14 +25,12 @@ import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Demo
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Protocol
-import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Random
 
 import           Test.Dynamic.General
 import           Test.Dynamic.Util
 
 import           Test.Util.Orphans.Arbitrary ()
-import           Test.Util.Range
 
 tests :: TestTree
 tests = testGroup "Dynamic chain generation"
@@ -71,24 +68,15 @@ prop_simple_praos_convergence :: PraosParams
                               -> Property
 prop_simple_praos_convergence
   params@PraosParams{praosSecurityParam = k} numCoreNodes numSlots seed =
-    counterexample (show final') $
-    counterexample (tracesToDot final) $
-    counterexample (condense schedule) $
-    tabulate "shortestLength" [show (rangeK k (shortestLength final'))] $
-    if maxForkLength > maxRollbacks k
+    counterexample (tracesToDot testOutputNodes) $
+    if tooCrowded k schedule
       then label "too crowded"     $ property True
       else label "not too crowded" $
-               prop_all_common_prefix
-                   (maxRollbacks k)
-                   (Map.elems final')
+               prop_general k schedule testOutput
   where
-    TestOutput{testOutputNodes = final} =
+    testOutput@TestOutput{testOutputNodes} =
         runTestNetwork
             (\nid -> protocolInfo numCoreNodes nid (ProtocolMockPraos params))
             numCoreNodes numSlots seed
 
-    -- Without the 'NodeConfig's
-    final'   = snd <$> final
-    schedule = leaderScheduleFromTrace numSlots final
-
-    NumBlocks maxForkLength = determineForkLength k schedule
+    schedule = leaderScheduleFromTrace numSlots testOutputNodes

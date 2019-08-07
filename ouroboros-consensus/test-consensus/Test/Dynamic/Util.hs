@@ -6,19 +6,18 @@
 
 module Test.Dynamic.Util (
   -- * Chain properties
-    allEqual
-  , prop_all_common_prefix
+    prop_all_common_prefix
   , shortestLength
   -- * LeaderSchedule
   , leaderScheduleFromTrace
-  , notTooCrowded
+  , roundRobinLeaderSchedule
+  , tooCrowded
   -- * GraphViz Dot
   , tracesToDot
   -- * Re-exports
   , module Test.Dynamic.Util.Expectations
   ) where
 
-import           Data.Foldable (foldl')
 import           Data.Graph.Inductive.Graph
 import           Data.Graph.Inductive.PatriciaTree
 import           Data.GraphViz
@@ -39,6 +38,8 @@ import qualified Ouroboros.Network.MockChain.Chain as Chain
 
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Ledger.Abstract
+import           Ouroboros.Consensus.Node.ProtocolInfo.Abstract
+                     (NumCoreNodes (..))
 import           Ouroboros.Consensus.NodeId
 import           Ouroboros.Consensus.Protocol.Abstract (NodeConfig,
                      SecurityParam (..))
@@ -56,39 +57,6 @@ import           Test.Dynamic.Util.Expectations (NumBlocks (..),
 {-------------------------------------------------------------------------------
   Chain properties
 -------------------------------------------------------------------------------}
-
-allEqual :: forall b. (Condense b, Eq b, HasHeader b) => [Chain b] -> Property
-allEqual []             = property True
-allEqual [_]            = property True
-allEqual (x : xs@(_:_)) =
-    let c = foldl' Chain.commonPrefix x xs
-    in  foldl' (\prop d -> prop .&&. f c d) (property True) xs
-  where
-    f :: Chain b -> Chain b -> Property
-    f c d = counterexample (g c d) $ c == d
-
-    g :: Chain b -> Chain b -> String
-    g c d = case (Chain.lastSlot c, Chain.lastSlot d) of
-        (Nothing, Nothing) -> error "impossible case"
-        (Nothing, Just t)  ->    "empty intersection of non-empty chains (one reaches slot "
-                              <> show (unSlotNo t)
-                              <> " and contains "
-                              <> show (Chain.length d)
-                              <> " blocks): "
-                              <> condense d
-        (Just _, Nothing)  -> error "impossible case"
-        (Just s, Just t)   ->    "intersection reaches slot "
-                              <> show (unSlotNo s)
-                              <> " and has length "
-                              <> show (Chain.length c)
-                              <> ", but at least one chain reaches slot "
-                              <> show (unSlotNo t)
-                              <> " and has length "
-                              <> show (Chain.length d)
-                              <> ": "
-                              <> condense c
-                              <> " /= "
-                              <> condense d
 
 shortestLength :: Map NodeId (Chain b) -> Natural
 shortestLength = fromIntegral . minimum . map Chain.length . Map.elems
@@ -271,7 +239,14 @@ leaderScheduleFromTrace (NumSlots numSlots) = LeaderSchedule .
         | nid `elem` xs = xs
         | otherwise     = nid : xs
 
-notTooCrowded :: SecurityParam -> LeaderSchedule -> Bool
-notTooCrowded k schedule = maxForkLength <= maxRollbacks k
+tooCrowded :: SecurityParam -> LeaderSchedule -> Bool
+tooCrowded k schedule = maxForkLength > maxRollbacks k
   where
     NumBlocks maxForkLength = determineForkLength k schedule
+
+roundRobinLeaderSchedule :: NumCoreNodes -> NumSlots -> LeaderSchedule
+roundRobinLeaderSchedule (NumCoreNodes n) (NumSlots t) = LeaderSchedule $
+    Map.fromList $
+    [ (SlotNo (toEnum i), [CoreNodeId (i `mod` n)])
+    | i <- [ 0 .. t - 1 ]
+    ]

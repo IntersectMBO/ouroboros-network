@@ -31,14 +31,12 @@ import           Ouroboros.Consensus.Demo
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.NodeId
 import           Ouroboros.Consensus.Protocol
-import           Ouroboros.Consensus.Util.Condense (Condense (..))
 import           Ouroboros.Consensus.Util.Random
 
 import           Test.Dynamic.General
 import           Test.Dynamic.Util
 
 import           Test.Util.Orphans.Arbitrary ()
-import           Test.Util.Range
 
 tests :: TestTree
 tests = testGroup "Dynamic chain generation"
@@ -72,21 +70,14 @@ prop_simple_leader_schedule_convergence :: PraosParams
 prop_simple_leader_schedule_convergence
   params@PraosParams{praosSecurityParam = k}
   numCoreNodes numSlots schedule seed =
-    counterexample ("schedule: " <> condense schedule) $
-    counterexample (tracesToDot final) $
-    tabulate "shortestLength" [show (rangeK k (shortestLength final'))] $
-    prop_all_common_prefix
-        (maxRollbacks k)
-        (Map.elems final')
+    counterexample (tracesToDot testOutputNodes) $
+    prop_general k schedule testOutput
   where
-    TestOutput{testOutputNodes = final} =
+    testOutput@TestOutput{testOutputNodes} =
         runTestNetwork
             (\nid -> protocolInfo numCoreNodes nid
                  (ProtocolLeaderSchedule params schedule))
             numCoreNodes numSlots seed
-
-    -- Without the 'NodeConfig's
-    final' = snd <$> final
 
 {-------------------------------------------------------------------------------
   Dependent generation and shrinking of leader schedules
@@ -97,7 +88,7 @@ genLeaderSchedule :: SecurityParam
                   -> NumCoreNodes
                   -> Gen LeaderSchedule
 genLeaderSchedule k (NumSlots numSlots) (NumCoreNodes numCoreNodes) =
-    flip suchThat (notTooCrowded k) $ do
+    flip suchThat (not . tooCrowded k) $ do
         leaders <- replicateM numSlots $ frequency
             [ ( 4, pick 0)
             , ( 2, pick 1)
