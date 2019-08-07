@@ -608,12 +608,18 @@ implIteratorNext varItState IteratorEnv{..} =
         NotDone blk | blockHash blk == hash -> do
           trace $ BlockWasCopiedToImmDB hash
           let continueFrom' = StreamFromExclusive (blockPoint blk)
-          atomically $ writeTVar varItState $ case NE.nonEmpty hashes of
-            Nothing      -> Closed
-            Just hashes' -> InImmDBRetry continueFrom' immIt hashes'
+          case NE.nonEmpty hashes of
+            Nothing      -> do
+              atomically $ writeTVar varItState Closed
+              ImmDB.iteratorClose itImmDB immIt
+            Just hashes' ->
+              atomically $ writeTVar varItState $
+                InImmDBRetry continueFrom' immIt hashes'
           return $ IteratorResult blk
 
         DoneAfter blk | blockHash blk == hash -> do
+          -- 'DoneAfter': 'selectResult' will have closed the ImmDB iterator
+          -- already
           trace $ BlockWasCopiedToImmDB hash
           let continueFrom' = StreamFromExclusive (blockPoint blk)
           case NE.nonEmpty hashes of
@@ -623,8 +629,8 @@ implIteratorNext varItState IteratorEnv{..} =
               trace SwitchBackToVolDB
           return $ IteratorResult blk
 
-        -- Hash mismatch or 'Done'
-        _ -> case mbContinueFrom of
+        -- Hash mismatch or 'Done'. Close the ImmDB Iterator (idempotent).
+        _ -> ImmDB.iteratorClose itImmDB immIt *> case mbContinueFrom of
           -- We just switched to this state and the iterator was just opened.
           -- The block must be GC'ed, since we opened the iterator because it
           -- was missing from the VolatileDB and now it is not in the
