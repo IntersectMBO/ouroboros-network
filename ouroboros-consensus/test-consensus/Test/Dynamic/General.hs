@@ -11,20 +11,12 @@
 
 {-# OPTIONS_GHC -Wredundant-constraints #-}
 module Test.Dynamic.General (
-    prop_simple_protocol_convergence
+    runTestNetwork
     -- * Re-exports
   , TestOutput (..)
   ) where
 
-import           Test.QuickCheck
-
-import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadFork (MonadFork)
-import           Control.Monad.Class.MonadST
-import           Control.Monad.Class.MonadSTM
-import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
-import           Control.Monad.Class.MonadTimer
 import           Control.Monad.IOSim (runSimOrThrow)
 
 import           Ouroboros.Consensus.BlockchainTime
@@ -38,56 +30,28 @@ import           Ouroboros.Consensus.Util.ThreadRegistry
 import           Test.Dynamic.Network
 import           Test.Dynamic.TxGen
 
-prop_simple_protocol_convergence :: forall blk.
-                                   ( RunNode blk
-                                   , TxGen blk
-                                   , TracingConstraints blk
-                                   )
-                                 => (CoreNodeId -> ProtocolInfo blk)
-                                 -> (   [NodeId]
-                                     -> TestOutput blk
-                                     -> Property)
-                                 -> NumCoreNodes
-                                 -> NumSlots
-                                 -> Seed
-                                 -> Property
-prop_simple_protocol_convergence pInfo isValid numCoreNodes numSlots seed =
+runTestNetwork ::
+  forall blk.
+     ( RunNode blk
+     , TxGen blk
+     , TracingConstraints blk
+     )
+  => (CoreNodeId -> ProtocolInfo blk)
+  -> NumCoreNodes
+  -> NumSlots
+  -> Seed
+  -> TestOutput blk
+runTestNetwork pInfo numCoreNodes numSlots seed =
     runSimOrThrow $
-      test_simple_protocol_convergence pInfo isValid numCoreNodes numSlots seed
-
--- Run protocol on the broadcast network, and check resulting chains on all nodes.
-test_simple_protocol_convergence :: forall m blk.
-                                    ( MonadAsync m
-                                    , MonadFork  m
-                                    , MonadMask  m
-                                    , MonadST    m
-                                    , MonadTime  m
-                                    , MonadTimer m
-                                    , MonadThrow (STM m)
-                                    , RunNode blk
-                                    , TxGen blk
-                                    , TracingConstraints blk
-                                    )
-                                 => (CoreNodeId -> ProtocolInfo blk)
-                                 -> (   [NodeId]
-                                     -> TestOutput blk
-                                     -> Property)
-                                 -> NumCoreNodes
-                                 -> NumSlots
-                                 -> Seed
-                                 -> m Property
-test_simple_protocol_convergence pInfo isValid numCoreNodes numSlots seed =
-    fmap (isValid nodeIds) $ withThreadRegistry $ \registry -> do
-      testBtime <- newTestBlockchainTime registry numSlots slotLen
-      broadcastNetwork registry
-                       testBtime
-                       numCoreNodes
-                       pInfo
-                       (seedToChaCha seed)
-                       slotLen
+        withThreadRegistry $ \registry -> do
+            testBtime <- newTestBlockchainTime registry numSlots slotLen
+            broadcastNetwork
+                registry
+                testBtime
+                numCoreNodes
+                pInfo
+                (seedToChaCha seed)
+                slotLen
   where
-    nodeIds :: [NodeId]
-    nodeIds = map fromCoreNodeId $ enumCoreNodes numCoreNodes
-
     slotLen :: DiffTime
     slotLen = 100000
