@@ -26,6 +26,7 @@
           (hsPkgs.contra-tracer)
           (hsPkgs.cardano-ledger-test)
           (hsPkgs.base16-bytestring)
+          (hsPkgs.bifunctors)
           (hsPkgs.bimap)
           (hsPkgs.bytestring)
           (hsPkgs.cardano-binary)

@@ -27,7 +27,7 @@ module Ouroboros.Storage.ChainDB.Impl.Background
   ) where
 
 import           Control.Exception (assert)
-import           Control.Monad (forM_, forever)
+import           Control.Monad (forM_, forever, void)
 import           Data.Bifunctor (first)
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (fromMaybe)
@@ -337,12 +337,8 @@ updateLedgerSnapshots
   -> m ()
 updateLedgerSnapshots CDB{..} = do
     -- TODO avoid taking multiple snapshots corresponding to the same tip.
-    (snapshot, pt)   <- LgrDB.takeSnapshot  cdbLgrDB
-    trace $ TookSnapshot snapshot pt
-    deletedSnapshots <- LgrDB.trimSnapshots cdbLgrDB
-    forM_ deletedSnapshots $ trace . DeletedSnapshot
-  where
-    trace = traceWith (contramap TraceLedgerEvent cdbTracer)
+    void $ LgrDB.takeSnapshot  cdbLgrDB
+    void $ LgrDB.trimSnapshots cdbLgrDB
 
 -- | Execute 'updateLedgerSnapshots', wait 'onDiskWriteInterval', and repeat.
 updateLedgerSnapshotsRunner

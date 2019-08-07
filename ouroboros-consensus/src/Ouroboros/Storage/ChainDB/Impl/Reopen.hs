@@ -27,12 +27,16 @@ import           Control.Monad.Class.MonadTimer
 import           Control.Tracer
 
 import qualified Ouroboros.Network.AnchoredFragment as AF
-import           Ouroboros.Network.Block (HasHeader (..), castPoint, genesisBlockNo)
+import           Ouroboros.Network.Block (HasHeader (..), blockPoint, castPoint,
+                     genesisBlockNo, genesisPoint)
 
 import           Ouroboros.Consensus.Block (Header)
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util (whenJust)
+
+import           Ouroboros.Storage.Common (EpochNo)
+import           Ouroboros.Storage.EpochInfo (epochInfoEpoch)
 
 import qualified Ouroboros.Storage.ChainDB.Impl.Background as Background
 import           Ouroboros.Storage.ChainDB.Impl.ChainSel
@@ -121,14 +125,37 @@ reopen (CDBHandle varState) launchBgTasks = do
         -- TODO what will actually happen if an exception is thrown? What if
         -- recovery is triggered?
 
+        let blockEpoch :: blk -> m EpochNo
+            blockEpoch = epochInfoEpoch cdbEpochInfo . blockSlot
+
         ImmDB.reopen cdbImmDB
+        -- In order to figure out the 'BlockNo' and 'Point' at the tip of the
+        -- ImmutableDB, we need to read the block at the tip of the ImmutableDB.
+        immDbTipBlock <- ImmDB.getBlockAtTip cdbImmDB
+        -- Note that 'immDbTipBlockNo' might not end up being the \"immutable\"
+        -- block(no), because the current chain computed from the VolatileDB could
+        -- be longer than @k@.
+        let immDbTipBlockNo = maybe genesisBlockNo blockNo    immDbTipBlock
+            immDbTipPoint   = maybe genesisPoint   blockPoint immDbTipBlock
+        immDbTipEpoch      <- maybe (return 0)     blockEpoch immDbTipBlock
+        traceWith cdbTracer $ TraceOpenEvent $ OpenedImmDB
+          { _immDbTip      = immDbTipPoint
+          , _immDbTipEpoch = immDbTipEpoch
+          }
+
         -- Note that we must reopen the VolatileDB before the LedgerDB, as the
         -- latter may try to access the former: when we initially opened it,
         -- we passed it @getAnyKnownBlock immDB volDB@, which will be called
         -- during reopening.
         VolDB.reopen cdbVolDB
-        let lgrTracer = contramap (TraceLedgerEvent . InitLog) cdbTracer
-        LgrDB.reopen cdbLgrDB cdbImmDB lgrTracer
+        traceWith cdbTracer $ TraceOpenEvent OpenedVolDB
+
+        lgrReplayTracer <- LgrDB.decorateReplayTracer
+          cdbEpochInfo
+          immDbTipPoint
+          (contramap TraceLedgerReplayEvent cdbTracer)
+        LgrDB.reopen cdbLgrDB cdbImmDB lgrReplayTracer
+        traceWith cdbTracer $ TraceOpenEvent OpenedLgrDB
 
         chainAndLedger <- initialChainSelection
            cdbImmDB
@@ -138,17 +165,10 @@ reopen (CDBHandle varState) launchBgTasks = do
            cdbNodeConfig
            cdbInvalid
 
-        -- Get the actual BlockNo of the tip of the ImmutableDB. Note that
-        -- this might not end up being the \"immutable\" block(no), because
-        -- the current chain computed from the VolatileDB could be longer than
-        -- @k@.
-        immDbBlockNo <- maybe genesisBlockNo blockNo <$>
-          ImmDB.getBlockAtTip cdbImmDB
-
         let chain      = clChain  chainAndLedger
             ledger     = clLedger chainAndLedger
             secParam   = protocolSecurityParam cdbNodeConfig
-            immBlockNo = getImmBlockNo secParam chain immDbBlockNo
+            immBlockNo = getImmBlockNo secParam chain immDbTipBlockNo
 
         atomically $ do
           writeTVar cdbChain chain

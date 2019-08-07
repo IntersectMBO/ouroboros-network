@@ -49,6 +49,8 @@ import           Data.Word
 import           GHC.Generics (Generic)
 import           System.Random (getStdRandom, randomR)
 
+import           Control.Tracer (nullTracer)
+
 import           Control.Monad.Class.MonadST
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
@@ -639,9 +641,11 @@ runDB standalone@DB{..} cmd =
           fmap switchResultToEither . ledgerDbSwitch conf n (map new bs)
     go hasFS Snap = do
         (_, db) <- atomically $ readTVar dbState
-        Snapped <$> takeSnapshot hasFS S.encode S.encode db
+        Snapped <$> takeSnapshot nullTracer hasFS S.encode S.encode db
     go hasFS Restore = do
         (initLog, db) <- initLedgerDB
+                           nullTracer
+                           nullTracer
                            hasFS
                            S.decode
                            S.decode

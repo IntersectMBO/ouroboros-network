@@ -875,10 +875,10 @@ deriving instance SOP.Generic         (TraceGCEvent blk)
 deriving instance SOP.HasDatatypeInfo (TraceGCEvent blk)
 deriving instance SOP.Generic         (TraceIteratorEvent blk)
 deriving instance SOP.HasDatatypeInfo (TraceIteratorEvent blk)
-deriving instance SOP.Generic         (TraceLedgerEvent blk)
-deriving instance SOP.HasDatatypeInfo (TraceLedgerEvent blk)
-deriving instance SOP.Generic         (LedgerDB.InitLog r)
-deriving instance SOP.HasDatatypeInfo (LedgerDB.InitLog r)
+deriving instance SOP.Generic         (LedgerDB.TraceEvent r)
+deriving instance SOP.HasDatatypeInfo (LedgerDB.TraceEvent r)
+deriving instance SOP.Generic         (LedgerDB.TraceReplayEvent r replayTo blockInfo)
+deriving instance SOP.HasDatatypeInfo (LedgerDB.TraceReplayEvent r replayTo blockInfo)
 deriving instance SOP.Generic         (ImmDB.TraceEvent e)
 deriving instance SOP.HasDatatypeInfo (ImmDB.TraceEvent e)
 
@@ -1128,9 +1128,8 @@ traceEventName = \case
     TraceOpenEvent           ev    -> "Open."         <> constrName ev
     TraceGCEvent             ev    -> "GC."           <> constrName ev
     TraceIteratorEvent       ev    -> "Iterator."     <> constrName ev
-    TraceLedgerEvent         ev    -> "Ledger."       <> case ev of
-      InitLog                ev' -> constrName ev'
-      _                          -> constrName ev
+    TraceLedgerEvent         ev    -> "Ledger."       <> constrName ev
+    TraceLedgerReplayEvent   ev    -> "LedgerReplay." <> constrName ev
     TraceImmDBEvent          ev    -> "ImmDB."        <> constrName ev
 
 mkArgs :: (MonadSTM m, MonadCatch m, MonadThrow (STM m))

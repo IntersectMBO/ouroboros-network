@@ -33,7 +33,6 @@ module Ouroboros.Storage.ChainDB.Impl.Types (
   , TraceInitChainSelEvent (..)
   , TraceOpenEvent (..)
   , TraceIteratorEvent (..)
-  , TraceLedgerEvent (..)
   , ReasonInvalid (..)
   ) where
 
@@ -70,8 +69,8 @@ import           Ouroboros.Storage.ChainDB.API (ChainDbError (..), IteratorId,
 import           Ouroboros.Storage.ChainDB.Impl.ImmDB (ImmDB)
 import qualified Ouroboros.Storage.ChainDB.Impl.ImmDB as ImmDB
 import           Ouroboros.Storage.ChainDB.Impl.LgrDB (LgrDB)
+import qualified Ouroboros.Storage.ChainDB.Impl.LgrDB as LgrDB
 import           Ouroboros.Storage.ChainDB.Impl.VolDB (VolDB)
-import qualified Ouroboros.Storage.LedgerDB.OnDisk as LedgerDB
 
 -- | A handle to the internal ChainDB state
 newtype ChainDbHandle m blk = CDBHandle (TVar m (ChainDbState m blk))
@@ -299,7 +298,8 @@ data TraceEvent blk
   | TraceInitChainSelEvent (TraceInitChainSelEvent blk)
   | TraceOpenEvent         (TraceOpenEvent         blk)
   | TraceIteratorEvent     (TraceIteratorEvent     blk)
-  | TraceLedgerEvent       (TraceLedgerEvent       blk)
+  | TraceLedgerEvent       (LgrDB.TraceEvent (Point blk))
+  | TraceLedgerReplayEvent (LgrDB.TraceLedgerReplayEvent blk)
   | TraceImmDBEvent        (ImmDB.TraceEvent ImmDB.EpochFileError)
   deriving (Generic)
 
@@ -320,7 +320,7 @@ data TraceOpenEvent blk
     , _chainTip :: Point blk
     }
     -- ^ The ChainDB was opened.
-  |  ClosedDB
+  | ClosedDB
     { _immTip   :: Point blk
     , _chainTip :: Point blk
     }
@@ -330,6 +330,15 @@ data TraceOpenEvent blk
     , _chainTip :: Point blk
     }
     -- ^ The ChainDB was successfully reopened.
+  | OpenedImmDB
+    { _immDbTip      :: Point blk
+    , _immDbTipEpoch :: EpochNo
+    }
+    -- ^ The ImmutableDB was opened.
+  | OpenedVolDB
+    -- ^ The VolatileDB was opened.
+  | OpenedLgrDB
+    -- ^ The LedgerDB was opened.
   deriving (Generic, Eq, Show)
 
 -- | Trace type for the various events that occur when adding a block.
@@ -514,13 +523,4 @@ data TraceIteratorEvent blk
     -- of the VolatileDB when initialising the iterator. Now, we have to look
     -- back in the VolatileDB again because the ImmutableDB doesn't have the
     -- next block we're looking for.
-  deriving (Generic, Eq, Show)
-
-data TraceLedgerEvent blk
-  = InitLog (LedgerDB.InitLog (Point blk))
-    -- ^ The initialization log of the LedgerDB.
-  | TookSnapshot    LedgerDB.DiskSnapshot (Point blk)
-    -- ^ A snapshot of the LedgerDB was written to disk.
-  | DeletedSnapshot LedgerDB.DiskSnapshot
-    -- ^ An old snapshot of the LedgerDB was deleted from disk.
   deriving (Generic, Eq, Show)

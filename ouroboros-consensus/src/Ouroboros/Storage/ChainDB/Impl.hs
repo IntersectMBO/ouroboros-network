@@ -18,7 +18,7 @@ module Ouroboros.Storage.ChainDB.Impl (
   , TraceInitChainSelEvent (..)
   , TraceOpenEvent (..)
   , TraceIteratorEvent (..)
-  , TraceLedgerEvent (..)
+  , LgrDB.TraceLedgerReplayEvent
   , ReasonInvalid (..)
     -- * Internals for testing purposes
   , openDBInternal
@@ -39,7 +39,8 @@ import           Control.Monad.Class.MonadTimer
 import           Control.Tracer
 
 import qualified Ouroboros.Network.AnchoredFragment as AF
-import           Ouroboros.Network.Block (blockNo, castPoint, genesisBlockNo)
+import           Ouroboros.Network.Block (blockNo, blockPoint, blockSlot,
+                     castPoint, genesisBlockNo, genesisPoint)
 
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Protocol.Abstract
@@ -97,12 +98,32 @@ openDBInternal
   -> Bool -- ^ 'True' = Launch background tasks
   -> m (ChainDB m blk, Internal m blk)
 openDBInternal args launchBgTasks = do
-    immDB   <- ImmDB.openDB argsImmDb
+    immDB <- ImmDB.openDB argsImmDb
+    -- In order to figure out the 'BlockNo' and 'Point' at the tip of the
+    -- ImmutableDB, we need to read the block at the tip of the ImmutableDB.
+    immDbTipBlock <- ImmDB.getBlockAtTip immDB
+    -- Note that 'immDbTipBlockNo' might not end up being the \"immutable\"
+    -- block(no), because the current chain computed from the VolatileDB could
+    -- be longer than @k@.
+    let immDbTipBlockNo = maybe genesisBlockNo blockNo    immDbTipBlock
+        immDbTipPoint   = maybe genesisPoint   blockPoint immDbTipBlock
+    immDbTipEpoch      <- maybe (return 0)     blockEpoch immDbTipBlock
+    traceWith tracer $ TraceOpenEvent $ OpenedImmDB
+      { _immDbTip      = immDbTipPoint
+      , _immDbTipEpoch = immDbTipEpoch
+      }
+
     volDB   <- VolDB.openDB argsVolDb
+    traceWith tracer $ TraceOpenEvent OpenedVolDB
+    lgrReplayTracer <- LgrDB.decorateReplayTracer
+      (Args.cdbEpochInfo args)
+      immDbTipPoint
+      (contramap TraceLedgerReplayEvent tracer)
     lgrDB   <- LgrDB.openDB argsLgrDb
+                            lgrReplayTracer
                             immDB
                             (Query.getAnyKnownBlock immDB volDB)
-                            lgrTracer
+    traceWith tracer $ TraceOpenEvent OpenedLgrDB
 
     varInvalid <- atomically $ newTVar (Map.empty, Fingerprint 0)
 
@@ -110,20 +131,15 @@ openDBInternal args launchBgTasks = do
       immDB
       volDB
       lgrDB
-      (Args.cdbTracer     args)
+      tracer
       (Args.cdbNodeConfig args)
       varInvalid
-
-    -- Get the actual BlockNo of the tip of the ImmutableDB. Note that this
-    -- might not end up being the \"immutable\" block(no), because the current
-    -- chain computed from the VolatileDB could be longer than @k@.
-    immDbBlockNo <- maybe genesisBlockNo blockNo <$> ImmDB.getBlockAtTip immDB
 
     let chain      = ChainSel.clChain  chainAndLedger
         ledger     = ChainSel.clLedger chainAndLedger
         cfg        = Args.cdbNodeConfig args
         secParam   = protocolSecurityParam cfg
-        immBlockNo = ChainSel.getImmBlockNo secParam chain immDbBlockNo
+        immBlockNo = ChainSel.getImmBlockNo secParam chain immDbTipBlockNo
 
     atomically $ LgrDB.setCurrent lgrDB ledger
     varChain          <- atomically $ newTVar chain
@@ -147,7 +163,7 @@ openDBInternal args launchBgTasks = do
                   , cdbNextIteratorId = varNextIteratorId
                   , cdbNextReaderId   = varNextReaderId
                   , cdbCopyLock       = varCopyLock
-                  , cdbTracer         = Args.cdbTracer         args
+                  , cdbTracer         = tracer
                   , cdbThreadRegistry = Args.cdbThreadRegistry args
                   , cdbGcDelay        = Args.cdbGcDelay        args
                   , cdbBgThreads      = varBgThreads
@@ -178,7 +194,7 @@ openDBInternal args launchBgTasks = do
           , intBgThreads             = varBgThreads
           }
 
-    traceWith (Args.cdbTracer args) $ TraceOpenEvent $ OpenedDB
+    traceWith tracer $ TraceOpenEvent $ OpenedDB
       { _immTip   = castPoint $ AF.anchorPoint chain
       , _chainTip = castPoint $ AF.headPoint   chain
       }
@@ -187,6 +203,8 @@ openDBInternal args launchBgTasks = do
 
     return (chainDB, testing)
   where
+    tracer = Args.cdbTracer args
     (argsImmDb, argsVolDb, argsLgrDb, _) = Args.fromChainDbArgs args
 
-    lgrTracer = contramap (TraceLedgerEvent . InitLog) (Args.cdbTracer args)
+    blockEpoch :: blk -> m EpochNo
+    blockEpoch = epochInfoEpoch (Args.cdbEpochInfo args) . blockSlot

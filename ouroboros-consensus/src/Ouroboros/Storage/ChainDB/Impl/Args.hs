@@ -162,6 +162,7 @@ fromChainDbArgs ChainDbArgs{..} = (
         , lgrMemPolicy        = cdbMemPolicy
         , lgrDiskPolicy       = cdbDiskPolicy
         , lgrGenesis          = cdbGenesis
+        , lgrTracer           = contramap TraceLedgerEvent cdbTracer
         }
     , ChainDbSpecificArgs {
           cdbsTracer          = cdbTracer
