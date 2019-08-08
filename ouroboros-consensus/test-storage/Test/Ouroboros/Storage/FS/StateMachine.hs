@@ -75,7 +75,7 @@ import qualified Ouroboros.Storage.Util.ErrorHandling as EH
 import qualified Ouroboros.Consensus.Util.Classify as C
 import           Ouroboros.Consensus.Util.Condense
 
-import           Test.Ouroboros.Storage.Util (collects)
+import           Test.Ouroboros.Storage.Util (collects, constrName, constrNames)
 
 import           Test.Util.RefEnv (RefEnv)
 import qualified Test.Util.RefEnv as RE
@@ -1381,27 +1381,3 @@ instance Condense (cmd Symbolic) => Condense (QSM.Commands cmd resp) where
     where
       indent :: String -> String
       indent = ("  " ++)
-
-{-------------------------------------------------------------------------------
-  generics-sop auxiliary
--------------------------------------------------------------------------------}
-
-cmdConstrInfo :: Proxy (Cmd fp h)
-              -> SOP.NP SOP.ConstructorInfo (SOP.Code (Cmd fp h))
-cmdConstrInfo = SOP.constructorInfo . SOP.datatypeInfo
-
-constrName :: forall fp h. Cmd fp h -> String
-constrName a =
-    SOP.hcollapse $ SOP.hliftA2 go (cmdConstrInfo p) (SOP.unSOP (SOP.from a))
-  where
-    go :: SOP.ConstructorInfo a -> SOP.NP SOP.I a -> SOP.K String a
-    go nfo _ = SOP.K $ SOP.constructorName nfo
-
-    p = Proxy @(Cmd fp h)
-
-constrNames :: Proxy (Cmd fp h) -> [String]
-constrNames p =
-    SOP.hcollapse $ SOP.hmap go (cmdConstrInfo p)
-  where
-    go :: SOP.ConstructorInfo a -> SOP.K String a
-    go nfo = SOP.K $ SOP.constructorName nfo

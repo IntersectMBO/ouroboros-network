@@ -36,9 +36,9 @@ import qualified Ouroboros.Storage.ChainDB as ChainDB
 import qualified Ouroboros.Storage.ChainDB.Model as Model
 import qualified Ouroboros.Storage.FS.Sim.MockFS as Mock
 
-import           Test.Ouroboros.Storage.ChainDB.StateMachine (constrName,
-                     mkArgs)
+import           Test.Ouroboros.Storage.ChainDB.StateMachine (mkArgs)
 import           Test.Ouroboros.Storage.ChainDB.TestBlock
+import           Test.Ouroboros.Storage.Util (constrName)
 
 tests :: TestTree
 tests = testGroup "AddBlock"
