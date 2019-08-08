@@ -38,7 +38,6 @@ If the connection is ever overloaded,
 the performance characteristics will degrade rapidly unless
 the load presented to the TCP connection is appropriately managed.
 
-
 At the same time, the node itself has a limit on the rate at which it can process data.
 In particular, a node may have to share its processing power with other processes that run on the
 same machine/operation system instance, which means that a node may get slowed down for some reason,
@@ -1199,8 +1198,8 @@ Both nodes run initiator and responder instances of the
 Chain-Sync, the Block-Fetch and the Transaction-Submission protocol.
 Node-to-Client (NtC) is a connection between a full node and a client that does not take part in
 Ouroboros protocol itself and only consumes data, for example a wallet or a block chain explorer.
-In a NtC setup, the node only runs the producer side of the Chain-Sync protocol and the client only the
-consumer side.
+In a NtC setup, the node only runs the producer side of the Chain-Sync protocol
+and the client only the consumer side.
 The Chain-Sync protocol is polymorphic in the type of blocks that are transmitted.
 NtN uses a Chain-Sync instance which only transmits block headers, while the NtC instance transmits
 full blocks.
@@ -1216,6 +1215,40 @@ The two variants of Chain-Sync use different protocol IDs.
 When a mini protocol thread detects that a peer violates the mini protocol it throws an exception.
 The MUX-layer catches the exceptions from the mini protocol threads and shuts down the connection.
 
+\subsection{Data Flow and Isometric Flow Control}
+Efficient data flow control is a key aspect of the design of the network layer.
+The section gives an overview of the flow of information
+from the producer of the information inside a node to the consumer of that piece
+of information in an other node in the current implementation.
+
+The section also describes how the network layer guaranties isometric flow control.
+The basic idea of isometric flow control is to actively control and limit how much data
+can be in-flight between a data producer and a consumer at any moment.
+Flow control is an essential consideration that affects every part of the source code
+but unlike the state machines of the mini protocols,
+that have a direct implementation in the source files,
+there is no explicit representation of the flow control in the source.
+
+To explain the flow of information we use the example of a new block created by the consensus layer.
+There are many entities and concepts involved:
+\begin{description}
+\item[Threads]
+  Haskell lightweight threads.
+\item[Buffers (Haskell)]
+  Shared-mutable state, single element buffers, FIFO queues
+\item[Lazy evaluation]
+\item[Functioncalls]
+  Synchronous/blocking, asynchronous
+\item[Haskell RTS]
+  Manages the Haskell threads and maps Haskell threads to OS threads.
+  Wakes up threads that are blocked waiting for specific events.
+\item[OS Network Stack]
+  Manages OS-level buffers.
+\item[IP network]
+todo: draw diagram
+mention: back pressure, head of line blocking  
+\end{description}
+  
 \hide{
 \chapter{Peer Discovery and Peer Selection}
 \wip{
