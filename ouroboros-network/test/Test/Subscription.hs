@@ -549,7 +549,7 @@ prop_send_recv f xs first = ioProperty $ do
         (,)
         (\(DictVersion _) -> acceptEq)
         (simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData 0) (DictVersion nodeToNodeCodecCBORTerm) responderApp)
-        $ \_ _ ->
+        $ \_ _ -> do
           dnsSubscriptionWorker'
             activeTracer activeTracer
             clientTbl

@@ -64,6 +64,7 @@ library
                        Ouroboros.Network.Subscription.Ip
                        Ouroboros.Network.Subscription.Dns
                        Ouroboros.Network.Subscription.Subscriber
+                       Ouroboros.Network.Subscription.PeerState
                        Ouroboros.Network.Subscription.Worker
                        Ouroboros.Network.Protocol.ChainSync.Client
                        Ouroboros.Network.Protocol.ChainSync.Codec
@@ -126,6 +127,7 @@ library
                        cborg             >=0.2.1 && <0.3,
                        containers,
                        dns,
+                       mtl,
                        fingertree        >=0.1.4.2 && <0.2,
                        iproute           >=1.7.0 && <1.8,
                        network,
@@ -151,6 +153,7 @@ test-suite tests
   hs-source-dirs:      test src
   main-is:             Main.hs
   other-modules:       Codec.SerialiseTerm
+                       Data.Semigroup.Action
                        Ouroboros.Network.AnchoredFragment
                        Ouroboros.Network.Testing.ConcreteBlock
                        Ouroboros.Network.Block
@@ -209,6 +212,7 @@ test-suite tests
                        Ouroboros.Network.Subscription
                        Ouroboros.Network.Subscription.Ip
                        Ouroboros.Network.Subscription.Dns
+                       Ouroboros.Network.Subscription.PeerState
                        Ouroboros.Network.Subscription.Subscriber
                        Ouroboros.Network.Subscription.Worker
                        Ouroboros.Network.TxSubmission.Inbound
