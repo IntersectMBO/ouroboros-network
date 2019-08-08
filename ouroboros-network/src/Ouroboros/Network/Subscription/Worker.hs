@@ -264,6 +264,7 @@ subscriptionLoop
        , MonadFix   m
        , Ord (Async m ())
        , Ord addr
+       , Show addr
        )
     => Tracer              m (SubscriptionTrace addr)
 
@@ -505,6 +506,10 @@ subscriptionLoop
               appRes :: Either SomeException a
                 <- try $ unmask (k sock)
 
+              case appRes of
+                Right _ -> pure ()
+                Left e -> traceWith tr $ SubscriptionTraceApplicationException remoteAddr e
+
               t' <- getMonotonicTime
               atomically $ do
                 case appRes of
@@ -564,7 +569,9 @@ mainLoop resQ threadsVar statusVar completeApplicationTx main = do
 --
 worker
     :: forall s sock addr a t.
-       Ord addr
+       ( Ord addr
+       , Show addr
+       )
     => Tracer              IO (SubscriptionTrace addr)
     -> ConnectionTable     IO   addr
     -> StateVar            IO s
@@ -644,9 +651,11 @@ instance Exception SubscriberError where
 data SubscriptionTrace addr =
       SubscriptionTraceConnectStart addr
     | SubscriptionTraceConnectEnd addr ConnectResult
-    | forall e. Exception e => SubscriptionTraceConnectException addr e
     | forall e. Exception e => SubscriptionTraceSocketAllocationException addr e
-    | SubscriptionTraceConnectCleanup addr
+    | forall e. Exception e => SubscriptionTraceConnectException addr e
+    | forall e. Exception e => SubscriptionTraceApplicationException addr e
+    | SubscriptionTraceTryConnectToPeer addr
+    | SubscriptionTraceSkippingPeer addr
     | SubscriptionTraceSubscriptionRunning
     | SubscriptionTraceSubscriptionWaiting Int
     | SubscriptionTraceSubscriptionFailed
@@ -656,7 +665,6 @@ data SubscriptionTrace addr =
     | SubscriptionTraceConnectionExist addr
     | SubscriptionTraceUnsupportedRemoteAddr addr
     | SubscriptionTraceMissingLocalAddress
-    | SubscriptionApplicationException SomeException
     | SubscriptionTraceAllocateSocket addr
     | SubscriptionTraceCloseSocket addr
 
@@ -669,8 +677,10 @@ instance Show addr => Show (SubscriptionTrace addr) where
         "Socket Allocation Exception, destination " ++ show dst ++ " exception: " ++ show e
     show (SubscriptionTraceConnectException dst e) =
         "Connection Attempt Exception, destination " ++ show dst ++ " exception: " ++ show e
-    show (SubscriptionTraceConnectCleanup dst) =
-        "Connection Cleanup, destination " ++ show dst
+    show (SubscriptionTraceTryConnectToPeer addr) =
+        "Trying to connect to " ++ show addr
+    show (SubscriptionTraceSkippingPeer addr) =
+        "Skipping peer " ++ show addr
     show SubscriptionTraceSubscriptionRunning =
         "Required subscriptions started"
     show (SubscriptionTraceSubscriptionWaiting d) =
@@ -690,8 +700,8 @@ instance Show addr => Show (SubscriptionTrace addr) where
     -- TODO: add address family
     show SubscriptionTraceMissingLocalAddress =
         "Missing local address"
-    show (SubscriptionApplicationException e) =
-        "Application Exception: " ++ show e
+    show (SubscriptionTraceApplicationException addr e) =
+        "Application Exception: " ++ show addr ++ " " ++ show e
     show (SubscriptionTraceAllocateSocket addr) =
         "Allocate socket to " ++ show addr
     show (SubscriptionTraceCloseSocket addr) =

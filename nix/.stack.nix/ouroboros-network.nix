@@ -31,6 +31,7 @@
           (hsPkgs.cborg)
           (hsPkgs.containers)
           (hsPkgs.dns)
+          (hsPkgs.mtl)
           (hsPkgs.fingertree)
           (hsPkgs.iproute)
           (hsPkgs.network)
