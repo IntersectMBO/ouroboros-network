@@ -61,6 +61,9 @@ import           Ouroboros.Consensus.Protocol.Abstract (NodeConfig)
 import           Ouroboros.Consensus.Util.STM (Fingerprint)
 import           Ouroboros.Consensus.Util.ThreadRegistry (ThreadRegistry)
 
+import           Ouroboros.Storage.Common (EpochNo)
+import           Ouroboros.Storage.EpochInfo (EpochInfo)
+
 import           Ouroboros.Storage.ChainDB.API (ChainDbError (..), IteratorId,
                      ReaderId, StreamFrom, StreamTo, UnknownRange)
 
@@ -222,6 +225,7 @@ data ChainDbEnv m blk = CDB
     -- ImmutableDB and garbage collecting it from the VolatileDB
   , cdbBgThreads      :: TVar m [Async m ()]
     -- ^ The background threads.
+  , cdbEpochInfo      :: EpochInfo m
   }
 
 {-------------------------------------------------------------------------------

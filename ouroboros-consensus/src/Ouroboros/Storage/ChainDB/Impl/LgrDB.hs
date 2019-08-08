@@ -70,6 +70,7 @@ import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util ((.:))
 
 import           Ouroboros.Storage.Common
+import           Ouroboros.Storage.EpochInfo (EpochInfo (..))
 import           Ouroboros.Storage.FS.API (HasFS (hasFsErr),
                      createDirectoryIfMissing)
 import           Ouroboros.Storage.FS.API.Types (FsError, MountPoint (..))

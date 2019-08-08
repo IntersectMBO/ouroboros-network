@@ -65,6 +65,7 @@ import           Ouroboros.Consensus.Util.ThreadRegistry
 
 import qualified Ouroboros.Storage.ChainDB as ChainDB
 import           Ouroboros.Storage.ChainDB.Impl (ChainDbArgs (..))
+import           Ouroboros.Storage.EpochInfo (newEpochInfo)
 import qualified Ouroboros.Storage.FS.Sim.MockFS as Mock
 import           Ouroboros.Storage.FS.Sim.STM (simHasFS)
 import qualified Ouroboros.Storage.ImmutableDB as ImmDB
@@ -249,6 +250,7 @@ broadcastNetwork registry testBtime numCoreNodes pInfo initRNG slotLen = do
         (,,) <$> newTVar Mock.empty
              <*> newTVar Mock.empty
              <*> newTVar Mock.empty
+      epochInfo <- newEpochInfo $ nodeEpochSize (Proxy @blk)
       return ChainDbArgs
         { -- Decoders
           cdbDecodeHash       = nodeDecodeHeaderHash (Proxy @blk)
@@ -275,7 +277,7 @@ broadcastNetwork registry testBtime numCoreNodes pInfo initRNG slotLen = do
         , cdbDiskPolicy       = LgrDB.defaultDiskPolicy (protocolSecurityParam cfg) slotLen
           -- Integration
         , cdbNodeConfig       = cfg
-        , cdbEpochSize        = nodeEpochSize (Proxy @blk)
+        , cdbEpochInfo        = epochInfo
         , cdbIsEBB            = \blk -> if nodeIsEBB blk
                                         then Just (blockHash blk)
                                         else Nothing

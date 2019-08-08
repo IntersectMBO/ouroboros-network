@@ -45,6 +45,9 @@ import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util.STM (Fingerprint (..))
 
+import           Ouroboros.Storage.Common (EpochNo)
+import           Ouroboros.Storage.EpochInfo (epochInfoEpoch)
+
 import           Ouroboros.Storage.ChainDB.API
 
 import           Ouroboros.Storage.ChainDB.Impl.Args (ChainDbArgs, defaultArgs)
@@ -148,6 +151,7 @@ openDBInternal args launchBgTasks = do
                   , cdbThreadRegistry = Args.cdbThreadRegistry args
                   , cdbGcDelay        = Args.cdbGcDelay        args
                   , cdbBgThreads      = varBgThreads
+                  , cdbEpochInfo      = Args.cdbEpochInfo      args
                   }
     h <- fmap CDBHandle $ atomically $ newTVar $ ChainDbOpen env
     let chainDB = ChainDB

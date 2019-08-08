@@ -78,7 +78,7 @@ import qualified Ouroboros.Consensus.Util.CBOR as Util.CBOR
 import           Ouroboros.Storage.ChainDB.API (ChainDbError (..),
                      ChainDbFailure (..), StreamFrom (..), UnknownRange (..))
 import           Ouroboros.Storage.Common
-import           Ouroboros.Storage.EpochInfo (EpochInfo (..), newEpochInfo)
+import           Ouroboros.Storage.EpochInfo (EpochInfo (..))
 import           Ouroboros.Storage.FS.API (HasFS, createDirectoryIfMissing)
 import           Ouroboros.Storage.FS.API.Types (MountPoint (..))
 import           Ouroboros.Storage.FS.IO (ioHasFS)
@@ -90,12 +90,12 @@ import qualified Ouroboros.Storage.Util.ErrorHandling as EH
 
 -- | Thin wrapper around the ImmutableDB (opaque type)
 data ImmDB m blk = ImmDB {
-      immDB        :: ImmutableDB (HeaderHash blk) m
-    , decBlock     :: forall s. Decoder s blk
-    , encBlock     :: blk -> Encoding
-    , immEpochInfo :: EpochInfo m
-    , isEBB        :: blk -> Maybe (HeaderHash blk)
-    , err          :: ErrorHandling ImmDB.ImmutableDBError m
+      immDB     :: ImmutableDB (HeaderHash blk) m
+    , decBlock  :: forall s. Decoder s blk
+    , encBlock  :: blk -> Encoding
+    , epochInfo :: EpochInfo m
+    , isEBB     :: blk -> Maybe (HeaderHash blk)
+    , err       :: ErrorHandling ImmDB.ImmutableDBError m
     }
 
 {-------------------------------------------------------------------------------
@@ -111,7 +111,7 @@ data ImmDbArgs m blk = forall h. ImmDbArgs {
     , immEncodeHash  :: HeaderHash blk -> Encoding
     , immEncodeBlock :: blk -> Encoding
     , immErr         :: ErrorHandling ImmDB.ImmutableDBError m
-    , immEpochSize   :: EpochNo -> m EpochSize
+    , immEpochInfo   :: EpochInfo m
     , immValidation  :: ImmDB.ValidationPolicy
     , immIsEBB       :: blk -> Maybe (HeaderHash blk)
     , immHasFS       :: HasFS m h
@@ -126,7 +126,7 @@ data ImmDbArgs m blk = forall h. ImmDbArgs {
 -- * 'immDecodeBlock'
 -- * 'immEncodeHash'
 -- * 'immEncodeBlock'
--- * 'immEpochSize'
+-- * 'immEpochInfo'
 -- * 'immValidation'
 -- * 'immIsEBB'
 defaultArgs :: FilePath -> ImmDbArgs IO blk
@@ -138,7 +138,7 @@ defaultArgs fp = ImmDbArgs{
     , immDecodeBlock = error "no default for immDecodeBlock"
     , immEncodeHash  = error "no default for immEncodeHash"
     , immEncodeBlock = error "no default for immEncodeBlock"
-    , immEpochSize   = error "no default for immEpochSize"
+    , immEpochInfo   = error "no default for immEpochInfo"
     , immValidation  = error "no default for immValidation"
     , immIsEBB       = error "no default for immIsEBB"
     , immTracer      = nullTracer
@@ -148,7 +148,6 @@ openDB :: (MonadSTM m, MonadST m, MonadCatch m, HasHeader blk)
        => ImmDbArgs m blk -> m (ImmDB m blk)
 openDB args@ImmDbArgs{..} = do
     createDirectoryIfMissing immHasFS True []
-    immEpochInfo <- newEpochInfo immEpochSize
     immDB <- ImmDB.openDB
                immDecodeHash
                immEncodeHash
@@ -162,7 +161,7 @@ openDB args@ImmDbArgs{..} = do
       { immDB        = immDB
       , decBlock     = immDecodeBlock
       , encBlock     = immEncodeBlock
-      , immEpochInfo = immEpochInfo
+      , epochInfo    = immEpochInfo
       , isEBB        = immIsEBB
       , err          = immErr
       }
@@ -175,7 +174,7 @@ mkImmDB :: ImmutableDB (HeaderHash blk) m
         -> (blk -> Maybe (HeaderHash blk))
         -> ErrorHandling ImmDB.ImmutableDBError m
         -> ImmDB m blk
-mkImmDB immDB decBlock encBlock immEpochInfo isEBB err = ImmDB {..}
+mkImmDB immDB decBlock encBlock epochInfo isEBB err = ImmDB {..}
 
 {-------------------------------------------------------------------------------
   Getting and parsing blocks
@@ -207,7 +206,7 @@ getBlockWithPoint db BlockPoint { withHash = hash, atSlot = slot } =
         epochNo <- epochInfoEpoch slot
         getBlockWithHash (Left epochNo)
   where
-    EpochInfo{..} = immEpochInfo db
+    EpochInfo{..} = epochInfo db
 
     -- Important: we check whether the block's hash matches the point's hash
     getBlockWithHash epochOrSlot = getBlock db epochOrSlot >>= \case
@@ -241,7 +240,7 @@ getSlotNoAtTip db = do
       Tip (Left epochNo) -> At <$> epochInfoFirst epochNo
       Tip (Right slotNo) -> return (At slotNo)
   where
-    EpochInfo{..} = immEpochInfo db
+    EpochInfo{..} = epochInfo db
 
 -- | Get known block from the ImmutableDB that we know should exist
 --
@@ -288,7 +287,7 @@ appendBlock db@ImmDB{..} b = withDB db $ \imm -> case isEBB b of
       ImmDB.appendEBB imm epochNo hash (CBOR.toBuilder (encBlock b))
   where
     slotNo = blockSlot b
-    EpochInfo{..} = immEpochInfo
+    EpochInfo{..} = epochInfo
 
 {-------------------------------------------------------------------------------
   Streaming

@@ -89,6 +89,7 @@ import qualified Ouroboros.Consensus.Util.ThreadRegistry as ThreadRegistry
 import           Ouroboros.Storage.ChainDB
 import qualified Ouroboros.Storage.ChainDB as ChainDB
 import qualified Ouroboros.Storage.ChainDB.Model as Model
+import           Ouroboros.Storage.EpochInfo (fixedSizeEpochInfo)
 import           Ouroboros.Storage.FS.Sim.MockFS (MockFS)
 import qualified Ouroboros.Storage.FS.Sim.MockFS as Mock
 import           Ouroboros.Storage.FS.Sim.STM (simHasFS)
@@ -1172,7 +1173,7 @@ mkArgs cfg initLedger tracer registry
 
       -- Integration
     , cdbNodeConfig       = cfg
-    , cdbEpochSize        = const (return 10)
+    , cdbEpochInfo        = fixedSizeEpochInfo 10
     , cdbIsEBB            = const Nothing -- TODO
     , cdbGenesis          = return initLedger
 
