@@ -30,7 +30,6 @@ import           Cardano.Crypto.DSIGN.Class
 import           Data.ByteString (ByteString)
 import           Data.Coerce (coerce)
 import           Data.Constraint
-import           Data.Function (on)
 import           Data.Proxy (Proxy (..))
 import           Data.Reflection (Given (..))
 import           GHC.Generics (Generic)
@@ -80,7 +79,7 @@ instance Given ProtocolMagicId => DSIGNAlgorithm CardanoDSIGN where
         deriving (Show, Eq, Generic)
 
     newtype SignKeyDSIGN CardanoDSIGN = SignKeyCardanoDSIGN SigningKey
-        deriving (Show, Eq, Generic)
+        deriving (Show, Generic)
 
     newtype SigDSIGN CardanoDSIGN = SigCardanoDSIGN (Signature CC.Block.ToSign)
         deriving (Show, Eq, Generic)
@@ -109,15 +108,6 @@ instance Given ProtocolMagicId => DSIGNAlgorithm CardanoDSIGN where
         if verifySignatureRaw vk (Crypto.signTag given (signTagFor a) <> recoverBytes a) $ coerce sig
           then Right ()
           else Left "Verification failed"
-
-instance Ord (VerKeyDSIGN CardanoDSIGN) where
-    compare = compare `on` show
-
-instance Ord (SignKeyDSIGN CardanoDSIGN) where
-    compare = compare `on` show
-
-instance Ord (SigDSIGN CardanoDSIGN) where
-    compare = compare `on` show
 
 instance Condense (SigDSIGN CardanoDSIGN) where
     condense (SigCardanoDSIGN s) = show s
