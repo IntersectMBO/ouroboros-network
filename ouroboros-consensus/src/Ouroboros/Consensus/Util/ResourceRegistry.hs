@@ -39,31 +39,24 @@ data ResourceRegistry m = ResourceRegistry
 -- 'unregister' it.
 newtype ResourceKey = ResourceKey Int
 
--- | Register a clean-up action that will be run when the 'ResourceRegistry'
--- is closed, unless it is 'unregister'ed before that happens.
-register :: MonadSTM m => ResourceRegistry m -> m () -> STM m ResourceKey
-register ResourceRegistry { _registered, _nextKey } cleanup = do
-    key <- readTVar _nextKey
-    writeTVar _nextKey $! succ key
-    modifyTVar' _registered $ IntMap.insertWith
-      (error $ "bug: key already registered: " <> show key)
-      key
-      cleanup
-    return $ ResourceKey key
-
 -- | Allocate a resource and register the corresponding clean-up action so
 -- that it will be run when the 'ResourceRegistry' is closed.
 --
 -- This deals with masking asynchronous exceptions.
 allocate :: (MonadSTM m, MonadMask m)
          => ResourceRegistry m
-         -> m a         -- ^ Create resource
-         -> (a -> m ()) -- ^ Clean-up resource
+         -> (ResourceKey -> m a)  -- ^ Create resource
+         -> (a -> m ())           -- ^ Clean-up resource
          -> m (ResourceKey, a)
-allocate registry create cleanup = mask $ \unmask -> do
-    resource <- unmask create
-    key      <- atomically $ register registry (cleanup resource)
-    return (key, resource)
+allocate ResourceRegistry { _registered, _nextKey } create cleanup =
+    mask $ \restore -> do
+      key      <- atomically $ updateTVar' _nextKey $ \k -> (succ k, k)
+      resource <- restore $ create $ ResourceKey key
+      atomically $ modifyTVar' _registered $ IntMap.insertWith
+        (error $ "bug: key already registered: " <> show key)
+        key
+        (cleanup resource)
+      return (ResourceKey key, resource)
 
 -- | Call a clean-up action and unregister it from the 'ResourceRegistry'.
 --

@@ -310,7 +310,7 @@ registeredStream :: (MonadMask m, MonadSTM m, HasHeader blk)
                  -> m (ImmDB.Iterator (HeaderHash blk) m Lazy.ByteString)
 registeredStream db registry start end = do
     (key, it) <- allocate registry
-      (withDB db $ \imm -> ImmDB.streamBinaryBlobs imm start end)
+      (\_key -> withDB db $ \imm -> ImmDB.streamBinaryBlobs imm start end)
       (iteratorClose db)
     return it
       { ImmDB.iteratorClose = release registry key
