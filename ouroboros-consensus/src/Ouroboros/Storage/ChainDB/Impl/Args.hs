@@ -27,7 +27,7 @@ import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util.ThreadRegistry (ThreadRegistry)
 
-import           Ouroboros.Storage.Common
+import           Ouroboros.Storage.EpochInfo (EpochInfo)
 import           Ouroboros.Storage.FS.API
 import           Ouroboros.Storage.Util.ErrorHandling (ErrorHandling,
                      ThrowCantCatch)
@@ -73,7 +73,7 @@ data ChainDbArgs m blk = forall h1 h2 h3. ChainDbArgs {
 
       -- Integration
     , cdbNodeConfig       :: NodeConfig (BlockProtocol blk)
-    , cdbEpochSize        :: EpochNo -> m EpochSize
+    , cdbEpochInfo        :: EpochInfo m
     , cdbIsEBB            :: blk -> Maybe (HeaderHash blk)
     , cdbGenesis          :: m (ExtLedgerState blk)
 
@@ -136,7 +136,7 @@ fromChainDbArgs ChainDbArgs{..} = (
         , immEncodeHash       = cdbEncodeHash
         , immEncodeBlock      = cdbEncodeBlock
         , immErr              = cdbErrImmDb
-        , immEpochSize        = cdbEpochSize
+        , immEpochInfo        = cdbEpochInfo
         , immValidation       = cdbValidation
         , immIsEBB            = cdbIsEBB
         , immHasFS            = cdbHasFSImmDb
@@ -162,6 +162,7 @@ fromChainDbArgs ChainDbArgs{..} = (
         , lgrMemPolicy        = cdbMemPolicy
         , lgrDiskPolicy       = cdbDiskPolicy
         , lgrGenesis          = cdbGenesis
+        , lgrTracer           = contramap TraceLedgerEvent cdbTracer
         }
     , ChainDbSpecificArgs {
           cdbsTracer          = cdbTracer
@@ -208,7 +209,7 @@ toChainDbArgs ImmDB.ImmDbArgs{..}
     , cdbDiskPolicy       = lgrDiskPolicy
       -- Integration
     , cdbNodeConfig       = lgrNodeConfig
-    , cdbEpochSize        = immEpochSize
+    , cdbEpochInfo        = immEpochInfo
     , cdbIsEBB            = immIsEBB
     , cdbGenesis          = lgrGenesis
       -- Misc

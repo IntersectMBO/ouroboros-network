@@ -1,10 +1,12 @@
 {-# LANGUAGE DeriveGeneric       #-}
+{-# LANGUAGE DeriveTraversable   #-}
 {-# LANGUAGE KindSignatures      #-}
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE MultiWayIf          #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TemplateHaskell     #-}
 
 module Ouroboros.Storage.LedgerDB.OnDisk (
     -- * Opening the database
@@ -21,12 +23,16 @@ module Ouroboros.Storage.LedgerDB.OnDisk (
   , DiskSnapshot -- opaque
   , deleteSnapshot
   , snapshotToPath
+    -- * Trace events
+  , TraceEvent(..)
+  , TraceReplayEvent(..)
   ) where
 
 import qualified Codec.CBOR.Write as CBOR
 import           Codec.Serialise.Decoding (Decoder)
 import           Codec.Serialise.Encoding (Encoding)
 import           Control.Monad.Except
+import qualified Data.Bifunctor.TH as TH
 import qualified Data.List as List
 import           Data.Maybe (mapMaybe)
 import           Data.Set (Set)
@@ -37,6 +43,8 @@ import           Text.Read (readMaybe)
 
 import           Control.Monad.Class.MonadST
 import           Control.Monad.Class.MonadThrow
+
+import           Control.Tracer
 
 import           Ouroboros.Consensus.Util.CBOR (ReadIncrementalErr,
                      readIncremental)
@@ -148,14 +156,16 @@ data InitLog r =
 -- obtained in this way will (hopefully) share much of their memory footprint
 -- with their predecessors.
 initLedgerDB :: forall m h l r b e. (MonadST m, MonadThrow m, HasCallStack)
-             => HasFS m h
+             => Tracer m (TraceReplayEvent r () r)
+             -> Tracer m (TraceEvent r)
+             -> HasFS m h
              -> (forall s. Decoder s l)
              -> (forall s. Decoder s r)
              -> MemPolicy
              -> LedgerDbConf m l r b e
              -> StreamAPI m r b
              -> m (InitLog r, LedgerDB l r)
-initLedgerDB hasFS decLedger decRef policy conf streamAPI = do
+initLedgerDB replayTracer tracer hasFS decLedger decRef policy conf streamAPI = do
     snapshots <- listSnapshots hasFS
     tryNewestFirst id snapshots
   where
@@ -164,14 +174,16 @@ initLedgerDB hasFS decLedger decRef policy conf streamAPI = do
                    -> m (InitLog r, LedgerDB l r)
     tryNewestFirst acc [] = do
         -- We're out of snapshots. Start at genesis
+        traceWith replayTracer $ ReplayFromGenesis ()
         initDb <- ledgerDbFromGenesis policy <$> ldbConfGenesis conf
-        ml     <- runExceptT $ initStartingWith conf streamAPI initDb
+        ml     <- runExceptT $ initStartingWith replayTracer conf streamAPI initDb
         case ml of
           Left _  -> error "invariant violation: invalid current chain"
           Right l -> return (acc InitFromGenesis, l)
     tryNewestFirst acc (s:ss) = do
         -- If we fail to use this snapshot, delete it and try an older one
         ml <- runExceptT $ initFromSnapshot
+                             replayTracer
                              hasFS
                              decLedger
                              decRef
@@ -182,6 +194,7 @@ initLedgerDB hasFS decLedger decRef policy conf streamAPI = do
         case ml of
           Left err -> do
             deleteSnapshot hasFS s
+            traceWith tracer $ InvalidSnapshot err
             tryNewestFirst (acc . InitFailure s err) ss
           Right (r, l) ->
             return (acc (InitFromSnapshot s r), l)
@@ -206,7 +219,8 @@ data InitFailure r =
 -- and an error is returned. This should not throw any errors itself (ignoring
 -- unexpected exceptions such as asynchronous exceptions, of course).
 initFromSnapshot :: forall m h l r b e. (MonadST m, MonadThrow m)
-                 => HasFS m h
+                 => Tracer m (TraceReplayEvent r () r)
+                 -> HasFS m h
                  -> (forall s. Decoder s l)
                  -> (forall s. Decoder s r)
                  -> MemPolicy
@@ -214,26 +228,29 @@ initFromSnapshot :: forall m h l r b e. (MonadST m, MonadThrow m)
                  -> StreamAPI m r b
                  -> DiskSnapshot
                  -> ExceptT (InitFailure r) m (Tip r, LedgerDB l r)
-initFromSnapshot hasFS decLedger decRef policy conf streamAPI ss = do
+initFromSnapshot tracer hasFS decLedger decRef policy conf streamAPI ss = do
     initSS <- withExceptT InitFailureRead $
                 readSnapshot hasFS decLedger decRef ss
-    initDB <- initStartingWith conf streamAPI (ledgerDbFromChain policy initSS)
+    lift $ traceWith tracer $ ReplayFromSnapshot ss (csTip initSS) ()
+    initDB <- initStartingWith tracer conf streamAPI (ledgerDbFromChain policy initSS)
     return (csTip initSS, initDB)
 
 -- | Attempt to initialize the ledger DB starting from the given ledger DB
 initStartingWith :: forall m l r b e. Monad m
-                 => LedgerDbConf m l r b e
+                 => Tracer m (TraceReplayEvent r () r)
+                 -> LedgerDbConf m l r b e
                  -> StreamAPI m r b
                  -> LedgerDB l r
                  -> ExceptT (InitFailure r) m (LedgerDB l r)
-initStartingWith conf@LedgerDbConf{..} streamAPI initDb = do
+initStartingWith tracer conf@LedgerDbConf{..} streamAPI initDb = do
     streamAll streamAPI (ledgerDbTip initDb)
       InitFailureTooRecent
       initDb
       push
   where
     push :: (r, b) -> LedgerDB l r -> m (LedgerDB l r)
-    push (r, b) db = ledgerDbReapply conf (Val r b) db
+    push (r, b) db =
+      ledgerDbReapply conf (Val r b) db <* traceWith tracer (ReplayedBlock r r ())
 
 {-------------------------------------------------------------------------------
   Write to disk
@@ -252,13 +269,15 @@ initStartingWith conf@LedgerDbConf{..} streamAPI initDb = do
 --
 -- TODO: Should we delete the file if an error occurs during writing?
 takeSnapshot :: forall m l r h. MonadThrow m
-             => HasFS m h
+             => Tracer m (TraceEvent r)
+             -> HasFS m h
              -> (l -> Encoding)
              -> (r -> Encoding)
              -> LedgerDB l r -> m (DiskSnapshot, Tip r)
-takeSnapshot hasFS encLedger encRef db = do
+takeSnapshot tracer hasFS encLedger encRef db = do
     ss <- nextAvailable <$> listSnapshots hasFS
     writeSnapshot hasFS encLedger encRef ss oldest
+    traceWith tracer $ TookSnapshot ss (csTip oldest)
     return (ss, csTip oldest)
   where
     oldest :: ChainSummary l r
@@ -269,15 +288,17 @@ takeSnapshot hasFS encLedger encRef db = do
 --
 -- The deleted snapshots are returned.
 trimSnapshots :: Monad m
-              => HasFS m h
+              => Tracer m (TraceEvent r)
+              -> HasFS m h
               -> DiskPolicy m
               -> m [DiskSnapshot]
-trimSnapshots hasFS DiskPolicy{..} = do
+trimSnapshots tracer hasFS DiskPolicy{..} = do
     snapshots <- listSnapshots hasFS
     -- The snapshot are most recent first, so we can simply drop from the
     -- front to get the snapshots that are "too" old.
     forM (drop (fromIntegral onDiskNumSnapshots) snapshots) $ \snapshot -> do
       deleteSnapshot hasFS snapshot
+      traceWith tracer $ DeletedSnapshot snapshot
       return snapshot
 
 {-------------------------------------------------------------------------------
@@ -338,3 +359,54 @@ snapshotToPath (DiskSnapshot ss) = [show ss]
 
 snapshotFromPath :: String -> Maybe DiskSnapshot
 snapshotFromPath = fmap DiskSnapshot . readMaybe
+
+
+{-------------------------------------------------------------------------------
+  Trace events
+-------------------------------------------------------------------------------}
+
+data TraceEvent r
+  = InvalidSnapshot (InitFailure r)
+    -- ^ An on disk snapshot was skipped because it was invalid.
+  | TookSnapshot DiskSnapshot (Tip r)
+    -- ^ A snapshot was written to disk.
+  | DeletedSnapshot DiskSnapshot
+    -- ^ An old or invalid on-disk snapshot was deleted
+  deriving (Generic, Eq, Show)
+
+-- | Events traced while replaying blocks against the ledger to bring it up to
+-- date w.r.t. the tip of the ImmutableDB during initialisation. As this
+-- process takes a while, we trace events to inform higher layers of our
+-- progress.
+--
+-- The @blockInfo@ parameter is meant to be filled in by a higher layer,
+-- i.e., the ChainDB, which has more information about a block, e.g., the
+-- 'EpochNo' of the block.
+--
+-- The @replayTo@ parameter is also meant to be filled in by a higher layer,
+-- i.e., the ChainDB.
+data TraceReplayEvent r replayTo blockInfo
+  = ReplayFromGenesis replayTo
+    -- ^ There were no LedgerDB snapshots on disk, so we're replaying all
+    -- blocks starting from Genesis against the initial ledger.
+    --
+    -- The @replayTo@ parameter corresponds to the block at the tip of the
+    -- ImmutableDB, i.e., the last block to replay.
+  | ReplayFromSnapshot DiskSnapshot (Tip r) replayTo
+    -- ^ There was a LedgerDB snapshot on disk corresponding to the given tip.
+    -- We're replaying more recent blocks against it.
+    --
+    -- The @replayTo@ parameter corresponds to the block at the tip of the
+    -- ImmutableDB, i.e., the last block to replay.
+  | ReplayedBlock r blockInfo replayTo
+    -- ^ We replayed the given block (reference) on the genesis snapshot
+    -- during the initialisation of the LedgerDB.
+    --
+    -- The @blockInfo@ parameter corresponds replayed block and the @replayTo@
+    -- parameter corresponds to the block at the tip of the ImmutableDB, i.e.,
+    -- the last block to replay.
+  deriving (Generic, Eq, Show)
+
+TH.deriveBifunctor     ''TraceReplayEvent
+TH.deriveBifoldable    ''TraceReplayEvent
+TH.deriveBitraversable ''TraceReplayEvent

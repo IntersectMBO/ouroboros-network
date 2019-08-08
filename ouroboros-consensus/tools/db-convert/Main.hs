@@ -58,6 +58,7 @@ import qualified Ouroboros.Storage.ChainDB.Impl.ImmDB as ImmDB
 import Ouroboros.Storage.Common (EpochSize (..))
 import qualified Ouroboros.Storage.LedgerDB.DiskPolicy as LgrDB
 import qualified Ouroboros.Storage.LedgerDB.MemPolicy as LgrDB
+import Ouroboros.Storage.EpochInfo (fixedSizeEpochInfo)
 import Path
 import Path.IO (listDir, createDirIfMissing)
 import qualified Streaming.Prelude as S
@@ -202,7 +203,7 @@ validateChainDb dbDir cfg verbose =
         , ChainDB.cdbDiskPolicy = LgrDB.defaultDiskPolicy securityParam 20000
           -- Integration
         , ChainDB.cdbNodeConfig = pInfoConfig byronProtocolInfo
-        , ChainDB.cdbEpochSize = const (return . EpochSize . unEpochSlots $ epochSlots)
+        , ChainDB.cdbEpochInfo = fixedSizeEpochInfo . EpochSize . unEpochSlots $ epochSlots
         , ChainDB.cdbIsEBB = \blk -> case Byron.unByronBlockOrEBB blk of
           CC.ABOBBlock _ -> Nothing
           CC.ABOBBoundary ebb -> Just (CC.boundaryHashAnnotated ebb)

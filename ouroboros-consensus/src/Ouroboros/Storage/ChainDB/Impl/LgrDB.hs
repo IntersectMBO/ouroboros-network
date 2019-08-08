@@ -2,6 +2,8 @@
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE FlexibleContexts          #-}
 {-# LANGUAGE LambdaCase                #-}
+{-# LANGUAGE NamedFieldPuns            #-}
+{-# LANGUAGE PatternSynonyms           #-}
 {-# LANGUAGE RankNTypes                #-}
 {-# LANGUAGE RecordWildCards           #-}
 {-# LANGUAGE ScopedTypeVariables       #-}
@@ -18,6 +20,9 @@ module Ouroboros.Storage.ChainDB.Impl.LgrDB (
   , defaultArgs
   , openDB
   , reopen
+    -- * 'TraceReplayEvent' decorator
+  , TraceLedgerReplayEvent
+  , decorateReplayTracer
     -- * Wrappers
   , getCurrent
   , setCurrent
@@ -37,12 +42,15 @@ module Ouroboros.Storage.ChainDB.Impl.LgrDB (
   , DiskSnapshot
   , LedgerDB.SwitchResult (..)
   , LedgerDB.PushManyResult (..)
+  , TraceEvent (..)
+  , TraceReplayEvent (..)
   ) where
 
 import           Codec.Serialise.Decoding (Decoder)
 import           Codec.Serialise.Encoding (Encoding)
 import           Control.Monad.Except (runExcept)
 import           Data.Bifunctor (second)
+import           Data.Bitraversable (bitraverse)
 import           Data.Foldable (foldl')
 import           Data.Functor ((<&>))
 import           Data.Set (Set)
@@ -58,7 +66,8 @@ import           Control.Monad.Class.MonadThrow
 
 import           Control.Tracer
 
-import           Ouroboros.Network.Block (HasHeader (..), HeaderHash, Point,
+import           Ouroboros.Network.Block (pattern BlockPoint,
+                     pattern GenesisPoint, HasHeader (..), HeaderHash, Point,
                      SlotNo, StandardHash, blockPoint, castPoint)
 import qualified Ouroboros.Network.Block as Block
 import           Ouroboros.Network.Point (WithOrigin (At))
@@ -70,6 +79,7 @@ import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util ((.:))
 
 import           Ouroboros.Storage.Common
+import           Ouroboros.Storage.EpochInfo
 import           Ouroboros.Storage.FS.API (HasFS (hasFsErr),
                      createDirectoryIfMissing)
 import           Ouroboros.Storage.FS.API.Types (FsError, MountPoint (..))
@@ -82,7 +92,8 @@ import           Ouroboros.Storage.LedgerDB.InMemory (Apply (..), RefOrVal (..))
 import qualified Ouroboros.Storage.LedgerDB.InMemory as LedgerDB
 import           Ouroboros.Storage.LedgerDB.MemPolicy (MemPolicy)
 import           Ouroboros.Storage.LedgerDB.OnDisk (DiskSnapshot,
-                     NextBlock (..), StreamAPI (..))
+                     NextBlock (..), StreamAPI (..), TraceEvent (..),
+                     TraceReplayEvent (..))
 import qualified Ouroboros.Storage.LedgerDB.OnDisk as LedgerDB
 
 import           Ouroboros.Storage.ChainDB.API (ChainDbFailure (..))
@@ -133,6 +144,7 @@ data LgrDbArgs m blk = forall h. LgrDbArgs {
     , lgrMemPolicy        :: MemPolicy
     , lgrDiskPolicy       :: DiskPolicy m
     , lgrGenesis          :: m (ExtLedgerState blk)
+    , lgrTracer           :: Tracer m (TraceEvent (Point blk))
     }
 
 -- | Default arguments
@@ -162,6 +174,7 @@ defaultArgs fp = LgrDbArgs {
     , lgrMemPolicy        = error "no default for lgrMemPolicy"
     , lgrDiskPolicy       = error "no default for lgrDiskPolicy"
     , lgrGenesis          = error "no default for lgrGenesis"
+    , lgrTracer           = nullTracer
     }
 
 -- | Open the ledger DB
@@ -173,6 +186,9 @@ openDB :: forall m blk.
           )
        => LgrDbArgs m blk
        -- ^ Stateless initializaton arguments
+       -> Tracer m (TraceReplayEvent (Point blk) () (Point blk))
+       -- ^ Used to trace the progress while replaying blocks against the
+       -- ledger.
        -> ImmDB m blk
        -- ^ Reference to the immutable DB
        --
@@ -185,11 +201,10 @@ openDB :: forall m blk.
        --
        -- The block may be in the immutable DB or in the volatile DB; the ledger
        -- DB does not know where the boundary is at any given point.
-       -> Tracer m (LedgerDB.InitLog (Point blk))
        -> m (LgrDB m blk)
-openDB args@LgrDbArgs{..} immDB getBlock tracer = do
+openDB args@LgrDbArgs{..} replayTracer immDB getBlock = do
     createDirectoryIfMissing lgrHasFS True []
-    db <- initFromDisk args lgrDbConf immDB tracer
+    db <- initFromDisk args replayTracer lgrDbConf immDB
     (varDB, varPrevApplied) <- atomically $
       (,) <$> newTVar db <*> newTVar Set.empty
     return LgrDB {
@@ -225,10 +240,10 @@ reopen :: ( MonadSTM   m
           )
        => LgrDB  m blk
        -> ImmDB  m blk
-       -> Tracer m (LedgerDB.InitLog (Point blk))
+       -> Tracer m (TraceReplayEvent (Point blk) () (Point blk))
        -> m ()
-reopen LgrDB{..} immDB tracer = do
-    db <- initFromDisk args conf immDB tracer
+reopen LgrDB{..} immDB replayTracer = do
+    db <- initFromDisk args replayTracer conf immDB
     atomically $ writeTVar varDB db
 
 initFromDisk :: ( MonadST    m
@@ -236,21 +251,61 @@ initFromDisk :: ( MonadST    m
                 , HasHeader blk
                 )
              => LgrDbArgs m blk
+             -> Tracer m (TraceReplayEvent (Point blk) () (Point blk))
              -> Conf      m blk
              -> ImmDB     m blk
-             -> Tracer    m (LedgerDB.InitLog (Point blk))
              -> m (LedgerDB blk)
-initFromDisk args@LgrDbArgs{..} lgrDbConf immDB tracer = wrapFailure args $ do
-    (initLog, db) <-
+initFromDisk args@LgrDbArgs{..} replayTracer lgrDbConf immDB = wrapFailure args $ do
+    (_initLog, db) <-
       LedgerDB.initLedgerDB
+        replayTracer
+        lgrTracer
         lgrHasFS
         (decodeExtLedgerState lgrDecodeLedger lgrDecodeChainState)
         (Block.decodePoint lgrDecodeHash)
         lgrMemPolicy
         lgrDbConf
         (streamAPI immDB)
-    traceWith tracer initLog
     return db
+
+{-------------------------------------------------------------------------------
+  TraceReplayEvent decorator
+-------------------------------------------------------------------------------}
+
+-- | 'TraceReplayEvent' instantiated with additional information.
+--
+-- The @replayTo@ parameter is instantiated with the 'Point' and 'EpochNo' of
+-- the tip of the ImmutableDB.
+--
+-- The @blockInfo@ parameter is instantiated with the 'EpochNo' of the block
+-- and the 'SlotNo' of the first slot in the epoch.
+type TraceLedgerReplayEvent blk =
+  TraceReplayEvent (Point blk) (Point blk, EpochNo) (EpochNo, SlotNo)
+
+decorateReplayTracer
+  :: forall m blk. Monad m
+  => EpochInfo m
+  -> Point blk
+     -- ^ Tip of the ImmutableDB
+  -> Tracer m (TraceLedgerReplayEvent blk)
+  -> m (Tracer m (TraceReplayEvent (Point blk) () (Point blk)))
+decorateReplayTracer epochInfo immDbTip tracer = do
+    (immDbTipEpoch, _) <- epochNoAndFirstSlot immDbTip
+    return $ Tracer $ \ev -> do
+      decoratedEv <- bitraverse
+        -- Fill in @replayTo@
+        (const $ return (immDbTip, immDbTipEpoch))
+        -- Fill in @blockInfo@
+        epochNoAndFirstSlot
+        ev
+      traceWith tracer decoratedEv
+  where
+    epochNoAndFirstSlot :: Point blk -> m (EpochNo, SlotNo)
+    epochNoAndFirstSlot GenesisPoint          = return (0, 0)
+    epochNoAndFirstSlot BlockPoint { atSlot } = do
+      epoch      <- epochInfoEpoch epochInfo atSlot
+      epochFirst <- epochInfoFirst epochInfo epoch
+      return (epoch, epochFirst)
 
 {-------------------------------------------------------------------------------
   Wrappers
@@ -283,6 +338,7 @@ takeSnapshot :: (MonadSTM m, MonadThrow m, StandardHash blk, Typeable blk)
 takeSnapshot lgrDB@LgrDB{ args = args@LgrDbArgs{..} } = wrapFailure args $ do
     ledgerDB <- atomically $ getCurrent lgrDB
     second tipToPoint <$> LedgerDB.takeSnapshot
+      lgrTracer
       lgrHasFS
       (encodeExtLedgerState lgrEncodeLedger lgrEncodeChainState)
       (Block.encodePoint lgrEncodeHash)
@@ -292,7 +348,7 @@ trimSnapshots :: (MonadThrow m, StandardHash blk, Typeable blk)
               => LgrDB m blk
               -> m [DiskSnapshot]
 trimSnapshots LgrDB{ args = args@LgrDbArgs{..} } = wrapFailure args $
-    LedgerDB.trimSnapshots lgrHasFS lgrDiskPolicy
+    LedgerDB.trimSnapshots lgrTracer lgrHasFS lgrDiskPolicy
 
 getDiskPolicy :: LgrDB m blk -> DiskPolicy m
 getDiskPolicy LgrDB{ args = LgrDbArgs{..} } = lgrDiskPolicy
