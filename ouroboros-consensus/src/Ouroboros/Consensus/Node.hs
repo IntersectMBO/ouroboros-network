@@ -40,6 +40,9 @@ import           Data.Time.Clock (secondsToDiffTime)
 import           Network.Mux.Types (MuxTrace, WithMuxBearer)
 import           Network.Socket as Socket
 
+import           Control.Monad.Class.MonadAsync
+import           Control.Monad.Class.MonadSTM.Strict
+
 import           Ouroboros.Network.Block
 import qualified Ouroboros.Network.Block as Block
 import           Ouroboros.Network.Magic
@@ -47,6 +50,7 @@ import           Ouroboros.Network.NodeToClient as NodeToClient
 import           Ouroboros.Network.NodeToNode as NodeToNode
 import           Ouroboros.Network.Protocol.ChainSync.PipelineDecision
                      (pipelineDecisionLowHighMark)
+import           Ouroboros.Network.Subscription.PeerState
 
 import           Ouroboros.Consensus.Block (BlockProtocol)
 import           Ouroboros.Consensus.BlockchainTime
@@ -266,6 +270,8 @@ data RunNetworkArgs peer blk = RunNetworkArgs
     -- ^ DNS subscription tracer
   , rnaDnsResolverTracer     :: Tracer IO (WithDomainName DnsTrace)
     -- ^ DNS resolver tracer
+  , rnaErrorPolicyTracer     :: Tracer IO (WithAddr Socket.SockAddr ErrorPolicyTrace)
+    -- ^ Error Policy tracer
   , rnaMkPeer                :: SockAddr -> SockAddr -> peer
     -- ^ How to create a peer
   , rnaMyAddrs               :: [AddrInfo]
@@ -294,6 +300,7 @@ initNetwork registry nodeArgs kernel RunNetworkArgs{..} = do
 
     -- serve downstream nodes
     connTable  <- newConnectionTable
+    peerStatesVar <- newPeerStatesVar
     peerServers <- forM rnaMyAddrs
         (\a -> forkLinkedThread registry $ runPeerServer connTable a)
 
@@ -305,12 +312,12 @@ initNetwork registry nodeArgs kernel RunNetworkArgs{..} = do
                          else Nothing
 
     ipSubscriptions <- forkLinkedThread registry $
-                         runIpSubscriptionWorker connTable ipv4Address ipv6Address
+                         runIpSubscriptionWorker connTable peerStatesVar ipv4Address ipv6Address
 
     -- dns subscription managers
     dnsSubscriptions <- forM rnaDnsProducers $ \dnsProducer -> do
        forkLinkedThread registry $
-         runDnsSubscriptionWorker connTable ipv4Address ipv6Address dnsProducer
+         runDnsSubscriptionWorker connTable peerStatesVar ipv4Address ipv6Address dnsProducer
 
     let threads = localServer : ipSubscriptions : dnsSubscriptions ++ peerServers
     void $ waitAnyThread threads
@@ -351,15 +358,18 @@ initNetwork registry nodeArgs kernel RunNetworkArgs{..} = do
         wait
 
     runIpSubscriptionWorker :: ConnectionTable IO Socket.SockAddr
+                            -> StrictTVar IO (PeerStates IO Socket.SockAddr (Time IO))
                             -> Maybe Socket.SockAddr
                             -> Maybe Socket.SockAddr
                             -> IO ()
-    runIpSubscriptionWorker connTable ipv4 ipv6 = ipSubscriptionWorker_V1
+    runIpSubscriptionWorker connTable peerStatesVar ipv4 ipv6 = ipSubscriptionWorker_V1
       rnaIpSubscriptionTracer
       rnaMuxTracer
       rnaHandshakeTracer
+      rnaErrorPolicyTracer
       rnaMkPeer
       connTable
+      peerStatesVar
       -- the comments in dnsSbuscriptionWorker call apply
       (LocalAddresses ipv4 ipv6 Nothing)
       (const Nothing)
@@ -371,17 +381,20 @@ initNetwork registry nodeArgs kernel RunNetworkArgs{..} = do
       (initiatorNetworkApplication networkApps)
 
     runDnsSubscriptionWorker :: ConnectionTable IO Socket.SockAddr
+                             -> StrictTVar IO (PeerStates IO Socket.SockAddr (Time IO))
                              -> Maybe Socket.SockAddr
                              -> Maybe Socket.SockAddr
                              -> DnsSubscriptionTarget
                              -> IO ()
-    runDnsSubscriptionWorker connTable ipv4 ipv6 dnsProducer = dnsSubscriptionWorker_V1
+    runDnsSubscriptionWorker connTable peerStatesVar ipv4 ipv6 dnsProducer = dnsSubscriptionWorker_V1
       rnaDnsSubscriptionTracer
       rnaDnsResolverTracer
       rnaMuxTracer
       rnaHandshakeTracer
+      rnaErrorPolicyTracer
       rnaMkPeer
       connTable
+      peerStatesVar
       (LocalAddresses
         -- IPv4 address
         --

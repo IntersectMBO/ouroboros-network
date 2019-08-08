@@ -28,6 +28,8 @@ module Ouroboros.Network.NodeToNode (
   , ipSubscriptionWorker_V1
   , SubscriptionTrace (..)
   , WithIPList (..)
+  , ErrorPolicyTrace
+  , WithAddr
   -- ** DNS subscription worker
   , DnsSubscriptionTarget (..)
   , dnsSubscriptionWorker
@@ -58,7 +60,7 @@ import           Codec.SerialiseTerm
 
 import qualified Network.Socket as Socket
 
-import           Control.Monad.Class.MonadSTM
+import           Control.Monad.Class.MonadSTM.Strict
 
 import           Network.Mux.Types (ProtocolEnum(..), MiniProtocolLimits (..), WithMuxBearer, MuxTrace)
 import           Network.Mux.Interface
@@ -82,6 +84,7 @@ import           Ouroboros.Network.Subscription.Dns ( DnsSubscriptionTarget (..)
                                                     , WithDomainName (..)
                                                     )
 import           Ouroboros.Network.Subscription.Worker (LocalAddresses (..))
+import           Ouroboros.Network.Subscription.PeerState
 import           Network.TypedProtocol.Driver.ByteLimit (DecoderFailureOrTooMuchInput)
 import           Network.TypedProtocol.Driver (TraceSendRecv (..))
 import           Control.Tracer (Tracer)
@@ -269,8 +272,10 @@ ipSubscriptionWorker
           (Handshake NodeToNodeVersion CBOR.Term)
           peerid
           (DecoderFailureOrTooMuchInput DeserialiseFailure))
+    -> Tracer IO (WithAddr Socket.SockAddr ErrorPolicyTrace)
     -> (Socket.SockAddr -> Socket.SockAddr -> peerid)
     -> ConnectionTable IO Socket.SockAddr
+    -> StrictTVar IO (PeerStates IO Socket.SockAddr)
     -> LocalAddresses Socket.SockAddr
     -> (Socket.SockAddr -> Maybe DiffTime)
     -- ^ Lookup function, should return expected delay for the given address
@@ -288,19 +293,24 @@ ipSubscriptionWorker
   subscriptionTracer
   muxTracer
   handshakeTracer
+  errTracer
   peeridFn
   tbl
+  peerStatesVar
   localAddr
   connectionAttemptDelay
   ips
   versions
     = Subscription.ipSubscriptionWorker
         subscriptionTracer
+        errTracer
         tbl
+        peerStatesVar
         localAddr
         connectionAttemptDelay
+        []
+        (\_ _ _ -> Throw)
         ips
-        (\_ -> retry)
         (connectToNode'
           (\(DictVersion codec) -> encodeTerm codec)
           (\(DictVersion codec) -> decodeTerm codec)
@@ -318,8 +328,10 @@ ipSubscriptionWorker_V1
     => Tracer IO (WithIPList (SubscriptionTrace Socket.SockAddr))
     -> Tracer IO (WithMuxBearer peerid (MuxTrace NodeToNodeProtocols))
     -> Tracer IO (TraceSendRecv (Handshake NodeToNodeVersion CBOR.Term) peerid (DecoderFailureOrTooMuchInput DeserialiseFailure))
+    -> Tracer IO (WithAddr Socket.SockAddr ErrorPolicyTrace)
     -> (Socket.SockAddr -> Socket.SockAddr -> peerid)
     -> ConnectionTable IO Socket.SockAddr
+    -> StrictTVar IO (PeerStates IO Socket.SockAddr)
     -> LocalAddresses Socket.SockAddr
     -> (Socket.SockAddr -> Maybe DiffTime)
     -- ^ Lookup function, should return expected delay for the given address
@@ -335,8 +347,10 @@ ipSubscriptionWorker_V1
   subscriptionTracer
   muxTracer
   handshakeTracer
+  errTracer
   peeridFn
   tbl
+  peerStatesVar
   localAddresses
   connectionAttemptDelay
   ips
@@ -346,8 +360,10 @@ ipSubscriptionWorker_V1
         subscriptionTracer
         muxTracer
         handshakeTracer
+        errTracer
         peeridFn
         tbl
+        peerStatesVar
         localAddresses
         connectionAttemptDelay
         ips
@@ -372,8 +388,10 @@ dnsSubscriptionWorker
           (Handshake NodeToNodeVersion CBOR.Term)
           peerid
           (DecoderFailureOrTooMuchInput DeserialiseFailure))
+    -> Tracer IO (WithAddr Socket.SockAddr ErrorPolicyTrace)
     -> (Socket.SockAddr -> Socket.SockAddr -> peerid)
     -> ConnectionTable IO Socket.SockAddr
+    -> StrictTVar IO (PeerStates IO Socket.SockAddr)
     -> LocalAddresses Socket.SockAddr
     -> (Socket.SockAddr -> Maybe DiffTime)
     -> DnsSubscriptionTarget
@@ -391,8 +409,10 @@ dnsSubscriptionWorker
   dnsTracer
   muxTracer
   handshakeTracer
+  errTracer
   peeridFn
   tbl
+  peerStatesVar
   localAddresses
   connectionAttemptDelay
   dst
@@ -400,11 +420,14 @@ dnsSubscriptionWorker
     Subscription.dnsSubscriptionWorker
       subscriptionTracer
       dnsTracer
+      errTracer
       tbl
+      peerStatesVar
       localAddresses
       connectionAttemptDelay
+      []
+      (\_ _ _ -> Throw)
       dst
-      (\_ -> retry)
       (connectToNode'
         (\(DictVersion codec) -> encodeTerm codec)
         (\(DictVersion codec) -> decodeTerm codec)
@@ -423,8 +446,10 @@ dnsSubscriptionWorker_V1
     -> Tracer IO (WithDomainName DnsTrace)
     -> Tracer IO (WithMuxBearer peerid (MuxTrace NodeToNodeProtocols))
     -> Tracer IO (TraceSendRecv (Handshake NodeToNodeVersion CBOR.Term) peerid (DecoderFailureOrTooMuchInput DeserialiseFailure))
+    -> Tracer IO (WithAddr Socket.SockAddr ErrorPolicyTrace)
     -> (Socket.SockAddr -> Socket.SockAddr -> peerid)
     -> ConnectionTable IO Socket.SockAddr
+    -> StrictTVar IO (PeerStates IO Socket.SockAddr)
     -> LocalAddresses Socket.SockAddr
     -> (Socket.SockAddr -> Maybe DiffTime)
     -> DnsSubscriptionTarget
@@ -440,8 +465,10 @@ dnsSubscriptionWorker_V1
   dnsTracer
   muxTracer
   handshakeTracer
+  errTracer
   peeridFn
   tbl
+  peerStatesVar
   localAddresses
   connectionAttemptDelay
   dst
@@ -452,8 +479,10 @@ dnsSubscriptionWorker_V1
       dnsTracer
       muxTracer
       handshakeTracer
+      errTracer
       peeridFn
       tbl
+      peerStatesVar
       localAddresses
       connectionAttemptDelay
       dst
