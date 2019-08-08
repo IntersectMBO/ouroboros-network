@@ -20,7 +20,7 @@ import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Protocol.Abstract
-import           Ouroboros.Consensus.Util ((..:), (.:))
+import           Ouroboros.Consensus.Util ((..:))
 import           Ouroboros.Consensus.Util.STM (blockUntilJust)
 
 import           Ouroboros.Storage.ChainDB.API
@@ -116,9 +116,9 @@ openDB cfg initLedger = do
       , getTipPoint         = querySTM $ Model.tipPoint
       , getIsFetched        = querySTM $ flip Model.hasBlockByPoint
       , getIsInvalidBlock   = querySTM $ (first (flip Map.member)) . Model.invalid
-      , streamBlocks        = updateE  .: (fmap (first (fmap iterator)) ..: Model.streamBlocks k)
-      , newBlockReader      = update   $ (first reader . Model.readBlocks)
-      , newHeaderReader     = update   $ (first (fmap getHeader . reader) . Model.readBlocks)
+      , streamBlocks        = updateE  ..: const (fmap (first (fmap iterator)) ..: Model.streamBlocks k)
+      , newBlockReader      = update   .   const (first reader . Model.readBlocks)
+      , newHeaderReader     = update   .   const (first (fmap getHeader . reader) . Model.readBlocks)
 
       , closeDB             = atomically $ modifyTVar' db Model.closeDB
       , isOpen              = Model.isOpen <$> readTVar db

@@ -23,6 +23,8 @@ import           Ouroboros.Network.Protocol.BlockFetch.Server
                      BlockFetchServer (..))
 import           Ouroboros.Network.Protocol.BlockFetch.Type (ChainRange (..))
 
+import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
+
 import           Ouroboros.Storage.ChainDB (ChainDB, IteratorResult (..))
 import qualified Ouroboros.Storage.ChainDB as ChainDB
 
@@ -58,8 +60,9 @@ blockFetchServer
        )
     => Tracer m (TraceBlockFetchServerEvent blk)
     -> ChainDB m blk
+    -> ResourceRegistry m
     -> BlockFetchServer blk m ()
-blockFetchServer _tracer chainDB = senderSide
+blockFetchServer _tracer chainDB registry = senderSide
   where
     senderSide :: BlockFetchServer blk m ()
     senderSide = BlockFetchServer receiveReq ()
@@ -67,10 +70,9 @@ blockFetchServer _tracer chainDB = senderSide
     receiveReq :: ChainRange blk
                -> m (BlockFetchBlockSender blk m ())
     receiveReq (ChainRange start end) = do
-      -- TODO close this iterator in case of an exception, use something like
-      -- ResourceT
       errIt <- ChainDB.streamBlocks
         chainDB
+        registry
         (ChainDB.StreamFromInclusive start)
         (ChainDB.StreamToInclusive   end)
       return $ case errIt of

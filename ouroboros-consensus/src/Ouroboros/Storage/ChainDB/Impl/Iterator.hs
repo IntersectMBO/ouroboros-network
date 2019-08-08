@@ -36,6 +36,8 @@ import           Ouroboros.Network.Block (pattern BlockPoint,
                      atSlot, blockHash, blockPoint, castPoint, pointSlot,
                      withHash)
 
+import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
+
 import           Ouroboros.Storage.ChainDB.API (ChainDbError (..),
                      Iterator (..), IteratorId (..), IteratorResult (..),
                      StreamFrom (..), StreamTo (..), UnknownRange (..),
@@ -173,18 +175,19 @@ import qualified Ouroboros.Storage.ChainDB.Impl.VolDB as VolDB
 -- multiple times. See #548.
 streamBlocks
   :: forall m blk.
-     ( MonadCatch m
-     , MonadSTM   m
+     ( MonadMask m
+     , MonadSTM  m
      , MonadThrow (STM m)
      , HasHeader blk
      , HasCallStack
      )
   => ChainDbHandle m blk
+  -> ResourceRegistry m
   -> StreamFrom      blk
   -> StreamTo        blk
   -> m (Either (UnknownRange blk) (Iterator m blk))
-streamBlocks h from to = getEnv h $ \cdb ->
-    newIterator (fromChainDbEnv cdb) getItEnv from to
+streamBlocks h registry from to = getEnv h $ \cdb ->
+    newIterator (fromChainDbEnv cdb) getItEnv registry from to
   where
     getItEnv :: forall r. (IteratorEnv m blk -> m r) -> m r
     getItEnv f = getEnv h (f . fromChainDbEnv)
@@ -225,8 +228,8 @@ fromChainDbEnv CDB{..} = IteratorEnv
 -- | See 'streamBlocks'.
 newIterator
   :: forall m blk.
-     ( MonadCatch m
-     , MonadSTM   m
+     ( MonadMask m
+     , MonadSTM  m
      , MonadThrow (STM m)
      , HasHeader blk
      , HasCallStack
@@ -238,10 +241,11 @@ newIterator
      -- ChainDB is still open or throw an exception otherwise. This makes sure
      -- that when we call 'iteratorNext', we first check whether the ChainDB
      -- is still open.
+  -> ResourceRegistry m
   -> StreamFrom      blk
   -> StreamTo        blk
   -> m (Either (UnknownRange blk) (Iterator m blk))
-newIterator itEnv@IteratorEnv{..} getItEnv from to = do
+newIterator itEnv@IteratorEnv{..} getItEnv registry from to = do
     unless (validBounds from to) $
       throwM $ InvalidIteratorRange from to
     res <- runExceptT start
@@ -314,7 +318,7 @@ newIterator itEnv@IteratorEnv{..} getItEnv from to = do
             Nothing -> throwError $ MissingBlock endPoint
         -- 'ImmDB.streamBlocksFrom' will check the hash of the block at the
         -- start bound.
-        immIt <- ExceptT $ ImmDB.streamBlocksFrom itImmDB from
+        immIt <- ExceptT $ ImmDB.streamBlocksFrom itImmDB registry from
         lift $ createIterator $ InImmDB from immIt (StreamTo to)
 
     -- | If we have to stream from both the ImmutableDB and the VolatileDB, we
@@ -365,7 +369,7 @@ newIterator itEnv@IteratorEnv{..} getItEnv from to = do
       where
         stream pt hashes' = do
           let immEnd = SwitchToVolDBFrom (StreamToInclusive pt) hashes'
-          immIt <- ExceptT $ ImmDB.streamBlocksFrom itImmDB from
+          immIt <- ExceptT $ ImmDB.streamBlocksFrom itImmDB registry from
           lift $ createIterator $ InImmDB from immIt immEnd
 
     makeIterator :: Bool  -- ^ Register the iterator in 'cdbIterators'?
@@ -380,8 +384,8 @@ newIterator itEnv@IteratorEnv{..} getItEnv from to = do
         -- probably won't be the case.
         Map.insert iteratorId (implIteratorClose varItState iteratorId itEnv)
       return Iterator {
-          iteratorNext  = getItEnv $ implIteratorNext  varItState
-        , iteratorClose = getItEnv $ implIteratorClose varItState iteratorId
+          iteratorNext  = getItEnv $ implIteratorNext  registry varItState
+        , iteratorClose = getItEnv $ implIteratorClose          varItState iteratorId
         , iteratorId    = iteratorId
         }
 
@@ -509,14 +513,15 @@ data InImmDBEnd blk
     -- second parameter) from the VolatileDB.
 
 implIteratorNext :: forall m blk.
-                    ( MonadCatch m
+                    ( MonadMask m
                     , MonadSTM   m
                     , HasHeader blk
                     )
-                 => TVar m (IteratorState m blk)
+                 => ResourceRegistry m
+                 -> TVar m (IteratorState m blk)
                  -> IteratorEnv m blk
                  -> m (IteratorResult blk)
-implIteratorNext varItState IteratorEnv{..} =
+implIteratorNext registry varItState IteratorEnv{..} =
     atomically (readTVar varItState) >>= \case
       Closed ->
         return IteratorExhausted
@@ -551,7 +556,7 @@ implIteratorNext varItState IteratorEnv{..} =
             -- 'ReadFutureEBBError' because if the block is missing, it /must/
             -- have been garbage-collected, which means that its slot was
             -- older than the slot of the tip of the ImmutableDB.
-            immIt <- ImmDB.streamBlocksFromUnchecked itImmDB continueFrom
+            immIt <- ImmDB.streamBlocksFromUnchecked itImmDB registry continueFrom
             nextInImmDBRetry Nothing immIt (hash NE.:| hashes)
 
         -- Block is there

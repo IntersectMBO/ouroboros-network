@@ -371,7 +371,7 @@ newtype TestOutput blk = TestOutput
 getTestOutput ::
     forall m blk.
        ( MonadSTM m
-       , MonadThrow m
+       , MonadMask m
        , HasHeader blk
        )
     => [( CoreNodeId

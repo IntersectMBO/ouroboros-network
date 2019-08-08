@@ -74,6 +74,9 @@ import           Ouroboros.Network.Block (pattern BlockPoint,
 import           Ouroboros.Network.Point (WithOrigin (..))
 
 import qualified Ouroboros.Consensus.Util.CBOR as Util.CBOR
+import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry,
+                     allocate, release)
+
 
 import           Ouroboros.Storage.ChainDB.API (ChainDbError (..),
                      ChainDbFailure (..), StreamFrom (..), UnknownRange (..))
@@ -293,6 +296,26 @@ appendBlock db@ImmDB{..} b = withDB db $ \imm -> case isEBB b of
   Streaming
 -------------------------------------------------------------------------------}
 
+-- | Wrapper around 'ImmDB.streamBinaryBlobs' that 'allocate's the iterator in
+-- the 'ResourceRegistry' so that 'ImmDB.iteratorClose' is registered as the
+-- clean-up action.
+--
+-- When the returned iterator is closed, it will be 'release'd from the
+-- 'ResourceRegistry'.
+registeredStream :: (MonadMask m, MonadSTM m, HasHeader blk)
+                 => ImmDB m blk
+                 -> ResourceRegistry m
+                 -> Maybe (SlotNo, HeaderHash blk)
+                 -> Maybe (SlotNo, HeaderHash blk)
+                 -> m (ImmDB.Iterator (HeaderHash blk) m Lazy.ByteString)
+registeredStream db registry start end = do
+    (key, it) <- allocate registry
+      (withDB db $ \imm -> ImmDB.streamBinaryBlobs imm start end)
+      (iteratorClose db)
+    return it
+      { ImmDB.iteratorClose = release registry key
+      }
+
 -- | Stream blocks from the given 'StreamFrom'.
 --
 -- Checks whether the block at the lower bound has the right hash. If not,
@@ -306,17 +329,19 @@ appendBlock db@ImmDB{..} b = withDB db $ \imm -> case isEBB b of
 -- When passed @'StreamFromInclusive' pt@ where @pt@ refers to Genesis, a
 -- 'NoGenesisBlock' exception will be thrown.
 streamBlocksFrom :: forall m blk.
-                   ( MonadCatch m
+                   ( MonadMask m
+                   , MonadSTM  m
                    , HasHeader blk
                    )
                  => ImmDB m blk
+                 -> ResourceRegistry m
                  -> StreamFrom blk
                  -> m (Either (UnknownRange blk)
                               (ImmDB.Iterator (HeaderHash blk) m blk))
-streamBlocksFrom db from = withDB db $ \imm -> runExceptT $ case from of
+streamBlocksFrom db registry from = runExceptT $ case from of
     StreamFromExclusive pt@BlockPoint { atSlot = slot, withHash = hash } -> do
       checkFutureSlot pt
-      it    <- stream imm (Just (slot, hash)) Nothing
+      it    <- stream (Just (slot, hash)) Nothing
       itRes <- lift $ iteratorNext db it
       if blockMatchesPoint itRes pt
         then return it
@@ -324,10 +349,10 @@ streamBlocksFrom db from = withDB db $ \imm -> runExceptT $ case from of
           lift $ iteratorClose db it
           throwError $ MissingBlock pt
     StreamFromExclusive    GenesisPoint ->
-      stream imm Nothing Nothing
+      stream Nothing Nothing
     StreamFromInclusive pt@BlockPoint { atSlot = slot, withHash = hash } -> do
       checkFutureSlot pt
-      it    <- stream imm (Just (slot, hash)) Nothing
+      it    <- stream (Just (slot, hash)) Nothing
       itRes <- lift $ iteratorPeek db it
       if blockMatchesPoint itRes pt
         then return it
@@ -351,8 +376,8 @@ streamBlocksFrom db from = withDB db $ \imm -> runExceptT $ case from of
       when (pointSlot pt > slotNoAtTip) $
         throwError $ MissingBlock pt
 
-    stream imm start end = lift $ parseIterator db <$>
-      ImmDB.streamBinaryBlobs imm start end
+    stream start end = lift $ parseIterator db <$>
+      registeredStream db registry start end
 
     -- | Check that the result of the iterator is a block that matches the
     -- given point.
@@ -373,37 +398,45 @@ streamBlocksFrom db from = withDB db $ \imm -> runExceptT $ case from of
 -- When passed @'StreamFromInclusive' pt@ where @pt@ refers to Genesis, a
 -- 'NoGenesisBlock' exception will be thrown.
 streamBlocksFromUnchecked  :: forall m blk.
-                              ( MonadCatch m
+                              ( MonadMask m
+                              , MonadSTM  m
                               , HasHeader blk
                               )
                            => ImmDB m blk
+                           -> ResourceRegistry m
                            -> StreamFrom blk
                            -> m (ImmDB.Iterator (HeaderHash blk) m blk)
-streamBlocksFromUnchecked db from = withDB db $ \imm -> case from of
+streamBlocksFromUnchecked db registry from = case from of
     StreamFromExclusive BlockPoint { atSlot = slot, withHash = hash } -> do
-      it    <- ImmDB.streamBinaryBlobs imm (Just (slot, hash)) Nothing
+      it <- registeredStream db registry (Just (slot, hash)) Nothing
       void $ iteratorNext db it
       return $ parseIterator db it
     StreamFromExclusive    GenesisPoint ->
-      stream imm Nothing Nothing
+      stream Nothing Nothing
     StreamFromInclusive BlockPoint { atSlot = slot, withHash = hash } ->
-      stream imm (Just (slot, hash)) Nothing
+      stream (Just (slot, hash)) Nothing
     StreamFromInclusive    GenesisPoint ->
       throwM $ NoGenesisBlock @blk
   where
-    stream imm start end = parseIterator db <$>
-      ImmDB.streamBinaryBlobs imm start end
+    stream start end = parseIterator db <$>
+      registeredStream db registry start end
 
 -- | Stream blocks after the given point
 --
 -- See also 'streamBlobsAfter'.
 --
 -- PRECONDITION: the exclusive lower bound is part of the ImmutableDB.
-streamBlocksAfter :: forall m blk. (MonadCatch m, HasHeader blk)
+streamBlocksAfter :: forall m blk.
+                     ( MonadMask m
+                     , MonadSTM  m
+                     , HasHeader blk
+                     )
                   => ImmDB m blk
+                  -> ResourceRegistry m
                   -> Point blk -- ^ Exclusive lower bound
                   -> m (Iterator (HeaderHash blk) m blk)
-streamBlocksAfter db low = parseIterator db <$> streamBlobsAfter db low
+streamBlocksAfter db registry low =
+    parseIterator db <$> streamBlobsAfter db registry low
 
 -- | Stream blobs after the given point
 --
@@ -416,12 +449,17 @@ streamBlocksAfter db low = parseIterator db <$> streamBlobsAfter db low
 -- bound at all; if it doesn't, we pass the hash as the lower bound to the
 -- 'ImmutableDB' and then step the iterator one block to skip that first
 -- block.
-streamBlobsAfter :: forall m blk. (MonadCatch m, HasHeader blk)
+streamBlobsAfter :: forall m blk.
+                    ( MonadMask m
+                    , MonadSTM  m
+                    , HasHeader blk
+                    )
                  => ImmDB m blk
+                 -> ResourceRegistry m
                  -> Point blk -- ^ Exclusive lower bound
                  -> m (Iterator (HeaderHash blk) m Lazy.ByteString)
-streamBlobsAfter db low = withDB db $ \imm -> do
-    itr   <- ImmDB.streamBinaryBlobs imm low' Nothing
+streamBlobsAfter db registry low = do
+    itr <- registeredStream db registry low' Nothing
     skipAndCheck itr
     return itr
   where

@@ -80,6 +80,8 @@ import           Ouroboros.Consensus.NodeId (NodeId (..))
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.BFT
 import           Ouroboros.Consensus.Util.Condense (condense)
+import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
+import qualified Ouroboros.Consensus.Util.ResourceRegistry as ResourceRegistry
 import           Ouroboros.Consensus.Util.STM (Fingerprint (..))
 import           Ouroboros.Consensus.Util.ThreadRegistry (ThreadRegistry,
                      withThreadRegistry)
@@ -206,9 +208,10 @@ deriving instance (TestConstraints blk, Show it, Show rdr)
 run :: forall m blk. (MonadSTM m, MonadAsync m)
     => ChainDB          m blk
     -> ChainDB.Internal m blk
+    -> ResourceRegistry m
     ->    Cmd     blk (Iterator m blk) (Reader m blk blk)
     -> m (Success blk (Iterator m blk) (Reader m blk blk))
-run ChainDB{..} ChainDB.Internal{..} = \case
+run ChainDB{..} ChainDB.Internal{..} registry = \case
     AddBlock blk          -> Unit          <$> addBlock blk
     GetCurrentChain       -> Chain         <$> atomically getCurrentChain
     GetCurrentLedger      -> Ledger        <$> atomically getCurrentLedger
@@ -217,10 +220,10 @@ run ChainDB{..} ChainDB.Internal{..} = \case
     GetTipPoint           -> Point         <$> atomically getTipPoint
     GetBlock pt           -> MbBlock       <$> getBlock pt
     GetGCedBlock pt       -> mbGCedBlock   <$> getBlock pt
-    StreamBlocks from to  -> iter          <$> streamBlocks from to
+    StreamBlocks from to  -> iter          <$> streamBlocks registry from to
     IteratorNext  it      -> IterResult    <$> iteratorNext it
     IteratorClose it      -> Unit          <$> iteratorClose it
-    NewBlockReader        -> BlockReader   <$> newBlockReader
+    NewBlockReader        -> BlockReader   <$> newBlockReader registry
     ReaderInstruction rdr -> MbChainUpdate <$> readerInstruction rdr
     ReaderForward rdr pts -> MbPoint       <$> readerForward rdr pts
     ReaderClose rdr       -> Unit          <$> readerClose rdr
@@ -363,9 +366,10 @@ runPure cfg = \case
 runIO :: TestConstraints blk
       => ChainDB          IO blk
       -> ChainDB.Internal IO blk
+      -> ResourceRegistry IO
       ->     Cmd  blk (Iterator IO blk) (Reader IO blk blk)
       -> IO (Resp blk (Iterator IO blk) (Reader IO blk blk))
-runIO db internal cmd = Resp <$> try (run db internal cmd)
+runIO db internal registry cmd = Resp <$> try (run db internal registry cmd)
 
 {-------------------------------------------------------------------------------
   Collect arguments
@@ -747,16 +751,18 @@ postcondition model cmd resp =
 semantics :: forall blk. TestConstraints blk
           => ChainDB IO blk
           -> ChainDB.Internal IO blk
+          -> ResourceRegistry IO
           -> At Cmd blk IO Concrete
           -> IO (At Resp blk IO Concrete)
-semantics db internal (At cmd) =
+semantics db internal registry (At cmd) =
     At . (bimap (QSM.reference . QSM.Opaque) (QSM.reference . QSM.Opaque)) <$>
-    runIO db internal (bimap QSM.opaque QSM.opaque cmd)
+    runIO db internal registry (bimap QSM.opaque QSM.opaque cmd)
 
 -- | The state machine proper
 sm :: TestConstraints blk
    => ChainDB          IO       blk
    -> ChainDB.Internal IO       blk
+   -> ResourceRegistry IO
    -> BlockGen                  blk IO
    -> NodeConfig (BlockProtocol blk)
    -> ExtLedgerState            blk
@@ -764,14 +770,14 @@ sm :: TestConstraints blk
                    (At Cmd      blk IO)
                                     IO
                    (At Resp     blk IO)
-sm db internal genBlock env initLedger = StateMachine
+sm db internal registry genBlock env initLedger = StateMachine
   { initModel     = initModel env initLedger
   , transition    = transition
   , precondition  = precondition
   , postcondition = postcondition
   , generator     = Just . generator genBlock
   , shrinker      = shrinker
-  , semantics     = semantics db internal
+  , semantics     = semantics db internal registry
   , mock          = mock
   , invariant     = Nothing
   , distribution  = Nothing
@@ -1011,8 +1017,11 @@ dbUnused = error "ChainDB used during command generation"
 internalUnused :: ChainDB.Internal blk m
 internalUnused = error "ChainDB.Internal used during command generation"
 
+registryUnunused :: ResourceRegistry m
+registryUnunused = error "ResourceRegistry used during command generation"
+
 smUnused :: StateMachine (Model Blk IO) (At Cmd Blk IO) IO (At Resp Blk IO)
-smUnused = sm dbUnused internalUnused genBlk testCfg testInitLedger
+smUnused = sm dbUnused internalUnused registryUnunused genBlk testCfg testInitLedger
 
 prop_sequential :: Property
 prop_sequential = forAllCommands smUnused Nothing $ \cmds -> QC.monadicIO $ do
@@ -1026,17 +1035,18 @@ prop_sequential = forAllCommands smUnused Nothing $ \cmds -> QC.monadicIO $ do
             , Property
             )
     test cmds = do
+      resourceRegistry   <- QC.run ResourceRegistry.new
       (tracer, getTrace) <- QC.run recordingTracerIORef
-      registry           <- QC.run $ atomically ThreadRegistry.new
+      threadRegistry     <- QC.run $ atomically ThreadRegistry.new
       fsVars             <- QC.run $ atomically $ (,,)
         <$> newTVar Mock.empty
         <*> newTVar Mock.empty
         <*> newTVar Mock.empty
-      let args = mkArgs testCfg testInitLedger tracer registry fsVars
+      let args = mkArgs testCfg testInitLedger tracer threadRegistry fsVars
       (db, internal)     <- QC.run $ openDBInternal args False
-      let sm' = sm db internal genBlk testCfg testInitLedger
+      let sm' = sm db internal resourceRegistry genBlk testCfg testInitLedger
       (hist, model, res) <- runCommands sm' cmds
-      (realChain, realChain', trace, immDbFs, volDbFs, lgrDbFs) <- QC.run $ do
+      (realChain, realChain', trace, fses, remainingCleanups) <- QC.run $ do
         trace <- getTrace
         open <- atomically $ isOpen db
         unless open $ intReopen internal False
@@ -1050,18 +1060,29 @@ prop_sequential = forAllCommands smUnused Nothing $ \cmds -> QC.monadicIO $ do
         realChain' <- toChain db'
         closeDB db'
 
-        ThreadRegistry.cancelAll registry
+        ThreadRegistry.cancelAll threadRegistry
+
+        -- closeDB should have closed all open Readers and Iterators, freeing
+        -- up all resources, so there should be no more clean-up actions left.
+        --
+        -- Note that this is only true because we're not simulating exceptions
+        -- (yet), in which case there /will be/ clean-up actions left. This is
+        -- exactly the reason for introducing the 'ResourceRegistry' in the
+        -- first place: to clean up resources in case exceptions get thrown.
+        remainingCleanups <- ResourceRegistry.nbCleanups resourceRegistry
+        ResourceRegistry.close resourceRegistry
 
         -- Read the final MockFS of each database
         let (immDbFsVar, volDbFsVar, lgrDbFsVar) = fsVars
-        (immDbFs, volDbFs, lgrDbFs) <- atomically $ (,,)
+        fses <- atomically $ (,,)
           <$> readTVar immDbFsVar
           <*> readTVar volDbFsVar
           <*> readTVar lgrDbFsVar
 
-        return (realChain, realChain', trace, immDbFs, volDbFs, lgrDbFs)
+        return (realChain, realChain', trace, fses, remainingCleanups)
 
       let modelChain = Model.currentChain $ dbModel model
+          (immDbFs, volDbFs, lgrDbFs) = fses
           prop =
             counterexample ("Real  chain: " <> condense realChain)       $
             counterexample ("Model chain: " <> condense modelChain)      $
@@ -1079,7 +1100,9 @@ prop_sequential = forAllCommands smUnused Nothing $ \cmds -> QC.monadicIO $ do
             counterexample "VolatileDB is leaking file handles"
                            (Mock.numOpenHandles volDbFs === 0) .&&.
             counterexample "LedgerDB is leaking file handles"
-                           (Mock.numOpenHandles lgrDbFs === 0)
+                           (Mock.numOpenHandles lgrDbFs === 0) .&&.
+            counterexample "There were registered clean-up actions"
+                           (remainingCleanups === 0)
       return (hist, prop)
 
 prop_trace :: [TraceEvent Blk] -> Property
@@ -1199,7 +1222,8 @@ _mkBlk h = TestBlock
 
 -- | Debugging utility: run some commands against the real implementation.
 _runCmds :: [Cmd Blk IteratorId ReaderId] -> IO [Resp Blk IteratorId ReaderId]
-_runCmds cmds = withThreadRegistry $ \registry -> do
+_runCmds cmds = withThreadRegistry $ \threadRegistry ->
+                ResourceRegistry.with $ \resourceRegistry -> do
     fsVars <- atomically $ (,,)
       <$> newTVar Mock.empty
       <*> newTVar Mock.empty
@@ -1208,21 +1232,22 @@ _runCmds cmds = withThreadRegistry $ \registry -> do
           testCfg
           testInitLedger
           (showTracing stdoutTracer)
-          registry
+          threadRegistry
           fsVars
     (db, internal) <- openDBInternal args False
-    evalStateT (mapM (go db internal) cmds) emptyRunCmdState
+    evalStateT (mapM (go db internal resourceRegistry) cmds) emptyRunCmdState
   where
     go :: ChainDB IO Blk -> ChainDB.Internal IO Blk
+       -> ResourceRegistry IO
        -> Cmd Blk IteratorId ReaderId
        -> StateT RunCmdState
                  IO
                  (Resp Blk IteratorId ReaderId)
-    go db internal cmd = do
+    go db internal resourceRegistry cmd = do
       RunCmdState { _knownIters, _knownReaders} <- get
       let cmd' = At $
             bimap (revLookup _knownIters) (revLookup _knownReaders) cmd
-      resp <- lift $ unAt <$> semantics db internal cmd'
+      resp <- lift $ unAt <$> semantics db internal resourceRegistry cmd'
       newIters <- RE.fromList <$>
        mapM (\rdr -> (rdr, ) <$> newIteratorId) (iters resp)
       newReaders <- RE.fromList <$>

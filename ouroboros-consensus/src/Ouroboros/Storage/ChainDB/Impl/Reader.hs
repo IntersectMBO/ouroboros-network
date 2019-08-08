@@ -33,6 +33,7 @@ import           Ouroboros.Network.Block (ChainUpdate (..), HasHeader,
 import           Ouroboros.Network.Point (WithOrigin (..))
 
 import           Ouroboros.Consensus.Block (GetHeader (..), headerPoint)
+import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
 import           Ouroboros.Consensus.Util.STM (blockUntilJust)
 
 import           Ouroboros.Storage.ChainDB.API (ChainDbError (..), Reader (..),
@@ -86,8 +87,8 @@ getReader1 h rdrId f a =
 
 newReader
   :: forall m blk.
-     ( MonadSTM   m
-     , MonadCatch m
+     ( MonadSTM  m
+     , MonadMask m
      , MonadThrow (STM m)
      , HasHeader blk
      , HasHeader (Header blk)
@@ -97,8 +98,9 @@ newReader
      -- ^ We need the handle to pass it on to the 'Reader', so that each time
      -- a function is called on the 'Reader', we check whether the ChainDB is
      -- actually open.
+  -> ResourceRegistry m
   -> m (Reader m blk (BlockOrHeader blk))
-newReader cdb@CDB{..} h = do
+newReader cdb@CDB{..} h registry = do
     tipPoint <- atomically $ Query.getTipPoint cdb
     readerState <- if tipPoint == genesisPoint
       then return $ ReaderInMem rollState
@@ -106,7 +108,7 @@ newReader cdb@CDB{..} h = do
         -- TODO avoid opening an iterator immediately when creating a reader,
         -- because the user will probably request an intersection with the
         -- recent chain. OR should we not optimise for the best case?
-        immIt <- ImmDB.streamBlocksAfter cdbImmDB genesisPoint
+        immIt <- ImmDB.streamBlocksAfter cdbImmDB registry genesisPoint
         return $ ReaderInImmDB rollState immIt
 
     (reader, readerId) <- atomically $ do
@@ -115,7 +117,7 @@ newReader cdb@CDB{..} h = do
 
       varReader <- newTVar readerState
       modifyTVar' cdbReaders (Map.insert readerId varReader)
-      let reader = makeNewBlockOrHeaderReader h readerId
+      let reader = makeNewBlockOrHeaderReader h readerId registry
       return (reader, readerId)
     traceWith cdbTracer $ TraceReaderEvent $ NewReader readerId
     return reader
@@ -124,16 +126,18 @@ newReader cdb@CDB{..} h = do
 
 newHeaderReader
   :: forall m blk.
-     ( MonadSTM   m
-     , MonadCatch m
+     ( MonadSTM  m
+     , MonadMask m
      , MonadThrow (STM m)
      , GetHeader blk
      , HasHeader blk
      , HasHeader (Header blk)
      )
   => ChainDbHandle m blk
+  -> ResourceRegistry m
   -> m (Reader m blk (Header blk))
-newHeaderReader h = getEnv h $ \cdb -> turnIntoHeaderReader <$> newReader cdb h
+newHeaderReader h registry = getEnv h $ \cdb ->
+    turnIntoHeaderReader <$> newReader cdb h registry
   where
     turnIntoHeaderReader :: Reader m blk (BlockOrHeader blk)
                          -> Reader m blk (Header blk)
@@ -149,15 +153,17 @@ newHeaderReader h = getEnv h $ \cdb -> turnIntoHeaderReader <$> newReader cdb h
 
 newBlockReader
   :: forall m blk.
-     ( MonadSTM   m
-     , MonadCatch m
+     ( MonadSTM  m
+     , MonadMask m
      , MonadThrow (STM m)
      , HasHeader blk
      , HasHeader (Header blk)
      )
   => ChainDbHandle m blk
+  -> ResourceRegistry m
   -> m (Reader m blk blk)
-newBlockReader h = getEnv h $ \cdb -> turnIntoBlockReader cdb <$> newReader cdb h
+newBlockReader h registry = getEnv h $ \cdb ->
+    turnIntoBlockReader cdb <$> newReader cdb h registry
   where
     turnIntoBlockReader :: ChainDbEnv m blk
                         -> Reader m blk (BlockOrHeader blk)
@@ -176,20 +182,21 @@ newBlockReader h = getEnv h $ \cdb -> turnIntoBlockReader cdb <$> newReader cdb 
 
 makeNewBlockOrHeaderReader
   :: forall m blk.
-     ( MonadSTM   m
-     , MonadCatch m
+     ( MonadSTM  m
+     , MonadMask m
      , MonadThrow (STM m)
      , HasHeader blk
      , HasHeader (Header blk)
      )
   => ChainDbHandle m blk
   -> ReaderId
+  -> ResourceRegistry m
   -> Reader m blk (BlockOrHeader blk)
-makeNewBlockOrHeaderReader h readerId = Reader {..}
+makeNewBlockOrHeaderReader h readerId registry = Reader {..}
   where
-    readerInstruction         = getReader  h readerId $ instructionHelper id Just
-    readerInstructionBlocking = getReader  h readerId $ instructionHelper blockUntilJust id
-    readerForward             = getReader1 h readerId $ forward
+    readerInstruction         = getReader  h readerId $ instructionHelper registry id Just
+    readerInstructionBlocking = getReader  h readerId $ instructionHelper registry blockUntilJust id
+    readerForward             = getReader1 h readerId $ forward           registry
     readerClose               = getEnv     h          $ close readerId
 
 close
@@ -250,12 +257,13 @@ type BlockOrHeader blk = Either (Header blk) blk
 -- the end of the current chain.
 instructionHelper
   :: forall m blk r.
-     ( MonadSTM   m
-     , MonadCatch m
+     ( MonadSTM  m
+     , MonadMask m
      , HasHeader blk
      , HasHeader (Header blk)
      )
-  => (STM m (Maybe (ChainUpdate blk (BlockOrHeader blk))) -> STM m r)
+  => ResourceRegistry m
+  -> (STM m (Maybe (ChainUpdate blk (BlockOrHeader blk))) -> STM m r)
      -- ^ How to turn a transaction that may or may not result in a new
      -- 'ChainUpdate' in one that returns the right return type: use
      -- 'blockUntilJust' to block or 'id' to just return the @Maybe@.
@@ -265,7 +273,7 @@ instructionHelper
   -> ChainDbEnv m blk
   -> TVar m (ReaderState m blk)
   -> m r
-instructionHelper fromMaybeSTM fromPure CDB{..} varReader = do
+instructionHelper registry fromMaybeSTM fromPure CDB{..} varReader = do
     -- In one transaction: check in which state we are, if in the
     -- @ReaderInMem@ state, just call 'instructionSTM', otherwise,
     -- return the contents of the 'ReaderInImmDB' state.
@@ -303,14 +311,14 @@ instructionHelper fromMaybeSTM fromPure CDB{..} varReader = do
             -- COST: the block at @pt@ is read.
             Nothing    -> do
               trace $ ReaderNoLongerInMem rollState
-              ImmDB.streamBlocksAfter cdbImmDB pt
+              ImmDB.streamBlocksAfter cdbImmDB registry pt
           rollForwardImmDB immIt pt
         RollBackTo      pt -> do
           case mbImmIt of
             Just immIt -> ImmDB.iteratorClose cdbImmDB immIt
             Nothing    -> trace $ ReaderNoLongerInMem rollState
           -- COST: the block at @pt@ is read.
-          immIt' <- ImmDB.streamBlocksAfter cdbImmDB pt
+          immIt' <- ImmDB.streamBlocksAfter cdbImmDB registry pt
           let readerState' = ReaderInImmDB (RollForwardFrom pt) immIt'
           atomically $ writeTVar varReader readerState'
           return $ fromPure $ RollBack pt
@@ -357,7 +365,7 @@ instructionHelper fromMaybeSTM fromPure CDB{..} varReader = do
           LT -> do
             trace $ ReaderNewImmIterator pt slotNoAtImmDBTip
             -- COST: the block at @pt@ is read.
-            immIt' <- ImmDB.streamBlocksAfter cdbImmDB pt
+            immIt' <- ImmDB.streamBlocksAfter cdbImmDB registry pt
             -- Try again with the new iterator
             rollForwardImmDB immIt' pt
 
@@ -392,17 +400,18 @@ instructionSTM rollState curChain saveRollState =
 
 forward
   :: forall m blk.
-     ( MonadSTM   m
-     , MonadCatch m
+     ( MonadSTM  m
+     , MonadMask m
      , HasHeader blk
      , HasHeader (Header blk)
      , HasCallStack
      )
-  => ChainDbEnv m blk
+  => ResourceRegistry m
+  -> ChainDbEnv m blk
   -> TVar m (ReaderState m blk)
   -> [Point blk]
   -> m (Maybe (Point blk))
-forward CDB{..} varReader = \pts -> do
+forward registry CDB{..} varReader = \pts -> do
     -- The current state of the reader doesn't matter, the given @pts@ could
     -- be in the current chain fragment or in the ImmutableDB.
 
@@ -442,7 +451,7 @@ forward CDB{..} varReader = \pts -> do
             then do
               -- TODO combine block checking with opening the iterator to
               -- avoid reading the same block twice
-              immIt <- ImmDB.streamBlocksAfter cdbImmDB pt
+              immIt <- ImmDB.streamBlocksAfter cdbImmDB registry pt
               updateState $ ReaderInImmDB (RollBackTo pt) immIt
               return $ Just pt
             else findFirstPointOnChain curChain slotNoAtImmDBTip pts
