@@ -4,19 +4,14 @@
 ## https://tex.stackexchange.com/questions/40738/how-to-properly-make-a-latex-project
 ##
 
-# Document name
-ifndef DOCNAME
-	DOCNAME = network
-endif
-
 # You want latexmk to *always* run, because make does not have all the info.
 # Also, include non-file targets in .PHONY so they are run regardless of any
 # file of the given name existing.
-.PHONY: $(DOCNAME).pdf all clean
+.PHONY: network.pdf all clean
 
 # The first rule in a Makefile is the one executed by default ("make"). It
 # should always be the "all" rule, so that "make" and "make all" are identical.
-all: $(DOCNAME).pdf
+all: network.pdf
 
 ##
 ## CUSTOM BUILD RULES
@@ -33,11 +28,11 @@ all: $(DOCNAME).pdf
 # -interaction=nonstopmode keeps the pdflatex backend from stopping at a
 # missing file reference and interactively asking you for an alternative.
 
-$(DOCNAME).pdf: $(DOCNAME).tex messages.cddl.incl
-	latexmk -pdf -pdflatex="pdflatex -synctex=1 -interaction=nonstopmode" -use-make $(DOCNAME).tex
+network.pdf: network.tex intro.tex part2.tex messages.cddl.incl
+	latexmk -pdf -pdflatex="pdflatex -synctex=1 -interaction=nonstopmode" -use-make network.tex
 
-watch: $(DOCNAME).tex messages.cddl.incl
-	latexmk -pvc -pdf -pdflatex="pdflatex -synctex=1 -interaction=nonstopmode" -use-make $(DOCNAME).tex
+watch: network.tex intro.tex part2.tex messages.cddl.incl
+	latexmk -pvc -pdf -pdflatex="pdflatex -synctex=1 -interaction=nonstopmode" -use-make network.tex
 
 clean:
 	latexmk -CA
