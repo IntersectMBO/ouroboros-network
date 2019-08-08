@@ -85,7 +85,11 @@
         "test-consensus" = {
           depends = [
             (hsPkgs.base)
+            (hsPkgs.cardano-binary)
             (hsPkgs.cardano-crypto-class)
+            (hsPkgs.cardano-crypto-wrapper)
+            (hsPkgs.cardano-ledger)
+            (hsPkgs.cardano-ledger-test)
             (hsPkgs.typed-protocols)
             (hsPkgs.network-mux)
             (hsPkgs.ouroboros-network)
@@ -101,6 +105,7 @@
             (hsPkgs.mtl)
             (hsPkgs.QuickCheck)
             (hsPkgs.random)
+            (hsPkgs.reflection)
             (hsPkgs.serialise)
             (hsPkgs.tasty)
             (hsPkgs.tasty-hunit)

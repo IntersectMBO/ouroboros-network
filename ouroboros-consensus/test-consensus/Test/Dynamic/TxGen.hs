@@ -3,7 +3,6 @@
 -- | Transaction generator for testing
 module Test.Dynamic.TxGen
   ( TxGen (..)
-  , testGenTxs
   ) where
 
 import           Control.Monad (replicateM)
@@ -14,6 +13,8 @@ import           GHC.Stack (HasCallStack)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Ledger.Abstract
+import           Ouroboros.Consensus.Ledger.Byron
+import           Ouroboros.Consensus.Ledger.Byron.Config
 import           Ouroboros.Consensus.Ledger.Mock hiding (utxo)
 import           Ouroboros.Consensus.Node.ProtocolInfo (NumCoreNodes (..))
 import           Ouroboros.Consensus.Protocol.Abstract
@@ -32,16 +33,22 @@ class TxGen blk where
             -> LedgerState blk
             -> m (GenTx blk)
 
--- | Generate multiple transactions using 'testGenTx'.
-testGenTxs :: (MonadRandom m, TxGen blk)
-           => NumCoreNodes
-           -> NodeConfig (BlockProtocol blk)
-           -> LedgerState blk
-           -> m [GenTx blk]
-testGenTxs numCoreNodes cfg ledger = do
+  -- | Generate a number of transactions, valid or invalid, that can be
+  -- submitted to a node's Mempool.
+  --
+  -- This function (not 'testGenTx') will be called to generate transactions
+  -- in consensus tests.
+  testGenTxs :: MonadRandom m
+             => NumCoreNodes
+             -> NodeConfig (BlockProtocol blk)
+             -> LedgerState blk
+             -> m [GenTx blk]
+  testGenTxs  numCoreNodes cfg ledger = do
     -- Currently 0 to 1 txs
     n <- generateBetween 0 1
     replicateM (fromIntegral n) $ testGenTx numCoreNodes cfg ledger
+
+  {-# MINIMAL testGenTx #-}
 
 {-------------------------------------------------------------------------------
   TxGen SimpleBlock
@@ -78,3 +85,12 @@ genSimpleTx addrs u = do
         case m of
             Nothing -> error "expected non-empty list"
             Just x  -> return x
+
+{-------------------------------------------------------------------------------
+  TxGen ByronBlockOrEBB
+-------------------------------------------------------------------------------}
+
+instance TxGen (ByronBlockOrEBB ByronConfig) where
+  testGenTx = error "TODO #855 testGenTx"
+  -- 'testGenTxs' is used by the tests, not 'testGenTx'.
+  testGenTxs _ _ _ = return []
