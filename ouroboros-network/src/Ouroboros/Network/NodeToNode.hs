@@ -44,6 +44,7 @@ module Ouroboros.Network.NodeToNode (
   ) where
 
 import           Control.Concurrent.Async (Async)
+import           Control.Monad (void)
 import qualified Data.ByteString.Lazy as BL
 import           Data.Time.Clock (DiffTime)
 import           Data.Text (Text)
@@ -58,7 +59,8 @@ import           Codec.SerialiseTerm
 
 import qualified Network.Socket as Socket
 
-import           Control.Monad.Class.MonadSTM
+import           Control.Monad.Class.MonadSTM.Strict
+import           Control.Monad.Class.MonadTime
 
 import           Network.Mux.Types (ProtocolEnum(..), MiniProtocolLimits (..), WithMuxBearer, MuxTrace)
 import           Network.Mux.Interface
@@ -80,6 +82,7 @@ import           Ouroboros.Network.Subscription.Dns ( DnsSubscriptionTarget (..)
                                                     , DnsTrace (..)
                                                     , WithDomainName (..)
                                                     )
+import           Ouroboros.Network.Subscription.PeerState
 import           Network.TypedProtocol.Driver.ByteLimit (DecoderFailureOrTooMuchInput)
 import           Network.TypedProtocol.Driver (TraceSendRecv (..))
 import           Control.Tracer (Tracer)
@@ -260,7 +263,7 @@ withServer_V1 muxTracer handshakeTracer tbl addr peeridFn versionData applicatio
 -- established connection.
 --
 ipSubscriptionWorker
-    :: forall appType peerid void x y.
+    :: forall appType peerid x y.
        ( HasInitiator appType ~ True
        , Show peerid )
     => Tracer IO (WithIPList (SubscriptionTrace Socket.SockAddr))
@@ -270,8 +273,10 @@ ipSubscriptionWorker
           (Handshake NodeToNodeVersion CBOR.Term)
           peerid
           (DecoderFailureOrTooMuchInput DeserialiseFailure))
+    -> Tracer IO (WithAddr Socket.SockAddr ErrorPolicyTrace)
     -> (Socket.SockAddr -> Socket.SockAddr -> peerid)
     -> ConnectionTable IO Socket.SockAddr
+    -> StrictTVar IO (PeerStates IO Socket.SockAddr (Time IO))
     -> Maybe Socket.SockAddr
     -- ^ Local IPv4 address to use, Nothing indicates don't use IPv4
     -> Maybe Socket.SockAddr
@@ -287,24 +292,29 @@ ipSubscriptionWorker
           peerid
           NodeToNodeProtocols
           IO BL.ByteString x y)
-    -> IO void
+    -> IO ()
 ipSubscriptionWorker
   subscriptionTracer
   muxTracer
   handshakeTracer
+  errTracer
   peeridFn
   tbl
+  peerStatesVar
   localIPv4 localIPv6
   connectionAttemptDelay
   ips
   versions
-    = Subscription.ipSubscriptionWorker
+    = void $ Subscription.ipSubscriptionWorker
         subscriptionTracer
+        errTracer
         tbl
+        peerStatesVar
         localIPv4 localIPv6
         connectionAttemptDelay
+        []
+        (\_ _ _ -> Throw)
         ips
-        (\_ -> retry)
         (connectToNode'
           (\(DictVersion codec) -> encodeTerm codec)
           (\(DictVersion codec) -> decodeTerm codec)
@@ -317,14 +327,16 @@ ipSubscriptionWorker
 -- | Like 'ipSubscriptionWorker' but specific to 'NodeToNodeV_1'.
 --
 ipSubscriptionWorker_V1
-    :: forall appType peerid void x y.
+    :: forall appType peerid x y.
        ( HasInitiator appType ~ True
        , Show peerid )
     => Tracer IO (WithIPList (SubscriptionTrace Socket.SockAddr))
     -> Tracer IO (WithMuxBearer (MuxTrace NodeToNodeProtocols))
     -> Tracer IO (TraceSendRecv (Handshake NodeToNodeVersion CBOR.Term) peerid (DecoderFailureOrTooMuchInput DeserialiseFailure))
+    -> Tracer IO (WithAddr Socket.SockAddr ErrorPolicyTrace)
     -> (Socket.SockAddr -> Socket.SockAddr -> peerid)
     -> ConnectionTable IO Socket.SockAddr
+    -> StrictTVar IO (PeerStates IO Socket.SockAddr (Time IO))
     -> Maybe Socket.SockAddr
     -- ^ Local IPv4 address to use, Nothing indicates don't use IPv4
     -> Maybe Socket.SockAddr
@@ -338,13 +350,15 @@ ipSubscriptionWorker_V1
           peerid
           NodeToNodeProtocols
           IO BL.ByteString x y)
-    -> IO void
+    -> IO ()
 ipSubscriptionWorker_V1
   subscriptionTracer
   muxTracer
   handshakeTracer
+  errTracer
   peeridFn
   tbl
+  peerStatesVar
   localIPv4 localIPv6
   connectionAttemptDelay
   ips
@@ -354,8 +368,10 @@ ipSubscriptionWorker_V1
         subscriptionTracer
         muxTracer
         handshakeTracer
+        errTracer
         peeridFn
         tbl
+        peerStatesVar
         localIPv4 localIPv6
         connectionAttemptDelay
         ips
@@ -370,7 +386,7 @@ ipSubscriptionWorker_V1
 -- established connection.
 --
 dnsSubscriptionWorker
-    :: forall appType peerid x y void.
+    :: forall appType peerid x y.
        ( HasInitiator appType ~ True
        , Show peerid
        )
@@ -382,8 +398,10 @@ dnsSubscriptionWorker
           (Handshake NodeToNodeVersion CBOR.Term)
           peerid
           (DecoderFailureOrTooMuchInput DeserialiseFailure))
+    -> Tracer IO (WithAddr Socket.SockAddr ErrorPolicyTrace)
     -> (Socket.SockAddr -> Socket.SockAddr -> peerid)
     -> ConnectionTable IO Socket.SockAddr
+    -> StrictTVar IO (PeerStates IO Socket.SockAddr (Time IO))
     -> Maybe Socket.SockAddr
     -> Maybe Socket.SockAddr
     -> (Socket.SockAddr -> Maybe DiffTime)
@@ -396,26 +414,32 @@ dnsSubscriptionWorker
           peerid
           NodeToNodeProtocols
           IO BL.ByteString x y)
-    -> IO void
+    -> IO ()
 dnsSubscriptionWorker
   subscriptionTracer
   dnsTracer
   muxTracer
   handshakeTracer
+  errTracer
   peeridFn
   tbl
+  peerStatesVar
   localIPv4 localIPv6
   connectionAttemptDelay
   dst
-  versions =
+  versions = void $
     Subscription.dnsSubscriptionWorker
       subscriptionTracer
       dnsTracer
+      errTracer
       tbl
+      peerStatesVar
       localIPv4 localIPv6
       connectionAttemptDelay
+      []
+      (\_ _ _ -> Throw)
       dst
-      (\_ -> retry)
+      --(\_ -> retry)
       (connectToNode'
         (\(DictVersion codec) -> encodeTerm codec)
         (\(DictVersion codec) -> decodeTerm codec)
@@ -428,7 +452,7 @@ dnsSubscriptionWorker
 -- | Like 'dnsSubscriptionWorker' but specific to 'NodeToNodeV_1'.
 --
 dnsSubscriptionWorker_V1
-    :: forall appType peerid x y void.
+    :: forall appType peerid x y.
        ( HasInitiator appType ~ True
        , Show peerid
        )
@@ -436,8 +460,10 @@ dnsSubscriptionWorker_V1
     -> Tracer IO (WithDomainName DnsTrace)
     -> Tracer IO (WithMuxBearer (MuxTrace NodeToNodeProtocols))
     -> Tracer IO (TraceSendRecv (Handshake NodeToNodeVersion CBOR.Term) peerid (DecoderFailureOrTooMuchInput DeserialiseFailure))
+    -> Tracer IO (WithAddr Socket.SockAddr ErrorPolicyTrace)
     -> (Socket.SockAddr -> Socket.SockAddr -> peerid)
     -> ConnectionTable IO Socket.SockAddr
+    -> StrictTVar IO (PeerStates IO Socket.SockAddr (Time IO))
     -> Maybe Socket.SockAddr
     -> Maybe Socket.SockAddr
     -> (Socket.SockAddr -> Maybe DiffTime)
@@ -448,14 +474,16 @@ dnsSubscriptionWorker_V1
           peerid
           NodeToNodeProtocols
           IO BL.ByteString x y)
-    -> IO void
+    -> IO ()
 dnsSubscriptionWorker_V1
   subscriptionTracer
   dnsTracer
   muxTracer
   handshakeTracer
+  errTracer
   peeridFn
   tbl
+  peerStatesVar
   localIPv4 localIPv6
   connectionAttemptDelay
   dst
@@ -466,8 +494,10 @@ dnsSubscriptionWorker_V1
       dnsTracer
       muxTracer
       handshakeTracer
+      errTracer
       peeridFn
       tbl
+      peerStatesVar
       localIPv4 localIPv6
       connectionAttemptDelay
       dst
