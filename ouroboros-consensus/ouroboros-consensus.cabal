@@ -90,6 +90,7 @@ library
                        Ouroboros.Consensus.Util.HList
                        Ouroboros.Consensus.Util.Orphans
                        Ouroboros.Consensus.Util.Random
+                       Ouroboros.Consensus.Util.ResourceRegistry
                        Ouroboros.Consensus.Util.STM
                        Ouroboros.Consensus.Util.Singletons
                        Ouroboros.Consensus.Util.SlotBounded
