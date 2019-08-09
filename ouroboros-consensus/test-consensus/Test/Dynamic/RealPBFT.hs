@@ -64,7 +64,8 @@ prop_simple_real_pbft_convergence k numCoreNodes numSlots seed =
     testOutput = giveByron $
         runTestNetwork
             (\nid -> protocolInfo numCoreNodes nid
-                (mkProtocolRealPBFT numCoreNodes nid genesisConfig))
+                (mkProtocolRealPBFT numCoreNodes nid
+                                    genesisConfig genesisSecrets))
             numCoreNodes numSlots seed
 
     finalChains :: [Chain (ByronBlockOrEBB ByronConfig)]
@@ -75,15 +76,18 @@ prop_simple_real_pbft_convergence k numCoreNodes numSlots seed =
       give (Genesis.gdProtocolMagicId $ Genesis.configGenesisData genesisConfig) $
       give (Genesis.configEpochSlots genesisConfig) a
 
-    genesisConfig :: Genesis.Config
-    genesisConfig = mkGenesisConfig numCoreNodes
+    genesisConfig  :: Genesis.Config
+    genesisSecrets :: Genesis.GeneratedSecrets
+    (genesisConfig, genesisSecrets) = generateGenesisConfig numCoreNodes
 
 
 mkProtocolRealPBFT :: NumCoreNodes
                    -> CoreNodeId
                    -> Genesis.Config
+                   -> Genesis.GeneratedSecrets
                    -> Protocol (ByronBlockOrEBB ByronConfig)
-mkProtocolRealPBFT (NumCoreNodes n) (CoreNodeId i) genesisConfig =
+mkProtocolRealPBFT (NumCoreNodes n) (CoreNodeId i)
+                   genesisConfig genesisSecrets =
     ProtocolRealPBFT
       genesisConfig
       (Just signatureThreshold)
@@ -102,10 +106,7 @@ mkProtocolRealPBFT (NumCoreNodes n) (CoreNodeId i) genesisConfig =
       1.0 / (fromIntegral n + 1.0)
 
     dlgKey :: Crypto.SigningKey
-    dlgKey = (!! i)
-           . Genesis.gsRichSecrets
-           . fromJust
-           $ Genesis.configGeneratedSecrets genesisConfig
+    dlgKey = Genesis.gsRichSecrets genesisSecrets !! i
 
     dlgCert :: Delegation.Certificate
     dlgCert = fromJust $
@@ -121,9 +122,9 @@ mkProtocolRealPBFT (NumCoreNodes n) (CoreNodeId i) genesisConfig =
 -- Instead of using 'Dummy.dummyConfig', which hard codes the number of rich
 -- men (= CoreNodes for us) to 4, we generate a dummy config with the given
 -- number of rich men.
-mkGenesisConfig :: NumCoreNodes -> Genesis.Config
-mkGenesisConfig (NumCoreNodes n) =
-    either (error . show) id $ Genesis.mkConfig startTime spec
+generateGenesisConfig :: NumCoreNodes -> (Genesis.Config, Genesis.GeneratedSecrets)
+generateGenesisConfig (NumCoreNodes n) =
+    either (error . show) id $ Genesis.generateGenesisConfig startTime spec
   where
     startTime = UTCTime (ModifiedJulianDay 0) 0
 

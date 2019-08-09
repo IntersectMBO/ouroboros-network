@@ -138,11 +138,9 @@ instance ToCBOR VRFType where
 
 deriving instance PraosCrypto c => Show (PraosExtraFields c)
 deriving instance PraosCrypto c => Eq   (PraosExtraFields c)
-deriving instance PraosCrypto c => Ord  (PraosExtraFields c)
 
 deriving instance PraosCrypto c => Show (PraosFields c toSign)
 deriving instance PraosCrypto c => Eq   (PraosFields c toSign)
-deriving instance PraosCrypto c => Ord  (PraosFields c toSign)
 
 data PraosProof c = PraosProof {
       praosProofRho  :: CertifiedVRF (PraosVRF c) (Natural, SlotNo, VRFType)

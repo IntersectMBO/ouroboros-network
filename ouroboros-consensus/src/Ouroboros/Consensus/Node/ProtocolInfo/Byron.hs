@@ -52,7 +52,7 @@ data PBftLeaderCredentials = PBftLeaderCredentials {
       plcSignKey     :: Crypto.SigningKey
     , plcDlgCert     :: Delegation.Certificate
     , plcCodeNodeId  :: CoreNodeId
-    } deriving (Eq, Show)
+    } deriving Show
 
 -- | Make the 'PBftLeaderCredentials', with a couple sanity checks:
 --
