@@ -28,6 +28,8 @@ import           GHC.Generics
 
 import           Ouroboros.Network.Block (Point, genesisPoint)
 
+import           Ouroboros.Consensus.Util.Condense
+
 {-------------------------------------------------------------------------------
   Epochs
 -------------------------------------------------------------------------------}
@@ -53,6 +55,10 @@ type SlotOffset = Word64
 -- | Tip of the chain
 data Tip r = Tip r | TipGen
   deriving (Show, Eq, Generic)
+
+instance Condense r => Condense (Tip r) where
+  condense TipGen  = "genesis"
+  condense (Tip r) = condense r
 
 tipIsGenesis :: Tip r -> Bool
 tipIsGenesis TipGen  = True
