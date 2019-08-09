@@ -19,7 +19,6 @@
 module Test.Ouroboros.Storage.ChainDB.StateMachine
   ( tests
   , mkArgs
-  , constrName
   ) where
 
 import           Prelude hiding (elem)
@@ -102,7 +101,7 @@ import qualified Ouroboros.Storage.LedgerDB.OnDisk as LedgerDB
 import qualified Ouroboros.Storage.Util.ErrorHandling as EH
 
 import           Test.Ouroboros.Storage.ChainDB.TestBlock
-import           Test.Ouroboros.Storage.Util ((=:=))
+import           Test.Ouroboros.Storage.Util (constrName, constrNames, (=:=))
 
 import           Test.Util.RefEnv (RefEnv)
 import qualified Test.Util.RefEnv as RE
@@ -1264,28 +1263,3 @@ emptyRunCmdState = RunCmdState
   , _nextIteratorId = IteratorId 0
   , _nextReaderId   = 0
   }
-
-{-------------------------------------------------------------------------------
-  generics-sop auxiliary
--------------------------------------------------------------------------------}
-
-cmdConstrInfo :: SOP.HasDatatypeInfo a
-              => Proxy a
-              -> SOP.NP SOP.ConstructorInfo (SOP.Code a)
-cmdConstrInfo = SOP.constructorInfo . SOP.datatypeInfo
-
-constrName :: forall a. SOP.HasDatatypeInfo a => a -> String
-constrName a =
-    SOP.hcollapse $ SOP.hliftA2 go (cmdConstrInfo p) (SOP.unSOP (SOP.from a))
-  where
-    go :: SOP.ConstructorInfo b -> SOP.NP SOP.I b -> SOP.K String b
-    go nfo _ = SOP.K $ SOP.constructorName nfo
-
-    p = Proxy @a
-
-constrNames :: SOP.HasDatatypeInfo a => Proxy a -> [String]
-constrNames p =
-    SOP.hcollapse $ SOP.hmap go (cmdConstrInfo p)
-  where
-    go :: SOP.ConstructorInfo a -> SOP.K String a
-    go nfo = SOP.K $ SOP.constructorName nfo

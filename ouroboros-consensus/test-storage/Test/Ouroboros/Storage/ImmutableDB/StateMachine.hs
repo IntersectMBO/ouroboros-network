@@ -84,7 +84,7 @@ import           Test.Ouroboros.Storage.FS.Sim.Error (Errors, mkSimErrorHasFS,
                      withErrors)
 import           Test.Ouroboros.Storage.ImmutableDB.Model
 import           Test.Ouroboros.Storage.ImmutableDB.TestBlock hiding (tests)
-import           Test.Ouroboros.Storage.Util (collects)
+import           Test.Ouroboros.Storage.Util (collects, constrName, constrNames)
 
 import           Test.Util.Orphans.Arbitrary (genSmallEpochNo, genSmallSlotNo)
 import           Test.Util.RefEnv (RefEnv)
@@ -1128,29 +1128,3 @@ dbUnused = error "semantics and DB used during command generation"
 
 hasFsUnused :: HasFS m h
 hasFsUnused = error "HasFS only used during execution"
-
--- TODO use condense?
-
-{-------------------------------------------------------------------------------
-  generics-sop auxiliary
--------------------------------------------------------------------------------}
-
-cmdConstrInfo :: Proxy (Cmd it)
-              -> SOP.NP SOP.ConstructorInfo (SOP.Code (Cmd it))
-cmdConstrInfo = SOP.constructorInfo . SOP.datatypeInfo
-
-constrName :: forall it. Cmd it -> String
-constrName a =
-    SOP.hcollapse $ SOP.hliftA2 go (cmdConstrInfo p) (SOP.unSOP (SOP.from a))
-  where
-    go :: SOP.ConstructorInfo a -> SOP.NP SOP.I a -> SOP.K String a
-    go nfo _ = SOP.K $ SOP.constructorName nfo
-
-    p = Proxy @(Cmd it)
-
-constrNames :: Proxy (Cmd it) -> [String]
-constrNames p =
-    SOP.hcollapse $ SOP.hmap go (cmdConstrInfo p)
-  where
-    go :: SOP.ConstructorInfo a -> SOP.K String a
-    go nfo = SOP.K $ SOP.constructorName nfo
