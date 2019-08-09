@@ -17,6 +17,8 @@ import           Control.Monad.IOSim
 import           Ouroboros.Network.MockChain.Chain (Chain (..), ChainUpdate)
 import qualified Ouroboros.Network.MockChain.Chain as Chain
 
+import qualified Ouroboros.Consensus.Util.ResourceRegistry as ResourceRegistry
+
 import           Ouroboros.Storage.ChainDB.API (ChainDB)
 import qualified Ouroboros.Storage.ChainDB.API as ChainDB
 import qualified Ouroboros.Storage.ChainDB.Mock as Mock
@@ -44,9 +46,9 @@ prop_reader bt p = runSimOrThrow test
     blocks = permute p $ treeToBlocks bt
 
     test :: forall s. SimM s Property
-    test = do
+    test = ResourceRegistry.with $ \registry -> do
         db       <- openDB
-        reader   <- ChainDB.newBlockReader db
+        reader   <- ChainDB.newBlockReader db registry
         chainVar <- atomically $ newTVar Genesis
 
         -- Fork a thread that applies all instructions from the reader

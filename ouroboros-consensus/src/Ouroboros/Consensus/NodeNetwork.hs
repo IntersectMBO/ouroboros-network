@@ -76,6 +76,8 @@ import           Ouroboros.Consensus.Mempool.API
 import           Ouroboros.Consensus.Node.Tracers
 import           Ouroboros.Consensus.TxSubmission
 import           Ouroboros.Consensus.Util.Orphans ()
+import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
+import qualified Ouroboros.Consensus.Util.ResourceRegistry as ResourceRegistry
 
 import qualified Ouroboros.Storage.ChainDB.API as ChainDB
 
@@ -100,14 +102,16 @@ data ProtocolHandlers m peer blk = ProtocolHandlers {
         -- closure include these and not need to be explicit about them here.
 
     , phChainSyncServer
-        :: ChainSyncServer (Header blk) (Point blk) m ()
+        :: ResourceRegistry m
+        -> ChainSyncServer (Header blk) (Point blk) m ()
 
     -- TODO block fetch client does not have GADT view of the handlers.
     , phBlockFetchClient
         :: BlockFetchClient (Header blk) blk m ()
 
     , phBlockFetchServer
-        :: BlockFetchServer blk m ()
+        :: ResourceRegistry m
+        -> BlockFetchServer blk m ()
 
     , phTxSubmissionClient
         :: TxSubmissionClient (GenTxId blk) (GenTx blk) m ()
@@ -118,7 +122,8 @@ data ProtocolHandlers m peer blk = ProtocolHandlers {
      -- Handlers for the local node-to-client bundle of mini-protocols
 
     , phLocalChainSyncServer
-        :: ChainSyncServer blk (Point blk) m ()
+        :: ResourceRegistry m
+        -> ChainSyncServer blk (Point blk) m ()
 
     , phLocalTxSubmissionServer
         :: LocalTxSubmissionServer (GenTx blk) (ApplyTxErr blk) m ()
@@ -391,14 +396,14 @@ consensusNetworkApps kernel ProtocolTracers {..} ProtocolCodecs {..} ProtocolHan
       :: peer
       -> Channel m bytesCS
       -> m ()
-    naChainSyncServer them channel =
+    naChainSyncServer them channel = ResourceRegistry.with $ \registry ->
       runPeer
         ptChainSyncTracer
         pcChainSyncCodec
         them
         channel
         $ chainSyncServerPeer
-        $ phChainSyncServer
+        $ phChainSyncServer registry
 
     naBlockFetchClient
       :: peer
@@ -417,14 +422,14 @@ consensusNetworkApps kernel ProtocolTracers {..} ProtocolCodecs {..} ProtocolHan
       :: peer
       -> Channel m bytesBF
       -> m ()
-    naBlockFetchServer them channel =
+    naBlockFetchServer them channel = ResourceRegistry.with $ \registry ->
       runPeer
         ptBlockFetchTracer
         pcBlockFetchCodec
         them
         channel
         $ blockFetchServerPeer
-        $ phBlockFetchServer
+        $ phBlockFetchServer registry
 
     naTxSubmissionClient
       :: peer
@@ -454,13 +459,14 @@ consensusNetworkApps kernel ProtocolTracers {..} ProtocolCodecs {..} ProtocolHan
       :: peer
       -> Channel m bytesLCS
       -> m ()
-    naLocalChainSyncServer them channel =
+    naLocalChainSyncServer them channel = ResourceRegistry.with $ \registry ->
       runPeer
         ptLocalChainSyncTracer
         pcLocalChainSyncCodec
         them
         channel
-        (chainSyncServerPeer phLocalChainSyncServer)
+        $ chainSyncServerPeer
+        $ phLocalChainSyncServer registry
 
     naLocalTxSubmissionServer
       :: peer

@@ -20,6 +20,7 @@ import           Ouroboros.Storage.ChainDB.API (ChainDB, Reader)
 import qualified Ouroboros.Storage.ChainDB.API as ChainDB
 
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
 
 
 -- | Chain Sync Server for block headers for a given a 'ChainDB'.
@@ -31,10 +32,11 @@ chainSyncHeadersServer
     :: forall m blk. MonadSTM m
     => Tracer m (TraceChainSyncServerEvent blk)
     -> ChainDB m blk
+    -> ResourceRegistry m
     -> ChainSyncServer (Header blk) (Point blk) m ()
-chainSyncHeadersServer tracer chainDB =
+chainSyncHeadersServer tracer chainDB registry =
     ChainSyncServer $ do
-      rdr <- ChainDB.newHeaderReader chainDB
+      rdr <- ChainDB.newHeaderReader chainDB registry
       let ChainSyncServer server = chainSyncServerForReader tracer chainDB rdr
       server
 
@@ -47,10 +49,11 @@ chainSyncBlocksServer
     :: forall m blk. MonadSTM m
     => Tracer m (TraceChainSyncServerEvent blk)
     -> ChainDB m blk
+    -> ResourceRegistry m
     -> ChainSyncServer blk (Point blk) m ()
-chainSyncBlocksServer tracer chainDB =
+chainSyncBlocksServer tracer chainDB registry =
     ChainSyncServer $ do
-      rdr <- ChainDB.newBlockReader chainDB
+      rdr <- ChainDB.newBlockReader chainDB registry
       let ChainSyncServer server = chainSyncServerForReader tracer chainDB rdr
       server
 

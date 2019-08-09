@@ -48,6 +48,8 @@ import           Ouroboros.Network.Block (pattern BlockPoint, ChainUpdate,
 
 import           Ouroboros.Consensus.Block (GetHeader (..))
 import           Ouroboros.Consensus.Ledger.Extended
+import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
+import qualified Ouroboros.Consensus.Util.ResourceRegistry as ResourceRegistry
 import           Ouroboros.Consensus.Util.STM (Fingerprint (..))
 
 import           Ouroboros.Storage.Common
@@ -193,7 +195,8 @@ data ChainDB m blk = ChainDB {
       --
       -- To stream all blocks from the current chain, use 'streamAll', as it
       -- correctly handles an empty ChainDB.
-    , streamBlocks       :: StreamFrom blk -> StreamTo blk
+    , streamBlocks       :: ResourceRegistry m
+                         -> StreamFrom blk -> StreamTo blk
                          -> m (Either (UnknownRange blk) (Iterator m blk))
 
       -- | Chain reader
@@ -211,7 +214,7 @@ data ChainDB m blk = ChainDB {
       -- Examples of users include the server side of the chain sync
       -- mini-protocol for the node-to-node protocol.
       --
-    , newHeaderReader    :: m (Reader m blk (Header blk))
+    , newHeaderReader    :: ResourceRegistry m -> m (Reader m blk (Header blk))
 
       -- | This is the same as the reader 'newHeaderReader' but it provides a
       -- reader for /whole blocks/ rather than headers.
@@ -219,7 +222,7 @@ data ChainDB m blk = ChainDB {
       -- Examples of users include the server side of the chain sync
       -- mini-protocol for the node-to-client protocol.
       --
-    , newBlockReader     :: m (Reader m blk blk)
+    , newBlockReader     :: ResourceRegistry m -> m (Reader m blk blk)
 
       -- | Function to check whether a block is known to be invalid.
       --
@@ -255,12 +258,10 @@ data ChainDB m blk = ChainDB {
 -------------------------------------------------------------------------------}
 
 toChain :: forall m blk.
-           (HasCallStack, MonadThrow m, HasHeader blk, MonadSTM m)
+           (HasCallStack, MonadMask m, HasHeader blk, MonadSTM m)
         => ChainDB m blk -> m (Chain blk)
-toChain chainDB = bracket
-    (streamAll chainDB)
-    (mapM_ iteratorClose)
-    (maybe (return Genesis) (go Genesis))
+toChain chainDB = ResourceRegistry.with $ \registry ->
+    streamAll chainDB registry >>= maybe (return Genesis) (go Genesis)
   where
     go :: Chain blk -> Iterator m blk -> m (Chain blk)
     go chain it = do
@@ -381,15 +382,18 @@ validBounds from to = case from of
 --
 -- Note that this is not a 'Reader', so the stream will not include blocks
 -- that are added to the current chain after starting the stream.
-streamAll :: (MonadSTM m, StandardHash blk) => ChainDB m blk
+streamAll :: (MonadSTM m, StandardHash blk)
+          => ChainDB m blk
+          -> ResourceRegistry m
           -> m (Maybe (Iterator m blk))
-streamAll chainDB = do
+streamAll chainDB registry = do
     tip <- atomically $ getTipPoint chainDB
     if tip == genesisPoint
       then return Nothing
       else do
         errIt <- streamBlocks
                    chainDB
+                   registry
                    (StreamFromExclusive genesisPoint)
                    (StreamToInclusive tip)
         case errIt of

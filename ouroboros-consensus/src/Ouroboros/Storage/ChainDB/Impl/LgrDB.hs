@@ -77,6 +77,7 @@ import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util ((.:))
+import qualified Ouroboros.Consensus.Util.ResourceRegistry as ResourceRegistry
 
 import           Ouroboros.Storage.Common
 import           Ouroboros.Storage.EpochInfo
@@ -179,9 +180,9 @@ defaultArgs fp = LgrDbArgs {
 
 -- | Open the ledger DB
 openDB :: forall m blk.
-          ( MonadSTM   m
-          , MonadST    m
-          , MonadCatch m
+          ( MonadSTM  m
+          , MonadST   m
+          , MonadMask m
           , ProtocolLedgerView blk
           )
        => LgrDbArgs m blk
@@ -233,9 +234,9 @@ openDB args@LgrDbArgs{..} replayTracer immDB getBlock = do
       , ldbConfResolve = getBlock
       }
 
-reopen :: ( MonadSTM   m
-          , MonadST    m
-          , MonadCatch m
+reopen :: ( MonadSTM  m
+          , MonadST   m
+          , MonadMask m
           , ProtocolLedgerView blk
           )
        => LgrDB  m blk
@@ -246,8 +247,9 @@ reopen LgrDB{..} immDB replayTracer = do
     db <- initFromDisk args replayTracer conf immDB
     atomically $ writeTVar varDB db
 
-initFromDisk :: ( MonadST    m
-                , MonadCatch m
+initFromDisk :: ( MonadST   m
+                , MonadSTM  m
+                , MonadMask m
                 , HasHeader blk
                 )
              => LgrDbArgs m blk
@@ -406,7 +408,7 @@ validate LgrDB{..} ledgerDB numRollbacks = \hdrs -> do
   Stream API to the immutable DB
 -------------------------------------------------------------------------------}
 
-streamAPI :: forall m blk. (MonadCatch m, HasHeader blk)
+streamAPI :: forall m blk. (MonadMask m, MonadSTM m, HasHeader blk)
           => ImmDB m blk -> StreamAPI m (Point blk) blk
 streamAPI immDB = StreamAPI streamAfter
   where
@@ -417,10 +419,9 @@ streamAPI immDB = StreamAPI streamAfter
       slotNoAtTip <- ImmDB.getSlotNoAtTip immDB
       if Block.pointSlot (tipToPoint tip) > slotNoAtTip
         then k Nothing
-        else bracket
-          (ImmDB.streamBlocksAfter immDB (tipToPoint tip))
-          (ImmDB.iteratorClose immDB)
-          (k . Just . getNext)
+        else ResourceRegistry.with $ \registry ->
+          ImmDB.streamBlocksAfter immDB registry (tipToPoint tip) >>=
+            k . Just . getNext
 
     getNext :: ImmDB.Iterator (HeaderHash blk) m blk
             -> m (NextBlock (Point blk) blk)
