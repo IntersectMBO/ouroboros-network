@@ -194,7 +194,7 @@ initLedgerDB replayTracer tracer hasFS decLedger decRef policy conf streamAPI = 
         case ml of
           Left err -> do
             deleteSnapshot hasFS s
-            traceWith tracer $ InvalidSnapshot err
+            traceWith tracer $ InvalidSnapshot s err
             tryNewestFirst (acc . InitFailure s err) ss
           Right (r, l) ->
             return (acc (InitFromSnapshot s r), l)
@@ -366,7 +366,7 @@ snapshotFromPath = fmap DiskSnapshot . readMaybe
 -------------------------------------------------------------------------------}
 
 data TraceEvent r
-  = InvalidSnapshot (InitFailure r)
+  = InvalidSnapshot DiskSnapshot (InitFailure r)
     -- ^ An on disk snapshot was skipped because it was invalid.
   | TookSnapshot DiskSnapshot (Tip r)
     -- ^ A snapshot was written to disk.
