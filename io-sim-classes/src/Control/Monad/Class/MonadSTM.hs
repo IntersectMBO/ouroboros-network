@@ -7,6 +7,10 @@ module Control.Monad.Class.MonadSTM
   ( MonadSTM (..)
   , Tr
 
+  -- * Helpers defined in terms of 'MonadSTM'
+  , updateTVar
+  , updateTVar'
+
   -- * Default 'TMVar' implementation
   , TMVarDefault (..)
   , newTMVarDefault
@@ -42,11 +46,11 @@ module Control.Monad.Class.MonadSTM
 
 import           Prelude hiding (read)
 
-import qualified Control.Monad.STM as STM
-import qualified Control.Concurrent.STM.TVar as STM
+import qualified Control.Concurrent.STM.TBQueue as STM
 import qualified Control.Concurrent.STM.TMVar as STM
 import qualified Control.Concurrent.STM.TQueue as STM
-import qualified Control.Concurrent.STM.TBQueue as STM
+import qualified Control.Concurrent.STM.TVar as STM
+import qualified Control.Monad.STM as STM
 
 import           Control.Exception
 import           Control.Monad.Except
@@ -269,6 +273,24 @@ instance Exception BlockedIndefinitely where
 wrapBlockedIndefinitely :: HasCallStack => IO a -> IO a
 wrapBlockedIndefinitely = handle (throwIO . BlockedIndefinitely callStack)
 
+--
+-- Helpers defined in terms of MonadSTM
+--
+
+updateTVar :: MonadSTM m => TVar m a -> (a -> (a, b)) -> STM m b
+updateTVar t f = do
+    a <- readTVar t
+    let (a', b) = f a
+    writeTVar t a'
+    return b
+
+-- | Strict variant of 'updateTVar'
+updateTVar' :: MonadSTM m => TVar m a -> (a -> (a, b)) -> STM m b
+updateTVar' t f = do
+    a <- readTVar t
+    let (a', b) = f a
+    writeTVar t $! a'
+    return b
 
 --
 -- Default TMVar implementation in terms of TVars (used by sim)
