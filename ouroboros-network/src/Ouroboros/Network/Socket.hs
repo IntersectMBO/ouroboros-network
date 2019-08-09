@@ -289,7 +289,7 @@ mkListeningSocket addrFamily_ addr = do
 -- Make a server-compatible socket from a network socket.
 --
 fromSocket
-    :: ConnectionTable IO
+    :: ConnectionTable IO Socket.SockAddr
     -> Socket.Socket
     -> Server.Socket Socket.SockAddr Socket.Socket
 fromSocket tblVar sd = Server.Socket
@@ -322,7 +322,7 @@ runNetworkNode'
        , Typeable vNumber
        , Show vNumber
        )
-    => ConnectionTable IO
+    => ConnectionTable IO Socket.SockAddr
     -> Socket.Socket
     -> (forall vData. extra vData -> vData -> CBOR.Term)
     -> (forall vData. extra vData -> CBOR.Term -> Either Text vData)
@@ -369,7 +369,7 @@ withServerNode
        , Typeable vNumber
        , Show vNumber
        )
-    => ConnectionTable IO
+    => ConnectionTable IO Socket.SockAddr
     -> Socket.AddrInfo
     -> (forall vData. extra vData -> vData -> CBOR.Term)
     -> (forall vData. extra vData -> CBOR.Term -> Either Text vData)
@@ -434,7 +434,7 @@ withSimpleServerNode
        , Typeable vNumber
        , Show vNumber
        )
-    => ConnectionTable IO
+    => ConnectionTable IO Socket.SockAddr
     -> Socket.AddrInfo
     -> (forall vData. extra vData -> vData -> CBOR.Term)
     -> (forall vData. extra vData -> CBOR.Term -> Either Text vData)

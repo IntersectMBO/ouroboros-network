@@ -74,7 +74,7 @@ data ConnectResult =
 
 subscribeTo
     :: HasCallStack
-    => ConnectionTable IO
+    => ConnectionTable IO Socket.SockAddr
     -> TVar IO (Set ThreadId)
     -> Tracer IO SubscriptionTrace
     -> Maybe Socket.SockAddr
@@ -266,7 +266,7 @@ data IPSubscriptionTarget = IPSubscriptionTarget {
 -- | Spawns a subscription worker which will attempt to keep the specified number
 -- of connections (Valency) active towards the list of IP addresses given in IPSubscriptionTarget.
 ipSubscriptionWorker
-    :: ConnectionTable IO
+    :: ConnectionTable IO Socket.SockAddr
     -> Tracer IO (WithIPList SubscriptionTrace)
     -> Maybe Socket.SockAddr
     -- ^ Local IPv4 address to use, Nothing indicates don't use IPv4
@@ -290,7 +290,7 @@ ipSubscriptionWorker tbl tracer localIPv4 localIPv6 connectionAttemptDelay ips c
             cb k
 
 subscriptionWorker
-    :: ConnectionTable IO
+    :: ConnectionTable IO Socket.SockAddr
     -> Tracer IO SubscriptionTrace
     -> Maybe Socket.SockAddr
     -> Maybe Socket.SockAddr
