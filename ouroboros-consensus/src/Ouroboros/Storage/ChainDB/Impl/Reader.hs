@@ -340,6 +340,10 @@ instructionHelper registry fromMaybeSTM fromPure CDB{..} varReader = do
         atomically $ writeTVar varReader readerState'
         return $ fromPure $ AddBlock $ Right blk
       Nothing  -> do
+        -- Even though an iterator is automatically closed internally when
+        -- exhausted, we close it again (idempotent), but this time to
+        -- unregister the associated clean-up action.
+        ImmDB.iteratorClose cdbImmDB immIt
         -- The iterator is exhausted: we've reached the end of the
         -- ImmutableDB, or actually what was the end of the ImmutableDB at the
         -- time of opening the iterator. We must now check whether that is
