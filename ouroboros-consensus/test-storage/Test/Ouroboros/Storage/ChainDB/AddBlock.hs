@@ -28,7 +28,7 @@ import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util (chunks)
 import           Ouroboros.Consensus.Util.Condense (condense)
-import qualified Ouroboros.Consensus.Util.ThreadRegistry as ThreadRegistry
+import qualified Ouroboros.Consensus.Util.ResourceRegistry as ResourceRegistry
 
 import           Ouroboros.Storage.ChainDB (TraceAddBlockEvent (..), addBlock,
                      closeDB, openDB, toChain)
@@ -94,21 +94,20 @@ prop_addBlock_multiple_threads bpt =
     trace       :: [TraceAddBlockEvent TestBlock]
     (actualChain, trace) = run $ do
         -- Open the DB
-        fsVars   <- atomically $ (,,)
+        fsVars <- atomically $ (,,)
           <$> newTVar Mock.empty
           <*> newTVar Mock.empty
           <*> newTVar Mock.empty
-        registry <- atomically ThreadRegistry.new
-        let args = mkArgs cfg initLedger dynamicTracer registry fsVars
-        db       <- openDB args
-        -- Add blocks concurrently
-        mapConcurrently_ (mapM_ (addBlock db)) $ blocksPerThread bpt
-        -- Obtain the actual chain
-        chain <- toChain db
-        -- Close and cancel things
-        closeDB db
-        ThreadRegistry.cancelAll registry
-        return chain
+        ResourceRegistry.with $ \registry -> do
+          let args = mkArgs cfg initLedger dynamicTracer registry fsVars
+          db <- openDB args
+          -- Add blocks concurrently
+          mapConcurrently_ (mapM_ (addBlock db)) $ blocksPerThread bpt
+          -- Obtain the actual chain
+          chain <- toChain db
+          -- Close
+          closeDB db
+          return chain
 
     -- The current chain after all the given blocks were added to a fresh
     -- model.

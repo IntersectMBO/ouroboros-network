@@ -36,8 +36,8 @@ import           Ouroboros.Consensus.Mempool.TxSeq (TicketNo, TxSeq (..),
                      splitAfterTicketNo, zeroTicketNo)
 import qualified Ouroboros.Consensus.Mempool.TxSeq as TxSeq
 import           Ouroboros.Consensus.Util (repeatedly)
+import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
 import           Ouroboros.Consensus.Util.STM (onEachChange)
-import           Ouroboros.Consensus.Util.ThreadRegistry (ThreadRegistry)
 
 {-------------------------------------------------------------------------------
   Top-level API
@@ -49,7 +49,7 @@ openMempool :: ( MonadAsync m
                , MonadSTM m
                , ApplyTx blk
                )
-            => ThreadRegistry m
+            => ResourceRegistry m
             -> LedgerInterface m blk
             -> LedgerConfig blk
             -> Tracer m (TraceEventMempool blk)
@@ -146,7 +146,7 @@ forkSyncStateOnTipPointChange :: ( MonadAsync m
                                  , MonadMask m
                                  , ApplyTx blk
                                  )
-                              => ThreadRegistry m
+                              => ResourceRegistry m
                               -> MempoolEnv m blk
                               -> m ()
 forkSyncStateOnTipPointChange registry menv =

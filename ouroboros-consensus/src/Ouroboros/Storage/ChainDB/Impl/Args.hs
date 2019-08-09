@@ -25,7 +25,7 @@ import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Protocol.Abstract
-import           Ouroboros.Consensus.Util.ThreadRegistry (ThreadRegistry)
+import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
 
 import           Ouroboros.Storage.EpochInfo (EpochInfo)
 import           Ouroboros.Storage.FS.API
@@ -78,17 +78,17 @@ data ChainDbArgs m blk = forall h1 h2 h3. ChainDbArgs {
     , cdbGenesis          :: m (ExtLedgerState blk)
 
       -- Misc
-    , cdbTracer         :: Tracer m (TraceEvent blk)
-    , cdbThreadRegistry :: ThreadRegistry m
-    , cdbGcDelay        :: DiffTime
+    , cdbTracer           :: Tracer m (TraceEvent blk)
+    , cdbRegistry         :: ResourceRegistry m
+    , cdbGcDelay          :: DiffTime
     }
 
 -- | Arguments specific to the ChainDB, not to the ImmutableDB, VolatileDB, or
 -- LedgerDB.
 data ChainDbSpecificArgs m blk = ChainDbSpecificArgs {
-      cdbsTracer         :: Tracer m (TraceEvent blk)
-    , cdbsThreadRegistry :: ThreadRegistry m
-    , cdbsGcDelay        :: DiffTime
+      cdbsTracer   :: Tracer m (TraceEvent blk)
+    , cdbsRegistry :: ResourceRegistry m
+    , cdbsGcDelay  :: DiffTime
     }
 
 -- | Default arguments
@@ -96,13 +96,13 @@ data ChainDbSpecificArgs m blk = ChainDbSpecificArgs {
 -- The following fields must still be defined:
 --
 -- * 'cdbsTracer'
--- * 'cdbsThreadRegistry'
+-- * 'cdbsRegistry'
 defaultSpecificArgs :: ChainDbSpecificArgs m blk
 defaultSpecificArgs = ChainDbSpecificArgs{
-      cdbsGcDelay        = oneHour
+      cdbsGcDelay  = oneHour
       -- Fields without a default
-    , cdbsTracer         = error "no default for cdbsTracer"
-    , cdbsThreadRegistry = error "no default for cdbsThreadRegistry"
+    , cdbsTracer   = error "no default for cdbsTracer"
+    , cdbsRegistry = error "no default for cdbsRegistry"
     }
   where
     oneHour = secondsToDiffTime 60 * 60
@@ -166,7 +166,7 @@ fromChainDbArgs ChainDbArgs{..} = (
         }
     , ChainDbSpecificArgs {
           cdbsTracer          = cdbTracer
-        , cdbsThreadRegistry  = cdbThreadRegistry
+        , cdbsRegistry        = cdbRegistry
         , cdbsGcDelay         = cdbGcDelay
         }
     )
@@ -214,6 +214,6 @@ toChainDbArgs ImmDB.ImmDbArgs{..}
     , cdbGenesis          = lgrGenesis
       -- Misc
     , cdbTracer           = cdbsTracer
-    , cdbThreadRegistry   = cdbsThreadRegistry
+    , cdbRegistry         = cdbsRegistry
     , cdbGcDelay          = cdbsGcDelay
     }

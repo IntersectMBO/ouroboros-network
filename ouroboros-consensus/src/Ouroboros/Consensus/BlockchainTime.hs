@@ -41,8 +41,8 @@ import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTimer
 
+import           Ouroboros.Consensus.Util.ResourceRegistry
 import           Ouroboros.Consensus.Util.STM
-import           Ouroboros.Consensus.Util.ThreadRegistry
 import           Ouroboros.Network.Block (SlotNo (..))
 
 {-------------------------------------------------------------------------------
@@ -107,7 +107,7 @@ data TestClock =
   deriving (Eq)
 
 data TestBlockchainTime m = TestBlockchainTime
-  { testBlockchainTime :: BlockchainTime m
+  { testBlockchainTime     :: BlockchainTime m
   , testBlockchainTimeDone :: m ()
     -- ^ Blocks until the end of the final requested slot.
   }
@@ -127,7 +127,7 @@ data TestBlockchainTime m = TestBlockchainTime
 -- 'onSlotChange' is blocked at least until @SlotNo 0@ begins.
 newTestBlockchainTime
     :: forall m. (MonadAsync m, MonadTimer m, MonadMask m, MonadFork m)
-    => ThreadRegistry m
+    => ResourceRegistry m
     -> NumSlots           -- ^ Number of slots
     -> DiffTime           -- ^ Slot duration
     -> m (TestBlockchainTime m)
@@ -171,7 +171,7 @@ newTestBlockchainTime registry (NumSlots numSlots) slotLen = do
 -- TODO: Right now this requires a single specific slot duration. This is
 -- not going to be the case when we move to Praos. We need to think this
 -- through carefully.
-realBlockchainTime :: ThreadRegistry IO
+realBlockchainTime :: ResourceRegistry IO
                    -> SlotLength -> SystemStart
                    -> IO (BlockchainTime IO)
 realBlockchainTime registry slotLen start = do

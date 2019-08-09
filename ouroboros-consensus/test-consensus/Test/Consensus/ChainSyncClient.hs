@@ -55,8 +55,9 @@ import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.BFT
 import           Ouroboros.Consensus.Util (whenJust)
 import           Ouroboros.Consensus.Util.Condense
+import           Ouroboros.Consensus.Util.ResourceRegistry (fork, forkLinked)
+import qualified Ouroboros.Consensus.Util.ResourceRegistry as ResourceRegistry
 import           Ouroboros.Consensus.Util.STM (Fingerprint (..))
-import           Ouroboros.Consensus.Util.ThreadRegistry
 
 import           Test.Util.Orphans.Arbitrary ()
 import           Test.Util.TestBlock
@@ -215,7 +216,7 @@ runChainSync :: forall m.
        -- ^ (The final client chain, the final server chain, the synced
        --    candidate fragment, exception thrown by the chain sync client)
 runChainSync securityParam maxClockSkew (ClientUpdates clientUpdates)
-    (ServerUpdates serverUpdates) startSyncingAt = withThreadRegistry $ \registry -> do
+    (ServerUpdates serverUpdates) startSyncingAt = ResourceRegistry.with $ \registry -> do
 
     testBtime <- newTestBlockchainTime registry numSlots slotDuration
     let btime = testBlockchainTime testBtime

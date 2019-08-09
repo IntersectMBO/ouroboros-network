@@ -33,7 +33,7 @@ import           Control.Monad.Class.MonadThrow
 
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util.Random
-import           Ouroboros.Consensus.Util.ThreadRegistry
+import           Ouroboros.Consensus.Util.ResourceRegistry
 
 {-------------------------------------------------------------------------------
   Misc
@@ -51,7 +51,7 @@ blockUntilChanged f b getA = do
 
 -- | Spawn a new thread that executes an action each time a 'TVar' changes.
 onEachChange :: forall m a b. (MonadAsync m, MonadMask m, MonadFork m, Eq b)
-             => ThreadRegistry m
+             => ResourceRegistry m
              -> (a -> b)  -- ^ Obtain a fingerprint
              -> Maybe b   -- ^ Optional initial fingerprint, if 'Nothing', the
                           -- action is executed once immediately to obtain the

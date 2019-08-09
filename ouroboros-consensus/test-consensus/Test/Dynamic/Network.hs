@@ -60,8 +60,8 @@ import           Ouroboros.Consensus.NodeId
 import           Ouroboros.Consensus.NodeNetwork
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util.Orphans ()
+import           Ouroboros.Consensus.Util.ResourceRegistry
 import           Ouroboros.Consensus.Util.STM
-import           Ouroboros.Consensus.Util.ThreadRegistry
 
 import qualified Ouroboros.Storage.ChainDB as ChainDB
 import           Ouroboros.Storage.ChainDB.Impl (ChainDbArgs (..))
@@ -185,7 +185,7 @@ broadcastNetwork :: forall m blk.
                     , TxGen blk
                     , TracingConstraints blk
                     )
-                 => ThreadRegistry m
+                 => ResourceRegistry m
                  -> TestBlockchainTime m
                  -> NumCoreNodes
                  -> (CoreNodeId -> ProtocolInfo blk)
@@ -284,7 +284,7 @@ broadcastNetwork registry testBtime numCoreNodes pInfo initRNG slotLen = do
         , cdbGenesis          = return initLedger
         -- Misc
         , cdbTracer           = nullTracer
-        , cdbThreadRegistry   = registry
+        , cdbRegistry         = registry
         , cdbGcDelay          = 0
         }
 
@@ -321,7 +321,7 @@ broadcastNetwork registry testBtime numCoreNodes pInfo initRNG slotLen = do
 
       let nodeParams = NodeParams
             { tracers            = nullTracers
-            , threadRegistry     = registry
+            , registry           = registry
             , maxClockSkew       = ClockSkew 1
             , cfg                = pInfoConfig
             , initState          = pInfoInitState

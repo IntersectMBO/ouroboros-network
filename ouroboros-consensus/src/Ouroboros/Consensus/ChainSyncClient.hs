@@ -45,10 +45,10 @@ import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util
+import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
+import qualified Ouroboros.Consensus.Util.ResourceRegistry as ResourceRegistry
 import           Ouroboros.Consensus.Util.SlotBounded as SB
 import           Ouroboros.Consensus.Util.STM (Fingerprint, onEachChange)
-import           Ouroboros.Consensus.Util.ThreadRegistry (ThreadRegistry)
-import qualified Ouroboros.Consensus.Util.ThreadRegistry as ThreadRegistry
 
 
 -- | Clock skew: the number of slots the chain of an upstream node may be
@@ -147,21 +147,23 @@ bracketChainSyncClient tracer getCurrentChain getCurrentLedger
         (readTVar varCandidate)
       body varCandidate curChain
   where
-    register = atomically $ do
-      curChain      <- getCurrentChain
-      curChainState <- ouroborosChainState <$> getCurrentLedger
-      -- We use our current chain, which contains the last @k@ headers, as
-      -- the initial chain for the candidate.
-      varCandidate <- newTVar CandidateState
-        { candidateChain       = curChain
-        , candidateChainState  = curChainState
-        }
-      modifyTVar' varCandidates $ Map.insert peer varCandidate
-      registry <- ThreadRegistry.new
+    register = do
+      (varCandidate, curChain) <- atomically $ do
+        curChain      <- getCurrentChain
+        curChainState <- ouroborosChainState <$> getCurrentLedger
+        -- We use our current chain, which contains the last @k@ headers, as
+        -- the initial chain for the candidate.
+        varCandidate <- newTVar CandidateState
+          { candidateChain       = curChain
+          , candidateChainState  = curChainState
+          }
+        modifyTVar' varCandidates $ Map.insert peer varCandidate
+        return (varCandidate, curChain)
+      registry <- ResourceRegistry.new
       return (registry, varCandidate, curChain)
 
     unregister (registry, _, _) = do
-      ThreadRegistry.cancelAll registry
+      ResourceRegistry.close registry
       atomically $ modifyTVar' varCandidates $ Map.delete peer
 
 -- | Chain sync client
@@ -540,7 +542,7 @@ chainSyncClient tracer cfg btime (ClockSkew maxSkew)
 -- node could have rolled back such that its candidate chain no longer
 -- contains the invalid block, in which case we do not disconnect from it.
 --
--- This function spawns a background thread using the given 'ThreadRegistry'.
+-- This function spawns a background thread using the given 'ResourceRegistry'.
 --
 -- The cost of this check is \( O(cand * check) \) where /cand/ is the size of
 -- the candidate fragment and /check/ is the cost of checking whether a block
@@ -554,7 +556,7 @@ rejectInvalidBlocks
        , SupportedBlock blk
        )
     => Tracer m (TraceChainSyncClientEvent blk)
-    -> ThreadRegistry m
+    -> ResourceRegistry m
     -> STM m (HeaderHash blk -> Bool, Fingerprint)
        -- ^ Get the invalid block checker
     -> STM m (CandidateState blk)
