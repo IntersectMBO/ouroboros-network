@@ -1,5 +1,6 @@
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TupleSections       #-}
 
 -- | A resource registry that allows registering clean-up actions that will be
 -- run when the resource registry is closed.
@@ -13,18 +14,28 @@ module Ouroboros.Consensus.Util.ResourceRegistry
   , new
   , close
   , with
+    -- * Subregistry
+  , withSubregistry
+    -- * Forking threads
+  , fork
+  , forkLinked
+  , ExceptionInForkedThread (..)
     -- * For testing purposes
   , nbCleanups
   ) where
 
+import           Control.Exception (asyncExceptionFromException,
+                     asyncExceptionToException)
 import           Control.Monad (forM)
 import           Data.IntMap.Strict (IntMap)
 import qualified Data.IntMap.Strict as IntMap
 import           Data.Maybe (catMaybes, listToMaybe)
 import           Data.Tuple (swap)
 
+import           Control.Monad.Class.MonadAsync
+import           Control.Monad.Class.MonadFork hiding (fork)
 import           Control.Monad.Class.MonadSTM
-import           Control.Monad.Class.MonadThrow
+import           Control.Monad.Class.MonadThrow hiding (handle)
 
 -- | A registry of resources with clean-up actions associated to them.
 data ResourceRegistry m = ResourceRegistry
@@ -104,6 +115,88 @@ close ResourceRegistry { _registered } = do
 -- | Bracketed variant.
 with :: (MonadSTM m, MonadMask m) => (ResourceRegistry m -> m a) -> m a
 with = bracket new close
+
+{-------------------------------------------------------------------------------
+  Subregistry
+-------------------------------------------------------------------------------}
+
+-- | Create a subregistry.
+--
+-- Similar to 'with'. The subregistry and all the resources that are allocated
+-- in it will be released when the parent (or any ancestor) registry is
+-- closed.
+withSubregistry :: forall m a. (MonadSTM m, MonadMask m)
+                => ResourceRegistry m
+                -> (ResourceRegistry m -> m a)
+                -> m a
+withSubregistry registry k = bracket
+    createSubregistry
+    closeSubregistry
+    (\(_key, subregistry) -> k subregistry)
+  where
+    createSubregistry :: m (ResourceKey, ResourceRegistry m)
+    createSubregistry = allocate
+      registry
+      (const new)
+      close
+
+    closeSubregistry :: (ResourceKey, ResourceRegistry m) -> m ()
+    closeSubregistry (key, _) = release
+      registry
+      key
+
+{-------------------------------------------------------------------------------
+  Forking threads
+-------------------------------------------------------------------------------}
+
+-- | Fork a new thread using the 'ResourceRegistry'.
+--
+-- You can use the returned 'Async' handle to wait on it and to obtain the
+-- result or exception.
+--
+-- The 'ResourceRegistry' will cancel the thread using 'uninterruptibleCancel'
+-- when it is closed.
+fork :: (MonadAsync m, MonadMask m)
+     => ResourceRegistry m
+     -> m a
+     -> m (Async m a)
+fork registry action = do
+    (_key, handle) <- allocate registry
+      (\key -> async $ mask $ \restore ->
+        restore action
+          `finally`
+        release registry key)
+      uninterruptibleCancel
+    return handle
+
+-- | Same as 'fork', but any exception thrown in the forked thread will be
+-- rethrown wrapped in 'ExceptionInForkedThread' to the thread that called
+-- this function, like 'link'.
+forkLinked :: (MonadAsync m, MonadFork m, MonadMask m)
+           => ResourceRegistry m
+           -> m a
+           -> m (Async m a)
+forkLinked registry action = do
+    me <- myThreadId
+    fork registry $
+      action `catch` \e -> do
+        case fromException e of
+          Just AsyncCancelled{} -> return ()
+          Nothing               -> throwTo me $ ExceptionInForkedThread e
+        throwM e
+
+-- | An exception thrown by a thread forked using 'forkLinked' or
+-- 'forkNonTerminating'.
+data ExceptionInForkedThread = ExceptionInForkedThread SomeException
+    deriving (Show)
+
+instance Exception ExceptionInForkedThread where
+  fromException = asyncExceptionFromException
+  toException   = asyncExceptionToException
+
+{-------------------------------------------------------------------------------
+  For testing purposes
+-------------------------------------------------------------------------------}
 
 -- | Return the number of registered clean-up actions in the
 -- 'ResourceRegistry'.
