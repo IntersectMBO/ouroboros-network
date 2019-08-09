@@ -97,7 +97,7 @@ instance Mx.MiniProtocolLimits TestProtocols2 where
 
 activeTracer :: Show a => Tracer IO a
 activeTracer = nullTracer
---activeTracer = _verboseTracer -- Dump log messages to stdout.
+-- activeTracer = _verboseTracer -- Dump log messages to stdout.
 
 --
 -- The list of all tests
@@ -423,12 +423,12 @@ prop_sub_io lr = ioProperty $ do
             (Just $ Socket.addrAddress ipv6Client)
             (\_ -> Just minConnectionAttemptDelay)
             (DnsSubscriptionTarget "shelley-0.iohk.example" 6062 (lrioValency lr))
+            (\_ -> do
+              c <- readTVar clientCountVar
+              when (c > 0) retry
+              writeTVar serverWaitVar True)
             (initiatorCallback clientCountVar)
-            (\_ -> atomically $ do
-                c <- readTVar clientCountVar
-                when (c > 0) retry)
 
-    atomically $ writeTVar serverWaitVar True
 
     mapM_ wait serverAids
 
@@ -540,8 +540,7 @@ prop_send_recv f xs first = ioProperty $ do
             atomically $ putTMVar cv r
             waitSiblingSub siblingVar
 
-    res <-
-     withDummyServer faultyAddress $
+    withDummyServer faultyAddress $
       withSimpleServerNode
         tbl
         responderAddr
@@ -559,6 +558,7 @@ prop_send_recv f xs first = ioProperty $ do
             (Just $ Socket.addrAddress initiatorAddr6)
             (\_ -> Just minConnectionAttemptDelay)
             (DnsSubscriptionTarget "shelley-0.iohk.example" 6062 1)
+            (\_ -> waitSiblingSTM siblingVar)
             (connectToNode'
                 (\(DictVersion codec) -> encodeTerm codec)
                 (\(DictVersion codec) -> decodeTerm codec)
@@ -566,12 +566,8 @@ prop_send_recv f xs first = ioProperty $ do
                 (,)
                 (simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData 0)
                 (DictVersion nodeToNodeCodecCBORTerm) initiatorApp))
-            (\_ -> do
-                r <- atomically $ (,) <$> takeTMVar sv <*> takeTMVar cv
-                waitSibling siblingVar
-                return r
-            )
 
+    res <- atomically $ (,) <$> takeTMVar sv <*> takeTMVar cv
     return (res == mapAccumL f 0 xs)
 
   where
@@ -693,13 +689,14 @@ prop_send_recv_init_and_rsp f xs = ioProperty $ do
         $ \localAddr _ -> do
           atomically $ putTMVar localAddrVar localAddr
           remoteAddr <- atomically $ takeTMVar remoteAddrVar
-          ipSubscriptionWorker
-            tbl
+          _ <- ipSubscriptionWorker
             activeTracer
+            tbl
             (Just localAddr)
             Nothing
             (\_ -> Just minConnectionAttemptDelay)
             (IPSubscriptionTarget [remoteAddr] 1)
+            (\_ -> waitSiblingSTM (rrcSiblingVar rrcfg))
             (connectToNode'
                 (\(DictVersion codec) -> encodeTerm codec)
                 (\(DictVersion codec) -> decodeTerm codec)
@@ -707,22 +704,22 @@ prop_send_recv_init_and_rsp f xs = ioProperty $ do
                 (,)
                 (simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData 0)
                 (DictVersion nodeToNodeCodecCBORTerm) $ appX rrcfg))
-            (\_ -> do
-                r <- atomically $ (,) <$> takeTMVar (rrcServerVar rrcfg)
-                                      <*> takeTMVar (rrcClientVar rrcfg)
-                waitSibling (rrcSiblingVar rrcfg)
-                return r
-            )
+
+          atomically $ (,) <$> takeTMVar (rrcServerVar rrcfg)
+                           <*> takeTMVar (rrcClientVar rrcfg)
 
 waitSiblingSub :: TVar IO Int -> IO ()
 waitSiblingSub cntVar = do
     atomically $ modifyTVar' cntVar (\a -> a - 1)
     waitSibling cntVar
 
-waitSibling :: TVar IO Int -> IO ()
-waitSibling cntVar = atomically $ do
+waitSiblingSTM :: TVar IO Int -> STM IO ()
+waitSiblingSTM cntVar = do
     cnt <- readTVar cntVar
     unless (cnt == 0) retry
+
+waitSibling :: TVar IO Int -> IO ()
+waitSibling = atomically . waitSiblingSTM
 
 {-
  - XXX Doesn't really test anything, doesn't exit in a resonable time.
@@ -760,6 +757,7 @@ _demo = ioProperty $ do
             (Just $ Socket.addrAddress client6)
             (\_ -> Just minConnectionAttemptDelay)
             (DnsSubscriptionTarget "shelley-0.iohk.example" 6064 1)
+            (\_ -> retry)
             (connectToNode'
                 (\(DictVersion codec) -> encodeTerm codec)
                 (\(DictVersion codec) -> decodeTerm codec)
@@ -767,7 +765,6 @@ _demo = ioProperty $ do
                 (,)
                 (simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData 0)
                 (DictVersion nodeToNodeCodecCBORTerm) appReq))
-            wait
 
     threadDelay 130
     -- bring the servers back again

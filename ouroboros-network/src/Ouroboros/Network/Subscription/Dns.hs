@@ -37,6 +37,7 @@ import           Text.Printf
 
 import           Ouroboros.Network.Subscription.Common
 import           Ouroboros.Network.Subscription.Subscriber
+import           Ouroboros.Network.Subscription.Worker
 import           Ouroboros.Network.Socket
 
 -- | Time to wait for an AAAA response after receiving an A response.
@@ -187,46 +188,56 @@ dnsResolve tracer resolver (DnsSubscriptionTarget domain _ _) = do
 
 dnsSubscriptionWorker'
     :: ConnectionTable IO Socket.SockAddr
-    -> Tracer IO (WithDomainName SubscriptionTrace)
+    -> Tracer IO (WithDomainName (SubscriptionTrace Socket.SockAddr))
     -> Tracer IO (WithDomainName DnsTrace)
     -> Resolver IO
     -> Maybe Socket.SockAddr
     -> Maybe Socket.SockAddr
     -> (Socket.SockAddr -> Maybe DiffTime)
     -> DnsSubscriptionTarget
-    -> (Socket.Socket -> IO ())
-    -> (Async IO () -> IO t)
+    -> Main IO () t
+    -> (Socket.Socket -> IO t)
     -> IO t
 dnsSubscriptionWorker' tbl subTracer dnsTracer resolver localIPv4 localIPv6
-  connectionAttemptDelay dst cb k = do
+  connectionAttemptDelay dst main k = do
+    statesVar <- newTVarM ()
     let subTracer' = domainNameTracer (dstDomain dst) subTracer
     let dnsTracer' = domainNameTracer (dstDomain dst) dnsTracer
 
-    subscriptionWorker tbl subTracer' localIPv4 localIPv6
-           connectionAttemptDelay
-           (dnsResolve dnsTracer' resolver dst) (dstValency dst) cb k
+    subscriptionWorker subTracer'
+                       tbl
+                       statesVar
+                       ioSocket
+                       (\_ s -> pure (s, pure ()))
+                       main
+                       localIPv4
+                       localIPv6
+                       connectionAttemptDelay
+                       (dnsResolve dnsTracer' resolver dst)
+                       (dstValency dst)
+                       k
 
 
 dnsSubscriptionWorker
     :: ConnectionTable IO Socket.SockAddr
-    -> Tracer IO (WithDomainName SubscriptionTrace)
+    -> Tracer IO (WithDomainName (SubscriptionTrace Socket.SockAddr))
     -> Tracer IO (WithDomainName DnsTrace)
     -> Maybe Socket.SockAddr
     -> Maybe Socket.SockAddr
     -> (Socket.SockAddr -> Maybe DiffTime)
     -> DnsSubscriptionTarget
-    -> (Socket.Socket -> IO ())
-    -> (Async IO () -> IO t)
+    -> Main IO () t
+    -> (Socket.Socket -> IO t)
     -> IO t
-dnsSubscriptionWorker tbl subTracer dnsTracer localIPv4 localIPv6 connectionAttemptDelay dst cb
-  k = do
+dnsSubscriptionWorker tbl subTracer dnsTracer localIPv4 localIPv6 connectionAttemptDelay dst
+  main k = do
     rs <- DNS.makeResolvSeed DNS.defaultResolvConf
 
     DNS.withResolver rs $ \dnsResolver ->
         let resolver = Resolver (ipv4ToSockAddr (dstPort dst) dnsResolver)
                                 (ipv6ToSockAddr (dstPort dst) dnsResolver) in
         dnsSubscriptionWorker' tbl subTracer dnsTracer resolver localIPv4 localIPv6
-                               connectionAttemptDelay dst cb k
+                               connectionAttemptDelay dst main k
   where
     ipv4ToSockAddr port dnsResolver d = do
         r <- DNS.lookupA dnsResolver d

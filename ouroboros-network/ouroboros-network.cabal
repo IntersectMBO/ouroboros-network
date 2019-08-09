@@ -62,6 +62,7 @@ library
                        Ouroboros.Network.Subscription.Common
                        Ouroboros.Network.Subscription.Dns
                        Ouroboros.Network.Subscription.Subscriber
+                       Ouroboros.Network.Subscription.Worker
                        Ouroboros.Network.Protocol.ChainSync.Client
                        Ouroboros.Network.Protocol.ChainSync.Codec
                        Ouroboros.Network.Protocol.ChainSync.Server
@@ -206,6 +207,7 @@ test-suite tests
                        Ouroboros.Network.Subscription.Common
                        Ouroboros.Network.Subscription.Dns
                        Ouroboros.Network.Subscription.Subscriber
+                       Ouroboros.Network.Subscription.Worker
                        Ouroboros.Network.TxSubmission.Inbound
                        Ouroboros.Network.TxSubmission.Outbound
 
