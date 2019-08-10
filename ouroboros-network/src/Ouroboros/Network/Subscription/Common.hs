@@ -333,7 +333,7 @@ subscriptionWorker tbl tracer localIPv4 localIPv6 connectionAttemptDelay getTarg
             end <- getMonotonicTime
             let duration = diffTime end start
             currentValency <- atomically $ readValencyCounter valencyVar
-            traceWith tracer $ SubscriptionTraceRestart duration currentValency
+            traceWith tracer $ SubscriptionTraceRestart duration valency
                 (valency - currentValency)
 
             when (duration < ipRetryDelay) $
