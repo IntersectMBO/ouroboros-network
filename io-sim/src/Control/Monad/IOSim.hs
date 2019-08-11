@@ -333,6 +333,7 @@ instance MonadAsync (SimM s) where
     return (Async tid var)
 
   cancel a@(Async tid _) = throwTo tid AsyncCancelled <* waitCatch a
+  cancelWith a@(Async tid _) e = throwTo tid e <* waitCatch a
 
   waitCatchSTM (Async _ var) = readTMVar var
   pollSTM      (Async _ var) = tryReadTMVar var
@@ -643,7 +644,7 @@ schedule thread@Thread{
 
     Catch action' handler k -> do
       -- push the failure and success continuations onto the control stack
-      let thread' = thread { threadControl = ThreadControl action' 
+      let thread' = thread { threadControl = ThreadControl action'
                                                (CatchFrame handler k ctl) }
       schedule thread' simstate
 

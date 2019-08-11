@@ -17,7 +17,7 @@ import           Control.Concurrent.Async (AsyncCancelled(..))
 
 class MonadSTM m => MonadAsync m where
 
-  {-# MINIMAL async, cancel, waitCatchSTM, pollSTM #-}
+  {-# MINIMAL async, cancel, cancelWith, waitCatchSTM, pollSTM #-}
 
   -- | An asynchronous action
   type Async m :: * -> *
@@ -26,9 +26,10 @@ class MonadSTM m => MonadAsync m where
   withAsync             :: m a -> (Async m a -> m b) -> m b
 
   wait                  :: Async m a -> m a
-  poll                  :: Async m a -> m (Maybe (Either SomeException a)) 
+  poll                  :: Async m a -> m (Maybe (Either SomeException a))
   waitCatch             :: Async m a -> m (Either SomeException a)
   cancel                :: Async m a -> m ()
+  cancelWith            :: Exception e => Async m a -> e -> m ()
   uninterruptibleCancel :: Async m a -> m ()
 
   waitSTM               :: Async m a -> STM m a
@@ -37,7 +38,7 @@ class MonadSTM m => MonadAsync m where
 
   waitAny               :: [Async m a] -> m (Async m a, a)
   waitAnyCatch          :: [Async m a] -> m (Async m a, Either SomeException a)
-  waitAnyCancel         :: [Async m a] -> m (Async m a, a) 
+  waitAnyCancel         :: [Async m a] -> m (Async m a, a)
   waitAnyCatchCancel    :: [Async m a] -> m (Async m a, Either SomeException a)
   waitEither            :: Async m a -> Async m b -> m (Either a b)
 
@@ -70,7 +71,7 @@ class MonadSTM m => MonadAsync m where
   default uninterruptibleCancel
                         :: MonadMask m => Async m a -> m ()
   default waitSTM       :: MonadThrow (STM m) => Async m a -> STM m a
-  default waitAnyCancel         :: MonadThrow m => [Async m a] -> m (Async m a, a) 
+  default waitAnyCancel         :: MonadThrow m => [Async m a] -> m (Async m a, a)
   default waitAnyCatchCancel    :: MonadThrow m => [Async m a]
                                 -> m (Async m a, Either SomeException a)
   default waitEitherCancel      :: MonadThrow m => Async m a -> Async m b
@@ -227,6 +228,7 @@ instance MonadAsync IO where
   poll                  = Async.poll
   waitCatch             = Async.waitCatch
   cancel                = Async.cancel
+  cancelWith            = Async.cancelWith
   uninterruptibleCancel = Async.uninterruptibleCancel
 
   waitSTM               = Async.waitSTM
