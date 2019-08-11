@@ -5,17 +5,13 @@
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module Ouroboros.Network.Subscription.Common
+-- | IP subscription worker implentation.
+module Ouroboros.Network.Subscription.Ip
     ( ipSubscriptionWorker
     , subscriptionWorker
     , SubscriptionTrace
     , IPSubscriptionTarget (..)
     , WithIPList
-    , defaultConnectionAttemptDelay
-    , minConnectionAttemptDelay
-    , maxConnectionAttemptDelay
-    , ipRetryDelay
-    , sockAddrFamily
     ) where
 
 

@@ -25,6 +25,8 @@ module Ouroboros.Network.Subscription.Worker
   , minConnectionAttemptDelay
   , maxConnectionAttemptDelay
   , ipRetryDelay
+    -- * Errors
+  , SubscriberError (..)
     -- * Tracing
   , SubscriptionTrace (..)
     -- * Auxiliary functions

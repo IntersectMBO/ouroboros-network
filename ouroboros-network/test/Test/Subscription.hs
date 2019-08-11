@@ -58,7 +58,7 @@ import           Codec.SerialiseTerm
 import           Ouroboros.Network.Mux
 import           Ouroboros.Network.NodeToNode
 import           Ouroboros.Network.Socket
-import           Ouroboros.Network.Subscription.Common
+import           Ouroboros.Network.Subscription
 import           Ouroboros.Network.Subscription.Dns
 import           Ouroboros.Network.Subscription.Subscriber
 

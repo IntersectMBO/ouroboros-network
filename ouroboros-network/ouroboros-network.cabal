@@ -59,7 +59,8 @@ library
                        Ouroboros.Network.Server.Version.CBOR
                        Ouroboros.Network.Server.Version.Protocol
                        Ouroboros.Network.Socket
-                       Ouroboros.Network.Subscription.Common
+                       Ouroboros.Network.Subscription
+                       Ouroboros.Network.Subscription.Ip
                        Ouroboros.Network.Subscription.Dns
                        Ouroboros.Network.Subscription.Subscriber
                        Ouroboros.Network.Subscription.Worker
@@ -204,7 +205,8 @@ test-suite tests
                        Ouroboros.Network.Socket
                        Ouroboros.Network.Server.ConnectionTable
                        Ouroboros.Network.Server.Socket
-                       Ouroboros.Network.Subscription.Common
+                       Ouroboros.Network.Subscription
+                       Ouroboros.Network.Subscription.Ip
                        Ouroboros.Network.Subscription.Dns
                        Ouroboros.Network.Subscription.Subscriber
                        Ouroboros.Network.Subscription.Worker
