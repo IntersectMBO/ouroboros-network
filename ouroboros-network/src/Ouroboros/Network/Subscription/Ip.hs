@@ -60,7 +60,8 @@ ipSubscriptionWorker
 ipSubscriptionWorker tracer tbl localIPv4 localIPv6 connectionAttemptDelay ips main k = do
     sVar <- newTVarM ()
     subscriptionWorker
-            (ipListTracer localIPv4 localIPv6 (ispIps ips) tracer)
+            (WithIPList localIPv4 localIPv6 (ispIps ips)
+              `contramap` tracer)
             tbl
             sVar
             ioSocket
@@ -144,11 +145,3 @@ instance (Show a) => Show (WithIPList a) where
     show WithIPList {wilIPv4, wilIPv6, wilDsts, wilEvent}
       = printf  "IPs: %s %s %s %s" (show wilIPv4) (show wilIPv6)
                                    (show wilDsts) (show wilEvent)
-
-ipListTracer
-    :: Maybe Socket.SockAddr
-    -> Maybe Socket.SockAddr
-    -> [Socket.SockAddr]
-    -> Tracer IO (WithIPList a)
-    -> Tracer IO a
-ipListTracer ipv4 ipv6 ips tr = Tracer $ \s -> traceWith tr $ WithIPList ipv4 ipv6 ips s

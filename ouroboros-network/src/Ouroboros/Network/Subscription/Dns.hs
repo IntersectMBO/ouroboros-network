@@ -201,10 +201,7 @@ dnsSubscriptionWorker'
 dnsSubscriptionWorker' tbl subTracer dnsTracer resolver localIPv4 localIPv6
   connectionAttemptDelay dst main k = do
     statesVar <- newTVarM ()
-    let subTracer' = domainNameTracer (dstDomain dst) subTracer
-    let dnsTracer' = domainNameTracer (dstDomain dst) dnsTracer
-
-    subscriptionWorker subTracer'
+    subscriptionWorker (WithDomainName (dstDomain dst) `contramap` subTracer)
                        tbl
                        statesVar
                        ioSocket
@@ -214,7 +211,9 @@ dnsSubscriptionWorker' tbl subTracer dnsTracer resolver localIPv4 localIPv6
                        localIPv4
                        localIPv6
                        connectionAttemptDelay
-                       (dnsResolve dnsTracer' resolver dst)
+                       (dnsResolve
+                          (WithDomainName (dstDomain dst) `contramap` dnsTracer)
+                          resolver dst)
                        (dstValency dst)
                        k
 
@@ -260,9 +259,6 @@ data WithDomainName a = WithDomainName {
 
 instance Show a => Show (WithDomainName a) where
     show WithDomainName {wdnDomain, wdnEvent} = printf  "Domain: %s %s" (show wdnDomain) (show wdnEvent)
-
-domainNameTracer :: DNS.Domain -> Tracer IO (WithDomainName a) -> Tracer IO a
-domainNameTracer domain tr = Tracer $ \s -> traceWith tr $ WithDomainName domain s
 
 data DnsTrace =
       DnsTraceLookupException SomeException
