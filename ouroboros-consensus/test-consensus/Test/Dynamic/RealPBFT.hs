@@ -1,4 +1,5 @@
 {-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE GADTs               #-}
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -25,6 +26,7 @@ import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Demo
 import           Ouroboros.Consensus.Ledger.Byron (ByronBlockOrEBB, ByronGiven)
 import           Ouroboros.Consensus.Node.ProtocolInfo
+import           Ouroboros.Consensus.Node.ProtocolInfo.Byron (plcCoreNodeId)
 import           Ouroboros.Consensus.NodeId
 import           Ouroboros.Consensus.Protocol
 import           Ouroboros.Consensus.Util.Random
@@ -42,12 +44,32 @@ import           Test.Dynamic.Util
 import           Test.Util.Orphans.Arbitrary ()
 
 tests :: TestTree
-tests = testGroup "Dynamic chain generation" [
-      testProperty "simple Real PBFT convergence" $
+tests = testGroup "Dynamic chain generation"
+    [ testProperty "check Real PBFT setup" $
+        \numCoreNodes ->
+          forAll (elements (enumCoreNodes numCoreNodes)) $ \coreNodeId ->
+          prop_setup_coreNodeId numCoreNodes coreNodeId
+    , testProperty "simple Real PBFT convergence" $
         prop_simple_real_pbft_convergence sp
     ]
   where
     sp = defaultSecurityParam
+
+prop_setup_coreNodeId ::
+     NumCoreNodes
+  -> CoreNodeId
+  -> Property
+prop_setup_coreNodeId numCoreNodes coreNodeId =
+    case mkProtocolRealPBFT numCoreNodes coreNodeId genesisConfig genesisSecrets of
+      ProtocolRealPBFT _cfg _th _pv _swv (Just plc) ->
+          coreNodeId === plcCoreNodeId plc
+      _ ->
+          counterexample "mkProtocolRealPBFT did not use ProtocolRealPBFT" $
+          property False
+  where
+    genesisConfig  :: Genesis.Config
+    genesisSecrets :: Genesis.GeneratedSecrets
+    (genesisConfig, genesisSecrets) = generateGenesisConfig numCoreNodes
 
 prop_simple_real_pbft_convergence :: SecurityParam
                                   -> NumCoreNodes

@@ -15,6 +15,8 @@ module Ouroboros.Consensus.Node.ProtocolInfo.Byron (
   , PBftLeaderCredentials
   , PBftLeaderCredentialsError
   , mkPBftLeaderCredentials
+    -- * For testing
+  , plcCoreNodeId
   ) where
 
 import           Control.Exception (Exception)
