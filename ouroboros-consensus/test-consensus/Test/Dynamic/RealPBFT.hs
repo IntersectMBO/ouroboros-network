@@ -128,12 +128,12 @@ mkProtocolRealPBFT (NumCoreNodes n) (CoreNodeId i)
       1.0 / (fromIntegral n + 1.0)
 
     dlgKey :: Crypto.SigningKey
-    dlgKey = Genesis.gsRichSecrets genesisSecrets !! i
+    dlgKey = fromJust $
+       find (\sec -> Delegation.delegateVK dlgCert == Crypto.toVerification sec)
+            $ Genesis.gsRichSecrets genesisSecrets
 
     dlgCert :: Delegation.Certificate
-    dlgCert = fromJust $
-      find (\crt -> Delegation.delegateVK crt == Crypto.toVerification dlgKey)
-           (Map.elems dlgMap)
+    dlgCert = snd $ Map.toAscList dlgMap !! i
 
     dlgMap :: Map Common.KeyHash Delegation.Certificate
     dlgMap = Genesis.unGenesisDelegation
