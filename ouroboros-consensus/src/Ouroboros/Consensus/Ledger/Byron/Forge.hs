@@ -5,6 +5,8 @@
 module Ouroboros.Consensus.Ledger.Byron.Forge (
     forgeBlock
   , forgeBlockOrEBB
+    -- * For testing purposes
+  , forgeGenesisEBB
   ) where
 
 import           Control.Monad (void)
@@ -50,22 +52,16 @@ forgeBlockOrEBB
   -> PBftIsLeader PBftCardanoCrypto    -- ^ Leader proof ('IsLeader')
   -> m (ByronBlockOrEBB ByronConfig)
 forgeBlockOrEBB cfg curSlot curNo prevHash txs isLeader = case prevHash of
-  GenesisHash -> forgeGenesisEBB cfg curSlot
+  GenesisHash -> return $ forgeGenesisEBB cfg curSlot
   BlockHash _ -> forgeBlock cfg curSlot curNo prevHash txs isLeader
 
 forgeGenesisEBB
-  :: forall m.
-     ( HasNodeState_ () m  -- @()@ is the @NodeState@ of PBFT
-     , MonadRandom m
-       -- TODO: This 'Given' constraint should not be needed (present in config)
-     , Given Crypto.ProtocolMagicId
-     )
+  :: Given Crypto.ProtocolMagicId
   => NodeConfig ByronEBBExtNodeConfig
   -> SlotNo
-  -> m (ByronBlockOrEBB ByronConfig)
-forgeGenesisEBB (WithEBBNodeConfig cfg) curSlot = do
-    return
-      . ByronBlockOrEBB
+  -> ByronBlockOrEBB ByronConfig
+forgeGenesisEBB (WithEBBNodeConfig cfg) curSlot =
+        ByronBlockOrEBB
       . CC.Block.ABOBBoundary
       . annotateBoundary given
       $ boundaryBlock
