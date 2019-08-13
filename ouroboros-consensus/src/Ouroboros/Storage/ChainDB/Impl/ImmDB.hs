@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns              #-}
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE LambdaCase                #-}
 {-# LANGUAGE PatternSynonyms           #-}
@@ -58,6 +59,7 @@ import           Control.Monad.Except
 import           Control.Tracer (Tracer, nullTracer)
 import           Data.Bifunctor (first)
 import qualified Data.ByteString.Lazy as Lazy
+import           Data.Functor ((<&>))
 import           Data.Proxy
 import           Data.Word
 import           GHC.Stack (HasCallStack)
@@ -601,7 +603,15 @@ epochFileParser ImmDbArgs{..} =
     -- It is important that we don't first parse all blocks, storing them all
     -- in memory, and only /then/ extract the information we need.
     decoder' :: forall s. Decoder s (SlotNo, Maybe (HeaderHash blk))
-    decoder' = (\b -> (blockSlot b, immIsEBB b)) <$> immDecodeBlock
+    decoder' = immDecodeBlock <&> \b ->
+      -- IMPORTANT: force the slot and the ebbHash, because otherwise we
+      -- return thunks that refer to the whole block! See
+      -- 'Ouroboros.Consensus.Util.CBOR.readIncrementalOffsets' where we need
+      -- to force the decoded value in order to force this computation.
+      let !slot = blockSlot b
+      in case immIsEBB b of
+           Nothing       -> (slot, Nothing)
+           Just !ebbHash -> (slot, Just ebbHash)
 
 -- | Verify that there is at most one EBB in the epoch file and that it
 -- lives at the start of the file

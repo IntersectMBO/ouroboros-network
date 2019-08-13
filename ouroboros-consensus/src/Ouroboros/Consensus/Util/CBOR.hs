@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -181,7 +182,13 @@ readIncrementalOffsets hasFS@HasFS{..} decoder fp = withLiftST $ \liftST ->
         dec' <- liftST $ k (checkEmpty bs)
         go liftST h offset deserialised Nothing fileSize dec'
 
-      CBOR.Done leftover size a -> do
+      CBOR.Done leftover size !a -> do
+        -- The bang on the @a@ here allows the used 'Decoder' to force its
+        -- computation. For example, the decoder might decode a whole block
+        -- and then (maybe through a use of 'fmap') just return its hash. If
+        -- we don't force the value it returned here, we're just putting a
+        -- thunk that references the whole block in the list instead of merely
+        -- the hash.
         let nextOffset    = offset + fromIntegral size
             deserialised' = (offset, (fromIntegral size, a)) : deserialised
         case checkEmpty leftover of
