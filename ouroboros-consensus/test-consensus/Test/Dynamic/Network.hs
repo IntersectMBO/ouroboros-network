@@ -27,6 +27,7 @@ import           Data.Foldable (traverse_)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Proxy (Proxy (..))
+import           GHC.Stack
 
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork (MonadFork)
@@ -60,8 +61,8 @@ import           Ouroboros.Consensus.NodeId
 import           Ouroboros.Consensus.NodeNetwork
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util.Orphans ()
+import           Ouroboros.Consensus.Util.ResourceRegistry
 import           Ouroboros.Consensus.Util.STM
-import           Ouroboros.Consensus.Util.ThreadRegistry
 
 import qualified Ouroboros.Storage.ChainDB as ChainDB
 import           Ouroboros.Storage.ChainDB.Impl (ChainDbArgs (..))
@@ -184,8 +185,9 @@ broadcastNetwork :: forall m blk.
                     , RunNode blk
                     , TxGen blk
                     , TracingConstraints blk
+                    , HasCallStack
                     )
-                 => ThreadRegistry m
+                 => ResourceRegistry m
                  -> TestBlockchainTime m
                  -> NumCoreNodes
                  -> (CoreNodeId -> ProtocolInfo blk)
@@ -218,15 +220,17 @@ broadcastNetwork registry testBtime numCoreNodes pInfo initRNG slotLen = do
 
     -- | Produce transactions every time the slot changes and submit them to
     -- the mempool.
-    txProducer :: NodeConfig (BlockProtocol blk)
+    txProducer :: HasCallStack
+               => ResourceRegistry m
+               -> NodeConfig (BlockProtocol blk)
                -> m ChaChaDRG
                   -- ^ How to get a DRG
                -> STM m (ExtLedgerState blk)
                   -- ^ How to get the current ledger state
                -> Mempool m blk TicketNo
                -> m ()
-    txProducer cfg produceDRG getExtLedger mempool =
-      onSlotChange btime $ \_curSlotNo -> do
+    txProducer registry' cfg produceDRG getExtLedger mempool =
+      onSlotChange btime registry' $ \_registry' _curSlotNo -> do
         drg <- produceDRG
         txs <- atomically $ do
           ledger <- ledgerState <$> getExtLedger
@@ -284,12 +288,13 @@ broadcastNetwork registry testBtime numCoreNodes pInfo initRNG slotLen = do
         , cdbGenesis          = return initLedger
         -- Misc
         , cdbTracer           = nullTracer
-        , cdbThreadRegistry   = registry
+        , cdbRegistry         = registry
         , cdbGcDelay          = 0
         }
 
     createAndConnectNode
-      :: NodeChans m NodeId blk
+      :: HasCallStack
+      => NodeChans m NodeId blk
       -> TVar m ChaChaDRG
       -> CoreNodeId
       -> m (NodeKernel m NodeId blk)
@@ -321,7 +326,7 @@ broadcastNetwork registry testBtime numCoreNodes pInfo initRNG slotLen = do
 
       let nodeParams = NodeParams
             { tracers            = nullTracers
-            , threadRegistry     = registry
+            , registry           = registry
             , maxClockSkew       = ClockSkew 1
             , cfg                = pInfoConfig
             , initState          = pInfoInitState
@@ -343,8 +348,9 @@ broadcastNetwork registry testBtime numCoreNodes pInfo initRNG slotLen = do
           ni :: NetworkInterface m NodeId
           ni = createNetworkInterface chans nodeIds us app
 
-      void $ forkLinked registry (niWithServerNode ni wait)
-      void $ forkLinked registry $ txProducer
+      void $ forkLinked         registry $ niWithServerNode ni wait
+      void $ forkLinkedTransfer registry $ \registry' -> txProducer
+        registry'
         pInfoConfig
         (produceDRG callbacks)
         (ChainDB.getCurrentLedger chainDB)
@@ -372,6 +378,7 @@ getTestOutput ::
     forall m blk.
        ( MonadSTM m
        , MonadMask m
+       , MonadFork m
        , HasHeader blk
        )
     => [( CoreNodeId

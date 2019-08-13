@@ -58,8 +58,8 @@ import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util
 import           Ouroboros.Consensus.Util.Orphans ()
 import           Ouroboros.Consensus.Util.Random
+import           Ouroboros.Consensus.Util.ResourceRegistry
 import           Ouroboros.Consensus.Util.STM
-import           Ouroboros.Consensus.Util.ThreadRegistry
 
 import           Ouroboros.Storage.ChainDB.API (ChainDB)
 import qualified Ouroboros.Storage.ChainDB.API as ChainDB
@@ -125,7 +125,7 @@ data NodeCallbacks m blk = NodeCallbacks {
 -- | Parameters required when initializing a node
 data NodeParams m peer blk = NodeParams {
       tracers            :: Tracers m peer blk
-    , threadRegistry     :: ThreadRegistry m
+    , registry           :: ResourceRegistry m
     , maxClockSkew       :: ClockSkew
     , cfg                :: NodeConfig (BlockProtocol blk)
     , initState          :: NodeState (BlockProtocol blk)
@@ -148,7 +148,7 @@ nodeKernel
        )
     => NodeParams m peer blk
     -> m (NodeKernel m peer blk)
-nodeKernel params@NodeParams { threadRegistry, cfg, tracers } = do
+nodeKernel params@NodeParams { registry, cfg, tracers } = do
     st <- initInternalState params
 
     forkBlockProduction st
@@ -158,7 +158,7 @@ nodeKernel params@NodeParams { threadRegistry, cfg, tracers } = do
 
     -- Run the block fetch logic in the background. This will call
     -- 'addFetchedBlock' whenever a new block is downloaded.
-    void $ forkLinked threadRegistry $ blockFetchLogic
+    void $ forkLinked registry $ blockFetchLogic
         (blockFetchDecisionTracer tracers)
         (blockFetchClientTracer   tracers)
         blockFetchInterface
@@ -180,7 +180,7 @@ nodeKernel params@NodeParams { threadRegistry, cfg, tracers } = do
 data InternalState m peer blk = IS {
       tracers             :: Tracers m peer blk
     , cfg                 :: NodeConfig (BlockProtocol blk)
-    , threadRegistry      :: ThreadRegistry m
+    , registry            :: ResourceRegistry m
     , btime               :: BlockchainTime m
     , callbacks           :: NodeCallbacks m blk
     , chainDB             :: ChainDB m blk
@@ -202,12 +202,12 @@ initInternalState
        )
     => NodeParams m peer blk
     -> m (InternalState m peer blk)
-initInternalState NodeParams { tracers, chainDB, threadRegistry, cfg,
+initInternalState NodeParams { tracers, chainDB, registry, cfg,
                                blockFetchSize, blockMatchesHeader, btime,
                                callbacks, initState } = do
     varCandidates  <- atomically $ newTVar mempty
     varState       <- atomically $ newTVar initState
-    mempool        <- openMempool threadRegistry
+    mempool        <- openMempool registry
                                   (chainDBLedgerInterface chainDB)
                                   (ledgerConfigView cfg)
                                   (mempoolTracer tracers)
@@ -288,7 +288,7 @@ forkBlockProduction
        )
     => InternalState m peer blk -> m ()
 forkBlockProduction IS{..} =
-    onSlotChange btime $ \currentSlot -> do
+    onSlotChange btime registry $ \_registry' currentSlot -> do
       drg  <- produceDRG
       -- See the docstring of 'withSyncState' for why we're using it instead
       -- of 'atomically'.

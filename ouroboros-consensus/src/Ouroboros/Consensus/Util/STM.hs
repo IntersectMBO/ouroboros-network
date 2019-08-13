@@ -6,6 +6,7 @@ module Ouroboros.Consensus.Util.STM (
     -- * Misc
     blockUntilChanged
   , onEachChange
+  , runWhenJust
   , blockUntilJust
   , blockUntilAllJust
   , Fingerprint (..)
@@ -25,6 +26,7 @@ import           Control.Monad.Writer
 
 import           Data.Void (Void)
 import           Data.Word (Word64)
+import           GHC.Stack
 
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork (MonadFork)
@@ -33,7 +35,7 @@ import           Control.Monad.Class.MonadThrow
 
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util.Random
-import           Ouroboros.Consensus.Util.ThreadRegistry
+import           Ouroboros.Consensus.Util.ResourceRegistry
 
 {-------------------------------------------------------------------------------
   Misc
@@ -49,30 +51,83 @@ blockUntilChanged f b getA = do
       then retry
       else return (a, b')
 
--- | Spawn a new thread that executes an action each time a 'TVar' changes.
-onEachChange :: forall m a b. (MonadAsync m, MonadMask m, MonadFork m, Eq b)
-             => ThreadRegistry m
+-- | Spawn a new thread that executes an action each time an STM value changes.
+--
+-- NOTE: STM does not guarantee that 'onEachChange' will /literally/ be called
+-- on /every/ change: when the system is under heavy load, some updates may
+-- be missed.
+--
+-- The life time of the child thread (the thread executing the action) is tied
+-- to the lifetime of the registry. Typically this registry is local to the
+-- parent thread (the thread calling 'onEachChange'), though if that parent
+-- thread was created using 'forkLinkedTransfer', the lifetime of the child
+-- thread will be tied to a (great) grandparent thread.
+--
+-- Moreover, the child thread is linked to the parent one, so that if the action
+-- throws an exception the parent thread is also killed.
+--
+-- The action is passed a registry which it can use to allocate resources that
+-- should survive past the end of each action. These resources will be cleaned
+-- up only when the parent thread terminates.
+--
+-- If the action creates resources that should only be alive during the action
+-- itself, it should create its own local registry using
+-- 'Ouroboros.Consensus.Util.ResourceRegistry.with'.
+onEachChange :: forall m a b. (
+                    MonadAsync m
+                  , MonadMask  m
+                  , MonadFork  m
+                  , Eq b
+                  , HasCallStack
+                  )
+             => ResourceRegistry m
              -> (a -> b)  -- ^ Obtain a fingerprint
              -> Maybe b   -- ^ Optional initial fingerprint, if 'Nothing', the
                           -- action is executed once immediately to obtain the
                           -- initial fingerprint.
              -> STM m a
-             -> (a -> m ())
+             -> (ResourceRegistry m -> a -> m ())
              -> m ()
 onEachChange registry f mbInitB getA notify = do
-    initB <- case mbInitB of
-      Just initB -> return initB
-      Nothing    -> do
-        a <- atomically getA
-        notify a
-        return $ f a
-    void $ forkLinked registry $ go initB
+    -- No point using 'forkLinked', since 'go' never terminates
+    void $ forkLinked registry $ with $ \registry' -> do
+      initB <- case mbInitB of
+        Just initB -> return initB
+        Nothing    -> do
+          a <- atomically getA
+          notify registry' a
+          return $ f a
+      go registry' initB
   where
-    go :: b -> m Void
-    go b = do
+    go :: ResourceRegistry m -> b -> m Void
+    go registry' b = do
       (a, b') <- atomically $ blockUntilChanged f b getA
-      notify a
-      go b'
+      notify registry' a
+      go registry' b'
+
+-- | Spawn a new thread that waits for an STM value to become 'Just'
+--
+-- The lifetime of the child thread (the one waiting for the STM value) is tied
+-- to the lifetime of the input ("parent") resource registry. The action is
+-- provided a "child" resource registry which it can use to allocate resources
+-- that should  survive past the lifetime of the action; such resources will be
+-- transferred the parent registry.
+--
+-- The child thread is linked to the parent one (the one calling 'runWhenJust'),
+-- so that if the child thread throws an exception, the parent thread is killed
+-- also.
+runWhenJust :: ( MonadMask  m
+               , MonadFork  m
+               , MonadAsync m
+               )
+            => ResourceRegistry m
+            -> STM m (Maybe a)
+            -> (ResourceRegistry m -> a -> m ())
+            -> m ()
+runWhenJust registry getMaybeA action =
+    void $ forkLinkedTransfer registry $ \registry' -> do
+      a <- atomically $ blockUntilJust getMaybeA
+      action registry' a
 
 blockUntilJust :: MonadSTM m => STM m (Maybe a) -> STM m a
 blockUntilJust getMaybeA = do

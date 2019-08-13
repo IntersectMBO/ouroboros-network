@@ -1,6 +1,7 @@
 {-# LANGUAGE TypeFamilies           #-}
 {-# LANGUAGE DefaultSignatures      #-}
 {-# LANGUAGE FlexibleContexts       #-}
+{-# LANGUAGE QuantifiedConstraints  #-}
 
 module Control.Monad.Class.MonadAsync
   ( MonadAsync (..)
@@ -15,7 +16,10 @@ import           Control.Exception (SomeException)
 import qualified Control.Concurrent.Async as Async
 import           Control.Concurrent.Async (AsyncCancelled(..))
 
-class MonadSTM m => MonadAsync m where
+class ( MonadSTM m
+      , forall a. Eq  (Async m a)
+      , forall a. Ord (Async m a)
+      ) => MonadAsync m where
 
   {-# MINIMAL async, cancel, cancelWith, waitCatchSTM, pollSTM #-}
 

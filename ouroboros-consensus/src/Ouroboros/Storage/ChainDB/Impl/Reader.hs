@@ -20,6 +20,7 @@ import qualified Data.Map.Strict as Map
 import           Data.Maybe (isJust)
 import           GHC.Stack (HasCallStack)
 
+import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
 
@@ -89,6 +90,7 @@ newReader
   :: forall m blk.
      ( MonadSTM  m
      , MonadMask m
+     , MonadFork m
      , MonadThrow (STM m)
      , HasHeader blk
      , HasHeader (Header blk)
@@ -128,6 +130,7 @@ newHeaderReader
   :: forall m blk.
      ( MonadSTM  m
      , MonadMask m
+     , MonadFork m
      , MonadThrow (STM m)
      , GetHeader blk
      , HasHeader blk
@@ -155,6 +158,7 @@ newBlockReader
   :: forall m blk.
      ( MonadSTM  m
      , MonadMask m
+     , MonadFork m
      , MonadThrow (STM m)
      , HasHeader blk
      , HasHeader (Header blk)
@@ -184,6 +188,7 @@ makeNewBlockOrHeaderReader
   :: forall m blk.
      ( MonadSTM  m
      , MonadMask m
+     , MonadFork m
      , MonadThrow (STM m)
      , HasHeader blk
      , HasHeader (Header blk)
@@ -259,6 +264,7 @@ instructionHelper
   :: forall m blk r.
      ( MonadSTM  m
      , MonadMask m
+     , MonadFork m
      , HasHeader blk
      , HasHeader (Header blk)
      )
@@ -406,6 +412,7 @@ forward
   :: forall m blk.
      ( MonadSTM  m
      , MonadMask m
+     , MonadFork m
      , HasHeader blk
      , HasHeader (Header blk)
      , HasCallStack

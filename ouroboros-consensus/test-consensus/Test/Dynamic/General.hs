@@ -27,7 +27,7 @@ import           Ouroboros.Consensus.Protocol.Abstract (SecurityParam (..))
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Orphans ()
 import           Ouroboros.Consensus.Util.Random
-import           Ouroboros.Consensus.Util.ThreadRegistry
+import qualified Ouroboros.Consensus.Util.ResourceRegistry as ResourceRegistry
 
 import           Test.Dynamic.Network
 import           Test.Dynamic.TxGen
@@ -53,7 +53,7 @@ runTestNetwork ::
   -> TestOutput blk
 runTestNetwork pInfo numCoreNodes numSlots seed =
     runSimOrThrow $
-        withThreadRegistry $ \registry -> do
+        ResourceRegistry.with $ \registry -> do
             testBtime <- newTestBlockchainTime registry numSlots slotLen
             broadcastNetwork
                 registry

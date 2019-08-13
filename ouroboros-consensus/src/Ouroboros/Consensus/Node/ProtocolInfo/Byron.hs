@@ -15,6 +15,8 @@ module Ouroboros.Consensus.Node.ProtocolInfo.Byron (
   , PBftLeaderCredentials
   , PBftLeaderCredentialsError
   , mkPBftLeaderCredentials
+    -- * For testing
+  , plcCoreNodeId
   ) where
 
 import           Control.Exception (Exception)
@@ -51,7 +53,7 @@ import qualified Test.Cardano.Chain.Genesis.Dummy as Dummy
 data PBftLeaderCredentials = PBftLeaderCredentials {
       plcSignKey     :: Crypto.SigningKey
     , plcDlgCert     :: Delegation.Certificate
-    , plcCodeNodeId  :: CoreNodeId
+    , plcCoreNodeId  :: CoreNodeId
     } deriving Show
 
 -- | Make the 'PBftLeaderCredentials', with a couple sanity checks:
@@ -76,7 +78,7 @@ mkPBftLeaderCredentials gc sk cert = do
     return PBftLeaderCredentials {
       plcSignKey     = sk
     , plcDlgCert     = cert
-    , plcCodeNodeId  = nid
+    , plcCoreNodeId  = nid
     }
   where
     (?!) :: Maybe a -> e -> Either e a

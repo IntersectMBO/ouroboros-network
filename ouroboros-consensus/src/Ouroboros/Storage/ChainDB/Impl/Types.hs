@@ -57,8 +57,8 @@ import           Ouroboros.Consensus.Block (BlockProtocol, Header)
 import           Ouroboros.Consensus.Ledger.Abstract (ProtocolLedgerView)
 import           Ouroboros.Consensus.Ledger.Extended (ExtValidationError)
 import           Ouroboros.Consensus.Protocol.Abstract (NodeConfig)
+import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
 import           Ouroboros.Consensus.Util.STM (Fingerprint)
-import           Ouroboros.Consensus.Util.ThreadRegistry (ThreadRegistry)
 
 import           Ouroboros.Storage.Common (EpochNo)
 import           Ouroboros.Storage.EpochInfo (EpochInfo)
@@ -216,8 +216,8 @@ data ChainDbEnv m blk = CDB
     -- Note that 'copyToImmDB' can still be executed concurrently with all
     -- others functions, just not with itself.
   , cdbTracer         :: Tracer m (TraceEvent blk)
-  , cdbThreadRegistry :: ThreadRegistry m
-    -- ^ Thread registry that will be used to (re)start the background
+  , cdbRegistry       :: ResourceRegistry m
+    -- ^ Resource registry that will be used to (re)start the background
     -- threads, see 'cdbBgThreads'.
   , cdbGcDelay        :: DiffTime
     -- ^ How long to wait between copying a block from the VolatileDB to

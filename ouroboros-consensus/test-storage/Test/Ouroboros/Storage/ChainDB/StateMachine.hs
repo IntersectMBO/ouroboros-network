@@ -83,9 +83,6 @@ import           Ouroboros.Consensus.Util.Condense (condense)
 import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
 import qualified Ouroboros.Consensus.Util.ResourceRegistry as ResourceRegistry
 import           Ouroboros.Consensus.Util.STM (Fingerprint (..))
-import           Ouroboros.Consensus.Util.ThreadRegistry (ThreadRegistry,
-                     withThreadRegistry)
-import qualified Ouroboros.Consensus.Util.ThreadRegistry as ThreadRegistry
 
 import           Ouroboros.Storage.ChainDB
 import qualified Ouroboros.Storage.ChainDB as ChainDB
@@ -1035,16 +1032,16 @@ prop_sequential = forAllCommands smUnused Nothing $ \cmds -> QC.monadicIO $ do
             , Property
             )
     test cmds = do
-      resourceRegistry   <- QC.run ResourceRegistry.new
+      threadRegistry     <- QC.run ResourceRegistry.new
+      iteratorRegistry   <- QC.run ResourceRegistry.new
       (tracer, getTrace) <- QC.run recordingTracerIORef
-      threadRegistry     <- QC.run $ atomically ThreadRegistry.new
       fsVars             <- QC.run $ atomically $ (,,)
         <$> newTVar Mock.empty
         <*> newTVar Mock.empty
         <*> newTVar Mock.empty
       let args = mkArgs testCfg testInitLedger tracer threadRegistry fsVars
       (db, internal)     <- QC.run $ openDBInternal args False
-      let sm' = sm db internal resourceRegistry genBlk testCfg testInitLedger
+      let sm' = sm db internal iteratorRegistry genBlk testCfg testInitLedger
       (hist, model, res) <- runCommands sm' cmds
       (realChain, realChain', trace, fses, remainingCleanups) <- QC.run $ do
         trace <- getTrace
@@ -1060,17 +1057,18 @@ prop_sequential = forAllCommands smUnused Nothing $ \cmds -> QC.monadicIO $ do
         realChain' <- toChain db'
         closeDB db'
 
-        ThreadRegistry.cancelAll threadRegistry
+        ResourceRegistry.close threadRegistry
 
-        -- closeDB should have closed all open Readers and Iterators, freeing
-        -- up all resources, so there should be no more clean-up actions left.
+        -- 'closeDB' should have closed all open 'Reader's and 'Iterator's,
+        -- freeing up all resources, so there should be no more clean-up
+        -- actions left.
         --
         -- Note that this is only true because we're not simulating exceptions
         -- (yet), in which case there /will be/ clean-up actions left. This is
         -- exactly the reason for introducing the 'ResourceRegistry' in the
         -- first place: to clean up resources in case exceptions get thrown.
-        remainingCleanups <- ResourceRegistry.nbCleanups resourceRegistry
-        ResourceRegistry.close resourceRegistry
+        remainingCleanups <- ResourceRegistry.nbCleanups iteratorRegistry
+        ResourceRegistry.close iteratorRegistry
 
         -- Read the final MockFS of each database
         let (immDbFsVar, volDbFsVar, lgrDbFsVar) = fsVars
@@ -1158,7 +1156,7 @@ mkArgs :: (MonadSTM m, MonadCatch m, MonadThrow (STM m))
        => NodeConfig (BlockProtocol Blk)
        -> ExtLedgerState Blk
        -> Tracer m (TraceEvent Blk)
-       -> ThreadRegistry m
+       -> ResourceRegistry m
        -> (TVar m MockFS, TVar m MockFS, TVar m MockFS)
           -- ^ ImmutableDB, VolatileDB, LedgerDB
        -> ChainDbArgs m Blk
@@ -1200,7 +1198,7 @@ mkArgs cfg initLedger tracer registry
 
     -- Misc
     , cdbTracer           = tracer
-    , cdbThreadRegistry   = registry
+    , cdbRegistry         = registry
     , cdbGcDelay          = 0
     }
 
@@ -1222,8 +1220,7 @@ _mkBlk h = TestBlock
 
 -- | Debugging utility: run some commands against the real implementation.
 _runCmds :: [Cmd Blk IteratorId ReaderId] -> IO [Resp Blk IteratorId ReaderId]
-_runCmds cmds = withThreadRegistry $ \threadRegistry ->
-                ResourceRegistry.with $ \resourceRegistry -> do
+_runCmds cmds = ResourceRegistry.with $ \registry -> do
     fsVars <- atomically $ (,,)
       <$> newTVar Mock.empty
       <*> newTVar Mock.empty
@@ -1232,10 +1229,10 @@ _runCmds cmds = withThreadRegistry $ \threadRegistry ->
           testCfg
           testInitLedger
           (showTracing stdoutTracer)
-          threadRegistry
+          registry
           fsVars
     (db, internal) <- openDBInternal args False
-    evalStateT (mapM (go db internal resourceRegistry) cmds) emptyRunCmdState
+    evalStateT (mapM (go db internal registry) cmds) emptyRunCmdState
   where
     go :: ChainDB IO Blk -> ChainDB.Internal IO Blk
        -> ResourceRegistry IO

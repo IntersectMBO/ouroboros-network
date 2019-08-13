@@ -164,10 +164,10 @@ openDBInternal args launchBgTasks = do
                   , cdbNextReaderId   = varNextReaderId
                   , cdbCopyLock       = varCopyLock
                   , cdbTracer         = tracer
-                  , cdbThreadRegistry = Args.cdbThreadRegistry args
-                  , cdbGcDelay        = Args.cdbGcDelay        args
+                  , cdbRegistry       = Args.cdbRegistry args
+                  , cdbGcDelay        = Args.cdbGcDelay args
                   , cdbBgThreads      = varBgThreads
-                  , cdbEpochInfo      = Args.cdbEpochInfo      args
+                  , cdbEpochInfo      = Args.cdbEpochInfo args
                   }
     h <- fmap CDBHandle $ atomically $ newTVar $ ChainDbOpen env
     let chainDB = ChainDB
