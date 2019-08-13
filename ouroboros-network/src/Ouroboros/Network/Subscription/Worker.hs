@@ -9,7 +9,9 @@
 {-# LANGUAGE StandaloneDeriving  #-}
 
 module Ouroboros.Network.Subscription.Worker
-  ( CompleteApplication
+  ( SocketStateChange
+  , SocketState (..)
+  , CompleteApplication
   , Result (..)
   , Main
   , StateVar
@@ -133,6 +135,16 @@ type StateVar m s = TVar m s
 --
 type ThreadsVar m = TVar m (Set (Async m ()))
 
+
+data SocketState m addr
+   = CreatedSocket !addr !(Async m ())
+   | ClosedSocket  !addr !(Async m ())
+
+-- | Callback which firest: when we create or close a socket.
+--
+-- Note: this callback runs with async exceptions masked.
+--
+type SocketStateChange m s addr = SocketState m addr -> s -> STM m s
 
 -- | Complete a connection, which receive application result (or exception).
 --
@@ -259,6 +271,7 @@ subscriptionLoop
     -> ThreadsVar          m
 
     -> Socket              m   addr sock
+    -> SocketStateChange   m s addr
     -> CompleteApplication m s addr a
     -- ^ callback which fires when either 'connect' fails or the application
     -- returns.
@@ -278,7 +291,9 @@ subscriptionLoop
     -- ^ application
     -> m Void
 subscriptionLoop
-      tr tbl resQ sVar threadsVar socket completeApplicationTx
+      tr tbl resQ sVar threadsVar socket
+      socketStateChangeTx
+      completeApplicationTx
       mbLocalIPv4 mbLocalIPv6 selectAddr connectionAttemptDelay
       getTargets valency k = do
     valencyVar <- atomically $ newValencyCounter tbl valency
@@ -388,11 +403,17 @@ subscriptionLoop
                       localAddr
                       (atomically $ do
                         modifyTVar' conThreads (Set.insert thread)
-                        modifyTVar' threadsVar (Set.insert thread))
-                      (atomically $
+                        modifyTVar' threadsVar (Set.insert thread)
+                        readTVar sVar
+                          >>= socketStateChangeTx (CreatedSocket remoteAddr thread)
+                          >>= (writeTVar sVar $!))
+                      (atomically $ do
                         -- The thread is removed from 'conThreads'
                         -- inside 'connAction'.
-                        modifyTVar' threadsVar (Set.delete thread))
+                        modifyTVar' threadsVar (Set.delete thread)
+                        readTVar sVar
+                          >>= socketStateChangeTx (ClosedSocket remoteAddr thread)
+                          >>= (writeTVar sVar $!))
                       (connAction
                         thread conThreads valencyVar
                         remoteAddr)
@@ -542,6 +563,7 @@ worker
     -> Socket              IO   addr sock
 
     -- callbacks
+    -> SocketStateChange   IO s addr
     -> CompleteApplication IO s addr a
     -> Main                IO s      t
 
@@ -562,6 +584,7 @@ worker
     -- ^ application
     -> IO t
 worker tr tbl sVar socket
+       socketStateChangeTx
        completeApplicationTx mainTx
        mbLocalIPv4 mbLocalIPv6 selectAddr
        connectionAttemptDelay getTargets valency k = do
@@ -569,6 +592,7 @@ worker tr tbl sVar socket
     threadsVar <- atomically $ newTVar Set.empty
     withAsync
       (subscriptionLoop tr tbl resQ sVar threadsVar socket
+         socketStateChangeTx
          completeApplicationTx
          mbLocalIPv4 mbLocalIPv6 selectAddr connectionAttemptDelay
          getTargets valency k) $ \_ ->

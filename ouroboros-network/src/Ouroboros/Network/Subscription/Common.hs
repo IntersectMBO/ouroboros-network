@@ -68,6 +68,7 @@ ipSubscriptionWorker tracer tbl localIPv4 localIPv6 connectionAttemptDelay ips m
             tbl
             sVar
             ioSocket
+            (\_ s -> pure s)
             (\_ s -> pure (s, pure ()))
             main
             localIPv4
@@ -90,6 +91,7 @@ subscriptionWorker
 
     -> Socket IO Socket.SockAddr Socket.Socket
     -- callbacks
+    -> SocketStateChange   IO s Socket.SockAddr
     -> CompleteApplication IO s Socket.SockAddr a
     -- ^ complete connection callback
     -> Main IO s t
@@ -109,10 +111,12 @@ subscriptionWorker
     -> IO t
 subscriptionWorker
   tr tbl sVar socket
+  socketStateChangeTx
   completeApplicationTx mainTx
   mbLocalIPv4 mbLocalIPv6
   connectionAttemptDelay getTargets valency k =
     worker tr tbl sVar socket
+           socketStateChangeTx
            completeApplicationTx mainTx
            mbLocalIPv4 mbLocalIPv6
            selectAddr connectionAttemptDelay

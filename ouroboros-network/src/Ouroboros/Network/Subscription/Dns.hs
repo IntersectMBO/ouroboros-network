@@ -208,6 +208,7 @@ dnsSubscriptionWorker' tbl subTracer dnsTracer resolver localIPv4 localIPv6
                        tbl
                        statesVar
                        ioSocket
+                       (\_ s -> pure s)
                        (\_ s -> pure (s, pure ()))
                        main
                        localIPv4
