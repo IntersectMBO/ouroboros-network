@@ -19,6 +19,7 @@ import           Ouroboros.Network.Block (BlockNo, ChainHash (..), HeaderHash,
 import           Ouroboros.Network.BlockFetch (SizeInBytes)
 
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.BlockchainTime (SystemStart)
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Byron
 import           Ouroboros.Consensus.Mempool
@@ -42,6 +43,10 @@ class (ProtocolLedgerView blk, ApplyTx blk) => RunNode blk where
   nodeIsEBB              :: blk -> Bool
   nodeEpochSize          :: Monad m
                          => Proxy blk  -> EpochNo -> m EpochSize
+  nodeStartTime          :: Proxy blk
+                         -> NodeConfig (BlockProtocol blk)
+                         -> SystemStart
+
 
   -- Encoders
   nodeEncodeBlock        :: NodeConfig (BlockProtocol blk) -> blk -> Encoding

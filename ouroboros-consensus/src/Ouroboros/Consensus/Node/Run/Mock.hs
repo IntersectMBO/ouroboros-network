@@ -6,9 +6,12 @@
 module Ouroboros.Consensus.Node.Run.Mock () where
 
 import           Codec.Serialise (Serialise, decode, encode)
+import           Data.Time.Calendar (fromGregorian)
+import           Data.Time.Clock (UTCTime (..))
 import           Data.Typeable (Typeable)
 
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.BlockchainTime (SystemStart (..))
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Mock
 import           Ouroboros.Consensus.Node.Run.Abstract
@@ -37,6 +40,10 @@ instance ( ProtocolLedgerView (SimpleBlock SimpleMockCrypto ext)
   nodeBlockFetchSize     = fromIntegral . simpleBlockSize . simpleHeaderStd
   nodeIsEBB              = const False
   nodeEpochSize          = \_ _ -> return 21600
+  nodeStartTime          = \_ _ -> SystemStart dummyDate
+    where
+      --  This doesn't matter much
+      dummyDate = UTCTime (fromGregorian 2019 8 13) 0
 
   nodeEncodeBlock        = const encode
   nodeEncodeHeader       = const encode
