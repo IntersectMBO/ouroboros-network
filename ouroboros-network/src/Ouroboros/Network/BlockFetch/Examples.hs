@@ -196,7 +196,7 @@ runFetchClient tracer registry peerid channel client =
       runPipelinedPeer tracer codec peerid channel $
         client clientCtx
   where
-    codec = codecBlockFetch encode encode decode decode
+    codec = codecBlockFetch encode (fmap const decode) encode decode
 
 runFetchServer :: (MonadThrow m, MonadST m,
                    Serialise block,
@@ -210,7 +210,7 @@ runFetchServer tracer peerid channel server =
     runPeer tracer codec peerid channel $
       blockFetchServerPeer server
   where
-    codec = codecBlockFetch encode encode decode decode
+    codec = codecBlockFetch encode (fmap const decode) encode decode
 
 runFetchClientAndServerAsync
                :: (MonadCatch m, MonadAsync m, MonadFork m, MonadTimer m,

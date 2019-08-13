@@ -266,7 +266,7 @@ prop_channel createChannels chain points = do
     (bodies, ()) <-
       runConnectedPeers
         createChannels nullTracer
-        (codecBlockFetch S.encode S.encode S.decode S.decode)
+        codec
         "client" "server"
         (blockFetchClientPeer (testClient chain points))
         (blockFetchServerPeer (testServer chain))
@@ -298,6 +298,13 @@ prop_pipe_IO (TestChainAndPoints chain points) =
 -- Codec properties
 --
 
+codec :: MonadST m
+      => Codec (BlockFetch Block)
+               S.DeserialiseFailure
+               m ByteString
+codec = codecBlockFetch S.encode (fmap const S.decode)
+                        S.encode             S.decode
+
 instance Arbitrary (AnyMessageAndAgency (BlockFetch Block)) where
   arbitrary = oneof
     [ AnyMessageAndAgency (ClientAgency TokIdle) <$>
@@ -327,19 +334,19 @@ prop_codec_BlockFetch
   :: AnyMessageAndAgency (BlockFetch Block)
   -> Bool
 prop_codec_BlockFetch msg =
-  runST (prop_codecM (codecBlockFetch S.encode S.encode S.decode S.decode) msg)
+  runST (prop_codecM codec msg)
 
 prop_codec_splits2_BlockFetch
   :: AnyMessageAndAgency (BlockFetch Block)
   -> Bool
 prop_codec_splits2_BlockFetch msg =
-  runST (prop_codec_splitsM splits2 (codecBlockFetch S.encode S.encode S.decode S.decode) msg)
+  runST (prop_codec_splitsM splits2 codec msg)
 
 prop_codec_splits3_BlockFetch
   :: AnyMessageAndAgency (BlockFetch Block)
   -> Bool
 prop_codec_splits3_BlockFetch msg =
-  runST (prop_codec_splitsM splits3 (codecBlockFetch S.encode S.encode S.decode S.decode) msg)
+  runST (prop_codec_splitsM splits3 codec msg)
 
 
 --
