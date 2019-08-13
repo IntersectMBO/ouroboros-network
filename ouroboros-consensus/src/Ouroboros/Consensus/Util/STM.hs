@@ -119,6 +119,7 @@ onEachChange registry f mbInitB getA notify = do
 runWhenJust :: ( MonadMask  m
                , MonadFork  m
                , MonadAsync m
+               , HasCallStack
                )
             => ResourceRegistry m
             -> STM m (Maybe a)

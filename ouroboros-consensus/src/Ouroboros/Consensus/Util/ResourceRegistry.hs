@@ -1,4 +1,6 @@
 {-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE FlexibleContexts          #-}
+{-# LANGUAGE LambdaCase                #-}
 {-# LANGUAGE NamedFieldPuns            #-}
 {-# LANGUAGE ScopedTypeVariables       #-}
 {-# LANGUAGE StandaloneDeriving        #-}
@@ -41,7 +43,7 @@ import           Control.Monad.Class.MonadThrow hiding (handle)
 
 -- | A registry of resources with clean-up actions associated to them.
 data ResourceRegistry m = ResourceRegistry
-  { _registered   :: !(TVar m (Map ResourceKey (m ())))
+  { _registered   :: !(TVar m (CleanUps m))
     -- ^ The registered clean-up actions
   , _nextKey      :: !(TVar m Int)
     -- ^ The next value to use for the 'ResourceKey' of the next clean-up
@@ -61,6 +63,38 @@ data ResourceRegistry m = ResourceRegistry
 newtype ResourceKey = ResourceKey [Int]
   deriving (Show, Eq, Ord)
 
+-- | A collection of clean-up actions
+--
+-- A tombstone indicates that this registry has been closed or is currently in
+-- the process of closing.
+--
+data CleanUps m
+  = CleanUps !(Map ResourceKey (m ()))
+  | Tombstone !CallStack
+    -- ^ stack of the 'close' call
+
+-- | Not exported
+unexpectedTombstone ::
+     ( Show (ThreadId m)
+     , HasCallStack
+     )
+  => String
+     -- ^ message prefix
+  -> CreationInfo m
+  -> CallStack
+     -- ^ stack of the attempt to use the closed registry
+  -> a
+unexpectedTombstone
+  header CreationInfo{ _creationThreadId, _creationCallStack } stk = error $
+    header <> "\n" <>
+    "Created by:" <> "\n" <>
+    show _creationThreadId <> "\n" <>
+    prettyCallStack _creationCallStack <> "\n" <>
+    "\n" <> "Closed by:" <> "\n" <>
+    prettyCallStack stk <>
+    "\n" <> "Used-after-close by:" <> "\n" <>
+    prettyCallStack callStack
+
 -- | Allocate a resource and register the corresponding clean-up action so
 -- that it will be run when the 'ResourceRegistry' is closed.
 --
@@ -78,10 +112,13 @@ allocate ResourceRegistry { _registered, _nextKey, _creationInfo, _suffix }
     mask $ \restore -> do
       key      <- atomically $ updateTVar' _nextKey $ \k -> (succ k, mkKey k)
       resource <- restore $ create key
-      atomically $ modifyTVar' _registered $ Map.insertWith
-        (error $ "bug: key already registered: " <> show key)
-        key
-        (cleanup resource)
+      atomically $ modifyTVar' _registered $ \case
+        Tombstone stk -> unexpectedTombstone "late allocate" _creationInfo stk
+        CleanUps m -> CleanUps $ Map.insertWith
+          (error $ "bug: key already registered: " <> show key)
+          key
+          (cleanup resource)
+          m
       return (key, resource)
   where
     mkKey :: Int -> ResourceKey
@@ -92,12 +129,13 @@ allocate ResourceRegistry { _registered, _nextKey, _creationInfo, _suffix }
 -- Idempotent: noop when the clean-up action has already been unregistered.
 --
 -- Any exception thrown by the clean-up action is propagated.
-release :: forall m. (MonadSTM m, MonadFork m, MonadThrow m)
+release :: forall m. (MonadSTM m, MonadFork m, MonadThrow m, HasCallStack)
         => ResourceRegistry m -> ResourceKey -> m ()
 release ResourceRegistry { _registered, _creationInfo } key = do
     checkThreadId _creationInfo
-    mbCleanup <- atomically $ updateTVar' _registered $
-      swap . Map.updateLookupWithKey (\_ _ -> Nothing) key
+    mbCleanup <- atomically $ updateTVar' _registered $ \case
+      Tombstone stk -> unexpectedTombstone "late release" _creationInfo stk
+      CleanUps m -> swap $ fmap CleanUps $ Map.updateLookupWithKey (\_ _ -> Nothing) key m
     sequence_ mbCleanup
 
 -- | Create new resource registry.
@@ -105,7 +143,7 @@ new :: (MonadSTM m, MonadFork m, HasCallStack) => m (ResourceRegistry m)
 new = do
     _creationInfo <- mkCreationInfo
     atomically $ do
-      _registered <- newTVar Map.empty
+      _registered <- newTVar (CleanUps Map.empty)
       _nextKey    <- newTVar 1
       return ResourceRegistry {
           _registered
@@ -124,19 +162,19 @@ new = do
 --
 -- After closing a 'ResourceRegistry', it should no longer be used. This means
 -- that a 'ResourceRegistry' can only be closed once.
-close :: (MonadSTM m, MonadMask m, MonadFork m) => ResourceRegistry m -> m ()
+close :: (MonadSTM m, MonadMask m, MonadFork m, HasCallStack) => ResourceRegistry m -> m ()
 close ResourceRegistry { _registered, _creationInfo } = do
     checkThreadId _creationInfo
     cleanups <- atomically $ do
-      cleanups <- Map.elems <$> readTVar _registered
-      writeTVar _registered $ error msg
+      cleanups <- readTVar _registered >>= \case
+        Tombstone stk -> unexpectedTombstone "late close" _creationInfo stk
+        CleanUps m -> pure (Map.elems m)
+      writeTVar _registered $ Tombstone callStack
       return cleanups
     mbEx <- fmap firstJust $ mask_ $ forM cleanups $ \cleanup ->
       either (\(e :: SomeException) -> Just e) (const Nothing) <$> try cleanup
     mapM_ throwM mbEx
   where
-    msg = "ResourceRegistry used after closing"
-
     firstJust :: forall a. [Maybe a] -> Maybe a
     firstJust = listToMaybe . catMaybes
 
@@ -236,6 +274,7 @@ forkLinkedTransfer :: forall m a.
                        , MonadMask  m
                        , MonadFork  m
                        , MonadAsync m
+                       , HasCallStack
                        )
                     => ResourceRegistry m
                     -> (ResourceRegistry m -> m a)
@@ -247,8 +286,16 @@ forkLinkedTransfer parent action = do
   where
     transferFrom :: ResourceRegistry m -> m ()
     transferFrom child = atomically $ do
-        rs <- updateTVar' (_registered child) $ \rs -> (Map.empty, rs)
-        modifyTVar' (_registered parent) $ \rs' -> Map.union rs' rs
+        rs <- readTVar (_registered child) >>= \case
+          Tombstone stk ->
+            unexpectedTombstone "late forkLinkedTransfer"
+              (_creationInfo child) stk
+          CleanUps rs -> pure rs
+        readTVar (_registered parent) >>= \case
+          Tombstone{} -> pure ()   -- abort, let the child run its own cleanups
+          CleanUps rs' -> do
+            writeTVar (_registered child)  $! CleanUps $ Map.empty
+            writeTVar (_registered parent) $! CleanUps $ Map.union rs' rs
 
 {-------------------------------------------------------------------------------
   For testing purposes
@@ -260,7 +307,9 @@ forkLinkedTransfer parent action = do
 -- Useful for testing purposes.
 nbCleanups :: MonadSTM m => ResourceRegistry m -> m Int
 nbCleanups ResourceRegistry { _registered } = atomically $
-    Map.size <$> readTVar _registered
+    readTVar _registered >>= pure . \case
+        Tombstone{} -> 0
+        CleanUps m -> Map.size m
 
 {-------------------------------------------------------------------------------
   Internal: thread safety
