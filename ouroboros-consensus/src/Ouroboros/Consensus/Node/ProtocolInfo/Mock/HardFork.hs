@@ -2,6 +2,7 @@
 
 module Ouroboros.Consensus.Node.ProtocolInfo.Mock.HardFork (
     protocolInfoMockHardFork
+  , SimpleForkedBlock
   ) where
 
 import           Ouroboros.Consensus.Ledger.Extended
@@ -15,16 +16,17 @@ import           Ouroboros.Consensus.Protocol.HardFork
 import           Ouroboros.Consensus.Protocol.PBFT hiding (pbftParams)
 import           Ouroboros.Consensus.Protocol.Praos hiding (praosParams)
 
+type SimpleForkedBlock
+  = Forked
+      (SimplePBftBlock SimpleMockCrypto PBftMockCrypto)
+      (SimplePraosBlock SimpleMockCrypto PraosMockCrypto)
+
 protocolInfoMockHardFork
   :: NumCoreNodes
   -> CoreNodeId
   -> PBftParams
   -> PraosParams
-  -> ProtocolInfo
-       ( Forked
-           (SimplePBftBlock SimpleMockCrypto PBftMockCrypto)
-           (SimplePraosBlock SimpleMockCrypto PraosMockCrypto)
-       )
+  -> ProtocolInfo SimpleForkedBlock
 protocolInfoMockHardFork numCoreNodes nid pbftParams praosParams =
   ProtocolInfo
     { pInfoConfig = ForkedNodeConfig

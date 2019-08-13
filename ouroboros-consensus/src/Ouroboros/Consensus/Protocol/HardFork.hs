@@ -27,6 +27,7 @@ module Ouroboros.Consensus.Protocol.HardFork (
   , AfterMaybeT (..)
   , runAfterMaybeT
   , AfterForkChainState (..)
+  , decodeAfterForkChainState
   , encodeAfterForkChainState
   , HardForksTo
   , NodeConfig (..)
@@ -42,7 +43,9 @@ import           Data.Kind (Type)
 import           Data.Maybe (fromJust, isJust)
 import           GHC.Stack (HasCallStack)
 
-import           Cardano.Binary (Encoding, ToCBOR (..), encodeListLen)
+import           Cardano.Binary (Decoder, Encoding, FromCBOR (..), ToCBOR (..),
+                                 decodeListLenOf, encodeListLen, fromCBORMaybe,
+                                 toCBORMaybe)
 
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import           Ouroboros.Network.Block (HasHeader (..), SlotNo (..))
@@ -213,11 +216,22 @@ encodeAfterForkChainState
   -> (ChainState p2 -> Encoding)
   -> AfterForkChainState p1 p2
   -> Encoding
-encodeAfterForkChainState _encodeBeforeFork encodeAfterFork chainState =
+encodeAfterForkChainState encodeBeforeFork encodeAfterFork chainState =
   encodeListLen 3 <>
     toCBOR (forkSlotNo chainState) <>
-    undefined <>
+    toCBORMaybe encodeBeforeFork (snapshotAtFork chainState) <>
     encodeAfterFork (afterForkChainState chainState)
+
+decodeAfterForkChainState
+  :: Decoder s (ChainState p1)
+  -> Decoder s (ChainState p2)
+  -> Decoder s (AfterForkChainState p1 p2)
+decodeAfterForkChainState decodeBeforeFork decodeAfterFork = do
+  decodeListLenOf 3
+  AfterForkChainState <$>
+    fromCBOR <*>
+    fromCBORMaybe decodeBeforeFork <*>
+    decodeAfterFork
 
 
 data ForkedValidationErr p1 p2
@@ -282,7 +296,7 @@ instance CanHardFork p1 p2 => OuroborosTag (p1 `HardForksTo` p2) where
             slotNo
             (AfterFork $ translateLedgerViewForHardFork @p1 @p2 ledgerView)
             ( AfterFork $ AfterForkChainState
-              { forkSlotNo = fromJust hardForkSlot -- TODO: Remove fromJust?
+              { forkSlotNo = fromJust hardForkSlot
               , snapshotAtFork = Just chainState
               , afterForkChainState = translateChainStateForHardFork @p1 @p2 chainState
               }
@@ -351,8 +365,15 @@ instance CanHardFork p1 p2 => OuroborosTag (p1 `HardForksTo` p2) where
         return . AfterFork $ chainState { afterForkChainState = chainState' }
       (BeforeFork _ledgerView, BeforeFork _, AfterFork _chainState) ->
         throwE StateMismatch
-      (BeforeFork _ledgerView, AfterFork _header, _) ->
-        throwE NewHeaderBeforeFork
+      -- We might actually be forking here, so translate ledger view and move on
+      -- TODO: Check we really should be forking here
+      (BeforeFork ledgerView, AfterFork _header, _) ->
+        applyChainState
+          nodeConfig
+          (AfterFork $ translateLedgerViewForHardFork @p1 @p2 ledgerView)
+          forkedHeader
+          forkedChainState
+        -- throwE NewHeaderBeforeFork
       (AfterFork _ledgerView, BeforeFork _header, _) ->
         throwE OldHeaderAfterFork
 
@@ -395,7 +416,7 @@ instance
     (ExtNodeConfig (PBftLedgerView PBftMockCrypto) (PBft PBftMockCrypto))
     (ExtNodeConfig AddrDist (Praos PraosMockCrypto)) where
 
-  hardForksAtView _ = Just $ SlotNo 5
+  hardForksAtView _ = Just $ SlotNo 0
 
   translateNodeStateForHardFork ForkedNodeConfig {nodeConfigAfterFork} _ =
     pInfoInitState (protocolInfoPraos (NumCoreNodes 7) (CoreNodeId nid) params)

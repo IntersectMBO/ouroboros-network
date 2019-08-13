@@ -203,7 +203,7 @@ class ( Show (ChainState    p)
 -- NOTE: This talks about the number of /blocks/ we can roll back, not
 -- the number of /slots/.
 newtype SecurityParam = SecurityParam { maxRollbacks :: Word64 }
-  deriving (Eq)
+  deriving (Eq, Show)
 
 {-------------------------------------------------------------------------------
   State monad

@@ -1,6 +1,7 @@
 {-# LANGUAGE AllowAmbiguousTypes        #-}
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE FlexibleInstances          #-}
+{-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
@@ -18,6 +19,8 @@ module Ouroboros.Consensus.Ledger.HardFork (
   , Header (..)
   , ForkedHeaderHash (..)
   , LedgerState (..)
+  , ForkedApplyTxErr (..)
+  , encodeForkedApplyTxErr
   , GenTx (..)
   , GenTxId (..)
   ) where
@@ -26,7 +29,10 @@ import           Control.Monad.Trans.Except (throwE, withExcept)
 import           Data.Bifunctor (bimap)
 import           Data.FingerTree (Measured (..))
 import           Data.Maybe (isJust)
+import           Data.Word (Word8)
 import           Unsafe.Coerce (unsafeCoerce)
+
+import           Cardano.Binary (Encoding, ToCBOR (..), encodeListLen)
 
 import           Ouroboros.Network.Block
 
@@ -45,7 +51,7 @@ import Debug.Trace
 
 -- | Translate from one ledger state to another at the boundary of a hard fork
 class
-  (UpdateLedger blk1, UpdateLedger blk2, SupportedBlock (Forked blk1 blk2))
+  (UpdateLedger blk1, UpdateLedger blk2)
   => CanHardForkBlock blk1 blk2 where
   hardForksAt :: LedgerState blk1 -> Maybe SlotNo
   translateLedgerStateForHardFork :: LedgerState blk1 -> LedgerState blk2
@@ -63,6 +69,14 @@ newtype ForkedHeaderHash blk1 blk2
   = ForkedHeaderHash
       { unForkedHeaderHash :: Forked (HeaderHash blk1) (HeaderHash blk2)
       }
+
+deriving instance
+  (Show (HeaderHash blk1), Show (HeaderHash blk2))
+  => Show (ForkedHeaderHash blk1 blk2)
+
+deriving instance
+  (Ord (HeaderHash blk1), Ord (HeaderHash blk2), CanHardForkBlock blk1 blk2)
+  => Ord (ForkedHeaderHash blk1 blk2)
 
 instance
   (Eq (HeaderHash blk1), Eq (HeaderHash blk2), CanHardForkBlock blk1 blk2)
@@ -239,6 +253,8 @@ instance
       (BeforeFork _, AfterFork _) -> throwE OldBlockAfterFork
       (AfterFork _, BeforeFork _) -> throwE NewBlockBeforeFork
 
+  reapplyLedgerBlock = undefined
+
   ledgerTipPoint =
     forked
       (fmapPoint (ForkedHeaderHash . BeforeFork) . ledgerTipPoint)
@@ -255,7 +271,11 @@ deriving instance
 
 
 instance
-  (ProtocolLedgerView blk1, ProtocolLedgerView blk2, CanHardForkBlock blk1 blk2)
+  ( ProtocolLedgerView blk1
+  , ProtocolLedgerView blk2
+  , CanHardFork (BlockProtocol blk1) (BlockProtocol blk2)
+  , CanHardForkBlock blk1 blk2
+  )
   => ProtocolLedgerView (Forked blk1 blk2) where
 
   protocolLedgerView ForkedNodeConfig {nodeConfigBeforeFork, nodeConfigAfterFork} =
@@ -282,9 +302,26 @@ deriving instance
   (Show (ApplyTxErr blk1), Show (ApplyTxErr blk2))
   => Show (ForkedApplyTxErr blk1 blk2)
 
+encodeForkedApplyTxErr
+  :: (ApplyTxErr blk1 -> Encoding)
+  -> (ApplyTxErr blk2 -> Encoding)
+  -> ForkedApplyTxErr blk1 blk2
+  -> Encoding
+encodeForkedApplyTxErr encodeBeforeFork encodeAfterFork = \case
+  OldTransactionAfterFork -> encodeListLen 1 <> toCBOR (0 :: Word8)
+  NewTransactionBeforeFork -> encodeListLen 1 <> toCBOR (1 :: Word8)
+  BeforeForkApplyTxErr err ->
+    encodeListLen 2 <> toCBOR (2 :: Word8) <> encodeBeforeFork err
+  AfterForkApplyTxErr err ->
+    encodeListLen 2 <> toCBOR (3 :: Word8) <> encodeAfterFork err
+
 
 instance
-  (ApplyTx blk1, ApplyTx blk2, CanHardForkBlock blk1 blk2)
+  ( ApplyTx blk1
+  , ApplyTx blk2
+  , CanHardFork (BlockProtocol blk1) (BlockProtocol blk2)
+  , CanHardForkBlock blk1 blk2
+  )
   => ApplyTx (Forked blk1 blk2) where
 
   newtype GenTx (Forked blk1 blk2)
@@ -312,7 +349,6 @@ instance
             genTx
             ledgerState
       (AfterFork genTx, AfterFork ledgerState) ->
-        trace "applying new transaction" $
         withExcept AfterForkApplyTxErr . fmap (ForkedLedgerState . AfterFork) $
           applyTx
             (ledgerConfigAfterFork ledgerConfig)
@@ -374,7 +410,7 @@ instance
 
   -- Hard fork at slot 50. If hard forking is working we should see chains of
   -- length >> 50 in the tests.
-  hardForksAt _ = Just $ SlotNo 5
+  hardForksAt _ = Just $ SlotNo 0
 
   -- This is safe as we know they're both 'MockState'
   translateLedgerStateForHardFork = unsafeCoerce

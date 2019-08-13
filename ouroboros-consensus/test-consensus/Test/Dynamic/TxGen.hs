@@ -32,8 +32,6 @@ import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.HardFork
 import           Ouroboros.Consensus.Util.Random
 
-import Debug.Trace
-
 {-------------------------------------------------------------------------------
   TxGen class
 -------------------------------------------------------------------------------}
@@ -109,7 +107,7 @@ genSimpleTx addrs u = do
 instance TxGen (ByronBlockOrEBB ByronConfig) where
   testGenTx = error "TODO #855 testGenTx"
   -- 'testGenTxs' is used by the tests, not 'testGenTx'.
-  testGenTxs _ _ _ = return []
+  testGenTxs _ _ _ _ = return []
 
 {-------------------------------------------------------------------------------
   TxGen Forked
@@ -120,7 +118,7 @@ instance
   => TxGen (Forked blk1 blk2) where
 
   -- We 'applyChainTick' as a hard fork might be triggered during that call
-  testGenTx numCoreNodes nodeConfig curSlotNo = trace "Generating transaction" $
+  testGenTx numCoreNodes nodeConfig curSlotNo =
     forked
       (fmap (ForkedGenTx . BeforeFork) . testGenTx numCoreNodes (nodeConfigBeforeFork nodeConfig) curSlotNo)
       (fmap (ForkedGenTx . AfterFork) . testGenTx numCoreNodes (nodeConfigAfterFork nodeConfig) curSlotNo) .

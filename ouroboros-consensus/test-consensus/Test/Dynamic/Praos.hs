@@ -1,10 +1,6 @@
-<<<<<<< HEAD
-{-# LANGUAGE NamedFieldPuns  #-}
-{-# LANGUAGE RecordWildCards #-}
-=======
-{-# LANGUAGE RecordWildCards       #-}
-{-# LANGUAGE ScopedTypeVariables   #-}
->>>>>>> [skip ci] Implement HardForksTo Protocol combinator
+{-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE RecordWildCards     #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 module Test.Dynamic.Praos (
     tests

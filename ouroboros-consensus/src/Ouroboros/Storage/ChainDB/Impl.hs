@@ -64,8 +64,6 @@ import qualified Ouroboros.Storage.ChainDB.Impl.Reopen as Reopen
 import           Ouroboros.Storage.ChainDB.Impl.Types
 import qualified Ouroboros.Storage.ChainDB.Impl.VolDB as VolDB
 
-import Debug.Trace
-
 {-------------------------------------------------------------------------------
   Initialization
 -------------------------------------------------------------------------------}
@@ -201,11 +199,7 @@ openDBInternal args launchBgTasks = do
       , _chainTip = castPoint $ AF.headPoint   chain
       }
 
-    traceM "here!"
-
     when launchBgTasks $ Background.launchBgTasks env
-
-    traceM "There!"
 
     return (chainDB, testing)
   where
