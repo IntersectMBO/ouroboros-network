@@ -63,7 +63,7 @@ import           Data.Typeable ( Proxy (..)
 import           Text.Printf
 
 import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadSTM
+import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadTime
 
 import           Data.Semigroup.Action
@@ -297,7 +297,7 @@ suspend mbps cmd = ( maybe Set.empty (`threadsToCancel` cmd) mbps
                    )
 
 
--- | Map from addresses to 'PeerState's; it will be be shared in a 'TVar'.
+-- | Map from addresses to 'PeerState's; it will be be shared in a 'StrictTVar'.
 --
 -- Abstracting @t@ is useful for tests, the @IO@ version will use @Time IO@.
 --
@@ -329,7 +329,7 @@ instance ( Eq addr
     _ == _ = False
 
 
-newPeerStatesVar :: MonadSTM m => m (TVar m (PeerStates m addr t))
+newPeerStatesVar :: MonadSTM m => m (StrictTVar m (PeerStates m addr t))
 newPeerStatesVar = newTVarM (PeerStates Map.empty)
 
 -- | Update 'PeerStates' for a given 'addr', using 'suspend', and return
