@@ -7,11 +7,15 @@ module Ouroboros.Consensus.Node.Run.Byron () where
 import           Data.Reflection (given)
 
 import qualified Cardano.Chain.Block as Cardano.Block
-import           Ouroboros.Consensus.Ledger.Byron
-import           Ouroboros.Consensus.Node.Run.Abstract
+import qualified Cardano.Chain.Genesis as Genesis
 
+import           Ouroboros.Consensus.BlockchainTime (SystemStart (..))
+import           Ouroboros.Consensus.Ledger.Byron
 import           Ouroboros.Consensus.Ledger.Byron.Config
 import           Ouroboros.Consensus.Ledger.Byron.Forge
+import           Ouroboros.Consensus.Node.Run.Abstract
+import           Ouroboros.Consensus.Protocol.ExtNodeConfig
+import           Ouroboros.Consensus.Protocol.WithEBBs
 
 {-------------------------------------------------------------------------------
   RunNode instance
@@ -25,6 +29,15 @@ instance ByronGiven => RunNode (ByronBlockOrEBB ByronConfig) where
     Cardano.Block.ABOBBlock _    -> False
     Cardano.Block.ABOBBoundary _ -> True
   nodeEpochSize          = \_ _ -> return 21600 -- TODO #226
+
+  -- Extract it from the 'Genesis.Config'
+  nodeStartTime          = const
+                         $ SystemStart
+                         . Genesis.gdStartTime
+                         . Genesis.configGenesisData
+                         . pbftGenesisConfig
+                         . encNodeConfigExt
+                         . unWithEBBNodeConfig
 
   nodeEncodeBlock        = const encodeByronBlock
   nodeEncodeHeader       = const encodeByronHeader
