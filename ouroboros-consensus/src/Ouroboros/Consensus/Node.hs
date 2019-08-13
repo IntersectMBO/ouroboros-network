@@ -288,7 +288,7 @@ forkBlockProduction
        )
     => InternalState m peer blk -> m ()
 forkBlockProduction IS{..} =
-    onSlotChange btime $ \currentSlot -> do
+    onSlotChange btime registry $ \_registry' currentSlot -> do
       drg  <- produceDRG
       -- See the docstring of 'withSyncState' for why we're using it instead
       -- of 'atomically'.

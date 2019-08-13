@@ -562,7 +562,11 @@ rejectInvalidBlocks
     -> STM m (CandidateState blk)
     -> m ()
 rejectInvalidBlocks tracer registry getIsInvalidBlock getCandidateState =
-    onEachChange registry snd Nothing getIsInvalidBlock $ \(isInvalidBlock, _) -> do
+    onEachChange registry
+                 snd
+                 Nothing
+                 getIsInvalidBlock
+               $ \_registry' (isInvalidBlock, _) -> do
       candChain <- candidateChain <$> atomically getCandidateState
       -- The invalid block is likely to be a more recent block, so check from
       -- newest to oldest.

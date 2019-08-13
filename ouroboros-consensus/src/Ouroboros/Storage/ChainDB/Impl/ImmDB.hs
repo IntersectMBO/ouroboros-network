@@ -63,6 +63,7 @@ import           Data.Word
 import           GHC.Stack (HasCallStack)
 import           System.FilePath ((</>))
 
+import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadST
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
@@ -302,7 +303,7 @@ appendBlock db@ImmDB{..} b = withDB db $ \imm -> case isEBB b of
 --
 -- When the returned iterator is closed, it will be 'release'd from the
 -- 'ResourceRegistry'.
-registeredStream :: (MonadMask m, MonadSTM m, HasHeader blk)
+registeredStream :: (MonadMask m, MonadSTM m, MonadFork m, HasHeader blk)
                  => ImmDB m blk
                  -> ResourceRegistry m
                  -> Maybe (SlotNo, HeaderHash blk)
@@ -331,6 +332,7 @@ registeredStream db registry start end = do
 streamBlocksFrom :: forall m blk.
                    ( MonadMask m
                    , MonadSTM  m
+                   , MonadFork m
                    , HasHeader blk
                    )
                  => ImmDB m blk
@@ -400,6 +402,7 @@ streamBlocksFrom db registry from = runExceptT $ case from of
 streamBlocksFromUnchecked  :: forall m blk.
                               ( MonadMask m
                               , MonadSTM  m
+                              , MonadFork m
                               , HasHeader blk
                               )
                            => ImmDB m blk
@@ -429,6 +432,7 @@ streamBlocksFromUnchecked db registry from = case from of
 streamBlocksAfter :: forall m blk.
                      ( MonadMask m
                      , MonadSTM  m
+                     , MonadFork m
                      , HasHeader blk
                      )
                   => ImmDB m blk
@@ -452,6 +456,7 @@ streamBlocksAfter db registry low =
 streamBlobsAfter :: forall m blk.
                     ( MonadMask m
                     , MonadSTM  m
+                    , MonadFork m
                     , HasHeader blk
                     )
                  => ImmDB m blk

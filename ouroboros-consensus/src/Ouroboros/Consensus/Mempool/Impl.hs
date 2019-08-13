@@ -152,7 +152,7 @@ forkSyncStateOnTipPointChange :: ( MonadAsync m
 forkSyncStateOnTipPointChange registry menv =
     onEachChange registry id Nothing getCurrentTip action
   where
-    action _tipPoint = implWithSyncState menv (const (return ()))
+    action _registry _tipPoint = implWithSyncState menv (const (return ()))
     MempoolEnv { mpEnvLedger } = menv
     -- Using the tip ('Point') allows for quicker equality checks
     getCurrentTip = ledgerTipPoint <$> getCurrentLedgerState mpEnvLedger

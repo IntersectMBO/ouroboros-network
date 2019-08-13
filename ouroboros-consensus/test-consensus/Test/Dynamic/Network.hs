@@ -27,6 +27,7 @@ import           Data.Foldable (traverse_)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Proxy (Proxy (..))
+import           GHC.Stack
 
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork (MonadFork)
@@ -184,6 +185,7 @@ broadcastNetwork :: forall m blk.
                     , RunNode blk
                     , TxGen blk
                     , TracingConstraints blk
+                    , HasCallStack
                     )
                  => ResourceRegistry m
                  -> TestBlockchainTime m
@@ -218,15 +220,17 @@ broadcastNetwork registry testBtime numCoreNodes pInfo initRNG slotLen = do
 
     -- | Produce transactions every time the slot changes and submit them to
     -- the mempool.
-    txProducer :: NodeConfig (BlockProtocol blk)
+    txProducer :: HasCallStack
+               => ResourceRegistry m
+               -> NodeConfig (BlockProtocol blk)
                -> m ChaChaDRG
                   -- ^ How to get a DRG
                -> STM m (ExtLedgerState blk)
                   -- ^ How to get the current ledger state
                -> Mempool m blk TicketNo
                -> m ()
-    txProducer cfg produceDRG getExtLedger mempool =
-      onSlotChange btime $ \_curSlotNo -> do
+    txProducer registry' cfg produceDRG getExtLedger mempool =
+      onSlotChange btime registry' $ \_registry' _curSlotNo -> do
         drg <- produceDRG
         txs <- atomically $ do
           ledger <- ledgerState <$> getExtLedger
@@ -289,7 +293,8 @@ broadcastNetwork registry testBtime numCoreNodes pInfo initRNG slotLen = do
         }
 
     createAndConnectNode
-      :: NodeChans m NodeId blk
+      :: HasCallStack
+      => NodeChans m NodeId blk
       -> TVar m ChaChaDRG
       -> CoreNodeId
       -> m (NodeKernel m NodeId blk)
@@ -343,8 +348,9 @@ broadcastNetwork registry testBtime numCoreNodes pInfo initRNG slotLen = do
           ni :: NetworkInterface m NodeId
           ni = createNetworkInterface chans nodeIds us app
 
-      void $ forkLinked registry (niWithServerNode ni wait)
-      void $ forkLinked registry $ txProducer
+      void $ forkLinked         registry $ niWithServerNode ni wait
+      void $ forkLinkedTransfer registry $ \registry' -> txProducer
+        registry'
         pInfoConfig
         (produceDRG callbacks)
         (ChainDB.getCurrentLedger chainDB)
@@ -372,6 +378,7 @@ getTestOutput ::
     forall m blk.
        ( MonadSTM m
        , MonadMask m
+       , MonadFork m
        , HasHeader blk
        )
     => [( CoreNodeId

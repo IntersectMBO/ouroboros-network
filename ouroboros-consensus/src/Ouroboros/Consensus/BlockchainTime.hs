@@ -1,4 +1,5 @@
 {-# LANGUAGE LambdaCase          #-}
+{-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE NumericUnderscores  #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE RecordWildCards     #-}
@@ -7,7 +8,7 @@
 module Ouroboros.Consensus.BlockchainTime (
     -- * Abstract definition
     BlockchainTime(..)
-  , onLaterSlot
+  , onSlotChange
   , onSlot
     -- * Use in testing
   , NumSlots(..)
@@ -34,6 +35,7 @@ import           Control.Monad (forever, replicateM_, void, when)
 import           Data.Fixed
 import           Data.Time
 import           Data.Word (Word64)
+import           GHC.Stack
 
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork (MonadFork)
@@ -59,29 +61,63 @@ data BlockchainTime m = BlockchainTime {
       getCurrentSlot :: STM m SlotNo
 
       -- | Spawn a thread to run an action each time the slot changes
-    , onSlotChange   :: (SlotNo -> m ()) -> m ()
+      --
+      -- The lifetime of the action is tied to the lifetime of the input
+      -- resource registry; the resource registry passed to the action can be
+      -- used to allocate resources that should survive past the end of the
+      -- action. See 'onEachChange' for details.
+      --
+      -- Use sites should call 'onSlotChange' rather than 'onSlotChange_'.
+    , onSlotChange_  :: HasCallStack
+                     => ResourceRegistry m
+                     -> (ResourceRegistry m -> SlotNo -> m ())
+                     -> m ()
     }
 
--- | Execute action on specific slot.
+-- | Wrapper around 'onSlotChange_' to ensure 'HasCallStack' constraint
 --
--- Discards the action unless the given slot is after the current slot.
-onLaterSlot :: MonadSTM m => BlockchainTime m -> SlotNo -> m () -> m ()
-onLaterSlot BlockchainTime{..} slot act = onSlotChange $ \slot' ->
-    when (slot == slot') act
+-- See documentation of 'onSlotChange_'.
+onSlotChange :: HasCallStack
+             => BlockchainTime m
+             -> ResourceRegistry m
+             -> (ResourceRegistry m -> SlotNo -> m ())
+             -> m ()
+onSlotChange = onSlotChange_
 
--- | Execute action on specific slot.
+-- | Run an action when a certain slot number is reached
 --
--- If the given slot and current slot are equal,
--- then this action equals the given action (e.g. runs immediately in the current thread).
--- If the slot is in the future, it delegates to 'onLaterSlot'.
--- If the slot is in the past, it raises 'OnSlotTooLate'.
-onSlot :: (MonadSTM m, MonadThrow m) => BlockchainTime m -> SlotNo -> m () -> m ()
-onSlot btime slot@(SlotNo wSlot) m = do
-    now@(SlotNo wNow) <- atomically (getCurrentSlot btime)
-    case compare wSlot wNow of
-        LT -> throwM $ OnSlotTooLate slot now
-        EQ -> m
-        GT -> onLaterSlot btime slot m
+-- We cannot guarantee that the action will run /at/ the specified slot:
+-- when the system is under heavy load, it may be run later.
+--
+-- See 'runWhenJust' and 'onSlotChange_' for details of the lifetime
+-- of the action and its resources.
+--
+-- Throws 'OnSlotTooLate' if the slot is already passed. This is primarily
+-- to guard against programmer error.
+onSlot :: forall m.
+          ( MonadMask  m
+          , MonadFork  m
+          , MonadAsync m
+          , HasCallStack
+          )
+       => BlockchainTime m
+       -> ResourceRegistry m
+       -> SlotNo
+       -> (ResourceRegistry m -> m ())
+       -> m ()
+onSlot BlockchainTime{ getCurrentSlot } registry slot action = do
+    startingSlot <- atomically getCurrentSlot
+    when (startingSlot >= slot) $
+      throwM $ OnSlotTooLate slot startingSlot
+    runWhenJust registry waitForSlot $ \registry'' () ->
+      action registry''
+  where
+    waitForSlot :: STM m (Maybe ())
+    waitForSlot = do
+        currentSlot <- getCurrentSlot
+        return $ if currentSlot >= slot
+                   then Just ()
+                   else Nothing
 
 data OnSlotException =
     -- | An action was scheduled via 'onSlot' for a slot in the past.
@@ -126,7 +162,13 @@ data TestBlockchainTime m = TestBlockchainTime
 -- appropriate for initialization code etc. In contrast, the argument to
 -- 'onSlotChange' is blocked at least until @SlotNo 0@ begins.
 newTestBlockchainTime
-    :: forall m. (MonadAsync m, MonadTimer m, MonadMask m, MonadFork m)
+    :: forall m. (
+           MonadAsync m
+         , MonadTimer m
+         , MonadMask  m
+         , MonadFork  m
+         , HasCallStack
+         )
     => ResourceRegistry m
     -> NumSlots           -- ^ Number of slots
     -> DiffTime           -- ^ Slot duration
@@ -152,7 +194,8 @@ newTestBlockchainTime registry (NumSlots numSlots) slotLen = do
             <$> readTVar slotVar
         btime = BlockchainTime {
             getCurrentSlot = get
-          , onSlotChange   = onEachChange registry Running (Just initVal) get
+          , onSlotChange_  = \registry' ->
+              onEachChange registry' Running (Just initVal) get
           }
 
     return $ TestBlockchainTime
@@ -184,7 +227,8 @@ realBlockchainTime registry slotLen start = do
       atomically $ writeTVar slotVar next
     return BlockchainTime {
         getCurrentSlot = readTVar slotVar
-      , onSlotChange   = onEachChange registry id (Just first) (readTVar slotVar)
+      , onSlotChange_  = \registry' ->
+          onEachChange registry' id (Just first) (readTVar slotVar)
       }
 
 {-------------------------------------------------------------------------------
@@ -266,4 +310,3 @@ waitUntilNextSlotIO slotLen start = do
     let (delay, nextSlot) = timeUntilNextSlot slotLen start now
     threadDelay ((realToFrac :: NominalDiffTime -> DiffTime) delay)
     return nextSlot
-

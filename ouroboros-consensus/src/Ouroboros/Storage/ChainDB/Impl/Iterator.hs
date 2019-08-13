@@ -25,6 +25,7 @@ import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           GHC.Stack (HasCallStack)
 
+import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
 
@@ -177,6 +178,7 @@ streamBlocks
   :: forall m blk.
      ( MonadMask m
      , MonadSTM  m
+     , MonadFork m
      , MonadThrow (STM m)
      , HasHeader blk
      , HasCallStack
@@ -230,6 +232,7 @@ newIterator
   :: forall m blk.
      ( MonadMask m
      , MonadSTM  m
+     , MonadFork m
      , MonadThrow (STM m)
      , HasHeader blk
      , HasCallStack
@@ -514,7 +517,8 @@ data InImmDBEnd blk
 
 implIteratorNext :: forall m blk.
                     ( MonadMask m
-                    , MonadSTM   m
+                    , MonadSTM  m
+                    , MonadFork m
                     , HasHeader blk
                     )
                  => ResourceRegistry m

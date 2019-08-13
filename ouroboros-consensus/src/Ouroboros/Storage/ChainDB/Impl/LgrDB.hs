@@ -60,6 +60,7 @@ import           Data.Word (Word64)
 import           GHC.Stack (HasCallStack)
 import           System.FilePath ((</>))
 
+import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadST
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
@@ -183,6 +184,7 @@ openDB :: forall m blk.
           ( MonadSTM  m
           , MonadST   m
           , MonadMask m
+          , MonadFork m
           , ProtocolLedgerView blk
           )
        => LgrDbArgs m blk
@@ -237,6 +239,7 @@ openDB args@LgrDbArgs{..} replayTracer immDB getBlock = do
 reopen :: ( MonadSTM  m
           , MonadST   m
           , MonadMask m
+          , MonadFork m
           , ProtocolLedgerView blk
           )
        => LgrDB  m blk
@@ -250,6 +253,7 @@ reopen LgrDB{..} immDB replayTracer = do
 initFromDisk :: ( MonadST   m
                 , MonadSTM  m
                 , MonadMask m
+                , MonadFork m
                 , HasHeader blk
                 )
              => LgrDbArgs m blk
@@ -408,7 +412,7 @@ validate LgrDB{..} ledgerDB numRollbacks = \hdrs -> do
   Stream API to the immutable DB
 -------------------------------------------------------------------------------}
 
-streamAPI :: forall m blk. (MonadMask m, MonadSTM m, HasHeader blk)
+streamAPI :: forall m blk. (MonadMask m, MonadSTM m, MonadFork m, HasHeader blk)
           => ImmDB m blk -> StreamAPI m (Point blk) blk
 streamAPI immDB = StreamAPI streamAfter
   where
