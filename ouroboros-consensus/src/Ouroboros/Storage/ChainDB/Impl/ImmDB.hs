@@ -91,7 +91,7 @@ import qualified Ouroboros.Storage.Util.ErrorHandling as EH
 -- | Thin wrapper around the ImmutableDB (opaque type)
 data ImmDB m blk = ImmDB {
       immDB     :: ImmutableDB (HeaderHash blk) m
-    , decBlock  :: forall s. Decoder s blk
+    , decBlock  :: forall s. Decoder s (Lazy.ByteString -> blk)
     , encBlock  :: blk -> Encoding
     , epochInfo :: EpochInfo m
     , isEBB     :: blk -> Maybe (HeaderHash blk)
@@ -107,7 +107,7 @@ data ImmDB m blk = ImmDB {
 -- See also 'defaultArgs'.
 data ImmDbArgs m blk = forall h. ImmDbArgs {
       immDecodeHash  :: forall s. Decoder s (HeaderHash blk)
-    , immDecodeBlock :: forall s. Decoder s blk
+    , immDecodeBlock :: forall s. Decoder s (Lazy.ByteString -> blk)
     , immEncodeHash  :: HeaderHash blk -> Encoding
     , immEncodeBlock :: blk -> Encoding
     , immErr         :: ErrorHandling ImmDB.ImmutableDBError m
@@ -168,7 +168,7 @@ openDB args@ImmDbArgs{..} = do
 
 -- | For testing purposes
 mkImmDB :: ImmutableDB (HeaderHash blk) m
-        -> (forall s. Decoder s blk)
+        -> (forall s. Decoder s (Lazy.ByteString -> blk))
         -> (blk -> Encoding)
         -> EpochInfo m
         -> (blk -> Maybe (HeaderHash blk))
@@ -508,8 +508,8 @@ epochFileParser ImmDbArgs{..} =
   where
     -- It is important that we don't first parse all blocks, storing them all
     -- in memory, and only /then/ extract the information we need.
-    decoder' :: forall s. Decoder s (SlotNo, Maybe (HeaderHash blk))
-    decoder' = (\b -> (blockSlot b, immIsEBB b)) <$> immDecodeBlock
+    decoder' :: forall s. Decoder s (Lazy.ByteString -> (SlotNo, Maybe (HeaderHash blk)))
+    decoder' = ((\b -> (blockSlot b, immIsEBB b)) .) <$> immDecodeBlock
 
 -- | Verify that there is at most one EBB in the epoch file and that it
 -- lives at the start of the file
@@ -578,17 +578,18 @@ mustExist epochOrSlot Nothing  = Left  $ ImmDbMissingBlock epochOrSlot
 mustExist _           (Just b) = Right $ b
 
 parse :: forall blk.
-         (forall s. Decoder s blk)
+         (forall s. Decoder s (Lazy.ByteString -> blk))
       -> Either EpochNo SlotNo
       -> Lazy.ByteString
       -> Either (ChainDbFailure blk) blk
-parse dec epochOrSlot =
-    aux . CBOR.deserialiseFromBytes dec
+parse dec epochOrSlot bytes =
+    aux (CBOR.deserialiseFromBytes dec bytes)
   where
-    aux :: Either CBOR.DeserialiseFailure (Lazy.ByteString, blk)
+    aux :: Either CBOR.DeserialiseFailure
+                  (Lazy.ByteString, Lazy.ByteString -> blk)
         -> Either (ChainDbFailure blk) blk
-    aux (Right (bs, b))
-      | Lazy.null bs = Right b
+    aux (Right (bs, blk))
+      | Lazy.null bs = Right (blk bytes)
       | otherwise    = Left $ ImmDbTrailingData epochOrSlot bs
     aux (Left err)   = Left $ ImmDbParseFailure epochOrSlot err
 
