@@ -11,6 +11,7 @@ module Ouroboros.Consensus.Node.ProtocolInfo.Byron (
     protocolInfoByron
   , ByronConfig
   , PBftSignatureThreshold(..)
+  , defaultPBftSignatureThreshold
     -- * Secrets
   , PBftLeaderCredentials
   , PBftLeaderCredentialsError
