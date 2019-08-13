@@ -11,7 +11,7 @@ import           Data.Time.Clock (UTCTime (..))
 import           Data.Typeable (Typeable)
 
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.BlockchainTime (SystemStart (..))
+import           Ouroboros.Consensus.BlockchainTime (SystemStart (..), slotLengthFromMillisec)
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Mock
 import           Ouroboros.Consensus.Node.Run.Abstract
@@ -44,6 +44,7 @@ instance ( ProtocolLedgerView (SimpleBlock SimpleMockCrypto ext)
     where
       --  This doesn't matter much
       dummyDate = UTCTime (fromGregorian 2019 8 13) 0
+  nodeSlotDuration       = \_ _ -> slotLengthFromMillisec 20000
 
   nodeEncodeBlock        = const encode
   nodeEncodeHeader       = const encode

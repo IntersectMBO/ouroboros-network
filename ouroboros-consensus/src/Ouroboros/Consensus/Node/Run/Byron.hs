@@ -8,8 +8,9 @@ import           Data.Reflection (given)
 
 import qualified Cardano.Chain.Block as Cardano.Block
 import qualified Cardano.Chain.Genesis as Genesis
+import qualified Cardano.Chain.Update as PPrams
 
-import           Ouroboros.Consensus.BlockchainTime (SystemStart (..))
+import           Ouroboros.Consensus.BlockchainTime (SystemStart (..), slotLengthFromMillisec)
 import           Ouroboros.Consensus.Ledger.Byron
 import           Ouroboros.Consensus.Ledger.Byron.Config
 import           Ouroboros.Consensus.Ledger.Byron.Forge
@@ -29,6 +30,15 @@ instance ByronGiven => RunNode (ByronBlockOrEBB ByronConfig) where
     Cardano.Block.ABOBBlock _    -> False
     Cardano.Block.ABOBBoundary _ -> True
   nodeEpochSize          = \_ _ -> return 21600 -- TODO #226
+  nodeSlotDuration       = const
+                         $ slotLengthFromMillisec
+                         . fromIntegral
+                         . PPrams.ppSlotDuration
+                         . Genesis.gdProtocolParameters
+                         . Genesis.configGenesisData
+                         . pbftGenesisConfig
+                         . encNodeConfigExt
+                         . unWithEBBNodeConfig
 
   -- Extract it from the 'Genesis.Config'
   nodeStartTime          = const

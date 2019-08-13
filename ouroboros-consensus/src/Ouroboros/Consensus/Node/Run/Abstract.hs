@@ -24,6 +24,7 @@ import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Byron
 import           Ouroboros.Consensus.Mempool
 import           Ouroboros.Consensus.Protocol.Abstract
+import           Ouroboros.Consensus.BlockchainTime (SlotLength)
 
 import           Ouroboros.Storage.Common (EpochNo, EpochSize)
 
@@ -43,10 +44,12 @@ class (ProtocolLedgerView blk, ApplyTx blk) => RunNode blk where
   nodeIsEBB              :: blk -> Bool
   nodeEpochSize          :: Monad m
                          => Proxy blk  -> EpochNo -> m EpochSize
+  nodeSlotDuration       :: Proxy blk
+                         -> NodeConfig (BlockProtocol blk)
+                         -> SlotLength
   nodeStartTime          :: Proxy blk
                          -> NodeConfig (BlockProtocol blk)
                          -> SystemStart
-
 
   -- Encoders
   nodeEncodeBlock        :: NodeConfig (BlockProtocol blk) -> blk -> Encoding
