@@ -118,6 +118,8 @@
           depends = [
             (hsPkgs.base)
             (hsPkgs.cardano-crypto-class)
+            (hsPkgs.cardano-ledger)
+            (hsPkgs.cardano-ledger-test)
             (hsPkgs.ouroboros-network)
             (hsPkgs.ouroboros-network-testing)
             (hsPkgs.ouroboros-consensus)
@@ -137,6 +139,7 @@
             (hsPkgs.QuickCheck)
             (hsPkgs.quickcheck-state-machine)
             (hsPkgs.random)
+            (hsPkgs.reflection)
             (hsPkgs.serialise)
             (hsPkgs.tasty)
             (hsPkgs.tasty-hunit)

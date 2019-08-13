@@ -188,6 +188,9 @@ mkImmDB immDB decBlock encBlock epochInfo isEBB err = ImmDB {..}
 --
 -- If we have a block at the slot of the point, but its hash differs, we
 -- return 'Nothing'.
+--
+-- If the point corresponds to some slot in the future, a
+-- 'ReadFutureSlotError' wrapped in a 'ImmDbFailure' is thrown.
 getBlockWithPoint :: forall m blk. (MonadCatch m, HasHeader blk, HasCallStack)
                   => ImmDB m blk -> Point blk -> m (Maybe blk)
 getBlockWithPoint _  GenesisPoint   = throwM $ NoGenesisBlock @blk
@@ -203,15 +206,61 @@ getBlockWithPoint db BlockPoint { withHash = hash, atSlot = slot } =
     --   non-existent after)
     -- - If the block does not exist in the database at all, we'd have done two
     --   reads before returning 'Nothing', but both of those reads are cheap
-    getBlockWithHash (Right slot) >>= \case
-      Just block -> return (Just block)
-      Nothing    -> do
-        epochNo <- epochInfoEpoch slot
-        getBlockWithHash (Left epochNo)
+    --
+    -- Note that there is one exceptional scenario: the point refers to the
+    -- EBB at the ImmutableDB's tip. This means that the regular block with
+    -- the same slot number as the EBB hasn't been added to the ImmutableDB
+    -- yet. If we first try to read the regular block at that slot, we would
+    -- get a 'ReadFutureSlotError' because we're trying to read a block in the
+    -- future. If we first read the EBB at that slot (the corresponding epoch,
+    -- in fact), then we won't get the 'ReadFutureSlotError'.
+    tipIsEBB >>= \case
+      Just tipSlot
+        | tipSlot == slot
+          -- There is an EBB at @slot@
+        -> getEBB
+      _ -> getBlockThenEBB
   where
     EpochInfo{..} = epochInfo db
 
+    -- | If there's an EBB at the tip of the ImmutableDB, return its 'SlotNo'.
+    tipIsEBB :: m (Maybe SlotNo)
+    tipIsEBB = withDB db $ \imm -> ImmDB.getTip imm >>= \case
+      Tip (Left epochNo) -> Just <$> epochInfoFirst epochNo
+      Tip (Right _)      -> return Nothing
+      TipGen             -> return Nothing
+
+    -- | First try to read the block at the slot, if the block's hash doesn't
+    -- match the expect hash, try reading the EBB at that slot.
+    getBlockThenEBB :: m (Maybe blk)
+    getBlockThenEBB = getBlockWithHash (Right slot) >>= \case
+      Just block -> return (Just block)
+      Nothing    -> do
+        epochNo <- epochInfoEpoch slot
+        ebbSlot <- epochInfoFirst epochNo
+        -- The point can only refer to an EBB if its slot refers to the first
+        -- slot of the epoch
+        if slot == ebbSlot
+          then getBlockWithHash (Left epochNo)
+          else return Nothing
+
+    -- | Try to read the EBB at the slot, if the EBB's hash doesn't match the
+    -- expect hash, return 'Nothing'.
+    --
+    -- PRECONDITION: there is an EBB at @slot@
+    getEBB :: m (Maybe blk)
+    getEBB = epochInfoEpoch slot >>= \epochNo ->
+      getBlock db (Left epochNo) >>= \case
+        Just block
+          | blockHash block == hash
+          -> return $ Just block
+          | otherwise
+          -> return $ Nothing
+        Nothing -- EBB is missing
+          -> throwM $ ImmDbMissingBlock @blk (Left epochNo)
+
     -- Important: we check whether the block's hash matches the point's hash
+    getBlockWithHash :: Either EpochNo SlotNo -> m (Maybe blk)
     getBlockWithHash epochOrSlot = getBlock db epochOrSlot >>= \case
       Just block | blockHash block == hash -> return $ Just block
       _                                    -> return $ Nothing
