@@ -274,7 +274,7 @@ initIteratorEnv TestSetup { immutable, volatile } tracer = do
       (_volDBModel, volDB) <- VolDB.openDBMock EH.throwSTM 1
       forM_ blocks $ \block ->
         VolDB.putBlock volDB (blockInfo block) (serialiseIncremental block)
-      return $ mkVolDB volDB decode encode EH.monadCatch EH.throwSTM
+      return $ mkVolDB volDB (const <$> decode) encode EH.monadCatch EH.throwSTM
 
     blockInfo :: TestBlock -> VolDB.BlockInfo (HeaderHash TestBlock)
     blockInfo tb = VolDB.BlockInfo
@@ -297,4 +297,4 @@ initIteratorEnv TestSetup { immutable, volatile } tracer = do
                                (serialiseIncremental block)
       let epochInfo = fixedSizeEpochInfo epochSize
           isEBB     = const Nothing
-      return $ mkImmDB immDB decode encode epochInfo isEBB EH.monadCatch
+      return $ mkImmDB immDB (const <$> decode) encode epochInfo isEBB EH.monadCatch

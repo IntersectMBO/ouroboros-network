@@ -13,6 +13,7 @@ module Ouroboros.Storage.ChainDB.Impl.Args
 
 import           Codec.CBOR.Decoding (Decoder)
 import           Codec.CBOR.Encoding (Encoding)
+import qualified Data.ByteString.Lazy as Lazy
 import           Data.Time.Clock (DiffTime, secondsToDiffTime)
 
 import           Control.Monad.Class.MonadSTM
@@ -45,7 +46,7 @@ data ChainDbArgs m blk = forall h1 h2 h3. ChainDbArgs {
 
       -- Decoders
       cdbDecodeHash       :: forall s. Decoder s (HeaderHash blk)
-    , cdbDecodeBlock      :: forall s. Decoder s blk
+    , cdbDecodeBlock      :: forall s. Decoder s (Lazy.ByteString -> blk)
     , cdbDecodeLedger     :: forall s. Decoder s (LedgerState blk)
     , cdbDecodeChainState :: forall s. Decoder s (ChainState (BlockProtocol blk))
 

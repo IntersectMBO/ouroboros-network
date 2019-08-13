@@ -1164,7 +1164,7 @@ mkArgs cfg initLedger tracer registry
        (immDbFsVar, volDbFsVar, lgrDbFsVar) = ChainDbArgs
     { -- Decoders
       cdbDecodeHash       = decode
-    , cdbDecodeBlock      = decode
+    , cdbDecodeBlock      = const <$> decode
     , cdbDecodeLedger     = decode
     , cdbDecodeChainState = decode
 

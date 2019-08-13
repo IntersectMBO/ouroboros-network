@@ -87,7 +87,7 @@ import qualified Ouroboros.Storage.VolatileDB as VolDB
 -- module.
 data VolDB m blk = VolDB {
       volDB    :: VolatileDB (HeaderHash blk) m
-    , decBlock :: forall s. Decoder s blk
+    , decBlock :: forall s. Decoder s (Lazy.ByteString -> blk)
     , encBlock :: blk -> Encoding
     , err      :: ErrorHandling (VolatileDBError (HeaderHash blk)) m
     , errSTM   :: ThrowCantCatch (VolatileDBError (HeaderHash blk)) (STM m)
@@ -102,7 +102,7 @@ data VolDbArgs m blk = forall h. VolDbArgs {
     , volErr           :: ErrorHandling (VolatileDBError (HeaderHash blk)) m
     , volErrSTM        :: ThrowCantCatch (VolatileDBError (HeaderHash blk)) (STM m)
     , volBlocksPerFile :: Int
-    , volDecodeBlock   :: forall s. Decoder s blk
+    , volDecodeBlock   :: forall s. Decoder s (Lazy.ByteString -> blk)
     , volEncodeBlock   :: blk -> Encoding
     }
 
@@ -144,7 +144,7 @@ openDB args@VolDbArgs{..} = do
 
 -- | For testing purposes
 mkVolDB :: VolatileDB (HeaderHash blk) m
-        -> (forall s. Decoder s blk)
+        -> (forall s. Decoder s (Lazy.ByteString -> blk))
         -> (blk -> Encoding)
         -> ErrorHandling (VolatileDBError (HeaderHash blk)) m
         -> ThrowCantCatch (VolatileDBError (HeaderHash blk)) (STM m)
@@ -432,8 +432,8 @@ blockFileParser :: forall m blk. (MonadST m, MonadThrow m, HasHeader blk)
 blockFileParser VolDbArgs{..} =
     VolDB.Parser $ Util.CBOR.readIncrementalOffsets volHasFS decoder'
   where
-    decoder' :: forall s. Decoder s (VolDB.BlockInfo (HeaderHash blk))
-    decoder' = extractInfo <$> volDecodeBlock
+    decoder' :: forall s. Decoder s (Lazy.ByteString -> VolDB.BlockInfo (HeaderHash blk))
+    decoder' = (extractInfo .) <$> volDecodeBlock
 
 {-------------------------------------------------------------------------------
   Error handling
@@ -471,17 +471,18 @@ mustExist hash Nothing  = Left  $ VolDbMissingBlock hash
 mustExist _    (Just b) = Right $ b
 
 parse :: forall blk.
-         (forall s. Decoder s blk)
+         (forall s. Decoder s (Lazy.ByteString -> blk))
       -> HeaderHash blk
       -> Lazy.ByteString
       -> Either (ChainDbFailure blk) blk
-parse dec hash =
-    aux . CBOR.deserialiseFromBytes dec
+parse dec hash bytes =
+    aux (CBOR.deserialiseFromBytes dec bytes)
   where
-    aux :: Either CBOR.DeserialiseFailure (Lazy.ByteString, blk)
+    aux :: Either CBOR.DeserialiseFailure
+                  (Lazy.ByteString, Lazy.ByteString -> blk)
         -> Either (ChainDbFailure blk) blk
-    aux (Right (bs, b))
-      | Lazy.null bs = Right b
+    aux (Right (bs, blk))
+      | Lazy.null bs = Right (blk bytes)
       | otherwise    = Left $ VolDbTrailingData hash bs
     aux (Left err)   = Left $ VolDbParseFailure hash err
 
