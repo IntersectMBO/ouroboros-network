@@ -323,6 +323,12 @@ instance MonadSTM (SimM s) where
 
 data Async s a = Async !ThreadId (TMVar (SimM s) (Either SomeException a))
 
+instance Eq (Async s a) where
+    Async tid _ == Async tid' _ = tid == tid'
+
+instance Ord (Async s a) where
+    compare (Async tid _) (Async tid' _) = compare tid tid'
+
 instance MonadAsync (SimM s) where
   type Async (SimM s) = Async s
 
