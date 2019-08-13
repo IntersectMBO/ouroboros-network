@@ -40,6 +40,7 @@ library
   exposed-modules:     Codec.SerialiseTerm
                        Data.FingerTree.Strict
                        Data.Sequence.Strict
+                       Data.Semigroup.Action
                        Ouroboros.Network.AnchoredFragment
                        Ouroboros.Network.Block
                        Ouroboros.Network.BlockFetch
