@@ -92,8 +92,8 @@ onSlotChange = onSlotChange_
 -- See 'runWhenJust' and 'onSlotChange_' for details of the lifetime
 -- of the action and its resources.
 --
--- Throws 'OnSlotTooLate' if the slot is already passed. This is primarily
--- to guard against programmer error.
+-- Throws 'OnSlotTooLate' if we have already reached the specified slot.
+-- This is primarily to guard against programmer error.
 onSlot :: forall m.
           ( MonadMask  m
           , MonadFork  m
@@ -109,8 +109,8 @@ onSlot BlockchainTime{ getCurrentSlot } registry slot action = do
     startingSlot <- atomically getCurrentSlot
     when (startingSlot >= slot) $
       throwM $ OnSlotTooLate slot startingSlot
-    runWhenJust registry waitForSlot $ \registry'' () ->
-      action registry''
+    runWhenJust registry waitForSlot $ \registry' () ->
+      action registry'
   where
     waitForSlot :: STM m (Maybe ())
     waitForSlot = do
