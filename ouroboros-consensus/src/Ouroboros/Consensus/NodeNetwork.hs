@@ -6,6 +6,7 @@
 {-# LANGUAGE RankNTypes            #-}
 {-# LANGUAGE RecordWildCards       #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE TypeApplications      #-}
 {-# LANGUAGE TypeFamilies          #-}
 
 {-# OPTIONS_GHC -Wredundant-constraints -Werror=missing-fields #-}
@@ -14,6 +15,7 @@ module Ouroboros.Consensus.NodeNetwork (
     ProtocolHandlers (..)
   , protocolHandlers
   , ProtocolCodecs (..)
+  , protocolCodecs
   , protocolCodecsId
   , ProtocolTracers
   , ProtocolTracers' (..)
@@ -26,11 +28,16 @@ module Ouroboros.Consensus.NodeNetwork (
   , localResponderNetworkApplication
   ) where
 
+import           Codec.CBOR.Decoding (Decoder)
+import           Codec.CBOR.Encoding (Encoding)
 import           Control.Monad (void)
+import           Data.ByteString.Lazy (ByteString)
+import           Data.Proxy (Proxy (..))
 import           Data.Void (Void)
 
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork
+import           Control.Monad.Class.MonadST
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
@@ -49,12 +56,12 @@ import           Ouroboros.Network.BlockFetch
 import           Ouroboros.Network.BlockFetch.Client (BlockFetchClient,
                      blockFetchClient)
 import           Ouroboros.Network.Mux
-import           Ouroboros.Network.Protocol.BlockFetch.Codec (codecBlockFetchId)
+import           Ouroboros.Network.Protocol.BlockFetch.Codec
 import           Ouroboros.Network.Protocol.BlockFetch.Server (BlockFetchServer,
                      blockFetchServerPeer)
 import           Ouroboros.Network.Protocol.BlockFetch.Type (BlockFetch (..))
 import           Ouroboros.Network.Protocol.ChainSync.Client
-import           Ouroboros.Network.Protocol.ChainSync.Codec (codecChainSyncId)
+import           Ouroboros.Network.Protocol.ChainSync.Codec
 import           Ouroboros.Network.Protocol.ChainSync.Server
 import           Ouroboros.Network.Protocol.ChainSync.Type
 import           Ouroboros.Network.Protocol.LocalTxSubmission.Codec
@@ -73,15 +80,16 @@ import           Ouroboros.Consensus.ChainSyncClient
 import           Ouroboros.Consensus.ChainSyncServer
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Mempool.API
+import           Ouroboros.Consensus.Node
+import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.Node.Tracers
+import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.TxSubmission
 import           Ouroboros.Consensus.Util.Orphans ()
 import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
 import qualified Ouroboros.Consensus.Util.ResourceRegistry as ResourceRegistry
 
 import qualified Ouroboros.Storage.ChainDB.API as ChainDB
-
-import           Ouroboros.Consensus.Node
 
 
 -- | The collection of all the mini-protocol handlers provided by the consensus
@@ -203,6 +211,57 @@ data ProtocolCodecs blk failure m
   , pcLocalTxSubmissionCodec :: Codec (LocalTxSubmission (GenTx blk) (ApplyTxErr blk))
                                       failure m bytesLTX
   }
+
+-- | The real codecs
+--
+protocolCodecs :: forall m blk. (MonadST m, RunNode blk)
+               => NodeConfig (BlockProtocol blk)
+               -> ProtocolCodecs blk DeserialiseFailure m
+                                 ByteString ByteString ByteString
+                                 ByteString ByteString
+protocolCodecs cfg = ProtocolCodecs {
+      pcChainSyncCodec =
+        codecChainSync
+          (nodeEncodeHeader cfg)
+          (nodeDecodeHeader cfg)
+           encodePoint'
+           decodePoint'
+
+    , pcBlockFetchCodec =
+        codecBlockFetch
+          (nodeEncodeBlock cfg)
+          (nodeDecodeBlock cfg)
+          (nodeEncodeHeaderHash (Proxy @blk))
+          (nodeDecodeHeaderHash (Proxy @blk))
+
+    , pcTxSubmissionCodec =
+        codecTxSubmission
+          nodeEncodeGenTxId
+          nodeDecodeGenTxId
+          nodeEncodeGenTx
+          nodeDecodeGenTx
+
+    , pcLocalChainSyncCodec =
+        codecChainSync
+          (nodeEncodeBlock cfg)
+          (nodeDecodeBlock cfg)
+           encodePoint'
+           decodePoint'
+
+    , pcLocalTxSubmissionCodec =
+        codecLocalTxSubmission
+          nodeEncodeGenTx
+          nodeDecodeGenTx
+          (nodeEncodeApplyTxError (Proxy @blk))
+          (nodeDecodeApplyTxError (Proxy @blk))
+    }
+  where
+    encodePoint' ::  Point blk -> Encoding
+    encodePoint' = encodePoint (nodeEncodeHeaderHash (Proxy @blk))
+
+    decodePoint' :: forall s. Decoder s (Point blk)
+    decodePoint' = decodePoint (nodeDecodeHeaderHash (Proxy @blk))
+
 
 -- | Id codecs used in tests.
 --
