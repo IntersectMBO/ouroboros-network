@@ -199,6 +199,53 @@ data ProtocolCodecs blk failure m
                                       failure m bytesLTX
   }
 
+{-
+ TODO: add something like this here for real, taken from cardano-node.
+-- | The real codecs
+--
+protocolCodecs :: RunNode blk
+               => ProtocolCodecs blk CodecFailure m
+                                 ByteString ByteString ByteString
+                                 ByteString ByteString
+protocolCodecs pInfoConfig =
+    ProtocolCodecs {
+      pcChainSyncCodec =
+        codecChainSync
+          (nodeEncodeHeader pInfoConfig)
+          (nodeDecodeHeader pInfoConfig)
+           encodePoint'
+           decodePoint'
+
+    , pcBlockFetchCodec =
+        codecBlockFetch
+          (nodeEncodeBlock pInfoConfig)
+          (nodeEncodeHeaderHash (Proxy :: Proxy blk))
+          (nodeDecodeBlock pInfoConfig)
+          (nodeDecodeHeaderHash (Proxy :: Proxy blk))
+
+    , pcTxSubmissionCodec =
+        codecTxSubmission
+          nodeEncodeGenTxId
+          nodeDecodeGenTxId
+          nodeEncodeGenTx
+          nodeDecodeGenTx
+
+    , pcLocalChainSyncCodec =
+        codecChainSync
+          (nodeEncodeBlock pInfoConfig)
+          (nodeDecodeBlock pInfoConfig)
+           encodePoint'
+           decodePoint'
+
+    , pcLocalTxSubmissionCodec =
+        codecLocalTxSubmission
+          nodeEncodeGenTx
+          nodeDecodeGenTx
+          (nodeEncodeApplyTxError (Proxy :: Proxy blk))
+          (nodeDecodeApplyTxError (Proxy :: Proxy blk))
+    }
+-}
+
 -- | Id codecs used in tests.
 --
 protocolCodecsId :: Monad m
@@ -208,7 +255,8 @@ protocolCodecsId :: Monad m
                       (AnyMessage (TxSubmission (GenTxId blk) (GenTx blk)))
                       (AnyMessage (ChainSync blk (Point blk)))
                       (AnyMessage (LocalTxSubmission (GenTx blk) (ApplyTxErr blk)))
-protocolCodecsId = ProtocolCodecs {
+protocolCodecsId =
+    ProtocolCodecs {
       pcChainSyncCodec         = codecChainSyncId
     , pcBlockFetchCodec        = codecBlockFetchId
     , pcTxSubmissionCodec      = codecTxSubmissionId
