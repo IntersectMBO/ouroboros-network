@@ -1,5 +1,5 @@
-{-# LANGUAGE DeriveFunctor     #-}
 {-# LANGUAGE DeriveFoldable    #-}
+{-# LANGUAGE DeriveFunctor     #-}
 {-# LANGUAGE DeriveGeneric     #-}
 {-# LANGUAGE DeriveTraversable #-}
 
@@ -11,9 +11,9 @@ module Ouroboros.Network.Point
   , block
   ) where
 
-import GHC.Generics (Generic)
+import           GHC.Generics (Generic)
 
-data WithOrigin t = Origin | At t
+data WithOrigin t = Origin | At !t
   deriving (Eq, Ord, Show, Generic, Functor, Foldable, Traversable)
 
 data Block slot hash = Block

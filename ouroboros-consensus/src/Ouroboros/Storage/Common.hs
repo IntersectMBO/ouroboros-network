@@ -53,7 +53,7 @@ type SlotOffset = Word64
 -------------------------------------------------------------------------------}
 
 -- | Tip of the chain
-data Tip r = Tip r | TipGen
+data Tip r = Tip !r | TipGen
   deriving (Show, Eq, Generic)
 
 instance Condense r => Condense (Tip r) where
