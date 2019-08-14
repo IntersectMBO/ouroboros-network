@@ -49,8 +49,7 @@ import           Ouroboros.Network.Block (pattern BlockPoint, ChainUpdate,
 
 import           Ouroboros.Consensus.Block (GetHeader (..))
 import           Ouroboros.Consensus.Ledger.Extended
-import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
-import qualified Ouroboros.Consensus.Util.ResourceRegistry as ResourceRegistry
+import           Ouroboros.Consensus.Util.ResourceRegistry
 import           Ouroboros.Consensus.Util.STM (Fingerprint (..))
 
 import           Ouroboros.Storage.Common
@@ -261,7 +260,7 @@ data ChainDB m blk = ChainDB {
 toChain :: forall m blk.
            (HasCallStack, MonadMask m, HasHeader blk, MonadSTM m, MonadFork m)
         => ChainDB m blk -> m (Chain blk)
-toChain chainDB = ResourceRegistry.with $ \registry ->
+toChain chainDB = withRegistry $ \registry ->
     streamAll chainDB registry >>= maybe (return Genesis) (go Genesis)
   where
     go :: Chain blk -> Iterator m blk -> m (Chain blk)

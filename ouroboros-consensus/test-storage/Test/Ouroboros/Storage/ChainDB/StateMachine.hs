@@ -80,8 +80,7 @@ import           Ouroboros.Consensus.NodeId (NodeId (..))
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.BFT
 import           Ouroboros.Consensus.Util.Condense (condense)
-import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
-import qualified Ouroboros.Consensus.Util.ResourceRegistry as ResourceRegistry
+import           Ouroboros.Consensus.Util.ResourceRegistry
 import           Ouroboros.Consensus.Util.STM (Fingerprint (..))
 
 import           Ouroboros.Storage.ChainDB
@@ -100,10 +99,11 @@ import qualified Ouroboros.Storage.LedgerDB.OnDisk as LedgerDB
 import qualified Ouroboros.Storage.Util.ErrorHandling as EH
 
 import           Test.Ouroboros.Storage.ChainDB.TestBlock
-import           Test.Ouroboros.Storage.Util (constrName, constrNames, (=:=))
+import           Test.Ouroboros.Storage.Util ((=:=))
 
 import           Test.Util.RefEnv (RefEnv)
 import qualified Test.Util.RefEnv as RE
+import           Test.Util.SOP
 import           Test.Util.Tracer (recordingTracerIORef)
 
 {-------------------------------------------------------------------------------
@@ -1032,8 +1032,8 @@ prop_sequential = forAllCommands smUnused Nothing $ \cmds -> QC.monadicIO $ do
             , Property
             )
     test cmds = do
-      threadRegistry     <- QC.run ResourceRegistry.new
-      iteratorRegistry   <- QC.run ResourceRegistry.new
+      threadRegistry     <- QC.run newRegistry
+      iteratorRegistry   <- QC.run newRegistry
       (tracer, getTrace) <- QC.run recordingTracerIORef
       fsVars             <- QC.run $ atomically $ (,,)
         <$> newTVar Mock.empty
@@ -1057,7 +1057,7 @@ prop_sequential = forAllCommands smUnused Nothing $ \cmds -> QC.monadicIO $ do
         realChain' <- toChain db'
         closeDB db'
 
-        ResourceRegistry.close threadRegistry
+        closeRegistry threadRegistry
 
         -- 'closeDB' should have closed all open 'Reader's and 'Iterator's,
         -- freeing up all resources, so there should be no more clean-up
@@ -1067,8 +1067,8 @@ prop_sequential = forAllCommands smUnused Nothing $ \cmds -> QC.monadicIO $ do
         -- (yet), in which case there /will be/ clean-up actions left. This is
         -- exactly the reason for introducing the 'ResourceRegistry' in the
         -- first place: to clean up resources in case exceptions get thrown.
-        remainingCleanups <- ResourceRegistry.nbCleanups iteratorRegistry
-        ResourceRegistry.close iteratorRegistry
+        remainingCleanups <- countResources iteratorRegistry
+        closeRegistry iteratorRegistry
 
         -- Read the final MockFS of each database
         let (immDbFsVar, volDbFsVar, lgrDbFsVar) = fsVars
@@ -1220,7 +1220,7 @@ _mkBlk h = TestBlock
 
 -- | Debugging utility: run some commands against the real implementation.
 _runCmds :: [Cmd Blk IteratorId ReaderId] -> IO [Resp Blk IteratorId ReaderId]
-_runCmds cmds = ResourceRegistry.with $ \registry -> do
+_runCmds cmds = withRegistry $ \registry -> do
     fsVars <- atomically $ (,,)
       <$> newTVar Mock.empty
       <*> newTVar Mock.empty

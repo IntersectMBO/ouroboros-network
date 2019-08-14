@@ -52,7 +52,7 @@ import           Ouroboros.Network.Point (WithOrigin (..))
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Ledger.Abstract (ProtocolLedgerView)
 import           Ouroboros.Consensus.Protocol.Abstract
-import           Ouroboros.Consensus.Util.ResourceRegistry (forkLinked)
+import           Ouroboros.Consensus.Util.ResourceRegistry
 
 import qualified Ouroboros.Storage.ChainDB.Impl.ImmDB as ImmDB
 import qualified Ouroboros.Storage.ChainDB.Impl.LgrDB as LgrDB
@@ -82,10 +82,15 @@ launchBgTasks cdb@CDB{..} = do
       copyToImmDBRunner cdb gcSchedule
     lgrSnapshotThread <- launch $
       updateLedgerSnapshotsRunner cdb
+    -- TODO: Do we still need this cdbBgThreads, if we have the registry?
     atomically $ writeTVar cdbBgThreads
       [gcThread, copyThread, lgrSnapshotThread]
   where
-    launch = forkLinked cdbRegistry
+    launch :: m () -> m (Thread m ())
+    launch k = do
+        thread <- forkThread cdbRegistry k
+        linkToRegistry thread
+        return thread
 
 {-------------------------------------------------------------------------------
   Copying blocks from the VolatileDB to the ImmutableDB

@@ -214,7 +214,7 @@ broadcastNetwork registry testBtime numCoreNodes pInfo initRNG slotLen = do
     -- a node. This is important because we close the ChainDBs in
     -- 'getTestOutput' and if background threads that use the ChainDB are
     -- still running at that point, they will throw a 'CloseDBError'.
-    close registry
+    closeRegistry registry
 
     getTestOutput nodes
   where
@@ -229,16 +229,15 @@ broadcastNetwork registry testBtime numCoreNodes pInfo initRNG slotLen = do
     -- | Produce transactions every time the slot changes and submit them to
     -- the mempool.
     txProducer :: HasCallStack
-               => ResourceRegistry m
-               -> NodeConfig (BlockProtocol blk)
+               => NodeConfig (BlockProtocol blk)
                -> m ChaChaDRG
                   -- ^ How to get a DRG
                -> STM m (ExtLedgerState blk)
                   -- ^ How to get the current ledger state
                -> Mempool m blk TicketNo
                -> m ()
-    txProducer registry' cfg produceDRG getExtLedger mempool =
-      onSlotChange btime registry' $ \_registry' _curSlotNo -> do
+    txProducer cfg produceDRG getExtLedger mempool =
+      onSlotChange btime $ \_curSlotNo -> do
         drg <- produceDRG
         txs <- atomically $ do
           ledger <- ledgerState <$> getExtLedger
@@ -356,16 +355,15 @@ broadcastNetwork registry testBtime numCoreNodes pInfo initRNG slotLen = do
           ni :: NetworkInterface m NodeId
           ni = createNetworkInterface chans nodeIds us app
 
-      void $ forkLinked         registry $ niWithServerNode ni wait
-      void $ forkLinkedTransfer registry $ \registry' -> txProducer
-        registry'
+      linkToRegistry =<< forkThread registry (niWithServerNode ni wait)
+      linkToRegistry =<< forkThread registry (txProducer
         pInfoConfig
         (produceDRG callbacks)
         (ChainDB.getCurrentLedger chainDB)
-        (getMempool node)
+        (getMempool node))
 
       forM_ (filter (/= us) nodeIds) $ \them ->
-        forkLinked registry (niConnectTo ni them)
+        linkToRegistry =<< forkThread registry (niConnectTo ni them)
 
       let nodeInfo = NodeInfo
             { nodeInfoImmDbFs = immDbFsVar

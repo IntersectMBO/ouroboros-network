@@ -76,8 +76,7 @@ import           Ouroboros.Consensus.Mempool.API
 import           Ouroboros.Consensus.Node.Tracers
 import           Ouroboros.Consensus.TxSubmission
 import           Ouroboros.Consensus.Util.Orphans ()
-import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
-import qualified Ouroboros.Consensus.Util.ResourceRegistry as ResourceRegistry
+import           Ouroboros.Consensus.Util.ResourceRegistry
 
 import qualified Ouroboros.Storage.ChainDB.API as ChainDB
 
@@ -396,7 +395,7 @@ consensusNetworkApps kernel ProtocolTracers {..} ProtocolCodecs {..} ProtocolHan
       :: peer
       -> Channel m bytesCS
       -> m ()
-    naChainSyncServer them channel = ResourceRegistry.with $ \registry ->
+    naChainSyncServer them channel = withRegistry $ \registry ->
       runPeer
         ptChainSyncTracer
         pcChainSyncCodec
@@ -422,7 +421,7 @@ consensusNetworkApps kernel ProtocolTracers {..} ProtocolCodecs {..} ProtocolHan
       :: peer
       -> Channel m bytesBF
       -> m ()
-    naBlockFetchServer them channel = ResourceRegistry.with $ \registry ->
+    naBlockFetchServer them channel = withRegistry $ \registry ->
       runPeer
         ptBlockFetchTracer
         pcBlockFetchCodec
@@ -459,7 +458,7 @@ consensusNetworkApps kernel ProtocolTracers {..} ProtocolCodecs {..} ProtocolHan
       :: peer
       -> Channel m bytesLCS
       -> m ()
-    naLocalChainSyncServer them channel = ResourceRegistry.with $ \registry ->
+    naLocalChainSyncServer them channel = withRegistry $ \registry ->
       runPeer
         ptLocalChainSyncTracer
         pcLocalChainSyncCodec

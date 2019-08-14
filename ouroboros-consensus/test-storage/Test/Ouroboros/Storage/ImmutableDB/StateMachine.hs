@@ -84,12 +84,12 @@ import           Test.Ouroboros.Storage.FS.Sim.Error (Errors, mkSimErrorHasFS,
                      withErrors)
 import           Test.Ouroboros.Storage.ImmutableDB.Model
 import           Test.Ouroboros.Storage.ImmutableDB.TestBlock hiding (tests)
-import           Test.Ouroboros.Storage.Util (collects, constrName, constrNames)
+import           Test.Ouroboros.Storage.Util (collects)
 
 import           Test.Util.Orphans.Arbitrary (genSmallEpochNo, genSmallSlotNo)
 import           Test.Util.RefEnv (RefEnv)
 import qualified Test.Util.RefEnv as RE
-
+import           Test.Util.SOP
 
 {-------------------------------------------------------------------------------
   Abstract model

@@ -36,7 +36,7 @@ import           Ouroboros.Consensus.Mempool.TxSeq (TicketNo, TxSeq (..),
                      splitAfterTicketNo, zeroTicketNo)
 import qualified Ouroboros.Consensus.Mempool.TxSeq as TxSeq
 import           Ouroboros.Consensus.Util (repeatedly)
-import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
+import           Ouroboros.Consensus.Util.ResourceRegistry
 import           Ouroboros.Consensus.Util.STM (onEachChange)
 
 {-------------------------------------------------------------------------------
@@ -46,7 +46,6 @@ import           Ouroboros.Consensus.Util.STM (onEachChange)
 openMempool :: ( MonadAsync m
                , MonadFork m
                , MonadMask m
-               , MonadSTM m
                , ApplyTx blk
                )
             => ResourceRegistry m
@@ -56,7 +55,8 @@ openMempool :: ( MonadAsync m
             -> m (Mempool m blk TicketNo)
 openMempool registry ledger cfg tracer = do
     env <- initMempoolEnv ledger cfg tracer
-    forkSyncStateOnTipPointChange registry env
+    -- TODO: Consider lifetime of this thread
+    _thread <- forkSyncStateOnTipPointChange registry env
     return $ mkMempool env
 
 -- | Unlike 'openMempool', this function does not fork a background thread
@@ -65,9 +65,6 @@ openMempool registry ledger cfg tracer = do
 -- Intended for testing purposes.
 openMempoolWithoutSyncThread
   :: ( MonadAsync m
-     , MonadFork m
-     , MonadMask m
-     , MonadSTM m
      , ApplyTx blk
      )
   => LedgerInterface m blk
@@ -152,7 +149,7 @@ forkSyncStateOnTipPointChange :: ( MonadAsync m
 forkSyncStateOnTipPointChange registry menv =
     onEachChange registry id Nothing getCurrentTip action
   where
-    action _registry _tipPoint = implWithSyncState menv (const (return ()))
+    action _tipPoint = implWithSyncState menv (const (return ()))
     MempoolEnv { mpEnvLedger } = menv
     -- Using the tip ('Point') allows for quicker equality checks
     getCurrentTip = ledgerTipPoint <$> getCurrentLedgerState mpEnvLedger
@@ -229,9 +226,7 @@ implWithSyncState mpEnv@MempoolEnv{mpEnvTracer, mpEnvStateVar} f = do
       traceWith mpEnvTracer $ TraceMempoolRemoveTxs removed mempoolSize
     return res
 
-implGetSnapshot :: ( MonadSTM m
-                   , ApplyTx blk
-                   )
+implGetSnapshot :: MonadSTM m
                 => MempoolEnv m blk
                 -> STM m (MempoolSnapshot blk TicketNo)
 implGetSnapshot MempoolEnv{mpEnvStateVar} = do
@@ -251,20 +246,17 @@ getMempoolSize MempoolEnv{mpEnvStateVar} =
   MempoolSnapshot Implementation
 -------------------------------------------------------------------------------}
 
-implSnapshotGetTxs :: ApplyTx blk
-                   => InternalState blk
+implSnapshotGetTxs :: InternalState blk
                    -> [(GenTx blk, TicketNo)]
 implSnapshotGetTxs = (flip implSnapshotGetTxsAfter) zeroTicketNo
 
-implSnapshotGetTxsAfter :: ApplyTx blk
-                        => InternalState blk
+implSnapshotGetTxsAfter :: InternalState blk
                         -> TicketNo
                         -> [(GenTx blk, TicketNo)]
 implSnapshotGetTxsAfter IS{isTxs} tn =
     fromTxSeq $ snd $ splitAfterTicketNo isTxs tn
 
-implSnapshotGetTx :: ApplyTx blk
-                  => InternalState blk
+implSnapshotGetTx :: InternalState blk
                   -> TicketNo
                   -> Maybe (GenTx blk)
 implSnapshotGetTx IS{isTxs} tn = isTxs `lookupByTicketNo` tn

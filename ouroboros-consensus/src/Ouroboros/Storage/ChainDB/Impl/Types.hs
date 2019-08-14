@@ -42,7 +42,6 @@ import           Data.Time.Clock (DiffTime)
 import           Data.Typeable (Typeable)
 import           GHC.Generics (Generic)
 
-import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
 
@@ -57,7 +56,7 @@ import           Ouroboros.Consensus.Block (BlockProtocol, Header)
 import           Ouroboros.Consensus.Ledger.Abstract (ProtocolLedgerView)
 import           Ouroboros.Consensus.Ledger.Extended (ExtValidationError)
 import           Ouroboros.Consensus.Protocol.Abstract (NodeConfig)
-import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
+import           Ouroboros.Consensus.Util.ResourceRegistry
 import           Ouroboros.Consensus.Util.STM (Fingerprint)
 
 import           Ouroboros.Storage.Common (EpochNo)
@@ -222,7 +221,7 @@ data ChainDbEnv m blk = CDB
   , cdbGcDelay        :: DiffTime
     -- ^ How long to wait between copying a block from the VolatileDB to
     -- ImmutableDB and garbage collecting it from the VolatileDB
-  , cdbBgThreads      :: TVar m [Async m ()]
+  , cdbBgThreads      :: TVar m [Thread m ()]
     -- ^ The background threads.
   , cdbEpochInfo      :: EpochInfo m
   }
@@ -252,7 +251,7 @@ data Internal m blk = Internal
     -- ^ Perform garbage collection for blocks <= the given 'SlotNo'.
   , intUpdateLedgerSnapshots :: m ()
     -- ^ Write a new LedgerDB snapshot to disk and remove the oldest one(s).
-  , intBgThreads             :: TVar m [Async m ()]
+  , intBgThreads             :: TVar m [Thread m ()]
       -- ^ The background threads.
   }
 

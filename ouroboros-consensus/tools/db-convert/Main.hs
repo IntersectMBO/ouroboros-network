@@ -162,7 +162,7 @@ validateChainDb
   -> Bool -- Verbose
   -> IO ()
 validateChainDb dbDir cfg verbose =
-  ResourceRegistry.with $ \registry -> do
+  ResourceRegistry.withRegistry $ \registry -> do
     chaindb <- give protocolMagicId $ give epochSlots $ ChainDB.openDB $ args registry
     blk <- ChainDB.getTipBlock chaindb
     putStrLn $ "DB tip: " ++ condense blk
