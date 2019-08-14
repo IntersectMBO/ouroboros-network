@@ -31,9 +31,10 @@ module Ouroboros.Consensus.BlockchainTime (
   ) where
 
 import           Control.Exception (Exception (..))
-import           Control.Monad (forever, replicateM_, void, when)
+import           Control.Monad
 import           Data.Fixed
 import           Data.Time
+import           Data.Void
 import           Data.Word (Word64)
 import           GHC.Stack
 
@@ -62,55 +63,51 @@ data BlockchainTime m = BlockchainTime {
 
       -- | Spawn a thread to run an action each time the slot changes
       --
-      -- The lifetime of the action is tied to the lifetime of the input
-      -- resource registry; the resource registry passed to the action can be
-      -- used to allocate resources that should survive past the end of the
-      -- action. See 'onEachChange' for details.
+      -- The thread will be linked to the registry in which the 'BlockchainTime'
+      -- itself was created.
       --
       -- Use sites should call 'onSlotChange' rather than 'onSlotChange_'.
-    , onSlotChange_  :: HasCallStack
-                     => ResourceRegistry m
-                     -> (ResourceRegistry m -> SlotNo -> m ())
-                     -> m ()
+    , onSlotChange_  :: HasCallStack => (SlotNo -> m ()) -> m ()
+
+      -- | Spawn a thread to run an action when reaching the specified slot
+      --
+      -- The thread will be linked to the registry in which the 'BlockchainTime'
+      -- itself was created.
+      --
+      -- Unlike the thread created by 'onSlotChange_', this thread will
+      -- terminate as soon as the action does.
+      --
+      -- Use sites should call 'onSlot' rather than 'onSlot_'.
+    , onSlot_        :: HasCallStack => SlotNo -> m () -> m ()
     }
 
 -- | Wrapper around 'onSlotChange_' to ensure 'HasCallStack' constraint
 --
 -- See documentation of 'onSlotChange_'.
-onSlotChange :: HasCallStack
-             => BlockchainTime m
-             -> ResourceRegistry m
-             -> (ResourceRegistry m -> SlotNo -> m ())
-             -> m ()
+onSlotChange :: HasCallStack => BlockchainTime m -> (SlotNo -> m ()) -> m ()
 onSlotChange = onSlotChange_
 
--- | Run an action when a certain slot number is reached
---
--- We cannot guarantee that the action will run /at/ the specified slot:
--- when the system is under heavy load, it may be run later.
---
--- See 'runWhenJust' and 'onSlotChange_' for details of the lifetime
--- of the action and its resources.
---
--- Throws 'OnSlotTooLate' if we have already reached the specified slot.
--- This is primarily to guard against programmer error.
-onSlot :: forall m.
-          ( MonadMask  m
-          , MonadFork  m
-          , MonadAsync m
-          , HasCallStack
-          )
-       => BlockchainTime m
-       -> ResourceRegistry m
-       -> SlotNo
-       -> (ResourceRegistry m -> m ())
-       -> m ()
-onSlot BlockchainTime{ getCurrentSlot } registry slot action = do
+-- | Wrapper around 'onSlot_' to ensure 'HasCallStack' constraint
+onSlot :: HasCallStack => BlockchainTime m -> SlotNo -> m () -> m ()
+onSlot = onSlot_
+
+-- | Default implementation of 'onSlot' (used internally only)
+defaultOnSlot :: forall m.
+                 ( MonadMask  m
+                 , MonadFork  m
+                 , MonadAsync m
+                 , HasCallStack
+                 )
+              => ResourceRegistry m
+              -> STM m SlotNo
+              -> SlotNo
+              -> m ()
+              -> m ()
+defaultOnSlot registry getCurrentSlot slot action = do
     startingSlot <- atomically getCurrentSlot
     when (startingSlot >= slot) $
       throwM $ OnSlotTooLate slot startingSlot
-    runWhenJust registry waitForSlot $ \registry' () ->
-      action registry'
+    runWhenJust registry waitForSlot (\() -> action)
   where
     waitForSlot :: STM m (Maybe ())
     waitForSlot = do
@@ -177,25 +174,20 @@ newTestBlockchainTime registry (NumSlots numSlots) slotLen = do
     slotVar <- atomically $ newTVar initVal
     doneVar <- atomically $ newEmptyTMVar
 
-    void $ forkLinked registry $ do
-        -- count off each requested slot
-        replicateM_ numSlots $ do
-            atomically $ modifyTVar slotVar $ Running . \case
-                Initializing -> SlotNo 0
-                Running slot -> succ slot
-            threadDelay slotLen
-        -- signal the end of the final slot
-        atomically $ putTMVar doneVar ()
+    void $ forkLinkedThread registry $ loop slotVar doneVar
 
-    let get = blockUntilJust $
+    let get :: STM m SlotNo
+        get = blockUntilJust $
                 (\case
                     Initializing -> Nothing
                     Running slot -> Just slot)
             <$> readTVar slotVar
+
+        btime :: BlockchainTime m
         btime = BlockchainTime {
             getCurrentSlot = get
-          , onSlotChange_  = \registry' ->
-              onEachChange registry' Running (Just initVal) get
+          , onSlot_        = defaultOnSlot registry get
+          , onSlotChange_  = onEachChange registry Running (Just initVal) get
           }
 
     return $ TestBlockchainTime
@@ -203,6 +195,17 @@ newTestBlockchainTime registry (NumSlots numSlots) slotLen = do
       , testBlockchainTimeDone = atomically (readTMVar doneVar)
       }
   where
+    loop :: TVar m TestClock -> TMVar m () -> m ()
+    loop slotVar doneVar = do
+        -- count off each requested slot
+        replicateM_ numSlots $ do
+          atomically $ modifyTVar slotVar $ Running . \case
+            Initializing -> SlotNo 0
+            Running slot -> succ slot
+          threadDelay slotLen
+        -- signal the end of the final slot
+        atomically $ putTMVar doneVar ()
+
     initVal = Initializing
 
 {-------------------------------------------------------------------------------
@@ -218,18 +221,21 @@ realBlockchainTime :: ResourceRegistry IO
                    -> SlotLength -> SystemStart
                    -> IO (BlockchainTime IO)
 realBlockchainTime registry slotLen start = do
-    first   <- getCurrentSlotIO slotLen start
-    slotVar <- atomically $ newTVar first
-    void $ forkLinked registry $ forever $ do
-      -- In each iteration of the loop, we recompute how long to wait until
-      -- the next slot. This minimizes clock skew.
-      next <- waitUntilNextSlotIO slotLen start
-      atomically $ writeTVar slotVar next
+    first <- getCurrentSlotIO slotLen start
+    slot  <- atomically $ newTVar first
+    void $ forkLinkedThread registry $ loop slot
     return BlockchainTime {
-        getCurrentSlot = readTVar slotVar
-      , onSlotChange_  = \registry' ->
-          onEachChange registry' id (Just first) (readTVar slotVar)
+        getCurrentSlot = readTVar slot
+      , onSlot_        = defaultOnSlot registry (readTVar slot)
+      , onSlotChange_  = onEachChange registry id (Just first) (readTVar slot)
       }
+  where
+    -- In each iteration of the loop, we recompute how long to wait until
+    -- the next slot. This minimizes clock skew.
+    loop :: TVar IO SlotNo -> IO Void
+    loop slot = forever $ do
+      next <- waitUntilNextSlotIO slotLen start
+      atomically $ writeTVar slot next
 
 {-------------------------------------------------------------------------------
   Time to slots and back again

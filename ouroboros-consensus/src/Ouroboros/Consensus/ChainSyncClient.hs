@@ -45,8 +45,7 @@ import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util
-import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
-import qualified Ouroboros.Consensus.Util.ResourceRegistry as ResourceRegistry
+import           Ouroboros.Consensus.Util.ResourceRegistry
 import           Ouroboros.Consensus.Util.SlotBounded as SB
 import           Ouroboros.Consensus.Util.STM (Fingerprint, onEachChange)
 
@@ -139,13 +138,14 @@ bracketChainSyncClient
     -> m a
 bracketChainSyncClient tracer getCurrentChain getCurrentLedger
                        getIsInvalidBlock varCandidates peer body =
-    bracket register unregister $ \(registry, varCandidate, curChain) -> do
-      rejectInvalidBlocks
-        tracer
-        registry
-        getIsInvalidBlock
-        (readTVar varCandidate)
-      body varCandidate curChain
+    withRegistry $ \registry ->
+      bracket register unregister $ \(varCandidate, curChain) -> do
+        rejectInvalidBlocks
+          tracer
+          registry
+          getIsInvalidBlock
+          (readTVar varCandidate)
+        body varCandidate curChain
   where
     register = do
       (varCandidate, curChain) <- atomically $ do
@@ -159,11 +159,9 @@ bracketChainSyncClient tracer getCurrentChain getCurrentLedger
           }
         modifyTVar' varCandidates $ Map.insert peer varCandidate
         return (varCandidate, curChain)
-      registry <- ResourceRegistry.new
-      return (registry, varCandidate, curChain)
+      return (varCandidate, curChain)
 
-    unregister (registry, _, _) = do
-      ResourceRegistry.close registry
+    unregister _ = do
       atomically $ modifyTVar' varCandidates $ Map.delete peer
 
 -- | Chain sync client
@@ -562,17 +560,16 @@ rejectInvalidBlocks
     -> STM m (CandidateState blk)
     -> m ()
 rejectInvalidBlocks tracer registry getIsInvalidBlock getCandidateState =
-    onEachChange registry
-                 snd
-                 Nothing
-                 getIsInvalidBlock
-               $ \_registry' (isInvalidBlock, _) -> do
+    onEachChange registry snd Nothing getIsInvalidBlock checkInvalid
+  where
+    checkInvalid :: (HeaderHash blk -> Bool, Fingerprint) -> m ()
+    checkInvalid (isInvalidBlock, _) = do
       candChain <- candidateChain <$> atomically getCandidateState
       -- The invalid block is likely to be a more recent block, so check from
       -- newest to oldest.
       mapM_ disconnect $
         find (isInvalidBlock . headerHash) (AF.toNewestFirst candChain)
-  where
+
     disconnect :: Header blk -> m ()
     disconnect invalidHeader = do
       let ex = InvalidBlock (headerPoint invalidHeader)

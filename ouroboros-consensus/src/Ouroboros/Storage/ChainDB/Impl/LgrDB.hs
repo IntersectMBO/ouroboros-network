@@ -78,7 +78,7 @@ import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util ((.:))
-import qualified Ouroboros.Consensus.Util.ResourceRegistry as ResourceRegistry
+import           Ouroboros.Consensus.Util.ResourceRegistry
 
 import           Ouroboros.Storage.Common
 import           Ouroboros.Storage.EpochInfo
@@ -423,7 +423,7 @@ streamAPI immDB = StreamAPI streamAfter
       slotNoAtTip <- ImmDB.getSlotNoAtTip immDB
       if Block.pointSlot (tipToPoint tip) > slotNoAtTip
         then k Nothing
-        else ResourceRegistry.with $ \registry ->
+        else withRegistry $ \registry ->
           ImmDB.streamBlocksAfter immDB registry (tipToPoint tip) >>=
             k . Just . getNext
 

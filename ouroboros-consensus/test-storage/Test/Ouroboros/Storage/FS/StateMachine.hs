@@ -75,10 +75,11 @@ import qualified Ouroboros.Storage.Util.ErrorHandling as EH
 import qualified Ouroboros.Consensus.Util.Classify as C
 import           Ouroboros.Consensus.Util.Condense
 
-import           Test.Ouroboros.Storage.Util (collects, constrName, constrNames)
+import           Test.Ouroboros.Storage.Util (collects)
 
 import           Test.Util.RefEnv (RefEnv)
 import qualified Test.Util.RefEnv as RE
+import           Test.Util.SOP
 
 {-------------------------------------------------------------------------------
   Path expressions

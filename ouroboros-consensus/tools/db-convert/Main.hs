@@ -49,7 +49,7 @@ import           Ouroboros.Consensus.Node.ProtocolInfo.Abstract (pInfoConfig,
 import           Ouroboros.Consensus.Node.ProtocolInfo.Byron
 import           Ouroboros.Consensus.Protocol.Abstract (SecurityParam (..))
 import           Ouroboros.Consensus.Util.Condense (condense)
-import qualified Ouroboros.Consensus.Util.ResourceRegistry as ResourceRegistry
+import           Ouroboros.Consensus.Util.ResourceRegistry
 import qualified Ouroboros.Storage.ChainDB as ChainDB
 import qualified Ouroboros.Storage.ChainDB.Impl.Args as Args
 import qualified Ouroboros.Storage.ChainDB.Impl.ImmDB as ImmDB
@@ -166,7 +166,7 @@ validateChainDb
   -> Bool -- Verbose
   -> IO ()
 validateChainDb dbDir cfg onlyImmDB verbose =
-  ResourceRegistry.with $ \registry -> give protocolMagicId $ give epochSlots $
+  withRegistry $ \registry -> give protocolMagicId $ give epochSlots $
     if onlyImmDB
     then
       let (immDBArgs, _, _, _) = Args.fromChainDbArgs $ args registry

@@ -253,6 +253,7 @@ test-suite test-consensus
                     Test.Consensus.Mempool.TestBlock
                     Test.Consensus.Mempool.TestTx
                     Test.Consensus.Protocol.PBFT
+                    Test.Consensus.ResourceRegistry
                     Test.Dynamic.BFT
                     Test.Dynamic.General
                     Test.Dynamic.LeaderSchedule
@@ -271,6 +272,8 @@ test-suite test-consensus
                     Test.Util.Orphans.Arbitrary
                     Test.Util.Range
                     Test.Util.TestBlock
+                    Test.Util.QSM
+                    Test.Util.SOP
   build-depends:    base,
                     cardano-binary,
                     cardano-crypto-class,
@@ -289,9 +292,11 @@ test-suite test-consensus
                     cryptonite,
                     fgl,
                     fingertree,
+                    generics-sop,
                     graphviz,
                     mtl,
                     QuickCheck,
+                    quickcheck-state-machine,
                     random,
                     reflection,
                     serialise,
@@ -299,10 +304,12 @@ test-suite test-consensus
                     tasty-hunit,
                     tasty-quickcheck,
                     text,
-                    time
+                    time,
+                    tree-diff
 
   ghc-options:      -Wall
                     -fno-ignore-asserts
+                    -threaded
 
 test-suite test-storage
   type:             exitcode-stdio-1.0
@@ -340,6 +347,7 @@ test-suite test-storage
                     Test.Util.Orphans.Arbitrary
                     Test.Util.Range
                     Test.Util.RefEnv
+                    Test.Util.SOP
                     Test.Util.TestBlock
                     Test.Util.Tracer
   build-depends:    base,

@@ -22,7 +22,7 @@ module Ouroboros.Consensus.NodeKernel (
   , ProtocolM
   ) where
 
-import           Control.Monad (void)
+import           Control.Monad
 import           Crypto.Random (ChaChaDRG)
 import           Data.Map.Strict (Map)
 import           Data.Maybe (isNothing)
@@ -159,7 +159,7 @@ initNodeKernel args@NodeArgs { registry, cfg, tracers } = do
 
     -- Run the block fetch logic in the background. This will call
     -- 'addFetchedBlock' whenever a new block is downloaded.
-    void $ forkLinked registry $ blockFetchLogic
+    void $ forkLinkedThread registry $ blockFetchLogic
         (blockFetchDecisionTracer tracers)
         (blockFetchClientTracer   tracers)
         blockFetchInterface
@@ -289,7 +289,7 @@ forkBlockProduction
        )
     => InternalState m peer blk -> m ()
 forkBlockProduction IS{..} =
-    onSlotChange btime registry $ \_registry' currentSlot -> do
+    onSlotChange btime $ \currentSlot -> do
       drg  <- produceDRG
       -- See the docstring of 'withSyncState' for why we're using it instead
       -- of 'atomically'.
