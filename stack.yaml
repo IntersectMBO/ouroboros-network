@@ -19,7 +19,7 @@ extra-deps:
       - iohk-monitoring
 
   - git: https://github.com/input-output-hk/cardano-base
-    commit: c50bfdb129ae1eb319c9af3902674ef75b017fec
+    commit: 64bb761664c9ca8a52a0023dc1a92c9b5b884497
     subdirs:
       - binary
       - binary/test
@@ -32,6 +32,14 @@ extra-deps:
       - cardano-ledger/test
       - crypto
       - crypto/test
+
+  - git: https://github.com/input-output-hk/cardano-ledger-specs
+    commit: 3a8b6c9401d62e50054f68e506d11cf76c3279e3
+    subdirs:
+      - byron/ledger/executable-spec
+      - byron/semantics/executable-spec
+      - shelley/chain-and-ledger/dependencies/non-integer
+      - shelley/chain-and-ledger/executable-spec
 
   - git: https://github.com/input-output-hk/cardano-prelude
     commit: 001ec3576ef3bda04cf5bcccdd9a00991835d1a7
@@ -47,13 +55,22 @@ extra-deps:
   - git: https://github.com/input-output-hk/cardano-sl-x509
     commit: 43a036c5bbe68ca2e9cbe611eab7982e2348fe49
 
+  - git: https://github.com/input-output-hk/goblins
+    commit: 26d35ad52fe9ade3391532dbfeb2f416f07650bc
+
   - bimap-0.4.0
   - binary-0.8.7.0
   - generic-monoid-0.1.0.0
-  - graphviz-2999.20.0.3
-  - quickcheck-state-machine-0.6.0
+  - graphviz-2999.20.0.3@sha256:cde383c356bc41136ed53cd27e0800f46dbd2185600dd0de18d66d5c49739d94
+  - gray-code-0.3.1
+  - libsystemd-journal-1.4.4
+  - moo-1.2
+  - prometheus-2.1.1
+  - quickcheck-state-machine-0.6.0@sha256:3e4f8df0f6b5d415e3c8840dc75034a63e37f56f5f8cfa1035ded16345235ac4
   - splitmix-0.0.2
   - tasty-hedgehog-1.0.0.1
+  - time-units-1.0.0
+  - Unique-0.4.7.6
 
   # Windows only
   - Win32-2.5.4.1

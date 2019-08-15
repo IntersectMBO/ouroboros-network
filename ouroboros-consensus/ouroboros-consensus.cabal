@@ -89,6 +89,10 @@ library
                        Ouroboros.Consensus.Protocol.PBFT.Crypto
                        Ouroboros.Consensus.Protocol.Praos
                        Ouroboros.Consensus.Protocol.Signed
+                       Ouroboros.Consensus.Protocol.TPraos
+                       Ouroboros.Consensus.Protocol.TPraos.ChainState
+                       Ouroboros.Consensus.Protocol.TPraos.Crypto
+                       Ouroboros.Consensus.Protocol.TPraos.Util
                        Ouroboros.Consensus.Protocol.WithEBBs
                        Ouroboros.Consensus.TxSubmission
                        Ouroboros.Consensus.Util
@@ -212,6 +216,8 @@ library
                        cardano-crypto-class,
                        cardano-crypto-wrapper,
                        cardano-ledger,
+                        -- cardano-ledger-specs shelley
+                       delegation,
                        cardano-prelude,
                        cborg             >=0.2.2 && <0.3,
                        constraints,
@@ -232,6 +238,7 @@ library
                        reflection,
                        serialise         >=0.2   && <0.3,
                        stm,
+                       small-steps,
                        text              >=1.2   && <1.3,
                        time,
                        transformers,
