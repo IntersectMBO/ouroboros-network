@@ -20,7 +20,7 @@ import           Data.Functor (void)
 import           Data.Time.Clock (DiffTime, diffTimeToPicoseconds)
 import           Data.Typeable (Typeable)
 
-#if defined(__GLASGOW_HASKELL__) && !defined(mingw32_HOST_OS)
+#if defined(__GLASGOW_HASKELL__) && !defined(mingw32_HOST_OS) && !defined(__GHCJS__)
 import qualified GHC.Event as GHC (TimeoutKey, getSystemTimerManager,
                      registerTimeout, unregisterTimeout, updateTimeout)
 #endif
@@ -103,7 +103,8 @@ class (MonadSTM m, Eq (Timeout m)) => MonadTimer m where
 -- Instances for IO
 --
 
-#if defined(__GLASGOW_HASKELL__) && !defined(mingw32_HOST_OS)
+
+#if defined(__GLASGOW_HASKELL__) && !defined(mingw32_HOST_OS) && !defined(__GHCJS__)
 instance Eq (Timeout IO) where
   TimeoutIO _ key == TimeoutIO _ key' = key == key'
 
