@@ -30,6 +30,9 @@ module Ouroboros.Consensus.Protocol.PBFT (
   , HeaderSupportsPBft(..)
     -- * Type instances
   , NodeConfig(..)
+    -- * Exposed for testing purposes
+  , pruneChainState
+  , chainStateSize
   ) where
 
 import           Control.Monad.Except

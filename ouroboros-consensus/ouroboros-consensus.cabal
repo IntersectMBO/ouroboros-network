@@ -249,6 +249,7 @@ test-suite test-consensus
                     Test.Consensus.Mempool
                     Test.Consensus.Mempool.TestBlock
                     Test.Consensus.Mempool.TestTx
+                    Test.Consensus.Protocol.PBFT
                     Test.Dynamic.BFT
                     Test.Dynamic.General
                     Test.Dynamic.LeaderSchedule
