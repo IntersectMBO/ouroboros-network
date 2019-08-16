@@ -12,6 +12,7 @@ module Ouroboros.Network.Subscription.Ip
     , subscriptionWorker
     , SubscriptionTrace
     , IPSubscriptionTarget (..)
+    , ipSubscriptionTarget
     , WithIPList (..)
 
     -- * 'PeerState' STM transactions
@@ -89,24 +90,31 @@ ipSubscriptionWorker tracer errTracer tbl peerStatesVar localIPv4 localIPv6 conn
             localIPv4
             localIPv6
             connectionAttemptDelay
-            getTargets
+            (pure $ ipSubscriptionTarget peerStatesVar $ ispIps ips)
             (ispValency ips)
             errPolicies
             returnCallback
             mainTx
             k
+
+ipSubscriptionTarget :: forall m addr.
+                        ( MonadSTM  m
+                        , MonadTime m
+                        , Ord addr
+                        )
+                     => StrictTVar m (PeerStates m addr (Time m))
+                     -> [addr]
+                     -> SubscriptionTarget m addr
+ipSubscriptionTarget peerStatesVar ips = go ips
   where
-    getTargets :: IO (SubscriptionTarget IO Socket.SockAddr)
-    getTargets = pure $ go $ ispIps ips
-      where
-        go :: [Socket.SockAddr]
-           -> SubscriptionTarget IO Socket.SockAddr
-        go [] = SubscriptionTarget $ pure Nothing
-        go (a : as) = SubscriptionTarget $ do
-          b <- runBeforeConnect peerStatesVar beforeConnectTx a
-          if b
-            then pure $ Just (a, go as)
-            else getSubscriptionTarget $ go as
+    go :: [addr]
+       -> SubscriptionTarget m addr
+    go [] = SubscriptionTarget $ pure Nothing
+    go (a : as) = SubscriptionTarget $ do
+      b <- runBeforeConnect peerStatesVar beforeConnectTx a
+      if b
+        then pure $ Just (a, go as)
+        else getSubscriptionTarget $ go as
 
 
 -- | Check state before connecting to a remote peer.  We will connect only if

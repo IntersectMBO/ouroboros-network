@@ -548,6 +548,7 @@ prop_send_recv f xs first = ioProperty $ do
             atomically $ putTMVar cv r
             waitSiblingSub siblingVar
 
+    peerStatesVar <- newPeerStatesVar
     withDummyServer faultyAddress $
       withSimpleServerNode
         tbl
@@ -558,7 +559,6 @@ prop_send_recv f xs first = ioProperty $ do
         (\(DictVersion _) -> acceptEq)
         (simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData 0) (DictVersion nodeToNodeCodecCBORTerm) responderApp)
         $ \_ _ -> do
-          peerStatesVar <- newPeerStatesVar
           dnsSubscriptionWorker'
             activeTracer activeTracer activeTracer
             clientTbl
