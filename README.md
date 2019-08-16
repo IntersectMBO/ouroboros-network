@@ -76,14 +76,6 @@ or with `nix`
 ```
 nix-build -A nix-tools.tests.ouroboros-consensus.test-consensus
 ```
-### Crypto test suite
-```
-cabal new-run pkg:ouroboros-consensus:test-crypto
-```
-or with `nix`
-```
-nix-build -A nix-tools.tests.ouroboros-consensus.test-crypto
-```
 ### Storage test suite
 ```
 cabal new-run pkg:ouroboros-consensus:test-storage
