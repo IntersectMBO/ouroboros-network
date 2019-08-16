@@ -23,8 +23,6 @@ import           Data.Typeable (Typeable)
 #if defined(__GLASGOW_HASKELL__) && !defined(mingw32_HOST_OS)
 import qualified GHC.Event as GHC (TimeoutKey, getSystemTimerManager,
                      registerTimeout, unregisterTimeout, updateTimeout)
-#else
-import           Control.Monad (when)
 #endif
 
 import           Control.Monad.Class.MonadFork (MonadFork(..))
