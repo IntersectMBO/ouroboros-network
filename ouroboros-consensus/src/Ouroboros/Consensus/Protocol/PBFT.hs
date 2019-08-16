@@ -1,7 +1,6 @@
-{-# LANGUAGE DeriveAnyClass          #-}
 {-# LANGUAGE DeriveGeneric           #-}
 {-# LANGUAGE FlexibleContexts        #-}
-{-# LANGUAGE FlexibleInstances       #-}
+{-# LANGUAGE LambdaCase              #-}
 {-# LANGUAGE MultiParamTypeClasses   #-}
 {-# LANGUAGE NamedFieldPuns          #-}
 {-# LANGUAGE RecordWildCards         #-}
@@ -28,6 +27,9 @@ module Ouroboros.Consensus.Protocol.PBFT (
   , HeaderSupportsPBft(..)
     -- * Type instances
   , NodeConfig(..)
+    -- * Exposed for testing purposes
+  , pruneChainState
+  , chainStateSize
   ) where
 
 import           Control.Monad.Except
@@ -35,7 +37,10 @@ import           Crypto.Random (MonadRandom)
 import           Data.Bimap (Bimap)
 import qualified Data.Bimap as Bimap
 import           Data.Constraint
+import           Data.List (sortOn)
 import           Data.Reflection (Given (..), give)
+import           Data.Map.Strict (Map)
+import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
 import           Data.Sequence (Seq)
 import qualified Data.Sequence as Seq
@@ -167,11 +172,10 @@ instance (PBftCrypto c, Typeable c) => OuroborosTag (PBft c) where
 
   type IsLeader       (PBft c) = PBftIsLeader c
 
-  -- | Chain state consists of two things:
-  --   - a list of the last 'pbftSignatureWindow' signatures.
-  --   - The last seen block slot
+  -- | Chain state consists of a map from genesis keys to the list of blocks
+  -- which they have issued.
   type ChainState     (PBft c) =
-    Seq (PBftVerKeyHash c, SlotNo)
+    Map (PBftVerKeyHash c) (Seq SlotNo)
 
   protocolSecurityParam = pbftSecurityParam . pbftParams
 
@@ -201,9 +205,14 @@ instance (PBftCrypto c, Typeable c) => OuroborosTag (PBft c) where
         Right () -> return ()
         Left err -> throwError $ PBftInvalidSignature err
 
-      let (signers, lastSlot) = ( takeR winSize $ fst <$> chainState
-                                , maybe (SlotNo 0) snd $ Seq.lookup (Seq.length chainState) chainState
-                                )
+      -- We always include slot number 0 in case there are no signers yet.
+      let lastSlotOfSigner = \case
+            _ Seq.:|> s -> s
+            _           -> SlotNo 0
+          lastSlot =  maximum
+                   .  (SlotNo 0 :)
+                   $  lastSlotOfSigner
+                  <$> Map.elems chainState
 
       -- FIXME confirm that non-strict inequality is ok in general.
       -- It's here because EBBs have the same slot as the first block of their
@@ -214,26 +223,79 @@ instance (PBftCrypto c, Typeable c) => OuroborosTag (PBft c) where
       case Bimap.lookupR (hashVerKey pbftIssuer) dms of
         Nothing -> throwError $ PBftNotGenesisDelegate (hashVerKey pbftIssuer) lv
         Just gk -> do
-          let totalSigners = Seq.length signers
-              gkSigners = Seq.length (Seq.filter (== gk) signers)
+          let totalSigners = chainStateSize chainState
+              gkSigners = maybe 0 Seq.length $ Map.lookup gk chainState
           when (totalSigners >= winSize && gkSigners > wt)
             $ throwError (PBftExceededSignThreshold totalSigners gkSigners)
-          return $! takeR (winSize + 2*k) chainState Seq.|> (gk, blockSlot b)
+          return $! insertSigner gk (blockSlot b) $ pruneChainState (winSize + 2*k) chainState
     where
       PBftParams{..} = pbftParams
       PBftFields{..} = headerPBftFields cfg b
       winSize = fromIntegral pbftSignatureWindow
       SecurityParam (fromIntegral -> k) = pbftSecurityParam
       wt = floor $ pbftSignatureThreshold * fromIntegral winSize
-      -- Take the rightmost n elements of a sequence
-      takeR :: Integral i => i -> Seq a -> Seq a
-      takeR (fromIntegral -> n) s = Seq.drop (Seq.length s - n - 1) s
 
   rewindChainState _ cs mSlot = case mSlot of
-    Origin  -> Just Seq.empty
-    At slot -> case Seq.takeWhileL (\(_, s) -> s <= slot) cs of
-        _ Seq.:<| _ -> Just cs
-        _           -> Nothing
+    Origin
+        -> Just Map.empty
+    At slot
+        | all Seq.null $ Map.elems oldCs
+        -> Nothing
+        | otherwise
+        -> Just oldCs
+      where
+        oldCs = Seq.takeWhileL (<= slot) <$> cs
+
+-- | Prune the chain state to the given size by dropping the signers in the
+-- oldest slots.
+pruneChainState :: forall k v. (Ord k, Ord v)
+                => Int -> Map k (Seq v) -> Map k (Seq v)
+pruneChainState toSize cs = go
+    cs
+    (sortOn snd . Map.toAscList . Map.mapMaybe (Seq.lookup 0) $ cs)
+    (max 0 $ chainStateSize cs - toSize)
+  where
+    go :: Map k (Seq v)  -- ^ The chain state to prune
+       -> [(k, v)]       -- ^ Index: for each @k@ in the chain state, its
+                         -- oldest @v@ (slot).
+                         --
+                         -- INVARIANT: the @k@s in the chain state match the
+                         -- @k@s in the index.
+       -> Int            -- ^ How many elements left to drop
+       -> Map k (Seq v)
+    go fromCS idx toDrop = if toDrop <= 0 then fromCS else case idx of
+      [] -> fromCS
+      (gk,_):xs@((_,nextLowest):_) ->
+        let (newSeq, numDropped) = dropWhileL (< nextLowest) $ fromCS Map.! gk
+            newIdx = case newSeq of
+              x Seq.:<| _ -> sortOn snd $ (gk, x) : xs
+              _           -> xs
+        in go (Map.insert gk newSeq fromCS) newIdx (toDrop - numDropped)
+      -- Only one genesis key
+      (gk,_):[] ->
+        let newSeq = Seq.drop toDrop $ fromCS Map.! gk
+        in Map.insert gk newSeq fromCS
+
+chainStateSize :: Map k (Seq v) -> Int
+chainStateSize cs = sum $ Seq.length <$> Map.elems cs
+
+-- | Variant of 'dropWhileL' which also returns the number of elements dropped
+dropWhileL :: (a -> Bool) -> Seq a -> (Seq a, Int)
+dropWhileL f s = let res = Seq.dropWhileL f s in
+  (res, Seq.length s - Seq.length res)
+
+-- | Insert a signatory into the chain state.
+insertSigner
+  :: PBftCrypto c
+  => PBftVerKeyHash c
+  -> SlotNo
+  -> ChainState (PBft c)
+  -> ChainState (PBft c)
+insertSigner gk s =
+  Map.alter (\case
+      Just es -> Just $ es Seq.|> s
+      Nothing -> Just $ Seq.singleton s
+    ) gk
 
 {-------------------------------------------------------------------------------
   PBFT node order

@@ -21,6 +21,7 @@ module Ouroboros.Consensus.Node.ProtocolInfo.Byron (
 
 import           Control.Exception (Exception)
 import           Control.Monad.Except
+import qualified Data.Map.Strict as Map
 import qualified Data.Sequence as Seq
 import qualified Data.Set as Set
 import           Data.Maybe
@@ -162,7 +163,7 @@ protocolInfoByron genesisConfig@Genesis.Config {
                 blsCurrent   = initState
               , blsSnapshots = Seq.empty
               }
-          , ouroborosChainState = Seq.empty
+          , ouroborosChainState = Map.empty
           }
       , pInfoInitState  = ()
       }
