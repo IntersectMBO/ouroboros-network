@@ -51,6 +51,7 @@ import           Ouroboros.Consensus.Util.Orphans ()
 import           Test.Util.HasCreator
 import qualified Test.Util.MockChain as Chain
 
+import           Test.Dynamic.Network (NodeOutput (..))
 import           Test.Dynamic.Util.Expectations (NumBlocks (..),
                      determineForkLength)
 
@@ -160,7 +161,7 @@ instance Labellable EdgeLabel where
     toLabelValue = const $ StrLabel Text.empty
 
 tracesToDot :: forall b. (HasHeader b, HasCreator b)
-            => Map NodeId (NodeConfig (BlockProtocol b), Chain b)
+            => Map NodeId (NodeOutput b)
             -> String
 tracesToDot traces = Text.unpack $ printDotGraph $ graphToDot quickParams graph
   where
@@ -172,18 +173,22 @@ tracesToDot traces = Text.unpack $ printDotGraph $ graphToDot quickParams graph
                 in  Map.insert (biHash info) info m
 
     blockInfos :: Map (ChainHash b) (BlockInfo b)
-    blockInfos = Map.unions $ map (uncurry chainBlockInfos) $ Map.elems traces
+    blockInfos = Map.unions
+      [ chainBlockInfos (nodeOutputCfg no) (nodeOutputFinalChain no)
+      | no <- Map.elems traces
+      ]
 
     lastHash :: Chain b -> ChainHash b
     lastHash Genesis  = GenesisHash
     lastHash (_ :> b) = BlockHash $ blockHash b
 
     blockInfosAndBelievers :: Map (ChainHash b) (BlockInfo b, Set NodeId)
-    blockInfosAndBelievers = Map.foldlWithKey f i traces
+    blockInfosAndBelievers =
+        Map.foldlWithKey f i (nodeOutputFinalChain <$> traces)
       where
         i = (\info -> (info, Set.empty)) <$> blockInfos
 
-        f m nid (_, chain) = Map.adjust
+        f m nid chain = Map.adjust
             (\(info, believers) ->
               (info, Set.insert nid believers))
             (lastHash chain)
@@ -220,13 +225,19 @@ tracesToDot traces = Text.unpack $ printDotGraph $ graphToDot quickParams graph
 
 leaderScheduleFromTrace :: forall b. (HasCreator b, HasHeader b)
                         => NumSlots
-                        -> Map NodeId (NodeConfig (BlockProtocol b), Chain b)
+                        -> Map NodeId (NodeOutput b)
                         -> LeaderSchedule
 leaderScheduleFromTrace (NumSlots numSlots) = LeaderSchedule .
-    Map.foldl' (\m (nc, c) -> Chain.foldChain (step nc) m c) initial
+    Map.foldl' addNodeOutput initial
   where
     initial :: Map SlotNo [CoreNodeId]
     initial = Map.fromList [(slot, []) | slot <- [1 .. fromIntegral numSlots]]
+
+    addNodeOutput :: Map SlotNo [CoreNodeId]
+                  -> NodeOutput b
+                  -> Map SlotNo [CoreNodeId]
+    addNodeOutput m NodeOutput {nodeOutputCfg = nc, nodeOutputFinalChain = c} =
+      Chain.foldChain (step nc) m c
 
     step :: NodeConfig (BlockProtocol b)
          -> Map SlotNo [CoreNodeId]

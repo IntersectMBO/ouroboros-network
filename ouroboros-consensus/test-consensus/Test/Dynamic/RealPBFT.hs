@@ -39,6 +39,7 @@ import qualified Cardano.Crypto as Crypto
 import qualified Test.Cardano.Chain.Genesis.Dummy as Dummy
 
 import           Test.Dynamic.General
+import           Test.Dynamic.Network (NodeOutput (..))
 import           Test.Dynamic.Util
 
 import           Test.Util.Orphans.Arbitrary ()
@@ -91,7 +92,7 @@ prop_simple_real_pbft_convergence k numCoreNodes numSlots seed =
             numCoreNodes numSlots seed
 
     finalChains :: [Chain (ByronBlockOrEBB ByronConfig)]
-    finalChains = map snd $ Map.elems $ testOutputNodes testOutput
+    finalChains = Map.elems $ nodeOutputFinalChain <$> testOutputNodes testOutput
 
     giveByron :: forall a. (ByronGiven => a) -> a
     giveByron a =
