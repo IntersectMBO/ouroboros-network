@@ -62,7 +62,7 @@ instance Foldable TxSeq where
 
 -- | The 'FingerTree' relies on a \"measure\" for subsequences in the tree.
 -- A measure of the size of the subsequence allows for efficient sequence
--- operations. Also measuing the min and max ticket number allows for efficient
+-- operations. Also measuring the min and max ticket number allows for efficient
 -- operations based on the ticket number (assuming the sequence is ordered by
 -- ticket number).
 --
