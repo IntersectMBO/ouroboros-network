@@ -218,8 +218,6 @@ data MuxBearer ptcl m = MuxBearer {
     , read    :: m (MuxSDU ptcl, Time m)
     -- | Return a suitable MuxSDU payload size.
     , sduSize :: m Word16
-    -- | Close underlying socket.
-    , close   :: m ()
     , state   :: TVar m MuxBearerState
     }
 
