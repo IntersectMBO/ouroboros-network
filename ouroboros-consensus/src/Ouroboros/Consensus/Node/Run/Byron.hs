@@ -5,7 +5,10 @@
 module Ouroboros.Consensus.Node.Run.Byron () where
 
 import           Data.Reflection (given)
+import           Data.Coerce (coerce)
 
+import           Cardano.Chain.Slotting (EpochSlots (..))
+import           Cardano.Chain.ProtocolConstants (kEpochSlots)
 import qualified Cardano.Chain.Block as Cardano.Block
 import qualified Cardano.Chain.Genesis as Genesis
 
@@ -16,6 +19,8 @@ import           Ouroboros.Consensus.Ledger.Byron.Forge
 import           Ouroboros.Consensus.Node.Run.Abstract
 import           Ouroboros.Consensus.Protocol.ExtNodeConfig
 import           Ouroboros.Consensus.Protocol.WithEBBs
+
+import           Ouroboros.Storage.Common (EpochSize (..))
 
 {-------------------------------------------------------------------------------
   RunNode instance
@@ -28,16 +33,21 @@ instance ByronGiven => RunNode (ByronBlockOrEBB ByronConfig) where
   nodeIsEBB              = \blk -> case unByronBlockOrEBB blk of
     Cardano.Block.ABOBBlock _    -> False
     Cardano.Block.ABOBBoundary _ -> True
-  nodeEpochSize          = \_ _ -> return 21600 -- TODO #226
+
+  -- The epoch size is fixed and can be derived from @k@ by the ledger
+  -- ('kEpochSlots').
+  nodeEpochSize          = \_proxy cfg _epochNo -> return
+                             . (coerce :: EpochSlots -> EpochSize)
+                             . kEpochSlots
+                             . Genesis.gdK
+                             . extractGenesisData
+                             $ cfg
 
   -- Extract it from the 'Genesis.Config'
   nodeStartTime          = const
                          $ SystemStart
                          . Genesis.gdStartTime
-                         . Genesis.configGenesisData
-                         . pbftGenesisConfig
-                         . encNodeConfigExt
-                         . unWithEBBNodeConfig
+                         . extractGenesisData
 
   nodeEncodeBlock        = const encodeByronBlock
   nodeEncodeHeader       = const encodeByronHeader
@@ -56,3 +66,10 @@ instance ByronGiven => RunNode (ByronBlockOrEBB ByronConfig) where
   nodeDecodeLedgerState  = const decodeByronLedgerState
   nodeDecodeChainState   = const decodeByronChainState
   nodeDecodeApplyTxError = const decodeByronApplyTxError
+
+extractGenesisData :: NodeConfig (WithEBBs (ExtNodeConfig ByronConfig p))
+                   -> Genesis.GenesisData
+extractGenesisData = Genesis.configGenesisData
+                   . pbftGenesisConfig
+                   . encNodeConfigExt
+                   . unWithEBBNodeConfig

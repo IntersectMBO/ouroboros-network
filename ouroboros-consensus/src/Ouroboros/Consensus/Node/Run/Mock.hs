@@ -39,7 +39,7 @@ instance ( ProtocolLedgerView (SimpleBlock SimpleMockCrypto ext)
   nodeBlockMatchesHeader = matchesSimpleHeader
   nodeBlockFetchSize     = fromIntegral . simpleBlockSize . simpleHeaderStd
   nodeIsEBB              = const False
-  nodeEpochSize          = \_ _ -> return 21600
+  nodeEpochSize          = \_ _ _ -> return 100
   nodeStartTime          = \_ _ -> SystemStart dummyDate
     where
       --  This doesn't matter much
