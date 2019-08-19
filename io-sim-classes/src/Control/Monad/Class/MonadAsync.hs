@@ -20,6 +20,7 @@ import           Control.Concurrent.Async (AsyncCancelled(..))
 class ( MonadSTM m
       , forall a. Eq  (Async m a)
       , forall a. Ord (Async m a)
+      , Functor (Async m)
       ) => MonadAsync m where
 
   {-# MINIMAL async, asyncThreadId, cancel, cancelWith, waitCatchSTM, pollSTM #-}

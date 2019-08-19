@@ -322,13 +322,16 @@ instance MonadSTM (SimM s) where
   isEmptyTBQueue    = isEmptyTBQueueDefault
   isFullTBQueue     = isFullTBQueueDefault
 
-data Async s a = Async !ThreadId (TMVar (SimM s) (Either SomeException a))
+data Async s a = forall b. Async !ThreadId (b -> a) (TMVar (SimM s) (Either SomeException b))
 
 instance Eq (Async s a) where
-    Async tid _ == Async tid' _ = tid == tid'
+    Async tid _ _ == Async tid' _ _ = tid == tid'
 
 instance Ord (Async s a) where
-    compare (Async tid _) (Async tid' _) = compare tid tid'
+    compare (Async tid _ _) (Async tid' _ _) = compare tid tid'
+
+instance Functor (Async s) where
+  fmap f (Async tid g var) = Async tid (f . g) var
 
 instance MonadAsync (SimM s) where
   type Async (SimM s) = Async s
@@ -337,15 +340,15 @@ instance MonadAsync (SimM s) where
     var <- newEmptyTMVarM
     tid <- mask $ \restore ->
              fork $ try (restore action) >>= atomically . putTMVar var
-    return (Async tid var)
+    return (Async tid id var)
 
-  asyncThreadId _proxy (Async tid _) = tid
+  asyncThreadId _proxy (Async tid _ _) = tid
 
-  cancel a@(Async tid _) = throwTo tid AsyncCancelled <* waitCatch a
-  cancelWith a@(Async tid _) e = throwTo tid e <* waitCatch a
+  cancel a@(Async tid _ _) = throwTo tid AsyncCancelled <* waitCatch a
+  cancelWith a@(Async tid _ _) e = throwTo tid e <* waitCatch a
 
-  waitCatchSTM (Async _ var) = readTMVar var
-  pollSTM      (Async _ var) = tryReadTMVar var
+  waitCatchSTM (Async _ f var) = fmap f <$> readTMVar var
+  pollSTM      (Async _ f var) = fmap (fmap f) <$> tryReadTMVar var
 
 instance MonadST (SimM s) where
   withLiftST f = f liftST
