@@ -273,10 +273,13 @@ newIterator itEnv@IteratorEnv{..} getItEnv registry from to = do
       BlockPoint { atSlot = tipSlot, withHash = tipHash } ->
         case atSlot endPoint `compare` tipSlot of
           -- The end point is < the tip of the ImmutableDB
-          LT -> streamFromImmDB
+          LT -> streamFromImmDB True
           EQ | withHash endPoint == tipHash
                 -- The end point == the tip of the ImmutableDB
-             -> streamFromImmDB
+             -> streamFromImmDB False
+                   -- No need to check twice; moreover, the second check might
+                   -- raise a superfluous ReadFutureSlotError when the endpoint
+                   -- is an EBB
              | otherwise
                 -- The end point /= the tip of the ImmutableDB
              -> throwError $ ForkTooOld from
@@ -301,10 +304,11 @@ newIterator itEnv@IteratorEnv{..} getItEnv registry from to = do
       createIterator $ InVolDB from hashes
 
     streamFromImmDB :: HasCallStack
-                    => ExceptT (UnknownRange blk) m (Iterator m blk)
-    streamFromImmDB = do
+                    => Bool -- ^ Check the hash of the upper bound
+                    -> ExceptT (UnknownRange blk) m (Iterator m blk)
+    streamFromImmDB checkUpperBound = do
       lift $ trace $ StreamFromImmDB from to
-      streamFromImmDBHelper True
+      streamFromImmDBHelper checkUpperBound
 
     streamFromImmDBHelper :: HasCallStack
                           => Bool -- ^ Check the hash of the upper bound
