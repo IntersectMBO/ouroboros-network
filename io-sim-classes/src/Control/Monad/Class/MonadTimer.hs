@@ -1,33 +1,38 @@
 {-# LANGUAGE CPP                        #-}
+{-# LANGUAGE FlexibleContexts           #-}
+{-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE DefaultSignatures          #-}
 
 module Control.Monad.Class.MonadTimer (
     MonadTimer(..)
   , TimeoutState(..)
+  , timeoutAfter
   ) where
 
 import qualified Control.Concurrent as IO
 import qualified Control.Concurrent.STM.TVar as STM
+import           Control.Monad (when)
 import qualified Control.Monad.STM as STM
-import           Control.Exception (assert)
+import           Control.Exception (Exception(..), assert)
+import qualified Control.Exception as E
 import           Data.Functor (void)
 import           Data.Time.Clock (DiffTime, diffTimeToPicoseconds)
+import           Data.Typeable (Typeable)
 
 #if defined(__GLASGOW_HASKELL__) && !defined(mingw32_HOST_OS)
 import qualified GHC.Event as GHC (TimeoutKey, getSystemTimerManager,
                      registerTimeout, unregisterTimeout, updateTimeout)
-#else
-import           Control.Monad (when)
 #endif
 
 import           Control.Monad.Class.MonadFork (MonadFork(..))
 import           Control.Monad.Class.MonadSTM
+import           Control.Monad.Class.MonadThrow
 
 
 data TimeoutState = TimeoutPending | TimeoutFired | TimeoutCancelled
 
-class MonadSTM m => MonadTimer m where
+class (MonadSTM m, Eq (Timeout m)) => MonadTimer m where
   data Timeout m :: *
 
   -- | Create a new timeout which will fire at the given time duration in
@@ -99,6 +104,9 @@ class MonadSTM m => MonadTimer m where
 --
 
 #if defined(__GLASGOW_HASKELL__) && !defined(mingw32_HOST_OS)
+instance Eq (Timeout IO) where
+  TimeoutIO _ key == TimeoutIO _ key' = key == key'
+
 instance MonadTimer IO where
   data Timeout IO = TimeoutIO !(STM.TVar TimeoutState) !GHC.TimeoutKey
 
@@ -138,6 +146,9 @@ instance MonadTimer IO where
 
   registerDelay = STM.registerDelay . diffTimeToMicrosecondsAsInt
 #else
+instance Eq (Timeout IO) where
+  TimeoutIO _ cancelvar == TimeoutIO _ cancelvar' = cancelvar == cancelvar'
+
 instance MonadTimer IO where
   data Timeout IO = TimeoutIO !(STM.TVar (STM.TVar Bool)) !(STM.TVar Bool)
 
@@ -178,3 +189,37 @@ diffTimeToMicrosecondsAsInt d =
     assert (usec <= fromIntegral (maxBound :: Int)) $
     fromIntegral usec
 
+{-------------------------------------------------------------------------------
+  Timeout an action
+
+  This is based on the implementation in System.Timeout
+-------------------------------------------------------------------------------}
+
+data TimeoutException m = TimeoutException (Timeout m)
+
+instance Show (TimeoutException m) where
+  show _ = "<<timeout>>"
+
+instance Typeable m => Exception (TimeoutException m) where
+  toException   = E.asyncExceptionToException
+  fromException = E.asyncExceptionFromException
+
+-- | Generalization of 'System.Timeout.timeout' to 'MonadTimer'
+--
+-- NOTE: Like most of the timer API, this will only work with the threaded
+-- runtime. When using the non-threaded runtime, will fail with a runtime
+-- exception about a pattern match failure in "GHC.Event.Thread".
+timeoutAfter :: (MonadFork m, MonadTimer m, MonadMask m, Typeable m)
+             => DiffTime -> m a -> m (Maybe a)
+timeoutAfter d act = do
+    pid <- myThreadId
+    t   <- newTimeout d
+    handleJust
+      (\(TimeoutException t') -> if t' == t then Just () else Nothing)
+      (\_ -> return Nothing) $
+      bracket
+        (void $ forkWithUnmask $ \unmask -> unmask $ do
+            fired <- atomically $ awaitTimeout t
+            when fired $ throwTo pid (TimeoutException t))
+        (\() -> cancelTimeout t)
+        (\() -> Just <$> act)

@@ -1,5 +1,7 @@
-{-# LANGUAGE TypeFamilies        #-}
 {-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE RankNTypes          #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeFamilies        #-}
 
 module Control.Monad.Class.MonadFork
   ( MonadFork (..)
@@ -21,9 +23,10 @@ class (Monad m, Eq   (ThreadId m),
 
   type ThreadId m :: *
 
-  fork       :: m () -> m (ThreadId m)
-  myThreadId :: m (ThreadId m)
-  throwTo    :: Exception e => ThreadId m -> e -> m ()
+  fork           :: m () -> m (ThreadId m)
+  forkWithUnmask :: ((forall a. m a -> m a) -> m ()) -> m (ThreadId m)
+  myThreadId     :: m (ThreadId m)
+  throwTo        :: Exception e => ThreadId m -> e -> m ()
 
 
 instance MonadFork IO where
@@ -39,12 +42,16 @@ instance MonadFork IO where
         handleException (Right x) = return x
     in IO.forkFinally a handleException
 
-  myThreadId = IO.myThreadId
-  throwTo    = IO.throwTo
+  forkWithUnmask = IO.forkIOWithUnmask
+  myThreadId     = IO.myThreadId
+  throwTo        = IO.throwTo
 
 instance MonadFork m => MonadFork (ReaderT e m) where
   type ThreadId (ReaderT e m) = ThreadId m
   fork (ReaderT f) = ReaderT $ \e -> fork (f e)
+  forkWithUnmask k = ReaderT $ \e -> forkWithUnmask $ \restore ->
+                       let restore' :: ReaderT e m a -> ReaderT e m a
+                           restore' (ReaderT f) = ReaderT $ restore . f
+                       in runReaderT (k restore') e
   myThreadId  = lift myThreadId
   throwTo e t = lift (throwTo e t)
-

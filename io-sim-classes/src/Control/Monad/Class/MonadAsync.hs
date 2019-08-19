@@ -10,6 +10,7 @@ module Control.Monad.Class.MonadAsync
 
 import           Prelude hiding (read)
 
+import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
 import           Control.Exception (SomeException)
@@ -19,14 +20,16 @@ import           Control.Concurrent.Async (AsyncCancelled(..))
 class ( MonadSTM m
       , forall a. Eq  (Async m a)
       , forall a. Ord (Async m a)
+      , Functor (Async m)
       ) => MonadAsync m where
 
-  {-# MINIMAL async, cancel, cancelWith, waitCatchSTM, pollSTM #-}
+  {-# MINIMAL async, asyncThreadId, cancel, cancelWith, waitCatchSTM, pollSTM #-}
 
   -- | An asynchronous action
   type Async m :: * -> *
 
   async                 :: m a -> m (Async m a)
+  asyncThreadId         :: proxy m -> Async m a -> ThreadId m
   withAsync             :: m a -> (Async m a -> m b) -> m b
 
   wait                  :: Async m a -> m a
@@ -226,6 +229,7 @@ instance MonadAsync IO where
   type Async IO = Async.Async
 
   async                 = Async.async
+  asyncThreadId         = \_proxy -> Async.asyncThreadId
   withAsync             = Async.withAsync
 
   wait                  = Async.wait
@@ -260,4 +264,3 @@ instance MonadAsync IO where
   race                  = Async.race
   race_                 = Async.race_
   concurrently          = Async.concurrently
-

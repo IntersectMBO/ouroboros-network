@@ -277,9 +277,10 @@ blockUninterruptible a = SimM (SetMaskState MaskedUninterruptible a)
 instance MonadFork (SimM s) where
   type ThreadId (SimM s) = ThreadId
 
-  fork task     = SimM $ \k -> Fork task k
-  myThreadId    = SimM $ \k -> GetThreadId k
-  throwTo tid e = SimM $ \k -> ThrowTo (toException e) tid (k ())
+  fork task        = SimM $ \k -> Fork task k
+  forkWithUnmask f = fork (f unblock)
+  myThreadId       = SimM $ \k -> GetThreadId k
+  throwTo tid e    = SimM $ \k -> ThrowTo (toException e) tid (k ())
 
 instance MonadSTM (SimM s) where
   type STM   (SimM s)   = STM s
@@ -321,13 +322,16 @@ instance MonadSTM (SimM s) where
   isEmptyTBQueue    = isEmptyTBQueueDefault
   isFullTBQueue     = isFullTBQueueDefault
 
-data Async s a = Async !ThreadId (TMVar (SimM s) (Either SomeException a))
+data Async s a = forall b. Async !ThreadId (b -> a) (TMVar (SimM s) (Either SomeException b))
 
 instance Eq (Async s a) where
-    Async tid _ == Async tid' _ = tid == tid'
+    Async tid _ _ == Async tid' _ _ = tid == tid'
 
 instance Ord (Async s a) where
-    compare (Async tid _) (Async tid' _) = compare tid tid'
+    compare (Async tid _ _) (Async tid' _ _) = compare tid tid'
+
+instance Functor (Async s) where
+  fmap f (Async tid g var) = Async tid (f . g) var
 
 instance MonadAsync (SimM s) where
   type Async (SimM s) = Async s
@@ -336,13 +340,15 @@ instance MonadAsync (SimM s) where
     var <- newEmptyTMVarM
     tid <- mask $ \restore ->
              fork $ try (restore action) >>= atomically . putTMVar var
-    return (Async tid var)
+    return (Async tid id var)
 
-  cancel a@(Async tid _) = throwTo tid AsyncCancelled <* waitCatch a
-  cancelWith a@(Async tid _) e = throwTo tid e <* waitCatch a
+  asyncThreadId _proxy (Async tid _ _) = tid
 
-  waitCatchSTM (Async _ var) = readTMVar var
-  pollSTM      (Async _ var) = tryReadTMVar var
+  cancel a@(Async tid _ _) = throwTo tid AsyncCancelled <* waitCatch a
+  cancelWith a@(Async tid _ _) e = throwTo tid e <* waitCatch a
+
+  waitCatchSTM (Async _ f var) = fmap f <$> readTMVar var
+  pollSTM      (Async _ f var) = fmap (fmap f) <$> tryReadTMVar var
 
 instance MonadST (SimM s) where
   withLiftST f = f liftST
@@ -354,6 +360,9 @@ instance MonadTime (SimM s) where
   type Time (SimM s) = VTime
 
   getMonotonicTime = SimM $ \k -> GetTime k
+
+instance Eq (Timeout (SimM s)) where
+  Timeout _ key == Timeout _ key' = key == key'
 
 instance MonadTimer (SimM s) where
   data Timeout (SimM s) = Timeout !(TVar s TimeoutState) !TimeoutId
