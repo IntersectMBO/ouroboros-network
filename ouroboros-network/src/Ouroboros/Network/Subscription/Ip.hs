@@ -82,30 +82,32 @@ ipSubscriptionWorker
     -> IO Void
 ipSubscriptionWorker tracer errTracer tbl peerStatesVar localIPv4 localIPv6 connectionAttemptDelay errPolicies returnCallback ips k = do
     subscriptionWorker
-            (WithIPList localIPv4 localIPv6 (ispIps ips)
-              `contramap` tracer)
+            tracer'
             errTracer
             tbl
             peerStatesVar
             localIPv4
             localIPv6
             connectionAttemptDelay
-            (pure $ ipSubscriptionTarget peerStatesVar $ ispIps ips)
+            (pure $ ipSubscriptionTarget tracer' peerStatesVar $ ispIps ips)
             (ispValency ips)
             errPolicies
             returnCallback
             mainTx
             k
+  where
+    tracer' =  WithIPList localIPv4 localIPv6 (ispIps ips) `contramap` tracer
 
 ipSubscriptionTarget :: forall m addr.
                         ( MonadSTM  m
                         , MonadTime m
                         , Ord addr
                         )
-                     => StrictTVar m (PeerStates m addr (Time m))
+                     => Tracer m (SubscriptionTrace addr)
+                     -> StrictTVar m (PeerStates m addr (Time m))
                      -> [addr]
                      -> SubscriptionTarget m addr
-ipSubscriptionTarget peerStatesVar ips = go ips
+ipSubscriptionTarget tr peerStatesVar ips = go ips
   where
     go :: [addr]
        -> SubscriptionTarget m addr
@@ -113,8 +115,12 @@ ipSubscriptionTarget peerStatesVar ips = go ips
     go (a : as) = SubscriptionTarget $ do
       b <- runBeforeConnect peerStatesVar beforeConnectTx a
       if b
-        then pure $ Just (a, go as)
-        else getSubscriptionTarget $ go as
+        then do
+          traceWith tr $ SubscriptionTraceTryConnectToPeer a
+          pure $ Just (a, go as)
+        else do
+          traceWith tr $ SubscriptionTraceSkippingPeer a
+          getSubscriptionTarget $ go as
 
 
 -- | Check state before connecting to a remote peer.  We will connect only if

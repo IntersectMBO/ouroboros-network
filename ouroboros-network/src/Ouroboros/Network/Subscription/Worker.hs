@@ -654,7 +654,8 @@ data SubscriptionTrace addr =
     | forall e. Exception e => SubscriptionTraceSocketAllocationException addr e
     | forall e. Exception e => SubscriptionTraceConnectException addr e
     | forall e. Exception e => SubscriptionTraceApplicationException addr e
-    | SubscriptionTraceTryConnectToPeer addr Bool
+    | SubscriptionTraceTryConnectToPeer addr
+    | SubscriptionTraceSkippingPeer addr
     | SubscriptionTraceSubscriptionRunning
     | SubscriptionTraceSubscriptionWaiting Int
     | SubscriptionTraceSubscriptionFailed
@@ -676,10 +677,10 @@ instance Show addr => Show (SubscriptionTrace addr) where
         "Socket Allocation Exception, destination " ++ show dst ++ " exception: " ++ show e
     show (SubscriptionTraceConnectException dst e) =
         "Connection Attemt Exception, destination " ++ show dst ++ " exception: " ++ show e
-    show (SubscriptionTraceTryConnectToPeer addr True) =
+    show (SubscriptionTraceTryConnectToPeer addr) =
         "Trying to connect to " ++ show addr
-    show (SubscriptionTraceTryConnectToPeer addr False) =
-        "Not trying to connect to " ++ show addr
+    show (SubscriptionTraceSkippingPeer addr) =
+        "Skipping peer " ++ show addr
     show SubscriptionTraceSubscriptionRunning =
         "Required subscriptions started"
     show (SubscriptionTraceSubscriptionWaiting d) =

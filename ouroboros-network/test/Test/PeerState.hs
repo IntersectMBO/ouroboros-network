@@ -336,7 +336,7 @@ prop_subscriptionWorker
              (Just localAddr)
              (\_ a b -> getFirst (First a <> First b))
              (const Nothing)
-             (pure $ ipSubscriptionTarget peerStatesVar [remoteAddr])
+             (pure $ ipSubscriptionTarget nullTracer peerStatesVar [remoteAddr])
              1
              (\sock -> app sock
                 `finally`
