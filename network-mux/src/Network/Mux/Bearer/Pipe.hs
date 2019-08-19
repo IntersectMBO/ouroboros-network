@@ -15,7 +15,7 @@ import           Control.Monad.Class.MonadTime
 import           Data.Word
 import qualified Data.ByteString.Lazy as BL
 import           GHC.Stack
-import           System.IO (Handle, hClose, hFlush)
+import           System.IO (Handle, hFlush)
 
 import qualified Network.Mux as Mx
 import           Network.Mux.Types (MuxBearer)
@@ -40,7 +40,6 @@ pipeAsMuxBearer pcRead pcWrite = do
       return $ Mx.MuxBearer {
           Mx.read = readPipe,
           Mx.write = writePipe,
-          Mx.close = closePipe,
           Mx.sduSize = sduSize,
           Mx.state = mxState
         }
@@ -76,11 +75,6 @@ pipeAsMuxBearer pcRead pcWrite = do
           BL.hPut pcWrite buf
           hFlush pcWrite
           return ts
-
-      closePipe :: IO ()
-      closePipe = do
-          hClose pcRead
-          hClose pcWrite
 
       sduSize :: IO Word16
       sduSize = return 32768
