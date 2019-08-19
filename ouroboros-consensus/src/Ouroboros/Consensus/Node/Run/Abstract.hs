@@ -42,7 +42,9 @@ class (ProtocolLedgerView blk, ApplyTx blk) => RunNode blk where
   nodeBlockFetchSize     :: Header blk -> SizeInBytes
   nodeIsEBB              :: blk -> Bool
   nodeEpochSize          :: Monad m
-                         => Proxy blk  -> EpochNo -> m EpochSize
+                         => Proxy blk
+                         -> NodeConfig (BlockProtocol blk)
+                         -> EpochNo -> m EpochSize
   nodeStartTime          :: Proxy blk
                          -> NodeConfig (BlockProtocol blk)
                          -> SystemStart

@@ -326,7 +326,7 @@ broadcastNetwork registry testBtime numCoreNodes pInfo initRNG slotLen = do
             , produceDRG      = atomically $ simChaChaT varRNG id $ drgNew
             }
 
-      epochInfo <- newEpochInfo $ nodeEpochSize (Proxy @blk)
+      epochInfo <- newEpochInfo $ nodeEpochSize (Proxy @blk) pInfoConfig
       fsVars@(immDbFsVar, volDbFsVar, lgrDbFsVar)  <- atomically $ (,,)
         <$> newTVar Mock.empty <*> newTVar Mock.empty <*> newTVar Mock.empty
       let args = mkArgs pInfoConfig pInfoInitLedger epochInfo fsVars
