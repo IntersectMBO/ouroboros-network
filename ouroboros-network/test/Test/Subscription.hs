@@ -293,7 +293,7 @@ prop_resolv lr =  do
     --say $ printf "%s" $ show lr
     let resolver = mockResolver lr
     peerStatesVar <- newTVarM ()
-    x <- dnsResolve nullTracer resolver peerStatesVar (\_ _ s -> pure (s, True)) $ DnsSubscriptionTarget "shelley-1.iohk.example" 1 2
+    x <- dnsResolve nullTracer resolver peerStatesVar (\_ _ s -> pure (AllowConnection s)) $ DnsSubscriptionTarget "shelley-1.iohk.example" 1 2
     !res <- checkResult <$> extractResult x []
 
     {-
