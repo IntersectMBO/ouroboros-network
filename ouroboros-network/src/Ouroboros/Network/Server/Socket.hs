@@ -11,6 +11,7 @@
 module Ouroboros.Network.Server.Socket
   ( BeginConnection
   , HandleConnection (..)
+  , ApplicationStart
   , CompleteConnection
   , Result (..)
   , Main
