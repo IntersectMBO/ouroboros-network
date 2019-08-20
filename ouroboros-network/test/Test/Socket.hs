@@ -20,6 +20,7 @@ import qualified Data.ByteString.Lazy as BL
 import           Data.Functor ((<$))
 import           Data.Int (Int64)
 import           Data.List (mapAccumL)
+import qualified Data.Map.Strict as Map
 import           Data.Void (Void)
 import qualified Network.Socket as Socket
 import qualified Network.Socket.ByteString.Lazy as Socket (sendAll)
@@ -50,6 +51,7 @@ import           Ouroboros.Network.MockChain.Chain (Chain, ChainUpdate, Point)
 import qualified Ouroboros.Network.MockChain.Chain as Chain
 import qualified Ouroboros.Network.MockChain.ProducerState as CPS
 import           Ouroboros.Network.NodeToNode
+import           Ouroboros.Network.Subscription.PeerState
 import qualified Ouroboros.Network.Protocol.ChainSync.Client as ChainSync
 import qualified Ouroboros.Network.Protocol.ChainSync.Codec as ChainSync
 import qualified Ouroboros.Network.Protocol.ChainSync.Examples as ChainSync
@@ -199,7 +201,7 @@ prop_socket_send_recv initiatorAddr responderAddr f xs = do
     cv <- newEmptyTMVarM
     sv <- newEmptyTMVarM
     tbl <- newConnectionTable
-    stVar <- newTVarM ()
+    stVar <- newTVarM (PeerStates Map.empty)
 
     {- The siblingVar is used by the initiator and responder to wait on each other before exiting.
      - Without this wait there is a risk that one side will finish first causing the Muxbearer to
@@ -233,6 +235,7 @@ prop_socket_send_recv initiatorAddr responderAddr f xs = do
 
     res <-
       withSimpleServerNode
+        nullTracer
         tbl
         stVar
         responderAddr
@@ -241,6 +244,8 @@ prop_socket_send_recv initiatorAddr responderAddr f xs = do
         (\_ _ -> ())
         (\(DictVersion _) -> acceptEq)
         (simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData 0) (DictVersion nodeToNodeCodecCBORTerm) responderApp)
+        []
+        (\_ _ _ -> Throw)
         $ \_ _ -> do
           connectToNode
             (\(DictVersion codec) -> encodeTerm codec)
@@ -368,7 +373,7 @@ demo chain0 updates = do
     consumerVar <- newTVarM chain0
     done <- atomically newEmptyTMVar
     tbl <- newConnectionTable
-    stVar <- newTVarM ()
+    stVar <- newTVarM (PeerStates Map.empty)
 
     let Just expectedChain = Chain.applyChainUpdates updates chain0
         target = Chain.headPoint expectedChain
@@ -396,6 +401,7 @@ demo chain0 updates = do
                                                   encode             decode
 
     withSimpleServerNode
+      nullTracer
       tbl
       stVar
       producerAddress
@@ -404,6 +410,8 @@ demo chain0 updates = do
       (,)
       (\(DictVersion _) -> acceptEq)
       (simpleSingletonVersions (0::Int) (NodeToNodeVersionData 0) (DictVersion nodeToNodeCodecCBORTerm) responderApp)
+      []
+      (\_ _ _ -> Throw)
       $ \_ _ -> do
       withAsync
         (connectToNode

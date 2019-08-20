@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE CPP                 #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE DataKinds           #-}
@@ -24,6 +25,9 @@ module Ouroboros.Network.Socket (
     , fromSocket
     , beginConnection
 
+    -- * Re-export of PeerStates
+    , PeerStates
+
     -- * Re-export connection table functions
     , newConnectionTable
     , refConnection
@@ -37,6 +41,7 @@ module Ouroboros.Network.Socket (
     ) where
 
 import           Control.Concurrent.Async
+import           Control.Exception (SomeException (..))
 import           Control.Monad (when)
 -- TODO: remove this, it will not be needed when `orElse` PR will be merged.
 import qualified Control.Monad.STM as STM
@@ -65,6 +70,8 @@ import           Network.Mux.Types (MuxBearer)
 import           Network.Mux.Interface
 import qualified Network.Mux.Bearer.Socket as Mx
 
+import           Ouroboros.Network.ErrorPolicy
+import           Ouroboros.Network.Subscription.PeerState
 import           Ouroboros.Network.Protocol.Handshake.Type
 import           Ouroboros.Network.Protocol.Handshake.Version
 import           Ouroboros.Network.Protocol.Handshake.Codec
@@ -310,7 +317,7 @@ fromSocket tblVar sd = Server.Socket
 -- Thin wrapper around @'Server.run'@.
 --
 runNetworkNode'
-    :: forall peerid ptcl st vNumber extra t.
+    :: forall peerid ptcl vNumber extra t.
        ( Mx.ProtocolEnum ptcl
        , Ord ptcl
        , Enum ptcl
@@ -324,7 +331,7 @@ runNetworkNode'
        , Show vNumber
        )
     => ConnectionTable IO Socket.SockAddr
-    -> StrictTVar IO st
+    -> StrictTVar IO (PeerStates IO Socket.SockAddr (Time IO))
     -> Socket.Socket
     -> (forall vData. extra vData -> vData -> CBOR.Term)
     -> (forall vData. extra vData -> CBOR.Term -> Either Text vData)
@@ -333,20 +340,22 @@ runNetworkNode'
     -> (SomeException -> IO ())
     -> (Time IO
           -> Socket.SockAddr
-          -> st
+          -> PeerStates IO Socket.SockAddr (Time IO)
           -> STM.STM
               (AcceptConnection
-                st vNumber extra peerid ptcl IO BL.ByteString))
-    -> Server.CompleteConnection Socket.SockAddr st ()
-    -> Server.Main st t
+                (PeerStates IO Socket.SockAddr (Time IO))
+                vNumber extra peerid ptcl IO BL.ByteString))
+    -> Server.ApplicationStart Socket.SockAddr (PeerStates IO Socket.SockAddr (Time IO))
+    -> Server.CompleteConnection Socket.SockAddr (PeerStates IO Socket.SockAddr (Time IO)) ()
+    -> Server.Main (PeerStates IO Socket.SockAddr (Time IO)) t
     -> IO t
-runNetworkNode' tbl stVar sd encodeData decodeData acceptVersion acceptException acceptConn complete
+runNetworkNode' tbl stVar sd encodeData decodeData acceptVersion acceptException acceptConn applicationStart complete
     main = Server.run
-      (fromSocket tbl sd)
-      acceptException
-      (beginConnection encodeData decodeData acceptVersion acceptConn)
-      (\_ _ st -> pure st)
-      complete main (toLazyTVar stVar)
+        (fromSocket tbl sd)
+        acceptException
+        (beginConnection encodeData decodeData acceptVersion acceptConn)
+        applicationStart
+        complete main (toLazyTVar stVar)
 
 
 -- |
@@ -366,7 +375,7 @@ runNetworkNode' tbl stVar sd encodeData decodeData acceptVersion acceptException
 -- thread which runs the server.  This makes it useful for testing, where we
 -- need to guarantee that a socket is open before we try to connect to it.
 withServerNode
-    :: forall peerid ptcl vNumber extra st t.
+    :: forall peerid ptcl vNumber extra t.
        ( Mx.ProtocolEnum ptcl
        , Ord ptcl
        , Enum ptcl
@@ -379,8 +388,9 @@ withServerNode
        , Typeable vNumber
        , Show vNumber
        )
-    => ConnectionTable IO Socket.SockAddr
-    -> StrictTVar IO st
+    => Tracer IO (WithAddr Socket.SockAddr ErrorPolicyTrace)
+    -> ConnectionTable IO Socket.SockAddr
+    -> StrictTVar IO (PeerStates IO Socket.SockAddr (Time IO))
     -> Socket.AddrInfo
     -> (forall vData. extra vData -> vData -> CBOR.Term)
     -> (forall vData. extra vData -> CBOR.Term -> Either Text vData)
@@ -390,12 +400,14 @@ withServerNode
     -- ^ The mux application that will be run on each incoming connection from
     -- a given address.  Note that if @'MuxClientAndServerApplication'@ is
     -- returned, the connection will run a full duplex set of mini-protocols.
+    -> [ErrorPolicy]
+    -> (Time IO -> Socket.SockAddr -> () -> SuspendDecision DiffTime)
     -> (Socket.SockAddr -> Async () -> IO t)
     -- ^ callback which takes the @Async@ of the thread that is running the server.
     -- Note: the server thread will terminate when the callback returns or
     -- throws an exception.
     -> IO t
-withServerNode tbl stVar addr encodeData decodeData peeridFn acceptVersion versions k =
+withServerNode errTracer tbl stVar addr encodeData decodeData peeridFn acceptVersion versions errPolicies returnCallback k =
     bracket (mkListeningSocket (Socket.addrFamily addr) (Just $ Socket.addrAddress addr)) Socket.close $ \sd -> do
       addr' <- Socket.getSocketName sd
       withAsync
@@ -407,24 +419,43 @@ withServerNode tbl stVar addr encodeData decodeData peeridFn acceptVersion versi
           decodeData
           acceptVersion
           throwIO
-          (\_t connAddr st ->
-            pure $ AcceptConnection
-                    st
-                    (peeridFn addr' connAddr)
-                    versions)
+          (\t connAddr st -> do
+            d <- beforeConnectTx t connAddr st
+            case d of
+              AllowConnection st'    -> pure $ AcceptConnection st' (peeridFn addr' connAddr) versions
+              DisallowConnection st' -> pure $ RejectConnection st' (peeridFn addr' connAddr))
+              -- register producer when application starts, it will be
+              -- unregistered using 'CompleteConnection'
+          (\remoteAddr thread st -> pure $ registerProducer remoteAddr thread
+          st)
           complete
           main) (k addr')
 
     where
-      main :: Server.Main st ()
-      main _ = retry
+      main :: Server.Main (PeerStates IO Socket.SockAddr (Time IO)) ()
+      main (ThrowException e) = throwM e
+      main PeerStates{}       = retry
+
+      completeTx :: CompleteApplication IO
+                      (PeerStates IO Socket.SockAddr (Time IO))
+                      Socket.SockAddr
+                      ()
+      completeTx = completeApplicationTx errTracer returnCallback errPolicies
 
       -- When a connection completes, we do nothing. State is ().
       -- Crucially: we don't re-throw exceptions, because doing so would
       -- bring down the server.
-      complete outcome st = case outcome of
-        Server.Result _ _ _ (Left _)  -> pure (st, pure ())
-        Server.Result _ _ _ (Right _) -> pure (st, pure ())
+      complete :: Server.CompleteConnection
+                    Socket.SockAddr
+                    (PeerStates IO Socket.SockAddr (Time IO))
+                    ()
+      complete result st = case result of
+        Server.Result thread remoteAddr t (Left (SomeException e)) -> do
+          (st', io) <- completeTx (ApplicationError t remoteAddr e) st
+          pure $ (unregisterProducer remoteAddr thread st', io)
+        Server.Result thread remoteAddr t (Right r) -> do
+          (st', io) <- completeTx (ApplicationResult t remoteAddr r) st
+          pure $ (unregisterProducer remoteAddr thread st', io)
 
 
 -- |
@@ -432,7 +463,7 @@ withServerNode tbl stVar addr encodeData decodeData peeridFn acceptVersion versi
 -- connection.
 --
 withSimpleServerNode
-    :: forall peerid ptcl vNumber extra t s a b.
+    :: forall peerid ptcl vNumber extra t a b.
        ( Mx.ProtocolEnum ptcl
        , Ord ptcl
        , Enum ptcl
@@ -445,8 +476,9 @@ withSimpleServerNode
        , Typeable vNumber
        , Show vNumber
        )
-    => ConnectionTable IO Socket.SockAddr
-    -> StrictTVar IO s
+    => Tracer IO (WithAddr Socket.SockAddr ErrorPolicyTrace)
+    -> ConnectionTable IO Socket.SockAddr
+    -> StrictTVar IO (PeerStates IO Socket.SockAddr (Time IO))
     -> Socket.AddrInfo
     -> (forall vData. extra vData -> vData -> CBOR.Term)
     -> (forall vData. extra vData -> CBOR.Term -> Either Text vData)
@@ -456,6 +488,8 @@ withSimpleServerNode
     -> Versions vNumber extra (OuroborosApplication ResponderApp peerid ptcl IO BL.ByteString a b)
     -- ^ The mux server application that will be run on each incoming
     -- connection.
+    -> [ErrorPolicy]
+    -> (Time IO -> Socket.SockAddr -> () -> SuspendDecision DiffTime)
     -> (Socket.SockAddr -> Async () -> IO t)
     -- ^ callback which takes the local address that the server bound to along with the @Async@ of
     -- the thread that is running the server
@@ -463,4 +497,4 @@ withSimpleServerNode
     -- Note: the server thread will terminate when the callback returns or
     -- throws an exception.
     -> IO t
-withSimpleServerNode tbl stVar addr encodeData decodeData peeridFn acceptVersion versions k = withServerNode tbl stVar addr encodeData decodeData peeridFn acceptVersion (AnyResponderApp <$> versions) k
+withSimpleServerNode errTracer tbl stVar addr encodeData decodeData peeridFn acceptVersion versions errPolicies returnCallback k = withServerNode errTracer tbl stVar addr encodeData decodeData peeridFn acceptVersion (AnyResponderApp <$> versions) errPolicies returnCallback k

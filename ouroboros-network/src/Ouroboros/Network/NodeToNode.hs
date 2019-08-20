@@ -36,6 +36,7 @@ import           Codec.SerialiseTerm
 import qualified Network.Socket as Socket
 
 import           Control.Monad.Class.MonadSTM.Strict
+import           Control.Monad.Class.MonadTime
 import           Control.Tracer (Tracer)
 
 import           Network.Mux.Types (ProtocolEnum(..), MiniProtocolLimits (..))
@@ -43,6 +44,7 @@ import           Network.Mux.Interface
 import           Network.TypedProtocol.Driver.ByteLimit (DecoderFailureOrTooMuchInput)
 import           Network.TypedProtocol.Driver (TraceSendRecv)
 
+import           Ouroboros.Network.ErrorPolicy
 import           Ouroboros.Network.Mux
 import           Ouroboros.Network.Protocol.Handshake.Type
 import           Ouroboros.Network.Protocol.Handshake.Version
@@ -141,17 +143,21 @@ connectTo =
 -- | A specialised version of @'Ouroboros.Network.Socket.withServerNode'@
 --
 withServer
-  :: ConnectionTable IO Socket.SockAddr
-  -> StrictTVar IO st
+  :: Tracer IO (WithAddr Socket.SockAddr ErrorPolicyTrace)
+  -> ConnectionTable IO Socket.SockAddr
+  -> StrictTVar IO (PeerStates IO Socket.SockAddr (Time IO))
   -> Socket.AddrInfo
   -> (Socket.SockAddr -> Socket.SockAddr -> peerid)
   -- ^ create peerid from local address and remote address
   -> (forall vData. DictVersion vData -> vData -> vData -> Accept)
   -> Versions NodeToNodeVersion DictVersion (AnyResponderApp peerid NodeToNodeProtocols IO BL.ByteString)
+  -> [ErrorPolicy]
+  -> (Time IO -> Socket.SockAddr -> () -> SuspendDecision DiffTime)
   -> (Async () -> IO t)
   -> IO t
-withServer tbl stVar addr peeridFn acceptVersion versions k =
+withServer errTracer tbl stVar addr peeridFn acceptVersion versions errPolicies returnCallback k =
   withServerNode
+    errTracer
     tbl
     stVar
     addr
@@ -160,4 +166,6 @@ withServer tbl stVar addr peeridFn acceptVersion versions k =
     peeridFn
     acceptVersion
     versions
+    errPolicies
+    returnCallback
     (\_ -> k)
