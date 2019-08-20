@@ -56,7 +56,6 @@ import qualified Codec.CBOR.Decoding as CBOR
 import qualified Codec.CBOR.Term as CBOR
 import           Codec.Serialise (Serialise (..), DeserialiseFailure)
 import           Codec.SerialiseTerm
-
 import qualified Network.Socket as Socket
 
 import           Control.Monad.Class.MonadSTM.Strict
@@ -65,6 +64,8 @@ import           Control.Tracer (Tracer)
 
 import           Network.Mux.Types
 import           Network.Mux.Interface
+import           Network.TypedProtocol.Driver.ByteLimit (DecoderFailureOrTooMuchInput)
+import           Network.TypedProtocol.Driver (TraceSendRecv)
 
 import           Ouroboros.Network.Mux
 import           Ouroboros.Network.Protocol.Handshake.Type
@@ -84,8 +85,6 @@ import           Ouroboros.Network.Subscription.Dns ( DnsSubscriptionTarget (..)
                                                     , WithDomainName (..)
                                                     )
 import           Ouroboros.Network.Subscription.PeerState
-import           Network.TypedProtocol.Driver.ByteLimit (DecoderFailureOrTooMuchInput)
-import           Network.TypedProtocol.Driver (TraceSendRecv)
 
 
 -- | An index type used with the mux to enumerate all the mini-protocols that
