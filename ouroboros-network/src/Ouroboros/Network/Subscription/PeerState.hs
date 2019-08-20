@@ -1,6 +1,7 @@
 {-# LANGUAGE BangPatterns          #-}
 {-# LANGUAGE DeriveFunctor         #-}
 {-# LANGUAGE GADTs                 #-}
+{-# LANGUAGE DeriveFunctor         #-}
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
@@ -30,6 +31,10 @@ module Ouroboros.Network.Subscription.PeerState
   , unregisterConsumer
   , registerProducer
   , unregisterProducer
+  , BeforeConnect
+  , ConnectDecision (..)
+  , runBeforeConnect
+  , beforeConnectTx
 
   -- * Tracing
   , ErrorPolicyTrace (..)
@@ -510,6 +515,115 @@ unregisterConsumer addr  tid (PeerStates peerStates) =
            else Just (HotPeer producers consumers')
     fn (Just ColdPeer) = Nothing
     fn (Just ps) = Just ps
+
+
+-- | Before connectin with a peer we make a decision to either connect to it or
+-- not.
+--
+data ConnectDecision s
+    = AllowConnection !s
+    | DisallowConnection !s
+  deriving Functor
+
+-- | Check state before connecting to a remote peer.  We will connect only if
+-- it retuns 'True'.
+--
+type BeforeConnect m s addr = Time m -> addr -> s -> STM m (ConnectDecision s)
+
+-- | Run 'BeforeConnect' callback in a 'MonadTime' monad.
+--
+runBeforeConnect :: ( MonadSTM  m
+                    , MonadTime m
+                    )
+                 => StrictTVar m s
+                 -> BeforeConnect m s addr
+                 -> addr
+                 -> m Bool
+runBeforeConnect sVar beforeConnect addr = do
+    t <- getMonotonicTime
+    atomically $ do
+      d <- readTVar sVar >>= beforeConnect t addr
+      case d of
+        AllowConnection s -> True  <$ writeTVar sVar s
+        DisallowConnection s      -> False <$ writeTVar sVar s
+
+
+-- | 'BeforeConnect' callback: it updates peer state and return boolean value
+-- wheather to connect to it or not.  If a peer hasn't been recorded in
+-- 'PeerStates', we add it and try to connect to it.
+--
+beforeConnectTx
+  :: forall m addr.
+     ( MonadSTM m
+     , Ord addr
+     , Ord (Time m)
+     )
+  => BeforeConnect m
+      (PeerStates m addr (Time m))
+      addr
+
+beforeConnectTx _t _addr ps@ThrowException{} = pure $ DisallowConnection ps
+
+beforeConnectTx  t  addr (PeerStates s) =
+    case alterAndLookup fn addr s of
+      (s', mbd) -> case mbd of
+        Nothing -> pure $ DisallowConnection (PeerStates s')
+        Just d  -> pure (PeerStates s' <$ d)
+  where
+    fn :: Maybe (PeerState m (Time m))
+       -> ( ConnectDecision ()
+          , Maybe (PeerState m (Time m))
+          )
+
+    -- we see the peer for the first time; consider it as a good peer and
+    -- try to connect to it.
+    fn Nothing = ( AllowConnection ()
+                 , Just ColdPeer
+                 )
+
+    fn (Just p@ColdPeer{}) = ( AllowConnection ()
+                             , Just p
+                             )
+
+    fn (Just p@(HotPeer producers consumers))
+      = if Set.null producers && Set.null consumers
+        -- the peer has no registered producers nor consumers, thus it should
+        -- be marked as a 'ColdPeer'
+        then ( AllowConnection ()
+             , Just ColdPeer
+             )
+        else ( AllowConnection ()
+             , Just p
+             )
+
+    fn (Just p@(SuspendedConsumer producers consT)) =
+      if consT < t
+        then if Set.null producers
+               -- the consumer is not suspended any longer, and it has no
+               -- producers; thus it's a 'ColdPeer'.
+               then (AllowConnection (), Just ColdPeer)
+               else (AllowConnection (), Just (HotPeer producers Set.empty))
+        else (DisallowConnection (), Just p)
+
+    fn (Just p@(SuspendedPeer prodT consT)) =
+      if t < prodT `max` consT
+          then if t < prodT `min` consT
+                 then (DisallowConnection (), Just p)
+                 else if prodT < consT
+                   then -- prodT ≤ t < consT
+                        -- allow the remote peer to connect to us, but we're
+                        -- still not allowed to connect to it.
+                        (DisallowConnection (), Just $ SuspendedConsumer Set.empty consT)
+                   else -- consT ≤ t < prodT
+                        -- the local consumer is suspended shorter than local
+                        -- producer; In this case we suspend both until `prodT`.
+                        -- This means we effectively make local consumer
+                        -- errors more sevier than the ones which come from
+                        -- a local producer.
+                        (DisallowConnection (), Just $ SuspendedPeer prodT prodT)
+
+          -- the peer is not suspended any longer
+          else (AllowConnection (), Just ColdPeer)
 
 
 -- | Trace data for error policies
