@@ -30,7 +30,6 @@ import           Control.Monad.Class.MonadThrow
 import           Control.Tracer
 
 import           Data.Semigroup.Action
-import           Ouroboros.Network.ErrorPolicy
 import           Ouroboros.Network.Server.ConnectionTable
 import           Ouroboros.Network.Subscription.Ip
 import           Ouroboros.Network.Subscription.PeerState
