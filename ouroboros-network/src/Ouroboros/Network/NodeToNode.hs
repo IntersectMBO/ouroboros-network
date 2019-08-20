@@ -20,6 +20,9 @@ module Ouroboros.Network.NodeToNode (
 
   -- * Re-exports
   , AnyResponderApp (..)
+  , ErrorPolicies (..)
+  , nullErrorPolicies
+  , ErrorPolicy (..)
   ) where
 
 import           Control.Concurrent.Async (Async)
@@ -151,11 +154,10 @@ withServer
   -- ^ create peerid from local address and remote address
   -> (forall vData. DictVersion vData -> vData -> vData -> Accept)
   -> Versions NodeToNodeVersion DictVersion (AnyResponderApp peerid NodeToNodeProtocols IO BL.ByteString)
-  -> [ErrorPolicy]
-  -> (Time IO -> Socket.SockAddr -> () -> SuspendDecision DiffTime)
+  -> ErrorPolicies IO Socket.SockAddr ()
   -> (Async () -> IO t)
   -> IO t
-withServer errTracer tbl stVar addr peeridFn acceptVersion versions errPolicies returnCallback k =
+withServer errTracer tbl stVar addr peeridFn acceptVersion versions errPolicies k =
   withServerNode
     errTracer
     tbl
@@ -167,5 +169,4 @@ withServer errTracer tbl stVar addr peeridFn acceptVersion versions errPolicies 
     acceptVersion
     versions
     errPolicies
-    returnCallback
     (\_ -> k)

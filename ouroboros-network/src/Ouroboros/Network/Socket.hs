@@ -400,14 +400,13 @@ withServerNode
     -- ^ The mux application that will be run on each incoming connection from
     -- a given address.  Note that if @'MuxClientAndServerApplication'@ is
     -- returned, the connection will run a full duplex set of mini-protocols.
-    -> [ErrorPolicy]
-    -> (Time IO -> Socket.SockAddr -> () -> SuspendDecision DiffTime)
+    -> ErrorPolicies IO Socket.SockAddr ()
     -> (Socket.SockAddr -> Async () -> IO t)
     -- ^ callback which takes the @Async@ of the thread that is running the server.
     -- Note: the server thread will terminate when the callback returns or
     -- throws an exception.
     -> IO t
-withServerNode errTracer tbl stVar addr encodeData decodeData peeridFn acceptVersion versions errPolicies returnCallback k =
+withServerNode errTracer tbl stVar addr encodeData decodeData peeridFn acceptVersion versions errPolicies k =
     bracket (mkListeningSocket (Socket.addrFamily addr) (Just $ Socket.addrAddress addr)) Socket.close $ \sd -> do
       addr' <- Socket.getSocketName sd
       withAsync
@@ -440,7 +439,7 @@ withServerNode errTracer tbl stVar addr encodeData decodeData peeridFn acceptVer
                       (PeerStates IO Socket.SockAddr (Time IO))
                       Socket.SockAddr
                       ()
-      completeTx = completeApplicationTx errTracer returnCallback errPolicies
+      completeTx = completeApplicationTx errTracer errPolicies
 
       -- When a connection completes, we do nothing. State is ().
       -- Crucially: we don't re-throw exceptions, because doing so would
@@ -488,8 +487,7 @@ withSimpleServerNode
     -> Versions vNumber extra (OuroborosApplication ResponderApp peerid ptcl IO BL.ByteString a b)
     -- ^ The mux server application that will be run on each incoming
     -- connection.
-    -> [ErrorPolicy]
-    -> (Time IO -> Socket.SockAddr -> () -> SuspendDecision DiffTime)
+    -> ErrorPolicies IO Socket.SockAddr ()
     -> (Socket.SockAddr -> Async () -> IO t)
     -- ^ callback which takes the local address that the server bound to along with the @Async@ of
     -- the thread that is running the server
@@ -497,4 +495,4 @@ withSimpleServerNode
     -- Note: the server thread will terminate when the callback returns or
     -- throws an exception.
     -> IO t
-withSimpleServerNode errTracer tbl stVar addr encodeData decodeData peeridFn acceptVersion versions errPolicies returnCallback k = withServerNode errTracer tbl stVar addr encodeData decodeData peeridFn acceptVersion (AnyResponderApp <$> versions) errPolicies returnCallback k
+withSimpleServerNode errTracer tbl stVar addr encodeData decodeData peeridFn acceptVersion versions errPolicies k = withServerNode errTracer tbl stVar addr encodeData decodeData peeridFn acceptVersion (AnyResponderApp <$> versions) errPolicies k

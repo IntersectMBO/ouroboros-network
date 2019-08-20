@@ -244,8 +244,7 @@ prop_socket_send_recv initiatorAddr responderAddr f xs = do
         (\_ _ -> ())
         (\(DictVersion _) -> acceptEq)
         (simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData 0) (DictVersion nodeToNodeCodecCBORTerm) responderApp)
-        []
-        (\_ _ _ -> Throw)
+        nullErrorPolicies
         $ \_ _ -> do
           connectToNode
             (\(DictVersion codec) -> encodeTerm codec)
@@ -410,8 +409,7 @@ demo chain0 updates = do
       (,)
       (\(DictVersion _) -> acceptEq)
       (simpleSingletonVersions (0::Int) (NodeToNodeVersionData 0) (DictVersion nodeToNodeCodecCBORTerm) responderApp)
-      []
-      (\_ _ _ -> Throw)
+      nullErrorPolicies
       $ \_ _ -> do
       withAsync
         (connectToNode

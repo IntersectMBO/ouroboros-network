@@ -19,10 +19,16 @@ module Ouroboros.Network.NodeToClient (
 
   -- * Re-exports
   , AnyResponderApp (..)
+<<<<<<< HEAD
 
   -- * Re-exported clients
   , chainSyncClientNull
   , localTxSubmissionClientNull
+=======
+  , ErrorPolicies (..)
+  , nullErrorPolicies
+  , ErrorPolicy (..)
+>>>>>>> ErrorPolicies type
   ) where
 
 import           Control.Concurrent.Async (Async)
@@ -145,11 +151,10 @@ withServer
   -> (forall vData. DictVersion vData -> vData -> vData -> Accept)
   -> Versions NodeToClientVersion DictVersion
               (AnyResponderApp peerid NodeToClientProtocols IO BL.ByteString)
-  -> [ErrorPolicy]
-  -> (Time IO -> Socket.SockAddr -> () -> SuspendDecision DiffTime)
+  -> ErrorPolicies IO Socket.SockAddr ()
   -> (Async () -> IO t)
   -> IO t
-withServer errTracer tbl stVar addr peeridFn acceptVersion versions errPolicies returnCallback k =
+withServer errTracer tbl stVar addr peeridFn acceptVersion versions errPolicies k =
   withServerNode
     errTracer
     tbl
@@ -161,6 +166,5 @@ withServer errTracer tbl stVar addr peeridFn acceptVersion versions errPolicies 
     acceptVersion
     versions
     errPolicies
-    returnCallback
     (\_ -> k)
 

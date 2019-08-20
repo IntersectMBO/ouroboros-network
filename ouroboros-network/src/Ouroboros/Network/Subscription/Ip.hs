@@ -67,12 +67,11 @@ ipSubscriptionWorker
     -- ^ Local IPv6 address to use, Nothing indicates don't use IPv6
     -> (Socket.SockAddr -> Maybe DiffTime)
     -- ^ Lookup function, should return expected delay for the given address
-    -> [ErrorPolicy]
-    -> (Time IO -> Socket.SockAddr -> a -> SuspendDecision DiffTime)
+    -> ErrorPolicies IO Socket.SockAddr a
     -> IPSubscriptionTarget
     -> (Socket.Socket -> IO a)
     -> IO Void
-ipSubscriptionWorker tracer errTracer tbl peerStatesVar localIPv4 localIPv6 connectionAttemptDelay errPolicies returnCallback ips k = do
+ipSubscriptionWorker tracer errTracer tbl peerStatesVar localIPv4 localIPv6 connectionAttemptDelay errPolicies ips k = do
     subscriptionWorker
             tracer'
             errTracer
@@ -84,7 +83,6 @@ ipSubscriptionWorker tracer errTracer tbl peerStatesVar localIPv4 localIPv6 conn
             (pure $ ipSubscriptionTarget tracer' peerStatesVar $ ispIps ips)
             (ispValency ips)
             errPolicies
-            returnCallback
             mainTx
             k
   where
@@ -166,8 +164,7 @@ subscriptionWorker
     -- ^ subscription targets
     -> Int
     -- ^ valency
-    -> [ErrorPolicy]
-    -> (Time IO -> Socket.SockAddr -> a -> SuspendDecision DiffTime)
+    -> ErrorPolicies IO Socket.SockAddr a
     -> Main IO (PeerStates IO Socket.SockAddr (Time IO)) x
     -- ^ main callback
     -> (Socket.Socket -> IO a)
@@ -175,13 +172,13 @@ subscriptionWorker
     -> IO x
 subscriptionWorker
   tracer errTracer tbl sVar mbLocalIPv4 mbLocalIPv6
-  connectionAttemptDelay getTargets valency errPolicies returnCallback main k =
+  connectionAttemptDelay getTargets valency errPolicies main k =
     worker tracer
            tbl
            sVar
            ioSocket
            socketStateChangeTx
-           (completeApplicationTx errTracer returnCallback errPolicies)
+           (completeApplicationTx errTracer errPolicies)
            main
            mbLocalIPv4 mbLocalIPv6
            selectAddr connectionAttemptDelay

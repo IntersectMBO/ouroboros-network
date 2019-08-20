@@ -348,10 +348,11 @@ prop_subscriptionWorker
 
     completeTx = completeApplicationTx
        nullTracer
-       (\t addr r -> fmap getArbDiffTime . getArbSuspendDecision $ case returnCallback of
-           Fn3 f -> f (ArbDiffTime t) addr r
-           _     -> error "impossible happend")
-       errPolicies
+       (ErrorPolicies
+          errPolicies
+          (\t addr r -> fmap getArbDiffTime . getArbSuspendDecision $ case returnCallback of
+              Fn3 f -> f (ArbDiffTime t) addr r
+              _     -> error "impossible happend"))
 
     main :: StrictTMVar IO () -> Main IO (PeerStates IO Int (Time IO)) Bool
     main doneVar s = do
