@@ -33,7 +33,7 @@ module Ouroboros.Network.NodeToClient (
   , LocalAddresses (..)
   , IPSubscriptionTarget (..)
   , SubscriptionTrace (..)
-  , ErrorPolicyTrace
+  , ErrorPolicyTrace (..)
   , WithIPList (..)
   , WithAddr (..)
   ) where
@@ -50,13 +50,14 @@ import qualified Codec.CBOR.Decoding as CBOR
 import qualified Codec.CBOR.Term as CBOR
 import           Codec.Serialise (Serialise (..), DeserialiseFailure)
 import           Codec.SerialiseTerm
+import qualified Network.Socket as Socket
 
-import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Tracer (Tracer)
 
-import qualified Network.Socket as Socket
 import           Network.Mux.Types
 import           Network.Mux.Interface
+import           Network.TypedProtocol.Driver.ByteLimit (DecoderFailureOrTooMuchInput)
+import           Network.TypedProtocol.Driver (TraceSendRecv (..))
 
 import           Ouroboros.Network.Magic
 import           Ouroboros.Network.Mux
@@ -72,8 +73,6 @@ import           Ouroboros.Network.Subscription.Ip ( IPSubscriptionTarget (..)
                                                    )
 import           Ouroboros.Network.Subscription.Worker (LocalAddresses (..))
 import           Ouroboros.Network.Subscription.PeerState
-import           Network.TypedProtocol.Driver.ByteLimit (DecoderFailureOrTooMuchInput)
-import           Network.TypedProtocol.Driver (TraceSendRecv)
 
 -- | An index type used with the mux to enumerate all the mini-protocols that
 -- make up the overall node-to-client protocol.
