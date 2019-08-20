@@ -39,6 +39,7 @@ import           Control.Monad (when)
 -- TODO: remove this, it will not be needed when `orElse` PR will be merged.
 import qualified Control.Monad.STM as STM
 import           Control.Monad.Class.MonadSTM.Strict
+import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadThrow
 import           Control.Exception (throwIO)
 import qualified Codec.CBOR.Term     as CBOR
@@ -239,11 +240,11 @@ beginConnection
     -> (forall vData. extra vData -> vData -> CBOR.Term)
     -> (forall vData. extra vData -> CBOR.Term -> Either Text vData)
     -> (forall vData. extra vData -> vData -> vData -> Accept)
-    -> (addr -> st -> STM.STM (AcceptConnection st vNumber extra peerid ptcl IO BL.ByteString))
+    -> (Time IO -> addr -> st -> STM.STM (AcceptConnection st vNumber extra peerid ptcl IO BL.ByteString))
     -- ^ either accept or reject a connection.
     -> Server.BeginConnection addr Socket.Socket st ()
-beginConnection muxTracer handshakeTracer encodeData decodeData acceptVersion fn addr st = do
-    accept <- fn addr st
+beginConnection muxTracer handshakeTracer encodeData decodeData acceptVersion fn t addr st = do
+    accept <- fn t addr st
     case accept of
       AcceptConnection st' peerid versions -> pure $ Server.Accept st' $ \sd -> do
         let muxTracer' = Mx.WithMuxBearer (show peerid) `contramap` muxTracer
@@ -339,13 +340,22 @@ runNetworkNode'
     -> (forall vData. extra vData -> vData -> vData -> Accept)
     -- -> Versions vNumber extra (MuxApplication ServerApp ptcl IO)
     -> (SomeException -> IO ())
-    -> (Socket.SockAddr -> st -> STM.STM (AcceptConnection st vNumber extra peerid ptcl IO BL.ByteString))
-    -> Server.CompleteConnection st ()
+    -> (Time IO
+          -> Socket.SockAddr
+          -> st
+          -> STM.STM
+              (AcceptConnection
+                st vNumber extra peerid ptcl IO BL.ByteString))
+    -> Server.CompleteConnection Socket.SockAddr st ()
     -> Server.Main st t
     -> IO t
 runNetworkNode' muxTracer handshakeTracer tbl stVar sd encodeData decodeData acceptVersion acceptException acceptConn complete
-    main = Server.run (fromSocket tbl sd) acceptException (beginConnection muxTracer handshakeTracer encodeData decodeData
-        acceptVersion acceptConn) complete main (toLazyTVar stVar)
+    main = Server.run
+      (fromSocket tbl sd)
+      acceptException
+      (beginConnection muxTracer handshakeTracer encodeData decodeData acceptVersion acceptConn)
+      (\_ _ st -> pure st)
+      complete main (toLazyTVar stVar)
 
 
 -- |
@@ -412,7 +422,7 @@ withServerNode muxTracer handshakeTracer tbl stVar addr encodeData decodeData pe
           decodeData
           acceptVersion
           throwIO
-          (\connAddr st ->
+          (\_t connAddr st ->
             pure $ AcceptConnection
                     st
                     (peeridFn addr' connAddr)
@@ -428,6 +438,6 @@ withServerNode muxTracer handshakeTracer tbl stVar addr encodeData decodeData pe
       -- Crucially: we don't re-throw exceptions, because doing so would
       -- bring down the server.
       complete outcome st = case outcome of
-        Left _  -> pure st
-        Right _ -> pure st
+        Server.Result _ _ _ (Left _)  -> pure (st, pure ())
+        Server.Result _ _ _ (Right _) -> pure (st, pure ())
 
