@@ -14,7 +14,7 @@ module Ouroboros.Consensus.NodeKernel (
     -- * Node kernel
     NodeKernel (..)
   , NodeCallbacks (..)
-  , NodeParams (..)
+  , NodeArgs (..)
   , TraceForgeEvent (..)
   , initNodeKernel
   , getMempoolReader
@@ -123,8 +123,8 @@ data NodeCallbacks m blk = NodeCallbacks {
     , produceDRG :: m ChaChaDRG
     }
 
--- | Parameters required when initializing a node
-data NodeParams m peer blk = NodeParams {
+-- | Arguments required when initializing a node
+data NodeArgs m peer blk = NodeArgs {
       tracers            :: Tracers m peer blk
     , registry           :: ResourceRegistry m
     , maxClockSkew       :: ClockSkew
@@ -147,10 +147,10 @@ initNodeKernel
        , Ord peer
        , ApplyTx blk
        )
-    => NodeParams m peer blk
+    => NodeArgs m peer blk
     -> m (NodeKernel m peer blk)
-initNodeKernel params@NodeParams { registry, cfg, tracers } = do
-    st <- initInternalState params
+initNodeKernel args@NodeArgs { registry, cfg, tracers } = do
+    st <- initInternalState args
 
     forkBlockProduction st
 
@@ -201,11 +201,11 @@ initInternalState
        , Ord peer
        , ApplyTx blk
        )
-    => NodeParams m peer blk
+    => NodeArgs m peer blk
     -> m (InternalState m peer blk)
-initInternalState NodeParams { tracers, chainDB, registry, cfg,
-                               blockFetchSize, blockMatchesHeader, btime,
-                               callbacks, initState } = do
+initInternalState NodeArgs { tracers, chainDB, registry, cfg,
+                             blockFetchSize, blockMatchesHeader, btime,
+                             callbacks, initState } = do
     varCandidates  <- atomically $ newTVar mempty
     varState       <- atomically $ newTVar initState
     mempool        <- openMempool registry

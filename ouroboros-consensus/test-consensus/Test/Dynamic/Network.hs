@@ -332,7 +332,7 @@ broadcastNetwork registry testBtime numCoreNodes pInfo initRNG slotLen = do
       let args = mkArgs pInfoConfig pInfoInitLedger epochInfo fsVars
       chainDB <- ChainDB.openDB args
 
-      let nodeParams = NodeParams
+      let nodeArgs = NodeArgs
             { tracers            = nullTracers
             , registry           = registry
             , maxClockSkew       = ClockSkew 1
@@ -346,12 +346,12 @@ broadcastNetwork registry testBtime numCoreNodes pInfo initRNG slotLen = do
             , maxUnackTxs        = 1000 -- TODO
             }
 
-      nodeKernel <- initNodeKernel nodeParams
+      nodeKernel <- initNodeKernel nodeArgs
       let app = consensusNetworkApps
                   nodeKernel
                   nullProtocolTracers
                   protocolCodecsId
-                  (protocolHandlers nodeParams nodeKernel)
+                  (protocolHandlers nodeArgs nodeKernel)
 
           ni :: NetworkInterface m NodeId
           ni = createNetworkInterface chans nodeIds us app

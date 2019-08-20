@@ -146,12 +146,12 @@ protocolHandlers
        , ApplyTx blk
        , ProtocolLedgerView blk
        )
-    => NodeParams m peer blk  --TODO eliminate, merge relevant into NodeKernel
+    => NodeArgs   m peer blk  --TODO eliminate, merge relevant into NodeKernel
     -> NodeKernel m peer blk
     -> ProtocolHandlers m peer blk
-protocolHandlers NodeParams {btime, maxClockSkew, tracers, maxUnackTxs}
+protocolHandlers NodeArgs {btime, maxClockSkew, tracers, maxUnackTxs}
                  NodeKernel {getChainDB, getMempool, getNodeConfig} =
-    --TODO: bundle needed NodeParams into the NodeKernel
+    --TODO: bundle needed NodeArgs into the NodeKernel
     -- so we do not have to pass it separately
     --TODO: need to review the use of the peer id in the tracers.
     -- Curently it is not available here to use.
