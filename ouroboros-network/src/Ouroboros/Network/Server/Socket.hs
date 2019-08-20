@@ -205,12 +205,11 @@ run
   -> BeginConnection addr channel st r
   -> CompleteConnection st r
   -> Main st t
-  -> st
+  -> STM.TVar st
   -> IO t
-run socket acceptException beginConnection complete main st = do
+run socket acceptException beginConnection complete main statusVar = do
   resQ <- STM.newTQueueIO
   threadsVar <- STM.newTVarIO Set.empty
-  statusVar <- STM.newTVarIO st
   let acceptLoopDo = acceptLoop resQ threadsVar statusVar beginConnection acceptException socket
       -- The accept loop is killed when the main loop stops.
       mainDo = Async.withAsync acceptLoopDo $ \_ ->
