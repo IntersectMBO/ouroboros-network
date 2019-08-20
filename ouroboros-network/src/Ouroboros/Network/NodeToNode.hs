@@ -44,6 +44,9 @@ module Ouroboros.Network.NodeToNode (
   , DecoderFailureOrTooMuchInput
   , Handshake
   , LocalAddresses (..)
+  , ErrorPolicies (..)
+  , nullErrorPolicies
+  , ErrorPolicy (..)
   ) where
 
 import           Control.Concurrent.Async (Async)
@@ -60,7 +63,6 @@ import           Codec.SerialiseTerm
 import qualified Network.Socket as Socket
 
 import           Control.Monad.Class.MonadSTM.Strict
-import           Control.Monad.Class.MonadTime (Time)
 import           Control.Tracer (Tracer)
 
 import           Network.Mux.Types
@@ -219,11 +221,10 @@ withServer
   -- ^ create peerid from local address and remote address
   -> (forall vData. DictVersion vData -> vData -> vData -> Accept)
   -> Versions NodeToNodeVersion DictVersion (OuroborosApplication appType peerid NodeToNodeProtocols IO BL.ByteString a b)
-  -> [ErrorPolicy]
-  -> (Time -> Socket.SockAddr -> () -> SuspendDecision DiffTime)
+  -> ErrorPolicies Socket.SockAddr ()
   -> (Async () -> IO t)
   -> IO t
-withServer muxTracer handshakeTracer errTracer tbl stVar addr peeridFn acceptVersion versions errPolicies returnCallback k =
+withServer muxTracer handshakeTracer errTracer tbl stVar addr peeridFn acceptVersion versions errPolicies k =
   withServerNode
     muxTracer
     handshakeTracer
@@ -237,7 +238,6 @@ withServer muxTracer handshakeTracer errTracer tbl stVar addr peeridFn acceptVer
     acceptVersion
     versions
     errPolicies
-    returnCallback
     (\_ -> k)
 
 
@@ -255,8 +255,7 @@ withServer_V1
   -- ^ create peerid from local address and remote address
   -> NodeToNodeVersionData
   -> (OuroborosApplication appType peerid NodeToNodeProtocols IO BL.ByteString x y)
-  -> [ErrorPolicy]
-  -> (Time -> Socket.SockAddr -> () -> SuspendDecision DiffTime)
+  -> ErrorPolicies Socket.SockAddr ()
   -> (Async () -> IO t)
   -> IO t
 withServer_V1 muxTracer handshakeTracer errTracer tbl stVar addr peeridFn versionData application =
@@ -290,6 +289,7 @@ ipSubscriptionWorker
     -> LocalAddresses Socket.SockAddr
     -> (Socket.SockAddr -> Maybe DiffTime)
     -- ^ Lookup function, should return expected delay for the given address
+    -> ErrorPolicies Socket.SockAddr ()
     -> IPSubscriptionTarget
     -> Versions
         NodeToNodeVersion
@@ -310,6 +310,7 @@ ipSubscriptionWorker
   peerStatesVar
   localAddr
   connectionAttemptDelay
+  errPolicies
   ips
   versions
     = Subscription.ipSubscriptionWorker
@@ -319,8 +320,7 @@ ipSubscriptionWorker
         peerStatesVar
         localAddr
         connectionAttemptDelay
-        []
-        (\_ _ _ -> Throw)
+        errPolicies
         ips
         (connectToNode'
           (\(DictVersion codec) -> encodeTerm codec)
@@ -346,6 +346,7 @@ ipSubscriptionWorker_V1
     -> LocalAddresses Socket.SockAddr
     -> (Socket.SockAddr -> Maybe DiffTime)
     -- ^ Lookup function, should return expected delay for the given address
+    -> ErrorPolicies Socket.SockAddr ()
     -> IPSubscriptionTarget
     -> NodeToNodeVersionData
     -> (OuroborosApplication
@@ -364,6 +365,7 @@ ipSubscriptionWorker_V1
   peerStatesVar
   localAddresses
   connectionAttemptDelay
+  errPolicies
   ips
   versionData
   application
@@ -377,6 +379,7 @@ ipSubscriptionWorker_V1
         peerStatesVar
         localAddresses
         connectionAttemptDelay
+        errPolicies
         ips
         (simpleSingletonVersions
           NodeToNodeV_1
@@ -405,6 +408,7 @@ dnsSubscriptionWorker
     -> StrictTVar IO (PeerStates IO Socket.SockAddr)
     -> LocalAddresses Socket.SockAddr
     -> (Socket.SockAddr -> Maybe DiffTime)
+    -> ErrorPolicies Socket.SockAddr ()
     -> DnsSubscriptionTarget
     -> Versions
         NodeToNodeVersion
@@ -426,6 +430,7 @@ dnsSubscriptionWorker
   peerStatesVar
   localAddresses
   connectionAttemptDelay
+  errPolicies
   dst
   versions =
     Subscription.dnsSubscriptionWorker
@@ -436,8 +441,7 @@ dnsSubscriptionWorker
       peerStatesVar
       localAddresses
       connectionAttemptDelay
-      []
-      (\_ _ _ -> Throw)
+      errPolicies
       dst
       (connectToNode'
         (\(DictVersion codec) -> encodeTerm codec)
@@ -463,6 +467,7 @@ dnsSubscriptionWorker_V1
     -> StrictTVar IO (PeerStates IO Socket.SockAddr)
     -> LocalAddresses Socket.SockAddr
     -> (Socket.SockAddr -> Maybe DiffTime)
+    -> ErrorPolicies Socket.SockAddr ()
     -> DnsSubscriptionTarget
     -> NodeToNodeVersionData
     -> (OuroborosApplication
@@ -482,6 +487,7 @@ dnsSubscriptionWorker_V1
   peerStatesVar
   localAddresses
   connectionAttemptDelay
+  errPolicies
   dst
   versionData
   application =
@@ -496,6 +502,7 @@ dnsSubscriptionWorker_V1
       peerStatesVar
       localAddresses
       connectionAttemptDelay
+      errPolicies
       dst
       (simpleSingletonVersions
           NodeToNodeV_1

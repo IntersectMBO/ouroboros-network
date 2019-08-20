@@ -416,14 +416,13 @@ withServerNode
     -- ^ The mux application that will be run on each incoming connection from
     -- a given address.  Note that if @'MuxClientAndServerApplication'@ is
     -- returned, the connection will run a full duplex set of mini-protocols.
-    -> [ErrorPolicy]
-    -> (Time -> Socket.SockAddr -> () -> SuspendDecision DiffTime)
+    -> ErrorPolicies Socket.SockAddr ()
     -> (Socket.SockAddr -> Async () -> IO t)
     -- ^ callback which takes the @Async@ of the thread that is running the server.
     -- Note: the server thread will terminate when the callback returns or
     -- throws an exception.
     -> IO t
-withServerNode muxTracer handshakeTracer errTracer tbl stVar addr encodeData decodeData peeridFn acceptVersion versions errPolicies returnCallback k =
+withServerNode muxTracer handshakeTracer errTracer tbl stVar addr encodeData decodeData peeridFn acceptVersion versions errPolicies k =
     bracket (mkListeningSocket (Socket.addrFamily addr) (Just $ Socket.addrAddress addr)) Socket.close $ \sd -> do
       addr' <- Socket.getSocketName sd
       withAsync
@@ -458,7 +457,7 @@ withServerNode muxTracer handshakeTracer errTracer tbl stVar addr encodeData dec
                       (PeerStates IO Socket.SockAddr)
                       Socket.SockAddr
                       ()
-      completeTx = completeApplicationTx errTracer returnCallback errPolicies
+      completeTx = completeApplicationTx errTracer errPolicies
 
       -- When a connection completes, we do nothing. State is ().
       -- Crucially: we don't re-throw exceptions, because doing so would

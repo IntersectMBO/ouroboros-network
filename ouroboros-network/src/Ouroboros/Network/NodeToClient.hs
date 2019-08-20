@@ -39,8 +39,6 @@ module Ouroboros.Network.NodeToClient (
   ) where
 
 import           Control.Concurrent.Async (Async)
-import           Control.Monad.Class.MonadTime (Time)
-import           Control.Monad.Class.MonadSTM.Strict
 import qualified Data.ByteString.Lazy as BL
 import           Data.Text (Text)
 import qualified Data.Text as T
@@ -53,6 +51,7 @@ import           Codec.Serialise (Serialise (..), DeserialiseFailure)
 import           Codec.SerialiseTerm
 import qualified Network.Socket as Socket
 
+import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Tracer (Tracer)
 
 import           Network.Mux.Types
@@ -207,11 +206,10 @@ withServer
   -> (forall vData. DictVersion vData -> vData -> vData -> Accept)
   -> Versions NodeToClientVersion DictVersion
               (OuroborosApplication appType peerid NodeToClientProtocols IO BL.ByteString a b)
-  -> [ErrorPolicy]
-  -> (Time -> Socket.SockAddr -> () -> SuspendDecision DiffTime)
+  -> ErrorPolicies Socket.SockAddr ()
   -> (Async () -> IO t)
   -> IO t
-withServer muxTracer handshakeTracer  errTracer tbl stVar addr peeridFn acceptVersion versions errPolicies returnCallback k =
+withServer muxTracer handshakeTracer  errTracer tbl stVar addr peeridFn acceptVersion versions errPolicies k =
   withServerNode
     muxTracer
     handshakeTracer
@@ -225,7 +223,6 @@ withServer muxTracer handshakeTracer  errTracer tbl stVar addr peeridFn acceptVe
     acceptVersion
     versions
     errPolicies
-    returnCallback
     (\_ -> k)
 
 -- | A specialised version of 'withServer' which can only communicate using
@@ -248,8 +245,7 @@ withServer_V1
   -- ^ applications which has the reponder side, i.e.
   -- 'OuroborosResponderApplication' or
   -- 'OuroborosInitiatorAndResponderApplication'.
-  -> [ErrorPolicy]
-  -> (Time -> Socket.SockAddr -> () -> SuspendDecision DiffTime)
+  -> ErrorPolicies Socket.SockAddr ()
   -> (Async () -> IO t)
   -> IO t
 withServer_V1 muxTracer handshakeTracer errTracer tbl stVar addr peeridFn versionData application =
@@ -282,6 +278,7 @@ ncSubscriptionWorker
     -> LocalAddresses Socket.SockAddr
     -> (Socket.SockAddr -> Maybe DiffTime)
     -- ^ Lookup function, should return expected delay for the given address
+    -> ErrorPolicies Socket.SockAddr ()
     -> IPSubscriptionTarget
     -> Versions
         NodeToClientVersion
@@ -302,6 +299,7 @@ ncSubscriptionWorker
   peerStatesVar
   localAddr
   connectionAttemptDelay
+  errPolicies
   ips
   versions
     = Subscription.ipSubscriptionWorker
@@ -311,8 +309,7 @@ ncSubscriptionWorker
         peerStatesVar
         localAddr
         connectionAttemptDelay
-        []
-        (\_ _ _ -> Throw)
+        errPolicies
         ips
         (connectToNode'
           (\(DictVersion codec) -> encodeTerm codec)
@@ -338,6 +335,7 @@ ncSubscriptionWorker_V1
     -> LocalAddresses Socket.SockAddr
     -> (Socket.SockAddr -> Maybe DiffTime)
     -- ^ Lookup function, should return expected delay for the given address
+    -> ErrorPolicies Socket.SockAddr ()
     -> IPSubscriptionTarget
     -> NodeToClientVersionData
     -> (OuroborosApplication
@@ -356,6 +354,7 @@ ncSubscriptionWorker_V1
   peerStatesVar
   localAddresses
   connectionAttemptDelay
+  errPolicies
   ips
   versionData
   application
@@ -369,6 +368,7 @@ ncSubscriptionWorker_V1
         peerStatesVar
         localAddresses
         connectionAttemptDelay
+        errPolicies
         ips
         (simpleSingletonVersions
           NodeToClientV_1

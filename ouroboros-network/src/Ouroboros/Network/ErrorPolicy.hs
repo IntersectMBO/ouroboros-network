@@ -8,7 +8,9 @@
 -- 'PeerState'.
 --
 module Ouroboros.Network.ErrorPolicy
-  ( ErrorPolicy (..)
+  ( ErrorPolicies (..)
+  , nullErrorPolicies
+  , ErrorPolicy (..)
   , evalErrorPolicy
   , evalErrorPolicies
   , ConnectionOrApplicationException (..)
@@ -92,6 +94,21 @@ evalErrorPolicies e =
     f (cmd : rst) = Just $ sconcat (cmd :| rst)
 
 
+-- | List of error policies for exception handling and a policy for handing
+-- application return values.
+--
+data ErrorPolicies addr a = ErrorPolicies {
+    epErrorPolicies  :: [ErrorPolicy]
+  , epReturnCallback :: Time -> addr -> a -> SuspendDecision DiffTime
+  }
+
+nullErrorPolicies :: ErrorPolicies addr a
+nullErrorPolicies = ErrorPolicies [] (\_ _ _ -> Throw)
+
+instance Semigroup (ErrorPolicies addr a) where
+    ErrorPolicies ep fn <> ErrorPolicies ep' fn'
+      = ErrorPolicies (ep <> ep') (fn <> fn')
+
 -- | Sum type which distinguishes between connection and application
 -- exceptions.
 --
@@ -147,19 +164,18 @@ completeApplicationTx
      , Ord (Async m ())
      )
   => Tracer m (WithAddr addr ErrorPolicyTrace)
-  -> (Time -> addr -> a -> SuspendDecision DiffTime)
-  -> [ErrorPolicy]
+  -> ErrorPolicies addr a
   -> CompleteApplication m
        (PeerStates m addr)
        addr
        a
 
 -- the 'ResultQ' did not throw the exception yet; it should not happen.
-completeApplicationTx _ _ _ _ ps@ThrowException{} = pure ( ps, pure () )
+completeApplicationTx _ _ _ ps@ThrowException{} = pure ( ps, pure () )
 
 -- application returned; classify the return value and update the state.
-completeApplicationTx tracer returnCallback _ (ApplicationResult t addr r) (PeerStates ps) =
-  let cmd = returnCallback t addr r
+completeApplicationTx tracer ErrorPolicies {epReturnCallback} (ApplicationResult t addr r) (PeerStates ps) =
+  let cmd = epReturnCallback t addr r
       fn :: Maybe (PeerState m)
          -> ( Set (Async m ())
             , Maybe (PeerState m)
@@ -178,8 +194,8 @@ completeApplicationTx tracer returnCallback _ (ApplicationResult t addr r) (Peer
       )
 
 -- application errored
-completeApplicationTx tracer  _ errPolicies (ApplicationError t addr e) ps =
-  case evalErrorPolicies (ApplicationException e) errPolicies of
+completeApplicationTx tracer ErrorPolicies {epErrorPolicies} (ApplicationError t addr e) ps =
+  case evalErrorPolicies (ApplicationException e) epErrorPolicies of
     -- the error is not handled by any policy; we're not rethrowing the
     -- error from the main thread, we only trace it.  This will only kill
     -- the local consumer application.
@@ -202,14 +218,14 @@ completeApplicationTx tracer  _ errPolicies (ApplicationError t addr e) ps =
             )
 
 -- we connected to a peer; this does not require to update the 'PeerState'.
-completeApplicationTx _ _ _ (Connected _t  _addr) ps =
+completeApplicationTx _ _ (Connected _t  _addr) ps =
   pure ( ps, pure () )
 
 -- error raised by the 'connect' call; we handle this in the same way as
 -- application exceptions, the only difference is that we wrap the exception
--- with 'ConnectionException' type constructor.
-completeApplicationTx tracer _ errPolicies (ConnectionError t addr e) ps =
-  case evalErrorPolicies (ConnectionException e) errPolicies of
+-- with 'ConnException' type constructor.
+completeApplicationTx tracer ErrorPolicies {epErrorPolicies} (ConnectionError t addr e) ps =
+  case evalErrorPolicies (ConnectionException e) epErrorPolicies of
     Nothing  ->
       let fn p@(HotPeer producers consumers)
              | Set.null producers && Set.null consumers

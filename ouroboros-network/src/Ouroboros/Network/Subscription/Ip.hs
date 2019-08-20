@@ -63,12 +63,11 @@ ipSubscriptionWorker
     -> LocalAddresses Socket.SockAddr
     -> (Socket.SockAddr -> Maybe DiffTime)
     -- ^ Lookup function, should return expected delay for the given address
-    -> [ErrorPolicy]
-    -> (Time -> Socket.SockAddr -> a -> SuspendDecision DiffTime)
+    -> ErrorPolicies Socket.SockAddr a
     -> IPSubscriptionTarget
     -> (Socket.Socket -> IO a)
     -> IO void
-ipSubscriptionWorker tracer errTracer tbl peerStatesVar localAddresses connectionAttemptDelay errPolicies returnCallback ips k = do
+ipSubscriptionWorker tracer errTracer tbl peerStatesVar localAddresses connectionAttemptDelay errPolicies ips k = do
     subscriptionWorker
             tracer'
             errTracer
@@ -79,7 +78,6 @@ ipSubscriptionWorker tracer errTracer tbl peerStatesVar localAddresses connectio
             (pure $ ipSubscriptionTarget tracer' peerStatesVar $ ispIps ips)
             (ispValency ips)
             errPolicies
-            returnCallback
             mainTx
             k
   where
@@ -159,8 +157,7 @@ subscriptionWorker
     -- ^ subscription targets
     -> Int
     -- ^ valency
-    -> [ErrorPolicy]
-    -> (Time -> Socket.SockAddr -> a -> SuspendDecision DiffTime)
+    -> ErrorPolicies Socket.SockAddr a
     -> Main IO (PeerStates IO Socket.SockAddr) x
     -- ^ main callback
     -> (Socket.Socket -> IO a)
@@ -168,13 +165,13 @@ subscriptionWorker
     -> IO x
 subscriptionWorker
   tracer errTracer tbl sVar localAddresses
-  connectionAttemptDelay getTargets valency errPolicies returnCallback main k =
+  connectionAttemptDelay getTargets valency errPolicies main k =
     worker tracer
            tbl
            sVar
            ioSocket
            socketStateChangeTx
-           (completeApplicationTx errTracer returnCallback errPolicies)
+           (completeApplicationTx errTracer errPolicies)
            main
            localAddresses
            selectAddr connectionAttemptDelay

@@ -208,14 +208,13 @@ dnsSubscriptionWorker'
     -> Resolver IO
     -> LocalAddresses Socket.SockAddr
     -> (Socket.SockAddr -> Maybe DiffTime)
-    -> [ErrorPolicy]
-    -> (Time -> Socket.SockAddr -> a -> SuspendDecision DiffTime)
+    -> ErrorPolicies Socket.SockAddr a
     -> DnsSubscriptionTarget
     -> Main IO (PeerStates IO Socket.SockAddr) x
     -> (Socket.Socket -> IO a)
     -> IO x
 dnsSubscriptionWorker' subTracer dnsTracer errTracer tbl peerStatesVar resolver localAddresses
-  connectionAttemptDelay errPolicies returnCallback dst main k = do
+  connectionAttemptDelay errPolicies dst main k = do
     subscriptionWorker (WithDomainName (dstDomain dst) `contramap` subTracer)
                        errTracer
                        tbl
@@ -227,7 +226,6 @@ dnsSubscriptionWorker' subTracer dnsTracer errTracer tbl peerStatesVar resolver 
                           resolver peerStatesVar beforeConnectTx dst)
                        (dstValency dst)
                        errPolicies
-                       returnCallback
                        main
                        k
 
@@ -240,13 +238,12 @@ dnsSubscriptionWorker
     -> StrictTVar IO (PeerStates IO Socket.SockAddr)
     -> LocalAddresses Socket.SockAddr
     -> (Socket.SockAddr -> Maybe DiffTime)
-    -> [ErrorPolicy]
-    -> (Time -> Socket.SockAddr -> a -> SuspendDecision DiffTime)
+    -> ErrorPolicies Socket.SockAddr a
     -> DnsSubscriptionTarget
     -> (Socket.Socket -> IO a)
     -> IO void
 dnsSubscriptionWorker subTracer dnsTracer errTrace tbl peerStateVar localAddresses
-  connectionAttemptDelay errPolicies returnCallback dst k = do
+  connectionAttemptDelay errPolicies dst k = do
     rs <- DNS.makeResolvSeed DNS.defaultResolvConf
 
     DNS.withResolver rs $ \dnsResolver ->
@@ -259,7 +256,6 @@ dnsSubscriptionWorker subTracer dnsTracer errTrace tbl peerStateVar localAddress
                                localAddresses
                                connectionAttemptDelay
                                errPolicies
-                               returnCallback
                                dst
                                mainTx
                                k
