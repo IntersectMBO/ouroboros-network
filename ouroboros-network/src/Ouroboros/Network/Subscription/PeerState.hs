@@ -16,11 +16,6 @@
 module Ouroboros.Network.Subscription.PeerState
   ( SuspendDecision (..)
   , suspend
-  -- * Error policy GADT
-  , ErrorPolicy (..)
-  , ConnectionOrApplicationException (..)
-  , evalErrorPolicy
-  , evalErrorPolicies
   -- * PeerStates and its operations
   , PeerState (..)
   , threadsToCancel
@@ -36,11 +31,6 @@ module Ouroboros.Network.Subscription.PeerState
   , runBeforeConnect
   , beforeConnectTx
 
-  -- * Tracing
-  , ErrorPolicyTrace (..)
-  , traceErrorPolicy
-  , WithAddr (..)
-
   -- * Re-exports
   , DiffTime
 
@@ -53,20 +43,11 @@ import           Control.Exception (Exception, SomeException (..), assert)
 import           Control.Monad.State
 import           Data.Map.Strict (Map)
 import qualified Data.Map as Map
-import           Data.Maybe (mapMaybe)
-import           Data.List.NonEmpty (NonEmpty (..))
-import           Data.Semigroup (sconcat)
 import           Data.Set (Set)
 import qualified Data.Set as Set
-import           Data.Typeable ( Proxy (..)
-                               , (:~:) (..)
+import           Data.Typeable ( (:~:) (..)
                                , eqT
-                               , gcast
-                               , tyConName
-                               , typeRepTyCon
-                               , typeRep
                                )
-import           Text.Printf
 
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadSTM.Strict
@@ -118,57 +99,6 @@ instance Ord t => Semigroup (SuspendDecision t) where
       = SuspendPeer prodT (consT `max` consT')
     SuspendConsumer consT <> SuspendConsumer consT'
       = SuspendConsumer (consT `max` consT')
-
-
--- | Sum type which distinguishes between connection and application
--- exceptions.
---
-data ConnectionOrApplicationException err =
-     -- | Exception thrown by `connect`
-     ConnectionException err
-     -- | Exception thrown by an application
-   | ApplicationException err
-   deriving (Show, Functor)
-
-data ErrorPolicy where
-     ErrorPolicy :: forall err.
-                      Exception err
-                   => (ConnectionOrApplicationException err -> SuspendDecision DiffTime)
-                   -> ErrorPolicy
-
-instance Show ErrorPolicy where
-    show (ErrorPolicy (_err :: ConnectionOrApplicationException err -> SuspendDecision DiffTime)) =
-           "ErrorPolicy ("
-        ++ tyConName (typeRepTyCon (typeRep (Proxy :: Proxy err)))
-        ++ ")"
-
-evalErrorPolicy :: forall e.
-                   Exception e
-                => ConnectionOrApplicationException e
-                -> ErrorPolicy
-                -> Maybe (SuspendDecision DiffTime)
-evalErrorPolicy e p =
-    case p of
-      ErrorPolicy (f :: ConnectionOrApplicationException e' -> SuspendDecision DiffTime)
-        -> case gcast e :: Maybe (ConnectionOrApplicationException e') of
-              Nothing -> Nothing
-              Just e' -> Just $ f e'
-
--- | Evaluate a list of 'ErrorPolicy's; If none of them applies this function
--- returns 'Nothing', in this case the exception will be traced and not thrown.
---
-evalErrorPolicies :: forall e.
-                     Exception e
-                  => ConnectionOrApplicationException e
-                  -> [ErrorPolicy]
-                  -> Maybe (SuspendDecision DiffTime)
-evalErrorPolicies e =
-    f . mapMaybe (evalErrorPolicy e)
-  where
-    f :: [SuspendDecision DiffTime]
-      -> Maybe (SuspendDecision DiffTime)
-    f []          = Nothing
-    f (cmd : rst) = Just $ sconcat (cmd :| rst)
 
 
 data PeerState m t
@@ -377,6 +307,7 @@ runSuspendDecision  t  addr _e  cmd (PeerStates ps0) =
     gn (ps, Just s)  = (PeerStates ps, s)
 
 
+
 -- Using pure 'State' monad and 'alterF' to avoid searching the 'PeerState'
 -- twice.
 alterAndLookup
@@ -395,21 +326,9 @@ alterAndLookup f k m = runState (Map.alterF g k m) Nothing
       (s, mba') -> mba' <$ modify' (const (Just s))
 
 
-traceErrorPolicy :: Either (ConnectionOrApplicationException SomeException) r
-                 -> SuspendDecision DiffTime
-                 -> Maybe ErrorPolicyTrace
-traceErrorPolicy (Left e) (SuspendPeer prodT consT) =
-    Just $ ErrorPolicySuspendPeer (Just e) prodT consT
-traceErrorPolicy (Right _) (SuspendPeer prodT consT) =
-    Just $ ErrorPolicySuspendPeer Nothing prodT consT
-traceErrorPolicy (Left e) (SuspendConsumer consT) =
-    Just $ ErrorPolicySuspendConsumer (Just e) consT
-traceErrorPolicy (Right _) (SuspendConsumer consT) =
-    Just $ ErrorPolicySuspendConsumer Nothing consT
-traceErrorPolicy (Left e) Throw =
-    Just $ ErrorPolicyLocalNodeError e
-traceErrorPolicy _ _ =
-    Nothing
+--
+-- Various callbacks
+--
 
 
 -- | Register producer in PeerStates.  This is a partial function which assumes
@@ -624,37 +543,3 @@ beforeConnectTx  t  addr (PeerStates s) =
 
           -- the peer is not suspended any longer
           else (AllowConnection (), Just ColdPeer)
-
-
--- | Trace data for error policies
-data ErrorPolicyTrace
-  = ErrorPolicySuspendPeer (Maybe (ConnectionOrApplicationException SomeException)) !DiffTime !DiffTime
-  -- ^ suspending peer with a given exception until
-  | ErrorPolicySuspendConsumer (Maybe (ConnectionOrApplicationException SomeException)) !DiffTime
-  -- ^ suspending consumer until
-  | ErrorPolicyLocalNodeError (ConnectionOrApplicationException SomeException)
-  -- ^ caught a local exception
-  | ErrorPolicyResumePeer
-  -- ^ resume a peer (both consumer and producer)
-  | ErrorPolicyKeepSuspended
-  -- ^ consumer was suspended until producer will resume
-  | ErrorPolicyResumeConsumer
-  -- ^ resume consumer
-  | ErrorPolicyResumeProducer
-  -- ^ resume producer
-  | ErrorPolicyUnhandledApplicationException SomeException
-  -- ^ an application throwed an exception, which was not handled by any
-  -- 'ErrorPolicy'.
-  | ErrorPolicyUnhandledConnectionException SomeException
-  -- ^ 'connect' throwed an exception, which was not handled by any
-  -- 'ErrorPolicy'.
-  deriving Show
-
-data WithAddr addr a = WithAddr {
-      wiaAddr  :: !addr
-    , wiaEvent :: !a
-    }
-
-instance (Show addr, Show a) => Show (WithAddr addr a) where
-    show WithAddr { wiaAddr, wiaEvent } =
-        printf "IP %s %s" (show wiaAddr) (show wiaEvent)
