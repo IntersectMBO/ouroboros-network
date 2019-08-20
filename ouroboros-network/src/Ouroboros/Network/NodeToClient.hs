@@ -40,6 +40,9 @@ import qualified Codec.CBOR.Term as CBOR
 import           Codec.Serialise (Serialise (..), DeserialiseFailure)
 import           Codec.SerialiseTerm
 
+import           Control.Monad.Class.MonadSTM.Strict
+import           Control.Tracer (Tracer)
+
 import qualified Network.Socket as Socket
 import           Network.Mux.Types
 import           Network.Mux.Interface
@@ -51,8 +54,7 @@ import           Ouroboros.Network.Protocol.Handshake.Type
 import           Ouroboros.Network.Protocol.Handshake.Version
 import           Ouroboros.Network.Socket
 import           Network.TypedProtocol.Driver.ByteLimit (DecoderFailureOrTooMuchInput)
-import           Network.TypedProtocol.Driver (TraceSendRecv (..))
-import           Control.Tracer (Tracer)
+import           Network.TypedProtocol.Driver (TraceSendRecv)
 
 
 -- | An index type used with the mux to enumerate all the mini-protocols that
@@ -181,6 +183,7 @@ withServer
   => Tracer IO (WithMuxBearer (MuxTrace NodeToClientProtocols))
   -> Tracer IO (TraceSendRecv (Handshake NodeToClientVersion CBOR.Term) peerid (DecoderFailureOrTooMuchInput DeserialiseFailure))
   -> ConnectionTable IO Socket.SockAddr
+  -> StrictTVar IO st
   -> Socket.AddrInfo
   -> (Socket.SockAddr -> Socket.SockAddr -> peerid)
   -- ^ create peerid from local address and remote address
@@ -189,11 +192,12 @@ withServer
               (OuroborosApplication appType peerid NodeToClientProtocols IO BL.ByteString a b)
   -> (Async () -> IO t)
   -> IO t
-withServer muxTracer handshakeTracer tbl addr peeridFn acceptVersion versions k =
+withServer muxTracer handshakeTracer tbl stVar addr peeridFn acceptVersion versions k =
   withServerNode
     muxTracer
     handshakeTracer
     tbl
+    stVar
     addr
     (\(DictVersion codec) -> encodeTerm codec)
     (\(DictVersion codec) -> decodeTerm codec)
@@ -210,6 +214,7 @@ withServer_V1
   => Tracer IO (WithMuxBearer (MuxTrace NodeToClientProtocols))
   -> Tracer IO (TraceSendRecv (Handshake NodeToClientVersion CBOR.Term) peerid (DecoderFailureOrTooMuchInput DeserialiseFailure))
   -> ConnectionTable IO Socket.SockAddr
+  -> StrictTVar IO st
   -> Socket.AddrInfo
   -> (Socket.SockAddr -> Socket.SockAddr -> peerid)
   -- ^ create peerid from local address and remote address
@@ -222,9 +227,9 @@ withServer_V1
   -- 'OuroborosInitiatorAndResponderApplication'.
   -> (Async () -> IO t)
   -> IO t
-withServer_V1 muxTracer handshakeTracer tbl addr peeridFn versionData application =
+withServer_V1 muxTracer handshakeTracer tbl stVar addr peeridFn versionData application =
     withServer
-      muxTracer handshakeTracer tbl addr peeridFn
+      muxTracer handshakeTracer tbl stVar addr peeridFn
       (\(DictVersion _) -> acceptEq)
       (simpleSingletonVersions
         NodeToClientV_1
