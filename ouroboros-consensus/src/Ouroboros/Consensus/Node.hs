@@ -44,6 +44,7 @@ import           Ouroboros.Network.Block
 import qualified Ouroboros.Network.Block as Block
 import           Ouroboros.Network.NodeToClient as NodeToClient
 import           Ouroboros.Network.NodeToNode as NodeToNode
+import           Ouroboros.Network.Snocket
 import           Ouroboros.Network.Socket
 import           Ouroboros.Network.Subscription.Ip
 import           Ouroboros.Network.Subscription.Dns
@@ -253,9 +254,9 @@ data RunNetworkArgs peer blk = RunNetworkArgs
     -- ^ DNS resolver tracer
   , rnaMkPeer                :: SockAddr -> SockAddr -> peer
     -- ^ How to create a peer
-  , rnaMyAddr                :: AddrInfo
+  , rnaMyAddr                :: SockAddr
     -- ^ The node's own address
-  , rnaMyLocalAddr           :: AddrInfo
+  , rnaMyLocalAddr           :: SockAddr
     -- ^ The node's own local address
   , rnaIpProducers           :: [SockAddr]
     -- ^ IP producers
@@ -324,6 +325,7 @@ initNetwork registry nodeArgs kernel RunNetworkArgs{..} = do
       connTable <- newConnectionTable
       NodeToClient.withServer
         connTable
+        (socketSnocket Socket.AF_UNIX)
         rnaMyLocalAddr
         rnaMkPeer
         (\(DictVersion _) -> acceptEq)
@@ -333,6 +335,7 @@ initNetwork registry nodeArgs kernel RunNetworkArgs{..} = do
     runPeerServer :: ConnectionTable IO Socket.SockAddr -> IO ()
     runPeerServer connTable = NodeToNode.withServer
       connTable
+      (socketSnocket (sockAddrFamily rnaMyAddr))
       rnaMyAddr
       rnaMkPeer
       (\(DictVersion _) -> acceptEq)
@@ -352,7 +355,7 @@ initNetwork registry nodeArgs kernel RunNetworkArgs{..} = do
         , ispValency = length rnaIpProducers
         }
       (\_ -> retry)
-      (connectToNode'
+      (connectToNodeSocket
         (\(DictVersion codec) -> encodeTerm codec)
         (\(DictVersion codec) -> decodeTerm codec)
         nullTracer
@@ -378,7 +381,7 @@ initNetwork registry nodeArgs kernel RunNetworkArgs{..} = do
       (const Nothing)
       dnsProducer
       (\_ -> retry)
-      (connectToNode'
+      (connectToNodeSocket
         (\(DictVersion codec) -> encodeTerm codec)
         (\(DictVersion codec) -> decodeTerm codec)
         nullTracer

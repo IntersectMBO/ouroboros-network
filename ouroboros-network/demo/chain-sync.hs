@@ -45,6 +45,7 @@ import qualified Ouroboros.Network.ChainFragment as CF
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import Ouroboros.Network.Point (WithOrigin (..))
 import Ouroboros.Network.Testing.ConcreteBlock
+import Ouroboros.Network.Snocket
 import Ouroboros.Network.Socket
 import Ouroboros.Network.Mux
 import Ouroboros.Network.NodeToNode
@@ -119,9 +120,9 @@ mkLocalSocketAddrInfo socketPath =
 defaultLocalSocketAddrPath :: FilePath
 defaultLocalSocketAddrPath =  "./demo-chain-sync.sock"
 
-defaultLocalSocketAddrInfo :: Socket.AddrInfo
-defaultLocalSocketAddrInfo =
-    mkLocalSocketAddrInfo defaultLocalSocketAddrPath
+defaultLocalSocketAddr :: Socket.SockAddr
+defaultLocalSocketAddr =
+    Socket.SockAddrUnix defaultLocalSocketAddrPath
 
 rmIfExists :: FilePath -> IO ()
 rmIfExists path = do
@@ -148,13 +149,14 @@ instance MiniProtocolLimits DemoProtocol0 where
 clientPingPong :: Bool -> IO ()
 clientPingPong pipelined =
     connectToNode
+      (socketSnocket Socket.AF_UNIX)
       (\(DictVersion codec) -> encodeTerm codec)
       (\(DictVersion codec) -> decodeTerm codec)
       nullTracer
       (,)
       (simpleSingletonVersions (0::Int) (NodeToNodeVersionData 0) (DictVersion nodeToNodeCodecCBORTerm) app)
       Nothing
-      defaultLocalSocketAddrInfo
+      defaultLocalSocketAddr
   where
     app :: OuroborosApplication InitiatorApp (Socket.SockAddr, Socket.SockAddr) DemoProtocol0 IO LBS.ByteString () Void
     app = simpleInitiatorApplication protocols
@@ -182,7 +184,8 @@ serverPingPong = do
     tbl <- newConnectionTable
     withSimpleServerNode
       tbl
-      defaultLocalSocketAddrInfo
+      (socketSnocket Socket.AF_UNIX)
+      defaultLocalSocketAddr
       (\(DictVersion codec)-> encodeTerm codec)
       (\(DictVersion codec)-> decodeTerm codec)
       (,)
@@ -232,13 +235,14 @@ instance MiniProtocolLimits DemoProtocol1 where
 clientPingPong2 :: IO ()
 clientPingPong2 =
     connectToNode
+      (socketSnocket Socket.AF_UNIX)
       (\(DictVersion codec) -> encodeTerm codec)
       (\(DictVersion codec) -> decodeTerm codec)
       nullTracer
       (,)
       (simpleSingletonVersions (0::Int) (NodeToNodeVersionData 0) (DictVersion nodeToNodeCodecCBORTerm) app)
       Nothing
-      defaultLocalSocketAddrInfo
+      defaultLocalSocketAddr
   where
     app :: OuroborosApplication InitiatorApp (Socket.SockAddr, Socket.SockAddr) DemoProtocol1 IO LBS.ByteString () Void
     app = simpleInitiatorApplication protocols
@@ -281,7 +285,8 @@ serverPingPong2 = do
     tbl <- newConnectionTable
     withSimpleServerNode
       tbl
-      defaultLocalSocketAddrInfo
+      (socketSnocket Socket.AF_UNIX)
+      defaultLocalSocketAddr
       (\(DictVersion codec)-> encodeTerm codec)
       (\(DictVersion codec)-> decodeTerm codec)
       (,)
@@ -326,16 +331,18 @@ instance MiniProtocolLimits DemoProtocol2 where
 
 
 clientChainSync :: [FilePath] -> IO ()
-clientChainSync sockAddrs =
-    forConcurrently_ sockAddrs $ \sockAddr ->
+clientChainSync sockPaths =
+    forConcurrently_ sockPaths $ \sockPath ->
       connectToNode
+        (socketSnocket Socket.AF_UNIX)
         (\(DictVersion codec) -> encodeTerm codec)
         (\(DictVersion codec) -> decodeTerm codec)
         nullTracer
         (,)
         (simpleSingletonVersions (0::Int) (NodeToNodeVersionData 0) (DictVersion nodeToNodeCodecCBORTerm) app)
         Nothing
-        (mkLocalSocketAddrInfo sockAddr)
+        (Socket.SockAddrUnix sockPath)
+
   where
     app :: OuroborosApplication InitiatorApp (Socket.SockAddr, Socket.SockAddr) DemoProtocol2 IO LBS.ByteString () Void
     app = simpleInitiatorApplication protocols
@@ -350,11 +357,12 @@ clientChainSync sockAddrs =
 
 
 serverChainSync :: FilePath -> IO ()
-serverChainSync sockAddr = do
+serverChainSync sockPath = do
     tbl <- newConnectionTable
     withSimpleServerNode
       tbl
-      (mkLocalSocketAddrInfo sockAddr)
+      (socketSnocket Socket.AF_UNIX)
+      (Socket.SockAddrUnix sockPath)
       (\(DictVersion codec)-> encodeTerm codec)
       (\(DictVersion codec)-> decodeTerm codec)
       (,)
@@ -507,13 +515,14 @@ clientBlockFetch sockAddrs = do
     peerAsyncs <- sequence
                     [ async $
                         connectToNode
+                          (socketSnocket Socket.AF_UNIX)
                           (\(DictVersion codec) -> encodeTerm codec)
                           (\(DictVersion codec) -> decodeTerm codec)
                           nullTracer
                           (,)
                           (simpleSingletonVersions (0::Int) (NodeToNodeVersionData 0) (DictVersion nodeToNodeCodecCBORTerm) app)
                           Nothing
-                          (mkLocalSocketAddrInfo sockAddr)
+                          (Socket.SockAddrUnix sockAddr)
                     | sockAddr <- sockAddrs ]
 
     fetchAsync <- async $
@@ -543,11 +552,12 @@ clientBlockFetch sockAddrs = do
 
 
 serverBlockFetch :: FilePath -> IO ()
-serverBlockFetch sockAddr = do
+serverBlockFetch sockPath = do
     tbl <- newConnectionTable
     withSimpleServerNode
       tbl
-      (mkLocalSocketAddrInfo sockAddr)
+      (socketSnocket Socket.AF_UNIX)
+      (Socket.SockAddrUnix sockPath)
       (\(DictVersion codec)-> encodeTerm codec)
       (\(DictVersion codec)-> decodeTerm codec)
       (,)

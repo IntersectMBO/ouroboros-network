@@ -34,8 +34,6 @@ import qualified Codec.CBOR.Term as CBOR
 import           Codec.Serialise (Serialise (..), DeserialiseFailure)
 import           Codec.SerialiseTerm
 
-import qualified Network.Socket as Socket
-
 import           Network.Mux.Types (ProtocolEnum(..), MiniProtocolLimits (..))
 import           Network.Mux.Interface
 
@@ -43,6 +41,7 @@ import           Ouroboros.Network.Mux
 import           Ouroboros.Network.Protocol.Handshake.Type
 import           Ouroboros.Network.Protocol.Handshake.Version
 import           Ouroboros.Network.Socket
+import           Ouroboros.Network.Snocket
 import           Network.TypedProtocol.Driver.ByteLimit (DecoderFailureOrTooMuchInput)
 import           Network.TypedProtocol.Driver (TraceSendRecv)
 import           Control.Tracer (Tracer)
@@ -123,34 +122,39 @@ nodeToNodeCodecCBORTerm = CodecCBORTerm {encodeTerm, decodeTerm}
 -- | A specialised version of @'Ouroboros.Network.Socket.connectToNode'@.
 --
 connectTo
-  :: Tracer IO (TraceSendRecv (Handshake NodeToNodeVersion CBOR.Term) peerid (DecoderFailureOrTooMuchInput DeserialiseFailure))
-  -> (Socket.SockAddr -> Socket.SockAddr -> peerid)
+  :: Snocket channel addr NodeToNodeProtocols
+  -> Tracer IO (TraceSendRecv (Handshake NodeToNodeVersion CBOR.Term) peerid (DecoderFailureOrTooMuchInput DeserialiseFailure))
+  -> (addr -> addr -> peerid)
   -- ^ create peerid from local address and remote address
   -> Versions NodeToNodeVersion
               DictVersion
               (OuroborosApplication InitiatorApp peerid NodeToNodeProtocols IO BL.ByteString a b)
-  -> Maybe Socket.AddrInfo
-  -> Socket.AddrInfo
+  -> Maybe addr
+  -> addr
   -> IO ()
-connectTo =
+connectTo sn =
   connectToNode
+    sn
     (\(DictVersion codec) -> encodeTerm codec)
     (\(DictVersion codec) -> decodeTerm codec)
 
 -- | A specialised version of @'Ouroboros.Network.Socket.withServerNode'@
 --
 withServer
-  :: ConnectionTable IO Socket.SockAddr
-  -> Socket.AddrInfo
-  -> (Socket.SockAddr -> Socket.SockAddr -> peerid)
+  :: Ord addr
+  => ConnectionTable IO addr
+  -> Snocket channel addr NodeToNodeProtocols
+  -> addr
+  -> (addr -> addr -> peerid)
   -- ^ create peerid from local address and remote address
   -> (forall vData. DictVersion vData -> vData -> vData -> Accept)
   -> Versions NodeToNodeVersion DictVersion (AnyResponderApp peerid NodeToNodeProtocols IO BL.ByteString)
   -> (Async () -> IO t)
   -> IO t
-withServer tbl addr peeridFn acceptVersion versions k =
+withServer tbl sn addr peeridFn acceptVersion versions k =
   withServerNode
     tbl
+    sn
     addr
     (\(DictVersion codec) -> encodeTerm codec)
     (\(DictVersion codec) -> decodeTerm codec)

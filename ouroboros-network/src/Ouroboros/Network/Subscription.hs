@@ -15,9 +15,6 @@ module Ouroboros.Network.Subscription
     , ipRetryDelay
     , resolutionDelay
 
-      -- * Auxiliary functions
-    , sockAddrFamily
-
       -- * Errors
     , SubscriberError (..)
 

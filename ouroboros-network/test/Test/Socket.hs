@@ -44,6 +44,7 @@ import           Ouroboros.Network.Mux as Mx
 import qualified Network.Mux as Mx
 import qualified Network.Mux.Bearer.Socket as Mx
 
+import           Ouroboros.Network.Snocket
 import           Ouroboros.Network.Socket
 
 import           Ouroboros.Network.MockChain.Chain (Chain, ChainUpdate, Point)
@@ -147,7 +148,7 @@ prop_socket_send_recv_ipv4
 prop_socket_send_recv_ipv4 f xs = ioProperty $ do
     server:_ <- Socket.getAddrInfo Nothing (Just "127.0.0.1") (Just "6061")
     client:_ <- Socket.getAddrInfo Nothing (Just "127.0.0.1") (Just "0")
-    prop_socket_send_recv client server f xs
+    prop_socket_send_recv (Socket.addrAddress client) (Socket.addrAddress server) f xs
 
 
 #ifdef OUROBOROS_NETWORK_IPV6
@@ -175,7 +176,8 @@ prop_socket_send_recv_unix request response = ioProperty $ do
                          (Socket.SockAddrUnix serverName) Nothing
         clientAddr = Socket.AddrInfo [] Socket.AF_UNIX Socket.Stream Socket.defaultProtocol
                          (Socket.SockAddrUnix clientName) Nothing
-    r <- prop_socket_send_recv clientAddr serverAddr request response
+    r <- prop_socket_send_recv (Socket.addrAddress clientAddr) (Socket.addrAddress serverAddr)
+                               request response
     cleanUp serverName
     cleanUp clientName
     return $ r
@@ -189,8 +191,8 @@ prop_socket_send_recv_unix request response = ioProperty $ do
 -- | Verify that an initiator and a responder can send and receive messages from each other
 -- over a TCP socket. Large DummyPayloads will be split into smaller segments and the
 -- testcases will verify that they are correctly reassembled into the original message.
-prop_socket_send_recv :: Socket.AddrInfo
-                      -> Socket.AddrInfo
+prop_socket_send_recv :: Socket.SockAddr
+                      -> Socket.SockAddr
                       -> (Int -> Int -> (Int, Int))
                       -> [Int]
                       -> IO Bool
@@ -233,6 +235,7 @@ prop_socket_send_recv initiatorAddr responderAddr f xs = do
     res <-
       withSimpleServerNode
         tbl
+        (socketSnocket $ sockAddrFamily responderAddr)
         responderAddr
         (\(DictVersion codec) -> encodeTerm codec)
         (\(DictVersion codec) -> decodeTerm codec)
@@ -241,6 +244,7 @@ prop_socket_send_recv initiatorAddr responderAddr f xs = do
         (simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData 0) (DictVersion nodeToNodeCodecCBORTerm) responderApp)
         $ \_ _ -> do
           connectToNode
+            (socketSnocket $ sockAddrFamily responderAddr)
             (\(DictVersion codec) -> encodeTerm codec)
             (\(DictVersion codec) -> decodeTerm codec)
             nullTracer
@@ -342,13 +346,14 @@ prop_socket_client_connect_error _ xs = ioProperty $ do
 
     (res :: Either IOException Bool)
       <- try $ False <$ connectToNode
+        (socketSnocket $ Socket.addrFamily serverAddr)
         (\(DictVersion codec) -> encodeTerm codec)
         (\(DictVersion codec) -> decodeTerm codec)
         nullTracer
         (,)
         (simpleSingletonVersions (0::Int) (NodeToNodeVersionData 0) (DictVersion nodeToNodeCodecCBORTerm) app)
-        (Just clientAddr)
-        serverAddr
+        (Just $ Socket.addrAddress clientAddr)
+        (Socket.addrAddress serverAddr)
 
     -- XXX Disregarding the exact exception type
     pure $ either (const True) id res
@@ -359,8 +364,11 @@ demo :: forall block .
         , Serialise block, Eq block, Show block )
      => Chain block -> [ChainUpdate block block] -> IO Bool
 demo chain0 updates = do
-    producerAddress:_ <- Socket.getAddrInfo Nothing (Just "127.0.0.1") (Just "6061")
-    consumerAddress:_ <- Socket.getAddrInfo Nothing (Just "127.0.0.1") (Just "0")
+    producerAddressInfo:_ <- Socket.getAddrInfo Nothing (Just "127.0.0.1") (Just "6061")
+    consumerAddressInfo:_ <- Socket.getAddrInfo Nothing (Just "127.0.0.1") (Just "0")
+
+    let producerAddress = Socket.addrAddress producerAddressInfo
+        consumerAddress = Socket.addrAddress consumerAddressInfo
 
     producerVar <- newTVarM (CPS.initChainProducerState chain0)
     consumerVar <- newTVarM chain0
@@ -394,6 +402,7 @@ demo chain0 updates = do
 
     withSimpleServerNode
       tbl
+      (socketSnocket $ sockAddrFamily producerAddress)
       producerAddress
       (\(DictVersion codec)-> encodeTerm codec)
       (\(DictVersion codec)-> decodeTerm codec)
@@ -403,6 +412,7 @@ demo chain0 updates = do
       $ \_ _ -> do
       withAsync
         (connectToNode
+          (socketSnocket $ sockAddrFamily consumerAddress)
           (\(DictVersion codec) -> encodeTerm codec)
           (\(DictVersion codec) -> decodeTerm codec)
           nullTracer
