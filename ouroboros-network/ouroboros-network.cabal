@@ -58,6 +58,7 @@ library
                        Ouroboros.Network.Server.Socket
                        Ouroboros.Network.Server.Version.CBOR
                        Ouroboros.Network.Server.Version.Protocol
+                       Ouroboros.Network.Snocket
                        Ouroboros.Network.Socket
                        Ouroboros.Network.Subscription
                        Ouroboros.Network.Subscription.Ip
@@ -132,7 +133,10 @@ library
                        network,
                        serialise         >=0.2 && <0.3,
                        stm               >=2.4 && <2.6,
-                       time              >=1.6 && <1.10
+                       time              >=1.6 && <1.10,
+
+                       Win32-network                   <0.2.0.0,
+                       Win32             >= 2.5.4.1 && < 2.9
 
   ghc-options:         -Wall
                        -Wno-unticked-promoted-constructors
@@ -206,6 +210,7 @@ test-suite test-network
                        Ouroboros.Network.Protocol.LocalTxSubmission.Server
                        Ouroboros.Network.Protocol.LocalTxSubmission.Type
                        Ouroboros.Network.Protocol.LocalTxSubmission.Test
+                       Ouroboros.Network.Snocket
                        Ouroboros.Network.Socket
                        Ouroboros.Network.Server.ConnectionTable
                        Ouroboros.Network.Server.Socket

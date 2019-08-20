@@ -255,9 +255,9 @@ data RunNetworkArgs peer blk = RunNetworkArgs
     -- ^ DNS resolver tracer
   , rnaMkPeer                :: SockAddr -> SockAddr -> peer
     -- ^ How to create a peer
-  , rnaMyAddr                :: AddrInfo
+  , rnaMyAddr                :: SockAddr
     -- ^ The node's own address
-  , rnaMyLocalAddr           :: AddrInfo
+  , rnaMyLocalAddr           :: SockAddr
     -- ^ The node's own local address
   , rnaIpProducers           :: [SockAddr]
     -- ^ IP producers
@@ -310,6 +310,7 @@ initNetwork registry nodeArgs kernel RunNetworkArgs{..} = do
       NodeToClient.withServer_V1
         rnaHandshakeLocalTracer
         connTable
+        (socketSnocket Socket.AF_UNIX)
         rnaMyLocalAddr
         rnaMkPeer
         nodeToClientVersionData

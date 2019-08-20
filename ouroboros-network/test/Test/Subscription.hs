@@ -56,9 +56,14 @@ import           Ouroboros.Network.Protocol.Handshake.Version (simpleSingletonVe
 
 import           Codec.SerialiseTerm
 import           Ouroboros.Network.Mux
+<<<<<<< HEAD
 import           Ouroboros.Network.NodeToNode hiding ( ipSubscriptionWorker
                                                      , dnsSubscriptionWorker
                                                      )
+=======
+import           Ouroboros.Network.NodeToNode
+import           Ouroboros.Network.Snocket
+>>>>>>> bfc121fd... WIP: Remove Sockets from Ouroboros.Network.Socket
 import           Ouroboros.Network.Socket
 import           Ouroboros.Network.Subscription
 import           Ouroboros.Network.Subscription.Dns
@@ -546,7 +551,8 @@ prop_send_recv f xs first = ioProperty $ do
       withServerNode
         nullTracer
         tbl
-        responderAddr
+        (socketSnocket $ Socket.addrFamily responderAddr)
+        (Socket.addrAddress responderAddr)
         (\(DictVersion codec) -> encodeTerm codec)
         (\(DictVersion codec) -> decodeTerm codec)
         (,)
@@ -562,7 +568,7 @@ prop_send_recv f xs first = ioProperty $ do
             (\_ -> Just minConnectionAttemptDelay)
             (DnsSubscriptionTarget "shelley-0.iohk.example" 6062 1)
             (\_ -> waitSiblingSTM siblingVar)
-            (connectToNode'
+            (connectToNodeSocket
                 (\(DictVersion codec) -> encodeTerm codec)
                 (\(DictVersion codec) -> decodeTerm codec)
                 nullTracer
@@ -624,13 +630,13 @@ prop_send_recv_init_and_rsp f xs = ioProperty $ do
 
     a_aid <- async $ startPassiveServer
       tblA
-      responderAddr4A
+      (Socket.addrAddress responderAddr4A)
       addrAVar
       rrcfgA
 
     b_aid <- async $ startActiveServer
       tblB
-      responderAddr4B
+      (Socket.addrAddress responderAddr4B)
       addrBVar
       addrAVar
       rrcfgB
@@ -669,6 +675,7 @@ prop_send_recv_init_and_rsp f xs = ioProperty $ do
     startPassiveServer tbl responderAddr localAddrVar rrcfg = withServerNode
         nullTracer
         tbl
+        (socketSnocket $ sockAddrFamily responderAddr)
         responderAddr
         (\(DictVersion codec) -> encodeTerm codec)
         (\(DictVersion codec) -> decodeTerm codec)
@@ -685,6 +692,7 @@ prop_send_recv_init_and_rsp f xs = ioProperty $ do
     startActiveServer tbl responderAddr localAddrVar remoteAddrVar rrcfg = withServerNode
         nullTracer
         tbl
+        (socketSnocket $ sockAddrFamily responderAddr)
         responderAddr
         (\(DictVersion codec) -> encodeTerm codec)
         (\(DictVersion codec) -> decodeTerm codec)
@@ -702,7 +710,7 @@ prop_send_recv_init_and_rsp f xs = ioProperty $ do
             (\_ -> Just minConnectionAttemptDelay)
             (IPSubscriptionTarget [remoteAddr] 1)
             (\_ -> waitSiblingSTM (rrcSiblingVar rrcfg))
-            (connectToNode'
+            (connectToNodeSocket
                 (\(DictVersion codec) -> encodeTerm codec)
                 (\(DictVersion codec) -> decodeTerm codec)
                 nullTracer
@@ -763,7 +771,7 @@ _demo = ioProperty $ do
             (\_ -> Just minConnectionAttemptDelay)
             (DnsSubscriptionTarget "shelley-0.iohk.example" 6064 1)
             (\_ -> retry)
-            (connectToNode'
+            (connectToNodeSocket
                 (\(DictVersion codec) -> encodeTerm codec)
                 (\(DictVersion codec) -> decodeTerm codec)
                 nullTracer
@@ -784,7 +792,8 @@ _demo = ioProperty $ do
         void $ async $ withServerNode
             nullTracer
             tbl
-            addr
+            (socketSnocket $ Socket.addrFamily addr)
+            (Socket.addrAddress addr)
             (\(DictVersion codec) -> encodeTerm codec)
             (\(DictVersion codec) -> decodeTerm codec)
             (,)
