@@ -557,6 +557,7 @@ prop_send_recv f xs first = ioProperty $ do
       withServerNode
         nullTracer
         nullTracer
+        nullTracer
         tbl
         peerStatesVar
         responderAddr
@@ -565,7 +566,9 @@ prop_send_recv f xs first = ioProperty $ do
         (,)
         (\(DictVersion _) -> acceptEq)
         (simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData $ NetworkMagic 0) (DictVersion nodeToNodeCodecCBORTerm) responderApp)
-        $ \_ _ ->
+        []
+        (\_ _ _ -> Throw)
+        $ \_ _ -> do
           dnsSubscriptionWorker'
             activeTracer activeTracer activeTracer
             clientTbl
@@ -641,7 +644,7 @@ prop_send_recv_init_and_rsp f xs = ioProperty $ do
     rrcfgA <- newReqRspCfg "A" siblingVar
     rrcfgB <- newReqRspCfg "B" siblingVar
 
-    stVar <- newTVarM ()
+    stVar <- newPeerStatesVar
 
     a_aid <- async $ startPassiveServer
       tblA
@@ -692,6 +695,7 @@ prop_send_recv_init_and_rsp f xs = ioProperty $ do
     startPassiveServer tbl stVar responderAddr localAddrVar rrcfg = withServerNode
         nullTracer
         nullTracer
+        nullTracer
         tbl
         stVar
         responderAddr
@@ -700,6 +704,8 @@ prop_send_recv_init_and_rsp f xs = ioProperty $ do
         (,)
         (\(DictVersion _) -> acceptEq)
         (simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData $ NetworkMagic 0) (DictVersion nodeToNodeCodecCBORTerm) (appX rrcfg))
+        []
+        (\_ _ _ -> Throw)
         $ \localAddr _ -> do
           atomically $ putTMVar localAddrVar localAddr
           r <- atomically $ (,) <$> takeTMVar (rrcServerVar rrcfg)
@@ -710,6 +716,7 @@ prop_send_recv_init_and_rsp f xs = ioProperty $ do
     startActiveServer tbl stVar responderAddr localAddrVar remoteAddrVar rrcfg = withServerNode
         nullTracer
         nullTracer
+        nullTracer
         tbl
         stVar
         responderAddr
@@ -718,6 +725,8 @@ prop_send_recv_init_and_rsp f xs = ioProperty $ do
         (,)
         (\(DictVersion _) -> acceptEq)
         ((simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData $ NetworkMagic 0) (DictVersion nodeToNodeCodecCBORTerm) (appX rrcfg)))
+        []
+        (\_ _ _ -> Throw)
         $ \localAddr _ -> do
           peerStatesVar <- newPeerStatesVar
           atomically $ putTMVar localAddrVar localAddr
@@ -785,7 +794,7 @@ _demo = ioProperty $ do
     tbl <- newConnectionTable
     clientTbl <- newConnectionTable
     peerStatesVar <- newPeerStatesVar
-    stVar <- newTVarM ()
+    stVar <- newPeerStatesVar
 
     spawnServer tbl stVar server 10000
     spawnServer tbl stVar server' 10000
@@ -825,6 +834,7 @@ _demo = ioProperty $ do
         void $ async $ withServerNode
             nullTracer
             nullTracer
+            nullTracer
             tbl
             stVar
             addr
@@ -834,6 +844,8 @@ _demo = ioProperty $ do
             (\(DictVersion _) -> acceptEq)
             (simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData $ NetworkMagic 0)
                 (DictVersion nodeToNodeCodecCBORTerm) appRsp)
+            []
+            (\_ _ _ -> Throw)
             (\_ _ -> threadDelay delay)
 
 

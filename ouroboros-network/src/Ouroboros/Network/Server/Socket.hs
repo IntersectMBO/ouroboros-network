@@ -11,6 +11,7 @@
 module Ouroboros.Network.Server.Socket
   ( BeginConnection
   , HandleConnection (..)
+  , ApplicationStart
   , CompleteConnection
   , Result (..)
   , Main
@@ -60,7 +61,7 @@ data HandleConnection channel st r where
   Accept :: !st -> !(channel -> IO r) -> HandleConnection channel st r
 
 -- | What to do on a new connection: accept and run this `IO`, or reject.
-type BeginConnection addr channel st r = Time IO -> addr -> st -> STM (HandleConnection channel st r)
+type BeginConnection addr channel st r = Time -> addr -> st -> STM (HandleConnection channel st r)
 
 -- | A call back which runs when application starts;
 --
@@ -94,7 +95,7 @@ type ResultQ addr r = STM.TQueue (Result addr r)
 data Result addr r = Result
   { resultThread :: !(Async ())
   , resultAddr   :: !addr
-  , resultTime   :: !(Time IO)
+  , resultTime   :: !Time 
   , resultValue  :: !(Either SomeException r)
   }
 
