@@ -54,11 +54,11 @@ import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.Mock
 import           Ouroboros.Consensus.Mempool
-import           Ouroboros.Consensus.Node
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.Node.Tracers
 import           Ouroboros.Consensus.NodeId
+import           Ouroboros.Consensus.NodeKernel
 import           Ouroboros.Consensus.NodeNetwork
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util.Orphans ()
@@ -346,12 +346,12 @@ broadcastNetwork registry testBtime numCoreNodes pInfo initRNG slotLen = do
             , maxUnackTxs        = 1000 -- TODO
             }
 
-      node <- nodeKernel nodeParams
+      nodeKernel <- initNodeKernel nodeParams
       let app = consensusNetworkApps
-                  node
+                  nodeKernel
                   nullProtocolTracers
                   protocolCodecsId
-                  (protocolHandlers nodeParams node)
+                  (protocolHandlers nodeParams nodeKernel)
 
           ni :: NetworkInterface m NodeId
           ni = createNetworkInterface chans nodeIds us app
@@ -362,7 +362,7 @@ broadcastNetwork registry testBtime numCoreNodes pInfo initRNG slotLen = do
         pInfoConfig
         (produceDRG callbacks)
         (ChainDB.getCurrentLedger chainDB)
-        (getMempool node)
+        (getMempool nodeKernel)
 
       forM_ (filter (/= us) nodeIds) $ \them ->
         forkLinked registry (niConnectTo ni them)
@@ -372,7 +372,7 @@ broadcastNetwork registry testBtime numCoreNodes pInfo initRNG slotLen = do
             , nodeInfoVolDbFs = volDbFsVar
             , nodeInfoLgrDbFs = lgrDbFsVar
             }
-      return (node, nodeInfo)
+      return (nodeKernel, nodeInfo)
 
 {-------------------------------------------------------------------------------
   Node Info

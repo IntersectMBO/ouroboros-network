@@ -10,15 +10,16 @@
 
 {-# OPTIONS_GHC -Wredundant-constraints -Werror=missing-fields #-}
 
-module Ouroboros.Consensus.Node (
-    -- * Node
+module Ouroboros.Consensus.NodeKernel (
+    -- * Node kernel
     NodeKernel (..)
   , NodeCallbacks (..)
   , NodeParams (..)
   , TraceForgeEvent (..)
-  , nodeKernel
+  , initNodeKernel
   , getMempoolReader
   , getMempoolWriter
+  , ProtocolM
   ) where
 
 import           Control.Monad (void)
@@ -137,7 +138,7 @@ data NodeParams m peer blk = NodeParams {
     , maxUnackTxs        :: Word16
     }
 
-nodeKernel
+initNodeKernel
     :: forall m peer blk.
        ( MonadAsync m
        , MonadFork  m
@@ -148,7 +149,7 @@ nodeKernel
        )
     => NodeParams m peer blk
     -> m (NodeKernel m peer blk)
-nodeKernel params@NodeParams { registry, cfg, tracers } = do
+initNodeKernel params@NodeParams { registry, cfg, tracers } = do
     st <- initInternalState params
 
     forkBlockProduction st

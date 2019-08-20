@@ -80,9 +80,9 @@ import           Ouroboros.Consensus.ChainSyncClient
 import           Ouroboros.Consensus.ChainSyncServer
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Mempool.API
-import           Ouroboros.Consensus.Node
 import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.Node.Tracers
+import           Ouroboros.Consensus.NodeKernel
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.TxSubmission
 import           Ouroboros.Consensus.Util.Orphans ()
