@@ -41,6 +41,9 @@ module Ouroboros.Network.NodeToNode (
   , TraceSendRecv
   , DecoderFailureOrTooMuchInput
   , Handshake
+  , ErrorPolicies (..)
+  , nullErrorPolicies
+  , ErrorPolicy (..)
   ) where
 
 import           Control.Concurrent.Async (Async)
@@ -218,11 +221,10 @@ withServer
   -- ^ create peerid from local address and remote address
   -> (forall vData. DictVersion vData -> vData -> vData -> Accept)
   -> Versions NodeToNodeVersion DictVersion (OuroborosApplication appType peerid NodeToNodeProtocols IO BL.ByteString a b)
-  -> [ErrorPolicy]
-  -> (Time IO -> Socket.SockAddr -> () -> SuspendDecision DiffTime)
+  -> ErrorPolicies IO Socket.SockAddr ()
   -> (Async () -> IO t)
   -> IO t
-withServer muxTracer handshakeTracer errTracer tbl stVar addr peeridFn acceptVersion versions errPolicies returnCallback k =
+withServer muxTracer handshakeTracer errTracer tbl stVar addr peeridFn acceptVersion versions errPolicies k =
   withServerNode
     muxTracer
     handshakeTracer
@@ -236,7 +238,6 @@ withServer muxTracer handshakeTracer errTracer tbl stVar addr peeridFn acceptVer
     acceptVersion
     versions
     errPolicies
-    returnCallback
     (\_ -> k)
 
 
@@ -254,8 +255,7 @@ withServer_V1
   -- ^ create peerid from local address and remote address
   -> NodeToNodeVersionData
   -> (OuroborosApplication appType peerid NodeToNodeProtocols IO BL.ByteString x y)
-  -> [ErrorPolicy]
-  -> (Time IO -> Socket.SockAddr -> () -> SuspendDecision DiffTime)
+  -> ErrorPolicies IO Socket.SockAddr ()
   -> (Async () -> IO t)
   -> IO t
 withServer_V1 muxTracer handshakeTracer errTracer tbl stVar addr peeridFn versionData application =
@@ -322,8 +322,7 @@ ipSubscriptionWorker
         peerStatesVar
         localIPv4 localIPv6
         connectionAttemptDelay
-        []
-        (\_ _ _ -> Throw)
+        nullErrorPolicies
         ips
         (connectToNode'
           (\(DictVersion codec) -> encodeTerm codec)
@@ -446,8 +445,7 @@ dnsSubscriptionWorker
       peerStatesVar
       localIPv4 localIPv6
       connectionAttemptDelay
-      []
-      (\_ _ _ -> Throw)
+      nullErrorPolicies
       dst
       (connectToNode'
         (\(DictVersion codec) -> encodeTerm codec)

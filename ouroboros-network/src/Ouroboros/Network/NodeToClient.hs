@@ -23,9 +23,12 @@ module Ouroboros.Network.NodeToClient (
   -- * Re-exported clients
   , chainSyncClientNull
   , localTxSubmissionClientNull
-  , TraceSendRecv (..)
+  , TraceSendRecv
   , DecoderFailureOrTooMuchInput
   , Handshake
+  , ErrorPolicies (..)
+  , nullErrorPolicies
+  , ErrorPolicy (..)
   ) where
 
 import           Control.Concurrent.Async (Async)
@@ -193,11 +196,10 @@ withServer
   -> (forall vData. DictVersion vData -> vData -> vData -> Accept)
   -> Versions NodeToClientVersion DictVersion
               (OuroborosApplication appType peerid NodeToClientProtocols IO BL.ByteString a b)
-  -> [ErrorPolicy]
-  -> (Time IO -> Socket.SockAddr -> () -> SuspendDecision DiffTime)
+  -> ErrorPolicies IO Socket.SockAddr ()
   -> (Async () -> IO t)
   -> IO t
-withServer muxTracer handshakeTracer  errTracer tbl stVar addr peeridFn acceptVersion versions errPolicies returnCallback k =
+withServer muxTracer handshakeTracer  errTracer tbl stVar addr peeridFn acceptVersion versions errPolicies k =
   withServerNode
     muxTracer
     handshakeTracer
@@ -211,7 +213,6 @@ withServer muxTracer handshakeTracer  errTracer tbl stVar addr peeridFn acceptVe
     acceptVersion
     versions
     errPolicies
-    returnCallback
     (\_ -> k)
 
 -- | A specialised version of 'withServer' which can only communicate using
@@ -234,8 +235,7 @@ withServer_V1
   -- ^ applications which has the reponder side, i.e.
   -- 'OuroborosResponderApplication' or
   -- 'OuroborosInitiatorAndResponderApplication'.
-  -> [ErrorPolicy]
-  -> (Time IO -> Socket.SockAddr -> () -> SuspendDecision DiffTime)
+  -> ErrorPolicies IO Socket.SockAddr ()
   -> (Async () -> IO t)
   -> IO t
 withServer_V1 muxTracer handshakeTracer errTracer tbl stVar addr peeridFn versionData application =

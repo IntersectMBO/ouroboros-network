@@ -430,8 +430,7 @@ prop_sub_io lr = ioProperty $ do
             (Just $ Socket.addrAddress ipv4Client)
             (Just $ Socket.addrAddress ipv6Client)
             (\_ -> Just minConnectionAttemptDelay)
-            []
-            (\_ _ _ -> Throw)
+            nullErrorPolicies
             (DnsSubscriptionTarget "shelley-0.iohk.example" 6062 (lrioValency lr))
             (\_ -> do
               c <- readTVar clientCountVar
@@ -564,8 +563,7 @@ prop_send_recv f xs first = ioProperty $ do
         (,)
         (\(DictVersion _) -> acceptEq)
         (simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData 0) (DictVersion nodeToNodeCodecCBORTerm) responderApp)
-        []
-        (\_ _ _ -> Throw)
+        nullErrorPolicies
         $ \_ _ -> do
           dnsSubscriptionWorker'
             activeTracer activeTracer activeTracer
@@ -575,8 +573,7 @@ prop_send_recv f xs first = ioProperty $ do
             (Just $ Socket.addrAddress initiatorAddr4)
             (Just $ Socket.addrAddress initiatorAddr6)
             (\_ -> Just minConnectionAttemptDelay)
-            []
-            (\_ _ _ -> Throw)
+            nullErrorPolicies
             (DnsSubscriptionTarget "shelley-0.iohk.example" 6062 1)
             (\_ -> waitSiblingSTM siblingVar)
             (connectToNode'
@@ -700,8 +697,7 @@ prop_send_recv_init_and_rsp f xs = ioProperty $ do
         (,)
         (\(DictVersion _) -> acceptEq)
         (simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData 0) (DictVersion nodeToNodeCodecCBORTerm) (appX rrcfg))
-        []
-        (\_ _ _ -> Throw)
+        nullErrorPolicies
         $ \localAddr _ -> do
           atomically $ putTMVar localAddrVar localAddr
           r <- atomically $ (,) <$> takeTMVar (rrcServerVar rrcfg)
@@ -721,8 +717,7 @@ prop_send_recv_init_and_rsp f xs = ioProperty $ do
         (,)
         (\(DictVersion _) -> acceptEq)
         ((simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData 0) (DictVersion nodeToNodeCodecCBORTerm) (appX rrcfg)))
-        []
-        (\_ _ _ -> Throw)
+        nullErrorPolicies
         $ \localAddr _ -> do
           peerStatesVar <- newPeerStatesVar
           atomically $ putTMVar localAddrVar localAddr
@@ -737,8 +732,7 @@ prop_send_recv_init_and_rsp f xs = ioProperty $ do
             (\_ -> Just minConnectionAttemptDelay)
             (pure $ listSubscriptionTarget [remoteAddr])
             1
-            []
-            (\_ _ _ -> Throw)
+            nullErrorPolicies
             (\_ -> waitSiblingSTM (rrcSiblingVar rrcfg))
             (connectToNode'
                 (\(DictVersion codec) -> encodeTerm codec)
@@ -804,8 +798,7 @@ _demo = ioProperty $ do
             (Just $ Socket.addrAddress client)
             (Just $ Socket.addrAddress client6)
             (\_ -> Just minConnectionAttemptDelay)
-            []
-            (\_ _ _ -> Throw)
+            nullErrorPolicies
             (DnsSubscriptionTarget "shelley-0.iohk.example" 6064 1)
             (connectToNode'
                 (\(DictVersion codec) -> encodeTerm codec)
@@ -839,8 +832,7 @@ _demo = ioProperty $ do
             (\(DictVersion _) -> acceptEq)
             (simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData 0)
                 (DictVersion nodeToNodeCodecCBORTerm) appRsp)
-            []
-            (\_ _ _ -> Throw)
+            nullErrorPolicies
             (\_ _ -> threadDelay delay)
 
 
