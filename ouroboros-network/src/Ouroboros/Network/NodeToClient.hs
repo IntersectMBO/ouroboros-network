@@ -37,6 +37,9 @@ import qualified Codec.CBOR.Term as CBOR
 import           Codec.Serialise (Serialise (..), DeserialiseFailure)
 import           Codec.SerialiseTerm
 
+import           Control.Monad.Class.MonadSTM.Strict
+import           Control.Tracer (Tracer)
+
 import qualified Network.Socket as Socket
 import           Network.Mux.Types (ProtocolEnum(..), MiniProtocolLimits (..))
 import           Network.Mux.Interface
@@ -49,7 +52,6 @@ import           Ouroboros.Network.Protocol.Handshake.Version
 import           Ouroboros.Network.Socket
 import           Network.TypedProtocol.Driver.ByteLimit (DecoderFailureOrTooMuchInput)
 import           Network.TypedProtocol.Driver (TraceSendRecv)
-import           Control.Tracer (Tracer)
 
 
 -- | An index type used with the mux to enumerate all the mini-protocols that
@@ -133,6 +135,7 @@ connectTo =
 --
 withServer
   :: ConnectionTable IO Socket.SockAddr
+  -> StrictTVar IO st
   -> Socket.AddrInfo
   -> (Socket.SockAddr -> Socket.SockAddr -> peerid)
   -- ^ create peerid from local address and remote address
@@ -141,9 +144,10 @@ withServer
               (AnyResponderApp peerid NodeToClientProtocols IO BL.ByteString)
   -> (Async () -> IO t)
   -> IO t
-withServer tbl addr peeridFn acceptVersion versions k =
+withServer tbl stVar addr peeridFn acceptVersion versions k =
   withServerNode
     tbl
+    stVar
     addr
     (\(DictVersion codec) -> encodeTerm codec)
     (\(DictVersion codec) -> decodeTerm codec)

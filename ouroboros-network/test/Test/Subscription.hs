@@ -552,6 +552,7 @@ prop_send_recv f xs first = ioProperty $ do
     withDummyServer faultyAddress $
       withSimpleServerNode
         tbl
+        peerStatesVar
         responderAddr
         (\(DictVersion codec) -> encodeTerm codec)
         (\(DictVersion codec) -> decodeTerm codec)
@@ -631,14 +632,18 @@ prop_send_recv_init_and_rsp f xs = ioProperty $ do
     rrcfgA <- newReqRspCfg "A" siblingVar
     rrcfgB <- newReqRspCfg "B" siblingVar
 
+    stVar <- newTVarM ()
+
     a_aid <- async $ startPassiveServer
       tblA
+      stVar
       responderAddr4A
       addrAVar
       rrcfgA
 
     b_aid <- async $ startActiveServer
       tblB
+      stVar
       responderAddr4B
       addrBVar
       addrAVar
@@ -675,8 +680,9 @@ prop_send_recv_init_and_rsp f xs = ioProperty $ do
              waitSiblingSub rrcSiblingVar
             )
 
-    startPassiveServer tbl responderAddr localAddrVar rrcfg = withServerNode
+    startPassiveServer tbl stVar responderAddr localAddrVar rrcfg = withServerNode
         tbl
+        stVar
         responderAddr
         (\(DictVersion codec) -> encodeTerm codec)
         (\(DictVersion codec) -> decodeTerm codec)
@@ -690,8 +696,9 @@ prop_send_recv_init_and_rsp f xs = ioProperty $ do
           waitSibling (rrcSiblingVar rrcfg)
           return r
 
-    startActiveServer tbl responderAddr localAddrVar remoteAddrVar rrcfg = withServerNode
+    startActiveServer tbl stVar responderAddr localAddrVar remoteAddrVar rrcfg = withServerNode
         tbl
+        stVar
         responderAddr
         (\(DictVersion codec) -> encodeTerm codec)
         (\(DictVersion codec) -> decodeTerm codec)
@@ -765,11 +772,12 @@ _demo = ioProperty $ do
     tbl <- newConnectionTable
     clientTbl <- newConnectionTable
     peerStatesVar <- newPeerStatesVar
+    stVar <- newTVarM ()
 
-    spawnServer tbl server 10000
-    spawnServer tbl server' 10000
-    spawnServer tbl server6 100
-    spawnServer tbl server6' 45
+    spawnServer tbl stVar server 10000
+    spawnServer tbl stVar server' 10000
+    spawnServer tbl stVar server6 100
+    spawnServer tbl stVar server6' 45
 
     _ <- dnsSubscriptionWorker activeTracer activeTracer activeTracer
             clientTbl
@@ -790,16 +798,17 @@ _demo = ioProperty $ do
 
     threadDelay 130
     -- bring the servers back again
-    spawnServer tbl server6 10000
-    spawnServer tbl server6' 10000
+    spawnServer tbl stVar server6 10000
+    spawnServer tbl stVar server6' 10000
     threadDelay 1000
     return ()
 
   where
 
-    spawnServer tbl addr delay =
+    spawnServer tbl stVar addr delay =
         void $ async $ withSimpleServerNode
             tbl
+            stVar
             addr
             (\(DictVersion codec) -> encodeTerm codec)
             (\(DictVersion codec) -> decodeTerm codec)

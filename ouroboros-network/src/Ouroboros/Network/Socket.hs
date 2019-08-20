@@ -40,7 +40,7 @@ import           Control.Concurrent.Async
 import           Control.Monad (when)
 -- TODO: remove this, it will not be needed when `orElse` PR will be merged.
 import qualified Control.Monad.STM as STM
-import           Control.Monad.Class.MonadSTM
+import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 import           Control.Exception (throwIO)
 import qualified Codec.CBOR.Term     as CBOR
@@ -323,6 +323,7 @@ runNetworkNode'
        , Show vNumber
        )
     => ConnectionTable IO Socket.SockAddr
+    -> StrictTVar IO st
     -> Socket.Socket
     -> (forall vData. extra vData -> vData -> CBOR.Term)
     -> (forall vData. extra vData -> CBOR.Term -> Either Text vData)
@@ -332,11 +333,10 @@ runNetworkNode'
     -> (Socket.SockAddr -> st -> STM.STM (AcceptConnection st vNumber extra peerid ptcl IO BL.ByteString))
     -> Server.CompleteConnection st ()
     -> Server.Main st t
-    -> st
     -> IO t
-runNetworkNode' tbl sd encodeData decodeData acceptVersion acceptException acceptConn complete
-    main st = Server.run (fromSocket tbl sd) acceptException (beginConnection encodeData decodeData
-        acceptVersion acceptConn) complete main st
+runNetworkNode' tbl stVar sd encodeData decodeData acceptVersion acceptException acceptConn complete
+    main = Server.run (fromSocket tbl sd) acceptException (beginConnection encodeData decodeData
+        acceptVersion acceptConn) complete main (toLazyTVar stVar)
 
 
 -- |
@@ -356,7 +356,7 @@ runNetworkNode' tbl sd encodeData decodeData acceptVersion acceptException accep
 -- thread which runs the server.  This makes it useful for testing, where we
 -- need to guarantee that a socket is open before we try to connect to it.
 withServerNode
-    :: forall peerid ptcl vNumber extra t.
+    :: forall peerid ptcl vNumber extra st t.
        ( Mx.ProtocolEnum ptcl
        , Ord ptcl
        , Enum ptcl
@@ -370,6 +370,7 @@ withServerNode
        , Show vNumber
        )
     => ConnectionTable IO Socket.SockAddr
+    -> StrictTVar IO st
     -> Socket.AddrInfo
     -> (forall vData. extra vData -> vData -> CBOR.Term)
     -> (forall vData. extra vData -> CBOR.Term -> Either Text vData)
@@ -384,12 +385,13 @@ withServerNode
     -- Note: the server thread will terminate when the callback returns or
     -- throws an exception.
     -> IO t
-withServerNode tbl addr encodeData decodeData peeridFn acceptVersion versions k =
+withServerNode tbl stVar addr encodeData decodeData peeridFn acceptVersion versions k =
     bracket (mkListeningSocket (Socket.addrFamily addr) (Just $ Socket.addrAddress addr)) Socket.close $ \sd -> do
       addr' <- Socket.getSocketName sd
       withAsync
         (runNetworkNode'
           tbl
+          stVar
           sd
           encodeData
           decodeData
@@ -401,11 +403,10 @@ withServerNode tbl addr encodeData decodeData peeridFn acceptVersion versions k 
                     (peeridFn addr' connAddr)
                     versions)
           complete
-          main
-          ()) (k addr')
+          main) (k addr')
 
     where
-      main :: Server.Main () ()
+      main :: Server.Main st ()
       main _ = retry
 
       -- When a connection completes, we do nothing. State is ().
@@ -421,7 +422,7 @@ withServerNode tbl addr encodeData decodeData peeridFn acceptVersion versions k 
 -- connection.
 --
 withSimpleServerNode
-    :: forall peerid ptcl vNumber extra t a b.
+    :: forall peerid ptcl vNumber extra t s a b.
        ( Mx.ProtocolEnum ptcl
        , Ord ptcl
        , Enum ptcl
@@ -435,6 +436,7 @@ withSimpleServerNode
        , Show vNumber
        )
     => ConnectionTable IO Socket.SockAddr
+    -> StrictTVar IO s
     -> Socket.AddrInfo
     -> (forall vData. extra vData -> vData -> CBOR.Term)
     -> (forall vData. extra vData -> CBOR.Term -> Either Text vData)
@@ -451,4 +453,4 @@ withSimpleServerNode
     -- Note: the server thread will terminate when the callback returns or
     -- throws an exception.
     -> IO t
-withSimpleServerNode tbl addr encodeData decodeData peeridFn acceptVersion versions k = withServerNode tbl addr encodeData decodeData peeridFn acceptVersion (AnyResponderApp <$> versions) k
+withSimpleServerNode tbl stVar addr encodeData decodeData peeridFn acceptVersion versions k = withServerNode tbl stVar addr encodeData decodeData peeridFn acceptVersion (AnyResponderApp <$> versions) k
