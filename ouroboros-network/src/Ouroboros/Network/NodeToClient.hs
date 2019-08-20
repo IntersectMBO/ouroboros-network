@@ -66,13 +66,13 @@ import           Ouroboros.Network.Protocol.LocalTxSubmission.Client (localTxSub
 import           Ouroboros.Network.Protocol.Handshake.Type
 import           Ouroboros.Network.Protocol.Handshake.Version
 import           Ouroboros.Network.Socket
+import           Ouroboros.Network.ErrorPolicy
 import qualified Ouroboros.Network.Subscription.Ip as Subscription
 import           Ouroboros.Network.Subscription.Ip ( IPSubscriptionTarget (..)
                                                    , WithIPList (..)
                                                    , SubscriptionTrace (..)
                                                    )
 import           Ouroboros.Network.Subscription.Worker (LocalAddresses (..))
-import           Ouroboros.Network.Subscription.PeerState
 
 -- | An index type used with the mux to enumerate all the mini-protocols that
 -- make up the overall node-to-client protocol.

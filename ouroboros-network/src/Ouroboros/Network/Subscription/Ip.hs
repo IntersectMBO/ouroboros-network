@@ -29,27 +29,19 @@ module Ouroboros.Network.Subscription.Ip
  - RFC8305, https://tools.ietf.org/html/rfc8305 .
  -}
 
-import           Control.Exception (SomeException (..))
-import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadThrow
 import           Control.Tracer
-import           Data.Foldable (traverse_)
-import           Data.Maybe (fromMaybe)
 import           Data.Time.Clock (DiffTime)
-import qualified Data.Map.Strict as Map
-import           Data.Set (Set)
-import qualified Data.Set as Set
 import qualified Network.Socket as Socket
 import           Text.Printf
 
 import           Ouroboros.Network.Socket
+import           Ouroboros.Network.ErrorPolicy
 import           Ouroboros.Network.Subscription.PeerState
 import           Ouroboros.Network.Subscription.Subscriber
 import           Ouroboros.Network.Subscription.Worker
-
-import           Data.Semigroup.Action
 
 data IPSubscriptionTarget = IPSubscriptionTarget {
     -- | List of destinations to possibly connect to
@@ -117,104 +109,6 @@ ipSubscriptionTarget tr peerStatesVar ips = go ips
         else do
           traceWith tr $ SubscriptionTraceSkippingPeer a
           getSubscriptionTarget $ go as
-
-
--- | 'CompleteApplication' callback
---
-completeApplicationTx
-  :: forall m addr a.
-     ( MonadAsync  m
-     , Ord addr
-     , Ord (Async m ())
-     )
-  => Tracer m (WithAddr addr ErrorPolicyTrace)
-  -> (Time -> addr -> a -> SuspendDecision DiffTime)
-  -> [ErrorPolicy]
-  -> CompleteApplication m
-       (PeerStates m addr)
-       addr
-       a
-
--- the 'ResultQ' did not throw the exception yet; it should not happen.
-completeApplicationTx _ _ _ _ ps@ThrowException{} = pure ( ps, pure () )
-
--- application returned; classify the return value and update the state.
-completeApplicationTx tracer returnCallback _ (ApplicationResult t addr r) (PeerStates ps) =
-  let cmd = returnCallback t addr r
-      fn :: Maybe (PeerState m)
-         -> ( Set (Async m ())
-            , Maybe (PeerState m)
-            )
-      fn mbps = ( maybe Set.empty (`threadsToCancel` cmd) mbps
-                , mbps <| (flip addTime t <$> cmd)
-                )
-  in case alterAndLookup fn addr ps of
-    (ps', mbthreads) -> pure
-      ( PeerStates ps'
-      , do
-          traverse_ (traceWith tracer . WithAddr addr)
-                    (traceErrorPolicy (Right r) cmd)
-          traverse_ cancel
-                    (fromMaybe Set.empty mbthreads)
-      )
-
--- application errored
-completeApplicationTx tracer  _ errPolicies (ApplicationError t addr e) ps =
-  case evalErrorPolicies (ApplicationException e) errPolicies of
-    -- the error is not handled by any policy; we're not rethrowing the
-    -- error from the main thread, we only trace it.  This will only kill
-    -- the local consumer application.
-    Nothing  -> pure ( ps
-                     , traceWith tracer
-                        (WithAddr addr
-                          (ErrorPolicyUnhandledApplicationException
-                            (SomeException e)))
-                     )
-    -- the error was classified; act with the 'SuspendDecision' on the state
-    -- and find threads to cancel.
-    Just cmd -> case runSuspendDecision t addr e cmd ps of
-      (ps', threads) ->
-        pure ( ps'
-             , do
-                traverse_ (traceWith tracer . WithAddr addr)
-                          (traceErrorPolicy (Left $ ApplicationException (SomeException e))
-                                            cmd)
-                traverse_ cancel threads
-            )
-
--- we connected to a peer; this does not require to update the 'PeerState'.
-completeApplicationTx _ _ _ (Connected _t  _addr) ps =
-  pure ( ps, pure () )
-
--- error raised by the 'connect' call; we handle this in the same way as
--- application exceptions, the only difference is that we wrap the exception
--- with 'ConnException' type constructor.
-completeApplicationTx tracer _ errPolicies (ConnectionError t addr e) ps =
-  case evalErrorPolicies (ConnectionException e) errPolicies of
-    Nothing  ->
-      let fn p@(HotPeer producers consumers)
-             | Set.null producers && Set.null consumers
-             = Just ColdPeer
-             | otherwise
-             = Just p
-          fn p = Just p
-
-      in pure ( case ps of
-                  PeerStates peerStates -> PeerStates $ Map.update fn addr peerStates
-                  ThrowException{} -> ps
-              , traceWith tracer
-                 (WithAddr addr
-                   (ErrorPolicyUnhandledConnectionException
-                     (SomeException e)))
-              )
-    Just cmd -> case runSuspendDecision t addr e cmd ps of
-      (ps', threads) ->
-        pure ( ps'
-             , do
-                 traverse_ (traceWith tracer . WithAddr addr)
-                           (traceErrorPolicy (Left $ ConnectionException (SomeException e)) cmd)
-                 traverse_ cancel threads
-             )
 
 
 -- when creating a new socket: register consumer thread
