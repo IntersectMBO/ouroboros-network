@@ -67,6 +67,7 @@ import           Network.Mux.Interface
 import           Network.TypedProtocol.Driver.ByteLimit (DecoderFailureOrTooMuchInput)
 import           Network.TypedProtocol.Driver (TraceSendRecv)
 
+import           Ouroboros.Network.ErrorPolicy
 import           Ouroboros.Network.Mux
 import           Ouroboros.Network.Protocol.Handshake.Type
 import           Ouroboros.Network.Protocol.Handshake.Version
@@ -84,7 +85,6 @@ import           Ouroboros.Network.Subscription.Dns ( DnsSubscriptionTarget (..)
                                                     , DnsTrace (..)
                                                     , WithDomainName (..)
                                                     )
-import           Ouroboros.Network.Subscription.PeerState
 
 
 -- | An index type used with the mux to enumerate all the mini-protocols that

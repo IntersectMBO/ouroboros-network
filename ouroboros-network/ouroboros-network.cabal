@@ -53,6 +53,7 @@ library
                        Ouroboros.Network.ChainFragment
                        Ouroboros.Network.Channel
                        Ouroboros.Network.DeltaQ
+                       Ouroboros.Network.ErrorPolicy
                        Ouroboros.Network.Mux
                        Ouroboros.Network.NodeToNode
                        Ouroboros.Network.NodeToClient
@@ -178,6 +179,7 @@ test-suite test-network
                        Ouroboros.Network.MockChain.ProducerState
                        Ouroboros.Network.Channel
                        Ouroboros.Network.DeltaQ
+                       Ouroboros.Network.ErrorPolicy
                        Ouroboros.Network.Mux
                        Ouroboros.Network.MockNode
                        Ouroboros.Network.NodeToNode

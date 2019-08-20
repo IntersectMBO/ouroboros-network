@@ -38,8 +38,8 @@ import qualified Network.DNS as DNS
 import qualified Network.Socket as Socket
 import           Text.Printf
 
+import           Ouroboros.Network.ErrorPolicy
 import           Ouroboros.Network.Subscription.Ip
-import           Ouroboros.Network.Subscription.PeerState
 import           Ouroboros.Network.Subscription.Subscriber
 import           Ouroboros.Network.Subscription.Worker
 import           Ouroboros.Network.Socket
