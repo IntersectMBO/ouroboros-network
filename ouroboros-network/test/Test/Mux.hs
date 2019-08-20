@@ -104,7 +104,9 @@ demo chain0 updates delay = do
                         (\ChainSyncPr ->
                             Mx.MuxPeer
                               nullTracer
-                              (ChainSync.codecChainSync encode decode encode decode)
+                              (ChainSync.codecChainSync
+                                 encode (fmap const decode)
+                                 encode             decode)
                               (consumerPeer))
 
         producerPeer :: Peer (ChainSync.ChainSync block (Point block)) AsServer ChainSync.StIdle m ()
@@ -113,7 +115,9 @@ demo chain0 updates delay = do
                         (\ChainSyncPr ->
                             Mx.MuxPeer
                               nullTracer
-                              (ChainSync.codecChainSync encode decode encode decode)
+                              (ChainSync.codecChainSync
+                                 encode (fmap const decode)
+                                 encode             decode)
                               producerPeer)
 
     clientAsync <- async $ Mx.runMuxWithQueues "consumer" (Mx.toApplication consumerApp) client_w client_r sduLen Nothing

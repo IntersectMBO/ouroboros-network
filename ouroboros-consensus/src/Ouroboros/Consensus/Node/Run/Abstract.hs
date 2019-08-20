@@ -12,6 +12,7 @@ module Ouroboros.Consensus.Node.Run.Abstract
 import           Codec.CBOR.Decoding (Decoder)
 import           Codec.CBOR.Encoding (Encoding)
 import           Crypto.Random (MonadRandom)
+import qualified Data.ByteString.Lazy as Lazy
 import           Data.Proxy (Proxy)
 
 import           Ouroboros.Network.Block (BlockNo, ChainHash (..), HeaderHash,
@@ -61,8 +62,8 @@ class (ProtocolLedgerView blk, ApplyTx blk) => RunNode blk where
   nodeEncodeApplyTxError :: Proxy blk -> ApplyTxErr blk -> Encoding
 
   -- Decoders
-  nodeDecodeHeader       :: forall s. NodeConfig (BlockProtocol blk) -> Decoder s (Header blk)
-  nodeDecodeBlock        :: forall s. NodeConfig (BlockProtocol blk) -> Decoder s blk
+  nodeDecodeHeader       :: forall s. NodeConfig (BlockProtocol blk) -> Decoder s (Lazy.ByteString -> Header blk)
+  nodeDecodeBlock        :: forall s. NodeConfig (BlockProtocol blk) -> Decoder s (Lazy.ByteString -> blk)
   nodeDecodeGenTx        :: forall s. Decoder s (GenTx blk)
   nodeDecodeGenTxId      :: forall s. Decoder s (GenTxId blk)
   nodeDecodeHeaderHash   :: forall s. Proxy blk -> Decoder s (HeaderHash blk)

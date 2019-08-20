@@ -7,7 +7,16 @@ allMessages =
     / [2,pingPongMessage]
     / [3,blockFetchMessage]
     / [4,txSubmissionMessage]
-    / [5, handshakeMessage]
+    / [5,handshakeMessage]
+    / [6,point]
+    / [7,points]
+
+; common encodings
+origin = []
+slotNo = uint ; word64
+hash   = nil ; in testing, () is chosen as the header hash...
+point  = origin / [slotNo, hash]
+points = [*point]
 
 ; Chain Sync Protocol
 ; reference implementation of the codec in
@@ -26,17 +35,15 @@ chainSyncMessage
 ; these records use fixed length list encodings TODO: lookup CDDL syntax for that
 msgRequestNext         = [0]
 msgAwaitReply          = [1]
-msgRollForward         = [2, header, point]
-msgRollBackward        = [3, header, point]
+msgRollForward         = [2, encodedHeader, point]
+msgRollBackward        = [3, point, point]
 msgFindIntersect       = [4, points]
 msgIntersectFound      = [5, point, point]
 msgIntersectNotFound   = [6, point]
 chainSyncMsgDone       = [7]
 
-points = [point]
-
-header = bytes .cbor any ; todo include definitions for header and point
-point = bytes .cbor any
+encodedHeader = #6.24(bytes .cbor header)
+header = bytes ; because of DummyBytes
 
 ; Request Response Protocol
 ; reference implementation of the codec in
@@ -77,18 +84,15 @@ blockFetchMessage
      / msgBlock
      / msgBatchDone
 
-msgRequestRange = [0, bfPoint, bfPoint]
+msgRequestRange = [0, point, point]
 msgClientDone   = [1]
 msgStartBatch   = [2]
 msgNoBlocks     = [3]
-msgBlock        = [4, bfBody]
+msgBlock        = [4, encodedBlock]
 msgBatchDone    = [5]
 
-bfPoint         = origin / [slotNo, dummyBlockHash]
-origin          = []
-slotNo          = uint ; word64
-dummyBlockHash  = null
-bfBody          = bytes .cbor any
+encodedBlock    = #6.24(bytes .cbor block)
+block           = bytes ; because of DummyBytes
 
 
 ; Transaction Submission Protocol

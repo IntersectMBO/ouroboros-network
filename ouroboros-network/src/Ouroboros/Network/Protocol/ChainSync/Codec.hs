@@ -11,35 +11,39 @@ module Ouroboros.Network.Protocol.ChainSync.Codec
   , codecChainSyncId
   ) where
 
+import           Control.Monad (when)
 import           Control.Monad.Class.MonadST
 
 import           Network.TypedProtocol.Codec
 import           Network.TypedProtocol.Codec.Cbor
 import           Ouroboros.Network.Protocol.ChainSync.Type
 
+import qualified Data.ByteString.Lazy as LBS
 
 import qualified Codec.CBOR.Encoding as CBOR
-import qualified Codec.CBOR.Read     as CBOR
 import qualified Codec.CBOR.Decoding as CBOR
+import           Codec.CBOR.Encoding (encodeListLen, encodeWord)
+import           Codec.CBOR.Decoding (decodeListLen, decodeWord)
+import qualified Codec.CBOR.Read     as CBOR
+import qualified Codec.CBOR.Write    as CBOR
 
-import Data.ByteString.Lazy (ByteString)
-import Codec.CBOR.Encoding (encodeListLen, encodeWord)
-import Codec.CBOR.Decoding (decodeListLen, decodeWord)
 
 -- | The main CBOR 'Codec' for the 'ChainSync' protocol.
 --
 codecChainSync :: forall header point m.
                   (MonadST m)
                => (header -> CBOR.Encoding)
-               -> (forall s . CBOR.Decoder s header)
+               -> (forall s . CBOR.Decoder s (LBS.ByteString -> header))
                -> (point -> CBOR.Encoding)
                -> (forall s . CBOR.Decoder s point)
                -> Codec (ChainSync header point)
-                        CBOR.DeserialiseFailure m ByteString
+                        CBOR.DeserialiseFailure m LBS.ByteString
 codecChainSync encodeHeader decodeHeader encodePoint decodePoint =
     mkCodecCborLazyBS encode decode
   where
-    encode :: forall (pr :: PeerRole) (st :: ChainSync header point) (st' :: ChainSync header point).
+    encode :: forall (pr  :: PeerRole)
+                     (st  :: ChainSync header point)
+                     (st' :: ChainSync header point).
               PeerHasAgency pr st
            -> Message (ChainSync header point) st st'
            -> CBOR.Encoding
@@ -51,7 +55,7 @@ codecChainSync encodeHeader decodeHeader encodePoint decodePoint =
       encodeListLen 1 <> encodeWord 1
 
     encode (ServerAgency TokNext{}) (MsgRollForward h p) =
-      encodeListLen 3 <> encodeWord 2 <> encodeHeader h <> encodePoint p
+      encodeListLen 3 <> encodeWord 2 <> encodeHeaderWrapped h <> encodePoint p
 
     encode (ServerAgency TokNext{}) (MsgRollBackward p1 p2) =
       encodeListLen 3 <> encodeWord 3 <> encodePoint p1 <> encodePoint p2
@@ -82,7 +86,7 @@ codecChainSync encodeHeader decodeHeader encodePoint decodePoint =
           return (SomeMessage MsgAwaitReply)
 
         (2, 3, ServerAgency (TokNext _)) -> do
-          h <- decodeHeader
+          h <- decodeHeaderWrapped
           p <- decodePoint
           return (SomeMessage (MsgRollForward h p))
 
@@ -108,6 +112,27 @@ codecChainSync encodeHeader decodeHeader encodePoint decodePoint =
           return (SomeMessage MsgDone)
 
         _ -> fail ("codecChainSync: unexpected key " ++ show (key, len))
+
+    encodeHeaderWrapped :: header -> CBOR.Encoding
+    encodeHeaderWrapped header =
+      --TODO: replace with encodeEmbeddedCBOR from cborg-0.2.4 once
+      -- it is available, since that will be faster.
+        CBOR.encodeTag 24
+     <> CBOR.encodeBytes (CBOR.toStrictByteString (encodeHeader header))
+
+    decodeHeaderWrapped :: forall s. CBOR.Decoder s header
+    decodeHeaderWrapped = do
+      --TODO: replace this with decodeEmbeddedCBOR from cborg-0.2.4 once
+      -- it is available, since that will be faster.
+      tag <- CBOR.decodeTag
+      when (tag /= 24) $ fail "expected tag 24 (CBOR-in-CBOR)"
+      payload <- LBS.fromStrict <$> CBOR.decodeBytes
+      case CBOR.deserialiseFromBytes decodeHeader payload of
+        Left (CBOR.DeserialiseFailure _ reason) -> fail reason
+        Right (trailing, header)
+          | not (LBS.null trailing) -> fail "trailing bytes in CBOR-in-CBOR"
+          | otherwise               -> return (header payload)
+
 
 encodeList :: (a -> CBOR.Encoding) -> [a] -> CBOR.Encoding
 encodeList _   [] = CBOR.encodeListLen 0
