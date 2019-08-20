@@ -55,6 +55,7 @@ library
                        Ouroboros.Consensus.Mempool.API
                        Ouroboros.Consensus.Mempool.Impl
                        Ouroboros.Consensus.Mempool.TxSeq
+                       Ouroboros.Consensus.Node
                        Ouroboros.Consensus.Node.ProtocolInfo
                        Ouroboros.Consensus.Node.ProtocolInfo.Abstract
                        Ouroboros.Consensus.Node.ProtocolInfo.Byron
@@ -219,6 +220,7 @@ library
                        memory            >=0.14  && <0.15,
                        mmorph            >=1.1   && <1.2,
                        mtl               >=2.2   && <2.3,
+                       network,
                        pipes             >=4.3   && <4.4,
                        -- This is used only to address legacy issues, and its
                        -- usage should be discouraged in general
