@@ -2,6 +2,7 @@
 {-# LANGUAGE DataKinds            #-}
 {-# LANGUAGE FlexibleContexts     #-}
 {-# LANGUAGE GADTs                #-}
+{-# LANGUAGE LambdaCase           #-}
 {-# LANGUAGE NamedFieldPuns       #-}
 {-# LANGUAGE RankNTypes           #-}
 {-# LANGUAGE RecordWildCards      #-}
@@ -25,6 +26,7 @@ import           Control.Monad
 import           Control.Tracer
 import           Crypto.Random (ChaChaDRG, drgNew)
 import           Data.Foldable (traverse_)
+import qualified Data.List as List
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Proxy (Proxy (..))
@@ -61,6 +63,7 @@ import           Ouroboros.Consensus.NodeId
 import           Ouroboros.Consensus.NodeKernel
 import           Ouroboros.Consensus.NodeNetwork
 import           Ouroboros.Consensus.Protocol.Abstract
+import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Orphans ()
 import           Ouroboros.Consensus.Util.RedundantConstraints
 import           Ouroboros.Consensus.Util.ResourceRegistry
@@ -78,6 +81,7 @@ import qualified Ouroboros.Storage.LedgerDB.MemPolicy as LgrDB
 import qualified Ouroboros.Storage.Util.ErrorHandling as EH
 
 import           Test.Dynamic.TxGen
+import           Test.Dynamic.Util.NodeJoinPlan
 
 -- | Interface provided by 'ouroboros-network'.  At the moment
 -- 'ouroboros-network' only provides this interface in 'IO' backed by sockets,
@@ -103,9 +107,11 @@ createNetworkInterface
        , MonadMask  m
        , Ord peer
        )
-    => NodeChans m peer blk -- ^ map of channels between nodes
+    => BlockchainTime m
+    -> NodeChans m peer blk -- ^ map of channels between nodes
     -> [peer]               -- ^ list of nodes which we want to serve
-    -> peer                 -- ^ our peer
+    -> (peer -> SlotNo)     -- ^ every node's join slot
+    -> peer                 -- ^ our own peer identifier
     -> NetworkApplication m peer
         (AnyMessage (ChainSync (Header blk) (Point blk)))
         (AnyMessage (BlockFetch blk))
@@ -114,7 +120,7 @@ createNetworkInterface
         unused2
         ()
     -> NetworkInterface m peer
-createNetworkInterface chans nodeIds us
+createNetworkInterface btime chans nodeIds joinSlotOf us
                        NetworkApplication {
                          naChainSyncClient,
                          naChainSyncServer,
@@ -134,13 +140,13 @@ createNetworkInterface chans nodeIds us
         -- exception the threads will be killed.  If one of the threads will
         -- error, 'waitAny' will terminate and both threads will be killed (thus
         -- there's no need to use 'waitAnyCancel').
-        withAsync (void $ naChainSyncClient them
+        withAsync (waitingFor them $ naChainSyncClient them
                         $ chainSyncProducer nodeChan)
                   $ \aCS ->
-          withAsync (naBlockFetchClient them
+          withAsync (waitingFor them $ naBlockFetchClient them
                         $ blockFetchProducer nodeChan)
                   $ \aBF ->
-            withAsync (naTxSubmissionClient them
+            withAsync (waitingFor them $ naTxSubmissionClient them
                         $ txSubmissionProducer nodeChan)
                   $ \aTX ->
                     -- wait for all the threads, if any throws an exception, cancel all
@@ -153,15 +159,15 @@ createNetworkInterface chans nodeIds us
               let nodeChan = chans Map.! us Map.! them
 
               aCS <- async $ unmask
-                           $ void $ naChainSyncServer
+                           $ waitingFor them $ naChainSyncServer
                              them
                              (chainSyncConsumer nodeChan)
               aBF <- async $ unmask
-                           $ void $ naBlockFetchServer
+                           $ waitingFor them $ naBlockFetchServer
                              them
                              (blockFetchConsumer nodeChan)
               aTX <- async $ unmask
-                           $ void $ naTxSubmissionServer
+                           $ waitingFor them $ naTxSubmissionServer
                              them
                              (txSubmissionConsumer nodeChan)
 
@@ -171,9 +177,21 @@ createNetworkInterface chans nodeIds us
         -- if an exception is thrown to this thread, cancel all threads;
         (waitAnyCancel ts `onException` traverse_ cancel ts) >>= k . fst
     }
+  where
+    -- block until both us and our peer have joined the network
+    waitingFor :: forall a. peer -> m a -> m ()
+    waitingFor them m = void $ do
+        tooLate <- blockUntilSlot btime $
+            joinSlotOf us `maxSlot` joinSlotOf them
+        when tooLate $
+            error "createNetworkInterface: unsatisfiable nodeJoinPlan"
+        void $ m
+
+    maxSlot :: SlotNo -> SlotNo ->  SlotNo
+    maxSlot (SlotNo i) (SlotNo j) = SlotNo (max i j)
 
 -- | Setup fully-connected topology, where every node is both a producer
--- and a consumer
+-- and a consumer, and joins according to the node join plan
 --
 -- We run for the specified number of blocks, then return the final state of
 -- each node.
@@ -193,16 +211,21 @@ broadcastNetwork :: forall m blk.
                  => ResourceRegistry m
                  -> TestBlockchainTime m
                  -> NumCoreNodes
+                 -> NodeJoinPlan
                  -> (CoreNodeId -> ProtocolInfo blk)
                  -> ChaChaDRG
                  -> DiffTime
                  -> m (TestOutput blk)
-broadcastNetwork registry testBtime numCoreNodes pInfo initRNG slotLen = do
+broadcastNetwork registry testBtime numCoreNodes nodeJoinPlan pInfo initRNG slotLen = do
     chans :: NodeChans m NodeId blk <- createCommunicationChannels
 
     varRNG <- atomically $ newTVar initRNG
 
-    nodes <- forM coreNodeIds $ \coreNodeId -> do
+    nodes <- forM (List.sortOn joinSlotOf coreNodeIds) $ \coreNodeId -> do
+      -- do not start the node before its joinSlot
+      tooLate <- blockUntilSlot btime $ joinSlotOf coreNodeId
+      when tooLate $ error "broadcastNetwork: unsatisfiable nodeJoinPlan"
+
       (node, nodeInfo) <- createAndConnectNode chans varRNG coreNodeId
       return (coreNodeId, pInfoConfig (pInfo coreNodeId), node, nodeInfo)
 
@@ -228,6 +251,13 @@ broadcastNetwork registry testBtime numCoreNodes pInfo initRNG slotLen = do
 
     coreNodeIds :: [CoreNodeId]
     coreNodeIds = enumCoreNodes numCoreNodes
+
+    joinSlotOf :: CoreNodeId -> SlotNo
+    joinSlotOf nid = case nodeJoinPlan of
+        NodeJoinPlan m -> Map.findWithDefault
+            (error $ "broadcastNetwork: incomplete NodeJoinPlan: "
+                 <> condense (nid, m))
+            nid m
 
     -- | Produce transactions every time the slot changes and submit them to
     -- the mempool.
@@ -356,7 +386,11 @@ broadcastNetwork registry testBtime numCoreNodes pInfo initRNG slotLen = do
                   (protocolHandlers nodeArgs nodeKernel)
 
           ni :: NetworkInterface m NodeId
-          ni = createNetworkInterface chans nodeIds us app
+          ni = createNetworkInterface btime chans nodeIds jso us app
+            where
+              jso = \case
+                CoreId  i -> joinSlotOf (CoreNodeId i)
+                RelayId _ -> error "broadcastNetwork: unexpected RelayId"
 
       void $ forkLinkedThread registry $ niWithServerNode ni wait
       void $ forkLinkedThread registry $ txProducer

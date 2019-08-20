@@ -18,6 +18,7 @@ import           Ouroboros.Consensus.Util.Random
 
 import           Test.Dynamic.General
 import           Test.Dynamic.Util
+import           Test.Dynamic.Util.NodeJoinPlan
 
 import           Test.Util.Orphans.Arbitrary ()
 
@@ -37,35 +38,55 @@ tests = testGroup "Dynamic chain generation"
                          , 6410351877547894330
                          , 14676014321459888687
                          )
-    , testProperty "simple Praos convergence" testPraos
+    , testProperty "simple Praos convergence" $
+        \seed ->
+        forAllShrink
+            (genNodeJoinPlan numCoreNodes numSlots)
+            shrinkNodeJoinPlan $
+        \nodeJoinPlan ->
+            testPraos'
+                nodeJoinPlan
+                seed
     ]
   where
     testPraos :: Seed -> Property
-    testPraos = prop_simple_praos_convergence
-                  params
-                  (NumCoreNodes 3)
-                  (NumSlots (fromIntegral numSlots))
+    testPraos = testPraos' (trivialNodeJoinPlan numCoreNodes)
+
+    testPraos' :: NodeJoinPlan -> Seed -> Property
+    testPraos' =
+        prop_simple_praos_convergence
+            params
+            numCoreNodes
+            numSlots
+
+    numCoreNodes = NumCoreNodes 3
+    numSlots = NumSlots $ fromIntegral $
+        maxRollbacks k * praosSlotsPerEpoch * numEpochs
 
     params@PraosParams{..} = defaultDemoPraosParams
-    numSlots  = maxRollbacks praosSecurityParam * praosSlotsPerEpoch * numEpochs
+    k = praosSecurityParam
     numEpochs = 3
 
 prop_simple_praos_convergence :: PraosParams
                               -> NumCoreNodes
                               -> NumSlots
+                              -> NodeJoinPlan
                               -> Seed
                               -> Property
 prop_simple_praos_convergence
-  params@PraosParams{praosSecurityParam = k} numCoreNodes numSlots seed =
+  params@PraosParams{praosSecurityParam = k}
+  numCoreNodes numSlots nodeJoinPlan seed =
     counterexample (tracesToDot testOutputNodes) $
     label lbl $
     counterexample lbl $
-    prop_general k schedule testOutput
+    prop_general k nodeJoinPlan schedule testOutput
   where
     testOutput@TestOutput{testOutputNodes} =
         runTestNetwork
             (\nid -> protocolInfo numCoreNodes nid (ProtocolMockPraos params))
-            numCoreNodes numSlots seed
+            numCoreNodes numSlots nodeJoinPlan seed
 
     schedule = leaderScheduleFromTrace numSlots testOutputNodes
-    lbl = if tooCrowded k schedule then "too crowded" else "not too crowded"
+    lbl = if tooCrowded k nodeJoinPlan schedule
+          then "too crowded"
+          else "not too crowded"

@@ -14,28 +14,37 @@ import           Ouroboros.Consensus.Util.Random
 
 import           Test.Dynamic.General
 import           Test.Dynamic.Util
+import           Test.Dynamic.Util.NodeJoinPlan
 
 import           Test.Util.Orphans.Arbitrary ()
 
 tests :: TestTree
 tests = testGroup "Dynamic chain generation" [
       testProperty "simple BFT convergence" $
-        prop_simple_bft_convergence params
+        \numCoreNodes numSlots seed ->
+        forAllShrink
+            (genNodeJoinPlan numCoreNodes numSlots)
+            shrinkNodeJoinPlan $
+        \nodeJoinPlan ->
+            prop_simple_bft_convergence
+                k numCoreNodes numSlots nodeJoinPlan seed
     ]
   where
-    params = defaultSecurityParam
+    k = defaultSecurityParam
 
 prop_simple_bft_convergence :: SecurityParam
                             -> NumCoreNodes
                             -> NumSlots
+                            -> NodeJoinPlan
                             -> Seed
                             -> Property
-prop_simple_bft_convergence k numCoreNodes numSlots seed =
+prop_simple_bft_convergence k numCoreNodes numSlots nodeJoinPlan seed =
     prop_general k
+        nodeJoinPlan
         (roundRobinLeaderSchedule numCoreNodes numSlots)
         testOutput
   where
     testOutput =
         runTestNetwork
             (\nid -> protocolInfo numCoreNodes nid (ProtocolMockBFT k))
-            numCoreNodes numSlots seed
+            numCoreNodes numSlots nodeJoinPlan seed

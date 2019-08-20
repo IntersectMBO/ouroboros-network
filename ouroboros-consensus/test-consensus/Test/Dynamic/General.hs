@@ -35,10 +35,12 @@ import qualified Ouroboros.Storage.FS.Sim.MockFS as Mock
 import           Test.Dynamic.Network
 import           Test.Dynamic.TxGen
 import           Test.Dynamic.Util
+import           Test.Dynamic.Util.NodeJoinPlan
 
 import           Test.Util.Range
 
--- | Execute a fully-connected network of nodes that all join immediately
+-- | Execute a fully-connected network of nodes that join according to the node
+-- join plan
 --
 -- Runs the network for the specified number of slots, and returns the
 -- resulting 'TestOutput'.
@@ -52,15 +54,17 @@ runTestNetwork ::
   => (CoreNodeId -> ProtocolInfo blk)
   -> NumCoreNodes
   -> NumSlots
+  -> NodeJoinPlan
   -> Seed
   -> TestOutput blk
-runTestNetwork pInfo numCoreNodes numSlots seed = runSimOrThrow $ do
+runTestNetwork pInfo numCoreNodes numSlots nodeJoinPlan seed = runSimOrThrow $ do
     registry  <- unsafeNewRegistry
     testBtime <- newTestBlockchainTime registry numSlots slotLen
     broadcastNetwork
       registry
       testBtime
       numCoreNodes
+      nodeJoinPlan
       pInfo
       (seedToChaCha seed)
       slotLen
@@ -82,10 +86,12 @@ prop_general ::
      , HasHeader blk
      )
   => SecurityParam
+  -> NodeJoinPlan
   -> LeaderSchedule
   -> TestOutput blk
   -> Property
-prop_general k schedule TestOutput{testOutputNodes} =
+prop_general k nodeJoinPlan schedule TestOutput{testOutputNodes} =
+    counterexample ("nodeJoinPlan: " <> condense nodeJoinPlan) $
     counterexample ("schedule: " <> condense schedule) $
     counterexample ("nodeChains: " <> condense nodeChains) $
     tabulate "shortestLength" [show (rangeK k (shortestLength nodeChains))] $
@@ -96,7 +102,7 @@ prop_general k schedule TestOutput{testOutputNodes} =
       [ fileHandleLeakCheck nid nodeInfo
       | (nid, nodeInfo) <- Map.toList nodeInfos ]
   where
-    NumBlocks maxForkLength = determineForkLength k schedule
+    NumBlocks maxForkLength = determineForkLength k nodeJoinPlan schedule
 
     nodeChains = nodeOutputFinalChain <$> testOutputNodes
     nodeInfos  = nodeOutputNodeInfo   <$> testOutputNodes

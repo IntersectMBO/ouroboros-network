@@ -41,6 +41,7 @@ import qualified Test.Cardano.Chain.Genesis.Dummy as Dummy
 import           Test.Dynamic.General
 import           Test.Dynamic.Network (NodeOutput (..))
 import           Test.Dynamic.Util
+import           Test.Dynamic.Util.NodeJoinPlan
 
 import           Test.Util.Orphans.Arbitrary ()
 
@@ -51,7 +52,13 @@ tests = testGroup "Dynamic chain generation"
           forAll (elements (enumCoreNodes numCoreNodes)) $ \coreNodeId ->
           prop_setup_coreNodeId numCoreNodes coreNodeId
     , testProperty "simple Real PBFT convergence" $
-        prop_simple_real_pbft_convergence sp
+        \numCoreNodes numSlots seed ->
+        forAllShrink
+            (genNodeJoinPlan numCoreNodes numSlots)
+            shrinkNodeJoinPlan $
+        \nodeJoinPlan ->
+            prop_simple_real_pbft_convergence
+                sp numCoreNodes numSlots nodeJoinPlan seed
     ]
   where
     sp = defaultSecurityParam
@@ -75,11 +82,13 @@ prop_setup_coreNodeId numCoreNodes coreNodeId =
 prop_simple_real_pbft_convergence :: SecurityParam
                                   -> NumCoreNodes
                                   -> NumSlots
+                                  -> NodeJoinPlan
                                   -> Seed
                                   -> Property
-prop_simple_real_pbft_convergence k numCoreNodes numSlots seed =
+prop_simple_real_pbft_convergence k numCoreNodes numSlots nodeJoinPlan seed =
     giveByron $
     prop_general k
+        nodeJoinPlan
         (roundRobinLeaderSchedule numCoreNodes numSlots)
         testOutput
     .&&. not (all Chain.null finalChains)
@@ -89,7 +98,7 @@ prop_simple_real_pbft_convergence k numCoreNodes numSlots seed =
             (\nid -> protocolInfo numCoreNodes nid
                 (mkProtocolRealPBFT numCoreNodes nid
                                     genesisConfig genesisSecrets))
-            numCoreNodes numSlots seed
+            numCoreNodes numSlots nodeJoinPlan seed
 
     finalChains :: [Chain (ByronBlockOrEBB ByronConfig)]
     finalChains = Map.elems $ nodeOutputFinalChain <$> testOutputNodes testOutput

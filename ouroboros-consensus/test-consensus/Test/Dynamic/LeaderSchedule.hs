@@ -23,6 +23,7 @@ import           Ouroboros.Consensus.Util.Random
 
 import           Test.Dynamic.General
 import           Test.Dynamic.Util
+import           Test.Dynamic.Util.NodeJoinPlan
 
 import           Test.Util.Orphans.Arbitrary ()
 
@@ -42,30 +43,34 @@ tests = testGroup "Dynamic chain generation"
 
     prop seed =
         forAllShrink
-            (genLeaderSchedule k numSlots numCoreNodes)
-            (shrinkLeaderSchedule numSlots)
-            $ \schedule ->
-                prop_simple_leader_schedule_convergence
-                    params
-                    numCoreNodes numSlots schedule seed
+            (genNodeJoinPlan numCoreNodes numSlots)
+            shrinkNodeJoinPlan $
+        \nodeJoinPlan ->
+        forAllShrink
+            (genLeaderSchedule k numSlots numCoreNodes nodeJoinPlan)
+            (shrinkLeaderSchedule numSlots) $
+        \schedule ->
+            prop_simple_leader_schedule_convergence
+                params numCoreNodes numSlots nodeJoinPlan schedule seed
 
 prop_simple_leader_schedule_convergence :: PraosParams
                                         -> NumCoreNodes
                                         -> NumSlots
+                                        -> NodeJoinPlan
                                         -> LeaderSchedule
                                         -> Seed
                                         -> Property
 prop_simple_leader_schedule_convergence
   params@PraosParams{praosSecurityParam = k}
-  numCoreNodes numSlots schedule seed =
+  numCoreNodes numSlots nodeJoinPlan schedule seed =
     counterexample (tracesToDot testOutputNodes) $
-    prop_general k schedule testOutput
+    prop_general k nodeJoinPlan schedule testOutput
   where
     testOutput@TestOutput{testOutputNodes} =
         runTestNetwork
             (\nid -> protocolInfo numCoreNodes nid
                  (ProtocolLeaderSchedule params schedule))
-            numCoreNodes numSlots seed
+            numCoreNodes numSlots nodeJoinPlan seed
 
 {-------------------------------------------------------------------------------
   Dependent generation and shrinking of leader schedules
@@ -74,9 +79,10 @@ prop_simple_leader_schedule_convergence
 genLeaderSchedule :: SecurityParam
                   -> NumSlots
                   -> NumCoreNodes
+                  -> NodeJoinPlan
                   -> Gen LeaderSchedule
-genLeaderSchedule k (NumSlots numSlots) (NumCoreNodes numCoreNodes) =
-    flip suchThat (not . tooCrowded k) $ do
+genLeaderSchedule k (NumSlots numSlots) (NumCoreNodes numCoreNodes) nodeJoinPlan =
+    flip suchThat (not . tooCrowded k nodeJoinPlan) $ do
         leaders <- replicateM numSlots $ frequency
             [ ( 4, pick 0)
             , ( 2, pick 1)
