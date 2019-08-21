@@ -26,6 +26,17 @@ module Ouroboros.Network.NodeToClient (
   -- * Re-exported clients
   , chainSyncClientNull
   , localTxSubmissionClientNull
+
+  -- * Re-exports
+  , ErrorPolicies (..)
+  , nullErrorPolicies
+  , ErrorPolicy (..)
+  , ErrorPolicyTrace (..)
+  , WithAddr (..)
+  , PeerStates (..)
+  , newPeerStatesVar
+  , PeerState (..)
+  , SuspendDecision (..)
   , newConnectionTable
   , TraceSendRecv (..)
   , DecoderFailureOrTooMuchInput
@@ -33,9 +44,7 @@ module Ouroboros.Network.NodeToClient (
   , LocalAddresses (..)
   , IPSubscriptionTarget (..)
   , SubscriptionTrace (..)
-  , ErrorPolicyTrace (..)
   , WithIPList (..)
-  , WithAddr (..)
   ) where
 
 import           Control.Concurrent.Async (Async)
@@ -60,13 +69,14 @@ import           Network.TypedProtocol.Driver.ByteLimit (DecoderFailureOrTooMuch
 import           Network.TypedProtocol.Driver (TraceSendRecv (..))
 
 import           Ouroboros.Network.Magic
+import           Ouroboros.Network.ErrorPolicy
+import           Ouroboros.Network.Subscription.PeerState
 import           Ouroboros.Network.Mux
 import           Ouroboros.Network.Protocol.ChainSync.Client (chainSyncClientNull)
 import           Ouroboros.Network.Protocol.LocalTxSubmission.Client (localTxSubmissionClientNull)
 import           Ouroboros.Network.Protocol.Handshake.Type
 import           Ouroboros.Network.Protocol.Handshake.Version
 import           Ouroboros.Network.Socket
-import           Ouroboros.Network.ErrorPolicy
 import qualified Ouroboros.Network.Subscription.Ip as Subscription
 import           Ouroboros.Network.Subscription.Ip ( IPSubscriptionTarget (..)
                                                    , WithIPList (..)

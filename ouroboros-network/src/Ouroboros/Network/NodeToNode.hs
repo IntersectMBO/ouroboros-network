@@ -47,6 +47,10 @@ module Ouroboros.Network.NodeToNode (
   , ErrorPolicies (..)
   , nullErrorPolicies
   , ErrorPolicy (..)
+  , PeerStates (..)
+  , newPeerStatesVar
+  , PeerState (..)
+  , SuspendDecision (..)
   ) where
 
 import           Control.Concurrent.Async (Async)
@@ -72,6 +76,7 @@ import           Network.TypedProtocol.Driver (TraceSendRecv)
 
 import           Ouroboros.Network.Magic
 import           Ouroboros.Network.ErrorPolicy
+import           Ouroboros.Network.Subscription.PeerState
 import           Ouroboros.Network.Mux
 import           Ouroboros.Network.Protocol.Handshake.Type
 import           Ouroboros.Network.Protocol.Handshake.Version
