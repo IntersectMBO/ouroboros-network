@@ -51,26 +51,26 @@ tests = testGroup "Dynamic chain generation"
             (shrinkLeaderSchedule numSlots) $
         \schedule ->
             prop_simple_leader_schedule_convergence
-                params numCoreNodes numSlots nodeJoinPlan schedule seed
+                params
+                TestConfig{numCoreNodes, numSlots, nodeJoinPlan}
+                schedule seed
 
 prop_simple_leader_schedule_convergence :: PraosParams
-                                        -> NumCoreNodes
-                                        -> NumSlots
-                                        -> NodeJoinPlan
+                                        -> TestConfig
                                         -> LeaderSchedule
                                         -> Seed
                                         -> Property
 prop_simple_leader_schedule_convergence
   params@PraosParams{praosSecurityParam = k}
-  numCoreNodes numSlots nodeJoinPlan schedule seed =
+  testConfig@TestConfig{numCoreNodes} schedule seed =
     counterexample (tracesToDot testOutputNodes) $
-    prop_general k numSlots nodeJoinPlan schedule testOutput
+    prop_general k testConfig schedule testOutput
   where
     testOutput@TestOutput{testOutputNodes} =
         runTestNetwork
             (\nid -> protocolInfo numCoreNodes nid
                  (ProtocolLeaderSchedule params schedule))
-            numCoreNodes numSlots nodeJoinPlan seed
+            testConfig seed
 
 {-------------------------------------------------------------------------------
   Dependent generation and shrinking of leader schedules

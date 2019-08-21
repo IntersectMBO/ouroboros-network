@@ -44,20 +44,25 @@ tests = testGroup "Dynamic chain generation"
             (genNodeJoinPlan numCoreNodes numSlots)
             shrinkNodeJoinPlan $
         \nodeJoinPlan ->
-            testPraos'
-                nodeJoinPlan
+            testPraos' TestConfig
+              { numCoreNodes
+              , numSlots
+              , nodeJoinPlan
+              }
                 seed
     ]
   where
     testPraos :: Seed -> Property
-    testPraos = testPraos' (trivialNodeJoinPlan numCoreNodes)
+    testPraos = testPraos' TestConfig
+      { numCoreNodes
+      , numSlots
+      , nodeJoinPlan = trivialNodeJoinPlan numCoreNodes
+      }
 
-    testPraos' :: NodeJoinPlan -> Seed -> Property
+    testPraos' :: TestConfig -> Seed -> Property
     testPraos' =
         prop_simple_praos_convergence
             params
-            numCoreNodes
-            numSlots
 
     numCoreNodes = NumCoreNodes 3
     numSlots = NumSlots $ fromIntegral $
@@ -68,23 +73,21 @@ tests = testGroup "Dynamic chain generation"
     numEpochs = 3
 
 prop_simple_praos_convergence :: PraosParams
-                              -> NumCoreNodes
-                              -> NumSlots
-                              -> NodeJoinPlan
+                              -> TestConfig
                               -> Seed
                               -> Property
 prop_simple_praos_convergence
   params@PraosParams{praosSecurityParam = k}
-  numCoreNodes numSlots nodeJoinPlan seed =
+  testConfig@TestConfig{numCoreNodes, numSlots, nodeJoinPlan} seed =
     counterexample (tracesToDot testOutputNodes) $
     label lbl $
     counterexample lbl $
-    prop_general k numSlots nodeJoinPlan schedule testOutput
+    prop_general k testConfig schedule testOutput
   where
     testOutput@TestOutput{testOutputNodes} =
         runTestNetwork
             (\nid -> protocolInfo numCoreNodes nid (ProtocolMockPraos params))
-            numCoreNodes numSlots nodeJoinPlan seed
+            testConfig seed
 
     schedule = leaderScheduleFromTrace numSlots testOutputNodes
     lbl = if tooCrowded k nodeJoinPlan schedule

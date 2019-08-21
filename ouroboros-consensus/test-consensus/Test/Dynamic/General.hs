@@ -5,10 +5,15 @@
 module Test.Dynamic.General (
     prop_general
   , runTestNetwork
+    -- * TestConfig
+  , TestConfig (..)
+  , genTestConfig
+  , shrinkTestConfig
     -- * Re-exports
   , TestOutput (..)
   ) where
 
+import           Control.Monad (join)
 import qualified Data.Map as Map
 import           Data.Word (Word64)
 import           Test.QuickCheck
@@ -38,7 +43,65 @@ import           Test.Dynamic.TxGen
 import           Test.Dynamic.Util
 import           Test.Dynamic.Util.NodeJoinPlan
 
+import           Test.Util.Orphans.Arbitrary ()
 import           Test.Util.Range
+
+{-------------------------------------------------------------------------------
+  Configuring tests
+-------------------------------------------------------------------------------}
+
+data TestConfig = TestConfig
+  { numCoreNodes :: !NumCoreNodes
+  , numSlots     :: !NumSlots
+  , nodeJoinPlan :: !NodeJoinPlan
+  }
+  deriving (Show)
+
+genTestConfig :: NumCoreNodes -> NumSlots -> Gen TestConfig
+genTestConfig numCoreNodes numSlots = do
+    nodeJoinPlan <- genNodeJoinPlan numCoreNodes numSlots
+    pure TestConfig{numCoreNodes, numSlots, nodeJoinPlan}
+
+-- | Shrink without changing the number of nodes or slots
+shrinkTestConfig :: TestConfig -> [TestConfig]
+shrinkTestConfig testConfig@TestConfig{nodeJoinPlan} =
+    [ testConfig{nodeJoinPlan = p'}
+    | p' <- shrinkNodeJoinPlan nodeJoinPlan
+    ]
+
+-- | Shrink, including the number of nodes and slots
+shrinkTestConfigFreely :: TestConfig -> [TestConfig]
+shrinkTestConfigFreely TestConfig{numCoreNodes, numSlots, nodeJoinPlan} =
+    tail $   -- drop the identity result
+    [ TestConfig
+        { numCoreNodes = n'
+        , numSlots = t'
+        , nodeJoinPlan = p'
+        }
+    | n' <- numCoreNodes : shrink numCoreNodes
+    , t' <- numSlots : shrink numSlots
+    , let adjustedP = adjustedNodeJoinPlan n' t'
+    , p' <- adjustedP : shrinkNodeJoinPlan adjustedP
+    ]
+  where
+    adjustedNodeJoinPlan (NumCoreNodes n') (NumSlots t') =
+        NodeJoinPlan $
+        -- scale by t' / t
+        Map.map (\(SlotNo i) -> SlotNo $ (i * toEnum t') `div` toEnum t) $
+        -- discard discarded nodes
+        Map.filterWithKey (\(CoreNodeId nid) _ -> nid < n') $
+        m
+      where
+        NumSlots t = numSlots
+        NodeJoinPlan m = nodeJoinPlan
+
+instance Arbitrary TestConfig where
+  arbitrary = join $ genTestConfig <$> arbitrary <*> arbitrary
+  shrink = shrinkTestConfigFreely
+
+{-------------------------------------------------------------------------------
+  Running tests
+-------------------------------------------------------------------------------}
 
 -- | Execute a fully-connected network of nodes that join according to the node
 -- join plan
@@ -53,12 +116,11 @@ runTestNetwork ::
      , TracingConstraints blk
      )
   => (CoreNodeId -> ProtocolInfo blk)
-  -> NumCoreNodes
-  -> NumSlots
-  -> NodeJoinPlan
+  -> TestConfig
   -> Seed
   -> TestOutput blk
-runTestNetwork pInfo numCoreNodes numSlots nodeJoinPlan seed = runSimOrThrow $ do
+runTestNetwork pInfo TestConfig{numCoreNodes, numSlots, nodeJoinPlan}
+  seed = runSimOrThrow $ do
     registry  <- unsafeNewRegistry
     testBtime <- newTestBlockchainTime registry numSlots slotLen
     broadcastNetwork
@@ -72,6 +134,10 @@ runTestNetwork pInfo numCoreNodes numSlots nodeJoinPlan seed = runSimOrThrow $ d
   where
     slotLen :: DiffTime
     slotLen = 100000
+
+{-------------------------------------------------------------------------------
+  Test properties
+-------------------------------------------------------------------------------}
 
 -- | The properties always required
 --
@@ -87,12 +153,12 @@ prop_general ::
      , HasHeader blk
      )
   => SecurityParam
-  -> NumSlots
-  -> NodeJoinPlan
+  -> TestConfig
   -> LeaderSchedule
   -> TestOutput blk
   -> Property
-prop_general k numSlots nodeJoinPlan schedule TestOutput{testOutputNodes} =
+prop_general k TestConfig{numSlots, nodeJoinPlan} schedule
+  TestOutput{testOutputNodes} =
     counterexample ("nodeJoinPlan: " <> condense nodeJoinPlan) $
     counterexample ("schedule: " <> condense schedule) $
     counterexample ("nodeChains: " <> condense nodeChains) $

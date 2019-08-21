@@ -1,5 +1,6 @@
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE GADTs               #-}
+{-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -22,7 +23,6 @@ import           Test.Tasty.QuickCheck
 import           Ouroboros.Network.MockChain.Chain (Chain)
 import qualified Ouroboros.Network.MockChain.Chain as Chain
 
-import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Demo
 import           Ouroboros.Consensus.Ledger.Byron (ByronBlockOrEBB, ByronGiven)
 import           Ouroboros.Consensus.Node.ProtocolInfo
@@ -41,7 +41,6 @@ import qualified Test.Cardano.Chain.Genesis.Dummy as Dummy
 import           Test.Dynamic.General
 import           Test.Dynamic.Network (NodeOutput (..))
 import           Test.Dynamic.Util
-import           Test.Dynamic.Util.NodeJoinPlan
 
 import           Test.Util.Orphans.Arbitrary ()
 
@@ -52,13 +51,7 @@ tests = testGroup "Dynamic chain generation"
           forAll (elements (enumCoreNodes numCoreNodes)) $ \coreNodeId ->
           prop_setup_coreNodeId numCoreNodes coreNodeId
     , testProperty "simple Real PBFT convergence" $
-        \numCoreNodes numSlots seed ->
-        forAllShrink
-            (genNodeJoinPlan numCoreNodes numSlots)
-            shrinkNodeJoinPlan $
-        \nodeJoinPlan ->
-            prop_simple_real_pbft_convergence
-                sp numCoreNodes numSlots nodeJoinPlan seed
+        prop_simple_real_pbft_convergence sp
     ]
   where
     sp = defaultSecurityParam
@@ -80,15 +73,14 @@ prop_setup_coreNodeId numCoreNodes coreNodeId =
     (genesisConfig, genesisSecrets) = generateGenesisConfig numCoreNodes
 
 prop_simple_real_pbft_convergence :: SecurityParam
-                                  -> NumCoreNodes
-                                  -> NumSlots
-                                  -> NodeJoinPlan
+                                  -> TestConfig
                                   -> Seed
                                   -> Property
-prop_simple_real_pbft_convergence k numCoreNodes numSlots nodeJoinPlan seed =
+prop_simple_real_pbft_convergence k
+  testConfig@TestConfig{numCoreNodes, numSlots} seed =
     giveByron $
     prop_general k
-        numSlots nodeJoinPlan
+        testConfig
         (roundRobinLeaderSchedule numCoreNodes numSlots)
         testOutput
     .&&. not (all Chain.null finalChains)
@@ -98,7 +90,7 @@ prop_simple_real_pbft_convergence k numCoreNodes numSlots nodeJoinPlan seed =
             (\nid -> protocolInfo numCoreNodes nid
                 (mkProtocolRealPBFT numCoreNodes nid
                                     genesisConfig genesisSecrets))
-            numCoreNodes numSlots nodeJoinPlan seed
+            testConfig seed
 
     finalChains :: [Chain (ByronBlockOrEBB ByronConfig)]
     finalChains = Map.elems $ nodeOutputFinalChain <$> testOutputNodes testOutput
