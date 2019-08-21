@@ -19,22 +19,39 @@ module Ouroboros.Network.Protocol.LocalTxSubmission.Client (
     -- * Protocol type for the client
     -- | The protocol states from the point of view of the client.
     LocalTxSubmissionClient(..)
+  , LocalTxClientStIdle (..)
 
     -- * Execution as a typed protocol
   , localTxSubmissionClientPeer
+
+      -- * Null local tx submission client
+    , localTxSubmissionClientNull
   ) where
+
+import           Control.Monad (forever)
+import           Control.Monad.Class.MonadTimer
 
 import           Network.TypedProtocol.Core
 
 import           Ouroboros.Network.Protocol.LocalTxSubmission.Type
 
 
+newtype LocalTxSubmissionClient tx reject m a = LocalTxSubmissionClient {
+      runLocalTxSubmissionClient :: m (LocalTxClientStIdle tx reject m a)
+    }
+
+-- | A local tx submission client which never sends any message.
+--
+localTxSubmissionClientNull :: MonadTimer m => LocalTxSubmissionClient tx reject m a
+localTxSubmissionClientNull =
+    LocalTxSubmissionClient $ forever $ threadDelay 43200 {- day in seconds -}
+
 -- | The client side of the local transaction submission protocol.
 --
 -- The peer in the client role submits transactions to the peer in the server
 -- role.
 --
-data LocalTxSubmissionClient tx reject m a where
+data LocalTxClientStIdle tx reject m a where
 
      -- | The client submits a single transaction and waits a reply.
      --
@@ -44,25 +61,25 @@ data LocalTxSubmissionClient tx reject m a where
      --
      SendMsgSubmitTx
        :: tx
-       -> (Maybe reject -> m (LocalTxSubmissionClient tx reject m a))
-       -> LocalTxSubmissionClient tx reject m a
+       -> (Maybe reject -> m (LocalTxClientStIdle tx reject m a))
+       -> LocalTxClientStIdle tx reject m a
 
      -- | The client can terminate the protocol.
      --
      SendMsgDone
-       :: a -> LocalTxSubmissionClient tx reject m a
+       :: a -> LocalTxClientStIdle tx reject m a
 
 
 -- | A non-pipelined 'Peer' representing the 'LocalTxSubmissionClient'.
 --
 localTxSubmissionClientPeer
   :: forall tx reject m a. Monad m
-  => m (LocalTxSubmissionClient tx reject m a)
+  => LocalTxSubmissionClient tx reject m a
   -> Peer (LocalTxSubmission tx reject) AsClient StIdle m a
-localTxSubmissionClientPeer client =
+localTxSubmissionClientPeer (LocalTxSubmissionClient client) =
     Effect $ go <$> client
   where
-    go :: LocalTxSubmissionClient tx reject m a
+    go :: LocalTxClientStIdle tx reject m a
        -> Peer (LocalTxSubmission tx reject) AsClient StIdle m a
     go (SendMsgSubmitTx tx k) =
       Yield (ClientAgency TokIdle)

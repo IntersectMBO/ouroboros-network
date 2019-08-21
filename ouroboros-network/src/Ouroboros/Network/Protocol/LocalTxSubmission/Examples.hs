@@ -30,7 +30,7 @@ localTxSubmissionClient
   => [tx]
   -> LocalTxSubmissionClient tx reject m [(tx, Maybe reject)]
 localTxSubmissionClient =
-    client []
+    LocalTxSubmissionClient . pure . client []
   where
     client acc [] =
       SendMsgDone (reverse acc)

@@ -111,7 +111,7 @@ prop_connect :: (Tx -> Maybe Reject) -> [Tx] -> Bool
 prop_connect p txs =
     case runSimOrThrow
            (connect
-             (localTxSubmissionClientPeer $ pure $
+             (localTxSubmissionClientPeer $
               localTxSubmissionClient txs)
              (localTxSubmissionServerPeer $ pure $
               localTxSubmissionServer p)) of
@@ -142,7 +142,7 @@ prop_channel createChannels p txs =
       codec
       "client"
       "server"
-      (localTxSubmissionClientPeer $ pure $
+      (localTxSubmissionClientPeer $
        localTxSubmissionClient txs)
       (localTxSubmissionServerPeer $ pure $
        localTxSubmissionServer p)
