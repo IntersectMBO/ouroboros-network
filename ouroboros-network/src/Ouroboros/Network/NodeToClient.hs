@@ -20,15 +20,21 @@ module Ouroboros.Network.NodeToClient (
   , withServer_V1
   , withServer
 
+  -- * Re-exports
+  , ErrorPolicies (..)
+  , nullErrorPolicies
+  , ErrorPolicy (..)
+  , PeerStates (..)
+  , newPeerStatesVar
+  , PeerState (..)
+  , SuspendDecision (..)
+
   -- * Re-exported clients
   , chainSyncClientNull
   , localTxSubmissionClientNull
   , TraceSendRecv
   , DecoderFailureOrTooMuchInput
   , Handshake
-  , ErrorPolicies (..)
-  , nullErrorPolicies
-  , ErrorPolicy (..)
   ) where
 
 import           Control.Concurrent.Async (Async)
@@ -54,6 +60,7 @@ import           Network.TypedProtocol.Driver.ByteLimit (DecoderFailureOrTooMuch
 import           Network.TypedProtocol.Driver (TraceSendRecv)
 
 import           Ouroboros.Network.ErrorPolicy
+import           Ouroboros.Network.Subscription.PeerState
 import           Ouroboros.Network.Mux
 import           Ouroboros.Network.Protocol.ChainSync.Client (chainSyncClientNull)
 import           Ouroboros.Network.Protocol.LocalTxSubmission.Client (localTxSubmissionClientNull)
