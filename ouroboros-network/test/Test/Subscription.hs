@@ -417,7 +417,7 @@ prop_sub_io lr = ioProperty $ do
         when (c > 0) retry
 
     serverPortMap <- atomically $ readTVar serverPortMapVar
-    dnsSubscriptionWorker' clientTbl activeTracer activeTracer
+    dnsSubscriptionWorker' activeTracer activeTracer clientTbl
             (mockResolverIO firstDoneVar serverPortMap lr)
             (Just $ Socket.addrAddress ipv4Client)
             (Just $ Socket.addrAddress ipv6Client)
@@ -551,8 +551,8 @@ prop_send_recv f xs first = ioProperty $ do
         (simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData 0) (DictVersion nodeToNodeCodecCBORTerm) responderApp)
         $ \_ _ ->
           dnsSubscriptionWorker'
-            clientTbl
             activeTracer activeTracer
+            clientTbl
             (mockResolverIO firstDoneVar serverPortMap lr)
             (Just $ Socket.addrAddress initiatorAddr4)
             (Just $ Socket.addrAddress initiatorAddr6)
@@ -752,7 +752,7 @@ _demo = ioProperty $ do
     spawnServer tbl server6 100
     spawnServer tbl server6' 45
 
-    dnsSubscriptionWorker clientTbl activeTracer activeTracer
+    dnsSubscriptionWorker activeTracer activeTracer clientTbl
             (Just $ Socket.addrAddress client)
             (Just $ Socket.addrAddress client6)
             (\_ -> Just minConnectionAttemptDelay)
