@@ -42,7 +42,7 @@ prop_simple_pbft_convergence :: SecurityParam
 prop_simple_pbft_convergence
   k numCoreNodes@(NumCoreNodes nn) numSlots nodeJoinPlan seed =
     prop_general k
-        nodeJoinPlan
+        numSlots nodeJoinPlan
         (roundRobinLeaderSchedule numCoreNodes numSlots)
         testOutput
   where

@@ -79,7 +79,7 @@ prop_simple_praos_convergence
     counterexample (tracesToDot testOutputNodes) $
     label lbl $
     counterexample lbl $
-    prop_general k nodeJoinPlan schedule testOutput
+    prop_general k numSlots nodeJoinPlan schedule testOutput
   where
     testOutput@TestOutput{testOutputNodes} =
         runTestNetwork

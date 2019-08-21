@@ -88,7 +88,7 @@ prop_simple_real_pbft_convergence :: SecurityParam
 prop_simple_real_pbft_convergence k numCoreNodes numSlots nodeJoinPlan seed =
     giveByron $
     prop_general k
-        nodeJoinPlan
+        numSlots nodeJoinPlan
         (roundRobinLeaderSchedule numCoreNodes numSlots)
         testOutput
     .&&. not (all Chain.null finalChains)

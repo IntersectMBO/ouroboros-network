@@ -40,7 +40,7 @@ prop_simple_bft_convergence :: SecurityParam
                             -> Property
 prop_simple_bft_convergence k numCoreNodes numSlots nodeJoinPlan seed =
     prop_general k
-        nodeJoinPlan
+        numSlots nodeJoinPlan
         (roundRobinLeaderSchedule numCoreNodes numSlots)
         testOutput
   where

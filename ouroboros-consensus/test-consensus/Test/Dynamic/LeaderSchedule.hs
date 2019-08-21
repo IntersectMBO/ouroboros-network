@@ -64,7 +64,7 @@ prop_simple_leader_schedule_convergence
   params@PraosParams{praosSecurityParam = k}
   numCoreNodes numSlots nodeJoinPlan schedule seed =
     counterexample (tracesToDot testOutputNodes) $
-    prop_general k nodeJoinPlan schedule testOutput
+    prop_general k numSlots nodeJoinPlan schedule testOutput
   where
     testOutput@TestOutput{testOutputNodes} =
         runTestNetwork
