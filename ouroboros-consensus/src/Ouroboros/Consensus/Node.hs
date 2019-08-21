@@ -46,11 +46,11 @@ import           Control.Monad.Class.MonadTime
 
 import           Ouroboros.Network.Block
 import qualified Ouroboros.Network.Block as Block
+import           Ouroboros.Network.ErrorPolicy
 import           Ouroboros.Network.NodeToClient as NodeToClient
 import           Ouroboros.Network.NodeToNode as NodeToNode
 import           Ouroboros.Network.Protocol.ChainSync.PipelineDecision
                      (pipelineDecisionLowHighMark)
-import           Ouroboros.Network.Subscription.PeerState
 
 import           Ouroboros.Consensus.Block (BlockProtocol)
 import           Ouroboros.Consensus.BlockchainTime
@@ -300,7 +300,7 @@ initNetwork registry nodeArgs kernel RunNetworkArgs{..} = do
     connTable  <- newConnectionTable
     peerStatesVar <- newPeerStatesVar
     peerServers <- forM rnaMyAddrs
-        (\a -> forkLinkedThread registry $ runPeerServer connTable a)
+        (\a -> forkLinkedThread registry $ runPeerServer connTable peerStatesVar a)
 
     let ipv4Address = if any (\ai -> Socket.addrFamily ai == Socket.AF_INET) rnaMyAddrs
                          then Just (Socket.SockAddrInet 0 0)
@@ -335,26 +335,36 @@ initNetwork registry nodeArgs kernel RunNetworkArgs{..} = do
     runLocalServer :: IO ()
     runLocalServer = do
       (connTable :: ConnectionTable IO Socket.SockAddr) <- newConnectionTable
+      peerStatesVar <- newPeerStatesVar
       NodeToClient.withServer_V1
         rnaMuxLocalTracer
         rnaHandshakeLocalTracer
+        rnaErrorPolicyTracer
         connTable
+        peerStatesVar
         rnaMyLocalAddr
         rnaMkPeer
         nodeToClientVersionData
         (localResponderNetworkApplication networkApps)
+        nullErrorPolicies
         wait
 
-    runPeerServer :: ConnectionTable IO Socket.SockAddr -> Socket.AddrInfo -> IO ()
-    runPeerServer connTable myAddr =
+    runPeerServer :: ConnectionTable IO Socket.SockAddr
+                  -> StrictTVar IO (PeerStates IO Socket.SockAddr (Time IO))
+                  -> Socket.AddrInfo
+                  -> IO ()
+    runPeerServer connTable peerStatesVar myAddr =
       NodeToNode.withServer_V1
         rnaMuxTracer
         rnaHandshakeTracer
+        rnaErrorPolicyTracer
         connTable
+        peerStatesVar
         myAddr
         rnaMkPeer
         nodeToNodeVersionData
         (responderNetworkApplication networkApps)
+        nullErrorPolicies
         wait
 
     runIpSubscriptionWorker :: ConnectionTable IO Socket.SockAddr
@@ -374,6 +384,7 @@ initNetwork registry nodeArgs kernel RunNetworkArgs{..} = do
       ipv4
       ipv6
       (const Nothing)
+      nullErrorPolicies
       IPSubscriptionTarget
         { ispIps     = rnaIpProducers
         , ispValency = length rnaIpProducers
@@ -406,6 +417,7 @@ initNetwork registry nodeArgs kernel RunNetworkArgs{..} = do
       -- IPv6 address
       ipv6
       (const Nothing)
+      nullErrorPolicies
       dnsProducer
       nodeToNodeVersionData
       (initiatorNetworkApplication networkApps)

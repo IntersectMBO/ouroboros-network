@@ -298,6 +298,7 @@ ipSubscriptionWorker
     -- ^ Local IPv6 address to use, Nothing indicates don't use IPv6
     -> (Socket.SockAddr -> Maybe DiffTime)
     -- ^ Lookup function, should return expected delay for the given address
+    -> ErrorPolicies IO Socket.SockAddr ()
     -> IPSubscriptionTarget
     -> Versions
         NodeToNodeVersion
@@ -318,6 +319,7 @@ ipSubscriptionWorker
   peerStatesVar
   localIPv4 localIPv6
   connectionAttemptDelay
+  errPolicies
   ips
   versions
     = void $ Subscription.ipSubscriptionWorker
@@ -327,7 +329,7 @@ ipSubscriptionWorker
         peerStatesVar
         localIPv4 localIPv6
         connectionAttemptDelay
-        nullErrorPolicies
+        errPolicies
         ips
         (connectToNode'
           (\(DictVersion codec) -> encodeTerm codec)
@@ -357,6 +359,7 @@ ipSubscriptionWorker_V1
     -- ^ Local IPv6 address to use, Nothing indicates don't use IPv6
     -> (Socket.SockAddr -> Maybe DiffTime)
     -- ^ Lookup function, should return expected delay for the given address
+    -> ErrorPolicies IO Socket.SockAddr ()
     -> IPSubscriptionTarget
     -> NodeToNodeVersionData
     -> (OuroborosApplication
@@ -375,6 +378,7 @@ ipSubscriptionWorker_V1
   peerStatesVar
   localIPv4 localIPv6
   connectionAttemptDelay
+  errPolicies
   ips
   versionData
   application
@@ -388,6 +392,7 @@ ipSubscriptionWorker_V1
         peerStatesVar
         localIPv4 localIPv6
         connectionAttemptDelay
+        errPolicies
         ips
         (simpleSingletonVersions
           NodeToNodeV_1
@@ -419,6 +424,7 @@ dnsSubscriptionWorker
     -> Maybe Socket.SockAddr
     -> Maybe Socket.SockAddr
     -> (Socket.SockAddr -> Maybe DiffTime)
+    -> ErrorPolicies IO Socket.SockAddr ()
     -> DnsSubscriptionTarget
     -> Versions
         NodeToNodeVersion
@@ -440,6 +446,7 @@ dnsSubscriptionWorker
   peerStatesVar
   localIPv4 localIPv6
   connectionAttemptDelay
+  errPolicies
   dst
   versions = void $
     Subscription.dnsSubscriptionWorker
@@ -450,7 +457,7 @@ dnsSubscriptionWorker
       peerStatesVar
       localIPv4 localIPv6
       connectionAttemptDelay
-      nullErrorPolicies
+      errPolicies
       dst
       (connectToNode'
         (\(DictVersion codec) -> encodeTerm codec)
@@ -479,6 +486,7 @@ dnsSubscriptionWorker_V1
     -> Maybe Socket.SockAddr
     -> Maybe Socket.SockAddr
     -> (Socket.SockAddr -> Maybe DiffTime)
+    -> ErrorPolicies IO Socket.SockAddr ()
     -> DnsSubscriptionTarget
     -> NodeToNodeVersionData
     -> (OuroborosApplication
@@ -498,6 +506,7 @@ dnsSubscriptionWorker_V1
   peerStatesVar
   localIPv4 localIPv6
   connectionAttemptDelay
+  errPolicies
   dst
   versionData
   application =
@@ -512,6 +521,7 @@ dnsSubscriptionWorker_V1
       peerStatesVar
       localIPv4 localIPv6
       connectionAttemptDelay
+      errPolicies
       dst
       (simpleSingletonVersions
           NodeToNodeV_1
