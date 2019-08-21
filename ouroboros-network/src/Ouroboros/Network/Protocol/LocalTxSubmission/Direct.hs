@@ -17,11 +17,17 @@ direct :: forall tx reject m a b.
        => LocalTxSubmissionClient tx reject m a
        -> LocalTxSubmissionServer tx reject m b
        -> m (a, b)
-direct (SendMsgSubmitTx tx k) LocalTxSubmissionServer{recvMsgSubmitTx} = do
-    (res, server') <- recvMsgSubmitTx tx
-    client' <- k res
-    direct client' server'
+direct (LocalTxSubmissionClient mclient) server =
+    mclient >>= \client -> directSender client server
+  where
+    directSender :: LocalTxClientStIdle     tx reject m a
+                 -> LocalTxSubmissionServer tx reject m b
+                 -> m (a, b)
+    directSender (SendMsgSubmitTx tx k) LocalTxSubmissionServer{recvMsgSubmitTx} = do
+        (res, server') <- recvMsgSubmitTx tx
+        client' <- k res
+        directSender client' server'
 
-direct (SendMsgDone a) LocalTxSubmissionServer{recvMsgDone = b} =
-    return (a,b)
+    directSender (SendMsgDone a) LocalTxSubmissionServer{recvMsgDone = b} =
+        return (a,b)
 
