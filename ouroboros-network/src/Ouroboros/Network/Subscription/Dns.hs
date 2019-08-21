@@ -18,7 +18,7 @@ module Ouroboros.Network.Subscription.Dns
     , dnsResolve
     , resolutionDelay
 
-    , DnsTrace
+    , DnsTrace (..)
     , WithDomainName (..)
     ) where
 
@@ -35,8 +35,9 @@ import qualified Network.DNS as DNS
 import qualified Network.Socket as Socket
 import           Text.Printf
 
-import           Ouroboros.Network.Subscription.Common
+import           Ouroboros.Network.Subscription.Ip
 import           Ouroboros.Network.Subscription.Subscriber
+import           Ouroboros.Network.Subscription.Worker
 import           Ouroboros.Network.Socket
 
 -- | Time to wait for an AAAA response after receiving an A response.
@@ -186,47 +187,57 @@ dnsResolve tracer resolver (DnsSubscriptionTarget domain _ _) = do
                  return Nothing
 
 dnsSubscriptionWorker'
-    :: ConnectionTable IO
-    -> Tracer IO (WithDomainName SubscriptionTrace)
+    :: Tracer IO (WithDomainName (SubscriptionTrace Socket.SockAddr))
     -> Tracer IO (WithDomainName DnsTrace)
+    -> ConnectionTable IO Socket.SockAddr
     -> Resolver IO
     -> Maybe Socket.SockAddr
     -> Maybe Socket.SockAddr
     -> (Socket.SockAddr -> Maybe DiffTime)
     -> DnsSubscriptionTarget
-    -> (Socket.Socket -> IO ())
-    -> (Async IO () -> IO t)
+    -> Main IO () t
+    -> (Socket.Socket -> IO t)
     -> IO t
-dnsSubscriptionWorker' tbl subTracer dnsTracer resolver localIPv4 localIPv6
-  connectionAttemptDelay dst cb k = do
-    let subTracer' = domainNameTracer (dstDomain dst) subTracer
-    let dnsTracer' = domainNameTracer (dstDomain dst) dnsTracer
-
-    subscriptionWorker tbl subTracer' localIPv4 localIPv6
-           connectionAttemptDelay
-           (dnsResolve dnsTracer' resolver dst) (dstValency dst) cb k
+dnsSubscriptionWorker' subTracer dnsTracer tbl resolver localIPv4 localIPv6
+  connectionAttemptDelay dst main k = do
+    statesVar <- newTVarM ()
+    subscriptionWorker (WithDomainName (dstDomain dst) `contramap` subTracer)
+                       tbl
+                       statesVar
+                       ioSocket
+                       (\_ s -> pure s)
+                       (\_ s -> pure (s, pure ()))
+                       main
+                       localIPv4
+                       localIPv6
+                       connectionAttemptDelay
+                       (dnsResolve
+                          (WithDomainName (dstDomain dst) `contramap` dnsTracer)
+                          resolver dst)
+                       (dstValency dst)
+                       k
 
 
 dnsSubscriptionWorker
-    :: ConnectionTable IO
-    -> Tracer IO (WithDomainName SubscriptionTrace)
+    :: Tracer IO (WithDomainName (SubscriptionTrace Socket.SockAddr))
     -> Tracer IO (WithDomainName DnsTrace)
+    -> ConnectionTable IO Socket.SockAddr
     -> Maybe Socket.SockAddr
     -> Maybe Socket.SockAddr
     -> (Socket.SockAddr -> Maybe DiffTime)
     -> DnsSubscriptionTarget
-    -> (Socket.Socket -> IO ())
-    -> (Async IO () -> IO t)
+    -> Main IO () t
+    -> (Socket.Socket -> IO t)
     -> IO t
-dnsSubscriptionWorker tbl subTracer dnsTracer localIPv4 localIPv6 connectionAttemptDelay dst cb
-  k = do
+dnsSubscriptionWorker subTracer dnsTracer tbl localIPv4 localIPv6 connectionAttemptDelay dst
+  main k = do
     rs <- DNS.makeResolvSeed DNS.defaultResolvConf
 
     DNS.withResolver rs $ \dnsResolver ->
         let resolver = Resolver (ipv4ToSockAddr (dstPort dst) dnsResolver)
                                 (ipv6ToSockAddr (dstPort dst) dnsResolver) in
-        dnsSubscriptionWorker' tbl subTracer dnsTracer resolver localIPv4 localIPv6
-                               connectionAttemptDelay dst cb k
+        dnsSubscriptionWorker' subTracer dnsTracer tbl resolver localIPv4 localIPv6
+                               connectionAttemptDelay dst main k
   where
     ipv4ToSockAddr port dnsResolver d = do
         r <- DNS.lookupA dnsResolver d
@@ -248,9 +259,6 @@ data WithDomainName a = WithDomainName {
 
 instance Show a => Show (WithDomainName a) where
     show WithDomainName {wdnDomain, wdnEvent} = printf  "Domain: %s %s" (show wdnDomain) (show wdnEvent)
-
-domainNameTracer :: DNS.Domain -> Tracer IO (WithDomainName a) -> Tracer IO a
-domainNameTracer domain tr = Tracer $ \s -> traceWith tr $ WithDomainName domain s
 
 data DnsTrace =
       DnsTraceLookupException SomeException

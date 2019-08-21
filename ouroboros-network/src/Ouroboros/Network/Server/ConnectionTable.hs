@@ -11,8 +11,10 @@ module Ouroboros.Network.Server.ConnectionTable (
     , ValencyCounter
 
     , newConnectionTable
+    , refConnectionSTM
     , refConnection
     , addConnection
+    , removeConnectionSTM
     , removeConnection
     , newValencyCounter
     , addValencyCounter
@@ -37,8 +39,8 @@ import           Text.Printf
 -- It is only used for bookkeeping, the sockets represented by the connections are not accessable
 -- through this structure.
 --
-data ConnectionTable m = ConnectionTable {
-    ctTable     :: TVar m (M.Map Socket.SockAddr (ConnectionTableEntry m))
+data ConnectionTable m addr = ConnectionTable {
+    ctTable     :: TVar m (M.Map addr (ConnectionTableEntry m addr))
   , ctLastRefId :: TVar m Int
   }
 
@@ -56,7 +58,7 @@ data ValencyCounter m = ValencyCounter {
 -- | Create a new ValencyCounter
 newValencyCounter
   :: MonadSTM m
-  => ConnectionTable m
+  => ConnectionTable m addr
   -> Int
   -- ^ Desired valency, that is number of connections a subscription worker will attempt to
   -- maintain.
@@ -79,11 +81,11 @@ instance Eq (ValencyCounter m) where
 readValencyCounter :: MonadSTM m => ValencyCounter m -> STM m Int
 readValencyCounter vc = readTVar $ vcRef vc
 
-data ConnectionTableEntry m = ConnectionTableEntry {
+data ConnectionTableEntry m addr = ConnectionTableEntry {
     -- | Set of ValencyCounter's for subscriptions interested in this peer.
       cteRefs           :: !(Set (ValencyCounter m))
     -- | Set of local SockAddr connected to this peer.
-    , cteLocalAddresses :: !(Set Socket.SockAddr)
+    , cteLocalAddresses :: !(Set addr)
     }
 
 data ConnectionTableRef =
@@ -113,7 +115,7 @@ waitValencyCounter vc = do
     retry
 
 -- | Create a new ConnectionTable.
-newConnectionTable :: MonadSTM m => m (ConnectionTable m)
+newConnectionTable :: MonadSTM m => m (ConnectionTable m addr)
 newConnectionTable =  do
     tbl <- newTVarM M.empty
     li <- newTVarM 0
@@ -121,18 +123,21 @@ newConnectionTable =  do
 
 -- | Insert a new connection into the ConnectionTable.
 addConnection
-    :: forall m. (MonadSTM m)
-    => ConnectionTable m
-    -> Socket.SockAddr
-    -> Socket.SockAddr
+    :: forall m addr.
+       ( MonadSTM m
+       , Ord addr
+       )
+    => ConnectionTable m addr
+    -> addr
+    -> addr
     -> Maybe (ValencyCounter m)
     -- ^ Optional ValencyCounter, used by subscription worker and set to Nothing when
     -- called by a local server.
     -> STM m ()
-addConnection ConnectionTable{ctTable} remoteAddr localAddr ref_m =
+addConnection ConnectionTable{ctTable} remoteAddr localAddr ref_m = do
     readTVar ctTable >>= M.alterF fn remoteAddr >>= writeTVar ctTable
   where
-    fn :: Maybe (ConnectionTableEntry m) -> STM m (Maybe (ConnectionTableEntry m))
+    fn :: Maybe (ConnectionTableEntry m addr) -> STM m (Maybe (ConnectionTableEntry m addr))
     fn Nothing = do
         refs <- case ref_m of
                      Just ref -> do
@@ -153,15 +158,16 @@ addConnection ConnectionTable{ctTable} remoteAddr localAddr ref_m =
               }
 
 -- TODO This should use Control.Tracer
+-- TODO shoult this be removed? Doesn't seem to be used anywhere
 _dumpConnectionTable
-    :: ConnectionTable IO
+    :: ConnectionTable IO Socket.SockAddr
     -> IO ()
 _dumpConnectionTable ConnectionTable{ctTable} = do
     tbl <- atomically $ readTVar ctTable
     printf "Dumping Table:\n"
     mapM_ dumpTableEntry (M.toList tbl)
   where
-    dumpTableEntry :: (Socket.SockAddr, ConnectionTableEntry IO) -> IO ()
+    dumpTableEntry :: (Socket.SockAddr, ConnectionTableEntry IO Socket.SockAddr) -> IO ()
     dumpTableEntry (remoteAddr, ce) = do
         refs <- mapM (atomically . readTVar . vcRef) (S.elems $ cteRefs ce)
         let rids = map vcId $ S.elems $ cteRefs ce
@@ -170,16 +176,20 @@ _dumpConnectionTable ConnectionTable{ctTable} = do
             (show remoteAddr) (show $ cteLocalAddresses ce) (show refids)
 
 -- | Remove a Connection.
-removeConnection
-    :: forall m. (MonadSTM m)
-    => ConnectionTable m
-    -> Socket.SockAddr
-    -> Socket.SockAddr
-    -> m ()
-removeConnection ConnectionTable{ctTable} remoteAddr localAddr = atomically $
+removeConnectionSTM
+    :: forall m addr.
+       ( MonadSTM m
+       , Ord addr
+       )
+    => ConnectionTable m addr
+    -> addr
+    -> addr
+    -> STM m ()
+removeConnectionSTM ConnectionTable{ctTable} remoteAddr localAddr =
     readTVar ctTable >>= M.alterF fn remoteAddr >>= writeTVar ctTable
   where
-    fn :: Maybe (ConnectionTableEntry m) -> STM m (Maybe (ConnectionTableEntry m))
+    fn :: Maybe (ConnectionTableEntry m addr)
+       -> STM m (Maybe (ConnectionTableEntry m addr))
     fn Nothing = return Nothing -- XXX removing non existent address
     fn (Just ConnectionTableEntry{cteRefs, cteLocalAddresses}) = do
         mapM_ remValencyCounter cteRefs
@@ -188,16 +198,29 @@ removeConnection ConnectionTable{ctTable} remoteAddr localAddr = atomically $
             then return Nothing
             else return $ Just $ ConnectionTableEntry cteRefs localAddresses'
 
+removeConnection
+    :: forall m addr.
+       ( MonadSTM m
+       , Ord addr
+       )
+    => ConnectionTable m addr
+    -> addr
+    -> addr
+    -> m ()
+removeConnection tbl remoteAddr localAddr = atomically $ removeConnectionSTM tbl remoteAddr localAddr
+
 -- | Try to see if it is possible to reference an existing connection rather
 -- than creating a new one to the provied peer.
 --
-refConnection
-    :: MonadSTM m
-    => ConnectionTable m
-    -> Socket.SockAddr
+refConnectionSTM
+    :: ( MonadSTM m
+       , Ord addr
+       )
+    => ConnectionTable m addr
+    -> addr
     -> ValencyCounter m
-    -> m ConnectionTableRef
-refConnection ConnectionTable{ctTable} remoteAddr refVar = atomically $ do
+    -> STM m ConnectionTableRef
+refConnectionSTM ConnectionTable{ctTable} remoteAddr refVar = do
     tbl <- readTVar ctTable
     case M.lookup remoteAddr tbl of
          Nothing -> return ConnectionTableCreate
@@ -215,3 +238,13 @@ refConnection ConnectionTable{ctTable} remoteAddr refVar = atomically $ do
                          (cte { cteRefs = refs'}) tbl
                      return ConnectionTableExist
 
+refConnection
+    :: ( MonadSTM m
+       , Ord addr
+       )
+    => ConnectionTable m addr
+    -> addr
+    -> ValencyCounter m
+    -> m ConnectionTableRef
+refConnection tbl remoteAddr refVar =
+    atomically $ refConnectionSTM  tbl remoteAddr refVar

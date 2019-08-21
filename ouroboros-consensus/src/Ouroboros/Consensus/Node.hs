@@ -38,13 +38,14 @@ import           Data.Time.Clock (secondsToDiffTime)
 import           Network.Socket as Socket
 
 import           Control.Monad.Class.MonadAsync
+import           Control.Monad.Class.MonadSTM
 
 import           Ouroboros.Network.Block
 import qualified Ouroboros.Network.Block as Block
 import           Ouroboros.Network.NodeToClient as NodeToClient
 import           Ouroboros.Network.NodeToNode as NodeToNode
 import           Ouroboros.Network.Socket
-import           Ouroboros.Network.Subscription.Common
+import           Ouroboros.Network.Subscription.Ip
 import           Ouroboros.Network.Subscription.Dns
 
 import           Ouroboros.Network.Protocol.Handshake.Type
@@ -244,9 +245,9 @@ type NetworkApps peer =
 
 -- | Arguments specific to the network stack
 data RunNetworkArgs peer blk = RunNetworkArgs
-  { rnaIpSubscriptionTracer  :: Tracer IO (WithIPList SubscriptionTrace)
+  { rnaIpSubscriptionTracer  :: Tracer IO (WithIPList (SubscriptionTrace Socket.SockAddr))
     -- ^ IP subscription tracer
-  , rnaDnsSubscriptionTracer :: Tracer IO (WithDomainName SubscriptionTrace)
+  , rnaDnsSubscriptionTracer :: Tracer IO (WithDomainName (SubscriptionTrace Socket.SockAddr))
     -- ^ DNS subscription tracer
   , rnaDnsResolverTracer     :: Tracer IO (WithDomainName DnsTrace)
     -- ^ DNS resolver tracer
@@ -279,7 +280,7 @@ initNetwork registry nodeArgs kernel RunNetworkArgs{..} = do
     peerServer <- forkLinked registry $
       runPeerServer connTable
 
-    ipSubscriptions <- forkLinked registry $
+    ipSubscriptions <- forkLinked registry $ do
       runIpSubscriptionWorker connTable
 
     -- dns subscription managers
@@ -329,7 +330,7 @@ initNetwork registry nodeArgs kernel RunNetworkArgs{..} = do
         (localResponderNetworkApplication <$> networkAppNodeToClient)
         wait
 
-    runPeerServer :: ConnectionTable IO -> IO ()
+    runPeerServer :: ConnectionTable IO Socket.SockAddr -> IO ()
     runPeerServer connTable = NodeToNode.withServer
       connTable
       rnaMyAddr
@@ -338,10 +339,10 @@ initNetwork registry nodeArgs kernel RunNetworkArgs{..} = do
       (responderNetworkApplication <$> networkAppNodeToNode)
       wait
 
-    runIpSubscriptionWorker :: ConnectionTable IO -> IO ()
+    runIpSubscriptionWorker :: ConnectionTable IO Socket.SockAddr -> IO ()
     runIpSubscriptionWorker connTable = ipSubscriptionWorker
-      connTable
       rnaIpSubscriptionTracer
+      connTable
       -- the comments in dnsSbuscriptionWorker call apply
       (Just (Socket.SockAddrInet 0 0))
       (Just (Socket.SockAddrInet6 0 0 (0, 0, 0, 1) 0))
@@ -350,21 +351,21 @@ initNetwork registry nodeArgs kernel RunNetworkArgs{..} = do
         { ispIps     = rnaIpProducers
         , ispValency = length rnaIpProducers
         }
+      (\_ -> retry)
       (connectToNode'
         (\(DictVersion codec) -> encodeTerm codec)
         (\(DictVersion codec) -> decodeTerm codec)
         nullTracer
         rnaMkPeer
         (initiatorNetworkApplication <$> networkAppNodeToNode))
-      wait
 
-    runDnsSubscriptionWorker :: ConnectionTable IO
+    runDnsSubscriptionWorker :: ConnectionTable IO Socket.SockAddr
                              -> DnsSubscriptionTarget
                              -> IO ()
     runDnsSubscriptionWorker connTable dnsProducer = dnsSubscriptionWorker
-      connTable
       rnaDnsSubscriptionTracer
       rnaDnsResolverTracer
+      connTable
       -- IPv4 address
       --
       -- We can't share portnumber with our server since we run separate
@@ -376,10 +377,10 @@ initNetwork registry nodeArgs kernel RunNetworkArgs{..} = do
       (Just (Socket.SockAddrInet6 0 0 (0, 0, 0, 1) 0))
       (const Nothing)
       dnsProducer
+      (\_ -> retry)
       (connectToNode'
         (\(DictVersion codec) -> encodeTerm codec)
         (\(DictVersion codec) -> decodeTerm codec)
         nullTracer
         rnaMkPeer
         (initiatorNetworkApplication <$> networkAppNodeToNode))
-      wait
