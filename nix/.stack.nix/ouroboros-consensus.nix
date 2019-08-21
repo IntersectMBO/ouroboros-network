@@ -45,6 +45,7 @@
           (hsPkgs.memory)
           (hsPkgs.mmorph)
           (hsPkgs.mtl)
+          (hsPkgs.network)
           (hsPkgs.pipes)
           (hsPkgs.reflection)
           (hsPkgs.serialise)
