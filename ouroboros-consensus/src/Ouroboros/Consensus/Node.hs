@@ -45,6 +45,7 @@ import           Ouroboros.Network.Block
 import qualified Ouroboros.Network.Block as Block
 import           Ouroboros.Network.NodeToClient as NodeToClient
 import           Ouroboros.Network.NodeToNode as NodeToNode
+import           Ouroboros.Network.ErrorPolicy
 import           Ouroboros.Network.Socket
 import           Ouroboros.Network.Subscription.PeerState
 import           Ouroboros.Network.Subscription.Dns
@@ -282,7 +283,7 @@ initNetwork registry nodeArgs kernel RunNetworkArgs{..} = do
     -- serve downstream nodes
     connTable  <- newConnectionTable
     peerStatesVar <- newPeerStatesVar
-    peerServer <- forkLinkedThread registry $ runPeerServer connTable
+    peerServer <- forkLinkedThread registry $ runPeerServer connTable peerStatesVar
 
     ipSubscriptions <- forkLinkedThread registry $
                          runIpSubscriptionWorker connTable peerStatesVar
@@ -327,21 +328,30 @@ initNetwork registry nodeArgs kernel RunNetworkArgs{..} = do
     runLocalServer :: IO ()
     runLocalServer = do
       connTable <- newConnectionTable
+      peerStatesVar <- newPeerStatesVar
       NodeToClient.withServer
+        rnaErrorPolicyTracer
         connTable
+        peerStatesVar
         rnaMyLocalAddr
         rnaMkPeer
         (\(DictVersion _) -> acceptEq)
         (localResponderNetworkApplication <$> networkAppNodeToClient)
+        nullErrorPolicies
         wait
 
-    runPeerServer :: ConnectionTable IO Socket.SockAddr -> IO ()
-    runPeerServer connTable = NodeToNode.withServer
+    runPeerServer :: ConnectionTable IO Socket.SockAddr
+                  -> StrictTVar IO (PeerStates IO Socket.SockAddr (Time IO))
+                  -> IO ()
+    runPeerServer connTable peerStatesVar = NodeToNode.withServer
+      rnaErrorPolicyTracer
       connTable
+      peerStatesVar
       rnaMyAddr
       rnaMkPeer
       (\(DictVersion _) -> acceptEq)
       (responderNetworkApplication <$> networkAppNodeToNode)
+      nullErrorPolicies
       wait
 
     runIpSubscriptionWorker :: ConnectionTable IO Socket.SockAddr
@@ -356,8 +366,7 @@ initNetwork registry nodeArgs kernel RunNetworkArgs{..} = do
       (Just (Socket.SockAddrInet 0 0))
       (Just (Socket.SockAddrInet6 0 0 (0, 0, 0, 1) 0))
       (const Nothing)
-      []
-      (\_ _ _ -> Throw)
+      nullErrorPolicies
       IPSubscriptionTarget
         { ispIps     = rnaIpProducers
         , ispValency = length rnaIpProducers
@@ -389,8 +398,7 @@ initNetwork registry nodeArgs kernel RunNetworkArgs{..} = do
       -- IPv6 address
       (Just (Socket.SockAddrInet6 0 0 (0, 0, 0, 1) 0))
       (const Nothing)
-      []
-      (\_ _ _ -> Throw)
+      nullErrorPolicies
       dnsProducer
       (connectToNode'
         (\(DictVersion codec) -> encodeTerm codec)
