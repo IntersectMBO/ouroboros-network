@@ -49,6 +49,7 @@ import           Ouroboros.Network.Socket
 import           Ouroboros.Network.Subscription.PeerState
 import           Ouroboros.Network.Subscription.Dns
 import           Ouroboros.Network.Subscription.Ip
+import           Ouroboros.Network.Subscription.PeerState
 
 import           Ouroboros.Network.Protocol.Handshake.Type
 import           Ouroboros.Network.Protocol.Handshake.Version
