@@ -206,13 +206,14 @@ instance (PBftCrypto c, Typeable c) => OuroborosTag (PBft c) where
         Left err -> throwError $ PBftInvalidSignature err
 
       -- We always include slot number 0 in case there are no signers yet.
-      let lastSlotOfSigner = \case
+      let signers = pruneChainState winSize chainState
+          lastSlotOfSigner = \case
             _ Seq.:|> s -> s
             _           -> SlotNo 0
           lastSlot =  maximum
                    .  (SlotNo 0 :)
                    $  lastSlotOfSigner
-                  <$> Map.elems chainState
+                  <$> Map.elems signers
 
       -- FIXME confirm that non-strict inequality is ok in general.
       -- It's here because EBBs have the same slot as the first block of their
@@ -223,8 +224,8 @@ instance (PBftCrypto c, Typeable c) => OuroborosTag (PBft c) where
       case Bimap.lookupR (hashVerKey pbftIssuer) dms of
         Nothing -> throwError $ PBftNotGenesisDelegate (hashVerKey pbftIssuer) lv
         Just gk -> do
-          let totalSigners = chainStateSize chainState
-              gkSigners = maybe 0 Seq.length $ Map.lookup gk chainState
+          let totalSigners = chainStateSize signers
+              gkSigners = maybe 0 Seq.length $ Map.lookup gk signers
           when (totalSigners >= winSize && gkSigners > wt)
             $ throwError (PBftExceededSignThreshold totalSigners gkSigners)
           return $! insertSigner gk (blockSlot b) $ pruneChainState (winSize + 2*k) chainState
