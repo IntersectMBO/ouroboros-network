@@ -9,6 +9,8 @@ module Ouroboros.Consensus.BlockFetchServer
   ( blockFetchServer
     -- * Trace events
   , TraceBlockFetchServerEvent
+    -- * Exceptions
+  , BlockFetchServerException
   ) where
 
 import           Data.Typeable (Typeable)

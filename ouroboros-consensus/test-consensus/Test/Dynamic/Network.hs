@@ -16,6 +16,10 @@
 module Test.Dynamic.Network (
     broadcastNetwork
   , TracingConstraints
+    -- * Tracers
+  , MiniProtocolExpectedException (..)
+  , MiniProtocolState (..)
+  , TraceMiniProtocolRestart (..)
     -- * Test Output
   , TestOutput (..)
   , NodeOutput (..)
@@ -25,8 +29,8 @@ module Test.Dynamic.Network (
 import           Control.Monad
 import           Control.Tracer
 import           Crypto.Random (ChaChaDRG, drgNew)
-import           Data.Foldable (traverse_)
 import qualified Data.List as List
+import qualified Data.List.NonEmpty as NE
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Proxy (Proxy (..))
@@ -46,13 +50,18 @@ import           Network.TypedProtocol.Codec (AnyMessage (..))
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.MockChain.Chain
 
+import qualified Ouroboros.Network.BlockFetch.Client as BFClient
 import           Ouroboros.Network.Protocol.BlockFetch.Type
 import           Ouroboros.Network.Protocol.ChainSync.Type
 import           Ouroboros.Network.Protocol.TxSubmission.Type
+import qualified Ouroboros.Network.TxSubmission.Inbound as TxInbound
+import qualified Ouroboros.Network.TxSubmission.Outbound as TxOutbound
 
+import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
+import qualified Ouroboros.Consensus.BlockFetchServer as BFServer
 import           Ouroboros.Consensus.ChainSyncClient (ClockSkew (..))
-import           Ouroboros.Consensus.Ledger.Abstract
+import qualified Ouroboros.Consensus.ChainSyncClient as CSClient
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.Mock
 import           Ouroboros.Consensus.Mempool
@@ -63,7 +72,6 @@ import           Ouroboros.Consensus.NodeId
 import           Ouroboros.Consensus.NodeKernel
 import           Ouroboros.Consensus.NodeNetwork
 import           Ouroboros.Consensus.Protocol.Abstract
-import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Orphans ()
 import           Ouroboros.Consensus.Util.RedundantConstraints
 import           Ouroboros.Consensus.Util.ResourceRegistry
@@ -82,113 +90,6 @@ import qualified Ouroboros.Storage.Util.ErrorHandling as EH
 
 import           Test.Dynamic.TxGen
 import           Test.Dynamic.Util.NodeJoinPlan
-
--- | Interface provided by 'ouroboros-network'.  At the moment
--- 'ouroboros-network' only provides this interface in 'IO' backed by sockets,
--- we cook up here one using 'NodeChans'.
---
-data NetworkInterface m peer = NetworkInterface {
-      -- | Like 'Ouroboros.Network.NodeToNode.connectTo'
-      --
-      niConnectTo      :: peer -> m ()
-
-      -- | Like 'Ouroboros.Network.NodeToNode.withServer'
-      --
-    , niWithServerNode :: forall t.  (Async m () -> m t) -> m t
-    }
-
--- | Create 'NetworkInterface' from a map of channels between nodes.
---
--- TODO: move this function to 'ouroboros-network'.
---
-createNetworkInterface
-    :: forall m peer blk unused1 unused2.
-       ( MonadAsync m
-       , MonadMask  m
-       , Ord peer
-       )
-    => BlockchainTime m
-    -> NodeChans m peer blk -- ^ map of channels between nodes
-    -> [peer]               -- ^ list of nodes which we want to serve
-    -> (peer -> SlotNo)     -- ^ every node's join slot
-    -> peer                 -- ^ our own peer identifier
-    -> NetworkApplication m peer
-        (AnyMessage (ChainSync (Header blk) (Point blk)))
-        (AnyMessage (BlockFetch blk))
-        (AnyMessage (TxSubmission (GenTxId blk) (GenTx blk)))
-        unused1 -- the local node-to-client channel types
-        unused2
-        ()
-    -> NetworkInterface m peer
-createNetworkInterface btime chans nodeIds joinSlotOf us
-                       NetworkApplication {
-                         naChainSyncClient,
-                         naChainSyncServer,
-                         naBlockFetchClient,
-                         naBlockFetchServer,
-                         naTxSubmissionClient,
-                         naTxSubmissionServer
-                         -- Note that this test is not intended to cover the
-                         -- mini-protocols in the node-to-client bundle, so
-                         -- we don't pull those handlers out here.
-                       } =
-  NetworkInterface
-    { niConnectTo = \them -> do
-        let nodeChan = chans Map.! them Map.! us
-
-        -- 'withAsync' guarantees that when 'waitAny' below receives an
-        -- exception the threads will be killed.  If one of the threads will
-        -- error, 'waitAny' will terminate and both threads will be killed (thus
-        -- there's no need to use 'waitAnyCancel').
-        withAsync (waitingFor them $ naChainSyncClient them
-                        $ chainSyncProducer nodeChan)
-                  $ \aCS ->
-          withAsync (waitingFor them $ naBlockFetchClient them
-                        $ blockFetchProducer nodeChan)
-                  $ \aBF ->
-            withAsync (waitingFor them $ naTxSubmissionClient them
-                        $ txSubmissionProducer nodeChan)
-                  $ \aTX ->
-                    -- wait for all the threads, if any throws an exception, cancel all
-                    -- of them; this is consistent with
-                    -- 'Ouroboros.Network.Socket.connectTo'.
-                    void $ waitAny [aCS, aBF, aTX]
-
-      , niWithServerNode = \k -> mask $ \unmask -> do
-        ts :: [Async m ()] <- fmap concat $ forM (filter (/= us) nodeIds) $ \them -> do
-              let nodeChan = chans Map.! us Map.! them
-
-              aCS <- async $ unmask
-                           $ waitingFor them $ naChainSyncServer
-                             them
-                             (chainSyncConsumer nodeChan)
-              aBF <- async $ unmask
-                           $ waitingFor them $ naBlockFetchServer
-                             them
-                             (blockFetchConsumer nodeChan)
-              aTX <- async $ unmask
-                           $ waitingFor them $ naTxSubmissionServer
-                             them
-                             (txSubmissionConsumer nodeChan)
-
-              return [aCS, aBF, aTX]
-
-        -- if any thread raises an exception, kill all of them;
-        -- if an exception is thrown to this thread, cancel all threads;
-        (waitAnyCancel ts `onException` traverse_ cancel ts) >>= k . fst
-    }
-  where
-    -- block until both us and our peer have joined the network
-    waitingFor :: forall a. peer -> m a -> m ()
-    waitingFor them m = void $ do
-        tooLate <- blockUntilSlot btime $
-            joinSlotOf us `maxSlot` joinSlotOf them
-        when tooLate $
-            error "createNetworkInterface: unsatisfiable nodeJoinPlan"
-        void $ m
-
-    maxSlot :: SlotNo -> SlotNo ->  SlotNo
-    maxSlot (SlotNo i) (SlotNo j) = SlotNo (max i j)
 
 -- | Setup fully-connected topology, where every node is both a producer
 -- and a consumer, and joins according to the node join plan
@@ -217,22 +118,54 @@ broadcastNetwork :: forall m blk.
                  -> DiffTime
                  -> m (TestOutput blk)
 broadcastNetwork registry testBtime numCoreNodes nodeJoinPlan pInfo initRNG slotLen = do
-    chans :: NodeChans m NodeId blk <- createCommunicationChannels
+    -- This function is organized around the notion of a network of nodes as a
+    -- simple graph with no loops. The graph topology is fully-connected/mesh.
+    --
+    -- Each graph node is a Ouroboros core node, with its own private threads
+    -- managing the node's internal state. Some nodes join the network later
+    -- than others, according to @nodeJoinPlan@.
+    --
+    -- Each undirected edge denotes two opposing directed edges. Each directed
+    -- edge denotes a bundle of mini protocols with client threads on the tail
+    -- node and server threads on the head node. These mini protocols begin as
+    -- soon as both nodes have joined the network, according to @nodeJoinPlan@.
 
     varRNG <- atomically $ newTVar initRNG
 
-    nodes <- forM (List.sortOn joinSlotOf coreNodeIds) $ \coreNodeId -> do
-      -- do not start the node before its joinSlot
-      tooLate <- blockUntilSlot btime $ joinSlotOf coreNodeId
-      when tooLate $ error "broadcastNetwork: unsatisfiable nodeJoinPlan"
+    -- allocate a TMVar for each node's network app
+    nodeVars <- fmap Map.fromList $ do
+      forM coreNodeIds $ \nid -> (,) nid <$> atomically newEmptyTMVar
 
-      (node, nodeInfo) <- createAndConnectNode chans varRNG coreNodeId
+    -- spawn threads for each undirected edge
+    let meshEdges =
+          [ (n1, n2) | n1 <- coreNodeIds, n2 <- coreNodeIds, n1 < n2 ]
+    forM_ meshEdges $ \edge -> do
+      void $ forkLinkedThread registry $ do
+        undirectedEdge nullTracer nodeVars edge
+
+    -- create nodes
+    let meshNodes =
+          List.sortOn fst $   -- sort non-descending by join slot
+          map (\nv@(n, _) -> (joinSlotOf n, nv)) $
+          Map.toList nodeVars
+    nodes <- forM meshNodes $ \(joinSlot, (coreNodeId, nodeVar)) -> do
+      -- do not start the node before its joinSlot
+      tooLate <- blockUntilSlot btime joinSlot
+      when tooLate $ do
+        error $ "unsatisfiable nodeJoinPlan: " ++ show coreNodeId
+
+      -- allocate the node's internal state and spawn its internal threads
+      (node, nodeInfo, app) <- createNode varRNG coreNodeId
+
+      -- unblock the threads of edges that involve this node
+      atomically $ putTMVar nodeVar app
+
       return (coreNodeId, pInfoConfig (pInfo coreNodeId), node, nodeInfo)
 
-    -- Wait a random amount of time after the final slot for the block fetch
-    -- and chain sync to finish
+    -- Wait some extra time after the end of the test block fetch and chain
+    -- sync to finish
     testBlockchainTimeDone testBtime
-    threadDelay 2000
+    threadDelay 2000   -- arbitrary "small" duration
 
     -- Close the 'ResourceRegistry': this shuts down the background threads of
     -- a node. This is important because we close the ChainDBs in
@@ -246,18 +179,32 @@ broadcastNetwork registry testBtime numCoreNodes nodeJoinPlan pInfo initRNG slot
 
     btime = testBlockchainTime testBtime
 
-    nodeIds :: [NodeId]
-    nodeIds = map fromCoreNodeId coreNodeIds
-
     coreNodeIds :: [CoreNodeId]
     coreNodeIds = enumCoreNodes numCoreNodes
 
     joinSlotOf :: CoreNodeId -> SlotNo
-    joinSlotOf nid = case nodeJoinPlan of
-        NodeJoinPlan m -> Map.findWithDefault
-            (error $ "broadcastNetwork: incomplete NodeJoinPlan: "
-                 <> condense (nid, m))
-            nid m
+    joinSlotOf = coreNodeIdJoinSlot nodeJoinPlan
+
+    undirectedEdge ::
+         HasCallStack
+      => Tracer m (SlotNo, MiniProtocolState, MiniProtocolExpectedException blk)
+      -> Map CoreNodeId (StrictTMVar m (LimitedApp m NodeId blk))
+      -> (CoreNodeId, CoreNodeId)
+      -> m ()
+    undirectedEdge tr nodeVars (node1, node2) = do
+      -- block until both endpoints have joined the network
+      (endpoint1, endpoint2) <- do
+        let lu node = case Map.lookup node nodeVars of
+              Nothing  -> error $ "node not found: " ++ show node
+              Just var -> (,) node <$> atomically (readTMVar var)
+        (,) <$> lu node1 <*> lu node2
+
+      -- spawn threads for both directed edges
+      void $ withAsyncsWaitAny $
+          directedEdge tr btime endpoint1 endpoint2
+        NE.:|
+        [ directedEdge tr btime endpoint2 endpoint1
+        ]
 
     -- | Produce transactions every time the slot changes and submit them to
     -- the mempool.
@@ -277,14 +224,6 @@ broadcastNetwork registry testBtime numCoreNodes nodeJoinPlan pInfo initRNG slot
           varDRG <- newTVar drg
           simChaChaT varDRG id $ testGenTxs numCoreNodes cfg ledger
         void $ addTxs mempool txs
-
-    createCommunicationChannels :: m (NodeChans m NodeId blk)
-    createCommunicationChannels = fmap Map.fromList $ forM nodeIds $ \us ->
-      fmap ((us, ) . Map.fromList) $ forM (filter (/= us) nodeIds) $ \them -> do
-        (chainSyncConsumer,    chainSyncProducer)    <- createConnectedChannels
-        (blockFetchConsumer,   blockFetchProducer)   <- createConnectedChannels
-        (txSubmissionConsumer, txSubmissionProducer) <- createConnectedChannels
-        return (them, NodeChan {..})
 
     mkArgs :: NodeConfig (BlockProtocol blk)
            -> ExtLedgerState blk
@@ -329,15 +268,16 @@ broadcastNetwork registry testBtime numCoreNodes nodeJoinPlan pInfo initRNG slot
         , cdbGcDelay          = 0
         }
 
-    createAndConnectNode
+    createNode
       :: HasCallStack
-      => NodeChans m NodeId blk
-      -> StrictTVar m ChaChaDRG
+      => StrictTVar m ChaChaDRG
       -> CoreNodeId
-      -> m (NodeKernel m NodeId blk, NodeInfo blk (StrictTVar m MockFS))
-    createAndConnectNode chans varRNG coreNodeId = do
-      let us               = fromCoreNodeId coreNodeId
-          ProtocolInfo{..} = pInfo coreNodeId
+      -> m ( NodeKernel m NodeId blk
+           , NodeInfo blk (StrictTVar m MockFS)
+           , LimitedApp m NodeId blk
+           )
+    createNode varRNG coreNodeId = do
+      let ProtocolInfo{..} = pInfo coreNodeId
 
       let callbacks :: NodeCallbacks m blk
           callbacks = NodeCallbacks {
@@ -385,29 +325,128 @@ broadcastNetwork registry testBtime numCoreNodes nodeJoinPlan pInfo initRNG slot
                   protocolCodecsId
                   (protocolHandlers nodeArgs nodeKernel)
 
-          ni :: NetworkInterface m NodeId
-          ni = createNetworkInterface btime chans nodeIds jso us app
-            where
-              jso = \case
-                CoreId  i -> joinSlotOf (CoreNodeId i)
-                RelayId _ -> error "broadcastNetwork: unexpected RelayId"
-
-      void $ forkLinkedThread registry $ niWithServerNode ni wait
       void $ forkLinkedThread registry $ txProducer
         pInfoConfig
         (produceDRG callbacks)
         (ChainDB.getCurrentLedger chainDB)
         (getMempool nodeKernel)
 
-      forM_ (filter (/= us) nodeIds) $ \them ->
-        void $ forkLinkedThread registry $ niConnectTo ni them
-
       let nodeInfo = NodeInfo
             { nodeInfoImmDbFs = immDbFsVar
             , nodeInfoVolDbFs = volDbFsVar
             , nodeInfoLgrDbFs = lgrDbFsVar
             }
-      return (nodeKernel, nodeInfo)
+      return (nodeKernel, nodeInfo, LimitedApp app)
+
+{-------------------------------------------------------------------------------
+  Running the Mini Protocols on an Ordered Pair of Nodes
+-------------------------------------------------------------------------------}
+
+-- | Spawn all mini protocols' threads for a given directed edge in the node
+-- network topology (ie an ordered pair of core nodes, client first, server
+-- second)
+--
+-- Key property: if any client thread or server thread in any of the mini
+-- protocols throws an exception, restart all of the threads.
+--
+-- The actual node implementation kills the other threads on the same peer as
+-- the thread that threw the exception, and then relies on TCP socket semantics
+-- to eventually kill the corresponding threads on the remote peer. The client
+-- node recreates its client threads after a delay, and they reconnect to the
+-- remote peer, thereby recreating the server threads.
+--
+-- This mock network instead ensures the property directly via the async
+-- interface rather than relying on some sort of mock socket semantics to
+-- convey the cancellation.
+--
+-- It only catches-and-restarts on /expected/ exceptions; anything else will
+-- tear down the whole hierarchy of test threads. See
+-- 'MiniProtocolExpectedException'.
+directedEdge ::
+  forall m blk.
+     ( MonadAsync m
+     , MonadCatch m
+     , SupportedBlock blk
+     )
+  => Tracer m (SlotNo, MiniProtocolState, MiniProtocolExpectedException blk)
+  -> BlockchainTime m
+  -> (CoreNodeId, LimitedApp m NodeId blk)
+  -> (CoreNodeId, LimitedApp m NodeId blk)
+  -> m ()
+directedEdge tr btime nodeapp1 nodeapp2 =
+    loopOnMPEE
+  where
+    loopOnMPEE = directedEdgeInner nodeapp1 nodeapp2 `catch` h
+      where
+        h :: MiniProtocolExpectedException blk -> m ()
+        h e = do
+          s@(SlotNo i) <- atomically $ getCurrentSlot btime
+          traceWith tr (s, MiniProtocolDelayed, e)
+          void $ blockUntilSlot btime $ SlotNo (succ i)
+          traceWith tr (s, MiniProtocolRestarting, e)
+          loopOnMPEE
+
+-- | Spawn threads for all of the mini protocols
+--
+-- See 'directedEdge'.
+directedEdgeInner ::
+  forall m blk.
+     ( MonadAsync m
+     , MonadCatch m
+     , SupportedBlock blk
+     )
+  => (CoreNodeId, LimitedApp m NodeId blk)
+     -- ^ client threads on this node
+  -> (CoreNodeId, LimitedApp m NodeId blk)
+     -- ^ server threads on this node
+  -> m ()
+directedEdgeInner (node1, LimitedApp app1) (node2, LimitedApp app2) = do
+    void $ (>>= withAsyncsWaitAny) $
+      fmap flattenPairs $
+      sequence $
+      ( miniProtocol
+          (wrapMPEE MPEEChainSyncClient naChainSyncClient)
+          naChainSyncServer
+      ) NE.:|
+      [ miniProtocol
+          (wrapMPEE MPEEBlockFetchClient naBlockFetchClient)
+          (wrapMPEE MPEEBlockFetchServer naBlockFetchServer)
+      , miniProtocol
+          (wrapMPEE MPEETxSubmissionClient naTxSubmissionClient)
+          (wrapMPEE MPEETxSubmissionServer naTxSubmissionServer)
+      ]
+  where
+    flattenPairs :: forall a. NE.NonEmpty (a, a) -> NE.NonEmpty a
+    flattenPairs = uncurry (<>) . NE.unzip
+
+    miniProtocol ::
+         (forall unused1 unused2.
+            LimitedApp' m NodeId blk unused1 unused2
+         -> NodeId
+         -> Channel m msg
+         -> m ())
+        -- ^ client action to run on node1
+      -> (forall unused1 unused2.
+            LimitedApp' m NodeId blk unused1 unused2
+         -> NodeId
+         -> Channel m msg
+         -> m ())
+         -- ^ server action to run on node2
+      -> m (m (), m ())
+    miniProtocol client server = do
+       (chan, dualChan) <- createConnectedChannels
+       pure
+         ( client app1 (fromCoreNodeId node2) chan
+         , server app2 (fromCoreNodeId node1) dualChan
+         )
+
+    wrapMPEE ::
+         Exception e
+      => (e -> MiniProtocolExpectedException blk)
+      -> (app -> peer -> chan -> m a)
+      -> (app -> peer -> chan -> m a)
+    wrapMPEE f m = \app them chan ->
+        catch (m app them chan) $ throwM . f
 
 {-------------------------------------------------------------------------------
   Node Info
@@ -473,33 +512,6 @@ getTestOutput nodes = do
         }
 
 {-------------------------------------------------------------------------------
-  Internal auxiliary
--------------------------------------------------------------------------------}
-
--- | Communication channel used for the Chain Sync protocol
-type ChainSyncChannel m blk = Channel m (AnyMessage (ChainSync (Header blk) (Point blk)))
-
--- | Communication channel used for the Block Fetch protocol
-type BlockFetchChannel m blk = Channel m (AnyMessage (BlockFetch blk))
-
--- | Communication channel used for the Tx Submission protocol
-type TxSubmissionChannel m blk = Channel m (AnyMessage (TxSubmission (GenTxId blk) (GenTx blk)))
-
--- | The communication channels from and to each node
-data NodeChan m blk = NodeChan
-  { chainSyncConsumer    :: ChainSyncChannel    m blk
-  , chainSyncProducer    :: ChainSyncChannel    m blk
-  , blockFetchConsumer   :: BlockFetchChannel   m blk
-  , blockFetchProducer   :: BlockFetchChannel   m blk
-  , txSubmissionConsumer :: TxSubmissionChannel m blk
-  , txSubmissionProducer :: TxSubmissionChannel m blk
-  }
-
--- | All connections between all nodes
-type NodeChans m peer blk = Map peer (Map peer (NodeChan m blk))
-
-
-{-------------------------------------------------------------------------------
   Constraints needed for verbose tracing
 -------------------------------------------------------------------------------}
 
@@ -510,3 +522,74 @@ type TracingConstraints blk =
   , Show (Header blk)
   , Show (GenTx blk)
   )
+
+{-------------------------------------------------------------------------------
+  Ancillaries
+-------------------------------------------------------------------------------}
+
+-- | Spawn multiple async actions and wait for the first one to complete.
+--
+-- Each child thread is spawned with 'withAsync' and so won't outlive this one.
+-- In the use case where each child thread only terminates on an exception, the
+-- 'waitAny' ensures that this parent thread will run until a child terminates
+-- with an exception, and it will also reraise that exception.
+--
+-- Why 'NE.NonEmpty'? An empty argument list would have blocked indefinitely,
+-- which is likely not intended.
+withAsyncsWaitAny :: forall m a. MonadAsync m => NE.NonEmpty (m a) -> m a
+withAsyncsWaitAny = go [] . NE.toList
+  where
+    go acc = \case
+      []   -> snd <$> waitAny acc
+      m:ms -> withAsync m $ \h -> go (h:acc) ms
+
+-- | The partially instantiation of the 'NetworkApplication' type according to
+-- its use in this module
+--
+-- Used internal to this module, essentially as an abbreviatiation.
+data LimitedApp m peer blk =
+   forall unused1 unused2.
+   LimitedApp (LimitedApp' m peer blk unused1 unused2)
+
+-- | Argument of 'LimitedApp' data constructor
+--
+-- Used internal to this module, essentially as an abbreviatiation.
+type LimitedApp' m peer blk unused1 unused2 =
+    NetworkApplication m peer
+        (AnyMessage (ChainSync (Header blk) (Point blk)))
+        (AnyMessage (BlockFetch blk))
+        (AnyMessage (TxSubmission (GenTxId blk) (GenTx blk)))
+        unused1 -- the local node-to-client channel types
+        unused2
+        ()
+
+{-------------------------------------------------------------------------------
+  Tracing
+-------------------------------------------------------------------------------}
+
+data MiniProtocolExpectedException blk
+  = MPEEChainSyncClient (CSClient.ChainSyncClientException blk)
+    -- ^ see "Ouroboros.Consensus.ChainSyncClient"
+  | MPEEBlockFetchClient BFClient.BlockFetchProtocolFailure
+    -- ^ see "Ouroboros.Network.BlockFetch.Client"
+  | MPEEBlockFetchServer (BFServer.BlockFetchServerException blk)
+    -- ^ see "Ouroboros.Consensus.BlockFetchServer"
+  | MPEETxSubmissionClient TxOutbound.TxSubmissionProtocolError
+    -- ^ see "Ouroboros.Network.TxSubmission.Outbound"
+  | MPEETxSubmissionServer TxInbound.TxSubmissionProtocolError
+    -- ^ see "Ouroboros.Network.TxSubmission.Inbound"
+  deriving (Show)
+
+instance SupportedBlock blk => Exception (MiniProtocolExpectedException blk)
+
+data MiniProtocolState = MiniProtocolDelayed | MiniProtocolRestarting
+  deriving (Show)
+
+data TraceMiniProtocolRestart peer blk
+  = TraceMiniProtocolRestart
+      peer peer
+      SlotNo
+      MiniProtocolState
+      (MiniProtocolExpectedException blk)
+    -- ^ us them when-start-blocking state reason
+  deriving (Show)

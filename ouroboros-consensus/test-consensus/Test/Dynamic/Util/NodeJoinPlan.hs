@@ -4,7 +4,9 @@
 module Test.Dynamic.Util.NodeJoinPlan
   ( -- * Node Join Plan
     NodeJoinPlan (..)
+  , coreNodeIdJoinSlot
   , genNodeJoinPlan
+  , nodeIdJoinSlot
   , shrinkNodeJoinPlan
   , trivialNodeJoinPlan
   ) where
@@ -12,6 +14,7 @@ module Test.Dynamic.Util.NodeJoinPlan
 import qualified Data.List as List
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
+import           GHC.Stack (HasCallStack)
 import           Test.QuickCheck
 
 import           Ouroboros.Consensus.BlockchainTime
@@ -58,12 +61,12 @@ genNodeJoinPlan numCoreNodes@(NumCoreNodes n) numSlots@(NumSlots t)
     ++ show (numCoreNodes, numSlots)
 
   | otherwise = do
-    let genNodeSchedule = do
+    let genJoinSlot = do
             let lastSlot = t - 1
             (SlotNo . toEnum) <$> choose (0, lastSlot)
 
     let nids = enumCoreNodes numCoreNodes :: [CoreNodeId]
-    schedules <- vectorOf n genNodeSchedule
+    schedules <- vectorOf n genJoinSlot
     -- without loss of generality, the nodes start initializing in order of
     -- their Ids; this merely makes it easer to interpret the counterexamples
     pure $ NodeJoinPlan $ Map.fromList $ zip nids $ List.sort schedules
@@ -99,3 +102,22 @@ shrinkNodeJoinPlan (NodeJoinPlan m) =
           where
             fromTail' = fromTail . (:) (cnid, SlotNo 0)
             cons x xs = if SlotNo 0 == slot then xs else x:xs
+
+-- | Partial; @error@ for a node not in the plan
+--
+coreNodeIdJoinSlot ::
+     HasCallStack
+  => NodeJoinPlan -> CoreNodeId -> SlotNo
+coreNodeIdJoinSlot (NodeJoinPlan m) nid =
+    Map.findWithDefault
+        (error $ "not found: " <> condense (nid, Map.toList m))
+        nid m
+
+-- | Partial; @error@ for a node not in the plan
+--
+nodeIdJoinSlot ::
+     HasCallStack
+  => NodeJoinPlan -> NodeId -> SlotNo
+nodeIdJoinSlot nodeJoinPlan@(NodeJoinPlan m) ni = case ni of
+    CoreId cni -> coreNodeIdJoinSlot nodeJoinPlan (CoreNodeId cni)
+    _          -> error $ "not found: " <> condense (ni, Map.toList m)
