@@ -51,6 +51,7 @@ import           Ouroboros.Consensus.Protocol.Abstract (SecurityParam (..))
 import           Ouroboros.Consensus.Util.Condense (condense)
 import qualified Ouroboros.Consensus.Util.ResourceRegistry as ResourceRegistry
 import qualified Ouroboros.Storage.ChainDB as ChainDB
+import qualified Ouroboros.Storage.ChainDB.Impl.Args as Args
 import qualified Ouroboros.Storage.ChainDB.Impl.ImmDB as ImmDB
 import           Ouroboros.Storage.Common (EpochSize (..))
 import           Ouroboros.Storage.EpochInfo (fixedSizeEpochInfo)
@@ -93,6 +94,7 @@ data Args w
       , requiresNetworkMagic :: w ::: Bool <?> "Expecto patronum?"
       , genesisHash :: w ::: Hash CB.Raw <?> "Expected genesis hash"
       , verbose :: w ::: Bool <?> "Enable verbose logging"
+      , onlyImmDB :: w ::: Bool <?> "Validate only the immutable DB (e.g. do not do ledger validation)"
       }
   deriving (Generic)
 
@@ -124,6 +126,7 @@ main = do
       , requiresNetworkMagic
       , genesisHash
       , verbose
+      , onlyImmDB
       } -> do
         dbDir' <- parseAbsDir =<< canonicalizePath dbDir
         econfig <-
@@ -134,7 +137,7 @@ main = do
               genesisHash
         case econfig of
           Left err     -> throwIO $ MkConfigError err
-          Right config -> validateChainDb dbDir' config verbose
+          Right config -> validateChainDb dbDir' config onlyImmDB verbose
 
 convertEpochFile
   :: EpochSlots
@@ -159,14 +162,22 @@ validateChainDb
   :: forall blk. (blk ~ ByronBlockOrEBB ByronConfig)
   => Path Abs Dir -- ^ DB directory
   -> CC.Genesis.Config
+  -> Bool -- Immutable DB only?
   -> Bool -- Verbose
   -> IO ()
-validateChainDb dbDir cfg verbose =
-  ResourceRegistry.with $ \registry -> do
-    chaindb <- give protocolMagicId $ give epochSlots $ ChainDB.openDB $ args registry
-    blk <- ChainDB.getTipBlock chaindb
-    putStrLn $ "DB tip: " ++ condense blk
-    ChainDB.closeDB chaindb
+validateChainDb dbDir cfg onlyImmDB verbose =
+  ResourceRegistry.with $ \registry -> if onlyImmDB
+    then give protocolMagicId $ give epochSlots $ do
+      let (immDBArgs, _, _, _) = Args.fromChainDbArgs $ args registry
+      immDB <- ImmDB.openDB immDBArgs
+      immDbTipBlock <- ImmDB.getBlockAtTip immDB
+      putStrLn $ "DB tip: " ++ condense immDbTipBlock
+      ImmDB.closeDB immDB
+    else do
+      chaindb <- give protocolMagicId $ give epochSlots $ ChainDB.openDB $ args registry
+      blk <- ChainDB.getTipBlock chaindb
+      putStrLn $ "DB tip: " ++ condense blk
+      ChainDB.closeDB chaindb
   where
     byronProtocolInfo =
       protocolInfoByron
