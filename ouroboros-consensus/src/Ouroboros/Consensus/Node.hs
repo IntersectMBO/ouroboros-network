@@ -38,13 +38,15 @@ import           Data.Time.Clock (secondsToDiffTime)
 import           Network.Socket as Socket
 
 import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadSTM
+import           Control.Monad.Class.MonadSTM.Strict
+import           Control.Monad.Class.MonadTime
 
 import           Ouroboros.Network.Block
 import qualified Ouroboros.Network.Block as Block
 import           Ouroboros.Network.NodeToClient as NodeToClient
 import           Ouroboros.Network.NodeToNode as NodeToNode
 import           Ouroboros.Network.Socket
+import           Ouroboros.Network.Subscription.PeerState
 import           Ouroboros.Network.Subscription.Dns
 import           Ouroboros.Network.Subscription.Ip
 
@@ -250,6 +252,8 @@ data RunNetworkArgs peer blk = RunNetworkArgs
     -- ^ DNS subscription tracer
   , rnaDnsResolverTracer     :: Tracer IO (WithDomainName DnsTrace)
     -- ^ DNS resolver tracer
+  , rnaErrorPolicyTracer     :: Tracer IO (WithAddr Socket.SockAddr ErrorPolicyTrace)
+    -- ^ Error Policy tracer
   , rnaMkPeer                :: SockAddr -> SockAddr -> peer
     -- ^ How to create a peer
   , rnaMyAddr                :: AddrInfo
@@ -276,15 +280,16 @@ initNetwork registry nodeArgs kernel RunNetworkArgs{..} = do
 
     -- serve downstream nodes
     connTable  <- newConnectionTable
+    peerStatesVar <- newPeerStatesVar
     peerServer <- forkLinkedThread registry $ runPeerServer connTable
 
     ipSubscriptions <- forkLinkedThread registry $
-                         runIpSubscriptionWorker connTable
+                         runIpSubscriptionWorker connTable peerStatesVar
 
     -- dns subscription managers
     dnsSubscriptions <- forM rnaDnsProducers $ \dnsProducer -> do
        forkLinkedThread registry $
-         runDnsSubscriptionWorker connTable dnsProducer
+         runDnsSubscriptionWorker connTable peerStatesVar dnsProducer
 
     let threads = localServer : peerServer : ipSubscriptions : dnsSubscriptions
     void $ waitAnyThread threads
@@ -338,33 +343,41 @@ initNetwork registry nodeArgs kernel RunNetworkArgs{..} = do
       (responderNetworkApplication <$> networkAppNodeToNode)
       wait
 
-    runIpSubscriptionWorker :: ConnectionTable IO Socket.SockAddr -> IO ()
-    runIpSubscriptionWorker connTable = ipSubscriptionWorker
+    runIpSubscriptionWorker :: ConnectionTable IO Socket.SockAddr
+                            -> StrictTVar IO (PeerStates IO Socket.SockAddr (Time IO))
+                            -> IO ()
+    runIpSubscriptionWorker connTable peerStatesVar = void $ ipSubscriptionWorker
       rnaIpSubscriptionTracer
+      rnaErrorPolicyTracer
       connTable
+      peerStatesVar
       -- the comments in dnsSbuscriptionWorker call apply
       (Just (Socket.SockAddrInet 0 0))
       (Just (Socket.SockAddrInet6 0 0 (0, 0, 0, 1) 0))
       (const Nothing)
+      []
+      (\_ _ _ -> Throw)
       IPSubscriptionTarget
         { ispIps     = rnaIpProducers
         , ispValency = length rnaIpProducers
         }
-      (\_ -> retry)
       (connectToNode'
         (\(DictVersion codec) -> encodeTerm codec)
         (\(DictVersion codec) -> decodeTerm codec)
-        nullTracer
+        nullTracer -- TODO handshake tracer
         rnaMkPeer
         (initiatorNetworkApplication <$> networkAppNodeToNode))
 
     runDnsSubscriptionWorker :: ConnectionTable IO Socket.SockAddr
+                             -> StrictTVar IO (PeerStates IO Socket.SockAddr (Time IO))
                              -> DnsSubscriptionTarget
                              -> IO ()
-    runDnsSubscriptionWorker connTable dnsProducer = dnsSubscriptionWorker
+    runDnsSubscriptionWorker connTable peerStatesVar dnsProducer = void $ dnsSubscriptionWorker
       rnaDnsSubscriptionTracer
       rnaDnsResolverTracer
+      rnaErrorPolicyTracer
       connTable
+      peerStatesVar
       -- IPv4 address
       --
       -- We can't share portnumber with our server since we run separate
@@ -375,8 +388,9 @@ initNetwork registry nodeArgs kernel RunNetworkArgs{..} = do
       -- IPv6 address
       (Just (Socket.SockAddrInet6 0 0 (0, 0, 0, 1) 0))
       (const Nothing)
+      []
+      (\_ _ _ -> Throw)
       dnsProducer
-      (\_ -> retry)
       (connectToNode'
         (\(DictVersion codec) -> encodeTerm codec)
         (\(DictVersion codec) -> decodeTerm codec)

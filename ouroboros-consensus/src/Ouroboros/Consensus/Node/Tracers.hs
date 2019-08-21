@@ -11,6 +11,8 @@ module Ouroboros.Consensus.Node.Tracers
 
 import           Control.Tracer (Tracer, nullTracer, showTracing)
 
+import qualified Network.Socket as Socket
+
 import           Ouroboros.Network.Block (Point, SlotNo)
 import           Ouroboros.Network.BlockFetch (FetchDecision,
                      TraceFetchClientState, TraceLabelPeer)
@@ -18,6 +20,7 @@ import           Ouroboros.Network.TxSubmission.Inbound
                      (TraceTxSubmissionInbound)
 import           Ouroboros.Network.TxSubmission.Outbound
                      (TraceTxSubmissionOutbound)
+import           Ouroboros.Network.Subscription.Ip (SubscriptionTrace, WithIPList)
 
 import           Ouroboros.Consensus.Block (Header, SupportedBlock)
 import           Ouroboros.Consensus.BlockFetchServer
@@ -44,6 +47,7 @@ data Tracers' peer blk f = Tracers
   , localTxSubmissionServerTracer :: f (TraceLocalTxSubmissionServerEvent blk)
   , mempoolTracer                 :: f (TraceEventMempool blk)
   , forgeTracer                   :: f (TraceForgeEvent blk)
+  , subscriptionTracer            :: f (WithIPList (SubscriptionTrace Socket.SockAddr))
   }
 
 -- | A record of 'Tracer's for the node.
@@ -62,6 +66,7 @@ nullTracers = Tracers
   , localTxSubmissionServerTracer = nullTracer
   , mempoolTracer                 = nullTracer
   , forgeTracer                   = nullTracer
+  , subscriptionTracer            = nullTracer
   }
 
 showTracers :: ( Show blk
@@ -82,6 +87,7 @@ showTracers tr = Tracers
   , localTxSubmissionServerTracer = showTracing tr
   , mempoolTracer                 = showTracing tr
   , forgeTracer                   = showTracing tr
+  , subscriptionTracer            = showTracing tr
   }
 
 {-------------------------------------------------------------------------------
