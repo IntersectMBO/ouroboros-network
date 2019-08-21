@@ -1,11 +1,18 @@
-{-# LANGUAGE TypeFamilies           #-}
-{-# LANGUAGE DefaultSignatures      #-}
-{-# LANGUAGE FlexibleContexts       #-}
-{-# LANGUAGE QuantifiedConstraints  #-}
+{-# LANGUAGE DefaultSignatures         #-}
+{-# LANGUAGE FlexibleContexts          #-}
+{-# LANGUAGE QuantifiedConstraints     #-}
+{-# LANGUAGE ScopedTypeVariables       #-}
+{-# LANGUAGE TypeApplications          #-}
+{-# LANGUAGE TypeFamilies              #-}
 
 module Control.Monad.Class.MonadAsync
   ( MonadAsync (..)
   , AsyncCancelled(..)
+  , ExceptionInLinkedThread(..)
+  , link
+  , linkTo
+  , linkOnly
+  , linkToOnly
   ) where
 
 import           Prelude hiding (read)
@@ -13,9 +20,12 @@ import           Prelude hiding (read)
 import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
+
+import           Control.Monad (void)
 import           Control.Exception (SomeException)
 import qualified Control.Concurrent.Async as Async
 import           Control.Concurrent.Async (AsyncCancelled(..))
+import           Data.Proxy
 
 class ( MonadSTM m
       , forall a. Eq  (Async m a)
@@ -264,3 +274,73 @@ instance MonadAsync IO where
   race                  = Async.race
   race_                 = Async.race_
   concurrently          = Async.concurrently
+
+--
+-- Linking
+--
+-- Adapted from "Control.Concurrent.Async"
+--
+
+-- | Exception from child thread re-raised in parent thread
+--
+-- We record the thread ID of the child thread as a 'String'. This avoids
+-- an @m@ parameter in the type, which is important: 'ExceptionInLinkedThread'
+-- must be an instance of 'Exception', requiring it to be 'Typeable'; if @m@
+-- appeared in the type, we would require @m@ to be 'Typeable', which does not
+-- work with with the simulator, as it would require a 'Typeable' constraint
+-- on the @s@ parameter of 'SimM'.
+data ExceptionInLinkedThread = ExceptionInLinkedThread String SomeException
+
+instance Show ExceptionInLinkedThread where
+  showsPrec p (ExceptionInLinkedThread a e) =
+    showParen (p >= 11) $
+      showString "ExceptionInLinkedThread " .
+      showsPrec 11 a .
+      showString " " .
+      showsPrec 11 e
+
+instance Exception ExceptionInLinkedThread
+
+linkTo :: (MonadAsync m, MonadFork m, MonadMask m)
+       => ThreadId m -> Async m a -> m ()
+linkTo tid = linkToOnly tid (not . isCancel)
+
+linkToOnly :: forall m a. (MonadAsync m, MonadFork m, MonadMask m)
+           => ThreadId m -> (SomeException -> Bool) -> Async m a -> m ()
+linkToOnly tid shouldThrow a = do
+    void $ forkRepeat $ do
+      r <- waitCatch a
+      case r of
+        Left e | shouldThrow e -> throwTo tid (exceptionInLinkedThread e)
+        _otherwise -> return ()
+  where
+    exceptionInLinkedThread :: SomeException -> ExceptionInLinkedThread
+    exceptionInLinkedThread =
+        ExceptionInLinkedThread (show (asyncThreadId (Proxy @m) a))
+
+link :: (MonadAsync m, MonadFork m, MonadMask m)
+     => Async m a -> m ()
+link = linkOnly (not . isCancel)
+
+linkOnly :: forall m a. (MonadAsync m, MonadFork m, MonadMask m)
+         => (SomeException -> Bool) -> Async m a -> m ()
+linkOnly shouldThrow a = do
+    me <- myThreadId
+    linkToOnly me shouldThrow a
+
+isCancel :: SomeException -> Bool
+isCancel e
+  | Just AsyncCancelled <- fromException e = True
+  | otherwise = False
+
+forkRepeat :: (MonadFork m, MonadMask m) => m a -> m (ThreadId m)
+forkRepeat action =
+  mask $ \restore ->
+    let go = do r <- tryAll (restore action)
+                case r of
+                  Left _ -> go
+                  _      -> return ()
+    in fork go
+
+tryAll :: MonadCatch m => m a -> m (Either SomeException a)
+tryAll = try
