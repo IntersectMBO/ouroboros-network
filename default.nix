@@ -41,9 +41,11 @@ let
 # hosts.
   nixTools = import ./nix/nix-tools.nix {};
   documents = import ./doc/default.nix {inherit commonLib; };
+  validate-mainnet-test = import ./nix/validate-mainnet.nix
+    {pkgs = commonLib.pkgs; byron-db-converter = nixTools.nix-tools.exes.ouroboros-consensus; };
 in {
   inherit (nixTools) nix-tools shell;
   network-pdf-wip = documents.network-pdf-wip;
   network-pdf = documents.network-pdf;
-  tests = {};
+  tests = { inherit validate-mainnet-test; };
 }
