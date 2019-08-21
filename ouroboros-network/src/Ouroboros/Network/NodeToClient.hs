@@ -19,6 +19,10 @@ module Ouroboros.Network.NodeToClient (
 
   -- * Re-exports
   , AnyResponderApp (..)
+
+  -- * Re-exported clients
+  , chainSyncClientNull
+  , localTxSubmissionClientNull
   ) where
 
 import           Control.Concurrent.Async (Async)
@@ -38,6 +42,8 @@ import           Network.Mux.Types (ProtocolEnum(..), MiniProtocolLimits (..))
 import           Network.Mux.Interface
 
 import           Ouroboros.Network.Mux
+import           Ouroboros.Network.Protocol.ChainSync.Client (chainSyncClientNull)
+import           Ouroboros.Network.Protocol.LocalTxSubmission.Client (localTxSubmissionClientNull)
 import           Ouroboros.Network.Protocol.Handshake.Type
 import           Ouroboros.Network.Protocol.Handshake.Version
 import           Ouroboros.Network.Socket
