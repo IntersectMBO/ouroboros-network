@@ -1,397 +1,385 @@
-{-# LANGUAGE ConstraintKinds       #-}
-{-# LANGUAGE DataKinds             #-}
-{-# LANGUAGE DuplicateRecordFields #-}
-{-# LANGUAGE FlexibleContexts      #-}
-{-# LANGUAGE NamedFieldPuns        #-}
-{-# LANGUAGE RankNTypes            #-}
-{-# LANGUAGE RecordWildCards       #-}
-{-# LANGUAGE ScopedTypeVariables   #-}
-{-# LANGUAGE TypeFamilies          #-}
-
-{-# OPTIONS_GHC -Wredundant-constraints -Werror=missing-fields #-}
-
-module Ouroboros.Consensus.Node (
-    -- * Node
-    NodeKernel (..)
-  , NodeCallbacks (..)
-  , NodeParams (..)
-  , TraceForgeEvent (..)
-  , nodeKernel
-  , getMempoolReader
-  , getMempoolWriter
+{-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE RecordWildCards     #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications    #-}
+-- | Run the whole Node
+--
+-- Intended for qualified import.
+--
+-- > import qualified Ouroboros.Consensus.Node as Node
+-- > import Ouroboros.Consensus.Node (RunNetworkArgs (..))
+-- > ..
+-- > Node.run ..
+module Ouroboros.Consensus.Node
+  ( run
+  , RunNetworkArgs (..)
+    -- * Exposed by 'run'
+  , RunNode (..)
+  , Tracers
+  , Tracers' (..)
+  , ChainDB.TraceEvent (..)
+  , ProtocolInfo (..)
+  , ChainDbArgs (..)
+  , NodeArgs (..)
+  , NodeKernel (..)
+    -- * Internal helpers
+  , initChainDB
+  , mkNodeArgs
+  , initNetwork
   ) where
 
-import           Control.Monad (void)
-import           Crypto.Random (ChaChaDRG)
-import           Data.Map.Strict (Map)
-import           Data.Maybe (isNothing)
-import           Data.Word (Word16)
+import           Codec.SerialiseTerm
+import           Control.Monad (forM, void)
+import           Control.Tracer
+import           Crypto.Random
+import           Data.ByteString.Lazy (ByteString)
+import           Data.Proxy (Proxy (..))
+import           Data.Time.Clock (secondsToDiffTime)
+import           Network.Socket as Socket
 
 import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadFork (MonadFork)
-import           Control.Monad.Class.MonadSTM
-import           Control.Monad.Class.MonadThrow
-import           Control.Tracer
 
-import           Ouroboros.Network.AnchoredFragment (AnchoredFragment (..),
-                     headSlot)
 import           Ouroboros.Network.Block
-import           Ouroboros.Network.BlockFetch
-import           Ouroboros.Network.BlockFetch.State (FetchMode (..))
-import           Ouroboros.Network.Point (WithOrigin (..))
-import           Ouroboros.Network.TxSubmission.Inbound
-                     (TxSubmissionMempoolWriter)
-import qualified Ouroboros.Network.TxSubmission.Inbound as Inbound
-import           Ouroboros.Network.TxSubmission.Outbound
-                     (TxSubmissionMempoolReader)
-import qualified Ouroboros.Network.TxSubmission.Outbound as Outbound
+import qualified Ouroboros.Network.Block as Block
+import           Ouroboros.Network.NodeToClient as NodeToClient
+import           Ouroboros.Network.NodeToNode as NodeToNode
+import           Ouroboros.Network.Socket
+import           Ouroboros.Network.Subscription.Common
+import           Ouroboros.Network.Subscription.Dns
 
-import           Ouroboros.Consensus.Block
+import           Ouroboros.Network.Protocol.Handshake.Type
+import           Ouroboros.Network.Protocol.Handshake.Version
+
+import           Ouroboros.Consensus.Block (BlockProtocol)
 import           Ouroboros.Consensus.BlockchainTime
-import           Ouroboros.Consensus.ChainSyncClient
-import           Ouroboros.Consensus.Ledger.Abstract
-import           Ouroboros.Consensus.Ledger.Extended
-import           Ouroboros.Consensus.Mempool
-import           Ouroboros.Consensus.Mempool.TxSeq (TicketNo)
+import           Ouroboros.Consensus.ChainSyncClient (ClockSkew (..))
+import           Ouroboros.Consensus.Ledger.Extended (ExtLedgerState)
+import           Ouroboros.Consensus.Mempool.API (GenTx)
+import           Ouroboros.Consensus.Node.ProtocolInfo
+import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.Node.Tracers
-import           Ouroboros.Consensus.Protocol.Abstract
-import           Ouroboros.Consensus.Util
+import           Ouroboros.Consensus.NodeKernel
+import           Ouroboros.Consensus.NodeNetwork
+import           Ouroboros.Consensus.Protocol hiding (Protocol)
 import           Ouroboros.Consensus.Util.Orphans ()
-import           Ouroboros.Consensus.Util.Random
 import           Ouroboros.Consensus.Util.ResourceRegistry
-import           Ouroboros.Consensus.Util.STM
+import qualified Ouroboros.Consensus.Util.ResourceRegistry as ResourceRegistry
 
-import           Ouroboros.Storage.ChainDB.API (ChainDB)
-import qualified Ouroboros.Storage.ChainDB.API as ChainDB
+import           Ouroboros.Storage.ChainDB (ChainDB, ChainDbArgs)
+import qualified Ouroboros.Storage.ChainDB as ChainDB
+import           Ouroboros.Storage.EpochInfo (newEpochInfo)
+import           Ouroboros.Storage.ImmutableDB (ValidationPolicy (..))
+import           Ouroboros.Storage.LedgerDB.DiskPolicy (defaultDiskPolicy)
+import           Ouroboros.Storage.LedgerDB.MemPolicy (defaultMemPolicy)
 
+-- | Start a node.
+--
+-- This opens the 'ChainDB', sets up the 'NodeKernel' and initialises the
+-- network layer.
+--
+-- This function runs forever unless an exception is thrown.
+run
+  :: forall blk peer. (RunNode blk, Ord peer)
+  => Tracers IO peer blk                  -- ^ Consensus tracers
+  -> Tracer  IO (ChainDB.TraceEvent blk)  -- ^ ChainDB tracer
+  -> RunNetworkArgs peer blk              -- ^ Network args
+  -> FilePath                             -- ^ Database path
+  -> ProtocolInfo blk
+  -> (ChainDbArgs IO blk -> ChainDbArgs IO blk)
+      -- ^ Customise the 'ChainDbArgs'
+  -> (NodeArgs IO peer blk -> NodeArgs IO peer blk)
+      -- ^ Customise the 'NodeArgs'
+  -> (ResourceRegistry IO -> NodeKernel IO peer blk -> IO ())
+     -- ^ Called on the 'NodeKernel' after creating it, but before the network
+     -- layer is initialised.
+  -> IO ()
+run tracers chainDbTracer rna dbPath pInfo
+    customiseChainDbArgs customiseNodeArgs onNodeKernel =
+    ResourceRegistry.with $ \registry -> do
 
-{-------------------------------------------------------------------------------
-  Relay node
--------------------------------------------------------------------------------}
+      chainDB <- initChainDB
+        chainDbTracer
+        registry
+        dbPath
+        cfg
+        initLedger
+        slotLength
+        customiseChainDbArgs
 
--- | Interface against running relay node
-data NodeKernel m peer blk = NodeKernel {
-      -- | The 'ChainDB' of the node
-      getChainDB             :: ChainDB m blk
+      btime <- realBlockchainTime
+        registry
+        slotLength
+        (nodeStartTime (Proxy @blk) cfg)
 
-      -- | The node's mempool
-    , getMempool             :: Mempool m blk TicketNo
+      let nodeArgs = customiseNodeArgs $ mkNodeArgs
+            registry
+            cfg
+            initState
+            tracers
+            btime
+            chainDB
 
-      -- | The node's static configuration
-    , getNodeConfig          :: NodeConfig (BlockProtocol blk)
+      nodeKernel <- initNodeKernel nodeArgs
 
-      -- | The fetch client registry, used for the block fetch clients.
-    , getFetchClientRegistry :: FetchClientRegistry peer (Header blk) blk m
+      onNodeKernel registry nodeKernel
 
-      -- | Read the current candidates
-    , getNodeCandidates      :: TVar m (Map peer (TVar m (CandidateState blk)))
+      initNetwork
+        registry
+        nodeArgs
+        nodeKernel
+        rna
+  where
+    ProtocolInfo
+      { pInfoConfig     = cfg
+      , pInfoInitLedger = initLedger
+      , pInfoInitState  = initState
+      } = pInfo
 
-      -- | The node's tracers
-    , getTracers             :: Tracers m peer blk
-    }
+    -- TODO this will depend on the protocol and can change when a hard-fork
+    -- happens, see #921 and #282.
+    --
+    -- For now, we hard-code it to Byron's 20 seconds.
+    slotLength = slotLengthFromMillisec (20 * 1000)
 
--- | Monad that we run protocol specific functions in
-type ProtocolM blk m = NodeStateT (BlockProtocol blk) (ChaChaT (STM m))
+initChainDB
+  :: forall blk. RunNode blk
+  => Tracer IO (ChainDB.TraceEvent blk)
+  -> ResourceRegistry IO
+  -> FilePath
+     -- ^ Database path
+  -> NodeConfig (BlockProtocol blk)
+  -> ExtLedgerState blk
+     -- ^ Initial ledger
+  -> SlotLength
+  -> (ChainDbArgs IO blk -> ChainDbArgs IO blk)
+      -- ^ Customise the 'ChainDbArgs'
+  -> IO (ChainDB IO blk)
+initChainDB tracer registry dbPath cfg initLedger slotLength
+            customiseArgs = do
+    epochInfo <- newEpochInfo $ nodeEpochSize (Proxy @blk) cfg
+    ChainDB.openDB $ mkArgs epochInfo
+  where
+    secParam = protocolSecurityParam cfg
 
--- | Callbacks required when running the node
-data NodeCallbacks m blk = NodeCallbacks {
-      -- | Produce a block
-      --
-      -- The function is passed the contents of the mempool; this is a set of
-      -- transactions that is guaranteed to be consistent with the ledger state
-      -- (also provided as an argument) and with each other (when applied in
-      -- order). In principle /all/ of them could be included in the block (up
-      -- to maximum block size).
-      produceBlock :: IsLeader (BlockProtocol blk) -- Proof we are leader
-                   -> ExtLedgerState blk -- Current ledger state
-                   -> SlotNo             -- Current slot
-                   -> Point blk          -- Previous point
-                   -> BlockNo            -- Previous block number
-                   -> [GenTx blk]        -- Contents of the mempool
-                   -> ProtocolM blk m blk
+    -- TODO cleaner way with subsecond precision
+    slotDiffTime = secondsToDiffTime
+      (slotLengthToMillisec slotLength `div` 1000)
 
-      -- | Produce a random seed
-      --
-      -- We want to be able to use real (crypto strength) random numbers, but
-      -- obviously have no access to a sytem random number source inside an
-      -- STM transaction. So we use the system RNG to generate a local DRG,
-      -- which we then use for this transaction, and /only/ this transaction.
-      -- The loss of entropy therefore is minimal.
-      --
-      -- In IO, can use 'Crypto.Random.drgNew'.
-    , produceDRG :: m ChaChaDRG
-    }
-
--- | Parameters required when initializing a node
-data NodeParams m peer blk = NodeParams {
-      tracers            :: Tracers m peer blk
-    , registry           :: ResourceRegistry m
-    , maxClockSkew       :: ClockSkew
-    , cfg                :: NodeConfig (BlockProtocol blk)
-    , initState          :: NodeState (BlockProtocol blk)
-    , btime              :: BlockchainTime m
-    , chainDB            :: ChainDB m blk
-    , callbacks          :: NodeCallbacks m blk
-    , blockFetchSize     :: Header blk -> SizeInBytes
-    , blockMatchesHeader :: Header blk -> blk -> Bool
-    , maxUnackTxs        :: Word16
-    }
-
-nodeKernel
-    :: forall m peer blk.
-       ( MonadAsync m
-       , MonadFork  m
-       , MonadMask  m
-       , ProtocolLedgerView blk
-       , Ord peer
-       , ApplyTx blk
-       )
-    => NodeParams m peer blk
-    -> m (NodeKernel m peer blk)
-nodeKernel params@NodeParams { registry, cfg, tracers } = do
-    st <- initInternalState params
-
-    forkBlockProduction st
-
-    let IS { blockFetchInterface, fetchClientRegistry, varCandidates,
-             chainDB, mempool } = st
-
-    -- Run the block fetch logic in the background. This will call
-    -- 'addFetchedBlock' whenever a new block is downloaded.
-    void $ forkLinked registry $ blockFetchLogic
-        (blockFetchDecisionTracer tracers)
-        (blockFetchClientTracer   tracers)
-        blockFetchInterface
-        fetchClientRegistry
-
-    return NodeKernel
-      { getChainDB             = chainDB
-      , getMempool             = mempool
-      , getNodeConfig          = cfg
-      , getFetchClientRegistry = fetchClientRegistry
-      , getNodeCandidates      = varCandidates
-      , getTracers             = tracers
+    mkArgs epochInfo = customiseArgs $ (ChainDB.defaultArgs dbPath)
+      { ChainDB.cdbBlocksPerFile    = 1000
+      , ChainDB.cdbDecodeBlock      = nodeDecodeBlock       cfg
+      , ChainDB.cdbDecodeChainState = nodeDecodeChainState  (Proxy @blk)
+      , ChainDB.cdbDecodeHash       = nodeDecodeHeaderHash  (Proxy @blk)
+      , ChainDB.cdbDecodeLedger     = nodeDecodeLedgerState cfg
+      , ChainDB.cdbEncodeBlock      = nodeEncodeBlock       cfg
+      , ChainDB.cdbEncodeChainState = nodeEncodeChainState  (Proxy @blk)
+      , ChainDB.cdbEncodeHash       = nodeEncodeHeaderHash  (Proxy @blk)
+      , ChainDB.cdbEncodeLedger     = nodeEncodeLedgerState cfg
+      , ChainDB.cdbEpochInfo        = epochInfo
+      , ChainDB.cdbGenesis          = return initLedger
+      , ChainDB.cdbDiskPolicy       = defaultDiskPolicy secParam slotDiffTime
+      , ChainDB.cdbIsEBB            = \blk -> if nodeIsEBB blk
+                                              then Just (blockHash blk)
+                                              else Nothing
+      , ChainDB.cdbMemPolicy        = defaultMemPolicy secParam
+      , ChainDB.cdbNodeConfig       = cfg
+      , ChainDB.cdbRegistry         = registry
+      , ChainDB.cdbTracer           = tracer
+      , ChainDB.cdbValidation       = ValidateMostRecentEpoch
+      , ChainDB.cdbGcDelay          = secondsToDiffTime 10
       }
 
-{-------------------------------------------------------------------------------
-  Internal node components
--------------------------------------------------------------------------------}
-
-data InternalState m peer blk = IS {
-      tracers             :: Tracers m peer blk
-    , cfg                 :: NodeConfig (BlockProtocol blk)
-    , registry            :: ResourceRegistry m
-    , btime               :: BlockchainTime m
-    , callbacks           :: NodeCallbacks m blk
-    , chainDB             :: ChainDB m blk
-    , blockFetchInterface :: BlockFetchConsensusInterface peer (Header blk) blk m
-    , fetchClientRegistry :: FetchClientRegistry peer (Header blk) blk m
-    , varCandidates       :: TVar m (Map peer (TVar m (CandidateState blk)))
-    , varState            :: TVar m (NodeState (BlockProtocol blk))
-    , mempool             :: Mempool m blk TicketNo
-    }
-
-initInternalState
-    :: forall m peer blk.
-       ( MonadAsync m
-       , MonadFork m
-       , MonadMask m
-       , ProtocolLedgerView blk
-       , Ord peer
-       , ApplyTx blk
-       )
-    => NodeParams m peer blk
-    -> m (InternalState m peer blk)
-initInternalState NodeParams { tracers, chainDB, registry, cfg,
-                               blockFetchSize, blockMatchesHeader, btime,
-                               callbacks, initState } = do
-    varCandidates  <- atomically $ newTVar mempty
-    varState       <- atomically $ newTVar initState
-    mempool        <- openMempool registry
-                                  (chainDBLedgerInterface chainDB)
-                                  (ledgerConfigView cfg)
-                                  (mempoolTracer tracers)
-
-    fetchClientRegistry <- newFetchClientRegistry
-
-    let getCandidates :: STM m (Map peer (AnchoredFragment (Header blk)))
-        getCandidates = readTVar varCandidates >>=
-                        traverse (fmap candidateChain . readTVar)
-
-        blockFetchInterface :: BlockFetchConsensusInterface peer (Header blk) blk m
-        blockFetchInterface = initBlockFetchConsensusInterface
-          cfg chainDB getCandidates blockFetchSize blockMatchesHeader btime
-
-    return IS {..}
-
-initBlockFetchConsensusInterface
-    :: forall m peer blk.
-       ( MonadSTM m
-       , SupportedBlock blk
-       )
-    => NodeConfig (BlockProtocol blk)
-    -> ChainDB m blk
-    -> STM m (Map peer (AnchoredFragment (Header blk)))
-    -> (Header blk -> SizeInBytes)
-    -> (Header blk -> blk -> Bool)
-    -> BlockchainTime m
-    -> BlockFetchConsensusInterface peer (Header blk) blk m
-initBlockFetchConsensusInterface cfg chainDB getCandidates blockFetchSize
-    blockMatchesHeader btime = BlockFetchConsensusInterface {..}
-  where
-    readCandidateChains :: STM m (Map peer (AnchoredFragment (Header blk)))
-    readCandidateChains = getCandidates
-
-    readCurrentChain :: STM m (AnchoredFragment (Header blk))
-    readCurrentChain = ChainDB.getCurrentChain chainDB
-
-    readFetchMode :: STM m FetchMode
-    readFetchMode = do
-      curSlot      <- getCurrentSlot btime
-      curChainSlot <- headSlot <$> ChainDB.getCurrentChain chainDB
-      let slotsBehind = case curChainSlot of
-            -- There's nothing in the chain. If the current slot is 0, then
-            -- we're 1 slot behind.
-            Origin  -> unSlotNo curSlot + 1
-            At slot -> unSlotNo curSlot - unSlotNo slot
-          maxBlocksBehind = 5
-          -- Convert from blocks to slots. This is more or less the @f@
-          -- parameter, the frequency of blocks. TODO should be 10 for Praos,
-          -- so make this part of 'OuroborosTag'.
-          blocksToSlots = 1
-      return $ if slotsBehind < maxBlocksBehind * blocksToSlots
-       -- When the current chain is near to "now", use deadline mode, when it
-       -- is far away, use bulk sync mode.
-        then FetchModeDeadline
-        else FetchModeBulkSync
-
-    readFetchedBlocks :: STM m (Point blk -> Bool)
-    readFetchedBlocks = ChainDB.getIsFetched chainDB
-
-    addFetchedBlock :: Point blk -> blk -> m ()
-    addFetchedBlock _pt = ChainDB.addBlock chainDB
-
-    plausibleCandidateChain :: AnchoredFragment (Header blk)
-                            -> AnchoredFragment (Header blk)
-                            -> Bool
-    plausibleCandidateChain = preferCandidate cfg
-
-    compareCandidateChains :: AnchoredFragment (Header blk)
-                           -> AnchoredFragment (Header blk)
-                           -> Ordering
-    compareCandidateChains = compareCandidates cfg
-
-forkBlockProduction
-    :: forall m peer blk.
-       ( MonadAsync m
-       , ProtocolLedgerView blk
-       )
-    => InternalState m peer blk -> m ()
-forkBlockProduction IS{..} =
-    onSlotChange btime registry $ \_registry' currentSlot -> do
-      drg  <- produceDRG
-      -- See the docstring of 'withSyncState' for why we're using it instead
-      -- of 'atomically'.
-      mNewBlock <- withSyncState mempool $ \MempoolSnapshot{snapshotTxs} -> do
-        varDRG <- newTVar drg
-        l@ExtLedgerState{..} <- ChainDB.getCurrentLedger chainDB
-        mIsLeader            <- runProtocol varDRG $
-                                   checkIsLeader
-                                     cfg
-                                     currentSlot
-                                     (protocolLedgerView cfg ledgerState)
-                                     ouroborosChainState
-
-        case mIsLeader of
-          Nothing    -> return Nothing
-          Just proof -> do
-            (prevPoint, prevNo) <- prevPointAndBlockNo currentSlot <$>
-                                     ChainDB.getCurrentChain chainDB
-            newBlock            <- runProtocol varDRG $
-                                     produceBlock
-                                       proof
-                                       l
-                                       currentSlot
-                                       prevPoint
-                                       prevNo
-                                       (map fst snapshotTxs)
-            return $ Just newBlock
-
-      -- Note that there is a possible race condition here: we have produced a
-      -- block containing valid transactions w.r.t. the current ledger state
-      -- (this was race-free), but the current chain might change before we
-      -- complete adding the block to the ChainDB. If the current chain has
-      -- changed to a longer chain (than the one at the time of producing the
-      -- block), chain selection will not select the block we just produced
-      -- ourselves, as it would mean switching to a shorter chain.
-      whenJust mNewBlock $ \newBlock -> do
-        traceWith (forgeTracer tracers) $ TraceForgeEvent currentSlot newBlock
-        ChainDB.addBlock chainDB newBlock
-  where
-    NodeCallbacks{..} = callbacks
-
-    -- Return the point and block number of the most recent block in the
-    -- current chain with a slot < the given slot. These will either
-    -- correspond to the header at the tip of the current chain or, in case
-    -- another node was also elected leader and managed to produce a block
-    -- before us, the header right before the one at the tip of the chain.
-    prevPointAndBlockNo :: SlotNo
-                        -> AnchoredFragment (Header blk)
-                        -> (Point blk, BlockNo)
-    prevPointAndBlockNo slot c = case c of
-        Empty _   -> (genesisPoint, genesisBlockNo)
-        c' :> hdr -> case blockSlot hdr `compare` slot of
-          LT -> (headerPoint hdr, blockNo hdr)
-          -- The block at the tip of our chain has a slot that lies in the
-          -- future.
-          GT -> error "prevPointAndBlockNo: block in future"
-          -- The block at the tip has the same slot as the block we're going
-          -- to produce (@slot@), so look at the block before it.
-          EQ | _ :> hdr' <- c'
-             -> (headerPoint hdr', blockNo hdr')
-             | otherwise
-               -- If there is no block before it, so use genesis.
-             -> (genesisPoint, genesisBlockNo)
-
-    runProtocol :: TVar m ChaChaDRG -> ProtocolM blk m a -> STM m a
-    runProtocol varDRG = simOuroborosStateT varState
-                       $ simChaChaT varDRG
-                       $ id
-
-
-{-------------------------------------------------------------------------------
-  TxSubmission integration
--------------------------------------------------------------------------------}
-
-getMempoolReader
-  :: forall m blk.
-     (MonadSTM m, ApplyTx blk)
-  => Mempool m blk TicketNo
-  -> TxSubmissionMempoolReader (GenTxId blk) (GenTx blk) TicketNo m
-getMempoolReader mempool = Outbound.TxSubmissionMempoolReader
-    { mempoolZeroIdx     = zeroIdx mempool
-    , mempoolGetSnapshot = convertSnapshot <$> getSnapshot mempool
+mkNodeArgs
+  :: forall blk peer. (RunNode blk, Ord peer)
+  => ResourceRegistry IO
+  -> NodeConfig (BlockProtocol blk)
+  -> NodeState  (BlockProtocol blk)
+  -> Tracers IO peer blk
+  -> BlockchainTime IO
+  -> ChainDB IO blk
+  -> NodeArgs IO peer blk
+mkNodeArgs registry cfg initState tracers btime chainDB = NodeArgs
+    { tracers
+    , registry
+    , maxClockSkew       = ClockSkew 1
+    , cfg
+    , initState
+    , btime
+    , chainDB
+    , callbacks
+    , blockFetchSize     = nodeBlockFetchSize
+    , blockMatchesHeader = nodeBlockMatchesHeader
+    , maxUnackTxs        = 100 -- TODO
     }
   where
-    convertSnapshot
-      :: MempoolSnapshot          blk                       TicketNo
-      -> Outbound.MempoolSnapshot (GenTxId blk) (GenTx blk) TicketNo
-    convertSnapshot MempoolSnapshot{snapshotTxsAfter, snapshotLookupTx} =
-      Outbound.MempoolSnapshot
-        { mempoolTxIdsAfter = \idx ->
-            [ (txId tx, idx', txSize tx)
-            | (tx, idx') <- snapshotTxsAfter idx
-            ]
-        , mempoolLookupTx   = snapshotLookupTx
+    callbacks = NodeCallbacks
+      { produceDRG   = drgNew
+      , produceBlock = produceBlock
+      }
+
+    produceBlock
+      :: IsLeader (BlockProtocol blk)  -- ^ Proof we are leader
+      -> ExtLedgerState blk            -- ^ Current ledger state
+      -> SlotNo                        -- ^ Current slot
+      -> Point blk                     -- ^ Previous point
+      -> BlockNo                       -- ^ Previous block number
+      -> [GenTx blk]                   -- ^ Contents of the mempool
+      -> ProtocolM blk IO blk
+    produceBlock proof _l slot prevPoint prevBlockNo txs =
+        -- The transactions we get are consistent; the only reason not to
+        -- include all of them would be maximum block size, which we ignore
+        -- for now.
+        nodeForgeBlock cfg slot curNo prevHash txs proof
+      where
+        curNo :: BlockNo
+        curNo = succ prevBlockNo
+
+        prevHash :: ChainHash blk
+        prevHash = castHash (Block.pointHash prevPoint)
+
+-- | Short-hand for the instantiated 'NetworkApplication'
+type NetworkApps peer =
+  NetworkApplication IO peer
+    ByteString ByteString ByteString ByteString ByteString ()
+
+-- | Arguments specific to the network stack
+data RunNetworkArgs peer blk = RunNetworkArgs
+  { rnaIpSubscriptionTracer  :: Tracer IO (WithIPList SubscriptionTrace)
+    -- ^ IP subscription tracer
+  , rnaDnsSubscriptionTracer :: Tracer IO (WithDomainName SubscriptionTrace)
+    -- ^ DNS subscription tracer
+  , rnaDnsResolverTracer     :: Tracer IO (WithDomainName DnsTrace)
+    -- ^ DNS resolver tracer
+  , rnaMkPeer                :: SockAddr -> SockAddr -> peer
+    -- ^ How to create a peer
+  , rnaMyAddr                :: AddrInfo
+    -- ^ The node's own address
+  , rnaMyLocalAddr           :: AddrInfo
+    -- ^ The node's own local address
+  , rnaIpProducers           :: [SockAddr]
+    -- ^ IP producers
+  , rnaDnsProducers          :: [DnsSubscriptionTarget]
+    -- ^ DNS producers
+  }
+
+initNetwork
+  :: forall blk peer.
+     (RunNode blk, Ord peer)
+  => ResourceRegistry IO
+  -> NodeArgs    IO peer blk
+  -> NodeKernel  IO peer blk
+  -> RunNetworkArgs peer blk
+  -> IO ()
+initNetwork registry nodeArgs kernel RunNetworkArgs{..} = do
+    -- serve local clients (including tx submission)
+    localServer <- forkLinked registry runLocalServer
+
+    -- serve downstream nodes
+    connTable  <- newConnectionTable
+    peerServer <- forkLinked registry $
+      runPeerServer connTable
+
+    ipSubscriptions <- forkLinked registry $
+      runIpSubscriptionWorker connTable
+
+    -- dns subscription managers
+    dnsSubscriptions <- forM rnaDnsProducers $ \dnsProducer ->
+      forkLinked registry $ runDnsSubscriptionWorker connTable dnsProducer
+
+    let asyncs = localServer : peerServer : ipSubscriptions : dnsSubscriptions
+    void $ waitAny asyncs
+  where
+    networkApps :: NetworkApps peer
+    networkApps = consensusNetworkApps
+      kernel
+      nullProtocolTracers
+      (protocolCodecs (getNodeConfig kernel))
+      (protocolHandlers nodeArgs kernel)
+
+    networkAppNodeToNode :: Versions
+                              NodeToNodeVersion
+                              DictVersion
+                              (NetworkApps peer)
+    networkAppNodeToNode =
+      simpleSingletonVersions
+        NodeToNodeV_1
+        (NodeToNodeVersionData { networkMagic = 0 })
+        (DictVersion nodeToNodeCodecCBORTerm)
+        networkApps
+
+    networkAppNodeToClient :: Versions
+                                NodeToClientVersion
+                                DictVersion
+                                (NetworkApps peer)
+    networkAppNodeToClient =
+      simpleSingletonVersions
+        NodeToClientV_1
+        (NodeToClientVersionData { networkMagic = 0 })
+        (DictVersion nodeToClientCodecCBORTerm)
+        networkApps
+
+    runLocalServer :: IO ()
+    runLocalServer = do
+      connTable <- newConnectionTable
+      NodeToClient.withServer
+        connTable
+        rnaMyLocalAddr
+        rnaMkPeer
+        (\(DictVersion _) -> acceptEq)
+        (localResponderNetworkApplication <$> networkAppNodeToClient)
+        wait
+
+    runPeerServer :: ConnectionTable IO -> IO ()
+    runPeerServer connTable = NodeToNode.withServer
+      connTable
+      rnaMyAddr
+      rnaMkPeer
+      (\(DictVersion _) -> acceptEq)
+      (responderNetworkApplication <$> networkAppNodeToNode)
+      wait
+
+    runIpSubscriptionWorker :: ConnectionTable IO -> IO ()
+    runIpSubscriptionWorker connTable = ipSubscriptionWorker
+      connTable
+      rnaIpSubscriptionTracer
+      -- the comments in dnsSbuscriptionWorker call apply
+      (Just (Socket.SockAddrInet 0 0))
+      (Just (Socket.SockAddrInet6 0 0 (0, 0, 0, 1) 0))
+      (const Nothing)
+      IPSubscriptionTarget
+        { ispIps     = rnaIpProducers
+        , ispValency = length rnaIpProducers
         }
+      (connectToNode'
+        (\(DictVersion codec) -> encodeTerm codec)
+        (\(DictVersion codec) -> decodeTerm codec)
+        nullTracer
+        rnaMkPeer
+        (initiatorNetworkApplication <$> networkAppNodeToNode))
+      wait
 
-getMempoolWriter
-  :: (Monad m, ApplyTx blk)
-  => Mempool m blk TicketNo
-  -> TxSubmissionMempoolWriter (GenTxId blk) (GenTx blk) TicketNo m
-getMempoolWriter mempool = Inbound.TxSubmissionMempoolWriter
-    { Inbound.txId          = txId
-    , mempoolAddTxs = \txs ->
-        map (txId . fst) . filter (isNothing . snd) <$>
-        addTxs mempool txs
-    }
+    runDnsSubscriptionWorker :: ConnectionTable IO
+                             -> DnsSubscriptionTarget
+                             -> IO ()
+    runDnsSubscriptionWorker connTable dnsProducer = dnsSubscriptionWorker
+      connTable
+      rnaDnsSubscriptionTracer
+      rnaDnsResolverTracer
+      -- IPv4 address
+      --
+      -- We can't share portnumber with our server since we run separate
+      -- 'MuxInitiatorApplication' and 'MuxResponderApplication'
+      -- applications instead of a 'MuxInitiatorAndResponderApplication'.
+      -- This means we don't utilise full duplex connection.
+      (Just (Socket.SockAddrInet 0 0))
+      -- IPv6 address
+      (Just (Socket.SockAddrInet6 0 0 (0, 0, 0, 1) 0))
+      (const Nothing)
+      dnsProducer
+      (connectToNode'
+        (\(DictVersion codec) -> encodeTerm codec)
+        (\(DictVersion codec) -> decodeTerm codec)
+        nullTracer
+        rnaMkPeer
+        (initiatorNetworkApplication <$> networkAppNodeToNode))
+      wait

@@ -19,6 +19,7 @@ module Ouroboros.Network.Subscription.Dns
     , resolutionDelay
 
     , DnsTrace
+    , WithDomainName (..)
     ) where
 
 import           Control.Monad (unless)
