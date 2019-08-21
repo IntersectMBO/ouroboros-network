@@ -84,7 +84,7 @@ instance SimpleCrypto c
 instance SimpleCrypto c
       => ProtocolLedgerView (SimplePraosRuleBlock c) where
   protocolLedgerView _ _ = ()
-  anachronisticProtocolLedgerView _ _ _ = Just $ SB.unbounded ()
+  anachronisticProtocolLedgerView _ _ _ = Right $ SB.unbounded ()
 
 {-------------------------------------------------------------------------------
   We don't need crypto for this protocol

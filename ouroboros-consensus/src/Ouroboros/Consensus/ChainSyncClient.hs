@@ -80,6 +80,13 @@ data ChainSyncClientException blk =
       -- | The chain validation threw an error.
     | ChainError (ValidationErr (BlockProtocol blk))
 
+      -- | The upstream node rolled forward to a point too far in our past.
+      -- This may happen if, during catch-up, our local node has moved too far ahead of the upstream node.
+      -- 
+      -- We store the requested point and head point from the upstream node as
+      -- well as the tip of our current ledger.
+    | InvalidRollForward (Point blk) (Point blk) (Point blk)
+
       -- | The upstream node rolled back more than @k@ blocks.
       --
       -- We store the requested intersection point and head point from the
@@ -356,7 +363,7 @@ chainSyncClient tracer cfg btime (ClockSkew maxSkew)
 
     rollForward :: Header blk -> Point blk
                 -> m (Consensus ClientStIdle blk m)
-    rollForward hdr _theirHead = traceException $ atomically $ do
+    rollForward hdr theirHead = traceException $ atomically $ do
       -- Reject the block if invalid
       let hdrHash  = headerHash hdr
           hdrPoint = headerPoint hdr
@@ -422,8 +429,11 @@ chainSyncClient tracer cfg btime (ClockSkew maxSkew)
 
           -- TODO: Chain sync Client: Reuse anachronistic ledger view? #581
           case anachronisticProtocolLedgerView cfg curLedger (pointSlot hdrPoint) of
-            Nothing   -> retry
-            Just view -> case view `SB.at` hdrSlot of
+            -- unexpected alternative; see comment before this case expression
+            Left TooFarBehind ->
+                disconnect $ InvalidRollForward hdrPoint theirHead ourTip
+            Left TooFarAhead  -> retry
+            Right view -> case view `SB.at` hdrSlot of
                 Nothing -> error "anachronisticProtocolLedgerView invariant violated"
                 Just lv -> return lv
               where

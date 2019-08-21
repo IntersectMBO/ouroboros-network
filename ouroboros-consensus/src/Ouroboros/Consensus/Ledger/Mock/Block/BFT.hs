@@ -105,7 +105,7 @@ instance ( SimpleCrypto c
          , Signable (BftDSIGN c') (SignedSimpleBft c c')
          ) => ProtocolLedgerView (SimpleBftBlock c c') where
   protocolLedgerView _ _ = ()
-  anachronisticProtocolLedgerView _ _ _ = Just $ SB.unbounded ()
+  anachronisticProtocolLedgerView _ _ _ = Right $ SB.unbounded ()
 
 {-------------------------------------------------------------------------------
   Serialisation

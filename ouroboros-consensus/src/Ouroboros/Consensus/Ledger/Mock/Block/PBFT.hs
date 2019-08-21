@@ -115,7 +115,7 @@ instance ( SimpleCrypto c
   protocolLedgerView (EncNodeConfig _ pbftParams) _ls =
       pbftParams
   anachronisticProtocolLedgerView (EncNodeConfig _ pbftParams) _ _ =
-      Just $ SB.unbounded pbftParams
+      Right $ SB.unbounded pbftParams
 
 {-------------------------------------------------------------------------------
   Serialisation
