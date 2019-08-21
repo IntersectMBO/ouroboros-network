@@ -1,16 +1,16 @@
-{-# LANGUAGE AllowAmbiguousTypes        #-}
-{-# LANGUAGE FlexibleContexts           #-}
-{-# LANGUAGE FlexibleInstances          #-}
-{-# LANGUAGE LambdaCase                 #-}
-{-# LANGUAGE MultiParamTypeClasses      #-}
-{-# LANGUAGE NamedFieldPuns             #-}
-{-# LANGUAGE ScopedTypeVariables        #-}
-{-# LANGUAGE StandaloneDeriving         #-}
-{-# LANGUAGE TypeApplications           #-}
-{-# LANGUAGE TypeFamilies               #-}
-{-# LANGUAGE TypeOperators              #-}
-{-# LANGUAGE UndecidableInstances       #-}
-{-# LANGUAGE UndecidableSuperClasses    #-}
+{-# LANGUAGE AllowAmbiguousTypes     #-}
+{-# LANGUAGE FlexibleContexts        #-}
+{-# LANGUAGE FlexibleInstances       #-}
+{-# LANGUAGE LambdaCase              #-}
+{-# LANGUAGE MultiParamTypeClasses   #-}
+{-# LANGUAGE NamedFieldPuns          #-}
+{-# LANGUAGE ScopedTypeVariables     #-}
+{-# LANGUAGE StandaloneDeriving      #-}
+{-# LANGUAGE TypeApplications        #-}
+{-# LANGUAGE TypeFamilies            #-}
+{-# LANGUAGE TypeOperators           #-}
+{-# LANGUAGE UndecidableInstances    #-}
+{-# LANGUAGE UndecidableSuperClasses #-}
 
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
@@ -46,8 +46,6 @@ import           Ouroboros.Consensus.Protocol.HardFork
 import           Ouroboros.Consensus.Ledger.Mock
 import           Ouroboros.Consensus.Protocol.PBFT
 import           Ouroboros.Consensus.Protocol.Praos
-
-import Debug.Trace
 
 -- | Translate from one ledger state to another at the boundary of a hard fork
 class
@@ -244,7 +242,6 @@ instance
             ledgerState
       -- After the fork simply act as @p2@
       (AfterFork block, AfterFork ledgerState) ->
-        trace "In the hard fork?!" $
         withExcept AfterForkError . fmap (ForkedLedgerState . AfterFork) $
           applyLedgerBlock
             (ledgerConfigAfterFork ledgerConfig)
@@ -253,7 +250,26 @@ instance
       (BeforeFork _, AfterFork _) -> throwE OldBlockAfterFork
       (AfterFork _, BeforeFork _) -> throwE NewBlockBeforeFork
 
-  reapplyLedgerBlock = undefined
+  reapplyLedgerBlock ledgerConfig forkedBlock forkedLedgerState =
+    case (forkedBlock, unForkedLedgerState forkedLedgerState) of
+      -- Before the fork simply act as @p1@
+      (BeforeFork block, BeforeFork ledgerState) ->
+        ForkedLedgerState . BeforeFork $
+          reapplyLedgerBlock
+            (ledgerConfigBeforeFork ledgerConfig)
+            block
+            ledgerState
+      -- After the fork simply act as @p2@
+      (AfterFork block, AfterFork ledgerState) ->
+        ForkedLedgerState . AfterFork $
+          reapplyLedgerBlock
+            (ledgerConfigAfterFork ledgerConfig)
+            block
+            ledgerState
+      (BeforeFork _, AfterFork _) ->
+        error "reapplyLedgerBlock: unexpected error OldBlockAfterFork"
+      (AfterFork _, BeforeFork _) ->
+        error "reapplyLedgerBlock: unexpected error NewBlockBeforeFork"
 
   ledgerTipPoint =
     forked
@@ -408,8 +424,7 @@ instance
     (SimplePBftBlock SimpleMockCrypto PBftMockCrypto)
     (SimplePraosBlock SimpleMockCrypto PraosMockCrypto) where
 
-  -- Hard fork at slot 50. If hard forking is working we should see chains of
-  -- length >> 50 in the tests.
+  -- Currently hard forking at slot 0 as we cannot fork yet
   hardForksAt _ = Just $ SlotNo 0
 
   -- This is safe as we know they're both 'MockState'

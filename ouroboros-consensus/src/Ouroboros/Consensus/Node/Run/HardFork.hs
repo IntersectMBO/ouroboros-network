@@ -31,7 +31,6 @@ instance
   )
   => RunNode (Forked blk1 blk2) where
 
-  -- TODO: Figure out where the NodeState actually changes...
   nodeForgeBlock nodeConfig slotNo blockNo chainHash txs isLeader =
     getNodeState >>= \case
       BeforeFork _ ->
@@ -54,7 +53,8 @@ instance
             (forked (translateHeaderHash @blk1 @blk2) id . unForkedHeaderHash)
             chainHash
           )
-          (catMaybes $ maybeAfterFork . unForkedGenTx <$> txs) -- TODO: Do we want to translate transactions across the fork?
+          -- TODO: Do we want to translate transactions across the fork?
+          (catMaybes $ maybeAfterFork . unForkedGenTx <$> txs)
           (unsafeAfterFork isLeader)
     where
       maybeAfterFork :: Forked a b -> Maybe b
@@ -74,7 +74,8 @@ instance
   nodeIsEBB = forked nodeIsEBB nodeIsEBB
 
   -- TODO: Define this properly - need some sort of stateful thing
-  nodeEpochSize _ = nodeEpochSize (Proxy @blk1)
+  nodeEpochSize _ nodeConfig =
+    nodeEpochSize (Proxy @blk2) (nodeConfigAfterFork nodeConfig)
 
   nodeStartTime          = \_ _ -> SystemStart dummyDate
     where
@@ -124,12 +125,12 @@ instance
 
   -- TODO: Do this properly
   nodeDecodeHeader nodeConfig =
-    ForkedHeader . AfterFork <$>
+    (.) (ForkedHeader . AfterFork) <$>
       nodeDecodeHeader (nodeConfigAfterFork nodeConfig)
 
   -- TODO: Do this properly
   nodeDecodeBlock nodeConfig =
-    AfterFork <$> nodeDecodeBlock (nodeConfigAfterFork nodeConfig)
+    (.) AfterFork <$> nodeDecodeBlock (nodeConfigAfterFork nodeConfig)
 
   -- TODO: Do this properly
   nodeDecodeGenTx = ForkedGenTx . AfterFork <$> nodeDecodeGenTx @blk2

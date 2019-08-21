@@ -78,9 +78,6 @@ import qualified Ouroboros.Storage.Util.ErrorHandling as EH
 
 import           Test.Dynamic.TxGen
 
-import Debug.Trace
-import Data.Maybe (catMaybes)
-
 -- | Interface provided by 'ouroboros-network'.  At the moment
 -- 'ouroboros-network' only provides this interface in 'IO' backed by sockets,
 -- we cook up here one using 'NodeChans'.
@@ -247,9 +244,7 @@ broadcastNetwork registry testBtime numCoreNodes pInfo initRNG slotLen = do
           ledger <- ledgerState <$> getExtLedger
           varDRG <- newTVar drg
           simChaChaT varDRG id $ testGenTxs numCoreNodes cfg curSlotNo ledger
-        res <- addTxs mempool txs
-        let errs = catMaybes $ snd <$> res
-        unless (Prelude.null errs) $ traceShowM errs
+        void $ addTxs mempool txs
 
     createCommunicationChannels :: m (NodeChans m NodeId blk)
     createCommunicationChannels = fmap Map.fromList $ forM nodeIds $ \us ->
@@ -297,7 +292,7 @@ broadcastNetwork registry testBtime numCoreNodes pInfo initRNG slotLen = do
                                         else Nothing
         , cdbGenesis          = return initLedger
         -- Misc
-        , cdbTracer           = showTracing (Tracer traceM)
+        , cdbTracer           = nullTracer
         , cdbRegistry         = registry
         , cdbGcDelay          = 0
         }
@@ -360,6 +355,7 @@ broadcastNetwork registry testBtime numCoreNodes pInfo initRNG slotLen = do
 
           ni :: NetworkInterface m NodeId
           ni = createNetworkInterface chans nodeIds us app
+
 
       void $ forkLinked         registry $ niWithServerNode ni wait
       void $ forkLinkedTransfer registry $ \registry' -> txProducer

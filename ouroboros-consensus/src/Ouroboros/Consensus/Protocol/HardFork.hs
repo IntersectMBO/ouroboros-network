@@ -51,6 +51,7 @@ import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import           Ouroboros.Network.Block (HasHeader (..), SlotNo (..))
 import           Ouroboros.Network.Point (at)
 
+import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util.Condense
 
@@ -62,8 +63,6 @@ import           Ouroboros.Consensus.Node.ProtocolInfo.Mock.Praos
 import           Ouroboros.Consensus.Protocol.ExtNodeConfig
 import           Ouroboros.Consensus.Protocol.PBFT hiding (pbftParams)
 import           Ouroboros.Consensus.Protocol.Praos
-
-import Debug.Trace
 
 -- | Protocols implementing this class will give up control to a new protocol
 --   when the 'shouldHardFork' becomes true
@@ -81,9 +80,10 @@ class (OuroborosTag p1, OuroborosTag p2) => CanHardFork p1 p2 where
   translateChainStateForHardFork :: ChainState p1 -> ChainState p2
 
   -- | Convert the 'LedgerView' from the old protocol to the new at the boundary
-  translateLedgerViewForHardFork :: LedgerView p1 -> LedgerView p2
-
-  -- translateChainHash ::
+  translateLedgerViewForHardFork
+    :: NodeConfig (p1 `HardForksTo` p2)
+    -> LedgerView p1
+    -> LedgerView p2
 
   -- | A custom 'preferCandidate' function to handle transition between
   --   protocols. We use this because it is tricky to define a generic version
@@ -286,7 +286,6 @@ instance CanHardFork p1 p2 => OuroborosTag (p1 `HardForksTo` p2) where
         let hardForkSlot = hardForksAtView @p1 @p2 ledgerView
         if isJust hardForkSlot && Just slotNo >= hardForkSlot
         then do
-          traceM "Acting as after hard fork, but haven't forked state"
           getNodeState >>= \case
             BeforeFork nodeState -> putNodeState . AfterFork $
              translateNodeStateForHardFork nodeConfig nodeState
@@ -294,7 +293,7 @@ instance CanHardFork p1 p2 => OuroborosTag (p1 `HardForksTo` p2) where
           checkIsLeader
             nodeConfig
             slotNo
-            (AfterFork $ translateLedgerViewForHardFork @p1 @p2 ledgerView)
+            (AfterFork $ translateLedgerViewForHardFork @p1 @p2 nodeConfig ledgerView)
             ( AfterFork $ AfterForkChainState
               { forkSlotNo = fromJust hardForkSlot
               , snapshotAtFork = Just chainState
@@ -337,6 +336,15 @@ instance CanHardFork p1 p2 => OuroborosTag (p1 `HardForksTo` p2) where
             ledgerView
             header
             chainState
+      -- We have received a new era header, but have an old 'LedgerView', so we
+      -- need to translate it
+      -- TODO: Check whether we should be forking here
+      (BeforeFork ledgerView, AfterFork _header, _) ->
+        applyChainState
+          nodeConfig
+          (AfterFork $ translateLedgerViewForHardFork @p1 @p2 nodeConfig ledgerView)
+          forkedHeader
+          forkedChainState
       -- We have received a new era 'LedgerView' and 'Header', but an old era
       -- 'ChainState'. This means we should be in the process of forking and
       -- should translate the 'ChainState', however we should make sure this is
@@ -365,15 +373,6 @@ instance CanHardFork p1 p2 => OuroborosTag (p1 `HardForksTo` p2) where
         return . AfterFork $ chainState { afterForkChainState = chainState' }
       (BeforeFork _ledgerView, BeforeFork _, AfterFork _chainState) ->
         throwE StateMismatch
-      -- We might actually be forking here, so translate ledger view and move on
-      -- TODO: Check we really should be forking here
-      (BeforeFork ledgerView, AfterFork _header, _) ->
-        applyChainState
-          nodeConfig
-          (AfterFork $ translateLedgerViewForHardFork @p1 @p2 ledgerView)
-          forkedHeader
-          forkedChainState
-        -- throwE NewHeaderBeforeFork
       (AfterFork _ledgerView, BeforeFork _header, _) ->
         throwE OldHeaderAfterFork
 
@@ -416,6 +415,7 @@ instance
     (ExtNodeConfig (PBftLedgerView PBftMockCrypto) (PBft PBftMockCrypto))
     (ExtNodeConfig AddrDist (Praos PraosMockCrypto)) where
 
+  -- Currently hard forking at slot 0 as we cannot fork yet
   hardForksAtView _ = Just $ SlotNo 0
 
   translateNodeStateForHardFork ForkedNodeConfig {nodeConfigAfterFork} _ =
@@ -424,10 +424,13 @@ instance
       CoreId nid = praosNodeId $ encNodeConfigP nodeConfigAfterFork
       params = praosParams $ encNodeConfigP nodeConfigAfterFork
 
-
   translateChainStateForHardFork _ = []
 
-  translateLedgerViewForHardFork = undefined
+  translateLedgerViewForHardFork nodeConfig _ =
+    protocolLedgerView
+      @(SimplePraosBlock SimpleMockCrypto PraosMockCrypto)
+      (nodeConfigAfterFork nodeConfig)
+      undefined
 
   -- TODO: Take into account the fork
   hardForkPreferCandidate nodeConfig =
