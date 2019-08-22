@@ -17,6 +17,7 @@ import           GHC.Stack (HasCallStack)
 
 import qualified Cardano.Chain.Common as CC.Common
 import qualified Cardano.Chain.Genesis as CC.Genesis
+import qualified Cardano.Chain.MempoolPayload as CC.Mempool
 import qualified Cardano.Chain.UTxO as CC.UTxO
 import qualified Cardano.Crypto as Crypto
 
@@ -44,7 +45,8 @@ elaborateTx :: HasCallStack
             => NodeConfig ByronEBBExtNodeConfig
             -> Mock.Tx -> GenTx (ByronBlockOrEBB cfg)
 elaborateTx (WithEBBNodeConfig cfg) (Mock.Tx ins outs) =
-    mkByronTx $ CC.UTxO.annotateTxAux $ CC.UTxO.mkTxAux tx witness
+    mkByronGenTx $ CC.Mempool.MempoolTx $ CC.UTxO.annotateTxAux $
+    CC.UTxO.mkTxAux tx witness
   where
     -- mockInp and mockOut in [0 .. 3] (index of rich actor)
     [(_hash, mockInp)]    = Set.toList ins
