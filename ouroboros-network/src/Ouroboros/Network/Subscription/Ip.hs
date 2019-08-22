@@ -76,7 +76,7 @@ ipSubscriptionWorker
     -> (Socket.SockAddr -> Maybe DiffTime)
     -- ^ Lookup function, should return expected delay for the given address
     -> [ErrorPolicy]
-    -> (Time IO -> Socket.SockAddr -> a -> SuspendCommand DiffTime)
+    -> (Time IO -> Socket.SockAddr -> a -> SuspendDecision DiffTime)
     -> IPSubscriptionTarget
     -> (Socket.Socket -> IO a)
     -> IO Void
@@ -231,7 +231,7 @@ completeApplicationTx
      , TimeMeasure (Time m)
      )
   => Tracer m (WithAddr addr ErrorPolicyTrace)
-  -> (Time m -> addr -> a -> SuspendCommand DiffTime)
+  -> (Time m -> addr -> a -> SuspendDecision DiffTime)
   -> [ErrorPolicy]
   -> CompleteApplication m
        (PeerStates m addr (Time m))
@@ -263,7 +263,7 @@ completeApplicationTx tracer returnCallback _ (ApplicationResult t addr r) (Peer
 
 -- application errored
 completeApplicationTx tracer  _ errPolicies (ApplicationError t addr e) ps =
-  case evalErrorPolicies (AppException e) errPolicies of
+  case evalErrorPolicies (ApplicationException e) errPolicies of
     -- the error is not handled by any policy; we're not rethrowing the
     -- error from the main thread, we only trace it.  This will only kill
     -- the local consumer application.
@@ -273,14 +273,14 @@ completeApplicationTx tracer  _ errPolicies (ApplicationError t addr e) ps =
                           (ErrorPolicyUnhandledApplicationException
                             (SomeException e)))
                      )
-    -- the error was classified; act with the 'SuspendCommand' on the state
+    -- the error was classified; act with the 'SuspendDecision' on the state
     -- and find threads to cancel.
-    Just cmd -> case runSuspendCommand t addr e cmd ps of
+    Just cmd -> case runSuspendDecision t addr e cmd ps of
       (ps', threads) ->
         pure ( ps'
              , do
                 traverse_ (traceWith tracer . WithAddr addr)
-                          (traceErrorPolicy (Left $ AppException (SomeException e))
+                          (traceErrorPolicy (Left $ ApplicationException (SomeException e))
                                             cmd)
                 traverse_ cancel threads
             )
@@ -293,7 +293,7 @@ completeApplicationTx _ _ _ (Connected _t  _addr) ps =
 -- application exceptions, the only difference is that we wrap the exception
 -- with 'ConnException' type constructor.
 completeApplicationTx tracer _ errPolicies (ConnectionError t addr e) ps =
-  case evalErrorPolicies (ConnException e) errPolicies of
+  case evalErrorPolicies (ConnectionException e) errPolicies of
     Nothing  ->
       let fn p@(HotPeer producers consumers)
              | Set.null producers && Set.null consumers
@@ -310,12 +310,12 @@ completeApplicationTx tracer _ errPolicies (ConnectionError t addr e) ps =
                    (ErrorPolicyUnhandledConnectionException
                      (SomeException e)))
               )
-    Just cmd -> case runSuspendCommand t addr e cmd ps of
+    Just cmd -> case runSuspendDecision t addr e cmd ps of
       (ps', threads) ->
         pure ( ps'
              , do
                  traverse_ (traceWith tracer . WithAddr addr)
-                           (traceErrorPolicy (Left $ ConnException (SomeException e)) cmd)
+                           (traceErrorPolicy (Left $ ConnectionException (SomeException e)) cmd)
                  traverse_ cancel threads
              )
 
@@ -352,7 +352,9 @@ mainTx (ThrowException e) = throwM e
 mainTx PeerStates{}       = retry
 
 
--- | Like 'worker' but in 'IO'; It only instantiates local address selection.
+-- | Like 'worker' but in 'IO'; It provides address selection function,
+-- 'SocketStateChange' and 'CompleteApplication' callbacks.  The 'Main'
+-- callback is left as it's useful for testing purposes.
 --
 subscriptionWorker
     :: Tracer IO (SubscriptionTrace Socket.SockAddr)
@@ -370,7 +372,7 @@ subscriptionWorker
     -> Int
     -- ^ valency
     -> [ErrorPolicy]
-    -> (Time IO -> Socket.SockAddr -> a -> SuspendCommand DiffTime)
+    -> (Time IO -> Socket.SockAddr -> a -> SuspendDecision DiffTime)
     -> Main IO (PeerStates IO Socket.SockAddr (Time IO)) x
     -- ^ main callback
     -> (Socket.Socket -> IO a)

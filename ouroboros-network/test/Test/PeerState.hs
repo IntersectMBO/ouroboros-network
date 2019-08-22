@@ -41,25 +41,25 @@ import           Test.Tasty.QuickCheck (testProperty)
 
 tests :: TestTree
 tests = testGroup "Subscription.PeerState"
-  [ testProperty "SuspendCommand semigroup" (prop_SuspendCommandSemigroup @Int)
+  [ testProperty "SuspendDecision semigroup" (prop_SuspendDecisionSemigroup @Int)
   , testProperty "Suspend semigroup action on PeerState (up to constructor)"
-      (prop_SuspendCommandAction @IO @Int)
+      (prop_SuspendDecisionAction @IO @Int)
   , testProperty "worker error handling" prop_subscriptionWorker
   ]
 
 
 --
--- Generators of 'SuspendCommand' and 'PeerState'
+-- Generators of 'SuspendDecision' and 'PeerState'
 --
 
-newtype ArbSuspendCommand t = ArbSuspendCommand {
-      getArbSuspendCommand :: SuspendCommand t
+newtype ArbSuspendDecision t = ArbSuspendDecision {
+      getArbSuspendDecision :: SuspendDecision t
     }
   deriving (Eq, Show)
 
-genSuspendCommand :: Gen t
-                  -> Gen (SuspendCommand t)
-genSuspendCommand gen = oneof
+genSuspendDecision :: Gen t
+                   -> Gen (SuspendDecision t)
+genSuspendDecision gen = oneof
     [ SuspendPeer <$> gen <*> gen
     , SuspendConsumer <$> gen
     , pure Throw
@@ -68,13 +68,13 @@ genSuspendCommand gen = oneof
 genDiffTime :: Gen DiffTime
 genDiffTime = secondsToDiffTime <$> arbitrary
 
-instance Arbitrary t => Arbitrary (ArbSuspendCommand t) where
-    arbitrary = ArbSuspendCommand <$> genSuspendCommand arbitrary
+instance Arbitrary t => Arbitrary (ArbSuspendDecision t) where
+    arbitrary = ArbSuspendDecision <$> genSuspendDecision arbitrary
 
--- | Subsemigroup formed by 'SuspendPeer' and 'SuspendCommand'.
+-- | Subsemigroup formed by 'SuspendPeer' and 'SuspendDecision'.
 --
 newtype SuspendSubsemigroup t = SuspendSubsemigroup {
-      getSuspendSubsemigroup :: SuspendCommand t
+      getSuspendSubsemigroup :: SuspendDecision t
     }
   deriving (Eq, Show)
 
@@ -102,23 +102,23 @@ instance Arbitrary t => Arbitrary (ArbPeerState m t) where
       ]
 
 --
--- Algebraic properties of 'SuspendCommand' and 'PeerState'
+-- Algebraic properties of 'SuspendDecision' and 'PeerState'
 --
 
-prop_SuspendCommandSemigroup
+prop_SuspendDecisionSemigroup
     :: ( Ord t
        , Eq t
        )
-    => ArbSuspendCommand t
-    -> ArbSuspendCommand t
-    -> ArbSuspendCommand t
+    => ArbSuspendDecision t
+    -> ArbSuspendDecision t
+    -> ArbSuspendDecision t
     -> Bool
-prop_SuspendCommandSemigroup (ArbSuspendCommand a1)
-                             (ArbSuspendCommand a2)
-                             (ArbSuspendCommand a3) =
+prop_SuspendDecisionSemigroup (ArbSuspendDecision a1)
+                             (ArbSuspendDecision a2)
+                             (ArbSuspendDecision a3) =
     a1 <> (a2 <> a3) == (a1 <> a2) <> a3
 
-prop_SuspendCommandAction
+prop_SuspendDecisionAction
     :: forall m t.
       ( Eq   t
       , Ord  t
@@ -126,13 +126,13 @@ prop_SuspendCommandAction
       , Eq (Async m ())
       )
     => Blind (Maybe (ArbPeerState m t))
-    -> ArbSuspendCommand t
-    -> ArbSuspendCommand t
+    -> ArbSuspendDecision t
+    -> ArbSuspendDecision t
     -> Bool
-prop_SuspendCommandAction
+prop_SuspendDecisionAction
       (Blind mps)
-      (ArbSuspendCommand a1)
-      (ArbSuspendCommand a2) =
+      (ArbSuspendDecision a1)
+      (ArbSuspendDecision a2) =
     mps' <| (a1 <> a2) == (mps' <| a1) <| a2
   where
     mps' :: Maybe (PeerState m t)
@@ -188,32 +188,32 @@ newtype ArbErrorPolicies = ArbErrorPolicies [ErrorPolicy]
   deriving Show
 
 
-genErrorPolicy :: Gen (SuspendCommand DiffTime)
+genErrorPolicy :: Gen (SuspendDecision DiffTime)
                -> Gen ErrorPolicy
 genErrorPolicy genCmd = oneof
-    [ (\cmd -> ErrorPolicy (\(_e :: ConnOrAppException ArithException) -> cmd)) <$> genCmd,
-      (\cmd -> ErrorPolicy (\(_e :: ConnOrAppException AsyncException) -> cmd)) <$> genCmd,
-      (\cmd -> ErrorPolicy (\(_e :: ConnOrAppException NonTermination) -> cmd)) <$> genCmd
+    [ (\cmd -> ErrorPolicy (\(_e :: ConnectionOrApplicationException ArithException) -> cmd)) <$> genCmd,
+      (\cmd -> ErrorPolicy (\(_e :: ConnectionOrApplicationException AsyncException) -> cmd)) <$> genCmd,
+      (\cmd -> ErrorPolicy (\(_e :: ConnectionOrApplicationException NonTermination) -> cmd)) <$> genCmd
     ]
 
 instance Arbitrary ArbErrorPolicies where
     arbitrary = ArbErrorPolicies <$> listOf genPolicy
       where
-        genPolicy = genErrorPolicy (genSuspendCommand genDiffTime)
+        genPolicy = genErrorPolicy (genSuspendDecision genDiffTime)
 
     shrink (ArbErrorPolicies ps) = map ArbErrorPolicies $ shrinkList (const []) ps
 
 
 data ArbConnOrAppException =
-     ArbConnOrAppException (ConnOrAppException SomeException)
+     ArbConnOrAppException (ConnectionOrApplicationException SomeException)
 
 instance Arbitrary ArbConnOrAppException where
     arbitrary = fn <$> arbitrary <*> arbitrary
       where
         fn False (ArbException e) =
-          ArbConnOrAppException (ConnException (SomeException e))
+          ArbConnOrAppException (ConnectionException (SomeException e))
         fn True  (ArbException e) =
-          ArbConnOrAppException (AppException (SomeException e))
+          ArbConnOrAppException (ApplicationException (SomeException e))
 
 data Sock addr = Sock {
     remoteAddr :: addr
@@ -308,7 +308,7 @@ prop_subscriptionWorker
     -> Int -- local address
     -> Int -- remote address
     -> ArbValidPeerState IO ArbDiffTime
-    -> (Fun (ArbDiffTime, Int, ()) (ArbSuspendCommand ArbDiffTime))
+    -> (Fun (ArbDiffTime, Int, ()) (ArbSuspendDecision ArbDiffTime))
     -> ArbErrorPolicies
     -> (Blind (ArbApp Int))
     -> Property
@@ -347,7 +347,7 @@ prop_subscriptionWorker
 
     completeTx = completeApplicationTx
        nullTracer
-       (\t addr r -> fmap getArbDiffTime . getArbSuspendCommand $ case returnCallback of
+       (\t addr r -> fmap getArbDiffTime . getArbSuspendDecision $ case returnCallback of
            Fn3 f -> f (ArbDiffTime t) addr r
            _     -> error "impossible happend")
        errPolicies
@@ -362,13 +362,13 @@ prop_subscriptionWorker
               Nothing -> True
               Just (ArbException e) -> transitionSpec remoteAddr ps0
                                         (evalErrorPolicies
-                                          (AppException e)
+                                          (ApplicationException e)
                                           errPolicies)
                                         s
             AllocateError _ -> True
             ConnectError e  -> transitionSpec remoteAddr ps0
                                               (evalErrorPolicies
-                                                (ConnException e)
+                                                (ConnectionException e)
                                                 errPolicies)
                                               s
       if done
@@ -380,7 +380,7 @@ prop_subscriptionWorker
 transitionSpec :: Ord addr
                => addr
                -> PeerState IO (Time IO)
-               -> Maybe (SuspendCommand DiffTime)
+               -> Maybe (SuspendDecision DiffTime)
                -> PeerStates IO addr (Time IO)
                -> Bool
 

@@ -38,7 +38,6 @@ import           Control.Exception (SomeException (..))
 import qualified Control.Concurrent.STM as STM
 import           Control.Monad (forever, join, when, unless)
 import           Control.Monad.Fix (MonadFix)
--- import           Data.Functor.Identity (Identity (..))
 import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Void (Void)
@@ -143,9 +142,7 @@ data SocketState m addr
    = CreatedSocket !addr !(Async m ())
    | ClosedSocket  !addr !(Async m ())
 
--- | Callback which firest: when we create or close a socket.
---
--- Note: this callback runs with async exceptions masked.
+-- | Callback which fires: when we create or close a socket.
 --
 type SocketStateChange m s addr = SocketState m addr -> s -> STM m s
 
