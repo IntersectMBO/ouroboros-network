@@ -4,7 +4,7 @@
 
 let
   cardano-mainnet-config = pkgs.fetchurl {
-    url = https://raw.githubusercontent.com/input-output-hk/cardano-node/master/mainnet-genesis.json;
+    url = https://raw.githubusercontent.com/input-output-hk/cardano-node/114ee7f3b1cb55d384f928552c6b0871d4ca27ff/configuration/mainnet-genesis.json;
     sha256 = "1ahkdhqh07096law629r1d5jf6jz795rcw6c4vpgdi5j6ysb6a2g";
   };
   cardano-mainnet-mirror = pkgs.fetchFromGitHub {
