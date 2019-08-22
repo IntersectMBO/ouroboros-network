@@ -211,7 +211,7 @@ dnsSubscriptionWorker'
     -> Maybe Socket.SockAddr
     -> (Socket.SockAddr -> Maybe DiffTime)
     -> [ErrorPolicy]
-    -> (Time IO -> Socket.SockAddr -> a -> SuspendCommand DiffTime)
+    -> (Time IO -> Socket.SockAddr -> a -> SuspendDecision DiffTime)
     -> DnsSubscriptionTarget
     -> Main IO (PeerStates IO Socket.SockAddr (Time IO)) x
     -> (Socket.Socket -> IO a)
@@ -245,7 +245,7 @@ dnsSubscriptionWorker
     -> Maybe Socket.SockAddr
     -> (Socket.SockAddr -> Maybe DiffTime)
     -> [ErrorPolicy]
-    -> (Time IO -> Socket.SockAddr -> a -> SuspendCommand DiffTime)
+    -> (Time IO -> Socket.SockAddr -> a -> SuspendDecision DiffTime)
     -> DnsSubscriptionTarget
     -> (Socket.Socket -> IO a)
     -> IO Void

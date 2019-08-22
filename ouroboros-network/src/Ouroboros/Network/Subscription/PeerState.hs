@@ -1,4 +1,5 @@
 {-# LANGUAGE BangPatterns          #-}
+{-# LANGUAGE DeriveFunctor         #-}
 {-# LANGUAGE GADTs                 #-}
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE FlexibleInstances     #-}
@@ -12,11 +13,11 @@
 -- | This module contains peer state management and error policies.
 --
 module Ouroboros.Network.Subscription.PeerState
-  ( SuspendCommand (..)
+  ( SuspendDecision (..)
   , suspend
   -- * Error policy GADT
   , ErrorPolicy (..)
-  , ConnOrAppException (..)
+  , ConnectionOrApplicationException (..)
   , evalErrorPolicy
   , evalErrorPolicies
   -- * PeerStates and its operations
@@ -24,7 +25,7 @@ module Ouroboros.Network.Subscription.PeerState
   , threadsToCancel
   , PeerStates (..)
   , newPeerStatesVar
-  , runSuspendCommand
+  , runSuspendDecision
   , registerConsumer
   , unregisterConsumer
   , registerProducer
@@ -74,7 +75,7 @@ import           Data.Semigroup.Action
 -- This semigroup allows to either suspend both consumer and producer or just
 -- the consumer part.
 --
-data SuspendCommand t
+data SuspendDecision t
     = SuspendPeer !t !t
     -- ^ peer is suspend; The first @t@ is the time until which a local
     -- producer is suspended, the second one is the time until which a local
@@ -85,28 +86,23 @@ data SuspendCommand t
     -- peer).
     | Throw
     -- ^ throw an error from the main thread.
-    deriving (Eq, Ord, Show)
+    deriving (Eq, Ord, Show, Functor)
 
-consumerSuspendedUntil :: SuspendCommand t -> Maybe t
+consumerSuspendedUntil :: SuspendDecision t -> Maybe t
 consumerSuspendedUntil (SuspendPeer _ consT)   = Just consT
 consumerSuspendedUntil (SuspendConsumer consT) = Just consT
 consumerSuspendedUntil Throw                   = Nothing
 
-producerSuspendedUntil :: SuspendCommand t -> Maybe t
+producerSuspendedUntil :: SuspendDecision t -> Maybe t
 producerSuspendedUntil (SuspendPeer prodT _) = Just prodT
 producerSuspendedUntil (SuspendConsumer _) = Nothing
 producerSuspendedUntil Throw               = Nothing
-
-instance Functor SuspendCommand where
-    fmap f (SuspendPeer prodT consT) = SuspendPeer (f prodT) (f consT)
-    fmap f (SuspendConsumer consT) = SuspendConsumer (f consT)
-    fmap _ Throw = Throw
 
 -- | The semigroup instance.  Note that composing 'SuspendPeer' with
 -- 'SuspendConsumer' gives 'SuspendPeer'.  'SuspendPeer' and 'SuspendConsumer'
 -- form a sub-semigroup.
 --
-instance Ord t => Semigroup (SuspendCommand t) where
+instance Ord t => Semigroup (SuspendDecision t) where
     Throw <> _ = Throw
     _ <> Throw = Throw
     SuspendPeer prodT consT <> SuspendPeer prodT' consT'
@@ -122,38 +118,34 @@ instance Ord t => Semigroup (SuspendCommand t) where
 -- | Sum type which distinguishes between connection and application
 -- exceptions.
 --
-data ConnOrAppException err =
+data ConnectionOrApplicationException err =
      -- | Exception thrown by `connect`
-     ConnException err
+     ConnectionException err
      -- | Exception thrown by an application
-   | AppException err
-   deriving Show
-
-instance Functor ConnOrAppException where
-    fmap f (ConnException e) = ConnException (f e)
-    fmap f (AppException e)  = AppException (f e)
+   | ApplicationException err
+   deriving (Show, Functor)
 
 data ErrorPolicy where
      ErrorPolicy :: forall err.
                       Exception err
-                   => (ConnOrAppException err -> SuspendCommand DiffTime)
+                   => (ConnectionOrApplicationException err -> SuspendDecision DiffTime)
                    -> ErrorPolicy
 
 instance Show ErrorPolicy where
-    show (ErrorPolicy (_err :: ConnOrAppException err -> SuspendCommand DiffTime)) =
+    show (ErrorPolicy (_err :: ConnectionOrApplicationException err -> SuspendDecision DiffTime)) =
            "ErrorPolicy ("
         ++ tyConName (typeRepTyCon (typeRep (Proxy :: Proxy err)))
         ++ ")"
 
 evalErrorPolicy :: forall e.
                    Exception e
-                => ConnOrAppException e
+                => ConnectionOrApplicationException e
                 -> ErrorPolicy
-                -> Maybe (SuspendCommand DiffTime)
+                -> Maybe (SuspendDecision DiffTime)
 evalErrorPolicy e p =
     case p of
-      ErrorPolicy (f :: ConnOrAppException e' -> SuspendCommand DiffTime)
-        -> case gcast e :: Maybe (ConnOrAppException e') of
+      ErrorPolicy (f :: ConnectionOrApplicationException e' -> SuspendDecision DiffTime)
+        -> case gcast e :: Maybe (ConnectionOrApplicationException e') of
               Nothing -> Nothing
               Just e' -> Just $ f e'
 
@@ -162,14 +154,14 @@ evalErrorPolicy e p =
 --
 evalErrorPolicies :: forall e.
                      Exception e
-                  => ConnOrAppException e
+                  => ConnectionOrApplicationException e
                   -> [ErrorPolicy]
-                  -> Maybe (SuspendCommand DiffTime)
+                  -> Maybe (SuspendDecision DiffTime)
 evalErrorPolicies e =
     f . mapMaybe (evalErrorPolicy e)
   where
-    f :: [SuspendCommand DiffTime]
-      -> Maybe (SuspendCommand DiffTime)
+    f :: [SuspendDecision DiffTime]
+      -> Maybe (SuspendDecision DiffTime)
     f []          = Nothing
     f (cmd : rst) = Just $ sconcat (cmd :| rst)
 
@@ -184,12 +176,7 @@ data PeerState m t
   -- ^ suspended peer: producer & consumer suspend time
   | ColdPeer
   -- ^ peer with no opened connections in either direction
-
-instance Functor (PeerState m) where
-    fmap _ (HotPeer producers consumers) = HotPeer producers consumers
-    fmap f (SuspendedConsumer producers consT) = SuspendedConsumer producers (f consT)
-    fmap f (SuspendedPeer prodT consT) = SuspendedPeer (f prodT) (f consT)
-    fmap _ ColdPeer = ColdPeer
+  deriving Functor
 
 instance Show t => Show (PeerState IO t) where
     show (HotPeer producers consumers)
@@ -216,14 +203,14 @@ deriving instance (Eq (Async m ()), Eq t) => Eq (PeerState m t)
 
 deriving instance (Ord (Async m ()), Ord t) => Ord (PeerState m t)
 
--- | Action of 'SuspendCommand' on @Maybe 'PeerState'@.  We use this action
+-- | Action of 'SuspendDecision' on @Maybe 'PeerState'@.  We use this action
 -- together with 'Map.alter' function.
 --
--- Note: 'SuspendCommand' does not act on 'PeerState', only the sub-semigroup
+-- Note: 'SuspendDecision' does not act on 'PeerState', only the sub-semigroup
 -- generated by 'SuspendConsumer' and 'SuspendPeer' does.
 --
 --
-instance Ord t => SAct (SuspendCommand t) (Maybe (PeerState m t)) where
+instance Ord t => SAct (SuspendDecision t) (Maybe (PeerState m t)) where
 
     -- this means we will remove the entry from the state map; this is fine
     -- since we are about to throw an exception to kill a node.
@@ -259,11 +246,11 @@ instance Ord t => SAct (SuspendCommand t) (Maybe (PeerState m t)) where
                     (maybe consT (consT `max`) $ consumerSuspendedUntil cmd)
 
 -- | Threads which needs to be cancelled when updating the 'PeerState' with
--- 'SuspendCommand'.
+-- 'SuspendDecision'.
 --
 threadsToCancel :: Ord (Async m ())
                 => PeerState m t
-                -> SuspendCommand diffTime
+                -> SuspendDecision diffTime
                 -> Set (Async m ())
 threadsToCancel _ Throw
     = Set.empty
@@ -281,14 +268,14 @@ threadsToCancel SuspendedPeer{} _cmd
     = Set.empty
 
 
--- | Action of 'SuspendCommand' on @Maybe 'PeerState'@.  Action laws are only
+-- | Action of 'SuspendDecision' on @Maybe 'PeerState'@.  Action laws are only
 -- satisfied for the submonoid form by 'SuspendPeer' and 'SuspendConsumer'.
 --
 suspend :: ( Ord t
            , Ord (Async m ())
            )
         => Maybe (PeerState m t)
-        -> SuspendCommand t
+        -> SuspendDecision t
         -> ( Set (Async m ())
            , Maybe (PeerState m t)
            )
@@ -335,11 +322,11 @@ newPeerStatesVar = newTVarM (PeerStates Map.empty)
 -- | Update 'PeerStates' for a given 'addr', using 'suspend', and return
 -- threads which must be cancelled.
 --
--- This is more efficient that using the action of 'SuspendCommand' on
+-- This is more efficient that using the action of 'SuspendDecision' on
 -- 'PeerStates', since it only uses a single dictionary lookup to update the
 -- state and return the set of threads to be cancelled.
 --
-runSuspendCommand
+runSuspendDecision
     :: forall m addr e t.
        ( Monad m
        , TimeMeasure t
@@ -351,20 +338,20 @@ runSuspendCommand
     => t
     -> addr
     -> e
-    -> SuspendCommand DiffTime
+    -> SuspendDecision DiffTime
     -> PeerStates m addr t
     -> ( PeerStates m addr t
        , Set (Async m ())
        )
-runSuspendCommand _t _addr _e _cmd ps0@ThrowException{} =
+runSuspendDecision _t _addr _e _cmd ps0@ThrowException{} =
     ( ps0
     , Set.empty
     )
-runSuspendCommand _t _addr  e  Throw _ =
+runSuspendDecision _t _addr  e  Throw _ =
     ( ThrowException (SomeException e)
     , Set.empty
     )
-runSuspendCommand  t  addr _e  cmd (PeerStates ps0) =
+runSuspendDecision  t  addr _e  cmd (PeerStates ps0) =
     gn $ alterAndLookup fn addr ps0
   where
     fn :: Maybe (PeerState m t)
@@ -403,8 +390,8 @@ alterAndLookup f k m = runState (Map.alterF g k m) Nothing
       (s, mba') -> mba' <$ modify' (const (Just s))
 
 
-traceErrorPolicy :: Either (ConnOrAppException SomeException) r
-                 -> SuspendCommand DiffTime
+traceErrorPolicy :: Either (ConnectionOrApplicationException SomeException) r
+                 -> SuspendDecision DiffTime
                  -> Maybe ErrorPolicyTrace
 traceErrorPolicy (Left e) (SuspendPeer prodT consT) =
     Just $ ErrorPolicySuspendPeer (Just e) prodT consT
@@ -527,11 +514,11 @@ unregisterConsumer addr  tid (PeerStates peerStates) =
 
 -- | Trace data for error policies
 data ErrorPolicyTrace
-  = ErrorPolicySuspendPeer (Maybe (ConnOrAppException SomeException)) !DiffTime !DiffTime
+  = ErrorPolicySuspendPeer (Maybe (ConnectionOrApplicationException SomeException)) !DiffTime !DiffTime
   -- ^ suspending peer with a given exception until
-  | ErrorPolicySuspendConsumer (Maybe (ConnOrAppException SomeException)) !DiffTime
+  | ErrorPolicySuspendConsumer (Maybe (ConnectionOrApplicationException SomeException)) !DiffTime
   -- ^ suspending consumer until
-  | ErrorPolicyLocalNodeError (ConnOrAppException SomeException)
+  | ErrorPolicyLocalNodeError (ConnectionOrApplicationException SomeException)
   -- ^ caught a local exception
   | ErrorPolicyResumePeer
   -- ^ resume a peer (both consumer and producer)
