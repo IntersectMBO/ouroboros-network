@@ -80,7 +80,7 @@ in commonLib.nix-tools.release-nix {
     "nix-tools.tests.ouroboros-network.tests.x86_64-darwin"
     # 'Storage.HasFS.HasFS' test failing:
     "nix-tools.tests.ouroboros-consensus.test-storage.x86_64-darwin"
-    "nix-tools.tests.x86_65-pc-mingw32-ouroboros-consensus.test-storage.x86_64-linux"
+    "nix-tools.tests.x86_64-pc-mingw32-ouroboros-consensus.test-storage.x86_64-linux"
   ];
   # The required jobs that must pass for ci not to fail:
   required-name = "ouroboros-network-required-checks";
