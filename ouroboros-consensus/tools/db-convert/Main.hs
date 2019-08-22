@@ -26,7 +26,7 @@ import           Cardano.Chain.Slotting (EpochSlots (..))
 import qualified Cardano.Chain.Update as CC.Update
 import           Cardano.Crypto (Hash, RequiresNetworkMagic (..),
                      decodeAbstractHash, getAProtocolMagicId)
-import           Control.Exception (Exception, throwIO)
+import           Control.Exception (Exception, bracket, throwIO)
 import           Control.Monad.Except (liftIO, runExceptT)
 import           Control.Monad.Trans.Resource (runResourceT)
 import           Control.Tracer (contramap, debugTracer, nullTracer)
@@ -166,18 +166,24 @@ validateChainDb
   -> Bool -- Verbose
   -> IO ()
 validateChainDb dbDir cfg onlyImmDB verbose =
-  ResourceRegistry.with $ \registry -> if onlyImmDB
-    then give protocolMagicId $ give epochSlots $ do
+  ResourceRegistry.with $ \registry -> give protocolMagicId $ give epochSlots $
+    if onlyImmDB
+    then
       let (immDBArgs, _, _, _) = Args.fromChainDbArgs $ args registry
-      immDB <- ImmDB.openDB immDBArgs
-      immDbTipBlock <- ImmDB.getBlockAtTip immDB
-      putStrLn $ "DB tip: " ++ condense immDbTipBlock
-      ImmDB.closeDB immDB
-    else do
-      chaindb <- give protocolMagicId $ give epochSlots $ ChainDB.openDB $ args registry
-      blk <- ChainDB.getTipBlock chaindb
-      putStrLn $ "DB tip: " ++ condense blk
-      ChainDB.closeDB chaindb
+      in bracket
+        (ImmDB.openDB immDBArgs)
+        ImmDB.closeDB
+        (\immdb -> do
+          immDbTipBlock <- ImmDB.getBlockAtTip immdb
+          putStrLn $ "DB tip: " ++ condense immDbTipBlock
+        )
+    else bracket
+      (ChainDB.openDB $ args registry)
+        ChainDB.closeDB
+      (\chaindb -> do
+        blk <- ChainDB.getTipBlock chaindb
+        putStrLn $ "DB tip: " ++ condense blk
+      )
   where
     byronProtocolInfo =
       protocolInfoByron
