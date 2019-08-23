@@ -356,7 +356,6 @@ broadcastNetwork registry testBtime numCoreNodes pInfo initRNG slotLen = do
           ni :: NetworkInterface m NodeId
           ni = createNetworkInterface chans nodeIds us app
 
-
       void $ forkLinked         registry $ niWithServerNode ni wait
       void $ forkLinkedTransfer registry $ \registry' -> txProducer
         registry'

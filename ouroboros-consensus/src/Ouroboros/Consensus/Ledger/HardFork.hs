@@ -25,7 +25,7 @@ module Ouroboros.Consensus.Ledger.HardFork (
   , GenTxId (..)
   ) where
 
-import           Control.Monad.Trans.Except (throwE, withExcept)
+import           Control.Monad.Except (Except, throwError, withExcept)
 import           Data.Bifunctor (bimap)
 import           Data.FingerTree (Measured (..))
 import           Data.Maybe (isJust)
@@ -47,19 +47,37 @@ import           Ouroboros.Consensus.Ledger.Mock
 import           Ouroboros.Consensus.Protocol.PBFT
 import           Ouroboros.Consensus.Protocol.Praos
 
+{-------------------------------------------------------------------------------
+  Class for hard forking between ledgers
+-------------------------------------------------------------------------------}
+
 -- | Translate from one ledger state to another at the boundary of a hard fork
 class
   (UpdateLedger blk1, UpdateLedger blk2)
   => CanHardForkBlock blk1 blk2 where
+  -- | The slot number at which the hard fork will come into affect
+  --
+  --   If this is @Just n@, the new (type of) ledger state should be used from
+  --   slot @n@ forward. This should only be 'Just' a value when we are sure
+  --   that the hard fork will happen (in other words, when update proposals etc
+  --   have been accepted and are part of the stable chain).
   hardForksAt :: LedgerState blk1 -> Maybe SlotNo
   translateLedgerStateForHardFork :: LedgerState blk1 -> LedgerState blk2
   translateHeaderHash :: HeaderHash blk1 -> HeaderHash blk2
+
+{-------------------------------------------------------------------------------
+  BlockProtocol
+-------------------------------------------------------------------------------}
 
 -- | 'Forked' blocks compose the corresponding 'BlockProtocol's of the
 --   sub-blocks using the 'HardForksTo' protocol combinator
 type instance
   BlockProtocol (Forked blk1 blk2) =
     BlockProtocol blk1 `HardForksTo` BlockProtocol blk2
+
+{-------------------------------------------------------------------------------
+  Header and Hashes
+-------------------------------------------------------------------------------}
 
 type instance HeaderHash (Forked blk1 blk2) = ForkedHeaderHash blk1 blk2
 
@@ -82,9 +100,9 @@ instance
   forkedHeaderHash1 == forkedHeaderHash2 =
     case (unForkedHeaderHash forkedHeaderHash1, unForkedHeaderHash forkedHeaderHash2) of
       (BeforeFork a, BeforeFork b) -> a == b
-      (BeforeFork a, AfterFork b) -> translateHeaderHash @blk1 @blk2 a == b
-      (AfterFork a, BeforeFork b) -> a == translateHeaderHash @blk1 @blk2 b
-      (AfterFork a, AfterFork b) -> a == b
+      (BeforeFork a, AfterFork b)  -> translateHeaderHash @blk1 @blk2 a == b
+      (AfterFork a, BeforeFork b)  -> a == translateHeaderHash @blk1 @blk2 b
+      (AfterFork a, AfterFork b)   -> a == b
 
 instance
   (Measured BlockMeasure blk1, Measured BlockMeasure blk2)
@@ -162,6 +180,9 @@ instance
 
   blockInvariant = forked blockInvariant blockInvariant . unForkedHeader
 
+{-------------------------------------------------------------------------------
+  UpdateLedger
+-------------------------------------------------------------------------------}
 
 data ForkedLedgerError blk1 blk2
   = NewBlockBeforeFork
@@ -213,10 +234,7 @@ instance
   applyChainTick ForkedLedgerConfig {ledgerConfigBeforeFork, ledgerConfigAfterFork} slotNo =
     forked
       applyChainTickBeforeFork
-      ( withExcept AfterForkError .
-        fmap (ForkedLedgerState . AfterFork) .
-        applyChainTick ledgerConfigAfterFork slotNo
-      ) .
+      applyChainTickAfterFork .
       unForkedLedgerState
     where
       applyChainTickBeforeFork ledgerState = do
@@ -230,46 +248,27 @@ instance
             translateLedgerStateForHardFork @blk1 @blk2 ledgerState'
         else return . ForkedLedgerState . BeforeFork $ ledgerState'
 
-  -- Apply a Block to the 'LedgerState'
-  applyLedgerBlock ledgerConfig forkedBlock forkedLedgerState =
-    case (forkedBlock, unForkedLedgerState forkedLedgerState) of
-      -- Before the fork simply act as @p1@
-      (BeforeFork block, BeforeFork ledgerState) ->
-        withExcept BeforeForkError . fmap (ForkedLedgerState . BeforeFork) $
-          applyLedgerBlock
-            (ledgerConfigBeforeFork ledgerConfig)
-            block
-            ledgerState
-      -- After the fork simply act as @p2@
-      (AfterFork block, AfterFork ledgerState) ->
-        withExcept AfterForkError . fmap (ForkedLedgerState . AfterFork) $
-          applyLedgerBlock
-            (ledgerConfigAfterFork ledgerConfig)
-            block
-            ledgerState
-      (BeforeFork _, AfterFork _) -> throwE OldBlockAfterFork
-      (AfterFork _, BeforeFork _) -> throwE NewBlockBeforeFork
+      applyChainTickAfterFork =
+        withExcept AfterForkError .
+          fmap (ForkedLedgerState . AfterFork) .
+          applyChainTick ledgerConfigAfterFork slotNo
 
-  reapplyLedgerBlock ledgerConfig forkedBlock forkedLedgerState =
-    case (forkedBlock, unForkedLedgerState forkedLedgerState) of
-      -- Before the fork simply act as @p1@
-      (BeforeFork block, BeforeFork ledgerState) ->
-        ForkedLedgerState . BeforeFork $
-          reapplyLedgerBlock
-            (ledgerConfigBeforeFork ledgerConfig)
-            block
-            ledgerState
-      -- After the fork simply act as @p2@
-      (AfterFork block, AfterFork ledgerState) ->
-        ForkedLedgerState . AfterFork $
-          reapplyLedgerBlock
-            (ledgerConfigAfterFork ledgerConfig)
-            block
-            ledgerState
-      (BeforeFork _, AfterFork _) ->
-        error "reapplyLedgerBlock: unexpected error OldBlockAfterFork"
-      (AfterFork _, BeforeFork _) ->
-        error "reapplyLedgerBlock: unexpected error NewBlockBeforeFork"
+  -- Apply a Block to the 'LedgerState'
+  applyLedgerBlock =
+    applyToForkedLedgerState
+      applyLedgerBlock
+      BeforeForkError
+      applyLedgerBlock
+      AfterForkError
+      NewBlockBeforeFork
+      OldBlockAfterFork
+
+  reapplyLedgerBlock =
+    reapplyToSameForkedLedgerState
+      reapplyLedgerBlock
+      reapplyLedgerBlock
+      "reapplyLedgerBlock: unexpected error NewBlockBeforeFork"
+      "reapplyLedgerBlock: unexpected error OldBlockAfterFork"
 
   ledgerTipPoint =
     forked
@@ -285,6 +284,9 @@ deriving instance
   (Show (LedgerState blk1), Show (LedgerState blk2))
   => Show (LedgerState (Forked blk1 blk2))
 
+{-------------------------------------------------------------------------------
+  ProtocolLedgerView
+-------------------------------------------------------------------------------}
 
 instance
   ( ProtocolLedgerView blk1
@@ -295,7 +297,8 @@ instance
   => ProtocolLedgerView (Forked blk1 blk2) where
 
   protocolLedgerView ForkedNodeConfig {nodeConfigBeforeFork, nodeConfigAfterFork} =
-    bimap (protocolLedgerView nodeConfigBeforeFork)
+    bimap
+      (protocolLedgerView nodeConfigBeforeFork)
       (protocolLedgerView nodeConfigAfterFork) .
       unForkedLedgerState
 
@@ -307,6 +310,9 @@ instance
       (nodeConfigBeforeFork nodeConfig)
       (unsafeBeforeFork forkedLedgerState)
 
+{-------------------------------------------------------------------------------
+  ApplyTx
+-------------------------------------------------------------------------------}
 
 data ForkedApplyTxErr blk1 blk2
   = OldTransactionAfterFork
@@ -324,8 +330,10 @@ encodeForkedApplyTxErr
   -> ForkedApplyTxErr blk1 blk2
   -> Encoding
 encodeForkedApplyTxErr encodeBeforeFork encodeAfterFork = \case
-  OldTransactionAfterFork -> encodeListLen 1 <> toCBOR (0 :: Word8)
-  NewTransactionBeforeFork -> encodeListLen 1 <> toCBOR (1 :: Word8)
+  OldTransactionAfterFork ->
+    encodeListLen 1 <> toCBOR (0 :: Word8)
+  NewTransactionBeforeFork ->
+    encodeListLen 1 <> toCBOR (1 :: Word8)
   BeforeForkApplyTxErr err ->
     encodeListLen 2 <> toCBOR (2 :: Word8) <> encodeBeforeFork err
   AfterForkApplyTxErr err ->
@@ -356,58 +364,36 @@ instance
 
   type ApplyTxErr (Forked blk1 blk2) = ForkedApplyTxErr blk1 blk2
 
-  applyTx ledgerConfig forkedGenTx forkedLedgerState =
-    case (unForkedGenTx forkedGenTx, unForkedLedgerState forkedLedgerState) of
-      (BeforeFork genTx, BeforeFork ledgerState) ->
-        withExcept BeforeForkApplyTxErr . fmap (ForkedLedgerState . BeforeFork) $
-          applyTx
-            (ledgerConfigBeforeFork ledgerConfig)
-            genTx
-            ledgerState
-      (AfterFork genTx, AfterFork ledgerState) ->
-        withExcept AfterForkApplyTxErr . fmap (ForkedLedgerState . AfterFork) $
-          applyTx
-            (ledgerConfigAfterFork ledgerConfig)
-            genTx
-            ledgerState
-      (BeforeFork _, AfterFork _) -> throwE OldTransactionAfterFork
-      (AfterFork _, BeforeFork _) -> throwE NewTransactionBeforeFork
+  applyTx ledgerConfig =
+    applyToForkedLedgerState
+      applyTx
+      BeforeForkApplyTxErr
+      applyTx
+      AfterForkApplyTxErr
+      NewTransactionBeforeFork
+      OldTransactionAfterFork
+      ledgerConfig .
+      unForkedGenTx
 
-  reapplyTx ledgerConfig forkedGenTx forkedLedgerState =
-    case (unForkedGenTx forkedGenTx, unForkedLedgerState forkedLedgerState) of
-      (BeforeFork genTx, BeforeFork ledgerState) ->
-        withExcept BeforeForkApplyTxErr . fmap (ForkedLedgerState . BeforeFork) $
-          reapplyTx
-            (ledgerConfigBeforeFork ledgerConfig)
-            genTx
-            ledgerState
-      (AfterFork genTx, AfterFork ledgerState) ->
-        withExcept AfterForkApplyTxErr . fmap (ForkedLedgerState . AfterFork) $
-          reapplyTx
-            (ledgerConfigAfterFork ledgerConfig)
-            genTx
-            ledgerState
-      (BeforeFork _, AfterFork _) -> throwE OldTransactionAfterFork
-      (AfterFork _, BeforeFork _) -> throwE NewTransactionBeforeFork
+  reapplyTx ledgerConfig =
+    applyToForkedLedgerState
+      reapplyTx
+      BeforeForkApplyTxErr
+      reapplyTx
+      AfterForkApplyTxErr
+      NewTransactionBeforeFork
+      OldTransactionAfterFork
+      ledgerConfig .
+      unForkedGenTx
 
-  reapplyTxSameState ledgerConfig forkedGenTx forkedLedgerState =
-    case (unForkedGenTx forkedGenTx, unForkedLedgerState forkedLedgerState) of
-      (BeforeFork genTx, BeforeFork ledgerState) ->
-        ForkedLedgerState . BeforeFork $
-          reapplyTxSameState
-            (ledgerConfigBeforeFork ledgerConfig)
-            genTx
-            ledgerState
-      (AfterFork genTx, AfterFork ledgerState) ->
-        ForkedLedgerState . AfterFork $
-          reapplyTxSameState
-            (ledgerConfigAfterFork ledgerConfig)
-            genTx
-            ledgerState
-      (BeforeFork _, AfterFork _) ->
-        error "reapplyTxSameState: impossible! OldTransactionAfterFork"
-      (AfterFork _, BeforeFork _) ->
-        error "reapplyTxSameState: impossible! NewTransactionBeforeFork"
+  reapplyTxSameState ledgerConfig =
+      reapplyToSameForkedLedgerState
+        reapplyTxSameState
+        reapplyTxSameState
+        "reapplyTxSameState: impossible! NewTransactionBeforeFork"
+        "reapplyTxSameState: impossible! OldTransactionAfterFork"
+        ledgerConfig
+    . unForkedGenTx
 
 deriving instance
   (Show (GenTx blk1), Show (GenTx blk2)) => Show (GenTx (Forked blk1 blk2))
@@ -418,6 +404,97 @@ deriving instance
 deriving instance
   (Ord (GenTxId blk1), Ord (GenTxId blk2)) => Ord (GenTxId (Forked blk1 blk2))
 
+{-------------------------------------------------------------------------------
+  ForkedLedgerState Combinators
+-------------------------------------------------------------------------------}
+
+applyToForkedLedgerState
+  :: (LedgerConfig blk1 -> a -> LedgerState blk1 -> Except beforeError (LedgerState blk1))
+  -- ^ Function to apply before the fork
+  -> (beforeError -> error)
+  -- ^ Wrapper for errors before the fork
+  -> (LedgerConfig blk2 -> b -> LedgerState blk2 -> Except afterError (LedgerState blk2))
+  -- ^ Function to apply after the fork
+  -> (afterError -> error)
+  -- ^ Wrapper for errors after the fork
+  -> error
+  -- ^ Error for new thing before fork
+  -> error
+  -- ^ Error for old thing after fork
+  -> LedgerConfig (Forked blk1 blk2)
+  -> Forked a b
+  -> LedgerState (Forked blk1 blk2)
+  -> Except error (LedgerState (Forked blk1 blk2))
+applyToForkedLedgerState
+  applyBeforeFork
+  beforeWrapper
+  applyAfterFork
+  afterWrapper
+  newBeforeForkError
+  oldAfterForkError
+  ledgerConfig
+  forkedToApply
+  forkedLedgerState =
+    case (forkedToApply, unForkedLedgerState forkedLedgerState) of
+      -- Before the fork, act as ledger for @blk1@
+      (BeforeFork toApply, BeforeFork ledgerState) ->
+        withExcept beforeWrapper . fmap (ForkedLedgerState . BeforeFork) $
+          applyBeforeFork
+            (ledgerConfigBeforeFork ledgerConfig)
+            toApply
+            ledgerState
+      -- After the fork, act as ledger for @blk2@
+      (AfterFork toApply, AfterFork ledgerState) ->
+        withExcept afterWrapper . fmap (ForkedLedgerState . AfterFork) $
+          applyAfterFork
+            (ledgerConfigAfterFork ledgerConfig)
+            toApply
+            ledgerState
+      -- Throw error when receiving a new thing before the fork
+      (AfterFork _, BeforeFork _) -> throwError newBeforeForkError
+      -- Throw error when receiving an old thing after the fork
+      (BeforeFork _, AfterFork _) -> throwError oldAfterForkError
+
+reapplyToSameForkedLedgerState
+  :: (LedgerConfig blk1 -> a -> LedgerState blk1 -> LedgerState blk1)
+  -- ^ Wrapper for errors before the fork
+  -> (LedgerConfig blk2 -> b -> LedgerState blk2 -> LedgerState blk2)
+  -- ^ Wrapper for errors after the fork
+  -> String
+  -- ^ Error for new thing before fork
+  -> String
+  -- ^ Error for old thing after fork
+  -> LedgerConfig (Forked blk1 blk2)
+  -> Forked a b
+  -> LedgerState (Forked blk1 blk2)
+  -> LedgerState (Forked blk1 blk2)
+reapplyToSameForkedLedgerState
+  applyBeforeFork
+  applyAfterFork
+  errorNewBefore
+  errorOldAfter
+  ledgerConfig
+  forkedToApply
+  forkedLedgerState =
+    case (forkedToApply, unForkedLedgerState forkedLedgerState) of
+      (BeforeFork toApply, BeforeFork ledgerState) ->
+        ForkedLedgerState . BeforeFork $
+          applyBeforeFork
+            (ledgerConfigBeforeFork ledgerConfig)
+            toApply
+            ledgerState
+      (AfterFork toApply, AfterFork ledgerState) ->
+        ForkedLedgerState . AfterFork $
+          applyAfterFork
+            (ledgerConfigAfterFork ledgerConfig)
+            toApply
+            ledgerState
+      (BeforeFork _, AfterFork _) -> error errorNewBefore
+      (AfterFork _, BeforeFork _) -> error errorOldAfter
+
+{-------------------------------------------------------------------------------
+  Simple Hard Fork Instance
+-------------------------------------------------------------------------------}
 
 instance
   CanHardForkBlock

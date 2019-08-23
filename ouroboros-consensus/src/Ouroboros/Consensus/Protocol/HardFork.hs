@@ -38,7 +38,9 @@ import           Control.Monad.Trans.Class (MonadTrans (lift))
 import           Control.Monad.Trans.Except (throwE, withExcept)
 import           Control.Monad.Trans.Maybe (MaybeT (..))
 import           Crypto.Random (MonadRandom (..))
+import           Data.Bifoldable (Bifoldable (..))
 import           Data.Bifunctor (Bifunctor (..))
+import           Data.Bitraversable (Bitraversable (..))
 import           Data.Kind (Type)
 import           Data.Maybe (fromJust, isJust)
 import           GHC.Stack (HasCallStack)
@@ -63,6 +65,10 @@ import           Ouroboros.Consensus.Node.ProtocolInfo.Mock.Praos
 import           Ouroboros.Consensus.Protocol.ExtNodeConfig
 import           Ouroboros.Consensus.Protocol.PBFT hiding (pbftParams)
 import           Ouroboros.Consensus.Protocol.Praos
+
+{-------------------------------------------------------------------------------
+  Class to hard fork between protocols
+-------------------------------------------------------------------------------}
 
 -- | Protocols implementing this class will give up control to a new protocol
 --   when the 'shouldHardFork' becomes true
@@ -107,6 +113,9 @@ class (OuroborosTag p1, OuroborosTag p2) => CanHardFork p1 p2 where
     -> AnchoredFragment hdr
     -> Ordering
 
+{-------------------------------------------------------------------------------
+  Forked Data
+-------------------------------------------------------------------------------}
 
 -- | A sum type to represent values before and after a hard fork
 data Forked a b = BeforeFork a | AfterFork b
@@ -114,6 +123,12 @@ data Forked a b = BeforeFork a | AfterFork b
 
 instance Bifunctor Forked where
   bimap f g = forked (BeforeFork . f) (AfterFork . g)
+
+instance Bifoldable Forked where
+  bifoldMap = forked
+
+instance Bitraversable Forked where
+  bitraverse f g = forked (fmap BeforeFork . f) (fmap AfterFork . g)
 
 instance (Condense a, Condense b) => Condense (Forked a b) where
   condense (BeforeFork a) = condense a
@@ -132,119 +147,9 @@ unsafeAfterFork :: HasCallStack => Forked a b -> b
 unsafeAfterFork (AfterFork b) = b
 unsafeAfterFork _ = error "unsafeAfterFork: Got BeforeFork"
 
-
-class
-  ( SupportedHeader p1 (ForkedBefore hdr)
-  , SupportedHeader p2 (ForkedAfter hdr)
-  , HasHeader (ForkedAfter hdr)
-  )
-  => HardForkSupportedHeader p1 p2 hdr where
-
-  type ForkedBefore hdr :: Type
-
-  type ForkedAfter hdr :: Type
-
-  getForkedHeader :: hdr -> Forked (ForkedBefore hdr) (ForkedAfter hdr)
-
-
--- | This newtype around 'MaybeT' is used to get around the functional
---   dependency required by 'HasNodeState'
-newtype BeforeMaybeT m a
-  = BeforeMaybeT (MaybeT m a)
-  deriving newtype (Functor, Applicative, Monad, MonadTrans)
-
-instance MonadRandom m => MonadRandom (BeforeMaybeT m) where
-  getRandomBytes = lift . getRandomBytes
-
-runBeforeMaybeT :: BeforeMaybeT m a -> m (Maybe a)
-runBeforeMaybeT (BeforeMaybeT m) = runMaybeT m
-
-instance
-  HasNodeState_ (Forked p1 p2) m
-  => HasNodeState_ p1 (BeforeMaybeT m) where
-
-  getNodeState = lift getNodeState >>= \case
-    BeforeFork x -> return x
-    AfterFork _ -> BeforeMaybeT (MaybeT (pure Nothing))
-
-  putNodeState = lift . putNodeState . BeforeFork
-
-
--- | This newtype around 'MaybeT' is used to get around the functional
---   dependency required by 'HasNodeState'
-newtype AfterMaybeT m a
-  = AfterMaybeT (MaybeT m a)
-  deriving newtype (Functor, Applicative, Monad, MonadTrans)
-
-instance MonadRandom m => MonadRandom (AfterMaybeT m) where
-  getRandomBytes = lift . getRandomBytes
-
-runAfterMaybeT :: AfterMaybeT m a -> m (Maybe a)
-runAfterMaybeT (AfterMaybeT m) = runMaybeT m
-
-instance
-  HasNodeState_ (Forked p1 p2) m
-  => HasNodeState_ p2 (AfterMaybeT m) where
-
-  getNodeState = lift getNodeState >>= \case
-    BeforeFork _ -> AfterMaybeT (MaybeT (pure Nothing))
-    AfterFork x -> return x
-
-  putNodeState = lift . putNodeState . AfterFork
-
-
--- | After the fork we need to keep track of when we forked and keep a snapshot
---   of the old era 'ChainState' for k blocks
-data AfterForkChainState p1 p2
-  = AfterForkChainState
-      { forkSlotNo :: SlotNo
-      -- ^ The slot that we hard-forked at
-      , snapshotAtFork :: Maybe (ChainState p1)
-      -- ^ A snapshot of the old era chain state taken at the fork. It is
-      -- 'Nothing' after k blocks, because we can no longer roll back far enough
-      -- to need it
-      , afterForkChainState :: ChainState p2
-      -- ^ The 'ChainState' of the new era protocol
-      }
-
-deriving instance
-  (Show (ChainState p1), Show (ChainState p2))
-  => Show (AfterForkChainState p1 p2)
-
-encodeAfterForkChainState
-  :: (ChainState p1 -> Encoding)
-  -> (ChainState p2 -> Encoding)
-  -> AfterForkChainState p1 p2
-  -> Encoding
-encodeAfterForkChainState encodeBeforeFork encodeAfterFork chainState =
-  encodeListLen 3 <>
-    toCBOR (forkSlotNo chainState) <>
-    toCBORMaybe encodeBeforeFork (snapshotAtFork chainState) <>
-    encodeAfterFork (afterForkChainState chainState)
-
-decodeAfterForkChainState
-  :: Decoder s (ChainState p1)
-  -> Decoder s (ChainState p2)
-  -> Decoder s (AfterForkChainState p1 p2)
-decodeAfterForkChainState decodeBeforeFork decodeAfterFork = do
-  decodeListLenOf 3
-  AfterForkChainState <$>
-    fromCBOR <*>
-    fromCBORMaybe decodeBeforeFork <*>
-    decodeAfterFork
-
-
-data ForkedValidationErr p1 p2
-  = StateMismatch
-  | NewHeaderBeforeFork
-  | OldHeaderAfterFork
-  | BeforeForkValidationErr (ValidationErr p1)
-  | AfterForkValidationErr (ValidationErr p2)
-
-deriving instance
-  (Show (ValidationErr p1), Show (ValidationErr p2))
-  => Show (ForkedValidationErr p1 p2)
-
+{-------------------------------------------------------------------------------
+  HardForksTo Combinator
+-------------------------------------------------------------------------------}
 
 -- | A protocol that acts as @p1@ until a hard fork switches to @p2@
 data HardForksTo p1 p2
@@ -409,6 +314,134 @@ instance CanHardFork p1 p2 => OuroborosTag (p1 `HardForksTo` p2) where
               BeforeFork <$>
                 rewindChainState nodeConfigBeforeFork chainStateSnapshot originOrSlotNo
 
+{-------------------------------------------------------------------------------
+  SupportedHeader
+-------------------------------------------------------------------------------}
+
+class
+  ( SupportedHeader p1 (ForkedBefore hdr)
+  , SupportedHeader p2 (ForkedAfter hdr)
+  , HasHeader (ForkedAfter hdr)
+  )
+  => HardForkSupportedHeader p1 p2 hdr where
+
+  type ForkedBefore hdr :: Type
+
+  type ForkedAfter hdr :: Type
+
+  getForkedHeader :: hdr -> Forked (ForkedBefore hdr) (ForkedAfter hdr)
+
+{-------------------------------------------------------------------------------
+  Forking NodeState
+-------------------------------------------------------------------------------}
+
+-- | This newtype around 'MaybeT' is used to get around the functional
+--   dependency required by 'HasNodeState'
+newtype BeforeMaybeT m a
+  = BeforeMaybeT (MaybeT m a)
+  deriving newtype (Functor, Applicative, Monad, MonadTrans)
+
+instance MonadRandom m => MonadRandom (BeforeMaybeT m) where
+  getRandomBytes = lift . getRandomBytes
+
+runBeforeMaybeT :: BeforeMaybeT m a -> m (Maybe a)
+runBeforeMaybeT (BeforeMaybeT m) = runMaybeT m
+
+instance
+  HasNodeState_ (Forked p1 p2) m
+  => HasNodeState_ p1 (BeforeMaybeT m) where
+
+  getNodeState = lift getNodeState >>= \case
+    BeforeFork x -> return x
+    AfterFork _  -> BeforeMaybeT (MaybeT (pure Nothing))
+
+  putNodeState = lift . putNodeState . BeforeFork
+
+
+-- | This newtype around 'MaybeT' is used to get around the functional
+--   dependency required by 'HasNodeState'
+newtype AfterMaybeT m a
+  = AfterMaybeT (MaybeT m a)
+  deriving newtype (Functor, Applicative, Monad, MonadTrans)
+
+instance MonadRandom m => MonadRandom (AfterMaybeT m) where
+  getRandomBytes = lift . getRandomBytes
+
+runAfterMaybeT :: AfterMaybeT m a -> m (Maybe a)
+runAfterMaybeT (AfterMaybeT m) = runMaybeT m
+
+instance
+  HasNodeState_ (Forked p1 p2) m
+  => HasNodeState_ p2 (AfterMaybeT m) where
+
+  getNodeState = lift getNodeState >>= \case
+    BeforeFork _ -> AfterMaybeT (MaybeT (pure Nothing))
+    AfterFork x  -> return x
+
+  putNodeState = lift . putNodeState . AfterFork
+
+{-------------------------------------------------------------------------------
+  ChainState for after the fork
+-------------------------------------------------------------------------------}
+
+-- | After the fork we need to keep track of when we forked and keep a snapshot
+--   of the old era 'ChainState' for k blocks
+data AfterForkChainState p1 p2
+  = AfterForkChainState
+      { forkSlotNo :: SlotNo
+      -- ^ The slot that we hard-forked at
+      , snapshotAtFork :: Maybe (ChainState p1)
+      -- ^ A snapshot of the old era chain state taken at the fork. It is
+      -- 'Nothing' after k blocks, because we can no longer roll back far enough
+      -- to need it
+      , afterForkChainState :: ChainState p2
+      -- ^ The 'ChainState' of the new era protocol
+      }
+
+deriving instance
+  (Show (ChainState p1), Show (ChainState p2))
+  => Show (AfterForkChainState p1 p2)
+
+encodeAfterForkChainState
+  :: (ChainState p1 -> Encoding)
+  -> (ChainState p2 -> Encoding)
+  -> AfterForkChainState p1 p2
+  -> Encoding
+encodeAfterForkChainState encodeBeforeFork encodeAfterFork chainState =
+  encodeListLen 3 <>
+    toCBOR (forkSlotNo chainState) <>
+    toCBORMaybe encodeBeforeFork (snapshotAtFork chainState) <>
+    encodeAfterFork (afterForkChainState chainState)
+
+decodeAfterForkChainState
+  :: Decoder s (ChainState p1)
+  -> Decoder s (ChainState p2)
+  -> Decoder s (AfterForkChainState p1 p2)
+decodeAfterForkChainState decodeBeforeFork decodeAfterFork = do
+  decodeListLenOf 3
+  AfterForkChainState <$>
+    fromCBOR <*>
+    fromCBORMaybe decodeBeforeFork <*>
+    decodeAfterFork
+
+{-------------------------------------------------------------------------------
+  ValidationErr
+-------------------------------------------------------------------------------}
+
+data ForkedValidationErr p1 p2
+  = StateMismatch
+  | NewHeaderBeforeFork
+  | OldHeaderAfterFork
+  | BeforeForkValidationErr (ValidationErr p1)
+  | AfterForkValidationErr (ValidationErr p2)
+
+deriving instance
+  (Show (ValidationErr p1), Show (ValidationErr p2))
+  => Show (ForkedValidationErr p1 p2)
+
+{-------------------------------------------------------------------------------
+  Simple Hard Fork Instance
+-------------------------------------------------------------------------------}
 
 instance
   CanHardFork

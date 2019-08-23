@@ -2,7 +2,6 @@
 {-# LANGUAGE RecordWildCards   #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
-
 module Ouroboros.Consensus.Node.ProtocolInfo.Mock.Praos (
     protocolInfoPraos
   ) where

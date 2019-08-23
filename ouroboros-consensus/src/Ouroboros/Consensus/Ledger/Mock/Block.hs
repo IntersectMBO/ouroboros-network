@@ -89,7 +89,9 @@ data SimpleBlock' c ext ext' = SimpleBlock {
 class SerialiseTag a where
   serialiseTag :: Word8
 
-instance (SimpleCrypto c, Serialise ext', SerialiseTag ext') => Serialise (SimpleBlock' c ext ext') where
+instance
+  (SimpleCrypto c, Serialise ext', SerialiseTag ext')
+  => Serialise (SimpleBlock' c ext ext') where
 
   encode block =
     encode (serialiseTag @ext') <>
@@ -98,9 +100,11 @@ instance (SimpleCrypto c, Serialise ext', SerialiseTag ext') => Serialise (Simpl
       encode (simpleBody block)
 
   decode = do
-    void (decode :: CBOR.Decoder s Word8)
+    tag <- decode
+    unless (tag == serialiseTag @ext') (fail "Incorrect SerialiseTag")
     CBOR.decodeListLenOf 2
     SimpleBlock <$> decode <*> decode
+
 
 instance GetHeader (SimpleBlock' c ext ext') where
   data Header (SimpleBlock' c ext ext') = SimpleHeader {

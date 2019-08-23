@@ -378,7 +378,6 @@ test-suite test-storage
                     tasty-quickcheck,
                     temporary,
                     time,
-                    transformers,
                     tree-diff
 
   ghc-options:      -Wall
