@@ -452,6 +452,8 @@ subscriptionLoop
         Left (SomeException e) -> do
           traceWith tr $ SubscriptionTraceConnectException remoteAddr e
           atomically $ do
+            -- remove thread from active connections threads
+            modifyTVar' conThreads (Set.delete thread)
             (!s, m) <- readTVar sVar >>= completeApplicationTx (ConnectionError t remoteAddr e)
             writeTVar sVar s
             writeTQueue resQ (Act m)
