@@ -164,7 +164,7 @@ protocolInfoByron genesisConfig@Genesis.Config {
                 blsCurrent   = initState
               , blsSnapshots = Seq.empty
               }
-          , ouroborosChainState = Map.empty
+          , ouroborosChainState = initChainStateWithEBBs Map.empty
           }
       , pInfoInitState  = ()
       }
