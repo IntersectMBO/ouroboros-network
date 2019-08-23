@@ -84,7 +84,6 @@ data ClientStIdle header tip m a where
 --
 --  * a roll forward,
 --  * roll back message,
---  * the terminating message.
 --
 -- It must be prepared to handle any of these.
 --
