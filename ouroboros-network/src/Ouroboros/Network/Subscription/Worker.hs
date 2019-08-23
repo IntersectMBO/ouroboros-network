@@ -403,19 +403,23 @@ subscriptionLoop
                       socket'
                       remoteAddr
                       localAddr
-                      (atomically $ do
-                        modifyTVar' conThreads (Set.insert thread)
-                        modifyTVar' threadsVar (Set.insert thread)
-                        readTVar sVar
-                          >>= socketStateChangeTx (CreatedSocket remoteAddr thread)
-                          >>= (writeTVar sVar $!))
-                      (atomically $ do
-                        -- The thread is removed from 'conThreads'
-                        -- inside 'connAction'.
-                        modifyTVar' threadsVar (Set.delete thread)
-                        readTVar sVar
-                          >>= socketStateChangeTx (ClosedSocket remoteAddr thread)
-                          >>= (writeTVar sVar $!))
+                      (do
+                        traceWith tr $ SubscriptionTraceAllocateSocket remoteAddr
+                        atomically $ do
+                          modifyTVar' conThreads (Set.insert thread)
+                          modifyTVar' threadsVar (Set.insert thread)
+                          readTVar sVar
+                            >>= socketStateChangeTx (CreatedSocket remoteAddr thread)
+                            >>= (writeTVar sVar $!))
+                      (do
+                        atomically $ do
+                          -- The thread is removed from 'conThreads'
+                          -- inside 'connAction'.
+                          modifyTVar' threadsVar (Set.delete thread)
+                          readTVar sVar
+                            >>= socketStateChangeTx (ClosedSocket remoteAddr thread)
+                            >>= (writeTVar sVar $!)
+                        traceWith tr $ SubscriptionTraceCloseSocket remoteAddr)
                       (connAction
                         thread conThreads valencyVar
                         remoteAddr)
