@@ -22,6 +22,7 @@ library
                    , Network.TypedProtocol.Core
                    , Network.TypedProtocol.Pipelined
                    , Network.TypedProtocol.Channel
+                   , Network.TypedProtocol.Channel.Session
                    , Network.TypedProtocol.Codec
                    , Network.TypedProtocol.Driver
                    , Network.TypedProtocol.Driver.ByteLimit
