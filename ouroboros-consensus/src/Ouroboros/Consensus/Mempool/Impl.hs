@@ -270,7 +270,7 @@ implAddTxs mpEnv accum txs = do
           -- validating the provided new transactions.
           (vr, unvalidated) <- validateNew syncRes
           mempoolSize       <- getMempoolSize mpEnv
-          pure (vr, removed, (vrInvalid vr), unvalidated, mempoolSize)
+          pure (vr, removed, vrInvalid vr, unvalidated, mempoolSize)
 
     let ValidationResult { vrNewValid = accepted } = vr
 

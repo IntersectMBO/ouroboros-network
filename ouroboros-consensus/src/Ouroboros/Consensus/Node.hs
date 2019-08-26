@@ -51,8 +51,7 @@ import           Ouroboros.Consensus.Block (BlockProtocol)
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.ChainSyncClient (ClockSkew (..))
 import           Ouroboros.Consensus.Ledger.Extended (ExtLedgerState)
-import           Ouroboros.Consensus.Mempool.API (GenTx)
-import           Ouroboros.Consensus.Mempool.Impl (MempoolCapacity (..))
+import           Ouroboros.Consensus.Mempool (GenTx, MempoolCapacity (..))
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.Node.Tracers
