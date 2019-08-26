@@ -132,6 +132,9 @@ library
                        serialise         >=0.2 && <0.3,
                        stm               >=2.4 && <2.6,
                        time              >=1.6 && <1.10
+  if os(windows)
+    build-depends:     Win32,
+                       Win32-named-pipes
 
   ghc-options:         -Wall
                        -Wno-unticked-promoted-constructors
@@ -261,6 +264,9 @@ test-suite tests
                        time,
                        typed-protocols-cbor,
                        typed-protocols
+  if os(windows)
+    build-depends:     Win32,
+                       Win32-named-pipes
 
   ghc-options:         -Wall
                        -Wno-unticked-promoted-constructors

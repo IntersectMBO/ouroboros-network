@@ -8,7 +8,10 @@ module Ouroboros.Network.Snocket where
 import           Control.Monad (when)
 import qualified Network.Socket as Socket hiding (recv)
 #if defined(mingw32_HOST_OS)
-import           System.IO (Handle, hClose)
+import           Data.Bits
+import           System.IO
+import           System.Win32
+import           System.Win32.NamedPipes
 #endif
 
 import qualified Network.Mux as Mx
@@ -23,7 +26,7 @@ data Snocket channel addr ptcl = Snocket {
   , getLocalAddr        :: channel -> IO addr
   , getRemoteAddr       :: channel -> IO addr
   , close               :: channel -> IO ()
-  , connect             :: channel -> addr -> IO channel
+  , connect             :: channel -> addr -> IO ()
   , toBearer            :: channel -> IO (MuxBearer ptcl IO)
   , bind                :: channel -> addr -> IO ()
   , listen              :: channel -> IO ()
@@ -43,10 +46,7 @@ socketSnocket family = Snocket {
     , getRemoteAddr = Socket.getPeerName
     , close = Socket.close
     , accept = Socket.accept
-    , connect = (\s a -> do
-        Socket.connect s a
-        return s
-        )
+    , connect = Socket.connect
     , bind = (\sd a -> do
         when (family == Socket.AF_INET ||
               family == Socket.AF_INET6) $ do
@@ -67,18 +67,25 @@ socketSnocket family = Snocket {
 -- | Create a Windows Named Pipe Snocket.
 namedPipeSnocket
   :: forall ptcl.
-     Mx.ProtocolEnum ptcl
+     ( Mx.ProtocolEnum ptcl
+     , Ord ptcl
+     , Enum ptcl
+     , Bounded ptcl
+     )
   => String
   -> Snocket Handle String ptcl
 namedPipeSnocket name = Snocket {
-      createClient = createFile name
+      createClient = do
+        h <- createFile name
                        (gENERIC_READ .|. gENERIC_WRITE)
                        fILE_SHARE_NONE
                        Nothing
                        oPEN_EXISTING
                        fILE_ATTRIBUTE_NORMAL
                        Nothing
-    , createServer = createNamedPipe name
+        pipeToHandle h name ReadWriteMode
+    , createServer = do
+        h <- createNamedPipe name
                            pIPE_ACCESS_DUPLEX
                            (pIPE_TYPE_BYTE .|. pIPE_READMODE_BYTE)
                            pIPE_UNLIMITED_INSTANCES
@@ -86,18 +93,17 @@ namedPipeSnocket name = Snocket {
                            512
                            0
                            Nothing
-    , getLocalAddr = return name
-    , getRemoteAddr = return name
+        pipeToHandle h name ReadWriteMode
+    , getLocalAddr = \_ -> return name
+    , getRemoteAddr = \_ -> return name
     , close = hClose
     , accept = (\h -> do
-        h' <- pipeToHandle h name ReadWriteMode
-        return (h', name)
-    , connect = (\h a -> do
-        h' <- pipeToHandle h name ReadWriteMode
-        return h'
-    , bind = pure ()
-    , listen = (\h -> connectNamedPipe h Nothing)
-    , toBearer = (h -> Mx.pipeAsMuxBearer h h)
+        --h' <- pipeToHandle h name ReadWriteMode
+        return (h, name))
+    , connect = (\_ _ -> return ())
+    , bind = \_ _ -> return ()
+    , listen = (\_ -> return ())
+    , toBearer = (\h -> Mx.pipeAsMuxBearer h h)
     }
 
 #endif

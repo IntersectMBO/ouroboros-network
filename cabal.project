@@ -6,6 +6,7 @@ packages: ./typed-protocols
           ./ouroboros-consensus
           ./io-sim
           ./io-sim-classes
+          ../Win32-named-pipes-0.1.0.0
 
 package typed-protocols
   tests: True

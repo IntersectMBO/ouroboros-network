@@ -131,8 +131,8 @@ connectToNode sn encodeData decodeData tracer peeridFn versions localAddr remote
           case localAddr of
             Just addr -> Snocket.bind sn sd addr
             Nothing   -> return ()
-          sd' <- Snocket.connect sn sd remoteAddr
-          connectToNode' sn encodeData decodeData tracer peeridFn versions sd'
+          Snocket.connect sn sd remoteAddr
+          connectToNode' sn encodeData decodeData tracer peeridFn versions sd
       )
 
 -- |
