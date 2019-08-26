@@ -11,7 +11,7 @@ module Ouroboros.Network.Subscription.Ip
     , subscriptionWorker
     , SubscriptionTrace
     , IPSubscriptionTarget (..)
-    , WithIPList
+    , WithIPList (..)
     ) where
 
 

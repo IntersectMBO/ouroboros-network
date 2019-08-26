@@ -23,9 +23,9 @@ module Ouroboros.Network.Subscription
 
       -- * Tracing
     , SubscriptionTrace (..)
-    , WithIPList
+    , WithIPList (..)
     , DnsTrace (..)
-    , WithDomainName
+    , WithDomainName (..)
     ) where
 
 import           Ouroboros.Network.Subscription.Ip

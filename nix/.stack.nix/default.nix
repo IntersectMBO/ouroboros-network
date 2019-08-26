@@ -31,8 +31,8 @@
         ouroboros-consensus = ./ouroboros-consensus.nix;
         io-sim = ./io-sim.nix;
         io-sim-classes = ./io-sim-classes.nix;
-        iohk-monitoring = ./iohk-monitoring.nix;
         contra-tracer = ./contra-tracer.nix;
+        iohk-monitoring = ./iohk-monitoring.nix;
         cardano-binary = ./cardano-binary.nix;
         cardano-binary-test = ./cardano-binary-test.nix;
         cardano-crypto-class = ./cardano-crypto-class.nix;
