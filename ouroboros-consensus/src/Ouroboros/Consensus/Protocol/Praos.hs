@@ -179,6 +179,7 @@ data PraosParams = PraosParams {
     , praosSecurityParam :: SecurityParam
     , praosSlotsPerEpoch :: Word64
     , praosLifetimeKES   :: Natural
+    , praosSlotLength    :: SlotLength
     }
 
 instance PraosCrypto c => OuroborosTag (Praos c) where
@@ -192,6 +193,8 @@ instance PraosCrypto c => OuroborosTag (Praos c) where
     }
 
   protocolSecurityParam = praosSecurityParam . praosParams
+
+  protocolSlotLength cfg _ledgerView = praosSlotLength $ praosParams cfg
 
   type NodeState       (Praos c) = SignKeyKES (PraosKES c)
   type LedgerView      (Praos c) = StakeDist

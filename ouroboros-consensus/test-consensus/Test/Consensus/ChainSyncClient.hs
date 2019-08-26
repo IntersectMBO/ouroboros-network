@@ -342,6 +342,7 @@ runChainSync securityParam maxClockSkew (ClientUpdates clientUpdates)
       { bftParams   = BftParams
         { bftSecurityParam = securityParam
         , bftNumNodes      = 2
+        , bftSlotLength    = slotLengthFromSec 20
         }
       , bftNodeId   = fromCoreNodeId coreNodeId
       , bftSignKey  = SignKeyMockDSIGN 0

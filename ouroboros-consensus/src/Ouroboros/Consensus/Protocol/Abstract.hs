@@ -11,9 +11,10 @@
 {-# LANGUAGE UndecidableInstances       #-}
 
 module Ouroboros.Consensus.Protocol.Abstract (
-    -- * Abstract definition of the Ouroboros protocl
+    -- * Abstract definition of the Ouroboros protocol
     OuroborosTag(..)
   , SecurityParam(..)
+  , SlotLength(..)
     -- * State monad for Ouroboros state
   , HasNodeState
   , HasNodeState_(..)
@@ -31,6 +32,7 @@ import           Control.Monad.State
 import           Crypto.Random (MonadRandom (..))
 import           Data.Functor.Identity
 import           Data.Kind (Constraint)
+import           Data.Time (NominalDiffTime)
 import           Data.Typeable (Typeable)
 import           Data.Word (Word64)
 
@@ -166,6 +168,20 @@ class ( Show (ChainState    p)
   -- | We require that protocols support a @k@ security parameter
   protocolSecurityParam :: NodeConfig p -> SecurityParam
 
+  -- | The slot length, where known.
+  --
+  -- The duration of a slot is typically fixed for a certain protocol, but
+  -- might change when we switch from one protocol to another via a hard fork.
+  -- In that case, the 'LedgerView' can be used to detect if the hard fork has
+  -- happened.
+  --
+  -- Should guarantee that "later" calls (later on the blockchain) can extend,
+  -- but not modify, the information returned by earlier calls
+  protocolSlotLength :: NodeConfig p
+                     -> LedgerView p
+                     -> SlotLength
+                        -- TODO "where known", currently assumed to be static
+
   -- | We require that it's possible to reverse the chain state up to @k@
   -- blocks.
   --
@@ -204,6 +220,10 @@ class ( Show (ChainState    p)
 -- the number of /slots/.
 newtype SecurityParam = SecurityParam { maxRollbacks :: Word64 }
   deriving (Eq)
+
+-- | Slot length
+newtype SlotLength = SlotLength { getSlotLength :: NominalDiffTime }
+  deriving (Show)
 
 {-------------------------------------------------------------------------------
   State monad

@@ -56,6 +56,7 @@ instance (Typeable cfg, OuroborosTag p) => OuroborosTag (ExtNodeConfig cfg p) wh
   applyChainState       (EncNodeConfig cfg _) = applyChainState       cfg
   rewindChainState      (EncNodeConfig cfg _) = rewindChainState      cfg
   protocolSecurityParam (EncNodeConfig cfg _) = protocolSecurityParam cfg
+  protocolSlotLength    (EncNodeConfig cfg _) = protocolSlotLength    cfg
 
 mapExtNodeConfig :: (a -> b)
                  -> NodeConfig (ExtNodeConfig a p)

@@ -6,6 +6,7 @@ import qualified Data.Map as Map
 
 import           Cardano.Crypto.DSIGN
 
+import           Ouroboros.Consensus.BlockchainTime (slotLengthFromSec)
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.Mock
 import           Ouroboros.Consensus.Node.ProtocolInfo.Abstract
@@ -23,6 +24,7 @@ protocolInfoBft (NumCoreNodes numCoreNodes) (CoreNodeId nid) securityParam =
             bftParams   = BftParams {
                               bftNumNodes      = fromIntegral numCoreNodes
                             , bftSecurityParam = securityParam
+                            , bftSlotLength    = slotLengthFromSec 20
                             }
           , bftNodeId   = CoreId nid
           , bftSignKey  = SignKeyMockDSIGN nid

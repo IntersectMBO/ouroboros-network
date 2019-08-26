@@ -39,7 +39,13 @@ prop_simple_pbft_convergence
   where
     sigWin = fromIntegral $ nn * 10
     sigThd = (1.0 / fromIntegral nn) + 0.1
-    params = PBftParams k (fromIntegral nn) sigWin sigThd
+    params = PBftParams
+      { pbftSecurityParam      = k
+      , pbftNumNodes           = fromIntegral nn
+      , pbftSlotLength         = slotLengthFromSec 20
+      , pbftSignatureWindow    = sigWin
+      , pbftSignatureThreshold = sigThd
+      }
 
     testOutput =
         runTestNetwork

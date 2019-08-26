@@ -93,6 +93,9 @@ data BftParams = BftParams {
 
       -- | Number of core nodes
     , bftNumNodes      :: Word64
+
+      -- | Slot length
+    , bftSlotLength    :: SlotLength
     }
 
 instance BftCrypto c => OuroborosTag (Bft c) where
@@ -112,6 +115,8 @@ instance BftCrypto c => OuroborosTag (Bft c) where
   type ChainState      (Bft c) = ()
 
   protocolSecurityParam = bftSecurityParam . bftParams
+
+  protocolSlotLength cfg _ledgerView = bftSlotLength $ bftParams cfg
 
   checkIsLeader BftNodeConfig{..} (SlotNo n) _l _cs = do
       return $ case bftNodeId of

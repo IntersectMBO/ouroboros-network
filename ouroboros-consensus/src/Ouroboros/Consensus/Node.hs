@@ -45,8 +45,8 @@ import qualified Ouroboros.Network.Block as Block
 import           Ouroboros.Network.NodeToClient as NodeToClient
 import           Ouroboros.Network.NodeToNode as NodeToNode
 import           Ouroboros.Network.Socket
-import           Ouroboros.Network.Subscription.Ip
 import           Ouroboros.Network.Subscription.Dns
+import           Ouroboros.Network.Subscription.Ip
 
 import           Ouroboros.Network.Protocol.Handshake.Type
 import           Ouroboros.Network.Protocol.Handshake.Version
@@ -54,7 +54,8 @@ import           Ouroboros.Network.Protocol.Handshake.Version
 import           Ouroboros.Consensus.Block (BlockProtocol)
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.ChainSyncClient (ClockSkew (..))
-import           Ouroboros.Consensus.Ledger.Extended (ExtLedgerState)
+import           Ouroboros.Consensus.Ledger.Abstract (protocolLedgerView)
+import           Ouroboros.Consensus.Ledger.Extended (ExtLedgerState (..))
 import           Ouroboros.Consensus.Mempool.API (GenTx)
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Node.Run
@@ -136,11 +137,9 @@ run tracers chainDbTracer rna dbPath pInfo
       , pInfoInitState  = initState
       } = pInfo
 
-    -- TODO this will depend on the protocol and can change when a hard-fork
-    -- happens, see #921 and #282.
-    --
-    -- For now, we hard-code it to Byron's 20 seconds.
-    slotLength = slotLengthFromMillisec (20 * 1000)
+    slotLength = protocolSlotLength cfg
+               $ protocolLedgerView cfg
+               $ ledgerState        initLedger
 
 initChainDB
   :: forall blk. RunNode blk

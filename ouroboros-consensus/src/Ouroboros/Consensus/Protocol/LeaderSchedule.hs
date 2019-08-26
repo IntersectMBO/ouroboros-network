@@ -1,9 +1,7 @@
-{-# LANGUAGE DeriveGeneric              #-}
-{-# LANGUAGE FlexibleInstances          #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE RecordWildCards            #-}
-{-# LANGUAGE StandaloneDeriving         #-}
-{-# LANGUAGE TypeFamilies               #-}
+{-# LANGUAGE FlexibleInstances   #-}
+{-# LANGUAGE RecordWildCards     #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeFamilies        #-}
 
 module Ouroboros.Consensus.Protocol.LeaderSchedule (
     LeaderSchedule (..)
@@ -37,7 +35,7 @@ instance OuroborosTag p => OuroborosTag (WithLeaderSchedule p) where
 
   type ChainState      (WithLeaderSchedule p) = ()
   type NodeState       (WithLeaderSchedule p) = ()
-  type LedgerView      (WithLeaderSchedule p) = ()
+  type LedgerView      (WithLeaderSchedule p) = LedgerView p
   type ValidationErr   (WithLeaderSchedule p) = ()
   type IsLeader        (WithLeaderSchedule p) = ()
   type SupportedHeader (WithLeaderSchedule p) = Empty
@@ -51,6 +49,7 @@ instance OuroborosTag p => OuroborosTag (WithLeaderSchedule p) where
   preferCandidate       WLSNodeConfig{..} = preferCandidate       lsNodeConfigP
   compareCandidates     WLSNodeConfig{..} = compareCandidates     lsNodeConfigP
   protocolSecurityParam WLSNodeConfig{..} = protocolSecurityParam lsNodeConfigP
+  protocolSlotLength    WLSNodeConfig{..} = protocolSlotLength    lsNodeConfigP
 
   checkIsLeader WLSNodeConfig{..} slot _ _ = return $
     case Map.lookup slot $ getLeaderSchedule lsNodeConfigSchedule of

@@ -23,17 +23,18 @@ module Ouroboros.Consensus.Node.ProtocolInfo.Byron (
 import           Control.Exception (Exception)
 import           Control.Monad.Except
 import qualified Data.Map.Strict as Map
+import           Data.Maybe
 import qualified Data.Sequence as Seq
 import qualified Data.Set as Set
-import           Data.Maybe
 
 import qualified Cardano.Chain.Block as Block
-import           Cardano.Chain.Common (BlockCount(..))
+import           Cardano.Chain.Common (BlockCount (..))
 import qualified Cardano.Chain.Delegation as Delegation
 import qualified Cardano.Chain.Genesis as Genesis
 import qualified Cardano.Chain.Update as Update
 import qualified Cardano.Crypto as Crypto
 
+import           Ouroboros.Consensus.BlockchainTime (slotLengthFromMillisec)
 import           Ouroboros.Consensus.Crypto.DSIGN.Cardano
 import           Ouroboros.Consensus.Ledger.Byron hiding (genesisConfig)
 import           Ouroboros.Consensus.Ledger.Extended
@@ -53,9 +54,9 @@ import qualified Test.Cardano.Chain.Genesis.Dummy as Dummy
 -------------------------------------------------------------------------------}
 
 data PBftLeaderCredentials = PBftLeaderCredentials {
-      plcSignKey     :: Crypto.SigningKey
-    , plcDlgCert     :: Delegation.Certificate
-    , plcCoreNodeId  :: CoreNodeId
+      plcSignKey    :: Crypto.SigningKey
+    , plcDlgCert    :: Delegation.Certificate
+    , plcCoreNodeId :: CoreNodeId
     } deriving Show
 
 -- | Make the 'PBftLeaderCredentials', with a couple sanity checks:
@@ -132,6 +133,11 @@ protocolInfoByron genesisConfig@Genesis.Config {
                   , pbftNumNodes           = fromIntegral . Set.size
                                            . Genesis.unGenesisKeyHashes
                                            $ genesisKeyHashes
+                  , pbftSlotLength         = slotLengthFromMillisec
+                                           . fromIntegral
+                                           . Update.ppSlotDuration
+                                           . Genesis.configProtocolParameters
+                                           $ genesisConfig
                   , pbftSignatureWindow    = fromIntegral kParam
                   , pbftSignatureThreshold = unSignatureThreshold $
                       fromMaybe defaultPBftSignatureThreshold mSigThresh

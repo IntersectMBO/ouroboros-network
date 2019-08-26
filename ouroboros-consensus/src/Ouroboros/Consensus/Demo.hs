@@ -14,6 +14,7 @@ import           Data.Reflection (give)
 
 import qualified Cardano.Chain.Genesis as Cardano.Genesis
 
+import           Ouroboros.Consensus.BlockchainTime (slotLengthFromSec)
 import           Ouroboros.Consensus.Demo.Run
 import           Ouroboros.Consensus.Protocol
 import           Ouroboros.Consensus.Util
@@ -31,6 +32,7 @@ defaultDemoPraosParams :: PraosParams
 defaultDemoPraosParams = PraosParams {
       praosSecurityParam = defaultSecurityParam
     , praosSlotsPerEpoch = 3
+    , praosSlotLength    = slotLengthFromSec 2
     , praosLeaderF       = 0.5
     , praosLifetimeKES   = 1000000
     }
@@ -39,6 +41,7 @@ defaultDemoPBftParams :: PBftParams
 defaultDemoPBftParams = PBftParams {
       pbftSecurityParam      = defaultSecurityParam
     , pbftNumNodes           = nn
+    , pbftSlotLength         = slotLengthFromSec 2
     , pbftSignatureWindow    = fromIntegral $ nn * 10
     , pbftSignatureThreshold = (1.0 / fromIntegral nn) + 0.1
     }

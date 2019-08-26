@@ -1,11 +1,10 @@
-{-# LANGUAGE FlexibleContexts           #-}
-{-# LANGUAGE MultiParamTypeClasses      #-}
-{-# LANGUAGE ScopedTypeVariables        #-}
-{-# LANGUAGE TypeApplications           #-}
-{-# LANGUAGE TypeFamilies               #-}
-{-# LANGUAGE UndecidableInstances       #-}
-{-# LANGUAGE UndecidableSuperClasses    #-}
-{-# LANGUAGE ViewPatterns               #-}
+{-# LANGUAGE FlexibleContexts        #-}
+{-# LANGUAGE MultiParamTypeClasses   #-}
+{-# LANGUAGE ScopedTypeVariables     #-}
+{-# LANGUAGE TypeApplications        #-}
+{-# LANGUAGE TypeFamilies            #-}
+{-# LANGUAGE UndecidableInstances    #-}
+{-# LANGUAGE UndecidableSuperClasses #-}
 
 module Ouroboros.Consensus.Protocol.WithEBBs
   ( WithEBBs
@@ -14,7 +13,7 @@ module Ouroboros.Consensus.Protocol.WithEBBs
   )
 where
 
-import Ouroboros.Consensus.Protocol.Abstract
+import           Ouroboros.Consensus.Protocol.Abstract
 
 class ( SupportedHeader p (HeaderOfBlock hoe)
       ) => HeaderSupportsWithEBB p hoe where
@@ -51,10 +50,11 @@ instance (OuroborosTag p) => OuroborosTag (WithEBBs p) where
   checkIsLeader         (WithEBBNodeConfig cfg) = checkIsLeader         cfg
   rewindChainState      (WithEBBNodeConfig cfg) = rewindChainState      cfg
   protocolSecurityParam (WithEBBNodeConfig cfg) = protocolSecurityParam cfg
+  protocolSlotLength    (WithEBBNodeConfig cfg) = protocolSlotLength cfg
 
   applyChainState (WithEBBNodeConfig cfg) lv b cs = case
     eitherHeaderOrEbb cfg b of
       Right hdr -> applyChainState @p cfg lv hdr cs
       -- Currently the hash chain is maintained in the ledger state, so we just
       -- ignore the EBB for protocol concerns.
-      Left _ -> return cs
+      Left _    -> return cs

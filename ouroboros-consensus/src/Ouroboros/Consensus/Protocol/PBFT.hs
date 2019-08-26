@@ -38,13 +38,13 @@ import           Data.Bimap (Bimap)
 import qualified Data.Bimap as Bimap
 import           Data.Constraint
 import           Data.List (sortOn)
-import           Data.Reflection (Given (..), give)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
-import qualified Data.Set as Set
+import           Data.Reflection (Given (..), give)
 import           Data.Sequence (Seq)
 import qualified Data.Sequence as Seq
-import           Data.Typeable (Proxy(..), Typeable)
+import qualified Data.Set as Set
+import           Data.Typeable (Proxy (..), Typeable)
 import           Data.Word (Word64)
 import           GHC.Generics (Generic)
 
@@ -60,7 +60,7 @@ import           Ouroboros.Network.Block
 import           Ouroboros.Network.Point (WithOrigin (..))
 
 import           Ouroboros.Consensus.Crypto.DSIGN.Cardano
-import           Ouroboros.Consensus.NodeId (CoreNodeId(..))
+import           Ouroboros.Consensus.NodeId (CoreNodeId (..))
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.Signed
 import           Ouroboros.Consensus.Util.Condense
@@ -133,6 +133,9 @@ data PBftParams = PBftParams {
       -- | Number of core nodes
     , pbftNumNodes           :: Word64
 
+      -- | Slot length
+    , pbftSlotLength         :: SlotLength
+
       -- TODO These will ultimately be protocol parameters, but at the moment such
       -- parameters are missing in the ledger.
 
@@ -178,6 +181,8 @@ instance (PBftCrypto c, Typeable c) => OuroborosTag (PBft c) where
     Map (PBftVerKeyHash c) (Seq SlotNo)
 
   protocolSecurityParam = pbftSecurityParam . pbftParams
+
+  protocolSlotLength cfg _ledgerView = pbftSlotLength $ pbftParams cfg
 
   checkIsLeader PBftNodeConfig{pbftIsLeader, pbftParams} (SlotNo n) _l _cs =
       case pbftIsLeader of
