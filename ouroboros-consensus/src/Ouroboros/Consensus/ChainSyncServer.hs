@@ -1,4 +1,5 @@
 {-# LANGUAGE EmptyDataDeriving   #-}
+{-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies        #-}
 
@@ -89,15 +90,16 @@ chainSyncServerForReader _tracer chainDB rdr =
 
     handleRequestNext :: m (Either (ServerStNext b (Point blk) m ())
                                 (m (ServerStNext b (Point blk) m ())))
-    handleRequestNext = do
-      mupdate <- ChainDB.readerInstruction rdr
-      tip     <- atomically $ ChainDB.getTipPoint chainDB
-      return $ case mupdate of
-        Just update -> Left  $ sendNext tip update
-        Nothing     -> Right $ sendNext tip <$>
-                                 ChainDB.readerInstructionBlocking rdr
-                       -- Reader is at the head, have to block and wait for
-                       -- the producer's state to change.
+    handleRequestNext = ChainDB.readerInstruction rdr >>= \case
+      Just update -> do
+        tip <- atomically $ ChainDB.getTipPoint chainDB
+        return $ Left $ sendNext tip update
+      Nothing     -> return $ Right $ do
+        -- Reader is at the head, we have to block and wait for the chain to
+        -- change.
+        update <- ChainDB.readerInstructionBlocking rdr
+        tip    <- atomically $ ChainDB.getTipPoint chainDB
+        return $ sendNext tip update
 
     sendNext :: Point blk
              -> ChainUpdate blk b
