@@ -79,6 +79,10 @@ import           Text.Show.Functions ()
 tests :: TestTree
 tests =
   testGroup "Socket"
+#if defined(mingw32_HOST_OS)
+  -- We run multithreaded on windows, so nothing is supported.
+  []
+#else
   [ testProperty "socket send receive IPv4"              prop_socket_send_recv_ipv4
 #ifdef OUROBOROS_NETWORK_IPV6
   , after AllFinish "socket send receive IPv4" $
@@ -87,9 +91,7 @@ tests =
 #else
 #define LAST_IP_TEST "socket send receive IPv4"
 #endif
-#ifndef mingw32_HOST_OS
   , testProperty "socket send receive Unix"              prop_socket_send_recv_unix
-#endif
   , after AllFinish LAST_IP_TEST $
     testProperty "socket close during receive"           prop_socket_recv_close
   , after AllFinish "socket close during receive" $
@@ -460,3 +462,4 @@ demo chain0 updates = do
                     pure $ Right $ consumerClient done target chain
         , ChainSync.points = \_ -> pure $ consumerClient done target chain
         }
+#endif

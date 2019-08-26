@@ -112,10 +112,13 @@ tests =
         --, testProperty "Resolve (IO)"      _prop_resolv_io
         -- ^ takes about 10 minutes to run due to delays in realtime.
         , testProperty "Resolve Subscribe (IO)" prop_sub_io
+#ifndef mingw32_HOST_OS
+  -- On windows no socket operations are supported
         , testProperty "Send Recive with Dns worker (IO)" prop_send_recv
         , testProperty "Send Recieve with IP worker, Initiator and responder (IO)"
                prop_send_recv_init_and_rsp
         -- , testProperty "subscription demo" _demo
+#endif
         ]
 
 data LookupResult = LookupResult {
