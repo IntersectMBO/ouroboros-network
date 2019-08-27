@@ -107,7 +107,7 @@ createNetworkInterface
     -> [peer]               -- ^ list of nodes which we want to serve
     -> peer                 -- ^ our peer
     -> NetworkApplication m peer
-        (AnyMessage (ChainSync (Header blk) (Point blk)))
+        (AnyMessage (ChainSync (Header blk) (Point (Header blk))))
         (AnyMessage (BlockFetch blk))
         (AnyMessage (TxSubmission (GenTxId blk) (GenTx blk)))
         unused1 -- the local node-to-client channel types
@@ -443,7 +443,7 @@ getTestOutput nodes = do
 -------------------------------------------------------------------------------}
 
 -- | Communication channel used for the Chain Sync protocol
-type ChainSyncChannel m blk = Channel m (AnyMessage (ChainSync (Header blk) (Point blk)))
+type ChainSyncChannel m blk = Channel m (AnyMessage (ChainSync (Header blk) (Point (Header blk))))
 
 -- | Communication channel used for the Block Fetch protocol
 type BlockFetchChannel m blk = Channel m (AnyMessage (BlockFetch blk))
