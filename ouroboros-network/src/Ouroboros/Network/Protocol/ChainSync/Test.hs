@@ -29,6 +29,7 @@ import           Network.TypedProtocol.Proofs (connect)
 
 import           Ouroboros.Network.Channel
 
+import           Ouroboros.Network.Block (BlockNo, StandardHash)
 import           Ouroboros.Network.MockChain.Chain (Point)
 import qualified Ouroboros.Network.MockChain.Chain as Chain
 import qualified Ouroboros.Network.MockChain.ProducerState as ChainProducerState
@@ -70,7 +71,7 @@ testClient
   :: MonadSTM m
   => TVar m Bool
   -> Point Block
-  -> ChainSyncExamples.Client Block m ()
+  -> ChainSyncExamples.Client Block blockInfo m ()
 testClient doneVar tip =
   ChainSyncExamples.Client {
       ChainSyncExamples.rollbackward = \point _ ->
@@ -96,8 +97,8 @@ chainSyncForkExperiment
      ( MonadST m
      , MonadSTM m
      )
-  => (forall a b. ChainSyncServer Block (Point Block) m a
-      -> ChainSyncClient Block (Point Block) m b
+  => (forall a b. ChainSyncServer Block (Point Block, BlockNo) m a
+      -> ChainSyncClient Block (Point Block, BlockNo) m b
       -> m ())
   -> ChainProducerStateForkTest
   -> m Property
@@ -141,7 +142,7 @@ propChainSyncConnectIO cps =
             void $  connect (chainSyncClientPeer cli) (chainSyncServerPeer ser)
         ) cps
 
-instance Arbitrary (AnyMessageAndAgency (ChainSync BlockHeader (Point BlockHeader))) where
+instance Arbitrary (AnyMessageAndAgency (ChainSync BlockHeader (Point BlockHeader, BlockNo))) where
   arbitrary = oneof
     [ return $ AnyMessageAndAgency (ClientAgency TokIdle) MsgRequestNext
     , return $ AnyMessageAndAgency (ServerAgency (TokNext TokCanAwait)) MsgAwaitReply
@@ -169,41 +170,49 @@ instance Arbitrary (AnyMessageAndAgency (ChainSync BlockHeader (Point BlockHeade
         <$> (MsgIntersectFound <$> arbitrary
                                <*> arbitrary)
 
-    , AnyMessageAndAgency (ServerAgency TokIntersect) . MsgIntersectNotFound
-        <$> arbitrary
+    , AnyMessageAndAgency (ServerAgency TokIntersect)
+        <$> (MsgIntersectNotFound <$> arbitrary)
 
     , return $ AnyMessageAndAgency (ClientAgency TokIdle) MsgDone
     ]
 
-instance (Show header, Show point) => Show (AnyMessageAndAgency (ChainSync header point)) where
+instance (StandardHash header, Show header, Show tip) => Show (AnyMessageAndAgency (ChainSync header tip)) where
   show (AnyMessageAndAgency _ msg) = show msg
 
-instance (Eq header, Eq point) => Eq (AnyMessage (ChainSync header point)) where
-  AnyMessage MsgRequestNext            == AnyMessage MsgRequestNext            = True
-  AnyMessage MsgAwaitReply             == AnyMessage MsgAwaitReply             = True
-  AnyMessage (MsgRollForward h1 p1)    == AnyMessage (MsgRollForward h2 p2)    = h1 == h2 && p1 == p2
-  AnyMessage (MsgRollBackward p1 h1)   == AnyMessage (MsgRollBackward p2 h2)   = p1 == p2 && h1 == h2
-  AnyMessage (MsgFindIntersect ps1)    == AnyMessage (MsgFindIntersect ps2)    = ps1 == ps2
-  AnyMessage (MsgIntersectFound p1 h1) == AnyMessage (MsgIntersectFound p2 h2) = p1 == p2 && h1 == h2
-  AnyMessage (MsgIntersectNotFound h1) == AnyMessage (MsgIntersectNotFound h2) = h1 == h2
-  AnyMessage MsgDone                   == AnyMessage MsgDone                   = True
-  _                                    == _                                    = False
+instance ( StandardHash header
+         , Eq header
+         , Eq tip
+         ) => Eq (AnyMessage (ChainSync header tip)) where
+  AnyMessage MsgRequestNext              == AnyMessage MsgRequestNext              = True
+  AnyMessage MsgAwaitReply               == AnyMessage MsgAwaitReply               = True
+  AnyMessage (MsgRollForward h1 tip1)    == AnyMessage (MsgRollForward h2 tip2)    = h1 == h2 && tip1 == tip2
+  AnyMessage (MsgRollBackward p1 tip1)   == AnyMessage (MsgRollBackward p2 tip2)   = p1 == p2 && tip1 == tip2
+  AnyMessage (MsgFindIntersect ps1)      == AnyMessage (MsgFindIntersect ps2)      = ps1 == ps2
+  AnyMessage (MsgIntersectFound p1 tip1) == AnyMessage (MsgIntersectFound p2 tip2) = p1 == p2 && tip1 == tip2
+  AnyMessage (MsgIntersectNotFound tip1) == AnyMessage (MsgIntersectNotFound tip2) = tip1 == tip2
+  AnyMessage MsgDone                     == AnyMessage MsgDone                     = True
+  _                                      == _                                      = False
 
-codec :: (MonadST m, S.Serialise block, S.Serialise point)
-      => Codec (ChainSync block point)
+codec :: ( MonadST m
+         , S.Serialise block
+         , S.Serialise (Chain.HeaderHash block)
+         , S.Serialise tip
+         )
+      => Codec (ChainSync block tip)
                S.DeserialiseFailure
                m ByteString
 codec = codecChainSync S.encode (fmap const S.decode)
                        S.encode             S.decode
+                       S.encode             S.decode
 
 prop_codec_ChainSync
-  :: AnyMessageAndAgency (ChainSync BlockHeader (Point BlockHeader))
+  :: AnyMessageAndAgency (ChainSync BlockHeader (Point BlockHeader, BlockNo))
   -> Bool
 prop_codec_ChainSync msg =
     ST.runST $ prop_codecM codec msg
 
 prop_codec_splits2_ChainSync
-  :: AnyMessageAndAgency (ChainSync BlockHeader (Point BlockHeader))
+  :: AnyMessageAndAgency (ChainSync BlockHeader (Point BlockHeader, BlockNo))
   -> Bool
 prop_codec_splits2_ChainSync msg =
     ST.runST $ prop_codec_splitsM
@@ -212,7 +221,7 @@ prop_codec_splits2_ChainSync msg =
       msg
 
 prop_codec_splits3_ChainSync
-  :: AnyMessageAndAgency (ChainSync BlockHeader (Point BlockHeader))
+  :: AnyMessageAndAgency (ChainSync BlockHeader (Point BlockHeader, BlockNo))
   -> Bool
 prop_codec_splits3_ChainSync msg =
     ST.runST $ prop_codec_splitsM
@@ -237,11 +246,12 @@ chainSyncDemo clientChan serverChan (ChainProducerStateForkTest cps chain) = do
   chainVar <- atomically $ newTVar chain
   doneVar  <- atomically $ newTVar False
 
-  let server :: ChainSyncServer Block (Point Block) m a
+  let server :: ChainSyncServer Block (Point Block, BlockNo) m a
       server = ChainSyncExamples.chainSyncServerExample
         (error "chainSyncServerExample: lazy in the result type")
         cpsVar
 
+      client :: ChainSyncClient Block (Point Block, BlockNo) m ()
       client = ChainSyncExamples.chainSyncClientExample chainVar (testClient doneVar (Chain.headPoint pchain))
 
   void $ fork (void $ runPeer nullTracer codec "server" serverChan (chainSyncServerPeer server))

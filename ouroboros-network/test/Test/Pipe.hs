@@ -28,6 +28,7 @@ import           Ouroboros.Network.Mux
 import qualified Network.Mux.Types as Mx
 import qualified Network.Mux.Bearer.Pipe as Mx
 
+import           Ouroboros.Network.Block (BlockNo)
 import           Ouroboros.Network.MockChain.Chain (Chain, ChainUpdate, Point)
 import qualified Ouroboros.Network.MockChain.Chain as Chain
 import qualified Ouroboros.Network.MockChain.ProducerState as CPS
@@ -104,19 +105,23 @@ demo chain0 updates = do
         consumerApp = simpleInitiatorApplication $
           \ChainSync ->
             MuxPeer nullTracer
-                    (ChainSync.codecChainSync encode (fmap const decode) encode decode)
+                    (ChainSync.codecChainSync encode (fmap const decode)
+                                              encode decode
+                                              encode decode)
                     (ChainSync.chainSyncClientPeer
                       (ChainSync.chainSyncClientExample consumerVar
                       (consumerClient done target consumerVar)))
 
-        server :: ChainSyncServer block (Point block) IO ()
+        server :: ChainSyncServer block (Point block, BlockNo) IO ()
         server = ChainSync.chainSyncServerExample () producerVar
 
         producerApp ::OuroborosApplication ResponderApp String DemoProtocols IO BL.ByteString Void ()
         producerApp = simpleResponderApplication $
           \ChainSync ->
             MuxPeer nullTracer
-                    (ChainSync.codecChainSync encode (fmap const decode) encode decode)
+                    (ChainSync.codecChainSync encode (fmap const decode)
+                                              encode decode
+                                              encode decode)
                     (ChainSync.chainSyncServerPeer server)
 
     _ <- async $ Mx.runMuxWithPipes "producer" (toApplication producerApp) hndRead1 hndWrite2
@@ -143,7 +148,7 @@ demo chain0 updates = do
     consumerClient :: TMVar IO Bool
                    -> Point block
                    -> TVar IO (Chain block)
-                   -> ChainSync.Client block IO ()
+                   -> ChainSync.Client block (Point block, BlockNo) IO ()
     consumerClient done target chain =
       ChainSync.Client
         { ChainSync.rollforward = \_ -> checkTip target chain >>= \b ->

@@ -31,6 +31,7 @@ import           Test.Tasty.QuickCheck (testProperty)
 
 import           Network.TypedProtocol.Core
 
+import           Ouroboros.Network.Block (BlockNo)
 import           Ouroboros.Network.MockChain.Chain (Chain, ChainUpdate, Point)
 import qualified Ouroboros.Network.MockChain.Chain as Chain
 import qualified Ouroboros.Network.MockChain.ProducerState as CPS
@@ -96,7 +97,7 @@ demo chain0 updates delay = do
     let Just expectedChain = Chain.applyChainUpdates updates chain0
         target = Chain.headPoint expectedChain
 
-        consumerPeer :: Peer (ChainSync.ChainSync block (Point block)) AsClient ChainSync.StIdle m ()
+        consumerPeer :: Peer (ChainSync.ChainSync block (Point block, BlockNo)) AsClient ChainSync.StIdle m ()
         consumerPeer = ChainSync.chainSyncClientPeer
                           (ChainSync.chainSyncClientExample consumerVar
                           (consumerClient done target consumerVar))
@@ -106,10 +107,11 @@ demo chain0 updates delay = do
                               nullTracer
                               (ChainSync.codecChainSync
                                  encode (fmap const decode)
+                                 encode             decode
                                  encode             decode)
                               (consumerPeer))
 
-        producerPeer :: Peer (ChainSync.ChainSync block (Point block)) AsServer ChainSync.StIdle m ()
+        producerPeer :: Peer (ChainSync.ChainSync block (Point block, BlockNo)) AsServer ChainSync.StIdle m ()
         producerPeer = ChainSync.chainSyncServerPeer (ChainSync.chainSyncServerExample () producerVar)
         producerApp = Mx.simpleResponderApplication
                         (\ChainSyncPr ->
@@ -117,6 +119,7 @@ demo chain0 updates delay = do
                               nullTracer
                               (ChainSync.codecChainSync
                                  encode (fmap const decode)
+                                 encode             decode
                                  encode             decode)
                               producerPeer)
 
@@ -151,7 +154,7 @@ demo chain0 updates delay = do
     consumerClient :: TMVar m Bool
                    -> Point block
                    -> TVar m (Chain block)
-                   -> ChainSync.Client block m ()
+                   -> ChainSync.Client block (Point block, BlockNo) m ()
     consumerClient done target chain =
       ChainSync.Client
         { ChainSync.rollforward = \_ -> checkTip target chain >>= \b ->

@@ -10,8 +10,8 @@ import Ouroboros.Network.Protocol.ChainSync.Server as Server
 -- That's demonstrated here by constructing 'direct'.
 --
 direct :: Monad m
-       => ChainSyncServer header point m a
-       -> ChainSyncClient header point m b
+       => ChainSyncServer header tip m a
+       -> ChainSyncClient header tip m b
        -> m (a, b)
 direct (ChainSyncServer mserver) (ChainSyncClient mclient) = do
   server <- mserver
@@ -19,8 +19,8 @@ direct (ChainSyncServer mserver) (ChainSyncClient mclient) = do
   direct_ server client
 
 direct_ :: Monad m
-        => ServerStIdle header point m a
-        -> ClientStIdle header point m b
+        => ServerStIdle header tip m a
+        -> ClientStIdle header tip m b
         -> m (a, b)
 direct_  ServerStIdle{recvMsgRequestNext}
         (Client.SendMsgRequestNext stNext stAwait) = do
@@ -31,13 +31,13 @@ direct_  ServerStIdle{recvMsgRequestNext}
                           stNext' <- stAwait
                           directStNext resp stNext'
   where
-    directStNext (SendMsgRollForward header pHead server')
+    directStNext (SendMsgRollForward header tip server')
                   ClientStNext{recvMsgRollForward} = do
-      direct server' (recvMsgRollForward header pHead)
+      direct server' (recvMsgRollForward header tip)
 
-    directStNext (SendMsgRollBackward pIntersect pHead server')
+    directStNext (SendMsgRollBackward pIntersect tip server')
                   ClientStNext{recvMsgRollBackward} = do
-      direct server' (recvMsgRollBackward pIntersect pHead)
+      direct server' (recvMsgRollBackward pIntersect tip)
 
 direct_  ServerStIdle{recvMsgFindIntersect}
         (Client.SendMsgFindIntersect points
@@ -45,11 +45,11 @@ direct_  ServerStIdle{recvMsgFindIntersect}
                             recvMsgIntersectNotFound}) = do
     sIntersect <- recvMsgFindIntersect points
     case sIntersect of
-      SendMsgIntersectFound  pIntersect pHead server' ->
-        direct server' (recvMsgIntersectFound pIntersect pHead)
+      SendMsgIntersectFound  pIntersect tip server' ->
+        direct server' (recvMsgIntersectFound pIntersect tip)
 
-      SendMsgIntersectNotFound          pHead server' ->
-        direct server' (recvMsgIntersectNotFound         pHead)
+      SendMsgIntersectNotFound          tip server' ->
+        direct server' (recvMsgIntersectNotFound         tip)
 
 direct_ ServerStIdle{recvMsgDoneClient}
        (Client.SendMsgDone clientDone) = do
