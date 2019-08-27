@@ -16,6 +16,8 @@ import           Control.Monad.Class.MonadST
 
 import           Network.TypedProtocol.Codec
 import           Network.TypedProtocol.Codec.Cbor
+
+import           Ouroboros.Network.Block (Point)
 import           Ouroboros.Network.Protocol.ChainSync.Type
 
 import qualified Data.ByteString.Lazy as LBS
@@ -30,22 +32,26 @@ import qualified Codec.CBOR.Write    as CBOR
 
 -- | The main CBOR 'Codec' for the 'ChainSync' protocol.
 --
-codecChainSync :: forall header point m.
+codecChainSync :: forall header tip m.
                   (MonadST m)
                => (header -> CBOR.Encoding)
                -> (forall s . CBOR.Decoder s (LBS.ByteString -> header))
-               -> (point -> CBOR.Encoding)
-               -> (forall s . CBOR.Decoder s point)
-               -> Codec (ChainSync header point)
+               -> (Point header -> CBOR.Encoding)
+               -> (forall s . CBOR.Decoder s (Point header))
+               -> (tip -> CBOR.Encoding)
+               -> (forall s. CBOR.Decoder s tip)
+               -> Codec (ChainSync header tip)
                         CBOR.DeserialiseFailure m LBS.ByteString
-codecChainSync encodeHeader decodeHeader encodePoint decodePoint =
+codecChainSync encodeHeader decodeHeader
+               encodePoint  decodePoint
+               encodeTip    decodeTip =
     mkCodecCborLazyBS encode decode
   where
     encode :: forall (pr  :: PeerRole)
-                     (st  :: ChainSync header point)
-                     (st' :: ChainSync header point).
+                     (st  :: ChainSync header tip)
+                     (st' :: ChainSync header tip).
               PeerHasAgency pr st
-           -> Message (ChainSync header point) st st'
+           -> Message (ChainSync header tip) st st'
            -> CBOR.Encoding
 
     encode (ClientAgency TokIdle) MsgRequestNext =
@@ -54,25 +60,36 @@ codecChainSync encodeHeader decodeHeader encodePoint decodePoint =
     encode (ServerAgency TokNext{}) MsgAwaitReply =
       encodeListLen 1 <> encodeWord 1
 
-    encode (ServerAgency TokNext{}) (MsgRollForward h p) =
-      encodeListLen 3 <> encodeWord 2 <> encodeHeaderWrapped h <> encodePoint p
+    encode (ServerAgency TokNext{}) (MsgRollForward h tip) =
+      encodeListLen 3
+        <> encodeWord 2
+        <> encodeHeaderWrapped h
+        <> encodeTip tip
 
-    encode (ServerAgency TokNext{}) (MsgRollBackward p1 p2) =
-      encodeListLen 3 <> encodeWord 3 <> encodePoint p1 <> encodePoint p2
+    encode (ServerAgency TokNext{}) (MsgRollBackward p tip) =
+      encodeListLen 3
+        <> encodeWord 3
+        <> encodePoint p
+        <> encodeTip tip
 
     encode (ClientAgency TokIdle) (MsgFindIntersect ps) =
       encodeListLen 2 <> encodeWord 4 <> encodeList encodePoint ps
 
-    encode (ServerAgency TokIntersect) (MsgIntersectFound p1 p2) =
-      encodeListLen 3 <> encodeWord 5 <> encodePoint p1 <> encodePoint p2
+    encode (ServerAgency TokIntersect) (MsgIntersectFound p tip) =
+      encodeListLen 3
+        <> encodeWord 5
+        <> encodePoint p
+        <> encodeTip tip
 
-    encode (ServerAgency TokIntersect) (MsgIntersectNotFound p) =
-      encodeListLen 2 <> encodeWord 6 <> encodePoint p
+    encode (ServerAgency TokIntersect) (MsgIntersectNotFound tip) =
+      encodeListLen 2
+        <> encodeWord 6
+        <> encodeTip tip
 
     encode (ClientAgency TokIdle) MsgDone =
       encodeListLen 1 <> encodeWord 7
 
-    decode :: forall (pr :: PeerRole) (st :: ChainSync header point) s.
+    decode :: forall (pr :: PeerRole) (st :: ChainSync header tip) s.
               PeerHasAgency pr st
            -> CBOR.Decoder s (SomeMessage st)
     decode stok = do
@@ -87,26 +104,26 @@ codecChainSync encodeHeader decodeHeader encodePoint decodePoint =
 
         (2, 3, ServerAgency (TokNext _)) -> do
           h <- decodeHeaderWrapped
-          p <- decodePoint
-          return (SomeMessage (MsgRollForward h p))
+          tip <- decodeTip
+          return (SomeMessage (MsgRollForward h tip))
 
         (3, 3, ServerAgency (TokNext _)) -> do
-          p1 <- decodePoint
-          p2 <- decodePoint
-          return (SomeMessage (MsgRollBackward p1 p2))
+          p <- decodePoint
+          tip  <- decodeTip
+          return (SomeMessage (MsgRollBackward p tip))
 
         (4, 2, ClientAgency TokIdle) -> do
           ps <- decodeList decodePoint
           return (SomeMessage (MsgFindIntersect ps))
 
         (5, 3, ServerAgency TokIntersect) -> do
-          p1 <- decodePoint
-          p2 <- decodePoint
-          return (SomeMessage (MsgIntersectFound p1 p2))
+          p <- decodePoint
+          tip  <- decodeTip
+          return (SomeMessage (MsgIntersectFound p tip))
 
         (6, 2, ServerAgency TokIntersect) -> do
-          p <- decodePoint
-          return (SomeMessage (MsgIntersectNotFound p))
+          tip <- decodeTip
+          return (SomeMessage (MsgIntersectNotFound tip))
 
         (7, 1, ClientAgency TokIdle) ->
           return (SomeMessage MsgDone)
@@ -149,20 +166,20 @@ decodeList dec = do
 -- | An identity 'Codec' for the 'ChainSync' protocol. It does not do any
 -- serialisation. It keeps the typed messages, wrapped in 'AnyMessage'.
 --
-codecChainSyncId :: forall header point m. Monad m
-                 => Codec (ChainSync header point)
-                          CodecFailure m (AnyMessage (ChainSync header point))
+codecChainSyncId :: forall header tip m. Monad m
+                 => Codec (ChainSync header tip)
+                          CodecFailure m (AnyMessage (ChainSync header tip))
 codecChainSyncId = Codec encode decode
  where
   encode :: forall (pr :: PeerRole) st st'.
             PeerHasAgency pr st
-         -> Message (ChainSync header point) st st'
-         -> AnyMessage (ChainSync header point)
+         -> Message (ChainSync header tip) st st'
+         -> AnyMessage (ChainSync header tip)
   encode _ = AnyMessage
 
   decode :: forall (pr :: PeerRole) st.
             PeerHasAgency pr st
-         -> m (DecodeStep (AnyMessage (ChainSync header point))
+         -> m (DecodeStep (AnyMessage (ChainSync header tip))
                           CodecFailure m (SomeMessage st))
   decode stok = return $ DecodePartial $ \bytes -> case (stok, bytes) of
 
@@ -172,15 +189,15 @@ codecChainSyncId = Codec encode decode
 
     (ServerAgency (TokNext TokCanAwait), Just (AnyMessage msg@MsgAwaitReply)) -> return (DecodeDone (SomeMessage msg) Nothing)
 
-    (ServerAgency (TokNext _), Just (AnyMessage (MsgRollForward h p))) -> return (DecodeDone (SomeMessage (MsgRollForward h p)) Nothing)
+    (ServerAgency (TokNext _), Just (AnyMessage (MsgRollForward h tip))) -> return (DecodeDone (SomeMessage (MsgRollForward h tip)) Nothing)
 
-    (ServerAgency (TokNext _), Just (AnyMessage (MsgRollBackward p1 p2))) -> return (DecodeDone (SomeMessage (MsgRollBackward p1 p2)) Nothing)
+    (ServerAgency (TokNext _), Just (AnyMessage (MsgRollBackward p tip))) -> return (DecodeDone (SomeMessage (MsgRollBackward p tip)) Nothing)
 
     (ClientAgency TokIdle, Just (AnyMessage (MsgFindIntersect ps))) -> return (DecodeDone (SomeMessage (MsgFindIntersect ps)) Nothing)
 
-    (ServerAgency TokIntersect, Just (AnyMessage (MsgIntersectFound p1 p2))) -> return (DecodeDone (SomeMessage (MsgIntersectFound p1 p2)) Nothing)
+    (ServerAgency TokIntersect, Just (AnyMessage (MsgIntersectFound p tip))) -> return (DecodeDone (SomeMessage (MsgIntersectFound p tip)) Nothing)
 
-    (ServerAgency TokIntersect, Just (AnyMessage (MsgIntersectNotFound p))) -> return (DecodeDone (SomeMessage (MsgIntersectNotFound p)) Nothing)
+    (ServerAgency TokIntersect, Just (AnyMessage (MsgIntersectNotFound tip))) -> return (DecodeDone (SomeMessage (MsgIntersectNotFound tip)) Nothing)
 
     (ClientAgency TokIdle, Just (AnyMessage MsgDone)) -> return (DecodeDone (SomeMessage MsgDone) Nothing)
 
