@@ -12,6 +12,7 @@ module Ouroboros.Network.Subscription.Worker
   ( SocketStateChange
   , SocketState (..)
   , CompleteApplication
+  , ConnectResult (..)
   , Result (..)
   , Main
   , StateVar
