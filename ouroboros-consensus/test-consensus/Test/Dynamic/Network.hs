@@ -186,7 +186,6 @@ broadcastNetwork :: forall m blk.
                     , MonadThrow (STM m)
                     , RunNode blk
                     , TxGen blk
-                    , TracingConstraints blk
                     , HasCallStack
                     )
                  => ResourceRegistry m

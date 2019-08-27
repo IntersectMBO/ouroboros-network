@@ -368,8 +368,7 @@ instance Condense (ChainHash (SimpleBlock' c ext ext')) where
 instance ToCBOR SimpleBody where
   toCBOR = encode
 
-encodeSimpleHeader :: SimpleCrypto c
-                   => (ext' -> CBOR.Encoding)
+encodeSimpleHeader :: (ext' -> CBOR.Encoding)
                    -> Header (SimpleBlock' c ext ext')
                    -> CBOR.Encoding
 encodeSimpleHeader encodeExt SimpleHeader{..} =  mconcat [

@@ -11,7 +11,7 @@ module Ouroboros.Consensus.Node.Tracers
 
 import           Control.Tracer (Tracer, nullTracer, showTracing)
 
-import           Ouroboros.Network.Block (HasHeader, Point, SlotNo)
+import           Ouroboros.Network.Block (Point, SlotNo)
 import           Ouroboros.Network.BlockFetch (FetchDecision,
                      TraceFetchClientState, TraceLabelPeer)
 import           Ouroboros.Network.TxSubmission.Inbound
@@ -64,9 +64,7 @@ nullTracers = Tracers
   , forgeTracer                   = nullTracer
   }
 
-showTracers :: ( Monad m
-               , HasHeader blk
-               , Show blk
+showTracers :: ( Show blk
                , Show (GenTx blk)
                , Show (Header blk)
                , Show peer

@@ -18,7 +18,7 @@ import           Codec.Serialise (Serialise (..))
 import           Data.Typeable (Typeable)
 import           GHC.Generics (Generic)
 
-import           Cardano.Binary (ToCBOR(..))
+import           Cardano.Binary (ToCBOR (..))
 import           Cardano.Crypto.DSIGN
 
 import           Ouroboros.Consensus.Block
@@ -66,7 +66,7 @@ _simpleBFtHeader = simpleHeader
   Evidence that SimpleBlock can support BFT
 -------------------------------------------------------------------------------}
 
-instance SimpleCrypto c => SignedHeader (SimpleBftHeader c c') where
+instance SignedHeader (SimpleBftHeader c c') where
   type Signed (SimpleBftHeader c c') = SignedSimpleBft c c'
 
   headerSigned = SignedSimpleBft . simpleHeaderStd

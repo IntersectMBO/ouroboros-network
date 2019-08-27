@@ -47,7 +47,6 @@ runTestNetwork ::
   forall blk.
      ( RunNode blk
      , TxGen blk
-     , TracingConstraints blk
      )
   => (CoreNodeId -> ProtocolInfo blk)
   -> NumCoreNodes

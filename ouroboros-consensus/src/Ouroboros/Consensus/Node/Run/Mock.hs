@@ -27,7 +27,6 @@ instance ( ProtocolLedgerView (SimpleBlock SimpleMockCrypto ext)
            -- some of the tests loop, but only when compiled with @-O2@ ; with
            -- @-O0@ it is perfectly fine. ghc bug?!
          , SupportedBlock (SimpleBlock SimpleMockCrypto ext)
-         , Show ext
          , Typeable ext
          , Serialise ext
          , ForgeExt (BlockProtocol (SimpleBlock SimpleMockCrypto ext))

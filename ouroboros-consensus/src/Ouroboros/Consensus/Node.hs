@@ -45,8 +45,8 @@ import qualified Ouroboros.Network.Block as Block
 import           Ouroboros.Network.NodeToClient as NodeToClient
 import           Ouroboros.Network.NodeToNode as NodeToNode
 import           Ouroboros.Network.Socket
-import           Ouroboros.Network.Subscription.Ip
 import           Ouroboros.Network.Subscription.Dns
+import           Ouroboros.Network.Subscription.Ip
 
 import           Ouroboros.Network.Protocol.Handshake.Type
 import           Ouroboros.Network.Protocol.Handshake.Version
@@ -191,7 +191,7 @@ initChainDB tracer registry dbPath cfg initLedger slotLength
       }
 
 mkNodeArgs
-  :: forall blk peer. (RunNode blk, Ord peer)
+  :: forall blk peer. RunNode blk
   => ResourceRegistry IO
   -> NodeConfig (BlockProtocol blk)
   -> NodeState  (BlockProtocol blk)

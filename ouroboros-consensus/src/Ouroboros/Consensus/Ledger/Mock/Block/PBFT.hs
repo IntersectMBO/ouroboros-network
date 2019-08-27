@@ -18,7 +18,7 @@ import           Codec.Serialise (Serialise (..))
 import           Data.Typeable (Typeable)
 import           GHC.Generics (Generic)
 
-import           Cardano.Binary (ToCBOR(..))
+import           Cardano.Binary (ToCBOR (..))
 import           Cardano.Crypto.DSIGN
 
 import           Ouroboros.Consensus.Block
@@ -74,7 +74,7 @@ _simplePBftHeader = simpleHeader
   Evidence that SimpleBlock can support PBFT
 -------------------------------------------------------------------------------}
 
-instance SimpleCrypto c => SignedHeader (SimplePBftHeader c c') where
+instance SignedHeader (SimplePBftHeader c c') where
   type Signed (SimplePBftHeader c c') = SignedSimplePBft c c'
 
   headerSigned = SignedSimplePBft . simpleHeaderStd

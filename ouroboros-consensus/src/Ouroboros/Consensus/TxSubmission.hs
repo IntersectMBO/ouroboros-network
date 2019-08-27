@@ -20,9 +20,7 @@ import           Ouroboros.Consensus.Mempool.API
 -- | Local transaction submission server, for adding txs to the 'Mempool'
 --
 localTxSubmissionServer
-  :: ( Monad m
-     , ApplyTx blk
-     )
+  :: Monad m
   => Tracer m (TraceLocalTxSubmissionServerEvent blk)
   -> Mempool m blk idx
   -> LocalTxSubmissionServer (GenTx blk) (ApplyTxErr blk) m ()
