@@ -281,6 +281,20 @@ instance MonadAsync IO where
 --
 -- Adapted from "Control.Concurrent.Async"
 --
+-- We don't use the implementation of linking from 'Control.Concurrent.Async'
+-- directly because:
+--
+-- 1. We need a generalized form of linking that links an async to an arbitrary
+--    thread ('linkTo')
+-- 2. If we /did/ use the real implementation, then the mock implementation and
+--    the real implementation would not be able to throw the same exception,
+--    because the exception type used by the real implementation is
+--
+-- > data ExceptionInLinkedThread =
+-- >   forall a . ExceptionInLinkedThread (Async a) SomeException
+--
+--    containing a reference to the real 'Async' type.
+--
 
 -- | Exception from child thread re-raised in parent thread
 --
@@ -304,6 +318,7 @@ instance Exception ExceptionInLinkedThread where
   fromException = E.asyncExceptionFromException
   toException = E.asyncExceptionToException
 
+-- | Generalizion of 'link' that links an async to an arbitrary thread.
 linkTo :: (MonadAsync m, MonadFork m, MonadMask m)
        => ThreadId m -> Async m a -> m ()
 linkTo tid = linkToOnly tid (not . isCancel)
