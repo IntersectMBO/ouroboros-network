@@ -1,13 +1,15 @@
 {-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications    #-}
 module Test.Consensus.ChainSyncClient ( tests ) where
 
 import           Control.Monad (replicateM_, void)
 import           Control.Monad.Except (runExcept)
 import           Control.Monad.State.Strict
-import           Control.Tracer (nullTracer)
+import           Control.Tracer (Tracer (..), nullTracer)
 import           Data.Coerce (coerce)
 import           Data.Foldable (foldl')
 import           Data.List (intercalate, span, unfoldr)
@@ -25,6 +27,7 @@ import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
+import           Control.Monad.Class.MonadSay
 import           Control.Monad.IOSim (runSimOrThrow)
 
 import           Network.TypedProtocol.Channel
@@ -93,6 +96,11 @@ prop_chainSync ChainSyncClientSetup {..} =
     -- If an exception has been thrown, we check that it was right to throw
     -- it, but not the other way around: we don't check whether a situation
     -- has occured where an exception should have been thrown, but wasn't.
+    --
+    -- NOTE: this test will fail if the excpetion type 'ChainSyncException'
+    -- does not agree with the type in 'ChainSync' protocol.  They will
+    -- mismatch if @tip@ type variable is not the same in both of them.
+    --
     case mbEx of
       Just (ForkTooDeep intersection _theirHead)     ->
         label "ForkTooDeep" $
@@ -121,7 +129,7 @@ prop_chainSync ChainSyncClientSetup {..} =
 -- | Check whether the anchored fragment is a suffix of the chain.
 isSuffix :: AnchoredFragment TestBlock -> Chain TestBlock -> Property
 isSuffix fragment chain =
-    fragmentAnchor === chainAnchor .&&. fragmentBlocks === chainBlocks
+    fragmentAnchor === chainAnchor .&&.  fragmentBlocks === chainBlocks
   where
     nbBlocks       = AF.length fragment
     fragmentBlocks = AF.toOldestFirst fragment
@@ -147,7 +155,7 @@ serverId :: CoreNodeId
 serverId = CoreNodeId 1
 
 -- | Terser notation
-type ChainSyncException = ChainSyncClientException TestBlock
+type ChainSyncException = ChainSyncClientException TestBlock (Point (Header TestBlock), BlockNo)
 
 -- | Using slots as times, a schedule plans updates to a chain on certain
 -- slots.
@@ -204,6 +212,7 @@ runChainSync :: forall m.
        , MonadMask  m
        , MonadTimer m
        , MonadThrow (STM m)
+       , MonadSay   m
        )
     => SecurityParam
     -> ClockSkew
@@ -238,8 +247,15 @@ runChainSync securityParam maxClockSkew (ClientUpdates clientUpdates)
         getLedgerState  = snd <$> readTVar varClientState
         getIsInvalidBlock :: STM m (HeaderHash TestBlock -> Bool, Fingerprint)
         getIsInvalidBlock = return (const False, Fingerprint 0)
+
+        client :: StrictTVar m (CandidateState TestBlock)
+               -> AnchoredFragment (Header TestBlock)
+               -> Consensus ChainSyncClient
+                    TestBlock
+                    (Point (Header TestBlock), BlockNo)
+                    m
         client = chainSyncClient
-                   nullTracer
+                   (Tracer $ say . show)
                    (nodeCfg clientId)
                    btime
                    maxClockSkew
@@ -248,7 +264,7 @@ runChainSync securityParam maxClockSkew (ClientUpdates clientUpdates)
 
     -- Set up the server
     varChainProducerState <- newTVarM $ initChainProducerState Genesis
-    let server :: ChainSyncServer (Header TestBlock) (Point TestBlock) m ()
+    let server :: ChainSyncServer (Header TestBlock) (Point (Header TestBlock), BlockNo) m ()
         server = chainSyncServerExample () varChainProducerState
 
     -- Schedule updates of the client and server chains

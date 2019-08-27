@@ -556,7 +556,7 @@ data LimitedApp m peer blk =
 -- Used internal to this module, essentially as an abbreviatiation.
 type LimitedApp' m peer blk unused1 unused2 =
     NetworkApplication m peer
-        (AnyMessage (ChainSync (Header blk) (Point blk)))
+        (AnyMessage (ChainSync (Header blk) (Point (Header blk))))
         (AnyMessage (BlockFetch blk))
         (AnyMessage (TxSubmission (GenTxId blk) (GenTx blk)))
         unused1 -- the local node-to-client channel types
@@ -568,8 +568,13 @@ type LimitedApp' m peer blk unused1 unused2 =
 -------------------------------------------------------------------------------}
 
 data MiniProtocolExpectedException blk
-  = MPEEChainSyncClient (CSClient.ChainSyncClientException blk)
+  = MPEEChainSyncClient (CSClient.ChainSyncClientException blk (Point (Header blk)))
     -- ^ see "Ouroboros.Consensus.ChainSyncClient"
+    --
+    -- NOTE: the second type in 'ChainSyncClientException' denotes the 'tip'.
+    -- If it does not agree with the consensus client & server, 'Dynamic chain
+    -- generation' tests will fail, since they will not catch the right
+    -- exception.
   | MPEEBlockFetchClient BFClient.BlockFetchProtocolFailure
     -- ^ see "Ouroboros.Network.BlockFetch.Client"
   | MPEEBlockFetchServer (BFServer.BlockFetchServerException blk)
@@ -580,7 +585,7 @@ data MiniProtocolExpectedException blk
     -- ^ see "Ouroboros.Network.TxSubmission.Inbound"
   deriving (Show)
 
-instance SupportedBlock blk => Exception (MiniProtocolExpectedException blk)
+instance (SupportedBlock blk) => Exception (MiniProtocolExpectedException blk)
 
 data MiniProtocolState = MiniProtocolDelayed | MiniProtocolRestarting
   deriving (Show)
