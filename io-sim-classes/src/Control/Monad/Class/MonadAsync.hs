@@ -23,6 +23,7 @@ import           Control.Monad.Class.MonadThrow
 
 import           Control.Monad (void)
 import           Control.Exception (SomeException)
+import qualified Control.Exception as E
 import qualified Control.Concurrent.Async as Async
 import           Control.Concurrent.Async (AsyncCancelled(..))
 import           Data.Proxy
@@ -299,7 +300,9 @@ instance Show ExceptionInLinkedThread where
       showString " " .
       showsPrec 11 e
 
-instance Exception ExceptionInLinkedThread
+instance Exception ExceptionInLinkedThread where
+  fromException = E.asyncExceptionFromException
+  toException = E.asyncExceptionToException
 
 linkTo :: (MonadAsync m, MonadFork m, MonadMask m)
        => ThreadId m -> Async m a -> m ()
