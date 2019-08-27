@@ -44,9 +44,8 @@ import           Ouroboros.Consensus.Util.STM (onEachChange)
 -------------------------------------------------------------------------------}
 
 openMempool :: ( MonadAsync m
-               , MonadFork m
-               , MonadMask m
-               , MonadSTM m
+               , MonadFork  m
+               , MonadMask  m
                , ApplyTx blk
                )
             => ResourceRegistry m
@@ -64,12 +63,7 @@ openMempool registry ledger cfg tracer = do
 --
 -- Intended for testing purposes.
 openMempoolWithoutSyncThread
-  :: ( MonadAsync m
-     , MonadFork m
-     , MonadMask m
-     , MonadSTM m
-     , ApplyTx blk
-     )
+  :: (MonadAsync m, ApplyTx blk)
   => LedgerInterface m blk
   -> LedgerConfig blk
   -> Tracer m (TraceEventMempool blk)
@@ -229,9 +223,7 @@ implWithSyncState mpEnv@MempoolEnv{mpEnvTracer, mpEnvStateVar} f = do
       traceWith mpEnvTracer $ TraceMempoolRemoveTxs removed mempoolSize
     return res
 
-implGetSnapshot :: ( MonadSTM m
-                   , ApplyTx blk
-                   )
+implGetSnapshot :: MonadSTM m
                 => MempoolEnv m blk
                 -> STM m (MempoolSnapshot blk TicketNo)
 implGetSnapshot MempoolEnv{mpEnvStateVar} = do
@@ -251,20 +243,17 @@ getMempoolSize MempoolEnv{mpEnvStateVar} =
   MempoolSnapshot Implementation
 -------------------------------------------------------------------------------}
 
-implSnapshotGetTxs :: ApplyTx blk
-                   => InternalState blk
+implSnapshotGetTxs :: InternalState blk
                    -> [(GenTx blk, TicketNo)]
 implSnapshotGetTxs = (flip implSnapshotGetTxsAfter) zeroTicketNo
 
-implSnapshotGetTxsAfter :: ApplyTx blk
-                        => InternalState blk
+implSnapshotGetTxsAfter :: InternalState blk
                         -> TicketNo
                         -> [(GenTx blk, TicketNo)]
 implSnapshotGetTxsAfter IS{isTxs} tn =
     fromTxSeq $ snd $ splitAfterTicketNo isTxs tn
 
-implSnapshotGetTx :: ApplyTx blk
-                  => InternalState blk
+implSnapshotGetTx :: InternalState blk
                   -> TicketNo
                   -> Maybe (GenTx blk)
 implSnapshotGetTx IS{isTxs} tn = isTxs `lookupByTicketNo` tn

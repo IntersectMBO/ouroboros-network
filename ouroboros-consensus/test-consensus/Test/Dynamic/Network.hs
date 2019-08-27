@@ -62,6 +62,7 @@ import           Ouroboros.Consensus.NodeKernel
 import           Ouroboros.Consensus.NodeNetwork
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util.Orphans ()
+import           Ouroboros.Consensus.Util.RedundantConstraints
 import           Ouroboros.Consensus.Util.ResourceRegistry
 import           Ouroboros.Consensus.Util.STM
 
@@ -218,6 +219,8 @@ broadcastNetwork registry testBtime numCoreNodes pInfo initRNG slotLen = do
 
     getTestOutput nodes
   where
+    _ = keepRedundantConstraint (Proxy @(TracingConstraints blk))
+
     btime = testBlockchainTime testBtime
 
     nodeIds :: [NodeId]

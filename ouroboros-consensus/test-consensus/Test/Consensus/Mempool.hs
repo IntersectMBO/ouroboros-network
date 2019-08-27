@@ -22,9 +22,7 @@ import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
 
 import           Control.Monad.Class.MonadAsync (MonadAsync)
-import           Control.Monad.Class.MonadFork (MonadFork)
 import           Control.Monad.Class.MonadSTM
-import           Control.Monad.Class.MonadThrow (MonadMask)
 import           Control.Monad.IOSim (runSimOrThrow)
 
 import           Control.Tracer (Tracer (..))
@@ -410,8 +408,7 @@ withTestMempool setup@TestSetup { testLedgerState, testInitialTxs } prop =
   where
     cfg = ledgerConfigView singleNodeTestConfig
 
-    setUpAndRun :: forall m. (MonadAsync m, MonadMask m, MonadFork m)
-                => m Property
+    setUpAndRun :: forall m. MonadAsync m => m Property
     setUpAndRun = do
 
       -- Set up the LedgerInterface

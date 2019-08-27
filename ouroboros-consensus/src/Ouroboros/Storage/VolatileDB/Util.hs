@@ -15,7 +15,6 @@ import           Data.Maybe (fromMaybe)
 import           Data.Set (Set)
 import qualified Data.Set as Set
 import qualified Data.Text as T
-import           Data.Typeable
 import           Data.Word (Word64)
 import           Text.Read (readMaybe)
 
@@ -63,7 +62,7 @@ modifyTMVar m action =
             ExitCaseAbort                -> putTMVar m oldState
        ) action
 
-wrapFsError :: (Monad m, Show blockId, Typeable blockId)
+wrapFsError :: Monad m
             => ErrorHandling FsError                   m
             -> ErrorHandling (VolatileDBError blockId) m
             -> m a -> m a
@@ -98,7 +97,7 @@ sizeAndId (size, bInfo) = (size, bbid bInfo)
 -- This should be used whenever you want to run an action on the VolatileDB
 -- and catch the 'VolatileDBError' and the 'FsError' (wrapped in the former)
 -- it may thrown.
-tryVolDB :: forall m blockId a. (Monad m, Show blockId)
+tryVolDB :: forall m blockId a. Monad m
          => ErrorHandling FsError                   m
          -> ErrorHandling (VolatileDBError blockId) m
          -> m a -> m (Either (VolatileDBError blockId) a)

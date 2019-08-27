@@ -19,7 +19,7 @@ import qualified Codec.CBOR.Encoding as CBOR
 import           Codec.Serialise (Serialise (..))
 import           GHC.Generics (Generic)
 
-import           Cardano.Binary (FromCBOR(..), ToCBOR(..))
+import           Cardano.Binary (FromCBOR (..), ToCBOR (..))
 import           Cardano.Crypto.KES
 
 import           Ouroboros.Consensus.Block
@@ -76,8 +76,7 @@ _simplePraosHeader = simpleHeader
   Evidence that SimpleBlock can support BFT
 -------------------------------------------------------------------------------}
 
-instance (SimpleCrypto c, PraosCrypto c')
-      => SignedHeader (SimplePraosHeader c c') where
+instance PraosCrypto c' => SignedHeader (SimplePraosHeader c c') where
   type Signed (SimplePraosHeader c c') = SignedSimplePraos c c'
 
   headerSigned SimpleHeader{..} = SignedSimplePraos {
