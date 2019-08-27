@@ -114,6 +114,7 @@ openDB cfg initLedger = do
       , getTipBlock         = query    $ Model.tipBlock
       , getTipHeader        = query    $ (fmap getHeader . Model.tipBlock)
       , getTipPoint         = querySTM $ Model.tipPoint
+      , getTipBlockNo       = querySTM $ Model.tipBlockNo
       , getIsFetched        = querySTM $ flip Model.hasBlockByPoint
       , getIsInvalidBlock   = querySTM $ (first (flip Map.member)) . Model.invalid
       , streamBlocks        = updateE  ..: const (fmap (first (fmap iterator)) ..: Model.streamBlocks k)

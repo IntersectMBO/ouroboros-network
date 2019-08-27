@@ -177,6 +177,7 @@ openDBInternal args launchBgTasks = do
           , getTipBlock        = getEnv     h Query.getTipBlock
           , getTipHeader       = getEnv     h Query.getTipHeader
           , getTipPoint        = getEnvSTM  h Query.getTipPoint
+          , getTipBlockNo      = getEnvSTM  h Query.getTipBlockNo
           , getBlock           = getEnv1    h Query.getBlock
           , getIsFetched       = getEnvSTM  h Query.getIsFetched
           , streamBlocks       = Iterator.streamBlocks  h

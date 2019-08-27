@@ -62,9 +62,8 @@ import           Cardano.Crypto.DSIGN.Mock
 
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import qualified Ouroboros.Network.AnchoredFragment as AF
-import           Ouroboros.Network.Block (BlockNo (..), ChainHash (..),
-                     ChainUpdate, HasHeader, HeaderHash, Point, SlotNo (..),
-                     StandardHash)
+import           Ouroboros.Network.Block (BlockNo, ChainHash (..), ChainUpdate,
+                     HasHeader, HeaderHash, Point, SlotNo (..), StandardHash)
 import qualified Ouroboros.Network.Block as Block
 import           Ouroboros.Network.MockChain.Chain (Chain (..))
 import qualified Ouroboros.Network.MockChain.Chain as Chain
@@ -118,6 +117,7 @@ data Cmd blk it rdr
   | GetTipBlock
   | GetTipHeader
   | GetTipPoint
+  | GetTipBlockNo
   | GetBlock          (Point blk)
   | GetGCedBlock      (Point blk)
     -- ^ Only for blocks that may have been garbage collected.
@@ -176,6 +176,7 @@ data Success blk it rdr
   | MbGCedBlock   (MaybeGCedBlock blk)
   | MbHeader      (Maybe (Header blk))
   | Point         (Point blk)
+  | BlockNo       BlockNo
   | UnknownRange  (UnknownRange blk)
   | Iter          it
   | IterResult    (IteratorResult blk)
@@ -215,6 +216,7 @@ run ChainDB{..} ChainDB.Internal{..} registry = \case
     GetTipBlock           -> MbBlock       <$> getTipBlock
     GetTipHeader          -> MbHeader      <$> getTipHeader
     GetTipPoint           -> Point         <$> atomically getTipPoint
+    GetTipBlockNo         -> BlockNo       <$> atomically getTipBlockNo
     GetBlock pt           -> MbBlock       <$> getBlock pt
     GetGCedBlock pt       -> mbGCedBlock   <$> getBlock pt
     StreamBlocks from to  -> iter          <$> streamBlocks registry from to
@@ -321,6 +323,7 @@ runPure cfg = \case
     GetTipBlock           -> ok  MbBlock       $ query    Model.tipBlock
     GetTipHeader          -> ok  MbHeader      $ query   (fmap getHeader . Model.tipBlock)
     GetTipPoint           -> ok  Point         $ query    Model.tipPoint
+    GetTipBlockNo         -> ok  BlockNo       $ query    Model.tipBlockNo
     GetBlock pt           -> err MbBlock       $ query   (Model.getBlockByPoint pt)
     GetGCedBlock pt       -> err mbGCedBlock   $ query   (Model.getBlockByPoint pt)
     StreamBlocks from to  -> err iter          $ updateE (Model.streamBlocks k from to)
@@ -536,6 +539,7 @@ generator genBlock m@Model {..} = At <$> frequency
     , (if empty then 1 else 10, return GetTipBlock)
       -- To check that we're on the right chain
     , (if empty then 1 else 10, return GetTipPoint)
+    , (if empty then 1 else 10, return GetTipBlockNo)
     , (10, genGetBlock)
 
     -- Iterators
