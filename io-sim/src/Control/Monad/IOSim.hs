@@ -66,7 +66,7 @@ import qualified Control.Monad.Class.MonadFork as MonadFork
 import           Control.Monad.Class.MonadThrow as MonadThrow
 import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadST
-import           Control.Monad.Class.MonadSTM hiding (STM, TVar)
+import           Control.Monad.Class.MonadSTM hiding (STM)
 import qualified Control.Monad.Class.MonadSTM as MonadSTM
 import           Control.Monad.Class.MonadAsync hiding (Async)
 import qualified Control.Monad.Class.MonadAsync as MonadAsync
@@ -283,11 +283,11 @@ instance MonadFork (SimM s) where
   throwTo tid e    = SimM $ \k -> ThrowTo (toException e) tid (k ())
 
 instance MonadSTM (SimM s) where
-  type STM   (SimM s)   = STM s
-  type TVar  (SimM s)   = TVar s
-  type TMVar (SimM s)   = TMVarDefault (SimM s)
-  type TQueue (SimM s)  = TQueueDefault (SimM s)
-  type TBQueue (SimM s) = TBQueueDefault (SimM s)
+  type STM       (SimM s) = STM s
+  type LazyTVar  (SimM s) = TVar s
+  type LazyTMVar (SimM s) = TMVarDefault (SimM s)
+  type TQueue    (SimM s) = TQueueDefault (SimM s)
+  type TBQueue   (SimM s) = TBQueueDefault (SimM s)
 
   atomically action = SimM $ \k -> Atomically action k
 
@@ -322,7 +322,7 @@ instance MonadSTM (SimM s) where
   isEmptyTBQueue    = isEmptyTBQueueDefault
   isFullTBQueue     = isFullTBQueueDefault
 
-data Async s a = forall b. Async !ThreadId (b -> a) (TMVar (SimM s) (Either SomeException b))
+data Async s a = forall b. Async !ThreadId (b -> a) (LazyTMVar (SimM s) (Either SomeException b))
 
 instance Eq (Async s a) where
     Async tid _ _ == Async tid' _ _ = tid == tid'

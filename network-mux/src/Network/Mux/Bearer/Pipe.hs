@@ -9,7 +9,7 @@ module Network.Mux.Bearer.Pipe (
   , runMuxWithPipes
   ) where
 
-import           Control.Monad.Class.MonadSTM
+import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
 import           Data.Word

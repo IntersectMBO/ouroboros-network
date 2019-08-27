@@ -34,7 +34,7 @@ import           Data.Word
 import           GHC.Stack
 import           Text.Printf
 
-import           Control.Monad.Class.MonadSTM
+import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadTime
 
 import           Network.TypedProtocol.Channel (Channel(Channel))
@@ -145,7 +145,7 @@ instance (MiniProtocolLimits ptcl) => MiniProtocolLimits (MiniProtocolId ptcl) w
 
 newtype MiniProtocolDispatch ptcl m =
         MiniProtocolDispatch (Array (MiniProtocolId ptcl, MiniProtocolMode)
-                                    (TVar m BL.ByteString))
+                                    (StrictTVar m BL.ByteString))
 
 data MiniProtocolMode = ModeInitiator | ModeResponder
   deriving (Eq, Ord, Ix, Enum, Bounded, Show)
@@ -175,7 +175,7 @@ data TranslocationServiceRequest ptcl m
 -- | A Wanton represent the concrete data to be translocated, note that the
 --  TMVar becoming empty indicates -- that the last fragment of the data has
 --  been enqueued on the -- underlying bearer.
-newtype Wanton m = Wanton { want :: TMVar m BL.ByteString }
+newtype Wanton m = Wanton { want :: StrictTMVar m BL.ByteString }
 
 -- | Each peer's multiplexer has some state that provides both
 -- de-multiplexing details (for despatch of incoming mesages to mini
@@ -218,7 +218,7 @@ data MuxBearer ptcl m = MuxBearer {
     , read    :: m (MuxSDU ptcl, Time m)
     -- | Return a suitable MuxSDU payload size.
     , sduSize :: m Word16
-    , state   :: TVar m MuxBearerState
+    , state   :: StrictTVar m MuxBearerState
     }
 
 

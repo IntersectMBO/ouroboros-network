@@ -26,7 +26,7 @@ import qualified Data.Map.Strict as Map
 import           GHC.Stack (HasCallStack)
 
 import           Control.Monad.Class.MonadFork
-import           Control.Monad.Class.MonadSTM
+import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 
 import           Control.Tracer
@@ -208,8 +208,8 @@ data IteratorEnv m blk = IteratorEnv
   , itVolDB          :: VolDB m blk
   , itGetImmDBTip    :: m (Point blk)
     -- ^ This should preferably be cheap.
-  , itIterators      :: TVar m (Map IteratorId (m ()))
-  , itNextIteratorId :: TVar m IteratorId
+  , itIterators      :: StrictTVar m (Map IteratorId (m ()))
+  , itNextIteratorId :: StrictTVar m IteratorId
   , itTracer         :: Tracer m (TraceIteratorEvent blk)
   }
 
@@ -381,7 +381,7 @@ newIterator itEnv@IteratorEnv{..} getItEnv registry from to = do
     makeIterator register itState = do
       iteratorId <- makeNewIteratorId
       varItState <- newTVarM itState
-      when register $ atomically $ modifyTVar' itIterators $
+      when register $ atomically $ modifyTVar itIterators $
         -- Note that we don't use 'itEnv' here, because that would mean that
         -- invoking the function only works when the database is open, which
         -- probably won't be the case.
@@ -402,20 +402,20 @@ newIterator itEnv@IteratorEnv{..} getItEnv registry from to = do
     makeNewIteratorId :: m IteratorId
     makeNewIteratorId = atomically $ do
       newIteratorId <- readTVar itNextIteratorId
-      modifyTVar' itNextIteratorId succ
+      modifyTVar itNextIteratorId succ
       return newIteratorId
 
 -- | Close the iterator and remove it from the map of iterators ('itIterators'
 -- and thus 'cdbIterators').
 implIteratorClose
   :: (MonadSTM m, MonadCatch m, HasHeader blk)
-  => TVar m (IteratorState m blk)
+  => StrictTVar m (IteratorState m blk)
   -> IteratorId
   -> IteratorEnv m blk
   -> m ()
 implIteratorClose varItState itrId IteratorEnv{..} = do
     mbImmIt <- atomically $ do
-      modifyTVar' itIterators (Map.delete itrId)
+      modifyTVar itIterators (Map.delete itrId)
       mbImmIt <- iteratorStateImmIt <$> readTVar varItState
       writeTVar varItState Closed
       return mbImmIt
@@ -522,7 +522,7 @@ implIteratorNext :: forall m blk.
                     , HasHeader blk
                     )
                  => ResourceRegistry m
-                 -> TVar m (IteratorState m blk)
+                 -> StrictTVar m (IteratorState m blk)
                  -> IteratorEnv m blk
                  -> m (IteratorResult blk)
 implIteratorNext registry varItState IteratorEnv{..} =

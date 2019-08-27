@@ -30,7 +30,7 @@ import           Data.Word (Word64)
 
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork
-import           Control.Monad.Class.MonadSTM
+import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment (..))
@@ -130,11 +130,11 @@ bracketChainSyncClient
        -- ^ Get the current ledger state
     -> STM m (HeaderHash blk -> Bool, Fingerprint)
        -- ^ Get the invalid block checker
-    -> TVar m (Map peer (TVar m (CandidateState blk)))
+    -> StrictTVar m (Map peer (StrictTVar m (CandidateState blk)))
        -- ^ The candidate chains, we need the whole map because we
        -- (de)register nodes (@peer@).
     -> peer
-    -> (TVar m (CandidateState blk) -> AnchoredFragment (Header blk) -> m a)
+    -> (StrictTVar m (CandidateState blk) -> AnchoredFragment (Header blk) -> m a)
     -> m a
 bracketChainSyncClient tracer getCurrentChain getCurrentLedger
                        getIsInvalidBlock varCandidates peer body =
@@ -157,12 +157,12 @@ bracketChainSyncClient tracer getCurrentChain getCurrentLedger
           { candidateChain       = curChain
           , candidateChainState  = curChainState
           }
-        modifyTVar' varCandidates $ Map.insert peer varCandidate
+        modifyTVar varCandidates $ Map.insert peer varCandidate
         return (varCandidate, curChain)
       return (varCandidate, curChain)
 
     unregister _ = do
-      atomically $ modifyTVar' varCandidates $ Map.delete peer
+      atomically $ modifyTVar varCandidates $ Map.delete peer
 
 -- | Chain sync client
 --
@@ -182,7 +182,7 @@ chainSyncClient
     -> ClockSkew                                    -- ^ Maximum clock skew
     -> STM m (ExtLedgerState blk)                   -- ^ Get the current ledger state
     -> STM m (HeaderHash blk -> Bool, Fingerprint)  -- ^ Get the invalid block checker
-    -> TVar m (CandidateState blk)                  -- ^ Our peer's state var
+    -> StrictTVar m (CandidateState blk)            -- ^ Our peer's state var
     -> AnchoredFragment (Header blk)                -- ^ The current chain
     -> Consensus ChainSyncClient blk m
 chainSyncClient tracer cfg btime (ClockSkew maxSkew)

@@ -12,7 +12,7 @@ import           Data.Proxy (Proxy (..))
 import           Data.Reflection (give)
 
 import           Control.Monad.Class.MonadST
-import           Control.Monad.Class.MonadSTM
+import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.IOSim (runSimOrThrow)
 

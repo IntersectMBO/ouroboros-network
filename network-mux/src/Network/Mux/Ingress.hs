@@ -16,7 +16,7 @@ import           GHC.Stack
 import           Text.Printf
 
 import           Control.Monad.Class.MonadSay
-import           Control.Monad.Class.MonadSTM
+import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 
 import           Network.Mux.Types
@@ -92,7 +92,7 @@ ingressQueue :: (MonadSTM m, Ord ptcl, Enum ptcl)
              => MiniProtocolDispatch ptcl m
              -> MiniProtocolId ptcl
              -> MiniProtocolMode
-             -> TVar m BL.ByteString
+             -> StrictTVar m BL.ByteString
 ingressQueue (MiniProtocolDispatch tbl) dis mode =
     tbl ! (dis, mode)
     -- We can use array indexing here, because we constructed the dispatch

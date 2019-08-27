@@ -17,7 +17,7 @@ import           Data.Word (Word64)
 
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork
-import           Control.Monad.Class.MonadSTM
+import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 
 import           Control.Tracer
@@ -112,7 +112,7 @@ data InternalState blk = IS {
 data MempoolEnv m blk = MempoolEnv {
       mpEnvLedger    :: LedgerInterface m blk
     , mpEnvLedgerCfg :: LedgerConfig blk
-    , mpEnvStateVar  :: TVar m (InternalState blk)
+    , mpEnvStateVar  :: StrictTVar m (InternalState blk)
     , mpEnvTracer    :: Tracer m (TraceEventMempool blk)
     }
 

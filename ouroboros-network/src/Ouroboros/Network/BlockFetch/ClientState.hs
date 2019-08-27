@@ -27,7 +27,7 @@ import           Data.Set (Set)
 import           Data.Semigroup (Semigroup, Last(..))
 
 import           Control.Monad (when)
-import           Control.Monad.Class.MonadSTM
+import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Exception (assert)
 import           Control.Tracer (Tracer, traceWith)
 
@@ -77,14 +77,14 @@ data FetchClientStateVars m header =
        -- thread. Changes in this state trigger re-evaluation of fetch
        -- decisions.
        --
-       fetchClientStatusVar   :: TVar m (PeerFetchStatus header),
+       fetchClientStatusVar   :: StrictTVar m (PeerFetchStatus header),
 
        -- | The current number of requests in-flight and the amount of data
        -- in-flight with the peer. It is written by the protocol thread and
        -- read by the decision logic thread. This is used in fetch decisions
        -- but changes here do not trigger re-evaluation of fetch decisions.
        --
-       fetchClientInFlightVar :: TVar m (PeerFetchInFlight header),
+       fetchClientInFlightVar :: StrictTVar m (PeerFetchInFlight header),
 
        -- | The shared variable used to communicate fetch requests to the thread
        -- running the block fetch protocol. Fetch requests are posted by the
@@ -396,7 +396,7 @@ completeFetchBatch :: MonadSTM m
                    => FetchClientStateVars m header
                    -> m ()
 completeFetchBatch FetchClientStateVars {fetchClientInFlightVar} =
-    atomically $ modifyTVar' fetchClientInFlightVar $ \inflight ->
+    atomically $ modifyTVar fetchClientInFlightVar $ \inflight ->
       assert (if peerFetchReqsInFlight inflight == 1
                  then peerFetchBytesInFlight inflight == 0
                    && Set.null (peerFetchBlocksInFlight inflight)
@@ -457,7 +457,7 @@ takeTFetchRequestVar v = (\(r,g,l) -> (r, getLast g, getLast l))
 -- This is used much like a 'TMVar' as a one-place queue between threads but
 -- with the property that we can \"improve\" the current value (if any).
 --
-newtype TMergeVar m a = TMergeVar (TMVar m a)
+newtype TMergeVar m a = TMergeVar (StrictTMVar m a)
 
 newTMergeVar :: MonadSTM m => STM m (TMergeVar m a)
 newTMergeVar = TMergeVar <$> newEmptyTMVar

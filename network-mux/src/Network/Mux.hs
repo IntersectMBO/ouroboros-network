@@ -22,7 +22,7 @@ module Network.Mux (
 import           Control.Monad
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadSay
-import           Control.Monad.Class.MonadSTM
+import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 import           Data.Array
 import qualified Data.ByteString.Lazy as BL
@@ -123,7 +123,7 @@ muxStart peerid app bearer = do
 
 
     mpsJob
-      :: TVar m Int
+      :: StrictTVar m Int
       -> PerMuxSharedState ptcl m
       -> ptcl
       -> m [m ()]
@@ -151,7 +151,7 @@ muxStart peerid app bearer = do
     -- threads will be prevented from exiting until all SDUs have been
     -- transmitted unless an exception/error is encounter. In that case all
     -- jobs will be cancelled directly.
-    mpsJobExit :: TVar m Int -> m ()
+    mpsJobExit :: StrictTVar m Int -> m ()
     mpsJobExit cnt = do
         muxBearerSetState bearer Dying
         atomically $ do
@@ -187,7 +187,7 @@ muxChannel
     => PerMuxSharedState ptcl m
     -> MiniProtocolId ptcl
     -> MiniProtocolMode
-    -> TVar m Int
+    -> StrictTVar m Int
     -> m (Channel m)
 muxChannel pmss mid md cnt = do
     w <- newEmptyTMVarM
@@ -208,7 +208,7 @@ muxChannel pmss mid md cnt = do
                 (printf "Attempting to send a message of size %d on %s %s" (BL.length encoding)
                         (show mid) (show $ md))
                 callStack
-        atomically $ modifyTVar' cnt (+ 1)
+        atomically $ modifyTVar cnt (+ 1)
         atomically $ putTMVar w encoding
         atomically $ writeTBQueue (tsrQueue pmss) (TLSRDemand mid md want)
 

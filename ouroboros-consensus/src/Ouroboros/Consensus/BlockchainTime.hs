@@ -40,7 +40,7 @@ import           GHC.Stack
 
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork (MonadFork)
-import           Control.Monad.Class.MonadSTM
+import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTimer
 
@@ -195,7 +195,7 @@ newTestBlockchainTime registry (NumSlots numSlots) slotLen = do
       , testBlockchainTimeDone = atomically (readTMVar doneVar)
       }
   where
-    loop :: TVar m TestClock -> TMVar m () -> m ()
+    loop :: StrictTVar m TestClock -> StrictTMVar m () -> m ()
     loop slotVar doneVar = do
         -- count off each requested slot
         replicateM_ numSlots $ do
@@ -232,7 +232,7 @@ realBlockchainTime registry slotLen start = do
   where
     -- In each iteration of the loop, we recompute how long to wait until
     -- the next slot. This minimizes clock skew.
-    loop :: TVar IO SlotNo -> IO Void
+    loop :: StrictTVar IO SlotNo -> IO Void
     loop slot = forever $ do
       next <- waitUntilNextSlotIO slotLen start
       atomically $ writeTVar slot next

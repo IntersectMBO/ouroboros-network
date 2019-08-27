@@ -16,7 +16,7 @@ import           Text.Printf
 import           GHC.Stack
 
 import           Control.Monad.Class.MonadSay
-import           Control.Monad.Class.MonadSTM
+import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer

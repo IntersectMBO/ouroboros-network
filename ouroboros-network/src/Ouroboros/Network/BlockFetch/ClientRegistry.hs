@@ -21,7 +21,7 @@ import qualified Data.Map as Map
 import           Data.Map (Map)
 
 import           Control.Monad (unless)
-import           Control.Monad.Class.MonadSTM
+import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork
@@ -44,10 +44,10 @@ import           Ouroboros.Network.BlockFetch.ClientState
 --
 data FetchClientRegistry peer header block m =
      FetchClientRegistry
-       (TMVar m (Tracer m (TraceLabelPeer peer (TraceFetchClientState header)),
+       (StrictTMVar m (Tracer m (TraceLabelPeer peer (TraceFetchClientState header)),
                  FetchClientPolicy header block m))
-       (TVar  m (Map peer (FetchClientStateVars m header)))
-       (TVar  m (Map peer (ThreadId m, TMVar m ())))
+       (StrictTVar  m (Map peer (FetchClientStateVars m header)))
+       (StrictTVar  m (Map peer (ThreadId m, StrictTMVar m ())))
 
 newFetchClientRegistry :: MonadSTM m
                        => m (FetchClientRegistry peer header block m)
@@ -72,13 +72,13 @@ bracketFetchClient (FetchClientRegistry ctxVar
     bracket register (uncurry unregister) (action . fst)
   where
     register :: m ( FetchClientContext header block m
-                  , (ThreadId m, TMVar m ()) )
+                  , (ThreadId m, StrictTMVar m ()) )
     register = do
       ctx <- atomically $ do
         -- blocks until setFetchClientContext is called
         (tracer, policy) <- readTMVar ctxVar
         stateVars <- newFetchClientStateVars
-        modifyTVar' fetchRegistry $ \m ->
+        modifyTVar fetchRegistry $ \m ->
           assert (peer `Map.notMember` m) $
           Map.insert peer stateVars m
         return FetchClientContext {
@@ -95,7 +95,7 @@ bracketFetchClient (FetchClientRegistry ctxVar
       return (ctx, syncclient)
 
     unregister :: FetchClientContext header block m
-               -> (ThreadId m, TMVar m ())
+               -> (ThreadId m, StrictTMVar m ())
                -> m ()
     unregister FetchClientContext { fetchClientCtxStateVars = stateVars }
                (tid, doneVar)  = do
@@ -107,7 +107,7 @@ bracketFetchClient (FetchClientRegistry ctxVar
       -- Wait for the sync client to terminate and finally unregister ourselves
       atomically $ do
         readTMVar doneVar
-        modifyTVar' fetchRegistry $ \m ->
+        modifyTVar fetchRegistry $ \m ->
           assert (peer `Map.member` m) $
           Map.delete peer m
 
@@ -137,22 +137,22 @@ bracketSyncWithFetchClient (FetchClientRegistry _ctxVar
     -- is unregistered. This has to happen even if either client is terminated
     -- abnormally or being cancelled (which of course can happen in any order).
 
-    register :: TMVar m () -> m ()
+    register :: StrictTMVar m () -> m ()
     register doneVar = do
       tid <- myThreadId
       -- We wait for the fetch client to be registered, and register ourselves
       atomically $ do
         fetchclients <- readTVar fetchRegistry
         check (peer `Map.member` fetchclients)
-        modifyTVar' syncRegistry $ \m ->
+        modifyTVar syncRegistry $ \m ->
           assert (peer `Map.notMember` m) $
           Map.insert peer (tid, doneVar) m
 
-    unregister :: TMVar m () -> m ()
+    unregister :: StrictTMVar m () -> m ()
     unregister doneVar =
       atomically $ do
         putTMVar doneVar ()
-        modifyTVar' syncRegistry $ \m ->
+        modifyTVar syncRegistry $ \m ->
           assert (peer `Map.member` m) $
           Map.delete peer m
 

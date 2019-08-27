@@ -20,7 +20,7 @@ import           Codec.Serialise (Serialise(..))
 import           Codec.CBOR.Read (DeserialiseFailure)
 
 import           Control.Monad (forever)
-import           Control.Monad.Class.MonadSTM
+import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadST
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadAsync
@@ -310,5 +310,5 @@ mkTestFetchedBlockHeap points = do
     v <- atomically (newTVar (Set.fromList points))
     return TestFetchedBlockHeap {
       getTestFetchedBlocks = readTVar v,
-      addTestFetchedBlock  = \p _b -> atomically (modifyTVar' v (Set.insert p))
+      addTestFetchedBlock  = \p _b -> atomically (modifyTVar v (Set.insert p))
     }

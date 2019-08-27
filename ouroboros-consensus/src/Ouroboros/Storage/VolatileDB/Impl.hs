@@ -87,7 +87,7 @@ module Ouroboros.Storage.VolatileDB.Impl
     ) where
 
 import           Control.Monad
-import           Control.Monad.Class.MonadSTM
+import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 import qualified Data.ByteString.Builder as BS
 import           Data.ByteString.Lazy (ByteString)
@@ -118,7 +118,7 @@ data VolatileDBEnv m blockId = forall h e. VolatileDBEnv {
       _dbHasFS          :: !(HasFS m h)
     , _dbErr            :: !(ErrorHandling (VolatileDBError blockId) m)
     , _dbErrSTM         :: !(ThrowCantCatch (VolatileDBError blockId) (STM m))
-    , _dbInternalState  :: !(TMVar m (Maybe (InternalState blockId h)))
+    , _dbInternalState  :: !(StrictTMVar m (Maybe (InternalState blockId h)))
     , _maxBlocksPerFile :: !Int
     , _parser           :: !(Parser e m blockId)
     }

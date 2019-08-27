@@ -32,7 +32,7 @@ import           GHC.Generics (Generic, Generic1)
 
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork hiding (fork)
-import           Control.Monad.Class.MonadSTM
+import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTimer
 
@@ -279,7 +279,7 @@ data ThreadInstr m :: * -> * where
   ThreadCrash :: ThreadInstr m ()
 
 -- | Instruction along with an MVar for the result
-data QueuedInstr m = forall a. QueuedInstr (ThreadInstr m a) (TMVar m a)
+data QueuedInstr m = forall a. QueuedInstr (ThreadInstr m a) (StrictTMVar m a)
 
 runInThread :: MonadSTM m => TestThread m -> ThreadInstr m a -> m a
 runInThread TestThread{..} instr = do
@@ -299,7 +299,7 @@ instance (MonadFork m, MonadAsync m) => Eq (TestThread m) where
 -- register and unregister themselves. We do not reuse the registry for this,
 -- to avoid circular reasoning in the tests.
 newThread :: forall m. (MonadAsync m, MonadMask m, MonadFork m, MonadTimer m)
-          => TVar m [TestThread m]
+          => StrictTVar m [TestThread m]
           -> ResourceRegistry m
           -> Link (TestThread m)
           -> m (TestThread m)
@@ -327,7 +327,7 @@ newThread alive parentReg = \shouldLink -> do
     return testThread
   where
     threadBody :: ResourceRegistry m
-               -> TMVar m (TestThread m)
+               -> StrictTMVar m (TestThread m)
                -> TQueue m (QueuedInstr m)
                -> m ()
     threadBody childReg spawned comms = do
@@ -355,7 +355,7 @@ runIO :: forall m. (
            , MonadTimer m
            , Typeable   m
            )
-      => TVar m [TestThread m]
+      => StrictTVar m [TestThread m]
       -> ResourceRegistry m
       -> Cmd (TestThread m) -> m (Resp (TestThread m))
 runIO alive reg cmd = catchEx $ timeoutAfter 1 $
@@ -526,7 +526,7 @@ semantics :: ( MonadAsync m
              , MonadTimer m
              , Typeable   m
              )
-          => TVar m [TestThread m]
+          => StrictTVar m [TestThread m]
           -> ResourceRegistry m
           -> At m Cmd Concrete -> m (At m Resp Concrete)
 semantics alive reg (At c) =
@@ -572,7 +572,7 @@ sm :: ( MonadAsync m
       , MonadTimer m
       , Typeable   m
       )
-   => TVar m [TestThread m]
+   => StrictTVar m [TestThread m]
    -> ResourceRegistry m
    -> StateMachine (Model m) (At m Cmd) m (At m Resp)
 sm alive reg = StateMachine {

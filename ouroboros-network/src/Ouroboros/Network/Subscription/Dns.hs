@@ -24,8 +24,10 @@ module Ouroboros.Network.Subscription.Dns
 
 import           Control.Monad (unless)
 import           Control.Monad.Class.MonadAsync
+import           Control.Monad.Class.MonadSTM (LazyTVar)
+import qualified Control.Monad.Class.MonadSTM as Lazy
+import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadSay
-import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
@@ -70,7 +72,7 @@ dnsResolve :: forall m.
 dnsResolve tracer resolver (DnsSubscriptionTarget domain _ _) = do
     ipv6Rsps <- newEmptyTMVarM
     ipv4Rsps <- newEmptyTMVarM
-    gotIpv6Rsp <- newTVarM False
+    gotIpv6Rsp <- Lazy.newTVarM False
 
     aid_ipv6 <- async $ resolveAAAA gotIpv6Rsp ipv6Rsps
     aid_ipv4 <- async $ resolveA gotIpv6Rsp ipv4Rsps
@@ -101,8 +103,8 @@ dnsResolve tracer resolver (DnsSubscriptionTarget domain _ _) = do
      - Returns a series of SockAddr, where the address family will alternate
      - between IPv4 and IPv6 as soon as the corresponding lookup call has completed.
      -}
-    listTargets :: Either [Socket.SockAddr] (TMVar m [Socket.SockAddr])
-                -> Either [Socket.SockAddr] (TMVar m [Socket.SockAddr])
+    listTargets :: Either [Socket.SockAddr] (StrictTMVar m [Socket.SockAddr])
+                -> Either [Socket.SockAddr] (StrictTMVar m [Socket.SockAddr])
                 -> m (Maybe (Socket.SockAddr, SubscriptionTarget m Socket.SockAddr))
 
     -- No result left to try
@@ -149,7 +151,7 @@ dnsResolve tracer resolver (DnsSubscriptionTarget domain _ _) = do
         case r_e of
              Left e  -> do
                  atomically $ putTMVar rspsVar []
-                 atomically $ writeTVar gotIpv6RspVar True
+                 atomically $ Lazy.writeTVar gotIpv6RspVar True
                  traceWith tracer $ DnsTraceLookupAAAAError e
                  return $ Just e
              Right r -> do
@@ -157,10 +159,10 @@ dnsResolve tracer resolver (DnsSubscriptionTarget domain _ _) = do
 
                  -- XXX Addresses should be sorted here based on DeltaQueue.
                  atomically $ putTMVar rspsVar r
-                 atomically $ writeTVar gotIpv6RspVar True
+                 atomically $ Lazy.writeTVar gotIpv6RspVar True
                  return Nothing
 
-    resolveA :: TVar m Bool -> TMVar m [Socket.SockAddr] -> m (Maybe DNS.DNSError)
+    resolveA :: LazyTVar m Bool -> StrictTMVar m [Socket.SockAddr] -> m (Maybe DNS.DNSError)
     resolveA gotIpv6RspVar rspsVar= do
         r_e <- lookupA resolver domain
         case r_e of
@@ -178,8 +180,8 @@ dnsResolve tracer resolver (DnsSubscriptionTarget domain _ _) = do
                   -}
                  timeoutVar <- registerDelay resolutionDelay
                  atomically $ do
-                     timeout <- readTVar timeoutVar
-                     gotIpv6Rsp <- readTVar gotIpv6RspVar
+                     timeout <- Lazy.readTVar timeoutVar
+                     gotIpv6Rsp <- Lazy.readTVar gotIpv6RspVar
                      unless (timeout || gotIpv6Rsp) retry
 
                  -- XXX Addresses should be sorted here based on DeltaQueue.

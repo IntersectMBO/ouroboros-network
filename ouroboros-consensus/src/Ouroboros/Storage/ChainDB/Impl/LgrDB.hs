@@ -62,7 +62,7 @@ import           System.FilePath ((</>))
 
 import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadST
-import           Control.Monad.Class.MonadSTM
+import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 
 import           Control.Tracer
@@ -105,10 +105,10 @@ import qualified Ouroboros.Storage.ChainDB.Impl.ImmDB as ImmDB
 -- | Thin wrapper around the ledger database
 data LgrDB m blk = LgrDB {
       conf           :: Conf m blk
-    , varDB          :: TVar m (LedgerDB blk)
+    , varDB          :: StrictTVar m (LedgerDB blk)
       -- ^ INVARIANT: the tip of the 'LedgerDB' is always in sync with the tip
       -- of the current chain of the ChainDB.
-    , varPrevApplied :: TVar m (Set (Point blk))
+    , varPrevApplied :: StrictTVar m (Set (Point blk))
       -- ^ INVARIANT: this set contains only points that are in the
       -- VolatileDB.
       --
@@ -381,7 +381,7 @@ validate :: forall m blk.
 validate LgrDB{..} ledgerDB numRollbacks = \hdrs -> do
     blocks <- toBlocks hdrs <$> atomically (readTVar varPrevApplied)
     res <- LedgerDB.ledgerDbSwitch conf numRollbacks blocks ledgerDB
-    atomically $ modifyTVar' varPrevApplied $
+    atomically $ modifyTVar varPrevApplied $
       addPoints (validBlockPoints res (map headerPoint hdrs))
     return res
   where
@@ -444,7 +444,7 @@ garbageCollectPrevApplied :: MonadSTM m
                           => LgrDB m blk
                           -> SlotNo
                           -> STM m ()
-garbageCollectPrevApplied LgrDB{..} slotNo = modifyTVar' varPrevApplied $
+garbageCollectPrevApplied LgrDB{..} slotNo = modifyTVar varPrevApplied $
     Set.filter ((<= (At slotNo)) . Block.pointSlot)
 
 {-------------------------------------------------------------------------------

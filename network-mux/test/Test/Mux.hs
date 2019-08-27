@@ -37,7 +37,7 @@ import qualified System.Random.SplitMix as SM
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadST
-import           Control.Monad.Class.MonadSTM
+import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
@@ -343,10 +343,10 @@ prop_mux_snd_recv request response = ioProperty $ do
 -- side and a MiniProtocolDescription for the server side for a RequestResponce
 -- protocol.
 --
-setupMiniReqRsp :: IO ()        -- | Action performed by responder before processing the response
-                -> TVar IO Int  -- | Total number of miniprotocols.
-                -> DummyPayload -- | Request, sent from initiator.
-                -> DummyPayload -- | Response, sent from responder after receive the request.
+setupMiniReqRsp :: IO ()              -- | Action performed by responder before processing the response
+                -> StrictTVar IO Int  -- | Total number of miniprotocols.
+                -> DummyPayload       -- | Request, sent from initiator.
+                -> DummyPayload       -- | Response, sent from responder after receive the request.
                 -> IO ( IO Bool
                       , Mx.Channel IO -> IO ()
                       , Mx.Channel IO -> IO ()
@@ -378,7 +378,7 @@ setupMiniReqRsp serverAction mpsEndVar request response = do
         go resps []         = SendMsgDone (pure $ reverse resps == [response])
         go resps (req:reqs) = SendMsgReq req $ \resp -> return (go (resp:resps) reqs)
 
-    clientApp :: TMVar IO Bool
+    clientApp :: StrictTMVar IO Bool
               -> Mx.Channel IO
               -> IO ()
     clientApp clientResultVar clientChan = do
@@ -386,7 +386,7 @@ setupMiniReqRsp serverAction mpsEndVar request response = do
         atomically (putTMVar clientResultVar result)
         end
 
-    serverApp :: TMVar IO Bool
+    serverApp :: StrictTMVar IO Bool
               -> Mx.Channel IO
               -> IO ()
     serverApp serverResultVar serverChan = do
@@ -396,16 +396,16 @@ setupMiniReqRsp serverAction mpsEndVar request response = do
 
     -- Wait on all miniprotocol jobs before letting a miniprotocol thread exit.
     end = do
-        atomically $ modifyTVar' mpsEndVar (\a -> a - 1)
+        atomically $ modifyTVar mpsEndVar (\a -> a - 1)
         atomically $ do
             c <- readTVar mpsEndVar
             unless (c == 0) retry
 
-waitOnAllClients :: TVar IO Int
+waitOnAllClients :: StrictTVar IO Int
                  -> Int
                  -> IO ()
 waitOnAllClients clientVar clientTot = do
-        atomically $ modifyTVar' clientVar (+ 1)
+        atomically $ modifyTVar clientVar (+ 1)
         atomically $ do
             c <- readTVar clientVar
             unless (c == clientTot) retry

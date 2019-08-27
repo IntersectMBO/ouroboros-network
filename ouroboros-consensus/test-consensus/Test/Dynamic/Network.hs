@@ -33,7 +33,7 @@ import           GHC.Stack
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork (MonadFork)
 import           Control.Monad.Class.MonadST
-import           Control.Monad.Class.MonadSTM
+import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
@@ -259,7 +259,7 @@ broadcastNetwork registry testBtime numCoreNodes pInfo initRNG slotLen = do
     mkArgs :: NodeConfig (BlockProtocol blk)
            -> ExtLedgerState blk
            -> EpochInfo m
-           -> (TVar m MockFS, TVar m MockFS, TVar m MockFS)
+           -> (StrictTVar m MockFS, StrictTVar m MockFS, StrictTVar m MockFS)
               -- ^ ImmutableDB, VolatileDB, LedgerDB
            -> ChainDbArgs m blk
     mkArgs cfg initLedger epochInfo (immDbFsVar, volDbFsVar, lgrDbFsVar) = ChainDbArgs
@@ -302,9 +302,9 @@ broadcastNetwork registry testBtime numCoreNodes pInfo initRNG slotLen = do
     createAndConnectNode
       :: HasCallStack
       => NodeChans m NodeId blk
-      -> TVar m ChaChaDRG
+      -> StrictTVar m ChaChaDRG
       -> CoreNodeId
-      -> m (NodeKernel m NodeId blk, NodeInfo blk (TVar m MockFS))
+      -> m (NodeKernel m NodeId blk, NodeInfo blk (StrictTVar m MockFS))
     createAndConnectNode chans varRNG coreNodeId = do
       let us               = fromCoreNodeId coreNodeId
           ProtocolInfo{..} = pInfo coreNodeId
@@ -386,7 +386,7 @@ data NodeInfo blk fs = NodeInfo
   }
 
 readFsTVars :: MonadSTM m
-            => NodeInfo blk (TVar m MockFS)
+            => NodeInfo blk (StrictTVar m MockFS)
             -> m (NodeInfo blk MockFS)
 readFsTVars tvars = atomically $ NodeInfo
     <$> readTVar (nodeInfoImmDbFs tvars)
@@ -418,7 +418,7 @@ getTestOutput ::
     => [( CoreNodeId
         , NodeConfig (BlockProtocol blk)
         , NodeKernel m NodeId blk
-        , NodeInfo blk (TVar m MockFS)
+        , NodeInfo blk (StrictTVar m MockFS)
         )]
     -> m (TestOutput blk)
 getTestOutput nodes = do

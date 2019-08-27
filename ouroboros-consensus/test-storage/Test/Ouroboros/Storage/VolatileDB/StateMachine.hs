@@ -22,7 +22,7 @@ module Test.Ouroboros.Storage.VolatileDB.StateMachine
 
 import           Prelude hiding (elem)
 
-import           Control.Monad.Class.MonadSTM
+import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow (MonadCatch)
 import           Control.Monad.Except
 import           Control.Monad.State
@@ -295,7 +295,7 @@ runDB restCmd db cmd = case cmd of
 
 sm :: (MonadCatch m, MonadSTM m)
    => Bool
-   -> TVar m Errors
+   -> StrictTVar m Errors
    -> HasFS m h
    -> VolatileDB BlockId m
    -> Internal.VolatileDBEnv m BlockId
@@ -446,7 +446,7 @@ shrinkerImpl :: Model Symbolic -> At CmdErr Symbolic -> [At CmdErr Symbolic]
 shrinkerImpl _ _ = []
 
 semanticsImplErr :: (MonadCatch m, MonadSTM m)
-                 => TVar m Errors
+                 => StrictTVar m Errors
                  -> HasFS m h
                  -> VolatileDB BlockId m
                  -> Internal.VolatileDBEnv m blockId
@@ -528,7 +528,7 @@ knownLimitation model (At cmd) = case cmd of
 prop_sequential :: Property
 prop_sequential =
     forAllCommands smUnused Nothing $ \cmds -> monadicIO $ do
-        let test :: TVar IO Errors
+        let test :: StrictTVar IO Errors
                  -> HasFS IO h
                  -> PropertyM IO (History (At CmdErr) (At Resp), Reason)
             test errorsVar hasFS = do

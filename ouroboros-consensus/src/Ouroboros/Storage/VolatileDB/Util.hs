@@ -6,7 +6,7 @@
 module Ouroboros.Storage.VolatileDB.Util where
 
 import           Control.Monad
-import           Control.Monad.Class.MonadSTM
+import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 import           Data.List (maximumBy)
 import           Data.Map (Map)
@@ -51,7 +51,7 @@ fromEither err = \case
     Right a -> return a
 
 modifyTMVar :: (MonadSTM m, MonadCatch m)
-            => TMVar m a
+            => StrictTMVar m a
             -> (a -> m (a,b))
             -> m b
 modifyTMVar m action =

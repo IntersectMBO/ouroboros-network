@@ -4,7 +4,7 @@
 module Test.Ouroboros.Storage.VolatileDB.Mock (openDBMock) where
 
 import           Control.Monad.State (StateT)
-import           Control.Monad.Class.MonadSTM
+import           Control.Monad.Class.MonadSTM.Strict
 
 import           Ouroboros.Storage.Util.ErrorHandling (ThrowCantCatch)
 import qualified Ouroboros.Storage.Util.ErrorHandling as EH
@@ -26,7 +26,7 @@ openDBMock err maxNumPerFile = do
   where
     dbModel = initDBModel maxNumPerFile
 
-    db :: TVar m (DBModel blockId) -> VolatileDB blockId m
+    db :: StrictTVar m (DBModel blockId) -> VolatileDB blockId m
     db dbVar = VolatileDB {
           closeDB        = wrapModel' dbVar  $ closeModel
         , isOpenDB       = wrapModel' dbVar  $ isOpenModel
@@ -44,10 +44,10 @@ openDBMock err maxNumPerFile = do
                            (StateT (DBModel blockId) (STM m))
     err' = EH.liftThrowT err
 
-    wrapModel' :: TVar m (DBModel blockId)
+    wrapModel' :: StrictTVar m (DBModel blockId)
                -> StateT (DBModel blockId) (STM m) a -> m a
     wrapModel' dbVar = atomically . wrapModel dbVar
 
-    wrapModel :: TVar m (DBModel blockId)
+    wrapModel :: StrictTVar m (DBModel blockId)
               -> StateT (DBModel blockId) (STM m) a -> STM m a
     wrapModel dbVar = simStateT dbVar $ id

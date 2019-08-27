@@ -38,7 +38,7 @@ import qualified Data.Set as Set
 import           Data.Word (Word64)
 import           GHC.Stack (HasCallStack)
 
-import           Control.Monad.Class.MonadSTM
+import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 
 import           Control.Tracer (Tracer, contramap, traceWith)
@@ -80,7 +80,7 @@ initialChainSelection
   -> LgrDB m blk
   -> Tracer m (TraceEvent blk)
   -> NodeConfig (BlockProtocol blk)
-  -> TVar m (Map (HeaderHash blk) SlotNo, Fingerprint) -- ^ 'cdbInvalid'
+  -> StrictTVar m (Map (HeaderHash blk) SlotNo, Fingerprint) -- ^ 'cdbInvalid'
   -> m (ChainAndLedger blk)
 initialChainSelection immDB volDB lgrDB tracer cfg varInvalid = do
     -- We follow the steps from section "## Initialization" in ChainDB.md
@@ -435,15 +435,14 @@ addBlock cdb@CDB{..} b = do
                     AF.join curChainPrefix newChainSuffix
               writeTVar cdbChain newChain'
               LgrDB.setCurrent cdbLgrDB newLedger
-              -- Update 'cdbImmBlockNo'
-              modifyTVar' cdbImmBlockNo $ getImmBlockNo secParam newChain'
+              modifyTVar cdbImmBlockNo $ getImmBlockNo secParam newChain'
 
               -- Update the readers
               -- 'Reader.switchFork' needs to know the intersection point
               -- (@ipoint@) between the old and the current chain.
               let ipoint = castPoint $ AF.anchorPoint newChainSuffix
               varReaders <- Map.elems <$> readTVar cdbReaders
-              forM_ varReaders $ \varReader -> modifyTVar' varReader $
+              forM_ varReaders $ \varReader -> modifyTVar varReader $
                 Reader.switchFork ipoint newChain'
 
               return (curChain, True)
@@ -524,9 +523,10 @@ chainSelection
   => LgrDB m blk
   -> Tracer m (TraceValidationEvent blk)
   -> NodeConfig (BlockProtocol blk)
-  -> TVar m (Map (HeaderHash blk) SlotNo, Fingerprint)  -- ^ The invalid blocks
-  -> ChainAndLedger blk                    -- ^ The current chain and ledger
-  -> NonEmpty (CandidateSuffix blk)        -- ^ Candidates
+  -> StrictTVar m (Map (HeaderHash blk) SlotNo, Fingerprint)
+     -- ^ The invalid blocks
+  -> ChainAndLedger blk              -- ^ The current chain and ledger
+  -> NonEmpty (CandidateSuffix blk)  -- ^ Candidates
   -> m (Maybe (ChainAndLedger blk))
      -- ^ The (valid) chain and corresponding LedgerDB that was selected, or
      -- 'Nothing' if there is no valid chain preferred over the current
@@ -631,7 +631,8 @@ validateCandidate
   => LgrDB m blk
   -> Tracer m (TraceValidationEvent blk)
   -> NodeConfig (BlockProtocol blk)
-  -> TVar m (Map (HeaderHash blk) SlotNo, Fingerprint)  -- ^ The invalid blocks
+  -> StrictTVar m (Map (HeaderHash blk) SlotNo, Fingerprint)
+     -- ^ The invalid blocks
   -> ChainAndLedger  blk                   -- ^ Current chain and ledger
   -> CandidateSuffix blk                   -- ^ Candidate fragment
   -> m (Maybe (ChainAndLedger blk))
@@ -679,7 +680,7 @@ validateCandidate lgrDB tracer cfg varInvalid
     -- fingerprint.
     addInvalidBlocks :: Map (HeaderHash blk) SlotNo -> m ()
     addInvalidBlocks invalidBlocksInCand = atomically $
-      modifyTVar' varInvalid $ \(invalid, fp) ->
+      modifyTVar varInvalid $ \(invalid, fp) ->
         (Map.union invalid invalidBlocksInCand, succ fp)
 
     -- | Make a list of all the points after from the given point (inclusive)

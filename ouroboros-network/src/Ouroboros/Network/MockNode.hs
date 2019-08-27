@@ -28,7 +28,7 @@ import           GHC.Generics (Generic)
 import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadThrow
-import           Control.Monad.Class.MonadSTM
+import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadTimer
 import           Control.Tracer (nullTracer)
 
@@ -71,8 +71,8 @@ longestChainSelection :: forall block m.
                          ( HasHeader block
                          , MonadSTM m
                          )
-                      => [TVar m (Maybe (Chain block))]
-                      -> TVar m (ChainProducerState block)
+                      => [StrictTVar m (Maybe (Chain block))]
+                      -> StrictTVar m (ChainProducerState block)
                       -> m ()
 longestChainSelection candidateChainVars cpsVar =
     forever (atomically updateCurrentChain)
@@ -89,14 +89,14 @@ longestChainSelection candidateChainVars cpsVar =
 
 
 chainValidation :: forall block m. (HasHeader block, MonadSTM m)
-                => TVar m (Chain block)
-                -> TVar m (Maybe (Chain block))
+                => StrictTVar m (Chain block)
+                -> StrictTVar m (Maybe (Chain block))
                 -> m ()
 chainValidation peerChainVar candidateChainVar = do
     st <- atomically (newTVar genesisPoint)
     forever (atomically (update st))
   where
-    update :: TVar m (Point block) -> STM m ()
+    update :: StrictTVar m (Point block) -> STM m ()
     update stateVar = do
       peerChain      <- readTVar peerChainVar
       candidatePoint <- readTVar stateVar
@@ -200,8 +200,8 @@ blockGenerator slotDuration chain = do
     atomically (writeTBQueue var (Just b))
     go var (Just slot) bs
 
--- | Observe @TVar ('ChainProducerState' block)@, and whenever the @TVar@
--- mutates, write the result to the supplied @'Probe'@.
+-- | Observe @StrictTVar ('ChainProducerState' block)@, and whenever the
+-- @StrictTVar@ mutates, write the result to the supplied @'Probe'@.
 --
 observeChainProducerState
   :: forall m block.
@@ -209,14 +209,14 @@ observeChainProducerState
      , MonadSTM m
      )
   => NodeId
-  -> TVar m [(NodeId, Chain block)]
-  -> TVar m (ChainProducerState block)
+  -> StrictTVar m [(NodeId, Chain block)]
+  -> StrictTVar m (ChainProducerState block)
   -> m ()
 observeChainProducerState nid probe cpsVar = do
     st <- atomically (newTVar genesisPoint)
     forever (update st)
   where
-    update :: TVar m (Point block) -> m ()
+    update :: StrictTVar m (Point block) -> m ()
     update stateVar = atomically $ do
       chain  <- producerChain <$> readTVar cpsVar
       curPoint <- readTVar stateVar
@@ -238,16 +238,16 @@ data ProducerId = ProducerId NodeId Int
 -- side which sends updates to its m subscribers.
 --
 -- The main thread of the @'relayNode'@ is not blocking; it will return
--- @TVar ('ChainProducerState' block)@.  This allows to extend the relay node to
--- a core node.
+-- @StrictTVar ('ChainProducerState' block)@. This allows to extend the relay
+-- node to a core node.
 forkRelayKernel :: forall block m.
                 ( HasHeader block
                 , MonadSTM m
                 , MonadFork m
                 )
-                => [TVar m (Chain block)]
+                => [StrictTVar m (Chain block)]
                 -- ^ These will track the upstream producers.
-                -> TVar m (ChainProducerState block)
+                -> StrictTVar m (ChainProducerState block)
                 -- ^ This is tracking the current node and the downstream.
                 -> m ()
 forkRelayKernel upstream cpsVar = do
@@ -269,8 +269,8 @@ forkRelayKernel upstream cpsVar = do
 -- side which sends updates to its m subscribers.
 --
 -- The main thread of the @'relayNode'@ is not blocking; it will return
--- @TVar ('ChainProducerState' block)@.  This allows to extend the relay node to
--- a core node.
+-- @StrictTVar ('ChainProducerState' block)@. This allows to extend the relay
+-- node to a core node.
 relayNode :: forall m block.
              ( MonadSTM m
              , MonadFork m
@@ -283,7 +283,7 @@ relayNode :: forall m block.
           => NodeId
           -> Chain block
           -> NodeChannels m block
-          -> m (TVar m (ChainProducerState block))
+          -> m (StrictTVar m (ChainProducerState block))
 relayNode nid initChain chans = do
   -- Mutable state
   -- 1. input chains
@@ -306,7 +306,7 @@ relayNode nid initChain chans = do
     -- state and all the reader states, while we could share just the chain).
     startConsumer :: Int
                   -> Channel m (AnyMessage (ChainSync block (Point block)))
-                  -> m (TVar m (Chain block))
+                  -> m (StrictTVar m (Chain block))
     startConsumer cid channel = do
       chainVar <- atomically $ newTVar Genesis
       let consumer = chainSyncClientPeer (chainSyncClientExample chainVar pureClient)
@@ -352,7 +352,7 @@ forkCoreKernel :: forall block m.
                -> [block]
                -- ^ Blocks to produce (in order they should be produced)
                -> (Chain block -> block -> block)
-               -> TVar m (ChainProducerState block)
+               -> StrictTVar m (ChainProducerState block)
                -> m ()
 forkCoreKernel slotDuration gchain fixupBlock cpsVar = do
   getBlock <- blockGenerator slotDuration gchain
@@ -400,7 +400,7 @@ coreNode :: forall m.
      -- ^ slot duration
      -> [Block]
      -> NodeChannels m Block
-     -> m (TVar m (ChainProducerState Block))
+     -> m (StrictTVar m (ChainProducerState Block))
 coreNode nid slotDuration gchain chans = do
   cpsVar <- relayNode nid Genesis chans
   forkCoreKernel slotDuration gchain fixupBlock cpsVar

@@ -48,7 +48,7 @@ import           GHC.Stack
 
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork
-import           Control.Monad.Class.MonadSTM
+import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 
 -- | Resource registry
@@ -274,7 +274,7 @@ data ResourceRegistry m = ResourceRegistry {
       registryContext :: !(Context m)
 
       -- | Registry state
-    , registryState   :: !(TVar m (RegistryState m))
+    , registryState   :: !(StrictTVar m (RegistryState m))
     }
 
 {-------------------------------------------------------------------------------
@@ -412,7 +412,7 @@ updateState :: forall m a. MonadSTM m
             -> State (RegistryState m) a
             -> m a
 updateState rr f =
-    atomically $ updateTVar' (registryState rr) (swap . runState f)
+    atomically $ updateTVar (registryState rr) (swap . runState f)
 
 -- | Attempt to allocate a resource in a registry which is closed
 --

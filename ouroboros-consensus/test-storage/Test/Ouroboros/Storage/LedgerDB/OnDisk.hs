@@ -52,7 +52,7 @@ import           System.Random (getStdRandom, randomR)
 import           Control.Tracer (nullTracer)
 
 import           Control.Monad.Class.MonadST
-import           Control.Monad.Class.MonadSTM
+import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 
 import           Test.QuickCheck (Gen)
@@ -521,7 +521,7 @@ data StandaloneDB m t = DB {
       --
       -- We can think of this as mocking the volatile DB. Blocks can be
       -- added to this without updating the rest of the state.
-    , dbBlocks :: TVar m (Map (BlockRef t) (BlockVal t))
+    , dbBlocks :: StrictTVar m (Map (BlockRef t) (BlockVal t))
 
       -- | Current chain and corresponding ledger state
       --
@@ -529,7 +529,7 @@ data StandaloneDB m t = DB {
       -- track of a current chain and keep the ledger DB in sync with it.
       --
       -- Invariant: all references @r@ here must be present in 'dbBlocks'.
-    , dbState  :: TVar m ([BlockRef t], LedgerDB (LedgerSt t) (BlockRef t))
+    , dbState  :: StrictTVar m ([BlockRef t], LedgerDB (LedgerSt t) (BlockRef t))
     }
 
 initStandaloneDB :: (MonadSTM m, LUT t) => DbEnv m -> m (StandaloneDB m t)
@@ -595,7 +595,7 @@ dbStreamAPI DB{..} = StreamAPI {..}
     blocksToStream TipGen  = id
     blocksToStream (Tip r) = tail . dropWhile (/= r)
 
-    getNext :: TVar m [BlockRef t] -> m (NextBlock' t)
+    getNext :: StrictTVar m [BlockRef t] -> m (NextBlock' t)
     getNext toStream = do
         mr <- atomically $ do
                 rs <- readTVar toStream

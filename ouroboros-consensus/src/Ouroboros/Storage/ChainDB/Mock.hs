@@ -10,7 +10,7 @@ module Ouroboros.Storage.ChainDB.Mock (
 import           Data.Bifunctor (first)
 import qualified Data.Map as Map
 
-import           Control.Monad.Class.MonadSTM
+import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 
 import           Ouroboros.Network.Block (ChainUpdate)
@@ -37,7 +37,7 @@ openDB :: forall m blk.
        -> ExtLedgerState blk
        -> m (ChainDB m blk)
 openDB cfg initLedger = do
-    db :: TVar m (Model blk) <- atomically $ newTVar (Model.empty initLedger)
+    db :: StrictTVar m (Model blk) <- atomically $ newTVar (Model.empty initLedger)
 
     let querySTM :: (Model blk -> a) -> STM m a
         querySTM f = readTVar db >>= \m ->
@@ -121,7 +121,7 @@ openDB cfg initLedger = do
       , newBlockReader      = update   .   const (first reader . Model.readBlocks)
       , newHeaderReader     = update   .   const (first (fmap getHeader . reader) . Model.readBlocks)
 
-      , closeDB             = atomically $ modifyTVar' db Model.closeDB
+      , closeDB             = atomically $ modifyTVar db Model.closeDB
       , isOpen              = Model.isOpen <$> readTVar db
       }
   where

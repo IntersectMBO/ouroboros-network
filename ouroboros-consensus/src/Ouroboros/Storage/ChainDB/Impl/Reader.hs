@@ -21,7 +21,7 @@ import           Data.Maybe (isJust)
 import           GHC.Stack (HasCallStack)
 
 import           Control.Monad.Class.MonadFork
-import           Control.Monad.Class.MonadSTM
+import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 
 import           Control.Tracer (contramap, traceWith)
@@ -50,7 +50,7 @@ import           Ouroboros.Storage.ChainDB.Impl.Types
 -- throw a 'ClosedReaderError'.
 --
 -- Otherwise, execute the given function on the 'ChainDbEnv' and 'ReaderState'
--- 'TVar'.
+-- 'StrictTVar'.
 getReader
   :: forall m blk r.
      ( MonadSTM m
@@ -59,7 +59,7 @@ getReader
      )
   => ChainDbHandle m blk
   -> ReaderId
-  -> (ChainDbEnv m blk -> TVar m (ReaderState m blk) -> m r)
+  -> (ChainDbEnv m blk -> StrictTVar m (ReaderState m blk) -> m r)
   -> m r
 getReader (CDBHandle varState) readerId f = do
     (env, varRdr) <- atomically $ readTVar varState >>= \case
@@ -81,7 +81,7 @@ getReader1
      )
   => ChainDbHandle m blk
   -> ReaderId
-  -> (ChainDbEnv m blk -> TVar m (ReaderState m blk) -> a -> m r)
+  -> (ChainDbEnv m blk -> StrictTVar m (ReaderState m blk) -> a -> m r)
   -> a -> m r
 getReader1 h rdrId f a =
     getReader h rdrId (\env varReader -> f env varReader a)
@@ -115,10 +115,10 @@ newReader cdb@CDB{..} h registry = do
 
     (reader, readerId) <- atomically $ do
       readerId <- readTVar cdbNextReaderId
-      modifyTVar' cdbNextReaderId succ
+      modifyTVar cdbNextReaderId succ
 
       varReader <- newTVar readerState
-      modifyTVar' cdbReaders (Map.insert readerId varReader)
+      modifyTVar cdbReaders (Map.insert readerId varReader)
       let reader = makeNewBlockOrHeaderReader h readerId registry
       return (reader, readerId)
     traceWith cdbTracer $ TraceReaderEvent $ NewReader readerId
@@ -277,7 +277,7 @@ instructionHelper
      -- ^ How to turn a (pure) 'ChainUpdate' in the right return type: use
      -- 'id' or 'Just'.
   -> ChainDbEnv m blk
-  -> TVar m (ReaderState m blk)
+  -> StrictTVar m (ReaderState m blk)
   -> m r
 instructionHelper registry fromMaybeSTM fromPure CDB{..} varReader = do
     -- In one transaction: check in which state we are, if in the
@@ -419,7 +419,7 @@ forward
      )
   => ResourceRegistry m
   -> ChainDbEnv m blk
-  -> TVar m (ReaderState m blk)
+  -> StrictTVar m (ReaderState m blk)
   -> [Point blk]
   -> m (Maybe (Point blk))
 forward registry CDB{..} varReader = \pts -> do

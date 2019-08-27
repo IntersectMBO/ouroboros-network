@@ -38,7 +38,7 @@ import           Data.Void (Void)
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadST
-import           Control.Monad.Class.MonadSTM
+import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
 import           Control.Tracer
@@ -100,7 +100,7 @@ import qualified Ouroboros.Storage.ChainDB.API as ChainDB
 --
 data ProtocolHandlers m peer blk = ProtocolHandlers {
       phChainSyncClient
-        :: TVar m (CandidateState blk)
+        :: StrictTVar m (CandidateState blk)
         -> AnchoredFragment (Header blk)
         -> ChainSyncClient (Header blk) (Point blk) m Void
         -- TODO: we should consider either bundling these context paramaters
