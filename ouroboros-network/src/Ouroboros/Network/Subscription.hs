@@ -7,6 +7,8 @@ module Ouroboros.Network.Subscription
       -- * DNS Subscription Worker
     , dnsSubscriptionWorker
     , DnsSubscriptionTarget (..)
+    , ConnectResult (..)
+
 
       -- * Constants
     , defaultConnectionAttemptDelay
