@@ -55,7 +55,7 @@ instance ByronGiven => RunNode (ByronBlockOrEBB ByronConfig) where
   nodeEncodeGenTxId      = encodeByronGenTxId
   nodeEncodeHeaderHash   = const encodeByronHeaderHash
   nodeEncodeLedgerState  = const encodeByronLedgerState
-  nodeEncodeChainState   = const encodeByronChainState
+  nodeEncodeChainState   = const (encodeChainStateWithEBBs encodeByronChainState)
   nodeEncodeApplyTxError = const encodeByronApplyTxError
 
   nodeDecodeBlock        = const (decodeByronBlock given)
@@ -64,7 +64,7 @@ instance ByronGiven => RunNode (ByronBlockOrEBB ByronConfig) where
   nodeDecodeGenTxId      = decodeByronGenTxId
   nodeDecodeHeaderHash   = const decodeByronHeaderHash
   nodeDecodeLedgerState  = const decodeByronLedgerState
-  nodeDecodeChainState   = const decodeByronChainState
+  nodeDecodeChainState   = const (decodeChainStateWithEBBs decodeByronChainState)
   nodeDecodeApplyTxError = const decodeByronApplyTxError
 
 extractGenesisData :: NodeConfig (WithEBBs (ExtNodeConfig ByronConfig p))
