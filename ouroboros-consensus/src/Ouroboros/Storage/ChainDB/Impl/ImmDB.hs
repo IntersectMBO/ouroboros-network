@@ -77,7 +77,7 @@ import           Ouroboros.Network.Point (WithOrigin (..))
 
 import qualified Ouroboros.Consensus.Util.CBOR as Util.CBOR
 import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry,
-                     allocate, release)
+                     allocate, unsafeRelease)
 
 
 import           Ouroboros.Storage.ChainDB.API (ChainDbError (..),
@@ -363,9 +363,13 @@ registeredStream db registry start end = do
     (key, it) <- allocate registry
       (\_key -> withDB db $ \imm -> ImmDB.streamBinaryBlobs imm start end)
       (iteratorClose db)
-    return it
-      { ImmDB.iteratorClose = release registry key
-      }
+    -- The iterator will be used by a thread that is unknown to the registry
+    -- (which, after all, is entirely internal to the chain DB). This means
+    -- that the registry cannot guarantee that the iterator will be live for
+    -- the duration of that thread, and indeed, it may not be: the chain DB
+    -- might be closed before that thread terminates. We will deal with this
+    -- in the chain DB itself (throw ClosedDBError exception).
+    return it { ImmDB.iteratorClose = unsafeRelease key }
 
 -- | Stream blocks from the given 'StreamFrom'.
 --
@@ -611,8 +615,8 @@ epochFileParser ImmDbArgs{..} =
       -- 'Ouroboros.Consensus.Util.CBOR.readIncrementalOffsets' where we need
       -- to force the decoded value in order to force this computation.
         case immIsEBB b of
-          Nothing       -> (slot, Nothing)
-          Just !ebbHash -> (slot, Just ebbHash)
+          Nothing         -> (slot, Nothing)
+          Just (!ebbHash) -> (slot, Just ebbHash)
       where
         !slot = blockSlot b
 

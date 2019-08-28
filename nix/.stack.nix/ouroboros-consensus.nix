@@ -102,9 +102,11 @@
             (hsPkgs.cryptonite)
             (hsPkgs.fgl)
             (hsPkgs.fingertree)
+            (hsPkgs.generics-sop)
             (hsPkgs.graphviz)
             (hsPkgs.mtl)
             (hsPkgs.QuickCheck)
+            (hsPkgs.quickcheck-state-machine)
             (hsPkgs.random)
             (hsPkgs.reflection)
             (hsPkgs.serialise)
@@ -113,6 +115,7 @@
             (hsPkgs.tasty-quickcheck)
             (hsPkgs.text)
             (hsPkgs.time)
+            (hsPkgs.tree-diff)
             ];
           };
         "test-storage" = {

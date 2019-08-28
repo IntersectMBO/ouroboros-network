@@ -52,7 +52,7 @@ import           Ouroboros.Network.Point (WithOrigin (..))
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Ledger.Abstract (ProtocolLedgerView)
 import           Ouroboros.Consensus.Protocol.Abstract
-import           Ouroboros.Consensus.Util.ResourceRegistry (forkLinked)
+import           Ouroboros.Consensus.Util.ResourceRegistry
 
 import qualified Ouroboros.Storage.ChainDB.Impl.ImmDB as ImmDB
 import qualified Ouroboros.Storage.ChainDB.Impl.LgrDB as LgrDB
@@ -85,7 +85,8 @@ launchBgTasks cdb@CDB{..} = do
     atomically $ writeTVar cdbBgThreads
       [gcThread, copyThread, lgrSnapshotThread]
   where
-    launch = forkLinked cdbRegistry
+    launch :: m () -> m (Thread m ())
+    launch = forkLinkedThread cdbRegistry
 
 {-------------------------------------------------------------------------------
   Copying blocks from the VolatileDB to the ImmutableDB

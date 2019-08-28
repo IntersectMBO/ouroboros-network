@@ -28,7 +28,7 @@ import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util (chunks)
 import           Ouroboros.Consensus.Util.Condense (condense)
-import qualified Ouroboros.Consensus.Util.ResourceRegistry as ResourceRegistry
+import           Ouroboros.Consensus.Util.ResourceRegistry
 
 import           Ouroboros.Storage.ChainDB (TraceAddBlockEvent (..), addBlock,
                      closeDB, openDB, toChain)
@@ -38,7 +38,8 @@ import qualified Ouroboros.Storage.FS.Sim.MockFS as Mock
 
 import           Test.Ouroboros.Storage.ChainDB.StateMachine (mkArgs)
 import           Test.Ouroboros.Storage.ChainDB.TestBlock
-import           Test.Ouroboros.Storage.Util (constrName)
+
+import           Test.Util.SOP
 
 tests :: TestTree
 tests = testGroup "AddBlock"
@@ -98,7 +99,7 @@ prop_addBlock_multiple_threads bpt =
           <$> newTVar Mock.empty
           <*> newTVar Mock.empty
           <*> newTVar Mock.empty
-        ResourceRegistry.with $ \registry -> do
+        withRegistry $ \registry -> do
           let args = mkArgs cfg initLedger dynamicTracer registry fsVars
           db <- openDB args
           -- Add blocks concurrently

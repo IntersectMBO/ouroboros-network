@@ -26,7 +26,7 @@ import           Ouroboros.Network.MockChain.Chain (Chain)
 import qualified Ouroboros.Network.MockChain.Chain as Chain
 
 import           Ouroboros.Consensus.Util.Condense (condense)
-import qualified Ouroboros.Consensus.Util.ResourceRegistry as ResourceRegistry
+import           Ouroboros.Consensus.Util.ResourceRegistry
 
 import           Ouroboros.Storage.ChainDB.API (Iterator (..), IteratorId (..),
                      IteratorResult (..), StreamFrom (..), StreamTo (..),
@@ -220,7 +220,7 @@ runIterator
   -> StreamFrom TestBlock
   -> StreamTo   TestBlock
   -> ([TraceIteratorEvent TestBlock], IterRes)
-runIterator setup from to = runSimOrThrow $ ResourceRegistry.with $ \r -> do
+runIterator setup from to = runSimOrThrow $ withRegistry $ \r -> do
     (tracer, getTrace) <- recordingTracerTVar
     itEnv <- initIteratorEnv setup tracer
     res <- runExceptT $ do

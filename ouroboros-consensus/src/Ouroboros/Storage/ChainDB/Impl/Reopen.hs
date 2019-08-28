@@ -34,6 +34,7 @@ import           Ouroboros.Consensus.Block (Header)
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util (whenJust)
+import           Ouroboros.Consensus.Util.ResourceRegistry
 
 import           Ouroboros.Storage.Common (EpochNo)
 import           Ouroboros.Storage.EpochInfo (epochInfoEpoch)
@@ -55,7 +56,7 @@ isOpen (CDBHandle varState) = readTVar varState <&> \case
 
 closeDB
   :: forall m blk.
-     ( MonadCatch m
+     ( MonadMask m
      , MonadAsync m
      , HasHeader blk
      , HasHeader (Header blk)
@@ -79,7 +80,7 @@ closeDB (CDBHandle varState) = do
       Iterator.closeAllIterators cdb
 
       bgThreads <- atomically $ readTVar cdbBgThreads
-      mapM_ cancel bgThreads
+      mapM_ cancelThread bgThreads
 
       -- TODO Maybe write a 'LedgerDB' snapshot or wait until it is done.
       -- See #367.

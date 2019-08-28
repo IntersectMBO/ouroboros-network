@@ -64,7 +64,6 @@ import           Ouroboros.Consensus.NodeNetwork
 import           Ouroboros.Consensus.Protocol hiding (Protocol)
 import           Ouroboros.Consensus.Util.Orphans ()
 import           Ouroboros.Consensus.Util.ResourceRegistry
-import qualified Ouroboros.Consensus.Util.ResourceRegistry as ResourceRegistry
 
 import           Ouroboros.Storage.ChainDB (ChainDB, ChainDbArgs)
 import qualified Ouroboros.Storage.ChainDB as ChainDB
@@ -96,7 +95,7 @@ run
   -> IO ()
 run tracers chainDbTracer rna dbPath pInfo
     customiseChainDbArgs customiseNodeArgs onNodeKernel =
-    ResourceRegistry.with $ \registry -> do
+    withRegistry $ \registry -> do
 
       chainDB <- initChainDB
         chainDbTracer
@@ -273,22 +272,22 @@ initNetwork
   -> IO ()
 initNetwork registry nodeArgs kernel RunNetworkArgs{..} = do
     -- serve local clients (including tx submission)
-    localServer <- forkLinked registry runLocalServer
+    localServer <- forkLinkedThread registry runLocalServer
 
     -- serve downstream nodes
     connTable  <- newConnectionTable
-    peerServer <- forkLinked registry $
-      runPeerServer connTable
+    peerServer <- forkLinkedThread registry $ runPeerServer connTable
 
-    ipSubscriptions <- forkLinked registry $ do
-      runIpSubscriptionWorker connTable
+    ipSubscriptions <- forkLinkedThread registry $
+                         runIpSubscriptionWorker connTable
 
     -- dns subscription managers
-    dnsSubscriptions <- forM rnaDnsProducers $ \dnsProducer ->
-      forkLinked registry $ runDnsSubscriptionWorker connTable dnsProducer
+    dnsSubscriptions <- forM rnaDnsProducers $ \dnsProducer -> do
+       forkLinkedThread registry $
+         runDnsSubscriptionWorker connTable dnsProducer
 
-    let asyncs = localServer : peerServer : ipSubscriptions : dnsSubscriptions
-    void $ waitAny asyncs
+    let threads = localServer : peerServer : ipSubscriptions : dnsSubscriptions
+    void $ waitAnyThread threads
   where
     networkApps :: NetworkApps peer
     networkApps = consensusNetworkApps

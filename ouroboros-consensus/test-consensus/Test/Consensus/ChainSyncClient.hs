@@ -55,8 +55,7 @@ import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.BFT
 import           Ouroboros.Consensus.Util (whenJust)
 import           Ouroboros.Consensus.Util.Condense
-import           Ouroboros.Consensus.Util.ResourceRegistry (fork, forkLinked)
-import qualified Ouroboros.Consensus.Util.ResourceRegistry as ResourceRegistry
+import           Ouroboros.Consensus.Util.ResourceRegistry
 import           Ouroboros.Consensus.Util.STM (Fingerprint (..))
 
 import           Test.Util.Orphans.Arbitrary ()
@@ -216,7 +215,7 @@ runChainSync :: forall m.
        -- ^ (The final client chain, the final server chain, the synced
        --    candidate fragment, exception thrown by the chain sync client)
 runChainSync securityParam maxClockSkew (ClientUpdates clientUpdates)
-    (ServerUpdates serverUpdates) startSyncingAt = ResourceRegistry.with $ \registry -> do
+    (ServerUpdates serverUpdates) startSyncingAt = withRegistry $ \registry -> do
 
     testBtime <- newTestBlockchainTime registry numSlots slotDuration
     let btime = testBlockchainTime testBtime
@@ -254,7 +253,7 @@ runChainSync securityParam maxClockSkew (ClientUpdates clientUpdates)
 
     -- Schedule updates of the client and server chains
     varLastUpdate <- newTVarM 0
-    onSlotChange btime registry $ \_registry' slot -> do
+    onSlotChange btime $ \slot -> do
       -- Stop updating the client and server chains when the chain sync client
       -- has thrown an exception, so that at the end, we can read the chains
       -- in the states they were in when the exception was thrown.
@@ -280,7 +279,7 @@ runChainSync securityParam maxClockSkew (ClientUpdates clientUpdates)
         atomically $ writeTVar varLastUpdate slot
 
     -- Connect client to server and run the chain sync protocol
-    onSlot btime registry startSyncingAt $ \registry' -> do
+    onSlot btime startSyncingAt $ do
       -- When updates are planned at the same slot that we start syncing, we
       -- wait until these updates are done before we start syncing.
       when (isJust (Map.lookup startSyncingAt clientUpdates) ||
@@ -293,7 +292,7 @@ runChainSync securityParam maxClockSkew (ClientUpdates clientUpdates)
       -- Don't link the thread (which will cause the exception to be rethrown
       -- in the main thread), just catch the exception and store it, because
       -- we want a "regular ending".
-      void $ fork registry' $
+      void $ forkThread registry $
         bracketChainSyncClient
            nullTracer
            (AF.mapAnchoredFragment coerce <$> getCurrentChain)
@@ -306,10 +305,11 @@ runChainSync securityParam maxClockSkew (ClientUpdates clientUpdates)
              runPeer nullTracer codecChainSyncId serverId clientChannel
                     (chainSyncClientPeer (client varCandidate curChain))
         `catch` \(e :: ChainSyncException) -> do
+          -- TODO: Is this necessary? Wouldn't the Async's internal MVar do?
           atomically $ writeTVar varClientException (Just e)
           -- Rethrow, but it will be ignored anyway.
           throwM e
-      void $ forkLinked registry' $
+      void $ forkLinkedThread registry $
         runPeer nullTracer codecChainSyncId clientId serverChannel
                 (chainSyncServerPeer server)
 

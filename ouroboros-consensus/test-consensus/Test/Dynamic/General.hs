@@ -27,7 +27,7 @@ import           Ouroboros.Consensus.Protocol.Abstract (SecurityParam (..))
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Orphans ()
 import           Ouroboros.Consensus.Util.Random
-import qualified Ouroboros.Consensus.Util.ResourceRegistry as ResourceRegistry
+import           Ouroboros.Consensus.Util.ResourceRegistry
 
 import           Ouroboros.Storage.FS.Sim.MockFS (MockFS)
 import qualified Ouroboros.Storage.FS.Sim.MockFS as Mock
@@ -55,7 +55,7 @@ runTestNetwork ::
   -> Seed
   -> TestOutput blk
 runTestNetwork pInfo numCoreNodes numSlots seed = runSimOrThrow $ do
-    registry  <- ResourceRegistry.new
+    registry  <- unsafeNewRegistry
     testBtime <- newTestBlockchainTime registry numSlots slotLen
     broadcastNetwork
       registry
