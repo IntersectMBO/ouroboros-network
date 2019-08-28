@@ -156,6 +156,7 @@ decodeMsg (tag, input) = case tag of
         codecCS :: MonoCodec CS
         codecCS = codecChainSync Serialise.encode (fmap const Serialise.decode)
                                  Serialise.encode (Serialise.decode :: CBOR.Decoder s (Point DummyBytes))
+                                 Serialise.encode (Serialise.decode :: CBOR.Decoder s (Point DummyBytes))
 
         chainSyncParsers = [
               runCS (ClientAgency CS.TokIdle)

@@ -1,3 +1,4 @@
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE BangPatterns #-}
@@ -375,15 +376,19 @@ serverChainSync sockAddr = do
          codecChainSync
         (ChainSync.chainSyncServerPeer (chainSyncServer prng))
 
-codecChainSync :: (CBOR.Serialise block, CBOR.Serialise point)
-               => Codec (ChainSync.ChainSync block point)
+
+codecChainSync :: ( CBOR.Serialise (HeaderHash block)
+                  , CBOR.Serialise block
+                  , CBOR.Serialise tip
+                  )
+               => Codec (ChainSync.ChainSync block tip)
                         CBOR.DeserialiseFailure
                         IO LBS.ByteString
 codecChainSync =
     ChainSync.codecChainSync
       CBOR.encode (fmap const CBOR.decode)
       CBOR.encode             CBOR.decode
-
+      CBOR.encode             CBOR.decode
 
 
 --
