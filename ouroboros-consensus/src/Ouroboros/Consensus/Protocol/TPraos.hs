@@ -3,6 +3,7 @@
 {-# LANGUAGE DeriveGeneric           #-}
 {-# LANGUAGE FlexibleContexts        #-}
 {-# LANGUAGE FlexibleInstances       #-}
+{-# LANGUAGE LambdaCase              #-}
 {-# LANGUAGE MultiParamTypeClasses   #-}
 {-# LANGUAGE NamedFieldPuns          #-}
 {-# LANGUAGE RecordWildCards         #-}
@@ -20,7 +21,7 @@
 module Ouroboros.Consensus.Protocol.TPraos (
     TPraos
   , TPraosFields(..)
-  , TPraosExtraFields(..)
+  , TPraosToSign(..)
   , TPraosLedgerView(..)
   , TPraosParams(..)
   , forgeTPraosFields
@@ -33,25 +34,17 @@ module Ouroboros.Consensus.Protocol.TPraos (
   , NodeConfig(..)
   ) where
 
-import           Cardano.Binary (ToCBOR (..))
-import           Codec.CBOR.Encoding (Encoding)
-import           Codec.Serialise (Serialise (..))
-import           Control.Monad (unless)
-import           Control.Monad.Except (ExceptT(..), throwError)
-import           Control.Monad.Identity (runIdentity)
+import           Control.Monad.Except (ExceptT(..))
 import           Crypto.Random (MonadRandom)
 import           Data.Coerce (coerce)
-import           Data.IntMap.Strict (IntMap)
-import qualified Data.IntMap.Strict as IntMap
 import qualified Data.Map.Strict as Map
-import           Data.Maybe (fromMaybe)
 import           Data.Proxy (Proxy (..))
 import           Data.Typeable (Typeable)
 import           Data.Word (Word64)
 import           GHC.Generics (Generic)
 import           Numeric.Natural
 import           Control.State.Transition (TRC(..), applySTS)
-import           Cardano.Crypto.DSIGN.Class (DSIGNAlgorithm, Signable)
+import           Cardano.Crypto.DSIGN.Class (DSIGNAlgorithm, Signable, VerKeyDSIGN)
 import           Cardano.Crypto.DSIGN.Ed448 (Ed448DSIGN)
 import           Cardano.Crypto.DSIGN.Mock (MockDSIGN)
 import           Cardano.Crypto.Hash.Class (HashAlgorithm (..), fromHash, hash)
@@ -74,10 +67,10 @@ import           Ouroboros.Storage.Common (EpochNo (..), EpochSize (..))
 import           Ouroboros.Storage.EpochInfo (EpochInfo (..),
                      fixedSizeEpochInfo)
 
-import BaseTypes (Seed)
-import BlockChain (BHeader, BHBody)
+import BaseTypes (Seed, UnitInterval, forceUnitInterval)
+import BlockChain (BHeader, BHBody, Proof)
 import Delegation.Certificates (PoolDistr(..))
-import Keys (Dms(..), GenKeyHash, KeyHash, VKeyES(..), hashKey, hashKeyES)
+import Keys (DiscVKey(..), Dms(..), GenKeyHash, KeyHash, VKeyES(..), hashKey, hashKeyES)
 import OCert (KESPeriod, OCert(..))
 import PParams (PParams)
 import Slot (Slot(..))
@@ -90,25 +83,27 @@ type PRTCL c = STS.PRTCL (TPraosHash c) (TPraosDSIGN c) (TPraosKES c)
   Fields required by TPraos in the header
 -------------------------------------------------------------------------------}
 
--- | The fields that TPraos required in the header
-data TPraosFields c toSign = TPraosFields {
-      tpraosSignature   :: SignedKES (TPraosKES c) toSign
-    , tpraosExtraFields :: TPraosExtraFields c
-    }
+data TPraosFields c toSign = TPraosFields
+  { tpraosSignature :: SignedKES (TPraosKES c) toSign
+  , tpraosToSign :: TPraosToSign c
+  }
   deriving Generic
 
--- | Fields that should be included in the signature
-data TPraosExtraFields c = TPraosExtraFields {
-      tpraosCreator :: CoreNodeId
-    , tpraosRho     :: CertifiedVRF (TPraosVRF c) (Seed, SlotNo, VRFType)
-    , tpraosY       :: CertifiedVRF (TPraosVRF c) (Seed, SlotNo, VRFType)
-    }
+-- | Fields arising from transitional praos execution which must be included in
+-- the block signature.
+data TPraosToSign c = TPraosToSign
+  { tptsIssuerVK :: VerKeyDSIGN (TPraosDSIGN c)
+  , tptsVrfVk :: VerKeyVRF (TPraosVRF c)
+  , tptsEta :: CertifiedVRF (TPraosVRF c) Seed
+  , tptsLeader :: CertifiedVRF (TPraosVRF c) UnitInterval
+  , tptsOCert :: OCert (TPraosDSIGN c) (TPraosKES c)
+  }
+  deriving Generic
 
 class ( HasHeader hdr
       , SignedHeader hdr
       , Cardano.Crypto.KES.Class.Signable (TPraosKES c) (Signed hdr)
       ) => HeaderSupportsTPraos c hdr where
-  headerTPraosFields :: proxy (TPraos c) -> hdr -> TPraosFields c (Signed hdr)
 
   -- Because we are using the executable spec, rather than implementing the
   -- protocol directly here, we have a fixed header type rather than an
@@ -124,59 +119,42 @@ forgeTPraosFields :: ( HasNodeState (TPraos c) m
                     , Cardano.Crypto.KES.Class.Signable (TPraosKES c) toSign
                     )
                  => NodeConfig (TPraos c)
+                 -> TPraosIsCoreNode c
                  -> TPraosProof c
-                 -> (TPraosExtraFields c -> toSign)
+                 -> (TPraosToSign c -> toSign)
                  -> m (TPraosFields c toSign)
-forgeTPraosFields TPraosNodeConfig{..} TPraosProof{..} mkToSign = do
-    ns@TPraosNodeState{tpraosNodeStateSKSHot} <- getNodeState
-    let signedFields = TPraosExtraFields {
-          tpraosCreator = tpraosLeader
-        , tpraosRho     = tpraosProofRho
-        , tpraosY       = tpraosProofY
+forgeTPraosFields TPraosNodeConfig{..} icn@TPraosIsCoreNode{..} TPraosProof{..} mkToSign = do
+    let (DiscVKey issuerVK) = ocertVkCold tpraosOpCert
+        signedFields = TPraosToSign {
+          tptsIssuerVK = issuerVK
+        , tptsVrfVk = deriveVerKeyVRF tpraosSignKeyVRF
+        , tptsEta = tpraosEta
+        , tptsLeader       = tpraosLeader
+        , tptsOCert = tpraosOpCert
         }
     m <- signedKES
            (fromIntegral (unSlotNo tpraosProofSlot))
            (mkToSign signedFields)
-           tpraosNodeStateSKSHot
+           tpraosIsCoreNodeSKSHot
     case m of
       Nothing                  -> error "mkOutoborosPayload: signedKES failed"
       Just (signature, newKey) -> do
-        putNodeState $ ns { tpraosNodeStateSKSHot = newKey }
+        putNodeState . Just $ icn { tpraosIsCoreNodeSKSHot = newKey }
         return $ TPraosFields {
             tpraosSignature    = signature
-          , tpraosExtraFields = signedFields
+          , tpraosToSign       = signedFields
           }
 
 {-------------------------------------------------------------------------------
   TPraos specific types
 -------------------------------------------------------------------------------}
 
-data VRFType = NONCE | TEST
-    deriving (Show, Eq, Ord, Generic)
-
-instance Serialise VRFType
-  -- use generic instance
-
-instance ToCBOR VRFType where
-  -- This is a cheat, and at some point we probably want to decide on Serialise/ToCBOR
-  toCBOR = encode
-
-deriving instance TPraosCrypto c => Show (TPraosExtraFields c)
-deriving instance TPraosCrypto c => Eq   (TPraosExtraFields c)
-
-deriving instance TPraosCrypto c => Show (TPraosFields c toSign)
-deriving instance TPraosCrypto c => Eq   (TPraosFields c toSign)
-
 data TPraosProof c
   = TPraosProof
-    { tpraosProofRho  :: CertifiedVRF (TPraosVRF c) (Seed, SlotNo, VRFType)
-    , tpraosProofY    :: CertifiedVRF (TPraosVRF c) (Seed, SlotNo, VRFType)
-    , tpraosLeader    :: CoreNodeId
+    { tpraosEta       :: CertifiedVRF (TPraosVRF c) Seed
+    , tpraosLeader    :: CertifiedVRF (TPraosVRF c) UnitInterval
     , tpraosProofSlot :: SlotNo
-    }
-  | OverlayProof
-    { tpraosProofSlot :: SlotNo
-    , tpraosLeader    :: CoreNodeId
+    , tpraosOpCert    :: OCert (TPraosDSIGN c) (TPraosKES c)
     }
 
 data TPraosLedgerView c = TPraosLedgerView {
@@ -185,6 +163,7 @@ data TPraosLedgerView c = TPraosLedgerView {
   , tpraosLedgerViewProtParams :: PParams
   , tpraosLedgerViewDelegationMap :: Dms (TPraosHash c) (TPraosDSIGN c)
   , tpraosLedgerViewEpochNonce :: Seed
+  , tpraosLedgerViewLeaderVal :: UnitInterval
   , tpraosLedgerViewOverlaySchedule :: Map.Map Slot (Maybe (GenKeyHash (TPraosHash c) (TPraosDSIGN c)))
   }
 {-------------------------------------------------------------------------------
@@ -201,11 +180,10 @@ data TPraosParams = TPraosParams {
     , tpraosLifetimeKES   :: Natural
     }
 
-data TPraosNodeState c = TPraosNodeState
-  { tpraosNodeStateSKSHot :: SignKeyKES (TPraosKES c)
-  , tpraosNodeStateOpCert :: OCert (TPraosDSIGN c) (TPraosKES c)
-
-}
+data TPraosIsCoreNode c = TPraosIsCoreNode
+  { tpraosIsCoreNodeSKSHot :: SignKeyKES (TPraosKES c)
+  , tpraosIsCoreNodeOpCert :: OCert (TPraosDSIGN c) (TPraosKES c)
+  }
 
 instance TPraosCrypto c => OuroborosTag (TPraos c) where
   data NodeConfig (TPraos c) = TPraosNodeConfig
@@ -218,7 +196,7 @@ instance TPraosCrypto c => OuroborosTag (TPraos c) where
 
   protocolSecurityParam = tpraosSecurityParam . tpraosParams
 
-  type NodeState       (TPraos c) = TPraosNodeState c
+  type NodeState       (TPraos c) = Maybe (TPraosIsCoreNode c)
   type LedgerView      (TPraos c) = TPraosLedgerView c
   type IsLeader        (TPraos c) = TPraosProof c
   type ValidationErr   (TPraos c) = [[STS.PredicateFailure (PRTCL c)]]
@@ -226,25 +204,23 @@ instance TPraosCrypto c => OuroborosTag (TPraos c) where
   type ChainState      (TPraos c) = STS.State (PRTCL c)
 
   checkIsLeader cfg@TPraosNodeConfig{..} slot lv _cs =
-    case tpraosNodeId of
-        RelayId _  -> return Nothing
-        CoreId nid ->
+    getNodeState >>= \case
+        Nothing -> return Nothing
+        Just TPraosIsCoreNode{ tpraosIsCoreNodeOpCert} -> do
+          let vkhCold = hashKey $ ocertVkCold tpraosIsCoreNodeOpCert
+              (rho', y', t) = rhoYT cfg slot vkhCold lv
+          rho <- evalCertified rho' tpraosSignKeyVRF
+          y   <- evalCertified y'   tpraosSignKeyVRF
           -- First, check whether we're in the overlay schedule
           case (Map.lookup (convertSlot slot) $ tpraosLedgerViewOverlaySchedule lv) of
-            Nothing -> do
-              TPraosNodeState
-                { tpraosNodeStateOpCert } <- getNodeState
+            Nothing -> return $
               -- Slot isn't in the overlay schedule, so we're in Praos
-              let vkhCold = hashKey $ ocertVkCold tpraosNodeStateOpCert
-                  (rho', y', t) = rhoYT cfg slot vkhCold lv
-              rho <- evalCertified rho' tpraosSignKeyVRF
-              y   <- evalCertified y'   tpraosSignKeyVRF
-              return $ if fromIntegral (certifiedNatural y) < t
+              if fromIntegral (certifiedNatural y) < t
                   then Just TPraosProof {
-                          tpraosProofRho  = rho
-                        , tpraosProofY    = y
-                        , tpraosLeader    = CoreNodeId nid
+                          tpraosEta       = coerce rho
+                        , tpraosLeader    = coerce y
                         , tpraosProofSlot = slot
+                        , tpraosOpCert    = tpraosIsCoreNodeOpCert
                         }
                   else Nothing
             Just Nothing ->
@@ -255,20 +231,23 @@ instance TPraosCrypto c => OuroborosTag (TPraos c) where
               -- slot. Check whether we're its delegate.
               let Dms dlgMap = tpraosLedgerViewDelegationMap lv
               in do
-                TPraosNodeState {tpraosNodeStateOpCert} <- getNodeState
-                let verKey = ocertVkCold tpraosNodeStateOpCert
+                let verKey = ocertVkCold tpraosIsCoreNodeOpCert
                 return $ case Map.lookup gkhash dlgMap of
                   Just dlgHash | dlgHash == hashKey verKey ->
-                    Just $ OverlayProof
-                        { tpraosProofSlot = slot
-                        , tpraosLeader = CoreNodeId nid
+                    Just TPraosProof
+                        { tpraosEta = coerce rho
+                          -- Note that this leader value is not checked for
+                          -- slots in the overlay schedule, so we could set it
+                          -- to whatever we want. We evaluate it as normal for
+                          -- simplicity's sake.
+                        , tpraosLeader = coerce y
+                        , tpraosProofSlot = slot
+                        , tpraosOpCert    = tpraosIsCoreNodeOpCert
                         }
                   _ -> Nothing
 
   applyChainState cfg@TPraosNodeConfig{..} lv b cs = do
-    let TPraosFields{..}      = headerTPraosFields cfg b
-        TPraosExtraFields{..} = tpraosExtraFields
-        slot                 = blockSlot b
+    let slot                 = blockSlot b
 
     ExceptT . return $ applySTS @(PRTCL c)
       $ TRC ( ( ( tpraosLedgerViewProtParams lv
@@ -310,9 +289,6 @@ instance TPraosCrypto c => OuroborosTag (TPraos c) where
 convertSlot :: SlotNo -> Slot
 convertSlot (SlotNo n) = Slot $ fromIntegral n
 
-convertSlotNo :: Slot -> SlotNo
-convertSlotNo (Slot n) = SlotNo $ fromIntegral n
-
 phi :: NodeConfig (TPraos c) -> Rational -> Double
 phi TPraosNodeConfig{..} r = 1 - (1 - tpraosLeaderF) ** fromRational r
   where
@@ -337,14 +313,15 @@ rhoYT :: TPraosCrypto c
       -> SlotNo
       -> KeyHash (TPraosHash c) (TPraosDSIGN c) -- ^ Pool key hash
       -> LedgerView (TPraos c)
-      -> ( (Seed, SlotNo, VRFType)
-         , (Seed, SlotNo, VRFType)
+      -> ( (Seed, SlotNo)
+         , (UnitInterval, SlotNo)
          , Double
          )
 rhoYT nc s kh lv =
     let eta = tpraosLedgerViewEpochNonce lv
-        rho = (eta, s, NONCE)
-        y   = (eta, s, TEST)
+        l   = tpraosLedgerViewLeaderVal lv
+        rho = (eta, s)
+        y   = (l, s)
         t   = leaderThreshold nc lv kh
     in  (rho, y, t)
 {-------------------------------------------------------------------------------
@@ -364,7 +341,8 @@ class ( DSIGNAlgorithm (TPraosDSIGN c)
       , Cardano.Crypto.KES.Class.Signable
           (TPraosKES c)
           (BlockChain.BHBody (TPraosHash c) (TPraosDSIGN c) (TPraosKES c))
-      , Cardano.Crypto.VRF.Class.Signable (TPraosVRF c) (Seed, SlotNo, VRFType)
+      , Cardano.Crypto.VRF.Class.Signable (TPraosVRF c) (Seed, SlotNo)
+      , Cardano.Crypto.VRF.Class.Signable (TPraosVRF c) (UnitInterval, SlotNo)
       ) => TPraosCrypto (c :: *) where
   type family TPraosDSIGN c :: *
   type family TPraosKES   c :: *
@@ -385,10 +363,3 @@ instance TPraosCrypto TPraosMockCrypto where
   type TPraosKES  TPraosMockCrypto = MockKES
   type TPraosVRF  TPraosMockCrypto = MockVRF
   type TPraosHash TPraosMockCrypto = MD5
-
-{-------------------------------------------------------------------------------
-  Condense
--------------------------------------------------------------------------------}
-
-instance TPraosCrypto c => Condense (TPraosFields c toSign) where
-   condense TPraosFields{..} = condense tpraosSignature
