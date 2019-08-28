@@ -1,3 +1,4 @@
+{-# LANGUAGE GADTs               #-}
 {-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE RankNTypes          #-}
@@ -96,11 +97,6 @@ prop_chainSync ChainSyncClientSetup {..} =
     -- If an exception has been thrown, we check that it was right to throw
     -- it, but not the other way around: we don't check whether a situation
     -- has occured where an exception should have been thrown, but wasn't.
-    --
-    -- NOTE: this test will fail if the excpetion type 'ChainSyncException'
-    -- does not agree with the type in 'ChainSync' protocol.  They will
-    -- mismatch if @tip@ type variable is not the same in both of them.
-    --
     case mbEx of
       Just (ForkTooDeep intersection _theirHead)     ->
         label "ForkTooDeep" $
@@ -155,7 +151,7 @@ serverId :: CoreNodeId
 serverId = CoreNodeId 1
 
 -- | Terser notation
-type ChainSyncException = ChainSyncClientException TestBlock (Point (Header TestBlock), BlockNo)
+type ChainSyncException tip = ChainSyncClientException TestBlock tip
 
 -- | Using slots as times, a schedule plans updates to a chain on certain
 -- slots.
@@ -206,13 +202,14 @@ newtype ServerUpdates =
 --
 -- Note that updates that are scheduled before the slot at which we start
 -- syncing help generate different chains to start syncing from.
-runChainSync :: forall m.
+runChainSync :: forall m tip.
        ( MonadAsync m
        , MonadFork  m
        , MonadMask  m
        , MonadTimer m
        , MonadThrow (STM m)
        , MonadSay   m
+       , tip ~ (Point (Header TestBlock), BlockNo)
        )
     => SecurityParam
     -> ClockSkew
@@ -220,7 +217,7 @@ runChainSync :: forall m.
     -> ServerUpdates
     -> SlotNo  -- ^ Start chain syncing at this slot.
     -> m (Chain TestBlock, Chain TestBlock,
-          AnchoredFragment TestBlock, Maybe ChainSyncException)
+          AnchoredFragment TestBlock, Maybe (ChainSyncException tip))
        -- ^ (The final client chain, the final server chain, the synced
        --    candidate fragment, exception thrown by the chain sync client)
 runChainSync securityParam maxClockSkew (ClientUpdates clientUpdates)
@@ -252,7 +249,7 @@ runChainSync securityParam maxClockSkew (ClientUpdates clientUpdates)
                -> AnchoredFragment (Header TestBlock)
                -> Consensus ChainSyncClient
                     TestBlock
-                    (Point (Header TestBlock), BlockNo)
+                    tip
                     m
         client = chainSyncClient
                    (Tracer $ say . show)
@@ -320,7 +317,7 @@ runChainSync securityParam maxClockSkew (ClientUpdates clientUpdates)
                Map.insert serverId varCandidate
              runPeer nullTracer codecChainSyncId serverId clientChannel
                     (chainSyncClientPeer (client varCandidate curChain))
-        `catch` \(e :: ChainSyncException) -> do
+        `catch` \(e :: ChainSyncException tip) -> do
           -- TODO: Is this necessary? Wouldn't the Async's internal MVar do?
           atomically $ writeTVar varClientException (Just e)
           -- Rethrow, but it will be ignored anyway.
