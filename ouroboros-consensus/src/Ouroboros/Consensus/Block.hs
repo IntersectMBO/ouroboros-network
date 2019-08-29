@@ -18,6 +18,7 @@ module Ouroboros.Consensus.Block (
   , SupportedBlock
   ) where
 
+import           Cardano.Prelude (NoUnexpectedThunks)
 import           Data.FingerTree (Measured (..))
 
 import           Ouroboros.Network.Block
@@ -78,4 +79,5 @@ class ( GetHeader blk
       , HasHeader (Header blk)
       , OuroborosTag (BlockProtocol blk)
       , SupportedHeader (BlockProtocol blk) (Header blk)
+      , NoUnexpectedThunks (Header blk)
       ) => SupportedBlock blk

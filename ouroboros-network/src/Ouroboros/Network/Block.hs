@@ -2,11 +2,11 @@
 {-# LANGUAGE DeriveTraversable          #-}
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE PatternSynonyms            #-}
 {-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE StandaloneDeriving         #-}
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE UndecidableInstances       #-}
-{-# LANGUAGE PatternSynonyms            #-}
 
 -- | Abstract view over blocks
 --
@@ -43,7 +43,7 @@ module Ouroboros.Network.Block (
   , withHash
   ) where
 
-import           Cardano.Binary (ToCBOR(..))
+import           Cardano.Binary (ToCBOR (..))
 import           Codec.CBOR.Decoding (Decoder)
 import qualified Codec.CBOR.Decoding as Dec
 import           Codec.CBOR.Encoding (Encoding)
@@ -54,12 +54,14 @@ import           Data.Typeable (Typeable)
 import           Data.Word (Word64)
 import           GHC.Generics (Generic)
 
-import           Ouroboros.Network.Point (WithOrigin (..), origin, block)
+import           Cardano.Prelude (NoUnexpectedThunks)
+
+import           Ouroboros.Network.Point (WithOrigin (..), block, origin)
 import qualified Ouroboros.Network.Point as Point (Block (..))
 
 -- | The 0-based index for the Ourboros time slot.
 newtype SlotNo = SlotNo { unSlotNo :: Word64 }
-  deriving (Show, Eq, Ord, Enum, Bounded, Num, Serialise, Generic)
+  deriving (Show, Eq, Ord, Enum, Bounded, Num, Serialise, Generic, NoUnexpectedThunks)
 
 instance ToCBOR SlotNo where
   toCBOR = encode
@@ -68,7 +70,7 @@ instance ToCBOR SlotNo where
 -- BlockNo is <= SlotNo and is only equal at slot N if there is a block
 -- for every slot where N <= SlotNo.
 newtype BlockNo = BlockNo { unBlockNo :: Word64 }
-  deriving (Show, Eq, Ord, Enum, Bounded, Num, Serialise, Generic)
+  deriving (Show, Eq, Ord, Enum, Bounded, Num, Serialise, Generic, NoUnexpectedThunks)
 
 genesisSlotNo :: SlotNo
 genesisSlotNo = SlotNo 0
@@ -118,6 +120,7 @@ class ( Eq        (HeaderHash b)
       , Ord       (HeaderHash b)
       , Show      (HeaderHash b)
       , Typeable  (HeaderHash b)
+      , NoUnexpectedThunks (HeaderHash b)
       ) => StandardHash b
 
 data ChainHash b = GenesisHash | BlockHash (HeaderHash b)
@@ -126,6 +129,9 @@ data ChainHash b = GenesisHash | BlockHash (HeaderHash b)
 deriving instance StandardHash block => Eq   (ChainHash block)
 deriving instance StandardHash block => Ord  (ChainHash block)
 deriving instance StandardHash block => Show (ChainHash block)
+
+instance (StandardHash block, Typeable block) => NoUnexpectedThunks (ChainHash block)
+  -- use generic instance
 
 castHash :: HeaderHash b ~ HeaderHash b' => ChainHash b -> ChainHash b'
 castHash GenesisHash   = GenesisHash
@@ -150,6 +156,7 @@ newtype Point block = Point
 deriving instance StandardHash block => Eq   (Point block)
 deriving instance StandardHash block => Ord  (Point block)
 deriving instance StandardHash block => Show (Point block)
+deriving instance (StandardHash block, Typeable block) => NoUnexpectedThunks (Point block)
 
 pattern GenesisPoint :: Point block
 pattern GenesisPoint = Point Origin

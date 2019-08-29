@@ -15,8 +15,8 @@ import           Test.Tasty
 import           Test.Tasty.QuickCheck
 
 import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.IOSim
+import           Ouroboros.Consensus.Util.MonadSTM.NormalForm
 
 import           Control.Tracer
 
@@ -39,6 +39,7 @@ import qualified Ouroboros.Storage.FS.Sim.MockFS as Mock
 import           Test.Ouroboros.Storage.ChainDB.StateMachine (mkArgs)
 import           Test.Ouroboros.Storage.ChainDB.TestBlock
 
+import           Test.Util.Orphans.NoUnexpectedThunks ()
 import           Test.Util.SOP
 
 tests :: TestTree
@@ -95,10 +96,10 @@ prop_addBlock_multiple_threads bpt =
     trace       :: [TraceAddBlockEvent TestBlock]
     (actualChain, trace) = run $ do
         -- Open the DB
-        fsVars <- atomically $ (,,)
-          <$> newTVar Mock.empty
-          <*> newTVar Mock.empty
-          <*> newTVar Mock.empty
+        fsVars <- (,,)
+          <$> uncheckedNewTVarM Mock.empty
+          <*> uncheckedNewTVarM Mock.empty
+          <*> uncheckedNewTVarM Mock.empty
         withRegistry $ \registry -> do
           let args = mkArgs cfg initLedger dynamicTracer registry fsVars
           db <- openDB args

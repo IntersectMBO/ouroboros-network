@@ -26,8 +26,8 @@ import qualified Data.Map.Strict as Map
 import           GHC.Stack (HasCallStack)
 
 import           Control.Monad.Class.MonadFork
-import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
+import           Ouroboros.Consensus.Util.MonadSTM.NormalForm
 
 import           Control.Tracer
 
@@ -380,7 +380,7 @@ newIterator itEnv@IteratorEnv{..} getItEnv registry from to = do
                  -> m (Iterator m blk)
     makeIterator register itState = do
       iteratorId <- makeNewIteratorId
-      varItState <- newTVarM itState
+      varItState <- uncheckedNewTVarM itState
       when register $ atomically $ modifyTVar itIterators $
         -- Note that we don't use 'itEnv' here, because that would mean that
         -- invoking the function only works when the database is open, which

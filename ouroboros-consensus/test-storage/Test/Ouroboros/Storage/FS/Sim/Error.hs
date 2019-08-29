@@ -43,8 +43,8 @@ module Test.Ouroboros.Storage.FS.Sim.Error
 import           Prelude hiding (null)
 
 import           Control.Monad (replicateM, void)
-import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Except (runExceptT)
+import           Ouroboros.Consensus.Util.MonadSTM.NormalForm
 
 import qualified Data.ByteString as BS
 import           Data.List (dropWhileEnd, intercalate)
@@ -482,8 +482,8 @@ runSimErrorFS :: MonadSTM m
               -> (StrictTVar m Errors -> HasFS m HandleMock -> m a)
               -> m (a, MockFS)
 runSimErrorFS err mockFS errors action = do
-    fsVar     <- atomically $ newTVar mockFS
-    errorsVar <- atomically $ newTVar errors
+    fsVar     <- uncheckedNewTVarM mockFS
+    errorsVar <- uncheckedNewTVarM errors
     a         <- action errorsVar $ mkSimErrorHasFS err fsVar errorsVar
     fs'       <- atomically $ readTVar fsVar
     return (a, fs')

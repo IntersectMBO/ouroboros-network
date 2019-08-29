@@ -1,3 +1,4 @@
+{-# LANGUAGE DeriveGeneric           #-}
 {-# LANGUAGE FlexibleContexts        #-}
 {-# LANGUAGE FlexibleInstances       #-}
 {-# LANGUAGE MultiParamTypeClasses   #-}
@@ -7,6 +8,8 @@
 {-# LANGUAGE TypeFamilies            #-}
 {-# LANGUAGE UndecidableInstances    #-}
 {-# LANGUAGE UndecidableSuperClasses #-}
+
+{-# OPTIONS_GHC -ddump-deriv -ddump-simpl -ddump-to-file -dsuppress-all #-}
 
 module Ouroboros.Consensus.Protocol.BFT (
     Bft
@@ -25,12 +28,15 @@ module Ouroboros.Consensus.Protocol.BFT (
 import           Cardano.Crypto.DSIGN.Class
 import           Cardano.Crypto.DSIGN.Ed448 (Ed448DSIGN)
 import           Cardano.Crypto.DSIGN.Mock (MockDSIGN)
+import           Cardano.Prelude (NoUnexpectedThunks (..), 
+                     showTypeOfTypeable)
 import           Control.Monad.Except
 import           Crypto.Random (MonadRandom)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Typeable (Typeable)
 import           Data.Word (Word64)
+import           GHC.Generics (Generic)
 
 import           Ouroboros.Network.Block
 
@@ -44,11 +50,17 @@ import           Ouroboros.Consensus.Util.Condense
 -------------------------------------------------------------------------------}
 
 data BftFields c toSign = BftFields {
-      bftSignature :: SignedDSIGN (BftDSIGN c) toSign
+      bftSignature :: !(SignedDSIGN (BftDSIGN c) toSign)
     }
+  deriving (Generic)
 
-deriving instance BftCrypto c => Show (BftFields c toSIgn)
+deriving instance BftCrypto c => Show (BftFields c toSign)
 deriving instance BftCrypto c => Eq   (BftFields c toSign)
+
+instance (BftCrypto c, Typeable toSign) => NoUnexpectedThunks (BftFields c toSign) where
+  showTypeOf = showTypeOfTypeable
+  -- use generic instance
+  -- whnfNoUnexpectedThunks ctxt (BftFields s) = noUnexpectedThunks ctxt s
 
 class ( HasHeader hdr
       , SignedHeader hdr

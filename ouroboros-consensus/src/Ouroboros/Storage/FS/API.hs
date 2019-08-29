@@ -1,4 +1,5 @@
 {-# LANGUAGE BangPatterns        #-}
+{-# LANGUAGE DerivingVia         #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -24,6 +25,8 @@ import           Data.Int (Int64)
 import           Data.Set (Set)
 import           Data.Word (Word64)
 import           GHC.Stack
+
+import           Cardano.Prelude (DontCheckForThunks (..), NoUnexpectedThunks)
 
 import           Control.Monad.Class.MonadThrow
 
@@ -117,6 +120,7 @@ data HasFS m h = HasFS {
     -- | Error handling
   , hasFsErr                 :: ErrorHandling FsError m
   }
+  deriving NoUnexpectedThunks via DontCheckForThunks (HasFS m h)
 
 withFile :: (HasCallStack, MonadThrow m)
          => HasFS m h -> FsPath -> OpenMode -> (Handle h -> m a) -> m a

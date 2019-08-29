@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -36,7 +37,7 @@ import           GHC.Stack (HasCallStack)
 
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork
-import           Control.Monad.Class.MonadSTM.Strict
+import           Ouroboros.Consensus.Util.MonadSTM.NormalForm
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
@@ -76,11 +77,11 @@ launchBgTasks
   -> m ()
 launchBgTasks cdb@CDB{..} = do
     gcSchedule <- newGcSchedule
-    gcThread   <- launch $
+    !gcThread   <- launch $
       gcScheduleRunner gcSchedule $ garbageCollect cdb
-    copyThread <- launch $
+    !copyThread <- launch $
       copyToImmDBRunner cdb gcSchedule
-    lgrSnapshotThread <- launch $
+    !lgrSnapshotThread <- launch $
       updateLedgerSnapshotsRunner cdb
     atomically $ writeTVar cdbBgThreads
       [gcThread, copyThread, lgrSnapshotThread]

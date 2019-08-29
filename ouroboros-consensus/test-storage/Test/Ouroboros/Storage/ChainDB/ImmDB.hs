@@ -12,9 +12,9 @@ import           Data.Proxy (Proxy (..))
 import           Data.Reflection (give)
 
 import           Control.Monad.Class.MonadST
-import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.IOSim (runSimOrThrow)
+import           Ouroboros.Consensus.Util.MonadSTM.NormalForm
 
 import           Control.Tracer (nullTracer)
 
@@ -72,7 +72,7 @@ withImmDB :: forall m blk a.
              )
           => (ImmDB m blk -> m a) -> m a
 withImmDB k = do
-    immDbFsVar <- atomically $ newTVar Mock.empty
+    immDbFsVar <- uncheckedNewTVarM Mock.empty
     epochInfo  <- newEpochInfo $ nodeEpochSize (Proxy @blk) testCfg
     bracket (ImmDB.openDB (mkArgs immDbFsVar epochInfo)) ImmDB.closeDB k
   where

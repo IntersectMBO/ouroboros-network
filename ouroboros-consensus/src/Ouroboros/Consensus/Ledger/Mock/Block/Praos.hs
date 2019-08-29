@@ -21,6 +21,7 @@ import           GHC.Generics (Generic)
 
 import           Cardano.Binary (FromCBOR (..), ToCBOR (..))
 import           Cardano.Crypto.KES
+import           Cardano.Prelude (NoUnexpectedThunks)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Ledger.Abstract
@@ -51,7 +52,7 @@ type SimplePraosHeader c c' = SimpleHeader c (SimplePraosExt c c')
 newtype SimplePraosExt c c' = SimplePraosExt {
     simplePraosExt :: PraosFields c' (SignedSimplePraos c c')
   }
-  deriving (Generic, Condense, Show, Eq)
+  deriving (Generic, Condense, Show, Eq, NoUnexpectedThunks)
 
 -- | Part of the block that gets signed
 --

@@ -57,6 +57,8 @@ import           Data.String (IsString)
 import qualified Data.Text as Text
 import           Data.Word (Word64)
 
+import           Cardano.Prelude (NoUnexpectedThunks)
+
 import           Codec.CBOR.Decoding (decodeInt, decodeListLenOf, decodeString,
                      decodeWord64)
 import           Codec.CBOR.Encoding (encodeInt, encodeListLen, encodeString,
@@ -138,7 +140,7 @@ instance Hashable (HeaderHash b) => Hashable (ChainHash b)
 -- | The hash of all the information in a 'BlockHeader'.
 --
 newtype ConcreteHeaderHash = HeaderHash Int
-  deriving (Show, Eq, Ord, Generic, Hashable)
+  deriving (Show, Eq, Ord, Generic, Hashable, NoUnexpectedThunks)
 
 -- | The hash of all the information in a 'BlockBody'.
 --

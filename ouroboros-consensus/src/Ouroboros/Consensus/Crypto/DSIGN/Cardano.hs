@@ -29,7 +29,7 @@ import           Cardano.Crypto (ProtocolMagicId, SignTag (..), Signature,
                      toVerification, verifySignatureRaw)
 import           Cardano.Crypto.DSIGN.Class
 import qualified Cardano.Crypto.Signing as Crypto
-import           Cardano.Prelude (NoUnexpectedThunks, UseIsNormalForm (..))
+import           Cardano.Prelude (NoUnexpectedThunks)
 import           Data.ByteString (ByteString)
 import           Data.Coerce (coerce)
 import           Data.Constraint
@@ -79,15 +79,13 @@ data CardanoDSIGN
 instance Given ProtocolMagicId => DSIGNAlgorithm CardanoDSIGN where
 
     newtype VerKeyDSIGN CardanoDSIGN = VerKeyCardanoDSIGN VerificationKey
-        deriving (Show, Eq, Generic)
-        deriving NoUnexpectedThunks via UseIsNormalForm (VerKeyDSIGN CardanoDSIGN)
+        deriving (Show, Eq, Generic, NoUnexpectedThunks)
 
     newtype SignKeyDSIGN CardanoDSIGN = SignKeyCardanoDSIGN SigningKey
         deriving (Show, Generic)
 
     newtype SigDSIGN CardanoDSIGN = SigCardanoDSIGN (Signature CC.Block.ToSign)
-        deriving (Show, Eq, Generic)
-        deriving NoUnexpectedThunks via UseIsNormalForm (SigDSIGN CardanoDSIGN)
+        deriving (Show, Eq, Generic, NoUnexpectedThunks)
 
     type Signable CardanoDSIGN = ByronSignable
 

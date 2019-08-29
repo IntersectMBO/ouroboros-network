@@ -1,12 +1,16 @@
 {-# LANGUAGE BangPatterns              #-}
+{-# LANGUAGE DeriveAnyClass            #-}
+{-# LANGUAGE DeriveGeneric             #-}
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE FlexibleContexts          #-}
 {-# LANGUAGE LambdaCase                #-}
 {-# LANGUAGE MultiWayIf                #-}
 {-# LANGUAGE NamedFieldPuns            #-}
+{-# LANGUAGE QuantifiedConstraints     #-}
 {-# LANGUAGE RankNTypes                #-}
 {-# LANGUAGE RecordWildCards           #-}
 {-# LANGUAGE ScopedTypeVariables       #-}
+{-# LANGUAGE UndecidableInstances      #-}
 
 {-# OPTIONS_GHC -Wredundant-constraints #-}
 -- | Immutable on-disk database of binary blobs
@@ -145,12 +149,13 @@ import           Codec.CBOR.Decoding (Decoder)
 import           Codec.CBOR.Encoding (Encoding)
 import           Control.Exception (assert)
 import           Control.Monad (forM_, replicateM_, unless, when)
-import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow (ExitCase (..),
                      MonadCatch (generalBracket), MonadThrow, finally)
 import           Control.Monad.State.Strict (StateT (..), get, lift, modify,
                      put, runStateT, state)
 import           Control.Tracer (Tracer, traceWith)
+import           GHC.Generics (Generic)
+import           Ouroboros.Consensus.Util.MonadSTM.NormalForm
 
 import           Data.ByteString.Builder (Builder)
 import           Data.ByteString.Lazy (ByteString, toStrict)
@@ -215,6 +220,7 @@ data OpenState m hash h = OpenState
     , _nextIteratorID          :: !BaseIteratorID
     -- ^ The ID of the next iterator that will be created.
     }
+  deriving (Generic, NoUnexpectedThunks)
 
 -- | Internal state when the database is closed. This contains data that
 -- should be restored when the database is reopened. Data not present here
@@ -225,7 +231,7 @@ data ClosedState m = ClosedState
     , _closedNextIteratorID :: !BaseIteratorID
     -- ^ See '_nextIteratorID'.
     }
-
+  deriving (Generic, NoUnexpectedThunks)
 
 {------------------------------------------------------------------------------
   ImmutableDB API
@@ -304,7 +310,7 @@ openDBImpl hashDecoder hashEncoder hasFS@HasFS{..} err epochInfo valPol epochFil
     !ost  <- validateAndReopen hashDecoder hashEncoder hasFS err epochInfo
       valPol epochFileParser initialIteratorID tracer
 
-    stVar <- atomically $ newTMVar (Right ost)
+    stVar <- newTMVarM (Right ost)
 
     let dbEnv = ImmutableDBEnv hasFS err stVar epochFileParser hashDecoder hashEncoder tracer
         db    = mkDBRecord dbEnv
@@ -804,6 +810,17 @@ data IteratorHandle hash m = forall h. IteratorHandle
     -- determine when to stop streaming.
   }
 
+instance ( forall a. NoUnexpectedThunks (StrictTVar m a)
+         ) => NoUnexpectedThunks (IteratorHandle hash m) where
+  showTypeOf _ = "IteratorHandle"
+  whnfNoUnexpectedThunks ctxt IteratorHandle{..} =
+      allNoUnexpectedThunks [
+          noUnexpectedThunks ctxt _it_hasFS
+        , noUnexpectedThunks ctxt _it_state
+        , noUnexpectedThunks ctxt _it_end
+        , noUnexpectedThunksUsingNormalForm ("Maybe hash" : ctxt) _it_end_hash
+        ]
+
 data IteratorState hash h = IteratorState
   { _it_next         :: !EpochSlot
     -- ^ The location of the next binary blob to read.
@@ -829,6 +846,7 @@ data IteratorState hash h = IteratorState
     -- ^ We load the index file for the epoch we are currently iterating over
     -- in-memory, as it's going to be small anyway (usually ~150kb).
   }
+  deriving (Generic, NoUnexpectedThunks)
 
 streamBinaryBlobsImpl :: forall m hash.
                          (HasCallStack, MonadSTM m, MonadCatch m, Eq hash)
@@ -999,7 +1017,7 @@ streamBinaryBlobsImpl dbEnv mbStart mbEnd = withOpenState dbEnv $ \hasFS st -> d
               , _it_epoch_index  = index
               }
 
-        itState <- atomically $ newTVar mbIteratorState
+        itState <- newTVarM mbIteratorState
 
         let ith = IteratorHandle
               { _it_hasFS    = hasFS

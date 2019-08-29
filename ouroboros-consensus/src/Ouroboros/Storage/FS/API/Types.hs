@@ -40,6 +40,9 @@ import           System.FilePath
 import           System.IO (SeekMode (..))
 import qualified System.IO.Error as IO
 
+import           Cardano.Prelude (NoUnexpectedThunks (..),
+                     noUnexpectedThunksUsingNormalForm)
+
 import           Ouroboros.Consensus.Util.Condense
 
 {-------------------------------------------------------------------------------
@@ -110,6 +113,10 @@ instance Eq h => Eq (Handle h) where
 
 instance Show (Handle h) where
   show (Handle _ fp) = "<Handle " ++ fsToFilePath (MountPoint "<root>") fp ++ ">"
+
+instance NoUnexpectedThunks (Handle h) where
+  showTypeOf _ = "Handle"
+  whnfNoUnexpectedThunks = noUnexpectedThunksUsingNormalForm
 
 {-------------------------------------------------------------------------------
   Errors

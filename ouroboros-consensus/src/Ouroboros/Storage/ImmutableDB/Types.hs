@@ -33,6 +33,9 @@ import           Control.Exception (Exception (..))
 import           GHC.Generics (Generic)
 import           GHC.Stack (CallStack, prettyCallStack)
 
+import           Cardano.Prelude (NoUnexpectedThunks (..),
+                     noUnexpectedThunksUsingNormalForm)
+
 import           Ouroboros.Network.Block (SlotNo (..))
 
 import           Ouroboros.Storage.Common
@@ -125,7 +128,7 @@ data ValidationPolicy
 
 -- | ID of an iterator that is not derived from another iterator
 newtype BaseIteratorID = MkBaseIteratorID Int
-  deriving (Show, Eq, Ord, Generic, Enum)
+  deriving (Show, Eq, Ord, Generic, Enum, NoUnexpectedThunks)
 
 -- | A unique identifier for an iterator.
 data IteratorID = BaseIteratorID BaseIteratorID | DerivedIteratorID IteratorID
@@ -285,6 +288,10 @@ data CurrentEBB hash =
     NoCurrentEBB
   | CurrentEBB !hash
   deriving (Eq, Show)
+
+instance NoUnexpectedThunks (CurrentEBB hash) where
+  showTypeOf _ = "CurrentEBB"
+  whnfNoUnexpectedThunks = noUnexpectedThunksUsingNormalForm
 
 hasCurrentEBB :: CurrentEBB hash -> Bool
 hasCurrentEBB NoCurrentEBB   = False

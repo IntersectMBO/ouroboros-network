@@ -26,19 +26,18 @@ module Ouroboros.Storage.ChainDB.Impl (
 
 import           Control.Monad (when)
 import qualified Data.Map.Strict as Map
---import           System.IO.Unsafe (unsafePerformIO)
 
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadST
-import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
+import           Ouroboros.Consensus.Util.MonadSTM.NormalForm
 
 import           Control.Tracer
 
---import           Cardano.Prelude (isNormalForm)
+import           Cardano.Prelude (NoUnexpectedThunks (..))
 
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block (blockNo, blockPoint, blockSlot,
@@ -46,6 +45,7 @@ import           Ouroboros.Network.Block (blockNo, blockPoint, blockSlot,
 
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Protocol.Abstract
+import           Ouroboros.Consensus.Util (unsafeNoThunks)
 import           Ouroboros.Consensus.Util.STM (Fingerprint (..))
 
 import           Ouroboros.Storage.Common (EpochNo)
@@ -80,6 +80,8 @@ openDB
      , MonadTimer m
      , MonadThrow (STM m)
      , ProtocolLedgerView blk
+     , NoUnexpectedThunks (m ())
+     , NoUnexpectedThunks (StrictTVar m (ReaderState m blk))
      )
   => ChainDbArgs m blk
   -> m (ChainDB m blk)
@@ -95,6 +97,8 @@ openDBInternal
      , MonadTimer m
      , MonadThrow (STM m)
      , ProtocolLedgerView blk
+     , NoUnexpectedThunks (m ())
+     , NoUnexpectedThunks (StrictTVar m (ReaderState m blk))
      )
   => ChainDbArgs m blk
   -> Bool -- ^ 'True' = Launch background tasks
@@ -127,7 +131,7 @@ openDBInternal args launchBgTasks = do
                             (Query.getAnyKnownBlock immDB volDB)
     traceWith tracer $ TraceOpenEvent OpenedLgrDB
 
-    varInvalid <- newTVarM (Map.empty, Fingerprint 0)
+    varInvalid <- uncheckedNewTVarM (Map.empty, Fingerprint 0)
 
     chainAndLedger <- ChainSel.initialChainSelection
       immDB
@@ -144,14 +148,14 @@ openDBInternal args launchBgTasks = do
         immBlockNo = ChainSel.getImmBlockNo secParam chain immDbTipBlockNo
 
     atomically $ LgrDB.setCurrent lgrDB ledger
-    varChain          <- newTVarWithInvariantM  isNF chain
-    varImmBlockNo     <- newTVarWithInvariantM  isNF immBlockNo
-    varIterators      <- newTVarM Map.empty
-    varReaders        <- newTVarM Map.empty
-    varNextIteratorId <- newTVarWithInvariantM  isNF (IteratorId 0)
-    varNextReaderId   <- newTVarWithInvariantM  isNF 0
-    varCopyLock       <- newTMVarWithInvariantM isNF ()
-    varBgThreads      <- newTVarWithInvariantM  isNF []
+    varChain          <- newTVarM  chain
+    varImmBlockNo     <- newTVarM  immBlockNo
+    varIterators      <- newTVarM  Map.empty
+    varReaders        <- newTVarM  Map.empty
+    varNextIteratorId <- newTVarM  (IteratorId 0)
+    varNextReaderId   <- newTVarM  0
+    varCopyLock       <- newTMVarM ()
+    varBgThreads      <- newTVarM  []
 
     let env = CDB { cdbImmDB          = immDB
                   , cdbVolDB          = volDB
@@ -171,7 +175,7 @@ openDBInternal args launchBgTasks = do
                   , cdbBgThreads      = varBgThreads
                   , cdbEpochInfo      = Args.cdbEpochInfo args
                   }
-    h <- fmap CDBHandle $ newTVarM $ ChainDbOpen env
+    h <- fmap CDBHandle $ uncheckedNewTVarM $ ChainDbOpen env
     let chainDB = ChainDB
           { addBlock           = getEnv1    h ChainSel.addBlock
           , getCurrentChain    = getEnvSTM  h Query.getCurrentChain
@@ -211,7 +215,3 @@ openDBInternal args launchBgTasks = do
 
     blockEpoch :: blk -> m EpochNo
     blockEpoch = epochInfoEpoch (Args.cdbEpochInfo args) . blockSlot
-
-    -- TODO (#969): Re-enable this and deal with the fallout.
-    isNF :: forall a. a -> Maybe String
-    isNF = const Nothing -- unsafePerformIO . isNormalForm

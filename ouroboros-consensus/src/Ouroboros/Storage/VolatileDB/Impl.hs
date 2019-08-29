@@ -87,7 +87,6 @@ module Ouroboros.Storage.VolatileDB.Impl
     ) where
 
 import           Control.Monad
-import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 import qualified Data.ByteString.Builder as BS
 import           Data.ByteString.Lazy (ByteString)
@@ -99,6 +98,7 @@ import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Word (Word64)
 import           GHC.Stack
+import           Ouroboros.Consensus.Util.MonadSTM.NormalForm
 
 import           Ouroboros.Consensus.Util (SomePair (..))
 
@@ -184,7 +184,7 @@ openDBImpl hasFS@HasFS{..} err errSTM parser maxBlocksPerFile =
     then EH.throwError err $ UserError . InvalidArgumentsError $ "maxBlocksPerFile should be positive"
     else do
         st <- mkInternalStateDB hasFS err parser maxBlocksPerFile
-        stVar <- atomically $ newTMVar $ Just st
+        stVar <- uncheckedNewTMVarM $ Just st
         return $ VolatileDBEnv hasFS err errSTM stVar maxBlocksPerFile parser
 
 closeDBImpl :: MonadSTM m

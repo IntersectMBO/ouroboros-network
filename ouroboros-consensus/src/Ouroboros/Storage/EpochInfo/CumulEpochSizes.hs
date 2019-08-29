@@ -1,3 +1,4 @@
+{-# LANGUAGE DeriveAnyClass      #-}
 {-# LANGUAGE DeriveGeneric       #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 module Ouroboros.Storage.EpochInfo.CumulEpochSizes
@@ -25,6 +26,8 @@ import qualified Data.Sequence as Seq
 import           GHC.Generics (Generic)
 import           GHC.Stack
 
+import           Cardano.Prelude (NoUnexpectedThunks)
+
 import           Ouroboros.Network.Block (SlotNo (..))
 
 import           Ouroboros.Storage.Common
@@ -45,7 +48,7 @@ import           Ouroboros.Storage.Common
 -- This allows us to recover the original size of each epoch and to convert
 -- 'SlotNo's to 'EpochSlot's (and vice versa).
 newtype CumulEpochSizes = CES (Seq EpochSize) -- Invariant: non-empty.
-    deriving (Show, Eq, Generic)
+    deriving (Show, Eq, Generic, NoUnexpectedThunks)
 
 -- | \( O(1) \). Create a 'CumulEpochSizes' using the given size for the first
 -- epoch.

@@ -17,8 +17,8 @@ import           Data.Word (Word64)
 
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork
-import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
+import           Ouroboros.Consensus.Util.MonadSTM.NormalForm
 
 import           Control.Tracer
 
@@ -125,7 +125,7 @@ initMempoolEnv :: MonadSTM m
                -> Tracer m (TraceEventMempool blk)
                -> m (MempoolEnv m blk)
 initMempoolEnv ledgerInterface cfg tracer = do
-    isVar <- atomically $ newTVar initInternalState
+    isVar <- uncheckedNewTVarM initInternalState
     return MempoolEnv
       { mpEnvLedger    = ledgerInterface
       , mpEnvLedgerCfg = cfg

@@ -92,6 +92,7 @@ library
                        Ouroboros.Consensus.Util.Classify
                        Ouroboros.Consensus.Util.Condense
                        Ouroboros.Consensus.Util.HList
+                       Ouroboros.Consensus.Util.MonadSTM.NormalForm
                        Ouroboros.Consensus.Util.Orphans
                        Ouroboros.Consensus.Util.Random
                        Ouroboros.Consensus.Util.RedundantConstraints
@@ -228,6 +229,7 @@ library
                        -- usage should be discouraged in general
                        reflection,
                        serialise         >=0.2   && <0.3,
+                       stm,
                        text              >=1.2   && <1.3,
                        time,
                        transformers,
@@ -273,6 +275,7 @@ test-suite test-consensus
                     Test.Util.HasCreator
                     Test.Util.MockChain
                     Test.Util.Orphans.Arbitrary
+                    Test.Util.Orphans.NoUnexpectedThunks
                     Test.Util.Range
                     Test.Util.TestBlock
                     Test.Util.QSM
@@ -283,6 +286,7 @@ test-suite test-consensus
                     cardano-crypto-wrapper,
                     cardano-ledger,
                     cardano-ledger-test,
+                    cardano-prelude,
                     typed-protocols,
                     network-mux,
                     ouroboros-network,
@@ -348,6 +352,7 @@ test-suite test-storage
                     Test.Ouroboros.Storage.VolatileDB.StateMachine
                     Test.Ouroboros.Storage.VolatileDB.TestBlock
                     Test.Util.Orphans.Arbitrary
+                    Test.Util.Orphans.NoUnexpectedThunks
                     Test.Util.Range
                     Test.Util.RefEnv
                     Test.Util.SOP
@@ -357,6 +362,7 @@ test-suite test-storage
                     cardano-crypto-class,
                     cardano-ledger,
                     cardano-ledger-test,
+                    cardano-prelude,
                     ouroboros-network,
                     ouroboros-network-testing,
                     ouroboros-consensus,

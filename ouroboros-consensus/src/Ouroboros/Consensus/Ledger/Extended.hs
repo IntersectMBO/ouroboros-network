@@ -1,3 +1,5 @@
+{-# LANGUAGE DeriveAnyClass       #-}
+{-# LANGUAGE DeriveGeneric        #-}
 {-# LANGUAGE FlexibleContexts     #-}
 {-# LANGUAGE RankNTypes           #-}
 {-# LANGUAGE RecordWildCards      #-}
@@ -19,7 +21,10 @@ module Ouroboros.Consensus.Ledger.Extended (
 import           Codec.CBOR.Decoding (Decoder)
 import           Codec.CBOR.Encoding (Encoding)
 import           Control.Monad.Except
+import           GHC.Generics (Generic)
 import           GHC.Stack
+
+import           Cardano.Prelude (NoUnexpectedThunks (..), showTypeOfTypeable)
 
 import           Ouroboros.Network.Block (blockSlot)
 
@@ -39,6 +44,7 @@ data ExtLedgerState blk = ExtLedgerState {
       ledgerState         :: !(LedgerState blk)
     , ouroborosChainState :: !(ChainState (BlockProtocol blk))
     }
+  deriving (Generic)
 
 data ExtValidationError blk =
     ExtValidationErrorLedger (LedgerError blk)
@@ -46,6 +52,13 @@ data ExtValidationError blk =
 
 deriving instance ProtocolLedgerView blk => Show (ExtLedgerState     blk)
 deriving instance ProtocolLedgerView blk => Show (ExtValidationError blk)
+
+-- | We override 'showTypeOf' to show the type of the block
+--
+-- This makes debugging a bit easier, as the block gets used to resolve all
+-- kinds of type families.
+instance ProtocolLedgerView blk => NoUnexpectedThunks (ExtLedgerState blk) where
+  showTypeOf = showTypeOfTypeable
 
 deriving instance (ProtocolLedgerView blk, Eq (ChainState (BlockProtocol blk)))
                => Eq (ExtLedgerState blk)

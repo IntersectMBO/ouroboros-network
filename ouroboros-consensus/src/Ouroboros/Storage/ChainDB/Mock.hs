@@ -10,8 +10,8 @@ module Ouroboros.Storage.ChainDB.Mock (
 import           Data.Bifunctor (first)
 import qualified Data.Map as Map
 
-import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
+import           Ouroboros.Consensus.Util.MonadSTM.NormalForm
 
 import           Ouroboros.Network.Block (ChainUpdate)
 import qualified Ouroboros.Network.MockChain.ProducerState as CPS
@@ -37,7 +37,7 @@ openDB :: forall m blk.
        -> ExtLedgerState blk
        -> m (ChainDB m blk)
 openDB cfg initLedger = do
-    db :: StrictTVar m (Model blk) <- atomically $ newTVar (Model.empty initLedger)
+    db :: StrictTVar m (Model blk) <- uncheckedNewTVarM (Model.empty initLedger)
 
     let querySTM :: (Model blk -> a) -> STM m a
         querySTM f = readTVar db >>= \m ->

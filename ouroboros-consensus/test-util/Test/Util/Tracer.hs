@@ -5,7 +5,7 @@ module Test.Util.Tracer
 
 import           Data.IORef
 
-import           Control.Monad.Class.MonadSTM.Strict
+import           Ouroboros.Consensus.Util.MonadSTM.NormalForm
 
 import           Control.Tracer
 
@@ -23,7 +23,7 @@ recordingTracerIORef = newIORef [] >>= \ref -> return
 -- updated. The second return value lets you obtain the events recorded so far
 -- (from oldest to newest). Obtaining the events does not erase them.
 recordingTracerTVar :: MonadSTM m => m (Tracer m ev, m [ev])
-recordingTracerTVar = newTVarM [] >>= \ref -> return
+recordingTracerTVar = uncheckedNewTVarM [] >>= \ref -> return
     ( Tracer $ \ev -> atomically $ modifyTVar ref (ev:)
     , atomically $ reverse <$> readTVar ref
     )

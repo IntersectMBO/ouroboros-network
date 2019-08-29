@@ -78,12 +78,11 @@ forgeGenesisEBB (WithEBBNodeConfig cfg) curSlot =
 
     boundaryHeader :: CC.Block.ABoundaryHeader ()
     boundaryHeader =
-      CC.Block.ABoundaryHeader {
-        CC.Block.boundaryPrevHash         = Left pbftGenesisHash
-      , CC.Block.boundaryEpoch            = epoch
-      , CC.Block.boundaryDifficulty       = CC.Common.ChainDifficulty 0
-      , CC.Block.boundaryHeaderAnnotation = ()
-      }
+      CC.Block.mkABoundaryHeader
+        (Left pbftGenesisHash)
+        epoch
+        (CC.Common.ChainDifficulty 0)
+        ()
       where
         ByronConfig { pbftGenesisHash
                     , pbftEpochSlots

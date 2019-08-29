@@ -42,6 +42,8 @@ import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
 
+import           Cardano.Prelude (NoUnexpectedThunks)
+
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import           Ouroboros.Network.Block (BlockNo, pattern BlockPoint,
                      ChainUpdate, pattern GenesisPoint, HasHeader (..),
@@ -322,7 +324,7 @@ instance Eq (Iterator m blk) where
   (==) = (==) `on` iteratorId
 
 newtype IteratorId = IteratorId Int
-  deriving (Show, Eq, Ord, Enum)
+  deriving (Show, Eq, Ord, Enum, NoUnexpectedThunks)
 
 data IteratorResult blk =
     IteratorExhausted

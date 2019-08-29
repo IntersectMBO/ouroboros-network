@@ -7,8 +7,8 @@ import           Control.Monad.Except (Except, runExcept)
 import           Control.Monad.State (StateT, runStateT)
 import           Data.Proxy
 
-import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
+import           Ouroboros.Consensus.Util.MonadSTM.NormalForm
 
 import           Ouroboros.Consensus.Util ((..:), (.:))
 
@@ -27,7 +27,7 @@ openDBMock  :: forall m hash.
             -> (EpochNo -> EpochSize)
             -> m (DBModel hash, ImmutableDB hash m)
 openDBMock err epochSize = do
-    dbVar <- atomically $ newTVar dbModel
+    dbVar <- uncheckedNewTVarM dbModel
     return (dbModel, immDB dbVar)
   where
     db :: ImmutableDB hash (MockM hash)

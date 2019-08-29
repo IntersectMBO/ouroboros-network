@@ -1,6 +1,6 @@
-{-# LANGUAGE GADTs               #-}
 {-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE GADTs               #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -24,12 +24,12 @@ import           Test.Tasty.QuickCheck
 
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork (MonadFork)
-import           Control.Monad.Class.MonadSTM.Strict
+import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
-import           Control.Monad.Class.MonadSay
 import           Control.Monad.IOSim (runSimOrThrow)
+import           Ouroboros.Consensus.Util.MonadSTM.NormalForm
 
 import           Network.TypedProtocol.Channel
 import           Network.TypedProtocol.Driver
@@ -227,14 +227,14 @@ runChainSync securityParam maxClockSkew (ClientUpdates clientUpdates)
     let btime = testBlockchainTime testBtime
 
     -- Set up the client
-    varCandidates      <- newTVarM Map.empty
-    varClientState     <- newTVarM (Genesis, testInitExtLedger)
-    varClientException <- newTVarM Nothing
+    varCandidates      <- uncheckedNewTVarM Map.empty
+    varClientState     <- uncheckedNewTVarM (Genesis, testInitExtLedger)
+    varClientException <- uncheckedNewTVarM Nothing
     -- Candidates are removed from the candidates map when disconnecting, so
     -- we lose access to them. Therefore, store the candidate 'TVar's in a
     -- separate map too, one that isn't emptied. We can use this map to look
     -- at the final state of each candidate.
-    varFinalCandidates <- newTVarM Map.empty
+    varFinalCandidates <- uncheckedNewTVarM Map.empty
 
     let getCurrentChain :: STM m (AnchoredFragment TestBlock)
         getCurrentChain =
@@ -260,7 +260,7 @@ runChainSync securityParam maxClockSkew (ClientUpdates clientUpdates)
                    getIsInvalidBlock
 
     -- Set up the server
-    varChainProducerState <- newTVarM $ initChainProducerState Genesis
+    varChainProducerState <- uncheckedNewTVarM $ initChainProducerState Genesis
     let server :: ChainSyncServer (Header TestBlock) (Point (Header TestBlock), BlockNo) m ()
         server = chainSyncServerExample () varChainProducerState
 

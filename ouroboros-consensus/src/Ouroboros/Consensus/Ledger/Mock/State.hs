@@ -22,6 +22,7 @@ import qualified Data.Set as Set
 import           GHC.Generics (Generic)
 
 import           Cardano.Crypto.Hash
+import           Cardano.Prelude (NoUnexpectedThunks)
 
 import           Ouroboros.Network.Block (ChainHash, HasHeader, HeaderHash,
                      Point, StandardHash, genesisPoint, pointHash)
@@ -35,11 +36,11 @@ import           Ouroboros.Consensus.Ledger.Mock.UTxO
 -------------------------------------------------------------------------------}
 
 data MockState blk = MockState {
-      mockUtxo      :: Utxo
-    , mockConfirmed :: Set TxId
-    , mockTip       :: Point blk
+      mockUtxo      :: !Utxo
+    , mockConfirmed :: !(Set TxId)
+    , mockTip       :: !(Point blk)
     }
-  deriving (Show, Eq, Generic)
+  deriving (Show, Eq, Generic, NoUnexpectedThunks)
 
 deriving instance Serialise (HeaderHash blk) => Serialise (MockState blk)
 

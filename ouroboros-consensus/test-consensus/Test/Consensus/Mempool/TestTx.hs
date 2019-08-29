@@ -13,6 +13,8 @@ module Test.Consensus.Mempool.TestTx (
 import           Control.Monad.Except (Except, throwError)
 import           Data.Word (Word64)
 
+import           Cardano.Prelude (NoUnexpectedThunks)
+
 import           Test.QuickCheck (Arbitrary (..), oneof)
 
 import           Ouroboros.Consensus.Util.Condense (Condense (..))
@@ -24,7 +26,7 @@ import           Ouroboros.Consensus.Util.Condense (Condense (..))
 -- | A simple transaction identifier.
 newtype TestTxId = TestTxId { unTestTxId :: Word64 }
   deriving stock   (Show, Eq, Ord)
-  deriving newtype (Condense)
+  deriving newtype (Condense, NoUnexpectedThunks)
 
 instance Arbitrary TestTxId where
   arbitrary           = TestTxId <$> arbitrary

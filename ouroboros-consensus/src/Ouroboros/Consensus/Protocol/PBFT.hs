@@ -42,6 +42,7 @@ import           GHC.Generics (Generic)
 import qualified Cardano.Chain.Common as CC.Common
 import qualified Cardano.Chain.Genesis as CC.Genesis
 import           Cardano.Crypto.DSIGN.Class
+import           Cardano.Prelude (NoUnexpectedThunks)
 
 import           Ouroboros.Network.Block (HasHeader (..), SlotNo (..))
 import           Ouroboros.Network.Point (WithOrigin (At))
@@ -70,6 +71,9 @@ data PBftFields c toSign = PBftFields {
 
 deriving instance PBftCrypto c => Show (PBftFields c toSign)
 deriving instance PBftCrypto c => Eq   (PBftFields c toSign)
+
+instance (PBftCrypto c, Typeable toSign) => NoUnexpectedThunks (PBftFields c toSign)
+  -- use generic instance
 
 class ( HasHeader hdr
       , SignedHeader hdr

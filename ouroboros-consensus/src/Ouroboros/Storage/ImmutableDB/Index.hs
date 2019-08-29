@@ -1,3 +1,5 @@
+{-# LANGUAGE DerivingStrategies  #-}
+{-# LANGUAGE DerivingVia         #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE RecordWildCards     #-}
@@ -47,6 +49,9 @@ import           Data.Word (Word64)
 
 import           GHC.Stack (HasCallStack, callStack)
 
+import           Cardano.Prelude (NoUnexpectedThunks (..),
+                     noUnexpectedThunksUsingNormalForm)
+
 import           Ouroboros.Storage.FS.API (HasFS (..), hGetAll, hPut, hPutAll,
                      withFile)
 import           Ouroboros.Storage.FS.API.Types (AllowExisting (..),
@@ -73,7 +78,13 @@ data Index hash = MkIndex
   { getOffsets :: !(V.Vector SlotOffset)
   , getEBBHash :: !(CurrentEBB hash)
     -- ^ Return the hash of the EBB, if the index stores one.
-  } deriving (Eq, Show)
+  } deriving stock (Eq, Show)
+
+-- TODO: We should use the 'Generic' instance here (after adding support
+-- for vectors to the Prelude)
+instance NoUnexpectedThunks (Index hash) where
+  showTypeOf _ = "Index"
+  whnfNoUnexpectedThunks = noUnexpectedThunksUsingNormalForm
 
 -- | Return the number of slots in the index (the number of offsets - 1).
 --

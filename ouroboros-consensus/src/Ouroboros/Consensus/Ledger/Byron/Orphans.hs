@@ -1,3 +1,5 @@
+{-# LANGUAGE DerivingVia        #-}
+{-# LANGUAGE StandaloneDeriving #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
 module Ouroboros.Consensus.Ledger.Byron.Orphans () where
 

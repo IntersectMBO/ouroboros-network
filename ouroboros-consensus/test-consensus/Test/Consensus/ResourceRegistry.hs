@@ -32,9 +32,9 @@ import           GHC.Generics (Generic, Generic1)
 
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork hiding (fork)
-import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTimer
+import           Ouroboros.Consensus.Util.MonadSTM.NormalForm
 
 import           Test.QuickCheck (Gen)
 import qualified Test.QuickCheck as QC
@@ -283,7 +283,7 @@ data QueuedInstr m = forall a. QueuedInstr (ThreadInstr m a) (StrictTMVar m a)
 
 runInThread :: MonadSTM m => TestThread m -> ThreadInstr m a -> m a
 runInThread TestThread{..} instr = do
-    result <- atomically newEmptyTMVar
+    result <- uncheckedNewEmptyTMVarM
     atomically $ writeTQueue threadComms (QueuedInstr instr result)
     atomically $ takeTMVar result
 
@@ -305,7 +305,7 @@ newThread :: forall m. (MonadAsync m, MonadMask m, MonadFork m, MonadTimer m)
           -> m (TestThread m)
 newThread alive parentReg = \shouldLink -> do
     comms      <- atomically $ newTQueue
-    spawned    <- atomically $ newEmptyTMVar
+    spawned    <- uncheckedNewEmptyTMVarM
 
     thread <- forkThread parentReg $
                 withRegistry $ \childReg ->
@@ -593,7 +593,7 @@ prop_sequential = forAllCommands (sm unused unused) Nothing prop_sequential'
 
 prop_sequential' :: QSM.Commands (At IO Cmd) (At IO Resp) -> QC.Property
 prop_sequential' cmds = QC.monadicIO $ do
-    alive <- liftIO $ atomically $ newTVar []
+    alive <- liftIO $ uncheckedNewTVarM []
     reg   <- liftIO $ unsafeNewRegistry
     let sm' = sm alive reg
     (hist, _model, res) <- runCommands sm' cmds

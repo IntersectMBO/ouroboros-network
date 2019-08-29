@@ -20,6 +20,7 @@ import           GHC.Generics (Generic)
 import           Cardano.Crypto.Hash
 import           Cardano.Crypto.KES
 import           Cardano.Crypto.VRF
+import           Cardano.Prelude (NoUnexpectedThunks)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Ledger.Abstract
@@ -54,7 +55,7 @@ type SimplePraosRuleHeader c = SimpleHeader c SimplePraosRuleExt
 newtype SimplePraosRuleExt = SimplePraosRuleExt {
       simplePraosRuleExt :: CoreNodeId
     }
-  deriving (Generic, Condense, Show, Eq)
+  deriving (Generic, Condense, Show, Eq, NoUnexpectedThunks)
 
 type instance BlockProtocol (SimplePraosRuleBlock c) =
    WithLeaderSchedule (Praos PraosCryptoUnused)

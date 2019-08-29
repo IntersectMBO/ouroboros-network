@@ -1,3 +1,4 @@
+{-# LANGUAGE DeriveAnyClass       #-}
 {-# LANGUAGE DeriveGeneric        #-}
 {-# LANGUAGE FlexibleContexts     #-}
 {-# LANGUAGE LambdaCase           #-}
@@ -42,10 +43,12 @@ import           Data.Typeable (Typeable)
 import           Data.Word
 import           GHC.Generics (Generic)
 
-import           Control.Monad.Class.MonadSTM.Strict
+import           Ouroboros.Consensus.Util.MonadSTM.NormalForm
 import           Control.Monad.Class.MonadThrow
 
 import           Control.Tracer
+
+import           Cardano.Prelude (NoUnexpectedThunks)
 
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import           Ouroboros.Network.Block (BlockNo, HasHeader, HeaderHash, Point,
@@ -269,6 +272,7 @@ data ReaderState m blk
     -- ^ The 'Reader' is reading from the ImmutableDB
   | ReaderInMem   !(ReaderRollState blk)
     -- ^ The 'Reader' is reading from the in-memory current chain fragment.
+  deriving (Generic, NoUnexpectedThunks)
 
 -- | Similar to 'Ouroboros.Network.MockChain.ProducerState.ReaderState'.
 data ReaderRollState blk
@@ -276,7 +280,7 @@ data ReaderRollState blk
     -- ^ The reader should roll back to this point.
   | RollForwardFrom !(Point blk)
     -- ^ The reader should roll forward from this point.
-  deriving (Eq, Show)
+  deriving (Eq, Show, Generic, NoUnexpectedThunks)
 
 -- | Get the point the 'ReaderRollState' should roll back to or roll forward
 -- from.

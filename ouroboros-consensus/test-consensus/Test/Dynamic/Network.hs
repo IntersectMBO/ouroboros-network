@@ -31,21 +31,23 @@ import qualified Control.Exception as Exn
 import           Control.Monad
 import           Control.Tracer
 import           Crypto.Random (ChaChaDRG, drgNew)
-import qualified Data.Typeable as Typeable
 import qualified Data.List as List
 import qualified Data.List.NonEmpty as NE
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Proxy (Proxy (..))
+import qualified Data.Typeable as Typeable
 import           GHC.Stack
+
+import           Cardano.Prelude (NoUnexpectedThunks)
 
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork (MonadFork)
 import           Control.Monad.Class.MonadST
-import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
+import           Ouroboros.Consensus.Util.MonadSTM.NormalForm
 
 import           Network.TypedProtocol.Channel
 import           Network.TypedProtocol.Codec (AnyMessage (..))
@@ -82,6 +84,7 @@ import           Ouroboros.Consensus.Util.STM
 
 import qualified Ouroboros.Storage.ChainDB as ChainDB
 import           Ouroboros.Storage.ChainDB.Impl (ChainDbArgs (..))
+import           Ouroboros.Storage.ChainDB.Impl.Types (ReaderState)
 import           Ouroboros.Storage.EpochInfo (EpochInfo, newEpochInfo)
 import           Ouroboros.Storage.FS.Sim.MockFS (MockFS)
 import qualified Ouroboros.Storage.FS.Sim.MockFS as Mock
@@ -112,6 +115,8 @@ runNodeNetwork :: forall m blk.
                     , TxGen blk
                     , TracingConstraints blk
                     , HasCallStack
+                    , NoUnexpectedThunks (m ())
+                    , NoUnexpectedThunks (StrictTVar m (ReaderState m blk))
                     )
                  => ResourceRegistry m
                  -> TestBlockchainTime m
@@ -137,11 +142,11 @@ runNodeNetwork registry testBtime numCoreNodes nodeJoinPlan nodeTopology
     -- node and server threads on the head node. These mini protocols begin as
     -- soon as both nodes have joined the network, according to @nodeJoinPlan@.
 
-    varRNG <- atomically $ newTVar initRNG
+    varRNG <- uncheckedNewTVarM initRNG
 
     -- allocate a TMVar for each node's network app
     nodeVars <- fmap Map.fromList $ do
-      forM coreNodeIds $ \nid -> (,) nid <$> atomically newEmptyTMVar
+      forM coreNodeIds $ \nid -> (,) nid <$> uncheckedNewEmptyTMVarM
 
     -- spawn threads for each undirected edge
     let edges = edgesNodeTopology nodeTopology
@@ -227,7 +232,7 @@ runNodeNetwork registry testBtime numCoreNodes nodeJoinPlan nodeTopology
         drg <- produceDRG
         txs <- atomically $ do
           ledger <- ledgerState <$> getExtLedger
-          varDRG <- newTVar drg
+          varDRG <- uncheckedNewTVar drg
           simChaChaT varDRG id $ testGenTxs numCoreNodes cfg ledger
         void $ addTxs mempool txs
 
@@ -305,8 +310,10 @@ runNodeNetwork registry testBtime numCoreNodes nodeJoinPlan nodeTopology
             }
 
       epochInfo <- newEpochInfo $ nodeEpochSize (Proxy @blk) pInfoConfig
-      fsVars@(immDbFsVar, volDbFsVar, lgrDbFsVar)  <- atomically $ (,,)
-        <$> newTVar Mock.empty <*> newTVar Mock.empty <*> newTVar Mock.empty
+      fsVars@(immDbFsVar, volDbFsVar, lgrDbFsVar)  <- (,,)
+        <$> uncheckedNewTVarM Mock.empty
+        <*> uncheckedNewTVarM Mock.empty
+        <*> uncheckedNewTVarM Mock.empty
       let args = mkArgs pInfoConfig pInfoInitLedger epochInfo fsVars
       chainDB <- ChainDB.openDB args
 

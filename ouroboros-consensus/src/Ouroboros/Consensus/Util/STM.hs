@@ -30,7 +30,7 @@ import           GHC.Stack
 
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork (MonadFork)
-import           Control.Monad.Class.MonadSTM.Strict
+import           Ouroboros.Consensus.Util.MonadSTM.NormalForm
 import           Control.Monad.Class.MonadThrow
 
 import           Ouroboros.Consensus.Protocol.Abstract

@@ -1,4 +1,6 @@
+{-# LANGUAGE BangPatterns            #-}
 {-# LANGUAGE DataKinds               #-}
+{-# LANGUAGE DeriveAnyClass          #-}
 {-# LANGUAGE DeriveGeneric           #-}
 {-# LANGUAGE FlexibleContexts        #-}
 {-# LANGUAGE FlexibleInstances       #-}
@@ -53,6 +55,7 @@ import           Cardano.Crypto.KES.Simple
 import           Cardano.Crypto.VRF.Class
 import           Cardano.Crypto.VRF.Mock (MockVRF)
 import           Cardano.Crypto.VRF.Simple (SimpleVRF)
+import           Cardano.Prelude (NoUnexpectedThunks)
 
 import           Ouroboros.Network.Block (HasHeader (..), SlotNo (..))
 import           Ouroboros.Network.Point (WithOrigin (At))
@@ -78,7 +81,10 @@ data PraosFields c toSign = PraosFields {
       praosSignature   :: SignedKES (PraosKES c) toSign
     , praosExtraFields :: PraosExtraFields c
     }
-  deriving Generic
+  deriving (Generic)
+
+instance (PraosCrypto c, Typeable toSign) => NoUnexpectedThunks (PraosFields c toSign)
+  -- use generic instance
 
 -- | Fields that should be included in the signature
 data PraosExtraFields c = PraosExtraFields {
@@ -86,6 +92,10 @@ data PraosExtraFields c = PraosExtraFields {
     , praosRho     :: CertifiedVRF (PraosVRF c) (Natural, SlotNo, VRFType)
     , praosY       :: CertifiedVRF (PraosVRF c) (Natural, SlotNo, VRFType)
     }
+  deriving (Generic)
+
+instance PraosCrypto c => NoUnexpectedThunks (PraosExtraFields c)
+  -- use generic instance
 
 class ( HasHeader hdr
       , SignedHeader hdr
@@ -159,13 +169,15 @@ data PraosValidationError c =
 deriving instance PraosCrypto c => Show (PraosValidationError c)
 
 data BlockInfo c = BlockInfo
-    { biSlot  :: SlotNo
-    , biRho   :: CertifiedVRF (PraosVRF c) (Natural, SlotNo, VRFType)
-    , biStake :: StakeDist
+    { biSlot  :: !SlotNo
+    , biRho   :: !(CertifiedVRF (PraosVRF c) (Natural, SlotNo, VRFType))
+    , biStake :: !StakeDist
     }
+  deriving (Generic)
 
 deriving instance PraosCrypto c => Show (BlockInfo c)
 deriving instance PraosCrypto c => Eq   (BlockInfo c)
+deriving instance PraosCrypto c => NoUnexpectedThunks (BlockInfo c)
 
 {-------------------------------------------------------------------------------
   Protocol proper
@@ -269,7 +281,7 @@ instance PraosCrypto c => OuroborosTag (Praos c) where
     unless (fromIntegral (certifiedNatural praosY) < t) $
         throwError $ PraosInsufficientStake t $ certifiedNatural praosY
 
-    let bi = BlockInfo
+    let !bi = BlockInfo
             { biSlot  = blockSlot b
             , biRho   = praosRho
             , biStake = sd

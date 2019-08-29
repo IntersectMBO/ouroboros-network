@@ -22,7 +22,6 @@ module Test.Ouroboros.Storage.VolatileDB.StateMachine
 
 import           Prelude hiding (elem)
 
-import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow (MonadCatch)
 import           Control.Monad.Except
 import           Control.Monad.State
@@ -40,6 +39,7 @@ import qualified Data.Set as S
 import           Data.TreeDiff (ToExpr)
 import           GHC.Generics
 import           GHC.Stack
+import           Ouroboros.Consensus.Util.MonadSTM.NormalForm
 import           System.Random (getStdRandom, randomR)
 import           Test.QuickCheck
 import           Test.QuickCheck.Monadic
@@ -537,8 +537,8 @@ prop_sequential =
               (hist, _model, res) <- runCommands sm' cmds
               run $ closeDB db
               return (hist, res)
-        errorsVar <- run $ atomically (newTVar mempty)
-        fsVar <- run $ atomically (newTVar Mock.empty)
+        errorsVar <- run $ uncheckedNewTVarM mempty
+        fsVar <- run $ uncheckedNewTVarM Mock.empty
         (hist, res) <- test errorsVar (mkSimErrorHasFS EH.monadCatch fsVar errorsVar)
         let events = execCmds (initModel smUnused) cmds
         let myshow n = if n<5 then show n else if n < 20 then "5-19" else if n < 100 then "20-99" else ">=100"

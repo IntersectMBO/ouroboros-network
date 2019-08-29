@@ -1,4 +1,7 @@
 {-# LANGUAGE ConstraintKinds            #-}
+{-# LANGUAGE DeriveAnyClass             #-}
+{-# LANGUAGE DeriveGeneric              #-}
+{-# LANGUAGE DerivingVia                #-}
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GADTSyntax                 #-}
@@ -9,6 +12,7 @@
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE StandaloneDeriving         #-}
 {-# LANGUAGE TypeApplications           #-}
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE UndecidableInstances       #-}
@@ -81,6 +85,7 @@ import           Data.Set (Set)
 import qualified Data.Text as T
 import           Data.Typeable
 import           Formatting
+import           GHC.Generics (Generic)
 
 import           Cardano.Binary (Annotated (..), ByteSpan, FromCBOR (..),
                      ToCBOR (..), enforceSize, fromCBOR, reAnnotate, slice)
@@ -98,6 +103,8 @@ import           Cardano.Chain.ValidationMode (ValidationMode (..),
 import qualified Cardano.Crypto as Crypto
 import           Cardano.Crypto.DSIGN
 import           Cardano.Crypto.Hash
+import           Cardano.Prelude (NoUnexpectedThunks (..),
+                     showTypeOfTypeable)
 
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.Point (WithOrigin (..))
@@ -122,7 +129,9 @@ import qualified Ouroboros.Consensus.Util.SlotBounded as SB
 -------------------------------------------------------------------------------}
 
 newtype ByronHash = ByronHash { unByronHash :: CC.Block.HeaderHash }
-  deriving (Eq, Ord, Show, ToCBOR, FromCBOR)
+  deriving stock   (Eq, Ord, Show, Generic)
+  deriving newtype (ToCBOR, FromCBOR)
+  deriving anyclass NoUnexpectedThunks
 
 instance Condense ByronHash where
   condense = formatToString CC.Block.headerHashF . unByronHash
@@ -177,6 +186,13 @@ instance GetHeader (ByronBlock cfg) where
 
   getHeader (ByronBlock b) = mkByronHeader (CC.Block.blockHeader b)
 
+instance Typeable cfg => NoUnexpectedThunks (Header (ByronBlock cfg)) where
+  showTypeOf = showTypeOfTypeable
+
+  -- We explicitly allow the hash to be a thunk
+  whnfNoUnexpectedThunks ctxt ByronHeader{..} =
+      noUnexpectedThunks ctxt byronHeader
+
 instance (ByronGiven, Typeable cfg) => SupportedBlock (ByronBlock cfg)
 
 {-------------------------------------------------------------------------------
@@ -226,7 +242,7 @@ instance (ByronGiven, Typeable cfg, ConfigContainsGenesis cfg)
         -- | Slot-bounded snapshots of the chain state
       , blsSnapshots :: !(Seq.Seq (SlotBounded CC.Block.ChainValidationState))
       }
-    deriving (Eq, Show)
+    deriving (Eq, Show, Generic, NoUnexpectedThunks)
 
   type LedgerError (ByronBlock cfg) = CC.Block.ChainValidationError
 
@@ -497,6 +513,15 @@ instance GetHeader (ByronBlockOrEBB cfg) where
 
 type instance HeaderHash (ByronBlockOrEBB  cfg) = ByronHash
 
+instance Typeable cfg => NoUnexpectedThunks (Header (ByronBlockOrEBB cfg)) where
+  showTypeOf = showTypeOfTypeable
+
+  -- We explicitly allow the hash to be a thunk
+  whnfNoUnexpectedThunks ctxt (ByronHeaderRegular mb _) =
+      noUnexpectedThunks ctxt mb
+  whnfNoUnexpectedThunks ctxt (ByronHeaderBoundary ebb _) =
+      noUnexpectedThunks ctxt ebb
+
 instance (ByronGiven, Typeable cfg) => SupportedBlock (ByronBlockOrEBB cfg)
 
 instance (ByronGiven, Typeable cfg) => HasHeader (ByronBlockOrEBB cfg) where
@@ -585,6 +610,8 @@ instance ( ByronGiven
       Right st' -> st'
 
   ledgerTipPoint (ByronEBBLedgerState state) = castPoint $ ledgerTipPoint state
+
+deriving newtype instance UpdateLedger (ByronBlock cfg) => NoUnexpectedThunks (LedgerState (ByronBlockOrEBB cfg))
 
 applyByronLedgerBlockOrEBB :: Given CC.Slot.EpochSlots
                            => ValidationMode

@@ -21,8 +21,8 @@ import           Data.Maybe (isJust)
 import           GHC.Stack (HasCallStack)
 
 import           Control.Monad.Class.MonadFork
-import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
+import           Ouroboros.Consensus.Util.MonadSTM.NormalForm
 
 import           Control.Tracer (contramap, traceWith)
 
@@ -117,7 +117,7 @@ newReader cdb@CDB{..} h registry = do
       readerId <- readTVar cdbNextReaderId
       modifyTVar cdbNextReaderId succ
 
-      varReader <- newTVar readerState
+      varReader <- uncheckedNewTVar readerState
       modifyTVar cdbReaders (Map.insert readerId varReader)
       let reader = makeNewBlockOrHeaderReader h readerId registry
       return (reader, readerId)

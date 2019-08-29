@@ -1,11 +1,11 @@
- {-# LANGUAGE BangPatterns          #-}
- {-# LANGUAGE ConstraintKinds       #-}
- {-# LANGUAGE FlexibleInstances     #-}
- {-# LANGUAGE GADTs                 #-}
- {-# LANGUAGE MultiParamTypeClasses #-}
- {-# LANGUAGE PolyKinds             #-}
- {-# LANGUAGE ScopedTypeVariables   #-}
- {-# LANGUAGE TypeOperators         #-}
+{-# LANGUAGE BangPatterns          #-}
+{-# LANGUAGE ConstraintKinds       #-}
+{-# LANGUAGE FlexibleInstances     #-}
+{-# LANGUAGE GADTs                 #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE PolyKinds             #-}
+{-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE TypeOperators         #-}
 
 -- | Miscellaneous utilities
 module Ouroboros.Consensus.Util (
@@ -33,6 +33,7 @@ module Ouroboros.Consensus.Util (
   , takeLast
   , dropLast
   , mustBeRight
+  , unsafeNoThunks
   ) where
 
 import qualified Data.ByteString as Strict
@@ -45,6 +46,9 @@ import qualified Data.Set as Set
 import           Data.Void
 import           Data.Word (Word64)
 import           GHC.Stack
+import           System.IO.Unsafe (unsafePerformIO)
+
+import           Cardano.Prelude (NoUnexpectedThunks (..), ThunkInfo (..))
 
 class Empty a
 instance Empty a
@@ -168,3 +172,13 @@ dropLast n = reverse . drop (fromIntegral n) . reverse
 mustBeRight :: Either Void a -> a
 mustBeRight (Left  v) = absurd v
 mustBeRight (Right a) = a
+
+-- | Wrapper around 'noUnexpectedThunks'
+--
+-- Uses @unsafePerformIO@. Use with caution.
+unsafeNoThunks :: forall a. NoUnexpectedThunks a => a -> Maybe String
+unsafeNoThunks a = unsafePerformIO $ do
+    nf <- noUnexpectedThunks [] a
+    return $ case nf of
+      NoUnexpectedThunks  -> Nothing
+      UnexpectedThunk nfo -> Just $ show nfo

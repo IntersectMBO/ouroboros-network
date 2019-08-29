@@ -38,7 +38,7 @@ import qualified Data.Set as Set
 import           Data.Word (Word64)
 import           GHC.Stack (HasCallStack)
 
-import           Control.Monad.Class.MonadSTM.Strict
+import           Ouroboros.Consensus.Util.MonadSTM.NormalForm
 import           Control.Monad.Class.MonadThrow
 
 import           Control.Tracer (Tracer, contramap, traceWith)

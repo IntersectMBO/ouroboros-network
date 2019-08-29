@@ -1,3 +1,4 @@
+{-# LANGUAGE DeriveAnyClass    #-}
 {-# LANGUAGE DeriveFoldable    #-}
 {-# LANGUAGE DeriveFunctor     #-}
 {-# LANGUAGE DeriveGeneric     #-}
@@ -16,14 +17,16 @@ module Ouroboros.Network.Point
 
 import           GHC.Generics (Generic)
 
+import           Cardano.Prelude (NoUnexpectedThunks)
+
 data WithOrigin t = Origin | At !t
-  deriving (Eq, Ord, Show, Generic, Functor, Foldable, Traversable)
+  deriving (Eq, Ord, Show, Generic, Functor, Foldable, Traversable, NoUnexpectedThunks)
 
 data Block slot hash = Block
   { blockPointSlot :: !slot
   , blockPointHash :: !hash
   }
-  deriving (Eq, Ord, Show)
+  deriving (Eq, Ord, Show, Generic, NoUnexpectedThunks)
 
 at :: t -> WithOrigin t
 at = At

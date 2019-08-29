@@ -1,3 +1,5 @@
+{-# LANGUAGE DeriveAnyClass      #-}
+{-# LANGUAGE DeriveGeneric       #-}
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE NumericUnderscores  #-}
@@ -37,13 +39,16 @@ import           Data.Fixed
 import           Data.Time
 import           Data.Void
 import           Data.Word (Word64)
+import           GHC.Generics (Generic)
 import           GHC.Stack
+
+import           Cardano.Prelude (NoUnexpectedThunks)
 
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork (MonadFork)
-import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTimer
+import           Ouroboros.Consensus.Util.MonadSTM.NormalForm
 
 import           Ouroboros.Consensus.Util.ResourceRegistry
 import           Ouroboros.Consensus.Util.STM
@@ -154,7 +159,7 @@ data TestClock =
     Initializing
     -- ^ This phase has a non-zero but negligible duration.
   | Running !SlotNo
-  deriving (Eq)
+  deriving (Eq, Generic, NoUnexpectedThunks)
 
 data TestBlockchainTime m = TestBlockchainTime
   { testBlockchainTime     :: BlockchainTime m
@@ -188,8 +193,8 @@ newTestBlockchainTime
     -> DiffTime           -- ^ Slot duration
     -> m (TestBlockchainTime m)
 newTestBlockchainTime registry (NumSlots numSlots) slotLen = do
-    slotVar <- atomically $ newTVar initVal
-    doneVar <- atomically $ newEmptyTMVar
+    slotVar <- newTVarM initVal
+    doneVar <- newEmptyTMVarM
 
     void $ forkLinkedThread registry $ loop slotVar doneVar
 
@@ -239,7 +244,7 @@ realBlockchainTime :: ResourceRegistry IO
                    -> IO (BlockchainTime IO)
 realBlockchainTime registry slotLen start = do
     first <- getCurrentSlotIO slotLen start
-    slot  <- atomically $ newTVar first
+    slot  <- newTVarM first
     void $ forkLinkedThread registry $ loop slot
     return BlockchainTime {
         getCurrentSlot = readTVar slot

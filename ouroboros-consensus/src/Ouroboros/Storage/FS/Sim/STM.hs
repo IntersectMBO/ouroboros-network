@@ -11,7 +11,7 @@ import           Control.Monad.Except
 import           Control.Monad.State
 import           Data.Proxy
 
-import           Control.Monad.Class.MonadSTM.Strict
+import           Ouroboros.Consensus.Util.MonadSTM.NormalForm
 
 import           Ouroboros.Consensus.Util
 
@@ -35,7 +35,7 @@ runSimFS :: MonadSTM m
          -> (HasFS m HandleMock -> m a)
          -> m (a, MockFS)
 runSimFS err fs act = do
-    var <- atomically (newTVar fs)
+    var <- uncheckedNewTVarM fs
     a   <- act (simHasFS err var)
     fs' <- atomically (readTVar var)
     return (a, fs')

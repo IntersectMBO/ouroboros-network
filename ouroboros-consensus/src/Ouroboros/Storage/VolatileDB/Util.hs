@@ -6,7 +6,7 @@
 module Ouroboros.Storage.VolatileDB.Util where
 
 import           Control.Monad
-import           Control.Monad.Class.MonadSTM.Strict
+import           Ouroboros.Consensus.Util.MonadSTM.NormalForm
 import           Control.Monad.Class.MonadThrow
 import           Data.List (maximumBy)
 import           Data.Map (Map)

@@ -89,6 +89,9 @@ import qualified Data.Foldable as Foldable
 import qualified Data.List as L
 import           GHC.Stack
 
+import           Cardano.Prelude (NoUnexpectedThunks (..),
+                     allNoUnexpectedThunks)
+
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.Point (WithOrigin (At))
 
@@ -108,6 +111,17 @@ import           Ouroboros.Network.Point (WithOrigin (At))
 -- the 'SlotNo' (or 'Point') of a block.
 newtype ChainFragment block = ChainFragment (FingerTree BlockMeasure block)
   deriving (Show, Eq)
+
+-- | The 'FingerTree' might have internal thunks
+--
+-- TODO: Ideally we should just give an instance for 'FingerTree' directly
+-- (but without introducing an orphan).
+instance NoUnexpectedThunks block
+      => NoUnexpectedThunks (ChainFragment block) where
+  showTypeOf _ = "ChainFragment"
+  whnfNoUnexpectedThunks ctxt (ChainFragment ft) =
+      allNoUnexpectedThunks $
+        map (noUnexpectedThunks ctxt) (Foldable.toList ft)
 
 viewRight :: HasHeader block
          => ChainFragment block -> FT.ViewR ChainFragment block

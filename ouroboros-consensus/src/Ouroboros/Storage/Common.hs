@@ -1,4 +1,6 @@
+{-# LANGUAGE DeriveAnyClass             #-}
 {-# LANGUAGE DeriveGeneric              #-}
+{-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE RankNTypes                 #-}
 
@@ -26,6 +28,8 @@ import           Codec.Serialise (Serialise (..))
 import           Data.Word
 import           GHC.Generics
 
+import           Cardano.Prelude (NoUnexpectedThunks)
+
 import           Ouroboros.Network.Block (Point, genesisPoint)
 
 import           Ouroboros.Consensus.Util.Condense
@@ -36,10 +40,12 @@ import           Ouroboros.Consensus.Util.Condense
 
 -- | An epoch, i.e. the number of the epoch.
 newtype EpochNo = EpochNo { unEpochNo :: Word64 }
-  deriving (Eq, Ord, Enum, Num, Show, Generic, Serialise, ToCBOR)
+  deriving stock (Eq, Ord, Show, Generic)
+  deriving newtype (Enum, Num, Serialise, ToCBOR, NoUnexpectedThunks)
 
 newtype EpochSize = EpochSize { unEpochSize :: Word64 }
-  deriving (Eq, Ord, Enum, Num, Show, Generic, Real, Integral)
+  deriving stock (Eq, Ord, Show, Generic)
+  deriving newtype (Enum, Num, Real, Integral, NoUnexpectedThunks)
 
 {-------------------------------------------------------------------------------
   File formats
@@ -54,7 +60,7 @@ type SlotOffset = Word64
 
 -- | Tip of the chain
 data Tip r = Tip !r | TipGen
-  deriving (Show, Eq, Generic)
+  deriving (Show, Eq, Generic, NoUnexpectedThunks)
 
 instance Condense r => Condense (Tip r) where
   condense TipGen  = "genesis"
