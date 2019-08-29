@@ -687,8 +687,8 @@ encodeByronLedgerState (ByronEBBLedgerState ByronLedgerState{..}) = mconcat
     , encode blsSnapshots
     ]
 
-encodeByronChainState :: ChainState (BlockProtocol (ByronBlock cfg)) -> Encoding
-encodeByronChainState = encode
+encodeByronChainState :: ChainState (BlockProtocol (ByronBlockOrEBB cfg)) -> Encoding
+encodeByronChainState = encodeChainStateWithEBBs encode
 
 decodeByronHeaderHash :: Decoder s (HeaderHash (ByronBlockOrEBB cfg))
 decodeByronHeaderHash = fromCBOR
@@ -724,8 +724,8 @@ decodeByronLedgerState = ByronEBBLedgerState <$> do
     CBOR.decodeListLenOf 2
     ByronLedgerState <$> decode <*> decode
 
-decodeByronChainState :: Decoder s (ChainState (BlockProtocol (ByronBlock cfg)))
-decodeByronChainState = decode
+decodeByronChainState :: Decoder s (ChainState (BlockProtocol (ByronBlockOrEBB cfg)))
+decodeByronChainState = decodeChainStateWithEBBs decode
 
 decodeByronApplyTxError :: Decoder s (ApplyTxErr (ByronBlockOrEBB cfg))
 decodeByronApplyTxError = fromCBOR
