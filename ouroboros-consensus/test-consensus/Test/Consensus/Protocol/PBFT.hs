@@ -10,7 +10,11 @@ import           Test.Tasty
 import           Test.Tasty.HUnit
 import           Test.Tasty.QuickCheck
 
-import           Ouroboros.Consensus.Protocol.PBFT (pruneChainState, chainStateSize)
+import           Cardano.Crypto.DSIGN
+
+import           Ouroboros.Consensus.Protocol.PBFT.ChainState (PBftChainState)
+import qualified Ouroboros.Consensus.Protocol.PBFT.ChainState as CS
+import           Ouroboros.Consensus.Protocol.PBFT.Crypto
 
 {-------------------------------------------------------------------------------
   Top-level tests
@@ -29,7 +33,7 @@ tests = testGroup "PBFT"
   Test setup
 -------------------------------------------------------------------------------}
 
-newtype TestChainState = TestChainState (Map Int (Seq Int))
+newtype TestChainState = TestChainState (PBftChainState PBftMockCrypto)
   deriving (Show)
 
 instance Arbitrary TestChainState where
@@ -48,11 +52,16 @@ instance Arbitrary TestChainState where
       , (1, choose (1, nbKs))
       , (8, choose (nbKs, 200))
       ]
-    return $ TestChainState $ Map.fromList
+    return $ TestChainState . testState $ Map.fromList
       [ (k, Seq.fromList vs)
       | k <- [0..nbKs-1]
       , let vs = [v | v <- [0..nbVs-1], v `mod` nbKs == k]
       ]
+
+testState :: Map Int (Seq Int) -> PBftChainState PBftMockCrypto
+testState = CS.fromMap
+          . Map.mapKeys VerKeyMockDSIGN
+          . Map.map (fmap fromIntegral)
 
 {-------------------------------------------------------------------------------
   Tests
@@ -60,20 +69,20 @@ instance Arbitrary TestChainState where
 
 prop_pruneChainState_chainStateSize :: TestChainState -> Property
 prop_pruneChainState_chainStateSize (TestChainState cs) =
-    pruneChainState (chainStateSize cs) cs === cs
+    CS.prune (CS.size cs) cs === cs
 
 prop_chainStateSize_pruneChainState :: Positive Int -> TestChainState -> Property
 prop_chainStateSize_pruneChainState (Positive n) (TestChainState cs)
-    | chainStateSize cs >= n
+    | CS.size cs >= n
     = label "pruned"
-    $ chainStateSize (pruneChainState n cs) === n
+    $ CS.size (CS.prune n cs) === n
     | otherwise
     = label "not pruned"
-    $ chainStateSize (pruneChainState n cs) === chainStateSize cs
+    $ CS.size (CS.prune n cs) === CS.size cs
 
 test_pruneChainState :: Assertion
 test_pruneChainState =
-    pruneChainState 2 cs @?= Map.fromList [('a', [5]), ('b', [6])]
+    CS.prune 2 cs @?= testState (Map.fromList [(100, [5]), (101, [6])])
   where
-    cs :: Map Char (Seq Int)
-    cs = [('a', [1,2,5]), ('b', [3, 4, 6])]
+    cs :: PBftChainState PBftMockCrypto
+    cs = testState $ Map.fromList [(100, [1,2,5]), (101, [3, 4, 6])]
