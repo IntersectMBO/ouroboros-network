@@ -43,9 +43,10 @@ import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
 
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
-import           Ouroboros.Network.Block (pattern BlockPoint, ChainUpdate,
-                     pattern GenesisPoint, HasHeader (..), HeaderHash, Point,
-                     SlotNo, StandardHash, atSlot, genesisPoint)
+import           Ouroboros.Network.Block (BlockNo, pattern BlockPoint,
+                     ChainUpdate, pattern GenesisPoint, HasHeader (..),
+                     HeaderHash, Point, SlotNo, StandardHash, atSlot,
+                     genesisPoint)
 
 import           Ouroboros.Consensus.Block (GetHeader (..))
 import           Ouroboros.Consensus.Ledger.Extended
@@ -148,6 +149,11 @@ data ChainDB m blk = ChainDB {
       -- current chain fragment is empty due to data loss in the volatile DB,
       -- 'getTipPoint' will return the tip of the immutable DB.
     , getTipPoint        :: STM m (Point blk)
+
+      -- | Get block number of the tip of the chain
+      --
+      -- Will return 'genesisBlockNo' if the database is empty.
+    , getTipBlockNo      :: STM m BlockNo
 
       -- | Get block at the specified point (if it exists)
     , getBlock           :: Point blk -> m (Maybe blk)

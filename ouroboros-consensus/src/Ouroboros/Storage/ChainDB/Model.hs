@@ -22,6 +22,7 @@ module Ouroboros.Storage.ChainDB.Model (
   , lastK
   , tipBlock
   , tipPoint
+  , tipBlockNo
   , getBlock
   , getBlockByPoint
   , hasBlock
@@ -63,9 +64,9 @@ import           GHC.Generics (Generic)
 
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import qualified Ouroboros.Network.AnchoredFragment as Fragment
-import           Ouroboros.Network.Block (pattern BlockPoint, ChainHash (..),
-                     pattern GenesisPoint, HasHeader, HeaderHash, Point,
-                     SlotNo)
+import           Ouroboros.Network.Block (BlockNo, pattern BlockPoint,
+                     ChainHash (..), pattern GenesisPoint, HasHeader,
+                     HeaderHash, Point, SlotNo)
 import qualified Ouroboros.Network.Block as Block
 import           Ouroboros.Network.MockChain.Chain (Chain (..), ChainUpdate)
 import qualified Ouroboros.Network.MockChain.Chain as Chain
@@ -137,6 +138,9 @@ tipBlock = Chain.head . currentChain
 
 tipPoint :: HasHeader blk => Model blk -> Point blk
 tipPoint = maybe Block.genesisPoint Block.blockPoint . tipBlock
+
+tipBlockNo :: HasHeader blk => Model blk -> BlockNo
+tipBlockNo = maybe Block.genesisBlockNo Block.blockNo . tipBlock
 
 lastK :: HasHeader a
       => SecurityParam

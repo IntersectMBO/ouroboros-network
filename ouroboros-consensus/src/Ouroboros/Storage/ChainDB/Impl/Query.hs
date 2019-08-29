@@ -12,6 +12,7 @@ module Ouroboros.Storage.ChainDB.Impl.Query
   , getTipBlock
   , getTipHeader
   , getTipPoint
+  , getTipBlockNo
   , getBlock
   , getIsFetched
   , getIsInvalidBlock
@@ -27,8 +28,9 @@ import           Control.Monad.Class.MonadThrow
 
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment (..))
 import qualified Ouroboros.Network.AnchoredFragment as AF
-import           Ouroboros.Network.Block (ChainHash (..), HasHeader, HeaderHash,
-                     Point, castPoint, genesisPoint, pointHash, pointSlot)
+import           Ouroboros.Network.Block (BlockNo, ChainHash (..), HasHeader,
+                     HeaderHash, Point, castPoint, genesisPoint, pointHash,
+                     pointSlot)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Ledger.Extended
@@ -128,6 +130,15 @@ getTipPoint
   => ChainDbEnv m blk -> STM m (Point blk)
 getTipPoint CDB{..} =
     (castPoint . AF.headPoint) <$> readTVar cdbChain
+
+getTipBlockNo
+  :: forall m blk. (MonadSTM m, HasHeader (Header blk))
+  => ChainDbEnv m blk -> STM m BlockNo
+getTipBlockNo CDB{..} = do
+    mbTipBlockNo <- AF.headBlockNo <$> readTVar cdbChain
+    -- If the current chain is empty, then look at 'cdbImmBlockNo', see its
+    -- invariant.
+    maybe (readTVar cdbImmBlockNo) return mbTipBlockNo
 
 getBlock
   :: forall m blk. (MonadCatch m , HasHeader blk)
