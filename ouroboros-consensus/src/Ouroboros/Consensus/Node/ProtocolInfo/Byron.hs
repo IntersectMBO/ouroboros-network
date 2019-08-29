@@ -22,13 +22,12 @@ module Ouroboros.Consensus.Node.ProtocolInfo.Byron (
 
 import           Control.Exception (Exception)
 import           Control.Monad.Except
-import qualified Data.Map.Strict as Map
+import           Data.Maybe
 import qualified Data.Sequence as Seq
 import qualified Data.Set as Set
-import           Data.Maybe
 
 import qualified Cardano.Chain.Block as Block
-import           Cardano.Chain.Common (BlockCount(..))
+import           Cardano.Chain.Common (BlockCount (..))
 import qualified Cardano.Chain.Delegation as Delegation
 import qualified Cardano.Chain.Genesis as Genesis
 import qualified Cardano.Chain.Update as Update
@@ -42,6 +41,7 @@ import           Ouroboros.Consensus.NodeId (CoreNodeId)
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.ExtNodeConfig
 import           Ouroboros.Consensus.Protocol.PBFT
+import qualified Ouroboros.Consensus.Protocol.PBFT.ChainState as CS
 import           Ouroboros.Consensus.Protocol.WithEBBs
 
 import           Ouroboros.Consensus.Ledger.Byron.Config
@@ -53,9 +53,9 @@ import qualified Test.Cardano.Chain.Genesis.Dummy as Dummy
 -------------------------------------------------------------------------------}
 
 data PBftLeaderCredentials = PBftLeaderCredentials {
-      plcSignKey     :: Crypto.SigningKey
-    , plcDlgCert     :: Delegation.Certificate
-    , plcCoreNodeId  :: CoreNodeId
+      plcSignKey    :: Crypto.SigningKey
+    , plcDlgCert    :: Delegation.Certificate
+    , plcCoreNodeId :: CoreNodeId
     } deriving Show
 
 -- | Make the 'PBftLeaderCredentials', with a couple sanity checks:
@@ -164,7 +164,7 @@ protocolInfoByron genesisConfig@Genesis.Config {
                 blsCurrent   = initState
               , blsSnapshots = Seq.empty
               }
-          , ouroborosChainState = initChainStateWithEBBs Map.empty
+          , ouroborosChainState = initChainStateWithEBBs CS.empty
           }
       , pInfoInitState  = ()
       }
