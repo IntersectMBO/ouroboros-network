@@ -1,3 +1,5 @@
+{-# LANGUAGE DataKinds         #-}
+{-# LANGUAGE DerivingVia       #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE RankNTypes        #-}
 {-# LANGUAGE RecordWildCards   #-}
@@ -13,6 +15,8 @@ module Ouroboros.Storage.EpochInfo.API (
 import           Control.Monad.Morph (generalize)
 import           Data.Functor.Classes (showsUnaryWith)
 import           Data.Functor.Identity
+
+import           Cardano.Prelude (NoUnexpectedThunks, OnlyCheckIsWHNF (..))
 
 import           Ouroboros.Network.Block (SlotNo (..))
 
@@ -49,6 +53,7 @@ data EpochInfo m = EpochInfo {
       -- > s `inRange` epochInfoRange (epochInfoEpoch s)
     , epochInfoEpoch :: SlotNo -> m EpochNo
     }
+  deriving NoUnexpectedThunks via OnlyCheckIsWHNF "EpochInfo" (EpochInfo m)
 
 -- | Show instance only for non-stateful instances
 instance Show (EpochInfo Identity) where

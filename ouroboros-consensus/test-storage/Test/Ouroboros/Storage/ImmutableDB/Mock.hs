@@ -8,9 +8,9 @@ import           Control.Monad.State (StateT, runStateT)
 import           Data.Proxy
 
 import           Control.Monad.Class.MonadThrow
+import           Ouroboros.Consensus.Util.MonadSTM.NormalForm
 
 import           Ouroboros.Consensus.Util ((..:), (.:))
-import           Ouroboros.Consensus.Util.MonadSTM.NormalForm
 
 import           Ouroboros.Storage.Common (EpochNo, EpochSize)
 import           Ouroboros.Storage.ImmutableDB.API

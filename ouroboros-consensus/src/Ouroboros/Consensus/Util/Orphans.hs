@@ -1,14 +1,19 @@
 {-# LANGUAGE FlexibleContexts     #-}
+{-# LANGUAGE FlexibleInstances    #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 module Ouroboros.Consensus.Util.Orphans () where
 
-import           Codec.Serialise (Serialise(..))
+import           Codec.Serialise (Serialise (..))
+import           Control.Concurrent.STM (readTVarIO)
 import           Control.Monad.Identity
 import           Control.Monad.Trans
 import           Crypto.Random
 
+import           Ouroboros.Consensus.Util.MonadSTM.NormalForm
+
 import           Cardano.Crypto.Hash (Hash)
+import           Cardano.Prelude (NoUnexpectedThunks (..))
 
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import qualified Ouroboros.Network.AnchoredFragment as AF
@@ -56,3 +61,15 @@ instance MonadRandom m => MonadRandom (IdentityT m) where
 -------------------------------------------------------------------------------}
 
 instance Serialise (Hash h a) where
+
+{-------------------------------------------------------------------------------
+  NoUnexpectedThunks
+-------------------------------------------------------------------------------}
+
+instance NoUnexpectedThunks a => NoUnexpectedThunks (StrictTVar IO a) where
+  showTypeOf _ = "StrictTVar IO"
+  whnfNoUnexpectedThunks ctxt tvar = do
+      -- We can't use @atomically $ readTVar ..@ here, as that will lead to a
+      -- "Control.Concurrent.STM.atomically was nested" exception.
+      a <- readTVarIO (toLazyTVar tvar)
+      noUnexpectedThunks ctxt a

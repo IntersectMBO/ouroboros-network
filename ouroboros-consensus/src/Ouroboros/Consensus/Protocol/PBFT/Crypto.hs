@@ -22,8 +22,10 @@ import qualified Cardano.Chain.Delegation as CC.Delegation
 import           Cardano.Crypto (ProtocolMagicId)
 import           Cardano.Crypto.DSIGN.Class
 import           Cardano.Crypto.DSIGN.Mock (MockDSIGN)
+import           Cardano.Prelude (NoUnexpectedThunks)
 
 import           Ouroboros.Consensus.Crypto.DSIGN.Cardano
+import           Ouroboros.Consensus.Ledger.Byron.Orphans ()
 import           Ouroboros.Consensus.Protocol.Signed
 import           Ouroboros.Consensus.Util.Condense
 
@@ -35,6 +37,7 @@ class ( Typeable c
       , Ord (PBftVerKeyHash c)
       , Eq (PBftVerKeyHash c)
       , Show (PBftVerKeyHash c)
+      , NoUnexpectedThunks (PBftVerKeyHash c)
       ) => PBftCrypto c where
   type family PBftDSIGN c :: *
 

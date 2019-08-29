@@ -1,3 +1,7 @@
+{-# LANGUAGE DataKinds                  #-}
+{-# LANGUAGE DeriveAnyClass             #-}
+{-# LANGUAGE DeriveGeneric              #-}
+{-# LANGUAGE DerivingVia                #-}
 {-# LANGUAGE ExistentialQuantification  #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
@@ -42,7 +46,11 @@ import           Data.Proxy
 import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Tuple (swap)
+import           GHC.Generics (Generic)
 import           GHC.Stack
+
+import           Cardano.Prelude (NoUnexpectedThunks (..), OnlyCheckIsWHNF (..),
+                     UseIsNormalForm (..), UseIsNormalFormNamed (..))
 
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork
@@ -296,6 +304,7 @@ data RegistryState m = RegistryState {
       -- See 'RegistryClosedException' for discussion.
     , registryStatus    :: !RegistryStatus
     }
+  deriving (Generic, NoUnexpectedThunks)
 
 -- | Threads known to the registry
 --
@@ -311,6 +320,7 @@ data RegistryState m = RegistryState {
 -- broken when we start a new thread in 'forkThread' but will be re-established
 -- before that thread starts execution proper.)
 newtype KnownThreads m = KnownThreads (Set (ThreadId m))
+  deriving NoUnexpectedThunks via UseIsNormalFormNamed "KnownThreads" (KnownThreads m)
 
 -- | Status of the registry (open or closed)
 data RegistryStatus =
@@ -318,6 +328,7 @@ data RegistryStatus =
 
     -- | We record the 'CallStack' to the call to 'close
   | RegistryClosed !PrettyCallStack
+  deriving (Generic, NoUnexpectedThunks)
 
 -- | Resource key
 --
@@ -330,7 +341,8 @@ data ResourceKey m = ResourceKey !(ResourceRegistry m) !ResourceId
 -- instance) than resources allocated earlier. We take advantage of this when we
 -- close the registry to release "younger" resources before "older" resources.
 newtype ResourceId = ResourceId Int
-  deriving (Show, Eq, Ord, Enum)
+  deriving stock   (Show, Eq, Ord)
+  deriving newtype (Enum, NoUnexpectedThunks)
 
 -- | Information about a resource
 data Resource m = Resource {
@@ -340,9 +352,10 @@ data Resource m = Resource {
       -- | Deallocate the resource
     , resourceRelease :: !(Release m)
     }
+  deriving (Generic, NoUnexpectedThunks)
 
--- | Newtype wrapper just for the show instance
 newtype Release m = Release (m ())
+  deriving NoUnexpectedThunks via OnlyCheckIsWHNF "Release" (Release m)
 
 releaseResource :: Resource m -> m ()
 releaseResource Resource{resourceRelease = Release f} = f
@@ -668,6 +681,7 @@ data Thread m a = MonadFork m => Thread {
     , threadAsync      :: !(Async m a)
     , threadRegistry   :: !(ResourceRegistry m)
     }
+  deriving NoUnexpectedThunks via OnlyCheckIsWHNF "Thread" (Thread m a)
 
 -- | 'Eq' instance for 'Thread' compares 'threadId' only.
 instance Eq (Thread m a) where
@@ -823,6 +837,7 @@ data Context m = MonadFork m => Context {
     , contextThreadId  :: !(ThreadId m)
     }
 
+deriving via UseIsNormalFormNamed "Context" (Context m) instance NoUnexpectedThunks (Context m)
 deriving instance Show (Context m)
 
 captureContext :: MonadFork m => HasCallStack => m (Context m)
@@ -836,6 +851,7 @@ captureContext = Context (PrettyCallStack callStack) <$> myThreadId
 
 -- | CallStack with 'Show' instance using 'prettyCallStack'
 newtype PrettyCallStack = PrettyCallStack CallStack
+  deriving NoUnexpectedThunks via UseIsNormalForm CallStack
 
 instance Show PrettyCallStack where
   show (PrettyCallStack cs) = prettyCallStack cs

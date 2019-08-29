@@ -1,3 +1,5 @@
+{-# LANGUAGE DeriveAnyClass      #-}
+{-# LANGUAGE DeriveGeneric       #-}
 {-# LANGUAGE PatternSynonyms     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies        #-}
@@ -73,7 +75,10 @@ import           Control.Exception (assert)
 import           Data.Functor ((<&>))
 import           Data.List (find)
 import           Data.Word (Word64)
+import           GHC.Generics (Generic)
 import           GHC.Stack
+
+import           Cardano.Prelude (NoUnexpectedThunks)
 
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.ChainFragment (ChainFragment)
@@ -120,7 +125,7 @@ import           Ouroboros.Network.Point (WithOrigin (At))
 data AnchoredFragment block = AnchoredFragment
     { anchorPoint      :: !(Point block)
     , unanchorFragment :: !(ChainFragment block)
-    } deriving (Show, Eq)
+    } deriving (Show, Eq, Generic, NoUnexpectedThunks)
 
 mkAnchoredFragment :: HasHeader block
                    => Point block -> ChainFragment block

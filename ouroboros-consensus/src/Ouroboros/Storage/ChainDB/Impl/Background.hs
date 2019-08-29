@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -76,11 +77,11 @@ launchBgTasks
   -> m ()
 launchBgTasks cdb@CDB{..} = do
     gcSchedule <- newGcSchedule
-    gcThread   <- launch $
+    !gcThread   <- launch $
       gcScheduleRunner gcSchedule $ garbageCollect cdb
-    copyThread <- launch $
+    !copyThread <- launch $
       copyToImmDBRunner cdb gcSchedule
-    lgrSnapshotThread <- launch $
+    !lgrSnapshotThread <- launch $
       updateLedgerSnapshotsRunner cdb
     atomically $ writeTVar cdbBgThreads
       [gcThread, copyThread, lgrSnapshotThread]

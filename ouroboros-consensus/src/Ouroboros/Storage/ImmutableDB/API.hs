@@ -15,6 +15,8 @@ module Ouroboros.Storage.ImmutableDB.API
 
 import           Control.Monad.Class.MonadThrow
 
+import           Cardano.Prelude (NoUnexpectedThunks (..), ThunkInfo (..))
+
 import           Data.ByteString.Builder (Builder)
 import           Data.ByteString.Lazy (ByteString)
 import           Data.Function (on)
@@ -253,6 +255,11 @@ data Iterator hash m a = Iterator
     -- TODO how can we avoid this abstraction leak?
   , iteratorID      :: IteratorID
   }
+
+-- | This only contains actions, we don't check anything
+instance NoUnexpectedThunks (Iterator hash m a) where
+  showTypeOf _ = "Iterator"
+  whnfNoUnexpectedThunks _ctxt _itr = return NoUnexpectedThunks
 
 instance Functor m => Functor (Iterator hash m) where
   fmap f itr = Iterator{

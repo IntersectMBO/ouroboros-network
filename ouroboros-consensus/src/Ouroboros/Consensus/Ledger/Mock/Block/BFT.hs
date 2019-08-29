@@ -20,6 +20,7 @@ import           GHC.Generics (Generic)
 
 import           Cardano.Binary (ToCBOR (..))
 import           Cardano.Crypto.DSIGN
+import           Cardano.Prelude (NoUnexpectedThunks)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Ledger.Abstract
@@ -47,7 +48,7 @@ type SimpleBftHeader c c' = SimpleHeader c (SimpleBftExt c c')
 newtype SimpleBftExt c c' = SimpleBftExt {
       simpleBftExt :: BftFields c' (SignedSimpleBft c c')
     }
-  deriving (Condense, Show, Eq)
+  deriving (Condense, Show, Eq, NoUnexpectedThunks)
 
 -- | Part of the block that gets signed
 data SignedSimpleBft c c' = SignedSimpleBft {

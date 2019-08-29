@@ -821,11 +821,9 @@ deriving instance Generic Fingerprint
 deriving instance Generic ReaderNext
 deriving instance Generic IteratorId
 deriving instance Generic (Point blk)
-deriving instance Generic (Point.Block slot hash)
 deriving instance Generic (Chain blk)
 deriving instance Generic (ChainProducerState blk)
 deriving instance Generic (ReaderState blk)
-deriving instance Generic (ExtLedgerState blk)
 
 deriving instance ( ToExpr (ChainState (BlockProtocol blk))
                   , ToExpr (LedgerState blk)

@@ -13,6 +13,8 @@ module Ouroboros.Consensus.Util.SlotBounded (
 import           Codec.Serialise (Serialise)
 import           GHC.Generics (Generic)
 
+import           Cardano.Prelude (NoUnexpectedThunks)
+
 import           Ouroboros.Network.Block (SlotNo)
 
 -- | An item bounded to be valid within particular slots
@@ -20,7 +22,7 @@ data SlotBounded a = SlotBounded
   { sbLower   :: !SlotNo
   , sbUpper   :: !SlotNo
   , sbContent :: !a
-  } deriving (Eq, Functor, Show, Generic, Serialise)
+  } deriving (Eq, Functor, Show, Generic, Serialise, NoUnexpectedThunks)
 
 -- | Construct a slot bounded item.
 --

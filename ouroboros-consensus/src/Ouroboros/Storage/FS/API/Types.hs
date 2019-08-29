@@ -1,4 +1,7 @@
+{-# LANGUAGE DataKinds          #-}
 {-# LANGUAGE DeriveGeneric      #-}
+{-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE DerivingVia        #-}
 {-# LANGUAGE RecordWildCards    #-}
 {-# LANGUAGE StandaloneDeriving #-}
 
@@ -46,6 +49,9 @@ import           GHC.Stack
 import           System.FilePath
 import           System.IO (SeekMode (..))
 import qualified System.IO.Error as IO
+
+import           Cardano.Prelude (NoUnexpectedThunks (..),
+                     UseIsNormalFormNamed (..))
 
 import           Ouroboros.Consensus.Util.Condense
 
@@ -143,6 +149,7 @@ data Handle h = Handle {
     , handlePath :: !FsPath
     }
   deriving (Generic)
+  deriving NoUnexpectedThunks via UseIsNormalFormNamed "Handle" (Handle h)
 
 instance Eq h => Eq (Handle h) where
   (==) = (==) `on` handleRaw

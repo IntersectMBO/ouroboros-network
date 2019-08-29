@@ -1,3 +1,5 @@
+{-# LANGUAGE DeriveAnyClass      #-}
+{-# LANGUAGE DeriveGeneric       #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE RecordWildCards     #-}
@@ -37,6 +39,7 @@ import           Codec.CBOR.Write (toLazyByteString)
 import           Control.Exception (assert)
 import           Control.Monad (void, when)
 import           Control.Monad.Class.MonadThrow
+import           GHC.Generics (Generic)
 
 import           Data.Bifunctor (second)
 import qualified Data.ByteString.Lazy as BL
@@ -46,6 +49,8 @@ import qualified Data.Vector.Unboxed as V
 import           Data.Word (Word64)
 
 import           GHC.Stack (HasCallStack, callStack)
+
+import           Cardano.Prelude (NoUnexpectedThunks (..))
 
 import           Ouroboros.Storage.FS.API (HasFS (..), hGetAll, hPut, hPutAll,
                      withFile)
@@ -73,7 +78,7 @@ data Index hash = MkIndex
   { getOffsets :: !(V.Vector SlotOffset)
   , getEBBHash :: !(CurrentEBB hash)
     -- ^ Return the hash of the EBB, if the index stores one.
-  } deriving (Eq, Show)
+  } deriving (Eq, Show, Generic, NoUnexpectedThunks)
 
 -- | Return the number of slots in the index (the number of offsets - 1).
 --

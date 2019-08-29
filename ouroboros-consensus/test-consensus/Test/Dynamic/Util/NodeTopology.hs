@@ -122,9 +122,7 @@ coreNodeIdNeighbors (NodeTopology m) nid =
 
 -- | The edges in this topology
 --
-edgesNodeTopology ::
-     HasCallStack
-  => NodeTopology -> [(CoreNodeId, CoreNodeId)]
+edgesNodeTopology :: NodeTopology -> [(CoreNodeId, CoreNodeId)]
 edgesNodeTopology (NodeTopology m) =
     flip foldMap (Map.toList m) $ \(greater, lessers) ->
         map (flip (,) greater) (Set.toList lessers)
