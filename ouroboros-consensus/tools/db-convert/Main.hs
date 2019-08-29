@@ -48,7 +48,6 @@ import           Ouroboros.Consensus.Node.ProtocolInfo.Abstract (pInfoConfig,
                      pInfoInitLedger)
 import           Ouroboros.Consensus.Node.ProtocolInfo.Byron
 import           Ouroboros.Consensus.Protocol.Abstract (SecurityParam (..))
-import qualified Ouroboros.Consensus.Protocol.WithEBBs as WithEBBs
 import           Ouroboros.Consensus.Util.Condense (condense)
 import           Ouroboros.Consensus.Util.ResourceRegistry
 import qualified Ouroboros.Storage.ChainDB as ChainDB
@@ -204,11 +203,11 @@ validateChainDb dbDir cfg onlyImmDB verbose =
       (ChainDB.defaultArgs @blk (toFilePath dbDir))
         { ChainDB.cdbGenesis = return $ pInfoInitLedger byronProtocolInfo
         , ChainDB.cdbDecodeBlock = Byron.decodeByronBlock epochSlots
-        , ChainDB.cdbDecodeChainState = WithEBBs.decodeChainStateWithEBBs Byron.decodeByronChainState
+        , ChainDB.cdbDecodeChainState = Byron.decodeByronChainState
         , ChainDB.cdbDecodeHash = Byron.decodeByronHeaderHash
         , ChainDB.cdbDecodeLedger = Byron.decodeByronLedgerState
         , ChainDB.cdbEncodeBlock = Byron.encodeByronBlock
-        , ChainDB.cdbEncodeChainState = WithEBBs.encodeChainStateWithEBBs Byron.encodeByronChainState
+        , ChainDB.cdbEncodeChainState = Byron.encodeByronChainState
         , ChainDB.cdbEncodeHash = Byron.encodeByronHeaderHash
         , ChainDB.cdbEncodeLedger = Byron.encodeByronLedgerState
           -- Policy

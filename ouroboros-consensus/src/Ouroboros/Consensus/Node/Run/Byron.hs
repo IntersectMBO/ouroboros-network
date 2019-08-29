@@ -4,13 +4,13 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 module Ouroboros.Consensus.Node.Run.Byron () where
 
-import           Data.Reflection (given)
 import           Data.Coerce (coerce)
+import           Data.Reflection (given)
 
-import           Cardano.Chain.Slotting (EpochSlots (..))
-import           Cardano.Chain.ProtocolConstants (kEpochSlots)
 import qualified Cardano.Chain.Block as Cardano.Block
 import qualified Cardano.Chain.Genesis as Genesis
+import           Cardano.Chain.ProtocolConstants (kEpochSlots)
+import           Cardano.Chain.Slotting (EpochSlots (..))
 
 import           Ouroboros.Consensus.BlockchainTime (SystemStart (..))
 import           Ouroboros.Consensus.Ledger.Byron
@@ -55,7 +55,7 @@ instance ByronGiven => RunNode (ByronBlockOrEBB ByronConfig) where
   nodeEncodeGenTxId      = encodeByronGenTxId
   nodeEncodeHeaderHash   = const encodeByronHeaderHash
   nodeEncodeLedgerState  = const encodeByronLedgerState
-  nodeEncodeChainState   = const (encodeChainStateWithEBBs encodeByronChainState)
+  nodeEncodeChainState   = const encodeByronChainState
   nodeEncodeApplyTxError = const encodeByronApplyTxError
 
   nodeDecodeBlock        = const (decodeByronBlock given)
@@ -64,7 +64,7 @@ instance ByronGiven => RunNode (ByronBlockOrEBB ByronConfig) where
   nodeDecodeGenTxId      = decodeByronGenTxId
   nodeDecodeHeaderHash   = const decodeByronHeaderHash
   nodeDecodeLedgerState  = const decodeByronLedgerState
-  nodeDecodeChainState   = const (decodeChainStateWithEBBs decodeByronChainState)
+  nodeDecodeChainState   = const decodeByronChainState
   nodeDecodeApplyTxError = const decodeByronApplyTxError
 
 extractGenesisData :: NodeConfig (WithEBBs (ExtNodeConfig ByronConfig p))
