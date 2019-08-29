@@ -271,10 +271,10 @@ import           Control.Monad.Class.MonadThrow
 -- the scope of the resources created within, and hence their maximum lifetimes.
 data ResourceRegistry m = ResourceRegistry {
       -- | Context in which the registry was created
-      registryContext :: Context m
+      registryContext :: !(Context m)
 
       -- | Registry state
-    , registryState   :: TVar m (RegistryState m)
+    , registryState   :: !(TVar m (RegistryState m))
     }
 
 {-------------------------------------------------------------------------------
@@ -313,13 +313,13 @@ data RegistryState m = RegistryState {
 -- | Information recorded when we close the registry
 data RegistryClosed = RegistryClosed {
       -- | CallStack to the call to 'close'
-      registryCloseCallStack :: PrettyCallStack
+      registryCloseCallStack :: !PrettyCallStack
     }
 
 -- | Resource key
 --
 -- Resource keys are tied to a particular registry.
-data ResourceKey m = ResourceKey (ResourceRegistry m) ResourceId
+data ResourceKey m = ResourceKey !(ResourceRegistry m) !ResourceId
 
 -- | Resource ID
 --
@@ -332,10 +332,10 @@ newtype ResourceId = ResourceId Int
 -- | Information about a resource
 data Resource m = Resource {
       -- | Context in which the resource was created
-      resourceContext :: Context m
+      resourceContext :: !(Context m)
 
       -- | Deallocate the resource
-    , resourceRelease :: Release m
+    , resourceRelease :: !(Release m)
     }
 
 -- | Newtype wrapper just for the show instance
@@ -430,16 +430,16 @@ updateState rr f =
 data RegistryClosedException =
     forall m. MonadFork m => RegistryClosedException {
         -- | The context in which the registry was created
-        registryClosedRegistryContext :: Context m
+        registryClosedRegistryContext :: !(Context m)
 
         -- | Callstack to the call to 'close'
         --
         -- Note that 'close' can only be called from the same thread that
         -- created the registry.
-      , registryClosedCloseCallStack  :: PrettyCallStack
+      , registryClosedCloseCallStack  :: !PrettyCallStack
 
         -- | Context of the call resulting in the exception
-      , registryClosedAllocContext    :: Context m
+      , registryClosedAllocContext    :: !(Context m)
       }
 
 deriving instance Show RegistryClosedException
@@ -654,10 +654,10 @@ unsafeRelease (ResourceKey rr rid) = do
 --
 -- The internals of this type are not exported.
 data Thread m a = MonadFork m => Thread {
-      threadId         :: ThreadId m
-    , threadResourceId :: ResourceId
-    , threadAsync      :: Async m a
-    , threadRegistry   :: ResourceRegistry m
+      threadId         :: !(ThreadId m)
+    , threadResourceId :: !ResourceId
+    , threadAsync      :: !(Async m a)
+    , threadRegistry   :: !(ResourceRegistry m)
     }
 
 -- | 'Eq' instance for 'Thread' compares 'threadId' only.
@@ -784,19 +784,19 @@ data ResourceRegistryThreadException =
     -- reference counting
     forall m. MonadFork m => ResourceRegistryUsedFromUnknownThread {
           -- | Information about the context in which the registry was created
-          resourceRegistryCreatedIn :: Context m
+          resourceRegistryCreatedIn :: !(Context m)
 
           -- | The context in which it was used
-        , resourceRegistryUsedIn    :: Context m
+        , resourceRegistryUsedIn    :: !(Context m)
         }
 
     -- | Registry closed from different threat than that created it
   | forall m. MonadFork m => ResourceRegistryClosedFromWrongThread {
           -- | Information about the context in which the registry was created
-          resourceRegistryCreatedIn :: Context m
+          resourceRegistryCreatedIn :: !(Context m)
 
           -- | The context in which it was used
-        , resourceRegistryUsedIn    :: Context m
+        , resourceRegistryUsedIn    :: !(Context m)
         }
 
 deriving instance Show ResourceRegistryThreadException
@@ -808,10 +808,10 @@ instance Exception ResourceRegistryThreadException
 
 data Context m = MonadFork m => Context {
       -- | CallStack in which it was created
-      contextCallStack :: PrettyCallStack
+      contextCallStack :: !PrettyCallStack
 
       -- | Thread that created the registry or resource
-    , contextThreadId  :: ThreadId m
+    , contextThreadId  :: !(ThreadId m)
     }
 
 deriving instance Show (Context m)
