@@ -44,6 +44,7 @@ import qualified Cardano.Chain.Genesis as CC.Genesis
 import           Cardano.Crypto.DSIGN.Class
 
 import           Ouroboros.Network.Block (HasHeader (..), SlotNo (..))
+import           Ouroboros.Network.Point (WithOrigin (At))
 
 import           Ouroboros.Consensus.Crypto.DSIGN.Cardano
 import           Ouroboros.Consensus.NodeId (CoreNodeId (..))
@@ -122,12 +123,6 @@ data PBftParams = PBftParams {
       -- | Number of core nodes
     , pbftNumNodes           :: Word64
 
-      -- TODO These will ultimately be protocol parameters, but at the moment such
-      -- parameters are missing in the ledger.
-
-      -- | Size of the window over which to check the proportion of signed keys.
-    , pbftSignatureWindow    :: Word64
-
       -- | Signature threshold. This represents the proportion of blocks in a
       -- pbftSignatureWindow-sized window which may be signed by any single key.
     , pbftSignatureThreshold :: Double
@@ -189,27 +184,25 @@ instance (PBftCrypto c, Typeable c) => OuroborosTag (PBft c) where
         Right () -> return ()
         Left err -> throwError $ PBftInvalidSignature err
 
-      let signers  = CS.prune winSize chainState
-          lastSlot = CS.lastSlot signers
-
       -- FIXME confirm that non-strict inequality is ok in general.
       -- It's here because EBBs have the same slot as the first block of their
       -- epoch.
-      unless (blockSlot b >= lastSlot)
+      unless (At (blockSlot b) >= CS.lastSlot chainState)
         $ throwError PBftInvalidSlot
 
       case Bimap.lookupR (hashVerKey pbftIssuer) dms of
         Nothing -> throwError $ PBftNotGenesisDelegate (hashVerKey pbftIssuer) lv
         Just gk -> do
-          let totalSigners = CS.size          signers
-              gkSigners    = CS.countSignedBy signers gk
+          let chainState'  = CS.prune winSize $ CS.insert gk (blockSlot b) $ chainState
+              totalSigners = CS.size          chainState'
+              gkSigners    = CS.countSignedBy chainState' gk
           when (totalSigners >= winSize && gkSigners > wt)
-            $ throwError (PBftExceededSignThreshold totalSigners gkSigners)
-          return $! CS.insert gk (blockSlot b) $ CS.prune (winSize + 2*k) chainState
+            $ throwError (PBftExceededSignThreshold (show (pbftSecurityParam, chainState')) totalSigners gkSigners)
+          return $! chainState'
     where
       PBftParams{..} = pbftParams
       PBftFields{..} = headerPBftFields cfg b
-      winSize = fromIntegral pbftSignatureWindow
+      winSize = k
       SecurityParam (fromIntegral -> k) = pbftSecurityParam
       wt = floor $ pbftSignatureThreshold * fromIntegral winSize
 
@@ -250,7 +243,7 @@ data PBftValidationErr c
   -- - The former is greater than or equal to the PBFT signature window.
   -- - The latter exceeds (strictly) the PBFT signature window multiplied by
   --   the PBFT signature threshold (rounded down).
-  | PBftExceededSignThreshold Int Int
+  | PBftExceededSignThreshold String Int Int
   | PBftInvalidSlot
 
 deriving instance (Show (PBftLedgerView c), PBftCrypto c) => Show (PBftValidationErr c)

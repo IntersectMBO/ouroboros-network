@@ -37,9 +37,8 @@ prop_simple_pbft_convergence
         (roundRobinLeaderSchedule numCoreNodes numSlots)
         testOutput
   where
-    sigWin = fromIntegral $ nn * 10
     sigThd = (1.0 / fromIntegral nn) + 0.1
-    params = PBftParams k (fromIntegral nn) sigWin sigThd
+    params = PBftParams k (fromIntegral nn) sigThd
 
     testOutput =
         runTestNetwork

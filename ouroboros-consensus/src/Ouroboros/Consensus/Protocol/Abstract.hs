@@ -190,7 +190,12 @@ class ( Show (ChainState    p)
   -- and will yield 'Nothing'.
   rewindChainState :: NodeConfig p
                    -> ChainState p
-                   -> WithOrigin SlotNo -- ^ Slot to rewind to.
+                   -> WithOrigin SlotNo
+                   -- ^ Slot to rewind to
+                   --
+                   -- This should be the state at the /end/ of the specified
+                   -- slot (i.e., after the block in that slot, if any, has
+                   -- been applied).
                    -> Maybe (ChainState p)
 
 -- | Protocol security parameter
@@ -203,7 +208,7 @@ class ( Show (ChainState    p)
 -- NOTE: This talks about the number of /blocks/ we can roll back, not
 -- the number of /slots/.
 newtype SecurityParam = SecurityParam { maxRollbacks :: Word64 }
-  deriving (Eq)
+  deriving (Show, Eq)
 
 {-------------------------------------------------------------------------------
   State monad

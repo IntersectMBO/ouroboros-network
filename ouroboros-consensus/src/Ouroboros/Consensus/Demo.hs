@@ -39,7 +39,6 @@ defaultDemoPBftParams :: PBftParams
 defaultDemoPBftParams = PBftParams {
       pbftSecurityParam      = defaultSecurityParam
     , pbftNumNodes           = nn
-    , pbftSignatureWindow    = fromIntegral $ nn * 10
     , pbftSignatureThreshold = (1.0 / fromIntegral nn) + 0.1
     }
   where
