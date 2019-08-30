@@ -180,9 +180,12 @@ test-suite test-network
                        Ouroboros.Network.Protocol.BlockFetch.Type
                        Ouroboros.Network.Protocol.BlockFetch.Test
                        Ouroboros.Network.Protocol.ChainSync.Client
+                       Ouroboros.Network.Protocol.ChainSync.ClientPipelined
                        Ouroboros.Network.Protocol.ChainSync.Codec
                        Ouroboros.Network.Protocol.ChainSync.Direct
+                       Ouroboros.Network.Protocol.ChainSync.DirectPipelined
                        Ouroboros.Network.Protocol.ChainSync.Examples
+                       Ouroboros.Network.Protocol.ChainSync.ExamplesPipelined
                        Ouroboros.Network.Protocol.ChainSync.Server
                        Ouroboros.Network.Protocol.ChainSync.Type
                        Ouroboros.Network.Protocol.ChainSync.Test

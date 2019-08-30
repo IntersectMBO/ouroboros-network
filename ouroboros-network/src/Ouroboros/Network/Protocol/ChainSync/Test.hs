@@ -14,10 +14,12 @@ import           Control.Monad (unless, void)
 import qualified Control.Monad.ST as ST
 import           Data.ByteString.Lazy (ByteString)
 
+import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadST
 import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
+import           Control.Monad.Class.MonadSay
 import           Control.Tracer (nullTracer)
 
 import           Control.Monad.IOSim (runSimOrThrow)
@@ -25,19 +27,24 @@ import           Control.Monad.IOSim (runSimOrThrow)
 import           Network.TypedProtocol.Codec
 import           Network.TypedProtocol.Channel
 import           Network.TypedProtocol.Driver
-import           Network.TypedProtocol.Proofs (connect)
+import           Network.TypedProtocol.Proofs (connect, connectPipelined)
 
 import           Ouroboros.Network.Channel
 
 import           Ouroboros.Network.Block (BlockNo, StandardHash)
-import           Ouroboros.Network.MockChain.Chain (Point)
+import           Ouroboros.Network.MockChain.Chain (Point, Chain)
 import qualified Ouroboros.Network.MockChain.Chain as Chain
 import qualified Ouroboros.Network.MockChain.ProducerState as ChainProducerState
 
 import           Ouroboros.Network.Protocol.ChainSync.Client
+import           Ouroboros.Network.Protocol.ChainSync.ClientPipelined
 import           Ouroboros.Network.Protocol.ChainSync.Codec
 import           Ouroboros.Network.Protocol.ChainSync.Direct
+import           Ouroboros.Network.Protocol.ChainSync.DirectPipelined
 import qualified Ouroboros.Network.Protocol.ChainSync.Examples as ChainSyncExamples
+import           Ouroboros.Network.Protocol.ChainSync.Examples (Client)
+import qualified Ouroboros.Network.Protocol.ChainSync.ExamplesPipelined as ChainSyncExamples
+import           Ouroboros.Network.Protocol.ChainSync.ExamplesPipelined (Tip)
 import           Ouroboros.Network.Protocol.ChainSync.Server
 import           Ouroboros.Network.Protocol.ChainSync.Type
 
@@ -57,10 +64,25 @@ tests = testGroup "Ouroboros.Network.Protocol.ChainSyncProtocol"
   , testProperty "direct IO" propChainSyncDirectIO
   , testProperty "connect ST" propChainSyncConnectST
   , testProperty "connect IO" propChainSyncConnectIO
+  , testProperty "directPipelinedMax ST" propChainSyncPipeliendMaxDirectST
+  , testProperty "directPipelinedMax IO" propChainSyncPipeliendMaxDirectIO
+  , testProperty "directPipelinedMin ST" propChainSyncPipeliendMinDirectST
+  , testProperty "directPipelinedMin IO" propChainSyncPipeliendMinDirectIO
+  , testProperty "connectPipelinedMax ST" propChainSyncPipelinedMaxConnectST
+  , testProperty "connectPipelinedMin ST" propChainSyncPipelinedMinConnectST
+  , testProperty "connectPipelinedMax IO" propChainSyncPipelinedMaxConnectIO
+  , testProperty "connectPipelinedMin IO" propChainSyncPipelinedMinConnectIO
   , testProperty "codec"          prop_codec_ChainSync
   , testProperty "codec 2-splits" prop_codec_splits2_ChainSync
   , testProperty "codec 3-splits" $ withMaxSuccess 30 prop_codec_splits3_ChainSync
   , testProperty "demo ST" propChainSyncDemoST
+  , testProperty "demo IO" propChainSyncDemoIO
+  , testProperty "demoPipelinedMax ST" propChainSyncDemoPipelinedMaxST
+  , testProperty "demoPipelinedMax IO" propChainSyncDemoPipelinedMaxIO
+  , testProperty "demoPipelinedMin ST" propChainSyncDemoPipelinedMinST
+  , testProperty "demoPipelinedMin IO" propChainSyncDemoPipelinedMinIO
+  , testProperty "demoPipelinedMin IO (buffered)"
+                                       propChainSyncDemoPipelinedMinBufferedIO
   , testProperty "demo IO" propChainSyncDemoIO
   , testProperty "pipe demo" propChainSyncPipe
   ]
@@ -141,6 +163,155 @@ propChainSyncConnectIO cps =
         (\ser cli ->
             void $  connect (chainSyncClientPeer cli) (chainSyncServerPeer ser)
         ) cps
+
+
+--
+-- Properties of pipelined client
+--
+
+-- | An experiment in which the client has a fork of the server chain.  The
+-- experiment finishes successfully if the client receives the server's chain.
+--
+chainSyncPipelinedForkExperiment
+  :: forall m.
+     ( MonadST m
+     , MonadSTM m
+     )
+  => (forall a b. ChainSyncServer Block (Tip Block) m a
+      -> ChainSyncClientPipelined Block (Tip Block) m b
+      -> m ())
+  -> (forall a. StrictTVar m (Chain Block)
+      -> Client Block (Tip Block) m a
+      -> ChainSyncClientPipelined Block (Tip Block) m a)
+  -> ChainProducerStateForkTest
+  -> m Bool
+chainSyncPipelinedForkExperiment run mkClient (ChainProducerStateForkTest cps chain) = do
+  let pchain = ChainProducerState.producerChain cps
+  cpsVar   <- atomically $ newTVar cps
+  chainVar <- atomically $ newTVar chain
+  doneVar  <- atomically $ newTVar False
+  let server = ChainSyncExamples.chainSyncServerExample
+        (error "chainSyncServerExample: lazy in the result type")
+        cpsVar
+      client :: ChainSyncClientPipelined Block (Tip Block) m ()
+      client = mkClient chainVar (testClient doneVar (Chain.headPoint pchain))
+  _ <- run server client
+
+  cchain <- atomically $ readTVar chainVar
+  return (pchain == cchain)
+
+--
+-- Piplined direct tests
+--
+
+propChainSyncPipeliendMaxDirectST :: ChainProducerStateForkTest
+                                  -> Positive Int
+                                  -> Bool
+propChainSyncPipeliendMaxDirectST cps (Positive omax) =
+    runSimOrThrow $
+      chainSyncPipelinedForkExperiment
+        ((fmap . fmap) void directPipelined)
+        (ChainSyncExamples.chainSyncClientPipelinedMax omax)
+        cps
+
+propChainSyncPipeliendMaxDirectIO :: ChainProducerStateForkTest
+                                  -> Positive Int
+                                  -> Property
+propChainSyncPipeliendMaxDirectIO cps (Positive omax) =
+    ioProperty $
+      chainSyncPipelinedForkExperiment
+        ((fmap . fmap) void directPipelined)
+        (ChainSyncExamples.chainSyncClientPipelinedMax omax)
+        cps
+
+propChainSyncPipeliendMinDirectST :: ChainProducerStateForkTest
+                                  -> Positive Int
+                                  -> Bool
+propChainSyncPipeliendMinDirectST cps (Positive omax) =
+    runSimOrThrow $
+      chainSyncPipelinedForkExperiment
+        ((fmap . fmap) void directPipelined)
+        (ChainSyncExamples.chainSyncClientPipelinedMin omax)
+        cps
+
+propChainSyncPipeliendMinDirectIO :: ChainProducerStateForkTest
+                                  -> Positive Int
+                                  -> Property
+propChainSyncPipeliendMinDirectIO cps (Positive omax) =
+    ioProperty $
+      chainSyncPipelinedForkExperiment
+        ((fmap . fmap) void directPipelined)
+        (ChainSyncExamples.chainSyncClientPipelinedMin omax)
+        cps
+
+--
+-- Piplined connect tests
+--
+
+propChainSyncPipelinedMaxConnectST :: ChainProducerStateForkTest
+                                   -> [Bool]
+                                   -> Positive Int
+                                   -> Bool
+propChainSyncPipelinedMaxConnectST cps choices (Positive omax) =
+    runSimOrThrow $
+      chainSyncPipelinedForkExperiment
+        (\ser cli ->
+            void $ connectPipelined
+              choices
+              (chainSyncClientPeerPipelined cli)
+              (chainSyncServerPeer ser)
+        )
+        (ChainSyncExamples.chainSyncClientPipelinedMax omax)
+        cps
+
+
+propChainSyncPipelinedMinConnectST :: ChainProducerStateForkTest
+                                   -> [Bool]
+                                   -> Positive Int
+                                   -> Bool
+propChainSyncPipelinedMinConnectST cps choices (Positive omax) =
+    runSimOrThrow $
+      chainSyncPipelinedForkExperiment
+        (\ser cli ->
+            void $ connectPipelined
+              choices
+              (chainSyncClientPeerPipelined cli)
+              (chainSyncServerPeer ser)
+        )
+        (ChainSyncExamples.chainSyncClientPipelinedMin omax)
+        cps
+
+propChainSyncPipelinedMaxConnectIO :: ChainProducerStateForkTest
+                                   -> [Bool]
+                                   -> Positive Int
+                                   -> Property
+propChainSyncPipelinedMaxConnectIO cps choices (Positive omax) =
+    ioProperty $
+      chainSyncPipelinedForkExperiment
+        (\ser cli ->
+            void $ connectPipelined
+              choices
+              (chainSyncClientPeerPipelined cli)
+              (chainSyncServerPeer ser)
+        )
+        (ChainSyncExamples.chainSyncClientPipelinedMax omax)
+        cps
+
+propChainSyncPipelinedMinConnectIO :: ChainProducerStateForkTest
+                                   -> [Bool]
+                                   -> Positive Int
+                                   -> Property
+propChainSyncPipelinedMinConnectIO cps choices (Positive omax) =
+    ioProperty $
+      chainSyncPipelinedForkExperiment
+        (\ser cli ->
+            void $ connectPipelined
+              choices
+              (chainSyncClientPeerPipelined cli)
+              (chainSyncServerPeer ser)
+        )
+        (ChainSyncExamples.chainSyncClientPipelinedMin omax)
+        cps
 
 instance Arbitrary (AnyMessageAndAgency (ChainSync BlockHeader (Point BlockHeader, BlockNo))) where
   arbitrary = oneof
@@ -287,3 +458,111 @@ propChainSyncPipe cps =
   ioProperty $ do
     (clientChan, serverChan) <- createPipeConnectedChannels
     chainSyncDemo clientChan serverChan cps
+
+--
+-- Piplined demo
+--
+
+chainSyncDemoPipelined
+  :: forall m.
+     ( MonadST    m
+     , MonadSTM   m
+     , MonadFork  m
+     , MonadAsync m
+     , MonadThrow m
+     , MonadSay   m
+     )
+  => Channel m ByteString
+  -> Channel m ByteString
+  -> (forall a. StrictTVar m (Chain Block)
+      -> Client Block (Tip Block) m a
+      -> ChainSyncClientPipelined Block (Tip Block) m a)
+  -> ChainProducerStateForkTest
+  -> m Property
+chainSyncDemoPipelined clientChan serverChan mkClient (ChainProducerStateForkTest cps chain) = do
+  let pchain = ChainProducerState.producerChain cps
+  cpsVar   <- atomically $ newTVar cps
+  chainVar <- atomically $ newTVar chain
+  doneVar  <- atomically $ newTVar False
+
+  let server :: ChainSyncServer Block (Tip Block) m a
+      server = ChainSyncExamples.chainSyncServerExample
+        (error "chainSyncServerExample: lazy in the result type")
+        cpsVar
+
+      client :: ChainSyncClientPipelined Block (Tip Block) m ()
+      client = mkClient chainVar (testClient doneVar (Chain.headPoint pchain))
+
+  void $ fork (void $ runPeer nullTracer codec "server" serverChan (chainSyncServerPeer server))
+  void $ fork (void $ runPipelinedPeer nullTracer codec "client" clientChan (chainSyncClientPeerPipelined client))
+
+  atomically $ do
+    done <- readTVar doneVar
+    unless done retry
+
+  cchain <- atomically $ readTVar chainVar
+  return (pchain === cchain)
+
+propChainSyncDemoPipelinedMaxST
+  :: ChainProducerStateForkTest
+  -> Positive Int
+  -> Property
+propChainSyncDemoPipelinedMaxST cps (Positive omax) =
+  runSimOrThrow $ do
+    (clientChan, serverChan) <- createPipelineTestChannels (fromIntegral omax)
+    chainSyncDemoPipelined
+      clientChan serverChan
+      (ChainSyncExamples.chainSyncClientPipelinedMax omax)
+      cps
+
+propChainSyncDemoPipelinedMaxIO
+  :: ChainProducerStateForkTest
+  -> Positive Int
+  -> Property
+propChainSyncDemoPipelinedMaxIO cps (Positive omax) =
+  ioProperty $ do
+    (clientChan, serverChan) <- createPipelineTestChannels (fromIntegral omax)
+    chainSyncDemoPipelined
+      clientChan serverChan
+      (ChainSyncExamples.chainSyncClientPipelinedMax omax)
+      cps
+
+propChainSyncDemoPipelinedMinST
+  :: ChainProducerStateForkTest
+  -> Positive Int
+  -> Property
+propChainSyncDemoPipelinedMinST cps (Positive omax) =
+  runSimOrThrow $ do
+    (clientChan, serverChan) <- createPipelineTestChannels (fromIntegral omax)
+    chainSyncDemoPipelined
+      clientChan serverChan
+      (ChainSyncExamples.chainSyncClientPipelinedMin omax)
+      cps
+
+propChainSyncDemoPipelinedMinIO
+  :: ChainProducerStateForkTest
+  -> Positive Int
+  -> Property
+propChainSyncDemoPipelinedMinIO cps (Positive omax) =
+  ioProperty $ do
+    (clientChan, serverChan) <- createPipelineTestChannels (fromIntegral omax)
+    chainSyncDemoPipelined
+      clientChan serverChan
+      (ChainSyncExamples.chainSyncClientPipelinedMin omax)
+      cps
+
+propChainSyncDemoPipelinedMinBufferedIO
+  :: ChainProducerStateForkTest
+  -> Positive Int
+  -> Positive Int
+  -> Property
+propChainSyncDemoPipelinedMinBufferedIO cps (Positive n) (Positive m) =
+    ioProperty $ do
+      (clientChan, serverChan) <- createConnectedBufferedChannels (fromIntegral omin)
+      chainSyncDemoPipelined
+        clientChan serverChan
+        (ChainSyncExamples.chainSyncClientPipelinedMin omax)
+        cps
+  where
+    omin = min n m
+    omax = max n m

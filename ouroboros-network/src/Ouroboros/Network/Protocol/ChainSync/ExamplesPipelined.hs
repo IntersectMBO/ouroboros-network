@@ -12,7 +12,7 @@ module Ouroboros.Network.Protocol.ChainSync.ExamplesPipelined
     , chainSyncClientPipelinedMin
     ) where
 
-import           Control.Monad.Class.MonadSTM
+import           Control.Monad.Class.MonadSTM.Strict
 
 import           Network.TypedProtocol.Pipelined
 
@@ -156,7 +156,7 @@ chainSyncClientPipelined
          , MonadSTM m
          )
       => (forall n. MkPipelineDecision n)
-      -> TVar m (Chain header)
+      -> StrictTVar m (Chain header)
       -> Client header (Tip header) m a
       -> ChainSyncClientPipelined header (Tip header) m a
 chainSyncClientPipelined pipelineDecision chainvar =
@@ -367,7 +367,7 @@ chainSyncClientPipelinedMax
          )
       => Int
       -- ^ maximal number of outstanding requests
-      -> TVar m (Chain header)
+      -> StrictTVar m (Chain header)
       -> Client header (Tip header) m a
       -> ChainSyncClientPipelined header (Tip header) m a
 chainSyncClientPipelinedMax omax = chainSyncClientPipelined (pipelineDecisionMax omax)
@@ -420,7 +420,7 @@ chainSyncClientPipelinedMin
          )
       => Int
       -- ^ maximal number of outstanding requests
-      -> TVar m (Chain header)
+      -> StrictTVar m (Chain header)
       -> Client header (Tip header) m a
       -> ChainSyncClientPipelined header (Tip header) m a
 chainSyncClientPipelinedMin omax = chainSyncClientPipelined (pipelineDecisionMin omax)
