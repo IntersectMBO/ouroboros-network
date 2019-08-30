@@ -30,7 +30,7 @@ import           Data.Word (Word16)
 
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork (MonadFork)
-import           Control.Monad.Class.MonadSTM
+import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 import           Control.Tracer
 
@@ -85,7 +85,7 @@ data NodeKernel m peer blk = NodeKernel {
     , getFetchClientRegistry :: FetchClientRegistry peer (Header blk) blk m
 
       -- | Read the current candidates
-    , getNodeCandidates      :: TVar m (Map peer (TVar m (CandidateState blk)))
+    , getNodeCandidates      :: StrictTVar m (Map peer (StrictTVar m (CandidateState blk)))
 
       -- | The node's tracers
     , getTracers             :: Tracers m peer blk
@@ -187,8 +187,8 @@ data InternalState m peer blk = IS {
     , chainDB             :: ChainDB m blk
     , blockFetchInterface :: BlockFetchConsensusInterface peer (Header blk) blk m
     , fetchClientRegistry :: FetchClientRegistry peer (Header blk) blk m
-    , varCandidates       :: TVar m (Map peer (TVar m (CandidateState blk)))
-    , varState            :: TVar m (NodeState (BlockProtocol blk))
+    , varCandidates       :: StrictTVar m (Map peer (StrictTVar m (CandidateState blk)))
+    , varState            :: StrictTVar m (NodeState (BlockProtocol blk))
     , mempool             :: Mempool m blk TicketNo
     }
 
@@ -354,7 +354,7 @@ forkBlockProduction IS{..} =
                -- If there is no block before it, so use genesis.
              -> (genesisPoint, genesisBlockNo)
 
-    runProtocol :: TVar m ChaChaDRG -> ProtocolM blk m a -> STM m a
+    runProtocol :: StrictTVar m ChaChaDRG -> ProtocolM blk m a -> STM m a
     runProtocol varDRG = simOuroborosStateT varState
                        $ simChaChaT varDRG
                        $ id

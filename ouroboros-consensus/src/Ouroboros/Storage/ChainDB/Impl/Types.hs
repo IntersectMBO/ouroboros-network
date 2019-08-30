@@ -42,7 +42,7 @@ import           Data.Time.Clock (DiffTime)
 import           Data.Typeable (Typeable)
 import           GHC.Generics (Generic)
 
-import           Control.Monad.Class.MonadSTM
+import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 
 import           Control.Tracer
@@ -72,7 +72,7 @@ import qualified Ouroboros.Storage.ChainDB.Impl.LgrDB as LgrDB
 import           Ouroboros.Storage.ChainDB.Impl.VolDB (VolDB)
 
 -- | A handle to the internal ChainDB state
-newtype ChainDbHandle m blk = CDBHandle (TVar m (ChainDbState m blk))
+newtype ChainDbHandle m blk = CDBHandle (StrictTVar m (ChainDbState m blk))
 
 -- | Check if the ChainDB is open, if so, executing the given function on the
 -- 'ChainDbEnv', otherwise, throw a 'CloseDBError'.
@@ -148,7 +148,7 @@ data ChainDbEnv m blk = CDB
   { cdbImmDB          :: ImmDB m blk
   , cdbVolDB          :: VolDB m blk
   , cdbLgrDB          :: LgrDB m blk
-  , cdbChain          :: TVar m (AnchoredFragment (Header blk))
+  , cdbChain          :: StrictTVar m (AnchoredFragment (Header blk))
     -- ^ Contains the current chain fragment.
     --
     -- INVARIANT: the anchor point of this fragment is the tip of the
@@ -161,7 +161,7 @@ data ChainDbEnv m blk = CDB
     -- Note that this fragment might also be /longer/ than @k@ headers,
     -- because the oldest blocks from the fragment might not yet have been
     -- copied from the VolatileDB to the ImmutableDB.
-  , cdbImmBlockNo     :: TVar m BlockNo
+  , cdbImmBlockNo     :: StrictTVar m BlockNo
     -- ^ The block number corresponding to the block @k@ blocks back. This is
     -- the most recent \"immutable\" block according to the protocol, i.e., a
     -- block that cannot be rolled back.
@@ -181,7 +181,7 @@ data ChainDbEnv m blk = CDB
     --
     -- Note that the \"immutable\" block will /never/ be /more/ than @k@
     -- blocks back, as opposed to the anchor point of 'cdbChain'.
-  , cdbIterators      :: TVar m (Map IteratorId (m ()))
+  , cdbIterators      :: StrictTVar m (Map IteratorId (m ()))
     -- ^ The iterators.
     --
     -- This maps the 'IteratorId's of each open 'Iterator' to a function that,
@@ -189,14 +189,14 @@ data ChainDbEnv m blk = CDB
     -- ChainDB: the open file handles used by iterators can be closed, and the
     -- iterators themselves are closed so that it is impossible to use an
     -- iterator after closing the ChainDB itself.
-  , cdbReaders        :: TVar m (Map ReaderId (TVar m (ReaderState m blk)))
+  , cdbReaders        :: StrictTVar m (Map ReaderId (StrictTVar m (ReaderState m blk)))
     -- ^ The readers.
     --
     -- INVARIANT: the 'readerPoint' of each reader is 'withinFragmentBounds'
     -- of the current chain fragment (retrieved 'cdbGetCurrentChain', not by
     -- reading 'cdbChain' directly).
   , cdbNodeConfig     :: NodeConfig (BlockProtocol blk)
-  , cdbInvalid        :: TVar m (Map (HeaderHash blk) SlotNo, Fingerprint)
+  , cdbInvalid        :: StrictTVar m (Map (HeaderHash blk) SlotNo, Fingerprint)
     -- ^ Hashes corresponding to invalid blocks. This is used to ignore these
     -- blocks during chain selection.
     --
@@ -206,9 +206,9 @@ data ChainDbEnv m blk = CDB
     --
     -- The 'Fingerprint' changes every time a hash is added to the map, but
     -- not when hashes are garbage-collected from the map.
-  , cdbNextIteratorId :: TVar m IteratorId
-  , cdbNextReaderId   :: TVar m ReaderId
-  , cdbCopyLock       :: TMVar m ()
+  , cdbNextIteratorId :: StrictTVar m IteratorId
+  , cdbNextReaderId   :: StrictTVar m ReaderId
+  , cdbCopyLock       :: StrictTMVar m ()
     -- ^ Lock used to ensure that 'copyToImmDB' is not executed more than
     -- once concurrentlycopyToImmDB.
     --
@@ -221,7 +221,7 @@ data ChainDbEnv m blk = CDB
   , cdbGcDelay        :: DiffTime
     -- ^ How long to wait between copying a block from the VolatileDB to
     -- ImmutableDB and garbage collecting it from the VolatileDB
-  , cdbBgThreads      :: TVar m [Thread m ()]
+  , cdbBgThreads      :: StrictTVar m [Thread m ()]
     -- ^ The background threads.
   , cdbEpochInfo      :: EpochInfo m
   }
@@ -251,7 +251,7 @@ data Internal m blk = Internal
     -- ^ Perform garbage collection for blocks <= the given 'SlotNo'.
   , intUpdateLedgerSnapshots :: m ()
     -- ^ Write a new LedgerDB snapshot to disk and remove the oldest one(s).
-  , intBgThreads             :: TVar m [Thread m ()]
+  , intBgThreads             :: StrictTVar m [Thread m ()]
       -- ^ The background threads.
   }
 

@@ -16,7 +16,7 @@ import           Data.ByteString.Lazy (ByteString)
 
 import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadST
-import           Control.Monad.Class.MonadSTM
+import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 import           Control.Tracer (nullTracer)
 
@@ -68,7 +68,7 @@ tests = testGroup "Ouroboros.Network.Protocol.ChainSyncProtocol"
 --
 testClient
   :: MonadSTM m
-  => TVar m Bool
+  => StrictTVar m Bool
   -> Point Block
   -> ChainSyncExamples.Client Block m ()
 testClient doneVar tip =

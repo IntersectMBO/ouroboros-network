@@ -22,7 +22,7 @@ import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
 
 import           Control.Monad.Class.MonadAsync (MonadAsync)
-import           Control.Monad.Class.MonadSTM
+import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.IOSim (runSimOrThrow)
 
 import           Control.Tracer (Tracer (..))
@@ -420,7 +420,7 @@ withTestMempool setup@TestSetup { testLedgerState, testInitialTxs } prop =
       -- Set up the Tracer
       varEvents <- atomically $ newTVar []
       -- TODO use SimM's dynamicTracer
-      let tracer = Tracer $ \ev -> atomically $ modifyTVar' varEvents (ev:)
+      let tracer = Tracer $ \ev -> atomically $ modifyTVar varEvents (ev:)
 
       -- Open the mempool and add the initial transactions
       mempool <- openMempoolWithoutSyncThread ledgerInterface cfg tracer
@@ -440,7 +440,7 @@ withTestMempool setup@TestSetup { testLedgerState, testInitialTxs } prop =
         }
 
     addTxToLedger :: forall m. MonadSTM m
-                  => TVar m (LedgerState TestBlock)
+                  => StrictTVar m (LedgerState TestBlock)
                   -> TestTx
                   -> STM m (Either TestTxError ())
     addTxToLedger varCurrentLedgerState tx = do

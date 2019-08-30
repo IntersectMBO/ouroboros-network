@@ -27,16 +27,19 @@ module Ouroboros.Storage.ChainDB.Impl (
 
 import           Control.Monad (when)
 import qualified Data.Map.Strict as Map
+--import           System.IO.Unsafe (unsafePerformIO)
 
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadST
-import           Control.Monad.Class.MonadSTM
+import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
 
 import           Control.Tracer
+
+--import           Cardano.Prelude (isNormalForm)
 
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block (blockNo, blockPoint, blockSlot,
@@ -125,7 +128,7 @@ openDBInternal args launchBgTasks = do
                             (Query.getAnyKnownBlock immDB volDB)
     traceWith tracer $ TraceOpenEvent OpenedLgrDB
 
-    varInvalid <- atomically $ newTVar (Map.empty, Fingerprint 0)
+    varInvalid <- newTVarM (Map.empty, Fingerprint 0)
 
     chainAndLedger <- ChainSel.initialChainSelection
       immDB
@@ -142,14 +145,14 @@ openDBInternal args launchBgTasks = do
         immBlockNo = ChainSel.getImmBlockNo secParam chain immDbTipBlockNo
 
     atomically $ LgrDB.setCurrent lgrDB ledger
-    varChain          <- atomically $ newTVar chain
-    varImmBlockNo     <- atomically $ newTVar immBlockNo
-    varIterators      <- atomically $ newTVar Map.empty
-    varReaders        <- atomically $ newTVar Map.empty
-    varNextIteratorId <- atomically $ newTVar $ IteratorId 0
-    varNextReaderId   <- atomically $ newTVar 0
-    varCopyLock       <- atomically $ newTMVar ()
-    varBgThreads      <- atomically $ newTVar []
+    varChain          <- newTVarWithInvariantM  isNF chain
+    varImmBlockNo     <- newTVarWithInvariantM  isNF immBlockNo
+    varIterators      <- newTVarM Map.empty
+    varReaders        <- newTVarM Map.empty
+    varNextIteratorId <- newTVarWithInvariantM  isNF (IteratorId 0)
+    varNextReaderId   <- newTVarWithInvariantM  isNF 0
+    varCopyLock       <- newTMVarWithInvariantM isNF ()
+    varBgThreads      <- newTVarWithInvariantM  isNF []
 
     let env = CDB { cdbImmDB          = immDB
                   , cdbVolDB          = volDB
@@ -169,7 +172,7 @@ openDBInternal args launchBgTasks = do
                   , cdbBgThreads      = varBgThreads
                   , cdbEpochInfo      = Args.cdbEpochInfo args
                   }
-    h <- fmap CDBHandle $ atomically $ newTVar $ ChainDbOpen env
+    h <- fmap CDBHandle $ newTVarM $ ChainDbOpen env
     let chainDB = ChainDB
           { addBlock           = getEnv1    h ChainSel.addBlock
           , getCurrentChain    = getEnvSTM  h Query.getCurrentChain
@@ -209,3 +212,7 @@ openDBInternal args launchBgTasks = do
 
     blockEpoch :: blk -> m EpochNo
     blockEpoch = epochInfoEpoch (Args.cdbEpochInfo args) . blockSlot
+
+    -- TODO (#969): Re-enable this and deal with the fallout.
+    isNF :: forall a. a -> Bool
+    isNF = const True -- unsafePerformIO . isNormalForm

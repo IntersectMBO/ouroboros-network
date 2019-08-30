@@ -24,7 +24,7 @@ module Ouroboros.Network.Server.ConnectionTable (
     ) where
 
 import           Control.Monad (when)
-import           Control.Monad.Class.MonadSTM
+import           Control.Monad.Class.MonadSTM.Strict
 --import           Control.Tracer XXX Not Yet
 import qualified Data.Map.Strict as M
 import           Data.Set (Set)
@@ -40,8 +40,8 @@ import           Text.Printf
 -- through this structure.
 --
 data ConnectionTable m addr = ConnectionTable {
-    ctTable     :: TVar m (M.Map addr (ConnectionTableEntry m addr))
-  , ctLastRefId :: TVar m Int
+    ctTable     :: StrictTVar m (M.Map addr (ConnectionTableEntry m addr))
+  , ctLastRefId :: StrictTVar m Int
   }
 
 -- | ValencyCounter represents how many active connections we have towards a given peer.
@@ -52,7 +52,7 @@ data ConnectionTable m addr = ConnectionTable {
 --
 data ValencyCounter m = ValencyCounter {
     vcId  :: Int
-  , vcRef :: TVar m Int
+  , vcRef :: StrictTVar m Int
   }
 
 -- | Create a new ValencyCounter
@@ -100,11 +100,11 @@ data ConnectionTableRef =
 
 -- | Add a connection.
 addValencyCounter :: MonadSTM m => ValencyCounter m -> STM m ()
-addValencyCounter vc = modifyTVar' (vcRef vc) (\r -> r - 1)
+addValencyCounter vc = modifyTVar (vcRef vc) (\r -> r - 1)
 
 -- | Remove a connection.
 remValencyCounter :: MonadSTM m => ValencyCounter m -> STM m ()
-remValencyCounter vc = modifyTVar' (vcRef vc) (+ 1)
+remValencyCounter vc = modifyTVar (vcRef vc) (+ 1)
 
 -- | Wait until ValencyCounter becomes positive, used for detecting when
 -- we can create new connections.

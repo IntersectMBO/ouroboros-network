@@ -23,7 +23,7 @@ import           Test.Tasty
 import           Test.Tasty.QuickCheck
 
 import           Control.Monad.Class.MonadFork
-import           Control.Monad.Class.MonadSTM
+import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
@@ -311,7 +311,7 @@ prop_threadId_order_order_Sim n = runSimOrThrow $ test_threadId_order n
 -- a trace of events we want to observe, and can do probe output from
 -- multiple threads.
 --
-type Probe m x = TVar m [x]
+type Probe m x = StrictTVar m [x]
 
 withProbe :: MonadSTM m => (Probe m x -> m ()) -> m [x]
 withProbe action = do

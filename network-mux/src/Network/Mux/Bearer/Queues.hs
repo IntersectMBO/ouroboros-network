@@ -11,7 +11,7 @@ import           Data.Word (Word16)
 
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadSay
-import           Control.Monad.Class.MonadSTM
+import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
 import           Control.Monad.Class.MonadThrow

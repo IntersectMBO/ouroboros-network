@@ -30,7 +30,7 @@ import           GHC.Stack
 
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork (MonadFork)
-import           Control.Monad.Class.MonadSTM
+import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 
 import           Ouroboros.Consensus.Protocol.Abstract
@@ -117,7 +117,7 @@ blockUntilJust getMaybeA = do
 blockUntilAllJust :: MonadSTM m => [STM m (Maybe a)] -> STM m [a]
 blockUntilAllJust = mapM blockUntilJust
 
--- | Simple type that can be used to indicate something in a 'TVar' is
+-- | Simple type that can be used to indicate something in a @TVar@ is
 -- changed.
 newtype Fingerprint = Fingerprint Word64
   deriving (Show, Eq, Enum)
@@ -131,18 +131,18 @@ type Sim n m = forall a. n a -> STM m a
 simId :: Sim (STM m) m
 simId = id
 
-simReaderT :: MonadSTM m => TVar m st -> Sim n m -> Sim (ReaderT st n) m
+simReaderT :: MonadSTM m => StrictTVar m st -> Sim n m -> Sim (ReaderT st n) m
 simReaderT tvar k (ReaderT f) = do
     st <- readTVar tvar
     k (f st)
 
-simWriterT :: MonadSTM m => TVar m st -> Sim n m -> Sim (WriterT st n) m
+simWriterT :: MonadSTM m => StrictTVar m st -> Sim n m -> Sim (WriterT st n) m
 simWriterT tvar k (WriterT f) = do
     (a, st') <- k f
     writeTVar tvar st'
     return a
 
-simStateT :: MonadSTM m => TVar m st -> Sim n m -> Sim (StateT st n) m
+simStateT :: MonadSTM m => StrictTVar m st -> Sim n m -> Sim (StateT st n) m
 simStateT tvar k (StateT f) = do
     st       <- readTVar tvar
     (a, st') <- k (f st)
@@ -150,7 +150,7 @@ simStateT tvar k (StateT f) = do
     return a
 
 simOuroborosStateT :: MonadSTM m
-                   => TVar m s
+                   => StrictTVar m s
                    -> Sim n m
                    -> Sim (NodeStateT_ s n) m
 simOuroborosStateT tvar k n = do
@@ -160,7 +160,7 @@ simOuroborosStateT tvar k n = do
     return a
 
 simChaChaT :: MonadSTM m
-           => TVar m ChaChaDRG
+           => StrictTVar m ChaChaDRG
            -> Sim n m
            -> Sim (ChaChaT n) m
 simChaChaT tvar k n = do
@@ -171,9 +171,9 @@ simChaChaT tvar k n = do
 
 -- | Example of composition
 _exampleComposition :: MonadSTM m
-                    => TVar m r
-                    -> TVar m w
-                    -> TVar m s
+                    => StrictTVar m r
+                    -> StrictTVar m w
+                    -> StrictTVar m s
                     -> Sim n m
                     -> Sim (ReaderT r (WriterT w (StateT s n))) m
 _exampleComposition r w s k = simReaderT r $ simWriterT w $ simStateT s $ k

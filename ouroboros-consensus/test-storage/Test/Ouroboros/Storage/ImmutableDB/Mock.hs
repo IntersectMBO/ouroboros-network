@@ -7,7 +7,7 @@ import           Control.Monad.Except (Except, runExcept)
 import           Control.Monad.State (StateT, runStateT)
 import           Data.Proxy
 
-import           Control.Monad.Class.MonadSTM
+import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 
 import           Ouroboros.Consensus.Util ((..:), (.:))
@@ -36,7 +36,7 @@ openDBMock err epochSize = do
     err' :: ErrorHandling ImmutableDBError (MockM hash)
     err' = EH.liftErrState (Proxy @(DBModel hash)) EH.exceptT
 
-    immDB :: TVar m (DBModel hash) -> ImmutableDB hash m
+    immDB :: StrictTVar m (DBModel hash) -> ImmutableDB hash m
     immDB dbVar = ImmutableDB
         { closeDB           = wrap  $   closeDB          db
         , isOpen            = wrap  $   isOpen           db
@@ -54,7 +54,7 @@ openDBMock err epochSize = do
         wrap  = wrapModel dbVar
         wrapI = wrapModel dbVar . fmap (wrapIter dbVar)
 
-    wrapModel :: forall a. TVar m (DBModel hash)
+    wrapModel :: forall a. StrictTVar m (DBModel hash)
               -> MockM hash a -> m a
     wrapModel dbVar m = atomically $ do
         st <- readTVar dbVar
@@ -65,7 +65,7 @@ openDBMock err epochSize = do
             return res
 
     wrapIter :: forall a.
-                TVar m (DBModel hash)
+                StrictTVar m (DBModel hash)
              -> Iterator hash (MockM hash) a
              -> Iterator hash m a
     wrapIter dbVar it = Iterator

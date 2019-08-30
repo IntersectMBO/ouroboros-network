@@ -21,7 +21,7 @@ import           Test.Tasty.QuickCheck
 
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork (MonadFork)
-import           Control.Monad.Class.MonadSTM
+import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
@@ -300,7 +300,7 @@ runChainSync securityParam maxClockSkew (ClientUpdates clientUpdates)
            getIsInvalidBlock
            varCandidates
            serverId $ \varCandidate curChain -> do
-             atomically $ modifyTVar' varFinalCandidates $
+             atomically $ modifyTVar varFinalCandidates $
                Map.insert serverId varCandidate
              runPeer nullTracer codecChainSyncId serverId clientChannel
                     (chainSyncClientPeer (client varCandidate curChain))

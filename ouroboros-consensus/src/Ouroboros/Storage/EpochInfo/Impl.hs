@@ -10,7 +10,7 @@ import           Control.Monad.Trans.State.Strict (runStateT)
 import           Data.List (maximumBy)
 import           Data.Ord (comparing)
 
-import           Control.Monad.Class.MonadSTM
+import           Control.Monad.Class.MonadSTM.Strict
 
 import           Ouroboros.Network.Block (SlotNo (..))
 
@@ -29,7 +29,7 @@ newEpochInfo getSize = do
       , epochInfoEpoch = wrap cesVar . CES.slotToEpoch
       }
   where
-    wrap :: TVar m CumulEpochSizes
+    wrap :: StrictTVar m CumulEpochSizes
          -> (CumulEpochSizes -> Maybe a)
          -> m a
     wrap cesVar f = do

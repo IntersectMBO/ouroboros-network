@@ -11,7 +11,7 @@ module Ouroboros.Network.Protocol.ChainSync.Examples (
   , chainSyncServerExample
   ) where
 
-import           Control.Monad.Class.MonadSTM
+import           Control.Monad.Class.MonadSTM.Strict
 
 import           Ouroboros.Network.Block (HasHeader (..), HeaderHash, castPoint, genesisPoint)
 import           Ouroboros.Network.MockChain.Chain (Chain (..), ChainUpdate (..),
@@ -30,7 +30,7 @@ data Client header m t = Client
   }
 
 -- | A client which doesn't do anything and never ends. Used with
--- 'chainSyncClientExample', the TVar m (Chain header) will be updated but
+-- 'chainSyncClientExample', the StrictTVar m (Chain header) will be updated but
 -- nothing further will happen.
 pureClient :: Applicative m => Client header m x
 pureClient = Client
@@ -40,14 +40,14 @@ pureClient = Client
   }
 
 -- | An instance of the client side of the chain sync protocol that
--- consumes into a 'Chain' stored in a 'TVar'.
+-- consumes into a 'Chain' stored in a 'StrictTVar'.
 --
 -- This is of course only useful in tests and reference implementations since
 -- this is not a realistic chain representation.
 --
 chainSyncClientExample :: forall header m a.
                           (HasHeader header, MonadSTM m)
-                       => TVar m (Chain header)
+                       => StrictTVar m (Chain header)
                        -> Client header m a
                        -> ChainSyncClient header (Point header) m a
 chainSyncClientExample chainvar client = ChainSyncClient $
@@ -122,7 +122,7 @@ recentOffsets = [0,1,2,3,5,8,13,21,34,55,89,144,233,377,610,987,1597,2584]
 
 
 -- | An instance of the server side of the chain sync protocol that reads from
--- a pure 'ChainProducerState' stored in a 'TVar'.
+-- a pure 'ChainProducerState' stored in a 'StrictTVar'.
 --
 -- This is of course only useful in tests and reference implementations since
 -- this is not a realistic chain representation.
@@ -133,7 +133,7 @@ chainSyncServerExample :: forall header blk m a.
                           , HeaderHash header ~ HeaderHash blk
                           )
                        => a
-                       -> TVar m (ChainProducerState header)
+                       -> StrictTVar m (ChainProducerState header)
                        -> ChainSyncServer header (Point blk) m a
 chainSyncServerExample recvMsgDoneClient chainvar = ChainSyncServer $
     idle <$> newReader

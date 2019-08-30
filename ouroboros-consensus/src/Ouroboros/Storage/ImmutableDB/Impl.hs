@@ -145,7 +145,7 @@ import           Codec.CBOR.Decoding (Decoder)
 import           Codec.CBOR.Encoding (Encoding)
 import           Control.Exception (assert)
 import           Control.Monad (forM_, replicateM_, unless, when)
-import           Control.Monad.Class.MonadSTM (MonadSTM (..))
+import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow (ExitCase (..),
                      MonadCatch (generalBracket), MonadThrow, finally)
 import           Control.Monad.State.Strict (StateT (..), get, lift, modify,
@@ -189,7 +189,7 @@ import           Ouroboros.Storage.ImmutableDB.Util
 data ImmutableDBEnv m hash = forall h e. ImmutableDBEnv
     { _dbHasFS           :: !(HasFS m h)
     , _dbErr             :: !(ErrorHandling ImmutableDBError m)
-    , _dbInternalState   :: !(TMVar m (Either (ClosedState m) (OpenState m hash h)))
+    , _dbInternalState   :: !(StrictTMVar m (Either (ClosedState m) (OpenState m hash h)))
     , _dbEpochFileParser :: !(EpochFileParser e hash m (Word64, SlotNo))
     , _dbHashDecoder     :: !(forall s . Decoder s hash)
     , _dbHashEncoder     :: !(hash -> Encoding)
@@ -793,7 +793,7 @@ appendEBBImpl dbEnv@ImmutableDBEnv{..} epoch hash builder =
 data IteratorHandle hash m = forall h. IteratorHandle
   { _it_hasFS    :: !(HasFS m h)
     -- ^ Bundled HasFS instance allows to hide type parameters
-  , _it_state    :: !(TVar m (Maybe (IteratorState hash h)))
+  , _it_state    :: !(StrictTVar m (Maybe (IteratorState hash h)))
     -- ^ The state of the iterator. If it is 'Nothing', the iterator is
     -- exhausted and/or closed.
   , _it_end      :: !EpochSlot

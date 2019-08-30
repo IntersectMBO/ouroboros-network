@@ -107,8 +107,8 @@ fixedInputChannel xs0 = do
 -- writing.
 --
 mvarsAsChannel :: MonadSTM m
-               => TMVar m a
-               -> TMVar m a
+               => LazyTMVar m a
+               -> LazyTMVar m a
                -> Channel m a 
 mvarsAsChannel bufferRead bufferWrite =
     Channel{send, recv}

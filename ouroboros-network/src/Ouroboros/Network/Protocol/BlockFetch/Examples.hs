@@ -8,7 +8,7 @@ import Data.Functor (($>))
 import Data.Maybe (fromMaybe)
 import qualified Pipes
 
-import Control.Monad.Class.MonadSTM (MonadSTM (..))
+import Control.Monad.Class.MonadSTM.Strict
 
 import           Network.TypedProtocol.Pipelined
 
@@ -32,7 +32,7 @@ constantBlockFetchReceiver onBlock handleBatchDone =
   }
 
 -- | A @'BlockFetchClient'@ designed for testing, which accumulates incoming
--- blocks in a @'TVar'@, which is read on termination.
+-- blocks in a @'StrictTVar'@, which is read on termination.
 --
 -- Returns a list of bodies received from the server, from the newest to
 -- oldest.
@@ -56,8 +56,8 @@ blockFetchClientMap ranges = BlockFetchClient $ do
   goBlockFetch donevar var ranges blockFetchResponse
  where
   goBlockFetch
-    :: TVar m Int
-    -> TVar m [block]
+    :: StrictTVar m Int
+    -> StrictTVar m [block]
     -> [ChainRange block]
     -> BlockFetchResponse block m [block]
     -> m (BlockFetchRequest block m [block])

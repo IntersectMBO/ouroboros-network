@@ -16,7 +16,7 @@ import           Data.List (intercalate)
 import qualified Data.Map.Strict as Map
 import           Data.Word (Word64)
 
-import           Control.Monad.Class.MonadSTM
+import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.IOSim (runSimOrThrow)
 

@@ -11,7 +11,7 @@ import           Control.Monad.Except
 import           Control.Monad.State
 import           Data.Proxy
 
-import           Control.Monad.Class.MonadSTM
+import           Control.Monad.Class.MonadSTM.Strict
 
 import           Ouroboros.Consensus.Util
 
@@ -43,7 +43,7 @@ runSimFS err fs act = do
 -- | Equip @m@ with a @HasFs@ instance using the mock file system
 simHasFS :: forall m. MonadSTM m
          => ErrorHandling FsError m
-         -> TVar m MockFS
+         -> StrictTVar m MockFS
          -> HasFS m Mock.Handle
 simHasFS err var = HasFS {
       dumpState                = sim     Mock.dumpState

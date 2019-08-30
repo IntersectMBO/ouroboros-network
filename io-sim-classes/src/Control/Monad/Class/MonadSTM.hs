@@ -9,7 +9,6 @@ module Control.Monad.Class.MonadSTM
 
   -- * Helpers defined in terms of 'MonadSTM'
   , updateTVar
-  , updateTVar'
 
   -- * Default 'TMVar' implementation
   , TMVarDefault (..)
@@ -66,45 +65,40 @@ class (Monad m, Monad (STM m)) => MonadSTM m where
   -- STM transactions
   type STM  m = (n :: * -> *) | n -> m
   -- The STM primitives
-  type TVar m :: * -> *
+  type LazyTVar m :: * -> *
 
   atomically   :: HasCallStack => STM m a -> m a
-  newTVar      :: a -> STM m (TVar m a)
-  readTVar     :: TVar m a -> STM m a
-  writeTVar    :: TVar m a -> a -> STM m ()
+  newTVar      :: a -> STM m (LazyTVar m a)
+  readTVar     :: LazyTVar m a -> STM m a
+  writeTVar    :: LazyTVar m a -> a -> STM m ()
   retry        :: STM m a
 --orElse       :: STM m a -> STM m a -> STM m a --TODO
 
   -- Helpful derived functions with default implementations
-  newTVarM     :: a -> m (TVar m a)
+  newTVarM     :: a -> m (LazyTVar m a)
   newTVarM     = atomically . newTVar
 
-  modifyTVar   :: TVar m a -> (a -> a) -> STM m ()
+  modifyTVar   :: LazyTVar m a -> (a -> a) -> STM m ()
   modifyTVar  v f = readTVar v >>= writeTVar v . f
-
-  modifyTVar'  :: TVar m a -> (a -> a) -> STM m ()
-  modifyTVar' v f = do
-    a <- readTVar v
-    writeTVar v $! f a
 
   check        :: Bool -> STM m ()
   check True = return ()
   check _    = retry
 
   -- Additional derived STM APIs
-  type TMVar m :: * -> *
-  newTMVar        :: a -> STM m (TMVar m a)
-  newTMVarM       :: a -> m     (TMVar m a)
-  newEmptyTMVar   ::      STM m (TMVar m a)
-  newEmptyTMVarM  ::      m     (TMVar m a)
-  takeTMVar       :: TMVar m a      -> STM m a
-  tryTakeTMVar    :: TMVar m a      -> STM m (Maybe a)
-  putTMVar        :: TMVar m a -> a -> STM m ()
-  tryPutTMVar     :: TMVar m a -> a -> STM m Bool
-  readTMVar       :: TMVar m a      -> STM m a
-  tryReadTMVar    :: TMVar m a      -> STM m (Maybe a)
-  swapTMVar       :: TMVar m a -> a -> STM m a
-  isEmptyTMVar    :: TMVar m a      -> STM m Bool
+  type LazyTMVar m :: * -> *
+  newTMVar        :: a -> STM m (LazyTMVar m a)
+  newTMVarM       :: a -> m     (LazyTMVar m a)
+  newEmptyTMVar   ::      STM m (LazyTMVar m a)
+  newEmptyTMVarM  ::      m     (LazyTMVar m a)
+  takeTMVar       :: LazyTMVar m a      -> STM m a
+  tryTakeTMVar    :: LazyTMVar m a      -> STM m (Maybe a)
+  putTMVar        :: LazyTMVar m a -> a -> STM m ()
+  tryPutTMVar     :: LazyTMVar m a -> a -> STM m Bool
+  readTMVar       :: LazyTMVar m a      -> STM m a
+  tryReadTMVar    :: LazyTMVar m a      -> STM m (Maybe a)
+  swapTMVar       :: LazyTMVar m a -> a -> STM m a
+  isEmptyTMVar    :: LazyTMVar m a      -> STM m Bool
 
   type TQueue m  :: * -> *
   newTQueue      :: STM m (TQueue m a)
@@ -122,11 +116,11 @@ class (Monad m, Monad (STM m)) => MonadSTM m where
   isFullTBQueue  :: TBQueue m a -> STM m Bool
 
 instance MonadSTM m => MonadSTM (ReaderT e m) where
-  type STM  (ReaderT e m)  = ReaderT e (STM m)
-  type TVar (ReaderT e m)  = TVar m
-  type TMVar (ReaderT e m) = TMVar m
-  type TQueue (ReaderT e m)  = TQueue m
-  type TBQueue (ReaderT e m) = TBQueue m
+  type STM       (ReaderT e m) = ReaderT e (STM m)
+  type LazyTVar  (ReaderT e m) = LazyTVar m
+  type LazyTMVar (ReaderT e m) = LazyTMVar m
+  type TQueue    (ReaderT e m) = TQueue m
+  type TBQueue   (ReaderT e m) = TBQueue m
 
   atomically (ReaderT t) = ReaderT $ \e -> atomically (t e)
   newTVar          = lift . newTVar
@@ -161,11 +155,11 @@ instance MonadSTM m => MonadSTM (ReaderT e m) where
   isFullTBQueue    = lift . isFullTBQueue
 
 instance (Show e, MonadSTM m) => MonadSTM (ExceptT e m) where
-  type STM  (ExceptT e m)    = ExceptT e (STM m)
-  type TVar (ExceptT e m)    = TVar m
-  type TMVar (ExceptT e m)   = TMVar m
-  type TQueue (ExceptT e m)  = TQueue m
-  type TBQueue (ExceptT e m) = TBQueue m
+  type STM       (ExceptT e m) = ExceptT e (STM m)
+  type LazyTVar  (ExceptT e m) = LazyTVar m
+  type LazyTMVar (ExceptT e m) = LazyTMVar m
+  type TQueue    (ExceptT e m) = TQueue m
+  type TBQueue   (ExceptT e m) = TBQueue m
 
   atomically (ExceptT t) = ExceptT $ atomically t
   newTVar                = lift . newTVar
@@ -205,8 +199,8 @@ instance (Show e, MonadSTM m) => MonadSTM (ExceptT e m) where
 --
 
 instance MonadSTM IO where
-  type STM  IO = STM.STM
-  type TVar IO = STM.TVar
+  type STM      IO = STM.STM
+  type LazyTVar IO = STM.TVar
 
   atomically  = wrapBlockedIndefinitely . STM.atomically
   newTVar     = STM.newTVar
@@ -216,10 +210,9 @@ instance MonadSTM IO where
 
   newTVarM    = STM.newTVarIO
   modifyTVar  = STM.modifyTVar
-  modifyTVar' = STM.modifyTVar'
   check       = STM.check
 
-  type TMVar IO = STM.TMVar
+  type LazyTMVar IO = STM.TMVar
 
   newTMVar        = STM.newTMVar
   newTMVarM       = STM.newTMVarIO
@@ -277,26 +270,18 @@ wrapBlockedIndefinitely = handle (throwIO . BlockedIndefinitely callStack)
 -- Helpers defined in terms of MonadSTM
 --
 
-updateTVar :: MonadSTM m => TVar m a -> (a -> (a, b)) -> STM m b
+updateTVar :: MonadSTM m => LazyTVar m a -> (a -> (a, b)) -> STM m b
 updateTVar t f = do
     a <- readTVar t
     let (a', b) = f a
     writeTVar t a'
     return b
 
--- | Strict variant of 'updateTVar'
-updateTVar' :: MonadSTM m => TVar m a -> (a -> (a, b)) -> STM m b
-updateTVar' t f = do
-    a <- readTVar t
-    let (a', b) = f a
-    writeTVar t $! a'
-    return b
-
 --
 -- Default TMVar implementation in terms of TVars (used by sim)
 --
 
-newtype TMVarDefault m a = TMVar (TVar m (Maybe a))
+newtype TMVarDefault m a = TMVar (LazyTVar m (Maybe a))
 
 newTMVarDefault :: MonadSTM m => a -> STM m (TMVarDefault m a)
 newTMVarDefault a = do
@@ -375,8 +360,8 @@ isEmptyTMVarDefault (TMVar t) = do
 -- Default TQueue implementation in terms of TVars (used by sim)
 --
 
-data TQueueDefault m a = TQueue !(TVar m [a])
-                                !(TVar m [a])
+data TQueueDefault m a = TQueue !(LazyTVar m [a])
+                                !(LazyTVar m [a])
 
 newTQueueDefault :: MonadSTM m => STM m (TQueueDefault m a)
 newTQueueDefault = do
@@ -424,10 +409,10 @@ isEmptyTQueueDefault (TQueue read write) = do
 --
 
 data TBQueueDefault m a = TBQueue
-  !(TVar m Natural) -- read capacity
-  !(TVar m [a])     -- elements waiting for read
-  !(TVar m Natural) -- write capacity
-  !(TVar m [a])     -- written elements
+  !(LazyTVar m Natural) -- read capacity
+  !(LazyTVar m [a])     -- elements waiting for read
+  !(LazyTVar m Natural) -- write capacity
+  !(LazyTVar m [a])     -- written elements
   !Natural
 
 newTBQueueDefault :: MonadSTM m => Natural -> STM m (TBQueueDefault m a)

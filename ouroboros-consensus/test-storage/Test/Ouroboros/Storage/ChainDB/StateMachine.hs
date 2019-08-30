@@ -53,7 +53,7 @@ import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
 
 import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadSTM
+import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 
 import           Control.Tracer
@@ -1161,7 +1161,7 @@ mkArgs :: (MonadSTM m, MonadCatch m, MonadThrow (STM m))
        -> ExtLedgerState Blk
        -> Tracer m (TraceEvent Blk)
        -> ResourceRegistry m
-       -> (TVar m MockFS, TVar m MockFS, TVar m MockFS)
+       -> (StrictTVar m MockFS, StrictTVar m MockFS, StrictTVar m MockFS)
           -- ^ ImmutableDB, VolatileDB, LedgerDB
        -> ChainDbArgs m Blk
 mkArgs cfg initLedger tracer registry

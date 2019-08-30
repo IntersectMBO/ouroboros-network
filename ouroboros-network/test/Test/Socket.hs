@@ -13,7 +13,7 @@ import           Control.Exception (IOException)
 import           Control.Monad
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork
-import           Control.Monad.Class.MonadSTM
+import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTimer
 import qualified Data.ByteString.Lazy as BL
@@ -253,9 +253,9 @@ prop_socket_send_recv initiatorAddr responderAddr f xs = do
     return (res == mapAccumL f 0 xs)
 
   where
-    waitSibling :: TVar IO Int -> IO ()
+    waitSibling :: StrictTVar IO Int -> IO ()
     waitSibling cntVar = do
-        atomically $ modifyTVar' cntVar (\a -> a - 1)
+        atomically $ modifyTVar cntVar (\a -> a - 1)
         atomically $ do
             cnt <- readTVar cntVar
             unless (cnt == 0) retry
@@ -430,9 +430,9 @@ demo chain0 updates = do
 
     -- A simple chain-sync client which runs until it recieves an update to
     -- a given point (either as a roll forward or as a roll backward).
-    consumerClient :: TMVar IO Bool
+    consumerClient :: StrictTMVar IO Bool
                    -> Point block
-                   -> TVar IO (Chain block)
+                   -> StrictTVar IO (Chain block)
                    -> ChainSync.Client block IO ()
     consumerClient done target chain =
       ChainSync.Client

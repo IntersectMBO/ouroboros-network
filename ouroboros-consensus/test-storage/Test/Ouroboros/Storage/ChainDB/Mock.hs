@@ -9,7 +9,7 @@ import           Test.Tasty
 import           Test.Tasty.QuickCheck
 
 import           Control.Monad.Class.MonadFork
-import           Control.Monad.Class.MonadSTM
+import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTimer
 import           Control.Monad.IOSim
@@ -65,7 +65,7 @@ prop_reader bt p = runSimOrThrow test
         reconstructed <- atomically $ readTVar chainVar
         return $ current === reconstructed
 
-    monitorReader :: TVar (SimM s) (Chain TestBlock)
+    monitorReader :: StrictTVar (SimM s) (Chain TestBlock)
                   -> ChainDB.Reader (SimM s) TestBlock TestBlock
                   -> SimM s ()
     monitorReader chainVar reader = forever $ do

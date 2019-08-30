@@ -15,7 +15,7 @@ import           Test.Tasty
 import           Test.Tasty.QuickCheck
 
 import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadSTM
+import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.IOSim
 
 import           Control.Tracer

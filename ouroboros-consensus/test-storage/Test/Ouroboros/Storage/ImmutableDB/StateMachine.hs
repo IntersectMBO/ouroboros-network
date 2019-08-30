@@ -20,7 +20,7 @@ import           Prelude hiding (elem, notElem)
 
 import           Codec.Serialise (decode, encode)
 import           Control.Monad (forM_, when)
-import           Control.Monad.Class.MonadSTM
+import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow (MonadCatch)
 import           Control.Monad.Except (ExceptT (..), runExceptT)
 import           Control.Monad.State.Strict (MonadState, State, evalState, gets,
@@ -675,7 +675,7 @@ postcondition model cmdErr resp =
   where
     ev = lockstep model cmdErr resp
 
-semantics :: TVar IO Errors
+semantics :: StrictTVar IO Errors
           -> HasFS IO h
           -> ImmutableDB Hash IO
           -> At CmdErr IO Concrete
@@ -743,7 +743,7 @@ semanticsCorruption hasFS db (MkCorruption corrs) = do
     Tip <$> getTip db
 
 -- | The state machine proper
-sm :: TVar IO Errors
+sm :: StrictTVar IO Errors
    -> HasFS IO h
    -> ImmutableDB Hash IO
    -> DBModel Hash
@@ -1076,7 +1076,7 @@ showLabelledExamples = showLabelledExamples' Nothing 1000 (const True) $
 
 prop_sequential :: Property
 prop_sequential = forAllCommands smUnused Nothing $ \cmds -> QC.monadicIO $ do
-    let test :: TVar IO Errors -> HasFS IO h -> QC.PropertyM IO (
+    let test :: StrictTVar IO Errors -> HasFS IO h -> QC.PropertyM IO (
                     QSM.History (At CmdErr IO) (At Resp IO)
                   , Property
                   )

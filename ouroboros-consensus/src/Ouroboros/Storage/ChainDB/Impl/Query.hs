@@ -23,7 +23,7 @@ module Ouroboros.Storage.ChainDB.Impl.Query
 import           Data.Bifunctor (first)
 import qualified Data.Map.Strict as Map
 
-import           Control.Monad.Class.MonadSTM
+import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment (..))

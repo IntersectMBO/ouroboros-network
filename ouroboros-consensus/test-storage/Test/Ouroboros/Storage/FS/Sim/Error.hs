@@ -43,7 +43,7 @@ module Test.Ouroboros.Storage.FS.Sim.Error
 import           Prelude hiding (null)
 
 import           Control.Monad (replicateM, void)
-import           Control.Monad.Class.MonadSTM (MonadSTM (..))
+import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Except (runExceptT)
 
 import qualified Data.ByteString as BS
@@ -425,8 +425,8 @@ instance Arbitrary Errors where
 -- TODO: Lenses would be nice for the setters
 mkSimErrorHasFS :: forall m. MonadSTM m
                 => ErrorHandling FsError m
-                -> TVar m MockFS
-                -> TVar m Errors
+                -> StrictTVar m MockFS
+                -> StrictTVar m Errors
                 -> HasFS m Handle
 mkSimErrorHasFS err fsVar errorsVar =
     case Sim.simHasFS err fsVar of
@@ -480,7 +480,7 @@ runSimErrorFS :: MonadSTM m
               => ErrorHandling FsError m
               -> MockFS
               -> Errors
-              -> (TVar m Errors -> HasFS m Handle -> m a)
+              -> (StrictTVar m Errors -> HasFS m Handle -> m a)
               -> m (a, MockFS)
 runSimErrorFS err mockFS errors action = do
     fsVar     <- atomically $ newTVar mockFS
@@ -491,7 +491,7 @@ runSimErrorFS err mockFS errors action = do
 
 -- | Execute the next action using the given 'Errors'. After the action is
 -- finished, the previous 'Errors' are restored.
-withErrors :: MonadSTM m => TVar m Errors -> Errors -> m a -> m a
+withErrors :: MonadSTM m => StrictTVar m Errors -> Errors -> m a -> m a
 withErrors errorsVar tempErrors action = do
     originalErrors <- atomically $ do
       originalErrors <- readTVar errorsVar
@@ -506,11 +506,11 @@ withErrors errorsVar tempErrors action = do
 -------------------------------------------------------------------------------}
 
 -- | Advance to the next error in the stream of some 'ErrorStream' in the
--- 'Errors' stored in the 'TVar'. Extracts the right error stream from the
--- state with the @getter@ and stores the advanced error stream in the state
--- with the @setter@.
+-- 'Errors' stored in the 'StrictTVar'. Extracts the right error stream from
+-- the state with the @getter@ and stores the advanced error stream in the
+-- state with the @setter@.
 next :: MonadSTM m
-     => TVar m Errors
+     => StrictTVar m Errors
      -> (Errors -> Stream a)            -- ^ @getter@
      -> (Stream a -> Errors -> Errors)  -- ^ @setter@
      -> m (Maybe a)
@@ -525,7 +525,7 @@ next errorsVar getter setter = do
 -- 'ErrorStream' (see 'nextError').
 withErr :: (MonadSTM m, HasCallStack)
         => ErrorHandling FsError m
-        -> TVar m Errors
+        -> StrictTVar m Errors
         -> FsPath     -- ^ The path for the error, if thrown
         -> m a        -- ^ Action in case no error is thrown
         -> String     -- ^ Extra message for in the 'fsErrorString'
@@ -550,8 +550,8 @@ withErr ErrorHandling {..} errorsVar path action msg getter setter = do
 -- The path of the handle is retrieved from the 'MockFS' using 'handleFsPath'.
 withErr' :: (MonadSTM m, HasCallStack)
          => ErrorHandling FsError m
-         -> TVar m MockFS
-         -> TVar m Errors
+         -> StrictTVar m MockFS
+         -> StrictTVar m Errors
          -> Handle     -- ^ The path for the error, if thrown
          -> m a        -- ^ Action in case no error is thrown
          -> String     -- ^ Extra message for in the 'fsErrorString'
@@ -567,8 +567,8 @@ withErr' err fsVar errorsVar handle action msg getter setter = do
 -- 'nextError').
 hGetSome'  :: (MonadSTM m, HasCallStack)
            => ErrorHandling FsError m
-           -> TVar m MockFS
-           -> TVar m Errors
+           -> StrictTVar m MockFS
+           -> StrictTVar m Errors
            -> (Handle -> Word64 -> m BS.ByteString)  -- ^ Wrapped 'hGetSome'
            -> Handle -> Word64 -> m BS.ByteString
 hGetSome' ErrorHandling{..} fsVar errorsVar hGetSomeWrapped handle n = do
@@ -591,8 +591,8 @@ hGetSome' ErrorHandling{..} fsVar errorsVar hGetSomeWrapped handle n = do
 -- the corresponding 'ErrorStreamPutSome' (see 'nextError').
 hPutSome' :: (MonadSTM m, HasCallStack)
           => ErrorHandling FsError m
-          -> TVar m MockFS
-          -> TVar m Errors
+          -> StrictTVar m MockFS
+          -> StrictTVar m Errors
           -> (Handle -> BS.ByteString -> m Word64)  -- ^ Wrapped 'hPutSome'
           -> Handle -> BS.ByteString -> m Word64
 hPutSome' ErrorHandling{..} fsVar errorsVar hPutSomeWrapped handle bs = do
