@@ -20,7 +20,6 @@ module Ouroboros.Consensus.NodeNetwork (
   , ProtocolTracers
   , ProtocolTracers' (..)
   , nullProtocolTracers
-  , showProtocolTracers
   , NetworkApplication(..)
   , consensusNetworkApps
   , initiatorNetworkApplication
@@ -298,24 +297,6 @@ nullProtocolTracers = ProtocolTracers {
   , ptTxSubmissionTracer      = nullTracer
   , ptLocalChainSyncTracer    = nullTracer
   , ptLocalTxSubmissionTracer = nullTracer
-  }
-
-showProtocolTracers :: ( StandardHash blk
-                       , Show blk
-                       , Show (Header blk)
-                       , Show peer
-                       , Show failure
-                       , Show (GenTx blk)
-                       , Show (GenTxId blk)
-                       , Show (ApplyTxErr blk)
-                       )
-                    => Tracer m String -> ProtocolTracers m peer blk failure
-showProtocolTracers tr = ProtocolTracers {
-    ptChainSyncTracer         = showTracing tr
-  , ptBlockFetchTracer        = showTracing tr
-  , ptTxSubmissionTracer      = showTracing tr
-  , ptLocalChainSyncTracer    = showTracing tr
-  , ptLocalTxSubmissionTracer = showTracing tr
   }
 
 -- | Consensus provides a chains sync, block fetch applications.  This data

@@ -4,12 +4,11 @@ module Ouroboros.Consensus.Node.Tracers
     Tracers' (..)
   , Tracers
   , nullTracers
-  , showTracers
     -- * Specific tracers
   , TraceForgeEvent (..)
   ) where
 
-import           Control.Tracer (Tracer, nullTracer, showTracing)
+import           Control.Tracer (Tracer, nullTracer)
 
 import           Ouroboros.Network.Block (Point, SlotNo)
 import           Ouroboros.Network.BlockFetch (FetchDecision,
@@ -62,26 +61,6 @@ nullTracers = Tracers
   , localTxSubmissionServerTracer = nullTracer
   , mempoolTracer                 = nullTracer
   , forgeTracer                   = nullTracer
-  }
-
-showTracers :: ( Show blk
-               , Show (GenTx blk)
-               , Show (Header blk)
-               , Show peer
-               , SupportedBlock blk
-               )
-            => Tracer m String -> Tracers m peer blk
-showTracers tr = Tracers
-  { chainSyncClientTracer         = showTracing tr
-  , chainSyncServerTracer         = showTracing tr
-  , blockFetchDecisionTracer      = showTracing tr
-  , blockFetchClientTracer        = showTracing tr
-  , blockFetchServerTracer        = showTracing tr
-  , txInboundTracer               = showTracing tr
-  , txOutboundTracer              = showTracing tr
-  , localTxSubmissionServerTracer = showTracing tr
-  , mempoolTracer                 = showTracing tr
-  , forgeTracer                   = showTracing tr
   }
 
 {-------------------------------------------------------------------------------
