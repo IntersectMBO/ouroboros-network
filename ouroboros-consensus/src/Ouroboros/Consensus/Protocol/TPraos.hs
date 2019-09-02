@@ -8,11 +8,11 @@
 {-# LANGUAGE NamedFieldPuns          #-}
 {-# LANGUAGE RecordWildCards         #-}
 {-# LANGUAGE ScopedTypeVariables     #-}
-{-# LANGUAGE StandaloneDeriving      #-}
 {-# LANGUAGE TypeApplications        #-}
 {-# LANGUAGE TypeFamilies            #-}
 {-# LANGUAGE UndecidableInstances    #-}
 {-# LANGUAGE UndecidableSuperClasses #-}
+{-# LANGUAGE ViewPatterns            #-}
 
 -- | Transitional Praos.
 --
@@ -39,45 +39,31 @@ import           Crypto.Random (MonadRandom)
 import           Data.Coerce (coerce)
 import qualified Data.Map.Strict as Map
 import           Data.Proxy (Proxy (..))
-import           Data.Typeable (Typeable)
 import           Data.Word (Word64)
 import           GHC.Generics (Generic)
 import           Numeric.Natural
 import           Control.State.Transition (TRC(..), applySTS)
-import           Cardano.Crypto.DSIGN.Class (DSIGNAlgorithm, Signable, VerKeyDSIGN)
-import           Cardano.Crypto.DSIGN.Ed448 (Ed448DSIGN)
-import           Cardano.Crypto.DSIGN.Mock (MockDSIGN)
-import           Cardano.Crypto.Hash.Class (HashAlgorithm (..), fromHash, hash)
-import           Cardano.Crypto.Hash.MD5 (MD5)
-import           Cardano.Crypto.Hash.SHA256 (SHA256)
+import           Cardano.Crypto.DSIGN.Class (VerKeyDSIGN)
+import           Cardano.Crypto.Hash.Class (HashAlgorithm (..))
 import           Cardano.Crypto.KES.Class
-import           Cardano.Crypto.KES.Mock
-import           Cardano.Crypto.KES.Simple
 import           Cardano.Crypto.VRF.Class
-import           Cardano.Crypto.VRF.Mock (MockVRF)
-import           Cardano.Crypto.VRF.Simple (SimpleVRF)
 import           Ouroboros.Network.Block (HasHeader (..), SlotNo (..))
-import           Ouroboros.Network.Point (WithOrigin (At))
-import           Ouroboros.Consensus.NodeId (CoreNodeId (..), NodeId (..))
+import           Ouroboros.Consensus.NodeId (NodeId (..))
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.Signed
+import qualified Ouroboros.Consensus.Protocol.TPraos.ChainState as ChainState
+import           Ouroboros.Consensus.Protocol.TPraos.Crypto
+import           Ouroboros.Consensus.Protocol.TPraos.Util
 import qualified Ouroboros.Consensus.Util.AnchoredFragment as AF
-import           Ouroboros.Consensus.Util.Condense
-import           Ouroboros.Storage.Common (EpochNo (..), EpochSize (..))
-import           Ouroboros.Storage.EpochInfo (EpochInfo (..),
-                     fixedSizeEpochInfo)
 
-import BaseTypes (Seed, UnitInterval, forceUnitInterval)
-import BlockChain (BHeader, BHBody, Proof)
+import BaseTypes (Seed, UnitInterval)
+import BlockChain (BHeader)
 import Delegation.Certificates (PoolDistr(..))
-import Keys (DiscVKey(..), Dms(..), GenKeyHash, KeyHash, VKeyES(..), hashKey, hashKeyES)
-import OCert (KESPeriod, OCert(..))
+import Keys (DiscVKey(..), Dms(..), GenKeyHash, KeyHash, hashKey)
+import OCert (OCert(..))
 import PParams (PParams)
 import Slot (Slot(..))
 import qualified STS.Prtcl as STS
-
--- Useful type alias
-type PRTCL c = STS.PRTCL (TPraosHash c) (TPraosDSIGN c) (TPraosKES c)
 
 {-------------------------------------------------------------------------------
   Fields required by TPraos in the header
@@ -201,7 +187,7 @@ instance TPraosCrypto c => OuroborosTag (TPraos c) where
   type IsLeader        (TPraos c) = TPraosProof c
   type ValidationErr   (TPraos c) = [[STS.PredicateFailure (PRTCL c)]]
   type SupportedHeader (TPraos c) = HeaderSupportsTPraos c
-  type ChainState      (TPraos c) = STS.State (PRTCL c)
+  type ChainState      (TPraos c) = ChainState.TPraosChainState c
 
   checkIsLeader cfg@TPraosNodeConfig{..} slot lv _cs =
     getNodeState >>= \case
@@ -246,10 +232,11 @@ instance TPraosCrypto c => OuroborosTag (TPraos c) where
                         }
                   _ -> Nothing
 
-  applyChainState cfg@TPraosNodeConfig{..} lv b cs = do
-    let slot                 = blockSlot b
+  applyChainState TPraosNodeConfig{..} lv b cs = do
+    let slot = blockSlot b
+        SecurityParam (fromIntegral -> k) = tpraosSecurityParam tpraosParams
 
-    ExceptT . return $ applySTS @(PRTCL c)
+    newCS <- ExceptT . return $ applySTS @(PRTCL c)
       $ TRC ( ( ( tpraosLedgerViewProtParams lv
                 , tpraosLedgerViewOverlaySchedule lv
                 , tpraosLedgerViewEpochNonce lv
@@ -258,9 +245,11 @@ instance TPraosCrypto c => OuroborosTag (TPraos c) where
                 )
               , convertSlot slot
               )
-            , cs
+            , ChainState.toPRTCLState cs
             , headerToBHeader (Proxy :: Proxy (TPraos c)) b
             )
+
+    return . ChainState.prune k $ ChainState.appendState newCS cs
 
   -- Rewind the chain state
   --
@@ -273,7 +262,7 @@ instance TPraosCrypto c => OuroborosTag (TPraos c) where
   --
   -- We don't roll back to the exact slot since that slot might not have been
   -- filled; instead we roll back the the block just before it.
-  rewindChainState TPraosNodeConfig{..} cs rewindTo = undefined
+  rewindChainState TPraosNodeConfig{..} cs rewindTo = ChainState.rewind rewindTo cs
 
   -- NOTE: We redefine `preferCandidate` but NOT `compareCandidates`
   -- NOTE: See note regarding clock skew.
@@ -285,9 +274,6 @@ instance TPraosCrypto c => OuroborosTag (TPraos c) where
 
       k :: Word64
       k = maxRollbacks tpraosSecurityParam
-
-convertSlot :: SlotNo -> Slot
-convertSlot (SlotNo n) = Slot $ fromIntegral n
 
 phi :: NodeConfig (TPraos c) -> Rational -> Double
 phi TPraosNodeConfig{..} r = 1 - (1 - tpraosLeaderF) ** fromRational r
@@ -324,42 +310,3 @@ rhoYT nc s kh lv =
         y   = (l, s)
         t   = leaderThreshold nc lv kh
     in  (rho, y, t)
-{-------------------------------------------------------------------------------
-  Crypto models
--------------------------------------------------------------------------------}
-
-class ( DSIGNAlgorithm (TPraosDSIGN c)
-      , KESAlgorithm  (TPraosKES  c)
-      , VRFAlgorithm  (TPraosVRF  c)
-      , HashAlgorithm (TPraosHash c)
-      , Typeable c
-      , Typeable (TPraosVRF c)
-      , Condense (SigKES (TPraosKES c))
-      , Cardano.Crypto.DSIGN.Class.Signable
-          (TPraosDSIGN c)
-          (Keys.VKeyES (TPraosKES c), Natural, OCert.KESPeriod)
-      , Cardano.Crypto.KES.Class.Signable
-          (TPraosKES c)
-          (BlockChain.BHBody (TPraosHash c) (TPraosDSIGN c) (TPraosKES c))
-      , Cardano.Crypto.VRF.Class.Signable (TPraosVRF c) (Seed, SlotNo)
-      , Cardano.Crypto.VRF.Class.Signable (TPraosVRF c) (UnitInterval, SlotNo)
-      ) => TPraosCrypto (c :: *) where
-  type family TPraosDSIGN c :: *
-  type family TPraosKES   c :: *
-  type family TPraosVRF   c :: *
-  type family TPraosHash  c :: *
-
-data TPraosStandardCrypto
-data TPraosMockCrypto
-
-instance TPraosCrypto TPraosStandardCrypto where
-  type TPraosDSIGN TPraosStandardCrypto = Ed448DSIGN
-  type TPraosKES  TPraosStandardCrypto = SimpleKES Ed448DSIGN
-  type TPraosVRF  TPraosStandardCrypto = SimpleVRF
-  type TPraosHash TPraosStandardCrypto = SHA256
-
-instance TPraosCrypto TPraosMockCrypto where
-  type TPraosDSIGN TPraosMockCrypto = MockDSIGN
-  type TPraosKES  TPraosMockCrypto = MockKES
-  type TPraosVRF  TPraosMockCrypto = MockVRF
-  type TPraosHash TPraosMockCrypto = MD5

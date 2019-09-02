@@ -26,7 +26,7 @@ extra-deps:
       - cardano-crypto-class
 
   - git: https://github.com/input-output-hk/cardano-ledger
-    commit: 291bb7a169363ac67ba0bf401973491f6a3be84f
+    commit: 22363162ee08039ec6158c24a0882c9357e9e35e
     subdirs:
       - cardano-ledger
       - cardano-ledger/test
@@ -34,7 +34,7 @@ extra-deps:
       - crypto/test
 
   - git: https://github.com/input-output-hk/cardano-ledger-specs
-    commit: 384deb55906e037a6c4e73f66636c04fedc3564d
+    commit: bf7038d160b1bba9c2611af63031fb1221508d7f
     subdirs:
       - byron/ledger/executable-spec
       - byron/semantics/executable-spec
@@ -48,7 +48,7 @@ extra-deps:
       - test
 
   - git: https://github.com/input-output-hk/cardano-shell
-    commit: 3664336312b064f30530be003c09cbe9de45df1a
+    commit: d74dadd5a146c5c4e0e6195025fc5c2dd4355f11
 
   - git: https://github.com/input-output-hk/cardano-sl-x509
     commit: ec96c64c665b741c17b4e38f611315bae9b0b054

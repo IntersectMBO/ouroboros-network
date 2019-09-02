@@ -84,6 +84,9 @@ library
                        Ouroboros.Consensus.Protocol.Praos
                        Ouroboros.Consensus.Protocol.Signed
                        Ouroboros.Consensus.Protocol.TPraos
+                       Ouroboros.Consensus.Protocol.TPraos.ChainState
+                       Ouroboros.Consensus.Protocol.TPraos.Crypto
+                       Ouroboros.Consensus.Protocol.TPraos.Util
                        Ouroboros.Consensus.Protocol.WithEBBs
                        Ouroboros.Consensus.TxSubmission
                        Ouroboros.Consensus.Util

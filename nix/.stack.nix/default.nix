@@ -12,6 +12,7 @@
         "splitmix" = (((hackage.splitmix)."0.0.2").revisions).default;
         "libsystemd-journal" = (((hackage.libsystemd-journal)."1.4.4").revisions).default;
         "tasty-hedgehog" = (((hackage.tasty-hedgehog)."1.0.0.1").revisions).default;
+        "Unique" = (((hackage.Unique)."0.4.7.6").revisions).default;
         "Win32" = (((hackage.Win32)."2.5.4.1").revisions).default;
         "base58-bytestring" = (((hackage.base58-bytestring)."0.1.0").revisions).default;
         "hedgehog" = (((hackage.hedgehog)."1.0").revisions).default;
@@ -40,6 +41,10 @@
         cardano-ledger-test = ./cardano-ledger-test.nix;
         cardano-crypto-wrapper = ./cardano-crypto-wrapper.nix;
         cardano-crypto-test = ./cardano-crypto-test.nix;
+        cs-ledger = ./cs-ledger.nix;
+        small-steps = ./small-steps.nix;
+        non-integer = ./non-integer.nix;
+        delegation = ./delegation.nix;
         cardano-prelude = ./cardano-prelude.nix;
         cardano-prelude-test = ./cardano-prelude-test.nix;
         cardano-shell = ./cardano-shell.nix;
