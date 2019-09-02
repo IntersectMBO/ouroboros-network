@@ -69,15 +69,18 @@ repeatedly = flip . foldl' . flip
 repeatedlyM :: Monad m => (a -> b -> m b) -> ([a] -> b -> m b)
 repeatedlyM = flip . foldlM' . flip
 
+-- | Apply a function n times. The value of each application is forced.
 nTimes :: forall a. (a -> a) -> Word64 -> (a -> a)
 nTimes f n = runIdentity . nTimesM (Identity . f) n
 
+-- | Apply a function n times through a monadic bind. The value of each
+-- application is forced.
 nTimesM :: forall m a. Monad m => (a -> m a) -> Word64 -> (a -> m a)
 nTimesM f = go
   where
     go :: Word64 -> (a -> m a)
-    go 0 x = return x
-    go n x = go (n - 1) =<< f x
+    go 0 !x = return x
+    go n !x = go (n - 1) =<< f x
 
 chunks :: Int -> [a] -> [[a]]
 chunks _ [] = []
