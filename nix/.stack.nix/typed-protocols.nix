@@ -25,7 +25,7 @@
           ];
         };
       tests = {
-        "tests" = {
+        "test-protocols" = {
           depends = [
             (hsPkgs.base)
             (hsPkgs.bytestring)

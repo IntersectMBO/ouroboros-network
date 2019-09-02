@@ -57,7 +57,7 @@ library
   ghc-options:       -Wall
                      -Wno-unticked-promoted-constructors
 
-test-suite tests
+test-suite test-protocols
   type:              exitcode-stdio-1.0
   main-is:           Main.hs
   hs-source-dirs:    test src

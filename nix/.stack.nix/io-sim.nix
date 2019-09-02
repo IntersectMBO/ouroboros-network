@@ -25,7 +25,7 @@
           ];
         };
       tests = {
-        "tests" = {
+        "test-sim" = {
           depends = [
             (hsPkgs.base)
             (hsPkgs.array)
