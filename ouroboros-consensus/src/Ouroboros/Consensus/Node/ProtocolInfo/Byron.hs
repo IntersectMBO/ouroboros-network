@@ -132,7 +132,6 @@ protocolInfoByron genesisConfig@Genesis.Config {
                   , pbftNumNodes           = fromIntegral . Set.size
                                            . Genesis.unGenesisKeyHashes
                                            $ genesisKeyHashes
-                  , pbftSignatureWindow    = fromIntegral kParam
                   , pbftSignatureThreshold = unSignatureThreshold $
                       fromMaybe defaultPBftSignatureThreshold mSigThresh
                   }

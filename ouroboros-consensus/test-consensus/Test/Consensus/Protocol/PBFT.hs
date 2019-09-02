@@ -3,14 +3,14 @@ module Test.Consensus.Protocol.PBFT where
 
 import           Data.Map (Map)
 import qualified Data.Map as Map
-import           Data.Sequence (Seq)
-import qualified Data.Sequence as Seq
 
 import           Test.Tasty
 import           Test.Tasty.HUnit
 import           Test.Tasty.QuickCheck
 
 import           Cardano.Crypto.DSIGN
+
+import           Ouroboros.Network.Point (WithOrigin (..))
 
 import           Ouroboros.Consensus.Protocol.PBFT.ChainState (PBftChainState)
 import qualified Ouroboros.Consensus.Protocol.PBFT.ChainState as CS
@@ -52,16 +52,17 @@ instance Arbitrary TestChainState where
       , (1, choose (1, nbKs))
       , (8, choose (nbKs, 200))
       ]
-    return $ TestChainState . testState $ Map.fromList
-      [ (k, Seq.fromList vs)
+    return $ TestChainState . testState Origin $ Map.fromList
+      [ (k, vs)
       | k <- [0..nbKs-1]
       , let vs = [v | v <- [0..nbVs-1], v `mod` nbKs == k]
       ]
 
-testState :: Map Int (Seq Int) -> PBftChainState PBftMockCrypto
-testState = CS.fromMap
-          . Map.mapKeys VerKeyMockDSIGN
-          . Map.map (fmap fromIntegral)
+testState :: WithOrigin Int -> Map Int [Int] -> PBftChainState PBftMockCrypto
+testState anchor =
+      CS.fromMap (fromIntegral <$> anchor)
+    . Map.mapKeys VerKeyMockDSIGN
+    . Map.map (fmap fromIntegral)
 
 {-------------------------------------------------------------------------------
   Tests
@@ -82,7 +83,7 @@ prop_chainStateSize_pruneChainState (Positive n) (TestChainState cs)
 
 test_pruneChainState :: Assertion
 test_pruneChainState =
-    CS.prune 2 cs @?= testState (Map.fromList [(100, [5]), (101, [6])])
+    CS.prune 2 cs @?= testState (At 4) (Map.fromList [(100, [5]), (101, [6])])
   where
     cs :: PBftChainState PBftMockCrypto
-    cs = testState $ Map.fromList [(100, [1,2,5]), (101, [3, 4, 6])]
+    cs = testState Origin $ Map.fromList [(100, [1,2,5]), (101, [3, 4, 6])]
