@@ -214,30 +214,45 @@ runChannelApplication tracer peerid Codec {encode, decode} channel srole stok0 a
           Right (SomeMessage msg, trailing') -> do
             traceWith tracer (TraceRecvMsg peerid (AnyMessage msg))
             pure $ SomeMessageAndChannel msg (go (starget srole msg) trailing')
+          Left failure -> throwM failure
 
       go (NobodyHasAgency stok) _trailing = ClosedChannel stok
 
 
-fn :: forall ps pr st m a x.
+-- | Anything that can be constructed (proved), from 'ChannelApplication' can be
+-- also constructed using a 'Peer' (proven).
+--
+--
+channelApplicationImpliesPeer :: forall ps pr st m a x.
       ( Protocol ps
       , STarget  ps
       , Monad m
       )
-   => ((Channel ps pr st m   -> m a) -> x)
-   -> (Peer     ps pr st m a         -> x)
-fn f peer = f k
+   => (ChannelApplication ps pr st m a -> x)
+   -> (Peer               ps pr st m a -> x)
+channelApplicationImpliesPeer f peer = f k
   where
     k :: Channel ps pr st m -> m a
     k channel = peerChannelDuality peer channel
 
--- TODO: how to convert 'ChannelApplication' to 'Peer'?  There might be more
--- 'ChannelApplication's than 'Peer', but what if we restrict
--- 'ChannelApplication' to ones where 'Channel' is used linearly?
+-- | The dual statement to 'channelApplicationImpliesPeer', it tells us some
+-- thing about 'runPeer' types:
 --
--- @
--- type LinearChannelApplication ps pr (st :: ps) m a = Channel ps pr st m a .- m a
--- @
-
+-- anything that could be derived from a 'runPeer' function can be derived from
+-- 'Channel'
+--
+-- This can be see as 'runPeer' being a weak dual (in some sense) to 'Channel'.
+--
+runPeerImpliesChannel :: forall ps pr st m x.
+        ( Protocol ps
+        , STarget  ps
+        , Monad m
+        )
+     => ((Peer   ps pr st m () -> m ()) -> x)
+     -> (Channel ps pr st m             -> x)
+runPeerImpliesChannel f  channel = f k
+  where
+    k peer = peerChannelDuality peer channel
 
 --
 -- PingPong protocol
