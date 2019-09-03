@@ -45,12 +45,6 @@ import           Ouroboros.Network.Block
 import qualified Ouroboros.Network.Block as Block
 import           Ouroboros.Network.NodeToClient as NodeToClient
 import           Ouroboros.Network.NodeToNode as NodeToNode
-import           Ouroboros.Network.ErrorPolicy
-import           Ouroboros.Network.Socket
-import           Ouroboros.Network.Subscription.PeerState
-import           Ouroboros.Network.Subscription.Dns
-import           Ouroboros.Network.Subscription.Ip
-import           Ouroboros.Network.Subscription.PeerState
 
 import           Ouroboros.Network.Protocol.Handshake.Type
 import           Ouroboros.Network.Protocol.Handshake.Version

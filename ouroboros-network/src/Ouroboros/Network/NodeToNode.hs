@@ -16,10 +16,20 @@ module Ouroboros.Network.NodeToNode (
   , nodeToNodeCodecCBORTerm
 
   , connectTo
+  -- TODO: it seems it more useful for consensus to use connectToNode' rather
+  -- than connectTo (because of `ipSubscriptionWorker` and
+  -- `dnsSubscriptionWorker`)
+  , connectToNode'
   , withServer
 
   -- * Re-exports
   , AnyResponderApp (..)
+
+  -- ** Connection table
+  , ConnectionTable
+  , newConnectionTable
+
+  -- ** Error Policies and Peer state
   , ErrorPolicies (..)
   , nullErrorPolicies
   , ErrorPolicy (..)
@@ -27,6 +37,20 @@ module Ouroboros.Network.NodeToNode (
   , newPeerStatesVar
   , PeerState (..)
   , SuspendDecision (..)
+
+  -- ** Subscription
+  , DnsSubscriptionTarget (..)
+  , dnsSubscriptionWorker
+  , IPSubscriptionTarget (..)
+  , ipSubscriptionWorker
+
+  -- ** Traces
+  , SubscriptionTrace (..)
+  , DnsTrace (..)
+  , ErrorPolicyTrace (..)
+  , WithIPList (..)
+  , WithDomainName (..)
+  , WithAddr (..)
   ) where
 
 import           Control.Concurrent.Async (Async)
@@ -57,6 +81,8 @@ import           Ouroboros.Network.Mux
 import           Ouroboros.Network.Protocol.Handshake.Type
 import           Ouroboros.Network.Protocol.Handshake.Version
 import           Ouroboros.Network.Socket
+import           Ouroboros.Network.Subscription.Dns
+import           Ouroboros.Network.Subscription.Ip
 
 
 -- | An index type used with the mux to enumerate all the mini-protocols that
