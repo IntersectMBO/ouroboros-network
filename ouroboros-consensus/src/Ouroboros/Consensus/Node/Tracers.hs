@@ -18,7 +18,7 @@ import           Ouroboros.Network.TxSubmission.Inbound
 import           Ouroboros.Network.TxSubmission.Outbound
                      (TraceTxSubmissionOutbound)
 
-import           Ouroboros.Consensus.Block (Header, SupportedBlock)
+import           Ouroboros.Consensus.Block (Header)
 import           Ouroboros.Consensus.BlockFetchServer
                      (TraceBlockFetchServerEvent)
 import           Ouroboros.Consensus.ChainSyncClient (TraceChainSyncClientEvent)
