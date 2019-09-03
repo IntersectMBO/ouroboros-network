@@ -26,24 +26,22 @@ module Ouroboros.Network.NodeToNode (
   , IPSubscriptionTarget (..)
   , ipSubscriptionWorker
   , ipSubscriptionWorker_V1
-  , SubscriptionTrace (..)
-  , WithIPList (..)
+
   -- ** DNS subscription worker
   , DnsSubscriptionTarget (..)
   , dnsSubscriptionWorker
   , dnsSubscriptionWorker_V1
-  , DnsTrace (..)
-  , WithDomainName (..)
 
   -- * Re-exports
-  , WithAddr (..)
-  , ErrorPolicyTrace (..)
-  , ConnectionTable
-  , newConnectionTable
-  , TraceSendRecv
   , DecoderFailureOrTooMuchInput
   , Handshake
   , LocalAddresses (..)
+
+  -- ** Connection table
+  , ConnectionTable
+  , newConnectionTable
+
+  -- ** Error Policies and Peer state
   , ErrorPolicies (..)
   , nullErrorPolicies
   , ErrorPolicy (..)
@@ -51,6 +49,15 @@ module Ouroboros.Network.NodeToNode (
   , newPeerStatesVar
   , PeerState (..)
   , SuspendDecision (..)
+
+  -- ** Traces
+  , TraceSendRecv (..)
+  , SubscriptionTrace (..)
+  , DnsTrace (..)
+  , ErrorPolicyTrace (..)
+  , WithIPList (..)
+  , WithDomainName (..)
+  , WithAddr (..)
   ) where
 
 import           Control.Concurrent.Async (Async)
@@ -72,7 +79,7 @@ import           Control.Tracer (Tracer)
 import           Network.Mux.Types
 import           Network.Mux.Interface
 import           Network.TypedProtocol.Driver.ByteLimit (DecoderFailureOrTooMuchInput)
-import           Network.TypedProtocol.Driver (TraceSendRecv)
+import           Network.TypedProtocol.Driver (TraceSendRecv (..))
 
 import           Ouroboros.Network.Magic
 import           Ouroboros.Network.ErrorPolicy

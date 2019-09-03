@@ -18,8 +18,12 @@ module Ouroboros.Network.Subscription.Dns
     , dnsResolve
     , resolutionDelay
 
+      -- * Traces
+    , SubscriptionTrace (..)
     , DnsTrace (..)
+    , ErrorPolicyTrace (..)
     , WithDomainName (..)
+    , WithAddr (..)
     ) where
 
 import           Control.Monad (unless)
