@@ -5,6 +5,7 @@ module Control.Monad.Class.MonadSTM.Strict
   ( module X
     -- * 'StrictTVar'
   , StrictTVar
+  , toLazyTVar
   , newTVar
   , newTVarM
   , newTVarWithInvariantM
@@ -49,6 +50,9 @@ data StrictTVar m a = StrictTVar
      -- 'StrictTVar'.
    , tvar      :: !(Lazy.LazyTVar m a)
    }
+
+toLazyTVar :: StrictTVar m a -> Lazy.LazyTVar m a
+toLazyTVar StrictTVar { tvar } = tvar
 
 newTVar :: MonadSTM m => a -> STM m (StrictTVar m a)
 newTVar !a = StrictTVar (const True) <$> Lazy.newTVar a
