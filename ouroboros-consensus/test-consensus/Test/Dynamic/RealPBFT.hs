@@ -23,6 +23,7 @@ import           Test.Tasty.QuickCheck
 import           Ouroboros.Network.MockChain.Chain (Chain)
 import qualified Ouroboros.Network.MockChain.Chain as Chain
 
+import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Demo
 import           Ouroboros.Consensus.Ledger.Byron (ByronBlockOrEBB, ByronGiven)
 import           Ouroboros.Consensus.Node.ProtocolInfo
@@ -41,6 +42,7 @@ import qualified Test.Cardano.Chain.Genesis.Dummy as Dummy
 import           Test.Dynamic.General
 import           Test.Dynamic.Network (NodeOutput (..))
 import           Test.Dynamic.Util
+import           Test.Dynamic.Util.NodeJoinPlan
 
 import           Test.Util.Orphans.Arbitrary ()
 
@@ -50,6 +52,21 @@ tests = testGroup "Dynamic chain generation"
         \numCoreNodes ->
           forAll (elements (enumCoreNodes numCoreNodes)) $ \coreNodeId ->
           prop_setup_coreNodeId numCoreNodes coreNodeId
+    , adjustOption (\(QuickCheckTests n) -> QuickCheckTests (1 `max` (div n 10))) $
+      -- as of merging PR #773, this test case fails without the commit that
+      -- introduces the InvalidRollForward exception
+      --
+      -- See a related discussion at
+      -- https://github.com/input-output-hk/ouroboros-network/pull/773#issuecomment-522192097
+      testProperty "addressed by InvalidRollForward exception (PR #773)" $
+          prop_simple_real_pbft_convergence sp TestConfig
+            { numCoreNodes = NumCoreNodes 3
+            , numSlots = NumSlots 24
+            , nodeJoinPlan = NodeJoinPlan $ Map.fromList
+              [ (CoreNodeId 0,SlotNo 0)
+              , (CoreNodeId 1,SlotNo 20)
+              , (CoreNodeId 2,SlotNo 22)
+              ]}
     , testProperty "simple Real PBFT convergence" $
         prop_simple_real_pbft_convergence sp
     ]
