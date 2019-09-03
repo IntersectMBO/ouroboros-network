@@ -42,6 +42,7 @@ import           Test.Dynamic.General
 import           Test.Dynamic.Network (NodeOutput (..))
 import           Test.Dynamic.Util
 import           Test.Dynamic.Util.NodeJoinPlan
+import           Test.Dynamic.Util.NodeTopology
 
 import           Test.Util.Orphans.Arbitrary ()
 
@@ -59,14 +60,18 @@ tests = testGroup "Dynamic chain generation"
       -- See a related discussion at
       -- https://github.com/input-output-hk/ouroboros-network/pull/773#issuecomment-522192097
       testProperty "addressed by InvalidRollForward exception (PR #773)" $
+          let ncn = NumCoreNodes 3
+          in
           prop_simple_real_pbft_convergence TestConfig
-            { numCoreNodes = NumCoreNodes 3
+            { numCoreNodes = ncn
             , numSlots = NumSlots 24
             , nodeJoinPlan = NodeJoinPlan $ Map.fromList
               [ (CoreNodeId 0,SlotNo 0)
               , (CoreNodeId 1,SlotNo 20)
               , (CoreNodeId 2,SlotNo 22)
-              ]}
+              ]
+            , nodeTopology = meshNodeTopology ncn
+            }
     , testProperty "simple Real PBFT convergence" $
         prop_simple_real_pbft_convergence
     ]

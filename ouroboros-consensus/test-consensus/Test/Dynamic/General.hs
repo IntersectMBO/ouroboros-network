@@ -42,6 +42,7 @@ import           Test.Dynamic.Network
 import           Test.Dynamic.TxGen
 import           Test.Dynamic.Util
 import           Test.Dynamic.Util.NodeJoinPlan
+import           Test.Dynamic.Util.NodeTopology
 
 import           Test.Util.Orphans.Arbitrary ()
 import           Test.Util.Range
@@ -54,36 +55,47 @@ data TestConfig = TestConfig
   { numCoreNodes :: !NumCoreNodes
   , numSlots     :: !NumSlots
   , nodeJoinPlan :: !NodeJoinPlan
+  , nodeTopology :: !NodeTopology
   }
   deriving (Show)
 
 genTestConfig :: NumCoreNodes -> NumSlots -> Gen TestConfig
 genTestConfig numCoreNodes numSlots = do
     nodeJoinPlan <- genNodeJoinPlan numCoreNodes numSlots
-    pure TestConfig{numCoreNodes, numSlots, nodeJoinPlan}
+    nodeTopology <- genNodeTopology numCoreNodes
+    pure TestConfig{numCoreNodes, numSlots, nodeJoinPlan, nodeTopology}
 
 -- | Shrink without changing the number of nodes or slots
 shrinkTestConfig :: TestConfig -> [TestConfig]
-shrinkTestConfig testConfig@TestConfig{nodeJoinPlan} =
-    [ testConfig{nodeJoinPlan = p'}
-    | p' <- shrinkNodeJoinPlan nodeJoinPlan
+shrinkTestConfig testConfig@TestConfig{nodeJoinPlan, nodeTopology} =
+    tail $ -- drop the identity output
+    [ testConfig{nodeJoinPlan = p', nodeTopology = top'}
+    | p' <- nodeJoinPlan : shrinkNodeJoinPlan nodeJoinPlan
+    , top' <- nodeTopology : shrinkNodeTopology nodeTopology
     ]
 
 -- | Shrink, including the number of nodes and slots
 shrinkTestConfigFreely :: TestConfig -> [TestConfig]
-shrinkTestConfigFreely TestConfig{numCoreNodes, numSlots, nodeJoinPlan} =
+shrinkTestConfigFreely
+  TestConfig{numCoreNodes, numSlots, nodeJoinPlan, nodeTopology} =
     tail $   -- drop the identity result
     [ TestConfig
         { numCoreNodes = n'
         , numSlots = t'
         , nodeJoinPlan = p'
+        , nodeTopology = top'
         }
-    | n' <- numCoreNodes : shrink numCoreNodes
-    , t' <- numSlots : shrink numSlots
+    | n' <- idAnd shrink numCoreNodes
+    , t' <- idAnd shrink numSlots
     , let adjustedP = adjustedNodeJoinPlan n' t'
-    , p' <- adjustedP : shrinkNodeJoinPlan adjustedP
+    , let adjustedTop = adjustedNodeTopology n'
+    , p' <- idAnd shrinkNodeJoinPlan adjustedP
+    , top' <- idAnd shrinkNodeTopology adjustedTop
     ]
   where
+    idAnd :: forall a. (a -> [a]) -> a -> [a]
+    idAnd f x = x : f x
+
     adjustedNodeJoinPlan (NumCoreNodes n') (NumSlots t') =
         NodeJoinPlan $
         -- scale by t' / t
@@ -95,6 +107,11 @@ shrinkTestConfigFreely TestConfig{numCoreNodes, numSlots, nodeJoinPlan} =
         NumSlots t = numSlots
         NodeJoinPlan m = nodeJoinPlan
 
+    adjustedNodeTopology (NumCoreNodes n') =
+        NodeTopology $ Map.filterWithKey (\(CoreNodeId i) _ -> i < n') m
+      where
+        NodeTopology m = nodeTopology
+
 instance Arbitrary TestConfig where
   arbitrary = join $ genTestConfig <$> arbitrary <*> arbitrary
   shrink = shrinkTestConfigFreely
@@ -103,11 +120,10 @@ instance Arbitrary TestConfig where
   Running tests
 -------------------------------------------------------------------------------}
 
--- | Execute a fully-connected network of nodes that join according to the node
--- join plan
+-- | Thin wrapper around 'runNodeNetwork'
 --
--- Runs the network for the specified number of slots, and returns the
--- resulting 'TestOutput'.
+-- Provides a 'ResourceRegistry' and 'BlockchainTime', runs in the IO sim
+-- monad.
 --
 runTestNetwork ::
   forall blk.
@@ -119,15 +135,17 @@ runTestNetwork ::
   -> TestConfig
   -> Seed
   -> TestOutput blk
-runTestNetwork pInfo TestConfig{numCoreNodes, numSlots, nodeJoinPlan}
+runTestNetwork pInfo
+  TestConfig{numCoreNodes, numSlots, nodeJoinPlan, nodeTopology}
   seed = runSimOrThrow $ do
     registry  <- unsafeNewRegistry
     testBtime <- newTestBlockchainTime registry numSlots slotLen
-    broadcastNetwork
+    runNodeNetwork
       registry
       testBtime
       numCoreNodes
       nodeJoinPlan
+      nodeTopology
       pInfo
       (seedToChaCha seed)
       slotLen
@@ -157,15 +175,16 @@ prop_general ::
   -> LeaderSchedule
   -> TestOutput blk
   -> Property
-prop_general k TestConfig{numSlots, nodeJoinPlan} schedule
+prop_general k TestConfig{numSlots, nodeJoinPlan, nodeTopology} schedule
   TestOutput{testOutputNodes} =
     counterexample ("nodeJoinPlan: " <> condense nodeJoinPlan) $
     counterexample ("schedule: " <> condense schedule) $
     counterexample ("nodeChains: " <> unlines ("" : map (\x -> "  " <> condense x) (Map.toList nodeChains))) $
-    counterexample ("consensus expected: " <> show isConsensusExcepected) $
+    counterexample ("nodeTopology: " <> condense nodeTopology) $
     tabulate "consensus expected" [show isConsensusExcepected] $
     tabulate "shortestLength" [show (rangeK k (shortestLength nodeChains))] $
     tabulate "floor(4 * lastJoinSlot / numSlots)" [show lastJoinSlot] $
+    tabulate "bottleneckSizeNodeTopology" [show (bottleneckSizeNodeTopology nodeTopology)] $
     prop_all_common_prefix
         maxForkLength
         (Map.elems nodeChains) .&&.
