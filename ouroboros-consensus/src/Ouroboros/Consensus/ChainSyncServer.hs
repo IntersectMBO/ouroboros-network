@@ -73,15 +73,16 @@ chainSyncServerForReader
        ( MonadSTM m
        , HeaderHash blk ~ HeaderHash b
        )
-    => Tracer m (TraceChainSyncServerEvent blk)
+    => Tracer m (TraceChainSyncServerEvent b)
     -> ChainDB m blk
     -> Reader  m blk b
     -> ChainSyncServer b (Point b) m ()
-chainSyncServerForReader _tracer chainDB rdr =
+chainSyncServerForReader tracer chainDB rdr =
     idle'
   where
-    idle :: ServerStIdle b (Point b) m ()
-    idle =
+    idle :: m (ServerStIdle b (Point b) m ())
+    idle = do
+      traceWith tracer (TraceChainSyncServerIdle)
       ServerStIdle {
         recvMsgRequestNext   = handleRequestNext,
         recvMsgFindIntersect = handleFindIntersect,
@@ -89,19 +90,21 @@ chainSyncServerForReader _tracer chainDB rdr =
       }
 
     idle' :: ChainSyncServer b (Point b) m ()
-    idle' = ChainSyncServer (return idle)
+    idle' = ChainSyncServer idle
 
     handleRequestNext :: m (Either (ServerStNext b (Point b) m ())
                                 (m (ServerStNext b (Point b) m ())))
     handleRequestNext = ChainDB.readerInstruction rdr >>= \case
       Just update -> do
         tip <- castPoint <$> atomically (ChainDB.getTipPoint chainDB)
+        traceWith tracer (TraceChainSyncServerRead tip)
         return $ Left $ sendNext tip update
       Nothing     -> return $ Right $ do
         -- Reader is at the head, we have to block and wait for the chain to
         -- change.
         update <- ChainDB.readerInstructionBlocking rdr
         tip    <- castPoint <$> atomically (ChainDB.getTipPoint chainDB)
+        traceWith tracer (TraceChainSyncServerReadBlocked tip)
         return $ sendNext tip update
 
     sendNext :: Point b
@@ -126,7 +129,11 @@ chainSyncServerForReader _tracer chainDB rdr =
 -------------------------------------------------------------------------------}
 
 -- | Events traced by the Chain Sync Server.
-data TraceChainSyncServerEvent blk
+data TraceChainSyncServerEvent blk =
+    TraceChainSyncServerIdle
+  | TraceChainSyncServerRead (Point blk)
+  | TraceChainSyncServerReadBlocked (Point blk)
+
    -- TODO no events yet. Tracing the messages send/received over the network
    -- might be all we need?
   deriving (Eq, Show)
