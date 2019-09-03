@@ -26,21 +26,22 @@ module Ouroboros.Network.NodeToNode (
   , IPSubscriptionTarget (..)
   , ipSubscriptionWorker
   , ipSubscriptionWorker_V1
-  , SubscriptionTrace (..)
-  , WithIPList (..)
+
   -- ** DNS subscription worker
   , DnsSubscriptionTarget (..)
   , dnsSubscriptionWorker
   , dnsSubscriptionWorker_V1
-  , DnsTrace (..)
-  , WithDomainName (..)
 
   -- * Re-exports
-  , ConnectionTable
-  , newConnectionTable
   , TraceSendRecv
   , DecoderFailureOrTooMuchInput
   , Handshake
+
+  -- ** Connection table
+  , ConnectionTable
+  , newConnectionTable
+
+  -- ** Error Policies and Peer state
   , ErrorPolicies (..)
   , nullErrorPolicies
   , ErrorPolicy (..)
@@ -48,6 +49,14 @@ module Ouroboros.Network.NodeToNode (
   , newPeerStatesVar
   , PeerState (..)
   , SuspendDecision (..)
+
+  -- ** Traces
+  , SubscriptionTrace (..)
+  , DnsTrace (..)
+  , ErrorPolicyTrace (..)
+  , WithIPList (..)
+  , WithDomainName (..)
+  , WithAddr (..)
   ) where
 
 import           Control.Concurrent.Async (Async)

@@ -10,9 +10,12 @@
 module Ouroboros.Network.Subscription.Ip
     ( ipSubscriptionWorker
     , subscriptionWorker
-    , SubscriptionTrace (..)
     , IPSubscriptionTarget (..)
     , ipSubscriptionTarget
+
+    --  * Traces
+    , SubscriptionTrace (..)
+    , ErrorPolicyTrace (..)
     , WithIPList (..)
 
     -- * 'PeerState' STM transactions
