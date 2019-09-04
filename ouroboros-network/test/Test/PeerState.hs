@@ -22,6 +22,7 @@ import           Data.Monoid (First (..))
 import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
 import           Data.Time.Clock (secondsToDiffTime)
+import           Text.Printf
 
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork
@@ -338,6 +339,7 @@ prop_subscriptionWorker
     returnCallback (ArbErrorPolicies errPolicies)
     (Blind (ArbApp merr app))
   =
+    tabulate "peer states & app errors" [printf "%-20s %s" (peerStateType ps) (exceptionType merr)] $
     ioProperty $ do
       doneVar :: StrictTMVar IO () <- newEmptyTMVarM
       tbl <- newConnectionTable
@@ -396,6 +398,17 @@ prop_subscriptionWorker
         then pure r
         else if r then retry else pure r
 
+    --
+    -- tabulating QuickCheck's cases
+    --
+
+    peerStateType HotPeer{}           = "HotPeer"
+    peerStateType SuspendedConsumer{} = "SuspendedConsumer"
+    peerStateType SuspendedPeer{}     = "SuspendedPeer"
+    peerStateType ColdPeer{}          = "ColdPeer"
+
+    exceptionType Nothing  = "no-exception"
+    exceptionType (Just _) = "with-exception"
 
 -- transition spec from a given state to a target states
 transitionSpec :: Ord addr
