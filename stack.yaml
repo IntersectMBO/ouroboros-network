@@ -1,4 +1,4 @@
-resolver: https://raw.githubusercontent.com/input-output-hk/cardano-prelude/4c48d34fd60991bb1b9168d293cfe31a975d858e/snapshot.yaml
+resolver: https://raw.githubusercontent.com/input-output-hk/cardano-prelude/b83730dccab14111d62144b048084eec7900d091/snapshot.yaml
 
 packages:
   - ./typed-transitions
@@ -13,20 +13,20 @@ packages:
 
 extra-deps:
   - git: https://github.com/input-output-hk/iohk-monitoring-framework
-    commit: 4ad81798402ce05655b37b31b0b67f444a2f0b91
+    commit: c85d57a95d919336afea7e0eff00e834bd6b4b58
     subdirs:
       - contra-tracer
       - iohk-monitoring
 
   - git: https://github.com/input-output-hk/cardano-base
-    commit: 1121579803319f01612583fc445c50b0a0ce0424
+    commit: 31aafc8d5c090c4443a12d588c923badac929843
     subdirs:
       - binary
       - binary/test
       - cardano-crypto-class
 
   - git: https://github.com/input-output-hk/cardano-ledger
-    commit: 70515f1aefdbd60d11061b4b370aa5e54a487e56
+    commit: 291bb7a169363ac67ba0bf401973491f6a3be84f
     subdirs:
       - cardano-ledger
       - cardano-ledger/test
@@ -34,13 +34,13 @@ extra-deps:
       - crypto/test
 
   - git: https://github.com/input-output-hk/cardano-prelude
-    commit: 4c48d34fd60991bb1b9168d293cfe31a975d858e
+    commit: b83730dccab14111d62144b048084eec7900d091
     subdirs:
       - .
       - test
 
   - git: https://github.com/input-output-hk/cardano-shell
-    commit: 81c72dab5ef6974226b5158c474cf7b3caebaea2
+    commit: 3664336312b064f30530be003c09cbe9de45df1a
 
   - git: https://github.com/input-output-hk/cardano-sl-x509
     commit: ec96c64c665b741c17b4e38f611315bae9b0b054
