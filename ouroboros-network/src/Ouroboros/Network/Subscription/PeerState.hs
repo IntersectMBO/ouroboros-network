@@ -43,7 +43,6 @@ module Ouroboros.Network.Subscription.PeerState
   , alterAndLookup
   ) where
 
-import qualified Control.Concurrent.Async as Async
 import           Control.Exception (Exception, SomeException (..), assert)
 import           Control.Monad.State
 import           Data.Map.Strict (Map)
@@ -64,6 +63,7 @@ import           Data.Typeable ( Proxy (..)
 import           Text.Printf
 
 import           Control.Monad.Class.MonadAsync
+import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadTime
 
@@ -178,17 +178,21 @@ data PeerState m t
   -- ^ peer with no opened connections in either direction
   deriving Functor
 
-instance Show t => Show (PeerState IO t) where
+instance ( Show t
+         , MonadAsync m
+         , Ord (ThreadId m)
+         , Show (ThreadId m)
+         ) => Show (PeerState m t) where
     show (HotPeer producers consumers)
        = "HotPeer"
       ++ " "
-      ++ show (Set.map Async.asyncThreadId producers)
+      ++ show (Set.map (asyncThreadId (Proxy :: Proxy m)) producers)
       ++ " "
-      ++ show (Set.map Async.asyncThreadId consumers)
+      ++ show (Set.map (asyncThreadId (Proxy :: Proxy m)) consumers)
     show (SuspendedConsumer producers consT)
        = "SuspendedConsumer"
       ++ " "
-      ++ show (Set.map Async.asyncThreadId producers)
+      ++ show (Set.map (asyncThreadId (Proxy :: Proxy m)) producers)
       ++ " "
       ++ show consT
     show (SuspendedPeer prodT consT)
