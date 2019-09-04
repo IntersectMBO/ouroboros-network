@@ -12,15 +12,6 @@
 * The [`byron-proxy`](https://github.com/input-output-hk/cardano-byron-proxy) is a network protocol proxy between Byron and Shelley.
   It now lives in a seaprate repository.
 
-## Design Specification
-
-The network design is documented
-[here](https://hydra.iohk.io/job/Cardano/ouroboros-network/network-pdf/latest/download-by-type/doc-pdf/network).  It includes
-high level overview and requirements, description of communication protocols,
-design of the multiplexing layer, wire protocl (binary encoding of messages).
-It is a self contained document, written for implementors who wish to
-re-implenet Cardano Shelley network architecture.
-
 ## Demo application
 
 You can run a demo application, check

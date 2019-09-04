@@ -65,8 +65,6 @@ in commonLib.nix-tools.release-nix {
 
   extraBuilds = {
     tests = default.tests;
-    network-pdf-wip = default.network-pdf-wip;
-    network-pdf = default.network-pdf;
   };
   # so that the shell is also built for darwin:
   builds-on-supported-systems = [ "shell" ];
@@ -100,7 +98,6 @@ in commonLib.nix-tools.release-nix {
     jobs.nix-tools.x86_64-pc-mingw32-packages-exes.x86_64-linux
 
     # additional required jobs:
-    jobs.network-pdf
     jobs.shell.x86_64-linux
     
     # FIXME: https://github.com/NixOS/nix/issues/2311
