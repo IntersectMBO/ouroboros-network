@@ -63,7 +63,7 @@
           };
         };
       tests = {
-        "tests" = {
+        "test-network" = {
           depends = [
             (hsPkgs.base)
             (hsPkgs.array)
