@@ -65,8 +65,6 @@ in commonLib.nix-tools.release-nix {
 
   extraBuilds = {
     tests = default.tests;
-    network-pdf-wip = default.network-pdf-wip;
-    network-pdf = default.network-pdf;
   };
   # so that the shell is also built for darwin:
   builds-on-supported-systems = [ "shell" ];
