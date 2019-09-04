@@ -24,6 +24,7 @@ import qualified Data.Set as Set
 import           Data.Time.Clock (secondsToDiffTime)
 
 import           Control.Monad.Class.MonadAsync
+import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadThrow
@@ -88,8 +89,11 @@ newtype ArbPeerState m = ArbPeerState {
       getArbPeerState :: PeerState m
     }
 
-instance Show (ArbPeerState m) where
-    show (ArbPeerState _) = "ArbPeerState"
+instance ( Ord (ThreadId m)
+         , Show (ThreadId m)
+         , MonadAsync m
+         ) => Show (ArbPeerState m) where
+    show (ArbPeerState p) = "ArbPeerState " ++ show p
 
 -- TODO: it only generates times, not ThreadId's.
 instance Arbitrary (ArbPeerState m) where
