@@ -664,11 +664,11 @@ instance Show addr => Show (SubscriptionTrace addr) where
     show (SubscriptionTraceConnectStart dst) =
         "Connection Attempt Start, destination " ++ show dst
     show (SubscriptionTraceConnectEnd dst res) =
-        "Connection Attemt End, destination " ++ show dst ++ " outcome: " ++ show res
+        "Connection Attempt End, destination " ++ show dst ++ " outcome: " ++ show res
     show (SubscriptionTraceSocketAllocationException dst e) =
         "Socket Allocation Exception, destination " ++ show dst ++ " exception: " ++ show e
     show (SubscriptionTraceConnectException dst e) =
-        "Connection Attemt Exception, destination " ++ show dst ++ " exception: " ++ show e
+        "Connection Attempt Exception, destination " ++ show dst ++ " exception: " ++ show e
     show (SubscriptionTraceConnectCleanup dst) =
         "Connection Cleanup, destination " ++ show dst
     show SubscriptionTraceSubscriptionRunning =
