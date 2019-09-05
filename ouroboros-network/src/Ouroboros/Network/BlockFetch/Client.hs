@@ -16,10 +16,12 @@ module Ouroboros.Network.BlockFetch.Client (
   ) where
 
 import           Control.Monad (unless)
-import           Control.Monad.Class.MonadSTM
+import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
 import           Control.Exception (assert)
+
+import qualified Data.Set as Set
 
 import           Ouroboros.Network.Block
 
@@ -32,9 +34,11 @@ import           Ouroboros.Network.ChainFragment (ChainFragment)
 import           Ouroboros.Network.BlockFetch.ClientState
                    ( FetchClientContext(..)
                    , FetchClientPolicy(..)
-                   , FetchClientStateVars
+                   , FetchClientStateVars (fetchClientInFlightVar)
                    , FetchRequest(..)
+                   , PeerFetchInFlight(..)
                    , TraceFetchClientState
+                   , fetchClientCtxStateVars
                    , acknowledgeFetchRequest
                    , completeBlockDownload
                    , completeFetchBatch )
@@ -92,8 +96,19 @@ blockFetchClient FetchClientContext {
                     (\_ -> senderIdle outstanding)
 
     -- And similarly if there are no pending pipelined results at all.
-    senderIdle Zero = senderAwait Zero
-    --TODO: assert nothing in flight here
+    senderIdle Zero = SenderEffect $ do
+      -- assert nothing in flight here
+      PeerFetchInFlight {
+          peerFetchReqsInFlight,
+          peerFetchBytesInFlight,
+          peerFetchBlocksInFlight
+        } <- atomically $ readTVar (fetchClientInFlightVar stateVars)
+
+      assert
+        ( peerFetchReqsInFlight  == 0 &&
+          peerFetchBytesInFlight == 0 &&
+          Set.null peerFetchBlocksInFlight )
+        $ pure (senderAwait Zero)
 
     senderAwait :: forall n.
                    Nat n
