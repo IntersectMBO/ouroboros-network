@@ -1060,8 +1060,12 @@ applyByronGenTx :: ValidationMode
                 -> LedgerState (ByronBlockOrEBB cfg)
                 -> Except (ApplyTxErr (ByronBlockOrEBB cfg))
                           (LedgerState (ByronBlockOrEBB cfg))
-applyByronGenTx validationMode (ByronEBBLedgerConfig (ByronLedgerConfig cfg)) genTx (ByronEBBLedgerState st@ByronLedgerState{..}) =
-    (\x -> ByronEBBLedgerState $ st { blsCurrent = x }) <$> go genTx blsCurrent
+applyByronGenTx validationMode
+                (ByronEBBLedgerConfig (ByronLedgerConfig cfg))
+                genTx
+                (ByronEBBLedgerState st@ByronLedgerState{..}) =
+    (\x -> ByronEBBLedgerState $ st { blsCurrent = x })
+      <$> go genTx blsCurrent
   where
     go :: (MonadError ByronApplyTxError m)
        => GenTx (ByronBlockOrEBB cfg)
@@ -1082,7 +1086,36 @@ applyByronGenTx validationMode (ByronEBBLedgerConfig (ByronLedgerConfig cfg)) ge
           }
         fixPM (Crypto.AProtocolMagic a b) = Crypto.AProtocolMagic (reAnnotate a) b
 
-    go (ByronDlg _ _) _            = error "applyByronGenTx.go: ByronDlg"
+    go (ByronDlg _ cert) cvs = wrapCVS <$>
+        V.Interface.updateDelegation env dlgState [cert]
+          `wrapError` ByronApplyDlgError
+      where
+        wrapCVS dlgState' = cvs { CC.Block.cvsDelegationState = dlgState' }
+
+        protocolMagic = Crypto.getAProtocolMagicId $ fixPM $
+          CC.Genesis.configProtocolMagic cfg
+
+        k = CC.Genesis.configK cfg
+
+        dlgState = CC.Block.cvsDelegationState cvs
+
+        currentEpoch =
+          CC.Slot.slotNumberEpoch (CC.Genesis.configEpochSlots cfg)
+                                  currentSlot
+
+        currentSlot = CC.Block.cvsLastSlot cvs
+
+        env = V.Interface.Environment
+          { V.Interface.protocolMagic     = protocolMagic
+          , V.Interface.allowedDelegators = allowedDelegators cfg
+          , V.Interface.k                 = k
+          , V.Interface.currentEpoch      = currentEpoch
+          , V.Interface.currentSlot       = currentSlot
+          }
+
+        fixPM (Crypto.AProtocolMagic a b) =
+          Crypto.AProtocolMagic (reAnnotate a) b
+
     go (ByronUpdateProposal _ _) _ = error "applyByronGenTx.go: ByronUpdateProposal"
     go (ByronUpdateVote _ _) _     = error "applyByronGenTx.go: ByronUpdateVote"
 
