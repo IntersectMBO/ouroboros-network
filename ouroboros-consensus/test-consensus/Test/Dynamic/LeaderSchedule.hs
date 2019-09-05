@@ -82,7 +82,7 @@ genLeaderSchedule :: SecurityParam
                   -> NodeJoinPlan
                   -> Gen LeaderSchedule
 genLeaderSchedule k (NumSlots numSlots) (NumCoreNodes numCoreNodes) nodeJoinPlan =
-    flip suchThat (not . tooCrowded k nodeJoinPlan) $ do
+    flip suchThat (consensusExpected k nodeJoinPlan) $ do
         leaders <- replicateM numSlots $ frequency
             [ ( 4, pick 0)
             , ( 2, pick 1)

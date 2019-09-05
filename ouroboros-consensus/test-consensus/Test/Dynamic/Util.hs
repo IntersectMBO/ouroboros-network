@@ -11,7 +11,7 @@ module Test.Dynamic.Util (
   -- * LeaderSchedule
   , leaderScheduleFromTrace
   , roundRobinLeaderSchedule
-  , tooCrowded
+  , consensusExpected
   -- * GraphViz Dot
   , tracesToDot
   -- * Re-exports
@@ -251,8 +251,13 @@ leaderScheduleFromTrace (NumSlots numSlots) = LeaderSchedule .
         | nid `elem` xs = xs
         | otherwise     = nid : xs
 
-tooCrowded :: SecurityParam -> NodeJoinPlan -> LeaderSchedule -> Bool
-tooCrowded k nodeJoinPlan schedule = maxForkLength > maxRollbacks k
+consensusExpected ::
+     SecurityParam
+  -> NodeJoinPlan
+  -> LeaderSchedule
+  -> Bool
+consensusExpected k nodeJoinPlan schedule =
+    maxForkLength <= maxRollbacks k
   where
     NumBlocks maxForkLength = determineForkLength k nodeJoinPlan schedule
 

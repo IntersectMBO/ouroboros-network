@@ -78,10 +78,8 @@ prop_simple_praos_convergence :: PraosParams
                               -> Property
 prop_simple_praos_convergence
   params@PraosParams{praosSecurityParam = k}
-  testConfig@TestConfig{numCoreNodes, numSlots, nodeJoinPlan} seed =
+  testConfig@TestConfig{numCoreNodes, numSlots} seed =
     counterexample (tracesToDot testOutputNodes) $
-    label lbl $
-    counterexample lbl $
     prop_general k testConfig schedule testOutput
   where
     testOutput@TestOutput{testOutputNodes} =
@@ -90,6 +88,3 @@ prop_simple_praos_convergence
             testConfig seed
 
     schedule = leaderScheduleFromTrace numSlots testOutputNodes
-    lbl = if tooCrowded k nodeJoinPlan schedule
-          then "too crowded"
-          else "not too crowded"

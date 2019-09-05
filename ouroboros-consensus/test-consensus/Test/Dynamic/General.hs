@@ -161,7 +161,9 @@ prop_general k TestConfig{numSlots, nodeJoinPlan} schedule
   TestOutput{testOutputNodes} =
     counterexample ("nodeJoinPlan: " <> condense nodeJoinPlan) $
     counterexample ("schedule: " <> condense schedule) $
-    counterexample ("nodeChains: " <> condense nodeChains) $
+    counterexample ("nodeChains: " <> unlines ("" : map (\x -> "  " <> condense x) (Map.toList nodeChains))) $
+    counterexample ("consensus expected: " <> show isConsensusExcepected) $
+    tabulate "consensus expected" [show isConsensusExcepected] $
     tabulate "shortestLength" [show (rangeK k (shortestLength nodeChains))] $
     tabulate "floor(4 * lastJoinSlot / numSlots)" [show lastJoinSlot] $
     prop_all_common_prefix
@@ -175,6 +177,9 @@ prop_general k TestConfig{numSlots, nodeJoinPlan} schedule
 
     nodeChains = nodeOutputFinalChain <$> testOutputNodes
     nodeInfos  = nodeOutputNodeInfo   <$> testOutputNodes
+
+    isConsensusExcepected :: Bool
+    isConsensusExcepected = consensusExpected k nodeJoinPlan schedule
 
     fileHandleLeakCheck :: NodeId -> NodeInfo blk MockFS -> Property
     fileHandleLeakCheck nid nodeInfo = conjoin
