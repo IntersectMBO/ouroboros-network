@@ -85,6 +85,7 @@ import           Data.Foldable (find, foldl')
 import           Data.Reflection (Given (..))
 import qualified Data.Sequence.Strict as Seq
 import           Data.Set (Set)
+import qualified Data.Set as Set
 import qualified Data.Text as T
 import           Data.Typeable
 import           Formatting
@@ -1116,8 +1117,53 @@ applyByronGenTx validationMode
         fixPM (Crypto.AProtocolMagic a b) =
           Crypto.AProtocolMagic (reAnnotate a) b
 
-    go (ByronUpdateProposal _ _) _ = error "applyByronGenTx.go: ByronUpdateProposal"
-    go (ByronUpdateVote _ _) _     = error "applyByronGenTx.go: ByronUpdateVote"
+    -- Note that we're only expecting update-related 'GenTx's in this case.
+    -- Both of them share much of the same code so it didn't seem to make
+    -- sense defining two separate cases of 'go'.
+    go tx cvs = wrapCVS <$> case tx of
+        ByronUpdateProposal _ proposal ->
+          CC.UPI.registerProposal env updateState proposal
+            `wrapError` ByronApplyUpdateProposalError
+
+        ByronUpdateVote _ vote ->
+          CC.UPI.registerVote env updateState vote
+            `wrapError` ByronApplyUpdateVoteError
+
+        _ -> error $  "applyByronGenTx.go: "
+                   <> "Only expecting update-related `GenTx`s at this point."
+      where
+        wrapCVS updateState' = cvs { CC.Block.cvsUpdateState = updateState' }
+
+        protocolMagic = Crypto.getAProtocolMagicId $ fixPM $
+          CC.Genesis.configProtocolMagic cfg
+
+        k = CC.Genesis.configK cfg
+
+        updateState = CC.Block.cvsUpdateState cvs
+
+        currentSlot = CC.Block.cvsLastSlot cvs
+
+        numGenKeys = toNumGenKeys $ Set.size (allowedDelegators cfg)
+
+        delegationMap =
+          (V.Interface.delegationMap . CC.Block.cvsDelegationState) cvs
+
+        env = CC.UPI.Environment
+          { CC.UPI.protocolMagic = protocolMagic
+          , CC.UPI.k             = k
+          , CC.UPI.currentSlot   = currentSlot
+          , CC.UPI.numGenKeys    = numGenKeys
+          , CC.UPI.delegationMap = delegationMap
+          }
+
+        fixPM (Crypto.AProtocolMagic a b) =
+          Crypto.AProtocolMagic (reAnnotate a) b
+
+        toNumGenKeys :: Integral n => n -> Word8
+        toNumGenKeys n
+          | n > fromIntegral (maxBound :: Word8) = error $
+            "applyByronGenTx.go.toNumGenKeys: Too many genesis keys"
+          | otherwise = fromIntegral n
 
 mkByronGenTx :: CC.Mempool.AMempoolPayload ByteString
              -> GenTx (ByronBlockOrEBB cfg)
