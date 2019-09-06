@@ -1,6 +1,7 @@
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE CPP                 #-}
 
 {-# OPTIONS_GHC -Wno-orphans     #-}
 
@@ -14,27 +15,45 @@ import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadTimer
 import qualified Data.ByteString.Lazy as BL
 import           Data.Int
+import           Data.List (mapAccumL)
 import           Data.Void (Void)
-import           System.Info (os)
 import           System.Process (createPipe)
 import           Test.ChainGenerators (TestBlockChainAndUpdates (..))
 import           Test.QuickCheck
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
+import           Text.Show.Functions ()
 
-import           Control.Tracer (nullTracer)
+#if defined(mingw32_HOST_OS)
+import           System.IO (Handle)
+#endif
+
+import           Codec.SerialiseTerm
+import           Control.Tracer
 
 import           Ouroboros.Network.Mux
-import qualified Network.Mux.Types as Mx
+import qualified Network.Mux as Mx
 import qualified Network.Mux.Bearer.Pipe as Mx
+
+import           Network.TypedProtocol.Driver
+import qualified Network.TypedProtocol.ReqResp.Client as ReqResp
+import qualified Network.TypedProtocol.ReqResp.Server as ReqResp
+import qualified Network.TypedProtocol.ReqResp.Codec.Cbor as ReqResp
+import qualified Network.TypedProtocol.ReqResp.Examples as ReqResp
+
 
 import           Ouroboros.Network.MockChain.Chain (Chain, ChainUpdate, Point)
 import qualified Ouroboros.Network.MockChain.Chain as Chain
 import qualified Ouroboros.Network.MockChain.ProducerState as CPS
+import           Ouroboros.Network.NodeToNode
 import           Ouroboros.Network.Protocol.ChainSync.Client as ChainSync
 import           Ouroboros.Network.Protocol.ChainSync.Codec as ChainSync
 import           Ouroboros.Network.Protocol.ChainSync.Examples as ChainSync
 import           Ouroboros.Network.Protocol.ChainSync.Server as ChainSync
+import           Ouroboros.Network.Protocol.Handshake.Type (acceptEq)
+import           Ouroboros.Network.Protocol.Handshake.Version (simpleSingletonVersions)
+import qualified Ouroboros.Network.Snocket as Snocket
+import           Ouroboros.Network.Socket as Socket
 
 --
 -- The list of all tests
@@ -42,20 +61,20 @@ import           Ouroboros.Network.Protocol.ChainSync.Server as ChainSync
 
 tests :: TestTree
 tests =
-    {-
-     - Anonymous pipe test cases fails for an unknown reason
-     - when compiled without "-threaded" on Windows. The Socket test
-     - suite deadlocks when compiled with "-threaded" on windows due to
-     - https://gitlab.haskell.org/ghc/ghc/issues/14503.
-     -
-     - We require working sockets not anoynymous pipes on Windows so
-     - this test group is disabled for now.
-     -}
-    if os == "mingw32"
-        then testGroup "Pipe" []
-        else testGroup "Pipe"
+#if defined(mingw32_HOST_OS)
+      testGroup "Pipe"
+                 [ testProperty "pipe sync demo" prop_pipe_demo
+                 {- Named pipes testcase is disabled since it causes
+                  - a deadlock when we attempt to cancel a thread that
+                  - is blocked in hPut().
+                  -}
+                 -- , testProperty "named pipes" prop_pipe_send_recv_
+                 ]
+#else
+      testGroup "Pipe"
                  [ testProperty "pipe sync demo"        prop_pipe_demo
                  ]
+#endif
 
 --
 -- Properties
@@ -63,7 +82,7 @@ tests =
 
 prop_pipe_demo :: TestBlockChainAndUpdates -> Property
 prop_pipe_demo (TestBlockChainAndUpdates chain updates) =
-    ioProperty $ demo chain updates
+    ioProperty $ anonymousPipesDemo chain updates
 
 defaultMiniProtocolLimit :: Int64
 defaultMiniProtocolLimit = 3000000
@@ -82,16 +101,120 @@ instance Mx.MiniProtocolLimits DemoProtocols where
   maximumMessageSize ChainSync  = defaultMiniProtocolLimit
   maximumIngressQueue ChainSync = defaultMiniProtocolLimit
 
+-- |
+-- Allow to run a singly req-resp protocol.
+--
+data TestProtocols2 = ReqRespPr
+  deriving (Eq, Ord, Enum, Bounded, Show)
+
+instance Mx.ProtocolEnum TestProtocols2 where
+  fromProtocolEnum ReqRespPr = 4
+
+  toProtocolEnum 4 = Just ReqRespPr
+  toProtocolEnum _ = Nothing
+
+instance Mx.MiniProtocolLimits TestProtocols2 where
+  maximumMessageSize ReqRespPr  = defaultMiniProtocolLimit
+  maximumIngressQueue ReqRespPr = defaultMiniProtocolLimit
+
+anonymousPipesDemo :: forall block .
+        ( Chain.HasHeader block, Serialise (Chain.HeaderHash block), Serialise block, Eq block
+        , Show block)
+     => Chain block -> [ChainUpdate block block] -> IO Bool
+anonymousPipesDemo chain0 updates = do
+    (hndRead1, hndWrite1) <- createPipe
+    (hndRead2, hndWrite2) <- createPipe
+    demo hndRead1 hndWrite1 hndRead2 hndWrite2 chain0 updates
+
+#if defined(mingw32_HOST_OS)
+
+clientName :: String
+clientName = "\\\\.\\pipe\\named-client"
+
+serverName :: String
+serverName = "\\\\.\\pipe\\named-server"
+
+prop_pipe_send_recv_ :: (Int -> Int -> (Int, Int))
+                      -> [Int]
+                      -> Property
+prop_pipe_send_recv_ f xs = ioProperty $ do
+
+    cv <- newEmptyTMVarM
+    sv <- newEmptyTMVarM
+    tbl <- newConnectionTable
+
+    {- The siblingVar is used by the initiator and responder to wait on each other before exiting.
+     - Without this wait there is a risk that one side will finish first causing the Muxbearer to
+     - be torn down and the other side exiting before it has a chance to write to its result TMVar.
+     -}
+    siblingVar <- newTVarM 2
+
+    let -- Server Node; only req-resp server
+        responderApp :: OuroborosApplication ResponderApp () TestProtocols2 IO BL.ByteString Void ()
+        responderApp = OuroborosResponderApplication $
+          \peerid ReqRespPr channel -> do
+            r <- runPeer nullTracer
+                         ReqResp.codecReqResp
+                         peerid
+                         channel
+                         (ReqResp.reqRespServerPeer (ReqResp.reqRespServerMapAccumL (\a -> pure . f a) 0))
+            atomically $ putTMVar sv r
+            waitSibling siblingVar
+
+        -- Client Node; only req-resp client
+        initiatorApp :: OuroborosApplication InitiatorApp () TestProtocols2 IO BL.ByteString () Void
+        initiatorApp = OuroborosInitiatorApplication $
+          \peerid ReqRespPr channel -> do
+            r <- runPeer nullTracer
+                         ReqResp.codecReqResp
+                         peerid
+                         channel
+                         (ReqResp.reqRespClientPeer (ReqResp.reqRespClientMap xs))
+            atomically $ putTMVar cv r
+            waitSibling siblingVar
+
+    res <-
+      withSimpleServerNode
+        tbl
+        (Snocket.namedPipeSnocket serverName clientName)
+        serverName
+        (\(DictVersion codec) -> encodeTerm codec)
+        (\(DictVersion codec) -> decodeTerm codec)
+        (\_ _ -> ())
+        (\(DictVersion _) -> acceptEq)
+        (simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData 0) (DictVersion nodeToNodeCodecCBORTerm) responderApp)
+        $ \_ _ -> do
+          connectToNode
+            (Snocket.namedPipeSnocket clientName serverName)
+            (\(DictVersion codec) -> encodeTerm codec)
+            (\(DictVersion codec) -> decodeTerm codec)
+            nullTracer
+            (\_ _ -> ())
+            (simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData 0) (DictVersion nodeToNodeCodecCBORTerm) initiatorApp)
+            (Just clientName)
+            serverName
+          atomically $ (,) <$> takeTMVar sv <*> takeTMVar cv
+
+    return (res == mapAccumL f 0 xs)
+
+  where
+    waitSibling :: TVar IO Int -> IO ()
+    waitSibling cntVar = do
+        atomically $ modifyTVar' cntVar (\a -> a - 1)
+        atomically $ do
+            cnt <- readTVar cntVar
+            unless (cnt == 0) retry
+
+#endif
+
 -- | A demonstration that we can run the simple chain consumer protocol
 -- over a pipe with full message serialisation, framing etc.
 --
 demo :: forall block .
-        (Chain.HasHeader block, Serialise (Chain.HeaderHash block), Serialise block, Eq block )
-     => Chain block -> [ChainUpdate block block] -> IO Bool
-demo chain0 updates = do
-
-    (hndRead1, hndWrite1) <- createPipe
-    (hndRead2, hndWrite2) <- createPipe
+        ( Chain.HasHeader block, Serialise (Chain.HeaderHash block), Serialise block, Eq block
+        , Show block)
+     => Handle -> Handle -> Handle -> Handle -> Chain block -> [ChainUpdate block block] -> IO Bool
+demo hndRead1 hndWrite1 hndRead2 hndWrite2 chain0 updates = do
 
     producerVar <- atomically $ newTVar (CPS.initChainProducerState chain0)
     consumerVar <- atomically $ newTVar chain0

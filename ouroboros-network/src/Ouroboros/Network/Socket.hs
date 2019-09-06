@@ -128,9 +128,7 @@ connectToNode sn encodeData decodeData tracer peeridFn versions localAddr remote
       (Snocket.createClient sn)
       (Snocket.close sn)
       (\sd -> do
-          case localAddr of
-            Just addr -> Snocket.bind sn sd addr
-            Nothing   -> return ()
+          Snocket.setupClient sn sd localAddr
           Snocket.connect sn sd remoteAddr
           connectToNode' sn encodeData decodeData tracer peeridFn versions sd
       )
@@ -298,20 +296,6 @@ beginConnection encodeData decodeData acceptVersion sn fn addr st = do
             Mx.muxStart peerid (toApplication app) bearer
       RejectConnection st' _peerid -> pure $ Server.Reject st'
 
-mkListeningSocket
-    :: Snocket channel addr ptcl
-    -> Maybe addr
-    -> IO channel
-mkListeningSocket sn addr = do
-    sd <- Snocket.createServer sn
-
-    case addr of
-      Nothing -> pure ()
-      Just addr_ -> do
-        Snocket.bind sn sd addr_
-        Snocket.listen sn sd
-    pure sd
-
 -- |
 -- Make a server-compatible socket from a network socket.
 --
@@ -418,7 +402,8 @@ withServerNode
     -- throws an exception.
     -> IO t
 withServerNode tbl sn addr encodeData decodeData peeridFn acceptVersion versions k =
-    bracket (mkListeningSocket sn (Just addr)) (Snocket.close sn) $ \sd -> do
+    bracket (Snocket.createServer sn) (Snocket.close sn) $ \sd -> do
+      Snocket.setupServer sn sd (Just addr)
       addr' <- Snocket.getLocalAddr sn sd
       withAsync
         (runNetworkNode'
