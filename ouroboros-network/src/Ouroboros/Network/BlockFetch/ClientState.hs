@@ -273,6 +273,10 @@ data TraceFetchClientState header =
          (PeerFetchInFlight header)
           PeerFetchInFlightLimits
          (PeerFetchStatus header)
+     -- | This trace point is useful in tests, it allows to recompute
+     -- requests in flight from the trace.
+     --
+     | CompletedFetchBatch
   deriving Show
 
 -- | A peer label for use in 'Tracer's. This annotates tracer output as being
@@ -393,9 +397,10 @@ completeBlockDownload tracer blockFetchSize inflightlimits
 
 
 completeFetchBatch :: MonadSTM m
-                   => FetchClientStateVars m header
+                   => Tracer m (TraceFetchClientState header)
+                   -> FetchClientStateVars m header
                    -> m ()
-completeFetchBatch FetchClientStateVars {fetchClientInFlightVar} =
+completeFetchBatch tracer FetchClientStateVars {fetchClientInFlightVar} = do
     atomically $ modifyTVar fetchClientInFlightVar $ \inflight ->
       assert (if peerFetchReqsInFlight inflight == 1
                  then peerFetchBytesInFlight inflight == 0
@@ -404,6 +409,7 @@ completeFetchBatch FetchClientStateVars {fetchClientInFlightVar} =
       inflight {
         peerFetchReqsInFlight = peerFetchReqsInFlight inflight - 1
       }
+    traceWith tracer CompletedFetchBatch
 
 --
 -- STM TFetchRequestVar

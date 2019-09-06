@@ -212,7 +212,7 @@ blockFetchClient FetchClientContext {
         (ServerAgency TokStreaming) $ \msg ->
         case (msg, headers) of
           (MsgBatchDone, []) -> ReceiverEffect $ do
-            completeFetchBatch stateVars
+            completeFetchBatch tracer stateVars
             return (ReceiverDone ())
 
 
