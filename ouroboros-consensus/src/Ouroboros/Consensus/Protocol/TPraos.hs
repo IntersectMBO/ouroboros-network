@@ -8,6 +8,7 @@
 {-# LANGUAGE NamedFieldPuns          #-}
 {-# LANGUAGE RecordWildCards         #-}
 {-# LANGUAGE ScopedTypeVariables     #-}
+{-# LANGUAGE StandaloneDeriving      #-}
 {-# LANGUAGE TypeApplications        #-}
 {-# LANGUAGE TypeFamilies            #-}
 {-# LANGUAGE UndecidableInstances    #-}
@@ -24,6 +25,8 @@ module Ouroboros.Consensus.Protocol.TPraos (
   , TPraosToSign(..)
   , TPraosLedgerView(..)
   , TPraosParams(..)
+  , TPraosProof(..)
+  , TPraosIsCoreNode(..)
   , forgeTPraosFields
     -- * Tags
   , TPraosCrypto(..)
@@ -54,6 +57,7 @@ import           Ouroboros.Consensus.Protocol.Signed
 import qualified Ouroboros.Consensus.Protocol.TPraos.ChainState as ChainState
 import           Ouroboros.Consensus.Protocol.TPraos.Crypto
 import           Ouroboros.Consensus.Protocol.TPraos.Util
+import           Ouroboros.Consensus.Util.Condense
 import qualified Ouroboros.Consensus.Util.AnchoredFragment as AF
 
 import BaseTypes (Seed, UnitInterval)
@@ -75,6 +79,8 @@ data TPraosFields c toSign = TPraosFields
   }
   deriving Generic
 
+deriving instance TPraosCrypto c => Show (TPraosFields c toSign)
+
 -- | Fields arising from transitional praos execution which must be included in
 -- the block signature.
 data TPraosToSign c = TPraosToSign
@@ -85,6 +91,8 @@ data TPraosToSign c = TPraosToSign
   , tptsOCert :: OCert (TPraosDSIGN c) (TPraosKES c)
   }
   deriving Generic
+
+deriving instance TPraosCrypto c => Show (TPraosToSign c)
 
 class ( HasHeader hdr
       , SignedHeader hdr
@@ -105,12 +113,12 @@ forgeTPraosFields :: ( HasNodeState (TPraos c) m
                     , Cardano.Crypto.KES.Class.Signable (TPraosKES c) toSign
                     )
                  => NodeConfig (TPraos c)
-                 -> TPraosIsCoreNode c
                  -> TPraosProof c
                  -> (TPraosToSign c -> toSign)
                  -> m (TPraosFields c toSign)
-forgeTPraosFields TPraosNodeConfig{..} icn@TPraosIsCoreNode{..} TPraosProof{..} mkToSign = do
-    let (DiscVKey issuerVK) = ocertVkCold tpraosOpCert
+forgeTPraosFields TPraosNodeConfig{..}  TPraosProof{..} mkToSign = do
+    let icn@TPraosIsCoreNode{..} = tpraosIsCoreNode
+        (DiscVKey issuerVK) = ocertVkCold tpraosOpCert
         signedFields = TPraosToSign {
           tptsIssuerVK = issuerVK
         , tptsVrfVk = deriveVerKeyVRF tpraosSignKeyVRF
@@ -141,10 +149,11 @@ data TPraosProof c
     , tpraosLeader    :: CertifiedVRF (TPraosVRF c) UnitInterval
     , tpraosProofSlot :: SlotNo
     , tpraosOpCert    :: OCert (TPraosDSIGN c) (TPraosKES c)
+    , tpraosIsCoreNode :: TPraosIsCoreNode c
     }
 
 data TPraosLedgerView c = TPraosLedgerView {
-    -- Stake distribution
+    -- | Stake distribution
     tpraosLedgerViewPoolDistr :: PoolDistr (TPraosHash c) (TPraosDSIGN c)
   , tpraosLedgerViewProtParams :: PParams
   , tpraosLedgerViewDelegationMap :: Dms (TPraosHash c) (TPraosDSIGN c)
@@ -152,6 +161,7 @@ data TPraosLedgerView c = TPraosLedgerView {
   , tpraosLedgerViewLeaderVal :: UnitInterval
   , tpraosLedgerViewOverlaySchedule :: Map.Map Slot (Maybe (GenKeyHash (TPraosHash c) (TPraosDSIGN c)))
   }
+
 {-------------------------------------------------------------------------------
   Protocol proper
 -------------------------------------------------------------------------------}
@@ -310,3 +320,9 @@ rhoYT nc s kh lv =
         y   = (l, s)
         t   = leaderThreshold nc lv kh
     in  (rho, y, t)
+
+{-------------------------------------------------------------------------------
+  Condense
+-------------------------------------------------------------------------------}
+
+instance (Condense c, Condense toSign) => Condense (TPraosFields c toSign)

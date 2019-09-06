@@ -47,6 +47,7 @@ library
                        Ouroboros.Consensus.Ledger.Mock.Block.PBFT
                        Ouroboros.Consensus.Ledger.Mock.Block.Praos
                        Ouroboros.Consensus.Ledger.Mock.Block.PraosRule
+                       Ouroboros.Consensus.Ledger.Mock.Block.TPraos
                        Ouroboros.Consensus.Ledger.Mock.Forge
                        Ouroboros.Consensus.Ledger.Mock.Stake
                        Ouroboros.Consensus.Ledger.Mock.State
