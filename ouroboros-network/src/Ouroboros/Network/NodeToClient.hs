@@ -14,7 +14,10 @@ module Ouroboros.Network.NodeToClient (
   , DictVersion (..)
   , nodeToClientCodecCBORTerm
 
+  , connectTo_V1
   , connectTo
+
+  , withServer_V1
   , withServer
 
   -- * Re-exports
@@ -112,7 +115,9 @@ nodeToClientCodecCBORTerm = CodecCBORTerm {encodeTerm, decodeTerm}
                                | otherwise             = Left $ T.pack $ "networkMagic out of bound: " <> show x
       decodeTerm t             = Left $ T.pack $ "unknown encoding: " ++ show t
 
--- | A specialised version of @'Ouroboros.Network.Socket.connectToNode'@.
+-- | A specialised version of 'Ouroboros.Network.Socket.connectToNode'.  It is
+-- a general purpose function which can connect using any version of the
+-- protocol.  This is mostly useful for future enhancements.
 --
 connectTo
   :: Tracer IO (TraceSendRecv (Handshake NodeToClientVersion CBOR.Term) peerid (DecoderFailureOrTooMuchInput DeserialiseFailure))
@@ -121,15 +126,50 @@ connectTo
   -> Versions NodeToClientVersion
               DictVersion
               (OuroborosApplication InitiatorApp peerid NodeToClientProtocols IO BL.ByteString a b)
+  -- ^ A dictionary of protocol versions & applications to run on an established
+  -- connection.  The application to run will be chosen by initial handshake
+  -- protocol (the highest shared version will be chosen).
   -> Maybe Socket.AddrInfo
+  -- ^ local address; the created socket will bind to it
   -> Socket.AddrInfo
+  -- ^ remote address
   -> IO ()
 connectTo =
   connectToNode
     (\(DictVersion codec) -> encodeTerm codec)
     (\(DictVersion codec) -> decodeTerm codec)
 
--- | A specialised version of @'Ouroboros.Network.Socket.withServerNode'@
+-- | A version of 'Ouroboros.Network.Socket.connectToNode' which connects using
+-- the 'NodeToClientV_1' version of the protocol.
+--
+connectTo_V1
+  :: Tracer IO (TraceSendRecv (Handshake NodeToClientVersion CBOR.Term) peerid (DecoderFailureOrTooMuchInput DeserialiseFailure))
+  -> (Socket.SockAddr -> Socket.SockAddr -> peerid)
+  -- ^ create peerid from local address and remote address
+  -> NodeToClientVersionData
+  -- ^ Client version data sent during initial handshake protocol.  Client and
+  -- server must agree on it.
+  -> (OuroborosApplication InitiatorApp peerid NodeToClientProtocols IO BL.ByteString a b)
+  -- ^ 'OuroborosInitiatorApplication' which is run on an established connection
+  -- using a multiplexer after the initial handshake protocol suceeds.
+  -> Maybe Socket.AddrInfo
+  -- ^ local address; the created socket will bind to it
+  -> Socket.AddrInfo
+  -- ^ remote address
+  -> IO ()
+connectTo_V1 tracer peeridFn versionData application =
+  connectTo
+    tracer
+    peeridFn
+    (simpleSingletonVersions
+      NodeToClientV_1
+      versionData
+      (DictVersion nodeToClientCodecCBORTerm)
+      application)
+
+-- | A specialised version of 'Ouroboros.Network.Socket.withServerNode'; Use
+-- 'withServer_V1' instead of you would like to use 'NodeToCLientV_1' version of
+-- the protocols.
 --
 withServer
   :: ConnectionTable IO Socket.SockAddr
@@ -152,3 +192,30 @@ withServer tbl addr peeridFn acceptVersion versions k =
     versions
     (\_ -> k)
 
+-- | A specialised version of 'withServer' which can only communicate using
+-- 'NodeToClientV_1' version of the protocol.
+--
+withServer_V1
+  :: (HasResponder appType ~ True)
+  => ConnectionTable IO Socket.SockAddr
+  -> Socket.AddrInfo
+  -> (Socket.SockAddr -> Socket.SockAddr -> peerid)
+  -- ^ create peerid from local address and remote address
+  -> (forall vData. DictVersion vData -> vData -> vData -> Accept)
+  -> NodeToClientVersionData
+  -- ^ Client version data sent during initial handshake protocol.  Client and
+  -- server must agree on it.
+  -> (OuroborosApplication appType peerid NodeToClientProtocols IO BL.ByteString a b)
+  -- ^ applications which has the reponder side, i.e.
+  -- 'OuroborosResponderApplication' or
+  -- 'OuroborosInitiatorAndResponderApplication'.
+  -> (Async () -> IO t)
+  -> IO t
+withServer_V1 tbl addr peeridFn acceptVersion versionData application =
+    withServer
+      tbl addr peeridFn acceptVersion 
+      (simpleSingletonVersions
+        NodeToClientV_1
+        versionData
+        (DictVersion nodeToClientCodecCBORTerm)
+        (AnyResponderApp application))
