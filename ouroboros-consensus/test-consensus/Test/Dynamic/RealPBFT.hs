@@ -66,8 +66,7 @@ tests = testGroup "Dynamic chain generation"
               , (CoreNodeId 1,SlotNo 20)
               , (CoreNodeId 2,SlotNo 22)
               ]}
-    , localOption (QuickCheckTests 0) $
-      testProperty "simple Real PBFT convergence" $
+    , testProperty "simple Real PBFT convergence" $
         prop_simple_real_pbft_convergence
     ]
 
