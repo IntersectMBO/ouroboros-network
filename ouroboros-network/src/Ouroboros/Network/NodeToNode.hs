@@ -27,11 +27,13 @@ module Ouroboros.Network.NodeToNode (
   , ipSubscriptionWorker
   , ipSubscriptionWorker_V1
   , SubscriptionTrace (..)
+  , WithIPList (..)
   -- ** DNS subscription worker
   , DnsSubscriptionTarget (..)
   , dnsSubscriptionWorker
   , dnsSubscriptionWorker_V1
   , DnsTrace (..)
+  , WithDomainName (..)
 
   -- * Re-exports
   , AnyResponderApp (..)
@@ -63,7 +65,7 @@ import           Ouroboros.Network.Protocol.Handshake.Version
 import           Ouroboros.Network.Socket
 import qualified Ouroboros.Network.Subscription.Ip as Subscription
 import           Ouroboros.Network.Subscription.Ip ( IPSubscriptionTarget (..)
-                                                   , WithIPList
+                                                   , WithIPList (..)
                                                    , SubscriptionTrace (..)
                                                    )
 import qualified Ouroboros.Network.Subscription.Dns as Subscription
@@ -243,7 +245,11 @@ ipSubscriptionWorker
     :: forall appType peerid void x y.
        (HasInitiator appType ~ True)
     => Tracer IO (WithIPList (SubscriptionTrace Socket.SockAddr))
-    -> Tracer IO (TraceSendRecv (Handshake NodeToNodeVersion CBOR.Term) peerid (DecoderFailureOrTooMuchInput DeserialiseFailure))
+    -> Tracer IO
+        (TraceSendRecv
+          (Handshake NodeToNodeVersion CBOR.Term)
+          peerid
+          (DecoderFailureOrTooMuchInput DeserialiseFailure))
     -> (Socket.SockAddr -> Socket.SockAddr -> peerid)
     -> ConnectionTable IO Socket.SockAddr
     -> Maybe Socket.SockAddr
@@ -342,7 +348,11 @@ dnsSubscriptionWorker
        HasInitiator appType ~ True
     => Tracer IO (WithDomainName (SubscriptionTrace Socket.SockAddr))
     -> Tracer IO (WithDomainName DnsTrace)
-    -> Tracer IO (TraceSendRecv (Handshake NodeToNodeVersion CBOR.Term) peerid (DecoderFailureOrTooMuchInput DeserialiseFailure))
+    -> Tracer IO
+        (TraceSendRecv
+          (Handshake NodeToNodeVersion CBOR.Term)
+          peerid
+          (DecoderFailureOrTooMuchInput DeserialiseFailure))
     -> (Socket.SockAddr -> Socket.SockAddr -> peerid)
     -> ConnectionTable IO Socket.SockAddr
     -> Maybe Socket.SockAddr
