@@ -18,6 +18,7 @@ import           Ouroboros.Consensus.Util.Random
 
 import           Test.Dynamic.General
 import           Test.Dynamic.Util
+import           Test.Dynamic.Util.NodeJoinPlan
 
 import           Test.Util.Orphans.Arbitrary ()
 
@@ -37,35 +38,53 @@ tests = testGroup "Dynamic chain generation"
                          , 6410351877547894330
                          , 14676014321459888687
                          )
-    , testProperty "simple Praos convergence" testPraos
+    , testProperty "simple Praos convergence" $
+        \seed ->
+        forAllShrink
+            (genNodeJoinPlan numCoreNodes numSlots)
+            shrinkNodeJoinPlan $
+        \nodeJoinPlan ->
+            testPraos' TestConfig
+              { numCoreNodes
+              , numSlots
+              , nodeJoinPlan
+              }
+                seed
     ]
   where
     testPraos :: Seed -> Property
-    testPraos = prop_simple_praos_convergence
-                  params
-                  (NumCoreNodes 3)
-                  (NumSlots (fromIntegral numSlots))
+    testPraos = testPraos' TestConfig
+      { numCoreNodes
+      , numSlots
+      , nodeJoinPlan = trivialNodeJoinPlan numCoreNodes
+      }
+
+    testPraos' :: TestConfig -> Seed -> Property
+    testPraos' =
+        prop_simple_praos_convergence
+            params
+
+    numCoreNodes = NumCoreNodes 3
+    numSlots = NumSlots $ fromIntegral $
+        maxRollbacks k * praosSlotsPerEpoch * numEpochs
 
     params@PraosParams{..} = defaultDemoPraosParams
-    numSlots  = maxRollbacks praosSecurityParam * praosSlotsPerEpoch * numEpochs
+    k = praosSecurityParam
     numEpochs = 3
 
 prop_simple_praos_convergence :: PraosParams
-                              -> NumCoreNodes
-                              -> NumSlots
+                              -> TestConfig
                               -> Seed
                               -> Property
 prop_simple_praos_convergence
-  params@PraosParams{praosSecurityParam = k} numCoreNodes numSlots seed =
+  params@PraosParams{praosSecurityParam = k}
+  testConfig@TestConfig{numCoreNodes, numSlots} seed =
     counterexample (tracesToDot testOutputNodes) $
-    label lbl $
-    counterexample lbl $
-    prop_general k schedule testOutput
+    prop_general k testConfig schedule testOutput
   where
     testOutput@TestOutput{testOutputNodes} =
         runTestNetwork
             (\nid -> protocolInfo numCoreNodes nid (ProtocolMockPraos params))
-            numCoreNodes numSlots seed
+            testConfig seed
 
     schedule = leaderScheduleFromTrace numSlots testOutputNodes
-    lbl = if tooCrowded k schedule then "too crowded" else "not too crowded"

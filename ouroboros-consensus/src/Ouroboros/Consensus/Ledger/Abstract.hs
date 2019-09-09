@@ -8,6 +8,7 @@ module Ouroboros.Consensus.Ledger.Abstract (
     UpdateLedger(..)
   , BlockProtocol
   , ProtocolLedgerView(..)
+  , AnachronyFailure(..)
   ) where
 
 import           Control.Monad.Except
@@ -123,4 +124,10 @@ class UpdateLedger blk => ProtocolLedgerView blk where
     :: NodeConfig (BlockProtocol blk)
     -> LedgerState blk
     -> WithOrigin SlotNo -- ^ Slot for which you would like a ledger view
-    -> Maybe (SlotBounded (LedgerView (BlockProtocol blk)))
+    -> Either AnachronyFailure (SlotBounded (LedgerView (BlockProtocol blk)))
+
+-- | See 'anachronisticProtocolLedgerView'.
+data AnachronyFailure
+  = TooFarAhead
+  | TooFarBehind
+  deriving (Eq,Show)

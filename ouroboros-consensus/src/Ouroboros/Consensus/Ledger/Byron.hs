@@ -929,7 +929,7 @@ instance (ByronGiven, Typeable cfg, ConfigContainsGenesis cfg)
     (ByronEBBLedgerState (ByronLedgerState ls ss)) slot =
       case find (containsSlot slot) ss of
         -- We can find a snapshot which supports this slot
-        Just sb -> Just
+        Just sb -> Right
                  $  PBftLedgerView
                  .  CC.Delegation.unMap
                  .  V.Interface.delegationMap
@@ -937,8 +937,10 @@ instance (ByronGiven, Typeable cfg, ConfigContainsGenesis cfg)
                 <$> sb
         -- No snapshot - we could be in the past or in the future
         Nothing
-          | slot >= At lvLB && slot <= At lvUB
-          -> Just $ PBftLedgerView <$>
+          | slot < At lvLB -> Left TooFarBehind
+          | slot > At lvUB -> Left TooFarAhead
+          | otherwise
+          -> Right $ PBftLedgerView <$>
              case intermediateUpdates of
                 -- No updates to apply. So the current ledger state is valid
                 -- from the end of the last snapshot to the first scheduled
@@ -954,8 +956,6 @@ instance (ByronGiven, Typeable cfg, ConfigContainsGenesis cfg)
                                            (V.Scheduling.sdDelegate x)
                                            acc)
                    dsNow toApply
-          | otherwise
-          -> Nothing
     where
       lb = case ss of
         _ Seq.:|> s -> max lvLB (sbUpper s)

@@ -11,7 +11,7 @@ module Test.Dynamic.Util (
   -- * LeaderSchedule
   , leaderScheduleFromTrace
   , roundRobinLeaderSchedule
-  , tooCrowded
+  , consensusExpected
   -- * GraphViz Dot
   , tracesToDot
   -- * Re-exports
@@ -54,6 +54,7 @@ import qualified Test.Util.MockChain as Chain
 import           Test.Dynamic.Network (NodeOutput (..))
 import           Test.Dynamic.Util.Expectations (NumBlocks (..),
                      determineForkLength)
+import           Test.Dynamic.Util.NodeJoinPlan (NodeJoinPlan)
 
 {-------------------------------------------------------------------------------
   Chain properties
@@ -250,10 +251,15 @@ leaderScheduleFromTrace (NumSlots numSlots) = LeaderSchedule .
         | nid `elem` xs = xs
         | otherwise     = nid : xs
 
-tooCrowded :: SecurityParam -> LeaderSchedule -> Bool
-tooCrowded k schedule = maxForkLength > maxRollbacks k
+consensusExpected ::
+     SecurityParam
+  -> NodeJoinPlan
+  -> LeaderSchedule
+  -> Bool
+consensusExpected k nodeJoinPlan schedule =
+    maxForkLength <= maxRollbacks k
   where
-    NumBlocks maxForkLength = determineForkLength k schedule
+    NumBlocks maxForkLength = determineForkLength k nodeJoinPlan schedule
 
 roundRobinLeaderSchedule :: NumCoreNodes -> NumSlots -> LeaderSchedule
 roundRobinLeaderSchedule (NumCoreNodes n) (NumSlots t) = LeaderSchedule $

@@ -13,6 +13,8 @@ module Ouroboros.Network.BlockFetch.Client (
     TraceFetchClientState,
     FetchRequest(..),
     FetchClientStateVars,
+    -- * Exception types
+    BlockFetchProtocolFailure,
   ) where
 
 import           Control.Monad (unless)

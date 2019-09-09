@@ -8,6 +8,7 @@
 module Ouroboros.Consensus.BlockchainTime (
     -- * Abstract definition
     BlockchainTime(..)
+  , blockUntilSlot
   , onSlotChange
   , onSlot
     -- * Use in testing
@@ -80,6 +81,22 @@ data BlockchainTime m = BlockchainTime {
       -- Use sites should call 'onSlot' rather than 'onSlot_'.
     , onSlot_        :: HasCallStack => SlotNo -> m () -> m ()
     }
+
+-- | Returns 'True' immediately if the requested slot is already over, else
+-- blocks as requested and then returns 'False'
+--
+blockUntilSlot ::
+     MonadSTM m
+  => BlockchainTime m
+  -> SlotNo
+  -> m Bool
+blockUntilSlot btime slot = do
+    tooLate <- atomically $ do
+        now <- getCurrentSlot btime
+        if now > slot then pure True else do
+            check $ now == slot
+            pure False
+    pure tooLate
 
 -- | Wrapper around 'onSlotChange_' to ensure 'HasCallStack' constraint
 --

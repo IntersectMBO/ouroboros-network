@@ -12,6 +12,7 @@ import           Ouroboros.Consensus.Node.ProtocolInfo.Abstract
 import           Ouroboros.Consensus.Protocol.Abstract (SecurityParam (..))
 
 import           Test.Dynamic.Util
+import           Test.Dynamic.Util.NodeJoinPlan (trivialNodeJoinPlan)
 
 import           Test.Util.Orphans.Arbitrary ()
 
@@ -25,6 +26,7 @@ tests = testGroup "Test.Dynamic.Util.Tests" $
 prop_roundRobin_forkLength ::
     SecurityParam -> NumCoreNodes -> NumSlots -> Property
 prop_roundRobin_forkLength k numCoreNodes numSlots =
-  determineForkLength k schedule === NumBlocks 0
+  determineForkLength k nodeJoinPlan schedule === NumBlocks 0
   where
+    nodeJoinPlan = trivialNodeJoinPlan numCoreNodes
     schedule = roundRobinLeaderSchedule numCoreNodes numSlots

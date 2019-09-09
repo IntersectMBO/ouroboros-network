@@ -1,3 +1,5 @@
+{-# LANGUAGE NamedFieldPuns #-}
+
 module Test.Dynamic.PBFT (
     tests
   ) where
@@ -7,7 +9,6 @@ import           Test.QuickCheck
 import           Test.Tasty
 import           Test.Tasty.QuickCheck
 
-import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Demo
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Protocol
@@ -27,20 +28,22 @@ tests = testGroup "Dynamic chain generation" [
     k = defaultSecurityParam
 
 prop_simple_pbft_convergence :: SecurityParam
-                             -> NumCoreNodes
-                             -> NumSlots
+                             -> TestConfig
                              -> Seed
                              -> Property
 prop_simple_pbft_convergence
-  k numCoreNodes@(NumCoreNodes nn) numSlots seed =
+  k testConfig@TestConfig{numCoreNodes, numSlots} seed =
     prop_general k
+        testConfig
         (roundRobinLeaderSchedule numCoreNodes numSlots)
         testOutput
   where
+    NumCoreNodes nn = numCoreNodes
+
     sigThd = (1.0 / fromIntegral nn) + 0.1
     params = PBftParams k (fromIntegral nn) sigThd
 
     testOutput =
         runTestNetwork
             (\nid -> protocolInfo numCoreNodes nid (ProtocolMockPBFT params))
-            numCoreNodes numSlots seed
+            testConfig seed

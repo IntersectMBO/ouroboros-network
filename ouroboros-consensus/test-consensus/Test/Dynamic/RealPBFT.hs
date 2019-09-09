@@ -1,5 +1,6 @@
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE GADTs               #-}
+{-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -23,7 +24,6 @@ import           Ouroboros.Network.MockChain.Chain (Chain)
 import qualified Ouroboros.Network.MockChain.Chain as Chain
 
 import           Ouroboros.Consensus.BlockchainTime
-import           Ouroboros.Consensus.Demo
 import           Ouroboros.Consensus.Ledger.Byron (ByronBlockOrEBB, ByronGiven)
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Node.ProtocolInfo.Byron (plcCoreNodeId)
@@ -41,6 +41,7 @@ import qualified Test.Cardano.Chain.Genesis.Dummy as Dummy
 import           Test.Dynamic.General
 import           Test.Dynamic.Network (NodeOutput (..))
 import           Test.Dynamic.Util
+import           Test.Dynamic.Util.NodeJoinPlan
 
 import           Test.Util.Orphans.Arbitrary ()
 
@@ -50,11 +51,25 @@ tests = testGroup "Dynamic chain generation"
         \numCoreNodes ->
           forAll (elements (enumCoreNodes numCoreNodes)) $ \coreNodeId ->
           prop_setup_coreNodeId numCoreNodes coreNodeId
-    , testProperty "simple Real PBFT convergence" $
-        prop_simple_real_pbft_convergence sp
+    , adjustOption (\(QuickCheckTests n) -> QuickCheckTests (1 `max` (div n 10))) $
+      -- as of merging PR #773, this test case fails without the commit that
+      -- introduces the InvalidRollForward exception
+      --
+      -- See a related discussion at
+      -- https://github.com/input-output-hk/ouroboros-network/pull/773#issuecomment-522192097
+      testProperty "addressed by InvalidRollForward exception (PR #773)" $
+          prop_simple_real_pbft_convergence TestConfig
+            { numCoreNodes = NumCoreNodes 3
+            , numSlots = NumSlots 24
+            , nodeJoinPlan = NodeJoinPlan $ Map.fromList
+              [ (CoreNodeId 0,SlotNo 0)
+              , (CoreNodeId 1,SlotNo 20)
+              , (CoreNodeId 2,SlotNo 22)
+              ]}
+    , localOption (QuickCheckTests 0) $
+      testProperty "simple Real PBFT convergence" $
+        prop_simple_real_pbft_convergence
     ]
-  where
-    sp = defaultSecurityParam
 
 prop_setup_coreNodeId ::
      NumCoreNodes
@@ -72,24 +87,29 @@ prop_setup_coreNodeId numCoreNodes coreNodeId =
     genesisSecrets :: Genesis.GeneratedSecrets
     (genesisConfig, genesisSecrets) = generateGenesisConfig numCoreNodes
 
-prop_simple_real_pbft_convergence :: SecurityParam
-                                  -> NumCoreNodes
-                                  -> NumSlots
+prop_simple_real_pbft_convergence :: TestConfig
                                   -> Seed
                                   -> Property
-prop_simple_real_pbft_convergence k numCoreNodes numSlots seed =
+prop_simple_real_pbft_convergence
+  testConfig@TestConfig{numCoreNodes, numSlots} seed =
     giveByron $
     prop_general k
+        testConfig
         (roundRobinLeaderSchedule numCoreNodes numSlots)
         testOutput
     .&&. not (all Chain.null finalChains)
   where
+    k =
+      (SecurityParam . Common.unBlockCount) $
+      (Genesis.gdK . Genesis.configGenesisData) $
+      genesisConfig
+
     testOutput = giveByron $
         runTestNetwork
             (\nid -> protocolInfo numCoreNodes nid
                 (mkProtocolRealPBFT numCoreNodes nid
                                     genesisConfig genesisSecrets))
-            numCoreNodes numSlots seed
+            testConfig seed
 
     finalChains :: [Chain (ByronBlockOrEBB ByronConfig)]
     finalChains = Map.elems $ nodeOutputFinalChain <$> testOutputNodes testOutput
@@ -126,7 +146,7 @@ mkProtocolRealPBFT (NumCoreNodes n) (CoreNodeId i)
           dlgCert
 
     signatureThreshold = PBftSignatureThreshold $
-      1.0 / (fromIntegral n + 1.0)
+      (1.0 / fromIntegral n) + 0.1
 
     dlgKey :: Crypto.SigningKey
     dlgKey = fromJust $

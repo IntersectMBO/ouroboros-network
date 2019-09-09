@@ -131,7 +131,7 @@ instance ( SimpleCrypto c
       equalStakeDist addrDist
 
   anachronisticProtocolLedgerView (EncNodeConfig _ addrDist) _ _ =
-      Just $ SB.unbounded $ equalStakeDist addrDist
+      Right $ SB.unbounded $ equalStakeDist addrDist
 
 {-------------------------------------------------------------------------------
   Serialisation
