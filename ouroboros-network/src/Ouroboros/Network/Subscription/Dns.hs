@@ -198,7 +198,7 @@ dnsSubscriptionWorker'
     -> (Socket.SockAddr -> Maybe DiffTime)
     -> DnsSubscriptionTarget
     -> Main IO () t
-    -> (Socket.Socket -> IO t)
+    -> (Socket.Socket -> IO a)
     -> IO t
 dnsSubscriptionWorker' subTracer dnsTracer tbl resolver localIPv4 localIPv6
   connectionAttemptDelay dst main k = do
@@ -229,7 +229,7 @@ dnsSubscriptionWorker
     -> (Socket.SockAddr -> Maybe DiffTime)
     -> DnsSubscriptionTarget
     -> Main IO () t
-    -> (Socket.Socket -> IO t)
+    -> (Socket.Socket -> IO a)
     -> IO t
 dnsSubscriptionWorker subTracer dnsTracer tbl localIPv4 localIPv6 connectionAttemptDelay dst
   main k = do
