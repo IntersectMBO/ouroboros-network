@@ -16,7 +16,10 @@ module Ouroboros.Network.NodeToNode (
   , nodeToNodeCodecCBORTerm
 
   , connectTo
+  , connectTo_V1
+
   , withServer
+  , withServer_V1
 
   -- * Re-exports
   , AnyResponderApp (..)
@@ -137,6 +140,30 @@ connectTo =
     (\(DictVersion codec) -> encodeTerm codec)
     (\(DictVersion codec) -> decodeTerm codec)
 
+
+-- | Like 'connectTo' but specific to 'NodeToNodeV_1'.
+--
+connectTo_V1
+  :: Tracer IO (TraceSendRecv (Handshake NodeToNodeVersion CBOR.Term) peerid (DecoderFailureOrTooMuchInput DeserialiseFailure))
+  -> (Socket.SockAddr -> Socket.SockAddr -> peerid)
+  -- ^ create peerid from local address and remote address
+  -> NodeToNodeVersionData
+  -> (OuroborosApplication InitiatorApp peerid NodeToNodeProtocols IO BL.ByteString a b)
+  -> Maybe Socket.AddrInfo
+  -> Socket.AddrInfo
+  -> IO ()
+connectTo_V1 tracer peeridFn versionData application localAddr remoteAddr =
+    connectTo
+      tracer peeridFn
+      (simpleSingletonVersions
+          NodeToNodeV_1
+          versionData
+          (DictVersion nodeToNodeCodecCBORTerm)
+          application)
+      localAddr
+      remoteAddr
+        
+
 -- | A specialised version of @'Ouroboros.Network.Socket.withServerNode'@
 --
 withServer
@@ -158,3 +185,27 @@ withServer tbl addr peeridFn acceptVersion versions k =
     acceptVersion
     versions
     (\_ -> k)
+
+
+-- | Like 'withServer' but specific to 'NodeToNodeV_1'.
+--
+withServer_V1
+  :: HasResponder appType ~ True
+  => ConnectionTable IO Socket.SockAddr
+  -> Socket.AddrInfo
+  -> (Socket.SockAddr -> Socket.SockAddr -> peerid)
+  -- ^ create peerid from local address and remote address
+  -> (forall vData. DictVersion vData -> vData -> vData -> Accept)
+  -> NodeToNodeVersionData
+  -> (OuroborosApplication appType peerid NodeToNodeProtocols IO BL.ByteString x y)
+  -> (Async () -> IO t)
+  -> IO t
+withServer_V1 tbl addr peeridFn acceptVersion versionData application k =
+    withServer
+      tbl addr peeridFn acceptVersion
+      (simpleSingletonVersions
+          NodeToNodeV_1
+          versionData
+          (DictVersion nodeToNodeCodecCBORTerm)
+          (AnyResponderApp application))
+      k
