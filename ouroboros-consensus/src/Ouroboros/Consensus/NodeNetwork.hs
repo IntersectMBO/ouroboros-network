@@ -373,9 +373,9 @@ initiatorNetworkApplication NetworkApplication {..} =
 --
 responderNetworkApplication
   :: NetworkApplication m peer bytes bytes bytes bytes bytes a
-  -> AnyResponderApp peer NodeToNodeProtocols m bytes
+  -> OuroborosApplication 'ResponderApp peer NodeToNodeProtocols m bytes Void a
 responderNetworkApplication NetworkApplication {..} =
-    AnyResponderApp $ OuroborosResponderApplication $ \them ptcl -> case ptcl of
+    OuroborosResponderApplication $ \them ptcl -> case ptcl of
       ChainSyncWithHeadersPtcl -> naChainSyncServer them
       BlockFetchPtcl           -> naBlockFetchServer them
       TxSubmissionPtcl         -> naTxSubmissionServer them
@@ -385,9 +385,9 @@ responderNetworkApplication NetworkApplication {..} =
 --
 localResponderNetworkApplication
   :: NetworkApplication m peer bytes bytes bytes bytes bytes a
-  -> AnyResponderApp peer NodeToClientProtocols m bytes
+  -> OuroborosApplication 'ResponderApp peer NodeToClientProtocols m bytes Void a
 localResponderNetworkApplication NetworkApplication {..} =
-    AnyResponderApp $ OuroborosResponderApplication $ \peer  ptcl -> case ptcl of
+    OuroborosResponderApplication $ \peer  ptcl -> case ptcl of
       ChainSyncWithBlocksPtcl -> naLocalChainSyncServer peer
       LocalTxSubmissionPtcl   -> naLocalTxSubmissionServer peer
 

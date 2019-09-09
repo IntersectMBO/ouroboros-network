@@ -299,29 +299,25 @@ initNetwork registry nodeArgs kernel RunNetworkArgs{..} = do
     runLocalServer :: IO ()
     runLocalServer = do
       (connTable :: ConnectionTable IO Socket.SockAddr) <- newConnectionTable
-      case localResponderNetworkApplication networkApps of
-        AnyResponderApp application ->
-          NodeToClient.withServer_V1
-            connTable
-            rnaMyLocalAddr
-            rnaMkPeer
-            (\(DictVersion _) -> acceptEq)
-            nodeToClientVersionData
-            application
-            wait
+      NodeToClient.withServer_V1
+        connTable
+        rnaMyLocalAddr
+        rnaMkPeer
+        (\(DictVersion _) -> acceptEq)
+        nodeToClientVersionData
+        (localResponderNetworkApplication networkApps)
+        wait
 
     runPeerServer :: ConnectionTable IO Socket.SockAddr -> IO ()
     runPeerServer connTable =
-      case responderNetworkApplication networkApps of
-        AnyResponderApp application ->
-          NodeToNode.withServer_V1
-            connTable
-            rnaMyAddr
-            rnaMkPeer
-            (\(DictVersion _) -> acceptEq)
-            nodeToNodeVersionData
-            application
-            wait
+      NodeToNode.withServer_V1
+        connTable
+        rnaMyAddr
+        rnaMkPeer
+        (\(DictVersion _) -> acceptEq)
+        nodeToNodeVersionData
+        (responderNetworkApplication networkApps)
+        wait
 
     runIpSubscriptionWorker :: ConnectionTable IO Socket.SockAddr -> IO ()
     runIpSubscriptionWorker connTable = ipSubscriptionWorker_V1

@@ -20,9 +20,6 @@ module Ouroboros.Network.NodeToClient (
   , withServer_V1
   , withServer
 
-  -- * Re-exports
-  , AnyResponderApp (..)
-
   -- * Re-exported clients
   , chainSyncClientNull
   , localTxSubmissionClientNull
@@ -172,13 +169,14 @@ connectTo_V1 tracer peeridFn versionData application =
 -- the protocols.
 --
 withServer
-  :: ConnectionTable IO Socket.SockAddr
+  :: HasResponder appType ~ True
+  => ConnectionTable IO Socket.SockAddr
   -> Socket.AddrInfo
   -> (Socket.SockAddr -> Socket.SockAddr -> peerid)
   -- ^ create peerid from local address and remote address
   -> (forall vData. DictVersion vData -> vData -> vData -> Accept)
   -> Versions NodeToClientVersion DictVersion
-              (AnyResponderApp peerid NodeToClientProtocols IO BL.ByteString)
+              (OuroborosApplication appType peerid NodeToClientProtocols IO BL.ByteString a b)
   -> (Async () -> IO t)
   -> IO t
 withServer tbl addr peeridFn acceptVersion versions k =
@@ -218,4 +216,4 @@ withServer_V1 tbl addr peeridFn acceptVersion versionData application =
         NodeToClientV_1
         versionData
         (DictVersion nodeToClientCodecCBORTerm)
-        (AnyResponderApp application))
+        application)

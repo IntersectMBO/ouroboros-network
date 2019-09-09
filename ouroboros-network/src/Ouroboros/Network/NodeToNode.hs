@@ -34,9 +34,6 @@ module Ouroboros.Network.NodeToNode (
   , dnsSubscriptionWorker_V1
   , DnsTrace (..)
   , WithDomainName (..)
-
-  -- * Re-exports
-  , AnyResponderApp (..)
   ) where
 
 import           Control.Concurrent.Async (Async)
@@ -194,12 +191,13 @@ connectTo_V1 tracer peeridFn versionData application localAddr remoteAddr =
 -- | A specialised version of @'Ouroboros.Network.Socket.withServerNode'@
 --
 withServer
-  :: ConnectionTable IO Socket.SockAddr
+  :: HasResponder appType ~ True
+  => ConnectionTable IO Socket.SockAddr
   -> Socket.AddrInfo
   -> (Socket.SockAddr -> Socket.SockAddr -> peerid)
   -- ^ create peerid from local address and remote address
   -> (forall vData. DictVersion vData -> vData -> vData -> Accept)
-  -> Versions NodeToNodeVersion DictVersion (AnyResponderApp peerid NodeToNodeProtocols IO BL.ByteString)
+  -> Versions NodeToNodeVersion DictVersion (OuroborosApplication appType peerid NodeToNodeProtocols IO BL.ByteString a b)
   -> (Async () -> IO t)
   -> IO t
 withServer tbl addr peeridFn acceptVersion versions k =
@@ -234,7 +232,7 @@ withServer_V1 tbl addr peeridFn acceptVersion versionData application k =
           NodeToNodeV_1
           versionData
           (DictVersion nodeToNodeCodecCBORTerm)
-          (AnyResponderApp application))
+          application)
       k
 
 

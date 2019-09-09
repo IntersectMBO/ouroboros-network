@@ -11,12 +11,10 @@
 --
 module Ouroboros.Network.Socket (
     -- * High level socket interface
-      AnyResponderApp (..)
-    , ConnectionTable
+      ConnectionTable
     , ConnectionTableRef (..)
     , ValencyCounter
     , withServerNode
-    , withSimpleServerNode
     , connectToNode
     , connectToNode'
 
@@ -182,16 +180,6 @@ connectToNode' encodeData decodeData tracer peeridFn versions sd = do
              Mx.muxBearerSetState bearer Mx.Mature
              Mx.muxStart peerid (toApplication app) bearer
 
--- |
--- A mux application which has a server component.
---
-data AnyResponderApp peerid ptcl m bytes where
-      AnyResponderApp
-        :: forall appType peerid ptcl m bytes a b.
-           HasResponder appType ~ True
-        => OuroborosApplication appType peerid ptcl m bytes a b
-        -> AnyResponderApp peerid ptcl m bytes
-
 
 -- |
 -- Accept or reject an incoming connection.  Each record contains the new state
@@ -207,9 +195,11 @@ data AnyResponderApp peerid ptcl m bytes where
 data AcceptConnection st vNumber extra peerid ptcl m bytes where
 
     AcceptConnection
-      :: !st
+      :: forall appType st vNumber extra peerid ptcl m bytes a b.
+         HasResponder appType ~ True
+      => !st
       -> !peerid
-      -> Versions vNumber extra (AnyResponderApp peerid ptcl m bytes)
+      -> Versions vNumber extra (OuroborosApplication appType peerid ptcl m bytes a b)
       -> AcceptConnection st vNumber extra peerid ptcl m bytes
 
     RejectConnection
@@ -258,7 +248,7 @@ beginConnection encodeData decodeData acceptVersion fn addr st = do
                 (handshakeServerPeer encodeData decodeData acceptVersion versions)
         case mapp of
           Left err -> throwIO err
-          Right (AnyResponderApp app) -> do
+          Right app -> do
             Mx.muxBearerSetState bearer Mx.Mature
             Mx.muxStart peerid (toApplication app) bearer
       RejectConnection st' _peerid -> pure $ Server.Reject st'
@@ -356,8 +346,9 @@ runNetworkNode' tbl sd encodeData decodeData acceptVersion acceptException accep
 -- thread which runs the server.  This makes it useful for testing, where we
 -- need to guarantee that a socket is open before we try to connect to it.
 withServerNode
-    :: forall peerid ptcl vNumber extra t.
-       ( Mx.ProtocolEnum ptcl
+    :: forall appType peerid ptcl vNumber extra t a b.
+       ( HasResponder appType ~ True
+       , Mx.ProtocolEnum ptcl
        , Ord ptcl
        , Enum ptcl
        , Bounded ptcl
@@ -375,7 +366,7 @@ withServerNode
     -> (forall vData. extra vData -> CBOR.Term -> Either Text vData)
     -> (Socket.SockAddr -> Socket.SockAddr -> peerid)
     -> (forall vData. extra vData -> vData -> vData -> Accept)
-    -> Versions vNumber extra (AnyResponderApp peerid ptcl IO BL.ByteString)
+    -> Versions vNumber extra (OuroborosApplication appType peerid ptcl IO BL.ByteString a b)
     -- ^ The mux application that will be run on each incoming connection from
     -- a given address.  Note that if @'MuxClientAndServerApplication'@ is
     -- returned, the connection will run a full duplex set of mini-protocols.
@@ -414,41 +405,3 @@ withServerNode tbl addr encodeData decodeData peeridFn acceptVersion versions k 
       complete outcome st = case outcome of
         Left _  -> pure st
         Right _ -> pure st
-
-
--- |
--- Like @'withServerNode'@ but always runs only server side on an incoming
--- connection.
---
-withSimpleServerNode
-    :: forall peerid ptcl vNumber extra t a b.
-       ( Mx.ProtocolEnum ptcl
-       , Ord ptcl
-       , Enum ptcl
-       , Bounded ptcl
-       , Show ptcl
-       , Mx.MiniProtocolLimits ptcl
-       , Ord vNumber
-       , Enum vNumber
-       , Serialise vNumber
-       , Typeable vNumber
-       , Show vNumber
-       )
-    => ConnectionTable IO Socket.SockAddr
-    -> Socket.AddrInfo
-    -> (forall vData. extra vData -> vData -> CBOR.Term)
-    -> (forall vData. extra vData -> CBOR.Term -> Either Text vData)
-    -> (Socket.SockAddr -> Socket.SockAddr -> peerid)
-    -- ^ create peerid from local address and remote address
-    -> (forall vData. extra vData -> vData -> vData -> Accept)
-    -> Versions vNumber extra (OuroborosApplication ResponderApp peerid ptcl IO BL.ByteString a b)
-    -- ^ The mux server application that will be run on each incoming
-    -- connection.
-    -> (Socket.SockAddr -> Async () -> IO t)
-    -- ^ callback which takes the local address that the server bound to along with the @Async@ of
-    -- the thread that is running the server
-    --
-    -- Note: the server thread will terminate when the callback returns or
-    -- throws an exception.
-    -> IO t
-withSimpleServerNode tbl addr encodeData decodeData peeridFn acceptVersion versions k = withServerNode tbl addr encodeData decodeData peeridFn acceptVersion (AnyResponderApp <$> versions) k
