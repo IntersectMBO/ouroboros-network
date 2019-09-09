@@ -42,7 +42,6 @@ import           Ouroboros.Network.Block
 import qualified Ouroboros.Network.Block as Block
 import           Ouroboros.Network.NodeToClient as NodeToClient
 import           Ouroboros.Network.NodeToNode as NodeToNode
-import           Ouroboros.Network.Socket
 
 import           Ouroboros.Network.Protocol.Handshake.Type
 

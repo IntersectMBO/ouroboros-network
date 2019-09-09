@@ -34,6 +34,10 @@ module Ouroboros.Network.NodeToNode (
   , dnsSubscriptionWorker_V1
   , DnsTrace (..)
   , WithDomainName (..)
+
+  -- * Re-exports
+  , ConnectionTable
+  , newConnectionTable
   ) where
 
 import           Control.Concurrent.Async (Async)
@@ -60,6 +64,9 @@ import           Ouroboros.Network.Mux
 import           Ouroboros.Network.Protocol.Handshake.Type
 import           Ouroboros.Network.Protocol.Handshake.Version
 import           Ouroboros.Network.Socket
+import           Ouroboros.Network.Server.ConnectionTable ( ConnectionTable
+                                                          , newConnectionTable
+                                                          )
 import qualified Ouroboros.Network.Subscription.Ip as Subscription
 import           Ouroboros.Network.Subscription.Ip ( IPSubscriptionTarget (..)
                                                    , WithIPList (..)
