@@ -22,8 +22,6 @@ module Control.Monad.IOSim (
   runSimTraceST,
   liftST,
   traceM,
-  -- * Simulation time
-  VTime(..),
   -- * Simulation trace
   Trace(..),
   TraceEvent(..),
@@ -43,7 +41,6 @@ import           Data.OrdPSQ (OrdPSQ)
 import qualified Data.OrdPSQ as PSQ
 import qualified Data.List as List
 import           Data.Maybe (maybeToList)
-import           Data.Fixed (Pico)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
@@ -95,7 +92,7 @@ data SimA s a where
 
   LiftST       :: StrictST.ST s a -> (a -> SimA s b) -> SimA s b
 
-  GetTime      :: (VTime -> SimA s b) -> SimA s b
+  GetTime      :: (Time -> SimA s b) -> SimA s b
   NewTimeout   :: DiffTime -> (Timeout (SimM s) -> SimA s b) -> SimA s b
   UpdateTimeout:: Timeout (SimM s) -> DiffTime -> SimA s b -> SimA s b
   CancelTimeout:: Timeout (SimM s) -> SimA s b -> SimA s b
@@ -188,15 +185,6 @@ instance Monad (STM s) where
     (>>) = (*>)
 
     fail = MonadFail.fail
-
-newtype VTime = VTime Pico
-  deriving (Eq, Ord, Show)
-
-instance TimeMeasure VTime where
-
-  diffTime (VTime t) (VTime t') = realToFrac (t-t')
-  addTime d (VTime t) = VTime (t + realToFrac d)
-  zeroTime = VTime 0
 
 instance MonadFail (SimM s) where
   fail msg = SimM $ \_ -> Throw (toException (IO.Error.userError msg))
@@ -359,7 +347,6 @@ liftST :: StrictST.ST s a -> SimM s a
 liftST action = SimM $ \k -> LiftST action k
 
 instance MonadTime (SimM s) where
-  type Time (SimM s) = VTime
 
   getMonotonicTime = SimM $ \k -> GetTime k
 
@@ -417,10 +404,10 @@ newtype ThreadId  = ThreadId  Int deriving (Eq, Ord, Enum, Show)
 newtype TVarId    = TVarId    Int deriving (Eq, Ord, Enum, Show)
 newtype TimeoutId = TimeoutId Int deriving (Eq, Ord, Enum, Show)
 
-data Trace a = Trace !VTime !ThreadId !TraceEvent (Trace a)
-             | TraceMainReturn    !VTime a             ![ThreadId]
-             | TraceMainException !VTime SomeException ![ThreadId]
-             | TraceDeadlock      !VTime               ![ThreadId]
+data Trace a = Trace !Time !ThreadId !TraceEvent (Trace a)
+             | TraceMainReturn    !Time a             ![ThreadId]
+             | TraceMainException !Time SomeException ![ThreadId]
+             | TraceDeadlock      !Time               ![ThreadId]
   deriving Show
 
 data TraceEvent
@@ -443,8 +430,8 @@ data TraceEvent
   | EventTxBlocked     [TVarId] -- tx blocked reading these
   | EventTxWakeup      [TVarId] -- changed vars causing retry
 
-  | EventTimerCreated   TimeoutId TVarId VTime
-  | EventTimerUpdated   TimeoutId        VTime
+  | EventTimerCreated   TimeoutId TVarId Time
+  | EventTimerUpdated   TimeoutId        Time
   | EventTimerCancelled TimeoutId
   | EventTimerExpired   TimeoutId
   deriving Show
@@ -538,7 +525,7 @@ traceResult strict = go
     go (TraceMainException _ e _)       = Left (FailureException e)
     go (TraceDeadlock   _   _)          = Left FailureDeadlock
 
-traceEvents :: Trace a -> [(VTime, ThreadId, TraceEvent)]
+traceEvents :: Trace a -> [(Time, ThreadId, TraceEvent)]
 traceEvents (Trace time tid event t) = (time, tid, event) : traceEvents t
 traceEvents _                        = []
 
@@ -564,8 +551,8 @@ data SimState s a = SimState {
        -- | All threads other than the currently running thread: both running
        -- and blocked threads.
        threads  :: !(Map ThreadId (Thread s a)),
-       curTime  :: !VTime,
-       timers   :: !(OrdPSQ TimeoutId VTime (TVar s TimeoutState)),
+       curTime  :: !Time,
+       timers   :: !(OrdPSQ TimeoutId Time (TVar s TimeoutState)),
        nextTid  :: !ThreadId,   -- ^ next unused 'ThreadId'
        nextVid  :: !TVarId,     -- ^ next unused 'TVarId'
        nextTmid :: !TimeoutId   -- ^ next unused 'TimeoutId'
@@ -576,7 +563,7 @@ initialState =
     SimState {
       runqueue = [],
       threads  = Map.empty,
-      curTime  = VTime 0,
+      curTime  = Time 0,
       timers   = PSQ.empty,
       nextTid  = ThreadId 1,
       nextVid  = TVarId 0,
@@ -1016,7 +1003,7 @@ removeMinimums = \psq ->
           | p == p' -> collectAll (k:ks) p (x:xs) psq'
         _           -> (reverse ks, p, reverse xs, psq)
 
-traceMany :: [(VTime, ThreadId, TraceEvent)] -> Trace a -> Trace a
+traceMany :: [(Time, ThreadId, TraceEvent)] -> Trace a -> Trace a
 traceMany []                      trace = trace
 traceMany ((time, tid, event):ts) trace =
     Trace time tid event (traceMany ts trace)
