@@ -43,8 +43,6 @@ import qualified Ouroboros.Network.Block as Block
 import           Ouroboros.Network.NodeToClient as NodeToClient
 import           Ouroboros.Network.NodeToNode as NodeToNode
 
-import           Ouroboros.Network.Protocol.Handshake.Type
-
 import           Ouroboros.Consensus.Block (BlockProtocol)
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.ChainSyncClient (ClockSkew (..))
@@ -302,7 +300,6 @@ initNetwork registry nodeArgs kernel RunNetworkArgs{..} = do
         connTable
         rnaMyLocalAddr
         rnaMkPeer
-        (\(DictVersion _) -> acceptEq)
         nodeToClientVersionData
         (localResponderNetworkApplication networkApps)
         wait
@@ -313,7 +310,6 @@ initNetwork registry nodeArgs kernel RunNetworkArgs{..} = do
         connTable
         rnaMyAddr
         rnaMkPeer
-        (\(DictVersion _) -> acceptEq)
         nodeToNodeVersionData
         (responderNetworkApplication networkApps)
         wait

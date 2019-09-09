@@ -227,14 +227,14 @@ withServer_V1
   -> Socket.AddrInfo
   -> (Socket.SockAddr -> Socket.SockAddr -> peerid)
   -- ^ create peerid from local address and remote address
-  -> (forall vData. DictVersion vData -> vData -> vData -> Accept)
   -> NodeToNodeVersionData
   -> (OuroborosApplication appType peerid NodeToNodeProtocols IO BL.ByteString x y)
   -> (Async () -> IO t)
   -> IO t
-withServer_V1 tbl addr peeridFn acceptVersion versionData application k =
+withServer_V1 tbl addr peeridFn versionData application k =
     withServer
-      tbl addr peeridFn acceptVersion
+      tbl addr peeridFn
+      (\(DictVersion _) -> acceptEq)
       (simpleSingletonVersions
           NodeToNodeV_1
           versionData

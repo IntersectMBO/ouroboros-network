@@ -199,7 +199,6 @@ withServer_V1
   -> Socket.AddrInfo
   -> (Socket.SockAddr -> Socket.SockAddr -> peerid)
   -- ^ create peerid from local address and remote address
-  -> (forall vData. DictVersion vData -> vData -> vData -> Accept)
   -> NodeToClientVersionData
   -- ^ Client version data sent during initial handshake protocol.  Client and
   -- server must agree on it.
@@ -209,9 +208,10 @@ withServer_V1
   -- 'OuroborosInitiatorAndResponderApplication'.
   -> (Async () -> IO t)
   -> IO t
-withServer_V1 tbl addr peeridFn acceptVersion versionData application =
+withServer_V1 tbl addr peeridFn versionData application =
     withServer
-      tbl addr peeridFn acceptVersion 
+      tbl addr peeridFn 
+      (\(DictVersion _) -> acceptEq)
       (simpleSingletonVersions
         NodeToClientV_1
         versionData
