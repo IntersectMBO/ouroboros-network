@@ -41,6 +41,7 @@ queuesAsMuxBearer writeQueue readQueue sduSize traceQueue = do
       return $ Mx.MuxBearer {
           Mx.read    = readMux,
           Mx.write   = writeMux,
+          Mx.close   = return (),
           Mx.sduSize = sduSizeMux,
           Mx.state   = mxState
         }
@@ -99,7 +100,7 @@ runMuxWithQueues
   -> Maybe (TBQueue m (Mx.MiniProtocolId ptcl, Mx.MiniProtocolMode, Time m))
   -> m (Maybe SomeException)
 runMuxWithQueues peerid app wq rq mtu trace =
-    bracket (queuesAsMuxBearer wq rq mtu trace) (\_ -> pure ()) $ \bearer -> do
+    bracket (queuesAsMuxBearer wq rq mtu trace) Mx.close $ \bearer -> do
       res_e <- try $ Mx.muxStart peerid app bearer
       case res_e of
             Left  e -> return (Just e)

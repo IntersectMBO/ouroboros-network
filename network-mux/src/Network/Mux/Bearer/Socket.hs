@@ -48,6 +48,7 @@ socketAsMuxBearer sd = do
       return $ Mx.MuxBearer {
           Mx.read    = readSocket,
           Mx.write   = writeSocket,
+          Mx.close   = closeSocket,
           Mx.sduSize = sduSize,
           Mx.state   = mxState
         }
@@ -93,6 +94,9 @@ socketAsMuxBearer sd = do
           --hexDump buf ""
           Socket.sendAll sd buf
           return ts
+
+      closeSocket :: IO ()
+      closeSocket = Socket.close sd
 
       sduSize :: IO Word16
 #if defined(mingw32_HOST_OS)
