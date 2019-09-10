@@ -33,8 +33,8 @@ import           Ouroboros.Consensus.TxSubmission
   All tracers of a node bundled together
 -------------------------------------------------------------------------------}
 
-data Tracers' peer blk f = Tracers
-  { chainSyncClientTracer         :: f (TraceChainSyncClientEvent blk)
+data Tracers' peer blk tip f = Tracers
+  { chainSyncClientTracer         :: f (TraceChainSyncClientEvent blk tip)
   , chainSyncServerTracer         :: f (TraceChainSyncServerEvent blk)
   , blockFetchDecisionTracer      :: f [TraceLabelPeer peer (FetchDecision [Point (Header blk)])]
   , blockFetchClientTracer        :: f (TraceLabelPeer peer (TraceFetchClientState (Header blk)))
@@ -47,7 +47,7 @@ data Tracers' peer blk f = Tracers
   }
 
 -- | A record of 'Tracer's for the node.
-type Tracers m peer blk = Tracers' peer blk (Tracer m)
+type Tracers m peer blk = Tracers' peer blk (Point (Header blk)) (Tracer m)
 
 -- | Use a 'nullTracer' for each of the 'Tracer's in 'Tracers'
 nullTracers :: Monad m => Tracers m peer blk

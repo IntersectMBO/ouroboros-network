@@ -31,6 +31,7 @@ import           Test.Tasty.QuickCheck (testProperty)
 
 import           Network.TypedProtocol.Core
 
+import           Ouroboros.Network.Block (BlockNo)
 import           Ouroboros.Network.MockChain.Chain (Chain, ChainUpdate, Point)
 import qualified Ouroboros.Network.MockChain.Chain as Chain
 import qualified Ouroboros.Network.MockChain.ProducerState as CPS
@@ -47,7 +48,7 @@ import qualified Ouroboros.Network.Mux as Mx
 
 tests :: TestTree
 tests =
-  testGroup "Mux"
+    testGroup "Mux"
   [ testProperty "ChainSync Demo (IO)"  prop_mux_demo_io
   , testProperty "ChainSync Demo (Sim)" prop_mux_demo_sim
   ]
@@ -96,62 +97,64 @@ demo chain0 updates delay = do
     let Just expectedChain = Chain.applyChainUpdates updates chain0
         target = Chain.headPoint expectedChain
 
-        consumerPeer :: Peer (ChainSync.ChainSync block (Point block)) AsClient ChainSync.StIdle m ()
+        consumerPeer :: Peer (ChainSync.ChainSync block (Point block, BlockNo)) AsClient ChainSync.StIdle m ()
         consumerPeer = ChainSync.chainSyncClientPeer
                           (ChainSync.chainSyncClientExample consumerVar
                           (consumerClient done target consumerVar))
         consumerApp = Mx.simpleInitiatorApplication
                         (\ChainSyncPr ->
-                            Mx.MuxPeer
-                              nullTracer
-                              (ChainSync.codecChainSync
-                                 encode (fmap const decode)
-                                 encode             decode)
-                              (consumerPeer))
+                        Mx.MuxPeer
+                        nullTracer
+                        (ChainSync.codecChainSync
+                        encode (fmap const decode)
+                        encode             decode
+                        encode             decode)
+                        (consumerPeer))
 
-        producerPeer :: Peer (ChainSync.ChainSync block (Point block)) AsServer ChainSync.StIdle m ()
+        producerPeer :: Peer (ChainSync.ChainSync block (Point block, BlockNo)) AsServer ChainSync.StIdle m ()
         producerPeer = ChainSync.chainSyncServerPeer (ChainSync.chainSyncServerExample () producerVar)
         producerApp = Mx.simpleResponderApplication
                         (\ChainSyncPr ->
-                            Mx.MuxPeer
-                              nullTracer
-                              (ChainSync.codecChainSync
-                                 encode (fmap const decode)
-                                 encode             decode)
-                              producerPeer)
+                        Mx.MuxPeer
+                        nullTracer
+                        (ChainSync.codecChainSync
+                        encode (fmap const decode)
+                        encode             decode
+                        encode             decode)
+                        producerPeer)
 
     clientAsync <- async $ Mx.runMuxWithQueues "consumer" (Mx.toApplication consumerApp) client_w client_r sduLen Nothing
     serverAsync <- async $ Mx.runMuxWithQueues "producer" (Mx.toApplication producerApp) server_w server_r sduLen Nothing
 
     updateAid <- async $ sequence_
-        [ do threadDelay delay -- X milliseconds, just to provide interest
-             atomically $ do
-                 p <- readTVar producerVar
-                 let Just p' = CPS.applyChainUpdate update p
-                 writeTVar producerVar p'
-             | update <- updates
+        [ do
+            threadDelay delay -- X milliseconds, just to provide interest
+            atomically $ do
+              p <- readTVar producerVar
+              let Just p' = CPS.applyChainUpdate update p
+              writeTVar producerVar p'
+        | update <- updates
         ]
 
     wait updateAid
     r <- waitBoth clientAsync serverAsync
     case r of
-         (Just _, _) -> return $ property False
          (_, Just _) -> return $ property False
          _           -> do
-             ret <- atomically $ takeTMVar done
-             return $ property ret
+           ret <- atomically $ takeTMVar done
+           return $ property ret
 
   where
     checkTip target consumerVar = atomically $ do
-          chain <- readTVar consumerVar
-          return (Chain.headPoint chain == target)
+      chain <- readTVar consumerVar
+      return (Chain.headPoint chain == target)
 
     -- A simple chain-sync client which runs until it recieves an update to
     -- a given point (either as a roll forward or as a roll backward).
     consumerClient :: StrictTMVar m Bool
                    -> Point block
                    -> StrictTVar m (Chain block)
-                   -> ChainSync.Client block m ()
+                   -> ChainSync.Client block (Point block, BlockNo) m ()
     consumerClient done target chain =
       ChainSync.Client
         { ChainSync.rollforward = \_ -> checkTip target chain >>= \b ->

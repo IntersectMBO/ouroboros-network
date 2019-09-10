@@ -304,7 +304,6 @@ networkGraphSim :: forall m.
                 -> m ()
 networkGraphSim (TestNetworkGraph g cs) slotDuration coreTrDelay relayTrDelay probe = do
   let vs = vertices g
-      channs :: Map Vertex (NodeChannels m block)
       channs = Map.fromList (map (,mempty) vs)
 
   -- construct communication channels based on the graph

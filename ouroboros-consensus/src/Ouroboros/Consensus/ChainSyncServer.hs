@@ -14,7 +14,7 @@ module Ouroboros.Consensus.ChainSyncServer
 import           Control.Monad.Class.MonadSTM
 import           Control.Tracer
 
-import           Ouroboros.Network.Block (ChainUpdate (..), Point (..))
+import           Ouroboros.Network.Block (ChainUpdate (..), HeaderHash, Point (..), castPoint)
 import           Ouroboros.Network.Protocol.ChainSync.Server
 
 import           Ouroboros.Storage.ChainDB.API (ChainDB, Reader)
@@ -34,7 +34,7 @@ chainSyncHeadersServer
     => Tracer m (TraceChainSyncServerEvent blk)
     -> ChainDB m blk
     -> ResourceRegistry m
-    -> ChainSyncServer (Header blk) (Point blk) m ()
+    -> ChainSyncServer (Header blk) (Point (Header blk)) m ()
 chainSyncHeadersServer tracer chainDB registry =
     ChainSyncServer $ do
       rdr <- ChainDB.newHeaderReader chainDB registry
@@ -69,15 +69,18 @@ chainSyncBlocksServer tracer chainDB registry =
 -- All the hard work is done by the 'Reader's provided by the 'ChainDB'.
 --
 chainSyncServerForReader
-    :: forall m blk b. MonadSTM m
+    :: forall m blk b.
+       ( MonadSTM m
+       , HeaderHash blk ~ HeaderHash b
+       )
     => Tracer m (TraceChainSyncServerEvent blk)
     -> ChainDB m blk
     -> Reader  m blk b
-    -> ChainSyncServer b (Point blk) m ()
+    -> ChainSyncServer b (Point b) m ()
 chainSyncServerForReader _tracer chainDB rdr =
     idle'
   where
-    idle :: ServerStIdle b (Point blk) m ()
+    idle :: ServerStIdle b (Point b) m ()
     idle =
       ServerStIdle {
         recvMsgRequestNext   = handleRequestNext,
@@ -85,37 +88,37 @@ chainSyncServerForReader _tracer chainDB rdr =
         recvMsgDoneClient    = ChainDB.readerClose rdr
       }
 
-    idle' :: ChainSyncServer b (Point blk) m ()
+    idle' :: ChainSyncServer b (Point b) m ()
     idle' = ChainSyncServer (return idle)
 
-    handleRequestNext :: m (Either (ServerStNext b (Point blk) m ())
-                                (m (ServerStNext b (Point blk) m ())))
+    handleRequestNext :: m (Either (ServerStNext b (Point b) m ())
+                                (m (ServerStNext b (Point b) m ())))
     handleRequestNext = ChainDB.readerInstruction rdr >>= \case
       Just update -> do
-        tip <- atomically $ ChainDB.getTipPoint chainDB
+        tip <- castPoint <$> atomically (ChainDB.getTipPoint chainDB)
         return $ Left $ sendNext tip update
       Nothing     -> return $ Right $ do
         -- Reader is at the head, we have to block and wait for the chain to
         -- change.
         update <- ChainDB.readerInstructionBlocking rdr
-        tip    <- atomically $ ChainDB.getTipPoint chainDB
+        tip    <- castPoint <$> atomically (ChainDB.getTipPoint chainDB)
         return $ sendNext tip update
 
-    sendNext :: Point blk
+    sendNext :: Point b
              -> ChainUpdate blk b
-             -> ServerStNext b (Point blk) m ()
+             -> ServerStNext b (Point b) m ()
     sendNext tip update = case update of
       AddBlock hdr -> SendMsgRollForward  hdr tip idle'
-      RollBack pt  -> SendMsgRollBackward pt  tip idle'
+      RollBack pt  -> SendMsgRollBackward (castPoint pt) tip idle'
 
-    handleFindIntersect :: [Point blk]
-                        -> m (ServerStIntersect b (Point blk) m ())
+    handleFindIntersect :: [Point b]
+                        -> m (ServerStIntersect b (Point b) m ())
     handleFindIntersect points = do
       -- TODO guard number of points
-      changed <- ChainDB.readerForward rdr points
-      tip     <- atomically $ ChainDB.getTipPoint chainDB
-      return $ case changed of
-        Just pt -> SendMsgIntersectFound    pt tip idle'
+      changed <- ChainDB.readerForward rdr (map castPoint points)
+      tip     <- castPoint <$> atomically (ChainDB.getTipPoint chainDB)
+      return $ case changed :: Maybe (Point blk) of
+        Just pt -> SendMsgIntersectFound    (castPoint pt) tip idle'
         Nothing -> SendMsgIntersectNotFound tip idle'
 
 {-------------------------------------------------------------------------------

@@ -1,13 +1,16 @@
+{-# LANGUAGE GADTs               #-}
 {-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications    #-}
 module Test.Consensus.ChainSyncClient ( tests ) where
 
 import           Control.Monad (replicateM_, void)
 import           Control.Monad.Except (runExcept)
 import           Control.Monad.State.Strict
-import           Control.Tracer (nullTracer)
+import           Control.Tracer (Tracer (..), nullTracer)
 import           Data.Coerce (coerce)
 import           Data.Foldable (foldl')
 import           Data.List (intercalate, span, unfoldr)
@@ -25,6 +28,7 @@ import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
+import           Control.Monad.Class.MonadSay
 import           Control.Monad.IOSim (runSimOrThrow)
 
 import           Network.TypedProtocol.Channel
@@ -121,7 +125,7 @@ prop_chainSync ChainSyncClientSetup {..} =
 -- | Check whether the anchored fragment is a suffix of the chain.
 isSuffix :: AnchoredFragment TestBlock -> Chain TestBlock -> Property
 isSuffix fragment chain =
-    fragmentAnchor === chainAnchor .&&. fragmentBlocks === chainBlocks
+    fragmentAnchor === chainAnchor .&&.  fragmentBlocks === chainBlocks
   where
     nbBlocks       = AF.length fragment
     fragmentBlocks = AF.toOldestFirst fragment
@@ -147,7 +151,7 @@ serverId :: CoreNodeId
 serverId = CoreNodeId 1
 
 -- | Terser notation
-type ChainSyncException = ChainSyncClientException TestBlock
+type ChainSyncException tip = ChainSyncClientException TestBlock tip
 
 -- | Using slots as times, a schedule plans updates to a chain on certain
 -- slots.
@@ -198,12 +202,14 @@ newtype ServerUpdates =
 --
 -- Note that updates that are scheduled before the slot at which we start
 -- syncing help generate different chains to start syncing from.
-runChainSync :: forall m.
+runChainSync :: forall m tip.
        ( MonadAsync m
        , MonadFork  m
        , MonadMask  m
        , MonadTimer m
        , MonadThrow (STM m)
+       , MonadSay   m
+       , tip ~ (Point (Header TestBlock), BlockNo)
        )
     => SecurityParam
     -> ClockSkew
@@ -211,7 +217,7 @@ runChainSync :: forall m.
     -> ServerUpdates
     -> SlotNo  -- ^ Start chain syncing at this slot.
     -> m (Chain TestBlock, Chain TestBlock,
-          AnchoredFragment TestBlock, Maybe ChainSyncException)
+          AnchoredFragment TestBlock, Maybe (ChainSyncException tip))
        -- ^ (The final client chain, the final server chain, the synced
        --    candidate fragment, exception thrown by the chain sync client)
 runChainSync securityParam maxClockSkew (ClientUpdates clientUpdates)
@@ -238,8 +244,15 @@ runChainSync securityParam maxClockSkew (ClientUpdates clientUpdates)
         getLedgerState  = snd <$> readTVar varClientState
         getIsInvalidBlock :: STM m (HeaderHash TestBlock -> Bool, Fingerprint)
         getIsInvalidBlock = return (const False, Fingerprint 0)
+
+        client :: StrictTVar m (CandidateState TestBlock)
+               -> AnchoredFragment (Header TestBlock)
+               -> Consensus ChainSyncClient
+                    TestBlock
+                    tip
+                    m
         client = chainSyncClient
-                   nullTracer
+                   (Tracer $ say . show)
                    (nodeCfg clientId)
                    btime
                    maxClockSkew
@@ -248,7 +261,7 @@ runChainSync securityParam maxClockSkew (ClientUpdates clientUpdates)
 
     -- Set up the server
     varChainProducerState <- newTVarM $ initChainProducerState Genesis
-    let server :: ChainSyncServer (Header TestBlock) (Point TestBlock) m ()
+    let server :: ChainSyncServer (Header TestBlock) (Point (Header TestBlock), BlockNo) m ()
         server = chainSyncServerExample () varChainProducerState
 
     -- Schedule updates of the client and server chains
@@ -304,7 +317,7 @@ runChainSync securityParam maxClockSkew (ClientUpdates clientUpdates)
                Map.insert serverId varCandidate
              runPeer nullTracer codecChainSyncId serverId clientChannel
                     (chainSyncClientPeer (client varCandidate curChain))
-        `catch` \(e :: ChainSyncException) -> do
+        `catch` \(e :: ChainSyncException tip) -> do
           -- TODO: Is this necessary? Wouldn't the Async's internal MVar do?
           atomically $ writeTVar varClientException (Just e)
           -- Rethrow, but it will be ignored anyway.

@@ -31,24 +31,26 @@ import Control.Monad (forever)
 import Control.Monad.Class.MonadTimer
 
 import Network.TypedProtocol.Core
+
+import Ouroboros.Network.Block (Point)
 import Ouroboros.Network.Protocol.ChainSync.Type
 
 
 -- | A chain sync protocol client, on top of some effect 'm'.
 -- The first choice of request is within that 'm'.
-newtype ChainSyncClient header point m a = ChainSyncClient {
-    runChainSyncClient :: m (ClientStIdle header point m a)
+newtype ChainSyncClient header tip m a = ChainSyncClient {
+    runChainSyncClient :: m (ClientStIdle header tip m a)
   }
 
 -- | A chain sync client which never sends any message.
 --
-chainSyncClientNull :: MonadTimer m => ChainSyncClient header point m a
+chainSyncClientNull :: MonadTimer m => ChainSyncClient header tip m a
 chainSyncClientNull = ChainSyncClient $ forever $ threadDelay 43200 {- one day in seconds -}
 
 -- | In the 'StIdle' protocol state, the server does not have agency and can choose to
 -- send a request next, or a find intersection message.
 --
-data ClientStIdle header point m a where
+data ClientStIdle header tip m a where
 
   -- | Send the 'MsgRequestNext', with handlers for the replies.
   --
@@ -60,36 +62,40 @@ data ClientStIdle header point m a where
   -- In the waiting case, the client gets the chance to take a local action.
   --
   SendMsgRequestNext
-    ::    ClientStNext header point m a
-    -> m (ClientStNext header point m a) -- after MsgAwaitReply
-    -> ClientStIdle header point m a
+    ::    ClientStNext header tip m a
+    -> m (ClientStNext header tip m a) -- after MsgAwaitReply
+    -> ClientStIdle header tip m a
 
   -- | Send the 'MsgFindIntersect', with handlers for the replies.
   --
   SendMsgFindIntersect
-    :: [point]
-    -> ClientStIntersect header point m a
-    -> ClientStIdle header point m a
+    :: [Point header]
+    -> ClientStIntersect header tip m a
+    -> ClientStIdle header tip m a
 
   -- | The client decided to end the protocol.
   --
   SendMsgDone
     :: a
-    -> ClientStIdle header point m a
+    -> ClientStIdle header tip m a
 
 -- | In the 'StNext' protocol state, the client does not have agency and is
 -- waiting to receive either
 --
 --  * a roll forward,
 --  * roll back message,
---  * the terminating message.
 --
 -- It must be prepared to handle any of these.
 --
-data ClientStNext header point m a =
+data ClientStNext header tip m a =
      ClientStNext {
-       recvMsgRollForward  :: header -> point -> ChainSyncClient header point m a,
-       recvMsgRollBackward :: point  -> point -> ChainSyncClient header point m a
+       recvMsgRollForward  :: header -- header to add to the chain
+                           -> tip    -- information about tip of the chain
+                           -> ChainSyncClient header tip m a,
+
+       recvMsgRollBackward :: Point header -- rollback point
+                           -> tip          -- information about tip of the chain
+                           -> ChainSyncClient header tip m a
      }
 
 -- | In the 'StIntersect' protocol state, the client does not have agency and
@@ -101,10 +107,14 @@ data ClientStNext header point m a =
 --
 -- It must be prepared to handle any of these.
 --
-data ClientStIntersect header point m a =
+data ClientStIntersect header tip m a =
      ClientStIntersect {
-       recvMsgIntersectFound    :: point -> point -> ChainSyncClient header point m a,
-       recvMsgIntersectNotFound ::          point -> ChainSyncClient header point m a
+       recvMsgIntersectFound    :: Point header -- found intersection point
+                                -> tip          -- information about tip of the chain
+                                -> ChainSyncClient header tip m a,
+
+       recvMsgIntersectNotFound :: tip          -- information about tip of the chain
+                                -> ChainSyncClient header tip m a
      }
 
 
@@ -112,27 +122,27 @@ data ClientStIntersect header point m a =
 -- side of the 'ChainSyncProtocol'.
 --
 chainSyncClientPeer
-  :: forall header point m a .
+  :: forall header tip m a .
      Monad m
-  => ChainSyncClient header point m a
-  -> Peer (ChainSync header point) AsClient StIdle m a
+  => ChainSyncClient header tip m a
+  -> Peer (ChainSync header tip) AsClient StIdle m a
 chainSyncClientPeer (ChainSyncClient mclient) =
     Effect $ fmap chainSyncClientPeer_ mclient
   where
     chainSyncClientPeer_
-      :: ClientStIdle header point m a
-      -> Peer (ChainSync header point) AsClient StIdle m a
+      :: ClientStIdle header tip m a
+      -> Peer (ChainSync header tip) AsClient StIdle m a
     chainSyncClientPeer_ (SendMsgRequestNext stNext stAwait) =
         Yield (ClientAgency TokIdle) MsgRequestNext $
         Await (ServerAgency (TokNext TokCanAwait)) $ \resp ->
         case resp of
-          MsgRollForward header pHead ->
-              chainSyncClientPeer (recvMsgRollForward header pHead)
+          MsgRollForward header tip ->
+              chainSyncClientPeer (recvMsgRollForward header tip)
             where
               ClientStNext{recvMsgRollForward} = stNext
 
-          MsgRollBackward pRollback pHead ->
-              chainSyncClientPeer (recvMsgRollBackward pRollback pHead)
+          MsgRollBackward pRollback tip ->
+              chainSyncClientPeer (recvMsgRollBackward pRollback tip)
             where
               ClientStNext{recvMsgRollBackward} = stNext
 
@@ -143,20 +153,20 @@ chainSyncClientPeer (ChainSyncClient mclient) =
               ClientStNext{recvMsgRollForward, recvMsgRollBackward} <- stAwait
               pure $ Await (ServerAgency (TokNext TokMustReply)) $ \resp' ->
                 case resp' of
-                  MsgRollForward header pHead ->
-                    chainSyncClientPeer (recvMsgRollForward header pHead)
-                  MsgRollBackward pRollback pHead ->
-                    chainSyncClientPeer (recvMsgRollBackward pRollback pHead)
+                  MsgRollForward header tip ->
+                    chainSyncClientPeer (recvMsgRollForward header tip)
+                  MsgRollBackward pRollback tip ->
+                    chainSyncClientPeer (recvMsgRollBackward pRollback tip)
 
     chainSyncClientPeer_ (SendMsgFindIntersect points stIntersect) =
         Yield (ClientAgency TokIdle) (MsgFindIntersect points) $
         Await (ServerAgency TokIntersect) $ \resp ->
         case resp of
-          MsgIntersectFound pIntersect pHead ->
-            chainSyncClientPeer (recvMsgIntersectFound pIntersect pHead)
+          MsgIntersectFound pIntersect tip ->
+            chainSyncClientPeer (recvMsgIntersectFound pIntersect tip)
 
-          MsgIntersectNotFound pHead ->
-            chainSyncClientPeer (recvMsgIntersectNotFound pHead)
+          MsgIntersectNotFound tip ->
+            chainSyncClientPeer (recvMsgIntersectNotFound tip)
       where
         ClientStIntersect {
           recvMsgIntersectFound,

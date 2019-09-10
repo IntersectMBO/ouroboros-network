@@ -46,6 +46,7 @@ import qualified Network.Mux.Bearer.Socket as Mx
 
 import           Ouroboros.Network.Socket
 
+import           Ouroboros.Network.Block (BlockNo)
 import           Ouroboros.Network.MockChain.Chain (Chain, ChainUpdate, Point)
 import qualified Ouroboros.Network.MockChain.Chain as Chain
 import qualified Ouroboros.Network.MockChain.ProducerState as CPS
@@ -379,7 +380,7 @@ demo chain0 updates = do
                         (ChainSync.chainSyncClientExample consumerVar
                         (consumerClient done target consumerVar)))
 
-        server :: ChainSync.ChainSyncServer block (Point block) IO ()
+        server :: ChainSync.ChainSyncServer block (Point block, BlockNo) IO ()
         server = ChainSync.chainSyncServerExample () producerVar
 
         responderApp :: OuroborosApplication Mx.ResponderApp (Socket.SockAddr, Socket.SockAddr) TestProtocols1 IO BL.ByteString Void ()
@@ -390,6 +391,7 @@ demo chain0 updates = do
                     (ChainSync.chainSyncServerPeer server)
 
         codecChainSync = ChainSync.codecChainSync encode (fmap const decode)
+                                                  encode             decode
                                                   encode             decode
 
     withServerNode
@@ -433,7 +435,7 @@ demo chain0 updates = do
     consumerClient :: StrictTMVar IO Bool
                    -> Point block
                    -> StrictTVar IO (Chain block)
-                   -> ChainSync.Client block IO ()
+                   -> ChainSync.Client block (Point block, BlockNo) IO ()
     consumerClient done target chain =
       ChainSync.Client
         { ChainSync.rollforward = \_ -> checkTip target chain >>= \b ->

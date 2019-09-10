@@ -109,31 +109,31 @@ chainValidation peerChainVar candidateChainVar = do
 
 -- | Simulated network channels for a given network node.
 --
-data NodeChannels m block = NodeChannels
-  { consumerChans :: [Channel m (AnyMessage (ChainSync block (Point block)))]
+data NodeChannels m block tip = NodeChannels
+  { consumerChans :: [Channel m (AnyMessage (ChainSync block tip))]
     -- ^ channels on which the node will play the consumer role:
     -- sending @consMsg@ and receiving @prodMsg@ messages.
-  , producerChans :: [Channel m (AnyMessage (ChainSync block (Point block)))]
+  , producerChans :: [Channel m (AnyMessage (ChainSync block tip))]
     -- ^ channels on which the node will play the producer role:
     -- sending @prodMsg@ and receiving @consMsg@ messages.
   }
 
-instance Semigroup (NodeChannels m block) where
+instance Semigroup (NodeChannels m block tip) where
   NodeChannels c1 p1 <> NodeChannels c2 p2 = NodeChannels (c1 ++ c2) (p1 ++ p2)
 
-instance Monoid (NodeChannels m block) where
+instance Monoid (NodeChannels m block tip) where
   mempty = NodeChannels [] []
 
 -- | Create channels n1 → n2, where n1 is a producer and n2 is the consumer.
 --
 createOneWaySubscriptionChannels
-  :: forall block m.
+  :: forall block tip m.
      ( MonadSTM m
      , MonadTimer m
      )
   => DiffTime
   -> DiffTime
-  -> m (NodeChannels m block, NodeChannels m block)
+  -> m (NodeChannels m block tip, NodeChannels m block tip)
 createOneWaySubscriptionChannels trDelay1 trDelay2 = do
   (cr, rc) <- createConnectedChannels
   return
@@ -151,13 +151,13 @@ createOneWaySubscriptionChannels trDelay1 trDelay2 = do
 -- simultaneously.
 --
 createTwoWaySubscriptionChannels
-  :: forall block m.
+  :: forall block tip m.
      ( MonadSTM m
      , MonadTimer m
      )
   => DiffTime
   -> DiffTime
-  -> m (NodeChannels m block, NodeChannels m block)
+  -> m (NodeChannels m block tip, NodeChannels m block tip)
 createTwoWaySubscriptionChannels trDelay1 trDelay2 = do
   r12 <- createOneWaySubscriptionChannels trDelay1 trDelay2
   r21 <- createOneWaySubscriptionChannels trDelay2 trDelay1
@@ -282,7 +282,7 @@ relayNode :: forall m block.
              )
           => NodeId
           -> Chain block
-          -> NodeChannels m block
+          -> NodeChannels m block (Point block, BlockNo)
           -> m (StrictTVar m (ChainProducerState block))
 relayNode nid initChain chans = do
   -- Mutable state
@@ -305,7 +305,7 @@ relayNode nid initChain chans = do
     -- state between producers than necessary (here are producers share chain
     -- state and all the reader states, while we could share just the chain).
     startConsumer :: Int
-                  -> Channel m (AnyMessage (ChainSync block (Point block)))
+                  -> Channel m (AnyMessage (ChainSync block (Point block, BlockNo)))
                   -> m (StrictTVar m (Chain block))
     startConsumer cid channel = do
       chainVar <- atomically $ newTVar Genesis
@@ -317,9 +317,9 @@ relayNode nid initChain chans = do
                                    consumer
       return chainVar
 
-    startProducer :: Peer (ChainSync block (Point block)) AsServer StIdle m ()
+    startProducer :: Peer (ChainSync block (Point block, BlockNo)) AsServer StIdle m ()
                   -> Int
-                  -> Channel m (AnyMessage (ChainSync block (Point block)))
+                  -> Channel m (AnyMessage (ChainSync block (Point block, BlockNo)))
                   -> m ()
     startProducer producer pid channel =
       -- use 'void' because 'fork' only works with 'm ()'
@@ -399,7 +399,7 @@ coreNode :: forall m.
      -> DiffTime
      -- ^ slot duration
      -> [Block]
-     -> NodeChannels m Block
+     -> NodeChannels m Block (Point Block, BlockNo)
      -> m (StrictTVar m (ChainProducerState Block))
 coreNode nid slotDuration gchain chans = do
   cpsVar <- relayNode nid Genesis chans

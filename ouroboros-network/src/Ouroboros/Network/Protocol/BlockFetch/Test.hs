@@ -294,6 +294,8 @@ prop_pipe_IO (TestChainAndPoints chain points) =
     ioProperty (prop_channel createPipeConnectedChannels chain points)
 
 
+-- TODO: issue #347: BlockFetch pipelined tests using channels & pipes
+
 --
 -- Codec properties
 --

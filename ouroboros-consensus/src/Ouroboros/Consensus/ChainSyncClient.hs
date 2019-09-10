@@ -25,6 +25,7 @@ import           Control.Tracer
 import           Data.List (find)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
+import           Data.Typeable (Typeable)
 import           Data.Void (Void)
 import           Data.Word (Word64)
 
@@ -58,10 +59,10 @@ import           Ouroboros.Consensus.Util.STM (Fingerprint, onEachChange)
 newtype ClockSkew = ClockSkew { unClockSkew :: Word64 }
   deriving (Eq, Ord, Enum, Bounded, Show, Num)
 
-type Consensus (client :: * -> * -> (* -> *) -> * -> *) blk m =
-   client (Header blk) (Point blk) m Void
+type Consensus (client :: * -> * -> (* -> *) -> * -> *) blk tip m =
+   client (Header blk) tip m Void
 
-data ChainSyncClientException blk =
+data ChainSyncClientException blk tip =
       -- | The header we received was for a slot too far in the future.
       --
       -- I.e., the slot of the received header was > current slot (according
@@ -75,7 +76,7 @@ data ChainSyncClientException blk =
       --
       -- The first 'Point' is the intersection point with the server that was
       -- too far in the past, the second 'Point' is the head of the server.
-    | ForkTooDeep (Point blk) (Point blk)
+    | ForkTooDeep (Point blk) tip
 
       -- | The chain validation threw an error.
     | ChainError (ValidationErr (BlockProtocol blk))
@@ -85,20 +86,20 @@ data ChainSyncClientException blk =
       -- 
       -- We store the requested point and head point from the upstream node as
       -- well as the tip of our current ledger.
-    | InvalidRollForward (Point blk) (Point blk) (Point blk)
+    | InvalidRollForward (Point blk) tip (Point blk)
 
       -- | The upstream node rolled back more than @k@ blocks.
       --
       -- We store the requested intersection point and head point from the
       -- upstream node.
-    | InvalidRollBack (Point blk) (Point blk)
+    | InvalidRollBack (Point blk) tip
 
       -- | We send the upstream node a bunch of points from a chain fragment and
       -- the upstream node responded with an intersection point that is not on
       -- our chain fragment, and thus not among the points we sent.
       --
       -- We store the intersection point the upstream node sent us.
-    | InvalidIntersection (Point blk)
+    | InvalidIntersection (Point (Header blk))
 
       -- | The received header to roll forward doesn't fit onto the previous
       -- one.
@@ -110,10 +111,18 @@ data ChainSyncClientException blk =
       -- | The upstream node's chain contained a block that we know is invalid.
     | InvalidBlock (Point blk)
 
-deriving instance SupportedBlock blk => Show (ChainSyncClientException blk)
-deriving instance (SupportedBlock blk, Eq (ValidationErr (BlockProtocol blk)))
-               => Eq (ChainSyncClientException blk)
-instance SupportedBlock blk => Exception (ChainSyncClientException blk)
+deriving instance ( SupportedBlock blk
+                  , Show tip
+                  ) => Show (ChainSyncClientException blk tip)
+deriving instance ( SupportedBlock blk
+                  , Eq (ValidationErr (BlockProtocol blk))
+                  , Eq tip
+                  )
+               => Eq (ChainSyncClientException blk tip)
+instance ( SupportedBlock blk
+         , Typeable tip
+         , Show tip
+         ) => Exception (ChainSyncClientException blk tip)
 
 -- | The state of the candidate chain synched with an upstream node.
 data CandidateState blk = CandidateState
@@ -130,7 +139,7 @@ bracketChainSyncClient
        , Ord peer
        , SupportedBlock blk
        )
-    => Tracer m (TraceChainSyncClientEvent blk)
+    => Tracer m (TraceChainSyncClientEvent blk (Point (Header blk)))
     -> STM m (AnchoredFragment (Header blk))
        -- ^ Get the current chain
     -> STM m (ExtLedgerState blk)
@@ -177,13 +186,14 @@ bracketChainSyncClient tracer getCurrentChain getCurrentLedger
 -- is thrown. The network layer classifies exception such that the
 -- corresponding peer will never be chosen again.
 chainSyncClient
-    :: forall m blk.
+    :: forall m blk tip.
        ( MonadSTM   m
        , MonadCatch m
        , MonadThrow (STM m)
        , ProtocolLedgerView blk
+       , Exception (ChainSyncClientException blk tip)
        )
-    => Tracer m (TraceChainSyncClientEvent blk)
+    => Tracer m (TraceChainSyncClientEvent blk tip)
     -> NodeConfig (BlockProtocol blk)
     -> BlockchainTime m
     -> ClockSkew                                    -- ^ Maximum clock skew
@@ -191,7 +201,7 @@ chainSyncClient
     -> STM m (HeaderHash blk -> Bool, Fingerprint)  -- ^ Get the invalid block checker
     -> StrictTVar m (CandidateState blk)            -- ^ Our peer's state var
     -> AnchoredFragment (Header blk)                -- ^ The current chain
-    -> Consensus ChainSyncClient blk m
+    -> Consensus ChainSyncClient blk tip m
 chainSyncClient tracer cfg btime (ClockSkew maxSkew)
                 getCurrentLedger getIsInvalidBlock varCandidate =
     \curChain -> ChainSyncClient (initialise curChain)
@@ -251,7 +261,7 @@ chainSyncClient tracer cfg btime (ClockSkew maxSkew)
     -- TODO split in two parts: one requiring only the @TVar@ for the
     -- candidate instead of the whole map.
     initialise :: AnchoredFragment (Header blk)
-               -> m (Consensus ClientStIdle blk m)
+               -> m (Consensus ClientStIdle blk tip m)
     initialise curChain = do
       -- We select points from the last @k@ headers of our current chain. This
       -- means that if an intersection is found for one of these points, it
@@ -263,7 +273,7 @@ chainSyncClient tracer cfg btime (ClockSkew maxSkew)
       -- that the intersection is now more than @k@ blocks in the past, which
       -- means the candidate is no longer eligible after all.
       let points = AF.selectPoints (map fromIntegral offsets) curChain
-      return $ SendMsgFindIntersect (map castPoint points) $ ClientStIntersect
+      return $ SendMsgFindIntersect points $ ClientStIntersect
         { recvMsgIntersectFound  =
             ChainSyncClient .: intersectFound
         , recvMsgIntersectNotFound =
@@ -272,8 +282,8 @@ chainSyncClient tracer cfg btime (ClockSkew maxSkew)
 
     -- One of the points we sent intersected our chain. This intersection
     -- point will become the new tip of the candidate chain.
-    intersectFound :: Point blk -> Point blk
-                   -> m (Consensus ClientStIdle blk m)
+    intersectFound :: Point (Header blk) -> tip
+                   -> m (Consensus ClientStIdle blk tip m)
     intersectFound intersection _theirHead = traceException $ atomically $ do
 
       CandidateState { candidateChain, candidateChainState } <- readTVar varCandidate
@@ -294,7 +304,7 @@ chainSyncClient tracer cfg btime (ClockSkew maxSkew)
       -- that the ChainSync protocol /does/ in fact give us a switch-to-fork
       -- instead of a true rollback.
       (candidateChain', candidateChainState') <-
-        case (,) <$> AF.rollback (castPoint intersection) candidateChain
+        case (,) <$> AF.rollback intersection candidateChain
                  <*> rewindChainState cfg candidateChainState (pointSlot intersection)
         of
           Just (c,d) -> return (c,d)
@@ -319,8 +329,8 @@ chainSyncClient tracer cfg btime (ClockSkew maxSkew)
     -- we later optimise this client to also find intersections after
     -- start-up, this code will have to be adapted, as it assumes it is only
     -- called at start-up.
-    intersectNotFound :: Point blk
-                       -> m (Consensus ClientStIdle blk m)
+    intersectNotFound :: tip
+                       -> m (Consensus ClientStIdle blk tip m)
     intersectNotFound theirHead = traceException $ atomically $ do
       curChainState <- ouroborosChainState <$> getCurrentLedger
 
@@ -346,23 +356,25 @@ chainSyncClient tracer cfg btime (ClockSkew maxSkew)
         }
       return requestNext
 
-    requestNext :: Consensus ClientStIdle blk m
+    requestNext :: Consensus ClientStIdle blk tip m
     requestNext = SendMsgRequestNext
       handleNext
       (return handleNext) -- when we have to wait
 
-    handleNext :: Consensus ClientStNext blk m
+    handleNext :: Consensus ClientStNext blk tip m
     handleNext = ClientStNext
       { recvMsgRollForward  = \hdr theirHead -> ChainSyncClient $ do
           traceWith tracer $ TraceDownloadedHeader hdr
           rollForward hdr theirHead
       , recvMsgRollBackward = \intersection theirHead -> ChainSyncClient $ do
-          traceWith tracer $ TraceRolledBack intersection
-          rollBackward intersection theirHead
+          let intersection' :: Point blk
+              intersection' = castPoint intersection
+          traceWith tracer $ TraceRolledBack intersection'
+          rollBackward intersection' theirHead
       }
 
-    rollForward :: Header blk -> Point blk
-                -> m (Consensus ClientStIdle blk m)
+    rollForward :: Header blk -> tip
+                -> m (Consensus ClientStIdle blk tip m)
     rollForward hdr theirHead = traceException $ atomically $ do
       -- Reject the block if invalid
       let hdrHash  = headerHash hdr
@@ -465,8 +477,8 @@ chainSyncClient tracer cfg btime (ClockSkew maxSkew)
         }
       return requestNext
 
-    rollBackward :: Point blk -> Point blk
-                 -> m (Consensus ClientStIdle blk m)
+    rollBackward :: Point blk -> tip
+                 -> m (Consensus ClientStIdle blk tip m)
     rollBackward intersection theirHead = traceException $ atomically $ do
       CandidateState {..} <- readTVar varCandidate
 
@@ -508,12 +520,12 @@ chainSyncClient tracer cfg btime (ClockSkew maxSkew)
 
     -- | Disconnect from the upstream node by throwing the given exception.
     -- The cleanup is handled in 'bracketChainSyncClient'.
-    disconnect :: ChainSyncClientException blk -> STM m a
+    disconnect :: ChainSyncClientException blk tip -> STM m a
     disconnect = throwM
 
     -- | Trace any 'ChainSyncClientException' if thrown.
     traceException :: m a -> m a
-    traceException m = m `catch` \(e :: ChainSyncClientException blk) -> do
+    traceException m = m `catch` \(e :: ChainSyncClientException blk tip) -> do
       traceWith tracer $ TraceException e
       throwM e
 
@@ -557,13 +569,15 @@ chainSyncClient tracer cfg btime (ClockSkew maxSkew)
 -- is invalid (typically \( O(\log(invalid)) \) where /invalid/ is the number
 -- of invalid blocks).
 rejectInvalidBlocks
-    :: forall m blk.
+    :: forall m blk tip.
        ( MonadAsync m
        , MonadFork  m
        , MonadMask  m
        , SupportedBlock blk
+       , Typeable tip
+       , Show tip
        )
-    => Tracer m (TraceChainSyncClientEvent blk)
+    => Tracer m (TraceChainSyncClientEvent blk tip)
     -> ResourceRegistry m
     -> STM m (HeaderHash blk -> Bool, Fingerprint)
        -- ^ Get the invalid block checker
@@ -633,17 +647,23 @@ rejectInvalidBlocks tracer registry getIsInvalidBlock getCandidateState =
 -------------------------------------------------------------------------------}
 
 -- | Events traced by the Chain Sync Client.
-data TraceChainSyncClientEvent blk
+data TraceChainSyncClientEvent blk tip
   = TraceDownloadedHeader (Header blk)
     -- ^ While following a candidate chain, we rolled forward by downloading a
     -- header.
   | TraceRolledBack (Point blk)
     -- ^ While following a candidate chain, we rolled back to the given point.
-  | TraceException (ChainSyncClientException blk)
+  | TraceException (ChainSyncClientException blk tip)
     -- ^ An exception was thrown by the Chain Sync Client.
 
-deriving instance (SupportedBlock blk, Eq (ValidationErr (BlockProtocol blk)),
-                   Eq (Header blk))
-               => Eq   (TraceChainSyncClientEvent blk)
-deriving instance (SupportedBlock blk, Show (Header blk))
-               => Show (TraceChainSyncClientEvent blk)
+deriving instance ( SupportedBlock blk
+                  , Eq (ValidationErr (BlockProtocol blk))
+                  , Eq (Header blk)
+                  , Eq tip
+                  )
+               => Eq   (TraceChainSyncClientEvent blk tip)
+deriving instance ( SupportedBlock blk
+                  , Show (Header blk)
+                  , Show tip
+                  )
+               => Show (TraceChainSyncClientEvent blk tip)
