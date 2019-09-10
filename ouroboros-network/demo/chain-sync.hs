@@ -182,6 +182,7 @@ serverPingPong :: IO ()
 serverPingPong = do
     tbl <- newConnectionTable
     withServerNode
+      nullTracer
       tbl
       defaultLocalSocketAddrInfo
       (\(DictVersion codec)-> encodeTerm codec)
@@ -281,6 +282,7 @@ serverPingPong2 :: IO ()
 serverPingPong2 = do
     tbl <- newConnectionTable
     withServerNode
+      nullTracer
       tbl
       defaultLocalSocketAddrInfo
       (\(DictVersion codec)-> encodeTerm codec)
@@ -354,6 +356,7 @@ serverChainSync :: FilePath -> IO ()
 serverChainSync sockAddr = do
     tbl <- newConnectionTable
     withServerNode
+      nullTracer
       tbl
       (mkLocalSocketAddrInfo sockAddr)
       (\(DictVersion codec)-> encodeTerm codec)
@@ -551,6 +554,7 @@ serverBlockFetch :: FilePath -> IO ()
 serverBlockFetch sockAddr = do
     tbl <- newConnectionTable
     withServerNode
+      nullTracer
       tbl
       (mkLocalSocketAddrInfo sockAddr)
       (\(DictVersion codec)-> encodeTerm codec)

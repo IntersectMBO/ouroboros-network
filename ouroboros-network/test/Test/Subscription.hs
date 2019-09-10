@@ -544,6 +544,7 @@ prop_send_recv f xs first = ioProperty $ do
 
     withDummyServer faultyAddress $
       withServerNode
+        nullTracer
         tbl
         responderAddr
         (\(DictVersion codec) -> encodeTerm codec)
@@ -666,6 +667,7 @@ prop_send_recv_init_and_rsp f xs = ioProperty $ do
             )
 
     startPassiveServer tbl responderAddr localAddrVar rrcfg = withServerNode
+        nullTracer
         tbl
         responderAddr
         (\(DictVersion codec) -> encodeTerm codec)
@@ -681,6 +683,7 @@ prop_send_recv_init_and_rsp f xs = ioProperty $ do
           return r
 
     startActiveServer tbl responderAddr localAddrVar remoteAddrVar rrcfg = withServerNode
+        nullTracer
         tbl
         responderAddr
         (\(DictVersion codec) -> encodeTerm codec)
@@ -779,6 +782,7 @@ _demo = ioProperty $ do
 
     spawnServer tbl addr delay =
         void $ async $ withServerNode
+            nullTracer
             tbl
             addr
             (\(DictVersion codec) -> encodeTerm codec)

@@ -233,6 +233,7 @@ prop_socket_send_recv initiatorAddr responderAddr f xs = do
 
     res <-
       withServerNode
+        nullTracer
         tbl
         responderAddr
         (\(DictVersion codec) -> encodeTerm codec)
@@ -395,6 +396,7 @@ demo chain0 updates = do
                                                   encode             decode
 
     withServerNode
+      nullTracer
       tbl
       producerAddress
       (\(DictVersion codec)-> encodeTerm codec)

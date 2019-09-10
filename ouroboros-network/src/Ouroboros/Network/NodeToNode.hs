@@ -38,6 +38,9 @@ module Ouroboros.Network.NodeToNode (
   -- * Re-exports
   , ConnectionTable
   , newConnectionTable
+  , TraceSendRecv (..)
+  , DecoderFailureOrTooMuchInput
+  , Handshake
   ) where
 
 import           Control.Concurrent.Async (Async)
@@ -78,7 +81,7 @@ import           Ouroboros.Network.Subscription.Dns ( DnsSubscriptionTarget (..)
                                                     , WithDomainName (..)
                                                     )
 import           Network.TypedProtocol.Driver.ByteLimit (DecoderFailureOrTooMuchInput)
-import           Network.TypedProtocol.Driver (TraceSendRecv)
+import           Network.TypedProtocol.Driver (TraceSendRecv (..))
 import           Control.Tracer (Tracer)
 
 
@@ -183,9 +186,9 @@ connectTo_V1
   -> Maybe Socket.AddrInfo
   -> Socket.AddrInfo
   -> IO ()
-connectTo_V1 tracer peeridFn versionData application localAddr remoteAddr =
+connectTo_V1 handshakeTracer peeridFn versionData application localAddr remoteAddr =
     connectTo
-      tracer peeridFn
+      handshakeTracer peeridFn
       (simpleSingletonVersions
           NodeToNodeV_1
           versionData
@@ -199,7 +202,8 @@ connectTo_V1 tracer peeridFn versionData application localAddr remoteAddr =
 --
 withServer
   :: HasResponder appType ~ True
-  => ConnectionTable IO Socket.SockAddr
+  => Tracer IO (TraceSendRecv (Handshake NodeToNodeVersion CBOR.Term) peerid (DecoderFailureOrTooMuchInput DeserialiseFailure))
+  -> ConnectionTable IO Socket.SockAddr
   -> Socket.AddrInfo
   -> (Socket.SockAddr -> Socket.SockAddr -> peerid)
   -- ^ create peerid from local address and remote address
@@ -207,8 +211,9 @@ withServer
   -> Versions NodeToNodeVersion DictVersion (OuroborosApplication appType peerid NodeToNodeProtocols IO BL.ByteString a b)
   -> (Async () -> IO t)
   -> IO t
-withServer tbl addr peeridFn acceptVersion versions k =
+withServer handshakeTracer tbl addr peeridFn acceptVersion versions k =
   withServerNode
+    handshakeTracer
     tbl
     addr
     (\(DictVersion codec) -> encodeTerm codec)
@@ -223,7 +228,8 @@ withServer tbl addr peeridFn acceptVersion versions k =
 --
 withServer_V1
   :: HasResponder appType ~ True
-  => ConnectionTable IO Socket.SockAddr
+  => Tracer IO (TraceSendRecv (Handshake NodeToNodeVersion CBOR.Term) peerid (DecoderFailureOrTooMuchInput DeserialiseFailure))
+  -> ConnectionTable IO Socket.SockAddr
   -> Socket.AddrInfo
   -> (Socket.SockAddr -> Socket.SockAddr -> peerid)
   -- ^ create peerid from local address and remote address
@@ -231,9 +237,9 @@ withServer_V1
   -> (OuroborosApplication appType peerid NodeToNodeProtocols IO BL.ByteString x y)
   -> (Async () -> IO t)
   -> IO t
-withServer_V1 tbl addr peeridFn versionData application k =
+withServer_V1 handshakeTracer tbl addr peeridFn versionData application k =
     withServer
-      tbl addr peeridFn
+      handshakeTracer tbl addr peeridFn
       (\(DictVersion _) -> acceptEq)
       (simpleSingletonVersions
           NodeToNodeV_1

@@ -23,6 +23,9 @@ module Ouroboros.Network.NodeToClient (
   -- * Re-exported clients
   , chainSyncClientNull
   , localTxSubmissionClientNull
+  , TraceSendRecv (..)
+  , DecoderFailureOrTooMuchInput
+  , Handshake
   ) where
 
 import           Control.Concurrent.Async (Async)
@@ -48,7 +51,7 @@ import           Ouroboros.Network.Protocol.Handshake.Type
 import           Ouroboros.Network.Protocol.Handshake.Version
 import           Ouroboros.Network.Socket
 import           Network.TypedProtocol.Driver.ByteLimit (DecoderFailureOrTooMuchInput)
-import           Network.TypedProtocol.Driver (TraceSendRecv)
+import           Network.TypedProtocol.Driver (TraceSendRecv (..))
 import           Control.Tracer (Tracer)
 
 
@@ -170,7 +173,8 @@ connectTo_V1 tracer peeridFn versionData application =
 --
 withServer
   :: HasResponder appType ~ True
-  => ConnectionTable IO Socket.SockAddr
+  => Tracer IO (TraceSendRecv (Handshake NodeToClientVersion CBOR.Term) peerid (DecoderFailureOrTooMuchInput DeserialiseFailure))
+  -> ConnectionTable IO Socket.SockAddr
   -> Socket.AddrInfo
   -> (Socket.SockAddr -> Socket.SockAddr -> peerid)
   -- ^ create peerid from local address and remote address
@@ -179,8 +183,9 @@ withServer
               (OuroborosApplication appType peerid NodeToClientProtocols IO BL.ByteString a b)
   -> (Async () -> IO t)
   -> IO t
-withServer tbl addr peeridFn acceptVersion versions k =
+withServer tracer tbl addr peeridFn acceptVersion versions k =
   withServerNode
+    tracer
     tbl
     addr
     (\(DictVersion codec) -> encodeTerm codec)
@@ -195,7 +200,8 @@ withServer tbl addr peeridFn acceptVersion versions k =
 --
 withServer_V1
   :: (HasResponder appType ~ True)
-  => ConnectionTable IO Socket.SockAddr
+  => Tracer IO (TraceSendRecv (Handshake NodeToClientVersion CBOR.Term) peerid (DecoderFailureOrTooMuchInput DeserialiseFailure))
+  -> ConnectionTable IO Socket.SockAddr
   -> Socket.AddrInfo
   -> (Socket.SockAddr -> Socket.SockAddr -> peerid)
   -- ^ create peerid from local address and remote address
@@ -208,9 +214,9 @@ withServer_V1
   -- 'OuroborosInitiatorAndResponderApplication'.
   -> (Async () -> IO t)
   -> IO t
-withServer_V1 tbl addr peeridFn versionData application =
+withServer_V1 tracer tbl addr peeridFn versionData application =
     withServer
-      tbl addr peeridFn 
+      tracer tbl addr peeridFn 
       (\(DictVersion _) -> acceptEq)
       (simpleSingletonVersions
         NodeToClientV_1
