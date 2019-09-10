@@ -56,7 +56,9 @@ import           Ouroboros.Network.Protocol.Handshake.Version (simpleSingletonVe
 
 import           Codec.SerialiseTerm
 import           Ouroboros.Network.Mux
-import           Ouroboros.Network.NodeToNode
+import           Ouroboros.Network.NodeToNode hiding ( ipSubscriptionWorker
+                                                     , dnsSubscriptionWorker
+                                                     )
 import           Ouroboros.Network.Socket
 import           Ouroboros.Network.Subscription
 import           Ouroboros.Network.Subscription.Dns
@@ -541,7 +543,7 @@ prop_send_recv f xs first = ioProperty $ do
             waitSiblingSub siblingVar
 
     withDummyServer faultyAddress $
-      withSimpleServerNode
+      withServerNode
         tbl
         responderAddr
         (\(DictVersion codec) -> encodeTerm codec)
@@ -670,7 +672,7 @@ prop_send_recv_init_and_rsp f xs = ioProperty $ do
         (\(DictVersion codec) -> decodeTerm codec)
         (,)
         (\(DictVersion _) -> acceptEq)
-        (AnyResponderApp <$> simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData 0) (DictVersion nodeToNodeCodecCBORTerm) (appX rrcfg))
+        (simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData 0) (DictVersion nodeToNodeCodecCBORTerm) (appX rrcfg))
         $ \localAddr _ -> do
           atomically $ putTMVar localAddrVar localAddr
           r <- atomically $ (,) <$> takeTMVar (rrcServerVar rrcfg)
@@ -685,7 +687,7 @@ prop_send_recv_init_and_rsp f xs = ioProperty $ do
         (\(DictVersion codec) -> decodeTerm codec)
         (,)
         (\(DictVersion _) -> acceptEq)
-        (AnyResponderApp <$> (simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData 0) (DictVersion nodeToNodeCodecCBORTerm) (appX rrcfg)))
+        ((simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData 0) (DictVersion nodeToNodeCodecCBORTerm) (appX rrcfg)))
         $ \localAddr _ -> do
           atomically $ putTMVar localAddrVar localAddr
           remoteAddr <- atomically $ takeTMVar remoteAddrVar
@@ -752,7 +754,7 @@ _demo = ioProperty $ do
     spawnServer tbl server6 100
     spawnServer tbl server6' 45
 
-    dnsSubscriptionWorker activeTracer activeTracer clientTbl
+    _ <- dnsSubscriptionWorker activeTracer activeTracer clientTbl
             (Just $ Socket.addrAddress client)
             (Just $ Socket.addrAddress client6)
             (\_ -> Just minConnectionAttemptDelay)
@@ -776,7 +778,7 @@ _demo = ioProperty $ do
   where
 
     spawnServer tbl addr delay =
-        void $ async $ withSimpleServerNode
+        void $ async $ withServerNode
             tbl
             addr
             (\(DictVersion codec) -> encodeTerm codec)

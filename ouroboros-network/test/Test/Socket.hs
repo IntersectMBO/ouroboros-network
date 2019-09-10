@@ -231,7 +231,7 @@ prop_socket_send_recv initiatorAddr responderAddr f xs = do
             waitSibling siblingVar
 
     res <-
-      withSimpleServerNode
+      withServerNode
         tbl
         responderAddr
         (\(DictVersion codec) -> encodeTerm codec)
@@ -392,7 +392,7 @@ demo chain0 updates = do
         codecChainSync = ChainSync.codecChainSync encode (fmap const decode)
                                                   encode             decode
 
-    withSimpleServerNode
+    withServerNode
       tbl
       producerAddress
       (\(DictVersion codec)-> encodeTerm codec)
