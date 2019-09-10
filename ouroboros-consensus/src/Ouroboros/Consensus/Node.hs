@@ -28,7 +28,6 @@ module Ouroboros.Consensus.Node
   , initNetwork
   ) where
 
-import           Codec.SerialiseTerm
 import           Control.Monad (forM, void)
 import           Control.Tracer
 import           Crypto.Random
@@ -38,18 +37,11 @@ import           Data.Time.Clock (secondsToDiffTime)
 import           Network.Socket as Socket
 
 import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadSTM
 
 import           Ouroboros.Network.Block
 import qualified Ouroboros.Network.Block as Block
 import           Ouroboros.Network.NodeToClient as NodeToClient
 import           Ouroboros.Network.NodeToNode as NodeToNode
-import           Ouroboros.Network.Socket
-import           Ouroboros.Network.Subscription.Dns
-import           Ouroboros.Network.Subscription.Ip
-
-import           Ouroboros.Network.Protocol.Handshake.Type
-import           Ouroboros.Network.Protocol.Handshake.Version
 
 import           Ouroboros.Consensus.Block (BlockProtocol)
 import           Ouroboros.Consensus.BlockchainTime
@@ -296,51 +288,37 @@ initNetwork registry nodeArgs kernel RunNetworkArgs{..} = do
       (protocolCodecs (getNodeConfig kernel))
       (protocolHandlers nodeArgs kernel)
 
-    networkAppNodeToNode :: Versions
-                              NodeToNodeVersion
-                              DictVersion
-                              (NetworkApps peer)
-    networkAppNodeToNode =
-      simpleSingletonVersions
-        NodeToNodeV_1
-        (NodeToNodeVersionData { networkMagic = 0 })
-        (DictVersion nodeToNodeCodecCBORTerm)
-        networkApps
-
-    networkAppNodeToClient :: Versions
-                                NodeToClientVersion
-                                DictVersion
-                                (NetworkApps peer)
-    networkAppNodeToClient =
-      simpleSingletonVersions
-        NodeToClientV_1
-        (NodeToClientVersionData { networkMagic = 0 })
-        (DictVersion nodeToClientCodecCBORTerm)
-        networkApps
+    -- TODO: network magics should be configurable, this gives an early fail if
+    -- one tries to run testnet vs mainnet.
+    nodeToNodeVersionData   = NodeToNodeVersionData { networkMagic   = 0 }
+    nodeToClientVersionData = NodeToClientVersionData { networkMagic = 0 }
 
     runLocalServer :: IO ()
     runLocalServer = do
-      connTable <- newConnectionTable
-      NodeToClient.withServer
+      (connTable :: ConnectionTable IO Socket.SockAddr) <- newConnectionTable
+      NodeToClient.withServer_V1
         connTable
         rnaMyLocalAddr
         rnaMkPeer
-        (\(DictVersion _) -> acceptEq)
-        (localResponderNetworkApplication <$> networkAppNodeToClient)
+        nodeToClientVersionData
+        (localResponderNetworkApplication networkApps)
         wait
 
     runPeerServer :: ConnectionTable IO Socket.SockAddr -> IO ()
-    runPeerServer connTable = NodeToNode.withServer
-      connTable
-      rnaMyAddr
-      rnaMkPeer
-      (\(DictVersion _) -> acceptEq)
-      (responderNetworkApplication <$> networkAppNodeToNode)
-      wait
+    runPeerServer connTable =
+      NodeToNode.withServer_V1
+        connTable
+        rnaMyAddr
+        rnaMkPeer
+        nodeToNodeVersionData
+        (responderNetworkApplication networkApps)
+        wait
 
     runIpSubscriptionWorker :: ConnectionTable IO Socket.SockAddr -> IO ()
-    runIpSubscriptionWorker connTable = ipSubscriptionWorker
+    runIpSubscriptionWorker connTable = ipSubscriptionWorker_V1
       rnaIpSubscriptionTracer
+      nullTracer -- TODO add hanshake protocol tracer to 'ProtocolTracers'
+      rnaMkPeer
       connTable
       -- the comments in dnsSbuscriptionWorker call apply
       (Just (Socket.SockAddrInet 0 0))
@@ -350,20 +328,17 @@ initNetwork registry nodeArgs kernel RunNetworkArgs{..} = do
         { ispIps     = rnaIpProducers
         , ispValency = length rnaIpProducers
         }
-      (\_ -> retry)
-      (connectToNode'
-        (\(DictVersion codec) -> encodeTerm codec)
-        (\(DictVersion codec) -> decodeTerm codec)
-        nullTracer
-        rnaMkPeer
-        (initiatorNetworkApplication <$> networkAppNodeToNode))
+      nodeToNodeVersionData
+      (initiatorNetworkApplication networkApps) 
 
     runDnsSubscriptionWorker :: ConnectionTable IO Socket.SockAddr
                              -> DnsSubscriptionTarget
                              -> IO ()
-    runDnsSubscriptionWorker connTable dnsProducer = dnsSubscriptionWorker
+    runDnsSubscriptionWorker connTable dnsProducer = dnsSubscriptionWorker_V1
       rnaDnsSubscriptionTracer
       rnaDnsResolverTracer
+      nullTracer -- TODO add hanshake protocol tracer to 'ProtocolTracers'
+      rnaMkPeer
       connTable
       -- IPv4 address
       --
@@ -376,10 +351,5 @@ initNetwork registry nodeArgs kernel RunNetworkArgs{..} = do
       (Just (Socket.SockAddrInet6 0 0 (0, 0, 0, 1) 0))
       (const Nothing)
       dnsProducer
-      (\_ -> retry)
-      (connectToNode'
-        (\(DictVersion codec) -> encodeTerm codec)
-        (\(DictVersion codec) -> decodeTerm codec)
-        nullTracer
-        rnaMkPeer
-        (initiatorNetworkApplication <$> networkAppNodeToNode))
+      nodeToNodeVersionData
+      (initiatorNetworkApplication networkApps)

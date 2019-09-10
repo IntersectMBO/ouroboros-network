@@ -9,7 +9,7 @@
 module Ouroboros.Network.Subscription.Ip
     ( ipSubscriptionWorker
     , subscriptionWorker
-    , SubscriptionTrace
+    , SubscriptionTrace (..)
     , IPSubscriptionTarget (..)
     , WithIPList (..)
     ) where

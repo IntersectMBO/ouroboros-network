@@ -16,14 +16,33 @@ module Ouroboros.Network.NodeToNode (
   , nodeToNodeCodecCBORTerm
 
   , connectTo
+  , connectTo_V1
+
   , withServer
+  , withServer_V1
+
+  -- * Subscription Workers
+  -- ** IP subscriptin worker
+  , IPSubscriptionTarget (..)
+  , ipSubscriptionWorker
+  , ipSubscriptionWorker_V1
+  , SubscriptionTrace (..)
+  , WithIPList (..)
+  -- ** DNS subscription worker
+  , DnsSubscriptionTarget (..)
+  , dnsSubscriptionWorker
+  , dnsSubscriptionWorker_V1
+  , DnsTrace (..)
+  , WithDomainName (..)
 
   -- * Re-exports
-  , AnyResponderApp (..)
+  , ConnectionTable
+  , newConnectionTable
   ) where
 
 import           Control.Concurrent.Async (Async)
 import qualified Data.ByteString.Lazy as BL
+import           Data.Time.Clock (DiffTime)
 import           Data.Text (Text)
 import qualified Data.Text as T
 import           Data.Typeable (Typeable)
@@ -36,6 +55,8 @@ import           Codec.SerialiseTerm
 
 import qualified Network.Socket as Socket
 
+import           Control.Monad.Class.MonadSTM
+
 import           Network.Mux.Types (ProtocolEnum(..), MiniProtocolLimits (..))
 import           Network.Mux.Interface
 
@@ -43,6 +64,19 @@ import           Ouroboros.Network.Mux
 import           Ouroboros.Network.Protocol.Handshake.Type
 import           Ouroboros.Network.Protocol.Handshake.Version
 import           Ouroboros.Network.Socket
+import           Ouroboros.Network.Server.ConnectionTable ( ConnectionTable
+                                                          , newConnectionTable
+                                                          )
+import qualified Ouroboros.Network.Subscription.Ip as Subscription
+import           Ouroboros.Network.Subscription.Ip ( IPSubscriptionTarget (..)
+                                                   , WithIPList (..)
+                                                   , SubscriptionTrace (..)
+                                                   )
+import qualified Ouroboros.Network.Subscription.Dns as Subscription
+import           Ouroboros.Network.Subscription.Dns ( DnsSubscriptionTarget (..)
+                                                    , DnsTrace (..)
+                                                    , WithDomainName (..)
+                                                    )
 import           Network.TypedProtocol.Driver.ByteLimit (DecoderFailureOrTooMuchInput)
 import           Network.TypedProtocol.Driver (TraceSendRecv)
 import           Control.Tracer (Tracer)
@@ -137,15 +171,40 @@ connectTo =
     (\(DictVersion codec) -> encodeTerm codec)
     (\(DictVersion codec) -> decodeTerm codec)
 
+
+-- | Like 'connectTo' but specific to 'NodeToNodeV_1'.
+--
+connectTo_V1
+  :: Tracer IO (TraceSendRecv (Handshake NodeToNodeVersion CBOR.Term) peerid (DecoderFailureOrTooMuchInput DeserialiseFailure))
+  -> (Socket.SockAddr -> Socket.SockAddr -> peerid)
+  -- ^ create peerid from local address and remote address
+  -> NodeToNodeVersionData
+  -> (OuroborosApplication InitiatorApp peerid NodeToNodeProtocols IO BL.ByteString a b)
+  -> Maybe Socket.AddrInfo
+  -> Socket.AddrInfo
+  -> IO ()
+connectTo_V1 tracer peeridFn versionData application localAddr remoteAddr =
+    connectTo
+      tracer peeridFn
+      (simpleSingletonVersions
+          NodeToNodeV_1
+          versionData
+          (DictVersion nodeToNodeCodecCBORTerm)
+          application)
+      localAddr
+      remoteAddr
+        
+
 -- | A specialised version of @'Ouroboros.Network.Socket.withServerNode'@
 --
 withServer
-  :: ConnectionTable IO Socket.SockAddr
+  :: HasResponder appType ~ True
+  => ConnectionTable IO Socket.SockAddr
   -> Socket.AddrInfo
   -> (Socket.SockAddr -> Socket.SockAddr -> peerid)
   -- ^ create peerid from local address and remote address
   -> (forall vData. DictVersion vData -> vData -> vData -> Accept)
-  -> Versions NodeToNodeVersion DictVersion (AnyResponderApp peerid NodeToNodeProtocols IO BL.ByteString)
+  -> Versions NodeToNodeVersion DictVersion (OuroborosApplication appType peerid NodeToNodeProtocols IO BL.ByteString a b)
   -> (Async () -> IO t)
   -> IO t
 withServer tbl addr peeridFn acceptVersion versions k =
@@ -158,3 +217,231 @@ withServer tbl addr peeridFn acceptVersion versions k =
     acceptVersion
     versions
     (\_ -> k)
+
+
+-- | Like 'withServer' but specific to 'NodeToNodeV_1'.
+--
+withServer_V1
+  :: HasResponder appType ~ True
+  => ConnectionTable IO Socket.SockAddr
+  -> Socket.AddrInfo
+  -> (Socket.SockAddr -> Socket.SockAddr -> peerid)
+  -- ^ create peerid from local address and remote address
+  -> NodeToNodeVersionData
+  -> (OuroborosApplication appType peerid NodeToNodeProtocols IO BL.ByteString x y)
+  -> (Async () -> IO t)
+  -> IO t
+withServer_V1 tbl addr peeridFn versionData application k =
+    withServer
+      tbl addr peeridFn
+      (\(DictVersion _) -> acceptEq)
+      (simpleSingletonVersions
+          NodeToNodeV_1
+          versionData
+          (DictVersion nodeToNodeCodecCBORTerm)
+          application)
+      k
+
+
+-- | 'ipSubscriptionWorker' which starts given application versions on each
+-- established connection.
+--
+ipSubscriptionWorker
+    :: forall appType peerid void x y.
+       (HasInitiator appType ~ True)
+    => Tracer IO (WithIPList (SubscriptionTrace Socket.SockAddr))
+    -> Tracer IO
+        (TraceSendRecv
+          (Handshake NodeToNodeVersion CBOR.Term)
+          peerid
+          (DecoderFailureOrTooMuchInput DeserialiseFailure))
+    -> (Socket.SockAddr -> Socket.SockAddr -> peerid)
+    -> ConnectionTable IO Socket.SockAddr
+    -> Maybe Socket.SockAddr
+    -- ^ Local IPv4 address to use, Nothing indicates don't use IPv4
+    -> Maybe Socket.SockAddr
+    -- ^ Local IPv6 address to use, Nothing indicates don't use IPv6
+    -> (Socket.SockAddr -> Maybe DiffTime)
+    -- ^ Lookup function, should return expected delay for the given address
+    -> IPSubscriptionTarget
+    -> Versions
+        NodeToNodeVersion
+        DictVersion
+        (OuroborosApplication
+          appType
+          peerid
+          NodeToNodeProtocols
+          IO BL.ByteString x y)
+    -> IO void
+ipSubscriptionWorker
+  subscriptionTracer
+  handshakeTracer
+  peeridFn
+  tbl
+  localIPv4 localIPv6
+  connectionAttemptDelay
+  ips
+  versions
+    = Subscription.ipSubscriptionWorker
+        subscriptionTracer
+        tbl
+        localIPv4 localIPv6
+        connectionAttemptDelay
+        ips
+        (\_ -> retry)
+        (connectToNode'
+          (\(DictVersion codec) -> encodeTerm codec)
+          (\(DictVersion codec) -> decodeTerm codec)
+          handshakeTracer
+          peeridFn
+          versions)
+
+
+-- | Like 'ipSubscriptionWorker' but specific to 'NodeToNodeV_1'.
+--
+ipSubscriptionWorker_V1
+    :: forall appType peerid void x y.
+       (HasInitiator appType ~ True)
+    => Tracer IO (WithIPList (SubscriptionTrace Socket.SockAddr))
+    -> Tracer IO (TraceSendRecv (Handshake NodeToNodeVersion CBOR.Term) peerid (DecoderFailureOrTooMuchInput DeserialiseFailure))
+    -> (Socket.SockAddr -> Socket.SockAddr -> peerid)
+    -> ConnectionTable IO Socket.SockAddr
+    -> Maybe Socket.SockAddr
+    -- ^ Local IPv4 address to use, Nothing indicates don't use IPv4
+    -> Maybe Socket.SockAddr
+    -- ^ Local IPv6 address to use, Nothing indicates don't use IPv6
+    -> (Socket.SockAddr -> Maybe DiffTime)
+    -- ^ Lookup function, should return expected delay for the given address
+    -> IPSubscriptionTarget
+    -> NodeToNodeVersionData
+    -> (OuroborosApplication
+          appType
+          peerid
+          NodeToNodeProtocols
+          IO BL.ByteString x y)
+    -> IO void
+ipSubscriptionWorker_V1
+  subscriptionTracer
+  handshakeTracer
+  peeridFn
+  tbl
+  localIPv4 localIPv6
+  connectionAttemptDelay
+  ips
+  versionData
+  application
+    = ipSubscriptionWorker
+        subscriptionTracer
+        handshakeTracer
+        peeridFn
+        tbl
+        localIPv4 localIPv6
+        connectionAttemptDelay
+        ips
+        (simpleSingletonVersions
+          NodeToNodeV_1
+          versionData
+          (DictVersion nodeToNodeCodecCBORTerm)
+          application)
+
+
+-- | 'dnsSubscriptionWorker' which starts given application versions on each
+-- established connection.
+--
+dnsSubscriptionWorker
+    :: forall appType peerid x y void.
+       HasInitiator appType ~ True
+    => Tracer IO (WithDomainName (SubscriptionTrace Socket.SockAddr))
+    -> Tracer IO (WithDomainName DnsTrace)
+    -> Tracer IO
+        (TraceSendRecv
+          (Handshake NodeToNodeVersion CBOR.Term)
+          peerid
+          (DecoderFailureOrTooMuchInput DeserialiseFailure))
+    -> (Socket.SockAddr -> Socket.SockAddr -> peerid)
+    -> ConnectionTable IO Socket.SockAddr
+    -> Maybe Socket.SockAddr
+    -> Maybe Socket.SockAddr
+    -> (Socket.SockAddr -> Maybe DiffTime)
+    -> DnsSubscriptionTarget
+    -> Versions
+        NodeToNodeVersion
+        DictVersion
+        (OuroborosApplication
+          appType
+          peerid
+          NodeToNodeProtocols
+          IO BL.ByteString x y)
+    -> IO void
+dnsSubscriptionWorker
+  subscriptionTracer
+  dnsTracer
+  handshakeTracer
+  peeridFn
+  tbl
+  localIPv4 localIPv6
+  connectionAttemptDelay
+  dst
+  versions =
+    Subscription.dnsSubscriptionWorker
+      subscriptionTracer
+      dnsTracer
+      tbl
+      localIPv4 localIPv6
+      connectionAttemptDelay
+      dst
+      (\_ -> retry)
+      (connectToNode'
+        (\(DictVersion codec) -> encodeTerm codec)
+        (\(DictVersion codec) -> decodeTerm codec)
+        handshakeTracer
+        peeridFn
+        versions)
+
+
+-- | Like 'dnsSubscriptionWorker' but specific to 'NodeToNodeV_1'.
+--
+dnsSubscriptionWorker_V1
+    :: forall appType peerid x y void.
+       HasInitiator appType ~ True
+    => Tracer IO (WithDomainName (SubscriptionTrace Socket.SockAddr))
+    -> Tracer IO (WithDomainName DnsTrace)
+    -> Tracer IO (TraceSendRecv (Handshake NodeToNodeVersion CBOR.Term) peerid (DecoderFailureOrTooMuchInput DeserialiseFailure))
+    -> (Socket.SockAddr -> Socket.SockAddr -> peerid)
+    -> ConnectionTable IO Socket.SockAddr
+    -> Maybe Socket.SockAddr
+    -> Maybe Socket.SockAddr
+    -> (Socket.SockAddr -> Maybe DiffTime)
+    -> DnsSubscriptionTarget
+    -> NodeToNodeVersionData
+    -> (OuroborosApplication
+          appType
+          peerid
+          NodeToNodeProtocols
+          IO BL.ByteString x y)
+    -> IO void
+dnsSubscriptionWorker_V1
+  subscriptionTracer
+  dnsTracer
+  handshakeTracer
+  peeridFn
+  tbl
+  localIPv4 localIPv6
+  connectionAttemptDelay
+  dst
+  versionData
+  application =
+     dnsSubscriptionWorker 
+      subscriptionTracer
+      dnsTracer
+      handshakeTracer
+      peeridFn
+      tbl
+      localIPv4 localIPv6
+      connectionAttemptDelay
+      dst
+      (simpleSingletonVersions
+          NodeToNodeV_1
+          versionData
+          (DictVersion nodeToNodeCodecCBORTerm)
+          application)

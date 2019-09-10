@@ -180,7 +180,7 @@ pingPongClientCount n = SendMsgPing (pure (pingPongClientCount (n-1)))
 serverPingPong :: IO ()
 serverPingPong = do
     tbl <- newConnectionTable
-    withSimpleServerNode
+    withServerNode
       tbl
       defaultLocalSocketAddrInfo
       (\(DictVersion codec)-> encodeTerm codec)
@@ -279,7 +279,7 @@ pingPongClientPipelinedMax c =
 serverPingPong2 :: IO ()
 serverPingPong2 = do
     tbl <- newConnectionTable
-    withSimpleServerNode
+    withServerNode
       tbl
       defaultLocalSocketAddrInfo
       (\(DictVersion codec)-> encodeTerm codec)
@@ -352,7 +352,7 @@ clientChainSync sockAddrs =
 serverChainSync :: FilePath -> IO ()
 serverChainSync sockAddr = do
     tbl <- newConnectionTable
-    withSimpleServerNode
+    withServerNode
       tbl
       (mkLocalSocketAddrInfo sockAddr)
       (\(DictVersion codec)-> encodeTerm codec)
@@ -545,7 +545,7 @@ clientBlockFetch sockAddrs = do
 serverBlockFetch :: FilePath -> IO ()
 serverBlockFetch sockAddr = do
     tbl <- newConnectionTable
-    withSimpleServerNode
+    withServerNode
       tbl
       (mkLocalSocketAddrInfo sockAddr)
       (\(DictVersion codec)-> encodeTerm codec)
