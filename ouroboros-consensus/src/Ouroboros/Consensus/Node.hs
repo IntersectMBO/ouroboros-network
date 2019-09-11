@@ -35,6 +35,8 @@ import           Data.ByteString.Lazy (ByteString)
 import           Data.Proxy (Proxy (..))
 import           Data.Time.Clock (secondsToDiffTime)
 import           Network.Socket as Socket
+import qualified Codec.CBOR.Term as CBOR
+import qualified Codec.CBOR.Read as CBOR
 
 import           Control.Monad.Class.MonadAsync
 
@@ -239,6 +241,15 @@ data RunNetworkArgs peer blk = RunNetworkArgs
   { rnaIpSubscriptionTracer  :: Tracer IO (WithIPList (SubscriptionTrace Socket.SockAddr))
     -- ^ IP subscription tracer
   , rnaDnsSubscriptionTracer :: Tracer IO (WithDomainName (SubscriptionTrace Socket.SockAddr))
+  , rnaHandshakeTracer       :: Tracer IO (TraceSendRecv
+                                            (Handshake NodeToNodeVersion CBOR.Term)
+                                            peer
+                                            (DecoderFailureOrTooMuchInput CBOR.DeserialiseFailure))
+    -- ^ Handshake protocol tracer
+  , rnaHandshakeLocalTracer  :: Tracer IO (TraceSendRecv
+                                            (Handshake NodeToClientVersion CBOR.Term)
+                                            peer
+                                            (DecoderFailureOrTooMuchInput CBOR.DeserialiseFailure))
     -- ^ DNS subscription tracer
   , rnaDnsResolverTracer     :: Tracer IO (WithDomainName DnsTrace)
     -- ^ DNS resolver tracer
@@ -297,6 +308,7 @@ initNetwork registry nodeArgs kernel RunNetworkArgs{..} = do
     runLocalServer = do
       (connTable :: ConnectionTable IO Socket.SockAddr) <- newConnectionTable
       NodeToClient.withServer_V1
+        rnaHandshakeLocalTracer
         connTable
         rnaMyLocalAddr
         rnaMkPeer
@@ -307,6 +319,7 @@ initNetwork registry nodeArgs kernel RunNetworkArgs{..} = do
     runPeerServer :: ConnectionTable IO Socket.SockAddr -> IO ()
     runPeerServer connTable =
       NodeToNode.withServer_V1
+        rnaHandshakeTracer
         connTable
         rnaMyAddr
         rnaMkPeer
@@ -317,7 +330,7 @@ initNetwork registry nodeArgs kernel RunNetworkArgs{..} = do
     runIpSubscriptionWorker :: ConnectionTable IO Socket.SockAddr -> IO ()
     runIpSubscriptionWorker connTable = ipSubscriptionWorker_V1
       rnaIpSubscriptionTracer
-      nullTracer -- TODO add hanshake protocol tracer to 'ProtocolTracers'
+      rnaHandshakeTracer
       rnaMkPeer
       connTable
       -- the comments in dnsSbuscriptionWorker call apply
@@ -329,7 +342,7 @@ initNetwork registry nodeArgs kernel RunNetworkArgs{..} = do
         , ispValency = length rnaIpProducers
         }
       nodeToNodeVersionData
-      (initiatorNetworkApplication networkApps) 
+      (initiatorNetworkApplication networkApps)
 
     runDnsSubscriptionWorker :: ConnectionTable IO Socket.SockAddr
                              -> DnsSubscriptionTarget
@@ -337,7 +350,7 @@ initNetwork registry nodeArgs kernel RunNetworkArgs{..} = do
     runDnsSubscriptionWorker connTable dnsProducer = dnsSubscriptionWorker_V1
       rnaDnsSubscriptionTracer
       rnaDnsResolverTracer
-      nullTracer -- TODO add hanshake protocol tracer to 'ProtocolTracers'
+      rnaHandshakeTracer
       rnaMkPeer
       connTable
       -- IPv4 address
