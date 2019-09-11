@@ -639,12 +639,7 @@ validateCandidate
 validateCandidate lgrDB tracer cfg varInvalid
                   (ChainAndLedger curChain curLedger) candSuffix =
     LgrDB.validate lgrDB curLedger rollback newBlocks >>= \case
-      LgrDB.InvalidBlockInPrefix e pt -> do
-        addInvalidBlocks (hashesStartingFrom pt)
-        trace (InvalidBlock e pt)
-        trace (InvalidCandidate (_suffix candSuffix) InvalidBlockInPrefix)
-        return Nothing
-      LgrDB.PushSuffix (LgrDB.InvalidBlock e pt ledger') -> do
+      LgrDB.InvalidBlock e pt ledger' -> do
         let lastValid  = castPoint $ LgrDB.currentPoint ledger'
             candidate' = fromMaybe
               (error "cannot rollback to point on fragment") $
@@ -652,12 +647,9 @@ validateCandidate lgrDB tracer cfg varInvalid
         addInvalidBlocks (hashesStartingFrom pt)
         trace (InvalidBlock e pt)
 
-        -- The candidate is now a prefix of the original candidate. We
-        -- already know the candidate is at least as long as the current
-        -- chain (otherwise, we'd be in the 'InvalidBlockInPrefix' case). We
-        -- always prefer longer chains, but the prefix of the candidate
-        -- might be exactly as long as the current chain, in which case we
-        -- must check again whether it is preferred over the current chain.
+        -- The candidate is now a prefix of the original candidate, and might be
+        -- shorter (or as long) as the current chain. We must check again
+        -- whether it is preferred over the current chain.
         if preferCandidate cfg curChain candidate'
           then do
             trace (ValidCandidate (_suffix candSuffix))
@@ -665,7 +657,7 @@ validateCandidate lgrDB tracer cfg varInvalid
           else do
             trace (InvalidCandidate (_suffix candSuffix) InvalidBlockInSuffix)
             return Nothing
-      LgrDB.PushSuffix (LgrDB.ValidBlocks ledger') -> do
+      LgrDB.ValidBlocks ledger' -> do
         trace (ValidCandidate (_suffix candSuffix))
         return $ Just $ mkChainAndLedger candidate ledger'
   where

@@ -3,6 +3,7 @@
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE KindSignatures             #-}
+{-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE UndecidableInstances       #-}
@@ -14,7 +15,6 @@ module Test.Ouroboros.Storage.LedgerDB.InMemory (
   ) where
 
 import           Data.Word
-import           GHC.Stack
 import           Test.QuickCheck
 import           Test.Tasty
 import           Test.Tasty.QuickCheck
@@ -28,20 +28,11 @@ import           Ouroboros.Storage.Common
 
 import           Ouroboros.Storage.LedgerDB.Conf
 import           Ouroboros.Storage.LedgerDB.InMemory
-import           Ouroboros.Storage.LedgerDB.MemPolicy
-import           Ouroboros.Storage.LedgerDB.Offsets
 
 tests :: TestTree
 tests = testGroup "InMemory" [
       testGroup "Serialisation" [
           testProperty "ChainSummary" prop_serialise_ChainSummary
-        ]
-    , testGroup "MemPolicy" [
-          testProperty "invariant"     prop_memPolicy_invariant
-        , testProperty "fromToSkips"   prop_memPolicy_fromToSkips
-        , testProperty "toFromSkips"   prop_memPolicy_toFromSkips
-        , testProperty "fromToOffsets" prop_memPolicy_fromToOffsets
-        , testProperty "toFromOffsets" prop_memPolicy_toFromOffsets
         ]
     , testGroup "Genesis" [
           testProperty "length"  prop_genesisLength
@@ -49,9 +40,7 @@ tests = testGroup "InMemory" [
         ]
     , testGroup "Push" [
           testProperty "incrementsLength"       prop_pushIncrementsLength
-        , testProperty "preservesShape"         prop_pushPreservesShape
         , testProperty "lengthMatchesNumBlocks" prop_lengthMatchesNumBlocks
-        , testProperty "shapeMatchesPolicy"     prop_shapeMatchesPolicy
         , testProperty "matchesPolicy"          prop_pushMatchesPolicy
         , testProperty "expectedLedger"         prop_pushExpectedLedger
         ]
@@ -59,9 +48,8 @@ tests = testGroup "InMemory" [
           testProperty "maxRollbackGenesisZero" prop_maxRollbackGenesisZero
         , testProperty "ledgerDbMaxRollback"    prop_snapshotsMaxRollback
         , testProperty "ledgerDbMaxRollbackSat" prop_snapshotsMaxRollbackSat
-        , testProperty "toFromSuffix"           prop_toFromSuffix
-        , testProperty "preservesShape"         prop_rollbackPreservesShape
         , testProperty "switchSameChain"        prop_switchSameChain
+        , testProperty "switchMatchesPolicy"    prop_switchMatchesPolicy
         , testProperty "switchExpectedLedger"   prop_switchExpectedLedger
         ]
     ]
@@ -74,44 +62,44 @@ prop_serialise_ChainSummary :: Trivial (ChainSummary Int Int) -> Property
 prop_serialise_ChainSummary (Trivial summary) = prop_serialise summary
 
 {-------------------------------------------------------------------------------
-  Memory policy
--------------------------------------------------------------------------------}
-
--- | Check the generator
-prop_memPolicy_invariant :: MemPolicy -> Property
-prop_memPolicy_invariant = (Right () ===) . memPolicyVerify
-
-prop_memPolicy_fromToSkips :: [Word64] -> Property
-prop_memPolicy_fromToSkips skips =
-    memPolicyToSkips (memPolicyFromSkips skips) === skips
-
-prop_memPolicy_toFromSkips :: MemPolicy -> Property
-prop_memPolicy_toFromSkips policy =
-    memPolicyFromSkips (memPolicyToSkips policy) === policy
-
-prop_memPolicy_fromToOffsets :: Offsets () -> Property
-prop_memPolicy_fromToOffsets offsets =
-    memPolicyToOffsets (memPolicyFromOffsets offsets) === offsets
-
-prop_memPolicy_toFromOffsets :: MemPolicy -> Property
-prop_memPolicy_toFromOffsets policy =
-    memPolicyFromOffsets (memPolicyToOffsets policy) === policy
-
-{-------------------------------------------------------------------------------
   Genesis
 -------------------------------------------------------------------------------}
 
-prop_genesisCurrent :: MemPolicy -> Property
-prop_genesisCurrent policy =
+prop_genesisCurrent :: LedgerDbParams -> Property
+prop_genesisCurrent params =
     ledgerDbCurrent genSnaps === initLedger
   where
-    genSnaps = ledgerDbFromGenesis policy initLedger
+    genSnaps = ledgerDbFromGenesis params initLedger
 
-prop_genesisLength :: MemPolicy -> Property
-prop_genesisLength policy =
+prop_genesisLength :: LedgerDbParams -> Property
+prop_genesisLength params =
    ledgerDbChainLength genSnaps === 0
   where
-    genSnaps = ledgerDbFromGenesis policy initLedger
+    genSnaps = ledgerDbFromGenesis params initLedger
+
+{-------------------------------------------------------------------------------
+  Verifying shape of the Ledger DB
+-------------------------------------------------------------------------------}
+
+-- | Verify the snap of the ledger DB
+--
+-- No matter how many snapshots we have, we always expected a snapshot every
+-- @snapEvery@ blocks.
+verifyShape :: (Show r, Show l) => Word64 -> [(r, Maybe l)] -> Property
+verifyShape snapEvery = \ss ->
+    counterexample ("snapshots: " ++ show ss) $
+      go 1 ss
+  where
+    go :: Word64 -> [(r, Maybe l)] -> Property
+    go _ []           = property True
+    go n ((_, ms):ss) =
+        case (n `mod` snapEvery == 0, ms) of
+          (True  , Just _ ) -> go (n + 1) ss
+          (False , Nothing) -> go (n + 1) ss
+          (True  , Nothing) -> counterexample "missing snapshot" $
+                                 property False
+          (False , Just _)  -> counterexample "unexpected snapshot" $
+                                 property False
 
 {-------------------------------------------------------------------------------
   Constructing snapshots
@@ -131,34 +119,17 @@ prop_lengthMatchesNumBlocks setup@ChainSetup{..} =
           ledgerDbChainLength csPushed
       === csNumBlocks
 
-prop_shapeMatchesPolicy :: ChainSetup 'Unsaturated -> Property
-prop_shapeMatchesPolicy setup@ChainSetup{..} =
-    collect (saturation setup) $
-          snapshotsShape csPushed
-      === memPolicyShape csPolicy
-
-prop_pushPreservesShape :: ChainSetup 'Unsaturated -> Property
-prop_pushPreservesShape setup@ChainSetup{..} =
-    collect (saturation setup) $
-          snapshotsShape (ledgerDbPush' callbacks blockInfo csPushed)
-      === snapshotsShape csPushed
-  where
-    blockInfo = Block maxBound 0
-
-prop_pushMatchesPolicy :: ChainSetup 'Saturated -> Property
+prop_pushMatchesPolicy :: ChainSetup 'Unsaturated -> Property
 prop_pushMatchesPolicy setup@ChainSetup{..} =
-    conjoin [
-        saturation setup === Saturated
-      ,     (const () <$> ledgerDbToList csPushed)
-        === memPolicyToOffsets csPolicy
-      ]
+    collect (saturation setup) $
+      verifyShape (ledgerDbSnapEvery csParams) (ledgerDbToList csPushed)
 
 prop_pushExpectedLedger :: ChainSetup 'Unsaturated -> Property
 prop_pushExpectedLedger setup@ChainSetup{..} =
     collect (saturation setup) $
       conjoin [
           l === applyMany (expectedChain o) initLedger
-        | (o, l) <- offsetsToPairs $ ledgerDbToList csPushed
+        | (o, l) <- ledgerDbSnapshots csPushed
         ]
   where
     expectedChain :: Word64 -> [Block]
@@ -168,37 +139,32 @@ prop_pushExpectedLedger setup@ChainSetup{..} =
   Rollback
 -------------------------------------------------------------------------------}
 
-prop_maxRollbackGenesisZero :: MemPolicy -> Property
-prop_maxRollbackGenesisZero policy =
-        ledgerDbMaxRollback (ledgerDbFromGenesis policy (Ledger []))
+prop_maxRollbackGenesisZero :: LedgerDbParams -> Property
+prop_maxRollbackGenesisZero params =
+        ledgerDbMaxRollback (ledgerDbFromGenesis params (Ledger []))
     === 0
 
 prop_snapshotsMaxRollback :: ChainSetup 'Unsaturated -> Property
 prop_snapshotsMaxRollback setup@ChainSetup{..} =
     collect (saturation setup) $
-          ledgerDbMaxRollback csPushed
-      === min (memPolicyMaxRollback csPolicy) csNumBlocks
+      conjoin [
+          (ledgerDbMaxRollback csPushed) `ge` (min k csNumBlocks)
+        , (ledgerDbMaxRollback csPushed) `lt` (k + snapEvery)
+        ]
+  where
+    SecurityParam k = ledgerDbSecurityParam csParams
+    snapEvery       = ledgerDbSnapEvery     csParams
 
 prop_snapshotsMaxRollbackSat :: ChainSetup 'Saturated -> Property
 prop_snapshotsMaxRollbackSat setup@ChainSetup{..} =
     conjoin [
         saturation setup === Saturated
-      , ledgerDbMaxRollback csPushed === memPolicyMaxRollback csPolicy
+      , (ledgerDbMaxRollback csPushed) `ge` k
+      , (ledgerDbMaxRollback csPushed) `lt` (k + snapEvery)
       ]
-
-prop_toFromSuffix :: ChainSetup 'Unsaturated -> Property
-prop_toFromSuffix setup@ChainSetup{..} =
-    collect (saturation setup) $
-          fromSuffix' neverCalled [] (toSuffix csPushed)
-      === csPushed
-
-prop_rollbackPreservesShape :: SwitchSetup 'Unsaturated -> Property
-prop_rollbackPreservesShape setup@SwitchSetup{..} =
-    collect (saturation setup) $
-          snapshotsShape csPushed
-      === snapshotsShape ssSwitched
   where
-    ChainSetup{..} = ssChainSetup
+    SecurityParam k = ledgerDbSecurityParam csParams
+    snapEvery       = ledgerDbSnapEvery     csParams
 
 prop_switchSameChain :: SwitchSetup 'Unsaturated -> Property
 prop_switchSameChain setup@SwitchSetup{..} =
@@ -206,19 +172,24 @@ prop_switchSameChain setup@SwitchSetup{..} =
           ledgerDbSwitch' callbacks ssNumRollback blockInfo csPushed
       === csPushed
   where
-    ChainSetup{..} = ssChainSetup
-    blockInfo      = ssRemoved
+    ChainSetup{csPushed} = ssChainSetup
+    blockInfo            = ssRemoved
+
+prop_switchMatchesPolicy :: SwitchSetup 'Unsaturated -> Property
+prop_switchMatchesPolicy setup@SwitchSetup{..} =
+    collect (saturation setup) $
+      verifyShape (ledgerDbSnapEvery csParams) (ledgerDbToList ssSwitched)
+  where
+    ChainSetup{csParams} = ssChainSetup
 
 prop_switchExpectedLedger :: SwitchSetup 'Unsaturated -> Property
 prop_switchExpectedLedger setup@SwitchSetup{..} =
     collect (saturation setup) $
       conjoin [
           l === applyMany (expectedChain o) initLedger
-        | (o, l) <- offsetsToPairs $ ledgerDbToList ssSwitched
+        | (o, l) <- ledgerDbSnapshots ssSwitched
         ]
   where
-    ChainSetup{..} = ssChainSetup
-
     expectedChain :: Word64 -> [Block]
     expectedChain o = take (fromIntegral (ssNumBlocks - o)) ssChain
 
@@ -242,8 +213,8 @@ class CheckSaturation (f :: Saturation -> *) where
 -------------------------------------------------------------------------------}
 
 data ChainSetup (s :: Saturation) = ChainSetup {
-      -- | Memory policy
-      csPolicy    :: MemPolicy
+      -- | Ledger DB parameters
+      csParams    :: LedgerDbParams
 
       -- | Number of blocks applied
     , csNumBlocks :: Word64
@@ -294,11 +265,11 @@ data SwitchSetup s = SwitchSetup {
 instance CheckSaturation SwitchSetup where
   saturation = saturation . ssChainSetup
 
-mkTestSetup :: MemPolicy -> Word64 -> ChainSetup s
-mkTestSetup csPolicy csNumBlocks =
+mkTestSetup :: LedgerDbParams -> Word64 -> ChainSetup s
+mkTestSetup csParams csNumBlocks =
     ChainSetup {..}
   where
-    csGenSnaps = ledgerDbFromGenesis csPolicy initLedger
+    csGenSnaps = ledgerDbFromGenesis csParams initLedger
     csChain    = mkChain csNumBlocks 0
     csPushed   = ledgerDbPushMany' callbacks csChain csGenSnaps
 
@@ -320,35 +291,39 @@ mkRollbackSetup ssChainSetup ssNumRollback ssNumNew =
 
 instance Arbitrary (ChainSetup 'Unsaturated) where
   arbitrary = sized $ \n -> do
-      policy    <- arbitrary
+      params    <- arbitrary
       numBlocks <- choose (0, min (fromIntegral n) maxNumBlocks)
-      return $ mkTestSetup policy numBlocks
+      return $ mkTestSetup params numBlocks
+    where
+      -- Maximum number of blocks we want on a chain
+      maxNumBlocks :: Word64
+      maxNumBlocks = 1500
 
   shrink ChainSetup{..} = concat [
-        [ mkTestSetup csPolicy' csNumBlocks
-        | csPolicy' <- shrink csPolicy
+        [ mkTestSetup csParams' csNumBlocks
+        | csParams' <- shrink csParams
         ]
-      , [ mkTestSetup csPolicy csNumBlocks'
+      , [ mkTestSetup csParams csNumBlocks'
         | csNumBlocks' <- shrink csNumBlocks
         ]
       ]
 
 instance Arbitrary (ChainSetup 'Saturated) where
   arbitrary = do
-      policy    <- arbitrary
-      let minNumBlocks = memPolicyMaxRollback policy
+      params <- arbitrary
+      let minNumBlocks = maxRollbacks (ledgerDbSecurityParam params)
       numBlocks <- choose (minNumBlocks, minNumBlocks * 2)
-      return $ mkTestSetup policy numBlocks
+      return $ mkTestSetup params numBlocks
 
   shrink ChainSetup{..} = concat [
         -- If we shrink the policy, it can't be that we need /more/ blocks
-        [ mkTestSetup csPolicy' csNumBlocks
-        | csPolicy' <- shrink csPolicy
+        [ mkTestSetup csParams' csNumBlocks
+        | csParams' <- shrink csParams
         ]
         -- Shrinking the number of blocks may make the snapshots unsaturated
-      , [ mkTestSetup csPolicy csNumBlocks'
+      , [ mkTestSetup csParams csNumBlocks'
         | csNumBlocks' <- shrink csNumBlocks
-        , let minNumBlocks = memPolicyMaxRollback csPolicy
+        , let minNumBlocks = maxRollbacks (ledgerDbSecurityParam csParams)
         , csNumBlocks' >= minNumBlocks
         ]
       ]
@@ -417,66 +392,23 @@ callbacks = pureLedgerDbConf initLedger apply
   Orphan Arbitrary instances
 -------------------------------------------------------------------------------}
 
-instance Arbitrary a => Arbitrary (Offsets a) where
+instance Arbitrary LedgerDbParams where
   arbitrary = do
-      offsets <- arbitrary
-      offsetsFromPairs <$> go 0 (imposeLimits offsets)
-    where
-      imposeLimits :: [Word64] -> [Word64]
-      imposeLimits = take maxNumSnapshots . map (min maxSkip) . (0 :)
-
-      -- Make sure the list is strictly monotonically increasing
-      go :: Word64 -> [Word64] -> Gen [(Word64, a)]
-      go _ []     = return []
-      go p (o:os) = do a    <- arbitrary
-                       rest <- go (p + o + 1) os
-                       return (((p + o), a) : rest)
-
-  shrink = map offsetsFromPairs
-         . filter isValid
-         . shrink
-         . offsetsToPairs
-    where
-      isValid ((0, _):_) = True
-      isValid _otherwise = False
-
-instance Arbitrary MemPolicy where
-  arbitrary = oneof [
-        -- Sufficiently often return a small mempolicy to keep examples small
-        return $ defaultMemPolicy (SecurityParam 3)
-      , memPolicyFromSkips . imposeLimits <$> arbitrary
+      k <- choose (0, 6)
+      snapEvery <- choose (1, 8)
+      return $ LedgerDbParams {
+            ledgerDbSnapEvery     = snapEvery
+          , ledgerDbSecurityParam = SecurityParam k
+          }
+  shrink params@LedgerDbParams{..} = concat [
+        [ params {ledgerDbSnapEvery = snapEvery'}
+        | snapEvery' <- shrink ledgerDbSnapEvery
+        , snapEvery' > 0
+        ]
+      , [ params {ledgerDbSecurityParam = SecurityParam k'}
+        | k' <- shrink (maxRollbacks ledgerDbSecurityParam)
+        ]
       ]
-    where
-      imposeLimits :: [Word64] -> [Word64]
-      imposeLimits = take maxNumSnapshots . map (min maxSkip) . (0 :)
-
-  shrink = filter memPolicyValid
-         . map memPolicyFromSkips
-         . shrink
-         . memPolicyToSkips
-
-{-------------------------------------------------------------------------------
-  Testing constants
--------------------------------------------------------------------------------}
-
--- | Maximum number of snapshots we want to keep
-maxNumSnapshots :: Int
-maxNumSnapshots = 10
-
--- | Maximum distance between the snapshots
-maxSkip :: Word64
-maxSkip = 100
-
--- | Maximum number of blocks we want on a chain
-maxNumBlocks :: Word64
-maxNumBlocks = 1500
-
-{-------------------------------------------------------------------------------
-  Auxiliary
--------------------------------------------------------------------------------}
-
-neverCalled :: HasCallStack => a
-neverCalled = error "this should not be called"
 
 {-------------------------------------------------------------------------------
   Serialisation roundtrip
@@ -498,3 +430,15 @@ instance Arbitrary (Trivial (Tip Int)) where
                 gen <- arbitrary
                 if gen then return TipGen
                        else Tip <$> arbitrary
+
+{-------------------------------------------------------------------------------
+  Auxiliary
+-------------------------------------------------------------------------------}
+
+-- | Like '>=', but prints a counterexample when it fails.
+ge :: (Ord a, Show a) => a -> a -> Property
+x `ge` y = counterexample (show x ++ " < " ++ show y) $ x >= y
+
+-- | Like '<', but prints a counterexample when it fails.
+lt :: (Ord a, Show a) => a -> a -> Property
+x `lt` y = counterexample (show x ++ " >= " ++ show y) $ x < y

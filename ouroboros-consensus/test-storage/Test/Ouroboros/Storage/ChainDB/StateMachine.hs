@@ -93,7 +93,7 @@ import           Ouroboros.Storage.ImmutableDB
                      (ValidationPolicy (ValidateAllEpochs))
 import qualified Ouroboros.Storage.ImmutableDB as ImmDB
 import           Ouroboros.Storage.LedgerDB.DiskPolicy (defaultDiskPolicy)
-import           Ouroboros.Storage.LedgerDB.MemPolicy (defaultMemPolicy)
+import           Ouroboros.Storage.LedgerDB.InMemory (ledgerDbDefaultParams)
 import qualified Ouroboros.Storage.LedgerDB.OnDisk as LedgerDB
 import qualified Ouroboros.Storage.Util.ErrorHandling as EH
 
@@ -1191,7 +1191,7 @@ mkArgs cfg initLedger tracer registry
       -- Policy
     , cdbValidation       = ValidateAllEpochs
     , cdbBlocksPerFile    = 4
-    , cdbMemPolicy        = defaultMemPolicy  (protocolSecurityParam cfg)
+    , cdbParamsLgrDB      = ledgerDbDefaultParams (protocolSecurityParam cfg)
     , cdbDiskPolicy       = defaultDiskPolicy (protocolSecurityParam cfg) 10000
 
       -- Integration

@@ -37,10 +37,9 @@ module Ouroboros.Storage.ChainDB.Impl.LgrDB (
     -- * Garbage collect points of previously applied blocks
   , garbageCollectPrevApplied
     -- * Re-exports
-  , MemPolicy
+  , LedgerDbParams(..)
   , DiskPolicy (..)
   , DiskSnapshot
-  , LedgerDB.SwitchResult (..)
   , LedgerDB.PushManyResult (..)
   , TraceEvent (..)
   , TraceReplayEvent (..)
@@ -90,9 +89,9 @@ import qualified Ouroboros.Storage.Util.ErrorHandling as EH
 
 import           Ouroboros.Storage.LedgerDB.Conf
 import           Ouroboros.Storage.LedgerDB.DiskPolicy (DiskPolicy (..))
-import           Ouroboros.Storage.LedgerDB.InMemory (Apply (..), RefOrVal (..))
+import           Ouroboros.Storage.LedgerDB.InMemory (Apply (..),
+                     LedgerDbParams (..), RefOrVal (..))
 import qualified Ouroboros.Storage.LedgerDB.InMemory as LedgerDB
-import           Ouroboros.Storage.LedgerDB.MemPolicy (MemPolicy)
 import           Ouroboros.Storage.LedgerDB.OnDisk (DiskSnapshot,
                      NextBlock (..), StreamAPI (..), TraceEvent (..),
                      TraceReplayEvent (..))
@@ -143,7 +142,7 @@ data LgrDbArgs m blk = forall h. LgrDbArgs {
     , lgrEncodeLedger     :: LedgerState blk                -> Encoding
     , lgrEncodeChainState :: ChainState (BlockProtocol blk) -> Encoding
     , lgrEncodeHash       :: HeaderHash blk                 -> Encoding
-    , lgrMemPolicy        :: MemPolicy
+    , lgrParams           :: LedgerDbParams
     , lgrDiskPolicy       :: DiskPolicy m
     , lgrGenesis          :: m (ExtLedgerState blk)
     , lgrTracer           :: Tracer m (TraceEvent (Point blk))
@@ -173,7 +172,7 @@ defaultArgs fp = LgrDbArgs {
     , lgrEncodeLedger     = error "no default for lgrEncodeLedger"
     , lgrEncodeChainState = error "no default for lgrEncodeChainState"
     , lgrEncodeHash       = error "no default for lgrEncodeHash"
-    , lgrMemPolicy        = error "no default for lgrMemPolicy"
+    , lgrParams           = error "no default for lgrParams"
     , lgrDiskPolicy       = error "no default for lgrDiskPolicy"
     , lgrGenesis          = error "no default for lgrGenesis"
     , lgrTracer           = nullTracer
@@ -269,7 +268,7 @@ initFromDisk args@LgrDbArgs{..} replayTracer lgrDbConf immDB = wrapFailure args 
         lgrHasFS
         (decodeExtLedgerState lgrDecodeLedger lgrDecodeChainState)
         (Block.decodePoint lgrDecodeHash)
-        lgrMemPolicy
+        lgrParams
         lgrDbConf
         (streamAPI immDB)
     return db
@@ -364,7 +363,7 @@ getDiskPolicy LgrDB{ args = LgrDbArgs{..} } = lgrDiskPolicy
 -------------------------------------------------------------------------------}
 
 type ValidateResult blk =
-  LedgerDB.SwitchResult (ExtValidationError blk) (ExtLedgerState blk) (Point blk) 'False
+  LedgerDB.PushManyResult (ExtValidationError blk) (ExtLedgerState blk) (Point blk) 'False
 
 validate :: forall m blk.
             ( MonadSTM m
@@ -398,11 +397,8 @@ validate LgrDB{..} ledgerDB numRollbacks = \hdrs -> do
     validBlockPoints :: ValidateResult blk
                      -> ([Point blk] -> [Point blk])
     validBlockPoints = \case
-      LedgerDB.PushSuffix (LedgerDB.ValidBlocks _)              -> id
-      LedgerDB.PushSuffix (LedgerDB.InvalidBlock _ lastValid _) ->
-        takeWhile (/= lastValid)
-      LedgerDB.InvalidBlockInPrefix _ lastValid                 ->
-        takeWhile (/= lastValid)
+      LedgerDB.ValidBlocks _              -> id
+      LedgerDB.InvalidBlock _ lastValid _ -> takeWhile (/= lastValid)
 
     addPoints :: [Point blk] -> Set (Point blk)
               -> Set (Point blk)

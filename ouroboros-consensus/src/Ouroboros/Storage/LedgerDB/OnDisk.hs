@@ -56,7 +56,6 @@ import           Ouroboros.Storage.FS.API.Types
 import           Ouroboros.Storage.LedgerDB.Conf
 import           Ouroboros.Storage.LedgerDB.DiskPolicy
 import           Ouroboros.Storage.LedgerDB.InMemory
-import           Ouroboros.Storage.LedgerDB.MemPolicy
 
 {-------------------------------------------------------------------------------
   Abstraction over the streaming API provided by the Chain DB
@@ -161,11 +160,11 @@ initLedgerDB :: forall m h l r b e. (MonadST m, MonadThrow m, HasCallStack)
              -> HasFS m h
              -> (forall s. Decoder s l)
              -> (forall s. Decoder s r)
-             -> MemPolicy
+             -> LedgerDbParams
              -> LedgerDbConf m l r b e
              -> StreamAPI m r b
              -> m (InitLog r, LedgerDB l r)
-initLedgerDB replayTracer tracer hasFS decLedger decRef policy conf streamAPI = do
+initLedgerDB replayTracer tracer hasFS decLedger decRef params conf streamAPI = do
     snapshots <- listSnapshots hasFS
     tryNewestFirst id snapshots
   where
@@ -175,7 +174,7 @@ initLedgerDB replayTracer tracer hasFS decLedger decRef policy conf streamAPI = 
     tryNewestFirst acc [] = do
         -- We're out of snapshots. Start at genesis
         traceWith replayTracer $ ReplayFromGenesis ()
-        initDb <- ledgerDbFromGenesis policy <$> ldbConfGenesis conf
+        initDb <- ledgerDbFromGenesis params <$> ldbConfGenesis conf
         ml     <- runExceptT $ initStartingWith replayTracer conf streamAPI initDb
         case ml of
           Left _  -> error "invariant violation: invalid current chain"
@@ -187,7 +186,7 @@ initLedgerDB replayTracer tracer hasFS decLedger decRef policy conf streamAPI = 
                              hasFS
                              decLedger
                              decRef
-                             policy
+                             params
                              conf
                              streamAPI
                              s
@@ -223,16 +222,16 @@ initFromSnapshot :: forall m h l r b e. (MonadST m, MonadThrow m)
                  -> HasFS m h
                  -> (forall s. Decoder s l)
                  -> (forall s. Decoder s r)
-                 -> MemPolicy
+                 -> LedgerDbParams
                  -> LedgerDbConf m l r b e
                  -> StreamAPI m r b
                  -> DiskSnapshot
                  -> ExceptT (InitFailure r) m (Tip r, LedgerDB l r)
-initFromSnapshot tracer hasFS decLedger decRef policy conf streamAPI ss = do
+initFromSnapshot tracer hasFS decLedger decRef params conf streamAPI ss = do
     initSS <- withExceptT InitFailureRead $
                 readSnapshot hasFS decLedger decRef ss
     lift $ traceWith tracer $ ReplayFromSnapshot ss (csTip initSS) ()
-    initDB <- initStartingWith tracer conf streamAPI (ledgerDbFromChain policy initSS)
+    initDB <- initStartingWith tracer conf streamAPI (ledgerDbWithAnchor params initSS)
     return (csTip initSS, initDB)
 
 -- | Attempt to initialize the ledger DB starting from the given ledger DB
@@ -281,7 +280,7 @@ takeSnapshot tracer hasFS encLedger encRef db = do
     return (ss, csTip oldest)
   where
     oldest :: ChainSummary l r
-    oldest = ledgerDbTail db
+    oldest = ledgerDbAnchor db
 
 -- | Trim the number of on disk snapshots so that at most 'onDiskNumSnapshots'
 -- snapshots are stored on disk. The oldest snapshots are deleted.

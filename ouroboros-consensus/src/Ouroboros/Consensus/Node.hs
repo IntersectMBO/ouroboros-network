@@ -64,7 +64,7 @@ import qualified Ouroboros.Storage.ChainDB as ChainDB
 import           Ouroboros.Storage.EpochInfo (newEpochInfo)
 import           Ouroboros.Storage.ImmutableDB (ValidationPolicy (..))
 import           Ouroboros.Storage.LedgerDB.DiskPolicy (defaultDiskPolicy)
-import           Ouroboros.Storage.LedgerDB.MemPolicy (defaultMemPolicy)
+import           Ouroboros.Storage.LedgerDB.InMemory (ledgerDbDefaultParams)
 
 -- | Start a node.
 --
@@ -175,7 +175,7 @@ initChainDB tracer registry dbPath cfg initLedger slotLength
       , ChainDB.cdbIsEBB            = \blk -> if nodeIsEBB blk
                                               then Just (blockHash blk)
                                               else Nothing
-      , ChainDB.cdbMemPolicy        = defaultMemPolicy secParam
+      , ChainDB.cdbParamsLgrDB      = ledgerDbDefaultParams secParam
       , ChainDB.cdbNodeConfig       = cfg
       , ChainDB.cdbRegistry         = registry
       , ChainDB.cdbTracer           = tracer

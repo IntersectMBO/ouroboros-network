@@ -78,8 +78,6 @@ import qualified Ouroboros.Storage.Util.ErrorHandling as EH
 
 import           Ouroboros.Storage.LedgerDB.Conf
 import           Ouroboros.Storage.LedgerDB.InMemory
-import           Ouroboros.Storage.LedgerDB.MemPolicy
-import           Ouroboros.Storage.LedgerDB.Offsets
 import           Ouroboros.Storage.LedgerDB.OnDisk
 
 -- For the Arbitrary instance of 'MemPolicy'
@@ -228,7 +226,7 @@ data Cmd (t :: LedgerUnderTest) ss =
     --
     -- NOTE: Since this is modelling /disk/ corruption, and it is the
     -- responsibility of the 'ChainStateDB' to /notice/ disk corruption (by
-    -- catching the appropriate exceptions), the assume that the ledger state
+    -- catching the appropriate exceptions), we assume that the ledger state
     -- will immediately be re-initialized after a 'Truncate' (which is precisely
     -- what the 'ChainStateDB' would do, after first doing recovery on the
     -- underlying 'ChainDB'). This is important because otherwise the model
@@ -300,12 +298,12 @@ data Mock t = Mock {
       -- | Counter to assign 'MockSnap's
     , mockNext    :: Int
 
-      -- | Memory policy
+      -- | Ledger DB params
       --
-      -- We need the memory policy only to compute which snapshots the real
+      -- We need the ledger DB params only to compute which snapshots the real
       -- implementation would take, so that we can accurately predict how far
       -- the real implementation can roll back.
-    , mockPolicy  :: MemPolicy
+    , mockParams  :: LedgerDbParams
     }
   deriving (Generic)
 
@@ -315,7 +313,7 @@ deriving instance LUT t => ToExpr (Mock t)
 data SnapState = SnapOk | SnapCorrupted Corruption
   deriving (Show, Eq, Generic, ToExpr)
 
-mockInit :: MemPolicy -> Mock t
+mockInit :: LedgerDbParams -> Mock t
 mockInit = Mock [] Map.empty TipGen 1
 
 mockCurrent :: LUT t => Mock t -> LedgerSt t
@@ -419,7 +417,7 @@ applyMockLog = go
 
 -- | Compute theretical maximum rollback
 --
--- The actual maximum rollback will be restricted by the memory policy.
+-- The actual maximum rollback will be restricted by the mledger DB params.
 mockMaxRollback :: forall t. LUT t => Mock t -> Word64
 mockMaxRollback Mock{..} = go mockLedger
   where
@@ -454,18 +452,29 @@ runMock = first Resp .: go
                }
         )
       where
+        blocksAfterAnchor :: Tip (BlockRef t)
+                          -> [(BlockVal t, LedgerSt t)] -- old to new
+                          -> [(BlockVal t, LedgerSt t)]
+        blocksAfterAnchor TipGen  = id
+        blocksAfterAnchor (Tip r) = tail . dropWhile ((/= r) . blockRef . fst)
+
         -- The snapshot that the real implementation will write to disk
         --
-        -- When we write a snapshot, we write the ledger state @k@ blocks back,
-        -- since we only want to write immutable ledger states
+        -- The real implementation keeps the length of the blocks between @k@
+        -- and @k + snapEvery 1@ (provided that there are enough blocks). The
+        -- function 'ledgerDbCountToPrune' computes how many (old) blocks should
+        -- be dropped to get back into that range; the last (most recent) block
+        -- to be dropped will become the new anchor. It is the anchor that gets
+        -- written to disk.
         snapped :: Tip' t
-        snapped =
-            case drop (fromIntegral k) (mockLedger mock) of
-              []       -> TipGen
-              (b, _):_ -> Tip (blockRef b)
+        snapped
+          | n == 0    = mockRestore mock
+          | otherwise = case drop (n - 1) blocks of
+                          []       -> error "snapped: impossible"
+                          (b, _):_ -> Tip (blockRef b)
           where
-            k = min (memPolicyMaxRollback (mockPolicy mock))
-                    (mockMaxRollback mock)
+            blocks = blocksAfterAnchor (mockRestore mock) (reverse (mockLedger mock))
+            n      = ledgerDbCountToPrune (mockParams mock) (length blocks)
     go (Corrupt c ss) mock = (
           Unit ()
         , mock { mockSnaps = Map.alter corrupt ss (mockSnaps mock) }
@@ -505,7 +514,7 @@ runMock = first Resp .: go
 -- | Arguments required by 'StandaloneDB'
 data DbEnv m = forall fh. DbEnv {
       dbHasFS     :: HasFS m fh
-    , dbMemPolicy :: MemPolicy
+    , dbLgrParams :: LedgerDbParams
     }
 
 -- | Standalone ledger DB
@@ -539,7 +548,7 @@ initStandaloneDB dbEnv@DbEnv{..} = do
     return DB{..}
   where
     initChain = []
-    initDB    = ledgerDbFromGenesis dbMemPolicy ledgerGenesis
+    initDB    = ledgerDbFromGenesis dbLgrParams ledgerGenesis
 
 dbConf :: forall m t. (MonadSTM m, LUT t)
        => StandaloneDB m t -> LedgerDbConf' m t
@@ -638,7 +647,7 @@ runDB standalone@DB{..} cmd =
         atomically $ modifyTVar dbBlocks $
           repeatedly (uncurry Map.insert) (map refValPair bs)
         upd (switch n bs) $
-          fmap switchResultToEither . ledgerDbSwitch conf n (map new bs)
+          fmap pushManyResultToEither . ledgerDbSwitch conf n (map new bs)
     go hasFS Snap = do
         (_, db) <- atomically $ readTVar dbState
         Snapped <$> takeSnapshot nullTracer hasFS S.encode S.encode db
@@ -649,7 +658,7 @@ runDB standalone@DB{..} cmd =
                            hasFS
                            S.decode
                            S.decode
-                           (dbMemPolicy dbEnv)
+                           (dbLgrParams dbEnv)
                            conf
                            streamAPI
         atomically $ modifyTVar dbState (\(rs, _) -> (rs, db))
@@ -724,8 +733,8 @@ data Model t r = Model {
 
 deriving instance (Show1 r, LUT t) => Show (Model t r)
 
-initModel :: MemPolicy -> Model t r
-initModel memPolicy = Model (mockInit memPolicy) []
+initModel :: LedgerDbParams -> Model t r
+initModel lgrDbParams = Model (mockInit lgrDbParams) []
 
 toMock :: (Functor f, Eq1 r) => Model t r -> f :@ r -> f MockSnap
 toMock m (At fr) = (modelSnaps m !) <$> fr
@@ -770,7 +779,7 @@ execCmd :: LUT t
 execCmd model (QSM.Command cmd resp _vars) = lockstep model cmd resp
 
 execCmds :: forall t. LUT t
-         => MemPolicy
+         => LedgerDbParams
          -> QSM.Commands (At (Cmd t)) (At (Resp t))
          -> [Event t Symbolic]
 execCmds memPolicy = \(QSM.Commands cs) -> go (initModel memPolicy) cs
@@ -788,8 +797,8 @@ execCmds memPolicy = \(QSM.Commands cs) -> go (initModel memPolicy) cs
 -------------------------------------------------------------------------------}
 
 generator :: forall t. LUT t
-          => MemPolicy -> Model t Symbolic -> Maybe (Gen (Cmd t :@ Symbolic))
-generator memPolicy (Model mock hs) = Just $ QC.oneof $ concat [
+          => LedgerDbParams -> Model t Symbolic -> Maybe (Gen (Cmd t :@ Symbolic))
+generator lgrDbParams (Model mock hs) = Just $ QC.oneof $ concat [
       withoutRef
     , if null possibleCorruptions
         then []
@@ -803,7 +812,7 @@ generator memPolicy (Model mock hs) = Just $ QC.oneof $ concat [
         , fmap At $ do
             let maxRollback = minimum [
                     mockMaxRollback mock
-                  , memPolicyMaxRollback memPolicy
+                  , maxRollbacks (ledgerDbSecurityParam lgrDbParams)
                   ]
             numRollback  <- QC.choose (0, maxRollback)
             numNewBlocks <- QC.choose (numRollback, numRollback + 2)
@@ -892,7 +901,8 @@ instance Traversable t => Rank2.Traversable (At t) where
 
 instance LUT t => ToExpr (Model t Concrete)
 instance ToExpr a => ToExpr (Tip a)
-instance ToExpr MemPolicy
+instance ToExpr SecurityParam
+instance ToExpr LedgerDbParams
 
 deriving instance ToExpr DiskSnapshot
 
@@ -940,64 +950,63 @@ symbolicResp m c = At <$> traverse (const genSym) resp
     (resp, _mock') = step m c
 
 sm :: (MonadSTM m, MonadThrow m, MonadST m, LUT t)
-   => MemPolicy
+   => LedgerDbParams
    -> StandaloneDB m t
    -> StateMachine (Model t) (At (Cmd t)) m (At (Resp t))
-sm memPolicy db = StateMachine {
-      initModel     = initModel memPolicy
+sm lgrDbParams db = StateMachine {
+      initModel     = initModel lgrDbParams
     , transition    = transition
     , precondition  = precondition
     , postcondition = postcondition
     , invariant     = Nothing
-    , generator     = generator memPolicy
+    , generator     = generator lgrDbParams
     , distribution  = Nothing
     , shrinker      = shrinker
     , semantics     = semantics db
     , mock          = symbolicResp
     }
 
-prop_sequential :: LUT t => Proxy t -> MemPolicy -> QC.Property
-prop_sequential p memPolicy =
-    QC.collect (tagMemPolicy memPolicy) $
-      forAllCommands (sm memPolicy (dbUnused p)) Nothing $ \cmds ->
-        QC.monadicIO (propCmds memPolicy cmds)
+prop_sequential :: LUT t => Proxy t -> LedgerDbParams -> QC.Property
+prop_sequential p lgrDbParams =
+    QC.collect (tagMemPolicy lgrDbParams) $
+      forAllCommands (sm lgrDbParams (dbUnused p)) Nothing $ \cmds ->
+        QC.monadicIO (propCmds lgrDbParams cmds)
 
 -- Ideally we'd like to use @SimM s@ instead of IO, but unfortunately
 -- QSM requires monads that implement MonadIO.
 propCmds :: LUT t
-         => MemPolicy
+         => LedgerDbParams
          -> QSM.Commands (At (Cmd t)) (At (Resp t))
          -> QC.PropertyM IO ()
-propCmds memPolicy cmds = do
+propCmds lgrDbParams cmds = do
     fs <- QC.run $ atomically $ newTVar MockFS.empty
     let dbEnv :: DbEnv IO
-        dbEnv = DbEnv (simHasFS EH.exceptions fs) memPolicy
+        dbEnv = DbEnv (simHasFS EH.exceptions fs) lgrDbParams
     db <- QC.run $ initStandaloneDB dbEnv
-    let sm' = sm memPolicy db
+    let sm' = sm lgrDbParams db
     (hist, _model, res) <- runCommands sm' cmds
     prettyCommands sm' hist
-      $ QC.tabulate "Tags" (map show $ tagEvents k (execCmds memPolicy cmds))
+      $ QC.tabulate "Tags" (map show $ tagEvents k (execCmds lgrDbParams cmds))
       $ res QC.=== Ok
   where
-    k = SecurityParam $ memPolicyMaxRollback memPolicy
+    k = ledgerDbSecurityParam lgrDbParams
 
 dbUnused :: Proxy t -> StandaloneDB IO t
 dbUnused = error "DB unused during command generation"
 
 {-------------------------------------------------------------------------------
-  Labelling of the mem policy
+  Labelling of the ledger DB params
 -------------------------------------------------------------------------------}
 
-data TagMemPolicy =
-     -- | Otherwise we record the maximum offset
-    MemPolicyMaxOffset (Range Word64)
+-- Record the @snapEvery@ parameter in relation to K
+data TagLedgerDbParams =
+    TagLedgerDbParams { rangeSnapEvery :: RangeK }
   deriving (Show)
 
-tagMemPolicy :: MemPolicy -> TagMemPolicy
-tagMemPolicy = go . offsetsDropValues . memPolicyToOffsets
-  where
-    go :: [Word64] -> TagMemPolicy
-    go os = MemPolicyMaxOffset $ range (maximum os)
+tagMemPolicy :: LedgerDbParams -> TagLedgerDbParams
+tagMemPolicy LedgerDbParams{..} = TagLedgerDbParams{
+      rangeSnapEvery = rangeK ledgerDbSecurityParam ledgerDbSnapEvery
+    }
 
 {-------------------------------------------------------------------------------
   Event labelling
@@ -1064,11 +1073,11 @@ tagEvents k = C.classify [
   Inspecting the labelling function
 -------------------------------------------------------------------------------}
 
-showLabelledExamples :: MemPolicy
+showLabelledExamples :: LedgerDbParams
                      -> Maybe Int
                      -> (Tag -> Bool) -- ^ Which tag are we interested in?
                      -> IO ()
-showLabelledExamples memPolicy mReplay relevant = do
+showLabelledExamples lgrDbParams mReplay relevant = do
     replaySeed <- case mReplay of
                     Nothing   -> getStdRandom $ randomR (1, 999999)
                     Just seed -> return seed
@@ -1081,12 +1090,12 @@ showLabelledExamples memPolicy mReplay relevant = do
           }
 
     QC.labelledExamplesWith args $
-      forAllCommands (sm memPolicy (dbUnused p)) Nothing $ \cmds ->
+      forAllCommands (sm lgrDbParams (dbUnused p)) Nothing $ \cmds ->
         repeatedly QC.collect (run cmds) $
           QC.property True
   where
-    k = SecurityParam $ memPolicyMaxRollback memPolicy
+    k = ledgerDbSecurityParam lgrDbParams
     p = Proxy @'LedgerSimple
 
     run :: LUT t => QSM.Commands (At (Cmd t)) (At (Resp t)) -> [Tag]
-    run = filter relevant . tagEvents k . execCmds memPolicy
+    run = filter relevant . tagEvents k . execCmds lgrDbParams

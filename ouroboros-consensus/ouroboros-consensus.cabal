@@ -141,8 +141,6 @@ library
                        Ouroboros.Storage.LedgerDB.Conf
                        Ouroboros.Storage.LedgerDB.DiskPolicy
                        Ouroboros.Storage.LedgerDB.InMemory
-                       Ouroboros.Storage.LedgerDB.MemPolicy
-                       Ouroboros.Storage.LedgerDB.Offsets
                        Ouroboros.Storage.LedgerDB.OnDisk
                        Ouroboros.Storage.Util
                        Ouroboros.Storage.Util.ErrorHandling

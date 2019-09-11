@@ -69,7 +69,7 @@ data ChainDbArgs m blk = forall h1 h2 h3. ChainDbArgs {
       -- Policy
     , cdbValidation       :: ImmDB.ValidationPolicy
     , cdbBlocksPerFile    :: Int
-    , cdbMemPolicy        :: LgrDB.MemPolicy
+    , cdbParamsLgrDB      :: LgrDB.LedgerDbParams
     , cdbDiskPolicy       :: LgrDB.DiskPolicy m
 
       -- Integration
@@ -160,7 +160,7 @@ fromChainDbArgs ChainDbArgs{..} = (
         , lgrEncodeLedger     = cdbEncodeLedger
         , lgrEncodeChainState = cdbEncodeChainState
         , lgrEncodeHash       = cdbEncodeHash
-        , lgrMemPolicy        = cdbMemPolicy
+        , lgrParams           = cdbParamsLgrDB
         , lgrDiskPolicy       = cdbDiskPolicy
         , lgrGenesis          = cdbGenesis
         , lgrTracer           = contramap TraceLedgerEvent cdbTracer
@@ -206,7 +206,7 @@ toChainDbArgs ImmDB.ImmDbArgs{..}
       -- Policy
     , cdbValidation       = immValidation
     , cdbBlocksPerFile    = volBlocksPerFile
-    , cdbMemPolicy        = lgrMemPolicy
+    , cdbParamsLgrDB      = lgrParams
     , cdbDiskPolicy       = lgrDiskPolicy
       -- Integration
     , cdbNodeConfig       = lgrNodeConfig
