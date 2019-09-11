@@ -212,22 +212,37 @@ initialPeerFetchInFlight =
 
 addHeadersInFlight :: HasHeader header
                    => (header -> SizeInBytes)
-                   -> FetchRequest header
-                   -> Int
-                   -- ^ the number of new requests; this might differ from the
-                   -- length of 'FetchRequest' by one, since when we write to
-                   -- @TFetchRequestVar@ we combine 'FetchRequest's using their
-                   -- semigroup instance, which might merge two chain fragments.
+                   -> Maybe (FetchRequest header) -- ^ Any existing request.
+                   -> FetchRequest header         -- ^ The new (merged) request.
+                   -> FetchRequest header         -- ^ The extra request.
                    -> PeerFetchInFlight header
                    -> PeerFetchInFlight header
-addHeadersInFlight blockFetchSize fr@(FetchRequest fragments) newRequests inflight =
+addHeadersInFlight blockFetchSize
+                   existingReq
+                   mergedReq
+                   extraReq@(FetchRequest fragments)
+                   inflight =
+
+    -- This assertion checks the pre-condition 'addNewFetchRequest' that all
+    -- requested blocks are new. This is true irrespective of fetch-request
+    -- command merging.
     assert (and [ blockPoint header `Set.notMember` peerFetchBlocksInFlight inflight
                 | fragment <- fragments
                 , header   <- CF.toOldestFirst fragment ]) $
-    PeerFetchInFlight {
-      peerFetchReqsInFlight   = peerFetchReqsInFlight inflight
-                              + fromIntegral newRequests,
 
+    PeerFetchInFlight {
+
+      -- Fetch request merging makes the update of the number of in-flight
+      -- requests rather subtle. See the 'FetchRequest' semigroup instance
+      -- documentation for details. The upshot is that we have to look at the
+      -- /difference/ in the number of fragments for the existing request
+      -- (if any) and new request.
+      peerFetchReqsInFlight   = peerFetchReqsInFlight inflight
+                              +         numFetchReqs mergedReq
+                              - maybe 0 numFetchReqs existingReq,
+
+      -- For the bytes and blocks in flight however we can rely on the
+      -- pre-condition that is asserted above.
       peerFetchBytesInFlight  = peerFetchBytesInFlight inflight
                               + sum [ blockFetchSize header
                                     | fragment <- fragments
@@ -240,8 +255,11 @@ addHeadersInFlight blockFetchSize fr@(FetchRequest fragments) newRequests inflig
                                   , header   <- CF.toOldestFirst fragment ],
 
       peerFetchMaxSlotNo      = peerFetchMaxSlotNo inflight
-                          `max` fetchRequestMaxSlotNo fr
+                          `max` fetchRequestMaxSlotNo extraReq
     }
+  where
+    numFetchReqs :: FetchRequest header -> Word
+    numFetchReqs = fromIntegral . length . fetchRequestFragments
 
 deleteHeaderInFlight :: HasHeader header
                      => (header -> SizeInBytes)
@@ -264,6 +282,24 @@ newtype FetchRequest header =
         FetchRequest { fetchRequestFragments :: [ChainFragment header] }
   deriving Show
 
+-- | We sometimes have the opportunity to merge fetch request fragments to
+-- reduce the number of separate range request messages that we send. We send
+-- one message per fragment. It is better to send fewer requests for bigger
+-- ranges, rather than lots of requests for small ranges.
+--
+-- We never expect fetch requests to overlap (ie have blocks in common) but we
+-- do expect a common case that requests will \"touch\" so that two ranges
+-- could be merged into a single contiguous range.
+--
+-- This semigroup instance implements this merging when possible, otherwise the
+-- two lists of fragments are just appended.
+--
+-- A consequence of merging and sending fewer request messages is that tracking
+-- the number of requests in-flight a bit more subtle. To track this accurately
+-- we have to look at the /old request/ as well a the updated request after any
+-- merging. We meed to account for the /difference/ in the number of fragments
+-- in the existing request (if any) and in new request.
+--
 instance HasHeader header => Semigroup (FetchRequest header) where
   FetchRequest afs@(_:_) <> FetchRequest bfs@(_:_)
     | Just f <- CF.joinChainFragments (last afs) (head bfs)
@@ -330,17 +366,23 @@ addNewFetchRequest tracer blockFetchSize
                    FetchClientStateVars{..} request gsvs = do
     (inflight', currentStatus') <- atomically $ do
 
-      -- Add a new fetch request, or extend the current unacknowledged one.
+      -- Add a new fetch request, or extend or merge with the existing
+      -- unacknowledged one.
       --
-      -- FIX #973 'writeTFetchRequestVar' will combine @request@ with already
-      -- pending request using 'FetchRequest' 'Semigroup' instance.  This might
-      -- change the number of fragments inside @request@.  We need to calculate
-      -- exactly how many requests we are adding.
-      newRequests <- writeTFetchRequestVar fetchClientRequestVar request gsvs inflightlimits
+      -- Fetch request merging makes the update of the in-flight stats subtle.
+      -- See the 'FetchRequest' semigroup instance documentation for details.
+      -- The upshot is that our in-flight stats update is based on the existing
+      -- request (if any), the new (merged) one and the extra one.
+      --
+      request0 <- peekTFetchRequestVar fetchClientRequestVar
+      request' <- writeTFetchRequestVar fetchClientRequestVar
+                                        request gsvs inflightlimits
 
       -- Update our in-flight stats
       inflight <- readTVar fetchClientInFlightVar
-      let !inflight' = addHeadersInFlight blockFetchSize request newRequests inflight
+      let !inflight' = addHeadersInFlight blockFetchSize
+                                          request0 request' request
+                                          inflight
       writeTVar fetchClientInFlightVar inflight'
 
       -- Set the peer status to busy if it went over the high watermark.
@@ -463,20 +505,22 @@ newTFetchRequestVar :: MonadSTM m => STM m (TFetchRequestVar m header)
 newTFetchRequestVar = newTMergeVar
 
 
--- | Write to the underlying 'TMergeVar' and return the number of new
--- fragments.
+-- | Write to the underlying 'TMergeVar' and return the updated 'FetchRequest'
 --
 writeTFetchRequestVar :: (MonadSTM m, HasHeader header)
                       => TFetchRequestVar m header
                       -> FetchRequest header
                       -> PeerGSV
                       -> PeerFetchInFlightLimits
-                      -> STM m Int
+                      -> STM m (FetchRequest header)
 writeTFetchRequestVar v r g l = do
-    mr0 <- fmap (\(x, _, _) -> x) <$> tryReadTMergeVar v
     (r', _, _) <- writeTMergeVar v (r, Last g, Last l)
-    return $ length (fetchRequestFragments r')
-              - (maybe 0 (length . fetchRequestFragments) mr0)
+    return r'
+
+peekTFetchRequestVar :: MonadSTM m
+                     => TFetchRequestVar m header
+                     -> STM m (Maybe (FetchRequest header))
+peekTFetchRequestVar v = fmap (\(x, _, _) -> x) <$> tryReadTMergeVar v
 
 takeTFetchRequestVar :: MonadSTM m
                      => TFetchRequestVar m header
