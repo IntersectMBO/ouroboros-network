@@ -322,7 +322,7 @@ initNetwork registry nodeArgs kernel RunNetworkArgs{..} = do
       connTable
       -- the comments in dnsSbuscriptionWorker call apply
       (Just (Socket.SockAddrInet 0 0))
-      (Just (Socket.SockAddrInet6 0 0 (0, 0, 0, 1) 0))
+      (Just (Socket.SockAddrInet6 0 0 (0, 0, 0, 0) 0))
       (const Nothing)
       IPSubscriptionTarget
         { ispIps     = rnaIpProducers
@@ -348,7 +348,7 @@ initNetwork registry nodeArgs kernel RunNetworkArgs{..} = do
       -- This means we don't utilise full duplex connection.
       (Just (Socket.SockAddrInet 0 0))
       -- IPv6 address
-      (Just (Socket.SockAddrInet6 0 0 (0, 0, 0, 1) 0))
+      (Just (Socket.SockAddrInet6 0 0 (0, 0, 0, 0) 0))
       (const Nothing)
       dnsProducer
       nodeToNodeVersionData
