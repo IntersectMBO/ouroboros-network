@@ -123,8 +123,13 @@ data PBftParams = PBftParams {
       -- | Number of core nodes
     , pbftNumNodes           :: Word64
 
-      -- | Signature threshold. This represents the proportion of blocks in a
-      -- pbftSignatureWindow-sized window which may be signed by any single key.
+      -- | Signature threshold
+      --
+      -- This bounds the proportion of the latest 'pbftSecurityParam'-many
+      -- blocks which is allowed to be signed by any single key. The protocol
+      -- proper is parameterized over the size of this window of recent blocks,
+      -- but this implementation follows the specification by fixing that
+      -- parameter to the ambient security parameter @k@.
     , pbftSignatureThreshold :: Double
     }
 
