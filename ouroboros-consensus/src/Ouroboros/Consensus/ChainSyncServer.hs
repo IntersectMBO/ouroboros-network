@@ -31,7 +31,7 @@ import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
 --
 chainSyncHeadersServer
     :: forall m blk. MonadSTM m
-    => Tracer m (TraceChainSyncServerEvent blk)
+    => Tracer m (TraceChainSyncServerEvent (Header blk))
     -> ChainDB m blk
     -> ResourceRegistry m
     -> ChainSyncServer (Header blk) (Point (Header blk)) m ()
@@ -83,7 +83,7 @@ chainSyncServerForReader tracer chainDB rdr =
     idle :: m (ServerStIdle b (Point b) m ())
     idle = do
       traceWith tracer (TraceChainSyncServerIdle)
-      ServerStIdle {
+      return $ ServerStIdle {
         recvMsgRequestNext   = handleRequestNext,
         recvMsgFindIntersect = handleFindIntersect,
         recvMsgDoneClient    = ChainDB.readerClose rdr

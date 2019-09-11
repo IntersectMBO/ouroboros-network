@@ -165,7 +165,7 @@ protocolHandlers NodeArgs {btime, maxClockSkew, tracers, maxUnackTxs}
           (ChainDB.getIsInvalidBlock getChainDB)
     , phChainSyncServer =
         chainSyncHeadersServer
-          (chainSyncServerTracer tracers)
+          (chainSyncServerHeaderTracer tracers)
           getChainDB
     , phBlockFetchClient = blockFetchClient
     , phBlockFetchServer =
@@ -185,7 +185,7 @@ protocolHandlers NodeArgs {btime, maxClockSkew, tracers, maxUnackTxs}
 
     , phLocalChainSyncServer =
         chainSyncBlocksServer
-          (chainSyncServerTracer tracers)
+          (chainSyncServerBlockTracer tracers)
           getChainDB
     , phLocalTxSubmissionServer =
         localTxSubmissionServer
