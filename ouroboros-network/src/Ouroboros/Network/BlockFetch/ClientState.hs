@@ -201,15 +201,20 @@ initialPeerFetchInFlight =
 addHeadersInFlight :: HasHeader header
                    => (header -> SizeInBytes)
                    -> FetchRequest header
+                   -> Int
+                   -- ^ the number of new requests; this might differ from the
+                   -- length of 'FetchRequest' by one, since when we write to
+                   -- @TFetchRequestVar@ we combine 'FetchRequest's using their
+                   -- semigroup instance, which might merge two chain fragments.
                    -> PeerFetchInFlight header
                    -> PeerFetchInFlight header
-addHeadersInFlight blockFetchSize (FetchRequest fragments) inflight =
+addHeadersInFlight blockFetchSize (FetchRequest fragments) newRequests inflight =
     assert (and [ blockPoint header `Set.notMember` peerFetchBlocksInFlight inflight
                 | fragment <- fragments
                 , header   <- CF.toOldestFirst fragment ]) $
     PeerFetchInFlight {
       peerFetchReqsInFlight   = peerFetchReqsInFlight inflight
-                              + fromIntegral (length fragments),
+                              + fromIntegral newRequests,
 
       peerFetchBytesInFlight  = peerFetchBytesInFlight inflight
                               + sum [ blockFetchSize header
@@ -273,6 +278,10 @@ data TraceFetchClientState header =
          (PeerFetchInFlight header)
           PeerFetchInFlightLimits
          (PeerFetchStatus header)
+     -- | This trace point is useful in tests, it allows to recompute
+     -- requests in flight from the trace.
+     --
+     | CompletedFetchBatch
   deriving Show
 
 -- | A peer label for use in 'Tracer's. This annotates tracer output as being
@@ -303,9 +312,17 @@ addNewFetchRequest tracer blockFetchSize
                    FetchClientStateVars{..} request gsvs = do
     (inflight', currentStatus') <- atomically $ do
 
+      -- Add a new fetch request, or extend the current unacknowledged one.
+      --
+      -- FIX #973 'writeTFetchRequestVar' will combine @request@ with already
+      -- pending request using 'FetchRequest' 'Semigroup' instance.  This might
+      -- change the number of fragments inside @request@.  We need to calculate
+      -- exactly how many requests we are adding.
+      newRequests <- writeTFetchRequestVar fetchClientRequestVar request gsvs inflightlimits
+
       -- Update our in-flight stats
       inflight <- readTVar fetchClientInFlightVar
-      let !inflight' = addHeadersInFlight blockFetchSize request inflight
+      let !inflight' = addHeadersInFlight blockFetchSize request newRequests inflight
       writeTVar fetchClientInFlightVar inflight'
 
       -- Set the peer status to busy if it went over the high watermark.
@@ -321,9 +338,6 @@ addNewFetchRequest tracer blockFetchSize
         writeTVar fetchClientStatusVar currentStatus'
 
       --TODO: think about status aberrant
-
-      -- Add a new fetch request, or extend the current unacknowledged one.
-      writeTFetchRequestVar fetchClientRequestVar request gsvs inflightlimits
 
       return (inflight', currentStatus')
 
@@ -393,9 +407,10 @@ completeBlockDownload tracer blockFetchSize inflightlimits
 
 
 completeFetchBatch :: MonadSTM m
-                   => FetchClientStateVars m header
+                   => Tracer m (TraceFetchClientState header)
+                   -> FetchClientStateVars m header
                    -> m ()
-completeFetchBatch FetchClientStateVars {fetchClientInFlightVar} =
+completeFetchBatch tracer FetchClientStateVars {fetchClientInFlightVar} = do
     atomically $ modifyTVar fetchClientInFlightVar $ \inflight ->
       assert (if peerFetchReqsInFlight inflight == 1
                  then peerFetchBytesInFlight inflight == 0
@@ -404,6 +419,7 @@ completeFetchBatch FetchClientStateVars {fetchClientInFlightVar} =
       inflight {
         peerFetchReqsInFlight = peerFetchReqsInFlight inflight - 1
       }
+    traceWith tracer CompletedFetchBatch
 
 --
 -- STM TFetchRequestVar
@@ -428,13 +444,21 @@ type TFetchRequestVar m header =
 newTFetchRequestVar :: MonadSTM m => STM m (TFetchRequestVar m header)
 newTFetchRequestVar = newTMergeVar
 
+
+-- | Write to the underlying 'TMergeVar' and return the number of new
+-- fragments.
+--
 writeTFetchRequestVar :: (MonadSTM m, HasHeader header)
                       => TFetchRequestVar m header
                       -> FetchRequest header
                       -> PeerGSV
                       -> PeerFetchInFlightLimits
-                      -> STM m ()
-writeTFetchRequestVar v r g l = writeTMergeVar v (r, Last g, Last l)
+                      -> STM m Int
+writeTFetchRequestVar v r g l = do
+    mr0 <- fmap (\(x, _, _) -> x) <$> tryReadTMergeVar v
+    (r', _, _) <- writeTMergeVar v (r, Last g, Last l)
+    return $ length (fetchRequestFragments r')
+              - (maybe 0 (length . fetchRequestFragments) mr0)
 
 takeTFetchRequestVar :: MonadSTM m
                      => TFetchRequestVar m header
@@ -443,7 +467,6 @@ takeTFetchRequestVar :: MonadSTM m
                                PeerFetchInFlightLimits)
 takeTFetchRequestVar v = (\(r,g,l) -> (r, getLast g, getLast l))
                      <$> takeTMergeVar v
-
 
 --
 -- STM TMergeVar mini-abstraction
@@ -462,13 +485,20 @@ newtype TMergeVar m a = TMergeVar (StrictTMVar m a)
 newTMergeVar :: MonadSTM m => STM m (TMergeVar m a)
 newTMergeVar = TMergeVar <$> newEmptyTMVar
 
-writeTMergeVar :: (MonadSTM m, Semigroup a) => TMergeVar m a -> a -> STM m ()
+-- | Merge the current value with the given one and store it, return the updated
+-- value.
+--
+writeTMergeVar :: (MonadSTM m, Semigroup a) => TMergeVar m a -> a -> STM m a
 writeTMergeVar (TMergeVar v) x = do
     mx0 <- tryTakeTMVar v
     case mx0 of
-      Nothing -> putTMVar v x
-      Just x0 -> putTMVar v x' where !x' = x0 <> x
+      Nothing -> x  <$ putTMVar v x
+      Just x0 -> x' <$ putTMVar v x' where !x' = x0 <> x
 
 takeTMergeVar :: MonadSTM m => TMergeVar m a -> STM m a
 takeTMergeVar (TMergeVar v) = takeTMVar v
 
+tryReadTMergeVar :: MonadSTM m
+                 => TMergeVar m a
+                 -> STM m (Maybe a)
+tryReadTMergeVar (TMergeVar v) = tryReadTMVar v

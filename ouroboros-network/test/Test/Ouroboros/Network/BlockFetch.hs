@@ -18,6 +18,7 @@ import qualified Data.Set as Set
 import           Data.Set (Set)
 import qualified Data.Map as Map
 import           Data.Map (Map)
+import           Data.Maybe (mapMaybe)
 import           Data.Typeable (Typeable)
 
 import           Control.Monad (unless)
@@ -82,6 +83,7 @@ tests = testGroup "BlockFetch"
 --
 -- * 'tracePropertyBlocksRequestedAndRecievedPerPeer'
 -- * 'tracePropertyClientStateSanity'
+-- * 'tracePropertyInFlight'
 --
 prop_blockFetchStaticNoOverlap :: TestChainFork -> Property
 prop_blockFetchStaticNoOverlap (TestChainFork common fork1 fork2) =
@@ -101,6 +103,9 @@ prop_blockFetchStaticNoOverlap (TestChainFork common fork1 fork2) =
 
         -- state sanity check
    .&&. property (tracePropertyClientStateSanity trace)
+
+        -- check in-flight requests
+   .&&. tracePropertyInFlight trace
 
   where
     -- TODO: consider making a specific generator for anchored fragment forks
@@ -129,6 +134,7 @@ prop_blockFetchStaticNoOverlap (TestChainFork common fork1 fork2) =
 -- * 'tracePropertyBlocksRequestedAndRecievedAllPeers'
 -- * 'tracePropertyNoDuplicateBlocksBetweenPeers'
 -- * 'tracePropertyClientStateSanity'
+-- * 'tracePropertyInFlight'
 --
 prop_blockFetchStaticWithOverlap :: TestChainFork -> Property
 prop_blockFetchStaticWithOverlap (TestChainFork _common fork1 fork2) =
@@ -152,6 +158,9 @@ prop_blockFetchStaticWithOverlap (TestChainFork _common fork1 fork2) =
 
         -- state sanity check
    .&&. property (tracePropertyClientStateSanity trace)
+
+        -- check in-flight requests
+   .&&. tracePropertyInFlight trace
 
   where
     -- TODO: consider making a specific generator for anchored fragment forks
@@ -356,6 +365,112 @@ tracePropertyClientStateSanity es =
 -- whether there's any concise and robust way of expressing this.
 --
 -- tracePropertyDecisions _fork1 _fork2 _es = True
+
+data FetchRequestTrace
+    = AddedFetchRequestTrace
+        (FetchRequest BlockHeader)
+        (PeerFetchInFlight BlockHeader)
+    | AcknowledgedFetchRequestTrace
+    | CompletedFetchBatchTrace
+  deriving Show
+
+fetchRequestTrace :: [Example1TraceEvent] -> [TraceLabelPeer Int FetchRequestTrace]
+fetchRequestTrace = mapMaybe f
+  where
+    f (TraceFetchClientState (TraceLabelPeer peerid (AddedFetchRequest request inflight _ _))) =
+      Just (TraceLabelPeer peerid (AddedFetchRequestTrace request inflight))
+    f (TraceFetchClientState (TraceLabelPeer peerid (AcknowledgedFetchRequest{}))) =
+      Just (TraceLabelPeer peerid AcknowledgedFetchRequestTrace)
+    f (TraceFetchClientState (TraceLabelPeer peerid CompletedFetchBatch))
+      = Just (TraceLabelPeer peerid CompletedFetchBatchTrace)
+    f _ = Nothing
+
+
+-- | This property verifies that the number of in-flight requests is computed
+-- according to the following algorithm:
+--
+-- * when adding requests to 'fetchClientRequestVar' using semigroup instance of
+--   'FetchRequest' to calculate the number of requests to add to the number of
+--   requests in flight
+-- * when finishing receiving a batch, subtract one from the number of requests
+--   in flight.
+-- 
+-- This tests reconstructs the value of 'fetchClientRequestVar' and
+-- 'peerFetchReqsInFlight' from the trace and compares the expected value with
+-- the actual value logged in the trace.
+--
+-- This property also assures that when the client terminates, there are no
+-- outstanding in-flight requests.
+--
+-- Note: the implementation calls in-flight requests the requests that are
+-- ordered to be sent (and they may not be sent immediately).  This test tracks
+-- requests added to 'fetchClientRequestVar' and the number or requests that
+-- were sent (acknowledged) by the client.  The sum of these two values gives
+-- in-flight requests.
+--
+tracePropertyInFlight :: [Example1TraceEvent] -> Property
+tracePropertyInFlight =
+      foldr (\tr c -> checkTrace Nothing 0 tr .&&. c) (property True)
+    . Map.fromListWith (flip (++))
+    . map (\(TraceLabelPeer peerid a) -> (peerid, [a]))
+    . fetchRequestTrace
+  where
+    checkTrace :: Maybe (FetchRequest BlockHeader)
+               --  not yet acknowledged 'FetchRequest', but ones that already
+               --  added to 'fetchClientRequestVar';  This value simulates the
+               --  content of 'fetchClientRequestVar'
+               -> Int
+               -- number of requests that were already sent (acknowledged);
+               -> [FetchRequestTrace]
+               -> Property
+
+    -- 'AddedFetchRequest' when there 'fetchClientRequestVar' is empty
+    checkTrace Nothing reqsInFlight ((AddedFetchRequestTrace r PeerFetchInFlight {peerFetchReqsInFlight}) : tr)
+      | reqsInFlight + length (fetchRequestFragments r) == fromIntegral peerFetchReqsInFlight
+      = checkTrace (Just r) reqsInFlight tr
+      | otherwise
+      = counterexample ("tracePropertyInFlight: "
+                       ++ show reqsInFlight
+                       ++ " + "
+                       ++ show (length (fetchRequestFragments r))
+                       ++ " /= "
+                       ++ show peerFetchReqsInFlight
+                      ) False
+
+    -- 'AddedFetchRequest' when there are 'fetchClientRequestVar' is non-empty
+    -- in this case we use 'FetchRequest' Semigroup instance to combine new and
+    -- old requests.
+    checkTrace (Just r0) reqsInFlight ((AddedFetchRequestTrace r1 PeerFetchInFlight {peerFetchReqsInFlight}) : tr)
+      | reqsInFlight + length (fetchRequestFragments (r0 <> r1)) == fromIntegral peerFetchReqsInFlight
+      = checkTrace (Just (r0 <> r1)) reqsInFlight tr
+      | otherwise
+      = counterexample ("tracePropertyInFlight: "
+                       ++ show reqsInFlight
+                       ++ " + "
+                       ++ show (length (fetchRequestFragments (r0 <> r1)))
+                       ++ " /= "
+                       ++ show peerFetchReqsInFlight
+                       ) False
+
+    -- acknowledged fetch requests: update 'reqsInFlight' and continue
+    -- traversing the trace
+    checkTrace (Just r) reqsInFlight (AcknowledgedFetchRequestTrace : tr)
+      = checkTrace Nothing (reqsInFlight + length (fetchRequestFragments r)) tr
+    checkTrace Nothing reqsInFlight (AcknowledgedFetchRequestTrace : tr)
+      = checkTrace Nothing reqsInFlight tr
+
+    -- batch completed, we subtract `1` from requests in flight
+    checkTrace mr reqsInFlight (CompletedFetchBatchTrace : tr)
+      = checkTrace mr (reqsInFlight - 1) tr
+
+    -- check that by the end of the trace there are no requests in flight
+    checkTrace (Just _) _ []
+      = property False
+    checkTrace Nothing reqsInFlight []
+      | reqsInFlight > 0
+      = property False
+      | otherwise
+      = property True
 
 
 --
