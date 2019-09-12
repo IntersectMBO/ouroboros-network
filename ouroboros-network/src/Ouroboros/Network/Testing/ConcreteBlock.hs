@@ -49,7 +49,7 @@ module Ouroboros.Network.Testing.ConcreteBlock (
   , fixupAnchoredFragmentFromSame
   ) where
 
-import           Data.FingerTree (Measured (measure))
+import           Data.FingerTree.Strict (Measured (measure))
 import           Data.Function (fix)
 import           Data.Hashable
 import           Data.Maybe (fromMaybe)

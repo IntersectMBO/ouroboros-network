@@ -78,7 +78,7 @@ import           Codec.CBOR.Decoding (decodeListLen)
 import           Codec.CBOR.Encoding (encodeListLen)
 import           Codec.Serialise (Serialise (..))
 import           Control.Exception (assert)
-import qualified Data.FingerTree as FT
+import qualified Data.FingerTree.Strict as FT
 import qualified Data.List as L
 import           GHC.Stack
 

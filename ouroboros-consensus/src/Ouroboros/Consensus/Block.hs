@@ -19,7 +19,7 @@ module Ouroboros.Consensus.Block (
   ) where
 
 import           Cardano.Prelude (NoUnexpectedThunks)
-import           Data.FingerTree (Measured (..))
+import           Data.FingerTree.Strict (Measured (..))
 
 import           Ouroboros.Network.Block
 

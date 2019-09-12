@@ -57,7 +57,7 @@ import qualified Codec.CBOR.Decoding as Dec
 import           Codec.CBOR.Encoding (Encoding)
 import qualified Codec.CBOR.Encoding as Enc
 import           Codec.Serialise (Serialise (..))
-import           Data.FingerTree (Measured)
+import           Data.FingerTree.Strict (Measured)
 import           Data.Typeable (Typeable)
 import           Data.Word (Word64)
 import           GHC.Generics (Generic)

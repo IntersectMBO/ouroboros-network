@@ -41,7 +41,7 @@ module Test.Util.TestBlock (
 
 import           Codec.Serialise (Serialise)
 import           Control.Monad.Except (throwError)
-import           Data.FingerTree (Measured (..))
+import           Data.FingerTree.Strict (Measured (..))
 import           Data.Int
 import           Data.List (transpose)
 import           Data.List.NonEmpty (NonEmpty)

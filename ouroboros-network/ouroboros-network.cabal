@@ -38,6 +38,7 @@ library
   -- At this experiment/prototype stage everything is exposed.
   -- This has to be tidied up once the design becomes clear.
   exposed-modules:     Codec.SerialiseTerm
+                       Data.FingerTree.Strict
                        Ouroboros.Network.AnchoredFragment
                        Ouroboros.Network.Block
                        Ouroboros.Network.BlockFetch
@@ -154,6 +155,7 @@ test-suite test-network
   hs-source-dirs:      test src
   main-is:             Main.hs
   other-modules:       Codec.SerialiseTerm
+                       Data.FingerTree.Strict
                        Ouroboros.Network.AnchoredFragment
                        Ouroboros.Network.Testing.ConcreteBlock
                        Ouroboros.Network.Block
@@ -283,6 +285,7 @@ test-suite cddl
   if !flag(cddl)
     buildable: False
   other-modules:       Codec.SerialiseTerm
+                       Data.FingerTree.Strict
                        Ouroboros.Network.AnchoredFragment
                        Ouroboros.Network.Block
                        Ouroboros.Network.MockChain.Chain
