@@ -100,7 +100,7 @@ pipelineDecisionMax omax n cliTipBlockNo srvTipBlockNo =
              -- this causes @n'@ to drop and we will pipeline next message.
              -- This assures that when we aproach the end of the chain we will
              -- collect all outstanding requests without pipelining a request
-             | cliTipBlockNo + omax' >= srvTipBlockNo || n' >= omax'
+             | cliTipBlockNo + n' >= srvTipBlockNo || n' >= omax'
              -> Collect
 
              | otherwise
@@ -131,7 +131,7 @@ pipelineDecisionMin omax n cliTipBlockNo srvTipBlockNo =
       Succ{} -- We pipelined some requests and we are now synchronised or we
              -- exceeded pipelineing limit, and thus we should await for
              -- a response.
-             | cliTipBlockNo + omax' >= srvTipBlockNo || n' >= omax'
+             | cliTipBlockNo + n' >= srvTipBlockNo || n' >= omax'
              -> Collect
 
              | otherwise
