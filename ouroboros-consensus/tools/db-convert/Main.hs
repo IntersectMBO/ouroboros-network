@@ -56,7 +56,7 @@ import qualified Ouroboros.Storage.ChainDB.Impl.ImmDB as ImmDB
 import           Ouroboros.Storage.Common (EpochSize (..))
 import           Ouroboros.Storage.EpochInfo (fixedSizeEpochInfo)
 import qualified Ouroboros.Storage.LedgerDB.DiskPolicy as LgrDB
-import qualified Ouroboros.Storage.LedgerDB.MemPolicy as LgrDB
+import qualified Ouroboros.Storage.LedgerDB.InMemory as LgrDB
 import           Path
 import           Path.IO (createDirIfMissing, listDir)
 import qualified Streaming.Prelude as S
@@ -213,7 +213,7 @@ validateChainDb dbDir cfg onlyImmDB verbose =
           -- Policy
         , ChainDB.cdbValidation = ImmDB.ValidateAllEpochs
         , ChainDB.cdbBlocksPerFile = 10
-        , ChainDB.cdbMemPolicy = LgrDB.defaultMemPolicy securityParam
+        , ChainDB.cdbParamsLgrDB = LgrDB.ledgerDbDefaultParams securityParam
         , ChainDB.cdbDiskPolicy = LgrDB.defaultDiskPolicy securityParam 20000
           -- Integration
         , ChainDB.cdbNodeConfig = pInfoConfig byronProtocolInfo

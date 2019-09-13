@@ -85,7 +85,7 @@ import qualified Ouroboros.Storage.FS.Sim.MockFS as Mock
 import           Ouroboros.Storage.FS.Sim.STM (simHasFS)
 import qualified Ouroboros.Storage.ImmutableDB as ImmDB
 import qualified Ouroboros.Storage.LedgerDB.DiskPolicy as LgrDB
-import qualified Ouroboros.Storage.LedgerDB.MemPolicy as LgrDB
+import qualified Ouroboros.Storage.LedgerDB.InMemory as LgrDB
 import qualified Ouroboros.Storage.Util.ErrorHandling as EH
 
 import           Test.Dynamic.TxGen
@@ -253,7 +253,7 @@ broadcastNetwork registry testBtime numCoreNodes nodeJoinPlan pInfo initRNG slot
           -- Policy
         , cdbValidation       = ImmDB.ValidateAllEpochs
         , cdbBlocksPerFile    = 4
-        , cdbMemPolicy        = LgrDB.defaultMemPolicy  (protocolSecurityParam cfg)
+        , cdbParamsLgrDB      = LgrDB.ledgerDbDefaultParams (protocolSecurityParam cfg)
         , cdbDiskPolicy       = LgrDB.defaultDiskPolicy (protocolSecurityParam cfg) slotLen
           -- Integration
         , cdbNodeConfig       = cfg

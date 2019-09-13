@@ -622,6 +622,8 @@ chainSelection lgrDB tracer cfg varInvalid
 -- 'ChainAndLedger' is a prefix of the given candidate fragment (upto the last
 -- valid block), if that fragment is still preferred ('preferCandidate') over
 -- the current chain, if not, 'Nothing' is returned.
+--
+-- Returns 'Nothing' if this candidate requires a rollback we cannot support.
 validateCandidate
   :: forall m blk.
      ( MonadSTM m
@@ -639,12 +641,14 @@ validateCandidate
 validateCandidate lgrDB tracer cfg varInvalid
                   (ChainAndLedger curChain curLedger) candSuffix =
     LgrDB.validate lgrDB curLedger rollback newBlocks >>= \case
-      LgrDB.InvalidBlockInPrefix e pt -> do
-        addInvalidBlocks (hashesStartingFrom pt)
-        trace (InvalidBlock e pt)
-        trace (InvalidCandidate (_suffix candSuffix) InvalidBlockInPrefix)
+      LgrDB.MaximumRollbackExceeded supported _ -> do
+        trace $ CandidateExceedsRollback {
+            _supportedRollback = supported
+          , _candidateRollback = _rollback candSuffix
+          , _candidate         = _suffix   candSuffix
+          }
         return Nothing
-      LgrDB.PushSuffix (LgrDB.InvalidBlock e pt ledger') -> do
+      LgrDB.RollbackSuccessful (LgrDB.InvalidBlock e pt ledger') -> do
         let lastValid  = castPoint $ LgrDB.currentPoint ledger'
             candidate' = fromMaybe
               (error "cannot rollback to point on fragment") $
@@ -652,20 +656,17 @@ validateCandidate lgrDB tracer cfg varInvalid
         addInvalidBlocks (hashesStartingFrom pt)
         trace (InvalidBlock e pt)
 
-        -- The candidate is now a prefix of the original candidate. We
-        -- already know the candidate is at least as long as the current
-        -- chain (otherwise, we'd be in the 'InvalidBlockInPrefix' case). We
-        -- always prefer longer chains, but the prefix of the candidate
-        -- might be exactly as long as the current chain, in which case we
-        -- must check again whether it is preferred over the current chain.
+        -- The candidate is now a prefix of the original candidate, and might be
+        -- shorter than (or as long as) the current chain. We must check again
+        -- whether it is preferred over the current chain.
         if preferCandidate cfg curChain candidate'
           then do
             trace (ValidCandidate (_suffix candSuffix))
             return $ Just $ mkChainAndLedger candidate' ledger'
           else do
-            trace (InvalidCandidate (_suffix candSuffix) InvalidBlockInSuffix)
+            trace (InvalidCandidate (_suffix candSuffix))
             return Nothing
-      LgrDB.PushSuffix (LgrDB.ValidBlocks ledger') -> do
+      LgrDB.RollbackSuccessful (LgrDB.ValidBlocks ledger') -> do
         trace (ValidCandidate (_suffix candSuffix))
         return $ Just $ mkChainAndLedger candidate ledger'
   where

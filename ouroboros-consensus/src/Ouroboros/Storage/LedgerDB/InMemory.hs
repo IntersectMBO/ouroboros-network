@@ -10,25 +10,23 @@
 {-# LANGUAGE TypeFamilies        #-}
 
 module Ouroboros.Storage.LedgerDB.InMemory (
-     -- * Chain summary
-     ChainSummary(..)
      -- * LedgerDB proper
-   , LedgerDB
-   , ledgerDbFromChain
+     LedgerDB
+   , LedgerDbParams(..)
+   , ledgerDbDefaultParams
+   , ledgerDbWithAnchor
    , ledgerDbFromGenesis
+     -- ** ChainSummary
+   , ChainSummary(..)
+   , encodeChainSummary
+   , decodeChainSummary
      -- ** Queries
-   , ledgerDbChainLength
-   , ledgerDbToList
-   , ledgerDbMaxRollback
    , ledgerDbCurrent
    , ledgerDbTip
-   , ledgerDbIsSaturated
-   , ledgerDbTail
+   , ledgerDbAnchor
      -- ** Result types
    , PushManyResult (..)
-   , SwitchResult (..)
-   , pushManyResultToEither
-   , switchResultToEither
+   , SwitchResult(..)
      -- ** Updates
    , Apply(..)
    , Err
@@ -36,47 +34,236 @@ module Ouroboros.Storage.LedgerDB.InMemory (
    , ledgerDbPush
    , ledgerDbReapply
    , ledgerDbSwitch
-     -- * Low-level rollback support (primarily for property testing)
-   , Suffix -- opaque
-   , toSuffix
-   , fromSuffix'
-     -- * Pure wrappers (primarily for property testing)
-   , ledgerDbComputeCurrent'
+     -- * Exports for the benefit of tests
+     -- ** Additional queries
+   , ledgerDbChainLength
+   , ledgerDbToList
+   , ledgerDbMaxRollback
+   , ledgerDbSnapshots
+   , ledgerDbIsSaturated
+   , ledgerDbCountToPrune
+     -- ** Pure API
    , ledgerDbPush'
    , ledgerDbPushMany'
    , ledgerDbSwitch'
-     -- * Shape of the snapshots
-   , Shape(..)
-   , memPolicyShape
-   , snapshotsShape
-     -- * Serialisation
-   , encodeChainSummary
-   , decodeChainSummary
-     -- * Demo
-   , demo
+     -- ** Simplifying the result types
+   , pushManyResultToEither
+   , switchResultToEither
    ) where
+
+import           Prelude hiding (mod, (/))
+import qualified Prelude
 
 import           Codec.Serialise (Serialise (..))
 import           Codec.Serialise.Decoding (Decoder)
 import qualified Codec.Serialise.Decoding as Dec
 import           Codec.Serialise.Encoding (Encoding)
 import qualified Codec.Serialise.Encoding as Enc
-import           Control.Exception (Exception, throw)
-import           Control.Monad.Except (Except, ExceptT (..), lift, runExcept,
-                     runExceptT, throwError)
+import           Control.Monad ((>=>))
+import           Control.Monad.Except (ExceptT (..), runExceptT)
+import           Data.Bifunctor
+import           Data.Foldable (toList)
 import           Data.Functor.Identity
-import           Data.Typeable (Typeable)
+import           Data.Sequence (Seq ((:|>), Empty), (|>))
+import qualified Data.Sequence as Seq
 import           Data.Void
 import           Data.Word
 import           GHC.Generics (Generic)
-import           GHC.Stack (CallStack, HasCallStack, callStack)
+import           GHC.Stack (HasCallStack)
 
+import           Ouroboros.Consensus.Protocol.Abstract (SecurityParam (..))
 import           Ouroboros.Consensus.Util
 
 import           Ouroboros.Storage.Common
 import           Ouroboros.Storage.LedgerDB.Conf
-import           Ouroboros.Storage.LedgerDB.MemPolicy
-import           Ouroboros.Storage.LedgerDB.Offsets
+
+{-------------------------------------------------------------------------------
+  Ledger DB types
+-------------------------------------------------------------------------------}
+
+-- | Internal state of the ledger DB
+--
+-- The ledger DB looks like
+--
+-- > anchor |> blocks and snapshots <| current
+--
+-- where @anchor@ records the oldest known snapshot and @current@ the most
+-- recent.
+--
+-- As an example, suppose we have @snapEvery = 4@ (i.e., we will take a
+-- snapshot every 4 blocks) and @k = 6@. The ledger DB grows as illustrated
+-- below, where we indicate the anchor, number of blocks, the stored
+-- blocks/snapshots, and the current ledger; the oldest block we can roll back
+-- to is marked.
+--
+-- > anchor |> #   [ blocks ]                                      <| tip
+-- > ---------------------------------------------------------------------------
+-- > *G     |> (0) [ ]                                             <| G
+-- > *G     |> (1) [ B1]                                           <| L1
+-- > *G     |> (2) [ B1,  B2]                                      <| L2
+-- > *G     |> (3) [ B1,  B2,   B3]                                <| L3
+-- > *G     |> (4) [ B1,  B2,   B3,  L4]                           <| L4
+-- > *G     |> (5) [ B1,  B2,   B3,  L4,  B5]                      <| L5
+-- > *G     |> (6) [ B1,  B2,   B3,  L4,  B5,  B6]                 <| L6
+-- >  G     |> (7) [*B1,  B2,   B3,  L4,  B5,  B6,  B7]            <| L7
+-- >  G     |> (8) [ B1, *B2,   B3,  L4,  B5,  B6,  B7,  L8]       <| L8
+-- >  G     |> (9) [ B1,  B2,  *B3,  L4,  B5,  B6,  B7,  L8,  B9]  <| L9   (*)
+-- > *L4    |> (6) [ B5,  B6,   B7,  L8,  B9,  B10]                <| L10  (**)
+-- >  L4    |> (7) [*B5,  B6,   B7,  L8,  B9,  B10, B11]           <| L11
+-- >  L4    |> (8) [ B5, *B6,   B7,  L8,  B9,  B10, B11, L12]      <| L12
+-- >  L4    |> (9) [ B5,  B6,  *B7,  L8,  B9,  B10, B12, L12, B13] <| L13
+-- > *L8    |> (6) [ B9,  B10,  B12, L12, B13, B14]                <| L14
+--
+-- The ledger DB must guarantee we must at all times be able to roll back @k@
+-- blocks. For example, if we are on line (*), and roll back 6 blocks, we get
+--
+-- > G |> [B1, B2, B3]
+--
+-- from which we can /compute/ @G |> [B1, B2, B3] <| L3@ by re-applying
+-- @snapEvery - 1@ blocks. However, as soon as we pushed one more block @(**)@,
+-- and then roll back 6 blocks, we end up with
+--
+-- > L4 |> [] <| L4
+--
+-- This representation has the following properties:
+--
+-- * The distance between snapshots is at most @snapEvery@. This implies that
+--   rolling back involves re-applying at most @snapEvery - 1@ blocks
+--   (note that @snapEvery >= 1@).
+--
+-- * This implies that the number of (references to) blocks we store will vary
+--   between @k@ and @k + snapEvery - 1@ (unless we are near genesis).
+--
+-- * When the number of blocks reaches @k + snapEvery@, we can drop the first
+--   @snapEvery@ blocks, shifting up the anchor.
+--
+-- * The average number of blocks we have to reapply on a rollback is given by
+--
+--   >    average [0 .. snapEvery - 1]
+--   > == ((snapEvery - 1) * snapEvery / 2) / snapEvery
+--   > == (snapEvery - 1) / 2
+--
+--   (Obvious) boundary case: if @snapEvery == 1@, the average number is zero.
+--
+-- * The number of snapshots we store is in the range
+--
+--   > [1 + floor(k / snapEvery), 1 + ceiling(k / snapEvery)]
+--
+--   If @snapEvery@ divides @k@, the number is precisely @1 + k / snapEvery@.
+--
+-- * Picking a suitable value of @snapEvery@ for a given @k@ is a tradeoff
+--   between cost of reapplying blocks and the cost of storing more snapshots.
+--   The latter is primarily the cost of less opportunity for garbage
+--   collection, which is hard to quantify abstractly. This should probably
+--   be determined empirically.
+--
+-- Some example boundary cases:
+--
+-- * Suppose @k = 4@ and @snapEvery = 1@:
+--
+--   > *G  |> []               <| G
+--   > *G  |> [L1]             <| L1
+--   > *G  |> [L1, L2]         <| L2
+--   > *G  |> [L1, L2, L3]     <| L3
+--   > *G  |> [L1, L2, L3, L4] <| L4
+--   > *L1 |> [L2, L3, L4, L5] <| L5
+--   > *L2 |> [L3, L4, L5, L6] <| L6
+--
+--   Note that in this case the number of blocks will always be @k@ (unless we
+--   are close to genesis), and the anchor is always the oldest point we can
+--   roll back to.
+--
+-- * If @k = 1@ and @snapEvery = 4@, we get
+--
+--   > *G  |> [ ]                  <| G
+--   > *G  |> [ B1]                <| L1
+--   >  G  |> [*B1,  B2]           <| L2
+--   >  G  |> [ B1, *B2,  B3]      <| L3
+--   >  G  |> [ B1,  B2, *B3, L4]  <| L4
+--   > *L4 |> [ B5]                <| L5
+--   >  L4 |> [*B5,  B6]           <| L6
+--   >  L4 |> [ B5, *B6,  B7]      <| L7
+--   >  L4 |> [ B5,  B6, *B7, L8]  <| L8
+--   > *L8 |> [*B9]                <| L9
+--
+--   (The minimum distance between the current ledger and the maximum rollback
+--   is @k@.)
+--
+-- * If @k = 0@ and @snapEvery = 4@, we get
+--
+--   > *G  |> [ ]                  <| G
+--   >  G  |> [*B1]                <| L1
+--   >  G  |> [ B1, *B2]           <| L2
+--   >  G  |> [ B1,  B2, *B3]      <| L3
+--   > *L4 |> [ ]                  <| L4
+--   >  L4 |> [*B5]                <| L5
+--   >  L4 |> [ B5, *B6]           <| L6
+--   >  L4 |> [ B5,  B6, *B7]      <| L7
+--   > *L8 |> [ ]                  <| L8
+--
+--   @k = 0@ is the only case where the list might be empty. Of course, this is
+--   not a particularly useful configuration.
+--
+-- * If @k = 1@ and @snapEvery = 1@, we get
+--
+--   > *G  |> [ ]   <| G
+--   > *G  |> [ L1] <| L1
+--   > *L1 |> [ L2] <| L2
+--   > *L2 |> [ L3] <| L3
+--
+-- * If @k = 0@ and @snapEvery = 1@, we get
+--
+--   > *G  |> [ ] <| G
+--   > *L1 |> [ ] <| L1
+--   > *L2 |> [ ] <| L2
+--
+-- * Finally, if @k = snapEvery = k4@, we get
+--
+--   > *G  |> [ ]                             <| G
+--   > *G  |> [ B1]                           <| L1
+--   > *G  |> [ B1,  B2]                      <| L2
+--   > *G  |> [ B1,  B2,  B3]                 <| L3
+--   > *G  |> [ B1,  B2,  B3, L4]             <| L4
+--   >  G  |> [*B1,  B2,  B3, L4, B5]         <| L5
+--   >  G  |> [ B1, *B2,  B3, L4, B5, B6]     <| L6
+--   >  G  |> [ B1,  B2, *B3, L4, B5, B6, B7] <| L7
+--   > *L4 |> [ B5,  B6,  B7, L8]             <| L8
+--   >  L4 |> [*B5,  B6,  B7, L8, B9]         <| L9
+data LedgerDB l r = LedgerDB {
+      -- | The ledger state at the tip of the chain
+      ledgerDbCurrent :: !l
+
+      -- | Older ledger states
+    , ledgerDbBlocks  :: !(Seq (r, Maybe l))
+
+      -- | Information about the state of the ledger /before/
+    , ledgerDbAnchor  :: !(ChainSummary l r)
+
+      -- | Ledger DB parameters
+    , ledgerDbParams  :: !LedgerDbParams
+    }
+  deriving (Show, Eq)
+
+data LedgerDbParams = LedgerDbParams {
+      -- | Take a snapshot every @n@ blocks
+      --
+      -- Must be @>= 1@.
+      ledgerDbSnapEvery     :: !Word64
+
+      -- | Security parameter (maximum rollback)
+    , ledgerDbSecurityParam :: !SecurityParam
+    }
+  deriving (Show, Eq, Generic)
+
+-- | Default parameters
+--
+-- TODO: We should decide empirically what a good @snapEvery@ value is.
+-- <https://github.com/input-output-hk/ouroboros-network/issues/1026>
+ledgerDbDefaultParams :: SecurityParam -> LedgerDbParams
+ledgerDbDefaultParams (SecurityParam k) = LedgerDbParams {
+      ledgerDbSnapEvery     = 100
+    , ledgerDbSecurityParam = SecurityParam k
+    }
 
 {-------------------------------------------------------------------------------
   Block info
@@ -146,52 +333,25 @@ genesisChainSummary l = ChainSummary TipGen 0 l
   LedgerDB proper
 -------------------------------------------------------------------------------}
 
--- | Ledger snapshots
---
--- In addition to the ledger snapshots @l@ themselves we also store references
--- @r@ to the blocks that led to those snapshots. This is important when we
--- need to recompute the snapshots (in particular for rollback).
---
--- We maintain the invariant that the shape of the 'LedgerDB' (see 'Shape')
--- is always equal to the shape required by the memory policy. This implies that
---
--- * we always store the most recent snapshot (provided that the memory policy
---   requires a ledger state at offset 0)
--- * as well as one at offset @k@ (so that we can roll back at most @k@ blocks)
-data LedgerDB l r =
-    -- | Apply block @r@ and take a snapshot of the resulting ledger state @l@
-    Snap !r !l !(LedgerDB l r)
+-- | Ledger DB starting at the specified ledger state
+ledgerDbWithAnchor :: LedgerDbParams -> ChainSummary l r -> LedgerDB l r
+ledgerDbWithAnchor params anchor = LedgerDB {
+      ledgerDbCurrent = csLedger anchor
+    , ledgerDbBlocks  = Seq.empty
+    , ledgerDbAnchor  = anchor
+    , ledgerDbParams  = params
+    }
 
-    -- | Apply block @r@ without taking a snapshot
-  | Skip !r !(LedgerDB l r)
-
-    -- | The tail of the chain that is outside the scope of the snapshots
-    --
-    -- We record a summary of the chain tail /at this point/ as well as the
-    -- missing snapshots, if any.
-  | Tail !Missing !(ChainSummary l r)
-  deriving (Show, Eq)
-
--- | Are we still missing some snapshots?
---
--- This is represented as a list of skips:
---
--- * If the list is empty, all snapshots required by the policy are available.
--- * If the list starts with @n@, the current oldest ledger state will become a
---   snapshot after @n@ blocks have been applied.
-type Missing = [Word64]
-
--- | Construct snapshots when we are in the genesis ledger state (no blocks)
-ledgerDbFromChain :: MemPolicy -> ChainSummary l r -> LedgerDB l r
-ledgerDbFromChain = Tail . memPolicyToSkips
-
-ledgerDbFromGenesis :: MemPolicy -> l -> LedgerDB l r
-ledgerDbFromGenesis policy = ledgerDbFromChain policy . genesisChainSummary
+ledgerDbFromGenesis :: LedgerDbParams -> l -> LedgerDB l r
+ledgerDbFromGenesis params = ledgerDbWithAnchor params . genesisChainSummary
 
 {-------------------------------------------------------------------------------
   Internal: derived functions in terms of 'BlockInfo'
 -------------------------------------------------------------------------------}
 
+-- | Apply block to the given ledger state
+--
+-- Forces the new ledger to WHNF.
 applyBlock :: forall m l r b e ap. Monad m
            => LedgerDbConf m l r b e
            -> (Apply ap, RefOrVal r b)
@@ -201,10 +361,14 @@ applyBlock LedgerDbConf{..} (pa, rb) l = ExceptT $
       Ref  r   -> apply pa <$> ldbConfResolve r
       Val _r b -> return $ apply pa b
   where
+    -- Tie evaluation of the 'Either' to evaluation of the ledger state
     apply :: Apply ap -> b -> Either (Err ap e) l
-    apply Apply   b =         ldbConfApply   b l
-    apply Reapply b = Right $ ldbConfReapply b l
+    apply Reapply b = Right $! ldbConfReapply b l
+    apply Apply   b = case ldbConfApply b l of
+                        Left err -> Left err
+                        Right l' -> Right $! l'
 
+-- | Reapply previously applied block
 reapplyBlock :: forall m l r b e. Monad m
              => LedgerDbConf m l r b e -> RefOrVal r b -> l -> m l
 reapplyBlock cfg b = fmap mustBeRight
@@ -217,59 +381,42 @@ reapplyBlock cfg b = fmap mustBeRight
 
 -- | Total length of the chain (in terms of number of blocks)
 ledgerDbChainLength :: LedgerDB l r -> Word64
-ledgerDbChainLength = go 0
-  where
-    go :: Word64 -> LedgerDB l r -> Word64
-    go !acc (Tail _ cs)   = acc + csLength cs
-    go !acc (Snap _ _ ss) = go (acc + 1) ss
-    go !acc (Skip _   ss) = go (acc + 1) ss
+ledgerDbChainLength LedgerDB{..} =
+    csLength ledgerDbAnchor + fromIntegral (Seq.length ledgerDbBlocks)
 
--- | All snapshots along with their offsets from the tip of the chain
-ledgerDbToList :: LedgerDB l r -> Offsets l
-ledgerDbToList = offsetsFromPairs . go 0
-  where
-    go :: Word64 -> LedgerDB l r -> [(Word64, l)]
-    go offset (Snap _ l ss) = (offset, l) : go (offset + 1) ss
-    go offset (Skip _   ss) =               go (offset + 1) ss
-    go offset (Tail _ cs)   = [(offset, csLedger cs)]
+-- | References to blocks and corresponding ledger state (from old to new)
+ledgerDbToList :: LedgerDB l r -> [(r, Maybe l)]
+ledgerDbToList LedgerDB{..} = toList ledgerDbBlocks
 
--- | How many blocks can be currently roll back?
+-- | All snapshots currently stored by the ledger DB (new to old)
 --
--- If @ss@ is a 'LedgerDB' with @n@ blocks applied, we have
---
--- > ledgerDbMaxRollback ss == min (memPolicyMaxRollback policy) n
+-- For each snapshot we also return the distance from the tip
+ledgerDbSnapshots :: forall l r. LedgerDB l r -> [(Word64, l)]
+ledgerDbSnapshots LedgerDB{..} = go 0 ledgerDbBlocks
+  where
+    go :: Word64 -> Seq (r, Maybe l) -> [(Word64, l)]
+    go !offset Empty                 = [(offset, csLedger ledgerDbAnchor)]
+    go !offset (ss :|> (_, Nothing)) =               go (offset + 1) ss
+    go !offset (ss :|> (_, Just l))  = (offset, l) : go (offset + 1) ss
+
+-- | How many blocks can we currently roll back?
 ledgerDbMaxRollback :: LedgerDB l r -> Word64
-ledgerDbMaxRollback = last . offsetsDropValues . ledgerDbToList
-
--- | Current snapshot, assuming mem policy specifies it must be recorded
-ledgerDbCurrent :: LedgerDB l r -> l
-ledgerDbCurrent (Snap _ l _) = l
-ledgerDbCurrent (Skip   _ _) = error "ledgerDbCurrent: not stored"
-ledgerDbCurrent (Tail _ cs)  = csLedger cs
+ledgerDbMaxRollback LedgerDB{..} = fromIntegral (Seq.length ledgerDbBlocks)
 
 -- | Reference to the block at the tip of the chain
 ledgerDbTip :: LedgerDB l r -> Tip r
-ledgerDbTip (Snap r _ _) = Tip r
-ledgerDbTip (Skip r   _) = Tip r
-ledgerDbTip (Tail _ cs)  = csTip cs
+ledgerDbTip LedgerDB{..} =
+    case ledgerDbBlocks of
+      Empty        -> csTip ledgerDbAnchor
+      _ :|> (r, _) -> Tip r
 
--- | Have all snapshots been filled?
---
--- TODO: Here and elsewhere it would be much nicer to avoid this @Tail [0]@
--- special case. There is redundancy in the representation. We should
--- reconsider this.
+-- | Have we seen at least @k@ blocks?
 ledgerDbIsSaturated :: LedgerDB l r -> Bool
-ledgerDbIsSaturated (Snap _ _ ss) = ledgerDbIsSaturated ss
-ledgerDbIsSaturated (Skip _   ss) = ledgerDbIsSaturated ss
-ledgerDbIsSaturated (Tail []  _)  = True
-ledgerDbIsSaturated (Tail [0] _)  = True
-ledgerDbIsSaturated (Tail _   _)  = False
-
--- | The tail of the DB (oldest snapshot)
-ledgerDbTail :: LedgerDB l r -> ChainSummary l r
-ledgerDbTail (Snap _ _ ss) = ledgerDbTail ss
-ledgerDbTail (Skip _   ss) = ledgerDbTail ss
-ledgerDbTail (Tail _ cs)   = cs
+ledgerDbIsSaturated LedgerDB{..} =
+    fromIntegral (Seq.length ledgerDbBlocks) >= k
+  where
+    LedgerDbParams{..} = ledgerDbParams
+    SecurityParam k    = ledgerDbSecurityParam
 
 {-------------------------------------------------------------------------------
   Result types
@@ -293,67 +440,168 @@ data PushManyResult e l r :: Bool -> * where
 -- | The result of 'ledgerDbSwitch', i.e. when validating a fork of the
 -- current chain.
 --
--- First, we roll back @m@ blocks and then apply @n@ new blocks. It is
--- important that @n >= m@, because we cannot return a valid 'LedgerDB' that
--- is \"older\" (corresponds to an older block) than the given one.
---
--- We divide the new blocks in the /prefix/, the first @m@ new blocks, and the
--- /suffix/, the @n-m@ last blocks, which are pushed using 'ledgerDbPushMany'.
+-- First, we roll back @m@ blocks and then apply @n@ new blocks. We do not
+-- verify in the ledger DB that the new chain is longer; this will be the
+-- responsibility `preferCandidate`. Note however that if it is shorter, the
+-- maximum rollback we can support might be less than @k@.
 data SwitchResult e l r :: Bool -> * where
-  -- | When a block in the prefix is invalid, we cannot return a valid
-  -- 'LedgerDB'. We return the validation error and include a reference to the
-  -- invalid block.
-  InvalidBlockInPrefix :: e -> r                  -> SwitchResult e l r 'False
+  -- | Exceeded maximum rollback supported by the current ledger DB state
+  --
+  -- Under normal circumstances this will not arise. It can really only happen
+  -- in the presence of data corruption (or when switching to a shorter fork,
+  -- but that is disallowed by all currently known Ouroboros protocols).
+  --
+  -- NOTE: This can happen whether or not the blocks have been previously
+  -- applied, hence this constructor is polymorphic in @ap@.
+  --
+  -- Records both the supported and the requested rollback.
+  MaximumRollbackExceeded :: Word64 -> Word64 -> SwitchResult e l r ap
 
   -- | The result of pushing the blocks in the suffix with 'ledgerDbPushMany'.
-  PushSuffix           :: PushManyResult e l r ap -> SwitchResult e l r ap
+  RollbackSuccessful      :: PushManyResult e l r ap -> SwitchResult e l r ap
 
-pushManyResultToEither :: PushManyResult e l r ap
-                       -> Either (Err ap e) (LedgerDB l r)
-pushManyResultToEither = \case
-    InvalidBlock e _ _ -> Left e
-    ValidBlocks      l -> Right l
+{-------------------------------------------------------------------------------
+  Internal updates
+-------------------------------------------------------------------------------}
 
-switchResultToEither :: SwitchResult e l r ap
-                     -> Either (Err ap e) (LedgerDB l r)
-switchResultToEither = \case
-    InvalidBlockInPrefix e _ -> Left e
-    PushSuffix pm            -> pushManyResultToEither pm
+-- | Internal: shift the anchor given a bunch of blocks
+--
+-- PRE: The last block in the sequence /must/ contain a ledger snapshot.
+shiftAnchor :: forall r l. HasCallStack
+            => Seq (r, Maybe l) -> ChainSummary l r -> ChainSummary l r
+shiftAnchor toRemove ChainSummary{..} = ChainSummary {
+      csTip    = Tip csTip'
+    , csLength = csLength + fromIntegral (Seq.length toRemove)
+    , csLedger = csLedger'
+    }
+  where
+    csTip'    :: r
+    csLedger' :: l
+    (csTip', csLedger') =
+        case toRemove of
+          Empty              -> error "shiftAnchor: empty list"
+          _ :|> (_, Nothing) -> error "shiftAnchor: missing ledger"
+          _ :|> (r, Just l)  -> (r, l)
+
+-- | Internal: count number of blocks to prune, given total number of blocks
+--
+-- This is exposed for the benefit of tests only.
+ledgerDbCountToPrune :: HasCallStack => LedgerDbParams -> Int -> Int
+ledgerDbCountToPrune LedgerDbParams{..} curSize'
+  | curSize <= maxSize = 0
+  | otherwise          = fromIntegral $ numToRemove
+  where
+    SecurityParam k = ledgerDbSecurityParam
+
+    -- Current, minimum and maximum number of blocks we need
+    curSize, minSize, maxSize :: Word64
+    curSize = fromIntegral curSize'
+    minSize = k
+    maxSize = k + ledgerDbSnapEvery - 1
+
+    -- Number of blocks to remove (assuming curSize > maxSize)
+    --
+    -- Notes:
+    --
+    -- * If @curSize > maxSize@, then @curSize >= ledgerDbSnapEvery@
+    -- * This means we will at least remove 'ledgerDbSnapEvery' blocks
+    -- * We will remove an even multiple of 'ledgerDbSnapEvery' blocks
+    -- * This means that the last block we remove must contain a snapshot
+    numToRemove :: Word64
+    numToRemove = nearestMultiple ledgerDbSnapEvery (curSize - minSize)
+
+    -- Nearest multiple of n, not exceeding x
+    --
+    -- > nearestMultiple 4 3 == 0
+    -- > nearestMultiple 4 4 == 4
+    -- > nearestMultiple 4 5 == 4
+    -- > ..
+    -- > nearestMultiple 4 7 == 4
+    -- > nearestMultiple 4 8 == 8
+    -- > nearestMultiple 4 9 == 8
+    nearestMultiple :: Integral a => a -> a -> a
+    nearestMultiple n x = floor (x' `safeDiv` n') * n
+      where
+        n', x' :: Double
+        n' = fromIntegral n
+        x' = fromIntegral x
+
+-- | Internal: drop unneeded blocks from the head of the list
+--
+-- Postcondition: number blocks is between k and k + snapEvery - 1
+prune :: HasCallStack => LedgerDB l r -> LedgerDB l r
+prune db@LedgerDB{..} =
+    if toPrune == 0
+      then db
+      else let (removed, kept) = Seq.splitAt toPrune ledgerDbBlocks
+               anchor'         = shiftAnchor removed ledgerDbAnchor
+           in db { ledgerDbAnchor = anchor'
+                 , ledgerDbBlocks = kept
+                 }
+  where
+    -- Number of blocks to remove (assuming curSize > maxSize)
+    toPrune :: Int
+    toPrune = ledgerDbCountToPrune ledgerDbParams (Seq.length ledgerDbBlocks)
+
+-- | Rollback
+--
+-- Returns 'Nothing' if maximum rollback is exceeded.
+rollback :: forall m l r b e. Monad m
+         => LedgerDbConf m l r b e
+         -> Word64 -> LedgerDB l r -> m (Maybe (LedgerDB l r))
+rollback cfg n db@LedgerDB{..}
+  | numToKeep < 0 = return Nothing
+  | otherwise     = do
+      current' <- uncurry computeCurrent $ reapply blocks'
+      return $ Just db {
+          ledgerDbCurrent = current'
+        , ledgerDbBlocks  = blocks'
+        }
+  where
+    numToKeep :: Int
+    numToKeep = Seq.length ledgerDbBlocks - fromIntegral n
+
+    blocks' :: Seq (r, Maybe l)
+    blocks' = Seq.take numToKeep ledgerDbBlocks
+
+    -- Compute blocks to reapply, and ledger state to reapply them from
+    reapply :: Seq (r, Maybe l) -> ([r], l)
+    reapply = go []
+      where
+        go :: [r] -> Seq (r, Maybe l) -> ([r], l)
+        go acc Empty                 = (acc, csLedger ledgerDbAnchor)
+        go acc (_  :|> (_, Just l))  = (acc, l)
+        go acc (ss :|> (r, Nothing)) = go (r:acc) ss
+
+    computeCurrent :: [r] -> l -> m l
+    computeCurrent []     = return
+    computeCurrent (r:rs) = reapplyBlock cfg (Ref r) >=> computeCurrent rs
 
 {-------------------------------------------------------------------------------
   Updates
 -------------------------------------------------------------------------------}
 
+-- | Push a block
+--
+-- @O(1)@. Computes the new ledger state, and prunes the ledger DB if needed.
 ledgerDbPush :: forall m l r b e ap. Monad m
-              => LedgerDbConf m l r b e
-              -> (Apply ap, RefOrVal r b)
-              -> LedgerDB l r
-              -> m (Either (Err ap e) (LedgerDB l r))
-ledgerDbPush cfg (pa, new) ldb = runExceptT $
-    case ldb of
-      Snap r l ss -> Snap (ref new) <$> appNew l <*> reapp r ss
-      Skip r   ss -> Skip (ref new) <$>              reapp r ss
-      Tail os cs
-        | []    <- os -> Tail [] <$> goCS cs
-      -- Create new snapshots when we need to
-      -- For the very last snapshot we use the 'End' constructor itself.
-        | [0]   <- os -> Tail [] <$> goCS cs
-        | 0:os' <- os -> Snap (ref new) <$> appNew l <*> pure (Tail      os'  cs)
-        | o:os' <- os -> Skip (ref new) <$>              pure (Tail (o-1:os') cs)
-        where
-          l = csLedger cs
+             => LedgerDbConf m l r b e
+             -> (Apply ap, RefOrVal r b)
+             -> LedgerDB l r
+             -> m (Either (Err ap e) (LedgerDB l r))
+ledgerDbPush cfg (pa, new) db@LedgerDB{..} = runExceptT $ do
+    !current' <- applyBlock cfg (pa, new) ledgerDbCurrent
+    let newPos  = fromIntegral (Seq.length ledgerDbBlocks) + 1
+        blocks' = ledgerDbBlocks
+               |> if newPos `safeMod` ledgerDbSnapEvery == 0
+                    then (ref new, Just current')
+                    else (ref new, Nothing)
+    return $ prune (db {
+        ledgerDbCurrent = current'
+      , ledgerDbBlocks  = blocks'
+      })
   where
-    appNew  = applyBlock cfg (pa, new)
-    reapp r = lift . ledgerDbReapply cfg (Ref r)
-
-    goCS :: ChainSummary l r -> ExceptT (Err ap e) m (ChainSummary l r)
-    goCS ChainSummary{..} = do
-        csLedger' <- appNew csLedger
-        return ChainSummary{
-            csTip    = Tip (ref new)
-          , csLength = csLength + 1
-          , csLedger = csLedger'
-          }
+    LedgerDbParams{..} = ledgerDbParams
 
 ledgerDbReapply :: Monad m
                 => LedgerDbConf m l r b e
@@ -384,135 +632,19 @@ ledgerDbPushMany cfg = flip go
           Right l' -> go l' bs
 
 -- | Switch to a fork
---
--- PRE: Must have at least as many new blocks as we are rolling back.
-ledgerDbSwitch :: ( Monad m
-                  , HasCallStack
-                  , Show l
-                  , Show r
-                  , Typeable l
-                  , Typeable r
-                  )
+ledgerDbSwitch :: Monad m
                => LedgerDbConf m l r b e
                -> Word64                      -- ^ How many blocks to roll back
                -> [(Apply ap, RefOrVal r b)]  -- ^ New blocks to apply
                -> LedgerDB l r
                -> m (SwitchResult e l r ap)
-ledgerDbSwitch cfg numRollbacks newBlocks ss =
-    case runExcept $ rollbackMany numRollbacks (toSuffix ss) of
-      Right suffix -> fromSuffix cfg newBlocks suffix
-      Left  err    -> throw $ InvalidRollback numRollbacks ss err callStack
-
-{-------------------------------------------------------------------------------
-  Internal: implementation of rollback
--------------------------------------------------------------------------------}
-
--- | Suffix of 'LedgerDB' obtained by stripping some recent block
-data Suffix l r = Suffix {
-    -- | The remaining 'LedgerDB'
-    suffixRemaining :: LedgerDB l r
-
-    -- | The stuff we stripped off (old to new)
-  , suffixStripped  :: Stripped
-  }
-
-data Stripped =
-      -- | Nothing missing anymore; the prefix is complete
-      SNone
-
-      -- | Stripped off a 'Rec' constructor
-    | SSnap Stripped
-
-      -- | Stripped off a 'Skip' constructor
-    | SSkip Stripped
-
--- | Trivial suffix (not actually stripping off any blocks)
-toSuffix :: LedgerDB l r -> Suffix l r
-toSuffix ss = Suffix { suffixRemaining = ss, suffixStripped = SNone }
-
--- | Compute current snapshot
---
--- This will be O(1) /provided/ that we store the most recent snapshot
--- (see also 'ledgerDbGetCurrent').
-ledgerDbComputeCurrent :: forall m l r b e. Monad m
-                       => LedgerDbConf m l r b e -> LedgerDB l r -> m l
-ledgerDbComputeCurrent cfg = go
-  where
-    go :: LedgerDB l r -> m l
-    go (Snap _ l _)  = return l
-    go (Skip r   ss) = go ss >>= reapplyBlock cfg (Ref r)
-    go (Tail _ cs)   = return (csLedger cs)
-
-fromSuffix :: forall m l r b e ap. (Monad m, HasCallStack)
-           => LedgerDbConf m l r b e
-           -> [(Apply ap, RefOrVal r b)]
-           -> Suffix l r
-           -> m (SwitchResult e l r ap)
-fromSuffix cfg = \bs suffix -> do
-    -- Here we /must/ call 'ledgerDbComputeCurrent', not 'ledgerDbGetCurrent':
-    -- only if we are /very/ lucky would we roll back to a point where we happen
-    -- to store a snapshot.
-    l <- ledgerDbComputeCurrent cfg (suffixRemaining suffix)
-    go bs suffix l
-  where
-    go :: [(Apply ap, RefOrVal r b)]
-       -> Suffix l r -> l -> m (SwitchResult e l r ap)
-    go bs (Suffix ss SNone) _ =
-        PushSuffix <$> ledgerDbPushMany cfg bs ss
-    go ((ap,b):bs) (Suffix ss (SSnap m)) l =
-        applyBlock' ap b l
-          (\e -> return $ InvalidBlockInPrefix e (ref b))
-          (\l' -> go bs (Suffix (Snap (ref b) l' ss) m) l')
-    go ((ap,b):bs) (Suffix ss (SSkip m)) l =
-        applyBlock' ap b l
-          (\e  -> return $ InvalidBlockInPrefix e (ref b))
-          (\l' -> go bs (Suffix (Skip (ref b) ss) m) l')
-    go [] (Suffix _  (SSnap _)) _ =
-        error "fromSuffix: too few blocks"
-    go [] (Suffix _  (SSkip _)) _ =
-        error "fromSuffix: too few blocks"
-
-    applyBlock' :: forall a. Apply ap -> RefOrVal r b -> l
-                -> (ap ~ 'False => e -> m a)
-                -> (l -> m a)
-                -> m a
-    applyBlock' ap b l kErr kOk = case ap of
-      Apply   -> runExceptT (applyBlock cfg (ap, b) l) >>= \case
-        Left  e  -> kErr e
-        Right l' -> kOk l'
-      Reapply -> runExceptT (applyBlock cfg (Reapply @'True, b) l) >>= \case
-        Left  e  -> absurd e
-        Right l' -> kOk l'
-
-rollback :: Suffix l r -> Except String (Suffix l r)
-rollback (Suffix (Snap _ _ ss) missing) = return $ Suffix ss (SSnap missing)
-rollback (Suffix (Skip _   ss) missing) = return $ Suffix ss (SSkip missing)
-rollback (Suffix (Tail _ _)    _) = throwError "rollback: cannot rollback past end"
-
-rollbackMany :: Word64 -> Suffix l r -> Except String (Suffix l r)
-rollbackMany = nTimesM rollback
-
--- | Invalid rollback exception
---
--- If this is ever thrown it indicates a bug in the code
-data InvalidRollbackException l r =
-    InvalidRollback {
-        -- | Number of blocks requested to rollback
-        invalidRollbackCount :: Word64
-
-        -- | The ledger DB at the time of the rollback
-      , invalidRollbackDb    :: LedgerDB l r
-
-        -- | Error message
-      , invalidRollbackErr   :: String
-
-        -- | Callstack
-      , invalidRollbackStack :: CallStack
-      }
-  deriving (Show)
-
-instance (Typeable l, Typeable r, Show r, Show l)
-      => Exception (InvalidRollbackException l r)
+ledgerDbSwitch cfg numRollbacks newBlocks db = do
+    mRolledBack <- rollback cfg numRollbacks db
+    case mRolledBack of
+      Nothing ->
+        return $ MaximumRollbackExceeded (ledgerDbMaxRollback db) numRollbacks
+      Just db' ->
+        RollbackSuccessful <$> ledgerDbPushMany cfg newBlocks db'
 
 {-------------------------------------------------------------------------------
   Pure variations (primarily for testing)
@@ -521,17 +653,8 @@ instance (Typeable l, Typeable r, Show r, Show l)
 fromEither :: Identity (Either Void l) -> l
 fromEither = mustBeRight . runIdentity
 
-fromPushManyResult :: Identity (PushManyResult Void l b 'False) -> LedgerDB l b
-fromPushManyResult = mustBeRight . pushManyResultToEither . runIdentity
-
-fromSwitchResult :: Identity (SwitchResult Void l b 'False) -> LedgerDB l b
-fromSwitchResult = mustBeRight . switchResultToEither . runIdentity
-
 pureBlock :: b -> (Apply 'False, RefOrVal b b)
 pureBlock b = (Apply, Val b b)
-
-ledgerDbComputeCurrent' :: PureLedgerDbConf l b -> LedgerDB l b -> l
-ledgerDbComputeCurrent' cfg = runIdentity . ledgerDbComputeCurrent cfg
 
 ledgerDbPush' :: PureLedgerDbConf l b -> b -> LedgerDB l b -> LedgerDB l b
 ledgerDbPush' cfg b = fromEither . ledgerDbPush cfg (pureBlock b)
@@ -539,47 +662,39 @@ ledgerDbPush' cfg b = fromEither . ledgerDbPush cfg (pureBlock b)
 ledgerDbPushMany' :: PureLedgerDbConf l b -> [b] -> LedgerDB l b -> LedgerDB l b
 ledgerDbPushMany' cfg bs = fromPushManyResult . ledgerDbPushMany cfg (map pureBlock bs)
 
-ledgerDbSwitch' :: (HasCallStack, Show l, Show b, Typeable l, Typeable b)
-                => PureLedgerDbConf l b
-                -> Word64 -> [b] -> LedgerDB l b -> LedgerDB l b
+ledgerDbSwitch' :: PureLedgerDbConf l b -> Word64 -> [b] -> LedgerDB l b -> Maybe (LedgerDB l b)
 ledgerDbSwitch' cfg n bs = fromSwitchResult . ledgerDbSwitch cfg n (map pureBlock bs)
 
-fromSuffix' :: PureLedgerDbConf l b -> [b] -> Suffix l b -> LedgerDB l b
-fromSuffix' cfg bs = fromSwitchResult . fromSuffix cfg (map pureBlock bs)
-
 {-------------------------------------------------------------------------------
-  Shape
+  Auxiliary functions used for the pure wrappers above
 -------------------------------------------------------------------------------}
 
--- | Shape of the snapshots
+fromPushManyResult :: Identity (PushManyResult Void l b 'False) -> LedgerDB l b
+fromPushManyResult = mustBeRight . pushManyResultToEither . runIdentity
+
+fromSwitchResult :: Identity (SwitchResult Void l b 'False) -> Maybe (LedgerDB l b)
+fromSwitchResult = mightBeLeft . switchResultToEither . runIdentity
+  where
+    mightBeLeft :: Either (Maybe Void) a -> Maybe a
+    mightBeLeft (Left Nothing)  = Nothing
+    mightBeLeft (Left (Just v)) = absurd v
+    mightBeLeft (Right a)       = Just a
+
+pushManyResultToEither :: PushManyResult e l r ap
+                       -> Either (Err ap e) (LedgerDB l r)
+pushManyResultToEither = \case
+    InvalidBlock e _ _ -> Left e
+    ValidBlocks      l -> Right l
+
+-- | Translate 'SwtichResult' to 'Either'
 --
--- The shape of the snapshots tells us which snapshots are included and which
--- aren't. This is used only for testing and stating invariants: both
--- 'ledgerDbPush' and 'ledgerDbSwitch' must preserve this shape.
-data Shape = Included Shape | Excluded Shape | Nil
-  deriving (Show, Eq)
-
--- | The shape that the policy dictates
-memPolicyShape :: MemPolicy -> Shape
-memPolicyShape = go 0 . offsetsDropValues . memPolicyToOffsets
-  where
-    go :: Word64 -> [Word64] -> Shape
-    go _   []     = Nil
-    go cur (o:os)
-      | cur == o  = Included $ go (cur + 1)    os
-      | otherwise = Excluded $ go (cur + 1) (o:os)
-
--- | Compute the shape of the snapshots
-snapshotsShape :: LedgerDB l r -> Shape
-snapshotsShape (Snap _ _ ss) = Included (snapshotsShape ss)
-snapshotsShape (Skip  _  ss) = Excluded (snapshotsShape ss)
-snapshotsShape (Tail os _)   = go os
-  where
-    go :: Missing -> Shape
-    go []      = Included Nil
-    go [0]     = Included Nil
-    go (0:os') = Included $ go os'
-    go (o:os') = Excluded $ go (o-1:os')
+-- Returns @Left Nothing@ in case of 'MaximumRollbackExceeded'. Note that this
+-- may happen whether or not we have applied the b
+switchResultToEither :: SwitchResult e l r ap
+                     -> Either (Maybe (Err ap e)) (LedgerDB l r)
+switchResultToEither = \case
+    MaximumRollbackExceeded _ _ -> Left Nothing
+    RollbackSuccessful pm       -> first Just $ pushManyResultToEither pm
 
 {-------------------------------------------------------------------------------
   Serialisation
@@ -631,14 +746,17 @@ demoConf = LedgerDbConf {
                  else error "ledgerDbReapply: block applied in wrong state"
     }
 
-demoPolicy :: MemPolicy
-demoPolicy = memPolicyFromOffsets (offsetsWithoutValues [0, 2, 5])
+demoParams :: LedgerDbParams
+demoParams = LedgerDbParams {
+      ledgerDbSnapEvery     = 4
+    , ledgerDbSecurityParam = SecurityParam 6
+    }
 
 db0 :: LedgerDB DemoLedger DemoRef
-db0 = ledgerDbFromGenesis demoPolicy (DL ('a', 0))
+db0 = ledgerDbFromGenesis demoParams (DL ('a', 0))
 
-demo :: [LedgerDB DemoLedger DemoRef]
-demo = db0 : go 1 8 db0
+_demo :: [LedgerDB DemoLedger DemoRef]
+_demo = db0 : go 1 8 db0
   where
     go :: Int -> Int -> LedgerDB DemoLedger DemoRef -> [LedgerDB DemoLedger DemoRef]
     go n m db =
@@ -646,9 +764,22 @@ demo = db0 : go 1 8 db0
         let blockInfos = [ (Apply, Val (DR ('b', n-1)) (DB ('b', n-1)))
                          , (Apply, Val (DR ('b', n-0)) (DB ('b', n-0)))
                          ]
-            Identity (PushSuffix (ValidBlocks db')) = ledgerDbSwitch demoConf 1 blockInfos db
+            Identity (RollbackSuccessful (ValidBlocks db')) =
+                ledgerDbSwitch demoConf 1 blockInfos db
         in [db']
       else
         let blockInfo = (Apply, Val (DR ('a', n)) (DB ('a', n)))
             Identity (Right db') = ledgerDbPush demoConf blockInfo db
         in db' : go (n + 1) m db'
+
+{-------------------------------------------------------------------------------
+  Auxiliary
+-------------------------------------------------------------------------------}
+
+safeMod :: (Integral a, HasCallStack) => a -> a -> a
+safeMod _ 0 = error "safeMod: division by zero"
+safeMod x y = x `Prelude.mod` y
+
+safeDiv :: (Eq a, Fractional a, HasCallStack) => a -> a -> a
+safeDiv _ 0 = error "safeDiv: division by zero"
+safeDiv x y = x Prelude./ y
