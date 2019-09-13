@@ -47,7 +47,8 @@ import           Test.Util.Orphans.Arbitrary ()
 
 tests :: TestTree
 tests = testGroup "Dynamic chain generation"
-    [ testProperty "check Real PBFT setup" $
+    [ localOption (QuickCheckTests 10) $   -- each takes about 0.5 seconds!
+      testProperty "check Real PBFT setup" $
         \numCoreNodes ->
           forAll (elements (enumCoreNodes numCoreNodes)) $ \coreNodeId ->
           prop_setup_coreNodeId numCoreNodes coreNodeId
