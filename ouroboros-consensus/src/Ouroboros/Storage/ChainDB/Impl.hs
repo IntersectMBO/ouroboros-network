@@ -19,7 +19,6 @@ module Ouroboros.Storage.ChainDB.Impl (
   , TraceOpenEvent (..)
   , TraceIteratorEvent (..)
   , LgrDB.TraceLedgerReplayEvent
-  , ReasonInvalid (..)
     -- * Internals for testing purposes
   , openDBInternal
   , Internal (..)

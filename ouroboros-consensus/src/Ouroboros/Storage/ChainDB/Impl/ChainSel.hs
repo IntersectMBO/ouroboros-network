@@ -622,6 +622,8 @@ chainSelection lgrDB tracer cfg varInvalid
 -- 'ChainAndLedger' is a prefix of the given candidate fragment (upto the last
 -- valid block), if that fragment is still preferred ('preferCandidate') over
 -- the current chain, if not, 'Nothing' is returned.
+--
+-- Returns 'Nothing' if this candidate requires a rollback we cannot support.
 validateCandidate
   :: forall m blk.
      ( MonadSTM m
@@ -639,7 +641,14 @@ validateCandidate
 validateCandidate lgrDB tracer cfg varInvalid
                   (ChainAndLedger curChain curLedger) candSuffix =
     LgrDB.validate lgrDB curLedger rollback newBlocks >>= \case
-      LgrDB.InvalidBlock e pt ledger' -> do
+      LgrDB.MaximumRollbackExceeded supported _ -> do
+        trace $ CandidateExceedsRollback {
+            _supportedRollback = supported
+          , _candidateRollback = _rollback candSuffix
+          , _candidate         = _suffix   candSuffix
+          }
+        return Nothing
+      LgrDB.RollbackSuccessful (LgrDB.InvalidBlock e pt ledger') -> do
         let lastValid  = castPoint $ LgrDB.currentPoint ledger'
             candidate' = fromMaybe
               (error "cannot rollback to point on fragment") $
@@ -648,16 +657,16 @@ validateCandidate lgrDB tracer cfg varInvalid
         trace (InvalidBlock e pt)
 
         -- The candidate is now a prefix of the original candidate, and might be
-        -- shorter (or as long) as the current chain. We must check again
+        -- shorter than (or as long as) the current chain. We must check again
         -- whether it is preferred over the current chain.
         if preferCandidate cfg curChain candidate'
           then do
             trace (ValidCandidate (_suffix candSuffix))
             return $ Just $ mkChainAndLedger candidate' ledger'
           else do
-            trace (InvalidCandidate (_suffix candSuffix) InvalidBlockInSuffix)
+            trace (InvalidCandidate (_suffix candSuffix))
             return Nothing
-      LgrDB.ValidBlocks ledger' -> do
+      LgrDB.RollbackSuccessful (LgrDB.ValidBlocks ledger') -> do
         trace (ValidCandidate (_suffix candSuffix))
         return $ Just $ mkChainAndLedger candidate ledger'
   where

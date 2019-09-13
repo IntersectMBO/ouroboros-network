@@ -1,4 +1,3 @@
-{-# LANGUAGE DataKinds                  #-}
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
@@ -47,7 +46,6 @@ tests = testGroup "InMemory" [
     , testGroup "Rollback" [
           testProperty "maxRollbackGenesisZero" prop_maxRollbackGenesisZero
         , testProperty "ledgerDbMaxRollback"    prop_snapshotsMaxRollback
-        , testProperty "ledgerDbMaxRollbackSat" prop_snapshotsMaxRollbackSat
         , testProperty "switchSameChain"        prop_switchSameChain
         , testProperty "switchMatchesPolicy"    prop_switchMatchesPolicy
         , testProperty "switchExpectedLedger"   prop_switchExpectedLedger
@@ -105,28 +103,28 @@ verifyShape snapEvery = \ss ->
   Constructing snapshots
 -------------------------------------------------------------------------------}
 
-prop_pushIncrementsLength :: ChainSetup 'Unsaturated -> Property
+prop_pushIncrementsLength :: ChainSetup -> Property
 prop_pushIncrementsLength setup@ChainSetup{..} =
-    collect (saturation setup) $
+    collect (chainSetupSaturated setup) $
           ledgerDbChainLength (ledgerDbPush' callbacks blockInfo csPushed)
       === ledgerDbChainLength csPushed + 1
   where
     blockInfo = Block maxBound 0
 
-prop_lengthMatchesNumBlocks :: ChainSetup 'Unsaturated -> Property
+prop_lengthMatchesNumBlocks :: ChainSetup -> Property
 prop_lengthMatchesNumBlocks setup@ChainSetup{..} =
-    collect (saturation setup) $
+    collect (chainSetupSaturated setup) $
           ledgerDbChainLength csPushed
       === csNumBlocks
 
-prop_pushMatchesPolicy :: ChainSetup 'Unsaturated -> Property
+prop_pushMatchesPolicy :: ChainSetup -> Property
 prop_pushMatchesPolicy setup@ChainSetup{..} =
-    collect (saturation setup) $
+    collect (chainSetupSaturated setup) $
       verifyShape (ledgerDbSnapEvery csParams) (ledgerDbToList csPushed)
 
-prop_pushExpectedLedger :: ChainSetup 'Unsaturated -> Property
+prop_pushExpectedLedger :: ChainSetup -> Property
 prop_pushExpectedLedger setup@ChainSetup{..} =
-    collect (saturation setup) $
+    collect (chainSetupSaturated setup) $
       conjoin [
           l === applyMany (expectedChain o) initLedger
         | (o, l) <- ledgerDbSnapshots csPushed
@@ -144,47 +142,38 @@ prop_maxRollbackGenesisZero params =
         ledgerDbMaxRollback (ledgerDbFromGenesis params (Ledger []))
     === 0
 
-prop_snapshotsMaxRollback :: ChainSetup 'Unsaturated -> Property
+prop_snapshotsMaxRollback :: ChainSetup -> Property
 prop_snapshotsMaxRollback setup@ChainSetup{..} =
-    collect (saturation setup) $
+    collect (chainSetupSaturated setup) $
       conjoin [
-          (ledgerDbMaxRollback csPushed) `ge` (min k csNumBlocks)
+          if chainSetupSaturated setup
+            then (ledgerDbMaxRollback csPushed) `ge` k
+            else (ledgerDbMaxRollback csPushed) `ge` (min k csNumBlocks)
         , (ledgerDbMaxRollback csPushed) `lt` (k + snapEvery)
         ]
   where
     SecurityParam k = ledgerDbSecurityParam csParams
     snapEvery       = ledgerDbSnapEvery     csParams
 
-prop_snapshotsMaxRollbackSat :: ChainSetup 'Saturated -> Property
-prop_snapshotsMaxRollbackSat setup@ChainSetup{..} =
-    conjoin [
-        saturation setup === Saturated
-      , (ledgerDbMaxRollback csPushed) `ge` k
-      , (ledgerDbMaxRollback csPushed) `lt` (k + snapEvery)
-      ]
-  where
-    SecurityParam k = ledgerDbSecurityParam csParams
-    snapEvery       = ledgerDbSnapEvery     csParams
-
-prop_switchSameChain :: SwitchSetup 'Unsaturated -> Property
+prop_switchSameChain :: SwitchSetup -> Property
 prop_switchSameChain setup@SwitchSetup{..} =
-    collect (saturation setup) $
+    collect (switchSetupSaturated setup) $
           ledgerDbSwitch' callbacks ssNumRollback blockInfo csPushed
-      === csPushed
+      === Just csPushed
   where
     ChainSetup{csPushed} = ssChainSetup
     blockInfo            = ssRemoved
 
-prop_switchMatchesPolicy :: SwitchSetup 'Unsaturated -> Property
+prop_switchMatchesPolicy :: SwitchSetup -> Property
 prop_switchMatchesPolicy setup@SwitchSetup{..} =
-    collect (saturation setup) $
+    collect (switchSetupSaturated setup) $
       verifyShape (ledgerDbSnapEvery csParams) (ledgerDbToList ssSwitched)
   where
     ChainSetup{csParams} = ssChainSetup
 
-prop_switchExpectedLedger :: SwitchSetup 'Unsaturated -> Property
+prop_switchExpectedLedger :: SwitchSetup -> Property
 prop_switchExpectedLedger setup@SwitchSetup{..} =
-    collect (saturation setup) $
+    collect (switchSetupSaturated setup) $
       conjoin [
           l === applyMany (expectedChain o) initLedger
         | (o, l) <- ledgerDbSnapshots ssSwitched
@@ -194,25 +183,10 @@ prop_switchExpectedLedger setup@SwitchSetup{..} =
     expectedChain o = take (fromIntegral (ssNumBlocks - o)) ssChain
 
 {-------------------------------------------------------------------------------
-  Saturation
--------------------------------------------------------------------------------}
-
-data Saturation =
-    -- | Saturated (all snapshots have been filled)
-    Saturated
-
-    -- | Unsaturated (not all snapshots may have been filled)
-  | Unsaturated
-  deriving (Show, Eq)
-
-class CheckSaturation (f :: Saturation -> *) where
-  saturation :: f s -> Saturation
-
-{-------------------------------------------------------------------------------
   Test setup
 -------------------------------------------------------------------------------}
 
-data ChainSetup (s :: Saturation) = ChainSetup {
+data ChainSetup = ChainSetup {
       -- | Ledger DB parameters
       csParams    :: LedgerDbParams
 
@@ -230,14 +204,12 @@ data ChainSetup (s :: Saturation) = ChainSetup {
     }
   deriving (Show)
 
-instance CheckSaturation ChainSetup where
-  saturation ChainSetup{..}
-    | ledgerDbIsSaturated csPushed = Saturated
-    | otherwise                    = Unsaturated
+chainSetupSaturated :: ChainSetup -> Bool
+chainSetupSaturated = ledgerDbIsSaturated . csPushed
 
-data SwitchSetup s = SwitchSetup {
+data SwitchSetup = SwitchSetup {
       -- | Chain setup
-      ssChainSetup  :: ChainSetup s
+      ssChainSetup  :: ChainSetup
 
       -- | Number of blocks to roll back
     , ssNumRollback :: Word64
@@ -262,10 +234,10 @@ data SwitchSetup s = SwitchSetup {
     }
   deriving (Show)
 
-instance CheckSaturation SwitchSetup where
-  saturation = saturation . ssChainSetup
+switchSetupSaturated :: SwitchSetup -> Bool
+switchSetupSaturated = chainSetupSaturated . ssChainSetup
 
-mkTestSetup :: LedgerDbParams -> Word64 -> ChainSetup s
+mkTestSetup :: LedgerDbParams -> Word64 -> ChainSetup
 mkTestSetup csParams csNumBlocks =
     ChainSetup {..}
   where
@@ -273,7 +245,7 @@ mkTestSetup csParams csNumBlocks =
     csChain    = mkChain csNumBlocks 0
     csPushed   = ledgerDbPushMany' callbacks csChain csGenSnaps
 
-mkRollbackSetup :: ChainSetup s -> Word64 -> Word64 -> SwitchSetup s
+mkRollbackSetup :: ChainSetup -> Word64 -> Word64 -> SwitchSetup
 mkRollbackSetup ssChainSetup ssNumRollback ssNumNew =
     SwitchSetup {..}
   where
@@ -287,28 +259,9 @@ mkRollbackSetup ssChainSetup ssNumRollback ssNumNew =
                          take (fromIntegral (csNumBlocks - ssNumRollback)) csChain
                        , ssNewBlocks
                        ]
-    ssSwitched  = ledgerDbSwitch' callbacks ssNumRollback ssNewBlocks csPushed
+    Just ssSwitched  = ledgerDbSwitch' callbacks ssNumRollback ssNewBlocks csPushed
 
-instance Arbitrary (ChainSetup 'Unsaturated) where
-  arbitrary = sized $ \n -> do
-      params    <- arbitrary
-      numBlocks <- choose (0, min (fromIntegral n) maxNumBlocks)
-      return $ mkTestSetup params numBlocks
-    where
-      -- Maximum number of blocks we want on a chain
-      maxNumBlocks :: Word64
-      maxNumBlocks = 1500
-
-  shrink ChainSetup{..} = concat [
-        [ mkTestSetup csParams' csNumBlocks
-        | csParams' <- shrink csParams
-        ]
-      , [ mkTestSetup csParams csNumBlocks'
-        | csNumBlocks' <- shrink csNumBlocks
-        ]
-      ]
-
-instance Arbitrary (ChainSetup 'Saturated) where
+instance Arbitrary ChainSetup where
   arbitrary = do
       params <- arbitrary
       let minNumBlocks = maxRollbacks (ledgerDbSecurityParam params)
@@ -328,7 +281,7 @@ instance Arbitrary (ChainSetup 'Saturated) where
         ]
       ]
 
-instance Arbitrary (ChainSetup s) => Arbitrary (SwitchSetup s) where
+instance Arbitrary SwitchSetup where
   arbitrary = do
       chainSetup  <- arbitrary
       numRollback <- choose (0, ledgerDbMaxRollback (csPushed chainSetup))

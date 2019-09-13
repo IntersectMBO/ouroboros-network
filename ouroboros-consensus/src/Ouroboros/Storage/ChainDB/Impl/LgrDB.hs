@@ -41,6 +41,7 @@ module Ouroboros.Storage.ChainDB.Impl.LgrDB (
   , DiskPolicy (..)
   , DiskSnapshot
   , LedgerDB.PushManyResult (..)
+  , LedgerDB.SwitchResult (..)
   , TraceEvent (..)
   , TraceReplayEvent (..)
   ) where
@@ -363,7 +364,7 @@ getDiskPolicy LgrDB{ args = LgrDbArgs{..} } = lgrDiskPolicy
 -------------------------------------------------------------------------------}
 
 type ValidateResult blk =
-  LedgerDB.PushManyResult (ExtValidationError blk) (ExtLedgerState blk) (Point blk) 'False
+  LedgerDB.SwitchResult (ExtValidationError blk) (ExtLedgerState blk) (Point blk) 'False
 
 validate :: forall m blk.
             ( MonadSTM m
@@ -397,8 +398,9 @@ validate LgrDB{..} ledgerDB numRollbacks = \hdrs -> do
     validBlockPoints :: ValidateResult blk
                      -> ([Point blk] -> [Point blk])
     validBlockPoints = \case
-      LedgerDB.ValidBlocks _              -> id
-      LedgerDB.InvalidBlock _ lastValid _ -> takeWhile (/= lastValid)
+      LedgerDB.MaximumRollbackExceeded _ _                              -> const []
+      LedgerDB.RollbackSuccessful (LedgerDB.ValidBlocks _)              -> id
+      LedgerDB.RollbackSuccessful (LedgerDB.InvalidBlock _ lastValid _) -> takeWhile (/= lastValid)
 
     addPoints :: [Point blk] -> Set (Point blk)
               -> Set (Point blk)

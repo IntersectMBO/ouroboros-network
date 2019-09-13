@@ -33,13 +33,13 @@ module Ouroboros.Storage.ChainDB.Impl.Types (
   , TraceInitChainSelEvent (..)
   , TraceOpenEvent (..)
   , TraceIteratorEvent (..)
-  , ReasonInvalid (..)
   ) where
 
 import           Data.List.NonEmpty (NonEmpty)
 import           Data.Map.Strict (Map)
 import           Data.Time.Clock (DiffTime)
 import           Data.Typeable (Typeable)
+import           Data.Word
 import           GHC.Generics (Generic)
 
 import           Control.Monad.Class.MonadSTM.Strict
@@ -395,12 +395,21 @@ data TraceValidationEvent blk
 
   | InvalidCandidate
     { _candidate     :: AnchoredFragment (Header blk)
-    , _reasonInvalid :: ReasonInvalid
     }
     -- ^ A candidate chain was invalid.
 
   | ValidCandidate (AnchoredFragment (Header blk))
     -- ^ A candidate chain was valid.
+
+  | CandidateExceedsRollback
+    { _supportedRollback :: Word64
+    , _candidateRollback :: Word64
+    , _candidate         :: AnchoredFragment (Header blk)
+    }
+    -- ^ Candidate required rollback past what LedgerDB supported
+    --
+    -- This should only happen in exceptional circumstances (like after
+    -- disk corruption).
   deriving (Generic)
 
 deriving instance
@@ -412,22 +421,6 @@ deriving instance
   ( Show (Header                blk)
   , ProtocolLedgerView          blk
   ) => Show (TraceValidationEvent blk)
-
--- | Why a candidate is invalid.
---
--- Prefix and suffix: when switching to a fork, we roll back @r@ blocks and
--- then apply @n >= r@ blocks. The first @r@ blocks are the prefix and the
--- remaining blocks are the suffix.
---
--- If a block is invalid in the prefix we must reject the candidate.
---
--- If a block is invalid in the suffix, we can trim the candidate to the last
--- block before it. The trimmed candidate is valid iff it is still prefered
--- over the current chain.
-data ReasonInvalid
-  = InvalidBlockInPrefix
-  | InvalidBlockInSuffix
-  deriving (Eq, Show)
 
 data TraceInitChainSelEvent blk
   = InitChainSelValidation (TraceValidationEvent blk)

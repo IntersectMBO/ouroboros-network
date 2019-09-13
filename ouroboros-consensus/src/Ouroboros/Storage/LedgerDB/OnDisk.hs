@@ -145,10 +145,11 @@ data InitLog r =
 -- and trigger (further) validation. We only discard snapshots if
 --
 -- * We cannot deserialise them, or
--- * They are too close to the tip of the chain to give all snapshots required
---   by the memory policy (the snapshot being /ahead/ of the chain is a
---   special case of this).
+-- * they are /ahead/ of the chain
 --
+-- It is possible that the Ledger DB will not be able to roll back @k@ blocks
+-- after initialization if the chain has been truncated (data corruption).
+
 -- We do /not/ attempt to use multiple ledger states from disk to construct the
 -- ledger DB. Instead we load only a /single/ ledger state from disk, and
 -- /compute/ all subsequent ones. This is important, because the ledger states

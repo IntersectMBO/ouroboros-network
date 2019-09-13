@@ -12,23 +12,21 @@
 module Ouroboros.Storage.LedgerDB.InMemory (
      -- * LedgerDB proper
      LedgerDB
-   , ledgerDbWithAnchor
-   , ledgerDbFromGenesis
    , LedgerDbParams(..)
    , ledgerDbDefaultParams
-     -- ** Queries
+   , ledgerDbWithAnchor
+   , ledgerDbFromGenesis
+     -- ** ChainSummary
    , ChainSummary(..)
-   , ledgerDbChainLength
-   , ledgerDbToList
-   , ledgerDbSnapshots
-   , ledgerDbMaxRollback
+   , encodeChainSummary
+   , decodeChainSummary
+     -- ** Queries
    , ledgerDbCurrent
    , ledgerDbTip
-   , ledgerDbIsSaturated
    , ledgerDbAnchor
      -- ** Result types
    , PushManyResult (..)
-   , pushManyResultToEither
+   , SwitchResult(..)
      -- ** Updates
    , Apply(..)
    , Err
@@ -36,17 +34,21 @@ module Ouroboros.Storage.LedgerDB.InMemory (
    , ledgerDbPush
    , ledgerDbReapply
    , ledgerDbSwitch
-     -- * Pure wrappers (primarily for property testing)
+     -- * Exports for the benefit of tests
+     -- ** Additional queries
+   , ledgerDbChainLength
+   , ledgerDbToList
+   , ledgerDbMaxRollback
+   , ledgerDbSnapshots
+   , ledgerDbIsSaturated
+   , ledgerDbCountToPrune
+     -- ** Pure API
    , ledgerDbPush'
    , ledgerDbPushMany'
    , ledgerDbSwitch'
-     -- * Serialisation
-   , encodeChainSummary
-   , decodeChainSummary
-     -- * Demo
-   , demo
-     -- * Internal functions exposed for the benefit of tests only
-   , ledgerDbCountToPrune
+     -- ** Simplifying the result types
+   , pushManyResultToEither
+   , switchResultToEither
    ) where
 
 import           Prelude hiding (mod, (/))
@@ -57,18 +59,17 @@ import           Codec.Serialise.Decoding (Decoder)
 import qualified Codec.Serialise.Decoding as Dec
 import           Codec.Serialise.Encoding (Encoding)
 import qualified Codec.Serialise.Encoding as Enc
-import           Control.Exception (Exception, throw)
 import           Control.Monad ((>=>))
 import           Control.Monad.Except (ExceptT (..), runExceptT)
+import           Data.Bifunctor
 import           Data.Foldable (toList)
 import           Data.Functor.Identity
 import           Data.Sequence (Seq ((:|>), Empty), (|>))
 import qualified Data.Sequence as Seq
-import           Data.Typeable (Typeable)
 import           Data.Void
 import           Data.Word
 import           GHC.Generics (Generic)
-import           GHC.Stack (CallStack, HasCallStack, callStack)
+import           GHC.Stack (HasCallStack)
 
 import           Ouroboros.Consensus.Protocol.Abstract (SecurityParam (..))
 import           Ouroboros.Consensus.Util
@@ -131,7 +132,7 @@ import           Ouroboros.Storage.LedgerDB.Conf
 --   (note that @snapEvery >= 1@).
 --
 -- * This implies that the number of (references to) blocks we store will vary
---   between @k@ and @k + snapEvery - 1@.
+--   between @k@ and @k + snapEvery - 1@ (unless we are near genesis).
 --
 -- * When the number of blocks reaches @k + snapEvery@, we can drop the first
 --   @snapEvery@ blocks, shifting up the anchor.
@@ -146,7 +147,7 @@ import           Ouroboros.Storage.LedgerDB.Conf
 --
 -- * The number of snapshots we store is in the range
 --
---   > [1 + |_ k / snapEvery _|, 1 + |_ k / snapEvery _| + 1)
+--   > [1 + floor(k / snapEvery), 1 + ceiling(k / snapEvery)]
 --
 --   If @snapEvery@ divides @k@, the number is precisely @1 + k / snapEvery@.
 --
@@ -154,7 +155,7 @@ import           Ouroboros.Storage.LedgerDB.Conf
 --   between cost of reapplying blocks and the cost of storing more snapshots.
 --   The latter is primarily the cost of less opportunity for garbage
 --   collection, which is hard to quantify abstractly. This should probably
---   be determined emperically.
+--   be determined empirically.
 --
 -- Some example boundary cases:
 --
@@ -256,7 +257,8 @@ data LedgerDbParams = LedgerDbParams {
 
 -- | Default parameters
 --
--- TODO: We should decide emperically what a good @snapEvery@ value is.
+-- TODO: We should decide empirically what a good @snapEvery@ value is.
+-- <https://github.com/input-output-hk/ouroboros-network/issues/1026>
 ledgerDbDefaultParams :: SecurityParam -> LedgerDbParams
 ledgerDbDefaultParams (SecurityParam k) = LedgerDbParams {
       ledgerDbSnapEvery     = 100
@@ -393,9 +395,9 @@ ledgerDbSnapshots :: forall l r. LedgerDB l r -> [(Word64, l)]
 ledgerDbSnapshots LedgerDB{..} = go 0 ledgerDbBlocks
   where
     go :: Word64 -> Seq (r, Maybe l) -> [(Word64, l)]
-    go offset Empty                 = [(offset, csLedger ledgerDbAnchor)]
-    go offset (ss :|> (_, Nothing)) =               go (offset + 1) ss
-    go offset (ss :|> (_, Just l))  = (offset, l) : go (offset + 1) ss
+    go !offset Empty                 = [(offset, csLedger ledgerDbAnchor)]
+    go !offset (ss :|> (_, Nothing)) =               go (offset + 1) ss
+    go !offset (ss :|> (_, Just l))  = (offset, l) : go (offset + 1) ss
 
 -- | How many blocks can we currently roll back?
 ledgerDbMaxRollback :: LedgerDB l r -> Word64
@@ -435,11 +437,28 @@ data PushManyResult e l r :: Bool -> * where
   -- block is returned.
   ValidBlocks ::            LedgerDB l r -> PushManyResult e l r ap
 
-pushManyResultToEither :: PushManyResult e l r ap
-                       -> Either (Err ap e) (LedgerDB l r)
-pushManyResultToEither = \case
-    InvalidBlock e _ _ -> Left e
-    ValidBlocks      l -> Right l
+-- | The result of 'ledgerDbSwitch', i.e. when validating a fork of the
+-- current chain.
+--
+-- First, we roll back @m@ blocks and then apply @n@ new blocks. We do not
+-- verify in the ledger DB that the new chain is longer; this will be the
+-- responsibility `preferCandidate`. Note however that if it is shorter, the
+-- maximum rollback we can support might be less than @k@.
+data SwitchResult e l r :: Bool -> * where
+  -- | Exceeded maximum rollback supported by the current ledger DB state
+  --
+  -- Under normal circumstances this will not arise. It can really only happen
+  -- in the presence of data corruption (or when switching to a shorter fork,
+  -- but that is disallowed by all currently known Ouroboros protocols).
+  --
+  -- NOTE: This can happen whether or not the blocks have been previously
+  -- applied, hence this constructor is polymorphic in @ap@.
+  --
+  -- Records both the supported and the requested rollback.
+  MaximumRollbackExceeded :: Word64 -> Word64 -> SwitchResult e l r ap
+
+  -- | The result of pushing the blocks in the suffix with 'ledgerDbPushMany'.
+  RollbackSuccessful      :: PushManyResult e l r ap -> SwitchResult e l r ap
 
 {-------------------------------------------------------------------------------
   Internal updates
@@ -526,33 +545,24 @@ prune db@LedgerDB{..} =
 
 -- | Rollback
 --
--- Precondition: @n <= ledgerDbMaxRollback db@
-rollback :: forall m l r b e. (
-                Monad m
-              , HasCallStack
-              , Typeable l
-              , Typeable r
-              , Show l
-              , Show r
-              )
+-- Returns 'Nothing' if maximum rollback is exceeded.
+rollback :: forall m l r b e. Monad m
          => LedgerDbConf m l r b e
-         -> Word64 -> LedgerDB l r -> m (LedgerDB l r)
-rollback cfg n db@LedgerDB{..} = do
-    current' <- uncurry computeCurrent $ reapply blocks'
-    return db {
-        ledgerDbCurrent = current'
-      , ledgerDbBlocks  = blocks'
-      }
+         -> Word64 -> LedgerDB l r -> m (Maybe (LedgerDB l r))
+rollback cfg n db@LedgerDB{..}
+  | numToKeep < 0 = return Nothing
+  | otherwise     = do
+      current' <- uncurry computeCurrent $ reapply blocks'
+      return $ Just db {
+          ledgerDbCurrent = current'
+        , ledgerDbBlocks  = blocks'
+        }
   where
+    numToKeep :: Int
     numToKeep = Seq.length ledgerDbBlocks - fromIntegral n
-    blocks'   = if numToKeep >= 0
-                  then Seq.take numToKeep ledgerDbBlocks
-                  else throw $ InvalidRollback {
-                           invalidRollbackCount = n
-                         , invalidRollbackDb    = db
-                         , invalidRollbackErr   = "Rollback too far"
-                         , invalidRollbackStack = callStack
-                         }
+
+    blocks' :: Seq (r, Maybe l)
+    blocks' = Seq.take numToKeep ledgerDbBlocks
 
     -- Compute blocks to reapply, and ledger state to reapply them from
     reapply :: Seq (r, Maybe l) -> ([r], l)
@@ -566,28 +576,6 @@ rollback cfg n db@LedgerDB{..} = do
     computeCurrent :: [r] -> l -> m l
     computeCurrent []     = return
     computeCurrent (r:rs) = reapplyBlock cfg (Ref r) >=> computeCurrent rs
-
--- | Invalid rollback exception
---
--- If this is ever thrown it indicates a bug in the code
-data InvalidRollbackException l r =
-    InvalidRollback {
-        -- | Number of blocks requested to rollback
-        invalidRollbackCount :: Word64
-
-        -- | The ledger DB at the time of the rollback
-      , invalidRollbackDb    :: LedgerDB l r
-
-        -- | Error message
-      , invalidRollbackErr   :: String
-
-        -- | Callstack
-      , invalidRollbackStack :: CallStack
-      }
-  deriving (Show)
-
-instance (Typeable l, Typeable r, Show r, Show l)
-      => Exception (InvalidRollbackException l r)
 
 {-------------------------------------------------------------------------------
   Updates
@@ -644,21 +632,19 @@ ledgerDbPushMany cfg = flip go
           Right l' -> go l' bs
 
 -- | Switch to a fork
-ledgerDbSwitch :: ( Monad m
-                  , HasCallStack
-                  , Show l
-                  , Show r
-                  , Typeable l
-                  , Typeable r
-                  )
+ledgerDbSwitch :: Monad m
                => LedgerDbConf m l r b e
                -> Word64                      -- ^ How many blocks to roll back
                -> [(Apply ap, RefOrVal r b)]  -- ^ New blocks to apply
                -> LedgerDB l r
-               -> m (PushManyResult e l r ap)
-ledgerDbSwitch cfg numRollbacks newBlocks =
-        rollback cfg numRollbacks
-    >=> ledgerDbPushMany cfg newBlocks
+               -> m (SwitchResult e l r ap)
+ledgerDbSwitch cfg numRollbacks newBlocks db = do
+    mRolledBack <- rollback cfg numRollbacks db
+    case mRolledBack of
+      Nothing ->
+        return $ MaximumRollbackExceeded (ledgerDbMaxRollback db) numRollbacks
+      Just db' ->
+        RollbackSuccessful <$> ledgerDbPushMany cfg newBlocks db'
 
 {-------------------------------------------------------------------------------
   Pure variations (primarily for testing)
@@ -666,9 +652,6 @@ ledgerDbSwitch cfg numRollbacks newBlocks =
 
 fromEither :: Identity (Either Void l) -> l
 fromEither = mustBeRight . runIdentity
-
-fromPushManyResult :: Identity (PushManyResult Void l b 'False) -> LedgerDB l b
-fromPushManyResult = mustBeRight . pushManyResultToEither . runIdentity
 
 pureBlock :: b -> (Apply 'False, RefOrVal b b)
 pureBlock b = (Apply, Val b b)
@@ -679,10 +662,39 @@ ledgerDbPush' cfg b = fromEither . ledgerDbPush cfg (pureBlock b)
 ledgerDbPushMany' :: PureLedgerDbConf l b -> [b] -> LedgerDB l b -> LedgerDB l b
 ledgerDbPushMany' cfg bs = fromPushManyResult . ledgerDbPushMany cfg (map pureBlock bs)
 
-ledgerDbSwitch' :: (HasCallStack, Show l, Show b, Typeable l, Typeable b)
-                => PureLedgerDbConf l b
-                -> Word64 -> [b] -> LedgerDB l b -> LedgerDB l b
-ledgerDbSwitch' cfg n bs = fromPushManyResult . ledgerDbSwitch cfg n (map pureBlock bs)
+ledgerDbSwitch' :: PureLedgerDbConf l b -> Word64 -> [b] -> LedgerDB l b -> Maybe (LedgerDB l b)
+ledgerDbSwitch' cfg n bs = fromSwitchResult . ledgerDbSwitch cfg n (map pureBlock bs)
+
+{-------------------------------------------------------------------------------
+  Auxiliary functions used for the pure wrappers above
+-------------------------------------------------------------------------------}
+
+fromPushManyResult :: Identity (PushManyResult Void l b 'False) -> LedgerDB l b
+fromPushManyResult = mustBeRight . pushManyResultToEither . runIdentity
+
+fromSwitchResult :: Identity (SwitchResult Void l b 'False) -> Maybe (LedgerDB l b)
+fromSwitchResult = mightBeLeft . switchResultToEither . runIdentity
+  where
+    mightBeLeft :: Either (Maybe Void) a -> Maybe a
+    mightBeLeft (Left Nothing)  = Nothing
+    mightBeLeft (Left (Just v)) = absurd v
+    mightBeLeft (Right a)       = Just a
+
+pushManyResultToEither :: PushManyResult e l r ap
+                       -> Either (Err ap e) (LedgerDB l r)
+pushManyResultToEither = \case
+    InvalidBlock e _ _ -> Left e
+    ValidBlocks      l -> Right l
+
+-- | Translate 'SwtichResult' to 'Either'
+--
+-- Returns @Left Nothing@ in case of 'MaximumRollbackExceeded'. Note that this
+-- may happen whether or not we have applied the b
+switchResultToEither :: SwitchResult e l r ap
+                     -> Either (Maybe (Err ap e)) (LedgerDB l r)
+switchResultToEither = \case
+    MaximumRollbackExceeded _ _ -> Left Nothing
+    RollbackSuccessful pm       -> first Just $ pushManyResultToEither pm
 
 {-------------------------------------------------------------------------------
   Serialisation
@@ -743,8 +755,8 @@ demoParams = LedgerDbParams {
 db0 :: LedgerDB DemoLedger DemoRef
 db0 = ledgerDbFromGenesis demoParams (DL ('a', 0))
 
-demo :: [LedgerDB DemoLedger DemoRef]
-demo = db0 : go 1 8 db0
+_demo :: [LedgerDB DemoLedger DemoRef]
+_demo = db0 : go 1 8 db0
   where
     go :: Int -> Int -> LedgerDB DemoLedger DemoRef -> [LedgerDB DemoLedger DemoRef]
     go n m db =
@@ -752,7 +764,8 @@ demo = db0 : go 1 8 db0
         let blockInfos = [ (Apply, Val (DR ('b', n-1)) (DB ('b', n-1)))
                          , (Apply, Val (DR ('b', n-0)) (DB ('b', n-0)))
                          ]
-            Identity (ValidBlocks db') = ledgerDbSwitch demoConf 1 blockInfos db
+            Identity (RollbackSuccessful (ValidBlocks db')) =
+                ledgerDbSwitch demoConf 1 blockInfos db
         in [db']
       else
         let blockInfo = (Apply, Val (DR ('a', n)) (DB ('a', n)))

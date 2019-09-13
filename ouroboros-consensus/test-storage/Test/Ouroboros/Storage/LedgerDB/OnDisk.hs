@@ -647,7 +647,11 @@ runDB standalone@DB{..} cmd =
         atomically $ modifyTVar dbBlocks $
           repeatedly (uncurry Map.insert) (map refValPair bs)
         upd (switch n bs) $
-          fmap pushManyResultToEither . ledgerDbSwitch conf n (map new bs)
+          -- We don't currently test the case where the LedgerDB cannot support
+          -- the full rollback range. See also
+          -- <https://github.com/input-output-hk/ouroboros-network/issues/1025>
+            fmap (either (Left . fromJust) Right . switchResultToEither)
+          . ledgerDbSwitch conf n (map new bs)
     go hasFS Snap = do
         (_, db) <- atomically $ readTVar dbState
         Snapped <$> takeSnapshot nullTracer hasFS S.encode S.encode db
