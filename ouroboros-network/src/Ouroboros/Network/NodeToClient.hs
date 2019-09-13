@@ -111,8 +111,8 @@ nodeToClientCodecCBORTerm = CodecCBORTerm {encodeTerm, decodeTerm}
         CBOR.TInt (fromIntegral networkMagic)
 
       decodeTerm :: CBOR.Term -> Either Text NodeToClientVersionData
-      decodeTerm (CBOR.TInt x) | x >= 0 && x <= 0xffff = Right (NodeToClientVersionData $ fromIntegral x)
-                               | otherwise             = Left $ T.pack $ "networkMagic out of bound: " <> show x
+      decodeTerm (CBOR.TInt x) | x >= 0 && x <= 0xffffffff = Right (NodeToClientVersionData $ fromIntegral x)
+                               | otherwise                 = Left $ T.pack $ "networkMagic out of bound: " <> show x
       decodeTerm t             = Left $ T.pack $ "unknown encoding: " ++ show t
 
 -- | A specialised version of 'Ouroboros.Network.Socket.connectToNode'.  It is
