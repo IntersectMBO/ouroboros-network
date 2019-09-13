@@ -35,7 +35,8 @@ import           Ouroboros.Consensus.TxSubmission
 
 data Tracers' peer blk tip f = Tracers
   { chainSyncClientTracer         :: f (TraceChainSyncClientEvent blk tip)
-  , chainSyncServerTracer         :: f (TraceChainSyncServerEvent blk)
+  , chainSyncServerHeaderTracer   :: f (TraceChainSyncServerEvent (Header blk))
+  , chainSyncServerBlockTracer    :: f (TraceChainSyncServerEvent blk)
   , blockFetchDecisionTracer      :: f [TraceLabelPeer peer (FetchDecision [Point (Header blk)])]
   , blockFetchClientTracer        :: f (TraceLabelPeer peer (TraceFetchClientState (Header blk)))
   , blockFetchServerTracer        :: f (TraceBlockFetchServerEvent blk)
@@ -53,7 +54,8 @@ type Tracers m peer blk = Tracers' peer blk (Point (Header blk)) (Tracer m)
 nullTracers :: Monad m => Tracers m peer blk
 nullTracers = Tracers
   { chainSyncClientTracer         = nullTracer
-  , chainSyncServerTracer         = nullTracer
+  , chainSyncServerHeaderTracer   = nullTracer
+  , chainSyncServerBlockTracer    = nullTracer
   , blockFetchDecisionTracer      = nullTracer
   , blockFetchClientTracer        = nullTracer
   , blockFetchServerTracer        = nullTracer
@@ -73,7 +75,8 @@ showTracers :: ( Show blk
             => Tracer m String -> Tracers m peer blk
 showTracers tr = Tracers
   { chainSyncClientTracer         = showTracing tr
-  , chainSyncServerTracer         = showTracing tr
+  , chainSyncServerHeaderTracer   = showTracing tr
+  , chainSyncServerBlockTracer    = showTracing tr
   , blockFetchDecisionTracer      = showTracing tr
   , blockFetchClientTracer        = showTracing tr
   , blockFetchServerTracer        = showTracing tr
