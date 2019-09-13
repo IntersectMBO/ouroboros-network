@@ -10,8 +10,10 @@ module Ouroboros.Network.Protocol.ChainSync.ExamplesPipelined
     , Tip
     , chainSyncClientPipelinedMax
     , chainSyncClientPipelinedMin
+    , chainSyncClientPipelinedLowHigh
     ) where
 
+import           Control.Exception (assert)
 import           Control.Monad.Class.MonadSTM.Strict
 
 import           Network.TypedProtocol.Pipelined
@@ -27,8 +29,8 @@ import           Ouroboros.Network.Protocol.ChainSync.Examples (Client (..))
 -- | Pipeline decision: we can do either one of these:
 --
 -- * non-pipelined request
--- * pipline a request
--- * collect or pipline, but only when there are pipelined requests
+-- * pipeline a request
+-- * collect or pipeline, but only when there are pipelined requests
 -- * collect, as above, only when tere are pipelined requests
 --
 -- There might be other useful pipelining scenarios: collect a given number of
@@ -41,7 +43,7 @@ data PipelineDecision n where
     Collect           :: PipelineDecision (S n)
 
 
--- | Make pipeline decision gets the following arguments:
+-- | The callback gets the following arguments:
 --
 -- * how many requests are not yet collected (in flight or
 --   already queued)
@@ -54,10 +56,33 @@ data PipelineDecision n where
 -- 'MsgRollBackward' which rollbacks one block and makes client's tip and
 -- server's tip differ.
 --
--- In this module we implement two pipelining strategies: 'pipelineDecisionMax'
--- and 'pipelineDecisionMin'.
+-- In this module we implement three pipelining strategies:
 --
-type MkPipelineDecision n = Nat n -> BlockNo -> BlockNo -> PipelineDecision n
+-- * 'pipelineDecisionMax'
+-- * 'pipelineDecisionMin'
+-- * 'pipelineDecisionLowHighMark'
+--
+data MkPipelineDecision where
+     MkPipelineDecision
+       :: (forall n. Nat n
+                  -> BlockNo
+                  -> BlockNo
+                  -> (PipelineDecision n, MkPipelineDecision))
+       -> MkPipelineDecision
+
+runPipelineDecision
+    :: MkPipelineDecision
+    -> Nat n -> BlockNo -> BlockNo
+    -> (PipelineDecision n, MkPipelineDecision)
+runPipelineDecision (MkPipelineDecision f) n clientTipBlockNo serverTipBlockNo =
+    f n clientTipBlockNo serverTipBlockNo
+
+
+constantPipelineDecision
+   :: (forall n. Nat n -> BlockNo -> BlockNo -> PipelineDecision n)
+   -> MkPipelineDecision
+constantPipelineDecision f = MkPipelineDecision
+  $ \n clientTipBlockNo serverTipBlockNo -> (f n clientTipBlockNo serverTipBlockNo, constantPipelineDecision f)
 
 
 -- | Present maximal pipelining of at most @omax@ requests.  Collect responses
@@ -79,7 +104,7 @@ type MkPipelineDecision n = Nat n -> BlockNo -> BlockNo -> PipelineDecision n
 --    Collect
 -- @
 --
-pipelineDecisionMax :: Int -> MkPipelineDecision n
+pipelineDecisionMax :: Int -> Nat n -> BlockNo -> BlockNo -> PipelineDecision n
 pipelineDecisionMax omax n cliTipBlockNo srvTipBlockNo =
     case n of
       Zero   -- We are at most one block away from the server's tip.
@@ -116,7 +141,8 @@ pipelineDecisionMax omax n cliTipBlockNo srvTipBlockNo =
 -- | Present minimum pipelining of at most @omax@ requests, collect responses
 -- eagerly.
 --
-pipelineDecisionMin :: Int -> MkPipelineDecision n
+
+pipelineDecisionMin :: Int -> Nat n -> BlockNo -> BlockNo -> PipelineDecision n
 pipelineDecisionMin omax n cliTipBlockNo srvTipBlockNo =
     case n of
       Zero   -- We are at most one block away from the server's tip.
@@ -144,6 +170,64 @@ pipelineDecisionMin omax n cliTipBlockNo srvTipBlockNo =
     omax' = fromIntegral omax
 
 
+-- | Pipelinging strategy which pipelines up to highMark requests; if the number
+-- of pipelined messages exeeds the high mark it collects messages until there
+-- are at most lowMark outstanding requests.
+--
+pipelineDecisionLowHighMark :: Int -> Int -> MkPipelineDecision
+pipelineDecisionLowHighMark lowMark highMark =
+    assert (lowMark <= highMark) goLow
+  where
+    goZero :: Nat Z -> BlockNo -> BlockNo -> (PipelineDecision Z, MkPipelineDecision)
+    goZero Zero clientTipBlockNo serverTipBlockNo
+      | clientTipBlockNo + 1 == serverTipBlockNo
+      = (Request, goLow)
+
+      | otherwise
+      = (Pipeline, goLow)
+
+    -- mutually recursive pipeline decision strategies; we start with `goLow`,
+    -- when we go above the high mark, switch to `goHigh`, switch back to
+    -- `gotLow` when we go below low mark.
+    goLow, goHigh  :: MkPipelineDecision
+
+    goLow = MkPipelineDecision $
+      \n clientTipBlockNo serverTipBlockNo ->
+        case n of
+          Zero   -> goZero n clientTipBlockNo serverTipBlockNo
+
+          Succ{} | clientTipBlockNo + n' >= serverTipBlockNo
+                 -> (Collect, goLow)
+
+                 | n' >= highMark'
+                 -> (Collect, goHigh)
+
+                 | otherwise
+                 -> (CollectOrPipeline, goLow)
+            where
+              n' :: BlockNo
+              n' = fromIntegral (int n)
+
+    goHigh = MkPipelineDecision $
+      \n clientTipBlockNo serverTipBlockNo ->
+      case n of
+        Zero   -> goZero n clientTipBlockNo serverTipBlockNo  
+
+        Succ{} -> 
+            if n' > lowMark'
+              then (Collect,           goHigh)
+              else (CollectOrPipeline, goLow)
+          where
+            n' :: BlockNo
+            n' = fromIntegral (int n)
+
+    lowMark' :: BlockNo
+    lowMark' = fromIntegral lowMark
+
+    highMark' :: BlockNo
+    highMark' = fromIntegral highMark
+
+
 -- | Type which represents tip of server's chain.
 --
 type Tip header = (Point header, BlockNo)
@@ -155,11 +239,11 @@ chainSyncClientPipelined
          ( HasHeader header
          , MonadSTM m
          )
-      => (forall n. MkPipelineDecision n)
+      => MkPipelineDecision
       -> StrictTVar m (Chain header)
       -> Client header (Tip header) m a
       -> ChainSyncClientPipelined header (Tip header) m a
-chainSyncClientPipelined pipelineDecision chainvar =
+chainSyncClientPipelined mkPipelineDecision0 chainvar =
     ChainSyncClientPipelined . fmap initialise . getChainPoints
   where
     initialise :: ([Point header], Client header (Tip header) m a)
@@ -171,14 +255,15 @@ chainSyncClientPipelined pipelineDecision chainvar =
       ClientPipelinedStIntersect {
         recvMsgIntersectFound    = \_ srvTip -> do
           cliTipBlockNo <- Chain.headBlockNo <$> atomically (readTVar chainvar)
-          pure $ go Zero cliTipBlockNo srvTip client,
+          pure $ go mkPipelineDecision0 Zero cliTipBlockNo srvTip client,
         recvMsgIntersectNotFound = \  srvTip -> do
           cliTipBlockNo <- Chain.headBlockNo <$> atomically (readTVar chainvar)
-          pure $ go Zero cliTipBlockNo srvTip client
+          pure $ go mkPipelineDecision0 Zero cliTipBlockNo srvTip client
       }
 
-    -- Drive pipelining by using @pipelineDecision@ callback.
-    go :: Nat n
+    -- Drive pipelining by using @mkPipelineDecision@ callback.
+    go :: MkPipelineDecision
+       -> Nat n
        -> BlockNo
        -- ^ our head
        -> Tip header
@@ -186,9 +271,9 @@ chainSyncClientPipelined pipelineDecision chainvar =
        -> Client header (Tip header) m a
        -> ClientPipelinedStIdle n header (Tip header) m a
 
-    go n cliTipBlockNo srvTip@(_, srvTipBlockNo) client@Client {rollforward, rollbackward} =
-      case (n, pipelineDecision n cliTipBlockNo srvTipBlockNo) of
-        (_Zero, Request) ->
+    go mkPipelineDecision n cliTipBlockNo srvTip@(_, srvTipBlockNo) client@Client {rollforward, rollbackward} =
+      case (n, runPipelineDecision mkPipelineDecision n cliTipBlockNo srvTipBlockNo) of
+        (_Zero, (Request, mkPipelineDecision')) ->
           SendMsgRequestNext
               clientStNext
               -- We received 'MsgAwaitReplay' and we get a chance to run
@@ -202,42 +287,42 @@ chainSyncClientPipelined pipelineDecision chainvar =
                     choice <- rollforward srvHeader
                     pure $ case choice of
                       Left a        -> SendMsgDone a
-                      Right client' -> go n (blockNo srvHeader) srvTip' client',
+                      Right client' -> go mkPipelineDecision' n (blockNo srvHeader) srvTip' client',
                   recvMsgRollBackward = \pRollback srvTip' -> do
                     cliTipBlockNo' <- rollback pRollback
                     choice <- rollbackward pRollback srvTip'
                     pure $ case choice of
                       Left a        -> SendMsgDone a
-                      Right client' -> go n cliTipBlockNo' srvTip' client'
+                      Right client' -> go mkPipelineDecision' n cliTipBlockNo' srvTip' client'
                 }
 
-        (_, Pipeline) ->
+        (_, (Pipeline, mkPipelineDecision')) ->
           SendMsgRequestNextPipelined
-            (go (Succ n) cliTipBlockNo srvTip client)
+            (go mkPipelineDecision' (Succ n) cliTipBlockNo srvTip client)
 
-        (Succ n', CollectOrPipeline) ->
+        (Succ n', (CollectOrPipeline, mkPipelineDecision')) ->
           CollectResponse
             -- if there is no message we pipeline next one; it is important we
             -- do not directly loop here, but send something; otherwise we
             -- would just build a busy loop polling the driver's receiving
             -- queue.
-            (Just $ SendMsgRequestNextPipelined $ go (Succ n) cliTipBlockNo srvTip client)
+            (Just $ SendMsgRequestNextPipelined $ go mkPipelineDecision' (Succ n) cliTipBlockNo srvTip client)
             ClientStNext {
                 recvMsgRollForward = \srvHeader srvTip' -> do
                   addBlock srvHeader
                   choice <- rollforward srvHeader
                   pure $ case choice of
-                    Left a         -> collectAndDone n' a
-                    Right client' -> go n' (blockNo srvHeader) srvTip' client',
+                    Left a        -> collectAndDone n' a
+                    Right client' -> go mkPipelineDecision' n' (blockNo srvHeader) srvTip' client',
                 recvMsgRollBackward = \pRollback srvTip' -> do
                   cliTipBlockNo' <- rollback pRollback
                   choice <- rollbackward pRollback srvTip'
                   pure $ case choice of
-                    Left a         -> collectAndDone n' a
-                    Right client' -> go n' cliTipBlockNo' srvTip' client'
+                    Left a        -> collectAndDone n' a
+                    Right client' -> go mkPipelineDecision' n' cliTipBlockNo' srvTip' client'
               }
 
-        (Succ n', Collect) ->
+        (Succ n', (Collect, mkPipelineDecision')) ->
           CollectResponse
             Nothing
             ClientStNext {
@@ -245,14 +330,14 @@ chainSyncClientPipelined pipelineDecision chainvar =
                   addBlock srvHeader
                   choice <- rollforward srvHeader
                   pure $ case choice of
-                    Left a         -> collectAndDone n' a
-                    Right client' -> go n' (blockNo srvHeader) srvTip' client',
+                    Left a        -> collectAndDone n' a
+                    Right client' -> go mkPipelineDecision' n' (blockNo srvHeader) srvTip' client',
                 recvMsgRollBackward = \pRollback srvTip' -> do
                   cliTipBlockNo' <- rollback pRollback
                   choice <- rollbackward pRollback srvTip'
                   pure $ case choice of
-                    Left a         -> collectAndDone n' a
-                    Right client' -> go n' cliTipBlockNo' srvTip' client'
+                    Left a        -> collectAndDone n' a
+                    Right client' -> go mkPipelineDecision' n' cliTipBlockNo' srvTip' client'
               }
 
 
@@ -370,9 +455,9 @@ chainSyncClientPipelinedMax
       -> StrictTVar m (Chain header)
       -> Client header (Tip header) m a
       -> ChainSyncClientPipelined header (Tip header) m a
-chainSyncClientPipelinedMax omax = chainSyncClientPipelined (pipelineDecisionMax omax)
+chainSyncClientPipelinedMax omax = chainSyncClientPipelined (constantPipelineDecision $ pipelineDecisionMax omax)
 
--- | A pipelined chain-sycn client that piplines at most @omax@ requests and
+-- | A pipelined chain-sycn client that pipelines at most @omax@ requests and
 -- always tries to collect any replies as soon as they are available.   This
 -- keeps pipelineing to bare minimum, and gives maximum choice to the
 -- environment (drivers).
@@ -423,4 +508,19 @@ chainSyncClientPipelinedMin
       -> StrictTVar m (Chain header)
       -> Client header (Tip header) m a
       -> ChainSyncClientPipelined header (Tip header) m a
-chainSyncClientPipelinedMin omax = chainSyncClientPipelined (pipelineDecisionMin omax)
+chainSyncClientPipelinedMin omax = chainSyncClientPipelined (constantPipelineDecision $ pipelineDecisionMin omax)
+
+
+chainSyncClientPipelinedLowHigh
+      :: forall header m a.
+         ( HasHeader header
+         , MonadSTM m
+         )
+      => Int
+      -- ^ low mark
+      -> Int
+      -- ^ high mark
+      -> StrictTVar m (Chain header)
+      -> Client header (Tip header) m a
+      -> ChainSyncClientPipelined header (Tip header) m a
+chainSyncClientPipelinedLowHigh lowMark highMark = chainSyncClientPipelined (pipelineDecisionLowHighMark lowMark highMark)
