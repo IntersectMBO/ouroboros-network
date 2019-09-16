@@ -25,6 +25,7 @@ import           Test.Tasty.QuickCheck
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork (MonadFork)
 import           Control.Monad.Class.MonadSay
+import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
@@ -43,7 +44,7 @@ import           Ouroboros.Network.MockChain.ProducerState (chainState,
 import qualified Ouroboros.Network.MockChain.ProducerState as CPS
 import           Ouroboros.Network.Point (WithOrigin (..), blockPointHash,
                      blockPointSlot)
-import           Ouroboros.Network.Protocol.ChainSync.Client
+import           Ouroboros.Network.Protocol.ChainSync.ClientPipelined
 import           Ouroboros.Network.Protocol.ChainSync.Codec (codecChainSyncId)
 import           Ouroboros.Network.Protocol.ChainSync.Examples
 import           Ouroboros.Network.Protocol.ChainSync.Server
@@ -247,7 +248,7 @@ runChainSync securityParam maxClockSkew (ClientUpdates clientUpdates)
 
         client :: StrictTVar m (CandidateState TestBlock)
                -> AnchoredFragment (Header TestBlock)
-               -> Consensus ChainSyncClient
+               -> Consensus ChainSyncClientPipelined
                     TestBlock
                     tip
                     m
@@ -315,8 +316,8 @@ runChainSync securityParam maxClockSkew (ClientUpdates clientUpdates)
            serverId $ \varCandidate curChain -> do
              atomically $ modifyTVar varFinalCandidates $
                Map.insert serverId varCandidate
-             runPeer nullTracer codecChainSyncId serverId clientChannel
-                    (chainSyncClientPeer (client varCandidate curChain))
+             runPipelinedPeer nullTracer codecChainSyncId serverId clientChannel
+                    (chainSyncClientPeerPipelined (client varCandidate curChain))
         `catch` \(e :: ChainSyncException tip) -> do
           -- TODO: Is this necessary? Wouldn't the Async's internal MVar do?
           atomically $ writeTVar varClientException (Just e)

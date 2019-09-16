@@ -59,7 +59,7 @@ import           Ouroboros.Network.Protocol.BlockFetch.Codec
 import           Ouroboros.Network.Protocol.BlockFetch.Server (BlockFetchServer,
                      blockFetchServerPeer)
 import           Ouroboros.Network.Protocol.BlockFetch.Type (BlockFetch (..))
-import           Ouroboros.Network.Protocol.ChainSync.Client
+import           Ouroboros.Network.Protocol.ChainSync.ClientPipelined
 import           Ouroboros.Network.Protocol.ChainSync.Codec
 import           Ouroboros.Network.Protocol.ChainSync.Server
 import           Ouroboros.Network.Protocol.ChainSync.Type
@@ -90,7 +90,6 @@ import           Ouroboros.Consensus.Util.ResourceRegistry
 
 import qualified Ouroboros.Storage.ChainDB.API as ChainDB
 
-
 -- | The collection of all the mini-protocol handlers provided by the consensus
 -- layer.
 --
@@ -102,7 +101,7 @@ data ProtocolHandlers m peer blk = ProtocolHandlers {
       phChainSyncClient
         :: StrictTVar m (CandidateState blk)
         -> AnchoredFragment (Header blk)
-        -> ChainSyncClient (Header blk) (Point (Header blk)) m Void
+        -> ChainSyncClientPipelined (Header blk) (Point (Header blk)) m Void
         -- TODO: we should consider either bundling these context paramaters
         -- into a record, or extending the protocol handler representation
         -- to support bracket-style initialisation so that we could have the
@@ -452,12 +451,12 @@ consensusNetworkApps kernel ProtocolTracers {..} ProtocolCodecs {..} ProtocolHan
           (ChainDB.getIsInvalidBlock (getChainDB kernel))
           (getNodeCandidates kernel)
           them $ \varCandidate curChain ->
-        runPeer
+        runPipelinedPeer
           ptChainSyncTracer
           pcChainSyncCodec
           them
           channel
-          $ chainSyncClientPeer
+          $ chainSyncClientPeerPipelined
           $ phChainSyncClient varCandidate curChain
 
     naChainSyncServer
