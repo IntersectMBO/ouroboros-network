@@ -1,6 +1,6 @@
 {-# LANGUAGE BangPatterns        #-}
-{-# LANGUAGE GADTs               #-}
 {-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE GADTs               #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -13,220 +13,17 @@ module Ouroboros.Network.Protocol.ChainSync.ExamplesPipelined
     , chainSyncClientPipelinedLowHigh
     ) where
 
-import           Control.Exception (assert)
 import           Control.Monad.Class.MonadSTM.Strict
 
 import           Network.TypedProtocol.Pipelined
 
-import           Ouroboros.Network.Block (HasHeader (..), BlockNo)
+import           Ouroboros.Network.Block (BlockNo, HasHeader (..))
 import           Ouroboros.Network.MockChain.Chain (Chain (..), Point (..))
 import qualified Ouroboros.Network.MockChain.Chain as Chain
 
 import           Ouroboros.Network.Protocol.ChainSync.ClientPipelined
 import           Ouroboros.Network.Protocol.ChainSync.Examples (Client (..))
-
-
--- | Pipeline decision: we can do either one of these:
---
--- * non-pipelined request
--- * pipeline a request
--- * collect or pipeline, but only when there are pipelined requests
--- * collect, as above, only when tere are pipelined requests
---
--- There might be other useful pipelining scenarios: collect a given number of
--- requests (whihc als can be used to collect all outstanding requests).
---
-data PipelineDecision n where
-    Request           :: PipelineDecision Z
-    Pipeline          :: PipelineDecision n
-    CollectOrPipeline :: PipelineDecision (S n)
-    Collect           :: PipelineDecision (S n)
-
-
--- | The callback gets the following arguments:
---
--- * how many requests are not yet collected (in flight or
---   already queued)
--- * block nubmer of client's tip
--- * block nubmer of server's tip
---
--- Client' tip block number and server' tip block number can only be equal
--- (from client's perspective) when both client's and server's tip headers
--- agree.  If they would not agree (server forked), then the server sends
--- 'MsgRollBackward' which rollbacks one block and makes client's tip and
--- server's tip differ.
---
--- In this module we implement three pipelining strategies:
---
--- * 'pipelineDecisionMax'
--- * 'pipelineDecisionMin'
--- * 'pipelineDecisionLowHighMark'
---
-data MkPipelineDecision where
-     MkPipelineDecision
-       :: (forall n. Nat n
-                  -> BlockNo
-                  -> BlockNo
-                  -> (PipelineDecision n, MkPipelineDecision))
-       -> MkPipelineDecision
-
-runPipelineDecision
-    :: MkPipelineDecision
-    -> Nat n -> BlockNo -> BlockNo
-    -> (PipelineDecision n, MkPipelineDecision)
-runPipelineDecision (MkPipelineDecision f) n clientTipBlockNo serverTipBlockNo =
-    f n clientTipBlockNo serverTipBlockNo
-
-
-constantPipelineDecision
-   :: (forall n. Nat n -> BlockNo -> BlockNo -> PipelineDecision n)
-   -> MkPipelineDecision
-constantPipelineDecision f = MkPipelineDecision
-  $ \n clientTipBlockNo serverTipBlockNo -> (f n clientTipBlockNo serverTipBlockNo, constantPipelineDecision f)
-
-
--- | Present maximal pipelining of at most @omax@ requests.  Collect responses
--- either when we are at the same block number as the server or when we sent
--- more than @omax@ requests.
---
--- If @omax = 3@ this pipelining strategy will generate a sequence:
--- @
---    Pipeline
---    Pipeline
---    Pipeline
---    Collect
---    Pipeline
---    Collect
---    ....
---    Pipeline
---    Collect
---    Collect
---    Collect
--- @
---
-pipelineDecisionMax :: Int -> Nat n -> BlockNo -> BlockNo -> PipelineDecision n
-pipelineDecisionMax omax n cliTipBlockNo srvTipBlockNo =
-    case n of
-      Zero   -- We are at most one block away from the server's tip.
-             -- We use equality so that this does not triggered when we are
-             -- ahead of the producer, and it wil send us 'MsgRollBackward'.
-             | cliTipBlockNo + 1 == srvTipBlockNo
-             -> Request
-
-             | otherwise
-             -> Pipeline
-
-      Succ{} -- We pipelined some requests and we are now synchronised or we
-             -- exceeded pipelineing limit, and thus we should await for
-             -- a response.
-             --
-             -- Note: we add @omax'@ to avoid a deadlock in tests.  This
-             -- pielineing strategy collects at this stage a single result,
-             -- this causes @n'@ to drop and we will pipeline next message.
-             -- This assures that when we aproach the end of the chain we will
-             -- collect all outstanding requests without pipelining a request
-             | cliTipBlockNo + n' >= srvTipBlockNo || n' >= omax'
-             -> Collect
-
-             | otherwise
-             -> Pipeline
-  where
-    n' :: BlockNo
-    n' = fromIntegral (int n)
-
-    omax' :: BlockNo
-    omax' = fromIntegral omax
-
-
--- | Present minimum pipelining of at most @omax@ requests, collect responses
--- eagerly.
---
-
-pipelineDecisionMin :: Int -> Nat n -> BlockNo -> BlockNo -> PipelineDecision n
-pipelineDecisionMin omax n cliTipBlockNo srvTipBlockNo =
-    case n of
-      Zero   -- We are at most one block away from the server's tip.
-             -- We use equality so that this does not triggered when we are
-             -- ahead of the producer, and it wil send us 'MsgRollBackward'.
-             | cliTipBlockNo + 1 == srvTipBlockNo
-             -> Request
-
-             | otherwise
-             -> Pipeline
-
-      Succ{} -- We pipelined some requests and we are now synchronised or we
-             -- exceeded pipelineing limit, and thus we should await for
-             -- a response.
-             | cliTipBlockNo + n' >= srvTipBlockNo || n' >= omax'
-             -> Collect
-
-             | otherwise
-             -> CollectOrPipeline
-  where
-    n' :: BlockNo
-    n' = fromIntegral (int n)
-
-    omax' :: BlockNo
-    omax' = fromIntegral omax
-
-
--- | Pipelinging strategy which pipelines up to highMark requests; if the number
--- of pipelined messages exeeds the high mark it collects messages until there
--- are at most lowMark outstanding requests.
---
-pipelineDecisionLowHighMark :: Int -> Int -> MkPipelineDecision
-pipelineDecisionLowHighMark lowMark highMark =
-    assert (lowMark <= highMark) goLow
-  where
-    goZero :: Nat Z -> BlockNo -> BlockNo -> (PipelineDecision Z, MkPipelineDecision)
-    goZero Zero clientTipBlockNo serverTipBlockNo
-      | clientTipBlockNo + 1 == serverTipBlockNo
-      = (Request, goLow)
-
-      | otherwise
-      = (Pipeline, goLow)
-
-    -- mutually recursive pipeline decision strategies; we start with `goLow`,
-    -- when we go above the high mark, switch to `goHigh`, switch back to
-    -- `gotLow` when we go below low mark.
-    goLow, goHigh  :: MkPipelineDecision
-
-    goLow = MkPipelineDecision $
-      \n clientTipBlockNo serverTipBlockNo ->
-        case n of
-          Zero   -> goZero n clientTipBlockNo serverTipBlockNo
-
-          Succ{} | clientTipBlockNo + n' >= serverTipBlockNo
-                 -> (Collect, goLow)
-
-                 | n' >= highMark'
-                 -> (Collect, goHigh)
-
-                 | otherwise
-                 -> (CollectOrPipeline, goLow)
-            where
-              n' :: BlockNo
-              n' = fromIntegral (int n)
-
-    goHigh = MkPipelineDecision $
-      \n clientTipBlockNo serverTipBlockNo ->
-      case n of
-        Zero   -> goZero n clientTipBlockNo serverTipBlockNo  
-
-        Succ{} -> 
-            if n' > lowMark'
-              then (Collect,           goHigh)
-              else (CollectOrPipeline, goLow)
-          where
-            n' :: BlockNo
-            n' = fromIntegral (int n)
-
-    lowMark' :: BlockNo
-    lowMark' = fromIntegral lowMark
-
-    highMark' :: BlockNo
-    highMark' = fromIntegral highMark
-
+import           Ouroboros.Network.Protocol.ChainSync.PipelineDecision
 
 -- | Type which represents tip of server's chain.
 --
@@ -381,12 +178,6 @@ chainSyncClientPipelined mkPipelineDecision0 chainvar =
         let (Just !chain') = Chain.rollback p chain
         writeTVar chainvar chain'
         pure $ Chain.headBlockNo chain'
-
-
--- this isn't supposed to be efficient, it's just for the example
-int :: Nat n -> Int
-int Zero     = 0
-int (Succ n) = succ (int n)
 
 -- | Offsets from the head of the chain to select points on the consumer's
 -- chain to send to the producer. The specific choice here is fibonacci up
