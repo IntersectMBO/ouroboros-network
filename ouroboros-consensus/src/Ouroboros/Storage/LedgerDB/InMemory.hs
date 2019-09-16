@@ -550,6 +550,7 @@ rollback :: forall m l r b e. Monad m
          => LedgerDbConf m l r b e
          -> Word64 -> LedgerDB l r -> m (Maybe (LedgerDB l r))
 rollback cfg n db@LedgerDB{..}
+  | n == 0        = return $ Just db
   | numToKeep < 0 = return Nothing
   | otherwise     = do
       current' <- uncurry computeCurrent $ reapply blocks'
