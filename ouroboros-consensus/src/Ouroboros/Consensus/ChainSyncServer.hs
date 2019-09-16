@@ -8,7 +8,7 @@ module Ouroboros.Consensus.ChainSyncServer
   ( chainSyncHeadersServer
   , chainSyncBlocksServer
     -- * Trace events
-  , TraceChainSyncServerEvent
+  , TraceChainSyncServerEvent (..)
   ) where
 
 import           Control.Monad.Class.MonadSTM
