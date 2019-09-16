@@ -59,6 +59,7 @@
             (hsPkgs.cardano-shell)
             (hsPkgs.cardano-prelude)
             (hsPkgs.process)
+            (hsPkgs.yaml)
             (hsPkgs.QuickCheck)
             (hsPkgs.quickcheck-state-machine)
             (hsPkgs.tree-diff)
@@ -73,7 +74,7 @@
     } // {
     src = (pkgs.lib).mkDefault (pkgs.fetchgit {
       url = "https://github.com/input-output-hk/cardano-shell";
-      rev = "3664336312b064f30530be003c09cbe9de45df1a";
-      sha256 = "1cqy66c2c0nr4i49ciacay720vi0ca7yswr9cabb2zfk7j0l7yml";
+      rev = "18906dd8c109380c4b1fa20ed35100e48135aac3";
+      sha256 = "1w2szfbkachpna80lark1qf6h0rcsnrdq5958h5m4bvylhn6n6fq";
       });
     }
