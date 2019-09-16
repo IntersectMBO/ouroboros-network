@@ -156,6 +156,7 @@ protocolHandlers NodeArgs {btime, maxClockSkew, tracers, maxUnackTxs}
     ProtocolHandlers {
       phChainSyncClient =
         chainSyncClient
+          pointSlot
           (chainSyncClientTracer tracers)
           getNodeConfig
           btime

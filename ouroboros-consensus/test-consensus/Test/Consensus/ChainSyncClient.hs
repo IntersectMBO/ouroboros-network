@@ -253,6 +253,7 @@ runChainSync securityParam maxClockSkew (ClientUpdates clientUpdates)
                     tip
                     m
         client = chainSyncClient
+                   (pointSlot . fst)
                    (Tracer $ say . show)
                    (nodeCfg clientId)
                    btime

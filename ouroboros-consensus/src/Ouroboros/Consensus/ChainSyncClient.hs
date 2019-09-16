@@ -38,8 +38,9 @@ import           Network.TypedProtocol.Pipelined
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment (..))
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block
-import           Ouroboros.Network.Point (WithOrigin (..))
+import           Ouroboros.Network.Point (WithOrigin (..), withOrigin)
 import           Ouroboros.Network.Protocol.ChainSync.ClientPipelined
+import           Ouroboros.Network.Protocol.ChainSync.PipelineDecision
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
@@ -194,7 +195,8 @@ chainSyncClient
        , ProtocolLedgerView blk
        , Exception (ChainSyncClientException blk tip)
        )
-    => Tracer m (TraceChainSyncClientEvent blk tip)
+    => (tip -> WithOrigin SlotNo)
+    -> Tracer m (TraceChainSyncClientEvent blk tip)
     -> NodeConfig (BlockProtocol blk)
     -> BlockchainTime m
     -> ClockSkew                                    -- ^ Maximum clock skew
@@ -203,8 +205,32 @@ chainSyncClient
     -> StrictTVar m (CandidateState blk)            -- ^ Our peer's state var
     -> AnchoredFragment (Header blk)                -- ^ The current chain
     -> Consensus ChainSyncClientPipelined blk tip m
-chainSyncClient tracer cfg btime (ClockSkew maxSkew)
-                getCurrentLedger getIsInvalidBlock varCandidate =
+chainSyncClient = chainSyncClient_ $ pipelineDecisionLowHighMark 200 300
+
+-- | Generalization of 'chainSyncClient_' over pipelining decision
+chainSyncClient_
+    :: forall m blk tip.
+       ( MonadSTM   m
+       , MonadCatch m
+       , MonadThrow (STM m)
+       , ProtocolLedgerView blk
+       , Exception (ChainSyncClientException blk tip)
+       )
+    => MkPipelineDecision
+    -> (tip -> WithOrigin SlotNo)
+    -> Tracer m (TraceChainSyncClientEvent blk tip)
+    -> NodeConfig (BlockProtocol blk)
+    -> BlockchainTime m
+    -> ClockSkew                                    -- ^ Maximum clock skew
+    -> STM m (ExtLedgerState blk)                   -- ^ Get the current ledger state
+    -> STM m (HeaderHash blk -> Bool, Fingerprint)  -- ^ Get the invalid block checker
+    -> StrictTVar m (CandidateState blk)            -- ^ Our peer's state var
+    -> AnchoredFragment (Header blk)                -- ^ The current chain
+    -> Consensus ChainSyncClientPipelined blk tip m
+chainSyncClient_ mkPipelineDecision0
+                 tipSlotNo
+                 tracer cfg btime (ClockSkew maxSkew)
+                 getCurrentLedger getIsInvalidBlock varCandidate =
     \curChain -> ChainSyncClientPipelined (initialise curChain)
   where
     -- Our task: after connecting to an upstream node, try to maintain an
@@ -275,15 +301,17 @@ chainSyncClient tracer cfg btime (ClockSkew maxSkew)
       -- means the candidate is no longer eligible after all.
       let points = AF.selectPoints (map fromIntegral offsets) curChain
       return $ SendMsgFindIntersect points $ ClientPipelinedStIntersect
-        { recvMsgIntersectFound    = intersectFound
-        , recvMsgIntersectNotFound = intersectNotFound
+        { recvMsgIntersectFound    = intersectFound    (AF.headSlot curChain)
+        , recvMsgIntersectNotFound = intersectNotFound (AF.headSlot curChain)
         }
 
     -- One of the points we sent intersected our chain. This intersection
     -- point will become the new tip of the candidate chain.
-    intersectFound :: Point (Header blk) -> tip
+    intersectFound :: WithOrigin SlotNo   -- Our head
+                   -> Point (Header blk)  -- Intersection
+                   -> tip                 -- Their head
                    -> m (Consensus (ClientPipelinedStIdle Z) blk tip m)
-    intersectFound intersection _theirHead = traceException $ atomically $ do
+    intersectFound ourHead intersection theirHead = traceException $ atomically $ do
 
       CandidateState { candidateChain, candidateChainState } <- readTVar varCandidate
       -- Roll back the candidate to the @intersection@.
@@ -319,7 +347,7 @@ chainSyncClient tracer cfg btime (ClockSkew maxSkew)
         { candidateChain      = candidateChain'
         , candidateChainState = candidateChainState'
         }
-      return requestNext
+      return $ requestNext mkPipelineDecision0 Zero ourHead theirHead
 
     -- If the intersection point is unchanged, this means that the best
     -- intersection point was the initial assumption: genesis.
@@ -328,9 +356,10 @@ chainSyncClient tracer cfg btime (ClockSkew maxSkew)
     -- we later optimise this client to also find intersections after
     -- start-up, this code will have to be adapted, as it assumes it is only
     -- called at start-up.
-    intersectNotFound :: tip
+    intersectNotFound :: WithOrigin SlotNo -- Our head
+                      -> tip               -- Their head
                       -> m (Consensus (ClientPipelinedStIdle Z) blk tip m)
-    intersectNotFound theirHead = traceException $ atomically $ do
+    intersectNotFound ourHead theirHead = traceException $ atomically $ do
       curChainState <- ouroborosChainState <$> getCurrentLedger
 
       CandidateState { candidateChain } <- readTVar varCandidate
@@ -353,28 +382,60 @@ chainSyncClient tracer cfg btime (ClockSkew maxSkew)
         { candidateChain       = candidateChain'
         , candidateChainState  = candidateChainState'
         }
-      return requestNext
+      return $ requestNext mkPipelineDecision0 Zero ourHead theirHead
 
-    requestNext :: Consensus (ClientPipelinedStIdle Z) blk tip m
-    requestNext = SendMsgRequestNext
-      handleNext
-      (return handleNext) -- when we have to wait
+    requestNext :: MkPipelineDecision
+                -> Nat n
+                -> WithOrigin SlotNo -- Our head
+                -> tip               -- Their head
+                -> Consensus (ClientPipelinedStIdle n) blk tip m
+    requestNext mkPipelineDecision n ourHead theirHead = do
+        case (n, runPipelineDecision mkPipelineDecision n ourBlockNo theirBlockNo) of
+          (_zero, (Request, mkPipelineDecision')) ->
+            SendMsgRequestNext
+              (handleNext mkPipelineDecision' Zero ourHead)
+              (return $ handleNext mkPipelineDecision' Zero ourHead) -- when we have to wait
+          (_, (Pipeline, mkPipelineDecision')) ->
+            SendMsgRequestNextPipelined
+              (requestNext mkPipelineDecision' (Succ n) ourHead theirHead)
+          (Succ n', (CollectOrPipeline, mkPipelineDecision')) ->
+            CollectResponse
+              (Just $ SendMsgRequestNextPipelined $
+                requestNext mkPipelineDecision' (Succ n) ourHead theirHead)
+              (handleNext mkPipelineDecision' n' ourHead)
+          (Succ n', (Collect, mkPipelineDecision')) ->
+            CollectResponse
+              Nothing
+              (handleNext mkPipelineDecision' n' ourHead)
+      where
+        -- TODO: We fake 'BlockNo' for now, because we don't have easy access
+        -- to 'SlotNo'. We need to think about that and address it.
+        ourBlockNo, theirBlockNo :: BlockNo
+        ourBlockNo   = withOrigin 0 (fromIntegral . unSlotNo) ourHead
+        theirBlockNo = withOrigin 0 (fromIntegral . unSlotNo) (tipSlotNo theirHead)
 
-    handleNext :: Consensus (ClientStNext Z) blk tip m
-    handleNext = ClientStNext
+    handleNext :: MkPipelineDecision
+               -> Nat n
+               -> WithOrigin SlotNo -- Our head
+               -> Consensus (ClientStNext n) blk tip m
+    handleNext mkPipelineDecision n ourHead = ClientStNext
       { recvMsgRollForward  = \hdr theirHead -> do
           traceWith tracer $ TraceDownloadedHeader hdr
-          rollForward hdr theirHead
+          -- We update ourHead in 'rollForward', so we don't pass it here
+          rollForward mkPipelineDecision n hdr theirHead
       , recvMsgRollBackward = \intersection theirHead -> do
           let intersection' :: Point blk
               intersection' = castPoint intersection
           traceWith tracer $ TraceRolledBack intersection'
-          rollBackward intersection' theirHead
+          rollBackward mkPipelineDecision n ourHead intersection' theirHead
       }
 
-    rollForward :: Header blk -> tip
-                -> m (Consensus (ClientPipelinedStIdle Z) blk tip m)
-    rollForward hdr theirHead = traceException $ atomically $ do
+    rollForward :: MkPipelineDecision
+                -> Nat n
+                -> Header blk
+                -> tip
+                -> m (Consensus (ClientPipelinedStIdle n) blk tip m)
+    rollForward mkPipelineDecision n hdr theirHead = traceException $ atomically $ do
       -- Reject the block if invalid
       let hdrHash  = headerHash hdr
           hdrPoint = headerPoint hdr
@@ -474,11 +535,15 @@ chainSyncClient tracer cfg btime (ClockSkew maxSkew)
         { candidateChain      = candidateChain :> hdr
         , candidateChainState = candidateChainState'
         }
-      return requestNext
+      return $ requestNext mkPipelineDecision n (pointSlot ourTip) theirHead
 
-    rollBackward :: Point blk -> tip
-                 -> m (Consensus (ClientPipelinedStIdle Z) blk tip m)
-    rollBackward intersection theirHead = traceException $ atomically $ do
+    rollBackward :: MkPipelineDecision
+                 -> Nat n
+                 -> WithOrigin SlotNo -- Our head
+                 -> Point blk
+                 -> tip
+                 -> m (Consensus (ClientPipelinedStIdle n) blk tip m)
+    rollBackward mkPipelineDecision n ourHead intersection theirHead = traceException $ atomically $ do
       CandidateState {..} <- readTVar varCandidate
 
       (candidateChain', candidateChainState') <-
@@ -515,7 +580,7 @@ chainSyncClient tracer cfg btime (ClockSkew maxSkew)
         { candidateChain      = candidateChain'
         , candidateChainState = candidateChainState'
         }
-      return requestNext
+      return $ requestNext mkPipelineDecision n ourHead theirHead
 
     -- | Disconnect from the upstream node by throwing the given exception.
     -- The cleanup is handled in 'bracketChainSyncClient'.
