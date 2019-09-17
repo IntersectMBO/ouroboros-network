@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP                 #-}
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE PolyKinds           #-}
@@ -23,7 +24,11 @@ import qualified Network.Mux.Types as Mx
 import qualified Network.Mux.Codec as Mx
 import qualified Network.Mux.Interface as Mx
 import qualified Network.Mux.Time as Mx
+import           Network.Mux.Win32.InterruptibleRead
 
+import           Network.Mux.Bearer.Socket (hexDump) -- XXX
+
+import Text.Printf
 
 pipeAsMuxBearer
   :: forall ptcl.
@@ -48,22 +53,34 @@ pipeAsMuxBearer pcRead pcWrite = do
       readPipe :: (HasCallStack)
                => IO (Mx.MuxSDU ptcl, Time IO)
       readPipe = do
+          printf "read pipe!\n"
           hbuf <- recvLen' pcRead 8 []
+          hexDump hbuf "read header: "
           case Mx.decodeMuxSDU hbuf of
-              Left e     -> throwM e
+              Left e     -> do
+                  printf "failed to decode mux header %s" (show e)
+                  throwM e
               Right header -> do
-                  --say $ printf "decoded mux header, goint to read %d bytes" (Mx.msLength header)
+                  printf "decoded mux header, goint to read %d bytes\n" (Mx.msLength header)
                   blob <- recvLen' pcRead (fromIntegral $ Mx.msLength header) []
                   ts <- getMonotonicTime
-                  --hexDump blob ""
+                  hexDump blob ""
                   return (header {Mx.msBlob = blob}, ts)
 
       recvLen' :: Handle -> Int -> [BL.ByteString] -> IO BL.ByteString
       recvLen' _ 0 bufs = return $ BL.concat $ reverse bufs
       recvLen' pd l bufs = do
+#if defined(mingw32_HOST_OS)
+          bufStrict <- iread pd l
+          let buf = BL.fromStrict bufStrict
+#else
           buf <- BL.hGet pd l
+#endif
           if BL.null buf
-              then throwM $ Mx.MuxError Mx.MuxBearerClosed "Pipe closed when reading data" callStack
+              then do 
+                printf "Pipe closed"
+                return BL.empty
+                --throwM $ Mx.MuxError Mx.MuxBearerClosed "Pipe closed when reading data" callStack
               else recvLen' pd (l - fromIntegral (BL.length buf)) (buf : bufs)
 
       writePipe :: Mx.MuxSDU ptcl
@@ -73,7 +90,13 @@ pipeAsMuxBearer pcRead pcWrite = do
           let ts32 = Mx.timestampMicrosecondsLow32Bits ts
               sdu' = sdu { Mx.msTimestamp = Mx.RemoteClockModel ts32 }
               buf  = Mx.encodeMuxSDU sdu'
-          BL.hPut pcWrite buf
+          hexDump buf "Pipe writing "
+          we <- try $ BL.hPut pcWrite buf
+          case we of
+               Left (e::SomeException) -> do
+                   printf "hPut failed with %s\n" (show e)
+                   throwM e
+               Right _ -> printf "Wrote done\n"
           hFlush pcWrite
           return ts
 

@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE CPP                 #-}
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE RankNTypes          #-}
@@ -8,13 +9,15 @@ module Ouroboros.Network.Snocket where
 
 import           Control.Monad (when)
 import           Control.Monad.Class.MonadSTM
-import qualified Network.Socket as Socket hiding (recv)
+import qualified Network.Socket as Socket
 #if defined(mingw32_HOST_OS)
 import           Data.Bits
 import           System.IO
 import           System.Win32
 import           System.Win32.NamedPipes
 #endif
+
+import Text.Printf
 
 import qualified Network.Mux as Mx
 import           Network.Mux.Types (MuxBearer)
@@ -93,6 +96,7 @@ namedPipeSnocket
   -> Snocket NamedPipe String ptcl
 namedPipeSnocket readName writeName = Snocket {
       createClient = do
+        printf "snocket create client\n"
         r <- createFile readName
                        (gENERIC_READ .|. gENERIC_WRITE)
                        fILE_SHARE_NONE
@@ -109,6 +113,7 @@ namedPipeSnocket readName writeName = Snocket {
                        Nothing
         return $ NamedPipeMature r w
     , createServer = do
+        printf "snocket create server\n"
         (r, w) <- create
         np <- newTMVarM (r, w)
         return $ NamedPipeLarva np
@@ -118,20 +123,25 @@ namedPipeSnocket readName writeName = Snocket {
     , getRemoteAddr = \_ -> return $ readName ++ writeName
     , close = (\case
       NamedPipeMature rh wh -> do
+        printf "snocket closing mature\n"
         rh' <- pipeToHandle rh readName ReadWriteMode
         hClose rh'
         wh' <- pipeToHandle wh writeName ReadWriteMode
         hClose wh'
+        printf "snocket mature closed\n"
       NamedPipeLarva v -> do
+          printf "snocket closing larval\n"
           (r, w) <- atomically $ takeTMVar v
           rh' <- pipeToHandle r readName ReadWriteMode
           hClose rh'
           wh' <- pipeToHandle w writeName ReadWriteMode
           hClose wh'
+          printf "snocket larval closed\n"
      )
     , accept = (\case
       NamedPipeMature _ _ -> error "Don't accept on connected named pipes" -- XXX
       NamedPipeLarva v -> do
+        printf "snocket accept\n"
         (rh, wh) <- atomically $ takeTMVar v
         connectNamedPipe rh Nothing
         connectNamedPipe wh Nothing
@@ -148,7 +158,7 @@ namedPipeSnocket readName writeName = Snocket {
     }
   where
     create = do
-        r <- createNamedPipe readName
+        !r <- createNamedPipe readName
                            pIPE_ACCESS_DUPLEX
                            (pIPE_TYPE_BYTE .|. pIPE_READMODE_BYTE)
                            pIPE_UNLIMITED_INSTANCES
@@ -156,7 +166,7 @@ namedPipeSnocket readName writeName = Snocket {
                            512
                            0
                            Nothing
-        w <- createNamedPipe writeName
+        !w <- createNamedPipe writeName
                            pIPE_ACCESS_DUPLEX
                            (pIPE_TYPE_BYTE .|. pIPE_READMODE_BYTE)
                            pIPE_UNLIMITED_INSTANCES

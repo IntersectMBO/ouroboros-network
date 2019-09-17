@@ -48,6 +48,10 @@ library
                        Network.Mux.Bearer.Pipe
                        Network.Mux.Bearer.Queues
                        Network.Mux.Bearer.Socket
+  if os(windows)
+    exposed-modules:
+                       Network.Mux.Win32.InterruptibleRead
+
   default-language:    Haskell2010
 
 test-suite test-network-mux

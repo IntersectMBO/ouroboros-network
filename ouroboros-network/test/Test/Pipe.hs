@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -24,16 +25,13 @@ import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
 import           Text.Show.Functions ()
 
-#if defined(mingw32_HOST_OS)
-import           System.IO (Handle)
-#endif
-
 import           Codec.SerialiseTerm
 import           Control.Tracer
 
 import           Ouroboros.Network.Mux
 import qualified Network.Mux as Mx
 import qualified Network.Mux.Bearer.Pipe as Mx
+import           Network.Mux.Types (MuxBearer)
 
 import           Network.TypedProtocol.Driver
 import qualified Network.TypedProtocol.ReqResp.Client as ReqResp
@@ -55,6 +53,8 @@ import           Ouroboros.Network.Protocol.Handshake.Version (simpleSingletonVe
 import qualified Ouroboros.Network.Snocket as Snocket
 import           Ouroboros.Network.Socket as Socket
 
+import Text.Printf
+
 --
 -- The list of all tests
 --
@@ -68,7 +68,8 @@ tests =
                   - a deadlock when we attempt to cancel a thread that
                   - is blocked in hPut().
                   -}
-                 -- , testProperty "named pipes" prop_pipe_send_recv_
+                 --  testProperty "namedpipe sync demo" prop_namedpipe_demo
+                 --  testProperty "named pipes" prop_pipe_send_recv_
                  ]
 #else
       testGroup "Pipe"
@@ -83,6 +84,7 @@ tests =
 prop_pipe_demo :: TestBlockChainAndUpdates -> Property
 prop_pipe_demo (TestBlockChainAndUpdates chain updates) =
     ioProperty $ anonymousPipesDemo chain updates
+
 
 defaultMiniProtocolLimit :: Int64
 defaultMiniProtocolLimit = 3000000
@@ -124,24 +126,50 @@ anonymousPipesDemo :: forall block .
 anonymousPipesDemo chain0 updates = do
     (hndRead1, hndWrite1) <- createPipe
     (hndRead2, hndWrite2) <- createPipe
-    demo hndRead1 hndWrite1 hndRead2 hndWrite2 chain0 updates
+    b1 <- Mx.pipeAsMuxBearer hndRead1 hndWrite2
+    b2 <- Mx.pipeAsMuxBearer hndRead2 hndWrite1
+    demo b1 b2 chain0 updates
 
 #if defined(mingw32_HOST_OS)
 
-clientName :: String
-clientName = "\\\\.\\pipe\\named-client"
+_clientName :: String
+_clientName = "\\\\.\\pipe\\named-client"
 
-serverName :: String
-serverName = "\\\\.\\pipe\\named-server"
+_serverName :: String
+_serverName = "\\\\.\\pipe\\named-server"
 
-prop_pipe_send_recv_ :: (Int -> Int -> (Int, Int))
+_prop_namedpipe_demo :: Positive Int -> TestBlockChainAndUpdates -> Property
+_prop_namedpipe_demo (Positive sn) (TestBlockChainAndUpdates chain updates) =
+    ioProperty $ _namedPipesDemo sn chain updates
+
+_namedPipesDemo :: forall block .
+        ( Chain.HasHeader block, Serialise (Chain.HeaderHash block), Serialise block, Eq block
+        , Show block)
+     => Int -> Chain block -> [ChainUpdate block block] -> IO Bool
+_namedPipesDemo x chain0 updates = do
+    let client = Snocket.namedPipeSnocket _clientName (_serverName ++ show x)
+        server = Snocket.namedPipeSnocket (_serverName ++ show x) _clientName
+
+    !s <- Snocket.createServer server
+    c <- Snocket.createClient client
+    (as,n) <- Snocket.accept server s
+    printf "connected with %s\n" $ show n
+    b1 <- Snocket.toBearer client c
+    b2 <- Snocket.toBearer server as
+    r <- demo b1 b2 chain0 updates
+    Snocket.close server s
+    Snocket.close client c
+    Snocket.close server as
+    return r
+
+_prop_pipe_send_recv :: (Int -> Int -> (Int, Int))
                       -> [Int]
                       -> Property
-prop_pipe_send_recv_ f xs = ioProperty $ do
-
+_prop_pipe_send_recv f xs = ioProperty $ do
     cv <- newEmptyTMVarM
     sv <- newEmptyTMVarM
     tbl <- newConnectionTable
+    printf "testing with function %s\n" (show f)
 
     {- The siblingVar is used by the initiator and responder to wait on each other before exiting.
      - Without this wait there is a risk that one side will finish first causing the Muxbearer to
@@ -160,6 +188,7 @@ prop_pipe_send_recv_ f xs = ioProperty $ do
                          (ReqResp.reqRespServerPeer (ReqResp.reqRespServerMapAccumL (\a -> pure . f a) 0))
             atomically $ putTMVar sv r
             waitSibling siblingVar
+            printf "responder done\n"
 
         -- Client Node; only req-resp client
         initiatorApp :: OuroborosApplication InitiatorApp () TestProtocols2 IO BL.ByteString () Void
@@ -172,12 +201,13 @@ prop_pipe_send_recv_ f xs = ioProperty $ do
                          (ReqResp.reqRespClientPeer (ReqResp.reqRespClientMap xs))
             atomically $ putTMVar cv r
             waitSibling siblingVar
+            printf "initiator done\n"
 
     res <-
       withSimpleServerNode
         tbl
-        (Snocket.namedPipeSnocket serverName clientName)
-        serverName
+        (Snocket.namedPipeSnocket _serverName _clientName)
+        _serverName
         (\(DictVersion codec) -> encodeTerm codec)
         (\(DictVersion codec) -> decodeTerm codec)
         (\_ _ -> ())
@@ -185,15 +215,20 @@ prop_pipe_send_recv_ f xs = ioProperty $ do
         (simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData 0) (DictVersion nodeToNodeCodecCBORTerm) responderApp)
         $ \_ _ -> do
           connectToNode
-            (Snocket.namedPipeSnocket clientName serverName)
+            (Snocket.namedPipeSnocket _clientName _serverName)
             (\(DictVersion codec) -> encodeTerm codec)
             (\(DictVersion codec) -> decodeTerm codec)
             nullTracer
             (\_ _ -> ())
             (simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData 0) (DictVersion nodeToNodeCodecCBORTerm) initiatorApp)
-            (Just clientName)
-            serverName
-          atomically $ (,) <$> takeTMVar sv <*> takeTMVar cv
+            (Just _clientName)
+            _serverName
+          printf "ready to take MVars\n"
+          !r <- atomically $ (,) <$> takeTMVar sv <*> takeTMVar cv
+          printf "mvars taken %s\n" (show r)
+          return r
+
+    printf "test case done\n"
 
     return (res == mapAccumL f 0 xs)
 
@@ -211,10 +246,13 @@ prop_pipe_send_recv_ f xs = ioProperty $ do
 -- over a pipe with full message serialisation, framing etc.
 --
 demo :: forall block .
-        ( Chain.HasHeader block, Serialise (Chain.HeaderHash block), Serialise block, Eq block
-        , Show block)
-     => Handle -> Handle -> Handle -> Handle -> Chain block -> [ChainUpdate block block] -> IO Bool
-demo hndRead1 hndWrite1 hndRead2 hndWrite2 chain0 updates = do
+        ( Chain.HasHeader block
+        , Serialise (Chain.HeaderHash block)
+        , Serialise block, Eq block
+        , Show block
+        )
+     => MuxBearer DemoProtocols IO -> MuxBearer DemoProtocols IO -> Chain block -> [ChainUpdate block block] -> IO Bool
+demo b1 b2 chain0 updates = do
 
     producerVar <- atomically $ newTVar (CPS.initChainProducerState chain0)
     consumerVar <- atomically $ newTVar chain0
@@ -242,8 +280,8 @@ demo hndRead1 hndWrite1 hndRead2 hndWrite2 chain0 updates = do
                     (ChainSync.codecChainSync encode (fmap const decode) encode decode)
                     (ChainSync.chainSyncServerPeer server)
 
-    _ <- async $ Mx.runMuxWithPipes "producer" (toApplication producerApp) hndRead1 hndWrite2
-    _ <- async $ Mx.runMuxWithPipes "consumer" (toApplication consumerApp) hndRead2 hndWrite1
+    _ <- async $ Mx.muxStart "producer" (toApplication producerApp) b1
+    _ <- async $ Mx.muxStart "consumer" (toApplication consumerApp) b2
 
     void $ fork $ sequence_
         [ do threadDelay 10e-4 -- 1 milliseconds, just to provide interest
