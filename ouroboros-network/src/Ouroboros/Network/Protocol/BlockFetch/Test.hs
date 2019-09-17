@@ -37,7 +37,7 @@ import           Ouroboros.Network.Protocol.BlockFetch.Examples
 import           Ouroboros.Network.Protocol.BlockFetch.Codec
 
 import           Test.ChainGenerators ( TestChainAndPoints (..) )
-import           Test.Ouroboros.Network.Testing.Utils (splits2, splits3)
+import           Test.Ouroboros.Network.Testing.Utils (prop_codec_cborM, splits2, splits3)
 
 import           Test.QuickCheck
 import           Test.Tasty (TestTree, testGroup)
@@ -63,6 +63,7 @@ tests =
   , testProperty "codec 2-splits"      prop_codec_splits2_BlockFetch
   , testProperty "codec 3-splits"    $ withMaxSuccess 30
                                        prop_codec_splits3_BlockFetch
+  , testProperty "codec cbor"          prop_codec_cbor_BlockFetch
   ]
 
 
@@ -350,6 +351,11 @@ prop_codec_splits3_BlockFetch
 prop_codec_splits3_BlockFetch msg =
   runST (prop_codec_splitsM splits3 codec msg)
 
+prop_codec_cbor_BlockFetch
+  :: AnyMessageAndAgency (BlockFetch Block)
+  -> Bool
+prop_codec_cbor_BlockFetch msg =
+  runST (prop_codec_cborM codec msg)
 
 --
 -- Auxilary functions

@@ -43,7 +43,7 @@ import           Ouroboros.Network.Protocol.TxSubmission.Examples
 import           Ouroboros.Network.Protocol.TxSubmission.Server
 import           Ouroboros.Network.Protocol.TxSubmission.Type
 
-import           Test.Ouroboros.Network.Testing.Utils (splits2, splits3)
+import           Test.Ouroboros.Network.Testing.Utils (prop_codec_cborM, splits2, splits3)
 
 import           Test.QuickCheck as QC
 import           Test.Tasty (TestTree, testGroup)
@@ -64,6 +64,7 @@ tests =
   , testProperty "codec 2-splits"      prop_codec_splits2
   , testProperty "codec 3-splits"    $ withMaxSuccess 30
                                        prop_codec_splits3
+  , testProperty "codec cbor"          prop_codec_cbor
   , testProperty "channel ST"          prop_channel_ST
   , testProperty "channel IO"          prop_channel_IO
   , testProperty "pipe IO"             prop_pipe_IO
@@ -318,6 +319,11 @@ prop_codec_splits3 :: AnyMessageAndAgency (TxSubmission TxId Tx) -> Bool
 prop_codec_splits3 msg =
   runST (prop_codec_splitsM splits3 codec msg)
 
+prop_codec_cbor
+  :: AnyMessageAndAgency (TxSubmission TxId Tx)
+  -> Bool
+prop_codec_cbor msg =
+  runST (prop_codec_cborM codec msg)
 
 --
 -- Local generators

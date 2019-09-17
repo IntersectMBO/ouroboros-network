@@ -40,7 +40,7 @@ import           Ouroboros.Network.Protocol.LocalTxSubmission.Examples
 import           Ouroboros.Network.Protocol.LocalTxSubmission.Server
 import           Ouroboros.Network.Protocol.LocalTxSubmission.Type
 
-import           Test.Ouroboros.Network.Testing.Utils (splits2, splits3)
+import           Test.Ouroboros.Network.Testing.Utils (prop_codec_cborM, splits2, splits3)
 
 import           Text.Show.Functions ()
 import           Test.QuickCheck as QC
@@ -61,6 +61,7 @@ tests =
   , testProperty "codec 2-splits"      prop_codec_splits2
   , testProperty "codec 3-splits"    $ withMaxSuccess 30
                                        prop_codec_splits3
+  , testProperty "codec cbor"          prop_codec_cbor
   , testProperty "channel ST"          prop_channel_ST
   , testProperty "channel IO"          prop_channel_IO
   , testProperty "pipe IO"             prop_pipe_IO
@@ -240,3 +241,8 @@ prop_codec_splits3 :: AnyMessageAndAgency (LocalTxSubmission Tx Reject) -> Bool
 prop_codec_splits3 msg =
   runST (prop_codec_splitsM splits3 codec msg)
 
+prop_codec_cbor
+  :: AnyMessageAndAgency (LocalTxSubmission Tx Reject)
+  -> Bool
+prop_codec_cbor msg =
+  runST (prop_codec_cborM codec msg)

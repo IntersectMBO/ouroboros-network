@@ -52,7 +52,7 @@ import           Ouroboros.Network.Testing.ConcreteBlock (Block (..),
                      BlockHeader (..))
 import           Test.ChainGenerators ()
 import           Test.ChainProducerState (ChainProducerStateForkTest (..))
-import           Test.Ouroboros.Network.Testing.Utils (splits2, splits3)
+import           Test.Ouroboros.Network.Testing.Utils (prop_codec_cborM, splits2, splits3)
 
 import           Test.QuickCheck hiding (Result)
 import           Test.Tasty (TestTree, testGroup)
@@ -75,6 +75,7 @@ tests = testGroup "Ouroboros.Network.Protocol.ChainSyncProtocol"
   , testProperty "codec"          prop_codec_ChainSync
   , testProperty "codec 2-splits" prop_codec_splits2_ChainSync
   , testProperty "codec 3-splits" $ withMaxSuccess 30 prop_codec_splits3_ChainSync
+  , testProperty "codec cbor"     prop_codec_cbor
   , testProperty "demo ST" propChainSyncDemoST
   , testProperty "demo IO" propChainSyncDemoIO
   , testProperty "demoPipelinedMax ST" propChainSyncDemoPipelinedMaxST
@@ -399,6 +400,11 @@ prop_codec_splits3_ChainSync msg =
       splits3
       codec
       msg
+prop_codec_cbor
+  :: AnyMessageAndAgency (ChainSync BlockHeader (Point BlockHeader, BlockNo))
+  -> Bool
+prop_codec_cbor msg =
+    ST.runST (prop_codec_cborM codec msg)
 
 chainSyncDemo
   :: forall m.
