@@ -5,6 +5,7 @@
 {-# LANGUAGE ScopedTypeVariables   #-}
 
 module Network.Mux.Ingress (
+    -- $ingress
       demux
     , ingressQueue
     ) where
@@ -28,43 +29,46 @@ negMiniProtocolMode ModeResponder = ModeInitiator
 -- $ingress
 -- = Ingress Path
 --
--- >                  o
--- >                  |
--- >                  | ByteStrings
--- >                  |
--- >                  V
--- >          +-------+-------+
--- >          | Bearer.read() | Mux Bearer implementation (Socket, Pipes, etc.)
--- >          +---------------+
--- >                  |
--- >                  | MuxSDUs
--- >                  |
--- >                  V
--- >          +-------+-------+
--- >          |     demux     | For a given Mux Bearer there is a single demux thread reading from
--- >          +-------+-------+ the underlying berarer.
--- >                  |
--- >            +---+-+--+--+
--- >           /    |    |   \
--- >           v    v    v    v
--- >         |  | |  | |  | |  | There is a limited queue (in bytes) for each mode (responder/initiator) per
--- >         |ci| |  | |bi| |br| miniprotocol. Overflowing a queue is a protocol violation and a
--- >         |ci| |cr| |bi| |br| MuxIngressQueueOverRun exception is thrown and the bearer torn down.
--- >         +--+ +--+ +--+ +--+
--- >          |              |
--- >          | CBOR data    |
--- >          V              |
--- >      +---+-------+ Every ingress queue has a dedicated thread which will read
--- >      | muxDuplex | CBOR encoded data from its queue.
--- >      | Initiator |      |
--- >      | ChainSync |      |
--- >      +-----------+      |
--- >                         V
--- >                    +----+------+
--- >                    | muxDuplex |
--- >                    | Responder |
--- >                    | BlockFetch|
--- >                    +-----------+
+-- >                  ●
+-- >                  │
+-- >                  │ ByteStrings
+-- >                  │
+-- >         ░░░░░░░░░▼░░░░░░░░░
+-- >         ░┌───────────────┐░
+-- >         ░│ Bearer.read() │░ Mux Bearer implementation (Socket, Pipes, etc.)
+-- >         ░└───────────────┘░
+-- >         ░░░░░░░░░│░░░░░░░░░
+-- >                 ░│░         MuxSDUs
+-- >         ░░░░░░░░░▼░░░░░░░░░
+-- >         ░┌───────────────┐░
+-- >         ░│     demux     │░ For a given Mux Bearer there is a single demux
+-- >         ░└───────┬───────┘░ thread reading from the underlying bearer.
+-- >         ░░░░░░░░░│░░░░░░░░░
+-- >                 ░│░
+-- >        ░░░░░░░░░░▼░░░░░░░░░░
+-- >        ░ ╭────┬────┬─────╮ ░ There is a limited queue (in bytes) for each mode
+-- >        ░ │    │    │     │ ░ (responder/initiator) per miniprotocol. Overflowing
+-- >        ░ ▼    ▼    ▼     ▼ ░ a queue is a protocol violation and a
+-- >        ░│  │ │  │ │  │ │  │░ MuxIngressQueueOverRun exception is thrown
+-- >        ░│ci│ │  │ │bi│ │br│░ and the bearer torn down.
+-- >        ░│ci│ │cr│ │bi│ │br│░
+-- >        ░└──┘ └──┘ └──┘ └──┘░ Every ingress queue has a dedicated thread which will
+-- >        ░░│░░░░│░░░░│░░░░│░░░ read application encoded data from its queue.
+-- >          │    │    │    │
+-- >           application data
+-- >          │    │    │    │
+-- >          ▼    │    │    ▼
+-- > ┌───────────┐ │    │  ┌───────────┐
+-- > │ muxDuplex │ │    │  │ muxDuplex │
+-- > │ Initiator │ │    │  │ Responder │
+-- > │ ChainSync │ │    │  │ BlockFetch│
+-- > └───────────┘ │    │  └───────────┘
+-- >               ▼    ▼
+-- >    ┌───────────┐  ┌───────────┐
+-- >    │ muxDuplex │  │ muxDuplex │
+-- >    │ Responder │  │ Initiator │
+-- >    │ ChainSync │  │ BlockFetch│
+-- >    └───────────┘  └───────────┘
 
 -- | demux runs as a single separate thread and reads complete 'MuxSDU's from
 -- the underlying Mux Bearer and forwards it to the matching ingress queue.

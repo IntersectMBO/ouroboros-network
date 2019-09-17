@@ -67,36 +67,39 @@ import           Network.Mux.Types
 -- $egress
 -- = Egress Path
 --
--- > +-----+-----+ +-----+-----+ +-----+-----+ +-----+-----+ Every mode per miniprotocol has a
--- > | muxDuplex | | muxDuplex | | muxDuplex | | muxDuplex | dedicated thread which will
--- > | Initiator | | Responder | | Initiator | | Responder | send ByteStrings of CBOR encoded
--- > | ChainSync | | ChainSync | | BlockFetch| | BlockFetch| data.
--- > +-----+-----+ +-----+-----+ +-----+-----+ +-----+-----+
--- >       |             |             |             |
--- >        \            \            /             /
--- >         -------------------+-------------------
--- >                            | CBOR data
--- >                            V
--- >                          |  | For a given Mux Bearer there is a single egress queue shared
--- >                          |ci| among all miniprotocols. To ensure fairness each miniprotocol
--- >                          |cr| can at most have one message in the queue, see
--- >                          +--+ Desired Servicing Semantics.
--- >                           |
--- >                           V
--- >                        +--+--+ The egress queue is served by a dedicated thread which
--- >                        | mux | chops up the CBOR data into MuxSDUs with at most sduSize
--- >                        +-----+ bytes of data in them.
--- >                           |
--- >                           | MuxSDUs
--- >                           |
--- >                           V
--- >                   +-------+--------+
--- >                   | Bearer.write() | Mux Bearer implementation specific write
--- >                   +----------------+
--- >                           |
--- >                           | ByteStrings
--- >                           V
--- >                           o
+-- > ┌───────────┐ ┌───────────┐ ┌───────────┐ ┌───────────┐ Every mode per miniprotocol
+-- > │ muxDuplex │ │ muxDuplex │ │ muxDuplex │ │ muxDuplex │ has a dedicated thread which
+-- > │ Initiator │ │ Responder │ │ Initiator │ │ Responder │ will send ByteStrings of CBOR
+-- > │ ChainSync │ │ ChainSync │ │ BlockFetch│ │ BlockFetch│ encoded data.
+-- > └─────┬─────┘ └─────┬─────┘ └─────┬─────┘ └─────┬─────┘
+-- >       │             │             │             │
+-- >       │             │             │             │
+-- >       ╰─────────────┴──────┬──────┴─────────────╯
+-- >                            │
+-- >                     application data
+-- >                            │
+-- >                         ░░░▼░░
+-- >                         ░│  │░ For a given Mux Bearer there is a single egress
+-- >                         ░│ci│░ queue shared among all miniprotocols. To ensure
+-- >                         ░│cr│░ fairness each miniprotocol can at most have one
+-- >                         ░└──┘░ message in the queue, see Desired Servicing
+-- >                         ░░░│░░ Semantics.
+-- >                           ░│░
+-- >                       ░░░░░▼░░░
+-- >                       ░┌─────┐░ The egress queue is served by a dedicated thread
+-- >                       ░│ mux │░ which chops up the CBOR data into MuxSDUs with at
+-- >                       ░└─────┘░ most sduSize bytes of data in them.
+-- >                       ░░░░│░░░░
+-- >                          ░│░ MuxSDUs
+-- >                          ░│░
+-- >                  ░░░░░░░░░▼░░░░░░░░░░
+-- >                  ░┌────────────────┐░
+-- >                  ░│ Bearer.write() │░ Mux Bearer implementation specific write
+-- >                  ░└────────────────┘░
+-- >                  ░░░░░░░░░│░░░░░░░░░░
+-- >                           │ ByteStrings
+-- >                           ▼
+-- >                           ●
 
 -- | Process the messages from the mini protocols - there is a single
 -- shared FIFO that contains the items of work. This is processed so
