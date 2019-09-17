@@ -24,7 +24,7 @@ import           Ouroboros.Consensus.BlockFetchServer
                      (TraceBlockFetchServerEvent)
 import           Ouroboros.Consensus.ChainSyncClient (TraceChainSyncClientEvent)
 import           Ouroboros.Consensus.ChainSyncServer (TraceChainSyncServerEvent)
-import           Ouroboros.Consensus.Mempool.API (GenTx, GenTxId,
+import           Ouroboros.Consensus.Mempool.API (ApplyTxErr, GenTx, GenTxId,
                      TraceEventMempool)
 import           Ouroboros.Consensus.TxSubmission
                      (TraceLocalTxSubmissionServerEvent (..))
@@ -68,6 +68,7 @@ nullTracers = Tracers
 
 showTracers :: ( Show blk
                , Show (GenTx blk)
+               , Show (ApplyTxErr blk)
                , Show (Header blk)
                , Show peer
                , SupportedBlock blk
