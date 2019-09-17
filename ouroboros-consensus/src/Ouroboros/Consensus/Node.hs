@@ -34,6 +34,7 @@ import           Control.Monad (forM, void)
 import           Control.Tracer
 import           Crypto.Random
 import           Data.ByteString.Lazy (ByteString)
+import           Data.List (any)
 import           Data.Proxy (Proxy (..))
 import           Data.Time.Clock (secondsToDiffTime)
 import           Network.Mux.Types (MuxTrace, WithMuxBearer)
@@ -266,8 +267,8 @@ data RunNetworkArgs peer blk = RunNetworkArgs
     -- ^ DNS resolver tracer
   , rnaMkPeer                :: SockAddr -> SockAddr -> peer
     -- ^ How to create a peer
-  , rnaMyAddr                :: AddrInfo
-    -- ^ The node's own address
+  , rnaMyAddrs               :: [AddrInfo]
+    -- ^ The node's own addresses
   , rnaMyLocalAddr           :: AddrInfo
     -- ^ The node's own local address
   , rnaIpProducers           :: [SockAddr]
@@ -290,17 +291,25 @@ initNetwork registry nodeArgs kernel RunNetworkArgs{..} = do
 
     -- serve downstream nodes
     connTable  <- newConnectionTable
-    peerServer <- forkLinkedThread registry $ runPeerServer connTable
+    peerServers <- forM rnaMyAddrs
+        (\a -> forkLinkedThread registry $ runPeerServer connTable a)
+
+    let ipv4Address = if any (\ai -> Socket.addrFamily ai == Socket.AF_INET) rnaMyAddrs
+                         then Just (Socket.SockAddrInet 0 0)
+                         else Nothing
+        ipv6Address = if any (\ai -> Socket.addrFamily ai == Socket.AF_INET6) rnaMyAddrs
+                         then Just (Socket.SockAddrInet6 0 0 (0, 0, 0, 0) 0)
+                         else Nothing
 
     ipSubscriptions <- forkLinkedThread registry $
-                         runIpSubscriptionWorker connTable
+                         runIpSubscriptionWorker connTable ipv4Address ipv6Address
 
     -- dns subscription managers
     dnsSubscriptions <- forM rnaDnsProducers $ \dnsProducer -> do
        forkLinkedThread registry $
-         runDnsSubscriptionWorker connTable dnsProducer
+         runDnsSubscriptionWorker connTable ipv4Address ipv6Address dnsProducer
 
-    let threads = localServer : peerServer : ipSubscriptions : dnsSubscriptions
+    let threads = localServer : ipSubscriptions : dnsSubscriptions ++ peerServers
     void $ waitAnyThread threads
   where
     networkApps :: NetworkApps peer
@@ -328,28 +337,31 @@ initNetwork registry nodeArgs kernel RunNetworkArgs{..} = do
         (localResponderNetworkApplication networkApps)
         wait
 
-    runPeerServer :: ConnectionTable IO Socket.SockAddr -> IO ()
-    runPeerServer connTable =
+    runPeerServer :: ConnectionTable IO Socket.SockAddr -> Socket.AddrInfo -> IO ()
+    runPeerServer connTable myAddr =
       NodeToNode.withServer_V1
         rnaMuxTracer
         rnaHandshakeTracer
         connTable
-        rnaMyAddr
+        myAddr
         rnaMkPeer
         nodeToNodeVersionData
         (responderNetworkApplication networkApps)
         wait
 
-    runIpSubscriptionWorker :: ConnectionTable IO Socket.SockAddr -> IO ()
-    runIpSubscriptionWorker connTable = ipSubscriptionWorker_V1
+    runIpSubscriptionWorker :: ConnectionTable IO Socket.SockAddr
+                            -> Maybe Socket.SockAddr
+                            -> Maybe Socket.SockAddr
+                            -> IO ()
+    runIpSubscriptionWorker connTable ipv4 ipv6 = ipSubscriptionWorker_V1
       rnaIpSubscriptionTracer
       rnaMuxTracer
       rnaHandshakeTracer
       rnaMkPeer
       connTable
       -- the comments in dnsSbuscriptionWorker call apply
-      (Just (Socket.SockAddrInet 0 0))
-      (Just (Socket.SockAddrInet6 0 0 (0, 0, 0, 0) 0))
+      ipv4
+      ipv6
       (const Nothing)
       IPSubscriptionTarget
         { ispIps     = rnaIpProducers
@@ -359,9 +371,11 @@ initNetwork registry nodeArgs kernel RunNetworkArgs{..} = do
       (initiatorNetworkApplication networkApps)
 
     runDnsSubscriptionWorker :: ConnectionTable IO Socket.SockAddr
+                             -> Maybe Socket.SockAddr
+                             -> Maybe Socket.SockAddr
                              -> DnsSubscriptionTarget
                              -> IO ()
-    runDnsSubscriptionWorker connTable dnsProducer = dnsSubscriptionWorker_V1
+    runDnsSubscriptionWorker connTable ipv4 ipv6 dnsProducer = dnsSubscriptionWorker_V1
       rnaDnsSubscriptionTracer
       rnaDnsResolverTracer
       rnaMuxTracer
@@ -374,9 +388,9 @@ initNetwork registry nodeArgs kernel RunNetworkArgs{..} = do
       -- 'MuxInitiatorApplication' and 'MuxResponderApplication'
       -- applications instead of a 'MuxInitiatorAndResponderApplication'.
       -- This means we don't utilise full duplex connection.
-      (Just (Socket.SockAddrInet 0 0))
+      ipv4
       -- IPv6 address
-      (Just (Socket.SockAddrInet6 0 0 (0, 0, 0, 0) 0))
+      ipv6
       (const Nothing)
       dnsProducer
       nodeToNodeVersionData
