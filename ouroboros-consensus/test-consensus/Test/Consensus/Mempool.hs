@@ -154,9 +154,9 @@ prop_Mempool_TraceRejectedTxs setup =
       return $ counterexample (ppTxs (txs setup)) $
         let rejectedTxs = maybe
               []
-              (\(TraceMempoolRejectedTxs txs _) -> txs)
+              (\(TraceMempoolRejectedTxs txsAndErrs _) -> map fst txsAndErrs)
               (find isRejectedTxsEvent evs)
-        in sort (invalidTxs setup)  === sort rejectedTxs
+        in sort (invalidTxs setup) === sort rejectedTxs
   where
     isRejectedTxsEvent :: TraceEventMempool blk -> Bool
     isRejectedTxsEvent (TraceMempoolRejectedTxs _ _) = True
@@ -608,7 +608,7 @@ executeAction testMempool action = case action of
     AddTx tx -> do
       void $ addTxs [TestGenTx tx]
       expectTraceEvent $ \case
-        TraceMempoolAddTxs { _txs = [TestGenTx tx'] }
+        TraceMempoolAddTxs [TestGenTx tx'] _
           | tx == tx'
           -> property True
         _ -> counterexample ("Transaction not added: " <> condense tx) False
@@ -618,7 +618,7 @@ executeAction testMempool action = case action of
       -- Synchronise the Mempool with the updated chain
       withSyncState $ \_snapshot -> return ()
       expectTraceEvent $ \case
-        TraceMempoolRemoveTxs { _txs = [TestGenTx tx'] }
+        TraceMempoolRemoveTxs [TestGenTx tx'] _
           | tx == tx'
           -> property True
         _ -> counterexample ("Transaction not removed: " <> condense tx) False

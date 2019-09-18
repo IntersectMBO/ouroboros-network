@@ -229,28 +229,29 @@ data MempoolSnapshot blk idx = MempoolSnapshot {
 
 -- | Events traced by the Mempool.
 data TraceEventMempool blk
-   = TraceMempoolAddTxs
-     { _txs          :: [GenTx blk]
-       -- ^ New, valid transaction were added to the Mempool.
-     , _txsInMempool :: Word64
-       -- ^ The total number of transactions now in the Mempool.
-     }
+  = TraceMempoolAddTxs
+      ![GenTx blk]
+      -- ^ New, valid transaction were added to the Mempool.
+      !Word64
+      -- ^ The total number of transactions now in the Mempool.
+  | TraceMempoolRejectedTxs
+      ![(GenTx blk, ApplyTxErr blk)]
+      -- ^ New, invalid transaction were rejected and thus not added to the
+      -- Mempool.
+      !Word64
+      -- ^ The total number of transactions now in the Mempool.
+  | TraceMempoolRemoveTxs
+      ![GenTx blk]
+      -- ^ Previously valid transactions that are no longer valid because of
+      -- changes in the ledger state. These transactions have been removed
+      -- from the Mempool.
+      !Word64
+      -- ^ The total number of transactions now in the Mempool.
 
-   | TraceMempoolRejectedTxs
-     { _txs          :: [GenTx blk]
-       -- ^ New, invalid transaction were rejected and thus not added to the
-       -- Mempool.
-     , _txsInMempool :: Word64
-       -- ^ The total number of transactions now in the Mempool.
-     }
-   | TraceMempoolRemoveTxs
-     { _txs          :: [GenTx blk]
-       -- ^ Previously valid transactions that are no longer valid because of
-       -- changes in the ledger state. These transactions have been removed
-       -- from the Mempool.
-     , _txsInMempool :: Word64
-       -- ^ The total number of transactions now in the Mempool.
-     }
+deriving instance ( Eq (GenTx blk)
+                  , Eq (ApplyTxErr blk)
+                  ) => Eq (TraceEventMempool blk)
 
-deriving instance Eq   (GenTx blk) => Eq   (TraceEventMempool blk)
-deriving instance Show (GenTx blk) => Show (TraceEventMempool blk)
+deriving instance ( Show (GenTx blk)
+                  , Show (ApplyTxErr blk)
+                  ) => Show (TraceEventMempool blk)

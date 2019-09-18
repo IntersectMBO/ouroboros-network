@@ -178,7 +178,7 @@ implAddTxs mpEnv@MempoolEnv{mpEnvStateVar, mpEnvLedgerCfg, mpEnvTracer} txs = do
 
     traceBatch TraceMempoolRemoveTxs   mempoolSize (map fst removed)
     traceBatch TraceMempoolAddTxs      mempoolSize accepted
-    traceBatch TraceMempoolRejectedTxs mempoolSize (map fst rejected)
+    traceBatch TraceMempoolRejectedTxs mempoolSize rejected
 
     return $ [(tx, Just err) | (tx, err) <- rejected] ++
              zip accepted (repeat Nothing)
