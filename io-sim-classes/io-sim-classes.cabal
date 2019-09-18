@@ -18,6 +18,11 @@ source-repository head
   location: https://github.com/input-output-hk/ouroboros-network
   subdir:   io-sim-classes
 
+flag checktvarinvariant
+  Description: Enable runtime invariant checks on StrictT(M)Var
+  Manual: True
+  Default: False
+
 library
   hs-source-dirs:      src
 
@@ -53,3 +58,5 @@ library
                        -Wno-unticked-promoted-constructors
                        -fno-ignore-asserts
 
+  if flag(checktvarinvariant)
+    cpp-options: -DCHECK_TVAR_INVARIANT
