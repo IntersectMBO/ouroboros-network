@@ -137,8 +137,8 @@ forgeBlock (WithEBBNodeConfig cfg) curSlot curNo prevHash txs isLeader = do
 
     prevHeaderHash :: CC.Block.HeaderHash
     prevHeaderHash = case prevHash of
-      GenesisHash -> CC.Block.genesisHeaderHash pbftGenesisHash
-      BlockHash h -> h
+      GenesisHash             -> CC.Block.genesisHeaderHash pbftGenesisHash
+      BlockHash (ByronHash h) -> h
 
     epochAndSlotCount :: CC.Slot.EpochAndSlotCount
     epochAndSlotCount = CC.Slot.fromSlotNumber pbftEpochSlots $ coerce curSlot
