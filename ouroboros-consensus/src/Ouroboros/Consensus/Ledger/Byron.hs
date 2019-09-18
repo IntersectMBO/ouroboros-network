@@ -1,23 +1,25 @@
-{-# LANGUAGE ConstraintKinds       #-}
-{-# LANGUAGE FlexibleContexts      #-}
-{-# LANGUAGE FlexibleInstances     #-}
-{-# LANGUAGE GADTSyntax            #-}
-{-# LANGUAGE LambdaCase            #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE NamedFieldPuns        #-}
-{-# LANGUAGE OverloadedStrings     #-}
-{-# LANGUAGE PatternSynonyms       #-}
-{-# LANGUAGE RecordWildCards       #-}
-{-# LANGUAGE ScopedTypeVariables   #-}
-{-# LANGUAGE TypeApplications      #-}
-{-# LANGUAGE TypeFamilies          #-}
-{-# LANGUAGE UndecidableInstances  #-}
+{-# LANGUAGE ConstraintKinds            #-}
+{-# LANGUAGE FlexibleContexts           #-}
+{-# LANGUAGE FlexibleInstances          #-}
+{-# LANGUAGE GADTSyntax                 #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE LambdaCase                 #-}
+{-# LANGUAGE MultiParamTypeClasses      #-}
+{-# LANGUAGE NamedFieldPuns             #-}
+{-# LANGUAGE OverloadedStrings          #-}
+{-# LANGUAGE PatternSynonyms            #-}
+{-# LANGUAGE RecordWildCards            #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE TypeApplications           #-}
+{-# LANGUAGE TypeFamilies               #-}
+{-# LANGUAGE UndecidableInstances       #-}
 
 {-# OPTIONS_GHC -Wredundant-constraints -Wno-orphans #-}
 
 module Ouroboros.Consensus.Ledger.Byron
   ( -- * Byron blocks and headers
     ByronBlock (..)
+  , ByronHash (..)
   , annotateByronBlock
   , ByronGiven
   , ConfigContainsGenesis(..)
@@ -80,8 +82,8 @@ import qualified Data.Text as T
 import           Data.Typeable
 import           Formatting
 
-import           Cardano.Binary (Annotated (..), ByteSpan, enforceSize,
-                     fromCBOR, reAnnotate, slice, toCBOR)
+import           Cardano.Binary (Annotated (..), ByteSpan, FromCBOR (..),
+                     ToCBOR (..), enforceSize, fromCBOR, reAnnotate, slice)
 import qualified Cardano.Chain.Block as CC.Block
 import qualified Cardano.Chain.Common as CC.Common
 import qualified Cardano.Chain.Delegation as CC.Delegation
@@ -114,6 +116,15 @@ import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.SlotBounded (SlotBounded (..))
 import qualified Ouroboros.Consensus.Util.SlotBounded as SB
 
+{-------------------------------------------------------------------------------
+  Header hash
+-------------------------------------------------------------------------------}
+
+newtype ByronHash = ByronHash { unByronHash :: CC.Block.HeaderHash }
+  deriving (Eq, Ord, Show, ToCBOR, FromCBOR)
+
+instance Condense ByronHash where
+  condense = formatToString CC.Block.headerHashF . unByronHash
 
 {-------------------------------------------------------------------------------
   Byron blocks and headers
@@ -150,7 +161,7 @@ instance (ByronGiven, Typeable cfg) => SupportedBlock (ByronBlock cfg)
   HasHeader instances
 -------------------------------------------------------------------------------}
 
-type instance HeaderHash (ByronBlock  cfg) = CC.Block.HeaderHash
+type instance HeaderHash (ByronBlock  cfg) = ByronHash
 
 instance (ByronGiven, Typeable cfg) => HasHeader (ByronBlock cfg) where
   blockHash      =            blockHash     . getHeader
@@ -160,9 +171,9 @@ instance (ByronGiven, Typeable cfg) => HasHeader (ByronBlock cfg) where
   blockInvariant = const True
 
 instance (ByronGiven, Typeable cfg) => HasHeader (Header (ByronBlock cfg)) where
-  blockHash = CC.Block.headerHashAnnotated . unByronHeader
+  blockHash = ByronHash . CC.Block.headerHashAnnotated . unByronHeader
 
-  blockPrevHash (ByronHeader h) = BlockHash $ CC.Block.headerPrevHash h
+  blockPrevHash (ByronHeader h) = BlockHash . ByronHash $ CC.Block.headerPrevHash h
 
   blockSlot      = convertSlot
                  . CC.Block.headerSlot
@@ -245,7 +256,7 @@ instance (ByronGiven, Typeable cfg, ConfigContainsGenesis cfg)
       -- In this case there are no blocks in the ledger state. The genesis
       -- block does not occupy a slot, so its point is Origin.
       Left _genHash -> Point Point.origin
-      Right hdrHash -> Point (Point.block slot hdrHash)
+      Right hdrHash -> Point (Point.block slot (ByronHash hdrHash))
         where
           slot = convertSlot (CC.Block.cvsLastSlot state)
 
@@ -439,7 +450,7 @@ instance GetHeader (ByronBlockOrEBB cfg) where
   getHeader (ByronBlockOrEBB (CC.Block.ABOBBoundary b)) =
     ByronHeaderOrEBB . Left $ CC.Block.boundaryHeader b
 
-type instance HeaderHash (ByronBlockOrEBB  cfg) = CC.Block.HeaderHash
+type instance HeaderHash (ByronBlockOrEBB  cfg) = ByronHash
 
 instance (ByronGiven, Typeable cfg) => SupportedBlock (ByronBlockOrEBB cfg)
 
@@ -451,15 +462,15 @@ instance (ByronGiven, Typeable cfg) => HasHeader (ByronBlockOrEBB cfg) where
   blockInvariant = const True
 
 instance (ByronGiven, Typeable cfg) => HasHeader (Header (ByronBlockOrEBB cfg)) where
-  blockHash b = case unByronHeaderOrEBB b of
+  blockHash b = ByronHash $ case unByronHeaderOrEBB b of
     Left ebb -> CC.Block.boundaryHeaderHashAnnotated ebb
     Right mb -> CC.Block.headerHashAnnotated mb
 
   blockPrevHash b = case unByronHeaderOrEBB b of
-    Right mb -> BlockHash . CC.Block.headerPrevHash $ mb
+    Right mb -> BlockHash . ByronHash . CC.Block.headerPrevHash $ mb
     Left ebb -> case CC.Block.boundaryPrevHash ebb of
       Left _  -> GenesisHash
-      Right h -> BlockHash h
+      Right h -> BlockHash (ByronHash h)
 
   blockSlot b = case unByronHeaderOrEBB b of
     Right mb -> convertSlot . CC.Block.headerSlot $ mb
@@ -592,9 +603,6 @@ condenseABoundaryHeader hdr =
 instance Condense (Header (ByronBlockOrEBB cfg)) where
   condense (ByronHeaderOrEBB (Right   hdr)) = condense (ByronHeader hdr)
   condense (ByronHeaderOrEBB (Left ebbhdr)) = condenseABoundaryHeader ebbhdr
-
-instance Condense CC.Block.HeaderHash where
-  condense = formatToString CC.Block.headerHashF
 
 instance Condense (ChainHash (ByronBlockOrEBB cfg)) where
   condense GenesisHash   = "genesis"
