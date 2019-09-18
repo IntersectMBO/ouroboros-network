@@ -46,7 +46,7 @@ codecBlockFetch encodeBlock     decodeBlock
          -> Message (BlockFetch block) st st'
          -> CBOR.Encoding
   encode (ClientAgency TokIdle) (MsgRequestRange (ChainRange from to)) =
-    CBOR.encodeListLen 2 <> CBOR.encodeWord 0 <> encodePoint from
+    CBOR.encodeListLen 3 <> CBOR.encodeWord 0 <> encodePoint from
                                               <> encodePoint to
   encode (ClientAgency TokIdle) MsgClientDone =
     CBOR.encodeListLen 1 <> CBOR.encodeWord 1

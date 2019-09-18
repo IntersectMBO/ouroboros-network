@@ -28,7 +28,7 @@ import           Network.TypedProtocol.Channel
 import           Network.TypedProtocol.Driver
 import           Network.TypedProtocol.Proofs
 
-import           Test.Ouroboros.Network.Testing.Utils (splits2, splits3)
+import           Test.Ouroboros.Network.Testing.Utils (prop_codec_cborM, splits2, splits3)
 
 import           Ouroboros.Network.Channel
 
@@ -59,6 +59,7 @@ tests =
   , testProperty "codec 2-splits"      prop_codec_splits2_Handshake
   , testProperty "codec 3-splits"    $ withMaxSuccess 30
                                        prop_codec_splits3_Handshake
+  , testProperty "codec cbor"          prop_codec_cbor
   , testGroup "Generators"
     [ testProperty "ArbitraryVersions" $
         checkCoverage prop_arbitrary_ArbitraryVersions
@@ -480,3 +481,9 @@ prop_codec_splits3_Handshake
   -> Bool
 prop_codec_splits3_Handshake msg =
   runST (prop_codec_splitsM splits3 codecHandshake msg)
+
+prop_codec_cbor
+  :: AnyMessageAndAgency (Handshake VersionNumber CBOR.Term)
+  -> Bool
+prop_codec_cbor msg =
+  runST (prop_codec_cborM codecHandshake msg)
