@@ -11,7 +11,9 @@
 
 module Ouroboros.Network.Protocol.TxSubmission.Test (
     tests
-  ) where
+   ,TxId (..)
+   ,Tx (..)
+   ) where
 
 import           Data.List (nub)
 import qualified Data.List.NonEmpty as NonEmpty
