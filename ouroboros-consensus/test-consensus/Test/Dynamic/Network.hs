@@ -18,6 +18,7 @@ module Test.Dynamic.Network (
   , TracingConstraints
     -- * Tracers
   , MiniProtocolExpectedException (..)
+  , MiniProtocolFatalException (..)
   , MiniProtocolState (..)
   , TraceMiniProtocolRestart (..)
     -- * Test Output
@@ -26,9 +27,11 @@ module Test.Dynamic.Network (
   , NodeInfo (..)
   ) where
 
+import qualified Control.Exception as Exn
 import           Control.Monad
 import           Control.Tracer
 import           Crypto.Random (ChaChaDRG, drgNew)
+import qualified Data.Typeable as Typeable
 import qualified Data.List as List
 import qualified Data.List.NonEmpty as NE
 import           Data.Map.Strict (Map)
@@ -376,15 +379,30 @@ directedEdge ::
 directedEdge tr btime nodeapp1 nodeapp2 =
     loopOnMPEE
   where
-    loopOnMPEE = directedEdgeInner nodeapp1 nodeapp2 `catch` h
+    loopOnMPEE =
+        directedEdgeInner nodeapp1 nodeapp2
+          `catch` hExpected
+          `catch` hUnexpected
       where
-        h :: MiniProtocolExpectedException blk -> m ()
-        h e = do
+        -- Catch and restart on expected exceptions
+        --
+        hExpected :: MiniProtocolExpectedException blk -> m ()
+        hExpected e = do
           s@(SlotNo i) <- atomically $ getCurrentSlot btime
           traceWith tr (s, MiniProtocolDelayed, e)
           void $ blockUntilSlot btime $ SlotNo (succ i)
           traceWith tr (s, MiniProtocolRestarting, e)
           loopOnMPEE
+
+        -- Wrap synchronous exceptions in 'MiniProtocolFatalException'
+        --
+        hUnexpected :: SomeException -> m ()
+        hUnexpected e@(Exn.SomeException e') = case fromException e of
+          Just (_ :: Exn.AsyncException) -> throwM e
+          Nothing                        -> throwM MiniProtocolFatalException
+            { mpfeType = Typeable.typeOf e'
+            , mpfeExn = e
+            }
 
 -- | Spawn threads for all of the mini protocols
 --
@@ -567,6 +585,8 @@ type LimitedApp' m peer blk unused1 unused2 =
   Tracing
 -------------------------------------------------------------------------------}
 
+-- | Non-fatal exceptions expected from the threads of a 'directedEdge'
+--
 data MiniProtocolExpectedException blk
   = MPEEChainSyncClient (CSClient.ChainSyncClientException blk (Point (Header blk)))
     -- ^ see "Ouroboros.Consensus.ChainSyncClient"
@@ -598,3 +618,15 @@ data TraceMiniProtocolRestart peer blk
       (MiniProtocolExpectedException blk)
     -- ^ us them when-start-blocking state reason
   deriving (Show)
+
+-- | Any synchronous exception from a 'directedEdge' that was not handled as a
+-- 'MiniProtocolExpectedException'
+--
+data MiniProtocolFatalException = MiniProtocolFatalException
+  { mpfeType :: !Typeable.TypeRep
+    -- ^ Including the type explicitly makes it easier for a human to debug
+  , mpfeExn  :: !SomeException
+  }
+  deriving (Show)
+
+instance Exception MiniProtocolFatalException
