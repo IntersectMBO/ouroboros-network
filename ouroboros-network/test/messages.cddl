@@ -1,27 +1,17 @@
-; The only purpose of allMessages is to have an entry point for testing all parts of the specification.
+; The purpose of allMessages is to have an entry point for testing all parts of the specification.
 ; ! allMessages is NOT a valid wire format !
 
-allMessages =
-      [0,chainSyncMessage]
+allMessages
+    = [0,chainSyncMessage]
     / [1,reqRespMessage]
     / [2,pingPongMessage]
     / [3,blockFetchMessage]
     / [4,txSubmissionMessage]
     / [5,handshakeMessage]
-    / [6,point]
-    / [7,points]
 
-; common encodings
-origin = []
-slotNo = uint ; word64
-hash   = nil ; in testing, () is chosen as the header hash...
-point  = origin / [slotNo, hash]
-points = [*point]
-
-; Chain Sync Protocol
-; reference implementation of the codec in
-; ouroboros-network/src/Ouroboros/Network/Protocol/ChainSync/Codec/Cbor.hs
-
+; ChainSync Protocol
+; reference implementation of the codec in :
+; ouroboros-network/src/Ouroboros/Network/Protocol/ChainSync/Codec.hs
 chainSyncMessage
     = msgRequestNext
     / msgAwaitReply
@@ -32,48 +22,22 @@ chainSyncMessage
     / msgIntersectNotFound
     / chainSyncMsgDone
 
-; these records use fixed length list encodings TODO: lookup CDDL syntax for that
 msgRequestNext         = [0]
 msgAwaitReply          = [1]
-msgRollForward         = [2, encodedHeader, point]
-msgRollBackward        = [3, point, point]
+msgRollForward         = [2, wrappedHeader, tip]
+msgRollBackward        = [3, point, tip]
 msgFindIntersect       = [4, points]
-msgIntersectFound      = [5, point, point]
-msgIntersectNotFound   = [6, point]
+msgIntersectFound      = [5, point, tip]
+msgIntersectNotFound   = [6, tip]
 chainSyncMsgDone       = [7]
 
-encodedHeader = #6.24(bytes .cbor header)
-header = bytes ; because of DummyBytes
+wrappedHeader = #6.24(bytes .cbor blockHeader)
+tip = [point, uint]
 
-; Request Response Protocol
-; reference implementation of the codec in
-; ouroboros-network/src/Ouroboros/Network/Protocol/ReqResp/Codec.hs
-
-reqRespMessage
-    = msgRequest
-    / msgResponse
-    / reqRespMsgDone
-
-msgRequest  = [0,  requestData]
-msgResponse = [1, responseData]
-reqRespMsgDone = [2]
-
-requestData  = bytes .cbor any
-responseData = bytes .cbor any
-
-; Ping-Pong Protocol
-; reference implementation of the codec in
-; ouroboros-network/src/Ouroboros/Network/Protocol/PingPong/Codec.hs
-pingPongMessage
-    = msgPing
-    / msgPong
-    / pingPongMsgDone
-msgPing = 0
-msgPong = 1
-pingPongMsgDone = 2
+points = [ *point ]
 
 ; BlockFetch Protocol
-; reference implementation of the codec in
+; reference implementation of the codec in :
 ; ouroboros-network/src/Ouroboros/Network/Protocol/BlockFetch/Codec.hs
 
 blockFetchMessage
@@ -88,75 +52,119 @@ msgRequestRange = [0, point, point]
 msgClientDone   = [1]
 msgStartBatch   = [2]
 msgNoBlocks     = [3]
-msgBlock        = [4, encodedBlock]
+msgBlock        = [4, #6.24(bytes .cbor block)]
 msgBatchDone    = [5]
 
-encodedBlock    = #6.24(bytes .cbor block)
-block           = bytes ; because of DummyBytes
-
-
 ; Transaction Submission Protocol
-; reference implementation of the codec in
+; reference implementation of the codec in :
 ; ouroboros-network/src/Ouroboros/Network/Protocol/TxSubmission/Codec.hs
 
 txSubmissionMessage
-    = msgGetHashes
-    / msgSendHashes
-    / msgGetTx
-    / msgTx
-    / txSubmissionMsgDone
+    = msgRequestTxIds
+    / msgReplyTxIds
+    / msgRequestTxs
+    / msgReplyTxs
+    / tsMsgDone
 
-msgGetHashes  = [0,int]
-msgSendHashes = [1,[txHash]]
-msgGetTx      = [2,txHash]
-msgTx         = [3,transaction]
-txSubmissionMsgDone = [4]
+msgRequestTxIds = [0, tsBlocking, txCount, txCount]
+msgReplyTxIds   = [1, [ *txIdAndSize] ]
+msgRequestTxs   = [2, tsIdList ]
+msgReplyTxs     = [3, tsIdList ]
+tsMsgDone       = [4]
 
-txHash        = bytes .cbor any
-transaction   = bytes .cbor any
+tsBlocking      = false / true
+txCount         = word16
+tsIdList        = [ *txId ] ; The codec only accepts infinite-length list encoding for tsIdList !
+txIdAndSize     = [txId, txSizeInBytes]
+txId            = int
+txSizeInBytes   = word32
 
-; ToDo
-; MuxControl Protocol
-; reference implementation of the codec in
-; ouroboros-network/src/Ouroboros/Network/Mux/Control.hs
-; muxControlMessage = msgInitReq / msgInitRsp / msgInitFail
-; msgInitReq  = [0]
-; msgInitRsp  = [1]
-; msgInitFail = [2]
-; Handshake Protocol
-; reference implementation of the codec in
+; The Handshake Protool
+; reference implementation of the codec in:
 ; ouroboros-network/src/Ouroboros/Network/Protocol/Handshake/Codec.hs
 
-versionNumber = uint .size 4
-handshakeMessage =
-       msgProposeVersions
-     / msgAcceptVersion
-     / msgRefuse
+handshakeMessage
+    = msgProposeVersions
+    / msgAcceptVersion
+    / msgRefuse
 
-msgProposeVersions = [0 , versionTable]
+msgProposeVersions = [0, versionTable]
+msgAcceptVersion   = [1, versionNumber, extraParams]
+msgRefuse          = [2, refuseReason ]
 
 ; CDDL is not expressive enough to describe the all possible values of proposeVersions.
 ; proposeVersions is a tables that maps version numbers to version parameters.
 ; The codec requires that the keys are unique and in ascending order.
-; This specification only enumerates version numbers from 1..4.
+; This specification only enumerates version numbers from 0..2.
 
-params = any
-extraParams = any
+versionNumber = 0 / 1 / 2  ; The test instance of handshake only supports version numbers 1,2 and 3.
+; versionNumber = uint     ; A real instance may support for example any unsigned integer as version number.
+
+params       = any
+extraParams  = any
 versionTable =
-    { ? 1 => params
+    { ? 0 => params
+    , ? 1 => params
     , ? 2 => params
-    , ? 3 => params
-    , ? 4 => params
     }
-
-msgAcceptVersion   = [1, versionNumber, extraParams]
-msgRefuse          = [2, refuseReason ]
 
 refuseReason
     = refuseReasonVersionMismatch
     / refuseReasonHandshakeDecodeError
     / refuseReasonRefused
 
-refuseReasonVersionMismatch      = [0 , [ versionNumber] ]
-refuseReasonHandshakeDecodeError = [1 , versionNumber, tstr]
-refuseReasonRefused              = [2 , versionNumber, tstr]
+refuseReasonVersionMismatch      = [0, [ *versionNumber ] ]
+refuseReasonHandshakeDecodeError = [1, versionNumber, tstr]
+refuseReasonRefused              = [2, versionNumber, tstr]
+
+
+; The Codecs are polymorphic in the underlying data types for blocks, points, slot numbers etc..
+; The following encodings are used in the test code.
+
+block           = [blockHeader, blockBody]
+blockHeader     = [int, chainHash, word64, word64 , word64, int]
+chainHash       = genesisHash / blockHash
+genesisHash     = []
+blockHash       = [int]
+blockBody       = tstr
+
+point           = origin / blockHeaderHash
+origin          = []
+blockHeaderHash = [slotNo, int]
+slotNo          = word64
+
+; The Request Response Protocol and the PingPing protocol
+; are uses as examples and for testing.
+
+; Request Response Protocol :
+; reference implementation of the codec in
+; typed-protocols/src/Network/TypedProtocol/ReqResp/Codec.hs
+
+reqRespMessage
+    = msgRequest
+    / msgResponse
+    / reqRespMsgDone
+
+msgRequest     = [0, requestData]
+msgResponse    = [1, responseData]
+reqRespMsgDone = [2]
+
+requestData  = bytes .cbor any
+responseData = bytes .cbor any
+
+; Ping-Pong Protocol
+; reference implementation of the codec in
+; typed-protocols/src/Network/TypedProtocol/PingPong/Codec.hs
+
+pingPongMessage
+    = msgPing
+    / msgPong
+    / pingPongMsgDone
+
+msgPing = 0
+msgPong = 1
+pingPongMsgDone = 2
+
+word16 = uint
+word32 = uint
+word64 = uint
