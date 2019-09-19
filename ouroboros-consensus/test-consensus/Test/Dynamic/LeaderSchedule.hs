@@ -24,6 +24,7 @@ import           Ouroboros.Consensus.Util.Random
 import           Test.Dynamic.General
 import           Test.Dynamic.Util
 import           Test.Dynamic.Util.NodeJoinPlan
+import           Test.Dynamic.Util.NodeTopology
 
 import           Test.Util.Orphans.Arbitrary ()
 
@@ -47,12 +48,16 @@ tests = testGroup "Dynamic chain generation"
             shrinkNodeJoinPlan $
         \nodeJoinPlan ->
         forAllShrink
+            (genNodeTopology numCoreNodes)
+            shrinkNodeTopology $
+        \nodeTopology ->
+        forAllShrink
             (genLeaderSchedule k numSlots numCoreNodes nodeJoinPlan)
             (shrinkLeaderSchedule numSlots) $
         \schedule ->
             prop_simple_leader_schedule_convergence
                 params
-                TestConfig{numCoreNodes, numSlots, nodeJoinPlan}
+                TestConfig{numCoreNodes, numSlots, nodeJoinPlan, nodeTopology}
                 schedule seed
 
 prop_simple_leader_schedule_convergence :: PraosParams

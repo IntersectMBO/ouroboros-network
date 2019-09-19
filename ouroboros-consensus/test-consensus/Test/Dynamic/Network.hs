@@ -14,7 +14,7 @@
 
 -- | Setup network
 module Test.Dynamic.Network (
-    broadcastNetwork
+    runNodeNetwork
   , TracingConstraints
     -- * Tracers
   , MiniProtocolExpectedException (..)
@@ -93,13 +93,14 @@ import qualified Ouroboros.Storage.Util.ErrorHandling as EH
 
 import           Test.Dynamic.TxGen
 import           Test.Dynamic.Util.NodeJoinPlan
+import           Test.Dynamic.Util.NodeTopology
 
--- | Setup fully-connected topology, where every node is both a producer
--- and a consumer, and joins according to the node join plan
+-- | Setup a network of core nodes, where each joins according to the node join
+-- plan and is interconnected according to the node topology
 --
 -- We run for the specified number of blocks, then return the final state of
 -- each node.
-broadcastNetwork :: forall m blk.
+runNodeNetwork :: forall m blk.
                     ( MonadAsync m
                     , MonadFork  m
                     , MonadMask  m
@@ -116,13 +117,16 @@ broadcastNetwork :: forall m blk.
                  -> TestBlockchainTime m
                  -> NumCoreNodes
                  -> NodeJoinPlan
+                 -> NodeTopology
                  -> (CoreNodeId -> ProtocolInfo blk)
                  -> ChaChaDRG
                  -> DiffTime
                  -> m (TestOutput blk)
-broadcastNetwork registry testBtime numCoreNodes nodeJoinPlan pInfo initRNG slotLen = do
+runNodeNetwork registry testBtime numCoreNodes nodeJoinPlan nodeTopology
+  pInfo initRNG slotLen = do
     -- This function is organized around the notion of a network of nodes as a
-    -- simple graph with no loops. The graph topology is fully-connected/mesh.
+    -- simple graph with no loops. The graph topology is determined by
+    -- @nodeTopology@.
     --
     -- Each graph node is a Ouroboros core node, with its own private threads
     -- managing the node's internal state. Some nodes join the network later
@@ -140,18 +144,17 @@ broadcastNetwork registry testBtime numCoreNodes nodeJoinPlan pInfo initRNG slot
       forM coreNodeIds $ \nid -> (,) nid <$> atomically newEmptyTMVar
 
     -- spawn threads for each undirected edge
-    let meshEdges =
-          [ (n1, n2) | n1 <- coreNodeIds, n2 <- coreNodeIds, n1 < n2 ]
-    forM_ meshEdges $ \edge -> do
+    let edges = edgesNodeTopology nodeTopology
+    forM_ edges $ \edge -> do
       void $ forkLinkedThread registry $ do
         undirectedEdge nullTracer nodeVars edge
 
     -- create nodes
-    let meshNodes =
+    let nodesByJoinSlot =
           List.sortOn fst $   -- sort non-descending by join slot
           map (\nv@(n, _) -> (joinSlotOf n, nv)) $
           Map.toList nodeVars
-    nodes <- forM meshNodes $ \(joinSlot, (coreNodeId, nodeVar)) -> do
+    nodes <- forM nodesByJoinSlot $ \(joinSlot, (coreNodeId, nodeVar)) -> do
       -- do not start the node before its joinSlot
       tooLate <- blockUntilSlot btime joinSlot
       when tooLate $ do

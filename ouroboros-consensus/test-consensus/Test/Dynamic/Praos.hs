@@ -19,6 +19,7 @@ import           Ouroboros.Consensus.Util.Random
 import           Test.Dynamic.General
 import           Test.Dynamic.Util
 import           Test.Dynamic.Util.NodeJoinPlan
+import           Test.Dynamic.Util.NodeTopology
 
 import           Test.Util.Orphans.Arbitrary ()
 
@@ -44,10 +45,15 @@ tests = testGroup "Dynamic chain generation"
             (genNodeJoinPlan numCoreNodes numSlots)
             shrinkNodeJoinPlan $
         \nodeJoinPlan ->
+        forAllShrink
+            (genNodeTopology numCoreNodes)
+            shrinkNodeTopology $
+        \nodeTopology ->
             testPraos' TestConfig
               { numCoreNodes
               , numSlots
               , nodeJoinPlan
+              , nodeTopology
               }
                 seed
     ]
@@ -57,6 +63,7 @@ tests = testGroup "Dynamic chain generation"
       { numCoreNodes
       , numSlots
       , nodeJoinPlan = trivialNodeJoinPlan numCoreNodes
+      , nodeTopology = meshNodeTopology numCoreNodes
       }
 
     testPraos' :: TestConfig -> Seed -> Property
