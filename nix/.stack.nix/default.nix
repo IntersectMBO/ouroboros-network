@@ -4,13 +4,8 @@
       packages = {
         "bimap" = (((hackage.bimap)."0.4.0").revisions).default;
         "binary" = (((hackage.binary)."0.8.7.0").revisions).default;
-        "time-units" = (((hackage.time-units)."1.0.0").revisions).default;
-        "ekg-prometheus-adapter" = (((hackage.ekg-prometheus-adapter)."0.1.0.4").revisions).default;
         "generic-monoid" = (((hackage.generic-monoid)."0.1.0.0").revisions).default;
-        "prometheus" = (((hackage.prometheus)."2.1.1").revisions).default;
-        "containers" = (((hackage.containers)."0.5.11.0").revisions).default;
         "splitmix" = (((hackage.splitmix)."0.0.2").revisions).default;
-        "libsystemd-journal" = (((hackage.libsystemd-journal)."1.4.4").revisions).default;
         "tasty-hedgehog" = (((hackage.tasty-hedgehog)."1.0.0.1").revisions).default;
         "Win32" = (((hackage.Win32)."2.5.4.1").revisions).default;
         "base58-bytestring" = (((hackage.base58-bytestring)."0.1.0").revisions).default;

@@ -13,7 +13,7 @@ packages:
 
 extra-deps:
   - git: https://github.com/input-output-hk/iohk-monitoring-framework
-    commit: e22be186e0b1018260ed7c5166871f82a869b94d
+    commit: 1ebe57df3a76a8ae4e3b5a31a9b85132f71534fc
     subdirs:
       - contra-tracer
       - iohk-monitoring
@@ -47,15 +47,10 @@ extra-deps:
 
   - bimap-0.4.0
   - binary-0.8.7.0
-  - time-units-1.0.0
-  - ekg-prometheus-adapter-0.1.0.4
   - generic-monoid-0.1.0.0
-  - prometheus-2.1.1
-  - containers-0.5.11.0
   - graphviz-2999.20.0.3@sha256:cde383c356bc41136ed53cd27e0800f46dbd2185600dd0de18d66d5c49739d94
   - quickcheck-state-machine-0.6.0@sha256:3e4f8df0f6b5d415e3c8840dc75034a63e37f56f5f8cfa1035ded16345235ac4
   - splitmix-0.0.2
-  - libsystemd-journal-1.4.4
   - tasty-hedgehog-1.0.0.1
 
   # Windows only
