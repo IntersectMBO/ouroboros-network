@@ -9,11 +9,13 @@ module Test.Dynamic.Util.NodeTopology
   , genNodeTopology
   , shrinkNodeTopology
   , meshNodeTopology
-  , bottleneckSizeNodeTopology
+  , minimumDegreeNodeTopology
   ) where
 
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
+import           Data.Set (Set)
+import qualified Data.Set as Set
 import           GHC.Stack (HasCallStack)
 import           Test.QuickCheck
 
@@ -28,23 +30,28 @@ import           Ouroboros.Consensus.Util.Orphans ()
 
 -- | Which /lesser/ nodes each node connects to
 --
--- INVARIANT: for each mapping @n -> ms@, @n > m@ for each @m@.
+-- INVARIANT: for each mapping @n -> ms@, @n > m@ for each @m@ in @ms@
 --
--- INVARIANT: each mapping is non-empty, except for @CoreNodeId 0@
---
--- INVARIANT: each mapping is sorted strictly ascending
+-- INVARIANT: only the mapping for @n = CoreNodeId 0@ is empty
 --
 -- INVARIANT: there is a mapping for each @CoreNodeId@ in the test, @0 .. n -
 -- 1@
 --
-newtype NodeTopology = NodeTopology (Map CoreNodeId [CoreNodeId])
+-- Note that every node is connected to every other but not necessarily
+-- directly. In other words, the topology is always a single network of nodes,
+-- which is realistic. With other test configuration components, such as
+-- network partitions, the network may split (temporarily or not) into separate
+-- connected components during the execution, but the base topology is
+-- connected.
+--
+newtype NodeTopology = NodeTopology (Map CoreNodeId (Set CoreNodeId))
   deriving (Eq, Show)
 
 instance Condense NodeTopology where
   condense top@(NodeTopology m)
     | top == mesh = "meshNodeTopology (NumCoreNodes " ++ show (Map.size m) ++ ")"
     | otherwise = condense
-      [ (fromCoreNodeId nid, map fromCoreNodeId nids)
+      [ (fromCoreNodeId nid, Set.map fromCoreNodeId nids)
       | (nid, nids) <- Map.toAscList m ]
     where
       mesh = meshNodeTopology (NumCoreNodes (Map.size m))
@@ -58,7 +65,7 @@ meshNodeTopology ::
 meshNodeTopology numCoreNodes =
     NodeTopology $
     Map.fromList $
-    [ (nid, enumCoreNodes (NumCoreNodes i))
+    [ (nid, Set.fromList $ enumCoreNodes (NumCoreNodes i))
     | nid@(CoreNodeId i) <- enumCoreNodes numCoreNodes ]
 
 -- | Generate a 'NodeTopology' consistent with the given properties
@@ -74,9 +81,9 @@ genNodeTopology numCoreNodes@(NumCoreNodes n)
 
   | otherwise = do
     let genNeighbors me@(CoreNodeId i) = case i of
-          0 -> pure (me, [])
+          0 -> pure (me, Set.empty)
           _ ->
-            fmap ((,) me) $
+            fmap ((,) me . Set.fromList) $
             flip suchThat (not . null) $
             sublistOf (enumCoreNodes (NumCoreNodes i))
 
@@ -97,33 +104,38 @@ shrinkNodeTopology top@(NodeTopology m)
     -- TODO more sophisticated shrinks. I anticipate that they'll need to use
     -- 'Test.QuickCheck.Shrinking' or else risk very slow responses
 
--- | Partial; @error@ for a node not in the plan
+-- | The neighbors of this node
 --
 coreNodeIdNeighbors ::
      HasCallStack
   => NodeTopology -> CoreNodeId -> [CoreNodeId]
 coreNodeIdNeighbors (NodeTopology m) nid =
     case hit of
-      Nothing      -> error $ "not found: " <> condense (nid, Map.toList m)
-      Just lessers -> lessers ++ greaters
+      Nothing      ->
+          error $
+          "invariant violated: " <>
+          "could not find " <> condense (nid, Map.toList m)
+      Just lessers -> Set.toList lessers ++ greaters
   where
     (_, hit, greaters0) = Map.splitLookup nid m
-    greaters = Map.keys (Map.filter (nid `elem`) greaters0)
+    greaters = Map.keys (Map.filter (nid `Set.member`) greaters0)
 
 -- | The edges in this topology
+--
 edgesNodeTopology ::
      HasCallStack
   => NodeTopology -> [(CoreNodeId, CoreNodeId)]
 edgesNodeTopology (NodeTopology m) =
     flip foldMap (Map.toList m) $ \(greater, lessers) ->
-       map (flip (,) greater) lessers
+        map (flip (,) greater) (Set.toList lessers)
 
--- | The neighbor count of the node with the fewest neighbors
+-- | The neighbor count of the node with the fewest neighbors, unless there are
+-- zero nodes
 --
-bottleneckSizeNodeTopology :: HasCallStack => NodeTopology -> Int
-bottleneckSizeNodeTopology top@(NodeTopology m) =
+minimumDegreeNodeTopology :: NodeTopology -> Maybe Int
+minimumDegreeNodeTopology top@(NodeTopology m) =
     check [ length (coreNodeIdNeighbors top nid) | nid <- Map.keys m ]
   where
     check = \case
-        []   -> error "empty topology"
-        x:xs -> foldl min x xs
+        []   -> Nothing
+        x:xs -> Just $ foldl min x xs

@@ -184,7 +184,7 @@ prop_general k TestConfig{numSlots, nodeJoinPlan, nodeTopology} schedule
     tabulate "consensus expected" [show isConsensusExcepected] $
     tabulate "shortestLength" [show (rangeK k (shortestLength nodeChains))] $
     tabulate "floor(4 * lastJoinSlot / numSlots)" [show lastJoinSlot] $
-    tabulate "bottleneckSizeNodeTopology" [show (bottleneckSizeNodeTopology nodeTopology)] $
+    tabulate "minimumDegreeNodeTopology" [show (minimumDegreeNodeTopology nodeTopology)] $
     prop_all_common_prefix
         maxForkLength
         (Map.elems nodeChains) .&&.
