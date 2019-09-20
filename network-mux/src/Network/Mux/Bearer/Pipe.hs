@@ -12,6 +12,7 @@ module Network.Mux.Bearer.Pipe (
 import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
+import           Control.Tracer
 import           Data.Word
 import qualified Data.ByteString.Lazy as BL
 import           GHC.Stack
@@ -32,10 +33,11 @@ pipeAsMuxBearer
      , Enum ptcl
      , Bounded ptcl
      )
-  => Handle -- ^ read handle
+  => Tracer IO (Mx.MuxTrace ptcl)
+  -> Handle -- ^ read handle
   -> Handle -- ^ write handle
   -> IO (MuxBearer ptcl IO)
-pipeAsMuxBearer pcRead pcWrite = do
+pipeAsMuxBearer tracer pcRead pcWrite = do
       mxState <- atomically $ newTVar Mx.Larval
       return $ Mx.MuxBearer {
           Mx.read = readPipe,
@@ -47,23 +49,30 @@ pipeAsMuxBearer pcRead pcWrite = do
       readPipe :: (HasCallStack)
                => IO (Mx.MuxSDU ptcl, Time IO)
       readPipe = do
+          traceWith tracer $ Mx.MuxTraceRecvHeaderStart
           hbuf <- recvLen' pcRead 8 []
           case Mx.decodeMuxSDU hbuf of
               Left e     -> throwM e
               Right header -> do
                   --say $ printf "decoded mux header, goint to read %d bytes" (Mx.msLength header)
+                  traceWith tracer $ Mx.MuxTraceRecvHeaderEnd header
+                  traceWith tracer $ Mx.MuxTraceRecvPayloadStart (fromIntegral $ Mx.msLength header)
                   blob <- recvLen' pcRead (fromIntegral $ Mx.msLength header) []
                   ts <- getMonotonicTime
+                  traceWith tracer $ Mx.MuxTraceRecvPayloadEnd blob
                   --hexDump blob ""
                   return (header {Mx.msBlob = blob}, ts)
 
       recvLen' :: Handle -> Int -> [BL.ByteString] -> IO BL.ByteString
       recvLen' _ 0 bufs = return $ BL.concat $ reverse bufs
       recvLen' pd l bufs = do
+          traceWith tracer $ Mx.MuxTraceRecvStart l
           buf <- BL.hGet pd l
           if BL.null buf
               then throwM $ Mx.MuxError Mx.MuxBearerClosed "Pipe closed when reading data" callStack
-              else recvLen' pd (l - fromIntegral (BL.length buf)) (buf : bufs)
+              else do
+                  traceWith tracer $ Mx.MuxTraceRecvEnd buf
+                  recvLen' pd (l - fromIntegral (BL.length buf)) (buf : bufs)
 
       writePipe :: Mx.MuxSDU ptcl
                 -> IO (Time IO)
@@ -72,8 +81,10 @@ pipeAsMuxBearer pcRead pcWrite = do
           let ts32 = Mx.timestampMicrosecondsLow32Bits ts
               sdu' = sdu { Mx.msTimestamp = Mx.RemoteClockModel ts32 }
               buf  = Mx.encodeMuxSDU sdu'
+          traceWith tracer $ Mx.MuxTraceSendStart sdu'
           BL.hPut pcWrite buf
           hFlush pcWrite
+          traceWith tracer $ Mx.MuxTraceSendEnd
           return ts
 
       sduSize :: IO Word16
@@ -82,12 +93,14 @@ pipeAsMuxBearer pcRead pcWrite = do
 runMuxWithPipes
     :: ( Mx.ProtocolEnum ptcl, Ord ptcl, Enum ptcl, Bounded ptcl, Show ptcl
        , Mx.MiniProtocolLimits ptcl)
-    => peerid
+    => Tracer IO (Mx.WithMuxBearer (Mx.MuxTrace ptcl))
+    -> peerid
     -> Mx.MuxApplication appType peerid ptcl IO a b
     -> Handle -- ^ read handle
     -> Handle -- ^ write handle
     -> IO ()
-runMuxWithPipes peerid app pcRead pcWrite = do
-    bearer <- pipeAsMuxBearer pcRead pcWrite
-    Mx.muxStart peerid app bearer
+runMuxWithPipes tracer peerid app pcRead pcWrite = do
+    let muxTracer = Mx.WithMuxBearer "Pipe" `contramap` tracer
+    bearer <- pipeAsMuxBearer muxTracer pcRead pcWrite
+    Mx.muxStart muxTracer peerid app bearer
 

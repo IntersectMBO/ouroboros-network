@@ -1,7 +1,9 @@
+{-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE CPP                 #-}
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE FlexibleInstances   #-}
+{-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections       #-}
 {-# LANGUAGE TypeApplications    #-}
@@ -9,14 +11,16 @@
 {-# OPTIONS_GHC -Wno-orphans     #-}
 module Test.Socket (tests) where
 
+import           Control.Concurrent (ThreadId)
 import           Control.Exception (IOException)
 import           Control.Monad
 import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadFork
+import           Control.Monad.Class.MonadFork hiding (ThreadId)
 import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTimer
 import qualified Data.ByteString.Lazy as BL
+import           Data.Time.Clock (UTCTime, getCurrentTime)
 import           Data.Functor ((<$))
 import           Data.Int (Int64)
 import           Data.List (mapAccumL)
@@ -65,6 +69,7 @@ import           Test.QuickCheck
 import           Test.Tasty (DependencyType (..), TestTree, after, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
 import           Text.Show.Functions ()
+import           Text.Printf
 
 {-
  - The travis build hosts does not support IPv6 so those test cases are hidden
@@ -98,6 +103,10 @@ tests =
     testProperty "socket sync demo"                      prop_socket_demo
   ]
 #undef LAST_IP_TEST
+
+activeMuxTracer :: Show a => Tracer IO a
+activeMuxTracer = nullTracer
+--activeMuxTracer = _verboseTracer -- Dump log messages to stdout.
 
 defaultMiniProtocolLimit :: Int64
 defaultMiniProtocolLimit = 3000000
@@ -233,6 +242,7 @@ prop_socket_send_recv initiatorAddr responderAddr f xs = do
 
     res <-
       withServerNode
+        activeMuxTracer
         nullTracer
         tbl
         responderAddr
@@ -245,6 +255,7 @@ prop_socket_send_recv initiatorAddr responderAddr f xs = do
           connectToNode
             (\(DictVersion codec) -> encodeTerm codec)
             (\(DictVersion codec) -> decodeTerm codec)
+            activeMuxTracer
             nullTracer
             (\_ _ -> ())
             (simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData 0) (DictVersion nodeToNodeCodecCBORTerm) initiatorApp)
@@ -299,9 +310,9 @@ prop_socket_recv_close f _ = ioProperty $ do
                 (Socket.accept sd)
                 (\(sd',_) -> Socket.close sd')
                 $ \(sd',_) -> do
-                  bearer <- Mx.socketAsMuxBearer sd'
-                  Mx.muxBearerSetState bearer Mx.Connected
-                  Mx.muxStart () (toApplication app) bearer
+                  bearer <- Mx.socketAsMuxBearer nullTracer sd'
+                  Mx.muxBearerSetState nullTracer bearer Mx.Connected
+                  Mx.muxStart nullTracer () (toApplication app) bearer
           )
           $ \muxAsync -> do
 
@@ -346,6 +357,7 @@ prop_socket_client_connect_error _ xs = ioProperty $ do
       <- try $ False <$ connectToNode
         (\(DictVersion codec) -> encodeTerm codec)
         (\(DictVersion codec) -> decodeTerm codec)
+        nullTracer
         nullTracer
         (,)
         (simpleSingletonVersions (0::Int) (NodeToNodeVersionData 0) (DictVersion nodeToNodeCodecCBORTerm) app)
@@ -397,6 +409,7 @@ demo chain0 updates = do
 
     withServerNode
       nullTracer
+      nullTracer
       tbl
       producerAddress
       (\(DictVersion codec)-> encodeTerm codec)
@@ -409,6 +422,7 @@ demo chain0 updates = do
         (connectToNode
           (\(DictVersion codec) -> encodeTerm codec)
           (\(DictVersion codec) -> decodeTerm codec)
+          nullTracer
           nullTracer
           (,)
           (simpleSingletonVersions (0::Int) (NodeToNodeVersionData 0) (DictVersion nodeToNodeCodecCBORTerm) initiatorApp)
@@ -454,3 +468,23 @@ demo chain0 updates = do
                     pure $ Right $ consumerClient done target chain
         , ChainSync.points = \_ -> pure $ consumerClient done target chain
         }
+
+data WithThreadAndTime a = WithThreadAndTime {
+      wtatOccuredAt    :: !UTCTime
+    , wtatWithinThread :: !ThreadId
+    , wtatEvent        :: !a
+    }
+
+instance (Show a) => Show (WithThreadAndTime a) where
+    show WithThreadAndTime {wtatOccuredAt, wtatWithinThread, wtatEvent} =
+        printf "%s: %s: %s" (show wtatOccuredAt) (show wtatWithinThread) (show wtatEvent)
+
+_verboseTracer :: Show a => Tracer IO a
+_verboseTracer = threadAndTimeTracer $ showTracing stdoutTracer
+
+threadAndTimeTracer :: Tracer IO (WithThreadAndTime a) -> Tracer IO a
+threadAndTimeTracer tr = Tracer $ \s -> do
+    !now <- getCurrentTime
+    !tid <- myThreadId
+    traceWith tr $ WithThreadAndTime now tid s
+

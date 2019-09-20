@@ -15,6 +15,7 @@ import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
 import           Control.Monad.Class.MonadThrow
+import           Control.Tracer
 
 import qualified Network.Mux as Mx
 import qualified Network.Mux.Interface as Mx
@@ -30,13 +31,15 @@ queuesAsMuxBearer
      , MonadTime  m
      , MonadThrow m
      , Mx.ProtocolEnum ptcl
+     , Eq  (Async m ())
      )
-  => TBQueue m BL.ByteString
+  => Tracer m (Mx.MuxTrace ptcl)
+  -> TBQueue m BL.ByteString
   -> TBQueue m BL.ByteString
   -> Word16
   -> Maybe (TBQueue m (Mx.MiniProtocolId ptcl, Mx.MiniProtocolMode, Time m))
   -> m (MuxBearer ptcl m)
-queuesAsMuxBearer writeQueue readQueue sduSize traceQueue = do
+queuesAsMuxBearer tracer writeQueue readQueue sduSize traceQueue = do
       mxState <- atomically $ newTVar Mx.Larval
       return $ Mx.MuxBearer {
           Mx.read    = readMux,
@@ -47,11 +50,14 @@ queuesAsMuxBearer writeQueue readQueue sduSize traceQueue = do
     where
       readMux :: m (Mx.MuxSDU ptcl, Time m)
       readMux = do
+          traceWith tracer $ Mx.MuxTraceRecvHeaderStart
           buf <- atomically $ readTBQueue readQueue
           let (hbuf, payload) = BL.splitAt 8 buf
           case Mx.decodeMuxSDU hbuf of
               Left  e      -> throwM e
               Right header -> do
+                  traceWith tracer $ Mx.MuxTraceRecvHeaderEnd header
+                  traceWith tracer $ Mx.MuxTraceRecvPayloadStart $ fromIntegral $ BL.length payload
                   ts <- getMonotonicTime
                   case traceQueue of
                         Just q  -> atomically $ do
@@ -59,6 +65,7 @@ queuesAsMuxBearer writeQueue readQueue sduSize traceQueue = do
                             if full then return ()
                                     else writeTBQueue q (Mx.msId header, Mx.msMode header, ts)
                         Nothing -> return ()
+                  traceWith tracer $ Mx.MuxTraceRecvPayloadEnd payload
                   return (header {Mx.msBlob = payload}, ts)
 
       writeMux :: Mx.MuxSDU ptcl
@@ -68,7 +75,9 @@ queuesAsMuxBearer writeQueue readQueue sduSize traceQueue = do
           let ts32 = Mx.timestampMicrosecondsLow32Bits ts
               sdu' = sdu { Mx.msTimestamp = Mx.RemoteClockModel ts32 }
               buf  = Mx.encodeMuxSDU sdu'
+          traceWith tracer $ Mx.MuxTraceSendStart sdu'
           atomically $ writeTBQueue writeQueue buf
+          traceWith tracer $ Mx.MuxTraceSendEnd
           return ts
 
       sduSizeMux :: m Word16
@@ -90,17 +99,21 @@ runMuxWithQueues
      , Mx.ProtocolEnum ptcl
      , Show ptcl
      , Mx.MiniProtocolLimits ptcl
+     , Eq  (Async m ())
      )
-  => peerid
+  => Tracer m (Mx.WithMuxBearer (Mx.MuxTrace ptcl))
+  -> peerid
   -> Mx.MuxApplication appType peerid ptcl m a b
   -> TBQueue m BL.ByteString
   -> TBQueue m BL.ByteString
   -> Word16
   -> Maybe (TBQueue m (Mx.MiniProtocolId ptcl, Mx.MiniProtocolMode, Time m))
   -> m (Maybe SomeException)
-runMuxWithQueues peerid app wq rq mtu trace =
-    bracket (queuesAsMuxBearer wq rq mtu trace) (\_ -> pure ()) $ \bearer -> do
-      res_e <- try $ Mx.muxStart peerid app bearer
-      case res_e of
-            Left  e -> return (Just e)
-            Right _ -> return Nothing
+runMuxWithQueues tracer peerid app wq rq mtu trace =
+    let muxTracer = Mx.WithMuxBearer "Queue" `contramap` tracer in
+    bracket (queuesAsMuxBearer muxTracer wq rq mtu trace)
+      (\_ -> pure ()) $ \bearer -> do
+        res_e <- try $ Mx.muxStart muxTracer peerid app bearer
+        case res_e of
+             Left  e -> return (Just e)
+             Right _ -> return Nothing

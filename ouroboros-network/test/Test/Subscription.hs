@@ -545,6 +545,7 @@ prop_send_recv f xs first = ioProperty $ do
     withDummyServer faultyAddress $
       withServerNode
         nullTracer
+        nullTracer
         tbl
         responderAddr
         (\(DictVersion codec) -> encodeTerm codec)
@@ -565,6 +566,7 @@ prop_send_recv f xs first = ioProperty $ do
             (connectToNode'
                 (\(DictVersion codec) -> encodeTerm codec)
                 (\(DictVersion codec) -> decodeTerm codec)
+                nullTracer
                 nullTracer
                 (,)
                 (simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData 0)
@@ -668,6 +670,7 @@ prop_send_recv_init_and_rsp f xs = ioProperty $ do
 
     startPassiveServer tbl responderAddr localAddrVar rrcfg = withServerNode
         nullTracer
+        nullTracer
         tbl
         responderAddr
         (\(DictVersion codec) -> encodeTerm codec)
@@ -683,6 +686,7 @@ prop_send_recv_init_and_rsp f xs = ioProperty $ do
           return r
 
     startActiveServer tbl responderAddr localAddrVar remoteAddrVar rrcfg = withServerNode
+        nullTracer
         nullTracer
         tbl
         responderAddr
@@ -705,6 +709,7 @@ prop_send_recv_init_and_rsp f xs = ioProperty $ do
             (connectToNode'
                 (\(DictVersion codec) -> encodeTerm codec)
                 (\(DictVersion codec) -> decodeTerm codec)
+                nullTracer
                 nullTracer
                 (,)
                 (simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData 0)
@@ -767,6 +772,7 @@ _demo = ioProperty $ do
                 (\(DictVersion codec) -> encodeTerm codec)
                 (\(DictVersion codec) -> decodeTerm codec)
                 nullTracer
+                nullTracer
                 (,)
                 (simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData 0)
                 (DictVersion nodeToNodeCodecCBORTerm) appReq))
@@ -782,6 +788,7 @@ _demo = ioProperty $ do
 
     spawnServer tbl addr delay =
         void $ async $ withServerNode
+            nullTracer
             nullTracer
             tbl
             addr

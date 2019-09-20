@@ -24,8 +24,10 @@ import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
+import           Control.Tracer
 import           Data.Array
 import qualified Data.ByteString.Lazy as BL
+import           Data.List (lookup)
 import           GHC.Stack
 import           Text.Printf
 
@@ -85,12 +87,14 @@ muxStart
        , Bounded ptcl
        , Show ptcl
        , MiniProtocolLimits ptcl
+       , Eq (Async m ())
        )
-    => peerid
+    => Tracer m (MuxTrace ptcl)
+    -> peerid
     -> MuxApplication appType peerid ptcl m a b
     -> MuxBearer ptcl m
     -> m ()
-muxStart peerid app bearer = do
+muxStart tracer peerid app bearer = do
     tbl <- setupTbl
     tq <- atomically $ newTBQueue 100
     cnt <- newTVarM 0
@@ -101,14 +105,25 @@ muxStart peerid app bearer = do
                , muxControl pmss ModeResponder
                , muxControl pmss ModeInitiator
                ]
-    mjobs <- sequence [ mpsJob cnt pmss ptcl
+    mjobs <- sequence [ (mpsJob cnt pmss ptcl)
                       | ptcl <- [minBound..maxBound] ]
 
     mask $ \unmask -> do
-      as <- traverse (async . unmask) (jobs ++ concat mjobs)
-      muxBearerSetState bearer Mature
-      unmask (void $ waitAnyCancel as)
-      muxBearerSetState bearer Dead
+      as <- traverse (async . unmask) (jobs ++ (map fst $ concat mjobs))
+      let aidsAndNames = zip as $ ["Demuxer", "Muxer", "MuxControl Responder", "MuxControl Initiator"] ++
+                                  (map snd $ concat mjobs)
+
+      muxBearerSetState tracer bearer Mature
+      unmask (do
+        (fa, r_e) <- waitAnyCatchCancel as
+        let faName = maybe "Unknown Protocol" id (lookup fa aidsAndNames)
+        case r_e of
+             Left (e::SomeException) -> do
+                 traceWith tracer $ MuxTraceExceptionExit e faName
+                 throwM e
+             Right _                 -> traceWith tracer $ MuxTraceCleanExit faName
+        )
+      muxBearerSetState tracer bearer Dead
 
   where
     -- Construct the array of TBQueues, one for each protocol id, and each mode
@@ -126,26 +141,30 @@ muxStart peerid app bearer = do
       :: StrictTVar m Int
       -> PerMuxSharedState ptcl m
       -> ptcl
-      -> m [m ()]
+      -> m [(m (), String)]
     mpsJob cnt pmss mpdId = do
 
-        initiatorChannel <- muxChannel pmss
+        initiatorChannel <- muxChannel tracer
+                              pmss
                               (AppProtocolId mpdId)
                               ModeInitiator
                               cnt
 
-        responderChannel <- muxChannel pmss
+        responderChannel <- muxChannel tracer
+                              pmss
                               (AppProtocolId mpdId)
                               ModeResponder
                               cnt
 
         return $ case app of
-          MuxInitiatorApplication initiator -> [ initiator peerid mpdId initiatorChannel >> mpsJobExit cnt ]
-          MuxResponderApplication responder -> [ responder peerid mpdId responderChannel >> mpsJobExit cnt ]
-          MuxInitiatorAndResponderApplication initiator responder
-                                            -> [ initiator peerid mpdId initiatorChannel >> mpsJobExit cnt
-                                               , responder peerid mpdId responderChannel >> mpsJobExit cnt
-                                               ]
+          MuxInitiatorApplication initiator ->
+            [ (initiator peerid mpdId initiatorChannel >> mpsJobExit cnt , show mpdId ++ " Initiator")]
+          MuxResponderApplication responder ->
+            [ (responder peerid mpdId responderChannel >> mpsJobExit cnt , show mpdId ++ " Responder")]
+          MuxInitiatorAndResponderApplication initiator responder ->
+            [ (initiator peerid mpdId initiatorChannel >> mpsJobExit cnt, show mpdId ++ " Initiator")
+            , (responder peerid mpdId responderChannel >> mpsJobExit cnt, show mpdId ++ " Responder")
+            ]
 
     -- cnt represent the number of SDUs that are queued but not yet sent.  Job
     -- threads will be prevented from exiting until all SDUs have been
@@ -153,7 +172,7 @@ muxStart peerid app bearer = do
     -- jobs will be cancelled directly.
     mpsJobExit :: StrictTVar m Int -> m ()
     mpsJobExit cnt = do
-        muxBearerSetState bearer Dying
+        muxBearerSetState tracer bearer Dying
         atomically $ do
             c <- readTVar cnt
             unless (c == 0) retry
@@ -184,12 +203,13 @@ muxChannel
        , MiniProtocolLimits ptcl
        , HasCallStack
        )
-    => PerMuxSharedState ptcl m
+    => Tracer m (MuxTrace ptcl)
+    -> PerMuxSharedState ptcl m
     -> MiniProtocolId ptcl
     -> MiniProtocolMode
     -> StrictTVar m Int
     -> m (Channel m)
-muxChannel pmss mid md cnt = do
+muxChannel tracer pmss mid md cnt = do
     w <- newEmptyTMVarM
     return $ Channel { send = send (Wanton w)
                      , recv}
@@ -210,12 +230,15 @@ muxChannel pmss mid md cnt = do
                 callStack
         atomically $ modifyTVar cnt (+ 1)
         atomically $ putTMVar w encoding
+        traceWith tracer $ MuxTraceChannelSendStart mid encoding
         atomically $ writeTBQueue (tsrQueue pmss) (TLSRDemand mid md want)
+        traceWith tracer $ MuxTraceChannelSendEnd mid
 
     recv :: m (Maybe BL.ByteString)
     recv = do
         -- We receive CBOR encoded messages as ByteStrings (possibly partial) from the
         -- matching ingress queueu. This is the same queue the 'demux' thread writes to.
+        traceWith tracer $ MuxTraceChannelRecvStart mid
         blob <- atomically $ do
             let q = ingressQueue (dispatchTable pmss) mid md
             blob <- readTVar q
@@ -223,10 +246,18 @@ muxChannel pmss mid md cnt = do
                 then retry
                 else writeTVar q BL.empty >> return blob
         -- say $ printf "recv mid %s mode %s blob len %d" (show mid) (show md) (BL.length blob)
+        traceWith tracer $ MuxTraceChannelRecvEnd mid blob
         return $ Just blob
 
 muxBearerSetState :: (MonadSTM m, Ord ptcl, Enum ptcl, Bounded ptcl)
-                  => MuxBearer ptcl m
+                  => Tracer m (MuxTrace ptcl)
+                  -> MuxBearer ptcl m
                   -> MuxBearerState
                   -> m ()
-muxBearerSetState bearer newState = atomically $ writeTVar (state bearer) newState
+muxBearerSetState tracer bearer newState = do
+    oldState <- atomically $ do
+        -- If MonadSTM had swapTVar we could use it here.
+        old <- readTVar (state bearer)
+        writeTVar (state bearer) newState
+        return old
+    traceWith tracer $ MuxTraceStateChange oldState newState
