@@ -146,7 +146,6 @@ library
   build-depends:       hashable          >=1.2 && <1.3,
                        text              >=1.2 && <1.3
 
-
 test-suite test-network
   type:                exitcode-stdio-1.0
   hs-source-dirs:      test src

@@ -213,5 +213,5 @@ openDBInternal args launchBgTasks = do
     blockEpoch = epochInfoEpoch (Args.cdbEpochInfo args) . blockSlot
 
     -- TODO (#969): Re-enable this and deal with the fallout.
-    isNF :: forall a. a -> Bool
-    isNF = const True -- unsafePerformIO . isNormalForm
+    isNF :: forall a. a -> Maybe String
+    isNF = const Nothing -- unsafePerformIO . isNormalForm
