@@ -14,8 +14,6 @@
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE UndecidableInstances       #-}
 
-{-# OPTIONS_GHC -Wredundant-constraints -Wno-orphans #-}
-
 module Ouroboros.Consensus.Ledger.Byron
   ( -- * Byron blocks and headers
     ByronBlock (..)
@@ -64,7 +62,7 @@ import           Codec.CBOR.Encoding (Encoding)
 import qualified Codec.CBOR.Encoding as CBOR
 import qualified Codec.CBOR.Read as CBOR
 import qualified Codec.CBOR.Write as CBOR
-import           Codec.Serialise (Serialise, decode, encode)
+import           Codec.Serialise (decode, encode)
 import           Control.Monad.Except
 import           Control.Monad.Trans.Reader (runReaderT)
 import           Data.Bifunctor (bimap)
@@ -106,6 +104,7 @@ import qualified Ouroboros.Network.Point as Point (block, origin)
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Crypto.DSIGN.Cardano
 import           Ouroboros.Consensus.Ledger.Abstract
+import           Ouroboros.Consensus.Ledger.Byron.Orphans ()
 import           Ouroboros.Consensus.Mempool.API
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.ExtNodeConfig
@@ -626,14 +625,6 @@ instance Show (GenTxId (ByronBlockOrEBB cfg)) where
 {-------------------------------------------------------------------------------
   Serialisation
 -------------------------------------------------------------------------------}
-
-instance Serialise CC.Block.ChainValidationState where
-  encode = toCBOR
-  decode = fromCBOR
-
-instance Serialise CC.Common.KeyHash where
-  encode = toCBOR
-  decode = fromCBOR
 
 -- | Encode a block. A legacy Byron node (cardano-sl) would successfully
 -- decode a block from these.

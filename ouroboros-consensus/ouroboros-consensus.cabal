@@ -39,6 +39,7 @@ library
                        Ouroboros.Consensus.Ledger.Byron
                        Ouroboros.Consensus.Ledger.Byron.Config
                        Ouroboros.Consensus.Ledger.Byron.Forge
+                       Ouroboros.Consensus.Ledger.Byron.Orphans
                        Ouroboros.Consensus.Ledger.Extended
                        Ouroboros.Consensus.Ledger.Mock
                        Ouroboros.Consensus.Ledger.Mock.Address
