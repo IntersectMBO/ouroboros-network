@@ -64,7 +64,7 @@ import           Control.Monad.Except (ExceptT (..), runExceptT)
 import           Data.Bifunctor
 import           Data.Foldable (toList)
 import           Data.Functor.Identity
-import           Data.Sequence (Seq ((:|>), Empty), (|>))
+import           Data.Sequence (Seq ((:|>), Empty))
 import qualified Data.Sequence as Seq
 import           Data.Void
 import           Data.Word
@@ -234,7 +234,7 @@ data LedgerDB l r = LedgerDB {
       ledgerDbCurrent :: !l
 
       -- | Older ledger states
-    , ledgerDbBlocks  :: !(Seq (r, Maybe l))
+    , ledgerDbBlocks  :: !(Seq (Checkpoint l r))
 
       -- | Information about the state of the ledger /before/
     , ledgerDbAnchor  :: !(ChainSummary l r)
@@ -264,6 +264,26 @@ ledgerDbDefaultParams (SecurityParam k) = LedgerDbParams {
       ledgerDbSnapEvery     = 100
     , ledgerDbSecurityParam = SecurityParam k
     }
+
+{-------------------------------------------------------------------------------
+  Internal: checkpoints
+-------------------------------------------------------------------------------}
+
+data Checkpoint l r =
+    -- | Checkpoint with a block reference only
+    CpBlock !r
+
+    -- | Checkpoint with a ledger state
+  | CpSShot !r !l
+  deriving (Show, Eq)
+
+cpToPair :: Checkpoint l r -> (r, Maybe l)
+cpToPair (CpBlock r)   = (r, Nothing)
+cpToPair (CpSShot r l) = (r, Just l)
+
+cpBlock :: Checkpoint l r -> r
+cpBlock (CpBlock r)   = r
+cpBlock (CpSShot r _) = r
 
 {-------------------------------------------------------------------------------
   Block info
@@ -386,7 +406,7 @@ ledgerDbChainLength LedgerDB{..} =
 
 -- | References to blocks and corresponding ledger state (from old to new)
 ledgerDbToList :: LedgerDB l r -> [(r, Maybe l)]
-ledgerDbToList LedgerDB{..} = toList ledgerDbBlocks
+ledgerDbToList LedgerDB{..} = map cpToPair $ toList ledgerDbBlocks
 
 -- | All snapshots currently stored by the ledger DB (new to old)
 --
@@ -394,10 +414,10 @@ ledgerDbToList LedgerDB{..} = toList ledgerDbBlocks
 ledgerDbSnapshots :: forall l r. LedgerDB l r -> [(Word64, l)]
 ledgerDbSnapshots LedgerDB{..} = go 0 ledgerDbBlocks
   where
-    go :: Word64 -> Seq (r, Maybe l) -> [(Word64, l)]
-    go !offset Empty                 = [(offset, csLedger ledgerDbAnchor)]
-    go !offset (ss :|> (_, Nothing)) =               go (offset + 1) ss
-    go !offset (ss :|> (_, Just l))  = (offset, l) : go (offset + 1) ss
+    go :: Word64 -> Seq (Checkpoint l r) -> [(Word64, l)]
+    go !offset Empty                = [(offset, csLedger ledgerDbAnchor)]
+    go !offset (ss :|> CpBlock _)   =               go (offset + 1) ss
+    go !offset (ss :|> CpSShot _ l) = (offset, l) : go (offset + 1) ss
 
 -- | How many blocks can we currently roll back?
 ledgerDbMaxRollback :: LedgerDB l r -> Word64
@@ -407,8 +427,8 @@ ledgerDbMaxRollback LedgerDB{..} = fromIntegral (Seq.length ledgerDbBlocks)
 ledgerDbTip :: LedgerDB l r -> Tip r
 ledgerDbTip LedgerDB{..} =
     case ledgerDbBlocks of
-      Empty        -> csTip ledgerDbAnchor
-      _ :|> (r, _) -> Tip r
+      Empty    -> csTip ledgerDbAnchor
+      _ :|> cp -> Tip (cpBlock cp)
 
 -- | Have we seen at least @k@ blocks?
 ledgerDbIsSaturated :: LedgerDB l r -> Bool
@@ -468,7 +488,7 @@ data SwitchResult e l r :: Bool -> * where
 --
 -- PRE: The last block in the sequence /must/ contain a ledger snapshot.
 shiftAnchor :: forall r l. HasCallStack
-            => Seq (r, Maybe l) -> ChainSummary l r -> ChainSummary l r
+            => Seq (Checkpoint l r) -> ChainSummary l r -> ChainSummary l r
 shiftAnchor toRemove ChainSummary{..} = ChainSummary {
       csTip    = Tip csTip'
     , csLength = csLength + fromIntegral (Seq.length toRemove)
@@ -479,9 +499,9 @@ shiftAnchor toRemove ChainSummary{..} = ChainSummary {
     csLedger' :: l
     (csTip', csLedger') =
         case toRemove of
-          Empty              -> error "shiftAnchor: empty list"
-          _ :|> (_, Nothing) -> error "shiftAnchor: missing ledger"
-          _ :|> (r, Just l)  -> (r, l)
+          Empty             -> error "shiftAnchor: empty list"
+          _ :|> CpBlock _   -> error "shiftAnchor: missing ledger"
+          _ :|> CpSShot r l -> (r, l)
 
 -- | Internal: count number of blocks to prune, given total number of blocks
 --
@@ -562,17 +582,17 @@ rollback cfg n db@LedgerDB{..}
     numToKeep :: Int
     numToKeep = Seq.length ledgerDbBlocks - fromIntegral n
 
-    blocks' :: Seq (r, Maybe l)
+    blocks' :: Seq (Checkpoint l r)
     blocks' = Seq.take numToKeep ledgerDbBlocks
 
     -- Compute blocks to reapply, and ledger state to reapply them from
-    reapply :: Seq (r, Maybe l) -> ([r], l)
+    reapply :: Seq (Checkpoint l r) -> ([r], l)
     reapply = go []
       where
-        go :: [r] -> Seq (r, Maybe l) -> ([r], l)
-        go acc Empty                 = (acc, csLedger ledgerDbAnchor)
-        go acc (_  :|> (_, Just l))  = (acc, l)
-        go acc (ss :|> (r, Nothing)) = go (r:acc) ss
+        go :: [r] -> Seq (Checkpoint l r) -> ([r], l)
+        go acc Empty                = (acc, csLedger ledgerDbAnchor)
+        go acc (_  :|> CpSShot _ l) = (acc, l)
+        go acc (ss :|> CpBlock r)   = go (r:acc) ss
 
     computeCurrent :: [r] -> l -> m l
     computeCurrent []     = return
@@ -595,8 +615,8 @@ ledgerDbPush cfg (pa, new) db@LedgerDB{..} = runExceptT $ do
     let newPos  = fromIntegral (Seq.length ledgerDbBlocks) + 1
         blocks' = ledgerDbBlocks
                |> if newPos `safeMod` ledgerDbSnapEvery == 0
-                    then (ref new, Just current')
-                    else (ref new, Nothing)
+                    then CpSShot (ref new) current'
+                    else CpBlock (ref new)
     return $ prune (db {
         ledgerDbCurrent = current'
       , ledgerDbBlocks  = blocks'
@@ -784,3 +804,6 @@ safeMod x y = x `Prelude.mod` y
 safeDiv :: (Eq a, Fractional a, HasCallStack) => a -> a -> a
 safeDiv _ 0 = error "safeDiv: division by zero"
 safeDiv x y = x Prelude./ y
+
+(|>) :: Seq a -> a -> Seq a
+(|>) s !a = s Seq.|> a
