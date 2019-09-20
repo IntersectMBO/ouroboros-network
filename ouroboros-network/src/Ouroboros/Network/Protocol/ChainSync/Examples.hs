@@ -13,9 +13,10 @@ module Ouroboros.Network.Protocol.ChainSync.Examples (
 
 import           Control.Monad.Class.MonadSTM.Strict
 
-import           Ouroboros.Network.Block (BlockNo, HasHeader (..), castPoint, genesisPoint)
-import           Ouroboros.Network.MockChain.Chain (Chain (..), ChainUpdate (..),
-                     Point (..))
+import           Ouroboros.Network.Block (BlockNo, HasHeader (..), HeaderHash,
+                     castPoint, genesisPoint)
+import           Ouroboros.Network.MockChain.Chain (Chain (..),
+                     ChainUpdate (..), Point (..))
 import qualified Ouroboros.Network.MockChain.Chain as Chain
 import           Ouroboros.Network.MockChain.ProducerState (ChainProducerState,
                      ReaderId)
@@ -130,18 +131,18 @@ recentOffsets = [0,1,2,3,5,8,13,21,34,55,89,144,233,377,610,987,1597,2584]
 -- This is of course only useful in tests and reference implementations since
 -- this is not a realistic chain representation.
 --
-chainSyncServerExample :: forall header m a.
+chainSyncServerExample :: forall blk header m a.
                           ( HasHeader header
                           , MonadSTM m
-                          -- , HeaderHash header ~ HeaderHash blk
+                          , HeaderHash header ~ HeaderHash blk
                           )
                        => a
                        -> StrictTVar m (ChainProducerState header)
-                       -> ChainSyncServer header (Point header, BlockNo) m a
+                       -> ChainSyncServer header (Point blk, BlockNo) m a
 chainSyncServerExample recvMsgDoneClient chainvar = ChainSyncServer $
     idle <$> newReader
   where
-    idle :: ReaderId -> ServerStIdle header (Point header, BlockNo) m a
+    idle :: ReaderId -> ServerStIdle header (Point blk, BlockNo) m a
     idle r =
       ServerStIdle {
         recvMsgRequestNext   = handleRequestNext r,
@@ -149,12 +150,12 @@ chainSyncServerExample recvMsgDoneClient chainvar = ChainSyncServer $
         recvMsgDoneClient    = pure recvMsgDoneClient
       }
 
-    idle' :: ReaderId -> ChainSyncServer header (Point header, BlockNo) m a
+    idle' :: ReaderId -> ChainSyncServer header (Point blk, BlockNo) m a
     idle' = ChainSyncServer . pure . idle
 
     handleRequestNext :: ReaderId
-                      -> m (Either (ServerStNext header (Point header, BlockNo) m a)
-                                (m (ServerStNext header (Point header, BlockNo) m a)))
+                      -> m (Either (ServerStNext header (Point blk, BlockNo) m a)
+                                (m (ServerStNext header (Point blk, BlockNo) m a)))
     handleRequestNext r = do
       mupdate <- tryReadChainUpdate r
       case mupdate of
@@ -164,14 +165,14 @@ chainSyncServerExample recvMsgDoneClient chainvar = ChainSyncServer $
                        -- the producer's state to change.
 
     sendNext :: ReaderId
-             -> (Point header, BlockNo, ChainUpdate header header)
-             -> ServerStNext header (Point header, BlockNo) m a
+             -> (Point blk, BlockNo, ChainUpdate header header)
+             -> ServerStNext header (Point blk, BlockNo) m a
     sendNext r (tip, blkNo, AddBlock b) = SendMsgRollForward  b             (tip, blkNo) (idle' r)
     sendNext r (tip, blkNo, RollBack p) = SendMsgRollBackward (castPoint p) (tip, blkNo) (idle' r)
 
     handleFindIntersect :: ReaderId
                         -> [Point header]
-                        -> m (ServerStIntersect header (Point header, BlockNo) m a)
+                        -> m (ServerStIntersect header (Point blk, BlockNo) m a)
     handleFindIntersect r points = do
       -- TODO: guard number of points
       -- Find the first point that is on our chain
@@ -189,7 +190,7 @@ chainSyncServerExample recvMsgDoneClient chainvar = ChainSyncServer $
 
     improveReadPoint :: ReaderId
                      -> [Point header]
-                     -> m (Maybe (Point header), Point header, BlockNo)
+                     -> m (Maybe (Point header), Point blk, BlockNo)
     improveReadPoint rid points =
       atomically $ do
         cps <- readTVar chainvar
@@ -203,13 +204,13 @@ chainSyncServerExample recvMsgDoneClient chainvar = ChainSyncServer $
             let !cps' = ChainProducerState.updateReader rid ipoint cps
             writeTVar chainvar cps'
             let chain = ChainProducerState.chainState cps'
-            pure ( Just (castPoint ipoint)
+            pure ( Just ipoint
                  , castPoint (Chain.headPoint chain)
                  , Chain.headBlockNo chain
                  )
 
     tryReadChainUpdate :: ReaderId
-                       -> m (Maybe (Point header, BlockNo, ChainUpdate header header))
+                       -> m (Maybe (Point blk, BlockNo, ChainUpdate header header))
     tryReadChainUpdate rid =
       atomically $ do
         cps <- readTVar chainvar
@@ -220,9 +221,10 @@ chainSyncServerExample recvMsgDoneClient chainvar = ChainSyncServer $
             let chain = ChainProducerState.chainState cps'
             return $ Just ( castPoint (Chain.headPoint chain)
                           , Chain.headBlockNo chain
-                          , u)
+                          , u
+                          )
 
-    readChainUpdate :: ReaderId -> m (Point header, BlockNo, ChainUpdate header header)
+    readChainUpdate :: ReaderId -> m (Point blk, BlockNo, ChainUpdate header header)
     readChainUpdate rid =
       atomically $ do
         cps <- readTVar chainvar
@@ -231,7 +233,7 @@ chainSyncServerExample recvMsgDoneClient chainvar = ChainSyncServer $
           Just (u, cps') -> do
             writeTVar chainvar cps'
             let chain = ChainProducerState.chainState cps'
-            return (castPoint (Chain.headPoint chain)
+            return ( castPoint (Chain.headPoint chain)
                    , Chain.headBlockNo chain
                    , u
                    )

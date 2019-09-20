@@ -22,6 +22,7 @@ import           Ouroboros.Network.TxSubmission.Outbound
 import           Ouroboros.Consensus.Block (Header, SupportedBlock)
 import           Ouroboros.Consensus.BlockFetchServer
                      (TraceBlockFetchServerEvent)
+import           Ouroboros.Consensus.ChainSync (Tip)
 import           Ouroboros.Consensus.ChainSyncClient (TraceChainSyncClientEvent)
 import           Ouroboros.Consensus.ChainSyncServer (TraceChainSyncServerEvent)
 import           Ouroboros.Consensus.Mempool.API (ApplyTxErr, GenTx, GenTxId,
@@ -35,8 +36,8 @@ import           Ouroboros.Consensus.TxSubmission
 
 data Tracers' peer blk tip f = Tracers
   { chainSyncClientTracer         :: f (TraceChainSyncClientEvent blk tip)
-  , chainSyncServerHeaderTracer   :: f (TraceChainSyncServerEvent (Header blk))
-  , chainSyncServerBlockTracer    :: f (TraceChainSyncServerEvent blk)
+  , chainSyncServerHeaderTracer   :: f (TraceChainSyncServerEvent blk (Header blk))
+  , chainSyncServerBlockTracer    :: f (TraceChainSyncServerEvent blk blk)
   , blockFetchDecisionTracer      :: f [TraceLabelPeer peer (FetchDecision [Point (Header blk)])]
   , blockFetchClientTracer        :: f (TraceLabelPeer peer (TraceFetchClientState (Header blk)))
   , blockFetchServerTracer        :: f (TraceBlockFetchServerEvent blk)
@@ -48,7 +49,7 @@ data Tracers' peer blk tip f = Tracers
   }
 
 -- | A record of 'Tracer's for the node.
-type Tracers m peer blk = Tracers' peer blk (Point (Header blk)) (Tracer m)
+type Tracers m peer blk = Tracers' peer blk (Tip blk) (Tracer m)
 
 -- | Use a 'nullTracer' for each of the 'Tracer's in 'Tracers'
 nullTracers :: Monad m => Tracers m peer blk

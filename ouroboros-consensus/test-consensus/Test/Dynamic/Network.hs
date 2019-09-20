@@ -64,6 +64,7 @@ import           Ouroboros.Consensus.BlockchainTime
 import qualified Ouroboros.Consensus.BlockFetchServer as BFServer
 import           Ouroboros.Consensus.ChainSyncClient (ClockSkew (..))
 import qualified Ouroboros.Consensus.ChainSyncClient as CSClient
+import           Ouroboros.Consensus.ChainSyncServer (Tip)
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.Mock
 import           Ouroboros.Consensus.Mempool
@@ -578,7 +579,7 @@ data LimitedApp m peer blk =
 -- Used internal to this module, essentially as an abbreviatiation.
 type LimitedApp' m peer blk unused1 unused2 =
     NetworkApplication m peer
-        (AnyMessage (ChainSync (Header blk) (Point (Header blk))))
+        (AnyMessage (ChainSync (Header blk) (Tip blk)))
         (AnyMessage (BlockFetch blk))
         (AnyMessage (TxSubmission (GenTxId blk) (GenTx blk)))
         unused1 -- the local node-to-client channel types
@@ -592,7 +593,7 @@ type LimitedApp' m peer blk unused1 unused2 =
 -- | Non-fatal exceptions expected from the threads of a 'directedEdge'
 --
 data MiniProtocolExpectedException blk
-  = MPEEChainSyncClient (CSClient.ChainSyncClientException blk (Point (Header blk)))
+  = MPEEChainSyncClient (CSClient.ChainSyncClientException blk (Tip blk))
     -- ^ see "Ouroboros.Consensus.ChainSyncClient"
     --
     -- NOTE: the second type in 'ChainSyncClientException' denotes the 'tip'.

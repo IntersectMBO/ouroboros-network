@@ -152,7 +152,8 @@ serverId :: CoreNodeId
 serverId = CoreNodeId 1
 
 -- | Terser notation
-type ChainSyncException tip = ChainSyncClientException TestBlock tip
+type ChainSyncException =
+  ChainSyncClientException TestBlock (Point TestBlock, BlockNo)
 
 -- | Using slots as times, a schedule plans updates to a chain on certain
 -- slots.
@@ -203,14 +204,13 @@ newtype ServerUpdates =
 --
 -- Note that updates that are scheduled before the slot at which we start
 -- syncing help generate different chains to start syncing from.
-runChainSync :: forall m tip.
+runChainSync :: forall m.
        ( MonadAsync m
        , MonadFork  m
        , MonadMask  m
        , MonadTimer m
        , MonadThrow (STM m)
        , MonadSay   m
-       , tip ~ (Point (Header TestBlock), BlockNo)
        )
     => SecurityParam
     -> ClockSkew
@@ -218,7 +218,7 @@ runChainSync :: forall m tip.
     -> ServerUpdates
     -> SlotNo  -- ^ Start chain syncing at this slot.
     -> m (Chain TestBlock, Chain TestBlock,
-          AnchoredFragment TestBlock, Maybe (ChainSyncException tip))
+          AnchoredFragment TestBlock, Maybe ChainSyncException)
        -- ^ (The final client chain, the final server chain, the synced
        --    candidate fragment, exception thrown by the chain sync client)
 runChainSync securityParam maxClockSkew (ClientUpdates clientUpdates)
@@ -245,25 +245,28 @@ runChainSync securityParam maxClockSkew (ClientUpdates clientUpdates)
         getLedgerState  = snd <$> readTVar varClientState
         getIsInvalidBlock :: STM m (HeaderHash TestBlock -> Bool, Fingerprint)
         getIsInvalidBlock = return (const False, Fingerprint 0)
+        getTipBlockNo :: STM m BlockNo
+        getTipBlockNo = Chain.headBlockNo . fst <$> readTVar varClientState
 
         client :: StrictTVar m (CandidateState TestBlock)
                -> AnchoredFragment (Header TestBlock)
                -> Consensus ChainSyncClientPipelined
                     TestBlock
-                    tip
+                    (Point TestBlock, BlockNo)
                     m
         client = chainSyncClient
-                   (pointSlot . fst)
+                   snd
                    (Tracer $ say . show)
                    (nodeCfg clientId)
                    btime
                    maxClockSkew
                    getLedgerState
                    getIsInvalidBlock
+                   getTipBlockNo
 
     -- Set up the server
     varChainProducerState <- uncheckedNewTVarM $ initChainProducerState Genesis
-    let server :: ChainSyncServer (Header TestBlock) (Point (Header TestBlock), BlockNo) m ()
+    let server :: ChainSyncServer (Header TestBlock) (Point TestBlock, BlockNo) m ()
         server = chainSyncServerExample () varChainProducerState
 
     -- Schedule updates of the client and server chains
@@ -304,12 +307,14 @@ runChainSync securityParam maxClockSkew (ClientUpdates clientUpdates)
           check (lastUpdate == startSyncingAt)
 
       (clientChannel, serverChannel) <- createConnectedChannels
+      let tracer :: Tracer m (TraceChainSyncClientEvent TestBlock (Point TestBlock, BlockNo))
+          tracer = nullTracer
       -- Don't link the thread (which will cause the exception to be rethrown
       -- in the main thread), just catch the exception and store it, because
       -- we want a "regular ending".
       void $ forkThread registry $
         bracketChainSyncClient
-           nullTracer
+           tracer
            (AF.mapAnchoredFragment coerce <$> getCurrentChain)
            getLedgerState
            getIsInvalidBlock
@@ -319,7 +324,7 @@ runChainSync securityParam maxClockSkew (ClientUpdates clientUpdates)
                Map.insert serverId varCandidate
              runPipelinedPeer nullTracer codecChainSyncId serverId clientChannel
                     (chainSyncClientPeerPipelined (client varCandidate curChain))
-        `catch` \(e :: ChainSyncException tip) -> do
+        `catch` \(e :: ChainSyncException) -> do
           -- TODO: Is this necessary? Wouldn't the Async's internal MVar do?
           atomically $ writeTVar varClientException (Just e)
           -- Rethrow, but it will be ignored anyway.

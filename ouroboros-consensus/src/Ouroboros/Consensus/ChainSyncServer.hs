@@ -1,5 +1,6 @@
 {-# LANGUAGE EmptyDataDeriving   #-}
 {-# LANGUAGE LambdaCase          #-}
+{-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies        #-}
 
@@ -7,6 +8,7 @@
 module Ouroboros.Consensus.ChainSyncServer
   ( chainSyncHeadersServer
   , chainSyncBlocksServer
+  , Tip
     -- * Trace events
   , TraceChainSyncServerEvent (..)
   ) where
@@ -14,15 +16,16 @@ module Ouroboros.Consensus.ChainSyncServer
 import           Control.Monad.Class.MonadSTM
 import           Control.Tracer
 
-import           Ouroboros.Network.Block (ChainUpdate (..), HeaderHash, Point (..), castPoint)
+import           Ouroboros.Network.Block (ChainUpdate (..), HeaderHash,
+                     Point (..), castPoint)
 import           Ouroboros.Network.Protocol.ChainSync.Server
 
 import           Ouroboros.Storage.ChainDB.API (ChainDB, Reader)
 import qualified Ouroboros.Storage.ChainDB.API as ChainDB
 
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.ChainSync (Tip (..))
 import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
-
 
 -- | Chain Sync Server for block headers for a given a 'ChainDB'.
 --
@@ -31,10 +34,10 @@ import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
 --
 chainSyncHeadersServer
     :: forall m blk. MonadSTM m
-    => Tracer m (TraceChainSyncServerEvent (Header blk))
+    => Tracer m (TraceChainSyncServerEvent blk (Header blk))
     -> ChainDB m blk
     -> ResourceRegistry m
-    -> ChainSyncServer (Header blk) (Point (Header blk)) m ()
+    -> ChainSyncServer (Header blk) (Tip blk) m ()
 chainSyncHeadersServer tracer chainDB registry =
     ChainSyncServer $ do
       rdr <- ChainDB.newHeaderReader chainDB registry
@@ -48,10 +51,10 @@ chainSyncHeadersServer tracer chainDB registry =
 --
 chainSyncBlocksServer
     :: forall m blk. MonadSTM m
-    => Tracer m (TraceChainSyncServerEvent blk)
+    => Tracer m (TraceChainSyncServerEvent blk blk)
     -> ChainDB m blk
     -> ResourceRegistry m
-    -> ChainSyncServer blk (Point blk) m ()
+    -> ChainSyncServer blk (Tip blk) m ()
 chainSyncBlocksServer tracer chainDB registry =
     ChainSyncServer $ do
       rdr <- ChainDB.newBlockReader chainDB registry
@@ -73,67 +76,67 @@ chainSyncServerForReader
        ( MonadSTM m
        , HeaderHash blk ~ HeaderHash b
        )
-    => Tracer m (TraceChainSyncServerEvent b)
+    => Tracer m (TraceChainSyncServerEvent blk b)
     -> ChainDB m blk
     -> Reader  m blk b
-    -> ChainSyncServer b (Point b) m ()
+    -> ChainSyncServer b (Tip blk) m ()
 chainSyncServerForReader tracer chainDB rdr =
     idle'
   where
-    idle :: m (ServerStIdle b (Point b) m ())
-    idle = do
-      traceWith tracer (TraceChainSyncServerIdle)
-      return $ ServerStIdle {
+    idle :: ServerStIdle b (Tip blk) m ()
+    idle = ServerStIdle {
         recvMsgRequestNext   = handleRequestNext,
         recvMsgFindIntersect = handleFindIntersect,
         recvMsgDoneClient    = ChainDB.readerClose rdr
       }
 
-    idle' :: ChainSyncServer b (Point b) m ()
-    idle' = ChainSyncServer idle
+    idle' :: ChainSyncServer b (Tip blk) m ()
+    idle' = ChainSyncServer $ return idle
 
-    handleRequestNext :: m (Either (ServerStNext b (Point b) m ())
-                                (m (ServerStNext b (Point b) m ())))
+    handleRequestNext :: m (Either (ServerStNext b (Tip blk) m ())
+                                (m (ServerStNext b (Tip blk) m ())))
     handleRequestNext = ChainDB.readerInstruction rdr >>= \case
       Just update -> do
-        tip <- castPoint <$> atomically (ChainDB.getTipPoint chainDB)
-        traceWith tracer (TraceChainSyncServerRead tip)
+        tip <- getTip
+        traceWith tracer (TraceChainSyncServerRead tip update)
         return $ Left $ sendNext tip update
       Nothing     -> return $ Right $ do
         -- Reader is at the head, we have to block and wait for the chain to
         -- change.
         update <- ChainDB.readerInstructionBlocking rdr
-        tip    <- castPoint <$> atomically (ChainDB.getTipPoint chainDB)
-        traceWith tracer (TraceChainSyncServerReadBlocked tip)
+        tip    <- getTip
+        traceWith tracer (TraceChainSyncServerReadBlocked tip update)
         return $ sendNext tip update
 
-    sendNext :: Point b
+    sendNext :: Tip blk
              -> ChainUpdate blk b
-             -> ServerStNext b (Point b) m ()
+             -> ServerStNext b (Tip blk) m ()
     sendNext tip update = case update of
       AddBlock hdr -> SendMsgRollForward  hdr tip idle'
       RollBack pt  -> SendMsgRollBackward (castPoint pt) tip idle'
 
     handleFindIntersect :: [Point b]
-                        -> m (ServerStIntersect b (Point b) m ())
+                        -> m (ServerStIntersect b (Tip blk) m ())
     handleFindIntersect points = do
       -- TODO guard number of points
       changed <- ChainDB.readerForward rdr (map castPoint points)
-      tip     <- castPoint <$> atomically (ChainDB.getTipPoint chainDB)
+      tip     <- getTip
       return $ case changed :: Maybe (Point blk) of
         Just pt -> SendMsgIntersectFound    (castPoint pt) tip idle'
         Nothing -> SendMsgIntersectNotFound tip idle'
+
+    getTip :: m (Tip blk)
+    getTip = atomically $ do
+      tipPoint   <- castPoint <$> ChainDB.getTipPoint   chainDB
+      tipBlockNo <-               ChainDB.getTipBlockNo chainDB
+      return Tip { tipPoint, tipBlockNo }
 
 {-------------------------------------------------------------------------------
   Trace events
 -------------------------------------------------------------------------------}
 
 -- | Events traced by the Chain Sync Server.
-data TraceChainSyncServerEvent blk =
-    TraceChainSyncServerIdle
-  | TraceChainSyncServerRead (Point blk)
-  | TraceChainSyncServerReadBlocked (Point blk)
-
-   -- TODO no events yet. Tracing the messages send/received over the network
-   -- might be all we need?
+data TraceChainSyncServerEvent blk b
+  = TraceChainSyncServerRead        (Tip blk) (ChainUpdate blk b)
+  | TraceChainSyncServerReadBlocked (Tip blk) (ChainUpdate blk b)
   deriving (Eq, Show)
