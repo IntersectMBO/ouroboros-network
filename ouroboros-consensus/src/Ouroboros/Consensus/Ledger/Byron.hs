@@ -21,6 +21,7 @@ module Ouroboros.Consensus.Ledger.Byron
   , annotateByronBlock
   , ByronGiven
   , ConfigContainsGenesis(..)
+  , mkByronHeader
     -- * Mempool integration
   , GenTx (..)
   , GenTxId (..)
@@ -50,7 +51,7 @@ module Ouroboros.Consensus.Ledger.Byron
     -- * EBBs
   , ByronBlockOrEBB (..)
   , pattern ByronHeaderOrEBB
-  , unByronHeaderOrEBB
+  , mkByronHeaderOrEBB
   , annotateBoundary
   , toCBORAHeaderOrBoundary
   , fromCBORAHeaderOrBoundary
@@ -147,12 +148,33 @@ newtype ByronBlock cfg = ByronBlock
   }
   deriving (Eq, Show)
 
+mkByronHeader :: CC.Block.AHeader ByteString -> Header (ByronBlock cfg)
+mkByronHeader header = ByronHeader {
+    -- This satisfies the format 'ByronHeader' desires.
+    byronHeader     = header
+  , byronHeaderHash = ByronHash $ CC.Block.headerHashAnnotated header
+  }
+
 instance GetHeader (ByronBlock cfg) where
-  newtype Header (ByronBlock cfg) = ByronHeader {
-      unByronHeader :: CC.Block.AHeader ByteString
+  -- | The only acceptable format for constructing a 'ByronHeader' is
+  --
+  -- > ByronHeader {
+  -- >     byronHeader     = <optional constructor> x
+  -- >   , byronHeaderHash = computeHash x
+  -- >   }
+  --
+  -- for some variable (not expression) @x@.
+  data Header (ByronBlock cfg) = ByronHeader {
+      byronHeader     :: !(CC.Block.AHeader ByteString)
+    , byronHeaderHash :: ByronHash
+      -- ^ Cache the hash, but compute it lazily based on 'byronHeader'.
+      --
+      -- Since the thunk to compute the hash (see 'mkByronHeader') only refers
+      -- to 'byronHeader', this thunk should not secretly hold on to
+      -- more data than 'byronHeader' itself holds on to.
     } deriving (Eq, Show)
 
-  getHeader (ByronBlock b) = ByronHeader (CC.Block.blockHeader b)
+  getHeader (ByronBlock b) = mkByronHeader (CC.Block.blockHeader b)
 
 instance (ByronGiven, Typeable cfg) => SupportedBlock (ByronBlock cfg)
 
@@ -170,17 +192,17 @@ instance (ByronGiven, Typeable cfg) => HasHeader (ByronBlock cfg) where
   blockInvariant = const True
 
 instance (ByronGiven, Typeable cfg) => HasHeader (Header (ByronBlock cfg)) where
-  blockHash = ByronHash . CC.Block.headerHashAnnotated . unByronHeader
+  blockHash = byronHeaderHash
 
-  blockPrevHash (ByronHeader h) = BlockHash . ByronHash $ CC.Block.headerPrevHash h
+  blockPrevHash = BlockHash . ByronHash . CC.Block.headerPrevHash . byronHeader
 
   blockSlot      = convertSlot
                  . CC.Block.headerSlot
-                 . unByronHeader
+                 . byronHeader
   blockNo        = BlockNo
                  . CC.Common.unChainDifficulty
                  . CC.Block.headerDifficulty
-                 . unByronHeader
+                 . byronHeader
   blockInvariant = const True
 
 instance (ByronGiven, Typeable cfg) => Measured BlockMeasure (ByronBlock cfg) where
@@ -341,11 +363,11 @@ type instance BlockProtocol (ByronBlock cfg) =
 instance ByronGiven => SignedHeader (Header (ByronBlock cfg)) where
   type Signed (Header (ByronBlock cfg)) = Annotated CC.Block.ToSign ByteString
   headerSigned = CC.Block.recoverSignedBytes given
-               . unByronHeader
+               . byronHeader
 
 instance (ByronGiven, Typeable cfg)
       => HeaderSupportsPBft PBftCardanoCrypto (Header (ByronBlock cfg)) where
-  headerPBftFields _ (ByronHeader hdr) = PBftFields {
+  headerPBftFields _ (ByronHeader hdr _) = PBftFields {
         pbftIssuer    = VerKeyCardanoDSIGN
                       . CC.Delegation.delegateVK
                       . CC.Block.delegationCertificate
@@ -400,7 +422,7 @@ instance Condense (Header (ByronBlock cfg)) where
     where
       psigCert = CC.Block.delegationCertificate
                . CC.Block.headerSignature
-               . unByronHeader
+               . byronHeader
                $ hdr
       issuer   = CC.Delegation.issuerVK   psigCert
       delegate = CC.Delegation.delegateVK psigCert
@@ -411,15 +433,15 @@ instance Condense (Header (ByronBlock cfg)) where
       condensedHash
         = T.unpack
         . sformat CC.Block.headerHashF
-        . Crypto.hashDecoded . fmap CC.Block.wrapHeaderBytes
-        . unByronHeader
+        . unByronHash
+        . byronHeaderHash
         $ hdr
 
       condensedPrevHash
         = T.unpack
         . sformat CC.Block.headerHashF
         . CC.Block.headerPrevHash
-        . unByronHeader
+        . byronHeader
         $ hdr
 
       condensedSlot
@@ -427,7 +449,7 @@ instance Condense (Header (ByronBlock cfg)) where
         . sformat build
         . unAnnotated
         . CC.Block.aHeaderSlot
-        . unByronHeader
+        . byronHeader
         $ hdr
 
 {-------------------------------------------------------------------------------
@@ -438,16 +460,46 @@ newtype ByronBlockOrEBB cfg = ByronBlockOrEBB
   { unByronBlockOrEBB :: CC.Block.ABlockOrBoundary ByteString
   } deriving (Eq, Show)
 
+mkByronHeaderOrEBB :: Either (CC.Block.ABoundaryHeader ByteString)
+                             (CC.Block.AHeader         ByteString)
+                   -> Header (ByronBlockOrEBB cfg)
+mkByronHeaderOrEBB header = case header of
+    -- By pattern-matching on the two cases, we satisfy the format
+    -- 'ByronHeaderOrEBB' desires.
+    Left ebb -> ByronHeaderOrEBB {
+        byronHeaderOrEBB     = Left ebb
+      , byronHeaderOrEBBHash = ByronHash $ CC.Block.boundaryHeaderHashAnnotated ebb
+      }
+    Right mb -> ByronHeaderOrEBB {
+        byronHeaderOrEBB     = Right mb
+      , byronHeaderOrEBBHash = ByronHash $ CC.Block.headerHashAnnotated mb
+      }
+
 instance GetHeader (ByronBlockOrEBB cfg) where
-  newtype Header (ByronBlockOrEBB cfg) = ByronHeaderOrEBB {
-      unByronHeaderOrEBB :: Either (CC.Block.ABoundaryHeader ByteString) (CC.Block.AHeader ByteString)
+  -- | The only acceptable format for constructing a 'ByronHeaderOrEBB' is
+  --
+  -- > ByronHeaderOrEBB {
+  -- >     byronHeaderOrEBB     = <optional constructor> x
+  -- >   , byronHeaderOrEBBHash = computeHash x
+  -- >   }
+  --
+  -- for some variable (not expression) @x@.
+  data Header (ByronBlockOrEBB cfg) = ByronHeaderOrEBB {
+      byronHeaderOrEBB     :: !(Either (CC.Block.ABoundaryHeader ByteString)
+                                       (CC.Block.AHeader         ByteString))
+    , byronHeaderOrEBBHash :: ByronHash
+      -- ^ Cache the hash, but compute it lazily based on 'byronHeaderOrEBB'.
+      --
+      -- Since the thunk to compute the hash (see 'mkByronHeaderOrEBB') only
+      -- refers to 'byronHeaderOrEBB', this thunk should not secretly hold on
+      -- to more data than 'byronHeaderOrEBB' itself holds on to.
     } deriving (Eq, Show)
 
   getHeader (ByronBlockOrEBB (CC.Block.ABOBBlock    b)) =
-    ByronHeaderOrEBB . Right $ CC.Block.blockHeader b
+    mkByronHeaderOrEBB . Right $ CC.Block.blockHeader b
 
   getHeader (ByronBlockOrEBB (CC.Block.ABOBBoundary b)) =
-    ByronHeaderOrEBB . Left $ CC.Block.boundaryHeader b
+    mkByronHeaderOrEBB . Left $ CC.Block.boundaryHeader b
 
 type instance HeaderHash (ByronBlockOrEBB  cfg) = ByronHash
 
@@ -461,21 +513,19 @@ instance (ByronGiven, Typeable cfg) => HasHeader (ByronBlockOrEBB cfg) where
   blockInvariant = const True
 
 instance (ByronGiven, Typeable cfg) => HasHeader (Header (ByronBlockOrEBB cfg)) where
-  blockHash b = ByronHash $ case unByronHeaderOrEBB b of
-    Left ebb -> CC.Block.boundaryHeaderHashAnnotated ebb
-    Right mb -> CC.Block.headerHashAnnotated mb
+  blockHash = byronHeaderOrEBBHash
 
-  blockPrevHash b = case unByronHeaderOrEBB b of
+  blockPrevHash b = case byronHeaderOrEBB b of
     Right mb -> BlockHash . ByronHash . CC.Block.headerPrevHash $ mb
     Left ebb -> case CC.Block.boundaryPrevHash ebb of
       Left _  -> GenesisHash
       Right h -> BlockHash (ByronHash h)
 
-  blockSlot b = case unByronHeaderOrEBB b of
+  blockSlot b = case byronHeaderOrEBB b of
     Right mb -> convertSlot . CC.Block.headerSlot $ mb
     Left ebb -> SlotNo $ CC.Slot.unEpochSlots given * CC.Block.boundaryEpoch ebb
 
-  blockNo b = case unByronHeaderOrEBB b of
+  blockNo b = case byronHeaderOrEBB b of
     Right mb -> BlockNo
       . CC.Common.unChainDifficulty
       . CC.Block.headerDifficulty
@@ -497,7 +547,7 @@ instance (ByronGiven, Typeable cfg)
   type HeaderOfBlock (Header (ByronBlockOrEBB cfg)) = Header (ByronBlock cfg)
   type HeaderOfEBB (Header (ByronBlockOrEBB cfg)) = CC.Block.ABoundaryHeader ByteString
 
-  eitherHeaderOrEbb _ = fmap ByronHeader . unByronHeaderOrEBB
+  eitherHeaderOrEbb _ = fmap mkByronHeader . byronHeaderOrEBB
 
 type instance BlockProtocol (ByronBlockOrEBB cfg) =
   WithEBBs (ExtNodeConfig cfg (PBft PBftCardanoCrypto))
@@ -600,8 +650,8 @@ condenseABoundaryHeader hdr =
           Right h -> sformat CC.Block.headerHashF h
 
 instance Condense (Header (ByronBlockOrEBB cfg)) where
-  condense (ByronHeaderOrEBB (Right   hdr)) = condense (ByronHeader hdr)
-  condense (ByronHeaderOrEBB (Left ebbhdr)) = condenseABoundaryHeader ebbhdr
+  condense (ByronHeaderOrEBB (Right   hdr) _) = condense (mkByronHeader hdr)
+  condense (ByronHeaderOrEBB (Left ebbhdr) _) = condenseABoundaryHeader ebbhdr
 
 instance Condense (ChainHash (ByronBlockOrEBB cfg)) where
   condense GenesisHash   = "genesis"
@@ -655,7 +705,7 @@ decodeByronBlock epochSlots =
 encodeByronHeader :: Header (ByronBlockOrEBB cfg) -> Encoding
 encodeByronHeader hdr =
     CBOR.encodeListLen 2
-     <> case unByronHeaderOrEBB hdr of
+     <> case byronHeaderOrEBB hdr of
           Left ebb ->
               CBOR.encodeWord 0
            <> CBOR.encodePreEncoded (CC.Block.boundaryHeaderAnnotation ebb)
@@ -671,7 +721,7 @@ decodeByronHeader :: CC.Slot.EpochSlots
 decodeByronHeader epochSlots =
     fillInByteString <$> fromCBORAHeaderOrBoundary epochSlots
   where
-    fillInByteString it theBytes = ByronHeaderOrEBB $ bimap
+    fillInByteString it theBytes = mkByronHeaderOrEBB $ bimap
       (fmap (Lazy.toStrict . slice theBytes))
       (fmap (Lazy.toStrict . slice theBytes))
       it
@@ -886,7 +936,7 @@ byronBlockOrEBBMatchesHeader :: Header (ByronBlockOrEBB cfg)
                              -> ByronBlockOrEBB cfg
                              -> Bool
 byronBlockOrEBBMatchesHeader blkOrEbbHdr blkOrEbb =
-    case unByronHeaderOrEBB blkOrEbbHdr of
+    case byronHeaderOrEBB blkOrEbbHdr of
         -- For EBBs, we're currently being more permissive here and not
         -- performing any header-body validation but only checking whether an
         -- EBB header and EBB block were provided. This seems to be fine as it
