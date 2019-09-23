@@ -55,4 +55,6 @@ data VolatileDB blockId m = VolatileDB {
     , getPredecessor :: HasCallStack => STM m (blockId -> Maybe blockId)
     , garbageCollect :: HasCallStack => SlotNo -> m ()
     , getIsMember    :: HasCallStack => STM m (blockId -> Bool)
+      -- | Return the highest slot number ever stored by the VolatileDB.
+    , getMaxSlotNo   :: HasCallStack => STM m MaxSlotNo
 }

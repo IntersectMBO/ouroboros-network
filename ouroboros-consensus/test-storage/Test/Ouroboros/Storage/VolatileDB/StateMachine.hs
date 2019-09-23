@@ -83,6 +83,7 @@ data Success
   | SimulatedError (Either (VolatileDBError BlockId) Success)
   | Successors [Set BlockId]
   | Predecessor [Predecessor]
+  | MaxSlot  MaxSlotNo
   deriving Show
 
 instance Eq Success where
@@ -94,6 +95,7 @@ instance Eq Success where
     SimulatedError _ == SimulatedError _ = True
     Successors st1 == Successors st2 = st1 == st2
     Predecessor p1 == Predecessor p2 = p1 == p2
+    MaxSlot ms1 == MaxSlot ms2 = ms1 == ms2
     _ == _ = False
 
 
@@ -115,6 +117,7 @@ data Cmd
     | DuplicateBlock String BlockId Predecessor
     | GetSuccessors [Predecessor]
     | GetPredecessor [BlockId]
+    | GetMaxSlotNo
     deriving Show
 
 data CmdErr = CmdErr
@@ -142,6 +145,7 @@ deriving instance ToExpr SlotNo
 deriving instance Generic BlockId
 deriving instance Generic (ParserError BlockId)
 deriving instance ToExpr (ParserError BlockId)
+deriving instance ToExpr MaxSlotNo
 deriving instance ToExpr (DBModel BlockId)
 deriving instance ToExpr (Model r)
 
@@ -161,6 +165,7 @@ instance CommandNames (At Cmd) where
         DuplicateBlock {}    -> "DuplicateBlock"
         GetSuccessors {}     -> "GetSuccessors"
         GetPredecessor {}    -> "GetPredecessor"
+        GetMaxSlotNo {}      -> "GetMaxSlotNo"
     cmdNames _ = ["not", "suported", "yet"]
 
 instance CommandNames (At CmdErr) where
@@ -246,6 +251,7 @@ runPure dbm (CmdErr cmd err) =
             AskIfMember bids   -> do
                 isMember <- getIsMemberModel tnc
                 return $ IsMember $ isMember <$> bids
+            GetMaxSlotNo       -> MaxSlot <$> getMaxSlotNoModel tnc
             Corrupt cors       -> do
                 closeModel
                 runCorruptionModel guessSlot cors
@@ -293,6 +299,7 @@ runDB restCmd db cmd = case cmd of
     AskIfMember bids   -> do
         isMember <- atomically $ getIsMember db
         return $ IsMember $ isMember <$> bids
+    GetMaxSlotNo       -> atomically $ MaxSlot <$> getMaxSlotNo db
 
 sm :: (MonadCatch m, MonadSTM m)
    => Bool
@@ -379,6 +386,7 @@ generatorCmdImpl terminatingCmd m@Model {..} =
         , (150, return $ PutBlock sl $ Just psl)
         , (100, return $ GetSuccessors $ Just sl : (Just <$> possiblePredecessors))
         , (100, return $ GetPredecessor ls)
+        , (100, return $ GetMaxSlotNo)
         , (50, return $ GarbageCollect sl)
         , (50, return $ IsOpen)
         , (50, return $ Close)
@@ -419,6 +427,7 @@ generatorImpl mkErr terminatingCmd m@Model {..} = do
         noErrorFor PutBlock {}          = False
         noErrorFor GetSuccessors {}     = False
         noErrorFor GetPredecessor {}    = False
+        noErrorFor GetMaxSlotNo {}      = False
         noErrorFor CreateInvalidFile {} = True
         noErrorFor CreateFile {}        = True
         noErrorFor Corrupt {}           = True
@@ -511,6 +520,7 @@ knownLimitation model (At cmd) = case cmd of
     GetBlockIds        -> Bot
     GetSuccessors {}   -> Bot
     GetPredecessor {}  -> Bot
+    GetMaxSlotNo {}    -> Bot
     PutBlock bid _pbid -> Boolean $ isLimitation (latestGarbaged $ dbModel model) (guessSlot bid)
     GarbageCollect _sl -> Bot
     IsOpen             -> Bot

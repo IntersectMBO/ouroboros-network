@@ -19,6 +19,7 @@ module Test.Ouroboros.Storage.VolatileDB.Model
     , getIsMemberModel
     , getSuccessorsModel
     , getPredecessorModel
+    , getMaxSlotNoModel
     , initDBModel
     , isOpenModel
     , putBlockModel
@@ -34,10 +35,12 @@ import           Data.Either
 import           Data.List (find, sortOn, splitAt, uncons)
 import           Data.Map (Map)
 import qualified Data.Map as Map
-import           Data.Maybe (fromMaybe, isNothing)
+import           Data.Maybe (fromMaybe, isNothing, mapMaybe)
 import           Data.Set (Set)
 import qualified Data.Set as Set
 import           GHC.Stack.Types
+
+import           Ouroboros.Consensus.Util (safeMaximum)
 
 import           Ouroboros.Storage.FS.API.Types
 import           Ouroboros.Storage.Util.ErrorHandling (ThrowCantCatch)
@@ -58,6 +61,7 @@ data DBModel blockId = DBModel {
     , index          :: Map String (Maybe SlotNo, Int, [(blockId, Maybe blockId)]) -- what each file contains in the real impl.
     , currentFile    :: String -- the current open file. If the db is empty this is the next it wil write.
     , nextFId        :: FileId -- the next file id.
+    , maxSlotNo      :: MaxSlotNo -- highest ever stored SlotNo
     } deriving Show
 
 initDBModel ::Int -> DBModel blockId
@@ -70,6 +74,7 @@ initDBModel bpf = DBModel {
     , index          = Map.singleton (Internal.filePath 0) newFileInfo
     , currentFile    = Internal.filePath 0
     , nextFId        = 1
+    , maxSlotNo      = NoMaxSlotNo
 }
 
 closeModel :: MonadState (DBModel blockId) m => m ()
@@ -154,6 +159,7 @@ putBlockModel err cmdErr BlockInfo{..} bs = do
                     , index = index''
                     , currentFile = currentFile'
                     , nextFId = nextFId'
+                    , maxSlotNo = maxSlotNo `max` MaxSlotNo bslot
                     }
 
 garbageCollectModel :: forall m blockId
@@ -245,6 +251,15 @@ getPredecessorModel err = do
         maybe (error msg) snd $ find (\(b,_pb) -> b == bid) (concat $ (\(_,_,c) -> c) <$> Map.elems index)
   where
     msg = "precondition violated: block not member of the VolatileDB"
+
+getMaxSlotNoModel :: forall m blockId
+                  . MonadState (DBModel blockId) m
+                  => ThrowCantCatch (VolatileDBError blockId) m
+                  -> m MaxSlotNo
+getMaxSlotNoModel err = do
+    DBModel {..} <- get
+    if not open then EH.throwError' err $ UserError ClosedDBError
+    else return maxSlotNo
 
 modifyIndex :: MonadState (DBModel blockId) m
             => (Map String (Maybe SlotNo, Int, [(blockId, Maybe blockId)])
@@ -344,7 +359,17 @@ recover err dbm@DBModel {..} = do
     case parseError of
         Just pError@(InvalidFilename _) -> EH.throwError' err $ UnexpectedError $ ParserError pError
         Just pError@(DuplicatedSlot _ _ _) -> EH.throwError' err $ UnexpectedError $ ParserError pError
-        _ -> return $ dbm {index = index', currentFile = cFile, nextFId = fid, parseError = Nothing}
+        _ -> return dbm
+          { index       = index'
+          , currentFile = cFile
+          , nextFId     = fid
+          , parseError  = Nothing
+            -- Recalculate it from the index to match the real implementation
+          , maxSlotNo   = maxSlotNoFromMaybe
+                        $ safeMaximum
+                        $ mapMaybe (\(mbS, _, _) -> mbS)
+                        $ Map.elems index'
+          }
   where
     lastFd = fromRight (error "filename in index didn't parse" )
                        (findLastFd $ Set.fromList $ Map.keys index)

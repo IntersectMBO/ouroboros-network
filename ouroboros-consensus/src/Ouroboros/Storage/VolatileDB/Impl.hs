@@ -99,7 +99,7 @@ import qualified Data.Set as Set
 import           Data.Word (Word64)
 import           GHC.Stack
 
-import           Ouroboros.Consensus.Util (SomePair (..))
+import           Ouroboros.Consensus.Util (SomePair (..), safeMaximum)
 import           Ouroboros.Consensus.Util.MonadSTM.NormalForm
 
 import           Ouroboros.Storage.FS.API
@@ -132,6 +132,7 @@ data InternalState blockId h = InternalState {
     , _currentMap         :: !(Index blockId) -- The content of each file.
     , _currentRevMap      :: !(ReverseIndex blockId) -- Where to find each block from slot.
     , _currentSuccMap     :: !(SuccessorsIndex blockId) -- successors for each block.
+    , _currentMaxSlotNo   :: !MaxSlotNo -- Highest ever stored SlotNo
     }
 
 {------------------------------------------------------------------------------
@@ -167,6 +168,7 @@ openDBFull hasFS err errSTM parser maxBlocksPerFile = do
         , getBlockIds    = getBlockIdsImpl env
         , getSuccessors  = getSuccessorsImpl env
         , getPredecessor = getPredecessorImpl env
+        , getMaxSlotNo   = getMaxSlotNoImpl env
         }
     return (db, env)
 
@@ -278,6 +280,7 @@ putBlockImpl env@VolatileDBEnv{..} BlockInfo{..} builder = do
                         , _currentMap         = mp
                         , _currentRevMap      = revMp
                         , _currentSuccMap     = insertMapSet _currentSuccMap (bbid, bpreBid)
+                        , _currentMaxSlotNo   = _currentMaxSlotNo `max` MaxSlotNo bslot
                     }
                 if nBlocks' < fromIntegral _maxBlocksPerFile
                 then return (st', ())
@@ -390,6 +393,15 @@ getPredecessorImpl VolatileDBEnv{..} = do
   where
     msg = "precondition violated: block not member of the VolatileDB"
 
+getMaxSlotNoImpl :: forall m blockId. (MonadSTM m, Ord blockId, HasCallStack)
+                 => VolatileDBEnv m blockId
+                 -> STM m MaxSlotNo
+getMaxSlotNoImpl VolatileDBEnv{..} = do
+    mSt <- readTMVar _dbInternalState
+    case mSt of
+        Nothing -> EH.throwError' _dbErrSTM $ UserError ClosedDBError
+        Just st -> return $ _currentMaxSlotNo st
+
 {------------------------------------------------------------------------------
   Internal functions
 ------------------------------------------------------------------------------}
@@ -493,6 +505,10 @@ mkInternalState hasFS@HasFS{..} err parser n files = wrapFsError hasFsErr err $ 
                                 -- new one.
                                 return (filePath fd', [], lst + 2, Map.insert (filePath fd') (FileInfo Nothing 0 Map.empty) mp, 0)
                 hndl <- hOpen (mkFsPath [fileToWrite]) (AppendMode AllowExisting)
+                let maxSlotNo = maxSlotNoFromMaybe
+                              $ safeMaximum
+                              $ mapMaybe fLatestSlot
+                              $ Map.elems mp'
                 return $ InternalState {
                       _currentWriteHandle = hndl
                     , _currentWritePath   = fileToWrite
@@ -502,6 +518,7 @@ mkInternalState hasFS@HasFS{..} err parser n files = wrapFsError hasFsErr err $ 
                     , _currentMap         = mp'
                     , _currentRevMap      = revMp
                     , _currentSuccMap     = succMp
+                    , _currentMaxSlotNo   = maxSlotNo
                 }
             file : restFiles -> do
                 let path = mkFsPath [file]
