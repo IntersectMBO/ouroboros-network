@@ -87,16 +87,24 @@ data Success
   deriving Show
 
 instance Eq Success where
-    Unit () == Unit () = True
-    Blob mbs == Blob mbs' = mbs == mbs'
-    Blocks ls == Blocks ls' = S.fromList ls == S.fromList ls'
-    Bl bl == Bl bl' = bl == bl'
-    IsMember ls == IsMember ls' = ls == ls'
+    Unit ()          == Unit ()          = True
+    Unit _           == _                = False
+    Blob mbs         == Blob mbs'        = mbs == mbs'
+    Blob _           == _                = False
+    Blocks ls        == Blocks ls'       = S.fromList ls == S.fromList ls'
+    Blocks _         == _                = False
+    Bl bl            == Bl bl'           = bl == bl'
+    Bl _             == _                = False
+    IsMember ls      == IsMember ls'     = ls == ls'
+    IsMember _       == _                = False
     SimulatedError _ == SimulatedError _ = True
-    Successors st1 == Successors st2 = st1 == st2
-    Predecessor p1 == Predecessor p2 = p1 == p2
-    MaxSlot ms1 == MaxSlot ms2 = ms1 == ms2
-    _ == _ = False
+    SimulatedError _ == _                = False
+    Successors st1   == Successors st2   = st1 == st2
+    Successors _     == _                = False
+    Predecessor p1   == Predecessor p2   = p1 == p2
+    Predecessor _    == _                = False
+    MaxSlot ms1      == MaxSlot ms2      = ms1 == ms2
+    MaxSlot _        == _                = False
 
 
 newtype Resp = Resp {getResp :: Either (VolatileDBError BlockId) Success}
