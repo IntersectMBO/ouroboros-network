@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns               #-}
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase                 #-}
@@ -32,9 +33,8 @@ import           Data.Foldable (toList)
 import           Data.List (sortOn)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
-import           Data.Sequence (Seq ((:<|), (:|>)), (|>))
+import           Data.Sequence (Seq ((:<|), (:|>)))
 import qualified Data.Sequence as Seq
-import           Data.Tuple (swap)
 import           Data.Word
 
 import           Ouroboros.Network.Block (SlotNo (..))
@@ -100,10 +100,10 @@ data PBftChainState c = PBftChainState {
       --
       -- At this point the anchor becomes equal to the (slot number of) the
       -- oldest block that we can roll back to.
-      anchor  :: WithOrigin SlotNo
+      anchor  :: !(WithOrigin SlotNo)
 
       -- | Sequence in increasing order of slots and corresponding genesis keys
-    , signers :: !(Seq (SlotNo, PBftVerKeyHash c))
+    , signers :: !(Seq (PBftSigner c))
 
       -- | Count for each genesis key
       --
@@ -115,8 +115,17 @@ data PBftChainState c = PBftChainState {
     , counts  :: !(Map (PBftVerKeyHash c) Int)
     }
 
+-- | Slot and corresponding genesis key
+data PBftSigner c = PBftSigner {
+      pbftSignerSlotNo     :: !SlotNo
+    , pbftSignerGenesisKey :: !(PBftVerKeyHash c)
+    }
+
 deriving instance PBftCrypto c => Show (PBftChainState c)
 deriving instance PBftCrypto c => Eq   (PBftChainState c)
+
+deriving instance PBftCrypto c => Show (PBftSigner c)
+deriving instance PBftCrypto c => Eq   (PBftSigner c)
 
 {-------------------------------------------------------------------------------
   Queries
@@ -145,8 +154,8 @@ countSignedBy st gk = Map.findWithDefault 0 gk (counts st)
 lastSlot :: PBftChainState c -> WithOrigin SlotNo
 lastSlot st =
     case signers st of
-      _ :|> (slot, _) -> At slot
-      _otherwise      -> anchor st
+      _ :|> PBftSigner slot _ -> At slot
+      _otherwise              -> anchor st
 
 {-------------------------------------------------------------------------------
   Construction
@@ -167,7 +176,7 @@ insert :: PBftCrypto c
        => PBftVerKeyHash c -> SlotNo -> PBftChainState c -> PBftChainState c
 insert gk slot st = PBftChainState {
       anchor  = anchor st -- anchor doesn't change because first block doesn't
-    , signers = signers st |> (slot, gk)
+    , signers = signers st |> PBftSigner slot gk
     , counts  = incrementKey gk (counts st)
     }
 
@@ -179,7 +188,7 @@ insert gk slot st = PBftChainState {
 dropOldest :: PBftCrypto c => PBftChainState c -> PBftChainState c
 dropOldest st =
     case signers st of
-      (slot, gk) :<| signers' ->
+      PBftSigner slot gk :<| signers' ->
         PBftChainState {
             anchor  = At slot
           , signers = signers'
@@ -245,17 +254,22 @@ rewind slot st
       -- Typically we only drop a few blocks (and keep most), so updating
       -- the counts based on what we drop will in most cases be faster than
       -- recomputing it from the blocks we keep.
-      , counts  = repeatedly (decrementKey . snd) (toList discard) (counts st)
+      , counts  = repeatedly (decrementKey . pbftSignerGenesisKey)
+                             (toList discard)
+                             (counts st)
       }
   where
-    (keep, discard) = Seq.spanl (\(slot', _) -> At slot' <= slot) (signers st)
+    (keep, discard) = Seq.spanl (\(PBftSigner slot' _) -> At slot' <= slot) (signers st)
 
 {-------------------------------------------------------------------------------
   Internal
 -------------------------------------------------------------------------------}
 
-fromSlots :: Ord gk => Seq (slot, gk) -> Map gk Int
-fromSlots slots = repeatedly (incrementKey . snd) (toList slots) Map.empty
+fromSlots :: Ord (PBftVerKeyHash c)
+          => Seq (PBftSigner c) -> Map (PBftVerKeyHash c) Int
+fromSlots slots = repeatedly (incrementKey . pbftSignerGenesisKey)
+                             (toList slots)
+                             Map.empty
 
 incrementKey :: Ord gk => gk -> Map gk Int -> Map gk Int
 incrementKey = Map.alter inc
@@ -287,16 +301,15 @@ fromMap anchor perKey = PBftChainState {
     , counts  = fromSlots perSlot
     }
   where
-    perSlot :: Seq (SlotNo, PBftVerKeyHash c)
+    perSlot :: Seq (PBftSigner c)
     perSlot = Seq.fromList
-            . sortOn fst
-            . map swap
+            . sortOn pbftSignerSlotNo
             . distrib
             . Map.toList
             $ perKey
 
-    distrib :: [(a, [b])] -> [(a, b)]
-    distrib = concatMap (\(a, bs) -> map (a,) bs)
+    distrib :: [(PBftVerKeyHash c, [SlotNo])] -> [PBftSigner c]
+    distrib = concatMap $ \(k, ss) -> map (\s -> PBftSigner s k) ss
 
 {-------------------------------------------------------------------------------
   Serialization
@@ -318,3 +331,20 @@ instance ( Ord       (PBftVerKeyHash c)
       signers <- decode
       let counts = fromSlots signers
       return $ PBftChainState{..}
+
+instance Serialise (PBftVerKeyHash c) => Serialise (PBftSigner c) where
+  encode = encode . toPair
+    where
+      toPair (PBftSigner{..}) = (pbftSignerSlotNo, pbftSignerGenesisKey)
+
+  decode = fromPair <$> decode
+    where
+      fromPair (slotNo, genesisKey) = PBftSigner slotNo genesisKey
+
+{-------------------------------------------------------------------------------
+  Auxiliary
+-------------------------------------------------------------------------------}
+
+-- TODO: This will be obsolete once we have a strict Seq type
+(|>) :: Seq a -> a -> Seq a
+(|>) xs !x = xs Seq.|> x
