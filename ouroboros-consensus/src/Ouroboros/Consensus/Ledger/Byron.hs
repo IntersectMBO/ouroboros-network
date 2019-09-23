@@ -7,7 +7,6 @@
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE OverloadedStrings          #-}
-{-# LANGUAGE PatternSynonyms            #-}
 {-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE TypeApplications           #-}
@@ -50,7 +49,6 @@ module Ouroboros.Consensus.Ledger.Byron
   , decodeByronApplyTxError
     -- * EBBs
   , ByronBlockOrEBB (..)
-  , pattern ByronHeaderOrEBB
   , mkByronHeaderOrEBB
   , annotateBoundary
   , toCBORAHeaderOrBoundary
@@ -159,7 +157,7 @@ instance GetHeader (ByronBlock cfg) where
   -- | The only acceptable format for constructing a 'ByronHeader' is
   --
   -- > ByronHeader {
-  -- >     byronHeader     = <optional constructor> x
+  -- >     byronHeader     = x
   -- >   , byronHeaderHash = computeHash x
   -- >   }
   --
@@ -466,34 +464,27 @@ mkByronHeaderOrEBB :: Either (CC.Block.ABoundaryHeader ByteString)
 mkByronHeaderOrEBB header = case header of
     -- By pattern-matching on the two cases, we satisfy the format
     -- 'ByronHeaderOrEBB' desires.
-    Left ebb -> ByronHeaderOrEBB {
-        byronHeaderOrEBB     = Left ebb
-      , byronHeaderOrEBBHash = ByronHash $ CC.Block.boundaryHeaderHashAnnotated ebb
-      }
-    Right mb -> ByronHeaderOrEBB {
-        byronHeaderOrEBB     = Right mb
-      , byronHeaderOrEBBHash = ByronHash $ CC.Block.headerHashAnnotated mb
-      }
+    Left ebb -> ByronHeaderBoundary ebb h
+      where
+        h = ByronHash $ CC.Block.boundaryHeaderHashAnnotated ebb
+    Right mb -> ByronHeaderRegular mb h
+      where
+        h = ByronHash $ CC.Block.headerHashAnnotated mb
 
 instance GetHeader (ByronBlockOrEBB cfg) where
-  -- | The only acceptable format for constructing a 'ByronHeaderOrEBB' is
+  -- | The only acceptable formats for constructing a 'ByronHeaderOrEBB' are
   --
-  -- > ByronHeaderOrEBB {
-  -- >     byronHeaderOrEBB     = <optional constructor> x
-  -- >   , byronHeaderOrEBBHash = computeHash x
-  -- >   }
+  -- > ByronHeaderRegular  x (computeHash x)
+  -- > ByronHeaderBoundary x (computeHash x)
   --
   -- for some variable (not expression) @x@.
-  data Header (ByronBlockOrEBB cfg) = ByronHeaderOrEBB {
-      byronHeaderOrEBB     :: !(Either (CC.Block.ABoundaryHeader ByteString)
-                                       (CC.Block.AHeader         ByteString))
-    , byronHeaderOrEBBHash :: ByronHash
-      -- ^ Cache the hash, but compute it lazily based on 'byronHeaderOrEBB'.
-      --
-      -- Since the thunk to compute the hash (see 'mkByronHeaderOrEBB') only
-      -- refers to 'byronHeaderOrEBB', this thunk should not secretly hold on
-      -- to more data than 'byronHeaderOrEBB' itself holds on to.
-    } deriving (Eq, Show)
+  --
+  -- This guarantees that the lazily evaluated hash won't retain anything more
+  -- than is retained /anyway/ by the header itself.
+  data Header (ByronBlockOrEBB cfg) =
+        ByronHeaderRegular  !(CC.Block.AHeader         ByteString) ByronHash
+      | ByronHeaderBoundary !(CC.Block.ABoundaryHeader ByteString) ByronHash
+      deriving (Eq, Show)
 
   getHeader (ByronBlockOrEBB (CC.Block.ABOBBlock    b)) =
     mkByronHeaderOrEBB . Right $ CC.Block.blockHeader b
@@ -513,24 +504,28 @@ instance (ByronGiven, Typeable cfg) => HasHeader (ByronBlockOrEBB cfg) where
   blockInvariant = const True
 
 instance (ByronGiven, Typeable cfg) => HasHeader (Header (ByronBlockOrEBB cfg)) where
-  blockHash = byronHeaderOrEBBHash
+  blockHash (ByronHeaderRegular  _ h) = h
+  blockHash (ByronHeaderBoundary _ h) = h
 
-  blockPrevHash b = case byronHeaderOrEBB b of
-    Right mb -> BlockHash . ByronHash . CC.Block.headerPrevHash $ mb
-    Left ebb -> case CC.Block.boundaryPrevHash ebb of
-      Left _  -> GenesisHash
-      Right h -> BlockHash (ByronHash h)
+  blockPrevHash (ByronHeaderRegular mb _) =
+      BlockHash . ByronHash . CC.Block.headerPrevHash $ mb
+  blockPrevHash (ByronHeaderBoundary ebb _) =
+      case CC.Block.boundaryPrevHash ebb of
+        Left _  -> GenesisHash
+        Right h -> BlockHash (ByronHash h)
 
-  blockSlot b = case byronHeaderOrEBB b of
-    Right mb -> convertSlot . CC.Block.headerSlot $ mb
-    Left ebb -> SlotNo $ CC.Slot.unEpochSlots given * CC.Block.boundaryEpoch ebb
+  blockSlot (ByronHeaderRegular mb _) =
+      convertSlot . CC.Block.headerSlot $ mb
+  blockSlot (ByronHeaderBoundary ebb _) =
+      SlotNo $ CC.Slot.unEpochSlots given * CC.Block.boundaryEpoch ebb
 
-  blockNo b = case byronHeaderOrEBB b of
-    Right mb -> BlockNo
+  blockNo (ByronHeaderRegular mb _) =
+        BlockNo
       . CC.Common.unChainDifficulty
       . CC.Block.headerDifficulty
       $ mb
-    Left ebb -> BlockNo
+  blockNo (ByronHeaderBoundary ebb _) =
+        BlockNo
       . CC.Common.unChainDifficulty
       . CC.Block.boundaryDifficulty
       $ ebb
@@ -547,7 +542,8 @@ instance (ByronGiven, Typeable cfg)
   type HeaderOfBlock (Header (ByronBlockOrEBB cfg)) = Header (ByronBlock cfg)
   type HeaderOfEBB (Header (ByronBlockOrEBB cfg)) = CC.Block.ABoundaryHeader ByteString
 
-  eitherHeaderOrEbb _ = fmap mkByronHeader . byronHeaderOrEBB
+  eitherHeaderOrEbb _ (ByronHeaderRegular  mb _)  = Right (mkByronHeader mb)
+  eitherHeaderOrEbb _ (ByronHeaderBoundary ebb _) = Left ebb
 
 type instance BlockProtocol (ByronBlockOrEBB cfg) =
   WithEBBs (ExtNodeConfig cfg (PBft PBftCardanoCrypto))
@@ -650,8 +646,8 @@ condenseABoundaryHeader hdr =
           Right h -> sformat CC.Block.headerHashF h
 
 instance Condense (Header (ByronBlockOrEBB cfg)) where
-  condense (ByronHeaderOrEBB (Right   hdr) _) = condense (mkByronHeader hdr)
-  condense (ByronHeaderOrEBB (Left ebbhdr) _) = condenseABoundaryHeader ebbhdr
+  condense (ByronHeaderRegular  hdr    _) = condense (mkByronHeader hdr)
+  condense (ByronHeaderBoundary ebbhdr _) = condenseABoundaryHeader ebbhdr
 
 instance Condense (ChainHash (ByronBlockOrEBB cfg)) where
   condense GenesisHash   = "genesis"
@@ -703,16 +699,16 @@ decodeByronBlock epochSlots =
 -- | Encode a header. A legacy Byron node (cardano-sl) would successfully
 -- decode a header from these.
 encodeByronHeader :: Header (ByronBlockOrEBB cfg) -> Encoding
-encodeByronHeader hdr =
-    CBOR.encodeListLen 2
-     <> case byronHeaderOrEBB hdr of
-          Left ebb ->
-              CBOR.encodeWord 0
-           <> CBOR.encodePreEncoded (CC.Block.boundaryHeaderAnnotation ebb)
-
-          Right hdr' ->
-              CBOR.encodeWord 1
-           <> CBOR.encodePreEncoded (CC.Block.headerAnnotation hdr')
+encodeByronHeader (ByronHeaderBoundary ebb _) = mconcat [
+      CBOR.encodeListLen 2
+    , CBOR.encodeWord 0
+    , CBOR.encodePreEncoded (CC.Block.boundaryHeaderAnnotation ebb)
+    ]
+encodeByronHeader (ByronHeaderRegular mb _) = mconcat [
+      CBOR.encodeListLen 2
+    , CBOR.encodeWord 1
+    , CBOR.encodePreEncoded (CC.Block.headerAnnotation mb)
+    ]
 
 -- | Inversion of 'encodeByronHeader'.  The annotation will be correct, because
 -- the full bytes are passed to the decoded value.
@@ -932,24 +928,22 @@ mkByronTx tx = ByronTx
   Block Fetch integration
 -------------------------------------------------------------------------------}
 
+-- | Check if a block matches its header
 byronBlockOrEBBMatchesHeader :: Header (ByronBlockOrEBB cfg)
                              -> ByronBlockOrEBB cfg
                              -> Bool
-byronBlockOrEBBMatchesHeader blkOrEbbHdr blkOrEbb =
-    case byronHeaderOrEBB blkOrEbbHdr of
+byronBlockOrEBBMatchesHeader blkOrEbbHdr (ByronBlockOrEBB blkOrEbb) =
+    case (blkOrEbbHdr, blkOrEbb) of
+      (ByronHeaderRegular hdr _, CC.Block.ABOBBlock blk) -> isRight $
+        CC.Block.validateHeaderMatchesBody hdr (CC.Block.blockBody blk)
+      (ByronHeaderBoundary _ebbHdr _, CC.Block.ABOBBoundary _) ->
         -- For EBBs, we're currently being more permissive here and not
         -- performing any header-body validation but only checking whether an
         -- EBB header and EBB block were provided. This seems to be fine as it
         -- won't cause any loss of consensus with the old `cardano-sl` nodes.
-        Left _ebbHdr -> isEbb (unByronBlockOrEBB blkOrEbb)
-        Right hdr    -> isBlockAndHeaderMatchesBody (unByronBlockOrEBB blkOrEbb) hdr
-  where
-    isEbb (CC.Block.ABOBBoundary _) = True
-    isEbb (CC.Block.ABOBBlock _)    = False
-    --
-    isBlockAndHeaderMatchesBody (CC.Block.ABOBBoundary _) _  = False
-    isBlockAndHeaderMatchesBody (CC.Block.ABOBBlock blk) hdr = isRight $
-        CC.Block.validateHeaderMatchesBody hdr (CC.Block.blockBody blk)
+        True
+      (ByronHeaderRegular{}  , CC.Block.ABOBBoundary{}) -> False
+      (ByronHeaderBoundary{} , CC.Block.ABOBBlock{})    -> False
 
 {-------------------------------------------------------------------------------
   PBFT integration
