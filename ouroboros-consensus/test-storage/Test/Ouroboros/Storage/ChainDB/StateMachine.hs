@@ -62,7 +62,8 @@ import           Cardano.Crypto.DSIGN.Mock
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block (BlockNo, ChainHash (..), ChainUpdate,
-                     HasHeader, HeaderHash, Point, SlotNo (..), StandardHash)
+                     HasHeader, HeaderHash, MaxSlotNo, Point, SlotNo (..),
+                     StandardHash)
 import qualified Ouroboros.Network.Block as Block
 import           Ouroboros.Network.MockChain.Chain (Chain (..))
 import qualified Ouroboros.Network.MockChain.Chain as Chain
@@ -121,6 +122,7 @@ data Cmd blk it rdr
   | GetBlock          (Point blk)
   | GetGCedBlock      (Point blk)
     -- ^ Only for blocks that may have been garbage collected.
+  | GetMaxSlotNo
   | StreamBlocks      (StreamFrom blk) (StreamTo blk)
   | IteratorNext      it
   | IteratorClose     it
@@ -183,6 +185,7 @@ data Success blk it rdr
   | BlockReader   rdr
   | MbChainUpdate (Maybe (ChainUpdate blk blk))
   | MbPoint       (Maybe (Point blk))
+  | MaxSlot       MaxSlotNo
   deriving (Functor, Foldable, Traversable)
 
 type TestConstraints blk =
@@ -219,6 +222,7 @@ run ChainDB{..} ChainDB.Internal{..} registry = \case
     GetTipBlockNo         -> BlockNo       <$> atomically getTipBlockNo
     GetBlock pt           -> MbBlock       <$> getBlock pt
     GetGCedBlock pt       -> mbGCedBlock   <$> getBlock pt
+    GetMaxSlotNo          -> MaxSlot       <$> atomically getMaxSlotNo
     StreamBlocks from to  -> iter          <$> streamBlocks registry from to
     IteratorNext  it      -> IterResult    <$> iteratorNext it
     IteratorClose it      -> Unit          <$> iteratorClose it
@@ -326,6 +330,7 @@ runPure cfg = \case
     GetTipBlockNo         -> ok  BlockNo       $ query    Model.tipBlockNo
     GetBlock pt           -> err MbBlock       $ query   (Model.getBlockByPoint pt)
     GetGCedBlock pt       -> err mbGCedBlock   $ query   (Model.getBlockByPoint pt)
+    GetMaxSlotNo          -> ok  MaxSlot       $ query    Model.maxSlotNo
     StreamBlocks from to  -> err iter          $ updateE (Model.streamBlocks k from to)
     IteratorNext  it      -> ok  IterResult    $ update  (Model.iteratorNext  it)
     IteratorClose it      -> ok  Unit          $ update_ (Model.iteratorClose it)
@@ -541,6 +546,7 @@ generator genBlock m@Model {..} = At <$> frequency
     , (if empty then 1 else 10, return GetTipPoint)
     , (if empty then 1 else 10, return GetTipBlockNo)
     , (10, genGetBlock)
+    , (if empty then 1 else 10, return GetMaxSlotNo)
 
     -- Iterators
     , (if empty then 1 else 10, uncurry StreamBlocks <$> genBounds)

@@ -117,6 +117,7 @@ openDB cfg initLedger = do
       , getTipBlockNo       = querySTM $ Model.tipBlockNo
       , getIsFetched        = querySTM $ flip Model.hasBlockByPoint
       , getIsInvalidBlock   = querySTM $ (first (flip Map.member)) . Model.invalid
+      , getMaxSlotNo        = querySTM $ Model.maxSlotNo
       , streamBlocks        = updateE  ..: const (fmap (first (fmap iterator)) ..: Model.streamBlocks k)
       , newBlockReader      = update   .   const (first reader . Model.readBlocks)
       , newHeaderReader     = update   .   const (first (fmap getHeader . reader) . Model.readBlocks)

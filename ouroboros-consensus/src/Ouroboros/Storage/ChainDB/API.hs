@@ -45,8 +45,8 @@ import           Control.Monad.Class.MonadThrow
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import           Ouroboros.Network.Block (BlockNo, pattern BlockPoint,
                      ChainUpdate, pattern GenesisPoint, HasHeader (..),
-                     HeaderHash, Point, SlotNo, StandardHash, atSlot,
-                     genesisPoint)
+                     HeaderHash, MaxSlotNo, Point, SlotNo, StandardHash,
+                     atSlot, genesisPoint)
 
 import           Ouroboros.Consensus.Block (GetHeader (..))
 import           Ouroboros.Consensus.Ledger.Extended
@@ -164,6 +164,13 @@ data ChainDB m blk = ChainDB {
       -- For blocks older than that the results should be regarded as
       -- non-deterministic.
     , getIsFetched       :: STM m (Point blk -> Bool)
+
+      -- | Get the highest slot number stored in the ChainDB.
+      --
+      -- Note that the corresponding block doesn't have to be part of the
+      -- current chain, it could be part of some fork, or even be a
+      -- disconnected block.
+    , getMaxSlotNo       :: STM m MaxSlotNo
 
       -- | Stream blocks
       --

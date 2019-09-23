@@ -33,6 +33,7 @@ module Ouroboros.Storage.ChainDB.Impl.VolDB (
   , getIsMember
   , getPredecessor
   , getSuccessors
+  , getMaxSlotNo
   , putBlock
   , closeDB
   , reopen
@@ -62,8 +63,9 @@ import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
 
 import           Ouroboros.Network.Block (pattern BlockPoint, ChainHash (..),
-                     pattern GenesisPoint, HasHeader (..), HeaderHash, Point,
-                     SlotNo, StandardHash, pointHash, withHash)
+                     pattern GenesisPoint, HasHeader (..), HeaderHash,
+                     MaxSlotNo, Point, SlotNo, StandardHash, pointHash,
+                     withHash)
 import qualified Ouroboros.Network.Block as Block
 
 import           Ouroboros.Consensus.Block (GetHeader, Header)
@@ -165,6 +167,10 @@ getPredecessor db = withSTM db VolDB.getPredecessor
 getSuccessors :: VolDB m blk
               -> STM m (Maybe (HeaderHash blk) -> Set (HeaderHash blk))
 getSuccessors db = withSTM db VolDB.getSuccessors
+
+getMaxSlotNo :: VolDB m blk
+             -> STM m MaxSlotNo
+getMaxSlotNo db = withSTM db VolDB.getMaxSlotNo
 
 putBlock :: (MonadCatch m, HasHeader blk) => VolDB m blk -> blk -> m ()
 putBlock db@VolDB{..} b = withDB db $ \vol ->

@@ -28,6 +28,7 @@ module Ouroboros.Storage.ChainDB.Model (
   , hasBlock
   , hasBlockByPoint
   , immutableBlockNo
+  , maxSlotNo
   , isOpen
   , invalid
     -- * Iterators
@@ -66,7 +67,7 @@ import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import qualified Ouroboros.Network.AnchoredFragment as Fragment
 import           Ouroboros.Network.Block (BlockNo, pattern BlockPoint,
                      ChainHash (..), pattern GenesisPoint, HasHeader,
-                     HeaderHash, Point, SlotNo)
+                     HeaderHash, MaxSlotNo, Point, SlotNo, maxSlotNoFromMaybe)
 import qualified Ouroboros.Network.Block as Block
 import           Ouroboros.Network.MockChain.Chain (Chain (..), ChainUpdate)
 import qualified Ouroboros.Network.MockChain.Chain as Chain
@@ -76,7 +77,7 @@ import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.MockChainSel
-import           Ouroboros.Consensus.Util (repeatedly)
+import           Ouroboros.Consensus.Util (repeatedly, safeMaximum)
 import qualified Ouroboros.Consensus.Util.AnchoredFragment as Fragment
 import           Ouroboros.Consensus.Util.STM (Fingerprint (..))
 
@@ -164,6 +165,13 @@ immutableBlockNo (SecurityParam k) =
         Chain.headBlockNo
       . Chain.drop (fromIntegral k)
       . currentChain
+
+maxSlotNo :: HasHeader blk => Model blk -> MaxSlotNo
+maxSlotNo = maxSlotNoFromMaybe
+          . safeMaximum
+          . map Block.blockSlot
+          . Map.elems
+          . blocks
 
 {-------------------------------------------------------------------------------
   Construction
