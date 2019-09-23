@@ -35,7 +35,7 @@ import           Ouroboros.Network.BlockFetch.ClientState
                    ( FetchRequest(..)
                    , PeerFetchInFlight(..)
                    , PeerFetchStatus(..)
-                   , FetchClientStateVars
+                   , FetchClientStateVars(..)
                    , addNewFetchRequest
                    , readFetchClientState
                    , TraceFetchClientState(..)
@@ -178,6 +178,7 @@ fetchDecisionsForStateSnapshot
       fetchStatePeerStates,
       fetchStatePeerGSVs,
       fetchStateFetchedBlocks,
+      fetchStateFetchedMaxSlotNo,
       fetchStateFetchMode
     } =
     assert (                 Map.keysSet fetchStatePeerChains
@@ -191,6 +192,7 @@ fetchDecisionsForStateSnapshot
       fetchStateFetchMode
       fetchStateCurrentChain
       fetchStateFetchedBlocks
+      fetchStateFetchedMaxSlotNo
       peerChainsAndPeerInfo
   where
     peerChainsAndPeerInfo =
@@ -246,10 +248,11 @@ data FetchTriggerVariables peer header m = FetchTriggerVariables {
 -- necessary to re-evaluate when these variables change.
 --
 data FetchNonTriggerVariables peer header block m = FetchNonTriggerVariables {
-       readStateFetchedBlocks :: STM m (Point block -> Bool),
-       readStatePeerStateVars :: STM m (Map peer (FetchClientStateVars m header)),
-       readStatePeerGSVs      :: STM m (Map peer PeerGSV),
-       readStateFetchMode     :: STM m FetchMode
+       readStateFetchedBlocks    :: STM m (Point block -> Bool),
+       readStatePeerStateVars    :: STM m (Map peer (FetchClientStateVars m header)),
+       readStatePeerGSVs         :: STM m (Map peer PeerGSV),
+       readStateFetchMode        :: STM m FetchMode,
+       readStateFetchedMaxSlotNo :: STM m MaxSlotNo
      }
 
 
@@ -284,14 +287,15 @@ updateFetchStateFingerprintPeerStatus statuses'
 -- of 'fetchStatePeerStates' and 'fetchStatePeerReqVars'.
 --
 data FetchStateSnapshot peer header block m = FetchStateSnapshot {
-       fetchStateCurrentChain  :: AnchoredFragment header,
-       fetchStatePeerChains    :: Map peer (AnchoredFragment header),
-       fetchStatePeerStates    :: Map peer (PeerFetchStatus   header,
-                                            PeerFetchInFlight header,
-                                            FetchClientStateVars m header),
-       fetchStatePeerGSVs      :: Map peer PeerGSV,
-       fetchStateFetchedBlocks :: Point block -> Bool,
-       fetchStateFetchMode     :: FetchMode
+       fetchStateCurrentChain     :: AnchoredFragment header,
+       fetchStatePeerChains       :: Map peer (AnchoredFragment header),
+       fetchStatePeerStates       :: Map peer (PeerFetchStatus   header,
+                                               PeerFetchInFlight header,
+                                               FetchClientStateVars m header),
+       fetchStatePeerGSVs         :: Map peer PeerGSV,
+       fetchStateFetchedBlocks    :: Point block -> Bool,
+       fetchStateFetchMode        :: FetchMode,
+       fetchStateFetchedMaxSlotNo :: MaxSlotNo
      }
 
 readStateVariables :: (MonadSTM m, Eq peer,
@@ -322,11 +326,13 @@ readStateVariables FetchTriggerVariables{..}
     check (fetchStateFingerprint' /= fetchStateFingerprint)
 
     -- Now read all the non-trigger state variables
-    fetchStatePeerStates    <- readStatePeerStateVars
-                           >>= traverse readFetchClientState
-    fetchStatePeerGSVs      <- readStatePeerGSVs
-    fetchStateFetchedBlocks <- readStateFetchedBlocks
-    fetchStateFetchMode     <- readStateFetchMode
+    fetchStatePeerStates       <- readStatePeerStateVars
+                              >>= traverse readFetchClientState
+    fetchStatePeerGSVs         <- readStatePeerGSVs
+    fetchStateFetchedBlocks    <- readStateFetchedBlocks
+    fetchStateFetchMode        <- readStateFetchMode
+    fetchStateFetchedMaxSlotNo <- readStateFetchedMaxSlotNo
+
 
     -- Construct the overall snapshot of the state
     let fetchStateSnapshot =
@@ -336,7 +342,8 @@ readStateVariables FetchTriggerVariables{..}
             fetchStatePeerStates,
             fetchStatePeerGSVs,
             fetchStateFetchedBlocks,
-            fetchStateFetchMode
+            fetchStateFetchMode,
+            fetchStateFetchedMaxSlotNo
           }
 
     return (fetchStateSnapshot, fetchStateFingerprint')

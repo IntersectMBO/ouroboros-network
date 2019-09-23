@@ -163,6 +163,15 @@ data BlockFetchConsensusInterface peer header block m =
        -- 'readFetchedBlocks' reports the block.
        addFetchedBlock        :: Point block -> block -> m (),
 
+       -- | The highest stored/downloaded slot number.
+       --
+       -- This is used to optimise the filtering of fragments in the block
+       -- fetch logic: when removing already downloaded blocks from a
+       -- fragment, the filtering (with a linear cost) is stopped as soon as a
+       -- block has a slot number higher than this slot number, as it cannot
+       -- have been downloaded anyway.
+       readFetchedMaxSlotNo    :: STM m MaxSlotNo,
+
        -- | Given the current chain, is the given chain plausible as a
        -- candidate chain. Classically for Ouroboros this would simply
        -- check if the candidate is strictly longer, but for Ouroboros
@@ -256,10 +265,11 @@ blockFetchLogic decisionTracer clientStateTracer
     fetchNonTriggerVariables :: FetchNonTriggerVariables peer header block m
     fetchNonTriggerVariables =
       FetchNonTriggerVariables {
-        readStateFetchedBlocks = readFetchedBlocks,
-        readStatePeerStateVars = readFetchClientsStateVars registry,
-        readStatePeerGSVs      = readPeerGSVs,
-        readStateFetchMode     = readFetchMode
+        readStateFetchedBlocks    = readFetchedBlocks,
+        readStatePeerStateVars    = readFetchClientsStateVars registry,
+        readStatePeerGSVs         = readPeerGSVs,
+        readStateFetchMode        = readFetchMode,
+        readStateFetchedMaxSlotNo = readFetchedMaxSlotNo
       }
 
     -- TODO: get this from elsewhere once we have DeltaQ info available

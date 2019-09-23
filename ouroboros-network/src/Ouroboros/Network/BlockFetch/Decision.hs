@@ -24,8 +24,10 @@ module Ouroboros.Network.BlockFetch.Decision (
 
 import qualified Data.Set as Set
 
-import           Data.List (sortBy, groupBy, transpose)
+import           Data.List (foldl', groupBy, sortBy, transpose)
 import           Data.Function (on)
+import           Data.Maybe (mapMaybe)
+import           Data.Set (Set)
 
 import           Control.Exception (assert)
 import           Control.Monad (guard)
@@ -147,6 +149,7 @@ fetchDecisions
   -> FetchMode
   -> AnchoredFragment header
   -> (Point block -> Bool)
+  -> MaxSlotNo
   -> [(AnchoredFragment header, PeerInfo header extra)]
   -> [(FetchDecision (FetchRequest header), PeerInfo header extra)]
 fetchDecisions fetchDecisionPolicy@FetchDecisionPolicy {
@@ -156,7 +159,8 @@ fetchDecisions fetchDecisionPolicy@FetchDecisionPolicy {
                }
                fetchMode
                currentChain
-               fetchedBlocks =
+               fetchedBlocks
+               fetchedMaxSlotNo =
 
     -- Finally, make a decision for each (chain, peer) pair.
     fetchRequestDecisions
@@ -183,6 +187,7 @@ fetchDecisions fetchDecisionPolicy@FetchDecisionPolicy {
     -- Filter to keep blocks that have not already been downloaded.
   . filterNotAlreadyFetched
       fetchedBlocks
+      fetchedMaxSlotNo
 
     -- Select the suffix up to the intersection with the current chain.
   . selectForkSuffixes
@@ -465,17 +470,20 @@ of individual blocks without their relationship to each other.
 filterNotAlreadyFetched
   :: (HasHeader header, HeaderHash header ~ HeaderHash block)
   => (Point block -> Bool)
+  -> MaxSlotNo
   -> [(FetchDecision (ChainSuffix        header), peerinfo)]
   -> [(FetchDecision (CandidateFragments header), peerinfo)]
-filterNotAlreadyFetched alreadyDownloaded chains =
+filterNotAlreadyFetched alreadyDownloaded fetchedMaxSlotNo chains =
     [ (mcandidates, peer)
     | (mcandidate,  peer) <- chains
     , let mcandidates = do
             candidate <- mcandidate
             let chainfragment = AnchoredFragment.unanchorFragment
                               $ getChainSuffix candidate
-                fragments = ChainFragment.filter notAlreadyFetched
-                                                 chainfragment
+                fragments = filterWithMaxSlotNo
+                              notAlreadyFetched
+                              fetchedMaxSlotNo
+                              chainfragment
             guard (not (null fragments)) ?! FetchDeclineAlreadyFetched
             return (candidate, fragments)
     ]
@@ -493,8 +501,9 @@ filterNotAlreadyInFlightWithPeer chains =
     | (mcandidatefragments, inflight, peer) <- chains
     , let mcandidatefragments' = do
             (candidate, chainfragments) <- mcandidatefragments
-            let fragments = concatMap (ChainFragment.filter
-                                         (notAlreadyInFlight inflight))
+            let fragments = concatMap (filterWithMaxSlotNo
+                                         (notAlreadyInFlight inflight)
+                                         (peerFetchMaxSlotNo inflight))
                                       chainfragments
             guard (not (null fragments)) ?! FetchDeclineInFlightThisPeer
             return (candidate, fragments)
@@ -529,7 +538,9 @@ filterNotAlreadyInFlightWithOtherPeers FetchModeBulkSync chains =
     | (mcandidatefragments, _, _, peer) <- chains
     , let mcandidatefragments' = do
             chainfragments <- mcandidatefragments
-            let fragments = concatMap (ChainFragment.filter notAlreadyInFlight)
+            let fragments = concatMap (filterWithMaxSlotNo
+                                        notAlreadyInFlight
+                                        maxSlotNoInFlightWithOtherPeers)
                                       chainfragments
             guard (not (null fragments)) ?! FetchDeclineInFlightOtherPeer
             return fragments
@@ -547,6 +558,46 @@ filterNotAlreadyInFlightWithOtherPeers FetchModeBulkSync chains =
             _other                  -> peerFetchBlocksInFlight inflight
         | (_, status, inflight, _) <- chains ]
 
+    -- The highest slot number that is or has been in flight for any peer.
+    maxSlotNoInFlightWithOtherPeers = foldl' max NoMaxSlotNo
+      [ peerFetchMaxSlotNo inflight | (_, _, inflight, _) <- chains ]
+
+-- | Filter a fragment. This is an optimised variant that will behave the same
+-- as 'ChainFragment.filter' if the following precondition is satisfied:
+--
+-- PRECONDITION: for all @hdr@ in the chain fragment: if @blockSlot hdr >
+-- maxSlotNo@ then the predicate should not hold for any header after @hdr@ in
+-- the chain fragment.
+--
+-- For example, when filtering out already downloaded blocks from the
+-- fragment, it does not make sense to keep filtering after having encountered
+-- the highest slot number the ChainDB has seen so far: blocks with a greater
+-- slot number cannot have been downloaded yet. When the candidate fragments
+-- get far ahead of the current chain, e.g., @2k@ headers, this optimisation
+-- avoids the linear cost of filtering these headers when we know in advance
+-- they will all remain in the final fragment. In case the given slot number
+-- is 'NoSlotNo', no filtering takes place, as there should be no matches
+-- because we haven't downloaded any blocks yet.
+--
+-- For example, when filtering out blocks already in-flight for the given
+-- peer, the given @maxSlotNo@ can correspond to the block with the highest
+-- slot number that so far has been in-flight for the given peer. When no
+-- blocks have been in-flight yet, @maxSlotNo@ can be 'NoSlotNo', in which
+-- case no filtering needs to take place, which makes sense, as there are no
+-- blocks to filter out. Note that this is conservative: if a block is for
+-- some reason multiple times in-flight (maybe it has to be redownloaded) and
+-- the block's slot number matches the @maxSlotNo@, it will now be filtered
+-- (while the filtering might previously have stopped before encountering the
+-- block in question). This is fine, as the filter will now include the block,
+-- because according to the filtering predicate, the block is not in-flight.
+filterWithMaxSlotNo
+  :: forall header. HasHeader header
+  => (header -> Bool)
+  -> MaxSlotNo  -- ^ @maxSlotNo@
+  -> ChainFragment header
+  -> [ChainFragment header]
+filterWithMaxSlotNo p maxSlotNo =
+    ChainFragment.filterWithStop p ((> maxSlotNo) . MaxSlotNo . blockSlot)
 
 prioritisePeerChains
   :: forall header peer. HasHeader header
@@ -725,7 +776,7 @@ obviously take that into account when considering later peer chains.
 
 
 fetchRequestDecisions
-  :: HasHeader header
+  :: forall header peer. HasHeader header
   => FetchDecisionPolicy header
   -> FetchMode
   -> [(FetchDecision [ChainFragment header], PeerFetchStatus header,
@@ -734,14 +785,21 @@ fetchRequestDecisions
                                              peer)]
   -> [(FetchDecision (FetchRequest header),  peer)]
 fetchRequestDecisions fetchDecisionPolicy fetchMode chains =
-    go nConcurrentFetchPeers0 Set.empty chains
+    go nConcurrentFetchPeers0 Set.empty NoMaxSlotNo chains
   where
-    go !_ !_ [] = []
-    go !nConcurrentFetchPeers !blocksFetchedThisRound
+    go :: Word
+       -> Set (Point header)
+       -> MaxSlotNo
+       -> [(Either FetchDecline [ChainFragment header],
+            PeerFetchStatus header, PeerFetchInFlight header, PeerGSV, b)]
+       -> [(FetchDecision (FetchRequest header), b)]
+    go !_ !_ !_ [] = []
+    go !nConcurrentFetchPeers !blocksFetchedThisRound !maxSlotNoFetchedThisRound
        ((mchainfragments, status, inflight, gsvs, peer) : cps) =
 
         (decision, peer)
-      : go nConcurrentFetchPeers' blocksFetchedThisRound' cps
+      : go nConcurrentFetchPeers' blocksFetchedThisRound'
+           maxSlotNoFetchedThisRound' cps
       where
         decision = fetchRequestDecision
                      fetchDecisionPolicy
@@ -758,7 +816,9 @@ fetchRequestDecisions fetchDecisionPolicy fetchMode chains =
             FetchModeBulkSync -> do
                 chainfragments <- mchainfragments
                 let fragments =
-                      concatMap (ChainFragment.filter notFetchedThisRound)
+                      concatMap (filterWithMaxSlotNo
+                                   notFetchedThisRound
+                                   maxSlotNoFetchedThisRound)
                                 chainfragments
                 guard (not (null fragments)) ?! FetchDeclineInFlightOtherPeer
                 return fragments
@@ -775,12 +835,18 @@ fetchRequestDecisions fetchDecisionPolicy fetchMode chains =
         -- This is only for avoiding duplication between fetch requests in this
         -- round of decisions. Avoiding duplication with blocks that are already
         -- in flight is handled by filterNotAlreadyInFlightWithOtherPeers
-        blocksFetchedThisRound' =
+        (blocksFetchedThisRound', maxSlotNoFetchedThisRound') =
           case decision of
-            Left _                         -> blocksFetchedThisRound
-            Right (FetchRequest fragments) -> blocksFetchedThisRound
-                                  `Set.union` blocksFetchedThisDecision
+            Left _                         ->
+              (blocksFetchedThisRound, maxSlotNoFetchedThisRound)
+            Right (FetchRequest fragments) ->
+              (blocksFetchedThisRound `Set.union` blocksFetchedThisDecision,
+               maxSlotNoFetchedThisRound `max` maxSlotNoFetchedThisDecision)
               where
+                maxSlotNoFetchedThisDecision =
+                  foldl' max NoMaxSlotNo $ map MaxSlotNo $
+                  mapMaybe ChainFragment.headSlot fragments
+
                 blocksFetchedThisDecision =
                   Set.fromList
                     [ blockPoint header
