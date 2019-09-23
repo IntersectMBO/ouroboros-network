@@ -97,6 +97,10 @@ tests = testGroup "ChainFragment"
   , testProperty "pointOnChainFragment"                      prop_pointOnChainFragment
   , testProperty "lookupByIndexFromEnd"                      prop_lookupByIndexFromEnd
   , testProperty "filter"                                    prop_filter
+  , testProperty "filterWithStop always stop"                prop_filterWithStop_always_stop
+  , testProperty "filterWithStop never stop"                 prop_filterWithStop_never_stop
+  , testProperty "filterWithStop"                            prop_filterWithStop
+  , testProperty "filterWithStop filter"                     prop_filterWithStop_filter
   , testProperty "selectPoints"                              prop_selectPoints
   , testProperty "splitAfterPoint"                           prop_splitAfterPoint
   , testProperty "splitBeforePoint"                          prop_splitBeforePoint
@@ -325,7 +329,46 @@ prop_filter p (TestBlockChainFragment chain) =
       and [ isNothing (CF.joinChainFragments a b)
           | (a,b) <- zip fragments (tail fragments) ]
 
+prop_filterWithStop_always_stop :: (Block -> Bool) -> TestBlockChainFragment -> Property
+prop_filterWithStop_always_stop p (TestBlockChainFragment chain) =
+    CF.filterWithStop p (const True) chain ===
+    if CF.null chain then [] else [chain]
 
+prop_filterWithStop_never_stop :: (Block -> Bool) -> TestBlockChainFragment -> Property
+prop_filterWithStop_never_stop p (TestBlockChainFragment chain) =
+    CF.filterWithStop p (const False) chain === CF.filter p chain
+
+-- If the stop condition implies that the predicate is true for all the
+-- remaining arguments, 'filterWithStop' must be equivalent to 'filter', just
+-- optimised.
+prop_filterWithStop :: (Block -> Bool) -> (Block -> Bool) -> TestBlockChainFragment -> Property
+prop_filterWithStop p stop (TestBlockChainFragment chain) =
+    CF.filterWithStop p stop chain ===
+    if CF.null chain
+    then []
+    else appendStopped $ CF.filter p (CF.fromOldestFirst before)
+  where
+    (before, stopped) = break stop $ CF.toOldestFirst chain
+    stoppedFrag = CF.fromOldestFirst stopped
+
+    -- If the last fragment in @c@ can be joined with @stoppedFrag@, do so,
+    -- otherwise append @stoppedFrag@ as a separate, final fragment. If it is
+    -- empty, ignore it.
+    appendStopped c
+      | null stopped
+      = c
+      | lastFrag:frags <- reverse c
+      , Just lastFrag' <- CF.joinChainFragments lastFrag stoppedFrag
+      = reverse $ lastFrag':frags
+      | otherwise
+      = c ++ [stoppedFrag]
+
+prop_filterWithStop_filter :: TestBlockChainFragment -> Property
+prop_filterWithStop_filter (TestBlockChainFragment chain) =
+    CF.filterWithStop p stop chain === CF.filter p chain
+  where
+    p    = (> 5)  . blockSlot
+    stop = (> 10) . blockSlot
 
 prop_selectPoints :: TestBlockChainFragment -> Property
 prop_selectPoints (TestBlockChainFragment c) =

@@ -61,6 +61,7 @@ module Ouroboros.Network.ChainFragment (
   sliceRange,
   lookupByIndexFromEnd, FT.SearchResult(..),
   filter,
+  filterWithStop,
   selectPoints,
   findFirstPoint,
   intersectChainFragments,
@@ -87,6 +88,7 @@ import           Data.FingerTree (FingerTree)
 import qualified Data.FingerTree as FT
 import qualified Data.Foldable as Foldable
 import qualified Data.List as L
+import           Data.Maybe (fromMaybe)
 import           GHC.Stack
 
 import           Ouroboros.Network.Block
@@ -473,14 +475,42 @@ filter :: HasHeader block
        => (block -> Bool)
        -> ChainFragment block
        -> [ChainFragment block]
-filter p = go [] Empty
-  where
-    go cs c'    (b :< c) | p b = go     cs (c' :> b) c
-    go cs Empty (_ :< c) = go     cs  Empty    c
-    go cs c'    (_ :< c) = go (c':cs) Empty    c
+filter p = filterWithStop p (const False)
 
-    go cs Empty  Empty   = reverse     cs
-    go cs c'     Empty   = reverse (c':cs)
+-- | \( O\(n\) \). Same as 'filter', but as soon as the stop condition is
+-- true, the filtering stops and the remaining fragment (starting with the
+-- first element for which the stop condition is true) is the final fragment
+-- in the returned list.
+--
+-- The stop condition wins from the filtering predicate: if the stop condition
+-- is true for an element, but the filter predicate not, then the element
+-- still ends up in final fragment.
+--
+-- For example, given the fragment containing @[1, 2, 3, 4, 5, 6]@:
+--
+-- > filter         odd        -> [[1], [3], [5]]
+-- > filterWithStop odd (>= 4) -> [[1], [3], [4, 5, 6]]
+--
+filterWithStop :: HasHeader block
+               => (block -> Bool)  -- ^ Filtering predicate
+               -> (block -> Bool)  -- ^ Stop condition
+               -> ChainFragment block
+               -> [ChainFragment block]
+filterWithStop p stop = go [] Empty
+  where
+    go cs c'    (b :< c) | stop b = reverse (addToAcc (join c' (b :< c)) cs)
+                         | p    b = go              cs (c' :> b) c
+    go cs c'    (_ :< c)          = go (addToAcc c' cs) Empty    c
+
+    go cs c'     Empty            = reverse (addToAcc c' cs)
+
+    addToAcc Empty acc =    acc
+    addToAcc c'    acc = c':acc
+
+    -- This is called with @c'@ and @(b : < c)@. @c'@ is the fragment
+    -- containing the blocks before @b@, so they must be joinable.
+    join a b = fromMaybe (error "could not join fragments") $
+               joinChainFragments a b
 
 -- | \( O(o \log(\min(i,n-i))) \). Select a bunch of 'Point's based on offsets
 -- from the head of the chain fragment. This is used in the chain consumer
