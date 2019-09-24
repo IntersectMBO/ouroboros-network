@@ -29,13 +29,13 @@ tests tmpDir = testGroup "HasFS"
 
 test_hOpenWriteInvalid :: Assertion
 test_hOpenWriteInvalid = apiEquivalenceFs (expectFsError FsInvalidArgument) $ \hasFS@HasFS{..} _err -> do
-    _  <- hOpen ["foo.txt"] (WriteMode MustBeNew)
-    h2 <- hOpen ["foo.txt"] ReadMode
+    _  <- hOpen (mkFsPath ["foo.txt"]) (WriteMode MustBeNew)
+    h2 <- hOpen (mkFsPath ["foo.txt"]) ReadMode
     hPut hasFS h2 "haskell-is-nice"
 
 test_example :: Assertion
 test_example = apiEquivalenceFs (expectFsResult (@?= ["test", "block"])) $ \hasFS@HasFS{..} _err -> do
     -- The example assumes the presence of some files and dirs.
-    createDirectoryIfMissing True ["var", "tmp"]
-    withFile hasFS ["var", "tmp", "foo.txt"] (WriteMode MustBeNew) $ \_ -> return ()
+    createDirectoryIfMissing True (mkFsPath ["var", "tmp"])
+    withFile hasFS (mkFsPath ["var", "tmp", "foo.txt"]) (WriteMode MustBeNew) $ \_ -> return ()
     FS.API.Example.example hasFS

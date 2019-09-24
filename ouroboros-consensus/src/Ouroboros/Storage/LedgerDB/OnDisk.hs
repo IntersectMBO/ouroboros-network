@@ -349,13 +349,13 @@ deleteSnapshot HasFS{..} = removeFile . snapshotToPath
 -- | List on-disk snapshots, most recent first
 listSnapshots :: Monad m => HasFS m h -> m [DiskSnapshot]
 listSnapshots HasFS{..} =
-    aux <$> listDirectory []
+    aux <$> listDirectory (mkFsPath [])
   where
     aux :: Set String -> [DiskSnapshot]
     aux = List.sortBy (flip compare) . mapMaybe snapshotFromPath . Set.toList
 
 snapshotToPath :: DiskSnapshot -> FsPath
-snapshotToPath (DiskSnapshot ss) = [show ss]
+snapshotToPath (DiskSnapshot ss) = mkFsPath [show ss]
 
 snapshotFromPath :: String -> Maybe DiskSnapshot
 snapshotFromPath = fmap DiskSnapshot . readMaybe

@@ -128,13 +128,13 @@ generateCorruptions allFiles = sized $ \n -> do
 
 corruptFile :: MonadThrow m => HasFS m h -> FileCorruption -> String -> m Bool
 corruptFile hasFS@HasFS{..} corr file = case corr of
-    DeleteFile -> removeFile [file] >> return True
-    DropLastBytes n -> withFile hasFS [file] (AppendMode AllowExisting) $ \hnd -> do
+    DeleteFile -> removeFile (mkFsPath [file]) >> return True
+    DropLastBytes n -> withFile hasFS (mkFsPath [file]) (AppendMode AllowExisting) $ \hnd -> do
         fileSize <- hGetSize hnd
         let newFileSize = if n >= fileSize then 0 else fileSize - n
         hTruncate hnd newFileSize
         return $ fileSize /= newFileSize
-    AppendBytes n -> withFile hasFS [file] (AppendMode AllowExisting) $ \hnd -> do
+    AppendBytes n -> withFile hasFS (mkFsPath [file]) (AppendMode AllowExisting) $ \hnd -> do
         fileSize <- hGetSize hnd
         let newFileSize = fileSize + (fromIntegral n)
         _ <- hPut hasFS hnd (BB.byteString $ BS.replicate n 0)
@@ -149,6 +149,6 @@ createFileImpl hasFS env = do
     SomePair _stHasFS st <- Internal.getInternalState env
     let nextFd = Internal._nextNewFileId st
     let path = Internal.filePath nextFd
-    withFile hasFS [path] (AppendMode MustBeNew) $ \_hndl -> do
+    withFile hasFS (mkFsPath [path]) (AppendMode MustBeNew) $ \_hndl -> do
         return ()
     return ()

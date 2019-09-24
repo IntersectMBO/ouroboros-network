@@ -126,7 +126,7 @@ putBlockModel err cmdErr BlockInfo{..} bs = do
             Just fsErrT -> EH.throwError' err $ UnexpectedError . FileSystemError $
                 FsError {
                       fsErrorType = fsErrT
-                    , fsErrorPath = [currentFile]
+                    , fsErrorPath = mkFsPath [currentFile]
                     , fsErrorString = ""
                     , fsErrorNo    = Nothing
                     , fsErrorStack = EmptyCallStack
@@ -190,7 +190,7 @@ garbageCollectModel err cmdErr sl = do
                     (_, False, _, (Just e) : _rest) -> EH.throwError' err $ UnexpectedError . FileSystemError $
                         FsError {
                               fsErrorType = e
-                            , fsErrorPath = [currentFile]
+                            , fsErrorPath = mkFsPath [currentFile]
                             , fsErrorString = ""
                             , fsErrorNo    = Nothing
                             , fsErrorStack = EmptyCallStack
@@ -202,7 +202,7 @@ garbageCollectModel err cmdErr sl = do
                     (_, _, Just e, _)  -> EH.throwError' err $ UnexpectedError . FileSystemError $
                         FsError {
                               fsErrorType = e
-                            , fsErrorPath = [currentFile]
+                            , fsErrorPath = mkFsPath [currentFile]
                             , fsErrorString = ""
                             , fsErrorNo    = Nothing
                             , fsErrorStack = EmptyCallStack

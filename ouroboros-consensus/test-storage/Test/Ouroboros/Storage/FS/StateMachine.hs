@@ -40,6 +40,7 @@ import qualified Data.Map.Strict as Map
 import           Data.Proxy
 import           Data.Set (Set)
 import qualified Data.Set as Set
+import qualified Data.Text as Text
 import           Data.TreeDiff (ToExpr (..), defaultExprViaShow)
 import           Data.Word (Word64)
 import qualified Generics.SOP as SOP
@@ -94,7 +95,7 @@ data PathExpr fp =
 evalPathExpr :: PathExpr FsPath -> FsPath
 evalPathExpr (PExpPath     fp) = fp
 evalPathExpr (PExpRef      fp) = fp
-evalPathExpr (PExpParentOf fp) = init fp
+evalPathExpr (PExpParentOf fp) = fsPathInit fp
 
 {-------------------------------------------------------------------------------
   Abstract model
@@ -456,7 +457,9 @@ generator Model{..} = oneof $ concat [
     -- We use the same set of files and directories so that we can test
     -- things like trying to open a directory as if it were a file
     genPath :: Gen FsPath
-    genPath = choose (0, 3) >>= \n -> replicateM n (elements ["x", "y", "z"])
+    genPath = do
+        n <- choose (0, 3)
+        mkFsPath <$> replicateM n (elements ["x", "y", "z"])
 
     genHandle :: Gen (HandleRef Symbolic)
     genHandle = elements (RE.keys knownHandles)
@@ -498,13 +501,15 @@ instance Condense TempFile where -- basically GNTD
   condense (TempFile n) = condense n
 
 tempToExpr :: TempFile -> PathExpr fp
-tempToExpr (TempFile n) = PExpPath ['t' : show n]
+tempToExpr (TempFile n) = PExpPath (mkFsPath ['t' : show n])
 
 tempFromPath :: FsPath -> Maybe TempFile
-tempFromPath ['t' : suf] = do n <- readMaybe suf
-                              guard (n >= 1)
-                              return $ TempFile n
-tempFromPath _otherwise  = Nothing
+tempFromPath fp =
+    case map Text.unpack (fsPathToList fp) of
+      ['t' : suf] -> do n <- readMaybe suf
+                        guard (n >= 1)
+                        return $ TempFile n
+      _otherwise  -> Nothing
 
 {-------------------------------------------------------------------------------
   Shrinking
@@ -544,7 +549,7 @@ shrinker Model{..} (At cmd) =
 
       ListDirectory pe -> concat [
             map (At . ListDirectory) $
-              replaceWithRef pe ((== fp) . init) PExpParentOf
+              replaceWithRef pe ((== fp) . fsPathInit) PExpParentOf
           ]
         where
           fp :: FsPath
@@ -883,7 +888,7 @@ tag = C.classify [
               Right $ tagCreateDirThenListDir (Set.insert fp created)
             where
               fp = evalPathExpr fe
-          ListDirectory fe | fp `Set.member` (Set.map init created) ->
+          ListDirectory fe | fp `Set.member` (Set.map fsPathInit created) ->
               Left TagCreateDirThenListDir
             where
               fp = evalPathExpr fe
@@ -893,11 +898,11 @@ tag = C.classify [
     tagCreateDirWithParentsThenListDir :: Set FsPath -> EventPred
     tagCreateDirWithParentsThenListDir created = successful $ \ev _ ->
         case eventMockCmd ev of
-          CreateDirIfMissing True fe | length fp > 1 ->
+          CreateDirIfMissing True fe | length (fsPathToList fp) > 1 ->
               Right $ tagCreateDirWithParentsThenListDir (Set.insert fp created)
             where
               fp = evalPathExpr fe
-          ListDirectory fe | fp `Set.member` (Set.map init created) ->
+          ListDirectory fe | fp `Set.member` (Set.map fsPathInit created) ->
               Left TagCreateDirWithParentsThenListDir
             where
               fp = evalPathExpr fe
@@ -907,11 +912,12 @@ tag = C.classify [
     tagCreateDirWithParentsThenListDirNotNull :: Set FsPath -> EventPred
     tagCreateDirWithParentsThenListDirNotNull created = successful $ \ev suc ->
         case (eventMockCmd ev, suc) of
-          (CreateDirIfMissing True fe, _) | length fp > 1 ->
+          (CreateDirIfMissing True fe, _) | length (fsPathToList fp) > 1 ->
               Right $ tagCreateDirWithParentsThenListDirNotNull (Set.insert fp created)
             where
               fp = evalPathExpr fe
-          (ListDirectory fe, Strings set) | fp `Set.member` (Set.map init created) && not (Set.null set) ->
+          (ListDirectory fe, Strings set) | fp `Set.member` (Set.map fsPathInit created)
+                                         && not (Set.null set) ->
               Left TagCreateDirWithParentsThenListDirNotNull
             where
               fp = evalPathExpr fe
@@ -1075,7 +1081,7 @@ tag = C.classify [
     tagCreateDirectory :: EventPred
     tagCreateDirectory = successful $ \ev@Event{..} _ ->
       case eventMockCmd ev of
-        CreateDirIfMissing True (PExpPath fp) | length fp > 1 ->
+        CreateDirIfMissing True (PExpPath fp) | length (fsPathToList fp) > 1 ->
           Left TagCreateDirectory
         _otherwise ->
           Right tagCreateDirectory
@@ -1095,7 +1101,7 @@ tag = C.classify [
     tagDoesDirectoryExistOK :: EventPred
     tagDoesDirectoryExistOK = successful $ \ev@Event{..} suc ->
       case (eventMockCmd ev, suc) of
-        (DoesDirectoryExist (PExpPath fp), Bool True) | not (fp == ["/"])
+        (DoesDirectoryExist (PExpPath fp), Bool True) | not (fp == mkFsPath ["/"])
                    -> Left TagDoesDirectoryExistOK
         _otherwise -> Right tagDoesDirectoryExistOK
 
@@ -1219,6 +1225,7 @@ deriving instance ToExpr Mock.HandleState
 deriving instance ToExpr Mock.OpenHandleState
 deriving instance ToExpr Mock.ClosedHandleState
 deriving instance ToExpr Mock.FilePtr
+deriving instance ToExpr FsPath
 
 instance ToExpr (Handle h) where
   toExpr = defaultExprViaShow
@@ -1325,7 +1332,7 @@ _showTaggedShrinks hasRequiredTags numLevels = go 0
 -------------------------------------------------------------------------------}
 
 instance Condense fp => Condense (PathExpr fp) where
-  condense (PExpPath     fp) = show $ "/" ++ L.intercalate "/" fp
+  condense (PExpPath     fp) = condense fp
   condense (PExpRef      fp) = condense fp
   condense (PExpParentOf fp) = condense fp ++ "/.."
 

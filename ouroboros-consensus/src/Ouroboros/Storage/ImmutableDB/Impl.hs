@@ -1468,7 +1468,7 @@ removeFilesStartingFrom :: (HasCallStack, Monad m)
                         -> EpochNo
                         -> m ()
 removeFilesStartingFrom HasFS{..} epoch = do
-    filesInDBFolder <- listDirectory []
+    filesInDBFolder <- listDirectory (mkFsPath [])
     let (epochFiles, indexFiles) = dbFilesOnDisk filesInDBFolder
     forM_ (takeWhile (>= epoch) (Set.toDescList epochFiles)) $ \e ->
       removeFile (renderFile "epoch" e)
@@ -1533,7 +1533,7 @@ validate :: forall m hash h e.
             -- disk and the 'Index' of the corresponding epoch. 'Nothing' if
             -- the database is empty.
 validate hashDecoder hashEncoder hasFS@HasFS{..} err epochInfo valPol epochFileParser tracer = do
-    filesInDBFolder <- listDirectory []
+    filesInDBFolder <- listDirectory (mkFsPath [])
     let epochFiles = fst $ dbFilesOnDisk filesInDBFolder
     case Set.lookupMax epochFiles of
       Nothing              -> do

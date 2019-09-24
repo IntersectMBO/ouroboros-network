@@ -59,6 +59,7 @@ import qualified Data.Map.Strict as M
 import           Data.Maybe (mapMaybe)
 import           Data.Set (Set)
 import qualified Data.Set as S
+import qualified Data.Text as Text
 import           Data.Word (Word64)
 import           GHC.Generics (Generic)
 import           GHC.Stack
@@ -73,9 +74,9 @@ import           Ouroboros.Storage.Util.ErrorHandling (ErrorHandling (..))
 -------------------------------------------------------------------------------}
 
 data MockFS = MockFS {
-      mockFiles      :: Files
-    , mockHandles    :: Map HandleMock HandleState
-    , mockNextHandle :: HandleMock
+      mockFiles      :: !Files
+    , mockHandles    :: !(Map HandleMock HandleState)
+    , mockNextHandle :: !HandleMock
     }
   deriving (Generic, Show)
 
@@ -680,7 +681,9 @@ createDirectoryIfMissing err@ErrorHandling{..} createParents dir = do
 listDirectory :: CanSimFS m
               => ErrorHandling FsError m -> FsPath -> m (Set String)
 listDirectory err fp = readMockFS err $
-    fmap M.keysSet . checkFsTree err . FS.getDir fp
+      fmap (S.fromList . map Text.unpack . M.keys)
+    . checkFsTree err
+    . FS.getDir fp
 
 -- | Check if directory exists
 --
@@ -718,28 +721,29 @@ doesFileExist err fp = readMockFS err $ \fs ->
 -- mismatch during testing, we also consider removing the root folder a
 -- limitation of the mock file system.
 removeFile :: CanSimFS m => ErrorHandling FsError m -> FsPath -> m ()
-removeFile err@ErrorHandling{..} fp = modifyMockFS err $ \fs -> case fp of
-    []
-      -> throwError FsError {
-             fsErrorType   = FsIllegalOperation
-           , fsErrorPath   = fp
-           , fsErrorString = "cannot remove the root directory"
-           , fsErrorNo     = Nothing
-           , fsErrorStack  = callStack
-           , fsLimitation  = True
-           }
-    _ | fp `S.member` openFilePaths fs
-      -> throwError FsError {
-             fsErrorType   = FsIllegalOperation
-           , fsErrorPath   = fp
-           , fsErrorString = "cannot remove an open file"
-           , fsErrorNo     = Nothing
-           , fsErrorStack  = callStack
-           , fsLimitation  = True
-           }
-    _ -> do
-      files' <- checkFsTree err $ FS.removeFile fp (mockFiles fs)
-      return ((), fs { mockFiles = files' })
+removeFile err@ErrorHandling{..} fp =
+    modifyMockFS err $ \fs -> case fsPathToList fp of
+      []
+        -> throwError FsError {
+               fsErrorType   = FsIllegalOperation
+             , fsErrorPath   = fp
+             , fsErrorString = "cannot remove the root directory"
+             , fsErrorNo     = Nothing
+             , fsErrorStack  = callStack
+             , fsLimitation  = True
+             }
+      _ | fp `S.member` openFilePaths fs
+        -> throwError FsError {
+               fsErrorType   = FsIllegalOperation
+             , fsErrorPath   = fp
+             , fsErrorString = "cannot remove an open file"
+             , fsErrorNo     = Nothing
+             , fsErrorStack  = callStack
+             , fsLimitation  = True
+             }
+      _ -> do
+        files' <- checkFsTree err $ FS.removeFile fp (mockFiles fs)
+        return ((), fs { mockFiles = files' })
 
 {-------------------------------------------------------------------------------
   Pretty-printing

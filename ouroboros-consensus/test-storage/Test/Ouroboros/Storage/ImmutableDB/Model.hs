@@ -31,6 +31,7 @@ import           Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
 import           Data.Map (Map)
 import qualified Data.Map as Map
+import qualified Data.Text as Text
 import           Data.Word (Word64)
 
 import           GHC.Generics (Generic)
@@ -42,7 +43,7 @@ import           Ouroboros.Network.Block (SlotNo (..))
 
 import           Ouroboros.Storage.Common
 import           Ouroboros.Storage.EpochInfo
-import           Ouroboros.Storage.FS.API.Types (FsPath)
+import           Ouroboros.Storage.FS.API.Types (FsPath, fsPathSplit)
 import           Ouroboros.Storage.ImmutableDB.API
 import           Ouroboros.Storage.ImmutableDB.Layout
 import           Ouroboros.Storage.ImmutableDB.Util
@@ -286,7 +287,7 @@ rollBack rbp dbm = case rbp of
 findCorruptionRollBackPoint :: FileCorruption -> FsPath -> DBModel hash
                             -> RollBackPoint
 findCorruptionRollBackPoint corr file dbm =
-    case lastMaybe file >>= parseDBFile of
+    case (Text.unpack . snd <$> fsPathSplit file) >>= parseDBFile of
       Just ("epoch", epoch) -> findEpochCorruptionRollBackPoint corr epoch dbm
       Just ("index", epoch) -> findIndexCorruptionRollBackPoint corr epoch dbm
       _                     -> error "Invalid file to corrupt"

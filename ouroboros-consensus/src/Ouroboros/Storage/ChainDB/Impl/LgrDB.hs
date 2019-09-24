@@ -84,7 +84,8 @@ import           Ouroboros.Storage.Common
 import           Ouroboros.Storage.EpochInfo
 import           Ouroboros.Storage.FS.API (HasFS (hasFsErr),
                      createDirectoryIfMissing)
-import           Ouroboros.Storage.FS.API.Types (FsError, MountPoint (..))
+import           Ouroboros.Storage.FS.API.Types (FsError, MountPoint (..),
+                     mkFsPath)
 import           Ouroboros.Storage.FS.IO (ioHasFS)
 import qualified Ouroboros.Storage.Util.ErrorHandling as EH
 
@@ -206,7 +207,7 @@ openDB :: forall m blk.
        -- DB does not know where the boundary is at any given point.
        -> m (LgrDB m blk)
 openDB args@LgrDbArgs{..} replayTracer immDB getBlock = do
-    createDirectoryIfMissing lgrHasFS True []
+    createDirectoryIfMissing lgrHasFS True (mkFsPath [])
     db <- initFromDisk args replayTracer lgrDbConf immDB
     (varDB, varPrevApplied) <- atomically $
       (,) <$> newTVar db <*> newTVar Set.empty
