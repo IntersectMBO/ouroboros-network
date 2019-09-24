@@ -1,5 +1,3 @@
-{-# OPTIONS_GHC -Werror #-}
-
 {-# LANGUAGE ExistentialQuantification  #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
@@ -284,19 +282,7 @@ data ResourceRegistry m = ResourceRegistry {
 -- | Internal registry state
 data RegistryState m = RegistryState {
       -- | Forked threads
-      --
-      -- This is the set of threads spawned using 'forkThread'. The lifetimes of
-      -- all of these threads are limited by the lifetime of the registry.
-      --
-      -- Does not include the thread ID of the thread that created the registry.
-      -- After all, this thread may well outlive the registry (though the
-      -- registry cannot outlive it).
-      --
-      -- Invariant (informal): the set of registered threads is a subset of the
-      -- registered resources ('registryResources'). (This invariant is
-      -- temporarily broken when we start a new thread in 'forkThread' but will
-      -- be re-established before that thread starts execution proper.)
-      registryThreads   :: !(Set (ThreadId m))
+      registryThreads   :: !(KnownThreads m)
 
       -- | Currently allocated resources
     , registryResources :: !(Map ResourceId (Resource m))
@@ -307,14 +293,30 @@ data RegistryState m = RegistryState {
       -- | Does the registry still accept new allocations?
       --
       -- See 'RegistryClosedException' for discussion.
-    , registryClosed    :: !(Maybe RegistryClosed)
+    , registryStatus    :: !RegistryStatus
     }
 
--- | Information recorded when we close the registry
-data RegistryClosed = RegistryClosed {
-      -- | CallStack to the call to 'close'
-      registryCloseCallStack :: !PrettyCallStack
-    }
+-- | Threads known to the registry
+--
+-- This is the set of threads spawned using 'forkThread'. The lifetimes of all
+-- of these threads are limited by the lifetime of the registry.
+--
+-- Does not include the thread ID of the thread that created the registry. After
+-- all, this thread may well outlive the registry (though the registry cannot
+-- outlive it).
+--
+-- Invariant (informal): the set of registered threads is a subset of the
+-- registered resources ('registryResources'). (This invariant is temporarily
+-- broken when we start a new thread in 'forkThread' but will be re-established
+-- before that thread starts execution proper.)
+newtype KnownThreads m = KnownThreads (Set (ThreadId m))
+
+-- | Status of the registry (open or closed)
+data RegistryStatus =
+    RegistryOpen
+
+    -- | We record the 'CallStack' to the call to 'close
+  | RegistryClosed !PrettyCallStack
 
 -- | Resource key
 --
@@ -351,17 +353,21 @@ instance Show (Release m) where
   Internal: pure functions on the registry state
 -------------------------------------------------------------------------------}
 
+modifyKnownThreads :: (Set (ThreadId m) -> Set (ThreadId m))
+                   -> KnownThreads m -> KnownThreads m
+modifyKnownThreads f (KnownThreads ts) = KnownThreads (f ts)
+
 -- | Auxiliary for functions that should be disallowed when registry is closed
 unlessClosed :: State (RegistryState m) a
-             -> State (RegistryState m) (Either RegistryClosed a)
+             -> State (RegistryState m) (Either PrettyCallStack a)
 unlessClosed f = do
-    isClosed <- gets registryClosed
-    case isClosed of
-      Just closed -> return $ Left closed
-      Nothing     -> Right <$> f
+    status <- gets registryStatus
+    case status of
+      RegistryClosed closed -> return $ Left closed
+      RegistryOpen          -> Right <$> f
 
 -- | Allocate key for new resource
-allocKey :: State (RegistryState m) (Either RegistryClosed ResourceId)
+allocKey :: State (RegistryState m) (Either PrettyCallStack ResourceId)
 allocKey = unlessClosed $ do
     nextKey <- gets registryNextKey
     modify $ \st -> st {registryNextKey = succ nextKey}
@@ -370,7 +376,7 @@ allocKey = unlessClosed $ do
 -- | Insert new resource
 insertResource :: ResourceId
                -> Resource m
-               -> State (RegistryState m) (Either RegistryClosed ())
+               -> State (RegistryState m) (Either PrettyCallStack ())
 insertResource key r = unlessClosed $ do
     modify $ \st -> st {
         registryResources = Map.insert key r (registryResources st)
@@ -387,23 +393,25 @@ removeResource key = state $ \st ->
 insertThread :: MonadFork m => ThreadId m -> State (RegistryState m) ()
 insertThread tid =
     modify $ \st -> st {
-        registryThreads = Set.insert tid (registryThreads st)
+        registryThreads = modifyKnownThreads (Set.insert tid) $
+                            registryThreads st
       }
 
 -- | Remove thread from set of known threads
 removeThread :: MonadFork m => ThreadId m -> State (RegistryState m) ()
 removeThread tid =
     modify $ \st -> st {
-        registryThreads = Set.delete tid (registryThreads st)
+        registryThreads = modifyKnownThreads (Set.delete tid) $
+                            registryThreads st
       }
 
 -- | Close the registry
 --
 -- Returns the keys currently registered if the registry is not already closed.
 close :: PrettyCallStack
-      -> State (RegistryState m) (Either RegistryClosed (Set ResourceId))
+      -> State (RegistryState m) (Either PrettyCallStack (Set ResourceId))
 close closeCallStack = unlessClosed $ do
-    modify $ \st -> st {registryClosed = Just (RegistryClosed closeCallStack)}
+    modify $ \st -> st {registryStatus = RegistryClosed closeCallStack}
     gets $ Map.keysSet . registryResources
 
 -- | Convenience function for updating the registry state
@@ -465,10 +473,10 @@ unsafeNewRegistry = do
   where
     initState :: RegistryState m
     initState = RegistryState {
-          registryThreads   = Set.empty
+          registryThreads   = KnownThreads Set.empty
         , registryResources = Map.empty
         , registryNextKey   = ResourceId 1
-        , registryClosed    = Nothing
+        , registryStatus    = RegistryOpen
         }
 
 -- | Close the registry
@@ -605,10 +613,10 @@ allocate rr alloc free = do
         , resourceRelease = Release $ free a
         }
 
-    throwRegistryClosed :: forall x. Context m -> RegistryClosed -> m x
+    throwRegistryClosed :: forall x. Context m -> PrettyCallStack -> m x
     throwRegistryClosed context closed = throwM RegistryClosedException {
           registryClosedRegistryContext = registryContext rr
-        , registryClosedCloseCallStack  = registryCloseCallStack closed
+        , registryClosedCloseCallStack  = closed
         , registryClosedAllocContext    = context
         }
 
@@ -773,8 +781,8 @@ ensureKnownThread rr context = do
       | contextThreadId context == contextThreadId (registryContext rr) =
           return True
       | otherwise = atomically $ do
-          knownThreads <- registryThreads <$> readTVar (registryState rr)
-          return $ contextThreadId context `Set.member` knownThreads
+          KnownThreads ts <- registryThreads <$> readTVar (registryState rr)
+          return $ contextThreadId context `Set.member` ts
 
 -- | Registry used from unknown threads
 --
