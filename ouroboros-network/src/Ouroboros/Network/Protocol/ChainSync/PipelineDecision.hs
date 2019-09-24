@@ -127,7 +127,7 @@ pipelineDecisionMax omax n cliTipBlockNo srvTipBlockNo =
              -> Pipeline
   where
     n' :: BlockNo
-    n' = fromIntegral (int n)
+    n' = fromIntegral (natToInt n)
 
     omax' :: BlockNo
     omax' = fromIntegral omax
@@ -158,7 +158,7 @@ pipelineDecisionMin omax n cliTipBlockNo srvTipBlockNo =
              -> CollectOrPipeline
   where
     n' :: BlockNo
-    n' = fromIntegral (int n)
+    n' = fromIntegral (natToInt n)
 
     omax' :: BlockNo
     omax' = fromIntegral omax
@@ -200,7 +200,7 @@ pipelineDecisionLowHighMark lowMark highMark =
                  -> (CollectOrPipeline, goLow)
             where
               n' :: BlockNo
-              n' = fromIntegral (int n)
+              n' = fromIntegral (natToInt n)
 
     goHigh = MkPipelineDecision $
       \n clientTipBlockNo serverTipBlockNo ->
@@ -213,15 +213,10 @@ pipelineDecisionLowHighMark lowMark highMark =
               else (CollectOrPipeline, goLow)
           where
             n' :: BlockNo
-            n' = fromIntegral (int n)
+            n' = fromIntegral (natToInt n)
 
     lowMark' :: BlockNo
     lowMark' = fromIntegral lowMark
 
     highMark' :: BlockNo
     highMark' = fromIntegral highMark
-
--- this isn't supposed to be efficient, it's just for the example
-int :: Nat n -> Int
-int Zero     = 0
-int (Succ n) = succ (int n)
