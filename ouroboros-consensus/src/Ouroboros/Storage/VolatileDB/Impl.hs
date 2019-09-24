@@ -393,7 +393,7 @@ getPredecessorImpl VolatileDBEnv{..} = do
   where
     msg = "precondition violated: block not member of the VolatileDB"
 
-getMaxSlotNoImpl :: forall m blockId. (MonadSTM m, Ord blockId, HasCallStack)
+getMaxSlotNoImpl :: forall m blockId. MonadSTM m
                  => VolatileDBEnv m blockId
                  -> STM m MaxSlotNo
 getMaxSlotNoImpl VolatileDBEnv{..} = do
