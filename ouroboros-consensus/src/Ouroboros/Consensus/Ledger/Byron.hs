@@ -12,6 +12,7 @@
 {-# LANGUAGE TypeApplications           #-}
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE UndecidableInstances       #-}
+{-# LANGUAGE PatternSynonyms            #-}
 
 module Ouroboros.Consensus.Ledger.Byron
   ( -- * Byron blocks and headers
@@ -49,6 +50,8 @@ module Ouroboros.Consensus.Ledger.Byron
   , decodeByronApplyTxError
     -- * EBBs
   , ByronBlockOrEBB (..)
+  , pattern ByronHeaderRegular
+  , pattern ByronHeaderBoundary
   , mkByronHeaderOrEBB
   , annotateBoundary
   , toCBORAHeaderOrBoundary
