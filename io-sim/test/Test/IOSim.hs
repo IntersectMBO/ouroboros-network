@@ -25,7 +25,6 @@ import           Test.Tasty.QuickCheck
 import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
-import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
 import           Control.Monad.Class.MonadSay
 import           Control.Monad.IOSim
@@ -191,7 +190,6 @@ test_timers :: forall m.
                ( MonadFork m
                , MonadSTM m
                , MonadTimer m
-               , Show (Time m)
                )
             => [DiffTime]
             -> m Property

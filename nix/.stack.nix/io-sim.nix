@@ -22,6 +22,7 @@
           (hsPkgs.exceptions)
           (hsPkgs.containers)
           (hsPkgs.psqueues)
+          (hsPkgs.time)
           ];
         };
       tests = {

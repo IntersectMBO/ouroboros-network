@@ -5,10 +5,11 @@ module Control.Monad.Class.MonadTime (
   , diffTime
   , addTime
   , DiffTime
+  , UTCTime
   ) where
 
 import           Data.Word (Word64)
-import           Data.Time.Clock (DiffTime)
+import           Data.Time.Clock (DiffTime, UTCTime)
 import qualified Data.Time.Clock as Time
 
 
@@ -37,11 +38,14 @@ class Monad m => MonadTime m where
   --
   getMonotonicTime :: m Time
 
+  -- | Wall clock time.
+  --
+  getCurrentTime   :: m UTCTime
+
 
 --
 -- Instances for IO
 --
-
 
 instance MonadTime IO where
   getMonotonicTime =
@@ -49,6 +53,8 @@ instance MonadTime IO where
     where
       conv :: Word64 -> Time
       conv = Time . Time.picosecondsToDiffTime . (* 1000) . toInteger
+
+  getCurrentTime = Time.getCurrentTime
 
 foreign import ccall unsafe "getMonotonicNSec"
     getMonotonicNSec :: IO Word64
