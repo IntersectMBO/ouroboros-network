@@ -307,14 +307,15 @@ data RegistryState m = RegistryState {
       -- | Does the registry still accept new allocations?
       --
       -- See 'RegistryClosedException' for discussion.
-    , registryClosed    :: !(Maybe RegistryClosed)
+    , registryStatus    :: !RegistryStatus
     }
 
--- | Information recorded when we close the registry
-data RegistryClosed = RegistryClosed {
-      -- | CallStack to the call to 'close'
-      registryCloseCallStack :: !PrettyCallStack
-    }
+-- | Status of the registry (open or closed)
+data RegistryStatus =
+    RegistryOpen
+
+    -- | We record the 'CallStack' to the call to 'close
+  | RegistryClosed !PrettyCallStack
 
 -- | Resource key
 --
@@ -353,15 +354,15 @@ instance Show (Release m) where
 
 -- | Auxiliary for functions that should be disallowed when registry is closed
 unlessClosed :: State (RegistryState m) a
-             -> State (RegistryState m) (Either RegistryClosed a)
+             -> State (RegistryState m) (Either PrettyCallStack a)
 unlessClosed f = do
-    isClosed <- gets registryClosed
-    case isClosed of
-      Just closed -> return $ Left closed
-      Nothing     -> Right <$> f
+    status <- gets registryStatus
+    case status of
+      RegistryClosed closed -> return $ Left closed
+      RegistryOpen          -> Right <$> f
 
 -- | Allocate key for new resource
-allocKey :: State (RegistryState m) (Either RegistryClosed ResourceId)
+allocKey :: State (RegistryState m) (Either PrettyCallStack ResourceId)
 allocKey = unlessClosed $ do
     nextKey <- gets registryNextKey
     modify $ \st -> st {registryNextKey = succ nextKey}
@@ -370,7 +371,7 @@ allocKey = unlessClosed $ do
 -- | Insert new resource
 insertResource :: ResourceId
                -> Resource m
-               -> State (RegistryState m) (Either RegistryClosed ())
+               -> State (RegistryState m) (Either PrettyCallStack ())
 insertResource key r = unlessClosed $ do
     modify $ \st -> st {
         registryResources = Map.insert key r (registryResources st)
@@ -401,9 +402,9 @@ removeThread tid =
 --
 -- Returns the keys currently registered if the registry is not already closed.
 close :: PrettyCallStack
-      -> State (RegistryState m) (Either RegistryClosed (Set ResourceId))
+      -> State (RegistryState m) (Either PrettyCallStack (Set ResourceId))
 close closeCallStack = unlessClosed $ do
-    modify $ \st -> st {registryClosed = Just (RegistryClosed closeCallStack)}
+    modify $ \st -> st {registryStatus = RegistryClosed closeCallStack}
     gets $ Map.keysSet . registryResources
 
 -- | Convenience function for updating the registry state
@@ -468,7 +469,7 @@ unsafeNewRegistry = do
           registryThreads   = Set.empty
         , registryResources = Map.empty
         , registryNextKey   = ResourceId 1
-        , registryClosed    = Nothing
+        , registryStatus    = RegistryOpen
         }
 
 -- | Close the registry
@@ -605,10 +606,10 @@ allocate rr alloc free = do
         , resourceRelease = Release $ free a
         }
 
-    throwRegistryClosed :: forall x. Context m -> RegistryClosed -> m x
+    throwRegistryClosed :: forall x. Context m -> PrettyCallStack -> m x
     throwRegistryClosed context closed = throwM RegistryClosedException {
           registryClosedRegistryContext = registryContext rr
-        , registryClosedCloseCallStack  = registryCloseCallStack closed
+        , registryClosedCloseCallStack  = closed
         , registryClosedAllocContext    = context
         }
 
