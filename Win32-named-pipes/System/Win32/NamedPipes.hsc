@@ -193,6 +193,3 @@ handleToFd :: HANDLE -> IO CInt
 handleToFd hnd =
   _open_osfhandle (fromIntegral (ptrToIntPtr hnd))
                   (#const _O_BINARY)
-
-foreign import ccall "_open_osfhandle"
-  _open_osfhandle :: CIntPtr -> CInt -> IO CInt
