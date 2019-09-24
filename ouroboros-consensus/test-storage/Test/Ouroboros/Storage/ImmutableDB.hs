@@ -246,20 +246,20 @@ instance Arbitrary (Index TestHash) where
   arbitrary = do
     slotOffsets <- arbitrary
     ebbHash <- if hasEBB slotOffsets
-      then Just <$> arbitrary
-      else return Nothing
+      then CurrentEBB <$> arbitrary
+      else return NoCurrentEBB
     return $ indexFromSlotOffsets (getSlotOffsets slotOffsets) ebbHash
 
   shrink index =
     [ indexFromSlotOffsets (getSlotOffsets slotOffsets') ebbHash'
     | slotOffsets' <- shrink (SlotOffsets (indexToSlotOffsets index))
-    , let ebbHash' | hasEBB slotOffsets' = Just (TestHash "a")
-                   | otherwise           = Nothing
+    , let ebbHash' | hasEBB slotOffsets' = CurrentEBB (TestHash "a")
+                   | otherwise           = NoCurrentEBB
     ]
 
 prop_indexToSlotOffsets_indexFromSlotOffsets :: SlotOffsets -> Property
 prop_indexToSlotOffsets_indexFromSlotOffsets (SlotOffsets offsets) =
-  indexToSlotOffsets (indexFromSlotOffsets offsets Nothing) === offsets
+  indexToSlotOffsets (indexFromSlotOffsets offsets NoCurrentEBB) === offsets
 
 prop_filledSlots_isFilledSlot :: SlotOffsets -> Property
 prop_filledSlots_isFilledSlot (SlotOffsets offsets) = conjoin
@@ -270,7 +270,7 @@ prop_filledSlots_isFilledSlot (SlotOffsets offsets) = conjoin
     slots | totalSlots == 0 = []
           | otherwise       = map coerce [0..indexSlots idx-1]
     totalSlots = indexSlots idx
-    idx = indexFromSlotOffsets offsets Nothing
+    idx = indexFromSlotOffsets offsets NoCurrentEBB
 
 prop_writeIndex_loadIndex :: Index TestHash -> Property
 prop_writeIndex_loadIndex index =
@@ -297,8 +297,8 @@ prop_writeSlotOffsets_loadIndex_indexToSlotOffsets :: SlotOffsets
 prop_writeSlotOffsets_loadIndex_indexToSlotOffsets slotOffsets@(SlotOffsets offsets) =
     monadicIO $ run $ runS prop
   where
-    ebbHash | hasEBB slotOffsets = Just (TestHash "a")
-            | otherwise          = Nothing
+    ebbHash | hasEBB slotOffsets = CurrentEBB (TestHash "a")
+            | otherwise          = NoCurrentEBB
 
     epoch = 0
 
