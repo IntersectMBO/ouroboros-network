@@ -1,3 +1,6 @@
+{-# LANGUAGE BangPatterns            #-}
+{-# LANGUAGE DeriveAnyClass          #-}
+{-# LANGUAGE DeriveGeneric           #-}
 {-# LANGUAGE FlexibleContexts        #-}
 {-# LANGUAGE MultiParamTypeClasses   #-}
 {-# LANGUAGE ScopedTypeVariables     #-}
@@ -68,12 +71,11 @@ instance (OuroborosTag p) => OuroborosTag (WithEBBs p) where
       Right hdr ->
           wrap <$> applyChainState @p cfg lv hdr (underlyingChainState cs)
         where
-          wrap x = ChainStateWithEBBs
-            { firstNonEBBSlot      = Just $ case firstNonEBBSlot cs of
-                Just s  -> s
-                Nothing -> blockSlot b
-            , underlyingChainState = x
-            }
+          wrap = mkChainStateWithEBBs $ Just $
+                   case firstNonEBBSlot cs of
+                     Just s  -> s
+                     Nothing -> blockSlot b
+
       -- Currently the hash chain is maintained in the ledger state, so we just
       -- ignore the EBB for protocol concerns.
       Left _ -> return cs
@@ -94,10 +96,7 @@ instance (OuroborosTag p) => OuroborosTag (WithEBBs p) where
          | effectivelyRewindingToOrigin = (Origin, Nothing)
          | otherwise                    = (mSlot, firstNonEBBSlot cs)
 
-      wrap x = ChainStateWithEBBs
-        { firstNonEBBSlot      = firstNonEBBSlot'
-        , underlyingChainState = x
-        }
+      wrap = mkChainStateWithEBBs firstNonEBBSlot'
 
 -- | A wrapper around @'ChainState' p@ with extra bookeeping data
 --
@@ -109,12 +108,23 @@ instance (OuroborosTag p) => OuroborosTag (WithEBBs p) where
 -- EBB with genesis predecessor because @PBFT@'s @rewindChainState@ refuses to
 -- return an empty chain state unless 'Origin' was specified directly.
 --
-data ChainStateWithEBBs p = ChainStateWithEBBs
+-- Constructor marked as unsafe because we have to make sure to force that
+-- slot number.
+--
+-- TODO: I thought that we decided we could get rid of this bookkeeping
+-- altogether..?
+data ChainStateWithEBBs p = UnsafeChainStateWithEBBs
   { firstNonEBBSlot      :: !(Maybe SlotNo)
     -- ^ earliest slot incorporated into 'underlyingChainState' that is not an
     -- EBB
   , underlyingChainState :: !(ChainState p)
   }
+
+mkChainStateWithEBBs :: Maybe SlotNo -> ChainState p -> ChainStateWithEBBs p
+mkChainStateWithEBBs mSlot underlying =
+    case mSlot of
+      Nothing    -> UnsafeChainStateWithEBBs Nothing     underlying
+      Just !slot -> UnsafeChainStateWithEBBs (Just slot) underlying
 
 deriving instance Show (ChainState p) => Show (ChainStateWithEBBs p)
 
@@ -122,16 +132,13 @@ deriving instance Show (ChainState p) => Show (ChainStateWithEBBs p)
 -- any non-EBB blocks.
 --
 initChainStateWithEBBs :: ChainState p -> ChainStateWithEBBs p
-initChainStateWithEBBs x = ChainStateWithEBBs
-  { firstNonEBBSlot      = Nothing
-  , underlyingChainState = x
-  }
+initChainStateWithEBBs = mkChainStateWithEBBs Nothing
 
 encodeChainStateWithEBBs ::
     (ChainState p -> CBOR.Encoding)
   -> ChainStateWithEBBs p
   -> CBOR.Encoding
-encodeChainStateWithEBBs f (ChainStateWithEBBs x0 x1) =
+encodeChainStateWithEBBs f (UnsafeChainStateWithEBBs x0 x1) =
   CBOR.encodeListLen 2
   <> CBOR.encode x0
   <> f x1
@@ -141,4 +148,4 @@ decodeChainStateWithEBBs ::
   -> CBOR.Decoder s (ChainStateWithEBBs p)
 decodeChainStateWithEBBs f = do
   CBOR.decodeListLenOf 2
-  ChainStateWithEBBs <$> CBOR.decode <*> f
+  mkChainStateWithEBBs <$> CBOR.decode <*> f
