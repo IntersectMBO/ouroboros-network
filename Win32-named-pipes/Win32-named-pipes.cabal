@@ -5,11 +5,11 @@ name:                Win32-named-pipes
 version:             0.1.0.0
 synopsis:            Win32 named pipes API
 -- description:         
-license:             BSD3
-license-file:        LICENSE
+license:             Apache-2.0
+license-files:       LICENSE NOTICE
 author:              Duncan Coutts
 maintainer:          duncan@well-typed.com
--- copyright:           
+copyright:           2019 Input Output (Hong Kong) Ltd.
 category:            System
 build-type:          Simple
 extra-source-files:  ChangeLog.md
