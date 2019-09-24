@@ -146,7 +146,7 @@ protocolHandlers
     => NodeArgs   m peer blk  --TODO eliminate, merge relevant into NodeKernel
     -> NodeKernel m peer blk
     -> ProtocolHandlers m peer blk
-protocolHandlers NodeArgs {btime, maxClockSkew, tracers, maxUnackTxs}
+protocolHandlers NodeArgs {btime, maxClockSkew, tracers, maxUnackTxs, chainSyncPipelining}
                  NodeKernel {getChainDB, getMempool, getNodeConfig} =
     --TODO: bundle needed NodeArgs into the NodeKernel
     -- so we do not have to pass it separately
@@ -155,6 +155,7 @@ protocolHandlers NodeArgs {btime, maxClockSkew, tracers, maxUnackTxs}
     ProtocolHandlers {
       phChainSyncClient =
         chainSyncClient
+          chainSyncPipelining
           tipBlockNo
           (chainSyncClientTracer tracers)
           getNodeConfig

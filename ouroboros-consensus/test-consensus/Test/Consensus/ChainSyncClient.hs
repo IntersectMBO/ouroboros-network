@@ -47,6 +47,8 @@ import           Ouroboros.Network.Point (WithOrigin (..), blockPointHash,
 import           Ouroboros.Network.Protocol.ChainSync.ClientPipelined
 import           Ouroboros.Network.Protocol.ChainSync.Codec (codecChainSyncId)
 import           Ouroboros.Network.Protocol.ChainSync.Examples
+import           Ouroboros.Network.Protocol.ChainSync.PipelineDecision
+                     (pipelineDecisionLowHighMark)
 import           Ouroboros.Network.Protocol.ChainSync.Server
 
 import           Cardano.Crypto.DSIGN.Mock
@@ -255,6 +257,7 @@ runChainSync securityParam maxClockSkew (ClientUpdates clientUpdates)
                     (Point TestBlock, BlockNo)
                     m
         client = chainSyncClient
+                   (pipelineDecisionLowHighMark 10 20)
                    snd
                    (Tracer $ say . show)
                    (nodeCfg clientId)

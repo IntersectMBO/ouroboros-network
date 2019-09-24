@@ -54,6 +54,8 @@ import           Ouroboros.Network.MockChain.Chain
 
 import qualified Ouroboros.Network.BlockFetch.Client as BFClient
 import           Ouroboros.Network.Protocol.BlockFetch.Type
+import           Ouroboros.Network.Protocol.ChainSync.PipelineDecision
+                     (pipelineDecisionLowHighMark)
 import           Ouroboros.Network.Protocol.ChainSync.Type
 import           Ouroboros.Network.Protocol.TxSubmission.Type
 import qualified Ouroboros.Network.TxSubmission.Inbound as TxInbound
@@ -313,17 +315,18 @@ runNodeNetwork registry testBtime numCoreNodes nodeJoinPlan nodeTopology
       chainDB <- ChainDB.openDB args
 
       let nodeArgs = NodeArgs
-            { tracers            = nullTracers
-            , registry           = registry
-            , maxClockSkew       = ClockSkew 1
-            , cfg                = pInfoConfig
-            , initState          = pInfoInitState
+            { tracers             = nullTracers
+            , registry            = registry
+            , maxClockSkew        = ClockSkew 1
+            , cfg                 = pInfoConfig
+            , initState           = pInfoInitState
             , btime
             , chainDB
             , callbacks
-            , blockFetchSize     = nodeBlockFetchSize
-            , blockMatchesHeader = nodeBlockMatchesHeader
-            , maxUnackTxs        = 1000 -- TODO
+            , blockFetchSize      = nodeBlockFetchSize
+            , blockMatchesHeader  = nodeBlockMatchesHeader
+            , maxUnackTxs         = 1000 -- TODO
+            , chainSyncPipelining = pipelineDecisionLowHighMark 2 4
             }
 
       nodeKernel <- initNodeKernel nodeArgs

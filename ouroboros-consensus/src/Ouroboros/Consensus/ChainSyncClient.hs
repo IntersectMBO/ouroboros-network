@@ -197,28 +197,6 @@ chainSyncClient
        , ProtocolLedgerView blk
        , Exception (ChainSyncClientException blk tip)
        )
-    => (tip -> BlockNo)
-    -> Tracer m (TraceChainSyncClientEvent blk tip)
-    -> NodeConfig (BlockProtocol blk)
-    -> BlockchainTime m
-    -> ClockSkew                                    -- ^ Maximum clock skew
-    -> STM m (ExtLedgerState blk)                   -- ^ Get the current ledger state
-    -> STM m (HeaderHash blk -> Bool, Fingerprint)  -- ^ Get the invalid block checker
-    -> STM m BlockNo                                -- ^ Get the BlockNo of our current tip
-    -> StrictTVar m (CandidateState blk)            -- ^ Our peer's state var
-    -> AnchoredFragment (Header blk)                -- ^ The current chain
-    -> Consensus ChainSyncClientPipelined blk tip m
-chainSyncClient = chainSyncClient_ $ pipelineDecisionLowHighMark 200 300
-
--- | Generalization of 'chainSyncClient_' over pipelining decision
-chainSyncClient_
-    :: forall m blk tip.
-       ( MonadSTM   m
-       , MonadCatch m
-       , MonadThrow (STM m)
-       , ProtocolLedgerView blk
-       , Exception (ChainSyncClientException blk tip)
-       )
     => MkPipelineDecision
     -> (tip -> BlockNo)
     -> Tracer m (TraceChainSyncClientEvent blk tip)
@@ -231,7 +209,7 @@ chainSyncClient_
     -> StrictTVar m (CandidateState blk)            -- ^ Our peer's state var
     -> AnchoredFragment (Header blk)                -- ^ The current chain
     -> Consensus ChainSyncClientPipelined blk tip m
-chainSyncClient_ mkPipelineDecision0
+chainSyncClient mkPipelineDecision0
                  tipBlockNo
                  tracer cfg btime (ClockSkew maxSkew)
                  getCurrentLedger getIsInvalidBlock getTipBlockNo varCandidate =
