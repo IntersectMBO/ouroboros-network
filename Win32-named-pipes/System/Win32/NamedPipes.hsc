@@ -2,6 +2,8 @@
 #include <fcntl.h>
 #include <windows.h>
 
+{-# LANGUAGE InterruptibleFFI #-}
+
 -- | For full details on the Windows named pipes API see
 -- <https://docs.microsoft.com/en-us/windows/desktop/ipc/named-pipes>
 --
@@ -167,7 +169,7 @@ connectNamedPipe hpipe mb_over = do
 eRROR_PIPE_CONNECTED :: ErrCode
 eRROR_PIPE_CONNECTED = #const ERROR_PIPE_CONNECTED
 
-foreign import ccall safe "windows.h ConnectNamedPipe"
+foreign import ccall interruptible "windows.h ConnectNamedPipe"
   c_ConnectNamedPipe :: HANDLE
                      -> LPOVERLAPPED
                      -> IO Bool
