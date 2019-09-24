@@ -33,7 +33,7 @@ runPureSimFS :: PureSimFS m a -> MockFS -> m (a, MockFS)
 runPureSimFS = runStateT . unPureSimFS
 
 pureHasFS :: forall m. Monad m
-          => ErrorHandling FsError m -> HasFS (PureSimFS m) Mock.Handle
+          => ErrorHandling FsError m -> HasFS (PureSimFS m) Mock.HandleMock
 pureHasFS err = HasFS {
       dumpState                = Mock.dumpState
     , hOpen                    = Mock.hOpen                    err'
@@ -49,7 +49,6 @@ pureHasFS err = HasFS {
     , doesDirectoryExist       = Mock.doesDirectoryExist       err'
     , doesFileExist            = Mock.doesFileExist            err'
     , removeFile               = Mock.removeFile               err'
-    , handlePath               = gets . flip Mock.handleFsPath
     , hasFsErr                 = err'
     }
   where

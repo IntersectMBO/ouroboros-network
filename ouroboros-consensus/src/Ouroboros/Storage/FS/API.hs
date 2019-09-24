@@ -6,6 +6,7 @@
 -- | An abstract view over the filesystem.
 module Ouroboros.Storage.FS.API (
       HasFS(..)
+    , Handle(..)
     , hGetExactly
     , hGetAll
     , hPut
@@ -41,10 +42,10 @@ data HasFS m h = HasFS {
     -- Operations of files
 
     -- | Open a file
-  , hOpen                    :: HasCallStack => FsPath -> OpenMode -> m h
+  , hOpen                    :: HasCallStack => FsPath -> OpenMode -> m (Handle h)
 
     -- | Close a file
-  , hClose                   :: HasCallStack => h -> m ()
+  , hClose                   :: HasCallStack => Handle h -> m ()
 
     -- | Seek handle
     --
@@ -54,7 +55,7 @@ data HasFS m h = HasFS {
     -- Unlike the Posix @lseek@, 'hSeek' does not return the new seek position
     -- because the value returned by Posix is rather strange and unreliable
     -- and we don't want to emulate it's behaviour.
-  , hSeek                    :: HasCallStack => h -> SeekMode -> Int64 -> m ()
+  , hSeek                    :: HasCallStack => Handle h -> SeekMode -> Int64 -> m ()
 
     -- | Try to read @n@ bytes from a handle
     --
@@ -66,7 +67,7 @@ data HasFS m h = HasFS {
     -- that we have reached EOF.
     --
     -- Postcondition: the length of the returned bytestring <= @n@ and >= 0.
-  , hGetSome                 :: HasCallStack => h -> Word64 -> m BS.ByteString
+  , hGetSome                 :: HasCallStack => Handle h -> Word64 -> m BS.ByteString
 
     -- | Write to a handle
     --
@@ -78,18 +79,18 @@ data HasFS m h = HasFS {
     --
     -- Postcondition: the return value <= @l@ and > 0, unless the given
     -- bytestring is empty, in which case the return value can be 0.
-  , hPutSome                 :: HasCallStack => h -> BS.ByteString -> m Word64
+  , hPutSome                 :: HasCallStack => Handle h -> BS.ByteString -> m Word64
 
     -- | Truncate the file to the specified size
     --
     -- NOTE: Only supported in append mode.
-  , hTruncate                :: HasCallStack => h -> Word64 -> m ()
+  , hTruncate                :: HasCallStack => Handle h -> Word64 -> m ()
 
     -- | Return current file size
     --
     -- NOTE: This is not thread safe (changes made to the file in other threads
     -- may affect this thread).
-  , hGetSize                 :: HasCallStack => h -> m Word64
+  , hGetSize                 :: HasCallStack => Handle h -> m Word64
 
     -- Operations of directories
 
@@ -113,27 +114,19 @@ data HasFS m h = HasFS {
     -- | Remove the file (which must exist)
   , removeFile               :: HasCallStack => FsPath -> m ()
 
-    -- | Return the path corresponding to the handle
-    --
-    -- Useful for error reporting.
-    --
-    -- TODO make this a pure function
-  , handlePath               :: HasCallStack => h -> m FsPath
-
     -- | Error handling
   , hasFsErr                 :: ErrorHandling FsError m
   }
 
 withFile :: (HasCallStack, MonadThrow m)
-         => HasFS m h -> FsPath -> OpenMode -> (h -> m a) -> m a
+         => HasFS m h -> FsPath -> OpenMode -> (Handle h -> m a) -> m a
 withFile HasFS{..} fp openMode = bracket (hOpen fp openMode) hClose
 
 -- | Makes sure it reads all requested bytes.
 -- If eof is found before all bytes are read, it throws an exception.
-hGetExactly :: forall m h
-            . (HasCallStack, Monad m)
+hGetExactly :: forall m h. (HasCallStack, Monad m)
             => HasFS m h
-            -> h
+            -> Handle h
             -> Word64
             -> m BL.ByteString
 hGetExactly hasFS h n = go n []
@@ -144,10 +137,9 @@ hGetExactly hasFS h n = go n []
       | otherwise           = do
         bs <- hGetSome hasFS h remainingBytes
         if BS.null bs then do
-          path <- handlePath hasFS h
           throwError (hasFsErr hasFS) FsError {
               fsErrorType   = FsReachedEOF
-            , fsErrorPath   = path
+            , fsErrorPath   = handlePath h
             , fsErrorString = "hGetExactly found eof before reading " ++ show n ++ " bytes"
             , fsErrorNo     = Nothing
             , fsErrorStack  = callStack
@@ -159,7 +151,7 @@ hGetExactly hasFS h n = go n []
 -- | Read all the data from the given file handle 64kB at a time.
 --
 -- Stops when EOF is reached.
-hGetAll :: Monad m => HasFS m h -> h -> m BL.ByteString
+hGetAll :: Monad m => HasFS m h -> Handle h -> m BL.ByteString
 hGetAll HasFS{..} hnd = go mempty
   where
     bufferSize = 64 * 1024
@@ -174,7 +166,7 @@ hGetAll HasFS{..} hnd = go mempty
 hPutAllStrict :: forall m h
               .  (HasCallStack, Monad m)
               => HasFS m h
-              -> h
+              -> Handle h
               -> BS.ByteString
               -> m Word64
 hPutAllStrict hasFS h = go 0
@@ -193,7 +185,7 @@ hPutAllStrict hasFS h = go 0
 hPutAll :: forall m h
         .  (HasCallStack, Monad m)
         => HasFS m h
-        -> h
+        -> Handle h
         -> BL.ByteString
         -> m Word64
 hPutAll hasFS h = foldM putChunk 0 . BL.toChunks
@@ -210,7 +202,7 @@ hPutAll hasFS h = foldM putChunk 0 . BL.toChunks
 hPut :: forall m h
      .  (HasCallStack, Monad m)
      => HasFS m h
-     -> h
+     -> Handle h
      -> Builder
      -> m Word64
 hPut hasFS g = hPutAll hasFS g . BS.toLazyByteString

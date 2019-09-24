@@ -40,7 +40,7 @@ import qualified Data.Map.Strict as Map
 import           Data.Proxy
 import           Data.Set (Set)
 import qualified Data.Set as Set
-import           Data.TreeDiff (ToExpr)
+import           Data.TreeDiff (ToExpr (..), defaultExprViaShow)
 import           Data.Word (Word64)
 import qualified Generics.SOP as SOP
 import           GHC.Generics
@@ -66,7 +66,7 @@ import           Ouroboros.Storage.FS.API (HasFS (..))
 import           Ouroboros.Storage.FS.API.Types
 import           Ouroboros.Storage.FS.IO
 import           Ouroboros.Storage.FS.Sim.FsTree (FsTree (..))
-import           Ouroboros.Storage.FS.Sim.MockFS (MockFS)
+import           Ouroboros.Storage.FS.Sim.MockFS (HandleMock, MockFS)
 import qualified Ouroboros.Storage.FS.Sim.MockFS as Mock
 import           Ouroboros.Storage.FS.Sim.Pure
 import qualified Ouroboros.Storage.IO as F
@@ -104,7 +104,7 @@ evalPathExpr (PExpParentOf fp) = init fp
 --
 -- We will be interested in three different instantiations of @h@:
 --
--- > Cmd Mock.Handle
+-- > Cmd HandleMock
 -- > Cmd (Reference (Opaque (FsHandle IOFSE)) Concrete)
 -- > Cmd (Reference (Opaque (FsHandle IOFSE)) Symbolic)
 --
@@ -147,11 +147,11 @@ data Success fp h =
 -- | Successful semantics
 run :: forall m h. Monad m
     => HasFS m h
-    -> Cmd FsPath h
-    -> m (Success FsPath h)
+    -> Cmd FsPath (Handle h)
+    -> m (Success FsPath (Handle h))
 run hasFS@HasFS{..} = go
   where
-    go :: Cmd FsPath h -> m (Success FsPath h)
+    go :: Cmd FsPath (Handle h) -> m (Success FsPath (Handle h))
     go (Open pe mode) =
         case mode of
           ReadMode   -> withPE pe (\_ -> RHandle) $ \fp -> hOpen fp mode
@@ -174,9 +174,9 @@ run hasFS@HasFS{..} = go
     go (RemoveFile         pe  ) = withPE pe (const Unit)    $ removeFile
 
     withPE :: PathExpr FsPath
-           -> (FsPath -> a -> Success FsPath h)
+           -> (FsPath -> a -> Success FsPath (Handle h))
            -> (FsPath -> m a)
-           -> m (Success FsPath h)
+           -> m (Success FsPath (Handle h))
     withPE pe r f = let fp = evalPathExpr pe in r fp <$> f fp
 
 
@@ -215,7 +215,7 @@ run hasFS@HasFS{..} = go
 -- the real implementation are in sync.
 
 hGetSomeChecked :: (Monad m, HasCallStack)
-                => HasFS m h -> h -> Word64 -> m ByteString
+                => HasFS m h -> Handle h -> Word64 -> m ByteString
 hGetSomeChecked HasFS{..} h n = do
     bytes <- hGetSome h n
     when (fromIntegral (BS.length bytes) /= n) $ do
@@ -227,7 +227,7 @@ hGetSomeChecked HasFS{..} h n = do
     return bytes
 
 hPutSomeChecked :: (Monad m, HasCallStack)
-                => HasFS m h -> h -> ByteString -> m Word64
+                => HasFS m h -> Handle h -> ByteString -> m Word64
 hPutSomeChecked HasFS{..} h bytes = do
     n <- hPutSome h bytes
     if fromIntegral (BS.length bytes) /= n
@@ -248,16 +248,18 @@ instance (Eq fp, Eq h) => Eq (Resp fp h) where
   Resp (Right a) == Resp (Right a') = a == a'
   _              == _               = False
 
-runPure :: Cmd FsPath Mock.Handle -> MockFS -> (Resp FsPath Mock.Handle, MockFS)
+runPure :: Cmd FsPath (Handle HandleMock)
+        -> MockFS -> (Resp FsPath (Handle HandleMock), MockFS)
 runPure cmd mockFS =
     aux $ runExcept $ runPureSimFS (run (pureHasFS EH.exceptT) cmd) mockFS
   where
-    aux :: Either FsError (Success FsPath Mock.Handle, MockFS)
-        -> (Resp FsPath Mock.Handle, MockFS)
+    aux :: Either FsError (Success FsPath (Handle HandleMock), MockFS)
+        -> (Resp FsPath (Handle HandleMock), MockFS)
     aux (Left e)             = (Resp (Left e), mockFS)
     aux (Right (r, mockFS')) = (Resp (Right r), mockFS')
 
-runIO :: MountPoint -> Cmd FsPath HandleIO -> IO (Resp FsPath HandleIO)
+runIO :: MountPoint
+      -> Cmd FsPath (Handle HandleIO) -> IO (Resp FsPath (Handle HandleIO))
 runIO mount cmd = Resp <$> E.try (run (ioHasFS mount) cmd)
 
 {-------------------------------------------------------------------------------
@@ -294,10 +296,10 @@ handles = bifoldMap (const []) (:[])
 type PathRef = QSM.Reference FsPath
 
 -- | Concrete or symbolic reference to an IO file handle
-type HandleRef = QSM.Reference (QSM.Opaque HandleIO)
+type HandleRef = QSM.Reference (Handle HandleIO)
 
 -- | Mapping between real IO file handles and mock file handles
-type KnownHandles = RefEnv (QSM.Opaque HandleIO) Mock.Handle
+type KnownHandles = RefEnv (Handle HandleIO) (Handle HandleMock)
 
 -- | Mapping between path references and paths
 type KnownPaths = RefEnv FsPath FsPath
@@ -318,26 +320,24 @@ initModel :: Model r
 initModel = Model Mock.empty RE.empty RE.empty
 
 -- | Key property of the model is that we can go from real to mock responses
-toMock :: (Bifunctor t, Eq1 r) => Model r -> t :@ r -> t FsPath Mock.Handle
+toMock :: (Bifunctor t, Eq1 r)
+       => Model r -> t :@ r -> t FsPath (Handle HandleMock)
 toMock Model{..} (At r) = bimap (knownPaths RE.!) (knownHandles RE.!) r
 
 -- | Step the mock semantics
 --
 -- We cannot step the whole Model here (see 'event', below)
-step :: Eq1 r => Model r -> Cmd :@ r -> (Resp FsPath Mock.Handle, MockFS)
+step :: Eq1 r
+     => Model r -> Cmd :@ r -> (Resp FsPath (Handle HandleMock), MockFS)
 step model@Model{..} cmd = runPure (toMock model cmd) mockFS
 
--- | Pair a handle with the path it points to
-resolveHandle :: MockFS -> Mock.Handle -> (Mock.Handle, FsPath)
-resolveHandle mockFS h = (h, Mock.handleFsPath mockFS h)
-
--- | Open read handles and the files they point to
-openHandles :: Model r -> [(Mock.Handle, FsPath)]
+-- | Open read handles
+openHandles :: Model r -> [Handle HandleMock]
 openHandles Model{..} =
-    map (resolveHandle mockFS) $ filter isOpen (RE.elems knownHandles)
+    filter isOpen (RE.elems knownHandles)
   where
-    isOpen :: Mock.Handle -> Bool
-    isOpen = Mock.handleIsOpen mockFS
+    isOpen :: Handle HandleMock -> Bool
+    isOpen (Handle h _) = Mock.handleIsOpen mockFS h
 
 {-------------------------------------------------------------------------------
   Wrapping in quickcheck-state-machine references
@@ -385,16 +385,12 @@ data Event r = Event {
       eventBefore   :: Model  r
     , eventCmd      :: Cmd :@ r
     , eventAfter    :: Model  r
-    , eventMockResp :: Resp FsPath Mock.Handle
+    , eventMockResp :: Resp FsPath (Handle HandleMock)
     }
   deriving (Show)
 
-eventMockCmd :: Eq1 r => Event r -> Cmd FsPath Mock.Handle
+eventMockCmd :: Eq1 r => Event r -> Cmd FsPath (Handle HandleMock)
 eventMockCmd Event{..} = toMock eventBefore eventCmd
-
--- | Bundle handles with the paths they refer to
-resolveCmd :: Eq1 r => Event r -> Cmd FsPath (Mock.Handle, FsPath)
-resolveCmd ev@Event{..} = resolveHandle (mockFS eventBefore) <$> eventMockCmd ev
 
 -- | Construct an event
 --
@@ -647,8 +643,8 @@ postcondition model cmd resp =
 
 semantics :: MountPoint -> Cmd :@ Concrete -> IO (Resp :@ Concrete)
 semantics mount (At cmd) =
-    At . bimap QSM.reference (QSM.reference . QSM.Opaque) <$>
-      runIO mount (bimap QSM.concrete QSM.opaque cmd)
+    At . bimap QSM.reference QSM.reference <$>
+      runIO mount (bimap QSM.concrete QSM.concrete cmd)
 
 -- | The state machine proper
 sm :: MountPoint -> QSM.StateMachine Model (At Cmd) IO (At Resp)
@@ -838,7 +834,7 @@ type EventPred = C.Predicate (Event Symbolic) Tag
 --
 -- For convenience we pair handles with the paths they refer to
 successful :: (    Event Symbolic
-                -> Success FsPath Mock.Handle
+                -> Success FsPath (Handle HandleMock)
                 -> Either Tag EventPred
               )
            -> EventPred
@@ -941,33 +937,33 @@ tag = C.classify [
         countOpen :: Model r -> Int
         countOpen = Mock.numOpenHandles . mockFS
 
-    tagPutTruncateGet :: Map (Mock.Handle, FsPath) Int
-                      -> Set (Mock.Handle, FsPath)
+    tagPutTruncateGet :: Map (HandleMock, FsPath) Int
+                      -> Set (HandleMock, FsPath)
                       -> EventPred
     tagPutTruncateGet put truncated = successful $ \ev _ ->
-      case resolveCmd  ev of
-        Put (h, fp) bs | BS.length bs /= 0 ->
+      case eventMockCmd  ev of
+        Put (Handle h fp) bs | BS.length bs /= 0 ->
           let
               f Nothing  = Just $ BS.length bs
               f (Just n) = Just $ (BS.length bs) + n
               put' = Map.alter f (h, fp) put
           in Right $ tagPutTruncateGet put' truncated
-        Truncate (h, fp) sz | sz > 0 -> case Map.lookup (h, fp) put of
+        Truncate (Handle h fp) sz | sz > 0 -> case Map.lookup (h, fp) put of
           Just p | fromIntegral sz < p ->
             let truncated' = Set.insert (h, fp) truncated
             in Right $ tagPutTruncateGet put truncated'
           _otherwise -> Right $ tagPutTruncateGet put truncated
-        Get (h, fp) n | n > 0 && (not $ Set.null $ Set.filter (\(hRead, fp') -> fp' == fp && not (hRead == h)) truncated) ->
+        Get (Handle h fp) n | n > 0 && (not $ Set.null $ Set.filter (\(hRead, fp') -> fp' == fp && not (hRead == h)) truncated) ->
               Left TagPutTruncateGet
         _otherwise -> Right $ tagPutTruncateGet put truncated
 
-    tagPutTruncatePut :: Map Mock.Handle ByteString
-                      -> Map Mock.Handle ByteString
-                      -> Map Mock.Handle ByteString
+    tagPutTruncatePut :: Map HandleMock ByteString
+                      -> Map HandleMock ByteString
+                      -> Map HandleMock ByteString
                       -> EventPred
     tagPutTruncatePut before truncated after = successful $ \ev _ ->
         case eventMockCmd ev of
-          Put h bs | BS.length bs /= 0 ->
+          Put (Handle h _) bs | BS.length bs /= 0 ->
             case Map.lookup h truncated of
               Nothing -> -- not yet truncated
                 let before' = Map.alter (appTo bs) h before in
@@ -978,7 +974,7 @@ tag = C.classify [
                 if deleted /= BS.take (BS.length deleted) putAfter
                   then Left  $ TagPutTruncatePut
                   else Right $ tagPutTruncatePut before truncated after'
-          Truncate h sz | sz > 0 ->
+          Truncate (Handle h _) sz | sz > 0 ->
             let putBefore  = Map.findWithDefault mempty h before
                 (putBefore', deleted) = BS.splitAt (fromIntegral sz) putBefore
                 before'    = Map.insert h putBefore' before
@@ -992,24 +988,24 @@ tag = C.classify [
         appTo b Nothing  = Just b
         appTo b (Just a) = Just (a <> b)
 
-    tagConcurrentWriterReader :: Map Mock.Handle (Set Mock.Handle) -> EventPred
+    tagConcurrentWriterReader :: Map HandleMock (Set HandleMock) -> EventPred
     tagConcurrentWriterReader put = successful $ \ev@Event{..} _ ->
-        case resolveCmd ev of
-          Put (h, fp) bs | BS.length bs > 0 ->
+        case eventMockCmd ev of
+          Put (Handle h fp) bs | BS.length bs > 0 ->
             -- Remember the other handles to the same file open at this time
-            let readHs :: Set Mock.Handle
+            let readHs :: Set HandleMock
                 readHs = Set.fromList
-                       $ map fst
-                       $ filter (\(h', fp') -> h /= h' && fp == fp')
+                       $ map handleRaw
+                       $ filter (\(Handle h' fp') -> h /= h' && fp == fp')
                        $ openHandles eventBefore
 
-                put' :: Map Mock.Handle (Set Mock.Handle)
+                put' :: Map HandleMock (Set HandleMock)
                 put' = Map.alter (Just . maybe readHs (Set.union readHs)) h put
 
             in Right $ tagConcurrentWriterReader put'
-          Close (h, _) ->
+          Close (Handle h _) ->
             Right $ tagConcurrentWriterReader (Map.delete h put)
-          Get (h, _) n | h `elem` Set.unions (Map.elems put), n > 0 ->
+          Get (Handle h _) n | h `elem` Set.unions (Map.elems put), n > 0 ->
             Left TagConcurrentWriterReader
           _otherwise ->
             Right $ tagConcurrentWriterReader put
@@ -1032,14 +1028,14 @@ tag = C.classify [
           Right $ tagOpenReadThenRead $ Set.insert fp readOpen
         _otherwise -> Right $ tagOpenReadThenRead readOpen
 
-    tagWriteWriteRead :: Map (Mock.Handle, FsPath) Int -> EventPred
+    tagWriteWriteRead :: Map (HandleMock, FsPath) Int -> EventPred
     tagWriteWriteRead wr = successful $ \ev@Event{..} _ ->
-      case resolveCmd ev of
-        Put (h, fp) bs | BS.length bs > 0 ->
+      case eventMockCmd ev of
+        Put (Handle h fp) bs | BS.length bs > 0 ->
           let f Nothing  = Just 0
               f (Just x) = Just $ x + 1
           in Right $ tagWriteWriteRead $ Map.alter f (h, fp) wr
-        Get (hRead, fp) n | n > 1 ->
+        Get (Handle hRead fp) n | n > 1 ->
           if not $ Map.null $ Map.filterWithKey (\(hWrite, fp') times -> fp' == fp && times > 1 && not (hWrite == hRead)) wr
           then Left TagWriteWriteRead
           else Right $ tagWriteWriteRead wr
@@ -1078,7 +1074,7 @@ tag = C.classify [
 
     tagCreateDirectory :: EventPred
     tagCreateDirectory = successful $ \ev@Event{..} _ ->
-      case resolveCmd ev of
+      case eventMockCmd ev of
         CreateDirIfMissing True (PExpPath fp) | length fp > 1 ->
           Left TagCreateDirectory
         _otherwise ->
@@ -1111,7 +1107,7 @@ tag = C.classify [
 
     tagRemoveFile :: Set FsPath -> EventPred
     tagRemoveFile removed = successful $ \ev@Event{..} _suc ->
-      case resolveCmd ev of
+      case eventMockCmd ev of
         RemoveFile fe -> Right $ tagRemoveFile $ Set.insert fp removed
           where
             fp = evalPathExpr fe
@@ -1122,56 +1118,56 @@ tag = C.classify [
               fp = evalPathExpr fe
         _otherwise -> Right $ tagRemoveFile removed
 
-    tagClosedTwice :: Set Mock.Handle -> EventPred
+    tagClosedTwice :: Set HandleMock -> EventPred
     tagClosedTwice closed = successful $ \ev@Event{..} _suc ->
       case eventMockCmd ev of
-        Close h | Set.member h closed -> Left TagClosedTwice
-        Close h -> Right $ tagClosedTwice $ Set.insert h closed
+        Close (Handle h _) | Set.member h closed -> Left TagClosedTwice
+        Close (Handle h _) -> Right $ tagClosedTwice $ Set.insert h closed
         _otherwise -> Right $ tagClosedTwice closed
 
     -- this never succeeds because of an fsLimitation
-    tagReadInvalid :: Set Mock.Handle -> EventPred
+    tagReadInvalid :: Set HandleMock -> EventPred
     tagReadInvalid openAppend = C.predicate $ \ev ->
       case (eventMockCmd ev, eventMockResp ev) of
-        (Open _ (AppendMode _), Resp (Right (WHandle _ h))) ->
+        (Open _ (AppendMode _), Resp (Right (WHandle _ (Handle h _)))) ->
           Right $ tagReadInvalid $ Set.insert h openAppend
-        (Close h, Resp (Right _)) ->
+        (Close (Handle h _), Resp (Right _)) ->
           Right $ tagReadInvalid $ Set.delete h openAppend
-        (Get h _, Resp (Left _)) | Set.member h openAppend ->
+        (Get (Handle h _) _, Resp (Left _)) | Set.member h openAppend ->
           Left TagReadInvalid
         _otherwise -> Right $ tagReadInvalid openAppend
 
     -- never succeeds, not sure why.
-    tagWriteInvalid :: Set Mock.Handle -> EventPred
+    tagWriteInvalid :: Set HandleMock -> EventPred
     tagWriteInvalid openRead = C.predicate $ \ev ->
       case (eventMockCmd ev, eventMockResp ev) of
-        (Open _ ReadMode, Resp (Right (WHandle _ h))) ->
+        (Open _ ReadMode, Resp (Right (WHandle _ (Handle h _)))) ->
           Right $ tagWriteInvalid $ Set.insert h openRead
-        (Close h, Resp (Right _)) ->
+        (Close (Handle h _), Resp (Right _)) ->
           Right $ tagWriteInvalid $ Set.delete h openRead
-        (Put h _, _) | Set.member h openRead ->
+        (Put (Handle h _) _, _) | Set.member h openRead ->
           Left TagWriteInvalid
         _otherwise -> Right $ tagWriteInvalid openRead
 
-    tagPutSeekGet :: Set Mock.Handle -> Set Mock.Handle -> EventPred
+    tagPutSeekGet :: Set HandleMock -> Set HandleMock -> EventPred
     tagPutSeekGet put seek = successful $ \ev@Event{..} _suc ->
       case eventMockCmd ev of
-        Put h bs | BS.length bs > 0 ->
+        Put (Handle h _) bs | BS.length bs > 0 ->
           Right $ tagPutSeekGet (Set.insert h put) seek
-        Seek h RelativeSeek n | n > 0 && Set.member h put ->
+        Seek (Handle h _) RelativeSeek n | n > 0 && Set.member h put ->
           Right $ tagPutSeekGet put (Set.insert h seek)
-        Get h n | n > 0 && Set.member h seek ->
+        Get (Handle h _) n | n > 0 && Set.member h seek ->
           Left TagPutSeekGet
         _otherwise -> Right $ tagPutSeekGet put seek
 
-    tagPutSeekNegGet :: Set Mock.Handle -> Set Mock.Handle -> EventPred
+    tagPutSeekNegGet :: Set HandleMock -> Set HandleMock -> EventPred
     tagPutSeekNegGet put seek = successful $ \ev@Event{..} _suc ->
       case eventMockCmd ev of
-        Put h bs | BS.length bs > 0 ->
+        Put (Handle h _) bs | BS.length bs > 0 ->
           Right $ tagPutSeekNegGet (Set.insert h put) seek
-        Seek h RelativeSeek n | n < 0 && Set.member h put ->
+        Seek (Handle h _) RelativeSeek n | n < 0 && Set.member h put ->
           Right $ tagPutSeekNegGet put (Set.insert h seek)
-        Get h n | n > 0 && Set.member h seek ->
+        Get (Handle h _) n | n > 0 && Set.member h seek ->
           Left TagPutSeekNegGet
         _otherwise -> Right $ tagPutSeekNegGet put seek
 
@@ -1217,12 +1213,15 @@ instance QSM.CommandNames (At Cmd) where
 deriving instance ToExpr a => ToExpr (FsTree a)
 deriving instance ToExpr fp => ToExpr (PathExpr fp)
 
+deriving instance ToExpr HandleMock
 deriving instance ToExpr MockFS
-deriving instance ToExpr Mock.Handle
 deriving instance ToExpr Mock.HandleState
 deriving instance ToExpr Mock.OpenHandleState
 deriving instance ToExpr Mock.ClosedHandleState
 deriving instance ToExpr Mock.FilePtr
+
+instance ToExpr (Handle h) where
+  toExpr = defaultExprViaShow
 
 deriving instance ToExpr (Model Concrete)
 
@@ -1273,7 +1272,7 @@ prop_sequential tmpDir =
 
       -- | Close all open handles and delete the temp directory
       liftIO $ do
-        forM_ (RE.keys (knownHandles model)) $ F.close . QSM.opaque
+        forM_ (RE.keys (knownHandles model)) $ F.close . handleRaw . QSM.concrete
         removeDirectoryRecursive tstTmpDir
 
       QSM.prettyCommands sm' hist

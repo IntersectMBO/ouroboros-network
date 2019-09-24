@@ -61,7 +61,7 @@ import           Ouroboros.Consensus.Util (whenJust)
 import           Ouroboros.Storage.FS.API
 import           Ouroboros.Storage.FS.API.Example (example)
 import           Ouroboros.Storage.FS.API.Types
-import           Ouroboros.Storage.FS.Sim.MockFS (Handle, MockFS, handleFsPath)
+import           Ouroboros.Storage.FS.Sim.MockFS (HandleMock, MockFS)
 import qualified Ouroboros.Storage.FS.Sim.MockFS as Mock
 import qualified Ouroboros.Storage.FS.Sim.STM as Sim
 import           Ouroboros.Storage.Util.ErrorHandling (ErrorHandling (..))
@@ -427,7 +427,7 @@ mkSimErrorHasFS :: forall m. MonadSTM m
                 => ErrorHandling FsError m
                 -> StrictTVar m MockFS
                 -> StrictTVar m Errors
-                -> HasFS m Handle
+                -> HasFS m HandleMock
 mkSimErrorHasFS err fsVar errorsVar =
     case Sim.simHasFS err fsVar of
       HasFS{..} -> HasFS{
@@ -438,18 +438,18 @@ mkSimErrorHasFS err fsVar errorsVar =
             withErr err errorsVar p (hOpen p m) "hOpen"
             _hOpen (\e es -> es { _hOpen = e })
         , hClose     = \h ->
-            withErr' err fsVar errorsVar h (hClose h) "hClose"
+            withErr' err errorsVar h (hClose h) "hClose"
             _hClose (\e es -> es { _hClose = e })
         , hSeek      = \h m n ->
-            withErr' err fsVar errorsVar h (hSeek h m n) "hSeek"
+            withErr' err errorsVar h (hSeek h m n) "hSeek"
             _hSeek (\e es -> es { _hSeek = e })
-        , hGetSome   = hGetSome' err fsVar errorsVar hGetSome
-        , hPutSome   = hPutSome' err fsVar errorsVar hPutSome
+        , hGetSome   = hGetSome' err errorsVar hGetSome
+        , hPutSome   = hPutSome' err errorsVar hPutSome
         , hTruncate  = \h w ->
-            withErr' err fsVar errorsVar h (hTruncate h w) "hTruncate"
+            withErr' err errorsVar h (hTruncate h w) "hTruncate"
             _hTruncate (\e es -> es { _hTruncate = e })
         , hGetSize   =  \h ->
-            withErr' err fsVar errorsVar h (hGetSize h) "hGetSize"
+            withErr' err errorsVar h (hGetSize h) "hGetSize"
             _hGetSize (\e es -> es { _hGetSize = e })
 
         , createDirectory          = \p ->
@@ -470,7 +470,6 @@ mkSimErrorHasFS err fsVar errorsVar =
         , removeFile               = \p ->
             withErr err errorsVar p (removeFile p) "removeFile"
             _removeFile (\e es -> es { _removeFile = e })
-        , handlePath = handlePath
         , hasFsErr = err
         }
 
@@ -480,7 +479,7 @@ runSimErrorFS :: MonadSTM m
               => ErrorHandling FsError m
               -> MockFS
               -> Errors
-              -> (StrictTVar m Errors -> HasFS m Handle -> m a)
+              -> (StrictTVar m Errors -> HasFS m HandleMock -> m a)
               -> m (a, MockFS)
 runSimErrorFS err mockFS errors action = do
     fsVar     <- atomically $ newTVar mockFS
@@ -550,34 +549,30 @@ withErr ErrorHandling {..} errorsVar path action msg getter setter = do
 -- The path of the handle is retrieved from the 'MockFS' using 'handleFsPath'.
 withErr' :: (MonadSTM m, HasCallStack)
          => ErrorHandling FsError m
-         -> StrictTVar m MockFS
          -> StrictTVar m Errors
-         -> Handle     -- ^ The path for the error, if thrown
+         -> Handle HandleMock   -- ^ The path for the error, if thrown
          -> m a        -- ^ Action in case no error is thrown
          -> String     -- ^ Extra message for in the 'fsErrorString'
          -> (Errors -> ErrorStream)           -- ^ @getter@
          -> (ErrorStream -> Errors -> Errors) -- ^ @setter@
          -> m a
-withErr' err fsVar errorsVar handle action msg getter setter = do
-    mockFS <- atomically $ readTVar fsVar
-    withErr err errorsVar (handleFsPath mockFS handle) action msg getter setter
+withErr' err errorsVar handle action msg getter setter =
+    withErr err errorsVar (handlePath handle) action msg getter setter
 
 -- | Execute the wrapped 'hGetSome', throw an error, or simulate a partial
 -- read, depending on the corresponding 'ErrorStreamGetSome' (see
 -- 'nextError').
 hGetSome'  :: (MonadSTM m, HasCallStack)
            => ErrorHandling FsError m
-           -> StrictTVar m MockFS
            -> StrictTVar m Errors
-           -> (Handle -> Word64 -> m BS.ByteString)  -- ^ Wrapped 'hGetSome'
-           -> Handle -> Word64 -> m BS.ByteString
-hGetSome' ErrorHandling{..} fsVar errorsVar hGetSomeWrapped handle n = do
-    mockFS <- atomically $ readTVar fsVar
+           -> (Handle HandleMock -> Word64 -> m BS.ByteString)  -- ^ Wrapped 'hGetSome'
+           -> Handle HandleMock -> Word64 -> m BS.ByteString
+hGetSome' ErrorHandling{..} errorsVar hGetSomeWrapped handle n = do
     next errorsVar _hGetSome (\e es -> es { _hGetSome = e }) >>= \case
       Nothing             -> hGetSomeWrapped handle n
       Just (Left errType) -> throwError FsError
         { fsErrorType   = errType
-        , fsErrorPath   = handleFsPath mockFS handle
+        , fsErrorPath   = handlePath handle
         , fsErrorString = "simulated error: hGetSome"
         , fsErrorNo     = Nothing
         , fsErrorStack  = callStack
@@ -591,12 +586,10 @@ hGetSome' ErrorHandling{..} fsVar errorsVar hGetSomeWrapped handle n = do
 -- the corresponding 'ErrorStreamPutSome' (see 'nextError').
 hPutSome' :: (MonadSTM m, HasCallStack)
           => ErrorHandling FsError m
-          -> StrictTVar m MockFS
           -> StrictTVar m Errors
-          -> (Handle -> BS.ByteString -> m Word64)  -- ^ Wrapped 'hPutSome'
-          -> Handle -> BS.ByteString -> m Word64
-hPutSome' ErrorHandling{..} fsVar errorsVar hPutSomeWrapped handle bs = do
-    mockFS <- atomically $ readTVar fsVar
+          -> (Handle HandleMock -> BS.ByteString -> m Word64)  -- ^ Wrapped 'hPutSome'
+          -> Handle HandleMock -> BS.ByteString -> m Word64
+hPutSome' ErrorHandling{..} errorsVar hPutSomeWrapped handle bs = do
     next errorsVar _hPutSome (\e es -> es { _hPutSome = e }) >>= \case
       Nothing                       -> hPutSomeWrapped handle bs
       Just (Left (errType, mbCorr)) -> do
@@ -604,7 +597,7 @@ hPutSome' ErrorHandling{..} fsVar errorsVar hPutSomeWrapped handle bs = do
           void $ hPutSomeWrapped handle (corrupt bs corr)
         throwError FsError
           { fsErrorType   = errType
-          , fsErrorPath   = handleFsPath mockFS handle
+          , fsErrorPath   = handlePath handle
           , fsErrorString = "simulated error: hPutSome" <> case mbCorr of
               Nothing   -> ""
               Just corr -> " with corruption: " <> show corr

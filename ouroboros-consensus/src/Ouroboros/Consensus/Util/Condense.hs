@@ -27,20 +27,17 @@ import           Text.Printf (printf)
 import qualified Cardano.Chain.UTxO as CC.UTxO
 
 import           Cardano.Crypto (shortHashF)
-import           Cardano.Crypto.DSIGN
-                   (SigDSIGN, SignedDSIGN(..), Ed448DSIGN,
-                    pattern SigEd448DSIGN, MockDSIGN, pattern SigMockDSIGN)
+import           Cardano.Crypto.DSIGN (Ed448DSIGN, MockDSIGN, SigDSIGN,
+                     pattern SigEd448DSIGN, pattern SigMockDSIGN,
+                     SignedDSIGN (..))
 import           Cardano.Crypto.Hash (Hash)
-import           Cardano.Crypto.KES
-                   (SigKES, SignedKES(..), MockKES, pattern SigMockKES,
-                    pattern SignKeyMockKES, pattern VerKeyMockKES, NeverKES,
-                    SimpleKES, pattern SigSimpleKES)
+import           Cardano.Crypto.KES (MockKES, NeverKES, SigKES,
+                     pattern SigMockKES, pattern SigSimpleKES,
+                     pattern SignKeyMockKES, SignedKES (..), SimpleKES,
+                     pattern VerKeyMockKES)
 
 import           Ouroboros.Consensus.Util.HList (All, HList (..))
 import qualified Ouroboros.Consensus.Util.HList as HList
-
-import           Ouroboros.Storage.FS.API.Types (AllowExisting (..),
-                     OpenMode (..), SeekMode (..))
 
 -- | Condensed but human-readable output
 class Condense a where
@@ -116,22 +113,6 @@ instance (Condense a, Condense b, Condense c, Condense d, Condense e) => Condens
 
 instance (Condense k, Condense a) => Condense (Map k a) where
   condense = condense . Map.toList
-
-instance Condense SeekMode where
-  condense RelativeSeek = "r"
-  condense AbsoluteSeek = "a"
-  condense SeekFromEnd  = "e"
-
-instance Condense AllowExisting where
-  condense AllowExisting = ""
-  condense MustBeNew     = "!"
-
-instance Condense OpenMode where
-    condense ReadMode           = "r"
-    condense (WriteMode     ex) = "w"  ++ condense ex
-    condense (ReadWriteMode ex) = "rw" ++ condense ex
-    condense (AppendMode    ex) = "a"  ++ condense ex
-
 
 instance Condense BS.Strict.ByteString where
   condense bs = show bs ++ "<" ++ show (BS.Strict.length bs) ++ "b>"

@@ -200,7 +200,7 @@ data ImmutableDBEnv m hash = forall h e. ImmutableDBEnv
 data OpenState m hash h = OpenState
     { _currentEpoch            :: !EpochNo
     -- ^ The current 'EpochNo' the immutable store is writing to.
-    , _currentEpochWriteHandle :: !h
+    , _currentEpochWriteHandle :: !(Handle h)
     -- ^ The write handle for the current epoch file.
     , _currentEpochOffsets     :: !(NonEmpty SlotOffset)
     -- ^ The offsets to which blobs have been written in the current epoch
@@ -823,7 +823,7 @@ data IteratorState hash h = IteratorState
     --
     -- __Invariant 4__: '_it_epoch_handle' points to where @next@ can be read
     -- from.
-  , _it_epoch_handle :: !h
+  , _it_epoch_handle :: !(Handle h)
     -- ^ A handle to the epoch file corresponding with '_it_next'.
   , _it_epoch_index  :: Index hash
     -- ^ We load the index file for the epoch we are currently iterating over

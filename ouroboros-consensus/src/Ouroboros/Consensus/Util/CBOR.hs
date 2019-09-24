@@ -24,8 +24,8 @@ import           Control.Monad
 import           Control.Monad.ST
 import           Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
-import qualified Data.ByteString.Lazy as LBS
 import           Data.ByteString.Builder.Extra (defaultChunkSize)
+import qualified Data.ByteString.Lazy as LBS
 import           Data.IORef
 import           Data.Word (Word64)
 
@@ -124,7 +124,7 @@ readIncremental hasFS@HasFS{..} decoder fp = withLiftST $ \liftST -> do
       go liftST h =<< liftST (CBOR.deserialiseIncremental decoder)
   where
     go :: (forall x. ST s x -> m x)
-       -> h
+       -> Handle h
        -> CBOR.IDecode s a
        -> m (Either ReadIncrementalErr a)
     go liftST h (CBOR.Partial k) = do
@@ -166,7 +166,7 @@ readIncrementalOffsets hasFS@HasFS{..} decoder fp = withLiftST $ \liftST ->
              go liftST h 0 [] Nothing [] fileSize
   where
     go :: (forall x. ST s x -> m x)
-       -> h
+       -> Handle h
        -> Word64                  -- ^ Offset
        -> [(Word64, (Word64, a))] -- ^ Already deserialised (reverse order)
        -> Maybe ByteString        -- ^ Unconsumed bytes from last time
@@ -218,4 +218,3 @@ readIncrementalOffsets hasFS@HasFS{..} decoder fp = withLiftST $ \liftST ->
     checkEmpty :: ByteString -> Maybe ByteString
     checkEmpty bs | BS.null bs = Nothing
                   | otherwise  = Just bs
-

@@ -48,6 +48,7 @@ import           Test.Tasty.QuickCheck (testProperty)
 import           Ouroboros.Storage.Common
 import           Ouroboros.Storage.FS.API (HasFS (..), hGetAll, hPut, withFile)
 import           Ouroboros.Storage.FS.API.Types
+import           Ouroboros.Storage.FS.Sim.MockFS (HandleMock)
 import qualified Ouroboros.Storage.FS.Sim.MockFS as Mock
 import           Ouroboros.Storage.FS.Sim.STM (runSimFS)
 import           Ouroboros.Storage.ImmutableDB.Types
@@ -212,19 +213,19 @@ prop_testBlockEpochFileParser (TestBlocks mbEBB regularBlocks) = QCM.monadicIO $
 
     blocks = maybeToList mbEBB <> regularBlocks
 
-    writeBlocks :: HasFS IO Mock.Handle -> IO ()
+    writeBlocks :: HasFS IO HandleMock -> IO ()
     writeBlocks hasFS@HasFS{..} = do
       let bld = foldMap testBlockToBuilder blocks
       withFile hasFS file (AppendMode MustBeNew) $ \eHnd ->
         void $ hPut hasFS eHnd bld
 
-    readBlocks :: HasFS IO Mock.Handle
+    readBlocks :: HasFS IO HandleMock
                -> IO ([(SlotOffset, TestBlock)], Maybe TestBlock, Maybe String)
     readBlocks hasFS = runEpochFileParser
       (binaryEpochFileParser hasFS testBlockIsEBB id)
       file
 
-    runSimIO :: (HasFS IO Mock.Handle -> IO a) -> IO a
+    runSimIO :: (HasFS IO HandleMock -> IO a) -> IO a
     runSimIO m = fst <$> runSimFS EH.exceptions Mock.empty m
 
 {-------------------------------------------------------------------------------

@@ -124,7 +124,7 @@ data VolatileDBEnv m blockId = forall h e. VolatileDBEnv {
     }
 
 data InternalState blockId h = InternalState {
-      _currentWriteHandle :: !h -- The unique open file we append blocks.
+      _currentWriteHandle :: !(Handle h) -- The unique open file we append blocks.
     , _currentWritePath   :: !String -- The path of the file above.
     , _currentWriteOffset :: !Word64 -- The 'WriteHandle' for the same file.
     , _nextWriteFiles     :: ![(String, Word)] -- The path and the size of the next files to write

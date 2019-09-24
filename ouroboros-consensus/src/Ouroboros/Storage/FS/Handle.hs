@@ -13,18 +13,15 @@ import           Control.Concurrent.MVar
 import           Control.Exception hiding (handle)
 import           System.IO.Error as IO
 
-import           Ouroboros.Storage.FS.API.Types
-
--- | File handlers for the IO instance for HasFS. 
+-- | File handlers for the IO instance for HasFS.
 -- This is parametric on the os.
 --
 -- The 'FilePath' is used to improve error messages.
 -- The 'MVar' is used to implement 'close'.
 -- osHandle is Fd for unix and HANDLE for Windows.
-data HandleOS osHandle = Handle {
-      handlePath :: FsPath
-    , filePath   :: FilePath
-    , handle     :: MVar (Maybe osHandle)
+data HandleOS osHandle = HandleOS {
+      filePath :: FilePath
+    , handle   :: MVar (Maybe osHandle)
     }
 
 instance Eq (HandleOS a) where
@@ -35,7 +32,7 @@ instance Show (HandleOS a) where
 
 -- | This is a no-op when the handle is already closed.
 closeHandleOS :: HandleOS osHandle -> (osHandle -> IO ()) -> IO ()
-closeHandleOS (Handle _ _ hVar) close =
+closeHandleOS (HandleOS _ hVar) close =
   modifyMVar hVar $ \case
     Nothing -> return (Nothing, ())
     Just h -> close h >> return (Nothing, ())
@@ -48,7 +45,7 @@ closeHandleOS (Handle _ _ hVar) close =
 -- Using it for larger scopes woud not be correct, since we would not notice if the
 -- handle is closed.
 withOpenHandle :: String -> HandleOS osHandle -> (osHandle -> IO a) -> IO a
-withOpenHandle label (Handle _ fp hVar) k =
+withOpenHandle label (HandleOS fp hVar) k =
     withMVar hVar $ \case
         Nothing -> throwIO (handleClosedException fp label)
         Just fd -> k fd
