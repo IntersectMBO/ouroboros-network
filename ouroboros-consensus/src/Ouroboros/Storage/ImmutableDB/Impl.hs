@@ -205,7 +205,7 @@ data OpenState m hash h = OpenState
     , _currentEpochOffsets     :: !(NonEmpty SlotOffset)
     -- ^ The offsets to which blobs have been written in the current epoch
     -- file, stored from last to first.
-    , _currentEBBHash          :: !(Maybe hash)
+    , _currentEBBHash          :: !(CurrentEBB hash)
     -- ^ The hash of the EBB of the current epoch that must be appended to the
     -- index file when finalising the current epoch.
     , _currentTip              :: !ImmTip
@@ -513,7 +513,7 @@ getEBBImpl dbEnv epoch = withOpenState dbEnv $ \_dbHasFS st@OpenState{..} -> do
       throwUserError _dbErr $ ReadFutureEBBError epoch _currentEpoch
 
     (mbEBBHash, mbBlob) <- getEpochSlot _dbHasFS (_dbHashDecoder dbEnv) st _dbErr (EpochSlot epoch 0)
-    return $ (,) <$> mbEBBHash <*> mbBlob
+    return $ (,) <$> getCurrentEBB mbEBBHash <*> mbBlob
   where
     ImmutableDBEnv { _dbErr } = dbEnv
 
@@ -525,7 +525,7 @@ getEpochSlot
   -> OpenState m hash h
   -> ErrorHandling ImmutableDBError m
   -> EpochSlot
-  -> m (Maybe hash, Maybe ByteString)
+  -> m (CurrentEBB hash, Maybe ByteString)
 getEpochSlot _dbHasFS hashDecoder OpenState {..} _dbErr epochSlot = do
     let epochFile = renderFile "epoch" epoch
         indexFile = renderFile "index" epoch
@@ -544,7 +544,7 @@ getEpochSlot _dbHasFS hashDecoder OpenState {..} _dbErr epochSlot = do
               return (offset, offsetAfter - offset, _currentEBBHash)
             [_] ->
               -- We requested the EBB, but no EBB has been written yet.
-              return $ assert (relativeSlot == 0) (0, 0, Nothing)
+              return $ assert (relativeSlot == 0) (0, 0, NoCurrentEBB)
             [] -> error "impossible: _currentEpochOffsets out of sync"
           where
             -- The substraction below cannot underflow, in other words:
@@ -575,7 +575,7 @@ getEpochSlot _dbHasFS hashDecoder OpenState {..} _dbErr epochSlot = do
             let hashOffset = (fromIntegral epochSize + 2) * indexEntrySizeBytes
             hSeek iHnd AbsoluteSeek (fromIntegral hashOffset)
             deserialiseHash' =<< hGetAll _dbHasFS iHnd
-          else return Nothing
+          else return NoCurrentEBB
 
         return (start, end - start, mbEBBHash)
 
@@ -598,7 +598,7 @@ getEpochSlot _dbHasFS hashDecoder OpenState {..} _dbErr epochSlot = do
     HasFS{..}                    = _dbHasFS
     EpochSlot epoch relativeSlot = epochSlot
 
-    deserialiseHash' :: HasCallStack => ByteString -> m (Maybe hash)
+    deserialiseHash' :: HasCallStack => ByteString -> m (CurrentEBB hash)
     deserialiseHash' bs = case deserialiseHash hashDecoder bs of
       Right (_, hash) -> return hash
       Left df         -> throwUnexpectedError _dbErr $
@@ -780,7 +780,7 @@ appendEBBImpl dbEnv@ImmutableDBEnv{..} epoch hash builder =
 
       modify $ \st -> st
         { _currentEpochOffsets = newOffset NE.<| _currentEpochOffsets
-        , _currentEBBHash      = Just hash
+        , _currentEBBHash      = CurrentEBB hash
         , _currentTip          = Tip (Left epoch)
         }
 
@@ -911,7 +911,7 @@ streamBinaryBlobsImpl dbEnv mbStart mbEnd = withOpenState dbEnv $ \hasFS st -> d
                   0 | Just startHash <- mbStartHash
                       -- If slot 0 is filled, there must be an EBB hash
                     , let ebbHash = fromMaybe (error "missing EBB hash") $
-                            getEBBHash startIndex
+                            getCurrentEBB (getEBBHash startIndex)
                     , ebbHash /= startHash
                     -> False
                     | otherwise
@@ -1053,7 +1053,7 @@ iteratorNextImpl dbEnv it@IteratorHandle {_it_hasFS = hasFS :: HasFS m h, ..} st
           -- It's an EBB
           EpochSlot epoch 0
             | let ebbHash = fromMaybe (error "missing EBB hash") $
-                    getEBBHash _it_epoch_index
+                    getCurrentEBB (getEBBHash _it_epoch_index)
             -> do
               when step $ case (_it_end, _it_end_hash) of
                 -- Special case: if the thing we are returning is an EBB and
@@ -1278,7 +1278,7 @@ mkOpenStateNewEpoch HasFS{..} epoch epochInfo nextIteratorID tip = do
       { _currentEpoch            = epoch
       , _currentEpochWriteHandle = eHnd
       , _currentEpochOffsets     = epochOffsets
-      , _currentEBBHash          = Nothing
+      , _currentEBBHash          = NoCurrentEBB
       , _currentTip              = tip
       , _epochInfo               = epochInfo
       , _nextIteratorID          = nextIteratorID
@@ -1823,7 +1823,7 @@ reconstructIndex epochFile epochFileParser epochInfo = do
     offsetsAndSizesAndRelSlots <- case offsetsAndSizesAndSlots of
       [] -> return []
       (offset0, (size0, _slot0)) : offsetsAndSizesAndSlots'
-        | Just _ <- ebbHash
+        | CurrentEBB _ <- ebbHash
           -- If there is an EBB, then the first entry in the list must
           -- correspond to the EBB
         -> ((offset0, (size0, 0)) :) <$> slotsToRelSlots offsetsAndSizesAndSlots'

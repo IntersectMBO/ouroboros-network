@@ -87,7 +87,7 @@ import           Ouroboros.Storage.EpochInfo (EpochInfo (..))
 import           Ouroboros.Storage.FS.API (HasFS, createDirectoryIfMissing)
 import           Ouroboros.Storage.FS.API.Types (MountPoint (..))
 import           Ouroboros.Storage.FS.IO (ioHasFS)
-import           Ouroboros.Storage.ImmutableDB (ImmutableDB,
+import           Ouroboros.Storage.ImmutableDB (CurrentEBB (..), ImmutableDB,
                      Iterator (Iterator), IteratorResult (..))
 import qualified Ouroboros.Storage.ImmutableDB as ImmDB
 import           Ouroboros.Storage.Util.ErrorHandling (ErrorHandling)
@@ -605,18 +605,18 @@ epochFileParser ImmDbArgs{..} =
   where
     -- It is important that we don't first parse all blocks, storing them all
     -- in memory, and only /then/ extract the information we need.
-    decoder' :: forall s. Decoder s (Lazy.ByteString -> (SlotNo, Maybe (HeaderHash blk)))
+    decoder' :: forall s. Decoder s (Lazy.ByteString -> (SlotNo, CurrentEBB (HeaderHash blk)))
     decoder' = (extractSlotNoAndEbbHash .) <$> immDecodeBlock
 
-    extractSlotNoAndEbbHash :: blk -> (SlotNo, Maybe (HeaderHash blk))
+    extractSlotNoAndEbbHash :: blk -> (SlotNo, CurrentEBB (HeaderHash blk))
     extractSlotNoAndEbbHash b =
       -- IMPORTANT: force the slot and the ebbHash, because otherwise we
       -- return thunks that refer to the whole block! See
       -- 'Ouroboros.Consensus.Util.CBOR.readIncrementalOffsets' where we need
       -- to force the decoded value in order to force this computation.
         case immIsEBB b of
-          Nothing         -> (slot, Nothing)
-          Just (!ebbHash) -> (slot, Just ebbHash)
+          Nothing         -> (slot, NoCurrentEBB)
+          Just (!ebbHash) -> (slot, CurrentEBB ebbHash)
       where
         !slot = blockSlot b
 
@@ -624,30 +624,30 @@ epochFileParser ImmDbArgs{..} =
 -- lives at the start of the file
 processEpochs :: forall blk.
                  Proxy blk
-              -> ( [(Word64, (Word64, (SlotNo, Maybe (HeaderHash blk))))]
+              -> ( [(Word64, (Word64, (SlotNo, CurrentEBB (HeaderHash blk))))]
                  , Maybe Util.CBOR.ReadIncrementalErr
                  )
               -> ( [(SlotOffset, (Word64, SlotNo))]
-                 , Maybe (HeaderHash blk)
+                 , CurrentEBB (HeaderHash blk)
                  , Maybe EpochFileError
                  )
 processEpochs _ = \(bs, mErr) ->
     case bs of
-      []    -> ([], Nothing, EpochErrRead <$> mErr)
+      []    -> ([], NoCurrentEBB, EpochErrRead <$> mErr)
       b:bs' -> let (bOff, (bSz, (bSlot, bEBB))) = b
                    (slots, mErr') = go bs'
                in ((bOff, (bSz, bSlot)) : slots, bEBB, earlierError mErr mErr')
   where
     -- Check that the rest of the blocks are not EBBs
-    go :: [(Word64, (Word64, (SlotNo, Maybe (HeaderHash blk))))]
+    go :: [(Word64, (Word64, (SlotNo, CurrentEBB (HeaderHash blk))))]
        -> ( [(SlotOffset, (Word64, SlotNo))]
           , Maybe EpochFileError
           )
     go []     = ( [], Nothing )
     go (b:bs) = let (bOff, (bSz, (bSlot, bEBB))) = b
                 in case bEBB of
-                     Just _  -> ( [], Just EpochErrUnexpectedEBB )
-                     Nothing -> first ((bOff, (bSz, bSlot)) :) $ go bs
+                     CurrentEBB _ -> ( [], Just EpochErrUnexpectedEBB )
+                     NoCurrentEBB -> first ((bOff, (bSz, bSlot)) :) $ go bs
 
     -- Report the earlier error
     --

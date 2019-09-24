@@ -42,7 +42,6 @@ import           Data.Bifunctor (second)
 import qualified Data.ByteString.Lazy as BL
 import           Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
-import           Data.Maybe (isJust)
 import qualified Data.Vector.Unboxed as V
 import           Data.Word (Word64)
 
@@ -58,8 +57,10 @@ import           Ouroboros.Storage.Util (decodeIndexEntryAt, encodeIndexEntry)
 import           Ouroboros.Storage.Util.ErrorHandling (ErrorHandling (..))
 
 import           Ouroboros.Storage.ImmutableDB.Layout
-import           Ouroboros.Storage.ImmutableDB.Types (ImmutableDBError,
-                     UnexpectedError (DeserialisationError, InvalidFileError))
+import           Ouroboros.Storage.ImmutableDB.Types (CurrentEBB (..),
+                     ImmutableDBError,
+                     UnexpectedError (DeserialisationError, InvalidFileError),
+                     hasCurrentEBB)
 import           Ouroboros.Storage.ImmutableDB.Util (renderFile,
                      throwUnexpectedError)
 
@@ -70,10 +71,9 @@ import           Ouroboros.Storage.ImmutableDB.Util (renderFile,
 -- | In-memory representation of the index file.
 data Index hash = MkIndex
   { getOffsets :: !(V.Vector SlotOffset)
-  , getEBBHash :: !(Maybe hash)
+  , getEBBHash :: !(CurrentEBB hash)
     -- ^ Return the hash of the EBB, if the index stores one.
   } deriving (Eq, Show)
-
 
 -- | Return the number of slots in the index (the number of offsets - 1).
 --
@@ -118,7 +118,7 @@ loadIndex hashDecoder hasFS err epoch indexSize = do
           hasEBB     = V.length offsets >= 2 && offsets V.! 1 /= 0
       case deserialiseHash hashDecoder ebbHashBL of
         Right (leftover, ebbHash) -> do
-          when (hasEBB /= isJust ebbHash || not (BL.null leftover)) $
+          when (hasEBB /= hasCurrentEBB ebbHash || not (BL.null leftover)) $
             throwUnexpectedError err $ InvalidFileError indexFile callStack
           return $ MkIndex offsets ebbHash
         Left  df                   -> throwUnexpectedError err $
@@ -158,7 +158,7 @@ writeSlotOffsets :: (MonadThrow m)
                  -> HasFS m h
                  -> EpochNo
                  -> NonEmpty SlotOffset
-                 -> Maybe hash
+                 -> CurrentEBB hash
                  -> m ()
 writeSlotOffsets hashEncoder hasFS@HasFS{..} epoch sos ebbHash = do
     let indexFile = renderFile "index" epoch
@@ -174,7 +174,7 @@ writeSlotOffsets hashEncoder hasFS@HasFS{..} epoch sos ebbHash = do
 --
 -- The 'SlotOffset's must occur in reverse order: the greatest offset should
 -- come first in the list. Thus, the list must be monotonically decreasing.
-indexFromSlotOffsets :: NonEmpty SlotOffset -> Maybe hash -> Index hash
+indexFromSlotOffsets :: NonEmpty SlotOffset -> CurrentEBB hash -> Index hash
 indexFromSlotOffsets = MkIndex . V.fromList . reverse . NE.toList
 
 -- | Convert an 'Index' into a non-empty list of 'SlotOffset's.
@@ -363,13 +363,13 @@ truncateToSlots slots index@(MkIndex offsets ebbHash)
 
 deserialiseHash :: (forall s. Decoder s hash)
                 -> BL.ByteString
-                -> Either DeserialiseFailure (BL.ByteString, Maybe hash)
+                -> Either DeserialiseFailure (BL.ByteString, CurrentEBB hash)
 deserialiseHash hashDecoder bs
-  | BL.null bs = Right (BL.empty, Nothing)
-  | otherwise  = second Just <$> (deserialiseFromBytes hashDecoder bs)
+  | BL.null bs = Right (BL.empty, NoCurrentEBB)
+  | otherwise  = second CurrentEBB <$> (deserialiseFromBytes hashDecoder bs)
 
 serialiseHash :: (hash -> Encoding)
-              -> Maybe hash
+              -> CurrentEBB hash
               -> BL.ByteString
-serialiseHash _           Nothing     = BL.empty
-serialiseHash hashEncoder (Just hash) = toLazyByteString (hashEncoder hash)
+serialiseHash _           NoCurrentEBB      = BL.empty
+serialiseHash hashEncoder (CurrentEBB hash) = toLazyByteString (hashEncoder hash)

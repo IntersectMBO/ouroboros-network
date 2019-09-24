@@ -21,6 +21,10 @@ module Ouroboros.Storage.ImmutableDB.Types
   , sameUnexpectedError
   , prettyUnexpectedError
   , TraceEvent(..)
+    -- * Current EBB
+  , CurrentEBB(..)
+  , hasCurrentEBB
+  , getCurrentEBB
   ) where
 
 import           Codec.Serialise (DeserialiseFailure)
@@ -79,7 +83,7 @@ newtype TruncateTo = TruncateTo { getTruncateTo :: ImmTip }
 -- but also want to know about the error so we can truncate the file to get
 -- rid of the unparseable data.
 newtype EpochFileParser e hash m t = EpochFileParser
-  { runEpochFileParser :: FsPath -> m ([(SlotOffset, t)], Maybe hash, Maybe e) }
+  { runEpochFileParser :: FsPath -> m ([(SlotOffset, t)], CurrentEBB hash, Maybe e) }
   deriving (Functor)
 
 -- | The validation policy used when (re)opening an
@@ -271,3 +275,21 @@ data TraceEvent e
     | DBAlreadyClosed
     | DBClosed
   deriving (Eq, Generic, Show)
+
+{-------------------------------------------------------------------------------
+  Reference to EBB in current epoch
+-------------------------------------------------------------------------------}
+
+-- | Hash of the EBB in the current epoch
+data CurrentEBB hash =
+    NoCurrentEBB
+  | CurrentEBB !hash
+  deriving (Eq, Show)
+
+hasCurrentEBB :: CurrentEBB hash -> Bool
+hasCurrentEBB NoCurrentEBB   = False
+hasCurrentEBB (CurrentEBB _) = True
+
+getCurrentEBB :: CurrentEBB hash -> Maybe hash
+getCurrentEBB NoCurrentEBB      = Nothing
+getCurrentEBB (CurrentEBB hash) = Just hash

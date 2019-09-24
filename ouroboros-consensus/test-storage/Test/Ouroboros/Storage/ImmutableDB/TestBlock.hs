@@ -34,7 +34,7 @@ import qualified Data.ByteString.Lazy as BL
 import           Data.Functor (($>))
 import           Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
-import           Data.Maybe (isJust, maybeToList)
+import           Data.Maybe (maybeToList)
 import           Data.Word (Word64)
 
 import           GHC.Generics (Generic)
@@ -121,21 +121,21 @@ instance Bin.Binary TestBlock where
 
 -- | The list contains regular @TestBlock@s ordered by their slot.
 -- The @Maybe TestBlock@ is an optional @TestEBB@.
-data TestBlocks = TestBlocks (Maybe TestBlock) [TestBlock]
+data TestBlocks = TestBlocks (CurrentEBB TestBlock) [TestBlock]
     deriving (Show)
 
 instance Arbitrary TestBlocks where
     arbitrary = do
       regularBlocks <- orderedList
       mbEBB           <- frequency
-        [ (2, return Nothing)
-        , (1, Just . TestEBB <$> arbitrary)
+        [ (2, return NoCurrentEBB)
+        , (1, CurrentEBB . TestEBB <$> arbitrary)
         ]
       return $ TestBlocks mbEBB regularBlocks
 
     shrink (TestBlocks mbEBB testBlocks) =
       -- If there is an EBB, also return a list without it
-      (if isJust mbEBB then (TestBlocks Nothing testBlocks :) else id)
+      (if hasCurrentEBB mbEBB then (TestBlocks NoCurrentEBB testBlocks :) else id)
       (TestBlocks mbEBB <$> shrinkList (const []) testBlocks)
 
 testBlockToBuilder :: TestBlock -> BS.Builder
@@ -165,14 +165,14 @@ binaryEpochFileParser :: forall b m hash h. (MonadThrow m, Bin.Binary b)
 binaryEpochFileParser hasFS@HasFS{..} isEBB getHash = EpochFileParser $ \fsPath ->
     withFile hasFS fsPath ReadMode $ \eHnd -> do
       bytesInFile <- hGetSize eHnd
-      parse bytesInFile 0 [] Nothing <$> hGetAll hasFS eHnd
+      parse bytesInFile 0 [] NoCurrentEBB <$> hGetAll hasFS eHnd
   where
     parse :: SlotOffset
           -> SlotOffset
           -> [(SlotOffset, b)]
-          -> Maybe hash
+          -> CurrentEBB hash
           -> BL.ByteString
-          -> ([(SlotOffset, b)], Maybe hash, Maybe String)
+          -> ([(SlotOffset, b)], CurrentEBB hash, Maybe String)
     parse bytesInFile offset parsed ebbHash bs
       | offset >= bytesInFile
       = (reverse parsed, ebbHash, Nothing)
@@ -183,7 +183,7 @@ binaryEpochFileParser hasFS@HasFS{..} isEBB getHash = EpochFileParser $ \fsPath 
             let newOffset = offset + fromIntegral bytesConsumed
                 newParsed = (offset, b) : parsed
                 ebbHash'
-                  | offset == 0, isEBB b = Just (getHash b)
+                  | offset == 0, isEBB b = CurrentEBB (getHash b)
                   | otherwise            = ebbHash
             in parse bytesInFile newOffset newParsed ebbHash' remaining
 
@@ -211,7 +211,7 @@ prop_testBlockEpochFileParser (TestBlocks mbEBB regularBlocks) = QCM.monadicIO $
     dropLast xs = zipWith const xs (drop 1 xs)
     file = ["test"]
 
-    blocks = maybeToList mbEBB <> regularBlocks
+    blocks = maybeToList (getCurrentEBB mbEBB) <> regularBlocks
 
     writeBlocks :: HasFS IO HandleMock -> IO ()
     writeBlocks hasFS@HasFS{..} = do
@@ -220,7 +220,7 @@ prop_testBlockEpochFileParser (TestBlocks mbEBB regularBlocks) = QCM.monadicIO $
         void $ hPut hasFS eHnd bld
 
     readBlocks :: HasFS IO HandleMock
-               -> IO ([(SlotOffset, TestBlock)], Maybe TestBlock, Maybe String)
+               -> IO ([(SlotOffset, TestBlock)], CurrentEBB TestBlock, Maybe String)
     readBlocks hasFS = runEpochFileParser
       (binaryEpochFileParser hasFS testBlockIsEBB id)
       file
