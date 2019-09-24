@@ -12,6 +12,7 @@ in commonLib.nix-tools.release-nix {
   # are interested in building on CI via nix-tools.
   packages = [ "typed-protocols"
                "typed-protocols-cbor"
+               "Win32-network"
                "network-mux"
                "ouroboros-network"
                "ouroboros-network-testing"
@@ -79,6 +80,8 @@ in commonLib.nix-tools.release-nix {
     "nix-tools.tests.ouroboros-network.test-network.x86_64-darwin"
     # 'Storage.HasFS.HasFS' test failing:
     "nix-tools.tests.ouroboros-consensus.test-storage.x86_64-darwin"
+    # Win32-network tests do not run using win64
+    "nix-tools.tests.x86_64-pc-mingw32-Win32-network.test-Win32-network.x84_64-linux"
   ];
   # The required jobs that must pass for ci not to fail:
   required-name = "ouroboros-network-required-checks";

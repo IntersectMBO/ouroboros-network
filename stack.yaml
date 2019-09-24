@@ -11,6 +11,7 @@ packages:
   - ./io-sim
   - ./io-sim-classes
   - ./ntp-client
+  - ./Win32-network
 
 extra-deps:
   - git: https://github.com/input-output-hk/iohk-monitoring-framework

@@ -7,9 +7,13 @@ packages: ./typed-protocols
           ./io-sim
           ./io-sim-classes
           ./ntp-client
+          ./Win32-network
 
 constraints:
   graphviz == 2999.20.0.3
+
+package Win32-network
+  tests: True
 
 package typed-protocols
   tests: True
@@ -56,19 +60,19 @@ source-repository-package
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-ledger-specs
-  tag: 11b674a10e76ab266a37225d82955fd8b1f80e27
+  tag: a0607b2c60a196f78be36bd3dba74f3ae5054f29
   subdir: byron/semantics/executable-spec
 
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-ledger-specs
-  tag: 11b674a10e76ab266a37225d82955fd8b1f80e27
+  tag: a0607b2c60a196f78be36bd3dba74f3ae5054f29
   subdir: byron/ledger/executable-spec
 
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-ledger-specs
-  tag: 11b674a10e76ab266a37225d82955fd8b1f80e27
+  tag: a0607b2c60a196f78be36bd3dba74f3ae5054f29
   subdir: byron/chain/executable-spec
 
 source-repository-package
