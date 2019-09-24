@@ -39,3 +39,15 @@ executable named-pipe-demo
   ghc-options:         -Wall
                        -threaded
 
+test-suite named-pipe-test
+  type:                exitcode-stdio-1.0
+  hs-source-dirs:      test
+  main-is:             Main.hs
+  default-language:    Haskell2010
+  ghc-options:         -Wall
+                       -threaded
+  build-depends:       base,
+                       tasty,
+                       tasty-hunit,
+                       Win32-named-pipes
+

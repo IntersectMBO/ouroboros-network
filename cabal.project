@@ -8,6 +8,9 @@ packages: ./typed-protocols
           ./io-sim-classes
           ./Win32-named-pipes
 
+package Win32-named-pipes
+  tests: True
+
 package typed-protocols
   tests: True
 
