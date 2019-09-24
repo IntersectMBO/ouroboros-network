@@ -7,7 +7,7 @@ synopsis:            Win32 named pipes API
 -- description:         
 license:             Apache-2.0
 license-files:       LICENSE NOTICE
-author:              Duncan Coutts
+author:              Duncan Coutts, Marcin Szamotulski
 maintainer:          duncan@well-typed.com
 copyright:           2019 Input Output (Hong Kong) Ltd.
 category:            System
