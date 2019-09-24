@@ -1,5 +1,3 @@
-{-# OPTIONS_GHC -Werror #-}
-
 {-# LANGUAGE ExistentialQuantification  #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
@@ -284,19 +282,7 @@ data ResourceRegistry m = ResourceRegistry {
 -- | Internal registry state
 data RegistryState m = RegistryState {
       -- | Forked threads
-      --
-      -- This is the set of threads spawned using 'forkThread'. The lifetimes of
-      -- all of these threads are limited by the lifetime of the registry.
-      --
-      -- Does not include the thread ID of the thread that created the registry.
-      -- After all, this thread may well outlive the registry (though the
-      -- registry cannot outlive it).
-      --
-      -- Invariant (informal): the set of registered threads is a subset of the
-      -- registered resources ('registryResources'). (This invariant is
-      -- temporarily broken when we start a new thread in 'forkThread' but will
-      -- be re-established before that thread starts execution proper.)
-      registryThreads   :: !(Set (ThreadId m))
+      registryThreads   :: !(KnownThreads m)
 
       -- | Currently allocated resources
     , registryResources :: !(Map ResourceId (Resource m))
@@ -309,6 +295,21 @@ data RegistryState m = RegistryState {
       -- See 'RegistryClosedException' for discussion.
     , registryStatus    :: !RegistryStatus
     }
+
+-- | Threads known to the registry
+--
+-- This is the set of threads spawned using 'forkThread'. The lifetimes of all
+-- of these threads are limited by the lifetime of the registry.
+--
+-- Does not include the thread ID of the thread that created the registry. After
+-- all, this thread may well outlive the registry (though the registry cannot
+-- outlive it).
+--
+-- Invariant (informal): the set of registered threads is a subset of the
+-- registered resources ('registryResources'). (This invariant is temporarily
+-- broken when we start a new thread in 'forkThread' but will be re-established
+-- before that thread starts execution proper.)
+newtype KnownThreads m = KnownThreads (Set (ThreadId m))
 
 -- | Status of the registry (open or closed)
 data RegistryStatus =
@@ -352,6 +353,10 @@ instance Show (Release m) where
   Internal: pure functions on the registry state
 -------------------------------------------------------------------------------}
 
+modifyKnownThreads :: (Set (ThreadId m) -> Set (ThreadId m))
+                   -> KnownThreads m -> KnownThreads m
+modifyKnownThreads f (KnownThreads ts) = KnownThreads (f ts)
+
 -- | Auxiliary for functions that should be disallowed when registry is closed
 unlessClosed :: State (RegistryState m) a
              -> State (RegistryState m) (Either PrettyCallStack a)
@@ -388,14 +393,16 @@ removeResource key = state $ \st ->
 insertThread :: MonadFork m => ThreadId m -> State (RegistryState m) ()
 insertThread tid =
     modify $ \st -> st {
-        registryThreads = Set.insert tid (registryThreads st)
+        registryThreads = modifyKnownThreads (Set.insert tid) $
+                            registryThreads st
       }
 
 -- | Remove thread from set of known threads
 removeThread :: MonadFork m => ThreadId m -> State (RegistryState m) ()
 removeThread tid =
     modify $ \st -> st {
-        registryThreads = Set.delete tid (registryThreads st)
+        registryThreads = modifyKnownThreads (Set.delete tid) $
+                            registryThreads st
       }
 
 -- | Close the registry
@@ -466,7 +473,7 @@ unsafeNewRegistry = do
   where
     initState :: RegistryState m
     initState = RegistryState {
-          registryThreads   = Set.empty
+          registryThreads   = KnownThreads Set.empty
         , registryResources = Map.empty
         , registryNextKey   = ResourceId 1
         , registryStatus    = RegistryOpen
@@ -774,8 +781,8 @@ ensureKnownThread rr context = do
       | contextThreadId context == contextThreadId (registryContext rr) =
           return True
       | otherwise = atomically $ do
-          knownThreads <- registryThreads <$> readTVar (registryState rr)
-          return $ contextThreadId context `Set.member` knownThreads
+          KnownThreads ts <- registryThreads <$> readTVar (registryState rr)
+          return $ contextThreadId context `Set.member` ts
 
 -- | Registry used from unknown threads
 --
