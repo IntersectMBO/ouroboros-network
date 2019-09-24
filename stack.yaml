@@ -26,7 +26,7 @@ extra-deps:
       - cardano-crypto-class
 
   - git: https://github.com/input-output-hk/cardano-ledger
-    commit: eca4f1b3a4ae92b778a32e023da0e8638b3ce7e6
+    commit: 1a791a5cc188e02d30e567d920355da2bdbb271c
     subdirs:
       - cardano-ledger
       - cardano-ledger/test
