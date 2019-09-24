@@ -1,7 +1,8 @@
+{-# LANGUAGE DeriveGeneric      #-}
 {-# LANGUAGE RecordWildCards    #-}
 {-# LANGUAGE StandaloneDeriving #-}
 
--- For Show Errno
+-- For Show Errno and Condense SeekMode instances
 {-# OPTIONS_GHC -Wno-orphans #-}
 module Ouroboros.Storage.FS.API.Types (
     -- * Modes
@@ -14,6 +15,8 @@ module Ouroboros.Storage.FS.API.Types (
   , MountPoint(..)
   , fsToFilePath
   , fsFromFilePath
+    -- * Handles
+  , Handle(..)
     -- * Errors
   , FsError(..)
   , FsErrorType(..)
@@ -26,15 +29,18 @@ module Ouroboros.Storage.FS.API.Types (
   ) where
 
 import           Control.Exception
+import           Data.Function (on)
 import           Data.List (stripPrefix)
 import           Foreign.C.Error (Errno (..))
 import qualified Foreign.C.Error as C
+import           GHC.Generics (Generic)
 import qualified GHC.IO.Exception as GHC
 import           GHC.Stack
 import           System.FilePath
 import           System.IO (SeekMode (..))
 import qualified System.IO.Error as IO
 
+import           Ouroboros.Consensus.Util.Condense
 
 {-------------------------------------------------------------------------------
   Modes
@@ -83,6 +89,27 @@ fsToFilePath (MountPoint mp) fp = mp </> foldr (</>) "" fp
 fsFromFilePath :: MountPoint -> FilePath -> Maybe FsPath
 fsFromFilePath (MountPoint mp) path =
     stripPrefix (splitDirectories mp) (splitDirectories path)
+
+{-------------------------------------------------------------------------------
+  Handles
+-------------------------------------------------------------------------------}
+
+data Handle h = Handle {
+      -- | The raw underlying handle
+      handleRaw  :: !h
+
+      -- | The path corresponding to this handle
+      --
+      -- This is primarily useful for error reporting.
+    , handlePath :: !FsPath
+    }
+  deriving (Generic)
+
+instance Eq h => Eq (Handle h) where
+  (==) = (==) `on` handleRaw
+
+instance Show (Handle h) where
+  show (Handle _ fp) = "<Handle " ++ fsToFilePath (MountPoint "<root>") fp ++ ">"
 
 {-------------------------------------------------------------------------------
   Errors
@@ -229,3 +256,25 @@ ioToFsErrorType ioErr = case Errno <$> GHC.ioe_errno ioErr of
   where
     eType :: IO.IOErrorType
     eType = IO.ioeGetErrorType ioErr
+
+{-------------------------------------------------------------------------------
+  Condense instances
+-------------------------------------------------------------------------------}
+
+instance Condense SeekMode where
+  condense RelativeSeek = "r"
+  condense AbsoluteSeek = "a"
+  condense SeekFromEnd  = "e"
+
+instance Condense AllowExisting where
+  condense AllowExisting = ""
+  condense MustBeNew     = "!"
+
+instance Condense OpenMode where
+    condense ReadMode           = "r"
+    condense (WriteMode     ex) = "w"  ++ condense ex
+    condense (ReadWriteMode ex) = "rw" ++ condense ex
+    condense (AppendMode    ex) = "a"  ++ condense ex
+
+instance Condense (Handle h) where
+  condense = show

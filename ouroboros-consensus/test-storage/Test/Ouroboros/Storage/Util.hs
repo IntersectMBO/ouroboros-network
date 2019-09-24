@@ -29,7 +29,7 @@ import           Ouroboros.Consensus.Util.Condense (Condense, condense)
 import           Ouroboros.Storage.FS.API (HasFS (..))
 import           Ouroboros.Storage.FS.API.Types
 import           Ouroboros.Storage.FS.IO (ioHasFS)
-import           Ouroboros.Storage.FS.Sim.MockFS (MockFS)
+import           Ouroboros.Storage.FS.Sim.MockFS (HandleMock, MockFS)
 import qualified Ouroboros.Storage.FS.Sim.MockFS as Mock
 import qualified Ouroboros.Storage.FS.Sim.STM as Sim
 import           Ouroboros.Storage.ImmutableDB (ImmutableDBError (..),
@@ -50,7 +50,7 @@ import           Ouroboros.Storage.VolatileDB.Util (tryVolDB)
 withMockFS :: Exception e
            => (forall x. IO x -> IO (Either e x))
            -> (Either e (a, MockFS) -> Assertion)
-           -> (HasFS IO Mock.Handle -> ErrorHandling e IO -> IO a)
+           -> (HasFS IO HandleMock -> ErrorHandling e IO -> IO a)
            -> Assertion
 withMockFS tryE assertion sim = do
     r <- tryE $ Sim.runSimFS EH.exceptions Mock.empty (flip sim EH.exceptions)

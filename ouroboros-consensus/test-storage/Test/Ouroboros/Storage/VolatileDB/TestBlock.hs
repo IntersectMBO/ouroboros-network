@@ -73,7 +73,7 @@ parseImpl hasFS@HasFS{..} path =
       fileSize <- hGetSize hndl
       go hndl [] 0 fileSize
   where
-    go :: h
+    go :: Handle h
        -> [(SlotOffset, (BlockSize, BlockInfo BlockId))]
        -> Word64  -- ^ Offset where we will read from next
        -> Word64  -- ^ File size, i.e. the max offset

@@ -16,12 +16,11 @@
 -- > import qualified Ouroboros.Storage.FS.Sim.MockFS as Mock
 module Ouroboros.Storage.FS.Sim.MockFS (
     MockFS -- opaque
-  , Handle -- opaque
+  , HandleMock -- opaque
   , empty
   , example
   , pretty
   , handleIsOpen
-  , handleFsPath
   , numOpenHandles
     -- * Debugging
   , dumpState
@@ -75,8 +74,8 @@ import           Ouroboros.Storage.Util.ErrorHandling (ErrorHandling (..))
 
 data MockFS = MockFS {
       mockFiles      :: Files
-    , mockHandles    :: Map Handle HandleState
-    , mockNextHandle :: Handle
+    , mockHandles    :: Map HandleMock HandleState
+    , mockNextHandle :: HandleMock
     }
   deriving (Generic, Show)
 
@@ -86,8 +85,11 @@ type Files = FsTree ByteString
 -- | A mock handle to a file on disk.
 --
 -- This is only meaningful when interpreted against a 'MockFS'.
-newtype Handle = Handle Int
+newtype HandleMock = HandleMock Int
   deriving (Show, Eq, Ord, Enum, Generic)
+
+-- | Instantiate 'Handle' with the mock handle
+type Handle' = Handle HandleMock
 
 -- | Mock handle internal state
 data HandleState =
@@ -132,7 +134,7 @@ data ClosedHandleState = ClosedHandle {
 type CanSimFS m = (HasCallStack, MonadState MockFS m)
 
 empty :: MockFS
-empty = MockFS FS.empty M.empty (Handle 0)
+empty = MockFS FS.empty M.empty (HandleMock 0)
 
 example :: MockFS
 example = empty { mockFiles = FS.example }
@@ -144,26 +146,13 @@ example = empty { mockFiles = FS.example }
 -- | Return 'True' iff the handle is open.
 --
 -- Throws an exception if the handle is unknown.
-handleIsOpen :: MockFS -> Handle -> Bool
+handleIsOpen :: MockFS -> HandleMock -> Bool
 handleIsOpen MockFS{..} h =
     case M.lookup h mockHandles of
       Nothing ->
         error "handleIOMode: unknown handle"
       Just (HandleOpen OpenHandle{}) -> True
       Just (HandleClosed _)          -> False
-
--- | The file path associated with this handle
---
--- Works for closed handles; throws an exception for unknown handles.
-handleFsPath :: MockFS -> Handle -> FsPath
-handleFsPath MockFS{..} h =
-    case M.lookup h mockHandles of
-      Nothing ->
-        error "handleFsPath: unknown handle"
-      Just (HandleOpen OpenHandle{..}) ->
-        openFilePath
-      Just (HandleClosed ClosedHandle{..}) ->
-        closedFilePath
 
 openHandles :: MockFS -> [OpenHandleState]
 openHandles MockFS{..} = mapMaybe isOpen $ M.elems mockHandles
@@ -191,8 +180,8 @@ numOpenHandles = length . openHandles
 -- See 'hSeek' for limitations.
 seekFilePtr :: Monad m
             => ErrorHandling FsError m
-            -> MockFS -> Handle -> SeekMode -> Int64 -> m FilePtr
-seekFilePtr err@ErrorHandling{..} MockFS{..} h seekMode o = do
+            -> MockFS -> Handle' -> SeekMode -> Int64 -> m FilePtr
+seekFilePtr err@ErrorHandling{..} MockFS{..} (Handle h _) seekMode o = do
     case mockHandles M.! h of
       HandleClosed ClosedHandle{..} ->
         throwError FsError {
@@ -279,13 +268,13 @@ readMockFS err f = modifyMockFS err (\fs -> (, fs) <$> f (mockFiles fs))
 -- | Require a file handle and may modify the mock file system
 withHandleModify :: CanSimFS m
                  => ErrorHandling FsError m
-                 -> Handle
+                 -> Handle'
                  -> (    MockFS
                       -> HandleState
                       -> m (a, (Files, HandleState))
                     )
                  -> m a
-withHandleModify ErrorHandling{..} h f = do
+withHandleModify ErrorHandling{..} (Handle h _) f = do
     st <- get
     case M.lookup h (mockHandles st) of
       Just hs -> do
@@ -300,7 +289,7 @@ withHandleModify ErrorHandling{..} h f = do
 -- | Require a file handle but do not modify the mock file system
 withHandleRead :: CanSimFS m
                => ErrorHandling FsError m
-               -> Handle
+               -> Handle'
                -> (    MockFS
                     -> HandleState
                     -> m (a, HandleState)
@@ -313,7 +302,7 @@ withHandleRead err h f =
 -- | Require an open file handle to modify the mock file system
 withOpenHandleModify :: CanSimFS m
                      => ErrorHandling FsError m
-                     -> Handle
+                     -> Handle'
                      -> (    MockFS
                           -> OpenHandleState
                           -> m (a, (Files, OpenHandleState))
@@ -336,7 +325,7 @@ withOpenHandleModify err@ErrorHandling{..} h f =
 -- | Require an open file handle but do not modify the mock file system
 withOpenHandleRead :: CanSimFS m
                    => ErrorHandling FsError m
-                   -> Handle
+                   -> Handle'
                    -> (    MockFS
                         -> OpenHandleState
                         -> m (a, OpenHandleState)
@@ -439,9 +428,9 @@ checkDoesNotExist err@ErrorHandling{..} fs fp = do
     pathExists (Left _)  = False
     pathExists (Right _) = True
 
-newHandle :: MockFS -> OpenHandleState -> (Handle, MockFS)
+newHandle :: MockFS -> OpenHandleState -> (Handle', MockFS)
 newHandle fs hs = (
-      mockNextHandle fs
+      Handle (mockNextHandle fs) (openFilePath hs)
     , fs { mockNextHandle = succ (mockNextHandle fs)
          , mockHandles    = M.insert (mockNextHandle fs)
                                      (HandleOpen hs)
@@ -461,7 +450,7 @@ newHandle fs hs = (
 -- * We do not support more than one concurrent writer
 --   (we do however allow a writer and multiple concurrent readers)
 -- * We do not support create file on ReadMode.
-hOpen :: CanSimFS m => ErrorHandling FsError m -> FsPath -> OpenMode -> m Handle
+hOpen :: CanSimFS m => ErrorHandling FsError m -> FsPath -> OpenMode -> m Handle'
 hOpen err@ErrorHandling{..} fp openMode = do
     dirExists <- doesDirectoryExist err fp
     when dirExists $ throwError FsError {
@@ -501,7 +490,7 @@ hOpen err@ErrorHandling{..} fp openMode = do
     filePtr (AppendMode    _) = Append
 
 -- | Mock implementation of 'hClose'
-hClose :: CanSimFS m => ErrorHandling FsError m -> Handle -> m ()
+hClose :: CanSimFS m => ErrorHandling FsError m -> Handle' -> m ()
 hClose err h = withHandleRead err h $ \_fs -> \case
     HandleOpen hs ->
       return ((), HandleClosed (ClosedHandle (openFilePath hs)))
@@ -518,7 +507,7 @@ hClose err h = withHandleRead err h $ \_fs -> \case
 --   (this means that when using 'IO.SeekFromEnd', the only valid offset is 0)
 -- * We do /not/ return the new file offset
 hSeek :: CanSimFS m
-      => ErrorHandling FsError m -> Handle -> SeekMode -> Int64 -> m ()
+      => ErrorHandling FsError m -> Handle' -> SeekMode -> Int64 -> m ()
 hSeek err h seekMode o = withOpenHandleRead err h $ \fs hs -> do
     openPtr' <- seekFilePtr err fs h seekMode o
     return ((), hs { openPtr = openPtr' })
@@ -526,7 +515,7 @@ hSeek err h seekMode o = withOpenHandleRead err h $ \fs hs -> do
 -- | Get bytes from handle
 --
 -- NOTE: Unlike real I/O, we disallow 'hGetSome' on a handle in append mode.
-hGetSome :: CanSimFS m => ErrorHandling FsError m -> Handle -> Word64 -> m ByteString
+hGetSome :: CanSimFS m => ErrorHandling FsError m -> Handle' -> Word64 -> m ByteString
 hGetSome err@ErrorHandling{..} h n =
     withOpenHandleRead err h $ \fs hs@OpenHandle{..} -> do
       file <- checkFsTree err $ FS.getFile openFilePath (mockFiles fs)
@@ -546,7 +535,7 @@ hGetSome err@ErrorHandling{..} h n =
       , fsLimitation  = True
       }
 
-hPutSome :: CanSimFS m => ErrorHandling FsError m -> Handle -> ByteString -> m Word64
+hPutSome :: CanSimFS m => ErrorHandling FsError m -> Handle' -> ByteString -> m Word64
 hPutSome err@ErrorHandling{..} h toWrite =
     withOpenHandleModify err h $ \fs hs@OpenHandle{..} -> do
       case openPtr of
@@ -614,7 +603,7 @@ hPutSome err@ErrorHandling{..} h toWrite =
 --   on subsequent writes. This is however not behaviour we want to emulate.
 --   In append mode however the Posix file offset is not used (and we don't
 --   even record it at all), appends always happen at the end of the file.
-hTruncate :: CanSimFS m => ErrorHandling FsError m -> Handle -> Word64 -> m ()
+hTruncate :: CanSimFS m => ErrorHandling FsError m -> Handle' -> Word64 -> m ()
 hTruncate err@ErrorHandling{..} h sz =
     withOpenHandleModify err h $ \fs hs@OpenHandle{..} -> do
       file <- checkFsTree err $ FS.getFile openFilePath (mockFiles fs)
@@ -648,7 +637,7 @@ hTruncate err@ErrorHandling{..} h sz =
 --
 -- NOTE: In the mock implementation this is thread safe, because there can be
 -- only one writer, so concurrent threads cannot change the size of the file.
-hGetSize :: CanSimFS m => ErrorHandling FsError m -> Handle -> m Word64
+hGetSize :: CanSimFS m => ErrorHandling FsError m -> Handle' -> m Word64
 hGetSize err h =
     withOpenHandleRead err h $ \fs hs@OpenHandle{..} -> do
       file <- checkFsTree err $ FS.getFile openFilePath (mockFiles fs)

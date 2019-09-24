@@ -37,7 +37,7 @@ import           Ouroboros.Storage.FS.API
 import           Ouroboros.Storage.FS.API.Types
 import           Ouroboros.Storage.FS.Sim.FsTree (FsTree (..))
 import qualified Ouroboros.Storage.FS.Sim.FsTree as FS
-import           Ouroboros.Storage.FS.Sim.MockFS (MockFS)
+import           Ouroboros.Storage.FS.Sim.MockFS (HandleMock, MockFS)
 import qualified Ouroboros.Storage.FS.Sim.MockFS as Mock
 import qualified Ouroboros.Storage.FS.Sim.STM as Sim
 import           Ouroboros.Storage.ImmutableDB
@@ -285,7 +285,7 @@ prop_writeIndex_loadIndex index =
       index' <- loadIndex S.decode hasFS EH.exceptions epoch epochSize
       return $ index === index'
 
-    runS :: (HasFS IO Mock.Handle -> IO Property) -> IO Property
+    runS :: (HasFS IO HandleMock -> IO Property) -> IO Property
     runS m = do
         r <- tryFS (Sim.runSimFS EH.exceptions Mock.empty m)
         case r of
@@ -309,7 +309,7 @@ prop_writeSlotOffsets_loadIndex_indexToSlotOffsets slotOffsets@(SlotOffsets offs
       index :: Index TestHash <- loadIndex S.decode hasFS EH.exceptions epoch epochSize
       return $ indexToSlotOffsets index === offsets
 
-    runS :: (HasFS IO Mock.Handle -> IO Property) -> IO Property
+    runS :: (HasFS IO HandleMock -> IO Property) -> IO Property
     runS m = do
         r <- tryFS (Sim.runSimFS EH.exceptions Mock.empty m)
         case r of

@@ -17,7 +17,7 @@ import           Ouroboros.Consensus.Util
 
 import           Ouroboros.Storage.FS.API
 import           Ouroboros.Storage.FS.API.Types
-import           Ouroboros.Storage.FS.Sim.MockFS (MockFS)
+import           Ouroboros.Storage.FS.Sim.MockFS (HandleMock, MockFS)
 import qualified Ouroboros.Storage.FS.Sim.MockFS as Mock
 import           Ouroboros.Storage.Util.ErrorHandling (ErrorHandling (..))
 import qualified Ouroboros.Storage.Util.ErrorHandling as EH
@@ -32,7 +32,7 @@ import qualified Ouroboros.Storage.Util.ErrorHandling as EH
 runSimFS :: MonadSTM m
          => ErrorHandling FsError m
          -> MockFS
-         -> (HasFS m Mock.Handle -> m a)
+         -> (HasFS m HandleMock -> m a)
          -> m (a, MockFS)
 runSimFS err fs act = do
     var <- atomically (newTVar fs)
@@ -44,7 +44,7 @@ runSimFS err fs act = do
 simHasFS :: forall m. MonadSTM m
          => ErrorHandling FsError m
          -> StrictTVar m MockFS
-         -> HasFS m Mock.Handle
+         -> HasFS m HandleMock
 simHasFS err var = HasFS {
       dumpState                = sim     Mock.dumpState
     , hOpen                    = sim  .: Mock.hOpen                    err'
@@ -60,7 +60,6 @@ simHasFS err var = HasFS {
     , doesDirectoryExist       = sim  .  Mock.doesDirectoryExist       err'
     , doesFileExist            = sim  .  Mock.doesFileExist            err'
     , removeFile               = sim  .  Mock.removeFile               err'
-    , handlePath               = sim  .  gets . flip Mock.handleFsPath
     , hasFsErr                 = err
     }
   where

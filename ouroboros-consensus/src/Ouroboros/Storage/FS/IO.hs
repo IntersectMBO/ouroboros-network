@@ -38,18 +38,18 @@ ioHasFS mount = HasFS {
         osHandle <- rethrowFsError fp $
             F.open path openMode
         hVar <- newMVar $ Just osHandle
-        return $ H.Handle fp path hVar
-    , hClose = \h -> rethrowFsError (H.handlePath h) $
+        return $ Handle (H.HandleOS path hVar) fp
+    , hClose = \(Handle h fp) -> rethrowFsError fp $
         F.close h
-    , hSeek = \h mode o -> rethrowFsError (H.handlePath h) $
+    , hSeek = \(Handle h fp) mode o -> rethrowFsError fp $
         F.seek h mode o
-    , hGetSome = \h n -> rethrowFsError (H.handlePath h) $
+    , hGetSome = \(Handle h fp) n -> rethrowFsError fp $
         F.read h (fromIntegral n)
-    , hTruncate = \h sz -> rethrowFsError (H.handlePath h) $
+    , hTruncate = \(Handle h fp) sz -> rethrowFsError fp $
         F.truncate h sz
-    , hGetSize = \h -> rethrowFsError (H.handlePath h) $
+    , hGetSize = \(Handle h fp) -> rethrowFsError fp $
         F.getSize h
-    , hPutSome = \h bs -> rethrowFsError (H.handlePath h) $ do
+    , hPutSome = \(Handle h fp) bs -> rethrowFsError fp $ do
         BS.unsafeUseAsCStringLen bs $ \(ptr, len) ->
             fromIntegral <$> F.write h (castPtr ptr) (fromIntegral len)
     , createDirectory = \fp -> rethrowFsError fp $
@@ -64,7 +64,6 @@ ioHasFS mount = HasFS {
         Dir.createDirectoryIfMissing createParent (root fp)
     , removeFile = \fp -> rethrowFsError fp $
         Dir.removeFile (root fp)
-    , handlePath = return . H.handlePath
     , hasFsErr = EH.exceptions
     }
   where
