@@ -595,7 +595,22 @@ intersect
     -> AnchoredFragment block2
     -> Maybe (AnchoredFragment block1, AnchoredFragment block2,
               AnchoredFragment block1, AnchoredFragment block2)
-intersect c1 c2 = go c2
+intersect c1 c2
+    | length c2 > length c1
+      -- Note that 'intersect' is linear in its second argument. It iterates
+      -- over the elements in the second fragment, starting from the end,
+      -- looking for a match in the first fragment (with a /O(log(n))/ cost).
+      -- So by using the shortest fragment as the second argument, we get the
+      -- same result with a lower cost than the other way around.
+    = (\(p2, p1, s2, s1) -> (p1, p2, s1, s2)) <$> intersect c2 c1
+
+    | pointSlot (headPoint c1) < pointSlot (anchorPoint c2) ||
+      pointSlot (headPoint c2) < pointSlot (anchorPoint c1)
+      -- If there is no overlap in slot numbers, there will be no overlap
+    = Nothing
+
+    | otherwise
+    = go c2
   where
     go :: AnchoredFragment block2
        -> Maybe (AnchoredFragment block1, AnchoredFragment block2,
