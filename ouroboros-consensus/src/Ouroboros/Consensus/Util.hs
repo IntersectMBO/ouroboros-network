@@ -1,11 +1,8 @@
- {-# LANGUAGE BangPatterns          #-}
- {-# LANGUAGE ConstraintKinds       #-}
- {-# LANGUAGE FlexibleInstances     #-}
- {-# LANGUAGE GADTs                 #-}
- {-# LANGUAGE MultiParamTypeClasses #-}
- {-# LANGUAGE PolyKinds             #-}
- {-# LANGUAGE ScopedTypeVariables   #-}
- {-# LANGUAGE TypeOperators         #-}
+{-# LANGUAGE BangPatterns        #-}
+{-# LANGUAGE FlexibleInstances   #-}
+{-# LANGUAGE GADTs               #-}
+{-# LANGUAGE PolyKinds           #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 -- | Miscellaneous utilities
 module Ouroboros.Consensus.Util (
@@ -33,13 +30,17 @@ module Ouroboros.Consensus.Util (
   , takeLast
   , dropLast
   , mustBeRight
+  , safeMaximum
+  , safeMaximumBy
+  , safeMaximumOn
   ) where
 
 import qualified Data.ByteString as Strict
 import qualified Data.ByteString.Lazy as Lazy
 import           Data.Constraint
+import           Data.Function (on)
 import           Data.Functor.Identity
-import           Data.List (foldl')
+import           Data.List (foldl', maximumBy)
 import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Void
@@ -168,3 +169,13 @@ dropLast n = reverse . drop (fromIntegral n) . reverse
 mustBeRight :: Either Void a -> a
 mustBeRight (Left  v) = absurd v
 mustBeRight (Right a) = a
+
+safeMaximum :: Ord a => [a] -> Maybe a
+safeMaximum = safeMaximumBy compare
+
+safeMaximumBy :: (a -> a -> Ordering) -> [a] -> Maybe a
+safeMaximumBy _cmp [] = Nothing
+safeMaximumBy cmp ls  = Just $ maximumBy cmp ls
+
+safeMaximumOn :: Ord b => (a -> b) -> [a] -> Maybe a
+safeMaximumOn f = safeMaximumBy (compare `on` f)
