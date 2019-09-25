@@ -36,7 +36,6 @@ import           GHC.Stack (HasCallStack)
 
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork
-import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
@@ -52,6 +51,7 @@ import           Ouroboros.Network.Point (WithOrigin (..))
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Ledger.Abstract (ProtocolLedgerView)
 import           Ouroboros.Consensus.Protocol.Abstract
+import           Ouroboros.Consensus.Util.MonadSTM.NormalForm
 import           Ouroboros.Consensus.Util.ResourceRegistry
 
 import qualified Ouroboros.Storage.ChainDB.Impl.ImmDB as ImmDB

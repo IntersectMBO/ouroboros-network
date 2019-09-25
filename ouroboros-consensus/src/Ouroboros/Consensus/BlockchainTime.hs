@@ -41,10 +41,10 @@ import           GHC.Stack
 
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork (MonadFork)
-import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTimer
 
+import           Ouroboros.Consensus.Util.MonadSTM.NormalForm
 import           Ouroboros.Consensus.Util.ResourceRegistry
 import           Ouroboros.Consensus.Util.STM
 import           Ouroboros.Network.Block (SlotNo (..))
@@ -188,8 +188,8 @@ newTestBlockchainTime
     -> DiffTime           -- ^ Slot duration
     -> m (TestBlockchainTime m)
 newTestBlockchainTime registry (NumSlots numSlots) slotLen = do
-    slotVar <- atomically $ newTVar initVal
-    doneVar <- atomically $ newEmptyTMVar
+    slotVar <- uncheckedNewTVarM initVal
+    doneVar <- uncheckedNewEmptyTMVarM
 
     void $ forkLinkedThread registry $ loop slotVar doneVar
 
@@ -239,7 +239,7 @@ realBlockchainTime :: ResourceRegistry IO
                    -> IO (BlockchainTime IO)
 realBlockchainTime registry slotLen start = do
     first <- getCurrentSlotIO slotLen start
-    slot  <- atomically $ newTVar first
+    slot  <- uncheckedNewTVarM first
     void $ forkLinkedThread registry $ loop slot
     return BlockchainTime {
         getCurrentSlot = readTVar slot

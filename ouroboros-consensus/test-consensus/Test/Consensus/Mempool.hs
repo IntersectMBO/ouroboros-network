@@ -22,7 +22,6 @@ import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
 
 import           Control.Monad.Class.MonadAsync (MonadAsync)
-import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.IOSim (runSimOrThrow)
 
 import           Control.Tracer (Tracer (..))
@@ -36,6 +35,7 @@ import           Ouroboros.Consensus.Mempool
 import           Ouroboros.Consensus.Mempool.TxSeq as TxSeq
 import           Ouroboros.Consensus.Util (whenJust)
 import           Ouroboros.Consensus.Util.Condense (condense)
+import           Ouroboros.Consensus.Util.MonadSTM.NormalForm
 
 import           Test.Consensus.Mempool.TestBlock
 
@@ -412,13 +412,13 @@ withTestMempool setup@TestSetup { testLedgerState, testInitialTxs } prop =
     setUpAndRun = do
 
       -- Set up the LedgerInterface
-      varCurrentLedgerState <- atomically $ newTVar testLedgerState
+      varCurrentLedgerState <- uncheckedNewTVarM testLedgerState
       let ledgerInterface = LedgerInterface
             { getCurrentLedgerState = readTVar varCurrentLedgerState
             }
 
       -- Set up the Tracer
-      varEvents <- atomically $ newTVar []
+      varEvents <- uncheckedNewTVarM []
       -- TODO use SimM's dynamicTracer
       let tracer = Tracer $ \ev -> atomically $ modifyTVar varEvents (ev:)
 

@@ -16,7 +16,6 @@ import           Data.List (intercalate)
 import qualified Data.Map.Strict as Map
 import           Data.Word (Word64)
 
-import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.IOSim (runSimOrThrow)
 
@@ -26,6 +25,7 @@ import           Ouroboros.Network.MockChain.Chain (Chain)
 import qualified Ouroboros.Network.MockChain.Chain as Chain
 
 import           Ouroboros.Consensus.Util.Condense (condense)
+import           Ouroboros.Consensus.Util.MonadSTM.NormalForm
 import           Ouroboros.Consensus.Util.ResourceRegistry
 
 import           Ouroboros.Storage.ChainDB.API (Iterator (..), IteratorId (..),
@@ -255,8 +255,8 @@ initIteratorEnv
   -> Tracer m (TraceIteratorEvent TestBlock)
   -> m (IteratorEnv m TestBlock)
 initIteratorEnv TestSetup { immutable, volatile } tracer = do
-    iters      <- atomically $ newTVar Map.empty
-    nextIterId <- atomically $ newTVar $ IteratorId 0
+    iters      <- uncheckedNewTVarM Map.empty
+    nextIterId <- uncheckedNewTVarM $ IteratorId 0
     volDB      <- openVolDB volatile
     immDB      <- openImmDB immutable
     return IteratorEnv

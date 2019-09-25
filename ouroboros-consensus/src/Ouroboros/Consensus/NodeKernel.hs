@@ -30,7 +30,6 @@ import           Data.Word (Word16)
 
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork (MonadFork)
-import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 import           Control.Tracer
 
@@ -57,6 +56,7 @@ import           Ouroboros.Consensus.Mempool.TxSeq (TicketNo)
 import           Ouroboros.Consensus.Node.Tracers
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util
+import           Ouroboros.Consensus.Util.MonadSTM.NormalForm
 import           Ouroboros.Consensus.Util.Orphans ()
 import           Ouroboros.Consensus.Util.Random
 import           Ouroboros.Consensus.Util.ResourceRegistry
@@ -206,8 +206,8 @@ initInternalState
 initInternalState NodeArgs { tracers, chainDB, registry, cfg,
                              blockFetchSize, blockMatchesHeader, btime,
                              callbacks, initState } = do
-    varCandidates  <- atomically $ newTVar mempty
-    varState       <- atomically $ newTVar initState
+    varCandidates  <- uncheckedNewTVarM mempty
+    varState       <- uncheckedNewTVarM initState
     mempool        <- openMempool registry
                                   (chainDBLedgerInterface chainDB)
                                   (ledgerConfigView cfg)
@@ -290,11 +290,10 @@ forkBlockProduction
     => InternalState m peer blk -> m ()
 forkBlockProduction IS{..} =
     onSlotChange btime $ \currentSlot -> do
-      drg  <- produceDRG
+      varDRG <- uncheckedNewTVarM =<< produceDRG
       -- See the docstring of 'withSyncState' for why we're using it instead
       -- of 'atomically'.
       mNewBlock <- withSyncState mempool $ \MempoolSnapshot{snapshotTxs} -> do
-        varDRG <- newTVar drg
         l@ExtLedgerState{..} <- ChainDB.getCurrentLedger chainDB
         mIsLeader            <- runProtocol varDRG $
                                    checkIsLeader

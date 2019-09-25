@@ -38,7 +38,6 @@ import           Data.Void (Void)
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadST
-import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
 import           Control.Tracer
@@ -85,6 +84,7 @@ import           Ouroboros.Consensus.Node.Tracers
 import           Ouroboros.Consensus.NodeKernel
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.TxSubmission
+import           Ouroboros.Consensus.Util.MonadSTM.NormalForm
 import           Ouroboros.Consensus.Util.Orphans ()
 import           Ouroboros.Consensus.Util.ResourceRegistry
 

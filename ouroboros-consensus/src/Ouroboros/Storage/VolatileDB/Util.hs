@@ -6,7 +6,6 @@
 module Ouroboros.Storage.VolatileDB.Util where
 
 import           Control.Monad
-import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 import           Data.List (maximumBy)
 import           Data.Map (Map)
@@ -17,6 +16,8 @@ import qualified Data.Set as Set
 import qualified Data.Text as T
 import           Data.Word (Word64)
 import           Text.Read (readMaybe)
+
+import           Ouroboros.Consensus.Util.MonadSTM.NormalForm
 
 import           Ouroboros.Storage.FS.API.Types
 import           Ouroboros.Storage.Util.ErrorHandling (ErrorHandling (..))

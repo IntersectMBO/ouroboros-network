@@ -20,7 +20,6 @@ import           Prelude hiding (elem, notElem)
 
 import           Codec.Serialise (decode, encode)
 import           Control.Monad (forM_, when)
-import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow (MonadCatch)
 import           Control.Monad.Except (ExceptT (..), runExceptT)
 import           Control.Monad.State.Strict (MonadState, State, evalState, gets,
@@ -65,6 +64,7 @@ import           Test.Tasty.QuickCheck (testProperty)
 import           Text.Show.Pretty (ppShow)
 
 import qualified Ouroboros.Consensus.Util.Classify as C
+import           Ouroboros.Consensus.Util.MonadSTM.NormalForm
 
 import           Ouroboros.Network.Block (SlotNo (..))
 
@@ -1100,8 +1100,8 @@ prop_sequential = forAllCommands smUnused Nothing $ \cmds -> QC.monadicIO $ do
 
           return (hist, res === Ok .&&. dbTip === modelTip .&&. validation)
 
-    fsVar     <- QC.run $ atomically (newTVar Mock.empty)
-    errorsVar <- QC.run $ atomically (newTVar mempty)
+    fsVar     <- QC.run $ uncheckedNewTVarM Mock.empty
+    errorsVar <- QC.run $ uncheckedNewTVarM mempty
     (hist, prop) <-
       test errorsVar (mkSimErrorHasFS EH.monadCatch fsVar errorsVar)
     prettyCommands smUnused hist

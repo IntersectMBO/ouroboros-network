@@ -145,7 +145,6 @@ import           Codec.CBOR.Decoding (Decoder)
 import           Codec.CBOR.Encoding (Encoding)
 import           Control.Exception (assert)
 import           Control.Monad (forM_, replicateM_, unless, when)
-import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow (ExitCase (..),
                      MonadCatch (generalBracket), MonadThrow, finally)
 import           Control.Monad.State.Strict (StateT (..), get, lift, modify,
@@ -166,6 +165,7 @@ import           Data.Word
 import           GHC.Stack (HasCallStack, callStack)
 
 import           Ouroboros.Consensus.Util (SomePair (..))
+import           Ouroboros.Consensus.Util.MonadSTM.NormalForm
 
 import           Ouroboros.Storage.Common
 import           Ouroboros.Storage.EpochInfo
@@ -304,7 +304,7 @@ openDBImpl hashDecoder hashEncoder hasFS@HasFS{..} err epochInfo valPol epochFil
     !ost  <- validateAndReopen hashDecoder hashEncoder hasFS err epochInfo
       valPol epochFileParser initialIteratorID tracer
 
-    stVar <- atomically $ newTMVar (Right ost)
+    stVar <- uncheckedNewTMVarM (Right ost)
 
     let dbEnv = ImmutableDBEnv hasFS err stVar epochFileParser hashDecoder hashEncoder tracer
         db    = mkDBRecord dbEnv
@@ -999,7 +999,7 @@ streamBinaryBlobsImpl dbEnv mbStart mbEnd = withOpenState dbEnv $ \hasFS st -> d
               , _it_epoch_index  = index
               }
 
-        itState <- atomically $ newTVar mbIteratorState
+        itState <- uncheckedNewTVarM mbIteratorState
 
         let ith = IteratorHandle
               { _it_hasFS    = hasFS

@@ -42,7 +42,6 @@ import           Data.Typeable (Typeable)
 import           Data.Word
 import           GHC.Generics (Generic)
 
-import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 
 import           Control.Tracer
@@ -56,6 +55,7 @@ import           Ouroboros.Consensus.Block (BlockProtocol, Header)
 import           Ouroboros.Consensus.Ledger.Abstract (ProtocolLedgerView)
 import           Ouroboros.Consensus.Ledger.Extended (ExtValidationError)
 import           Ouroboros.Consensus.Protocol.Abstract (NodeConfig)
+import           Ouroboros.Consensus.Util.MonadSTM.NormalForm
 import           Ouroboros.Consensus.Util.ResourceRegistry
 import           Ouroboros.Consensus.Util.STM (Fingerprint)
 

@@ -9,7 +9,6 @@ import           Test.Tasty
 import           Test.Tasty.QuickCheck
 
 import           Control.Monad.Class.MonadFork
-import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTimer
 import           Control.Monad.IOSim
@@ -17,6 +16,7 @@ import           Control.Monad.IOSim
 import           Ouroboros.Network.MockChain.Chain (Chain (..), ChainUpdate)
 import qualified Ouroboros.Network.MockChain.Chain as Chain
 
+import           Ouroboros.Consensus.Util.MonadSTM.NormalForm
 import           Ouroboros.Consensus.Util.ResourceRegistry
 
 import           Ouroboros.Storage.ChainDB.API (ChainDB)
@@ -49,7 +49,7 @@ prop_reader bt p = runSimOrThrow test
     test = withRegistry $ \registry -> do
         db       <- openDB
         reader   <- ChainDB.newBlockReader db registry
-        chainVar <- atomically $ newTVar Genesis
+        chainVar <- uncheckedNewTVarM Genesis
 
         -- Fork a thread that applies all instructions from the reader
         _tid <- fork $ monitorReader chainVar reader

@@ -53,7 +53,6 @@ import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
 
 import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 
 import           Control.Tracer
@@ -79,6 +78,7 @@ import           Ouroboros.Consensus.NodeId (NodeId (..))
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.BFT
 import           Ouroboros.Consensus.Util.Condense (condense)
+import           Ouroboros.Consensus.Util.MonadSTM.NormalForm
 import           Ouroboros.Consensus.Util.ResourceRegistry
 import           Ouroboros.Consensus.Util.STM (Fingerprint (..))
 
@@ -1039,10 +1039,10 @@ prop_sequential = forAllCommands smUnused Nothing $ \cmds -> QC.monadicIO $ do
       threadRegistry     <- QC.run unsafeNewRegistry
       iteratorRegistry   <- QC.run unsafeNewRegistry
       (tracer, getTrace) <- QC.run recordingTracerIORef
-      fsVars             <- QC.run $ atomically $ (,,)
-        <$> newTVar Mock.empty
-        <*> newTVar Mock.empty
-        <*> newTVar Mock.empty
+      fsVars             <- QC.run $ (,,)
+        <$> uncheckedNewTVarM Mock.empty
+        <*> uncheckedNewTVarM Mock.empty
+        <*> uncheckedNewTVarM Mock.empty
       let args = mkArgs testCfg testInitLedger tracer threadRegistry fsVars
       (db, internal)     <- QC.run $ openDBInternal args False
       let sm' = sm db internal iteratorRegistry genBlk testCfg testInitLedger
@@ -1225,10 +1225,10 @@ _mkBlk h = TestBlock
 -- | Debugging utility: run some commands against the real implementation.
 _runCmds :: [Cmd Blk IteratorId ReaderId] -> IO [Resp Blk IteratorId ReaderId]
 _runCmds cmds = withRegistry $ \registry -> do
-    fsVars <- atomically $ (,,)
-      <$> newTVar Mock.empty
-      <*> newTVar Mock.empty
-      <*> newTVar Mock.empty
+    fsVars <- (,,)
+      <$> uncheckedNewTVarM Mock.empty
+      <*> uncheckedNewTVarM Mock.empty
+      <*> uncheckedNewTVarM Mock.empty
     let args = mkArgs
           testCfg
           testInitLedger

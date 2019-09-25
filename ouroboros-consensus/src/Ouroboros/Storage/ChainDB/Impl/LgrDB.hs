@@ -62,7 +62,6 @@ import           System.FilePath ((</>))
 
 import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadST
-import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 
 import           Control.Tracer
@@ -78,6 +77,7 @@ import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util ((.:))
+import           Ouroboros.Consensus.Util.MonadSTM.NormalForm
 import           Ouroboros.Consensus.Util.ResourceRegistry
 
 import           Ouroboros.Storage.Common
@@ -209,8 +209,8 @@ openDB :: forall m blk.
 openDB args@LgrDbArgs{..} replayTracer immDB getBlock = do
     createDirectoryIfMissing lgrHasFS True (mkFsPath [])
     db <- initFromDisk args replayTracer lgrDbConf immDB
-    (varDB, varPrevApplied) <- atomically $
-      (,) <$> newTVar db <*> newTVar Set.empty
+    (varDB, varPrevApplied) <-
+      (,) <$> uncheckedNewTVarM db <*> uncheckedNewTVarM Set.empty
     return LgrDB {
         conf           = lgrDbConf
       , varDB          = varDB

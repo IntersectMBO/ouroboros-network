@@ -52,7 +52,6 @@ import           System.Random (getStdRandom, randomR)
 import           Control.Tracer (nullTracer)
 
 import           Control.Monad.Class.MonadST
-import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 
 import           Test.QuickCheck (Gen)
@@ -68,6 +67,7 @@ import           Test.Tasty.QuickCheck (testProperty)
 import           Ouroboros.Consensus.Protocol.Abstract (SecurityParam (..))
 import           Ouroboros.Consensus.Util
 import qualified Ouroboros.Consensus.Util.Classify as C
+import           Ouroboros.Consensus.Util.MonadSTM.NormalForm
 
 import           Ouroboros.Storage.Common
 import           Ouroboros.Storage.FS.API
@@ -543,8 +543,8 @@ data StandaloneDB m t = DB {
 
 initStandaloneDB :: (MonadSTM m, LUT t) => DbEnv m -> m (StandaloneDB m t)
 initStandaloneDB dbEnv@DbEnv{..} = do
-    dbBlocks <- atomically $ newTVar Map.empty
-    dbState  <- atomically $ newTVar (initChain, initDB)
+    dbBlocks <- uncheckedNewTVarM Map.empty
+    dbState  <- uncheckedNewTVarM (initChain, initDB)
     return DB{..}
   where
     initChain = []
@@ -589,7 +589,7 @@ dbStreamAPI DB{..} = StreamAPI {..}
         if unknownBlock tip rs
           then k Nothing
           else do
-            toStream <- atomically $ newTVar (blocksToStream tip rs)
+            toStream <- uncheckedNewTVarM (blocksToStream tip rs)
             k (Just (getNext toStream))
 
     -- Ignore requests to start streaming from blocks not on the current chain
@@ -983,7 +983,7 @@ propCmds :: LUT t
          -> QSM.Commands (At (Cmd t)) (At (Resp t))
          -> QC.PropertyM IO ()
 propCmds lgrDbParams cmds = do
-    fs <- QC.run $ atomically $ newTVar MockFS.empty
+    fs <- QC.run $ uncheckedNewTVarM MockFS.empty
     let dbEnv :: DbEnv IO
         dbEnv = DbEnv (simHasFS EH.exceptions fs) lgrDbParams
     db <- QC.run $ initStandaloneDB dbEnv

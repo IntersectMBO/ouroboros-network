@@ -12,7 +12,6 @@ import           Data.Proxy (Proxy (..))
 import           Data.Reflection (give)
 
 import           Control.Monad.Class.MonadST
-import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.IOSim (runSimOrThrow)
 
@@ -33,6 +32,7 @@ import           Ouroboros.Consensus.Node.ProtocolInfo (NumCoreNodes (..),
 import           Ouroboros.Consensus.Node.Run (RunNode (..))
 import           Ouroboros.Consensus.NodeId (CoreNodeId (..))
 import           Ouroboros.Consensus.Protocol
+import           Ouroboros.Consensus.Util.MonadSTM.NormalForm
 
 import           Ouroboros.Storage.ChainDB.Impl.ImmDB (ImmDB, ImmDbArgs (..))
 import qualified Ouroboros.Storage.ChainDB.Impl.ImmDB as ImmDB
@@ -72,7 +72,7 @@ withImmDB :: forall m blk a.
              )
           => (ImmDB m blk -> m a) -> m a
 withImmDB k = do
-    immDbFsVar <- atomically $ newTVar Mock.empty
+    immDbFsVar <- uncheckedNewTVarM Mock.empty
     epochInfo  <- newEpochInfo $ nodeEpochSize (Proxy @blk) testCfg
     bracket (ImmDB.openDB (mkArgs immDbFsVar epochInfo)) ImmDB.closeDB k
   where

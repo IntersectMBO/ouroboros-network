@@ -21,7 +21,6 @@ import           Data.Maybe (isJust)
 import           GHC.Stack (HasCallStack)
 
 import           Control.Monad.Class.MonadFork
-import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 
 import           Control.Tracer (contramap, traceWith)
@@ -34,6 +33,7 @@ import           Ouroboros.Network.Block (ChainUpdate (..), HasHeader,
 import           Ouroboros.Network.Point (WithOrigin (..))
 
 import           Ouroboros.Consensus.Block (GetHeader (..), headerPoint)
+import           Ouroboros.Consensus.Util.MonadSTM.NormalForm
 import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
 import           Ouroboros.Consensus.Util.STM (blockUntilJust)
 
@@ -113,14 +113,10 @@ newReader cdb@CDB{..} h registry = do
         immIt <- ImmDB.streamBlocksAfter cdbImmDB registry genesisPoint
         return $ ReaderInImmDB rollState immIt
 
-    (reader, readerId) <- atomically $ do
-      readerId <- readTVar cdbNextReaderId
-      modifyTVar cdbNextReaderId succ
-
-      varReader <- newTVar readerState
-      modifyTVar cdbReaders (Map.insert readerId varReader)
-      let reader = makeNewBlockOrHeaderReader h readerId registry
-      return (reader, readerId)
+    readerId  <- atomically $ updateTVar cdbNextReaderId $ \r -> (succ r, r)
+    varReader <- uncheckedNewTVarM readerState
+    atomically $ modifyTVar cdbReaders $ Map.insert readerId varReader
+    let reader = makeNewBlockOrHeaderReader h readerId registry
     traceWith cdbTracer $ TraceReaderEvent $ NewReader readerId
     return reader
   where

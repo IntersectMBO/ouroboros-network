@@ -23,7 +23,6 @@ module Ouroboros.Storage.ChainDB.Impl.Query
 import           Data.Bifunctor (first)
 import qualified Data.Map.Strict as Map
 
-import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment (..))
@@ -35,6 +34,7 @@ import           Ouroboros.Network.Block (BlockNo, ChainHash (..), HasHeader,
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Protocol.Abstract
+import           Ouroboros.Consensus.Util.MonadSTM.NormalForm
 import           Ouroboros.Consensus.Util.STM (Fingerprint)
 
 import           Ouroboros.Storage.ChainDB.API (ChainDbError (..),
