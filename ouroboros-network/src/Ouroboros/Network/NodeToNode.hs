@@ -192,7 +192,8 @@ connectTo_V1
   -> IO ()
 connectTo_V1 muxTracer handshakeTracer peeridFn versionData application localAddr remoteAddr =
     connectTo
-      muxTracer handshakeTracer peeridFn
+      muxTracer handshakeTracer
+      peeridFn
       (simpleSingletonVersions
           NodeToNodeV_1
           versionData

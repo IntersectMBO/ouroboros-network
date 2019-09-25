@@ -288,14 +288,19 @@ instance Exception MuxError where
           (show errorMsg)
           (prettyCallStack errorStack)
 
+-- Type used for tracing mux events.
+--
 data WithMuxBearer a = WithMuxBearer {
       wmbTag   :: !String
+      -- ^ A tag that should identify a specific mux bearer.
     , wmbEvent :: !a
 }
 
 instance Show a => Show (WithMuxBearer a) where
     show WithMuxBearer {wmbTag, wmbEvent} = printf "Mux %s %s" wmbTag (show wmbEvent)
 
+-- | Enumeration of Mux events that can be traced.
+--
 data MuxTrace ptcl =
       MuxTraceRecvHeaderStart
     | MuxTraceRecvHeaderEnd (MuxSDU ptcl)

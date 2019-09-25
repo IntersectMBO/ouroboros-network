@@ -3,6 +3,7 @@
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TupleSections       #-}
 {-# LANGUAGE TypeFamilies        #-}
 
 module Network.Mux (
@@ -28,6 +29,7 @@ import           Control.Tracer
 import           Data.Array
 import qualified Data.ByteString.Lazy as BL
 import           Data.List (lookup)
+import           Data.Maybe (fromMaybe)
 import           GHC.Stack
 import           Text.Printf
 
@@ -100,29 +102,27 @@ muxStart tracer peerid app bearer = do
     cnt <- newTVarM 0
 
     let pmss = PerMuxSS tbl tq bearer
-        jobs = [ demux pmss
-               , mux cnt pmss
-               , muxControl pmss ModeResponder
-               , muxControl pmss ModeInitiator
+        jobs = [ (demux pmss, "Demuxer")
+               , (mux cnt pmss, "Muxer")
+               , (muxControl pmss ModeResponder, "MuxControl Responder")
+               , (muxControl pmss ModeInitiator, "MuxControl Initiator")
                ]
-    mjobs <- sequence [ (mpsJob cnt pmss ptcl)
+    mjobs <- sequence [ mpsJob cnt pmss ptcl
                       | ptcl <- [minBound..maxBound] ]
 
     mask $ \unmask -> do
-      as <- traverse (async . unmask) (jobs ++ (map fst $ concat mjobs))
-      let aidsAndNames = zip as $ ["Demuxer", "Muxer", "MuxControl Responder", "MuxControl Initiator"] ++
-                                  (map snd $ concat mjobs)
+      aidsAndNames <- traverse (\(io, name) -> (,name) <$> async (unmask io)) (jobs ++ concat mjobs)
 
       muxBearerSetState tracer bearer Mature
-      unmask (do
-        (fa, r_e) <- waitAnyCatchCancel as
-        let faName = maybe "Unknown Protocol" id (lookup fa aidsAndNames)
+      unmask $ do
+        (fa, r_e) <- waitAnyCatchCancel $ map fst aidsAndNames
+        let faName = fromMaybe "Unknown Protocol" (lookup fa aidsAndNames)
         case r_e of
              Left (e::SomeException) -> do
                  traceWith tracer $ MuxTraceExceptionExit e faName
                  throwM e
              Right _                 -> traceWith tracer $ MuxTraceCleanExit faName
-        )
+
       muxBearerSetState tracer bearer Dead
 
   where
@@ -158,12 +158,16 @@ muxStart tracer peerid app bearer = do
 
         return $ case app of
           MuxInitiatorApplication initiator ->
-            [ (initiator peerid mpdId initiatorChannel >> mpsJobExit cnt , show mpdId ++ " Initiator")]
+            [ ( initiator peerid mpdId initiatorChannel >> mpsJobExit cnt
+              , show mpdId ++ " Initiator" )]
           MuxResponderApplication responder ->
-            [ (responder peerid mpdId responderChannel >> mpsJobExit cnt , show mpdId ++ " Responder")]
+            [ ( responder peerid mpdId responderChannel >> mpsJobExit cnt
+              , show mpdId ++ " Responder" )]
           MuxInitiatorAndResponderApplication initiator responder ->
-            [ (initiator peerid mpdId initiatorChannel >> mpsJobExit cnt, show mpdId ++ " Initiator")
-            , (responder peerid mpdId responderChannel >> mpsJobExit cnt, show mpdId ++ " Responder")
+            [ ( initiator peerid mpdId initiatorChannel >> mpsJobExit cnt
+              , show mpdId ++ " Initiator" )
+            , (responder peerid mpdId responderChannel >> mpsJobExit cnt
+              , show mpdId ++ " Responder" )
             ]
 
     -- cnt represent the number of SDUs that are queued but not yet sent.  Job
@@ -256,7 +260,7 @@ muxBearerSetState :: (MonadSTM m, Ord ptcl, Enum ptcl, Bounded ptcl)
                   -> m ()
 muxBearerSetState tracer bearer newState = do
     oldState <- atomically $ do
-        -- If MonadSTM had swapTVar we could use it here.
+        -- TODO: reimplement with swapTVar once it is added to MonadSTM
         old <- readTVar (state bearer)
         writeTVar (state bearer) newState
         return old

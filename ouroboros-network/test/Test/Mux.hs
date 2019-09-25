@@ -54,11 +54,11 @@ tests =
   ]
 
 activeTracer :: forall m a. (MonadSay m, Show a) => Tracer m a
---activeTracer = nullTracer
-activeTracer = showTracing sayTracer
+activeTracer = nullTracer
+--activeTracer = showTracing sayTracer
 
-sayTracer :: MonadSay m => Tracer m String
-sayTracer = Tracer say
+_sayTracer :: MonadSay m => Tracer m String
+_sayTracer = Tracer say
 
 
 data TestProtocols = ChainSyncPr

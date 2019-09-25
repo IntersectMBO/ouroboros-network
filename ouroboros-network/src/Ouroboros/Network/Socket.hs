@@ -243,7 +243,7 @@ beginConnection muxTracer handshakeTracer encodeData decodeData acceptVersion fn
     accept <- fn addr st
     case accept of
       AcceptConnection st' peerid versions -> pure $ Server.Accept st' $ \sd -> do
-        let muxTracer' = (Mx.WithMuxBearer (show peerid) `contramap` muxTracer)
+        let muxTracer' = Mx.WithMuxBearer (show peerid) `contramap` muxTracer
         (bearer :: MuxBearer ptcl IO) <- Mx.socketAsMuxBearer muxTracer' sd
         Mx.muxBearerSetState muxTracer' bearer Mx.Connected
         mapp <- runPeerWithByteLimit
