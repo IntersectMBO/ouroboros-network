@@ -543,8 +543,8 @@ data StandaloneDB m t = DB {
 
 initStandaloneDB :: (MonadSTM m, LUT t) => DbEnv m -> m (StandaloneDB m t)
 initStandaloneDB dbEnv@DbEnv{..} = do
-    dbBlocks <- atomically $ newTVar Map.empty
-    dbState  <- atomically $ newTVar (initChain, initDB)
+    dbBlocks <- newTVarM Map.empty
+    dbState  <- newTVarM (initChain, initDB)
     return DB{..}
   where
     initChain = []
@@ -589,7 +589,7 @@ dbStreamAPI DB{..} = StreamAPI {..}
         if unknownBlock tip rs
           then k Nothing
           else do
-            toStream <- atomically $ newTVar (blocksToStream tip rs)
+            toStream <- newTVarM (blocksToStream tip rs)
             k (Just (getNext toStream))
 
     -- Ignore requests to start streaming from blocks not on the current chain
@@ -983,7 +983,7 @@ propCmds :: LUT t
          -> QSM.Commands (At (Cmd t)) (At (Resp t))
          -> QC.PropertyM IO ()
 propCmds lgrDbParams cmds = do
-    fs <- QC.run $ atomically $ newTVar MockFS.empty
+    fs <- QC.run $ newTVarM MockFS.empty
     let dbEnv :: DbEnv IO
         dbEnv = DbEnv (simHasFS EH.exceptions fs) lgrDbParams
     db <- QC.run $ initStandaloneDB dbEnv

@@ -1039,10 +1039,10 @@ prop_sequential = forAllCommands smUnused Nothing $ \cmds -> QC.monadicIO $ do
       threadRegistry     <- QC.run unsafeNewRegistry
       iteratorRegistry   <- QC.run unsafeNewRegistry
       (tracer, getTrace) <- QC.run recordingTracerIORef
-      fsVars             <- QC.run $ atomically $ (,,)
-        <$> newTVar Mock.empty
-        <*> newTVar Mock.empty
-        <*> newTVar Mock.empty
+      fsVars             <- QC.run $ (,,)
+        <$> newTVarM Mock.empty
+        <*> newTVarM Mock.empty
+        <*> newTVarM Mock.empty
       let args = mkArgs testCfg testInitLedger tracer threadRegistry fsVars
       (db, internal)     <- QC.run $ openDBInternal args False
       let sm' = sm db internal iteratorRegistry genBlk testCfg testInitLedger
@@ -1225,10 +1225,10 @@ _mkBlk h = TestBlock
 -- | Debugging utility: run some commands against the real implementation.
 _runCmds :: [Cmd Blk IteratorId ReaderId] -> IO [Resp Blk IteratorId ReaderId]
 _runCmds cmds = withRegistry $ \registry -> do
-    fsVars <- atomically $ (,,)
-      <$> newTVar Mock.empty
-      <*> newTVar Mock.empty
-      <*> newTVar Mock.empty
+    fsVars <- (,,)
+      <$> newTVarM Mock.empty
+      <*> newTVarM Mock.empty
+      <*> newTVarM Mock.empty
     let args = mkArgs
           testCfg
           testInitLedger

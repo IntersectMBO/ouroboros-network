@@ -206,8 +206,8 @@ initInternalState
 initInternalState NodeArgs { tracers, chainDB, registry, cfg,
                              blockFetchSize, blockMatchesHeader, btime,
                              callbacks, initState } = do
-    varCandidates  <- atomically $ newTVar mempty
-    varState       <- atomically $ newTVar initState
+    varCandidates  <- newTVarM mempty
+    varState       <- newTVarM initState
     mempool        <- openMempool registry
                                   (chainDBLedgerInterface chainDB)
                                   (ledgerConfigView cfg)
@@ -294,7 +294,7 @@ forkBlockProduction IS{..} =
       -- See the docstring of 'withSyncState' for why we're using it instead
       -- of 'atomically'.
       mNewBlock <- withSyncState mempool $ \MempoolSnapshot{snapshotTxs} -> do
-        varDRG <- newTVar drg
+        varDRG <- uncheckedNewTVar drg
         l@ExtLedgerState{..} <- ChainDB.getCurrentLedger chainDB
         mIsLeader            <- runProtocol varDRG $
                                    checkIsLeader

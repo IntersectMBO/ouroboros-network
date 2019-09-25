@@ -169,7 +169,7 @@ bracketChainSyncClient tracer getCurrentChain getCurrentLedger
         curChainState <- ouroborosChainState <$> getCurrentLedger
         -- We use our current chain, which contains the last @k@ headers, as
         -- the initial chain for the candidate.
-        varCandidate <- newTVar CandidateState
+        varCandidate <- uncheckedNewTVar CandidateState
           { candidateChain       = curChain
           , candidateChainState  = curChainState
           }

@@ -188,8 +188,8 @@ newTestBlockchainTime
     -> DiffTime           -- ^ Slot duration
     -> m (TestBlockchainTime m)
 newTestBlockchainTime registry (NumSlots numSlots) slotLen = do
-    slotVar <- atomically $ newTVar initVal
-    doneVar <- atomically $ newEmptyTMVar
+    slotVar <- newTVarM initVal
+    doneVar <- newEmptyTMVarM
 
     void $ forkLinkedThread registry $ loop slotVar doneVar
 
@@ -239,7 +239,7 @@ realBlockchainTime :: ResourceRegistry IO
                    -> IO (BlockchainTime IO)
 realBlockchainTime registry slotLen start = do
     first <- getCurrentSlotIO slotLen start
-    slot  <- atomically $ newTVar first
+    slot  <- newTVarM first
     void $ forkLinkedThread registry $ loop slot
     return BlockchainTime {
         getCurrentSlot = readTVar slot

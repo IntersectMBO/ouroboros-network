@@ -304,7 +304,7 @@ openDBImpl hashDecoder hashEncoder hasFS@HasFS{..} err epochInfo valPol epochFil
     !ost  <- validateAndReopen hashDecoder hashEncoder hasFS err epochInfo
       valPol epochFileParser initialIteratorID tracer
 
-    stVar <- atomically $ newTMVar (Right ost)
+    stVar <- newTMVarM (Right ost)
 
     let dbEnv = ImmutableDBEnv hasFS err stVar epochFileParser hashDecoder hashEncoder tracer
         db    = mkDBRecord dbEnv
@@ -999,7 +999,7 @@ streamBinaryBlobsImpl dbEnv mbStart mbEnd = withOpenState dbEnv $ \hasFS st -> d
               , _it_epoch_index  = index
               }
 
-        itState <- atomically $ newTVar mbIteratorState
+        itState <- newTVarM mbIteratorState
 
         let ith = IteratorHandle
               { _it_hasFS    = hasFS

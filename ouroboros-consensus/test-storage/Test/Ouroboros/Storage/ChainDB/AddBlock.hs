@@ -95,10 +95,10 @@ prop_addBlock_multiple_threads bpt =
     trace       :: [TraceAddBlockEvent TestBlock]
     (actualChain, trace) = run $ do
         -- Open the DB
-        fsVars <- atomically $ (,,)
-          <$> newTVar Mock.empty
-          <*> newTVar Mock.empty
-          <*> newTVar Mock.empty
+        fsVars <- (,,)
+          <$> newTVarM Mock.empty
+          <*> newTVarM Mock.empty
+          <*> newTVarM Mock.empty
         withRegistry $ \registry -> do
           let args = mkArgs cfg initLedger dynamicTracer registry fsVars
           db <- openDB args

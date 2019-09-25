@@ -255,8 +255,8 @@ initIteratorEnv
   -> Tracer m (TraceIteratorEvent TestBlock)
   -> m (IteratorEnv m TestBlock)
 initIteratorEnv TestSetup { immutable, volatile } tracer = do
-    iters      <- atomically $ newTVar Map.empty
-    nextIterId <- atomically $ newTVar $ IteratorId 0
+    iters      <- newTVarM Map.empty
+    nextIterId <- newTVarM $ IteratorId 0
     volDB      <- openVolDB volatile
     immDB      <- openImmDB immutable
     return IteratorEnv

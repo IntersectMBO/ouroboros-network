@@ -466,7 +466,7 @@ unsafeNewRegistry :: (MonadFork m, MonadSTM m, HasCallStack)
                   => m (ResourceRegistry m)
 unsafeNewRegistry = do
     context  <- captureContext
-    stateVar <- atomically $ newTVar initState
+    stateVar <- newTVarM initState
     return ResourceRegistry {
           registryContext = context
         , registryState   = stateVar

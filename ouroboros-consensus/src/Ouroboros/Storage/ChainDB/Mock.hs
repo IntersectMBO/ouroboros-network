@@ -37,7 +37,7 @@ openDB :: forall m blk.
        -> ExtLedgerState blk
        -> m (ChainDB m blk)
 openDB cfg initLedger = do
-    db :: StrictTVar m (Model blk) <- atomically $ newTVar (Model.empty initLedger)
+    db :: StrictTVar m (Model blk) <- newTVarM (Model.empty initLedger)
 
     let querySTM :: (Model blk -> a) -> STM m a
         querySTM f = readTVar db >>= \m ->

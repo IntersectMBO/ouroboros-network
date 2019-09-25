@@ -125,7 +125,7 @@ initMempoolEnv :: MonadSTM m
                -> Tracer m (TraceEventMempool blk)
                -> m (MempoolEnv m blk)
 initMempoolEnv ledgerInterface cfg tracer = do
-    isVar <- atomically $ newTVar initInternalState
+    isVar <- newTVarM initInternalState
     return MempoolEnv
       { mpEnvLedger    = ledgerInterface
       , mpEnvLedgerCfg = cfg

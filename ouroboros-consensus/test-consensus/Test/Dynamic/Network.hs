@@ -137,11 +137,11 @@ runNodeNetwork registry testBtime numCoreNodes nodeJoinPlan nodeTopology
     -- node and server threads on the head node. These mini protocols begin as
     -- soon as both nodes have joined the network, according to @nodeJoinPlan@.
 
-    varRNG <- atomically $ newTVar initRNG
+    varRNG <- newTVarM initRNG
 
     -- allocate a TMVar for each node's network app
     nodeVars <- fmap Map.fromList $ do
-      forM coreNodeIds $ \nid -> (,) nid <$> atomically newEmptyTMVar
+      forM coreNodeIds $ \nid -> (,) nid <$> newEmptyTMVarM
 
     -- spawn threads for each undirected edge
     let edges = edgesNodeTopology nodeTopology
@@ -227,7 +227,7 @@ runNodeNetwork registry testBtime numCoreNodes nodeJoinPlan nodeTopology
         drg <- produceDRG
         txs <- atomically $ do
           ledger <- ledgerState <$> getExtLedger
-          varDRG <- newTVar drg
+          varDRG <- uncheckedNewTVar drg
           simChaChaT varDRG id $ testGenTxs numCoreNodes cfg ledger
         void $ addTxs mempool txs
 
@@ -305,8 +305,8 @@ runNodeNetwork registry testBtime numCoreNodes nodeJoinPlan nodeTopology
             }
 
       epochInfo <- newEpochInfo $ nodeEpochSize (Proxy @blk) pInfoConfig
-      fsVars@(immDbFsVar, volDbFsVar, lgrDbFsVar)  <- atomically $ (,,)
-        <$> newTVar Mock.empty <*> newTVar Mock.empty <*> newTVar Mock.empty
+      fsVars@(immDbFsVar, volDbFsVar, lgrDbFsVar)  <- (,,)
+        <$> newTVarM Mock.empty <*> newTVarM Mock.empty <*> newTVarM Mock.empty
       let args = mkArgs pInfoConfig pInfoInitLedger epochInfo fsVars
       chainDB <- ChainDB.openDB args
 

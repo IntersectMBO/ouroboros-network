@@ -27,7 +27,7 @@ openDBMock  :: forall m hash.
             -> (EpochNo -> EpochSize)
             -> m (DBModel hash, ImmutableDB hash m)
 openDBMock err epochSize = do
-    dbVar <- atomically $ newTVar dbModel
+    dbVar <- newTVarM dbModel
     return (dbModel, immDB dbVar)
   where
     db :: ImmutableDB hash (MockM hash)

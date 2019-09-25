@@ -412,13 +412,13 @@ withTestMempool setup@TestSetup { testLedgerState, testInitialTxs } prop =
     setUpAndRun = do
 
       -- Set up the LedgerInterface
-      varCurrentLedgerState <- atomically $ newTVar testLedgerState
+      varCurrentLedgerState <- newTVarM testLedgerState
       let ledgerInterface = LedgerInterface
             { getCurrentLedgerState = readTVar varCurrentLedgerState
             }
 
       -- Set up the Tracer
-      varEvents <- atomically $ newTVar []
+      varEvents <- newTVarM []
       -- TODO use SimM's dynamicTracer
       let tracer = Tracer $ \ev -> atomically $ modifyTVar varEvents (ev:)
 

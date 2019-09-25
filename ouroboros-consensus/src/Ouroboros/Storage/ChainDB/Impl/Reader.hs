@@ -117,7 +117,7 @@ newReader cdb@CDB{..} h registry = do
       readerId <- readTVar cdbNextReaderId
       modifyTVar cdbNextReaderId succ
 
-      varReader <- newTVar readerState
+      varReader <- uncheckedNewTVar readerState
       modifyTVar cdbReaders (Map.insert readerId varReader)
       let reader = makeNewBlockOrHeaderReader h readerId registry
       return (reader, readerId)

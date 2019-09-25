@@ -1100,8 +1100,8 @@ prop_sequential = forAllCommands smUnused Nothing $ \cmds -> QC.monadicIO $ do
 
           return (hist, res === Ok .&&. dbTip === modelTip .&&. validation)
 
-    fsVar     <- QC.run $ atomically (newTVar Mock.empty)
-    errorsVar <- QC.run $ atomically (newTVar mempty)
+    fsVar     <- QC.run $ newTVarM Mock.empty
+    errorsVar <- QC.run $ newTVarM mempty
     (hist, prop) <-
       test errorsVar (mkSimErrorHasFS EH.monadCatch fsVar errorsVar)
     prettyCommands smUnused hist
