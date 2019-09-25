@@ -144,14 +144,14 @@ openDBInternal args launchBgTasks = do
         immBlockNo = ChainSel.getImmBlockNo secParam chain immDbTipBlockNo
 
     atomically $ LgrDB.setCurrent lgrDB ledger
-    varChain          <- newTVarWithInvariantM  isNF chain
-    varImmBlockNo     <- newTVarWithInvariantM  isNF immBlockNo
-    varIterators      <- uncheckedNewTVarM Map.empty
-    varReaders        <- uncheckedNewTVarM Map.empty
-    varNextIteratorId <- newTVarWithInvariantM  isNF (IteratorId 0)
-    varNextReaderId   <- newTVarWithInvariantM  isNF 0
-    varCopyLock       <- newTMVarWithInvariantM isNF ()
-    varBgThreads      <- newTVarWithInvariantM  isNF []
+    varChain          <- uncheckedNewTVarM  chain
+    varImmBlockNo     <- uncheckedNewTVarM  immBlockNo
+    varIterators      <- uncheckedNewTVarM  Map.empty
+    varReaders        <- uncheckedNewTVarM  Map.empty
+    varNextIteratorId <- uncheckedNewTVarM  (IteratorId 0)
+    varNextReaderId   <- uncheckedNewTVarM  0
+    varCopyLock       <- uncheckedNewTMVarM ()
+    varBgThreads      <- uncheckedNewTVarM  []
 
     let env = CDB { cdbImmDB          = immDB
                   , cdbVolDB          = volDB
@@ -211,7 +211,3 @@ openDBInternal args launchBgTasks = do
 
     blockEpoch :: blk -> m EpochNo
     blockEpoch = epochInfoEpoch (Args.cdbEpochInfo args) . blockSlot
-
-    -- TODO (#969): Re-enable this and deal with the fallout.
-    isNF :: forall a. a -> Maybe String
-    isNF = const Nothing -- unsafePerformIO . isNormalForm
