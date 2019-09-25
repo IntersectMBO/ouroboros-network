@@ -206,8 +206,8 @@ initInternalState
 initInternalState NodeArgs { tracers, chainDB, registry, cfg,
                              blockFetchSize, blockMatchesHeader, btime,
                              callbacks, initState } = do
-    varCandidates  <- newTVarM mempty
-    varState       <- newTVarM initState
+    varCandidates  <- uncheckedNewTVarM mempty
+    varState       <- uncheckedNewTVarM initState
     mempool        <- openMempool registry
                                   (chainDBLedgerInterface chainDB)
                                   (ledgerConfigView cfg)
@@ -290,7 +290,7 @@ forkBlockProduction
     => InternalState m peer blk -> m ()
 forkBlockProduction IS{..} =
     onSlotChange btime $ \currentSlot -> do
-      varDRG <- newTVarM =<< produceDRG
+      varDRG <- uncheckedNewTVarM =<< produceDRG
       -- See the docstring of 'withSyncState' for why we're using it instead
       -- of 'atomically'.
       mNewBlock <- withSyncState mempool $ \MempoolSnapshot{snapshotTxs} -> do

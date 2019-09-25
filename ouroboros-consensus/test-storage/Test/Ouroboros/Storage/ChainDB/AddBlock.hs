@@ -96,9 +96,9 @@ prop_addBlock_multiple_threads bpt =
     (actualChain, trace) = run $ do
         -- Open the DB
         fsVars <- (,,)
-          <$> newTVarM Mock.empty
-          <*> newTVarM Mock.empty
-          <*> newTVarM Mock.empty
+          <$> uncheckedNewTVarM Mock.empty
+          <*> uncheckedNewTVarM Mock.empty
+          <*> uncheckedNewTVarM Mock.empty
         withRegistry $ \registry -> do
           let args = mkArgs cfg initLedger dynamicTracer registry fsVars
           db <- openDB args

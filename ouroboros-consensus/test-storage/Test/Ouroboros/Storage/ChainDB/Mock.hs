@@ -49,7 +49,7 @@ prop_reader bt p = runSimOrThrow test
     test = withRegistry $ \registry -> do
         db       <- openDB
         reader   <- ChainDB.newBlockReader db registry
-        chainVar <- newTVarM Genesis
+        chainVar <- uncheckedNewTVarM Genesis
 
         -- Fork a thread that applies all instructions from the reader
         _tid <- fork $ monitorReader chainVar reader

@@ -1,8 +1,8 @@
 module Ouroboros.Consensus.Util.MonadSTM.NormalForm (
     module Control.Monad.Class.MonadSTM.Strict
-  , newTVarM
-  , newTMVarM
-  , newEmptyTMVarM
+  , uncheckedNewTVarM
+  , uncheckedNewTMVarM
+  , uncheckedNewEmptyTMVarM
     -- Temporary
   , newTVarWithInvariantM
   , newTMVarWithInvariantM
@@ -17,17 +17,19 @@ import           Control.Monad.Class.MonadSTM.Strict hiding (newEmptyTMVar,
 import qualified Control.Monad.Class.MonadSTM.Strict as Strict
 
 {-------------------------------------------------------------------------------
-  Wrap the variable constructors
+  Unchecked wrappers (where we don't check for thunks)
+
+  These will eventually be removed.
 -------------------------------------------------------------------------------}
 
-newTVarM :: MonadSTM m => a -> m (StrictTVar m a)
-newTVarM = Strict.newTVarM
+uncheckedNewTVarM :: MonadSTM m => a -> m (StrictTVar m a)
+uncheckedNewTVarM = Strict.newTVarM
 
-newTMVarM :: MonadSTM m => a -> m (StrictTMVar m a)
-newTMVarM = Strict.newTMVarM
+uncheckedNewTMVarM :: MonadSTM m => a -> m (StrictTMVar m a)
+uncheckedNewTMVarM = Strict.newTMVarM
 
-newEmptyTMVarM :: MonadSTM m => m (StrictTMVar m a)
-newEmptyTMVarM = Strict.newEmptyTMVarM
+uncheckedNewEmptyTMVarM :: MonadSTM m => m (StrictTMVar m a)
+uncheckedNewEmptyTMVarM = Strict.newEmptyTMVarM
 
 {-------------------------------------------------------------------------------
   Deprecated

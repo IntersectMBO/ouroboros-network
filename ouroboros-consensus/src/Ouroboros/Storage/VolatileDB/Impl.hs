@@ -184,7 +184,7 @@ openDBImpl hasFS@HasFS{..} err errSTM parser maxBlocksPerFile =
     then EH.throwError err $ UserError . InvalidArgumentsError $ "maxBlocksPerFile should be positive"
     else do
         st <- mkInternalStateDB hasFS err parser maxBlocksPerFile
-        stVar <- newTMVarM $ Just st
+        stVar <- uncheckedNewTMVarM $ Just st
         return $ VolatileDBEnv hasFS err errSTM stVar maxBlocksPerFile parser
 
 closeDBImpl :: MonadSTM m

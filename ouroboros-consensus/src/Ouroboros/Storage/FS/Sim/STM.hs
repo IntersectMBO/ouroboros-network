@@ -34,7 +34,7 @@ runSimFS :: MonadSTM m
          -> (HasFS m HandleMock -> m a)
          -> m (a, MockFS)
 runSimFS err fs act = do
-    var <- newTVarM fs
+    var <- uncheckedNewTVarM fs
     a   <- act (simHasFS err var)
     fs' <- atomically (readTVar var)
     return (a, fs')

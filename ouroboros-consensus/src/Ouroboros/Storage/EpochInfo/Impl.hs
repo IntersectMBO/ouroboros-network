@@ -22,7 +22,7 @@ newEpochInfo :: forall m. MonadSTM m
              => (EpochNo -> m EpochSize) -> m (EpochInfo m)
 newEpochInfo getSize = do
     firstEpochSize <- getSize 0
-    cesVar         <- newTVarM $ CES.singleton firstEpochSize
+    cesVar         <- uncheckedNewTVarM $ CES.singleton firstEpochSize
     return EpochInfo {
         epochInfoSize  = wrap cesVar . CES.epochSize
       , epochInfoFirst = wrap cesVar . CES.firstSlotOf

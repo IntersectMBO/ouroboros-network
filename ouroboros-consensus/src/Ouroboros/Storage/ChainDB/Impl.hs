@@ -127,7 +127,7 @@ openDBInternal args launchBgTasks = do
                             (Query.getAnyKnownBlock immDB volDB)
     traceWith tracer $ TraceOpenEvent OpenedLgrDB
 
-    varInvalid <- newTVarM (Map.empty, Fingerprint 0)
+    varInvalid <- uncheckedNewTVarM (Map.empty, Fingerprint 0)
 
     chainAndLedger <- ChainSel.initialChainSelection
       immDB
@@ -146,8 +146,8 @@ openDBInternal args launchBgTasks = do
     atomically $ LgrDB.setCurrent lgrDB ledger
     varChain          <- newTVarWithInvariantM  isNF chain
     varImmBlockNo     <- newTVarWithInvariantM  isNF immBlockNo
-    varIterators      <- newTVarM Map.empty
-    varReaders        <- newTVarM Map.empty
+    varIterators      <- uncheckedNewTVarM Map.empty
+    varReaders        <- uncheckedNewTVarM Map.empty
     varNextIteratorId <- newTVarWithInvariantM  isNF (IteratorId 0)
     varNextReaderId   <- newTVarWithInvariantM  isNF 0
     varCopyLock       <- newTMVarWithInvariantM isNF ()
@@ -171,7 +171,7 @@ openDBInternal args launchBgTasks = do
                   , cdbBgThreads      = varBgThreads
                   , cdbEpochInfo      = Args.cdbEpochInfo args
                   }
-    h <- fmap CDBHandle $ newTVarM $ ChainDbOpen env
+    h <- fmap CDBHandle $ uncheckedNewTVarM $ ChainDbOpen env
     let chainDB = ChainDB
           { addBlock           = getEnv1    h ChainSel.addBlock
           , getCurrentChain    = getEnvSTM  h Query.getCurrentChain

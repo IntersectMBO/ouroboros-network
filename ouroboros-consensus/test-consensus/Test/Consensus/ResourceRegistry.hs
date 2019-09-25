@@ -283,7 +283,7 @@ data QueuedInstr m = forall a. QueuedInstr (ThreadInstr m a) (StrictTMVar m a)
 
 runInThread :: MonadSTM m => TestThread m -> ThreadInstr m a -> m a
 runInThread TestThread{..} instr = do
-    result <- newEmptyTMVarM
+    result <- uncheckedNewEmptyTMVarM
     atomically $ writeTQueue threadComms (QueuedInstr instr result)
     atomically $ takeTMVar result
 
@@ -305,7 +305,7 @@ newThread :: forall m. (MonadAsync m, MonadMask m, MonadFork m, MonadTimer m)
           -> m (TestThread m)
 newThread alive parentReg = \shouldLink -> do
     comms      <- atomically $ newTQueue
-    spawned    <- newEmptyTMVarM
+    spawned    <- uncheckedNewEmptyTMVarM
 
     thread <- forkThread parentReg $
                 withRegistry $ \childReg ->
@@ -593,7 +593,7 @@ prop_sequential = forAllCommands (sm unused unused) Nothing prop_sequential'
 
 prop_sequential' :: QSM.Commands (At IO Cmd) (At IO Resp) -> QC.Property
 prop_sequential' cmds = QC.monadicIO $ do
-    alive <- liftIO $ newTVarM []
+    alive <- liftIO $ uncheckedNewTVarM []
     reg   <- liftIO $ unsafeNewRegistry
     let sm' = sm alive reg
     (hist, _model, res) <- runCommands sm' cmds

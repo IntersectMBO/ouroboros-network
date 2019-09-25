@@ -227,14 +227,14 @@ runChainSync securityParam maxClockSkew (ClientUpdates clientUpdates)
     let btime = testBlockchainTime testBtime
 
     -- Set up the client
-    varCandidates      <- newTVarM Map.empty
-    varClientState     <- newTVarM (Genesis, testInitExtLedger)
-    varClientException <- newTVarM Nothing
+    varCandidates      <- uncheckedNewTVarM Map.empty
+    varClientState     <- uncheckedNewTVarM (Genesis, testInitExtLedger)
+    varClientException <- uncheckedNewTVarM Nothing
     -- Candidates are removed from the candidates map when disconnecting, so
     -- we lose access to them. Therefore, store the candidate 'TVar's in a
     -- separate map too, one that isn't emptied. We can use this map to look
     -- at the final state of each candidate.
-    varFinalCandidates <- newTVarM Map.empty
+    varFinalCandidates <- uncheckedNewTVarM Map.empty
 
     let getCurrentChain :: STM m (AnchoredFragment TestBlock)
         getCurrentChain =
@@ -260,12 +260,12 @@ runChainSync securityParam maxClockSkew (ClientUpdates clientUpdates)
                    getIsInvalidBlock
 
     -- Set up the server
-    varChainProducerState <- newTVarM $ initChainProducerState Genesis
+    varChainProducerState <- uncheckedNewTVarM $ initChainProducerState Genesis
     let server :: ChainSyncServer (Header TestBlock) (Point (Header TestBlock), BlockNo) m ()
         server = chainSyncServerExample () varChainProducerState
 
     -- Schedule updates of the client and server chains
-    varLastUpdate <- newTVarM 0
+    varLastUpdate <- uncheckedNewTVarM 0
     onSlotChange btime $ \slot -> do
       -- Stop updating the client and server chains when the chain sync client
       -- has thrown an exception, so that at the end, we can read the chains

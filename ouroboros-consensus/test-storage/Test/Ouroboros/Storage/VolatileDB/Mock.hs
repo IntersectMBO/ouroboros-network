@@ -22,7 +22,7 @@ openDBMock  :: forall m blockId.
             -> Int
             -> m (DBModel blockId, VolatileDB blockId m)
 openDBMock err maxNumPerFile = do
-    dbVar <- newTVarM dbModel
+    dbVar <- uncheckedNewTVarM dbModel
     return (dbModel, db dbVar)
   where
     dbModel = initDBModel maxNumPerFile

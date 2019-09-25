@@ -167,7 +167,7 @@ bracketChainSyncClient tracer getCurrentChain getCurrentLedger
       (curChain, curChainState) <- atomically $ (,)
         <$> getCurrentChain
         <*> (ouroborosChainState <$> getCurrentLedger)
-      varCandidate <- newTVarM CandidateState
+      varCandidate <- uncheckedNewTVarM CandidateState
         { candidateChain       = curChain
         , candidateChainState  = curChainState
         }

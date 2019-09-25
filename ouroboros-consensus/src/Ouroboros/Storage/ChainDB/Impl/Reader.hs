@@ -114,7 +114,7 @@ newReader cdb@CDB{..} h registry = do
         return $ ReaderInImmDB rollState immIt
 
     readerId  <- atomically $ updateTVar cdbNextReaderId $ \r -> (succ r, r)
-    varReader <- newTVarM readerState
+    varReader <- uncheckedNewTVarM readerState
     atomically $ modifyTVar cdbReaders $ Map.insert readerId varReader
     let reader = makeNewBlockOrHeaderReader h readerId registry
     traceWith cdbTracer $ TraceReaderEvent $ NewReader readerId

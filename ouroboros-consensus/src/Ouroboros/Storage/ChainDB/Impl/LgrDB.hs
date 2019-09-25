@@ -209,7 +209,7 @@ openDB args@LgrDbArgs{..} replayTracer immDB getBlock = do
     createDirectoryIfMissing lgrHasFS True []
     db <- initFromDisk args replayTracer lgrDbConf immDB
     (varDB, varPrevApplied) <-
-      (,) <$> newTVarM db <*> newTVarM Set.empty
+      (,) <$> uncheckedNewTVarM db <*> uncheckedNewTVarM Set.empty
     return LgrDB {
         conf           = lgrDbConf
       , varDB          = varDB

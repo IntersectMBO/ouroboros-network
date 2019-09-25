@@ -72,7 +72,7 @@ withImmDB :: forall m blk a.
              )
           => (ImmDB m blk -> m a) -> m a
 withImmDB k = do
-    immDbFsVar <- newTVarM Mock.empty
+    immDbFsVar <- uncheckedNewTVarM Mock.empty
     epochInfo  <- newEpochInfo $ nodeEpochSize (Proxy @blk) testCfg
     bracket (ImmDB.openDB (mkArgs immDbFsVar epochInfo)) ImmDB.closeDB k
   where
