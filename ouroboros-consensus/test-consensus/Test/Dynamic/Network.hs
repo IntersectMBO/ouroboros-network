@@ -224,10 +224,9 @@ runNodeNetwork registry testBtime numCoreNodes nodeJoinPlan nodeTopology
                -> m ()
     txProducer cfg produceDRG getExtLedger mempool =
       onSlotChange btime $ \_curSlotNo -> do
-        drg <- produceDRG
+        varDRG <- newTVarM =<< produceDRG
         txs <- atomically $ do
           ledger <- ledgerState <$> getExtLedger
-          varDRG <- uncheckedNewTVar drg
           simChaChaT varDRG id $ testGenTxs numCoreNodes cfg ledger
         void $ addTxs mempool txs
 

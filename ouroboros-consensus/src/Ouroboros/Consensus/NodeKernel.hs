@@ -290,11 +290,10 @@ forkBlockProduction
     => InternalState m peer blk -> m ()
 forkBlockProduction IS{..} =
     onSlotChange btime $ \currentSlot -> do
-      drg  <- produceDRG
+      varDRG <- newTVarM =<< produceDRG
       -- See the docstring of 'withSyncState' for why we're using it instead
       -- of 'atomically'.
       mNewBlock <- withSyncState mempool $ \MempoolSnapshot{snapshotTxs} -> do
-        varDRG <- uncheckedNewTVar drg
         l@ExtLedgerState{..} <- ChainDB.getCurrentLedger chainDB
         mIsLeader            <- runProtocol varDRG $
                                    checkIsLeader

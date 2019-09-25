@@ -164,17 +164,16 @@ bracketChainSyncClient tracer getCurrentChain getCurrentLedger
         body varCandidate curChain
   where
     register = do
-      (varCandidate, curChain) <- atomically $ do
-        curChain      <- getCurrentChain
-        curChainState <- ouroborosChainState <$> getCurrentLedger
-        -- We use our current chain, which contains the last @k@ headers, as
-        -- the initial chain for the candidate.
-        varCandidate <- uncheckedNewTVar CandidateState
-          { candidateChain       = curChain
-          , candidateChainState  = curChainState
-          }
-        modifyTVar varCandidates $ Map.insert peer varCandidate
-        return (varCandidate, curChain)
+      (curChain, curChainState) <- atomically $ (,)
+        <$> getCurrentChain
+        <*> (ouroborosChainState <$> getCurrentLedger)
+      varCandidate <- newTVarM CandidateState
+        { candidateChain       = curChain
+        , candidateChainState  = curChainState
+        }
+      atomically $ modifyTVar varCandidates $ Map.insert peer varCandidate
+      -- We use our current chain, which contains the last @k@ headers, as
+      -- the initial chain for the candidate.
       return (varCandidate, curChain)
 
     unregister _ = do

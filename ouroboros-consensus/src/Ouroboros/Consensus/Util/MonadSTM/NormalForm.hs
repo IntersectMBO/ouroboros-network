@@ -4,7 +4,6 @@ module Ouroboros.Consensus.Util.MonadSTM.NormalForm (
   , newTMVarM
   , newEmptyTMVarM
     -- Temporary
-  , uncheckedNewTVar
   , newTVarWithInvariantM
   , newTMVarWithInvariantM
   ) where
@@ -33,9 +32,6 @@ newEmptyTMVarM = Strict.newEmptyTMVarM
 {-------------------------------------------------------------------------------
   Deprecated
 -------------------------------------------------------------------------------}
-
-uncheckedNewTVar :: MonadSTM m => a -> STM m (StrictTVar m a)
-uncheckedNewTVar = Strict.newTVar
 
 newTVarWithInvariantM :: (MonadSTM m, HasCallStack)
                       => (a -> Maybe String) -- ^ Invariant (expect 'Nothing')

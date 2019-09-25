@@ -113,14 +113,10 @@ newReader cdb@CDB{..} h registry = do
         immIt <- ImmDB.streamBlocksAfter cdbImmDB registry genesisPoint
         return $ ReaderInImmDB rollState immIt
 
-    (reader, readerId) <- atomically $ do
-      readerId <- readTVar cdbNextReaderId
-      modifyTVar cdbNextReaderId succ
-
-      varReader <- uncheckedNewTVar readerState
-      modifyTVar cdbReaders (Map.insert readerId varReader)
-      let reader = makeNewBlockOrHeaderReader h readerId registry
-      return (reader, readerId)
+    readerId  <- atomically $ updateTVar cdbNextReaderId $ \r -> (succ r, r)
+    varReader <- newTVarM readerState
+    atomically $ modifyTVar cdbReaders $ Map.insert readerId varReader
+    let reader = makeNewBlockOrHeaderReader h readerId registry
     traceWith cdbTracer $ TraceReaderEvent $ NewReader readerId
     return reader
   where
