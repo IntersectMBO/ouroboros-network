@@ -29,6 +29,7 @@ module System.Win32.NamedPipes (
     -- * Named pipe client APIs
     -- | This directly reuses other Win32 file APIs
     createFile,
+    closePipe,
 
     -- * Client and server APIs
     pipeToHandle,
@@ -195,3 +196,11 @@ handleToFd :: HANDLE -> IO CInt
 handleToFd hnd =
   _open_osfhandle (fromIntegral (ptrToIntPtr hnd))
                   (#const _O_BINARY)
+
+
+-- | Close underlaying 'HANDLE'; It is just 'closeHandle' renamed for
+-- consistency sake.
+--
+closePipe :: HANDLE
+          -> IO ()
+closePipe = closeHandle
