@@ -5,10 +5,9 @@ module Test.Util.Tracer
 
 import           Data.IORef
 
-import           Control.Monad.Class.MonadSTM.Strict
-
 import           Control.Tracer
 
+import           Ouroboros.Consensus.Util.MonadSTM.NormalForm
 
 -- | Create a 'Tracer' that stores all events in an 'IORef' that is atomically
 -- updated. The second return value lets you obtain the events recorded so far

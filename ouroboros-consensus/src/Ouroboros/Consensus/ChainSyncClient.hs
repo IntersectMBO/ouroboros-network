@@ -31,7 +31,6 @@ import           Data.Word (Word64)
 
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork
-import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment (..))
@@ -46,6 +45,7 @@ import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util
+import           Ouroboros.Consensus.Util.MonadSTM.NormalForm
 import           Ouroboros.Consensus.Util.ResourceRegistry
 import           Ouroboros.Consensus.Util.SlotBounded as SB
 import           Ouroboros.Consensus.Util.STM (Fingerprint, onEachChange)
@@ -83,7 +83,7 @@ data ChainSyncClientException blk tip =
 
       -- | The upstream node rolled forward to a point too far in our past.
       -- This may happen if, during catch-up, our local node has moved too far ahead of the upstream node.
-      -- 
+      --
       -- We store the requested point and head point from the upstream node as
       -- well as the tip of our current ledger.
     | InvalidRollForward (Point blk) tip (Point blk)

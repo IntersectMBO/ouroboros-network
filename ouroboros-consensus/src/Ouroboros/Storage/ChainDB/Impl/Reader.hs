@@ -21,7 +21,6 @@ import           Data.Maybe (isJust)
 import           GHC.Stack (HasCallStack)
 
 import           Control.Monad.Class.MonadFork
-import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 
 import           Control.Tracer (contramap, traceWith)
@@ -34,6 +33,7 @@ import           Ouroboros.Network.Block (ChainUpdate (..), HasHeader,
 import           Ouroboros.Network.Point (WithOrigin (..))
 
 import           Ouroboros.Consensus.Block (GetHeader (..), headerPoint)
+import           Ouroboros.Consensus.Util.MonadSTM.NormalForm
 import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
 import           Ouroboros.Consensus.Util.STM (blockUntilJust)
 

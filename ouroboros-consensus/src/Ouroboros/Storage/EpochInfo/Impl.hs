@@ -10,9 +10,9 @@ import           Control.Monad.Trans.State.Strict (runStateT)
 import           Data.List (maximumBy)
 import           Data.Ord (comparing)
 
-import           Control.Monad.Class.MonadSTM.Strict
-
 import           Ouroboros.Network.Block (SlotNo (..))
+
+import           Ouroboros.Consensus.Util.MonadSTM.NormalForm
 
 import           Ouroboros.Storage.Common
 import           Ouroboros.Storage.EpochInfo.API

@@ -22,7 +22,6 @@ module Test.Ouroboros.Storage.VolatileDB.StateMachine
 
 import           Prelude hiding (elem)
 
-import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow (MonadCatch)
 import           Control.Monad.Except
 import           Control.Monad.State
@@ -54,6 +53,8 @@ import           Text.Show.Pretty (ppShow)
 
 import           Ouroboros.Consensus.Util (SomePair (..))
 import qualified Ouroboros.Consensus.Util.Classify as C
+import           Ouroboros.Consensus.Util.MonadSTM.NormalForm
+
 import           Ouroboros.Storage.FS.API
 import           Ouroboros.Storage.FS.API.Types
 import qualified Ouroboros.Storage.FS.Sim.MockFS as Mock

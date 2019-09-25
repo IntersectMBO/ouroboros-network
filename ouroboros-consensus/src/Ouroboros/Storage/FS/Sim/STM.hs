@@ -11,9 +11,8 @@ import           Control.Monad.Except
 import           Control.Monad.State
 import           Data.Proxy
 
-import           Control.Monad.Class.MonadSTM.Strict
-
 import           Ouroboros.Consensus.Util
+import           Ouroboros.Consensus.Util.MonadSTM.NormalForm
 
 import           Ouroboros.Storage.FS.API
 import           Ouroboros.Storage.FS.API.Types

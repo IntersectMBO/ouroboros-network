@@ -4,12 +4,13 @@
 module Test.Ouroboros.Storage.VolatileDB.Mock (openDBMock) where
 
 import           Control.Monad.State (StateT)
-import           Control.Monad.Class.MonadSTM.Strict
 
 import           Ouroboros.Storage.Util.ErrorHandling (ThrowCantCatch)
 import qualified Ouroboros.Storage.Util.ErrorHandling as EH
 import           Ouroboros.Storage.VolatileDB.API
+
 import           Ouroboros.Consensus.Util ((.:))
+import           Ouroboros.Consensus.Util.MonadSTM.NormalForm
 import           Ouroboros.Consensus.Util.STM (simStateT)
 
 import           Test.Ouroboros.Storage.VolatileDB.Model

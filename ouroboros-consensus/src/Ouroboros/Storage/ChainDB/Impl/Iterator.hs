@@ -26,7 +26,6 @@ import qualified Data.Map.Strict as Map
 import           GHC.Stack (HasCallStack)
 
 import           Control.Monad.Class.MonadFork
-import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 
 import           Control.Tracer
@@ -37,6 +36,7 @@ import           Ouroboros.Network.Block (pattern BlockPoint,
                      atSlot, blockHash, blockPoint, castPoint, pointSlot,
                      withHash)
 
+import           Ouroboros.Consensus.Util.MonadSTM.NormalForm
 import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
 
 import           Ouroboros.Storage.ChainDB.API (ChainDbError (..),

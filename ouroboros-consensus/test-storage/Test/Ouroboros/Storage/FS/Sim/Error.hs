@@ -43,7 +43,6 @@ module Test.Ouroboros.Storage.FS.Sim.Error
 import           Prelude hiding (null)
 
 import           Control.Monad (replicateM, void)
-import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Except (runExceptT)
 
 import qualified Data.ByteString as BS
@@ -57,6 +56,7 @@ import           Test.QuickCheck (Arbitrary (..), Gen)
 import qualified Test.QuickCheck as QC
 
 import           Ouroboros.Consensus.Util (whenJust)
+import           Ouroboros.Consensus.Util.MonadSTM.NormalForm
 
 import           Ouroboros.Storage.FS.API
 import           Ouroboros.Storage.FS.API.Example (example)

@@ -52,7 +52,6 @@ import           System.Random (getStdRandom, randomR)
 import           Control.Tracer (nullTracer)
 
 import           Control.Monad.Class.MonadST
-import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 
 import           Test.QuickCheck (Gen)
@@ -68,6 +67,7 @@ import           Test.Tasty.QuickCheck (testProperty)
 import           Ouroboros.Consensus.Protocol.Abstract (SecurityParam (..))
 import           Ouroboros.Consensus.Util
 import qualified Ouroboros.Consensus.Util.Classify as C
+import           Ouroboros.Consensus.Util.MonadSTM.NormalForm
 
 import           Ouroboros.Storage.Common
 import           Ouroboros.Storage.FS.API
