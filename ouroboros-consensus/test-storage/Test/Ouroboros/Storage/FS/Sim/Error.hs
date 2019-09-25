@@ -432,7 +432,7 @@ mkSimErrorHasFS err fsVar errorsVar =
     case Sim.simHasFS err fsVar of
       HasFS{..} -> HasFS{
           dumpState =
-            withErr err errorsVar ["<dumpState>"] dumpState "dumpState"
+            withErr err errorsVar (mkFsPath ["<dumpState>"]) dumpState "dumpState"
               _dumpState (\e es -> es { _dumpState = e })
         , hOpen      = \p m ->
             withErr err errorsVar p (hOpen p m) "hOpen"

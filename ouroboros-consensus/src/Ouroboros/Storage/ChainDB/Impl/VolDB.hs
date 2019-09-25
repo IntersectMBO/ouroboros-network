@@ -73,7 +73,7 @@ import qualified Ouroboros.Consensus.Util.CBOR as Util.CBOR
 import           Ouroboros.Storage.ChainDB.API (ChainDbError (..),
                      ChainDbFailure (..), StreamFrom (..), StreamTo (..))
 import           Ouroboros.Storage.FS.API (HasFS, createDirectoryIfMissing)
-import           Ouroboros.Storage.FS.API.Types (MountPoint (..))
+import           Ouroboros.Storage.FS.API.Types (MountPoint (..), mkFsPath)
 import           Ouroboros.Storage.FS.IO (ioHasFS)
 import           Ouroboros.Storage.Util.ErrorHandling (ErrorHandling,
                      ThrowCantCatch)
@@ -127,7 +127,7 @@ defaultArgs fp = VolDbArgs {
 openDB :: (MonadCatch m, MonadSTM m, MonadST m, HasHeader blk)
        => VolDbArgs m blk -> m (VolDB m blk)
 openDB args@VolDbArgs{..} = do
-    createDirectoryIfMissing volHasFS True []
+    createDirectoryIfMissing volHasFS True (mkFsPath [])
     volDB <- VolDB.openDB
                volHasFS
                volErr

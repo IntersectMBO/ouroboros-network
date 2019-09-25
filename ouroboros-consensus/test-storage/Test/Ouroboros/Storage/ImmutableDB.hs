@@ -128,8 +128,8 @@ test_openDBEmptyIndexFileEquivalence :: Assertion
 test_openDBEmptyIndexFileEquivalence =
     apiEquivalenceImmDB (expectImmDBResult (@?= TipGen)) $ \hasFS@HasFS{..} err -> do
       -- Create an empty index file
-      h1 <- hOpen ["epoch-000.dat"] (WriteMode MustBeNew)
-      h2 <- hOpen ["index-000.dat"] (WriteMode MustBeNew)
+      h1 <- hOpen (mkFsPath ["epoch-000.dat"]) (WriteMode MustBeNew)
+      h2 <- hOpen (mkFsPath ["index-000.dat"]) (WriteMode MustBeNew)
       hClose h1
       hClose h2
 
@@ -194,9 +194,9 @@ test_startNewEpochPadsTheIndexFile = withMockFS try assrt $ \hasFS err ->
 
     assrt (Left _)        = assertFailure "Unexpected error"
     assrt (Right (_, fs)) = do
-      getIndexContents fs ["index-000.dat"] @?= [0, 0, 1, 6, 6, 6, 13, 13, 13, 13, 13, 13]
-      getIndexContents fs ["index-001.dat"] @?= [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
-      getIndexContents fs ["index-002.dat"] @?= []
+      getIndexContents fs (mkFsPath ["index-000.dat"]) @?= [0, 0, 1, 6, 6, 6, 13, 13, 13, 13, 13, 13]
+      getIndexContents fs (mkFsPath ["index-001.dat"]) @?= [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+      getIndexContents fs (mkFsPath ["index-002.dat"]) @?= []
 
 {------------------------------------------------------------------------------
   Index

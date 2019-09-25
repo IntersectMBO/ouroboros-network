@@ -485,7 +485,7 @@ semanticsRestCmd hasFS env db cmd = case cmd of
         return $ Unit ()
     CreateInvalidFile -> do
         closeDB db
-        withFile hasFS ["invalidFileName.dat"] (AppendMode MustBeNew) $ \_hndl -> do
+        withFile hasFS (mkFsPath ["invalidFileName.dat"]) (AppendMode MustBeNew) $ \_hndl -> do
             return ()
         reOpenDB db
         return $ Unit ()

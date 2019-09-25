@@ -227,7 +227,7 @@ getBlockImpl env@VolatileDBEnv{..} slot = do
         case Map.lookup slot _currentRevMap of
             Nothing -> return (st, Nothing)
             Just InternalBlockInfo {..} ->  do
-                bs <- withFile hasFS [ibFile] ReadMode $ \hndl -> do
+                bs <- withFile hasFS (mkFsPath [ibFile]) ReadMode $ \hndl -> do
                         _ <- hSeek hndl AbsoluteSeek (fromIntegral ibSlotOffset)
                         hGetExactly hasFS hndl (fromIntegral ibBlockSize)
                 return (st, Just bs)
@@ -325,7 +325,7 @@ tryCollectFile hasFS@HasFS{..} env@VolatileDBEnv{..} slot st@InternalState{..} (
         succMap' = foldl deleteMapSet _currentSuccMap deletedPairs
     in if   | not isLess    -> return st
             | not isCurrent -> do
-                removeFile [file]
+                removeFile (mkFsPath [file])
                 return st { _currentMap = Map.delete file _currentMap
                           , _currentRevMap = rv'
                           , _currentSuccMap = succMap'
@@ -409,7 +409,7 @@ nextFile HasFS{..} _err VolatileDBEnv{..} st = do
     case _nextWriteFiles st of
         [] -> do
             let file = filePath $ _nextNewFileId st
-            hndl <- hOpen [file] (AppendMode MustBeNew)
+            hndl <- hOpen (mkFsPath [file]) (AppendMode MustBeNew)
             return $ st {
                   _currentWriteHandle = hndl
                 , _currentWritePath   = file
@@ -418,7 +418,7 @@ nextFile HasFS{..} _err VolatileDBEnv{..} st = do
                 , _currentMap         = Map.insert file (FileInfo Nothing 0 Map.empty) (_currentMap st)
             }
         (file, size) : rest -> do
-            hndl <- hOpen [file] (AppendMode AllowExisting)
+            hndl <- hOpen (mkFsPath [file]) (AppendMode AllowExisting)
             return $ st {
                   _currentWriteHandle = hndl
                 , _currentWritePath   = file
@@ -452,8 +452,8 @@ mkInternalStateDB :: (HasCallStack, MonadThrow m, MonadCatch m, Ord blockId)
                   -> m (InternalState blockId h)
 mkInternalStateDB hasFS@HasFS{..} err parser maxBlocksPerFile = wrapFsError hasFsErr err $ do
     allFiles <- do
-        createDirectoryIfMissing True []
-        listDirectory []
+        createDirectoryIfMissing True (mkFsPath [])
+        listDirectory (mkFsPath [])
     mkInternalState hasFS err parser maxBlocksPerFile allFiles
 
 mkInternalState :: forall blockId m h e. (HasCallStack, MonadCatch m, Ord blockId)
@@ -492,7 +492,7 @@ mkInternalState hasFS@HasFS{..} err parser n files = wrapFsError hasFsErr err $ 
                                 -- If it's not the last file, we just ignore it and open a
                                 -- new one.
                                 return (filePath fd', [], lst + 2, Map.insert (filePath fd') (FileInfo Nothing 0 Map.empty) mp, 0)
-                hndl <- hOpen [fileToWrite] (AppendMode AllowExisting)
+                hndl <- hOpen (mkFsPath [fileToWrite]) (AppendMode AllowExisting)
                 return $ InternalState {
                       _currentWriteHandle = hndl
                     , _currentWritePath   = fileToWrite
@@ -504,7 +504,7 @@ mkInternalState hasFS@HasFS{..} err parser n files = wrapFsError hasFsErr err $ 
                     , _currentSuccMap     = succMp
                 }
             file : restFiles -> do
-                let path = [file]
+                let path = mkFsPath [file]
                 (ls, mErr) <- parse parser path
                 let offset = case ls of
                         [] -> 0

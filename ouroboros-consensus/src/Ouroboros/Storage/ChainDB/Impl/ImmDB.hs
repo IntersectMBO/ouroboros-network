@@ -85,7 +85,7 @@ import           Ouroboros.Storage.ChainDB.API (ChainDbError (..),
 import           Ouroboros.Storage.Common
 import           Ouroboros.Storage.EpochInfo (EpochInfo (..))
 import           Ouroboros.Storage.FS.API (HasFS, createDirectoryIfMissing)
-import           Ouroboros.Storage.FS.API.Types (MountPoint (..))
+import           Ouroboros.Storage.FS.API.Types (MountPoint (..), mkFsPath)
 import           Ouroboros.Storage.FS.IO (ioHasFS)
 import           Ouroboros.Storage.ImmutableDB (CurrentEBB (..), ImmutableDB,
                      Iterator (Iterator), IteratorResult (..))
@@ -152,7 +152,7 @@ defaultArgs fp = ImmDbArgs{
 openDB :: (MonadSTM m, MonadST m, MonadCatch m, HasHeader blk)
        => ImmDbArgs m blk -> m (ImmDB m blk)
 openDB args@ImmDbArgs{..} = do
-    createDirectoryIfMissing immHasFS True []
+    createDirectoryIfMissing immHasFS True (mkFsPath [])
     immDB <- ImmDB.openDB
                immDecodeHash
                immEncodeHash

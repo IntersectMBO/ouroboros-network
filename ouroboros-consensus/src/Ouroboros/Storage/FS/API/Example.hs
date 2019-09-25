@@ -24,20 +24,20 @@ import qualified Ouroboros.Storage.Util.ErrorHandling as EH
 
 example :: (HasCallStack, Monad m) => HasFS m h -> m [ByteString]
 example hasFS@HasFS{..} = do
-    h1 <- hOpen ["cardano.txt"] (ReadWriteMode MustBeNew)
+    h1 <- hOpen (mkFsPath ["cardano.txt"]) (ReadWriteMode MustBeNew)
     _  <- hPut hasFS h1 "test"
     _  <- hSeek h1 AbsoluteSeek 0
     r1 <- hGetExactly hasFS h1 4
     _  <- hPut hasFS h1 "ing"
-    h2 <- hOpen ["bar.txt"] (ReadWriteMode MustBeNew)
+    h2 <- hOpen (mkFsPath ["bar.txt"]) (ReadWriteMode MustBeNew)
     _  <- hPut hasFS h2 "blockchain"
     _  <- hSeek h2 AbsoluteSeek 0
     r2 <- hGetExactly hasFS h2 5
-    _  <- listDirectory []
-    _  <- listDirectory ["var"]
-    createDirectory ["var", "tmp", "my-temp-dir"]
-    createDirectoryIfMissing True ["home", "adinapoli", "test", "foo", "bar"]
-    f1 <- listDirectory ["var", "tmp"]
+    _  <- listDirectory (mkFsPath [])
+    _  <- listDirectory (mkFsPath ["var"])
+    createDirectory $ mkFsPath ["var", "tmp", "my-temp-dir"]
+    createDirectoryIfMissing True $ mkFsPath ["home", "adinapoli", "test", "foo", "bar"]
+    f1 <- listDirectory $ mkFsPath ["var", "tmp"]
     hClose h1
     hClose h2
     checkThat "listDirectory [var, tmp]" ((==) (Set.fromList ["my-temp-dir", "foo.txt"])) f1

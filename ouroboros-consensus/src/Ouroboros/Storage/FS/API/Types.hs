@@ -11,7 +11,12 @@ module Ouroboros.Storage.FS.API.Types (
   , allowExisting
   , SeekMode(..)
     -- * Paths
-  , FsPath
+  , FsPath -- opaque
+  , fsPathToList
+  , fsPathFromList
+  , fsPathSplit
+  , fsPathInit
+  , mkFsPath
   , MountPoint(..)
   , fsToFilePath
   , fsFromFilePath
@@ -28,9 +33,11 @@ module Ouroboros.Storage.FS.API.Types (
   , ioToFsErrorType
   ) where
 
+import           Control.DeepSeq (force)
 import           Control.Exception
 import           Data.Function (on)
-import           Data.List (stripPrefix)
+import           Data.List (intercalate, stripPrefix)
+import qualified Data.Text as Strict
 import           Foreign.C.Error (Errno (..))
 import qualified Foreign.C.Error as C
 import           GHC.Generics (Generic)
@@ -75,7 +82,38 @@ allowExisting openMode = case openMode of
   Paths
 -------------------------------------------------------------------------------}
 
-type FsPath = [String]
+newtype FsPath = UnsafeFsPath { fsPathToList :: [Strict.Text] }
+  deriving (Eq, Ord, Generic)
+
+fsPathFromList :: [Strict.Text] -> FsPath
+fsPathFromList = UnsafeFsPath . force
+
+instance Show FsPath where
+  show = intercalate "/" . map Strict.unpack . fsPathToList
+
+instance Condense FsPath where
+  condense = show
+
+-- | Constructor for 'FsPath' ensures path is in normal form
+mkFsPath :: [String] -> FsPath
+mkFsPath = fsPathFromList . map Strict.pack
+
+-- | Split 'FsPath' is essentially @(init fp, last fp)@
+--
+-- Like @init@ and @last@, 'Nothing' if empty.
+fsPathSplit :: FsPath -> Maybe (FsPath, Strict.Text)
+fsPathSplit fp =
+    case reverse (fsPathToList fp) of
+      []   -> Nothing
+      p:ps -> Just (fsPathFromList (reverse ps), p)
+
+-- | Drop the final component of the path
+--
+-- Undefined if the path is empty.
+fsPathInit :: HasCallStack => FsPath -> FsPath
+fsPathInit fp = case fsPathSplit fp of
+                  Nothing       -> error $ "fsPathInit: empty path"
+                  Just (fp', _) -> fp'
 
 -- | Mount point
 --
@@ -84,10 +122,11 @@ type FsPath = [String]
 newtype MountPoint = MountPoint FilePath
 
 fsToFilePath :: MountPoint -> FsPath -> FilePath
-fsToFilePath (MountPoint mp) fp = mp </> foldr (</>) "" fp
+fsToFilePath (MountPoint mp) fp =
+    mp </> foldr (</>) "" (map Strict.unpack $ fsPathToList fp)
 
 fsFromFilePath :: MountPoint -> FilePath -> Maybe FsPath
-fsFromFilePath (MountPoint mp) path =
+fsFromFilePath (MountPoint mp) path = mkFsPath <$>
     stripPrefix (splitDirectories mp) (splitDirectories path)
 
 {-------------------------------------------------------------------------------

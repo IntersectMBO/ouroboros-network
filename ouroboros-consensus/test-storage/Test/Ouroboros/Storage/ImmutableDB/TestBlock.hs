@@ -5,6 +5,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections       #-}
 -- | Block used for the state machine tests
+{-# OPTIONS_GHC -fno-warn-orphans #-}
 module Test.Ouroboros.Storage.ImmutableDB.TestBlock
   ( TestBlock(..)
   , testBlockRepeat
@@ -35,6 +36,7 @@ import           Data.Functor (($>))
 import           Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
 import           Data.Maybe (maybeToList)
+import qualified Data.Text as Text
 import           Data.Word (Word64)
 
 import           GHC.Generics (Generic)
@@ -209,7 +211,7 @@ prop_testBlockEpochFileParser (TestBlocks mbEBB regularBlocks) = QCM.monadicIO $
     QSM.liftProperty (offsets === offsets')
   where
     dropLast xs = zipWith const xs (drop 1 xs)
-    file = ["test"]
+    file = mkFsPath ["test"]
 
     blocks = maybeToList (getCurrentEBB mbEBB) <> regularBlocks
 
@@ -274,14 +276,22 @@ shrinkCorruptions :: Corruptions -> [Corruptions]
 shrinkCorruptions =
   fmap (NE.fromList . getNonEmpty) . shrink . NonEmpty . NE.toList
 
-
 {-------------------------------------------------------------------------------
   Top-level tests
 -------------------------------------------------------------------------------}
-
 
 tests :: TestTree
 tests = testGroup "TestBlock"
     [ testProperty "TestBlock Binary roundtrip"   prop_TestBlock_Binary
     , testProperty "testBlockEpochFileParser"     prop_testBlockEpochFileParser
     ]
+
+{-------------------------------------------------------------------------------
+  Orphans
+-------------------------------------------------------------------------------}
+
+instance Arbitrary FsPath where
+  arbitrary = error "we only need the definition of shrink"
+  shrink    = map fsPathFromList . shrinkList shrinkText . fsPathToList
+    where
+      shrinkText = map Text.pack . shrink . Text.unpack

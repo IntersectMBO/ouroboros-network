@@ -1,5 +1,7 @@
+{-# LANGUAGE BangPatterns               #-}
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE TypeApplications           #-}
 
@@ -22,15 +24,15 @@ import           Ouroboros.Storage.Util.ErrorHandling (ErrorHandling (..))
 import qualified Ouroboros.Storage.Util.ErrorHandling as EH
 
 -- | Monad useful for running 'HasFS' in pure code
-newtype PureSimFS m a = PureSimFS { unPureSimFS :: StateT MockFS m a }
-  deriving ( Functor
-           , Applicative
-           , Monad
-           , MonadState MockFS
-           )
+newtype PureSimFS m a = PureSimFS (StateT MockFS m a)
+  deriving (Functor, Applicative, Monad)
+
+instance Monad m => MonadState MockFS (PureSimFS m) where
+  get     = PureSimFS get
+  put !st = PureSimFS $ put st
 
 runPureSimFS :: PureSimFS m a -> MockFS -> m (a, MockFS)
-runPureSimFS = runStateT . unPureSimFS
+runPureSimFS (PureSimFS act) !st = runStateT act st
 
 pureHasFS :: forall m. Monad m
           => ErrorHandling FsError m -> HasFS (PureSimFS m) Mock.HandleMock

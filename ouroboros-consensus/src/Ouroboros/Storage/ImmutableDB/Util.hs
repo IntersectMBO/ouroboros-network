@@ -47,7 +47,7 @@ import           Ouroboros.Storage.ImmutableDB.Types
 
 
 renderFile :: String -> EpochNo -> FsPath
-renderFile fileType (EpochNo epoch) = [printf "%s-%03d.dat" fileType epoch]
+renderFile fileType (EpochNo epoch) = mkFsPath [printf "%s-%03d.dat" fileType epoch]
 
 handleUser :: HasCallStack
            => ErrorHandling ImmutableDBError m
