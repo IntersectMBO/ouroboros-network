@@ -2,11 +2,11 @@
 {-# LANGUAGE DeriveTraversable          #-}
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE PatternSynonyms            #-}
 {-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE StandaloneDeriving         #-}
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE UndecidableInstances       #-}
-{-# LANGUAGE PatternSynonyms            #-}
 
 -- | Abstract view over blocks
 --
@@ -26,6 +26,10 @@ module Ouroboros.Network.Block (
   , castPoint
   , blockPoint
   , ChainUpdate(..)
+  , MaxSlotNo (..)
+  , maxSlotNoFromMaybe
+  , maxSlotNoToMaybe
+  , maxSlotNoFromWithOrigin
   , BlockMeasure(..)
   , blockMeasure
   , genesisPoint
@@ -43,7 +47,7 @@ module Ouroboros.Network.Block (
   , withHash
   ) where
 
-import           Cardano.Binary (ToCBOR(..))
+import           Cardano.Binary (ToCBOR (..))
 import           Codec.CBOR.Decoding (Decoder)
 import qualified Codec.CBOR.Decoding as Dec
 import           Codec.CBOR.Encoding (Encoding)
@@ -54,7 +58,8 @@ import           Data.Typeable (Typeable)
 import           Data.Word (Word64)
 import           GHC.Generics (Generic)
 
-import           Ouroboros.Network.Point (WithOrigin (..), origin, block)
+import           Ouroboros.Network.Point (WithOrigin (..), block, origin,
+                     withOriginToMaybe)
 import qualified Ouroboros.Network.Point as Point (Block (..))
 
 -- | The 0-based index for the Ourboros time slot.
@@ -186,6 +191,37 @@ blockPoint b = Point (block (blockSlot b) (blockHash b))
 data ChainUpdate block a = AddBlock a
                          | RollBack (Point block)
   deriving (Eq, Show, Functor, Foldable, Traversable)
+
+{-------------------------------------------------------------------------------
+  MaxSlotNo
+-------------------------------------------------------------------------------}
+
+-- | The highest slot number seen.
+data MaxSlotNo
+  = NoMaxSlotNo
+    -- ^ No block/header has been seen yet, so we don't have a highest slot
+    -- number.
+  | MaxSlotNo !SlotNo
+    -- ^ The highest slot number seen.
+  deriving (Eq, Show, Generic)
+
+-- The derived instances would do the same, but for clarity, we write it out
+-- explicitly.
+instance Ord MaxSlotNo where
+  compare NoMaxSlotNo       (MaxSlotNo _) = LT
+  compare NoMaxSlotNo       NoMaxSlotNo   = EQ
+  compare (MaxSlotNo _)  NoMaxSlotNo      = GT
+  compare (MaxSlotNo s1) (MaxSlotNo s2)   = compare s1 s2
+
+maxSlotNoFromMaybe :: Maybe SlotNo -> MaxSlotNo
+maxSlotNoFromMaybe = maybe NoMaxSlotNo MaxSlotNo
+
+maxSlotNoToMaybe :: MaxSlotNo -> Maybe SlotNo
+maxSlotNoToMaybe NoMaxSlotNo   = Nothing
+maxSlotNoToMaybe (MaxSlotNo s) = Just s
+
+maxSlotNoFromWithOrigin :: WithOrigin SlotNo -> MaxSlotNo
+maxSlotNoFromWithOrigin = maxSlotNoFromMaybe . withOriginToMaybe
 
 {-------------------------------------------------------------------------------
   Serialisation
