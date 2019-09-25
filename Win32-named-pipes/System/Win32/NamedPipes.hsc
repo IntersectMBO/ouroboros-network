@@ -2,6 +2,7 @@
 #include <fcntl.h>
 #include <windows.h>
 
+{-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE InterruptibleFFI #-}
 
 -- | For full details on the Windows named pipes API see
@@ -30,6 +31,8 @@ module System.Win32.NamedPipes (
     -- | This directly reuses other Win32 file APIs
     createFile,
     closePipe,
+    readPipe,
+    pGetLine,
 
     -- * Client and server APIs
     pipeToHandle,
@@ -37,6 +40,9 @@ module System.Win32.NamedPipes (
 
 
 import Control.Monad (unless)
+import           Data.ByteString (ByteString)
+import qualified Data.ByteString.Internal as BS
+import qualified Data.ByteString.Char8 as BSC
 import System.IO (Handle, IOMode, BufferMode(..), hSetBuffering)
 import GHC.IO.Device (IODeviceType(..))
 import GHC.IO.FD     (mkFD)
@@ -45,7 +51,7 @@ import GHC.IO.Handle.FD (mkHandleFromFD)
 import Foreign
 import Foreign.C
 import System.Win32.Types
-import System.Win32.File
+import System.Win32.File hiding (win32_ReadFile, c_ReadFile)
 
 
 
@@ -204,3 +210,37 @@ handleToFd hnd =
 closePipe :: HANDLE
           -> IO ()
 closePipe = closeHandle
+
+
+win32_ReadFile :: HANDLE -> Ptr a -> DWORD -> Maybe LPOVERLAPPED -> IO DWORD
+win32_ReadFile h buf n mb_over =
+  alloca $ \ p_n -> do
+  failIfFalse_ "ReadFile" $ c_ReadFile h buf n p_n (maybePtr mb_over)
+  peek p_n
+
+foreign import ccall interruptible "windows.h ReadFile"
+  c_ReadFile :: HANDLE -> Ptr a -> DWORD -> Ptr DWORD -> LPOVERLAPPED -> IO Bool
+
+-- | Interruptible read from a Windows 'HANDLE'.
+--
+readPipe :: HANDLE
+         -> Int
+         -> IO ByteString
+readPipe h size
+  = BS.createAndTrim size
+      (\ptr ->
+        fromIntegral <$>
+          win32_ReadFile h ptr (fromIntegral size) Nothing)
+
+-- | Get a single line from a 'HANDLE'.
+--
+pGetLine :: HANDLE
+         -> IO String
+pGetLine h = go ""
+    where
+      go :: String -> IO String
+      go !s = do
+        [x] <- BSC.unpack <$> readPipe h 1
+        if x == '\n'
+          then pure (reverse s)
+          else go (x : s)

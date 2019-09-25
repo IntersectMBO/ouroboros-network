@@ -3,6 +3,7 @@
 module Main where
 
 import Data.Bits
+import qualified Data.ByteString.Char8 as BSC
 import Control.Concurrent (forkIO, threadDelay)
 import Control.Exception (finally)
 import System.IO
@@ -28,10 +29,13 @@ usage = do
 pipeName :: String
 pipeName = "\\\\.\\pipe\\named-pipe-demo"
 
+putStrLn_ :: String -> IO ()
+putStrLn_ = BSC.putStrLn . BSC.pack
+
 server :: IO ()
 server = do
 
-  putStrLn "creating pipe..."
+  putStrLn_ "creating pipe..."
   hpipe <- createNamedPipe pipeName
                            pIPE_ACCESS_DUPLEX
                            (pIPE_TYPE_BYTE .|. pIPE_READMODE_BYTE)
@@ -40,32 +44,32 @@ server = do
                            512
                            0
                            Nothing
-  putStrLn "created pipe, waiting for client"
+  putStrLn_ "created pipe, waiting for client"
   connectNamedPipe hpipe Nothing
-  putStrLn "client connected"
+  putStrLn_ "client connected"
   hpipe' <- pipeToHandle hpipe pipeName ReadWriteMode
   _ <- forkIO $ do
-         putStrLn "starting client conversation"
-         serverLoop hpipe'
+         putStrLn_ "starting client conversation"
+         serverLoop hpipe hpipe'
            `finally` (do putStrLn "client disconnected"
                          hClose hpipe')
   threadDelay 1
   server
 
-serverLoop :: Handle -> IO ()
-serverLoop hpipe = do
+serverLoop :: HANDLE -> Handle -> IO ()
+serverLoop hPIPE hpipe = do
   hPutStrLn hpipe "Hi! >"
   putStrLn "Sent prompt, awaiting reply"
-  resp <- hGetLine hpipe
+  resp <- pGetLine hPIPE
   putStrLn $ "received: " ++ show resp
   let reply = "reversed: " ++ show (reverse resp)
   putStrLn $ "replying: " ++ show reply
   hPutStrLn hpipe reply
-  serverLoop hpipe
+  serverLoop hPIPE hpipe
 
 client :: IO ()
 client = do
-  hpipe <- createFile pipeName
+  hPIPE <- createFile pipeName
                       (gENERIC_READ .|. gENERIC_WRITE)
                       fILE_SHARE_NONE
                       Nothing
@@ -73,14 +77,14 @@ client = do
                       fILE_ATTRIBUTE_NORMAL
                       Nothing
   putStrLn "opened pipe"
-  hpipe' <- pipeToHandle hpipe pipeName ReadWriteMode
-  clientLoop hpipe'
-    `finally` hClose hpipe'
+  hpipe <- pipeToHandle hPIPE pipeName ReadWriteMode
+  clientLoop hPIPE hpipe
+    `finally` hClose hpipe
 
-clientLoop :: Handle -> IO ()
-clientLoop hpipe = do
+clientLoop :: HANDLE -> Handle -> IO ()
+clientLoop hPIPE hpipe = do
   putStrLn "awaiting prompt..."
-  prompt <- hGetLine hpipe
+  prompt <- pGetLine hPIPE
   putStrLn prompt
   reply <- getLine
   case reply of
@@ -89,7 +93,7 @@ clientLoop hpipe = do
                  hPutStrLn hpipe reply
                  putStrLn "reply sent"
                  putStrLn "reply flushed"
-                 resp <- hGetLine hpipe
+                 resp <- pGetLine hPIPE
                  putStrLn $ "response: " ++ resp
-                 clientLoop hpipe
+                 clientLoop hPIPE hpipe
 
