@@ -11,6 +11,7 @@ module Ouroboros.Network.BlockFetch.Examples (
     exampleFixedPeerGSVs,
   ) where
 
+import           Data.List (foldl')
 import qualified Data.Map.Strict as Map
 import           Data.Map (Map)
 import qualified Data.Set as Set
@@ -152,6 +153,10 @@ sampleBlockFetchPolicy1 blockHeap currentChain candidateChains =
       readFetchMode          = return FetchModeBulkSync,
       readFetchedBlocks      = flip Set.member <$>
                                  getTestFetchedBlocks blockHeap,
+      readFetchedMaxSlotNo   = foldl' max NoMaxSlotNo .
+                               map (maxSlotNoFromWithOrigin . pointSlot) .
+                               Set.elems <$>
+                               getTestFetchedBlocks blockHeap,
       addFetchedBlock        = addTestFetchedBlock blockHeap,
 
       plausibleCandidateChain,

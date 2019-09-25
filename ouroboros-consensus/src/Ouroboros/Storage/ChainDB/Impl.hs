@@ -182,6 +182,7 @@ openDBInternal args launchBgTasks = do
           , getTipBlockNo      = getEnvSTM  h Query.getTipBlockNo
           , getBlock           = getEnv1    h Query.getBlock
           , getIsFetched       = getEnvSTM  h Query.getIsFetched
+          , getMaxSlotNo       = getEnvSTM  h Query.getMaxSlotNo
           , streamBlocks       = Iterator.streamBlocks  h
           , newHeaderReader    = Reader.newHeaderReader h
           , newBlockReader     = Reader.newBlockReader  h

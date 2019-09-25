@@ -22,6 +22,8 @@ module Ouroboros.Network.BlockFetch.ClientState (
     TraceLabelPeer(..),
   ) where
 
+import           Data.List (foldl')
+import           Data.Maybe (mapMaybe)
 import qualified Data.Set as Set
 import           Data.Set (Set)
 import           Data.Semigroup (Semigroup, Last(..))
@@ -31,7 +33,8 @@ import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Exception (assert)
 import           Control.Tracer (Tracer, traceWith)
 
-import           Ouroboros.Network.Block (Point, blockPoint, HasHeader)
+import           Ouroboros.Network.Block
+                   ( HasHeader, MaxSlotNo (..), Point, blockPoint )
 import qualified Ouroboros.Network.ChainFragment as CF
 import           Ouroboros.Network.ChainFragment (ChainFragment)
 import           Ouroboros.Network.BlockFetch.DeltaQ
@@ -186,7 +189,15 @@ data PeerFetchInFlight header = PeerFetchInFlight {
        -- fetch from which peers we take into account what blocks are already
        -- in-flight with peers.
        --
-       peerFetchBlocksInFlight :: Set (Point header)
+       peerFetchBlocksInFlight :: Set (Point header),
+
+       -- | The maximum slot of a block that /has ever been/ in flight for
+       -- this peer.
+       --
+       -- We track this to more efficiently remove blocks that are already
+       -- in-flight from the candidate fragments: blocks with a slot number
+       -- higher than this one do not have to be filtered out.
+       peerFetchMaxSlotNo  :: !MaxSlotNo
      }
   deriving (Eq, Show)
 
@@ -195,7 +206,8 @@ initialPeerFetchInFlight =
     PeerFetchInFlight {
       peerFetchReqsInFlight   = 0,
       peerFetchBytesInFlight  = 0,
-      peerFetchBlocksInFlight = Set.empty
+      peerFetchBlocksInFlight = Set.empty,
+      peerFetchMaxSlotNo      = NoMaxSlotNo
     }
 
 addHeadersInFlight :: HasHeader header
@@ -208,7 +220,7 @@ addHeadersInFlight :: HasHeader header
                    -- semigroup instance, which might merge two chain fragments.
                    -> PeerFetchInFlight header
                    -> PeerFetchInFlight header
-addHeadersInFlight blockFetchSize (FetchRequest fragments) newRequests inflight =
+addHeadersInFlight blockFetchSize fr@(FetchRequest fragments) newRequests inflight =
     assert (and [ blockPoint header `Set.notMember` peerFetchBlocksInFlight inflight
                 | fragment <- fragments
                 , header   <- CF.toOldestFirst fragment ]) $
@@ -225,7 +237,10 @@ addHeadersInFlight blockFetchSize (FetchRequest fragments) newRequests inflight 
                     `Set.union` Set.fromList
                                   [ blockPoint header
                                   | fragment <- fragments
-                                  , header   <- CF.toOldestFirst fragment ]
+                                  , header   <- CF.toOldestFirst fragment ],
+
+      peerFetchMaxSlotNo      = peerFetchMaxSlotNo inflight
+                          `max` fetchRequestMaxSlotNo fr
     }
 
 deleteHeaderInFlight :: HasHeader header
@@ -257,6 +272,9 @@ instance HasHeader header => Semigroup (FetchRequest header) where
   FetchRequest afs <> FetchRequest bfs
     = FetchRequest (afs ++ bfs)
 
+fetchRequestMaxSlotNo :: HasHeader header => FetchRequest header -> MaxSlotNo
+fetchRequestMaxSlotNo (FetchRequest afs) =
+    foldl' max NoMaxSlotNo $ map MaxSlotNo $ mapMaybe CF.headSlot afs
 
 -- | Tracing types for the various events that change the state
 -- (i.e. 'FetchClientStateVars') for a block fetch client.

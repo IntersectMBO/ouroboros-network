@@ -272,6 +272,9 @@ initBlockFetchConsensusInterface cfg chainDB getCandidates blockFetchSize
     addFetchedBlock :: Point blk -> blk -> m ()
     addFetchedBlock _pt = ChainDB.addBlock chainDB
 
+    readFetchedMaxSlotNo :: STM m MaxSlotNo
+    readFetchedMaxSlotNo = ChainDB.getMaxSlotNo chainDB
+
     plausibleCandidateChain :: AnchoredFragment (Header blk)
                             -> AnchoredFragment (Header blk)
                             -> Bool

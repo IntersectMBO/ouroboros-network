@@ -7,7 +7,6 @@ module Ouroboros.Storage.VolatileDB.Util where
 
 import           Control.Monad
 import           Control.Monad.Class.MonadThrow
-import           Data.List (maximumBy)
 import           Data.Map (Map)
 import qualified Data.Map as Map
 import           Data.Maybe (fromMaybe)
@@ -17,6 +16,7 @@ import qualified Data.Text as T
 import           Data.Word (Word64)
 import           Text.Read (readMaybe)
 
+import           Ouroboros.Consensus.Util (safeMaximum, safeMaximumOn)
 import           Ouroboros.Consensus.Util.MonadSTM.NormalForm
 
 import           Ouroboros.Storage.FS.API.Types
@@ -147,7 +147,7 @@ deleteMapSet mapSet (bid, pbid) = Map.alter (alterfDelete bid) pbid mapSet
 ------------------------------------------------------------------------------}
 
 maxSlotMap :: Map Word64 (Word64, BlockInfo blockId) -> Maybe (blockId, SlotNo)
-maxSlotMap mp = f <$> safeMaximumBy (\a b -> compare (getSlot a) (getSlot b)) (Map.elems mp)
+maxSlotMap mp = f <$> safeMaximumOn getSlot (Map.elems mp)
     where
         f (_, bInfo) = (bbid bInfo, bslot bInfo)
         getSlot (_, bInfo) = bslot bInfo
@@ -160,16 +160,11 @@ cmpMaybe Nothing _   = False
 cmpMaybe (Just a) a' = a >= a'
 
 updateSlot :: forall blockId. Maybe (blockId, SlotNo) -> [(blockId, SlotNo)] -> Maybe (blockId, SlotNo)
-updateSlot msl ls = safeMaximumBy (\a b -> compare (snd a) (snd b))
-    $ case msl of
-        Nothing -> ls
-        Just sl -> sl : ls
+updateSlot msl ls = safeMaximumOn snd $ case msl of
+    Nothing -> ls
+    Just sl -> sl : ls
 
 updateSlotNoBlockId :: Maybe SlotNo -> [SlotNo] -> Maybe SlotNo
-updateSlotNoBlockId msl ls = safeMaximumBy compare $ case msl of
-        Nothing -> ls
-        Just sl -> sl : ls
-
-safeMaximumBy :: (a -> a -> Ordering) -> [a] -> Maybe a
-safeMaximumBy _cmp [] = Nothing
-safeMaximumBy cmp ls  = Just $ maximumBy cmp ls
+updateSlotNoBlockId msl ls = safeMaximum $ case msl of
+    Nothing -> ls
+    Just sl -> sl : ls

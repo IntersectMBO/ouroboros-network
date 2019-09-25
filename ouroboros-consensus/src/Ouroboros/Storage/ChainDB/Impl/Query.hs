@@ -16,6 +16,7 @@ module Ouroboros.Storage.ChainDB.Impl.Query
   , getBlock
   , getIsFetched
   , getIsInvalidBlock
+  , getMaxSlotNo
     -- * Low-level queries
   , getAnyKnownBlock
   ) where
@@ -28,8 +29,8 @@ import           Control.Monad.Class.MonadThrow
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment (..))
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block (BlockNo, ChainHash (..), HasHeader,
-                     HeaderHash, Point, castPoint, genesisPoint, pointHash,
-                     pointSlot)
+                     HeaderHash, MaxSlotNo, Point, castPoint, genesisPoint,
+                     maxSlotNoFromWithOrigin, pointHash, pointSlot)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Ledger.Extended
@@ -164,6 +165,23 @@ getIsInvalidBlock
   :: forall m blk. (MonadSTM m, HasHeader blk)
   => ChainDbEnv m blk -> STM m (HeaderHash blk -> Bool, Fingerprint)
 getIsInvalidBlock CDB{..} = first (flip Map.member) <$> readTVar cdbInvalid
+
+getMaxSlotNo
+  :: forall m blk. (MonadSTM m, HasHeader (Header blk))
+  => ChainDbEnv m blk -> STM m MaxSlotNo
+getMaxSlotNo CDB{..} = do
+    -- Note that we need to look at both the current chain and the VolatileDB
+    -- in all cases (even when the VolatileDB is not empty), because the
+    -- VolatileDB might have been corrupted.
+    --
+    -- For example, imagine the VolatileDB has been corrupted so that it only
+    -- contains block 9'. The ImmutableDB contains blocks 1-10. The max slot
+    -- of the current chain will be 10 (being the anchor point of the empty
+    -- current chain), while the max slot of the VolatileDB will be 9.
+    curChainMaxSlotNo <- maxSlotNoFromWithOrigin . AF.headSlot
+                     <$> readTVar cdbChain
+    volDBMaxSlotNo    <- VolDB.getMaxSlotNo cdbVolDB
+    return $ curChainMaxSlotNo `max` volDBMaxSlotNo
 
 {-------------------------------------------------------------------------------
   Unifying interface over the immutable DB and volatile DB, but independent

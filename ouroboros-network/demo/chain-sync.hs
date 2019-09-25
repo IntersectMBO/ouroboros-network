@@ -467,6 +467,10 @@ clientBlockFetch sockAddrs = do
               readFetchMode          = return FetchModeBulkSync,
               readFetchedBlocks      = (\h p -> castPoint p `Set.member` h) <$>
                                          getTestFetchedBlocks blockHeap,
+              readFetchedMaxSlotNo   = foldl' max NoMaxSlotNo .
+                                       map (maxSlotNoFromWithOrigin . pointSlot) .
+                                       Set.elems <$>
+                                       getTestFetchedBlocks blockHeap,
               addFetchedBlock        = \p b -> addTestFetchedBlock blockHeap
                                          (castPoint p) (blockHeader b),
 
@@ -840,8 +844,8 @@ doloremIpsum =
 -- The interface is enough to use in examples and tests.
 --
 data TestFetchedBlockHeap m block = TestFetchedBlockHeap {
-       getTestFetchedBlocks  :: STM (Set (Point block)),
-       addTestFetchedBlock   :: Point block -> block -> m ()
+       getTestFetchedBlocks :: STM (Set (Point block)),
+       addTestFetchedBlock  :: Point block -> block -> m ()
      }
 
 -- | Make a 'TestFetchedBlockHeap' using a simple in-memory 'Map', stored in an
