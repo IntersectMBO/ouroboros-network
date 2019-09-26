@@ -152,6 +152,7 @@ clientPingPong pipelined =
       (\(DictVersion codec) -> encodeTerm codec)
       (\(DictVersion codec) -> decodeTerm codec)
       nullTracer
+      nullTracer
       (,)
       (simpleSingletonVersions (0::Int) (NodeToNodeVersionData 0) (DictVersion nodeToNodeCodecCBORTerm) app)
       Nothing
@@ -182,6 +183,7 @@ serverPingPong :: IO ()
 serverPingPong = do
     tbl <- newConnectionTable
     withServerNode
+      nullTracer
       nullTracer
       tbl
       defaultLocalSocketAddrInfo
@@ -237,6 +239,7 @@ clientPingPong2 =
       (\(DictVersion codec) -> encodeTerm codec)
       (\(DictVersion codec) -> decodeTerm codec)
       nullTracer
+      nullTracer
       (,)
       (simpleSingletonVersions (0::Int) (NodeToNodeVersionData 0) (DictVersion nodeToNodeCodecCBORTerm) app)
       Nothing
@@ -282,6 +285,7 @@ serverPingPong2 :: IO ()
 serverPingPong2 = do
     tbl <- newConnectionTable
     withServerNode
+      nullTracer
       nullTracer
       tbl
       defaultLocalSocketAddrInfo
@@ -335,6 +339,7 @@ clientChainSync sockAddrs =
         (\(DictVersion codec) -> encodeTerm codec)
         (\(DictVersion codec) -> decodeTerm codec)
         nullTracer
+        nullTracer
         (,)
         (simpleSingletonVersions (0::Int) (NodeToNodeVersionData 0) (DictVersion nodeToNodeCodecCBORTerm) app)
         Nothing
@@ -356,6 +361,7 @@ serverChainSync :: FilePath -> IO ()
 serverChainSync sockAddr = do
     tbl <- newConnectionTable
     withServerNode
+      nullTracer
       nullTracer
       tbl
       (mkLocalSocketAddrInfo sockAddr)
@@ -522,6 +528,7 @@ clientBlockFetch sockAddrs = do
                           (\(DictVersion codec) -> encodeTerm codec)
                           (\(DictVersion codec) -> decodeTerm codec)
                           nullTracer
+                          nullTracer
                           (,)
                           (simpleSingletonVersions (0::Int) (NodeToNodeVersionData 0) (DictVersion nodeToNodeCodecCBORTerm) app)
                           Nothing
@@ -558,6 +565,7 @@ serverBlockFetch :: FilePath -> IO ()
 serverBlockFetch sockAddr = do
     tbl <- newConnectionTable
     withServerNode
+      nullTracer
       nullTracer
       tbl
       (mkLocalSocketAddrInfo sockAddr)

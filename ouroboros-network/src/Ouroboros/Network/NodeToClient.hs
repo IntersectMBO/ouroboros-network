@@ -41,7 +41,7 @@ import           Codec.Serialise (Serialise (..), DeserialiseFailure)
 import           Codec.SerialiseTerm
 
 import qualified Network.Socket as Socket
-import           Network.Mux.Types (ProtocolEnum(..), MiniProtocolLimits (..))
+import           Network.Mux.Types
 import           Network.Mux.Interface
 
 import           Ouroboros.Network.Mux
@@ -120,7 +120,9 @@ nodeToClientCodecCBORTerm = CodecCBORTerm {encodeTerm, decodeTerm}
 -- protocol.  This is mostly useful for future enhancements.
 --
 connectTo
-  :: Tracer IO (TraceSendRecv (Handshake NodeToClientVersion CBOR.Term) peerid (DecoderFailureOrTooMuchInput DeserialiseFailure))
+  :: Show peerid
+  => Tracer IO (WithMuxBearer (MuxTrace NodeToClientProtocols))
+  -> Tracer IO (TraceSendRecv (Handshake NodeToClientVersion CBOR.Term) peerid (DecoderFailureOrTooMuchInput DeserialiseFailure))
   -> (Socket.SockAddr -> Socket.SockAddr -> peerid)
   -- ^ create peerid from local address and remote address
   -> Versions NodeToClientVersion
@@ -143,7 +145,9 @@ connectTo =
 -- the 'NodeToClientV_1' version of the protocol.
 --
 connectTo_V1
-  :: Tracer IO (TraceSendRecv (Handshake NodeToClientVersion CBOR.Term) peerid (DecoderFailureOrTooMuchInput DeserialiseFailure))
+  :: Show peerid
+  => Tracer IO (WithMuxBearer (MuxTrace NodeToClientProtocols))
+  -> Tracer IO (TraceSendRecv (Handshake NodeToClientVersion CBOR.Term) peerid (DecoderFailureOrTooMuchInput DeserialiseFailure))
   -> (Socket.SockAddr -> Socket.SockAddr -> peerid)
   -- ^ create peerid from local address and remote address
   -> NodeToClientVersionData
@@ -157,9 +161,10 @@ connectTo_V1
   -> Socket.AddrInfo
   -- ^ remote address
   -> IO ()
-connectTo_V1 tracer peeridFn versionData application =
+connectTo_V1 muxTracer handshakeTracer peeridFn versionData application =
   connectTo
-    tracer
+    muxTracer
+    handshakeTracer
     peeridFn
     (simpleSingletonVersions
       NodeToClientV_1
@@ -172,8 +177,9 @@ connectTo_V1 tracer peeridFn versionData application =
 -- the protocols.
 --
 withServer
-  :: HasResponder appType ~ True
-  => Tracer IO (TraceSendRecv (Handshake NodeToClientVersion CBOR.Term) peerid (DecoderFailureOrTooMuchInput DeserialiseFailure))
+  :: (HasResponder appType ~ True, Show peerid)
+  => Tracer IO (WithMuxBearer (MuxTrace NodeToClientProtocols))
+  -> Tracer IO (TraceSendRecv (Handshake NodeToClientVersion CBOR.Term) peerid (DecoderFailureOrTooMuchInput DeserialiseFailure))
   -> ConnectionTable IO Socket.SockAddr
   -> Socket.AddrInfo
   -> (Socket.SockAddr -> Socket.SockAddr -> peerid)
@@ -183,9 +189,10 @@ withServer
               (OuroborosApplication appType peerid NodeToClientProtocols IO BL.ByteString a b)
   -> (Async () -> IO t)
   -> IO t
-withServer tracer tbl addr peeridFn acceptVersion versions k =
+withServer muxTracer handshakeTracer tbl addr peeridFn acceptVersion versions k =
   withServerNode
-    tracer
+    muxTracer
+    handshakeTracer
     tbl
     addr
     (\(DictVersion codec) -> encodeTerm codec)
@@ -199,8 +206,9 @@ withServer tracer tbl addr peeridFn acceptVersion versions k =
 -- 'NodeToClientV_1' version of the protocol.
 --
 withServer_V1
-  :: (HasResponder appType ~ True)
-  => Tracer IO (TraceSendRecv (Handshake NodeToClientVersion CBOR.Term) peerid (DecoderFailureOrTooMuchInput DeserialiseFailure))
+  :: (HasResponder appType ~ True, Show peerid)
+  => Tracer IO (WithMuxBearer (MuxTrace NodeToClientProtocols))
+  -> Tracer IO (TraceSendRecv (Handshake NodeToClientVersion CBOR.Term) peerid (DecoderFailureOrTooMuchInput DeserialiseFailure))
   -> ConnectionTable IO Socket.SockAddr
   -> Socket.AddrInfo
   -> (Socket.SockAddr -> Socket.SockAddr -> peerid)
@@ -214,9 +222,9 @@ withServer_V1
   -- 'OuroborosInitiatorAndResponderApplication'.
   -> (Async () -> IO t)
   -> IO t
-withServer_V1 tracer tbl addr peeridFn versionData application =
+withServer_V1 muxTracer handshakeTracer tbl addr peeridFn versionData application =
     withServer
-      tracer tbl addr peeridFn 
+      muxTracer handshakeTracer tbl addr peeridFn
       (\(DictVersion _) -> acceptEq)
       (simpleSingletonVersions
         NodeToClientV_1

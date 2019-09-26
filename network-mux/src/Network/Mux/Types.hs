@@ -16,10 +16,12 @@ module Network.Mux.Types (
     , MuxErrorType (..)
     , MuxSDU (..)
     , MuxSDUHeader (..)
+    , MuxTrace (..)
     , PerMuxSharedState (..)
     , RemoteClockModel (..)
     , TranslocationServiceRequest (..)
     , Wanton (..)
+    , WithMuxBearer (..)
     ) where
 
 import           Prelude hiding (read)
@@ -285,4 +287,61 @@ instance Exception MuxError where
           (show errorType)
           (show errorMsg)
           (prettyCallStack errorStack)
+
+-- Type used for tracing mux events.
+--
+data WithMuxBearer a = WithMuxBearer {
+      wmbTag   :: !String
+      -- ^ A tag that should identify a specific mux bearer.
+    , wmbEvent :: !a
+}
+
+instance Show a => Show (WithMuxBearer a) where
+    show WithMuxBearer {wmbTag, wmbEvent} = printf "Mux %s %s" wmbTag (show wmbEvent)
+
+-- | Enumeration of Mux events that can be traced.
+--
+data MuxTrace ptcl =
+      MuxTraceRecvHeaderStart
+    | MuxTraceRecvHeaderEnd (MuxSDU ptcl)
+    | MuxTraceRecvPayloadStart Int
+    | MuxTraceRecvPayloadEnd BL.ByteString
+    | MuxTraceRecvStart Int
+    | MuxTraceRecvEnd BL.ByteString
+    | MuxTraceSendStart (MuxSDU ptcl)
+    | MuxTraceSendEnd
+    | MuxTraceStateChange MuxBearerState MuxBearerState
+    | MuxTraceCleanExit String
+    | MuxTraceExceptionExit SomeException String
+    | MuxTraceChannelRecvStart (MiniProtocolId ptcl)
+    | MuxTraceChannelRecvEnd (MiniProtocolId ptcl) BL.ByteString
+    | MuxTraceChannelSendStart (MiniProtocolId ptcl) BL.ByteString
+    | MuxTraceChannelSendEnd (MiniProtocolId ptcl)
+
+instance Show ptcl => Show (MuxTrace ptcl) where
+    show MuxTraceRecvHeaderStart = printf "Bearer Receive Header Start"
+    show (MuxTraceRecvHeaderEnd sdu) = printf "Bearer Receive Header End: ts: 0x%08x %s %s len %d"
+        (unRemoteClockModel $ msTimestamp sdu)
+        (show $ msId sdu)
+        (show $ msMode sdu)
+        (msLength sdu)
+    show (MuxTraceRecvPayloadStart len) = printf "Bearer Receive Body Start: length %d" len
+    show (MuxTraceRecvPayloadEnd blob) = printf "Bearer Receive Body End: length %d" (BL.length blob)
+    show (MuxTraceRecvStart len) = printf "Bearer Receive Start: length %d" len
+    show (MuxTraceRecvEnd blob) = printf "Bearer Receive End: length %d" (BL.length blob)
+    show (MuxTraceSendStart sdu) = printf "Bearer Send Start: ts: 0x%08x %s %s length %d"
+        (unRemoteClockModel $ msTimestamp sdu)
+        (show $ msId sdu)
+        (show $ msMode sdu)
+        (BL.length $ msBlob sdu)
+    show MuxTraceSendEnd = printf "Bearer Send End"
+    show (MuxTraceStateChange old new) = printf "State Change: %s -> %s" (show old) (show new)
+    show (MuxTraceCleanExit mp) = printf "Miniprotocol %s triggered clean exit" mp
+    show (MuxTraceExceptionExit e mp) = printf "Miniprotocol %s triggered exit with %s" mp (show e)
+    show (MuxTraceChannelRecvStart mid) = printf "Channel Receive Start on %s" (show mid)
+    show (MuxTraceChannelRecvEnd mid blob) = printf "Channel Receive End on %s %d" (show mid)
+        (BL.length blob)
+    show (MuxTraceChannelSendStart mid blob) = printf "Channel Send Start on %s %d" (show mid)
+        (BL.length blob)
+    show (MuxTraceChannelSendEnd mid) = printf "Channel Send End on %s" (show mid)
 

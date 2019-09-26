@@ -22,7 +22,7 @@ import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
-import           Control.Tracer (nullTracer)
+import           Control.Tracer
 
 import           Test.ChainGenerators (TestBlockChainAndUpdates (..))
 import           Test.QuickCheck
@@ -53,6 +53,13 @@ tests =
   , testProperty "ChainSync Demo (Sim)" prop_mux_demo_sim
   ]
 
+activeTracer :: forall m a. (MonadSay m, Show a) => Tracer m a
+activeTracer = nullTracer
+--activeTracer = showTracing sayTracer
+
+_sayTracer :: MonadSay m => Tracer m String
+_sayTracer = Tracer say
+
 
 data TestProtocols = ChainSyncPr
   deriving (Eq, Ord, Enum, Bounded, Show)
@@ -82,7 +89,8 @@ demo :: forall m block.
         , Serialise (Chain.HeaderHash block)
         , Serialise block
         , Eq block
-        , Show block )
+        , Show block
+        , Eq (Async m ()) )
      => Chain block -> [ChainUpdate block block] -> DiffTime -> m Property
 demo chain0 updates delay = do
     client_w <- atomically $ newTBQueue 10
@@ -123,8 +131,8 @@ demo chain0 updates delay = do
                         encode             decode)
                         producerPeer)
 
-    clientAsync <- async $ Mx.runMuxWithQueues "consumer" (Mx.toApplication consumerApp) client_w client_r sduLen Nothing
-    serverAsync <- async $ Mx.runMuxWithQueues "producer" (Mx.toApplication producerApp) server_w server_r sduLen Nothing
+    clientAsync <- async $ Mx.runMuxWithQueues activeTracer "consumer" (Mx.toApplication consumerApp) client_w client_r sduLen Nothing
+    serverAsync <- async $ Mx.runMuxWithQueues activeTracer "producer" (Mx.toApplication producerApp) server_w server_r sduLen Nothing
 
     updateAid <- async $ sequence_
         [ do

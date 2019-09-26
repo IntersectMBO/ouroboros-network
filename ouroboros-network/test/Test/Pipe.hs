@@ -22,7 +22,7 @@ import           Test.QuickCheck
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
 
-import           Control.Tracer (nullTracer)
+import           Control.Tracer
 
 import           Ouroboros.Network.Mux
 import qualified Network.Mux.Types as Mx
@@ -36,6 +36,10 @@ import           Ouroboros.Network.Protocol.ChainSync.Client as ChainSync
 import           Ouroboros.Network.Protocol.ChainSync.Codec as ChainSync
 import           Ouroboros.Network.Protocol.ChainSync.Examples as ChainSync
 import           Ouroboros.Network.Protocol.ChainSync.Server as ChainSync
+
+activeTracer :: Show a => Tracer IO a
+activeTracer = nullTracer
+--activeTracer = showTracing stdoutTracer
 
 --
 -- The list of all tests
@@ -124,8 +128,8 @@ demo chain0 updates = do
                                               encode decode)
                     (ChainSync.chainSyncServerPeer server)
 
-    _ <- async $ Mx.runMuxWithPipes "producer" (toApplication producerApp) hndRead1 hndWrite2
-    _ <- async $ Mx.runMuxWithPipes "consumer" (toApplication consumerApp) hndRead2 hndWrite1
+    _ <- async $ Mx.runMuxWithPipes activeTracer "producer" (toApplication producerApp) hndRead1 hndWrite2
+    _ <- async $ Mx.runMuxWithPipes activeTracer "consumer" (toApplication consumerApp) hndRead2 hndWrite1
 
     void $ fork $ sequence_
         [ do threadDelay 10e-4 -- 1 milliseconds, just to provide interest

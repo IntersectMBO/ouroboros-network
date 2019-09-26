@@ -37,6 +37,7 @@ import           Data.ByteString.Lazy (ByteString)
 import           Data.Proxy (Proxy (..))
 import           Data.Time.Clock (secondsToDiffTime)
 import           Network.Socket as Socket
+import           Network.Mux.Types (WithMuxBearer, MuxTrace)
 
 import           Control.Monad.Class.MonadAsync
 
@@ -75,7 +76,7 @@ import           Ouroboros.Storage.LedgerDB.InMemory (ledgerDbDefaultParams)
 --
 -- This function runs forever unless an exception is thrown.
 run
-  :: forall blk peer. (RunNode blk, Ord peer)
+  :: forall blk peer. (RunNode blk, Ord peer, Show peer)
   => Tracers IO peer blk                  -- ^ Consensus tracers
   -> Tracer  IO (ChainDB.TraceEvent blk)  -- ^ ChainDB tracer
   -> RunNetworkArgs peer blk              -- ^ Network args
@@ -244,6 +245,9 @@ data RunNetworkArgs peer blk = RunNetworkArgs
   { rnaIpSubscriptionTracer  :: Tracer IO (WithIPList (SubscriptionTrace Socket.SockAddr))
     -- ^ IP subscription tracer
   , rnaDnsSubscriptionTracer :: Tracer IO (WithDomainName (SubscriptionTrace Socket.SockAddr))
+  , rnaMuxTracer             :: Tracer IO (WithMuxBearer (MuxTrace NodeToNodeProtocols))
+    -- ^ Mux tracer
+  , rnaMuxLocalTracer        :: Tracer IO (WithMuxBearer (MuxTrace NodeToClientProtocols))
   , rnaHandshakeTracer       :: Tracer IO (TraceSendRecv
                                             (Handshake NodeToNodeVersion CBOR.Term)
                                             peer
@@ -270,7 +274,7 @@ data RunNetworkArgs peer blk = RunNetworkArgs
 
 initNetwork
   :: forall blk peer.
-     (RunNode blk, Ord peer)
+     (RunNode blk, Ord peer, Show peer)
   => ResourceRegistry IO
   -> NodeArgs    IO peer blk
   -> NodeKernel  IO peer blk
@@ -311,6 +315,7 @@ initNetwork registry nodeArgs kernel RunNetworkArgs{..} = do
     runLocalServer = do
       (connTable :: ConnectionTable IO Socket.SockAddr) <- newConnectionTable
       NodeToClient.withServer_V1
+        rnaMuxLocalTracer
         rnaHandshakeLocalTracer
         connTable
         rnaMyLocalAddr
@@ -322,6 +327,7 @@ initNetwork registry nodeArgs kernel RunNetworkArgs{..} = do
     runPeerServer :: ConnectionTable IO Socket.SockAddr -> IO ()
     runPeerServer connTable =
       NodeToNode.withServer_V1
+        rnaMuxTracer
         rnaHandshakeTracer
         connTable
         rnaMyAddr
@@ -333,6 +339,7 @@ initNetwork registry nodeArgs kernel RunNetworkArgs{..} = do
     runIpSubscriptionWorker :: ConnectionTable IO Socket.SockAddr -> IO ()
     runIpSubscriptionWorker connTable = ipSubscriptionWorker_V1
       rnaIpSubscriptionTracer
+      rnaMuxTracer
       rnaHandshakeTracer
       rnaMkPeer
       connTable
@@ -353,6 +360,7 @@ initNetwork registry nodeArgs kernel RunNetworkArgs{..} = do
     runDnsSubscriptionWorker connTable dnsProducer = dnsSubscriptionWorker_V1
       rnaDnsSubscriptionTracer
       rnaDnsResolverTracer
+      rnaMuxTracer
       rnaHandshakeTracer
       rnaMkPeer
       connTable

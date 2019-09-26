@@ -8,6 +8,7 @@ module Network.Mux.Bearer.Socket
   ) where
 
 import           Control.Monad (when)
+import           Control.Tracer
 import qualified Data.ByteString.Lazy as BL
 import           Data.Int
 import           Data.Word
@@ -41,9 +42,10 @@ hexDump buf out = hexDump (BL.tail buf) (out ++ printf "0x%02x " (BL.head buf))
 socketAsMuxBearer
   :: forall ptcl.
      Mx.ProtocolEnum ptcl
-  => Socket.Socket
+  => Tracer IO (Mx.MuxTrace ptcl)
+  -> Socket.Socket
   -> IO (MuxBearer ptcl IO)
-socketAsMuxBearer sd = do
+socketAsMuxBearer tracer sd = do
       mxState <- atomically $ newTVar Mx.Larval
       return $ Mx.MuxBearer {
           Mx.read    = readSocket,
@@ -54,6 +56,7 @@ socketAsMuxBearer sd = do
     where
       readSocket :: (HasCallStack) => IO (Mx.MuxSDU ptcl, Time IO)
       readSocket = do
+          traceWith tracer $ Mx.MuxTraceRecvHeaderStart
           hbuf <- recvLen' True 8 []
           --say "read"
           --hexDump hbuf ""
@@ -61,14 +64,18 @@ socketAsMuxBearer sd = do
               Left  e      -> throwM e
               Right header -> do
                   -- say $ printf "decoded mux header, goint to read %d bytes" (Mx.msLength header)
+                  traceWith tracer $ Mx.MuxTraceRecvHeaderEnd header
+                  traceWith tracer $ Mx.MuxTraceRecvPayloadStart (fromIntegral $ Mx.msLength header)
                   blob <- recvLen' False (fromIntegral $ Mx.msLength header) []
                   ts <- getMonotonicTime
+                  traceWith tracer $ Mx.MuxTraceRecvPayloadEnd blob
                   --hexDump blob ""
                   return (header {Mx.msBlob = blob}, ts)
 
       recvLen' :: Bool -> Int64 -> [BL.ByteString] -> IO BL.ByteString
       recvLen' _ 0 bufs = return (BL.concat $ reverse bufs)
       recvLen' waitingOnNxtHeader l bufs = do
+          traceWith tracer $ Mx.MuxTraceRecvStart $ fromIntegral l
           buf <- Socket.recv sd l
           if BL.null buf
               then do
@@ -81,7 +88,9 @@ socketAsMuxBearer sd = do
                   throwM $ Mx.MuxError Mx.MuxBearerClosed (show sd ++
                       " closed when reading data, waiting on next header " ++
                       show waitingOnNxtHeader) callStack
-              else recvLen' False (l - fromIntegral (BL.length buf)) (buf : bufs)
+              else do
+                  traceWith tracer $ Mx.MuxTraceRecvEnd buf
+                  recvLen' False (l - fromIntegral (BL.length buf)) (buf : bufs)
 
       writeSocket :: Mx.MuxSDU ptcl -> IO (Time IO)
       writeSocket sdu = do
@@ -91,7 +100,9 @@ socketAsMuxBearer sd = do
               sdu' = sdu { Mx.msTimestamp = Mx.RemoteClockModel ts32 }
               buf  = Mx.encodeMuxSDU sdu'
           --hexDump buf ""
+          traceWith tracer $ Mx.MuxTraceSendStart sdu'
           Socket.sendAll sd buf
+          traceWith tracer $ Mx.MuxTraceSendEnd
           return ts
 
       sduSize :: IO Word16

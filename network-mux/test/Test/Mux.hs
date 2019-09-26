@@ -19,6 +19,7 @@ import           Codec.CBOR.Decoding as CBOR
 import           Codec.CBOR.Encoding as CBOR
 import           Codec.Serialise (Serialise (..))
 import           Control.Monad
+import           Control.Tracer
 import qualified Data.Binary.Put as Bin
 import           Data.Bits
 import qualified Data.ByteString.Lazy as BL
@@ -71,6 +72,13 @@ defaultMiniProtocolLimit = 3000000
 
 smallMiniProtocolLimit :: Int64
 smallMiniProtocolLimit = 16*1024
+
+activeTracer :: forall m a. (MonadSay m, Show a) => Tracer m a
+activeTracer = nullTracer
+--activeTracer = showTracing sayTracer
+
+_sayTracer :: MonadSay m => Tracer m String
+_sayTracer = Tracer say
 
 --
 -- Various ProtocolEnum instances used in tests
@@ -327,10 +335,10 @@ prop_mux_snd_recv request response = ioProperty $ do
                                         (return ()) endMpsVar request response
 
     clientAsync <-
-      async $ Mx.runMuxWithQueues "client" (Mx.MuxInitiatorApplication
+      async $ Mx.runMuxWithQueues activeTracer "client" (Mx.MuxInitiatorApplication
         $ \_ ReqResp1 -> clientApp) client_w client_r sduLen Nothing
     serverAsync <-
-      async $ Mx.runMuxWithQueues "server" (Mx.MuxResponderApplication
+      async $ Mx.runMuxWithQueues activeTracer "server" (Mx.MuxResponderApplication
         $ \_ ReqResp1 -> serverApp) server_w server_r sduLen Nothing
 
     r <- waitBoth clientAsync serverAsync
@@ -439,8 +447,8 @@ prop_mux_2_minis request0 response0 response1 request1 = ioProperty $ do
         serverApp _ ReqResp2 = server_mp0
         serverApp _ ReqResp3 = server_mp1
 
-    clientAsync <- async $ Mx.runMuxWithQueues "client" (Mx.MuxInitiatorApplication clientApp) client_w client_r sduLen Nothing
-    serverAsync <- async $ Mx.runMuxWithQueues "server" (Mx.MuxResponderApplication serverApp) server_w server_r sduLen Nothing
+    clientAsync <- async $ Mx.runMuxWithQueues activeTracer "client" (Mx.MuxInitiatorApplication clientApp) client_w client_r sduLen Nothing
+    serverAsync <- async $ Mx.runMuxWithQueues activeTracer "server" (Mx.MuxResponderApplication serverApp) server_w server_r sduLen Nothing
 
 
     r <- waitBoth clientAsync serverAsync
@@ -491,8 +499,8 @@ prop_mux_starvation (Uneven response0 response1) =
         serverApp _ ReqResp2 = server_short
         serverApp _ ReqResp3 = server_long
 
-    clientAsync <- async $ Mx.runMuxWithQueues "client" (Mx.MuxInitiatorApplication clientApp) client_w client_r sduLen (Just traceQueueVar)
-    serverAsync <- async $ Mx.runMuxWithQueues "server" (Mx.MuxResponderApplication serverApp) server_w server_r sduLen Nothing
+    clientAsync <- async $ Mx.runMuxWithQueues activeTracer "client" (Mx.MuxInitiatorApplication clientApp) client_w client_r sduLen (Just traceQueueVar)
+    serverAsync <- async $ Mx.runMuxWithQueues activeTracer "server" (Mx.MuxResponderApplication serverApp) server_w server_r sduLen Nothing
 
     -- First verify that all messages where received correctly
     r <- waitBoth clientAsync serverAsync
@@ -569,7 +577,9 @@ prop_demux_sdu :: forall m.
                     , MonadSTM m
                     , MonadThrow (STM m)
                     , MonadTime m
-                    , MonadTimer m)
+                    , MonadTimer m
+                    , Eq (Async m ())
+                    )
                  => ArbitrarySDU
                  -> m Property
 prop_demux_sdu a = do
@@ -645,7 +655,7 @@ prop_demux_sdu a = do
         server_w <- atomically $ newTBQueue 10
         server_r <- atomically $ newTBQueue 10
 
-        said <- async $ Mx.runMuxWithQueues "server" server_mps server_w server_r 1280 Nothing
+        said <- async $ Mx.runMuxWithQueues activeTracer "server" server_mps server_w server_r 1280 Nothing
 
         return (server_r, said)
 
