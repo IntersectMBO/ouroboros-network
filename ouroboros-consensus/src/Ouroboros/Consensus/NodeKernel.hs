@@ -39,6 +39,8 @@ import           Ouroboros.Network.Block
 import           Ouroboros.Network.BlockFetch
 import           Ouroboros.Network.BlockFetch.State (FetchMode (..))
 import           Ouroboros.Network.Point (WithOrigin (..))
+import           Ouroboros.Network.Protocol.ChainSync.PipelineDecision
+                     (MkPipelineDecision)
 import           Ouroboros.Network.TxSubmission.Inbound
                      (TxSubmissionMempoolWriter)
 import qualified Ouroboros.Network.TxSubmission.Inbound as Inbound
@@ -125,17 +127,18 @@ data NodeCallbacks m blk = NodeCallbacks {
 
 -- | Arguments required when initializing a node
 data NodeArgs m peer blk = NodeArgs {
-      tracers            :: Tracers m peer blk
-    , registry           :: ResourceRegistry m
-    , maxClockSkew       :: ClockSkew
-    , cfg                :: NodeConfig (BlockProtocol blk)
-    , initState          :: NodeState (BlockProtocol blk)
-    , btime              :: BlockchainTime m
-    , chainDB            :: ChainDB m blk
-    , callbacks          :: NodeCallbacks m blk
-    , blockFetchSize     :: Header blk -> SizeInBytes
-    , blockMatchesHeader :: Header blk -> blk -> Bool
-    , maxUnackTxs        :: Word16
+      tracers             :: Tracers m peer blk
+    , registry            :: ResourceRegistry m
+    , maxClockSkew        :: ClockSkew
+    , cfg                 :: NodeConfig (BlockProtocol blk)
+    , initState           :: NodeState (BlockProtocol blk)
+    , btime               :: BlockchainTime m
+    , chainDB             :: ChainDB m blk
+    , callbacks           :: NodeCallbacks m blk
+    , blockFetchSize      :: Header blk -> SizeInBytes
+    , blockMatchesHeader  :: Header blk -> blk -> Bool
+    , maxUnackTxs         :: Word16
+    , chainSyncPipelining :: MkPipelineDecision
     }
 
 initNodeKernel

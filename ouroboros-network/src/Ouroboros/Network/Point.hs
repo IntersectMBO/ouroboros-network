@@ -10,6 +10,7 @@ module Ouroboros.Network.Point
   , at
   , block
   , fromWithOrigin
+  , withOrigin
   , withOriginToMaybe
   , withOriginFromMaybe
   ) where
@@ -37,6 +38,10 @@ block slot hash = at (Block slot hash)
 fromWithOrigin :: t -> WithOrigin t -> t
 fromWithOrigin t Origin = t
 fromWithOrigin _ (At t) = t
+
+withOrigin :: b -> (t -> b) -> WithOrigin t -> b
+withOrigin a _ Origin = a
+withOrigin _ f (At t) = f t
 
 withOriginToMaybe :: WithOrigin t -> Maybe t
 withOriginToMaybe Origin = Nothing

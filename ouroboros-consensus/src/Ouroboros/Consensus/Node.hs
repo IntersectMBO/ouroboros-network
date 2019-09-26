@@ -28,6 +28,8 @@ module Ouroboros.Consensus.Node
   , initNetwork
   ) where
 
+import qualified Codec.CBOR.Read as CBOR
+import qualified Codec.CBOR.Term as CBOR
 import           Control.Monad (forM, void)
 import           Control.Tracer
 import           Crypto.Random
@@ -35,8 +37,6 @@ import           Data.ByteString.Lazy (ByteString)
 import           Data.Proxy (Proxy (..))
 import           Data.Time.Clock (secondsToDiffTime)
 import           Network.Socket as Socket
-import qualified Codec.CBOR.Term as CBOR
-import qualified Codec.CBOR.Read as CBOR
 
 import           Control.Monad.Class.MonadAsync
 
@@ -44,6 +44,8 @@ import           Ouroboros.Network.Block
 import qualified Ouroboros.Network.Block as Block
 import           Ouroboros.Network.NodeToClient as NodeToClient
 import           Ouroboros.Network.NodeToNode as NodeToNode
+import           Ouroboros.Network.Protocol.ChainSync.PipelineDecision
+                     (pipelineDecisionLowHighMark)
 
 import           Ouroboros.Consensus.Block (BlockProtocol)
 import           Ouroboros.Consensus.BlockchainTime
@@ -201,9 +203,10 @@ mkNodeArgs registry cfg initState tracers btime chainDB = NodeArgs
     , btime
     , chainDB
     , callbacks
-    , blockFetchSize     = nodeBlockFetchSize
-    , blockMatchesHeader = nodeBlockMatchesHeader
-    , maxUnackTxs        = 100 -- TODO
+    , blockFetchSize      = nodeBlockFetchSize
+    , blockMatchesHeader  = nodeBlockMatchesHeader
+    , maxUnackTxs         = 100 -- TODO
+    , chainSyncPipelining = pipelineDecisionLowHighMark 200 300 -- TODO
     }
   where
     callbacks = NodeCallbacks

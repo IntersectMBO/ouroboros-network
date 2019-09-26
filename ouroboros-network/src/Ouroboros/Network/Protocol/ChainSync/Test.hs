@@ -78,10 +78,12 @@ tests = testGroup "Ouroboros.Network.Protocol.ChainSyncProtocol"
   , testProperty "codec cbor"     prop_codec_cbor
   , testProperty "demo ST" propChainSyncDemoST
   , testProperty "demo IO" propChainSyncDemoIO
-  , testProperty "demoPipelinedMax ST" propChainSyncDemoPipelinedMaxST
-  , testProperty "demoPipelinedMax IO" propChainSyncDemoPipelinedMaxIO
-  , testProperty "demoPipelinedMin ST" propChainSyncDemoPipelinedMinST
-  , testProperty "demoPipelinedMin IO" propChainSyncDemoPipelinedMinIO
+  , testProperty "demoPipelinedMax ST"     propChainSyncDemoPipelinedMaxST
+  , testProperty "demoPipelinedMax IO"     propChainSyncDemoPipelinedMaxIO
+  , testProperty "demoPipelinedMin ST"     propChainSyncDemoPipelinedMinST
+  , testProperty "demoPipelinedMin IO"     propChainSyncDemoPipelinedMinIO
+  , testProperty "demoPipelinedLowHigh ST" propChainSyncDemoPipelinedLowHighST
+  , testProperty "demoPipelinedLowHigh IO" propChainSyncDemoPipelinedLowHighIO
   , testProperty "demoPipelinedMin IO (buffered)"
                                        propChainSyncDemoPipelinedMinBufferedIO
   , testProperty "demo IO" propChainSyncDemoIO
@@ -556,6 +558,38 @@ propChainSyncDemoPipelinedMinIO cps (Positive omax) =
       clientChan serverChan
       (ChainSyncExamples.chainSyncClientPipelinedMin omax)
       cps
+
+propChainSyncDemoPipelinedLowHighST
+  :: ChainProducerStateForkTest
+  -> Positive Int
+  -> Positive Int
+  -> Property
+propChainSyncDemoPipelinedLowHighST cps (Positive x) (Positive y) =
+    runSimOrThrow $ do
+      (clientChan, serverChan) <- createPipelineTestChannels (fromIntegral highMark)
+      chainSyncDemoPipelined
+        clientChan serverChan
+        (ChainSyncExamples.chainSyncClientPipelinedLowHigh lowMark highMark)
+        cps
+  where
+    lowMark = min x y
+    highMark = max x y
+
+propChainSyncDemoPipelinedLowHighIO
+  :: ChainProducerStateForkTest
+  -> Positive Int
+  -> Positive Int
+  -> Property
+propChainSyncDemoPipelinedLowHighIO cps (Positive x) (Positive y) =
+    ioProperty $ do
+      (clientChan, serverChan) <- createPipelineTestChannels (fromIntegral highMark)
+      chainSyncDemoPipelined
+        clientChan serverChan
+        (ChainSyncExamples.chainSyncClientPipelinedLowHigh lowMark highMark)
+        cps
+  where
+    lowMark = min x y
+    highMark = max x y
 
 propChainSyncDemoPipelinedMinBufferedIO
   :: ChainProducerStateForkTest

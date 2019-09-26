@@ -1,14 +1,23 @@
-{-# LANGUAGE GADTs #-}
-{-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE RankNTypes #-}
-{-# LANGUAGE PolyKinds #-}
-{-# LANGUAGE DataKinds #-}
-{-# LANGUAGE TypeInType #-}
+{-# LANGUAGE DataKinds       #-}
+{-# LANGUAGE GADTs           #-}
+{-# LANGUAGE PatternSynonyms #-}
+{-# LANGUAGE PolyKinds       #-}
+{-# LANGUAGE RankNTypes      #-}
+{-# LANGUAGE ViewPatterns    #-}
 
+module Network.TypedProtocol.Pipelined
+  ( PeerPipelined (..)
+  , PeerSender (..)
+  , PeerReceiver (..)
+  , Outstanding
+  , N (..)
+  , Nat (Zero, Succ)
+  , natToInt
+  ) where
 
-module Network.TypedProtocol.Pipelined where
+import           Unsafe.Coerce (unsafeCoerce)
 
-import Network.TypedProtocol.Core
+import           Network.TypedProtocol.Core
 
 
 -- | A description of a peer that engages in a protocol in a pipelined fashion.
@@ -110,6 +119,18 @@ data PeerSender ps (pr :: PeerRole) (st :: ps) (n :: Outstanding) c m a where
                  -> (c ->  PeerSender ps pr (st :: ps)    n  c m a)
                  ->        PeerSender ps pr (st :: ps) (S n) c m a
 
+data PeerReceiver ps (pr :: PeerRole) (st :: ps) (stdone :: ps) m c where
+
+  ReceiverEffect :: m (PeerReceiver ps pr st stdone m c)
+                 ->    PeerReceiver ps pr st stdone m c
+
+  ReceiverDone   :: c -> PeerReceiver ps pr stdone stdone m c
+
+  ReceiverAwait  :: !(TheyHaveAgency pr st)
+                 -> (forall st'. Message ps st st'
+                              -> PeerReceiver ps pr st' stdone m c)
+                 -> PeerReceiver ps pr st stdone m c
+
 
 -- | Type level count of the number of outstanding pipelined yields for which
 -- we have not yet collected a receiver result. Used in 'PeerSender' to ensure
@@ -129,20 +150,25 @@ data N = Z | S N
 -- number of outstanding pipelined yields, and show to the type checker that
 -- 'SenderCollect' and 'SenderDone' are being used correctly.
 --
-data Nat (n :: N) where
-  Zero ::          Nat Z
-  Succ :: Nat n -> Nat (S n)
+newtype Nat (n :: N) = UnsafeInt Int
 
+data IsNat (n :: N) where
+  IsZero ::          IsNat Z
+  IsSucc :: Nat n -> IsNat (S n)
 
-data PeerReceiver ps (pr :: PeerRole) (st :: ps) (stdone :: ps) m c where
+toIsNat :: Nat n -> IsNat n
+toIsNat (UnsafeInt 0) = unsafeCoerce IsZero
+toIsNat (UnsafeInt n) = unsafeCoerce (IsSucc (UnsafeInt (pred n)))
 
-  ReceiverEffect :: m (PeerReceiver ps pr st stdone m c)
-                 ->    PeerReceiver ps pr st stdone m c
+pattern Zero :: () => Z ~ n => Nat n
+pattern Zero <- (toIsNat -> IsZero) where
+  Zero = UnsafeInt 0
 
-  ReceiverDone   :: c -> PeerReceiver ps pr stdone stdone m c
+pattern Succ :: () => (m ~ S n) => Nat n -> Nat m
+pattern Succ n <- (toIsNat -> IsSucc n) where
+  Succ (UnsafeInt n) = UnsafeInt (succ n)
 
-  ReceiverAwait  :: !(TheyHaveAgency pr st)
-                 -> (forall st'. Message ps st st'
-                              -> PeerReceiver ps pr st' stdone m c)
-                 -> PeerReceiver ps pr st stdone m c
+{-# COMPLETE Zero, Succ #-}
 
+natToInt :: Nat n -> Int
+natToInt (UnsafeInt n) = n
