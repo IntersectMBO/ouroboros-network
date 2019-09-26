@@ -17,6 +17,7 @@ local conv_ids = {
 	[0x0002] = "ChainSync Initiator",
 	[0x8002] = "ChainSync Responder",
 	[0x0003] = "BlockFetch Initiator",
+	[0x8003] = "BlockFetch Responder",
 	[0x8004] = "TxSubmission Responder",
 	[0x0004] = "TxSubmission Initiator"
 }
