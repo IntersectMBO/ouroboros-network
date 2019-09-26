@@ -70,68 +70,6 @@ newtype ClockSkew = ClockSkew { unClockSkew :: Word64 }
 type Consensus (client :: * -> * -> (* -> *) -> * -> *) blk tip m =
    client (Header blk) tip m Void
 
-data ChainSyncClientException blk tip =
-      -- | The header we received was for a slot too far in the future.
-      --
-      -- I.e., the slot of the received header was > current slot (according
-      -- to the wall time) + the max clock skew.
-      --
-      -- The first 'Point' argument is the point of the received header, the
-      -- second 'SlotId' argument is the current slot (by wall clock).
-      HeaderExceedsClockSkew (Point blk) SlotNo
-
-      -- | The server we're connecting to forked more than @k@ blocks ago.
-      --
-      -- The first 'Point' is the intersection point with the server that was
-      -- too far in the past, the second 'Point' is the head of the server.
-    | ForkTooDeep (Point blk) tip
-
-      -- | The chain validation threw an error.
-    | ChainError (ValidationErr (BlockProtocol blk))
-
-      -- | The upstream node rolled forward to a point too far in our past.
-      -- This may happen if, during catch-up, our local node has moved too far ahead of the upstream node.
-      --
-      -- We store the requested point and head point from the upstream node as
-      -- well as the tip of our current ledger.
-    | InvalidRollForward (Point blk) tip (Point blk)
-
-      -- | The upstream node rolled back more than @k@ blocks.
-      --
-      -- We store the requested intersection point and head point from the
-      -- upstream node.
-    | InvalidRollBack (Point blk) tip
-
-      -- | We send the upstream node a bunch of points from a chain fragment and
-      -- the upstream node responded with an intersection point that is not on
-      -- our chain fragment, and thus not among the points we sent.
-      --
-      -- We store the intersection point the upstream node sent us.
-    | InvalidIntersection (Point blk)
-
-      -- | The received header to roll forward doesn't fit onto the previous
-      -- one.
-      --
-      -- The first 'ChainHash' is the previous hash of the received header and
-      -- the second 'ChainHash' is that of the previous one.
-    | DoesntFit (ChainHash blk) (ChainHash blk)
-
-      -- | The upstream node's chain contained a block that we know is invalid.
-    | InvalidBlock (Point blk)
-
-deriving instance ( SupportedBlock blk
-                  , Show tip
-                  ) => Show (ChainSyncClientException blk tip)
-deriving instance ( SupportedBlock blk
-                  , Eq (ValidationErr (BlockProtocol blk))
-                  , Eq tip
-                  )
-               => Eq (ChainSyncClientException blk tip)
-instance ( SupportedBlock blk
-         , Typeable tip
-         , Show tip
-         ) => Exception (ChainSyncClientException blk tip)
-
 -- | The state of the candidate chain synched with an upstream node.
 data CandidateState blk = CandidateState
     { candidateChain      :: !(AnchoredFragment (Header blk))
@@ -655,6 +593,74 @@ rejectInvalidBlocks tracer registry getIsInvalidBlock getCandidateState =
       let ex = InvalidBlock (headerPoint invalidHeader)
       traceWith tracer $ TraceException ex
       throwM ex
+
+{-------------------------------------------------------------------------------
+  Exception
+-------------------------------------------------------------------------------}
+
+data ChainSyncClientException blk tip =
+      -- | The header we received was for a slot too far in the future.
+      --
+      -- I.e., the slot of the received header was > current slot (according
+      -- to the wall time) + the max clock skew.
+      --
+      -- The first 'Point' argument is the point of the received header, the
+      -- second 'SlotId' argument is the current slot (by wall clock).
+      HeaderExceedsClockSkew (Point blk) SlotNo
+
+      -- | The server we're connecting to forked more than @k@ blocks ago.
+      --
+      -- The first 'Point' is the intersection point with the server that was
+      -- too far in the past, the second 'Point' is the head of the server.
+    | ForkTooDeep (Point blk) tip
+
+      -- | The chain validation threw an error.
+    | ChainError (ValidationErr (BlockProtocol blk))
+
+      -- | The upstream node rolled forward to a point too far in our past.
+      -- This may happen if, during catch-up, our local node has moved too far
+      -- ahead of the upstream node.
+      --
+      -- We store the requested point and head point from the upstream node as
+      -- well as the tip of our current ledger.
+    | InvalidRollForward (Point blk) tip (Point blk)
+
+      -- | The upstream node rolled back more than @k@ blocks.
+      --
+      -- We store the requested intersection point and head point from the
+      -- upstream node.
+    | InvalidRollBack (Point blk) tip
+
+      -- | We send the upstream node a bunch of points from a chain fragment and
+      -- the upstream node responded with an intersection point that is not on
+      -- our chain fragment, and thus not among the points we sent.
+      --
+      -- We store the intersection point the upstream node sent us.
+    | InvalidIntersection (Point blk)
+
+      -- | The received header to roll forward doesn't fit onto the previous
+      -- one.
+      --
+      -- The first 'ChainHash' is the previous hash of the received header and
+      -- the second 'ChainHash' is that of the previous one.
+    | DoesntFit (ChainHash blk) (ChainHash blk)
+
+      -- | The upstream node's chain contained a block that we know is invalid.
+    | InvalidBlock (Point blk)
+
+deriving instance ( SupportedBlock blk
+                  , Show tip
+                  ) => Show (ChainSyncClientException blk tip)
+deriving instance ( SupportedBlock blk
+                  , Eq (ValidationErr (BlockProtocol blk))
+                  , Eq tip
+                  )
+               => Eq (ChainSyncClientException blk tip)
+instance ( SupportedBlock blk
+         , Typeable tip
+         , Show tip
+         ) => Exception (ChainSyncClientException blk tip)
+
 
 {-------------------------------------------------------------------------------
   TODO #221: Implement genesis
