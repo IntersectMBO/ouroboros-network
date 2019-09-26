@@ -33,6 +33,7 @@ module System.Win32.NamedPipes (
     closePipe,
     readPipe,
     pGetLine,
+    writePipe,
 
     -- * Client and server APIs
     pipeToHandle,
@@ -42,6 +43,7 @@ module System.Win32.NamedPipes (
 import Control.Monad (unless)
 import           Data.ByteString (ByteString)
 import qualified Data.ByteString.Internal as BS
+import qualified Data.ByteString.Unsafe as BS (unsafeUseAsCStringLen)
 import qualified Data.ByteString.Char8 as BSC
 import System.IO (Handle, IOMode, BufferMode(..), hSetBuffering)
 import GHC.IO.Device (IODeviceType(..))
@@ -51,7 +53,9 @@ import GHC.IO.Handle.FD (mkHandleFromFD)
 import Foreign
 import Foreign.C
 import System.Win32.Types
-import System.Win32.File hiding (win32_ReadFile, c_ReadFile)
+import System.Win32.File hiding ( win32_ReadFile, c_ReadFile
+                                , win32_WriteFile, c_WriteFile
+                                )
 
 
 
@@ -211,6 +215,9 @@ closePipe :: HANDLE
           -> IO ()
 closePipe = closeHandle
 
+--
+-- Read from a pipe
+--
 
 win32_ReadFile :: HANDLE -> Ptr a -> DWORD -> Maybe LPOVERLAPPED -> IO DWORD
 win32_ReadFile h buf n mb_over =
@@ -244,3 +251,30 @@ pGetLine h = go ""
         if x == '\n'
           then pure (reverse s)
           else go (x : s)
+
+
+--
+-- Write to a pipe
+--
+
+win32_WriteFile :: HANDLE
+                -> Ptr a
+                -> DWORD
+                -> Maybe LPOVERLAPPED
+                -> IO DWORD
+win32_WriteFile h buf n mb_over =
+  alloca $ \ p_n -> do
+  failIfFalse_ "WriteFile" $ c_WriteFile h buf n p_n (maybePtr mb_over)
+  peek p_n
+
+foreign import ccall interruptible "windows.h WriteFile"
+  c_WriteFile :: HANDLE -> Ptr a -> DWORD -> Ptr DWORD -> LPOVERLAPPED -> IO Bool
+
+-- | Write a 'ByteString' to a pipe.
+--
+writePipe :: HANDLE
+          -> ByteString
+          -> IO Int
+writePipe h bs = BS.unsafeUseAsCStringLen bs $
+    \(str, len) ->
+      fromIntegral <$> win32_WriteFile h (castPtr str) (fromIntegral len) Nothing

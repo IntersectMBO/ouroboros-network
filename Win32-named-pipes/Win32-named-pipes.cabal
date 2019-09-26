@@ -49,8 +49,12 @@ test-suite named-pipe-test
   ghc-options:         -Wall
                        -threaded
   build-depends:       base,
+                       bytestring,
                        tasty,
                        tasty-hunit,
+                       tasty-quickcheck,
+                       QuickCheck        >= 2.13.2,
+                       quickcheck-instances,
                        Win32,
                        Win32-named-pipes
 
