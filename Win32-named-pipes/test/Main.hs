@@ -1,14 +1,25 @@
+{-# LANGUAGE NumericUnderscores  #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+
 module Main (main) where
 
+import           Control.Concurrent.MVar
 import           Control.Concurrent (forkIO, killThread, threadDelay)
+import           Control.Exception (AsyncException (..), catch, throwIO, mask)
 import           Data.Functor (void)
 import           Data.Bits
+import           Data.ByteString (ByteString)
+import qualified Data.ByteString as BS
+import qualified Data.ByteString.Char8 as BSC
 
 import           System.Win32
 import           System.Win32.NamedPipes
 
 import           Test.Tasty
 import           Test.Tasty.HUnit
+import           Test.Tasty.QuickCheck (testProperty)
+import           Test.QuickCheck
+import           Test.QuickCheck.Instances.ByteString () 
 
 main :: IO ()
 main = defaultMain tests
@@ -27,6 +38,14 @@ tests =
       test_interruptible_readPipe_sync
   , testCase "interruptible readPipe twice (concurrent)"
       test_interruptible_readPipe_conc
+  , testProperty "writePipe & readPipe"         prop_WriteRead
+  , testProperty "writePipe & readPipe (large)" prop_WriteReadLarge
+  , testProperty "interruptible writePipe"      prop_interruptible_Write
+
+  , testGroup "generators"
+    [ testProperty "NonEmptyBS" prop_NonEmptyBS
+    , testProperty "NonEmptyBS" prop_shrink_NonEmptyBS
+    ]
   ]
 
 
@@ -128,3 +147,104 @@ test_interruptible_readPipe_conc = do
     killThread tid'
     closePipe hpipe'
     closePipe hpipe
+
+
+-- | Small non-empty 'ByteString's.
+--
+data NonEmptyBS = NonEmptyBS { getNonEmptyBS :: ByteString }
+  deriving (Eq, Show)
+
+instance Arbitrary NonEmptyBS where
+    arbitrary = do
+      bs <- arbitrary
+      if BS.null bs
+        then do
+          -- generate a non empty string
+          NonEmpty s <- arbitrary
+          pure (NonEmptyBS $ BSC.pack s)
+        else pure (NonEmptyBS bs)
+
+    shrink (NonEmptyBS bs) =
+      [ NonEmptyBS bs'
+      | bs' <- shrink bs
+      , not (BS.null bs')
+      ]
+
+prop_NonEmptyBS :: NonEmptyBS -> Bool
+prop_NonEmptyBS (NonEmptyBS bs) = not (BS.null bs)
+
+prop_shrink_NonEmptyBS :: NonEmptyBS -> Bool
+prop_shrink_NonEmptyBS = all (\(NonEmptyBS bs) -> not (BS.null bs)) . shrink
+
+-- | Large non-empty 'ByteString's, up to 2.5MB.
+--
+data LargeNonEmptyBS = LargeNonEmptyBS { getLargeNonEmptyBS :: ByteString }
+  deriving (Show, Eq)
+
+instance Arbitrary LargeNonEmptyBS where
+    arbitrary = LargeNonEmptyBS . getNonEmptyBS <$> resize 2_500_000 arbitrary
+    shrink (LargeNonEmptyBS bs) =
+      map (LargeNonEmptyBS . getNonEmptyBS)
+        (shrink $ NonEmptyBS bs)
+
+test_WriteRead :: ByteString -> Property
+test_WriteRead bs = ioProperty (do
+    hRead <- createNamedPipe pipeName
+                             pIPE_ACCESS_DUPLEX
+                             (pIPE_TYPE_BYTE .|. pIPE_READMODE_BYTE)
+                             pIPE_UNLIMITED_INSTANCES
+                             maxBound
+                             maxBound
+                             0
+                             Nothing
+    hWrite <- createFile pipeName
+                         (gENERIC_READ .|. gENERIC_WRITE)
+                         fILE_SHARE_NONE
+                         Nothing
+                         oPEN_EXISTING
+                         fILE_ATTRIBUTE_NORMAL
+                         Nothing
+    _ <- writePipe hWrite bs
+    bs' <- readPipe hRead (BS.length bs)
+    closePipe hRead
+    closePipe hWrite
+    pure (bs === bs'))
+
+prop_WriteRead :: NonEmptyBS -> Property
+prop_WriteRead = test_WriteRead . getNonEmptyBS
+
+prop_WriteReadLarge :: LargeNonEmptyBS -> Property
+prop_WriteReadLarge = test_WriteRead . getLargeNonEmptyBS
+
+
+prop_interruptible_Write :: Property
+prop_interruptible_Write = ioProperty $ do
+    let bs = BSC.pack $ replicate 100 'a'
+    v <- newEmptyMVar
+
+    -- create a pipe which will block after writing 1 byte
+    hRead <- createNamedPipe pipeName
+                             pIPE_ACCESS_DUPLEX
+                             (pIPE_TYPE_BYTE .|. pIPE_READMODE_BYTE)
+                             pIPE_UNLIMITED_INSTANCES
+                             1
+                             1
+                             0
+                             Nothing
+    hWrite <- createFile pipeName
+                         (gENERIC_READ .|. gENERIC_WRITE)
+                         fILE_SHARE_NONE
+                         Nothing
+                         oPEN_EXISTING
+                         fILE_ATTRIBUTE_NORMAL
+                         Nothing
+
+    tid <- mask $ \unmask -> forkIO $ void $
+      unmask (writePipe hWrite bs)
+        `catch` \(e :: AsyncException) -> putMVar v e >> throwIO e
+
+    killThread tid
+    closePipe hRead
+    closePipe hWrite
+
+    (Just ThreadKilled ==) <$> tryReadMVar v
