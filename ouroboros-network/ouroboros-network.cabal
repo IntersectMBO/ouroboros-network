@@ -39,6 +39,7 @@ library
   -- This has to be tidied up once the design becomes clear.
   exposed-modules:     Codec.SerialiseTerm
                        Data.FingerTree.Strict
+                       Data.Sequence.Strict
                        Ouroboros.Network.AnchoredFragment
                        Ouroboros.Network.Block
                        Ouroboros.Network.BlockFetch
@@ -156,6 +157,7 @@ test-suite test-network
   main-is:             Main.hs
   other-modules:       Codec.SerialiseTerm
                        Data.FingerTree.Strict
+                       Data.Sequence.Strict
                        Ouroboros.Network.AnchoredFragment
                        Ouroboros.Network.Testing.ConcreteBlock
                        Ouroboros.Network.Block
@@ -286,6 +288,7 @@ test-suite cddl
     buildable: False
   other-modules:       Codec.SerialiseTerm
                        Data.FingerTree.Strict
+                       Data.Sequence.Strict
                        Ouroboros.Network.AnchoredFragment
                        Ouroboros.Network.Block
                        Ouroboros.Network.MockChain.Chain
