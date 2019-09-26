@@ -153,7 +153,6 @@ import           Control.Tracer (Tracer, traceWith)
 
 import           Data.ByteString.Builder (Builder)
 import           Data.ByteString.Lazy (ByteString, toStrict)
-import           Data.Either (isRight)
 import           Data.Functor (($>), (<&>))
 import           Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
@@ -189,12 +188,20 @@ import           Ouroboros.Storage.ImmutableDB.Util
 data ImmutableDBEnv m hash = forall h e. ImmutableDBEnv
     { _dbHasFS           :: !(HasFS m h)
     , _dbErr             :: !(ErrorHandling ImmutableDBError m)
-    , _dbInternalState   :: !(StrictTMVar m (Either (ClosedState m) (OpenState m hash h)))
+    , _dbInternalState   :: !(StrictTMVar m (InternalState m hash h))
     , _dbEpochFileParser :: !(EpochFileParser e hash m (Word64, SlotNo))
     , _dbHashDecoder     :: !(forall s . Decoder s hash)
     , _dbHashEncoder     :: !(hash -> Encoding)
     , _dbTracer          :: !(Tracer m (TraceEvent e))
     }
+
+data InternalState m hash h =
+    DbClosed !(ClosedState m)
+  | DbOpen !(OpenState m hash h)
+
+dbIsOpen :: InternalState m hash h -> Bool
+dbIsOpen (DbClosed _) = False
+dbIsOpen (DbOpen _)   = True
 
 -- | Internal state when the database is open.
 data OpenState m hash h = OpenState
@@ -304,7 +311,7 @@ openDBImpl hashDecoder hashEncoder hasFS@HasFS{..} err epochInfo valPol epochFil
     !ost  <- validateAndReopen hashDecoder hashEncoder hasFS err epochInfo
       valPol epochFileParser initialIteratorID tracer
 
-    stVar <- uncheckedNewTMVarM (Right ost)
+    stVar <- uncheckedNewTMVarM (DbOpen ost)
 
     let dbEnv = ImmutableDBEnv hasFS err stVar epochFileParser hashDecoder hashEncoder tracer
         db    = mkDBRecord dbEnv
@@ -318,14 +325,14 @@ closeDBImpl ImmutableDBEnv {..} = do
     internalState <- atomically $ takeTMVar _dbInternalState
     case internalState of
       -- Already closed
-      Left  _ -> do
+      DbClosed  _ -> do
         traceWith _dbTracer $ DBAlreadyClosed
         atomically $ putTMVar _dbInternalState internalState
-      Right OpenState {..} -> do
+      DbOpen OpenState {..} -> do
         let !closedState = closedStateFromInternalState internalState
         -- Close the database before doing the file-system operations so that
         -- in case these fail, we don't leave the database open.
-        atomically $ putTMVar _dbInternalState (Left closedState)
+        atomically $ putTMVar _dbInternalState (DbClosed closedState)
         hClose _currentEpochWriteHandle
         traceWith _dbTracer DBClosed
   where
@@ -333,7 +340,7 @@ closeDBImpl ImmutableDBEnv {..} = do
 
 isOpenImpl :: MonadSTM m => ImmutableDBEnv m hash -> m Bool
 isOpenImpl ImmutableDBEnv {..} =
-    isRight <$> atomically (readTMVar _dbInternalState)
+    dbIsOpen <$> atomically (readTMVar _dbInternalState)
 
 reopenImpl :: forall m hash.
               (HasCallStack, MonadSTM m, MonadThrow m, Eq hash)
@@ -344,12 +351,12 @@ reopenImpl ImmutableDBEnv {..} valPol = do
     internalState <- atomically $ takeTMVar _dbInternalState
     case internalState of
       -- When still open,
-      Right _ -> do
+      DbOpen _ -> do
         atomically $ putTMVar _dbInternalState internalState
         throwUserError _dbErr OpenDBError
 
       -- Closed, so we can try to reopen
-      Left ClosedState {..} ->
+      DbClosed ClosedState {..} ->
         -- Important: put back the state when an error is thrown, otherwise we
         -- have an empty TMVar.
         onException hasFsErr _dbErr
@@ -359,7 +366,7 @@ reopenImpl ImmutableDBEnv {..} valPol = do
               _dbErr _closedEpochInfo valPol _dbEpochFileParser
               _closedNextIteratorID _dbTracer
 
-            atomically $ putTMVar _dbInternalState (Right ost)
+            atomically $ putTMVar _dbInternalState (DbOpen ost)
   where
     HasFS{..} = _dbHasFS
 
@@ -1299,8 +1306,8 @@ getOpenState :: (HasCallStack, MonadSTM m)
 getOpenState ImmutableDBEnv {..} = do
     internalState <- atomically (readTMVar _dbInternalState)
     case internalState of
-       Left  _         -> throwUserError _dbErr ClosedDBError
-       Right openState -> return (SomePair _dbHasFS openState)
+       DbClosed _       -> throwUserError _dbErr ClosedDBError
+       DbOpen openState -> return (SomePair _dbHasFS openState)
 
 -- | Modify the internal state of an open database.
 --
@@ -1335,10 +1342,10 @@ modifyOpenState ImmutableDBEnv {_dbHasFS = hasFS :: HasFS m h, ..} action = do
     -- so that 'close' knows which error is thrown (@Either e (s, r)@ vs. @(s,
     -- r)@).
 
-    open :: m (Either (ClosedState m) (OpenState m hash h))
+    open :: m (InternalState m hash h)
     open = atomically $ takeTMVar _dbInternalState
 
-    close :: Either (ClosedState m) (OpenState m hash h)
+    close :: InternalState m hash h
           -> ExitCase (Either ImmutableDBError (r, OpenState m hash h))
           -> m ()
     close !st ec = case ec of
@@ -1347,31 +1354,31 @@ modifyOpenState ImmutableDBEnv {_dbHasFS = hasFS :: HasFS m h, ..} action = do
       -- In case of an exception, close the DB for safety.
       ExitCaseException _ex -> do
         let !cst = closedStateFromInternalState st
-        atomically $ putTMVar _dbInternalState (Left cst)
+        atomically $ putTMVar _dbInternalState (DbClosed cst)
         closeOpenHandles st
       -- In case of success, update to the newest state
       ExitCaseSuccess (Right (_, ost)) ->
-        atomically $ putTMVar _dbInternalState (Right ost)
+        atomically $ putTMVar _dbInternalState (DbOpen ost)
       -- In case of an error (not an exception)
       ExitCaseSuccess (Left (UnexpectedError {})) -> do
         -- When unexpected, close the DB for safety
         let !cst = closedStateFromInternalState st
-        atomically $ putTMVar _dbInternalState (Left cst)
+        atomically $ putTMVar _dbInternalState (DbClosed cst)
         closeOpenHandles st
       ExitCaseSuccess (Left (UserError {})) ->
         -- When a user error, just restore the previous state
         atomically $ putTMVar _dbInternalState st
 
     mutation :: HasCallStack
-             => Either (ClosedState m) (OpenState m hash h)
+             => InternalState m hash h
              -> m (r, OpenState m hash h)
-    mutation (Left _)    = throwUserError _dbErr ClosedDBError
-    mutation (Right ost) = runStateT (action hasFS) ost
+    mutation (DbClosed _) = throwUserError _dbErr ClosedDBError
+    mutation (DbOpen ost) = runStateT (action hasFS) ost
 
     -- TODO what if this fails?
-    closeOpenHandles :: Either (ClosedState m) (OpenState m hash h) -> m ()
-    closeOpenHandles (Left _)               = return ()
-    closeOpenHandles (Right OpenState {..}) = hClose _currentEpochWriteHandle
+    closeOpenHandles :: InternalState m hash h -> m ()
+    closeOpenHandles (DbClosed _)            = return ()
+    closeOpenHandles (DbOpen OpenState {..}) = hClose _currentEpochWriteHandle
 
 -- | Perform an action that accesses the internal state of an open database.
 --
@@ -1393,7 +1400,7 @@ withOpenState ImmutableDBEnv {_dbHasFS = hasFS :: HasFS m h, ..} action = do
     HasFS{..}         = hasFS
     ErrorHandling{..} = _dbErr
 
-    open :: m (Either (ClosedState m) (OpenState m hash h))
+    open :: m (InternalState m hash h)
     open = atomically $ readTMVar _dbInternalState
 
     -- close doesn't take the state that @open@ returned, because the state
@@ -1409,7 +1416,7 @@ withOpenState ImmutableDBEnv {_dbHasFS = hasFS :: HasFS m h, ..} action = do
         st <- atomically $ do
           st <- takeTMVar _dbInternalState
           let !cst = closedStateFromInternalState st
-          putTMVar _dbInternalState (Left cst)
+          putTMVar _dbInternalState (DbClosed cst)
           return st
         closeOpenHandles st
       ExitCaseSuccess (Right _) -> return ()
@@ -1420,28 +1427,27 @@ withOpenState ImmutableDBEnv {_dbHasFS = hasFS :: HasFS m h, ..} action = do
         st <- atomically $ do
           st <- takeTMVar _dbInternalState
           let !cst = closedStateFromInternalState st
-          putTMVar _dbInternalState (Left cst)
+          putTMVar _dbInternalState (DbClosed cst)
           return st
         closeOpenHandles st
       ExitCaseSuccess (Left (UserError {})) -> return ()
 
     access :: HasCallStack
-           => Either (ClosedState m) (OpenState m hash h)
+           => InternalState m hash h
            -> m r
-    access (Left _)    = throwUserError _dbErr ClosedDBError
-    access (Right ost) = action hasFS ost
+    access (DbClosed _) = throwUserError _dbErr ClosedDBError
+    access (DbOpen ost) = action hasFS ost
 
     -- TODO what if this fails?
-    closeOpenHandles :: Either (ClosedState m) (OpenState m hash h) -> m ()
-    closeOpenHandles (Left _)               = return ()
-    closeOpenHandles (Right OpenState {..}) = hClose _currentEpochWriteHandle
+    closeOpenHandles :: InternalState m hash h -> m ()
+    closeOpenHandles (DbClosed _)            = return ()
+    closeOpenHandles (DbOpen OpenState {..}) = hClose _currentEpochWriteHandle
 
 
 -- | Create a 'ClosedState' from an internal state, open or closed.
-closedStateFromInternalState :: Either (ClosedState m) (OpenState m hash h)
-                             -> ClosedState m
-closedStateFromInternalState (Left cst) = cst
-closedStateFromInternalState (Right OpenState {..}) = ClosedState
+closedStateFromInternalState :: InternalState m hash h -> ClosedState m
+closedStateFromInternalState (DbClosed cst) = cst
+closedStateFromInternalState (DbOpen OpenState {..}) = ClosedState
   { _closedEpochInfo       = _epochInfo
   , _closedNextIteratorID  = _nextIteratorID
   }
