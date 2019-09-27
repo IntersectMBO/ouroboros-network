@@ -50,7 +50,10 @@ data StrictTVar m a = StrictTVar
    , tvar      :: !(Lazy.LazyTVar m a)
    }
 
--- TODO: it can be removed after 'Server.Socket' is re-written using 'MonadSTM'
+-- | Get the underlying @TVar@
+--
+-- Since we obviously cannot guarantee that updates to this 'LazyTVar' will be
+-- strict, this should be used with caution.
 toLazyTVar :: StrictTVar m a -> Lazy.LazyTVar m a
 toLazyTVar StrictTVar { tvar } = tvar
 

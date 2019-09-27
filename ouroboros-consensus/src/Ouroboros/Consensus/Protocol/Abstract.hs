@@ -36,6 +36,8 @@ import           Data.Typeable (Typeable)
 import           Data.Word (Word64)
 import           GHC.Generics (Generic)
 
+import           Cardano.Prelude (NoUnexpectedThunks)
+
 import           Control.Monad.Class.MonadSay
 
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment (..))
@@ -53,6 +55,7 @@ import           GHC.Stack
 -- block representation.
 class ( Show (ChainState    p)
       , Show (ValidationErr p)
+      , NoUnexpectedThunks (ChainState p)
       , Typeable p -- so that p can appear in exceptions
       ) => OuroborosTag p where
 
@@ -210,7 +213,7 @@ class ( Show (ChainState    p)
 -- NOTE: This talks about the number of /blocks/ we can roll back, not
 -- the number of /slots/.
 newtype SecurityParam = SecurityParam { maxRollbacks :: Word64 }
-  deriving (Show, Eq, Generic)
+  deriving (Show, Eq, Generic, NoUnexpectedThunks)
 
 {-------------------------------------------------------------------------------
   State monad

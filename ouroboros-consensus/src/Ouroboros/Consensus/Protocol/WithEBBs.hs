@@ -22,9 +22,13 @@ module Ouroboros.Consensus.Protocol.WithEBBs
   )
 where
 
+import           GHC.Generics (Generic)
+
 import qualified Codec.CBOR.Decoding as CBOR
 import qualified Codec.CBOR.Encoding as CBOR
 import qualified Codec.Serialise as CBOR
+
+import           Cardano.Prelude (NoUnexpectedThunks)
 
 import           Ouroboros.Network.Block (HasHeader (..), SlotNo)
 import           Ouroboros.Network.Point (WithOrigin (..))
@@ -119,6 +123,7 @@ data ChainStateWithEBBs p = UnsafeChainStateWithEBBs
     -- EBB
   , underlyingChainState :: !(ChainState p)
   }
+  deriving (Generic)
 
 mkChainStateWithEBBs :: Maybe SlotNo -> ChainState p -> ChainStateWithEBBs p
 mkChainStateWithEBBs mSlot underlying =
@@ -126,7 +131,8 @@ mkChainStateWithEBBs mSlot underlying =
       Nothing    -> UnsafeChainStateWithEBBs Nothing     underlying
       Just !slot -> UnsafeChainStateWithEBBs (Just slot) underlying
 
-deriving instance Show (ChainState p) => Show (ChainStateWithEBBs p)
+deriving instance OuroborosTag p => NoUnexpectedThunks (ChainStateWithEBBs p)
+deriving instance OuroborosTag p => Show (ChainStateWithEBBs p)
 
 -- | Create a 'ChainStateWithEBBs' from a 'ChainState' that does not include
 -- any non-EBB blocks.

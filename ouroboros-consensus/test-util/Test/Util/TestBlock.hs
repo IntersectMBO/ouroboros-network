@@ -1,6 +1,7 @@
 {-# LANGUAGE DeriveAnyClass             #-}
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE DerivingStrategies         #-}
+{-# LANGUAGE DerivingVia                #-}
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
@@ -55,6 +56,7 @@ import qualified System.Random as R
 import           Test.QuickCheck
 
 import           Cardano.Crypto.DSIGN
+import           Cardano.Prelude (NoUnexpectedThunks)
 
 import           Ouroboros.Network.Block (ChainHash (..), HeaderHash)
 import qualified Ouroboros.Network.Block as Block
@@ -117,6 +119,7 @@ newtype TestHash = TestHash {
     }
   deriving stock   (Generic)
   deriving newtype (Eq, Ord, Serialise)
+  deriving anyclass NoUnexpectedThunks
 
 mkTestHash :: [Word64] -> TestHash
 mkTestHash = TestHash . NE.fromList . reverse
@@ -140,11 +143,12 @@ data TestBlock = TestBlock {
       -- blocks with the same 'TestHash' have the same value for 'tbValid'.
     }
   deriving stock    (Show, Eq, Generic)
-  deriving anyclass (Serialise)
+  deriving anyclass (Serialise, NoUnexpectedThunks)
 
 instance GetHeader TestBlock where
   newtype Header TestBlock = TestHeader { testHeader :: TestBlock }
-    deriving (Eq, Show)
+    deriving stock   (Eq, Show)
+    deriving newtype (NoUnexpectedThunks)
   getHeader = TestHeader
 
 type instance HeaderHash TestBlock = TestHash
@@ -231,9 +235,10 @@ instance UpdateLedger TestBlock where
   data LedgerState TestBlock =
       TestLedger {
           -- The ledger state simply consists of the last applied block
-          lastApplied :: (Point TestBlock, ChainHash TestBlock)
+          lastAppliedPoint :: !(Point TestBlock)
+        , lastAppliedHash  :: !(ChainHash TestBlock)
         }
-    deriving (Show, Eq, Generic, Serialise)
+    deriving (Show, Eq, Generic, Serialise, NoUnexpectedThunks)
 
   data LedgerConfig TestBlock = LedgerConfig
   type LedgerError  TestBlock = TestBlockError
@@ -243,24 +248,24 @@ instance UpdateLedger TestBlock where
   applyChainTick _ _ = return
 
   applyLedgerBlock _ tb@TestBlock{..} TestLedger{..}
-    | Block.blockPrevHash tb /= snd lastApplied
-    = throwError $ InvalidHash (snd lastApplied) (Block.blockPrevHash tb)
+    | Block.blockPrevHash tb /= lastAppliedHash
+    = throwError $ InvalidHash lastAppliedHash (Block.blockPrevHash tb)
     | not tbValid
     = throwError $ InvalidBlock
     | otherwise
-    = return     $ TestLedger (Chain.blockPoint tb, BlockHash (Block.blockHash tb))
+    = return     $ TestLedger (Chain.blockPoint tb) (BlockHash (Block.blockHash tb))
 
   reapplyLedgerBlock _ tb _ =
-    TestLedger (Chain.blockPoint tb, BlockHash (Block.blockHash tb))
+    TestLedger (Chain.blockPoint tb) (BlockHash (Block.blockHash tb))
 
-  ledgerTipPoint = fst . lastApplied
+  ledgerTipPoint = lastAppliedPoint
 
 instance ProtocolLedgerView TestBlock where
   protocolLedgerView _ _ = ()
   anachronisticProtocolLedgerView _ _ _ = Right $ SB.unbounded ()
 
 testInitLedger :: LedgerState TestBlock
-testInitLedger = TestLedger (Block.genesisPoint, GenesisHash)
+testInitLedger = TestLedger Block.genesisPoint GenesisHash
 
 testInitExtLedger :: ExtLedgerState TestBlock
 testInitExtLedger = ExtLedgerState {

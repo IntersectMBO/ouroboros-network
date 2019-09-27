@@ -1,3 +1,6 @@
+{-# LANGUAGE DeriveAnyClass             #-}
+{-# LANGUAGE DeriveGeneric              #-}
+{-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
 module Ouroboros.Consensus.NodeId (
@@ -8,8 +11,11 @@ module Ouroboros.Consensus.NodeId (
   ) where
 
 import           Codec.Serialise (Serialise)
-import           Ouroboros.Consensus.Util.Condense (Condense(..))
+import           GHC.Generics (Generic)
 
+import           Cardano.Prelude (NoUnexpectedThunks)
+
+import           Ouroboros.Consensus.Util.Condense (Condense (..))
 
 {-------------------------------------------------------------------------------
   Node IDs
@@ -19,7 +25,7 @@ import           Ouroboros.Consensus.Util.Condense (Condense(..))
 -- layer does not use or provide node ids (it uses addresses).
 data NodeId = CoreId Int
             | RelayId Int
-  deriving (Eq, Ord, Show)
+  deriving (Eq, Ord, Show, Generic, NoUnexpectedThunks)
 
 instance Condense NodeId where
   condense (CoreId  i) = "c" ++ show i
@@ -27,8 +33,8 @@ instance Condense NodeId where
 
 -- | Core node ID
 newtype CoreNodeId = CoreNodeId Int
-  deriving (Show, Eq, Ord, Condense, Serialise)
+  deriving stock   (Show, Eq, Ord)
+  deriving newtype (Condense, Serialise, NoUnexpectedThunks)
 
 fromCoreNodeId :: CoreNodeId -> NodeId
 fromCoreNodeId (CoreNodeId n) = CoreId n
-

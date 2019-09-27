@@ -1,4 +1,5 @@
 {-# LANGUAGE DeriveAnyClass             #-}
+{-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
@@ -29,7 +30,10 @@ module Test.Consensus.Mempool.TestBlock
 import           Control.Monad.Except (runExcept)
 import           Data.FingerTree (Measured (..))
 import           Data.Word (Word64)
+import           GHC.Generics (Generic)
 import           GHC.Stack (HasCallStack)
+
+import           Cardano.Prelude (NoUnexpectedThunks)
 
 import           Ouroboros.Network.Block (pattern GenesisPoint, HasHeader (..),
                      HeaderHash, Point, StandardHash)
@@ -62,7 +66,7 @@ data TestBlock = TestBlock deriving (StandardHash)
 
 instance GetHeader TestBlock where
   data Header TestBlock = TestHeader
-    deriving (Eq, Show)
+    deriving (Eq, Show, Generic, NoUnexpectedThunks)
   getHeader = notNeeded
 
 type instance HeaderHash TestBlock = Word64
@@ -106,7 +110,7 @@ instance UpdateLedger TestBlock where
         , tlTxIds       :: [TestTxId]
           -- ^ From new-to-old.
         }
-    deriving (Show, Eq)
+    deriving (Show, Eq, Generic, NoUnexpectedThunks)
 
   data LedgerConfig TestBlock = LedgerConfig
   type LedgerError  TestBlock = ()

@@ -53,6 +53,7 @@ import           GHC.Generics (Generic)
 
 import           Cardano.Binary (ToCBOR (..))
 import           Cardano.Crypto.Hash
+import           Cardano.Prelude (NoUnexpectedThunks)
 
 import           Ouroboros.Network.Block
 
@@ -103,7 +104,7 @@ instance GetHeader (SimpleBlock' c ext ext') where
         -- consensus protocols.
       , simpleHeaderExt  :: ext'
       }
-    deriving (Generic, Show, Eq)
+    deriving (Generic, Show, Eq, NoUnexpectedThunks)
 
   getHeader = simpleHeader
 
@@ -115,7 +116,7 @@ data SimpleStdHeader c ext = SimpleStdHeader {
     , simpleBlockSize :: Word64
     }
   deriving stock    (Generic, Show, Eq)
-  deriving anyclass (Serialise)
+  deriving anyclass (Serialise, NoUnexpectedThunks)
 
 data SimpleBody = SimpleBody {
       simpleTxs :: [Tx]
@@ -212,7 +213,7 @@ instance (SimpleCrypto c, Typeable ext, SupportedBlock (SimpleBlock c ext))
         simpleLedgerState :: MockState (SimpleBlock c ext)
       }
     deriving stock   (Generic, Show, Eq)
-    deriving newtype (Serialise)
+    deriving newtype (Serialise, NoUnexpectedThunks)
 
   data LedgerConfig (SimpleBlock c ext) =
       SimpleLedgerConfig

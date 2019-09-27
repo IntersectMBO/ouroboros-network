@@ -33,6 +33,8 @@ module Control.Monad.IOSim (
   selectTraceEventsDynamic,
   selectTraceEventsSay,
   printTraceEventsSay,
+  -- * Low-level API
+  execReadTVar
   ) where
 
 import           Prelude hiding (read)

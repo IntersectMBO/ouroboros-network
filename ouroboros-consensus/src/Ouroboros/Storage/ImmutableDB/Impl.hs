@@ -1,12 +1,18 @@
 {-# LANGUAGE BangPatterns              #-}
+{-# LANGUAGE DataKinds                 #-}
+{-# LANGUAGE DeriveAnyClass            #-}
+{-# LANGUAGE DeriveGeneric             #-}
+{-# LANGUAGE DerivingVia               #-}
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE FlexibleContexts          #-}
 {-# LANGUAGE LambdaCase                #-}
 {-# LANGUAGE MultiWayIf                #-}
 {-# LANGUAGE NamedFieldPuns            #-}
+{-# LANGUAGE QuantifiedConstraints     #-}
 {-# LANGUAGE RankNTypes                #-}
 {-# LANGUAGE RecordWildCards           #-}
 {-# LANGUAGE ScopedTypeVariables       #-}
+{-# LANGUAGE UndecidableInstances      #-}
 
 {-# OPTIONS_GHC -Wredundant-constraints #-}
 -- | Immutable on-disk database of binary blobs
@@ -150,6 +156,7 @@ import           Control.Monad.Class.MonadThrow (ExitCase (..),
 import           Control.Monad.State.Strict (StateT (..), get, lift, modify,
                      put, runStateT, state)
 import           Control.Tracer (Tracer, traceWith)
+import           GHC.Generics (Generic)
 
 import           Data.ByteString.Builder (Builder)
 import           Data.ByteString.Lazy (ByteString, toStrict)
@@ -160,6 +167,10 @@ import           Data.Maybe (fromMaybe, isJust)
 import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Word
+
+import           Cardano.Prelude (NoUnexpectedThunks(..),
+                     UseIsNormalFormNamed(..),
+                     allNoUnexpectedThunks)
 
 import           GHC.Stack (HasCallStack, callStack)
 
@@ -222,6 +233,7 @@ data OpenState m hash h = OpenState
     , _nextIteratorID          :: !BaseIteratorID
     -- ^ The ID of the next iterator that will be created.
     }
+  deriving (Generic, NoUnexpectedThunks)
 
 -- | Internal state when the database is closed. This contains data that
 -- should be restored when the database is reopened. Data not present here
@@ -232,7 +244,7 @@ data ClosedState m = ClosedState
     , _closedNextIteratorID :: !BaseIteratorID
     -- ^ See '_nextIteratorID'.
     }
-
+  deriving (Generic, NoUnexpectedThunks)
 
 {------------------------------------------------------------------------------
   ImmutableDB API
@@ -805,11 +817,28 @@ data IteratorHandle hash m = forall h. IteratorHandle
     -- exhausted and/or closed.
   , _it_end      :: !EpochSlot
     -- ^ The end of the iterator: the last 'EpochSlot' it should return.
-  , _it_end_hash :: !(Maybe hash)
+  , _it_end_hash :: !(IteratorEndHash hash)
     -- ^ The @hash@ of the last block the iterator should return. 'Nothing'
     -- when no @hash@ was specified, then only '_it_end' will be used to
     -- determine when to stop streaming.
   }
+
+data IteratorEndHash hash =
+    ItrNoEndHash
+  | ItrEndHash !hash
+  deriving NoUnexpectedThunks via UseIsNormalFormNamed "IteratorEndHash" (IteratorEndHash hash)
+
+-- Existential type; we can't use generics
+instance ( forall a. NoUnexpectedThunks (StrictTVar m a)
+         ) => NoUnexpectedThunks (IteratorHandle hash m) where
+  showTypeOf _ = "IteratorHandle"
+  whnfNoUnexpectedThunks ctxt IteratorHandle{..} =
+      allNoUnexpectedThunks [
+          noUnexpectedThunks ctxt _it_hasFS
+        , noUnexpectedThunks ctxt _it_state
+        , noUnexpectedThunks ctxt _it_end
+        , noUnexpectedThunks ctxt _it_end_hash
+        ]
 
 data IteratorState hash h = IteratorState
   { _it_next         :: !EpochSlot
@@ -836,6 +865,7 @@ data IteratorState hash h = IteratorState
     -- ^ We load the index file for the epoch we are currently iterating over
     -- in-memory, as it's going to be small anyway (usually ~150kb).
   }
+  deriving (Generic, NoUnexpectedThunks)
 
 streamBinaryBlobsImpl :: forall m hash.
                          (HasCallStack, MonadSTM m, MonadCatch m, Eq hash)
@@ -861,16 +891,16 @@ streamBinaryBlobsImpl dbEnv mbStart mbEnd = withOpenState dbEnv $ \hasFS st -> d
                   -- must a regular block (which would come /after/ the EBB),
                   -- and then check this when we actually reach the end.
                   endEpochSlot <- epochInfoBlockRelative _epochInfo endSlot
-                  return $ Just (endEpochSlot, Just endHash)
+                  return $ Just (endEpochSlot, ItrEndHash endHash)
             | otherwise
-            -> return $ Just (EpochSlot epoch 0, Nothing)
+            -> return $ Just (EpochSlot epoch 0, ItrNoEndHash)
           Tip (Right lastSlot')
             | Just (endSlot, endHash) <- mbEnd
             -> do endEpochSlot <- epochInfoBlockRelative _epochInfo endSlot
-                  return $ Just (endEpochSlot, Just endHash)
+                  return $ Just (endEpochSlot, ItrEndHash endHash)
             | otherwise
             -> do endEpochSlot <- epochInfoBlockRelative _epochInfo lastSlot'
-                  return $ Just (endEpochSlot, Nothing)
+                  return $ Just (endEpochSlot, ItrNoEndHash)
 
     case emptyOrEndBound of
       -- The database is empty, just return an empty iterator (directly
@@ -1071,7 +1101,7 @@ iteratorNextImpl dbEnv it@IteratorHandle {_it_hasFS = hasFS :: HasFS m h, ..} st
                 -- we calculate '_it_end"", we don't know yet whether to stop
                 -- at the EBB or the block stored in the same slot (after the
                 -- EBB).
-                (EpochSlot endEpoch 1, Just endHash)
+                (EpochSlot endEpoch 1, ItrEndHash endHash)
                   | epoch == endEpoch, endHash == ebbHash
                   -> iteratorCloseImpl it
                 _ -> stepIterator st iteratorState

@@ -1,5 +1,6 @@
 {-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE DeriveAnyClass      #-}
 {-# LANGUAGE DeriveGeneric       #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE LambdaCase          #-}
@@ -70,6 +71,8 @@ import           Data.Void
 import           Data.Word
 import           GHC.Generics (Generic)
 import           GHC.Stack (HasCallStack)
+
+import           Cardano.Prelude (NoUnexpectedThunks)
 
 import           Ouroboros.Consensus.Protocol.Abstract (SecurityParam (..))
 import           Ouroboros.Consensus.Util
@@ -242,7 +245,7 @@ data LedgerDB l r = LedgerDB {
       -- | Ledger DB parameters
     , ledgerDbParams  :: !LedgerDbParams
     }
-  deriving (Show, Eq)
+  deriving (Show, Eq, Generic, NoUnexpectedThunks)
 
 data LedgerDbParams = LedgerDbParams {
       -- | Take a snapshot every @n@ blocks
@@ -253,7 +256,7 @@ data LedgerDbParams = LedgerDbParams {
       -- | Security parameter (maximum rollback)
     , ledgerDbSecurityParam :: !SecurityParam
     }
-  deriving (Show, Eq, Generic)
+  deriving (Show, Eq, Generic, NoUnexpectedThunks)
 
 -- | Default parameters
 --
@@ -275,7 +278,7 @@ data Checkpoint l r =
 
     -- | Checkpoint with a ledger state
   | CpSShot !r !l
-  deriving (Show, Eq)
+  deriving (Show, Eq, Generic, NoUnexpectedThunks)
 
 cpToPair :: Checkpoint l r -> (r, Maybe l)
 cpToPair (CpBlock r)   = (r, Nothing)
@@ -344,7 +347,7 @@ data ChainSummary l r = ChainSummary {
       -- | Ledger state
     , csLedger :: !l
     }
-  deriving (Show, Eq, Generic)
+  deriving (Show, Eq, Generic, NoUnexpectedThunks)
 
 genesisChainSummary :: l -> ChainSummary l r
 genesisChainSummary l = ChainSummary TipGen 0 l

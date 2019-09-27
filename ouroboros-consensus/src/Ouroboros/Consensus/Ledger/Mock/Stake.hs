@@ -20,6 +20,8 @@ import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (mapMaybe)
 
+import           Cardano.Prelude (NoUnexpectedThunks)
+
 import           Ouroboros.Consensus.Ledger.Mock.Address
 import           Ouroboros.Consensus.Ledger.Mock.UTxO
 import           Ouroboros.Consensus.NodeId (NodeId (..))
@@ -41,7 +43,7 @@ data StakeHolder =
 -------------------------------------------------------------------------------}
 
 newtype StakeDist = StakeDist { stakeDistToIntMap :: IntMap Rational }
-  deriving (Show, Eq, Serialise)
+  deriving (Show, Eq, Serialise, NoUnexpectedThunks)
 
 stakeWithDefault :: Rational -> Int -> StakeDist -> Rational
 stakeWithDefault d n = IntMap.findWithDefault d n . stakeDistToIntMap

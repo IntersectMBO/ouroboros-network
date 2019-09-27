@@ -1,3 +1,5 @@
+{-# LANGUAGE DeriveAnyClass      #-}
+{-# LANGUAGE DeriveGeneric       #-}
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE NumericUnderscores  #-}
@@ -37,7 +39,10 @@ import           Data.Fixed
 import           Data.Time
 import           Data.Void
 import           Data.Word (Word64)
+import           GHC.Generics (Generic)
 import           GHC.Stack
+
+import           Cardano.Prelude (NoUnexpectedThunks)
 
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork (MonadFork)
@@ -154,7 +159,7 @@ data TestClock =
     Initializing
     -- ^ This phase has a non-zero but negligible duration.
   | Running !SlotNo
-  deriving (Eq)
+  deriving (Eq, Generic, NoUnexpectedThunks)
 
 data TestBlockchainTime m = TestBlockchainTime
   { testBlockchainTime     :: BlockchainTime m

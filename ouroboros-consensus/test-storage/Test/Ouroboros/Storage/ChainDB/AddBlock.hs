@@ -39,6 +39,7 @@ import qualified Ouroboros.Storage.FS.Sim.MockFS as Mock
 import           Test.Ouroboros.Storage.ChainDB.StateMachine (mkArgs)
 import           Test.Ouroboros.Storage.ChainDB.TestBlock
 
+import           Test.Util.Orphans.NoUnexpectedThunks ()
 import           Test.Util.SOP
 
 tests :: TestTree

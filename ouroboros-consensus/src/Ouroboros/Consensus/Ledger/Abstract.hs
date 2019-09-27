@@ -14,6 +14,8 @@ module Ouroboros.Consensus.Ledger.Abstract (
 import           Control.Monad.Except
 import           GHC.Stack (HasCallStack)
 
+import           Cardano.Prelude (NoUnexpectedThunks)
+
 import           Ouroboros.Network.Block (Point, SlotNo)
 import           Ouroboros.Network.Point (WithOrigin)
 
@@ -30,6 +32,7 @@ class ( SupportedBlock blk
       , Show (LedgerState blk)
       , Show (LedgerError blk)
       , Eq   (LedgerState blk)
+      , NoUnexpectedThunks (LedgerState blk)
       ) => UpdateLedger blk where
   data family LedgerState blk :: *
   type family LedgerError blk :: *

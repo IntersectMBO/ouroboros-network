@@ -26,7 +26,6 @@ module Ouroboros.Storage.ChainDB.Impl (
 
 import           Control.Monad (when)
 import qualified Data.Map.Strict as Map
---import           System.IO.Unsafe (unsafePerformIO)
 
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork
@@ -36,8 +35,6 @@ import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
 
 import           Control.Tracer
-
---import           Cardano.Prelude (isNormalForm)
 
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block (blockNo, blockPoint, blockSlot,

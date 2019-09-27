@@ -1,5 +1,8 @@
+{-# LANGUAGE DataKinds                  #-}
 {-# LANGUAGE DeriveFunctor              #-}
 {-# LANGUAGE DeriveGeneric              #-}
+{-# LANGUAGE DerivingStrategies         #-}
+{-# LANGUAGE DerivingVia                #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase                 #-}
 module Ouroboros.Storage.ImmutableDB.Types
@@ -32,6 +35,9 @@ import           Control.Exception (Exception (..))
 
 import           GHC.Generics (Generic)
 import           GHC.Stack (CallStack, prettyCallStack)
+
+import           Cardano.Prelude (NoUnexpectedThunks (..),
+                     UseIsNormalFormNamed (..))
 
 import           Ouroboros.Network.Block (SlotNo (..))
 
@@ -125,7 +131,7 @@ data ValidationPolicy
 
 -- | ID of an iterator that is not derived from another iterator
 newtype BaseIteratorID = MkBaseIteratorID Int
-  deriving (Show, Eq, Ord, Generic, Enum)
+  deriving (Show, Eq, Ord, Generic, Enum, NoUnexpectedThunks)
 
 -- | A unique identifier for an iterator.
 data IteratorID = BaseIteratorID BaseIteratorID | DerivedIteratorID IteratorID
@@ -285,6 +291,7 @@ data CurrentEBB hash =
     NoCurrentEBB
   | CurrentEBB !hash
   deriving (Eq, Show)
+  deriving NoUnexpectedThunks via UseIsNormalFormNamed "CurrentEBB" (CurrentEBB hash)
 
 hasCurrentEBB :: CurrentEBB hash -> Bool
 hasCurrentEBB NoCurrentEBB   = False

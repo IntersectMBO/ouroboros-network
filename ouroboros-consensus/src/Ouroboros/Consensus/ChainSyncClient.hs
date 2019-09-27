@@ -1,4 +1,7 @@
 {-# LANGUAGE DataKinds                  #-}
+{-# LANGUAGE DeriveAnyClass             #-}
+{-# LANGUAGE DeriveGeneric              #-}
+{-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE NamedFieldPuns             #-}
@@ -29,6 +32,9 @@ import qualified Data.Map.Strict as Map
 import           Data.Typeable (Typeable)
 import           Data.Void (Void)
 import           Data.Word (Word64)
+import           GHC.Generics (Generic)
+
+import           Cardano.Prelude (NoUnexpectedThunks)
 
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork
@@ -60,7 +66,8 @@ import           Ouroboros.Consensus.Util.STM (Fingerprint, onEachChange)
 -- E.g. a 'ClockSkew' value of @1@ means that a block produced by an upstream
 -- it may have a slot number that is 1 greater than the current slot.
 newtype ClockSkew = ClockSkew { unClockSkew :: Word64 }
-  deriving (Eq, Ord, Enum, Bounded, Show, Num)
+  deriving stock   (Show, Eq, Ord)
+  deriving newtype (Enum, Bounded, Num)
 
 type Consensus (client :: * -> * -> (* -> *) -> * -> *) blk tip m =
    client (Header blk) tip m Void
@@ -134,6 +141,9 @@ data CandidateState blk = CandidateState
       -- ^ 'ChainState' corresponding to the tip (most recent block) of the
       -- 'candidateChain'.
     }
+  deriving (Generic)
+
+deriving instance SupportedBlock blk => NoUnexpectedThunks (CandidateState blk)
 
 bracketChainSyncClient
     :: ( MonadAsync m

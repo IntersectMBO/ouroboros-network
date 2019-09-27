@@ -1,4 +1,6 @@
+{-# LANGUAGE DeriveAnyClass             #-}
 {-# LANGUAGE DeriveGeneric              #-}
+{-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
 -- | Immutable DB per-epoch layout
@@ -41,6 +43,8 @@ module Ouroboros.Storage.ImmutableDB.Layout (
 import           Data.Word
 import           GHC.Generics (Generic)
 
+import           Cardano.Prelude (NoUnexpectedThunks)
+
 import           Ouroboros.Network.Block (SlotNo (..))
 
 import           Ouroboros.Storage.Common
@@ -52,13 +56,14 @@ import           Ouroboros.Storage.EpochInfo
 
 -- | A /relative/ slot within an 'EpochNo'.
 newtype RelativeSlot = RelativeSlot { unRelativeSlot :: Word64 }
-  deriving (Eq, Ord, Enum, Num, Show, Generic)
+  deriving stock   (Eq, Ord, Show, Generic)
+  deriving newtype (Num, Enum, NoUnexpectedThunks)
 
 -- | The combination of an 'EpochNo' and a 'RelativeSlot' within the epoch.
 data EpochSlot = EpochSlot
   { _epoch        :: !EpochNo
   , _relativeSlot :: !RelativeSlot
-  } deriving (Eq, Ord, Generic)
+  } deriving (Eq, Ord, Generic, NoUnexpectedThunks)
 
 instance Show EpochSlot where
   show (EpochSlot (EpochNo e) (RelativeSlot s)) = show (e, s)

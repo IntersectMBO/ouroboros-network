@@ -1,4 +1,6 @@
 {-# LANGUAGE BangPatterns               #-}
+{-# LANGUAGE DeriveAnyClass             #-}
+{-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase                 #-}
@@ -36,6 +38,9 @@ import qualified Data.Map.Strict as Map
 import           Data.Sequence (Seq ((:<|), (:|>)))
 import qualified Data.Sequence as Seq
 import           Data.Word
+import           GHC.Generics (Generic)
+
+import           Cardano.Prelude (NoUnexpectedThunks)
 
 import           Ouroboros.Network.Block (SlotNo (..))
 import           Ouroboros.Network.Point (WithOrigin (..), withOriginFromMaybe,
@@ -114,18 +119,22 @@ data PBftChainState c = PBftChainState {
       -- We maintain it as an explicit value for improved performance.
     , counts  :: !(Map (PBftVerKeyHash c) Int)
     }
+  deriving (Generic)
 
 -- | Slot and corresponding genesis key
 data PBftSigner c = PBftSigner {
       pbftSignerSlotNo     :: !SlotNo
     , pbftSignerGenesisKey :: !(PBftVerKeyHash c)
     }
+  deriving (Generic)
 
 deriving instance PBftCrypto c => Show (PBftChainState c)
 deriving instance PBftCrypto c => Eq   (PBftChainState c)
+deriving instance PBftCrypto c => NoUnexpectedThunks (PBftChainState c)
 
 deriving instance PBftCrypto c => Show (PBftSigner c)
 deriving instance PBftCrypto c => Eq   (PBftSigner c)
+deriving instance PBftCrypto c => NoUnexpectedThunks (PBftSigner c)
 
 {-------------------------------------------------------------------------------
   Queries
