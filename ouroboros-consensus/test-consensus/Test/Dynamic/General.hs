@@ -13,14 +13,17 @@ module Test.Dynamic.General (
   , TestOutput (..)
   ) where
 
-import           Control.Monad (join)
+import           Control.Monad (guard, join)
+import           Data.Coerce (coerce)
+import qualified Data.List as List
 import qualified Data.Map as Map
+import qualified Data.Set as Set
 import           Data.Word (Word64)
 import           Test.QuickCheck
 
 import           Control.Monad.IOSim (runSimOrThrow)
 
-import           Ouroboros.Network.Block (HasHeader)
+import           Ouroboros.Network.Block (BlockNo (..), HasHeader, blockPoint)
 
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Node.ProtocolInfo
@@ -171,6 +174,7 @@ prop_general ::
      ( Condense blk
      , Eq blk
      , HasHeader blk
+     , RunNode blk
      )
   => SecurityParam
   -> TestConfig
@@ -178,11 +182,14 @@ prop_general ::
   -> TestOutput blk
   -> Property
 prop_general k TestConfig{numSlots, nodeJoinPlan, nodeTopology} schedule
-  TestOutput{testOutputNodes} =
-    counterexample ("nodeJoinPlan: " <> condense nodeJoinPlan) $
-    counterexample ("schedule: " <> condense schedule) $
+  TestOutput{testOutputNodes, testOutputSlotBlockNos} =
     counterexample ("nodeChains: " <> unlines ("" : map (\x -> "  " <> condense x) (Map.toList nodeChains))) $
+    counterexample ("nodeJoinPlan: " <> condense nodeJoinPlan) $
     counterexample ("nodeTopology: " <> condense nodeTopology) $
+    counterexample ("slot-node-depth: " <> condense slotNodeDepths) $
+    counterexample ("schedule: " <> condense schedule) $
+    counterexample ("schedule': " <> condense schedule') $
+    counterexample ("consensus expected: " <> show isConsensusExcepected) $
     tabulate "consensus expected" [show isConsensusExcepected] $
     tabulate "shortestLength" [show (rangeK k (shortestLength nodeChains))] $
     tabulate "floor(4 * lastJoinSlot / numSlots)" [show lastJoinSlot] $
@@ -190,11 +197,46 @@ prop_general k TestConfig{numSlots, nodeJoinPlan, nodeTopology} schedule
     prop_all_common_prefix
         maxForkLength
         (Map.elems nodeChains) .&&.
+    prop_all_growth .&&.
     conjoin
       [ fileHandleLeakCheck nid nodeInfo
       | (nid, nodeInfo) <- Map.toList nodeInfos ]
   where
     NumBlocks maxForkLength = determineForkLength k nodeJoinPlan schedule
+
+    -- remove entries from @schedule@ if any of:
+    --
+    -- * the node just joined in this slot (unless it's the earliest slot in
+    --   which any nodes joined)
+    --
+    -- * the node rejected its own new block (eg 'PBftExceededSignThreshold')
+    --
+    -- * the node forged an EBB
+    --
+    schedule' :: LeaderSchedule
+    schedule' =
+        Map.mapWithKey (filter . actuallyLead) `coerce` schedule
+      where
+        actuallyLead s cid = maybe False id $ do
+            let nid = fromCoreNodeId cid
+            let j   = nodeIdJoinSlot nodeJoinPlan nid
+
+            guard $ j < s || (j == s && isFirstJoinSlot s)
+
+            NodeOutput
+              { nodeOutputForges
+              , nodeOutputInvalids
+              } <- Map.lookup nid testOutputNodes
+            b <- Map.lookup s nodeOutputForges
+
+            pure $ not $
+              (||) (nodeIsEBB b) $
+              Set.member (blockPoint b) nodeOutputInvalids
+
+        isFirstJoinSlot s =
+            let NodeJoinPlan m = nodeJoinPlan
+            in
+            Just s == (snd <$> Map.lookupMin m)
 
     nodeChains = nodeOutputFinalChain <$> testOutputNodes
     nodeInfos  = nodeOutputNodeInfo   <$> testOutputNodes
@@ -221,3 +263,53 @@ prop_general k TestConfig{numSlots, nodeJoinPlan, nodeTopology} schedule
       where
         NumSlots t = numSlots
         NodeJoinPlan m = nodeJoinPlan
+
+    -- check for Chain Growth violations if there are no Common Prefix
+    -- violations
+    --
+    -- We consider all possible non-empty intervals, so the interval span
+    -- @s@ varies but is always at least 1. We compute a different /speed
+    -- coefficient/ @τ@ for each interval under the assumption that there are
+    -- no message delays (ie @Δ = 0@). This is essentially a count of the
+    -- active slots for that interval in the refined @schedule'@.
+    prop_all_growth =
+        (.||.) (not isConsensusExcepected) $
+        conjoin $ zipWith f slotDepths (List.tails slotDepths)
+      where
+        f ::
+             (SlotNo, BlockNo, BlockNo)
+          -> [(SlotNo, BlockNo, BlockNo)]
+          -> Property
+        f (s1, _, max1) =
+            conjoin .
+            map (\(s2, min2, _) -> prop_growth (s1, max1) (s2, min2))
+
+        prop_growth :: (SlotNo, BlockNo) -> (SlotNo, BlockNo) -> Property
+        prop_growth (s1, b1) (s2, b2) =
+            counterexample (condense (s1, s2, b1, b2, numActiveSlots)) $
+            (.&&.)
+                (counterexample "negative chain growth" $
+                 property (b2 >= b1)) $
+            counterexample "insufficient chain growth" $
+            property (d >= toEnum numActiveSlots)
+          where
+            BlockNo d = b2 - b1
+            numActiveSlots =
+                Map.size $
+                flip Map.filterWithKey (getLeaderSchedule schedule') $
+                \slot ls -> s1 <= slot && slot < s2 && (not . null) ls
+
+        slotDepths =
+            [ case map snd bnos' of
+                  [] -> (slot, 0, 0)
+                  o  -> (slot, minimum o, maximum o)
+            | (slot, bnos) <- slotNodeDepths
+            , let bnos' = filter (joinedBefore slot . fst) bnos
+            ]
+
+        joinedBefore slot nid = nodeIdJoinSlot nodeJoinPlan nid < slot
+
+    slotNodeDepths =
+        Map.toAscList $
+        fmap Map.toAscList $
+        testOutputSlotBlockNos
