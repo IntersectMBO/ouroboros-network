@@ -3,6 +3,7 @@
 module Main where
 
 import Data.Bits
+import Data.ByteString (ByteString)
 import qualified Data.ByteString.Char8 as BSC
 import Control.Concurrent (forkIO, threadDelay)
 import Control.Exception (finally)
@@ -47,29 +48,32 @@ server = do
   putStrLn_ "created pipe, waiting for client"
   connectNamedPipe hpipe Nothing
   putStrLn_ "client connected"
-  hpipe' <- pipeToHandle hpipe pipeName ReadWriteMode
   _ <- forkIO $ do
          putStrLn_ "starting client conversation"
-         serverLoop hpipe hpipe'
+         serverLoop hpipe
            `finally` (do putStrLn "client disconnected"
-                         hClose hpipe')
+                         closePipe hpipe)
   threadDelay 1
   server
 
-serverLoop :: HANDLE -> Handle -> IO ()
-serverLoop hPIPE hpipe = do
-  hPutStrLn hpipe "Hi! >"
+
+encodeMsg :: String -> ByteString
+encodeMsg msg = BSC.pack (msg ++ "\n")
+
+serverLoop :: HANDLE -> IO ()
+serverLoop hpipe = do
+  _ <- writePipe hpipe (encodeMsg "Hi! >")
   putStrLn "Sent prompt, awaiting reply"
-  resp <- pGetLine hPIPE
+  resp <- pGetLine hpipe
   putStrLn $ "received: " ++ show resp
   let reply = "reversed: " ++ show (reverse resp)
   putStrLn $ "replying: " ++ show reply
-  hPutStrLn hpipe reply
-  serverLoop hPIPE hpipe
+  _ <- writePipe hpipe (encodeMsg reply)
+  serverLoop hpipe
 
 client :: IO ()
 client = do
-  hPIPE <- createFile pipeName
+  hpipe <- createFile pipeName
                       (gENERIC_READ .|. gENERIC_WRITE)
                       fILE_SHARE_NONE
                       Nothing
@@ -77,23 +81,22 @@ client = do
                       fILE_ATTRIBUTE_NORMAL
                       Nothing
   putStrLn "opened pipe"
-  hpipe <- pipeToHandle hPIPE pipeName ReadWriteMode
-  clientLoop hPIPE hpipe
-    `finally` hClose hpipe
+  clientLoop hpipe
+    `finally` closePipe hpipe
 
-clientLoop :: HANDLE -> Handle -> IO ()
-clientLoop hPIPE hpipe = do
+clientLoop :: HANDLE -> IO ()
+clientLoop hpipe = do
   putStrLn "awaiting prompt..."
-  prompt <- pGetLine hPIPE
+  prompt <- pGetLine hpipe
   putStrLn prompt
   reply <- getLine
   case reply of
     "quit" -> return ()
     _      -> do putStrLn $ "sending reply: " ++ show reply
-                 hPutStrLn hpipe reply
+                 _ <- writePipe hpipe (encodeMsg reply)
                  putStrLn "reply sent"
                  putStrLn "reply flushed"
-                 resp <- pGetLine hPIPE
+                 resp <- pGetLine hpipe
                  putStrLn $ "response: " ++ resp
-                 clientLoop hPIPE hpipe
+                 clientLoop hpipe
 
