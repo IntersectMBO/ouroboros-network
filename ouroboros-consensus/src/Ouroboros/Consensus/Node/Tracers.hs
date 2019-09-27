@@ -11,7 +11,7 @@ module Ouroboros.Consensus.Node.Tracers
 
 import           Control.Tracer (Tracer, nullTracer, showTracing)
 
-import           Ouroboros.Network.Block (Point, SlotNo)
+import           Ouroboros.Network.Block (Point, SlotNo, Tip)
 import           Ouroboros.Network.BlockFetch (FetchDecision,
                      TraceFetchClientState, TraceLabelPeer)
 import           Ouroboros.Network.TxSubmission.Inbound
@@ -22,7 +22,6 @@ import           Ouroboros.Network.TxSubmission.Outbound
 import           Ouroboros.Consensus.Block (Header, SupportedBlock)
 import           Ouroboros.Consensus.BlockFetchServer
                      (TraceBlockFetchServerEvent)
-import           Ouroboros.Consensus.ChainSync (Tip)
 import           Ouroboros.Consensus.ChainSyncClient (TraceChainSyncClientEvent)
 import           Ouroboros.Consensus.ChainSyncServer (TraceChainSyncServerEvent)
 import           Ouroboros.Consensus.Mempool.API (ApplyTxErr, GenTx, GenTxId,

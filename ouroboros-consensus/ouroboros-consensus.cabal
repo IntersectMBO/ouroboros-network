@@ -29,7 +29,6 @@ library
                        Ouroboros.Consensus.Block
                        Ouroboros.Consensus.BlockFetchServer
                        Ouroboros.Consensus.BlockchainTime
-                       Ouroboros.Consensus.ChainSync
                        Ouroboros.Consensus.ChainSyncClient
                        Ouroboros.Consensus.ChainSyncServer
                        Ouroboros.Consensus.Crypto.DSIGN.Cardano

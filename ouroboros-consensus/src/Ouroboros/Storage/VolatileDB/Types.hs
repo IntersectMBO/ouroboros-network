@@ -18,7 +18,7 @@ import           Data.Set (Set)
 import           Data.Typeable
 import           Data.Word (Word64)
 
-import           Ouroboros.Network.Block
+import           Ouroboros.Network.Block hiding (Tip, encodeTip, decodeTip)
 import           Ouroboros.Storage.Common
 import           Ouroboros.Storage.FS.API.Types
 

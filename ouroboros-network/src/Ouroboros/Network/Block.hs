@@ -2,6 +2,7 @@
 {-# LANGUAGE DeriveTraversable          #-}
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE PatternSynonyms            #-}
 {-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE StandaloneDeriving         #-}
@@ -25,6 +26,9 @@ module Ouroboros.Network.Block (
   , pointHash
   , castPoint
   , blockPoint
+  , Tip(..)
+  , encodeTip
+  , decodeTip
   , ChainUpdate(..)
   , MaxSlotNo (..)
   , maxSlotNoFromMaybe
@@ -185,6 +189,33 @@ castPoint (Point (At (Point.Block slot hash))) = Point (block slot hash)
 
 blockPoint :: HasHeader block => block -> Point block
 blockPoint b = Point (block (blockSlot b) (blockHash b))
+
+{-------------------------------------------------------------------------------
+  Tip of a chain
+-------------------------------------------------------------------------------}
+
+-- | Used in chain-sync protocol to advertise the tip of the server's chain.
+--
+data Tip b = Tip
+  { tipPoint   :: !(Point b)
+  , tipBlockNo :: !BlockNo
+  } deriving (Eq, Show, Generic)
+
+encodeTip :: (HeaderHash blk -> Encoding)
+          -> (Tip        blk -> Encoding)
+encodeTip encodeHeaderHash Tip { tipPoint, tipBlockNo } = mconcat
+    [ Enc.encodeListLen 2
+    , encodePoint encodeHeaderHash tipPoint
+    , encode                       tipBlockNo
+    ]
+
+decodeTip :: (forall s. Decoder s (HeaderHash blk))
+          -> (forall s. Decoder s (Tip        blk))
+decodeTip decodeHeaderHash = do
+  Dec.decodeListLenOf 2
+  tipPoint    <- decodePoint decodeHeaderHash
+  tipBlockNo  <- decode
+  return Tip { tipPoint, tipBlockNo }
 
 {-------------------------------------------------------------------------------
   ChainUpdate type
