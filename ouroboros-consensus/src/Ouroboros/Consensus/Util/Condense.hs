@@ -36,6 +36,8 @@ import           Cardano.Crypto.KES (MockKES, NeverKES, SigKES,
                      pattern SignKeyMockKES, SignedKES (..), SimpleKES,
                      pattern VerKeyMockKES)
 
+import           Ouroboros.Network.Block (BlockNo (..), SlotNo (..))
+
 import           Ouroboros.Consensus.Util.HList (All, HList (..))
 import qualified Ouroboros.Consensus.Util.HList as HList
 
@@ -153,3 +155,9 @@ instance Condense (Hash h a) where
 
 instance Condense CC.UTxO.TxId where
   condense hash = "txid:" <> unpack (sformat shortHashF hash)
+
+instance Condense BlockNo where
+  condense (BlockNo n) = 'b' : show n
+
+instance Condense SlotNo where
+  condense (SlotNo n) = 's' : show n

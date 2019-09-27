@@ -16,7 +16,7 @@ import qualified Data.Map.Strict as Map
 
 import           Ouroboros.Network.Block (SlotNo (..))
 
-import           Ouroboros.Consensus.NodeId (CoreNodeId (..))
+import           Ouroboros.Consensus.NodeId (CoreNodeId (..), fromCoreNodeId)
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util (Empty)
 import           Ouroboros.Consensus.Util.Condense (Condense (..))
@@ -25,9 +25,8 @@ newtype LeaderSchedule = LeaderSchedule {getLeaderSchedule :: Map SlotNo [CoreNo
     deriving (Show, Eq, Ord)
 
 instance Condense LeaderSchedule where
-    condense (LeaderSchedule m) = show
-                                $ map (\(s, ls) ->
-                                    (unSlotNo s, map (\(CoreNodeId nid) -> nid) ls))
+    condense (LeaderSchedule m) = condense
+                                $ map (\(s, ls) -> (s, map fromCoreNodeId ls))
                                 $ Map.toList m
 
 -- | Extension of protocol @p@ by a static leader schedule.
