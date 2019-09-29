@@ -8,19 +8,16 @@ module Test.IOSim
     , arbitraryAcyclicGraph
     ) where
 
-import           Control.Monad
-import           Control.Exception
-                   ( ArithException(..) )
-import           System.IO.Error
 import           Data.Array
 import           Data.Fixed (Fixed (..), Micro)
 import           Data.Graph
 import           Data.List (sort)
 import           Data.Time.Clock (DiffTime, picosecondsToDiffTime)
 
-import           Test.QuickCheck
-import           Test.Tasty
-import           Test.Tasty.QuickCheck
+import           Control.Monad
+import           Control.Exception
+                   ( ArithException(..) )
+import           System.IO.Error (IOError, isUserError, ioeGetErrorString)
 
 import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadSTM.Strict
@@ -29,9 +26,14 @@ import           Control.Monad.Class.MonadTimer
 import           Control.Monad.Class.MonadSay
 import           Control.Monad.IOSim
 
+import           Test.QuickCheck
+import           Test.Tasty
+import           Test.Tasty.QuickCheck
+
+
 tests :: TestTree
 tests =
-  testGroup "STM simulator"
+  testGroup "IO simulator"
   [ testProperty "read/write graph (IO)"   prop_stm_graph_io
   , testProperty "read/write graph (SimM)" (withMaxSuccess 1000 prop_stm_graph_sim)
   , testProperty "timers (SimM)"           (withMaxSuccess 1000 prop_timers_ST)
