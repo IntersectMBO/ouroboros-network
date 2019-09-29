@@ -26,6 +26,8 @@ import           Control.Monad.Class.MonadTimer
 import           Control.Monad.Class.MonadSay
 import           Control.Monad.IOSim
 
+import           Test.STM
+
 import           Test.QuickCheck
 import           Test.Tasty
 import           Test.Tasty.QuickCheck
@@ -72,6 +74,9 @@ tests =
     , testProperty "14" unit_async_14
     , testProperty "15" unit_async_15
     , testProperty "16" unit_async_16
+    ]
+  , testGroup "STM reference semantics"
+    [ testProperty "Reference vs IO"    prop_stm_referenceIO
     ]
   ]
 
@@ -760,6 +765,37 @@ unit_async_16 =
           say "parent done")
  ===
    ["child", "child masked", "handler", "child done", "parent done"]
+
+
+--
+-- Tests vs STM operational semantics
+--
+
+-- | Compare the behaviour of the STM reference operational semantics with
+-- the behaviour of the real IO STM implementation.
+--
+prop_stm_referenceIO :: SomeTerm -> Property
+prop_stm_referenceIO t =
+    ioProperty (prop_stm_referenceM t)
+
+-- | Compare the behaviour of the STM reference operational semantics with
+-- the behaviour of the IO simulator's STM implementation.
+--
+--prop_stm_referenceSim :: SomeTerm -> Property
+--prop_stm_referenceSim t =
+--    runSimOrThrow (prop_stm_referenceM t)
+
+-- | Compare the behaviour of the STM reference operational semantics with
+-- the behaviour of any 'MonadSTM' STM implementation.
+--
+--prop_stm_referenceM :: (MonadSTM m, MonadThrow (STM m), MonadCatch m)
+--                    => SomeTerm -> m Property
+prop_stm_referenceM :: SomeTerm -> IO Property
+prop_stm_referenceM (SomeTerm _tyrep t) = do
+    let (r1, _heap) = evalAtomically t
+    r2 <- execAtomically t
+    return (r1 === r2)
+
 
 
 --
