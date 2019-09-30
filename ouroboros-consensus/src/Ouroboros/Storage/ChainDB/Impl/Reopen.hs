@@ -42,7 +42,7 @@ import qualified Ouroboros.Storage.ChainDB.Impl.Reader as Reader
 import           Ouroboros.Storage.ChainDB.Impl.Types
 import qualified Ouroboros.Storage.ChainDB.Impl.VolDB as VolDB
 
-isOpen :: MonadSTM m => ChainDbHandle m blk -> STM m Bool
+isOpen :: IOLike m => ChainDbHandle m blk -> STM m Bool
 isOpen (CDBHandle varState) = readTVar varState <&> \case
     ChainDbReopening   -> False
     ChainDbClosed _env -> False
@@ -50,8 +50,7 @@ isOpen (CDBHandle varState) = readTVar varState <&> \case
 
 closeDB
   :: forall m blk.
-     ( MonadMask m
-     , MonadAsync m
+     ( IOLike m
      , HasHeader blk
      , HasHeader (Header blk)
      , HasCallStack
@@ -90,12 +89,7 @@ closeDB (CDBHandle varState) = do
 
 reopen
   :: forall m blk.
-     ( MonadAsync m
-     , MonadFork  m
-     , MonadMask  m
-     , MonadST    m
-     , MonadTime  m
-     , MonadTimer m
+     ( IOLike m
      , ProtocolLedgerView blk
      , HasCallStack
      )

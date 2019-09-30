@@ -69,11 +69,7 @@ import qualified Ouroboros.Storage.ChainDB.Impl.VolDB as VolDB
 --
 -- See "## Initialization" in ChainDB.md.
 initialChainSelection
-  :: forall m blk.
-     ( MonadCatch m
-     , MonadSTM   m
-     , ProtocolLedgerView blk
-     )
+  :: forall m blk. (IOLike m, ProtocolLedgerView blk)
   => ImmDB m blk
   -> VolDB m blk
   -> LgrDB m blk
@@ -188,8 +184,7 @@ initialChainSelection immDB volDB lgrDB tracer cfg varInvalid = do
 -- This cost is currently deemed acceptable.
 addBlock
   :: forall m blk.
-     ( MonadSTM   m
-     , MonadCatch m
+     ( IOLike m
      , HasHeader blk
      , ProtocolLedgerView blk
      , HasCallStack
@@ -515,7 +510,7 @@ getKnownHeaderThroughCache volDB hash = gets (Map.lookup hash) >>= \case
 -- PRECONDITION: the candidate suffixes must fit on the (given) current chain.
 chainSelection
   :: forall m blk.
-     ( MonadSTM m
+     ( IOLike m
      , ProtocolLedgerView blk
      , HasCallStack
      )
@@ -625,7 +620,7 @@ chainSelection lgrDB tracer cfg varInvalid
 -- Returns 'Nothing' if this candidate requires a rollback we cannot support.
 validateCandidate
   :: forall m blk.
-     ( MonadSTM m
+     ( IOLike m
      , ProtocolLedgerView blk
      , HasCallStack
      )

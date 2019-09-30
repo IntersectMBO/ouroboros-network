@@ -99,13 +99,7 @@ import           Test.Dynamic.Util.NodeTopology
 -- We run for the specified number of blocks, then return the final state of
 -- each node.
 runNodeNetwork :: forall m blk.
-                    ( MonadAsync m
-                    , MonadFork  m
-                    , MonadMask  m
-                    , MonadST    m
-                    , MonadTime  m
-                    , MonadTimer m
-                    , MonadThrow (STM m)
+                    ( IOLike m
                     , RunNode blk
                     , TxGen blk
                     , TracingConstraints blk
@@ -369,11 +363,7 @@ runNodeNetwork registry testBtime numCoreNodes nodeJoinPlan nodeTopology
 -- tear down the whole hierarchy of test threads. See
 -- 'MiniProtocolExpectedException'.
 directedEdge ::
-  forall m blk.
-     ( MonadAsync m
-     , MonadCatch m
-     , SupportedBlock blk
-     )
+  forall m blk. (IOLike m, SupportedBlock blk)
   => Tracer m (SlotNo, MiniProtocolState, MiniProtocolExpectedException blk)
   -> BlockchainTime m
   -> (CoreNodeId, LimitedApp m NodeId blk)
@@ -411,11 +401,7 @@ directedEdge tr btime nodeapp1 nodeapp2 =
 --
 -- See 'directedEdge'.
 directedEdgeInner ::
-  forall m blk.
-     ( MonadAsync m
-     , MonadCatch m
-     , SupportedBlock blk
-     )
+  forall m blk. (IOLike m, SupportedBlock blk)
   => (CoreNodeId, LimitedApp m NodeId blk)
      -- ^ client threads on this node
   -> (CoreNodeId, LimitedApp m NodeId blk)
@@ -479,7 +465,7 @@ data NodeInfo blk fs = NodeInfo
   , nodeInfoLgrDbFs :: fs
   }
 
-readFsTVars :: MonadSTM m
+readFsTVars :: IOLike m
             => NodeInfo blk (StrictTVar m MockFS)
             -> m (NodeInfo blk MockFS)
 readFsTVars tvars = atomically $ NodeInfo
@@ -503,12 +489,7 @@ newtype TestOutput blk = TestOutput
 
 -- | Gather the test output from the nodes
 getTestOutput ::
-    forall m blk.
-       ( MonadSTM m
-       , MonadMask m
-       , MonadFork m
-       , HasHeader blk
-       )
+    forall m blk. (IOLike m, HasHeader blk)
     => [( CoreNodeId
         , NodeConfig (BlockProtocol blk)
         , NodeKernel m NodeId blk
@@ -557,7 +538,7 @@ type TracingConstraints blk =
 --
 -- Why 'NE.NonEmpty'? An empty argument list would have blocked indefinitely,
 -- which is likely not intended.
-withAsyncsWaitAny :: forall m a. MonadAsync m => NE.NonEmpty (m a) -> m a
+withAsyncsWaitAny :: forall m a. IOLike m => NE.NonEmpty (m a) -> m a
 withAsyncsWaitAny = go [] . NE.toList
   where
     go acc = \case

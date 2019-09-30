@@ -29,8 +29,6 @@ import qualified Data.ByteString.Lazy as LBS
 import           Data.IORef
 import           Data.Word (Word64)
 
-import           Control.Monad.Class.MonadThrow
-
 import           Ouroboros.Consensus.Util.IOLike
 
 import           Ouroboros.Storage.FS.API
@@ -115,7 +113,7 @@ data ReadIncrementalErr =
 --
 -- NOTE: This currently expects the file to contain precisely one value; see also
 -- 'readIncrementalOffsets'.
-readIncremental :: forall m h a. (MonadST m, MonadThrow m)
+readIncremental :: forall m h a. IOLike m
                 => HasFS m h
                 -> (forall s . CBOR.Decoder s a)
                 -> FsPath
@@ -148,7 +146,7 @@ readIncremental hasFS@HasFS{..} decoder fp = withLiftST $ \liftST -> do
 -- Return the offset ('Word64') of the start of each @a@ and the size ('Word64')
 -- of each @a@. When deserialising fails, return all already deserialised @a@s
 -- and the error.
-readIncrementalOffsets :: forall m h a. (MonadST m, MonadThrow m)
+readIncrementalOffsets :: forall m h a. IOLike m
                        => HasFS m h
                        -> (forall s . CBOR.Decoder s (LBS.ByteString -> a))
                        -> FsPath

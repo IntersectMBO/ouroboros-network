@@ -27,12 +27,7 @@ import           Ouroboros.Storage.ChainDB.API
 import           Ouroboros.Storage.ChainDB.Model (Model)
 import qualified Ouroboros.Storage.ChainDB.Model as Model
 
-openDB :: forall m blk.
-          ( MonadSTM   m
-          , MonadThrow m
-          , MonadThrow (STM m)
-          , ProtocolLedgerView blk
-          )
+openDB :: forall m blk. (IOLike m, ProtocolLedgerView blk)
        => NodeConfig (BlockProtocol blk)
        -> ExtLedgerState blk
        -> m (ChainDB m blk)

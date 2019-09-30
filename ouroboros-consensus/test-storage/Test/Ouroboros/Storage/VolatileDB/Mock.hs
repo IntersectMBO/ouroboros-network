@@ -6,7 +6,7 @@ module Test.Ouroboros.Storage.VolatileDB.Mock (openDBMock) where
 import           Control.Monad.State (StateT)
 
 import           Ouroboros.Consensus.Util ((.:))
-import           Ouroboros.Consensus.Util.MonadSTM.NormalForm
+import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.STM (simStateT)
 
 import           Ouroboros.Storage.Util.ErrorHandling (ThrowCantCatch)
@@ -15,8 +15,7 @@ import           Ouroboros.Storage.VolatileDB.API
 
 import           Test.Ouroboros.Storage.VolatileDB.Model
 
-openDBMock  :: forall m blockId.
-               MonadSTM m
+openDBMock  :: forall m blockId. IOLike m
             => (Ord blockId)
             => ThrowCantCatch (VolatileDBError blockId) (STM m)
             -> Int

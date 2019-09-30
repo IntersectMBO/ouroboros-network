@@ -144,9 +144,7 @@ data CandidateState blk = CandidateState
 deriving instance SupportedBlock blk => NoUnexpectedThunks (CandidateState blk)
 
 bracketChainSyncClient
-    :: ( MonadAsync m
-       , MonadFork  m
-       , MonadMask  m
+    :: ( IOLike m
        , Ord peer
        , SupportedBlock blk
        , Typeable tip
@@ -199,9 +197,7 @@ bracketChainSyncClient tracer getCurrentChain getCurrentLedger
 -- corresponding peer will never be chosen again.
 chainSyncClient
     :: forall m blk tip.
-       ( MonadSTM   m
-       , MonadCatch m
-       , MonadThrow (STM m)
+       ( IOLike m
        , ProtocolLedgerView blk
        , Exception (ChainSyncClientException blk tip)
        )
@@ -632,9 +628,7 @@ chainSyncClient mkPipelineDecision0
 -- of invalid blocks).
 rejectInvalidBlocks
     :: forall m blk tip.
-       ( MonadAsync m
-       , MonadFork  m
-       , MonadMask  m
+       ( IOLike m
        , SupportedBlock blk
        , Typeable tip
        , Show tip

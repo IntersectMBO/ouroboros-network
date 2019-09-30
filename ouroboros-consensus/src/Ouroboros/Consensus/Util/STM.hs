@@ -24,8 +24,6 @@ import           Control.Monad.Reader
 import           Control.Monad.State
 import           Control.Monad.Writer
 
-import           Control.Monad.Class.MonadThrow
-
 import           Data.Void
 import           Data.Word (Word64)
 import           GHC.Stack
@@ -40,7 +38,7 @@ import           Ouroboros.Consensus.Util.ResourceRegistry
 -------------------------------------------------------------------------------}
 
 -- | Wait until the TVar changed
-blockUntilChanged :: forall m a b. (MonadSTM m, Eq b)
+blockUntilChanged :: forall m a b. (IOLike m, Eq b)
                   => (a -> b) -> b -> STM m a -> STM m (a, b)
 blockUntilChanged f b getA = do
     a <- getA
@@ -56,13 +54,7 @@ blockUntilChanged f b getA = do
 -- be missed.
 --
 -- The thread will be linked to the registry.
-onEachChange :: forall m a b. (
-                    MonadAsync m
-                  , MonadMask  m
-                  , MonadFork  m
-                  , Eq b
-                  , HasCallStack
-                  )
+onEachChange :: forall m a b. (IOLike m, Eq b, HasCallStack)
              => ResourceRegistry m
              -> (a -> b)  -- ^ Obtain a fingerprint
              -> Maybe b   -- ^ Optional initial fingerprint
@@ -93,10 +85,7 @@ onEachChange registry f mbInitB getA notify = do
 -- | Spawn a new thread that waits for an STM value to become 'Just'
 --
 -- The thread will be linked to the registry.
-runWhenJust :: ( MonadMask  m
-               , MonadFork  m
-               , MonadAsync m
-               )
+runWhenJust :: IOLike m
             => ResourceRegistry m
             -> STM m (Maybe a)
             -> (a -> m ())
@@ -105,14 +94,14 @@ runWhenJust registry getMaybeA action =
     void $ forkLinkedThread registry $
       action =<< atomically (blockUntilJust getMaybeA)
 
-blockUntilJust :: MonadSTM m => STM m (Maybe a) -> STM m a
+blockUntilJust :: IOLike m => STM m (Maybe a) -> STM m a
 blockUntilJust getMaybeA = do
     ma <- getMaybeA
     case ma of
       Nothing -> retry
       Just a  -> return a
 
-blockUntilAllJust :: MonadSTM m => [STM m (Maybe a)] -> STM m [a]
+blockUntilAllJust :: IOLike m => [STM m (Maybe a)] -> STM m [a]
 blockUntilAllJust = mapM blockUntilJust
 
 -- | Simple type that can be used to indicate something in a @TVar@ is
@@ -129,25 +118,25 @@ type Sim n m = forall a. n a -> STM m a
 simId :: Sim (STM m) m
 simId = id
 
-simReaderT :: MonadSTM m => StrictTVar m st -> Sim n m -> Sim (ReaderT st n) m
+simReaderT :: IOLike m => StrictTVar m st -> Sim n m -> Sim (ReaderT st n) m
 simReaderT tvar k (ReaderT f) = do
     st <- readTVar tvar
     k (f st)
 
-simWriterT :: MonadSTM m => StrictTVar m st -> Sim n m -> Sim (WriterT st n) m
+simWriterT :: IOLike m => StrictTVar m st -> Sim n m -> Sim (WriterT st n) m
 simWriterT tvar k (WriterT f) = do
     (a, st') <- k f
     writeTVar tvar st'
     return a
 
-simStateT :: MonadSTM m => StrictTVar m st -> Sim n m -> Sim (StateT st n) m
+simStateT :: IOLike m => StrictTVar m st -> Sim n m -> Sim (StateT st n) m
 simStateT tvar k (StateT f) = do
     st       <- readTVar tvar
     (a, st') <- k (f st)
     writeTVar tvar st'
     return a
 
-simOuroborosStateT :: MonadSTM m
+simOuroborosStateT :: IOLike m
                    => StrictTVar m s
                    -> Sim n m
                    -> Sim (NodeStateT_ s n) m
@@ -157,7 +146,7 @@ simOuroborosStateT tvar k n = do
     writeTVar tvar st'
     return a
 
-simChaChaT :: MonadSTM m
+simChaChaT :: IOLike m
            => StrictTVar m ChaChaDRG
            -> Sim n m
            -> Sim (ChaChaT n) m
@@ -168,7 +157,7 @@ simChaChaT tvar k n = do
     return a
 
 -- | Example of composition
-_exampleComposition :: MonadSTM m
+_exampleComposition :: IOLike m
                     => StrictTVar m r
                     -> StrictTVar m w
                     -> StrictTVar m s

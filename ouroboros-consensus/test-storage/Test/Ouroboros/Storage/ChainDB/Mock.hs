@@ -21,6 +21,8 @@ import           Ouroboros.Storage.ChainDB.API (ChainDB)
 import qualified Ouroboros.Storage.ChainDB.API as ChainDB
 import qualified Ouroboros.Storage.ChainDB.Mock as Mock
 
+import           Test.Util.Orphans.IOLike ()
+
 import           Test.Ouroboros.Storage.ChainDB.TestBlock
 
 tests :: TestTree

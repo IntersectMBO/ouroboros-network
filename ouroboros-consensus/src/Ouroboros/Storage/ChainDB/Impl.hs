@@ -27,7 +27,6 @@ module Ouroboros.Storage.ChainDB.Impl (
 import           Control.Monad (when)
 import qualified Data.Map.Strict as Map
 
-import           Control.Monad.Class.MonadThrow
 import           Control.Tracer
 
 import qualified Ouroboros.Network.AnchoredFragment as AF
@@ -62,31 +61,13 @@ import qualified Ouroboros.Storage.ChainDB.Impl.VolDB as VolDB
 -------------------------------------------------------------------------------}
 
 openDB
-  :: forall m blk.
-     ( MonadAsync m
-     , MonadFork  m
-     , MonadST    m
-     , MonadMask  m
-     , MonadTime  m
-     , MonadTimer m
-     , MonadThrow (STM m)
-     , ProtocolLedgerView blk
-     )
+  :: forall m blk. (IOLike m, ProtocolLedgerView blk)
   => ChainDbArgs m blk
   -> m (ChainDB m blk)
 openDB args = fst <$> openDBInternal args True
 
 openDBInternal
-  :: forall m blk.
-     ( MonadAsync m
-     , MonadFork  m
-     , MonadST    m
-     , MonadMask  m
-     , MonadTime  m
-     , MonadTimer m
-     , MonadThrow (STM m)
-     , ProtocolLedgerView blk
-     )
+  :: forall m blk. (IOLike m, ProtocolLedgerView blk)
   => ChainDbArgs m blk
   -> Bool -- ^ 'True' = Launch background tasks
   -> m (ChainDB m blk, Internal m blk)

@@ -49,7 +49,6 @@ import           Data.Word
 import           GHC.Generics (Generic)
 import           System.Random (getStdRandom, randomR)
 
-import           Control.Monad.Class.MonadThrow
 import           Control.Tracer (nullTracer)
 
 import           Test.QuickCheck (Gen)
@@ -539,7 +538,7 @@ data StandaloneDB m t = DB {
     , dbState  :: StrictTVar m ([BlockRef t], LedgerDB (LedgerSt t) (BlockRef t))
     }
 
-initStandaloneDB :: (MonadSTM m, LUT t) => DbEnv m -> m (StandaloneDB m t)
+initStandaloneDB :: (IOLike m, LUT t) => DbEnv m -> m (StandaloneDB m t)
 initStandaloneDB dbEnv@DbEnv{..} = do
     dbBlocks <- uncheckedNewTVarM Map.empty
     dbState  <- uncheckedNewTVarM (initChain, initDB)
@@ -548,7 +547,7 @@ initStandaloneDB dbEnv@DbEnv{..} = do
     initChain = []
     initDB    = ledgerDbFromGenesis dbLgrParams ledgerGenesis
 
-dbConf :: forall m t. (MonadSTM m, LUT t)
+dbConf :: forall m t. (IOLike m, LUT t)
        => StandaloneDB m t -> LedgerDbConf' m t
 dbConf DB{..} = LedgerDbConf {..}
   where
@@ -577,7 +576,7 @@ dbConf DB{..} = LedgerDbConf {..}
         , show err
         ]
 
-dbStreamAPI :: forall m t. (MonadSTM m, LUT t)
+dbStreamAPI :: forall m t. (IOLike m, LUT t)
             => StandaloneDB m t -> StreamAPI' m t
 dbStreamAPI DB{..} = StreamAPI {..}
   where
@@ -623,8 +622,7 @@ dbStreamAPI DB{..} = StreamAPI {..}
         , "block in dbChain not present in dbBlocks"
         ]
 
-runDB :: forall m t.
-         (MonadSTM m, MonadThrow m, MonadST m, LUT t)
+runDB :: forall m t. (IOLike m, LUT t)
       => StandaloneDB m t
       -> Cmd t DiskSnapshot -> m (Resp t DiskSnapshot)
 runDB standalone@DB{..} cmd =
@@ -912,7 +910,7 @@ deriving instance ToExpr DiskSnapshot
   Final state machine
 -------------------------------------------------------------------------------}
 
-semantics :: (MonadSTM m, MonadThrow m, MonadST m, LUT t)
+semantics :: (IOLike m, LUT t)
           => StandaloneDB m t
           -> Cmd t :@ Concrete -> m (Resp t :@ Concrete)
 semantics db (At cmd) = (At . fmap reference) <$> runDB db (concrete <$> cmd)
@@ -951,7 +949,7 @@ symbolicResp m c = At <$> traverse (const genSym) resp
   where
     (resp, _mock') = step m c
 
-sm :: (MonadSTM m, MonadThrow m, MonadST m, LUT t)
+sm :: (IOLike m, LUT t)
    => LedgerDbParams
    -> StandaloneDB m t
    -> StateMachine (Model t) (At (Cmd t)) m (At (Resp t))

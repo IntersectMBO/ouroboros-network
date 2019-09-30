@@ -17,8 +17,6 @@ import qualified Data.List.NonEmpty as NE
 import           Data.Maybe (maybeToList)
 import           Data.Word (Word64)
 
-import           Control.Monad.Class.MonadThrow hiding (try)
-
 import qualified Test.Ouroboros.Storage.ImmutableDB.CumulEpochSizes as CumulEpochSizes
 import qualified Test.Ouroboros.Storage.ImmutableDB.StateMachine as StateMachine
 import           Test.Ouroboros.Storage.ImmutableDB.TestBlock hiding (tests)
@@ -84,7 +82,7 @@ fixedEpochSize = 10
 type Hash = TestBlock
 
 -- Shorthand
-openTestDB :: (HasCallStack, MonadSTM m, MonadCatch m)
+openTestDB :: (HasCallStack, IOLike m)
            => HasFS m h
            -> ErrorHandling ImmutableDBError m
            -> m (ImmutableDB Hash m)
@@ -94,7 +92,7 @@ openTestDB hasFS err =
     parser = TestBlock.testBlockEpochFileParser' hasFS
 
 -- Shorthand
-withTestDB :: (HasCallStack, MonadSTM m, MonadCatch m)
+withTestDB :: (HasCallStack, IOLike m)
            => HasFS m h
            -> ErrorHandling ImmutableDBError m
            -> (ImmutableDB Hash m -> m a)

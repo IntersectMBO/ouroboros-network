@@ -61,6 +61,7 @@ import           Ouroboros.Consensus.Util.ResourceRegistry
 import           Ouroboros.Consensus.Util.STM (Fingerprint (..))
 
 import           Test.Util.Orphans.Arbitrary ()
+import           Test.Util.Orphans.IOLike ()
 import           Test.Util.TestBlock
 
 {-------------------------------------------------------------------------------
@@ -201,14 +202,7 @@ newtype ServerUpdates =
 --
 -- Note that updates that are scheduled before the slot at which we start
 -- syncing help generate different chains to start syncing from.
-runChainSync :: forall m.
-       ( MonadAsync m
-       , MonadFork  m
-       , MonadMask  m
-       , MonadTimer m
-       , MonadThrow (STM m)
-       , MonadSay   m
-       )
+runChainSync :: forall m. (IOLike m, MonadSay m)
     => SecurityParam
     -> ClockSkew
     -> ClientUpdates

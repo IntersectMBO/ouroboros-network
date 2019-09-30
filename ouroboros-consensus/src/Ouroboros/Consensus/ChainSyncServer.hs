@@ -32,7 +32,7 @@ import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
 -- headers (and fetches blocks separately with the block fetch mini-protocol).
 --
 chainSyncHeadersServer
-    :: forall m blk. MonadSTM m
+    :: forall m blk. IOLike m
     => Tracer m (TraceChainSyncServerEvent blk (Header blk))
     -> ChainDB m blk
     -> ResourceRegistry m
@@ -49,7 +49,7 @@ chainSyncHeadersServer tracer chainDB registry =
 -- chains of full blocks (rather than a header \/ body split).
 --
 chainSyncBlocksServer
-    :: forall m blk. MonadSTM m
+    :: forall m blk. IOLike m
     => Tracer m (TraceChainSyncServerEvent blk blk)
     -> ChainDB m blk
     -> ResourceRegistry m
@@ -72,7 +72,7 @@ chainSyncBlocksServer tracer chainDB registry =
 --
 chainSyncServerForReader
     :: forall m blk b.
-       ( MonadSTM m
+       ( IOLike m
        , HeaderHash blk ~ HeaderHash b
        )
     => Tracer m (TraceChainSyncServerEvent blk b)

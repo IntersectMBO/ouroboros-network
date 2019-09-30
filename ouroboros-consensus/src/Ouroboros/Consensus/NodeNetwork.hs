@@ -131,10 +131,7 @@ data ProtocolHandlers m peer blk = ProtocolHandlers {
 
 protocolHandlers
     :: forall m blk peer.
-       ( MonadSTM   m
-       , MonadThrow (STM m)
-       , MonadTime  m
-       , MonadCatch m
+       ( IOLike m
        , ApplyTx blk
        , ProtocolLedgerView blk
        )
@@ -209,7 +206,7 @@ data ProtocolCodecs blk failure m
 
 -- | The real codecs
 --
-protocolCodecs :: forall m blk. (MonadST m, RunNode blk)
+protocolCodecs :: forall m blk. (IOLike m, RunNode blk)
                => NodeConfig (BlockProtocol blk)
                -> ProtocolCodecs blk DeserialiseFailure m
                                  ByteString ByteString ByteString
@@ -391,9 +388,7 @@ localResponderNetworkApplication NetworkApplication {..} =
 --
 consensusNetworkApps
     :: forall m peer blk failure bytesCS bytesBF bytesTX bytesLCS bytesLTX.
-       ( MonadAsync m
-       , MonadFork m
-       , MonadMask m
+       ( IOLike m
        , Ord peer
        , Exception failure
        , SupportedBlock blk

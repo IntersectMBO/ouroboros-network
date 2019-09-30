@@ -21,8 +21,7 @@ import           Test.Ouroboros.Storage.ImmutableDB.Model
 
 type MockM hash = StateT (DBModel hash) (Except ImmutableDBError)
 
-openDBMock  :: forall m hash.
-               (MonadSTM m, MonadThrow (STM m), Eq hash)
+openDBMock  :: forall m hash. (IOLike m, Eq hash)
             => ErrorHandling ImmutableDBError m
             -> (EpochNo -> EpochSize)
             -> m (DBModel hash, ImmutableDB hash m)

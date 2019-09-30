@@ -143,7 +143,7 @@ corruptFile hasFS@HasFS{..} corr file = case corr of
         return $ fileSize /= newFileSize
 
 
-createFileImpl :: (MonadSTM m, MonadThrow m)
+createFileImpl :: IOLike m
                => HasFS m h
                -> Internal.VolatileDBEnv m blockId
                -> m ()

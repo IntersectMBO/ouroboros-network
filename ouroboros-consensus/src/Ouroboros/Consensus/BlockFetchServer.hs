@@ -55,8 +55,7 @@ instance (Typeable blk, StandardHash blk)
 -- the 'ChainDB'.
 blockFetchServer
     :: forall m blk.
-       ( MonadSTM   m
-       , MonadThrow m
+       ( IOLike m
        , StandardHash blk
        , Typeable     blk
        )

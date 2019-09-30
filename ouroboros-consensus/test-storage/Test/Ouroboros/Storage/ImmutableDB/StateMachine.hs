@@ -42,7 +42,7 @@ import           Data.TreeDiff.Class (ToExpr (..))
 import           Data.Typeable (Typeable)
 import           Data.Word (Word64)
 
-import           Control.Monad.Class.MonadThrow
+import           Control.Monad.Class.MonadThrow hiding (try)
 
 import qualified Generics.SOP as SOP
 

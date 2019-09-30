@@ -140,7 +140,7 @@ data InternalState blockId h = InternalState {
   VolatileDB API
 ------------------------------------------------------------------------------}
 
-openDB :: (HasCallStack, MonadCatch m, MonadSTM m, Ord blockId)
+openDB :: (HasCallStack, IOLike m, Ord blockId)
        => HasFS m h
        -> ErrorHandling (VolatileDBError blockId) m
        -> ThrowCantCatch (VolatileDBError blockId) (STM m)
@@ -149,7 +149,7 @@ openDB :: (HasCallStack, MonadCatch m, MonadSTM m, Ord blockId)
        -> m (VolatileDB blockId m)
 openDB h e e' p m = fst <$> openDBFull h e e' p m
 
-openDBFull :: (HasCallStack, MonadCatch m, MonadSTM m, Ord blockId)
+openDBFull :: (HasCallStack, IOLike m, Ord blockId)
            => HasFS m h
            -> ErrorHandling (VolatileDBError blockId) m
            -> ThrowCantCatch (VolatileDBError blockId) (STM m)
@@ -175,7 +175,7 @@ openDBFull hasFS err errSTM parser maxBlocksPerFile = do
 
 -- After opening the db once, the same @maxBlocksPerFile@ must be provided all
 -- next opens.
-openDBImpl :: (HasCallStack, MonadCatch m, MonadSTM m, Ord blockId)
+openDBImpl :: (HasCallStack, IOLike m, Ord blockId)
            => HasFS m h
            -> ErrorHandling (VolatileDBError blockId) m
            -> ThrowCantCatch (VolatileDBError blockId) (STM m)
@@ -190,7 +190,7 @@ openDBImpl hasFS@HasFS{..} err errSTM parser maxBlocksPerFile =
         stVar <- uncheckedNewTMVarM $ Just st
         return $ VolatileDBEnv hasFS err errSTM stVar maxBlocksPerFile parser
 
-closeDBImpl :: MonadSTM m
+closeDBImpl :: IOLike m
             => VolatileDBEnv m blockId
             -> m ()
 closeDBImpl VolatileDBEnv{..} = do
@@ -202,7 +202,7 @@ closeDBImpl VolatileDBEnv{..} = do
   where
     HasFS{..} = _dbHasFS
 
-isOpenDBImpl :: MonadSTM m
+isOpenDBImpl :: IOLike m
              => VolatileDBEnv m blockId
              -> m Bool
 isOpenDBImpl VolatileDBEnv{..} = do
@@ -211,7 +211,7 @@ isOpenDBImpl VolatileDBEnv{..} = do
 
 -- closeDB . reOpenDB is a no-op. This is achieved because when we reOpen
 -- we try to append on the latest created file.
-reOpenDBImpl :: (HasCallStack, MonadCatch m, MonadSTM m, Ord blockId)
+reOpenDBImpl :: (HasCallStack, IOLike m, Ord blockId)
              => VolatileDBEnv m blockId
              -> m ()
 reOpenDBImpl VolatileDBEnv{..} = do
@@ -221,7 +221,7 @@ reOpenDBImpl VolatileDBEnv{..} = do
             st <- mkInternalStateDB _dbHasFS _dbErr _parser _maxBlocksPerFile
             return (Just st, ())
 
-getBlockImpl :: (MonadSTM m, MonadCatch m, Ord blockId)
+getBlockImpl :: (IOLike m, Ord blockId)
              => VolatileDBEnv m blockId
              -> blockId
              -> m (Maybe ByteString)
@@ -246,7 +246,7 @@ getBlockImpl env@VolatileDBEnv{..} slot = do
 -- and that we are left with an empty Internal State.
 -- We should be careful about not leaking open fds when we open a new file, since this can affect garbage
 -- collection of files.
-putBlockImpl :: forall m blockId. (MonadCatch m, MonadSTM m, Ord blockId)
+putBlockImpl :: forall m blockId. (IOLike m, Ord blockId)
              => VolatileDBEnv m blockId
              -> BlockInfo blockId
              -> BS.Builder
@@ -295,7 +295,7 @@ putBlockImpl env@VolatileDBEnv{..} BlockInfo{..} builder = do
 -- This is ok only if any fs updates leave the fs in a consistent state every moment.
 -- This approach works since we always close the Database in case of errors,
 -- but we should rethink it if this changes in the future.
-garbageCollectImpl :: forall m blockId. (MonadCatch m, MonadSTM m, Ord blockId)
+garbageCollectImpl :: forall m blockId. (IOLike m, Ord blockId)
                    => VolatileDBEnv m blockId
                    -> SlotNo
                    -> m ()
@@ -341,8 +341,7 @@ tryCollectFile hasFS@HasFS{..} env@VolatileDBEnv{..} slot st@InternalState{..} (
                            , _currentSuccMap = succMap'
                            }
 
-getInternalState :: forall m blockId
-                 .  MonadSTM m
+getInternalState :: forall m blockId. IOLike m
                  => VolatileDBEnv m blockId
                  -> m (SomePair (HasFS m) (InternalState blockId))
 getInternalState VolatileDBEnv{..} = do
@@ -351,8 +350,7 @@ getInternalState VolatileDBEnv{..} = do
         Nothing -> EH.throwError _dbErr $ UserError ClosedDBError
         Just st -> return (SomePair _dbHasFS st)
 
-getIsMemberImpl :: forall m blockId
-                .  (MonadSTM m, Ord blockId)
+getIsMemberImpl :: forall m blockId. (IOLike m, Ord blockId)
                 => VolatileDBEnv m blockId
                 -> STM m (blockId -> Bool)
 getIsMemberImpl VolatileDBEnv{..} = do
@@ -361,8 +359,7 @@ getIsMemberImpl VolatileDBEnv{..} = do
         Nothing -> EH.throwError' _dbErrSTM $ UserError ClosedDBError
         Just st -> return $ \bid -> Map.member bid (_currentRevMap st)
 
-getBlockIdsImpl :: forall m blockId
-                .  (MonadSTM m)
+getBlockIdsImpl :: forall m blockId. (IOLike m)
                 => VolatileDBEnv m blockId
                 -> m [blockId]
 getBlockIdsImpl VolatileDBEnv{..} = do
@@ -371,8 +368,7 @@ getBlockIdsImpl VolatileDBEnv{..} = do
         Nothing -> EH.throwError _dbErr $ UserError ClosedDBError
         Just st -> return $ Map.keys $ _currentRevMap st
 
-getSuccessorsImpl :: forall m blockId
-                  .  (MonadSTM m, Ord blockId)
+getSuccessorsImpl :: forall m blockId. (IOLike m, Ord blockId)
                   => VolatileDBEnv m blockId
                   -> STM m (Maybe blockId -> Set blockId)
 getSuccessorsImpl VolatileDBEnv{..} = do
@@ -382,7 +378,7 @@ getSuccessorsImpl VolatileDBEnv{..} = do
         Just st -> return $ \blockId ->
             fromMaybe Set.empty (Map.lookup blockId (_currentSuccMap st))
 
-getPredecessorImpl :: forall m blockId. (MonadSTM m, Ord blockId, HasCallStack)
+getPredecessorImpl :: forall m blockId. (IOLike m, Ord blockId, HasCallStack)
                    => VolatileDBEnv m blockId
                    -> STM m (blockId -> Maybe blockId)
 getPredecessorImpl VolatileDBEnv{..} = do
@@ -394,7 +390,7 @@ getPredecessorImpl VolatileDBEnv{..} = do
   where
     msg = "precondition violated: block not member of the VolatileDB"
 
-getMaxSlotNoImpl :: forall m blockId. MonadSTM m
+getMaxSlotNoImpl :: forall m blockId. IOLike m
                  => VolatileDBEnv m blockId
                  -> STM m MaxSlotNo
 getMaxSlotNoImpl VolatileDBEnv{..} = do
@@ -410,8 +406,7 @@ getMaxSlotNoImpl VolatileDBEnv{..} = do
 -- db first tries to fill files from _nextWriteFiles list.
 -- If none find it creates new ones.
 -- This may throw an FsError.
-nextFile :: forall h m blockId
-         .  MonadSTM m
+nextFile :: forall h m blockId. IOLike m
          => HasFS m h
          -> ErrorHandling (VolatileDBError blockId) m
          -> VolatileDBEnv m blockId
@@ -560,7 +555,7 @@ mkInternalState hasFS@HasFS{..} err parser n files = wrapFsError hasFsErr err $ 
     go Map.empty Map.empty Map.empty Nothing [] (Set.toList files)
 
 -- This is safe in terms of throwing FsErrors.
-modifyState :: forall blockId m r. (HasCallStack, MonadSTM m, MonadCatch m)
+modifyState :: forall blockId m r. (HasCallStack, IOLike m)
             => VolatileDBEnv m blockId
             -> (forall h. HasFS m h -> (InternalState blockId h) -> m (InternalState blockId h, r))
             -> m r

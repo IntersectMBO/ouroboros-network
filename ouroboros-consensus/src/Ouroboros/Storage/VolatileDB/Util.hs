@@ -52,7 +52,7 @@ fromEither err = \case
     Left e -> EH.throwError err e
     Right a -> return a
 
-modifyTMVar :: (MonadSTM m, MonadCatch m)
+modifyTMVar :: IOLike m
             => StrictTMVar m a
             -> (a -> m (a,b))
             -> m b

@@ -50,11 +50,7 @@ import           Ouroboros.Storage.ChainDB.Impl.Types
 -- Otherwise, execute the given function on the 'ChainDbEnv' and 'ReaderState'
 -- 'StrictTVar'.
 getReader
-  :: forall m blk r.
-     ( MonadSTM m
-     , MonadThrow (STM m)
-     , HasHeader blk
-     )
+  :: forall m blk r. (IOLike m, HasHeader blk)
   => ChainDbHandle m blk
   -> ReaderId
   -> (ChainDbEnv m blk -> StrictTVar m (ReaderState m blk) -> m r)
@@ -72,11 +68,7 @@ getReader (CDBHandle varState) readerId f = do
 
 -- | Variant 'of 'getReader' for functions taking one argument.
 getReader1
-  :: forall m blk a r.
-     ( MonadSTM m
-     , MonadThrow (STM m)
-     , HasHeader blk
-     )
+  :: forall m blk a r. (IOLike m, HasHeader blk)
   => ChainDbHandle m blk
   -> ReaderId
   -> (ChainDbEnv m blk -> StrictTVar m (ReaderState m blk) -> a -> m r)
@@ -85,14 +77,7 @@ getReader1 h rdrId f a =
     getReader h rdrId (\env varReader -> f env varReader a)
 
 newReader
-  :: forall m blk.
-     ( MonadSTM  m
-     , MonadMask m
-     , MonadFork m
-     , MonadThrow (STM m)
-     , HasHeader blk
-     , HasHeader (Header blk)
-     )
+  :: forall m blk. (IOLike m, HasHeader blk, HasHeader (Header blk))
   => ChainDbEnv    m blk
   -> ChainDbHandle m blk
      -- ^ We need the handle to pass it on to the 'Reader', so that each time
@@ -122,10 +107,7 @@ newReader cdb@CDB{..} h registry = do
 
 newHeaderReader
   :: forall m blk.
-     ( MonadSTM  m
-     , MonadMask m
-     , MonadFork m
-     , MonadThrow (STM m)
+     ( IOLike m
      , GetHeader blk
      , HasHeader blk
      , HasHeader (Header blk)
@@ -150,10 +132,7 @@ newHeaderReader h registry = getEnv h $ \cdb ->
 
 newBlockReader
   :: forall m blk.
-     ( MonadSTM  m
-     , MonadMask m
-     , MonadFork m
-     , MonadThrow (STM m)
+     ( IOLike m
      , HasHeader blk
      , HasHeader (Header blk)
      )
@@ -180,10 +159,7 @@ newBlockReader h registry = getEnv h $ \cdb ->
 
 makeNewBlockOrHeaderReader
   :: forall m blk.
-     ( MonadSTM  m
-     , MonadMask m
-     , MonadFork m
-     , MonadThrow (STM m)
+     ( IOLike m
      , HasHeader blk
      , HasHeader (Header blk)
      )
@@ -199,8 +175,7 @@ makeNewBlockOrHeaderReader h readerId registry = Reader {..}
     readerClose               = getEnv     h          $ close readerId
 
 close
-  :: forall m blk.
-     (MonadSTM m, MonadCatch m, HasHeader blk)
+  :: forall m blk. (IOLike m, HasHeader blk)
   => ReaderId
   -> ChainDbEnv m blk
   -> m ()
@@ -256,9 +231,7 @@ type BlockOrHeader blk = Either (Header blk) blk
 -- the end of the current chain.
 instructionHelper
   :: forall m blk r.
-     ( MonadSTM  m
-     , MonadMask m
-     , MonadFork m
+     ( IOLike m
      , HasHeader blk
      , HasHeader (Header blk)
      )
@@ -375,10 +348,7 @@ instructionHelper registry fromMaybeSTM fromPure CDB{..} varReader = do
 
 -- | 'readerInstruction' for when the reader is in the 'ReaderInMem' state.
 instructionSTM
-  :: forall m blk.
-     ( MonadSTM m
-     , HasHeader (Header blk)
-     )
+  :: forall m blk. (IOLike m, HasHeader (Header blk))
   => ReaderRollState blk
      -- ^ The current 'ReaderRollState' of the reader
   -> AnchoredFragment (Header blk)
@@ -404,9 +374,7 @@ instructionSTM rollState curChain saveRollState =
 
 forward
   :: forall m blk.
-     ( MonadSTM  m
-     , MonadMask m
-     , MonadFork m
+     ( IOLike m
      , HasHeader blk
      , HasHeader (Header blk)
      , HasCallStack
@@ -507,7 +475,7 @@ switchFork ipoint newChain readerState =
 
 -- | Close all open 'Reader's.
 closeAllReaders
-  :: (MonadSTM m, MonadCatch m, HasHeader blk)
+  :: (IOLike m, HasHeader blk)
   => ChainDbEnv m blk
   -> m ()
 closeAllReaders CDB{..} = do

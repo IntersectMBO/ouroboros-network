@@ -55,7 +55,7 @@ data DiskPolicy m = DiskPolicy {
     }
 
 -- | Default on-disk policy
-defaultDiskPolicy :: MonadSTM m
+defaultDiskPolicy :: IOLike m
                   => SecurityParam     -- ^ Maximum rollback
                   -> DiffTime          -- ^ Slot length
                   -> DiskPolicy m

@@ -88,7 +88,7 @@ data BlockchainTime m = BlockchainTime {
 -- blocks as requested and then returns 'False'
 --
 blockUntilSlot ::
-     MonadSTM m
+     IOLike m
   => BlockchainTime m
   -> SlotNo
   -> m Bool
@@ -111,12 +111,7 @@ onSlot :: HasCallStack => BlockchainTime m -> SlotNo -> m () -> m ()
 onSlot = onSlot_
 
 -- | Default implementation of 'onSlot' (used internally only)
-defaultOnSlot :: forall m.
-                 ( MonadMask  m
-                 , MonadFork  m
-                 , MonadAsync m
-                 , HasCallStack
-                 )
+defaultOnSlot :: forall m. (IOLike m, HasCallStack)
               => ResourceRegistry m
               -> STM m SlotNo
               -> SlotNo
@@ -178,13 +173,7 @@ data TestBlockchainTime m = TestBlockchainTime
 -- appropriate for initialization code etc. In contrast, the argument to
 -- 'onSlotChange' is blocked at least until @SlotNo 0@ begins.
 newTestBlockchainTime
-    :: forall m. (
-           MonadAsync m
-         , MonadTimer m
-         , MonadMask  m
-         , MonadFork  m
-         , HasCallStack
-         )
+    :: forall m. (IOLike m, HasCallStack)
     => ResourceRegistry m
     -> NumSlots           -- ^ Number of slots
     -> DiffTime           -- ^ Slot duration

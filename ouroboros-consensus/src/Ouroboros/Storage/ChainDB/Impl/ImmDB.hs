@@ -146,8 +146,7 @@ defaultArgs fp = ImmDbArgs{
     , immTracer      = nullTracer
     }
 
-openDB :: (MonadSTM m, MonadST m, MonadCatch m, HasHeader blk)
-       => ImmDbArgs m blk -> m (ImmDB m blk)
+openDB :: (IOLike m, HasHeader blk) => ImmDbArgs m blk -> m (ImmDB m blk)
 openDB args@ImmDbArgs{..} = do
     createDirectoryIfMissing immHasFS True (mkFsPath [])
     immDB <- ImmDB.openDB
@@ -350,7 +349,7 @@ appendBlock db@ImmDB{..} b = withDB db $ \imm -> case isEBB b of
 --
 -- When the returned iterator is closed, it will be 'release'd from the
 -- 'ResourceRegistry'.
-registeredStream :: (MonadMask m, MonadSTM m, MonadFork m, HasHeader blk)
+registeredStream :: (IOLike m, HasHeader blk)
                  => ImmDB m blk
                  -> ResourceRegistry m
                  -> Maybe (SlotNo, HeaderHash blk)
@@ -380,12 +379,7 @@ registeredStream db registry start end = do
 --
 -- When passed @'StreamFromInclusive' pt@ where @pt@ refers to Genesis, a
 -- 'NoGenesisBlock' exception will be thrown.
-streamBlocksFrom :: forall m blk.
-                   ( MonadMask m
-                   , MonadSTM  m
-                   , MonadFork m
-                   , HasHeader blk
-                   )
+streamBlocksFrom :: forall m blk. (IOLike m, HasHeader blk)
                  => ImmDB m blk
                  -> ResourceRegistry m
                  -> StreamFrom blk
@@ -450,12 +444,7 @@ streamBlocksFrom db registry from = runExceptT $ case from of
 --
 -- When passed @'StreamFromInclusive' pt@ where @pt@ refers to Genesis, a
 -- 'NoGenesisBlock' exception will be thrown.
-streamBlocksFromUnchecked  :: forall m blk.
-                              ( MonadMask m
-                              , MonadSTM  m
-                              , MonadFork m
-                              , HasHeader blk
-                              )
+streamBlocksFromUnchecked  :: forall m blk. (IOLike m, HasHeader blk)
                            => ImmDB m blk
                            -> ResourceRegistry m
                            -> StreamFrom blk
@@ -480,12 +469,7 @@ streamBlocksFromUnchecked db registry from = case from of
 -- See also 'streamBlobsAfter'.
 --
 -- PRECONDITION: the exclusive lower bound is part of the ImmutableDB.
-streamBlocksAfter :: forall m blk.
-                     ( MonadMask m
-                     , MonadSTM  m
-                     , MonadFork m
-                     , HasHeader blk
-                     )
+streamBlocksAfter :: forall m blk. (IOLike m, HasHeader blk)
                   => ImmDB m blk
                   -> ResourceRegistry m
                   -> Point blk -- ^ Exclusive lower bound
@@ -504,12 +488,7 @@ streamBlocksAfter db registry low =
 -- bound at all; if it doesn't, we pass the hash as the lower bound to the
 -- 'ImmutableDB' and then step the iterator one block to skip that first
 -- block.
-streamBlobsAfter :: forall m blk.
-                    ( MonadMask m
-                    , MonadSTM  m
-                    , MonadFork m
-                    , HasHeader blk
-                    )
+streamBlobsAfter :: forall m blk. (IOLike m, HasHeader blk)
                  => ImmDB m blk
                  -> ResourceRegistry m
                  -> Point blk -- ^ Exclusive lower bound
@@ -588,7 +567,7 @@ data EpochFileError =
   | EpochErrUnexpectedEBB
   deriving (Eq, Show)
 
-epochFileParser :: forall m blk. (MonadST m, MonadThrow m, HasHeader blk)
+epochFileParser :: forall m blk. (IOLike m, HasHeader blk)
                 => ImmDbArgs m blk
                 -> ImmDB.EpochFileParser
                      EpochFileError

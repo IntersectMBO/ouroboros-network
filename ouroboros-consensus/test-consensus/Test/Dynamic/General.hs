@@ -45,6 +45,7 @@ import           Test.Dynamic.Util.NodeJoinPlan
 import           Test.Dynamic.Util.NodeTopology
 
 import           Test.Util.Orphans.Arbitrary ()
+import           Test.Util.Orphans.IOLike ()
 import           Test.Util.Orphans.NoUnexpectedThunks ()
 import           Test.Util.Range
 

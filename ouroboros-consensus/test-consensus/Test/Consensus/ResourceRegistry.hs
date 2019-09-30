@@ -278,16 +278,16 @@ data ThreadInstr m :: * -> * where
 -- | Instruction along with an MVar for the result
 data QueuedInstr m = forall a. QueuedInstr (ThreadInstr m a) (StrictTMVar m a)
 
-runInThread :: MonadSTM m => TestThread m -> ThreadInstr m a -> m a
+runInThread :: IOLike m => TestThread m -> ThreadInstr m a -> m a
 runInThread TestThread{..} instr = do
     result <- uncheckedNewEmptyTMVarM
     atomically $ writeTQueue threadComms (QueuedInstr instr result)
     atomically $ takeTMVar result
 
-instance (MonadFork m, MonadAsync m) => Show (TestThread m) where
+instance (IOLike m) => Show (TestThread m) where
   show TestThread{..} = "<Thread " ++ show (threadId testThread) ++ ">"
 
-instance (MonadFork m, MonadAsync m) => Eq (TestThread m) where
+instance (IOLike m) => Eq (TestThread m) where
   (==) = (==) `on` (threadId . testThread)
 
 -- | Create a new thread in the given registry
@@ -295,7 +295,7 @@ instance (MonadFork m, MonadAsync m) => Eq (TestThread m) where
 -- In order to be able to see which threads are alive, we have threads
 -- register and unregister themselves. We do not reuse the registry for this,
 -- to avoid circular reasoning in the tests.
-newThread :: forall m. (MonadAsync m, MonadMask m, MonadFork m, MonadTimer m)
+newThread :: forall m. IOLike m
           => StrictTVar m [TestThread m]
           -> ResourceRegistry m
           -> Link (TestThread m)
@@ -345,13 +345,7 @@ newThread alive parentReg = \shouldLink -> do
               atomically $ putTMVar result ()
               error "crashing"
 
-runIO :: forall m. (
-             MonadAsync m
-           , MonadMask  m
-           , MonadFork  m
-           , MonadTimer m
-           , Typeable   m
-           )
+runIO :: forall m. (IOLike m, Typeable m)
       => StrictTVar m [TestThread m]
       -> ResourceRegistry m
       -> Cmd (TestThread m) -> m (Resp (TestThread m))
@@ -389,8 +383,8 @@ runIO alive reg cmd = catchEx $ timeoutAfter 1 $
 
 newtype At m f r = At (f (Reference (TestThread m) r))
 
-deriving instance (Show1 r, MonadFork m, MonadAsync m) => Show (At m Cmd  r)
-deriving instance (Show1 r, MonadFork m, MonadAsync m) => Show (At m Resp r)
+deriving instance (Show1 r, IOLike m) => Show (At m Cmd  r)
+deriving instance (Show1 r, IOLike m) => Show (At m Resp r)
 
 {-------------------------------------------------------------------------------
   Relate model to IO
@@ -414,11 +408,11 @@ initModel = Model emptyMock []
   Events
 -------------------------------------------------------------------------------}
 
-toMock :: forall m f r. (Functor f, Eq1 r, Show1 r, MonadFork m, MonadAsync m)
+toMock :: forall m f r. (Functor f, Eq1 r, Show1 r, IOLike m)
        => Model m r -> At m f r -> f MockThread
 toMock (Model _ hs) (At fr) = (hs !) <$> fr
 
-step :: (Eq1 r, Show1 r, MonadFork m, MonadAsync m)
+step :: (Eq1 r, Show1 r, IOLike m)
      => Model m r -> At m Cmd r -> (Resp MockThread, Mock)
 step m@(Model mock _) c = runMock (toMock m c) mock
 
@@ -429,7 +423,7 @@ data Event m r = Event {
     , mockResp :: Resp MockThread
     }
 
-lockstep :: (Eq1 r, Show1 r, MonadFork m, MonadAsync m)
+lockstep :: (Eq1 r, Show1 r, IOLike m)
          => Model m      r
          -> At    m Cmd  r
          -> At    m Resp r
@@ -510,19 +504,14 @@ instance ToExpr Mock
 instance ToExpr (Link MockThread)
 instance ToExpr (Model IO Concrete)
 
-instance (MonadFork m, MonadAsync m) => ToExpr (TestThread m) where
+instance (IOLike m) => ToExpr (TestThread m) where
   toExpr = defaultExprViaShow
 
 {-------------------------------------------------------------------------------
   QSM toplevel
 -------------------------------------------------------------------------------}
 
-semantics :: ( MonadAsync m
-             , MonadMask  m
-             , MonadFork  m
-             , MonadTimer m
-             , Typeable   m
-             )
+semantics :: (IOLike m, Typeable m)
           => StrictTVar m [TestThread m]
           -> ResourceRegistry m
           -> At m Cmd Concrete -> m (At m Resp Concrete)
@@ -530,11 +519,11 @@ semantics alive reg (At c) =
     (At . fmap reference) <$>
       runIO alive reg (concrete <$> c)
 
-transition :: (Eq1 r, Show1 r, MonadFork m, MonadAsync m)
+transition :: (Eq1 r, Show1 r, IOLike m)
            => Model m r -> At m Cmd r -> At m Resp r -> Model m r
 transition m c = after . lockstep m c
 
-precondition :: forall m. (MonadFork m, MonadAsync m)
+precondition :: forall m. (IOLike m)
              => Model m Symbolic -> At m Cmd Symbolic -> Logic
 precondition (Model mock hs) (At c) =
     forall (toList c) checkRef
@@ -545,7 +534,7 @@ precondition (Model mock hs) (At c) =
           Nothing -> Bot
           Just r' -> r' `elem` mockLiveThreads (threads mock)
 
-postcondition :: (MonadFork m, MonadAsync m)
+postcondition :: (IOLike m)
               => Model m      Concrete
               -> At    m Cmd  Concrete
               -> At    m Resp Concrete
@@ -555,7 +544,7 @@ postcondition m c r =
   where
     e = lockstep m c r
 
-symbolicResp :: (Typeable m, MonadFork m, MonadAsync m)
+symbolicResp :: (IOLike m, Typeable m)
              => Model m     Symbolic
              -> At    m Cmd Symbolic
              -> GenSym (At m Resp Symbolic)
@@ -563,12 +552,7 @@ symbolicResp m c = At <$> traverse (const genSym) resp
   where
     (resp, _mock') = step m c
 
-sm :: ( MonadAsync m
-      , MonadFork  m
-      , MonadMask  m
-      , MonadTimer m
-      , Typeable   m
-      )
+sm :: (IOLike m, Typeable m)
    => StrictTVar m [TestThread m]
    -> ResourceRegistry m
    -> StateMachine (Model m) (At m Cmd) m (At m Resp)

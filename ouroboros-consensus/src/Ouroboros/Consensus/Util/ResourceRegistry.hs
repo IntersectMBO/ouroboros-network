@@ -402,7 +402,7 @@ removeResource key = state $ \st ->
     $ registryResources st
 
 -- | Insert thread into the set of known threads
-insertThread :: MonadFork m => ThreadId m -> State (RegistryState m) ()
+insertThread :: IOLike m => ThreadId m -> State (RegistryState m) ()
 insertThread tid =
     modify $ \st -> st {
         registryThreads = modifyKnownThreads (Set.insert tid) $
@@ -410,7 +410,7 @@ insertThread tid =
       }
 
 -- | Remove thread from set of known threads
-removeThread :: MonadFork m => ThreadId m -> State (RegistryState m) ()
+removeThread :: IOLike m => ThreadId m -> State (RegistryState m) ()
 removeThread tid =
     modify $ \st -> st {
         registryThreads = modifyKnownThreads (Set.delete tid) $
@@ -427,7 +427,7 @@ close closeCallStack = unlessClosed $ do
     gets $ Map.keysSet . registryResources
 
 -- | Convenience function for updating the registry state
-updateState :: forall m a. MonadSTM m
+updateState :: forall m a. IOLike m
             => ResourceRegistry m
             -> State (RegistryState m) a
             -> m a
@@ -448,7 +448,7 @@ updateState rr f =
 -- exception (apart from in a generic handler that does local resource cleanup).
 -- The thread will anyway soon receive a 'ThreadKilled' exception.
 data RegistryClosedException =
-    forall m. MonadFork m => RegistryClosedException {
+    forall m. IOLike m => RegistryClosedException {
         -- | The context in which the registry was created
         registryClosedRegistryContext :: !(Context m)
 
@@ -473,8 +473,7 @@ instance Exception RegistryClosedException
 --
 -- You are strongly encouraged to use 'withRegistry' instead.
 -- Exported primarily for the benefit of tests.
-unsafeNewRegistry :: (MonadFork m, MonadSTM m, HasCallStack)
-                  => m (ResourceRegistry m)
+unsafeNewRegistry :: (IOLike m, HasCallStack) => m (ResourceRegistry m)
 unsafeNewRegistry = do
     context  <- captureContext
     stateVar <- uncheckedNewTVarM initState
@@ -510,8 +509,7 @@ unsafeNewRegistry = do
 -- will prioritize asynchronous exceptions over other exceptions. This may be
 -- important for exception handlers that catch all-except-asynchronous
 -- exceptions.
-closeRegistry :: (MonadSTM m, MonadFork m, MonadMask m, HasCallStack)
-              => ResourceRegistry m -> m ()
+closeRegistry :: (IOLike m, HasCallStack) => ResourceRegistry m -> m ()
 closeRegistry rr = mask_ $ do
     context <- captureContext
     unless (contextThreadId context == contextThreadId (registryContext rr)) $
@@ -553,8 +551,7 @@ closeRegistry rr = mask_ $ do
 -- | Create a new registry
 --
 -- See documentation of 'ResourceRegistry' for a detailed discussion.
-withRegistry :: (MonadFork m, MonadMask m, MonadSTM m)
-             => (ResourceRegistry m -> m a) -> m a
+withRegistry :: IOLike m => (ResourceRegistry m -> m a) -> m a
 withRegistry = bracket unsafeNewRegistry closeRegistry
 
 {-------------------------------------------------------------------------------
@@ -568,7 +565,7 @@ registryThread = contextThreadId . registryContext
 -- | Number of currently allocated resources
 --
 -- Primarily for the benefit of testing.
-countResources :: MonadSTM m => ResourceRegistry m -> m Int
+countResources :: IOLike m => ResourceRegistry m -> m Int
 countResources rr = atomically $ aux <$> readTVar (registryState rr)
   where
     aux :: RegistryState m -> Int
@@ -584,12 +581,7 @@ countResources rr = atomically $ aux <$> readTVar (registryState rr)
 -- means that the resource allocation must either be fast or else interruptible;
 -- see "Dealing with Asynchronous Exceptions during Resource Acquisition"
 -- <http://www.well-typed.com/blog/97/> for details.
-allocate :: forall m a. (
-                MonadSTM  m
-              , MonadMask m
-              , MonadFork m
-              , HasCallStack
-              )
+allocate :: forall m a. (IOLike m, HasCallStack)
          => ResourceRegistry m
          -> (ResourceId -> m a)
          -> (a -> m ())
@@ -642,7 +634,7 @@ allocate rr alloc free = do
 -- guaranteed not to remove the resource from the registry without releasing it.
 --
 -- Releasing an already released resource is a no-op.
-release :: (MonadSTM m, MonadFork m, MonadMask m) => ResourceKey m -> m ()
+release :: IOLike m => ResourceKey m -> m ()
 release key@(ResourceKey rr _) = do
     context <- captureContext
     ensureKnownThread rr context
@@ -660,7 +652,7 @@ release key@(ResourceKey rr _) = do
 --
 -- This function should only be used if the above situation can be ruled out
 -- or handled by other means.
-unsafeRelease :: (MonadSTM m, MonadMask m) => ResourceKey m -> m ()
+unsafeRelease :: IOLike m => ResourceKey m -> m ()
 unsafeRelease (ResourceKey rr rid) = do
     mask_ $ do
       mResource <- updateState rr $ removeResource rid
@@ -673,7 +665,7 @@ unsafeRelease (ResourceKey rr rid) = do
 -- | Thread
 --
 -- The internals of this type are not exported.
-data Thread m a = MonadFork m => Thread {
+data Thread m a = IOLike m => Thread {
       threadId         :: !(ThreadId m)
     , threadResourceId :: !ResourceId
     , threadAsync      :: !(Async m a)
@@ -691,7 +683,7 @@ instance Eq (Thread m a) where
 -- function returns.
 --
 -- Uses 'uninterruptibleCancel' because that's what 'withAsync' does.
-cancelThread :: MonadAsync m => Thread m a -> m ()
+cancelThread :: IOLike m => Thread m a -> m ()
 cancelThread = uninterruptibleCancel . threadAsync
 
 -- | Wait for thread to terminate and return its result.
@@ -701,20 +693,15 @@ cancelThread = uninterruptibleCancel . threadAsync
 -- NOTE: If A waits on B, and B is linked to the registry, and B throws an
 -- exception, then A might /either/ receive the exception thrown by B /or/
 -- the 'ThreadKilled' exception thrown by the registry.
-waitThread :: MonadAsync m => Thread m a -> m a
+waitThread :: IOLike m => Thread m a -> m a
 waitThread = wait . threadAsync
 
 -- | Lift 'waitAny' to 'Thread'
-waitAnyThread :: forall m a. MonadAsync m => [Thread m a] -> m a
+waitAnyThread :: forall m a. IOLike m => [Thread m a] -> m a
 waitAnyThread ts = snd <$> waitAny (map threadAsync ts)
 
 -- | Fork a new thread
-forkThread :: forall m a. (
-                  MonadMask  m
-                , MonadFork  m
-                , MonadAsync m
-                , HasCallStack
-                )
+forkThread :: forall m a. (IOLike m, HasCallStack)
            => ResourceRegistry m
            -> m a
            -> m (Thread m a)
@@ -757,15 +744,13 @@ forkThread rr body = snd <$>
           void $ removeResource rid
 
 -- | Link specified 'Thread' to the (thread that created) the registry
-linkToRegistry :: (MonadAsync m, MonadFork m, MonadMask m)
-               => Thread m a -> m ()
+linkToRegistry :: IOLike m => Thread m a -> m ()
 linkToRegistry t = linkTo (registryThread $ threadRegistry t) (threadAsync t)
 
 -- | Fork a thread and link to it to the registry.
 --
 -- This function is just a convenience.
-forkLinkedThread :: (MonadAsync m, MonadFork m, MonadMask m)
-                 => ResourceRegistry m -> m a -> m (Thread m a)
+forkLinkedThread :: IOLike m => ResourceRegistry m -> m a -> m (Thread m a)
 forkLinkedThread rr body = do
     t <- forkThread rr body
     -- There is no race condition here between the new thread throwing an
@@ -779,7 +764,7 @@ forkLinkedThread rr body = do
   Check that registry is used from known thread
 -------------------------------------------------------------------------------}
 
-ensureKnownThread :: forall m. (MonadSTM m, MonadFork m, MonadThrow m)
+ensureKnownThread :: forall m. IOLike m
                   => ResourceRegistry m -> Context m -> m ()
 ensureKnownThread rr context = do
     isKnown <- checkIsKnown
@@ -803,7 +788,7 @@ ensureKnownThread rr context = do
 data ResourceRegistryThreadException =
     -- | If the registry is used from an unknown thread, we cannot do proper
     -- reference counting
-    forall m. MonadFork m => ResourceRegistryUsedFromUnknownThread {
+    forall m. IOLike m => ResourceRegistryUsedFromUnknownThread {
           -- | Information about the context in which the registry was created
           resourceRegistryCreatedIn :: !(Context m)
 
@@ -812,7 +797,7 @@ data ResourceRegistryThreadException =
         }
 
     -- | Registry closed from different threat than that created it
-  | forall m. MonadFork m => ResourceRegistryClosedFromWrongThread {
+  | forall m. IOLike m => ResourceRegistryClosedFromWrongThread {
           -- | Information about the context in which the registry was created
           resourceRegistryCreatedIn :: !(Context m)
 
@@ -827,7 +812,7 @@ instance Exception ResourceRegistryThreadException
   Auxiliary: context
 -------------------------------------------------------------------------------}
 
-data Context m = MonadFork m => Context {
+data Context m = IOLike m => Context {
       -- | CallStack in which it was created
       contextCallStack :: !PrettyCallStack
 
@@ -838,7 +823,7 @@ data Context m = MonadFork m => Context {
 deriving via UseIsNormalFormNamed "Context" (Context m) instance NoUnexpectedThunks (Context m)
 deriving instance Show (Context m)
 
-captureContext :: MonadFork m => HasCallStack => m (Context m)
+captureContext :: IOLike m => HasCallStack => m (Context m)
 captureContext = Context (PrettyCallStack callStack) <$> myThreadId
 
 {-------------------------------------------------------------------------------

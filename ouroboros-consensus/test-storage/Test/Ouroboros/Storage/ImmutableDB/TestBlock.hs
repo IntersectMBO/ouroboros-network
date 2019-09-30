@@ -48,8 +48,6 @@ import qualified Test.StateMachine.Utils as QSM
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
 
-import           Ouroboros.Consensus.Util.IOLike
-
 import           Ouroboros.Storage.Common
 import           Ouroboros.Storage.FS.API (HasFS (..), hGetAll, hPut, withFile)
 import           Ouroboros.Storage.FS.API.Types

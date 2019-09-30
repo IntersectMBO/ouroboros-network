@@ -53,8 +53,6 @@ import           Control.Monad.Class.MonadThrow
 
 import           Cardano.Prelude (NoUnexpectedThunks (..))
 
-import           Ouroboros.Consensus.Util.IOLike
-
 import           Ouroboros.Storage.FS.API (HasFS (..), hGetAll, hPut, hPutAll,
                      withFile)
 import           Ouroboros.Storage.FS.API.Types (AllowExisting (..),
