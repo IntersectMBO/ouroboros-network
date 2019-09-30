@@ -84,7 +84,7 @@ data NodeKernel m peer blk = NodeKernel {
     , getFetchClientRegistry :: FetchClientRegistry peer (Header blk) blk m
 
       -- | Read the current candidates
-    , getNodeCandidates      :: StrictTVar m (Map peer (StrictTVar m (CandidateState blk)))
+    , getNodeCandidates      :: StrictTVar m (Map peer (StrictTVar m (AnchoredFragment (Header blk))))
 
       -- | The node's tracers
     , getTracers             :: Tracers m peer blk
@@ -185,7 +185,7 @@ data InternalState m peer blk = IS {
     , chainDB             :: ChainDB m blk
     , blockFetchInterface :: BlockFetchConsensusInterface peer (Header blk) blk m
     , fetchClientRegistry :: FetchClientRegistry peer (Header blk) blk m
-    , varCandidates       :: StrictTVar m (Map peer (StrictTVar m (CandidateState blk)))
+    , varCandidates       :: StrictTVar m (Map peer (StrictTVar m (AnchoredFragment (Header blk))))
     , varState            :: StrictTVar m (NodeState (BlockProtocol blk))
     , mempool             :: Mempool m blk TicketNo
     }
@@ -212,8 +212,7 @@ initInternalState NodeArgs { tracers, chainDB, registry, cfg,
     fetchClientRegistry <- newFetchClientRegistry
 
     let getCandidates :: STM m (Map peer (AnchoredFragment (Header blk)))
-        getCandidates = readTVar varCandidates >>=
-                        traverse (fmap candidateChain . readTVar)
+        getCandidates = readTVar varCandidates >>= traverse readTVar
 
         blockFetchInterface :: BlockFetchConsensusInterface peer (Header blk) blk m
         blockFetchInterface = initBlockFetchConsensusInterface

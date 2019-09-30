@@ -82,6 +82,7 @@ import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.Orphans ()
 import           Ouroboros.Consensus.Util.ResourceRegistry
 
+import           Ouroboros.Storage.ChainDB.API (ChainDB)
 import qualified Ouroboros.Storage.ChainDB.API as ChainDB
 
 -- | The collection of all the mini-protocol handlers provided by the consensus
@@ -93,10 +94,9 @@ import qualified Ouroboros.Storage.ChainDB.API as ChainDB
 --
 data ProtocolHandlers m peer blk = ProtocolHandlers {
       phChainSyncClient
-        :: StrictTVar m (CandidateState blk)
-        -> AnchoredFragment (Header blk)
+        :: StrictTVar m (AnchoredFragment (Header blk))
         -> ChainSyncClientPipelined (Header blk) (Tip blk) m Void
-        -- TODO: we should consider either bundling these context paramaters
+        -- TODO: we should consider either bundling these context parameters
         -- into a record, or extending the protocol handler representation
         -- to support bracket-style initialisation so that we could have the
         -- closure include these and not need to be explicit about them here.
@@ -153,9 +153,7 @@ protocolHandlers NodeArgs {btime, maxClockSkew, tracers, maxUnackTxs, chainSyncP
           getNodeConfig
           btime
           maxClockSkew
-          (ChainDB.getCurrentLedger  getChainDB)
-          (ChainDB.getIsInvalidBlock getChainDB)
-          (ChainDB.getTipBlockNo     getChainDB)
+          (chainDbView getChainDB)
     , phChainSyncServer =
         chainSyncHeadersServer
           (chainSyncServerHeaderTracer tracers)
@@ -424,19 +422,17 @@ consensusNetworkApps kernel ProtocolTracers {..} ProtocolCodecs {..} ProtocolHan
       bracketSyncWithFetchClient
         (getFetchClientRegistry kernel) them $
       bracketChainSyncClient
-          (chainSyncClientTracer     (getTracers kernel))
-          (ChainDB.getCurrentChain   (getChainDB kernel))
-          (ChainDB.getCurrentLedger  (getChainDB kernel))
-          (ChainDB.getIsInvalidBlock (getChainDB kernel))
+          (chainSyncClientTracer (getTracers kernel))
+          (chainDbView (getChainDB kernel))
           (getNodeCandidates kernel)
-          them $ \varCandidate curChain ->
+          them $ \varCandidate->
         runPipelinedPeer
           ptChainSyncTracer
           pcChainSyncCodec
           them
           channel
           $ chainSyncClientPeerPipelined
-          $ phChainSyncClient varCandidate curChain
+          $ phChainSyncClient varCandidate
 
     naChainSyncServer
       :: peer
@@ -525,3 +521,12 @@ consensusNetworkApps kernel ProtocolTracers {..} ProtocolCodecs {..} ProtocolHan
         them
         channel
         (localTxSubmissionServerPeer (pure phLocalTxSubmissionServer))
+
+chainDbView :: IOLike m => ChainDB m blk -> ChainDbView m blk (Tip blk)
+chainDbView chainDB = ChainDbView
+  { getCurrentChain   = ChainDB.getCurrentChain       chainDB
+  , getCurrentLedger  = ChainDB.getCurrentLedger      chainDB
+  , getOurTip         = Tip <$> ChainDB.getTipPoint   chainDB
+                            <*> ChainDB.getTipBlockNo chainDB
+  , getIsInvalidBlock = ChainDB.getIsInvalidBlock     chainDB
+  }

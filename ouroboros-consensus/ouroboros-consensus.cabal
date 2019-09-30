@@ -283,6 +283,7 @@ test-suite test-consensus
                     Test.Util.TestBlock
                     Test.Util.QSM
                     Test.Util.SOP
+                    Test.Util.Tracer
   build-depends:    base,
                     cardano-binary,
                     cardano-crypto-class,
