@@ -26,8 +26,6 @@ import           Crypto.Random (ChaChaDRG, MonadPseudoRandom, MonadRandom (..),
 import           Data.List (genericLength)
 import           Data.Word (Word64)
 
---import ToBeReplaced
-
 {-------------------------------------------------------------------------------
   Producing values in MonadRandom
 -------------------------------------------------------------------------------}

@@ -1,4 +1,5 @@
-{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE QuantifiedConstraints #-}
 
 module Ouroboros.Consensus.Util.IOLike (
     IOLike
@@ -69,6 +70,7 @@ import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
 
 import           Ouroboros.Consensus.Util.MonadSTM.NormalForm
+import           Ouroboros.Consensus.Util.Orphans ()
 
 {-------------------------------------------------------------------------------
   IOLike
@@ -83,6 +85,8 @@ class ( MonadAsync m
       , MonadCatch m
       , MonadMask  m
       , MonadThrow (STM m)
+      , forall a. NoUnexpectedThunks (m a)
+      , forall a. NoUnexpectedThunks a => NoUnexpectedThunks (StrictTVar m a)
       ) => IOLike m where
 
 instance IOLike IO
