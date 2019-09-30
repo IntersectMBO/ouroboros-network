@@ -1,3 +1,5 @@
+{-# LANGUAGE DeriveAnyClass             #-}
+{-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase                 #-}
@@ -12,6 +14,7 @@ module Test.Consensus.Mempool.TestTx (
 
 import           Control.Monad.Except (Except, throwError)
 import           Data.Word (Word64)
+import           GHC.Generics (Generic)
 
 import           Cardano.Prelude (NoUnexpectedThunks)
 
@@ -38,7 +41,7 @@ data TestTx
     -- ^ Note that a 'ValidTestTx' may still be invalid: if the same
     -- transaction is already in the ledger.
   | InvalidTestTx !TestTxId
-  deriving (Show, Eq, Ord)
+  deriving (Show, Eq, Ord, Generic, NoUnexpectedThunks)
 
 instance Condense TestTx where
   condense = \case

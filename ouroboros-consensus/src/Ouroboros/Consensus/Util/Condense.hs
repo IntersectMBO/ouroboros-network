@@ -133,7 +133,7 @@ instance Condense (SigKES v) => Condense (SignedKES v a) where
   condense (SignedKES sig) = condense sig
 
 instance Condense (SigKES MockKES) where
-    condense (SigMockKES n (SignKeyMockKES (VerKeyMockKES v, j, d))) =
+    condense (SigMockKES n (SignKeyMockKES (VerKeyMockKES v) j d)) =
            show n
         <> ":"
         <> show v

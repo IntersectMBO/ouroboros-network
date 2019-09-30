@@ -1,6 +1,7 @@
 {-# LANGUAGE DeriveAnyClass             #-}
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE DerivingStrategies         #-}
+{-# LANGUAGE DerivingVia                #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE UndecidableInstances       #-}
@@ -8,6 +9,7 @@
 module Ouroboros.Consensus.Ledger.Mock.UTxO (
     -- * Basic definitions
     Tx(..)
+  , mkTx
   , TxId
   , TxIn
   , TxOut
@@ -23,6 +25,7 @@ module Ouroboros.Consensus.Ledger.Mock.UTxO (
   ) where
 
 import           Codec.Serialise (Serialise (..))
+import           Control.DeepSeq (NFData (..), force)
 import           Control.Monad.Except
 import           Data.Either (fromRight)
 import           Data.Map.Strict (Map)
@@ -33,6 +36,7 @@ import           GHC.Generics (Generic)
 
 import           Cardano.Binary (ToCBOR (..))
 import           Cardano.Crypto.Hash
+import           Cardano.Prelude (NoUnexpectedThunks, UseIsNormalForm (..))
 
 import           Ouroboros.Network.MockChain.Chain (Chain, toOldestFirst)
 
@@ -46,14 +50,21 @@ import           Ouroboros.Consensus.Ledger.Mock.Address
   Basic definitions
 -------------------------------------------------------------------------------}
 
-data Tx = Tx (Set TxIn) [TxOut]
-  deriving (Show, Eq, Ord, Generic, Serialise)
+data Tx = UnsafeTx (Set TxIn) [TxOut]
+  deriving stock    (Show, Eq, Ord, Generic)
+  deriving anyclass (Serialise, NFData)
+  deriving NoUnexpectedThunks via UseIsNormalForm Tx
+
+mkTx :: Set TxIn -> [TxOut] -> Tx
+mkTx ins outs = force tx
+  where
+    tx = UnsafeTx ins outs
 
 instance ToCBOR Tx where
   toCBOR = encode
 
 instance Condense Tx where
-  condense (Tx ins outs) = condense (ins, outs)
+  condense (UnsafeTx ins outs) = condense (ins, outs)
 
 type TxId  = Hash ShortHash Tx
 type TxIn  = (TxId, Int)
@@ -83,8 +94,8 @@ utxo a = updateUtxo a Map.empty
 -------------------------------------------------------------------------------}
 
 instance HasUtxo Tx where
-  txIns     (Tx ins _outs) = ins
-  txOuts tx@(Tx _ins outs) =
+  txIns     (UnsafeTx ins _outs) = ins
+  txOuts tx@(UnsafeTx _ins outs) =
       Map.fromList $ map aux (zip [0..] outs)
     where
       aux :: (Int, TxOut) -> (TxIn, TxOut)
@@ -115,7 +126,7 @@ instance HasUtxo a => HasUtxo (Chain a) where
 
 -- | Transaction giving initial stake to the nodes
 genesisTx :: AddrDist -> Tx
-genesisTx addrDist = Tx mempty [(addr, 1000) | addr <- Map.keys addrDist]
+genesisTx addrDist = mkTx mempty [(addr, 1000) | addr <- Map.keys addrDist]
 
 genesisUtxo :: AddrDist -> Utxo
 genesisUtxo addrDist =

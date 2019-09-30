@@ -7,6 +7,8 @@
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE RecordWildCards            #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE TypeApplications           #-}
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE UndecidableInstances       #-}
 
@@ -47,13 +49,14 @@ import qualified Codec.CBOR.Encoding as CBOR
 import           Codec.Serialise (Serialise (..))
 import           Control.Monad.Except
 import           Data.FingerTree.Strict (Measured (..))
-import           Data.Typeable (Typeable)
+import           Data.Proxy
+import           Data.Typeable
 import           Data.Word
 import           GHC.Generics (Generic)
 
 import           Cardano.Binary (ToCBOR (..))
 import           Cardano.Crypto.Hash
-import           Cardano.Prelude (NoUnexpectedThunks)
+import           Cardano.Prelude (NoUnexpectedThunks (..))
 
 import           Ouroboros.Network.Block
 
@@ -258,8 +261,8 @@ genesisSimpleLedgerState = SimpleLedgerState . genesisMockState
 instance (SimpleCrypto c, Typeable ext, SupportedBlock (SimpleBlock c ext))
       => ApplyTx (SimpleBlock c ext) where
   data GenTx (SimpleBlock c ext) = SimpleGenTx
-    { simpleGenTx   :: Tx
-    , simpleGenTxId :: TxId
+    { simpleGenTx   :: !Tx
+    , simpleGenTxId :: !TxId
       -- ^ This field is lazy on purpose so that the TxId is computed on
       -- demand.
     } deriving stock    (Generic)
@@ -282,6 +285,9 @@ instance (SimpleCrypto c, Typeable ext, SupportedBlock (SimpleBlock c ext))
     where
       mustSucceed (Left  _)  = error "reapplyTxSameState: unexpected error"
       mustSucceed (Right st) = st
+
+instance (Typeable p, Typeable c) => NoUnexpectedThunks (GenTx (SimpleBlock p c)) where
+  showTypeOf _ = show $ typeRep (Proxy @(GenTx (SimpleBlock p c)))
 
 instance HasUtxo (GenTx (SimpleBlock p c)) where
   txIns      = txIns      . simpleGenTx

@@ -84,6 +84,7 @@ instance Given ProtocolMagicId => DSIGNAlgorithm CardanoDSIGN where
 
     newtype SignKeyDSIGN CardanoDSIGN = SignKeyCardanoDSIGN SigningKey
         deriving (Show, Generic)
+        deriving NoUnexpectedThunks via UseIsNormalForm (SignKeyDSIGN CardanoDSIGN)
 
     newtype SigDSIGN CardanoDSIGN = SigCardanoDSIGN (Signature CC.Block.ToSign)
         deriving (Show, Eq, Generic)

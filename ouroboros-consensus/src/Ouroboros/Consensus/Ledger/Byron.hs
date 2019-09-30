@@ -1,4 +1,5 @@
 {-# LANGUAGE ConstraintKinds            #-}
+{-# LANGUAGE DataKinds                  #-}
 {-# LANGUAGE DeriveAnyClass             #-}
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE DerivingVia                #-}
@@ -103,7 +104,8 @@ import           Cardano.Chain.ValidationMode (ValidationMode (..),
 import qualified Cardano.Crypto as Crypto
 import           Cardano.Crypto.DSIGN
 import           Cardano.Crypto.Hash
-import           Cardano.Prelude (NoUnexpectedThunks (..))
+import           Cardano.Prelude (NoUnexpectedThunks (..),
+                     UseIsNormalFormNamed (..))
 
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.Point (WithOrigin (..))
@@ -918,6 +920,15 @@ instance (ByronGiven, Typeable cfg, ConfigContainsGenesis cfg)
     in case runExcept (applyByronGenTx validationMode cfg tx st) of
       Left  err -> error $ "unexpected error: " <> show err
       Right st' -> st'
+
+-- | We intentionally ignore the hash
+instance Typeable cfg => NoUnexpectedThunks (GenTx (ByronBlockOrEBB cfg)) where
+  showTypeOf _ = show (typeRep (Proxy @(GenTx (ByronBlockOrEBB cfg))))
+  whnfNoUnexpectedThunks ctxt (ByronTx tx _hash) =
+      noUnexpectedThunks ctxt tx'
+    where
+      tx' :: UseIsNormalFormNamed "ATxAux" (CC.UTxO.ATxAux ByteString)
+      tx' = UseIsNormalFormNamed tx
 
 applyByronGenTx :: ValidationMode
                 -> LedgerConfig (ByronBlockOrEBB cfg)

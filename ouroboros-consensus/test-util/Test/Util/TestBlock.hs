@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns               #-}
 {-# LANGUAGE DeriveAnyClass             #-}
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE DerivingStrategies         #-}
@@ -14,6 +15,7 @@ module Test.Util.TestBlock (
     -- * Blocks
     TestHash(..)
   , mkTestHash
+  , testHashFromList
   , TestBlock(..)
   , TestBlockError(..)
   , Header(..)
@@ -40,6 +42,7 @@ module Test.Util.TestBlock (
   ) where
 
 import           Codec.Serialise (Serialise)
+import           Control.DeepSeq (force)
 import           Control.Monad.Except (throwError)
 import           Data.FingerTree.Strict (Measured (..))
 import           Data.Int
@@ -114,18 +117,21 @@ import qualified Ouroboros.Consensus.Util.SlotBounded as SB
 -- in-memory representation).
 --
 -- The 'BlockNo' of the corresponding block is just the length of the list.
-newtype TestHash = TestHash {
+newtype TestHash = UnsafeTestHash {
       unTestHash :: NonEmpty Word64
     }
   deriving stock   (Generic)
   deriving newtype (Eq, Ord, Serialise)
   deriving anyclass NoUnexpectedThunks
 
-mkTestHash :: [Word64] -> TestHash
-mkTestHash = TestHash . NE.fromList . reverse
+mkTestHash :: NonEmpty Word64 -> TestHash
+mkTestHash = UnsafeTestHash . force
+
+testHashFromList :: [Word64] -> TestHash
+testHashFromList = mkTestHash . NE.fromList . reverse
 
 instance Show TestHash where
-  show (TestHash h) = "(mkTestHash " <> show (reverse (NE.toList h)) <> ")"
+  show (UnsafeTestHash h) = "(testHashFromList " <> show (reverse (NE.toList h)) <> ")"
 
 instance Condense TestHash where
   condense = condense . reverse . NE.toList . unTestHash
@@ -157,7 +163,7 @@ instance Block.HasHeader TestBlock where
   blockHash      = tbHash
   blockPrevHash b = case NE.nonEmpty . NE.tail . unTestHash . tbHash $ b of
     Nothing       -> GenesisHash
-    Just prevHash -> BlockHash (TestHash prevHash)
+    Just prevHash -> BlockHash (mkTestHash prevHash)
   blockSlot      = tbSlot
   blockNo        = fromIntegral . NE.length . unTestHash . tbHash
   blockInvariant = const True
@@ -309,7 +315,7 @@ instance Arbitrary BlockChain where
 -- The 'SlotNo' will be 1.
 firstBlock :: Word64 -> TestBlock
 firstBlock forkNo = TestBlock
-    { tbHash  = TestHash (forkNo NE.:| [])
+    { tbHash  = mkTestHash (forkNo NE.:| [])
     , tbSlot  = 1
     , tbValid = True
     }
@@ -321,7 +327,7 @@ firstBlock forkNo = TestBlock
 -- In Zipper parlance, this corresponds to going down in a tree.
 successorBlock :: TestBlock -> TestBlock
 successorBlock TestBlock{..} = TestBlock
-    { tbHash  = TestHash (NE.cons 0 (unTestHash tbHash))
+    { tbHash  = mkTestHash (NE.cons 0 (unTestHash tbHash))
     , tbSlot  = succ tbSlot
     , tbValid = True
     }
@@ -330,8 +336,8 @@ successorBlock TestBlock{..} = TestBlock
 -- @g@ -> @[.., f]@ -> @[.., g f]@
 -- The 'SlotNo' is left unchanged.
 modifyFork :: (Word64 -> Word64) -> TestBlock -> TestBlock
-modifyFork g tb@TestBlock{ tbHash = TestHash (f NE.:| h) } = tb
-    { tbHash = TestHash (g f NE.:| h)
+modifyFork g tb@TestBlock{ tbHash = UnsafeTestHash (f NE.:| h) } = tb
+    { tbHash = let !gf = g f in UnsafeTestHash (gf NE.:| h)
     }
 
 -- Increase the fork number of the given block:

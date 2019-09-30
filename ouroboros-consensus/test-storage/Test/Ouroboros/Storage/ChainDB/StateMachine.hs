@@ -900,7 +900,7 @@ type Blk = TestBlock
 
 genBlk :: BlockGen Blk m
 genBlk Model{..} = do
-    testHash@(TestHash h) <- genHash
+    testHash@(UnsafeTestHash h) <- genHash
     let slot = 2 * fromIntegral (length h)
     return $ TestBlock
       { tbHash  = testHash
@@ -933,8 +933,8 @@ genBlk Model{..} = do
     -- before, this block is already on an invalid chain). Note that valid
     -- blocks may fit onto an invalid chain, e.g., [0,2,0].
     isValid :: TestHash -> Bool
-    isValid (TestHash (2 NE.:| _)) = False
-    isValid _                      = True
+    isValid (UnsafeTestHash (2 NE.:| _)) = False
+    isValid _                            = True
 
     genForkNo :: Gen Word64
     genForkNo = frequency
@@ -961,23 +961,23 @@ genBlk Model{..} = do
           , (2, choose (10, 12))
           , (1, choose (12, 20))
           ]
-        TestHash . NE.fromList <$> replicateM n genForkNo
+        mkTestHash . NE.fromList <$> replicateM n genForkNo
 
     -- A hash that fits onto the current chain, it may or may not fork off.
     genAppendToCurrentChain :: Gen TestHash
     genAppendToCurrentChain = do
         forkNo <- genForkNo
-        return $ TestHash $ case Block.pointHash $ Model.tipPoint dbModel of
-          GenesisHash            ->         forkNo NE.:| []
-          BlockHash (TestHash h) -> NE.cons forkNo h
+        return $ mkTestHash $ case Block.pointHash $ Model.tipPoint dbModel of
+          GenesisHash                  ->         forkNo NE.:| []
+          BlockHash (UnsafeTestHash h) -> NE.cons forkNo h
 
     -- A hash that fits onto a block in the ChainDB. The block could be at the
     -- tip of the chain and the hash might already be present in the ChainDB.
     genFitsOnSomewhere :: Gen TestHash
     genFitsOnSomewhere = do
-        TestHash hashInDB <- elements hashesInDB
+        UnsafeTestHash hashInDB <- elements hashesInDB
         forkNo <- genForkNo
-        return $ TestHash $ NE.cons forkNo hashInDB
+        return $ mkTestHash $ NE.cons forkNo hashInDB
 
     -- A hash that doesn't fit onto a block in the ChainDB, but it creates a
     -- gap of a couple of blocks between genesis or an existing block in the
@@ -993,7 +993,7 @@ genBlk Model{..} = do
         gapSize <- choose (1, 2) -- TODO relate it to @k@?
         -- ForkNos for the gap
         forkNos <- replicateM gapSize genForkNo
-        return $ TestHash $ NE.fromList $ foldr (:) hash forkNos
+        return $ mkTestHash $ NE.fromList $ foldr (:) hash forkNos
 
 {-------------------------------------------------------------------------------
   Top-level tests
@@ -1219,7 +1219,7 @@ tests = testGroup "ChainDB q-s-m"
 
 _mkBlk :: [Word64] -> TestBlock
 _mkBlk h = TestBlock
-    { tbHash  = mkTestHash h
+    { tbHash  = testHashFromList h
     , tbSlot  = SlotNo $ fromIntegral $ 2 * length h
     , tbValid = True
     }

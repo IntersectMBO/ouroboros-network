@@ -75,7 +75,12 @@ import           Ouroboros.Storage.LedgerDB.InMemory (ledgerDbDefaultParams)
 --
 -- This function runs forever unless an exception is thrown.
 run
-  :: forall blk peer. (RunNode blk, Ord peer, Show peer)
+  :: forall blk peer.
+     ( RunNode blk
+     , Ord                peer
+     , Show               peer
+     , NoUnexpectedThunks peer
+     )
   => Tracers IO peer blk                  -- ^ Consensus tracers
   -> Tracer  IO (ChainDB.TraceEvent blk)  -- ^ ChainDB tracer
   -> RunNetworkArgs peer blk              -- ^ Network args

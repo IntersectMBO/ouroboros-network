@@ -77,7 +77,7 @@ genSimpleTx addrs u = do
         outs         = if amount == fortune
             then [outRecipient]
             else [outRecipient, (sender, fortune - amount)]
-    return $ Tx ins outs
+    return $ mkTx ins outs
   where
     genElt :: HasCallStack => [a] -> m a
     genElt xs = do

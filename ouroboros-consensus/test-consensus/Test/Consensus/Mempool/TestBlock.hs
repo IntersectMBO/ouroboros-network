@@ -33,7 +33,7 @@ import           Data.Word (Word64)
 import           GHC.Generics (Generic)
 import           GHC.Stack (HasCallStack)
 
-import           Cardano.Prelude (NoUnexpectedThunks)
+import           Cardano.Prelude (NoUnexpectedThunks (..))
 
 import           Ouroboros.Network.Block (pattern GenesisPoint, HasHeader (..),
                      HeaderHash, Point, StandardHash)
@@ -139,7 +139,7 @@ instance ApplyTx TestBlock where
   newtype GenTx TestBlock = TestGenTx
     { unTestGenTx :: TestTx
     }
-    deriving stock (Show, Eq, Ord)
+    deriving stock (Show, Eq, Ord, Generic)
     deriving newtype (Condense)
 
   newtype GenTxId TestBlock = TestGenTxId
@@ -163,3 +163,6 @@ instance ApplyTx TestBlock where
   reapplyTxSameState cfg tx ledger = mustBeRight $ applyTx cfg tx ledger
     where
       mustBeRight = either (error "cannot fail") id . runExcept
+
+instance NoUnexpectedThunks (GenTx TestBlock) where
+  showTypeOf _ = "GenTx TestBlock"
