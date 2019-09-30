@@ -49,6 +49,7 @@ test-suite named-pipe-test
   default-language:    Haskell2010
   ghc-options:         -Wall
                        -threaded
+  other-modules:       Test.NamedPipes
   build-depends:       base,
                        binary,
                        bytestring,
