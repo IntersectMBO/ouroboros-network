@@ -11,7 +11,6 @@ module Test.Ouroboros.Storage.ChainDB.ImmDB
 import           Data.Proxy (Proxy (..))
 import           Data.Reflection (give)
 
-import           Control.Monad.Class.MonadST
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.IOSim (runSimOrThrow)
 
@@ -32,7 +31,7 @@ import           Ouroboros.Consensus.Node.ProtocolInfo (NumCoreNodes (..),
 import           Ouroboros.Consensus.Node.Run (RunNode (..))
 import           Ouroboros.Consensus.NodeId (CoreNodeId (..))
 import           Ouroboros.Consensus.Protocol
-import           Ouroboros.Consensus.Util.MonadSTM.NormalForm
+import           Ouroboros.Consensus.Util.IOLike
 
 import           Ouroboros.Storage.ChainDB.Impl.ImmDB (ImmDB, ImmDbArgs (..))
 import qualified Ouroboros.Storage.ChainDB.Impl.ImmDB as ImmDB

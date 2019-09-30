@@ -35,7 +35,7 @@ import           Ouroboros.Network.Block (BlockNo, ChainHash (..), HasHeader,
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Protocol.Abstract
-import           Ouroboros.Consensus.Util.MonadSTM.NormalForm
+import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.STM (Fingerprint)
 
 import           Ouroboros.Storage.ChainDB.API (ChainDbError (..),

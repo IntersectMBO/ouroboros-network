@@ -22,7 +22,6 @@ module Test.Ouroboros.Storage.VolatileDB.StateMachine
 
 import           Prelude hiding (elem)
 
-import           Control.Monad.Class.MonadThrow (MonadCatch)
 import           Control.Monad.Except
 import           Control.Monad.State
 import           Data.Bifunctor (bimap)
@@ -51,9 +50,11 @@ import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
 import           Text.Show.Pretty (ppShow)
 
+import           Control.Monad.Class.MonadThrow hiding (try)
+
 import           Ouroboros.Consensus.Util (SomePair (..))
 import qualified Ouroboros.Consensus.Util.Classify as C
-import           Ouroboros.Consensus.Util.MonadSTM.NormalForm
+import           Ouroboros.Consensus.Util.IOLike
 
 import           Ouroboros.Storage.FS.API
 import           Ouroboros.Storage.FS.API.Types

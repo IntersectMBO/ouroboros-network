@@ -38,8 +38,6 @@ import           Data.Function (on)
 import           Data.Typeable (Typeable)
 import           GHC.Stack
 
-import           Control.Monad.Class.MonadFork
-import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
 
 import           Cardano.Prelude (NoUnexpectedThunks)
@@ -52,6 +50,7 @@ import           Ouroboros.Network.Block (BlockNo, pattern BlockPoint,
 
 import           Ouroboros.Consensus.Block (GetHeader (..))
 import           Ouroboros.Consensus.Ledger.Extended
+import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
 import           Ouroboros.Consensus.Util.STM (Fingerprint (..))
 

@@ -21,7 +21,6 @@ import           Test.QuickCheck
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
 
-import           Control.Monad.Class.MonadAsync (MonadAsync)
 import           Control.Monad.IOSim (runSimOrThrow)
 
 import           Control.Tracer (Tracer (..))
@@ -35,7 +34,7 @@ import           Ouroboros.Consensus.Mempool
 import           Ouroboros.Consensus.Mempool.TxSeq as TxSeq
 import           Ouroboros.Consensus.Util (whenJust)
 import           Ouroboros.Consensus.Util.Condense (condense)
-import           Ouroboros.Consensus.Util.MonadSTM.NormalForm
+import           Ouroboros.Consensus.Util.IOLike
 
 import           Test.Consensus.Mempool.TestBlock
 

@@ -6,7 +6,6 @@
 module Ouroboros.Storage.VolatileDB.Util where
 
 import           Control.Monad
-import           Control.Monad.Class.MonadThrow
 import           Data.Map (Map)
 import qualified Data.Map as Map
 import           Data.Maybe (fromMaybe)
@@ -16,8 +15,10 @@ import qualified Data.Text as T
 import           Data.Word (Word64)
 import           Text.Read (readMaybe)
 
+import           Control.Monad.Class.MonadThrow
+
 import           Ouroboros.Consensus.Util (safeMaximum, safeMaximumOn)
-import           Ouroboros.Consensus.Util.MonadSTM.NormalForm
+import           Ouroboros.Consensus.Util.IOLike
 
 import           Ouroboros.Storage.FS.API.Types
 import           Ouroboros.Storage.Util.ErrorHandling (ErrorHandling (..))

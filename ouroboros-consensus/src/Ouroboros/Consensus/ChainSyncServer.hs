@@ -13,7 +13,6 @@ module Ouroboros.Consensus.ChainSyncServer
   , TraceChainSyncServerEvent (..)
   ) where
 
-import           Control.Monad.Class.MonadSTM
 import           Control.Tracer
 
 import           Ouroboros.Network.Block (ChainUpdate (..), HeaderHash,
@@ -24,6 +23,7 @@ import           Ouroboros.Storage.ChainDB.API (ChainDB, Reader)
 import qualified Ouroboros.Storage.ChainDB.API as ChainDB
 
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
 
 -- | Chain Sync Server for block headers for a given a 'ChainDB'.

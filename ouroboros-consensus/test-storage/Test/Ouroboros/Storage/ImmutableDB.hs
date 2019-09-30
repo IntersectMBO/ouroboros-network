@@ -8,8 +8,6 @@
 module Test.Ouroboros.Storage.ImmutableDB (tests) where
 
 import qualified Codec.Serialise as S
-import           Control.Monad.Class.MonadSTM (MonadSTM)
-import           Control.Monad.Class.MonadThrow (MonadCatch)
 import           Control.Tracer (nullTracer)
 import           Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
@@ -18,6 +16,8 @@ import           Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
 import           Data.Maybe (maybeToList)
 import           Data.Word (Word64)
+
+import           Control.Monad.Class.MonadThrow hiding (try)
 
 import qualified Test.Ouroboros.Storage.ImmutableDB.CumulEpochSizes as CumulEpochSizes
 import qualified Test.Ouroboros.Storage.ImmutableDB.StateMachine as StateMachine
@@ -30,6 +30,8 @@ import           Test.QuickCheck.Monadic (monadicIO, run)
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.HUnit
 import           Test.Tasty.QuickCheck (testProperty)
+
+import           Ouroboros.Consensus.Util.IOLike
 
 import           Ouroboros.Storage.Common
 import           Ouroboros.Storage.EpochInfo

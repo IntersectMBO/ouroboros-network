@@ -24,16 +24,14 @@ import           Control.Monad.Reader
 import           Control.Monad.State
 import           Control.Monad.Writer
 
+import           Control.Monad.Class.MonadThrow
+
 import           Data.Void
 import           Data.Word (Word64)
 import           GHC.Stack
 
-import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadFork (MonadFork)
-import           Control.Monad.Class.MonadThrow
-
 import           Ouroboros.Consensus.Protocol.Abstract
-import           Ouroboros.Consensus.Util.MonadSTM.NormalForm
+import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.Random
 import           Ouroboros.Consensus.Util.ResourceRegistry
 

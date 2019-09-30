@@ -3,10 +3,10 @@ module Ouroboros.Storage.LedgerDB.DiskPolicy (
   , defaultDiskPolicy
   ) where
 
-import           Control.Monad.Class.MonadSTM
 import           Data.Time.Clock (DiffTime)
 
 import           Ouroboros.Consensus.Protocol.Abstract (SecurityParam (..))
+import           Ouroboros.Consensus.Util.IOLike
 
 -- | On-disk policy
 --

@@ -18,11 +18,10 @@ import           Control.Monad.Except
 import           Data.Word (Word64)
 import           GHC.Stack (HasCallStack)
 
-import           Control.Monad.Class.MonadSTM
-
 import           Ouroboros.Network.Protocol.TxSubmission.Type (TxSizeInBytes)
 
 import           Ouroboros.Consensus.Ledger.Abstract
+import           Ouroboros.Consensus.Util.IOLike
 
 class (UpdateLedger blk, Ord (GenTxId blk)) => ApplyTx blk where
   -- | Generalized transaction

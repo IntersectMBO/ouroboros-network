@@ -58,8 +58,6 @@ import           Data.Typeable (Typeable)
 import           GHC.Stack (HasCallStack)
 import           System.FilePath ((</>))
 
-import           Control.Monad.Class.MonadST
-import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
 
 import           Ouroboros.Network.Block (pattern BlockPoint, ChainHash (..),
@@ -71,6 +69,7 @@ import qualified Ouroboros.Network.Block as Block
 import           Ouroboros.Consensus.Block (GetHeader, Header)
 import qualified Ouroboros.Consensus.Block as Block
 import qualified Ouroboros.Consensus.Util.CBOR as Util.CBOR
+import           Ouroboros.Consensus.Util.IOLike
 
 import           Ouroboros.Storage.ChainDB.API (ChainDbError (..),
                      ChainDbFailure (..), StreamFrom (..), StreamTo (..))

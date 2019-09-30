@@ -64,9 +64,6 @@ import           Data.Word
 import           GHC.Stack (HasCallStack)
 import           System.FilePath ((</>))
 
-import           Control.Monad.Class.MonadFork
-import           Control.Monad.Class.MonadST
-import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
 
 import           Ouroboros.Network.Block (pattern BlockPoint,
@@ -76,9 +73,9 @@ import           Ouroboros.Network.Block (pattern BlockPoint,
 import           Ouroboros.Network.Point (WithOrigin (..))
 
 import qualified Ouroboros.Consensus.Util.CBOR as Util.CBOR
+import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry,
                      allocate, unsafeRelease)
-
 
 import           Ouroboros.Storage.ChainDB.API (ChainDbError (..),
                      ChainDbFailure (..), StreamFrom (..), UnknownRange (..))

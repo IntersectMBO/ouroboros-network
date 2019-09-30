@@ -151,8 +151,6 @@ import           Codec.CBOR.Decoding (Decoder)
 import           Codec.CBOR.Encoding (Encoding)
 import           Control.Exception (assert)
 import           Control.Monad (forM_, replicateM_, unless, when)
-import           Control.Monad.Class.MonadThrow (ExitCase (..),
-                     MonadCatch (generalBracket), MonadThrow, finally)
 import           Control.Monad.State.Strict (StateT (..), get, lift, modify,
                      put, runStateT, state)
 import           Control.Tracer (Tracer, traceWith)
@@ -174,8 +172,10 @@ import           Cardano.Prelude (NoUnexpectedThunks(..),
 
 import           GHC.Stack (HasCallStack, callStack)
 
+import           Control.Monad.Class.MonadThrow hiding (onException)
+
 import           Ouroboros.Consensus.Util (SomePair (..))
-import           Ouroboros.Consensus.Util.MonadSTM.NormalForm
+import           Ouroboros.Consensus.Util.IOLike
 
 import           Ouroboros.Storage.Common
 import           Ouroboros.Storage.EpochInfo

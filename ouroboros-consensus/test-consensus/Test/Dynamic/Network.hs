@@ -39,12 +39,7 @@ import           Data.Proxy (Proxy (..))
 import qualified Data.Typeable as Typeable
 import           GHC.Stack
 
-import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadFork (MonadFork)
-import           Control.Monad.Class.MonadST
 import           Control.Monad.Class.MonadThrow
-import           Control.Monad.Class.MonadTime
-import           Control.Monad.Class.MonadTimer
 
 import           Network.TypedProtocol.Channel
 import           Network.TypedProtocol.Codec (AnyMessage (..))
@@ -77,7 +72,7 @@ import           Ouroboros.Consensus.NodeId
 import           Ouroboros.Consensus.NodeKernel
 import           Ouroboros.Consensus.NodeNetwork
 import           Ouroboros.Consensus.Protocol.Abstract
-import           Ouroboros.Consensus.Util.MonadSTM.NormalForm
+import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.Orphans ()
 import           Ouroboros.Consensus.Util.RedundantConstraints
 import           Ouroboros.Consensus.Util.ResourceRegistry

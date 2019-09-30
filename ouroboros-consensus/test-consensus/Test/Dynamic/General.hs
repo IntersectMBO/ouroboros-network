@@ -18,7 +18,6 @@ import qualified Data.Map as Map
 import           Data.Word (Word64)
 import           Test.QuickCheck
 
-import           Control.Monad.Class.MonadTime
 import           Control.Monad.IOSim (runSimOrThrow)
 
 import           Ouroboros.Network.Block (HasHeader)
@@ -31,6 +30,7 @@ import           Ouroboros.Consensus.Protocol (LeaderSchedule (..))
 import           Ouroboros.Consensus.Protocol.Abstract (SecurityParam (..))
 
 import           Ouroboros.Consensus.Util.Condense
+import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.Orphans ()
 import           Ouroboros.Consensus.Util.Random
 import           Ouroboros.Consensus.Util.ResourceRegistry

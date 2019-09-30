@@ -87,7 +87,6 @@ module Ouroboros.Storage.VolatileDB.Impl
     ) where
 
 import           Control.Monad
-import           Control.Monad.Class.MonadThrow
 import qualified Data.ByteString.Builder as BS
 import           Data.ByteString.Lazy (ByteString)
 import           Data.List (sortOn)
@@ -99,8 +98,10 @@ import qualified Data.Set as Set
 import           Data.Word (Word64)
 import           GHC.Stack
 
+import           Control.Monad.Class.MonadThrow
+
 import           Ouroboros.Consensus.Util (SomePair (..), safeMaximum)
-import           Ouroboros.Consensus.Util.MonadSTM.NormalForm
+import           Ouroboros.Consensus.Util.IOLike
 
 import           Ouroboros.Storage.FS.API
 import           Ouroboros.Storage.FS.API.Types

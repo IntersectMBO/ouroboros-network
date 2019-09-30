@@ -15,10 +15,7 @@ import           Control.Monad.Except
 import qualified Data.Foldable as Foldable
 import           Data.Word (Word64)
 
-import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadThrow
-
 import           Control.Tracer
 
 import           Ouroboros.Network.Block (ChainHash)
@@ -35,7 +32,7 @@ import           Ouroboros.Consensus.Mempool.TxSeq (TicketNo, TxSeq (..),
                      splitAfterTicketNo, zeroTicketNo)
 import qualified Ouroboros.Consensus.Mempool.TxSeq as TxSeq
 import           Ouroboros.Consensus.Util (repeatedly)
-import           Ouroboros.Consensus.Util.MonadSTM.NormalForm
+import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
 import           Ouroboros.Consensus.Util.STM (onEachChange)
 

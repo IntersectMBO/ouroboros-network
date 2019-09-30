@@ -38,7 +38,6 @@ import           Codec.CBOR.Read (DeserialiseFailure, deserialiseFromBytes)
 import           Codec.CBOR.Write (toLazyByteString)
 import           Control.Exception (assert)
 import           Control.Monad (void, when)
-import           Control.Monad.Class.MonadThrow
 import           GHC.Generics (Generic)
 
 import           Data.Bifunctor (second)
@@ -50,7 +49,11 @@ import           Data.Word (Word64)
 
 import           GHC.Stack (HasCallStack, callStack)
 
+import           Control.Monad.Class.MonadThrow
+
 import           Cardano.Prelude (NoUnexpectedThunks (..))
+
+import           Ouroboros.Consensus.Util.IOLike
 
 import           Ouroboros.Storage.FS.API (HasFS (..), hGetAll, hPut, hPutAll,
                      withFile)

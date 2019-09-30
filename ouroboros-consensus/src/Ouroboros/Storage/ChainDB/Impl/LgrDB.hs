@@ -60,10 +60,7 @@ import           Data.Word (Word64)
 import           GHC.Stack (HasCallStack)
 import           System.FilePath ((</>))
 
-import           Control.Monad.Class.MonadFork
-import           Control.Monad.Class.MonadST
 import           Control.Monad.Class.MonadThrow
-
 import           Control.Tracer
 
 import           Ouroboros.Network.Block (pattern BlockPoint,
@@ -77,7 +74,7 @@ import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util ((.:))
-import           Ouroboros.Consensus.Util.MonadSTM.NormalForm
+import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
 
 import           Ouroboros.Storage.Common

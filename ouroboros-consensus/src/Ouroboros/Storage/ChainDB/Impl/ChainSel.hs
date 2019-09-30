@@ -39,7 +39,6 @@ import           Data.Word (Word64)
 import           GHC.Stack (HasCallStack)
 
 import           Control.Monad.Class.MonadThrow
-
 import           Control.Tracer (Tracer, contramap, traceWith)
 
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment (..))
@@ -50,7 +49,7 @@ import           Ouroboros.Network.Block (BlockNo, HasHeader (..), HeaderHash,
 import           Ouroboros.Consensus.Block (BlockProtocol, GetHeader (..))
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Protocol.Abstract
-import           Ouroboros.Consensus.Util.MonadSTM.NormalForm
+import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.STM (Fingerprint)
 
 import           Ouroboros.Storage.ChainDB.Impl.ImmDB (ImmDB)

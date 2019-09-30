@@ -30,10 +30,7 @@ import           Data.Typeable
 import qualified Generics.SOP as SOP
 import           GHC.Generics (Generic, Generic1)
 
-import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadFork hiding (fork)
 import           Control.Monad.Class.MonadThrow
-import           Control.Monad.Class.MonadTimer
 
 import           Test.QuickCheck (Gen)
 import qualified Test.QuickCheck as QC
@@ -44,7 +41,7 @@ import qualified Test.StateMachine.Types.Rank2 as Rank2
 import           Test.Tasty hiding (after)
 import           Test.Tasty.QuickCheck (testProperty)
 
-import           Ouroboros.Consensus.Util.MonadSTM.NormalForm
+import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
 
 import           Test.Util.QSM

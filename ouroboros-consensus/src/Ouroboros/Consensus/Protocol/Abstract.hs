@@ -38,8 +38,6 @@ import           GHC.Generics (Generic)
 
 import           Cardano.Prelude (NoUnexpectedThunks)
 
-import           Control.Monad.Class.MonadSay
-
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment (..))
 import           Ouroboros.Network.Block (HasHeader (..), SlotNo (..))
 import           Ouroboros.Network.Point (WithOrigin)
@@ -238,7 +236,7 @@ instance HasNodeState_ s m => HasNodeState_ s (ChaChaT m) where
 -------------------------------------------------------------------------------}
 
 newtype NodeStateT_ s m a = NodeStateT { unNodeStateT :: StateT s m a }
-  deriving (Functor, Applicative, Monad, MonadTrans, MonadSay)
+  deriving (Functor, Applicative, Monad, MonadTrans)
 
 type NodeStateT p = NodeStateT_ (NodeState p)
 

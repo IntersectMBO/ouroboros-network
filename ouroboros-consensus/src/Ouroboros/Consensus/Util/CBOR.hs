@@ -29,8 +29,9 @@ import qualified Data.ByteString.Lazy as LBS
 import           Data.IORef
 import           Data.Word (Word64)
 
-import           Control.Monad.Class.MonadST
 import           Control.Monad.Class.MonadThrow
+
+import           Ouroboros.Consensus.Util.IOLike
 
 import           Ouroboros.Storage.FS.API
 import           Ouroboros.Storage.FS.API.Types

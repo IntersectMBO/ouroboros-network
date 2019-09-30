@@ -41,13 +41,13 @@ import           GHC.Generics (Generic)
 import           GHC.Stack
 import           Text.Read (readMaybe)
 
-import           Control.Monad.Class.MonadST
-import           Control.Monad.Class.MonadThrow
-
 import           Control.Tracer
+
+import           Control.Monad.Class.MonadThrow
 
 import           Ouroboros.Consensus.Util.CBOR (ReadIncrementalErr,
                      readIncremental)
+import           Ouroboros.Consensus.Util.IOLike
 
 import           Ouroboros.Storage.Common
 import           Ouroboros.Storage.FS.API

@@ -34,11 +34,9 @@ import           Data.Void (Void)
 import           Data.Word (Word64)
 import           GHC.Generics (Generic)
 
-import           Cardano.Prelude (NoUnexpectedThunks)
-
-import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadThrow
+
+import           Cardano.Prelude (NoUnexpectedThunks)
 
 import           Network.TypedProtocol.Pipelined
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment (..))
@@ -54,7 +52,7 @@ import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util
-import           Ouroboros.Consensus.Util.MonadSTM.NormalForm
+import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
 import           Ouroboros.Consensus.Util.SlotBounded as SB
 import           Ouroboros.Consensus.Util.STM (Fingerprint, onEachChange)

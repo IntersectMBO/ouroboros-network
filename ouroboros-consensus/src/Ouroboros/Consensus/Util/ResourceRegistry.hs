@@ -34,7 +34,7 @@ module Ouroboros.Consensus.Util.ResourceRegistry (
   ) where
 
 import           Control.Applicative ((<|>))
-import           Control.Exception (asyncExceptionFromException)
+import           Control.Exception (Exception, asyncExceptionFromException)
 import           Control.Monad
 import           Control.Monad.State
 import           Data.Bifunctor
@@ -49,14 +49,12 @@ import           Data.Tuple (swap)
 import           GHC.Generics (Generic)
 import           GHC.Stack
 
+import           Control.Monad.Class.MonadThrow
+
 import           Cardano.Prelude (NoUnexpectedThunks (..), OnlyCheckIsWHNF (..),
                      UseIsNormalForm (..), UseIsNormalFormNamed (..))
 
-import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadFork
-import           Control.Monad.Class.MonadThrow
-
-import           Ouroboros.Consensus.Util.MonadSTM.NormalForm
+import           Ouroboros.Consensus.Util.IOLike
 
 -- | Resource registry
 --

@@ -25,7 +25,6 @@ module Test.Ouroboros.Storage.ImmutableDB.TestBlock
 
 import           Codec.Serialise (Serialise)
 import           Control.Monad (forM, replicateM, void, when)
-import           Control.Monad.Class.MonadThrow
 
 import qualified Data.Binary as Bin
 import qualified Data.Binary.Get as Bin
@@ -41,11 +40,15 @@ import           Data.Word (Word64)
 
 import           GHC.Generics (Generic)
 
+import           Control.Monad.Class.MonadThrow
+
 import           Test.QuickCheck
 import qualified Test.QuickCheck.Monadic as QCM
 import qualified Test.StateMachine.Utils as QSM
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
+
+import           Ouroboros.Consensus.Util.IOLike
 
 import           Ouroboros.Storage.Common
 import           Ouroboros.Storage.FS.API (HasFS (..), hGetAll, hPut, withFile)
