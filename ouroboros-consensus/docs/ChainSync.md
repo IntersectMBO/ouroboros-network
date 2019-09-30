@@ -8,9 +8,10 @@ the most _recent_ intersection (could be genesis).
 0.  We will never roll back more than `k` blocks.
 1.  This means we are not interested in upstream nodes whose chains fork from
     our chain more than `k` blocks ago.
-    (If an upstream node does not satisfy this condition, we will disconnect;
-    it will be the responsibility of the network layer to decide whether or not
-    to try reconnecting to such nodes later.)
+    - If an upstream node does not satisfy this condition, we will disconnect.
+    - Note that this includes nodes that are on the same chain but behind.
+    - It will be the responsibility of the network layer to decide whether or
+      not to try reconnecting to such nodes later.
 2.  From (1), the intersection between their chain and our chain must be within
     `k` blocks from our tip.
 3.  Since our fragment will be anchored `k` back, from (2) we get that the
@@ -24,6 +25,9 @@ the most _recent_ intersection (could be genesis).
     must lie on their fragment: if not, the intersection would be _before_ their
     fragment, which would mean that we would miss some blocks.
 
+Note that if both nodes are following the same and are up to date, the
+intersection will be the _tip_ of both fragments.    
+
 ## Chain evolution
 
 Property (0) will continue to hold, which means that all of (1-7) must continue
@@ -33,9 +37,40 @@ the upstream node.
 ### Our chain changes
 
 When _our_ chain evolves, we get a new fragment. If our new fragment still
-intersects with their chain, all is well. Otherwise, we initiate the
-intersection finding protocol again, establishing a new fragment for the
-upstream node.
+intersects with their chain, all is well. Otherwise, we throw away their
+fragment, wait for the pipeline to drain, initiate the intersection finding
+protocol again, and establish a new fragment for the upstream node.
+
+This is a simple approach, but we need to argue why simply draining the pipe
+(rather than executing the instructions) and throwing away their fragment is
+not too wasteful.
+
+The number of headers we might potentially have to download again due to not
+executing the drained instructions is limited by the high watermark, which is
+small; this is no big deal. However, the fragment we had before we threw it
+away could potentially be very long, so we have to make a case that throwing
+it away is okay.
+
+The scenario is something like this:
+
+```
+                                k
+                           /~~~~~~~~~~\                                 
+
+..................\........------------ our fragment
+                   \
+                    ----------------------- their (potentially long) fragment
+```
+
+
+Since we will _never_ adopt the chain for which we have all those headers
+already (since this would require us to roll back more than `k` blocks),
+the headers we have downloaded will never be useful, and so we can just discard
+them.
+
+(There is one special case here, where there is no intersection between our
+fragment and their fragment because we are far _ahead_ of them on the _same_
+chain; but in this case, starting afresh is only beneficial.)
 
 ### Their chain changes
 
@@ -64,10 +99,23 @@ We get notified through the chain sync protocol about updates to their chain:
 
 Our fragment is always `k` long (unless near genesis), so no trimming needed.
 However, to avoid unbounded memory usage, we should trim their fragment.
-It should always be safe to trim to the intersection point.
 
-NOTE: This may leave their fragment shorter than `k`, thus not allowing them
-their full rollback. However, this is okay: if their fragment _is_ shorter than
-`k` due to trimming to the intersection point, and they _do_ roll back to a
-point before their fragment, this new intersection point would be too far from
-our tip, and we should disconnect from them.
+We have established that the intersection between their chain and our _chain_
+must lie on both _fragments_, and moreover, that this intersection will be
+within `k` from our tip; since our fragment is `k` long, it means the
+intersection will be somewhere along our fragment.
+
+This means that we should allow the remote node to roll back from its current
+intersection point to our chain to any point on our fragment, but we do not need
+to allow it to roll back more than that. This means we can always trim their
+fragment so that it is anchored at our anchor point.
+
+- In the common case that both nodes are following the same chain and both up
+  to date, this would leave both fragments identical.
+- In the extreme case that they are `k` behind, it would leave their fragment
+  empty.
+- More generally, this may leave their fragment shorter than `k`, thus not
+  allowing them their full rollback. However, this is okay: if their fragment
+  _is_ shorter than `k` due to trimming to our anchor point, and they _do_ roll
+  back to a point before their fragment, this new intersection point would be
+  too far from our tip, and we should disconnect from them.
