@@ -35,9 +35,9 @@ import qualified Data.List as List
 import qualified Data.List.NonEmpty as NE
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
+import           Data.Proxy (Proxy (..))
 import           Data.Set (Set)
 import qualified Data.Set as Set
-import           Data.Proxy (Proxy (..))
 import qualified Data.Typeable as Typeable
 import           GHC.Stack
 
@@ -230,7 +230,7 @@ runNodeNetwork registry testBtime numCoreNodes nodeJoinPlan nodeTopology
            -> ExtLedgerState blk
            -> EpochInfo m
            -> Tracer m (Point blk)
-           -> NodeDBs blk (StrictTVar m MockFS)
+           -> NodeDBs (StrictTVar m MockFS)
            -> ChainDbArgs m blk
     mkArgs cfg initLedger epochInfo invalidTracer nodeDBs = ChainDbArgs
         { -- Decoders
@@ -478,9 +478,14 @@ directedEdgeInner (node1, LimitedApp app1) (node2, LimitedApp app2) = do
 
 data NodeInfo blk db ev = NodeInfo
   { nodeInfoEvents :: NodeEvents blk ev
-  , nodeInfoDBs    :: NodeDBs blk db
+  , nodeInfoDBs    :: NodeDBs db
   }
 
+-- | A vector with an @ev@-shaped element for a particular set of
+-- instrumentation events
+--
+-- The @ev@ type parameter is instantiated by this module at types for
+-- 'Tracer's and lists: actions for accumulating and lists as accumulations.
 data NodeEvents blk ev = NodeEvents
   { nodeEventsTipBlockNos :: ev (SlotNo, BlockNo)
     -- ^ 'ChainDB.getTipBlockNo' for each node at the onset of each slot
@@ -490,7 +495,11 @@ data NodeEvents blk ev = NodeEvents
     -- ^ the point of every 'ChainDB.InvalidBlock' event
   }
 
-data NodeDBs blk db = NodeDBs
+-- | A vector with an element for each database of a node
+--
+-- The @db@ type parameter is instantiated by this module at types for mock
+-- filesystems; either the 'MockFS' type or reference cells thereof.
+data NodeDBs db = NodeDBs
   { nodeDBsImm :: db
   , nodeDBsVol :: db
   , nodeDBsLgr :: db
@@ -507,9 +516,10 @@ newNodeInfo = do
       (t1, m1) <- recordingTracerTVar
       (t2, m2) <- recordingTracerTVar
       (t3, m3) <- recordingTracerTVar
-      pure ( NodeEvents     t1     t2     t3
-           , NodeEvents <$> m1 <*> m2 <*> m3
-           )
+      pure
+          ( NodeEvents     t1     t2     t3
+          , NodeEvents <$> m1 <*> m2 <*> m3
+          )
 
   (nodeInfoDBs, readDBs) <- do
       let mk :: m (StrictTVar m MockFS, STM m MockFS)
@@ -536,7 +546,7 @@ newNodeInfo = do
 data NodeOutput blk = NodeOutput
   { nodeOutputCfg        :: NodeConfig (BlockProtocol blk)
   , nodeOutputFinalChain :: Chain blk
-  , nodeOutputNodeDBs    :: NodeDBs blk MockFS
+  , nodeOutputNodeDBs    :: NodeDBs MockFS
   , nodeOutputForges     :: Map SlotNo blk
   , nodeOutputInvalids   :: Set (Point blk)
   }

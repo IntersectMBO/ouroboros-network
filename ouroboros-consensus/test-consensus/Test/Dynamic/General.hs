@@ -1,4 +1,5 @@
 {-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
@@ -15,8 +16,8 @@ module Test.Dynamic.General (
 
 import           Control.Monad (guard, join)
 import           Data.Coerce (coerce)
-import qualified Data.List as List
 import qualified Data.Map as Map
+import           Data.Maybe (fromMaybe)
 import qualified Data.Set as Set
 import           Data.Word (Word64)
 import           Test.QuickCheck
@@ -186,11 +187,11 @@ prop_general k TestConfig{numSlots, nodeJoinPlan, nodeTopology} schedule
     counterexample ("nodeChains: " <> unlines ("" : map (\x -> "  " <> condense x) (Map.toList nodeChains))) $
     counterexample ("nodeJoinPlan: " <> condense nodeJoinPlan) $
     counterexample ("nodeTopology: " <> condense nodeTopology) $
-    counterexample ("slot-node-depth: " <> condense slotNodeDepths) $
+    counterexample ("slot-node-tipBlockNo: " <> condense tipBlockNos) $
     counterexample ("schedule: " <> condense schedule) $
-    counterexample ("schedule': " <> condense schedule') $
-    counterexample ("consensus expected: " <> show isConsensusExcepected) $
-    tabulate "consensus expected" [show isConsensusExcepected] $
+    counterexample ("growth schedule: " <> condense growthSchedule) $
+    counterexample ("consensus expected: " <> show isConsensusExpected) $
+    tabulate "consensus expected" [show isConsensusExpected] $
     tabulate "shortestLength" [show (rangeK k (shortestLength nodeChains))] $
     tabulate "floor(4 * lastJoinSlot / numSlots)" [show lastJoinSlot] $
     tabulate "minimumDegreeNodeTopology" [show (minimumDegreeNodeTopology nodeTopology)] $
@@ -213,11 +214,11 @@ prop_general k TestConfig{numSlots, nodeJoinPlan, nodeTopology} schedule
     --
     -- * the node forged an EBB
     --
-    schedule' :: LeaderSchedule
-    schedule' =
+    growthSchedule :: LeaderSchedule
+    growthSchedule =
         Map.mapWithKey (filter . actuallyLead) `coerce` schedule
       where
-        actuallyLead s cid = maybe False id $ do
+        actuallyLead s cid = fromMaybe False $ do
             let nid = fromCoreNodeId cid
             let j   = nodeIdJoinSlot nodeJoinPlan nid
 
@@ -234,17 +235,17 @@ prop_general k TestConfig{numSlots, nodeJoinPlan, nodeTopology} schedule
               Set.member (blockPoint b) nodeOutputInvalids
 
         isFirstJoinSlot s =
-            let NodeJoinPlan m = nodeJoinPlan
-            in
             Just s == (snd <$> Map.lookupMin m)
+          where
+            NodeJoinPlan m = nodeJoinPlan
 
     nodeChains    = nodeOutputFinalChain <$> testOutputNodes
     nodeOutputDBs = nodeOutputNodeDBs    <$> testOutputNodes
 
-    isConsensusExcepected :: Bool
-    isConsensusExcepected = consensusExpected k nodeJoinPlan schedule
+    isConsensusExpected :: Bool
+    isConsensusExpected = consensusExpected k nodeJoinPlan schedule
 
-    fileHandleLeakCheck :: NodeId -> NodeDBs blk MockFS -> Property
+    fileHandleLeakCheck :: NodeId -> NodeDBs MockFS -> Property
     fileHandleLeakCheck nid nodeDBs = conjoin
         [ checkLeak "ImmutableDB" $ nodeDBsImm nodeDBs
         , checkLeak "VolatileDB"  $ nodeDBsVol nodeDBs
@@ -271,45 +272,68 @@ prop_general k TestConfig{numSlots, nodeJoinPlan, nodeTopology} schedule
     -- @s@ varies but is always at least 1. We compute a different /speed
     -- coefficient/ @τ@ for each interval under the assumption that there are
     -- no message delays (ie @Δ = 0@). This is essentially a count of the
-    -- active slots for that interval in the refined @schedule'@.
+    -- active slots for that interval in the refined @growthSchedule@.
+    --
+    -- The paper <https://eprint.iacr.org/2017/573/20171115:00183> defines
+    -- Common Growth as follows.
+    --
+    -- * Chain Growth (CG); with parameters τ ∈ (0, 1], s ∈ N. Consider the
+    --   chains C1, C2 possessed by two honest parties at the onset of two
+    --   slots sl1, sl2 with sl2 at least s slots ahead of sl1. Then it holds
+    --   that len(C2) − len(C1) ≥ τs. We call τ the speed coefficient.
     prop_all_growth =
-        (.||.) (not isConsensusExcepected) $
-        conjoin $ zipWith f slotDepths (List.tails slotDepths)
+        isConsensusExpected `implies`
+            conjoin
+                [ prop_growth (s1, max1) (s2, min2)
+                | ((s1, _, max1), (s2, min2, _)) <- orderedPairs extrema
+                ]
       where
-        f ::
-             (SlotNo, BlockNo, BlockNo)
-          -> [(SlotNo, BlockNo, BlockNo)]
-          -> Property
-        f (s1, _, max1) =
-            conjoin .
-            map (\(s2, min2, _) -> prop_growth (s1, max1) (s2, min2))
+        -- QuickCheck's @==>@ 'discard's the test if @p1@ fails; that's not
+        -- what we want
+        implies p1 p2 = not p1 .||. p2
+
+        -- all pairs @(x, y)@ where @x@ precedes @y@ in the given list
+        orderedPairs :: [a] -> [(a, a)]
+        orderedPairs = \case
+            []   -> []
+            x:ys -> foldr ((:) . (,) x) (orderedPairs ys) ys
 
         prop_growth :: (SlotNo, BlockNo) -> (SlotNo, BlockNo) -> Property
         prop_growth (s1, b1) (s2, b2) =
             counterexample (condense (s1, s2, b1, b2, numActiveSlots)) $
-            (.&&.)
-                (counterexample "negative chain growth" $
-                 property (b2 >= b1)) $
-            counterexample "insufficient chain growth" $
-            property (d >= toEnum numActiveSlots)
+            nonNegativeGrowth .&&.
+            sufficientGrowth
           where
+            nonNegativeGrowth =
+                counterexample "negative chain growth" $
+                    property (b2 >= b1)
+
+            sufficientGrowth =
+                counterexample "insufficient chain growth" $
+                    property (d >= toEnum numActiveSlots)
+
             BlockNo d = b2 - b1
             numActiveSlots =
                 Map.size $
-                flip Map.filterWithKey (getLeaderSchedule schedule') $
+                flip Map.filterWithKey (getLeaderSchedule growthSchedule) $
                 \slot ls -> s1 <= slot && slot < s2 && (not . null) ls
 
-        slotDepths =
+        -- @(s, min, max)@ the minimum and maximum block number of the tip of a
+        -- chain at the onset of slot @s@.
+        extrema :: [(SlotNo, BlockNo, BlockNo)]
+        extrema =
             [ case map snd bnos' of
                   [] -> (slot, 0, 0)
                   o  -> (slot, minimum o, maximum o)
-            | (slot, bnos) <- slotNodeDepths
+            | (slot, bnos) <- tipBlockNos
             , let bnos' = filter (joinedBefore slot . fst) bnos
             ]
 
         joinedBefore slot nid = nodeIdJoinSlot nodeJoinPlan nid < slot
 
-    slotNodeDepths =
+    -- swizzled 'testOutputTipBlockNos'
+    tipBlockNos :: [(SlotNo, [(NodeId, BlockNo)])]
+    tipBlockNos =
         Map.toAscList $
         fmap Map.toAscList $
         testOutputTipBlockNos
