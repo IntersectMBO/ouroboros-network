@@ -1,4 +1,5 @@
 {-# LANGUAGE CPP                 #-}
+{-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
@@ -61,8 +62,8 @@ socketAsMuxBearer tracer sd = do
           --say "read"
           --hexDump hbuf ""
           case Mx.decodeMuxSDU hbuf of
-              Left  e      -> throwM e
-              Right header -> do
+              Left  e       -> throwM e
+              Right !header -> do
                   -- say $ printf "decoded mux header, goint to read %d bytes" (Mx.msLength header)
                   traceWith tracer $ Mx.MuxTraceRecvHeaderEnd header
                   traceWith tracer $ Mx.MuxTraceRecvPayloadStart (fromIntegral $ Mx.msLength header)
@@ -73,10 +74,10 @@ socketAsMuxBearer tracer sd = do
                   return (header {Mx.msBlob = blob}, ts)
 
       recvLen' :: Bool -> Int64 -> [BL.ByteString] -> IO BL.ByteString
-      recvLen' _ 0 bufs = return (BL.concat $ reverse bufs)
-      recvLen' waitingOnNxtHeader l bufs = do
+      recvLen' _ 0 !bufs = return (BL.concat $ reverse bufs)
+      recvLen' waitingOnNxtHeader l !bufs = do
           traceWith tracer $ Mx.MuxTraceRecvStart $ fromIntegral l
-          buf <- Socket.recv sd l
+          !buf <- Socket.recv sd l
           if BL.null buf
               then do
                   when (waitingOnNxtHeader) $
@@ -98,7 +99,7 @@ socketAsMuxBearer tracer sd = do
           ts <- getMonotonicTime
           let ts32 = Mx.timestampMicrosecondsLow32Bits ts
               sdu' = sdu { Mx.msTimestamp = Mx.RemoteClockModel ts32 }
-              buf  = Mx.encodeMuxSDU sdu'
+              buf = Mx.encodeMuxSDU sdu'
           --hexDump buf ""
           traceWith tracer $ Mx.MuxTraceSendStart sdu'
           Socket.sendAll sd buf
