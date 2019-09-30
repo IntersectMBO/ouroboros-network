@@ -52,9 +52,7 @@ import qualified Test.StateMachine.Types.Rank2 as Rank2
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
 
-import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadThrow
-
 import           Control.Tracer
 
 import           Cardano.Crypto.DSIGN.Mock
@@ -79,7 +77,7 @@ import           Ouroboros.Consensus.NodeId (NodeId (..))
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.BFT
 import           Ouroboros.Consensus.Util.Condense (condense)
-import           Ouroboros.Consensus.Util.MonadSTM.NormalForm
+import           Ouroboros.Consensus.Util.IOLike hiding (fork)
 import           Ouroboros.Consensus.Util.ResourceRegistry
 import           Ouroboros.Consensus.Util.STM (Fingerprint (..))
 
@@ -206,7 +204,7 @@ deriving instance (TestConstraints blk, Eq   it, Eq   rdr)
 deriving instance (TestConstraints blk, Show it, Show rdr)
                => Show (Success blk it rdr)
 
-run :: forall m blk. (MonadSTM m, MonadAsync m)
+run :: forall m blk. (IOLike m)
     => ChainDB          m blk
     -> ChainDB.Internal m blk
     -> ResourceRegistry m
@@ -1160,7 +1158,7 @@ traceEventName = \case
     TraceLedgerReplayEvent   ev    -> "LedgerReplay." <> constrName ev
     TraceImmDBEvent          ev    -> "ImmDB."        <> constrName ev
 
-mkArgs :: (MonadSTM m, MonadCatch m, MonadThrow (STM m))
+mkArgs :: IOLike m
        => NodeConfig (BlockProtocol Blk)
        -> ExtLedgerState Blk
        -> Tracer m (TraceEvent Blk)

@@ -38,10 +38,6 @@ import           Data.Function (on)
 import           Data.Typeable (Typeable)
 import           GHC.Stack
 
-import           Control.Monad.Class.MonadFork
-import           Control.Monad.Class.MonadSTM
-import           Control.Monad.Class.MonadThrow
-
 import           Cardano.Prelude (NoUnexpectedThunks)
 
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
@@ -52,6 +48,7 @@ import           Ouroboros.Network.Block (BlockNo, pattern BlockPoint,
 
 import           Ouroboros.Consensus.Block (GetHeader (..))
 import           Ouroboros.Consensus.Ledger.Extended
+import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
 import           Ouroboros.Consensus.Util.STM (Fingerprint (..))
 
@@ -272,8 +269,7 @@ data ChainDB m blk = ChainDB {
   Support for tests
 -------------------------------------------------------------------------------}
 
-toChain :: forall m blk.
-           (HasCallStack, MonadMask m, HasHeader blk, MonadSTM m, MonadFork m)
+toChain :: forall m blk. (HasCallStack, IOLike m, HasHeader blk)
         => ChainDB m blk -> m (Chain blk)
 toChain chainDB = withRegistry $ \registry ->
     streamAll chainDB registry >>= maybe (return Genesis) (go Genesis)
@@ -397,7 +393,7 @@ validBounds from to = case from of
 --
 -- Note that this is not a 'Reader', so the stream will not include blocks
 -- that are added to the current chain after starting the stream.
-streamAll :: (MonadSTM m, StandardHash blk)
+streamAll :: (IOLike m, StandardHash blk)
           => ChainDB m blk
           -> ResourceRegistry m
           -> m (Maybe (Iterator m blk))

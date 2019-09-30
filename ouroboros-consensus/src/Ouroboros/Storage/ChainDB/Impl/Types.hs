@@ -44,7 +44,6 @@ import           Data.Word
 import           GHC.Generics (Generic)
 
 import           Control.Monad.Class.MonadThrow
-
 import           Control.Tracer
 
 import           Cardano.Prelude (NoUnexpectedThunks)
@@ -58,7 +57,7 @@ import           Ouroboros.Consensus.Block (BlockProtocol, Header)
 import           Ouroboros.Consensus.Ledger.Abstract (ProtocolLedgerView)
 import           Ouroboros.Consensus.Ledger.Extended (ExtValidationError)
 import           Ouroboros.Consensus.Protocol.Abstract (NodeConfig)
-import           Ouroboros.Consensus.Util.MonadSTM.NormalForm
+import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
 import           Ouroboros.Consensus.Util.STM (Fingerprint)
 
@@ -79,12 +78,7 @@ newtype ChainDbHandle m blk = CDBHandle (StrictTVar m (ChainDbState m blk))
 
 -- | Check if the ChainDB is open, if so, executing the given function on the
 -- 'ChainDbEnv', otherwise, throw a 'CloseDBError'.
-getEnv :: forall m blk r.
-          ( MonadSTM   m
-          , MonadThrow m
-          , StandardHash blk
-          , Typeable     blk
-          )
+getEnv :: forall m blk r. (IOLike m, StandardHash blk, Typeable blk)
        => ChainDbHandle m blk
        -> (ChainDbEnv m blk -> m r)
        -> m r
@@ -95,24 +89,14 @@ getEnv (CDBHandle varState) f = atomically (readTVar varState) >>= \case
     ChainDbReopening   -> error "ChainDB used while reopening"
 
 -- | Variant 'of 'getEnv' for functions taking one argument.
-getEnv1 :: forall m blk a r.
-           ( MonadSTM   m
-           , MonadThrow m
-           , StandardHash blk
-           , Typeable     blk
-           )
+getEnv1 :: (IOLike m, StandardHash blk, Typeable blk)
         => ChainDbHandle m blk
         -> (ChainDbEnv m blk -> a -> m r)
         -> a -> m r
 getEnv1 h f a = getEnv h (\env -> f env a)
 
 -- | Variant 'of 'getEnv' for functions taking two arguments.
-getEnv2 :: forall m blk a b r.
-           ( MonadSTM   m
-           , MonadThrow m
-           , StandardHash blk
-           , Typeable     blk
-           )
+getEnv2 :: (IOLike m, StandardHash blk, Typeable blk)
         => ChainDbHandle m blk
         -> (ChainDbEnv m blk -> a -> b -> m r)
         -> a -> b -> m r
@@ -120,12 +104,7 @@ getEnv2 h f a b = getEnv h (\env -> f env a b)
 
 
 -- | Variant of 'getEnv' that works in 'STM'.
-getEnvSTM :: forall m blk r.
-             ( MonadSTM   m
-             , MonadThrow (STM m)
-             , StandardHash blk
-             , Typeable     blk
-             )
+getEnvSTM :: forall m blk r. (IOLike m, StandardHash blk, Typeable  blk)
           => ChainDbHandle m blk
           -> (ChainDbEnv m blk -> STM m r)
           -> STM m r

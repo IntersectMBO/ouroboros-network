@@ -151,8 +151,6 @@ import           Codec.CBOR.Decoding (Decoder)
 import           Codec.CBOR.Encoding (Encoding)
 import           Control.Exception (assert)
 import           Control.Monad (forM_, replicateM_, unless, when)
-import           Control.Monad.Class.MonadThrow (ExitCase (..),
-                     MonadCatch (generalBracket), MonadThrow, finally)
 import           Control.Monad.State.Strict (StateT (..), get, lift, modify,
                      put, runStateT, state)
 import           Control.Tracer (Tracer, traceWith)
@@ -174,8 +172,10 @@ import           Cardano.Prelude (NoUnexpectedThunks(..),
 
 import           GHC.Stack (HasCallStack, callStack)
 
+import           Control.Monad.Class.MonadThrow hiding (onException)
+
 import           Ouroboros.Consensus.Util (SomePair (..))
-import           Ouroboros.Consensus.Util.MonadSTM.NormalForm
+import           Ouroboros.Consensus.Util.IOLike
 
 import           Ouroboros.Storage.Common
 import           Ouroboros.Storage.EpochInfo
@@ -275,7 +275,7 @@ data ClosedState m = ClosedState
 --
 -- __Note__: To be used in conjunction with 'withDB'.
 openDB
-  :: (HasCallStack, MonadSTM m, MonadCatch m, Eq hash)
+  :: (HasCallStack, IOLike m, Eq hash)
   => (forall s . Decoder s hash)
   -> (hash -> Encoding)
   -> HasFS m h
@@ -291,7 +291,7 @@ openDB = openDBImpl
   ImmutableDB Implementation
 ------------------------------------------------------------------------------}
 
-mkDBRecord :: (MonadSTM m, MonadCatch m, Eq hash)
+mkDBRecord :: (IOLike m, Eq hash)
            => ImmutableDBEnv m hash
            -> ImmutableDB hash m
 mkDBRecord dbEnv = ImmutableDB
@@ -309,7 +309,7 @@ mkDBRecord dbEnv = ImmutableDB
     }
 
 openDBImpl :: forall m h hash e.
-              (HasCallStack, MonadSTM m, MonadCatch m, Eq hash)
+              (HasCallStack, IOLike m, Eq hash)
            => (forall s . Decoder s hash)
            -> (hash -> Encoding)
            -> HasFS m h
@@ -330,7 +330,7 @@ openDBImpl hashDecoder hashEncoder hasFS@HasFS{..} err epochInfo valPol epochFil
     return db
 
 
-closeDBImpl :: (HasCallStack, MonadSTM m)
+closeDBImpl :: (HasCallStack, IOLike m)
             => ImmutableDBEnv m hash
             -> m ()
 closeDBImpl ImmutableDBEnv {..} = do
@@ -350,12 +350,12 @@ closeDBImpl ImmutableDBEnv {..} = do
   where
     HasFS{..} = _dbHasFS
 
-isOpenImpl :: MonadSTM m => ImmutableDBEnv m hash -> m Bool
+isOpenImpl :: IOLike m => ImmutableDBEnv m hash -> m Bool
 isOpenImpl ImmutableDBEnv {..} =
     dbIsOpen <$> atomically (readTMVar _dbInternalState)
 
 reopenImpl :: forall m hash.
-              (HasCallStack, MonadSTM m, MonadThrow m, Eq hash)
+              (HasCallStack, IOLike m, Eq hash)
            => ImmutableDBEnv m hash
            -> ValidationPolicy
            -> m ()
@@ -384,7 +384,7 @@ reopenImpl ImmutableDBEnv {..} valPol = do
 
 -- TODO close all iterators
 deleteAfterImpl :: forall m hash.
-                   (HasCallStack, MonadSTM m, MonadCatch m)
+                   (HasCallStack, IOLike m)
                 => ImmutableDBEnv m hash
                 -> ImmTip
                 -> m ()
@@ -485,7 +485,7 @@ deleteAfterImpl dbEnv@ImmutableDBEnv { _dbErr, _dbTracer } tip =
         truncateIndex relSlot =
             truncateToSlots (EpochSize (unRelativeSlot (succ relSlot)))
 
-getTipImpl :: (HasCallStack, MonadSTM m)
+getTipImpl :: (HasCallStack, IOLike m)
            => ImmutableDBEnv m hash
            -> m ImmTip
 getTipImpl dbEnv = do
@@ -493,7 +493,7 @@ getTipImpl dbEnv = do
     return _currentTip
 
 getBinaryBlobImpl
-  :: forall m hash. (HasCallStack, MonadSTM m, MonadCatch m)
+  :: forall m hash. (HasCallStack, IOLike m)
   => ImmutableDBEnv m hash
   -> SlotNo
   -> m (Maybe ByteString)
@@ -518,7 +518,7 @@ getBinaryBlobImpl dbEnv slot = withOpenState dbEnv $ \_dbHasFS st@OpenState{..} 
     ImmutableDBEnv { _dbErr } = dbEnv
 
 getEBBImpl
-  :: forall m hash. (HasCallStack, MonadSTM m, MonadCatch m)
+  :: forall m hash. (HasCallStack, IOLike m)
   => ImmutableDBEnv m hash
   -> EpochNo
   -> m (Maybe (hash, ByteString))
@@ -538,7 +538,7 @@ getEBBImpl dbEnv epoch = withOpenState dbEnv $ \_dbHasFS st@OpenState{..} -> do
 
 -- Preconditions: the given 'EpochSlot' is in the past.
 getEpochSlot
-  :: forall m hash h. (HasCallStack, MonadSTM m, MonadThrow m)
+  :: forall m hash h. (HasCallStack, IOLike m)
   => HasFS m h
   -> (forall s . Decoder s hash)
   -> OpenState m hash h
@@ -625,7 +625,7 @@ getEpochSlot _dbHasFS hashDecoder OpenState {..} _dbErr epochSlot = do
 
 
 appendBinaryBlobImpl :: forall m hash.
-                        (HasCallStack, MonadSTM m, MonadCatch m)
+                        (HasCallStack, IOLike m)
                      => ImmutableDBEnv m hash
                      -> SlotNo
                      -> Builder
@@ -695,7 +695,7 @@ appendBinaryBlobImpl dbEnv@ImmutableDBEnv{..} slot builder =
         , _currentTip = Tip (Right slot)
         }
 
-startNewEpoch :: (HasCallStack, MonadSTM m, MonadCatch m)
+startNewEpoch :: (HasCallStack, IOLike m)
               => (hash -> Encoding)
               -> HasFS m h
               -> StateT (OpenState m hash h) m ()
@@ -750,7 +750,7 @@ startNewEpoch hashEncoder hasFS@HasFS{..} = do
     put st
 
 appendEBBImpl :: forall m hash.
-                 (HasCallStack, MonadSTM m, MonadCatch m)
+                 (HasCallStack, IOLike m)
               => ImmutableDBEnv m hash
               -> EpochNo
               -> hash
@@ -868,7 +868,7 @@ data IteratorState hash h = IteratorState
   deriving (Generic, NoUnexpectedThunks)
 
 streamBinaryBlobsImpl :: forall m hash.
-                         (HasCallStack, MonadSTM m, MonadCatch m, Eq hash)
+                         (HasCallStack, IOLike m, Eq hash)
                       => ImmutableDBEnv m hash
                       -> Maybe (SlotNo, hash)
                       -- ^ When to start streaming (inclusive).
@@ -1069,7 +1069,7 @@ streamBinaryBlobsImpl dbEnv mbStart mbEnd = withOpenState dbEnv $ \hasFS st -> d
 
 
 iteratorNextImpl :: forall m hash.
-                    (MonadSTM m, MonadCatch m, Eq hash)
+                    (IOLike m, Eq hash)
                  => ImmutableDBEnv m hash
                  -> IteratorHandle hash m
                  -> Bool  -- ^ Step the iterator after reading iff True
@@ -1193,13 +1193,13 @@ iteratorNextImpl dbEnv it@IteratorHandle {_it_hasFS = hasFS :: HasFS m h, ..} st
                 , _it_epoch_index = index
                 }
 
-iteratorHasNextImpl :: (HasCallStack, MonadSTM m)
+iteratorHasNextImpl :: (HasCallStack, IOLike m)
                     => IteratorHandle hash m
                     -> m Bool
 iteratorHasNextImpl IteratorHandle { _it_state } =
     fmap isJust $ atomically $ readTVar _it_state
 
-iteratorCloseImpl :: (HasCallStack, MonadSTM m)
+iteratorCloseImpl :: (HasCallStack, IOLike m)
                   => IteratorHandle hash m
                   -> m ()
 iteratorCloseImpl IteratorHandle {..} = do
@@ -1330,7 +1330,7 @@ mkOpenStateNewEpoch HasFS{..} epoch epochInfo nextIteratorID tip = do
 -- instance for the /same/ type parameter @h@. Note that it would be impossible
 -- to use an existing 'HasFS' instance already in scope otherwise, since the
 -- @h@ parameters would not be known to match.
-getOpenState :: (HasCallStack, MonadSTM m)
+getOpenState :: (HasCallStack, IOLike m)
              => ImmutableDBEnv m hash
              -> m (SomePair (HasFS m) (OpenState m hash))
 getOpenState ImmutableDBEnv {..} = do
@@ -1355,7 +1355,7 @@ getOpenState ImmutableDBEnv {..} = do
 -- TODO(adn): we should really just use 'Control.Concurrent.MVar.MVar' rather
 -- than 'TMVar', but we currently don't have a simulator for code using
 -- @MVar@.
-modifyOpenState :: forall m hash r. (HasCallStack, MonadSTM m, MonadCatch m)
+modifyOpenState :: forall m hash r. (HasCallStack, IOLike m)
                 => ImmutableDBEnv m hash
                 -> (forall h. HasFS m h -> StateT (OpenState m hash h) m r)
                 -> m r
@@ -1417,7 +1417,7 @@ modifyOpenState ImmutableDBEnv {_dbHasFS = hasFS :: HasFS m h, ..} action = do
 -- In case an 'UnexpectedError' is thrown while the action is being run, the
 -- database is closed to prevent further appending to a database in a
 -- potentially inconsistent state.
-withOpenState :: forall m hash r. (HasCallStack, MonadSTM m, MonadCatch m)
+withOpenState :: forall m hash r. (HasCallStack, IOLike m)
               => ImmutableDBEnv m hash
               -> (forall h. HasFS m h -> OpenState m hash h -> m r)
               -> m r

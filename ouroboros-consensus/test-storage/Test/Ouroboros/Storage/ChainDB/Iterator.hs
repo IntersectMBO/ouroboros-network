@@ -16,7 +16,6 @@ import           Data.List (intercalate)
 import qualified Data.Map.Strict as Map
 import           Data.Word (Word64)
 
-import           Control.Monad.Class.MonadThrow
 import           Control.Monad.IOSim (runSimOrThrow)
 
 import           Ouroboros.Network.Block (ChainHash (..), HasHeader (..),
@@ -25,7 +24,7 @@ import           Ouroboros.Network.MockChain.Chain (Chain)
 import qualified Ouroboros.Network.MockChain.Chain as Chain
 
 import           Ouroboros.Consensus.Util.Condense (condense)
-import           Ouroboros.Consensus.Util.MonadSTM.NormalForm
+import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
 
 import           Ouroboros.Storage.ChainDB.API (Iterator (..), IteratorId (..),
@@ -43,6 +42,7 @@ import qualified Ouroboros.Storage.ImmutableDB as ImmDB
 import qualified Ouroboros.Storage.Util.ErrorHandling as EH
 import qualified Ouroboros.Storage.VolatileDB as VolDB
 
+import           Test.Util.Orphans.IOLike ()
 import           Test.Util.Tracer (recordingTracerTVar)
 
 import           Test.Ouroboros.Storage.ChainDB.TestBlock
@@ -246,11 +246,7 @@ runIterator setup from to = runSimOrThrow $ withRegistry $ \r -> do
 -------------------------------------------------------------------------------}
 
 initIteratorEnv
-  :: forall m.
-     ( MonadSTM   m
-     , MonadCatch m
-     , MonadThrow (STM m)
-     )
+  :: forall m. IOLike m
   => TestSetup
   -> Tracer m (TraceIteratorEvent TestBlock)
   -> m (IteratorEnv m TestBlock)

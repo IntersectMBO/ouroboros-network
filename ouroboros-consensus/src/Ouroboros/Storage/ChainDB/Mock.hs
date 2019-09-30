@@ -20,19 +20,14 @@ import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util ((..:))
-import           Ouroboros.Consensus.Util.MonadSTM.NormalForm
+import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.STM (blockUntilJust)
 
 import           Ouroboros.Storage.ChainDB.API
 import           Ouroboros.Storage.ChainDB.Model (Model)
 import qualified Ouroboros.Storage.ChainDB.Model as Model
 
-openDB :: forall m blk.
-          ( MonadSTM   m
-          , MonadThrow m
-          , MonadThrow (STM m)
-          , ProtocolLedgerView blk
-          )
+openDB :: forall m blk. (IOLike m, ProtocolLedgerView blk)
        => NodeConfig (BlockProtocol blk)
        -> ExtLedgerState blk
        -> m (ChainDB m blk)

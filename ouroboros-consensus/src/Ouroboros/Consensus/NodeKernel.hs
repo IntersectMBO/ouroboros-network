@@ -28,9 +28,6 @@ import           Data.Map.Strict (Map)
 import           Data.Maybe (isNothing)
 import           Data.Word (Word16)
 
-import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadFork (MonadFork)
-import           Control.Monad.Class.MonadThrow
 import           Control.Tracer
 
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment (..),
@@ -58,7 +55,7 @@ import           Ouroboros.Consensus.Mempool.TxSeq (TicketNo)
 import           Ouroboros.Consensus.Node.Tracers
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util
-import           Ouroboros.Consensus.Util.MonadSTM.NormalForm
+import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.Orphans ()
 import           Ouroboros.Consensus.Util.Random
 import           Ouroboros.Consensus.Util.ResourceRegistry
@@ -143,9 +140,7 @@ data NodeArgs m peer blk = NodeArgs {
 
 initNodeKernel
     :: forall m peer blk.
-       ( MonadAsync m
-       , MonadFork  m
-       , MonadMask  m
+       ( IOLike m
        , ProtocolLedgerView blk
        , Ord peer
        , ApplyTx blk
@@ -197,9 +192,7 @@ data InternalState m peer blk = IS {
 
 initInternalState
     :: forall m peer blk.
-       ( MonadAsync m
-       , MonadFork m
-       , MonadMask m
+       ( IOLike m
        , ProtocolLedgerView blk
        , Ord peer
        , ApplyTx blk
@@ -229,10 +222,7 @@ initInternalState NodeArgs { tracers, chainDB, registry, cfg,
     return IS {..}
 
 initBlockFetchConsensusInterface
-    :: forall m peer blk.
-       ( MonadSTM m
-       , SupportedBlock blk
-       )
+    :: forall m peer blk. (IOLike m, SupportedBlock blk)
     => NodeConfig (BlockProtocol blk)
     -> ChainDB m blk
     -> STM m (Map peer (AnchoredFragment (Header blk)))
@@ -290,9 +280,7 @@ initBlockFetchConsensusInterface cfg chainDB getCandidates blockFetchSize
 
 forkBlockProduction
     :: forall m peer blk.
-       ( MonadAsync m
-       , ProtocolLedgerView blk
-       )
+       (IOLike m, ProtocolLedgerView blk)
     => InternalState m peer blk -> m ()
 forkBlockProduction IS{..} =
     onSlotChange btime $ \currentSlot -> do
@@ -370,8 +358,7 @@ forkBlockProduction IS{..} =
 -------------------------------------------------------------------------------}
 
 getMempoolReader
-  :: forall m blk.
-     (MonadSTM m, ApplyTx blk)
+  :: forall m blk. (IOLike m, ApplyTx blk)
   => Mempool m blk TicketNo
   -> TxSubmissionMempoolReader (GenTxId blk) (GenTx blk) TicketNo m
 getMempoolReader mempool = Outbound.TxSubmissionMempoolReader

@@ -13,7 +13,6 @@ module Ouroboros.Consensus.ChainSyncServer
   , TraceChainSyncServerEvent (..)
   ) where
 
-import           Control.Monad.Class.MonadSTM
 import           Control.Tracer
 
 import           Ouroboros.Network.Block (ChainUpdate (..), HeaderHash,
@@ -24,6 +23,7 @@ import           Ouroboros.Storage.ChainDB.API (ChainDB, Reader)
 import qualified Ouroboros.Storage.ChainDB.API as ChainDB
 
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
 
 -- | Chain Sync Server for block headers for a given a 'ChainDB'.
@@ -32,7 +32,7 @@ import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
 -- headers (and fetches blocks separately with the block fetch mini-protocol).
 --
 chainSyncHeadersServer
-    :: forall m blk. MonadSTM m
+    :: forall m blk. IOLike m
     => Tracer m (TraceChainSyncServerEvent blk (Header blk))
     -> ChainDB m blk
     -> ResourceRegistry m
@@ -49,7 +49,7 @@ chainSyncHeadersServer tracer chainDB registry =
 -- chains of full blocks (rather than a header \/ body split).
 --
 chainSyncBlocksServer
-    :: forall m blk. MonadSTM m
+    :: forall m blk. IOLike m
     => Tracer m (TraceChainSyncServerEvent blk blk)
     -> ChainDB m blk
     -> ResourceRegistry m
@@ -72,7 +72,7 @@ chainSyncBlocksServer tracer chainDB registry =
 --
 chainSyncServerForReader
     :: forall m blk b.
-       ( MonadSTM m
+       ( IOLike m
        , HeaderHash blk ~ HeaderHash b
        )
     => Tracer m (TraceChainSyncServerEvent blk b)

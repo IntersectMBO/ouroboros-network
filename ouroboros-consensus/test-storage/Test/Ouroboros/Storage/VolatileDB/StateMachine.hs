@@ -22,7 +22,6 @@ module Test.Ouroboros.Storage.VolatileDB.StateMachine
 
 import           Prelude hiding (elem)
 
-import           Control.Monad.Class.MonadThrow (MonadCatch)
 import           Control.Monad.Except
 import           Control.Monad.State
 import           Data.Bifunctor (bimap)
@@ -53,7 +52,7 @@ import           Text.Show.Pretty (ppShow)
 
 import           Ouroboros.Consensus.Util (SomePair (..))
 import qualified Ouroboros.Consensus.Util.Classify as C
-import           Ouroboros.Consensus.Util.MonadSTM.NormalForm
+import           Ouroboros.Consensus.Util.IOLike
 
 import           Ouroboros.Storage.FS.API
 import           Ouroboros.Storage.FS.API.Types
@@ -281,7 +280,7 @@ runPure dbm (CmdErr cmd err) =
                 reOpenModel tnc
                 return $ Unit ()
 
-runDB :: (HasCallStack, Monad m, MonadSTM m)
+runDB :: (HasCallStack, IOLike m)
       => (VolatileDB BlockId m -> Cmd -> m Success)
       -> VolatileDB BlockId m
       -> Cmd
@@ -309,7 +308,7 @@ runDB restCmd db cmd = case cmd of
         return $ IsMember $ isMember <$> bids
     GetMaxSlotNo       -> atomically $ MaxSlot <$> getMaxSlotNo db
 
-sm :: (MonadCatch m, MonadSTM m)
+sm :: IOLike m
    => Bool
    -> StrictTVar m Errors
    -> HasFS m h
@@ -330,7 +329,7 @@ sm terminatingCmd errorsVar hasFS db env dbm = StateMachine {
    , distribution  = Nothing
  }
 
-stateMachine :: (MonadCatch m, MonadSTM m)
+stateMachine :: IOLike m
              => DBModel BlockId
              -> StateMachine Model (At CmdErr) m (At Resp)
 stateMachine = sm
@@ -463,7 +462,7 @@ newer (Just a) a' = a' >= a
 shrinkerImpl :: Model Symbolic -> At CmdErr Symbolic -> [At CmdErr Symbolic]
 shrinkerImpl _ _ = []
 
-semanticsImplErr :: (MonadCatch m, MonadSTM m)
+semanticsImplErr :: IOLike m
                  => StrictTVar m Errors
                  -> HasFS m h
                  -> VolatileDB BlockId m
@@ -484,7 +483,7 @@ semanticsImplErr errorsVar hasFS m env (At cmderr) = At . Resp <$> case cmderr o
   where
     try = tryVolDB EH.monadCatch EH.monadCatch
 
-semanticsRestCmd :: (MonadSTM m, MonadCatch m)
+semanticsRestCmd :: IOLike m
                  => HasFS m h
                  -> Internal.VolatileDBEnv m blockId
                  -> VolatileDB BlockId m

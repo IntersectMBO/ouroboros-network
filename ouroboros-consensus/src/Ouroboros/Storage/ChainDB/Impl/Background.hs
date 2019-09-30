@@ -35,12 +35,7 @@ import           Data.Maybe (fromMaybe)
 import           Data.Typeable (Typeable)
 import           GHC.Stack (HasCallStack)
 
-import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadThrow
-import           Control.Monad.Class.MonadTime
-import           Control.Monad.Class.MonadTimer
-
 import           Control.Tracer
 
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment (..))
@@ -52,7 +47,7 @@ import           Ouroboros.Network.Point (WithOrigin (..))
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Ledger.Abstract (ProtocolLedgerView)
 import           Ouroboros.Consensus.Protocol.Abstract
-import           Ouroboros.Consensus.Util.MonadSTM.NormalForm
+import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
 
 import qualified Ouroboros.Storage.ChainDB.Impl.ImmDB as ImmDB
@@ -65,14 +60,7 @@ import qualified Ouroboros.Storage.ChainDB.Impl.VolDB as VolDB
 -------------------------------------------------------------------------------}
 
 launchBgTasks
-  :: forall m blk.
-     ( MonadAsync m
-     , MonadFork  m
-     , MonadMask  m
-     , MonadTime  m
-     , MonadTimer m
-     , ProtocolLedgerView blk
-     )
+  :: forall m blk. (IOLike m, ProtocolLedgerView blk)
   => ChainDbEnv m blk
   -> m ()
 launchBgTasks cdb@CDB{..} = do
@@ -114,8 +102,7 @@ launchBgTasks cdb@CDB{..} = do
 -- not with itself.
 copyToImmDB
   :: forall m blk.
-     ( MonadSTM   m
-     , MonadCatch m
+     ( IOLike m
      , OuroborosTag (BlockProtocol blk)
      , HasHeader blk
      , HasHeader (Header blk)
@@ -195,9 +182,7 @@ copyToImmDB CDB{..} = withCopyLock $ do
 -- recent block that was copied.
 copyToImmDBRunner
   :: forall m blk.
-     ( MonadSTM   m
-     , MonadCatch m
-     , MonadTime  m
+     ( IOLike m
      , OuroborosTag (BlockProtocol blk)
      , HasHeader blk
      , HasHeader (Header blk)
@@ -232,11 +217,7 @@ copyToImmDBRunner cdb@CDB{..} gcSchedule = forever $ do
 -- TODO will a long GC be a bottleneck? It will block any other calls to
 -- @putBlock@ and @getBlock@.
 garbageCollect
-  :: forall m blk.
-     ( MonadCatch m
-     , MonadSTM   m
-     , HasHeader blk
-     )
+  :: forall m blk. (IOLike m, HasHeader blk)
   => ChainDbEnv m blk
   -> SlotNo
   -> m ()
@@ -296,12 +277,11 @@ garbageCollect CDB{..} slotNo = do
 -- same.
 newtype GcSchedule m = GcSchedule (TQueue m (Time m, SlotNo))
 
-newGcSchedule :: MonadSTM m => m (GcSchedule m)
+newGcSchedule :: IOLike m => m (GcSchedule m)
 newGcSchedule = GcSchedule <$> atomically newTQueue
 
 scheduleGC
-  :: forall m blk.
-     (MonadSTM m, MonadTime m)
+  :: forall m blk. IOLike m
   => Tracer m (TraceGCEvent blk)
   -> SlotNo    -- ^ The slot to use for garbage collection
   -> DiffTime  -- ^ How long to wait until performing the GC
@@ -313,8 +293,7 @@ scheduleGC tracer slotNo delay (GcSchedule queue) = do
     traceWith tracer $ ScheduledGC slotNo delay
 
 gcScheduleRunner
-  :: forall m.
-     (MonadSTM m, MonadTime m, MonadTimer m)
+  :: forall m. IOLike m
   => GcSchedule m
   -> (SlotNo -> m ())  -- ^ GC function
   -> m ()
@@ -333,8 +312,7 @@ gcScheduleRunner (GcSchedule queue) runGc = forever $ do
 -- | Write a snapshot of the LedgerDB to disk and remove old snapshots
 -- (typically one) so that only 'onDiskNumSnapshots' snapshots are on disk.
 updateLedgerSnapshots
-  :: forall m blk.
-     (MonadSTM m, MonadThrow m, StandardHash blk, Typeable blk)
+  :: forall m blk. (IOLike m, StandardHash blk, Typeable blk)
   => ChainDbEnv m blk
   -> m ()
 updateLedgerSnapshots CDB{..} = do
@@ -344,8 +322,7 @@ updateLedgerSnapshots CDB{..} = do
 
 -- | Execute 'updateLedgerSnapshots', wait 'onDiskWriteInterval', and repeat.
 updateLedgerSnapshotsRunner
-  :: forall m blk.
-     (MonadTimer m, MonadThrow m, StandardHash blk, Typeable blk)
+  :: forall m blk. (IOLike m, StandardHash blk, Typeable blk)
   => ChainDbEnv m blk
   -> m ()
 updateLedgerSnapshotsRunner cdb@CDB{..} = loop

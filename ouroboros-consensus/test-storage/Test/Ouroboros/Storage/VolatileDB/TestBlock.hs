@@ -7,8 +7,6 @@
 module Test.Ouroboros.Storage.VolatileDB.TestBlock where
 
 import           Control.Monad (forM)
-import           Control.Monad.Class.MonadSTM
-import           Control.Monad.Class.MonadThrow (MonadThrow)
 import qualified Data.Binary as Binary
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Builder as BB
@@ -19,7 +17,11 @@ import           Data.Serialize
 import           Data.Word (Word64)
 import           Test.QuickCheck
 
+import           Control.Monad.Class.MonadThrow
+
 import           Ouroboros.Consensus.Util (SomePair (..))
+import           Ouroboros.Consensus.Util.IOLike
+
 import           Ouroboros.Storage.Common
 import           Ouroboros.Storage.FS.API (HasFS (..), hGetExactly, hPut,
                      withFile)
@@ -141,7 +143,7 @@ corruptFile hasFS@HasFS{..} corr file = case corr of
         return $ fileSize /= newFileSize
 
 
-createFileImpl :: (MonadSTM m, MonadThrow m)
+createFileImpl :: IOLike m
                => HasFS m h
                -> Internal.VolatileDBEnv m blockId
                -> m ()

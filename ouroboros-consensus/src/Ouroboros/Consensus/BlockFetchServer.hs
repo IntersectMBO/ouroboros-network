@@ -15,7 +15,6 @@ module Ouroboros.Consensus.BlockFetchServer
 
 import           Data.Typeable (Typeable)
 
-import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
 import           Control.Tracer (Tracer)
 
@@ -25,6 +24,7 @@ import           Ouroboros.Network.Protocol.BlockFetch.Server
                      BlockFetchServer (..))
 import           Ouroboros.Network.Protocol.BlockFetch.Type (ChainRange (..))
 
+import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
 
 import           Ouroboros.Storage.ChainDB (ChainDB, IteratorResult (..))
@@ -55,8 +55,7 @@ instance (Typeable blk, StandardHash blk)
 -- the 'ChainDB'.
 blockFetchServer
     :: forall m blk.
-       ( MonadSTM   m
-       , MonadThrow m
+       ( IOLike m
        , StandardHash blk
        , Typeable     blk
        )

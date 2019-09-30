@@ -20,19 +20,17 @@ import           Prelude hiding (elem, notElem)
 
 import           Codec.Serialise (decode, encode)
 import           Control.Monad (forM_, when)
-import           Control.Monad.Class.MonadThrow (MonadCatch)
 import           Control.Monad.Except (ExceptT (..), runExceptT)
 import           Control.Monad.State.Strict (MonadState, State, evalState, gets,
                      modify, put, runState)
 import           Control.Tracer (nullTracer)
-import           Data.Functor.Identity
-
 import           Data.Bifunctor (first)
 import           Data.ByteString.Lazy (ByteString)
 import           Data.Coerce (Coercible, coerce)
 import           Data.Foldable (toList)
 import           Data.Function (on)
 import           Data.Functor.Classes (Eq1, Show1)
+import           Data.Functor.Identity
 import           Data.List (sortBy)
 import qualified Data.List.NonEmpty as NE
 import           Data.Map (Map)
@@ -43,6 +41,8 @@ import           Data.TreeDiff (Expr (App))
 import           Data.TreeDiff.Class (ToExpr (..))
 import           Data.Typeable (Typeable)
 import           Data.Word (Word64)
+
+import           Control.Monad.Class.MonadThrow hiding (try)
 
 import qualified Generics.SOP as SOP
 
@@ -64,7 +64,7 @@ import           Test.Tasty.QuickCheck (testProperty)
 import           Text.Show.Pretty (ppShow)
 
 import qualified Ouroboros.Consensus.Util.Classify as C
-import           Ouroboros.Consensus.Util.MonadSTM.NormalForm
+import           Ouroboros.Consensus.Util.IOLike
 
 import           Ouroboros.Network.Block (SlotNo (..))
 
@@ -78,7 +78,6 @@ import           Ouroboros.Storage.ImmutableDB
 import           Ouroboros.Storage.ImmutableDB.Layout
 import           Ouroboros.Storage.ImmutableDB.Util (renderFile, tryImmDB)
 import qualified Ouroboros.Storage.Util.ErrorHandling as EH
-
 
 import           Test.Ouroboros.Storage.FS.Sim.Error (Errors, mkSimErrorHasFS,
                      withErrors)

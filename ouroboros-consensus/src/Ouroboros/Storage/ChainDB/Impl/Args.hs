@@ -16,8 +16,6 @@ import           Codec.CBOR.Encoding (Encoding)
 import qualified Data.ByteString.Lazy as Lazy
 import           Data.Time.Clock (DiffTime, secondsToDiffTime)
 
-import           Control.Monad.Class.MonadSTM
-
 import           Control.Tracer (Tracer, contramap)
 
 import           Ouroboros.Network.Block (HeaderHash, StandardHash)
@@ -26,6 +24,7 @@ import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Protocol.Abstract
+import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
 
 import           Ouroboros.Storage.EpochInfo (EpochInfo)

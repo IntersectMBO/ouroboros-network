@@ -41,13 +41,13 @@ import           GHC.Generics (Generic)
 import           GHC.Stack
 import           Text.Read (readMaybe)
 
-import           Control.Monad.Class.MonadST
-import           Control.Monad.Class.MonadThrow
-
 import           Control.Tracer
+
+import           Control.Monad.Class.MonadThrow
 
 import           Ouroboros.Consensus.Util.CBOR (ReadIncrementalErr,
                      readIncremental)
+import           Ouroboros.Consensus.Util.IOLike
 
 import           Ouroboros.Storage.Common
 import           Ouroboros.Storage.FS.API
@@ -155,7 +155,7 @@ data InitLog r =
 -- /compute/ all subsequent ones. This is important, because the ledger states
 -- obtained in this way will (hopefully) share much of their memory footprint
 -- with their predecessors.
-initLedgerDB :: forall m h l r b e. (MonadST m, MonadThrow m, HasCallStack)
+initLedgerDB :: forall m h l r b e. (IOLike m, HasCallStack)
              => Tracer m (TraceReplayEvent r () r)
              -> Tracer m (TraceEvent r)
              -> HasFS m h
@@ -218,7 +218,7 @@ data InitFailure r =
 -- If the chain DB or ledger layer reports an error, the whole thing is aborted
 -- and an error is returned. This should not throw any errors itself (ignoring
 -- unexpected exceptions such as asynchronous exceptions, of course).
-initFromSnapshot :: forall m h l r b e. (MonadST m, MonadThrow m)
+initFromSnapshot :: forall m h l r b e. (IOLike m)
                  => Tracer m (TraceReplayEvent r () r)
                  -> HasFS m h
                  -> (forall s. Decoder s l)
@@ -315,7 +315,7 @@ nextAvailable [] = DiskSnapshot 1
 nextAvailable ss = let DiskSnapshot n = maximum ss in DiskSnapshot (n + 1)
 
 -- | Read snapshot from disk
-readSnapshot :: forall m l r h. (MonadST m, MonadThrow m)
+readSnapshot :: forall m l r h. (IOLike m)
              => HasFS m h
              -> (forall s. Decoder s l)
              -> (forall s. Decoder s r)

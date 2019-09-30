@@ -33,19 +33,13 @@ import           Data.ByteString.Lazy (ByteString)
 import           Data.Proxy (Proxy (..))
 import           Data.Void (Void)
 
-import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadFork
-import           Control.Monad.Class.MonadST
 import           Control.Monad.Class.MonadThrow
-import           Control.Monad.Class.MonadTime
 import           Control.Tracer
 
 import           Network.Mux.Interface
 import           Network.TypedProtocol.Channel
 import           Network.TypedProtocol.Codec.Cbor hiding (decode, encode)
 import           Network.TypedProtocol.Driver
-import           Ouroboros.Network.NodeToClient
-import           Ouroboros.Network.NodeToNode
 
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment (..))
 import           Ouroboros.Network.Block
@@ -53,6 +47,8 @@ import           Ouroboros.Network.BlockFetch
 import           Ouroboros.Network.BlockFetch.Client (BlockFetchClient,
                      blockFetchClient)
 import           Ouroboros.Network.Mux
+import           Ouroboros.Network.NodeToClient
+import           Ouroboros.Network.NodeToNode
 import           Ouroboros.Network.Protocol.BlockFetch.Codec
 import           Ouroboros.Network.Protocol.BlockFetch.Server (BlockFetchServer,
                      blockFetchServerPeer)
@@ -82,7 +78,7 @@ import           Ouroboros.Consensus.Node.Tracers
 import           Ouroboros.Consensus.NodeKernel
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.TxSubmission
-import           Ouroboros.Consensus.Util.MonadSTM.NormalForm
+import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.Orphans ()
 import           Ouroboros.Consensus.Util.ResourceRegistry
 
@@ -135,10 +131,7 @@ data ProtocolHandlers m peer blk = ProtocolHandlers {
 
 protocolHandlers
     :: forall m blk peer.
-       ( MonadSTM   m
-       , MonadThrow (STM m)
-       , MonadTime  m
-       , MonadCatch m
+       ( IOLike m
        , ApplyTx blk
        , ProtocolLedgerView blk
        )
@@ -213,7 +206,7 @@ data ProtocolCodecs blk failure m
 
 -- | The real codecs
 --
-protocolCodecs :: forall m blk. (MonadST m, RunNode blk)
+protocolCodecs :: forall m blk. (IOLike m, RunNode blk)
                => NodeConfig (BlockProtocol blk)
                -> ProtocolCodecs blk DeserialiseFailure m
                                  ByteString ByteString ByteString
@@ -395,9 +388,7 @@ localResponderNetworkApplication NetworkApplication {..} =
 --
 consensusNetworkApps
     :: forall m peer blk failure bytesCS bytesBF bytesTX bytesLCS bytesLTX.
-       ( MonadAsync m
-       , MonadFork m
-       , MonadMask m
+       ( IOLike m
        , Ord peer
        , Exception failure
        , SupportedBlock blk

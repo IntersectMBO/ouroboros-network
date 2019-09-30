@@ -13,8 +13,6 @@ module Ouroboros.Storage.ImmutableDB.API
   , module Ouroboros.Storage.ImmutableDB.Types
   ) where
 
-import           Control.Monad.Class.MonadThrow
-
 import           Cardano.Prelude (NoUnexpectedThunks (..), ThunkInfo (..))
 
 import           Data.ByteString.Builder (Builder)
@@ -25,6 +23,8 @@ import           GHC.Generics (Generic)
 import           GHC.Stack (HasCallStack)
 
 import           Pipes (Producer, lift, yield)
+
+import           Control.Monad.Class.MonadThrow
 
 import           Ouroboros.Storage.Common
 import           Ouroboros.Storage.ImmutableDB.Types

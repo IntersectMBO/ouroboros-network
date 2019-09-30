@@ -15,10 +15,6 @@ import           Control.Monad.Except
 import qualified Data.Foldable as Foldable
 import           Data.Word (Word64)
 
-import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadFork
-import           Control.Monad.Class.MonadThrow
-
 import           Control.Tracer
 
 import           Ouroboros.Network.Block (ChainHash)
@@ -35,7 +31,7 @@ import           Ouroboros.Consensus.Mempool.TxSeq (TicketNo, TxSeq (..),
                      splitAfterTicketNo, zeroTicketNo)
 import qualified Ouroboros.Consensus.Mempool.TxSeq as TxSeq
 import           Ouroboros.Consensus.Util (repeatedly)
-import           Ouroboros.Consensus.Util.MonadSTM.NormalForm
+import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
 import           Ouroboros.Consensus.Util.STM (onEachChange)
 
@@ -43,11 +39,7 @@ import           Ouroboros.Consensus.Util.STM (onEachChange)
   Top-level API
 -------------------------------------------------------------------------------}
 
-openMempool :: ( MonadAsync m
-               , MonadFork  m
-               , MonadMask  m
-               , ApplyTx blk
-               )
+openMempool :: (IOLike m, ApplyTx blk)
             => ResourceRegistry m
             -> LedgerInterface m blk
             -> LedgerConfig blk
@@ -63,7 +55,7 @@ openMempool registry ledger cfg tracer = do
 --
 -- Intended for testing purposes.
 openMempoolWithoutSyncThread
-  :: (MonadAsync m, ApplyTx blk)
+  :: (IOLike m, ApplyTx blk)
   => LedgerInterface m blk
   -> LedgerConfig blk
   -> Tracer m (TraceEventMempool blk)
@@ -71,7 +63,7 @@ openMempoolWithoutSyncThread
 openMempoolWithoutSyncThread ledger cfg tracer =
     mkMempool <$> initMempoolEnv ledger cfg tracer
 
-mkMempool :: (MonadSTM m, ApplyTx blk)
+mkMempool :: (IOLike m, ApplyTx blk)
           => MempoolEnv m blk -> Mempool m blk TicketNo
 mkMempool env = Mempool
     { addTxs        = implAddTxs env
@@ -86,7 +78,7 @@ data LedgerInterface m blk = LedgerInterface
   }
 
 -- | Create a 'LedgerInterface' from a 'ChainDB'.
-chainDBLedgerInterface :: MonadSTM m => ChainDB m blk -> LedgerInterface m blk
+chainDBLedgerInterface :: IOLike m => ChainDB m blk -> LedgerInterface m blk
 chainDBLedgerInterface chainDB = LedgerInterface
     { getCurrentLedgerState = ledgerState <$> ChainDB.getCurrentLedger chainDB
     }
@@ -119,7 +111,7 @@ data MempoolEnv m blk = MempoolEnv {
 initInternalState :: InternalState blk
 initInternalState = IS TxSeq.Empty Block.GenesisHash zeroTicketNo
 
-initMempoolEnv :: MonadSTM m
+initMempoolEnv :: IOLike m
                => LedgerInterface m blk
                -> LedgerConfig blk
                -> Tracer m (TraceEventMempool blk)
@@ -135,11 +127,7 @@ initMempoolEnv ledgerInterface cfg tracer = do
 
 -- | Spawn a thread which syncs the 'Mempool' state whenever the 'LedgerState'
 -- changes.
-forkSyncStateOnTipPointChange :: ( MonadAsync m
-                                 , MonadFork m
-                                 , MonadMask m
-                                 , ApplyTx blk
-                                 )
+forkSyncStateOnTipPointChange :: (IOLike m, ApplyTx blk)
                               => ResourceRegistry m
                               -> MempoolEnv m blk
                               -> m ()
@@ -155,7 +143,7 @@ forkSyncStateOnTipPointChange registry menv =
   Mempool Implementation
 -------------------------------------------------------------------------------}
 
-implAddTxs :: forall m blk. (MonadSTM m, ApplyTx blk)
+implAddTxs :: forall m blk. (IOLike m, ApplyTx blk)
            => MempoolEnv m blk
            -> [GenTx blk]
            -> m [(GenTx blk, Maybe (ApplyTxErr blk))]
@@ -196,7 +184,7 @@ implAddTxs mpEnv@MempoolEnv{mpEnvStateVar, mpEnvLedgerCfg, mpEnvTracer} txs = do
         res { vrInvalid = [] }
 
 implWithSyncState
-  :: (MonadSTM m, ApplyTx blk)
+  :: (IOLike m, ApplyTx blk)
   => MempoolEnv m blk
   -> (MempoolSnapshot blk TicketNo -> STM m a)
   -> m a
@@ -223,7 +211,7 @@ implWithSyncState mpEnv@MempoolEnv{mpEnvTracer, mpEnvStateVar} f = do
       traceWith mpEnvTracer $ TraceMempoolRemoveTxs removed mempoolSize
     return res
 
-implGetSnapshot :: MonadSTM m
+implGetSnapshot :: IOLike m
                 => MempoolEnv m blk
                 -> STM m (MempoolSnapshot blk TicketNo)
 implGetSnapshot MempoolEnv{mpEnvStateVar} = do
@@ -235,7 +223,7 @@ implGetSnapshot MempoolEnv{mpEnvStateVar} = do
     }
 
 -- | Return the number of transactions in the Mempool.
-getMempoolSize :: MonadSTM m => MempoolEnv m blk -> STM m Word64
+getMempoolSize :: IOLike m => MempoolEnv m blk -> STM m Word64
 getMempoolSize MempoolEnv{mpEnvStateVar} =
     fromIntegral . Foldable.length . isTxs <$> readTVar mpEnvStateVar
 
@@ -367,7 +355,7 @@ extendVRNew cfg tx
                       }
 
 -- | Validate internal state
-validateIS :: forall m blk. (MonadSTM m, ApplyTx blk)
+validateIS :: forall m blk. (IOLike m, ApplyTx blk)
            => MempoolEnv m blk -> STM m (ValidationResult blk)
 validateIS MempoolEnv{mpEnvLedger, mpEnvLedgerCfg, mpEnvStateVar} =
     go <$> getCurrentLedgerState mpEnvLedger <*> readTVar mpEnvStateVar

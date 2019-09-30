@@ -36,10 +36,8 @@ import           Crypto.Random
 import           Data.ByteString.Lazy (ByteString)
 import           Data.Proxy (Proxy (..))
 import           Data.Time.Clock (secondsToDiffTime)
+import           Network.Mux.Types (MuxTrace, WithMuxBearer)
 import           Network.Socket as Socket
-import           Network.Mux.Types (WithMuxBearer, MuxTrace)
-
-import           Control.Monad.Class.MonadAsync
 
 import           Ouroboros.Network.Block
 import qualified Ouroboros.Network.Block as Block
@@ -59,6 +57,7 @@ import           Ouroboros.Consensus.Node.Tracers
 import           Ouroboros.Consensus.NodeKernel
 import           Ouroboros.Consensus.NodeNetwork
 import           Ouroboros.Consensus.Protocol hiding (Protocol)
+import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.Orphans ()
 import           Ouroboros.Consensus.Util.ResourceRegistry
 

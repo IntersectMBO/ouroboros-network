@@ -8,8 +8,6 @@
 module Test.Ouroboros.Storage.ImmutableDB (tests) where
 
 import qualified Codec.Serialise as S
-import           Control.Monad.Class.MonadSTM (MonadSTM)
-import           Control.Monad.Class.MonadThrow (MonadCatch)
 import           Control.Tracer (nullTracer)
 import           Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
@@ -30,6 +28,8 @@ import           Test.QuickCheck.Monadic (monadicIO, run)
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.HUnit
 import           Test.Tasty.QuickCheck (testProperty)
+
+import           Ouroboros.Consensus.Util.IOLike
 
 import           Ouroboros.Storage.Common
 import           Ouroboros.Storage.EpochInfo
@@ -82,7 +82,7 @@ fixedEpochSize = 10
 type Hash = TestBlock
 
 -- Shorthand
-openTestDB :: (HasCallStack, MonadSTM m, MonadCatch m)
+openTestDB :: (HasCallStack, IOLike m)
            => HasFS m h
            -> ErrorHandling ImmutableDBError m
            -> m (ImmutableDB Hash m)
@@ -92,7 +92,7 @@ openTestDB hasFS err =
     parser = TestBlock.testBlockEpochFileParser' hasFS
 
 -- Shorthand
-withTestDB :: (HasCallStack, MonadSTM m, MonadCatch m)
+withTestDB :: (HasCallStack, IOLike m)
            => HasFS m h
            -> ErrorHandling ImmutableDBError m
            -> (ImmutableDB Hash m -> m a)

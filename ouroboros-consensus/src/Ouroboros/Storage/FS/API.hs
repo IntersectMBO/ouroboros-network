@@ -27,9 +27,9 @@ import           Data.Set (Set)
 import           Data.Word (Word64)
 import           GHC.Stack
 
-import           Cardano.Prelude (NoUnexpectedThunks, OnlyCheckIsWHNF (..))
-
 import           Control.Monad.Class.MonadThrow
+
+import           Cardano.Prelude (NoUnexpectedThunks, OnlyCheckIsWHNF (..))
 
 import           Ouroboros.Storage.FS.API.Types
 import           Ouroboros.Storage.Util.ErrorHandling (ErrorHandling,

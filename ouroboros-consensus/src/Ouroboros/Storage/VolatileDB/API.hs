@@ -7,13 +7,14 @@ module Ouroboros.Storage.VolatileDB.API
   , module Ouroboros.Storage.VolatileDB.Types
   ) where
 
-import           Control.Monad.Class.MonadSTM
-import           Control.Monad.Class.MonadThrow
-
 import           Data.ByteString.Builder (Builder)
 import           Data.ByteString.Lazy (ByteString)
 import           Data.Set (Set)
 import           GHC.Stack (HasCallStack)
+
+import           Control.Monad.Class.MonadThrow
+
+import           Ouroboros.Consensus.Util.IOLike
 
 import           Ouroboros.Storage.VolatileDB.Types
 

@@ -21,7 +21,6 @@ import           Test.QuickCheck
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
 
-import           Control.Monad.Class.MonadAsync (MonadAsync)
 import           Control.Monad.IOSim (runSimOrThrow)
 
 import           Control.Tracer (Tracer (..))
@@ -35,7 +34,9 @@ import           Ouroboros.Consensus.Mempool
 import           Ouroboros.Consensus.Mempool.TxSeq as TxSeq
 import           Ouroboros.Consensus.Util (whenJust)
 import           Ouroboros.Consensus.Util.Condense (condense)
-import           Ouroboros.Consensus.Util.MonadSTM.NormalForm
+import           Ouroboros.Consensus.Util.IOLike
+
+import           Test.Util.Orphans.IOLike ()
 
 import           Test.Consensus.Mempool.TestBlock
 
@@ -398,7 +399,7 @@ data TestMempool m = TestMempool
 withTestMempool
   :: forall prop. Testable prop
   => TestSetup
-  -> (forall m. MonadSTM m => TestMempool m -> m prop)
+  -> (forall m. IOLike m => TestMempool m -> m prop)
   -> Property
 withTestMempool setup@TestSetup { testLedgerState, testInitialTxs } prop =
     counterexample (ppTestSetup setup) $
@@ -408,7 +409,7 @@ withTestMempool setup@TestSetup { testLedgerState, testInitialTxs } prop =
   where
     cfg = ledgerConfigView singleNodeTestConfig
 
-    setUpAndRun :: forall m. MonadAsync m => m Property
+    setUpAndRun :: forall m. IOLike m => m Property
     setUpAndRun = do
 
       -- Set up the LedgerInterface
@@ -439,7 +440,7 @@ withTestMempool setup@TestSetup { testLedgerState, testInitialTxs } prop =
         , addTxToLedger    = atomically . addTxToLedger varCurrentLedgerState
         }
 
-    addTxToLedger :: forall m. MonadSTM m
+    addTxToLedger :: forall m. IOLike m
                   => StrictTVar m (LedgerState TestBlock)
                   -> TestTx
                   -> STM m (Either TestTxError ())
@@ -603,7 +604,7 @@ expectedTicketAssignment actions =
 
 -- | Executes the action and verifies that it is actually executed using the
 -- tracer, hence the 'Property' in the return type.
-executeAction :: forall m. MonadSTM m => TestMempool m -> Action -> m Property
+executeAction :: forall m. IOLike m => TestMempool m -> Action -> m Property
 executeAction testMempool action = case action of
     AddTx tx -> do
       void $ addTxs [TestGenTx tx]
@@ -640,7 +641,7 @@ executeAction testMempool action = case action of
         []   -> counterexample "No events traced"       False
         _    -> counterexample "Multiple events traced" False
 
-currentTicketAssignment :: MonadSTM m
+currentTicketAssignment :: IOLike m
                         => Mempool m TestBlock TicketNo -> m TicketAssignment
 currentTicketAssignment Mempool { withSyncState } =
     withSyncState $ \MempoolSnapshot { snapshotTxs } -> return $ Map.fromList

@@ -92,6 +92,7 @@ library
                        Ouroboros.Consensus.Util.Classify
                        Ouroboros.Consensus.Util.Condense
                        Ouroboros.Consensus.Util.HList
+                       Ouroboros.Consensus.Util.IOLike
                        Ouroboros.Consensus.Util.MonadSTM.NormalForm
                        Ouroboros.Consensus.Util.Orphans
                        Ouroboros.Consensus.Util.Random
@@ -277,6 +278,7 @@ test-suite test-consensus
                     Test.Util.MockChain
                     Test.Util.Orphans.Arbitrary
                     Test.Util.Orphans.NoUnexpectedThunks
+                    Test.Util.Orphans.IOLike
                     Test.Util.Range
                     Test.Util.TestBlock
                     Test.Util.QSM
@@ -353,6 +355,7 @@ test-suite test-storage
                     Test.Ouroboros.Storage.VolatileDB.StateMachine
                     Test.Ouroboros.Storage.VolatileDB.TestBlock
                     Test.Util.Orphans.Arbitrary
+                    Test.Util.Orphans.IOLike
                     Test.Util.Orphans.NoUnexpectedThunks
                     Test.Util.Range
                     Test.Util.RefEnv

@@ -25,9 +25,7 @@ import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           GHC.Stack (HasCallStack)
 
-import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadThrow
-
 import           Control.Tracer
 
 import qualified Ouroboros.Network.AnchoredFragment as AF
@@ -36,7 +34,7 @@ import           Ouroboros.Network.Block (pattern BlockPoint,
                      atSlot, blockHash, blockPoint, castPoint, pointSlot,
                      withHash)
 
-import           Ouroboros.Consensus.Util.MonadSTM.NormalForm
+import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
 
 import           Ouroboros.Storage.ChainDB.API (ChainDbError (..),
@@ -175,14 +173,7 @@ import qualified Ouroboros.Storage.ChainDB.Impl.VolDB as VolDB
 -- addition to the block(s) we are actually interested in. This can happen
 -- multiple times. See #548.
 streamBlocks
-  :: forall m blk.
-     ( MonadMask m
-     , MonadSTM  m
-     , MonadFork m
-     , MonadThrow (STM m)
-     , HasHeader blk
-     , HasCallStack
-     )
+  :: forall m blk. (IOLike m, HasHeader blk, HasCallStack)
   => ChainDbHandle m blk
   -> ResourceRegistry m
   -> StreamFrom      blk
@@ -214,8 +205,7 @@ data IteratorEnv m blk = IteratorEnv
   }
 
 -- | Obtain an 'IteratorEnv' from a 'ChainDbEnv'.
-fromChainDbEnv :: MonadSTM m
-               => ChainDbEnv m blk -> IteratorEnv m blk
+fromChainDbEnv :: IOLike m => ChainDbEnv m blk -> IteratorEnv m blk
 fromChainDbEnv CDB{..} = IteratorEnv
   { itImmDB          = cdbImmDB
   , itVolDB          = cdbVolDB
@@ -229,14 +219,7 @@ fromChainDbEnv CDB{..} = IteratorEnv
 
 -- | See 'streamBlocks'.
 newIterator
-  :: forall m blk.
-     ( MonadMask m
-     , MonadSTM  m
-     , MonadFork m
-     , MonadThrow (STM m)
-     , HasHeader blk
-     , HasCallStack
-     )
+  :: forall m blk. (IOLike m, HasHeader blk, HasCallStack)
   => IteratorEnv   m blk
   -> (forall r. (IteratorEnv m blk -> m r) -> m r)
      -- ^ Function with which the operations on the returned iterator should
@@ -408,7 +391,7 @@ newIterator itEnv@IteratorEnv{..} getItEnv registry from to = do
 -- | Close the iterator and remove it from the map of iterators ('itIterators'
 -- and thus 'cdbIterators').
 implIteratorClose
-  :: (MonadSTM m, MonadCatch m, HasHeader blk)
+  :: (IOLike m, HasHeader blk)
   => StrictTVar m (IteratorState m blk)
   -> IteratorId
   -> IteratorEnv m blk
@@ -515,12 +498,7 @@ data InImmDBEnd blk
     -- ^ Stream to the upper bound. Afterwards, start streaming the path (the
     -- second parameter) from the VolatileDB.
 
-implIteratorNext :: forall m blk.
-                    ( MonadMask m
-                    , MonadSTM  m
-                    , MonadFork m
-                    , HasHeader blk
-                    )
+implIteratorNext :: forall m blk. (IOLike m, HasHeader blk)
                  => ResourceRegistry m
                  -> StrictTVar m (IteratorState m blk)
                  -> IteratorEnv m blk
@@ -716,7 +694,7 @@ data Done blk
 --
 -- This /can/ be called when the ChainDB is already closed.
 closeAllIterators
-  :: MonadSTM m
+  :: IOLike m
   => ChainDbEnv m blk
   -> m ()
 closeAllIterators CDB{..} = do

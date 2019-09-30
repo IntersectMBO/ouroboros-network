@@ -25,7 +25,6 @@ module Test.Ouroboros.Storage.ImmutableDB.TestBlock
 
 import           Codec.Serialise (Serialise)
 import           Control.Monad (forM, replicateM, void, when)
-import           Control.Monad.Class.MonadThrow
 
 import qualified Data.Binary as Bin
 import qualified Data.Binary.Get as Bin
@@ -40,6 +39,8 @@ import qualified Data.Text as Text
 import           Data.Word (Word64)
 
 import           GHC.Generics (Generic)
+
+import           Control.Monad.Class.MonadThrow
 
 import           Test.QuickCheck
 import qualified Test.QuickCheck.Monadic as QCM

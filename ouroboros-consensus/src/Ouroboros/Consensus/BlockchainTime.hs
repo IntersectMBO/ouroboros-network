@@ -42,14 +42,11 @@ import           Data.Word (Word64)
 import           GHC.Generics (Generic)
 import           GHC.Stack
 
+import           Control.Monad.Class.MonadThrow
+
 import           Cardano.Prelude (NoUnexpectedThunks)
 
-import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadFork (MonadFork)
-import           Control.Monad.Class.MonadThrow
-import           Control.Monad.Class.MonadTimer
-
-import           Ouroboros.Consensus.Util.MonadSTM.NormalForm
+import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
 import           Ouroboros.Consensus.Util.STM
 import           Ouroboros.Network.Block (SlotNo (..))
@@ -91,7 +88,7 @@ data BlockchainTime m = BlockchainTime {
 -- blocks as requested and then returns 'False'
 --
 blockUntilSlot ::
-     MonadSTM m
+     IOLike m
   => BlockchainTime m
   -> SlotNo
   -> m Bool
@@ -114,12 +111,7 @@ onSlot :: HasCallStack => BlockchainTime m -> SlotNo -> m () -> m ()
 onSlot = onSlot_
 
 -- | Default implementation of 'onSlot' (used internally only)
-defaultOnSlot :: forall m.
-                 ( MonadMask  m
-                 , MonadFork  m
-                 , MonadAsync m
-                 , HasCallStack
-                 )
+defaultOnSlot :: forall m. (IOLike m, HasCallStack)
               => ResourceRegistry m
               -> STM m SlotNo
               -> SlotNo
@@ -181,13 +173,7 @@ data TestBlockchainTime m = TestBlockchainTime
 -- appropriate for initialization code etc. In contrast, the argument to
 -- 'onSlotChange' is blocked at least until @SlotNo 0@ begins.
 newTestBlockchainTime
-    :: forall m. (
-           MonadAsync m
-         , MonadTimer m
-         , MonadMask  m
-         , MonadFork  m
-         , HasCallStack
-         )
+    :: forall m. (IOLike m, HasCallStack)
     => ResourceRegistry m
     -> NumSlots           -- ^ Number of slots
     -> DiffTime           -- ^ Slot duration

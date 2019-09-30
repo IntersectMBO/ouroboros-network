@@ -60,10 +60,7 @@ import           Data.Word (Word64)
 import           GHC.Stack (HasCallStack)
 import           System.FilePath ((</>))
 
-import           Control.Monad.Class.MonadFork
-import           Control.Monad.Class.MonadST
 import           Control.Monad.Class.MonadThrow
-
 import           Control.Tracer
 
 import           Ouroboros.Network.Block (pattern BlockPoint,
@@ -77,7 +74,7 @@ import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util ((.:))
-import           Ouroboros.Consensus.Util.MonadSTM.NormalForm
+import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
 
 import           Ouroboros.Storage.Common
@@ -181,13 +178,7 @@ defaultArgs fp = LgrDbArgs {
     }
 
 -- | Open the ledger DB
-openDB :: forall m blk.
-          ( MonadSTM  m
-          , MonadST   m
-          , MonadMask m
-          , MonadFork m
-          , ProtocolLedgerView blk
-          )
+openDB :: forall m blk. (IOLike m, ProtocolLedgerView blk)
        => LgrDbArgs m blk
        -- ^ Stateless initializaton arguments
        -> Tracer m (TraceReplayEvent (Point blk) () (Point blk))
@@ -237,12 +228,7 @@ openDB args@LgrDbArgs{..} replayTracer immDB getBlock = do
       , ldbConfResolve = getBlock
       }
 
-reopen :: ( MonadSTM  m
-          , MonadST   m
-          , MonadMask m
-          , MonadFork m
-          , ProtocolLedgerView blk
-          )
+reopen :: (IOLike m, ProtocolLedgerView blk)
        => LgrDB  m blk
        -> ImmDB  m blk
        -> Tracer m (TraceReplayEvent (Point blk) () (Point blk))
@@ -251,12 +237,7 @@ reopen LgrDB{..} immDB replayTracer = do
     db <- initFromDisk args replayTracer conf immDB
     atomically $ writeTVar varDB db
 
-initFromDisk :: ( MonadST   m
-                , MonadSTM  m
-                , MonadMask m
-                , MonadFork m
-                , HasHeader blk
-                )
+initFromDisk :: (IOLike m, HasHeader blk)
              => LgrDbArgs m blk
              -> Tracer m (TraceReplayEvent (Point blk) () (Point blk))
              -> Conf      m blk
@@ -318,30 +299,25 @@ decorateReplayTracer epochInfo immDbTip tracer = do
   Wrappers
 -------------------------------------------------------------------------------}
 
-getCurrent :: MonadSTM m
-           => LgrDB m blk -> STM m (LedgerDB blk)
+getCurrent :: IOLike m => LgrDB m blk -> STM m (LedgerDB blk)
 getCurrent LgrDB{..} = readTVar varDB
 
-getCurrentState :: MonadSTM m
-                => LgrDB m blk -> STM m (ExtLedgerState blk)
+getCurrentState :: IOLike m => LgrDB m blk -> STM m (ExtLedgerState blk)
 getCurrentState LgrDB{..} = LedgerDB.ledgerDbCurrent <$> readTVar varDB
 
 -- | PRECONDITION: The new 'LedgerDB' must be the result of calling either
 -- 'LedgerDB.ledgerDbSwitch' or 'LedgerDB.ledgerDbPushMany' on the current
 -- 'LedgerDB'.
-setCurrent :: MonadSTM m
-           => LgrDB m blk -> LedgerDB blk -> STM m ()
+setCurrent :: IOLike m => LgrDB m blk -> LedgerDB blk -> STM m ()
 setCurrent LgrDB{..} = writeTVar $! varDB
 
-currentPoint :: UpdateLedger blk
-             => LedgerDB blk -> Point blk
+currentPoint :: UpdateLedger blk => LedgerDB blk -> Point blk
 currentPoint = ledgerTipPoint
              . ledgerState
              . LedgerDB.ledgerDbCurrent
 
-takeSnapshot :: (MonadSTM m, MonadThrow m, StandardHash blk, Typeable blk)
-             => LgrDB m blk
-             -> m (DiskSnapshot, Point blk)
+takeSnapshot :: (IOLike m, StandardHash blk, Typeable blk)
+             => LgrDB m blk -> m (DiskSnapshot, Point blk)
 takeSnapshot lgrDB@LgrDB{ args = args@LgrDbArgs{..} } = wrapFailure args $ do
     ledgerDB <- atomically $ getCurrent lgrDB
     second tipToPoint <$> LedgerDB.takeSnapshot
@@ -367,11 +343,7 @@ getDiskPolicy LgrDB{ args = LgrDbArgs{..} } = lgrDiskPolicy
 type ValidateResult blk =
   LedgerDB.SwitchResult (ExtValidationError blk) (ExtLedgerState blk) (Point blk) 'False
 
-validate :: forall m blk.
-            ( MonadSTM m
-            , ProtocolLedgerView blk
-            , HasCallStack
-            )
+validate :: forall m blk. (IOLike m, ProtocolLedgerView blk, HasCallStack)
          => LgrDB m blk
          -> LedgerDB blk
             -- ^ This is used as the starting point for validation, not the one
@@ -411,7 +383,7 @@ validate LgrDB{..} ledgerDB numRollbacks = \hdrs -> do
   Stream API to the immutable DB
 -------------------------------------------------------------------------------}
 
-streamAPI :: forall m blk. (MonadMask m, MonadSTM m, MonadFork m, HasHeader blk)
+streamAPI :: forall m blk. (IOLike m, HasHeader blk)
           => ImmDB m blk -> StreamAPI m (Point blk) blk
 streamAPI immDB = StreamAPI streamAfter
   where
@@ -439,10 +411,7 @@ streamAPI immDB = StreamAPI streamAfter
 
 -- | Remove all points with a slot less than or equal to the given slot from
 -- the set of previously applied points.
-garbageCollectPrevApplied :: MonadSTM m
-                          => LgrDB m blk
-                          -> SlotNo
-                          -> STM m ()
+garbageCollectPrevApplied :: IOLike m => LgrDB m blk -> SlotNo -> STM m ()
 garbageCollectPrevApplied LgrDB{..} slotNo = modifyTVar varPrevApplied $
     Set.filter ((<= (At slotNo)) . Block.pointSlot)
 

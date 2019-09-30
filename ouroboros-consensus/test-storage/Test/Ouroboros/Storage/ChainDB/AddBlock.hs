@@ -14,7 +14,6 @@ import           Test.QuickCheck
 import           Test.Tasty
 import           Test.Tasty.QuickCheck
 
-import           Control.Monad.Class.MonadAsync
 import           Control.Monad.IOSim
 
 import           Control.Tracer
@@ -27,7 +26,7 @@ import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util (chunks)
 import           Ouroboros.Consensus.Util.Condense (condense)
-import           Ouroboros.Consensus.Util.MonadSTM.NormalForm
+import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
 
 import           Ouroboros.Storage.ChainDB (TraceAddBlockEvent (..), addBlock,
@@ -39,6 +38,7 @@ import qualified Ouroboros.Storage.FS.Sim.MockFS as Mock
 import           Test.Ouroboros.Storage.ChainDB.StateMachine (mkArgs)
 import           Test.Ouroboros.Storage.ChainDB.TestBlock
 
+import           Test.Util.Orphans.IOLike ()
 import           Test.Util.Orphans.NoUnexpectedThunks ()
 import           Test.Util.SOP
 
@@ -144,7 +144,7 @@ prop_addBlock_multiple_threads bpt =
   Auxiliary
 -------------------------------------------------------------------------------}
 
-mapConcurrently_ :: forall m a. MonadAsync m => (a -> m ()) -> [a] -> m ()
+mapConcurrently_ :: forall m a. IOLike m => (a -> m ()) -> [a] -> m ()
 mapConcurrently_ f = go
   where
     go :: [a] -> m ()

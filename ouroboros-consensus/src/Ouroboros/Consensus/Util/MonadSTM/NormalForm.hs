@@ -14,9 +14,9 @@ import           System.IO.Unsafe (unsafePerformIO)
 
 import           Cardano.Prelude (NoUnexpectedThunks (..), ThunkInfo (..))
 
-import           Control.Monad.Class.MonadSTM.Strict hiding (newEmptyTMVar,
-                     newEmptyTMVarM, newEmptyTMVarWithInvariantM, newTMVar,
-                     newTMVarM, newTMVarWithInvariantM, newTVar, newTVarM,
+import           Control.Monad.Class.MonadSTM.Strict hiding (newEmptyTMVarM,
+                     newEmptyTMVarWithInvariantM, newTMVar, newTMVarM,
+                     newTMVarWithInvariantM, newTVar, newTVarM,
                      newTVarWithInvariantM)
 import qualified Control.Monad.Class.MonadSTM.Strict as Strict
 

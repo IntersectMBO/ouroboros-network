@@ -34,11 +34,9 @@ import           Data.Void (Void)
 import           Data.Word (Word64)
 import           GHC.Generics (Generic)
 
-import           Cardano.Prelude (NoUnexpectedThunks)
-
-import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadThrow
+
+import           Cardano.Prelude (NoUnexpectedThunks)
 
 import           Network.TypedProtocol.Pipelined
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment (..))
@@ -54,7 +52,7 @@ import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util
-import           Ouroboros.Consensus.Util.MonadSTM.NormalForm
+import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
 import           Ouroboros.Consensus.Util.SlotBounded as SB
 import           Ouroboros.Consensus.Util.STM (Fingerprint, onEachChange)
@@ -146,9 +144,7 @@ data CandidateState blk = CandidateState
 deriving instance SupportedBlock blk => NoUnexpectedThunks (CandidateState blk)
 
 bracketChainSyncClient
-    :: ( MonadAsync m
-       , MonadFork  m
-       , MonadMask  m
+    :: ( IOLike m
        , Ord peer
        , SupportedBlock blk
        , Typeable tip
@@ -201,9 +197,7 @@ bracketChainSyncClient tracer getCurrentChain getCurrentLedger
 -- corresponding peer will never be chosen again.
 chainSyncClient
     :: forall m blk tip.
-       ( MonadSTM   m
-       , MonadCatch m
-       , MonadThrow (STM m)
+       ( IOLike m
        , ProtocolLedgerView blk
        , Exception (ChainSyncClientException blk tip)
        )
@@ -634,9 +628,7 @@ chainSyncClient mkPipelineDecision0
 -- of invalid blocks).
 rejectInvalidBlocks
     :: forall m blk tip.
-       ( MonadAsync m
-       , MonadFork  m
-       , MonadMask  m
+       ( IOLike m
        , SupportedBlock blk
        , Typeable tip
        , Show tip

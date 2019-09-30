@@ -11,7 +11,6 @@ module Test.Ouroboros.Storage.ChainDB.ImmDB
 import           Data.Proxy (Proxy (..))
 import           Data.Reflection (give)
 
-import           Control.Monad.Class.MonadST
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.IOSim (runSimOrThrow)
 
@@ -32,7 +31,7 @@ import           Ouroboros.Consensus.Node.ProtocolInfo (NumCoreNodes (..),
 import           Ouroboros.Consensus.Node.Run (RunNode (..))
 import           Ouroboros.Consensus.NodeId (CoreNodeId (..))
 import           Ouroboros.Consensus.Protocol
-import           Ouroboros.Consensus.Util.MonadSTM.NormalForm
+import           Ouroboros.Consensus.Util.IOLike
 
 import           Ouroboros.Storage.ChainDB.Impl.ImmDB (ImmDB, ImmDbArgs (..))
 import qualified Ouroboros.Storage.ChainDB.Impl.ImmDB as ImmDB
@@ -45,6 +44,8 @@ import qualified Ouroboros.Storage.Util.ErrorHandling as EH
 
 import           Test.Tasty
 import           Test.Tasty.HUnit
+
+import           Test.Util.Orphans.IOLike ()
 
 import qualified Test.Cardano.Chain.Genesis.Dummy as Dummy
 
@@ -64,9 +65,7 @@ test_getBlockWithPoint_EBB_at_tip =
     ebb = giveByron $ forgeGenesisEBB testCfg (SlotNo 0)
 
 withImmDB :: forall m blk a.
-             ( MonadCatch m
-             , MonadST    m
-             , MonadSTM   m
+             ( IOLike m
              , ByronGiven
              , blk ~ ByronBlockOrEBB ByronConfig
              )

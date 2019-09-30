@@ -22,13 +22,8 @@ import           Test.QuickCheck
 import           Test.Tasty
 import           Test.Tasty.QuickCheck
 
-import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadFork (MonadFork)
 import           Control.Monad.Class.MonadSay
-import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
-import           Control.Monad.Class.MonadTime
-import           Control.Monad.Class.MonadTimer
 import           Control.Monad.IOSim (runSimOrThrow)
 
 import           Network.TypedProtocol.Channel
@@ -61,11 +56,12 @@ import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.BFT
 import           Ouroboros.Consensus.Util (whenJust)
 import           Ouroboros.Consensus.Util.Condense
-import           Ouroboros.Consensus.Util.MonadSTM.NormalForm
+import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
 import           Ouroboros.Consensus.Util.STM (Fingerprint (..))
 
 import           Test.Util.Orphans.Arbitrary ()
+import           Test.Util.Orphans.IOLike ()
 import           Test.Util.TestBlock
 
 {-------------------------------------------------------------------------------
@@ -206,14 +202,7 @@ newtype ServerUpdates =
 --
 -- Note that updates that are scheduled before the slot at which we start
 -- syncing help generate different chains to start syncing from.
-runChainSync :: forall m.
-       ( MonadAsync m
-       , MonadFork  m
-       , MonadMask  m
-       , MonadTimer m
-       , MonadThrow (STM m)
-       , MonadSay   m
-       )
+runChainSync :: forall m. (IOLike m, MonadSay m)
     => SecurityParam
     -> ClockSkew
     -> ClientUpdates

@@ -26,8 +26,6 @@ import           Crypto.Random (ChaChaDRG, MonadPseudoRandom, MonadRandom (..),
 import           Data.List (genericLength)
 import           Data.Word (Word64)
 
-import           Control.Monad.Class.MonadSay
-
 {-------------------------------------------------------------------------------
   Producing values in MonadRandom
 -------------------------------------------------------------------------------}
@@ -60,7 +58,7 @@ nullSeed = Seed (0,0,0,0,0)
 
 -- | Add DRNG to a monad stack
 newtype ChaChaT m a = ChaChaT { unChaChaT :: StateT ChaChaDRG m a }
-  deriving (Functor, Applicative, Monad, MonadTrans, MonadSay)
+  deriving (Functor, Applicative, Monad, MonadTrans)
 
 instance Monad m => MonadRandom (ChaChaT m) where
   getRandomBytes = ChaChaT . state . randomBytesGenerate

@@ -35,7 +35,7 @@ import           Ouroboros.Network.Block (BlockNo, ChainHash (..), HasHeader,
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Protocol.Abstract
-import           Ouroboros.Consensus.Util.MonadSTM.NormalForm
+import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.STM (Fingerprint)
 
 import           Ouroboros.Storage.ChainDB.API (ChainDbError (..),
@@ -65,7 +65,7 @@ import qualified Ouroboros.Storage.ChainDB.Impl.VolDB as VolDB
 -- therefore, /must/ still be \"immutable\".
 getCurrentChain
   :: forall m blk.
-     ( MonadSTM m
+     ( IOLike m
      , HasHeader (Header blk)
      , OuroborosTag (BlockProtocol blk)
      )
@@ -76,16 +76,11 @@ getCurrentChain CDB{..} =
   where
     SecurityParam k = protocolSecurityParam cdbNodeConfig
 
-getCurrentLedger :: MonadSTM m => ChainDbEnv m blk -> STM m (ExtLedgerState blk)
+getCurrentLedger :: IOLike m => ChainDbEnv m blk -> STM m (ExtLedgerState blk)
 getCurrentLedger CDB{..} = LgrDB.getCurrentState cdbLgrDB
 
 getTipBlock
-  :: forall m blk.
-     ( MonadCatch m
-     , MonadSTM m
-     , HasHeader blk
-     , HasHeader (Header blk)
-     )
+  :: forall m blk. (IOLike m, HasHeader blk, HasHeader (Header blk))
   => ChainDbEnv m blk
   -> m (Maybe blk)
 getTipBlock cdb@CDB{..} = do
@@ -96,8 +91,7 @@ getTipBlock cdb@CDB{..} = do
 
 getTipHeader
   :: forall m blk.
-     ( MonadCatch m
-     , MonadSTM   m
+     ( IOLike m
      , GetHeader blk
      , HasHeader blk
      , HasHeader (Header blk)
@@ -127,13 +121,13 @@ getTipHeader CDB{..} = do
     anchorMustBeThere (Just blk) = Just (getHeader blk)
 
 getTipPoint
-  :: forall m blk. (MonadSTM m, HasHeader (Header blk))
+  :: forall m blk. (IOLike m, HasHeader (Header blk))
   => ChainDbEnv m blk -> STM m (Point blk)
 getTipPoint CDB{..} =
     (castPoint . AF.headPoint) <$> readTVar cdbChain
 
 getTipBlockNo
-  :: forall m blk. (MonadSTM m, HasHeader (Header blk))
+  :: forall m blk. (IOLike m, HasHeader (Header blk))
   => ChainDbEnv m blk -> STM m BlockNo
 getTipBlockNo CDB{..} = do
     mbTipBlockNo <- AF.headBlockNo <$> readTVar cdbChain
@@ -148,7 +142,7 @@ getBlock
 getBlock CDB{..} = getAnyBlock cdbImmDB cdbVolDB
 
 getIsFetched
-  :: forall m blk. MonadSTM m
+  :: forall m blk. IOLike m
   => ChainDbEnv m blk -> STM m (Point blk -> Bool)
 getIsFetched CDB{..} = basedOnHash <$> VolDB.getIsMember cdbVolDB
   where
@@ -162,12 +156,12 @@ getIsFetched CDB{..} = basedOnHash <$> VolDB.getIsMember cdbVolDB
           GenesisHash    -> False
 
 getIsInvalidBlock
-  :: forall m blk. (MonadSTM m, HasHeader blk)
+  :: forall m blk. (IOLike m, HasHeader blk)
   => ChainDbEnv m blk -> STM m (HeaderHash blk -> Bool, Fingerprint)
 getIsInvalidBlock CDB{..} = first (flip Map.member) <$> readTVar cdbInvalid
 
 getMaxSlotNo
-  :: forall m blk. (MonadSTM m, HasHeader (Header blk))
+  :: forall m blk. (IOLike m, HasHeader (Header blk))
   => ChainDbEnv m blk -> STM m MaxSlotNo
 getMaxSlotNo CDB{..} = do
     -- Note that we need to look at both the current chain and the VolatileDB

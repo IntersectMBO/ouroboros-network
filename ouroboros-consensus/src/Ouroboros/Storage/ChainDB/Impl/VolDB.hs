@@ -58,8 +58,6 @@ import           Data.Typeable (Typeable)
 import           GHC.Stack (HasCallStack)
 import           System.FilePath ((</>))
 
-import           Control.Monad.Class.MonadST
-import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
 
 import           Ouroboros.Network.Block (pattern BlockPoint, ChainHash (..),
@@ -71,6 +69,7 @@ import qualified Ouroboros.Network.Block as Block
 import           Ouroboros.Consensus.Block (GetHeader, Header)
 import qualified Ouroboros.Consensus.Block as Block
 import qualified Ouroboros.Consensus.Util.CBOR as Util.CBOR
+import           Ouroboros.Consensus.Util.IOLike
 
 import           Ouroboros.Storage.ChainDB.API (ChainDbError (..),
                      ChainDbFailure (..), StreamFrom (..), StreamTo (..))
@@ -126,8 +125,7 @@ defaultArgs fp = VolDbArgs {
     , volEncodeBlock   = error "no default for volEncodeBlock"
     }
 
-openDB :: (MonadCatch m, MonadSTM m, MonadST m, HasHeader blk)
-       => VolDbArgs m blk -> m (VolDB m blk)
+openDB :: (IOLike m, HasHeader blk) => VolDbArgs m blk -> m (VolDB m blk)
 openDB args@VolDbArgs{..} = do
     createDirectoryIfMissing volHasFS True (mkFsPath [])
     volDB <- VolDB.openDB
@@ -223,7 +221,7 @@ candidates succsOf b = mapMaybe NE.nonEmpty $ go (fromChainHash (pointHash b))
 
 -- | Variant of 'isReachable' that obtains its arguments in the same 'STM'
 -- transaction.
-isReachableSTM :: (MonadSTM m, HasHeader blk)
+isReachableSTM :: (IOLike m, HasHeader blk)
                => VolDB m blk
                -> STM m (Point blk) -- ^ The tip of the ImmutableDB (@I@).
                -> Point blk         -- ^ The point of the block (@B@) to check
@@ -336,11 +334,7 @@ computePath predecessor isMember from to = case to of
 -- transaction. Throws an 'InvalidIteratorRange' exception when the range is
 -- invalid (i.e., 'computePath' returned 'Nothing').
 computePathSTM
-  :: forall m blk.
-     ( MonadSTM m
-     , MonadThrow (STM m)
-     , HasHeader blk
-     )
+  :: forall m blk. (IOLike m, HasHeader blk)
   => VolDB m blk
   -> StreamFrom blk
   -> StreamTo   blk
@@ -429,7 +423,7 @@ getBlock db hash = do
   Auxiliary: parsing
 -------------------------------------------------------------------------------}
 
-blockFileParser :: forall m blk. (MonadST m, MonadThrow m, HasHeader blk)
+blockFileParser :: forall m blk. (IOLike m, HasHeader blk)
                 => VolDbArgs m blk
                 -> VolDB.Parser
                      Util.CBOR.ReadIncrementalErr
