@@ -33,6 +33,7 @@ library
 executable named-pipe-demo
   main-is:             named-pipe-demo.hs
   build-depends:       base,
+                       binary,
                        bytestring,
                        Win32,
                        Win32-named-pipes
@@ -49,7 +50,9 @@ test-suite named-pipe-test
   ghc-options:         -Wall
                        -threaded
   build-depends:       base,
+                       binary,
                        bytestring,
+                       stm,
                        tasty,
                        tasty-hunit,
                        tasty-quickcheck,
