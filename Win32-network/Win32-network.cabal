@@ -8,7 +8,7 @@ synopsis:            Win32 network API
 license:             Apache-2.0
 license-files:       LICENSE NOTICE
 author:              Duncan Coutts, Marcin Szamotulski
-maintainer:          duncan@well-typed.com
+maintainer:          duncan@well-typed.com, marcin.szamotulski@iohk.io
 copyright:           2019 Input Output (Hong Kong) Ltd.
 category:            System
 build-type:          Simple
