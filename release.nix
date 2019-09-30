@@ -12,6 +12,7 @@ in commonLib.nix-tools.release-nix {
   # are interested in building on CI via nix-tools.
   packages = [ "typed-protocols"
                "typed-protocols-cbor"
+               "Win32-network"
                "network-mux"
                "ouroboros-network"
                "ouroboros-network-testing"
