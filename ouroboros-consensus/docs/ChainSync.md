@@ -1,7 +1,11 @@
 # Chain sync client specification
 
-Note on terminology: by "intersection" between two chains we will always mean
-the most _recent_ intersection (could be genesis).
+Note on terminology:
+
+- By "intersection" between two chains we will always mean the most _recent_
+  intersection (could be genesis).
+- "Their" fragment, "their" chain refers to the chain of the upstream node;
+  "our" fragment, "our" chain refers to the chain of the local node.
 
 ## Key invariant
 
@@ -16,6 +20,9 @@ the most _recent_ intersection (could be genesis).
     `k` blocks from our tip.
 3.  Since our fragment will be anchored `k` back, from (2) we get that the
     intersection between their chain and our chain must lie on our fragment.   
+    (NOTE: In the case of corruption of volatile DB -- or being near genesis --
+    our fragment may be shorter than `k`, but even in that case, the length of
+    our fragment will dictate our maximum rollback.)
 4.  We use their fragment as a proxy for their chain.
 5.  We must be able to _adopt_ their chain, and so their _fragment_ should give
     us enough information to do so.
@@ -25,7 +32,7 @@ the most _recent_ intersection (could be genesis).
     must lie on their fragment: if not, the intersection would be _before_ their
     fragment, which would mean that we would miss some blocks.
 
-Note that if both nodes are following the same and are up to date, the
+Note that if both nodes are following the same chain and are up to date, the
 intersection will be the _tip_ of both fragments.    
 
 ## Chain evolution
@@ -37,9 +44,16 @@ the upstream node.
 ### Our chain changes
 
 When _our_ chain evolves, we get a new fragment. If our new fragment still
-intersects with their chain, all is well. Otherwise, we throw away their
-fragment, wait for the pipeline to drain, initiate the intersection finding
+intersects with their fragment, all is well. Otherwise, we throw away their
+fragment, wait for the pipeline to drain, re-initiate the intersection finding
 protocol again, and establish a new fragment for the upstream node.
+
+Note: It's not impossible that such a new intersection might exist. For example,
+if both the upstream node and we are part of a network that temporarily got
+disconnected from the rest of the world, we might at roughly the same time
+attempt to switch to the same, much longer, chain when we get reconnected.
+The check is also not expensive, so there is no need to try to be more clever
+here and decide if we can disconnect without doing the check.
 
 This is a simple approach, but we need to argue why simply draining the pipe
 (rather than executing the instructions) and throwing away their fragment is
@@ -77,12 +91,13 @@ chain; but in this case, starting afresh is only beneficial.)
 We get notified through the chain sync protocol about updates to their chain:
 
 1. Roll forward. Two possibilities:
-   a. This block does not exist on our fragment (they are either ahead of us,
-      or they are on another fork). The intersection point does not change.
-   b. This block _does_ exist on our fragment (they are behind us). The
-      intersection points shifts forward one block, but must still exist on
-      both fragments. Moreover, since it moved _forward_, it can't violate the
-      "intersection point within `k`" condition.
+   a. This block does not exist on our fragment (they are either ahead of us on
+      the same chain, or they are on another fork). The intersection point does
+      not change.
+   b. This block _does_ exist on our fragment (they are behind us on the same
+      chain). The intersection points shifts forward one block, but must still
+      exist on both fragments. Moreover, since it moved _forward_, it can't
+      violate the "intersection point within `k`" condition.
 
 2. Roll back. Two possibilities:
    a. The roll back point is at or after the old intersection point (before the
@@ -92,23 +107,29 @@ We get notified through the chain sync protocol about updates to their chain:
       our chain, so the new intersection point must /be/ the rollback point.
       If that rollback point lies on our fragment (and hence is within @k@),
       all is good; otherwise, we disconnect.
-   NOTE: We could additionally (and optionally) check that they do not roll
-   back more than `k`, and if they do, treat them as adversarial (disconnect).
+   Notes:
+   - We could additionally (and optionally) check that they do not roll
+     back more than `k`, and if they do, treat them as adversarial (disconnect).
+     (This is anyway limited by maximum rollback supported by the `ChainState`.)
+   - This might mean we could disconnect from peers that do unnecessarily
+     rollbacks; we consider this acceptable (they should not be doing that in
+     the first place).
 
 ## Trimming
 
-Our fragment is always `k` long (unless near genesis), so no trimming needed.
-However, to avoid unbounded memory usage, we should trim their fragment.
+Our fragment is always `k` long (unless near genesis or data loss), so no
+trimming needed. However, to avoid unbounded memory usage, we should trim their
+fragment.
 
-We have established that the intersection between their chain and our _chain_
+We have established that the intersection between their chain and our chain
 must lie on both _fragments_, and moreover, that this intersection will be
 within `k` from our tip; since our fragment is `k` long, it means the
 intersection will be somewhere along our fragment.
 
 This means that we should allow the remote node to roll back from its current
-intersection point to our chain to any point on our fragment, but we do not need
-to allow it to roll back more than that. This means we can always trim their
-fragment so that it is anchored at our anchor point.
+intersection point with our fragment to any (earlier) point on our fragment, but
+we do not need to allow it to roll back more than that. This means we can always
+trim their fragment so that it is anchored at our anchor point.
 
 - In the common case that both nodes are following the same chain and both up
   to date, this would leave both fragments identical.
@@ -119,3 +140,11 @@ fragment so that it is anchored at our anchor point.
   _is_ shorter than `k` due to trimming to our anchor point, and they _do_ roll
   back to a point before their fragment, this new intersection point would be
   too far from our tip, and we should disconnect from them.
+- This places a bound on the length of their fragment: the `ChainState` will
+  place a limitation on how far into the future we can validate headers; for
+  PBFT this is `2k` from the intersection point. In the worst case (in terms
+  of fragment length) the intersection point is the tip, and so the longest
+  fragment we will ever have in memory is `3k` headers.
+- We could, if needed, bind this more tightly still; as long as we have a
+  sufficient number of headers to determine if their chain is preferred over
+  ours (this needs careful consideration when adopting genesis).
