@@ -542,8 +542,8 @@ data NodeOutput blk = NodeOutput
   }
 
 data TestOutput blk = TestOutput
-    { testOutputNodes        :: Map NodeId (NodeOutput blk)
-    , testOutputSlotBlockNos :: Map SlotNo (Map NodeId BlockNo)
+    { testOutputNodes       :: Map NodeId (NodeOutput blk)
+    , testOutputTipBlockNos :: Map SlotNo (Map NodeId BlockNo)
     }
 
 -- | Gather the test output from the nodes
@@ -556,37 +556,38 @@ getTestOutput ::
         )]
     -> m (TestOutput blk)
 getTestOutput nodes = do
-    (nodes', lens') <- fmap unzip $ forM nodes $ \(cid, cfg, node, readNodeInfo) -> do
-      let nid = fromCoreNodeId cid
-      let chainDB = getChainDB node
-      ch <- ChainDB.toChain chainDB
-      ChainDB.closeDB chainDB
-      nodeInfo <- readNodeInfo
-      let NodeInfo
-            { nodeInfoEvents
-            , nodeInfoDBs
-            } = nodeInfo
-      let NodeEvents
-            { nodeEventsForges      = forges
-            , nodeEventsInvalids    = invalids
-            , nodeEventsTipBlockNos = tipBlockNos0
-            } = nodeInfoEvents
-      let nodeOutput = NodeOutput
-            { nodeOutputCfg        = cfg
-            , nodeOutputFinalChain = ch
-            , nodeOutputNodeDBs    = nodeInfoDBs
-            , nodeOutputForges     =
-                  Map.fromList [ (s, b) | TraceForgeEvent s b <- forges ]
-            , nodeOutputInvalids   = Set.fromList invalids
-            }
+    (nodeOutputs', tipBlockNos') <- fmap unzip $ forM nodes $
+      \(cid, cfg, node, readNodeInfo) -> do
+        let nid = fromCoreNodeId cid
+        let chainDB = getChainDB node
+        ch <- ChainDB.toChain chainDB
+        ChainDB.closeDB chainDB
+        nodeInfo <- readNodeInfo
+        let NodeInfo
+              { nodeInfoEvents
+              , nodeInfoDBs
+              } = nodeInfo
+        let NodeEvents
+              { nodeEventsForges      = forges
+              , nodeEventsInvalids    = invalids
+              , nodeEventsTipBlockNos = tipBlockNos0
+              } = nodeInfoEvents
+        let nodeOutput = NodeOutput
+              { nodeOutputCfg        = cfg
+              , nodeOutputFinalChain = ch
+              , nodeOutputNodeDBs    = nodeInfoDBs
+              , nodeOutputForges     =
+                    Map.fromList [ (s, b) | TraceForgeEvent s b <- forges ]
+              , nodeOutputInvalids   = Set.fromList invalids
+              }
 
-      let tipBlockNos = Map.singleton nid <$> Map.fromList tipBlockNos0
+        let tipBlockNos = Map.singleton nid <$> Map.fromList tipBlockNos0
 
-      return (Map.singleton nid nodeOutput, tipBlockNos)
+        return (Map.singleton nid nodeOutput, tipBlockNos)
 
     pure $ TestOutput
-        { testOutputNodes        = Map.unions nodes'
-        , testOutputSlotBlockNos = Map.unionsWith Map.union lens'
+        { testOutputNodes       = Map.unions nodeOutputs'
+        , testOutputTipBlockNos = Map.unionsWith Map.union tipBlockNos'
         }
 
 {-------------------------------------------------------------------------------

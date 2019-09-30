@@ -182,7 +182,7 @@ prop_general ::
   -> TestOutput blk
   -> Property
 prop_general k TestConfig{numSlots, nodeJoinPlan, nodeTopology} schedule
-  TestOutput{testOutputNodes, testOutputSlotBlockNos} =
+  TestOutput{testOutputNodes, testOutputTipBlockNos} =
     counterexample ("nodeChains: " <> unlines ("" : map (\x -> "  " <> condense x) (Map.toList nodeChains))) $
     counterexample ("nodeJoinPlan: " <> condense nodeJoinPlan) $
     counterexample ("nodeTopology: " <> condense nodeTopology) $
@@ -312,4 +312,4 @@ prop_general k TestConfig{numSlots, nodeJoinPlan, nodeTopology} schedule
     slotNodeDepths =
         Map.toAscList $
         fmap Map.toAscList $
-        testOutputSlotBlockNos
+        testOutputTipBlockNos
