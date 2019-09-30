@@ -199,8 +199,8 @@ prop_general k TestConfig{numSlots, nodeJoinPlan, nodeTopology} schedule
         (Map.elems nodeChains) .&&.
     prop_all_growth .&&.
     conjoin
-      [ fileHandleLeakCheck nid nodeInfo
-      | (nid, nodeInfo) <- Map.toList nodeInfos ]
+      [ fileHandleLeakCheck nid nodeDBs
+      | (nid, nodeDBs) <- Map.toList nodeOutputDBs ]
   where
     NumBlocks maxForkLength = determineForkLength k nodeJoinPlan schedule
 
@@ -238,17 +238,17 @@ prop_general k TestConfig{numSlots, nodeJoinPlan, nodeTopology} schedule
             in
             Just s == (snd <$> Map.lookupMin m)
 
-    nodeChains = nodeOutputFinalChain <$> testOutputNodes
-    nodeInfos  = nodeOutputNodeInfo   <$> testOutputNodes
+    nodeChains    = nodeOutputFinalChain <$> testOutputNodes
+    nodeOutputDBs = nodeOutputNodeDBs    <$> testOutputNodes
 
     isConsensusExcepected :: Bool
     isConsensusExcepected = consensusExpected k nodeJoinPlan schedule
 
-    fileHandleLeakCheck :: NodeId -> NodeInfo blk MockFS -> Property
-    fileHandleLeakCheck nid nodeInfo = conjoin
-        [ checkLeak "ImmutableDB" $ nodeInfoImmDbFs nodeInfo
-        , checkLeak "VolatileDB"  $ nodeInfoVolDbFs nodeInfo
-        , checkLeak "LedgerDB"    $ nodeInfoLgrDbFs nodeInfo
+    fileHandleLeakCheck :: NodeId -> NodeDBs blk MockFS -> Property
+    fileHandleLeakCheck nid nodeDBs = conjoin
+        [ checkLeak "ImmutableDB" $ nodeDBsImm nodeDBs
+        , checkLeak "VolatileDB"  $ nodeDBsVol nodeDBs
+        , checkLeak "LedgerDB"    $ nodeDBsLgr nodeDBs
         ]
       where
         checkLeak dbName fs = counterexample
