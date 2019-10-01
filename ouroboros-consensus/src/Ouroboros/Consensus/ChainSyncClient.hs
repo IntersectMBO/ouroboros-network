@@ -240,11 +240,12 @@ chainSyncClient mkPipelineDecision0 getTipBlockNo tracer cfg btime
                 , getOurTip
                 , getIsInvalidBlock
                 }
-                varCandidate = ChainSyncClientPipelined initialise
+                varCandidate = ChainSyncClientPipelined $
+    continueWithState () $ initialise
   where
     -- | Start ChainSync by looking for an intersection between our current
     -- chain fragment and their chain.
-    initialise :: m (Consensus (ClientPipelinedStIdle Z) blk tip m)
+    initialise :: Stateful m blk tip () (ClientPipelinedStIdle Z)
     initialise = findIntersection (ForkTooDeep GenesisPoint)
 
     -- | Try to find an intersection by sending points of our current chain to
@@ -255,8 +256,8 @@ chainSyncClient mkPipelineDecision0 getTipBlockNo tracer cfg btime
     findIntersection
       :: (Our tip -> Their tip -> ChainSyncClientException blk tip)
          -- ^ Exception to throw when no intersection is found.
-      -> m (Consensus (ClientPipelinedStIdle Z) blk tip m)
-    findIntersection mkEx = do
+      -> Stateful m blk tip () (ClientPipelinedStIdle Z)
+    findIntersection mkEx = Stateful $ \() -> do
       (ourFrag, ourChainState, ourTip) <- atomically $ (,,)
         <$> getCurrentChain
         <*> (ouroborosChainState <$> getCurrentLedger)
@@ -276,23 +277,25 @@ chainSyncClient mkPipelineDecision0 getTipBlockNo tracer cfg btime
             }
       return $ SendMsgFindIntersect points $ ClientPipelinedStIntersect
         { recvMsgIntersectFound = \i theirTip' ->
-            intersectFound uis (castPoint i) (Their theirTip')
-        , recvMsgIntersectNotFound = \theirTip'   -> traceException $
+            continueWithState uis $
+              intersectFound (castPoint i) (Their theirTip')
+        , recvMsgIntersectNotFound = \theirTip' -> traceException $
             disconnect $ mkEx ourTip (Their theirTip')
         }
 
     -- | One of the points we sent intersected our chain. This intersection
     -- point will become the new tip of the candidate chain.
-    intersectFound :: UnknownIntersectionState blk tip
-                   -> Point blk  -- ^ Intersection
+    intersectFound :: Point blk  -- ^ Intersection
                    -> Their tip
-                   -> m (Consensus (ClientPipelinedStIdle Z) blk tip m)
-    intersectFound UnknownIntersectionState
-                   { ourFrag
-                   , ourChainState
-                   , ourTip = ourTip
-                   }
-                   intersection theirTip = do
+                   -> Stateful m blk tip
+                        (UnknownIntersectionState blk tip)
+                        (ClientPipelinedStIdle Z)
+    intersectFound intersection theirTip
+                 = Stateful $ \UnknownIntersectionState
+                     { ourFrag
+                     , ourChainState
+                     , ourTip = ourTip
+                     } -> do
       traceWith tracer $ TraceFoundIntersection intersection ourTip theirTip
       traceException $ do
         -- Roll back the current chain fragment to the @intersection@.
@@ -333,7 +336,7 @@ chainSyncClient mkPipelineDecision0 getTipBlockNo tracer cfg btime
               , ourFrag         = ourFrag
               , ourTip          = ourTip
               }
-        nextStep kis mkPipelineDecision0 Zero theirTip
+        continueWithState kis $ nextStep mkPipelineDecision0 Zero theirTip
 
     -- | Look at the current chain fragment that may have been updated in the
     -- background. Check whether the candidate fragment still intersects with
@@ -398,12 +401,13 @@ chainSyncClient mkPipelineDecision0 getTipBlockNo tracer cfg btime
     --
     -- Note that this is the only place we check whether our current chain has
     -- changed.
-    nextStep :: KnownIntersectionState blk tip
-             -> MkPipelineDecision
+    nextStep :: MkPipelineDecision
              -> Nat n
              -> Their tip
-             -> m (Consensus (ClientPipelinedStIdle n) blk tip m)
-    nextStep kis mkPipelineDecision n theirTip = do
+             -> Stateful m blk tip
+                  (KnownIntersectionState blk tip)
+                  (ClientPipelinedStIdle n)
+    nextStep mkPipelineDecision n theirTip = Stateful $ \kis -> do
       mKis' <- atomically $ intersectsWithCurrentChain kis
       case mKis' of
         Just kis' -> do
@@ -417,22 +421,25 @@ chainSyncClient mkPipelineDecision0 getTipBlockNo tracer cfg btime
           -- Our chain (tip) has changed and it no longer intersects with the
           -- candidate fragment, so we have to find a new intersection, but
           -- first drain the pipe.
-          drainThePipe n $ findIntersection NoMoreIntersection
+          continueWithState ()
+            $ drainThePipe n
+            $ findIntersection NoMoreIntersection
 
     -- | "Drain the pipe": collect and discard all in-flight responses and
     -- finally execute the given action.
-    drainThePipe :: Nat n
-                 -> m (Consensus (ClientPipelinedStIdle Z) blk tip m)
-                 -> m (Consensus (ClientPipelinedStIdle n) blk tip m)
-    drainThePipe n0 m = go n0
+    drainThePipe :: forall s n. Nat n
+                 -> Stateful m blk tip s (ClientPipelinedStIdle Z)
+                 -> Stateful m blk tip s (ClientPipelinedStIdle n)
+    drainThePipe n0 m = Stateful $ go n0
       where
-        go :: forall n. Nat n
-           -> m (Consensus (ClientPipelinedStIdle n) blk tip m)
-        go n = case n of
-          Zero    -> m
+        go :: forall n'. Nat n'
+           -> s
+           -> m (Consensus (ClientPipelinedStIdle n') blk tip m)
+        go n s = case n of
+          Zero    -> continueWithState s m
           Succ n' -> return $ CollectResponse Nothing $ ClientStNext
-            { recvMsgRollForward  = \_hdr _tip -> go n'
-            , recvMsgRollBackward = \_pt  _tip -> go n'
+            { recvMsgRollForward  = \_hdr _tip -> go n' s
+            , recvMsgRollBackward = \_pt  _tip -> go n' s
             }
 
     requestNext :: KnownIntersectionState blk tip
@@ -474,26 +481,29 @@ chainSyncClient mkPipelineDecision0 getTipBlockNo tracer cfg btime
     handleNext kis mkPipelineDecision n = ClientStNext
       { recvMsgRollForward  = \hdr theirTip -> do
           traceWith tracer $ TraceDownloadedHeader hdr
-          rollForward kis mkPipelineDecision n hdr (Their theirTip)
+          continueWithState kis $
+            rollForward mkPipelineDecision n hdr (Their theirTip)
       , recvMsgRollBackward = \intersection theirTip -> do
           let intersection' :: Point blk
               intersection' = castPoint intersection
           traceWith tracer $ TraceRolledBack intersection'
-          rollBackward kis mkPipelineDecision n intersection' (Their theirTip)
+          continueWithState kis $
+            rollBackward mkPipelineDecision n intersection' (Their theirTip)
       }
 
-    rollForward :: KnownIntersectionState blk tip
-                -> MkPipelineDecision
+    rollForward :: MkPipelineDecision
                 -> Nat n
                 -> Header blk
                 -> Their tip
-                -> m (Consensus (ClientPipelinedStIdle n) blk tip m)
-    rollForward kis@KnownIntersectionState
-                { theirChainState
-                , theirFrag
-                , ourTip
-                }
-                mkPipelineDecision n hdr theirTip = traceException $ do
+                -> Stateful m blk tip
+                     (KnownIntersectionState blk tip)
+                     (ClientPipelinedStIdle n)
+    rollForward mkPipelineDecision n hdr theirTip
+              = Stateful $ \kis@KnownIntersectionState
+                  { theirChainState
+                  , theirFrag
+                  , ourTip
+                  } -> traceException $ do
       -- Reject the block if invalid
       let hdrHash  = headerHash hdr
           hdrPoint = headerPoint hdr
@@ -543,7 +553,7 @@ chainSyncClient mkPipelineDecision0 getTipBlockNo tracer cfg btime
             }
       atomically $ writeTVar varCandidate theirFrag'
 
-      nextStep kis' mkPipelineDecision n theirTip
+      continueWithState kis' $ nextStep mkPipelineDecision n theirTip
 
     -- Get the ledger view required to validate the header
     --
@@ -630,19 +640,20 @@ chainSyncClient mkPipelineDecision0 getTipBlockNo tracer cfg btime
       where
         hdrPoint = headerPoint hdr
 
-    rollBackward :: KnownIntersectionState blk tip
-                 -> MkPipelineDecision
+    rollBackward :: MkPipelineDecision
                  -> Nat n
                  -> Point blk
                  -> Their tip
-                 -> m (Consensus (ClientPipelinedStIdle n) blk tip m)
-    rollBackward kis@KnownIntersectionState
-                 { theirFrag
-                 , theirChainState
-                 , ourTip
-                 }
-                 mkPipelineDecision n intersection
-                 theirTip = traceException $ do
+                 -> Stateful m blk tip
+                      (KnownIntersectionState blk tip)
+                      (ClientPipelinedStIdle n)
+    rollBackward mkPipelineDecision n intersection
+                 theirTip
+               = Stateful $ \kis@KnownIntersectionState
+                   { theirFrag
+                   , theirChainState
+                   , ourTip
+                   } -> traceException $ do
       (theirFrag', theirChainState') <-
         case (,) <$> AF.rollback (castPoint intersection) theirFrag
                  <*> rewindChainState cfg theirChainState (pointSlot intersection)
@@ -682,7 +693,7 @@ chainSyncClient mkPipelineDecision0 getTipBlockNo tracer cfg btime
             }
       atomically $ writeTVar varCandidate theirFrag'
 
-      nextStep kis' mkPipelineDecision n theirTip
+      continueWithState kis' $ nextStep mkPipelineDecision n theirTip
 
     -- | Disconnect from the upstream node by throwing the given exception.
     -- The cleanup is handled in 'bracketChainSyncClient'.
@@ -770,6 +781,23 @@ rejectInvalidBlocks tracer registry getIsInvalidBlock getCandidate =
       let ex = InvalidBlock (headerPoint invalidHeader)
       traceWith tracer $ TraceException ex
       throwM ex
+
+{-------------------------------------------------------------------------------
+  Explicit state
+-------------------------------------------------------------------------------}
+
+-- | Make the state maintained by the chain sync client explicit
+--
+-- The chain sync client contains of a bunch of functions that basically look
+-- like "do some network stuff, compute some stuff, and then continue with
+-- such-and-such a new state". We want to make sure to keep that state in NF
+-- at all times, but since we don't use a TVar to store it, we cannot reuse
+-- the existing infrastructure for checking TVars for NF. Instead, we make
+-- the state explicit in the types and do the check in 'continueWithState'.
+newtype Stateful m blk tip s st = Stateful (s -> m (Consensus st blk tip m))
+
+continueWithState :: s -> Stateful m blk tip s st -> m (Consensus st blk tip m)
+continueWithState s (Stateful f) = f s
 
 {-------------------------------------------------------------------------------
   Exception
