@@ -6,6 +6,7 @@
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
+{-# LANGUAGE PatternSynonyms            #-}
 {-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE TypeFamilies               #-}
@@ -13,8 +14,8 @@
 -- | Minimal instantiation of the consensus layer to be able to run the ChainDB
 module Test.Util.TestBlock (
     -- * Blocks
-    TestHash(..)
-  , mkTestHash
+    TestHash(TestHash)
+  , unTestHash
   , testHashFromList
   , TestBlock(..)
   , TestBlockError(..)
@@ -124,14 +125,17 @@ newtype TestHash = UnsafeTestHash {
   deriving newtype (Eq, Ord, Serialise)
   deriving anyclass NoUnexpectedThunks
 
-mkTestHash :: NonEmpty Word64 -> TestHash
-mkTestHash = UnsafeTestHash . force
+pattern TestHash :: NonEmpty Word64 -> TestHash
+pattern TestHash path <- UnsafeTestHash path where
+  TestHash path = UnsafeTestHash (force path)
+
+{-# COMPLETE TestHash #-}
 
 testHashFromList :: [Word64] -> TestHash
-testHashFromList = mkTestHash . NE.fromList . reverse
+testHashFromList = TestHash . NE.fromList . reverse
 
 instance Show TestHash where
-  show (UnsafeTestHash h) = "(testHashFromList " <> show (reverse (NE.toList h)) <> ")"
+  show (TestHash h) = "(testHashFromList " <> show (reverse (NE.toList h)) <> ")"
 
 instance Condense TestHash where
   condense = condense . reverse . NE.toList . unTestHash
@@ -163,7 +167,7 @@ instance Block.HasHeader TestBlock where
   blockHash      = tbHash
   blockPrevHash b = case NE.nonEmpty . NE.tail . unTestHash . tbHash $ b of
     Nothing       -> GenesisHash
-    Just prevHash -> BlockHash (mkTestHash prevHash)
+    Just prevHash -> BlockHash (TestHash prevHash)
   blockSlot      = tbSlot
   blockNo        = fromIntegral . NE.length . unTestHash . tbHash
   blockInvariant = const True
@@ -315,7 +319,7 @@ instance Arbitrary BlockChain where
 -- The 'SlotNo' will be 1.
 firstBlock :: Word64 -> TestBlock
 firstBlock forkNo = TestBlock
-    { tbHash  = mkTestHash (forkNo NE.:| [])
+    { tbHash  = TestHash (forkNo NE.:| [])
     , tbSlot  = 1
     , tbValid = True
     }
@@ -327,7 +331,7 @@ firstBlock forkNo = TestBlock
 -- In Zipper parlance, this corresponds to going down in a tree.
 successorBlock :: TestBlock -> TestBlock
 successorBlock TestBlock{..} = TestBlock
-    { tbHash  = mkTestHash (NE.cons 0 (unTestHash tbHash))
+    { tbHash  = TestHash (NE.cons 0 (unTestHash tbHash))
     , tbSlot  = succ tbSlot
     , tbValid = True
     }

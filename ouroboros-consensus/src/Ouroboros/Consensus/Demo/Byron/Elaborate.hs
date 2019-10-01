@@ -44,7 +44,7 @@ import           Ouroboros.Consensus.Ledger.Byron.Config
 elaborateTx :: HasCallStack
             => NodeConfig ByronEBBExtNodeConfig
             -> Mock.Tx -> GenTx (ByronBlockOrEBB cfg)
-elaborateTx (WithEBBNodeConfig cfg) (Mock.UnsafeTx ins outs) =
+elaborateTx (WithEBBNodeConfig cfg) (Mock.Tx ins outs) =
     mkByronTx $ CC.UTxO.ATxAux (annotate tx) (annotate witness)
   where
     annotate x = reAnnotate $ Annotated x ()

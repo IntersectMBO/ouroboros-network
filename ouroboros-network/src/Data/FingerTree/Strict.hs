@@ -1,5 +1,6 @@
 {-# LANGUAGE BangPatterns               #-}
 {-# LANGUAGE DeriveGeneric              #-}
+{-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
@@ -52,10 +53,13 @@ import           Prelude hiding (null, reverse)
 
 import           Data.FingerTree (Measured (..), ViewL (..), ViewR (..))
 import qualified Data.FingerTree as FT
-import           Data.Foldable (foldl')
+import           Data.Foldable (foldl', toList)
 import           Data.Monoid (Monoid (..))
 import           Data.Semigroup (Semigroup (..))
 import           GHC.Generics (Generic)
+
+import           Cardano.Prelude (NoUnexpectedThunks (..),
+                     noUnexpectedThunksInValues)
 
 infixr 5 ><
 infixr 5 <|
@@ -71,8 +75,12 @@ infixl 5 |>
 newtype StrictFingerTree v a = SFT (FT.FingerTree v a)
   deriving (Eq, Ord, Show)
 
-deriving instance Foldable (StrictFingerTree v)
-deriving instance (Measured v a) => Measured v (StrictFingerTree v a)
+deriving newtype instance Foldable (StrictFingerTree v)
+deriving newtype instance (Measured v a) => Measured v (StrictFingerTree v a)
+
+instance NoUnexpectedThunks a => NoUnexpectedThunks (StrictFingerTree v a) where
+  showTypeOf _ = "StrictFingerTree"
+  whnfNoUnexpectedThunks ctxt = noUnexpectedThunksInValues ctxt . toList
 
 {-------------------------------------------------------------------------------
   Construction

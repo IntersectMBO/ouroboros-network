@@ -22,8 +22,7 @@ import qualified Data.Foldable as Foldable
 import           Data.Word (Word64)
 import           GHC.Generics (Generic)
 
-import           Cardano.Prelude (NoUnexpectedThunks (..),
-                     noUnexpectedThunksInValues)
+import           Cardano.Prelude (NoUnexpectedThunks)
 
 {-------------------------------------------------------------------------------
   Mempool transaction sequence as a finger tree
@@ -60,14 +59,8 @@ data TxTicket tx = TxTicket !tx !TicketNo
 -- splitting and indexing by the ticket number.
 --
 newtype TxSeq tx = TxSeq (StrictFingerTree TxSeqMeasure (TxTicket tx))
-  deriving (Show)
-
-instance NoUnexpectedThunks tx => NoUnexpectedThunks (TxSeq tx) where
-  showTypeOf _ = "TxSeq"
-  whnfNoUnexpectedThunks ctxt (TxSeq ft) =
-      -- We cannot rely on our own 'Foldable' instance here because it
-      -- /introduces/ thunks
-      noUnexpectedThunksInValues ctxt (Foldable.toList ft)
+  deriving stock   (Show)
+  deriving newtype (NoUnexpectedThunks)
 
 instance Foldable TxSeq where
   foldMap f (TxSeq txs) = Foldable.foldMap (f . (\(TxTicket tx _) -> tx)) txs
