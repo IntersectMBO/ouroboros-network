@@ -41,6 +41,8 @@ extra-deps:
 
   - git: https://github.com/input-output-hk/cardano-shell
     commit: 8b8437fa2c0cd7e0c1f0ee94ae1565dbcf5617d0
+    subdirs:
+      - cardano-shell
 
   - git: https://github.com/input-output-hk/cardano-sl-x509
     commit: 43a036c5bbe68ca2e9cbe611eab7982e2348fe49

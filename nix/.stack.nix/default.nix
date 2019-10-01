@@ -37,6 +37,7 @@
         cardano-crypto-test = ./cardano-crypto-test.nix;
         cardano-prelude = ./cardano-prelude.nix;
         cardano-prelude-test = ./cardano-prelude-test.nix;
+        cardano-shell = ./cardano-shell.nix;
         cardano-sl-x509 = ./cardano-sl-x509.nix;
         cardano-crypto = ./cardano-crypto.nix;
         };
