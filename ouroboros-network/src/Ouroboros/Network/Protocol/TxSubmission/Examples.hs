@@ -19,8 +19,8 @@ import           Data.List.NonEmpty (NonEmpty(..))
 import           Data.Word (Word16)
 import qualified Data.Map.Strict as Map
 import           Data.Map.Strict (Map)
-import qualified Data.Sequence as Seq
-import           Data.Sequence (Seq)
+import qualified Data.Sequence.Strict as Seq
+import           Data.Sequence.Strict (StrictSeq)
 import           Data.Foldable as Foldable (foldr, foldl', toList)
 
 import           Control.Monad (when)
@@ -38,8 +38,8 @@ import           Ouroboros.Network.Protocol.TxSubmission.Server
 --
 
 data TraceEventClient txid tx =
-     EventRecvMsgRequestTxIds (Seq txid) (Map txid tx) [tx] Word16 Word16
-   | EventRecvMsgRequestTxs   (Seq txid) (Map txid tx) [tx] [txid]
+     EventRecvMsgRequestTxIds (StrictSeq txid) (Map txid tx) [tx] Word16 Word16
+   | EventRecvMsgRequestTxs   (StrictSeq txid) (Map txid tx) [tx] [txid]
   deriving Show
 
 -- | An example @'TxSubmissionClient'@ which sends transactions from a fixed
@@ -49,7 +49,7 @@ data TraceEventClient txid tx =
 -- enforces aspects of the protocol. It will fail with a protocol error if
 -- the peer asks for a transaction which is not in the unacknowledged set.
 -- The unacknowledged set is managed such that things are removed after having
--- been requested. The net effect is that the peer can only ask for 
+-- been requested. The net effect is that the peer can only ask for
 -- * If a server will ask for
 -- the same transaction twice.
 --
@@ -65,7 +65,7 @@ txSubmissionClient
 txSubmissionClient tracer txId txSize maxUnacked =
     TxSubmissionClient . pure . client Seq.empty Map.empty
   where
-    client :: Seq txid -> Map txid tx -> [tx] -> ClientStIdle txid tx m ()
+    client :: StrictSeq txid -> Map txid tx -> [tx] -> ClientStIdle txid tx m ()
     client !unackedSeq !unackedMap remainingTxs =
         assert invariant
         ClientStIdle { recvMsgRequestTxIds, recvMsgRequestTxs }
@@ -176,7 +176,7 @@ data ServerState txid tx = ServerState {
        -- the order in which the client gave them to us. This is the same order
        -- in which we submit them to the mempool (or for this example, the final
        -- result order). It is also the order we acknowledge in.
-       unacknowledgedTxIds :: Seq txid,
+       unacknowledgedTxIds :: StrictSeq txid,
 
        -- | Those transactions (by their identifier) that we can request. These
        -- are a subset of the 'unacknowledgedTxIds' that we have not yet
@@ -217,7 +217,7 @@ txSubmissionServer
      (Ord txid, Show txid, Show tx, Monad m)
   => Tracer m (TraceEventServer txid tx)
   -> (tx -> txid)
-  -> Word16  -- ^ Maximum number of unacknowledged txids  
+  -> Word16  -- ^ Maximum number of unacknowledged txids
   -> Word16  -- ^ Maximum number of txids to request in any one go
   -> Word16  -- ^ Maximum number of txs to request in any one go
   -> TxSubmissionServerPipelined txid tx m [tx]
@@ -394,4 +394,3 @@ txSubmissionServer tracer txId maxUnacked maxTxIdsToRequest maxTxToRequest =
                   - fromIntegral (Seq.length (unacknowledgedTxIds st))
                   - requestedTxIdsInFlight st)
           `min` maxTxIdsToRequest
-

@@ -17,8 +17,8 @@ import           Data.Maybe (isNothing, catMaybes)
 import qualified Data.List.NonEmpty as NonEmpty
 import qualified Data.Map.Strict as Map
 import           Data.Map.Strict (Map)
-import qualified Data.Sequence as Seq
-import           Data.Sequence (Seq)
+import qualified Data.Sequence.Strict as Seq
+import           Data.Sequence.Strict (StrictSeq)
 import           Data.Foldable (foldl')
 import qualified Data.Foldable as Foldable
 
@@ -101,7 +101,7 @@ instance Exception TxSubmissionProtocolError where
    ++ "no unacknowledged txids. It should have used a blocking request."
 
   displayException ProtocolErrorRequestedUnavailableTx =
-      "The peer requested a transaction which is not available, either " 
+      "The peer requested a transaction which is not available, either "
    ++ "because it was never available or because it was previously requested."
 
 
@@ -115,7 +115,7 @@ txSubmissionOutbound
 txSubmissionOutbound _tracer maxUnacked TxSubmissionMempoolReader{..} =
     TxSubmissionClient (pure (client Seq.empty Map.empty mempoolZeroIdx))
   where
-    client :: Seq txid -> Map txid idx -> idx -> ClientStIdle txid tx m ()
+    client :: StrictSeq txid -> Map txid idx -> idx -> ClientStIdle txid tx m ()
     client !unackedSeq !unackedMap !lastIdx =
         assert invariant
         ClientStIdle { recvMsgRequestTxIds, recvMsgRequestTxs }
@@ -219,4 +219,3 @@ txSubmissionOutbound _tracer maxUnacked TxSubmissionMempoolReader{..} =
               client'      = client unackedSeq unackedMap' lastIdx
 
           return $ SendMsgReplyTxs txs client'
-

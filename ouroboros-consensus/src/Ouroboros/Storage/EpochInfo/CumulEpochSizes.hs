@@ -20,8 +20,8 @@ import           Data.Coerce (coerce)
 import qualified Data.Foldable as Foldable
 import           Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
-import           Data.Sequence (Seq (..))
-import qualified Data.Sequence as Seq
+import           Data.Sequence.Strict (StrictSeq (..))
+import qualified Data.Sequence.Strict as Seq
 
 import           GHC.Generics (Generic)
 import           GHC.Stack
@@ -47,7 +47,7 @@ import           Ouroboros.Storage.Common
 --
 -- This allows us to recover the original size of each epoch and to convert
 -- 'SlotNo's to 'EpochSlot's (and vice versa).
-newtype CumulEpochSizes = CES (Seq EpochSize) -- Invariant: non-empty.
+newtype CumulEpochSizes = CES (StrictSeq EpochSize) -- Invariant: non-empty.
     deriving (Show, Eq, Generic, NoUnexpectedThunks)
 
 -- | \( O(1) \). Create a 'CumulEpochSizes' using the given size for the first

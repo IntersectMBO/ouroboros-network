@@ -81,7 +81,7 @@ import           Data.Either (isRight)
 import           Data.FingerTree.Strict (Measured (..))
 import           Data.Foldable (find, foldl')
 import           Data.Reflection (Given (..))
-import qualified Data.Sequence as Seq
+import qualified Data.Sequence.Strict as Seq
 import           Data.Set (Set)
 import qualified Data.Text as T
 import           Data.Typeable
@@ -241,7 +241,7 @@ instance (ByronGiven, Typeable cfg, ConfigContainsGenesis cfg)
   data LedgerState (ByronBlock cfg) = ByronLedgerState
       { blsCurrent :: !CC.Block.ChainValidationState
         -- | Slot-bounded snapshots of the chain state
-      , blsSnapshots :: !(Seq.Seq (SlotBounded CC.Block.ChainValidationState))
+      , blsSnapshots :: !(Seq.StrictSeq (SlotBounded CC.Block.ChainValidationState))
       }
     deriving (Eq, Show, Generic, NoUnexpectedThunks)
 
@@ -1064,7 +1064,8 @@ instance (ByronGiven, Typeable cfg, ConfigContainsGenesis cfg)
             . V.Interface.delegationMap
             . CC.Block.cvsDelegationState
             $ ls
-      dsScheduled = V.Scheduling.scheduledDelegations
+      dsScheduled = Seq.toStrict
+                  . V.Scheduling.scheduledDelegations
                   . V.Interface.schedulingState
                   . CC.Block.cvsDelegationState
                   $ ls

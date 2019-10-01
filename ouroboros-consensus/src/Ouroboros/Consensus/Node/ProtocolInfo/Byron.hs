@@ -23,7 +23,7 @@ module Ouroboros.Consensus.Node.ProtocolInfo.Byron (
 import           Control.Exception (Exception)
 import           Control.Monad.Except
 import           Data.Maybe
-import qualified Data.Sequence as Seq
+import qualified Data.Sequence.Strict as Seq
 import qualified Data.Set as Set
 
 import qualified Cardano.Chain.Block as Block
