@@ -50,7 +50,7 @@ import           Ouroboros.Consensus.Block (GetHeader (..))
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
-import           Ouroboros.Consensus.Util.STM (Fingerprint (..))
+import           Ouroboros.Consensus.Util.STM (WithFingerprint)
 
 import           Ouroboros.Storage.Common
 import           Ouroboros.Storage.FS.API.Types (FsError)
@@ -243,14 +243,14 @@ data ChainDB m blk = ChainDB {
       -- If the hash corresponds to a block that is known to be invalid, but
       -- is now older than @k@, this function may return 'False'.
       --
-      -- Whenever a new invalid block is added, the 'Fingerprint' will be
+      -- Whenever a new invalid block is added, the @Fingerprint@ will be
       -- changed. This is useful when \"watching\" this function in a
       -- transaction.
       --
       -- Note that when invalid blocks are garbage collected and thus no
       -- longer detected by this function, the 'Fingerprint' doesn't have to
       -- change, since the function will not detect new invalid blocks.
-    , getIsInvalidBlock :: STM m (HeaderHash blk -> Bool, Fingerprint)
+    , getIsInvalidBlock :: STM m (WithFingerprint (HeaderHash blk -> Bool))
 
       -- | Close the ChainDB
       --

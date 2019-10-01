@@ -21,7 +21,6 @@ module Ouroboros.Storage.ChainDB.Impl.Query
   , getAnyKnownBlock
   ) where
 
-import           Data.Bifunctor (first)
 import qualified Data.Map.Strict as Map
 
 import           Control.Monad.Class.MonadThrow
@@ -36,7 +35,7 @@ import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util.IOLike
-import           Ouroboros.Consensus.Util.STM (Fingerprint)
+import           Ouroboros.Consensus.Util.STM (WithFingerprint)
 
 import           Ouroboros.Storage.ChainDB.API (ChainDbError (..),
                      ChainDbFailure (..))
@@ -157,8 +156,8 @@ getIsFetched CDB{..} = basedOnHash <$> VolDB.getIsMember cdbVolDB
 
 getIsInvalidBlock
   :: forall m blk. (IOLike m, HasHeader blk)
-  => ChainDbEnv m blk -> STM m (HeaderHash blk -> Bool, Fingerprint)
-getIsInvalidBlock CDB{..} = first (flip Map.member) <$> readTVar cdbInvalid
+  => ChainDbEnv m blk -> STM m (WithFingerprint (HeaderHash blk -> Bool))
+getIsInvalidBlock CDB{..} = fmap (flip Map.member) <$> readTVar cdbInvalid
 
 getMaxSlotNo
   :: forall m blk. (IOLike m, HasHeader (Header blk))

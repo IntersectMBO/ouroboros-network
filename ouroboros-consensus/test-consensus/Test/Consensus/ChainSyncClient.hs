@@ -60,7 +60,8 @@ import           Ouroboros.Consensus.Util (whenJust)
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
-import           Ouroboros.Consensus.Util.STM (Fingerprint (..))
+import           Ouroboros.Consensus.Util.STM (Fingerprint (..),
+                     WithFingerprint (..))
 
 import           Test.Util.Orphans.Arbitrary ()
 import           Test.Util.Orphans.IOLike ()
@@ -280,7 +281,8 @@ runChainSync securityParam maxClockSkew (ClientUpdates clientUpdates)
           , getOurTip         = do
               chain <- fst <$> readTVar varClientState
               return $ ExampleTip (Chain.headPoint chain) (Chain.headBlockNo chain)
-          , getIsInvalidBlock = return (const False, Fingerprint 0)
+          , getIsInvalidBlock = return $
+              WithFingerprint (const False) (Fingerprint 0)
           }
 
         client :: StrictTVar m (AnchoredFragment (Header TestBlock))

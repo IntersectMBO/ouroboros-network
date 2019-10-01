@@ -50,7 +50,7 @@ import           Ouroboros.Consensus.Block (BlockProtocol, GetHeader (..))
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util.IOLike
-import           Ouroboros.Consensus.Util.STM (Fingerprint)
+import           Ouroboros.Consensus.Util.STM (WithFingerprint (..))
 
 import           Ouroboros.Storage.ChainDB.Impl.ImmDB (ImmDB)
 import qualified Ouroboros.Storage.ChainDB.Impl.ImmDB as ImmDB
@@ -75,14 +75,14 @@ initialChainSelection
   -> LgrDB m blk
   -> Tracer m (TraceEvent blk)
   -> NodeConfig (BlockProtocol blk)
-  -> StrictTVar m (Map (HeaderHash blk) SlotNo, Fingerprint) -- ^ 'cdbInvalid'
+  -> StrictTVar m (WithFingerprint (Map (HeaderHash blk) SlotNo)) -- ^ 'cdbInvalid'
   -> m (ChainAndLedger blk)
 initialChainSelection immDB volDB lgrDB tracer cfg varInvalid = do
     -- We follow the steps from section "## Initialization" in ChainDB.md
 
     i :: Point blk <- ImmDB.getPointAtTip immDB
     (succsOf, ledger) <- atomically $ do
-      (invalid, _fingerprint) <- readTVar varInvalid
+      invalid <- forgetFingerprint <$> readTVar varInvalid
       (,) <$> (ignoreInvalidSuc volDB invalid <$> VolDB.getSuccessors volDB)
           <*> LgrDB.getCurrent lgrDB
 
@@ -195,12 +195,12 @@ addBlock
 addBlock cdb@CDB{..} b = do
     (isMember, curChain, tipPoint, ledgerDB, invalid, immBlockNo) <-
       atomically $ (,,,,,)
-        <$> VolDB.getIsMember     cdbVolDB
-        <*> Query.getCurrentChain cdb
-        <*> Query.getTipPoint     cdb
-        <*> LgrDB.getCurrent      cdbLgrDB
-        <*> (fst <$> readTVar     cdbInvalid)
-        <*> readTVar              cdbImmBlockNo
+        <$> VolDB.getIsMember           cdbVolDB
+        <*> Query.getCurrentChain       cdb
+        <*> Query.getTipPoint           cdb
+        <*> LgrDB.getCurrent            cdbLgrDB
+        <*> (forgetFingerprint <$> readTVar cdbInvalid)
+        <*> readTVar                    cdbImmBlockNo
     let curChainAndLedger =
           -- The current chain we're working with here is not longer than @k@
           -- blocks (see 'getCurrentChain' and 'cdbChain'), which is easier to
@@ -517,7 +517,7 @@ chainSelection
   => LgrDB m blk
   -> Tracer m (TraceValidationEvent blk)
   -> NodeConfig (BlockProtocol blk)
-  -> StrictTVar m (Map (HeaderHash blk) SlotNo, Fingerprint)
+  -> StrictTVar m (WithFingerprint (Map (HeaderHash blk) SlotNo))
      -- ^ The invalid blocks
   -> ChainAndLedger blk              -- ^ The current chain and ledger
   -> NonEmpty (CandidateSuffix blk)  -- ^ Candidates
@@ -581,7 +581,8 @@ chainSelection lgrDB tracer cfg varInvalid
     truncateInvalidCandidates :: [CandidateSuffix blk]
                               -> m [CandidateSuffix blk]
     truncateInvalidCandidates cands = do
-      isInvalid <- flip Map.member . fst <$> atomically (readTVar varInvalid)
+      isInvalid <- flip Map.member . forgetFingerprint <$>
+        atomically (readTVar varInvalid)
       return $ filter (preferCandidate cfg curChain . _suffix)
              $ mapMaybe (truncateInvalidCandidate isInvalid) cands
 
@@ -627,7 +628,7 @@ validateCandidate
   => LgrDB m blk
   -> Tracer m (TraceValidationEvent blk)
   -> NodeConfig (BlockProtocol blk)
-  -> StrictTVar m (Map (HeaderHash blk) SlotNo, Fingerprint)
+  -> StrictTVar m (WithFingerprint (Map (HeaderHash blk) SlotNo))
      -- ^ The invalid blocks
   -> ChainAndLedger  blk                   -- ^ Current chain and ledger
   -> CandidateSuffix blk                   -- ^ Candidate fragment
@@ -675,8 +676,8 @@ validateCandidate lgrDB tracer cfg varInvalid
     -- fingerprint.
     addInvalidBlocks :: Map (HeaderHash blk) SlotNo -> m ()
     addInvalidBlocks invalidBlocksInCand = atomically $
-      modifyTVar varInvalid $ \(invalid, fp) ->
-        (Map.union invalid invalidBlocksInCand, succ fp)
+      modifyTVar varInvalid $ \(WithFingerprint invalid fp) ->
+        WithFingerprint (Map.union invalid invalidBlocksInCand) (succ fp)
 
     -- | Make a list of all the points after from the given point (inclusive)
     -- in the candidate fragment and turn it into a map from hash to slot that
