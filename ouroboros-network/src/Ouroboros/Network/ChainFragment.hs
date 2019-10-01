@@ -84,8 +84,8 @@ import           Codec.CBOR.Encoding (encodeListLen)
 import           Codec.Serialise (Serialise (..))
 import           Control.Exception (assert)
 import           Data.Either (isRight)
-import           Data.FingerTree (FingerTree)
-import qualified Data.FingerTree as FT
+import           Data.FingerTree.Strict (StrictFingerTree)
+import qualified Data.FingerTree.Strict as FT
 import qualified Data.Foldable as Foldable
 import qualified Data.List as L
 import           Data.Maybe (fromMaybe)
@@ -111,7 +111,7 @@ import           Ouroboros.Network.Point (WithOrigin (At))
 --
 -- A fragment is represented by a finger tree for efficient searching based on
 -- the 'SlotNo' (or 'Point') of a block.
-newtype ChainFragment block = ChainFragment (FingerTree BlockMeasure block)
+newtype ChainFragment block = ChainFragment (StrictFingerTree BlockMeasure block)
   deriving (Show, Eq)
 
 -- | The 'FingerTree' might have internal thunks

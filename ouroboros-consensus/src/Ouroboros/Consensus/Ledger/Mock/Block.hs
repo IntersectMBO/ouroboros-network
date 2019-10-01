@@ -46,7 +46,7 @@ import qualified Codec.CBOR.Decoding as CBOR
 import qualified Codec.CBOR.Encoding as CBOR
 import           Codec.Serialise (Serialise (..))
 import           Control.Monad.Except
-import           Data.FingerTree (Measured (..))
+import           Data.FingerTree.Strict (Measured (..))
 import           Data.Typeable (Typeable)
 import           Data.Word
 import           GHC.Generics (Generic)

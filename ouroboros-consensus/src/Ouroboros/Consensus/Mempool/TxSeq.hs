@@ -13,8 +13,8 @@ module Ouroboros.Consensus.Mempool.TxSeq (
   , zeroTicketNo
   ) where
 
-import           Data.FingerTree (FingerTree)
-import qualified Data.FingerTree as FingerTree
+import           Data.FingerTree.Strict (StrictFingerTree)
+import qualified Data.FingerTree.Strict as FingerTree
 import qualified Data.Foldable as Foldable
 import           Data.Word (Word64)
 
@@ -52,7 +52,7 @@ data TxTicket tx = TxTicket !tx !TicketNo
 -- measure to allow not just normal sequence operations but also efficient
 -- splitting and indexing by the ticket number.
 --
-newtype TxSeq tx = TxSeq (FingerTree TxSeqMeasure (TxTicket tx))
+newtype TxSeq tx = TxSeq (StrictFingerTree TxSeqMeasure (TxTicket tx))
   deriving Show
 
 instance Foldable TxSeq where
@@ -60,14 +60,14 @@ instance Foldable TxSeq where
   null      (TxSeq txs) = Foldable.null txs
   length    (TxSeq txs) = mSize $ FingerTree.measure txs
 
--- | The 'FingerTree' relies on a \"measure\" for subsequences in the tree.
--- A measure of the size of the subsequence allows for efficient sequence
--- operations. Also measuring the min and max ticket number allows for efficient
--- operations based on the ticket number (assuming the sequence is ordered by
--- ticket number).
+-- | The 'StrictFingerTree' relies on a \"measure\" for subsequences in the
+-- tree. A measure of the size of the subsequence allows for efficient
+-- sequence operations. Also measuring the min and max ticket number allows
+-- for efficient operations based on the ticket number (assuming the sequence
+-- is ordered by ticket number).
 --
--- To use a 'FingerTree' with a 'TxSeqMeasure' we have to provide a way to
--- measure individual elements of the sequence (i.e. 'TxTicket's), via a
+-- To use a 'StrictFingerTree' with a 'TxSeqMeasure' we have to provide a way
+-- to measure individual elements of the sequence (i.e. 'TxTicket's), via a
 -- 'Measured' instance, and also a way to combine the measures, via a 'Monoid'
 -- instance.
 --

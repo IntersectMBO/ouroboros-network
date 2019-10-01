@@ -77,7 +77,7 @@ import qualified Data.ByteString as Strict
 import qualified Data.ByteString.Lazy as Lazy
 import           Data.Coerce (coerce)
 import           Data.Either (isRight)
-import           Data.FingerTree (Measured (..))
+import           Data.FingerTree.Strict (Measured (..))
 import           Data.Foldable (find, foldl')
 import           Data.Reflection (Given (..))
 import qualified Data.Sequence as Seq

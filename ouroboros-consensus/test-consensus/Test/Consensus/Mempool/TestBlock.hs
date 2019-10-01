@@ -28,7 +28,7 @@ module Test.Consensus.Mempool.TestBlock
   ) where
 
 import           Control.Monad.Except (runExcept)
-import           Data.FingerTree (Measured (..))
+import           Data.FingerTree.Strict (Measured (..))
 import           Data.Word (Word64)
 import           GHC.Generics (Generic)
 import           GHC.Stack (HasCallStack)
