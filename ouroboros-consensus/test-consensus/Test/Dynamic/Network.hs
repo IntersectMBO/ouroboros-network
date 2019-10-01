@@ -24,7 +24,7 @@ module Test.Dynamic.Network (
     -- * Test Output
   , TestOutput (..)
   , NodeOutput (..)
-  , NodeInfo (..)
+  , NodeDBs (..)
   ) where
 
 import qualified Control.Exception as Exn
@@ -36,6 +36,8 @@ import qualified Data.List.NonEmpty as NE
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Proxy (Proxy (..))
+import           Data.Set (Set)
+import qualified Data.Set as Set
 import qualified Data.Typeable as Typeable
 import           GHC.Stack
 
@@ -92,6 +94,8 @@ import qualified Ouroboros.Storage.Util.ErrorHandling as EH
 import           Test.Dynamic.TxGen
 import           Test.Dynamic.Util.NodeJoinPlan
 import           Test.Dynamic.Util.NodeTopology
+
+import           Test.Util.Tracer
 
 -- | Setup a network of core nodes, where each joins according to the node join
 -- plan and is interconnected according to the node topology
@@ -153,12 +157,12 @@ runNodeNetwork registry testBtime numCoreNodes nodeJoinPlan nodeTopology
         error $ "unsatisfiable nodeJoinPlan: " ++ show coreNodeId
 
       -- allocate the node's internal state and spawn its internal threads
-      (node, nodeInfo, app) <- createNode varRNG coreNodeId
+      (node, readNodeInfo, app) <- createNode varRNG coreNodeId
 
       -- unblock the threads of edges that involve this node
       atomically $ putTMVar nodeVar app
 
-      return (coreNodeId, pInfoConfig (pInfo coreNodeId), node, nodeInfo)
+      return (coreNodeId, pInfoConfig (pInfo coreNodeId), node, readNodeInfo)
 
     -- Wait some extra time after the end of the test block fetch and chain
     -- sync to finish
@@ -225,10 +229,10 @@ runNodeNetwork registry testBtime numCoreNodes nodeJoinPlan nodeTopology
     mkArgs :: NodeConfig (BlockProtocol blk)
            -> ExtLedgerState blk
            -> EpochInfo m
-           -> (StrictTVar m MockFS, StrictTVar m MockFS, StrictTVar m MockFS)
-              -- ^ ImmutableDB, VolatileDB, LedgerDB
+           -> Tracer m (Point blk)
+           -> NodeDBs (StrictTVar m MockFS)
            -> ChainDbArgs m blk
-    mkArgs cfg initLedger epochInfo (immDbFsVar, volDbFsVar, lgrDbFsVar) = ChainDbArgs
+    mkArgs cfg initLedger epochInfo invalidTracer nodeDBs = ChainDbArgs
         { -- Decoders
           cdbDecodeHash       = nodeDecodeHeaderHash (Proxy @blk)
         , cdbDecodeBlock      = nodeDecodeBlock cfg
@@ -244,9 +248,9 @@ runNodeNetwork registry testBtime numCoreNodes nodeJoinPlan nodeTopology
         , cdbErrVolDb         = EH.monadCatch
         , cdbErrVolDbSTM      = EH.throwSTM
           -- HasFS instances
-        , cdbHasFSImmDb       = simHasFS EH.monadCatch immDbFsVar
-        , cdbHasFSVolDb       = simHasFS EH.monadCatch volDbFsVar
-        , cdbHasFSLgrDB       = simHasFS EH.monadCatch lgrDbFsVar
+        , cdbHasFSImmDb       = simHasFS EH.monadCatch (nodeDBsImm nodeDBs)
+        , cdbHasFSVolDb       = simHasFS EH.monadCatch (nodeDBsVol nodeDBs)
+        , cdbHasFSLgrDB       = simHasFS EH.monadCatch (nodeDBsLgr nodeDBs)
           -- Policy
         , cdbValidation       = ImmDB.ValidateAllEpochs
         , cdbBlocksPerFile    = 4
@@ -260,7 +264,11 @@ runNodeNetwork registry testBtime numCoreNodes nodeJoinPlan nodeTopology
                                         else Nothing
         , cdbGenesis          = return initLedger
         -- Misc
-        , cdbTracer           = nullTracer
+        , cdbTracer           = Tracer $ \case
+              ChainDB.TraceAddBlockEvent
+                  (ChainDB.AddBlockValidation ChainDB.InvalidBlock
+                { _invalidPoint = p }) -> traceWith invalidTracer p
+              _                        -> pure ()
         , cdbRegistry         = registry
         , cdbGcDelay          = 0
         }
@@ -270,7 +278,7 @@ runNodeNetwork registry testBtime numCoreNodes nodeJoinPlan nodeTopology
       => StrictTVar m ChaChaDRG
       -> CoreNodeId
       -> m ( NodeKernel m NodeId blk
-           , NodeInfo blk (StrictTVar m MockFS)
+           , m (NodeInfo blk MockFS [])
            , LimitedApp m NodeId blk
            )
     createNode varRNG coreNodeId = do
@@ -295,16 +303,22 @@ runNodeNetwork registry testBtime numCoreNodes nodeJoinPlan nodeTopology
             , produceDRG      = atomically $ simChaChaT varRNG id $ drgNew
             }
 
+      (nodeInfo, readNodeInfo) <- newNodeInfo
+      let NodeInfo
+            { nodeInfoEvents
+            , nodeInfoDBs
+            } = nodeInfo
+
       epochInfo <- newEpochInfo $ nodeEpochSize (Proxy @blk) pInfoConfig
-      fsVars@(immDbFsVar, volDbFsVar, lgrDbFsVar)  <- (,,)
-        <$> uncheckedNewTVarM Mock.empty
-        <*> uncheckedNewTVarM Mock.empty
-        <*> uncheckedNewTVarM Mock.empty
-      let args = mkArgs pInfoConfig pInfoInitLedger epochInfo fsVars
+      let args = mkArgs
+              pInfoConfig pInfoInitLedger epochInfo
+              (nodeEventsInvalids nodeInfoEvents) nodeInfoDBs
       chainDB <- ChainDB.openDB args
 
       let nodeArgs = NodeArgs
             { tracers             = nullTracers
+                { forgeTracer = nodeEventsForges nodeInfoEvents
+                }
             , registry            = registry
             , maxClockSkew        = ClockSkew 1
             , cfg                 = pInfoConfig
@@ -325,18 +339,21 @@ runNodeNetwork registry testBtime numCoreNodes nodeJoinPlan nodeTopology
                   protocolCodecsId
                   (protocolHandlers nodeArgs nodeKernel)
 
+      void $ forkLinkedThread registry $ do
+        -- TODO We assume this effectively runs before anything else in the
+        -- slot. With such a short transaction (read one TVar) this is likely
+        -- but not necessarily certain.
+        onSlotChange btime $ \s -> do
+          bno <- atomically $ ChainDB.getTipBlockNo chainDB
+          traceWith (nodeEventsTipBlockNos nodeInfoEvents) (s, bno)
+
       void $ forkLinkedThread registry $ txProducer
         pInfoConfig
         (produceDRG callbacks)
         (ChainDB.getCurrentLedger chainDB)
         (getMempool nodeKernel)
 
-      let nodeInfo = NodeInfo
-            { nodeInfoImmDbFs = immDbFsVar
-            , nodeInfoVolDbFs = volDbFsVar
-            , nodeInfoLgrDbFs = lgrDbFsVar
-            }
-      return (nodeKernel, nodeInfo, LimitedApp app)
+      return (nodeKernel, readNodeInfo, LimitedApp app)
 
 {-------------------------------------------------------------------------------
   Running the Mini Protocols on an Ordered Pair of Nodes
@@ -459,32 +476,84 @@ directedEdgeInner (node1, LimitedApp app1) (node2, LimitedApp app2) = do
   Node Info
 -------------------------------------------------------------------------------}
 
-data NodeInfo blk fs = NodeInfo
-  { nodeInfoImmDbFs :: fs
-  , nodeInfoVolDbFs :: fs
-  , nodeInfoLgrDbFs :: fs
+data NodeInfo blk db ev = NodeInfo
+  { nodeInfoEvents :: NodeEvents blk ev
+  , nodeInfoDBs    :: NodeDBs db
   }
 
-readFsTVars :: IOLike m
-            => NodeInfo blk (StrictTVar m MockFS)
-            -> m (NodeInfo blk MockFS)
-readFsTVars tvars = atomically $ NodeInfo
-    <$> readTVar (nodeInfoImmDbFs tvars)
-    <*> readTVar (nodeInfoVolDbFs tvars)
-    <*> readTVar (nodeInfoLgrDbFs tvars)
+-- | A vector with an @ev@-shaped element for a particular set of
+-- instrumentation events
+--
+-- The @ev@ type parameter is instantiated by this module at types for
+-- 'Tracer's and lists: actions for accumulating and lists as accumulations.
+data NodeEvents blk ev = NodeEvents
+  { nodeEventsTipBlockNos :: ev (SlotNo, BlockNo)
+    -- ^ 'ChainDB.getTipBlockNo' for each node at the onset of each slot
+  , nodeEventsForges      :: ev (TraceForgeEvent blk)
+    -- ^ every 'TraceForgeEvent'
+  , nodeEventsInvalids    :: ev (Point blk)
+    -- ^ the point of every 'ChainDB.InvalidBlock' event
+  }
+
+-- | A vector with an element for each database of a node
+--
+-- The @db@ type parameter is instantiated by this module at types for mock
+-- filesystems; either the 'MockFS' type or reference cells thereof.
+data NodeDBs db = NodeDBs
+  { nodeDBsImm :: db
+  , nodeDBsVol :: db
+  , nodeDBsLgr :: db
+  }
+
+newNodeInfo ::
+  forall blk m.
+     IOLike m
+  => m ( NodeInfo blk (StrictTVar m MockFS) (Tracer m)
+       , m (NodeInfo blk MockFS [])
+       )
+newNodeInfo = do
+  (nodeInfoEvents, readEvents) <- do
+      (t1, m1) <- recordingTracerTVar
+      (t2, m2) <- recordingTracerTVar
+      (t3, m3) <- recordingTracerTVar
+      pure
+          ( NodeEvents     t1     t2     t3
+          , NodeEvents <$> m1 <*> m2 <*> m3
+          )
+
+  (nodeInfoDBs, readDBs) <- do
+      let mk :: m (StrictTVar m MockFS, STM m MockFS)
+          mk = do
+              v <- uncheckedNewTVarM Mock.empty
+              pure (v, readTVar v)
+      (v1, m1) <- mk
+      (v2, m2) <- mk
+      (v3, m3) <- mk
+      pure
+          ( NodeDBs     v1     v2     v3
+          , NodeDBs <$> m1 <*> m2 <*> m3
+          )
+
+  pure
+      ( NodeInfo{nodeInfoEvents, nodeInfoDBs}
+      , NodeInfo <$> readEvents <*> atomically readDBs
+      )
 
 {-------------------------------------------------------------------------------
-  Test Output - records of how each node's chain changed
+  Test Output - output data about each node
 -------------------------------------------------------------------------------}
 
 data NodeOutput blk = NodeOutput
   { nodeOutputCfg        :: NodeConfig (BlockProtocol blk)
   , nodeOutputFinalChain :: Chain blk
-  , nodeOutputNodeInfo   :: NodeInfo blk MockFS
+  , nodeOutputNodeDBs    :: NodeDBs MockFS
+  , nodeOutputForges     :: Map SlotNo blk
+  , nodeOutputInvalids   :: Set (Point blk)
   }
 
-newtype TestOutput blk = TestOutput
-    { testOutputNodes :: Map NodeId (NodeOutput blk)
+data TestOutput blk = TestOutput
+    { testOutputNodes       :: Map NodeId (NodeOutput blk)
+    , testOutputTipBlockNos :: Map SlotNo (Map NodeId BlockNo)
     }
 
 -- | Gather the test output from the nodes
@@ -493,24 +562,42 @@ getTestOutput ::
     => [( CoreNodeId
         , NodeConfig (BlockProtocol blk)
         , NodeKernel m NodeId blk
-        , NodeInfo blk (StrictTVar m MockFS)
+        , m (NodeInfo blk MockFS [])
         )]
     -> m (TestOutput blk)
 getTestOutput nodes = do
-    nodes' <- fmap Map.fromList $ forM nodes $ \(cid, cfg, node, nodeInfo) -> do
-      let chainDB = getChainDB node
-      ch <- ChainDB.toChain chainDB
-      ChainDB.closeDB chainDB
-      nodeInfo' <- readFsTVars nodeInfo
-      let nodeOutput = NodeOutput
-            { nodeOutputCfg        = cfg
-            , nodeOutputFinalChain = ch
-            , nodeOutputNodeInfo   = nodeInfo'
-            }
-      return (fromCoreNodeId cid, nodeOutput)
+    (nodeOutputs', tipBlockNos') <- fmap unzip $ forM nodes $
+      \(cid, cfg, node, readNodeInfo) -> do
+        let nid = fromCoreNodeId cid
+        let chainDB = getChainDB node
+        ch <- ChainDB.toChain chainDB
+        ChainDB.closeDB chainDB
+        nodeInfo <- readNodeInfo
+        let NodeInfo
+              { nodeInfoEvents
+              , nodeInfoDBs
+              } = nodeInfo
+        let NodeEvents
+              { nodeEventsForges      = forges
+              , nodeEventsInvalids    = invalids
+              , nodeEventsTipBlockNos = tipBlockNos0
+              } = nodeInfoEvents
+        let nodeOutput = NodeOutput
+              { nodeOutputCfg        = cfg
+              , nodeOutputFinalChain = ch
+              , nodeOutputNodeDBs    = nodeInfoDBs
+              , nodeOutputForges     =
+                    Map.fromList [ (s, b) | TraceForgeEvent s b <- forges ]
+              , nodeOutputInvalids   = Set.fromList invalids
+              }
+
+        let tipBlockNos = Map.singleton nid <$> Map.fromList tipBlockNos0
+
+        return (Map.singleton nid nodeOutput, tipBlockNos)
 
     pure $ TestOutput
-        { testOutputNodes = nodes'
+        { testOutputNodes       = Map.unions nodeOutputs'
+        , testOutputTipBlockNos = Map.unionsWith Map.union tipBlockNos'
         }
 
 {-------------------------------------------------------------------------------

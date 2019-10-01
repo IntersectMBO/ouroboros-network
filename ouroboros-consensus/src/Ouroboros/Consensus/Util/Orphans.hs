@@ -17,8 +17,7 @@ import           Cardano.Prelude (NoUnexpectedThunks (..))
 
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import qualified Ouroboros.Network.AnchoredFragment as AF
-import           Ouroboros.Network.Block (HasHeader, HeaderHash, Point (..),
-                     SlotNo (..))
+import           Ouroboros.Network.Block (HasHeader, HeaderHash, Point (..))
 import           Ouroboros.Network.MockChain.Chain (Chain (..))
 import           Ouroboros.Network.Point (WithOrigin (..), blockPointHash,
                      blockPointSlot)
@@ -28,9 +27,6 @@ import           Ouroboros.Consensus.Util.Condense
 {-------------------------------------------------------------------------------
   Condense
 -------------------------------------------------------------------------------}
-
-instance Condense SlotNo where
-  condense (SlotNo n) = condense n
 
 instance Condense (HeaderHash block) => Condense (Point block) where
     condense (Point Origin)        = "Origin"
