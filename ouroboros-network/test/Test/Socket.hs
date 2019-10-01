@@ -20,10 +20,10 @@ import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTimer
 import qualified Data.ByteString.Lazy as BL
-import           Data.Time.Clock (UTCTime, getCurrentTime)
 import           Data.Functor ((<$))
 import           Data.Int (Int64)
 import           Data.List (mapAccumL)
+import           Data.Time.Clock (UTCTime, getCurrentTime)
 import           Data.Void (Void)
 import qualified Network.Socket as Socket
 import qualified Network.Socket.ByteString.Lazy as Socket (sendAll)
@@ -35,32 +35,33 @@ import           System.IO.Error
 import           Network.TypedProtocol.Core
 import           Network.TypedProtocol.Driver
 import qualified Network.TypedProtocol.ReqResp.Client as ReqResp
-import qualified Network.TypedProtocol.ReqResp.Server as ReqResp
-import qualified Network.TypedProtocol.ReqResp.Type as ReqResp
 import qualified Network.TypedProtocol.ReqResp.Codec.Cbor as ReqResp
 import qualified Network.TypedProtocol.ReqResp.Examples as ReqResp
+import qualified Network.TypedProtocol.ReqResp.Server as ReqResp
+import qualified Network.TypedProtocol.ReqResp.Type as ReqResp
 
 import           Codec.SerialiseTerm
 import           Control.Tracer
 
 -- TODO: remove Mx prefixes
-import           Ouroboros.Network.Mux as Mx
 import qualified Network.Mux as Mx
 import qualified Network.Mux.Bearer.Socket as Mx
+import           Ouroboros.Network.Mux as Mx
 
 import           Ouroboros.Network.Socket
 
-import           Ouroboros.Network.Block (BlockNo)
 import           Ouroboros.Network.MockChain.Chain (Chain, ChainUpdate, Point)
 import qualified Ouroboros.Network.MockChain.Chain as Chain
 import qualified Ouroboros.Network.MockChain.ProducerState as CPS
 import           Ouroboros.Network.NodeToNode
 import qualified Ouroboros.Network.Protocol.ChainSync.Client as ChainSync
 import qualified Ouroboros.Network.Protocol.ChainSync.Codec as ChainSync
+import           Ouroboros.Network.Protocol.ChainSync.Examples (ExampleTip)
 import qualified Ouroboros.Network.Protocol.ChainSync.Examples as ChainSync
 import qualified Ouroboros.Network.Protocol.ChainSync.Server as ChainSync
 import           Ouroboros.Network.Protocol.Handshake.Type (acceptEq)
-import           Ouroboros.Network.Protocol.Handshake.Version (simpleSingletonVersions)
+import           Ouroboros.Network.Protocol.Handshake.Version
+                     (simpleSingletonVersions)
 import           Ouroboros.Network.Testing.Serialise
 
 import           Test.ChainGenerators (TestBlockChainAndUpdates (..))
@@ -68,8 +69,8 @@ import           Test.ChainGenerators (TestBlockChainAndUpdates (..))
 import           Test.QuickCheck
 import           Test.Tasty (DependencyType (..), TestTree, after, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
-import           Text.Show.Functions ()
 import           Text.Printf
+import           Text.Show.Functions ()
 
 {-
  - The travis build hosts does not support IPv6 so those test cases are hidden
@@ -393,7 +394,7 @@ demo chain0 updates = do
                         (ChainSync.chainSyncClientExample consumerVar
                         (consumerClient done target consumerVar)))
 
-        server :: ChainSync.ChainSyncServer block (Point block, BlockNo) IO ()
+        server :: ChainSync.ChainSyncServer block (ExampleTip block) IO ()
         server = ChainSync.chainSyncServerExample () producerVar
 
         responderApp :: OuroborosApplication Mx.ResponderApp (Socket.SockAddr, Socket.SockAddr) TestProtocols1 IO BL.ByteString Void ()
@@ -451,7 +452,7 @@ demo chain0 updates = do
     consumerClient :: StrictTMVar IO Bool
                    -> Point block
                    -> StrictTVar IO (Chain block)
-                   -> ChainSync.Client block (Point block, BlockNo) IO ()
+                   -> ChainSync.Client block (ExampleTip block) IO ()
     consumerClient done target chain =
       ChainSync.Client
         { ChainSync.rollforward = \_ -> checkTip target chain >>= \b ->
@@ -487,4 +488,3 @@ threadAndTimeTracer tr = Tracer $ \s -> do
     !now <- getCurrentTime
     !tid <- myThreadId
     traceWith tr $ WithThreadAndTime now tid s
-

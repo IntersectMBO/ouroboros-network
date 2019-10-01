@@ -1,10 +1,10 @@
+{-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE DeriveGeneric       #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE KindSignatures      #-}
 {-# LANGUAGE NamedFieldPuns      #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE PolyKinds           #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 -- | A mock (and naive) node implentation.  It only implements the @chain-sync@
 -- protocol using the 'Ouroboros.Network.MockChain.Chain' module.  The module
@@ -25,17 +25,17 @@ import           Data.Semigroup (Semigroup (..))
 import           Data.Tuple (swap)
 import           GHC.Generics (Generic)
 
-import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadFork
-import           Control.Monad.Class.MonadThrow
+import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadSTM.Strict
+import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTimer
 import           Control.Tracer (nullTracer)
 
-import           Network.TypedProtocol.Core
 import           Network.TypedProtocol.Channel
-import           Network.TypedProtocol.Driver
 import           Network.TypedProtocol.Codec.Cbor
+import           Network.TypedProtocol.Core
+import           Network.TypedProtocol.Driver
 
 import           Network.Mux.Time
 
@@ -44,16 +44,15 @@ import           Ouroboros.Network.Block
 -- TODO Should this be impored here
 import           Ouroboros.Network.MockChain.Chain (Chain (..), Point)
 import qualified Ouroboros.Network.MockChain.Chain as Chain
+import           Ouroboros.Network.MockChain.ProducerState
+                     (ChainProducerState (..), initChainProducerState,
+                     producerChain, switchFork)
 import           Ouroboros.Network.Point (WithOrigin (At))
-import           Ouroboros.Network.MockChain.ProducerState (ChainProducerState (..),
-                                                       initChainProducerState,
-                                                       producerChain,
-                                                       switchFork)
-import           Ouroboros.Network.Protocol.ChainSync.Codec (codecChainSyncId)
 import           Ouroboros.Network.Protocol.ChainSync.Client
+import           Ouroboros.Network.Protocol.ChainSync.Codec (codecChainSyncId)
+import           Ouroboros.Network.Protocol.ChainSync.Examples
 import           Ouroboros.Network.Protocol.ChainSync.Server
 import           Ouroboros.Network.Protocol.ChainSync.Type
-import           Ouroboros.Network.Protocol.ChainSync.Examples
 -- FIXME bad module name below. They're examples, sure, but they're also
 -- legit useful.
 import           Ouroboros.Network.Testing.ConcreteBlock hiding (fixupBlock)
@@ -282,7 +281,7 @@ relayNode :: forall m block.
              )
           => NodeId
           -> Chain block
-          -> NodeChannels m block (Point block, BlockNo)
+          -> NodeChannels m block (ExampleTip block)
           -> m (StrictTVar m (ChainProducerState block))
 relayNode nid initChain chans = do
   -- Mutable state
@@ -305,7 +304,7 @@ relayNode nid initChain chans = do
     -- state between producers than necessary (here are producers share chain
     -- state and all the reader states, while we could share just the chain).
     startConsumer :: Int
-                  -> Channel m (AnyMessage (ChainSync block (Point block, BlockNo)))
+                  -> Channel m (AnyMessage (ChainSync block (ExampleTip block)))
                   -> m (StrictTVar m (Chain block))
     startConsumer cid channel = do
       chainVar <- atomically $ newTVar Genesis
@@ -317,9 +316,9 @@ relayNode nid initChain chans = do
                                    consumer
       return chainVar
 
-    startProducer :: Peer (ChainSync block (Point block, BlockNo)) AsServer StIdle m ()
+    startProducer :: Peer (ChainSync block (ExampleTip block)) AsServer StIdle m ()
                   -> Int
-                  -> Channel m (AnyMessage (ChainSync block (Point block, BlockNo)))
+                  -> Channel m (AnyMessage (ChainSync block (ExampleTip block)))
                   -> m ()
     startProducer producer pid channel =
       -- use 'void' because 'fork' only works with 'm ()'
@@ -399,7 +398,7 @@ coreNode :: forall m.
      -> DiffTime
      -- ^ slot duration
      -> [Block]
-     -> NodeChannels m Block (Point Block, BlockNo)
+     -> NodeChannels m Block (ExampleTip Block)
      -> m (StrictTVar m (ChainProducerState Block))
 coreNode nid slotDuration gchain chans = do
   cpsVar <- relayNode nid Genesis chans

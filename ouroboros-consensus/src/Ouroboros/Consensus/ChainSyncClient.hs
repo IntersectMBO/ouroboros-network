@@ -1,3 +1,5 @@
+{-# LANGUAGE BangPatterns               #-}
+{-# LANGUAGE CPP                        #-}
 {-# LANGUAGE DataKinds                  #-}
 {-# LANGUAGE DeriveAnyClass             #-}
 {-# LANGUAGE DeriveGeneric              #-}
@@ -10,6 +12,7 @@
 {-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE StandaloneDeriving         #-}
+{-# LANGUAGE TypeApplications           #-}
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE UndecidableInstances       #-}
 
@@ -34,9 +37,11 @@ import           Data.List (find)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (isJust)
-import           Data.Typeable (Typeable)
+import           Data.Proxy
+import           Data.Typeable
 import           Data.Void (Void)
 import           Data.Word (Word64)
+import           GHC.Generics (Generic)
 
 import           Control.Monad.Class.MonadThrow
 
@@ -55,10 +60,14 @@ import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util
 import           Ouroboros.Consensus.Util.IOLike
+import           Ouroboros.Consensus.Util.RedundantConstraints
 import           Ouroboros.Consensus.Util.ResourceRegistry
 import           Ouroboros.Consensus.Util.SlotBounded as SB
 import           Ouroboros.Consensus.Util.STM (Fingerprint, onEachChange)
 
+#if CHECK_TVAR_INVARIANT
+import           Ouroboros.Consensus.Util.MonadSTM.NormalForm (unsafeNoThunks)
+#endif
 
 -- | Clock skew: the number of slots the chain of an upstream node may be
 -- ahead of the current slot (according to 'BlockchainTime').
@@ -83,11 +92,11 @@ data ChainDbView m blk tip = ChainDbView
 -- newtype wrappers to avoid confusing our tip with their tip.
 newtype Their a = Their { unTheir :: a }
   deriving stock   (Eq)
-  deriving newtype (Show)
+  deriving newtype (Show, NoUnexpectedThunks)
 
 newtype Our   a = Our   { unOur   :: a }
   deriving stock   (Eq)
-  deriving newtype (Show)
+  deriving newtype (Show, NoUnexpectedThunks)
 
 bracketChainSyncClient
     :: ( IOLike m
@@ -188,6 +197,12 @@ data UnknownIntersectionState blk tip = UnknownIntersectionState
   , ourTip        :: !(Our tip)
     -- ^ INVARIANT: must correspond to the tip of 'ourFrag'.
   }
+  deriving (Generic)
+
+instance ( ProtocolLedgerView blk
+         , NoUnexpectedThunks tip
+         ) => NoUnexpectedThunks (UnknownIntersectionState blk tip) where
+  showTypeOf _ = show $ typeRep (Proxy @(UnknownIntersectionState blk))
 
 -- | State used when the intersection between the candidate and the current
 -- chain is known.
@@ -211,6 +226,12 @@ data KnownIntersectionState blk tip = KnownIntersectionState
   , ourTip          :: !(Our tip)
     -- ^ INVARIANT: must correspond to the tip of 'ourFrag'.
   }
+  deriving (Generic)
+
+instance ( ProtocolLedgerView blk
+         , NoUnexpectedThunks tip
+         ) => NoUnexpectedThunks (KnownIntersectionState blk tip) where
+  showTypeOf _ = show $ typeRep (Proxy @(KnownIntersectionState blk))
 
 -- | Chain sync client
 --
@@ -221,6 +242,7 @@ chainSyncClient
     :: forall m blk tip.
        ( IOLike m
        , ProtocolLedgerView blk
+       , NoUnexpectedThunks tip
        , Exception (ChainSyncClientException blk tip)
        )
     => MkPipelineDecision
@@ -427,7 +449,8 @@ chainSyncClient mkPipelineDecision0 getTipBlockNo tracer cfg btime
 
     -- | "Drain the pipe": collect and discard all in-flight responses and
     -- finally execute the given action.
-    drainThePipe :: forall s n. Nat n
+    drainThePipe :: forall s n. NoUnexpectedThunks s
+                 => Nat n
                  -> Stateful m blk tip s (ClientPipelinedStIdle Z)
                  -> Stateful m blk tip s (ClientPipelinedStIdle n)
     drainThePipe n0 m = Stateful $ go n0
@@ -796,8 +819,18 @@ rejectInvalidBlocks tracer registry getIsInvalidBlock getCandidate =
 -- the state explicit in the types and do the check in 'continueWithState'.
 newtype Stateful m blk tip s st = Stateful (s -> m (Consensus st blk tip m))
 
-continueWithState :: s -> Stateful m blk tip s st -> m (Consensus st blk tip m)
-continueWithState s (Stateful f) = f s
+continueWithState :: forall m blk tip s st. NoUnexpectedThunks s
+                  => s -> Stateful m blk tip s st -> m (Consensus st blk tip m)
+#if CHECK_TVAR_INVARIANT
+continueWithState !s (Stateful f) =
+    case unsafeNoThunks s of
+      Nothing  -> f s
+      Just err -> error $ "Invariant violation: " ++ err
+#else
+continueWithState !s (Stateful f) = f s
+  where
+    _ = keepRedundantConstraint (Proxy @(NoUnexpectedThunks s))
+#endif
 
 {-------------------------------------------------------------------------------
   Exception

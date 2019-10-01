@@ -1,17 +1,28 @@
-{-# LANGUAGE BangPatterns        #-}
-{-# LANGUAGE NamedFieldPuns      #-}
-{-# LANGUAGE RecordWildCards     #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeFamilies        #-}
+{-# LANGUAGE BangPatterns         #-}
+{-# LANGUAGE DeriveAnyClass       #-}
+{-# LANGUAGE DeriveGeneric        #-}
+{-# LANGUAGE FlexibleContexts     #-}
+{-# LANGUAGE FlexibleInstances    #-}
+{-# LANGUAGE NamedFieldPuns       #-}
+{-# LANGUAGE RecordWildCards      #-}
+{-# LANGUAGE ScopedTypeVariables  #-}
+{-# LANGUAGE StandaloneDeriving   #-}
+{-# LANGUAGE TypeFamilies         #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 module Ouroboros.Network.Protocol.ChainSync.Examples (
     chainSyncClientExample
   , Client (..)
   , pureClient
+  , ExampleTip(..)
   , chainSyncServerExample
   ) where
 
+import           Codec.Serialise (Serialise)
 import           Control.Monad.Class.MonadSTM.Strict
+import           GHC.Generics (Generic)
+
+import           Cardano.Prelude (NoUnexpectedThunks)
 
 import           Ouroboros.Network.Block (BlockNo, HasHeader (..), HeaderHash,
                      castPoint, genesisPoint)
@@ -124,6 +135,14 @@ chainSyncClientExample chainvar client = ChainSyncClient $
 recentOffsets :: [Int]
 recentOffsets = [0,1,2,3,5,8,13,21,34,55,89,144,233,377,610,987,1597,2584]
 
+-- | @tip@ instantiation used by the example server
+data ExampleTip blk = ExampleTip {
+      exampleTipPoint :: !(Point blk)
+    , exampleTipBlock :: !BlockNo
+    }
+  deriving (Show, Generic, NoUnexpectedThunks)
+
+deriving instance Serialise (HeaderHash blk) => Serialise (ExampleTip blk)
 
 -- | An instance of the server side of the chain sync protocol that reads from
 -- a pure 'ChainProducerState' stored in a 'StrictTVar'.
@@ -138,11 +157,11 @@ chainSyncServerExample :: forall blk header m a.
                           )
                        => a
                        -> StrictTVar m (ChainProducerState header)
-                       -> ChainSyncServer header (Point blk, BlockNo) m a
+                       -> ChainSyncServer header (ExampleTip blk) m a
 chainSyncServerExample recvMsgDoneClient chainvar = ChainSyncServer $
     idle <$> newReader
   where
-    idle :: ReaderId -> ServerStIdle header (Point blk, BlockNo) m a
+    idle :: ReaderId -> ServerStIdle header (ExampleTip blk) m a
     idle r =
       ServerStIdle {
         recvMsgRequestNext   = handleRequestNext r,
@@ -150,12 +169,12 @@ chainSyncServerExample recvMsgDoneClient chainvar = ChainSyncServer $
         recvMsgDoneClient    = pure recvMsgDoneClient
       }
 
-    idle' :: ReaderId -> ChainSyncServer header (Point blk, BlockNo) m a
+    idle' :: ReaderId -> ChainSyncServer header (ExampleTip blk) m a
     idle' = ChainSyncServer . pure . idle
 
     handleRequestNext :: ReaderId
-                      -> m (Either (ServerStNext header (Point blk, BlockNo) m a)
-                                (m (ServerStNext header (Point blk, BlockNo) m a)))
+                      -> m (Either (ServerStNext header (ExampleTip blk) m a)
+                                (m (ServerStNext header (ExampleTip blk) m a)))
     handleRequestNext r = do
       mupdate <- tryReadChainUpdate r
       case mupdate of
@@ -166,20 +185,20 @@ chainSyncServerExample recvMsgDoneClient chainvar = ChainSyncServer $
 
     sendNext :: ReaderId
              -> (Point blk, BlockNo, ChainUpdate header header)
-             -> ServerStNext header (Point blk, BlockNo) m a
-    sendNext r (tip, blkNo, AddBlock b) = SendMsgRollForward  b             (tip, blkNo) (idle' r)
-    sendNext r (tip, blkNo, RollBack p) = SendMsgRollBackward (castPoint p) (tip, blkNo) (idle' r)
+             -> ServerStNext header (ExampleTip blk) m a
+    sendNext r (tip, blkNo, AddBlock b) = SendMsgRollForward  b             (ExampleTip tip blkNo) (idle' r)
+    sendNext r (tip, blkNo, RollBack p) = SendMsgRollBackward (castPoint p) (ExampleTip tip blkNo) (idle' r)
 
     handleFindIntersect :: ReaderId
                         -> [Point header]
-                        -> m (ServerStIntersect header (Point blk, BlockNo) m a)
+                        -> m (ServerStIntersect header (ExampleTip blk) m a)
     handleFindIntersect r points = do
       -- TODO: guard number of points
       -- Find the first point that is on our chain
       changed <- improveReadPoint r points
       case changed of
-        (Just pt, tip, blkNo) -> return $ SendMsgIntersectFound     pt (tip, blkNo) (idle' r)
-        (Nothing, tip, blkNo) -> return $ SendMsgIntersectNotFound     (tip, blkNo) (idle' r)
+        (Just pt, tip, blkNo) -> return $ SendMsgIntersectFound     pt (ExampleTip tip blkNo) (idle' r)
+        (Nothing, tip, blkNo) -> return $ SendMsgIntersectNotFound     (ExampleTip tip blkNo) (idle' r)
 
     newReader :: m ReaderId
     newReader = atomically $ do
