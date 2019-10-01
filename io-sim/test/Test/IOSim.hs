@@ -44,6 +44,7 @@ tests =
   , testProperty "threadId order (SimM)"   (withMaxSuccess 1000 prop_threadId_order_order_Sim)
   , testProperty "fork order (SimM)"       (withMaxSuccess 1000 prop_fork_order_ST)
   , testProperty "fork order (IO)"         (expectFailure prop_fork_order_IO)
+  , testProperty "STM wakeup order"        prop_wakeup_order_ST
   , testGroup "throw/catch unit tests"
     [ testProperty "0" unit_catch_0
     , testProperty "1" unit_catch_1
@@ -306,6 +307,34 @@ test_threadId_order = \(Positive n) -> do
 
 prop_threadId_order_order_Sim :: Positive Int -> Property
 prop_threadId_order_order_Sim n = runSimOrThrow $ test_threadId_order n
+
+
+prop_wakeup_order_ST :: Property
+prop_wakeup_order_ST = runSimOrThrow $ test_wakeup_order
+
+-- It is not deterministic in IO
+--prop_wakeup_order_IO = ioProperty test_wakeup_order
+
+test_wakeup_order :: ( MonadFork m
+                     , MonadSTM m
+                     , MonadTimer m
+                     )
+                => m Property
+test_wakeup_order = do
+    v          <- atomically $ newTVar False
+    wakupOrder <-
+      withProbe $ \p -> do
+        sequence_
+          [ do _ <- fork $ do
+                 atomically $ do
+                   x <- readTVar v
+                   check x
+                 probeOutput p (n :: Int)
+               threadDelay 0.1
+          | n <- [0..9] ]
+        atomically $ writeTVar v True
+        threadDelay 0.1
+    return (wakupOrder === [0..9]) --FIFO order
 
 
 --
