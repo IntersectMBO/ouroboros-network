@@ -455,6 +455,13 @@ AnchoredFragment a1 c1 `isPrefixOf` AnchoredFragment a2 c2 =
 -- The given 'Point' may be the anchor point of the fragment, in which case
 -- the empty fragment with the given anchor point and the original fragment
 -- are returned.
+--
+-- POSTCONDITION: when @Just (before, after) = splitAfterPoint f pt@, then:
+-- * @anchorPoint before == anchorPoint f@
+-- * @headPoint   before == pt@
+-- * @anchorPoint after  == pt@
+-- * @headPoint   after  == headPoint f@
+-- * @join before after  == Just f@
 splitAfterPoint
    :: forall block1 block2.
       (HasHeader block1, HasHeader block2, HeaderHash block1 ~ HeaderHash block2)
