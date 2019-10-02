@@ -157,7 +157,7 @@ instance Condense CC.UTxO.TxId where
   condense hash = "txid:" <> unpack (sformat shortHashF hash)
 
 instance Condense BlockNo where
-  condense (BlockNo n) = 'b' : show n
+  condense (BlockNo n) = show n
 
 instance Condense SlotNo where
-  condense (SlotNo n) = 's' : show n
+  condense (SlotNo n) = show n
