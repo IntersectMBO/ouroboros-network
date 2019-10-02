@@ -77,9 +77,9 @@ instance Monoid Latency where
   mappend = (<>)
   mempty = TX 0
 
-to_difftime :: Latency -> String
-to_difftime Loss = "_|_"
-to_difftime (TX a) = show (fromRational a :: DiffTime)
+to_difftime :: Latency -> Maybe DiffTime
+to_difftime Loss   = Nothing
+to_difftime (TX a) = Just (fromRational a)
 
 -- Must know the edges in _both directions_!
 -- Instead of messing with the shortest path algorithm, we could construct
