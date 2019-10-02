@@ -61,7 +61,6 @@ test-suite test-sim
                        containers,
                        io-sim,
                        io-sim-classes,
-                       stm,
                        QuickCheck,
                        tasty,
                        tasty-quickcheck,

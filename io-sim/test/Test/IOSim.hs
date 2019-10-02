@@ -78,6 +78,7 @@ tests =
     ]
   , testGroup "STM reference semantics"
     [ testProperty "Reference vs IO"    prop_stm_referenceIO
+    , testProperty "Reference vs Sim"   prop_stm_referenceSim
     ]
   ]
 
@@ -810,16 +811,19 @@ prop_stm_referenceIO t =
 -- | Compare the behaviour of the STM reference operational semantics with
 -- the behaviour of the IO simulator's STM implementation.
 --
---prop_stm_referenceSim :: SomeTerm -> Property
---prop_stm_referenceSim t =
---    runSimOrThrow (prop_stm_referenceM t)
+prop_stm_referenceSim :: SomeTerm -> Property
+prop_stm_referenceSim t =
+    runSimOrThrow (prop_stm_referenceM t)
+
+--TODO: would be nice to also have stronger tests here:
+-- * compare all the tvar values in the heap
+-- * compare the read and write sets
 
 -- | Compare the behaviour of the STM reference operational semantics with
 -- the behaviour of any 'MonadSTM' STM implementation.
 --
---prop_stm_referenceM :: (MonadSTM m, MonadThrow (STM m), MonadCatch m)
---                    => SomeTerm -> m Property
-prop_stm_referenceM :: SomeTerm -> IO Property
+prop_stm_referenceM :: (MonadSTM m, MonadThrow (STM m), MonadCatch m)
+                    => SomeTerm -> m Property
 prop_stm_referenceM (SomeTerm _tyrep t) = do
     let (r1, _heap) = evalAtomically t
     r2 <- execAtomically t

@@ -136,6 +136,7 @@ data StmA s a where
   ReadTVar     :: TVar s a -> (a -> StmA s b) -> StmA s b
   WriteTVar    :: TVar s a ->  a -> StmA s b  -> StmA s b
   Retry        :: StmA s b
+  OrElse       :: StmA s a -> StmA s a -> (a -> StmA s b) -> StmA s b
 
 
 data MaskingState = Unmasked | MaskedInterruptible | MaskedUninterruptible
@@ -297,6 +298,7 @@ instance MonadSTM (SimM s) where
   readTVar   tvar   = STM $ \k -> ReadTVar tvar k
   writeTVar  tvar x = STM $ \k -> WriteTVar tvar x (k ())
   retry             = STM $ \_ -> Retry
+  orElse        a b = STM $ \k -> OrElse (runSTM a) (runSTM b) k
 
   newTMVar          = newTMVarDefault
   newTMVarM         = newTMVarMDefault
@@ -1130,57 +1132,141 @@ data StmTxResult s a =
 data SomeTVar s where
   SomeTVar :: !(TVar s a) -> SomeTVar s
 
-execAtomically :: TVarId
+data StmStack s b a where
+  -- | Executing in the context of a top level 'atomically'.
+  AtomicallyFrame  :: StmStack s a a
+  
+  -- | Executing in the context of the /left/ hand side of an 'orElse'
+  OrElseLeftFrame  :: StmA s a                -- orElse right alternative
+                   -> (a -> StmA s b)         -- subsequent continuation
+                   -> Map TVarId (SomeTVar s) -- saved written vars set
+                   -> [SomeTVar s]            -- saved written vars list
+                   -> StmStack s b c
+                   -> StmStack s a c
+
+  -- | Executing in the context of the /right/ hand side of an 'orElse'
+  OrElseRightFrame :: (a -> StmA s b)         -- subsequent continuation
+                   -> Map TVarId (SomeTVar s) -- saved written vars set
+                   -> [SomeTVar s]            -- saved written vars list
+                   -> StmStack s b c
+                   -> StmStack s a c
+
+execAtomically :: forall s a.
+                  TVarId
                -> StmA s a
                -> ST s (StmTxResult s a)
-execAtomically = go Map.empty Map.empty []
+execAtomically =
+    go AtomicallyFrame Map.empty Map.empty []
   where
-    go :: Map TVarId (SomeTVar s)  -- set of vars read
+    go :: forall b.
+          StmStack s b a
+       -> Map TVarId (SomeTVar s)  -- set of vars read
        -> Map TVarId (SomeTVar s)  -- set of vars written
        -> [SomeTVar s]             -- vars written in order (no dups)
        -> TVarId                   -- var fresh name supply
-       -> StmA s a
+       -> StmA s b
        -> ST s (StmTxResult s a)
-    go !read !written writtenSeq !nextVid action = case action of
-      ReturnStm x -> do
-        -- Commit each TVar
-        traverse_ (\(SomeTVar tvar) -> commitTVar tvar) written
-        -- Return the vars written, so readers can be unblocked
-        return (StmTxComitted x writtenSeq nextVid)
+    go ctl !read !written writtenSeq !nextVid action = assert localInvariant $
+                                                       case action of
+      ReturnStm x -> case ctl of
+        AtomicallyFrame -> do
+          -- Commit each TVar
+          traverse_ (\(SomeTVar tvar) -> do
+                        commitTVar tvar
+                        -- Also assert the data invariant that outside a tx
+                        -- the undo stack is empty:
+                        undos <- readTVarUndos tvar
+                        assert (null undos) $ return ()
+                    ) written
+          
+          -- Return the vars written, so readers can be unblocked
+          return (StmTxComitted x (reverse writtenSeq) nextVid)
+
+        OrElseLeftFrame _b k writtenOuter writtenOuterSeq ctl' -> do
+          -- Commit the TVars written in this sub-transaction that are also
+          -- in the written set of the outer transaction
+          traverse_ (\(SomeTVar tvar) -> commitTVar tvar)
+                    (Map.intersection written writtenOuter)
+          -- Merge the written set of the inner with the outer
+          let written'    = Map.union written writtenOuter
+              writtenSeq' = filter (\(SomeTVar tvar) ->
+                                      tvarId tvar `Map.notMember` writtenOuter)
+                                    writtenSeq
+                         ++ writtenOuterSeq
+          -- Skip the orElse right hand and continue with the k continuation
+          go ctl' read written' writtenSeq' nextVid (k x)
+
+        OrElseRightFrame k writtenOuter writtenOuterSeq ctl' -> do
+          -- Commit the TVars written in this sub-transaction that are also
+          -- in the written set of the outer transaction
+          traverse_ (\(SomeTVar tvar) -> commitTVar tvar)
+                    (Map.intersection written writtenOuter)
+          -- Merge the written set of the inner with the outer
+          let written'    = Map.union written writtenOuter
+              writtenSeq' = filter (\(SomeTVar tvar) ->
+                                      tvarId tvar `Map.notMember` writtenOuter)
+                                    writtenSeq
+                         ++ writtenOuterSeq
+          -- Continue with the k continuation
+          go ctl' read written' writtenSeq' nextVid (k x)
 
       ThrowStm e -> do
         -- Revert all the TVar writes
         traverse_ (\(SomeTVar tvar) -> revertTVar tvar) written
         return (StmTxAborted (toException e))
 
-      Retry -> do
-        -- Revert all the TVar writes
-        traverse_ (\(SomeTVar tvar) -> revertTVar tvar) written
-        -- Return vars read, so the thread can block on them
-        return (StmTxBlocked (Map.elems read))
+      Retry -> case ctl of
+        AtomicallyFrame -> do
+          -- Revert all the TVar writes
+          traverse_ (\(SomeTVar tvar) -> revertTVar tvar) written
+          -- Return vars read, so the thread can block on them
+          return (StmTxBlocked (Map.elems read))
+
+        OrElseLeftFrame b k writtenOuter writtenOuterSeq ctl' -> do
+          -- Revert all the TVar writes within this orElse
+          traverse_ (\(SomeTVar tvar) -> revertTVar tvar) written
+          -- Execute the orElse right hand with an empty written set
+          let ctl'' = OrElseRightFrame k writtenOuter writtenOuterSeq ctl'
+          go ctl'' read Map.empty [] nextVid b
+
+        OrElseRightFrame _k writtenOuter writtenOuterSeq ctl' -> do
+          -- Revert all the TVar writes within this orElse branch
+          traverse_ (\(SomeTVar tvar) -> revertTVar tvar) written
+          -- Skip the continuation and propagate the retry into the outer frame
+          -- using the written set for the outer frame
+          go ctl' read writtenOuter writtenOuterSeq nextVid Retry
+
+      OrElse a b k -> do
+        -- Execute the left side in a new frame with an empty written set
+        let ctl' = OrElseLeftFrame b k written writtenSeq ctl
+        go ctl' read Map.empty [] nextVid a
 
       NewTVar x k -> do
         v <- execNewTVar nextVid x
-        go read written writtenSeq (succ nextVid) (k v)
+        go ctl read written writtenSeq (succ nextVid) (k v)
 
       ReadTVar v k
         | tvarId v `Map.member` read -> do
             x <- execReadTVar v
-            go read written writtenSeq nextVid (k x)
+            go ctl read written writtenSeq nextVid (k x)
         | otherwise -> do
             x <- execReadTVar v
             let read' = Map.insert (tvarId v) (SomeTVar v) read
-            go read' written writtenSeq nextVid (k x)
+            go ctl read' written writtenSeq nextVid (k x)
 
       WriteTVar v x k
         | tvarId v `Map.member` written -> do
             execWriteTVar v x
-            go read written writtenSeq nextVid k
+            go ctl read written writtenSeq nextVid k
         | otherwise -> do
             saveTVar v
             execWriteTVar v x
             let written' = Map.insert (tvarId v) (SomeTVar v) written
-            go read written' (SomeTVar v : writtenSeq) nextVid k
+            go ctl read written' (SomeTVar v : writtenSeq) nextVid k
+      where
+        localInvariant =
+            Map.keysSet written
+         == Set.fromList [ tvarId tvar | SomeTVar tvar <- writtenSeq ]
 
 
 -- | Special case of 'execAtomically' supporting only var reads and writes
@@ -1242,6 +1328,9 @@ commitTVar TVar{tvarUndo} = do
     -- pop the undo stack, leaving the current value unchanged
     (_:vs) <- readSTRef tvarUndo
     writeSTRef tvarUndo vs
+
+readTVarUndos :: TVar s a -> ST s [a]
+readTVarUndos TVar{tvarUndo} = readSTRef tvarUndo
 
 
 --

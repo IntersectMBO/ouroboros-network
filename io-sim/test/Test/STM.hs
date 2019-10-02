@@ -32,7 +32,6 @@ import           Data.Set (Set)
 
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadSTM as STM
-import qualified Control.Monad.STM as IOSTM
 
 import           Test.QuickCheck
 
@@ -407,13 +406,10 @@ extendExecEnv (Name name _tyrep) v (ExecEnv env) =
 
 -- | Execute an STM 'Term' in the 'STM' monad.
 --
---execTerm :: (MonadSTM m, MonadThrow (STM m))
---         => ExecEnv m
---         -> Term t
---         -> STM m (ExecValue m t)
-execTerm :: ExecEnv IO
+execTerm :: (MonadSTM m, MonadThrow (STM m))
+         => ExecEnv m
          -> Term t
-         -> STM IO (ExecValue IO t)
+         -> STM m (ExecValue m t)
 execTerm env t =
     case t of
       Return e -> do
@@ -451,7 +447,7 @@ execTerm env t =
         execTerm env' t2
 
       OrElse t1 t2 -> execTerm env t1
-             `IOSTM.orElse` execTerm env t2
+             `orElse` execTerm env t2
 
 execExpr :: forall m t. ExecEnv m -> Expr t -> ExecValue m t
 execExpr _    ExprUnit    = ExecValUnit
@@ -464,15 +460,14 @@ snapshotExecValue (ExecValInt x)   = return (ImmValInt x)
 snapshotExecValue (ExecValVar v _) = fmap ImmValVar
                                           (snapshotExecValue =<< readTVar v)
 
---execAtomically :: (MonadSTM m, MonadThrow (STM m), MonadCatch m)
---               => Term t -> m TxResult
-execAtomically :: Term t -> IO TxResult
+execAtomically :: (MonadSTM m, MonadThrow (STM m), MonadCatch m)
+               => Term t -> m TxResult
 execAtomically t =
     toTxResult <$> try (atomically action')
   where
     action  = snapshotExecValue =<< execTerm mempty t
              
-    action' = fmap Just action `IOSTM.orElse` return Nothing
+    action' = fmap Just action `orElse` return Nothing
     -- We want to observe if the transaction would block. If we trust the STM
     -- implementation then we can just use 'orElse' to observe the blocking.
 
