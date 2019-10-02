@@ -1,8 +1,9 @@
-{-# LANGUAGE BangPatterns   #-}
-{-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE BangPatterns      #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE NamedFieldPuns    #-}
 
 module Ouroboros.Consensus.Util.MonadSTM.StrictMVar (
-    StrictMVar
+    StrictMVar(..) -- constructors exported for benefit of tests
   , newMVar
   , newMVarWithInvariant
   , newEmptyMVar
@@ -19,11 +20,14 @@ module Ouroboros.Consensus.Util.MonadSTM.StrictMVar (
   , updateMVar
   ) where
 
+import           Control.Concurrent.STM (readTVarIO)
 import           Control.Monad (when)
 import           Control.Monad.Class.MonadSTM (MonadSTM (..))
 import qualified Control.Monad.Class.MonadSTM as Lazy
 import           Control.Monad.Class.MonadSTM.Strict (checkInvariant)
 import           GHC.Stack
+
+import           Cardano.Prelude (NoUnexpectedThunks (..))
 
 {-------------------------------------------------------------------------------
   Strict MVar
@@ -155,3 +159,15 @@ updateMVar StrictMVar { tmvar, tvar, invariant } f = do
         Lazy.writeTVar tvar a'
         return (a', b)
     checkInvariant (invariant a') $ return b
+
+{-------------------------------------------------------------------------------
+  NoUnexpectedThunks
+-------------------------------------------------------------------------------}
+
+instance NoUnexpectedThunks a => NoUnexpectedThunks (StrictMVar IO a) where
+  showTypeOf _ = "StrictMVar IO"
+  whnfNoUnexpectedThunks ctxt StrictMVar { tvar } = do
+      -- We can't use @atomically $ readTVar ..@ here, as that will lead to a
+      -- "Control.Concurrent.STM.atomically was nested" exception.
+      a <- readTVarIO tvar
+      noUnexpectedThunks ctxt a
