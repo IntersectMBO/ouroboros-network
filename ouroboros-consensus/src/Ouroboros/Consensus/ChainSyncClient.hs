@@ -428,12 +428,26 @@ chainSyncClient mkPipelineDecision0 getTipBlockNo tracer cfg btime
     nextStep mkPipelineDecision n theirTip = Stateful $ \kis -> do
       mKis' <- atomically $ intersectsWithCurrentChain kis
       case mKis' of
-        Just kis' -> do
+        Just kis'@KnownIntersectionState { theirFrag, ourFrag } -> do
           -- Our chain (tip) didn't change or if it did, it still intersects
           -- with the candidate fragment, so we can continue requesting the
           -- next block.
-          atomically $ writeTVar varCandidate (theirFrag kis')
-          let candTipBlockNo = getTipBlockNo (unTheir theirTip)
+          atomically $ writeTVar varCandidate theirFrag
+          let candTipBlockNo = case AF.headBlockNo theirFrag of
+                Just b  -> b
+                -- If their fragment is somehow empty, base ourselves on our
+                -- fragment instead. We know they must have the same anchor
+                -- point. Look at the first block after the anchor point, use
+                -- its block number - 1, this should correspond to the synced
+                -- tip, i.e. their anchor point. If our fragment is empty too,
+                -- then we and they are at Genesis.
+                Nothing -> either
+                  (const genesisBlockNo)
+                  (blockNoBefore . blockNo)
+                  (AF.last ourFrag)
+              blockNoBefore 0 = 0 -- the genesis EBB
+              blockNoBefore b = pred b
+
           return $ requestNext kis' mkPipelineDecision n theirTip candTipBlockNo
         Nothing ->
           -- Our chain (tip) has changed and it no longer intersects with the
