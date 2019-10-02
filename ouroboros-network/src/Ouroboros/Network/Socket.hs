@@ -127,7 +127,10 @@ connectToNode encodeData decodeData muxTracer handshakeTracer peeridFn versions 
               Socket.setSocketOption sd Socket.ReusePort 1
 #endif
           case localAddr of
-            Just addr -> Socket.bind sd (Socket.addrAddress addr)
+            Just addr -> do
+              when (Socket.addrFamily remoteAddr == Socket.AF_INET6) $
+                Socket.setSocketOption sd Socket.IPv6Only 1
+              Socket.bind sd (Socket.addrAddress addr)
             Nothing   -> return ()
           Socket.connect sd (Socket.addrAddress remoteAddr)
           connectToNode' encodeData decodeData muxTracer handshakeTracer peeridFn versions sd
@@ -277,6 +280,12 @@ mkListeningSocket addrFamily_ addr = do
     case addr of
       Nothing -> pure ()
       Just addr_ -> do
+        when (addrFamily_ == Socket.AF_INET6) $
+           -- An AF_INET6 socket can be used to talk to both IPv4 and IPv6 end points, and
+           -- it is enabled by default on some systems. Disabled here since we run a separate
+           -- IPv4 server instance if configured to use IPv4.
+           Socket.setSocketOption sd Socket.IPv6Only 1
+
         Socket.bind sd addr_
         Socket.listen sd 1
     pure sd
