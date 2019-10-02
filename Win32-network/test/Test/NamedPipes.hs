@@ -9,7 +9,7 @@ module Test.NamedPipes (tests) where
 
 import           Control.Concurrent.MVar
 import           Control.Concurrent (ThreadId, forkIO, killThread, threadDelay)
-import           Control.Exception (AsyncException (..), Exception, catch, finally, throwIO, mask)
+import           Control.Exception (AsyncException (..), Exception, catch, bracket, finally, throwIO, mask)
 import           Control.Monad (when)
 import           Data.Functor (void)
 import           Data.Foldable (foldl', traverse_)
@@ -31,7 +31,7 @@ import           Test.QuickCheck
 import           Test.QuickCheck.Instances.ByteString ()
 
 pipeName :: String
-pipeName = "\\\\.\\pipe\\nWin32-named-pipes-test"
+pipeName = "\\\\.\\pipe\\test-Win32-network"
 
 tests :: TestTree
 tests =
@@ -61,100 +61,102 @@ tests =
 -- would not be interruptible.
 --
 test_interruptible_connectNamedPipe :: IO ()
-test_interruptible_connectNamedPipe = do
-    hpipe <- createNamedPipe pipeName
+test_interruptible_connectNamedPipe =
+    bracket (createNamedPipe pipeName
                              pIPE_ACCESS_DUPLEX
                              (pIPE_TYPE_BYTE .|. pIPE_READMODE_BYTE)
                              pIPE_UNLIMITED_INSTANCES
                              512
                              512
                              0
-                             Nothing
-    tid <- forkIO (connectNamedPipe hpipe Nothing)
-    threadDelay 100
-    killThread tid
-    closePipe hpipe
+                             Nothing)
+            closePipe
+            $ \hpipe -> do
+                tid <- forkIO (connectNamedPipe hpipe Nothing)
+                threadDelay 100
+                killThread tid
 
 -- | Check if 'readPipe'`is interruptible
 --
 test_interruptible_readPipe :: IO ()
-test_interruptible_readPipe = do
-    hpipe <- createNamedPipe pipeName
-                             pIPE_ACCESS_DUPLEX
-                             (pIPE_TYPE_BYTE .|. pIPE_READMODE_BYTE)
-                             pIPE_UNLIMITED_INSTANCES
-                             512
-                             512
-                             0
-                             Nothing
-    hpipe' <- createFile pipeName
-                         gENERIC_READ
-                         fILE_SHARE_NONE
-                         Nothing
-                         oPEN_EXISTING
-                         fILE_ATTRIBUTE_NORMAL
-                         Nothing
-    tid <- forkIO (void $ readPipe hpipe' 1)
-    threadDelay 100
-    killThread tid
-    closePipe hpipe'
-    closePipe hpipe
+test_interruptible_readPipe =
+    bracket ((,) <$> createNamedPipe pipeName
+                                     pIPE_ACCESS_DUPLEX
+                                     (pIPE_TYPE_BYTE .|. pIPE_READMODE_BYTE)
+                                     pIPE_UNLIMITED_INSTANCES
+                                     512
+                                     512
+                                     0
+                                     Nothing
+                 <*> createFile pipeName
+                                gENERIC_READ
+                                fILE_SHARE_NONE
+                                Nothing
+                                oPEN_EXISTING
+                                fILE_ATTRIBUTE_NORMAL
+                                Nothing)
+            -- 'IO ()' is a monoid!
+            (foldMap closePipe)
+            $ \(_,     hpipe') -> do
+                tid <- forkIO (void $ readPipe hpipe' 1)
+                threadDelay 100
+                killThread tid
 
 -- | Interrupt two consecutive reads.
 --
 test_interruptible_readPipe_sync :: IO ()
-test_interruptible_readPipe_sync = do
-    hpipe <- createNamedPipe pipeName
-                             pIPE_ACCESS_DUPLEX
-                             (pIPE_TYPE_BYTE .|. pIPE_READMODE_BYTE)
-                             pIPE_UNLIMITED_INSTANCES
-                             512
-                             512
-                             0
-                             Nothing
-    hpipe' <- createFile pipeName
-                        gENERIC_READ
-                        fILE_SHARE_NONE
-                        Nothing
-                        oPEN_EXISTING
-                        fILE_ATTRIBUTE_NORMAL
-                        Nothing
-    tid <- forkIO (void $ readPipe hpipe' 1)
-    threadDelay 100
-    killThread tid
-    tid' <- forkIO (void $ readPipe hpipe' 1)
-    threadDelay 100
-    killThread tid'
-    closePipe hpipe'
-    closePipe hpipe
+test_interruptible_readPipe_sync =
+    bracket ((,) <$> createNamedPipe pipeName
+                                     pIPE_ACCESS_DUPLEX
+                                     (pIPE_TYPE_BYTE .|. pIPE_READMODE_BYTE)
+                                     pIPE_UNLIMITED_INSTANCES
+                                     512
+                                     512
+                                     0
+                                     Nothing
+                 <*> createFile pipeName
+                                (gENERIC_READ .|. gENERIC_WRITE)
+                                fILE_SHARE_NONE
+                                Nothing
+                                oPEN_EXISTING
+                                fILE_ATTRIBUTE_NORMAL
+                                Nothing)
+             (foldMap closePipe)
+             $ \(_,     hpipe') -> do
+                tid <- forkIO (void $ readPipe hpipe' 1)
+                threadDelay 100
+                killThread tid
+                tid' <- forkIO (void $ readPipe hpipe' 1)
+                threadDelay 100
+                killThread tid'
 
 
 -- | Interrupt two simultanous reads.
 --
 test_interruptible_readPipe_conc :: IO ()
-test_interruptible_readPipe_conc = do
-    hpipe <- createNamedPipe pipeName
-                             pIPE_ACCESS_DUPLEX
-                             (pIPE_TYPE_BYTE .|. pIPE_READMODE_BYTE)
-                             pIPE_UNLIMITED_INSTANCES
-                             512
-                             512
-                             0
-                             Nothing
-    hpipe' <- createFile pipeName
-                         gENERIC_READ
-                         fILE_SHARE_NONE
-                         Nothing
-                         oPEN_EXISTING
-                         fILE_ATTRIBUTE_NORMAL
-                         Nothing
-    tid  <- forkIO (void $ readPipe hpipe' 1)
-    tid' <- forkIO (void $ readPipe hpipe' 1)
-    threadDelay 100
-    killThread tid
-    killThread tid'
-    closePipe hpipe'
-    closePipe hpipe
+test_interruptible_readPipe_conc =
+    bracket ((,) <$> createNamedPipe pipeName
+                                     pIPE_ACCESS_DUPLEX
+                                     (pIPE_TYPE_BYTE .|. pIPE_READMODE_BYTE)
+                                     pIPE_UNLIMITED_INSTANCES
+                                     512
+                                     512
+                                     0
+                                     Nothing
+                 <*> createFile pipeName
+                                (gENERIC_READ .|. gENERIC_WRITE)
+                                fILE_SHARE_NONE
+                                Nothing
+                                oPEN_EXISTING
+                                fILE_ATTRIBUTE_NORMAL
+                                Nothing)
+            (foldMap closePipe)
+            $ \(_, hpipe') -> do
+              tid  <- forkIO (void $ readPipe hpipe' 1)
+              tid' <- forkIO (void $ readPipe hpipe' 1)
+              threadDelay 100
+              killThread tid
+              killThread tid'
 
 
 -- | Small non-empty 'ByteString's.
@@ -205,34 +207,33 @@ instance Arbitrary LargeNonEmptyBS where
       | NonEmptyBS bs' <- shrink (NonEmptyBS bs)
       ]
 
-test_WriteRead :: ByteString -> Property
-test_WriteRead bs = ioProperty (do
-    hRead <- createNamedPipe pipeName
-                             pIPE_ACCESS_DUPLEX
-                             (pIPE_TYPE_BYTE .|. pIPE_READMODE_BYTE)
-                             pIPE_UNLIMITED_INSTANCES
-                             maxBound
-                             maxBound
-                             0
-                             Nothing
-    hWrite <- createFile pipeName
-                         (gENERIC_READ .|. gENERIC_WRITE)
-                         fILE_SHARE_NONE
-                         Nothing
-                         oPEN_EXISTING
-                         fILE_ATTRIBUTE_NORMAL
-                         Nothing
-    _ <- writePipe hWrite bs
-    bs' <- readPipe hRead (BS.length bs)
-    closePipe hRead
-    closePipe hWrite
-    pure (bs === bs'))
+test_WriteRead :: ByteString -> IO Bool
+test_WriteRead bs =
+    bracket ((,) <$> createNamedPipe pipeName
+                                     pIPE_ACCESS_DUPLEX
+                                     (pIPE_TYPE_BYTE .|. pIPE_READMODE_BYTE)
+                                     pIPE_UNLIMITED_INSTANCES
+                                     maxBound
+                                     maxBound
+                                     0
+                                     Nothing
+                 <*> createFile pipeName
+                                (gENERIC_READ .|. gENERIC_WRITE)
+                                fILE_SHARE_NONE
+                                Nothing
+                                oPEN_EXISTING
+                                fILE_ATTRIBUTE_NORMAL
+                                Nothing)
+            (foldMap closePipe)
+            $ \(r,w) -> do
+              bs' <- writePipe w bs >> readPipe r (BS.length bs)
+              pure (bs == bs')
 
 prop_WriteRead :: NonEmptyBS -> Property
-prop_WriteRead = test_WriteRead . getNonEmptyBS
+prop_WriteRead = ioProperty . test_WriteRead . getNonEmptyBS
 
 prop_WriteReadLarge :: LargeNonEmptyBS -> Property
-prop_WriteReadLarge = test_WriteRead . getLargeNonEmptyBS
+prop_WriteReadLarge = ioProperty . test_WriteRead . getLargeNonEmptyBS
 
 
 prop_interruptible_Write :: Property
@@ -240,32 +241,32 @@ prop_interruptible_Write = ioProperty $ do
     let bs = BSC.pack $ replicate 100 'a'
     v <- newEmptyMVar
 
-    -- create a pipe which will block after writing 1 byte
-    hRead <- createNamedPipe pipeName
-                             pIPE_ACCESS_DUPLEX
-                             (pIPE_TYPE_BYTE .|. pIPE_READMODE_BYTE)
-                             pIPE_UNLIMITED_INSTANCES
-                             1
-                             1
-                             0
-                             Nothing
-    hWrite <- createFile pipeName
-                         gENERIC_WRITE
-                         fILE_SHARE_NONE
-                         Nothing
-                         oPEN_EXISTING
-                         fILE_ATTRIBUTE_NORMAL
-                         Nothing
+    bracket
+      ((,) <$> createNamedPipe pipeName
+                               pIPE_ACCESS_DUPLEX
+                               (pIPE_TYPE_BYTE .|. pIPE_READMODE_BYTE)
+                               pIPE_UNLIMITED_INSTANCES
+                               1
+                               1
+                               0
+                               Nothing
+           <*> createFile pipeName
+                          gENERIC_WRITE
+                          fILE_SHARE_NONE
+                          Nothing
+                          oPEN_EXISTING
+                          fILE_ATTRIBUTE_NORMAL
+                          Nothing)
+      (foldMap closePipe)
+      $ \(_,w) -> do
 
-    tid <- mask $ \unmask -> forkIO $ void $
-      unmask (writePipe hWrite bs)
-        `catch` \(e :: AsyncException) -> putMVar v e >> throwIO e
+        tid <- mask $ \unmask -> forkIO $ void $
+          unmask (writePipe w bs)
+            `catch` \(e :: AsyncException) -> putMVar v e >> throwIO e
 
-    killThread tid
-    closePipe hRead
-    closePipe hWrite
+        killThread tid
 
-    (Just ThreadKilled ==) <$> tryReadMVar v
+        (Just ThreadKilled ==) <$> tryReadMVar v
 
 
 -- if 'Bool' param is 'False', then the channel (or the other end) will block
