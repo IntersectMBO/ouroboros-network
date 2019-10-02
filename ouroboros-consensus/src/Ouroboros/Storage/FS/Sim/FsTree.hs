@@ -1,3 +1,4 @@
+{-# LANGUAGE DeriveAnyClass      #-}
 {-# LANGUAGE DeriveFunctor       #-}
 {-# LANGUAGE DeriveGeneric       #-}
 {-# LANGUAGE LambdaCase          #-}
@@ -42,6 +43,8 @@ import           Data.Tree
 import           GHC.Generics (Generic)
 import           GHC.Stack
 
+import           Cardano.Prelude (NoUnexpectedThunks)
+
 import           Ouroboros.Consensus.Util (repeatedlyM)
 import           Ouroboros.Storage.FS.API.Types
 
@@ -50,8 +53,8 @@ import           Ouroboros.Storage.FS.API.Types
 -------------------------------------------------------------------------------}
 
 -- | Simple in-memory representation of a file system
-data FsTree a = File a | Folder (Folder a)
-  deriving (Show, Eq, Generic, Functor)
+data FsTree a = File !a | Folder !(Folder a)
+  deriving (Show, Eq, Generic, Functor, NoUnexpectedThunks)
 
 type Folder a = Map Text (FsTree a)
 

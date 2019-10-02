@@ -12,10 +12,14 @@ module Ouroboros.Consensus.Util.MonadSTM.NormalForm (
   , unsafeNoThunks
   ) where
 
+import qualified Data.Text as Text
 import           GHC.Stack
 import           System.IO.Unsafe (unsafePerformIO)
 
-import           Cardano.Prelude (NoUnexpectedThunks (..), ThunkInfo (..))
+import           Cardano.Prelude (ClosureTreeOptions (..),
+                     NoUnexpectedThunks (..), ThunkInfo (..),
+                     TraverseCyclicClosures (..), TreeDepth (..),
+                     buildAndRenderClosureTree)
 
 import           Control.Monad.Class.MonadSTM.Strict hiding (newEmptyTMVarM,
                      newTMVar, newTMVarM, newTVar, newTVarM,
@@ -47,11 +51,23 @@ newEmptyMVar = Strict.newEmptyMVarWithInvariant unsafeNoThunks
 -------------------------------------------------------------------------------}
 
 unsafeNoThunks :: NoUnexpectedThunks a => a -> Maybe String
-unsafeNoThunks a = unsafePerformIO $ errorMessage <$> noUnexpectedThunks [] a
+unsafeNoThunks a = unsafePerformIO $ errorMessage =<< noUnexpectedThunks [] a
   where
-    errorMessage :: ThunkInfo -> Maybe String
-    errorMessage NoUnexpectedThunks     = Nothing
-    errorMessage (UnexpectedThunk info) = Just $ show info
+    errorMessage :: ThunkInfo -> IO (Maybe String)
+    errorMessage NoUnexpectedThunks     = return Nothing
+    errorMessage (UnexpectedThunk info) = do
+        -- We render the tree /after/ checking; in a way, this is not correct,
+        -- because 'noUnexpectedThunks' might have forced some stuff. However,
+        -- computing the tree beforehand, even when there is no failure, would
+        -- be prohibitively expensive.
+        tree <- buildAndRenderClosureTree opts a
+        return $ Just $ show info ++ "\nTree:\n" ++ Text.unpack tree
+
+    opts :: ClosureTreeOptions
+    opts = ClosureTreeOptions {
+        ctoMaxDepth       = AnyDepth
+      , ctoCyclicClosures = NoTraverseCyclicClosures
+      }
 
 {-------------------------------------------------------------------------------
   Unchecked wrappers (where we don't check for thunks)
