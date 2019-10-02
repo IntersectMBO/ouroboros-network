@@ -209,6 +209,7 @@ data ImmutableDBEnv m hash = forall h e. ImmutableDBEnv
 data InternalState m hash h =
     DbClosed !(ClosedState m)
   | DbOpen !(OpenState m hash h)
+  deriving (Generic, NoUnexpectedThunks)
 
 dbIsOpen :: InternalState m hash h -> Bool
 dbIsOpen (DbClosed _) = False
@@ -323,7 +324,7 @@ openDBImpl hashDecoder hashEncoder hasFS@HasFS{..} err epochInfo valPol epochFil
     !ost  <- validateAndReopen hashDecoder hashEncoder hasFS err epochInfo
       valPol epochFileParser initialIteratorID tracer
 
-    stVar <- uncheckedNewMVar (DbOpen ost)
+    stVar <- newMVar (DbOpen ost)
 
     let dbEnv = ImmutableDBEnv hasFS err stVar epochFileParser hashDecoder hashEncoder tracer
         db    = mkDBRecord dbEnv
