@@ -9,6 +9,7 @@ module Test.Dynamic.Util (
     prop_all_common_prefix
   , shortestLength
   -- * LeaderSchedule
+  , emptyLeaderSchedule
   , roundRobinLeaderSchedule
   , consensusExpected
   -- * GraphViz Dot
@@ -232,6 +233,13 @@ consensusExpected k nodeJoinPlan schedule =
     maxForkLength <= maxRollbacks k
   where
     NumBlocks maxForkLength = determineForkLength k nodeJoinPlan schedule
+
+emptyLeaderSchedule :: NumSlots -> LeaderSchedule
+emptyLeaderSchedule (NumSlots t) = LeaderSchedule $
+    Map.fromList $
+    [ (SlotNo (toEnum i), [])
+    | i <- [ 0 .. t - 1 ]
+    ]
 
 roundRobinLeaderSchedule :: NumCoreNodes -> NumSlots -> LeaderSchedule
 roundRobinLeaderSchedule (NumCoreNodes n) (NumSlots t) = LeaderSchedule $

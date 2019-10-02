@@ -15,16 +15,17 @@ module Test.Dynamic.General (
   ) where
 
 import           Control.Monad (guard, join)
-import           Data.Coerce (coerce)
 import qualified Data.Map as Map
-import           Data.Maybe (fromMaybe)
+import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Word (Word64)
 import           Test.QuickCheck
 
 import           Control.Monad.IOSim (runSimOrThrow)
 
-import           Ouroboros.Network.Block (BlockNo (..), HasHeader, blockPoint)
+import           Ouroboros.Network.Block (BlockNo (..), HasHeader, Point,
+                     blockPoint, pointSlot)
+import           Ouroboros.Network.Point (WithOrigin (..))
 
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Node.ProtocolInfo
@@ -171,6 +172,7 @@ runTestNetwork pInfo
 -- * The nodes do not leak file handles
 --
 prop_general ::
+  forall blk.
      ( Condense blk
      , Eq blk
      , HasHeader blk
@@ -198,6 +200,7 @@ prop_general k TestConfig{numSlots, nodeJoinPlan, nodeTopology} mbSchedule
         maxForkLength
         (Map.elems nodeChains) .&&.
     prop_all_growth .&&.
+    prop_no_unexpected_message_delays .&&.
     conjoin
       [ fileHandleLeakCheck nid nodeDBs
       | (nid, nodeDBs) <- Map.toList nodeOutputDBs ]
@@ -219,7 +222,7 @@ prop_general k TestConfig{numSlots, nodeJoinPlan, nodeTopology} mbSchedule
     --
     growthSchedule :: LeaderSchedule
     growthSchedule =
-        foldl (<>) (LeaderSchedule Map.empty) $
+        foldl (<>) (emptyLeaderSchedule numSlots) $
         [ let NodeOutput
                 { nodeOutputForges
                 , nodeOutputInvalids
@@ -355,3 +358,85 @@ prop_general k TestConfig{numSlots, nodeJoinPlan, nodeTopology} mbSchedule
         Map.toAscList $
         fmap Map.toAscList $
         testOutputTipBlockNos
+
+    -- In the paper <https://eprint.iacr.org/2017/573/20171115:00183>, a
+    -- /message/ carries a chain from one party to another. When a party forges
+    -- a block, it \"diffuses\" the chain with that block as its head by
+    -- sending a message to each other party (actually, to itself too, but
+    -- that's ultimately redundant). The adversary is able to delay each
+    -- message differently, so some parties may receive it before others do.
+    -- Once a party receives a message, the party can consider that chain for
+    -- selection.
+    --
+    -- In the implementation, on the other hand, our messages are varied and
+    -- much more granular than a whole chain. We therefore observe a delay
+    -- analogous to the paper's /message/ /delay/ by comparing the slot in
+    -- which a block is added to each node's ChainDB against the slot in which
+    -- that block was forged.
+    --
+    -- Since our mock network currently introduces only negligible latency
+    -- compared to the slot duration, we generally expect all messages to have
+    -- no delay: they should arrive to all nodes during the same slot in which
+    -- they were forged. However, some delays are expected, due to nodes
+    -- joining late and also due to the practicality of the ChainSync and
+    -- BlockFetch policies, which try to avoid /unnecessary/ header/block
+    -- fetches. See the relevant comments below.
+    --
+    -- NOTE: This current property does not check for interminable message
+    -- delay: i.e. for blocks that were never added to some ChainDBs. It only
+    -- checks the slot difference once a message does arrive. This seems
+    -- acceptable: if there are no Common Prefix or Chain Growth violations,
+    -- then each message must have either arrived or ultimately been
+    -- irrelevant.
+    --
+    prop_no_unexpected_message_delays :: Property
+    prop_no_unexpected_message_delays =
+        conjoin $
+        [ prop1 nid s p bno
+        | (nid, m)   <- Map.toList adds
+        , (s, pbnos) <- Map.toList m
+        , (p, bno)   <- Set.toList pbnos
+        ]
+      where
+        -- INVARIANT: these AddBlock events are *not* for EBBs
+        adds = nodeOutputAdds <$> testOutputNodes
+
+        prop1 nid s p bno =
+            counterexample msg $
+            delayOK || noDelay
+          where
+            msg =
+                "non-zero message delay: " <> show (nid, s, bno, p)
+
+            -- a node cannot receive a block until both exist
+            firstPossibleReception = max (pointSlot p) (At joinSlot)
+            joinSlot               = nodeIdJoinSlot nodeJoinPlan nid
+
+            noDelay = At s == firstPossibleReception
+
+            delayOK = delayOK1 || delayOK2
+
+            -- When a node leads in the same slot in which it joins the
+            -- network, it immediately forges a single block on top of Genesis;
+            -- this block then prevents it from fetching the network's current
+            -- chain if that also consists of just one block.
+            --
+            -- NOTE This predicate is more general than that specific scenario,
+            -- but we don't anticipate it wholly masking any interesting cases.
+            delayOK1 = 1 == bno
+
+            -- When a slot has multiple leaders, each node chooses one of the
+            -- mutually-exclusive forged blocks and won't fetch any of the
+            -- others until it's later compelled to switch to a chain
+            -- containing one of them
+            --
+            -- TODO This predicate is more general than that specific scenario,
+            -- and should be tightened accordingly. We currently anticipate
+            -- that Issues #229 and #230 will handle that.
+            delayOK2 = case pointSlot p of
+                Origin           -> False
+                At s' -> case Map.lookup s' sched of
+                    Just (_:_:_) -> True
+                    _            -> False
+              where
+                LeaderSchedule sched = growthSchedule
