@@ -207,6 +207,7 @@ data ChainDbEnv m blk = CDB
   , cdbBgThreads      :: !(StrictTVar m [Thread m ()])
     -- ^ The background threads.
   , cdbEpochInfo      :: !(EpochInfo m)
+  , cdbIsEBB          :: !(blk -> Bool)
   } deriving (Generic)
 
 -- | We include @blk@ in 'showTypeOf' because it helps resolving type families
@@ -333,8 +334,10 @@ data TraceOpenEvent blk
 
 -- | Trace type for the various events that occur when adding a block.
 data TraceAddBlockEvent blk
-  = AddedBlockToVolDB    (Point blk)
+  = AddedBlockToVolDB    !(Point blk) !BlockNo !Bool
     -- ^ A block was added to the Volatile DB
+    --
+    -- its point, its block number, whether it's an EBB
 
   | TryAddToCurrentChain (Point blk)
     -- ^ The block fits onto the current chain, we'll try to use it to extend

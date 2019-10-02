@@ -221,7 +221,7 @@ addBlock cdb@CDB{..} b = do
 
       -- Write the block to the VolatileDB in all other cases
       VolDB.putBlock cdbVolDB b
-      trace (AddedBlockToVolDB (blockPoint b))
+      trace $ AddedBlockToVolDB (blockPoint b) (blockNo b) (cdbIsEBB b)
 
       -- We need to get these after adding the block to the VolatileDB
       (isMember', succsOf, predecessor) <- atomically $
