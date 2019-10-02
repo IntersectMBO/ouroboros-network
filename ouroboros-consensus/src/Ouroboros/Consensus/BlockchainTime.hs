@@ -180,7 +180,7 @@ newTestBlockchainTime
     -> m (TestBlockchainTime m)
 newTestBlockchainTime registry (NumSlots numSlots) slotLen = do
     slotVar <- newTVarM initVal
-    doneVar <- newEmptyTMVarM
+    doneVar <- newEmptyMVar ()
 
     void $ forkLinkedThread registry $ loop slotVar doneVar
 
@@ -200,10 +200,10 @@ newTestBlockchainTime registry (NumSlots numSlots) slotLen = do
 
     return $ TestBlockchainTime
       { testBlockchainTime = btime
-      , testBlockchainTimeDone = atomically (readTMVar doneVar)
+      , testBlockchainTimeDone = readMVar doneVar
       }
   where
-    loop :: StrictTVar m TestClock -> StrictTMVar m () -> m ()
+    loop :: StrictTVar m TestClock -> StrictMVar m () -> m ()
     loop slotVar doneVar = do
         -- count off each requested slot
         replicateM_ numSlots $ do
@@ -212,7 +212,7 @@ newTestBlockchainTime registry (NumSlots numSlots) slotLen = do
             Running slot -> succ slot
           threadDelay slotLen
         -- signal the end of the final slot
-        atomically $ putTMVar doneVar ()
+        putMVar doneVar ()
 
     initVal = Initializing
 

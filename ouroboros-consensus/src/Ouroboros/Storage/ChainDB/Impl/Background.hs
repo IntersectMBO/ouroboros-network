@@ -168,8 +168,8 @@ copyToImmDB CDB{..} = withCopyLock $ do
 
     withCopyLock :: forall a. HasCallStack => m a -> m a
     withCopyLock = bracket_
-      (fmap mustBeUnlocked $ atomically $ tryTakeTMVar cdbCopyLock)
-      (atomically $ putTMVar  cdbCopyLock ())
+      (fmap mustBeUnlocked $ tryTakeMVar cdbCopyLock)
+      (putMVar  cdbCopyLock ())
 
     mustBeUnlocked :: forall b. HasCallStack => Maybe b -> b
     mustBeUnlocked = fromMaybe

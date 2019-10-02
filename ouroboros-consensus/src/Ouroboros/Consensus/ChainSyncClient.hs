@@ -1,5 +1,4 @@
 {-# LANGUAGE BangPatterns               #-}
-{-# LANGUAGE CPP                        #-}
 {-# LANGUAGE DataKinds                  #-}
 {-# LANGUAGE DeriveAnyClass             #-}
 {-# LANGUAGE DeriveGeneric              #-}
@@ -60,15 +59,11 @@ import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util
 import           Ouroboros.Consensus.Util.IOLike
+import           Ouroboros.Consensus.Util.MonadSTM.NormalForm (checkInvariant,
+                     unsafeNoThunks)
 import           Ouroboros.Consensus.Util.ResourceRegistry
 import           Ouroboros.Consensus.Util.SlotBounded as SB
 import           Ouroboros.Consensus.Util.STM (Fingerprint, onEachChange)
-
-#if CHECK_TVAR_INVARIANT
-import           Ouroboros.Consensus.Util.MonadSTM.NormalForm (unsafeNoThunks)
-#else
-import           Ouroboros.Consensus.Util.RedundantConstraints
-#endif
 
 -- | Clock skew: the number of slots the chain of an upstream node may be
 -- ahead of the current slot (according to 'BlockchainTime').
@@ -822,16 +817,7 @@ newtype Stateful m blk tip s st = Stateful (s -> m (Consensus st blk tip m))
 
 continueWithState :: forall m blk tip s st. NoUnexpectedThunks s
                   => s -> Stateful m blk tip s st -> m (Consensus st blk tip m)
-#if CHECK_TVAR_INVARIANT
-continueWithState !s (Stateful f) =
-    case unsafeNoThunks s of
-      Nothing  -> f s
-      Just err -> error $ "Invariant violation: " ++ err
-#else
-continueWithState !s (Stateful f) = f s
-  where
-    _ = keepRedundantConstraint (Proxy @(NoUnexpectedThunks s))
-#endif
+continueWithState !s (Stateful f) = checkInvariant (unsafeNoThunks s) $ f s
 
 {-------------------------------------------------------------------------------
   Exception

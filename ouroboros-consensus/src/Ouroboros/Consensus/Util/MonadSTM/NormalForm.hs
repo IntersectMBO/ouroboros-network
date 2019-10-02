@@ -1,12 +1,13 @@
 module Ouroboros.Consensus.Util.MonadSTM.NormalForm (
     module Control.Monad.Class.MonadSTM.Strict
+  , module Ouroboros.Consensus.Util.MonadSTM.StrictMVar
   , newTVarM
-  , newTMVarM
-  , newEmptyTMVarM
+  , newMVar
+  , newEmptyMVar
     -- * Temporary
   , uncheckedNewTVarM
-  , uncheckedNewTMVarM
-  , uncheckedNewEmptyTMVarM
+  , uncheckedNewMVar
+  , uncheckedNewEmptyMVar
     -- * Low-level API
   , unsafeNoThunks
   ) where
@@ -17,10 +18,14 @@ import           System.IO.Unsafe (unsafePerformIO)
 import           Cardano.Prelude (NoUnexpectedThunks (..), ThunkInfo (..))
 
 import           Control.Monad.Class.MonadSTM.Strict hiding (newEmptyTMVarM,
-                     newEmptyTMVarWithInvariantM, newTMVar, newTMVarM,
-                     newTMVarWithInvariantM, newTVar, newTVarM,
+                     newTMVar, newTMVarM, newTVar, newTVarM,
                      newTVarWithInvariantM)
+import           Ouroboros.Consensus.Util.MonadSTM.StrictMVar hiding
+                     (newEmptyMVar, newEmptyMVarWithInvariant, newMVar,
+                     newMVarWithInvariant)
+
 import qualified Control.Monad.Class.MonadSTM.Strict as Strict
+import qualified Ouroboros.Consensus.Util.MonadSTM.StrictMVar as Strict
 
 {-------------------------------------------------------------------------------
   Wrappers that check for thunks
@@ -30,13 +35,12 @@ newTVarM :: (MonadSTM m, HasCallStack, NoUnexpectedThunks a)
          => a -> m (StrictTVar m a)
 newTVarM = Strict.newTVarWithInvariantM unsafeNoThunks
 
-newTMVarM :: (MonadSTM m, HasCallStack, NoUnexpectedThunks a)
-          => a -> m (StrictTMVar m a)
-newTMVarM = Strict.newTMVarWithInvariantM unsafeNoThunks
+newMVar :: (MonadSTM m, HasCallStack, NoUnexpectedThunks a)
+        => a -> m (StrictMVar m a)
+newMVar = Strict.newMVarWithInvariant unsafeNoThunks
 
-newEmptyTMVarM :: (MonadSTM m, NoUnexpectedThunks a)
-               => m (StrictTMVar m a)
-newEmptyTMVarM = Strict.newEmptyTMVarWithInvariantM unsafeNoThunks
+newEmptyMVar :: (MonadSTM m, NoUnexpectedThunks a) => a -> m (StrictMVar m a)
+newEmptyMVar = Strict.newEmptyMVarWithInvariant unsafeNoThunks
 
 {-------------------------------------------------------------------------------
   Auxiliary: check for thunks
@@ -58,8 +62,8 @@ unsafeNoThunks a = unsafePerformIO $ errorMessage <$> noUnexpectedThunks [] a
 uncheckedNewTVarM :: MonadSTM m => a -> m (StrictTVar m a)
 uncheckedNewTVarM = Strict.newTVarM
 
-uncheckedNewTMVarM :: MonadSTM m => a -> m (StrictTMVar m a)
-uncheckedNewTMVarM = Strict.newTMVarM
+uncheckedNewMVar :: MonadSTM m => a -> m (StrictMVar m a)
+uncheckedNewMVar = Strict.newMVar
 
-uncheckedNewEmptyTMVarM :: MonadSTM m => m (StrictTMVar m a)
-uncheckedNewEmptyTMVarM = Strict.newEmptyTMVarM
+uncheckedNewEmptyMVar :: MonadSTM m => a -> m (StrictMVar m a)
+uncheckedNewEmptyMVar = Strict.newEmptyMVar

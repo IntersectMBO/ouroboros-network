@@ -116,14 +116,14 @@ openDBInternal args launchBgTasks = do
         immBlockNo = ChainSel.getImmBlockNo secParam chain immDbTipBlockNo
 
     atomically $ LgrDB.setCurrent lgrDB ledger
-    varChain          <- newTVarM  chain
-    varImmBlockNo     <- newTVarM  immBlockNo
-    varIterators      <- newTVarM  Map.empty
-    varReaders        <- newTVarM  Map.empty
-    varNextIteratorId <- newTVarM  (IteratorId 0)
-    varNextReaderId   <- newTVarM  0
-    varCopyLock       <- newTMVarM ()
-    varBgThreads      <- newTVarM  []
+    varChain          <- newTVarM chain
+    varImmBlockNo     <- newTVarM immBlockNo
+    varIterators      <- newTVarM Map.empty
+    varReaders        <- newTVarM Map.empty
+    varNextIteratorId <- newTVarM (IteratorId 0)
+    varNextReaderId   <- newTVarM 0
+    varCopyLock       <- newMVar  ()
+    varBgThreads      <- newTVarM []
 
     let env = CDB { cdbImmDB          = immDB
                   , cdbVolDB          = volDB

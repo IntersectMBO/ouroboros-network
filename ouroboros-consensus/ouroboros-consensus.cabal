@@ -99,6 +99,7 @@ library
                        Ouroboros.Consensus.Util.HList
                        Ouroboros.Consensus.Util.IOLike
                        Ouroboros.Consensus.Util.MonadSTM.NormalForm
+                       Ouroboros.Consensus.Util.MonadSTM.StrictMVar
                        Ouroboros.Consensus.Util.Orphans
                        Ouroboros.Consensus.Util.Random
                        Ouroboros.Consensus.Util.RedundantConstraints
@@ -164,7 +165,6 @@ library
   other-extensions:
                        BangPatterns
                        ConstraintKinds
-                       CPP
                        DataKinds
                        DeriveAnyClass
                        DeriveFunctor
@@ -250,9 +250,6 @@ library
   ghc-options:         -Wall
                        -Wno-unticked-promoted-constructors
                        -fno-ignore-asserts
-
-  if flag(checktvarinvariant)
-    cpp-options: -DCHECK_TVAR_INVARIANT
 
 test-suite test-consensus
   type:             exitcode-stdio-1.0
