@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE DeriveAnyClass      #-}
 {-# LANGUAGE DeriveGeneric       #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -53,12 +54,12 @@ newtype CumulEpochSizes = CES (Seq EpochSize) -- Invariant: non-empty.
 -- | \( O(1) \). Create a 'CumulEpochSizes' using the given size for the first
 -- epoch.
 singleton :: EpochSize -> CumulEpochSizes
-singleton = CES . Seq.singleton
+singleton !es = CES $ Seq.singleton es
 
 -- | \( O(1) \). Add a new epoch to the end with the given size.
 snoc :: CumulEpochSizes -> EpochSize -> CumulEpochSizes
-snoc _         0  = error "EpochNo size must be > 0"
-snoc (CES ces) es = case ces of
+snoc _         0   = error "EpochNo size must be > 0"
+snoc (CES ces) !es = case ces of
     Empty        -> error "Impossible: empty CumulEpochSizes"
     _ :|> lastEs -> CES (ces :|> lastEs + es)
 
