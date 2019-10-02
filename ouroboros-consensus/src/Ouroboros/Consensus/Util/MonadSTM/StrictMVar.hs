@@ -154,7 +154,7 @@ updateMVar :: MonadSTM m => StrictMVar m a -> (a -> (a, b)) -> m b
 updateMVar StrictMVar { tmvar, tvar, invariant } f = do
     (a', b) <- atomically $ do
         a <- Lazy.takeTMVar tmvar
-        let (!a', b) = f a
+        let !(!a', b) = f a
         Lazy.putTMVar tmvar a'
         Lazy.writeTVar tvar a'
         return (a', b)
