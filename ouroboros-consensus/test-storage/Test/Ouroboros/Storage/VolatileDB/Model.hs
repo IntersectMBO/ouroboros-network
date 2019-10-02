@@ -58,7 +58,7 @@ data DBModel blockId = DBModel {
     , open           :: Bool -- is the db open.
     , mp             :: Map blockId ByteString -- superset of blocks in db. Some of them may be gced already.
     , latestGarbaged :: Maybe SlotNo -- last gced slot.
-    , index          :: Map String (Maybe SlotNo, Int, [(blockId, Maybe blockId)]) -- what each file contains in the real impl.
+    , index          :: Map String (MaxSlotNo, Int, [(blockId, Maybe blockId)]) -- what each file contains in the real impl.
     , currentFile    :: String -- the current open file. If the db is empty this is the next it wil write.
     , nextFId        :: FileId -- the next file id.
     , maxSlotNo      :: MaxSlotNo -- highest ever stored SlotNo
@@ -183,9 +183,9 @@ garbageCollectModel err cmdErr sl = do
                 Nothing   -> []
                 Just cErr -> getStream . _removeFile $ cErr
         let f :: [Maybe FsErrorType]
-              -> (String, (Maybe SlotNo, Int, [(blockId, Maybe blockId)]))
+              -> (String, (MaxSlotNo, Int, [(blockId, Maybe blockId)]))
               -> m [Maybe FsErrorType]
-            f fsErr (path, (msl,_n,_bids)) = case (cmpMaybe msl sl, path == currentFile, tru, fsErr) of
+            f fsErr (path, (msl,_n,_bids)) = case (cmpMaybe (maxSlotNoToMaybe msl) sl, path == currentFile, tru, fsErr) of
                     (True, _, _, _) -> return fsErr
                     (_, False, _, []) -> do
                         modifyIndex $ Map.delete path
@@ -203,7 +203,7 @@ garbageCollectModel err cmdErr sl = do
                             , fsLimitation = False
                         }
                     (_, _, Nothing, _) -> do
-                        modifyIndex $ Map.insert path (Nothing,0,[])
+                        modifyIndex $ Map.insert path (NoMaxSlotNo,0,[])
                         return fsErr
                     (_, _, Just e, _)  -> EH.throwError' err $ UnexpectedError . FileSystemError $
                         FsError {
@@ -262,8 +262,8 @@ getMaxSlotNoModel err = do
     else return maxSlotNo
 
 modifyIndex :: MonadState (DBModel blockId) m
-            => (Map String (Maybe SlotNo, Int, [(blockId, Maybe blockId)])
-                  -> Map String (Maybe SlotNo, Int, [(blockId, Maybe  blockId)])
+            => (Map String (MaxSlotNo, Int, [(blockId, Maybe blockId)])
+                  -> Map String (MaxSlotNo, Int, [(blockId, Maybe  blockId)])
                )
             -> m ()
 modifyIndex f = do
@@ -313,7 +313,7 @@ runCorruptionModel guessSlot corrs = do
                         (droppedBids, newBids) = splitAt (fromIntegral dropBids) bids
                         newMmax = snd <$> maxSlotList ((\(b,_) -> (b, guessSlot b)) <$> newBids)
                         size' = size - fromIntegral (length droppedBids)
-                        index' = Map.insert file (newMmax, size', newBids) (index dbm)
+                        index' = Map.insert file (maxSlotNoFromMaybe newMmax, size', newBids) (index dbm)
                         mp' = Map.withoutKeys (mp dbm) (Set.fromList $ fst <$> droppedBids)
                         parseError' = if (fromIntegral binarySize)*(length droppedBids) > fromIntegral n
                                          && not (mod n (fromIntegral binarySize) == 0)
@@ -367,7 +367,7 @@ recover err dbm@DBModel {..} = do
             -- Recalculate it from the index to match the real implementation
           , maxSlotNo   = maxSlotNoFromMaybe
                         $ safeMaximum
-                        $ mapMaybe (\(mbS, _, _) -> mbS)
+                        $ mapMaybe (\(mbS, _, _) -> maxSlotNoToMaybe mbS)
                         $ Map.elems index'
           }
   where
@@ -386,8 +386,8 @@ recover err dbm@DBModel {..} = do
             in if unsafeParseFd file == lst then (file, lst + 1, index)
                else (Internal.filePath $ lst + 1, lst + 2, Map.insert (Internal.filePath $ lst + 1) newFileInfo index)
 
-newFileInfo :: (Maybe a, Int, [b])
-newFileInfo = (Nothing, 0, [])
+newFileInfo :: (MaxSlotNo, Int, [b])
+newFileInfo = (NoMaxSlotNo, 0, [])
 
 getIsMemberModel :: MonadState (DBModel blockId) m
                  => Ord blockId

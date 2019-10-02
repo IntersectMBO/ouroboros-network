@@ -1,3 +1,4 @@
+{-# LANGUAGE DeriveAnyClass             #-}
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase                 #-}
@@ -13,20 +14,19 @@ module Ouroboros.Storage.VolatileDB.Types
     ) where
 
 import           Control.Exception (Exception (..))
-import           Data.Map (Map)
+import           Data.Map.Strict (Map)
 import           Data.Set (Set)
 import           Data.Typeable
 import           Data.Word (Word64)
+import           GHC.Generics (Generic)
 
-import           Ouroboros.Network.Block hiding (Tip, encodeTip, decodeTip)
+import           Cardano.Prelude (NoUnexpectedThunks)
+
+import           Ouroboros.Network.Block hiding (Tip, decodeTip, encodeTip)
 import           Ouroboros.Storage.Common
 import           Ouroboros.Storage.FS.API.Types
 
 type FileId = Int
-
--- For each file, we store the latest blockId, the number of blocks
--- and a Map for its contents.
-type Index blockId = Map String (FileInfo blockId)
 
 -- For each blockId, we store the file we can find the block, the offset, its size
 -- in bytes and its predecessor.
@@ -89,34 +89,32 @@ sameParseError e1 e2 = case (e1, e2) of
     (InvalidFilename str1, InvalidFilename str2) -> str1 == str2
     _                                            -> False
 
-type FileSize  = Word64
-type BlockSize = Word64
+type FileSize  = Word64  -- TODO: Should be newtype
+type BlockSize = Word64  -- TODO: Should be newtype
 
 newtype Parser e m blockId = Parser {
     -- | Parse block storage at the given path.
-    --   The parser returns for each block, its size its blockId, its slot and its predecessor's blockId.
-    parse :: FsPath -> m ([(SlotOffset, (BlockSize, BlockInfo blockId))], Maybe e)
+    parse :: FsPath -> m (ParsedInfo blockId, Maybe e)
     }
+
+-- | Information returned by the parser about a single file
+--
+-- The parser returns for each block, its size its blockId, its slot and its
+-- predecessor's blockId.
+type ParsedInfo blockId = [(SlotOffset, (BlockSize, BlockInfo blockId))]
 
 -- This is the information a user has to provide for each new block.
 data BlockInfo blockId = BlockInfo {
-      bbid    :: blockId
-    , bslot   :: SlotNo
-    , bpreBid :: Maybe blockId
-    } deriving Show
+      bbid    :: !blockId
+    , bslot   :: !SlotNo
+    , bpreBid :: !(Maybe blockId)
+    } deriving (Show, Generic, NoUnexpectedThunks)
 
 -- The Internal information the db keeps for each block.
 data InternalBlockInfo blockId = InternalBlockInfo {
-      ibFile       :: String
-    , ibSlotOffset :: SlotOffset
-    , ibBlockSize  :: BlockSize
-    , ibSlot       :: SlotNo
-    , ibPreBid     :: Maybe blockId
-    } deriving Show
-
--- The Internal information the db keeps for each file.
-data FileInfo blockId = FileInfo {
-      fLatestSlot :: Maybe SlotNo
-    , fNBlocks    :: Int
-    , fContents   :: Map SlotOffset (BlockSize, blockId)
-    } deriving Show
+      ibFile       :: !String
+    , ibSlotOffset :: !SlotOffset
+    , ibBlockSize  :: !BlockSize
+    , ibSlot       :: !SlotNo
+    , ibPreBid     :: !(Maybe blockId)
+    } deriving (Show, Generic, NoUnexpectedThunks)

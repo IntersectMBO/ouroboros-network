@@ -156,7 +156,9 @@ library
                        Ouroboros.Storage.Util.ErrorHandling
                        Ouroboros.Storage.VolatileDB
                        Ouroboros.Storage.VolatileDB.API
+                       Ouroboros.Storage.VolatileDB.FileInfo
                        Ouroboros.Storage.VolatileDB.Impl
+                       Ouroboros.Storage.VolatileDB.Index
                        Ouroboros.Storage.VolatileDB.Types
                        Ouroboros.Storage.VolatileDB.Util
   if os(windows)

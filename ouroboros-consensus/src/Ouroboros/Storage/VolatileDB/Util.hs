@@ -6,13 +6,11 @@
 module Ouroboros.Storage.VolatileDB.Util where
 
 import           Control.Monad
-import           Data.Map (Map)
-import qualified Data.Map as Map
+import qualified Data.Map.Strict as Map
 import           Data.Maybe (fromMaybe)
 import           Data.Set (Set)
 import qualified Data.Set as Set
 import qualified Data.Text as T
-import           Data.Word (Word64)
 import           Text.Read (readMaybe)
 
 import           Control.Monad.Class.MonadThrow
@@ -89,9 +87,6 @@ findLastFd files = foldM go Nothing files
 filePath :: FileId -> String
 filePath fd = "blocks-" ++ show fd ++ ".dat"
 
-sizeAndId :: (BlockSize, BlockInfo blockId) -> (BlockSize, blockId)
-sizeAndId (size, bInfo) = (size, bbid bInfo)
-
 -- | Execute an action and catch the 'VolatileDBError' and 'FsError' that can
 -- be thrown by it, and wrap the 'FsError' in an 'VolatileDBError' using the
 -- 'FileSystemError' constructor.
@@ -147,12 +142,6 @@ deleteMapSet mapSet (bid, pbid) = Map.alter (alterfDelete bid) pbid mapSet
   Comparing utilities
 ------------------------------------------------------------------------------}
 
-maxSlotMap :: Map Word64 (Word64, BlockInfo blockId) -> Maybe (blockId, SlotNo)
-maxSlotMap mp = f <$> safeMaximumOn getSlot (Map.elems mp)
-    where
-        f (_, bInfo) = (bbid bInfo, bslot bInfo)
-        getSlot (_, bInfo) = bslot bInfo
-
 maxSlotList :: [(blockId, SlotNo)] -> Maybe (blockId, SlotNo)
 maxSlotList = updateSlot Nothing
 
@@ -165,7 +154,7 @@ updateSlot msl ls = safeMaximumOn snd $ case msl of
     Nothing -> ls
     Just sl -> sl : ls
 
-updateSlotNoBlockId :: Maybe SlotNo -> [SlotNo] -> Maybe SlotNo
-updateSlotNoBlockId msl ls = safeMaximum $ case msl of
-    Nothing -> ls
-    Just sl -> sl : ls
+updateSlotNoBlockId :: MaxSlotNo -> [SlotNo] -> MaxSlotNo
+updateSlotNoBlockId msl ls = maxSlotNoFromMaybe $ safeMaximum $ case msl of
+    NoMaxSlotNo  -> ls
+    MaxSlotNo sl -> sl : ls

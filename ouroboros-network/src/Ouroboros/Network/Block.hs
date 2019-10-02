@@ -245,7 +245,7 @@ data MaxSlotNo
     -- number.
   | MaxSlotNo !SlotNo
     -- ^ The highest slot number seen.
-  deriving (Eq, Show, Generic)
+  deriving (Eq, Show, Generic, NoUnexpectedThunks)
 
 -- The derived instances would do the same, but for clarity, we write it out
 -- explicitly.
