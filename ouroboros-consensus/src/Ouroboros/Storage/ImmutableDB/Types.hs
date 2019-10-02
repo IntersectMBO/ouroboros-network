@@ -58,7 +58,7 @@ type ImmTip = Tip BlockOrEBB
 -- | Variant of 'Tip' that uses 'EpochSlot' instead of 'EpochNo' or 'SlotNo'.
 data TipEpochSlot
   = TipEpochSlotGenesis
-  | TipEpochSlot EpochSlot
+  | TipEpochSlot !EpochSlot
   deriving (Eq, Show)
 
 instance Ord TipEpochSlot where
