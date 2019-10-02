@@ -11,8 +11,32 @@ import Data.Monoid (Sum (..), mconcat)
 import Data.PriorityQueue.FingerTree (PQueue)
 import qualified Data.PriorityQueue.FingerTree as PQ
 import Data.Semigroup (sconcat)
-import Data.Word (Word32)
+import Numeric.Natural
 
+-- | Use this as your edge weight to calculate number of hops as path length.
+newtype Hops = Hops
+  { getHops :: Natural
+  } deriving (Eq, Ord, Show)
+
+hop :: a -> Hops
+hop = const (Hops 1)
+
+instance Semigroup Hops where
+  left <> right = Hops (getHops left + getHops right)
+
+instance Monoid Hops where
+  mappend = (<>)
+  mempty  = Hops 0
+
+-- | All shortest paths for all vertices.
+type AllShortestPaths vertex edge weight = Map vertex (ShortestPaths vertex edge weight)
+
+-- | Shortest paths from a given vertex.
+type ShortestPaths vertex edge weight = Map vertex (WeightedPath vertex edge weight)
+
+-- | Full description of a weighted path, in reverse order from some vertex
+-- (would be the key in a ShortestPaths). Each list element is one edge
+-- traversal, and gives the edge label, its weight, and the initial vertex.
 type WeightedPath vertex edge weight = [(edge, weight, vertex)]
 
 path_weights :: WeightedPath vertex edge weight -> [weight]
@@ -25,76 +49,19 @@ map_weights f = fmap (\(e, w, v) -> (e, f w, v))
 total_weight :: Semigroup weight => WeightedPath vertex edge weight -> Maybe weight
 total_weight = fmap sconcat . nonEmpty . fmap (\(_, w, _) -> w)
 
-path_length :: WeightedPath vertex edge weight -> Word32
+-- | The length of the path in hops; not necessarily the same as the total
+-- weight of that path.
+path_length :: WeightedPath vertex edge weight -> Natural
 path_length = fromIntegral . length
 
-type ShortestPaths vertex edge weight = Map vertex (WeightedPath vertex edge weight)
-
-type AllShortestPaths vertex edge weight = Map vertex (ShortestPaths vertex edge weight)
-
-
--- | The median of the mean shortest path length (here: weight, use a simple
--- 1 weight to get hop length).
---
--- This becomes undefined/infinite (Nothing) if any 2 peers are not reachable.
-characteristic_path_length
-  :: forall vertex edge weight fractional .
-     ( Ord fractional, Fractional fractional )
-  => (weight -> Maybe fractional)
-  -> AllShortestPaths vertex edge weight
-  -> Maybe fractional
-characteristic_path_length mkFractional sps = do
-  let means :: [Maybe fractional]
-      means = fmap (mean_path_weight mkFractional) (Map.elems sps)
-  -- If there are no means, the CPL is undefined.
-  nonEmptyMeans :: NonEmpty (Maybe fractional) <- nonEmpty means
-  -- If any of the means is Nothing, the CPL is undefined.
-  finiteMeans   :: NonEmpty fractional         <- sequence nonEmptyMeans
-  pure $ median finiteMeans
-  where
-  median :: NonEmpty fractional -> fractional
-  median ne = case quotRem (NE.length ne) 2 of
-    -- If the length is odd, there's a midpoint.
-    (q, 1) -> NE.sort ne NE.!! (q+1)
-    -- If the lenght is even, take the average of the two closest points
-    (q, 0) -> let sorted = NE.sort ne
-              in  (sorted NE.!! q + sorted NE.!! (q+1)) / 2
-    _      -> error "median: impossible"
-
--- | The average path weight in the set of shortest paths from a given vertex.
---
--- The weight must be transformed to some fractional thing, so that we can
--- take the mean. It admits infinite weight by using Nothing.
---
--- If any of them are unreachable (empty weighted paths), this is Nothing.
--- If there are no paths, then this is Nothing.
-mean_path_weight
-  :: forall vertex edge weight fractional .
-     ( Fractional fractional )
-  => (weight -> Maybe fractional)
-  -> ShortestPaths vertex edge weight
-  -> Maybe fractional
-mean_path_weight mkFractional sps = do
-  let toFractionalSum :: weight -> Maybe (Sum fractional)
-      toFractionalSum = fmap Sum . mkFractional
-      -- For each path, make all of its weights fractional, and use sequence
-      -- to ensure that any Nothing in the weight list makes the whole list
-      -- Nothing
-      finiteFractions :: [Maybe [Sum fractional]]
-      finiteFractions = fmap (sequence . fmap toFractionalSum . path_weights) (Map.elems sps)
-      finiteFractionalSums :: [Maybe (Sum fractional)]
-      finiteFractionalSums = (fmap . fmap) mconcat finiteFractions
-  -- There must be at least one path
-  nePaths    :: NonEmpty (Maybe (Sum fractional)) <- nonEmpty finiteFractionalSums
-  -- If any of the paths are Nothing, the mean is Nothing.
-  finiteSums :: NonEmpty (Sum fractional)         <- sequence nePaths
-  pure $ getSum (sconcat finiteSums) / fromIntegral (length finiteSums)
-
+-- | A shortest path candidate: its head and the path traversed so far.
 data Candidate vertex edge weight = Candidate
   { candidateHead :: !vertex
   , candidateTail :: ![(edge, weight, vertex)]
   }
 
+-- | Extend a candidate to a new vertex, traversing a given edge with a given
+-- weight.
 extend_candidate
   :: vertex
   -> edge
@@ -106,6 +73,10 @@ extend_candidate v e w candidate = candidate
   , candidateTail = (e, w, candidateHead candidate) : candidateTail candidate
   }
 
+-- | All pairs shortest paths for a given weight.
+-- Runs 'dijkstra' for each vertex in the graph.
+-- For the monoid instance on the weight, its zero means "no distance". Must
+-- have that the zero is less than every non-zero element.
 all_pairs_sp
   :: forall vertex edge weight .
      ( Ord vertex, Ord weight, Monoid weight )
@@ -173,3 +144,60 @@ dijkstra mkWeight start gr = loop initialPQ gr Map.empty
 
   initialCandidate :: Candidate vertex edge weight
   initialCandidate = Candidate start []
+
+-- | The median of the mean shortest path length (here: weight, use a simple
+-- 1 weight to get hop length).
+--
+-- This becomes undefined/infinite (Nothing) if any 2 peers are not reachable.
+characteristic_path_length
+  :: forall vertex edge weight fractional .
+     ( Ord fractional, Fractional fractional )
+  => (weight -> Maybe fractional)
+  -> AllShortestPaths vertex edge weight
+  -> Maybe fractional
+characteristic_path_length mkFractional sps = do
+  let means :: [Maybe fractional]
+      means = fmap (mean_path_weight mkFractional) (Map.elems sps)
+  -- If there are no means, the CPL is undefined.
+  nonEmptyMeans :: NonEmpty (Maybe fractional) <- nonEmpty means
+  -- If any of the means is Nothing, the CPL is undefined.
+  finiteMeans   :: NonEmpty fractional         <- sequence nonEmptyMeans
+  pure $ median finiteMeans
+  where
+  median :: NonEmpty fractional -> fractional
+  median ne = case quotRem (NE.length ne) 2 of
+    -- If the length is odd, there's a midpoint.
+    (q, 1) -> NE.sort ne NE.!! (q+1)
+    -- If the lenght is even, take the average of the two closest points
+    (q, 0) -> let sorted = NE.sort ne
+              in  (sorted NE.!! q + sorted NE.!! (q+1)) / 2
+    _      -> error "median: impossible"
+
+-- | The average path weight in the set of shortest paths from a given vertex.
+--
+-- The weight must be transformed to some fractional thing, so that we can
+-- take the mean. It admits infinite weight by using Nothing.
+--
+-- If any of them are unreachable (empty weighted paths), this is Nothing.
+-- If there are no paths, then this is Nothing.
+mean_path_weight
+  :: forall vertex edge weight fractional .
+     ( Fractional fractional )
+  => (weight -> Maybe fractional)
+  -> ShortestPaths vertex edge weight
+  -> Maybe fractional
+mean_path_weight mkFractional sps = do
+  let toFractionalSum :: weight -> Maybe (Sum fractional)
+      toFractionalSum = fmap Sum . mkFractional
+      -- For each path, make all of its weights fractional, and use sequence
+      -- to ensure that any Nothing in the weight list makes the whole list
+      -- Nothing
+      finiteFractions :: [Maybe [Sum fractional]]
+      finiteFractions = fmap (sequence . fmap toFractionalSum . path_weights) (Map.elems sps)
+      finiteFractionalSums :: [Maybe (Sum fractional)]
+      finiteFractionalSums = (fmap . fmap) mconcat finiteFractions
+  -- There must be at least one path
+  nePaths    :: NonEmpty (Maybe (Sum fractional)) <- nonEmpty finiteFractionalSums
+  -- If any of the paths are Nothing, the mean is Nothing.
+  finiteSums :: NonEmpty (Sum fractional)         <- sequence nePaths
+  pure $ getSum (sconcat finiteSums) / fromIntegral (length finiteSums)
