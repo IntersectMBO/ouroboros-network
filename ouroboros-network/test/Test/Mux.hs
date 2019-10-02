@@ -1,11 +1,10 @@
-{-# LANGUAGE BangPatterns               #-}
 {-# LANGUAGE DataKinds                  #-}
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE TypeApplications           #-}
+{-# LANGUAGE TypeFamilies               #-}
 
 {-# OPTIONS_GHC -Wno-orphans            #-}
 module Test.Mux
@@ -14,7 +13,6 @@ module Test.Mux
 
 import           Codec.Serialise (Serialise (..))
 
-import           Control.Monad.IOSim
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadST
@@ -22,6 +20,7 @@ import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
+import           Control.Monad.IOSim
 import           Control.Tracer
 
 import           Test.ChainGenerators (TestBlockChainAndUpdates (..))
@@ -31,18 +30,18 @@ import           Test.Tasty.QuickCheck (testProperty)
 
 import           Network.TypedProtocol.Core
 
-import           Ouroboros.Network.Block (BlockNo)
 import           Ouroboros.Network.MockChain.Chain (Chain, ChainUpdate, Point)
 import qualified Ouroboros.Network.MockChain.Chain as Chain
 import qualified Ouroboros.Network.MockChain.ProducerState as CPS
-import qualified Ouroboros.Network.Protocol.ChainSync.Type     as ChainSync
-import qualified Ouroboros.Network.Protocol.ChainSync.Client   as ChainSync
-import qualified Ouroboros.Network.Protocol.ChainSync.Codec    as ChainSync
+import qualified Ouroboros.Network.Protocol.ChainSync.Client as ChainSync
+import qualified Ouroboros.Network.Protocol.ChainSync.Codec as ChainSync
+import           Ouroboros.Network.Protocol.ChainSync.Examples (ExampleTip (..))
 import qualified Ouroboros.Network.Protocol.ChainSync.Examples as ChainSync
-import qualified Ouroboros.Network.Protocol.ChainSync.Server   as ChainSync
+import qualified Ouroboros.Network.Protocol.ChainSync.Server as ChainSync
+import qualified Ouroboros.Network.Protocol.ChainSync.Type as ChainSync
 
-import qualified Network.Mux.Types as Mx
 import qualified Network.Mux.Bearer.Queues as Mx
+import qualified Network.Mux.Types as Mx
 import qualified Ouroboros.Network.Mux as Mx
 
 
@@ -105,7 +104,7 @@ demo chain0 updates delay = do
     let Just expectedChain = Chain.applyChainUpdates updates chain0
         target = Chain.headPoint expectedChain
 
-        consumerPeer :: Peer (ChainSync.ChainSync block (Point block, BlockNo)) AsClient ChainSync.StIdle m ()
+        consumerPeer :: Peer (ChainSync.ChainSync block (ExampleTip block)) AsClient ChainSync.StIdle m ()
         consumerPeer = ChainSync.chainSyncClientPeer
                           (ChainSync.chainSyncClientExample consumerVar
                           (consumerClient done target consumerVar))
@@ -119,7 +118,7 @@ demo chain0 updates delay = do
                         encode             decode)
                         (consumerPeer))
 
-        producerPeer :: Peer (ChainSync.ChainSync block (Point block, BlockNo)) AsServer ChainSync.StIdle m ()
+        producerPeer :: Peer (ChainSync.ChainSync block (ExampleTip block)) AsServer ChainSync.StIdle m ()
         producerPeer = ChainSync.chainSyncServerPeer (ChainSync.chainSyncServerExample () producerVar)
         producerApp = Mx.simpleResponderApplication
                         (\ChainSyncPr ->
@@ -162,7 +161,7 @@ demo chain0 updates delay = do
     consumerClient :: StrictTMVar m Bool
                    -> Point block
                    -> StrictTVar m (Chain block)
-                   -> ChainSync.Client block (Point block, BlockNo) m ()
+                   -> ChainSync.Client block (ExampleTip block) m ()
     consumerClient done target chain =
       ChainSync.Client
         { ChainSync.rollforward = \_ -> checkTip target chain >>= \b ->

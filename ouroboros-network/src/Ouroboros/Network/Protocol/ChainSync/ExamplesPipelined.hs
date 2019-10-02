@@ -7,7 +7,6 @@
 
 module Ouroboros.Network.Protocol.ChainSync.ExamplesPipelined
     ( Client (..)
-    , Tip
     , chainSyncClientPipelinedMax
     , chainSyncClientPipelinedMin
     , chainSyncClientPipelinedLowHigh
@@ -22,12 +21,9 @@ import           Ouroboros.Network.MockChain.Chain (Chain (..), Point (..))
 import qualified Ouroboros.Network.MockChain.Chain as Chain
 
 import           Ouroboros.Network.Protocol.ChainSync.ClientPipelined
-import           Ouroboros.Network.Protocol.ChainSync.Examples (Client (..))
+import           Ouroboros.Network.Protocol.ChainSync.Examples (Client (..),
+                     ExampleTip (..))
 import           Ouroboros.Network.Protocol.ChainSync.PipelineDecision
-
--- | Type which represents tip of server's chain.
---
-type Tip header = (Point header, BlockNo)
 
 -- | Pipelined chain sync client which pipelines at most @omax@ requests according to 'MkPipelineDecision' policy.
 --
@@ -38,13 +34,13 @@ chainSyncClientPipelined
          )
       => MkPipelineDecision
       -> StrictTVar m (Chain header)
-      -> Client header (Tip header) m a
-      -> ChainSyncClientPipelined header (Tip header) m a
+      -> Client header (ExampleTip header) m a
+      -> ChainSyncClientPipelined header (ExampleTip header) m a
 chainSyncClientPipelined mkPipelineDecision0 chainvar =
     ChainSyncClientPipelined . fmap initialise . getChainPoints
   where
-    initialise :: ([Point header], Client header (Tip header) m a)
-               -> ClientPipelinedStIdle Z header (Tip header) m a
+    initialise :: ([Point header], Client header (ExampleTip header) m a)
+               -> ClientPipelinedStIdle Z header (ExampleTip header) m a
     initialise (points, client) =
       SendMsgFindIntersect points $
       -- In this consumer example, we do not care about whether the server
@@ -63,12 +59,12 @@ chainSyncClientPipelined mkPipelineDecision0 chainvar =
        -> Nat n
        -> BlockNo
        -- ^ our head
-       -> Tip header
+       -> ExampleTip header
        -- ^ head of the server
-       -> Client header (Tip header) m a
-       -> ClientPipelinedStIdle n header (Tip header) m a
+       -> Client header (ExampleTip header) m a
+       -> ClientPipelinedStIdle n header (ExampleTip header) m a
 
-    go mkPipelineDecision n cliTipBlockNo srvTip@(_, srvTipBlockNo) client@Client {rollforward, rollbackward} =
+    go mkPipelineDecision n cliTipBlockNo srvTip@(ExampleTip _ srvTipBlockNo) client@Client {rollforward, rollbackward} =
       case (n, runPipelineDecision mkPipelineDecision n cliTipBlockNo srvTipBlockNo) of
         (_Zero, (Request, mkPipelineDecision')) ->
           SendMsgRequestNext
@@ -144,7 +140,7 @@ chainSyncClientPipelined mkPipelineDecision0 chainvar =
     -- outstanding responses and send 'MsgDone'.
     collectAndDone :: Nat n
                    -> a
-                   -> ClientPipelinedStIdle n header (Tip header) m a
+                   -> ClientPipelinedStIdle n header (ExampleTip header) m a
 
     collectAndDone Zero     a = SendMsgDone a
 
@@ -158,8 +154,8 @@ chainSyncClientPipelined mkPipelineDecision0 chainvar =
                                     }
 
 
-    getChainPoints :: Client header (Tip header) m a
-                   -> m ([Point header], Client header (Tip header) m a)
+    getChainPoints :: Client header (ExampleTip header) m a
+                   -> m ([Point header], Client header (ExampleTip header) m a)
     getChainPoints client = do
       pts <- Chain.selectPoints recentOffsets <$> atomically (readTVar chainvar)
       client' <- points client pts
@@ -244,8 +240,8 @@ chainSyncClientPipelinedMax
       => Int
       -- ^ maximal number of outstanding requests
       -> StrictTVar m (Chain header)
-      -> Client header (Tip header) m a
-      -> ChainSyncClientPipelined header (Tip header) m a
+      -> Client header (ExampleTip header) m a
+      -> ChainSyncClientPipelined header (ExampleTip header) m a
 chainSyncClientPipelinedMax omax = chainSyncClientPipelined (constantPipelineDecision $ pipelineDecisionMax omax)
 
 -- | A pipelined chain-sycn client that pipelines at most @omax@ requests and
@@ -297,8 +293,8 @@ chainSyncClientPipelinedMin
       => Int
       -- ^ maximal number of outstanding requests
       -> StrictTVar m (Chain header)
-      -> Client header (Tip header) m a
-      -> ChainSyncClientPipelined header (Tip header) m a
+      -> Client header (ExampleTip header) m a
+      -> ChainSyncClientPipelined header (ExampleTip header) m a
 chainSyncClientPipelinedMin omax = chainSyncClientPipelined (constantPipelineDecision $ pipelineDecisionMin omax)
 
 
@@ -312,6 +308,6 @@ chainSyncClientPipelinedLowHigh
       -> Int
       -- ^ high mark
       -> StrictTVar m (Chain header)
-      -> Client header (Tip header) m a
-      -> ChainSyncClientPipelined header (Tip header) m a
+      -> Client header (ExampleTip header) m a
+      -> ChainSyncClientPipelined header (ExampleTip header) m a
 chainSyncClientPipelinedLowHigh lowMark highMark = chainSyncClientPipelined (pipelineDecisionLowHighMark lowMark highMark)

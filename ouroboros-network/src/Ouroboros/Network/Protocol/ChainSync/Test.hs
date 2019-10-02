@@ -16,23 +16,23 @@ import           Data.ByteString.Lazy (ByteString)
 
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork
+import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadST
 import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
-import           Control.Monad.Class.MonadSay
 import           Control.Tracer (nullTracer)
 
 import           Control.Monad.IOSim (runSimOrThrow)
 
-import           Network.TypedProtocol.Codec
 import           Network.TypedProtocol.Channel
+import           Network.TypedProtocol.Codec
 import           Network.TypedProtocol.Driver
 import           Network.TypedProtocol.Proofs (connect, connectPipelined)
 
 import           Ouroboros.Network.Channel
 
 import           Ouroboros.Network.Block (BlockNo, StandardHash)
-import           Ouroboros.Network.MockChain.Chain (Point, Chain)
+import           Ouroboros.Network.MockChain.Chain (Chain, Point)
 import qualified Ouroboros.Network.MockChain.Chain as Chain
 import qualified Ouroboros.Network.MockChain.ProducerState as ChainProducerState
 
@@ -41,10 +41,10 @@ import           Ouroboros.Network.Protocol.ChainSync.ClientPipelined
 import           Ouroboros.Network.Protocol.ChainSync.Codec
 import           Ouroboros.Network.Protocol.ChainSync.Direct
 import           Ouroboros.Network.Protocol.ChainSync.DirectPipelined
+import           Ouroboros.Network.Protocol.ChainSync.Examples (Client,
+                     ExampleTip (..))
 import qualified Ouroboros.Network.Protocol.ChainSync.Examples as ChainSyncExamples
-import           Ouroboros.Network.Protocol.ChainSync.Examples (Client)
 import qualified Ouroboros.Network.Protocol.ChainSync.ExamplesPipelined as ChainSyncExamples
-import           Ouroboros.Network.Protocol.ChainSync.ExamplesPipelined (Tip)
 import           Ouroboros.Network.Protocol.ChainSync.Server
 import           Ouroboros.Network.Protocol.ChainSync.Type
 
@@ -52,7 +52,8 @@ import           Ouroboros.Network.Testing.ConcreteBlock (Block (..),
                      BlockHeader (..))
 import           Test.ChainGenerators ()
 import           Test.ChainProducerState (ChainProducerStateForkTest (..))
-import           Test.Ouroboros.Network.Testing.Utils (prop_codec_cborM, splits2, splits3)
+import           Test.Ouroboros.Network.Testing.Utils (prop_codec_cborM,
+                     splits2, splits3)
 
 import           Test.QuickCheck hiding (Result)
 import           Test.Tasty (TestTree, testGroup)
@@ -122,8 +123,8 @@ chainSyncForkExperiment
      ( MonadST m
      , MonadSTM m
      )
-  => (forall a b. ChainSyncServer Block (Point Block, BlockNo) m a
-      -> ChainSyncClient Block (Point Block, BlockNo) m b
+  => (forall a b. ChainSyncServer Block (ExampleTip Block) m a
+      -> ChainSyncClient Block (ExampleTip Block) m b
       -> m ())
   -> ChainProducerStateForkTest
   -> m Property
@@ -180,12 +181,12 @@ chainSyncPipelinedForkExperiment
      ( MonadST m
      , MonadSTM m
      )
-  => (forall a b. ChainSyncServer Block (Tip Block) m a
-      -> ChainSyncClientPipelined Block (Tip Block) m b
+  => (forall a b. ChainSyncServer Block (ExampleTip Block) m a
+      -> ChainSyncClientPipelined Block (ExampleTip Block) m b
       -> m ())
   -> (forall a. StrictTVar m (Chain Block)
-      -> Client Block (Tip Block) m a
-      -> ChainSyncClientPipelined Block (Tip Block) m a)
+      -> Client Block (ExampleTip Block) m a
+      -> ChainSyncClientPipelined Block (ExampleTip Block) m a)
   -> ChainProducerStateForkTest
   -> m Bool
 chainSyncPipelinedForkExperiment run mkClient (ChainProducerStateForkTest cps chain) = do
@@ -196,7 +197,7 @@ chainSyncPipelinedForkExperiment run mkClient (ChainProducerStateForkTest cps ch
   let server = ChainSyncExamples.chainSyncServerExample
         (error "chainSyncServerExample: lazy in the result type")
         cpsVar
-      client :: ChainSyncClientPipelined Block (Tip Block) m ()
+      client :: ChainSyncClientPipelined Block (ExampleTip Block) m ()
       client = mkClient chainVar (testClient doneVar (Chain.headPoint pchain))
   _ <- run server client
 
@@ -425,12 +426,12 @@ chainSyncDemo clientChan serverChan (ChainProducerStateForkTest cps chain) = do
   chainVar <- atomically $ newTVar chain
   doneVar  <- atomically $ newTVar False
 
-  let server :: ChainSyncServer Block (Point Block, BlockNo) m a
+  let server :: ChainSyncServer Block (ExampleTip Block) m a
       server = ChainSyncExamples.chainSyncServerExample
         (error "chainSyncServerExample: lazy in the result type")
         cpsVar
 
-      client :: ChainSyncClient Block (Point Block, BlockNo) m ()
+      client :: ChainSyncClient Block (ExampleTip Block) m ()
       client = ChainSyncExamples.chainSyncClientExample chainVar (testClient doneVar (Chain.headPoint pchain))
 
   void $ fork (void $ runPeer nullTracer codec "server" serverChan (chainSyncServerPeer server))
@@ -483,8 +484,8 @@ chainSyncDemoPipelined
   => Channel m ByteString
   -> Channel m ByteString
   -> (forall a. StrictTVar m (Chain Block)
-      -> Client Block (Tip Block) m a
-      -> ChainSyncClientPipelined Block (Tip Block) m a)
+      -> Client Block (ExampleTip Block) m a
+      -> ChainSyncClientPipelined Block (ExampleTip Block) m a)
   -> ChainProducerStateForkTest
   -> m Property
 chainSyncDemoPipelined clientChan serverChan mkClient (ChainProducerStateForkTest cps chain) = do
@@ -493,12 +494,12 @@ chainSyncDemoPipelined clientChan serverChan mkClient (ChainProducerStateForkTes
   chainVar <- atomically $ newTVar chain
   doneVar  <- atomically $ newTVar False
 
-  let server :: ChainSyncServer Block (Tip Block) m a
+  let server :: ChainSyncServer Block (ExampleTip Block) m a
       server = ChainSyncExamples.chainSyncServerExample
         (error "chainSyncServerExample: lazy in the result type")
         cpsVar
 
-      client :: ChainSyncClientPipelined Block (Tip Block) m ()
+      client :: ChainSyncClientPipelined Block (ExampleTip Block) m ()
       client = mkClient chainVar (testClient doneVar (Chain.headPoint pchain))
 
   void $ fork (void $ runPeer nullTracer codec "server" serverChan (chainSyncServerPeer server))

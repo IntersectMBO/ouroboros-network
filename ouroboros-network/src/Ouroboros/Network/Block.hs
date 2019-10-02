@@ -1,5 +1,7 @@
+{-# LANGUAGE DeriveAnyClass             #-}
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE DeriveTraversable          #-}
+{-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE NamedFieldPuns             #-}
@@ -70,7 +72,8 @@ import qualified Ouroboros.Network.Point as Point (Block (..))
 
 -- | The 0-based index for the Ourboros time slot.
 newtype SlotNo = SlotNo { unSlotNo :: Word64 }
-  deriving (Show, Eq, Ord, Enum, Bounded, Num, Serialise, Generic, NoUnexpectedThunks)
+  deriving stock   (Show, Eq, Ord, Generic)
+  deriving newtype (Enum, Bounded, Num, Serialise, NoUnexpectedThunks)
 
 instance ToCBOR SlotNo where
   toCBOR = encode
@@ -79,7 +82,8 @@ instance ToCBOR SlotNo where
 -- BlockNo is <= SlotNo and is only equal at slot N if there is a block
 -- for every slot where N <= SlotNo.
 newtype BlockNo = BlockNo { unBlockNo :: Word64 }
-  deriving (Show, Eq, Ord, Enum, Bounded, Num, Serialise, Generic, NoUnexpectedThunks)
+  deriving stock   (Show, Eq, Ord, Generic)
+  deriving newtype (Enum, Bounded, Num, Serialise, NoUnexpectedThunks)
 
 genesisSlotNo :: SlotNo
 genesisSlotNo = SlotNo 0
@@ -162,10 +166,10 @@ newtype Point block = Point
     { getPoint :: WithOrigin (Point.Block SlotNo (HeaderHash block))
     }
 
-deriving instance StandardHash block => Eq   (Point block)
-deriving instance StandardHash block => Ord  (Point block)
-deriving instance StandardHash block => Show (Point block)
-deriving instance (StandardHash block, Typeable block) => NoUnexpectedThunks (Point block)
+deriving newtype instance StandardHash block => Eq   (Point block)
+deriving newtype instance StandardHash block => Ord  (Point block)
+deriving newtype instance StandardHash block => Show (Point block)
+deriving newtype instance (StandardHash block, Typeable block) => NoUnexpectedThunks (Point block)
 
 pattern GenesisPoint :: Point block
 pattern GenesisPoint = Point Origin
@@ -199,7 +203,7 @@ blockPoint b = Point (block (blockSlot b) (blockHash b))
 data Tip b = Tip
   { tipPoint   :: !(Point b)
   , tipBlockNo :: !BlockNo
-  } deriving (Eq, Show, Generic)
+  } deriving (Eq, Show, Generic, NoUnexpectedThunks)
 
 encodeTip :: (HeaderHash blk -> Encoding)
           -> (Tip        blk -> Encoding)

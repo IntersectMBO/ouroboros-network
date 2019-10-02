@@ -1,3 +1,5 @@
+{-# LANGUAGE BangPatterns               #-}
+{-# LANGUAGE CPP                        #-}
 {-# LANGUAGE DataKinds                  #-}
 {-# LANGUAGE DeriveAnyClass             #-}
 {-# LANGUAGE DeriveGeneric              #-}
@@ -10,6 +12,7 @@
 {-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE StandaloneDeriving         #-}
+{-# LANGUAGE TypeApplications           #-}
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE UndecidableInstances       #-}
 
@@ -34,9 +37,11 @@ import           Data.List (find)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (isJust)
-import           Data.Typeable (Typeable)
+import           Data.Proxy
+import           Data.Typeable
 import           Data.Void (Void)
 import           Data.Word (Word64)
+import           GHC.Generics (Generic)
 
 import           Control.Monad.Class.MonadThrow
 
@@ -55,10 +60,14 @@ import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util
 import           Ouroboros.Consensus.Util.IOLike
+import           Ouroboros.Consensus.Util.RedundantConstraints
 import           Ouroboros.Consensus.Util.ResourceRegistry
 import           Ouroboros.Consensus.Util.SlotBounded as SB
 import           Ouroboros.Consensus.Util.STM (Fingerprint, onEachChange)
 
+#if CHECK_TVAR_INVARIANT
+import           Ouroboros.Consensus.Util.MonadSTM.NormalForm (unsafeNoThunks)
+#endif
 
 -- | Clock skew: the number of slots the chain of an upstream node may be
 -- ahead of the current slot (according to 'BlockchainTime').
@@ -83,11 +92,11 @@ data ChainDbView m blk tip = ChainDbView
 -- newtype wrappers to avoid confusing our tip with their tip.
 newtype Their a = Their { unTheir :: a }
   deriving stock   (Eq)
-  deriving newtype (Show)
+  deriving newtype (Show, NoUnexpectedThunks)
 
 newtype Our   a = Our   { unOur   :: a }
   deriving stock   (Eq)
-  deriving newtype (Show)
+  deriving newtype (Show, NoUnexpectedThunks)
 
 bracketChainSyncClient
     :: ( IOLike m
@@ -188,6 +197,12 @@ data UnknownIntersectionState blk tip = UnknownIntersectionState
   , ourTip        :: !(Our tip)
     -- ^ INVARIANT: must correspond to the tip of 'ourFrag'.
   }
+  deriving (Generic)
+
+instance ( ProtocolLedgerView blk
+         , NoUnexpectedThunks tip
+         ) => NoUnexpectedThunks (UnknownIntersectionState blk tip) where
+  showTypeOf _ = show $ typeRep (Proxy @(UnknownIntersectionState blk))
 
 -- | State used when the intersection between the candidate and the current
 -- chain is known.
@@ -211,6 +226,12 @@ data KnownIntersectionState blk tip = KnownIntersectionState
   , ourTip          :: !(Our tip)
     -- ^ INVARIANT: must correspond to the tip of 'ourFrag'.
   }
+  deriving (Generic)
+
+instance ( ProtocolLedgerView blk
+         , NoUnexpectedThunks tip
+         ) => NoUnexpectedThunks (KnownIntersectionState blk tip) where
+  showTypeOf _ = show $ typeRep (Proxy @(KnownIntersectionState blk))
 
 -- | Chain sync client
 --
@@ -221,6 +242,7 @@ chainSyncClient
     :: forall m blk tip.
        ( IOLike m
        , ProtocolLedgerView blk
+       , NoUnexpectedThunks tip
        , Exception (ChainSyncClientException blk tip)
        )
     => MkPipelineDecision
@@ -240,12 +262,13 @@ chainSyncClient mkPipelineDecision0 getTipBlockNo tracer cfg btime
                 , getOurTip
                 , getIsInvalidBlock
                 }
-                varCandidate = ChainSyncClientPipelined initialise
+                varCandidate = ChainSyncClientPipelined $
+    continueWithState () $ initialise
   where
     -- | Start ChainSync by looking for an intersection between our current
     -- chain fragment and their chain.
-    initialise :: m (Consensus (ClientPipelinedStIdle Z) blk tip m)
-    initialise = atomically $ findIntersection (ForkTooDeep GenesisPoint)
+    initialise :: Stateful m blk tip () (ClientPipelinedStIdle Z)
+    initialise = findIntersection (ForkTooDeep GenesisPoint)
 
     -- | Try to find an intersection by sending points of our current chain to
     -- the server, if any of them intersect with their chain, roll back our
@@ -255,11 +278,12 @@ chainSyncClient mkPipelineDecision0 getTipBlockNo tracer cfg btime
     findIntersection
       :: (Our tip -> Their tip -> ChainSyncClientException blk tip)
          -- ^ Exception to throw when no intersection is found.
-      -> STM m (Consensus (ClientPipelinedStIdle Z) blk tip m)
-    findIntersection mkEx = do
-      ourFrag       <- getCurrentChain
-      ourChainState <- ouroborosChainState <$> getCurrentLedger
-      ourTip        <- Our <$> getOurTip
+      -> Stateful m blk tip () (ClientPipelinedStIdle Z)
+    findIntersection mkEx = Stateful $ \() -> do
+      (ourFrag, ourChainState, ourTip) <- atomically $ (,,)
+        <$> getCurrentChain
+        <*> (ouroborosChainState <$> getCurrentLedger)
+        <*> (Our <$> getOurTip)
       -- We select points from the last @k@ headers of our current chain. This
       -- means that if an intersection is found for one of these points, it
       -- was an intersection within the last @k@ blocks of our current chain.
@@ -274,26 +298,28 @@ chainSyncClient mkPipelineDecision0 getTipBlockNo tracer cfg btime
             , ourTip        = ourTip
             }
       return $ SendMsgFindIntersect points $ ClientPipelinedStIntersect
-        { recvMsgIntersectFound    = \i theirTip' ->
-            intersectFound uis (castPoint i) (Their theirTip')
-        , recvMsgIntersectNotFound = \theirTip'   -> traceException $
-            atomically $ disconnect $ mkEx ourTip (Their theirTip')
+        { recvMsgIntersectFound = \i theirTip' ->
+            continueWithState uis $
+              intersectFound (castPoint i) (Their theirTip')
+        , recvMsgIntersectNotFound = \theirTip' -> traceException $
+            disconnect $ mkEx ourTip (Their theirTip')
         }
 
     -- | One of the points we sent intersected our chain. This intersection
     -- point will become the new tip of the candidate chain.
-    intersectFound :: UnknownIntersectionState blk tip
-                   -> Point blk  -- ^ Intersection
+    intersectFound :: Point blk  -- ^ Intersection
                    -> Their tip
-                   -> m (Consensus (ClientPipelinedStIdle Z) blk tip m)
-    intersectFound UnknownIntersectionState
-                   { ourFrag
-                   , ourChainState
-                   , ourTip = ourTip
-                   }
-                   intersection theirTip = do
+                   -> Stateful m blk tip
+                        (UnknownIntersectionState blk tip)
+                        (ClientPipelinedStIdle Z)
+    intersectFound intersection theirTip
+                 = Stateful $ \UnknownIntersectionState
+                     { ourFrag
+                     , ourChainState
+                     , ourTip = ourTip
+                     } -> do
       traceWith tracer $ TraceFoundIntersection intersection ourTip theirTip
-      traceException $ atomically $ do
+      traceException $ do
         -- Roll back the current chain fragment to the @intersection@.
         --
         -- While the primitives in the ChainSync protocol are "roll back",
@@ -325,14 +351,14 @@ chainSyncClient mkPipelineDecision0 getTipBlockNo tracer cfg btime
               , _ourTip       = ourTip
               , _theirTip     = theirTip
               }
-        writeTVar varCandidate theirFrag
+        atomically $ writeTVar varCandidate theirFrag
         let kis = KnownIntersectionState
               { theirFrag       = theirFrag
               , theirChainState = theirChainState
               , ourFrag         = ourFrag
               , ourTip          = ourTip
               }
-        nextStep kis mkPipelineDecision0 Zero theirTip
+        continueWithState kis $ nextStep mkPipelineDecision0 Zero theirTip
 
     -- | Look at the current chain fragment that may have been updated in the
     -- background. Check whether the candidate fragment still intersects with
@@ -397,41 +423,46 @@ chainSyncClient mkPipelineDecision0 getTipBlockNo tracer cfg btime
     --
     -- Note that this is the only place we check whether our current chain has
     -- changed.
-    nextStep :: KnownIntersectionState blk tip
-             -> MkPipelineDecision
+    nextStep :: MkPipelineDecision
              -> Nat n
              -> Their tip
-             -> STM m (Consensus (ClientPipelinedStIdle n) blk tip m)
-    nextStep kis mkPipelineDecision n theirTip =
-      intersectsWithCurrentChain kis >>= \case
+             -> Stateful m blk tip
+                  (KnownIntersectionState blk tip)
+                  (ClientPipelinedStIdle n)
+    nextStep mkPipelineDecision n theirTip = Stateful $ \kis -> do
+      mKis' <- atomically $ intersectsWithCurrentChain kis
+      case mKis' of
         Just kis' -> do
           -- Our chain (tip) didn't change or if it did, it still intersects
           -- with the candidate fragment, so we can continue requesting the
           -- next block.
-          writeTVar varCandidate (theirFrag kis')
+          atomically $ writeTVar varCandidate (theirFrag kis')
           let candTipBlockNo = getTipBlockNo (unTheir theirTip)
           return $ requestNext kis' mkPipelineDecision n theirTip candTipBlockNo
         Nothing ->
           -- Our chain (tip) has changed and it no longer intersects with the
           -- candidate fragment, so we have to find a new intersection, but
           -- first drain the pipe.
-          drainThePipe n $ findIntersection NoMoreIntersection
+          continueWithState ()
+            $ drainThePipe n
+            $ findIntersection NoMoreIntersection
 
     -- | "Drain the pipe": collect and discard all in-flight responses and
     -- finally execute the given action.
-    drainThePipe :: Nat n
-                 -> STM m (Consensus (ClientPipelinedStIdle Z) blk tip m)
-                    -- ^ Execute this when the pipe has been drained
-                 -> STM m (Consensus (ClientPipelinedStIdle n) blk tip m)
-    drainThePipe n0 m = go n0
+    drainThePipe :: forall s n. NoUnexpectedThunks s
+                 => Nat n
+                 -> Stateful m blk tip s (ClientPipelinedStIdle Z)
+                 -> Stateful m blk tip s (ClientPipelinedStIdle n)
+    drainThePipe n0 m = Stateful $ go n0
       where
-        go :: forall n. Nat n
-           -> STM m (Consensus (ClientPipelinedStIdle n) blk tip m)
-        go n = case n of
-          Zero    -> m
+        go :: forall n'. Nat n'
+           -> s
+           -> m (Consensus (ClientPipelinedStIdle n') blk tip m)
+        go n s = case n of
+          Zero    -> continueWithState s m
           Succ n' -> return $ CollectResponse Nothing $ ClientStNext
-            { recvMsgRollForward  = \_hdr _tip -> atomically $ go n'
-            , recvMsgRollBackward = \_pt  _tip -> atomically $ go n'
+            { recvMsgRollForward  = \_hdr _tip -> go n' s
+            , recvMsgRollBackward = \_pt  _tip -> go n' s
             }
 
     requestNext :: KnownIntersectionState blk tip
@@ -473,111 +504,42 @@ chainSyncClient mkPipelineDecision0 getTipBlockNo tracer cfg btime
     handleNext kis mkPipelineDecision n = ClientStNext
       { recvMsgRollForward  = \hdr theirTip -> do
           traceWith tracer $ TraceDownloadedHeader hdr
-          rollForward kis mkPipelineDecision n hdr (Their theirTip)
+          continueWithState kis $
+            rollForward mkPipelineDecision n hdr (Their theirTip)
       , recvMsgRollBackward = \intersection theirTip -> do
           let intersection' :: Point blk
               intersection' = castPoint intersection
           traceWith tracer $ TraceRolledBack intersection'
-          rollBackward kis mkPipelineDecision n intersection' (Their theirTip)
+          continueWithState kis $
+            rollBackward mkPipelineDecision n intersection' (Their theirTip)
       }
 
-    rollForward :: KnownIntersectionState blk tip
-                -> MkPipelineDecision
+    rollForward :: MkPipelineDecision
                 -> Nat n
                 -> Header blk
                 -> Their tip
-                -> m (Consensus (ClientPipelinedStIdle n) blk tip m)
-    rollForward kis@KnownIntersectionState
-                { theirChainState
-                , theirFrag
-                , ourTip
-                }
-                mkPipelineDecision n hdr theirTip = traceException $ atomically $ do
+                -> Stateful m blk tip
+                     (KnownIntersectionState blk tip)
+                     (ClientPipelinedStIdle n)
+    rollForward mkPipelineDecision n hdr theirTip
+              = Stateful $ \kis@KnownIntersectionState
+                  { theirChainState
+                  , theirFrag
+                  , ourTip
+                  } -> traceException $ do
       -- Reject the block if invalid
       let hdrHash  = headerHash hdr
           hdrPoint = headerPoint hdr
-      (isInvalidBlock, _fingerprint) <- getIsInvalidBlock
+      (isInvalidBlock, _fingerprint) <- atomically $ getIsInvalidBlock
       when (isInvalidBlock hdrHash) $
         disconnect $ InvalidBlock hdrPoint
 
-      -- To validate the block, we need the consensus chain state (updated using
-      -- headers only, and kept as part of the candidate state) and the
-      -- (anachronistic) ledger view. We read the latter as the first thing in
-      -- the transaction, because we might have to retry the transaction if the
-      -- ledger state is too far behind the upstream peer (see below).
-      --
-      -- NOTE: this doesn't need to be consistent with our current (possibly
-      -- outdated) view of our chain, i.e. 'ourFrag', we /only/ use
-      -- @curLedger@ to validate /their/ header, even in the special case
-      -- discussed below.
-      curLedger <- ledgerState <$> getCurrentLedger
-      -- NOTE: Low density chains
-      --
-      -- The ledger gives us an "anachronistic ledger view", which allows us
-      -- to validate headers within a certain range of slots, provided that we
-      -- maintain the invariant that the intersection between our tip and the
-      -- tip of the peer fragment is within @k@ blocks from our tip (see
-      -- detailed description at 'anachronisticProtocolLedgerView'). This
-      -- range is in terms of /slots/, not blocks: this is important, because
-      -- certain transitions on the ledger happen at slot boundaries (for
-      -- instance, update proposals).
-      --
-      -- Under normal circumstances this is fine, but it can be problematic in
-      -- the case of low density chains. For example, we might get the header
-      -- for a block which is only two /blocks/ away from our current tip, but
-      -- many slots (because for whatever reason simply no blocks were produced
-      -- at all in that period).
-      --
-      -- We can mitigate this to /some/ degree by introducing one special case:
-      -- if the header that we receive fits /directly/ onto our current chain,
-      -- we can validate it even if it is outside the anachronistic ledger view
-      -- window (based on its slot number). This is a useful special case
-      -- because it means that we can catch up with a node that has an extension
-      -- of our chain, even if there are many empty slots in between.
-      --
-      -- It is important to realize however that this special case does not help
-      -- with forks. Suppose we have
-      --
-      -- >    our tip
-      -- >      v
-      -- > --*--*
-      -- >   |
-      -- >   \--*--*--*--*-- (chain we might be able to switch to)
-      -- >      A
-      --
-      -- If the slot number for the block marked @A@ is way in the future,
-      -- we will not be able to verify it and so we will not be able to switch
-      -- to this fork.
-      ledgerView <-
-        if headerPrevHash hdr == pointHash (ledgerTipPoint curLedger) then
-          -- Special case mentioned above
-          return $ protocolLedgerView cfg curLedger
-        else
-          -- The invariant guarantees us that the intersection of their tip
-          -- and our tip is within k blocks from our tip. This means that the
-          -- anachronistic ledger view must be available, unless they are
-          -- too far /ahead/ of us. In this case we must simply wait
-
-          -- TODO: Chain sync Client: Reuse anachronistic ledger view? #581
-          case anachronisticProtocolLedgerView cfg curLedger (pointSlot hdrPoint) of
-            -- unexpected alternative; see comment before this case expression
-            Left TooFarBehind ->
-                disconnect InvalidRollForward
-                  { _newPoint = hdrPoint
-                  , _ourTip   = ourTip
-                  , _theirTip = theirTip
-                  }
-            Left TooFarAhead  -> retry
-            Right view -> case view `SB.at` hdrSlot of
-                Nothing -> error "anachronisticProtocolLedgerView invariant violated"
-                Just lv -> return lv
-              where
-                hdrSlot = case pointSlot hdrPoint of
-                  Origin      -> SlotNo 0
-                  At thisSlot -> thisSlot
+      -- Get the ledger view required to validate the header
+      -- NOTE: This will block if we are too far behind.
+      ledgerView <- atomically $ getLedgerView hdr ourTip theirTip
 
       -- Check for clock skew
-      wallclock <- getCurrentSlot btime
+      wallclock <- atomically $ getCurrentSlot btime
       when (fmap unSlotNo (pointSlot hdrPoint) > At (unSlotNo wallclock + maxSkew)) $
         disconnect HeaderExceedsClockSkew
           { _receivedHeader    = hdrPoint
@@ -612,23 +574,109 @@ chainSyncClient mkPipelineDecision0 getTipBlockNo tracer cfg btime
             { theirFrag       = theirFrag'
             , theirChainState = theirChainState'
             }
-      writeTVar varCandidate theirFrag'
+      atomically $ writeTVar varCandidate theirFrag'
 
-      nextStep kis' mkPipelineDecision n theirTip
+      continueWithState kis' $ nextStep mkPipelineDecision n theirTip
 
-    rollBackward :: KnownIntersectionState blk tip
-                 -> MkPipelineDecision
+    -- Get the ledger view required to validate the header
+    --
+    -- To validate the block, we need the consensus chain state (updated using
+    -- headers only, and kept as part of the candidate state) and the
+    -- (anachronistic) ledger view. We read the latter as the first thing in
+    -- the transaction, because we might have to retry the transaction if the
+    -- ledger state is too far behind the upstream peer (see below).
+    --
+    -- NOTE: this doesn't need to be consistent with our current (possibly
+    -- outdated) view of our chain, i.e. 'ourFrag', we /only/ use
+    -- @curLedger@ to validate /their/ header, even in the special case
+    -- discussed below.
+    --
+    -- NOTE: Low density chains
+    --
+    -- The ledger gives us an "anachronistic ledger view", which allows us
+    -- to validate headers within a certain range of slots, provided that we
+    -- maintain the invariant that the intersection between our tip and the
+    -- tip of the peer fragment is within @k@ blocks from our tip (see
+    -- detailed description at 'anachronisticProtocolLedgerView'). This
+    -- range is in terms of /slots/, not blocks: this is important, because
+    -- certain transitions on the ledger happen at slot boundaries (for
+    -- instance, update proposals).
+    --
+    -- Under normal circumstances this is fine, but it can be problematic in
+    -- the case of low density chains. For example, we might get the header
+    -- for a block which is only two /blocks/ away from our current tip, but
+    -- many slots (because for whatever reason simply no blocks were produced
+    -- at all in that period).
+    --
+    -- We can mitigate this to /some/ degree by introducing one special case:
+    -- if the header that we receive fits /directly/ onto our current chain,
+    -- we can validate it even if it is outside the anachronistic ledger view
+    -- window (based on its slot number). This is a useful special case
+    -- because it means that we can catch up with a node that has an extension
+    -- of our chain, even if there are many empty slots in between.
+    --
+    -- It is important to realize however that this special case does not help
+    -- with forks. Suppose we have
+    --
+    -- >    our tip
+    -- >      v
+    -- > --*--*
+    -- >   |
+    -- >   \--*--*--*--*-- (chain we might be able to switch to)
+    -- >      A
+    --
+    -- If the slot number for the block marked @A@ is way in the future,
+    -- we will not be able to verify it and so we will not be able to switch
+    -- to this fork.
+    getLedgerView :: Header blk
+                  -> Our tip
+                  -> Their tip
+                  -> STM m (LedgerView (BlockProtocol blk))
+    getLedgerView hdr ourTip theirTip = do
+        curLedger <- ledgerState <$> getCurrentLedger
+        if headerPrevHash hdr == pointHash (ledgerTipPoint curLedger) then
+          -- Special case mentioned above
+          return $ protocolLedgerView cfg curLedger
+        else
+          -- The invariant guarantees us that the intersection of their tip
+          -- and our tip is within k blocks from our tip. This means that the
+          -- anachronistic ledger view must be available, unless they are
+          -- too far /ahead/ of us. In this case we must simply wait
+
+          -- TODO: Chain sync Client: Reuse anachronistic ledger view? #581
+          case anachronisticProtocolLedgerView cfg curLedger (pointSlot hdrPoint) of
+            -- unexpected alternative; see comment before this case expression
+            Left TooFarBehind ->
+                disconnect InvalidRollForward
+                  { _newPoint = hdrPoint
+                  , _ourTip   = ourTip
+                  , _theirTip = theirTip
+                  }
+            Left TooFarAhead  -> retry
+            Right view -> case view `SB.at` hdrSlot of
+                Nothing -> error "anachronisticProtocolLedgerView invariant violated"
+                Just lv -> return lv
+              where
+                hdrSlot = case pointSlot hdrPoint of
+                  Origin      -> SlotNo 0
+                  At thisSlot -> thisSlot
+      where
+        hdrPoint = headerPoint hdr
+
+    rollBackward :: MkPipelineDecision
                  -> Nat n
                  -> Point blk
                  -> Their tip
-                 -> m (Consensus (ClientPipelinedStIdle n) blk tip m)
-    rollBackward kis@KnownIntersectionState
-                 { theirFrag
-                 , theirChainState
-                 , ourTip
-                 }
-                 mkPipelineDecision n intersection
-                 theirTip = traceException $ atomically $ do
+                 -> Stateful m blk tip
+                      (KnownIntersectionState blk tip)
+                      (ClientPipelinedStIdle n)
+    rollBackward mkPipelineDecision n intersection
+                 theirTip
+               = Stateful $ \kis@KnownIntersectionState
+                   { theirFrag
+                   , theirChainState
+                   , ourTip
+                   } -> traceException $ do
       (theirFrag', theirChainState') <-
         case (,) <$> AF.rollback (castPoint intersection) theirFrag
                  <*> rewindChainState cfg theirChainState (pointSlot intersection)
@@ -666,13 +714,14 @@ chainSyncClient mkPipelineDecision0 getTipBlockNo tracer cfg btime
             { theirFrag       = theirFrag'
             , theirChainState = theirChainState'
             }
-      writeTVar varCandidate theirFrag'
+      atomically $ writeTVar varCandidate theirFrag'
 
-      nextStep kis' mkPipelineDecision n theirTip
+      continueWithState kis' $ nextStep mkPipelineDecision n theirTip
 
     -- | Disconnect from the upstream node by throwing the given exception.
     -- The cleanup is handled in 'bracketChainSyncClient'.
-    disconnect :: ChainSyncClientException blk tip -> STM m a
+    disconnect :: forall m' x'. MonadThrow m'
+               => ChainSyncClientException blk tip -> m' x'
     disconnect = throwM
 
     -- | Trace any 'ChainSyncClientException' if thrown.
@@ -755,6 +804,33 @@ rejectInvalidBlocks tracer registry getIsInvalidBlock getCandidate =
       let ex = InvalidBlock (headerPoint invalidHeader)
       traceWith tracer $ TraceException ex
       throwM ex
+
+{-------------------------------------------------------------------------------
+  Explicit state
+-------------------------------------------------------------------------------}
+
+-- | Make the state maintained by the chain sync client explicit
+--
+-- The chain sync client contains of a bunch of functions that basically look
+-- like "do some network stuff, compute some stuff, and then continue with
+-- such-and-such a new state". We want to make sure to keep that state in NF
+-- at all times, but since we don't use a TVar to store it, we cannot reuse
+-- the existing infrastructure for checking TVars for NF. Instead, we make
+-- the state explicit in the types and do the check in 'continueWithState'.
+newtype Stateful m blk tip s st = Stateful (s -> m (Consensus st blk tip m))
+
+continueWithState :: forall m blk tip s st. NoUnexpectedThunks s
+                  => s -> Stateful m blk tip s st -> m (Consensus st blk tip m)
+#if CHECK_TVAR_INVARIANT
+continueWithState !s (Stateful f) =
+    case unsafeNoThunks s of
+      Nothing  -> f s
+      Just err -> error $ "Invariant violation: " ++ err
+#else
+continueWithState !s (Stateful f) = f s
+  where
+    _ = keepRedundantConstraint (Proxy @(NoUnexpectedThunks s))
+#endif
 
 {-------------------------------------------------------------------------------
   Exception

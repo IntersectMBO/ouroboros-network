@@ -24,11 +24,10 @@ import           Test.Tasty.QuickCheck (testProperty)
 
 import           Control.Tracer
 
-import           Ouroboros.Network.Mux
-import qualified Network.Mux.Types as Mx
 import qualified Network.Mux.Bearer.Pipe as Mx
+import qualified Network.Mux.Types as Mx
+import           Ouroboros.Network.Mux
 
-import           Ouroboros.Network.Block (BlockNo)
 import           Ouroboros.Network.MockChain.Chain (Chain, ChainUpdate, Point)
 import qualified Ouroboros.Network.MockChain.Chain as Chain
 import qualified Ouroboros.Network.MockChain.ProducerState as CPS
@@ -116,7 +115,7 @@ demo chain0 updates = do
                       (ChainSync.chainSyncClientExample consumerVar
                       (consumerClient done target consumerVar)))
 
-        server :: ChainSyncServer block (Point block, BlockNo) IO ()
+        server :: ChainSyncServer block (ExampleTip block) IO ()
         server = ChainSync.chainSyncServerExample () producerVar
 
         producerApp ::OuroborosApplication ResponderApp String DemoProtocols IO BL.ByteString Void ()
@@ -152,7 +151,7 @@ demo chain0 updates = do
     consumerClient :: StrictTMVar IO Bool
                    -> Point block
                    -> StrictTVar IO (Chain block)
-                   -> ChainSync.Client block (Point block, BlockNo) IO ()
+                   -> ChainSync.Client block (ExampleTip block) IO ()
     consumerClient done target chain =
       ChainSync.Client
         { ChainSync.rollforward = \_ -> checkTip target chain >>= \b ->

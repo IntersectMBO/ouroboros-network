@@ -7,6 +7,8 @@ module Ouroboros.Consensus.Util.MonadSTM.NormalForm (
   , uncheckedNewTVarM
   , uncheckedNewTMVarM
   , uncheckedNewEmptyTMVarM
+    -- * Low-level API
+  , unsafeNoThunks
   ) where
 
 import           GHC.Stack
