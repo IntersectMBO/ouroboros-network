@@ -121,6 +121,9 @@ instance Semigroup e => Semigroup (UEdge e) where
 --
 -- Kinda annoying but that's the library we're dealing with...
 
+aws_sp_hops :: AllShortestPaths NetNode (Edges BearerCharacteristics) Hops
+aws_sp_hops = all_pairs_sp (\_ _ -> hop) aws'
+
 aws_shortest_paths
   :: Natural
   -> AllShortestPaths NetNode (Maybe (UEdge (Semigroup.Last BearerCharacteristics))) Latency
