@@ -66,7 +66,7 @@ main = defaultMain tests
 
 tests :: TestTree
 tests =
-  adjustOption (const $ QuickCheckMaxSize 20) $ testGroup "messages.cddl-spec"
+  adjustOption (const $ QuickCheckMaxSize 10) $ testGroup "messages.cddl-spec"
   [
 -- These tests call the CDDL-tool to parse an arbitray message.
 -- The parser of the CDDL-tool is slow (exponential runtime & space).
