@@ -1,6 +1,10 @@
-{-# LANGUAGE FlexibleContexts    #-}
-{-# LANGUAGE NamedFieldPuns      #-}
-{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE DeriveAnyClass       #-}
+{-# LANGUAGE DeriveGeneric        #-}
+{-# LANGUAGE FlexibleContexts     #-}
+{-# LANGUAGE NamedFieldPuns       #-}
+{-# LANGUAGE ScopedTypeVariables  #-}
+{-# LANGUAGE StandaloneDeriving   #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 module Ouroboros.Consensus.Mempool.Impl (
     openMempool
@@ -13,11 +17,13 @@ module Ouroboros.Consensus.Mempool.Impl (
 
 import           Control.Monad.Except
 import qualified Data.Foldable as Foldable
+import           Data.Typeable
 import           Data.Word (Word64)
+import           GHC.Generics (Generic)
 
 import           Control.Tracer
 
-import           Ouroboros.Network.Block (ChainHash)
+import           Ouroboros.Network.Block (ChainHash, StandardHash)
 import qualified Ouroboros.Network.Block as Block
 
 import           Ouroboros.Storage.ChainDB (ChainDB)
@@ -90,16 +96,22 @@ chainDBLedgerInterface chainDB = LedgerInterface
 -- | Internal state in the mempool
 data InternalState blk = IS {
       -- | Transactions currently in the mempool
-      isTxs          :: TxSeq (GenTx blk)
+      isTxs          :: !(TxSeq (GenTx blk))
 
       -- | The tip of the chain that 'isTxs' was validated against
-    , isTip          :: ChainHash blk
+    , isTip          :: !(ChainHash blk)
 
       -- | The mempool 'TicketNo' counter.
       --
       -- See 'vrLastTicketNo' for more information.
-    , isLastTicketNo :: TicketNo
+    , isLastTicketNo :: !TicketNo
     }
+  deriving (Generic)
+
+deriving instance ( NoUnexpectedThunks (GenTx blk)
+                  , StandardHash blk
+                  , Typeable blk
+                  ) => NoUnexpectedThunks (InternalState blk)
 
 data MempoolEnv m blk = MempoolEnv {
       mpEnvLedger    :: LedgerInterface m blk
@@ -111,13 +123,13 @@ data MempoolEnv m blk = MempoolEnv {
 initInternalState :: InternalState blk
 initInternalState = IS TxSeq.Empty Block.GenesisHash zeroTicketNo
 
-initMempoolEnv :: IOLike m
+initMempoolEnv :: (IOLike m, ApplyTx blk)
                => LedgerInterface m blk
                -> LedgerConfig blk
                -> Tracer m (TraceEventMempool blk)
                -> m (MempoolEnv m blk)
 initMempoolEnv ledgerInterface cfg tracer = do
-    isVar <- uncheckedNewTVarM initInternalState
+    isVar <- newTVarM initInternalState
     return MempoolEnv
       { mpEnvLedger    = ledgerInterface
       , mpEnvLedgerCfg = cfg

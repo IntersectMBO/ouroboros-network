@@ -180,7 +180,7 @@ data TestSetup = TestSetup
 
 mkBlk :: [Word64] -> TestBlock
 mkBlk h = TestBlock
-    { tbHash  = mkTestHash h
+    { tbHash  = testHashFromList h
     , tbSlot  = SlotNo $ fromIntegral $ 2 * length h
     , tbValid = True
     }

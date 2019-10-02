@@ -900,8 +900,8 @@ type Blk = TestBlock
 
 genBlk :: BlockGen Blk m
 genBlk Model{..} = do
-    testHash@(TestHash h) <- genHash
-    let slot = 2 * fromIntegral (length h)
+    testHash <- genHash
+    let slot = 2 * fromIntegral (length (unTestHash testHash))
     return $ TestBlock
       { tbHash  = testHash
       , tbSlot  = SlotNo slot
@@ -975,7 +975,7 @@ genBlk Model{..} = do
     -- tip of the chain and the hash might already be present in the ChainDB.
     genFitsOnSomewhere :: Gen TestHash
     genFitsOnSomewhere = do
-        TestHash hashInDB <- elements hashesInDB
+        hashInDB <- unTestHash <$> elements hashesInDB
         forkNo <- genForkNo
         return $ TestHash $ NE.cons forkNo hashInDB
 
@@ -1219,7 +1219,7 @@ tests = testGroup "ChainDB q-s-m"
 
 _mkBlk :: [Word64] -> TestBlock
 _mkBlk h = TestBlock
-    { tbHash  = mkTestHash h
+    { tbHash  = testHashFromList h
     , tbSlot  = SlotNo $ fromIntegral $ 2 * length h
     , tbValid = True
     }

@@ -2,6 +2,7 @@
 {-# LANGUAGE DataKinds               #-}
 {-# LANGUAGE DeriveAnyClass          #-}
 {-# LANGUAGE DeriveGeneric           #-}
+{-# LANGUAGE DerivingVia             #-}
 {-# LANGUAGE FlexibleContexts        #-}
 {-# LANGUAGE FlexibleInstances       #-}
 {-# LANGUAGE MultiParamTypeClasses   #-}
@@ -19,6 +20,7 @@ module Ouroboros.Consensus.Protocol.Praos (
   , PraosFields(..)
   , PraosExtraFields(..)
   , PraosParams(..)
+  , PraosNodeState(..)
   , forgePraosFields
     -- * Tags
   , PraosCrypto(..)
@@ -40,7 +42,7 @@ import           Crypto.Random (MonadRandom)
 import           Data.IntMap.Strict (IntMap)
 import qualified Data.IntMap.Strict as IntMap
 import           Data.Proxy (Proxy (..))
-import           Data.Typeable (Typeable)
+import           Data.Typeable
 import           Data.Word (Word64)
 import           GHC.Generics (Generic)
 import           Numeric.Natural
@@ -55,7 +57,7 @@ import           Cardano.Crypto.KES.Simple
 import           Cardano.Crypto.VRF.Class
 import           Cardano.Crypto.VRF.Mock (MockVRF)
 import           Cardano.Crypto.VRF.Simple (SimpleVRF)
-import           Cardano.Prelude (NoUnexpectedThunks)
+import           Cardano.Prelude (NoUnexpectedThunks (..))
 
 import           Ouroboros.Network.Block (HasHeader (..), SlotNo (..))
 import           Ouroboros.Network.Point (WithOrigin (At))
@@ -113,7 +115,7 @@ forgePraosFields :: ( HasNodeState (Praos c) m
                  -> (PraosExtraFields c -> toSign)
                  -> m (PraosFields c toSign)
 forgePraosFields PraosNodeConfig{..} PraosProof{..} mkToSign = do
-    keyKES <- getNodeState
+    keyKES <- unPraosNodeState <$> getNodeState
     let signedFields = PraosExtraFields {
           praosCreator = praosLeader
         , praosRho     = praosProofRho
@@ -126,7 +128,7 @@ forgePraosFields PraosNodeConfig{..} PraosProof{..} mkToSign = do
     case m of
       Nothing                  -> error "mkOutoborosPayload: signedKES failed"
       Just (signature, newKey) -> do
-        putNodeState newKey
+        putNodeState (PraosNodeState newKey)
         return $ PraosFields {
             praosSignature    = signature
           , praosExtraFields = signedFields
@@ -193,6 +195,15 @@ data PraosParams = PraosParams {
     , praosLifetimeKES   :: Natural
     }
 
+newtype PraosNodeState c = PraosNodeState {
+      unPraosNodeState :: SignKeyKES (PraosKES c)
+    }
+  deriving (Generic)
+
+-- We override 'showTypeOf' to make sure to show @c@
+instance PraosCrypto c => NoUnexpectedThunks (PraosNodeState c) where
+  showTypeOf _ = show $ typeRep (Proxy @(PraosNodeState c))
+
 instance PraosCrypto c => OuroborosTag (Praos c) where
   data NodeConfig (Praos c) = PraosNodeConfig
     { praosParams        :: PraosParams
@@ -205,7 +216,7 @@ instance PraosCrypto c => OuroborosTag (Praos c) where
 
   protocolSecurityParam = praosSecurityParam . praosParams
 
-  type NodeState       (Praos c) = SignKeyKES (PraosKES c)
+  type NodeState       (Praos c) = PraosNodeState c
   type LedgerView      (Praos c) = StakeDist
   type IsLeader        (Praos c) = PraosProof c
   type ValidationErr   (Praos c) = PraosValidationError c

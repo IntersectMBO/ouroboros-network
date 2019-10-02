@@ -54,6 +54,7 @@ import           GHC.Stack
 class ( Show (ChainState    p)
       , Show (ValidationErr p)
       , NoUnexpectedThunks (ChainState p)
+      , NoUnexpectedThunks (NodeState  p)
       , Typeable p -- so that p can appear in exceptions
       ) => OuroborosTag p where
 

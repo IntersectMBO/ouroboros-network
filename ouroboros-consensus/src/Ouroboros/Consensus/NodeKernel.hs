@@ -142,6 +142,7 @@ initNodeKernel
     :: forall m peer blk.
        ( IOLike m
        , ProtocolLedgerView blk
+       , NoUnexpectedThunks peer
        , Ord peer
        , ApplyTx blk
        )
@@ -195,6 +196,7 @@ initInternalState
        ( IOLike m
        , ProtocolLedgerView blk
        , Ord peer
+       , NoUnexpectedThunks peer
        , ApplyTx blk
        )
     => NodeArgs m peer blk
@@ -202,8 +204,8 @@ initInternalState
 initInternalState NodeArgs { tracers, chainDB, registry, cfg,
                              blockFetchSize, blockMatchesHeader, btime,
                              callbacks, initState } = do
-    varCandidates  <- uncheckedNewTVarM mempty
-    varState       <- uncheckedNewTVarM initState
+    varCandidates  <- newTVarM mempty
+    varState       <- newTVarM initState
     mempool        <- openMempool registry
                                   (chainDBLedgerInterface chainDB)
                                   (ledgerConfigView cfg)

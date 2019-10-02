@@ -1,3 +1,6 @@
+{-# LANGUAGE DeriveAnyClass             #-}
+{-# LANGUAGE DeriveGeneric              #-}
+{-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE PatternSynonyms            #-}
@@ -17,7 +20,9 @@ import           Data.FingerTree.Strict (StrictFingerTree)
 import qualified Data.FingerTree.Strict as FingerTree
 import qualified Data.Foldable as Foldable
 import           Data.Word (Word64)
+import           GHC.Generics (Generic)
 
+import           Cardano.Prelude (NoUnexpectedThunks)
 
 {-------------------------------------------------------------------------------
   Mempool transaction sequence as a finger tree
@@ -27,7 +32,8 @@ import           Data.Word (Word64)
 -- as it enters the mempool.
 --
 newtype TicketNo = TicketNo Word64
-  deriving (Eq, Ord, Enum, Bounded, Show)
+  deriving stock (Eq, Ord, Show)
+  deriving newtype (Enum, Bounded, NoUnexpectedThunks)
 
 -- | The transaction ticket number from which our counter starts.
 zeroTicketNo :: TicketNo
@@ -36,7 +42,7 @@ zeroTicketNo = TicketNo 0
 -- | We pair up transactions in the mempool with their ticket number.
 --
 data TxTicket tx = TxTicket !tx !TicketNo
-  deriving Show
+  deriving (Show, Generic, NoUnexpectedThunks)
 
 -- | The mempool is a sequence of transactions with their ticket numbers.
 -- Transactions are allocated monotonically increasing ticket numbers as they
@@ -53,7 +59,8 @@ data TxTicket tx = TxTicket !tx !TicketNo
 -- splitting and indexing by the ticket number.
 --
 newtype TxSeq tx = TxSeq (StrictFingerTree TxSeqMeasure (TxTicket tx))
-  deriving Show
+  deriving stock   (Show)
+  deriving newtype (NoUnexpectedThunks)
 
 instance Foldable TxSeq where
   foldMap f (TxSeq txs) = Foldable.foldMap (f . (\(TxTicket tx _) -> tx)) txs

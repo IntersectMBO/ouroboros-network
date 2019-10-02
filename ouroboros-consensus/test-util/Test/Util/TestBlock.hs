@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns               #-}
 {-# LANGUAGE DeriveAnyClass             #-}
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE DerivingStrategies         #-}
@@ -5,6 +6,7 @@
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
+{-# LANGUAGE PatternSynonyms            #-}
 {-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE TypeFamilies               #-}
@@ -12,8 +14,9 @@
 -- | Minimal instantiation of the consensus layer to be able to run the ChainDB
 module Test.Util.TestBlock (
     -- * Blocks
-    TestHash(..)
-  , mkTestHash
+    TestHash(TestHash)
+  , unTestHash
+  , testHashFromList
   , TestBlock(..)
   , TestBlockError(..)
   , Header(..)
@@ -40,6 +43,7 @@ module Test.Util.TestBlock (
   ) where
 
 import           Codec.Serialise (Serialise)
+import           Control.DeepSeq (force)
 import           Control.Monad.Except (throwError)
 import           Data.FingerTree.Strict (Measured (..))
 import           Data.Int
@@ -114,18 +118,24 @@ import qualified Ouroboros.Consensus.Util.SlotBounded as SB
 -- in-memory representation).
 --
 -- The 'BlockNo' of the corresponding block is just the length of the list.
-newtype TestHash = TestHash {
+newtype TestHash = UnsafeTestHash {
       unTestHash :: NonEmpty Word64
     }
   deriving stock   (Generic)
   deriving newtype (Eq, Ord, Serialise)
   deriving anyclass NoUnexpectedThunks
 
-mkTestHash :: [Word64] -> TestHash
-mkTestHash = TestHash . NE.fromList . reverse
+pattern TestHash :: NonEmpty Word64 -> TestHash
+pattern TestHash path <- UnsafeTestHash path where
+  TestHash path = UnsafeTestHash (force path)
+
+{-# COMPLETE TestHash #-}
+
+testHashFromList :: [Word64] -> TestHash
+testHashFromList = TestHash . NE.fromList . reverse
 
 instance Show TestHash where
-  show (TestHash h) = "(mkTestHash " <> show (reverse (NE.toList h)) <> ")"
+  show (TestHash h) = "(testHashFromList " <> show (reverse (NE.toList h)) <> ")"
 
 instance Condense TestHash where
   condense = condense . reverse . NE.toList . unTestHash
@@ -330,8 +340,8 @@ successorBlock TestBlock{..} = TestBlock
 -- @g@ -> @[.., f]@ -> @[.., g f]@
 -- The 'SlotNo' is left unchanged.
 modifyFork :: (Word64 -> Word64) -> TestBlock -> TestBlock
-modifyFork g tb@TestBlock{ tbHash = TestHash (f NE.:| h) } = tb
-    { tbHash = TestHash (g f NE.:| h)
+modifyFork g tb@TestBlock{ tbHash = UnsafeTestHash (f NE.:| h) } = tb
+    { tbHash = let !gf = g f in UnsafeTestHash (gf NE.:| h)
     }
 
 -- Increase the fork number of the given block:

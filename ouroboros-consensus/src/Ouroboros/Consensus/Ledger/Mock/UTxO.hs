@@ -1,13 +1,15 @@
 {-# LANGUAGE DeriveAnyClass             #-}
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE DerivingStrategies         #-}
+{-# LANGUAGE DerivingVia                #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE PatternSynonyms            #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE UndecidableInstances       #-}
 
 module Ouroboros.Consensus.Ledger.Mock.UTxO (
     -- * Basic definitions
-    Tx(..)
+    Tx(Tx)
   , TxId
   , TxIn
   , TxOut
@@ -23,6 +25,7 @@ module Ouroboros.Consensus.Ledger.Mock.UTxO (
   ) where
 
 import           Codec.Serialise (Serialise (..))
+import           Control.DeepSeq (NFData (..), force)
 import           Control.Monad.Except
 import           Data.Either (fromRight)
 import           Data.Map.Strict (Map)
@@ -33,6 +36,7 @@ import           GHC.Generics (Generic)
 
 import           Cardano.Binary (ToCBOR (..))
 import           Cardano.Crypto.Hash
+import           Cardano.Prelude (NoUnexpectedThunks, UseIsNormalForm (..))
 
 import           Ouroboros.Network.MockChain.Chain (Chain, toOldestFirst)
 
@@ -46,8 +50,16 @@ import           Ouroboros.Consensus.Ledger.Mock.Address
   Basic definitions
 -------------------------------------------------------------------------------}
 
-data Tx = Tx (Set TxIn) [TxOut]
-  deriving (Show, Eq, Ord, Generic, Serialise)
+data Tx = UnsafeTx (Set TxIn) [TxOut]
+  deriving stock    (Show, Eq, Ord, Generic)
+  deriving anyclass (Serialise, NFData)
+  deriving NoUnexpectedThunks via UseIsNormalForm Tx
+
+pattern Tx :: Set TxIn -> [TxOut] -> Tx
+pattern Tx ins outs <- UnsafeTx ins outs where
+  Tx ins outs = force $ UnsafeTx ins outs
+
+{-# COMPLETE Tx #-}
 
 instance ToCBOR Tx where
   toCBOR = encode

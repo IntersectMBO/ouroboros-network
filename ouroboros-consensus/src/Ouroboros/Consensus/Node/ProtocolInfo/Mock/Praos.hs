@@ -45,11 +45,10 @@ protocolInfoPraos (NumCoreNodes numCoreNodes) (CoreNodeId nid) params =
             ledgerState         = genesisSimpleLedgerState addrDist
           , ouroborosChainState = []
           }
-      , pInfoInitState = SignKeyMockKES (
-             fst $ verKeys IntMap.! nid   -- key ID
-           , 0                            -- KES initial slot
-           , praosLifetimeKES params      -- KES lifetime
-           )
+      , pInfoInitState = PraosNodeState $ SignKeyMockKES
+           (fst $ verKeys IntMap.! nid)   -- key ID
+           0                              -- KES initial slot
+           (praosLifetimeKES params)      -- KES lifetime
       }
   where
     addrDist :: AddrDist
