@@ -135,10 +135,7 @@ aws_shortest_paths response_size = all_pairs_sp mkWeight aws_graph
   mkWeight _ _ (Just (In  _))   = Loss
   mkWeight _ _ (Just (Uni (Semigroup.Last o) (Semigroup.Last i))) =
     let pattern = tcpRPCLoadPattern i o pdu_overhead initial_window Nothing request_size response_size
-    in  TX $ foldr (+) 0 (fmap (toRational . fst) pattern)
-    -- If we wanted to ignore TCP and just use the delta Q
-    --TX $ toRational (dqG (linkDeltaQ o)) + toRational (dqS (linkDeltaQ i) request_size)
-    --   + toRational (dqG (linkDeltaQ i)) + toRational (dqS (linkDeltaQ i) response_size)
+    in  TX $ toRational (fst (last pattern))
 
   request_size :: Natural
   request_size = 256
