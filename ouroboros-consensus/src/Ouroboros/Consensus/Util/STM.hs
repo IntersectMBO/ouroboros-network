@@ -1,3 +1,4 @@
+{-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
@@ -24,6 +25,7 @@ import           Control.Monad.Reader
 import           Control.Monad.State
 import           Control.Monad.Writer
 
+import           Data.Coerce
 import           Data.Void
 import           Data.Word (Word64)
 import           GHC.Stack
@@ -146,14 +148,14 @@ simOuroborosStateT tvar k n = do
     writeTVar tvar st'
     return a
 
-simChaChaT :: IOLike m
-           => StrictTVar m ChaChaDRG
+simChaChaT :: (IOLike m, Coercible a ChaChaDRG)
+           => StrictTVar m a
            -> Sim n m
            -> Sim (ChaChaT n) m
 simChaChaT tvar k n = do
     st       <- readTVar tvar
-    (a, st') <- k (runChaChaT n st)
-    writeTVar tvar st'
+    (a, st') <- k (runChaChaT n (coerce st))
+    writeTVar tvar (coerce st')
     return a
 
 -- | Example of composition

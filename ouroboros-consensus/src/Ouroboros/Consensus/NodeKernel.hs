@@ -1,5 +1,6 @@
 {-# LANGUAGE ConstraintKinds       #-}
 {-# LANGUAGE DataKinds             #-}
+{-# LANGUAGE DerivingVia           #-}
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE NamedFieldPuns        #-}
@@ -28,6 +29,7 @@ import           Data.Map.Strict (Map)
 import           Data.Maybe (isNothing)
 import           Data.Word (Word16)
 
+import           Cardano.Prelude (UseIsNormalForm (..))
 import           Control.Tracer
 
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment (..),
@@ -285,7 +287,7 @@ forkBlockProduction
     => InternalState m peer blk -> m ()
 forkBlockProduction IS{..} =
     onSlotChange btime $ \currentSlot -> do
-      varDRG <- uncheckedNewTVarM =<< produceDRG
+      varDRG <- newTVarM =<< (PRNG <$> produceDRG)
       -- See the docstring of 'withSyncState' for why we're using it instead
       -- of 'atomically'.
       mNewBlock <- withSyncState mempool $ \MempoolSnapshot{snapshotTxs} -> do
@@ -348,11 +350,14 @@ forkBlockProduction IS{..} =
                -- If there is no block before it, so use genesis.
              -> (genesisPoint, genesisBlockNo)
 
-    runProtocol :: StrictTVar m ChaChaDRG -> ProtocolM blk m a -> STM m a
+    runProtocol :: StrictTVar m PRNG -> ProtocolM blk m a -> STM m a
     runProtocol varDRG = simOuroborosStateT varState
                        $ simChaChaT varDRG
                        $ id
 
+-- | State of the pseudo-random number generator
+newtype PRNG = PRNG ChaChaDRG
+  deriving NoUnexpectedThunks via UseIsNormalForm PRNG
 
 {-------------------------------------------------------------------------------
   TxSubmission integration

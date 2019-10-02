@@ -60,13 +60,14 @@ import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util
 import           Ouroboros.Consensus.Util.IOLike
-import           Ouroboros.Consensus.Util.RedundantConstraints
 import           Ouroboros.Consensus.Util.ResourceRegistry
 import           Ouroboros.Consensus.Util.SlotBounded as SB
 import           Ouroboros.Consensus.Util.STM (Fingerprint, onEachChange)
 
 #if CHECK_TVAR_INVARIANT
 import           Ouroboros.Consensus.Util.MonadSTM.NormalForm (unsafeNoThunks)
+#else
+import           Ouroboros.Consensus.Util.RedundantConstraints
 #endif
 
 -- | Clock skew: the number of slots the chain of an upstream node may be
@@ -127,7 +128,7 @@ bracketChainSyncClient tracer ChainDbView { getIsInvalidBlock } varCandidates
         body varCandidate
   where
     register = do
-      varCandidate <- uncheckedNewTVarM $ AF.Empty GenesisPoint
+      varCandidate <- newTVarM $ AF.Empty GenesisPoint
       atomically $ modifyTVar varCandidates $ Map.insert peer varCandidate
       return varCandidate
 
