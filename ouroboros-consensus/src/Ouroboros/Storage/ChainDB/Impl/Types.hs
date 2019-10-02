@@ -190,7 +190,7 @@ data ChainDbEnv m blk = CDB
     -- not when hashes are garbage-collected from the map.
   , cdbNextIteratorId :: StrictTVar m IteratorId
   , cdbNextReaderId   :: StrictTVar m ReaderId
-  , cdbCopyLock       :: StrictTMVar m ()
+  , cdbCopyLock       :: StrictMVar m ()
     -- ^ Lock used to ensure that 'copyToImmDB' is not executed more than
     -- once concurrentlycopyToImmDB.
     --

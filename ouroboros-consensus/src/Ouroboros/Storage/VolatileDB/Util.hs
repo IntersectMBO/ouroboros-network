@@ -52,16 +52,16 @@ fromEither err = \case
     Left e -> EH.throwError err e
     Right a -> return a
 
-modifyTMVar :: IOLike m
-            => StrictTMVar m a
-            -> (a -> m (a,b))
-            -> m b
-modifyTMVar m action =
-    snd . fst <$> generalBracket (atomically $ takeTMVar m)
-       (\oldState ec -> atomically $ case ec of
-            ExitCaseSuccess (newState,_) -> putTMVar m newState
-            ExitCaseException _ex        -> putTMVar m oldState
-            ExitCaseAbort                -> putTMVar m oldState
+modifyMVar :: IOLike m
+           => StrictMVar m a
+           -> (a -> m (a,b))
+           -> m b
+modifyMVar m action =
+    snd . fst <$> generalBracket (takeMVar m)
+       (\oldState ec -> case ec of
+            ExitCaseSuccess (newState,_) -> putMVar m newState
+            ExitCaseException _ex        -> putMVar m oldState
+            ExitCaseAbort                -> putMVar m oldState
        ) action
 
 wrapFsError :: Monad m

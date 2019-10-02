@@ -276,13 +276,13 @@ data ThreadInstr m :: * -> * where
   ThreadCrash :: ThreadInstr m ()
 
 -- | Instruction along with an MVar for the result
-data QueuedInstr m = forall a. QueuedInstr (ThreadInstr m a) (StrictTMVar m a)
+data QueuedInstr m = forall a. QueuedInstr (ThreadInstr m a) (StrictMVar m a)
 
 runInThread :: IOLike m => TestThread m -> ThreadInstr m a -> m a
 runInThread TestThread{..} instr = do
-    result <- uncheckedNewEmptyTMVarM
+    result <- uncheckedNewEmptyMVar (error "no result yet")
     atomically $ writeTQueue threadComms (QueuedInstr instr result)
-    atomically $ takeTMVar result
+    takeMVar result
 
 instance (IOLike m) => Show (TestThread m) where
   show TestThread{..} = "<Thread " ++ show (threadId testThread) ++ ">"
@@ -302,7 +302,7 @@ newThread :: forall m. IOLike m
           -> m (TestThread m)
 newThread alive parentReg = \shouldLink -> do
     comms      <- atomically $ newTQueue
-    spawned    <- uncheckedNewEmptyTMVarM
+    spawned    <- uncheckedNewEmptyMVar (error "no thread spawned yet")
 
     thread <- forkThread parentReg $
                 withRegistry $ \childReg ->
@@ -320,15 +320,15 @@ newThread alive parentReg = \shouldLink -> do
 
     -- Make sure to register thread before starting it
     atomically $ modifyTVar alive (testThread:)
-    atomically $ putTMVar spawned testThread
+    putMVar spawned testThread
     return testThread
   where
     threadBody :: ResourceRegistry m
-               -> StrictTMVar m (TestThread m)
+               -> StrictMVar m (TestThread m)
                -> TQueue m (QueuedInstr m)
                -> m ()
     threadBody childReg spawned comms = do
-        us <- atomically $ readTMVar spawned
+        us <- readMVar spawned
         loop us `finally` (atomically $ modifyTVar alive (delete us))
       where
         loop :: TestThread m -> m ()
@@ -337,12 +337,12 @@ newThread alive parentReg = \shouldLink -> do
           case instr of
             ThreadFork linked -> do
               child <- newThread alive childReg (const us <$> linked)
-              atomically $ putTMVar result child
+              putMVar result child
               loop us
             ThreadTerminate -> do
-              atomically $ putTMVar result ()
+              putMVar result ()
             ThreadCrash -> do
-              atomically $ putTMVar result ()
+              putMVar result ()
               error "crashing"
 
 runIO :: forall m. (IOLike m, Typeable m)

@@ -119,7 +119,7 @@ data VolatileDBEnv m blockId = forall h e. VolatileDBEnv {
       _dbHasFS          :: !(HasFS m h)
     , _dbErr            :: !(ErrorHandling (VolatileDBError blockId) m)
     , _dbErrSTM         :: !(ThrowCantCatch (VolatileDBError blockId) (STM m))
-    , _dbInternalState  :: !(StrictTMVar m (Maybe (InternalState blockId h)))
+    , _dbInternalState  :: !(StrictMVar m (Maybe (InternalState blockId h)))
     , _maxBlocksPerFile :: !Int
     , _parser           :: !(Parser e m blockId)
     }
@@ -187,14 +187,14 @@ openDBImpl hasFS@HasFS{..} err errSTM parser maxBlocksPerFile =
     then EH.throwError err $ UserError . InvalidArgumentsError $ "maxBlocksPerFile should be positive"
     else do
         st <- mkInternalStateDB hasFS err parser maxBlocksPerFile
-        stVar <- uncheckedNewTMVarM $ Just st
+        stVar <- uncheckedNewMVar $ Just st
         return $ VolatileDBEnv hasFS err errSTM stVar maxBlocksPerFile parser
 
 closeDBImpl :: IOLike m
             => VolatileDBEnv m blockId
             -> m ()
 closeDBImpl VolatileDBEnv{..} = do
-        mbInternalState <- atomically (swapTMVar _dbInternalState Nothing)
+        mbInternalState <- swapMVar _dbInternalState Nothing
         case mbInternalState of
             Nothing -> return ()
             Just InternalState{..} ->
@@ -206,7 +206,7 @@ isOpenDBImpl :: IOLike m
              => VolatileDBEnv m blockId
              -> m Bool
 isOpenDBImpl VolatileDBEnv{..} = do
-    mSt <- atomically (readTMVar _dbInternalState)
+    mSt <- readMVar _dbInternalState
     return $ isJust mSt
 
 -- closeDB . reOpenDB is a no-op. This is achieved because when we reOpen
@@ -215,7 +215,7 @@ reOpenDBImpl :: (HasCallStack, IOLike m, Ord blockId)
              => VolatileDBEnv m blockId
              -> m ()
 reOpenDBImpl VolatileDBEnv{..} = do
-    modifyTMVar _dbInternalState $ \mbSt -> case mbSt of
+    modifyMVar _dbInternalState $ \mbSt -> case mbSt of
         Just (st@InternalState{..}) -> return (Just st, ())
         Nothing -> do
             st <- mkInternalStateDB _dbHasFS _dbErr _parser _maxBlocksPerFile
@@ -345,7 +345,7 @@ getInternalState :: forall m blockId. IOLike m
                  => VolatileDBEnv m blockId
                  -> m (SomePair (HasFS m) (InternalState blockId))
 getInternalState VolatileDBEnv{..} = do
-    mSt <- atomically (readTMVar _dbInternalState)
+    mSt <- readMVar _dbInternalState
     case mSt of
         Nothing -> EH.throwError _dbErr $ UserError ClosedDBError
         Just st -> return (SomePair _dbHasFS st)
@@ -354,7 +354,7 @@ getIsMemberImpl :: forall m blockId. (IOLike m, Ord blockId)
                 => VolatileDBEnv m blockId
                 -> STM m (blockId -> Bool)
 getIsMemberImpl VolatileDBEnv{..} = do
-    mSt <- readTMVar _dbInternalState
+    mSt <- readMVarSTM _dbInternalState
     case mSt of
         Nothing -> EH.throwError' _dbErrSTM $ UserError ClosedDBError
         Just st -> return $ \bid -> Map.member bid (_currentRevMap st)
@@ -363,7 +363,7 @@ getBlockIdsImpl :: forall m blockId. (IOLike m)
                 => VolatileDBEnv m blockId
                 -> m [blockId]
 getBlockIdsImpl VolatileDBEnv{..} = do
-    mSt <- atomically (readTMVar _dbInternalState)
+    mSt <- atomically $ readMVarSTM _dbInternalState
     case mSt of
         Nothing -> EH.throwError _dbErr $ UserError ClosedDBError
         Just st -> return $ Map.keys $ _currentRevMap st
@@ -372,7 +372,7 @@ getSuccessorsImpl :: forall m blockId. (IOLike m, Ord blockId)
                   => VolatileDBEnv m blockId
                   -> STM m (Maybe blockId -> Set blockId)
 getSuccessorsImpl VolatileDBEnv{..} = do
-    mSt <- readTMVar _dbInternalState
+    mSt <- readMVarSTM _dbInternalState
     case mSt of
         Nothing -> EH.throwError' _dbErrSTM $ UserError ClosedDBError
         Just st -> return $ \blockId ->
@@ -382,7 +382,7 @@ getPredecessorImpl :: forall m blockId. (IOLike m, Ord blockId, HasCallStack)
                    => VolatileDBEnv m blockId
                    -> STM m (blockId -> Maybe blockId)
 getPredecessorImpl VolatileDBEnv{..} = do
-    mSt <- readTMVar _dbInternalState
+    mSt <- readMVarSTM _dbInternalState
     case mSt of
         Nothing -> EH.throwError' _dbErrSTM $ UserError ClosedDBError
         Just st -> return $ \blockId ->
@@ -394,7 +394,7 @@ getMaxSlotNoImpl :: forall m blockId. IOLike m
                  => VolatileDBEnv m blockId
                  -> STM m MaxSlotNo
 getMaxSlotNoImpl VolatileDBEnv{..} = do
-    mSt <- readTMVar _dbInternalState
+    mSt <- readMVarSTM _dbInternalState
     case mSt of
         Nothing -> EH.throwError' _dbErrSTM $ UserError ClosedDBError
         Just st -> return $ _currentMaxSlotNo st
@@ -569,24 +569,24 @@ modifyState VolatileDBEnv{_dbHasFS = hasFS :: HasFS m h, ..} action = do
     HasFS{..}         = hasFS
 
     open :: m (Maybe (InternalState blockId h))
-    open = atomically $ takeTMVar _dbInternalState
+    open = takeMVar _dbInternalState
 
     close :: Maybe (InternalState blockId h)
           -> ExitCase (Either (VolatileDBError blockId) (InternalState blockId h, r))
           -> m ()
     close mst ec = case ec of
       -- Restore the original state in case of an abort
-      ExitCaseAbort         -> atomically $ putTMVar _dbInternalState mst
+      ExitCaseAbort         -> putMVar _dbInternalState mst
       -- In case of an exception, close the DB for safety.
       ExitCaseException _ex -> do
-        atomically $ putTMVar _dbInternalState Nothing
+        putMVar _dbInternalState Nothing
         closeOpenHandle mst
       -- In case of success, update to the newest state
       ExitCaseSuccess (Right (newState, _)) ->
-        atomically $ putTMVar _dbInternalState (Just newState)
+        putMVar _dbInternalState (Just newState)
       -- In case of an error (not an exception), close the DB for safety
       ExitCaseSuccess (Left _) -> do
-        atomically $ putTMVar _dbInternalState Nothing
+        putMVar _dbInternalState Nothing
         closeOpenHandle mst
 
     mutation :: Maybe (InternalState blockId h)

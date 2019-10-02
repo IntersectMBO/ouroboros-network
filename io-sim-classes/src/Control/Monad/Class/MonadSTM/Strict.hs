@@ -18,10 +18,8 @@ module Control.Monad.Class.MonadSTM.Strict
   , StrictTMVar
   , newTMVar
   , newTMVarM
-  , newTMVarWithInvariantM
   , newEmptyTMVar
   , newEmptyTMVarM
-  , newEmptyTMVarWithInvariantM
   , takeTMVar
   , tryTakeTMVar
   , putTMVar
@@ -30,6 +28,8 @@ module Control.Monad.Class.MonadSTM.Strict
   , tryReadTMVar
   , swapTMVar
   , isEmptyTMVar
+    -- ** Low-level API
+  , checkInvariant
   ) where
 
 import           Control.Monad.Class.MonadSTM as X hiding (LazyTMVar, LazyTVar,
@@ -93,74 +93,62 @@ updateTVar v f = do
   Strict TMVar
 -------------------------------------------------------------------------------}
 
-data StrictTMVar m a = StrictTMVar
-  { invariant :: !(a -> Maybe String)
-    -- ^ Invariant checked whenever updating the 'StrictTMVar'.
-  , tmvar     :: !(Lazy.LazyTMVar m a)
-  }
+-- 'TMVar' that keeps its value in WHNF at all times
+--
+-- Does not support an invariant: if the invariant would not be satisfied,
+-- we would not be able to put a value into an empty TMVar, which would lead
+-- to very hard to debug bugs where code is blocked indefinitely.
+newtype StrictTMVar m a = StrictTMVar (Lazy.LazyTMVar m a)
 
 newTMVar :: MonadSTM m => a -> STM m (StrictTMVar m a)
-newTMVar !a = StrictTMVar (const Nothing) <$> Lazy.newTMVar a
+newTMVar !a = StrictTMVar <$> Lazy.newTMVar a
 
 newTMVarM :: MonadSTM m => a -> m (StrictTMVar m a)
-newTMVarM = newTMVarWithInvariantM (const Nothing)
-
-newTMVarWithInvariantM :: (MonadSTM m, HasCallStack)
-                       => (a -> Maybe String)  -- ^ Invariant (expect 'Nothing')
-                       -> a
-                       -> m (StrictTMVar m a)
-newTMVarWithInvariantM invariant !a =
-    checkInvariant (invariant a) $
-    StrictTMVar invariant <$> Lazy.newTMVarM a
+newTMVarM !a = StrictTMVar <$> Lazy.newTMVarM a
 
 newEmptyTMVar :: MonadSTM m => STM m (StrictTMVar m a)
-newEmptyTMVar = StrictTMVar (const Nothing) <$> Lazy.newEmptyTMVar
+newEmptyTMVar = StrictTMVar <$> Lazy.newEmptyTMVar
 
 newEmptyTMVarM :: MonadSTM m => m (StrictTMVar m a)
-newEmptyTMVarM = newEmptyTMVarWithInvariantM (const Nothing)
-
-newEmptyTMVarWithInvariantM :: MonadSTM m
-                            => (a -> Maybe String)  -- ^ Invariant (expect 'Nothing')
-                            -> m (StrictTMVar m a)
-newEmptyTMVarWithInvariantM invariant =
-    StrictTMVar invariant <$> Lazy.newEmptyTMVarM
-
+newEmptyTMVarM = StrictTMVar <$> Lazy.newEmptyTMVarM
 
 takeTMVar :: MonadSTM m => StrictTMVar m a -> STM m a
-takeTMVar StrictTMVar { tmvar } = Lazy.takeTMVar tmvar
+takeTMVar (StrictTMVar tmvar) = Lazy.takeTMVar tmvar
 
 tryTakeTMVar :: MonadSTM m => StrictTMVar m a -> STM m (Maybe a)
-tryTakeTMVar StrictTMVar { tmvar } = Lazy.tryTakeTMVar tmvar
+tryTakeTMVar (StrictTMVar tmvar) = Lazy.tryTakeTMVar tmvar
 
-putTMVar :: (MonadSTM m, HasCallStack) => StrictTMVar m a -> a -> STM m ()
-putTMVar StrictTMVar { tmvar, invariant } !a =
-    checkInvariant (invariant a) $
-    Lazy.putTMVar tmvar a
+putTMVar :: MonadSTM m => StrictTMVar m a -> a -> STM m ()
+putTMVar (StrictTMVar tmvar) !a = Lazy.putTMVar tmvar a
 
-tryPutTMVar :: (MonadSTM m, HasCallStack) => StrictTMVar m a -> a -> STM m Bool
-tryPutTMVar StrictTMVar { tmvar, invariant } !a =
-    checkInvariant (invariant a) $
-    Lazy.tryPutTMVar tmvar a
+tryPutTMVar :: MonadSTM m => StrictTMVar m a -> a -> STM m Bool
+tryPutTMVar (StrictTMVar tmvar) !a = Lazy.tryPutTMVar tmvar a
 
 readTMVar :: MonadSTM m => StrictTMVar m a -> STM m a
-readTMVar StrictTMVar { tmvar } = Lazy.readTMVar tmvar
+readTMVar (StrictTMVar tmvar) = Lazy.readTMVar tmvar
 
 tryReadTMVar :: MonadSTM m => StrictTMVar m a -> STM m (Maybe a)
-tryReadTMVar StrictTMVar { tmvar } = Lazy.tryReadTMVar tmvar
+tryReadTMVar (StrictTMVar tmvar) = Lazy.tryReadTMVar tmvar
 
-swapTMVar :: (MonadSTM m, HasCallStack) => StrictTMVar m a -> a -> STM m a
-swapTMVar StrictTMVar { tmvar, invariant } !a =
-    checkInvariant (invariant a) $
-    Lazy.swapTMVar tmvar a
+swapTMVar :: MonadSTM m => StrictTMVar m a -> a -> STM m a
+swapTMVar (StrictTMVar tmvar) !a = Lazy.swapTMVar tmvar a
 
 isEmptyTMVar :: MonadSTM m => StrictTMVar m a -> STM m Bool
-isEmptyTMVar StrictTMVar { tmvar } = Lazy.isEmptyTMVar tmvar
+isEmptyTMVar (StrictTMVar tmvar) = Lazy.isEmptyTMVar tmvar
 
 {-------------------------------------------------------------------------------
   Dealing with invariants
 -------------------------------------------------------------------------------}
 
-checkInvariant :: HasCallStack => Maybe String -> m x -> m x
+-- | Check invariant (if enabled) before continuing
+--
+-- @checkInvariant mErr x@ is equal to @x@ if @mErr == Nothing@, and throws
+-- an error @err@ if @mErr == Just err@.
+--
+-- This is exported so that other code that wants to conditionally check
+-- invariants can reuse the same logic, rather than having to introduce new
+-- per-package flags.
+checkInvariant :: HasCallStack => Maybe String -> a -> a
 #if CHECK_TVAR_INVARIANT
 checkInvariant Nothing    k = k
 checkInvariant (Just err) _ = error $ "Invariant violation: " ++ err

@@ -24,17 +24,19 @@ module Ouroboros.Consensus.Util.IOLike (
   , uncheckedNewTVarM
   , updateTVar
   , writeTVar
-    -- *** StrictTMVar
-  , StrictTMVar
-  , newEmptyTMVarM
-  , newTMVarM
-  , putTMVar
-  , readTMVar
-  , swapTMVar
-  , takeTMVar
-  , tryTakeTMVar
-  , uncheckedNewEmptyTMVarM
-  , uncheckedNewTMVarM
+    -- ** StrictMVar
+  , StrictMVar
+  , newEmptyMVar
+  , newMVar
+  , putMVar
+  , readMVar
+  , readMVarSTM
+  , swapMVar
+  , takeMVar
+  , tryTakeMVar
+  , uncheckedNewEmptyMVar
+  , uncheckedNewMVar
+  , updateMVar
     -- *** MonadFork
   , ThreadId
   , myThreadId

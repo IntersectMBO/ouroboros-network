@@ -137,7 +137,8 @@ runNodeNetwork registry testBtime numCoreNodes nodeJoinPlan nodeTopology
 
     -- allocate a TMVar for each node's network app
     nodeVars <- fmap Map.fromList $ do
-      forM coreNodeIds $ \nid -> (,) nid <$> uncheckedNewEmptyTMVarM
+      forM coreNodeIds $ \nid -> (,) nid <$>
+        uncheckedNewEmptyMVar (error "no App available yet")
 
     -- spawn threads for each undirected edge
     let edges = edgesNodeTopology nodeTopology
@@ -160,7 +161,7 @@ runNodeNetwork registry testBtime numCoreNodes nodeJoinPlan nodeTopology
       (node, readNodeInfo, app) <- createNode varRNG coreNodeId
 
       -- unblock the threads of edges that involve this node
-      atomically $ putTMVar nodeVar app
+      putMVar nodeVar app
 
       return (coreNodeId, pInfoConfig (pInfo coreNodeId), node, readNodeInfo)
 
@@ -190,7 +191,7 @@ runNodeNetwork registry testBtime numCoreNodes nodeJoinPlan nodeTopology
     undirectedEdge ::
          HasCallStack
       => Tracer m (SlotNo, MiniProtocolState, MiniProtocolExpectedException blk)
-      -> Map CoreNodeId (StrictTMVar m (LimitedApp m NodeId blk))
+      -> Map CoreNodeId (StrictMVar m (LimitedApp m NodeId blk))
       -> (CoreNodeId, CoreNodeId)
       -> m ()
     undirectedEdge tr nodeVars (node1, node2) = do
@@ -198,7 +199,7 @@ runNodeNetwork registry testBtime numCoreNodes nodeJoinPlan nodeTopology
       (endpoint1, endpoint2) <- do
         let lu node = case Map.lookup node nodeVars of
               Nothing  -> error $ "node not found: " ++ show node
-              Just var -> (,) node <$> atomically (readTMVar var)
+              Just var -> (,) node <$> readMVar var
         (,) <$> lu node1 <*> lu node2
 
       -- spawn threads for both directed edges
