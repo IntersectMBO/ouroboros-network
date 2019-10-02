@@ -143,8 +143,8 @@ validateIteratorRange err epochInfo tip mbStart mbEnd = do
     isNewerThanTip :: SlotNo -> m Bool
     isNewerThanTip slot = case tip of
       TipGen                -> return True
-      Tip (Left  lastEpoch) -> (slot >) <$> epochInfoFirst epochInfo lastEpoch
-      Tip (Right lastSlot)  -> return $ slot > lastSlot
+      Tip (EBB   lastEpoch) -> (slot >) <$> epochInfoFirst epochInfo lastEpoch
+      Tip (Block lastSlot)  -> return $ slot > lastSlot
 
 -- | Return the slots to backfill the index file with.
 --

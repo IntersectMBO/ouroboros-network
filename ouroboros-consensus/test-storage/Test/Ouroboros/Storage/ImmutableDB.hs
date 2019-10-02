@@ -138,7 +138,7 @@ test_openDBEmptyIndexFileEquivalence =
 
 test_reopenDBEquivalence :: Assertion
 test_reopenDBEquivalence =
-    apiEquivalenceImmDB (expectImmDBResult (@?= Tip (Right 5))) $ \hasFS err -> do
+    apiEquivalenceImmDB (expectImmDBResult (@?= Tip (Block 5))) $ \hasFS err -> do
       withTestDB hasFS err $ \db ->
         appendBinaryBlob db 5 (testBlockToBuilder (TestBlock 5))
       withTestDB hasFS err $ \db ->

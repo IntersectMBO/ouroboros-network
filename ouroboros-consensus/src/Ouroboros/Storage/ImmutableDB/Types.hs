@@ -1,4 +1,5 @@
 {-# LANGUAGE DataKinds                  #-}
+{-# LANGUAGE DeriveAnyClass             #-}
 {-# LANGUAGE DeriveFunctor              #-}
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE DerivingStrategies         #-}
@@ -8,6 +9,7 @@
 module Ouroboros.Storage.ImmutableDB.Types
   ( SlotNo (..)
   , ImmTip
+  , BlockOrEBB (..)
   , TipEpochSlot (..)
   , TruncateTo (..)
   , EpochFileParser (..)
@@ -46,7 +48,12 @@ import           Ouroboros.Storage.FS.API.Types (FsError, FsPath, prettyFsError,
                      sameFsError)
 import           Ouroboros.Storage.ImmutableDB.Layout
 
-type ImmTip = Tip (Either EpochNo SlotNo)
+data BlockOrEBB
+  = Block !SlotNo
+  | EBB   !EpochNo
+  deriving (Eq, Show, Generic, NoUnexpectedThunks)
+
+type ImmTip = Tip BlockOrEBB
 
 -- | Variant of 'Tip' that uses 'EpochSlot' instead of 'EpochNo' or 'SlotNo'.
 data TipEpochSlot
@@ -131,7 +138,9 @@ data ValidationPolicy
 
 -- | ID of an iterator that is not derived from another iterator
 newtype BaseIteratorID = MkBaseIteratorID Int
-  deriving (Show, Eq, Ord, Generic, Enum, NoUnexpectedThunks)
+  deriving stock    (Show, Generic)
+  deriving newtype  (Eq, Ord, Enum)
+  deriving anyclass (NoUnexpectedThunks)
 
 -- | A unique identifier for an iterator.
 data IteratorID = BaseIteratorID BaseIteratorID | DerivedIteratorID IteratorID
