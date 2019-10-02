@@ -231,9 +231,15 @@ runNodeNetwork registry testBtime numCoreNodes nodeJoinPlan nodeTopology
            -> ExtLedgerState blk
            -> EpochInfo m
            -> Tracer m (Point blk)
+              -- ^ invalid block tracer
+           -> Tracer m (Point blk, BlockNo)
+              -- ^ added block tracer
            -> NodeDBs (StrictTVar m MockFS)
            -> ChainDbArgs m blk
-    mkArgs cfg initLedger epochInfo invalidTracer nodeDBs = ChainDbArgs
+    mkArgs
+      cfg initLedger epochInfo
+      invalidTracer addTracer
+      nodeDBs = ChainDbArgs
         { -- Decoders
           cdbDecodeHash       = nodeDecodeHeaderHash (Proxy @blk)
         , cdbDecodeBlock      = nodeDecodeBlock cfg
@@ -268,7 +274,11 @@ runNodeNetwork registry testBtime numCoreNodes nodeJoinPlan nodeTopology
         , cdbTracer           = Tracer $ \case
               ChainDB.TraceAddBlockEvent
                   (ChainDB.AddBlockValidation ChainDB.InvalidBlock
-                { _invalidPoint = p }) -> traceWith invalidTracer p
+                      { _invalidPoint = p }) ->
+                  traceWith invalidTracer p
+              ChainDB.TraceAddBlockEvent
+                  (ChainDB.AddedBlockToVolDB p bno isEBB) ->
+                  when (not isEBB) $ traceWith addTracer (p, bno)
               _                        -> pure ()
         , cdbRegistry         = registry
         , cdbGcDelay          = 0
@@ -311,10 +321,13 @@ runNodeNetwork registry testBtime numCoreNodes nodeJoinPlan nodeTopology
             } = nodeInfo
 
       epochInfo <- newEpochInfo $ nodeEpochSize (Proxy @blk) pInfoConfig
-      let args = mkArgs
-              pInfoConfig pInfoInitLedger epochInfo
-              (nodeEventsInvalids nodeInfoEvents) nodeInfoDBs
-      chainDB <- ChainDB.openDB args
+      chainDB <- ChainDB.openDB $ mkArgs
+          pInfoConfig pInfoInitLedger epochInfo
+          (nodeEventsInvalids nodeInfoEvents)
+          (Tracer $ \(p, bno) -> do
+              s <- atomically $ getCurrentSlot btime
+              traceWith (nodeEventsAdds nodeInfoEvents) (s, p, bno))
+          nodeInfoDBs
 
       let nodeArgs = NodeArgs
             { tracers             = nullTracers
@@ -488,12 +501,14 @@ data NodeInfo blk db ev = NodeInfo
 -- The @ev@ type parameter is instantiated by this module at types for
 -- 'Tracer's and lists: actions for accumulating and lists as accumulations.
 data NodeEvents blk ev = NodeEvents
-  { nodeEventsTipBlockNos :: ev (SlotNo, BlockNo)
-    -- ^ 'ChainDB.getTipBlockNo' for each node at the onset of each slot
+  { nodeEventsAdds        :: ev (SlotNo, Point blk, BlockNo)
+    -- ^ every 'AddedBlockToVolDB' excluding EBBs
   , nodeEventsForges      :: ev (TraceForgeEvent blk)
     -- ^ every 'TraceForgeEvent'
   , nodeEventsInvalids    :: ev (Point blk)
     -- ^ the point of every 'ChainDB.InvalidBlock' event
+  , nodeEventsTipBlockNos :: ev (SlotNo, BlockNo)
+    -- ^ 'ChainDB.getTipBlockNo' for each node at the onset of each slot
   }
 
 -- | A vector with an element for each database of a node
@@ -517,9 +532,10 @@ newNodeInfo = do
       (t1, m1) <- recordingTracerTVar
       (t2, m2) <- recordingTracerTVar
       (t3, m3) <- recordingTracerTVar
+      (t4, m4) <- recordingTracerTVar
       pure
-          ( NodeEvents     t1     t2     t3
-          , NodeEvents <$> m1 <*> m2 <*> m3
+          ( NodeEvents     t1     t2     t3     t4
+          , NodeEvents <$> m1 <*> m2 <*> m3 <*> m4
           )
 
   (nodeInfoDBs, readDBs) <- do
@@ -545,7 +561,8 @@ newNodeInfo = do
 -------------------------------------------------------------------------------}
 
 data NodeOutput blk = NodeOutput
-  { nodeOutputCfg        :: NodeConfig (BlockProtocol blk)
+  { nodeOutputAdds       :: Map SlotNo (Set (Point blk, BlockNo))
+  , nodeOutputCfg        :: NodeConfig (BlockProtocol blk)
   , nodeOutputFinalChain :: Chain blk
   , nodeOutputNodeDBs    :: NodeDBs MockFS
   , nodeOutputForges     :: Map SlotNo blk
@@ -579,22 +596,28 @@ getTestOutput nodes = do
               , nodeInfoDBs
               } = nodeInfo
         let NodeEvents
-              { nodeEventsForges      = forges
-              , nodeEventsInvalids    = invalids
-              , nodeEventsTipBlockNos = tipBlockNos0
+              { nodeEventsAdds
+              , nodeEventsForges
+              , nodeEventsInvalids
+              , nodeEventsTipBlockNos
               } = nodeInfoEvents
         let nodeOutput = NodeOutput
-              { nodeOutputCfg        = cfg
+              { nodeOutputAdds       =
+                  Map.fromListWith Set.union $
+                  [ (s, Set.singleton (p, bno)) | (s, p, bno) <- nodeEventsAdds ]
+              , nodeOutputCfg        = cfg
               , nodeOutputFinalChain = ch
               , nodeOutputNodeDBs    = nodeInfoDBs
               , nodeOutputForges     =
-                    Map.fromList [ (s, b) | TraceForgeEvent s b <- forges ]
-              , nodeOutputInvalids   = Set.fromList invalids
+                  Map.fromList $
+                  [ (s, b) | TraceForgeEvent s b <- nodeEventsForges ]
+              , nodeOutputInvalids   = Set.fromList nodeEventsInvalids
               }
 
-        let tipBlockNos = Map.singleton nid <$> Map.fromList tipBlockNos0
-
-        return (Map.singleton nid nodeOutput, tipBlockNos)
+        pure
+          ( Map.singleton nid nodeOutput
+          , Map.singleton nid <$> Map.fromList nodeEventsTipBlockNos
+          )
 
     pure $ TestOutput
         { testOutputNodes       = Map.unions nodeOutputs'
