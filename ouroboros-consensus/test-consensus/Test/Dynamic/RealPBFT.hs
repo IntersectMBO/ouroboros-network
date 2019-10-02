@@ -100,7 +100,7 @@ prop_simple_real_pbft_convergence
     giveByron $
     prop_general k
         testConfig
-        (roundRobinLeaderSchedule numCoreNodes numSlots)
+        (Just $ roundRobinLeaderSchedule numCoreNodes numSlots)
         testOutput
     .&&. not (all Chain.null finalChains)
   where

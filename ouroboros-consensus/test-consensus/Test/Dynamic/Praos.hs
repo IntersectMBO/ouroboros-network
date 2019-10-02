@@ -85,13 +85,11 @@ prop_simple_praos_convergence :: PraosParams
                               -> Property
 prop_simple_praos_convergence
   params@PraosParams{praosSecurityParam = k}
-  testConfig@TestConfig{numCoreNodes, numSlots} seed =
+  testConfig@TestConfig{numCoreNodes} seed =
     counterexample (tracesToDot testOutputNodes) $
-    prop_general k testConfig schedule testOutput
+    prop_general k testConfig Nothing testOutput
   where
     testOutput@TestOutput{testOutputNodes} =
         runTestNetwork
             (\nid -> protocolInfo numCoreNodes nid (ProtocolMockPraos params))
             testConfig seed
-
-    schedule = leaderScheduleFromTrace numSlots testOutputNodes

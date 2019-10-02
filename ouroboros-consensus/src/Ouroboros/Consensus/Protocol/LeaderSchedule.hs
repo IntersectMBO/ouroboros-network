@@ -30,6 +30,13 @@ newtype LeaderSchedule = LeaderSchedule {getLeaderSchedule :: Map SlotNo [CoreNo
     deriving stock    (Show, Eq, Ord, Generic)
     deriving anyclass (NoUnexpectedThunks)
 
+instance Semigroup LeaderSchedule where
+    LeaderSchedule l <> LeaderSchedule r =
+        LeaderSchedule $
+        Map.unionWith comb l r
+      where
+        comb ls rs = ls ++ filter (`notElem` ls) rs
+
 instance Condense LeaderSchedule where
     condense (LeaderSchedule m) = condense
                                 $ map (\(s, ls) -> (s, map fromCoreNodeId ls))

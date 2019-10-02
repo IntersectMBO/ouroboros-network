@@ -178,16 +178,16 @@ prop_general ::
      )
   => SecurityParam
   -> TestConfig
-  -> LeaderSchedule
+  -> Maybe LeaderSchedule
   -> TestOutput blk
   -> Property
-prop_general k TestConfig{numSlots, nodeJoinPlan, nodeTopology} schedule
+prop_general k TestConfig{numSlots, nodeJoinPlan, nodeTopology} mbSchedule
   TestOutput{testOutputNodes, testOutputTipBlockNos} =
     counterexample ("nodeChains: " <> unlines ("" : map (\x -> "  " <> condense x) (Map.toList nodeChains))) $
     counterexample ("nodeJoinPlan: " <> condense nodeJoinPlan) $
     counterexample ("nodeTopology: " <> condense nodeTopology) $
     counterexample ("slot-node-tipBlockNo: " <> condense tipBlockNos) $
-    counterexample ("schedule: " <> condense schedule) $
+    counterexample ("mbSchedule: " <> condense mbSchedule) $
     counterexample ("growth schedule: " <> condense growthSchedule) $
     counterexample ("consensus expected: " <> show isConsensusExpected) $
     tabulate "consensus expected" [show isConsensusExpected] $
@@ -202,9 +202,13 @@ prop_general k TestConfig{numSlots, nodeJoinPlan, nodeTopology} schedule
       [ fileHandleLeakCheck nid nodeDBs
       | (nid, nodeDBs) <- Map.toList nodeOutputDBs ]
   where
+    schedule = case mbSchedule of
+        Nothing    -> growthSchedule
+        Just sched -> sched
+
     NumBlocks maxForkLength = determineForkLength k nodeJoinPlan schedule
 
-    -- remove entries from @schedule@ if any of:
+    -- build a leader schedule which includes every node that forged unless:
     --
     -- * the node just joined in this slot (unless it's the earliest slot in
     --   which any nodes joined)
@@ -215,23 +219,38 @@ prop_general k TestConfig{numSlots, nodeJoinPlan, nodeTopology} schedule
     --
     growthSchedule :: LeaderSchedule
     growthSchedule =
-        Map.mapWithKey (filter . actuallyLead) `coerce` schedule
+        foldl (<>) (LeaderSchedule Map.empty) $
+        [ let NodeOutput
+                { nodeOutputForges
+                , nodeOutputInvalids
+                } = no
+          in
+          LeaderSchedule $
+          Map.mapMaybeWithKey
+              (actuallyLead cid nodeOutputInvalids)
+              nodeOutputForges
+        | (cid, no) <- Map.toList testOutputNodes
+        ]
       where
-        actuallyLead s cid = fromMaybe False $ do
-            let nid = fromCoreNodeId cid
-            let j   = nodeIdJoinSlot nodeJoinPlan nid
+        actuallyLead ::
+             NodeId
+          -> Set (Point blk)
+          -> SlotNo
+          -> blk
+          -> Maybe [CoreNodeId]
+        actuallyLead nid invalids s b = do
+            cid <- case nid of
+              CoreId i  -> Just (CoreNodeId i)
+              RelayId _ -> Nothing
 
+            let j = nodeIdJoinSlot nodeJoinPlan nid
             guard $ j < s || (j == s && isFirstJoinSlot s)
 
-            NodeOutput
-              { nodeOutputForges
-              , nodeOutputInvalids
-              } <- Map.lookup nid testOutputNodes
-            b <- Map.lookup s nodeOutputForges
-
-            pure $ not $
+            guard $ not $
               (||) (nodeIsEBB b) $
-              Set.member (blockPoint b) nodeOutputInvalids
+              Set.member (blockPoint b) invalids
+
+            pure [cid]
 
         isFirstJoinSlot s =
             Just s == (snd <$> Map.lookupMin m)
