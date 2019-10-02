@@ -12,7 +12,6 @@ import           Control.Tracer (nullTracer)
 import           Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import           Data.Coerce (coerce)
-import           Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
 import           Data.Maybe (maybeToList)
 import           Data.Word (Word64)
@@ -43,8 +42,9 @@ import qualified Ouroboros.Storage.FS.Sim.STM as Sim
 import           Ouroboros.Storage.ImmutableDB
 import           Ouroboros.Storage.ImmutableDB.Index
 import           Ouroboros.Storage.ImmutableDB.Layout
-import           Ouroboros.Storage.ImmutableDB.Util (reconstructSlotOffsets,
-                     tryImmDB)
+import           Ouroboros.Storage.ImmutableDB.SlotOffsets (SlotOffsets)
+import qualified Ouroboros.Storage.ImmutableDB.SlotOffsets as SlotOffsets
+import           Ouroboros.Storage.ImmutableDB.Util (tryImmDB)
 import           Ouroboros.Storage.Util (decodeIndexEntryAt)
 import           Ouroboros.Storage.Util.ErrorHandling (ErrorHandling)
 import qualified Ouroboros.Storage.Util.ErrorHandling as EH
@@ -67,6 +67,7 @@ tests = testGroup "ImmutableDB"
       , testProperty "isFilledSlot iff in filledSlots" prop_filledSlots_isFilledSlot
       , testProperty "writeIndex/loadIndex roundtrip" prop_writeIndex_loadIndex
       , testProperty "writeSlotOffsets/loadIndex/indexToSlotOffsets roundtrip" prop_writeSlotOffsets_loadIndex_indexToSlotOffsets
+      , testProperty "slotOffsetsFromList/slotOffsetsToList roundtrip" prop_slotOffsetsFromList_slotOffsetsToList
       ]
     , testCase     "reconstructSlotOffsets" test_reconstructSlotOffsets
     , testCase     "reconstructSlotOffsets empty slots" test_reconstructSlotOffsets_empty_slots
@@ -202,13 +203,10 @@ test_startNewEpochPadsTheIndexFile = withMockFS try assrt $ \hasFS err ->
   Index
 ------------------------------------------------------------------------------}
 
-newtype SlotOffsets = SlotOffsets { getSlotOffsets :: NonEmpty SlotOffset }
-  deriving (Show)
-
 -- Return True when the EBB has a size > 0 according to its corresponding
 -- offset (2nd offset, starting from the end)
 hasEBB :: SlotOffsets -> Bool
-hasEBB (SlotOffsets offsets) = go (NE.toList offsets)
+hasEBB offsets = go $ SlotOffsets.toList offsets
   where
     go []     = error $ "Offsets must be non-empty"
     go [0]    = False
@@ -219,21 +217,21 @@ hasEBB (SlotOffsets offsets) = go (NE.toList offsets)
 
 instance Arbitrary SlotOffsets where
   arbitrary = do
-    offsets <- (0 NE.:|) <$> orderedList
+    offsetsList <- (0 NE.:|) <$> orderedList
     emptyEBB <- arbitrary
     -- Flip a coin to determine whether we will generate an empty EBB slot (=
     -- no EBB) by making the size of the first slot 0 (by setting the second
     -- offset to 0). If the first element in the generated @orderedList@ is
     -- already 0, then the EBB will be empty regardless the value of
     -- @emptyEBB@.
-    let allOffsets | emptyEBB  = 0 NE.<| offsets
-                   | otherwise = offsets
-    return $ SlotOffsets $ NE.reverse allOffsets
+    let allOffsets | emptyEBB  = 0 NE.<| offsetsList
+                   | otherwise = offsetsList
+    return $ SlotOffsets.fromNonEmptyList $ NE.reverse allOffsets
 
-  shrink (SlotOffsets offsets) =
-    [ SlotOffsets offsets'
-    | offsetList <- shrink $ NE.toList offsets
-    , offsets'   <- maybeToList $ NE.nonEmpty offsetList ]
+  shrink offsets =
+    [ offsets'
+    | offsetsList <- shrink $ SlotOffsets.toList offsets
+    , offsets'    <- maybeToList $ SlotOffsets.fromNonEmptyList <$> NE.nonEmpty offsetsList ]
 
 -- A non-empty string
 newtype TestHash = TestHash String
@@ -244,25 +242,25 @@ instance Arbitrary TestHash where
 
 instance Arbitrary (Index TestHash) where
   arbitrary = do
-    slotOffsets <- arbitrary
-    ebbHash <- if hasEBB slotOffsets
+    offsets <- arbitrary
+    ebbHash <- if hasEBB offsets
       then CurrentEBB <$> arbitrary
       else return NoCurrentEBB
-    return $ indexFromSlotOffsets (getSlotOffsets slotOffsets) ebbHash
+    return $ indexFromSlotOffsets offsets ebbHash
 
   shrink index =
-    [ indexFromSlotOffsets (getSlotOffsets slotOffsets') ebbHash'
-    | slotOffsets' <- shrink (SlotOffsets (indexToSlotOffsets index))
+    [ indexFromSlotOffsets slotOffsets' ebbHash'
+    | slotOffsets' <- shrink (indexToSlotOffsets index)
     , let ebbHash' | hasEBB slotOffsets' = CurrentEBB (TestHash "a")
                    | otherwise           = NoCurrentEBB
     ]
 
 prop_indexToSlotOffsets_indexFromSlotOffsets :: SlotOffsets -> Property
-prop_indexToSlotOffsets_indexFromSlotOffsets (SlotOffsets offsets) =
+prop_indexToSlotOffsets_indexFromSlotOffsets offsets =
   indexToSlotOffsets (indexFromSlotOffsets offsets NoCurrentEBB) === offsets
 
 prop_filledSlots_isFilledSlot :: SlotOffsets -> Property
-prop_filledSlots_isFilledSlot (SlotOffsets offsets) = conjoin
+prop_filledSlots_isFilledSlot offsets = conjoin
     [ isFilledSlot idx slot === (slot `elem` filledSlots idx)
     | slot <- slots ]
   where
@@ -294,18 +292,18 @@ prop_writeIndex_loadIndex index =
 
 prop_writeSlotOffsets_loadIndex_indexToSlotOffsets :: SlotOffsets
                                                    -> Property
-prop_writeSlotOffsets_loadIndex_indexToSlotOffsets slotOffsets@(SlotOffsets offsets) =
+prop_writeSlotOffsets_loadIndex_indexToSlotOffsets offsets =
     monadicIO $ run $ runS prop
   where
-    ebbHash | hasEBB slotOffsets = CurrentEBB (TestHash "a")
-            | otherwise          = NoCurrentEBB
+    ebbHash | hasEBB offsets = CurrentEBB (TestHash "a")
+            | otherwise      = NoCurrentEBB
 
     epoch = 0
 
     prop :: HasFS IO h -> IO Property
     prop hasFS = do
-      writeSlotOffsets S.encode hasFS epoch offsets ebbHash
-      let epochSize = fromIntegral (NE.length offsets - 1)
+      SlotOffsets.write S.encode hasFS epoch offsets ebbHash
+      let epochSize = fromIntegral (length (SlotOffsets.toList offsets) - 1)
       index :: Index TestHash <- loadIndex S.decode hasFS EH.exceptions epoch epochSize
       return $ indexToSlotOffsets index === offsets
 
@@ -316,20 +314,23 @@ prop_writeSlotOffsets_loadIndex_indexToSlotOffsets slotOffsets@(SlotOffsets offs
           Left  e      -> fail (prettyFsError e)
           Right (p, _) -> return p
 
+prop_slotOffsetsFromList_slotOffsetsToList :: SlotOffsets -> Property
+prop_slotOffsetsFromList_slotOffsetsToList sos =
+    SlotOffsets.fromList (SlotOffsets.toList sos) === sos
 
 {------------------------------------------------------------------------------
   reconstructSlotOffsets
 ------------------------------------------------------------------------------}
 
 test_reconstructSlotOffsets :: Assertion
-test_reconstructSlotOffsets = reconstructSlotOffsets input @?= output
+test_reconstructSlotOffsets = SlotOffsets.reconstruct input @?= output
   where
     input  = [(0, (10, 0)), (10, (10, 1)), (20, (5, 2)), (25, (10, 3))]
-    output = NE.fromList [35, 25, 20, 10, 0]
+    output = SlotOffsets.fromList [35, 25, 20, 10, 0]
 
 
 test_reconstructSlotOffsets_empty_slots :: Assertion
-test_reconstructSlotOffsets_empty_slots = reconstructSlotOffsets input @?= output
+test_reconstructSlotOffsets_empty_slots = SlotOffsets.reconstruct input @?= output
   where
     input  = [(0, (10, 2)), (10, (10, 4))]
-    output = NE.fromList [20, 10, 10, 0, 0, 0]
+    output = SlotOffsets.fromList [20, 10, 10, 0, 0, 0]

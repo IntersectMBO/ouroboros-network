@@ -12,7 +12,6 @@ module Ouroboros.Storage.ImmutableDB.Index
   , indexEntrySizeBytes
   , loadIndex
   , writeIndex
-  , writeSlotOffsets
   , indexFromSlotOffsets
   , indexToSlotOffsets
   , lastSlotOffset
@@ -28,28 +27,19 @@ module Ouroboros.Storage.ImmutableDB.Index
   , isPrefixOf
   , extendWithTrailingUnfilledSlotsFrom
   , truncateToSlots
-  , serialiseHash
-  , deserialiseHash
   ) where
 
 import           Codec.CBOR.Decoding (Decoder)
 import           Codec.CBOR.Encoding (Encoding)
-import           Codec.CBOR.Read (DeserialiseFailure, deserialiseFromBytes)
-import           Codec.CBOR.Write (toLazyByteString)
 import           Control.Exception (assert)
 import           Control.Monad (void, when)
-import           GHC.Generics (Generic)
-
-import           Data.Bifunctor (second)
+import           Control.Monad.Class.MonadThrow
 import qualified Data.ByteString.Lazy as BL
-import           Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
 import qualified Data.Vector.Unboxed as V
 import           Data.Word (Word64)
-
+import           GHC.Generics (Generic)
 import           GHC.Stack (HasCallStack, callStack)
-
-import           Control.Monad.Class.MonadThrow
 
 import           Cardano.Prelude (NoUnexpectedThunks (..))
 
@@ -63,12 +53,14 @@ import           Ouroboros.Storage.Util (decodeIndexEntryAt, encodeIndexEntry)
 import           Ouroboros.Storage.Util.ErrorHandling (ErrorHandling (..))
 
 import           Ouroboros.Storage.ImmutableDB.Layout
+import           Ouroboros.Storage.ImmutableDB.SlotOffsets (SlotOffsets)
+import qualified Ouroboros.Storage.ImmutableDB.SlotOffsets as SlotOffsets
 import           Ouroboros.Storage.ImmutableDB.Types (CurrentEBB (..),
                      ImmutableDBError,
                      UnexpectedError (DeserialisationError, InvalidFileError),
                      hasCurrentEBB)
-import           Ouroboros.Storage.ImmutableDB.Util (renderFile,
-                     throwUnexpectedError)
+import           Ouroboros.Storage.ImmutableDB.Util (deserialiseHash,
+                     renderFile, serialiseHash, throwUnexpectedError)
 
 {------------------------------------------------------------------------------
   Index
@@ -158,41 +150,18 @@ writeIndex hashEncoder hasFS@HasFS{..} epoch (MkIndex offsets ebbHash) = do
         (\acc offset -> acc <> encodeIndexEntry offset) mempty offsets
       void $ hPutAll hasFS iHnd $ serialiseHash hashEncoder ebbHash
 
--- | Write a non-empty list of 'SlotOffset's to an index file.
-writeSlotOffsets :: (MonadThrow m)
-                 => (hash -> Encoding)
-                 -> HasFS m h
-                 -> EpochNo
-                 -> NonEmpty SlotOffset
-                 -> CurrentEBB hash
-                 -> m ()
-writeSlotOffsets hashEncoder hasFS@HasFS{..} epoch sos ebbHash = do
-    let indexFile = renderFile "index" epoch
-    withFile hasFS indexFile (AppendMode AllowExisting) $ \iHnd -> do
-      -- NOTE: open it in AppendMode and truncate it first, otherwise we might
-      -- just overwrite part of the data stored in the index file.
-      void $ hTruncate iHnd 0
-      -- TODO efficient enough?
-      void $ hPut hasFS iHnd (foldMap encodeIndexEntry (NE.reverse sos))
-      void $ hPutAll hasFS iHnd $ serialiseHash hashEncoder ebbHash
 
--- | Create an 'Index' from the given non-empty list of 'SlotOffset's.
---
--- The 'SlotOffset's must occur in reverse order: the greatest offset should
--- come first in the list. Thus, the list must be monotonically decreasing.
-indexFromSlotOffsets :: NonEmpty SlotOffset -> CurrentEBB hash -> Index hash
-indexFromSlotOffsets = MkIndex . V.fromList . reverse . NE.toList
+-- | Create an 'Index' from the given 'SlotOffsets'.
+indexFromSlotOffsets :: SlotOffsets -> CurrentEBB hash -> Index hash
+indexFromSlotOffsets = MkIndex . V.reverse . V.fromList . SlotOffsets.toList
 
--- | Convert an 'Index' into a non-empty list of 'SlotOffset's.
---
--- The 'SlotOffset's will occur in reverse order: the greatest offset comes
--- first in the list. Thus, the list will be monotonically decreasing.
-indexToSlotOffsets :: Index hash -> NonEmpty SlotOffset
+-- | Convert an 'Index' to 'SlotOffsets'.
+indexToSlotOffsets :: Index hash -> SlotOffsets
 indexToSlotOffsets (MkIndex offsets _)
   | Just sos <- NE.nonEmpty $ V.toList $ V.reverse offsets
-  = sos
+  = SlotOffsets.fromNonEmptyList sos
   | otherwise
-  = 0 NE.:| []
+  = SlotOffsets.empty
 
 -- | Return the last 'SlotOffset' in the index file.
 lastSlotOffset :: Index hash -> SlotOffset
@@ -360,22 +329,3 @@ truncateToSlots slots index@(MkIndex offsets ebbHash)
   = index
   | otherwise
   = MkIndex (V.take (fromIntegral slots + 1) offsets) ebbHash
-
-{-------------------------------------------------------------------------------
-  Auxiliary: encoding and decoding the EBB hash
-
-  When no EBB is present we use an empty bytestring.
--------------------------------------------------------------------------------}
-
-deserialiseHash :: (forall s. Decoder s hash)
-                -> BL.ByteString
-                -> Either DeserialiseFailure (BL.ByteString, CurrentEBB hash)
-deserialiseHash hashDecoder bs
-  | BL.null bs = Right (BL.empty, NoCurrentEBB)
-  | otherwise  = second CurrentEBB <$> (deserialiseFromBytes hashDecoder bs)
-
-serialiseHash :: (hash -> Encoding)
-              -> CurrentEBB hash
-              -> BL.ByteString
-serialiseHash _           NoCurrentEBB      = BL.empty
-serialiseHash hashEncoder (CurrentEBB hash) = toLazyByteString (hashEncoder hash)

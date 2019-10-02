@@ -159,8 +159,6 @@ import           GHC.Generics (Generic)
 import           Data.ByteString.Builder (Builder)
 import           Data.ByteString.Lazy (ByteString, toStrict)
 import           Data.Functor (($>), (<&>))
-import           Data.List.NonEmpty (NonEmpty)
-import qualified Data.List.NonEmpty as NE
 import           Data.Maybe (fromMaybe, isJust)
 import           Data.Set (Set)
 import qualified Data.Set as Set
@@ -188,6 +186,8 @@ import qualified Ouroboros.Storage.Util.ErrorHandling as EH
 import           Ouroboros.Storage.ImmutableDB.API
 import           Ouroboros.Storage.ImmutableDB.Index
 import           Ouroboros.Storage.ImmutableDB.Layout
+import           Ouroboros.Storage.ImmutableDB.SlotOffsets (SlotOffsets (..))
+import qualified Ouroboros.Storage.ImmutableDB.SlotOffsets as SlotOffsets
 import           Ouroboros.Storage.ImmutableDB.Util
 
 {------------------------------------------------------------------------------
@@ -220,7 +220,7 @@ data OpenState m hash h = OpenState
     -- ^ The current 'EpochNo' the immutable store is writing to.
     , _currentEpochWriteHandle :: !(Handle h)
     -- ^ The write handle for the current epoch file.
-    , _currentEpochOffsets     :: !(NonEmpty SlotOffset)
+    , _currentEpochOffsets     :: !SlotOffsets
     -- ^ The offsets to which blobs have been written in the current epoch
     -- file, stored from last to first.
     , _currentEBBHash          :: !(CurrentEBB hash)
@@ -558,13 +558,14 @@ getEpochSlot _dbHasFS hashDecoder OpenState {..} _dbErr epochSlot = do
       -- If the requested epoch is the current epoch, the offsets are still in
       -- memory
       True -> assert (lastRelativeSlot >= relativeSlot) $
-        case NE.drop toDrop _currentEpochOffsets of
-            (offsetAfter:offset:_) ->
+        case SlotOffsets.drop toDrop _currentEpochOffsets of
+            (_ `Snoc` offset) `Snoc` offsetAfter ->
               return (offset, offsetAfter - offset, _currentEBBHash)
-            [_] ->
+            First `Snoc` offsetAfter ->
+              return (0, offsetAfter, _currentEBBHash)
+            First ->
               -- We requested the EBB, but no EBB has been written yet.
               return $ assert (relativeSlot == 0) (0, 0, NoCurrentEBB)
-            [] -> error "impossible: _currentEpochOffsets out of sync"
           where
             -- The substraction below cannot underflow, in other words:
             -- @lastRelativeSlot >= relativeSlot@. This is guaranteed by the
@@ -672,7 +673,7 @@ appendBinaryBlobImpl dbEnv@ImmutableDBEnv{..} slot builder =
                    Tip (Left _ebb)       -> return $ 1
                    Tip (Right lastSlot') -> succ . _relativeSlot <$>
                      epochInfoBlockRelative _epochInfo lastSlot'
-      let lastEpochOffset = NE.head _currentEpochOffsets
+      let lastEpochOffset = SlotOffsets.last _currentEpochOffsets
           backfillOffsets =
             indexBackfill relSlot nextFreeRelSlot lastEpochOffset
 
@@ -691,7 +692,8 @@ appendBinaryBlobImpl dbEnv@ImmutableDBEnv{..} slot builder =
 
       modify $ \st -> st
         { _currentEpochOffsets =
-            (newOffset NE.:| backfillOffsets) <> _currentEpochOffsets
+           (_currentEpochOffsets `SlotOffsets.append` backfillOffsets)
+             `Snoc` newOffset
         , _currentTip = Tip (Right slot)
         }
 
@@ -712,7 +714,7 @@ startNewEpoch hashEncoder hasFS@HasFS{..} = do
 
     -- Calculate what to pad the file with
     nextFreeRelSlot <- lift $
-        if null (NE.tail _currentEpochOffsets)
+        if SlotOffsets.isFirst _currentEpochOffsets
           -- We have to take care when starting multiple new epochs in a
           -- row. In the first call the tip will be in the current epoch,
           -- but in subsequent calls, the tip will still be in an epoch in
@@ -731,7 +733,7 @@ startNewEpoch hashEncoder hasFS@HasFS{..} = do
     -- The above calls may have modified the _cumulEpochSizes, so get it
     -- again.
     OpenState {..} <- get
-    let lastEpochOffset = NE.head _currentEpochOffsets
+    let lastEpochOffset = SlotOffsets.last _currentEpochOffsets
         -- The last relative slot in the file
         lastRelSlot     = maxRelativeSlot epochSize
         backfillOffsets =
@@ -739,10 +741,10 @@ startNewEpoch hashEncoder hasFS@HasFS{..} = do
         -- Prepend the backfillOffsets to the current offsets to get a
         -- non-empty list of all the offsets. Note that this list is stored in
         -- reverse order.
-        allOffsets = foldr NE.cons _currentEpochOffsets backfillOffsets
+        allOffsets = _currentEpochOffsets `SlotOffsets.append` backfillOffsets
 
     -- Now write the offsets and the EBB hash to the index file
-    lift $ writeSlotOffsets hashEncoder hasFS _currentEpoch allOffsets _currentEBBHash
+    lift $ SlotOffsets.write hashEncoder hasFS _currentEpoch allOffsets _currentEBBHash
 
     st <- lift $ mkOpenStateNewEpoch hasFS (succ _currentEpoch) _epochInfo
       _nextIteratorID _currentTip
@@ -798,7 +800,7 @@ appendEBBImpl dbEnv@ImmutableDBEnv{..} epoch hash builder =
       let newOffset = bytesWritten
 
       modify $ \st -> st
-        { _currentEpochOffsets = newOffset NE.<| _currentEpochOffsets
+        { _currentEpochOffsets = _currentEpochOffsets `Snoc` newOffset
         , _currentEBBHash      = CurrentEBB hash
         , _currentTip          = Tip (Left epoch)
         }
@@ -1307,7 +1309,7 @@ mkOpenStateNewEpoch :: (HasCallStack, MonadThrow m)
                     -> m (OpenState m hash h)
 mkOpenStateNewEpoch HasFS{..} epoch epochInfo nextIteratorID tip = do
     let epochFile    = renderFile "epoch" epoch
-        epochOffsets = 0 NE.:| []
+        epochOffsets = SlotOffsets.empty
 
     eHnd <- hOpen epochFile (AppendMode MustBeNew)
 
@@ -1860,7 +1862,7 @@ reconstructIndex epochFile epochFileParser epochInfo = do
         | otherwise
         -> slotsToRelSlots offsetsAndSizesAndSlots
 
-    let slotOffsets = reconstructSlotOffsets offsetsAndSizesAndRelSlots
+    let slotOffsets = SlotOffsets.reconstruct offsetsAndSizesAndRelSlots
         index       = indexFromSlotOffsets slotOffsets ebbHash
     return (index, mbErr)
   where
