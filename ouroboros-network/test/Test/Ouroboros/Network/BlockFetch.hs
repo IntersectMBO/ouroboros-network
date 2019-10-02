@@ -60,6 +60,10 @@ tests = testGroup "BlockFetch"
 
   --, testCaseSteps "bracketSyncWithFetchClient"
   --                unit_bracketSyncWithFetchClient
+
+  --TODO: test where for any given delta-Q, check that we do achieve full
+  -- pipelineing to keep the server busy and get decent enough batching of
+  -- requests (testing the high/low watermark mechanism).
   ]
 
 
@@ -349,8 +353,8 @@ tracePropertyClientStateSanity es =
         == fromIntegral peerFetchBytesInFlight
 
      && case status of
-          PeerFetchStatusReady _ -> Set.size peerFetchBlocksInFlight <  3
-          PeerFetchStatusBusy    -> Set.size peerFetchBlocksInFlight == 3
+          PeerFetchStatusReady _ -> True
+          PeerFetchStatusBusy    -> True
           _                      -> False -- not used in this test
 
      && if peerFetchReqsInFlight == 0
