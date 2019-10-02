@@ -200,6 +200,15 @@ instance Serialise DummyPayload where
     encode a = CBOR.encodeBytes (BL.toStrict $ unDummyPayload a)
     decode = DummyPayload . BL.fromStrict <$> CBOR.decodeBytes
 
+-- | A sequences of dummy requests and responses for test with the ReqResp protocol.
+newtype DummyTrace = DummyTrace {unDummyTrace :: [(DummyPayload, DummyPayload)]}
+    deriving (Show)
+
+instance Arbitrary DummyTrace where
+    arbitrary = do
+        len <- choose (1, 20)
+        DummyTrace <$> vector len
+
 data InvalidSDU = InvalidSDU {
       isTimestamp  :: !Mx.RemoteClockModel
     , isIdAndMode  :: !Word16
@@ -318,10 +327,9 @@ instance Arbitrary Uneven where
 -- messages and the testcases will verify that they are correctly reassembled
 -- into the original message.
 --
-prop_mux_snd_recv :: DummyPayload
-                  -> DummyPayload
+prop_mux_snd_recv :: DummyTrace
                   -> Property
-prop_mux_snd_recv request response = ioProperty $ do
+prop_mux_snd_recv messages = ioProperty $ do
     let sduLen = 1260
 
     client_w <- atomically $ newTBQueue 10
@@ -332,7 +340,7 @@ prop_mux_snd_recv request response = ioProperty $ do
         server_r = client_w
 
     (verify, clientApp, serverApp) <- setupMiniReqRsp
-                                        (return ()) endMpsVar request response
+                                        (return ()) endMpsVar messages
 
     clientAsync <-
       async $ Mx.runMuxWithQueues activeTracer "client" (Mx.MuxInitiatorApplication
@@ -353,13 +361,12 @@ prop_mux_snd_recv request response = ioProperty $ do
 --
 setupMiniReqRsp :: IO ()              -- | Action performed by responder before processing the response
                 -> StrictTVar IO Int  -- | Total number of miniprotocols.
-                -> DummyPayload       -- | Request, sent from initiator.
-                -> DummyPayload       -- | Response, sent from responder after receive the request.
+                -> DummyTrace         -- | Trace of messages
                 -> IO ( IO Bool
                       , Mx.Channel IO -> IO ()
                       , Mx.Channel IO -> IO ()
                       )
-setupMiniReqRsp serverAction mpsEndVar request response = do
+setupMiniReqRsp serverAction mpsEndVar (DummyTrace msgs) = do
     serverResultVar <- newEmptyTMVarM
     clientResultVar <- newEmptyTMVarM
 
@@ -368,29 +375,38 @@ setupMiniReqRsp serverAction mpsEndVar request response = do
            , serverApp serverResultVar
            )
   where
+    requests  = map fst msgs
+    responses = map snd msgs
+
     verifyCallback serverResultVar clientResultVar =
         atomically $ (&&) <$> takeTMVar serverResultVar <*> takeTMVar clientResultVar
 
-    reqRespServer :: ReqRespServer DummyPayload DummyPayload IO Bool
+    reqRespServer :: [DummyPayload]
+                  -> ReqRespServer DummyPayload DummyPayload IO Bool
     reqRespServer = go []
       where
-        go reqs = ReqRespServer {
-            recvMsgReq  = \req -> serverAction >> return (response, go (req:reqs)),
-            recvMsgDone = pure $ reverse reqs == [request]
+        go reqs (resp:resps) = ReqRespServer {
+            recvMsgReq  = \req -> serverAction >> return (resp, go (req:reqs) resps),
+            recvMsgDone = pure $ reverse reqs == requests
           }
+        go reqs [] = ReqRespServer {
+            recvMsgReq  = error "server out of replies",
+            recvMsgDone = pure $ reverse reqs == requests
+          }
+
 
     reqRespClient :: [DummyPayload]
                   -> ReqRespClient DummyPayload DummyPayload IO Bool
     reqRespClient = go []
       where
-        go resps []         = SendMsgDone (pure $ reverse resps == [response])
+        go resps []         = SendMsgDone (pure $ reverse resps == responses)
         go resps (req:reqs) = SendMsgReq req $ \resp -> return (go (resp:resps) reqs)
 
     clientApp :: StrictTMVar IO Bool
               -> Mx.Channel IO
               -> IO ()
     clientApp clientResultVar clientChan = do
-        result <- runClient nullTracer clientChan (reqRespClient [request])
+        result <- runClient nullTracer clientChan (reqRespClient requests)
         atomically (putTMVar clientResultVar result)
         end
 
@@ -398,7 +414,7 @@ setupMiniReqRsp serverAction mpsEndVar request response = do
               -> Mx.Channel IO
               -> IO ()
     serverApp serverResultVar serverChan = do
-        result <- runServer nullTracer serverChan reqRespServer
+        result <- runServer nullTracer serverChan (reqRespServer responses)
         atomically (putTMVar serverResultVar result)
         end
 
@@ -421,12 +437,10 @@ waitOnAllClients clientVar clientTot = do
 -- | Verify that it is possible to run two miniprotocols over the same bearer.
 -- Makes sure that messages are delivered to the correct miniprotocol in order.
 --
-prop_mux_2_minis :: DummyPayload
-                 -> DummyPayload
-                 -> DummyPayload
-                 -> DummyPayload
+prop_mux_2_minis :: DummyTrace
+                 -> DummyTrace
                  -> Property
-prop_mux_2_minis request0 response0 response1 request1 = ioProperty $ do
+prop_mux_2_minis msgTrace0 msgTrace1 = ioProperty $ do
     let sduLen = 14000
 
     client_w <- atomically $ newTBQueue 10
@@ -437,9 +451,9 @@ prop_mux_2_minis request0 response0 response1 request1 = ioProperty $ do
         server_r = client_w
 
     (verify_0, client_mp0, server_mp0) <-
-        setupMiniReqRsp (return ()) endMpsVar request0 response0
+        setupMiniReqRsp (return ()) endMpsVar msgTrace0
     (verify_1, client_mp1, server_mp1) <-
-        setupMiniReqRsp (return ()) endMpsVar request1 response1
+        setupMiniReqRsp (return ()) endMpsVar msgTrace1
 
     let clientApp _ ReqResp2 = client_mp0
         clientApp _ ReqResp3 = client_mp1
@@ -488,10 +502,10 @@ prop_mux_starvation (Uneven response0 response1) =
 
     (verify_short, client_short, server_short) <-
         setupMiniReqRsp (waitOnAllClients activeMpsVar 2)
-                        endMpsVar request response0
+                        endMpsVar  $ DummyTrace [(request, response0)]
     (verify_long, client_long, server_long) <-
         setupMiniReqRsp (waitOnAllClients activeMpsVar 2)
-                        endMpsVar request response1
+                        endMpsVar $ DummyTrace [(request, response1)]
 
     let clientApp _ ReqResp2 = client_short
         clientApp _ ReqResp3 = client_long
