@@ -1,4 +1,5 @@
 {-# LANGUAGE ConstraintKinds            #-}
+{-# LANGUAGE DeriveAnyClass             #-}
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE FlexibleInstances          #-}
@@ -18,13 +19,19 @@ module Ouroboros.Consensus.Protocol.ExtNodeConfig (
   ) where
 
 import           Data.Typeable (Typeable)
+import           GHC.Generics (Generic)
+
+import           Cardano.Prelude (NoUnexpectedThunks)
 
 import           Ouroboros.Consensus.Protocol.Abstract
 
 -- | Extension of protocol @p@ by additional static node configuration @cfg@.
 data ExtNodeConfig cfg p
 
-instance (Typeable cfg, OuroborosTag p) => OuroborosTag (ExtNodeConfig cfg p) where
+instance ( Typeable cfg
+         , OuroborosTag p
+         , NoUnexpectedThunks cfg
+         ) => OuroborosTag (ExtNodeConfig cfg p) where
 
   --
   -- Most types remain the same
@@ -45,6 +52,7 @@ instance (Typeable cfg, OuroborosTag p) => OuroborosTag (ExtNodeConfig cfg p) wh
         encNodeConfigP   :: NodeConfig p
       , encNodeConfigExt :: cfg
       }
+    deriving (Generic)
 
   --
   -- Propagate changes
@@ -56,6 +64,10 @@ instance (Typeable cfg, OuroborosTag p) => OuroborosTag (ExtNodeConfig cfg p) wh
   applyChainState       (EncNodeConfig cfg _) = applyChainState       cfg
   rewindChainState      (EncNodeConfig cfg _) = rewindChainState      cfg
   protocolSecurityParam (EncNodeConfig cfg _) = protocolSecurityParam cfg
+
+instance (OuroborosTag p, NoUnexpectedThunks cfg)
+      => NoUnexpectedThunks (NodeConfig (ExtNodeConfig cfg p))
+  -- use generic instance
 
 mapExtNodeConfig :: (a -> b)
                  -> NodeConfig (ExtNodeConfig a p)

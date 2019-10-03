@@ -194,7 +194,8 @@ instance Typeable cfg => NoUnexpectedThunks (Header (ByronBlock cfg)) where
   whnfNoUnexpectedThunks ctxt (ByronHeader hdr _hash) =
       noUnexpectedThunks ctxt hdr
 
-instance (ByronGiven, Typeable cfg) => SupportedBlock (ByronBlock cfg)
+instance (ByronGiven, Typeable cfg, NoUnexpectedThunks cfg)
+    => SupportedBlock (ByronBlock cfg)
 
 {-------------------------------------------------------------------------------
   HasHeader instances
@@ -235,7 +236,7 @@ instance StandardHash (ByronBlock cfg)
 class ConfigContainsGenesis cfg where
   genesisConfig :: cfg -> CC.Genesis.Config
 
-instance (ByronGiven, Typeable cfg, ConfigContainsGenesis cfg)
+instance (ByronGiven, Typeable cfg, ConfigContainsGenesis cfg, NoUnexpectedThunks cfg)
      => UpdateLedger (ByronBlock cfg) where
 
   data LedgerState (ByronBlock cfg) = ByronLedgerState
@@ -523,7 +524,8 @@ instance Typeable cfg => NoUnexpectedThunks (Header (ByronBlockOrEBB cfg)) where
   whnfNoUnexpectedThunks ctxt (ByronHeaderBoundary ebb _) =
       noUnexpectedThunks ctxt ebb
 
-instance (ByronGiven, Typeable cfg) => SupportedBlock (ByronBlockOrEBB cfg)
+instance (ByronGiven, Typeable cfg, NoUnexpectedThunks cfg)
+      => SupportedBlock (ByronBlockOrEBB cfg)
 
 instance (ByronGiven, Typeable cfg) => HasHeader (ByronBlockOrEBB cfg) where
   blockHash      =            blockHash     . getHeader
@@ -580,6 +582,7 @@ type instance BlockProtocol (ByronBlockOrEBB cfg) =
 instance ( ByronGiven
          , Typeable cfg
          , ConfigContainsGenesis cfg
+         , NoUnexpectedThunks cfg
          )
      => UpdateLedger (ByronBlockOrEBB cfg) where
 
@@ -882,7 +885,7 @@ toCBORAHeaderOrBoundary pm epochSlots abob =
   Mempool integration
 -------------------------------------------------------------------------------}
 
-instance (ByronGiven, Typeable cfg, ConfigContainsGenesis cfg)
+instance (ByronGiven, Typeable cfg, ConfigContainsGenesis cfg, NoUnexpectedThunks cfg)
       => ApplyTx (ByronBlockOrEBB cfg) where
   -- | Generalized transactions in Byron
   --
@@ -989,7 +992,7 @@ byronBlockOrEBBMatchesHeader blkOrEbbHdr (ByronBlockOrEBB blkOrEbb) =
   PBFT integration
 -------------------------------------------------------------------------------}
 
-instance (ByronGiven, Typeable cfg, ConfigContainsGenesis cfg)
+instance (ByronGiven, Typeable cfg, ConfigContainsGenesis cfg, NoUnexpectedThunks cfg)
       => ProtocolLedgerView (ByronBlockOrEBB cfg) where
   protocolLedgerView _ns (ByronEBBLedgerState (ByronLedgerState ls _))
     = PBftLedgerView

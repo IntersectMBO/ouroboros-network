@@ -1,4 +1,5 @@
 {-# LANGUAGE ConstraintKinds            #-}
+{-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GADTs                      #-}
@@ -18,6 +19,9 @@ module Ouroboros.Consensus.Protocol.ModChainSel (
 
 import           Data.Proxy (Proxy (..))
 import           Data.Typeable (Typeable)
+import           GHC.Generics (Generic)
+
+import           Cardano.Prelude (NoUnexpectedThunks)
 
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import           Ouroboros.Network.Block (HasHeader)
@@ -40,7 +44,7 @@ data ModChainSel p s
 
 instance (Typeable p, Typeable s, ChainSelection p s) => OuroborosTag (ModChainSel p s) where
 
-    newtype NodeConfig      (ModChainSel p s)    = McsNodeConfig (NodeConfig p)
+    newtype NodeConfig      (ModChainSel p s)    = McsNodeConfig (NodeConfig p) deriving (Generic)
     type    NodeState       (ModChainSel p s)    = NodeState p
     type    ChainState      (ModChainSel p s)    = ChainState p
     type    IsLeader        (ModChainSel p s)    = IsLeader p
@@ -55,3 +59,6 @@ instance (Typeable p, Typeable s, ChainSelection p s) => OuroborosTag (ModChainS
 
     preferCandidate   (McsNodeConfig cfg) = preferCandidate'   (Proxy :: Proxy s) cfg
     compareCandidates (McsNodeConfig cfg) = compareCandidates' (Proxy :: Proxy s) cfg
+
+instance OuroborosTag p => NoUnexpectedThunks (NodeConfig (ModChainSel p s))
+  -- use generic instance

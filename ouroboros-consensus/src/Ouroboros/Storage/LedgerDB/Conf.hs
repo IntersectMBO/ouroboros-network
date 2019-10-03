@@ -1,3 +1,6 @@
+{-# LANGUAGE DataKinds       #-}
+{-# LANGUAGE DeriveAnyClass  #-}
+{-# LANGUAGE DerivingVia     #-}
 {-# LANGUAGE RecordWildCards #-}
 
 module Ouroboros.Storage.LedgerDB.Conf (
@@ -9,6 +12,8 @@ module Ouroboros.Storage.LedgerDB.Conf (
 
 import           Data.Functor.Identity
 import           Data.Void
+
+import           Cardano.Prelude (NoUnexpectedThunks, OnlyCheckIsWHNF (..))
 
 import           Ouroboros.Consensus.Util ((.:))
 
@@ -52,6 +57,7 @@ data LedgerDbConf m l r b e = LedgerDbConf {
       -- validation mode.
     , ldbConfResolve :: r -> m b
     }
+  deriving NoUnexpectedThunks via OnlyCheckIsWHNF "LedgerDbConf" (LedgerDbConf m l r b e)
 
 {-------------------------------------------------------------------------------
   Support for tests

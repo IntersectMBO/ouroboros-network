@@ -39,7 +39,7 @@ module Ouroboros.Storage.ChainDB.Impl.Types (
 import           Data.List.NonEmpty (NonEmpty)
 import           Data.Map.Strict (Map)
 import           Data.Time.Clock (DiffTime)
-import           Data.Typeable (Typeable)
+import           Data.Typeable
 import           Data.Word
 import           GHC.Generics (Generic)
 
@@ -115,8 +115,8 @@ getEnvSTM (CDBHandle varState) f = readTVar varState >>= \case
     ChainDbReopening   -> error "ChainDB used while reopening"
 
 data ChainDbState m blk
-  = ChainDbOpen   (ChainDbEnv m blk)
-  | ChainDbClosed (ChainDbEnv m blk)
+  = ChainDbOpen   !(ChainDbEnv m blk)
+  | ChainDbClosed !(ChainDbEnv m blk)
     -- ^ Note: this 'ChainDbEnv' will only be used to reopen the ChainDB.
   | ChainDbReopening
     -- ^ The ChainDB is being reopened, this should not be performed
@@ -125,12 +125,13 @@ data ChainDbState m blk
     -- This state can only be reached by the 'intReopen' function, which is an
     -- internal function only exposed for testing. During normal use of the
     -- 'ChainDB', it should /never/ be used.
+  deriving (Generic, NoUnexpectedThunks)
 
 data ChainDbEnv m blk = CDB
-  { cdbImmDB          :: ImmDB m blk
-  , cdbVolDB          :: VolDB m blk
-  , cdbLgrDB          :: LgrDB m blk
-  , cdbChain          :: StrictTVar m (AnchoredFragment (Header blk))
+  { cdbImmDB          :: !(ImmDB m blk)
+  , cdbVolDB          :: !(VolDB m blk)
+  , cdbLgrDB          :: !(LgrDB m blk)
+  , cdbChain          :: !(StrictTVar m (AnchoredFragment (Header blk)))
     -- ^ Contains the current chain fragment.
     --
     -- INVARIANT: the anchor point of this fragment is the tip of the
@@ -143,7 +144,7 @@ data ChainDbEnv m blk = CDB
     -- Note that this fragment might also be /longer/ than @k@ headers,
     -- because the oldest blocks from the fragment might not yet have been
     -- copied from the VolatileDB to the ImmutableDB.
-  , cdbImmBlockNo     :: StrictTVar m BlockNo
+  , cdbImmBlockNo     :: !(StrictTVar m BlockNo)
     -- ^ The block number corresponding to the block @k@ blocks back. This is
     -- the most recent \"immutable\" block according to the protocol, i.e., a
     -- block that cannot be rolled back.
@@ -163,7 +164,7 @@ data ChainDbEnv m blk = CDB
     --
     -- Note that the \"immutable\" block will /never/ be /more/ than @k@
     -- blocks back, as opposed to the anchor point of 'cdbChain'.
-  , cdbIterators      :: StrictTVar m (Map IteratorId (m ()))
+  , cdbIterators      :: !(StrictTVar m (Map IteratorId (m ())))
     -- ^ The iterators.
     --
     -- This maps the 'IteratorId's of each open 'Iterator' to a function that,
@@ -171,14 +172,14 @@ data ChainDbEnv m blk = CDB
     -- ChainDB: the open file handles used by iterators can be closed, and the
     -- iterators themselves are closed so that it is impossible to use an
     -- iterator after closing the ChainDB itself.
-  , cdbReaders        :: StrictTVar m (Map ReaderId (StrictTVar m (ReaderState m blk)))
+  , cdbReaders        :: !(StrictTVar m (Map ReaderId (StrictTVar m (ReaderState m blk))))
     -- ^ The readers.
     --
     -- INVARIANT: the 'readerPoint' of each reader is 'withinFragmentBounds'
     -- of the current chain fragment (retrieved 'cdbGetCurrentChain', not by
     -- reading 'cdbChain' directly).
-  , cdbNodeConfig     :: NodeConfig (BlockProtocol blk)
-  , cdbInvalid        :: StrictTVar m (WithFingerprint (Map (HeaderHash blk) SlotNo))
+  , cdbNodeConfig     :: !(NodeConfig (BlockProtocol blk))
+  , cdbInvalid        :: !(StrictTVar m (WithFingerprint (Map (HeaderHash blk) SlotNo)))
     -- ^ Hashes corresponding to invalid blocks. This is used to ignore these
     -- blocks during chain selection.
     --
@@ -188,25 +189,32 @@ data ChainDbEnv m blk = CDB
     --
     -- The 'Fingerprint' changes every time a hash is added to the map, but
     -- not when hashes are garbage-collected from the map.
-  , cdbNextIteratorId :: StrictTVar m IteratorId
-  , cdbNextReaderId   :: StrictTVar m ReaderId
-  , cdbCopyLock       :: StrictMVar m ()
+  , cdbNextIteratorId :: !(StrictTVar m IteratorId)
+  , cdbNextReaderId   :: !(StrictTVar m ReaderId)
+  , cdbCopyLock       :: !(StrictMVar m ())
     -- ^ Lock used to ensure that 'copyToImmDB' is not executed more than
-    -- once concurrentlycopyToImmDB.
+    -- once concurrently.
     --
     -- Note that 'copyToImmDB' can still be executed concurrently with all
     -- others functions, just not with itself.
-  , cdbTracer         :: Tracer m (TraceEvent blk)
-  , cdbRegistry       :: ResourceRegistry m
+  , cdbTracer         :: !(Tracer m (TraceEvent blk))
+  , cdbRegistry       :: !(ResourceRegistry m)
     -- ^ Resource registry that will be used to (re)start the background
     -- threads, see 'cdbBgThreads'.
-  , cdbGcDelay        :: DiffTime
+  , cdbGcDelay        :: !DiffTime
     -- ^ How long to wait between copying a block from the VolatileDB to
     -- ImmutableDB and garbage collecting it from the VolatileDB
-  , cdbBgThreads      :: StrictTVar m [Thread m ()]
+  , cdbBgThreads      :: !(StrictTVar m [Thread m ()])
     -- ^ The background threads.
-  , cdbEpochInfo      :: EpochInfo m
-  }
+  , cdbEpochInfo      :: !(EpochInfo m)
+  } deriving (Generic)
+
+-- | We include @blk@ in 'showTypeOf' because it helps resolving type families
+-- (but avoid including @m@ because we cannot impose @Typeable m@ as a
+-- constraint and still have it work with the simulator)
+instance (IOLike m, ProtocolLedgerView blk)
+      => NoUnexpectedThunks (ChainDbEnv m blk) where
+    showTypeOf _ = "ChainDbEnv m " ++ show (typeRep (Proxy @blk))
 
 {-------------------------------------------------------------------------------
   Exposed internals for testing purposes

@@ -2,6 +2,7 @@
 {-# LANGUAGE DeriveAnyClass          #-}
 {-# LANGUAGE DeriveGeneric           #-}
 {-# LANGUAGE FlexibleContexts        #-}
+{-# LANGUAGE FlexibleInstances       #-}
 {-# LANGUAGE MultiParamTypeClasses   #-}
 {-# LANGUAGE ScopedTypeVariables     #-}
 {-# LANGUAGE StandaloneDeriving      #-}
@@ -51,7 +52,7 @@ class ( HasHeader hoe
 -- This is entirely a legacy concern, and should go away after the Byron era.
 data WithEBBs p
 
-instance (OuroborosTag p) => OuroborosTag (WithEBBs p) where
+instance OuroborosTag p => OuroborosTag (WithEBBs p) where
   --
   -- Most types remain the same
   --
@@ -65,6 +66,7 @@ instance (OuroborosTag p) => OuroborosTag (WithEBBs p) where
   type SupportedHeader (WithEBBs p) = HeaderSupportsWithEBB p
 
   newtype NodeConfig   (WithEBBs p) = WithEBBNodeConfig {unWithEBBNodeConfig :: NodeConfig p}
+    deriving (Generic)
 
   preferCandidate       (WithEBBNodeConfig cfg) = preferCandidate       cfg
   compareCandidates     (WithEBBNodeConfig cfg) = compareCandidates     cfg
@@ -101,6 +103,9 @@ instance (OuroborosTag p) => OuroborosTag (WithEBBs p) where
          | otherwise                    = (mSlot, firstNonEBBSlot cs)
 
       wrap = mkChainStateWithEBBs firstNonEBBSlot'
+
+instance OuroborosTag p => NoUnexpectedThunks (NodeConfig (WithEBBs p))
+ -- use generic instance
 
 -- | A wrapper around @'ChainState' p@ with extra bookeeping data
 --

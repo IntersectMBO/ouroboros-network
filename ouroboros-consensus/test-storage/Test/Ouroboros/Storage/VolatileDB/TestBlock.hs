@@ -19,6 +19,9 @@ import           Test.QuickCheck
 
 import           Control.Monad.Class.MonadThrow
 
+import           Ouroboros.Network.Point (WithOrigin, withOriginFromMaybe,
+                     withOriginToMaybe)
+
 import           Ouroboros.Consensus.Util (SomePair (..))
 import           Ouroboros.Consensus.Util.IOLike
 
@@ -31,19 +34,22 @@ import qualified Ouroboros.Storage.VolatileDB.Impl as Internal hiding (openDB)
 
 type BlockId = Word
 type SerialMagic = Int
-type Predecessor = Maybe BlockId
+type Predecessor = WithOrigin BlockId
 type BlockTestInfo = (BlockId, Predecessor)
 
 type TestBlock = (BlockId, Predecessor, SerialMagic)
 
-toBinary :: (BlockId, Maybe BlockId) -> BL.ByteString
-toBinary = Binary.encode . toBlock
+toBinary :: BlockTestInfo -> BL.ByteString
+toBinary = Binary.encode . convert . toBlock
+  where
+    convert :: TestBlock -> (BlockId, Maybe BlockId, SerialMagic)
+    convert (bid, pre, magic) = (bid, withOriginToMaybe pre, magic)
 
 fromBinary :: BS.ByteString -> Either String BlockTestInfo
 fromBinary bs = do
     block <- decode bs
     case block of
-        (bid, predb, 1 :: SerialMagic) -> Right (bid, predb)
+        (bid, predb, 1 :: SerialMagic) -> Right (bid, withOriginFromMaybe predb)
         _                              -> Left "wrong payload"
 
 guessSlot :: BlockId -> SlotNo

@@ -1,3 +1,6 @@
+{-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE DeriveGeneric       #-}
+{-# LANGUAGE DerivingVia         #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE RecordWildCards     #-}
@@ -44,6 +47,8 @@ import           Control.Monad.Trans.Class (MonadTrans (..))
 import           Data.Type.Coercion
 import           Data.Void
 
+import           Cardano.Prelude (NoUnexpectedThunks (..), OnlyCheckIsWHNF (..))
+
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow (MonadCatch)
 import qualified Control.Monad.Class.MonadThrow as C
@@ -62,6 +67,7 @@ data ErrorHandling e m = ErrorHandling {
       throwError :: forall a. e -> m a
     , catchError :: forall a. m a -> (e -> m a) -> m a
     }
+  deriving NoUnexpectedThunks via OnlyCheckIsWHNF "ErrorHandling" (ErrorHandling e m)
 
 try :: Monad m => ErrorHandling e m -> m a -> m (Either e a)
 try ErrorHandling{..} act = (Right <$> act) `catchError` (return . Left)
@@ -170,6 +176,7 @@ liftErrState _ ErrorHandling{..} = ErrorHandling{
 data ThrowCantCatch e m = ThrowCantCatch {
       throwError' :: forall a. e -> m a
     }
+  deriving NoUnexpectedThunks via OnlyCheckIsWHNF "ThrowCantCatch" (ThrowCantCatch e m)
 
 {-------------------------------------------------------------------------------
   ThrowCantCatch construction

@@ -92,6 +92,7 @@ class ( MonadAsync m
       , MonadThrow (STM m)
       , forall a. NoUnexpectedThunks (m a)
       , forall a. NoUnexpectedThunks a => NoUnexpectedThunks (StrictTVar m a)
+      , forall a. NoUnexpectedThunks a => NoUnexpectedThunks (StrictMVar m a)
       ) => IOLike m where
 
 instance IOLike IO

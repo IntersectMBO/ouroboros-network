@@ -159,7 +159,7 @@ import           GHC.Generics (Generic)
 import           Data.ByteString.Builder (Builder)
 import           Data.ByteString.Lazy (ByteString, toStrict)
 import           Data.Functor (($>), (<&>))
-import           Data.Maybe (fromMaybe, isJust)
+import           Data.Maybe (fromMaybe)
 import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Word
@@ -209,6 +209,7 @@ data ImmutableDBEnv m hash = forall h e. ImmutableDBEnv
 data InternalState m hash h =
     DbClosed !(ClosedState m)
   | DbOpen !(OpenState m hash h)
+  deriving (Generic, NoUnexpectedThunks)
 
 dbIsOpen :: InternalState m hash h -> Bool
 dbIsOpen (DbClosed _) = False
@@ -323,7 +324,7 @@ openDBImpl hashDecoder hashEncoder hasFS@HasFS{..} err epochInfo valPol epochFil
     !ost  <- validateAndReopen hashDecoder hashEncoder hasFS err epochInfo
       valPol epochFileParser initialIteratorID tracer
 
-    stVar <- uncheckedNewMVar (DbOpen ost)
+    stVar <- newMVar (DbOpen ost)
 
     let dbEnv = ImmutableDBEnv hasFS err stVar epochFileParser hashDecoder hashEncoder tracer
         db    = mkDBRecord dbEnv
@@ -814,7 +815,7 @@ appendEBBImpl dbEnv@ImmutableDBEnv{..} epoch hash builder =
 data IteratorHandle hash m = forall h. IteratorHandle
   { _it_hasFS    :: !(HasFS m h)
     -- ^ Bundled HasFS instance allows to hide type parameters
-  , _it_state    :: !(StrictTVar m (Maybe (IteratorState hash h)))
+  , _it_state    :: !(StrictTVar m (IteratorStateOrExhausted hash h))
     -- ^ The state of the iterator. If it is 'Nothing', the iterator is
     -- exhausted and/or closed.
   , _it_end      :: !EpochSlot
@@ -824,6 +825,15 @@ data IteratorHandle hash m = forall h. IteratorHandle
     -- when no @hash@ was specified, then only '_it_end' will be used to
     -- determine when to stop streaming.
   }
+
+data IteratorStateOrExhausted hash h =
+    IteratorStateOpen !(IteratorState hash h)
+  | IteratorStateExhausted
+  deriving (Generic, NoUnexpectedThunks)
+
+iteratorStateIsOpen :: IteratorStateOrExhausted hash h -> Bool
+iteratorStateIsOpen (IteratorStateOpen _)  = True
+iteratorStateIsOpen IteratorStateExhausted = False
 
 data IteratorEndHash hash =
     ItrNoEndHash
@@ -1017,7 +1027,7 @@ streamBinaryBlobsImpl dbEnv mbStart mbEnd = withOpenState dbEnv $ \hasFS st -> d
 
         mbIteratorState <- case mbIndexAndNext of
           -- No filled slot found, so just create a closed iterator
-          Nothing -> return Nothing
+          Nothing -> return IteratorStateExhausted
           Just (index, next@(EpochSlot nextEpoch nextRelSlot)) -> do
             -- Invariant 1 = OK by the search above for a filled slot
 
@@ -1032,13 +1042,13 @@ streamBinaryBlobsImpl dbEnv mbStart mbEnd = withOpenState dbEnv $ \hasFS st -> d
             onException hasFsErr _dbErr (hClose eHnd) $
               hSeek eHnd AbsoluteSeek offset
 
-            return $ Just IteratorState
+            return $ IteratorStateOpen IteratorState
               { _it_next         = next
               , _it_epoch_handle = eHnd
               , _it_epoch_index  = index
               }
 
-        itState <- uncheckedNewTVarM mbIteratorState
+        itState <- newTVarM mbIteratorState
 
         let ith = IteratorHandle
               { _it_hasFS    = hasFS
@@ -1083,9 +1093,9 @@ iteratorNextImpl dbEnv it@IteratorHandle {_it_hasFS = hasFS :: HasFS m h, ..} st
     mbIteratorState <- atomically $ readTVar _it_state
     case mbIteratorState of
       -- Iterator already closed
-      Nothing -> return IteratorExhausted
+      IteratorStateExhausted -> return IteratorExhausted
       -- Valid @next@ thanks to Invariant 1, so go ahead and read it
-      Just iteratorState@IteratorState{..} -> withOpenState dbEnv $ \_ st -> do
+      IteratorStateOpen iteratorState@IteratorState{..} -> withOpenState dbEnv $ \_ st -> do
         slot <- epochInfoAbsolute (_epochInfo st) _it_next
         blob <- readNext iteratorState
         case _it_next of
@@ -1143,7 +1153,7 @@ iteratorNextImpl dbEnv it@IteratorHandle {_it_hasFS = hasFS :: HasFS m h, ..} st
             -- We don't have to look at the end hash, because the next filled
             -- slot can never refer to an EBB (only stored at slot 0), and
             -- only when looking at an EBB can we check the hash.
-          -> atomically $ writeTVar _it_state $ Just its { _it_next = next }
+          -> atomically $ writeTVar _it_state $ IteratorStateOpen its { _it_next = next }
              -- Invariant 1 is OK (see condition), Invariant 2 is unchanged,
              -- Invariant 3 is OK (thanks to nextFilledSlot), Invariant 4 is
              -- OK (readNext moved the handle + nextFilledSlot).
@@ -1189,7 +1199,7 @@ iteratorNextImpl dbEnv it@IteratorHandle {_it_hasFS = hasFS :: HasFS m h, ..} st
               -- Invariant 1 is OK (see the guard above), Invariant 2 is OK,
               -- Invariant 3 is OK (thanks to firstFilledSlot), Invariant 4 is
               -- OK.
-              atomically $ writeTVar _it_state $ Just IteratorState
+              atomically $ writeTVar _it_state $ IteratorStateOpen IteratorState
                 { _it_next = EpochSlot epoch relSlot
                 , _it_epoch_handle = eHnd
                 , _it_epoch_index = index
@@ -1199,7 +1209,7 @@ iteratorHasNextImpl :: (HasCallStack, IOLike m)
                     => IteratorHandle hash m
                     -> m Bool
 iteratorHasNextImpl IteratorHandle { _it_state } =
-    fmap isJust $ atomically $ readTVar _it_state
+    fmap iteratorStateIsOpen $ atomically $ readTVar _it_state
 
 iteratorCloseImpl :: (HasCallStack, IOLike m)
                   => IteratorHandle hash m
@@ -1208,12 +1218,12 @@ iteratorCloseImpl IteratorHandle {..} = do
     mbIteratorState <- atomically $ readTVar _it_state
     case mbIteratorState of
       -- Already closed
-      Nothing -> return ()
-      Just IteratorState {..} -> do
+      IteratorStateExhausted -> return ()
+      IteratorStateOpen IteratorState {..} -> do
         -- First set it to Nothing to indicate it is closed, as the call to
         -- hClose might fail, which would leave the iterator open in an
         -- invalid state.
-        atomically $ writeTVar _it_state Nothing
+        atomically $ writeTVar _it_state IteratorStateExhausted
         hClose _it_epoch_handle
   where
     HasFS{..} = _it_hasFS

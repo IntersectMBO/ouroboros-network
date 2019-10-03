@@ -58,6 +58,8 @@ import           Data.Typeable (Typeable)
 import           GHC.Stack (HasCallStack)
 import           System.FilePath ((</>))
 
+import           Cardano.Prelude (allNoUnexpectedThunks)
+
 import           Control.Monad.Class.MonadThrow
 
 import           Ouroboros.Network.Block (pattern BlockPoint, ChainHash (..),
@@ -65,6 +67,7 @@ import           Ouroboros.Network.Block (pattern BlockPoint, ChainHash (..),
                      MaxSlotNo, Point, SlotNo, StandardHash, pointHash,
                      withHash)
 import qualified Ouroboros.Network.Block as Block
+import           Ouroboros.Network.Point (WithOrigin (..))
 
 import           Ouroboros.Consensus.Block (GetHeader, Header)
 import qualified Ouroboros.Consensus.Block as Block
@@ -89,10 +92,23 @@ import qualified Ouroboros.Storage.VolatileDB as VolDB
 data VolDB m blk = VolDB {
       volDB    :: VolatileDB (HeaderHash blk) m
     , decBlock :: forall s. Decoder s (Lazy.ByteString -> blk)
+      -- ^ TODO introduce a newtype wrapper around the @s@ so we can use
+      -- generics to derive the NoUnexpectedThunks instance.
     , encBlock :: blk -> Encoding
     , err      :: ErrorHandling (VolatileDBError (HeaderHash blk)) m
     , errSTM   :: ThrowCantCatch (VolatileDBError (HeaderHash blk)) (STM m)
     }
+
+-- Universal type; we can't use generics
+instance NoUnexpectedThunks (VolDB m blk) where
+  showTypeOf _ = "VolDB"
+  whnfNoUnexpectedThunks ctxt VolDB {..} = allNoUnexpectedThunks
+    [ noUnexpectedThunks ctxt volDB
+    , noUnexpectedThunks ctxt decBlock
+    , noUnexpectedThunks ctxt encBlock
+    , noUnexpectedThunks ctxt err
+    , noUnexpectedThunks ctxt errSTM
+    ]
 
 {-------------------------------------------------------------------------------
   Initialization
@@ -159,11 +175,11 @@ getIsMember :: VolDB m blk -> STM m (HeaderHash blk -> Bool)
 getIsMember db = withSTM db VolDB.getIsMember
 
 getPredecessor :: VolDB m blk
-               -> STM m (HeaderHash blk -> Maybe (HeaderHash blk))
+               -> STM m (HeaderHash blk -> WithOrigin (HeaderHash blk))
 getPredecessor db = withSTM db VolDB.getPredecessor
 
 getSuccessors :: VolDB m blk
-              -> STM m (Maybe (HeaderHash blk) -> Set (HeaderHash blk))
+              -> STM m (WithOrigin (HeaderHash blk) -> Set (HeaderHash blk))
 getSuccessors db = withSTM db VolDB.getSuccessors
 
 getMaxSlotNo :: VolDB m blk
@@ -204,19 +220,19 @@ garbageCollect db slotNo = withDB db $ \vol ->
 -- the chain (fragment) ending with @B@ is also a potential candidate.
 candidates
   :: forall blk.
-     (Maybe (HeaderHash blk) -> Set (HeaderHash blk)) -- ^ @getSuccessors@
-  -> Point blk                                        -- ^ @B@
+     (WithOrigin (HeaderHash blk) -> Set (HeaderHash blk)) -- ^ @getSuccessors@
+  -> Point blk                                             -- ^ @B@
   -> [NonEmpty (HeaderHash blk)]
      -- ^ Each element in the list is a list of hashes from which we can
      -- construct a fragment anchored at the point @B@.
 candidates succsOf b = mapMaybe NE.nonEmpty $ go (fromChainHash (pointHash b))
   where
-    go :: Maybe (HeaderHash blk) -> [[HeaderHash blk]]
+    go :: WithOrigin (HeaderHash blk) -> [[HeaderHash blk]]
     go mbHash = case Set.toList $ succsOf mbHash of
       []    -> [[]]
       succs -> [ next : candidate
                | next <- succs
-               , candidate <- go (Just next)
+               , candidate <- go (At next)
                ]
 
 -- | Variant of 'isReachable' that obtains its arguments in the same 'STM'
@@ -242,10 +258,10 @@ isReachableSTM volDB getI b = do
 -- 'True' <=> for all transitive predecessors @B'@ of @B@ we have @B' ∈ V@ or
 -- @B' = I@.
 isReachable :: forall blk. (HasHeader blk, HasCallStack)
-            => (HeaderHash blk -> Maybe (HeaderHash blk))  -- ^ @getPredecessor@
-            -> (HeaderHash blk -> Bool)                    -- ^ @isMember@
-            -> Point blk                                   -- ^ @I@
-            -> Point blk                                   -- ^ @B@
+            => (HeaderHash blk -> WithOrigin (HeaderHash blk))  -- ^ @getPredecessor@
+            -> (HeaderHash blk -> Bool)                         -- ^ @isMember@
+            -> Point blk                                        -- ^ @I@
+            -> Point blk                                        -- ^ @B@
             -> Maybe (NonEmpty (HeaderHash blk))
 isReachable predecessor isMember i b =
     case computePath predecessor isMember from to of
@@ -277,8 +293,8 @@ isReachable predecessor isMember i b =
 -- See the documentation of 'Path'.
 computePath
   :: forall blk. HasHeader blk
-  => (HeaderHash blk -> Maybe (HeaderHash blk)) -- ^ @getPredecessor@
-  -> (HeaderHash blk -> Bool)                   -- ^ @isMember@
+  => (HeaderHash blk -> WithOrigin (HeaderHash blk)) -- ^ @getPredecessor@
+  -> (HeaderHash blk -> Bool)                        -- ^ @isMember@
   -> StreamFrom blk
   -> StreamTo   blk
   -> Maybe (Path blk)
@@ -304,7 +320,7 @@ computePath predecessor isMember from to = case to of
     go :: [HeaderHash blk] -> HeaderHash blk -> Maybe (Path blk)
     go acc hash = case predecessor hash of
       -- Found genesis
-      Nothing -> case from of
+      Origin -> case from of
         StreamFromInclusive _
           -> Nothing
         StreamFromExclusive GenesisPoint
@@ -312,7 +328,7 @@ computePath predecessor isMember from to = case to of
         StreamFromExclusive (BlockPoint {})
           -> Nothing
 
-      Just predHash
+      At predHash
         | isMember predHash -> case from of
           StreamFromInclusive pt
             | BlockHash predHash == Block.pointHash pt
@@ -490,9 +506,9 @@ parse dec hash bytes =
   Auxiliary
 -------------------------------------------------------------------------------}
 
-fromChainHash :: ChainHash blk -> Maybe (HeaderHash blk)
-fromChainHash GenesisHash      = Nothing
-fromChainHash (BlockHash hash) = Just hash
+fromChainHash :: ChainHash blk -> WithOrigin (HeaderHash blk)
+fromChainHash GenesisHash      = Origin
+fromChainHash (BlockHash hash) = At hash
 
 extractInfo :: HasHeader blk => blk -> VolDB.BlockInfo (HeaderHash blk)
 extractInfo b = VolDB.BlockInfo {

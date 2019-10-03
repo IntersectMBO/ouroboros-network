@@ -1,5 +1,7 @@
+{-# LANGUAGE DataKinds     #-}
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE DerivingVia   #-}
 {-# LANGUAGE RankNTypes    #-}
 module Ouroboros.Storage.ImmutableDB.API
   ( ImmutableDB (..)
@@ -13,7 +15,8 @@ module Ouroboros.Storage.ImmutableDB.API
   , module Ouroboros.Storage.ImmutableDB.Types
   ) where
 
-import           Cardano.Prelude (NoUnexpectedThunks (..), ThunkInfo (..))
+import           Cardano.Prelude (NoUnexpectedThunks (..), OnlyCheckIsWHNF (..),
+                     ThunkInfo (..))
 
 import           Data.ByteString.Builder (Builder)
 import           Data.ByteString.Lazy (ByteString)
@@ -208,6 +211,7 @@ data ImmutableDB hash m = ImmutableDB
     -- | Throw 'ImmutableDB' errors
   , immutableDBErr :: ErrorHandling ImmutableDBError m
   }
+  deriving NoUnexpectedThunks via OnlyCheckIsWHNF "ImmutableDB" (ImmutableDB hash m)
 
 -- | An 'Iterator' is a handle which can be used to efficiently stream binary
 -- blobs. Slots not containing a blob and missing EBBs are skipped.
