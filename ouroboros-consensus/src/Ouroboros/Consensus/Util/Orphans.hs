@@ -31,7 +31,7 @@ import           Ouroboros.Consensus.Util.Condense
 instance Condense (HeaderHash block) => Condense (Point block) where
     condense (Point Origin)        = "Origin"
     condense (Point (At blk)) =
-      "(Point " <> condense ptSlot <> ", " <> condense ptHash <> ")"
+      "(Point " <> condense ptSlot <> " " <> condense ptHash <> ")"
       where
       ptSlot = blockPointSlot blk
       ptHash = blockPointHash blk
