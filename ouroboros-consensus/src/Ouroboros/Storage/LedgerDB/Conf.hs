@@ -1,6 +1,5 @@
 {-# LANGUAGE DataKinds       #-}
 {-# LANGUAGE DeriveAnyClass  #-}
-{-# LANGUAGE DeriveGeneric   #-}
 {-# LANGUAGE DerivingVia     #-}
 {-# LANGUAGE RecordWildCards #-}
 
@@ -13,9 +12,8 @@ module Ouroboros.Storage.LedgerDB.Conf (
 
 import           Data.Functor.Identity
 import           Data.Void
-import           GHC.Generics (Generic)
 
-import           Cardano.Prelude (NoUnexpectedThunks)
+import           Cardano.Prelude (NoUnexpectedThunks, OnlyCheckIsWHNF (..))
 
 import           Ouroboros.Consensus.Util ((.:))
 
@@ -58,7 +56,8 @@ data LedgerDbConf m l r b e = LedgerDbConf {
       -- corruption must have happened and the 'ChainStateDB' should trigger
       -- validation mode.
     , ldbConfResolve :: r -> m b
-    } deriving (Generic, NoUnexpectedThunks)
+    }
+  deriving NoUnexpectedThunks via OnlyCheckIsWHNF "LedgerDbConf" (LedgerDbConf m l r b e)
 
 {-------------------------------------------------------------------------------
   Support for tests
