@@ -1,89 +1,125 @@
-{-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications    #-}
+{-# LANGUAGE TypeFamilies        #-}
 
-module Test.Ouroboros.Storage.ChainDB.Mock (tests) where
+module Test.Ouroboros.Storage.ChainDB.Mock (
+    openDB
+  ) where
 
-import           Control.Exception (Exception)
-import           Control.Monad
-import           Test.QuickCheck
-import           Test.Tasty
-import           Test.Tasty.QuickCheck
+import           Data.Bifunctor (first)
+import qualified Data.Map as Map
 
 import           Control.Monad.Class.MonadThrow
-import           Control.Monad.IOSim
 
-import           Ouroboros.Network.MockChain.Chain (Chain (..), ChainUpdate)
-import qualified Ouroboros.Network.MockChain.Chain as Chain
+import           Ouroboros.Network.Block (ChainUpdate)
+import qualified Ouroboros.Network.MockChain.ProducerState as CPS
 
+import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.Ledger.Abstract
+import           Ouroboros.Consensus.Ledger.Extended
+import           Ouroboros.Consensus.Protocol.Abstract
+import           Ouroboros.Consensus.Util ((..:))
 import           Ouroboros.Consensus.Util.IOLike
-import           Ouroboros.Consensus.Util.ResourceRegistry
+import           Ouroboros.Consensus.Util.STM (blockUntilJust)
 
-import           Ouroboros.Storage.ChainDB.API (ChainDB)
-import qualified Ouroboros.Storage.ChainDB.API as ChainDB
-import qualified Ouroboros.Storage.ChainDB.Mock as Mock
+import           Ouroboros.Storage.ChainDB.API
 
-import           Test.Util.Orphans.IOLike ()
+import           Test.Ouroboros.Storage.ChainDB.Model (Model)
+import qualified Test.Ouroboros.Storage.ChainDB.Model as Model
 
-import           Test.Ouroboros.Storage.ChainDB.TestBlock
+openDB :: forall m blk. (IOLike m, ProtocolLedgerView blk)
+       => NodeConfig (BlockProtocol blk)
+       -> ExtLedgerState blk
+       -> m (ChainDB m blk)
+openDB cfg initLedger = do
+    db :: StrictTVar m (Model blk) <- uncheckedNewTVarM (Model.empty initLedger)
 
-tests :: TestTree
-tests = testGroup "Mock" [
-      testProperty "chainRoundtrip" prop_chainRoundtrip
-    , testProperty "reader"         prop_reader
-    ]
+    let querySTM :: (Model blk -> a) -> STM m a
+        querySTM f = readTVar db >>= \m ->
+          if Model.isOpen m
+            then return (f m)
+            else throwM $ ClosedDBError @blk
 
-prop_chainRoundtrip :: BlockChain -> Property
-prop_chainRoundtrip bc = runSimOrThrow test
+        query :: (Model blk -> a) -> m a
+        query = atomically . querySTM
+
+        queryE :: (Model blk -> Either (ChainDbError blk) a) -> m a
+        queryE f = query f >>= either throwM return
+
+        updateSTM :: (Model blk -> (a, Model blk)) -> STM m a
+        updateSTM f = do
+          m <- readTVar db
+          if Model.isOpen m
+            then let (a, m') = f m in writeTVar db m' >> return a
+            else
+              throwM $ ClosedDBError @blk
+
+        updateSTME :: (Model blk -> Either (ChainDbError blk) (a, Model blk))
+                   -> STM m a
+        updateSTME f = do
+            m <- readTVar db
+            if Model.isOpen m
+              then case f m of
+                Left e        -> throwM e
+                Right (a, m') -> writeTVar db m' >> return a
+              else
+                throwM $ ClosedDBError @blk
+
+        update :: (Model blk -> (a, Model blk)) -> m a
+        update = atomically . updateSTM
+
+        updateE :: (Model blk -> Either (ChainDbError blk) (a, Model blk))
+                -> m a
+        updateE = atomically . updateSTME
+
+        update_ :: (Model blk -> Model blk) -> m ()
+        update_ f = update (\m -> ((), f m))
+
+        iterator :: IteratorId -> Iterator m blk
+        iterator itrId = Iterator {
+              iteratorNext  = update  $ Model.iteratorNext  itrId
+            , iteratorClose = update_ $ Model.iteratorClose itrId
+            , iteratorId    = itrId
+            }
+
+        reader :: CPS.ReaderId -> Reader m blk blk
+        reader rdrId = Reader {
+              readerInstruction =
+                updateE readerInstruction'
+            , readerInstructionBlocking = atomically $
+                blockUntilJust $ updateSTME readerInstruction'
+            , readerForward = \ps ->
+                updateE $ Model.readerForward rdrId ps
+            , readerClose =
+                update_ $ Model.readerClose rdrId
+            , readerId =
+                rdrId
+            }
+          where
+            readerInstruction' :: Model blk
+                               -> Either (ChainDbError blk)
+                                         (Maybe (ChainUpdate blk blk), Model blk)
+            readerInstruction' = Model.readerInstruction rdrId
+
+    return ChainDB {
+        addBlock            = update_  . Model.addBlock cfg
+      , getCurrentChain     = querySTM $ Model.lastK k getHeader
+      , getCurrentLedger    = querySTM $ Model.currentLedger
+      , getBlock            = queryE   . Model.getBlockByPoint
+      , getTipBlock         = query    $ Model.tipBlock
+      , getTipHeader        = query    $ (fmap getHeader . Model.tipBlock)
+      , getTipPoint         = querySTM $ Model.tipPoint
+      , getTipBlockNo       = querySTM $ Model.tipBlockNo
+      , getIsFetched        = querySTM $ flip Model.hasBlockByPoint
+      , getIsInvalidBlock   = querySTM $ (fmap (flip Map.member)) . Model.invalid
+      , getMaxSlotNo        = querySTM $ Model.maxSlotNo
+      , streamBlocks        = updateE  ..: const (fmap (first (fmap iterator)) ..: Model.streamBlocks k)
+      , newBlockReader      = update   .   const (first reader . Model.readBlocks)
+      , newHeaderReader     = update   .   const (first (fmap getHeader . reader) . Model.readBlocks)
+
+      , closeDB             = atomically $ modifyTVar db Model.closeDB
+      , isOpen              = Model.isOpen <$> readTVar db
+      }
   where
-    test :: forall s. SimM s Property
-    test = do
-        db <- ChainDB.fromChain openDB (blockChain bc)
-        c' <- ChainDB.toChain db
-        return $ blockChain bc === c'
-
-prop_reader :: BlockTree -> Permutation -> Property
-prop_reader bt p = runSimOrThrow test
-  where
-    blocks = permute p $ treeToBlocks bt
-
-    test :: forall s. SimM s Property
-    test = withRegistry $ \registry -> do
-        db       <- openDB
-        reader   <- ChainDB.newBlockReader db registry
-        chainVar <- uncheckedNewTVarM Genesis
-
-        -- Fork a thread that applies all instructions from the reader
-        _tid <- fork $ monitorReader chainVar reader
-
-        -- Feed all blocks to the chain DB
-        mapM_ (ChainDB.addBlock db) blocks
-
-        -- Give reader chance to finish
-        threadDelay 1000000
-
-        -- Reconstructed chain should be equal to the current chain
-        current       <- ChainDB.toChain db
-        reconstructed <- atomically $ readTVar chainVar
-        return $ current === reconstructed
-
-    monitorReader :: StrictTVar (SimM s) (Chain TestBlock)
-                  -> ChainDB.Reader (SimM s) TestBlock TestBlock
-                  -> SimM s ()
-    monitorReader chainVar reader = forever $ do
-        upd <- ChainDB.readerInstructionBlocking reader
-        atomically $ do
-          chain <- readTVar chainVar
-          case Chain.applyChainUpdate upd chain of
-            Just chain' -> writeTVar chainVar chain'
-            Nothing     -> throwM $ InvalidUpdate chain upd
-
-data InvalidUpdate = InvalidUpdate (Chain TestBlock) (ChainUpdate TestBlock TestBlock)
-  deriving (Show)
-
-instance Exception InvalidUpdate
-
-{-------------------------------------------------------------------------------
-  Auxiliary
--------------------------------------------------------------------------------}
-
-openDB :: forall s. SimM s (ChainDB (SimM s) TestBlock)
-openDB = Mock.openDB singleNodeTestConfig testInitExtLedger
+    k = protocolSecurityParam cfg

@@ -124,8 +124,6 @@ library
                        Ouroboros.Storage.ChainDB.Impl.Reopen
                        Ouroboros.Storage.ChainDB.Impl.Types
                        Ouroboros.Storage.ChainDB.Impl.VolDB
-                       Ouroboros.Storage.ChainDB.Mock
-                       Ouroboros.Storage.ChainDB.Model
                        Ouroboros.Storage.EpochInfo
                        Ouroboros.Storage.EpochInfo.API
                        Ouroboros.Storage.EpochInfo.CumulEpochSizes
@@ -342,7 +340,9 @@ test-suite test-storage
                     Test.Ouroboros.Storage.ChainDB.ImmDB
                     Test.Ouroboros.Storage.ChainDB.Iterator
                     Test.Ouroboros.Storage.ChainDB.Mock
+                    Test.Ouroboros.Storage.ChainDB.Mock.Test
                     Test.Ouroboros.Storage.ChainDB.Model
+                    Test.Ouroboros.Storage.ChainDB.Model.Test
                     Test.Ouroboros.Storage.ChainDB.StateMachine
                     Test.Ouroboros.Storage.ChainDB.TestBlock
                     Test.Ouroboros.Storage.FS

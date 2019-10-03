@@ -32,13 +32,13 @@ import           Ouroboros.Consensus.Util.ResourceRegistry
 import           Ouroboros.Storage.ChainDB (TraceAddBlockEvent (..), addBlock,
                      closeDB, openDB, toChain)
 import qualified Ouroboros.Storage.ChainDB as ChainDB
-import qualified Ouroboros.Storage.ChainDB.Model as Model
 
 import qualified Test.Util.FS.Sim.MockFS as Mock
 import           Test.Util.Orphans.IOLike ()
 import           Test.Util.Orphans.NoUnexpectedThunks ()
 import           Test.Util.SOP
 
+import qualified Test.Ouroboros.Storage.ChainDB.Model as Model
 import           Test.Ouroboros.Storage.ChainDB.StateMachine (mkArgs)
 import           Test.Ouroboros.Storage.ChainDB.TestBlock
 

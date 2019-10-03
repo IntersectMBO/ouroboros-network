@@ -84,7 +84,6 @@ import           Ouroboros.Consensus.Util.STM (Fingerprint (..),
 
 import           Ouroboros.Storage.ChainDB
 import qualified Ouroboros.Storage.ChainDB as ChainDB
-import qualified Ouroboros.Storage.ChainDB.Model as Model
 import           Ouroboros.Storage.EpochInfo (fixedSizeEpochInfo)
 import           Ouroboros.Storage.ImmutableDB
                      (ValidationPolicy (ValidateAllEpochs))
@@ -94,6 +93,7 @@ import           Ouroboros.Storage.LedgerDB.InMemory (ledgerDbDefaultParams)
 import qualified Ouroboros.Storage.LedgerDB.OnDisk as LedgerDB
 import qualified Ouroboros.Storage.Util.ErrorHandling as EH
 
+import qualified Test.Ouroboros.Storage.ChainDB.Model as Model
 import           Test.Ouroboros.Storage.ChainDB.TestBlock
 import           Test.Ouroboros.Storage.Util ((=:=))
 
