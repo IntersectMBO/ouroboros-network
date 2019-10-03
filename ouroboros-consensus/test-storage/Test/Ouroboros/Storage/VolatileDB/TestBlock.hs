@@ -118,25 +118,25 @@ instance Arbitrary FileCorruption where
         ]
 
 -- | Multiple corruptions
-type Corruptions = NonEmpty (FileCorruption, String)
+type Corruptions = NonEmpty (FileCorruption, FsPath)
 
 -- | The same file will not occur twice.
-generateCorruptions :: NonEmpty String -> Gen Corruptions
+generateCorruptions :: NonEmpty FsPath -> Gen Corruptions
 generateCorruptions allFiles = sized $ \n -> do
     subl  <- sublistOf (NE.toList allFiles) `suchThat` (not . null)
     k     <- choose (1, 1 `max` n)
     let files = NE.fromList $ take k subl
     forM files $ \file -> (, file) <$> arbitrary
 
-corruptFile :: MonadThrow m => HasFS m h -> FileCorruption -> String -> m Bool
+corruptFile :: MonadThrow m => HasFS m h -> FileCorruption -> FsPath -> m Bool
 corruptFile hasFS@HasFS{..} corr file = case corr of
-    DeleteFile -> removeFile (mkFsPath [file]) >> return True
-    DropLastBytes n -> withFile hasFS (mkFsPath [file]) (AppendMode AllowExisting) $ \hnd -> do
+    DeleteFile -> removeFile file >> return True
+    DropLastBytes n -> withFile hasFS file (AppendMode AllowExisting) $ \hnd -> do
         fileSize <- hGetSize hnd
         let newFileSize = if n >= fileSize then 0 else fileSize - n
         hTruncate hnd newFileSize
         return $ fileSize /= newFileSize
-    AppendBytes n -> withFile hasFS (mkFsPath [file]) (AppendMode AllowExisting) $ \hnd -> do
+    AppendBytes n -> withFile hasFS file (AppendMode AllowExisting) $ \hnd -> do
         fileSize <- hGetSize hnd
         let newFileSize = fileSize + (fromIntegral n)
         _ <- hPut hasFS hnd (BB.byteString $ BS.replicate n 0)
@@ -151,6 +151,6 @@ createFileImpl hasFS env = do
     SomePair _stHasFS st <- Internal.getInternalState env
     let nextFd = Internal._nextNewFileId st
     let path = Internal.filePath nextFd
-    withFile hasFS (mkFsPath [path]) (AppendMode MustBeNew) $ \_hndl -> do
+    withFile hasFS path (AppendMode MustBeNew) $ \_hndl -> do
         return ()
     return ()

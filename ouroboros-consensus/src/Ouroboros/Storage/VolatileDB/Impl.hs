@@ -142,9 +142,9 @@ volatileDbIsOpen VolatileDbClosed   = False
 
 data InternalState blockId h = InternalState {
       _currentWriteHandle :: !(Handle h) -- The unique open file we append blocks.
-    , _currentWritePath   :: !String -- The path of the file above.
+    , _currentWritePath   :: !FsPath -- The path of the file above.
     , _currentWriteOffset :: !Word64 -- The 'WriteHandle' for the same file.
-    , _nextWriteFiles     :: ![(String, Word)] -- The path and the size of the next files to write
+    , _nextWriteFiles     :: ![(FsPath, Word)] -- The path and the size of the next files to write
     , _nextNewFileId      :: !Int -- The next file name Id.
     , _currentMap         :: !(Index blockId) -- The content of each file.
     , _currentRevMap      :: !(ReverseIndex blockId) -- Where to find each block from slot.
@@ -247,7 +247,7 @@ getBlockImpl env@VolatileDBEnv{..} slot = do
         case Map.lookup slot _currentRevMap of
             Nothing -> return (st, Nothing)
             Just InternalBlockInfo {..} ->  do
-                bs <- withFile hasFS (mkFsPath [ibFile]) ReadMode $ \hndl -> do
+                bs <- withFile hasFS ibFile ReadMode $ \hndl -> do
                         _ <- hSeek hndl AbsoluteSeek (fromIntegral ibSlotOffset)
                         hGetExactly hasFS hndl (fromIntegral ibBlockSize)
                 return (st, Just bs)
@@ -329,7 +329,7 @@ tryCollectFile :: forall m h blockId
                -> VolatileDBEnv m blockId
                -> SlotNo
                -> InternalState blockId h
-               -> (String, FileInfo blockId)
+               -> (FsPath, FileInfo blockId)
                -> m (InternalState blockId h)
 tryCollectFile hasFS@HasFS{..} env@VolatileDBEnv{..} slot st@InternalState{..} (file, fileInfo) =
     let canGC        = FileInfo.canGC fileInfo slot
@@ -341,7 +341,7 @@ tryCollectFile hasFS@HasFS{..} env@VolatileDBEnv{..} slot st@InternalState{..} (
         succMap' = foldl deleteMapSet _currentSuccMap deletedPairs
     in if   | not canGC     -> return st
             | not isCurrent -> do
-                removeFile (mkFsPath [file])
+                removeFile file
                 return st { _currentMap = Map.delete file _currentMap
                           , _currentRevMap = rv'
                           , _currentSuccMap = succMap'
@@ -429,7 +429,7 @@ nextFile HasFS{..} _err VolatileDBEnv{..} st = do
     case _nextWriteFiles st of
         [] -> do
             let file = filePath $ _nextNewFileId st
-            hndl <- hOpen (mkFsPath [file]) (AppendMode MustBeNew)
+            hndl <- hOpen file (AppendMode MustBeNew)
             return $ st {
                   _currentWriteHandle = hndl
                 , _currentWritePath   = file
@@ -438,7 +438,7 @@ nextFile HasFS{..} _err VolatileDBEnv{..} st = do
                 , _currentMap         = Map.insert file FileInfo.empty (_currentMap st)
             }
         (file, size) : rest -> do
-            hndl <- hOpen (mkFsPath [file]) (AppendMode AllowExisting)
+            hndl <- hOpen file (AppendMode AllowExisting)
             return $ st {
                   _currentWriteHandle = hndl
                 , _currentWritePath   = file
@@ -472,16 +472,21 @@ mkInternalStateDB :: (HasCallStack, MonadThrow m, MonadCatch m, Ord blockId)
                   -> m (InternalState blockId h)
 mkInternalStateDB hasFS@HasFS{..} err parser maxBlocksPerFile = wrapFsError hasFsErr err $ do
     allFiles <- do
-        createDirectoryIfMissing True (mkFsPath [])
-        listDirectory (mkFsPath [])
+        createDirectoryIfMissing True dir
+        Set.map toFsPath <$> listDirectory dir
     mkInternalState hasFS err parser maxBlocksPerFile allFiles
+  where
+    dir = mkFsPath []
+
+    toFsPath :: String -> FsPath
+    toFsPath file = mkFsPath [file]
 
 mkInternalState :: forall blockId m h e. (HasCallStack, MonadCatch m, Ord blockId)
                 => HasFS m h
                 -> ErrorHandling (VolatileDBError blockId) m
                 -> Parser e m blockId
                 -> Int
-                -> Set String
+                -> Set FsPath
                 -> m (InternalState blockId h)
 mkInternalState hasFS@HasFS{..} err parser n files = wrapFsError hasFsErr err $ do
     lastFd <- findNextFd err files
@@ -490,8 +495,8 @@ mkInternalState hasFS@HasFS{..} err parser n files = wrapFsError hasFsErr err $ 
            -> ReverseIndex blockId
            -> SuccessorsIndex blockId
            -> Maybe (blockId, SlotNo)
-           -> [(FileId, String, FileSize)] -- The relative path and size of the files with less than n blocks, if any found already.
-           -> [String]
+           -> [(FileId, FsPath, FileSize)] -- The relative path and size of the files with less than n blocks, if any found already.
+           -> [FsPath]
            -> m (InternalState blockId h)
         go mp revMp succMp maxSlot haveLessThanN leftFiles = case leftFiles of
             [] -> do
@@ -512,7 +517,7 @@ mkInternalState hasFS@HasFS{..} err parser n files = wrapFsError hasFsErr err $ 
                                 -- If it's not the last file, we just ignore it and open a
                                 -- new one.
                                 return (filePath fd', [], lst + 2, Map.insert (filePath fd') FileInfo.empty mp, 0)
-                hndl <- hOpen (mkFsPath [fileToWrite]) (AppendMode AllowExisting)
+                hndl <- hOpen fileToWrite (AppendMode AllowExisting)
 
                 let maxSlotNo = FileInfo.maxSlotInFiles (Map.elems mp')
                 return $ InternalState {
@@ -527,8 +532,7 @@ mkInternalState hasFS@HasFS{..} err parser n files = wrapFsError hasFsErr err $ 
                     , _currentMaxSlotNo   = maxSlotNo
                 }
             file : restFiles -> do
-                let path = mkFsPath [file]
-                (ls, mErr) <- parse parser path
+                (ls, mErr) <- parse parser file
                 let offset = case ls of
                         [] -> 0
                         _  -> let (so,(bs,_)) = last ls in so + bs
@@ -543,7 +547,7 @@ mkInternalState hasFS@HasFS{..} err parser n files = wrapFsError hasFsErr err $ 
                         -- concurrent writers, which is not allowed.
 
                         -- TODO(kde) we should add a Warning log here.
-                        withFile hasFS path (AppendMode AllowExisting) $ \hndl ->
+                        withFile hasFS file (AppendMode AllowExisting) $ \hndl ->
                             hTruncate hndl (fromIntegral offset)
                         return ()
                 newRevMp <- fromEither err $ reverseMap file revMp fileMp
@@ -555,7 +559,7 @@ mkInternalState hasFS@HasFS{..} err parser n files = wrapFsError hasFsErr err $ 
                         succMp
                         ls
                 -- error here is reasonable because we have already checked that all filenames parse.
-                let fd = fromMaybe (error $ "file name " <> file <> " failed to parse") (parseFd file)
+                let fd = fromMaybe (error $ "file name " <> show file <> " failed to parse") (parseFd file)
                 let newHaveLessThanN = if FileInfo.isFull n fileInfo
                         then haveLessThanN
                         else (fd, file, offset) : haveLessThanN
@@ -609,7 +613,7 @@ modifyState VolatileDBEnv{_dbHasFS = hasFS :: HasFS m h, ..} action = do
 
 reverseMap :: forall blockId
            .  Ord blockId
-           => String
+           => FsPath
            -> ReverseIndex blockId
            -> Map SlotOffset (BlockSize, BlockInfo blockId)
            -> Either (VolatileDBError blockId) (ReverseIndex blockId)
@@ -626,7 +630,7 @@ reverseMap file revMp mp = foldM f revMp (Map.toList mp)
 -- Throws an error if one of the given file names does not parse.
 findNextFd :: forall m blockId. Monad m
            => ErrorHandling (VolatileDBError blockId) m
-           -> Set String
+           -> Set FsPath
            -> m (Maybe FileId)
 findNextFd err files = foldM go Nothing files
     where
@@ -634,7 +638,7 @@ findNextFd err files = foldM go Nothing files
         maxMaybe ma a = case ma of
             Nothing -> a
             Just a' -> max a' a
-        go :: Maybe FileId -> String -> m (Maybe FileId)
+        go :: Maybe FileId -> FsPath -> m (Maybe FileId)
         go fd file = case parseFd file of
             Nothing -> EH.throwError err $ UnexpectedError . ParserError $ InvalidFilename file
             Just fd' -> return $ Just $ maxMaybe fd fd'

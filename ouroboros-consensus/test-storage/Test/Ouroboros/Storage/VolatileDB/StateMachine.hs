@@ -121,7 +121,7 @@ data Cmd
     | Corrupt Corruptions
     | CreateFile
     | CreateInvalidFile
-    | DuplicateBlock String BlockId Predecessor
+    | DuplicateBlock FsPath BlockId Predecessor
     | GetSuccessors [Predecessor]
     | GetPredecessor [BlockId]
     | GetMaxSlotNo
@@ -151,6 +151,7 @@ deriving instance Generic (DBModel BlockId)
 deriving instance ToExpr SlotNo
 deriving instance Generic BlockId
 deriving instance Generic (ParserError BlockId)
+deriving instance ToExpr FsPath
 deriving instance ToExpr (ParserError BlockId)
 deriving instance ToExpr MaxSlotNo
 deriving instance ToExpr (DBModel BlockId)
@@ -271,7 +272,7 @@ runPure dbm (CmdErr cmd err) =
                 return $ Unit ()
             CreateInvalidFile  -> do
                 closeModel
-                createInvalidFileModel "invalidFileName.dat"
+                createInvalidFileModel (mkFsPath ["invalidFileName.dat"])
                 reOpenModel tnc
                 return $ Unit ()
             DuplicateBlock file bid _pbid -> do
@@ -379,7 +380,7 @@ generatorCmdImpl terminatingCmd m@Model {..} =
     sl <- blockIdGenerator m
     psl <- predecessorGenerator m
     let lastGC = latestGarbaged dbModel
-    let dbFiles :: [String] = getDBFiles dbModel
+    let dbFiles :: [FsPath] = getDBFiles dbModel
     ls <- filter (newer lastGC . guessSlot) <$> (listOf $ blockIdGenerator m)
     bid <- do
         let bids = concat $ (\(f,(_, _, bs)) -> map (\(b, pb) -> (f, b, pb)) bs) <$> (M.toList $ index dbModel)
@@ -452,7 +453,7 @@ predecessorGenerator Model {..} = elements possiblePredecessors
 possiblePredecessors :: [BlockId]
 possiblePredecessors = [0,1,2]
 
-getDBFiles :: DBModel BlockId -> [String]
+getDBFiles :: DBModel BlockId -> [FsPath]
 getDBFiles DBModel {..} = M.keys index
 
 newer :: Ord a => Maybe a -> a -> Bool

@@ -63,8 +63,8 @@ instance (Show blockId, Typeable blockId) => Exception (VolatileDBError blockId)
     displayException = show
 
 data ParserError blockId =
-      DuplicatedSlot blockId String String
-    | InvalidFilename String
+      DuplicatedSlot blockId FsPath FsPath
+    | InvalidFilename FsPath
     deriving (Show)
 
 instance Eq blockId => Eq (ParserError blockId) where
@@ -112,7 +112,7 @@ data BlockInfo blockId = BlockInfo {
 
 -- The Internal information the db keeps for each block.
 data InternalBlockInfo blockId = InternalBlockInfo {
-      ibFile       :: !String
+      ibFile       :: !FsPath
     , ibSlotOffset :: !SlotOffset
     , ibBlockSize  :: !BlockSize
     , ibSlot       :: !SlotNo

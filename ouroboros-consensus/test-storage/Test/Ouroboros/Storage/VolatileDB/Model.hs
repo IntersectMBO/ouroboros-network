@@ -58,8 +58,8 @@ data DBModel blockId = DBModel {
     , open           :: Bool -- is the db open.
     , mp             :: Map blockId ByteString -- superset of blocks in db. Some of them may be gced already.
     , latestGarbaged :: Maybe SlotNo -- last gced slot.
-    , index          :: Map String (MaxSlotNo, Int, [(blockId, Maybe blockId)]) -- what each file contains in the real impl.
-    , currentFile    :: String -- the current open file. If the db is empty this is the next it wil write.
+    , index          :: Map FsPath (MaxSlotNo, Int, [(blockId, Maybe blockId)]) -- what each file contains in the real impl.
+    , currentFile    :: FsPath -- the current open file. If the db is empty this is the next it wil write.
     , nextFId        :: FileId -- the next file id.
     , maxSlotNo      :: MaxSlotNo -- highest ever stored SlotNo
     } deriving Show
@@ -131,7 +131,7 @@ putBlockModel err cmdErr BlockInfo{..} bs = do
             Just fsErrT -> EH.throwError' err $ UnexpectedError . FileSystemError $
                 FsError {
                       fsErrorType = fsErrT
-                    , fsErrorPath = mkFsPath [currentFile]
+                    , fsErrorPath = currentFile
                     , fsErrorString = ""
                     , fsErrorNo    = Nothing
                     , fsErrorStack = EmptyCallStack
@@ -148,7 +148,7 @@ putBlockModel err cmdErr BlockInfo{..} bs = do
                         if n' == blocksPerFile
                         then ( Internal.filePath nextFId
                             , Map.insertWith
-                                (\ _ _ -> (error $ "new file " <> currentFile' <> "already in index"))
+                                (\ _ _ -> (error $ "new file " <> show currentFile' <> "already in index"))
                                 currentFile' newFileInfo index'
                             , nextFId + 1)
                         else ( currentFile
@@ -183,7 +183,7 @@ garbageCollectModel err cmdErr sl = do
                 Nothing   -> []
                 Just cErr -> getStream . _removeFile $ cErr
         let f :: [Maybe FsErrorType]
-              -> (String, (MaxSlotNo, Int, [(blockId, Maybe blockId)]))
+              -> (FsPath, (MaxSlotNo, Int, [(blockId, Maybe blockId)]))
               -> m [Maybe FsErrorType]
             f fsErr (path, (msl,_n,_bids)) = case (cmpMaybe (maxSlotNoToMaybe msl) sl, path == currentFile, tru, fsErr) of
                     (True, _, _, _) -> return fsErr
@@ -196,7 +196,7 @@ garbageCollectModel err cmdErr sl = do
                     (_, False, _, (Just e) : _rest) -> EH.throwError' err $ UnexpectedError . FileSystemError $
                         FsError {
                               fsErrorType = e
-                            , fsErrorPath = mkFsPath [currentFile]
+                            , fsErrorPath = currentFile
                             , fsErrorString = ""
                             , fsErrorNo    = Nothing
                             , fsErrorStack = EmptyCallStack
@@ -208,7 +208,7 @@ garbageCollectModel err cmdErr sl = do
                     (_, _, Just e, _)  -> EH.throwError' err $ UnexpectedError . FileSystemError $
                         FsError {
                               fsErrorType = e
-                            , fsErrorPath = mkFsPath [currentFile]
+                            , fsErrorPath = currentFile
                             , fsErrorString = ""
                             , fsErrorNo    = Nothing
                             , fsErrorStack = EmptyCallStack
@@ -262,8 +262,8 @@ getMaxSlotNoModel err = do
     else return maxSlotNo
 
 modifyIndex :: MonadState (DBModel blockId) m
-            => (Map String (MaxSlotNo, Int, [(blockId, Maybe blockId)])
-                  -> Map String (MaxSlotNo, Int, [(blockId, Maybe  blockId)])
+            => (Map FsPath (MaxSlotNo, Int, [(blockId, Maybe blockId)])
+                  -> Map FsPath (MaxSlotNo, Int, [(blockId, Maybe  blockId)])
                )
             -> m ()
 modifyIndex f = do
@@ -282,7 +282,7 @@ runCorruptionModel guessSlot corrs = do
     let dbm' = foldr corrupt' dbm corrs
     put dbm'
         where
-            corrupt' :: (FileCorruption, String) -> DBModel blockId -> DBModel blockId
+            corrupt' :: (FileCorruption, FsPath) -> DBModel blockId -> DBModel blockId
             corrupt' (corr, file) dbm = case corr of
                 DeleteFile ->
                     dbm { mp = mp'
@@ -306,7 +306,7 @@ runCorruptionModel guessSlot corrs = do
                         dropBids = (div n (fromIntegral binarySize)) +
                                    (if mod n (fromIntegral binarySize) == 0 then 0 else 1 )
                         (_mmax, size, bids) = fromMaybe
-                            (error $ "tried to corrupt file " <> file <>  " which does not exist")
+                            (error $ "tried to corrupt file " <> show file <>  " which does not exist")
                             (Map.lookup file (index dbm))
                         -- we prepend on list of blockIds, so last bytes
                         -- are actually at the head of the list.
@@ -337,14 +337,14 @@ createFileModel = do
               , currentFile = currentFile'}
 
 createInvalidFileModel :: forall blockId m. MonadState (DBModel blockId) m
-                       => String
+                       => FsPath
                        -> m ()
 createInvalidFileModel file = do
     db <- get
     put $ db {parseError = Just $ InvalidFilename file}
 
 duplicateBlockModel :: forall blockId m. MonadState (DBModel blockId) m
-                    => (String, blockId)
+                    => (FsPath, blockId)
                     -> m ()
 duplicateBlockModel (file, bid) = do
     db <- get
