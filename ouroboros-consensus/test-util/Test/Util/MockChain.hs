@@ -11,7 +11,7 @@ module Test.Util.MockChain (
   ) where
 
 import           Data.Foldable (foldl')
-import           Data.Sequence (Seq (..))
+import           Data.Sequence.Strict (StrictSeq (..))
 
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.MockChain.Chain
@@ -27,7 +27,7 @@ lastSlot (_ :> b) = Just $ blockSlot b
 commonPrefix :: Eq b => Chain b -> Chain b -> Chain b
 commonPrefix c d = chainFromSeq $ go (chainToSeq c) (chainToSeq d)
   where
-    go :: Eq b => Seq b -> Seq b -> Seq b
+    go :: Eq b => StrictSeq b -> StrictSeq b -> StrictSeq b
     go Empty      _          = Empty
     go _          Empty      = Empty
     go (x :<| xs) (y :<| ys)
@@ -44,8 +44,8 @@ dropLastBlocks i bs@(cs :> _)
   Internal auxiliary
 -------------------------------------------------------------------------------}
 
-chainFromSeq :: Seq b -> Chain b
+chainFromSeq :: StrictSeq b -> Chain b
 chainFromSeq = foldl' (:>) Genesis
 
-chainToSeq :: Chain b -> Seq b
+chainToSeq :: Chain b -> StrictSeq b
 chainToSeq = foldChain (:|>) Empty

@@ -65,8 +65,8 @@ import           Control.Monad.Except (ExceptT (..), runExceptT)
 import           Data.Bifunctor
 import           Data.Foldable (toList)
 import           Data.Functor.Identity
-import           Data.Sequence (Seq ((:|>), Empty))
-import qualified Data.Sequence as Seq
+import           Data.Sequence.Strict (StrictSeq ((:|>), Empty), (|>))
+import qualified Data.Sequence.Strict as Seq
 import           Data.Void
 import           Data.Word
 import           GHC.Generics (Generic)
@@ -237,7 +237,7 @@ data LedgerDB l r = LedgerDB {
       ledgerDbCurrent :: !l
 
       -- | Older ledger states
-    , ledgerDbBlocks  :: !(Seq (Checkpoint l r))
+    , ledgerDbBlocks  :: !(StrictSeq (Checkpoint l r))
 
       -- | Information about the state of the ledger /before/
     , ledgerDbAnchor  :: !(ChainSummary l r)
@@ -417,7 +417,7 @@ ledgerDbToList LedgerDB{..} = map cpToPair $ toList ledgerDbBlocks
 ledgerDbSnapshots :: forall l r. LedgerDB l r -> [(Word64, l)]
 ledgerDbSnapshots LedgerDB{..} = go 0 ledgerDbBlocks
   where
-    go :: Word64 -> Seq (Checkpoint l r) -> [(Word64, l)]
+    go :: Word64 -> StrictSeq (Checkpoint l r) -> [(Word64, l)]
     go !offset Empty                = [(offset, csLedger ledgerDbAnchor)]
     go !offset (ss :|> CpBlock _)   =               go (offset + 1) ss
     go !offset (ss :|> CpSShot _ l) = (offset, l) : go (offset + 1) ss
@@ -491,7 +491,7 @@ data SwitchResult e l r :: Bool -> * where
 --
 -- PRE: The last block in the sequence /must/ contain a ledger snapshot.
 shiftAnchor :: forall r l. HasCallStack
-            => Seq (Checkpoint l r) -> ChainSummary l r -> ChainSummary l r
+            => StrictSeq (Checkpoint l r) -> ChainSummary l r -> ChainSummary l r
 shiftAnchor toRemove ChainSummary{..} = ChainSummary {
       csTip    = Tip csTip'
     , csLength = csLength + fromIntegral (Seq.length toRemove)
@@ -585,14 +585,14 @@ rollback cfg n db@LedgerDB{..}
     numToKeep :: Int
     numToKeep = Seq.length ledgerDbBlocks - fromIntegral n
 
-    blocks' :: Seq (Checkpoint l r)
+    blocks' :: StrictSeq (Checkpoint l r)
     blocks' = Seq.take numToKeep ledgerDbBlocks
 
     -- Compute blocks to reapply, and ledger state to reapply them from
-    reapply :: Seq (Checkpoint l r) -> ([r], l)
+    reapply :: StrictSeq (Checkpoint l r) -> ([r], l)
     reapply = go []
       where
-        go :: [r] -> Seq (Checkpoint l r) -> ([r], l)
+        go :: [r] -> StrictSeq (Checkpoint l r) -> ([r], l)
         go acc Empty                = (acc, csLedger ledgerDbAnchor)
         go acc (_  :|> CpSShot _ l) = (acc, l)
         go acc (ss :|> CpBlock r)   = go (r:acc) ss
@@ -807,6 +807,3 @@ safeMod x y = x `Prelude.mod` y
 safeDiv :: (Eq a, Fractional a, HasCallStack) => a -> a -> a
 safeDiv _ 0 = error "safeDiv: division by zero"
 safeDiv x y = x Prelude./ y
-
-(|>) :: Seq a -> a -> Seq a
-(|>) s !a = s Seq.|> a

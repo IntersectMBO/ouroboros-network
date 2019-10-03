@@ -35,8 +35,8 @@ import           Data.Foldable (toList)
 import           Data.List (sortOn)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
-import           Data.Sequence (Seq ((:<|), (:|>)))
-import qualified Data.Sequence as Seq
+import           Data.Sequence.Strict (StrictSeq ((:<|), (:|>)), (|>))
+import qualified Data.Sequence.Strict as Seq
 import           Data.Word
 import           GHC.Generics (Generic)
 
@@ -108,7 +108,7 @@ data PBftChainState c = PBftChainState {
       anchor  :: !(WithOrigin SlotNo)
 
       -- | Sequence in increasing order of slots and corresponding genesis keys
-    , signers :: !(Seq (PBftSigner c))
+    , signers :: !(StrictSeq (PBftSigner c))
 
       -- | Count for each genesis key
       --
@@ -275,7 +275,7 @@ rewind slot st
 -------------------------------------------------------------------------------}
 
 fromSlots :: Ord (PBftVerKeyHash c)
-          => Seq (PBftSigner c) -> Map (PBftVerKeyHash c) Int
+          => StrictSeq (PBftSigner c) -> Map (PBftVerKeyHash c) Int
 fromSlots slots = repeatedly (incrementKey . pbftSignerGenesisKey)
                              (toList slots)
                              Map.empty
@@ -310,7 +310,7 @@ fromMap anchor perKey = PBftChainState {
     , counts  = fromSlots perSlot
     }
   where
-    perSlot :: Seq (PBftSigner c)
+    perSlot :: StrictSeq (PBftSigner c)
     perSlot = Seq.fromList
             . sortOn pbftSignerSlotNo
             . distrib
@@ -349,11 +349,3 @@ instance Serialise (PBftVerKeyHash c) => Serialise (PBftSigner c) where
   decode = fromPair <$> decode
     where
       fromPair (slotNo, genesisKey) = PBftSigner slotNo genesisKey
-
-{-------------------------------------------------------------------------------
-  Auxiliary
--------------------------------------------------------------------------------}
-
--- TODO: This will be obsolete once we have a strict Seq type
-(|>) :: Seq a -> a -> Seq a
-(|>) xs !x = xs Seq.|> x

@@ -18,8 +18,8 @@ import           Data.Word (Word16)
 import qualified Data.Set as Set
 import qualified Data.Map.Strict as Map
 import           Data.Map.Strict (Map)
-import qualified Data.Sequence as Seq
-import           Data.Sequence (Seq)
+import qualified Data.Sequence.Strict as Seq
+import           Data.Sequence.Strict (StrictSeq)
 import           Data.Foldable (foldl')
 
 import           Control.Monad (unless)
@@ -85,7 +85,7 @@ data ServerState txid tx = ServerState {
        -- the order in which the client gave them to us. This is the same order
        -- in which we submit them to the mempool (or for this example, the final
        -- result order). It is also the order we acknowledge in.
-       unacknowledgedTxIds :: Seq txid,
+       unacknowledgedTxIds :: StrictSeq txid,
 
        -- | Those transactions (by their identifier) that we can request. These
        -- are a subset of the 'unacknowledgedTxIds' that we have not yet
@@ -308,4 +308,3 @@ txSubmissionInbound _tracer maxUnacked TxSubmissionMempoolWriter{..} =
                   - fromIntegral (Seq.length (unacknowledgedTxIds st))
                   - requestedTxIdsInFlight st)
           `min` maxTxIdsToRequest
-
