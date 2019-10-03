@@ -64,8 +64,8 @@ instance Serialise (Hash h a) where
 
 instance NoUnexpectedThunks a => NoUnexpectedThunks (StrictTVar IO a) where
   showTypeOf _ = "StrictTVar IO"
-  whnfNoUnexpectedThunks ctxt tvar = do
+  whnfNoUnexpectedThunks ctxt tv = do
       -- We can't use @atomically $ readTVar ..@ here, as that will lead to a
       -- "Control.Concurrent.STM.atomically was nested" exception.
-      a <- readTVarIO (toLazyTVar tvar)
+      a <- readTVarIO (toLazyTVar tv)
       noUnexpectedThunks ctxt a
