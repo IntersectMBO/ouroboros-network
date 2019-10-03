@@ -5,8 +5,7 @@ module DeltaQ.Examples.AWS where
 
 import Algebra.Graph.Labelled.AdjacencyMap hiding (edge)
 import Algebra.Graph.Labelled.AdjacencyMap.ShortestPath
-import Data.Monoid (Last (..))
-import qualified Data.Semigroup as Semigroup (Last (..))
+import Data.Semigroup (Last (..))
 import Data.Time.Clock
 import Numeric.Natural
 
@@ -121,19 +120,19 @@ instance Semigroup e => Semigroup (UEdge e) where
 --
 -- Kinda annoying but that's the library we're dealing with...
 
-aws_sp_hops :: AllShortestPaths NetNode (Edges BearerCharacteristics) Hops
+aws_sp_hops :: AllShortestPaths NetNode (Last BearerCharacteristics) Hops
 aws_sp_hops = all_pairs_sp (\_ _ -> hop) aws'
 
 aws_shortest_paths
   :: Natural
-  -> AllShortestPaths NetNode (Maybe (UEdge (Semigroup.Last BearerCharacteristics))) Latency
+  -> AllShortestPaths NetNode (UEdge (Last BearerCharacteristics)) Latency
 aws_shortest_paths response_size = all_pairs_sp mkWeight aws_graph
   where
-  mkWeight :: NetNode -> NetNode -> Maybe (UEdge (Semigroup.Last BearerCharacteristics)) -> Latency
-  mkWeight _ _ Nothing          = Loss
-  mkWeight _ _ (Just (Out _))   = Loss
-  mkWeight _ _ (Just (In  _))   = Loss
-  mkWeight _ _ (Just (Uni (Semigroup.Last o) (Semigroup.Last i))) =
+  mkWeight :: NetNode -> NetNode -> UEdge (Last BearerCharacteristics) -> Latency
+  -- If there's only a link in one direction, loss.
+  mkWeight _ _ (Out _)                 = Loss
+  mkWeight _ _ (In  _)                 = Loss
+  mkWeight _ _ (Uni (Last o) (Last i)) =
     let pattern = tcpRPCLoadPattern i o pdu_overhead initial_window Nothing request_size response_size
     in  TX $ toRational (fst (last pattern))
 
@@ -146,26 +145,24 @@ aws_shortest_paths response_size = all_pairs_sp mkWeight aws_graph
   initial_window :: Natural
   initial_window = 14000
 
-  aws_graph :: AdjacencyMap (Maybe (UEdge (Semigroup.Last BearerCharacteristics))) NetNode
+  aws_graph :: AdjacencyMap (UEdge (Last BearerCharacteristics)) NetNode
   aws_graph = overlay
     (emap mkOut aws')
     (emap mkIn  (transpose aws'))
 
-  mkOut :: Edges BearerCharacteristics -> Maybe (UEdge (Semigroup.Last BearerCharacteristics))
-  mkOut (Edges [])    = Nothing
-  mkOut (Edges (e:_)) = Just (Out (Semigroup.Last e))
+  mkOut :: Last BearerCharacteristics -> UEdge (Last BearerCharacteristics)
+  mkOut (Last e) = Out (Last e)
 
-  mkIn :: Edges BearerCharacteristics -> Maybe (UEdge (Semigroup.Last BearerCharacteristics))
-  mkIn (Edges [])    = Nothing
-  mkIn (Edges (e:_)) = Just (In (Semigroup.Last e))
+  mkIn :: Last BearerCharacteristics -> UEdge (Last BearerCharacteristics)
+  mkIn (Last e)  = In (Last e)
 
 -- | Restrictions to add to the AWS graph. 
 -- Note the edge type: there can be _at most one_ link restriction between
 -- any two nodes, and the last one takes precedence in case of duplicates.
 restrictions :: AdjacencyMap (Last LinkRestriction) NetNode
 restrictions = overlays
-  [ GL10       -< Last (Just (mkRestriction  7e6 1492)) >- IrelandAWS
-  , IrelandAWS -< Last (Just (mkRestriction 39e6 1492)) >- GL10
+  [ GL10       -< Last (mkRestriction  7e6 1492) >- IrelandAWS
+  , IrelandAWS -< Last (mkRestriction 39e6 1492) >- GL10
   ]
 
 addRestriction :: LinkRestriction -- ^ default link restriction.
@@ -175,8 +172,9 @@ addRestriction :: LinkRestriction -- ^ default link restriction.
                -> SimpleGS
                -> BearerCharacteristics
 addRestriction dft tr a b gs = case mlr of
-    Last Nothing   -> Bearer gs dft
-    Last (Just lr) -> Bearer gs lr
+    -- There's no edge in the link restriction map; use a default.
+    Nothing        -> Bearer gs dft
+    Just (Last lr) -> Bearer gs lr
   where
     mlr = edgeLabel a b tr
 
@@ -218,11 +216,9 @@ minTTC gr a b size =
     ttc' = ttc lp
     --rate :: Double
     --rate = fromRational $ 8 * (fromIntegral size ) / (toRational ttc')
-    -- FIXME non-exhaustive patterns; there can in fact be more than one
-    -- edge from a to b or b to a; tcpRPCLoadPatterns should be run on
-    -- each of them? What if there is no edge?
-    Edges [a2b] = edgeLabel a b gr
-    Edges [b2a] = edgeLabel b a gr
+    -- FIXME partial match; what if there is no edge?
+    Just (Last a2b) = edgeLabel a b gr
+    Just (Last b2a) = edgeLabel b a gr
 
 sbt1 = simpleBearerTest (mkGS' 0.1 8e6) [(x, 1500) | x <- [0,0.1..1]]
 sbt2 = simpleBearerTest (mkGS' 0.1 1e6) $ replicate 10 (0,1500)
