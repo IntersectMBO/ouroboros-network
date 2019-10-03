@@ -6,18 +6,17 @@
 module Ouroboros.Storage.VolatileDB.Util where
 
 import           Control.Monad
-import           Data.Map (Map)
-import qualified Data.Map as Map
+import qualified Data.Map.Strict as Map
 import           Data.Maybe (fromMaybe)
 import           Data.Set (Set)
 import qualified Data.Set as Set
+import           Data.Text (Text)
 import qualified Data.Text as T
-import           Data.Word (Word64)
 import           Text.Read (readMaybe)
 
 import           Control.Monad.Class.MonadThrow
 
-import           Ouroboros.Consensus.Util (safeMaximum, safeMaximumOn)
+import           Ouroboros.Consensus.Util (safeMaximum, safeMaximumOn, lastMaybe)
 import           Ouroboros.Consensus.Util.IOLike
 
 import           Ouroboros.Storage.FS.API.Types
@@ -30,18 +29,20 @@ import           Ouroboros.Storage.VolatileDB.Types
 ------------------------------------------------------------------------------}
 
 
-parseFd :: String -> Maybe FileId
-parseFd = readMaybe
-            . T.unpack
-            . snd
-            . T.breakOnEnd "-"
-            . fst
-            . T.breakOn "."
-            . T.pack
+parseFd :: FsPath -> Maybe FileId
+parseFd = parseFilename <=< lastMaybe . fsPathToList
+  where
+    parseFilename :: Text -> Maybe FileId
+    parseFilename = readMaybe
+                  . T.unpack
+                  . snd
+                  . T.breakOnEnd "-"
+                  . fst
+                  . T.breakOn "."
 
-unsafeParseFd :: String -> FileId
+unsafeParseFd :: FsPath -> FileId
 unsafeParseFd file = fromMaybe
-    (error $ "could not parse filename " <> file <> " of index")
+    (error $ "could not parse filename " <> show file <> " of index")
     (parseFd file)
 
 fromEither :: Monad m
@@ -73,7 +74,7 @@ wrapFsError fsErr volDBErr action =
 
 -- Throws an error if one of the given file names does not parse.
 findLastFd :: forall blockId.
-              Set String
+              Set FsPath
            -> Either (VolatileDBError blockId) (Maybe FileId)
 findLastFd files = foldM go Nothing files
     where
@@ -81,16 +82,13 @@ findLastFd files = foldM go Nothing files
         maxMaybe ma a = case ma of
             Nothing -> a
             Just a' -> max a' a
-        go :: Maybe FileId -> String -> Either (VolatileDBError blockId) (Maybe FileId)
+        go :: Maybe FileId -> FsPath -> Either (VolatileDBError blockId) (Maybe FileId)
         go fd file = case parseFd file of
             Nothing  -> Left $ UnexpectedError $ ParserError $ InvalidFilename file
             Just fd' -> Right $ Just $ maxMaybe fd fd'
 
-filePath :: FileId -> String
-filePath fd = "blocks-" ++ show fd ++ ".dat"
-
-sizeAndId :: (BlockSize, BlockInfo blockId) -> (BlockSize, blockId)
-sizeAndId (size, bInfo) = (size, bbid bInfo)
+filePath :: FileId -> FsPath
+filePath fd = mkFsPath ["blocks-" ++ show fd ++ ".dat"]
 
 -- | Execute an action and catch the 'VolatileDBError' and 'FsError' that can
 -- be thrown by it, and wrap the 'FsError' in an 'VolatileDBError' using the
@@ -147,12 +145,6 @@ deleteMapSet mapSet (bid, pbid) = Map.alter (alterfDelete bid) pbid mapSet
   Comparing utilities
 ------------------------------------------------------------------------------}
 
-maxSlotMap :: Map Word64 (Word64, BlockInfo blockId) -> Maybe (blockId, SlotNo)
-maxSlotMap mp = f <$> safeMaximumOn getSlot (Map.elems mp)
-    where
-        f (_, bInfo) = (bbid bInfo, bslot bInfo)
-        getSlot (_, bInfo) = bslot bInfo
-
 maxSlotList :: [(blockId, SlotNo)] -> Maybe (blockId, SlotNo)
 maxSlotList = updateSlot Nothing
 
@@ -165,7 +157,7 @@ updateSlot msl ls = safeMaximumOn snd $ case msl of
     Nothing -> ls
     Just sl -> sl : ls
 
-updateSlotNoBlockId :: Maybe SlotNo -> [SlotNo] -> Maybe SlotNo
-updateSlotNoBlockId msl ls = safeMaximum $ case msl of
-    Nothing -> ls
-    Just sl -> sl : ls
+updateSlotNoBlockId :: MaxSlotNo -> [SlotNo] -> MaxSlotNo
+updateSlotNoBlockId msl ls = maxSlotNoFromMaybe $ safeMaximum $ case msl of
+    NoMaxSlotNo  -> ls
+    MaxSlotNo sl -> sl : ls
