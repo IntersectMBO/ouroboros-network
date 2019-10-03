@@ -39,15 +39,14 @@ import           Ouroboros.Consensus.Util.Orphans ()
 import           Ouroboros.Consensus.Util.Random
 import           Ouroboros.Consensus.Util.ResourceRegistry
 
-import           Ouroboros.Storage.FS.Sim.MockFS (MockFS)
-import qualified Ouroboros.Storage.FS.Sim.MockFS as Mock
-
 import           Test.Dynamic.Network
 import           Test.Dynamic.TxGen
 import           Test.Dynamic.Util
 import           Test.Dynamic.Util.NodeJoinPlan
 import           Test.Dynamic.Util.NodeTopology
 
+import           Test.Util.FS.Sim.MockFS (MockFS)
+import qualified Test.Util.FS.Sim.MockFS as Mock
 import           Test.Util.Orphans.Arbitrary ()
 import           Test.Util.Orphans.IOLike ()
 import           Test.Util.Orphans.NoUnexpectedThunks ()

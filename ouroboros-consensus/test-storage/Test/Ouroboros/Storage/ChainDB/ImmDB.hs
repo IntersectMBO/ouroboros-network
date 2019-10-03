@@ -36,8 +36,6 @@ import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Storage.ChainDB.Impl.ImmDB (ImmDB, ImmDbArgs (..))
 import qualified Ouroboros.Storage.ChainDB.Impl.ImmDB as ImmDB
 import           Ouroboros.Storage.EpochInfo (newEpochInfo)
-import qualified Ouroboros.Storage.FS.Sim.MockFS as Mock
-import           Ouroboros.Storage.FS.Sim.STM (simHasFS)
 import           Ouroboros.Storage.ImmutableDB
                      (ValidationPolicy (ValidateMostRecentEpoch))
 import qualified Ouroboros.Storage.Util.ErrorHandling as EH
@@ -45,10 +43,11 @@ import qualified Ouroboros.Storage.Util.ErrorHandling as EH
 import           Test.Tasty
 import           Test.Tasty.HUnit
 
+import qualified Test.Util.FS.Sim.MockFS as Mock
+import           Test.Util.FS.Sim.STM (simHasFS)
 import           Test.Util.Orphans.IOLike ()
 
 import qualified Test.Cardano.Chain.Genesis.Dummy as Dummy
-
 
 tests :: TestTree
 tests = testGroup "ImmDB"

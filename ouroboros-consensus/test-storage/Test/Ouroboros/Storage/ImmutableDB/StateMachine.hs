@@ -73,23 +73,22 @@ import qualified Ouroboros.Storage.Common as C
 import           Ouroboros.Storage.EpochInfo
 import           Ouroboros.Storage.FS.API (HasFS (..))
 import           Ouroboros.Storage.FS.API.Types (FsError (..), FsPath)
-import qualified Ouroboros.Storage.FS.Sim.MockFS as Mock
 import           Ouroboros.Storage.ImmutableDB hiding (BlockOrEBB (..))
 import qualified Ouroboros.Storage.ImmutableDB as ImmDB
 import           Ouroboros.Storage.ImmutableDB.Layout
 import           Ouroboros.Storage.ImmutableDB.Util (renderFile, tryImmDB)
 import qualified Ouroboros.Storage.Util.ErrorHandling as EH
 
-import           Test.Ouroboros.Storage.FS.Sim.Error (Errors, mkSimErrorHasFS,
-                     withErrors)
-import           Test.Ouroboros.Storage.ImmutableDB.Model
-import           Test.Ouroboros.Storage.ImmutableDB.TestBlock hiding (tests)
-import           Test.Ouroboros.Storage.Util (collects)
-
+import           Test.Util.FS.Sim.Error (Errors, mkSimErrorHasFS, withErrors)
+import qualified Test.Util.FS.Sim.MockFS as Mock
 import           Test.Util.Orphans.Arbitrary (genSmallEpochNo, genSmallSlotNo)
 import           Test.Util.RefEnv (RefEnv)
 import qualified Test.Util.RefEnv as RE
 import           Test.Util.SOP
+
+import           Test.Ouroboros.Storage.ImmutableDB.Model
+import           Test.Ouroboros.Storage.ImmutableDB.TestBlock hiding (tests)
+import           Test.Ouroboros.Storage.Util (collects)
 
 {-------------------------------------------------------------------------------
   Abstract model

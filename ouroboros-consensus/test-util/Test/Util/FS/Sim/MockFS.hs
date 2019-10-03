@@ -14,9 +14,9 @@
 --
 -- Intended for qualified import
 --
--- > import Ouroboros.Storage.FS.Sim.MockFS (MockFS)
--- > import qualified Ouroboros.Storage.FS.Sim.MockFS as Mock
-module Ouroboros.Storage.FS.Sim.MockFS (
+-- > import Test.Util.FS.Sim.MockFS (MockFS)
+-- > import qualified Test.Util.FS.Sim.MockFS as Mock
+module Test.Util.FS.Sim.MockFS (
     MockFS -- opaque
   , HandleMock -- opaque
   , empty
@@ -69,9 +69,10 @@ import           GHC.Stack
 import           Cardano.Prelude (NoUnexpectedThunks)
 
 import           Ouroboros.Storage.FS.API.Types
-import           Ouroboros.Storage.FS.Sim.FsTree (FsTree (..), FsTreeError (..))
-import qualified Ouroboros.Storage.FS.Sim.FsTree as FS
 import           Ouroboros.Storage.Util.ErrorHandling (ErrorHandling (..))
+
+import           Test.Util.FS.Sim.FsTree (FsTree (..), FsTreeError (..))
+import qualified Test.Util.FS.Sim.FsTree as FS
 
 {-------------------------------------------------------------------------------
   Mock FS types

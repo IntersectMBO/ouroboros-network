@@ -69,18 +69,18 @@ import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Storage.Common
 import           Ouroboros.Storage.FS.API
 import           Ouroboros.Storage.FS.API.Types
-import qualified Ouroboros.Storage.FS.Sim.MockFS as MockFS
-import           Ouroboros.Storage.FS.Sim.STM
 import qualified Ouroboros.Storage.Util.ErrorHandling as EH
 
 import           Ouroboros.Storage.LedgerDB.Conf
 import           Ouroboros.Storage.LedgerDB.InMemory
 import           Ouroboros.Storage.LedgerDB.OnDisk
 
+import qualified Test.Util.FS.Sim.MockFS as MockFS
+import           Test.Util.FS.Sim.STM
+import           Test.Util.Range
+
 -- For the Arbitrary instance of 'MemPolicy'
 import           Test.Ouroboros.Storage.LedgerDB.InMemory ()
-
-import           Test.Util.Range
 
 {-------------------------------------------------------------------------------
   Top-level tests

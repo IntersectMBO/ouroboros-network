@@ -124,21 +124,14 @@ library
                        Ouroboros.Storage.ChainDB.Impl.Reopen
                        Ouroboros.Storage.ChainDB.Impl.Types
                        Ouroboros.Storage.ChainDB.Impl.VolDB
-                       Ouroboros.Storage.ChainDB.Mock
-                       Ouroboros.Storage.ChainDB.Model
                        Ouroboros.Storage.EpochInfo
                        Ouroboros.Storage.EpochInfo.API
                        Ouroboros.Storage.EpochInfo.CumulEpochSizes
                        Ouroboros.Storage.EpochInfo.Impl
                        Ouroboros.Storage.FS.API
-                       Ouroboros.Storage.FS.API.Example
                        Ouroboros.Storage.FS.API.Types
                        Ouroboros.Storage.FS.Handle
                        Ouroboros.Storage.FS.IO
-                       Ouroboros.Storage.FS.Sim.FsTree
-                       Ouroboros.Storage.FS.Sim.MockFS
-                       Ouroboros.Storage.FS.Sim.Pure
-                       Ouroboros.Storage.FS.Sim.STM
                        Ouroboros.Storage.ImmutableDB
                        Ouroboros.Storage.ImmutableDB.API
                        Ouroboros.Storage.ImmutableDB.Impl
@@ -212,7 +205,6 @@ library
                        -- only needs to live in cardano-node
                        cardano-ledger-test,
 
-                       base16-bytestring >=0.1   && <0.2,
                        bifunctors,
                        bimap             >=0.3   && <0.5,
                        bytestring        >=0.10  && <0.11,
@@ -282,17 +274,22 @@ test-suite test-consensus
                     Test.Dynamic.Util.Tests
                     Test.Ouroboros
                     Test.Util.DepFn
+                    Test.Util.FS.Sim.FsTree
+                    Test.Util.FS.Sim.MockFS
+                    Test.Util.FS.Sim.STM
                     Test.Util.HasCreator
                     Test.Util.MockChain
                     Test.Util.Orphans.Arbitrary
-                    Test.Util.Orphans.NoUnexpectedThunks
                     Test.Util.Orphans.IOLike
-                    Test.Util.Range
-                    Test.Util.TestBlock
+                    Test.Util.Orphans.NoUnexpectedThunks
                     Test.Util.QSM
+                    Test.Util.Range
                     Test.Util.SOP
+                    Test.Util.TestBlock
                     Test.Util.Tracer
   build-depends:    base,
+                    base16-bytestring,
+                    bytestring,
                     cardano-binary,
                     cardano-crypto-class,
                     cardano-crypto-wrapper,
@@ -343,11 +340,12 @@ test-suite test-storage
                     Test.Ouroboros.Storage.ChainDB.ImmDB
                     Test.Ouroboros.Storage.ChainDB.Iterator
                     Test.Ouroboros.Storage.ChainDB.Mock
+                    Test.Ouroboros.Storage.ChainDB.Mock.Test
                     Test.Ouroboros.Storage.ChainDB.Model
+                    Test.Ouroboros.Storage.ChainDB.Model.Test
                     Test.Ouroboros.Storage.ChainDB.StateMachine
                     Test.Ouroboros.Storage.ChainDB.TestBlock
                     Test.Ouroboros.Storage.FS
-                    Test.Ouroboros.Storage.FS.Sim.Error
                     Test.Ouroboros.Storage.FS.StateMachine
                     Test.Ouroboros.Storage.ImmutableDB
                     Test.Ouroboros.Storage.ImmutableDB.CumulEpochSizes
@@ -364,6 +362,12 @@ test-suite test-storage
                     Test.Ouroboros.Storage.VolatileDB.Model
                     Test.Ouroboros.Storage.VolatileDB.StateMachine
                     Test.Ouroboros.Storage.VolatileDB.TestBlock
+                    Test.Util.Blob
+                    Test.Util.FS.Sim.Error
+                    Test.Util.FS.Sim.FsTree
+                    Test.Util.FS.Sim.MockFS
+                    Test.Util.FS.Sim.Pure
+                    Test.Util.FS.Sim.STM
                     Test.Util.Orphans.Arbitrary
                     Test.Util.Orphans.IOLike
                     Test.Util.Orphans.NoUnexpectedThunks
@@ -383,6 +387,7 @@ test-suite test-storage
                     io-sim-classes,
                     io-sim,
 
+                    base16-bytestring,
                     bifunctors,
                     binary,
                     bytestring,

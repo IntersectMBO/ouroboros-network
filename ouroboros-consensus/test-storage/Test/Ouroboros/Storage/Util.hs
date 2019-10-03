@@ -9,18 +9,12 @@ module Test.Ouroboros.Storage.Util where
 import           Control.Exception (Exception, SomeException)
 import qualified Control.Exception as E
 
-import           Data.ByteString (ByteString)
-import qualified Data.ByteString.Char8 as C8
-import qualified Data.ByteString.Lazy as BL
-import qualified Data.ByteString.Lazy.Char8 as LC8
-import           Data.String (IsString (..))
 import           Data.Typeable
 
 import           System.Directory (getTemporaryDirectory)
 import           System.IO.Temp (withTempDirectory)
 
-import           Test.QuickCheck (ASCIIString (..), Arbitrary (..), Property,
-                     collect, counterexample, suchThat)
+import           Test.QuickCheck (Property, collect, counterexample)
 import           Test.Tasty.HUnit
 
 import           Ouroboros.Consensus.Util (repeatedly)
@@ -29,9 +23,6 @@ import           Ouroboros.Consensus.Util.Condense (Condense, condense)
 import           Ouroboros.Storage.FS.API (HasFS (..))
 import           Ouroboros.Storage.FS.API.Types
 import           Ouroboros.Storage.FS.IO (ioHasFS)
-import           Ouroboros.Storage.FS.Sim.MockFS (HandleMock, MockFS)
-import qualified Ouroboros.Storage.FS.Sim.MockFS as Mock
-import qualified Ouroboros.Storage.FS.Sim.STM as Sim
 import           Ouroboros.Storage.ImmutableDB (ImmutableDBError (..),
                      prettyImmutableDBError, sameImmutableDBError)
 import qualified Ouroboros.Storage.ImmutableDB as Immutable
@@ -42,6 +33,10 @@ import qualified Ouroboros.Storage.Util.ErrorHandling as EH
 import           Ouroboros.Storage.VolatileDB (VolatileDBError (..),
                      sameVolatileDBError)
 import           Ouroboros.Storage.VolatileDB.Util (tryVolDB)
+
+import           Test.Util.FS.Sim.MockFS (HandleMock, MockFS)
+import qualified Test.Util.FS.Sim.MockFS as Mock
+import qualified Test.Util.FS.Sim.STM as Sim
 
 {------------------------------------------------------------------------------
  Handy combinators
@@ -211,32 +206,3 @@ x =:= y =
     res = x == y
     interpret True  = " == "
     interpret False = " /= "
-
-{------------------------------------------------------------------------------
-  Blob
-------------------------------------------------------------------------------}
-
--- For the custom 'Show' and 'Arbitrary' instances
---
--- A builder of a non-empty bytestring.
-newtype Blob = MkBlob { getBlob :: ByteString }
-    deriving (Show)
-
-instance Arbitrary Blob where
-    arbitrary = do
-      str <- (getASCIIString <$> arbitrary) `suchThat` (not . null)
-      return $ fromString str
-    shrink (MkBlob b) =
-      [ fromString s'
-      | let s = ASCIIString $ LC8.unpack $ BL.fromStrict b
-      , s' <- getASCIIString <$> shrink s
-      , not (null s') ]
-
-blobToBS :: Blob -> ByteString
-blobToBS = getBlob
-
-blobFromBS :: ByteString -> Blob
-blobFromBS = MkBlob
-
-instance IsString Blob where
-    fromString = blobFromBS . C8.pack

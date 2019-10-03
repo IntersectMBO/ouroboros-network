@@ -84,11 +84,7 @@ import           Ouroboros.Consensus.Util.STM (Fingerprint (..),
 
 import           Ouroboros.Storage.ChainDB
 import qualified Ouroboros.Storage.ChainDB as ChainDB
-import qualified Ouroboros.Storage.ChainDB.Model as Model
 import           Ouroboros.Storage.EpochInfo (fixedSizeEpochInfo)
-import           Ouroboros.Storage.FS.Sim.MockFS (MockFS)
-import qualified Ouroboros.Storage.FS.Sim.MockFS as Mock
-import           Ouroboros.Storage.FS.Sim.STM (simHasFS)
 import           Ouroboros.Storage.ImmutableDB
                      (ValidationPolicy (ValidateAllEpochs))
 import qualified Ouroboros.Storage.ImmutableDB as ImmDB
@@ -97,9 +93,13 @@ import           Ouroboros.Storage.LedgerDB.InMemory (ledgerDbDefaultParams)
 import qualified Ouroboros.Storage.LedgerDB.OnDisk as LedgerDB
 import qualified Ouroboros.Storage.Util.ErrorHandling as EH
 
+import qualified Test.Ouroboros.Storage.ChainDB.Model as Model
 import           Test.Ouroboros.Storage.ChainDB.TestBlock
 import           Test.Ouroboros.Storage.Util ((=:=))
 
+import           Test.Util.FS.Sim.MockFS (MockFS)
+import qualified Test.Util.FS.Sim.MockFS as Mock
+import           Test.Util.FS.Sim.STM (simHasFS)
 import           Test.Util.RefEnv (RefEnv)
 import qualified Test.Util.RefEnv as RE
 import           Test.Util.SOP
