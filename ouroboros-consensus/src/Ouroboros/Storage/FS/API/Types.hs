@@ -50,7 +50,7 @@ import           System.FilePath
 import           System.IO (SeekMode (..))
 import qualified System.IO.Error as IO
 
-import           Cardano.Prelude (NoUnexpectedThunks (..),
+import           Cardano.Prelude (NoUnexpectedThunks (..), UseIsNormalForm (..),
                      UseIsNormalFormNamed (..))
 
 import           Ouroboros.Consensus.Util.Condense
@@ -90,6 +90,7 @@ allowExisting openMode = case openMode of
 
 newtype FsPath = UnsafeFsPath { fsPathToList :: [Strict.Text] }
   deriving (Eq, Ord, Generic)
+  deriving NoUnexpectedThunks via UseIsNormalForm FsPath
 
 fsPathFromList :: [Strict.Text] -> FsPath
 fsPathFromList = UnsafeFsPath . force

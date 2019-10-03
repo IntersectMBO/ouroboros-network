@@ -1,6 +1,8 @@
 {-# LANGUAGE ConstraintKinds            #-}
+{-# LANGUAGE DeriveAnyClass             #-}
 {-# LANGUAGE DeriveFunctor              #-}
 {-# LANGUAGE DeriveGeneric              #-}
+{-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase                 #-}
@@ -64,6 +66,8 @@ import           Data.Word (Word64)
 import           GHC.Generics (Generic)
 import           GHC.Stack
 
+import           Cardano.Prelude (NoUnexpectedThunks)
+
 import           Ouroboros.Storage.FS.API.Types
 import           Ouroboros.Storage.FS.Sim.FsTree (FsTree (..), FsTreeError (..))
 import qualified Ouroboros.Storage.FS.Sim.FsTree as FS
@@ -78,7 +82,7 @@ data MockFS = MockFS {
     , mockHandles    :: !(Map HandleMock HandleState)
     , mockNextHandle :: !HandleMock
     }
-  deriving (Generic, Show)
+  deriving (Generic, Show, NoUnexpectedThunks)
 
 -- | We store the files as an 'FsTree' of the file contents
 type Files = FsTree ByteString
@@ -87,22 +91,23 @@ type Files = FsTree ByteString
 --
 -- This is only meaningful when interpreted against a 'MockFS'.
 newtype HandleMock = HandleMock Int
-  deriving (Show, Eq, Ord, Enum, Generic)
+  deriving stock   (Show, Eq, Ord, Generic)
+  deriving newtype (Enum, NoUnexpectedThunks)
 
 -- | Instantiate 'Handle' with the mock handle
 type Handle' = Handle HandleMock
 
 -- | Mock handle internal state
 data HandleState =
-    HandleOpen OpenHandleState
-  | HandleClosed ClosedHandleState
-  deriving (Show, Generic)
+    HandleOpen !OpenHandleState
+  | HandleClosed !ClosedHandleState
+  deriving (Show, Generic, NoUnexpectedThunks)
 
 data OpenHandleState = OpenHandle {
-      openFilePath :: FsPath
-    , openPtr      :: FilePtr
+      openFilePath :: !FsPath
+    , openPtr      :: !FilePtr
     }
-  deriving (Show, Generic)
+  deriving (Show, Generic, NoUnexpectedThunks)
 
 -- | Check whether the file handle is in write/append mode.
 isWriteHandle :: OpenHandleState -> Bool
@@ -118,18 +123,18 @@ data FilePtr =
     -- | Read/write pointer
     --
     -- We record if we can read and/or write, and the current offset
-    RW Bool Bool Word64
+    RW !Bool !Bool !Word64
 
     -- | Append-only pointer
     --
     -- Offset is always the end of the file in append mode
   | Append
-  deriving (Show, Generic)
+  deriving (Show, Generic, NoUnexpectedThunks)
 
 data ClosedHandleState = ClosedHandle {
       closedFilePath :: FsPath
     }
-  deriving (Show, Generic)
+  deriving (Show, Generic, NoUnexpectedThunks)
 
 -- | Monads in which we can simulate the file system
 type CanSimFS m = (HasCallStack, MonadState MockFS m)
