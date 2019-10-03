@@ -22,6 +22,7 @@ import           GHC.Generics (Generic)
 
 import           Cardano.Prelude (NoUnexpectedThunks)
 
+import           Ouroboros.Network.Point (WithOrigin)
 import           Ouroboros.Network.Block hiding (Tip, decodeTip, encodeTip)
 import           Ouroboros.Storage.Common
 import           Ouroboros.Storage.FS.API.Types
@@ -34,7 +35,7 @@ type ReverseIndex blockId = Map blockId (InternalBlockInfo blockId)
 
 -- For each block, we store the Set of all blocks which have this block as
 -- a predecessor (its successors).
-type SuccessorsIndex blockId = Map (Maybe blockId) (Set blockId)
+type SuccessorsIndex blockId = Map (WithOrigin blockId) (Set blockId)
 
 -- | Errors which might arise when working with this database.
 data VolatileDBError blockId =
@@ -107,7 +108,7 @@ type ParsedInfo blockId = [(SlotOffset, (BlockSize, BlockInfo blockId))]
 data BlockInfo blockId = BlockInfo {
       bbid    :: !blockId
     , bslot   :: !SlotNo
-    , bpreBid :: !(Maybe blockId)
+    , bpreBid :: !(WithOrigin blockId)
     } deriving (Show, Generic, NoUnexpectedThunks)
 
 -- The Internal information the db keeps for each block.
@@ -116,5 +117,5 @@ data InternalBlockInfo blockId = InternalBlockInfo {
     , ibSlotOffset :: !SlotOffset
     , ibBlockSize  :: !BlockSize
     , ibSlot       :: !SlotNo
-    , ibPreBid     :: !(Maybe blockId)
+    , ibPreBid     :: !(WithOrigin blockId)
     } deriving (Show, Generic, NoUnexpectedThunks)

@@ -40,6 +40,8 @@ import           Data.Set (Set)
 import qualified Data.Set as Set
 import           GHC.Stack.Types
 
+import           Ouroboros.Network.Point (WithOrigin)
+
 import           Ouroboros.Consensus.Util (safeMaximum)
 
 import           Ouroboros.Storage.FS.API.Types
@@ -60,7 +62,7 @@ data DBModel blockId = DBModel {
     , open           :: Bool -- is the db open.
     , mp             :: Map blockId ByteString -- superset of blocks in db. Some of them may be gced already.
     , latestGarbaged :: Maybe SlotNo -- last gced slot.
-    , index          :: Map FsPath (MaxSlotNo, Int, [(blockId, Maybe blockId)]) -- what each file contains in the real impl.
+    , index          :: Map FsPath (MaxSlotNo, Int, [(blockId, WithOrigin blockId)]) -- what each file contains in the real impl.
     , currentFile    :: FsPath -- the current open file. If the db is empty this is the next it wil write.
     , nextFId        :: FileId -- the next file id.
     , maxSlotNo      :: MaxSlotNo -- highest ever stored SlotNo
@@ -185,7 +187,7 @@ garbageCollectModel err cmdErr sl = do
                 Nothing   -> []
                 Just cErr -> getStream . _removeFile $ cErr
         let f :: [Maybe FsErrorType]
-              -> (FsPath, (MaxSlotNo, Int, [(blockId, Maybe blockId)]))
+              -> (FsPath, (MaxSlotNo, Int, [(blockId, WithOrigin blockId)]))
               -> m [Maybe FsErrorType]
             f fsErr (path, (msl,_n,_bids)) = case (cmpMaybe (maxSlotNoToMaybe msl) sl, path == currentFile, tru, fsErr) of
                     (True, _, _, _) -> return fsErr
@@ -234,7 +236,7 @@ getSuccessorsModel :: forall m blockId
                    . MonadState (DBModel blockId) m
                    => Ord blockId
                    => ThrowCantCatch (VolatileDBError blockId) m
-                   -> m (Maybe blockId -> Set blockId)
+                   -> m (WithOrigin blockId -> Set blockId)
 getSuccessorsModel err = do
     DBModel {..} <- get
     if not open then EH.throwError' err $ UserError ClosedDBError
@@ -245,7 +247,7 @@ getPredecessorModel :: forall m blockId
                     . MonadState (DBModel blockId) m
                     => Ord blockId
                     => ThrowCantCatch (VolatileDBError blockId) m
-                    -> m (blockId -> Maybe blockId)
+                    -> m (blockId -> WithOrigin blockId)
 getPredecessorModel err = do
     DBModel {..} <- get
     if not open then EH.throwError' err $ UserError ClosedDBError
@@ -264,8 +266,8 @@ getMaxSlotNoModel err = do
     else return maxSlotNo
 
 modifyIndex :: MonadState (DBModel blockId) m
-            => (Map FsPath (MaxSlotNo, Int, [(blockId, Maybe blockId)])
-                  -> Map FsPath (MaxSlotNo, Int, [(blockId, Maybe  blockId)])
+            => (Map FsPath (MaxSlotNo, Int, [(blockId, WithOrigin blockId)])
+                  -> Map FsPath (MaxSlotNo, Int, [(blockId, WithOrigin blockId)])
                )
             -> m ()
 modifyIndex f = do

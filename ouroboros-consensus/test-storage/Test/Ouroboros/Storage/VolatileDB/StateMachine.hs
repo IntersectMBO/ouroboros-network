@@ -25,7 +25,6 @@ import           Prelude hiding (elem)
 import           Control.Monad.Except
 import           Control.Monad.State
 import           Data.Bifunctor (bimap)
-import qualified Data.Binary as Binary
 import qualified Data.ByteString.Builder as BL
 import           Data.ByteString.Lazy (ByteString)
 import           Data.Functor.Classes
@@ -49,6 +48,9 @@ import qualified Test.StateMachine.Types.Rank2 as Rank2
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
 import           Text.Show.Pretty (ppShow)
+
+import           Ouroboros.Network.Point (WithOrigin)
+import qualified Ouroboros.Network.Point as WithOrigin
 
 import           Ouroboros.Consensus.Util (SomePair (..))
 import qualified Ouroboros.Consensus.Util.Classify as C
@@ -157,6 +159,7 @@ deriving instance ToExpr (ParserError BlockId)
 deriving instance ToExpr MaxSlotNo
 deriving instance ToExpr (DBModel BlockId)
 deriving instance ToExpr (Model r)
+deriving instance ToExpr (WithOrigin BlockId)
 
 instance CommandNames (At Cmd) where
     cmdName (At cmd) = case cmd of
@@ -246,7 +249,7 @@ runPure dbm (CmdErr cmd err) =
             GetBlockIds        ->
                 Blocks <$> getBlockIdsModel tnc
             PutBlock b pb      ->
-                Unit <$> putBlockModel tnc err (BlockInfo b (guessSlot b) pb) (BL.lazyByteString $ Binary.encode $ toBlock (b, pb))
+                Unit <$> putBlockModel tnc err (BlockInfo b (guessSlot b) pb) (BL.lazyByteString $ toBinary (b, pb))
             GetSuccessors bids -> do
                 successors <- getSuccessorsModel tnc
                 return $ Successors $ successors <$> bids
@@ -290,7 +293,7 @@ runDB :: (HasCallStack, IOLike m)
 runDB restCmd db cmd = case cmd of
     GetBlock bid       -> Blob <$> getBlock db bid
     GetBlockIds        -> Blocks <$> getBlockIds db
-    PutBlock b pb      -> Unit <$> putBlock db (BlockInfo b (guessSlot b) pb) (BL.lazyByteString $ Binary.encode $ toBlock (b, pb))
+    PutBlock b pb      -> Unit <$> putBlock db (BlockInfo b (guessSlot b) pb) (BL.lazyByteString $ toBinary (b, pb))
     GetSuccessors bids -> do
         successors <- atomically $ getSuccessors db
         return $ Successors $ successors <$> bids
@@ -392,8 +395,8 @@ generatorCmdImpl terminatingCmd m@Model {..} =
     cmd <- frequency
         [ (150, return $ GetBlock sl)
         , (100, return $ GetBlockIds)
-        , (150, return $ PutBlock sl $ Just psl)
-        , (100, return $ GetSuccessors $ Just sl : (Just <$> possiblePredecessors))
+        , (150, return $ PutBlock sl $ WithOrigin.At psl)
+        , (100, return $ GetSuccessors $ WithOrigin.At sl : (WithOrigin.At <$> possiblePredecessors))
         , (100, return $ GetPredecessor ls)
         , (100, return $ GetMaxSlotNo)
         , (50, return $ GarbageCollect sl)
@@ -509,7 +512,7 @@ semanticsRestCmd hasFS env db cmd = case cmd of
         reOpenDB db
         return $ Unit ()
     DuplicateBlock _file  bid preBid -> do
-        let specialEnc = Binary.encode $ toBlock (bid, preBid)
+        let specialEnc = toBinary (bid, preBid)
         SomePair stHasFS st <- Internal.getInternalState env
         let hndl = Internal._currentWriteHandle st
         _ <- hPut stHasFS hndl (BL.lazyByteString specialEnc)

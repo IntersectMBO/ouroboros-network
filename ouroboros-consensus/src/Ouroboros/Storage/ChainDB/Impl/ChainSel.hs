@@ -45,6 +45,7 @@ import           Ouroboros.Network.AnchoredFragment (AnchoredFragment (..))
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block (BlockNo, HasHeader (..), HeaderHash,
                      Point, SlotNo, blockPoint, castPoint, pointHash)
+import           Ouroboros.Network.Point (WithOrigin)
 
 import           Ouroboros.Consensus.Block (BlockProtocol, GetHeader (..))
 import           Ouroboros.Consensus.Ledger.Abstract
@@ -101,7 +102,7 @@ initialChainSelection immDB volDB lgrDB tracer cfg varInvalid = do
     -- | Use the VolatileDB to construct all chains starting from the tip of
     -- the ImmutableDB.
     constructChains :: Point blk -- ^ Tip of the ImmutableDB, @i@
-                    -> (Maybe (HeaderHash blk) -> Set (HeaderHash blk))
+                    -> (WithOrigin (HeaderHash blk) -> Set (HeaderHash blk))
                     -> m [AnchoredFragment (Header blk)]
     constructChains i succsOf = flip evalStateT Map.empty $
         mapM constructChain suffixesAfterI
@@ -260,7 +261,7 @@ addBlock cdb@CDB{..} b = do
     -- | PRECONDITION: the header @hdr@ (and block @b@) fit onto the end of
     -- the current chain.
     addToCurrentChain :: HasCallStack
-                      => (Maybe (HeaderHash blk) -> Set (HeaderHash blk))
+                      => (WithOrigin (HeaderHash blk) -> Set (HeaderHash blk))
                       -> ChainAndLedger blk
                          -- ^ The current chain and ledger
                       -> m ()
@@ -315,7 +316,7 @@ addBlock cdb@CDB{..} b = do
     -- with the given block, then we do chain selection and /possibly/ try to
     -- switch to a new fork.
     switchToAFork :: HasCallStack
-                  => (Maybe (HeaderHash blk) -> Set (HeaderHash blk))
+                  => (WithOrigin (HeaderHash blk) -> Set (HeaderHash blk))
                   -> ChainAndLedger blk
                      -- ^ The current chain (anchored at @i@) and ledger
                   -> NonEmpty (HeaderHash blk)
@@ -833,8 +834,8 @@ ignoreInvalidSuc
   :: HasHeader blk
   => proxy blk
   -> Map (HeaderHash blk) SlotNo  -- ^ 'cdbInvalid'
-  -> (Maybe (HeaderHash blk) -> Set (HeaderHash blk))
-  -> (Maybe (HeaderHash blk) -> Set (HeaderHash blk))
+  -> (WithOrigin (HeaderHash blk) -> Set (HeaderHash blk))
+  -> (WithOrigin (HeaderHash blk) -> Set (HeaderHash blk))
 ignoreInvalidSuc _ invalid succsOf =
     Set.filter (`Map.notMember` invalid) . succsOf
 

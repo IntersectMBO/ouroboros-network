@@ -22,6 +22,7 @@ import           Ouroboros.Network.Block (ChainHash (..), HasHeader (..),
                      HeaderHash, SlotNo (..), blockPoint)
 import           Ouroboros.Network.MockChain.Chain (Chain)
 import qualified Ouroboros.Network.MockChain.Chain as Chain
+import           Ouroboros.Network.Point (WithOrigin (..))
 
 import           Ouroboros.Consensus.Util.Condense (condense)
 import           Ouroboros.Consensus.Util.IOLike
@@ -277,8 +278,8 @@ initIteratorEnv TestSetup { immutable, volatile } tracer = do
       { VolDB.bbid    = blockHash tb
       , VolDB.bslot   = blockSlot tb
       , VolDB.bpreBid = case blockPrevHash tb of
-          GenesisHash -> Nothing
-          BlockHash h -> Just h
+          GenesisHash -> Origin
+          BlockHash h -> At h
       }
 
     epochSize :: EpochSize

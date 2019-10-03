@@ -18,6 +18,8 @@ import           Cardano.Prelude (NoUnexpectedThunks (..), OnlyCheckIsWHNF (..))
 
 import           Control.Monad.Class.MonadThrow
 
+import           Ouroboros.Network.Point (WithOrigin)
+
 import           Ouroboros.Consensus.Util.IOLike
 
 import           Ouroboros.Storage.VolatileDB.Types
@@ -41,7 +43,7 @@ data VolatileDB blockId m = VolatileDB {
     , putBlock       :: HasCallStack => BlockInfo blockId -> Builder -> m ()
     , getBlockIds    :: HasCallStack => m [blockId]
       -- | Return a function that returns the successors of the block with the
-      -- given @blockId@ where 'Nothing' stands for Genesis.
+      -- given @blockId@.
       --
       -- This function will return a non-empty set for any block of which a
       -- predecessor has been added to the VolatileDB and will return an empty
@@ -50,14 +52,13 @@ data VolatileDB blockId m = VolatileDB {
       --
       -- Note that it is not required that the given block has been added to
       -- the VolatileDB.
-    , getSuccessors  :: HasCallStack => STM m (Maybe blockId -> Set blockId)
+    , getSuccessors  :: HasCallStack => STM m (WithOrigin blockId -> Set blockId)
       -- | Return a function that returns the predecessor of the block with
-      -- the given @blockId@. In case the predecessor is Genesis, 'Nothing' is
-      -- returned.
+      -- the given @blockId@.
       --
       -- PRECONDITION: the block must be a member of the VolatileDB, you can
       -- use 'getIsMember' to check this.
-    , getPredecessor :: HasCallStack => STM m (blockId -> Maybe blockId)
+    , getPredecessor :: HasCallStack => STM m (blockId -> WithOrigin blockId)
     , garbageCollect :: HasCallStack => SlotNo -> m ()
     , getIsMember    :: HasCallStack => STM m (blockId -> Bool)
       -- | Return the highest slot number ever stored by the VolatileDB.

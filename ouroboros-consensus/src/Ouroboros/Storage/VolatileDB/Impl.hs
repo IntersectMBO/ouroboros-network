@@ -103,6 +103,8 @@ import           GHC.Stack
 
 import           Control.Monad.Class.MonadThrow
 
+import           Ouroboros.Network.Point (WithOrigin)
+
 import           Ouroboros.Consensus.Util (SomePair (..))
 import           Ouroboros.Consensus.Util.IOLike
 
@@ -382,7 +384,7 @@ getBlockIdsImpl VolatileDBEnv{..} = do
 
 getSuccessorsImpl :: forall m blockId. (IOLike m, Ord blockId)
                   => VolatileDBEnv m blockId
-                  -> STM m (Maybe blockId -> Set blockId)
+                  -> STM m (WithOrigin blockId -> Set blockId)
 getSuccessorsImpl VolatileDBEnv{..} = do
     mSt <- readMVarSTM _dbInternalState
     case mSt of
@@ -392,7 +394,7 @@ getSuccessorsImpl VolatileDBEnv{..} = do
 
 getPredecessorImpl :: forall m blockId. (IOLike m, Ord blockId, HasCallStack)
                    => VolatileDBEnv m blockId
-                   -> STM m (blockId -> Maybe blockId)
+                   -> STM m (blockId -> WithOrigin blockId)
 getPredecessorImpl VolatileDBEnv{..} = do
     mSt <- readMVarSTM _dbInternalState
     case mSt of
