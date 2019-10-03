@@ -144,6 +144,7 @@ library
                        Ouroboros.Storage.ImmutableDB.Impl
                        Ouroboros.Storage.ImmutableDB.Index
                        Ouroboros.Storage.ImmutableDB.Layout
+                       Ouroboros.Storage.ImmutableDB.SlotOffsets
                        Ouroboros.Storage.ImmutableDB.Types
                        Ouroboros.Storage.ImmutableDB.Util
                        Ouroboros.Storage.IO

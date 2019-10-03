@@ -79,7 +79,8 @@ import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.MockChainSel
 import           Ouroboros.Consensus.Util (repeatedly, safeMaximum)
 import qualified Ouroboros.Consensus.Util.AnchoredFragment as Fragment
-import           Ouroboros.Consensus.Util.STM (Fingerprint (..))
+import           Ouroboros.Consensus.Util.STM (Fingerprint (..),
+                     WithFingerprint (..))
 
 import           Ouroboros.Storage.ChainDB.API (ChainDbError (..),
                      IteratorId (..), IteratorResult (..), StreamFrom (..),
@@ -92,7 +93,7 @@ data Model blk = Model {
     , currentLedger :: ExtLedgerState blk
     , initLedger    :: ExtLedgerState blk
     , iterators     :: Map IteratorId [blk]
-    , invalid       :: (Map (HeaderHash blk) SlotNo, Fingerprint)
+    , invalid       :: WithFingerprint (Map (HeaderHash blk) SlotNo)
     , isOpen        :: Bool
       -- ^ While the model tracks whether it is closed or not, the queries and
       -- other functions in this module ignore this for simplicity. The mock
@@ -184,7 +185,7 @@ empty initLedger = Model {
     , currentLedger = initLedger
     , initLedger    = initLedger
     , iterators     = Map.empty
-    , invalid       = (Map.empty, Fingerprint 0)
+    , invalid       = WithFingerprint Map.empty (Fingerprint 0)
     , isOpen        = True
     }
 
@@ -200,7 +201,7 @@ addBlock cfg blk m
     , currentLedger = newLedger
     , initLedger    = initLedger m
     , iterators     = iterators  m
-    , invalid       = (invalidBlocks', fingerprint')
+    , invalid       = WithFingerprint invalidBlocks' fingerprint'
     , isOpen        = True
     }
   where
@@ -219,7 +220,7 @@ addBlock cfg blk m
       = fingerprint
       | otherwise
       = succ fingerprint
-    (invalidBlocks, fingerprint) = invalid m
+    WithFingerprint invalidBlocks fingerprint = invalid m
 
     newChain  :: Chain blk
     newLedger :: ExtLedgerState blk

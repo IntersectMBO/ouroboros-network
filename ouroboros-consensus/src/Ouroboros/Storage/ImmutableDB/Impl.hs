@@ -159,8 +159,6 @@ import           GHC.Generics (Generic)
 import           Data.ByteString.Builder (Builder)
 import           Data.ByteString.Lazy (ByteString, toStrict)
 import           Data.Functor (($>), (<&>))
-import           Data.List.NonEmpty (NonEmpty)
-import qualified Data.List.NonEmpty as NE
 import           Data.Maybe (fromMaybe, isJust)
 import           Data.Set (Set)
 import qualified Data.Set as Set
@@ -188,6 +186,8 @@ import qualified Ouroboros.Storage.Util.ErrorHandling as EH
 import           Ouroboros.Storage.ImmutableDB.API
 import           Ouroboros.Storage.ImmutableDB.Index
 import           Ouroboros.Storage.ImmutableDB.Layout
+import           Ouroboros.Storage.ImmutableDB.SlotOffsets (SlotOffsets (..))
+import qualified Ouroboros.Storage.ImmutableDB.SlotOffsets as SlotOffsets
 import           Ouroboros.Storage.ImmutableDB.Util
 
 {------------------------------------------------------------------------------
@@ -220,7 +220,7 @@ data OpenState m hash h = OpenState
     -- ^ The current 'EpochNo' the immutable store is writing to.
     , _currentEpochWriteHandle :: !(Handle h)
     -- ^ The write handle for the current epoch file.
-    , _currentEpochOffsets     :: !(NonEmpty SlotOffset)
+    , _currentEpochOffsets     :: !SlotOffsets
     -- ^ The offsets to which blobs have been written in the current epoch
     -- file, stored from last to first.
     , _currentEBBHash          :: !(CurrentEBB hash)
@@ -419,8 +419,8 @@ deleteAfterImpl dbEnv@ImmutableDBEnv { _dbErr, _dbTracer } tip =
     tipToEpochSlot :: EpochInfo m -> ImmTip -> m TipEpochSlot
     tipToEpochSlot epochInfo currentTip = case currentTip of
       TipGen           -> return $ TipEpochSlotGenesis
-      Tip (Left epoch) -> return $ TipEpochSlot (EpochSlot epoch 0)
-      Tip (Right slot) -> TipEpochSlot <$> epochInfoBlockRelative epochInfo slot
+      Tip (EBB  epoch) -> return $ TipEpochSlot (EpochSlot epoch 0)
+      Tip (Block slot) -> TipEpochSlot <$> epochInfoBlockRelative epochInfo slot
 
     -- | Truncate to the last valid (filled slot or EBB) tip <= the given tip.
     truncateToTipLEQ :: HasFS m h
@@ -500,12 +500,12 @@ getBinaryBlobImpl
 getBinaryBlobImpl dbEnv slot = withOpenState dbEnv $ \_dbHasFS st@OpenState{..} -> do
     inTheFuture <- case _currentTip of
           TipGen                  -> return $ True
-          Tip (Right lastSlot')   -> return $ slot > lastSlot'
+          Tip (Block lastSlot')   -> return $ slot > lastSlot'
           -- The slot (that pointing to a regular block) corresponding to this
           -- EBB will be empty, as the EBB is the last thing in the database.
           -- So if @slot@ is equal to this slot, it is also refering to the
           -- future.
-          Tip (Left lastEBBEpoch) -> do
+          Tip (EBB lastEBBEpoch)  -> do
             ebbSlot <- epochInfoAbsolute _epochInfo (EpochSlot lastEBBEpoch 0)
             return $ slot >= ebbSlot
 
@@ -525,8 +525,8 @@ getEBBImpl
 getEBBImpl dbEnv epoch = withOpenState dbEnv $ \_dbHasFS st@OpenState{..} -> do
     let inTheFuture = case _currentTip of
           TipGen        -> True
-          Tip (Right _) -> epoch > _currentEpoch
-          Tip (Left _)  -> epoch > _currentEpoch
+          Tip (Block _) -> epoch > _currentEpoch
+          Tip (EBB _)   -> epoch > _currentEpoch
 
     when inTheFuture $
       throwUserError _dbErr $ ReadFutureEBBError epoch _currentEpoch
@@ -551,20 +551,21 @@ getEpochSlot _dbHasFS hashDecoder OpenState {..} _dbErr epochSlot = do
 
     lastRelativeSlot <- case _currentTip of
       TipGen           -> error "Postcondition violated: EpochSlot must be in the past"
-      Tip (Left  _)    -> return 0
-      Tip (Right slot) -> _relativeSlot <$> epochInfoBlockRelative _epochInfo slot
+      Tip (EBB  _)     -> return 0
+      Tip (Block slot) -> _relativeSlot <$> epochInfoBlockRelative _epochInfo slot
 
     (blobOffset, blobSize, mbEBBHash) <- case epoch == _currentEpoch of
       -- If the requested epoch is the current epoch, the offsets are still in
       -- memory
       True -> assert (lastRelativeSlot >= relativeSlot) $
-        case NE.drop toDrop _currentEpochOffsets of
-            (offsetAfter:offset:_) ->
+        case SlotOffsets.drop toDrop _currentEpochOffsets of
+            (_ `Snoc` offset) `Snoc` offsetAfter ->
               return (offset, offsetAfter - offset, _currentEBBHash)
-            [_] ->
+            First `Snoc` offsetAfter ->
+              return (0, offsetAfter, _currentEBBHash)
+            First ->
               -- We requested the EBB, but no EBB has been written yet.
               return $ assert (relativeSlot == 0) (0, 0, NoCurrentEBB)
-            [] -> error "impossible: _currentEpochOffsets out of sync"
           where
             -- The substraction below cannot underflow, in other words:
             -- @lastRelativeSlot >= relativeSlot@. This is guaranteed by the
@@ -639,9 +640,9 @@ appendBinaryBlobImpl dbEnv@ImmutableDBEnv{..} slot builder =
 
       -- Check that we're not appending to the past
       let inThePast = case _currentTip of
-            Tip (Right lastSlot')   -> slot  <= lastSlot'
-            Tip (Left lastEBBEpoch) -> epoch <  lastEBBEpoch
-            TipGen                  -> False
+            Tip (Block lastSlot')  -> slot  <= lastSlot'
+            Tip (EBB lastEBBEpoch) -> epoch <  lastEBBEpoch
+            TipGen                 -> False
 
       when inThePast $ lift $ throwUserError _dbErr $
         AppendToSlotInThePastError slot _currentTip
@@ -669,10 +670,10 @@ appendBinaryBlobImpl dbEnv@ImmutableDBEnv{..} slot builder =
             then return 0
             else case _currentTip of
                    TipGen                -> return $ 0
-                   Tip (Left _ebb)       -> return $ 1
-                   Tip (Right lastSlot') -> succ . _relativeSlot <$>
+                   Tip (EBB _ebb)        -> return $ 1
+                   Tip (Block lastSlot') -> succ . _relativeSlot <$>
                      epochInfoBlockRelative _epochInfo lastSlot'
-      let lastEpochOffset = NE.head _currentEpochOffsets
+      let lastEpochOffset = SlotOffsets.last _currentEpochOffsets
           backfillOffsets =
             indexBackfill relSlot nextFreeRelSlot lastEpochOffset
 
@@ -691,8 +692,9 @@ appendBinaryBlobImpl dbEnv@ImmutableDBEnv{..} slot builder =
 
       modify $ \st -> st
         { _currentEpochOffsets =
-            (newOffset NE.:| backfillOffsets) <> _currentEpochOffsets
-        , _currentTip = Tip (Right slot)
+           (_currentEpochOffsets `SlotOffsets.append` backfillOffsets)
+             `Snoc` newOffset
+        , _currentTip = Tip (Block slot)
         }
 
 startNewEpoch :: (HasCallStack, IOLike m)
@@ -712,7 +714,7 @@ startNewEpoch hashEncoder hasFS@HasFS{..} = do
 
     -- Calculate what to pad the file with
     nextFreeRelSlot <- lift $
-        if null (NE.tail _currentEpochOffsets)
+        if SlotOffsets.isFirst _currentEpochOffsets
           -- We have to take care when starting multiple new epochs in a
           -- row. In the first call the tip will be in the current epoch,
           -- but in subsequent calls, the tip will still be in an epoch in
@@ -724,14 +726,14 @@ startNewEpoch hashEncoder hasFS@HasFS{..} = do
           then return 0
           else case _currentTip of
                  TipGen                -> return $ 0
-                 Tip (Left _ebb)       -> return $ 1
-                 Tip (Right lastSlot') -> succ . _relativeSlot <$>
+                 Tip (EBB _ebb)        -> return $ 1
+                 Tip (Block lastSlot') -> succ . _relativeSlot <$>
                    epochInfoBlockRelative _epochInfo lastSlot'
 
     -- The above calls may have modified the _cumulEpochSizes, so get it
     -- again.
     OpenState {..} <- get
-    let lastEpochOffset = NE.head _currentEpochOffsets
+    let lastEpochOffset = SlotOffsets.last _currentEpochOffsets
         -- The last relative slot in the file
         lastRelSlot     = maxRelativeSlot epochSize
         backfillOffsets =
@@ -739,10 +741,10 @@ startNewEpoch hashEncoder hasFS@HasFS{..} = do
         -- Prepend the backfillOffsets to the current offsets to get a
         -- non-empty list of all the offsets. Note that this list is stored in
         -- reverse order.
-        allOffsets = foldr NE.cons _currentEpochOffsets backfillOffsets
+        allOffsets = _currentEpochOffsets `SlotOffsets.append` backfillOffsets
 
     -- Now write the offsets and the EBB hash to the index file
-    lift $ writeSlotOffsets hashEncoder hasFS _currentEpoch allOffsets _currentEBBHash
+    lift $ SlotOffsets.write hashEncoder hasFS _currentEpoch allOffsets _currentEBBHash
 
     st <- lift $ mkOpenStateNewEpoch hasFS (succ _currentEpoch) _epochInfo
       _nextIteratorID _currentTip
@@ -764,9 +766,9 @@ appendEBBImpl dbEnv@ImmutableDBEnv{..} epoch hash builder =
       let inThePast = case _currentTip of
             -- There is already a block in this epoch, so the EBB can no
             -- longer be appended in this epoch
-            Tip (Right _) -> epoch <= _currentEpoch
+            Tip (Block _) -> epoch <= _currentEpoch
             -- There is already an EBB in this epoch
-            Tip (Left _)  -> epoch <= _currentEpoch
+            Tip (EBB _)   -> epoch <= _currentEpoch
             TipGen        -> False
 
       when inThePast $ lift $ throwUserError _dbErr $
@@ -798,9 +800,9 @@ appendEBBImpl dbEnv@ImmutableDBEnv{..} epoch hash builder =
       let newOffset = bytesWritten
 
       modify $ \st -> st
-        { _currentEpochOffsets = newOffset NE.<| _currentEpochOffsets
+        { _currentEpochOffsets = _currentEpochOffsets `Snoc` newOffset
         , _currentEBBHash      = CurrentEBB hash
-        , _currentTip          = Tip (Left epoch)
+        , _currentTip          = Tip (EBB epoch)
         }
 
 {------------------------------------------------------------------------------
@@ -884,7 +886,7 @@ streamBinaryBlobsImpl dbEnv mbStart mbEnd = withOpenState dbEnv $ \hasFS st -> d
 
     emptyOrEndBound <- case _currentTip of
           TipGen -> return $ Nothing
-          Tip (Left epoch)
+          Tip (EBB epoch)
             | Just (endSlot, endHash) <- mbEnd
             -> do -- We don't really know if the upper bound points at a
                   -- regular block or an EBB here. We conservatively assume it
@@ -894,7 +896,7 @@ streamBinaryBlobsImpl dbEnv mbStart mbEnd = withOpenState dbEnv $ \hasFS st -> d
                   return $ Just (endEpochSlot, ItrEndHash endHash)
             | otherwise
             -> return $ Just (EpochSlot epoch 0, ItrNoEndHash)
-          Tip (Right lastSlot')
+          Tip (Block lastSlot')
             | Just (endSlot, endHash) <- mbEnd
             -> do endEpochSlot <- epochInfoBlockRelative _epochInfo endSlot
                   return $ Just (endEpochSlot, ItrEndHash endHash)
@@ -1307,7 +1309,7 @@ mkOpenStateNewEpoch :: (HasCallStack, MonadThrow m)
                     -> m (OpenState m hash h)
 mkOpenStateNewEpoch HasFS{..} epoch epochInfo nextIteratorID tip = do
     let epochFile    = renderFile "epoch" epoch
-        epochOffsets = 0 NE.:| []
+        epochOffsets = SlotOffsets.empty
 
     eHnd <- hOpen epochFile (AppendMode MustBeNew)
 
@@ -1478,8 +1480,8 @@ closedStateFromInternalState (DbOpen OpenState {..}) = ClosedState
 
 -- | Convert an 'EpochSlot' to a 'Tip'
 epochSlotToTip :: Monad m => EpochInfo m -> EpochSlot -> m ImmTip
-epochSlotToTip _         (EpochSlot epoch 0) = return $ Tip (Left epoch)
-epochSlotToTip epochInfo epochSlot           = Tip . Right <$>
+epochSlotToTip _         (EpochSlot epoch 0) = return $ Tip (EBB epoch)
+epochSlotToTip epochInfo epochSlot           = Tip . Block <$>
     epochInfoAbsolute epochInfo epochSlot
 
 -- | Go through all files, making two sets: the set of epoch-xxx.dat
@@ -1860,7 +1862,7 @@ reconstructIndex epochFile epochFileParser epochInfo = do
         | otherwise
         -> slotsToRelSlots offsetsAndSizesAndSlots
 
-    let slotOffsets = reconstructSlotOffsets offsetsAndSizesAndRelSlots
+    let slotOffsets = SlotOffsets.reconstruct offsetsAndSizesAndRelSlots
         index       = indexFromSlotOffsets slotOffsets ebbHash
     return (index, mbErr)
   where

@@ -5,7 +5,8 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections       #-}
 module Ouroboros.Storage.ImmutableDB.Util
-  ( renderFile
+  ( -- * Utilities
+    renderFile
   , handleUser
   , handleUnexpected
   , throwUserError
@@ -13,20 +14,21 @@ module Ouroboros.Storage.ImmutableDB.Util
   , tryImmDB
   , parseDBFile
   , validateIteratorRange
-  , reconstructSlotOffsets
   , indexBackfill
+    -- * Encoding and decoding the EBB hash
+  , deserialiseHash
+  , serialiseHash
   ) where
 
-import           Control.Exception (assert)
+import           Codec.CBOR.Decoding (Decoder)
+import           Codec.CBOR.Encoding (Encoding)
+import           Codec.CBOR.Read (DeserialiseFailure, deserialiseFromBytes)
+import           Codec.CBOR.Write (toLazyByteString)
 import           Control.Monad (when)
-
-import           Data.List.NonEmpty (NonEmpty)
-import qualified Data.List.NonEmpty as NE
+import           Data.Bifunctor (second)
+import qualified Data.ByteString.Lazy as BL
 import qualified Data.Text as T
-import           Data.Word
-
 import           GHC.Stack (HasCallStack, callStack, popCallStack)
-
 import           Text.Printf (printf)
 import           Text.Read (readMaybe)
 
@@ -141,40 +143,8 @@ validateIteratorRange err epochInfo tip mbStart mbEnd = do
     isNewerThanTip :: SlotNo -> m Bool
     isNewerThanTip slot = case tip of
       TipGen                -> return True
-      Tip (Left  lastEpoch) -> (slot >) <$> epochInfoFirst epochInfo lastEpoch
-      Tip (Right lastSlot)  -> return $ slot > lastSlot
-
-
--- | Given a list of increasing 'SlotOffset's together with the 'Word' (blob
--- size) and 'RelativeSlot' corresponding to the offset, reconstruct a
--- non-empty list of (decreasing) slot offsets.
---
--- The input list (typically returned by 'EpochFileParser') is assumed to be
--- valid: __strictly__ monotonically increasing offsets as well as
--- __strictly__ monotonically increasing relative slots.
---
--- The 'RelativeSlot's are used to detect empty/unfilled slots that will
--- result in repeated offsets in the output, indicating that the size of the
--- slot is 0.
---
--- The output list will always have 0 as last element.
-reconstructSlotOffsets :: [(SlotOffset, (Word64, RelativeSlot))]
-                       -> NonEmpty SlotOffset
-reconstructSlotOffsets = go 0 [] 0
-  where
-    go :: SlotOffset
-       -> [SlotOffset]
-       -> RelativeSlot
-       -> [(SlotOffset, (Word64, RelativeSlot))]
-       -> NonEmpty SlotOffset
-    go offsetAfterLast offsets expectedRelSlot ((offset, (len, relSlot)):olrs') =
-      assert (offsetAfterLast == offset) $
-      assert (relSlot >= expectedRelSlot) $
-      let backfill = indexBackfill relSlot expectedRelSlot offset
-      in go (offset + fromIntegral len) (offset : backfill <> offsets)
-            (succ relSlot) olrs'
-    go offsetAfterLast offsets _lastRelSlot [] = offsetAfterLast NE.:| offsets
-
+      Tip (EBB   lastEpoch) -> (slot >) <$> epochInfoFirst epochInfo lastEpoch
+      Tip (Block lastSlot)  -> return $ slot > lastSlot
 
 -- | Return the slots to backfill the index file with.
 --
@@ -219,3 +189,22 @@ indexBackfill (RelativeSlot slot) (RelativeSlot nextExpected) lastOffset =
     replicate gap lastOffset
   where
     gap = fromIntegral $ slot - nextExpected
+
+{-------------------------------------------------------------------------------
+  Encoding and decoding the EBB hash
+
+  When no EBB is present we use an empty bytestring.
+-------------------------------------------------------------------------------}
+
+deserialiseHash :: (forall s. Decoder s hash)
+                -> BL.ByteString
+                -> Either DeserialiseFailure (BL.ByteString, CurrentEBB hash)
+deserialiseHash hashDecoder bs
+  | BL.null bs = Right (BL.empty, NoCurrentEBB)
+  | otherwise  = second CurrentEBB <$> (deserialiseFromBytes hashDecoder bs)
+
+serialiseHash :: (hash -> Encoding)
+              -> CurrentEBB hash
+              -> BL.ByteString
+serialiseHash _           NoCurrentEBB      = BL.empty
+serialiseHash hashEncoder (CurrentEBB hash) = toLazyByteString (hashEncoder hash)

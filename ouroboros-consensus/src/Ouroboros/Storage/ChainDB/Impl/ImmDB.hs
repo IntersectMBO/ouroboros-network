@@ -224,9 +224,9 @@ getBlockWithPoint db BlockPoint { withHash = hash, atSlot = slot } =
     -- | If there's an EBB at the tip of the ImmutableDB, return its 'SlotNo'.
     tipIsEBB :: m (Maybe SlotNo)
     tipIsEBB = withDB db $ \imm -> ImmDB.getTip imm >>= \case
-      Tip (Left epochNo) -> Just <$> epochInfoFirst epochNo
-      Tip (Right _)      -> return Nothing
-      TipGen             -> return Nothing
+      Tip (ImmDB.EBB epochNo) -> Just <$> epochInfoFirst epochNo
+      Tip (ImmDB.Block _)     -> return Nothing
+      TipGen                  -> return Nothing
 
     -- | First try to read the block at the slot, if the block's hash doesn't
     -- match the expect hash, try reading the EBB at that slot.
@@ -268,9 +268,9 @@ getBlockAtTip :: (MonadCatch m, HasHeader blk, HasCallStack)
 getBlockAtTip db = do
     immTip <- withDB db $ \imm -> ImmDB.getTip imm
     case immTip of
-      TipGen             -> return Nothing
-      Tip (Left epochNo) -> Just <$> getKnownBlock db (Left epochNo)
-      Tip (Right slotNo) -> Just <$> getKnownBlock db (Right slotNo)
+      TipGen                   -> return Nothing
+      Tip (ImmDB.EBB epochNo)  -> Just <$> getKnownBlock db (Left epochNo)
+      Tip (ImmDB.Block slotNo) -> Just <$> getKnownBlock db (Right slotNo)
 
 getPointAtTip :: forall m blk.
                  (MonadCatch m, HasHeader blk, HasCallStack)
@@ -286,9 +286,9 @@ getSlotNoAtTip :: (MonadCatch m, HasHeader blk)
 getSlotNoAtTip db = do
     immTip <- withDB db $ \imm -> ImmDB.getTip imm
     case immTip of
-      TipGen             -> return Origin
-      Tip (Left epochNo) -> At <$> epochInfoFirst epochNo
-      Tip (Right slotNo) -> return (At slotNo)
+      TipGen                   -> return Origin
+      Tip (ImmDB.EBB epochNo)  -> At <$> epochInfoFirst epochNo
+      Tip (ImmDB.Block slotNo) -> return (At slotNo)
   where
     EpochInfo{..} = epochInfo db
 

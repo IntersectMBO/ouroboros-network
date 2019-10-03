@@ -59,7 +59,7 @@ import           Ouroboros.Consensus.Ledger.Extended (ExtValidationError)
 import           Ouroboros.Consensus.Protocol.Abstract (NodeConfig)
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
-import           Ouroboros.Consensus.Util.STM (Fingerprint)
+import           Ouroboros.Consensus.Util.STM (WithFingerprint)
 
 import           Ouroboros.Storage.Common (EpochNo)
 import           Ouroboros.Storage.EpochInfo (EpochInfo)
@@ -178,7 +178,7 @@ data ChainDbEnv m blk = CDB
     -- of the current chain fragment (retrieved 'cdbGetCurrentChain', not by
     -- reading 'cdbChain' directly).
   , cdbNodeConfig     :: NodeConfig (BlockProtocol blk)
-  , cdbInvalid        :: StrictTVar m (Map (HeaderHash blk) SlotNo, Fingerprint)
+  , cdbInvalid        :: StrictTVar m (WithFingerprint (Map (HeaderHash blk) SlotNo))
     -- ^ Hashes corresponding to invalid blocks. This is used to ignore these
     -- blocks during chain selection.
     --

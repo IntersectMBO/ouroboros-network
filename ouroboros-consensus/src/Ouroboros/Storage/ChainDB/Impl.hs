@@ -36,7 +36,8 @@ import           Ouroboros.Network.Block (blockNo, blockPoint, blockSlot,
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util.IOLike
-import           Ouroboros.Consensus.Util.STM (Fingerprint (..))
+import           Ouroboros.Consensus.Util.STM (Fingerprint (..),
+                     WithFingerprint (..))
 
 import           Ouroboros.Storage.Common (EpochNo)
 import           Ouroboros.Storage.EpochInfo (epochInfoEpoch)
@@ -99,7 +100,7 @@ openDBInternal args launchBgTasks = do
                             (Query.getAnyKnownBlock immDB volDB)
     traceWith tracer $ TraceOpenEvent OpenedLgrDB
 
-    varInvalid <- uncheckedNewTVarM (Map.empty, Fingerprint 0)
+    varInvalid <- newTVarM (WithFingerprint Map.empty (Fingerprint 0))
 
     chainAndLedger <- ChainSel.initialChainSelection
       immDB

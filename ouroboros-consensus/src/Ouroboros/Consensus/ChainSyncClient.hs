@@ -63,7 +63,8 @@ import           Ouroboros.Consensus.Util.MonadSTM.NormalForm (checkInvariant,
                      unsafeNoThunks)
 import           Ouroboros.Consensus.Util.ResourceRegistry
 import           Ouroboros.Consensus.Util.SlotBounded as SB
-import           Ouroboros.Consensus.Util.STM (Fingerprint, onEachChange)
+import           Ouroboros.Consensus.Util.STM (WithFingerprint (..),
+                     onEachChange)
 
 -- | Clock skew: the number of slots the chain of an upstream node may be
 -- ahead of the current slot (according to 'BlockchainTime').
@@ -82,7 +83,7 @@ data ChainDbView m blk tip = ChainDbView
   { getCurrentChain   :: STM m (AnchoredFragment (Header blk))
   , getCurrentLedger  :: STM m (ExtLedgerState blk)
   , getOurTip         :: STM m tip
-  , getIsInvalidBlock :: STM m (HeaderHash blk -> Bool, Fingerprint)
+  , getIsInvalidBlock :: STM m (WithFingerprint (HeaderHash blk -> Bool))
   }
 
 -- newtype wrappers to avoid confusing our tip with their tip.
@@ -540,7 +541,7 @@ chainSyncClient mkPipelineDecision0 getTipBlockNo tracer cfg btime
       -- Reject the block if invalid
       let hdrHash  = headerHash hdr
           hdrPoint = headerPoint hdr
-      (isInvalidBlock, _fingerprint) <- atomically $ getIsInvalidBlock
+      isInvalidBlock <- atomically $ forgetFingerprint <$> getIsInvalidBlock
       when (isInvalidBlock hdrHash) $
         disconnect $ InvalidBlock hdrPoint
 
@@ -794,15 +795,20 @@ rejectInvalidBlocks
        )
     => Tracer m (TraceChainSyncClientEvent blk tip)
     -> ResourceRegistry m
-    -> STM m (HeaderHash blk -> Bool, Fingerprint)
+    -> STM m (WithFingerprint (HeaderHash blk -> Bool))
        -- ^ Get the invalid block checker
     -> STM m (AnchoredFragment (Header blk))
     -> m ()
 rejectInvalidBlocks tracer registry getIsInvalidBlock getCandidate =
-    onEachChange registry snd Nothing getIsInvalidBlock checkInvalid
+    onEachChange
+      registry
+      getFingerprint
+      Nothing
+      getIsInvalidBlock
+      (checkInvalid . forgetFingerprint)
   where
-    checkInvalid :: (HeaderHash blk -> Bool, Fingerprint) -> m ()
-    checkInvalid (isInvalidBlock, _) = do
+    checkInvalid :: (HeaderHash blk -> Bool) -> m ()
+    checkInvalid isInvalidBlock = do
       theirFrag <- atomically getCandidate
       -- The invalid block is likely to be a more recent block, so check from
       -- newest to oldest.

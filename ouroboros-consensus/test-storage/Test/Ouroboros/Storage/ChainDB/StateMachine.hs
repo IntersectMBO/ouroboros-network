@@ -79,7 +79,8 @@ import           Ouroboros.Consensus.Protocol.BFT
 import           Ouroboros.Consensus.Util.Condense (condense)
 import           Ouroboros.Consensus.Util.IOLike hiding (fork)
 import           Ouroboros.Consensus.Util.ResourceRegistry
-import           Ouroboros.Consensus.Util.STM (Fingerprint (..))
+import           Ouroboros.Consensus.Util.STM (Fingerprint (..),
+                     WithFingerprint (..))
 
 import           Ouroboros.Storage.ChainDB
 import qualified Ouroboros.Storage.ChainDB as ChainDB
@@ -815,7 +816,6 @@ instance CommandNames (At Cmd blk m) where
   cmdNames (_ :: Proxy (At Cmd blk m r)) =
     constrNames (Proxy @(Cmd blk () ()))
 
-deriving instance Generic Fingerprint
 deriving instance Generic ReaderNext
 deriving instance Generic IteratorId
 deriving instance Generic (Point blk)
@@ -842,6 +842,7 @@ deriving instance ( ToExpr blk
                   , ToExpr (HeaderHash blk)
                   )
                  => ToExpr (ChainProducerState blk)
+deriving instance ToExpr a => ToExpr (WithFingerprint a)
 deriving instance ( ToExpr blk
                   , ToExpr (HeaderHash blk)
                   , ToExpr (ChainState (BlockProtocol blk))

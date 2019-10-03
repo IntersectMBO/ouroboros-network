@@ -74,7 +74,8 @@ import           Ouroboros.Storage.EpochInfo
 import           Ouroboros.Storage.FS.API (HasFS (..))
 import           Ouroboros.Storage.FS.API.Types (FsError (..), FsPath)
 import qualified Ouroboros.Storage.FS.Sim.MockFS as Mock
-import           Ouroboros.Storage.ImmutableDB
+import           Ouroboros.Storage.ImmutableDB hiding (BlockOrEBB (..))
+import qualified Ouroboros.Storage.ImmutableDB as ImmDB
 import           Ouroboros.Storage.ImmutableDB.Layout
 import           Ouroboros.Storage.ImmutableDB.Util (renderFile, tryImmDB)
 import qualified Ouroboros.Storage.Util.ErrorHandling as EH
@@ -529,8 +530,8 @@ generateCmd Model {..} = At <$> frequency
 
     genTip = frequency
       [ (1, return C.TipGen)
-      , (2, C.Tip . Right <$> chooseSlot  (0, lastSlot + 3))
-      , (2, C.Tip . Left  <$> chooseEpoch (0, currentEpoch + 3))
+      , (2, C.Tip . ImmDB.Block <$> chooseSlot  (0, lastSlot + 3))
+      , (2, C.Tip . ImmDB.EBB   <$> chooseEpoch (0, currentEpoch + 3))
       ]
 
 -- | Return the files that the database with the given model would have
@@ -625,13 +626,13 @@ shrinkCmd Model {..} (At cmd) = fmap At $ case cmd of
     -- similarly for TipBlock. Otherwise we have to check whether a TipEBB is
     -- before or after a TipBlock.
     shrinkTip C.TipGen =
-      map (C.Tip . Right) [0..lastSlot] ++ map (C.Tip . Left) [0..currentEpoch]
-    shrinkTip (C.Tip (Right slot))
-      | slot > lastSlot = map (C.Tip . Right) [lastSlot..slot - 1]
-      | otherwise       = map (C.Tip . Right) [slot + 1..lastSlot]
-    shrinkTip (C.Tip (Left epoch))
-      | epoch > currentEpoch = map (C.Tip . Left) [currentEpoch..epoch - 1]
-      | otherwise            = map (C.Tip . Left) [epoch + 1..currentEpoch]
+      map (C.Tip . ImmDB.Block) [0..lastSlot] ++ map (C.Tip . ImmDB.EBB) [0..currentEpoch]
+    shrinkTip (C.Tip (ImmDB.Block slot))
+      | slot > lastSlot = map (C.Tip . ImmDB.Block) [lastSlot..slot - 1]
+      | otherwise       = map (C.Tip . ImmDB.Block) [slot + 1..lastSlot]
+    shrinkTip (C.Tip (ImmDB.EBB epoch))
+      | epoch > currentEpoch = map (C.Tip . ImmDB.EBB) [currentEpoch..epoch - 1]
+      | otherwise            = map (C.Tip . ImmDB.EBB) [epoch + 1..currentEpoch]
 
 
 {-------------------------------------------------------------------------------
@@ -1017,6 +1018,7 @@ instance ToExpr IteratorID
 instance ToExpr (IteratorResult Hash ByteString)
 instance ToExpr (IteratorModel Hash)
 instance ToExpr TestBlock
+instance ToExpr ImmDB.BlockOrEBB
 instance ToExpr r => ToExpr (C.Tip r)
 instance ToExpr (DBModel Hash)
 

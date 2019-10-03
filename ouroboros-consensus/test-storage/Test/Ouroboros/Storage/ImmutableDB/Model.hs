@@ -76,9 +76,9 @@ initDBModel epochSize = DBModel
 dbmCurrentEpoch :: DBModel hash -> EpochNo
 dbmCurrentEpoch dbm@DBModel{..} =
     case dbmTip of
-      TipGen            -> EpochNo 0
-      Tip (Right slot ) -> slotToEpoch dbm slot
-      Tip (Left epoch') -> epoch'
+      TipGen           -> EpochNo 0
+      Tip (Block slot) -> slotToEpoch dbm slot
+      Tip (EBB epoch') -> epoch'
 
 dbmBlobs :: DBModel hash
          -> Map (EpochSlot, SlotNo) (Either (hash, ByteString) ByteString)
@@ -165,7 +165,7 @@ rollBackToTip tip dbm@DBModel {..} = case tip of
       where
         firstEpochSize = lookupEpochSize dbm 0
 
-    Tip (Left epoch) -> dbm
+    Tip (EBB epoch) -> dbm
         { dbmChain = rolledBackChain
         , dbmEBBs  = ebbsUpToEpoch epoch
         , dbmTip   = tip
@@ -177,7 +177,7 @@ rollBackToTip tip dbm@DBModel {..} = case tip of
                         & takeWhile ((< firstSlotAfter) . fst)
                         & map snd
 
-    Tip (Right slot)
+    Tip (Block slot)
       | slot >= fromIntegral (length dbmChain) -> dbm
       | otherwise                              -> dbm
         { dbmChain = rolledBackChain
@@ -229,11 +229,11 @@ tipsAfter dbm tip = map toTip $ dropWhile isBeforeTip blobLocations
     isBeforeTip :: (EpochSlot, SlotNo) -> Bool
     isBeforeTip (epochSlot, slot) = case tip of
       TipGen            -> False
-      Tip (Left epoch)  -> epochSlot < EpochSlot epoch 0
-      Tip (Right slot') -> slot      < slot'
+      Tip (EBB epoch)   -> epochSlot < EpochSlot epoch 0
+      Tip (Block slot') -> slot      < slot'
     toTip :: (EpochSlot, SlotNo) -> ImmTip
-    toTip (EpochSlot epoch 0, _)    = Tip (Left epoch)
-    toTip (_                , slot) = Tip (Right slot)
+    toTip (EpochSlot epoch 0, _)    = Tip (EBB epoch)
+    toTip (_                , slot) = Tip (Block slot)
 
 
 {------------------------------------------------------------------------------
@@ -279,8 +279,8 @@ rollBack :: RollBackPoint -> DBModel hash -> DBModel hash
 rollBack rbp dbm = case rbp of
     DontRollBack                            ->                                  dbm
     RollBackToGenesis                       -> rollBackToTip TipGen             dbm
-    RollBackToEpochSlot (EpochSlot epoch 0) -> rollBackToTip (Tip (Left epoch)) dbm
-    RollBackToEpochSlot epochSlot           -> rollBackToTip (Tip (Right slot)) dbm
+    RollBackToEpochSlot (EpochSlot epoch 0) -> rollBackToTip (Tip (EBB epoch))  dbm
+    RollBackToEpochSlot epochSlot           -> rollBackToTip (Tip (Block slot)) dbm
       where
         slot = epochSlotToSlot dbm epochSlot
 
@@ -376,8 +376,8 @@ getBinaryBlobModel err slot = do
     -- Check that the slot is not in the future
     let inTheFuture = case dbmTip of
           TipGen               -> True
-          Tip (Right lastSlot) -> slot > lastSlot
-          Tip (Left  _ebb)     -> slot >= fromIntegral (length dbmChain)
+          Tip (Block lastSlot) -> slot > lastSlot
+          Tip (EBB  _ebb)      -> slot >= fromIntegral (length dbmChain)
 
     when inTheFuture $
       throwUserError err $ ReadFutureSlotError slot dbmTip
@@ -408,8 +408,8 @@ appendBinaryBlobModel err slot bld = do
 
     -- Check that we're not appending to the past
     let inThePast = case dbmTip of
-          Tip (Right lastSlot) -> slot <= lastSlot
-          Tip (Left _)         -> slot < fromIntegral (length dbmChain)
+          Tip (Block lastSlot) -> slot <= lastSlot
+          Tip (EBB _)          -> slot < fromIntegral (length dbmChain)
           TipGen               -> False
 
     when inThePast $
@@ -421,7 +421,7 @@ appendBinaryBlobModel err slot bld = do
     -- TODO snoc list?
     put dbm
       { dbmChain = dbmChain ++ replicate toPad Nothing ++ [Just blob]
-      , dbmTip   = Tip (Right slot)
+      , dbmTip   = Tip (Block slot)
       }
 
 appendEBBModel :: (MonadState (DBModel hash) m)
@@ -447,7 +447,7 @@ appendEBBModel err epoch hash bld = do
 
     put dbm
       { dbmChain = dbmChain ++ replicate toPad Nothing
-      , dbmTip   = Tip (Left epoch)
+      , dbmTip   = Tip (EBB epoch)
       , dbmEBBs  = Map.insert epoch (hash, blob) dbmEBBs
       }
 

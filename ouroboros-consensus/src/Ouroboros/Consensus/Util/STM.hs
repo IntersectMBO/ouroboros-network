@@ -1,3 +1,7 @@
+{-# LANGUAGE DeriveAnyClass             #-}
+{-# LANGUAGE DeriveFunctor              #-}
+{-# LANGUAGE DeriveGeneric              #-}
+{-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE RankNTypes                 #-}
@@ -11,6 +15,7 @@ module Ouroboros.Consensus.Util.STM (
   , blockUntilJust
   , blockUntilAllJust
   , Fingerprint (..)
+  , WithFingerprint (..)
     -- * Simulate various monad stacks in STM
   , Sim
   , simId
@@ -28,6 +33,7 @@ import           Control.Monad.Writer
 import           Data.Coerce
 import           Data.Void
 import           Data.Word (Word64)
+import           GHC.Generics (Generic)
 import           GHC.Stack
 
 import           Ouroboros.Consensus.Protocol.Abstract
@@ -109,7 +115,15 @@ blockUntilAllJust = mapM blockUntilJust
 -- | Simple type that can be used to indicate something in a @TVar@ is
 -- changed.
 newtype Fingerprint = Fingerprint Word64
-  deriving (Show, Eq, Enum)
+  deriving stock    (Show, Eq, Generic)
+  deriving newtype  (Enum)
+  deriving anyclass (NoUnexpectedThunks)
+
+-- | Store a value together with its fingerprint.
+data WithFingerprint a = WithFingerprint
+  { forgetFingerprint :: !a
+  , getFingerprint    :: !Fingerprint
+  } deriving (Show, Eq, Functor, Generic, NoUnexpectedThunks)
 
 {-------------------------------------------------------------------------------
   Simulate monad stacks
