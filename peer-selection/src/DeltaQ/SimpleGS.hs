@@ -1,17 +1,14 @@
-{-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE GADTSyntax #-}
 
 module DeltaQ.SimpleGS where
 
 import Data.Time.Clock (DiffTime)
 import Numeric.Natural
 
--- FIXME should not use partial record fields.
-data SimpleGS
-  = SimpleDeltaQ
-    { dqG    :: DiffTime        -- ^ seconds
-    , dqS    :: Natural -> DiffTime -- ^ seconds per octet
-    }
-  | Bottom
+data SimpleGS where
+  -- | Seconds (G) and seconds per octet (S).
+  SimpleDeltaQ :: !DiffTime -> !(Natural -> DiffTime) -> SimpleGS
+  Bottom       :: SimpleGS
 
 perfection :: SimpleGS
 perfection = SimpleDeltaQ 0 (const 0)
@@ -21,9 +18,11 @@ dqS' :: Double -> DiffTime
 dqS' r = fromRational $ recip $ (toRational r) / 8
 
 instance Semigroup SimpleGS where
-  Bottom <> _      = Bottom
-  _      <> Bottom = Bottom
-  a      <> b      = SimpleDeltaQ (dqG a + dqG b) (\x -> dqS a x + dqS b x)
+  Bottom           <> _                  = Bottom
+  _                <> Bottom             = Bottom
+  SimpleDeltaQ g s <> SimpleDeltaQ g' s' = SimpleDeltaQ
+    ((+)     g     g')
+    ((+) <$> s <*> s')
 
 instance Monoid SimpleGS where
   mempty = perfection
@@ -45,26 +44,6 @@ mkGS' a b
   | otherwise
     = error "mkGS': negative G or non-positive S"
 
-
-instance Eq SimpleGS where
-  a == b = (compare a b) == EQ
-
-instance Ord SimpleGS where
-  Bottom `compare` Bottom = EQ
-  _      `compare` Bottom = LT
-  Bottom `compare` _      = GT
-  a      `compare` b
-    = (dqG a + dqS a 1) `compare` (dqG b + dqS b 1)
-    
-
 instance Show SimpleGS where
-  show Bottom = "⊥"
-  show SimpleDeltaQ{dqG, dqS}
-    = show dqG ++ "+" ++ show (dqS 1) ++ "/o"
-
-{-
-instance QualityAttenuationMeasure SimpleGS where
-  bottom = Bottom
-  perfection = SimpleDeltaQ 0 (const 0)
-  isBottom x = case x of {Bottom -> True; _ -> False}
--}
+  show Bottom             = "⊥"
+  show (SimpleDeltaQ g s) = show g ++ "+" ++ show (s 1) ++ "/o"
