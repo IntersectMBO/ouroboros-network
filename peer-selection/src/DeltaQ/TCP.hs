@@ -12,7 +12,7 @@ data BearerCharacteristics
   = Bearer { linkDeltaQ  :: SimpleGS
            , restriction :: LinkRestriction
            }
-    deriving (Eq, Ord, Show)
+    deriving (Show)
 
 -- | make a BearerCharacteristics, testing for consistency. ∆Q|S of
 --   the SimpleGS can not be smaller than the e2ePDUServiceTime of the
@@ -20,19 +20,20 @@ data BearerCharacteristics
 mkBearer :: SimpleGS
          -> LinkRestriction
          -> BearerCharacteristics
-mkBearer a b
-  = inv'g `seq` inv's'1 `seq` inv's'mtu `seq`  Bearer a b
+mkBearer Bottom                lr = Bearer Bottom lr
+mkBearer dq@(SimpleDeltaQ g s) lr
+  = inv'g `seq` inv's'1 `seq` inv's'mtu `seq`  Bearer dq lr
   where
     inv'g
-      | dqG a < e2ePDUServiceTime b 0
+      | g < e2ePDUServiceTime lr 0
       = error "mkBearer: ∆Q|G invariant check failure."
       | otherwise = ()
     inv's'1
-      | dqG a + dqS a 1 < e2ePDUServiceTime b 1
+      | g + s 1 < e2ePDUServiceTime lr 1
       = error "mkBearer: ∆Q|G,S(1) invariant check failure."
       | otherwise = ()
     inv's'mtu
-      | dqG a + dqS a (e2eMaxSDU b) < e2ePDUServiceTime b (e2eMaxSDU b)
+      | g + s (e2eMaxSDU lr) < e2ePDUServiceTime lr (e2eMaxSDU lr)
       = error "mkBearer: ∆Q|G,S(mtu) invariant check failure."
       | otherwise = ()
       
@@ -170,6 +171,9 @@ tcpRPCLoadPattern a2b b2a ohead iw' mws irs rs
 --   assumption is that the restriction is at the ingress, if we were
 --   including ∆Q|V in the model other locations of the restriction
 --   could be captured.
+--
+--   FIXME assumes the bearer has a non-bottom delta Q.
+--   Will crash if it is bottom.
 bearerTransitDelay :: BearerCharacteristics
                    -- ^ Characteristics of path A -> B
                    -> [(DiffTime, Natural)]
@@ -205,3 +209,14 @@ bearerTransitDelay b as
     step'idle :: (DiffTime, Natural) -> DiffTime
     step'idle (t, n)
       = t + e2ePDUServiceTime (restriction b) n
+
+    -- Partial functions which assume that the bearer characteristics are not
+    -- Bottom.
+    -- FIXME this needs to be rethought.
+    dqG :: SimpleGS -> DiffTime
+    dqG (SimpleDeltaQ g _) = g
+    dqG _                  = error "bearerTransitDelay given _|_ for delta q"
+
+    dqS :: SimpleGS -> Natural -> DiffTime
+    dqS (SimpleDeltaQ _ s) = s
+    dqS _                  = error "bearerTransitDelay given _|_ for delta q"
