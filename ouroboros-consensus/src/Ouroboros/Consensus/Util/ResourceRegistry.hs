@@ -52,9 +52,10 @@ import           GHC.Stack
 import           Control.Monad.Class.MonadThrow
 
 import           Cardano.Prelude (NoUnexpectedThunks (..), OnlyCheckIsWHNF (..),
-                     UseIsNormalForm (..), UseIsNormalFormNamed (..))
+                     UseIsNormalFormNamed (..), allNoUnexpectedThunks)
 
 import           Ouroboros.Consensus.Util.IOLike
+import           Ouroboros.Consensus.Util.Orphans ()
 
 -- | Resource registry
 --
@@ -281,6 +282,9 @@ data ResourceRegistry m = ResourceRegistry {
       -- | Registry state
     , registryState   :: !(StrictTVar m (RegistryState m))
     }
+  deriving (Generic)
+
+deriving instance IOLike m => NoUnexpectedThunks (ResourceRegistry m)
 
 {-------------------------------------------------------------------------------
   Internal: registry state
@@ -476,7 +480,7 @@ instance Exception RegistryClosedException
 unsafeNewRegistry :: (IOLike m, HasCallStack) => m (ResourceRegistry m)
 unsafeNewRegistry = do
     context  <- captureContext
-    stateVar <- uncheckedNewTVarM initState
+    stateVar <- newTVarM initState
     return ResourceRegistry {
           registryContext = context
         , registryState   = stateVar
@@ -820,7 +824,14 @@ data Context m = IOLike m => Context {
     , contextThreadId  :: !(ThreadId m)
     }
 
-deriving via UseIsNormalFormNamed "Context" (Context m) instance NoUnexpectedThunks (Context m)
+-- Existential type; we can't use generics
+instance NoUnexpectedThunks (Context m) where
+  showTypeOf _ = "Context"
+  whnfNoUnexpectedThunks ctxt (Context cs tid) = allNoUnexpectedThunks
+    [ noUnexpectedThunks ctxt cs
+    , noUnexpectedThunks ctxt (UseIsNormalFormNamed @"ThreadId" tid)
+    ]
+
 deriving instance Show (Context m)
 
 captureContext :: IOLike m => HasCallStack => m (Context m)
@@ -834,7 +845,7 @@ captureContext = Context (PrettyCallStack callStack) <$> myThreadId
 
 -- | CallStack with 'Show' instance using 'prettyCallStack'
 newtype PrettyCallStack = PrettyCallStack CallStack
-  deriving NoUnexpectedThunks via UseIsNormalForm CallStack
+  deriving newtype (NoUnexpectedThunks)
 
 instance Show PrettyCallStack where
   show (PrettyCallStack cs) = prettyCallStack cs
