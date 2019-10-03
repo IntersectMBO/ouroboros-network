@@ -16,9 +16,9 @@ module Ouroboros.Consensus.BlockFetchServer
 import           Data.Typeable (Typeable)
 
 import           Control.Monad.Class.MonadThrow
-import           Control.Tracer (Tracer)
+import           Control.Tracer (Tracer, traceWith)
 
-import           Ouroboros.Network.Block (HeaderHash, StandardHash)
+import           Ouroboros.Network.Block (HeaderHash, Point, StandardHash)
 import           Ouroboros.Network.Protocol.BlockFetch.Server
                      (BlockFetchBlockSender (..), BlockFetchSendBlocks (..),
                      BlockFetchServer (..))
@@ -63,7 +63,7 @@ blockFetchServer
     -> ChainDB m blk
     -> ResourceRegistry m
     -> BlockFetchServer blk m ()
-blockFetchServer _tracer chainDB registry = senderSide
+blockFetchServer tracer chainDB registry = senderSide
   where
     senderSide :: BlockFetchServer blk m ()
     senderSide = BlockFetchServer receiveReq ()
@@ -76,14 +76,16 @@ blockFetchServer _tracer chainDB registry = senderSide
         registry
         (ChainDB.StreamFromInclusive start)
         (ChainDB.StreamToInclusive   end)
-      return $ case errIt of
+      case errIt of
         -- The range is not in the ChainDB or it forks off more than @k@
         -- blocks back.
-        Left  _  -> SendMsgNoBlocks $ return senderSide
+        Left  _  -> do
+          traceWith tracer (TraceNoBlocks start end)
+          pure $ SendMsgNoBlocks $ return senderSide
         -- When we got an iterator, it will stream at least one block since
         -- its bounds are inclusive, so we don't have to check whether the
         -- iterator is empty.
-        Right it -> SendMsgStartBatch $ sendBlocks it
+        Right it -> pure $ SendMsgStartBatch $ sendBlocks it
 
 
     sendBlocks :: ChainDB.Iterator m blk
@@ -106,6 +108,9 @@ blockFetchServer _tracer chainDB registry = senderSide
 
 -- | Events traced by the Block Fetch Server.
 data TraceBlockFetchServerEvent blk
-   -- TODO no events yet. Tracing the messages send/received over the network
-   -- might be all we need?
+  = TraceNoBlocks (Point blk) (Point blk)
+    -- ^ the server is about to send 'MsgNoBlocks' because it could not obtain
+    -- an iterator for these two points
+    --
+    -- start (inclusive), stop (inclusive)
   deriving (Eq, Show)
