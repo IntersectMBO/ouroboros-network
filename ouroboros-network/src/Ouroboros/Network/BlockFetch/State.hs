@@ -57,7 +57,7 @@ fetchLogicIterations
   :: (MonadSTM m, Ord peer,
       HasHeader header, HasHeader block,
       HeaderHash header ~ HeaderHash block)
-  => Tracer m [TraceLabelPeer peer (FetchDecision [Point header])]
+  => Tracer m [TraceLabelPeer peer (AnchoredFragment header, FetchDecision [Point header])]
   -> Tracer m (TraceLabelPeer peer (TraceFetchClientState header))
   -> FetchDecisionPolicy header
   -> FetchTriggerVariables peer header m
@@ -99,7 +99,7 @@ fetchLogicIteration
   :: (MonadSTM m, Ord peer,
       HasHeader header, HasHeader block,
       HeaderHash header ~ HeaderHash block)
-  => Tracer m [TraceLabelPeer peer (FetchDecision [Point header])]
+  => Tracer m [TraceLabelPeer peer (AnchoredFragment header, FetchDecision [Point header])]
   -> Tracer m (TraceLabelPeer peer (TraceFetchClientState header))
   -> FetchDecisionPolicy header
   -> FetchTriggerVariables peer header m
@@ -127,17 +127,20 @@ fetchLogicIteration decisionTracer clientStateTracer
     -- TODO: log the difference in the fingerprint that caused us to wake up
 
     -- Make all the fetch decisions
-    let decisions = fetchDecisionsForStateSnapshot
-                      fetchDecisionPolicy
-                      stateSnapshot
+    let decisions0 = fetchDecisionsForStateSnapshot
+                       fetchDecisionPolicy
+                       stateSnapshot
 
     -- If we want to trace timings, we can do it here after forcing:
     -- _ <- evaluate (force decisions)
 
     -- Trace the batch of fetch decisions
     traceWith decisionTracer
-      [ TraceLabelPeer peer (fmap fetchRequestPoints decision)
-      | (decision, (_, _, _, (_, peer))) <- decisions ]
+      [ TraceLabelPeer peer (req, fmap fetchRequestPoints decision)
+      | (req, decision, (_, _, _, (_, peer))) <- decisions0 ]
+
+    let decisions =
+          [ (decision, pinfo) | (_req, decision, pinfo) <- decisions0 ]
 
     -- Tell the fetch clients to act on our decisions
     statusUpdates <- fetchLogicIterationAct clientStateTracer
@@ -166,7 +169,8 @@ fetchDecisionsForStateSnapshot
       Ord peer)
   => FetchDecisionPolicy header
   -> FetchStateSnapshot peer header block m
-  -> [( FetchDecision (FetchRequest header),
+  -> [( AnchoredFragment header,
+        FetchDecision (FetchRequest header),
         PeerInfo header (FetchClientStateVars m header, peer)
       )]
 

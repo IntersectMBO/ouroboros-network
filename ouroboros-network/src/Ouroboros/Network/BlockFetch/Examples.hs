@@ -28,7 +28,7 @@ import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
-import           Control.Tracer (Tracer, nullTracer)
+import           Control.Tracer (Tracer, contramap, nullTracer)
 import           Control.Exception (assert)
 
 import           Ouroboros.Network.Block
@@ -123,7 +123,8 @@ blockFetchExample1 decisionTracer clientStateTracer clientMsgTracer
                -> m ()
     blockFetch registry blockHeap =
         blockFetchLogic
-          decisionTracer clientStateTracer
+          (contramap (fmap (fmap snd)) decisionTracer)
+          clientStateTracer
           (sampleBlockFetchPolicy1 blockHeap currentChainHeaders candidateChainHeaders)
           registry
         >> return ()

@@ -11,6 +11,7 @@ module Ouroboros.Consensus.Node.Tracers
 
 import           Control.Tracer (Tracer, nullTracer, showTracing)
 
+import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import           Ouroboros.Network.Block (Point, SlotNo, Tip)
 import           Ouroboros.Network.BlockFetch (FetchDecision,
                      TraceFetchClientState, TraceLabelPeer)
@@ -37,7 +38,7 @@ data Tracers' peer blk tip f = Tracers
   { chainSyncClientTracer         :: f (TraceChainSyncClientEvent blk tip)
   , chainSyncServerHeaderTracer   :: f (TraceChainSyncServerEvent blk (Header blk))
   , chainSyncServerBlockTracer    :: f (TraceChainSyncServerEvent blk blk)
-  , blockFetchDecisionTracer      :: f [TraceLabelPeer peer (FetchDecision [Point (Header blk)])]
+  , blockFetchDecisionTracer      :: f [TraceLabelPeer peer (AnchoredFragment (Header blk), FetchDecision [Point (Header blk)])]
   , blockFetchClientTracer        :: f (TraceLabelPeer peer (TraceFetchClientState (Header blk)))
   , blockFetchServerTracer        :: f (TraceBlockFetchServerEvent blk)
   , txInboundTracer               :: f (TraceTxSubmissionInbound  (GenTxId blk) (GenTx blk))

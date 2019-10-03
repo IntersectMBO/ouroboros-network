@@ -151,7 +151,7 @@ fetchDecisions
   -> (Point block -> Bool)
   -> MaxSlotNo
   -> [(AnchoredFragment header, PeerInfo header extra)]
-  -> [(FetchDecision (FetchRequest header), PeerInfo header extra)]
+  -> [(AnchoredFragment header, FetchDecision (FetchRequest header), PeerInfo header extra)]
 fetchDecisions fetchDecisionPolicy@FetchDecisionPolicy {
                  plausibleCandidateChain,
                  compareCandidateChains,
@@ -197,12 +197,14 @@ fetchDecisions fetchDecisionPolicy@FetchDecisionPolicy {
   . filterPlausibleCandidates
       plausibleCandidateChain
       currentChain
+  . map swizzleX
   where
     -- Data swizzling functions to get the right info into each stage.
-    swizzleI   (c, p@(_,     inflight,_,   _)) = (c,         inflight,       p)
-    swizzleIG  (c, p@(_,     inflight,gsvs,_)) = (c,         inflight, gsvs, p)
-    swizzleSI  (c, p@(status,inflight,_,   _)) = (c, status, inflight,       p)
-    swizzleSIG (c, p@(status,inflight,gsvs,_)) = (c, status, inflight, gsvs, p)
+    swizzleI   (x, c, p@(_,     inflight,_,   _)) = (x, c,         inflight,       p)
+    swizzleIG  (x, c, p@(_,     inflight,gsvs,_)) = (x, c,         inflight, gsvs, p)
+    swizzleSI  (x, c, p@(status,inflight,_,   _)) = (x, c, status, inflight,       p)
+    swizzleSIG (x, c, p@(status,inflight,gsvs,_)) = (x, c, status, inflight, gsvs, p)
+    swizzleX   (c,    p                         ) = (c, c,                         p)
 
 {-
 We have the node's /current/ or /adopted/ chain. This is the node's chain in
@@ -293,11 +295,11 @@ filterPlausibleCandidates
   :: HasHeader header
   => (AnchoredFragment block -> AnchoredFragment header -> Bool)
   -> AnchoredFragment block  -- ^ The current chain
-  -> [(AnchoredFragment header, peerinfo)]
-  -> [(FetchDecision (AnchoredFragment header), peerinfo)]
+  -> [(x, AnchoredFragment header, peerinfo)]
+  -> [(x, FetchDecision (AnchoredFragment header), peerinfo)]
 filterPlausibleCandidates plausibleCandidateChain currentChain chains =
-    [ (chain', peer)
-    | (chain,  peer) <- chains
+    [ (x, chain', peer)
+    | (x, chain,  peer) <- chains
     , let chain' = do
             guard (plausibleCandidateChain currentChain chain)
               ?! FetchDeclineChainNotPlausible
@@ -418,11 +420,11 @@ selectForkSuffixes
   :: (HasHeader header, HasHeader block,
       HeaderHash header ~ HeaderHash block)
   => AnchoredFragment block
-  -> [(FetchDecision (AnchoredFragment header), peerinfo)]
-  -> [(FetchDecision (ChainSuffix      header), peerinfo)]
+  -> [(x, FetchDecision (AnchoredFragment header), peerinfo)]
+  -> [(x, FetchDecision (ChainSuffix      header), peerinfo)]
 selectForkSuffixes current chains =
-    [ (mchain', peer)
-    | (mchain,  peer) <- chains
+    [ (x, mchain', peer)
+    | (x, mchain,  peer) <- chains
     , let mchain' = do
             chain <- mchain
             chainForkSuffix current chain ?! FetchDeclineChainNoIntersection
@@ -471,11 +473,11 @@ filterNotAlreadyFetched
   :: (HasHeader header, HeaderHash header ~ HeaderHash block)
   => (Point block -> Bool)
   -> MaxSlotNo
-  -> [(FetchDecision (ChainSuffix        header), peerinfo)]
-  -> [(FetchDecision (CandidateFragments header), peerinfo)]
+  -> [(x, FetchDecision (ChainSuffix        header), peerinfo)]
+  -> [(x, FetchDecision (CandidateFragments header), peerinfo)]
 filterNotAlreadyFetched alreadyDownloaded fetchedMaxSlotNo chains =
-    [ (mcandidates, peer)
-    | (mcandidate,  peer) <- chains
+    [ (x, mcandidates, peer)
+    | (x, mcandidate,  peer) <- chains
     , let mcandidates = do
             candidate <- mcandidate
             let chainfragment = AnchoredFragment.unanchorFragment
@@ -493,12 +495,12 @@ filterNotAlreadyFetched alreadyDownloaded fetchedMaxSlotNo chains =
 
 filterNotAlreadyInFlightWithPeer
   :: HasHeader header
-  => [(FetchDecision (CandidateFragments header), PeerFetchInFlight header,
+  => [(x, FetchDecision (CandidateFragments header), PeerFetchInFlight header,
                                                   peerinfo)]
-  -> [(FetchDecision (CandidateFragments header), peerinfo)]
+  -> [(x, FetchDecision (CandidateFragments header), peerinfo)]
 filterNotAlreadyInFlightWithPeer chains =
-    [ (mcandidatefragments',          peer)
-    | (mcandidatefragments, inflight, peer) <- chains
+    [ (x, mcandidatefragments',          peer)
+    | (x, mcandidatefragments, inflight, peer) <- chains
     , let mcandidatefragments' = do
             (candidate, chainfragments) <- mcandidatefragments
             let fragments = concatMap (filterWithMaxSlotNo
@@ -524,18 +526,18 @@ filterNotAlreadyInFlightWithPeer chains =
 filterNotAlreadyInFlightWithOtherPeers
   :: HasHeader header
   => FetchMode
-  -> [(FetchDecision [ChainFragment header], PeerFetchStatus header,
+  -> [(x, FetchDecision [ChainFragment header], PeerFetchStatus header,
                                              PeerFetchInFlight header,
                                              peerinfo)]
-  -> [(FetchDecision [ChainFragment header], peerinfo)]
+  -> [(x, FetchDecision [ChainFragment header], peerinfo)]
 
 filterNotAlreadyInFlightWithOtherPeers FetchModeDeadline chains =
-    [ (mchainfragments,       peer)
-    | (mchainfragments, _, _, peer) <- chains ]
+    [ (x, mchainfragments,       peer)
+    | (x, mchainfragments, _, _, peer) <- chains ]
 
 filterNotAlreadyInFlightWithOtherPeers FetchModeBulkSync chains =
-    [ (mcandidatefragments',      peer)
-    | (mcandidatefragments, _, _, peer) <- chains
+    [ (x, mcandidatefragments',      peer)
+    | (x, mcandidatefragments, _, _, peer) <- chains
     , let mcandidatefragments' = do
             chainfragments <- mcandidatefragments
             let fragments = concatMap (filterWithMaxSlotNo
@@ -556,11 +558,11 @@ filterNotAlreadyInFlightWithOtherPeers FetchModeBulkSync chains =
             PeerFetchStatusShutdown -> Set.empty
             PeerFetchStatusAberrant -> Set.empty
             _other                  -> peerFetchBlocksInFlight inflight
-        | (_, status, inflight, _) <- chains ]
+        | (_, _, status, inflight, _) <- chains ]
 
     -- The highest slot number that is or has been in flight for any peer.
     maxSlotNoInFlightWithOtherPeers = foldl' max NoMaxSlotNo
-      [ peerFetchMaxSlotNo inflight | (_, _, inflight, _) <- chains ]
+      [ peerFetchMaxSlotNo inflight | (_, _, _, inflight, _) <- chains ]
 
 -- | Filter a fragment. This is an optimised variant that will behave the same
 -- as 'ChainFragment.filter' if the following precondition is satisfied:
@@ -600,52 +602,54 @@ filterWithMaxSlotNo p maxSlotNo =
     ChainFragment.filterWithStop p ((> maxSlotNo) . MaxSlotNo . blockSlot)
 
 prioritisePeerChains
-  :: forall header peer. HasHeader header
+  :: forall x header peer. HasHeader header
   => FetchMode
   -> (AnchoredFragment header -> AnchoredFragment header -> Ordering)
   -> (header -> SizeInBytes)
-  -> [(FetchDecision (CandidateFragments header), PeerFetchInFlight header,
+  -> [(x, FetchDecision (CandidateFragments header), PeerFetchInFlight header,
                                                   PeerGSV,
                                                   peer)]
-  -> [(FetchDecision [ChainFragment header],      peer)]
+  -> [(x, FetchDecision [ChainFragment header],      peer)]
 prioritisePeerChains FetchModeDeadline compareCandidateChains blockFetchSize =
     --TODO: last tie-breaker is still original order (which is probably
     -- peerid order). We should use a random tie breaker so that adversaries
     -- cannot get any advantage.
 
-    map (\(decision, peer) ->
-            (fmap (\(_,_,fragment) -> fragment) decision, peer))
+    map (\(x, decision, peer) ->
+            (x, fmap (\(_,_,fragment) -> fragment) decision, peer))
   . concatMap ( concat
               . transpose
-              . groupBy (equatingFst
-                          (equatingRight
-                            ((==) `on` chainHeadPoint)))
-              . sortBy  (comparingFst
-                          (comparingRight
-                            (compare `on` chainHeadPoint)))
+              . groupBy (equatingOn prj $
+                         equatingRight $
+                         equatingOn chainHeadPoint $
+                         (==))
+              . sortBy  (comparingOn prj $
+                         comparingRight $
+                         comparingOn chainHeadPoint $
+                         compare)
               )
-  . groupBy (equatingFst
-              (equatingRight
-                (equatingPair
-                   -- compare on probability band first, then preferred chain
-                   (==)
-                   (equateCandidateChains `on` getChainSuffix)
-                 `on`
-                   (\(band, chain, _fragments) -> (band, chain)))))
-  . sortBy  (descendingOrder
-              (comparingFst
-                (comparingRight
-                  (comparingPair
-                     -- compare on probability band first, then preferred chain
-                     compare
-                     (compareCandidateChains `on` getChainSuffix)
-                   `on`
-                      (\(band, chain, _fragments) -> (band, chain))))))
+  . groupBy (equatingOn prj $
+             equatingRight $
+             equatingOn (\(band, chain, _fragments) -> (band, chain)) $
+             equatingPair
+               -- compare on probability band first, then preferred chain
+               (==)
+               (equatingOn getChainSuffix equateCandidateChains))
+  . sortBy  (descendingOrder $
+             comparingOn prj $
+             comparingRight $
+             comparingOn (\(band, chain, _fragments) -> (band, chain)) $
+             comparingPair
+               -- compare on probability band first, then preferred chain
+                compare
+                (comparingOn getChainSuffix compareCandidateChains))
   . map annotateProbabilityBand
   where
-    annotateProbabilityBand (Left decline, _, _, peer) = (Left decline, peer)
-    annotateProbabilityBand (Right (chain,fragments), inflight, gsvs, peer) =
-        (Right (band, chain, fragments), peer)
+    prj (_x, d, _p) = d
+
+    annotateProbabilityBand (x, Left decline, _, _, peer) = (x, Left decline, peer)
+    annotateProbabilityBand (x, Right (chain,fragments), inflight, gsvs, peer) =
+        (x, Right (band, chain, fragments), peer)
       where
         band = probabilityBand $
                  estimateResponseDeadlineProbability
@@ -663,21 +667,22 @@ prioritisePeerChains FetchModeDeadline compareCandidateChains blockFetchSize =
     chainHeadPoint (_,ChainSuffix c,_) = AnchoredFragment.headPoint c
 
 prioritisePeerChains FetchModeBulkSync compareCandidateChains blockFetchSize =
-    map (\(decision, peer) ->
-            (fmap (\(_, _, fragment) -> fragment) decision, peer))
-  . sortBy (comparingFst
-             (comparingRight
-               (comparingPair
-                  -- compare on preferred chain first, then duration
-                  (compareCandidateChains `on` getChainSuffix)
-                  compare
-                `on`
-                  (\(duration, chain, _fragments) -> (chain, duration)))))
+    map (\(x, decision, peer) ->
+            (x, fmap (\(_, _, fragment) -> fragment) decision, peer))
+  . sortBy (comparingOn prj $
+            comparingRight $
+            comparingOn (\(duration, chain, _fragments) -> (chain, duration)) $
+            comparingPair
+              -- compare on preferred chain first, then duration
+              (comparingOn getChainSuffix compareCandidateChains)
+              compare)
   . map annotateDuration
   where
-    annotateDuration (Left decline, _, _, peer) = (Left decline, peer)
-    annotateDuration (Right (chain,fragments), inflight, gsvs, peer) =
-        (Right (duration, chain, fragments), peer)
+    prj (_x, d, _p) = d
+
+    annotateDuration (x, Left decline, _, _, peer) = (x, Left decline, peer)
+    annotateDuration (x, Right (chain,fragments), inflight, gsvs, peer) =
+        (x, Right (duration, chain, fragments), peer)
       where
         -- TODO: consider if we should put this into bands rather than just
         -- taking the full value.
@@ -697,6 +702,12 @@ totalFetchSize blockFetchSize fragments =
 
 type Comparing a = a -> a -> Ordering
 type Equating  a = a -> a -> Bool
+
+comparingOn :: (a -> b) -> Comparing b -> Comparing a
+comparingOn f cmp = cmp `on` f
+
+equatingOn :: (a -> b) -> Equating b -> Equating a
+equatingOn f eq = eq `on` f
 
 descendingOrder :: Comparing a -> Comparing a
 descendingOrder cmp = flip cmp
@@ -718,12 +729,6 @@ equatingEither _ _   (Left  _) (Right _) = False
 equatingEither eqA _ (Left  x) (Left  y) = eqA x y
 equatingEither _ eqB (Right x) (Right y) = eqB x y
 equatingEither _ _   (Right _) (Left  _) = False
-
-comparingFst :: Comparing a -> Comparing (a, b)
-comparingFst cmp = cmp `on` fst
-
-equatingFst :: Equating a -> Equating (a, b)
-equatingFst eq = eq `on` fst
 
 comparingRight :: Comparing b -> Comparing (Either a b)
 comparingRight = comparingEither mempty
@@ -776,28 +781,31 @@ obviously take that into account when considering later peer chains.
 
 
 fetchRequestDecisions
-  :: forall header peer. HasHeader header
+  :: forall x header peer. HasHeader header
   => FetchDecisionPolicy header
   -> FetchMode
-  -> [(FetchDecision [ChainFragment header], PeerFetchStatus header,
-                                             PeerFetchInFlight header,
-                                             PeerGSV,
-                                             peer)]
-  -> [(FetchDecision (FetchRequest header),  peer)]
+  -> [(x,
+       FetchDecision [ChainFragment header],
+       PeerFetchStatus header,
+       PeerFetchInFlight header,
+       PeerGSV,
+       peer)]
+  -> [(x, FetchDecision (FetchRequest header),  peer)]
 fetchRequestDecisions fetchDecisionPolicy fetchMode chains =
     go nConcurrentFetchPeers0 Set.empty NoMaxSlotNo chains
   where
     go :: Word
        -> Set (Point header)
        -> MaxSlotNo
-       -> [(Either FetchDecline [ChainFragment header],
+       -> [(x,
+            Either FetchDecline [ChainFragment header],
             PeerFetchStatus header, PeerFetchInFlight header, PeerGSV, b)]
-       -> [(FetchDecision (FetchRequest header), b)]
+       -> [(x, FetchDecision (FetchRequest header), b)]
     go !_ !_ !_ [] = []
     go !nConcurrentFetchPeers !blocksFetchedThisRound !maxSlotNoFetchedThisRound
-       ((mchainfragments, status, inflight, gsvs, peer) : cps) =
+       ((x, mchainfragments, status, inflight, gsvs, peer) : cps) =
 
-        (decision, peer)
+        (x, decision, peer)
       : go nConcurrentFetchPeers' blocksFetchedThisRound'
            maxSlotNoFetchedThisRound' cps
       where
@@ -857,7 +865,7 @@ fetchRequestDecisions fetchDecisionPolicy fetchMode chains =
         fromIntegral
       . length
       . filter (> 0)
-      . map (\(_, _, PeerFetchInFlight{peerFetchReqsInFlight}, _, _) ->
+      . map (\(_, _, _, PeerFetchInFlight{peerFetchReqsInFlight}, _, _) ->
                        peerFetchReqsInFlight)
       $ chains
 

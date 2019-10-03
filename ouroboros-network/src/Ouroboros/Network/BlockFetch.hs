@@ -214,7 +214,7 @@ blockFetchLogic :: forall peer header block m.
                    (MonadSTM m, Ord peer,
                     HasHeader header, HasHeader block,
                     HeaderHash header ~ HeaderHash block)
-                => Tracer m [TraceLabelPeer peer (FetchDecision [Point header])]
+                => Tracer m [TraceLabelPeer peer (AnchoredFragment header, FetchDecision [Point header])]
                 -> Tracer m (TraceLabelPeer peer (TraceFetchClientState header))
                 -> BlockFetchConsensusInterface peer header block m
                 -> FetchClientRegistry peer header block m
