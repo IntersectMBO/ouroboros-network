@@ -144,7 +144,7 @@ openDBInternal args launchBgTasks = do
                   , cdbBgThreads      = varBgThreads
                   , cdbEpochInfo      = Args.cdbEpochInfo args
                   }
-    h <- fmap CDBHandle $ uncheckedNewTVarM $ ChainDbOpen env
+    h <- fmap CDBHandle $ newTVarM $ ChainDbOpen env
     let chainDB = ChainDB
           { addBlock           = getEnv1    h ChainSel.addBlock
           , getCurrentChain    = getEnvSTM  h Query.getCurrentChain

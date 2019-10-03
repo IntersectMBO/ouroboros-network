@@ -1,9 +1,13 @@
+{-# LANGUAGE DataKinds            #-}
+{-# LANGUAGE DerivingVia          #-}
 {-# LANGUAGE FlexibleContexts     #-}
 {-# LANGUAGE FlexibleInstances    #-}
+{-# LANGUAGE StandaloneDeriving   #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 module Ouroboros.Consensus.Util.Orphans () where
 
+import           Codec.CBOR.Decoding (Decoder)
 import           Codec.Serialise (Serialise (..))
 import           Control.Concurrent.STM (readTVarIO)
 import           Control.Monad.Identity
@@ -12,10 +16,12 @@ import           Crypto.Random
 import           Data.Bimap (Bimap)
 import qualified Data.Bimap as Bimap
 
+import           Control.Tracer (Tracer)
+
 import           Ouroboros.Consensus.Util.MonadSTM.NormalForm
 
 import           Cardano.Crypto.Hash (Hash)
-import           Cardano.Prelude (NoUnexpectedThunks (..),
+import           Cardano.Prelude (NoUnexpectedThunks (..), OnlyCheckIsWHNF (..),
                      noUnexpectedThunksInKeysAndValues)
 
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
@@ -78,3 +84,6 @@ instance (NoUnexpectedThunks k, NoUnexpectedThunks v)
   whnfNoUnexpectedThunks ctxt = noUnexpectedThunksInKeysAndValues ctxt
                               . Bimap.toList
 
+deriving via OnlyCheckIsWHNF "Decoder" (Decoder s a) instance NoUnexpectedThunks (Decoder s a)
+
+deriving via OnlyCheckIsWHNF "Tracer" (Tracer m ev) instance NoUnexpectedThunks (Tracer m ev)

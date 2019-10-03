@@ -1,4 +1,7 @@
 {-# LANGUAGE DataKinds                 #-}
+{-# LANGUAGE DeriveAnyClass            #-}
+{-# LANGUAGE DeriveGeneric             #-}
+{-# LANGUAGE DerivingVia               #-}
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE FlexibleContexts          #-}
 {-# LANGUAGE LambdaCase                #-}
@@ -7,6 +10,7 @@
 {-# LANGUAGE RankNTypes                #-}
 {-# LANGUAGE RecordWildCards           #-}
 {-# LANGUAGE ScopedTypeVariables       #-}
+{-# LANGUAGE StandaloneDeriving        #-}
 {-# LANGUAGE TypeApplications          #-}
 {-# LANGUAGE TypeFamilies              #-}
 
@@ -57,8 +61,11 @@ import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Typeable (Typeable)
 import           Data.Word (Word64)
+import           GHC.Generics (Generic)
 import           GHC.Stack (HasCallStack)
 import           System.FilePath ((</>))
+
+import           Cardano.Prelude (OnlyCheckIsWHNF (..))
 
 import           Control.Monad.Class.MonadThrow
 import           Control.Tracer
@@ -102,11 +109,11 @@ import qualified Ouroboros.Storage.ChainDB.Impl.ImmDB as ImmDB
 
 -- | Thin wrapper around the ledger database
 data LgrDB m blk = LgrDB {
-      conf           :: Conf m blk
-    , varDB          :: StrictTVar m (LedgerDB blk)
+      conf           :: !(Conf m blk)
+    , varDB          :: !(StrictTVar m (LedgerDB blk))
       -- ^ INVARIANT: the tip of the 'LedgerDB' is always in sync with the tip
       -- of the current chain of the ChainDB.
-    , varPrevApplied :: StrictTVar m (Set (Point blk))
+    , varPrevApplied :: !(StrictTVar m (Set (Point blk)))
       -- ^ INVARIANT: this set contains only points that are in the
       -- VolatileDB.
       --
@@ -116,10 +123,14 @@ data LgrDB m blk = LgrDB {
       -- When a garbage-collection is performed on the VolatileDB, the points
       -- of the blocks eligible for garbage-collection should be removed from
       -- this set.
-    , args           :: LgrDbArgs m blk
+    , args           :: !(LgrDbArgs m blk)
       -- ^ The arguments used to open the 'LgrDB'. Needed for 'reopen'ing the
       -- 'LgrDB'.
-    }
+    } deriving (Generic)
+
+deriving instance (IOLike m, ProtocolLedgerView blk)
+               => NoUnexpectedThunks (LgrDB m blk)
+  -- use generic instance
 
 -- | Shorter synonym for the instantiated 'LedgerDB.LedgerDB'.
 type LedgerDB blk = LedgerDB.LedgerDB (ExtLedgerState blk) (Point blk)
@@ -146,6 +157,7 @@ data LgrDbArgs m blk = forall h. LgrDbArgs {
     , lgrGenesis          :: m (ExtLedgerState blk)
     , lgrTracer           :: Tracer m (TraceEvent (Point blk))
     }
+  deriving NoUnexpectedThunks via OnlyCheckIsWHNF "LgrDbArgs" (LgrDbArgs m blk)
 
 -- | Default arguments
 --
@@ -201,7 +213,7 @@ openDB args@LgrDbArgs{..} replayTracer immDB getBlock = do
     createDirectoryIfMissing lgrHasFS True (mkFsPath [])
     db <- initFromDisk args replayTracer lgrDbConf immDB
     (varDB, varPrevApplied) <-
-      (,) <$> uncheckedNewTVarM db <*> uncheckedNewTVarM Set.empty
+      (,) <$> newTVarM db <*> newTVarM Set.empty
     return LgrDB {
         conf           = lgrDbConf
       , varDB          = varDB
