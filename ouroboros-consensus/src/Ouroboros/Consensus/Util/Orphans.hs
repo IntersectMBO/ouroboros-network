@@ -9,11 +9,14 @@ import           Control.Concurrent.STM (readTVarIO)
 import           Control.Monad.Identity
 import           Control.Monad.Trans
 import           Crypto.Random
+import           Data.Bimap (Bimap)
+import qualified Data.Bimap as Bimap
 
 import           Ouroboros.Consensus.Util.MonadSTM.NormalForm
 
 import           Cardano.Crypto.Hash (Hash)
-import           Cardano.Prelude (NoUnexpectedThunks (..))
+import           Cardano.Prelude (NoUnexpectedThunks (..),
+                     noUnexpectedThunksInKeysAndValues)
 
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import qualified Ouroboros.Network.AnchoredFragment as AF
@@ -69,3 +72,9 @@ instance NoUnexpectedThunks a => NoUnexpectedThunks (StrictTVar IO a) where
       -- "Control.Concurrent.STM.atomically was nested" exception.
       a <- readTVarIO (toLazyTVar tv)
       noUnexpectedThunks ctxt a
+
+instance (NoUnexpectedThunks k, NoUnexpectedThunks v)
+      => NoUnexpectedThunks (Bimap k v) where
+  whnfNoUnexpectedThunks ctxt = noUnexpectedThunksInKeysAndValues ctxt
+                              . Bimap.toList
+

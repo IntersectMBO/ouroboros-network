@@ -189,11 +189,12 @@ data Praos c
 
 -- | Praos parameters that are node independent
 data PraosParams = PraosParams {
-      praosLeaderF       :: Double
-    , praosSecurityParam :: SecurityParam
-    , praosSlotsPerEpoch :: Word64
-    , praosLifetimeKES   :: Natural
+      praosLeaderF       :: !Double
+    , praosSecurityParam :: !SecurityParam
+    , praosSlotsPerEpoch :: !Word64
+    , praosLifetimeKES   :: !Natural
     }
+  deriving (Generic, NoUnexpectedThunks)
 
 newtype PraosNodeState c = PraosNodeState {
       unPraosNodeState :: SignKeyKES (PraosKES c)
@@ -206,13 +207,14 @@ instance PraosCrypto c => NoUnexpectedThunks (PraosNodeState c) where
 
 instance PraosCrypto c => OuroborosTag (Praos c) where
   data NodeConfig (Praos c) = PraosNodeConfig
-    { praosParams        :: PraosParams
-    , praosInitialEta    :: Natural
-    , praosInitialStake  :: StakeDist
-    , praosNodeId        :: NodeId
-    , praosSignKeyVRF    :: SignKeyVRF (PraosVRF c)
-    , praosVerKeys       :: IntMap (VerKeyKES (PraosKES c), VerKeyVRF (PraosVRF c))
+    { praosParams        :: !PraosParams
+    , praosInitialEta    :: !Natural
+    , praosInitialStake  :: !StakeDist
+    , praosNodeId        :: !NodeId
+    , praosSignKeyVRF    :: !(SignKeyVRF (PraosVRF c))
+    , praosVerKeys       :: !(IntMap (VerKeyKES (PraosKES c), VerKeyVRF (PraosVRF c)))
     }
+    deriving (Generic)
 
   protocolSecurityParam = praosSecurityParam . praosParams
 
@@ -325,6 +327,9 @@ instance PraosCrypto c => OuroborosTag (Praos c) where
 
       k :: Word64
       k = maxRollbacks praosSecurityParam
+
+instance PraosCrypto c => NoUnexpectedThunks (NodeConfig (Praos c))
+  -- use generic instance
 
 slotEpoch :: NodeConfig (Praos c) -> SlotNo -> EpochNo
 slotEpoch PraosNodeConfig{..} s =

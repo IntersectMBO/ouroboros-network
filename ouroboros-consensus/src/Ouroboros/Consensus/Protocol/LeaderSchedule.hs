@@ -1,4 +1,6 @@
+{-# LANGUAGE DeriveAnyClass             #-}
 {-# LANGUAGE DeriveGeneric              #-}
+{-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE RecordWildCards            #-}
@@ -13,6 +15,9 @@ module Ouroboros.Consensus.Protocol.LeaderSchedule (
 
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
+import           GHC.Generics (Generic)
+
+import           Cardano.Prelude (NoUnexpectedThunks)
 
 import           Ouroboros.Network.Block (SlotNo (..))
 
@@ -22,7 +27,8 @@ import           Ouroboros.Consensus.Util (Empty)
 import           Ouroboros.Consensus.Util.Condense (Condense (..))
 
 newtype LeaderSchedule = LeaderSchedule {getLeaderSchedule :: Map SlotNo [CoreNodeId]}
-    deriving (Show, Eq, Ord)
+    deriving stock    (Show, Eq, Ord, Generic)
+    deriving anyclass (NoUnexpectedThunks)
 
 instance Condense LeaderSchedule where
     condense (LeaderSchedule m) = condense
@@ -42,10 +48,11 @@ instance OuroborosTag p => OuroborosTag (WithLeaderSchedule p) where
   type SupportedHeader (WithLeaderSchedule p) = Empty
 
   data NodeConfig (WithLeaderSchedule p) = WLSNodeConfig
-    { lsNodeConfigSchedule :: LeaderSchedule
-    , lsNodeConfigP        :: NodeConfig p
-    , lsNodeConfigNodeId   :: CoreNodeId
+    { lsNodeConfigSchedule :: !LeaderSchedule
+    , lsNodeConfigP        :: !(NodeConfig p)
+    , lsNodeConfigNodeId   :: !CoreNodeId
     }
+    deriving (Generic)
 
   preferCandidate       WLSNodeConfig{..} = preferCandidate       lsNodeConfigP
   compareCandidates     WLSNodeConfig{..} = compareCandidates     lsNodeConfigP
@@ -60,3 +67,5 @@ instance OuroborosTag p => OuroborosTag (WithLeaderSchedule p) where
 
   applyChainState _ _ _ _ = return ()
   rewindChainState _ _ _  = Just ()
+
+instance OuroborosTag p => NoUnexpectedThunks (NodeConfig (WithLeaderSchedule p))

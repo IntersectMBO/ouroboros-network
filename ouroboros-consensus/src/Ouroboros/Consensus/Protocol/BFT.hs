@@ -1,3 +1,4 @@
+{-# LANGUAGE DeriveAnyClass          #-}
 {-# LANGUAGE DeriveGeneric           #-}
 {-# LANGUAGE FlexibleContexts        #-}
 {-# LANGUAGE FlexibleInstances       #-}
@@ -99,20 +100,22 @@ data BftParams = BftParams {
       --
       -- Although the protocol proper does not have such a security parameter,
       -- we insist on it.
-      bftSecurityParam :: SecurityParam
+      bftSecurityParam :: !SecurityParam
 
       -- | Number of core nodes
-    , bftNumNodes      :: Word64
+    , bftNumNodes      :: !Word64
     }
+  deriving (Generic, NoUnexpectedThunks)
 
 instance BftCrypto c => OuroborosTag (Bft c) where
   -- | (Static) node configuration
   data NodeConfig (Bft c) = BftNodeConfig {
-        bftParams   :: BftParams
-      , bftNodeId   :: NodeId
-      , bftSignKey  :: SignKeyDSIGN (BftDSIGN c)
-      , bftVerKeys  :: Map NodeId (VerKeyDSIGN (BftDSIGN c))
+        bftParams   :: !BftParams
+      , bftNodeId   :: !NodeId
+      , bftSignKey  :: !(SignKeyDSIGN (BftDSIGN c))
+      , bftVerKeys  :: !(Map NodeId (VerKeyDSIGN (BftDSIGN c)))
       }
+    deriving (Generic)
 
   type ValidationErr   (Bft c) = BftValidationErr
   type SupportedHeader (Bft c) = HeaderSupportsBft c
@@ -148,6 +151,9 @@ instance BftCrypto c => OuroborosTag (Bft c) where
 
   rewindChainState _ _ _ = Just ()
 
+instance BftCrypto c => NoUnexpectedThunks (NodeConfig (Bft c))
+  -- use generic instance
+
 {-------------------------------------------------------------------------------
   BFT specific types
 -------------------------------------------------------------------------------}
@@ -160,7 +166,11 @@ data BftValidationErr = BftInvalidSignature String
 -------------------------------------------------------------------------------}
 
 -- | Crypto primitives required by BFT
-class (Typeable c, DSIGNAlgorithm (BftDSIGN c), Condense (SigDSIGN (BftDSIGN c))) => BftCrypto c where
+class ( Typeable c
+      , DSIGNAlgorithm (BftDSIGN c)
+      , Condense (SigDSIGN (BftDSIGN c))
+      , NoUnexpectedThunks (SigDSIGN (BftDSIGN c))
+      ) => BftCrypto c where
   type family BftDSIGN c :: *
 
 data BftStandardCrypto
