@@ -66,21 +66,21 @@ import           Test.Tasty.QuickCheck
 import           Ouroboros.Storage.FS.API (HasFS (..))
 import           Ouroboros.Storage.FS.API.Types
 import           Ouroboros.Storage.FS.IO
-import           Ouroboros.Storage.FS.Sim.FsTree (FsTree (..))
-import           Ouroboros.Storage.FS.Sim.MockFS (HandleMock, MockFS)
-import qualified Ouroboros.Storage.FS.Sim.MockFS as Mock
-import           Ouroboros.Storage.FS.Sim.Pure
 import qualified Ouroboros.Storage.IO as F
 import qualified Ouroboros.Storage.Util.ErrorHandling as EH
 
 import qualified Ouroboros.Consensus.Util.Classify as C
 import           Ouroboros.Consensus.Util.Condense
 
-import           Test.Ouroboros.Storage.Util (collects)
-
+import           Test.Util.FS.Sim.FsTree (FsTree (..))
+import           Test.Util.FS.Sim.MockFS (HandleMock, MockFS)
+import qualified Test.Util.FS.Sim.MockFS as Mock
+import           Test.Util.FS.Sim.Pure
 import           Test.Util.RefEnv (RefEnv)
 import qualified Test.Util.RefEnv as RE
 import           Test.Util.SOP
+
+import           Test.Ouroboros.Storage.Util (collects)
 
 {-------------------------------------------------------------------------------
   Path expressions

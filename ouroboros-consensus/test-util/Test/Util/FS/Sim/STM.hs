@@ -2,7 +2,7 @@
 {-# LANGUAGE TypeApplications    #-}
 
 -- | 'HasFS' instance using 'MockFS' stored in an STM variable
-module Ouroboros.Storage.FS.Sim.STM (
+module Test.Util.FS.Sim.STM (
       runSimFS
     , simHasFS
     ) where
@@ -16,10 +16,11 @@ import           Ouroboros.Consensus.Util.MonadSTM.NormalForm
 
 import           Ouroboros.Storage.FS.API
 import           Ouroboros.Storage.FS.API.Types
-import           Ouroboros.Storage.FS.Sim.MockFS (HandleMock, MockFS)
-import qualified Ouroboros.Storage.FS.Sim.MockFS as Mock
 import           Ouroboros.Storage.Util.ErrorHandling (ErrorHandling (..))
 import qualified Ouroboros.Storage.Util.ErrorHandling as EH
+
+import           Test.Util.FS.Sim.MockFS (HandleMock, MockFS)
+import qualified Test.Util.FS.Sim.MockFS as Mock
 
 {------------------------------------------------------------------------------
   The simulation-related types

@@ -25,7 +25,6 @@
           (hsPkgs.io-sim-classes)
           (hsPkgs.contra-tracer)
           (hsPkgs.cardano-ledger-test)
-          (hsPkgs.base16-bytestring)
           (hsPkgs.bifunctors)
           (hsPkgs.bimap)
           (hsPkgs.bytestring)
@@ -88,6 +87,8 @@
         "test-consensus" = {
           depends = [
             (hsPkgs.base)
+            (hsPkgs.base16-bytestring)
+            (hsPkgs.bytestring)
             (hsPkgs.cardano-binary)
             (hsPkgs.cardano-crypto-class)
             (hsPkgs.cardano-crypto-wrapper)
@@ -134,6 +135,7 @@
             (hsPkgs.ouroboros-consensus)
             (hsPkgs.io-sim-classes)
             (hsPkgs.io-sim)
+            (hsPkgs.base16-bytestring)
             (hsPkgs.bifunctors)
             (hsPkgs.binary)
             (hsPkgs.bytestring)

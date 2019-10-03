@@ -48,7 +48,9 @@ import qualified Ouroboros.Storage.Util.ErrorHandling as EH
 import           Ouroboros.Storage.VolatileDB.API
 import qualified Ouroboros.Storage.VolatileDB.Impl as Internal
 import           Ouroboros.Storage.VolatileDB.Util
-import           Test.Ouroboros.Storage.FS.Sim.Error
+
+import           Test.Util.FS.Sim.Error
+
 import           Test.Ouroboros.Storage.VolatileDB.TestBlock (Corruptions,
                      FileCorruption (..), binarySize)
 

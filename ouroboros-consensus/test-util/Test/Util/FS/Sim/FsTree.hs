@@ -9,9 +9,9 @@
 --
 -- Intended for qualified import
 --
--- > import Ouroboros.Storage.FS.Sim.FsTree (FsTree)
--- > import Ouroboros.Storage.FS.Sim.FsTree as FS
-module Ouroboros.Storage.FS.Sim.FsTree (
+-- > import Test.Util.FS.Sim.FsTree (FsTree)
+-- > import Test.Util.FS.Sim.FsTree as FS
+module Test.Util.FS.Sim.FsTree (
     -- * FsTree type and indexing functions
     FsTree(..)
   , FsTreeError(..)

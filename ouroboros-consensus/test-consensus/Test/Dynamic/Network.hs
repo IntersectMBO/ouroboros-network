@@ -83,9 +83,6 @@ import           Ouroboros.Consensus.Util.STM
 import qualified Ouroboros.Storage.ChainDB as ChainDB
 import           Ouroboros.Storage.ChainDB.Impl (ChainDbArgs (..))
 import           Ouroboros.Storage.EpochInfo (EpochInfo, newEpochInfo)
-import           Ouroboros.Storage.FS.Sim.MockFS (MockFS)
-import qualified Ouroboros.Storage.FS.Sim.MockFS as Mock
-import           Ouroboros.Storage.FS.Sim.STM (simHasFS)
 import qualified Ouroboros.Storage.ImmutableDB as ImmDB
 import qualified Ouroboros.Storage.LedgerDB.DiskPolicy as LgrDB
 import qualified Ouroboros.Storage.LedgerDB.InMemory as LgrDB
@@ -95,6 +92,9 @@ import           Test.Dynamic.TxGen
 import           Test.Dynamic.Util.NodeJoinPlan
 import           Test.Dynamic.Util.NodeTopology
 
+import           Test.Util.FS.Sim.MockFS (MockFS)
+import qualified Test.Util.FS.Sim.MockFS as Mock
+import           Test.Util.FS.Sim.STM (simHasFS)
 import           Test.Util.Tracer
 
 -- | Setup a network of core nodes, where each joins according to the node join

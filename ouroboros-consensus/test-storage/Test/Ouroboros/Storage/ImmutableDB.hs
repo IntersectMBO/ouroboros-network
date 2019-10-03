@@ -34,11 +34,6 @@ import           Ouroboros.Storage.Common
 import           Ouroboros.Storage.EpochInfo
 import           Ouroboros.Storage.FS.API
 import           Ouroboros.Storage.FS.API.Types
-import           Ouroboros.Storage.FS.Sim.FsTree (FsTree (..))
-import qualified Ouroboros.Storage.FS.Sim.FsTree as FS
-import           Ouroboros.Storage.FS.Sim.MockFS (HandleMock, MockFS)
-import qualified Ouroboros.Storage.FS.Sim.MockFS as Mock
-import qualified Ouroboros.Storage.FS.Sim.STM as Sim
 import           Ouroboros.Storage.ImmutableDB
 import           Ouroboros.Storage.ImmutableDB.Index
 import           Ouroboros.Storage.ImmutableDB.Layout
@@ -48,6 +43,12 @@ import           Ouroboros.Storage.ImmutableDB.Util (tryImmDB)
 import           Ouroboros.Storage.Util (decodeIndexEntryAt)
 import           Ouroboros.Storage.Util.ErrorHandling (ErrorHandling)
 import qualified Ouroboros.Storage.Util.ErrorHandling as EH
+
+import           Test.Util.FS.Sim.FsTree (FsTree (..))
+import qualified Test.Util.FS.Sim.FsTree as FS
+import           Test.Util.FS.Sim.MockFS (HandleMock, MockFS)
+import qualified Test.Util.FS.Sim.MockFS as Mock
+import qualified Test.Util.FS.Sim.STM as Sim
 
 {------------------------------------------------------------------------------
   The list of all tests

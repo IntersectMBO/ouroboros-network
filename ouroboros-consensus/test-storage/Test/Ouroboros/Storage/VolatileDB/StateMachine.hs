@@ -56,13 +56,14 @@ import           Ouroboros.Consensus.Util.IOLike
 
 import           Ouroboros.Storage.FS.API
 import           Ouroboros.Storage.FS.API.Types
-import qualified Ouroboros.Storage.FS.Sim.MockFS as Mock
 import qualified Ouroboros.Storage.Util.ErrorHandling as EH
 import           Ouroboros.Storage.VolatileDB.API
 import qualified Ouroboros.Storage.VolatileDB.Impl as Internal hiding (openDB)
 import           Ouroboros.Storage.VolatileDB.Util
 
-import           Test.Ouroboros.Storage.FS.Sim.Error hiding (null)
+import           Test.Util.FS.Sim.Error hiding (null)
+import qualified Test.Util.FS.Sim.MockFS as Mock
+
 import           Test.Ouroboros.Storage.Util
 import           Test.Ouroboros.Storage.VolatileDB.Model
 import           Test.Ouroboros.Storage.VolatileDB.TestBlock

@@ -51,12 +51,12 @@ import           Test.Tasty.QuickCheck (testProperty)
 import           Ouroboros.Storage.Common
 import           Ouroboros.Storage.FS.API (HasFS (..), hGetAll, hPut, withFile)
 import           Ouroboros.Storage.FS.API.Types
-import           Ouroboros.Storage.FS.Sim.MockFS (HandleMock)
-import qualified Ouroboros.Storage.FS.Sim.MockFS as Mock
-import           Ouroboros.Storage.FS.Sim.STM (runSimFS)
 import           Ouroboros.Storage.ImmutableDB.Types
 import qualified Ouroboros.Storage.Util.ErrorHandling as EH
 
+import           Test.Util.FS.Sim.MockFS (HandleMock)
+import qualified Test.Util.FS.Sim.MockFS as Mock
+import           Test.Util.FS.Sim.STM (runSimFS)
 import           Test.Util.Orphans.Arbitrary ()
 
 {-------------------------------------------------------------------------------

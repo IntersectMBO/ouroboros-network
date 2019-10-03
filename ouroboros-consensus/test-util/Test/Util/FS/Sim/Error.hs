@@ -9,7 +9,7 @@
 
 -- | 'HasFS' instance wrapping 'SimFS' that generates errors, suitable for
 -- testing error handling.
-module Test.Ouroboros.Storage.FS.Sim.Error
+module Test.Util.FS.Sim.Error
   ( -- * Simulate Errors monad
     runSimErrorFS
   , mkSimErrorHasFS
@@ -36,14 +36,11 @@ module Test.Ouroboros.Storage.FS.Sim.Error
   , genErrors
   , allNull
   , simpleErrors
-    -- * Testing examples
-  , mockErrorDemo
   ) where
 
 import           Prelude hiding (null)
 
 import           Control.Monad (replicateM, void)
-import           Control.Monad.Except (runExceptT)
 
 import qualified Data.ByteString as BS
 import           Data.List (dropWhileEnd, intercalate)
@@ -59,15 +56,12 @@ import           Ouroboros.Consensus.Util (whenJust)
 import           Ouroboros.Consensus.Util.MonadSTM.NormalForm
 
 import           Ouroboros.Storage.FS.API
-import           Ouroboros.Storage.FS.API.Example (example)
 import           Ouroboros.Storage.FS.API.Types
-import           Ouroboros.Storage.FS.Sim.MockFS (HandleMock, MockFS)
-import qualified Ouroboros.Storage.FS.Sim.MockFS as Mock
-import qualified Ouroboros.Storage.FS.Sim.STM as Sim
 import           Ouroboros.Storage.Util.ErrorHandling (ErrorHandling (..))
-import qualified Ouroboros.Storage.Util.ErrorHandling as EH
 
-import           Test.Ouroboros.Storage.Util (Blob (..))
+import           Test.Util.Blob
+import           Test.Util.FS.Sim.MockFS (HandleMock, MockFS)
+import qualified Test.Util.FS.Sim.STM as Sim
 
 {-------------------------------------------------------------------------------
   Streams
@@ -607,19 +601,3 @@ hPutSome' ErrorHandling{..} errorsVar hPutSomeWrapped handle bs = do
           }
       Just (Right partial)          ->
         hPutSomeWrapped handle (hPutSomePartial partial bs)
-
-
-{-------------------------------------------------------------------------------
-  Demo
--------------------------------------------------------------------------------}
-
-mockErrorDemo :: IO ()
-mockErrorDemo = do
-    -- let errors = mempty
-    -- let errors = simpleErrors $ alwaysError FsDeviceFull
-    errors <- QC.generate arbitrary
-    res    <- runExceptT $ runSimErrorFS EH.exceptT Mock.example errors $ \_ ->
-                             example
-    case res of
-      Left  err      -> putStrLn (prettyFsError err)
-      Right (bs, fs) -> putStrLn (Mock.pretty fs) >> print bs

@@ -5,7 +5,7 @@
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE TypeApplications           #-}
 
-module Ouroboros.Storage.FS.Sim.Pure (
+module Test.Util.FS.Sim.Pure (
     PureSimFS -- opaque
   , runPureSimFS
   , pureHasFS
@@ -18,10 +18,11 @@ import           Data.Type.Coercion
 
 import           Ouroboros.Storage.FS.API
 import           Ouroboros.Storage.FS.API.Types
-import           Ouroboros.Storage.FS.Sim.MockFS (MockFS)
-import qualified Ouroboros.Storage.FS.Sim.MockFS as Mock
 import           Ouroboros.Storage.Util.ErrorHandling (ErrorHandling (..))
 import qualified Ouroboros.Storage.Util.ErrorHandling as EH
+
+import           Test.Util.FS.Sim.MockFS (MockFS)
+import qualified Test.Util.FS.Sim.MockFS as Mock
 
 -- | Monad useful for running 'HasFS' in pure code
 newtype PureSimFS m a = PureSimFS (StateT MockFS m a)
