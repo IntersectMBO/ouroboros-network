@@ -1,4 +1,7 @@
+{-# LANGUAGE DeriveAnyClass             #-}
 {-# LANGUAGE DeriveFunctor              #-}
+{-# LANGUAGE DeriveGeneric              #-}
+{-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE GADTs                      #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE PatternSynonyms            #-}
@@ -36,6 +39,7 @@ import           Control.Exception (Exception)
 import qualified Data.ByteString.Lazy as Lazy
 import           Data.Function (on)
 import           Data.Typeable (Typeable)
+import           GHC.Generics (Generic)
 import           GHC.Stack
 
 import           Cardano.Prelude (NoUnexpectedThunks)
@@ -301,14 +305,14 @@ fromChain openDB chain = do
 -- Hint: use @'StreamFromExclusive' 'genesisPoint'@ to start streaming from
 -- Genesis.
 data StreamFrom blk =
-    StreamFromInclusive (Point blk)
-  | StreamFromExclusive (Point blk)
-  deriving (Show, Eq)
+    StreamFromInclusive !(Point blk)
+  | StreamFromExclusive !(Point blk)
+  deriving (Show, Eq, Generic, NoUnexpectedThunks)
 
 data StreamTo blk =
-    StreamToInclusive (Point blk)
-  | StreamToExclusive (Point blk)
-  deriving (Show, Eq)
+    StreamToInclusive !(Point blk)
+  | StreamToExclusive !(Point blk)
+  deriving (Show, Eq, Generic, NoUnexpectedThunks)
 
 data Iterator m blk = Iterator {
       iteratorNext  :: m (IteratorResult blk)
@@ -327,7 +331,8 @@ instance Eq (Iterator m blk) where
   (==) = (==) `on` iteratorId
 
 newtype IteratorId = IteratorId Int
-  deriving (Show, Eq, Ord, Enum, NoUnexpectedThunks)
+  deriving stock (Show)
+  deriving newtype (Eq, Ord, Enum, NoUnexpectedThunks)
 
 data IteratorResult blk =
     IteratorExhausted

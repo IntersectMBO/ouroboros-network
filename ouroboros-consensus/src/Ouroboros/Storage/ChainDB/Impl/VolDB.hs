@@ -58,6 +58,8 @@ import           Data.Typeable (Typeable)
 import           GHC.Stack (HasCallStack)
 import           System.FilePath ((</>))
 
+import           Cardano.Prelude (allNoUnexpectedThunks)
+
 import           Control.Monad.Class.MonadThrow
 
 import           Ouroboros.Network.Block (pattern BlockPoint, ChainHash (..),
@@ -89,10 +91,23 @@ import qualified Ouroboros.Storage.VolatileDB as VolDB
 data VolDB m blk = VolDB {
       volDB    :: VolatileDB (HeaderHash blk) m
     , decBlock :: forall s. Decoder s (Lazy.ByteString -> blk)
+      -- ^ TODO introduce a newtype wrapper around the @s@ so we can use
+      -- generics to derive the NoUnexpectedThunks instance.
     , encBlock :: blk -> Encoding
     , err      :: ErrorHandling (VolatileDBError (HeaderHash blk)) m
     , errSTM   :: ThrowCantCatch (VolatileDBError (HeaderHash blk)) (STM m)
     }
+
+-- Universal type; we can't use generics
+instance NoUnexpectedThunks (VolDB m blk) where
+  showTypeOf _ = "VolDB"
+  whnfNoUnexpectedThunks ctxt VolDB {..} = allNoUnexpectedThunks
+    [ noUnexpectedThunks ctxt volDB
+    , noUnexpectedThunks ctxt decBlock
+    , noUnexpectedThunks ctxt encBlock
+    , noUnexpectedThunks ctxt err
+    , noUnexpectedThunks ctxt errSTM
+    ]
 
 {-------------------------------------------------------------------------------
   Initialization

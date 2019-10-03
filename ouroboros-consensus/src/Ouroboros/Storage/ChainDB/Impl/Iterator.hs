@@ -1,3 +1,5 @@
+{-# LANGUAGE DeriveAnyClass      #-}
+{-# LANGUAGE DeriveGeneric       #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE PatternSynonyms     #-}
@@ -23,6 +25,8 @@ import           Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
+import           Data.Typeable (Typeable)
+import           GHC.Generics (Generic)
 import           GHC.Stack (HasCallStack)
 
 import           Control.Monad.Class.MonadThrow
@@ -31,8 +35,8 @@ import           Control.Tracer
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block (pattern BlockPoint,
                      pattern GenesisPoint, HasHeader, HeaderHash, Point,
-                     atSlot, blockHash, blockPoint, castPoint, pointSlot,
-                     withHash)
+                     StandardHash, atSlot, blockHash, blockPoint, castPoint,
+                     pointSlot, withHash)
 
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
@@ -363,7 +367,7 @@ newIterator itEnv@IteratorEnv{..} getItEnv registry from to = do
                  -> m (Iterator m blk)
     makeIterator register itState = do
       iteratorId <- makeNewIteratorId
-      varItState <- uncheckedNewTVarM itState
+      varItState <- newTVarM itState
       when register $ atomically $ modifyTVar itIterators $
         -- Note that we don't use 'itEnv' here, because that would mean that
         -- invoking the function only works when the database is open, which
@@ -437,9 +441,9 @@ implIteratorClose varItState itrId IteratorEnv{..} = do
 --
 data IteratorState m blk
   = InImmDB
-      (StreamFrom blk)
-      (ImmDB.Iterator (HeaderHash blk) m blk)
-      (InImmDBEnd blk)
+      !(StreamFrom blk)
+      !(ImmDB.Iterator (HeaderHash blk) m blk)
+      !(InImmDBEnd blk)
     -- ^ Streaming from the ImmutableDB.
     --
     -- Invariant: an ImmutableDB iterator opened using the 'StreamFrom'
@@ -452,8 +456,8 @@ data IteratorState m blk
     --
     -- Invariant: the iterator is not exhausted.
   | InVolDB
-      (StreamFrom blk)
-      (NonEmpty (HeaderHash blk))
+      !(StreamFrom blk)
+      !(NonEmpty (HeaderHash blk))
     -- ^ Streaming from the VolatileDB.
     --
     -- The (non-empty) list of hashes is the path to follow through the
@@ -466,9 +470,9 @@ data IteratorState m blk
     -- the hashes in the path, because the blocks might not have been part of
     -- the current chain, in which case they will not be in the ImmutableDB.
   | InImmDBRetry
-      (StreamFrom blk)
-      (ImmDB.Iterator (HeaderHash blk) m blk)
-      (NonEmpty (HeaderHash blk))
+      !(StreamFrom blk)
+      !(ImmDB.Iterator (HeaderHash blk) m blk)
+      !(NonEmpty (HeaderHash blk))
     -- ^ When streaming blocks (a list of hashes) from the VolatileDB, we
     -- noticed a block was missing from the VolatileDB. It may have moved to
     -- the ImmutableDB since we initialised the iterator (and built the path),
@@ -477,6 +481,11 @@ data IteratorState m blk
     -- Invariants: invariants of 'InImmDB' + invariant of 'InVolDB'.
 
   | Closed
+  deriving (Generic)
+
+instance (Typeable blk, StandardHash blk)
+      => NoUnexpectedThunks (IteratorState m blk)
+  -- use generic instance
 
 -- | Extract the ImmutableDB Iterator from the 'IteratorState'.
 iteratorStateImmIt :: IteratorState m blk
@@ -492,11 +501,12 @@ iteratorStateImmIt = \case
 data InImmDBEnd blk
   = StreamAll
     -- ^ Don't stop streaming until the iterator is exhausted.
-  | StreamTo          (StreamTo blk)
+  | StreamTo          !(StreamTo blk)
     -- ^ Stream to the upper bound.
-  | SwitchToVolDBFrom (StreamTo blk)  (NonEmpty (HeaderHash blk))
+  | SwitchToVolDBFrom !(StreamTo blk)  !(NonEmpty (HeaderHash blk))
     -- ^ Stream to the upper bound. Afterwards, start streaming the path (the
     -- second parameter) from the VolatileDB.
+  deriving (Generic, NoUnexpectedThunks)
 
 implIteratorNext :: forall m blk. (IOLike m, HasHeader blk)
                  => ResourceRegistry m

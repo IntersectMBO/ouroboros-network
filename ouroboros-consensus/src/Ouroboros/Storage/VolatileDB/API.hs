@@ -1,3 +1,5 @@
+{-# LANGUAGE DataKinds        #-}
+{-# LANGUAGE DerivingVia      #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE RankNTypes       #-}
 module Ouroboros.Storage.VolatileDB.API
@@ -11,6 +13,8 @@ import           Data.ByteString.Builder (Builder)
 import           Data.ByteString.Lazy (ByteString)
 import           Data.Set (Set)
 import           GHC.Stack (HasCallStack)
+
+import           Cardano.Prelude (NoUnexpectedThunks (..), OnlyCheckIsWHNF (..))
 
 import           Control.Monad.Class.MonadThrow
 
@@ -58,4 +62,4 @@ data VolatileDB blockId m = VolatileDB {
     , getIsMember    :: HasCallStack => STM m (blockId -> Bool)
       -- | Return the highest slot number ever stored by the VolatileDB.
     , getMaxSlotNo   :: HasCallStack => STM m MaxSlotNo
-}
+} deriving NoUnexpectedThunks via OnlyCheckIsWHNF "VolatileDB" (VolatileDB blockId m)

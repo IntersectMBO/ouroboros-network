@@ -64,6 +64,8 @@ import           Data.Word
 import           GHC.Stack (HasCallStack)
 import           System.FilePath ((</>))
 
+import           Cardano.Prelude (allNoUnexpectedThunks)
+
 import           Control.Monad.Class.MonadThrow
 
 import           Ouroboros.Network.Block (pattern BlockPoint,
@@ -74,6 +76,7 @@ import           Ouroboros.Network.Point (WithOrigin (..))
 
 import qualified Ouroboros.Consensus.Util.CBOR as Util.CBOR
 import           Ouroboros.Consensus.Util.IOLike
+import           Ouroboros.Consensus.Util.Orphans ()
 import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry,
                      allocate, unsafeRelease)
 
@@ -92,13 +95,28 @@ import qualified Ouroboros.Storage.Util.ErrorHandling as EH
 
 -- | Thin wrapper around the ImmutableDB (opaque type)
 data ImmDB m blk = ImmDB {
-      immDB     :: ImmutableDB (HeaderHash blk) m
-    , decBlock  :: forall s. Decoder s (Lazy.ByteString -> blk)
-    , encBlock  :: blk -> Encoding
-    , epochInfo :: EpochInfo m
-    , isEBB     :: blk -> Maybe (HeaderHash blk)
-    , err       :: ErrorHandling ImmDB.ImmutableDBError m
+      immDB     :: !(ImmutableDB (HeaderHash blk) m)
+    , decBlock  :: !(forall s. Decoder s (Lazy.ByteString -> blk))
+      -- ^ TODO introduce a newtype wrapper around the @s@ so we can use
+      -- generics to derive the NoUnexpectedThunks instance.
+    , encBlock  :: !(blk -> Encoding)
+    , epochInfo :: !(EpochInfo m)
+    , isEBB     :: !(blk -> Maybe (HeaderHash blk))
+    , err       :: !(ErrorHandling ImmDB.ImmutableDBError m)
     }
+
+
+-- Universal type; we can't use generics
+instance NoUnexpectedThunks (ImmDB m blk) where
+  showTypeOf _ = "ImmDB"
+  whnfNoUnexpectedThunks ctxt ImmDB {..} = allNoUnexpectedThunks
+    [ noUnexpectedThunks ctxt immDB
+    , noUnexpectedThunks ctxt decBlock
+    , noUnexpectedThunks ctxt encBlock
+    , noUnexpectedThunks ctxt epochInfo
+    , noUnexpectedThunks ctxt isEBB
+    , noUnexpectedThunks ctxt err
+    ]
 
 {-------------------------------------------------------------------------------
   Initialization
