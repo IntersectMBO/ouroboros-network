@@ -38,6 +38,7 @@ class ( Typeable c
       , Eq (PBftVerKeyHash c)
       , Show (PBftVerKeyHash c)
       , NoUnexpectedThunks (PBftVerKeyHash c)
+      , NoUnexpectedThunks (PBftDelegationCert c)
       ) => PBftCrypto c where
   type family PBftDSIGN c :: *
 

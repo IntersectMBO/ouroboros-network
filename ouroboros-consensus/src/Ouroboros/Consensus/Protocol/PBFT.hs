@@ -1,3 +1,4 @@
+{-# LANGUAGE DeriveAnyClass          #-}
 {-# LANGUAGE DeriveGeneric           #-}
 {-# LANGUAGE FlexibleContexts        #-}
 {-# LANGUAGE LambdaCase              #-}
@@ -18,6 +19,7 @@ module Ouroboros.Consensus.Protocol.PBFT (
   , PBftFields(..)
   , PBftParams(..)
   , PBftIsLeader(..)
+  , PBftIsLeaderOrNot(..)
   , forgePBftFields
   , genesisKeyCoreNodeId
     -- * Classes
@@ -55,6 +57,7 @@ import qualified Ouroboros.Consensus.Protocol.PBFT.ChainState as CS
 import           Ouroboros.Consensus.Protocol.PBFT.Crypto
 import           Ouroboros.Consensus.Protocol.Signed
 import           Ouroboros.Consensus.Util.Condense
+import           Ouroboros.Consensus.Util.Orphans ()
 
 {-------------------------------------------------------------------------------
   Fields that PBFT requires present in a block
@@ -104,8 +107,12 @@ data PBftLedgerView c = PBftLedgerView {
     -- | ProtocolParameters: map from genesis to delegate keys.
     pbftDelegates :: Bimap (PBftVerKeyHash c) (PBftVerKeyHash c)
   }
+  deriving (Generic)
 
-deriving instance (Show (PBftVerKeyHash c)) => Show (PBftLedgerView c)
+deriving instance PBftCrypto c => NoUnexpectedThunks (PBftLedgerView c)
+  -- use generic instance
+
+deriving instance Show (PBftVerKeyHash c) => Show (PBftLedgerView c)
 
 {-------------------------------------------------------------------------------
   Protocol proper
@@ -122,10 +129,10 @@ data PBftParams = PBftParams {
       --
       -- Although the protocol proper does not have such a security parameter,
       -- we insist on it.
-      pbftSecurityParam      :: SecurityParam
+      pbftSecurityParam      :: !SecurityParam
 
       -- | Number of core nodes
-    , pbftNumNodes           :: Word64
+    , pbftNumNodes           :: !Word64
 
       -- | Signature threshold
       --
@@ -134,24 +141,35 @@ data PBftParams = PBftParams {
       -- proper is parameterized over the size of this window of recent blocks,
       -- but this implementation follows the specification by fixing that
       -- parameter to the ambient security parameter @k@.
-    , pbftSignatureThreshold :: Double
+    , pbftSignatureThreshold :: !Double
     }
+  deriving (Generic, NoUnexpectedThunks)
 
 -- | If we are a core node (i.e. a block producing node) we know which core
 -- node we are, and we have the operational key pair and delegation certificate.
 --
 data PBftIsLeader c = PBftIsLeader {
-      pbftCoreNodeId :: CoreNodeId
-    , pbftSignKey    :: SignKeyDSIGN (PBftDSIGN c)
-    , pbftDlgCert    :: PBftDelegationCert c
+      pbftCoreNodeId :: !CoreNodeId
+    , pbftSignKey    :: !(SignKeyDSIGN (PBftDSIGN c))
+    , pbftDlgCert    :: !(PBftDelegationCert c)
     }
+  deriving (Generic)
+
+instance PBftCrypto c => NoUnexpectedThunks (PBftIsLeader c)
+ -- use generic instance
+
+data PBftIsLeaderOrNot c
+  = PBftIsALeader !(PBftIsLeader c)
+  | PBftIsNotALeader
+  deriving (Generic, NoUnexpectedThunks)
 
 instance (PBftCrypto c, Typeable c) => OuroborosTag (PBft c) where
   -- | (Static) node configuration
   data NodeConfig (PBft c) = PBftNodeConfig {
-        pbftParams   :: PBftParams
-      , pbftIsLeader :: Maybe (PBftIsLeader c)
+        pbftParams   :: !PBftParams
+      , pbftIsLeader :: !(PBftIsLeaderOrNot c)
       }
+    deriving (Generic, NoUnexpectedThunks)
 
   type ValidationErr   (PBft c) = PBftValidationErr c
   type SupportedHeader (PBft c) = HeaderSupportsPBft c
@@ -169,12 +187,12 @@ instance (PBftCrypto c, Typeable c) => OuroborosTag (PBft c) where
 
   checkIsLeader PBftNodeConfig{pbftIsLeader, pbftParams} (SlotNo n) _l _cs =
       case pbftIsLeader of
-        Nothing                                    -> return Nothing
+        PBftIsNotALeader                           -> return Nothing
 
         -- We are the slot leader based on our node index, and the current
         -- slot number. Our node index depends which genesis key has delegated
         -- to us, see 'genesisKeyCoreNodeId'.
-        Just credentials
+        PBftIsALeader credentials
           | n `mod` pbftNumNodes == fromIntegral i -> return (Just credentials)
           | otherwise                              -> return Nothing
           where

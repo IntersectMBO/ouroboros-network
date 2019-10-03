@@ -28,7 +28,7 @@ protocolInfoMockPBFT (NumCoreNodes numCoreNodes) (CoreNodeId nid) params =
         pInfoConfig = EncNodeConfig {
             encNodeConfigP = PBftNodeConfig {
                 pbftParams   = params {pbftNumNodes = fromIntegral numCoreNodes}
-              , pbftIsLeader = Just PBftIsLeader {
+              , pbftIsLeader = PBftIsALeader PBftIsLeader {
                     pbftCoreNodeId = CoreNodeId nid
                   , pbftSignKey    = SignKeyMockDSIGN nid
                     -- For Mock PBFT, we use our key as the genesis key.

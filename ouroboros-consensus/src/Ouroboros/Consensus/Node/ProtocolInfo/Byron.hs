@@ -137,9 +137,9 @@ protocolInfoByron genesisConfig@Genesis.Config {
                   }
               , pbftIsLeader =
                   case mLeader of
-                    Nothing                                  -> Nothing
+                    Nothing                                  -> PBftIsNotALeader
                     Just (PBftLeaderCredentials sk cert nid) ->
-                      Just PBftIsLeader {
+                      PBftIsALeader PBftIsLeader {
                         pbftCoreNodeId = nid
                       , pbftSignKey    = SignKeyCardanoDSIGN sk
                       , pbftDlgCert    = cert
