@@ -51,10 +51,9 @@ type BitServiceRate = Double
 linkRestrictionAsSimpleGS :: LinkRestriction -> SimpleGS
 linkRestrictionAsSimpleGS lr = r
   where
-   r = SimpleDeltaQ { dqG = e2ePDUServiceTime lr 0
-                    , dqS = \n -> m * (fromIntegral n)
-                    }
-   m = ((e2ePDUServiceTime lr $ e2eMaxSDU lr) - dqG r)
+   g = e2ePDUServiceTime lr 0
+   r = SimpleDeltaQ g (\n -> m * (fromIntegral n))
+   m = ((e2ePDUServiceTime lr $ e2eMaxSDU lr) - g)
        / (fromIntegral $ e2eMaxSDU lr)
 
 -- | Simple model of bits on a wire, no overheads.
