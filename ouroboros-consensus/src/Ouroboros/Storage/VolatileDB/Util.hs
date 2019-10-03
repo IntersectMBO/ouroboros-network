@@ -16,6 +16,8 @@ import           Text.Read (readMaybe)
 
 import           Control.Monad.Class.MonadThrow
 
+import           Ouroboros.Network.Point (WithOrigin)
+
 import           Ouroboros.Consensus.Util (safeMaximum, safeMaximumOn, lastMaybe)
 import           Ouroboros.Consensus.Util.IOLike
 
@@ -123,7 +125,7 @@ alterfInsert successor mSet = case mSet of
 
 insertMapSet :: Ord blockId
              => SuccessorsIndex blockId
-             -> (blockId, Maybe blockId)
+             -> (blockId, WithOrigin blockId)
              -> SuccessorsIndex blockId
 insertMapSet mapSet (bid, pbid) = Map.alter (alterfInsert bid) pbid mapSet
 
@@ -137,7 +139,7 @@ alterfDelete successor mSet = case mSet of
 
 deleteMapSet :: Ord blockId
              => SuccessorsIndex blockId
-             -> (blockId, Maybe blockId)
+             -> (blockId, WithOrigin blockId)
              -> SuccessorsIndex blockId
 deleteMapSet mapSet (bid, pbid) = Map.alter (alterfDelete bid) pbid mapSet
 
