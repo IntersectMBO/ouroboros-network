@@ -81,11 +81,13 @@ blockFetchServer tracer chainDB registry = senderSide
         -- blocks back.
         Left  _  -> do
           traceWith tracer (TraceNoBlocks start end)
-          pure $ SendMsgNoBlocks $ return senderSide
+          return $ SendMsgNoBlocks $ return senderSide
         -- When we got an iterator, it will stream at least one block since
         -- its bounds are inclusive, so we don't have to check whether the
         -- iterator is empty.
-        Right it -> pure $ SendMsgStartBatch $ sendBlocks it
+        Right it -> do
+          traceWith tracer (TraceStartBatch start end)
+          return $ SendMsgStartBatch $ sendBlocks it
 
 
     sendBlocks :: ChainDB.Iterator m blk
@@ -96,6 +98,7 @@ blockFetchServer tracer chainDB registry = senderSide
         IteratorResult blk     -> return $ SendMsgBlock blk (sendBlocks it)
         IteratorExhausted      -> do
           ChainDB.iteratorClose it
+          traceWith tracer TraceFinishBatch
           return $ SendMsgBatchDone $ return senderSide
         IteratorBlockGCed hash -> do
           ChainDB.iteratorClose it
@@ -113,4 +116,12 @@ data TraceBlockFetchServerEvent blk
     -- an iterator for these two points
     --
     -- start (inclusive), stop (inclusive)
+  | TraceStartBatch (Point blk) (Point blk)
+    -- ^ the server is about to send 'MsgStartBatch', having obtained an
+    -- iterator for these two points
+    --
+    -- start (inclusive), stop (inclusive)
+  | TraceFinishBatch
+    -- ^ the server is about to send 'MsgFinishBatch', having exhausted the
+    -- iterator obtained at 'TraceStartBatch'
   deriving (Eq, Show)
