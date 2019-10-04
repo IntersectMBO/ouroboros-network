@@ -274,12 +274,12 @@ runNodeNetwork registry testBtime numCoreNodes nodeJoinPlan nodeTopology
         , cdbTracer           = Tracer $ \case
               ChainDB.TraceAddBlockEvent
                   (ChainDB.AddBlockValidation ChainDB.InvalidBlock
-                      { _invalidPoint = p }) ->
-                  traceWith invalidTracer p
+                      { _invalidPoint = p })
+                  -> traceWith invalidTracer p
               ChainDB.TraceAddBlockEvent
-                  (ChainDB.AddedBlockToVolDB p bno isEBB) ->
-                  when (not isEBB) $ traceWith addTracer (p, bno)
-              _                        -> pure ()
+                  (ChainDB.AddedBlockToVolDB p bno IsNotEBB)
+                  -> traceWith addTracer (p, bno)
+              _   -> pure ()
         , cdbRegistry         = registry
         , cdbGcDelay          = 0
         }

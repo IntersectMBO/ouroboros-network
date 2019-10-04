@@ -47,7 +47,8 @@ import           Ouroboros.Network.Block (BlockNo, HasHeader (..), HeaderHash,
                      Point, SlotNo, blockPoint, castPoint, pointHash)
 import           Ouroboros.Network.Point (WithOrigin)
 
-import           Ouroboros.Consensus.Block (BlockProtocol, GetHeader (..))
+import           Ouroboros.Consensus.Block (BlockProtocol, GetHeader (..),
+                     toIsEBB)
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util.IOLike
@@ -221,7 +222,7 @@ addBlock cdb@CDB{..} b = do
 
       -- Write the block to the VolatileDB in all other cases
       VolDB.putBlock cdbVolDB b
-      trace $ AddedBlockToVolDB (blockPoint b) (blockNo b) (cdbIsEBB b)
+      trace $ AddedBlockToVolDB (blockPoint b) (blockNo b) (toIsEBB (cdbIsEBB b))
 
       -- We need to get these after adding the block to the VolatileDB
       (isMember', succsOf, predecessor) <- atomically $

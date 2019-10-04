@@ -53,7 +53,7 @@ import           Ouroboros.Network.Block (BlockNo, HasHeader, HeaderHash, Point,
                      SlotNo, StandardHash)
 import           Ouroboros.Network.Point (WithOrigin)
 
-import           Ouroboros.Consensus.Block (BlockProtocol, Header)
+import           Ouroboros.Consensus.Block (BlockProtocol, Header, IsEBB (..))
 import           Ouroboros.Consensus.Ledger.Abstract (ProtocolLedgerView)
 import           Ouroboros.Consensus.Ledger.Extended (ExtValidationError)
 import           Ouroboros.Consensus.Protocol.Abstract (NodeConfig)
@@ -334,10 +334,8 @@ data TraceOpenEvent blk
 
 -- | Trace type for the various events that occur when adding a block.
 data TraceAddBlockEvent blk
-  = AddedBlockToVolDB    !(Point blk) !BlockNo !Bool
+  = AddedBlockToVolDB    !(Point blk) !BlockNo !IsEBB
     -- ^ A block was added to the Volatile DB
-    --
-    -- its point, its block number, whether it's an EBB
 
   | TryAddToCurrentChain (Point blk)
     -- ^ The block fits onto the current chain, we'll try to use it to extend
