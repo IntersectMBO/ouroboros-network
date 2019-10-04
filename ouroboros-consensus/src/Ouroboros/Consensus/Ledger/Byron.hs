@@ -976,8 +976,6 @@ instance (ByronGiven, Typeable cfg, ConfigContainsGenesis cfg, NoUnexpectedThunk
       => ApplyTx (ByronBlockOrEBB cfg) where
   -- | Generalized transactions in Byron
   --
-  -- TODO #514: This is still missing the other cases (this shouldn't be a
-  -- newtype)
   data GenTx (ByronBlockOrEBB cfg)
     = ByronTx
         CC.UTxO.TxId
