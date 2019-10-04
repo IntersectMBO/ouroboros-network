@@ -1064,7 +1064,7 @@ applyByronGenTx :: ValidationMode
 applyByronGenTx validationMode
                 (ByronEBBLedgerConfig (ByronLedgerConfig cfg))
                 genTx
-                (ByronEBBLedgerState st@ByronLedgerState{..}) =
+                (ByronEBBLedgerState st@ByronLedgerState{blsCurrent}) =
     (\x -> ByronEBBLedgerState $ st { blsCurrent = x })
       <$> go genTx blsCurrent
   where
@@ -1072,98 +1072,85 @@ applyByronGenTx validationMode
        => GenTx (ByronBlockOrEBB cfg)
        -> CC.Block.ChainValidationState
        -> m CC.Block.ChainValidationState
-    go (ByronTx _ tx) cvs = wrapCVS <$>
-        runReaderT (CC.UTxO.updateUTxO env utxo [tx]) validationMode
-          `wrapError` ByronApplyTxError
+    go gtx cvs = case gtx of
+        ByronTx             _ tx       -> applyByronTx tx
+        ByronDlg            _ cert     -> applyByronDlg cert
+        ByronUpdateProposal _ proposal -> applyByronUpdateProposal proposal
+        ByronUpdateVote     _ vote     -> applyByronUpdateVote vote
       where
-        wrapCVS newUTxO = cvs { CC.Block.cvsUtxo = newUTxO }
-        protocolMagic = fixPM $ CC.Genesis.configProtocolMagic cfg
-        utxo = CC.Block.cvsUtxo cvs
-        updateState = CC.Block.cvsUpdateState cvs
-        env = CC.UTxO.Environment
-          { CC.UTxO.protocolMagic = protocolMagic
-          , CC.UTxO.protocolParameters = CC.UPI.adoptedProtocolParameters updateState
-          , CC.UTxO.utxoConfiguration = CC.Genesis.configUTxOConfiguration cfg
-          }
-        fixPM (Crypto.AProtocolMagic a b) = Crypto.AProtocolMagic (reAnnotate a) b
-
-    go (ByronDlg _ cert) cvs = wrapCVS <$>
-        V.Interface.updateDelegation env dlgState [cert]
-          `wrapError` ByronApplyDlgError
-      where
-        wrapCVS dlgState' = cvs { CC.Block.cvsDelegationState = dlgState' }
-
-        protocolMagic = Crypto.getAProtocolMagicId $ fixPM $
-          CC.Genesis.configProtocolMagic cfg
+        protocolMagic = fixPM (CC.Genesis.configProtocolMagic cfg)
 
         k = CC.Genesis.configK cfg
 
-        dlgState = CC.Block.cvsDelegationState cvs
-
-        currentEpoch =
-          CC.Slot.slotNumberEpoch (CC.Genesis.configEpochSlots cfg)
-                                  currentSlot
+        currentEpoch = CC.Slot.slotNumberEpoch
+          (CC.Genesis.configEpochSlots cfg)
+          currentSlot
 
         currentSlot = CC.Block.cvsLastSlot cvs
 
-        env = V.Interface.Environment
-          { V.Interface.protocolMagic     = protocolMagic
+        utxo = CC.Block.cvsUtxo cvs
+
+        dlgState = CC.Block.cvsDelegationState cvs
+
+        updateState = CC.Block.cvsUpdateState cvs
+
+        delegationMap =
+          (V.Interface.delegationMap . CC.Block.cvsDelegationState) cvs
+
+        utxoEnv = CC.UTxO.Environment
+          { CC.UTxO.protocolMagic      = protocolMagic
+          , CC.UTxO.protocolParameters = CC.UPI.adoptedProtocolParameters updateState
+          , CC.UTxO.utxoConfiguration  = CC.Genesis.configUTxOConfiguration cfg
+          }
+
+        dlgEnv = V.Interface.Environment
+          { V.Interface.protocolMagic     = Crypto.getAProtocolMagicId protocolMagic
           , V.Interface.allowedDelegators = allowedDelegators cfg
           , V.Interface.k                 = k
           , V.Interface.currentEpoch      = currentEpoch
           , V.Interface.currentSlot       = currentSlot
           }
 
-        fixPM (Crypto.AProtocolMagic a b) =
-          Crypto.AProtocolMagic (reAnnotate a) b
-
-    -- Note that we're only expecting update-related 'GenTx's in this case.
-    -- Both of them share much of the same code so it didn't seem to make
-    -- sense defining two separate cases of 'go'.
-    go tx cvs = wrapCVS <$> case tx of
-        ByronUpdateProposal _ proposal ->
-          CC.UPI.registerProposal env updateState proposal
-            `wrapError` ByronApplyUpdateProposalError
-
-        ByronUpdateVote _ vote ->
-          CC.UPI.registerVote env updateState vote
-            `wrapError` ByronApplyUpdateVoteError
-
-        _ -> error $  "applyByronGenTx.go: "
-                   <> "Only expecting update-related `GenTx`s at this point."
-      where
-        wrapCVS updateState' = cvs { CC.Block.cvsUpdateState = updateState' }
-
-        protocolMagic = Crypto.getAProtocolMagicId $ fixPM $
-          CC.Genesis.configProtocolMagic cfg
-
-        k = CC.Genesis.configK cfg
-
-        updateState = CC.Block.cvsUpdateState cvs
-
-        currentSlot = CC.Block.cvsLastSlot cvs
-
-        numGenKeys = toNumGenKeys $ Set.size (allowedDelegators cfg)
-
-        delegationMap =
-          (V.Interface.delegationMap . CC.Block.cvsDelegationState) cvs
-
-        env = CC.UPI.Environment
-          { CC.UPI.protocolMagic = protocolMagic
+        updateEnv = CC.UPI.Environment
+          { CC.UPI.protocolMagic = Crypto.getAProtocolMagicId protocolMagic
           , CC.UPI.k             = k
           , CC.UPI.currentSlot   = currentSlot
           , CC.UPI.numGenKeys    = numGenKeys
           , CC.UPI.delegationMap = delegationMap
           }
 
-        fixPM (Crypto.AProtocolMagic a b) =
-          Crypto.AProtocolMagic (reAnnotate a) b
+        numGenKeys = toNumGenKeys $ Set.size (allowedDelegators cfg)
 
         toNumGenKeys :: Integral n => n -> Word8
         toNumGenKeys n
           | n > fromIntegral (maxBound :: Word8) = error $
-            "applyByronGenTx.go.toNumGenKeys: Too many genesis keys"
+            "toNumGenKeys: Too many genesis keys"
           | otherwise = fromIntegral n
+
+        fixPM (Crypto.AProtocolMagic a b) =
+          Crypto.AProtocolMagic (reAnnotate a) b
+
+        wrapUTxO newUTxO = cvs { CC.Block.cvsUtxo = newUTxO }
+
+        wrapDlg newDlg = cvs { CC.Block.cvsDelegationState = newDlg }
+
+        wrapUpdate newUpdate = cvs { CC.Block.cvsUpdateState = newUpdate }
+
+        applyByronTx tx = wrapUTxO <$>
+            runReaderT (CC.UTxO.updateUTxO utxoEnv utxo [tx]) validationMode
+              `wrapError` ByronApplyTxError
+
+        applyByronDlg cert = wrapDlg <$>
+            V.Interface.updateDelegation dlgEnv dlgState [cert]
+              `wrapError` ByronApplyDlgError
+
+        applyByronUpdateProposal proposal = wrapUpdate <$>
+            CC.UPI.registerProposal updateEnv updateState proposal
+              `wrapError` ByronApplyUpdateProposalError
+
+        applyByronUpdateVote vote = wrapUpdate <$>
+              CC.UPI.registerVote updateEnv updateState vote
+                `wrapError` ByronApplyUpdateVoteError
 
 mkByronGenTx :: CC.Mempool.AMempoolPayload ByteString
              -> GenTx (ByronBlockOrEBB cfg)
