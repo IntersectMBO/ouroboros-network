@@ -27,7 +27,6 @@ library
   -- other-extensions:
   build-depends:       base ^>=4.12.0.0,
                        time,
-                       algebraic-graphs,
                        fingertree,
                        containers,
                        deepseq,
