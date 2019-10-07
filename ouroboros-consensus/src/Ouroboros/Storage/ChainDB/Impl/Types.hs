@@ -53,7 +53,7 @@ import           Ouroboros.Network.Block (BlockNo, HasHeader, HeaderHash, Point,
                      SlotNo, StandardHash)
 import           Ouroboros.Network.Point (WithOrigin)
 
-import           Ouroboros.Consensus.Block (BlockProtocol, Header)
+import           Ouroboros.Consensus.Block (BlockProtocol, Header, IsEBB (..))
 import           Ouroboros.Consensus.Ledger.Abstract (ProtocolLedgerView)
 import           Ouroboros.Consensus.Ledger.Extended (ExtValidationError)
 import           Ouroboros.Consensus.Protocol.Abstract (NodeConfig)
@@ -207,6 +207,7 @@ data ChainDbEnv m blk = CDB
   , cdbBgThreads      :: !(StrictTVar m [Thread m ()])
     -- ^ The background threads.
   , cdbEpochInfo      :: !(EpochInfo m)
+  , cdbIsEBB          :: !(blk -> Bool)
   } deriving (Generic)
 
 -- | We include @blk@ in 'showTypeOf' because it helps resolving type families
@@ -333,7 +334,7 @@ data TraceOpenEvent blk
 
 -- | Trace type for the various events that occur when adding a block.
 data TraceAddBlockEvent blk
-  = AddedBlockToVolDB    (Point blk)
+  = AddedBlockToVolDB    !(Point blk) !BlockNo !IsEBB
     -- ^ A block was added to the Volatile DB
 
   | TryAddToCurrentChain (Point blk)

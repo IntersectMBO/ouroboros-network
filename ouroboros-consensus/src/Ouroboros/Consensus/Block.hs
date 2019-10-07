@@ -16,6 +16,9 @@ module Ouroboros.Consensus.Block (
   , headerPoint
     -- * Supported blocks
   , SupportedBlock
+    -- * EBBs
+  , IsEBB (..)
+  , toIsEBB
   ) where
 
 import           Cardano.Prelude (NoUnexpectedThunks)
@@ -24,6 +27,7 @@ import           Data.FingerTree.Strict (Measured (..))
 import           Ouroboros.Network.Block
 
 import           Ouroboros.Consensus.Protocol.Abstract
+import           Ouroboros.Consensus.Util.Condense
 
 {-------------------------------------------------------------------------------
   Link block to its header
@@ -81,3 +85,29 @@ class ( GetHeader blk
       , SupportedHeader (BlockProtocol blk) (Header blk)
       , NoUnexpectedThunks (Header blk)
       ) => SupportedBlock blk
+
+{-------------------------------------------------------------------------------
+  EBBs
+-------------------------------------------------------------------------------}
+
+-- | Whether a block is an Epoch Boundary Block (EBB)
+--
+-- See "Ouroboros.Storage.ImmutableDB.API" for a discussion of EBBs. Key
+-- idiosyncracies:
+--
+--  * An EBB carries no unique information.
+--
+--  * An EBB has the same 'BlockNo' as its predecessor.
+--
+--  * EBBs are vestigial. As of Shelley, nodes no longer forge EBBs: they are
+--    only a legacy/backwards-compatibility concern.
+data IsEBB
+  = IsEBB
+  | IsNotEBB
+  deriving (Eq, Show)
+
+instance Condense IsEBB where
+  condense = show
+
+toIsEBB :: Bool -> IsEBB
+toIsEBB b = if b then IsEBB else IsNotEBB

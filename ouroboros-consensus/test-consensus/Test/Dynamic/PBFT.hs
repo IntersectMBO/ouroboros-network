@@ -35,7 +35,7 @@ prop_simple_pbft_convergence
   k testConfig@TestConfig{numCoreNodes, numSlots} seed =
     prop_general k
         testConfig
-        (roundRobinLeaderSchedule numCoreNodes numSlots)
+        (Just $ roundRobinLeaderSchedule numCoreNodes numSlots)
         testOutput
   where
     NumCoreNodes nn = numCoreNodes

@@ -9,7 +9,7 @@ module Test.Dynamic.Util (
     prop_all_common_prefix
   , shortestLength
   -- * LeaderSchedule
-  , leaderScheduleFromTrace
+  , emptyLeaderSchedule
   , roundRobinLeaderSchedule
   , consensusExpected
   -- * GraphViz Dot
@@ -224,33 +224,6 @@ tracesToDot traces = Text.unpack $ printDotGraph $ graphToDot quickParams graph
   Leader Schedule
 -------------------------------------------------------------------------------}
 
-leaderScheduleFromTrace :: forall b. (HasCreator b, HasHeader b)
-                        => NumSlots
-                        -> Map NodeId (NodeOutput b)
-                        -> LeaderSchedule
-leaderScheduleFromTrace (NumSlots numSlots) = LeaderSchedule .
-    Map.foldl' addNodeOutput initial
-  where
-    initial :: Map SlotNo [CoreNodeId]
-    initial = Map.fromList [(slot, []) | slot <- [1 .. fromIntegral numSlots]]
-
-    addNodeOutput :: Map SlotNo [CoreNodeId]
-                  -> NodeOutput b
-                  -> Map SlotNo [CoreNodeId]
-    addNodeOutput m NodeOutput {nodeOutputCfg = nc, nodeOutputFinalChain = c} =
-      Chain.foldChain (step nc) m c
-
-    step :: NodeConfig (BlockProtocol b)
-         -> Map SlotNo [CoreNodeId]
-         -> b
-         -> Map SlotNo [CoreNodeId]
-    step nc m b = Map.adjust (insert $ getCreator nc b) (blockSlot b) m
-
-    insert :: CoreNodeId -> [CoreNodeId] -> [CoreNodeId]
-    insert nid xs
-        | nid `elem` xs = xs
-        | otherwise     = nid : xs
-
 consensusExpected ::
      SecurityParam
   -> NodeJoinPlan
@@ -260,6 +233,13 @@ consensusExpected k nodeJoinPlan schedule =
     maxForkLength <= maxRollbacks k
   where
     NumBlocks maxForkLength = determineForkLength k nodeJoinPlan schedule
+
+emptyLeaderSchedule :: NumSlots -> LeaderSchedule
+emptyLeaderSchedule (NumSlots t) = LeaderSchedule $
+    Map.fromList $
+    [ (SlotNo (toEnum i), [])
+    | i <- [ 0 .. t - 1 ]
+    ]
 
 roundRobinLeaderSchedule :: NumCoreNodes -> NumSlots -> LeaderSchedule
 roundRobinLeaderSchedule (NumCoreNodes n) (NumSlots t) = LeaderSchedule $

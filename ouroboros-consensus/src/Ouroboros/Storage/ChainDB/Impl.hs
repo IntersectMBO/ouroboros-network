@@ -26,6 +26,7 @@ module Ouroboros.Storage.ChainDB.Impl (
 
 import           Control.Monad (when)
 import qualified Data.Map.Strict as Map
+import           Data.Maybe (isJust)
 
 import           Control.Tracer
 
@@ -143,6 +144,7 @@ openDBInternal args launchBgTasks = do
                   , cdbGcDelay        = Args.cdbGcDelay args
                   , cdbBgThreads      = varBgThreads
                   , cdbEpochInfo      = Args.cdbEpochInfo args
+                  , cdbIsEBB          = isJust . Args.cdbIsEBB args
                   }
     h <- fmap CDBHandle $ newTVarM $ ChainDbOpen env
     let chainDB = ChainDB
