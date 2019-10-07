@@ -143,7 +143,7 @@ aws_shortest_paths response_size = all_pairs_sp mkWeight aws_graph
   pdu_overhead = 20
 
   initial_window :: Natural
-  initial_window = 14000
+  initial_window = 4
 
   aws_graph :: AdjacencyMap (UEdge (Last BearerCharacteristics)) NetNode
   aws_graph = overlay
