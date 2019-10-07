@@ -21,6 +21,7 @@ module Ouroboros.Consensus.ChainSyncClient (
   , chainSyncClient
   , bracketChainSyncClient
   , ChainSyncClientException (..)
+  , ChainSyncClientExceptionType (..)
   , ChainDbView (..)
   , ClockSkew (..)
   , Our (..)
@@ -270,13 +271,12 @@ chainSyncClient mkPipelineDecision0 getTipBlockNo tracer cfg btime
     -- | Try to find an intersection by sending points of our current chain to
     -- the server, if any of them intersect with their chain, roll back our
     -- chain to that point and start synching using that fragment. If none
-    -- intersect, disconnect by throwing the exception obtained by calling the
-    -- passed function.
+    -- intersect, disconnect by throwing the given exception.
     findIntersection
-      :: (Our tip -> Their tip -> ChainSyncClientException blk tip)
+      :: ChainSyncClientExceptionType blk
          -- ^ Exception to throw when no intersection is found.
       -> Stateful m blk tip () (ClientPipelinedStIdle Z)
-    findIntersection mkEx = Stateful $ \() -> do
+    findIntersection ex = Stateful $ \() -> do
       (ourFrag, ourChainState, ourTip) <- atomically $ (,,)
         <$> getCurrentChain
         <*> (ouroborosChainState <$> getCurrentLedger)
@@ -299,7 +299,7 @@ chainSyncClient mkPipelineDecision0 getTipBlockNo tracer cfg btime
             continueWithState uis $
               intersectFound (castPoint i) (Their theirTip')
         , recvMsgIntersectNotFound = \theirTip' -> traceException $
-            disconnect $ mkEx ourTip (Their theirTip')
+            disconnect ourTip (Their theirTip') ex
         }
 
     -- | One of the points we sent intersected our chain. This intersection
@@ -343,11 +343,9 @@ chainSyncClient mkPipelineDecision0 getTipBlockNo tracer cfg btime
             -- we sent only points from the candidate chain to find an
             -- intersection with. The node must have sent us an invalid
             -- intersection point.
-            Nothing     -> disconnect InvalidIntersection
-              { _intersection = intersection
-              , _ourTip       = ourTip
-              , _theirTip     = theirTip
-              }
+            Nothing     -> disconnect ourTip theirTip $
+              InvalidIntersection intersection
+
         atomically $ writeTVar varCandidate theirFrag
         let kis = KnownIntersectionState
               { theirFrag       = theirFrag
@@ -543,7 +541,7 @@ chainSyncClient mkPipelineDecision0 getTipBlockNo tracer cfg btime
           hdrPoint = headerPoint hdr
       isInvalidBlock <- atomically $ forgetFingerprint <$> getIsInvalidBlock
       when (isInvalidBlock hdrHash) $
-        disconnect $ InvalidBlock hdrPoint
+        disconnect ourTip theirTip $ InvalidBlock hdrPoint
 
       -- Get the ledger view required to validate the header
       -- NOTE: This will block if we are too far behind.
@@ -552,33 +550,19 @@ chainSyncClient mkPipelineDecision0 getTipBlockNo tracer cfg btime
       -- Check for clock skew
       wallclock <- atomically $ getCurrentSlot btime
       when (fmap unSlotNo (pointSlot hdrPoint) > At (unSlotNo wallclock + maxSkew)) $
-        disconnect HeaderExceedsClockSkew
-          { _receivedHeader    = hdrPoint
-          , _currentWallSlotNo = wallclock
-          , _ourTip            = ourTip
-          , _theirTip          = theirTip
-          }
+        disconnect ourTip theirTip $ HeaderExceedsClockSkew hdrPoint wallclock
 
       -- Validate header
       let expectPrevHash = castHash (AF.headHash theirFrag)
           actualPrevHash = headerPrevHash hdr
       when (actualPrevHash /= expectPrevHash) $
-        disconnect DoesntFit
-          { _receivedPrevHash = actualPrevHash
-          , _expectedPrevHash = expectPrevHash
-          , _ourTip           = ourTip
-          , _theirTip         = theirTip
-          }
+        disconnect ourTip theirTip $ DoesntFit actualPrevHash expectPrevHash
 
       theirChainState' <-
         case runExcept $ applyChainState cfg ledgerView hdr theirChainState of
           Right theirChainState' -> return theirChainState'
-          Left vErr              -> disconnect ChainError
-            { _newPoint           = hdrPoint
-            , _chainValidationErr = vErr
-            , _ourTip             = ourTip
-            , _theirTip           = theirTip
-            }
+          Left vErr              -> disconnect ourTip theirTip $
+            ChainError hdrPoint vErr
 
       let theirFrag' = theirFrag :> hdr
           kis' = kis
@@ -658,11 +642,7 @@ chainSyncClient mkPipelineDecision0 getTipBlockNo tracer cfg btime
           case anachronisticProtocolLedgerView cfg curLedger (pointSlot hdrPoint) of
             -- unexpected alternative; see comment before this case expression
             Left TooFarBehind ->
-                disconnect InvalidRollForward
-                  { _newPoint = hdrPoint
-                  , _ourTip   = ourTip
-                  , _theirTip = theirTip
-                  }
+                disconnect ourTip theirTip $ InvalidRollForward hdrPoint
             Left TooFarAhead  -> retry
             Right view -> case view `SB.at` hdrSlot of
                 Nothing -> error "anachronisticProtocolLedgerView invariant violated"
@@ -715,11 +695,8 @@ chainSyncClient mkPipelineDecision0 getTipBlockNo tracer cfg btime
           -- forward @s@ new headers where @s >= r@.
           --
           -- Thus, @k - r + s >= k@.
-          Nothing     -> disconnect InvalidRollBack
-            { _newPoint = intersection
-            , _ourTip   = ourTip
-            , _theirTip = theirTip
-            }
+          Nothing     -> disconnect ourTip theirTip $
+            InvalidRollBack intersection
 
       let kis' = kis
             { theirFrag       = theirFrag'
@@ -732,8 +709,11 @@ chainSyncClient mkPipelineDecision0 getTipBlockNo tracer cfg btime
     -- | Disconnect from the upstream node by throwing the given exception.
     -- The cleanup is handled in 'bracketChainSyncClient'.
     disconnect :: forall m' x'. MonadThrow m'
-               => ChainSyncClientException blk tip -> m' x'
-    disconnect = throwM
+               => Our tip
+               -> Their tip
+               -> ChainSyncClientExceptionType blk -> m' x'
+    disconnect ourTip theirTip typ = throwM $
+      ChainSyncClientException { typ, ourTip, theirTip }
 
     -- | Trace any 'ChainSyncClientException' if thrown.
     traceException :: m a -> m a
@@ -817,7 +797,11 @@ rejectInvalidBlocks tracer registry getIsInvalidBlock getCandidate =
 
     disconnect :: Header blk -> m ()
     disconnect invalidHeader = do
-      let ex = InvalidBlock (headerPoint invalidHeader)
+      let ex = ChainSyncClientException
+            { typ      = InvalidBlock (headerPoint invalidHeader)
+            , ourTip   = undefined
+            , theirTip = undefined
+            }
       traceWith tracer $ TraceException ex
       throwM ex
 
@@ -843,97 +827,71 @@ continueWithState !s (Stateful f) = checkInvariant (unsafeNoThunks s) $ f s
   Exception
 -------------------------------------------------------------------------------}
 
-data ChainSyncClientException blk tip =
-      -- | The header we received was for a slot too far in the future.
-      --
-      -- I.e., the slot of the received header was > current slot (according
-      -- to the wall time) + the max clock skew.
-      HeaderExceedsClockSkew
-      { _receivedHeader    :: Point blk
-      , _currentWallSlotNo :: SlotNo
-      , _ourTip            :: Our   tip
-      , _theirTip          :: Their tip
-      }
+data ChainSyncClientExceptionType blk =
+    -- | The header we received was for a slot too far in the future.
+    --
+    -- I.e., the slot of the received header was > current slot (according to
+    -- the wall time) + the max clock skew.
+    --
+    -- We store the point corresponding to the received header and the current
+    -- slot number according to the wall clock.
+    HeaderExceedsClockSkew (Point blk) SlotNo
 
-      -- | The server we're connecting to forked more than @k@ blocks ago.
-    | ForkTooDeep
-      { _intersection :: Point blk
-      , _ourTip       :: Our   tip
-      , _theirTip     :: Their tip
-      }
+    -- | The server we're connecting to forked more than @k@ blocks ago.
+    --
+    -- We store the found intersection.
+  | ForkTooDeep (Point blk)
 
-      -- | The chain validation threw an error.
-    | ChainError
-      { _newPoint           :: Point blk
-      , _chainValidationErr :: ValidationErr (BlockProtocol blk)
-      , _ourTip             :: Our   tip
-      , _theirTip           :: Their tip
-      }
+    -- | The chain validation threw an error for the header at the given
+    -- point.
+  | ChainError (Point blk) (ValidationErr (BlockProtocol blk))
 
-      -- | The upstream node rolled forward to a point too far in our past.
-      -- This may happen if, during catch-up, our local node has moved too far
-      -- ahead of the upstream node.
-    | InvalidRollForward
-      { _newPoint :: Point blk
-      , _ourTip   :: Our   tip
-      , _theirTip :: Their tip
-      }
+    -- | The upstream node rolled forward to a point too far in our past. This
+    -- may happen if, during catch-up, our local node has moved too far ahead
+    -- of the upstream node.
+  | InvalidRollForward (Point blk)
 
-      -- | The upstream node rolled back more than @k@ blocks.
-    | InvalidRollBack
-      { _newPoint :: Point blk
-      , _ourTip   :: Our   tip
-      , _theirTip :: Their tip
-      }
+    -- | The upstream node rolled back more than @k@ blocks to the given
+    -- point.
+  | InvalidRollBack (Point blk)
 
-      -- | We send the upstream node a bunch of points from a chain fragment and
-      -- the upstream node responded with an intersection point that is not on
-      -- our chain fragment, and thus not among the points we sent.
-      --
-      -- We store the intersection point the upstream node sent us.
-    | InvalidIntersection
-      { _intersection :: Point blk
-      , _ourTip       :: Our   tip
-      , _theirTip     :: Their tip
-      }
+    -- | We send the upstream node a bunch of points from a chain fragment and
+    -- the upstream node responded with an intersection point that is not on
+    -- our chain fragment, and thus not among the points we sent.
+    --
+    -- We store the intersection point the upstream node sent us.
+  | InvalidIntersection (Point blk)
 
-      -- | Our chain changed such that it no longer intersects with the
-      -- candidate's fragment, and asking for a new intersection did not yield
-      -- one.
-    | NoMoreIntersection
-      { _ourTip   :: Our   tip
-      , _theirTip :: Their tip
-      }
+    -- | Our chain changed such that it no longer intersects with the
+    -- candidate's fragment, and asking for a new intersection did not yield
+    -- one.
+  | NoMoreIntersection
 
-      -- | The received header to roll forward doesn't fit onto the previous
-      -- one.
-      --
-      -- The first 'ChainHash' is the previous hash of the received header and
-      -- the second 'ChainHash' is that of the previous one.
-    | DoesntFit
-      { _receivedPrevHash :: ChainHash blk
-      , _expectedPrevHash :: ChainHash blk
-      , _ourTip           :: Our   tip
-      , _theirTip         :: Their tip
-      }
+    -- | The received header to roll forward doesn't fit onto the previous
+    -- one.
+    --
+    -- The first 'ChainHash' is the previous hash of the received header and
+    -- the second 'ChainHash' is the hash of the previous header, i.e., the
+    -- expected value.
+  | DoesntFit (ChainHash blk) (ChainHash blk)
 
-      -- | The upstream node's chain contained a block that we know is invalid.
-    | InvalidBlock
-      { _invalidBlock :: Point blk
-      }
+    -- | The upstream node's chain contained a block that we know is invalid.
+  | InvalidBlock (Point blk)
 
-deriving instance ( SupportedBlock blk
-                  , Show tip
-                  ) => Show (ChainSyncClientException blk tip)
+deriving instance SupportedBlock blk => Show (ChainSyncClientExceptionType blk)
+deriving instance (SupportedBlock blk, Eq (ValidationErr (BlockProtocol blk)))
+               => Eq (ChainSyncClientExceptionType blk)
+
+data ChainSyncClientException blk tip = ChainSyncClientException
+  { typ      :: ChainSyncClientExceptionType blk
+  , ourTip   :: Our   tip
+  , theirTip :: Their tip
+  } deriving (Show, Exception)
+
 deriving instance ( SupportedBlock blk
                   , Eq (ValidationErr (BlockProtocol blk))
                   , Eq tip
-                  )
-               => Eq (ChainSyncClientException blk tip)
-instance ( SupportedBlock blk
-         , Typeable tip
-         , Show tip
-         ) => Exception (ChainSyncClientException blk tip)
+                  ) => Eq (ChainSyncClientException blk tip)
 
 
 {-------------------------------------------------------------------------------

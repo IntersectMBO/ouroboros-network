@@ -102,23 +102,25 @@ prop_chainSync ChainSyncClientSetup {..} =
     -- it, but not the other way around: we don't check whether a situation
     -- has occured where an exception should have been thrown, but wasn't.
     case mbEx of
-      Just (ForkTooDeep { _intersection = intersection })     ->
-        label "ForkTooDeep" $
-        counterexample ("ForkTooDeep intersection: " <> ppPoint intersection) $
-        not (AF.withinFragmentBounds intersection clientFragment)
-      Just (InvalidRollBack { _newPoint = intersection }) ->
-        label "InvalidRollBack" $
-        counterexample ("InvalidRollBack intersection: " <> ppPoint intersection) $
-        not (AF.withinFragmentBounds intersection synchedFragment)
-      Just (NoMoreIntersection { _ourTip   = Our   (ExampleTip ourHead   _)
-                               , _theirTip = Their (ExampleTip theirHead _)
-                               }) ->
-        label "NoMoreIntersection" $
-        counterexample ("NoMoreIntersection ourHead: " <> ppPoint ourHead <>
-                        ", theirHead: " <> ppPoint theirHead) $
-        not (clientFragment `forksWithinK` synchedFragment)
-      Just e ->
-        counterexample ("Exception: " ++ displayException e) False
+      Just e@ChainSyncClientException
+        { typ      = typ
+        , ourTip   = Our   (ExampleTip ourHead _)
+        , theirTip = Their (ExampleTip theirHead _)
+        } -> case typ of
+          ForkTooDeep intersection ->
+            label "ForkTooDeep" $
+            counterexample ("ForkTooDeep intersection: " <> ppPoint intersection) $
+            not (AF.withinFragmentBounds intersection clientFragment)
+          InvalidRollBack intersection ->
+            label "InvalidRollBack" $
+            counterexample ("InvalidRollBack intersection: " <> ppPoint intersection) $
+            not (AF.withinFragmentBounds intersection synchedFragment)
+          NoMoreIntersection ->
+            label "NoMoreIntersection" $
+            counterexample ("NoMoreIntersection ourHead: " <> ppPoint ourHead <>
+                            ", theirHead: " <> ppPoint theirHead) $
+            not (clientFragment `forksWithinK` synchedFragment)
+          _ -> counterexample ("Exception: " ++ displayException e) False
       Nothing ->
         counterexample "Synced fragment not a suffix of the server chain"
         (synchedFragment `isSuffixOf` serverChain) .&&.
