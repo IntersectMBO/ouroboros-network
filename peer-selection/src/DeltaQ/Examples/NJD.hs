@@ -4,6 +4,7 @@ where
 import           Algebra.Graph.Labelled.AdjacencyMap
 import           Data.List
 import           Data.Map.Strict
+import           Data.Semigroup (Last (..))
 import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Time.Clock (DiffTime)
@@ -20,7 +21,7 @@ testVertexSet
 --  = Set.fromList [OhioAWS, SydneyAWS, SaoPauloAWS]
 --  = Set.fromList [FrankfurtAWS, IrelandAWS, LondonAWS]
 
-testTopography :: AdjacencyMap (Edges BearerCharacteristics) NetNode
+testTopography :: AdjacencyMap (Last BearerCharacteristics) NetNode
 testTopography = fromAdjacencyMaps . toList $ restrictKeys g1 testVertexSet
   where
     g1 = (flip restrictKeys testVertexSet) <$> adjacencyMap aws'
@@ -39,34 +40,33 @@ singleHopTransferTime response_size i o
     initial_window = 4 -- initial segments 2, 4 or 10 depending on O/S version
 
 singleHopTimeToComplete :: Natural
-                        -> AdjacencyMap (Edges BearerCharacteristics) NetNode
-                        -> AdjacencyMap (Edges DiffTime) NetNode
+                        -> AdjacencyMap (Last BearerCharacteristics) NetNode
+                        -> AdjacencyMap (Last DiffTime) NetNode
 singleHopTimeToComplete responseSize topography
   = fromAdjacencyMaps . toList $ mapWithKey ttc g
   where
     g = adjacencyMap topography
     ttc v = mapWithKey  (between v)
     between v v' out
-      = Edges . (:[]) $
+      = Last $
         singleHopTransferTime
           responseSize
-          (fromEdge out)
-          (fromEdge $ edgeLabel v' v topography)
-    fromEdge :: Edges BearerCharacteristics -> BearerCharacteristics
-    fromEdge = head . getEdges
+          (getLast out)
+          -- We assume there is an edge in both directions.
+          (maybe (error "no edge label") getLast (edgeLabel v' v topography))
 
 
-simpleTest :: Natural -> AdjacencyMap (Edges DiffTime) NetNode
+simpleTest :: Natural -> AdjacencyMap (Last DiffTime) NetNode
 simpleTest n
   = singleHopTimeToComplete n testTopography
 
-renderTest :: Show a => AdjacencyMap (Edges a) NetNode -> IO ()
+renderTest :: Show a => AdjacencyMap (Last a) NetNode -> IO ()
 renderTest am
   = mapM_ r $ edgeList am
   where
     r (e,a,b)
       = putStrLn $ show a ++ " -> "
-          ++ show (head . getEdges $ e)
+          ++ show (getLast e)
           ++ " -> " ++ show b
 
 -- example usage:
