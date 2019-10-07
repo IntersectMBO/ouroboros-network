@@ -242,9 +242,9 @@ instance (ByronGiven, Typeable cfg, ConfigContainsGenesis cfg, NoUnexpectedThunk
   data LedgerState (ByronBlock cfg) = ByronLedgerState
       { blsCurrent :: !CC.Block.ChainValidationState
         -- | Slot-bounded snapshots of the chain state
-      , blsSnapshots :: !(Seq.StrictSeq (SlotBounded CC.Block.ChainValidationState))
+      , blsSnapshots :: !(Seq.StrictSeq (SlotBounded (PBftLedgerView PBftCardanoCrypto)))
       }
-    deriving (Eq, Show, Generic, NoUnexpectedThunks)
+    deriving (Eq, Show, Generic)
 
   type LedgerError (ByronBlock cfg) = CC.Block.ChainValidationError
 
@@ -300,6 +300,16 @@ instance (ByronGiven, Typeable cfg, ConfigContainsGenesis cfg, NoUnexpectedThunk
         where
           slot = convertSlot (CC.Block.cvsLastSlot state)
 
+instance ByronGiven => NoUnexpectedThunks (LedgerState (ByronBlock cfg))
+  -- use generic instance
+
+pbftLedgerView :: CC.Block.ChainValidationState
+               -> PBftLedgerView PBftCardanoCrypto
+pbftLedgerView = PBftLedgerView
+               . CC.Delegation.unMap
+               . V.Interface.delegationMap
+               . CC.Block.cvsDelegationState
+
 applyByronLedgerBlock :: ValidationMode
                       -> LedgerConfig (ByronBlock cfg)
                       -> ByronBlock cfg
@@ -333,7 +343,8 @@ applyByronLedgerBlock validationMode
                 CC.Block.cvsDelegationState state
             = snapshots
             | otherwise
-            = snapshots Seq.|> SB.bounded startOfSnapshot slot state'
+            = snapshots Seq.|>
+              SB.bounded startOfSnapshot slot (pbftLedgerView state')
           where
             startOfSnapshot = case snapshots of
               _ Seq.:|> a -> sbUpper a
@@ -994,12 +1005,8 @@ byronBlockOrEBBMatchesHeader blkOrEbbHdr (ByronBlockOrEBB blkOrEbb) =
 
 instance (ByronGiven, Typeable cfg, ConfigContainsGenesis cfg, NoUnexpectedThunks cfg)
       => ProtocolLedgerView (ByronBlockOrEBB cfg) where
-  protocolLedgerView _ns (ByronEBBLedgerState (ByronLedgerState ls _))
-    = PBftLedgerView
-    . CC.Delegation.unMap
-    . V.Interface.delegationMap
-    . CC.Block.cvsDelegationState
-    $ ls
+  protocolLedgerView _ns (ByronEBBLedgerState (ByronLedgerState ls _)) =
+    pbftLedgerView ls
 
   -- There are two cases here:
   --
@@ -1015,12 +1022,7 @@ instance (ByronGiven, Typeable cfg, ConfigContainsGenesis cfg, NoUnexpectedThunk
     (ByronEBBLedgerState (ByronLedgerState ls ss)) slot =
       case find (containsSlot slot) ss of
         -- We can find a snapshot which supports this slot
-        Just sb -> Right
-                 $  PBftLedgerView
-                 .  CC.Delegation.unMap
-                 .  V.Interface.delegationMap
-                 .  CC.Block.cvsDelegationState
-                <$> sb
+        Just sb -> Right sb
         -- No snapshot - we could be in the past or in the future
         Nothing
           | slot < At lvLB -> Left TooFarBehind
@@ -1063,10 +1065,7 @@ instance (ByronGiven, Typeable cfg, ConfigContainsGenesis cfg, NoUnexpectedThunk
         | otherwise
         = SlotNo $ unSlotNo currentSlot - (2 * paramK)
 
-      dsNow = CC.Delegation.unMap
-            . V.Interface.delegationMap
-            . CC.Block.cvsDelegationState
-            $ ls
+      dsNow = pbftDelegates $ pbftLedgerView ls
       dsScheduled = Seq.toStrict
                   . V.Scheduling.scheduledDelegations
                   . V.Interface.schedulingState

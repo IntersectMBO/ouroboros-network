@@ -31,6 +31,7 @@ module Ouroboros.Consensus.Protocol.PBFT (
   , NodeConfig(..)
   ) where
 
+import           Codec.Serialise (Serialise (..))
 import           Control.Monad.Except
 import           Crypto.Random (MonadRandom)
 import           Data.Bimap (Bimap)
@@ -105,14 +106,20 @@ forgePBftFields PBftIsLeader{..} toSign = do
 
 data PBftLedgerView c = PBftLedgerView {
     -- | ProtocolParameters: map from genesis to delegate keys.
-    pbftDelegates :: Bimap (PBftVerKeyHash c) (PBftVerKeyHash c)
+    pbftDelegates :: !(Bimap (PBftVerKeyHash c) (PBftVerKeyHash c))
   }
   deriving (Generic)
 
 deriving instance PBftCrypto c => NoUnexpectedThunks (PBftLedgerView c)
   -- use generic instance
 
+deriving instance Eq (PBftVerKeyHash c) => Eq (PBftLedgerView c)
 deriving instance Show (PBftVerKeyHash c) => Show (PBftLedgerView c)
+
+instance (Serialise (PBftVerKeyHash c), Ord (PBftVerKeyHash c))
+      => Serialise (PBftLedgerView c) where
+  encode (PBftLedgerView ds) = encode (Bimap.toList ds)
+  decode = PBftLedgerView . Bimap.fromList <$> decode
 
 {-------------------------------------------------------------------------------
   Protocol proper
