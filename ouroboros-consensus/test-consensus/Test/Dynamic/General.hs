@@ -1,6 +1,7 @@
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE PatternSynonyms     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Test.Dynamic.General (
@@ -19,13 +20,13 @@ import qualified Data.Map as Map
 import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Word (Word64)
+import           GHC.Stack (HasCallStack)
 import           Test.QuickCheck
 
 import           Control.Monad.IOSim (runSimOrThrow)
 
-import           Ouroboros.Network.Block (BlockNo (..), HasHeader, Point,
-                     blockPoint, pointSlot)
-import           Ouroboros.Network.Point (WithOrigin (..))
+import           Ouroboros.Network.Block (BlockNo (..), pattern BlockPoint,
+                     pattern GenesisPoint, HasHeader, Point, blockPoint)
 
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Node.ProtocolInfo
@@ -243,15 +244,14 @@ prop_general k TestConfig{numSlots, nodeJoinPlan, nodeTopology} mbSchedule
           -> Maybe [CoreNodeId]
         actuallyLead nid invalids s b = do
             cid <- case nid of
-              CoreId i  -> Just (CoreNodeId i)
-              RelayId _ -> Nothing
+                CoreId i  -> Just (CoreNodeId i)
+                RelayId _ -> Nothing
 
             let j = nodeIdJoinSlot nodeJoinPlan nid
             guard $ j < s || (j == s && isFirstJoinSlot s)
 
             guard $ not $
-              (||) (nodeIsEBB b) $
-              Set.member (blockPoint b) invalids
+                nodeIsEBB b || Set.member (blockPoint b) invalids
 
             pure [cid]
 
@@ -389,30 +389,40 @@ prop_general k TestConfig{numSlots, nodeJoinPlan, nodeTopology} mbSchedule
     -- then each message must have either arrived or ultimately been
     -- irrelevant.
     --
-    prop_no_unexpected_message_delays :: Property
+    prop_no_unexpected_message_delays :: HasCallStack => Property
     prop_no_unexpected_message_delays =
         conjoin $
-        [ prop1 nid s p bno
-        | (nid, m)   <- Map.toList adds
-        , (s, pbnos) <- Map.toList m
-        , (p, bno)   <- Set.toList pbnos
+        [ case p of
+              GenesisPoint            -> error "impossible"
+              BlockPoint sendSlot hsh ->
+                  prop1 nid recvSlot sendSlot hsh bno
+        | (nid, m)          <- Map.toList adds
+        , (recvSlot, pbnos) <- Map.toList m
+        , (p, bno)          <- Set.toList pbnos
         ]
       where
         -- INVARIANT: these AddBlock events are *not* for EBBs
         adds = nodeOutputAdds <$> testOutputNodes
 
-        prop1 nid s p bno =
+        prop1 nid recvSlot sendSlot hsh bno =
             counterexample msg $
             delayOK || noDelay
           where
             msg =
-                "non-zero message delay: " <> show (nid, s, bno, p)
+                "Unexpected message delay " <>
+                "(" <> "recipient: " <> condense nid <>
+                "," <> "expected receive slot: "
+                    <> condense firstPossibleReception <>
+                "," <> "actual receive slot: " <> condense recvSlot <>
+                "," <> "blockHash: " <> show hsh <>
+                "," <> "blockNo: " <> condense (unBlockNo bno) <>
+                ")"
 
             -- a node cannot receive a block until both exist
-            firstPossibleReception = max (pointSlot p) (At joinSlot)
-            joinSlot               = nodeIdJoinSlot nodeJoinPlan nid
+            firstPossibleReception =
+                nodeIdJoinSlot nodeJoinPlan nid `max` sendSlot
 
-            noDelay = At s == firstPossibleReception
+            noDelay = recvSlot == firstPossibleReception
 
             delayOK = delayOK1 || delayOK2
 
@@ -433,10 +443,8 @@ prop_general k TestConfig{numSlots, nodeJoinPlan, nodeTopology} mbSchedule
             -- TODO This predicate is more general than that specific scenario,
             -- and should be tightened accordingly. We currently anticipate
             -- that Issues #229 and #230 will handle that.
-            delayOK2 = case pointSlot p of
-                Origin           -> False
-                At s' -> case Map.lookup s' sched of
-                    Just (_:_:_) -> True
-                    _            -> False
+            delayOK2 = case Map.lookup sendSlot sched of
+                Just (_:_:_) -> True
+                _            -> False
               where
                 LeaderSchedule sched = growthSchedule
