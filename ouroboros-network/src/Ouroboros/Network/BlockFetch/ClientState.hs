@@ -223,17 +223,13 @@ addHeadersInFlight :: HasHeader header
                    -> FetchRequest header         -- ^ The merged request.
                    -> PeerFetchInFlight header
                    -> PeerFetchInFlight header
-addHeadersInFlight blockFetchSize
-                   oldReq
-                   addedReq@(FetchRequest fragments)
-                   mergedReq
-                   inflight =
+addHeadersInFlight blockFetchSize oldReq addedReq mergedReq inflight =
 
     -- This assertion checks the pre-condition 'addNewFetchRequest' that all
     -- requested blocks are new. This is true irrespective of fetch-request
     -- command merging.
     assert (and [ blockPoint header `Set.notMember` peerFetchBlocksInFlight inflight
-                | fragment <- fragments
+                | fragment <- fetchRequestFragments addedReq
                 , header   <- CF.toOldestFirst fragment ]) $
 
     PeerFetchInFlight {
@@ -251,13 +247,13 @@ addHeadersInFlight blockFetchSize
       -- pre-condition that is asserted above.
       peerFetchBytesInFlight  = peerFetchBytesInFlight inflight
                               + sum [ blockFetchSize header
-                                    | fragment <- fragments
+                                    | fragment <- fetchRequestFragments addedReq
                                     , header   <- CF.toOldestFirst fragment ],
 
       peerFetchBlocksInFlight = peerFetchBlocksInFlight inflight
                     `Set.union` Set.fromList
                                   [ blockPoint header
-                                  | fragment <- fragments
+                                  | fragment <- fetchRequestFragments addedReq
                                   , header   <- CF.toOldestFirst fragment ],
 
       peerFetchMaxSlotNo      = peerFetchMaxSlotNo inflight
