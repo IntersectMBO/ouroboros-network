@@ -210,17 +210,23 @@ initialPeerFetchInFlight =
       peerFetchMaxSlotNo      = NoMaxSlotNo
     }
 
+-- | Update the 'PeerFetchInFlight' in-flight tracking numbers.
+--
+-- Note that it takes both the existing \"old\" request, the \"added\" request
+-- and resulting \"merged\" request. The relationship between the three is
+-- @old <> added = merged@.
+--
 addHeadersInFlight :: HasHeader header
                    => (header -> SizeInBytes)
-                   -> Maybe (FetchRequest header) -- ^ Any existing request.
-                   -> FetchRequest header         -- ^ The new (merged) request.
-                   -> FetchRequest header         -- ^ The extra request.
+                   -> Maybe (FetchRequest header) -- ^ The old request (if any).
+                   -> FetchRequest header         -- ^ The added request.
+                   -> FetchRequest header         -- ^ The merged request.
                    -> PeerFetchInFlight header
                    -> PeerFetchInFlight header
 addHeadersInFlight blockFetchSize
-                   existingReq
+                   oldReq
+                   addedReq@(FetchRequest fragments)
                    mergedReq
-                   extraReq@(FetchRequest fragments)
                    inflight =
 
     -- This assertion checks the pre-condition 'addNewFetchRequest' that all
@@ -235,11 +241,11 @@ addHeadersInFlight blockFetchSize
       -- Fetch request merging makes the update of the number of in-flight
       -- requests rather subtle. See the 'FetchRequest' semigroup instance
       -- documentation for details. The upshot is that we have to look at the
-      -- /difference/ in the number of fragments for the existing request
-      -- (if any) and new request.
+      -- /difference/ in the number of fragments for the old request
+      -- (if any) and merged request.
       peerFetchReqsInFlight   = peerFetchReqsInFlight inflight
                               +         numFetchReqs mergedReq
-                              - maybe 0 numFetchReqs existingReq,
+                              - maybe 0 numFetchReqs oldReq,
 
       -- For the bytes and blocks in flight however we can rely on the
       -- pre-condition that is asserted above.
@@ -255,7 +261,7 @@ addHeadersInFlight blockFetchSize
                                   , header   <- CF.toOldestFirst fragment ],
 
       peerFetchMaxSlotNo      = peerFetchMaxSlotNo inflight
-                          `max` fetchRequestMaxSlotNo extraReq
+                          `max` fetchRequestMaxSlotNo addedReq
     }
   where
     numFetchReqs :: FetchRequest header -> Word
@@ -363,7 +369,7 @@ addNewFetchRequest :: (MonadSTM m, HasHeader header)
                    -> PeerGSV
                    -> m (PeerFetchStatus header)
 addNewFetchRequest tracer blockFetchSize
-                   FetchClientStateVars{..} request gsvs = do
+                   FetchClientStateVars{..} addedReq gsvs = do
     (inflight', currentStatus') <- atomically $ do
 
       -- Add a new fetch request, or extend or merge with the existing
@@ -372,16 +378,17 @@ addNewFetchRequest tracer blockFetchSize
       -- Fetch request merging makes the update of the in-flight stats subtle.
       -- See the 'FetchRequest' semigroup instance documentation for details.
       -- The upshot is that our in-flight stats update is based on the existing
-      -- request (if any), the new (merged) one and the extra one.
+      -- \"old\" request (if any), the \"added\" one and the resulting
+      -- \"merged\" one.
       --
-      request0 <- peekTFetchRequestVar fetchClientRequestVar
-      request' <- writeTFetchRequestVar fetchClientRequestVar
-                                        request gsvs inflightlimits
+      oldReq    <- peekTFetchRequestVar fetchClientRequestVar
+      mergedReq <- writeTFetchRequestVar fetchClientRequestVar
+                                           addedReq gsvs inflightlimits
 
       -- Update our in-flight stats
       inflight <- readTVar fetchClientInFlightVar
       let !inflight' = addHeadersInFlight blockFetchSize
-                                          request0 request' request
+                                          oldReq addedReq mergedReq
                                           inflight
       writeTVar fetchClientInFlightVar inflight'
 
@@ -403,7 +410,7 @@ addNewFetchRequest tracer blockFetchSize
 
     traceWith tracer $
       AddedFetchRequest
-        request
+        addedReq
         inflight' inflightlimits
         currentStatus'
     return currentStatus'
