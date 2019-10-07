@@ -50,7 +50,7 @@ These tests use unrealistic but illustrative values for the protocol
 parameters. For example, the security parameter `k` is only several blocks so
 that motivating examples and counterexamples are legible, while the Praos
 active slots coefficient `f` is set to 0.5, which is aggressively high compared
-to such a small `k`and so explores interesting leader schedules.
+to such a small `k` and so explores interesting leader schedules.
 
 The tests defined by each of these modules execute a network of several nodes
 for a duration of tens of slots and then inspect the final chains and logged
@@ -61,11 +61,14 @@ An adaptively-secure, semi-synchronous proof-of-stake
 protocol](https://eprint.iacr.org/2017/573/20171115:001835)", such as Common
 Prefix and Chain Growth (§2.1). The generators for these QuickCheck tests
 explore various combinations of number of nodes, number of slots, delays before
-each node joins the network, network topologies, PRNG seeds, etc. TODO How to
-characterize the synthetic transactions?
+each node joins the network, network topologies, PRNG seeds, etc.
 
-The development team is working through several important Issues on the GitHub
-repository's backlog.
+The development team is working to extend our tests to cover more real-world
+cases and edge cases. These tests will check that a node network reaches
+consensus when it should and otherwise handles the edge cases as expected.
+These edge cases will only rarely occur in practice and will be extremely
+difficult to trigger by QA or using a testnet, so property testing is an
+efficient alternative approach.
 
   * The current tests do not involve significant network latency or network
     partitions. See Issues #229 and #230.
@@ -77,5 +80,9 @@ repository's backlog.
 
   * The current tests do not involve disk corruptions/failures. See Issue #269.
 
-  * Other more-specific Issues: those with "Protocol testing" in the Issue name
-    and/or the `consensus` and `testing` labels.
+  * The current tests generate mock transactions. See Issue #888.
+
+  * Other more-specific Issues: [those with "Protocol testing" in the Issue
+    name](https://github.com/input-output-hk/ouroboros-network/issues?utf8=✓&q=is%3Aissue+is%3Aopen+protocol+testing)
+    and/or [the `consensus` and `testing`
+    labels](https://github.com/input-output-hk/ouroboros-network/issues?utf8=✓&q=is%3Aissue+is%3Aopen+label%3Atesting+label%3Aconsensus).
