@@ -42,8 +42,10 @@ import           Ouroboros.Network.BlockFetch.ClientState
                    , TraceFetchClientState
                    , fetchClientCtxStateVars
                    , acknowledgeFetchRequest
+                   , startedFetchBatch
                    , completeBlockDownload
-                   , completeFetchBatch )
+                   , completeFetchBatch
+                   , rejectedFetchBatch )
 import           Ouroboros.Network.BlockFetch.DeltaQ
                    ( PeerGSV(..), PeerFetchInFlightLimits(..) )
 
@@ -163,10 +165,10 @@ blockFetchClient FetchClientContext {
           when fired $
             atomically (writeTVar _ PeerFetchStatusAberrant)
 -}
-        let range :: ChainRange block
-            range = assert (not (ChainFragment.null fragment)) $
-                    ChainRange (castPoint (blockPoint lower))
-                               (castPoint (blockPoint upper))
+        let range :: ChainRange header
+            !range = assert (not (ChainFragment.null fragment)) $
+                     ChainRange (blockPoint lower)
+                                (blockPoint upper)
               where
                 Just lower = ChainFragment.last fragment
                 Just upper = ChainFragment.head fragment
@@ -174,19 +176,20 @@ blockFetchClient FetchClientContext {
         return $
           SenderPipeline
             (ClientAgency TokIdle)
-            (MsgRequestRange range)
-            (receiverBusy (ChainFragment.toOldestFirst fragment) inflightlimits)
+            (MsgRequestRange (castRange range))
+            (receiverBusy range fragment inflightlimits)
             (senderActive (Succ outstanding) gsvs inflightlimits fragments)
 
     -- And when we run out, go back to idle.
     senderActive outstanding _ _ [] = senderIdle outstanding
 
 
-    receiverBusy :: [header]
+    receiverBusy :: ChainRange header
+                 -> ChainFragment header
                  -> PeerFetchInFlightLimits
                  -> PeerReceiver (BlockFetch block) AsClient
                                  BFBusy BFIdle m ()
-    receiverBusy headers inflightlimits =
+    receiverBusy range fragment inflightlimits =
       ReceiverAwait
         (ServerAgency TokBusy) $ \msg ->
         case msg of
@@ -200,21 +203,33 @@ blockFetchClient FetchClientContext {
           -- FIXME: For now we will not do the detailed error checking to check
           -- that the peer is not cheating us. Nor will we track these failure
           -- points to make sure we do not ask for extensions of this again.
-          MsgNoBlocks   -> ReceiverDone ()
-          --TODO: also adjust the in-flight stats
+          MsgNoBlocks   ->
+            ReceiverEffect $ do
+              -- Update our in-flight stats and our current status
+              rejectedFetchBatch tracer blockFetchSize inflightlimits
+                                 range headers stateVars
+              return (ReceiverDone ())
+            where
+              headers = ChainFragment.toOldestFirst fragment
 
-          MsgStartBatch -> receiverStreaming inflightlimits headers
+          MsgStartBatch ->
+            ReceiverEffect $ do
+              startedFetchBatch tracer inflightlimits range stateVars
+              return (receiverStreaming inflightlimits range headers)
+            where
+              headers = ChainFragment.toOldestFirst fragment
 
     receiverStreaming :: PeerFetchInFlightLimits
+                      -> ChainRange header
                       -> [header]
                       -> PeerReceiver (BlockFetch block) AsClient
                                       BFStreaming BFIdle m ()
-    receiverStreaming inflightlimits headers =
+    receiverStreaming inflightlimits range headers =
       ReceiverAwait
         (ServerAgency TokStreaming) $ \msg ->
         case (msg, headers) of
           (MsgBatchDone, []) -> ReceiverEffect $ do
-            completeFetchBatch tracer stateVars
+            completeFetchBatch tracer inflightlimits range stateVars
             return (ReceiverDone ())
 
 
@@ -257,11 +272,14 @@ blockFetchClient FetchClientContext {
             completeBlockDownload tracer blockFetchSize inflightlimits
                                   header stateVars
 
-            return (receiverStreaming inflightlimits headers')
+            return (receiverStreaming inflightlimits range headers')
 
           (MsgBatchDone, (_:_)) -> ReceiverEffect $
             throwM BlockFetchProtocolFailureTooFewBlocks
 
           (MsgBlock _, []) -> ReceiverEffect $
             throwM BlockFetchProtocolFailureTooManyBlocks
+
+castRange :: (HeaderHash a ~ HeaderHash b) => ChainRange a -> ChainRange b
+castRange (ChainRange l u) = ChainRange (castPoint l) (castPoint u)
 
