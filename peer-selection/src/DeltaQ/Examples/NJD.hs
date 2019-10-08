@@ -75,3 +75,15 @@ renderTest am
 -- look at the single hop time to ship distances
 --    renderTest $ simpleTest $ 2 ^ 21
 
+-- the question of how well TCP would work to the moon was
+-- raised. 1.3s seems a reasonable "average" time for the transit from
+-- closest point on surface to moon) (though it would obvious vary by
+-- a given terresital location) so and additional 300ms to 400ms would
+-- be more "practically" realistic
+
+interLunaBearer :: BearerCharacteristics
+interLunaBearer = mkBearer gs lr
+  where
+    gs = mkGS' 1.3 100e6 -- assume 100mbps
+    lr = mkRestriction 100e6 1500
+  
