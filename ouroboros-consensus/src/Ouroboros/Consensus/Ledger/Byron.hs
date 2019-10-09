@@ -1158,13 +1158,13 @@ mkByronGenTx mp = case mp of
               tx
 
     CC.Mempool.MempoolDlg cert ->
-      ByronDlg (Crypto.hash $ void cert) cert
+      ByronDlg (CC.Delegation.recoverCertificateId cert) cert
 
     CC.Mempool.MempoolUpdateProposal proposal ->
       ByronUpdateProposal (CC.Update.Proposal.recoverUpId proposal) proposal
 
     CC.Mempool.MempoolUpdateVote vote ->
-      ByronUpdateVote (Crypto.hash $ void vote) vote
+      ByronUpdateVote (CC.Update.Vote.recoverVoteId vote) vote
 
 mkMempoolPayload :: GenTx (ByronBlockOrEBB cfg)
                  -> CC.Mempool.AMempoolPayload ByteString
