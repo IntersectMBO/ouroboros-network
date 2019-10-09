@@ -10,6 +10,8 @@ import           Data.Time.Calendar (fromGregorian)
 import           Data.Time.Clock (UTCTime (..))
 import           Data.Typeable (Typeable)
 
+import           Cardano.Crypto (ProtocolMagicId (..))
+
 import           Ouroboros.Network.Magic (NetworkMagic (..))
 
 import           Ouroboros.Consensus.Block
@@ -18,7 +20,6 @@ import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Mock
 import           Ouroboros.Consensus.Node.Run.Abstract
 import           Ouroboros.Consensus.Protocol.Abstract (ChainState)
-
 
 {-------------------------------------------------------------------------------
   RunNode instance for the mock ledger
@@ -46,6 +47,8 @@ instance ( ProtocolLedgerView (SimpleBlock SimpleMockCrypto ext)
       --  This doesn't matter much
       dummyDate = UTCTime (fromGregorian 2019 8 13) 0
   nodeNetworkMagic       = \_ _ -> NetworkMagic 0x0000ffff
+
+  nodeProtocolMagicId    = \_ _ -> ProtocolMagicId 0
 
   nodeEncodeBlock        = const encode
   nodeEncodeHeader       = const encode

@@ -47,11 +47,13 @@ instance RunNode ByronBlock where
                          $ SystemStart
                          . Genesis.gdStartTime
                          . extractGenesisData
-
   nodeNetworkMagic       = const
                          $ NetworkMagic
                          . Crypto.unProtocolMagicId
                          . Genesis.gdProtocolMagicId
+                         . extractGenesisData
+  nodeProtocolMagicId    = const
+                         $ Genesis.gdProtocolMagicId
                          . extractGenesisData
 
   nodeEncodeBlock        = const encodeByronBlock

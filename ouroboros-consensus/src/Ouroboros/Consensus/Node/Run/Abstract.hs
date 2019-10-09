@@ -15,6 +15,8 @@ import           Crypto.Random (MonadRandom)
 import qualified Data.ByteString.Lazy as Lazy
 import           Data.Proxy (Proxy)
 
+import           Cardano.Crypto (ProtocolMagicId)
+
 import           Ouroboros.Network.Block (BlockNo, ChainHash (..), HeaderHash,
                      SlotNo)
 import           Ouroboros.Network.BlockFetch (SizeInBytes)
@@ -53,6 +55,9 @@ class (ProtocolLedgerView blk, ApplyTx blk) => RunNode blk where
   nodeNetworkMagic       :: Proxy blk
                          -> NodeConfig (BlockProtocol blk)
                          -> NetworkMagic
+  nodeProtocolMagicId    :: Proxy blk
+                         -> NodeConfig (BlockProtocol blk)
+                         -> ProtocolMagicId
 
   -- Encoders
   nodeEncodeBlock        :: NodeConfig (BlockProtocol blk) -> blk -> Encoding

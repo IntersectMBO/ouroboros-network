@@ -1,4 +1,5 @@
 {-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications    #-}
@@ -23,6 +24,9 @@ module Ouroboros.Consensus.Node
   , NodeArgs (..)
   , NodeKernel (..)
     -- * Internal helpers
+  , checkProtocolMagicId
+  , protocolMagicIdFile
+  , ChainDbCheckError (..)
   , initChainDB
   , mkNodeArgs
   , initNetwork
@@ -30,23 +34,32 @@ module Ouroboros.Consensus.Node
 
 import qualified Codec.CBOR.Read as CBOR
 import qualified Codec.CBOR.Term as CBOR
+import qualified Codec.CBOR.Write as CBOR
 import           Control.Monad (forM, void)
+import           Control.Monad.Except
 import           Control.Tracer
 import           Crypto.Random
 import           Data.ByteString.Lazy (ByteString)
+import qualified Data.ByteString.Lazy as Lazy
 import           Data.List (any)
 import           Data.Proxy (Proxy (..))
+import qualified Data.Set as Set
+import           Data.Text (Text)
 import           Data.Time.Clock (secondsToDiffTime)
 import           Network.Mux.Types (MuxTrace, WithMuxBearer)
 import           Network.Socket as Socket
 
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadSTM.Strict
+import           Control.Monad.Class.MonadThrow
+
+import           Cardano.Binary (fromCBOR, toCBOR)
+import           Cardano.Crypto (ProtocolMagicId)
 
 import           Ouroboros.Network.Block
 import qualified Ouroboros.Network.Block as Block
-import           Ouroboros.Network.Magic
 import           Ouroboros.Network.ErrorPolicy
+import           Ouroboros.Network.Magic
 import           Ouroboros.Network.NodeToClient as NodeToClient
 import           Ouroboros.Network.NodeToNode as NodeToNode
 import           Ouroboros.Network.Protocol.ChainSync.PipelineDecision
@@ -70,6 +83,9 @@ import           Ouroboros.Consensus.Util.ResourceRegistry
 import           Ouroboros.Storage.ChainDB (ChainDB, ChainDbArgs)
 import qualified Ouroboros.Storage.ChainDB as ChainDB
 import           Ouroboros.Storage.EpochInfo (newEpochInfo)
+import           Ouroboros.Storage.FS.API
+import           Ouroboros.Storage.FS.API.Types
+import           Ouroboros.Storage.FS.IO (ioHasFS)
 import           Ouroboros.Storage.ImmutableDB (ValidationPolicy (..))
 import           Ouroboros.Storage.LedgerDB.DiskPolicy (defaultDiskPolicy)
 import           Ouroboros.Storage.LedgerDB.InMemory (ledgerDbDefaultParams)
@@ -100,7 +116,12 @@ run
      -- layer is initialised.
   -> IO ()
 run tracers chainDbTracer rna dbPath pInfo
-    customiseChainDbArgs customiseNodeArgs onNodeKernel =
+    customiseChainDbArgs customiseNodeArgs onNodeKernel = do
+    let mountPoint = MountPoint dbPath
+    either throwM return =<< checkProtocolMagicId
+      (ioHasFS mountPoint)
+      mountPoint
+      (nodeProtocolMagicId (Proxy @blk) cfg)
     withRegistry $ \registry -> do
 
       chainDB <- initChainDB
@@ -146,6 +167,115 @@ run tracers chainDbTracer rna dbPath pInfo
     --
     -- For now, we hard-code it to Byron's 20 seconds.
     slotLength = slotLengthFromMillisec (20 * 1000)
+
+
+-- | The database folder will contain folders for the ImmutableDB
+-- (@immutable@), the VolatileDB (@volatile@), and the LedgerDB (@ledger@).
+-- All three subdatabases can delete files from these folders, e.g., outdated
+-- files or files that are deemed invalid.
+--
+-- For example, when starting a node that will connect to a testnet with a
+-- database folder containing mainnet blocks, these blocks will be deemed
+-- invalid and will be deleted. This would throw away a perfectly good chain,
+-- possibly consisting of gigabytes of data that will have to be synched
+-- again.
+--
+-- To protect us from unwanted deletion of valid files, we first check whether
+-- we have been given the path to the right database folder. We do this by
+-- reading the 'ProtocolMagicId' of the net from a file stored in the root of
+-- the database folder. This file's name is defined in 'protocolMagicIdFile'.
+--
+-- * If the 'ProtocolMagicId' from the file matches that of the net, we have
+--   the right database folder.
+-- * If not, we are opening the wrong database folder and abort by throwing a
+--   'ChainDbCheckError'.
+-- * If there is no such file and the folder is empty, we create it and store
+--   the net's 'ProtocolMagicId' in it.
+-- * If there is no such file, but the folder is not empty, we throw a
+--   'ChainDbCheckError', because we have likely been given the wrong path,
+--   maybe to a folder containing user or system files. This includes the case
+--   that the 'protocolMagicIdFile' has been deleted.
+-- * If there is such a 'protocolMagicIdFile', but it could not be read or its
+--   contents could not be parsed, we also throw a 'ChainDbCheckError'.
+--
+-- Note that an 'FsError' can also be thrown.
+checkProtocolMagicId
+  :: forall m h. MonadThrow m
+  => HasFS m h
+  -> MountPoint
+     -- ^ Database directory. Should be the mount point of the @HasFS@. Used
+     -- in error messages.
+  -> ProtocolMagicId
+  -> m (Either ChainDbCheckError ())
+checkProtocolMagicId hasFS mountPoint protocolMagicId = runExceptT $ do
+    lift $ createDirectoryIfMissing hasFS True root
+    fileExists <- lift $ doesFileExist hasFS pFile
+    if fileExists then do
+      actualProtocolMagicId <- readProtocolMagicIdFile
+      when (actualProtocolMagicId /= protocolMagicId) $
+        throwError $ ProtocolMagicIdMismatch
+          fullPath
+          actualProtocolMagicId
+          protocolMagicId
+    else do
+      isEmpty <- lift $ Set.null <$> listDirectory hasFS root
+      if isEmpty then
+        createProtocolMagicIdFile
+      else
+        throwError $ NoProtocolMagicIdAndNotEmpty fullPath
+  where
+    root     = mkFsPath []
+    pFile    = fsPathFromList [protocolMagicIdFile]
+    fullPath = fsToFilePath mountPoint pFile
+
+    readProtocolMagicIdFile :: ExceptT ChainDbCheckError m ProtocolMagicId
+    readProtocolMagicIdFile = ExceptT $
+      withFile hasFS pFile ReadMode $ \h -> do
+        res <- CBOR.deserialiseFromBytes fromCBOR <$> hGetAll hasFS h
+        case res of
+          Right (bl, a) | Lazy.null bl -> return $ Right a
+          _ -> return $ Left $ CorruptProtocolMagicId fullPath
+
+    createProtocolMagicIdFile :: ExceptT ChainDbCheckError m ()
+    createProtocolMagicIdFile = lift $
+      withFile hasFS pFile (AppendMode MustBeNew) $ \h ->
+        void $ hPutAll hasFS h $
+          CBOR.toLazyByteString (toCBOR protocolMagicId)
+
+protocolMagicIdFile :: Text
+protocolMagicIdFile = "protocolMagicId"
+
+data ChainDbCheckError =
+    -- | There was a 'protocolMagicIdFile' in the database folder, but it
+    -- contained a different 'ProtocolMagicId' than the expected one. This
+    -- indicates that this database folder corresponds to another net.
+    ProtocolMagicIdMismatch
+      FilePath         -- ^ The full path to the 'protocolMagicIdFile'
+      ProtocolMagicId  -- ^ Actual
+      ProtocolMagicId  -- ^ Expected
+
+    -- | The database folder contained no 'protocolMagicIdFile', but also
+    -- contained some files. Either the given folder is a non-database folder
+    -- or it is a database folder, but its 'protocolMagicIdFile' has been
+    -- deleted.
+  | NoProtocolMagicIdAndNotEmpty
+      FilePath         -- ^ The full path to the 'protocolMagicIdFile'
+
+    -- | The database folder contained a 'protocolMagicIdFile' that could not
+    -- be read. The file has been tampered with or it was corrupted somehow.
+  | CorruptProtocolMagicId
+      FilePath         -- ^ The full path to the 'protocolMagicIdFile'
+  deriving (Eq, Show)
+
+instance Exception ChainDbCheckError where
+  displayException e = case e of
+    ProtocolMagicIdMismatch f actual expected ->
+      "Wrong protocolMagicId in \"" <> f <> "\": " <> show actual <>
+      ", but expected: " <> show expected
+    NoProtocolMagicIdAndNotEmpty f ->
+      "Missing \"" <> f <> "\" but the folder was not empty"
+    CorruptProtocolMagicId f ->
+      "Corrupt or unreadable \"" <> f <> "\""
 
 initChainDB
   :: forall blk. RunNode blk
