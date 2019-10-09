@@ -819,32 +819,30 @@ decodeByronGenTx :: Decoder s (GenTx (ByronBlockOrEBB cfg))
 decodeByronGenTx =
     mkByronGenTx . annotate <$> fromCBOR
   where
-    -- TODO #560: Re-annotation can be done but requires some rearranging in
-    -- the codecs Original ByteSpan's refer to bytestring we don't have, so
-    -- we'll ignore them
+    -- | 'slice' a strict 'ByteString'.
+    slice' :: ByteString -> ByteSpan -> ByteString
+    slice' bs = Lazy.toStrict . slice (Lazy.fromStrict bs)
+
     annotate :: CC.Mempool.AMempoolPayload ByteSpan
              -> CC.Mempool.AMempoolPayload ByteString
-    annotate mp = case mp of
-      CC.Mempool.MempoolTx tx ->
-        CC.Mempool.MempoolTx $ CC.UTxO.annotateTxAux (void tx)
+    annotate mp =
+      -- TODO: After input-output-hk/cardano-base#41 is complete, we should be
+      -- able to get rid of this 'serialize'' call as the new
+      -- @AnnotatedDecoder@ will allow us to reference the original
+      -- 'ByteString' from which the 'AMempoolPayload' was deserialized.
+      let bs = serialize' (void mp)
+      in case mp of
+        CC.Mempool.MempoolTx tx ->
+          CC.Mempool.MempoolTx (slice' bs <$> tx)
 
-      CC.Mempool.MempoolDlg cert@CC.Delegation.UnsafeACertificate{aEpoch} ->
-        CC.Mempool.MempoolDlg $
-          cert { CC.Delegation.aEpoch     = reAnnotate aEpoch
-               , CC.Delegation.annotation = serialize' (void cert)
-               }
+        CC.Mempool.MempoolDlg cert ->
+          CC.Mempool.MempoolDlg (slice' bs <$> cert)
 
-      CC.Mempool.MempoolUpdateProposal proposal@CC.Update.Proposal.AProposal{aBody} ->
-        CC.Mempool.MempoolUpdateProposal $
-          proposal { CC.Update.Proposal.aBody      = reAnnotate aBody
-                   , CC.Update.Proposal.annotation = serialize' (void proposal)
-                   }
+        CC.Mempool.MempoolUpdateProposal proposal ->
+          CC.Mempool.MempoolUpdateProposal (slice' bs <$> proposal)
 
-      CC.Mempool.MempoolUpdateVote vote@CC.Update.Vote.UnsafeVote{aProposalId} ->
-        CC.Mempool.MempoolUpdateVote $
-          vote { CC.Update.Vote.aProposalId     = reAnnotate aProposalId
-               , CC.Update.Vote.annotation  = serialize' (void vote)
-               }
+        CC.Mempool.MempoolUpdateVote vote ->
+          CC.Mempool.MempoolUpdateVote (slice' bs <$> vote)
 
 decodeByronGenTxId :: Decoder s (GenTxId (ByronBlockOrEBB cfg))
 decodeByronGenTxId = do
