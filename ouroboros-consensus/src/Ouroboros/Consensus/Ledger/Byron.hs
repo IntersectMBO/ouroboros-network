@@ -798,7 +798,7 @@ decodeByronHeaderHash :: Decoder s (HeaderHash (ByronBlockOrEBB cfg))
 decodeByronHeaderHash = fromCBOR
 
 encodeByronGenTx :: GenTx (ByronBlockOrEBB cfg) -> Encoding
-encodeByronGenTx genTx = toCBOR $ void (mkMempoolPayload genTx)
+encodeByronGenTx genTx = toCBOR (mkMempoolPayload genTx)
 
 encodeByronGenTxId :: GenTxId (ByronBlockOrEBB cfg) -> Encoding
 encodeByronGenTxId genTxId = case genTxId of
