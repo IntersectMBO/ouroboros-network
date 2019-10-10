@@ -18,6 +18,7 @@ library
                        Algebra.Graph.Labelled.AdjacencyMap.ShortestPath,
                        DeltaQ.SimpleGS,
                        DeltaQ.LinkRestriction,
+                       DeltaQ.Statistics,
                        DeltaQ.Topography,
                        DeltaQ.TCP,
                        DeltaQ.Examples.AWS,
