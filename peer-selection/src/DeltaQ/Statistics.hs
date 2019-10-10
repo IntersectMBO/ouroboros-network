@@ -16,7 +16,7 @@ import qualified Algebra.Graph.Labelled.AdjacencyMap as Graph
 import Algebra.Graph.Labelled.AdjacencyMap.ShortestPath
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
-import Data.Maybe (fromMaybe)
+import Data.Maybe (fromMaybe, mapMaybe)
 import Data.Semigroup (Last (..))
 import Data.Vector.Unboxed (Vector)
 import qualified Data.Vector.Unboxed as Vector
@@ -107,6 +107,18 @@ characteristic_path_length = Observations
   , global_observation = median
   }
 
+max_path_length :: Observations
+max_path_length = Observations
+  { local_observation  = percentile 100
+  , global_observation = percentile 100
+  }
+
+average_percentile :: Natural -> Observations
+average_percentile p = Observations
+  { local_observation  = percentile p
+  , global_observation = mean
+  }
+
 -- | Will be used as an edge weight in shortest-path computation. As such, its
 -- Ord instance is key: @Lost@ is greater than everything. Its Semigroup
 -- instance is also essential for it gives the length of multi-edge paths.
@@ -139,9 +151,9 @@ instance Monoid Latency where
   mempty  = Transmitted 0
 
 -- | Uses @Infinity :: Double@ for 'Lost'
-to_seconds_double :: Latency -> Double
-to_seconds_double Lost            = 1.0 / 0.0 -- Gives Infinity
-to_seconds_double (Transmitted a) = fromRational a
+to_seconds_double :: Latency -> Maybe Double
+to_seconds_double Lost            = Nothing
+to_seconds_double (Transmitted a) = Just $ fromRational a
 
 data Edge e where
   Out  :: !e -> Edge e
@@ -181,6 +193,9 @@ data Experiment peer param = Experiment
 --
 -- FIXME we may want to treat the response size (size of block) as a parameter
 -- for statistical analysis.
+--
+-- FIXME infinite distances are removed from the results, because statistics
+-- functions will error on NaNs. How best to deal with this?
 runExperiment
   :: forall peer param .
      (Ord peer)
@@ -196,15 +211,15 @@ runExperiment bytes experiment param = globals
   globals = global_observation (observations experiment) (Map.elems locals)
 
   locals :: Map peer Double
-  locals = fmap (local_observation (observations experiment)) all_local_lengths
+  locals = fmap (local_observation (observations experiment)) all_finite_local_lengths
 
-  all_local_lengths :: Map peer [Double]
-  all_local_lengths = fmap local_lengths all_sps
+  all_finite_local_lengths :: Map peer [Double]
+  all_finite_local_lengths = fmap finite_local_lengths all_sps
 
-  local_lengths :: forall edge . Map peer (WeightedPath peer edge Latency) -> [Double]
-  local_lengths = Map.elems . fmap local_length
+  finite_local_lengths :: forall edge . Map peer (WeightedPath peer edge Latency) -> [Double]
+  finite_local_lengths = mapMaybe local_length . Map.elems
 
-  local_length :: forall edge . WeightedPath peer edge Latency -> Double
+  local_length :: forall edge . WeightedPath peer edge Latency -> Maybe Double
   local_length = to_seconds_double . fromMaybe Lost . total_weight
 
   all_sps = all_pairs_sp weight graph
@@ -231,4 +246,3 @@ runExperiment bytes experiment param = globals
 
   initial_window :: Natural
   initial_window = 4
-
