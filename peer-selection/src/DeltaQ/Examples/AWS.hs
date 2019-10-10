@@ -1,11 +1,16 @@
+{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE GADTSyntax #-}
 
 module DeltaQ.Examples.AWS where
 
 import Algebra.Graph.Labelled.AdjacencyMap hiding (edge)
+import qualified Algebra.Graph.Labelled.AdjacencyMap as Graph
 import Algebra.Graph.Labelled.AdjacencyMap.ShortestPath
+import qualified Data.List as List (sortBy, head, null)
+import qualified Data.Map.Strict as Map
 import Data.Semigroup (Last (..))
+import qualified Data.Set as Set
 import Data.Time.Clock
 import Numeric.Natural
 
@@ -41,6 +46,31 @@ aws = overlays $
   , IrelandAWS -< edge (mkGS 9.6e-3 6.1e-7 ) >- GL10
   ]
 
+-- | Probably not the true minimal-cost cycle.
+awsMinCycle :: Natural -> [NetNode] -> Topography SimpleGS NetNode
+awsMinCycle bytes = awsCycle (compareAt bytes)
+
+-- | Probably not the true maximal-cost cycle.
+awsMaxCycle :: Natural -> [NetNode] -> Topography SimpleGS NetNode
+awsMaxCycle bytes = awsCycle (flipOrder (compareAt bytes))
+  where
+  flipOrder compare a b = case compare a b of
+    EQ -> EQ
+    LT -> GT
+    GT -> LT
+
+awsMinCycle' :: Natural -> [NetNode] -> Topography BearerCharacteristics NetNode
+awsMinCycle' bytes nodes = updateLinkAnnotation (setRestriction (ethernetR 1e9 1500)) $ overlays
+  [ awsMinCycle bytes nodes
+  , transpose (awsMinCycle bytes nodes)
+  ]
+
+awsMaxCycle' :: Natural -> [NetNode] -> Topography BearerCharacteristics NetNode
+awsMaxCycle' bytes nodes = updateLinkAnnotation (setRestriction (ethernetR 1e9 1500)) $ overlays
+  [ awsMaxCycle bytes nodes
+  , transpose (awsMaxCycle bytes nodes)
+  ]
+
 -- | The 2-edge graph 'restrictions' is used to add restrictions to
 -- the big AWS G/S graph. Whenever there is an edge in 'restrictions', its
 -- link restriction is added. Otherwise, the default one given here is used
@@ -50,112 +80,6 @@ aws' = updateLinkAnnotation f aws
   where
     f = addRestriction (ethernetR 1e9 1500) restrictions
 
-data Latency where
-  Loss :: Latency
-  TX   :: !Rational -> Latency
-
-deriving instance Show Latency
-
-instance Eq Latency where
-  Loss == Loss = True
-  TX a == TX b = a == b
-  _    == _    = False
-
-instance Ord Latency where
-  Loss `compare` Loss = EQ
-  Loss `compare` _    = GT
-  _    `compare` Loss = LT
-  TX a `compare` TX b = a `compare` b
-
-instance Semigroup Latency where
-  Loss <> _    = Loss
-  _    <> Loss = Loss
-  TX a <> TX b = TX (a + b)
-
-instance Monoid Latency where
-  mappend = (<>)
-  mempty = TX 0
-
-to_difftime :: Latency -> Maybe DiffTime
-to_difftime Loss   = Nothing
-to_difftime (TX a) = Just (fromRational a)
-
--- Must know the edges in _both directions_!
--- Instead of messing with the shortest path algorithm, we could construct
--- another graph with edge type
---
---   [(BearerCharacteristics, BearerCharacteristics)]
---
--- that just pairs edges in either direction.
---
--- So, on aws' we map the edges to "Send"
--- Then we transpose aws' and map the edges to "Recv"
--- Then we overlay them, with a monoid instance that pairs Sends and Recvs
--- arbitrarily, leaving extras...
--- It'll be easiest if we ditch the multiple edges as well, favouring
---
---   Data.Monoid.Last BearerCharacteristics
-
-data UEdge e where
-  Out :: e -> UEdge e
-  In  :: e -> UEdge e
-  Uni :: e -> e -> UEdge e
-  deriving (Eq, Show)
-
-instance Semigroup e => Semigroup (UEdge e) where
-
-  Out o <> Out o'   = Out (o <> o')
-  Out o <> In i     = Uni o i
-  Out o <> Uni o' i = Uni (o <> o') i
-
-  In i  <> In i'    = In (i <> i')
-  In i  <> Out o    = Uni o i
-  In i  <> Uni o i' = Uni o (i <> i')
-
-  Uni i o <> Uni i' o' = Uni (i <> i') (o <> o')
-
--- So the type we want for edges is
---
---   Maybe (UEdge (Last BearerCharacteristics))
---
--- Kinda annoying but that's the library we're dealing with...
-
-aws_sp_hops :: AllShortestPaths NetNode (Last BearerCharacteristics) Hops
-aws_sp_hops = all_pairs_sp (\_ _ -> hop) aws'
-
-aws_shortest_paths
-  :: Natural
-  -> AllShortestPaths NetNode (UEdge (Last BearerCharacteristics)) Latency
-aws_shortest_paths response_size = all_pairs_sp mkWeight aws_graph
-  where
-  mkWeight :: NetNode -> NetNode -> UEdge (Last BearerCharacteristics) -> Latency
-  -- If there's only a link in one direction, loss.
-  mkWeight _ _ (Out _)                 = Loss
-  mkWeight _ _ (In  _)                 = Loss
-  mkWeight _ _ (Uni (Last o) (Last i)) =
-    let pattern = tcpRPCLoadPattern i o pdu_overhead initial_window Nothing request_size response_size
-    in  TX $ toRational (fst (last pattern))
-
-  request_size :: Natural
-  request_size = 256
-
-  pdu_overhead :: Natural
-  pdu_overhead = 20
-
-  initial_window :: Natural
-  initial_window = 4
-
-  aws_graph :: AdjacencyMap (UEdge (Last BearerCharacteristics)) NetNode
-  aws_graph = overlay
-    (emap mkOut aws')
-    (emap mkIn  (transpose aws'))
-
-  mkOut :: Last BearerCharacteristics -> UEdge (Last BearerCharacteristics)
-  mkOut (Last e) = Out (Last e)
-
-  mkIn :: Last BearerCharacteristics -> UEdge (Last BearerCharacteristics)
-  mkIn (Last e)  = In (Last e)
-
 -- | Restrictions to add to the AWS graph. 
 -- Note the edge type: there can be _at most one_ link restriction between
 -- any two nodes, and the last one takes precedence in case of duplicates.
@@ -164,6 +88,13 @@ restrictions = overlays
   [ GL10       -< Last (mkRestriction  7e6 1492) >- IrelandAWS
   , IrelandAWS -< Last (mkRestriction 39e6 1492) >- GL10
   ]
+
+setRestriction :: LinkRestriction
+               -> NetNode
+               -> NetNode
+               -> SimpleGS
+               -> BearerCharacteristics
+setRestriction lr _ _ gs = Bearer gs lr
 
 addRestriction :: LinkRestriction -- ^ default link restriction.
                -> AdjacencyMap (Last LinkRestriction) NetNode
@@ -240,8 +171,28 @@ stt1 iw size = (ttc', rate, lp)
     a2b = mkBearer (mkGS 10e-3 1e-5) (mkRestriction 2e6 1500)
     b2a = mkBearer (mkGS 10e-3 1e-6) (mkRestriction 10e6 1500)
 
-
-
+-- | Construct a cycle in the 'awsTestData' graph by selecting one edge
+-- for each vertex according to an ordering: the lowest one.
+--
+-- Can be used to construct approximations of longest and shortest AWS cycles
+-- for a given number of bytes, by comparing the GS at that number of bytes and
+-- taking the dual order if desired. Actually computing the maximal/minimal
+-- such cycle would be quite hard; it's travelling salesman on 15 nodes.
+awsCycle :: (SimpleGS -> SimpleGS -> Ordering) -> [NetNode] -> Topography SimpleGS NetNode
+awsCycle ordering nodes = fst (foldr construct (Graph.empty, awsTestData) nodes)
+  where
+  construct :: NetNode
+            -> (Topography SimpleGS NetNode, Topography SimpleGS NetNode)
+            -> (Topography SimpleGS NetNode, Topography SimpleGS NetNode)
+  construct node (newGraph, oldGraph) =
+    let edgesFrom          = Map.toList (postSetEdges node oldGraph)
+        ~(node', minimale) = List.head (List.sortBy ordering' edgesFrom)
+        newGraph'          = Graph.overlay newGraph (Graph.edge minimale node node')
+        oldGraph'          = removeVertex node oldGraph
+        -- If the list is not null then node' and minimale are not _|_.
+    in  if List.null edgesFrom then (newGraph, oldGraph') else (newGraph', oldGraph')
+  ordering' :: (NetNode, Last SimpleGS) -> (NetNode, Last SimpleGS) -> Ordering
+  ordering' (_, Last a) (_, Last b) = ordering a b
 
 awsTestData :: Topography SimpleGS NetNode
 awsTestData = overlays 
