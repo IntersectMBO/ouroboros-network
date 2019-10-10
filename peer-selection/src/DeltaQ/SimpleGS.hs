@@ -17,6 +17,12 @@ perfection = SimpleDeltaQ 0 (const 0)
 dqS' :: Double -> DiffTime
 dqS' r = fromRational $ recip $ (toRational r) / 8
 
+compareAt :: Natural -> SimpleGS -> SimpleGS -> Ordering
+compareAt _ Bottom Bottom = EQ
+compareAt _ Bottom _      = GT
+compareAt _ _      Bottom = LT
+compareAt n (SimpleDeltaQ g s) (SimpleDeltaQ g' s') = (g + s n) `compare` (g' + s' n)
+
 instance Semigroup SimpleGS where
   Bottom           <> _                  = Bottom
   _                <> Bottom             = Bottom
