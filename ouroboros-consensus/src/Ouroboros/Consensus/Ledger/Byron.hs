@@ -59,7 +59,6 @@ module Ouroboros.Consensus.Ledger.Byron
   , pattern ByronHeaderBoundary
   , mkByronHeaderOrEBB
   , annotateBoundary
-  , toCBORAHeaderOrBoundary
   , fromCBORAHeaderOrBoundary
   ) where
 
@@ -925,17 +924,6 @@ fromCBORAHeaderOrBoundary epochSlots = do
     0 -> Left <$> CC.Block.fromCBORABoundaryHeader
     1 -> Right <$> CC.Block.fromCBORAHeader epochSlots
     t -> error $ "Unknown tag in encoded HeaderOrBoundary" <> show t
-
-toCBORAHeaderOrBoundary
-  :: Crypto.ProtocolMagicId
-  -> CC.Slot.EpochSlots
-  -> (Either (CC.Block.ABoundaryHeader a) (CC.Block.AHeader a))
-  -> Encoding
-toCBORAHeaderOrBoundary pm epochSlots abob =
-  CBOR.encodeListLen 2 <>
-  case abob of
-    Right mh -> toCBOR (1 :: Word) <> (CC.Block.toCBORHeader epochSlots  . void $ mh)
-    Left ebb -> toCBOR (0 :: Word) <> (CC.Block.toCBORABoundaryHeader pm . void $ ebb)
 
 {-------------------------------------------------------------------------------
   Mempool integration
