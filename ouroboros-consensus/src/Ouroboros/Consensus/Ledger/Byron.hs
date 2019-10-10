@@ -92,8 +92,8 @@ import           GHC.Generics (Generic)
 
 import           Cardano.Binary (Annotated (..), ByteSpan, Decoded (..),
                      DecoderError (..), FromCBOR (..), ToCBOR (..),
-                     enforceSize, fromCBOR, reAnnotate, serialize', slice,
-                     toCBOR)
+                     enforceSize, fromCBOR, reAnnotate, serialize, slice,
+                     toCBOR, unsafeDeserialize)
 import qualified Cardano.Chain.Block as CC.Block
 import qualified Cardano.Chain.Common as CC.Common
 import qualified Cardano.Chain.Delegation as CC.Delegation
@@ -814,34 +814,36 @@ encodeByronGenTxId genTxId = case genTxId of
 encodeByronApplyTxError :: ApplyTxErr (ByronBlockOrEBB cfg) -> Encoding
 encodeByronApplyTxError = toCBOR
 
+-- | The 'ByteString' annotation will be the canonical encoding.
+--
+-- While the new implementation does not care about canonical encodings, the
+-- old one does. When a generalised transaction arrives that is not in its
+-- canonical encoding (only the 'CC.UTxO.ATxAux' of the 'ByronTx' can be
+-- produced by nodes that are not under our control), the old implementation
+-- will reject it. Therefore, we need to reject them too. See #905.
+--
+-- We use the ledger to check for canonical encodings: the ledger will check
+-- whether the signed hash of the transaction (in the case of a
+-- 'CC.UTxO.ATxAux', the transaction witness) matches the annotated
+-- bytestring. Is therefore __important__ that the annotated bytestring be the
+-- /canonical/ encoding, not the /original, possibly non-canonical/ encoding.
 decodeByronGenTx :: Decoder s (GenTx (ByronBlockOrEBB cfg))
-decodeByronGenTx =
-    mkByronGenTx . annotate <$> fromCBOR
+decodeByronGenTx = mkByronGenTx . canonicalise <$> fromCBOR
   where
-    -- | 'slice' a strict 'ByteString'.
-    slice' :: ByteString -> ByteSpan -> ByteString
-    slice' bs = Lazy.toStrict . slice (Lazy.fromStrict bs)
-
-    annotate :: CC.Mempool.AMempoolPayload ByteSpan
-             -> CC.Mempool.AMempoolPayload ByteString
-    annotate mp =
-      -- TODO: After input-output-hk/cardano-base#41 is complete, we should be
-      -- able to get rid of this 'serialize'' call as the new
-      -- @AnnotatedDecoder@ will allow us to reference the original
-      -- 'ByteString' from which the 'AMempoolPayload' was deserialized.
-      let bs = serialize' (void mp)
-      in case mp of
-        CC.Mempool.MempoolTx tx ->
-          CC.Mempool.MempoolTx (slice' bs <$> tx)
-
-        CC.Mempool.MempoolDlg cert ->
-          CC.Mempool.MempoolDlg (slice' bs <$> cert)
-
-        CC.Mempool.MempoolUpdateProposal proposal ->
-          CC.Mempool.MempoolUpdateProposal (slice' bs <$> proposal)
-
-        CC.Mempool.MempoolUpdateVote vote ->
-          CC.Mempool.MempoolUpdateVote (slice' bs <$> vote)
+    -- Fill in the 'ByteString' annotation with a canonical encoding of the
+    -- 'GenTx'. We must reserialise the deserialised 'GenTx' to be sure we
+    -- have the canonical one. We don't have access to the original
+    -- 'ByteString' anyway, so having to reserialise here gives us a
+    -- 'ByteString' we can use.
+    canonicalise :: CC.Mempool.AMempoolPayload ByteSpan
+                 -> CC.Mempool.AMempoolPayload ByteString
+    canonicalise mp = Lazy.toStrict . slice canonicalBytes <$> mp'
+      where
+        canonicalBytes = serialize (void mp)
+        -- 'unsafeDeserialize' cannot fail, since we just 'serialize'd it.
+        -- Note that we cannot reuse @mp@, as its 'ByteSpan' might differ from
+        -- the canonical encoding's 'ByteSpan'.
+        mp'            = unsafeDeserialize canonicalBytes
 
 decodeByronGenTxId :: Decoder s (GenTxId (ByronBlockOrEBB cfg))
 decodeByronGenTxId = do
