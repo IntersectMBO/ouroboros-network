@@ -7,7 +7,7 @@ module DeltaQ.Examples.AWS where
 import Algebra.Graph.Labelled.AdjacencyMap hiding (edge)
 import qualified Algebra.Graph.Labelled.AdjacencyMap as Graph
 import Algebra.Graph.Labelled.AdjacencyMap.ShortestPath
-import qualified Data.List as List (sortBy, head, null)
+import qualified Data.List as List (sortBy, head, null, foldl')
 import qualified Data.Map.Strict as Map
 import Data.Semigroup (Last (..))
 import qualified Data.Set as Set
@@ -179,18 +179,24 @@ stt1 iw size = (ttc', rate, lp)
 -- taking the dual order if desired. Actually computing the maximal/minimal
 -- such cycle would be quite hard; it's travelling salesman on 15 nodes.
 awsCycle :: (SimpleGS -> SimpleGS -> Ordering) -> [NetNode] -> Topography SimpleGS NetNode
-awsCycle ordering nodes = fst (foldr construct (Graph.empty, awsTestData) nodes)
+awsCycle ordering nodes = fst (List.foldl' construct (Graph.empty, unidirectional) nodes)
   where
-  construct :: NetNode
+  construct :: (Topography SimpleGS NetNode, Topography SimpleGS NetNode)
+            -> NetNode
             -> (Topography SimpleGS NetNode, Topography SimpleGS NetNode)
-            -> (Topography SimpleGS NetNode, Topography SimpleGS NetNode)
-  construct node (newGraph, oldGraph) =
+  construct (newGraph, oldGraph) node =
     let edgesFrom          = Map.toList (postSetEdges node oldGraph)
         ~(node', minimale) = List.head (List.sortBy ordering' edgesFrom)
         newGraph'          = Graph.overlay newGraph (Graph.edge minimale node node')
         oldGraph'          = removeVertex node oldGraph
         -- If the list is not null then node' and minimale are not _|_.
     in  if List.null edgesFrom then (newGraph, oldGraph') else (newGraph', oldGraph')
+  -- Must do the fold on the graph overlayed with its own transpose, otherwise
+  -- weird results are possible due to the way in which the awsTestData graph
+  -- is defined and the order of the nodes given to awsCycle. It's possible
+  -- to get an empty graph, for instance, if @reverse [minBound..maxBound]@ is
+  -- used.
+  unidirectional = Graph.overlay (Graph.transpose awsTestData) awsTestData
   ordering' :: (NetNode, Last SimpleGS) -> (NetNode, Last SimpleGS) -> Ordering
   ordering' (_, Last a) (_, Last b) = ordering a b
 
