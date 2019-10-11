@@ -132,10 +132,10 @@ sizeAndId (size, bInfo) = FileSlotInfo size (bbid bInfo)
 lastSlotInfo :: forall blockId.
                 Map SlotOffset (Word64, BlockInfo blockId)
              -> Maybe (blockId, SlotNo)
-lastSlotInfo mp = f <$> safeMaximumOn getSlot (Map.elems mp)
+lastSlotInfo mp = getBlockId <$> safeMaximumOn getSlotNo (Map.elems mp)
   where
-    f :: (SlotOffset, BlockInfo blockId) -> (blockId, SlotNo)
-    f (_, bInfo) = (bbid bInfo, bslot bInfo)
+    getBlockId :: (SlotOffset, BlockInfo blockId) -> (blockId, SlotNo)
+    getBlockId (_, bInfo) = (bbid bInfo, bslot bInfo)
 
-    getSlot :: (SlotOffset, BlockInfo blockId) -> SlotNo
-    getSlot (_, bInfo) = bslot bInfo
+    getSlotNo :: (SlotOffset, BlockInfo blockId) -> SlotNo
+    getSlotNo (_, bInfo) = bslot bInfo

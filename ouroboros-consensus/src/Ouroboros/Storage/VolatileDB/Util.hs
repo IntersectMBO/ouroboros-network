@@ -44,7 +44,7 @@ parseFd = parseFilename <=< lastMaybe . fsPathToList
 
 unsafeParseFd :: FsPath -> FileId
 unsafeParseFd file = fromMaybe
-    (error $ "could not parse filename " <> show file <> " of index")
+    (error $ "could not parse filename " <> show file)
     (parseFd file)
 
 fromEither :: Monad m
@@ -78,7 +78,7 @@ wrapFsError fsErr volDBErr action =
 findLastFd :: forall blockId.
               Set FsPath
            -> Either (VolatileDBError blockId) (Maybe FileId)
-findLastFd files = foldM go Nothing files
+findLastFd= foldM go Nothing
     where
         maxMaybe :: Ord a => Maybe a -> a -> a
         maxMaybe ma a = case ma of

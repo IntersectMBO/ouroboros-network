@@ -71,14 +71,20 @@ data ParserError blockId =
 instance Eq blockId => Eq (ParserError blockId) where
     (==) = sameParseError
 
-sameVolatileDBError :: Eq blockId => VolatileDBError blockId -> VolatileDBError blockId -> Bool
+sameVolatileDBError :: Eq blockId
+                    => VolatileDBError blockId
+                    -> VolatileDBError blockId
+                    -> Bool
 sameVolatileDBError e1 e2 = case (e1, e2) of
     (UserError ue1, UserError ue2)             -> ue1 == ue2
     (UnexpectedError ue1, UnexpectedError ue2) -> sameUnexpectedError ue1 ue2
     _                                          -> False
 
 -- TODO: Why is this not comparing the arguments to 'DuplicatedSlot'?
-sameUnexpectedError :: Eq blockId => UnexpectedError blockId -> UnexpectedError blockId -> Bool
+sameUnexpectedError :: Eq blockId
+                    => UnexpectedError blockId
+                    -> UnexpectedError blockId
+                    -> Bool
 sameUnexpectedError e1 e2 = case (e1, e2) of
     (FileSystemError fs1, FileSystemError fs2) -> sameFsError fs1 fs2
     (ParserError p1, ParserError p2)           -> p1 == p2
