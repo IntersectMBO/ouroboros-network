@@ -114,8 +114,7 @@ import           Ouroboros.Storage.Util.ErrorHandling (ErrorHandling (..),
                      ThrowCantCatch (..))
 import qualified Ouroboros.Storage.Util.ErrorHandling as EH
 import           Ouroboros.Storage.VolatileDB.API
-import           Ouroboros.Storage.VolatileDB.FileInfo (FileInfo,
-                     FileSlotInfo (..))
+import           Ouroboros.Storage.VolatileDB.FileInfo (FileInfo)
 import qualified Ouroboros.Storage.VolatileDB.FileInfo as FileInfo
 import           Ouroboros.Storage.VolatileDB.Index (Index)
 import qualified Ouroboros.Storage.VolatileDB.Index as Index
@@ -306,7 +305,7 @@ putBlockImpl env@VolatileDBEnv{..} BlockInfo{..} builder =
                     ++ "Current write file not found in Index.")
             (Index.lookup _currentWriteId _currentMap)
         fileInfo' = FileInfo.addSlot bslot _currentWriteOffset
-            (FileSlotInfo (BlockSize bytesWritten) bbid) fileInfo
+            (FileInfo.mkFileSlotInfo (BlockSize bytesWritten) bbid) fileInfo
         currentMap' = Index.insert _currentWriteId fileInfo' _currentMap
         internalBlockInfo' = InternalBlockInfo {
             ibFile       = _currentWritePath

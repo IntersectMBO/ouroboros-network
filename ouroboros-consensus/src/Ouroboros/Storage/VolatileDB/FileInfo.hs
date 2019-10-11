@@ -8,11 +8,12 @@
 -- Intended for qualified import.
 module Ouroboros.Storage.VolatileDB.FileInfo (
     FileInfo     -- opaque
-  , FileSlotInfo(..) -- TODO: opaque
+  , FileSlotInfo -- opaque
     -- * Construction
   , empty
   , addSlot
   , fromParsedInfo
+  , mkFileSlotInfo
     -- * Queries
   , canGC
   , blockIds
@@ -91,6 +92,9 @@ fromParsedInfo parsed =
     parsed'  = Map.fromList parsed
     nBlocks  = Map.size parsed'
     contents = Map.map sizeAndId parsed'
+
+mkFileSlotInfo :: BlockSize -> blockId -> FileSlotInfo blockId
+mkFileSlotInfo = FileSlotInfo
 
 {-------------------------------------------------------------------------------
   Queries
