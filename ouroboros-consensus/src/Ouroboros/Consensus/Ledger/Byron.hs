@@ -62,7 +62,7 @@ module Ouroboros.Consensus.Ledger.Byron
   , fromCBORAHeaderOrBoundary
   ) where
 
-import           Cardano.Prelude (Word8, cborError, wrapError)
+import           Cardano.Prelude (Word32, Word8, cborError, wrapError)
 
 import           Codec.CBOR.Decoding (Decoder)
 import qualified Codec.CBOR.Decoding as CBOR
@@ -998,21 +998,14 @@ instance (ByronGiven, Typeable cfg, ConfigContainsGenesis cfg, NoUnexpectedThunk
   txId (ByronUpdateProposal upid _) = ByronUpdateProposalId upid
   txId (ByronUpdateVote voteHash _) = ByronUpdateVoteId voteHash
 
-  txSize (ByronTx _ atxaux) = fromIntegral txByteSize
+  txSize genTx = case genTx of
+      ByronTx             _ atxaux -> decodedLength atxaux
+      ByronDlg            _ cert   -> decodedLength cert
+      ByronUpdateProposal _ prop   -> decodedLength prop
+      ByronUpdateVote     _ vote   -> decodedLength vote
     where
-      -- TODO cardano-ledger#576 will provide a function for this
-      txByteSize = 1 -- To account for @encodeListLen 2@
-                 + (Strict.length . annotation . CC.UTxO.aTaTx      $ atxaux)
-                 + (Strict.length . annotation . CC.UTxO.aTaWitness $ atxaux)
-
-  txSize (ByronDlg _ cert) = fromIntegral $
-    Strict.length (recoverBytes cert)
-
-  txSize (ByronUpdateProposal _ prop) = fromIntegral $
-    Strict.length (recoverBytes prop)
-
-  txSize (ByronUpdateVote _ vote) = fromIntegral $
-    Strict.length (recoverBytes vote)
+      decodedLength :: Decoded a => a -> Word32
+      decodedLength = fromIntegral . Strict.length . recoverBytes
 
   type ApplyTxErr (ByronBlockOrEBB cfg) = ByronApplyTxError
 
