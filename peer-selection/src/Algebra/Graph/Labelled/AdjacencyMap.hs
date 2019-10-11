@@ -1,6 +1,7 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE TupleSections #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 -----------------------------------------------------------------------------
 -- |
 -- Module     : Algebra.Graph.Labelled.AdjacencyMap
@@ -31,7 +32,7 @@ module Algebra.Graph.Labelled.AdjacencyMap (
 
     -- * Graph properties
     isEmpty, hasVertex, hasEdge, edgeLabel, vertexCount, edgeCount, vertexList,
-    edgeList, vertexSet, edgeSet, preSet, postSet,
+    edgeList, vertexSet, edgeSet, preSet, postSet, postSetEdges,
 
     -- * Graph transformation
     removeVertex, modifyEdge, removeEdge, replaceVertex, replaceEdge, transpose, gmap,
@@ -431,7 +432,10 @@ preSet x (AM m) = Set.fromAscList
 -- postSet 2 ('edge' e 1 2) == Set.'Set.empty'
 -- @
 postSet :: Ord a => a -> AdjacencyMap e a -> Set a
-postSet x = Map.keysSet . Map.findWithDefault Map.empty x . adjacencyMap
+postSet x = Map.keysSet . postSetEdges x
+
+postSetEdges :: Ord a => a -> AdjacencyMap e a -> Map a e
+postSetEdges x = Map.findWithDefault Map.empty x . adjacencyMap
 
 -- | Remove a vertex from a given graph.
 -- Complexity: /O(n*log(n))/ time.
