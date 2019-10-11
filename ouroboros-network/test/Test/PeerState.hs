@@ -189,36 +189,45 @@ instance Arbitrary ArbException where
       -- , pure (ArbException NonTermination)
       ]
 
-newtype ArbErrorPolicies = ArbErrorPolicies [ErrorPolicy]
+data ArbErrorPolicies = ArbErrorPolicies [ErrorPolicy ApplicationException]
+                                         [ErrorPolicy ConnectionException]
   deriving Show
 
 
 genErrorPolicy :: Gen (SuspendDecision DiffTime)
-               -> Gen ErrorPolicy
+               -> Gen (ErrorPolicy et)
 genErrorPolicy genCmd = oneof
-    [ (\cmd -> ErrorPolicy (\(_e :: ConnectionOrApplicationException ArithException) -> cmd)) <$> genCmd,
-      (\cmd -> ErrorPolicy (\(_e :: ConnectionOrApplicationException AsyncException) -> cmd)) <$> genCmd,
-      (\cmd -> ErrorPolicy (\(_e :: ConnectionOrApplicationException NonTermination) -> cmd)) <$> genCmd
+    [ (\cmd -> ErrorPolicy (\(_e :: et ArithException) -> cmd)) <$> genCmd,
+      (\cmd -> ErrorPolicy (\(_e :: et AsyncException) -> cmd)) <$> genCmd,
+      (\cmd -> ErrorPolicy (\(_e :: et NonTermination) -> cmd)) <$> genCmd
     ]
 
 instance Arbitrary ArbErrorPolicies where
-    arbitrary = ArbErrorPolicies <$> listOf genPolicy
+    arbitrary = ArbErrorPolicies <$> listOf genPolicy <*> listOf genPolicy
       where
         genPolicy = genErrorPolicy (genSuspendDecision genDiffTime)
 
-    shrink (ArbErrorPolicies ps) = map ArbErrorPolicies $ shrinkList (const []) ps
+    shrink (ArbErrorPolicies aps cps) =
+        let aps' = shrinkList (const []) aps
+            cps' = shrinkList (const []) cps in
+        map (\(a,c) -> ArbErrorPolicies a c) $ zip aps' cps'
 
 
-data ArbConnOrAppException =
-     ArbConnOrAppException (ConnectionOrApplicationException SomeException)
+data ArbConException =
+     ArbConException (ConnectionException SomeException)
 
-instance Arbitrary ArbConnOrAppException where
-    arbitrary = fn <$> arbitrary <*> arbitrary
+instance Arbitrary ArbConException where
+    arbitrary = fn <$> arbitrary
       where
-        fn False (ArbException e) =
-          ArbConnOrAppException (ConnectionException (SomeException e))
-        fn True  (ArbException e) =
-          ArbConnOrAppException (ApplicationException (SomeException e))
+        fn (ArbException e) = ArbConException (ConnectionException (SomeException e))
+
+data ArbAppException =
+     ArbAppException (ApplicationException SomeException)
+
+instance Arbitrary ArbAppException where
+    arbitrary = fn <$> arbitrary
+      where
+        fn (ArbException e) = ArbAppException (ApplicationException (SomeException e))
 
 data Sock addr = Sock {
     remoteAddr :: addr
@@ -319,7 +328,7 @@ prop_subscriptionWorker
     -> Property
 prop_subscriptionWorker
     sockType localAddr remoteAddr (ArbValidPeerState ps)
-    returnCallback (ArbErrorPolicies errPolicies)
+    returnCallback (ArbErrorPolicies appErrPolicies conErrPolicies)
     (Blind (ArbApp merr app))
   =
     tabulate "peer states & app errors" [printf "%-20s %s" (peerStateType ps) (exceptionType merr)] $
@@ -354,7 +363,8 @@ prop_subscriptionWorker
     completeTx = completeApplicationTx
        nullTracer
        (ErrorPolicies
-          errPolicies
+          appErrPolicies
+          conErrPolicies
           (\t addr r -> fmap getArbDiffTime . getArbSuspendDecision $ case returnCallback of
               Fn3 f -> f (ArbDiffTime t) addr r
               _     -> error "impossible happend"))
@@ -370,13 +380,13 @@ prop_subscriptionWorker
               Just (ArbException e) -> transitionSpec remoteAddr ps0
                                         (evalErrorPolicies
                                           (ApplicationException e)
-                                          errPolicies)
+                                          appErrPolicies)
                                         s
             AllocateError _ -> True
             ConnectError e  -> transitionSpec remoteAddr ps0
                                               (evalErrorPolicies
                                                 (ConnectionException e)
-                                                errPolicies)
+                                                conErrPolicies)
                                               s
       if done
         then pure r

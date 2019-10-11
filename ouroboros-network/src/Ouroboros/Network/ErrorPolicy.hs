@@ -9,11 +9,12 @@
 --
 module Ouroboros.Network.ErrorPolicy
   ( ErrorPolicies (..)
+  , ConnectionException (..)
+  , ApplicationException (..)
   , nullErrorPolicies
   , ErrorPolicy (..)
   , evalErrorPolicy
   , evalErrorPolicies
-  , ConnectionOrApplicationException (..)
   , CompleteApplication
   , Result (..)
   , completeApplicationTx
@@ -53,37 +54,38 @@ import           Data.Semigroup.Action
 
 import           Ouroboros.Network.Subscription.PeerState
 
-data ErrorPolicy where
-     ErrorPolicy :: forall err.
+data ErrorPolicy e where
+     ErrorPolicy :: forall e err.
                       Exception err
-                   => (ConnectionOrApplicationException err -> SuspendDecision DiffTime)
-                   -> ErrorPolicy
+                   => (e err -> SuspendDecision DiffTime)
+                   -> ErrorPolicy e
 
-instance Show ErrorPolicy where
-    show (ErrorPolicy (_err :: ConnectionOrApplicationException err -> SuspendDecision DiffTime)) =
+instance Show (ErrorPolicy e) where
+    show (ErrorPolicy (_err :: e err -> SuspendDecision DiffTime)) =
            "ErrorPolicy ("
         ++ tyConName (typeRepTyCon (typeRep (Proxy :: Proxy err)))
         ++ ")"
 
-evalErrorPolicy :: forall e.
+
+evalErrorPolicy :: forall et e.
                    Exception e
-                => ConnectionOrApplicationException e
-                -> ErrorPolicy
+                => et e
+                -> ErrorPolicy et
                 -> Maybe (SuspendDecision DiffTime)
 evalErrorPolicy e p =
     case p of
-      ErrorPolicy (f :: ConnectionOrApplicationException e' -> SuspendDecision DiffTime)
-        -> case gcast e :: Maybe (ConnectionOrApplicationException e') of
+      ErrorPolicy (f :: et e' -> SuspendDecision DiffTime)
+        -> case gcast e :: Maybe (et e') of
               Nothing -> Nothing
               Just e' -> Just $ f e'
 
 -- | Evaluate a list of 'ErrorPolicy's; If none of them applies this function
 -- returns 'Nothing', in this case the exception will be traced and not thrown.
 --
-evalErrorPolicies :: forall e.
+evalErrorPolicies :: forall et e.
                      Exception e
-                  => ConnectionOrApplicationException e
-                  -> [ErrorPolicy]
+                  => et e
+                  -> [ErrorPolicy et]
                   -> Maybe (SuspendDecision DiffTime)
 evalErrorPolicies e =
     f . mapMaybe (evalErrorPolicy e)
@@ -98,27 +100,34 @@ evalErrorPolicies e =
 -- application return values.
 --
 data ErrorPolicies m addr a = ErrorPolicies {
-    epErrorPolicies  :: [ErrorPolicy]
+    -- | Application Error Policies
+    epAppErrorPolicies  :: [ErrorPolicy ApplicationException]
+    -- | `connect` Error Policies
+  , epConErrorPolicies  :: [ErrorPolicy ConnectionException]
   , epReturnCallback :: Time m -> addr -> a -> SuspendDecision DiffTime
   }
 
 nullErrorPolicies :: ErrorPolicies m addr a
-nullErrorPolicies = ErrorPolicies [] (\_ _ _ -> Throw)
+nullErrorPolicies = ErrorPolicies [] [] (\_ _ _ -> Throw)
 
 instance Semigroup (ErrorPolicies m addr a) where
-    ErrorPolicies ep fn <> ErrorPolicies ep' fn'
-      = ErrorPolicies (ep <> ep') (fn <> fn')
+    ErrorPolicies aep cep fn <> ErrorPolicies aep' cep' fn'
+      = ErrorPolicies (aep <> aep') (cep <> cep') (fn <> fn')
 
 -- | Sum type which distinguishes between connection and application
--- exceptions.
+-- exception traces.
 --
-data ConnectionOrApplicationException err =
-     -- | Exception thrown by `connect`
-     ConnectionException err
-     -- | Exception thrown by an application
-   | ApplicationException err
+data ConnectionOrApplicationExceptionTrace err =
+     -- | Trace of exception thrown by `connect`
+     ConnectionExceptionTrace err
+     -- | Trace of exception thrown by an application
+   | ApplicationExceptionTrace err
    deriving (Show, Functor)
 
+-- | Exception thrown by `connect`
+newtype ConnectionException err = ConnectionException err
+-- | Exception thrown by an application
+newtype ApplicationException err = ApplicationException err
 
 -- | Complete a connection, which receive application result (or exception).
 --
@@ -195,8 +204,8 @@ completeApplicationTx tracer ErrorPolicies {epReturnCallback} (ApplicationResult
       )
 
 -- application errored
-completeApplicationTx tracer ErrorPolicies {epErrorPolicies} (ApplicationError t addr e) ps =
-  case evalErrorPolicies (ApplicationException e) epErrorPolicies of
+completeApplicationTx tracer ErrorPolicies {epAppErrorPolicies} (ApplicationError t addr e) ps =
+  case evalErrorPolicies (ApplicationException e) epAppErrorPolicies of
     -- the error is not handled by any policy; we're not rethrowing the
     -- error from the main thread, we only trace it.  This will only kill
     -- the local consumer application.
@@ -213,7 +222,7 @@ completeApplicationTx tracer ErrorPolicies {epErrorPolicies} (ApplicationError t
         pure ( ps'
              , do
                 traverse_ (traceWith tracer . WithAddr addr)
-                          (traceErrorPolicy (Left $ ApplicationException (SomeException e))
+                          (traceErrorPolicy (Left $ ApplicationExceptionTrace (SomeException e))
                                             cmd)
                 traverse_ cancel threads
             )
@@ -222,11 +231,9 @@ completeApplicationTx tracer ErrorPolicies {epErrorPolicies} (ApplicationError t
 completeApplicationTx _ _ (Connected _t  _addr) ps =
   pure ( ps, pure () )
 
--- error raised by the 'connect' call; we handle this in the same way as
--- application exceptions, the only difference is that we wrap the exception
--- with 'ConnException' type constructor.
-completeApplicationTx tracer ErrorPolicies {epErrorPolicies} (ConnectionError t addr e) ps =
-  case evalErrorPolicies (ConnectionException e) epErrorPolicies of
+-- error raised by the 'connect' call
+completeApplicationTx tracer ErrorPolicies {epConErrorPolicies} (ConnectionError t addr e) ps =
+  case evalErrorPolicies (ConnectionException e) epConErrorPolicies of
     Nothing  ->
       let fn p@(HotPeer producers consumers)
              | Set.null producers && Set.null consumers
@@ -248,7 +255,7 @@ completeApplicationTx tracer ErrorPolicies {epErrorPolicies} (ConnectionError t 
         pure ( ps'
              , do
                  traverse_ (traceWith tracer . WithAddr addr)
-                           (traceErrorPolicy (Left $ ConnectionException (SomeException e)) cmd)
+                           (traceErrorPolicy (Left $ ConnectionExceptionTrace (SomeException e)) cmd)
                  traverse_ cancel threads
              )
 
@@ -258,11 +265,11 @@ completeApplicationTx tracer ErrorPolicies {epErrorPolicies} (ConnectionError t 
 
 -- | Trace data for error policies
 data ErrorPolicyTrace
-  = ErrorPolicySuspendPeer (Maybe (ConnectionOrApplicationException SomeException)) !DiffTime !DiffTime
+  = ErrorPolicySuspendPeer (Maybe (ConnectionOrApplicationExceptionTrace SomeException)) !DiffTime !DiffTime
   -- ^ suspending peer with a given exception until
-  | ErrorPolicySuspendConsumer (Maybe (ConnectionOrApplicationException SomeException)) !DiffTime
+  | ErrorPolicySuspendConsumer (Maybe (ConnectionOrApplicationExceptionTrace SomeException)) !DiffTime
   -- ^ suspending consumer until
-  | ErrorPolicyLocalNodeError (ConnectionOrApplicationException SomeException)
+  | ErrorPolicyLocalNodeError (ConnectionOrApplicationExceptionTrace SomeException)
   -- ^ caught a local exception
   | ErrorPolicyResumePeer
   -- ^ resume a peer (both consumer and producer)
@@ -280,7 +287,7 @@ data ErrorPolicyTrace
   -- 'ErrorPolicy'.
   deriving Show
 
-traceErrorPolicy :: Either (ConnectionOrApplicationException SomeException) r
+traceErrorPolicy :: Either (ConnectionOrApplicationExceptionTrace SomeException) r
                  -> SuspendDecision DiffTime
                  -> Maybe ErrorPolicyTrace
 traceErrorPolicy (Left e) (SuspendPeer prodT consT) =
