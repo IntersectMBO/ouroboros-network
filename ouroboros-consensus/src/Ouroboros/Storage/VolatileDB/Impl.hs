@@ -113,8 +113,7 @@ import           Ouroboros.Storage.Util.ErrorHandling (ErrorHandling (..),
                      ThrowCantCatch (..))
 import qualified Ouroboros.Storage.Util.ErrorHandling as EH
 import           Ouroboros.Storage.VolatileDB.API
-import           Ouroboros.Storage.VolatileDB.FileInfo (FileInfo,
-                     FileSlotInfo (..))
+import           Ouroboros.Storage.VolatileDB.FileInfo (FileInfo)
 import qualified Ouroboros.Storage.VolatileDB.FileInfo as FileInfo
 import           Ouroboros.Storage.VolatileDB.Index (Index)
 import qualified Ouroboros.Storage.VolatileDB.Index as Index
@@ -304,7 +303,7 @@ putBlockImpl' env BlockInfo{..} hasFS@HasFS{..} st@InternalState{..} bytesWritte
                   ++ "Current write file not found in Index.")
             (Index.lookup _currentWritePath _currentMap)
         fileInfo' = FileInfo.addSlot bslot _currentWriteOffset
-            (FileSlotInfo (fromIntegral bytesWritten) bbid) fileInfo
+            (FileInfo.mkFileSlotInfo (fromIntegral bytesWritten) bbid) fileInfo
         mp = Index.insert _currentWritePath fileInfo' _currentMap
         internalBlockInfo' = InternalBlockInfo {
               ibFile       = _currentWritePath
@@ -543,7 +542,7 @@ mkInternalState' hasFS err parser n files lastFd =
            -> m (InternalState blockId h)
         go mp revMp succMp maxSlot haveLessThanN (file : restFiles) = do
             (blocks, mErr) <- parse parser file
-            goAux mp revMp succMp maxSlot haveLessThanN file restFiles blocks mErr
+            updateAndGo mp revMp succMp maxSlot haveLessThanN file restFiles blocks mErr
         go mp revMp succMp _maxSlot haveLessThanN [] = do
             hndl <- hOpen hasFS fileToWrite (AppendMode AllowExisting)
             return $ InternalState {
@@ -572,7 +571,7 @@ mkInternalState' hasFS err parser n files lastFd =
                             -- open a new one.
                             newFileInfo mp $ lst + 1
 
-        goAux mp revMp succMp maxSlot haveLessThanN file restFiles blocks mErr = do
+        updateAndGo mp revMp succMp maxSlot haveLessThanN file restFiles blocks mErr = do
             truncateOnError mErr file offset
             newRevMp <- fromEither err $ reverseMap file revMp fileMp
             go newMp newRevMp newSuccMp newMaxSlot newHaveLessThanN restFiles
