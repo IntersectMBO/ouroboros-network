@@ -116,7 +116,8 @@ import           Ouroboros.Storage.VolatileDB.API
 import           Ouroboros.Storage.VolatileDB.FileInfo (FileInfo,
                      FileSlotInfo (..))
 import qualified Ouroboros.Storage.VolatileDB.FileInfo as FileInfo
-import           Ouroboros.Storage.VolatileDB.Index
+import           Ouroboros.Storage.VolatileDB.Index (Index)
+import qualified Ouroboros.Storage.VolatileDB.Index as Index
 import           Ouroboros.Storage.VolatileDB.Util
 
 {------------------------------------------------------------------------------
@@ -301,10 +302,10 @@ putBlockImpl' env BlockInfo{..} hasFS@HasFS{..} st@InternalState{..} bytesWritte
         fileInfo = fromMaybe
             (error $ "Volatile db invariant violation:"
                   ++ "Current write file not found in Index.")
-            (Map.lookup _currentWritePath _currentMap)
+            (Index.lookup _currentWritePath _currentMap)
         fileInfo' = FileInfo.addSlot bslot _currentWriteOffset
             (FileSlotInfo (fromIntegral bytesWritten) bbid) fileInfo
-        mp = Map.insert _currentWritePath fileInfo' _currentMap
+        mp = Index.insert _currentWritePath fileInfo' _currentMap
         internalBlockInfo' = InternalBlockInfo {
               ibFile       = _currentWritePath
             , ibSlotOffset = _currentWriteOffset
@@ -337,7 +338,7 @@ garbageCollectImpl :: forall m blockId. (IOLike m, Ord blockId)
 garbageCollectImpl env@VolatileDBEnv{..} slot =
     modifyState env $ \hasFS st -> do
         st' <- foldM (tryCollectFile hasFS env slot) st
-                (sortOn (unsafeParseFd . fst) $ Map.toList (_currentMap st))
+                (sortOn (unsafeParseFd . fst) $ Index.toList (_currentMap st))
         return (st', ())
 
 -- For the given file, we check if it should be garbage collected.
@@ -359,7 +360,7 @@ tryCollectFile hasFS@HasFS{..} env slot st@InternalState{..} (file, fileInfo) =
     if  | not canGC     -> return st
         | not isCurrent -> do
             removeFile file
-            return st { _currentMap = Map.delete file _currentMap
+            return st { _currentMap = Index.delete file _currentMap
                       , _currentRevMap = rv'
                       , _currentSuccMap = succMap'
                       }
@@ -442,7 +443,7 @@ nextFile HasFS{..} _err VolatileDBEnv{..} st = do
         , _currentWritePath   = file
         , _currentWriteOffset = 0
         , _nextNewFileId      = _nextNewFileId st + 1
-        , _currentMap = Map.insert file FileInfo.empty (_currentMap st)
+        , _currentMap = Index.insert file FileInfo.empty (_currentMap st)
     }
     where
         file = filePath $ _nextNewFileId st
@@ -461,7 +462,7 @@ reOpenFile HasFS{..} _err VolatileDBEnv{..} st@InternalState{..} = do
     -- to the end before each write.
    hTruncate _currentWriteHandle 0
    return $ st {
-         _currentMap = Map.insert _currentWritePath FileInfo.empty _currentMap
+         _currentMap = Index.insert _currentWritePath FileInfo.empty _currentMap
        , _currentWriteOffset = 0
     }
 
@@ -504,12 +505,12 @@ mkInternalState' :: forall blockId m h e. (HasCallStack, MonadCatch m, Ord block
                  -> Maybe FileId
                  -> m (InternalState blockId h)
 mkInternalState' hasFS err parser n files lastFd =
-    go Map.empty Map.empty Map.empty Nothing [] (Set.toList files)
+    go Index.empty Map.empty Map.empty Nothing [] (Set.toList files)
     where
         newFileInfo mp newIndex =
             ( newFile
             , newIndex + (1 :: Int)
-            , Map.insert newFile FileInfo.empty mp
+            , Index.insert newFile FileInfo.empty mp
             , 0 )
             where
                 newFile = filePath newIndex
@@ -553,7 +554,7 @@ mkInternalState' hasFS err parser n files lastFd =
                 , _currentMap         = mp'
                 , _currentRevMap      = revMp
                 , _currentSuccMap     = succMp
-                , _currentMaxSlotNo   = FileInfo.maxSlotInFiles (Map.elems mp')
+                , _currentMaxSlotNo   = FileInfo.maxSlotInFiles (Index.elems mp')
             }
             where
                 (fileToWrite, nextNewFileId', mp', offset') =
@@ -584,7 +585,7 @@ mkInternalState' hasFS err parser n files lastFd =
                         slotOffset + blockSize
                 fileMp = Map.fromList blocks
                 (fileInfo, maxSlotOfFile) = FileInfo.fromParsedInfo blocks
-                newMp = Map.insert file fileInfo mp
+                newMp = Index.insert file fileInfo mp
                 newMaxSlot = maxSlotList $ catMaybes [maxSlot, maxSlotOfFile]
                 -- For each block we need to update the succesor Map of its
                 -- predecesor.
