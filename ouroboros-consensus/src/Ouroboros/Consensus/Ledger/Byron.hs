@@ -1141,11 +1141,10 @@ applyByronGenTx validationMode
 mkByronGenTx :: CC.Mempool.AMempoolPayload ByteString
              -> GenTx (ByronBlockOrEBB cfg)
 mkByronGenTx mp = case mp of
-    CC.Mempool.MempoolTx tx ->
-      ByronTx (Crypto.hash $ CC.UTxO.taTx tx)  -- TODO replace this with a
-                                               -- function from cardano-ledger,
-                                               -- see cardano-ledger#581
-              tx
+    CC.Mempool.MempoolTx tx@CC.UTxO.ATxAux{aTaTx} ->
+      ByronTx (Crypto.hashDecoded aTaTx) tx  -- TODO replace this with a
+                                             -- function from cardano-ledger,
+                                             -- see cardano-ledger#581
 
     CC.Mempool.MempoolDlg cert ->
       ByronDlg (CC.Delegation.recoverCertificateId cert) cert
