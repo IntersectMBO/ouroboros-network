@@ -26,14 +26,26 @@ library
   hs-source-dirs:      src
 
   exposed-modules:
+                       Ouroboros.Consensus.Shelley.Ledger
+                       Ouroboros.Consensus.Shelley.Ledger.Block
+                       Ouroboros.Consensus.Shelley.Ledger.Config
+                       Ouroboros.Consensus.Shelley.Ledger.Forge
+                       Ouroboros.Consensus.Shelley.Ledger.History
+                       Ouroboros.Consensus.Shelley.Ledger.Integrity
+                       Ouroboros.Consensus.Shelley.Ledger.Ledger
+                       Ouroboros.Consensus.Shelley.Ledger.Mempool
+                       Ouroboros.Consensus.Shelley.Ledger.TPraos
                        Ouroboros.Consensus.Shelley.Protocol
                        Ouroboros.Consensus.Shelley.Protocol.State
                        Ouroboros.Consensus.Shelley.Protocol.Crypto
                        Ouroboros.Consensus.Shelley.Protocol.Util
 
   build-depends:       base              >=4.9   && <4.13
+                     , binary            >=0.8   && <0.9
+                     , bytestring        >=0.10  && <0.11
                      , cardano-binary
                      , cardano-crypto-class
+                     , cardano-crypto-wrapper
                      , cardano-prelude
                      , cardano-slotting
                      , cborg             >=0.2.2 && <0.3
