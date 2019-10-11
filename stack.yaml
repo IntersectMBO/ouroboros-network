@@ -19,14 +19,14 @@ extra-deps:
       - iohk-monitoring
 
   - git: https://github.com/input-output-hk/cardano-base
-    commit: c50bfdb129ae1eb319c9af3902674ef75b017fec
+    commit: 64bb761664c9ca8a52a0023dc1a92c9b5b884497
     subdirs:
       - binary
       - binary/test
       - cardano-crypto-class
 
   - git: https://github.com/input-output-hk/cardano-ledger
-    commit: 238eca4497f9c9d55bb532480c63efed70de06f2
+    commit: a1de5b52c32255464564a6c5a8a9e474086e3875
     subdirs:
       - cardano-ledger
       - cardano-ledger/test

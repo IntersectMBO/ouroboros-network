@@ -15,7 +15,6 @@ import qualified Data.Vector as V
 
 import           GHC.Stack (HasCallStack)
 
-import           Cardano.Binary (Annotated (..), reAnnotate)
 import qualified Cardano.Chain.Common as CC.Common
 import qualified Cardano.Chain.Genesis as CC.Genesis
 import qualified Cardano.Chain.UTxO as CC.UTxO
@@ -45,9 +44,8 @@ elaborateTx :: HasCallStack
             => NodeConfig ByronEBBExtNodeConfig
             -> Mock.Tx -> GenTx (ByronBlockOrEBB cfg)
 elaborateTx (WithEBBNodeConfig cfg) (Mock.Tx ins outs) =
-    mkByronTx $ CC.UTxO.ATxAux (annotate tx) (annotate witness)
+    mkByronTx $ CC.UTxO.annotateTxAux $ CC.UTxO.mkTxAux tx witness
   where
-    annotate x = reAnnotate $ Annotated x ()
     -- mockInp and mockOut in [0 .. 3] (index of rich actor)
     [(_hash, mockInp)]    = Set.toList ins
     [(mockAddr, mockVal)] = outs

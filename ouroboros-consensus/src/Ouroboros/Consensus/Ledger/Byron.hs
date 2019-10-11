@@ -793,18 +793,7 @@ encodeByronApplyTxError :: ApplyTxErr (ByronBlockOrEBB cfg) -> Encoding
 encodeByronApplyTxError = toCBOR
 
 decodeByronGenTx :: Decoder s (GenTx (ByronBlockOrEBB cfg))
-decodeByronGenTx =
-    mkByronTx . annotate <$> fromCBOR
-  where
-    -- TODO #560: Re-annotation can be done but requires some rearranging in
-    -- the codecs Original ByteSpan's refer to bytestring we don't have, so
-    -- we'll ignore them
-    annotate :: CC.UTxO.ATxAux ByteSpan -> CC.UTxO.ATxAux ByteString
-    annotate CC.UTxO.ATxAux{aTaTx, aTaWitness} =
-      CC.UTxO.ATxAux{
-        aTaTx      = reAnnotate aTaTx,
-        aTaWitness = reAnnotate aTaWitness
-      }
+decodeByronGenTx = mkByronTx . CC.UTxO.annotateTxAux <$> fromCBOR
 
 decodeByronGenTxId :: Decoder s (GenTxId (ByronBlockOrEBB cfg))
 decodeByronGenTxId = ByronTxId <$> fromCBOR
