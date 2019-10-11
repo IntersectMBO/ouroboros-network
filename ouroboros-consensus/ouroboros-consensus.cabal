@@ -83,6 +83,13 @@ library
                        Ouroboros.Consensus.Ledger.Mock.State
                        Ouroboros.Consensus.Ledger.Mock.UTxO
                        Ouroboros.Consensus.LocalStateQueryServer
+                       Ouroboros.Consensus.Ledger.Shelley
+                       Ouroboros.Consensus.Ledger.Shelley.Config
+                       Ouroboros.Consensus.Ledger.Shelley.Forge
+                       Ouroboros.Consensus.Ledger.Shelley.History
+                       Ouroboros.Consensus.Ledger.Shelley.Ledger
+                       Ouroboros.Consensus.Ledger.Shelley.Mempool
+                       Ouroboros.Consensus.Ledger.Shelley.TPraos
                        Ouroboros.Consensus.Mempool
                        Ouroboros.Consensus.Mempool.API
                        Ouroboros.Consensus.Mempool.Impl
