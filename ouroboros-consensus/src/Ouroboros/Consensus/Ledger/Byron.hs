@@ -1007,6 +1007,21 @@ instance (ByronGiven, Typeable cfg, ConfigContainsGenesis cfg, NoUnexpectedThunk
       decodedLength :: Decoded a => a -> Word32
       decodedLength = fromIntegral . Strict.length . recoverBytes
 
+  -- Check that the annotation is the canonical encoding. This is currently
+  -- enforced by 'decodeByronGenTx', see its docstring for more context.
+  txInvariant genTx = case genTx of
+      ByronTx             _ atxaux -> annotatedEnc atxaux == canonicalEnc atxaux
+      ByronDlg            _ cert   -> annotatedEnc cert   == canonicalEnc cert
+      ByronUpdateProposal _ prop   -> annotatedEnc prop   == canonicalEnc prop
+      ByronUpdateVote     _ vote   -> annotatedEnc vote   == canonicalEnc vote
+    where
+      annotatedEnc :: (Functor f, Decoded (f ByteString))
+                   => f ByteString -> ByteString
+      annotatedEnc = recoverBytes
+      canonicalEnc :: (Functor f, ToCBOR (f ()))
+                   => f a -> ByteString
+      canonicalEnc = CBOR.toStrictByteString . toCBOR . void
+
   type ApplyTxErr (ByronBlockOrEBB cfg) = ByronApplyTxError
 
   applyTx = applyByronGenTx
