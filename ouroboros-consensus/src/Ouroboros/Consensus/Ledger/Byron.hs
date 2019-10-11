@@ -998,7 +998,7 @@ instance (ByronGiven, Typeable cfg, ConfigContainsGenesis cfg, NoUnexpectedThunk
   txId (ByronUpdateProposal upid _) = ByronUpdateProposalId upid
   txId (ByronUpdateVote voteHash _) = ByronUpdateVoteId voteHash
 
-  txSize genTx = case genTx of
+  txSize genTx = 1 {- encodeListLen -} + 1 {- tag -} + case genTx of
       ByronTx             _ atxaux -> decodedLength atxaux
       ByronDlg            _ cert   -> decodedLength cert
       ByronUpdateProposal _ prop   -> decodedLength prop
