@@ -4,7 +4,7 @@
 
 module DeltaQ.Examples.Gen where
 
-import Algebra.Graph.Labelled.AdjacencyMap (AdjacencyMap)
+import Algebra.Graph.Labelled.AdjacencyMap (AdjacencyMap (..), adjacencyMap)
 import qualified Algebra.Graph.Labelled.AdjacencyMap as GR
 import Data.Foldable (foldlM)
 import Data.List.NonEmpty (NonEmpty)
@@ -79,6 +79,9 @@ gen_for_each genEdges vertices = foldlM includeEdges GR.empty (Set.toList vertic
 -- given the current vertex and a vertex set, generate a vertex, an edge, and
 -- another set. The new set must be derived from the given vertices. This
 -- generator will be run degree times for each vertex.
+--
+-- This graph is not necessarily connected. To guarantee a connected graph, one
+-- could start with an arbitrary cycle, and then overlay a regular graph.
 regular
   :: forall m vertex edge .
      ( Monad m, Ord vertex, Semigroup edge )
