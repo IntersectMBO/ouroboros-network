@@ -25,7 +25,7 @@ import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork
-                   ( MonadFork(ThreadId, myThreadId, throwTo) )
+                   ( MonadThread(ThreadId, myThreadId), MonadFork(throwTo) )
 import           Control.Exception (assert)
 import           Control.Tracer (Tracer)
 

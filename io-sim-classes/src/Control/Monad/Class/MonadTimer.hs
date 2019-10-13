@@ -23,7 +23,7 @@ import qualified GHC.Event as GHC (TimeoutKey, getSystemTimerManager,
 import           Control.Monad (when)
 #endif
 
-import           Control.Monad.Class.MonadFork (MonadFork(..))
+import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadSTM
 
 import qualified System.Timeout as IO

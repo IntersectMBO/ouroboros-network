@@ -279,12 +279,13 @@ unblock              a = SimM (SetMaskState Unmasked a)
 block                a = SimM (SetMaskState MaskedInterruptible a)
 blockUninterruptible a = SimM (SetMaskState MaskedUninterruptible a)
 
-instance MonadFork (SimM s) where
+instance MonadThread (SimM s) where
   type ThreadId (SimM s) = ThreadId
+  myThreadId       = SimM $ \k -> GetThreadId k
 
+instance MonadFork (SimM s) where
   fork task        = SimM $ \k -> Fork task k
   forkWithUnmask f = fork (f unblock)
-  myThreadId       = SimM $ \k -> GetThreadId k
   throwTo tid e    = SimM $ \k -> ThrowTo (toException e) tid (k ())
 
 instance MonadSTM (SimM s) where

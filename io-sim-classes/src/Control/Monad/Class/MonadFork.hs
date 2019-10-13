@@ -4,7 +4,8 @@
 {-# LANGUAGE TypeFamilies        #-}
 
 module Control.Monad.Class.MonadFork
-  ( MonadFork (..)
+  ( MonadThread (..)
+  , MonadFork (..)
   ) where
 
 import qualified Control.Concurrent as IO
@@ -19,18 +20,25 @@ forkPrintExceptionLock = unsafePerformIO $ IO.newMVar ()
 
 class (Monad m, Eq   (ThreadId m),
                 Ord  (ThreadId m),
-                Show (ThreadId m)) => MonadFork m where
+                Show (ThreadId m)) => MonadThread m where
 
   type ThreadId m :: *
 
+  myThreadId     :: m (ThreadId m)
+
+
+class MonadThread m => MonadFork m where
+
   fork           :: m () -> m (ThreadId m)
   forkWithUnmask :: ((forall a. m a -> m a) -> m ()) -> m (ThreadId m)
-  myThreadId     :: m (ThreadId m)
   throwTo        :: Exception e => ThreadId m -> e -> m ()
 
 
-instance MonadFork IO where
+instance MonadThread IO where
   type ThreadId IO = IO.ThreadId
+  myThreadId = IO.myThreadId
+
+instance MonadFork IO where
   fork a =
     let handleException :: Either SomeException () -> IO ()
         handleException (Left e) = do
@@ -43,15 +51,16 @@ instance MonadFork IO where
     in IO.forkFinally a handleException
 
   forkWithUnmask = IO.forkIOWithUnmask
-  myThreadId     = IO.myThreadId
   throwTo        = IO.throwTo
 
-instance MonadFork m => MonadFork (ReaderT e m) where
+instance MonadThread m => MonadThread (ReaderT e m) where
   type ThreadId (ReaderT e m) = ThreadId m
+  myThreadId  = lift myThreadId
+
+instance MonadFork m => MonadFork (ReaderT e m) where
   fork (ReaderT f) = ReaderT $ \e -> fork (f e)
   forkWithUnmask k = ReaderT $ \e -> forkWithUnmask $ \restore ->
                        let restore' :: ReaderT e m a -> ReaderT e m a
                            restore' (ReaderT f) = ReaderT $ restore . f
                        in runReaderT (k restore') e
-  myThreadId  = lift myThreadId
   throwTo e t = lift (throwTo e t)
