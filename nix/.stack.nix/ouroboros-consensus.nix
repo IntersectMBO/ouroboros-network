@@ -124,6 +124,7 @@
             (hsPkgs.quickcheck-state-machine)
             (hsPkgs.random)
             (hsPkgs.serialise)
+            (hsPkgs.splitmix)
             (hsPkgs.tasty)
             (hsPkgs.tasty-hunit)
             (hsPkgs.tasty-quickcheck)

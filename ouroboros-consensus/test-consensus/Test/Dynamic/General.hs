@@ -9,7 +9,10 @@ module Test.Dynamic.General (
   , runTestNetwork
     -- * TestConfig
   , TestConfig (..)
+  , genLatencySeed
   , genTestConfig
+  , noLatencySeed
+  , shrinkLatencySeed
   , shrinkTestConfig
     -- * Re-exports
   , TestOutput (..)
@@ -21,6 +24,7 @@ import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Word (Word64)
 import           GHC.Stack (HasCallStack)
+import qualified System.Random.SplitMix as SM
 import           Test.QuickCheck
 
 import           Control.Monad.IOSim (runSimOrThrow)
@@ -63,46 +67,68 @@ data TestConfig = TestConfig
   , numSlots     :: !NumSlots
   , nodeJoinPlan :: !NodeJoinPlan
   , nodeTopology :: !NodeTopology
+  , latencySeed  :: !(LatencyInjection SM.SMGen)
   }
   deriving (Show)
+
+noLatencySeed :: LatencyInjection a
+noLatencySeed = DoNotInjectLatencies
+
+genLatencySeed :: Gen (LatencyInjection SM.SMGen)
+genLatencySeed = (InjectLatencies . SM.mkSMGen) <$> arbitrary
+
+shrinkLatencySeed :: LatencyInjection SM.SMGen -> [LatencyInjection SM.SMGen]
+shrinkLatencySeed li =
+    takeWhile (diffCtor li) [DoNotInjectLatencies, InjectTrivialLatencies]
+  where
+    diffCtor DoNotInjectLatencies   DoNotInjectLatencies   = False
+    diffCtor InjectTrivialLatencies InjectTrivialLatencies = False
+    diffCtor InjectLatencies{}      InjectLatencies{}      = False
+    diffCtor _                      _                      = True
 
 genTestConfig :: NumCoreNodes -> NumSlots -> Gen TestConfig
 genTestConfig numCoreNodes numSlots = do
     nodeJoinPlan <- genNodeJoinPlan numCoreNodes numSlots
     nodeTopology <- genNodeTopology numCoreNodes
-    pure TestConfig{numCoreNodes, numSlots, nodeJoinPlan, nodeTopology}
+    latencySeed <- genLatencySeed
+    pure TestConfig
+      { numCoreNodes, numSlots, nodeJoinPlan, nodeTopology, latencySeed }
+
+idAnd :: forall a. (a -> [a]) -> a -> [a]
+idAnd f x = x : f x
 
 -- | Shrink without changing the number of nodes or slots
 shrinkTestConfig :: TestConfig -> [TestConfig]
-shrinkTestConfig testConfig@TestConfig{nodeJoinPlan, nodeTopology} =
+shrinkTestConfig
+  testConfig@TestConfig{nodeJoinPlan, nodeTopology, latencySeed} =
     tail $ -- drop the identity output
-    [ testConfig{nodeJoinPlan = p', nodeTopology = top'}
-    | p' <- nodeJoinPlan : shrinkNodeJoinPlan nodeJoinPlan
-    , top' <- nodeTopology : shrinkNodeTopology nodeTopology
+    [ testConfig{nodeJoinPlan = p', nodeTopology = top', latencySeed = seed'}
+    | p'    <- idAnd shrinkNodeJoinPlan nodeJoinPlan
+    , top'  <- idAnd shrinkNodeTopology nodeTopology
+    , seed' <- idAnd shrinkLatencySeed latencySeed
     ]
 
 -- | Shrink, including the number of nodes and slots
 shrinkTestConfigFreely :: TestConfig -> [TestConfig]
 shrinkTestConfigFreely
-  TestConfig{numCoreNodes, numSlots, nodeJoinPlan, nodeTopology} =
+  TestConfig{numCoreNodes, numSlots, nodeJoinPlan, nodeTopology, latencySeed} =
     tail $   -- drop the identity result
     [ TestConfig
         { numCoreNodes = n'
         , numSlots = t'
         , nodeJoinPlan = p'
         , nodeTopology = top'
+        , latencySeed = seed'
         }
-    | n' <- idAnd shrink numCoreNodes
-    , t' <- idAnd shrink numSlots
-    , let adjustedP = adjustedNodeJoinPlan n' t'
+    | n'    <- idAnd shrink numCoreNodes
+    , t'    <- idAnd shrink numSlots
+    , let adjustedP   = adjustedNodeJoinPlan n' t'
     , let adjustedTop = adjustedNodeTopology n'
-    , p' <- idAnd shrinkNodeJoinPlan adjustedP
-    , top' <- idAnd shrinkNodeTopology adjustedTop
+    , p'    <- idAnd shrinkNodeJoinPlan adjustedP
+    , top'  <- idAnd shrinkNodeTopology adjustedTop
+    , seed' <- idAnd shrinkLatencySeed latencySeed
     ]
   where
-    idAnd :: forall a. (a -> [a]) -> a -> [a]
-    idAnd f x = x : f x
-
     adjustedNodeJoinPlan (NumCoreNodes n') (NumSlots t') =
         NodeJoinPlan $
         -- scale by t' / t
@@ -143,24 +169,34 @@ runTestNetwork ::
   -> Seed
   -> TestOutput blk
 runTestNetwork pInfo
-  TestConfig{numCoreNodes, numSlots, nodeJoinPlan, nodeTopology}
+  TestConfig{numCoreNodes, numSlots, nodeJoinPlan, nodeTopology, latencySeed}
   seed = runSimOrThrow $ do
     registry  <- unsafeNewRegistry
-    testBtime <- newTestBlockchainTime registry numSlots
-      (\_s -> threadDelay slotLen)
+
+    -- the latest slot that is ready to start
+    latestReadySlot <- uncheckedNewTVarM (SlotNo 0)
+    -- a slot cannot end before a later slot is ready to start
+    let waitOn s = atomically $ do
+          x <- readTVar latestReadySlot
+          check (s < x)
+    testBtime <- newTestBlockchainTime registry numSlots waitOn
+
     runNodeNetwork NodeNetworkArgs
-      { nnaNodeJoinPlan    = nodeJoinPlan
-      , nnaNodeTopology    = nodeTopology
-      , nnaNumCoreNodes    = numCoreNodes
-      , nnaProtocol        = pInfo
-      , nnaRegistry        = registry
-      , nnaSlotLen         = slotLen
-      , nnaTestBtime       = testBtime
-      , nnaTxSeed          = seedToChaCha seed
+      { nnaLatencySeed         = latencySeed
+      , nnaLatestReadySlot     = latestReadySlot
+      , nnaMaxLatencies    = MaxLatencies
+          { maxSendLatency = 10   -- io-sim "seconds"
+          , maxVar1Latency = 1000   -- io-sim "seconds"
+          }
+      , nnaNodeJoinPlan        = nodeJoinPlan
+      , nnaQuiescenceThreshold = 50000   -- io-sim "seconds"
+      , nnaNodeTopology        = nodeTopology
+      , nnaNumCoreNodes        = numCoreNodes
+      , nnaProtocol            = pInfo
+      , nnaRegistry            = registry
+      , nnaTestBtime           = testBtime
+      , nnaTxSeed              = seedToChaCha seed
       }
-  where
-    slotLen :: DiffTime
-    slotLen = 100000   -- io-sim "seconds"
 
 {-------------------------------------------------------------------------------
   Test properties

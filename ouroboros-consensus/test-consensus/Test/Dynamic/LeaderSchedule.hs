@@ -56,13 +56,21 @@ tests = testGroup "Dynamic chain generation"
             (genNodeTopology numCoreNodes)
             shrinkNodeTopology $
         \nodeTopology ->
+        forAllShrink genLatencySeed shrinkLatencySeed $
+        \latencySeed ->
         forAllShrink
             (genLeaderSchedule k numSlots numCoreNodes nodeJoinPlan)
             (shrinkLeaderSchedule numSlots) $
         \schedule ->
             prop_simple_leader_schedule_convergence
                 params
-                TestConfig{numCoreNodes, numSlots, nodeJoinPlan, nodeTopology}
+                TestConfig
+                  { numCoreNodes
+                  , numSlots
+                  , nodeJoinPlan
+                  , nodeTopology
+                  , latencySeed
+                  }
                 schedule seed
 
 prop_simple_leader_schedule_convergence :: PraosParams

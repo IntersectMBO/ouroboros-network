@@ -48,11 +48,14 @@ tests = testGroup "Dynamic chain generation"
             (genNodeTopology numCoreNodes)
             shrinkNodeTopology $
         \nodeTopology ->
+        forAllShrink genLatencySeed shrinkLatencySeed $
+        \latencySeed ->
             testPraos' TestConfig
               { numCoreNodes
               , numSlots
               , nodeJoinPlan
               , nodeTopology
+              , latencySeed
               }
                 seed
     ]
@@ -63,6 +66,7 @@ tests = testGroup "Dynamic chain generation"
       , numSlots
       , nodeJoinPlan = trivialNodeJoinPlan numCoreNodes
       , nodeTopology = meshNodeTopology numCoreNodes
+      , latencySeed  = noLatencySeed
       }
 
     testPraos' :: TestConfig -> Seed -> Property

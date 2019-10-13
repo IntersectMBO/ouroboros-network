@@ -70,6 +70,7 @@ tests = testGroup "Dynamic chain generation"
               , (CoreNodeId 2,SlotNo 22)
               ]
             , nodeTopology = meshNodeTopology ncn
+            , latencySeed  = noLatencySeed
             }
     , testProperty "simple Real PBFT convergence" $
         prop_simple_real_pbft_convergence
