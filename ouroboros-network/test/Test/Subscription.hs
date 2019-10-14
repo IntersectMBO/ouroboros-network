@@ -427,8 +427,10 @@ prop_sub_io lr = ioProperty $ do
             clientTbl
             peerStatesVar
             (mockResolverIO firstDoneVar serverPortMap lr)
-            (Just $ Socket.addrAddress ipv4Client)
-            (Just $ Socket.addrAddress ipv6Client)
+            (LocalAddresses
+              (Just $ Socket.addrAddress ipv4Client)
+              (Just $ Socket.addrAddress ipv6Client)
+              Nothing)
             (\_ -> Just minConnectionAttemptDelay)
             nullErrorPolicies
             (DnsSubscriptionTarget "shelley-0.iohk.example" 6062 (lrioValency lr))
@@ -570,8 +572,10 @@ prop_send_recv f xs first = ioProperty $ do
             clientTbl
             peerStatesVar
             (mockResolverIO firstDoneVar serverPortMap lr)
-            (Just $ Socket.addrAddress initiatorAddr4)
-            (Just $ Socket.addrAddress initiatorAddr6)
+            (LocalAddresses
+                (Just $ Socket.addrAddress initiatorAddr4)
+                (Just $ Socket.addrAddress initiatorAddr6)
+                Nothing)
             (\_ -> Just minConnectionAttemptDelay)
             nullErrorPolicies
             (DnsSubscriptionTarget "shelley-0.iohk.example" 6062 1)
@@ -727,8 +731,7 @@ prop_send_recv_init_and_rsp f xs = ioProperty $ do
             activeTracer
             tbl
             peerStatesVar
-            (Just localAddr)
-            Nothing
+            (LocalAddresses (Just localAddr) Nothing Nothing)
             (\_ -> Just minConnectionAttemptDelay)
             (pure $ listSubscriptionTarget [remoteAddr])
             1
@@ -795,8 +798,10 @@ _demo = ioProperty $ do
     _ <- dnsSubscriptionWorker activeTracer activeTracer activeTracer
             clientTbl
             peerStatesVar
-            (Just $ Socket.addrAddress client)
-            (Just $ Socket.addrAddress client6)
+            (LocalAddresses
+                (Just $ Socket.addrAddress client)
+                (Just $ Socket.addrAddress client6)
+                Nothing)
             (\_ -> Just minConnectionAttemptDelay)
             nullErrorPolicies
             (DnsSubscriptionTarget "shelley-0.iohk.example" 6064 1)

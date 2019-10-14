@@ -381,8 +381,7 @@ initNetwork registry nodeArgs kernel RunNetworkArgs{..} = do
       connTable
       peerStatesVar
       -- the comments in dnsSbuscriptionWorker call apply
-      ipv4
-      ipv6
+      (LocalAddresses ipv4 ipv6 Nothing)
       (const Nothing)
       nullErrorPolicies
       IPSubscriptionTarget
@@ -407,15 +406,17 @@ initNetwork registry nodeArgs kernel RunNetworkArgs{..} = do
       rnaMkPeer
       connTable
       peerStatesVar
-      -- IPv4 address
-      --
-      -- We can't share portnumber with our server since we run separate
-      -- 'MuxInitiatorApplication' and 'MuxResponderApplication'
-      -- applications instead of a 'MuxInitiatorAndResponderApplication'.
-      -- This means we don't utilise full duplex connection.
-      ipv4
-      -- IPv6 address
-      ipv6
+      (LocalAddresses
+        -- IPv4 address
+        --
+        -- We can't share portnumber with our server since we run separate
+        -- 'MuxInitiatorApplication' and 'MuxResponderApplication'
+        -- applications instead of a 'MuxInitiatorAndResponderApplication'.
+        -- This means we don't utilise full duplex connection.
+        ipv4
+        -- IPv6 address
+        ipv6
+        Nothing)
       (const Nothing)
       nullErrorPolicies
       dnsProducer

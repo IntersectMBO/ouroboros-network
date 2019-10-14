@@ -211,22 +211,20 @@ dnsSubscriptionWorker'
     -> ConnectionTable IO Socket.SockAddr
     -> StrictTVar IO (PeerStates IO Socket.SockAddr (Time IO))
     -> Resolver IO
-    -> Maybe Socket.SockAddr
-    -> Maybe Socket.SockAddr
+    -> LocalAddresses Socket.SockAddr
     -> (Socket.SockAddr -> Maybe DiffTime)
     -> ErrorPolicies IO Socket.SockAddr a
     -> DnsSubscriptionTarget
     -> Main IO (PeerStates IO Socket.SockAddr (Time IO)) x
     -> (Socket.Socket -> IO a)
     -> IO x
-dnsSubscriptionWorker' subTracer dnsTracer errTracer tbl peerStatesVar resolver localIPv4 localIPv6
+dnsSubscriptionWorker' subTracer dnsTracer errTracer tbl peerStatesVar resolver localAddresses
   connectionAttemptDelay errPolicies dst main k = do
     subscriptionWorker (WithDomainName (dstDomain dst) `contramap` subTracer)
                        errTracer
                        tbl
                        peerStatesVar
-                       localIPv4
-                       localIPv6
+                       localAddresses
                        connectionAttemptDelay
                        (dnsResolve
                           (WithDomainName (dstDomain dst) `contramap` dnsTracer)
@@ -243,14 +241,13 @@ dnsSubscriptionWorker
     -> Tracer IO (WithAddr Socket.SockAddr ErrorPolicyTrace)
     -> ConnectionTable IO Socket.SockAddr
     -> StrictTVar IO (PeerStates IO Socket.SockAddr (Time IO))
-    -> Maybe Socket.SockAddr
-    -> Maybe Socket.SockAddr
+    -> LocalAddresses Socket.SockAddr
     -> (Socket.SockAddr -> Maybe DiffTime)
     -> ErrorPolicies IO Socket.SockAddr a
     -> DnsSubscriptionTarget
     -> (Socket.Socket -> IO a)
     -> IO Void
-dnsSubscriptionWorker subTracer dnsTracer errTrace tbl peerStateVar localIPv4 localIPv6
+dnsSubscriptionWorker subTracer dnsTracer errTrace tbl peerStateVar localAddresses
   connectionAttemptDelay errPolicies dst k = do
     rs <- DNS.makeResolvSeed DNS.defaultResolvConf
 
@@ -261,7 +258,7 @@ dnsSubscriptionWorker subTracer dnsTracer errTrace tbl peerStateVar localIPv4 lo
                                tbl
                                peerStateVar
                                resolver
-                               localIPv4 localIPv6
+                               localAddresses
                                connectionAttemptDelay
                                errPolicies
                                dst

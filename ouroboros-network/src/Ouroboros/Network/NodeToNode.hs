@@ -36,6 +36,7 @@ module Ouroboros.Network.NodeToNode (
   , TraceSendRecv
   , DecoderFailureOrTooMuchInput
   , Handshake
+  , LocalAddresses (..)
 
   -- ** Connection table
   , ConnectionTable
@@ -102,6 +103,7 @@ import           Ouroboros.Network.Subscription.Dns ( DnsSubscriptionTarget (..)
                                                     , DnsTrace (..)
                                                     , WithDomainName (..)
                                                     )
+import           Ouroboros.Network.Subscription.Worker (LocalAddresses (..))
 
 
 -- | An index type used with the mux to enumerate all the mini-protocols that
@@ -301,10 +303,7 @@ ipSubscriptionWorker
     -> (Socket.SockAddr -> Socket.SockAddr -> peerid)
     -> ConnectionTable IO Socket.SockAddr
     -> StrictTVar IO (PeerStates IO Socket.SockAddr (Time IO))
-    -> Maybe Socket.SockAddr
-    -- ^ Local IPv4 address to use, Nothing indicates don't use IPv4
-    -> Maybe Socket.SockAddr
-    -- ^ Local IPv6 address to use, Nothing indicates don't use IPv6
+    -> LocalAddresses Socket.SockAddr
     -> (Socket.SockAddr -> Maybe DiffTime)
     -- ^ Lookup function, should return expected delay for the given address
     -> ErrorPolicies IO Socket.SockAddr ()
@@ -326,7 +325,7 @@ ipSubscriptionWorker
   peeridFn
   tbl
   peerStatesVar
-  localIPv4 localIPv6
+  localAddr
   connectionAttemptDelay
   errPolicies
   ips
@@ -336,7 +335,7 @@ ipSubscriptionWorker
         errTracer
         tbl
         peerStatesVar
-        localIPv4 localIPv6
+        localAddr
         connectionAttemptDelay
         errPolicies
         ips
@@ -362,10 +361,7 @@ ipSubscriptionWorker_V1
     -> (Socket.SockAddr -> Socket.SockAddr -> peerid)
     -> ConnectionTable IO Socket.SockAddr
     -> StrictTVar IO (PeerStates IO Socket.SockAddr (Time IO))
-    -> Maybe Socket.SockAddr
-    -- ^ Local IPv4 address to use, Nothing indicates don't use IPv4
-    -> Maybe Socket.SockAddr
-    -- ^ Local IPv6 address to use, Nothing indicates don't use IPv6
+    -> LocalAddresses Socket.SockAddr
     -> (Socket.SockAddr -> Maybe DiffTime)
     -- ^ Lookup function, should return expected delay for the given address
     -> ErrorPolicies IO Socket.SockAddr ()
@@ -385,7 +381,7 @@ ipSubscriptionWorker_V1
   peeridFn
   tbl
   peerStatesVar
-  localIPv4 localIPv6
+  localAddresses
   connectionAttemptDelay
   errPolicies
   ips
@@ -399,7 +395,7 @@ ipSubscriptionWorker_V1
         peeridFn
         tbl
         peerStatesVar
-        localIPv4 localIPv6
+        localAddresses
         connectionAttemptDelay
         errPolicies
         ips
@@ -430,8 +426,7 @@ dnsSubscriptionWorker
     -> (Socket.SockAddr -> Socket.SockAddr -> peerid)
     -> ConnectionTable IO Socket.SockAddr
     -> StrictTVar IO (PeerStates IO Socket.SockAddr (Time IO))
-    -> Maybe Socket.SockAddr
-    -> Maybe Socket.SockAddr
+    -> LocalAddresses Socket.SockAddr
     -> (Socket.SockAddr -> Maybe DiffTime)
     -> ErrorPolicies IO Socket.SockAddr ()
     -> DnsSubscriptionTarget
@@ -453,7 +448,7 @@ dnsSubscriptionWorker
   peeridFn
   tbl
   peerStatesVar
-  localIPv4 localIPv6
+  localAddresses
   connectionAttemptDelay
   errPolicies
   dst
@@ -464,7 +459,7 @@ dnsSubscriptionWorker
       errTracer
       tbl
       peerStatesVar
-      localIPv4 localIPv6
+      localAddresses
       connectionAttemptDelay
       errPolicies
       dst
@@ -492,8 +487,7 @@ dnsSubscriptionWorker_V1
     -> (Socket.SockAddr -> Socket.SockAddr -> peerid)
     -> ConnectionTable IO Socket.SockAddr
     -> StrictTVar IO (PeerStates IO Socket.SockAddr (Time IO))
-    -> Maybe Socket.SockAddr
-    -> Maybe Socket.SockAddr
+    -> LocalAddresses Socket.SockAddr
     -> (Socket.SockAddr -> Maybe DiffTime)
     -> ErrorPolicies IO Socket.SockAddr ()
     -> DnsSubscriptionTarget
@@ -513,7 +507,7 @@ dnsSubscriptionWorker_V1
   peeridFn
   tbl
   peerStatesVar
-  localIPv4 localIPv6
+  localAddresses
   connectionAttemptDelay
   errPolicies
   dst
@@ -528,7 +522,7 @@ dnsSubscriptionWorker_V1
       peeridFn
       tbl
       peerStatesVar
-      localIPv4 localIPv6
+      localAddresses
       connectionAttemptDelay
       errPolicies
       dst

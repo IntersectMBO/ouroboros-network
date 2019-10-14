@@ -18,7 +18,6 @@ import           Control.Exception ( SomeException (..)
                                    , NonTermination (..)
                                    )
 import           Data.Functor (void)
-import           Data.Monoid (First (..))
 import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
 import           Data.Time.Clock (secondsToDiffTime)
@@ -347,9 +346,8 @@ prop_subscriptionWorker
                 ClosedSocket{}  -> tryPutTMVar doneVar () >> pure s')
              completeTx
              (main doneVar)
-             (Just localAddr)
-             (Just localAddr)
-             (\_ a b -> getFirst (First a <> First b))
+             (LocalAddresses (Just localAddr) (Just localAddr) Nothing)
+             (\_ _ -> Just localAddr)
              (const Nothing)
              (pure $ ipSubscriptionTarget nullTracer peerStatesVar [remoteAddr])
              1
