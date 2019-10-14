@@ -20,18 +20,28 @@ module Ouroboros.Network.NodeToClient (
   , withServer_V1
   , withServer
 
+  , ncSubscriptionWorker
+  , ncSubscriptionWorker_V1
+
   -- * Re-exported clients
   , chainSyncClientNull
   , localTxSubmissionClientNull
+  , newConnectionTable
   , TraceSendRecv (..)
   , DecoderFailureOrTooMuchInput
   , Handshake
+  , LocalAddresses (..)
+  , IPSubscriptionTarget (..)
+  , SubscriptionTrace (..)
+  , WithIPList (..)
   ) where
 
 import           Control.Concurrent.Async (Async)
+import           Control.Monad.Class.MonadSTM.Strict
 import qualified Data.ByteString.Lazy as BL
 import           Data.Text (Text)
 import qualified Data.Text as T
+import           Data.Time.Clock
 import           Data.Typeable (Typeable)
 import qualified Codec.CBOR.Encoding as CBOR
 import qualified Codec.CBOR.Decoding as CBOR
@@ -50,10 +60,15 @@ import           Ouroboros.Network.Protocol.LocalTxSubmission.Client (localTxSub
 import           Ouroboros.Network.Protocol.Handshake.Type
 import           Ouroboros.Network.Protocol.Handshake.Version
 import           Ouroboros.Network.Socket
+import qualified Ouroboros.Network.Subscription.Ip as Subscription
+import           Ouroboros.Network.Subscription.Ip ( IPSubscriptionTarget (..)
+                                                   , WithIPList (..)
+                                                   , SubscriptionTrace (..)
+                                                   )
+import           Ouroboros.Network.Subscription.Worker (LocalAddresses (..))
 import           Network.TypedProtocol.Driver.ByteLimit (DecoderFailureOrTooMuchInput)
 import           Network.TypedProtocol.Driver (TraceSendRecv (..))
 import           Control.Tracer (Tracer)
-
 
 -- | An index type used with the mux to enumerate all the mini-protocols that
 -- make up the overall node-to-client protocol.
@@ -231,3 +246,108 @@ withServer_V1 muxTracer handshakeTracer tbl addr peeridFn versionData applicatio
         versionData
         (DictVersion nodeToClientCodecCBORTerm)
         application)
+
+-- | 'ncSubscriptionWorker' which starts given application versions on each
+-- established connection.
+--
+ncSubscriptionWorker
+    :: forall appType peerid void x y.
+       ( HasInitiator appType ~ True
+       , Show peerid )
+    => Tracer IO (WithIPList (SubscriptionTrace Socket.SockAddr))
+    -> Tracer IO (WithMuxBearer (MuxTrace NodeToClientProtocols))
+    -> Tracer IO
+        (TraceSendRecv
+          (Handshake NodeToClientVersion CBOR.Term)
+          peerid
+          (DecoderFailureOrTooMuchInput DeserialiseFailure))
+    -> (Socket.SockAddr -> Socket.SockAddr -> peerid)
+    -> ConnectionTable IO Socket.SockAddr
+    -> LocalAddresses Socket.SockAddr
+    -> (Socket.SockAddr -> Maybe DiffTime)
+    -- ^ Lookup function, should return expected delay for the given address
+    -> IPSubscriptionTarget
+    -> Versions
+        NodeToClientVersion
+        DictVersion
+        (OuroborosApplication
+          appType
+          peerid
+          NodeToClientProtocols
+          IO BL.ByteString x y)
+    -> IO void
+ncSubscriptionWorker
+  subscriptionTracer
+  muxTracer
+  handshakeTracer
+  peeridFn
+  tbl
+  localAddr
+  connectionAttemptDelay
+  ips
+  versions
+    = Subscription.ipSubscriptionWorker
+        subscriptionTracer
+        tbl
+        localAddr
+        connectionAttemptDelay
+        ips
+        (\_ -> retry)
+        (connectToNode'
+          (\(DictVersion codec) -> encodeTerm codec)
+          (\(DictVersion codec) -> decodeTerm codec)
+          muxTracer
+          handshakeTracer
+          peeridFn
+          versions)
+
+
+-- | Like 'ncSubscriptionWorker' but specific to 'NodeToClientV_1'.
+--
+ncSubscriptionWorker_V1
+    :: forall appType peerid void x y.
+       ( HasInitiator appType ~ True
+       , Show peerid )
+    => Tracer IO (WithIPList (SubscriptionTrace Socket.SockAddr))
+    -> Tracer IO (WithMuxBearer (MuxTrace NodeToClientProtocols))
+    -> Tracer IO (TraceSendRecv (Handshake NodeToClientVersion CBOR.Term) peerid (DecoderFailureOrTooMuchInput DeserialiseFailure))
+    -> (Socket.SockAddr -> Socket.SockAddr -> peerid)
+    -> ConnectionTable IO Socket.SockAddr
+    -> LocalAddresses Socket.SockAddr
+    -> (Socket.SockAddr -> Maybe DiffTime)
+    -- ^ Lookup function, should return expected delay for the given address
+    -> IPSubscriptionTarget
+    -> NodeToClientVersionData
+    -> (OuroborosApplication
+          appType
+          peerid
+          NodeToClientProtocols
+          IO BL.ByteString x y)
+    -> IO void
+ncSubscriptionWorker_V1
+  subscriptionTracer
+  muxTracer
+  handshakeTracer
+  peeridFn
+  tbl
+  localAddresses
+  connectionAttemptDelay
+  ips
+  versionData
+  application
+    = ncSubscriptionWorker
+        subscriptionTracer
+        muxTracer
+        handshakeTracer
+        peeridFn
+        tbl
+        localAddresses
+        connectionAttemptDelay
+        ips
+        (simpleSingletonVersions
+          NodeToClientV_1
+          versionData
+          (DictVersion nodeToClientCodecCBORTerm)
+          application)
+
+
