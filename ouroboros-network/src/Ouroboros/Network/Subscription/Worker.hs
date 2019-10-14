@@ -161,9 +161,11 @@ ioSocket = Socket {
       return sock
 
   , connect = \remoteAddr localAddr sock -> do
-      Socket.setSocketOption sock Socket.ReuseAddr 1
+      let af = sockAddrFamily remoteAddr
+      when (af == Socket.AF_INET || af == Socket.AF_INET6) $ do
+        Socket.setSocketOption sock Socket.ReuseAddr 1
 #if !defined(mingw32_HOST_OS)
-      Socket.setSocketOption sock Socket.ReusePort 1
+        Socket.setSocketOption sock Socket.ReusePort 1
 #endif
       Socket.bind sock localAddr
       Socket.connect sock remoteAddr

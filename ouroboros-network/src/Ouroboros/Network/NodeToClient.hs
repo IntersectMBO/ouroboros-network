@@ -20,6 +20,9 @@ module Ouroboros.Network.NodeToClient (
   , withServer_V1
   , withServer
 
+  , ipSubscriptionWorker
+  , ipSubscriptionWorker_V1
+
   -- * Re-exports
   , ErrorPolicies (..)
   , nullErrorPolicies
@@ -28,6 +31,7 @@ module Ouroboros.Network.NodeToClient (
   , newPeerStatesVar
   , PeerState (..)
   , SuspendDecision (..)
+  , LocalAddresses (..)
 
   -- * Re-exported clients
   , chainSyncClientNull
@@ -38,6 +42,7 @@ module Ouroboros.Network.NodeToClient (
   ) where
 
 import           Control.Concurrent.Async (Async)
+import           Control.Monad (void)
 import qualified Data.ByteString.Lazy as BL
 import           Data.Text (Text)
 import qualified Data.Text as T
@@ -67,7 +72,12 @@ import           Ouroboros.Network.Protocol.LocalTxSubmission.Client (localTxSub
 import           Ouroboros.Network.Protocol.Handshake.Type
 import           Ouroboros.Network.Protocol.Handshake.Version
 import           Ouroboros.Network.Socket
-
+import qualified Ouroboros.Network.Subscription.Ip as Subscription
+import           Ouroboros.Network.Subscription.Ip ( IPSubscriptionTarget (..)
+                                                   , WithIPList (..)
+                                                   , SubscriptionTrace (..)
+                                                   )
+import           Ouroboros.Network.Subscription.Worker (LocalAddresses (..))
 
 -- | An index type used with the mux to enumerate all the mini-protocols that
 -- make up the overall node-to-client protocol.
@@ -254,4 +264,124 @@ withServer_V1 muxTracer handshakeTracer errTracer tbl stVar addr peeridFn versio
         versionData
         (DictVersion nodeToClientCodecCBORTerm)
         application)
+
+-- | 'ipSubscriptionWorker' which starts given application versions on each
+-- established connection.
+--
+ipSubscriptionWorker
+    :: forall appType peerid x y.
+       ( HasInitiator appType ~ True
+       , Show peerid )
+    => Tracer IO (WithIPList (SubscriptionTrace Socket.SockAddr))
+    -> Tracer IO (WithMuxBearer (MuxTrace NodeToClientProtocols))
+    -> Tracer IO
+        (TraceSendRecv
+          (Handshake NodeToClientVersion CBOR.Term)
+          peerid
+          (DecoderFailureOrTooMuchInput DeserialiseFailure))
+    -> Tracer IO (WithAddr Socket.SockAddr ErrorPolicyTrace)
+    -> (Socket.SockAddr -> Socket.SockAddr -> peerid)
+    -> ConnectionTable IO Socket.SockAddr
+    -> StrictTVar IO (PeerStates IO Socket.SockAddr (Time IO))
+    -> LocalAddresses Socket.SockAddr
+    -> (Socket.SockAddr -> Maybe DiffTime)
+    -- ^ Lookup function, should return expected delay for the given address
+    -> ErrorPolicies IO Socket.SockAddr ()
+    -> IPSubscriptionTarget
+    -> Versions
+        NodeToClientVersion
+        DictVersion
+        (OuroborosApplication
+          appType
+          peerid
+          NodeToClientProtocols
+          IO BL.ByteString x y)
+    -> IO ()
+ipSubscriptionWorker
+  subscriptionTracer
+  muxTracer
+  handshakeTracer
+  errTracer
+  peeridFn
+  tbl
+  peerStatesVar
+  localAddr
+  connectionAttemptDelay
+  errPolicies
+  ips
+  versions
+    = void $ Subscription.ipSubscriptionWorker
+        subscriptionTracer
+        errTracer
+        tbl
+        peerStatesVar
+        localAddr
+        connectionAttemptDelay
+        errPolicies
+        ips
+        (connectToNode'
+          (\(DictVersion codec) -> encodeTerm codec)
+          (\(DictVersion codec) -> decodeTerm codec)
+          muxTracer
+          handshakeTracer
+          peeridFn
+          versions)
+
+-- | Like 'ipSubscriptionWorker' but specific to 'NodeToNodeV_1'.
+--
+ipSubscriptionWorker_V1
+    :: forall appType peerid x y.
+       ( HasInitiator appType ~ True
+       , Show peerid )
+    => Tracer IO (WithIPList (SubscriptionTrace Socket.SockAddr))
+    -> Tracer IO (WithMuxBearer (MuxTrace NodeToClientProtocols))
+    -> Tracer IO (TraceSendRecv (Handshake NodeToClientVersion CBOR.Term) peerid (DecoderFailureOrTooMuchInput DeserialiseFailure))
+    -> Tracer IO (WithAddr Socket.SockAddr ErrorPolicyTrace)
+    -> (Socket.SockAddr -> Socket.SockAddr -> peerid)
+    -> ConnectionTable IO Socket.SockAddr
+    -> StrictTVar IO (PeerStates IO Socket.SockAddr (Time IO))
+    -> LocalAddresses Socket.SockAddr
+    -> (Socket.SockAddr -> Maybe DiffTime)
+    -- ^ Lookup function, should return expected delay for the given address
+    -> ErrorPolicies IO Socket.SockAddr ()
+    -> IPSubscriptionTarget
+    -> NodeToClientVersionData
+    -> (OuroborosApplication
+          appType
+          peerid
+          NodeToClientProtocols
+          IO BL.ByteString x y)
+    -> IO ()
+ipSubscriptionWorker_V1
+  subscriptionTracer
+  muxTracer
+  handshakeTracer
+  errTracer
+  peeridFn
+  tbl
+  peerStatesVar
+  localAddresses
+  connectionAttemptDelay
+  errPolicies
+  ips
+  versionData
+  application
+    = ipSubscriptionWorker
+        subscriptionTracer
+        muxTracer
+        handshakeTracer
+        errTracer
+        peeridFn
+        tbl
+        peerStatesVar
+        localAddresses
+        connectionAttemptDelay
+        errPolicies
+        ips
+        (simpleSingletonVersions
+          NodeToClientV_1
+          versionData
+          (DictVersion nodeToClientCodecCBORTerm)
+          application)
+
 
