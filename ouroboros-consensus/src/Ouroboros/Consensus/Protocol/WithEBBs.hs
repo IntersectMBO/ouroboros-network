@@ -17,6 +17,7 @@ module Ouroboros.Consensus.Protocol.WithEBBs
   , NodeConfig(..)
   -- * ChainStateWithEBBs
   , ChainStateWithEBBs   -- opaque
+  , mkChainStateWithEBBs
   , decodeChainStateWithEBBs
   , encodeChainStateWithEBBs
   , initChainStateWithEBBs
@@ -139,6 +140,7 @@ mkChainStateWithEBBs mSlot underlying =
 
 deriving instance OuroborosTag p => NoUnexpectedThunks (ChainStateWithEBBs p)
 deriving instance OuroborosTag p => Show (ChainStateWithEBBs p)
+deriving instance Eq (ChainState p) => Eq (ChainStateWithEBBs p)
 
 -- | Create a 'ChainStateWithEBBs' from a 'ChainState' that does not include
 -- any non-EBB blocks.
