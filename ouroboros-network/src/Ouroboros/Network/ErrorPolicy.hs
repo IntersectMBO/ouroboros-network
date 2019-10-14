@@ -54,20 +54,20 @@ import           Data.Semigroup.Action
 
 import           Ouroboros.Network.Subscription.PeerState
 
-data ErrorPolicy e where
-     ErrorPolicy :: forall e err.
-                      Exception err
-                   => (e err -> SuspendDecision DiffTime)
-                   -> ErrorPolicy e
+data ErrorPolicy et where
+     ErrorPolicy :: forall e et.
+                      Exception e
+                   => (et e -> SuspendDecision DiffTime)
+                   -> ErrorPolicy et
 
-instance Show (ErrorPolicy e) where
-    show (ErrorPolicy (_err :: e err -> SuspendDecision DiffTime)) =
+instance Show (ErrorPolicy et) where
+    show (ErrorPolicy (_err :: et e -> SuspendDecision DiffTime)) =
            "ErrorPolicy ("
-        ++ tyConName (typeRepTyCon (typeRep (Proxy :: Proxy err)))
+        ++ tyConName (typeRepTyCon (typeRep (Proxy :: Proxy e)))
         ++ ")"
 
 
-evalErrorPolicy :: forall et e.
+evalErrorPolicy :: forall e et.
                    Exception e
                 => et e
                 -> ErrorPolicy et
@@ -125,9 +125,9 @@ data ConnectionOrApplicationExceptionTrace err =
    deriving (Show, Functor)
 
 -- | Exception thrown by `connect`
-newtype ConnectionException err = ConnectionException err
+newtype ConnectionException e = ConnectionException e
 -- | Exception thrown by an application
-newtype ApplicationException err = ApplicationException err
+newtype ApplicationException e = ApplicationException e
 
 -- | Complete a connection, which receive application result (or exception).
 --
