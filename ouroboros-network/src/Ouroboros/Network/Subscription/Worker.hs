@@ -16,6 +16,7 @@ module Ouroboros.Network.Subscription.Worker
   , Result (..)
   , Main
   , StateVar
+  , LocalAddresses (..)
   , worker
     -- * Socket API
   , Socket (..)
@@ -169,11 +170,21 @@ data Socket m addr sock = Socket {
   , getPeerName   :: sock -> m addr
   }
 
+data LocalAddresses addr = LocalAddresses {
+    -- | Local IPv4 address to use, Nothing indicates don't use IPv4
+    laIpv4 :: Maybe addr
+    -- | Local IPv6 address to use, Nothing indicates don't use IPv6
+  , laIpv6 :: Maybe addr
+    -- | Local Unix address to use, Nothing indicates don't use Unix sockets
+  , laUnix :: Maybe addr
+  } deriving (Eq, Show)
+
 sockAddrFamily
     :: Socket.SockAddr
     -> Socket.Family
 sockAddrFamily (Socket.SockAddrInet  _ _    ) = Socket.AF_INET
 sockAddrFamily (Socket.SockAddrInet6 _ _ _ _) = Socket.AF_INET6
+sockAddrFamily (Socket.SockAddrUnix _       ) = Socket.AF_UNIX
 sockAddrFamily _                              = Socket.AF_UNSPEC
 
 -- | 'Socket' term instanciated with 'Network.Socket'.
@@ -279,11 +290,8 @@ subscriptionLoop
     -- ^ callback which fires when either 'connect' fails or the application
     -- returns.
 
-    -> Maybe addr
-    -- ^ local IPv4 address
-    -> Maybe addr
-    -- ^ local IPv6 address
-    -> (addr -> Maybe addr -> Maybe addr -> Maybe addr)
+    -> LocalAddresses addr
+    -> (addr -> LocalAddresses addr -> Maybe addr)
     -- ^ given remote address, pick the local one
     -> (addr -> Maybe DiffTime)
     -- ^ delay after a connection attempt to 'addr'
@@ -297,7 +305,7 @@ subscriptionLoop
       tr tbl resQ sVar threadsVar socket
       socketStateChangeTx
       completeApplicationTx
-      mbLocalIPv4 mbLocalIPv6 selectAddr connectionAttemptDelay
+      localAddresses selectAddr connectionAttemptDelay
       getTargets valency k = do
     valencyVar <- atomically $ newValencyCounter tbl valency
 
@@ -383,7 +391,7 @@ subscriptionLoop
       r <- refConnection tbl remoteAddr valencyVar
       case r of
         ConnectionTableCreate ->
-          case selectAddr remoteAddr mbLocalIPv4 mbLocalIPv6 of
+          case selectAddr remoteAddr localAddresses of
             Nothing ->
               traceWith tr (SubscriptionTraceUnsupportedRemoteAddr remoteAddr)
 
@@ -576,11 +584,8 @@ worker
     -> CompleteApplication IO s addr a
     -> Main                IO s      t
 
-    -> Maybe addr
-    -- ^ local IPv4 address
-    -> Maybe addr
-    -- ^ local IPv6 address
-    -> (addr -> Maybe addr -> Maybe addr -> Maybe addr)
+    -> LocalAddresses addr
+    -> (addr -> LocalAddresses addr -> Maybe addr)
     -- ^ given a remote address, pick the local one
     -> (addr -> Maybe DiffTime)
     -- ^ delay after a connection attempt to 'addr'
@@ -595,7 +600,7 @@ worker
 worker tr tbl sVar socket
        socketStateChangeTx
        completeApplicationTx mainTx
-       mbLocalIPv4 mbLocalIPv6 selectAddr
+       localAddresses selectAddr
        connectionAttemptDelay getTargets valency k = do
     resQ <- newResultQ
     threadsVar <- atomically $ newTVar Set.empty
@@ -603,7 +608,7 @@ worker tr tbl sVar socket
       (subscriptionLoop tr tbl resQ sVar threadsVar socket
          socketStateChangeTx
          completeApplicationTx
-         mbLocalIPv4 mbLocalIPv6 selectAddr connectionAttemptDelay
+         localAddresses selectAddr connectionAttemptDelay
          getTargets valency k) $ \_ ->
            mainLoop resQ threadsVar sVar completeApplicationTx mainTx
            `finally` killThreads threadsVar

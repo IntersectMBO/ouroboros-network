@@ -47,20 +47,17 @@ ipSubscriptionWorker
     :: forall a x.
        Tracer IO (WithIPList (SubscriptionTrace Socket.SockAddr))
     -> ConnectionTable IO Socket.SockAddr
-    -> Maybe Socket.SockAddr
-    -- ^ Local IPv4 address to use, Nothing indicates don't use IPv4
-    -> Maybe Socket.SockAddr
-    -- ^ Local IPv6 address to use, Nothing indicates don't use IPv6
+    -> LocalAddresses Socket.SockAddr
     -> (Socket.SockAddr -> Maybe DiffTime)
     -- ^ Lookup function, should return expected delay for the given address
     -> IPSubscriptionTarget
     -> Main IO () x
     -> (Socket.Socket -> IO a)
     -> IO x
-ipSubscriptionWorker tracer tbl localIPv4 localIPv6 connectionAttemptDelay ips main k = do
+ipSubscriptionWorker tracer tbl localAddresses connectionAttemptDelay ips main k = do
     sVar <- newTVarM ()
     subscriptionWorker
-            (WithIPList localIPv4 localIPv6 (ispIps ips)
+            (WithIPList localAddresses (ispIps ips)
               `contramap` tracer)
             tbl
             sVar
@@ -68,8 +65,7 @@ ipSubscriptionWorker tracer tbl localIPv4 localIPv6 connectionAttemptDelay ips m
             (\_ s -> pure s)
             (\_ s -> pure (s, pure ()))
             main
-            localIPv4
-            localIPv6
+            localAddresses
             connectionAttemptDelay
             getTargets
             (ispValency ips)
@@ -94,10 +90,7 @@ subscriptionWorker
     -> Main IO s t
     -- ^ main callback
 
-    -> Maybe Socket.SockAddr
-    -- ^ local IPv4 address
-    -> Maybe Socket.SockAddr
-    -- ^ local IPv6 address
+    -> LocalAddresses Socket.SockAddr
     -> (Socket.SockAddr -> Maybe DiffTime)
     -> IO (SubscriptionTarget IO Socket.SockAddr)
     -- ^ subscription targets
@@ -110,38 +103,40 @@ subscriptionWorker
   tr tbl sVar socket
   socketStateChangeTx
   completeApplicationTx mainTx
-  mbLocalIPv4 mbLocalIPv6
+  localAddresses
   connectionAttemptDelay getTargets valency k =
     worker tr tbl sVar socket
            socketStateChangeTx
            completeApplicationTx mainTx
-           mbLocalIPv4 mbLocalIPv6
+           localAddresses
            selectAddr connectionAttemptDelay
            getTargets valency k
 
   where
     selectAddr :: Socket.SockAddr
+               -> LocalAddresses Socket.SockAddr
                -> Maybe Socket.SockAddr
-               -- ^ IPv4 address
-               -> Maybe Socket.SockAddr
-               -- ^ IPv6 address
-               -> Maybe Socket.SockAddr
-    selectAddr Socket.SockAddrInet{} (Just localAddr) _ = Just localAddr
-    selectAddr Socket.SockAddrInet6{} _ (Just localAddr) = Just localAddr
-    selectAddr _ _ _ = Nothing
+    selectAddr Socket.SockAddrInet{}  (LocalAddresses (Just localAddr) _ _ ) = Just localAddr
+    selectAddr Socket.SockAddrInet6{} (LocalAddresses _ (Just localAddr) _ ) = Just localAddr
+    selectAddr Socket.SockAddrUnix{}  (LocalAddresses _ _ (Just localAddr) ) = Just localAddr
+    selectAddr _ _ = Nothing
 
 data WithIPList a = WithIPList {
-      wilIPv4  :: !(Maybe Socket.SockAddr)
-    , wilIPv6  :: !(Maybe Socket.SockAddr)
+      wilSrc   :: !(LocalAddresses Socket.SockAddr)
     , wilDsts  :: ![Socket.SockAddr]
     , wilEvent :: !a
     }
 
 instance (Show a) => Show (WithIPList a) where
-    show (WithIPList Nothing (Just wilIPv6) wilDsts wilEvent) =
-        printf "IPs: %s %s %s" (show wilIPv6) (show wilDsts) (show wilEvent)
-    show (WithIPList (Just wilIPv4) Nothing wilDsts wilEvent) =
-        printf "IPs: %s %s %s" (show wilIPv4) (show wilDsts) (show wilEvent)
-    show WithIPList {wilIPv4, wilIPv6, wilDsts, wilEvent}
-      = printf  "IPs: %s %s %s %s" (show wilIPv4) (show wilIPv6)
+    show (WithIPList (LocalAddresses Nothing (Just ipv6) Nothing) wilDsts wilEvent) =
+        printf "IPs: %s %s %s" (show ipv6) (show wilDsts) (show wilEvent)
+    show (WithIPList (LocalAddresses (Just ipv4) Nothing Nothing) wilDsts wilEvent) =
+        printf "IPs: %s %s %s" (show ipv4) (show wilDsts) (show wilEvent)
+    show (WithIPList (LocalAddresses Nothing Nothing (Just unix)) wilDsts wilEvent) =
+        printf "IPs: %s %s %s" (show unix) (show wilDsts) (show wilEvent)
+    show (WithIPList (LocalAddresses (Just ipv4) (Just ipv6) Nothing) wilDsts wilEvent) =
+        printf  "IPs: %s %s %s %s" (show ipv4) (show ipv6)
                                    (show wilDsts) (show wilEvent)
+    show WithIPList {wilSrc, wilDsts, wilEvent} =
+        printf "IPs: %s %s %s" (show wilSrc) (show wilDsts) (show wilEvent)
+

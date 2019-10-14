@@ -421,8 +421,10 @@ prop_sub_io lr = ioProperty $ do
     serverPortMap <- atomically $ readTVar serverPortMapVar
     dnsSubscriptionWorker' activeTracer activeTracer clientTbl
             (mockResolverIO firstDoneVar serverPortMap lr)
-            (Just $ Socket.addrAddress ipv4Client)
-            (Just $ Socket.addrAddress ipv6Client)
+            (LocalAddresses
+              (Just $ Socket.addrAddress ipv4Client)
+              (Just $ Socket.addrAddress ipv6Client)
+              Nothing)
             (\_ -> Just minConnectionAttemptDelay)
             (DnsSubscriptionTarget "shelley-0.iohk.example" 6062 (lrioValency lr))
             (\_ -> do
@@ -558,8 +560,10 @@ prop_send_recv f xs first = ioProperty $ do
             activeTracer activeTracer
             clientTbl
             (mockResolverIO firstDoneVar serverPortMap lr)
-            (Just $ Socket.addrAddress initiatorAddr4)
-            (Just $ Socket.addrAddress initiatorAddr6)
+            (LocalAddresses
+                (Just $ Socket.addrAddress initiatorAddr4)
+                (Just $ Socket.addrAddress initiatorAddr6)
+                Nothing)
             (\_ -> Just minConnectionAttemptDelay)
             (DnsSubscriptionTarget "shelley-0.iohk.example" 6062 1)
             (\_ -> waitSiblingSTM siblingVar)
@@ -701,8 +705,7 @@ prop_send_recv_init_and_rsp f xs = ioProperty $ do
           _ <- ipSubscriptionWorker
             activeTracer
             tbl
-            (Just localAddr)
-            Nothing
+            (LocalAddresses (Just localAddr) Nothing Nothing)
             (\_ -> Just minConnectionAttemptDelay)
             (IPSubscriptionTarget [remoteAddr] 1)
             (\_ -> waitSiblingSTM (rrcSiblingVar rrcfg))
@@ -763,8 +766,10 @@ _demo = ioProperty $ do
     spawnServer tbl server6' 45
 
     _ <- dnsSubscriptionWorker activeTracer activeTracer clientTbl
-            (Just $ Socket.addrAddress client)
-            (Just $ Socket.addrAddress client6)
+            (LocalAddresses
+                (Just $ Socket.addrAddress client)
+                (Just $ Socket.addrAddress client6)
+                Nothing)
             (\_ -> Just minConnectionAttemptDelay)
             (DnsSubscriptionTarget "shelley-0.iohk.example" 6064 1)
             (\_ -> retry)

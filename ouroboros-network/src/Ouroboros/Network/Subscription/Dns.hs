@@ -193,14 +193,13 @@ dnsSubscriptionWorker'
     -> Tracer IO (WithDomainName DnsTrace)
     -> ConnectionTable IO Socket.SockAddr
     -> Resolver IO
-    -> Maybe Socket.SockAddr
-    -> Maybe Socket.SockAddr
+    -> LocalAddresses Socket.SockAddr
     -> (Socket.SockAddr -> Maybe DiffTime)
     -> DnsSubscriptionTarget
     -> Main IO () t
     -> (Socket.Socket -> IO a)
     -> IO t
-dnsSubscriptionWorker' subTracer dnsTracer tbl resolver localIPv4 localIPv6
+dnsSubscriptionWorker' subTracer dnsTracer tbl resolver localAddresses
   connectionAttemptDelay dst main k = do
     statesVar <- newTVarM ()
     subscriptionWorker (WithDomainName (dstDomain dst) `contramap` subTracer)
@@ -210,8 +209,7 @@ dnsSubscriptionWorker' subTracer dnsTracer tbl resolver localIPv4 localIPv6
                        (\_ s -> pure s)
                        (\_ s -> pure (s, pure ()))
                        main
-                       localIPv4
-                       localIPv6
+                       localAddresses
                        connectionAttemptDelay
                        (dnsResolve
                           (WithDomainName (dstDomain dst) `contramap` dnsTracer)
@@ -224,21 +222,20 @@ dnsSubscriptionWorker
     :: Tracer IO (WithDomainName (SubscriptionTrace Socket.SockAddr))
     -> Tracer IO (WithDomainName DnsTrace)
     -> ConnectionTable IO Socket.SockAddr
-    -> Maybe Socket.SockAddr
-    -> Maybe Socket.SockAddr
+    -> LocalAddresses Socket.SockAddr
     -> (Socket.SockAddr -> Maybe DiffTime)
     -> DnsSubscriptionTarget
     -> Main IO () t
     -> (Socket.Socket -> IO a)
     -> IO t
-dnsSubscriptionWorker subTracer dnsTracer tbl localIPv4 localIPv6 connectionAttemptDelay dst
+dnsSubscriptionWorker subTracer dnsTracer tbl localAddresses connectionAttemptDelay dst
   main k = do
     rs <- DNS.makeResolvSeed DNS.defaultResolvConf
 
     DNS.withResolver rs $ \dnsResolver ->
         let resolver = Resolver (ipv4ToSockAddr (dstPort dst) dnsResolver)
                                 (ipv6ToSockAddr (dstPort dst) dnsResolver) in
-        dnsSubscriptionWorker' subTracer dnsTracer tbl resolver localIPv4 localIPv6
+        dnsSubscriptionWorker' subTracer dnsTracer tbl resolver localAddresses
                                connectionAttemptDelay dst main k
   where
     ipv4ToSockAddr port dnsResolver d = do
