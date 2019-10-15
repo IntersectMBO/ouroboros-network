@@ -76,7 +76,6 @@ import           Ouroboros.Consensus.NodeNetwork
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.Orphans ()
-import           Ouroboros.Consensus.Util.RedundantConstraints
 import           Ouroboros.Consensus.Util.ResourceRegistry
 import           Ouroboros.Consensus.Util.STM
 
@@ -144,7 +143,7 @@ runNodeNetwork registry testBtime numCoreNodes nodeJoinPlan nodeTopology
     let edges = edgesNodeTopology nodeTopology
     forM_ edges $ \edge -> do
       void $ forkLinkedThread registry $ do
-        undirectedEdge nullTracer nodeVars edge
+        undirectedEdge nullDebugTracer nodeVars edge
 
     -- create nodes
     let nodesByJoinSlot =
@@ -178,8 +177,6 @@ runNodeNetwork registry testBtime numCoreNodes nodeJoinPlan nodeTopology
 
     getTestOutput nodes
   where
-    _ = keepRedundantConstraint (Proxy @(TracingConstraints blk))
-
     btime = testBlockchainTime testBtime
 
     coreNodeIds :: [CoreNodeId]
@@ -330,7 +327,7 @@ runNodeNetwork registry testBtime numCoreNodes nodeJoinPlan nodeTopology
           nodeInfoDBs
 
       let nodeArgs = NodeArgs
-            { tracers             = nullTracers
+            { tracers             = nullDebugTracers
                 { forgeTracer = nodeEventsForges nodeInfoEvents
                 }
             , registry            = registry
@@ -350,7 +347,7 @@ runNodeNetwork registry testBtime numCoreNodes nodeJoinPlan nodeTopology
       nodeKernel <- initNodeKernel nodeArgs
       let app = consensusNetworkApps
                   nodeKernel
-                  nullProtocolTracers
+                  nullDebugProtocolTracers
                   protocolCodecsId
                   (protocolHandlers nodeArgs nodeKernel)
 
@@ -629,12 +626,37 @@ getTestOutput nodes = do
   Constraints needed for verbose tracing
 -------------------------------------------------------------------------------}
 
+nullDebugTracer :: (Applicative m, Show a) => Tracer m a
+nullDebugTracer = nullTracer `asTypeOf` showTracing debugTracer
+
+nullDebugTracers ::
+     ( Monad m
+     , Show peer
+     , SupportedBlock blk
+     , TracingConstraints blk
+     )
+  => Tracers m peer blk
+nullDebugTracers = nullTracers `asTypeOf` showTracers debugTracer
+
+nullDebugProtocolTracers ::
+     ( Monad m
+     , HasHeader blk
+     , TracingConstraints blk
+     , Show peer
+     , Show failure
+     )
+  => ProtocolTracers m peer blk failure
+nullDebugProtocolTracers =
+  nullProtocolTracers `asTypeOf` showProtocolTracers debugTracer
+
 -- These constraints are when using @showTracer(s) debugTracer@ instead of
 -- @nullTracer(s)@.
 type TracingConstraints blk =
   ( Show blk
+  , Show (ApplyTxErr blk)
   , Show (Header blk)
   , Show (GenTx blk)
+  , Show (GenTxId blk)
   )
 
 {-------------------------------------------------------------------------------
