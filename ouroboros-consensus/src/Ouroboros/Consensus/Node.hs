@@ -248,34 +248,38 @@ type NetworkApps peer =
 
 -- | Arguments specific to the network stack
 data RunNetworkArgs peer blk = RunNetworkArgs
-  { rnaIpSubscriptionTracer  :: Tracer IO (WithIPList (SubscriptionTrace Socket.SockAddr))
+  { rnaIpSubscriptionTracer    :: Tracer IO (WithIPList (SubscriptionTrace Socket.SockAddr))
     -- ^ IP subscription tracer
-  , rnaDnsSubscriptionTracer :: Tracer IO (WithDomainName (SubscriptionTrace Socket.SockAddr))
-  , rnaMuxTracer             :: Tracer IO (WithMuxBearer (MuxTrace NodeToNodeProtocols))
+  , rnaDnsSubscriptionTracer   :: Tracer IO (WithDomainName (SubscriptionTrace Socket.SockAddr))
+  , rnaMuxTracer               :: Tracer IO (WithMuxBearer (MuxTrace NodeToNodeProtocols))
     -- ^ Mux tracer
-  , rnaMuxLocalTracer        :: Tracer IO (WithMuxBearer (MuxTrace NodeToClientProtocols))
-  , rnaHandshakeTracer       :: Tracer IO (TraceSendRecv
-                                            (Handshake NodeToNodeVersion CBOR.Term)
-                                            peer
-                                            (DecoderFailureOrTooMuchInput CBOR.DeserialiseFailure))
+  , rnaMuxLocalTracer          :: Tracer IO (WithMuxBearer (MuxTrace NodeToClientProtocols))
+  , rnaHandshakeTracer         :: Tracer IO (TraceSendRecv
+                                              (Handshake NodeToNodeVersion CBOR.Term)
+                                              peer
+                                              (DecoderFailureOrTooMuchInput CBOR.DeserialiseFailure))
     -- ^ Handshake protocol tracer
-  , rnaHandshakeLocalTracer  :: Tracer IO (TraceSendRecv
-                                            (Handshake NodeToClientVersion CBOR.Term)
-                                            peer
-                                            (DecoderFailureOrTooMuchInput CBOR.DeserialiseFailure))
+  , rnaHandshakeLocalTracer    :: Tracer IO (TraceSendRecv
+                                              (Handshake NodeToClientVersion CBOR.Term)
+                                              peer
+                                              (DecoderFailureOrTooMuchInput CBOR.DeserialiseFailure))
     -- ^ DNS subscription tracer
-  , rnaDnsResolverTracer     :: Tracer IO (WithDomainName DnsTrace)
+  , rnaDnsResolverTracer       :: Tracer IO (WithDomainName DnsTrace)
     -- ^ DNS resolver tracer
-  , rnaMkPeer                :: SockAddr -> SockAddr -> peer
+  , rnaMkPeer                  :: SockAddr -> SockAddr -> peer
     -- ^ How to create a peer
-  , rnaMyAddrs               :: [AddrInfo]
+  , rnaMyAddrs                 :: [AddrInfo]
     -- ^ The node's own addresses
-  , rnaMyLocalAddr           :: AddrInfo
+  , rnaMyLocalAddr             :: AddrInfo
     -- ^ The node's own local address
-  , rnaIpProducers           :: [SockAddr]
+  , rnaIpProducers             :: [SockAddr]
     -- ^ IP producers
-  , rnaDnsProducers          :: [DnsSubscriptionTarget]
+  , rnaDnsProducers            :: [DnsSubscriptionTarget]
     -- ^ DNS producers
+  , rnaNodeToNodeVersionData   :: NodeToNodeVersionData
+    -- ^ Node-to-Node Version Data
+  , rnaNodeToClientVersionData :: NodeToClientVersionData
+    -- ^ Node-to-Client Version Data
   }
 
 initNetwork
@@ -320,11 +324,6 @@ initNetwork registry nodeArgs kernel RunNetworkArgs{..} = do
       (protocolCodecs (getNodeConfig kernel))
       (protocolHandlers nodeArgs kernel)
 
-    -- TODO: network magics should be configurable, this gives an early fail if
-    -- one tries to run testnet vs mainnet.
-    nodeToNodeVersionData   = NodeToNodeVersionData { networkMagic   = 0 }
-    nodeToClientVersionData = NodeToClientVersionData { networkMagic = 0 }
-
     runLocalServer :: IO ()
     runLocalServer = do
       (connTable :: ConnectionTable IO Socket.SockAddr) <- newConnectionTable
@@ -334,7 +333,7 @@ initNetwork registry nodeArgs kernel RunNetworkArgs{..} = do
         connTable
         rnaMyLocalAddr
         rnaMkPeer
-        nodeToClientVersionData
+        rnaNodeToClientVersionData
         (localResponderNetworkApplication networkApps)
         wait
 
@@ -346,7 +345,7 @@ initNetwork registry nodeArgs kernel RunNetworkArgs{..} = do
         connTable
         myAddr
         rnaMkPeer
-        nodeToNodeVersionData
+        rnaNodeToNodeVersionData
         (responderNetworkApplication networkApps)
         wait
 
@@ -368,7 +367,7 @@ initNetwork registry nodeArgs kernel RunNetworkArgs{..} = do
         { ispIps     = rnaIpProducers
         , ispValency = length rnaIpProducers
         }
-      nodeToNodeVersionData
+      rnaNodeToNodeVersionData
       (initiatorNetworkApplication networkApps)
 
     runDnsSubscriptionWorker :: ConnectionTable IO Socket.SockAddr
@@ -394,5 +393,5 @@ initNetwork registry nodeArgs kernel RunNetworkArgs{..} = do
       ipv6
       (const Nothing)
       dnsProducer
-      nodeToNodeVersionData
+      rnaNodeToNodeVersionData
       (initiatorNetworkApplication networkApps)
