@@ -57,15 +57,24 @@ import           Test.Ouroboros.Storage.VolatileDB.TestBlock (Corruptions,
                      FileCorruption (..), binarySize)
 
 data DBModel blockId = DBModel {
-      blocksPerFile  :: Int  -- how many blocks each file has (should follow the real Impl)
-    , parseError     :: Maybe (ParserError blockId) -- an error which indicates the parser will return an error.
-    , open           :: Bool -- is the db open.
-    , mp             :: Map blockId ByteString -- superset of blocks in db. Some of them may be gced already.
-    , latestGarbaged :: Maybe SlotNo -- last gced slot.
-    , index          :: Map FsPath (MaxSlotNo, Int, [(blockId, WithOrigin blockId)]) -- what each file contains in the real impl.
-    , currentFile    :: FsPath -- the current open file. If the db is empty this is the next it wil write.
-    , nextFId        :: FileId -- the next file id.
-    , maxSlotNo      :: MaxSlotNo -- highest ever stored SlotNo
+      blocksPerFile  :: Int
+    -- ^ how many blocks each file has (should follow the real Impl)
+    , parseError     :: Maybe (ParserError blockId)
+    -- ^ an error which indicates the parser will return an error.
+    , open           :: Bool
+    -- ^ is the db open.
+    , mp             :: Map blockId ByteString
+    -- ^ superset of blocks in db. Some of them may be gced already.
+    , latestGarbaged :: Maybe SlotNo
+    -- ^ last gced slot.
+    , index          :: Map FsPath (MaxSlotNo, Int, [(blockId, WithOrigin blockId)])
+    -- ^ what each file contains in the real impl.
+    , currentFile    :: FsPath
+    -- ^ the current open file. If the db is empty this is the next it wil write.
+    , nextFId        :: FileId
+    -- ^ the next file id.
+    , maxSlotNo      :: MaxSlotNo
+    -- ^ highest ever stored SlotNo
     } deriving Show
 
 initDBModel ::Int -> DBModel blockId

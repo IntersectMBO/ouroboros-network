@@ -14,41 +14,46 @@
 -- Logic
 --
 -- The db is a key-value store of binary blocks and is parametric
--- on the key of blocks, named blockId. The only constraints are that one must provide
--- a function (toSlot :: blockId -> SlotNo), as well as an Ord instance of blockId.
--- The db expects NO properties for this Ord instance, not even one that makes
--- toBlock monotonic.
+-- on the key of blocks, named blockId. The only constraints are that one must
+-- provide a function (toSlot :: blockId -> SlotNo), as well as an Ord instance
+-- of blockId. The db expects NO properties for this Ord instance, not even one
+-- that makes toBlock monotonic.
 
--- The database uses in memory indexes, which are created on each reopening. reopening
--- includes parsing all blocks of the dbFolder, so it can be an expensive operation
--- if the database gets big. That's why the intention of this db is to be used for only
--- the tip of the blockchain, when there is still volatility on which blocks are included.
--- The db is agnostic to the format of the blocks, so a parser must be provided.
--- In addition to getBlock and putBlock, the db provides also the ability to garbage-collect
--- old blocks. The actual garbage-collection happens in terms of files and not blocks: a file
--- is deleted/garbage-collected only if its latest block is old enough. A block is old enough
--- if its toSlot value is old enough and not based on its Ord instance. This type of garbage
--- collection makes the deletion of blocks depend on the number of blocks we insert on
--- each file, as well as the order of insertion, so it's not deterministic on blocks themselves.
+-- The database uses in memory indexes, which are created on each reopening.
+-- reopening includes parsing all blocks of the dbFolder, so it can be an
+-- expensive operation if the database gets big. That's why the intention of
+-- this db is to be used for only the tip of the blockchain, when there is still
+-- volatility on which blocks are included. The db is agnostic to the format of
+-- the blocks, so a parser must be provided. In addition to getBlock and
+-- putBlock, the db provides also the ability to garbage-collect old blocks.
+-- The actual garbage-collection happens in terms of files and not blocks: a
+-- file is deleted/garbage-collected only if its latest block is old enough. A
+-- block is old enough if its toSlot value is old enough and not based on its
+-- Ord instance. This type of garbage collection makes the deletion of blocks
+-- depend on the number of blocks we insert on each file, as well as the order
+-- of insertion, so it's not deterministic on blocks themselves.
 --
 -- Errors
 --
--- On any exception or error the db closes and its Internal State is lost, inluding in memory
--- indexes. We try to make sure that even on errors the fs represantation of the db remains
--- consistent and the Internal State can be recovered on reopening. In general we try to make
--- sure that at any point, losing the in-memory Internal State is not fatal to the db as it can
--- recovered. This is important since we must always expect unexpected shutdowns, power loss,
--- sleep mode etc. This is achived by leting only basic operations on the db:
--- + putBlock only appends a new block on a file. Losing an update means we only lose a block,
---   which can be recovered.
+-- On any exception or error the db closes and its Internal State is lost,
+-- inluding in memory indexes. We try to make sure that even on errors the
+-- fs represantation of the db remains consistent and the Internal State
+-- can be recovered on reopening. In general we try to make sure that at
+-- any point, losing the in-memory Internal State is not fatal to the db
+-- as it can recovered. This is important since we must always expect unexpected
+-- shutdowns, power loss, sleep mode etc.
+-- This is achived by leting only basic operations on the db:
+-- + putBlock only appends a new block on a file. Losing an update means we only
+--   lose a block, which can be recovered.
 -- + garbage collect deletes only whole files.
--- + there is no modify block operation. Thanks to that we need not keep any rollback journals
---   to make sure we are safe in case of unexpected shutdowns.
+-- + there is no modify block operation. Thanks to that we need not keep any
+--   rollback journals to make sure we are safe in case of unexpected shutdowns.
 --
--- We only throw VolatileDBError. All internal errors, like io errors, are cought, wrapped
--- and rethrown. For all new calls of HasFs, we must make sure that they are used properly
--- wrapped. All top-level function of this module are safe. You can safely use HasFs calls
--- in modifyState or wrapFsError actions.
+-- We only throw VolatileDBError. All internal errors, like io errors, are
+-- cought, wrapped and rethrown. For all new calls of HasFs, we must make sure
+-- that they are used properly wrapped. All top-level function of this module
+-- are safe. You can safely use HasFs calls in modifyState or wrapFsError
+-- actions.
 --
 -- Concurrency
 --
@@ -65,13 +70,13 @@
 --    ...
 --
 --  If on opening any other filename which does not follow blocks-i.dat is found
---  an error is raised. The Ordering of blocks is not guarranteed to be followed,
---  files can be garbage-collected.
+--  an error is raised. The Ordering of blocks is not guarranteed to be
+--  followed, files can be garbage-collected.
 --
 --  Each file stores a fixed number of slots, specified by _maxBlocksPerFile.
---  If the db finds files with less blocks than this max, it will start appending
---  to the newest of them, if it's the newest of all files. If it's not the newest
---  of all files it will create a new file to append blocks..
+--  If the db finds files with less blocks than this max, it will start
+--  appending to the newest of them, if it's the newest of all files. If it's
+--  not the newest of all files it will create a new file to append blocks..
 --
 --  There is an implicit ordering of block files, which is NOT alpharithmetic
 --  For example blocks-20.dat < blocks-100.dat
