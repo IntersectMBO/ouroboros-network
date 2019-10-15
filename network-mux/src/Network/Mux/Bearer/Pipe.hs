@@ -47,7 +47,7 @@ pipeAsMuxBearer tracer pcRead pcWrite = do
         }
     where
       readPipe :: (HasCallStack)
-               => IO (Mx.MuxSDU ptcl, Time IO)
+               => IO (Mx.MuxSDU ptcl, Time)
       readPipe = do
           traceWith tracer $ Mx.MuxTraceRecvHeaderStart
           hbuf <- recvLen' pcRead 8 []
@@ -75,7 +75,7 @@ pipeAsMuxBearer tracer pcRead pcWrite = do
                   recvLen' pd (l - fromIntegral (BL.length buf)) (buf : bufs)
 
       writePipe :: Mx.MuxSDU ptcl
-                -> IO (Time IO)
+                -> IO Time
       writePipe sdu = do
           ts <- getMonotonicTime
           let ts32 = Mx.timestampMicrosecondsLow32Bits ts

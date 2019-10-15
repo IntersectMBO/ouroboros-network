@@ -215,9 +215,9 @@ data MuxBearerState = Larval
 --
 data MuxBearer ptcl m = MuxBearer {
     -- | Timestamp and send MuxSDU.
-      write   :: MuxSDU ptcl -> m (Time m)
+      write   :: MuxSDU ptcl -> m Time
     -- | Read a MuxSDU
-    , read    :: m (MuxSDU ptcl, Time m)
+    , read    :: m (MuxSDU ptcl, Time)
     -- | Return a suitable MuxSDU payload size.
     , sduSize :: m Word16
     , state   :: StrictTVar m MuxBearerState

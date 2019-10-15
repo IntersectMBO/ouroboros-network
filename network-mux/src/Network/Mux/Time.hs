@@ -5,14 +5,13 @@ module Network.Mux.Time (
     diffTimeToMicroseconds,
     microsecondsToDiffTime,
 
-    -- * TimeMeasure
-    TimeMeasure(..),
+    -- * Compact timestamp
     timestampMicrosecondsLow32Bits,
   ) where
 
 import Data.Word (Word32)
 import Data.Time.Clock (DiffTime, diffTimeToPicoseconds, picosecondsToDiffTime)
-import Control.Monad.Class.MonadTime (TimeMeasure(..))
+import Control.Monad.Class.MonadTime (Time(..))
 
 diffTimeToMicroseconds :: DiffTime -> Integer
 diffTimeToMicroseconds = (`div` 1000000) . diffTimeToPicoseconds
@@ -27,7 +26,7 @@ microsecondsToDiffTime = picosecondsToDiffTime . (* 1000000)
 -- The purpose is to give a compact timestamp (compact to send over the wire)
 -- for measuring time differences on the order of seconds or less.
 --
-timestampMicrosecondsLow32Bits :: TimeMeasure t => t -> Word32
-timestampMicrosecondsLow32Bits ts =
-    fromIntegral (diffTimeToMicroseconds (ts `diffTime` zeroTime))
+timestampMicrosecondsLow32Bits :: Time -> Word32
+timestampMicrosecondsLow32Bits (Time ts) =
+    fromIntegral (diffTimeToMicroseconds ts)
 
