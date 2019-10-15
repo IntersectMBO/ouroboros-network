@@ -45,7 +45,7 @@ class TxGen blk where
              -> m [GenTx blk]
   testGenTxs  numCoreNodes cfg ledger = do
     -- Currently 0 to 1 txs
-    n <- generateBetween 0 1
+    n <- generateBetween 0 20
     replicateM (fromIntegral n) $ testGenTx numCoreNodes cfg ledger
 
   {-# MINIMAL testGenTx #-}

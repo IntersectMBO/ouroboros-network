@@ -137,6 +137,7 @@ data NodeArgs m peer blk = NodeArgs {
     , blockFetchSize      :: Header blk -> SizeInBytes
     , blockMatchesHeader  :: Header blk -> blk -> Bool
     , maxUnackTxs         :: Word16
+    , mempoolCap          :: MempoolCapacity
     , chainSyncPipelining :: MkPipelineDecision
     }
 
@@ -205,12 +206,13 @@ initInternalState
     -> m (InternalState m peer blk)
 initInternalState NodeArgs { tracers, chainDB, registry, cfg,
                              blockFetchSize, blockMatchesHeader, btime,
-                             callbacks, initState } = do
+                             callbacks, initState, mempoolCap } = do
     varCandidates  <- newTVarM mempty
     varState       <- newTVarM initState
     mempool        <- openMempool registry
                                   (chainDBLedgerInterface chainDB)
                                   (ledgerConfigView cfg)
+                                  mempoolCap
                                   (mempoolTracer tracers)
 
     fetchClientRegistry <- newFetchClientRegistry

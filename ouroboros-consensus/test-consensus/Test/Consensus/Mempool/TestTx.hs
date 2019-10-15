@@ -59,7 +59,7 @@ data TestTxError
   | TxAlreadyInChain TestTxId
     -- ^ The transaction was a 'ValidTestTx' but the same transaction is
     -- already in the ledger.
-  deriving (Eq, Show)
+  deriving (Eq, Ord, Show)
 
 testTxValidate :: TestTx
               -> [TestTxId]
