@@ -58,6 +58,8 @@ module Ouroboros.Consensus.Util.IOLike (
   , addTime
   , diffTime
   , getMonotonicTime
+  , UTCTime
+  , getCurrentTime
     -- *** MonadTimer
   , threadDelay
   , timeoutAfter
