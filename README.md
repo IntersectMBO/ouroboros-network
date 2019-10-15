@@ -7,7 +7,7 @@
 * io-sim-classes - type classes, all of them have instance for both `IOSim` and
   `IO`.
 * `typed-protocols` - session type framework with support of [protocol pipelining](https://en.wikipedia.org/wiki/Protocol_pipelining)
-  * See 45min Haskell eXchange 2019 [talk by @dcoutts](https://skillsmatter.com/skillscasts/14633-45-minute-talk-by-duncan-coutts)
+  * See 45min Haskell eXchange 2019 [talk](https://skillsmatter.com/skillscasts/14633-45-minute-talk-by-duncan-coutts) by @dcoutts.
   * See three 50min Monadic Party 2019 workshop talks by @coot: [Part 1](https://www.youtube.com/watch?v=j8gza2L61nM), [Part 2](https://www.youtube.com/watch?v=oV6KSl1srL8), [Part 3](https://www.youtube.com/watch?v=nOIQCRPwmPA).
 * `ouroboros-network`- ouroboros network package which implements protocols
   which to run ouroboros family of protocols, multiplexing layer.
