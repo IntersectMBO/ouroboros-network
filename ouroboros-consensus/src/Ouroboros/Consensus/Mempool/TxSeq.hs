@@ -13,6 +13,7 @@ module Ouroboros.Consensus.Mempool.TxSeq (
   , fromTxSeq
   , lookupByTicketNo
   , splitAfterTicketNo
+  , splitAfterSlotNo
   , zeroTicketNo
   , filterTxs
   ) where
@@ -85,21 +86,25 @@ instance Foldable TxSeq where
 data TxSeqMeasure = TxSeqMeasure {
        mMinTicket :: !TicketNo,
        mMaxTicket :: !TicketNo,
+       mMinSlotNo :: !SlotNo,
+       mMaxSlotNo :: !SlotNo,
        mSize      :: !Int
      }
   deriving Show
 
 instance FingerTree.Measured TxSeqMeasure (TxTicket tx) where
-  measure (TxTicket _ tno _sno) = TxSeqMeasure tno tno 1
+  measure (TxTicket _ tno sno) = TxSeqMeasure tno tno sno sno 1
 
 instance Semigroup TxSeqMeasure where
   vl <> vr = TxSeqMeasure
                (mMinTicket vl `min` mMinTicket vr)
                (mMaxTicket vl `max` mMaxTicket vr)
+               (mMinSlotNo vl `min` mMinSlotNo vr)
+               (mMaxSlotNo vl `max` mMaxSlotNo vr)
                (mSize      vl   +   mSize      vr)
 
 instance Monoid TxSeqMeasure where
-  mempty  = TxSeqMeasure maxBound minBound 0
+  mempty  = TxSeqMeasure maxBound minBound maxBound minBound 0
   mappend = (<>)
 
 -- | A helper function for the ':>' pattern.
@@ -161,6 +166,17 @@ lookupByTicketNo (TxSeq txs) n =
 splitAfterTicketNo :: TxSeq tx -> TicketNo -> (TxSeq tx, TxSeq tx)
 splitAfterTicketNo (TxSeq txs) n =
     case FingerTree.split (\m -> mMaxTicket m > n) txs of
+      (l, r) -> (TxSeq l, TxSeq r)
+
+-- | \( O(\log(n) \). Split the sequence of transactions into two parts
+-- based on the given slot number. The first part has transactions with slot
+-- numbers less than or equal to the given slot number, and the second part
+-- has transactions with slot numbers strictly greater than the given slot
+-- number.
+--
+splitAfterSlotNo :: TxSeq tx -> SlotNo -> (TxSeq tx, TxSeq tx)
+splitAfterSlotNo (TxSeq txs) n =
+    case FingerTree.split (\m -> mMaxSlotNo m > n) txs of
       (l, r) -> (TxSeq l, TxSeq r)
 
 -- | Convert a 'TxSeq' to a list of pairs of transactions and their
