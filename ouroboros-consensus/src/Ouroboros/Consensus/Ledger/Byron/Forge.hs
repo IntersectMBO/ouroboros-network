@@ -13,6 +13,7 @@ import           Control.Monad (void)
 import           Crypto.Random (MonadRandom)
 import           Data.ByteString (ByteString)
 import           Data.Coerce (coerce)
+import           Data.Foldable (foldl')
 import           Data.Reflection (Given (..), give)
 
 import           Cardano.Binary (Annotated (..), reAnnotate)
@@ -91,6 +92,31 @@ forgeGenesisEBB (WithEBBNodeConfig cfg) curSlot =
           . CC.Slot.fromSlotNumber pbftEpochSlots
           $ coerce curSlot
 
+-- | Internal helper data type for 'forgeBlock' used to accumulate the
+-- different kinds of block payloads that can be found in a given collection
+-- of Byron 'GenTx's.
+--
+-- n.b. This data type is not to be exposed from this module.
+data BlockPayloads = BlockPayloads
+  { bpTxs         :: ![CC.UTxO.TxAux]
+  , bpDlgCerts    :: ![CC.Delegation.Certificate]
+  , bpUpVotes     :: ![CC.Update.Vote]
+  , bpUpProposal  :: !(Maybe CC.Update.Proposal)
+    -- ^ 'Just' if there is at least one 'CC.Update.Proposal' in a list of
+    -- Byron 'GenTx's and 'Nothing' if there are none. It is worth noting that
+    -- if we encounter multiple 'CC.Update.Proposal's in a collection of
+    -- 'GenTx's, this value will be that of the last 'CC.Update.Proposal'
+    -- encountered.
+  }
+
+initBlockPayloads :: BlockPayloads
+initBlockPayloads = BlockPayloads
+  { bpTxs        = []
+  , bpDlgCerts   = []
+  , bpUpVotes    = []
+  , bpUpProposal = Nothing
+  }
+
 forgeBlock
   :: forall m cfg.
      ( HasNodeState_ () m  -- @()@ is the @NodeState@ of PBFT
@@ -99,8 +125,8 @@ forgeBlock
      , Given Crypto.ProtocolMagicId
      )
   => NodeConfig ByronEBBExtNodeConfig
-  -> SlotNo                       -- ^ Current slot
-  -> BlockNo                      -- ^ Current block number
+  -> SlotNo                            -- ^ Current slot
+  -> BlockNo                           -- ^ Current block number
   -> ChainHash (ByronBlockOrEBB cfg)   -- ^ Previous hash
   -> [GenTx (ByronBlockOrEBB cfg)]     -- ^ Txs to add in the block
   -> PBftIsLeader PBftCardanoCrypto    -- ^ Leader proof ('IsLeader')
@@ -119,15 +145,42 @@ forgeBlock (WithEBBNodeConfig cfg) curSlot curNo prevHash txs isLeader = do
       , pbftProtocolMagic
       } = encNodeConfigExt cfg
 
+    blockPayloads :: BlockPayloads
+    blockPayloads = foldl' extendBlockPayloads initBlockPayloads txs
+
     txPayload :: CC.UTxO.TxPayload
-    txPayload = CC.UTxO.mkTxPayload (map (void . byronTx) txs)
+    txPayload = CC.UTxO.mkTxPayload (bpTxs blockPayloads)
+
+    dlgPayload :: CC.Delegation.Payload
+    dlgPayload = CC.Delegation.unsafePayload (bpDlgCerts blockPayloads)
+
+    updatePayload :: CC.Update.Payload
+    updatePayload = CC.Update.payload (bpUpProposal blockPayloads)
+                                      (bpUpVotes blockPayloads)
+
+    extendBlockPayloads :: BlockPayloads
+                        -> GenTx (ByronBlockOrEBB cfg)
+                        -> BlockPayloads
+    extendBlockPayloads bp@BlockPayloads{bpTxs, bpDlgCerts, bpUpVotes} genTx =
+      -- TODO: We should try to use 'recoverProof' (and other variants of
+      -- 'recoverBytes') here as opposed to throwing away the serializations
+      -- (the 'ByteString' annotations) with 'void' as we're currently doing.
+      case genTx of
+        ByronTx             _ tx   -> bp { bpTxs        = void tx : bpTxs }
+        ByronDlg            _ cert -> bp { bpDlgCerts   = void cert : bpDlgCerts }
+        -- TODO: We should throw an error if we encounter multiple
+        -- 'ByronUpdateProposal's (i.e. if 'bpUpProposal' 'isJust').
+        -- This is because we should only be provided with a maximum of one
+        -- 'ByronUpdateProposal' to include in a block payload.
+        ByronUpdateProposal _ prop -> bp { bpUpProposal = Just (void prop) }
+        ByronUpdateVote     _ vote -> bp { bpUpVotes    = void vote : bpUpVotes }
 
     body :: CC.Block.Body
     body = CC.Block.ABody {
           CC.Block.bodyTxPayload     = txPayload
         , CC.Block.bodySscPayload    = CC.Ssc.SscPayload
-        , CC.Block.bodyDlgPayload    = CC.Delegation.UnsafeAPayload [] ()
-        , CC.Block.bodyUpdatePayload = CC.Update.APayload Nothing [] ()
+        , CC.Block.bodyDlgPayload    = dlgPayload
+        , CC.Block.bodyUpdatePayload = updatePayload
         }
 
     proof :: CC.Block.Proof

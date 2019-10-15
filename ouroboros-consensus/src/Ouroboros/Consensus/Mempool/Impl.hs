@@ -228,7 +228,7 @@ implAddTxs :: forall m blk. (IOLike m, ApplyTx blk)
            -> [GenTx blk]
            -- ^ Transactions to validate and add to the mempool.
            -> m [(GenTx blk, Maybe (ApplyTxErr blk))]
-implAddTxs mpEnv accum txs = do
+implAddTxs mpEnv accum txs = assert (all txInvariant txs) $ do
     (vr, removed, rejected, unvalidated, mempoolSize) <- atomically $ do
       IS{isTip = initialISTip} <- readTVar mpEnvStateVar
 

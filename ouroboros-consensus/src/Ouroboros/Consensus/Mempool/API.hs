@@ -44,6 +44,10 @@ class ( UpdateLedger blk
   -- | Return the post-serialization size in bytes of a 'GenTx'.
   txSize :: GenTx blk -> TxSizeInBytes
 
+  -- | Check whether the internal invariants of the transaction hold.
+  txInvariant :: GenTx blk -> Bool
+  txInvariant = const True
+
   -- | Updating the ledger with a single transaction may result in a different
   -- error type as when updating it with a block
   type family ApplyTxErr blk :: *

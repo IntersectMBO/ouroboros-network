@@ -24,6 +24,8 @@ import           Formatting (sformat)
 import           Numeric.Natural
 import           Text.Printf (printf)
 
+import qualified Cardano.Chain.Delegation as CC.Delegation
+import qualified Cardano.Chain.Update as CC.Update
 import qualified Cardano.Chain.UTxO as CC.UTxO
 
 import           Cardano.Crypto (shortHashF)
@@ -161,3 +163,12 @@ instance Condense BlockNo where
 
 instance Condense SlotNo where
   condense (SlotNo n) = show n
+
+instance Condense CC.Update.UpId where
+  condense hash = "upid:" <> unpack (sformat shortHashF hash)
+
+instance Condense CC.Delegation.CertificateId where
+  condense hash = "certificateid: " <> unpack (sformat shortHashF hash)
+
+instance Condense CC.Update.VoteId where
+  condense hash = "voteid: " <> unpack (sformat shortHashF hash)

@@ -30,7 +30,7 @@ module Ouroboros.Consensus.Ledger.Byron
     -- * Mempool integration
   , GenTx (..)
   , GenTxId (..)
-  , mkByronTx
+  , mkByronGenTx
     -- * Block Fetch integration
   , byronBlockOrEBBMatchesHeader
     -- * Ledger
@@ -59,9 +59,10 @@ module Ouroboros.Consensus.Ledger.Byron
   , pattern ByronHeaderBoundary
   , mkByronHeaderOrEBB
   , annotateBoundary
-  , toCBORAHeaderOrBoundary
   , fromCBORAHeaderOrBoundary
   ) where
+
+import           Cardano.Prelude (Word32, Word8, cborError, wrapError)
 
 import           Codec.CBOR.Decoding (Decoder)
 import qualified Codec.CBOR.Decoding as CBOR
@@ -83,21 +84,27 @@ import           Data.Foldable (find, foldl')
 import           Data.Reflection (Given (..))
 import qualified Data.Sequence.Strict as Seq
 import           Data.Set (Set)
+import qualified Data.Set as Set
 import qualified Data.Text as T
 import           Data.Typeable
 import           Formatting
 import           GHC.Generics (Generic)
 
-import           Cardano.Binary (Annotated (..), ByteSpan, FromCBOR (..),
-                     ToCBOR (..), enforceSize, fromCBOR, reAnnotate, slice)
+import           Cardano.Binary (Annotated (..), ByteSpan, Decoded (..),
+                     DecoderError (..), FromCBOR (..), ToCBOR (..),
+                     enforceSize, fromCBOR, reAnnotate, serialize, slice,
+                     toCBOR, unsafeDeserialize)
 import qualified Cardano.Chain.Block as CC.Block
 import qualified Cardano.Chain.Common as CC.Common
 import qualified Cardano.Chain.Delegation as CC.Delegation
 import qualified Cardano.Chain.Delegation.Validation.Interface as V.Interface
 import qualified Cardano.Chain.Delegation.Validation.Scheduling as V.Scheduling
 import qualified Cardano.Chain.Genesis as CC.Genesis
+import qualified Cardano.Chain.MempoolPayload as CC.Mempool
 import qualified Cardano.Chain.Slotting as CC.Slot
+import qualified Cardano.Chain.Update.Proposal as CC.Update.Proposal
 import qualified Cardano.Chain.Update.Validation.Interface as CC.UPI
+import qualified Cardano.Chain.Update.Vote as CC.Update.Vote
 import qualified Cardano.Chain.UTxO as CC.UTxO
 import           Cardano.Chain.ValidationMode (ValidationMode (..),
                      fromBlockValidationMode)
@@ -699,16 +706,23 @@ instance Condense (ChainHash (ByronBlockOrEBB cfg)) where
   condense (BlockHash h) = condense h
 
 instance Condense (GenTx (ByronBlockOrEBB cfg)) where
-    condense (ByronTx { byronTx = tx }) =
-      "(tx: "       <> show (CC.UTxO.aTaTx tx) <>
-      ", witness: " <> show (CC.UTxO.aTaWitness tx) <>
-      ")"
+    condense (ByronTx _ tx) =
+      "byrontx: " <> T.unpack (sformat build (void tx))
+    condense (ByronDlg _ cert) =
+      "byrondlg: " <> T.unpack (sformat build (void cert))
+    condense (ByronUpdateProposal _ p) =
+      "byronupdateproposal: " <> T.unpack (sformat build (void p))
+    condense (ByronUpdateVote _ vote) =
+      "byronupdatevote: " <> T.unpack (sformat build (void vote))
 
 instance Show (GenTx (ByronBlockOrEBB cfg)) where
     show tx = condense tx
 
 instance Condense (GenTxId (ByronBlockOrEBB cfg)) where
-  condense = condense . unByronTxId
+  condense (ByronTxId i)             = "byrontxid: " <> condense i
+  condense (ByronDlgId i)            = "byrondlgid: " <> condense i
+  condense (ByronUpdateProposalId i) = "byronupdateproposalid: " <> condense i
+  condense (ByronUpdateVoteId i)     = "byronupdatevoteid: " <> condense i
 
 instance Show (GenTxId (ByronBlockOrEBB cfg)) where
   show = condense
@@ -784,19 +798,62 @@ decodeByronHeaderHash :: Decoder s (HeaderHash (ByronBlockOrEBB cfg))
 decodeByronHeaderHash = fromCBOR
 
 encodeByronGenTx :: GenTx (ByronBlockOrEBB cfg) -> Encoding
-encodeByronGenTx (ByronTx {byronTx = tx }) = toCBOR (void tx)
+encodeByronGenTx genTx = toCBOR (mkMempoolPayload genTx)
 
 encodeByronGenTxId :: GenTxId (ByronBlockOrEBB cfg) -> Encoding
-encodeByronGenTxId (ByronTxId txid) = toCBOR txid
+encodeByronGenTxId genTxId = case genTxId of
+  ByronTxId i ->
+    CBOR.encodeListLen 2 <> toCBOR (0 :: Word8) <> toCBOR i
+  ByronDlgId i ->
+    CBOR.encodeListLen 2 <> toCBOR (1 :: Word8) <> toCBOR i
+  ByronUpdateProposalId i ->
+    CBOR.encodeListLen 2 <> toCBOR (2 :: Word8) <> toCBOR i
+  ByronUpdateVoteId i ->
+    CBOR.encodeListLen 2 <> toCBOR (3 :: Word8) <> toCBOR i
 
 encodeByronApplyTxError :: ApplyTxErr (ByronBlockOrEBB cfg) -> Encoding
 encodeByronApplyTxError = toCBOR
 
+-- | The 'ByteString' annotation will be the canonical encoding.
+--
+-- While the new implementation does not care about canonical encodings, the
+-- old one does. When a generalised transaction arrives that is not in its
+-- canonical encoding (only the 'CC.UTxO.ATxAux' of the 'ByronTx' can be
+-- produced by nodes that are not under our control), the old implementation
+-- will reject it. Therefore, we need to reject them too. See #905.
+--
+-- We use the ledger to check for canonical encodings: the ledger will check
+-- whether the signed hash of the transaction (in the case of a
+-- 'CC.UTxO.ATxAux', the transaction witness) matches the annotated
+-- bytestring. Is therefore __important__ that the annotated bytestring be the
+-- /canonical/ encoding, not the /original, possibly non-canonical/ encoding.
 decodeByronGenTx :: Decoder s (GenTx (ByronBlockOrEBB cfg))
-decodeByronGenTx = mkByronTx . CC.UTxO.annotateTxAux <$> fromCBOR
+decodeByronGenTx = mkByronGenTx . canonicalise <$> fromCBOR
+  where
+    -- Fill in the 'ByteString' annotation with a canonical encoding of the
+    -- 'GenTx'. We must reserialise the deserialised 'GenTx' to be sure we
+    -- have the canonical one. We don't have access to the original
+    -- 'ByteString' anyway, so having to reserialise here gives us a
+    -- 'ByteString' we can use.
+    canonicalise :: CC.Mempool.AMempoolPayload ByteSpan
+                 -> CC.Mempool.AMempoolPayload ByteString
+    canonicalise mp = Lazy.toStrict . slice canonicalBytes <$> mp'
+      where
+        canonicalBytes = serialize (void mp)
+        -- 'unsafeDeserialize' cannot fail, since we just 'serialize'd it.
+        -- Note that we cannot reuse @mp@, as its 'ByteSpan' might differ from
+        -- the canonical encoding's 'ByteSpan'.
+        mp'            = unsafeDeserialize canonicalBytes
 
 decodeByronGenTxId :: Decoder s (GenTxId (ByronBlockOrEBB cfg))
-decodeByronGenTxId = ByronTxId <$> fromCBOR
+decodeByronGenTxId = do
+  enforceSize "GenTxId (ByronBlockOrEBB cfg)" 2
+  CBOR.decodeWord8 >>= \case
+    0   -> ByronTxId             <$> fromCBOR
+    1   -> ByronDlgId            <$> fromCBOR
+    2   -> ByronUpdateProposalId <$> fromCBOR
+    3   -> ByronUpdateVoteId     <$> fromCBOR
+    tag -> cborError $ DecoderErrorUnknownTag "GenTxId (ByronBlockOrEBB cfg)" tag
 
 decodeByronLedgerState :: Decoder s (LedgerState (ByronBlockOrEBB cfg))
 decodeByronLedgerState = ByronEBBLedgerState <$> do
@@ -870,47 +927,102 @@ fromCBORAHeaderOrBoundary epochSlots = do
     1 -> Right <$> CC.Block.fromCBORAHeader epochSlots
     t -> error $ "Unknown tag in encoded HeaderOrBoundary" <> show t
 
-toCBORAHeaderOrBoundary
-  :: Crypto.ProtocolMagicId
-  -> CC.Slot.EpochSlots
-  -> (Either (CC.Block.ABoundaryHeader a) (CC.Block.AHeader a))
-  -> Encoding
-toCBORAHeaderOrBoundary pm epochSlots abob =
-  CBOR.encodeListLen 2 <>
-  case abob of
-    Right mh -> toCBOR (1 :: Word) <> (CC.Block.toCBORHeader epochSlots  . void $ mh)
-    Left ebb -> toCBOR (0 :: Word) <> (CC.Block.toCBORABoundaryHeader pm . void $ ebb)
-
 {-------------------------------------------------------------------------------
   Mempool integration
 -------------------------------------------------------------------------------}
+
+-- | An error type which represents either a UTxO, delegation, update proposal
+-- registration, or update vote error in the Byron era.
+data ByronApplyTxError
+  = ByronApplyTxError !CC.UTxO.UTxOValidationError
+  | ByronApplyDlgError !V.Scheduling.Error
+  | ByronApplyUpdateProposalError !CC.UPI.Error
+  | ByronApplyUpdateVoteError !CC.UPI.Error
+  deriving (Show)
+
+instance ToCBOR ByronApplyTxError where
+  toCBOR (ByronApplyTxError err) =
+    CBOR.encodeListLen 2 <> toCBOR (0 :: Word8) <> toCBOR err
+  toCBOR (ByronApplyDlgError err) =
+    CBOR.encodeListLen 2 <> toCBOR (1 :: Word8) <> toCBOR err
+  toCBOR (ByronApplyUpdateProposalError err) =
+    CBOR.encodeListLen 2 <> toCBOR (2 :: Word8) <> toCBOR err
+  toCBOR (ByronApplyUpdateVoteError err) =
+    CBOR.encodeListLen 2 <> toCBOR (3 :: Word8) <> toCBOR err
+
+instance FromCBOR ByronApplyTxError where
+  fromCBOR = do
+    enforceSize "ByronApplyTxError" 2
+    CBOR.decodeWord8 >>= \case
+      0   -> ByronApplyTxError             <$> fromCBOR
+      1   -> ByronApplyDlgError            <$> fromCBOR
+      2   -> ByronApplyUpdateProposalError <$> fromCBOR
+      3   -> ByronApplyUpdateVoteError     <$> fromCBOR
+      tag -> cborError $ DecoderErrorUnknownTag "ByronApplyTxError" tag
 
 instance (ByronGiven, Typeable cfg, ConfigContainsGenesis cfg, NoUnexpectedThunks cfg)
       => ApplyTx (ByronBlockOrEBB cfg) where
   -- | Generalized transactions in Byron
   --
-  -- TODO #514: This is still missing the other cases (this shouldn't be a
-  -- newtype)
-  data GenTx (ByronBlockOrEBB cfg) = ByronTx
-    { byronTx   :: !(CC.UTxO.ATxAux ByteString)
-    , byronTxId :: CC.UTxO.TxId
-      -- ^ This field is lazy on purpose so that the TxId is computed on
-      -- demand.
-    }
+  data GenTx (ByronBlockOrEBB cfg)
+    = ByronTx
+        CC.UTxO.TxId
+        -- ^ This field is lazy on purpose so that the 'CC.UTxO.TxId' is
+        -- computed on demand.
+        !(CC.UTxO.ATxAux ByteString)
+    | ByronDlg
+        CC.Delegation.CertificateId
+        -- ^ This field is lazy on purpose so that the
+        -- 'CC.Delegation.CertificateId' is computed on demand.
+        !(CC.Delegation.ACertificate ByteString)
+    | ByronUpdateProposal
+        CC.Update.Proposal.UpId
+        -- ^ This field is lazy on purpose so that the 'CC.Update.UpId' is
+        -- computed on demand.
+        !(CC.Update.Proposal.AProposal ByteString)
+    | ByronUpdateVote
+        CC.Update.Vote.VoteId
+        -- ^ This field is lazy on purpose so that the 'CC.Update.VoteId' is
+        -- computed on demand.
+        !(CC.Update.Vote.AVote ByteString)
 
-  newtype GenTxId (ByronBlockOrEBB cfg) = ByronTxId { unByronTxId :: CC.UTxO.TxId }
+  data GenTxId (ByronBlockOrEBB cfg)
+    = ByronTxId !CC.UTxO.TxId
+    | ByronDlgId !CC.Delegation.CertificateId
+    | ByronUpdateProposalId !CC.Update.Proposal.UpId
+    | ByronUpdateVoteId !CC.Update.Vote.VoteId
     deriving (Eq, Ord)
 
-  txId = ByronTxId . byronTxId
+  txId (ByronTx txid _)             = ByronTxId txid
+  txId (ByronDlg certHash _)        = ByronDlgId certHash
+  txId (ByronUpdateProposal upid _) = ByronUpdateProposalId upid
+  txId (ByronUpdateVote voteHash _) = ByronUpdateVoteId voteHash
 
-  txSize (ByronTx { byronTx = atxaux }) = fromIntegral txByteSize
+  txSize genTx = 1 {- encodeListLen -} + 1 {- tag -} + case genTx of
+      ByronTx             _ atxaux -> decodedLength atxaux
+      ByronDlg            _ cert   -> decodedLength cert
+      ByronUpdateProposal _ prop   -> decodedLength prop
+      ByronUpdateVote     _ vote   -> decodedLength vote
     where
-      -- TODO cardano-ledger#576 will provide a function for this
-      txByteSize = 1 -- To account for @encodeListLen 2@
-                 + (Strict.length . annotation . CC.UTxO.aTaTx      $ atxaux)
-                 + (Strict.length . annotation . CC.UTxO.aTaWitness $ atxaux)
+      decodedLength :: Decoded a => a -> Word32
+      decodedLength = fromIntegral . Strict.length . recoverBytes
 
-  type ApplyTxErr (ByronBlockOrEBB cfg) = CC.UTxO.UTxOValidationError
+  -- Check that the annotation is the canonical encoding. This is currently
+  -- enforced by 'decodeByronGenTx', see its docstring for more context.
+  txInvariant genTx = case genTx of
+      ByronTx             _ atxaux -> annotatedEnc atxaux == canonicalEnc atxaux
+      ByronDlg            _ cert   -> annotatedEnc cert   == canonicalEnc cert
+      ByronUpdateProposal _ prop   -> annotatedEnc prop   == canonicalEnc prop
+      ByronUpdateVote     _ vote   -> annotatedEnc vote   == canonicalEnc vote
+    where
+      annotatedEnc :: (Functor f, Decoded (f ByteString))
+                   => f ByteString -> ByteString
+      annotatedEnc = recoverBytes
+      canonicalEnc :: (Functor f, ToCBOR (f ()))
+                   => f a -> ByteString
+      canonicalEnc = CBOR.toStrictByteString . toCBOR . void
+
+  type ApplyTxErr (ByronBlockOrEBB cfg) = ByronApplyTxError
 
   applyTx = applyByronGenTx
     (ValidationMode CC.Block.BlockValidation CC.UTxO.TxValidation)
@@ -927,45 +1039,137 @@ instance (ByronGiven, Typeable cfg, ConfigContainsGenesis cfg, NoUnexpectedThunk
 -- | We intentionally ignore the hash
 instance Typeable cfg => NoUnexpectedThunks (GenTx (ByronBlockOrEBB cfg)) where
   showTypeOf _ = show (typeRep (Proxy @(GenTx (ByronBlockOrEBB cfg))))
-  whnfNoUnexpectedThunks ctxt (ByronTx tx _hash) =
-      noUnexpectedThunks ctxt tx'
-    where
-      tx' :: UseIsNormalFormNamed "ATxAux" (CC.UTxO.ATxAux ByteString)
-      tx' = UseIsNormalFormNamed tx
+  whnfNoUnexpectedThunks ctxt gtx = case gtx of
+      ByronTx _hash tx ->
+        noUnexpectedThunks ctxt (UseIsNormalFormNamed @"AVote" tx)
+      ByronDlg _hash cert ->
+        noUnexpectedThunks ctxt (UseIsNormalFormNamed @"ACertificate" cert)
+      ByronUpdateProposal _hash prop ->
+        noUnexpectedThunks ctxt (UseIsNormalFormNamed @"AProposal" prop)
+      ByronUpdateVote _hash vote ->
+        noUnexpectedThunks ctxt (UseIsNormalFormNamed @"AVote" vote)
 
 applyByronGenTx :: ValidationMode
                 -> LedgerConfig (ByronBlockOrEBB cfg)
                 -> GenTx (ByronBlockOrEBB cfg)
                 -> LedgerState (ByronBlockOrEBB cfg)
-                -> Except CC.UTxO.UTxOValidationError
+                -> Except (ApplyTxErr (ByronBlockOrEBB cfg))
                           (LedgerState (ByronBlockOrEBB cfg))
-applyByronGenTx validationMode (ByronEBBLedgerConfig (ByronLedgerConfig cfg)) genTx (ByronEBBLedgerState st@ByronLedgerState{..}) =
-    (\x -> ByronEBBLedgerState $ st { blsCurrent = x }) <$> go genTx blsCurrent
+applyByronGenTx validationMode
+                (ByronEBBLedgerConfig (ByronLedgerConfig cfg))
+                genTx
+                (ByronEBBLedgerState st@ByronLedgerState{blsCurrent}) =
+    (\x -> ByronEBBLedgerState $ st { blsCurrent = x })
+      <$> go genTx blsCurrent
   where
-    go :: GenTx (ByronBlockOrEBB cfg)
+    go :: (MonadError ByronApplyTxError m)
+       => GenTx (ByronBlockOrEBB cfg)
        -> CC.Block.ChainValidationState
-       -> Except CC.UTxO.UTxOValidationError CC.Block.ChainValidationState
-    go (ByronTx { byronTx = tx }) cvs = wrapCVS <$>
-        runReaderT (CC.UTxO.updateUTxO env utxo [tx]) validationMode
+       -> m CC.Block.ChainValidationState
+    go gtx cvs = case gtx of
+        ByronTx             _ tx       -> applyByronTx tx
+        ByronDlg            _ cert     -> applyByronDlg cert
+        ByronUpdateProposal _ proposal -> applyByronUpdateProposal proposal
+        ByronUpdateVote     _ vote     -> applyByronUpdateVote vote
       where
-        wrapCVS newUTxO = cvs { CC.Block.cvsUtxo = newUTxO }
-        protocolMagic = fixPM $ CC.Genesis.configProtocolMagic cfg
-        utxo = CC.Block.cvsUtxo cvs
-        updateState = CC.Block.cvsUpdateState cvs
-        env = CC.UTxO.Environment
-          { CC.UTxO.protocolMagic = protocolMagic
-          , CC.UTxO.protocolParameters = CC.UPI.adoptedProtocolParameters updateState
-          , CC.UTxO.utxoConfiguration = CC.Genesis.configUTxOConfiguration cfg
-          }
-        fixPM (Crypto.AProtocolMagic a b) = Crypto.AProtocolMagic (reAnnotate a) b
+        protocolMagic = fixPM (CC.Genesis.configProtocolMagic cfg)
 
-mkByronTx :: CC.UTxO.ATxAux ByteString -> GenTx (ByronBlockOrEBB cfg)
-mkByronTx tx = ByronTx
-    { byronTx   = tx
-    , byronTxId = Crypto.hash $ CC.UTxO.taTx tx
-      -- TODO replace this with a function from cardano-ledger, see
-      -- cardano-ledger#581
-    }
+        k = CC.Genesis.configK cfg
+
+        currentEpoch = CC.Slot.slotNumberEpoch
+          (CC.Genesis.configEpochSlots cfg)
+          currentSlot
+
+        currentSlot = CC.Block.cvsLastSlot cvs
+
+        utxo = CC.Block.cvsUtxo cvs
+
+        dlgState = CC.Block.cvsDelegationState cvs
+
+        updateState = CC.Block.cvsUpdateState cvs
+
+        delegationMap =
+          (V.Interface.delegationMap . CC.Block.cvsDelegationState) cvs
+
+        utxoEnv = CC.UTxO.Environment
+          { CC.UTxO.protocolMagic      = protocolMagic
+          , CC.UTxO.protocolParameters = CC.UPI.adoptedProtocolParameters updateState
+          , CC.UTxO.utxoConfiguration  = CC.Genesis.configUTxOConfiguration cfg
+          }
+
+        dlgEnv = V.Interface.Environment
+          { V.Interface.protocolMagic     = Crypto.getAProtocolMagicId protocolMagic
+          , V.Interface.allowedDelegators = allowedDelegators cfg
+          , V.Interface.k                 = k
+          , V.Interface.currentEpoch      = currentEpoch
+          , V.Interface.currentSlot       = currentSlot
+          }
+
+        updateEnv = CC.UPI.Environment
+          { CC.UPI.protocolMagic = Crypto.getAProtocolMagicId protocolMagic
+          , CC.UPI.k             = k
+          , CC.UPI.currentSlot   = currentSlot
+          , CC.UPI.numGenKeys    = numGenKeys
+          , CC.UPI.delegationMap = delegationMap
+          }
+
+        numGenKeys = toNumGenKeys $ Set.size (allowedDelegators cfg)
+
+        toNumGenKeys :: Integral n => n -> Word8
+        toNumGenKeys n
+          | n > fromIntegral (maxBound :: Word8) = error $
+            "toNumGenKeys: Too many genesis keys"
+          | otherwise = fromIntegral n
+
+        fixPM (Crypto.AProtocolMagic a b) =
+          Crypto.AProtocolMagic (reAnnotate a) b
+
+        wrapUTxO newUTxO = cvs { CC.Block.cvsUtxo = newUTxO }
+
+        wrapDlg newDlg = cvs { CC.Block.cvsDelegationState = newDlg }
+
+        wrapUpdate newUpdate = cvs { CC.Block.cvsUpdateState = newUpdate }
+
+        applyByronTx tx = wrapUTxO <$>
+            runReaderT (CC.UTxO.updateUTxO utxoEnv utxo [tx]) validationMode
+              `wrapError` ByronApplyTxError
+
+        applyByronDlg cert = wrapDlg <$>
+            V.Interface.updateDelegation dlgEnv dlgState [cert]
+              `wrapError` ByronApplyDlgError
+
+        applyByronUpdateProposal proposal = wrapUpdate <$>
+            CC.UPI.registerProposal updateEnv updateState proposal
+              `wrapError` ByronApplyUpdateProposalError
+
+        applyByronUpdateVote vote = wrapUpdate <$>
+              CC.UPI.registerVote updateEnv updateState vote
+                `wrapError` ByronApplyUpdateVoteError
+
+mkByronGenTx :: CC.Mempool.AMempoolPayload ByteString
+             -> GenTx (ByronBlockOrEBB cfg)
+mkByronGenTx mp = case mp of
+    CC.Mempool.MempoolTx tx@CC.UTxO.ATxAux{aTaTx} ->
+      ByronTx (Crypto.hashDecoded aTaTx) tx  -- TODO replace this with a
+                                             -- function from cardano-ledger,
+                                             -- see cardano-ledger#581
+
+    CC.Mempool.MempoolDlg cert ->
+      ByronDlg (CC.Delegation.recoverCertificateId cert) cert
+
+    CC.Mempool.MempoolUpdateProposal proposal ->
+      ByronUpdateProposal (CC.Update.Proposal.recoverUpId proposal) proposal
+
+    CC.Mempool.MempoolUpdateVote vote ->
+      ByronUpdateVote (CC.Update.Vote.recoverVoteId vote) vote
+
+mkMempoolPayload :: GenTx (ByronBlockOrEBB cfg)
+                 -> CC.Mempool.AMempoolPayload ByteString
+mkMempoolPayload genTx = case genTx of
+  ByronTx             _ tx       -> CC.Mempool.MempoolTx tx
+  ByronDlg            _ cert     -> CC.Mempool.MempoolDlg cert
+  ByronUpdateProposal _ proposal -> CC.Mempool.MempoolUpdateProposal proposal
+  ByronUpdateVote     _ vote     -> CC.Mempool.MempoolUpdateVote vote
 
 {-------------------------------------------------------------------------------
   Block Fetch integration
