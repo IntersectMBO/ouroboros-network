@@ -9,10 +9,12 @@ module Control.Monad.Class.MonadFork
   ) where
 
 import qualified Control.Concurrent as IO
+import qualified GHC.Conc.Sync as IO (labelThread)
 import           Control.Exception (Exception(..), SomeException)
 import           Control.Monad.Reader
 import           System.IO (hFlush, hPutStrLn, stderr)
 import           System.IO.Unsafe (unsafePerformIO)
+
 
 forkPrintExceptionLock :: IO.MVar ()
 {-# NOINLINE forkPrintExceptionLock #-}
@@ -25,6 +27,7 @@ class (Monad m, Eq   (ThreadId m),
   type ThreadId m :: *
 
   myThreadId     :: m (ThreadId m)
+  labelThread    :: ThreadId m -> String -> m ()
 
 
 class MonadThread m => MonadFork m where
@@ -37,6 +40,7 @@ class MonadThread m => MonadFork m where
 instance MonadThread IO where
   type ThreadId IO = IO.ThreadId
   myThreadId = IO.myThreadId
+  labelThread = IO.labelThread
 
 instance MonadFork IO where
   fork a =
@@ -56,6 +60,7 @@ instance MonadFork IO where
 instance MonadThread m => MonadThread (ReaderT e m) where
   type ThreadId (ReaderT e m) = ThreadId m
   myThreadId  = lift myThreadId
+  labelThread t l = lift (labelThread t l)
 
 instance MonadFork m => MonadFork (ReaderT e m) where
   fork (ReaderT f) = ReaderT $ \e -> fork (f e)
