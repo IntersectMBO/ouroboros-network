@@ -549,7 +549,7 @@ extendVRPrevApplied cfg (tx, tn)
     case runExcept (reapplyTx cfg tx vrAfter) of
       Left err  -> vr { vrInvalid = (tx, err) : vrInvalid
                       }
-      Right st' -> vr { vrValid   = vrValid :> TxTicket tx tn
+      Right st' -> vr { vrValid   = vrValid :> TxTicket tx tn (Block.SlotNo 0)
                       , vrAfter   = st'
                       }
 
@@ -571,7 +571,7 @@ extendVRNew cfg tx
     in  case runExcept (applyTx cfg tx vrAfter) of
       Left err  -> vr { vrInvalid      = (tx, err) : vrInvalid
                       }
-      Right st' -> vr { vrValid        = vrValid :> TxTicket tx nextTicketNo
+      Right st' -> vr { vrValid        = vrValid :> TxTicket tx nextTicketNo (Block.SlotNo 0)
                       , vrNewValid     = tx : vrNewValid
                       , vrAfter        = st'
                       , vrLastTicketNo = nextTicketNo
