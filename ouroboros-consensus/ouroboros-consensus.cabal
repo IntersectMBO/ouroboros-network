@@ -59,6 +59,7 @@ library
                        Ouroboros.Consensus.Ledger.Mock.UTxO
                        Ouroboros.Consensus.Mempool
                        Ouroboros.Consensus.Mempool.API
+                       Ouroboros.Consensus.Mempool.Expiry
                        Ouroboros.Consensus.Mempool.Impl
                        Ouroboros.Consensus.Mempool.TxSeq
                        Ouroboros.Consensus.Node

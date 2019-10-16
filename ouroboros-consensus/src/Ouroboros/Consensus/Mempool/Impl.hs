@@ -25,53 +25,61 @@ import           GHC.Generics (Generic)
 
 import           Control.Tracer
 
-import           Ouroboros.Network.Block (ChainHash, StandardHash)
+import           Ouroboros.Network.Block (ChainHash, SlotNo, StandardHash)
 import qualified Ouroboros.Network.Block as Block
 
 import           Ouroboros.Storage.ChainDB (ChainDB)
 import qualified Ouroboros.Storage.ChainDB.API as ChainDB
 
+import           Ouroboros.Consensus.BlockchainTime (BlockchainTime,
+                     getCurrentSlot, onSlotChange)
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Mempool.API
+import           Ouroboros.Consensus.Mempool.Expiry (ExpiryThreshold,
+                     expirySlotNo, splitExpiredTxs)
 import           Ouroboros.Consensus.Mempool.TxSeq (TicketNo, TxSeq (..),
                      TxTicket (..), fromTxSeq, lookupByTicketNo,
-                     splitAfterTicketNo, zeroTicketNo)
+                     splitAfterTicketNo, txTickets, zeroTicketNo)
 import qualified Ouroboros.Consensus.Mempool.TxSeq as TxSeq
 import           Ouroboros.Consensus.Util (repeatedly)
 import           Ouroboros.Consensus.Util.IOLike
-import           Ouroboros.Consensus.Util.ResourceRegistry
-import           Ouroboros.Consensus.Util.STM (onEachChange)
 
 {-------------------------------------------------------------------------------
   Top-level API
 -------------------------------------------------------------------------------}
 
 openMempool :: (IOLike m, ApplyTx blk)
-            => ResourceRegistry m
-            -> LedgerInterface m blk
+            => LedgerInterface m blk
             -> LedgerConfig blk
+            -> BlockchainTime m
             -> MempoolCapacity
+            -> ExpiryThreshold
             -> Tracer m (TraceEventMempool blk)
             -> m (Mempool m blk TicketNo)
-openMempool registry ledger cfg capacity tracer = do
-    env <- initMempoolEnv ledger cfg capacity tracer
-    forkSyncStateOnTipPointChange registry env
+openMempool ledger cfg btime capacity expThreshold tracer = do
+    env <- initMempoolEnv ledger cfg btime capacity expThreshold tracer
+    forkSyncStateOnSlotChange btime env
     return $ mkMempool env
 
 -- | Unlike 'openMempool', this function does not fork a background thread
--- that synchronises with the ledger state whenever the later changes.
+-- that, on a slot-by-slot basis:
+--
+-- * drops expired transactions, if there are any, from the mempool
+-- * synchronises with the ledger state, if it has changed
 --
 -- Intended for testing purposes.
 openMempoolWithoutSyncThread
   :: (IOLike m, ApplyTx blk)
   => LedgerInterface m blk
   -> LedgerConfig blk
+  -> BlockchainTime m
   -> MempoolCapacity
+  -> ExpiryThreshold
   -> Tracer m (TraceEventMempool blk)
   -> m (Mempool m blk TicketNo)
-openMempoolWithoutSyncThread ledger cfg capacity tracer =
-    mkMempool <$> initMempoolEnv ledger cfg capacity tracer
+openMempoolWithoutSyncThread ledger cfg btime capacity expThreshold tracer =
+    mkMempool <$> initMempoolEnv ledger cfg btime capacity expThreshold tracer
 
 mkMempool :: (IOLike m, ApplyTx blk)
           => MempoolEnv m blk -> Mempool m blk TicketNo
@@ -124,11 +132,13 @@ deriving instance ( NoUnexpectedThunks (GenTx blk)
                   ) => NoUnexpectedThunks (InternalState blk)
 
 data MempoolEnv m blk = MempoolEnv {
-      mpEnvLedger    :: LedgerInterface m blk
-    , mpEnvLedgerCfg :: LedgerConfig blk
-    , mpEnvCapacity  :: !MempoolCapacity
-    , mpEnvStateVar  :: StrictTVar m (InternalState blk)
-    , mpEnvTracer    :: Tracer m (TraceEventMempool blk)
+      mpEnvLedger         :: LedgerInterface m blk
+    , mpEnvLedgerCfg      :: LedgerConfig blk
+    , mpEnvBlockchainTime :: !(BlockchainTime m)
+    , mpEnvCapacity       :: !MempoolCapacity
+    , mpEnvExpThreshold   :: !ExpiryThreshold
+    , mpEnvStateVar       :: StrictTVar m (InternalState blk)
+    , mpEnvTracer         :: Tracer m (TraceEventMempool blk)
     }
 
 initInternalState :: InternalState blk
@@ -137,32 +147,34 @@ initInternalState = IS TxSeq.Empty Block.GenesisHash zeroTicketNo
 initMempoolEnv :: (IOLike m, ApplyTx blk)
                => LedgerInterface m blk
                -> LedgerConfig blk
+               -> BlockchainTime m
                -> MempoolCapacity
+               -> ExpiryThreshold
                -> Tracer m (TraceEventMempool blk)
                -> m (MempoolEnv m blk)
-initMempoolEnv ledgerInterface cfg capacity tracer = do
+initMempoolEnv ledgerInterface cfg btime capacity expThreshold tracer = do
     isVar <- newTVarM initInternalState
     return MempoolEnv
-      { mpEnvLedger    = ledgerInterface
-      , mpEnvLedgerCfg = cfg
-      , mpEnvCapacity  = capacity
-      , mpEnvStateVar  = isVar
-      , mpEnvTracer    = tracer
+      { mpEnvLedger         = ledgerInterface
+      , mpEnvLedgerCfg      = cfg
+      , mpEnvBlockchainTime = btime
+      , mpEnvCapacity       = capacity
+      , mpEnvExpThreshold   = expThreshold
+      , mpEnvStateVar       = isVar
+      , mpEnvTracer         = tracer
       }
 
--- | Spawn a thread which syncs the 'Mempool' state whenever the 'LedgerState'
--- changes.
-forkSyncStateOnTipPointChange :: (IOLike m, ApplyTx blk)
-                              => ResourceRegistry m
-                              -> MempoolEnv m blk
-                              -> m ()
-forkSyncStateOnTipPointChange registry menv =
-    onEachChange registry id Nothing getCurrentTip action
+-- | Spawn a thread which attempts to drop expired transactions from the
+-- mempool and sync the mempool state when the current slot number changes
+-- (according to the 'BlockchainTime').
+forkSyncStateOnSlotChange :: (IOLike m, ApplyTx blk)
+                          => BlockchainTime m
+                          -> MempoolEnv m blk
+                          -> m ()
+forkSyncStateOnSlotChange btime mpEnv =
+    onSlotChange btime action
   where
-    action _tipPoint = implWithSyncState menv (const (return ()))
-    MempoolEnv { mpEnvLedger } = menv
-    -- Using the tip ('Point') allows for quicker equality checks
-    getCurrentTip = ledgerTipPoint <$> getCurrentLedgerState mpEnvLedger
+    action _currentSlotNo = implWithSyncState mpEnv (const (return ()))
 
 {-------------------------------------------------------------------------------
   Mempool Implementation
@@ -231,16 +243,22 @@ implAddTxs :: forall m blk. (IOLike m, ApplyTx blk)
            -- ^ Transactions to validate and add to the mempool.
            -> m [(GenTx blk, Maybe (ApplyTxErr blk))]
 implAddTxs mpEnv accum txs = assert (all txInvariant txs) $ do
-    (vr, removed, rejected, unvalidated, mempoolSize) <- atomically $ do
+    ( vr, expired, removed, rejected, unvalidated, mempoolSize) <- atomically $ do
       IS{isTip = initialISTip} <- readTVar mpEnvStateVar
 
-      -- First sync the state, which might remove some transactions
+      -- First attempt to expire transactions in the mempool, which might
+      -- remove some transactions
+      (expired, _) <- expireTxs mpEnv
+
+      -- Second sync the state, which might remove some transactions
       syncRes@ValidationResult
         { vrBefore
         , vrValid
         , vrInvalid = removed
         , vrLastTicketNo
         } <- validateIS mpEnv
+
+      -- TODO @intricate: If transactions were expired, we should commit this STM tx
 
       -- Determine whether the tip was updated after a call to 'validateIS'
       --
@@ -253,7 +271,7 @@ implAddTxs mpEnv accum txs = assert (all txInvariant txs) $ do
       -- about losing any changes in the event that we have to 'retry' this
       -- STM transaction. So we should continue by validating the provided new
       -- transactions.
-      if initialISTip /= vrBefore
+      if initialISTip /= vrBefore || not (null expired)
         then do
           -- The tip changed.
           -- Because 'validateNew' can 'retry', we'll commit this STM
@@ -264,7 +282,7 @@ implAddTxs mpEnv accum txs = assert (all txInvariant txs) $ do
                                      , isLastTicketNo = vrLastTicketNo
                                      }
           mempoolSize <- getMempoolSize mpEnv
-          pure (syncRes, removed, [], txs, mempoolSize)
+          pure (syncRes, expired, removed, [], txs, mempoolSize)
         else do
           -- The tip was unchanged.
           -- Therefore, we don't have to worry about losing any changes in the
@@ -272,10 +290,11 @@ implAddTxs mpEnv accum txs = assert (all txInvariant txs) $ do
           -- validating the provided new transactions.
           (vr, unvalidated) <- validateNew syncRes
           mempoolSize       <- getMempoolSize mpEnv
-          pure (vr, removed, vrInvalid vr, unvalidated, mempoolSize)
+          pure (vr, expired, removed, vrInvalid vr, unvalidated, mempoolSize)
 
     let ValidationResult { vrNewValid = accepted } = vr
 
+    traceBatch TraceMempoolExpireTxs   mempoolSize (txsWithSlotNo expired)
     traceBatch TraceMempoolRemoveTxs   mempoolSize (map fst removed)
     traceBatch TraceMempoolAddTxs      mempoolSize accepted
     traceBatch TraceMempoolRejectedTxs mempoolSize rejected
@@ -292,6 +311,7 @@ implAddTxs mpEnv accum txs = assert (all txInvariant txs) $ do
       , mpEnvTracer
       , mpEnvLedgerCfg
       , mpEnvCapacity = MempoolCapacity mempoolCap
+      , mpEnvBlockchainTime
       } = mpEnv
 
     traceBatch mkEv size batch
@@ -357,13 +377,14 @@ implAddTxs mpEnv accum txs = assert (all txInvariant txs) $ do
       -- (those not yet validated due to the mempool capacity being reached).
     validateNewUntilMempoolFull []      vr = pure (vr, [])
     validateNewUntilMempoolFull (t:ts)  vr = do
+      currSlot <- getCurrentSlot mpEnvBlockchainTime
       mempoolSize <- getMempoolSize mpEnv
       -- The size of a mempool should never be greater than its capacity.
       assert (mempoolSize <= mempoolCap) $
         -- Here, we check whether we're at the mempool's capacity /before/
         -- attempting to validate another transaction.
         if (mempoolSize + fromIntegral (length (vrNewValid vr))) < mempoolCap
-          then validateNewUntilMempoolFull ts (extendVRNew mpEnvLedgerCfg t vr)
+          then validateNewUntilMempoolFull ts (extendVRNew mpEnvLedgerCfg currSlot t vr)
           else pure (vr, t:ts) -- if we're at mempool capacity, we return the
                                -- last 'ValidationResult' as well as the
                                -- remaining transactions (those not yet
@@ -381,7 +402,7 @@ implRemoveTxs mpEnv@MempoolEnv{mpEnvTracer, mpEnvStateVar} txIds = do
       -- the mempool.
       modifyTVar mpEnvStateVar $ \is@IS{isTxs} -> is
         { isTxs = TxSeq.filterTxs
-            (\(TxTicket tx _) -> txId tx `notElem` toRemove)
+            (\(TxTicket tx _ _) -> txId tx `notElem` toRemove)
             isTxs
         }
       -- TODO some duplication with 'implWithSyncState'
@@ -412,7 +433,8 @@ implWithSyncState
   -> (MempoolSnapshot blk TicketNo -> STM m a)
   -> m a
 implWithSyncState mpEnv@MempoolEnv{mpEnvTracer, mpEnvStateVar} f = do
-    (removed, mempoolSize, res) <- atomically $ do
+    (removed, expired, mempoolSize, res) <- atomically $ do
+      (expired, _) <- expireTxs mpEnv
       ValidationResult
         { vrBefore
         , vrValid
@@ -429,7 +451,9 @@ implWithSyncState mpEnv@MempoolEnv{mpEnvTracer, mpEnvStateVar} f = do
       mempoolSize <- getMempoolSize mpEnv
       snapshot    <- implGetSnapshot mpEnv
       res         <- f snapshot
-      return (map fst vrInvalid, mempoolSize, res)
+      return (map fst vrInvalid, txsWithSlotNo expired, mempoolSize, res)
+    unless (null expired) $
+      traceWith mpEnvTracer $ TraceMempoolExpireTxs expired mempoolSize
     unless (null removed) $
       traceWith mpEnvTracer $ TraceMempoolRemoveTxs removed mempoolSize
     return res
@@ -513,6 +537,7 @@ data ValidationResult blk = ValidationResult {
 initVR :: forall blk. ApplyTx blk
        => LedgerConfig blk
        -> TxSeq (GenTx blk)
+       -- ^ Transactions that are known to be valid
        -> (ChainHash blk, LedgerState blk)
        -> TicketNo
        -> ValidationResult blk
@@ -541,48 +566,65 @@ initVR cfg = \knownValid (tip, st) lastTicketNo -> ValidationResult {
 -- signatures.
 extendVRPrevApplied :: ApplyTx blk
                     => LedgerConfig blk
-                    -> (GenTx blk, TicketNo)
+                    -> TxTicket (GenTx blk)
                     -> ValidationResult blk
                     -> ValidationResult blk
-extendVRPrevApplied cfg (tx, tn)
-         vr@ValidationResult{vrValid, vrAfter, vrInvalid} =
+extendVRPrevApplied cfg txTicket vr =
     case runExcept (reapplyTx cfg tx vrAfter) of
       Left err  -> vr { vrInvalid = (tx, err) : vrInvalid
                       }
-      Right st' -> vr { vrValid   = vrValid :> TxTicket tx tn (Block.SlotNo 0)
+      Right st' -> vr { vrValid   = vrValid :> TxTicket tx tn sn
                       , vrAfter   = st'
                       }
+  where
+    ValidationResult
+      { vrValid
+      , vrAfter
+      , vrInvalid
+      } = vr
+
+    TxTicket tx tn sn = txTicket
 
 -- | Extend 'ValidationResult' with a new transaction (one which we have not
 -- previously validated) that may or may not be valid in this ledger state.
 extendVRNew :: ApplyTx blk
             => LedgerConfig blk
+            -> SlotNo
+            -- ^ The current 'SlotNo'
             -> GenTx blk
             -> ValidationResult blk
             -> ValidationResult blk
-extendVRNew cfg tx
-         vr@ValidationResult { vrValid
-                             , vrAfter
-                             , vrInvalid
-                             , vrLastTicketNo
-                             , vrNewValid
-                             } =
+extendVRNew cfg currSlot tx vr =
     let nextTicketNo = succ vrLastTicketNo
     in  case runExcept (applyTx cfg tx vrAfter) of
       Left err  -> vr { vrInvalid      = (tx, err) : vrInvalid
                       }
-      Right st' -> vr { vrValid        = vrValid :> TxTicket tx nextTicketNo (Block.SlotNo 0)
+      Right st' -> vr { vrValid        = vrValid :> TxTicket tx nextTicketNo currSlot
                       , vrNewValid     = tx : vrNewValid
                       , vrAfter        = st'
                       , vrLastTicketNo = nextTicketNo
                       }
+  where
+    ValidationResult
+      { vrValid
+      , vrAfter
+      , vrInvalid
+      , vrLastTicketNo
+      , vrNewValid
+      } = vr
 
 -- | Validate internal state
 validateIS :: forall m blk. (IOLike m, ApplyTx blk)
            => MempoolEnv m blk -> STM m (ValidationResult blk)
-validateIS MempoolEnv{mpEnvLedger, mpEnvLedgerCfg, mpEnvStateVar} =
+validateIS mpEnv =
     go <$> getCurrentLedgerState mpEnvLedger <*> readTVar mpEnvStateVar
   where
+    MempoolEnv
+      { mpEnvLedger
+      , mpEnvLedgerCfg
+      , mpEnvStateVar
+      } = mpEnv
+
     go :: LedgerState      blk
        -> InternalState    blk
        -> ValidationResult blk
@@ -590,7 +632,46 @@ validateIS MempoolEnv{mpEnvLedger, mpEnvLedgerCfg, mpEnvStateVar} =
         | tip == isTip
         = initVR mpEnvLedgerCfg isTxs (tip, st) isLastTicketNo
         | otherwise
-        = repeatedly (extendVRPrevApplied mpEnvLedgerCfg) (fromTxSeq isTxs)
-        $ initVR mpEnvLedgerCfg TxSeq.Empty (tip, st) isLastTicketNo
+        = repeatedly
+          (extendVRPrevApplied mpEnvLedgerCfg)
+          (txTickets isTxs)
+          $ initVR mpEnvLedgerCfg TxSeq.Empty (tip, st) isLastTicketNo
       where
         tip = Block.pointHash $ ledgerTipPoint st
+
+{-------------------------------------------------------------------------------
+  Mempool Transaction Expiry
+-------------------------------------------------------------------------------}
+
+-- | Drop expired transactions from the mempool.
+--
+-- A transaction is considered to be expired if the 'SlotNo' at which it was
+-- accepted into the mempool is less than or equal to the current 'SlotNo'
+-- (according to the 'BlockchainTime') minus the 'ExpiryThreshold' (an
+-- argument supplied by the node).
+--
+-- i.e. @txAcceptedSlotNo <= currentSlotNo - expiryThreshold@
+expireTxs :: IOLike m
+          => MempoolEnv m blk
+          -> STM m (TxSeq (GenTx blk), Word)
+expireTxs mpEnv = do
+    currentSlotNo <- getCurrentSlot mpEnvBlockchainTime
+    is@IS{isTxs} <- readTVar mpEnvStateVar
+    let (expIsTxs, unexpIsTxs) =
+          splitExpiredTxs isTxs (expirySlotNo currentSlotNo mpEnvExpThreshold)
+    writeTVar mpEnvStateVar is{isTxs = unexpIsTxs}
+    mempoolSize <- getMempoolSize mpEnv
+    pure (expIsTxs, mempoolSize)
+  where
+    MempoolEnv
+      { mpEnvExpThreshold
+      , mpEnvBlockchainTime
+      , mpEnvStateVar
+      } = mpEnv
+
+-- | Convert a 'TxSeq' to a list of generalized transactions paired with their
+-- slot numbers.
+txsWithSlotNo :: TxSeq (GenTx blk) -> [(GenTx blk, SlotNo)]
+txsWithSlotNo txseq = map
+  (\(TxTicket tx _ sn) -> (tx, sn))
+  (txTickets txseq)

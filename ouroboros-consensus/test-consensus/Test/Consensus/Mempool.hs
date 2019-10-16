@@ -12,6 +12,7 @@ import           Control.Exception (assert)
 import           Control.Monad (foldM, forM, forM_, void)
 import           Control.Monad.Except (Except, runExcept)
 import           Control.Monad.State (State, evalState, get, modify)
+import qualified Data.Foldable as Foldable
 import           Data.List (find, foldl', isSuffixOf, nub, sort)
 import           Data.Map (Map)
 import qualified Data.Map as Map
@@ -31,15 +32,20 @@ import           Ouroboros.Network.Block (pattern BlockPoint, SlotNo (..),
                      atSlot, pointSlot, withHash)
 import           Ouroboros.Network.Point (WithOrigin (..))
 
+import           Ouroboros.Consensus.BlockchainTime (ManualBlockchainTime(..),
+                     NumSlots(..), newManualBlockchainTime)
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Mempool
+import           Ouroboros.Consensus.Mempool.Expiry (ExpirySlotNo (..),
+                     ExpiryThreshold (..), expirySlotNo, splitExpiredTxs)
 import           Ouroboros.Consensus.Mempool.TxSeq as TxSeq
-import           Ouroboros.Consensus.Util (whenJust)
+import           Ouroboros.Consensus.Util (chunks, whenJust)
 import           Ouroboros.Consensus.Util.Condense (condense)
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry,
                      Thread, forkThread, withRegistry)
 
+import           Test.Util.Orphans.Arbitrary ()
 import           Test.Util.Orphans.IOLike ()
 
 import           Test.Consensus.Mempool.TestBlock
@@ -49,6 +55,7 @@ tests = testGroup "Mempool"
   [ testGroup "TxSeq"
       [ testProperty "lookupByTicketNo complete"           prop_TxSeq_lookupByTicketNo_complete
       , testProperty "lookupByTicketNo sound"              prop_TxSeq_lookupByTicketNo_sound
+      , testProperty "splitAfterSlotNo"                    prop_TxSeq_splitAfterSlotNo
       ]
   , testProperty "snapshotTxs == snapshotTxsAfter zeroIdx" prop_Mempool_snapshotTxs_snapshotTxsAfter
   , testProperty "valid added txs == getTxs"               prop_Mempool_addTxs_getTxs
@@ -56,6 +63,9 @@ tests = testGroup "Mempool"
   , testProperty "result of addTxs"                        prop_Mempool_addTxs_result
   , testProperty "Invalid transactions are never added"    prop_Mempool_InvalidTxsNeverAdded
   , testProperty "Mempool capacity implementation"         prop_Mempool_Capacity
+  , testProperty "Construct expirySlotNo"                  prop_Mempool_expirySlotNo
+  , testProperty "Expired transaction splitting"           prop_Mempool_splitExpiredTxs
+  , testProperty "Mempool expiry implementation"           prop_Mempool_txExpiry
   , testProperty "Added valid transactions are traced"     prop_Mempool_TraceValidTxs
   , testProperty "Rejected invalid txs are traced"         prop_Mempool_TraceRejectedTxs
   , testProperty "Removed invalid txs are traced"          prop_Mempool_TraceRemovedTxs
@@ -70,7 +80,7 @@ tests = testGroup "Mempool"
 -- | Test that @snapshotTxs == snapshotTxsAfter zeroIdx@.
 prop_Mempool_snapshotTxs_snapshotTxsAfter :: TestSetup -> Property
 prop_Mempool_snapshotTxs_snapshotTxsAfter setup =
-    withTestMempool setup $ \TestMempool { mempool } -> do
+    withTestMempool setup $ \TestMempool { mempool } _ -> do
       let Mempool { zeroIdx, getSnapshot } = mempool
       MempoolSnapshot { snapshotTxs, snapshotTxsAfter} <- atomically getSnapshot
       return $ snapshotTxs === snapshotTxsAfter zeroIdx
@@ -79,7 +89,7 @@ prop_Mempool_snapshotTxs_snapshotTxsAfter setup =
 -- afterward.
 prop_Mempool_addTxs_getTxs :: TestSetupWithTxs -> Property
 prop_Mempool_addTxs_getTxs setup =
-    withTestMempool (testSetup setup) $ \TestMempool { mempool } -> do
+    withTestMempool (testSetup setup) $ \TestMempool { mempool } _ -> do
       let Mempool { addTxs, getSnapshot } = mempool
       _ <- addTxs (allTxs setup)
       MempoolSnapshot { snapshotTxs } <- atomically getSnapshot
@@ -90,7 +100,7 @@ prop_Mempool_addTxs_getTxs setup =
 -- instead of all at once.
 prop_Mempool_addTxs_one_vs_multiple :: TestSetupWithTxs -> Property
 prop_Mempool_addTxs_one_vs_multiple setup =
-    withTestMempool (testSetup setup) $ \TestMempool { mempool } -> do
+    withTestMempool (testSetup setup) $ \TestMempool { mempool } _ -> do
       let Mempool { addTxs, getSnapshot } = mempool
       forM_ (allTxs setup) $ \tx -> addTxs [tx]
       MempoolSnapshot { snapshotTxs } <- atomically getSnapshot
@@ -102,7 +112,7 @@ prop_Mempool_addTxs_one_vs_multiple setup =
 -- valid transactions don't.
 prop_Mempool_addTxs_result :: TestSetupWithTxs -> Property
 prop_Mempool_addTxs_result setup =
-    withTestMempool (testSetup setup) $ \TestMempool { mempool } -> do
+    withTestMempool (testSetup setup) $ \TestMempool { mempool } _ -> do
       let Mempool { addTxs } = mempool
       result <- addTxs (allTxs setup)
       return $ counterexample (ppTxs (txs setup)) $
@@ -112,7 +122,7 @@ prop_Mempool_addTxs_result setup =
 -- | Test that invalid transactions are never added to the 'Mempool'.
 prop_Mempool_InvalidTxsNeverAdded :: TestSetupWithTxs -> Property
 prop_Mempool_InvalidTxsNeverAdded setup =
-    withTestMempool (testSetup setup) $ \TestMempool { mempool } -> do
+    withTestMempool (testSetup setup) $ \TestMempool { mempool } _ -> do
       let Mempool { addTxs, getSnapshot } = mempool
       txsInMempoolBefore <- map fst . snapshotTxs <$> atomically getSnapshot
       _ <- addTxs (allTxs setup)
@@ -132,7 +142,7 @@ prop_Mempool_InvalidTxsNeverAdded setup =
 -- | After removing a transaction from the Mempool, it's actually gone.
 prop_Mempool_removeTxs :: TestSetupWithTxInMempool -> Property
 prop_Mempool_removeTxs (TestSetupWithTxInMempool testSetup tx) =
-    withTestMempool testSetup $ \TestMempool { mempool } -> do
+    withTestMempool testSetup $ \TestMempool { mempool } _ -> do
       let Mempool { removeTxs, getSnapshot } = mempool
       removeTxs [txId txToRemove]
       txsInMempoolAfter <- map fst . snapshotTxs <$> atomically getSnapshot
@@ -164,28 +174,29 @@ prop_Mempool_Capacity mcts = withTestMempool mctsTestSetup $
     runCapacityTest :: forall m. IOLike m
                     => [GenTx TestBlock]
                     -> TestMempool m
+                    -> ResourceRegistry m
                     -> m Property
-    runCapacityTest txs testMempool@TestMempool{getTraceEvents} =
-      withRegistry $ \registry -> do
-        env@MempoolCapTestEnv
-          { mctEnvAddedTxs
-          , mctEnvRemovedTxs
-          } <- initMempoolCapTestEnv
-        void $ forkAddValidTxs  env registry testMempool txs
-        void $ forkUpdateLedger env registry testMempool txs
+    runCapacityTest txs testMempool@TestMempool{getTraceEvents} registry = do
+      env@MempoolCapTestEnv
+        { mctEnvAddedTxs
+        , mctEnvRemovedTxs
+        } <- initMempoolCapTestEnv
+      void $ forkAddValidTxs  env registry testMempool txs
+      void $ forkUpdateLedger env registry testMempool txs
 
-        -- Before we check the order of events, we must block until we've:
-        -- * Added all of the transactions to the mempool
-        -- * Removed all of the transactions from the mempool
-        atomically $ do
-          envAdded   <- readTVar mctEnvAddedTxs
-          envRemoved <- readTVar mctEnvRemovedTxs
-          check $  envAdded   == fromIntegral (length txs)
-                && envRemoved == fromIntegral (length txs)
+      -- Before we check the order of events, we must block until we've:
+      -- * Added all of the transactions to the mempool
+      -- * Removed all of the transactions from the mempool
+      atomically $ do
+        envAdded   <- readTVar mctEnvAddedTxs
+        envRemoved <- readTVar mctEnvRemovedTxs
+        check $  envAdded   == fromIntegral (length txs)
+              && envRemoved == fromIntegral (length txs)
 
-        -- Check the order of events
-        events <- getTraceEvents
-        pure $ checkTraceEvents events
+      -- Check the order of events
+      let expectedEvents = mempoolCapTestExpectedTrace mcts
+      actualEvents <- getTraceEvents
+      pure $ sortAndCheckTraceEvents expectedEvents actualEvents
 
     -- | Spawn a new thread which continuously attempts to fill the mempool to
     -- capacity until no more transactions remain. This should block whenever
@@ -292,26 +303,97 @@ prop_Mempool_Capacity mcts = withTestMempool mctsTestSetup $
             -- removed all of the transactions involved in this test.
             updateLedger env testMempool txs
 
-    checkTraceEvents :: [TraceEventMempool TestBlock]
-                     -> Property
-    checkTraceEvents events =
-          map sortTxsInTrace (mempoolCapTestExpectedTrace mcts)
-      === map sortTxsInTrace events
+-- | Test that the mempool appropriately expires transactions.
+--
+-- Ignore the "100% empty Mempool" label in the test output, that is there
+-- because we reuse 'withTestMempool' and always start with an empty Mempool
+-- and 'LedgerState'.
+prop_Mempool_txExpiry :: MempoolExpiryTestSetup -> Property
+prop_Mempool_txExpiry mets =
+    classify isNoExpiryThreshold "NoExpiryThreshold" $
+    classify (not isNoExpiryThreshold) "ExpiryThreshold" $
+    withTestMempool metsTestSetup $ \testMempool _ -> do
+      -- Add valid chunks of transactions to the mempool (each chunk
+      -- represents the transactions submitted per slot) and call the mempool
+      -- expiry logic on a slot-by-slot basis.
+      -- i.e. chunk #1 is added to the mempool at slot 0, chunk #2 is added at
+      -- slot 1, chunk #3 is added at slot 2, etc.
+      _ <- mapM_ (addTxsIncCurrSlotAndExpire testMempool) splitTxs
 
-    sortTxsInTrace :: TraceEventMempool TestBlock
-                   -> TraceEventMempool TestBlock
-    sortTxsInTrace ev = case ev of
-      TraceMempoolAddTxs      txs mpSz -> TraceMempoolAddTxs      (sort txs) mpSz
-      TraceMempoolRemoveTxs   txs mpSz -> TraceMempoolRemoveTxs   (sort txs) mpSz
-      TraceMempoolRejectedTxs txs mpSz -> TraceMempoolRejectedTxs (sort txs) mpSz
-      TraceMempoolManuallyRemovedTxs txIds txs mpSz ->
-        TraceMempoolManuallyRemovedTxs (sort txIds) (sort txs) mpSz
+      -- Confirm that the expected trace is equivalent to the actual trace
+      let expectedTrace = mempoolExpiryTestExpectedTrace mets
+      actualTrace <- getTraceEvents testMempool
+      pure $ sortAndCheckTraceEvents expectedTrace actualTrace
+  where
+    MempoolExpiryTestSetup
+      { metsTestSetup
+      , metsValidTxs
+      , metsTxsPerSlot
+      , metsExpiryThreshold
+      } = mets
+
+    isNoExpiryThreshold :: Bool
+    isNoExpiryThreshold = case metsExpiryThreshold of
+      NoExpiryThreshold -> True
+      _                 -> False
+
+    -- | The valid transactions split into chunks of 'metsTxsPerSlot'.
+    splitTxs :: [[GenTx TestBlock]]
+    splitTxs = chunks metsTxsPerSlot (map TestGenTx metsValidTxs)
+
+    -- | Add a list of transactions to the mempool (which also attempts to
+    -- firstly expire transactions from the mempool) and increment the current
+    -- 'SlotNo'.
+    addTxsIncCurrSlotAndExpire :: forall m. IOLike m
+                               => TestMempool m
+                               -> [GenTx TestBlock]
+                               -> m ()
+    addTxsIncCurrSlotAndExpire TestMempool{mempool, incCurrentSlot} txs = do
+      void $ addTxs mempool txs
+      incCurrentSlot
+
+-- | Test that 'ExpirySlotNo's are appropriately constructed using
+-- 'expirySlotNo'.
+prop_Mempool_expirySlotNo :: SlotNo -> ExpiryThreshold -> Property
+prop_Mempool_expirySlotNo slotNo expThreshold = case expThreshold of
+    NoExpiryThreshold -> res === NoExpirySlot
+    ExpiryThreshold (NumSlots et) ->
+      if unSlotNo slotNo >= fromIntegral et
+        then res === ExpirySlotNo (SlotNo (unSlotNo slotNo - fromIntegral et))
+        else res === NoExpirySlot
+  where
+    res = expirySlotNo slotNo expThreshold
+
+-- | Test that 'splitExpiredTxs' appropriately separates the expired
+-- transactions from the unexpired.
+prop_Mempool_splitExpiredTxs :: [Positive Int] -> ExpirySlotNo -> Property
+prop_Mempool_splitExpiredTxs xs expSlotNo = case expSlotNo of
+    NoExpirySlot ->
+      toTxTickets res === toTxTickets (Empty, txseq)
+    ExpirySlotNo esn ->
+      toTxTickets res === toTxTickets (splitAfterSlotNo txseq esn)
+  where
+    slotNos :: [SlotNo]
+    slotNos = map (SlotNo . fromIntegral . getPositive) (sort xs)
+
+    txseq :: TxSeq Int
+    txseq =
+      foldl'
+        (TxSeq.:>)
+        TxSeq.Empty
+        (zipWith3 TxTicket (repeat 0) (repeat (TicketNo 0)) slotNos)
+
+    toTxTickets :: (TxSeq a, TxSeq a) -> ([TxTicket a], [TxTicket a])
+    toTxTickets (ys, zs) = (txTickets ys, txTickets zs)
+
+    res :: (TxSeq Int, TxSeq Int)
+    res = splitExpiredTxs txseq expSlotNo
 
 -- | Test that all valid transactions added to a 'Mempool' via 'addTxs' are
 -- appropriately represented in the trace of events.
 prop_Mempool_TraceValidTxs :: TestSetupWithTxs -> Property
 prop_Mempool_TraceValidTxs setup =
-    withTestMempool (testSetup setup) $ \testMempool -> do
+    withTestMempool (testSetup setup) $ \testMempool _ -> do
       let TestMempool { mempool, getTraceEvents } = testMempool
           Mempool { addTxs } = mempool
       _ <- addTxs (allTxs setup)
@@ -331,7 +413,7 @@ prop_Mempool_TraceValidTxs setup =
 -- appropriately represented in the trace of events.
 prop_Mempool_TraceRejectedTxs :: TestSetupWithTxs -> Property
 prop_Mempool_TraceRejectedTxs setup =
-    withTestMempool (testSetup setup) $ \testMempool -> do
+    withTestMempool (testSetup setup) $ \testMempool _ -> do
       let TestMempool { mempool, getTraceEvents } = testMempool
           Mempool { addTxs } = mempool
       _ <- addTxs (allTxs setup)
@@ -352,7 +434,7 @@ prop_Mempool_TraceRejectedTxs setup =
 -- trace of events.
 prop_Mempool_TraceRemovedTxs :: TestSetup -> Property
 prop_Mempool_TraceRemovedTxs setup =
-    withTestMempool setup $ \testMempool -> do
+    withTestMempool setup $ \testMempool _ -> do
       let TestMempool { mempool, getTraceEvents, addTxsToLedger } = testMempool
           Mempool { getSnapshot, withSyncState } = mempool
       MempoolSnapshot { snapshotTxs } <- atomically getSnapshot
@@ -378,6 +460,27 @@ prop_Mempool_TraceRemovedTxs setup =
     isRemoveTxsEvent _                           = False
 
 {-------------------------------------------------------------------------------
+  TraceEventMempool helpers
+-------------------------------------------------------------------------------}
+
+sortAndCheckTraceEvents :: [TraceEventMempool TestBlock]
+                        -> [TraceEventMempool TestBlock]
+                        -> Property
+sortAndCheckTraceEvents expected actual =
+      map sortTxsInTrace expected
+  === map sortTxsInTrace actual
+
+sortTxsInTrace :: TraceEventMempool TestBlock
+               -> TraceEventMempool TestBlock
+sortTxsInTrace ev = case ev of
+  TraceMempoolAddTxs      txs mpSz -> TraceMempoolAddTxs      (sort txs) mpSz
+  TraceMempoolRemoveTxs   txs mpSz -> TraceMempoolRemoveTxs   (sort txs) mpSz
+  TraceMempoolRejectedTxs txs mpSz -> TraceMempoolRejectedTxs (sort txs) mpSz
+  TraceMempoolExpireTxs   txs mpSz -> TraceMempoolExpireTxs   (sort txs) mpSz
+  TraceMempoolManuallyRemovedTxs txIds txs mpSz ->
+    TraceMempoolManuallyRemovedTxs (sort txIds) (sort txs) mpSz
+
+{-------------------------------------------------------------------------------
   TestSetup: how to set up a TestMempool
 -------------------------------------------------------------------------------}
 
@@ -386,6 +489,7 @@ data TestSetup = TestSetup
   , testInitialTxs  :: [TestTx]
     -- ^ These are all valid and will be the initial contents of the Mempool.
   , testMempoolCap  :: MempoolCapacity
+  , testMempoolExp  :: ExpiryThreshold
   } deriving (Show)
 
 ppTestSetup :: TestSetup -> String
@@ -405,8 +509,11 @@ ppTestSetup TestSetup { testLedgerState
 --
 -- n.b. the generated 'MempoolCapacity' will be of the value
 -- @nbInitialTxs + extraCapacity@
-genTestSetup :: Int -> Int -> Gen (TestSetup, LedgerState TestBlock)
-genTestSetup maxInitialTxs extraCapacity = do
+genTestSetup :: Int
+             -> Int
+             -> ExpiryThreshold
+             -> Gen (TestSetup, LedgerState TestBlock)
+genTestSetup maxInitialTxs extraCapacity expThreshold = do
     ledgerSize   <- choose (0, maxInitialTxs)
     nbInitialTxs <- choose (0, maxInitialTxs)
     (_txs1,  ledger1) <- genValidTxs ledgerSize testInitLedger
@@ -416,21 +523,25 @@ genTestSetup maxInitialTxs extraCapacity = do
           { testLedgerState = ledger1
           , testInitialTxs  = txs2
           , testMempoolCap  = mpCap
+          , testMempoolExp  = expThreshold
           }
     return (testSetup, ledger2)
 
 instance Arbitrary TestSetup where
   arbitrary = sized $ \n -> do
     extraCapacity <- choose (0, n)
-    fst <$> genTestSetup n extraCapacity
+    let expiryThreshold = NoExpiryThreshold
+    fst <$> genTestSetup n extraCapacity expiryThreshold
   shrink TestSetup { testLedgerState
                    , testInitialTxs
                    , testMempoolCap = MempoolCapacity mpCap
+                   , testMempoolExp
                    } =
     -- TODO we could shrink @testLedgerState@ too
     [ TestSetup { testLedgerState
                 , testInitialTxs = testInitialTxs'
                 , testMempoolCap = MempoolCapacity mpCap'
+                , testMempoolExp
                 }
     | testInitialTxs' <- shrinkList (const []) testInitialTxs
     , mpCap' <- shrinkIntegral mpCap
@@ -550,7 +661,8 @@ invalidTxs = map (TestGenTx . fst) . filter (not . snd) . txs
 instance Arbitrary TestSetupWithTxs where
   arbitrary = sized $ \n -> do
     nbTxs <- choose (0, n)
-    (testSetup, ledger)  <- genTestSetup n nbTxs
+    let expiryThreshold = NoExpiryThreshold
+    (testSetup, ledger)  <- genTestSetup n nbTxs expiryThreshold
     (txs,      _ledger') <- genTxs nbTxs ledger
     return TestSetupWithTxs { testSetup, txs }
   shrink TestSetupWithTxs { testSetup, txs } =
@@ -623,23 +735,39 @@ data TestMempool m = TestMempool
     --
     -- Remember to synchronise the mempool afterwards.
   , addTxsToLedger   :: [TestTx] -> STM m [Either TestTxError ()]
+
+    -- | Increments the current 'SlotNo'.
+  , incCurrentSlot   :: m ()
   }
 
 withTestMempool
   :: forall prop. Testable prop
   => TestSetup
-  -> (forall m. IOLike m => TestMempool m -> m prop)
+  -> (forall m. IOLike m => TestMempool m -> ResourceRegistry m -> m prop)
   -> Property
-withTestMempool setup@TestSetup { testLedgerState, testInitialTxs, testMempoolCap } prop =
+withTestMempool setup prop =
     counterexample (ppTestSetup setup) $
     classify      (null testInitialTxs)  "empty Mempool"     $
     classify (not (null testInitialTxs)) "non-empty Mempool" $
     runSimOrThrow setUpAndRun
   where
+    TestSetup
+      { testLedgerState
+      , testInitialTxs
+      , testMempoolCap
+      , testMempoolExp
+      } = setup
+
     cfg = ledgerConfigView singleNodeTestConfig
 
     setUpAndRun :: forall m. IOLike m => m Property
-    setUpAndRun = do
+    setUpAndRun = withRegistry $ \registry -> do
+
+      -- Set up the BlockchainTime
+      ManualBlockchainTime
+        { manBlockchainTime
+        , manBlockchainTimeTick
+        } <- newManualBlockchainTime registry
 
       -- Set up the LedgerInterface
       varCurrentLedgerState <- uncheckedNewTVarM testLedgerState
@@ -655,7 +783,9 @@ withTestMempool setup@TestSetup { testLedgerState, testInitialTxs, testMempoolCa
       -- Open the mempool and add the initial transactions
       mempool <- openMempoolWithoutSyncThread ledgerInterface
                                               cfg
+                                              manBlockchainTime
                                               testMempoolCap
+                                              testMempoolExp
                                               tracer
       result  <- addTxs mempool (map TestGenTx testInitialTxs)
       whenJust (find (isJust . snd) result) $ \(invalidTx, _) -> error $
@@ -665,12 +795,15 @@ withTestMempool setup@TestSetup { testLedgerState, testInitialTxs, testMempoolCa
       atomically $ writeTVar varEvents []
 
       -- Apply the property to the 'TestMempool' record
-      property <$> prop TestMempool
-        { mempool
-        , getTraceEvents   = atomically $ reverse <$> readTVar varEvents
-        , eraseTraceEvents = atomically $ writeTVar varEvents []
-        , addTxsToLedger   = addTxsToLedger varCurrentLedgerState
-        }
+      property <$> prop
+        TestMempool
+          { mempool
+          , getTraceEvents   = atomically $ reverse <$> readTVar varEvents
+          , eraseTraceEvents = atomically $ writeTVar varEvents []
+          , addTxsToLedger   = addTxsToLedger varCurrentLedgerState
+          , incCurrentSlot   = manBlockchainTimeTick
+          }
+        registry
 
     addTxToLedger :: forall m. IOLike m
                   => StrictTVar m (LedgerState TestBlock)
@@ -707,6 +840,7 @@ instance Arbitrary MempoolCapTestSetup where
     let nbInitialTxs = 0
     nbNewTxs <- choose (2, 1000)
     capacity <- choose (1, nbNewTxs - 1)
+    let expiryThreshold = NoExpiryThreshold
 
     -- In 'genTestSetup', the mempool capacity is calculated as such:
     -- @nbInitialTxs + extraCapacity@
@@ -714,7 +848,7 @@ instance Arbitrary MempoolCapTestSetup where
     -- an 'extraCapacity' value of @nbNewTxs - 1@ to 'genTestSetup' guarantees
     -- that our mempool's capacity will be @nbNewTxs - 1@ (which is exactly
     -- what we want for 'prop_Mempool_Capacity').
-    (testSetup, ledger) <- genTestSetup nbInitialTxs capacity
+    (testSetup, ledger) <- genTestSetup nbInitialTxs capacity expiryThreshold
 
     (vtxs, _) <- genValidTxs nbNewTxs ledger
     pure MempoolCapTestSetup { mctsTestSetup = testSetup
@@ -726,7 +860,7 @@ instance Arbitrary MempoolCapTestSetup where
 -- expect from a mempool capacity test.
 mempoolCapTestExpectedTrace :: MempoolCapTestSetup
                             -> [TraceEventMempool TestBlock]
-mempoolCapTestExpectedTrace mcts = go chunks
+mempoolCapTestExpectedTrace mcts = go txChunks
   where
     MempoolCapTestSetup
       { mctsValidTxs
@@ -743,8 +877,8 @@ mempoolCapTestExpectedTrace mcts = go chunks
       | otherwise = error $  "mempoolCapTestExpectedTrace.chunksOf: "
                           <> "n is less than or equal to 0"
 
-    chunks :: [[GenTx TestBlock]]
-    chunks = chunksOf (fromIntegral mempoolCap) txs
+    txChunks :: [[GenTx TestBlock]]
+    txChunks = chunksOf (fromIntegral mempoolCap) txs
 
     go :: [[GenTx TestBlock]] -> [TraceEventMempool TestBlock]
     go []         = []
@@ -776,6 +910,119 @@ initMempoolCapTestEnv = do
   pure $ MempoolCapTestEnv { mctEnvAddedTxs   = added
                            , mctEnvRemovedTxs = removed
                            }
+
+{-------------------------------------------------------------------------------
+  MempoolExpiryTestSetup
+-------------------------------------------------------------------------------}
+
+data MempoolExpiryTestSetup = MempoolExpiryTestSetup
+  { metsTestSetup       :: !TestSetup
+  , metsValidTxs        :: ![TestTx]
+  , metsTxsPerSlot      :: !Int
+  , metsExpiryThreshold :: !ExpiryThreshold
+  } deriving (Show)
+
+instance Arbitrary MempoolExpiryTestSetup where
+  -- TODO: shrink
+  arbitrary = do
+    lowerBound <- getPositive <$> arbitrary
+
+    -- The number of valid transactions to generate
+    nbValidTxs <- choose (lowerBound, 10)
+
+    -- Generate an 'ExpiryThreshold'
+    expiryThreshold <- frequency
+      [ (1, pure NoExpiryThreshold)
+      , (9, ExpiryThreshold . NumSlots <$> choose (1, nbValidTxs))
+      ]
+
+    -- Generate the 'TestSetup'. This will consist of an empty ledger and a
+    -- mempool capacity which we will utilize. The mempool capacity should be
+    -- that of 'nbValidTxs'.
+    (testSetup@TestSetup{testLedgerState}, _) <-
+      genTestSetup 0 nbValidTxs expiryThreshold
+
+    -- Generate 'nbValidTxs' valid transactions for the empty ledger.
+    (txs, _ledger) <- genValidTxs nbValidTxs testLedgerState
+
+    -- Generate the number of txs that should be added to the mempool per slot
+    txsPerSlot <- choose (1, nbValidTxs)
+
+    pure MempoolExpiryTestSetup
+      { metsTestSetup       = testSetup
+      , metsValidTxs        = txs
+      , metsTxsPerSlot      = txsPerSlot
+      , metsExpiryThreshold = expiryThreshold
+      }
+
+-- | Given the 'MempoolExpiryTestSetup', compute the trace of events which we can
+-- expect from a mempool expiry test.
+mempoolExpiryTestExpectedTrace :: MempoolExpiryTestSetup
+                               -> [TraceEventMempool TestBlock]
+mempoolExpiryTestExpectedTrace mets = go txsWithExpectedSlot TxSeq.Empty
+  where
+    MempoolExpiryTestSetup
+      { metsValidTxs
+      , metsTxsPerSlot
+      , metsExpiryThreshold
+      } = mets
+
+    splitTxs :: [[GenTx TestBlock]]
+    splitTxs = chunks metsTxsPerSlot (map TestGenTx metsValidTxs)
+
+    txsWithExpectedSlot :: [ ([GenTx TestBlock], SlotNo) ]
+    txsWithExpectedSlot = zip splitTxs (map SlotNo [0..])
+
+    addTxChunkToTxSeq :: ([GenTx TestBlock], SlotNo)
+                      -> TxSeq (GenTx TestBlock)
+                      -> TxSeq (GenTx TestBlock)
+    addTxChunkToTxSeq (chunk, sn) txseq = foldl'
+      (\ts t -> ts :> TxTicket t zeroTicketNo sn)
+      txseq
+      chunk
+
+    go :: [ ([GenTx TestBlock], SlotNo) ]
+       -- ^ Remaining transactions and slot numbers to process
+       -> TxSeq (GenTx TestBlock)
+       -- ^ Transactions that we've already processed.
+       -- This mimics what we expect to be the internal representation of the
+       -- mempool at this time.
+       -> [TraceEventMempool TestBlock]
+    go [] _ = []
+    go (chunk@(txsToAdd, currSlotNo) : remaining) past =
+        expiryTrace ++ addTrace ++ go remaining txsAfterAdd
+      where
+        esn = expirySlotNo currSlotNo metsExpiryThreshold
+        (expired, unexpired) = splitExpiredTxs past esn
+        nbTxsAfterExp = fromIntegral (Foldable.length unexpired)
+        expiryTrace = case expired of
+          TxSeq.Empty -> []
+          ts ->
+            [ TraceMempoolExpireTxs
+                (map
+                  (\(TxTicket tx _ sn) -> (tx, sn))
+                  (txTickets ts)
+                )
+                nbTxsAfterExp
+            ]
+
+        txsAfterAdd = addTxChunkToTxSeq chunk unexpired
+        nbTxsAfterAdd = fromIntegral $ Foldable.length txsAfterAdd
+        addTrace = [TraceMempoolAddTxs txsToAdd nbTxsAfterAdd]
+
+        -- esn = expirySlotNo (currSlotNo + 1) metsExpiryThreshold
+        -- (expired, unexpired) = splitExpiredTxs txsAfterAdd esn
+        -- nbTxsAfterExp = fromIntegral (Foldable.length unexpired)
+        -- expiryTrace = case expired of
+        --   TxSeq.Empty -> []
+        --   ts ->
+        --     [ TraceMempoolExpireTxs
+        --         (map
+        --           (\(TxTicket tx _ sn) -> (tx, sn))
+        --           (txTickets ts)
+        --         )
+        --         nbTxsAfterExp
+        --     ]
 
 {-------------------------------------------------------------------------------
   TxSeq Properties
@@ -824,6 +1071,45 @@ prop_TxSeq_lookupByTicketNo_sound smalls small =
     mkTicket x = TxTicket x (mkTicketNo x) (SlotNo $ fromIntegral x)
     mkTicketNo = TicketNo . toEnum
 
+-- | Test that:
+--
+-- * The 'fst' of the result of 'splitAfterSlotNo' only contains 'TxTicket's
+--   whose 'SlotNo's are less than or equal to that of the 'SlotNo' which the
+--   'TxSeq' was split on.
+-- * The 'snd' of the result of 'splitAfterSlotNo' only contains 'TxTicket's
+--   whose 'SlotNo's are greater than that of the 'SlotNo' which the 'TxSeq'
+--   was split on.
+prop_TxSeq_splitAfterSlotNo :: [Positive Int] -> Property
+prop_TxSeq_splitAfterSlotNo xs =
+    conjoin [ splitAndCheck sn
+            | TxTicket _ _ sn <- txTickets txseq ]
+  where
+    slotNos :: [SlotNo]
+    slotNos = map (SlotNo . fromIntegral . getPositive) (sort xs)
+
+    txseq :: TxSeq Int
+    txseq =
+      foldl'
+        (TxSeq.:>)
+        TxSeq.Empty
+        (zipWith3 TxTicket (repeat 0) (repeat (TicketNo 0)) slotNos)
+
+    splitAndCheck :: SlotNo -> Bool
+    splitAndCheck sn =
+      let (before, after) = splitAfterSlotNo txseq sn
+      in    checkSlotsLessThanOrEqual (txTickets before) sn
+         && checkSlotsGreaterThan (txTickets after) sn
+
+    checkSlotsLessThanOrEqual :: [TxTicket tx] -> SlotNo -> Bool
+    checkSlotsLessThanOrEqual txs sn = all
+      (\(TxTicket _ _ sn') -> sn' <= sn)
+      txs
+
+    checkSlotsGreaterThan :: [TxTicket tx] -> SlotNo -> Bool
+    checkSlotsGreaterThan txs sn = all
+      (\(TxTicket _ _ sn') -> sn' > sn)
+      txs
+
 {-------------------------------------------------------------------------------
   TicketNo Properties
 -------------------------------------------------------------------------------}
@@ -852,7 +1138,7 @@ prop_TxSeq_lookupByTicketNo_sound smalls small =
 -- into account.
 prop_Mempool_idx_consistency :: Actions -> Property
 prop_Mempool_idx_consistency (Actions actions) =
-    withTestMempool emptyTestSetup $ \testMempool@TestMempool { mempool } ->
+    withTestMempool emptyTestSetup $ \testMempool@TestMempool { mempool } _ ->
       fmap conjoin $ forM actions $ \action -> do
         txsInMempool      <- map (unTestGenTx . fst) . snapshotTxs <$>
                              atomically (getSnapshot mempool)
@@ -885,6 +1171,7 @@ prop_Mempool_idx_consistency (Actions actions) =
       { testLedgerState = testInitLedger
       , testInitialTxs  = []
       , testMempoolCap  = MempoolCapacity 1000
+      , testMempoolExp  = NoExpiryThreshold
       }
 
     lastOfMempoolRemoved txsInMempool = \case

@@ -16,6 +16,8 @@ module Ouroboros.Consensus.BlockchainTime (
   , NumSlots(..)
   , TestBlockchainTime(..)
   , newTestBlockchainTime
+  , ManualBlockchainTime(..)
+  , newManualBlockchainTime
     -- * Real blockchain time
   , realBlockchainTime
     -- * Time to slots and back again
@@ -112,14 +114,17 @@ data TestBlockchainTime m = TestBlockchainTime
     -- ^ Blocks until the end of the final requested slot.
   }
 
+data ManualBlockchainTime m = ManualBlockchainTime
+  { manBlockchainTime     :: BlockchainTime m
+  , manBlockchainTimeTick :: m ()
+    -- ^ Manually tick the blockchain time.
+  }
+
 -- | Construct new blockchain time that ticks at the specified slot duration
 --
 -- NOTE: This is just one way to construct time. We can of course also connect
 -- this to the real time (if we are in IO), or indeed to a manual tick
 -- (in a demo).
---
--- NOTE: The number of slots is only there to make sure we terminate the
--- thread (otherwise the system will keep waiting).
 --
 -- NOTE: Any code not passed to 'onSlotChange' may start running \"before\" the
 -- first slot @SlotNo 0@, i.e. during 'Initializing'. This is likely only
@@ -128,8 +133,12 @@ data TestBlockchainTime m = TestBlockchainTime
 newTestBlockchainTime
     :: forall m. (IOLike m, HasCallStack)
     => ResourceRegistry m
-    -> NumSlots           -- ^ Number of slots
-    -> DiffTime           -- ^ Slot duration
+    -> NumSlots
+    -- ^ The maximum number of slots that the ticker thread should run for.
+    -- n.b. This is here to ensure that we terminate the thread (otherwise
+    -- the system will keep waiting).
+    -> DiffTime
+    -- ^ The slot duration at which the blockchain time will be ticked.
     -> m (TestBlockchainTime m)
 newTestBlockchainTime registry (NumSlots numSlots) slotLen = do
     slotVar <- newTVarM initVal
@@ -155,16 +164,57 @@ newTestBlockchainTime registry (NumSlots numSlots) slotLen = do
       , testBlockchainTimeDone = readMVar doneVar
       }
   where
-    loop :: StrictTVar m TestClock -> StrictMVar m () -> m ()
+    loop :: StrictTVar m TestClock
+         -> StrictMVar m ()
+         -> m ()
     loop slotVar doneVar = do
         -- count off each requested slot
         replicateM_ numSlots $ do
-          atomically $ modifyTVar slotVar $ Running . \case
-            Initializing -> SlotNo 0
-            Running slot -> succ slot
+          tickTestClock slotVar
           threadDelay slotLen
         -- signal the end of the final slot
         putMVar doneVar ()
+
+    tickTestClock :: StrictTVar m TestClock -> m ()
+    tickTestClock var = atomically $ modifyTVar var $ Running . \case
+        Initializing -> SlotNo 0
+        Running slot -> succ slot
+
+    initVal = Initializing
+
+-- | Construct a new 'ManualBlockchainTime' whose blockchain time can be
+-- manually ticked.
+newManualBlockchainTime
+    :: forall m. (IOLike m, HasCallStack)
+    => ResourceRegistry m
+    -> m (ManualBlockchainTime m)
+newManualBlockchainTime registry = do
+    slotVar <- newTVarM initVal
+
+    atomically $ writeTVar slotVar $ Running (SlotNo 0)
+
+    let get :: STM m SlotNo
+        get = blockUntilJust $
+                (\case
+                    Initializing -> Nothing
+                    Running slot -> Just slot)
+            <$> readTVar slotVar
+
+        btime :: BlockchainTime m
+        btime = BlockchainTime {
+            getCurrentSlot = get
+          , onSlotChange_  = onEachChange registry Running (Just initVal) get
+          }
+
+    return $ ManualBlockchainTime
+      { manBlockchainTime = btime
+      , manBlockchainTimeTick = tickTestClock slotVar
+      }
+  where
+    tickTestClock :: StrictTVar m TestClock -> m ()
+    tickTestClock var = atomically $ modifyTVar var $ Running . \case
+        Initializing -> SlotNo 0
+        Running slot -> succ slot
 
     initVal = Initializing
 

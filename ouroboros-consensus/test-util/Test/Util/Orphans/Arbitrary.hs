@@ -19,6 +19,8 @@ import           Ouroboros.Network.Block (SlotNo (..))
 
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.ChainSyncClient (ClockSkew (..))
+import           Ouroboros.Consensus.Mempool.Expiry (ExpirySlotNo (..),
+                     ExpiryThreshold (..))
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Util.Random (Seed (..))
 
@@ -96,6 +98,28 @@ instance Arbitrary EpochSlot where
 instance Arbitrary ClockSkew where
   arbitrary = ClockSkew <$> choose (0, 5)
   shrink (ClockSkew n) = [ ClockSkew n' | n' <- shrink n ]
+
+{-------------------------------------------------------------------------------
+  Mempool
+-------------------------------------------------------------------------------}
+
+instance Arbitrary ExpiryThreshold where
+  arbitrary = oneof
+    [ pure NoExpiryThreshold
+    , ExpiryThreshold . NumSlots . getPositive <$> arbitrary
+    ]
+  shrink NoExpiryThreshold    = []
+  shrink (ExpiryThreshold et) =
+    NoExpiryThreshold : [ExpiryThreshold et' | et' <- shrink et]
+
+instance Arbitrary ExpirySlotNo where
+  arbitrary = oneof
+    [ pure NoExpirySlot
+    , ExpirySlotNo <$> arbitrary
+    ]
+  shrink NoExpirySlot = []
+  shrink (ExpirySlotNo esn) =
+    NoExpirySlot : [ExpirySlotNo esn' | esn' <- shrink esn]
 
 {-------------------------------------------------------------------------------
   Crypto

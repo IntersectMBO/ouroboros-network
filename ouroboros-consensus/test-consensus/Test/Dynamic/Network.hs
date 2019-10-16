@@ -68,6 +68,7 @@ import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.Mock
 import           Ouroboros.Consensus.Mempool
+import           Ouroboros.Consensus.Mempool.Expiry (ExpiryThreshold (..))
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.Node.Tracers
@@ -342,6 +343,7 @@ runNodeNetwork registry testBtime numCoreNodes nodeJoinPlan nodeTopology
             , blockMatchesHeader  = nodeBlockMatchesHeader
             , maxUnackTxs         = 1000 -- TODO
             , mempoolCap          = MempoolCapacity 10 -- TODO
+            , mempoolExpThreshold = ExpiryThreshold (NumSlots 1) -- TODO
             , chainSyncPipelining = pipelineDecisionLowHighMark 2 4
             }
 

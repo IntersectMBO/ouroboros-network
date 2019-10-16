@@ -53,6 +53,7 @@ import           Ouroboros.Consensus.ChainSyncClient
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Mempool
+import           Ouroboros.Consensus.Mempool.Expiry (ExpiryThreshold)
 import           Ouroboros.Consensus.Mempool.TxSeq (TicketNo)
 import           Ouroboros.Consensus.Node.Tracers
 import           Ouroboros.Consensus.Protocol.Abstract
@@ -137,6 +138,12 @@ data NodeArgs m peer blk = NodeArgs {
     , blockMatchesHeader  :: Header blk -> blk -> Bool
     , maxUnackTxs         :: Word16
     , mempoolCap          :: MempoolCapacity
+    , mempoolExpThreshold :: ExpiryThreshold
+      -- ^ We require a transaction expiry threshold (measured in number of
+      -- slots) for the mempool.
+      --
+      -- E.g. if the 'ExpiryThreshold' is 10 slots, then transactions that
+      -- were received at least 10 slots ago will be removed from the mempool.
     , chainSyncPipelining :: MkPipelineDecision
     }
 
@@ -205,13 +212,15 @@ initInternalState
     -> m (InternalState m peer blk)
 initInternalState NodeArgs { tracers, chainDB, registry, cfg,
                              blockFetchSize, blockMatchesHeader, btime,
-                             callbacks, initState, mempoolCap } = do
+                             callbacks, initState, mempoolCap,
+                             mempoolExpThreshold } = do
     varCandidates  <- newTVarM mempty
     varState       <- newTVarM initState
-    mempool        <- openMempool registry
-                                  (chainDBLedgerInterface chainDB)
+    mempool        <- openMempool (chainDBLedgerInterface chainDB)
                                   (ledgerConfigView cfg)
+                                  btime
                                   mempoolCap
+                                  mempoolExpThreshold
                                   (mempoolTracer tracers)
 
     fetchClientRegistry <- newFetchClientRegistry

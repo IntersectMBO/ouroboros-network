@@ -48,7 +48,7 @@ zeroTicketNo = TicketNo 0
 -- 'SlotNo' at which they were submitted.
 --
 data TxTicket tx = TxTicket !tx !TicketNo !SlotNo
-  deriving (Show, Generic, NoUnexpectedThunks)
+  deriving (Eq, Show, Generic, NoUnexpectedThunks)
 
 -- | The mempool is a sequence of transactions with their ticket numbers.
 -- Transactions are allocated monotonically increasing ticket numbers as they

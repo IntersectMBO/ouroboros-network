@@ -17,6 +17,7 @@ module Ouroboros.Consensus.Mempool.API (
 import           Control.Monad.Except
 import           GHC.Stack (HasCallStack)
 
+import           Ouroboros.Network.Block (SlotNo)
 import           Ouroboros.Network.Protocol.TxSubmission.Type (TxSizeInBytes)
 
 import           Ouroboros.Consensus.Ledger.Abstract
@@ -108,6 +109,11 @@ data Mempool m blk idx = Mempool {
       -- The following validation steps will be performed when adding
       -- transactions to the mempool:
       --
+      -- * Drop expired transactions from the mempool. A transaction is
+      --   considered to be expired if the 'SlotNo' at which it was accepted
+      --   into the mempool is less than or equal to the current 'SlotNo'
+      --   (according to the 'BlockchainTime') minus the 'ExpiryThreshold' (an
+      --   argument supplied by the node).
       -- * Transactions which already exist in the mempool are revalidated,
       --   /in order/, against the current ledger state. Existing transactions
       --   which are found to be invalid, with respect to the current ledger
@@ -180,12 +186,18 @@ data Mempool m blk idx = Mempool {
     , removeTxs     :: [GenTxId blk] -> m ()
 
       -- | Sync the transactions in the mempool with the current ledger state
-      --  of the 'ChainDB'.
+      --  of the 'ChainDB' and drop expired transactions from the mempool.
       --
       -- The transactions that exist within the mempool will be revalidated
       -- against the current ledger state. Transactions which are found to be
       -- invalid with respect to the current ledger state, will be dropped
       -- from the mempool, whereas valid transactions will remain.
+      --
+      -- Additionally, expired transactions will be dropped from the mempool.
+      -- A transaction is considered to be expired if the 'SlotNo' at which it
+      -- was accepted into the mempool is less than or equal to the current
+      -- 'SlotNo' (according to the 'BlockchainTime') minus the
+      -- 'ExpiryThreshold' (an argument supplied by the node).
       --
       -- The given function will be applied to a snapshot of the mempool that
       -- is in sync with the current ledger state. This function will be
@@ -277,6 +289,12 @@ data TraceEventMempool blk
       --
       -- This list shares not transactions with the list of manually removed
       -- transactions.
+      !Word
+      -- ^ The total number of transactions now in the Mempool.
+  | TraceMempoolExpireTxs
+      ![(GenTx blk, SlotNo)]
+      -- ^ Previously valid transactions, along with the 'SlotNo' at which
+      -- they were introduced to the mempool, that have now expired.
       !Word
       -- ^ The total number of transactions now in the Mempool.
 
