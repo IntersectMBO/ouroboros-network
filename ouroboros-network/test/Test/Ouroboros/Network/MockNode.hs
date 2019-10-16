@@ -69,7 +69,6 @@ test_blockGenerator
      , MonadFork m
      , MonadTime m
      , MonadTimer m
-     , Show (Time m)
      )
   => Chain Block
   -> DiffTime
@@ -78,12 +77,12 @@ test_blockGenerator chain slotDuration = do
     startTime <- getMonotonicTime
     isValid startTime <$> withProbe (experiment slotDuration)
   where
-    isValid :: Time m -> [(Time m, Block)] -> Property
+    isValid :: Time -> [(Time, Block)] -> Property
     isValid startTime = foldl'
         (\r (t, b) -> r .&&. t === slotTime (blockSlot b))
         (property True)
       where
-        slotTime :: SlotNo -> Time m
+        slotTime :: SlotNo -> Time
         slotTime s = (realToFrac (unSlotNo s) * slotDuration) `addTime` startTime
 
     experiment
@@ -93,7 +92,7 @@ test_blockGenerator chain slotDuration = do
          , MonadTimer m
          )
       => DiffTime
-      -> Probe m (Time m, Block)
+      -> Probe m (Time, Block)
       -> m ()
     experiment slotDur p = do
       getBlock <- blockGenerator slotDur (Chain.toOldestFirst chain)

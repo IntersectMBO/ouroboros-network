@@ -236,7 +236,7 @@ garbageCollect CDB{..} slotNo = do
 -- Represented as a queue.
 --
 -- The background thread will continuously try to pop the first element of the
--- queue. Whenever it manages to pop a @('Time' m, 'SlotNo')@ off: it first
+-- queue. Whenever it manages to pop a @('Time', 'SlotNo')@ off: it first
 -- waits until the 'Time' is passed (using 'threadDelay' with the given 'Time'
 -- minus the current 'Time') and then performs a garbage collection with the
 -- given 'SlotNo'.
@@ -274,7 +274,7 @@ garbageCollect CDB{..} slotNo = do
 -- time) will remain the same as the density decreases too (more slots, but
 -- many of them empty), hence the queue queue length will also remain the
 -- same.
-newtype GcSchedule m = GcSchedule (TQueue m (Time m, SlotNo))
+newtype GcSchedule m = GcSchedule (TQueue m (Time, SlotNo))
 
 newGcSchedule :: IOLike m => m (GcSchedule m)
 newGcSchedule = GcSchedule <$> atomically newTQueue

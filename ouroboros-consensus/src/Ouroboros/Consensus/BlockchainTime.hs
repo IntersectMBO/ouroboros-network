@@ -36,7 +36,7 @@ module Ouroboros.Consensus.BlockchainTime (
 import           Control.Exception (Exception (..))
 import           Control.Monad
 import           Data.Fixed
-import           Data.Time
+import           Data.Time.Clock (NominalDiffTime, addUTCTime, diffUTCTime)
 import           Data.Void
 import           Data.Word (Word64)
 import           GHC.Generics (Generic)
@@ -225,9 +225,10 @@ newTestBlockchainTime registry (NumSlots numSlots) slotLen = do
 -- TODO: Right now this requires a single specific slot duration. This is
 -- not going to be the case when we move to Praos. We need to think this
 -- through carefully.
-realBlockchainTime :: ResourceRegistry IO
+realBlockchainTime :: forall m. IOLike m
+                   => ResourceRegistry m
                    -> SlotLength -> SystemStart
-                   -> IO (BlockchainTime IO)
+                   -> m (BlockchainTime m)
 realBlockchainTime registry slotLen start = do
     first <- getCurrentSlotIO slotLen start
     slot  <- newTVarM first
@@ -240,7 +241,7 @@ realBlockchainTime registry slotLen start = do
   where
     -- In each iteration of the loop, we recompute how long to wait until
     -- the next slot. This minimizes clock skew.
-    loop :: StrictTVar IO SlotNo -> IO Void
+    loop :: StrictTVar m SlotNo -> m Void
     loop slot = forever $ do
       next <- waitUntilNextSlotIO slotLen start
       atomically $ writeTVar slot next
@@ -313,12 +314,12 @@ timeUntilNextSlot slotLen start now =
     (currentSlot, timeInCurrentSlot) = slotAtTime slotLen start now
 
 -- | Get current slot
-getCurrentSlotIO :: SlotLength -> SystemStart -> IO SlotNo
+getCurrentSlotIO :: IOLike m => SlotLength -> SystemStart -> m SlotNo
 getCurrentSlotIO slotLen start =
     fst . slotAtTime slotLen start <$> getCurrentTime
 
 -- | Wait until next slot, and return number of that slot
-waitUntilNextSlotIO :: SlotLength -> SystemStart -> IO SlotNo
+waitUntilNextSlotIO :: IOLike m => SlotLength -> SystemStart -> m SlotNo
 waitUntilNextSlotIO slotLen start = do
     now <- getCurrentTime
     let (delay, nextSlot) = timeUntilNextSlot slotLen start now

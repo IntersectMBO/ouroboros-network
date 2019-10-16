@@ -37,7 +37,7 @@ queuesAsMuxBearer
   -> TBQueue m BL.ByteString
   -> TBQueue m BL.ByteString
   -> Word16
-  -> Maybe (TBQueue m (Mx.MiniProtocolId ptcl, Mx.MiniProtocolMode, Time m))
+  -> Maybe (TBQueue m (Mx.MiniProtocolId ptcl, Mx.MiniProtocolMode, Time))
   -> m (MuxBearer ptcl m)
 queuesAsMuxBearer tracer writeQueue readQueue sduSize traceQueue = do
       mxState <- atomically $ newTVar Mx.Larval
@@ -48,7 +48,7 @@ queuesAsMuxBearer tracer writeQueue readQueue sduSize traceQueue = do
           Mx.state   = mxState
         }
     where
-      readMux :: m (Mx.MuxSDU ptcl, Time m)
+      readMux :: m (Mx.MuxSDU ptcl, Time)
       readMux = do
           traceWith tracer $ Mx.MuxTraceRecvHeaderStart
           buf <- atomically $ readTBQueue readQueue
@@ -69,7 +69,7 @@ queuesAsMuxBearer tracer writeQueue readQueue sduSize traceQueue = do
                   return (header {Mx.msBlob = payload}, ts)
 
       writeMux :: Mx.MuxSDU ptcl
-               -> m (Time m)
+               -> m Time
       writeMux sdu = do
           ts <- getMonotonicTime
           let ts32 = Mx.timestampMicrosecondsLow32Bits ts
@@ -107,7 +107,7 @@ runMuxWithQueues
   -> TBQueue m BL.ByteString
   -> TBQueue m BL.ByteString
   -> Word16
-  -> Maybe (TBQueue m (Mx.MiniProtocolId ptcl, Mx.MiniProtocolMode, Time m))
+  -> Maybe (TBQueue m (Mx.MiniProtocolId ptcl, Mx.MiniProtocolMode, Time))
   -> m (Maybe SomeException)
 runMuxWithQueues tracer peerid app wq rq mtu trace =
     let muxTracer = Mx.WithMuxBearer "Queue" `contramap` tracer in

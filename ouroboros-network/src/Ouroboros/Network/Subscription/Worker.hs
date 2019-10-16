@@ -83,34 +83,34 @@ ipRetryDelay = 10 -- 10s delay
 -- | Result of the connection thread.  It's either result of an application, or
 -- an exception thrown by it.
 --
-data Result m addr r where
+data Result addr r where
      ApplicationResult
-       :: !(Time m)
+       :: !Time
        -> !addr
        -> !r
-       -> Result m addr r
+       -> Result addr r
 
      Connected
-       :: !(Time m)
+       :: !Time
        -> !addr
-       -> Result m addr r
+       -> Result addr r
 
      ConnectionError
        :: Exception e
-       => !(Time m)
+       => !Time
        -> !addr
        -> !e
-       -> Result m addr r
+       -> Result addr r
 
      ApplicationError
        :: Exception e
-       => !(Time m)
+       => !Time
        -> !addr
        -> !e
-       -> Result m addr r
+       -> Result addr r
 
 data ResOrAct m addr r =
-     Res !(Result m addr r)
+     Res !(Result addr r)
    | Act (m ())
 
 -- | Result queue.  The spawned threads will keep writing to it, while the main
@@ -151,7 +151,7 @@ type SocketStateChange m s addr = SocketState m addr -> s -> STM m s
 
 -- | Complete a connection, which receive application result (or exception).
 --
-type CompleteApplication m s addr r = Result m addr r -> s -> STM m (s, m ())
+type CompleteApplication m s addr r = Result addr r -> s -> STM m (s, m ())
 
 -- | Given current state 'retry' too keep the subscription worker going.
 -- When this transaction returns, all the threads spawned by the worker will be

@@ -29,7 +29,6 @@ import           Data.Int
 import qualified Data.IP as IP
 import           Data.List as L
 import qualified Data.Map as M
-import           Data.Time.Clock
 import           Data.Void (Void)
 import           Data.Word
 import qualified Network.DNS as DNS

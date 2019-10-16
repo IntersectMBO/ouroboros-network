@@ -23,7 +23,8 @@ module Control.Monad.IOSim (
   liftST,
   traceM,
   -- * Simulation time
-  VTime(..),
+  setCurrentTime,
+  unshareClock,
   -- * Simulation trace
   Trace(..),
   TraceEvent(..),
@@ -43,12 +44,14 @@ import           Data.OrdPSQ (OrdPSQ)
 import qualified Data.OrdPSQ as PSQ
 import qualified Data.List as List
 import           Data.Maybe (maybeToList)
-import           Data.Fixed (Pico)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
 import           Data.Typeable (Typeable)
 import           Data.Dynamic (Dynamic, toDyn, fromDynamic)
+import           Data.Time
+                   ( DiffTime, NominalDiffTime, UTCTime(..)
+                   , diffUTCTime, addUTCTime, fromGregorian )
 
 import           Control.Monad (mapM_)
 import           Control.Exception
@@ -95,7 +98,11 @@ data SimA s a where
 
   LiftST       :: StrictST.ST s a -> (a -> SimA s b) -> SimA s b
 
-  GetTime      :: (VTime -> SimA s b) -> SimA s b
+  GetMonoTime  :: (Time    -> SimA s b) -> SimA s b
+  GetWallTime  :: (UTCTime -> SimA s b) -> SimA s b
+  SetWallTime  ::  UTCTime -> SimA s b  -> SimA s b
+  UnshareClock :: SimA s b -> SimA s b
+
   NewTimeout   :: DiffTime -> (Timeout (SimM s) -> SimA s b) -> SimA s b
   UpdateTimeout:: Timeout (SimM s) -> DiffTime -> SimA s b -> SimA s b
   CancelTimeout:: Timeout (SimM s) -> SimA s b -> SimA s b
@@ -188,15 +195,6 @@ instance Monad (STM s) where
     (>>) = (*>)
 
     fail = MonadFail.fail
-
-newtype VTime = VTime Pico
-  deriving (Eq, Ord, Show)
-
-instance TimeMeasure VTime where
-
-  diffTime (VTime t) (VTime t') = realToFrac (t-t')
-  addTime d (VTime t) = VTime (t + realToFrac d)
-  zeroTime = VTime 0
 
 instance MonadFail (SimM s) where
   fail msg = SimM $ \_ -> Throw (toException (IO.Error.userError msg))
@@ -359,9 +357,22 @@ liftST :: StrictST.ST s a -> SimM s a
 liftST action = SimM $ \k -> LiftST action k
 
 instance MonadTime (SimM s) where
-  type Time (SimM s) = VTime
 
-  getMonotonicTime = SimM $ \k -> GetTime k
+  getMonotonicTime = SimM $ \k -> GetMonoTime k
+  getCurrentTime   = SimM $ \k -> GetWallTime k
+
+-- | Set the current wall clock time for the thread's clock domain.
+--
+setCurrentTime :: UTCTime -> SimM s ()
+setCurrentTime t = SimM $ \k -> SetWallTime t (k ())
+
+-- | Put the thread into a new wall clock domain, not shared with the parent
+-- thread. Changing the wall clock time in the new clock domain will not affect
+-- the other clock of other threads. All threads forked by this thread from
+-- this point onwards will share the new clock domain.
+--
+unshareClock :: SimM s ()
+unshareClock = SimM $ \k -> UnshareClock (k ())
 
 instance Eq (Timeout (SimM s)) where
   Timeout _ key == Timeout _ key' = key == key'
@@ -389,7 +400,8 @@ data Thread s a = Thread {
     threadBlocked :: !Bool,
     threadMasking :: !MaskingState,
     -- other threads blocked in a ThrowTo to us because we are or were masked
-    threadThrowTo :: ![(SomeException, ThreadId)]
+    threadThrowTo :: ![(SomeException, ThreadId)],
+    threadClockId :: !ClockId
   }
 
 -- We hide the type @b@ here, so it's useful to bundle these two parts
@@ -416,11 +428,12 @@ data ControlStack s b a where
 newtype ThreadId  = ThreadId  Int deriving (Eq, Ord, Enum, Show)
 newtype TVarId    = TVarId    Int deriving (Eq, Ord, Enum, Show)
 newtype TimeoutId = TimeoutId Int deriving (Eq, Ord, Enum, Show)
+newtype ClockId   = ClockId   Int deriving (Eq, Ord, Enum, Show)
 
-data Trace a = Trace !VTime !ThreadId !TraceEvent (Trace a)
-             | TraceMainReturn    !VTime a             ![ThreadId]
-             | TraceMainException !VTime SomeException ![ThreadId]
-             | TraceDeadlock      !VTime               ![ThreadId]
+data Trace a = Trace !Time !ThreadId !TraceEvent (Trace a)
+             | TraceMainReturn    !Time a             ![ThreadId]
+             | TraceMainException !Time SomeException ![ThreadId]
+             | TraceDeadlock      !Time               ![ThreadId]
   deriving Show
 
 data TraceEvent
@@ -443,8 +456,8 @@ data TraceEvent
   | EventTxBlocked     [TVarId] -- tx blocked reading these
   | EventTxWakeup      [TVarId] -- changed vars causing retry
 
-  | EventTimerCreated   TimeoutId TVarId VTime
-  | EventTimerUpdated   TimeoutId        VTime
+  | EventTimerCreated   TimeoutId TVarId Time
+  | EventTimerUpdated   TimeoutId        Time
   | EventTimerCancelled TimeoutId
   | EventTimerExpired   TimeoutId
   deriving Show
@@ -538,7 +551,7 @@ traceResult strict = go
     go (TraceMainException _ e _)       = Left (FailureException e)
     go (TraceDeadlock   _   _)          = Left FailureDeadlock
 
-traceEvents :: Trace a -> [(VTime, ThreadId, TraceEvent)]
+traceEvents :: Trace a -> [(Time, ThreadId, TraceEvent)]
 traceEvents (Trace time tid event t) = (time, tid, event) : traceEvents t
 traceEvents _                        = []
 
@@ -556,7 +569,8 @@ runSimTraceST mainAction = schedule mainThread initialState
         threadControl = ThreadControl (runSimM mainAction) MainFrame,
         threadBlocked = False,
         threadMasking = Unmasked,
-        threadThrowTo = []
+        threadThrowTo = [],
+        threadClockId = ClockId 0
       }
 
 data SimState s a = SimState {
@@ -564,8 +578,9 @@ data SimState s a = SimState {
        -- | All threads other than the currently running thread: both running
        -- and blocked threads.
        threads  :: !(Map ThreadId (Thread s a)),
-       curTime  :: !VTime,
-       timers   :: !(OrdPSQ TimeoutId VTime (TVar s TimeoutState)),
+       curTime  :: !Time,
+       timers   :: !(OrdPSQ TimeoutId Time (TVar s TimeoutState)),
+       clocks   :: !(Map ClockId UTCTime),
        nextTid  :: !ThreadId,   -- ^ next unused 'ThreadId'
        nextVid  :: !TVarId,     -- ^ next unused 'TVarId'
        nextTmid :: !TimeoutId   -- ^ next unused 'TimeoutId'
@@ -576,26 +591,37 @@ initialState =
     SimState {
       runqueue = [],
       threads  = Map.empty,
-      curTime  = VTime 0,
+      curTime  = Time 0,
       timers   = PSQ.empty,
+      clocks   = Map.singleton (ClockId 0) epoch1970,
       nextTid  = ThreadId 1,
       nextVid  = TVarId 0,
       nextTmid = TimeoutId 0
     }
+  where
+    epoch1970 = UTCTime (fromGregorian 1970 1 1) 0
 
 invariant :: Maybe (Thread s a) -> SimState s a -> Bool
 
-invariant (Just running) simstate@SimState{runqueue,threads} =
+invariant (Just running) simstate@SimState{runqueue,threads,clocks} =
     not (threadBlocked running)
  && threadId running `Map.notMember` threads
  && threadId running `List.notElem` runqueue
+ && threadClockId running `Map.member` clocks
  && invariant Nothing simstate
 
-invariant Nothing SimState{runqueue,threads} =
+invariant Nothing SimState{runqueue,threads,clocks} =
     all (`Map.member` threads) runqueue
  && and [ threadBlocked t == (threadId t `notElem` runqueue)
         | t <- Map.elems threads ]
  && runqueue == List.nub runqueue
+ && and [ threadClockId t `Map.member` clocks
+        | t <- Map.elems threads ]
+
+-- | Interpret the simulation monotonic time as a 'NominalDiffTime' since
+-- the start.
+timeSiceEpoch :: Time -> NominalDiffTime
+timeSiceEpoch (Time t) = fromRational (toRational t)
 
 
 schedule :: Thread s a -> SimState s a -> ST s (Trace a)
@@ -608,6 +634,7 @@ schedule thread@Thread{
            runqueue,
            threads,
            timers,
+           clocks,
            nextTid, nextVid, nextTmid,
            curTime  = time
          } =
@@ -680,9 +707,34 @@ schedule thread@Thread{
       let thread' = thread { threadControl = ThreadControl (k x) ctl }
       schedule thread' simstate
 
-    GetTime k -> do
+    GetMonoTime k -> do
       let thread' = thread { threadControl = ThreadControl (k time) ctl }
       schedule thread' simstate
+
+    GetWallTime k -> do
+      let clockid  = threadClockId thread
+          clockoff = clocks Map.! clockid
+          walltime = timeSiceEpoch time `addUTCTime` clockoff
+          thread'  = thread { threadControl = ThreadControl (k walltime) ctl }
+      schedule thread' simstate
+
+    SetWallTime walltime' k -> do
+      let clockid   = threadClockId thread
+          clockoff  = clocks Map.! clockid
+          walltime  = timeSiceEpoch time `addUTCTime` clockoff
+          clockoff' = addUTCTime (diffUTCTime walltime' walltime) clockoff
+          thread'   = thread { threadControl = ThreadControl k ctl }
+          simstate' = simstate { clocks = Map.insert clockid clockoff' clocks }
+      schedule thread' simstate'
+
+    UnshareClock k -> do
+      let clockid   = threadClockId thread
+          clockoff  = clocks Map.! clockid
+          clockid'  = (toEnum . fromEnum) tid -- reuse the thread id
+          thread'   = thread { threadControl = ThreadControl k ctl
+                             , threadClockId = clockid' }
+          simstate' = simstate { clocks = Map.insert clockid' clockoff clocks }
+      schedule thread' simstate'
 
     NewTimeout d k -> do
       tvar <- execNewTVar nextVid TimeoutPending
@@ -720,7 +772,8 @@ schedule thread@Thread{
                                                             ForkFrame
                             , threadBlocked = False
                             , threadMasking = threadMasking thread
-                            , threadThrowTo = [] }
+                            , threadThrowTo = []
+                            , threadClockId = threadClockId thread }
           threads' = Map.insert tid' thread'' threads
       trace <- schedule thread' simstate { runqueue = runqueue ++ [tid']
                                          , threads  = threads'
@@ -1016,7 +1069,7 @@ removeMinimums = \psq ->
           | p == p' -> collectAll (k:ks) p (x:xs) psq'
         _           -> (reverse ks, p, reverse xs, psq)
 
-traceMany :: [(VTime, ThreadId, TraceEvent)] -> Trace a -> Trace a
+traceMany :: [(Time, ThreadId, TraceEvent)] -> Trace a -> Trace a
 traceMany []                      trace = trace
 traceMany ((time, tid, event):ts) trace =
     Trace time tid event (traceMany ts trace)
@@ -1164,11 +1217,11 @@ ordNub = go Set.empty
 -- Examples
 --
 {-
-example0 :: (MonadSay m, MonadTimer m, MonadSTM m) => m ()
+example0 :: (MonadSay m, MonadTimer m, MonadFork m, MonadSTM m) => m ()
 example0 = do
   say "starting"
   t <- atomically (newTVar (0 :: Int))
-  fork $ threadDelay 2 >> do
+  _ <- fork $ threadDelay 2 >> do
     say "timer fired!"
     atomically $
       writeTVar t 1
@@ -1181,11 +1234,11 @@ example1 :: SimM s ()
 example1 = do
   say "starting"
   chan <- atomically (newTVar ([] :: [Int]))
-  fork $ forever $ do
+  _ <- fork $ forever $ do
     atomically $ do
       x <- readTVar chan
       writeTVar chan (1:x)
-  fork $ forever $ do
+  _ <- fork $ forever $ do
     atomically $ do
       x <- readTVar chan
       writeTVar chan (2:x)
@@ -1198,18 +1251,18 @@ example1 = do
     say $ show x
 
 -- the trace should contain "1" followed by "2"
-example2 :: (MonadSay m, MonadSTM m) => m ()
+example2 :: (MonadSay m, MonadFork m, MonadSTM m) => m ()
 example2 = do
   say "starting"
   v <- atomically $ newTVar Nothing
-  fork $ do
+  _ <- fork $ do
     atomically $ do
       x <- readTVar v
       case x of
         Nothing -> retry
         Just _  -> return ()
     say "1"
-  fork $ do
+  _ <- fork $ do
     atomically $ do
       x <- readTVar v
       case x of
@@ -1217,4 +1270,48 @@ example2 = do
         Just _  -> return ()
     say "2"
   atomically $ writeTVar v (Just ())
+
+example3 :: SimM s ()
+example3 = do
+  say "starting"
+  threadDelay 1
+  mt1 <- getMonotonicTime
+  ct1 <- getCurrentTime
+  say (show (mt1, ct1))
+
+  setCurrentTime (UTCTime (fromGregorian 2000 1 1) 0)
+  ct1' <- getCurrentTime
+  say (show ct1')
+
+  threadDelay 1
+  mt2 <- getMonotonicTime
+  ct2 <- getCurrentTime
+  say (show (mt2, ct2))
+
+example4 :: SimM s ()
+example4 = do
+
+  say "starting"
+  setCurrentTime (UTCTime (fromGregorian 2000 1 1) 0)
+  do t <- (,) <$> getMonotonicTime <*> getCurrentTime
+     say $ "start: " ++ show t
+
+  v <- atomically (newTVar (0 :: Int))
+  _ <- fork $ do
+    unshareClock
+    setCurrentTime (UTCTime (fromGregorian 2011 11 11) 11)
+    do t <- (,) <$> getMonotonicTime <*> getCurrentTime
+       say $ "unshared: " ++ show t
+
+    atomically $
+      writeTVar v 1
+
+  atomically $ do
+    x <- readTVar v
+    unless (x == 1) retry
+
+  do t <- (,) <$> getMonotonicTime <*> getCurrentTime
+     say $ "end: " ++ show t
+
+  say "main done"
 -}

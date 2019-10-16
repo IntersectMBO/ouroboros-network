@@ -54,7 +54,7 @@ socketAsMuxBearer tracer sd = do
           Mx.state   = mxState
         }
     where
-      readSocket :: (HasCallStack) => IO (Mx.MuxSDU ptcl, Time IO)
+      readSocket :: (HasCallStack) => IO (Mx.MuxSDU ptcl, Time)
       readSocket = do
           traceWith tracer $ Mx.MuxTraceRecvHeaderStart
           hbuf <- recvLen' True 8 []
@@ -92,7 +92,7 @@ socketAsMuxBearer tracer sd = do
                   traceWith tracer $ Mx.MuxTraceRecvEnd buf
                   recvLen' False (l - fromIntegral (BL.length buf)) (buf : bufs)
 
-      writeSocket :: Mx.MuxSDU ptcl -> IO (Time IO)
+      writeSocket :: Mx.MuxSDU ptcl -> IO Time
       writeSocket sdu = do
           --say "write"
           ts <- getMonotonicTime
