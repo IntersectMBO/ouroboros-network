@@ -8,6 +8,7 @@ packages: ./typed-protocols
           ./io-sim-classes
           ./ntp-client
           ./Win32-network
+          ./peer-selection
 
 constraints:
   ip < 1.5,
