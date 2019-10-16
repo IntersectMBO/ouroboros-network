@@ -87,6 +87,17 @@ all_pairs_sp mkWeight gr = Map.mapWithKey
   (\v _ -> dijkstra mkWeight v gr)
   (adjacencyMap gr)
 
+-- | 'all_pairs_sp' but remove the entry for each node to itself.
+all_pairs_sp_antireflexive
+  :: forall vertex edge weight .
+     ( Ord vertex, Ord weight, Monoid weight )
+  => (vertex -> vertex -> edge -> weight)
+  -> AdjacencyMap edge vertex
+  -> Map vertex (ShortestPaths vertex edge weight)
+all_pairs_sp_antireflexive mkWeight gr = remove_reflexives (all_pairs_sp mkWeight gr)
+  where
+  remove_reflexives = Map.mapWithKey Map.delete
+
 -- | Shortest paths from a given vertex under a given weight. The Ord instance
 -- determines "shorter-than": a min-priority-queue is used.
 -- 0 in the monoid on weight must be no cost, less than everything under Ord.
