@@ -20,7 +20,14 @@ import qualified STS.Prtcl as STS
 -- the STS.State (PRTCL c) type. This chain state, however, doesn't support
 -- rewinding.
 --
+-- Invariants:
 --
+-- The map of historical states is not empty.
+-- > not $ Map.null $ historicalStates cs
+--
+-- It is always possible to roll back to the anchor.
+-- > isJust $ rewind (anchor cs) cs
+
 data TPraosChainState c = TPraosChainState
   { -- | Anchor
     --

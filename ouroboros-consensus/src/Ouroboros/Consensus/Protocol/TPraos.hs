@@ -46,14 +46,13 @@ import           Data.Proxy (Proxy (..))
 import           Data.Word (Word64)
 import           GHC.Generics (Generic)
 import           Control.State.Transition (TRC(..), applySTS)
-import           Cardano.Crypto.DSIGN.Class (DSIGNAlgorithm, VerKeyDSIGN)
+import           Cardano.Crypto.DSIGN.Class (DSIGNAlgorithm)
 import           Cardano.Crypto.Hash.Class (HashAlgorithm (..))
 import           Cardano.Crypto.KES.Class
 import           Cardano.Crypto.VRF.Class
 import           Cardano.Prelude (NoUnexpectedThunks(..))
 import           Ouroboros.Network.Block (HasHeader (..), SlotNo (..))
 import           Ouroboros.Consensus.Protocol.Abstract
-import           Ouroboros.Consensus.Protocol.Signed
 import qualified Ouroboros.Consensus.Protocol.TPraos.ChainState as ChainState
 import           Ouroboros.Consensus.Protocol.TPraos.Crypto
 import           Ouroboros.Consensus.Protocol.TPraos.Util
@@ -63,7 +62,7 @@ import qualified Ouroboros.Consensus.Util.AnchoredFragment as AF
 import BaseTypes (Nonce, UnitInterval)
 import BlockChain (BHeader, HashHeader, mkSeed, seedEta, seedL)
 import Delegation.Certificates (PoolDistr(..))
-import Keys (DiscVKey(..), Dms(..), GenKeyHash, KeyHash, hashKey)
+import Keys (GenDelegs(..), GenKeyHash, KeyHash, hashKey)
 import OCert (OCert(..))
 import PParams (PParams)
 import Slot (Slot(..))
@@ -86,12 +85,7 @@ deriving instance TPraosCrypto c => Show (TPraosFields c toSign)
 -- | Fields arising from transitional praos execution which must be included in
 -- the block signature.
 data TPraosToSign c = TPraosToSign
-  { -- | Verification key for the issuer of this block. Note that unlike in Classic/BFT
-    --   where we have a key for the genesis delegate on whose behalf we are
-    --   issuing this block, this key corresponds to the stake pool/core node
-    --   actually forging the block.
-    tptsIssuerVK :: VerKeyDSIGN (TPraosDSIGN c)
-  , tptsVrfVk :: VerKeyVRF (TPraosVRF c)
+  { tptsVrfVk :: VerKeyVRF (TPraosVRF c)
     -- | Verifiable result containing the updated nonce value.
   , tptsEta :: CertifiedVRF (TPraosVRF c) Nonce
     -- | Verifiable proof of the leader value, used to determine whether the
@@ -134,10 +128,8 @@ forgeTPraosFields :: ( HasNodeState (TPraos c) m
                  -> m (TPraosFields c toSign)
 forgeTPraosFields TPraosNodeConfig{..}  TPraosProof{..} mkToSign = do
     let icn@TPraosIsCoreNode{..} = tpraosIsCoreNode
-        (DiscVKey issuerVK) = ocertVkCold tpraosIsCoreNodeOpCert
         signedFields = TPraosToSign {
-          tptsIssuerVK = issuerVK
-        , tptsVrfVk = deriveVerKeyVRF tpraosSignKeyVRF
+          tptsVrfVk = deriveVerKeyVRF tpraosIsCoreNodeSignKeyVRF
         , tptsEta = tpraosEta
         , tptsLeader = tpraosLeader
         , tptsOCert = tpraosIsCoreNodeOpCert
@@ -175,9 +167,8 @@ data TPraosLedgerView c = TPraosLedgerView {
     -- | Stake distribution
     tpraosLedgerViewPoolDistr :: PoolDistr (TPraosHash c) (TPraosDSIGN c) (TPraosVRF c)
   , tpraosLedgerViewProtParams :: PParams
-  , tpraosLedgerViewDelegationMap :: Dms (TPraosHash c) (TPraosDSIGN c)
+  , tpraosLedgerViewDelegationMap :: GenDelegs (TPraosHash c) (TPraosDSIGN c)
   , tpraosLedgerViewEpochNonce :: Nonce
-  , tpraosLedgerViewLeaderVal :: UnitInterval
     -- | Determines which slots are considered to be part of the overlay
     -- schedule - that is, slots for whom block issuance is reserved to the core
     -- nodes operating under Ouborobos BFT rules. There are three cases:
@@ -218,22 +209,23 @@ data TPraosParams = TPraosParams {
 instance NoUnexpectedThunks TPraosParams
 
 data TPraosIsCoreNode c = TPraosIsCoreNode
-  { -- | Online KES key used to sign blocks.GHC.Generics
+  { -- | Online KES key used to sign blocks.
     tpraosIsCoreNodeSKSHot :: SignKeyKES (TPraosKES c)
     -- | Certificate delegating rights from the stake pool cold key (or genesis
     -- stakeholder delegate cold key) to the online KES key.
   , tpraosIsCoreNodeOpCert :: OCert (TPraosDSIGN c) (TPraosKES c)
+  , tpraosIsCoreNodeSignKeyVRF    :: SignKeyVRF (TPraosVRF c)
   } deriving Generic
 
 instance
   ( DSIGNAlgorithm (TPraosDSIGN c)
   , KESAlgorithm (TPraosKES c)
+  , VRFAlgorithm (TPraosVRF c)
   ) => NoUnexpectedThunks (TPraosIsCoreNode c)
 
 instance TPraosCrypto c => OuroborosTag (TPraos c) where
   data NodeConfig (TPraos c) = TPraosNodeConfig
     { tpraosParams        :: TPraosParams
-    , tpraosSignKeyVRF    :: SignKeyVRF (TPraosVRF c)
     } deriving Generic
 
 
@@ -249,7 +241,10 @@ instance TPraosCrypto c => OuroborosTag (TPraos c) where
   checkIsLeader cfg@TPraosNodeConfig{..} slot lv cs =
     getNodeState >>= \case
         Nothing -> return Nothing
-        Just icn@TPraosIsCoreNode{ tpraosIsCoreNodeOpCert} -> do
+        Just icn@TPraosIsCoreNode
+              { tpraosIsCoreNodeOpCert
+              , tpraosIsCoreNodeSignKeyVRF
+              } -> do
           let mkSeed' = mkSeed @(TPraosHash c) @(TPraosDSIGN c) @(TPraosKES c) @(TPraosVRF c)
               vkhCold = hashKey $ ocertVkCold tpraosIsCoreNodeOpCert
               t = leaderThreshold cfg lv vkhCold
@@ -257,8 +252,8 @@ instance TPraosCrypto c => OuroborosTag (TPraos c) where
               prevHash = prtclStateHash @c $ ChainState.toPRTCLState cs
               rho' = mkSeed' seedEta (convertSlot slot) eta0 prevHash
               y' = mkSeed' seedL (convertSlot slot) eta0 prevHash
-          rho <- evalCertified rho' tpraosSignKeyVRF
-          y   <- evalCertified y'   tpraosSignKeyVRF
+          rho <- evalCertified rho' tpraosIsCoreNodeSignKeyVRF
+          y   <- evalCertified y'   tpraosIsCoreNodeSignKeyVRF
           -- First, check whether we're in the overlay schedule
           case (Map.lookup (convertSlot slot) $ tpraosLedgerViewOverlaySchedule lv) of
             Nothing -> return $
@@ -277,7 +272,7 @@ instance TPraosCrypto c => OuroborosTag (TPraos c) where
             Just (Just gkhash) ->
               -- The given genesis key has authority to produce a block in this
               -- slot. Check whether we're its delegate.
-              let Dms dlgMap = tpraosLedgerViewDelegationMap lv
+              let GenDelegs dlgMap = tpraosLedgerViewDelegationMap lv
               in do
                 let verKey = ocertVkCold tpraosIsCoreNodeOpCert
                 return $ case Map.lookup gkhash dlgMap of
