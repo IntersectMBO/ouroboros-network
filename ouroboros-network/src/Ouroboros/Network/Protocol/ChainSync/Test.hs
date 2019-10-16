@@ -599,7 +599,7 @@ propChainSyncDemoPipelinedMinBufferedIO
   -> Property
 propChainSyncDemoPipelinedMinBufferedIO cps (Positive n) (Positive m) =
     ioProperty $ do
-      (clientChan, serverChan) <- createConnectedBufferedChannels (fromIntegral omin)
+      (clientChan, serverChan) <- createConnectedBoundedChannels (fromIntegral omin)
       chainSyncDemoPipelined
         clientChan serverChan
         (ChainSyncExamples.chainSyncClientPipelinedMin omax)
