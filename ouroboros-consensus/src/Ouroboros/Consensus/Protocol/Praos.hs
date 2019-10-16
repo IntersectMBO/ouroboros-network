@@ -60,6 +60,7 @@ import           Cardano.Crypto.VRF.Simple (SimpleVRF)
 import           Cardano.Prelude (NoUnexpectedThunks (..))
 
 import           Ouroboros.Network.Block (HasHeader (..), SlotNo (..))
+import           Ouroboros.Network.Magic (NetworkMagic)
 import           Ouroboros.Network.Point (WithOrigin (At))
 
 import           Ouroboros.Consensus.NodeId (CoreNodeId (..), NodeId (..))
@@ -193,6 +194,7 @@ data PraosParams = PraosParams {
     , praosSecurityParam :: !SecurityParam
     , praosSlotsPerEpoch :: !Word64
     , praosLifetimeKES   :: !Natural
+    , praosNetworkMagic  :: !NetworkMagic
     }
   deriving (Generic, NoUnexpectedThunks)
 
@@ -217,6 +219,7 @@ instance PraosCrypto c => OuroborosTag (Praos c) where
     deriving (Generic)
 
   protocolSecurityParam = praosSecurityParam . praosParams
+  protocolNetworkMagic  = praosNetworkMagic . praosParams
 
   type NodeState       (Praos c) = PraosNodeState c
   type LedgerView      (Praos c) = StakeDist

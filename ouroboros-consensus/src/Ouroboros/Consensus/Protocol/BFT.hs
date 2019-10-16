@@ -39,6 +39,7 @@ import           Data.Word (Word64)
 import           GHC.Generics (Generic)
 
 import           Ouroboros.Network.Block
+import           Ouroboros.Network.Magic (NetworkMagic)
 
 import           Ouroboros.Consensus.NodeId (NodeId (..))
 import           Ouroboros.Consensus.Protocol.Abstract
@@ -104,6 +105,7 @@ data BftParams = BftParams {
 
       -- | Number of core nodes
     , bftNumNodes      :: !Word64
+    , bftNetworkMagic  :: !NetworkMagic
     }
   deriving (Generic, NoUnexpectedThunks)
 
@@ -125,6 +127,7 @@ instance BftCrypto c => OuroborosTag (Bft c) where
   type ChainState      (Bft c) = ()
 
   protocolSecurityParam = bftSecurityParam . bftParams
+  protocolNetworkMagic  = bftNetworkMagic . bftParams
 
   checkIsLeader BftNodeConfig{..} (SlotNo n) _l _cs = do
       return $ case bftNodeId of

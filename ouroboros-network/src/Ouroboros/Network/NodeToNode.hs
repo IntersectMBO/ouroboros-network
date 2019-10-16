@@ -49,7 +49,6 @@ import           Data.Time.Clock (DiffTime)
 import           Data.Text (Text)
 import qualified Data.Text as T
 import           Data.Typeable (Typeable)
-import           Data.Word
 import qualified Codec.CBOR.Encoding as CBOR
 import qualified Codec.CBOR.Decoding as CBOR
 import qualified Codec.CBOR.Term as CBOR
@@ -63,6 +62,7 @@ import           Control.Monad.Class.MonadSTM
 import           Network.Mux.Types (ProtocolEnum(..), MiniProtocolLimits (..), WithMuxBearer, MuxTrace)
 import           Network.Mux.Interface
 
+import           Ouroboros.Network.Magic
 import           Ouroboros.Network.Mux
 import           Ouroboros.Network.Protocol.Handshake.Type
 import           Ouroboros.Network.Protocol.Handshake.Version
@@ -141,7 +141,7 @@ instance Serialise NodeToNodeVersion where
 -- | Version data for NodeToNode protocol v1
 --
 newtype NodeToNodeVersionData = NodeToNodeVersionData
-  { networkMagic :: Word32 }
+  { networkMagic :: NetworkMagic }
   deriving (Eq, Show, Typeable)
 
 nodeToNodeCodecCBORTerm :: CodecCBORTerm Text NodeToNodeVersionData
@@ -149,10 +149,10 @@ nodeToNodeCodecCBORTerm = CodecCBORTerm {encodeTerm, decodeTerm}
     where
       encodeTerm :: NodeToNodeVersionData -> CBOR.Term
       encodeTerm NodeToNodeVersionData { networkMagic } =
-        CBOR.TInt (fromIntegral networkMagic)
+        CBOR.TInt (fromIntegral $ unNetworkMagic networkMagic)
 
       decodeTerm :: CBOR.Term -> Either Text NodeToNodeVersionData
-      decodeTerm (CBOR.TInt x) | x >= 0 && x <= 0xffffffff = Right (NodeToNodeVersionData $ fromIntegral x)
+      decodeTerm (CBOR.TInt x) | x >= 0 && x <= 0xffffffff = Right (NodeToNodeVersionData $ NetworkMagic $ fromIntegral x)
                                | otherwise                 = Left $ T.pack $ "networkMagic out of bound: " <> show x
       decodeTerm t             = Left $ T.pack $ "unknown encoding: " ++ show t
 

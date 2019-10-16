@@ -50,6 +50,7 @@ import           Ouroboros.Network.Mux as Mx
 
 import           Ouroboros.Network.Socket
 
+import           Ouroboros.Network.Magic
 import           Ouroboros.Network.MockChain.Chain (Chain, ChainUpdate, Point)
 import qualified Ouroboros.Network.MockChain.Chain as Chain
 import qualified Ouroboros.Network.MockChain.ProducerState as CPS
@@ -251,7 +252,7 @@ prop_socket_send_recv initiatorAddr responderAddr f xs = do
         (\(DictVersion codec) -> decodeTerm codec)
         (\_ _ -> ())
         (\(DictVersion _) -> acceptEq)
-        (simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData 0) (DictVersion nodeToNodeCodecCBORTerm) responderApp)
+        (simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData $ NetworkMagic 0) (DictVersion nodeToNodeCodecCBORTerm) responderApp)
         $ \_ _ -> do
           connectToNode
             (\(DictVersion codec) -> encodeTerm codec)
@@ -259,7 +260,7 @@ prop_socket_send_recv initiatorAddr responderAddr f xs = do
             activeMuxTracer
             nullTracer
             (\_ _ -> ())
-            (simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData 0) (DictVersion nodeToNodeCodecCBORTerm) initiatorApp)
+            (simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData $ NetworkMagic 0) (DictVersion nodeToNodeCodecCBORTerm) initiatorApp)
             (Just initiatorAddr)
             responderAddr
           atomically $ (,) <$> takeTMVar sv <*> takeTMVar cv
@@ -361,7 +362,7 @@ prop_socket_client_connect_error _ xs = ioProperty $ do
         nullTracer
         nullTracer
         (,)
-        (simpleSingletonVersions (0::Int) (NodeToNodeVersionData 0) (DictVersion nodeToNodeCodecCBORTerm) app)
+        (simpleSingletonVersions (0::Int) (NodeToNodeVersionData $ NetworkMagic 0) (DictVersion nodeToNodeCodecCBORTerm) app)
         (Just clientAddr)
         serverAddr
 
@@ -417,7 +418,7 @@ demo chain0 updates = do
       (\(DictVersion codec)-> decodeTerm codec)
       (,)
       (\(DictVersion _) -> acceptEq)
-      (simpleSingletonVersions (0::Int) (NodeToNodeVersionData 0) (DictVersion nodeToNodeCodecCBORTerm) responderApp)
+      (simpleSingletonVersions (0::Int) (NodeToNodeVersionData $ NetworkMagic 0) (DictVersion nodeToNodeCodecCBORTerm) responderApp)
       $ \_ _ -> do
       withAsync
         (connectToNode
@@ -426,7 +427,7 @@ demo chain0 updates = do
           nullTracer
           nullTracer
           (,)
-          (simpleSingletonVersions (0::Int) (NodeToNodeVersionData 0) (DictVersion nodeToNodeCodecCBORTerm) initiatorApp)
+          (simpleSingletonVersions (0::Int) (NodeToNodeVersionData $ NetworkMagic 0) (DictVersion nodeToNodeCodecCBORTerm) initiatorApp)
           (Just consumerAddress)
           producerAddress)
         $ \ _connAsync -> do

@@ -42,6 +42,7 @@ import           Network.Socket as Socket
 
 import           Ouroboros.Network.Block
 import qualified Ouroboros.Network.Block as Block
+import           Ouroboros.Network.Magic
 import           Ouroboros.Network.NodeToClient as NodeToClient
 import           Ouroboros.Network.NodeToNode as NodeToNode
 import           Ouroboros.Network.Protocol.ChainSync.PipelineDecision
@@ -276,6 +277,8 @@ data RunNetworkArgs peer blk = RunNetworkArgs
     -- ^ IP producers
   , rnaDnsProducers          :: [DnsSubscriptionTarget]
     -- ^ DNS producers
+  , rnaNetworkMagic          :: NetworkMagic
+    -- ^ Network protocol magic, differentiates between mainnet, staging and testnetworks.
   }
 
 initNetwork
@@ -320,10 +323,8 @@ initNetwork registry nodeArgs kernel RunNetworkArgs{..} = do
       (protocolCodecs (getNodeConfig kernel))
       (protocolHandlers nodeArgs kernel)
 
-    -- TODO: network magics should be configurable, this gives an early fail if
-    -- one tries to run testnet vs mainnet.
-    nodeToNodeVersionData   = NodeToNodeVersionData { networkMagic   = 0 }
-    nodeToClientVersionData = NodeToClientVersionData { networkMagic = 0 }
+    nodeToNodeVersionData   = NodeToNodeVersionData { networkMagic   = rnaNetworkMagic }
+    nodeToClientVersionData = NodeToClientVersionData { networkMagic = rnaNetworkMagic }
 
     runLocalServer :: IO ()
     runLocalServer = do

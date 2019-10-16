@@ -18,6 +18,8 @@ import           Ouroboros.Consensus.Demo.Run
 import           Ouroboros.Consensus.Protocol
 import           Ouroboros.Consensus.Util
 
+import           Ouroboros.Network.Magic
+
 import qualified Test.Cardano.Chain.Genesis.Dummy as Dummy
 
 {-------------------------------------------------------------------------------
@@ -33,6 +35,7 @@ defaultDemoPraosParams = PraosParams {
     , praosSlotsPerEpoch = 3
     , praosLeaderF       = 0.5
     , praosLifetimeKES   = 1000000
+    , praosNetworkMagic  = NetworkMagic 0xa5a5a5a5
     }
 
 defaultDemoPBftParams :: PBftParams
@@ -40,6 +43,7 @@ defaultDemoPBftParams = PBftParams {
       pbftSecurityParam      = defaultSecurityParam
     , pbftNumNodes           = nn
     , pbftSignatureThreshold = (1.0 / fromIntegral nn) + 0.1
+    , pbftNetworkMagic       = NetworkMagic 0x5a5a5a5a
     }
   where
     nn = 3

@@ -54,6 +54,7 @@ import           Ouroboros.Network.Protocol.Handshake.Version (simpleSingletonVe
 
 
 import           Codec.SerialiseTerm
+import           Ouroboros.Network.Magic
 import           Ouroboros.Network.Mux
 import           Ouroboros.Network.NodeToNode hiding ( ipSubscriptionWorker
                                                      , dnsSubscriptionWorker
@@ -551,7 +552,7 @@ prop_send_recv f xs first = ioProperty $ do
         (\(DictVersion codec) -> decodeTerm codec)
         (,)
         (\(DictVersion _) -> acceptEq)
-        (simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData 0) (DictVersion nodeToNodeCodecCBORTerm) responderApp)
+        (simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData $ NetworkMagic 0) (DictVersion nodeToNodeCodecCBORTerm) responderApp)
         $ \_ _ ->
           dnsSubscriptionWorker'
             activeTracer activeTracer
@@ -568,7 +569,7 @@ prop_send_recv f xs first = ioProperty $ do
                 nullTracer
                 nullTracer
                 (,)
-                (simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData 0)
+                (simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData $ NetworkMagic 0)
                 (DictVersion nodeToNodeCodecCBORTerm) initiatorApp))
 
     res <- atomically $ (,) <$> takeTMVar sv <*> takeTMVar cv
@@ -676,7 +677,7 @@ prop_send_recv_init_and_rsp f xs = ioProperty $ do
         (\(DictVersion codec) -> decodeTerm codec)
         (,)
         (\(DictVersion _) -> acceptEq)
-        (simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData 0) (DictVersion nodeToNodeCodecCBORTerm) (appX rrcfg))
+        (simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData $ NetworkMagic 0) (DictVersion nodeToNodeCodecCBORTerm) (appX rrcfg))
         $ \localAddr _ -> do
           atomically $ putTMVar localAddrVar localAddr
           r <- atomically $ (,) <$> takeTMVar (rrcServerVar rrcfg)
@@ -693,7 +694,7 @@ prop_send_recv_init_and_rsp f xs = ioProperty $ do
         (\(DictVersion codec) -> decodeTerm codec)
         (,)
         (\(DictVersion _) -> acceptEq)
-        ((simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData 0) (DictVersion nodeToNodeCodecCBORTerm) (appX rrcfg)))
+        ((simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData $ NetworkMagic 0) (DictVersion nodeToNodeCodecCBORTerm) (appX rrcfg)))
         $ \localAddr _ -> do
           atomically $ putTMVar localAddrVar localAddr
           remoteAddr <- atomically $ takeTMVar remoteAddrVar
@@ -711,7 +712,7 @@ prop_send_recv_init_and_rsp f xs = ioProperty $ do
                 nullTracer
                 nullTracer
                 (,)
-                (simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData 0)
+                (simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData $ NetworkMagic 0)
                 (DictVersion nodeToNodeCodecCBORTerm) $ appX rrcfg))
 
           atomically $ (,) <$> takeTMVar (rrcServerVar rrcfg)
@@ -773,7 +774,7 @@ _demo = ioProperty $ do
                 nullTracer
                 nullTracer
                 (,)
-                (simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData 0)
+                (simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData $ NetworkMagic 0)
                 (DictVersion nodeToNodeCodecCBORTerm) appReq))
 
     threadDelay 130
@@ -795,7 +796,7 @@ _demo = ioProperty $ do
             (\(DictVersion codec) -> decodeTerm codec)
             (,)
             (\(DictVersion _) -> acceptEq)
-            (simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData 0)
+            (simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData $ NetworkMagic 0)
                 (DictVersion nodeToNodeCodecCBORTerm) appRsp)
             (\_ _ -> threadDelay delay)
 
