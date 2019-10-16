@@ -35,7 +35,9 @@ import qualified Statistics.Sample as Stats
 -- function. It would also make sense to map these weights to Double first,
 -- then use the Sum semigroup. Thus that function should be a semigroup
 -- homomorphism to @(Double, (+), 0.0)@.
--- If there are unreachable nodes, infinity is used.
+-- If there are unreachable nodes, infinity is used. But NB this makes the
+-- result useless as far as the statistics package is concerned. So you
+-- probably want to ensure the graph is strongly connected before using this.
 distances
   :: forall vertex edge weight .
      (Semigroup weight)
@@ -60,10 +62,10 @@ edf samples x
   num_samples :: Natural
   num_samples = fromIntegral (Vector.length samples)
 
--- | Count the number of samples less than or equal to a given value.
-num_samples_lt :: Vector Double -> Double -> Natural
-num_samples_lt samples x = Vector.foldr include 0 samples
-  where
+  -- | Count the number of samples less than or equal to a given value.
+  num_samples_lt :: Vector Double -> Double -> Natural
+  num_samples_lt samples x = Vector.foldr include 0 samples
+
   include :: Double -> Natural -> Natural
   include a !n = if a <= x then n+1 else n
 
@@ -93,6 +95,10 @@ percentile n = Stats.quantile contParam k 100 . Vector.fromList
   k = if n >= 100 then 100 else fromIntegral n
   contParam = Stats.s
 
+-- | Specifies how to compute a single Double from all pairs shortest paths:
+-- first compress the distances for each vertex to all others into a Double,
+-- then compress all of those Doubles.
+-- TODO rename.
 data Observations = Observations
   { -- | Compute a "local" statistic for each peer with its distances to all
     -- other peers.
@@ -172,6 +178,14 @@ instance Semigroup e => Semigroup (Edge e) where
 
   Both i o <> Both i' o' = Both (i <> i') (o <> o')
 
+-- | Transform a topography graph so that each edge label may be suitable for
+-- use with @tcpRPCLoadPattern@. It works like this: the graph is overlayed
+-- with its transpose, but the edges are labelled by 'Out' and 'In'
+-- respectively. The overlay will use the semigroup instance on 'Edge' to
+-- produce a 'Both' whenever two directed edges appear as both In and Out
+-- between the same two vertices (in the same direction). Thus both the out-
+-- and in-edges from the original graph appear in a single edge label in the
+-- composite.
 bidirectional_bearer_graph
   :: (Ord peer)
   => Topography BearerCharacteristics peer
@@ -180,52 +194,29 @@ bidirectional_bearer_graph graph = Graph.overlay
   (Graph.emap Out graph)
   (Graph.emap In  (Graph.transpose graph))
 
--- | An experiment on a @Topography BearerCharacteristics peer@ that is
--- parameterised by @param@. See @runExperiment@.
-data Experiment peer param = Experiment
-  { topography       :: param -> Topography BearerCharacteristics peer
-  , observations     :: Observations
-  }
-
--- | Runs an @Experiment@ by weighting edges in the graph using
--- @tcpRPCLoadPattern@ (some params hard-coded). Path/edge weights are
--- seconds to complete a transfer of the given number of bytes, or Infinity.
+-- | For each peer in the topography, compute the time to reach each other
+-- peer.
 --
--- FIXME we may want to treat the response size (size of block) as a parameter
--- for statistical analysis.
---
--- FIXME infinite distances are removed from the results, because statistics
--- functions will error on NaNs. How best to deal with this?
-runExperiment
+-- TODO accept more parameters, for the TCP load pattern?
+all_pairs_time_to_send
   :: forall peer param .
      (Ord peer)
   => Natural
-  -> Experiment peer param
-  -> param
-  -> Double
-runExperiment bytes experiment param = globals
+  -> Topography BearerCharacteristics peer
+  -> Map peer (Map peer Double)
+all_pairs_time_to_send bytes topo = (fmap . fmap) local_length all_sps
 
   where
 
-  globals :: Double
-  globals = global_observation (observations experiment) (Map.elems locals)
+  local_length :: forall edge . WeightedPath peer edge Latency -> Double
+  -- Use infinity if the path is empty. Will make statistical computations
+  -- error.
+  local_length = fromMaybe (1.0 / 0.0) . (>>= to_seconds_double) . total_weight
+  --local_length = to_seconds_double . fromMaybe Lost . total_weight
 
-  locals :: Map peer Double
-  locals = fmap (local_observation (observations experiment)) all_finite_local_lengths
+  all_sps = all_pairs_sp_antireflexive weight graph
 
-  all_finite_local_lengths :: Map peer [Double]
-  all_finite_local_lengths = fmap finite_local_lengths all_sps
-
-  finite_local_lengths :: forall edge . Map peer (WeightedPath peer edge Latency) -> [Double]
-  finite_local_lengths = mapMaybe local_length . Map.elems
-
-  local_length :: forall edge . WeightedPath peer edge Latency -> Maybe Double
-  local_length = to_seconds_double . fromMaybe Lost . total_weight
-
-  all_sps = all_pairs_sp weight graph
-
-  uni_graph = topography experiment param
-  graph     = bidirectional_bearer_graph uni_graph
+  graph     = bidirectional_bearer_graph topo
 
   weight :: peer -> peer -> Edge (Last BearerCharacteristics) -> Latency
   weight _ _ (Out _) = Lost
@@ -246,3 +237,43 @@ runExperiment bytes experiment param = globals
 
   initial_window :: Natural
   initial_window = 4
+
+-- | An experiment on a @Topography BearerCharacteristics peer@ that is
+-- parameterised by @param@. See @runExperiment@.
+data Experiment peer param = Experiment
+  { topography       :: param -> Topography BearerCharacteristics peer
+  , observations     :: Observations
+  }
+
+-- | Runs an @Experiment@ by weighting edges in the graph using
+-- @tcpRPCLoadPattern@ (some params hard-coded). Path/edge weights are
+-- seconds to complete a transfer of the given number of bytes, or Infinity.
+--
+-- FIXME we may want to treat the response size (size of block) as a parameter
+-- for statistical analysis.
+--
+-- FIXME infinite distances are removed from the results, because statistics
+-- functions will error on NaNs. Maybe we shouldn't do this, instead assume
+-- the graph is strongly connected under finite weights?
+runExperiment
+  :: forall peer param .
+     (Ord peer)
+  => Natural
+  -> Experiment peer param
+  -> param
+  -> Double
+runExperiment bytes experiment param = globals
+
+  where
+
+  globals :: Double
+  globals = global_observation (observations experiment) (Map.elems locals)
+
+  locals :: Map peer Double
+  locals = fmap (local_observation (observations experiment)) (fmap Map.elems times)
+
+  times = all_pairs_time_to_send bytes topo
+
+  topo = topography experiment param
+
+
