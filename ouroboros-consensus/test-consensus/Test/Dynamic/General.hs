@@ -94,25 +94,37 @@ genTestConfig numCoreNodes numSlots = do
     pure TestConfig
       { numCoreNodes, numSlots, nodeJoinPlan, nodeTopology, latencySeed }
 
-idAnd :: forall a. (a -> [a]) -> a -> [a]
-idAnd f x = x : f x
+-- | Shrink and also include the original value
+--
+-- See 'unShrinkIdem'.
+--
+shrinkIdem :: (a -> [a]) -> a -> [a]
+shrinkIdem f x = f x ++ [x]
+
+-- | Discard the idempotent 'shrink'
+--
+-- A 'shrink' function defined as a list comprehension in which every input
+-- uses 'shrinkIdem' would include the original value being 'shrink'ed. Thus
+-- such comprehensions must be wrapped in this function.
+unShrinkIdem :: [a] -> [a]
+unShrinkIdem = init
 
 -- | Shrink without changing the number of nodes or slots
 shrinkTestConfig :: TestConfig -> [TestConfig]
 shrinkTestConfig
   testConfig@TestConfig{nodeJoinPlan, nodeTopology, latencySeed} =
-    tail $ -- drop the identity output
+    unShrinkIdem $
     [ testConfig{nodeJoinPlan = p', nodeTopology = top', latencySeed = seed'}
-    | p'    <- idAnd shrinkNodeJoinPlan nodeJoinPlan
-    , top'  <- idAnd shrinkNodeTopology nodeTopology
-    , seed' <- idAnd shrinkLatencySeed latencySeed
+    | p'    <- shrinkIdem shrinkNodeJoinPlan nodeJoinPlan
+    , top'  <- shrinkIdem shrinkNodeTopology nodeTopology
+    , seed' <- shrinkIdem shrinkLatencySeed latencySeed
     ]
 
 -- | Shrink, including the number of nodes and slots
 shrinkTestConfigFreely :: TestConfig -> [TestConfig]
 shrinkTestConfigFreely
   TestConfig{numCoreNodes, numSlots, nodeJoinPlan, nodeTopology, latencySeed} =
-    tail $   -- drop the identity result
+    unShrinkIdem $
     [ TestConfig
         { numCoreNodes = n'
         , numSlots = t'
@@ -120,13 +132,13 @@ shrinkTestConfigFreely
         , nodeTopology = top'
         , latencySeed = seed'
         }
-    | n'    <- idAnd shrink numCoreNodes
-    , t'    <- idAnd shrink numSlots
+    | n'    <- shrinkIdem shrink numCoreNodes
+    , t'    <- shrinkIdem shrink numSlots
     , let adjustedP   = adjustedNodeJoinPlan n' t'
     , let adjustedTop = adjustedNodeTopology n'
-    , p'    <- idAnd shrinkNodeJoinPlan adjustedP
-    , top'  <- idAnd shrinkNodeTopology adjustedTop
-    , seed' <- idAnd shrinkLatencySeed latencySeed
+    , p'    <- shrinkIdem shrinkNodeJoinPlan adjustedP
+    , top'  <- shrinkIdem shrinkNodeTopology adjustedTop
+    , seed' <- shrinkIdem shrinkLatencySeed latencySeed
     ]
   where
     adjustedNodeJoinPlan (NumCoreNodes n') (NumSlots t') =
