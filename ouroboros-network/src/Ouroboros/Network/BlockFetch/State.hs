@@ -223,7 +223,8 @@ fetchLogicIterationAct clientStateTracer FetchDecisionPolicy{blockFetchSize}
       [ (,) peer <$> addNewFetchRequest
                        (contramap (TraceLabelPeer peer) clientStateTracer)
                        blockFetchSize
-                       stateVars request gsvs
+                       request gsvs
+                       stateVars
       | (Right request, gsvs, stateVars, peer) <- decisions ]
 
 

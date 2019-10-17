@@ -376,6 +376,7 @@ data FetchRequestTrace
         (PeerFetchInFlight BlockHeader)
     | AcknowledgedFetchRequestTrace
     | CompletedFetchBatchTrace
+    | RejectedFetchBatchTrace
   deriving Show
 
 fetchRequestTrace :: [Example1TraceEvent] -> [TraceLabelPeer Int FetchRequestTrace]
@@ -385,8 +386,10 @@ fetchRequestTrace = mapMaybe f
       Just (TraceLabelPeer peerid (AddedFetchRequestTrace request inflight))
     f (TraceFetchClientState (TraceLabelPeer peerid (AcknowledgedFetchRequest{}))) =
       Just (TraceLabelPeer peerid AcknowledgedFetchRequestTrace)
-    f (TraceFetchClientState (TraceLabelPeer peerid CompletedFetchBatch))
+    f (TraceFetchClientState (TraceLabelPeer peerid CompletedFetchBatch{}))
       = Just (TraceLabelPeer peerid CompletedFetchBatchTrace)
+    f (TraceFetchClientState (TraceLabelPeer peerid RejectedFetchBatch{}))
+      = Just (TraceLabelPeer peerid RejectedFetchBatchTrace)
     f _ = Nothing
 
 
@@ -465,6 +468,8 @@ tracePropertyInFlight =
 
     -- batch completed, we subtract `1` from requests in flight
     checkTrace mr reqsInFlight (CompletedFetchBatchTrace : tr)
+      = checkTrace mr (reqsInFlight - 1) tr
+    checkTrace mr reqsInFlight (RejectedFetchBatchTrace : tr)
       = checkTrace mr (reqsInFlight - 1) tr
 
     -- check that by the end of the trace there are no requests in flight
