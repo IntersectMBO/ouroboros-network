@@ -1,5 +1,6 @@
 {-# LANGUAGE DeriveGeneric       #-}
 {-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE MultiWayIf          #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -25,12 +26,14 @@ import           Control.Monad.State.Strict (MonadState, get, gets, modify, put)
 
 import           Data.ByteString.Builder (Builder, toLazyByteString)
 import           Data.ByteString.Lazy (ByteString)
+import qualified Data.ByteString.Lazy as Lazy
 import           Data.Function ((&))
 import           Data.Functor.Identity
 import           Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
 import           Data.Map (Map)
 import qualified Data.Map as Map
+import           Data.Maybe (mapMaybe)
 import qualified Data.Text as Text
 import           Data.Word (Word64)
 
@@ -235,6 +238,16 @@ tipsAfter dbm tip = map toTip $ dropWhile isBeforeTip blobLocations
     toTip (EpochSlot epoch 0, _)    = Tip (EBB epoch)
     toTip (_                , slot) = Tip (Block slot)
 
+-- | Return the blobs in the given 'EpochNo', in order.
+blobsInEpoch :: DBModel hash -> EpochNo -> [ByteString]
+blobsInEpoch dbm@DBModel {..} epoch =
+    maybe id (:) mbEBBBlob       $
+    mapMaybe snd                 $
+    takeWhile ((== epoch) . fst) $
+    dropWhile ((/= epoch) . fst) $
+    zip (map (slotToEpoch dbm . SlotNo) [0..]) dbmChain
+  where
+    mbEBBBlob = snd <$> Map.lookup epoch dbmEBBs
 
 {------------------------------------------------------------------------------
   Simulation corruptions and restoring afterwards
@@ -299,14 +312,15 @@ findEpochDropLastBytesRollBackPoint n epoch dbm
       -- If the file is empty, no corruption happened, and we don't have to
       -- roll back
     = DontRollBack
-    | lastValidFilledSlotIndex validBytes < 0
+    | Just lastValidEpochSlot <- mbLastValidEpochSlot
+    = RollBackToEpochSlot lastValidEpochSlot
+    | otherwise
       -- When there are no more filled slots in the epoch file, roll back to
       -- the last filled slot before the epoch.
     = rollbackToLastFilledSlotBefore epoch dbm
-    | otherwise
-    = RollBackToEpochSlot (epochSlots !! lastValidFilledSlotIndex validBytes)
   where
-    totalBytes = fromIntegral testBlockSize * fromIntegral (length epochSlots)
+    blobs = blobsInEpoch dbm epoch
+    totalBytes = fromIntegral $ sum (map Lazy.length blobs)
     validBytes :: Word64
     validBytes
       | n >= totalBytes
@@ -314,9 +328,21 @@ findEpochDropLastBytesRollBackPoint n epoch dbm
       | otherwise
       = totalBytes - n
     epochSlots = epochSlotsInEpoch dbm epoch
-    lastValidFilledSlotIndex :: Word64 -> Int
-    lastValidFilledSlotIndex offset =
-      (fromIntegral offset `quot` fromIntegral testBlockSize) - 1
+    mbLastValidEpochSlot :: Maybe EpochSlot
+    mbLastValidEpochSlot = go 0 Nothing (zip epochSlots blobs)
+      where
+        go :: Word64 -> Maybe EpochSlot -> [(EpochSlot, ByteString)]
+           -> Maybe EpochSlot
+        go curOffset lastValid = \case
+          [] -> lastValid
+          (epochSlot, blob):rest
+              | curOffset + blobSize <= validBytes
+              -> go (curOffset + blobSize) (Just epochSlot) rest
+              | otherwise
+              -> lastValid
+            where
+              blobSize = fromIntegral $ Lazy.length blob
+
 
 findEpochCorruptionRollBackPoint :: FileCorruption -> EpochNo -> DBModel hash
                                  -> RollBackPoint
