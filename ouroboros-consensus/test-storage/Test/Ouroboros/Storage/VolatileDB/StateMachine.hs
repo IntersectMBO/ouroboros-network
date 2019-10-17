@@ -513,7 +513,7 @@ semanticsRestCmd hasFS env db cmd = case cmd of
         return $ Unit ()
     DuplicateBlock _file  bid preBid -> do
         let specialEnc = toBinary (bid, preBid)
-        SomePair stHasFS st <- Internal.getInternalState env
+        SomePair stHasFS st <- getInternalState env
         let hndl = Internal._currentWriteHandle st
         _ <- hPut stHasFS hndl (BL.lazyByteString specialEnc)
         closeDB db

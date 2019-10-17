@@ -1,10 +1,7 @@
-{-# LANGUAGE DeriveAnyClass             #-}
-{-# LANGUAGE DeriveGeneric              #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE LambdaCase                 #-}
-{-# LANGUAGE RankNTypes                 #-}
-{-# LANGUAGE RecordWildCards            #-}
-{-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE DeriveAnyClass      #-}
+{-# LANGUAGE DeriveGeneric       #-}
+{-# LANGUAGE RankNTypes          #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 module Ouroboros.Storage.VolatileDB.Types
     (
@@ -22,8 +19,8 @@ import           GHC.Generics (Generic)
 
 import           Cardano.Prelude (NoUnexpectedThunks)
 
-import           Ouroboros.Network.Point (WithOrigin)
 import           Ouroboros.Network.Block hiding (Tip, decodeTip, encodeTip)
+import           Ouroboros.Network.Point (WithOrigin)
 import           Ouroboros.Storage.Common
 import           Ouroboros.Storage.FS.API.Types
 

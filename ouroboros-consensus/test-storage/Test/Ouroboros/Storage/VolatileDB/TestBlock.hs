@@ -29,6 +29,7 @@ import           Ouroboros.Storage.Common
 import           Ouroboros.Storage.FS.API (HasFS (..), hGetExactly, hPut,
                      withFile)
 import           Ouroboros.Storage.FS.API.Types
+import qualified Ouroboros.Storage.Util.ErrorHandling as EH
 import           Ouroboros.Storage.VolatileDB
 import qualified Ouroboros.Storage.VolatileDB.Impl as Internal hiding (openDB)
 
@@ -154,9 +155,18 @@ createFileImpl :: IOLike m
                -> Internal.VolatileDBEnv m blockId
                -> m ()
 createFileImpl hasFS env = do
-    SomePair _stHasFS st <- Internal.getInternalState env
+    SomePair _stHasFS st <- getInternalState env
     let nextFd = Internal._nextNewFileId st
     let path = Internal.filePath nextFd
     withFile hasFS path (AppendMode MustBeNew) $ \_hndl -> do
         return ()
     return ()
+
+getInternalState :: forall m blockId. IOLike m
+                 => VolatileDBEnv m blockId
+                 -> m (SomePair (HasFS m) (InternalState blockId))
+getInternalState VolatileDBEnv{..} = do
+    mSt <- readMVar _dbInternalState
+    case mSt of
+      VolatileDbClosed  -> EH.throwError _dbErr $ UserError ClosedDBError
+      VolatileDbOpen st -> return $ SomePair _dbHasFS st

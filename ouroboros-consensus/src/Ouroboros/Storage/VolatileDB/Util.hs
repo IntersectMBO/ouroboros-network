@@ -18,7 +18,8 @@ import           Control.Monad.Class.MonadThrow
 
 import           Ouroboros.Network.Point (WithOrigin)
 
-import           Ouroboros.Consensus.Util (safeMaximum, safeMaximumOn, lastMaybe)
+import           Ouroboros.Consensus.Util (lastMaybe, safeMaximum,
+                     safeMaximumOn)
 import           Ouroboros.Consensus.Util.IOLike
 
 import           Ouroboros.Storage.FS.API.Types
@@ -74,20 +75,32 @@ wrapFsError :: Monad m
 wrapFsError fsErr volDBErr action =
     tryVolDB fsErr volDBErr action >>= either (throwError volDBErr) return
 
--- Throws an error if one of the given file names does not parse.
+-- | Parses the 'FsPath' of each filename and zips them together.
+-- If any 'FsPath' does not parse, we return an error.
+parseAllFds :: forall blockId.
+               [FsPath]
+            -> Either (VolatileDBError blockId) [(FileId, FsPath)]
+parseAllFds = mapM go
+  where
+    go :: FsPath -> Either (VolatileDBError blockId) (FileId, FsPath)
+    go file = case parseFd file of
+      Nothing -> Left $ UnexpectedError $ ParserError $ InvalidFilename file
+      Just fd -> Right (fd, file)
+
+-- | Throws an error if one of the given file names does not parse.
 findLastFd :: forall blockId.
               Set FsPath
            -> Either (VolatileDBError blockId) (Maybe FileId)
-findLastFd= foldM go Nothing
-    where
-        maxMaybe :: Ord a => Maybe a -> a -> a
-        maxMaybe ma a = case ma of
-            Nothing -> a
-            Just a' -> max a' a
-        go :: Maybe FileId -> FsPath -> Either (VolatileDBError blockId) (Maybe FileId)
-        go fd file = case parseFd file of
-            Nothing  -> Left $ UnexpectedError $ ParserError $ InvalidFilename file
-            Just fd' -> Right $ Just $ maxMaybe fd fd'
+findLastFd = foldM go Nothing
+  where
+    maxMaybe :: Ord a => Maybe a -> a -> a
+    maxMaybe ma a = case ma of
+      Nothing -> a
+      Just a' -> max a' a
+    go :: Maybe FileId -> FsPath -> Either (VolatileDBError blockId) (Maybe FileId)
+    go fd file = case parseFd file of
+      Nothing  -> Left $ UnexpectedError $ ParserError $ InvalidFilename file
+      Just fd' -> Right $ Just $ maxMaybe fd fd'
 
 filePath :: FileId -> FsPath
 filePath fd = mkFsPath ["blocks-" ++ show fd ++ ".dat"]
@@ -105,11 +118,11 @@ tryVolDB :: forall m blockId a. Monad m
          -> m a -> m (Either (VolatileDBError blockId) a)
 tryVolDB fsErr volDBErr = fmap squash . EH.try fsErr . EH.try volDBErr
     where
-        fromFS = UnexpectedError . FileSystemError
+      fromFS = UnexpectedError . FileSystemError
 
-        squash :: Either FsError (Either (VolatileDBError blockId) a)
+      squash :: Either FsError (Either (VolatileDBError blockId) a)
                -> Either (VolatileDBError blockId) a
-        squash = either (Left . fromFS) id
+      squash = either (Left . fromFS) id
 
 {------------------------------------------------------------------------------
   Map of Set operations

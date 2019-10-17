@@ -9,7 +9,6 @@ module Ouroboros.Storage.VolatileDB.API
   , module Ouroboros.Storage.VolatileDB.Types
   ) where
 
-import           Control.Monad.Class.MonadThrow
 import           Data.ByteString.Builder (Builder)
 import           Data.ByteString.Lazy (ByteString)
 import           Data.Set (Set)
@@ -17,8 +16,12 @@ import           GHC.Stack (HasCallStack)
 
 import           Cardano.Prelude (NoUnexpectedThunks (..), OnlyCheckIsWHNF (..))
 
-import           Ouroboros.Consensus.Util.IOLike
+import           Control.Monad.Class.MonadThrow
+
 import           Ouroboros.Network.Point (WithOrigin)
+
+import           Ouroboros.Consensus.Util.IOLike
+
 import           Ouroboros.Storage.VolatileDB.Types
 
 -- | Open the database using the given function, perform the given action
