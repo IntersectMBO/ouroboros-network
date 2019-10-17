@@ -14,6 +14,7 @@ module Test.Ouroboros.Storage.ImmutableDB.Model
   ( DBModel(..)
   , dbmCurrentEpoch
   , dbmBlobs
+  , dbmTipBlock
   , initDBModel
   , IteratorModel
   , openDBModel
@@ -33,7 +34,7 @@ import           Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
 import           Data.Map (Map)
 import qualified Data.Map as Map
-import           Data.Maybe (mapMaybe)
+import           Data.Maybe (fromMaybe, mapMaybe)
 import qualified Data.Text as Text
 import           Data.Word (Word64)
 
@@ -52,7 +53,7 @@ import           Ouroboros.Storage.ImmutableDB.Layout
 import           Ouroboros.Storage.ImmutableDB.Util
 import           Ouroboros.Storage.Util.ErrorHandling (ErrorHandling (..))
 
-import           Test.Ouroboros.Storage.ImmutableDB.TestBlock
+import           Test.Ouroboros.Storage.TestBlock
 
 data DBModel hash = DBModel
   { dbmChain        :: [Maybe ByteString]
@@ -96,6 +97,15 @@ dbmBlobs dbm@DBModel {..} = foldr add ebbs (zip (map SlotNo [0..]) dbmChain)
          & Map.mapKeysMonotonic (`EpochSlot` 0)
          & Map.mapKeysMonotonic (\epochSlot ->
              (epochSlot, epochSlotToSlot dbm epochSlot))
+
+-- TODO #1151
+dbmTipBlock :: DBModel hash -> Maybe TestBlock
+dbmTipBlock dbm = testBlockFromLazyByteString <$> case dbmTip dbm of
+    TipGen            -> Nothing
+    Tip (Block _slot) -> Just $ mustBeJust $ last $ dbmChain dbm
+    Tip (EBB epoch)   -> Just $ snd $ dbmEBBs dbm Map.! epoch
+  where
+    mustBeJust = fromMaybe (error "chain ends with an empty slot")
 
 -- | Model for an 'Iterator'.
 --

@@ -6,6 +6,7 @@ module Test.Ouroboros.Storage.ChainDB.AddBlock
   ( tests
   ) where
 
+import           Codec.Serialise (decode, encode)
 import           Control.Exception (throw)
 import           Control.Monad (void)
 import           Data.List (permutations, transpose)
@@ -29,18 +30,28 @@ import           Ouroboros.Consensus.Util.Condense (condense)
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
 
-import           Ouroboros.Storage.ChainDB (TraceAddBlockEvent (..), addBlock,
-                     closeDB, openDB, toChain)
+import           Ouroboros.Storage.ChainDB (ChainDbArgs (..),
+                     TraceAddBlockEvent (..), addBlock, closeDB, openDB,
+                     toChain)
 import qualified Ouroboros.Storage.ChainDB as ChainDB
+import           Ouroboros.Storage.Common (EpochSize (..))
+import           Ouroboros.Storage.EpochInfo (fixedSizeEpochInfo)
+import           Ouroboros.Storage.ImmutableDB
+                     (ValidationPolicy (ValidateAllEpochs))
+import           Ouroboros.Storage.LedgerDB.DiskPolicy (defaultDiskPolicy)
+import           Ouroboros.Storage.LedgerDB.InMemory (ledgerDbDefaultParams)
+import qualified Ouroboros.Storage.Util.ErrorHandling as EH
 
+import           Test.Util.FS.Sim.MockFS (MockFS)
 import qualified Test.Util.FS.Sim.MockFS as Mock
+import           Test.Util.FS.Sim.STM (simHasFS)
 import           Test.Util.Orphans.IOLike ()
 import           Test.Util.Orphans.NoUnexpectedThunks ()
 import           Test.Util.SOP
+import           Test.Util.TestBlock
 
 import qualified Test.Ouroboros.Storage.ChainDB.Model as Model
-import           Test.Ouroboros.Storage.ChainDB.StateMachine (mkArgs)
-import           Test.Ouroboros.Storage.ChainDB.TestBlock
+import           Test.Ouroboros.Storage.ChainDB.StateMachine ()
 
 tests :: TestTree
 tests = testGroup "AddBlock"
@@ -197,3 +208,61 @@ instance Arbitrary BlocksPerThread where
     -- No need to shrink permutations
     [BlocksPerThread bt  p t' | t'  <- shrink t]  <>
     [BlocksPerThread bt' p t  | bt' <- shrink bt]
+
+
+{-------------------------------------------------------------------------------
+  ChainDB args
+-------------------------------------------------------------------------------}
+
+fixedEpochSize :: EpochSize
+fixedEpochSize = 10
+
+mkArgs :: IOLike m
+       => NodeConfig (BlockProtocol TestBlock)
+       -> ExtLedgerState TestBlock
+       -> Tracer m (ChainDB.TraceEvent TestBlock)
+       -> ResourceRegistry m
+       -> (StrictTVar m MockFS, StrictTVar m MockFS, StrictTVar m MockFS)
+          -- ^ ImmutableDB, VolatileDB, LedgerDB
+       -> ChainDbArgs m TestBlock
+mkArgs cfg initLedger tracer registry
+       (immDbFsVar, volDbFsVar, lgrDbFsVar) = ChainDbArgs
+    { -- Decoders
+      cdbDecodeHash       = decode
+    , cdbDecodeBlock      = const <$> decode
+    , cdbDecodeLedger     = decode
+    , cdbDecodeChainState = decode
+
+      -- Encoders
+    , cdbEncodeBlock      = encode
+    , cdbEncodeHash       = encode
+    , cdbEncodeLedger     = encode
+    , cdbEncodeChainState = encode
+
+      -- Error handling
+    , cdbErrImmDb         = EH.monadCatch
+    , cdbErrVolDb         = EH.monadCatch
+    , cdbErrVolDbSTM      = EH.throwSTM
+
+      -- HasFS instances
+    , cdbHasFSImmDb       = simHasFS EH.monadCatch immDbFsVar
+    , cdbHasFSVolDb       = simHasFS EH.monadCatch volDbFsVar
+    , cdbHasFSLgrDB       = simHasFS EH.monadCatch lgrDbFsVar
+
+      -- Policy
+    , cdbValidation       = ValidateAllEpochs
+    , cdbBlocksPerFile    = 4
+    , cdbParamsLgrDB      = ledgerDbDefaultParams (protocolSecurityParam cfg)
+    , cdbDiskPolicy       = defaultDiskPolicy (protocolSecurityParam cfg) 10000
+
+      -- Integration
+    , cdbNodeConfig       = cfg
+    , cdbEpochInfo        = fixedSizeEpochInfo fixedEpochSize
+    , cdbIsEBB            = const Nothing
+    , cdbGenesis          = return initLedger
+
+    -- Misc
+    , cdbTracer           = tracer
+    , cdbRegistry         = registry
+    , cdbGcDelay          = 0
+    }

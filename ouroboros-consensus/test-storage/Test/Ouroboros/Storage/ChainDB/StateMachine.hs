@@ -16,10 +16,7 @@
 {-# LANGUAGE UndecidableInstances #-}
 
 {-# OPTIONS_GHC -Wno-orphans -Wredundant-constraints #-}
-module Test.Ouroboros.Storage.ChainDB.StateMachine
-  ( tests
-  , mkArgs
-  ) where
+module Test.Ouroboros.Storage.ChainDB.StateMachine ( tests ) where
 
 import           Prelude hiding (elem)
 
@@ -33,13 +30,11 @@ import qualified Data.Bifunctor.TH as TH
 import           Data.Bitraversable
 import           Data.Functor.Classes (Eq1, Show1)
 import           Data.List (sortOn)
-import qualified Data.List.NonEmpty as NE
 import qualified Data.Map as Map
 import           Data.Ord (Down (..))
 import           Data.Proxy
 import           Data.TreeDiff (ToExpr)
 import           Data.Typeable
-import           Data.Word (Word64)
 import           GHC.Generics (Generic)
 
 import qualified Generics.SOP as SOP
@@ -60,7 +55,7 @@ import           Cardano.Crypto.DSIGN.Mock
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block (BlockNo, ChainHash (..), ChainUpdate,
-                     HasHeader, HeaderHash, MaxSlotNo, Point, SlotNo (..),
+                     HasHeader (..), HeaderHash, MaxSlotNo, Point, SlotNo (..),
                      StandardHash)
 import qualified Ouroboros.Network.Block as Block
 import           Ouroboros.Network.Magic
@@ -71,7 +66,7 @@ import           Ouroboros.Network.MockChain.ProducerState (ChainProducerState,
 import qualified Ouroboros.Network.MockChain.ProducerState as CPS
 import qualified Ouroboros.Network.Point as Point
 
-import           Ouroboros.Consensus.Block (getHeader)
+import           Ouroboros.Consensus.Block (getHeader, IsEBB (..))
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.NodeId (NodeId (..))
@@ -85,6 +80,7 @@ import           Ouroboros.Consensus.Util.STM (Fingerprint (..),
 
 import           Ouroboros.Storage.ChainDB
 import qualified Ouroboros.Storage.ChainDB as ChainDB
+import           Ouroboros.Storage.Common (EpochSize (..))
 import           Ouroboros.Storage.EpochInfo (fixedSizeEpochInfo)
 import           Ouroboros.Storage.ImmutableDB
                      (ValidationPolicy (ValidateAllEpochs))
@@ -95,7 +91,7 @@ import qualified Ouroboros.Storage.LedgerDB.OnDisk as LedgerDB
 import qualified Ouroboros.Storage.Util.ErrorHandling as EH
 
 import qualified Test.Ouroboros.Storage.ChainDB.Model as Model
-import           Test.Ouroboros.Storage.ChainDB.TestBlock
+import           Test.Ouroboros.Storage.TestBlock
 import           Test.Ouroboros.Storage.Util ((=:=))
 
 import           Test.Util.FS.Sim.MockFS (MockFS)
@@ -538,7 +534,7 @@ generator :: forall       blk m.
           -> Model        blk m Symbolic
           -> Gen (At Cmd  blk m Symbolic)
 generator genBlock m@Model {..} = At <$> frequency
-    [ (20, AddBlock <$> genBlock m)
+    [ (30, AddBlock <$> genBlock m)
     , (if empty then 1 else 10, return GetCurrentChain)
     , (if empty then 1 else 10, return GetCurrentLedger)
     , (if empty then 1 else 10, return GetTipBlock)
@@ -859,7 +855,11 @@ deriving instance ( ToExpr blk
 
 -- Blk specific instances
 
-deriving instance ToExpr TestHash
+deriving instance ToExpr IsEBB
+deriving instance ToExpr TestHeader
+deriving instance ToExpr TestHeaderHash
+deriving instance ToExpr TestBody
+deriving instance ToExpr TestBodyHash
 deriving instance ToExpr Blk
 deriving instance ToExpr (LedgerState Blk)
 
@@ -900,102 +900,102 @@ deriving instance SOP.HasDatatypeInfo (ImmDB.TraceEvent e)
 
 type Blk = TestBlock
 
+-- | Note that the 'Blk = TestBlock' is general enough to be used by both the
+-- ChainDB /and/ the ImmutableDB, its generators cannot. For example, in the
+-- ChainDB, blocks are added /out of order/, while in the ImmutableDB, they
+-- must be added /in order/. This generator can thus not be reused for the
+-- ImmutableDB.
 genBlk :: BlockGen Blk m
-genBlk Model{..} = do
-    testHash <- genHash
-    let slot = 2 * fromIntegral (length (unTestHash testHash))
-    return $ TestBlock
-      { tbHash  = testHash
-      , tbSlot  = SlotNo slot
-      , tbValid = isValid testHash
-      }
+genBlk Model{..} = frequency
+    [ (if empty then 0 else 1, genAlreadyInChain)
+    , (5,                      genAppendToCurrentChain)
+    , (if empty then 0 else 3, genFitsOnSomewhere)
+    , (3,                      genGap)
+    ]
   where
-    hashesInDB :: [TestHash]
-    hashesInDB = Map.keys (Model.blocks dbModel)
+    blocksInChainDB = Model.blocks dbModel
 
     empty :: Bool
-    empty = null hashesInDB
+    empty = Map.null blocksInChainDB
 
-    -- If the maximum fork number is @n@, it means that only @n + 1@ different
-    -- forks may "fork off" after each block.
-    maxForkNo = 2
+    genBody :: Gen TestBody
+    genBody = do
+      isValid <- frequency
+        [ (4, return True)
+        , (1, return False)
+        ]
+      forkNo <- choose (1, 3)
+      return TestBody
+        { tbForkNo  = forkNo
+        , tbIsValid = isValid
+        }
 
-    -- We say that a block with most recent fork number 2 is invalid.
-    --
-    -- The hash (point) of an invalid block is remembered to ignore that block
-    -- in the future, this means that for each hash, the value of 'tbValid'
-    -- must always be the same. In other words, we can never generate an
-    -- invalid block with hash @h@ and also generate a valid block with the
-    -- same hash @h@. Formally:
-    --
-    -- > forall b1 b2. (tbHash b1 == tbHash b2) <=> (tbValid b1 == tbValid b2)
-    --
-    -- To enforce this, we reserve the most recent fork number for invalid
-    -- blocks, e.g., [2], [2,0], [2,0,1,0], [2,0,0,2,0] (since 2 occured
-    -- before, this block is already on an invalid chain). Note that valid
-    -- blocks may fit onto an invalid chain, e.g., [0,2,0].
-    isValid :: TestHash -> Bool
-    isValid (TestHash (2 NE.:| _)) = False
-    isValid _                      = True
+    -- A block that already exists in the ChainDB
+    genAlreadyInChain :: Gen TestBlock
+    genAlreadyInChain = elements $ Map.elems blocksInChainDB
 
-    genForkNo :: Gen Word64
-    genForkNo = frequency
-      -- Give a slight preference to "not forking off"
-      [ (1, return 0)
-      , (1, choose (1, maxForkNo))
+    -- A block that fits onto the current chain
+    genAppendToCurrentChain :: Gen TestBlock
+    genAppendToCurrentChain = case Model.tipBlock dbModel of
+      Nothing -> genFirstBlock
+      Just b  -> genFitsOn b
+
+    -- A block that fits onto some block @b@ in the ChainDB. The block @b@
+    -- could be at the tip of the chain and the generated block might already
+    -- be present in the ChainDB.
+    genFitsOnSomewhere :: Gen TestBlock
+    genFitsOnSomewhere = case Model.tipBlock dbModel of
+      Nothing -> genFirstBlock
+      Just _  -> genAlreadyInChain >>= genFitsOn
+
+    -- A block that doesn't fit onto a block in the ChainDB, but it creates a
+    -- gap of a couple of blocks between genesis or an existing block in the
+    -- ChainDB. We generate it by generating a few intermediary blocks first,
+    -- which we don't add. But the chance exists that we will generate them
+    -- again later on.
+    genGap :: Gen TestBlock
+    genGap = do
+        gapSize <- choose (1, 3)
+        start   <- genFitsOnSomewhere
+        go gapSize start
+      where
+        go :: Int -> TestBlock -> Gen TestBlock
+        go 0 b = return b
+        go n b = genFitsOn b >>= go (n - 1)
+
+    -- Generate a block or EBB fitting on genesis
+    genFirstBlock :: Gen TestBlock
+    genFirstBlock = frequency
+      [ (1, firstBlock <$> chooseSlot 0 2 <*> genBody)
+      , (1, firstEBB <$> genBody)
       ]
 
-    genHash :: Gen TestHash
-    genHash = frequency
-        [ (1, genRandomHash)
-        , (5, genAppendToCurrentChain)
-        , (if empty then 0 else 3, genFitsOnSomewhere)
-        , (3, genGap)
+    -- Helper that generates a block that fits onto the given block.
+    genFitsOn :: TestBlock -> Gen TestBlock
+    genFitsOn b = frequency
+        -- If we generate too many EBBs, the density of the chain will be low.
+        [ (4, do
+                slotNo <- chooseSlot (blockSlot b + 1) (blockSlot b + 3)
+                body   <- genBody
+                return $ mkNextBlock b slotNo body)
+        , (1, do
+                let SlotNo prevSlotNo   = blockSlot b
+                    EpochSize epochSize = fixedEpochSize
+                    nextEBBSlotNo = SlotNo $
+                      (prevSlotNo `div` epochSize + 1) * epochSize
+                slotNo <- frequency
+                  [ (7, return $ nextEBBSlotNo)
+                    -- Skip an epoch
+                  , (2, return $ nextEBBSlotNo + SlotNo (1 * epochSize))
+                    -- Skip two epochs
+                  , (1, return $ nextEBBSlotNo + SlotNo (2 * epochSize))
+                  ]
+                body   <- genBody
+                return $ mkNextEBB b slotNo body)
         ]
 
-    -- A random hash: random length and random fork numbers
-    genRandomHash :: Gen TestHash
-    genRandomHash = do
-        n <- frequency
-          [ (5, choose (1,  3))
-          , (4, choose (4,  6))
-          , (3, choose (7,  9))
-          , (2, choose (10, 12))
-          , (1, choose (12, 20))
-          ]
-        TestHash . NE.fromList <$> replicateM n genForkNo
-
-    -- A hash that fits onto the current chain, it may or may not fork off.
-    genAppendToCurrentChain :: Gen TestHash
-    genAppendToCurrentChain = do
-        forkNo <- genForkNo
-        return $ TestHash $ case Block.pointHash $ Model.tipPoint dbModel of
-          GenesisHash            ->         forkNo NE.:| []
-          BlockHash (TestHash h) -> NE.cons forkNo h
-
-    -- A hash that fits onto a block in the ChainDB. The block could be at the
-    -- tip of the chain and the hash might already be present in the ChainDB.
-    genFitsOnSomewhere :: Gen TestHash
-    genFitsOnSomewhere = do
-        hashInDB <- unTestHash <$> elements hashesInDB
-        forkNo <- genForkNo
-        return $ TestHash $ NE.cons forkNo hashInDB
-
-    -- A hash that doesn't fit onto a block in the ChainDB, but it creates a
-    -- gap of a couple of blocks between genesis or an existing block in the
-    -- ChainDB.
-    genGap :: Gen TestHash
-    genGap = do
-        hash <- frequency
-          [ (if empty then 0 else 3,
-             NE.toList . unTestHash <$> elements hashesInDB)
-            -- Genesis
-          , (1, return [])
-          ]
-        gapSize <- choose (1, 2) -- TODO relate it to @k@?
-        -- ForkNos for the gap
-        forkNos <- replicateM gapSize genForkNo
-        return $ TestHash $ NE.fromList $ foldr (:) hash forkNos
+    chooseSlot :: SlotNo -> SlotNo -> Gen SlotNo
+    chooseSlot (SlotNo start) (SlotNo end) = SlotNo <$> choose (start, end)
 
 {-------------------------------------------------------------------------------
   Top-level tests
@@ -1014,9 +1014,6 @@ testCfg = BftNodeConfig
   where
     k = SecurityParam 2
 
-testInitLedger :: ExtLedgerState Blk
-testInitLedger = testInitExtLedger
-
 dbUnused :: ChainDB blk m
 dbUnused = error "ChainDB used during command generation"
 
@@ -1027,7 +1024,7 @@ registryUnunused :: ResourceRegistry m
 registryUnunused = error "ResourceRegistry used during command generation"
 
 smUnused :: StateMachine (Model Blk IO) (At Cmd Blk IO) IO (At Resp Blk IO)
-smUnused = sm dbUnused internalUnused registryUnunused genBlk testCfg testInitLedger
+smUnused = sm dbUnused internalUnused registryUnunused genBlk testCfg testInitExtLedger
 
 prop_sequential :: Property
 prop_sequential = forAllCommands smUnused Nothing $ \cmds -> QC.monadicIO $ do
@@ -1048,9 +1045,9 @@ prop_sequential = forAllCommands smUnused Nothing $ \cmds -> QC.monadicIO $ do
         <$> uncheckedNewTVarM Mock.empty
         <*> uncheckedNewTVarM Mock.empty
         <*> uncheckedNewTVarM Mock.empty
-      let args = mkArgs testCfg testInitLedger tracer threadRegistry fsVars
+      let args = mkArgs testCfg testInitExtLedger tracer threadRegistry fsVars
       (db, internal)     <- QC.run $ openDBInternal args False
-      let sm' = sm db internal iteratorRegistry genBlk testCfg testInitLedger
+      let sm' = sm db internal iteratorRegistry genBlk testCfg testInitExtLedger
       (hist, model, res) <- runCommands sm' cmds
       (realChain, realChain', trace, fses, remainingCleanups) <- QC.run $ do
         trace <- getTrace
@@ -1161,6 +1158,9 @@ traceEventName = \case
     TraceLedgerReplayEvent   ev    -> "LedgerReplay." <> constrName ev
     TraceImmDBEvent          ev    -> "ImmDB."        <> constrName ev
 
+fixedEpochSize :: EpochSize
+fixedEpochSize = 10
+
 mkArgs :: IOLike m
        => NodeConfig (BlockProtocol Blk)
        -> ExtLedgerState Blk
@@ -1201,8 +1201,10 @@ mkArgs cfg initLedger tracer registry
 
       -- Integration
     , cdbNodeConfig       = cfg
-    , cdbEpochInfo        = fixedSizeEpochInfo 10
-    , cdbIsEBB            = const Nothing -- TODO
+    , cdbEpochInfo        = fixedSizeEpochInfo fixedEpochSize
+    , cdbIsEBB            = \b -> case testBlockIsEBB b of
+                              IsEBB    -> Just (blockHash b)
+                              IsNotEBB -> Nothing
     , cdbGenesis          = return initLedger
 
     -- Misc
@@ -1220,13 +1222,6 @@ tests = testGroup "ChainDB q-s-m"
   Running commands directly
 -------------------------------------------------------------------------------}
 
-_mkBlk :: [Word64] -> TestBlock
-_mkBlk h = TestBlock
-    { tbHash  = testHashFromList h
-    , tbSlot  = SlotNo $ fromIntegral $ 2 * length h
-    , tbValid = True
-    }
-
 -- | Debugging utility: run some commands against the real implementation.
 _runCmds :: [Cmd Blk IteratorId ReaderId] -> IO [Resp Blk IteratorId ReaderId]
 _runCmds cmds = withRegistry $ \registry -> do
@@ -1236,7 +1231,7 @@ _runCmds cmds = withRegistry $ \registry -> do
       <*> uncheckedNewTVarM Mock.empty
     let args = mkArgs
           testCfg
-          testInitLedger
+          testInitExtLedger
           (showTracing stdoutTracer)
           registry
           fsVars

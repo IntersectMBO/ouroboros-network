@@ -1,4 +1,3 @@
-{-# LANGUAGE BangPatterns              #-}
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE LambdaCase                #-}
 {-# LANGUAGE PatternSynonyms           #-}
@@ -38,7 +37,7 @@ module Ouroboros.Storage.ChainDB.Impl.ImmDB (
   , iteratorClose
     -- * Tracing
   , ImmDB.TraceEvent
-  , EpochFileError
+  , ImmDB.EpochFileError
     -- * Re-exports
   , Iterator
   , IteratorResult(..)
@@ -47,7 +46,7 @@ module Ouroboros.Storage.ChainDB.Impl.ImmDB (
     -- * Exported for testing purposes
   , mkImmDB
     -- * Exported for utilities
-  , epochFileParser
+  , ImmDB.epochFileParser
   ) where
 
 import           Codec.CBOR.Decoding (Decoder)
@@ -57,10 +56,7 @@ import qualified Codec.CBOR.Write as CBOR
 import           Control.Monad
 import           Control.Monad.Except
 import           Control.Tracer (Tracer, nullTracer)
-import           Data.Bifunctor (first)
 import qualified Data.ByteString.Lazy as Lazy
-import           Data.Proxy
-import           Data.Word
 import           GHC.Stack (HasCallStack)
 import           System.FilePath ((</>))
 
@@ -74,7 +70,6 @@ import           Ouroboros.Network.Block (pattern BlockPoint,
                      withHash)
 import           Ouroboros.Network.Point (WithOrigin (..))
 
-import qualified Ouroboros.Consensus.Util.CBOR as Util.CBOR
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.Orphans ()
 import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry,
@@ -87,9 +82,11 @@ import           Ouroboros.Storage.EpochInfo (EpochInfo (..))
 import           Ouroboros.Storage.FS.API (HasFS, createDirectoryIfMissing)
 import           Ouroboros.Storage.FS.API.Types (MountPoint (..), mkFsPath)
 import           Ouroboros.Storage.FS.IO (ioHasFS)
-import           Ouroboros.Storage.ImmutableDB (CurrentEBB (..), ImmutableDB,
+import           Ouroboros.Storage.ImmutableDB (ImmutableDB,
                      Iterator (Iterator), IteratorResult (..))
 import qualified Ouroboros.Storage.ImmutableDB as ImmDB
+import qualified Ouroboros.Storage.ImmutableDB.Util as ImmDB
+                     (EpochFileError (..), epochFileParser)
 import           Ouroboros.Storage.Util.ErrorHandling (ErrorHandling)
 import qualified Ouroboros.Storage.Util.ErrorHandling as EH
 
@@ -135,7 +132,7 @@ data ImmDbArgs m blk = forall h. ImmDbArgs {
     , immValidation  :: ImmDB.ValidationPolicy
     , immIsEBB       :: blk -> Maybe (HeaderHash blk)
     , immHasFS       :: HasFS m h
-    , immTracer      :: Tracer m (ImmDB.TraceEvent EpochFileError)
+    , immTracer      :: Tracer m (ImmDB.TraceEvent ImmDB.EpochFileError)
     }
 
 -- | Default arguments when using the 'IO' monad
@@ -165,7 +162,7 @@ defaultArgs fp = ImmDbArgs{
     }
 
 openDB :: (IOLike m, HasHeader blk) => ImmDbArgs m blk -> m (ImmDB m blk)
-openDB args@ImmDbArgs{..} = do
+openDB ImmDbArgs{..} = do
     createDirectoryIfMissing immHasFS True (mkFsPath [])
     immDB <- ImmDB.openDB
                immDecodeHash
@@ -174,7 +171,7 @@ openDB args@ImmDbArgs{..} = do
                immErr
                immEpochInfo
                immValidation
-               (epochFileParser args)
+               (ImmDB.epochFileParser immHasFS immDecodeBlock immIsEBB)
                immTracer
     return ImmDB
       { immDB        = immDB
@@ -575,85 +572,6 @@ parseIteratorResult db result =
         case parse (decBlock db) (Left epochNo) bs of
           Left  err -> throwM err
           Right blk -> return $ IteratorEBB epochNo hash blk
-
-{-------------------------------------------------------------------------------
-  Internal: parsing
--------------------------------------------------------------------------------}
-
-data EpochFileError =
-    EpochErrRead Util.CBOR.ReadIncrementalErr
-  | EpochErrUnexpectedEBB
-  deriving (Eq, Show)
-
-epochFileParser :: forall m blk. (IOLike m, HasHeader blk)
-                => ImmDbArgs m blk
-                -> ImmDB.EpochFileParser
-                     EpochFileError
-                     (HeaderHash blk)
-                     m
-                     (Word64, SlotNo)
-epochFileParser ImmDbArgs{..} =
-    ImmDB.EpochFileParser $
-        fmap (processEpochs (Proxy @blk))
-      . Util.CBOR.readIncrementalOffsets immHasFS decoder'
-  where
-    -- It is important that we don't first parse all blocks, storing them all
-    -- in memory, and only /then/ extract the information we need.
-    decoder' :: forall s. Decoder s (Lazy.ByteString -> (SlotNo, CurrentEBB (HeaderHash blk)))
-    decoder' = (extractSlotNoAndEbbHash .) <$> immDecodeBlock
-
-    extractSlotNoAndEbbHash :: blk -> (SlotNo, CurrentEBB (HeaderHash blk))
-    extractSlotNoAndEbbHash b =
-      -- IMPORTANT: force the slot and the ebbHash, because otherwise we
-      -- return thunks that refer to the whole block! See
-      -- 'Ouroboros.Consensus.Util.CBOR.readIncrementalOffsets' where we need
-      -- to force the decoded value in order to force this computation.
-        case immIsEBB b of
-          Nothing         -> (slot, NoCurrentEBB)
-          Just (!ebbHash) -> (slot, CurrentEBB ebbHash)
-      where
-        !slot = blockSlot b
-
--- | Verify that there is at most one EBB in the epoch file and that it
--- lives at the start of the file
-processEpochs :: forall blk.
-                 Proxy blk
-              -> ( [(Word64, (Word64, (SlotNo, CurrentEBB (HeaderHash blk))))]
-                 , Maybe Util.CBOR.ReadIncrementalErr
-                 )
-              -> ( [(SlotOffset, (Word64, SlotNo))]
-                 , CurrentEBB (HeaderHash blk)
-                 , Maybe EpochFileError
-                 )
-processEpochs _ = \(bs, mErr) ->
-    case bs of
-      []    -> ([], NoCurrentEBB, EpochErrRead <$> mErr)
-      b:bs' -> let (bOff, (bSz, (bSlot, bEBB))) = b
-                   (slots, mErr') = go bs'
-               in ((bOff, (bSz, bSlot)) : slots, bEBB, earlierError mErr mErr')
-  where
-    -- Check that the rest of the blocks are not EBBs
-    go :: [(Word64, (Word64, (SlotNo, CurrentEBB (HeaderHash blk))))]
-       -> ( [(SlotOffset, (Word64, SlotNo))]
-          , Maybe EpochFileError
-          )
-    go []     = ( [], Nothing )
-    go (b:bs) = let (bOff, (bSz, (bSlot, bEBB))) = b
-                in case bEBB of
-                     CurrentEBB _ -> ( [], Just EpochErrUnexpectedEBB )
-                     NoCurrentEBB -> first ((bOff, (bSz, bSlot)) :) $ go bs
-
-    -- Report the earlier error
-    --
-    -- The 'ReadIncrementalError' reported by the parser tells us that there
-    -- were blocks /after/ the ones that were returned that failed to parse.
-    -- If therefore /we/ find an error in those blocks that were returned, that
-    -- error happens /earlier/ in the file.
-    earlierError :: Maybe Util.CBOR.ReadIncrementalErr
-                 -> Maybe EpochFileError
-                 -> Maybe EpochFileError
-    earlierError _parserErr (Just ourErr) = Just ourErr
-    earlierError  parserErr Nothing       = EpochErrRead <$> parserErr
 
 {-------------------------------------------------------------------------------
   Error handling

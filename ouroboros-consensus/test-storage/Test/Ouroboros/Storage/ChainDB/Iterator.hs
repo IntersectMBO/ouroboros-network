@@ -44,9 +44,9 @@ import qualified Ouroboros.Storage.Util.ErrorHandling as EH
 import qualified Ouroboros.Storage.VolatileDB as VolDB
 
 import           Test.Util.Orphans.IOLike ()
+import           Test.Util.TestBlock
 import           Test.Util.Tracer (recordingTracerTVar)
 
-import           Test.Ouroboros.Storage.ChainDB.TestBlock
 import qualified Test.Ouroboros.Storage.ImmutableDB.Mock as ImmDB (openDBMock)
 import qualified Test.Ouroboros.Storage.VolatileDB.Mock as VolDB (openDBMock)
 
