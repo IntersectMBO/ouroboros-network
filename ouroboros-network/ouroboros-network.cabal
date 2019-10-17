@@ -61,6 +61,11 @@ library
                        Ouroboros.Network.NodeToClient
                        Ouroboros.Network.Tracers
                        Ouroboros.Network.Point
+                       Ouroboros.Network.PeerSelection.Types
+                       Ouroboros.Network.PeerSelection.KnownPeers
+                       Ouroboros.Network.PeerSelection.RootPeersDNS
+                       Ouroboros.Network.PeerSelection.JobPool
+                       Ouroboros.Network.PeerSelection.Governor
                        Ouroboros.Network.Server.ConnectionTable
                        Ouroboros.Network.Server.Socket
                        Ouroboros.Network.Server.Version.CBOR
@@ -144,6 +149,7 @@ library
                        fingertree        >=0.1.4.2 && <0.2,
                        iproute           >=1.7.0 && <1.8,
                        network,
+                       psqueues          >=0.2.3 && <0.3,
                        serialise         >=0.2 && <0.3,
                        stm               >=2.4 && <2.6,
                        time              >=1.6 && <1.10
@@ -191,6 +197,11 @@ test-suite test-network
                        Ouroboros.Network.MockNode
                        Ouroboros.Network.NodeToNode
                        Ouroboros.Network.Point
+                       Ouroboros.Network.PeerSelection.Types
+                       Ouroboros.Network.PeerSelection.KnownPeers
+                       Ouroboros.Network.PeerSelection.RootPeersDNS
+                       Ouroboros.Network.PeerSelection.JobPool
+                       Ouroboros.Network.PeerSelection.Governor
                        Ouroboros.Network.Protocol.BlockFetch.Client
                        Ouroboros.Network.Protocol.BlockFetch.Codec
                        Ouroboros.Network.Protocol.BlockFetch.Direct
@@ -273,6 +284,7 @@ test-suite test-network
                        mtl,
                        network-mux       >=0.1 && <0.2,
                        network,
+                       psqueues,
                        ouroboros-network-testing,
                        pipes,
                        process,
