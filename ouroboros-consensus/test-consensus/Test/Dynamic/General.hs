@@ -192,6 +192,7 @@ prop_general k TestConfig{numSlots, nodeJoinPlan, nodeTopology} mbSchedule
     counterexample ("slot-node-tipBlockNo: " <> condense tipBlockNos) $
     counterexample ("mbSchedule: " <> condense mbSchedule) $
     counterexample ("growth schedule: " <> condense growthSchedule) $
+    counterexample ("actual leader schedule: " <> condense actualLeaderSchedule) $
     counterexample ("consensus expected: " <> show isConsensusExpected) $
     tabulate "consensus expected" [show isConsensusExpected] $
     tabulate "shortestLength" [show (rangeK k (shortestLength nodeChains))] $
@@ -207,22 +208,19 @@ prop_general k TestConfig{numSlots, nodeJoinPlan, nodeTopology} mbSchedule
       | (nid, nodeDBs) <- Map.toList nodeOutputDBs ]
   where
     schedule = case mbSchedule of
-        Nothing    -> growthSchedule
+        Nothing    -> actualLeaderSchedule
         Just sched -> sched
 
     NumBlocks maxForkLength = determineForkLength k nodeJoinPlan schedule
 
     -- build a leader schedule which includes every node that forged unless:
     --
-    -- * the node just joined in this slot (unless it's the earliest slot in
-    --   which any nodes joined)
-    --
     -- * the node rejected its own new block (eg 'PBftExceededSignThreshold')
     --
     -- * the node forged an EBB
     --
-    growthSchedule :: LeaderSchedule
-    growthSchedule =
+    actualLeaderSchedule :: LeaderSchedule
+    actualLeaderSchedule =
         foldl (<>) (emptyLeaderSchedule numSlots) $
         [ let NodeOutput
                 { nodeOutputForges
@@ -248,17 +246,32 @@ prop_general k TestConfig{numSlots, nodeJoinPlan, nodeTopology} mbSchedule
                 RelayId _ -> Nothing
 
             let j = nodeIdJoinSlot nodeJoinPlan nid
-            guard $ j < s || (j == s && isFirstJoinSlot s)
+            guard $ j <= s
 
             guard $ not $
                 nodeIsEBB b || Set.member (blockPoint b) invalids
 
             pure [cid]
 
+    -- Refine 'actualLeaderSchedule' to also ignore a leader if:
+    --
+    -- * the node just joined in this slot (unless it's the earliest slot in
+    --   which any nodes joined)
+    --
+    growthSchedule :: LeaderSchedule
+    growthSchedule =
+        LeaderSchedule $ Map.mapWithKey (\s -> filter (keep s)) mlead
+      where
+        LeaderSchedule mlead = actualLeaderSchedule
+
+        keep s cid =
+             isFirstJoinSlot s
+          || coreNodeIdJoinSlot nodeJoinPlan cid < s
+
         isFirstJoinSlot s =
-            Just s == (snd <$> Map.lookupMin m)
+            Just s == (snd <$> Map.lookupMin mjoin)
           where
-            NodeJoinPlan m = nodeJoinPlan
+            NodeJoinPlan mjoin = nodeJoinPlan
 
     nodeChains    = nodeOutputFinalChain <$> testOutputNodes
     nodeOutputDBs = nodeOutputNodeDBs    <$> testOutputNodes
@@ -447,4 +460,4 @@ prop_general k TestConfig{numSlots, nodeJoinPlan, nodeTopology} mbSchedule
                 Just (_:_:_) -> True
                 _            -> False
               where
-                LeaderSchedule sched = growthSchedule
+                LeaderSchedule sched = actualLeaderSchedule
