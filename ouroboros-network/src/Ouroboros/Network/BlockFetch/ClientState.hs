@@ -443,16 +443,10 @@ addNewFetchRequest tracer blockFetchSize addedReq gsvs
       writeTVar fetchClientInFlightVar inflight'
 
       -- Set the peer status to busy if it went over the high watermark.
-      let currentStatus'
-           | peerFetchBytesInFlight inflight'
-             >= inFlightBytesHighWatermark inflightlimits
-           = PeerFetchStatusBusy
-           | otherwise
-           = PeerFetchStatusReady (peerFetchBlocksInFlight inflight')
-      -- Only update the variable if it changed, to avoid spurious wakeups.
-      currentStatus <- readTVar fetchClientStatusVar
-      when (currentStatus' /= currentStatus) $
-        writeTVar fetchClientStatusVar currentStatus'
+      currentStatus' <- updateCurrentStatus
+                          (busyIfOverHighWatermark inflightlimits)
+                          fetchClientStatusVar
+                          inflight'
 
       --TODO: think about status aberrant
 
@@ -523,16 +517,10 @@ completeBlockDownload tracer blockFetchSize inflightlimits header
       writeTVar fetchClientInFlightVar inflight'
 
       -- Set our status to ready if we're under the low watermark.
-      let currentStatus'
-            | peerFetchBytesInFlight inflight'
-              <= inFlightBytesLowWatermark inflightlimits
-            = PeerFetchStatusReady (peerFetchBlocksInFlight inflight')
-            | otherwise
-            = PeerFetchStatusBusy
-      -- Only update the variable if it changed, to avoid spurious wakeups.
-      currentStatus <- readTVar fetchClientStatusVar
-      when (currentStatus' /= currentStatus) $
-        writeTVar fetchClientStatusVar currentStatus'
+      currentStatus' <- updateCurrentStatus
+                          (readyIfUnderLowWatermark inflightlimits)
+                          fetchClientStatusVar
+                          inflight'
 
     -- TODO: when do we reset the status from PeerFetchStatusAberrant
     -- to PeerFetchStatusReady/Busy?
@@ -600,16 +588,10 @@ rejectedFetchBatch tracer blockFetchSize inflightlimits range headers
       writeTVar fetchClientInFlightVar inflight'
 
       -- Set our status to ready if we're under the low watermark.
-      let currentStatus'
-            | peerFetchBytesInFlight inflight'
-              <= inFlightBytesLowWatermark inflightlimits
-            = PeerFetchStatusReady (peerFetchBlocksInFlight inflight')
-            | otherwise
-            = PeerFetchStatusBusy
-      -- Only update the variable if it changed, to avoid spurious wakeups.
-      currentStatus <- readTVar fetchClientStatusVar
-      when (currentStatus' /= currentStatus) $
-        writeTVar fetchClientStatusVar currentStatus'
+      currentStatus' <- updateCurrentStatus
+                          (readyIfUnderLowWatermark inflightlimits)
+                          fetchClientStatusVar
+                          inflight'
 
     -- TODO: when do we reset the status from PeerFetchStatusAberrant
     -- to PeerFetchStatusReady/Busy?
@@ -621,6 +603,50 @@ rejectedFetchBatch tracer blockFetchSize inflightlimits range headers
         range
         inflight' inflightlimits
         currentStatus'
+
+
+-- | Given a 'PeerFetchInFlight' update the 'PeerFetchStatus' accordingly.
+-- This can be used with one of two policies:
+--
+-- * 'busyIfOverHighWatermark'
+-- * 'readyIfUnderLowWatermark'
+--
+updateCurrentStatus :: (MonadSTM m, HasHeader header)
+                    => (PeerFetchInFlight header -> PeerFetchStatus header)
+                    -> StrictTVar m (PeerFetchStatus header)
+                    -> PeerFetchInFlight header
+                    -> STM m (PeerFetchStatus header)
+updateCurrentStatus decideCurrentStatus fetchClientStatusVar inflight = do
+
+    let currentStatus' = decideCurrentStatus inflight
+
+    -- Only update the variable if it changed, to avoid spurious wakeups.
+    currentStatus <- readTVar fetchClientStatusVar
+    when (currentStatus' /= currentStatus) $
+      writeTVar fetchClientStatusVar currentStatus'
+    return currentStatus'
+
+-- | Return 'PeerFetchStatusBusy' if we're now over the high watermark.
+--
+busyIfOverHighWatermark :: PeerFetchInFlightLimits
+                        -> PeerFetchInFlight header
+                        -> PeerFetchStatus header
+busyIfOverHighWatermark inflightlimits inflight
+  | peerFetchBytesInFlight inflight >= inFlightBytesHighWatermark inflightlimits
+  = PeerFetchStatusBusy
+  | otherwise
+  = PeerFetchStatusReady (peerFetchBlocksInFlight inflight)
+
+-- | Return 'PeerFetchStatusReady' if we're now under the low watermark.
+--
+readyIfUnderLowWatermark :: PeerFetchInFlightLimits
+                         -> PeerFetchInFlight header
+                         -> PeerFetchStatus header
+readyIfUnderLowWatermark inflightlimits inflight
+  | peerFetchBytesInFlight inflight <= inFlightBytesLowWatermark inflightlimits
+  = PeerFetchStatusReady (peerFetchBlocksInFlight inflight)
+  | otherwise
+  = PeerFetchStatusBusy
 
 
 --
