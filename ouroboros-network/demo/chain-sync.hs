@@ -47,6 +47,7 @@ import qualified Ouroboros.Network.AnchoredFragment as AF
 import Ouroboros.Network.Point (WithOrigin (..))
 import Ouroboros.Network.Testing.ConcreteBlock
 import Ouroboros.Network.Socket
+import Ouroboros.Network.Magic
 import Ouroboros.Network.Mux
 import Ouroboros.Network.NodeToNode
 
@@ -154,7 +155,7 @@ clientPingPong pipelined =
       nullTracer
       nullTracer
       (,)
-      (simpleSingletonVersions (0::Int) (NodeToNodeVersionData 0) (DictVersion nodeToNodeCodecCBORTerm) app)
+      (simpleSingletonVersions (0::Int) (NodeToNodeVersionData $ NetworkMagic 0) (DictVersion nodeToNodeCodecCBORTerm) app)
       Nothing
       defaultLocalSocketAddrInfo
   where
@@ -191,7 +192,7 @@ serverPingPong = do
       (\(DictVersion codec)-> decodeTerm codec)
       (,)
       (\(DictVersion _) -> acceptEq)
-      (simpleSingletonVersions (0::Int) (NodeToNodeVersionData 0) (DictVersion nodeToNodeCodecCBORTerm) app) $ \_ serverAsync ->
+      (simpleSingletonVersions (0::Int) (NodeToNodeVersionData $ NetworkMagic 0) (DictVersion nodeToNodeCodecCBORTerm) app) $ \_ serverAsync ->
         wait serverAsync   -- block until async exception
   where
     app :: OuroborosApplication ResponderApp (Socket.SockAddr, Socket.SockAddr) DemoProtocol0 IO LBS.ByteString Void ()
@@ -241,7 +242,7 @@ clientPingPong2 =
       nullTracer
       nullTracer
       (,)
-      (simpleSingletonVersions (0::Int) (NodeToNodeVersionData 0) (DictVersion nodeToNodeCodecCBORTerm) app)
+      (simpleSingletonVersions (0::Int) (NodeToNodeVersionData $ NetworkMagic 0) (DictVersion nodeToNodeCodecCBORTerm) app)
       Nothing
       defaultLocalSocketAddrInfo
   where
@@ -293,7 +294,7 @@ serverPingPong2 = do
       (\(DictVersion codec)-> decodeTerm codec)
       (,)
       (\(DictVersion _) -> acceptEq)
-      (simpleSingletonVersions (0::Int) (NodeToNodeVersionData 0) (DictVersion nodeToNodeCodecCBORTerm) app) $ \_ serverAsync ->
+      (simpleSingletonVersions (0::Int) (NodeToNodeVersionData $ NetworkMagic 0) (DictVersion nodeToNodeCodecCBORTerm) app) $ \_ serverAsync ->
         wait serverAsync   -- block until async exception
   where
     app :: OuroborosApplication ResponderApp (Socket.SockAddr, Socket.SockAddr) DemoProtocol1 IO LBS.ByteString Void ()
@@ -341,7 +342,7 @@ clientChainSync sockAddrs =
         nullTracer
         nullTracer
         (,)
-        (simpleSingletonVersions (0::Int) (NodeToNodeVersionData 0) (DictVersion nodeToNodeCodecCBORTerm) app)
+        (simpleSingletonVersions (0::Int) (NodeToNodeVersionData $ NetworkMagic 0) (DictVersion nodeToNodeCodecCBORTerm) app)
         Nothing
         (mkLocalSocketAddrInfo sockAddr)
   where
@@ -369,7 +370,7 @@ serverChainSync sockAddr = do
       (\(DictVersion codec)-> decodeTerm codec)
       (,)
       (\(DictVersion _) -> acceptEq)
-      (simpleSingletonVersions (0::Int) (NodeToNodeVersionData 0) (DictVersion nodeToNodeCodecCBORTerm) app) $ \_ serverAsync ->
+      (simpleSingletonVersions (0::Int) (NodeToNodeVersionData $ NetworkMagic 0) (DictVersion nodeToNodeCodecCBORTerm) app) $ \_ serverAsync ->
         wait serverAsync   -- block until async exception
   where
     prng = mkSMGen 0
@@ -530,7 +531,7 @@ clientBlockFetch sockAddrs = do
                           nullTracer
                           nullTracer
                           (,)
-                          (simpleSingletonVersions (0::Int) (NodeToNodeVersionData 0) (DictVersion nodeToNodeCodecCBORTerm) app)
+                          (simpleSingletonVersions (0::Int) (NodeToNodeVersionData $ NetworkMagic 0) (DictVersion nodeToNodeCodecCBORTerm) app)
                           Nothing
                           (mkLocalSocketAddrInfo sockAddr)
                     | sockAddr <- sockAddrs ]
@@ -573,7 +574,7 @@ serverBlockFetch sockAddr = do
       (\(DictVersion codec)-> decodeTerm codec)
       (,)
       (\(DictVersion _) -> acceptEq)
-      (simpleSingletonVersions (0::Int) (NodeToNodeVersionData 0) (DictVersion nodeToNodeCodecCBORTerm) app) $ \_ serverAsync ->
+      (simpleSingletonVersions (0::Int) (NodeToNodeVersionData $ NetworkMagic 0) (DictVersion nodeToNodeCodecCBORTerm) app) $ \_ serverAsync ->
         wait serverAsync   -- block until async exception
   where
     prng = mkSMGen 0

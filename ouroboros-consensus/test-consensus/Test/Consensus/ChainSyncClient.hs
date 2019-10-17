@@ -33,6 +33,7 @@ import           Network.TypedProtocol.Driver
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block hiding (ChainUpdate (..))
+import           Ouroboros.Network.Magic
 import           Ouroboros.Network.MockChain.Chain (Chain (Genesis))
 import qualified Ouroboros.Network.MockChain.Chain as Chain
 import           Ouroboros.Network.MockChain.ProducerState (chainState,
@@ -396,6 +397,7 @@ runChainSync securityParam maxClockSkew (ClientUpdates clientUpdates)
       { bftParams   = BftParams
         { bftSecurityParam = securityParam
         , bftNumNodes      = 2
+        , bftNetworkMagic  = NetworkMagic 0x0000ffff
         }
       , bftNodeId   = fromCoreNodeId coreNodeId
       , bftSignKey  = SignKeyMockDSIGN 0

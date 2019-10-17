@@ -64,6 +64,7 @@ instance ( Typeable cfg
   applyChainState       (EncNodeConfig cfg _) = applyChainState       cfg
   rewindChainState      (EncNodeConfig cfg _) = rewindChainState      cfg
   protocolSecurityParam (EncNodeConfig cfg _) = protocolSecurityParam cfg
+  protocolNetworkMagic  (EncNodeConfig cfg _) = protocolNetworkMagic  cfg
 
 instance (OuroborosTag p, NoUnexpectedThunks cfg)
       => NoUnexpectedThunks (NodeConfig (ExtNodeConfig cfg p))

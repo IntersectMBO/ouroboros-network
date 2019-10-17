@@ -33,7 +33,6 @@ import qualified Data.ByteString.Lazy as BL
 import           Data.Text (Text)
 import qualified Data.Text as T
 import           Data.Typeable (Typeable)
-import           Data.Word
 import qualified Codec.CBOR.Encoding as CBOR
 import qualified Codec.CBOR.Decoding as CBOR
 import qualified Codec.CBOR.Term as CBOR
@@ -44,6 +43,7 @@ import qualified Network.Socket as Socket
 import           Network.Mux.Types
 import           Network.Mux.Interface
 
+import           Ouroboros.Network.Magic
 import           Ouroboros.Network.Mux
 import           Ouroboros.Network.Protocol.ChainSync.Client (chainSyncClientNull)
 import           Ouroboros.Network.Protocol.LocalTxSubmission.Client (localTxSubmissionClientNull)
@@ -100,7 +100,7 @@ instance Serialise NodeToClientVersion where
 -- | Version data for NodeToClient protocol v1
 --
 newtype NodeToClientVersionData = NodeToClientVersionData
-  { networkMagic :: Word32 }
+  { networkMagic :: NetworkMagic }
   deriving (Eq, Show, Typeable)
 
 nodeToClientCodecCBORTerm :: CodecCBORTerm Text NodeToClientVersionData
@@ -108,10 +108,10 @@ nodeToClientCodecCBORTerm = CodecCBORTerm {encodeTerm, decodeTerm}
     where
       encodeTerm :: NodeToClientVersionData -> CBOR.Term
       encodeTerm NodeToClientVersionData { networkMagic } =
-        CBOR.TInt (fromIntegral networkMagic)
+        CBOR.TInt (fromIntegral $ unNetworkMagic networkMagic)
 
       decodeTerm :: CBOR.Term -> Either Text NodeToClientVersionData
-      decodeTerm (CBOR.TInt x) | x >= 0 && x <= 0xffffffff = Right (NodeToClientVersionData $ fromIntegral x)
+      decodeTerm (CBOR.TInt x) | x >= 0 && x <= 0xffffffff = Right (NodeToClientVersionData $ NetworkMagic $ fromIntegral x)
                                | otherwise                 = Left $ T.pack $ "networkMagic out of bound: " <> show x
       decodeTerm t             = Left $ T.pack $ "unknown encoding: " ++ show t
 

@@ -48,6 +48,7 @@ import           Cardano.Crypto.DSIGN.Class
 import           Cardano.Prelude (NoUnexpectedThunks)
 
 import           Ouroboros.Network.Block (HasHeader (..), SlotNo (..))
+import           Ouroboros.Network.Magic (NetworkMagic)
 import           Ouroboros.Network.Point (WithOrigin (At))
 
 import           Ouroboros.Consensus.Crypto.DSIGN.Cardano
@@ -149,6 +150,7 @@ data PBftParams = PBftParams {
       -- but this implementation follows the specification by fixing that
       -- parameter to the ambient security parameter @k@.
     , pbftSignatureThreshold :: !Double
+    , pbftNetworkMagic       :: !NetworkMagic
     }
   deriving (Generic, NoUnexpectedThunks)
 
@@ -191,6 +193,7 @@ instance (PBftCrypto c, Typeable c) => OuroborosTag (PBft c) where
   type ChainState     (PBft c) = PBftChainState c
 
   protocolSecurityParam = pbftSecurityParam . pbftParams
+  protocolNetworkMagic  = pbftNetworkMagic . pbftParams
 
   checkIsLeader PBftNodeConfig{pbftIsLeader, pbftParams} (SlotNo n) _l _cs =
       case pbftIsLeader of
