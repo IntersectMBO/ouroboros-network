@@ -72,6 +72,7 @@ import qualified Ouroboros.Network.Block as Block
 import           Ouroboros.Network.MockChain.Chain (Chain (..), ChainUpdate)
 import qualified Ouroboros.Network.MockChain.Chain as Chain
 import qualified Ouroboros.Network.MockChain.ProducerState as CPS
+import           Ouroboros.Network.Point (WithOrigin (..))
 
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
@@ -164,6 +165,20 @@ immutableBlockNo :: HasHeader blk
                  => SecurityParam -> Model blk -> Block.BlockNo
 immutableBlockNo (SecurityParam k) =
         Chain.headBlockNo
+      . Chain.drop (fromIntegral k)
+      . currentChain
+
+-- | The slot number of the most recent \"immutable\" block (see
+-- 'immutableBlockNo').
+--
+-- This is used for garbage collection of the VolatileDB, which is done in
+-- terms of slot numbers, not in terms of block numbers.
+immutableSlotNo :: HasHeader blk
+                => SecurityParam
+                -> Model blk
+                -> WithOrigin SlotNo
+immutableSlotNo (SecurityParam k) =
+        Chain.headSlot
       . Chain.drop (fromIntegral k)
       . currentChain
 
@@ -519,15 +534,24 @@ between (SecurityParam k) from to m = do
         | otherwise
         -> Left $ MissingBlock p
 
--- Would the garbage collector (if run) be able to garbage collect the given
--- block?
+-- | Is it possible that the given block is no longer in the ChainDB because
+-- the garbage collector has collected it?
+--
+-- Note that blocks on the current chain will always remain in the ChainDB as
+-- they are copied to the ImmutableDB.
+--
+-- Blocks not on the current chain can be garbage collected from the
+-- VolatileDB when their slot number is older than the slot number of the
+-- immutable block (the block @k@ blocks after the current tip).
 garbageCollectable :: forall blk. HasHeader blk
                    => SecurityParam -> Model blk -> blk -> Bool
 garbageCollectable secParam m@Model{..} b =
-    not onCurrentChain && olderThanK
+    not onCurrentChain && olderThanImmutableSlotNo
   where
     onCurrentChain = Chain.pointOnChain (Block.blockPoint b) (currentChain m)
-    olderThanK     = Block.blockNo b <= immutableBlockNo secParam m
+    -- Note: we don't use the block number but the slot number, as the
+    -- VolatileDB's garbage collection is in terms of slot numbers.
+    olderThanImmutableSlotNo = At (Block.blockSlot b) <= immutableSlotNo secParam m
 
 -- Return 'True' when the model contains the block corresponding to the point
 -- and the block itself is eligible for garbage collection, i.e. the real
