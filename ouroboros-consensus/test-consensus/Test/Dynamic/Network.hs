@@ -15,6 +15,7 @@
 -- | Setup network
 module Test.Dynamic.Network (
     runNodeNetwork
+  , NodeNetworkArgs (..)
   , TracingConstraints
     -- * Tracers
   , MiniProtocolExpectedException (..)
@@ -96,6 +97,17 @@ import qualified Test.Util.FS.Sim.MockFS as Mock
 import           Test.Util.FS.Sim.STM (simHasFS)
 import           Test.Util.Tracer
 
+data NodeNetworkArgs m blk = NodeNetworkArgs
+  { nnaNodeJoinPlan    :: !NodeJoinPlan
+  , nnaNodeTopology    :: !NodeTopology
+  , nnaNumCoreNodes    :: !NumCoreNodes
+  , nnaProtocol        :: !(CoreNodeId -> ProtocolInfo blk)
+  , nnaRegistry        :: !(ResourceRegistry m)
+  , nnaSlotLen         :: !DiffTime
+  , nnaTestBtime       :: !(TestBlockchainTime m)
+  , nnaTxSeed          :: !ChaChaDRG
+  }
+
 -- | Setup a network of core nodes, where each joins according to the node join
 -- plan and is interconnected according to the node topology
 --
@@ -108,17 +120,18 @@ runNodeNetwork :: forall m blk.
                     , TracingConstraints blk
                     , HasCallStack
                     )
-                 => ResourceRegistry m
-                 -> TestBlockchainTime m
-                 -> NumCoreNodes
-                 -> NodeJoinPlan
-                 -> NodeTopology
-                 -> (CoreNodeId -> ProtocolInfo blk)
-                 -> ChaChaDRG
-                 -> DiffTime
-                 -> m (TestOutput blk)
-runNodeNetwork registry testBtime numCoreNodes nodeJoinPlan nodeTopology
-  pInfo initRNG slotLen = do
+               => NodeNetworkArgs m blk
+               -> m (TestOutput blk)
+runNodeNetwork NodeNetworkArgs
+  { nnaNodeJoinPlan    = nodeJoinPlan
+  , nnaNodeTopology    = nodeTopology
+  , nnaNumCoreNodes    = numCoreNodes
+  , nnaProtocol        = pInfo
+  , nnaRegistry        = registry
+  , nnaSlotLen         = slotLen
+  , nnaTestBtime       = testBtime
+  , nnaTxSeed          = initRNG
+  } = do
     -- This function is organized around the notion of a network of nodes as a
     -- simple graph with no loops. The graph topology is determined by
     -- @nodeTopology@.

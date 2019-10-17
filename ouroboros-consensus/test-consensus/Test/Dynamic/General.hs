@@ -147,15 +147,16 @@ runTestNetwork pInfo
   seed = runSimOrThrow $ do
     registry  <- unsafeNewRegistry
     testBtime <- newTestBlockchainTime registry numSlots slotLen
-    runNodeNetwork
-      registry
-      testBtime
-      numCoreNodes
-      nodeJoinPlan
-      nodeTopology
-      pInfo
-      (seedToChaCha seed)
-      slotLen
+    runNodeNetwork NodeNetworkArgs
+      { nnaNodeJoinPlan    = nodeJoinPlan
+      , nnaNodeTopology    = nodeTopology
+      , nnaNumCoreNodes    = numCoreNodes
+      , nnaProtocol        = pInfo
+      , nnaRegistry        = registry
+      , nnaSlotLen         = slotLen
+      , nnaTestBtime       = testBtime
+      , nnaTxSeed          = seedToChaCha seed
+      }
   where
     slotLen :: DiffTime
     slotLen = 100000
