@@ -159,7 +159,7 @@ data TestBlockchainTime m = TestBlockchainTime
     -- ^ Blocks until the end of the final requested slot.
   }
 
--- | Construct new blockchain time that ticks at the specified slot duration
+-- | Each slot advances once the given callback returns
 --
 -- NOTE: This is just one way to construct time. We can of course also connect
 -- this to the real time (if we are in IO), or indeed to a manual tick
@@ -172,13 +172,14 @@ data TestBlockchainTime m = TestBlockchainTime
 -- first slot @SlotNo 0@, i.e. during 'Initializing'. This is likely only
 -- appropriate for initialization code etc. In contrast, the argument to
 -- 'onSlotChange' is blocked at least until @SlotNo 0@ begins.
+--
 newTestBlockchainTime
     :: forall m. (IOLike m, HasCallStack)
     => ResourceRegistry m
     -> NumSlots           -- ^ Number of slots
-    -> DiffTime           -- ^ Slot duration
+    -> (SlotNo -> m ())   -- ^ Blocks until slot is finished
     -> m (TestBlockchainTime m)
-newTestBlockchainTime registry (NumSlots numSlots) slotLen = do
+newTestBlockchainTime registry (NumSlots numSlots) waitOn = do
     slotVar <- newTVarM initVal
     doneVar <- newEmptyMVar ()
 
@@ -207,10 +208,14 @@ newTestBlockchainTime registry (NumSlots numSlots) slotLen = do
     loop slotVar doneVar = do
         -- count off each requested slot
         replicateM_ numSlots $ do
-          atomically $ modifyTVar slotVar $ Running . \case
-            Initializing -> SlotNo 0
-            Running slot -> succ slot
-          threadDelay slotLen
+          s' <- atomically $ do
+            st <- readTVar slotVar
+            let s' = case st of
+                    Initializing -> SlotNo 0
+                    Running s    -> succ s
+            writeTVar slotVar (Running s')
+            pure s'
+          waitOn s'
         -- signal the end of the final slot
         putMVar doneVar ()
 

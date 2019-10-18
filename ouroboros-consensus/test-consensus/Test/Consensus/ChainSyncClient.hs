@@ -254,7 +254,8 @@ runChainSync
 runChainSync securityParam maxClockSkew (ClientUpdates clientUpdates)
     (ServerUpdates serverUpdates) startSyncingAt = withRegistry $ \registry -> do
 
-    testBtime <- newTestBlockchainTime registry numSlots slotDuration
+    testBtime <- newTestBlockchainTime registry numSlots
+      (\_s -> threadDelay 100000)   -- io-sim "seconds"
     let btime = testBlockchainTime testBtime
 
     -- Set up the client
@@ -387,9 +388,6 @@ runChainSync securityParam maxClockSkew (ClientUpdates clientUpdates)
         )
   where
     k = maxRollbacks securityParam
-
-    slotDuration :: DiffTime
-    slotDuration = 100000
 
     nodeCfg :: CoreNodeId -> NodeConfig (Bft BftMockCrypto)
     nodeCfg coreNodeId = BftNodeConfig

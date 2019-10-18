@@ -146,7 +146,8 @@ runTestNetwork pInfo
   TestConfig{numCoreNodes, numSlots, nodeJoinPlan, nodeTopology}
   seed = runSimOrThrow $ do
     registry  <- unsafeNewRegistry
-    testBtime <- newTestBlockchainTime registry numSlots slotLen
+    testBtime <- newTestBlockchainTime registry numSlots
+      (\_s -> threadDelay slotLen)
     runNodeNetwork NodeNetworkArgs
       { nnaNodeJoinPlan    = nodeJoinPlan
       , nnaNodeTopology    = nodeTopology
@@ -159,7 +160,7 @@ runTestNetwork pInfo
       }
   where
     slotLen :: DiffTime
-    slotLen = 100000
+    slotLen = 100000   -- io-sim "seconds"
 
 {-------------------------------------------------------------------------------
   Test properties
