@@ -1,3 +1,4 @@
+{-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE FlexibleContexts           #-}
@@ -11,6 +12,7 @@ module Ouroboros.Network.BlockFetch.ClientState (
     newFetchClientStateVars,
     readFetchClientState,
     PeerFetchStatus(..),
+    IsIdle(..),
     PeerFetchInFlight(..),
     initialPeerFetchInFlight,
     FetchRequest(..),
@@ -106,7 +108,7 @@ data FetchClientStateVars m header =
 newFetchClientStateVars :: MonadSTM m => STM m (FetchClientStateVars m header)
 newFetchClientStateVars = do
     fetchClientInFlightVar <- newTVar initialPeerFetchInFlight
-    fetchClientStatusVar   <- newTVar (PeerFetchStatusReady Set.empty)
+    fetchClientStatusVar   <- newTVar (PeerFetchStatusReady Set.empty IsIdle)
     fetchClientRequestVar  <- newTFetchRequestVar
     return FetchClientStateVars {..}
 
@@ -158,9 +160,17 @@ data PeerFetchStatus header =
        -- | Communication with the peer is in a normal state, and the peer is
        -- considered ready to accept new requests.
        --
-     | PeerFetchStatusReady (Set (Point header))
+       -- The 'Set' is the blocks in flight.
+     | PeerFetchStatusReady (Set (Point header)) IsIdle
   deriving (Eq, Show)
 
+-- | Whether this mini protocol instance is in the @Idle@ State
+--
+data IsIdle = IsIdle | IsNotIdle
+  deriving (Eq, Show)
+
+idleIf :: Bool -> IsIdle
+idleIf b = if b then IsIdle else IsNotIdle
 
 -- | The number of requests in-flight and the amount of data in-flight with a
 -- peer. This is maintained by fetch protocol threads and used in the block
@@ -556,8 +566,15 @@ completeFetchBatch tracer inflightlimits range
               peerFetchReqsInFlight = peerFetchReqsInFlight inflight - 1
             }
       writeTVar fetchClientInFlightVar inflight'
-      currentStatus <- readTVar fetchClientStatusVar
-      return (inflight', currentStatus)
+      currentStatus' <- readTVar fetchClientStatusVar >>= \case
+        PeerFetchStatusReady bs IsNotIdle
+          | Set.null bs
+            && 0 == peerFetchReqsInFlight inflight'
+          -> let status = PeerFetchStatusReady Set.empty IsIdle
+             in status <$ writeTVar fetchClientStatusVar status
+        currentStatus -> pure currentStatus
+
+      return (inflight', currentStatus')
 
     traceWith tracer $
       CompletedFetchBatch
@@ -635,7 +652,9 @@ busyIfOverHighWatermark inflightlimits inflight
   | peerFetchBytesInFlight inflight >= inFlightBytesHighWatermark inflightlimits
   = PeerFetchStatusBusy
   | otherwise
-  = PeerFetchStatusReady (peerFetchBlocksInFlight inflight)
+  = PeerFetchStatusReady
+      (peerFetchBlocksInFlight inflight)
+      (idleIf (0 == peerFetchReqsInFlight inflight))
 
 -- | Return 'PeerFetchStatusReady' if we're now under the low watermark.
 --
@@ -644,7 +663,9 @@ readyIfUnderLowWatermark :: PeerFetchInFlightLimits
                          -> PeerFetchStatus header
 readyIfUnderLowWatermark inflightlimits inflight
   | peerFetchBytesInFlight inflight <= inFlightBytesLowWatermark inflightlimits
-  = PeerFetchStatusReady (peerFetchBlocksInFlight inflight)
+  = PeerFetchStatusReady
+      (peerFetchBlocksInFlight inflight)
+      (idleIf (0 == peerFetchReqsInFlight inflight))
   | otherwise
   = PeerFetchStatusBusy
 
