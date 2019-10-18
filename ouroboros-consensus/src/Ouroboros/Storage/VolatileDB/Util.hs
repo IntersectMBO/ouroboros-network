@@ -2,12 +2,12 @@
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TupleSections       #-}
 
 module Ouroboros.Storage.VolatileDB.Util where
 
 import           Control.Monad
 import qualified Data.Map.Strict as Map
-import           Data.Maybe (fromMaybe)
 import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Text (Text)
@@ -31,10 +31,12 @@ import           Ouroboros.Storage.VolatileDB.Types
   Utilities
 ------------------------------------------------------------------------------}
 
-
-parseFd :: FsPath -> Maybe FileId
-parseFd = parseFilename <=< lastMaybe . fsPathToList
+parseFd :: FsPath -> Either (VolatileDBError blockId) FileId
+parseFd file = maybe err Right $
+    parseFilename <=< lastMaybe $ fsPathToList file
   where
+    err = Left $ UnexpectedError $ ParserError $ InvalidFilename file
+
     parseFilename :: Text -> Maybe FileId
     parseFilename = readMaybe
                   . T.unpack
@@ -44,8 +46,9 @@ parseFd = parseFilename <=< lastMaybe . fsPathToList
                   . T.breakOn "."
 
 unsafeParseFd :: FsPath -> FileId
-unsafeParseFd file = fromMaybe
-    (error $ "could not parse filename " <> show file)
+unsafeParseFd file = either
+    (\_ -> error $ "Could not parse filename " <> show file)
+    id
     (parseFd file)
 
 fromEither :: Monad m
@@ -75,32 +78,23 @@ wrapFsError :: Monad m
 wrapFsError fsErr volDBErr action =
     tryVolDB fsErr volDBErr action >>= either (throwError volDBErr) return
 
--- | Parses the 'FsPath' of each filename and zips them together.
--- If any 'FsPath' does not parse, we return an error.
+-- | Parses the 'FileId' of each 'FsPath' and zips them together.
+-- If any parsing does not parse, we abort with an error.
 parseAllFds :: forall blockId.
                [FsPath]
             -> Either (VolatileDBError blockId) [(FileId, FsPath)]
-parseAllFds = mapM go
-  where
-    go :: FsPath -> Either (VolatileDBError blockId) (FileId, FsPath)
-    go file = case parseFd file of
-      Nothing -> Left $ UnexpectedError $ ParserError $ InvalidFilename file
-      Just fd -> Right (fd, file)
+parseAllFds = mapM $ \f -> (,f) <$> parseFd f
 
--- | Throws an error if one of the given file names does not parse.
+-- | If any 'FsPath' does not parse, we return an error.
 findLastFd :: forall blockId.
               Set FsPath
            -> Either (VolatileDBError blockId) (Maybe FileId)
-findLastFd = foldM go Nothing
-  where
-    maxMaybe :: Ord a => Maybe a -> a -> a
-    maxMaybe ma a = case ma of
-      Nothing -> a
-      Just a' -> max a' a
-    go :: Maybe FileId -> FsPath -> Either (VolatileDBError blockId) (Maybe FileId)
-    go fd file = case parseFd file of
-      Nothing  -> Left $ UnexpectedError $ ParserError $ InvalidFilename file
-      Just fd' -> Right $ Just $ maxMaybe fd fd'
+findLastFd = fmap safeMaximum . mapM parseFd . Set.toList
+
+maxMaybe :: Ord a => Maybe a -> a -> a
+maxMaybe ma a = case ma of
+    Nothing -> a
+    Just a' -> max a' a
 
 filePath :: FileId -> FsPath
 filePath fd = mkFsPath ["blocks-" ++ show fd ++ ".dat"]
@@ -117,12 +111,12 @@ tryVolDB :: forall m blockId a. Monad m
          -> ErrorHandling (VolatileDBError blockId) m
          -> m a -> m (Either (VolatileDBError blockId) a)
 tryVolDB fsErr volDBErr = fmap squash . EH.try fsErr . EH.try volDBErr
-    where
-      fromFS = UnexpectedError . FileSystemError
+  where
+    fromFS = UnexpectedError . FileSystemError
 
-      squash :: Either FsError (Either (VolatileDBError blockId) a)
-               -> Either (VolatileDBError blockId) a
-      squash = either (Left . fromFS) id
+    squash :: Either FsError (Either (VolatileDBError blockId) a)
+              -> Either (VolatileDBError blockId) a
+    squash = either (Left . fromFS) id
 
 {------------------------------------------------------------------------------
   Map of Set operations
@@ -167,7 +161,9 @@ cmpMaybe :: Ord a => Maybe a -> a -> Bool
 cmpMaybe Nothing _   = False
 cmpMaybe (Just a) a' = a >= a'
 
-updateSlot :: forall blockId. Maybe (blockId, SlotNo) -> [(blockId, SlotNo)] -> Maybe (blockId, SlotNo)
+updateSlot :: forall blockId. Maybe (blockId, SlotNo)
+           -> [(blockId, SlotNo)]
+           -> Maybe (blockId, SlotNo)
 updateSlot msl ls = safeMaximumOn snd $ case msl of
     Nothing -> ls
     Just sl -> sl : ls

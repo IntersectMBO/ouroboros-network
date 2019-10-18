@@ -49,7 +49,7 @@ import           Ouroboros.Storage.Util.ErrorHandling (ThrowCantCatch)
 import qualified Ouroboros.Storage.Util.ErrorHandling as EH
 import           Ouroboros.Storage.VolatileDB.API
 import qualified Ouroboros.Storage.VolatileDB.Impl as Internal
-import           Ouroboros.Storage.VolatileDB.Util
+import           Ouroboros.Storage.VolatileDB.Util hiding (maxMaybe)
 
 import           Test.Util.FS.Sim.Error
 
@@ -70,7 +70,8 @@ data DBModel blockId = DBModel {
     , index          :: Map FsPath (MaxSlotNo, Int, [(blockId, WithOrigin blockId)])
       -- ^ What each file contains in the Impl.
     , currentFile    :: FsPath
-      -- ^ The current open file. If the db is closed, this is the next it should write to.
+      -- ^ The current open file. If the db is closed, this is the next file it
+      -- should write to.
     , nextFId        :: FileId
       -- ^ The next file id.
     , maxSlotNo      :: MaxSlotNo

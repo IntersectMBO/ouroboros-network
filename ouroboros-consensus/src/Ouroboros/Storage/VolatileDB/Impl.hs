@@ -95,7 +95,7 @@ module Ouroboros.Storage.VolatileDB.Impl
 import           Control.Monad
 import qualified Data.ByteString.Builder as BS
 import           Data.ByteString.Lazy (ByteString)
-import           Data.List (sortOn)
+import           Data.List (find, sortOn)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Maybe
@@ -146,9 +146,9 @@ volatileDbIsOpen :: OpenOrClosed blockId h -> Bool
 volatileDbIsOpen (VolatileDbOpen _) = True
 volatileDbIsOpen VolatileDbClosed   = False
 
-data InternalState blockId h = InternalState
-    { _currentWriteHandle :: !(Handle h)
-      -- ^ The unique open file we append blocks.
+data InternalState blockId h = InternalState {
+      _currentWriteHandle :: !(Handle h)
+      -- ^ The only open file we append blocks.
     , _currentWritePath   :: !FsPath
       -- ^ The path of the file above.
     , _currentWriteId     :: !FileId
@@ -214,11 +214,11 @@ openDBImpl :: (HasCallStack, IOLike m, Ord blockId, NoUnexpectedThunks blockId)
 openDBImpl hasFS@HasFS{..} err errSTM parser maxBlocksPerFile =
     if maxBlocksPerFile <= 0
     then EH.throwError err $ UserError . InvalidArgumentsError $
-        "maxBlocksPerFile should be positive"
+      "maxBlocksPerFile should be positive"
     else do
-        st <- mkInternalStateDB hasFS err parser maxBlocksPerFile
-        stVar <- newMVar $ VolatileDbOpen st
-        return $ VolatileDBEnv hasFS err errSTM stVar maxBlocksPerFile parser
+      st <- mkInternalStateDB hasFS err parser maxBlocksPerFile
+      stVar <- newMVar $ VolatileDbOpen st
+      return $ VolatileDBEnv hasFS err errSTM stVar maxBlocksPerFile parser
 
 closeDBImpl :: IOLike m
             => VolatileDBEnv m blockId
@@ -239,8 +239,8 @@ isOpenDBImpl VolatileDBEnv{..} = do
     mSt <- readMVar _dbInternalState
     return $ volatileDbIsOpen mSt
 
--- | Property: @'closeDB' >> 'reOpenDB'@ is a no-op. This is true because
--- 'reOpenDB` will always append to the last created file.
+-- | Property: @'closeDB' >> 'reOpenDB'@  should be a no-op. This is true
+-- because 'reOpenDB` will always append to the last created file.
 reOpenDBImpl :: (HasCallStack, IOLike m, Ord blockId)
              => VolatileDBEnv m blockId
              -> m ()
@@ -262,7 +262,7 @@ getBlockImpl env@VolatileDBEnv{..} slot =
         Just InternalBlockInfo {..} ->  do
           bs <- withFile hasFS ibFile ReadMode $ \hndl -> do
                   _ <- hSeek hndl AbsoluteSeek (fromIntegral ibSlotOffset)
-                  hGetExactly hasFS hndl (fromIntegral ibBlockSize)
+                  hGetExactly hasFS hndl ibBlockSize
           return (st, Just bs)
 
 -- | This function follows the approach:
@@ -272,8 +272,8 @@ getBlockImpl env@VolatileDBEnv{..} slot =
 -- (4) update the Internal State.
 --
 -- If there is an error after (1) or after (2) we should make sure that when
--- we reopen a db from scratch, it can successfully recover if it does not
--- find an empty file to write and all other files are full.
+-- we reopen a db from scratch, it can successfully recover, even if it does
+-- not find an empty file to write and all other files are full.
 --
 -- We should also make sure that the db can recover if we get an
 -- exception/error at any moment and that we are left with an empty Internal
@@ -309,7 +309,7 @@ putBlockImpl env@VolatileDBEnv{..} BlockInfo{..} builder =
                     ++ "Current write file not found in Index.")
             (Index.lookup _currentWriteId _currentMap)
         fileInfo' = FileInfo.addSlot bslot _currentWriteOffset
-            (FileInfo.mkFileSlotInfo (fromIntegral bytesWritten) bbid) fileInfo
+            (FileInfo.mkFileSlotInfo bytesWritten bbid) fileInfo
         currentMap' = Index.insert _currentWriteId fileInfo' _currentMap
         internalBlockInfo' = InternalBlockInfo {
             ibFile       = _currentWritePath
@@ -320,7 +320,7 @@ putBlockImpl env@VolatileDBEnv{..} BlockInfo{..} builder =
           }
         currentRevMap' = Map.insert bbid internalBlockInfo' _currentRevMap
         st' = st {
-            _currentWriteOffset = _currentWriteOffset + fromIntegral bytesWritten
+            _currentWriteOffset = _currentWriteOffset + bytesWritten
           , _currentMap         = currentMap'
           , _currentRevMap      = currentRevMap'
           , _currentSuccMap     = insertMapSet _currentSuccMap (bbid, bpreBid)
@@ -374,7 +374,12 @@ tryCollectFile hasFS@HasFS{..} env slot st@InternalState{..} (fileId, fileInfo) 
               }
         | isCurrentNew  -> return st
         | otherwise     -> do
-            -- TODO: Rething if we want to reopen after
+            -- We reach this case if we have to garbage collect the current file
+            -- we are appending blocks to. I'm not sure how realistic this case
+            -- is and maybe we want to skip this garbage collection.
+            --
+            -- 'ReOpenFile' techinally truncates the file to 0 offset, so any
+            -- concurrent readers may fail. This may become an issue after:
             -- <https://github.com/input-output-hk/ouroboros-network/issues/767>
             st' <- reOpenFile hasFS (_dbErr env) env st
             return st' {
@@ -394,36 +399,31 @@ tryCollectFile hasFS@HasFS{..} env slot st@InternalState{..} (fileId, fileInfo) 
 getIsMemberImpl :: forall m blockId. (IOLike m, Ord blockId)
                 => VolatileDBEnv m blockId
                 -> STM m (blockId -> Bool)
-getIsMemberImpl =
-    getterSTM $ \st bid -> Map.member bid (_currentRevMap st)
+getIsMemberImpl = getterSTM $ \st bid -> Map.member bid (_currentRevMap st)
 
 getBlockIdsImpl :: forall m blockId. (IOLike m)
                 => VolatileDBEnv m blockId
                 -> m [blockId]
-getBlockIdsImpl =
-    getter $ Map.keys . _currentRevMap
+getBlockIdsImpl = getter $ Map.keys . _currentRevMap
 
 getSuccessorsImpl :: forall m blockId. (IOLike m, Ord blockId)
                   => VolatileDBEnv m blockId
                   -> STM m (WithOrigin blockId -> Set blockId)
-getSuccessorsImpl =
-    getterSTM $ \st blockId ->
-      fromMaybe Set.empty (Map.lookup blockId (_currentSuccMap st))
+getSuccessorsImpl = getterSTM $ \st blockId ->
+    fromMaybe Set.empty (Map.lookup blockId (_currentSuccMap st))
 
 getPredecessorImpl :: forall m blockId. (IOLike m, Ord blockId, HasCallStack)
                    => VolatileDBEnv m blockId
                    -> STM m (blockId -> WithOrigin blockId)
-getPredecessorImpl =
-    getterSTM $ \st blockId ->
-        maybe (error msg) ibPreBid (Map.lookup blockId (_currentRevMap st))
+getPredecessorImpl = getterSTM $ \st blockId ->
+    maybe (error msg) ibPreBid (Map.lookup blockId (_currentRevMap st))
   where
     msg = "precondition violated: block not member of the VolatileDB"
 
 getMaxSlotNoImpl :: forall m blockId. IOLike m
                  => VolatileDBEnv m blockId
                  -> STM m MaxSlotNo
-getMaxSlotNoImpl =
-    getterSTM _currentMaxSlotNo
+getMaxSlotNoImpl = getterSTM _currentMaxSlotNo
 
 {------------------------------------------------------------------------------
   Internal functions
@@ -452,7 +452,7 @@ nextFile HasFS{..} _err VolatileDBEnv{..} st@InternalState{..} = do
   where
     file = filePath _nextNewFileId
 
--- | Truncate a file to 0 and update its state accordingly.
+-- | Truncates a file to 0 and update its state accordingly.
 -- This may throw an FsError.
 reOpenFile :: forall m h blockId
            .  (MonadThrow m)
@@ -467,8 +467,7 @@ reOpenFile HasFS{..} _err VolatileDBEnv{..} st@InternalState{..} = do
     -- to the end before each write.
    hTruncate _currentWriteHandle 0
    return st {
-        _currentMap = Index.insert
-            _currentWriteId FileInfo.empty _currentMap
+        _currentMap = Index.insert _currentWriteId FileInfo.empty _currentMap
       , _currentWriteOffset = 0
       }
 
@@ -479,21 +478,20 @@ mkInternalStateDB :: (HasCallStack, MonadThrow m, MonadCatch m, Ord blockId)
                   -> Int
                   -> m (InternalState blockId h)
 mkInternalStateDB hasFS@HasFS{..} err parser maxBlocksPerFile =
-  wrapFsError hasFsErr err $ do
-    createDirectoryIfMissing True dir
-    allFiles <- map toFsPath . Set.toList <$> listDirectory dir
-    filesWithIds <- fromEither err $ parseAllFds allFiles
-    mkInternalState hasFS err parser maxBlocksPerFile filesWithIds
+    wrapFsError hasFsErr err $ do
+      createDirectoryIfMissing True dbDir
+      allFiles <- map toFsPath . Set.toList <$> listDirectory dbDir
+      filesWithIds <- fromEither err $ parseAllFds allFiles
+      mkInternalState hasFS err parser maxBlocksPerFile filesWithIds
   where
-    dir = mkFsPath []
+    dbDir = mkFsPath []
 
     toFsPath :: String -> FsPath
     toFsPath file = mkFsPath [file]
 
 -- | Makes the 'InternalState' by parsing all files.
 --
--- This function may create a new file to append new blocks or use an existing
--- one.
+-- It may create a new file to append new blocks or use an existing one.
 mkInternalState
   :: forall blockId m h e. (HasCallStack, MonadCatch m, Ord blockId)
   => HasFS m h
@@ -506,33 +504,26 @@ mkInternalState hasFS err parser n files =
     wrapFsError (hasFsErr hasFS) err $
       go Index.empty Map.empty Map.empty Nothing [] files
   where
+    -- | This is the file with the maximum 'FileId' in the db.
     lastFile = safeMaximumOn fst files
     newFileInfo mp newIndex =
       ( filePath newIndex
       , newIndex
-      , newIndex + 1
       , Index.insert newIndex FileInfo.empty mp
       , 0 )
 
-    errorMsg = unwords
-        [ "VolatileDB invariant violation:"
-        , "The impossible happened!"
-        , "A file was found with less than "
-        , show n
-        , " blocks, but there are no files in db!"]
-
     truncateOnError Nothing _ _ = return ()
     truncateOnError (Just _) file offset =
-        -- The handle of the parser is closed at this point. We need
-        -- to reOpen the file in 'AppendMode' now (parser opens with
-        -- 'ReadMode').
-        --
-        -- Note that no file is open at this point, so we can safely
-        -- open with 'AppendMode' any file, without the fear of opening
-        -- multiple concurrent writers, which is not allowed.
-        --
-        withFile hasFS file (AppendMode AllowExisting) $ \hndl ->
-            hTruncate hasFS hndl (fromIntegral offset)
+      -- The handle of the parser is closed at this point. We need
+      -- to reοpen the file in 'AppendMode' now (parser opens with
+      -- 'ReadMode').
+      --
+      -- Note that no file is open at this point, so we can safely
+      -- open with 'AppendMode' any file, without the fear of opening
+      -- multiple concurrent writers, which is not allowed.
+      --
+      withFile hasFS file (AppendMode AllowExisting) $ \hndl ->
+          hTruncate hasFS hndl (fromIntegral offset)
 
     -- | For each file in the db, this function parses, updates the
     -- internal state and calls itself for the rest of the files.
@@ -543,9 +534,9 @@ mkInternalState hasFS err parser n files =
        -> [(FileId, FsPath, FileSize)] -- ^ Info of files with < n blocks.
        -> [(FileId, FsPath)]
        -> m (InternalState blockId h)
-    go currentMap currentRevMap succMp _maxSlot lessThanN [] = do
+    go currentMap currentRevMap succMap _maxSlot lessThanN [] = do
         hndl <- hOpen hasFS fileToWrite (AppendMode AllowExisting)
-        return $ InternalState {
+        return InternalState {
             _currentWriteHandle = hndl
           , _currentWritePath   = fileToWrite
           , _currentWriteId     = fdToWrite
@@ -553,25 +544,27 @@ mkInternalState hasFS err parser n files =
           , _nextNewFileId      = nextNewFileId'
           , _currentMap         = currentMap'
           , _currentRevMap      = currentRevMap
-          , _currentSuccMap     = succMp
+          , _currentSuccMap     = succMap
           , _currentMaxSlotNo   = FileInfo.maxSlotInFiles
                                     (Index.elems currentMap')
           }
       where
-        (fileToWrite, fdToWrite, nextNewFileId', currentMap', offset') =
-          case (safeMaximumOn (\(fileId,_,_) -> fileId) lessThanN, lastFile) of
-            (Nothing, _) -> newFileInfo currentMap $ case lastFile of
-              Just (lastFd, _) -> lastFd + 1
-              Nothing          -> 0
-            (_, Nothing) -> error errorMsg
-            (Just (writeFd, wrFile, size), Just (lastFd, _)) | writeFd == lastFd->
-              -- If the file with biggest index is non-empty,
-              -- then this is the file we're looking for.
-              (wrFile, writeFd, lastFd + 1, currentMap, size)
-            (_, Just (lastFd,_)) ->
-              -- If it's not the last file, we just ignore it and
-              -- open a new one.
-              newFileInfo currentMap $ lastFd + 1
+        (fileToWrite, fdToWrite, currentMap', offset') =
+          case lastFile of
+            Nothing ->
+              -- The db is empty. Create a new file with 'FileId' 0.
+              newFileInfo currentMap 0
+            Just (lastFd, _) ->
+              case find (\(fileId, _, _) -> fileId == lastFd) lessThanN of
+                Nothing ->
+                  -- If the last file is full, we need to create a new one.
+                  newFileInfo currentMap $ lastFd + 1
+                Just (wrFd, wrFile, size) ->
+                  -- If the last file is not full, then this is the file
+                  -- we're looking for.
+                  (wrFile, wrFd, currentMap, size)
+        nextNewFileId' = fdToWrite + 1
+
     go currentMap currentRevMap succMap maxSlot lessThanN ((fd, file):rest) = do
             (blocks, mErr) <- parse parser file
             updateAndGo blocks mErr
@@ -582,8 +575,8 @@ mkInternalState hasFS err parser n files =
                     -> m (InternalState blockId h)
         updateAndGo blocks mErr = do
             truncateOnError mErr file offset
-            newRevMp <- fromEither err $ reverseMap file currentRevMap fileMp
-            go newMp newRevMp newSuccMp newMaxSlot newHaveLessThanN rest
+            newRevMap <- fromEither err $ reverseMap file currentRevMap fileMap
+            go newMap newRevMap newSuccMap newMaxSlot newHaveLessThanN rest
           where
             offset = case reverse blocks of
               [] -> 0
@@ -591,17 +584,17 @@ mkInternalState hasFS err parser n files =
                 -- The file offset is given by the offset of the last
                 -- block plus its size.
                 slotOffset + blockSize
-            fileMp = Map.fromList blocks
+            fileMap = Map.fromList blocks
             (fileInfo, maxSlotOfFile) = FileInfo.fromParsedInfo blocks
-            newMp = Index.insert fd fileInfo currentMap
+            newMap = Index.insert fd fileInfo currentMap
             newMaxSlot = maxSlotList $ catMaybes [maxSlot, maxSlotOfFile]
             -- For each block we need to update the succesor Map of its
             -- predecesor.
-            newSuccMp = foldr
+            newSuccMap = foldr
               (\(_,(_, blockInfo)) succMap' ->
-                  insertMapSet succMap' (bbid blockInfo, bpreBid blockInfo))
-                  succMap
-                  blocks
+                insertMapSet succMap' (bbid blockInfo, bpreBid blockInfo))
+              succMap
+              blocks
             newHaveLessThanN = if FileInfo.isFull n fileInfo
               then lessThanN
               else (fd, file, offset) : lessThanN
