@@ -13,6 +13,10 @@ maintainer:          aovieth@gmail.com
 build-type:          Simple
 extra-source-files:  CHANGELOG.md
 
+flag no-chart
+  Description: Disable Chart graphs.
+  Default: False
+
 library
   exposed-modules:     Algebra.Graph.Labelled.AdjacencyMap,
                        Algebra.Graph.Labelled.AdjacencyMap.ShortestPath,
@@ -22,14 +26,14 @@ library
                        DeltaQ.Topography,
                        DeltaQ.TCP,
                        DeltaQ.Examples.AWS,
-                       DeltaQ.Examples.Charts,
                        DeltaQ.Examples.NJD,
                        DeltaQ.Examples.Gen
+  if !flag(no-chart)
+    exposed-modules:
+                       DeltaQ.Examples.Charts
   -- other-modules:
   -- other-extensions:
   build-depends:       base ^>=4.12.0.0,
-                       Chart,
-                       Chart-cairo,
                        colour,
                        containers,
                        data-default-class,
@@ -39,5 +43,10 @@ library
                        statistics,
                        time,
                        vector
+  if !flag(no-chart)
+    build-depends:
+                       Chart,
+                       Chart-cairo
+
   hs-source-dirs:      src
   default-language:    Haskell2010
