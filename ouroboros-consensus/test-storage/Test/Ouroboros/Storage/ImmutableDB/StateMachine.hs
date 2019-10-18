@@ -23,7 +23,6 @@ import           Control.Monad (forM_, when)
 import           Control.Monad.Except (ExceptT (..), runExceptT)
 import           Control.Monad.State.Strict (MonadState, State, evalState, gets,
                      modify, put, runState)
-import           Control.Tracer (nullTracer)
 import           Data.Bifunctor (first)
 import           Data.ByteString.Lazy (ByteString)
 import           Data.Coerce (Coercible, coerce)
@@ -88,6 +87,7 @@ import           Test.Util.Orphans.Arbitrary (genSmallEpochNo, genSmallSlotNo)
 import           Test.Util.RefEnv (RefEnv)
 import qualified Test.Util.RefEnv as RE
 import           Test.Util.SOP
+import           Test.Util.Tracer (recordingTracerIORef)
 
 import           Test.Ouroboros.Storage.ImmutableDB.Model
 import           Test.Ouroboros.Storage.TestBlock
@@ -1097,11 +1097,14 @@ prop_sequential = forAllCommands smUnused Nothing $ \cmds -> QC.monadicIO $ do
                   )
         test errorsVar hasFS = do
           let parser = epochFileParser hasFS (const <$> decode) isEBB
+          (tracer, getTrace) <- QC.run recordingTracerIORef
           db <- QC.run $ openDB decode encode hasFS EH.monadCatch
                           (fixedSizeEpochInfo fixedEpochSize) ValidateMostRecentEpoch
-                          parser nullTracer
+                          parser tracer
           let sm' = sm errorsVar hasFS db dbm mdb
           (hist, model, res) <- runCommands sm' cmds
+          trace <- QC.run getTrace
+          QC.monitor $ counterexample ("Trace: " <> unlines (map show trace))
           QC.run $ closeDB db >> reopen db ValidateAllEpochs
           validation <- validate model db
           dbTip <- QC.run $ do
