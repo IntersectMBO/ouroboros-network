@@ -66,8 +66,8 @@ import           Ouroboros.Consensus.Block (IsEBB (..), fromIsEBB)
 import qualified Ouroboros.Consensus.Util.Classify as C
 import           Ouroboros.Consensus.Util.IOLike
 
-import           Ouroboros.Network.Block (BlockNo, ChainHash, HasHeader (..),
-                     HeaderHash, SlotNo (..))
+import           Ouroboros.Network.Block (BlockNo (..), ChainHash (..),
+                     HasHeader (..), HeaderHash, SlotNo (..))
 
 import           Ouroboros.Storage.Common hiding (Tip (..))
 import qualified Ouroboros.Storage.Common as C
@@ -640,11 +640,18 @@ precondition :: Model m Symbolic -> At CmdErr m Symbolic -> Logic
 precondition Model {..} (At (CmdErr { _cmd = cmd })) =
    forall (iters cmd) (`elem` RE.keys knownIters) .&&
     case cmd of
+      AppendBinaryBlob _ b -> fitsOnTip b
+      AppendEBB      _ _ b -> fitsOnTip b
       Corruption corr ->
         forall (corruptionFiles corr) (`elem` getDBFiles dbModel)
       _ -> Top
   where
     corruptionFiles (MkCorruption corrs) = map snd $ NE.toList corrs
+
+    fitsOnTip :: TestBlock -> Logic
+    fitsOnTip b = case dbmTipBlock dbModel of
+      Nothing    -> blockPrevHash b .== GenesisHash
+      Just bPrev -> blockPrevHash b .== BlockHash (blockHash bPrev)
 
 transition :: (Show1 r, Eq1 r)
            => Model m r -> At CmdErr m r -> At Resp m r -> Model m r
