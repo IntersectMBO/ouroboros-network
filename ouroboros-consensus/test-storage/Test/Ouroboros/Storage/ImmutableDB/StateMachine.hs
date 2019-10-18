@@ -145,16 +145,7 @@ data CmdErr it = CmdErr
     -- first close all open iterators in these cases.
     --
     -- See #328
-  } deriving (Generic, Functor, Foldable, Traversable)
-
-instance Show it => Show (CmdErr it) where
-  showsPrec d (CmdErr mbErrors cmd its) = showParen (d > 10) $
-      showString constr . showsPrec 11 cmd . showString " " .
-      shows its
-    where
-      constr = case mbErrors of
-        Nothing  -> "Cmd "
-        Just err -> "Cmd " <> show err <> " "
+  } deriving (Show, Generic, Functor, Foldable, Traversable)
 
 type Hash = TestHeaderHash
 
@@ -207,25 +198,13 @@ run runCorruption its db cmd = case cmd of
 
 -- | Responses are either successful termination or an error.
 newtype Resp it = Resp { getResp :: Either ImmutableDBError (Success it) }
-  deriving (Functor, Foldable, Traversable)
+  deriving (Functor, Foldable, Traversable, Show)
 
 -- | The 'Eq' instance for 'Resp' uses 'sameImmutableDBError'.
 instance Eq it => Eq (Resp it) where
   Resp (Left  e) == Resp (Left  e') = sameImmutableDBError e e'
   Resp (Right a) == Resp (Right a') = a == a'
   _              == _               = False
-
--- | Don't print the callstack and parameters in the 'ImmutableDBError', just
--- the 'FsErrorType' or the constructor name.
-instance Show it => Show (Resp it) where
-  show resp = "(Resp " <> str <> ")"
-    where
-      str = case getResp resp of
-        Right success                                -> show success
-        Left (UserError ue _)                        -> show ue
-        Left (UnexpectedError (FileSystemError fse)) -> show (fsErrorType fse)
-        Left (UnexpectedError ue)                    ->
-          prettyImmutableDBError (UnexpectedError ue)
 
 -- | The monad used to run pure model/mock implementation of the database.
 type PureM = ExceptT ImmutableDBError (State (DBModel Hash))
@@ -333,9 +312,7 @@ step model@Model{..} cmdErr = runPure dbModel mockDB (toMock model cmdErr)
 newtype At t m r = At { unAt :: t (IterRef m r) }
   deriving (Generic)
 
--- | Don't print the 'At' constructor.
-instance Show (t (IterRef m r)) => Show (At t m r) where
-  show = show . unAt
+deriving instance Show (t (IterRef m r)) => Show (At t m r)
 
 deriving instance Eq1 r => Eq (At Resp m r)
 
