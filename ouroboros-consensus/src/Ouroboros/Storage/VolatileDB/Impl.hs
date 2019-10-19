@@ -592,7 +592,10 @@ mkInternalState hasFS@HasFS{..} err parser n files =
     go currentMap currentRevMap succMap maxSlot lessThanN ((fd, file):rest) = do
         (blocks, mErr) <- parse parser file
         hndlRead <- hOpen file ReadMode
-        updateAndGo blocks hndlRead mErr
+        -- TODO: We can use @ResourceRegistry@ for a  better way to handle
+        -- recourses. In particular the approach here may allow open handles leaks
+        -- in case of async-exceptions.
+        updateAndGo blocks hndlRead mErr `onException` hClose hndlRead
       where
         -- | Updates the state and call 'go' for the rest of the files.
         updateAndGo :: [(SlotOffset, (BlockSize, BlockInfo blockId))]

@@ -1,9 +1,12 @@
+{-# LANGUAGE PackageImports #-}
+
 module Ouroboros.Storage.IO (
       FHandle
     , open
     , truncate
     , seek
     , read
+    , pread
     , write
     , close
     , getSize
@@ -20,6 +23,9 @@ import           Data.Word (Word32, Word64, Word8)
 import           Foreign (Ptr)
 import           System.Posix (Fd)
 import qualified System.Posix as Posix
+
+-- Package 'unix' has a same module.
+import "unix-bytestring" System.Posix.IO.ByteString (fdPreadBuf)
 
 import           Ouroboros.Storage.FS.API.Types (AllowExisting (..), FsError,
                      OpenMode (..), SeekMode (..), sameFsError)
@@ -91,6 +97,11 @@ read :: FHandle -> Word64 -> IO ByteString
 read h bytes = withOpenHandle "read" h $ \fd ->
     Internal.createUptoN (fromIntegral bytes) $ \ptr ->
       fromIntegral <$> Posix.fdReadBuf fd ptr (fromIntegral bytes)
+
+pread :: FHandle -> Word64 -> Int64 -> IO ByteString
+pread h bytes offset = withOpenHandle "read" h $ \fd ->
+    Internal.createUptoN (fromIntegral bytes) $ \ptr ->
+      fromIntegral <$> fdPreadBuf fd ptr (fromIntegral bytes) (fromIntegral offset)
 
 -- | Truncates the file managed by the input 'FHandle' to the input size.
 truncate :: FHandle -> Word64 -> IO ()

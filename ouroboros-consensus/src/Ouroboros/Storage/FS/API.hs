@@ -10,7 +10,9 @@ module Ouroboros.Storage.FS.API (
       HasFS(..)
     , Handle(..)
     , hGetExactly
+    , hGetExactlyAt
     , hGetAll
+    , hGetAllAt
     , hPut
     , hPutAll
     , hPutAllStrict
@@ -72,7 +74,7 @@ data HasFS m h = HasFS {
     --
     -- Postcondition: the length of the returned bytestring <= @n@ and >= 0.
   , hGetSome                 :: HasCallStack => Handle h -> Word64 -> m BS.ByteString
-
+  , hGetSomeAt               :: HasCallStack => Handle h -> Word64 -> Int64 -> m BS.ByteString
     -- | Write to a handle
     --
     -- The return value indicates the number of bytes written and will
@@ -141,7 +143,7 @@ hGetExactly hasFS h n = go n []
       | remainingBytes == 0 = return $ BL.fromChunks $ reverse acc
       | otherwise           = do
         bs <- hGetSome hasFS h remainingBytes
-        if BS.null bs then do
+        if BS.null bs then
           throwError (hasFsErr hasFS) FsError {
               fsErrorType   = FsReachedEOF
             , fsErrorPath   = handlePath h
@@ -152,6 +154,36 @@ hGetExactly hasFS h n = go n []
             }
         -- We know the length <= remainingBytes, so this can't underflow
         else go (remainingBytes - fromIntegral (BS.length bs)) (bs : acc)
+
+-- | Like 'hGetExactly', but is thread safe since it does not change or depend
+-- on the file offset. @pread@ syscall is used internally.
+hGetExactlyAt :: forall m h. (HasCallStack, Monad m)
+              => HasFS m h
+              -> Handle h
+              -> Word64
+              -> Int64
+              -> m BL.ByteString
+hGetExactlyAt hasFS h n offset = go n offset []
+  where
+    go :: Word64 -> Int64 -> [BS.ByteString] -> m BL.ByteString
+    go remainingBytes currentOffset acc
+      | remainingBytes == 0 = return $ BL.fromChunks $ reverse acc
+      | otherwise           = do
+        bs <- hGetSomeAt hasFS h remainingBytes currentOffset
+        let readBytes = BS.length bs
+        if BS.null bs then
+          throwError (hasFsErr hasFS) FsError {
+              fsErrorType   = FsReachedEOF
+            , fsErrorPath   = handlePath h
+            , fsErrorString = "hGetExactly found eof before reading " ++ show n ++ " bytes"
+            , fsErrorNo     = Nothing
+            , fsErrorStack  = callStack
+            , fsLimitation  = False
+            }
+        -- We know the length <= remainingBytes, so this can't underflow.
+        else go (remainingBytes - fromIntegral readBytes)
+                (currentOffset + fromIntegral readBytes)
+                (bs : acc)
 
 -- | Read all the data from the given file handle 64kB at a time.
 --
@@ -166,6 +198,19 @@ hGetAll HasFS{..} hnd = go mempty
       if BS.null chunk
         then return $ BL.fromChunks $ reverse acc'
         else go acc'
+
+-- | Like 'hGetAll', but is thread safe since it does not change or depend
+-- on the file offset. @pread@ syscall is used internally.
+hGetAllAt :: Monad m => HasFS m h -> Handle h -> m BL.ByteString
+hGetAllAt HasFS{..} hnd = go mempty 0
+  where
+    bufferSize = 64 * 1024
+    go acc offset = do
+      chunk <- hGetSomeAt hnd bufferSize offset
+      let acc' = chunk : acc
+      if BS.null chunk
+        then return $ BL.fromChunks $ reverse acc'
+        else go acc' (offset + fromIntegral (BS.length chunk))
 
 -- | This function makes sure that the whole 'BS.ByteString' is written.
 hPutAllStrict :: forall m h
