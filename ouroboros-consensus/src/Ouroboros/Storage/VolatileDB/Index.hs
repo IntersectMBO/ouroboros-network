@@ -27,28 +27,28 @@ import           Ouroboros.Storage.VolatileDB.FileInfo (FileInfo)
 
 -- For each file, we store the latest blockId, the number of blocks
 -- and a Map for its contents.
-newtype Index blockId = Index {unIndex :: IntMap (FileInfo blockId)}
+newtype Index blockId h = Index {unIndex :: IntMap (FileInfo blockId h)}
   deriving (Generic, NoUnexpectedThunks)
 
-modifyIndex :: (IntMap (FileInfo blockId) -> IntMap (FileInfo blockId))
-            -> Index blockId
-            -> Index blockId
+modifyIndex :: (IntMap (FileInfo blockId h) -> IntMap (FileInfo blockId h))
+            -> Index blockId h
+            -> Index blockId h
 modifyIndex mdf (Index mp) = Index (mdf mp)
 
-empty :: Index blockId
+empty :: Index blockId h
 empty = Index IM.empty
 
-lookup :: FileId -> Index blockId -> Maybe (FileInfo blockId)
+lookup :: FileId -> Index blockId h -> Maybe (FileInfo blockId h)
 lookup path (Index mp) = IM.lookup path mp
 
-insert :: FileId -> FileInfo blockId -> Index blockId -> Index blockId
+insert :: FileId -> FileInfo blockId h -> Index blockId h -> Index blockId h
 insert path info = modifyIndex (IM.insert path info)
 
-delete :: FileId -> Index blockId -> Index blockId
+delete :: FileId -> Index blockId h -> Index blockId h
 delete path = modifyIndex (IM.delete path)
 
-toList :: Index blockId -> [(FileId, FileInfo blockId)]
+toList :: Index blockId h -> [(FileId, FileInfo blockId h)]
 toList (Index mp) = IM.toList mp
 
-elems :: Index blockId -> [FileInfo blockId]
+elems :: Index blockId h -> [FileInfo blockId h]
 elems (Index mp) = IM.elems mp
