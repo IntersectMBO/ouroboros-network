@@ -31,6 +31,7 @@ module Test.Util.FS.Sim.MockFS (
   , hClose
   , hSeek
   , hGetSome
+  , hGetSomeAt
   , hPutSome
   , hTruncate
   , hGetSize
@@ -306,6 +307,20 @@ withHandleRead err h f =
     withHandleModify err h $ \fs hs ->
       second (mockFiles fs, ) <$> f fs hs
 
+-- | Require a file handle but do not modify the mock file system or the
+-- 'HandleState'
+withHandleStateRead :: CanSimFS m
+                    => ErrorHandling FsError m
+                    -> Handle'
+                    -> (    MockFS
+                         -> HandleState
+                         -> m a
+                       )
+                    -> m a
+withHandleStateRead err h f =
+    withHandleModify err h $ \fs hs ->
+      (, (mockFiles fs, hs)) <$> f fs hs
+
 -- | Require an open file handle to modify the mock file system
 withOpenHandleModify :: CanSimFS m
                      => ErrorHandling FsError m
@@ -342,6 +357,29 @@ withOpenHandleRead err@ErrorHandling{..} h f =
     withHandleRead err h $ \fs -> \case
       HandleOpen hs ->
         second HandleOpen <$> f fs hs
+      HandleClosed ClosedHandle{..} ->
+        throwError FsError {
+            fsErrorType   = FsIllegalOperation
+          , fsErrorPath   = closedFilePath
+          , fsErrorString = "handle closed"
+          , fsErrorNo     = Nothing
+          , fsErrorStack  = callStack
+          , fsLimitation  = False
+          }
+
+-- | Require an open file handle but do not modify the mock file system
+-- or the 'HandleState'
+withOpenHandleStateRead :: CanSimFS m
+                        => ErrorHandling FsError m
+                        -> Handle'
+                        -> (    MockFS
+                             -> OpenHandleState
+                             -> m a
+                           )
+                        -> m a
+withOpenHandleStateRead err@ErrorHandling{..} h f =
+    withHandleStateRead err h $ \fs -> \case
+      HandleOpen hs -> f fs hs
       HandleClosed ClosedHandle{..} ->
         throwError FsError {
             fsErrorType   = FsIllegalOperation
@@ -542,6 +580,56 @@ hGetSome err@ErrorHandling{..} h n =
       , fsLimitation  = True
       }
 
+-- | Thread safe version of 'hGetSome', which doesnt modify or read the file
+-- offset.
+hGetSomeAt :: CanSimFS m
+           => ErrorHandling FsError m
+           -> Handle'
+           -> Word64
+           -> Int64
+           -> m ByteString
+hGetSomeAt err@ErrorHandling{..} h n o =
+    withOpenHandleStateRead err h $ \fs OpenHandle{..} -> do
+      file <- checkFsTree err $ FS.getFile openFilePath (mockFiles fs)
+      let fsize = fromIntegral (BS.length file) :: Word64
+      case (openPtr, sign64 o)  of
+        (RW r _ _, Positive o') -> do
+          unless r $ throwError (errNoReadAccess openFilePath "write")
+          let bs = BS.take (fromIntegral n) . BS.drop (fromIntegral o) $ file
+          -- This is the same fsLimitation we get when we seek past the end of
+          -- EOF, in AbsoluteSeek mode.
+          when (o' > fsize) $ throwError (errPastEnd openFilePath)
+          return bs
+        (_, Negative _) -> throwError $ errNegative openFilePath
+        (Append, _) -> throwError (errNoReadAccess openFilePath "append")
+  where
+    errNoReadAccess fp mode = FsError {
+        fsErrorType   = FsInvalidArgument
+      , fsErrorPath   = fp
+      , fsErrorString = "cannot hGetSomeAt in " <> mode <> " mode"
+      , fsErrorNo     = Nothing
+      , fsErrorStack  = callStack
+      , fsLimitation  = True
+      }
+
+    errPastEnd fp = FsError {
+        fsErrorType   = FsInvalidArgument
+      , fsErrorPath   = fp
+      , fsErrorString = "hGetSomeAt offset past EOF not supported"
+      , fsErrorNo     = Nothing
+      , fsErrorStack  = callStack
+      , fsLimitation  = True
+      }
+
+    errNegative fp = FsError {
+        fsErrorType   = FsInvalidArgument
+      , fsErrorPath   = fp
+      , fsErrorString = "hGetSomeAt negative offset not supported"
+      , fsErrorNo     = Nothing
+      , fsErrorStack  = callStack
+      , fsLimitation  = True -- for seek this is not a limitation.
+      }
+
 hPutSome :: CanSimFS m => ErrorHandling FsError m -> Handle' -> ByteString -> m Word64
 hPutSome err@ErrorHandling{..} h toWrite =
     withOpenHandleModify err h $ \fs hs@OpenHandle{..} -> do
@@ -646,9 +734,9 @@ hTruncate err@ErrorHandling{..} h sz =
 -- only one writer, so concurrent threads cannot change the size of the file.
 hGetSize :: CanSimFS m => ErrorHandling FsError m -> Handle' -> m Word64
 hGetSize err h =
-    withOpenHandleRead err h $ \fs hs@OpenHandle{..} -> do
+    withOpenHandleStateRead err h $ \fs OpenHandle{..} -> do
       file <- checkFsTree err $ FS.getFile openFilePath (mockFiles fs)
-      return (fromIntegral (BS.length file), hs)
+      return $ fromIntegral $ BS.length file
 
 {-------------------------------------------------------------------------------
   Operations on directories

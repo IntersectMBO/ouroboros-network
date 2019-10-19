@@ -262,10 +262,9 @@ getBlockImpl env@VolatileDBEnv{..} slot =
             Nothing ->
               -- All files should be open.
               throwError _dbErr $ UnexpectedError $ FileNotFound ibFile
-            Just hndl -> do
+            Just hndl ->
               -- TODO: use pread when available.
-              _ <- hSeek hndl AbsoluteSeek (fromIntegral ibSlotOffset)
-              hGetExactly hasFS hndl ibBlockSize
+              hGetExactlyAt hasFS hndl ibBlockSize (fromIntegral ibSlotOffset)
           return $ Just bs
 
 -- | This function follows the approach:

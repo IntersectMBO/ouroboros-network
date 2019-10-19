@@ -579,13 +579,12 @@ getEpochSlot _dbHasFS hashDecoder OpenState {..} _dbErr epochSlot = do
         let indexSeekPosition =
               (fromIntegral (unRelativeSlot relativeSlot)) *
               fromIntegral indexEntrySizeBytes
-        hSeek iHnd AbsoluteSeek indexSeekPosition
         -- Compute the offset on disk and the blob size.
         let nbBytesToGet = fromIntegral indexEntrySizeBytes * 2
-        -- Note the use of hGetExactly: we must get enough bytes from the
+        -- Note the use of hGetExactlyAt: we must get enough bytes from the
         -- index file, otherwise 'decodeIndexEntry' (and its variant) would
         -- fail.
-        bytes <- toStrict <$> hGetExactly _dbHasFS iHnd nbBytesToGet
+        bytes <- toStrict <$> hGetExactlyAt _dbHasFS iHnd nbBytesToGet indexSeekPosition
         let !start = decodeIndexEntry   bytes
             !end   = decodeIndexEntryAt indexEntrySizeBytes bytes
 
@@ -611,8 +610,8 @@ getEpochSlot _dbHasFS hashDecoder OpenState {..} _dbErr epochSlot = do
       0 -> return Nothing
       _ -> withFile _dbHasFS epochFile ReadMode $ \eHnd -> do
         -- Seek in the epoch file
-        hSeek eHnd AbsoluteSeek (fromIntegral blobOffset)
-        Just <$> hGetExactly _dbHasFS eHnd (fromIntegral blobSize)
+        Just <$> hGetExactlyAt _dbHasFS eHnd (fromIntegral blobSize)
+                  (fromIntegral blobOffset)
 
     return (mbEBBHash, mbBlob)
   where

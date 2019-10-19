@@ -51,6 +51,7 @@ simHasFS err var = HasFS {
     , hClose                   = sim  .  Mock.hClose                   err'
     , hSeek                    = sim ..: Mock.hSeek                    err'
     , hGetSome                 = sim  .: Mock.hGetSome                 err'
+    , hGetSomeAt               = sim ..: Mock.hGetSomeAt               err'
     , hPutSome                 = sim  .: Mock.hPutSome                 err'
     , hTruncate                = sim  .: Mock.hTruncate                err'
     , hGetSize                 = sim  .  Mock.hGetSize                 err'
