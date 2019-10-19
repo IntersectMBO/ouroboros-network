@@ -54,7 +54,7 @@
           (hsPkgs.vector)
           ] ++ (if system.isWindows
           then [ (hsPkgs.Win32) ]
-          else [ (hsPkgs.unix) ]);
+          else [ (hsPkgs.unix) (hsPkgs.unix-bytestring) ]);
         };
       exes = {
         "byron-db-converter" = {

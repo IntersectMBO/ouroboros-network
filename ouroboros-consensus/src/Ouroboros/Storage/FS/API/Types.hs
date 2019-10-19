@@ -1,9 +1,10 @@
-{-# LANGUAGE DataKinds          #-}
-{-# LANGUAGE DeriveGeneric      #-}
-{-# LANGUAGE DerivingStrategies #-}
-{-# LANGUAGE DerivingVia        #-}
-{-# LANGUAGE RecordWildCards    #-}
-{-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE DataKinds                  #-}
+{-# LANGUAGE DeriveGeneric              #-}
+{-# LANGUAGE DerivingStrategies         #-}
+{-# LANGUAGE DerivingVia                #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE RecordWildCards            #-}
+{-# LANGUAGE StandaloneDeriving         #-}
 
 -- For Show Errno and Condense SeekMode instances
 {-# OPTIONS_GHC -Wno-orphans #-}
@@ -25,6 +26,8 @@ module Ouroboros.Storage.FS.API.Types (
   , fsFromFilePath
     -- * Handles
   , Handle(..)
+    -- * Offset
+  , AbsOffset(..)
     -- * Errors
   , FsError(..)
   , FsErrorType(..)
@@ -41,6 +44,7 @@ import           Control.Exception
 import           Data.Function (on)
 import           Data.List (intercalate, stripPrefix)
 import qualified Data.Text as Strict
+import           Data.Word
 import           Foreign.C.Error (Errno (..))
 import qualified Foreign.C.Error as C
 import           GHC.Generics (Generic)
@@ -157,6 +161,14 @@ instance Eq h => Eq (Handle h) where
 
 instance Show (Handle h) where
   show (Handle _ fp) = "<Handle " ++ fsToFilePath (MountPoint "<root>") fp ++ ">"
+
+
+{-------------------------------------------------------------------------------
+  Offset wrappers
+-------------------------------------------------------------------------------}
+
+newtype AbsOffset = AbsOffset { unAbsOffset :: Word64 }
+  deriving (Eq, Ord, Enum, Bounded, Num, Show)
 
 {-------------------------------------------------------------------------------
   Errors

@@ -227,6 +227,7 @@ library
      build-depends:       Win32 >= 2.6.2.0
   else
      build-depends:       unix
+                        , unix-bytestring
 
   ghc-options:         -Wall
                        -Wno-unticked-promoted-constructors
