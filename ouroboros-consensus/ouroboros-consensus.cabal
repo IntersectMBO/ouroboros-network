@@ -214,6 +214,7 @@ library
                        cardano-ledger,
                        cardano-prelude,
                        cborg             >=0.2.2 && <0.3,
+                       concurrent-extra,
                        constraints,
                        containers        >=0.5   && <0.7,
                        cryptonite        >=0.25  && <0.26,
