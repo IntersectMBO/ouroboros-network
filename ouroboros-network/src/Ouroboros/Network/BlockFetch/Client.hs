@@ -70,12 +70,12 @@ type BlockFetchClient header block m a =
 -- | The implementation of the client side of block fetch protocol designed to
 -- work in conjunction with our fetch logic.
 --
-blockFetchClient :: forall header block m.
+blockFetchClient :: forall header block m void.
                     (MonadSTM m, MonadTime m, MonadThrow m,
                      HasHeader header, HasHeader block,
                      HeaderHash header ~ HeaderHash block)
                  => FetchClientContext header block m
-                 -> PeerPipelined (BlockFetch block) AsClient BFIdle m ()
+                 -> PeerPipelined (BlockFetch block) AsClient BFIdle m void
 blockFetchClient FetchClientContext {
                    fetchClientCtxTracer    = tracer,
                    fetchClientCtxPolicy    = FetchClientPolicy {
@@ -90,7 +90,7 @@ blockFetchClient FetchClientContext {
     senderIdle :: forall n.
                   Nat n
                -> PeerSender (BlockFetch block) AsClient
-                             BFIdle n () m ()
+                             BFIdle n () m void
 
     -- We have no requests to send. Check if we have any pending pipelined
     -- results to collect. If so, go round and collect any more. If not, block
@@ -117,7 +117,7 @@ blockFetchClient FetchClientContext {
     senderAwait :: forall n.
                    Nat n
                 -> PeerSender (BlockFetch block) AsClient
-                              BFIdle n () m ()
+                              BFIdle n () m void
     senderAwait outstanding =
       SenderEffect $ do
       -- Atomically grab our next request and update our tracking state.
@@ -142,7 +142,7 @@ blockFetchClient FetchClientContext {
                  -> PeerFetchInFlightLimits
                  -> [ChainFragment header]
                  -> PeerSender (BlockFetch block) AsClient
-                               BFIdle n () m ()
+                               BFIdle n () m void
 
     -- We now do have some requests that we have accepted but have yet to
     -- actually send out. Lets send out the first one.

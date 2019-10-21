@@ -106,16 +106,16 @@ instance Exception TxSubmissionProtocolError where
 
 
 txSubmissionOutbound
-  :: forall txid tx idx m.
+  :: forall txid tx idx m void.
      (Ord txid, Ord idx, MonadSTM m, MonadThrow m)
   => Tracer m (TraceTxSubmissionOutbound txid tx)
   -> Word16         -- ^ Maximum number of unacknowledged txids allowed
   -> TxSubmissionMempoolReader txid tx idx m
-  -> TxSubmissionClient txid tx m ()
+  -> TxSubmissionClient txid tx m void
 txSubmissionOutbound _tracer maxUnacked TxSubmissionMempoolReader{..} =
     TxSubmissionClient (pure (client Seq.empty Map.empty mempoolZeroIdx))
   where
-    client :: StrictSeq txid -> Map txid idx -> idx -> ClientStIdle txid tx m ()
+    client :: StrictSeq txid -> Map txid idx -> idx -> ClientStIdle txid tx m void
     client !unackedSeq !unackedMap !lastIdx =
         assert invariant
         ClientStIdle { recvMsgRequestTxIds, recvMsgRequestTxs }
@@ -130,7 +130,7 @@ txSubmissionOutbound _tracer maxUnacked TxSubmissionMempoolReader{..} =
                                TokBlockingStyle blocking
                             -> Word16
                             -> Word16
-                            -> m (ClientStTxIds blocking txid tx m ())
+                            -> m (ClientStTxIds blocking txid tx m void)
         recvMsgRequestTxIds blocking ackNo reqNo = do
 
           when (ackNo > fromIntegral (Seq.length unackedSeq)) $
@@ -201,7 +201,7 @@ txSubmissionOutbound _tracer maxUnacked TxSubmissionMempoolReader{..} =
 
 
         recvMsgRequestTxs :: [txid]
-                          -> m (ClientStTxs txid tx m ())
+                          -> m (ClientStTxs txid tx m void)
         recvMsgRequestTxs txids = do
           MempoolSnapshot{mempoolLookupTx} <- atomically mempoolGetSnapshot
 
