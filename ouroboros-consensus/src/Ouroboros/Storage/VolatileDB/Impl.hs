@@ -44,8 +44,8 @@
 -- as it can recovered. This is important since we must always expect unexpected
 -- shutdowns, power loss, sleep mode etc.
 -- This is achived by leting only basic operations on the db:
--- + putBlock only appends a new block on a file. Losing an update means we only
---   lose a block, which can be recovered.
+-- + 'putBlock' only appends a new block on a file. Losing an update means we
+--   only lose a block, which can be recovered.
 -- + garbage collect deletes only whole files.
 -- + there is no modify block operation. Thanks to that we need not keep any
 --   rollback journals to make sure we are safe in case of unexpected shutdowns.
@@ -56,10 +56,36 @@
 -- are safe. You can safely use HasFs calls in modifyState or wrapFsError
 -- actions.
 --
+-- = Read Handles
+--
+-- The implementation tries to minimize the number of times opens for read. For
+-- this reason, when a file is created, an open handle in 'ReadMode' is kept in
+-- its 'FileInfo'. See Concurrency below for an explanation about how concurrency
+-- on the same handle is managed. The handle closes when the file is garbage
+-- collected or when the db closes. Making sure that we don't leak file handles
+-- is important and not very trivial. q-s-m tests have caught some bugs of
+-- leaking handles and a first version of resource handling (with simple
+-- 'onException' calls) is implemented. In the future, we may want to use
+-- @ResourceRegistry@ for this.
+--
 -- = Concurrency
 --
--- The same db should only be opened once
--- Multiple threads can share the same db as concurency if fully supported.
+-- The same db should only be opened once at a time.  Multiple threads can
+-- share the same db and use the whole api.
+--
+-- There are two levels of locking:
+-- + the global lock of the 'InternalState' of the VolatileDB and
+-- + the locks of each open handle.
+--
+-- Most operations are serialized on the 'InternalState' lock. However 'getBlock'
+-- only reads this lock, without taking it. So it is possible that a 'getBlock'
+-- operation runs concurrently to another 'getBlock', a 'putBlock' or a
+-- 'garbageCollect'. For protection between two concurrent 'getBlock', the
+-- @pread@ system call is used. For protection between 'getBlock' and other
+-- operations, which may close the handle, read/write locks are used in the FS
+-- layer. In this way, we don't have concurrent @pread(2)@ and @close(2)@,
+-- which are incompatible. In any case, when we delete or truncate a file,
+-- we have to first close its read Handle and, in case of truncate, reopen it.
 --
 -- = FS Layout:
 --
@@ -384,10 +410,6 @@ tryCollectFile hasFS@HasFS{..} env slot st@InternalState{..} (fileId, fileInfo) 
             -- We reach this case if we have to garbage collect the current file
             -- we are appending blocks to. I'm not sure how realistic this case
             -- is and maybe we want to skip this garbage collection.
-            --
-            -- 'ReOpenFile' techinally truncates the file to 0 offset, so any
-            -- concurrent readers may fail. This may become an issue after:
-            -- <https://github.com/input-output-hk/ouroboros-network/issues/767>
             st' <- reOpenFile hasFS (_dbErr env) env st
             return st' {
                 _currentRevMap  = currentRevMap'
@@ -453,8 +475,8 @@ nextFile HasFS{..} _err VolatileDBEnv{..} st@InternalState{..} = do
       , _currentWritePath   = file
       , _currentWriteId     = _nextNewFileId
       , _currentWriteOffset = 0
-      , _currentMap         = Index.insert _nextNewFileId (FileInfo.empty hndlRead)
-                                _currentMap
+      , _currentMap         = Index.insert _nextNewFileId
+                                (FileInfo.empty hndlRead) _currentMap
       , _nextNewFileId      = _nextNewFileId + 1
       }
   where
@@ -475,7 +497,8 @@ reOpenFile HasFS{..} _err VolatileDBEnv{..} st@InternalState{..} = do
     -- @read: FHandle closed@ user error. If we don't close the handle
     -- a reader may read from a offset bigger than the size of the file,
     -- which we shouldn't allow.
-    forM_ (FileInfo.getHandle <$> Index.lookup _currentWriteId _currentMap) hClose
+    forM_ (FileInfo.getHandle <$> Index.lookup _currentWriteId _currentMap)
+      hClose
 
     -- According to the manual, truncate does not affect offset.
     -- However the file is open on Append Only, so it should automatically go
@@ -758,7 +781,8 @@ reverseMap :: forall blockId. Ord blockId
            -> ReverseIndex blockId
            -> Map SlotOffset (BlockSize, BlockInfo blockId)
            -> Either (VolatileDBError blockId) (ReverseIndex blockId)
-reverseMap (fileId, file) revMap mp = foldM insertNewBlockInfo revMap (Map.toList mp)
+reverseMap (fileId, file) revMap currentMap =
+    foldM insertNewBlockInfo revMap (Map.toList currentMap)
   where
     -- | If the block is not new, that's an error.
     insertNewBlockInfo :: ReverseIndex blockId
