@@ -13,8 +13,8 @@ let
 
   # Custom jupyterWith allows for setting the IHaskell and nixpkgs revisions.
   jupyterWithSrc = builtins.fetchTarball {
-    url = "https://github.com/avieth/jupyterWith/archive/382a202efbc0130f4baba62b7adaf95e3f9e1840.tar.gz";
-    sha256 = "0zhjxp65zc1pg4nv9vrwggkdf2w8fcvyg5bvjklilf8z59i0mmf3";
+    url = "https://github.com/avieth/jupyterWith/archive/f9d739aa3da4016b5042acff7b296b8409684274.tar.gz";
+    sha256 = "1fx4qfg7l6g7jz1fqx755d629r7i3zlcbvp7434axaxddxjpa3i6";
   };
   jupyterWith = import jupyterWithSrc { inherit nixpkgs; ihaskell = ihaskellSrc; };
 
@@ -42,12 +42,15 @@ let
       Chart
       Chart-cairo
       ihaskell-charts
+      ihaskell-graphviz
       cairo
       colour
       containers
       data-default-class
       deepseq
+      diagrams
       fingertree
+      graphviz
       random
       statistics
       time
@@ -63,6 +66,8 @@ let
   # BUG: if you give no kernels ([]) it fails...
   jupyterEnvironment = jupyterWith.jupyterlabWith {
     kernels = [ ipythonKernel ihaskellKernel ];
+    # Need the dot executable in order to use ihaskell-graphviz
+    extrapkgs = pkgs: [ pkgs.graphviz ];
   };
 in
   jupyterEnvironment.env
