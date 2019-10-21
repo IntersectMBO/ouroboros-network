@@ -59,6 +59,62 @@ data VolatileDB blockId m = VolatileDB {
       -- PRECONDITION: the block must be a member of the VolatileDB, you can
       -- use 'getIsMember' to check this.
     , getPredecessor :: HasCallStack => STM m (blockId -> WithOrigin blockId)
+      -- | Try to remove all blocks with a slot number less than the given
+      -- one.
+      --
+      -- = Context
+      --
+      -- When the current chain changes, blocks older than @k@, i.e., blocks
+      -- that are followed by @k@ blocks or more, become /immutable/. Whenever
+      -- this happens, we schedule a garbage collection on the VolatileDB that
+      -- will try to remove blocks older than the most recent immutable block,
+      -- as such blocks will never be adopted. There's no point in storing
+      -- them anymore.
+      --
+      -- = Block number vs slot number
+      --
+      -- While we typically talk in terms of /block numbers/ when discussing
+      -- immutability, i.e., /@k@ blocks/, we use /slot number/ for garbage
+      -- collection. We schedule a garbage collection for blocks with a /slot
+      -- number/ less than the slot number of the immutable block, as opposed
+      -- to the block number. The reason for this is that the VolatileDB is
+      -- not aware of block numbers, only of slot numbers.
+      --
+      -- By using slot numbers for garbage collection, we might not /yet/ have
+      -- garbage collected some blocks that could never be adopted again and
+      -- that we would have garbage collected when using block numbers. This
+      -- is harmless. The opposite direction is more important and
+      -- problematic: garbage collecting a block that we might want to adopt
+      -- after all. Say we have mistakenly garbage collected such a block, in
+      -- that case the following would be true:
+      --
+      -- 1. The block has a slot number older than the immutable block's slot
+      --    number: otherwise we wouldn't have mistakenly garbage collected
+      --    it.
+      --
+      -- 2. The block has a block number greater than the immutable block's
+      --    block number: otherwise we wouldn't want to adopt it, as it would
+      --    have been older than @k@.
+      --
+      -- 3. The block is a part of a fork fitting on the immutable block. As
+      --    we cannot roll back this block, all forks we could ever adopt
+      --    would have to go through this block.
+      --
+      -- As slot numbers grow monotonically within a chain, all forks starting
+      -- after the immutable block will only contain blocks with slot numbers
+      -- greater (or equal to in case of EBBs) than the immutable block's slot
+      -- number. This directly contradicts (1), so we will /never/ garbage
+      -- collect a block that we might still want to adopt.
+      --
+      -- = Less than vs. less than or equal to
+      --
+      -- Note that we remove blocks with a slot number /less than/ the given
+      -- slot number, but not /equal to/ it. In practice, this off-by-one
+      -- difference will not matter in terms of disk space usage, because as
+      -- soon as the chain grows again by at least one block, those blocks
+      -- will be removed anyway. The reason for @<@ opposed to @<=@ is to
+      -- avoid issues with /EBBs/, which have the same slot number as the
+      -- block after it.
     , garbageCollect :: HasCallStack => SlotNo -> m ()
     , getIsMember    :: HasCallStack => STM m (blockId -> Bool)
       -- | Return the highest slot number ever stored by the VolatileDB.
