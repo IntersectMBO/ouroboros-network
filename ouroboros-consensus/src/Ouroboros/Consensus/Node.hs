@@ -301,6 +301,8 @@ initNetwork registry nodeArgs kernel RunNetworkArgs{..} = do
     -- serve downstream nodes
     connTable  <- newConnectionTable
     peerStatesVar <- newPeerStatesVar
+    -- every 200s clean peer states
+    forkLinkedThread registry (NodeToNode.cleanPeerStates 200 peerStatesVar)
     peerServers <- forM rnaMyAddrs
         (\a -> forkLinkedThread registry $ runPeerServer connTable peerStatesVar a)
 

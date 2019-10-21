@@ -47,6 +47,7 @@ module Ouroboros.Network.NodeToNode (
   , ErrorPolicy (..)
   , PeerStates (..)
   , newPeerStatesVar
+  , cleanPeerStates
   , PeerState (..)
   , SuspendDecision (..)
 

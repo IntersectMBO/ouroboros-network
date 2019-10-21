@@ -35,6 +35,7 @@ module Ouroboros.Network.NodeToClient (
   , WithAddr (..)
   , PeerStates (..)
   , newPeerStatesVar
+  , cleanPeerStates
   , PeerState (..)
   , SuspendDecision (..)
   , newConnectionTable

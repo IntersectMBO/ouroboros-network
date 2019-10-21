@@ -184,6 +184,7 @@ serverPingPong :: IO ()
 serverPingPong = do
     tbl <- newConnectionTable
     peerStatesVar <- newPeerStatesVar
+    _ <- async $ cleanPeerStates 200 peerStatesVar
     withServerNode
       nullTracer
       nullTracer
@@ -291,6 +292,7 @@ serverPingPong2 :: IO ()
 serverPingPong2 = do
     tbl <- newConnectionTable
     peerStatesVar <- newPeerStatesVar
+    _ <- async $ cleanPeerStates 200 peerStatesVar
     withServerNode
       nullTracer
       nullTracer
@@ -372,6 +374,7 @@ serverChainSync :: FilePath -> IO ()
 serverChainSync sockAddr = do
     tbl <- newConnectionTable
     peerStatesVar <- newPeerStatesVar
+    _ <- async $ cleanPeerStates 200 peerStatesVar
     withServerNode
       nullTracer
       nullTracer
@@ -581,6 +584,7 @@ serverBlockFetch :: FilePath -> IO ()
 serverBlockFetch sockAddr = do
     tbl <- newConnectionTable
     peerStatesVar <- newPeerStatesVar
+    _ <- async $ cleanPeerStates 200 peerStatesVar
     withServerNode
       nullTracer
       nullTracer

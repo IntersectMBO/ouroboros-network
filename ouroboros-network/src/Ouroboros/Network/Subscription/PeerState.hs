@@ -21,6 +21,7 @@ module Ouroboros.Network.Subscription.PeerState
   , threadsToCancel
   , PeerStates (..)
   , newPeerStatesVar
+  , cleanPeerStates
   , runSuspendDecision
   , registerConsumer
   , unregisterConsumer
@@ -40,6 +41,7 @@ module Ouroboros.Network.Subscription.PeerState
 
 import           Control.Exception (Exception, SomeException (..), assert)
 import           Control.Monad.State
+import           Data.Functor ((<$))
 import           Data.Map.Strict (Map)
 import qualified Data.Map as Map
 import           Data.Set (Set)
@@ -53,6 +55,7 @@ import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadTime
+import           Control.Monad.Class.MonadTimer
 
 import           Data.Semigroup.Action
 
@@ -252,6 +255,69 @@ instance Eq addr
 
 newPeerStatesVar :: MonadSTM m => m (StrictTVar m (PeerStates m addr))
 newPeerStatesVar = newTVarM (PeerStates Map.empty)
+
+
+-- | Periodically clean 'PeerState'.  It will stop when 'PeerState' becomes
+-- 'ThrowException'.
+--
+cleanPeerStates :: ( MonadSTM   m
+                   , MonadAsync m
+                   , MonadTime  m
+                   , MonadTimer m
+                   )
+                => DiffTime
+                -> StrictTVar m (PeerStates m addr)
+                -> m ()
+cleanPeerStates interval v = go
+  where
+    go = do
+      threadDelay interval
+      t <- getMonotonicTime
+      continue <- atomically $ do
+        s <- readTVar v
+        case s of
+          ThrowException _
+            -> pure False
+          PeerStates ps
+            -> True <$ (writeTVar v $! (PeerStates $ Map.mapMaybe (cleanPeerState t) ps))
+
+      if continue
+        then go
+        else pure ()
+
+
+    cleanPeerState :: Time -> PeerState m -> Maybe (PeerState m)
+    cleanPeerState _t ColdPeer{}   = Nothing
+    cleanPeerState _  ps@HotPeer{} = Just ps
+    cleanPeerState  t ps@(SuspendedConsumer producers consT)
+      |      Set.null producers  && consT >= t
+      -- the consumer is not suspended anymore, but there is no producer thread
+      -- running, we can safely remove the peer from 'PeerStates'
+      = Nothing
+
+      | not (Set.null producers) && consT >= t
+      -- the consumer is not suspended anymore, there are running producer
+      -- threads, and thus return a 'HotPeer'.
+      = Just (HotPeer producers Set.empty)
+
+      | otherwise
+      -- otherwise the consumer is still supsended
+      = Just ps
+
+    cleanPeerState  t ps@(SuspendedPeer prodT consT)
+      | prodT < t
+      -- the producer is still suspended
+      = Just ps
+
+      | consT < t
+      -- only the consumer is still not suspended
+      = Just (SuspendedConsumer Set.empty consT)
+
+      | otherwise
+      -- the peer is not suspended any more
+      = Nothing
+
+
 
 -- | Update 'PeerStates' for a given 'addr', using 'suspend', and return
 -- threads which must be cancelled.
