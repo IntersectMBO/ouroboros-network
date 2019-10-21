@@ -35,7 +35,7 @@ import           Data.List (sortBy)
 import qualified Data.List.NonEmpty as NE
 import           Data.Map (Map)
 import qualified Data.Map as Map
-import           Data.Maybe (listToMaybe)
+import           Data.Maybe (catMaybes, isNothing, listToMaybe)
 import           Data.Proxy (Proxy (..))
 import           Data.TreeDiff (Expr (App))
 import           Data.TreeDiff.Class (ToExpr (..))
@@ -63,10 +63,12 @@ import           Test.Tasty.QuickCheck (testProperty)
 
 import           Text.Show.Pretty (ppShow)
 
+import           Ouroboros.Consensus.Block (IsEBB (..), fromIsEBB)
 import qualified Ouroboros.Consensus.Util.Classify as C
 import           Ouroboros.Consensus.Util.IOLike
 
-import           Ouroboros.Network.Block (SlotNo (..))
+import           Ouroboros.Network.Block (BlockNo, ChainHash, HasHeader (..),
+                     HeaderHash, SlotNo (..))
 
 import           Ouroboros.Storage.Common hiding (Tip (..))
 import qualified Ouroboros.Storage.Common as C
@@ -76,7 +78,8 @@ import           Ouroboros.Storage.FS.API.Types (FsError (..), FsPath)
 import           Ouroboros.Storage.ImmutableDB hiding (BlockOrEBB (..))
 import qualified Ouroboros.Storage.ImmutableDB as ImmDB
 import           Ouroboros.Storage.ImmutableDB.Layout
-import           Ouroboros.Storage.ImmutableDB.Util (renderFile, tryImmDB)
+import           Ouroboros.Storage.ImmutableDB.Util (epochFileParser,
+                     renderFile, tryImmDB)
 import qualified Ouroboros.Storage.Util.ErrorHandling as EH
 
 import           Test.Util.FS.Sim.Error (Errors, mkSimErrorHasFS, withErrors)
@@ -87,7 +90,7 @@ import qualified Test.Util.RefEnv as RE
 import           Test.Util.SOP
 
 import           Test.Ouroboros.Storage.ImmutableDB.Model
-import           Test.Ouroboros.Storage.ImmutableDB.TestBlock hiding (tests)
+import           Test.Ouroboros.Storage.TestBlock
 import           Test.Ouroboros.Storage.Util (collects)
 
 {-------------------------------------------------------------------------------
@@ -153,9 +156,7 @@ instance Show it => Show (CmdErr it) where
         Nothing  -> "Cmd "
         Just err -> "Cmd " <> show err <> " "
 
--- | Just use the 'TestBlock' itself as the hash so we can easily see of which
--- block it is the hash.
-type Hash = TestBlock
+type Hash = TestHeaderHash
 
 -- | Return type for successful database operations.
 data Success it
@@ -425,31 +426,46 @@ generateCmd Model {..} = At <$> frequency
             , (1,  genSmallSlotNo) ])
     , (1, GetEBB <$> genSmallEpochNo)
     , (3, do
-            slot <- frequency
-              -- Slots in the past -> invalid
-              [ (1, chooseSlot (0, lastSlot))
-              -- Slots not too far in the future
+            let mbPrevBlock = dbmTipBlock dbModel
+            slotNo  <- frequency
+              [ -- Slot in the past -> invalid
+                (1, chooseSlot (0, lastSlot))
+                -- If the previous block is an EBB, make a regular block in
+                -- the same slot number. The slot can still be empty, though.
+              , (if maybe False (fromIsEBB . testBlockIsEBB) mbPrevBlock
+                 then 7 else 0,
+                 return lastSlot)
+                -- Slots not too far in the future
               , (4, chooseSlot (lastSlot, lastSlot + 10))
-              -- Slots in some future epoch
-              , (1, chooseSlot (lastSlot + 10, lastSlot + 40))
+                -- Slots in some future epoch
+              , (1, chooseSlot (lastSlot + epochSize',
+                                lastSlot + epochSize' * 4))
               ]
-            return $ AppendBinaryBlob slot (TestBlock slot))
+            let block = (maybe firstBlock mkNextBlock mbPrevBlock)
+                        slotNo (TestBody 0 True)
+            return $ AppendBinaryBlob slotNo block)
     , (1, do
-            epoch <- frequency
-              -- Epoch in the past -> invalid
-              [ (1, chooseEpoch (0, currentEpoch))
-              , (3, chooseEpoch (currentEpoch, currentEpoch + 5))
-              ]
-            return $ AppendEBB epoch (TestEBB 0) (TestEBB 0))
+            (epoch, ebb) <- case dbmTipBlock dbModel of
+              Nothing        -> return (0, firstEBB (TestBody 0 True))
+              Just prevBlock -> do
+                epoch <- frequency
+                -- Epoch in the past -> invalid
+                  [ (1, chooseEpoch (0, currentEpoch))
+                  , (3, chooseEpoch (currentEpoch, currentEpoch + 5))
+                  ]
+                let slotNo = SlotNo (unEpochNo epoch) * epochSize'
+                return (epoch, mkNextEBB prevBlock slotNo (TestBody 0 True))
+            return $ AppendEBB epoch (blockHash ebb) ebb)
     , (4, frequency
             -- An iterator with a random and likely invalid range,
-            [ (1, StreamBinaryBlobs <$> (Just <$> arbitrary)
-                                    <*> (Just <$> arbitrary))
+            [ (1, StreamBinaryBlobs
+                    <$> (Just <$> genRandomBound)
+                    <*> (Just <$> genRandomBound))
             -- A valid iterator
             , (if empty then 0 else 2, do
                  start <- genBound
                  let startSlot = maybe 0 fst start
-                 end  <- genBound `suchThat` \case
+                 end   <- genBound `suchThat` \case
                      -- NOTE: say @start@ refers to the only block in the DB,
                      -- which is the EBB of the current epoch, then there is
                      -- no regular block >= @start@, only the EBB itself (=
@@ -486,7 +502,13 @@ generateCmd Model {..} = At <$> frequency
     lastSlot :: SlotNo
     lastSlot = fromIntegral $ length dbmChain
 
+    -- Useful when adding to another 'SlotNo'
+    epochSize' :: SlotNo
+    epochSize' = SlotNo $ unEpochSize fixedEpochSize
+
     empty = dbmTip == C.TipGen
+
+    noBlocks = all isNothing dbmChain
 
     noEBBs = Map.null dbmEBBs
 
@@ -500,25 +522,31 @@ generateCmd Model {..} = At <$> frequency
     chooseEpoch = chooseWord64
 
     genSlotInThePast :: Gen SlotNo
-    genSlotInThePast
-      | empty     = discard
-      | otherwise = chooseSlot (0, lastSlot)
-
-    genEBBSlotInThePast :: Gen SlotNo
-    genEBBSlotInThePast
-      | noEBBs
-      = discard
-      | otherwise
-      = elements $ map (runIdentity . epochInfoFirst dbmEpochInfo)
-      $ Map.keys dbmEBBs
+    genSlotInThePast = chooseSlot (0, lastSlot)
 
     genSlotInTheFuture :: Gen SlotNo
     genSlotInTheFuture = chooseSlot (succ lastSlot, maxBound)
 
+    -- Generates random hashes, will seldomly correspond to real blocks. Used
+    -- to test error handling.
+    genRandomBound :: Gen (SlotNo, Hash)
+    genRandomBound = (,) <$> arbitrary <*> (TestHeaderHash <$> arbitrary)
+
+    genBlockInThePast :: Gen TestBlock
+    genBlockInThePast =
+      elements $ map testBlockFromLazyByteString $ catMaybes dbmChain
+
+    genEBBInThePast :: Gen TestBlock
+    genEBBInThePast =
+      elements $ map (testBlockFromLazyByteString . snd) $ Map.elems dbmEBBs
+
     genBound = frequency
-      [ (1, return Nothing)
-      , (1, (\slot -> Just (slot, TestBlock slot)) <$> genSlotInThePast)
-      , (1, (\slot -> Just (slot, TestEBB slot))   <$> genEBBSlotInThePast)
+      [ (1,
+         return Nothing)
+      , (if noBlocks then 0 else 1,
+         (\b   -> Just (blockSlot b,   blockHash b))   <$> genBlockInThePast)
+      , (if noEBBs then 0 else 1,
+         (\ebb -> Just (blockSlot ebb, blockHash ebb)) <$> genEBBInThePast)
       ]
 
     genCorruption = MkCorruption <$> generateCorruptions (NE.fromList dbFiles)
@@ -568,32 +596,21 @@ shrinker m@Model {..} (At (CmdErr mbErrors cmd _)) = fmap At $
 -- | Shrink a 'Cmd'.
 shrinkCmd :: Model m Symbolic -> At Cmd m Symbolic -> [At Cmd m Symbolic]
 shrinkCmd Model {..} (At cmd) = fmap At $ case cmd of
-    AppendBinaryBlob slot _         ->
-      [ AppendBinaryBlob slot' (TestBlock slot')
-      | slot' <- shrink slot ]
-    AppendEBB epoch hash ebb        ->
-      [ AppendEBB epoch  (TestEBB slot') (TestEBB slot')
-      | let TestEBB slot = ebb
-      , slot' <- shrink slot ] ++
-      [ AppendEBB epoch' hash ebb
-      | epoch' <- shrink epoch ]
-    StreamBinaryBlobs mbStart mbEnd ->
-      [ StreamBinaryBlobs mbStart' mbEnd
-      | mbStart' <- shrinkMbBound mbStart] ++
-      [ StreamBinaryBlobs mbStart  mbEnd'
-      | mbEnd'   <- shrinkMbBound mbEnd]
-    GetBinaryBlob slot              ->
+    AppendBinaryBlob _slot _b         -> []
+    AppendEBB _epoch _hash _ebb       -> []
+    StreamBinaryBlobs _mbStart _mbEnd -> []
+    GetBinaryBlob slot                ->
       [GetBinaryBlob slot' | slot' <- shrink slot]
-    GetEBB epoch                    ->
+    GetEBB epoch                      ->
       [GetEBB epoch' | epoch' <- shrink epoch]
-    IteratorNext    {}              -> []
-    IteratorPeek    {}              -> []
-    IteratorHasNext {}              -> []
-    IteratorClose   {}              -> []
-    DeleteAfter tip                 ->
+    IteratorNext    {}                -> []
+    IteratorPeek    {}                -> []
+    IteratorHasNext {}                -> []
+    IteratorClose   {}                -> []
+    DeleteAfter tip                   ->
       [DeleteAfter tip' | tip' <- shrinkTip tip]
-    Reopen {}                       -> []
-    Corruption corr                 ->
+    Reopen {}                         -> []
+    Corruption corr                   ->
       [Corruption corr' | corr' <- shrinkCorruption corr]
   where
     DBModel {..} = dbModel
@@ -602,15 +619,6 @@ shrinkCmd Model {..} (At cmd) = fmap At $ case cmd of
 
     lastSlot :: SlotNo
     lastSlot = fromIntegral $ length dbmChain
-
-    shrinkMbBound :: Maybe (SlotNo, Hash) -> [Maybe (SlotNo, Hash)]
-    shrinkMbBound Nothing  = []
-    shrinkMbBound (Just (s, TestBlock _)) = Nothing :
-      [ Just (s', TestBlock s') | s' <- shrink s ]
-    shrinkMbBound (Just (s, TestEBB _)) = Nothing :
-      [ Just (s', TestEBB s')
-      | s' <- takeWhile (< s)  ebbSlots]
-    ebbSlots = map (runIdentity . epochInfoFirst dbmEpochInfo) $ Map.keys dbmEBBs
 
     shrinkCorruption (MkCorruption corrs) =
       [ MkCorruption corrs'
@@ -1012,10 +1020,17 @@ instance ToExpr EpochNo
 instance ToExpr EpochSize
 instance ToExpr EpochSlot
 instance ToExpr RelativeSlot
+instance ToExpr BlockNo
 instance ToExpr BaseIteratorID
 instance ToExpr IteratorID
 instance ToExpr (IteratorResult Hash ByteString)
 instance ToExpr (IteratorModel Hash)
+instance ToExpr (HeaderHash h) => ToExpr (ChainHash h)
+instance ToExpr IsEBB
+instance ToExpr TestHeaderHash
+instance ToExpr TestBodyHash
+instance ToExpr TestHeader
+instance ToExpr TestBody
 instance ToExpr TestBlock
 instance ToExpr ImmDB.BlockOrEBB
 instance ToExpr r => ToExpr (C.Tip r)
@@ -1081,7 +1096,7 @@ prop_sequential = forAllCommands smUnused Nothing $ \cmds -> QC.monadicIO $ do
                   , Property
                   )
         test errorsVar hasFS = do
-          let parser = testBlockEpochFileParser' hasFS
+          let parser = epochFileParser hasFS (const <$> decode) isEBB
           db <- QC.run $ openDB decode encode hasFS EH.monadCatch
                           (fixedSizeEpochInfo fixedEpochSize) ValidateMostRecentEpoch
                           parser nullTracer
@@ -1110,6 +1125,9 @@ prop_sequential = forAllCommands smUnused Nothing $ \cmds -> QC.monadicIO $ do
   where
     (dbm, mdb) = mkDBModel
     smUnused   = sm (error "errorsVar unused") hasFsUnused dbUnused dbm mdb
+    isEBB b = case testBlockIsEBB b of
+        IsEBB    -> Just (blockHash b)
+        IsNotEBB -> Nothing
 
 tests :: TestTree
 tests = testGroup "ImmutableDB q-s-m"

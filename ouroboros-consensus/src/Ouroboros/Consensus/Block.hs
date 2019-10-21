@@ -1,3 +1,5 @@
+{-# LANGUAGE DeriveAnyClass          #-}
+{-# LANGUAGE DeriveGeneric           #-}
 {-# LANGUAGE FlexibleContexts        #-}
 {-# LANGUAGE FlexibleInstances       #-}
 {-# LANGUAGE MultiParamTypeClasses   #-}
@@ -19,7 +21,11 @@ module Ouroboros.Consensus.Block (
     -- * EBBs
   , IsEBB (..)
   , toIsEBB
+  , fromIsEBB
   ) where
+
+import           Codec.Serialise (Serialise)
+import           GHC.Generics (Generic)
 
 import           Cardano.Prelude (NoUnexpectedThunks)
 import           Data.FingerTree.Strict (Measured (..))
@@ -104,10 +110,14 @@ class ( GetHeader blk
 data IsEBB
   = IsEBB
   | IsNotEBB
-  deriving (Eq, Show)
+  deriving (Eq, Show, Generic, NoUnexpectedThunks, Serialise)
 
 instance Condense IsEBB where
   condense = show
 
 toIsEBB :: Bool -> IsEBB
 toIsEBB b = if b then IsEBB else IsNotEBB
+
+fromIsEBB :: IsEBB -> Bool
+fromIsEBB IsEBB    = True
+fromIsEBB IsNotEBB = False

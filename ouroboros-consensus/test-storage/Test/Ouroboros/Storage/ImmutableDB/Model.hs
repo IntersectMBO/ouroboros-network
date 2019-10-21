@@ -1,5 +1,6 @@
 {-# LANGUAGE DeriveGeneric       #-}
 {-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE MultiWayIf          #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -13,6 +14,7 @@ module Test.Ouroboros.Storage.ImmutableDB.Model
   ( DBModel(..)
   , dbmCurrentEpoch
   , dbmBlobs
+  , dbmTipBlock
   , initDBModel
   , IteratorModel
   , openDBModel
@@ -25,12 +27,14 @@ import           Control.Monad.State.Strict (MonadState, get, gets, modify, put)
 
 import           Data.ByteString.Builder (Builder, toLazyByteString)
 import           Data.ByteString.Lazy (ByteString)
+import qualified Data.ByteString.Lazy as Lazy
 import           Data.Function ((&))
 import           Data.Functor.Identity
 import           Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
 import           Data.Map (Map)
 import qualified Data.Map as Map
+import           Data.Maybe (fromMaybe, mapMaybe)
 import qualified Data.Text as Text
 import           Data.Word (Word64)
 
@@ -49,7 +53,7 @@ import           Ouroboros.Storage.ImmutableDB.Layout
 import           Ouroboros.Storage.ImmutableDB.Util
 import           Ouroboros.Storage.Util.ErrorHandling (ErrorHandling (..))
 
-import           Test.Ouroboros.Storage.ImmutableDB.TestBlock
+import           Test.Ouroboros.Storage.TestBlock
 
 data DBModel hash = DBModel
   { dbmChain        :: [Maybe ByteString]
@@ -93,6 +97,15 @@ dbmBlobs dbm@DBModel {..} = foldr add ebbs (zip (map SlotNo [0..]) dbmChain)
          & Map.mapKeysMonotonic (`EpochSlot` 0)
          & Map.mapKeysMonotonic (\epochSlot ->
              (epochSlot, epochSlotToSlot dbm epochSlot))
+
+-- TODO #1151
+dbmTipBlock :: DBModel hash -> Maybe TestBlock
+dbmTipBlock dbm = testBlockFromLazyByteString <$> case dbmTip dbm of
+    TipGen            -> Nothing
+    Tip (Block _slot) -> Just $ mustBeJust $ last $ dbmChain dbm
+    Tip (EBB epoch)   -> Just $ snd $ dbmEBBs dbm Map.! epoch
+  where
+    mustBeJust = fromMaybe (error "chain ends with an empty slot")
 
 -- | Model for an 'Iterator'.
 --
@@ -235,6 +248,16 @@ tipsAfter dbm tip = map toTip $ dropWhile isBeforeTip blobLocations
     toTip (EpochSlot epoch 0, _)    = Tip (EBB epoch)
     toTip (_                , slot) = Tip (Block slot)
 
+-- | Return the blobs in the given 'EpochNo', in order.
+blobsInEpoch :: DBModel hash -> EpochNo -> [ByteString]
+blobsInEpoch dbm@DBModel {..} epoch =
+    maybe id (:) mbEBBBlob       $
+    mapMaybe snd                 $
+    takeWhile ((== epoch) . fst) $
+    dropWhile ((/= epoch) . fst) $
+    zip (map (slotToEpoch dbm . SlotNo) [0..]) dbmChain
+  where
+    mbEBBBlob = snd <$> Map.lookup epoch dbmEBBs
 
 {------------------------------------------------------------------------------
   Simulation corruptions and restoring afterwards
@@ -299,14 +322,15 @@ findEpochDropLastBytesRollBackPoint n epoch dbm
       -- If the file is empty, no corruption happened, and we don't have to
       -- roll back
     = DontRollBack
-    | lastValidFilledSlotIndex validBytes < 0
+    | Just lastValidEpochSlot <- mbLastValidEpochSlot
+    = RollBackToEpochSlot lastValidEpochSlot
+    | otherwise
       -- When there are no more filled slots in the epoch file, roll back to
       -- the last filled slot before the epoch.
     = rollbackToLastFilledSlotBefore epoch dbm
-    | otherwise
-    = RollBackToEpochSlot (epochSlots !! lastValidFilledSlotIndex validBytes)
   where
-    totalBytes = fromIntegral testBlockSize * fromIntegral (length epochSlots)
+    blobs = blobsInEpoch dbm epoch
+    totalBytes = fromIntegral $ sum (map Lazy.length blobs)
     validBytes :: Word64
     validBytes
       | n >= totalBytes
@@ -314,9 +338,21 @@ findEpochDropLastBytesRollBackPoint n epoch dbm
       | otherwise
       = totalBytes - n
     epochSlots = epochSlotsInEpoch dbm epoch
-    lastValidFilledSlotIndex :: Word64 -> Int
-    lastValidFilledSlotIndex offset =
-      (fromIntegral offset `quot` fromIntegral testBlockSize) - 1
+    mbLastValidEpochSlot :: Maybe EpochSlot
+    mbLastValidEpochSlot = go 0 Nothing (zip epochSlots blobs)
+      where
+        go :: Word64 -> Maybe EpochSlot -> [(EpochSlot, ByteString)]
+           -> Maybe EpochSlot
+        go curOffset lastValid = \case
+          [] -> lastValid
+          (epochSlot, blob):rest
+              | curOffset + blobSize <= validBytes
+              -> go (curOffset + blobSize) (Just epochSlot) rest
+              | otherwise
+              -> lastValid
+            where
+              blobSize = fromIntegral $ Lazy.length blob
+
 
 findEpochCorruptionRollBackPoint :: FileCorruption -> EpochNo -> DBModel hash
                                  -> RollBackPoint

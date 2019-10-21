@@ -344,7 +344,6 @@ test-suite test-storage
                     Test.Ouroboros.Storage.ChainDB.Model
                     Test.Ouroboros.Storage.ChainDB.Model.Test
                     Test.Ouroboros.Storage.ChainDB.StateMachine
-                    Test.Ouroboros.Storage.ChainDB.TestBlock
                     Test.Ouroboros.Storage.FS
                     Test.Ouroboros.Storage.FS.StateMachine
                     Test.Ouroboros.Storage.ImmutableDB
@@ -352,10 +351,10 @@ test-suite test-storage
                     Test.Ouroboros.Storage.ImmutableDB.Mock
                     Test.Ouroboros.Storage.ImmutableDB.Model
                     Test.Ouroboros.Storage.ImmutableDB.StateMachine
-                    Test.Ouroboros.Storage.ImmutableDB.TestBlock
                     Test.Ouroboros.Storage.LedgerDB
                     Test.Ouroboros.Storage.LedgerDB.InMemory
                     Test.Ouroboros.Storage.LedgerDB.OnDisk
+                    Test.Ouroboros.Storage.TestBlock
                     Test.Ouroboros.Storage.Util
                     Test.Ouroboros.Storage.VolatileDB
                     Test.Ouroboros.Storage.VolatileDB.Mock
@@ -391,6 +390,7 @@ test-suite test-storage
                     bifunctors,
                     binary,
                     bytestring,
+                    cborg,
                     cereal,
                     containers,
                     contra-tracer,
@@ -398,6 +398,7 @@ test-suite test-storage
                     directory,
                     fingertree,
                     generics-sop,
+                    hashable,
                     mtl,
                     pretty-show,
                     QuickCheck,

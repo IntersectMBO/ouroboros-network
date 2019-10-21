@@ -72,6 +72,7 @@ import qualified Ouroboros.Network.Block as Block
 import           Ouroboros.Network.MockChain.Chain (Chain (..), ChainUpdate)
 import qualified Ouroboros.Network.MockChain.Chain as Chain
 import qualified Ouroboros.Network.MockChain.ProducerState as CPS
+import           Ouroboros.Network.Point (WithOrigin (..))
 
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
@@ -167,6 +168,20 @@ immutableBlockNo (SecurityParam k) =
       . Chain.drop (fromIntegral k)
       . currentChain
 
+-- | The slot number of the most recent \"immutable\" block (see
+-- 'immutableBlockNo').
+--
+-- This is used for garbage collection of the VolatileDB, which is done in
+-- terms of slot numbers, not in terms of block numbers.
+immutableSlotNo :: HasHeader blk
+                => SecurityParam
+                -> Model blk
+                -> WithOrigin SlotNo
+immutableSlotNo (SecurityParam k) =
+        Chain.headSlot
+      . Chain.drop (fromIntegral k)
+      . currentChain
+
 maxSlotNo :: HasHeader blk => Model blk -> MaxSlotNo
 maxSlotNo = maxSlotNoFromMaybe
           . safeMaximum
@@ -193,8 +208,13 @@ addBlock :: forall blk. ProtocolLedgerView blk
          => NodeConfig (BlockProtocol blk) -> blk -> Model blk -> Model blk
 addBlock cfg blk m
     -- If the block is as old as the tip of the ImmutableDB, i.e. older than
-    -- @k@, we ignore it, as we can never switch to it.
-  | Block.blockNo blk <= immutableBlockNo secParam m = m
+    -- @k@, we ignore it, as we can never switch to it. TODO what about EBBs?
+  | Block.blockNo blk <= immutableBlockNo secParam m
+    -- Unless we're adding the first block to the empty chain: the empty chain
+    -- has the same block number as the genesis EBB, i.e. 0, so we don't want
+    -- to ignore it in this case.
+  , not addingGenesisEBBToEmptyDB
+  = m
   | otherwise = Model {
       blocks        = blocks'
     , cps           = CPS.switchFork newChain (cps m)
@@ -206,6 +226,9 @@ addBlock cfg blk m
     }
   where
     secParam = protocolSecurityParam cfg
+
+    addingGenesisEBBToEmptyDB = tipPoint m == GenesisPoint
+                             && Block.blockNo blk == Block.genesisBlockNo
 
     blocks' :: Map (HeaderHash blk) blk
     blocks' = Map.insert (Block.blockHash blk) blk (blocks m)
@@ -519,15 +542,24 @@ between (SecurityParam k) from to m = do
         | otherwise
         -> Left $ MissingBlock p
 
--- Would the garbage collector (if run) be able to garbage collect the given
--- block?
+-- | Is it possible that the given block is no longer in the ChainDB because
+-- the garbage collector has collected it?
+--
+-- Note that blocks on the current chain will always remain in the ChainDB as
+-- they are copied to the ImmutableDB.
+--
+-- Blocks not on the current chain can be garbage collected from the
+-- VolatileDB when their slot number is older than the slot number of the
+-- immutable block (the block @k@ blocks after the current tip).
 garbageCollectable :: forall blk. HasHeader blk
                    => SecurityParam -> Model blk -> blk -> Bool
 garbageCollectable secParam m@Model{..} b =
-    not onCurrentChain && olderThanK
+    not onCurrentChain && olderThanImmutableSlotNo
   where
     onCurrentChain = Chain.pointOnChain (Block.blockPoint b) (currentChain m)
-    olderThanK     = Block.blockNo b <= immutableBlockNo secParam m
+    -- Note: we don't use the block number but the slot number, as the
+    -- VolatileDB's garbage collection is in terms of slot numbers.
+    olderThanImmutableSlotNo = At (Block.blockSlot b) <= immutableSlotNo secParam m
 
 -- Return 'True' when the model contains the block corresponding to the point
 -- and the block itself is eligible for garbage collection, i.e. the real

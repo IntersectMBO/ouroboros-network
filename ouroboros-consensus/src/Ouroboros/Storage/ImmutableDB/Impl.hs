@@ -320,13 +320,13 @@ openDBImpl :: forall m h hash e.
            -> EpochFileParser e hash m (Word64, SlotNo)
            -> Tracer m (TraceEvent e)
            -> m (ImmutableDB hash m)
-openDBImpl hashDecoder hashEncoder hasFS@HasFS{..} err epochInfo valPol epochFileParser tracer = do
+openDBImpl hashDecoder hashEncoder hasFS@HasFS{..} err epochInfo valPol parser tracer = do
     !ost  <- validateAndReopen hashDecoder hashEncoder hasFS err epochInfo
-      valPol epochFileParser initialIteratorID tracer
+      valPol parser initialIteratorID tracer
 
     stVar <- newMVar (DbOpen ost)
 
-    let dbEnv = ImmutableDBEnv hasFS err stVar epochFileParser hashDecoder hashEncoder tracer
+    let dbEnv = ImmutableDBEnv hasFS err stVar parser hashDecoder hashEncoder tracer
         db    = mkDBRecord dbEnv
     return db
 
@@ -1264,11 +1264,11 @@ validateAndReopen
   err
   epochInfo
   valPol
-  epochFileParser
+  parser
   nextIteratorID
   tracer = do
     mbLastValidLocationAndIndex <-
-      validate hashDecoder hashEncoder hasFS err epochInfo valPol epochFileParser tracer
+      validate hashDecoder hashEncoder hasFS err epochInfo valPol parser tracer
 
     case mbLastValidLocationAndIndex of
       Nothing -> do
@@ -1574,7 +1574,7 @@ validate :: forall m hash h e.
             -- ^ The 'EpochSlot' pointing at the last valid block or EBB on
             -- disk and the 'Index' of the corresponding epoch. 'Nothing' if
             -- the database is empty.
-validate hashDecoder hashEncoder hasFS@HasFS{..} err epochInfo valPol epochFileParser tracer = do
+validate hashDecoder hashEncoder hasFS@HasFS{..} err epochInfo valPol parser tracer = do
     filesInDBFolder <- listDirectory (mkFsPath [])
     let epochFiles = fst $ dbFilesOnDisk filesInDBFolder
     case Set.lookupMax epochFiles of
@@ -1759,7 +1759,7 @@ validate hashDecoder hashEncoder hasFS@HasFS{..} err epochInfo valPol epochFileP
 
           -- Read the epoch file and reconstruct an index from it.
           (reconstructedIndex, mbErr) <- reconstructIndex epochFile
-            epochFileParser epochInfo
+            parser epochInfo
 
           -- If there was an error parsing the epoch file, truncate it
           case mbErr of
@@ -1859,9 +1859,9 @@ reconstructIndex :: forall m e hash. MonadThrow m
                  -> EpochFileParser e hash m (Word64, SlotNo)
                  -> EpochInfo m
                  -> m (Index hash, Maybe e)
-reconstructIndex epochFile epochFileParser epochInfo = do
+reconstructIndex epochFile parser epochInfo = do
     (offsetsAndSizesAndSlots, ebbHash, mbErr) <-
-      runEpochFileParser epochFileParser epochFile
+      runEpochFileParser parser epochFile
     offsetsAndSizesAndRelSlots <- case offsetsAndSizesAndSlots of
       [] -> return []
       (offset0, (size0, _slot0)) : offsetsAndSizesAndSlots'
