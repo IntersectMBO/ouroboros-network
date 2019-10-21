@@ -5,6 +5,7 @@ module Ouroboros.Storage.IO (
     , truncate
     , seek
     , read
+    , pread
     , write
     , close
     , getSize
@@ -50,20 +51,19 @@ open filename openMode = do
     return h
   where
     (isAppend, accessMode, creationDisposition) = case openMode of
-      ReadMode         -> (False, gENERIC_READ,                   oPEN_EXISTING)
+      ReadMode         -> (False, gENERIC_READ,                  oPEN_EXISTING)
       AppendMode    ex -> (True,                   gENERIC_WRITE, createNew ex)
       WriteMode     ex -> (True,  gENERIC_READ .|. gENERIC_WRITE, createNew ex)
       ReadWriteMode ex -> (True,  gENERIC_READ .|. gENERIC_WRITE, createNew ex)
     createNew AllowExisting = oPEN_ALWAYS
     createNew MustBeNew     = cREATE_NEW
 
-
 write :: FHandle -> Ptr Word8 -> Int64 -> IO Word32
-write fh data' bytes = withOpenHandle "write" fh $ \h ->
+write fh data' bytes = writeOpenHandle "write" fh $ \h ->
   win32_WriteFile h data' (fromIntegral bytes) Nothing
 
 seek :: FHandle -> SeekMode -> Int64 -> IO ()
-seek fh seekMode size = void <$> withOpenHandle "seek" fh $ \h ->
+seek fh seekMode size = void <$> writeOpenHandle "seek" fh $ \h ->
   setFilePointerEx h (fromIntegral size) (fromSeekMode seekMode)
 
 fromSeekMode :: SeekMode -> FilePtrDirection
@@ -71,15 +71,30 @@ fromSeekMode AbsoluteSeek = fILE_BEGIN
 fromSeekMode RelativeSeek = fILE_CURRENT
 fromSeekMode SeekFromEnd  = fILE_END
 
+getCurrentFileOffset :: HANDLE -> IO Int64
+getCurrentFileOffset h = setFilePointerEx h 0 fILE_CURRENT
+
 read :: FHandle -> Word64 -> IO ByteString
-read fh bytes = withOpenHandle "read" fh $ \h ->
+read fh bytes = writeOpenHandle "read" fh $ \h ->
   Internal.createUptoN (fromIntegral bytes) $ \ptr ->
     fromIntegral <$> win32_ReadFile h ptr (fromIntegral bytes) Nothing
 
--- We only allow truncate in AppendMode, but Windows do not support it, so we manually seek to the end.
--- It is important that the logical end of the handle stays alligned to the physical end of the file.
+-- | This is an ugly hack, since Windows does not support that well 'pread'
+-- syscall.
+pread :: FHandle -> Word64 -> Int64 -> IO ByteString
+pread fh bytes pos = writeOpenHandle "pread" fh $ \h ->
+  Internal.createUptoN (fromIntegral bytes) $ \ptr -> do
+    initialOffset <- getCurrentFileOffset h
+    _ <- setFilePointerEx h pos fILE_BEGIN
+    n <- fromIntegral <$> win32_ReadFile h ptr (fromIntegral bytes) Nothing
+    _ <- setFilePointerEx h initialOffset fILE_BEGIN
+    return n
+
+-- We only allow truncate in AppendMode, but Windows do not support it, so we
+-- manually seek to the end. It is important that the logical end of the handle
+-- stays alligned to the physical end of the file.
 truncate :: FHandle -> Word64 -> IO ()
-truncate fh size =  withOpenHandle "truncate" fh $ \h -> do
+truncate fh size =  writeOpenHandle "truncate" fh $ \h -> do
   _ <- setFilePointerEx h (fromIntegral size) (fromSeekMode AbsoluteSeek)
   setEndOfFile h
 
@@ -87,7 +102,7 @@ close :: FHandle -> IO ()
 close fh = closeHandleOS fh closeHandle
 
 getSize :: FHandle -> IO Word64
-getSize fh = withOpenHandle "getSize" fh $ \h -> do
+getSize fh = readOpenHandle "getSize" fh $ \h -> do
   fromIntegral . bhfiSize <$>  getFileInformationByHandle h
 
 -- | For the following error types, our mock FS implementation (and the Posix
