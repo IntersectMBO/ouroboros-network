@@ -51,10 +51,10 @@ open filename openMode = do
     return h
   where
     (isAppend, accessMode, creationDisposition) = case openMode of
-      ReadMode         -> (False, gENERIC_READ,                  oPEN_EXISTING)
-      AppendMode    ex -> (True,                   gENERIC_WRITE, createNew ex)
-      WriteMode     ex -> (True,  gENERIC_READ .|. gENERIC_WRITE, createNew ex)
-      ReadWriteMode ex -> (True,  gENERIC_READ .|. gENERIC_WRITE, createNew ex)
+      ReadMode         -> (False, gENERIC_READ,                   oPEN_EXISTING)
+      AppendMode    ex -> (True,                    gENERIC_WRITE, createNew ex)
+      WriteMode     ex -> (False,  gENERIC_READ .|. gENERIC_WRITE, createNew ex)
+      ReadWriteMode ex -> (False,  gENERIC_READ .|. gENERIC_WRITE, createNew ex)
     createNew AllowExisting = oPEN_ALWAYS
     createNew MustBeNew     = cREATE_NEW
 
