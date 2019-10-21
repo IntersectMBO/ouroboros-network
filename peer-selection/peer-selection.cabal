@@ -30,6 +30,7 @@ library
   build-depends:       base ^>=4.12.0.0,
                        Chart,
                        Chart-cairo,
+                       cairo,
                        colour,
                        containers,
                        data-default-class,
