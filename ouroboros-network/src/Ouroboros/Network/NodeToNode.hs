@@ -41,6 +41,7 @@ module Ouroboros.Network.NodeToNode (
   , TraceSendRecv (..)
   , DecoderFailureOrTooMuchInput
   , Handshake
+  , LocalAddresses (..)
   ) where
 
 import           Control.Concurrent.Async (Async)
@@ -80,6 +81,7 @@ import           Ouroboros.Network.Subscription.Dns ( DnsSubscriptionTarget (..)
                                                     , DnsTrace (..)
                                                     , WithDomainName (..)
                                                     )
+import           Ouroboros.Network.Subscription.Worker (LocalAddresses (..))
 import           Network.TypedProtocol.Driver.ByteLimit (DecoderFailureOrTooMuchInput)
 import           Network.TypedProtocol.Driver (TraceSendRecv (..))
 import           Control.Tracer (Tracer)
@@ -272,10 +274,7 @@ ipSubscriptionWorker
           (DecoderFailureOrTooMuchInput DeserialiseFailure))
     -> (Socket.SockAddr -> Socket.SockAddr -> peerid)
     -> ConnectionTable IO Socket.SockAddr
-    -> Maybe Socket.SockAddr
-    -- ^ Local IPv4 address to use, Nothing indicates don't use IPv4
-    -> Maybe Socket.SockAddr
-    -- ^ Local IPv6 address to use, Nothing indicates don't use IPv6
+    -> LocalAddresses Socket.SockAddr
     -> (Socket.SockAddr -> Maybe DiffTime)
     -- ^ Lookup function, should return expected delay for the given address
     -> IPSubscriptionTarget
@@ -294,14 +293,14 @@ ipSubscriptionWorker
   handshakeTracer
   peeridFn
   tbl
-  localIPv4 localIPv6
+  localAddr
   connectionAttemptDelay
   ips
   versions
     = Subscription.ipSubscriptionWorker
         subscriptionTracer
         tbl
-        localIPv4 localIPv6
+        localAddr
         connectionAttemptDelay
         ips
         (\_ -> retry)
@@ -325,10 +324,7 @@ ipSubscriptionWorker_V1
     -> Tracer IO (TraceSendRecv (Handshake NodeToNodeVersion CBOR.Term) peerid (DecoderFailureOrTooMuchInput DeserialiseFailure))
     -> (Socket.SockAddr -> Socket.SockAddr -> peerid)
     -> ConnectionTable IO Socket.SockAddr
-    -> Maybe Socket.SockAddr
-    -- ^ Local IPv4 address to use, Nothing indicates don't use IPv4
-    -> Maybe Socket.SockAddr
-    -- ^ Local IPv6 address to use, Nothing indicates don't use IPv6
+    -> LocalAddresses Socket.SockAddr
     -> (Socket.SockAddr -> Maybe DiffTime)
     -- ^ Lookup function, should return expected delay for the given address
     -> IPSubscriptionTarget
@@ -345,7 +341,7 @@ ipSubscriptionWorker_V1
   handshakeTracer
   peeridFn
   tbl
-  localIPv4 localIPv6
+  localAddresses
   connectionAttemptDelay
   ips
   versionData
@@ -356,7 +352,7 @@ ipSubscriptionWorker_V1
         handshakeTracer
         peeridFn
         tbl
-        localIPv4 localIPv6
+        localAddresses
         connectionAttemptDelay
         ips
         (simpleSingletonVersions
@@ -384,8 +380,7 @@ dnsSubscriptionWorker
           (DecoderFailureOrTooMuchInput DeserialiseFailure))
     -> (Socket.SockAddr -> Socket.SockAddr -> peerid)
     -> ConnectionTable IO Socket.SockAddr
-    -> Maybe Socket.SockAddr
-    -> Maybe Socket.SockAddr
+    -> LocalAddresses Socket.SockAddr
     -> (Socket.SockAddr -> Maybe DiffTime)
     -> DnsSubscriptionTarget
     -> Versions
@@ -404,7 +399,7 @@ dnsSubscriptionWorker
   handshakeTracer
   peeridFn
   tbl
-  localIPv4 localIPv6
+  localAddresses
   connectionAttemptDelay
   dst
   versions =
@@ -412,7 +407,7 @@ dnsSubscriptionWorker
       subscriptionTracer
       dnsTracer
       tbl
-      localIPv4 localIPv6
+      localAddresses
       connectionAttemptDelay
       dst
       (\_ -> retry)
@@ -438,8 +433,7 @@ dnsSubscriptionWorker_V1
     -> Tracer IO (TraceSendRecv (Handshake NodeToNodeVersion CBOR.Term) peerid (DecoderFailureOrTooMuchInput DeserialiseFailure))
     -> (Socket.SockAddr -> Socket.SockAddr -> peerid)
     -> ConnectionTable IO Socket.SockAddr
-    -> Maybe Socket.SockAddr
-    -> Maybe Socket.SockAddr
+    -> LocalAddresses Socket.SockAddr
     -> (Socket.SockAddr -> Maybe DiffTime)
     -> DnsSubscriptionTarget
     -> NodeToNodeVersionData
@@ -456,7 +450,7 @@ dnsSubscriptionWorker_V1
   handshakeTracer
   peeridFn
   tbl
-  localIPv4 localIPv6
+  localAddresses
   connectionAttemptDelay
   dst
   versionData
@@ -468,7 +462,7 @@ dnsSubscriptionWorker_V1
       handshakeTracer
       peeridFn
       tbl
-      localIPv4 localIPv6
+      localAddresses
       connectionAttemptDelay
       dst
       (simpleSingletonVersions
