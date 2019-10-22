@@ -25,8 +25,21 @@ extra-deps:
       - binary/test
       - cardano-crypto-class
 
+  - git: https://github.com/input-output-hk/cardano-ledger-specs
+    commit: 11b674a10e76ab266a37225d82955fd8b1f80e27
+    subdirs:
+      - byron/semantics/executable-spec
+      - byron/ledger/executable-spec
+      - byron/chain/executable-spec
+
+  # Needed for `cardano-ledger-specs`
+  - git: https://github.com/input-output-hk/goblins
+    commit: 26d35ad52fe9ade3391532dbfeb2f416f07650bc
+  - moo-1.2
+  - gray-code-0.3.1
+
   - git: https://github.com/input-output-hk/cardano-ledger
-    commit: a1de5b52c32255464564a6c5a8a9e474086e3875
+    commit: 181f69af290412abecefc07e1b26e77a453755ff
     subdirs:
       - cardano-ledger
       - cardano-ledger/test
@@ -51,9 +64,11 @@ extra-deps:
   - binary-0.8.7.0
   - generic-monoid-0.1.0.0
   - graphviz-2999.20.0.3
+  - hedgehog-quickcheck-0.1.1
   - quickcheck-state-machine-0.6.0
   - splitmix-0.0.2
   - tasty-hedgehog-1.0.0.1
+  - Unique-0.4.7.6
 
   # Windows only
   - Win32-2.5.4.1

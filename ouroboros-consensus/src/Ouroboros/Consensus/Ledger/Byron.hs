@@ -30,6 +30,7 @@ module Ouroboros.Consensus.Ledger.Byron
     -- * Mempool integration
   , GenTx (..)
   , GenTxId (..)
+  , ByronApplyTxError (..)
   , mkByronGenTx
     -- * Block Fetch integration
   , byronBlockOrEBBMatchesHeader
@@ -53,6 +54,9 @@ module Ouroboros.Consensus.Ledger.Byron
   , decodeByronLedgerState
   , decodeByronChainState
   , decodeByronApplyTxError
+    -- When adding a new en/decoder, add a test for it in
+    -- Test.Consensus.Ledger.Byron
+
     -- * EBBs
   , ByronBlockOrEBB (..)
   , pattern ByronHeaderRegular
@@ -938,7 +942,7 @@ data ByronApplyTxError
   | ByronApplyDlgError !V.Scheduling.Error
   | ByronApplyUpdateProposalError !CC.UPI.Error
   | ByronApplyUpdateVoteError !CC.UPI.Error
-  deriving (Show)
+  deriving (Eq, Show)
 
 instance ToCBOR ByronApplyTxError where
   toCBOR (ByronApplyTxError err) =
@@ -985,6 +989,7 @@ instance (ByronGiven, Typeable cfg, ConfigContainsGenesis cfg, NoUnexpectedThunk
         -- ^ This field is lazy on purpose so that the 'CC.Update.VoteId' is
         -- computed on demand.
         !(CC.Update.Vote.AVote ByteString)
+    deriving (Eq)
 
   data GenTxId (ByronBlockOrEBB cfg)
     = ByronTxId !CC.UTxO.TxId
