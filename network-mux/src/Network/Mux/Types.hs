@@ -1,7 +1,8 @@
-{-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE NamedFieldPuns        #-}
-{-# LANGUAGE RankNTypes            #-}
-{-# LANGUAGE TypeFamilies          #-}
+{-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE MultiParamTypeClasses     #-}
+{-# LANGUAGE NamedFieldPuns            #-}
+{-# LANGUAGE RankNTypes                #-}
+{-# LANGUAGE TypeFamilies              #-}
 
 module Network.Mux.Types (
       MiniProtocolDispatch (..)
@@ -317,6 +318,10 @@ data MuxTrace ptcl =
     | MuxTraceChannelRecvEnd (MiniProtocolId ptcl) BL.ByteString
     | MuxTraceChannelSendStart (MiniProtocolId ptcl) BL.ByteString
     | MuxTraceChannelSendEnd (MiniProtocolId ptcl)
+    | MuxTraceHandshakeStart
+    | MuxTraceHandshakeEnd
+    | forall e. Exception e => MuxTraceHandshakeClientError e
+    | forall e. Exception e => MuxTraceHandshakeServerError e
 
 instance Show ptcl => Show (MuxTrace ptcl) where
     show MuxTraceRecvHeaderStart = printf "Bearer Receive Header Start"
@@ -344,4 +349,10 @@ instance Show ptcl => Show (MuxTrace ptcl) where
     show (MuxTraceChannelSendStart mid blob) = printf "Channel Send Start on %s %d" (show mid)
         (BL.length blob)
     show (MuxTraceChannelSendEnd mid) = printf "Channel Send End on %s" (show mid)
+    show MuxTraceHandshakeStart = "Handshake start"
+    show MuxTraceHandshakeEnd = "Handshake end"
+    show (MuxTraceHandshakeClientError e) =
+         -- Client Error can include an error string from the peer which could be very large.
+        printf "Handshake Client Error %s" (take 64 $ show e)
+    show (MuxTraceHandshakeServerError e) = printf "Handshake Server Error %s" (show e)
 
