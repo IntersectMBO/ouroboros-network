@@ -5,6 +5,7 @@ module Ouroboros.Storage.IO (
     , truncate
     , seek
     , read
+    , pread
     , write
     , close
     , getSize
@@ -55,7 +56,6 @@ open filename openMode = do
     createNew AllowExisting = oPEN_ALWAYS
     createNew MustBeNew     = cREATE_NEW
 
-
 write :: FHandle -> Ptr Word8 -> Int64 -> IO Word32
 write fh data' bytes = withOpenHandle "write" fh $ \h ->
   win32_WriteFile h data' (fromIntegral bytes) Nothing
@@ -73,6 +73,18 @@ read :: FHandle -> Word64 -> IO ByteString
 read fh bytes = withOpenHandle "read" fh $ \h ->
   Internal.createUptoN (fromIntegral bytes) $ \ptr ->
     fromIntegral <$> win32_ReadFile h ptr (fromIntegral bytes) Nothing
+
+getCurrentFileOffset :: HANDLE -> IO Int64
+getCurrentFileOffset h = setFilePointerEx h 0 fILE_CURRENT
+
+pread :: FHandle -> Word64 -> Word64 -> IO ByteString
+pread fh bytes pos = withOpenHandle "pread" fh $ \h ->
+  Internal.createUptoN (fromIntegral bytes) $ \ptr -> do
+    initialOffset <- getCurrentFileOffset h
+    _ <- setFilePointerEx h (fromIntegral pos) fILE_BEGIN
+    n <- fromIntegral <$> win32_ReadFile h ptr (fromIntegral bytes) Nothing
+    _ <- setFilePointerEx h initialOffset fILE_BEGIN
+    return n
 
 -- We only allow truncate in AppendMode, but Windows do not support it, so we manually seek to the end.
 -- It is important that the logical end of the handle stays alligned to the physical end of the file.
