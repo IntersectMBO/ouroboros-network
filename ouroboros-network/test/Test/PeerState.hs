@@ -12,8 +12,7 @@
 module Test.PeerState (tests) where
 
 
-import           Control.Exception ( SomeException (..)
-                                   , ArithException (..)
+import           Control.Exception ( ArithException (..)
                                    , AsyncException (..)
                                    , NonTermination (..)
                                    )
@@ -189,17 +188,17 @@ instance Arbitrary ArbException where
       -- , pure (ArbException NonTermination)
       ]
 
-data ArbErrorPolicies = ArbErrorPolicies [ErrorPolicy ApplicationException]
-                                         [ErrorPolicy ConnectionException]
+data ArbErrorPolicies = ArbErrorPolicies [ErrorPolicy] -- application error policy
+                                         [ErrorPolicy] -- connection error policy
   deriving Show
 
 
 genErrorPolicy :: Gen (SuspendDecision DiffTime)
-               -> Gen (ErrorPolicy et)
+               -> Gen (ErrorPolicy)
 genErrorPolicy genCmd = oneof
-    [ (\cmd -> ErrorPolicy (\(_e :: et ArithException) -> cmd)) <$> genCmd,
-      (\cmd -> ErrorPolicy (\(_e :: et AsyncException) -> cmd)) <$> genCmd,
-      (\cmd -> ErrorPolicy (\(_e :: et NonTermination) -> cmd)) <$> genCmd
+    [ (\cmd -> ErrorPolicy (\(_e :: ArithException) -> cmd)) <$> genCmd,
+      (\cmd -> ErrorPolicy (\(_e :: AsyncException) -> cmd)) <$> genCmd,
+      (\cmd -> ErrorPolicy (\(_e :: NonTermination) -> cmd)) <$> genCmd
     ]
 
 instance Arbitrary ArbErrorPolicies where
@@ -211,23 +210,6 @@ instance Arbitrary ArbErrorPolicies where
         let aps' = shrinkList (const []) aps
             cps' = shrinkList (const []) cps in
         map (\(a,c) -> ArbErrorPolicies a c) $ zip aps' cps'
-
-
-data ArbConException =
-     ArbConException (ConnectionException SomeException)
-
-instance Arbitrary ArbConException where
-    arbitrary = fn <$> arbitrary
-      where
-        fn (ArbException e) = ArbConException (ConnectionException (SomeException e))
-
-data ArbAppException =
-     ArbAppException (ApplicationException SomeException)
-
-instance Arbitrary ArbAppException where
-    arbitrary = fn <$> arbitrary
-      where
-        fn (ArbException e) = ArbAppException (ApplicationException (SomeException e))
 
 data Sock addr = Sock {
     remoteAddr :: addr
@@ -396,15 +378,11 @@ prop_subscriptionWorker
               -- evaluated.
               Nothing -> True
               Just (ArbException e) -> transitionSpec remoteAddr ps
-                                        (evalErrorPolicies
-                                          (ApplicationException e)
-                                          appErrPolicies)
-                                        s
+                                                      (evalErrorPolicies e appErrPolicies)
+                                                      s
             AllocateError _ -> True
             ConnectError e  -> transitionSpec remoteAddr ps
-                                              (evalErrorPolicies
-                                                (ConnectionException e)
-                                                conErrPolicies)
+                                              (evalErrorPolicies e conErrPolicies)
                                               s
       if done
         then pure r
