@@ -7,8 +7,8 @@ let
   nixpkgs = import nixpkgsSrc;
 
   ihaskellSrc = builtins.fetchTarball {
-    url = "https://github.com/avieth/IHaskell/archive/55c5af2df37c8c17330ff99f85e3923866b17f49.tar.gz";
-    sha256 = "00a6ly8nbk5ic9bv6lpli8y96zr617d32iz2hs4x8x01nnfdcm6j";
+    url = "https://github.com/avieth/IHaskell/archive/f0cccec63df6874ea0244adc4102caa4bff549fd.tar.gz";
+    sha256 = "0wj88ys3qvjl7j3cj0krqy7im34naknpgc5ll8rzdzfdsyx550wl";
   };
 
   # Custom jupyterWith allows for setting the IHaskell and nixpkgs revisions.
