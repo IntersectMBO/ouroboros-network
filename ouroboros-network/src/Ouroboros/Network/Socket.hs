@@ -174,6 +174,7 @@ connectToNode' encodeData decodeData muxTracer handshakeTracer peeridFn versions
     let muxTracer' = Mx.WithMuxBearer (show peerid) `contramap` muxTracer
     bearer <- Mx.socketAsMuxBearer muxTracer' sd
     Mx.muxBearerSetState muxTracer' bearer Mx.Connected
+    traceWith muxTracer' $ Mx.MuxTraceHandshakeStart
     mapp <- runPeerWithByteLimit
               maxTransmissionUnit
               BL.length
@@ -183,8 +184,11 @@ connectToNode' encodeData decodeData muxTracer handshakeTracer peeridFn versions
               (Mx.muxBearerAsControlChannel bearer Mx.ModeInitiator)
               (handshakeClientPeer encodeData decodeData versions)
     case mapp of
-         Left err -> throwIO err
+         Left err -> do
+             traceWith muxTracer' $ Mx.MuxTraceHandshakeClientError err
+             throwIO err
          Right app -> do
+             traceWith muxTracer' Mx.MuxTraceHandshakeEnd
              Mx.muxStart muxTracer' peerid (toApplication app) bearer
 
 
@@ -249,6 +253,7 @@ beginConnection muxTracer handshakeTracer encodeData decodeData acceptVersion fn
         let muxTracer' = Mx.WithMuxBearer (show peerid) `contramap` muxTracer
         (bearer :: MuxBearer ptcl IO) <- Mx.socketAsMuxBearer muxTracer' sd
         Mx.muxBearerSetState muxTracer' bearer Mx.Connected
+        traceWith muxTracer' $ Mx.MuxTraceHandshakeStart
         mapp <- runPeerWithByteLimit
                 maxTransmissionUnit
                 BL.length
@@ -258,8 +263,11 @@ beginConnection muxTracer handshakeTracer encodeData decodeData acceptVersion fn
                 (Mx.muxBearerAsControlChannel bearer Mx.ModeResponder)
                 (handshakeServerPeer encodeData decodeData acceptVersion versions)
         case mapp of
-          Left err -> throwIO err
+          Left err -> do
+            traceWith muxTracer' $ Mx.MuxTraceHandshakeServerError err
+            throwIO err
           Right app -> do
+            traceWith muxTracer' $ Mx.MuxTraceHandshakeEnd
             Mx.muxStart muxTracer' peerid (toApplication app) bearer
       RejectConnection st' _peerid -> pure $ Server.Reject st'
 
