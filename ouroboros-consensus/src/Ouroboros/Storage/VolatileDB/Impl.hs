@@ -91,6 +91,7 @@ module Ouroboros.Storage.VolatileDB.Impl
     , InternalState(..)
     , OpenOrClosed(..)
     , filePath
+    , modifyState
     , openDBFull
     ) where
 

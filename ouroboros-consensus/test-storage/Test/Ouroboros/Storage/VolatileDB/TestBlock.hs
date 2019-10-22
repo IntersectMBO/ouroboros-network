@@ -23,13 +23,11 @@ import           Ouroboros.Network.Point (WithOrigin, withOriginFromMaybe,
                      withOriginToMaybe)
 
 import           Ouroboros.Consensus.Block (IsEBB (..))
-import           Ouroboros.Consensus.Util (SomePair (..))
 import           Ouroboros.Consensus.Util.IOLike
 
 import           Ouroboros.Storage.FS.API (HasFS (..), hGetExactly, hPut,
                      withFile)
 import           Ouroboros.Storage.FS.API.Types
-import qualified Ouroboros.Storage.Util.ErrorHandling as EH
 import           Ouroboros.Storage.VolatileDB
 import qualified Ouroboros.Storage.VolatileDB.Impl as Internal hiding (openDB)
 
@@ -115,10 +113,9 @@ parseImpl hasFS@HasFS{..} path =
                 }
 
 
-{-------------------------------------------------------------------------------
+{------------------------------------------------------------------------------
   Corruption
--------------------------------------------------------------------------------}
-
+------------------------------------------------------------------------------}
 
 data FileCorruption
     = DeleteFile
@@ -128,18 +125,22 @@ data FileCorruption
 
 instance Arbitrary FileCorruption where
     arbitrary = frequency
-        [ (1, return DeleteFile)
-        , (1, DropLastBytes . getSmall . getPositive <$> arbitrary)
-        , (1, AppendBytes . getSmall . getPositive <$> arbitrary)
-        ]
+      [ (1, return DeleteFile)
+      , (1, DropLastBytes . getSmall . getPositive <$> arbitrary)
+      , (1, AppendBytes . getSmall . getPositive <$> arbitrary)
+      ]
 
--- | Multiple corruptions
+-- | Multiple corruptions.
 type Corruptions = NonEmpty (FileCorruption, FsPath)
 
+-- | Brings a list of all corrupted files.
+corruptionFiles :: Corruptions -> [FsPath]
+corruptionFiles = map snd . NE.toList
+
 -- | The same file will not occur twice.
-generateCorruptions :: NonEmpty FsPath -> Gen Corruptions
+generateCorruptions :: [FsPath] -> Gen Corruptions
 generateCorruptions allFiles = sized $ \n -> do
-    subl  <- sublistOf (NE.toList allFiles) `suchThat` (not . null)
+    subl  <- sublistOf allFiles `suchThat` (not . null)
     k     <- choose (1, 1 `max` n)
     let files = NE.fromList $ take k subl
     forM files $ \file -> (, file) <$> arbitrary
@@ -147,35 +148,27 @@ generateCorruptions allFiles = sized $ \n -> do
 corruptFile :: MonadThrow m => HasFS m h -> FileCorruption -> FsPath -> m Bool
 corruptFile hasFS@HasFS{..} corr file = case corr of
     DeleteFile -> removeFile file >> return True
-    DropLastBytes n -> withFile hasFS file (AppendMode AllowExisting) $ \hnd -> do
+    DropLastBytes n ->
+      withFile hasFS file (AppendMode AllowExisting) $ \hnd -> do
         fileSize <- hGetSize hnd
         let newFileSize = if n >= fileSize then 0 else fileSize - n
         hTruncate hnd newFileSize
         return $ fileSize /= newFileSize
-    AppendBytes n -> withFile hasFS file (AppendMode AllowExisting) $ \hnd -> do
+    AppendBytes n ->
+      withFile hasFS file (AppendMode AllowExisting) $ \hnd -> do
         fileSize <- hGetSize hnd
         let newFileSize = fileSize + (fromIntegral n)
         _ <- hPut hasFS hnd (BB.byteString $ BS.replicate n 0)
         return $ fileSize /= newFileSize
 
-
-createFileImpl :: IOLike m
-               => HasFS m h
-               -> Internal.VolatileDBEnv m blockId
-               -> m ()
-createFileImpl hasFS env = do
-    SomePair _stHasFS st <- getInternalState env
-    let nextFd = Internal._nextNewFileId st
-    let path = Internal.filePath nextFd
-    withFile hasFS path (AppendMode MustBeNew) $ \_hndl -> do
-        return ()
-    return ()
-
-getInternalState :: forall m blockId. IOLike m
-                 => VolatileDBEnv m blockId
-                 -> m (SomePair (HasFS m) (InternalState blockId))
-getInternalState VolatileDBEnv{..} = do
-    mSt <- readMVar _dbInternalState
-    case mSt of
-      VolatileDbClosed  -> EH.throwError _dbErr $ UserError ClosedDBError
-      VolatileDbOpen st -> return $ SomePair _dbHasFS st
+createFile :: IOLike m
+           => Internal.VolatileDBEnv m blockId
+           -> m ()
+createFile env =
+    -- This will soon be replaced by @withState@.
+    modifyState env $ \hasFS st -> do
+      let nextFd = Internal._nextNewFileId st
+      let path = Internal.filePath nextFd
+      withFile hasFS path (AppendMode MustBeNew) $ \_hndl -> do
+          return ()
+      return (st, ())
