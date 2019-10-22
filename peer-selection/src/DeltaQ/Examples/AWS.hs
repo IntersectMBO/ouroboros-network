@@ -47,11 +47,11 @@ aws = overlays $
   ]
 
 -- | Probably not the true minimal-cost cycle.
-awsMinCycle :: Natural -> [NetNode] -> Topography SimpleGS NetNode
+awsMinCycle :: Natural -> NetNode -> Topography SimpleGS NetNode
 awsMinCycle bytes = awsCycle (compareAt bytes)
 
 -- | Probably not the true maximal-cost cycle.
-awsMaxCycle :: Natural -> [NetNode] -> Topography SimpleGS NetNode
+awsMaxCycle :: Natural -> NetNode -> Topography SimpleGS NetNode
 awsMaxCycle bytes = awsCycle (flipOrder (compareAt bytes))
   where
   flipOrder compare a b = case compare a b of
@@ -59,13 +59,13 @@ awsMaxCycle bytes = awsCycle (flipOrder (compareAt bytes))
     LT -> GT
     GT -> LT
 
-awsMinCycle' :: Natural -> [NetNode] -> Topography BearerCharacteristics NetNode
+awsMinCycle' :: Natural -> NetNode -> Topography BearerCharacteristics NetNode
 awsMinCycle' bytes nodes = updateLinkAnnotation (setRestriction (ethernetR 1e9 1500)) $ overlays
   [ awsMinCycle bytes nodes
   , transpose (awsMinCycle bytes nodes)
   ]
 
-awsMaxCycle' :: Natural -> [NetNode] -> Topography BearerCharacteristics NetNode
+awsMaxCycle' :: Natural -> NetNode -> Topography BearerCharacteristics NetNode
 awsMaxCycle' bytes nodes = updateLinkAnnotation (setRestriction (ethernetR 1e9 1500)) $ overlays
   [ awsMaxCycle bytes nodes
   , transpose (awsMaxCycle bytes nodes)
@@ -178,19 +178,20 @@ stt1 iw size = (ttc', rate, lp)
 -- for a given number of bytes, by comparing the GS at that number of bytes and
 -- taking the dual order if desired. Actually computing the maximal/minimal
 -- such cycle would be quite hard; it's travelling salesman on 15 nodes.
-awsCycle :: (SimpleGS -> SimpleGS -> Ordering) -> [NetNode] -> Topography SimpleGS NetNode
-awsCycle ordering nodes = fst (List.foldl' construct (Graph.empty, unidirectional) nodes)
+awsCycle :: (SimpleGS -> SimpleGS -> Ordering) -> NetNode -> Topography SimpleGS NetNode
+awsCycle ordering start = fst (construct (Graph.empty, unidirectional) start)
   where
   construct :: (Topography SimpleGS NetNode, Topography SimpleGS NetNode)
             -> NetNode
             -> (Topography SimpleGS NetNode, Topography SimpleGS NetNode)
-  construct (newGraph, oldGraph) node =
-    let edgesFrom          = Map.toList (postSetEdges node oldGraph)
-        ~(node', minimale) = List.head (List.sortBy ordering' edgesFrom)
-        newGraph'          = Graph.overlay newGraph (Graph.edge minimale node node')
-        oldGraph'          = removeVertex node oldGraph
-        -- If the list is not null then node' and minimale are not _|_.
-    in  if List.null edgesFrom then (newGraph, oldGraph') else (newGraph', oldGraph')
+  construct (newGraph, oldGraph) node = case Map.toList (postSetEdges node oldGraph) of
+    -- Cycle ends here.
+    []              -> (newGraph, oldGraph)
+    edgesFrom@(_:_) -> construct (newGraph', oldGraph') node'
+      where
+        (node', minimale) = List.head (List.sortBy ordering' edgesFrom)
+        !newGraph'          = Graph.overlay newGraph (Graph.edge minimale node node')
+        !oldGraph'          = removeVertex node oldGraph
   -- Must do the fold on the graph overlayed with its own transpose, otherwise
   -- weird results are possible due to the way in which the awsTestData graph
   -- is defined and the order of the nodes given to awsCycle. It's possible
