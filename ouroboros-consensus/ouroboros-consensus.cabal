@@ -17,11 +17,6 @@ source-repository head
   type:     git
   location: https://github.com/input-output-hk/ouroboros-network
 
-flag checktvarinvariant
-  Description: Enable runtime checks on application state
-  Manual: True
-  Default: False
-
 library
   hs-source-dirs:      src
 
