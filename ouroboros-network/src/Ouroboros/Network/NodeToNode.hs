@@ -469,7 +469,7 @@ dnsSubscriptionWorker
 --
 dnsSubscriptionWorker_V1
     :: forall appType peerid x y void.
-       ( HasInitiator appType ~ True)
+       ( HasInitiator appType ~ True )
     => Tracer IO (WithDomainName (SubscriptionTrace Socket.SockAddr))
     -> Tracer IO (WithDomainName DnsTrace)
     -> Tracer IO (WithMuxBearer peerid (MuxTrace NodeToNodeProtocols))
