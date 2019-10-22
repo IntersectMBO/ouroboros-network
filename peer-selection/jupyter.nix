@@ -67,7 +67,9 @@ let
   jupyterEnvironment = jupyterWith.jupyterlabWith {
     kernels = [ ipythonKernel ihaskellKernel ];
     # Need the dot executable in order to use ihaskell-graphviz
-    extrapkgs = pkgs: [ pkgs.graphviz ];
+    extrapkgs = pkgs: with pkgs; [
+      graphviz
+    ];
   };
 in
   jupyterEnvironment.env
