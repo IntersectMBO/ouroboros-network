@@ -79,6 +79,7 @@ data ChainDbArgs m blk = forall h1 h2 h3. ChainDbArgs {
 
       -- Misc
     , cdbTracer           :: Tracer m (TraceEvent blk)
+    , cdbTraceLedger      :: Tracer m (LgrDB.LedgerDB blk)
     , cdbRegistry         :: ResourceRegistry m
     , cdbGcDelay          :: DiffTime
     }
@@ -163,6 +164,7 @@ fromChainDbArgs ChainDbArgs{..} = (
         , lgrDiskPolicy       = cdbDiskPolicy
         , lgrGenesis          = cdbGenesis
         , lgrTracer           = contramap TraceLedgerEvent cdbTracer
+        , lgrTraceLedger      = cdbTraceLedger
         }
     , ChainDbSpecificArgs {
           cdbsTracer          = cdbTracer
@@ -214,6 +216,7 @@ toChainDbArgs ImmDB.ImmDbArgs{..}
     , cdbGenesis          = lgrGenesis
       -- Misc
     , cdbTracer           = cdbsTracer
+    , cdbTraceLedger      = lgrTraceLedger
     , cdbRegistry         = cdbsRegistry
     , cdbGcDelay          = cdbsGcDelay
     }

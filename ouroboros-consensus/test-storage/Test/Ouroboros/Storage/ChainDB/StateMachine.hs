@@ -66,7 +66,7 @@ import           Ouroboros.Network.MockChain.ProducerState (ChainProducerState,
 import qualified Ouroboros.Network.MockChain.ProducerState as CPS
 import qualified Ouroboros.Network.Point as Point
 
-import           Ouroboros.Consensus.Block (getHeader, IsEBB (..))
+import           Ouroboros.Consensus.Block (IsEBB (..), getHeader)
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.NodeId (NodeId (..))
@@ -1209,6 +1209,7 @@ mkArgs cfg initLedger tracer registry
 
     -- Misc
     , cdbTracer           = tracer
+    , cdbTraceLedger      = nullTracer
     , cdbRegistry         = registry
     , cdbGcDelay          = 0
     }

@@ -277,6 +277,7 @@ runNodeNetwork registry testBtime numCoreNodes nodeJoinPlan nodeTopology
                   (ChainDB.AddedBlockToVolDB p bno IsNotEBB)
                   -> traceWith addTracer (p, bno)
               _   -> pure ()
+        , cdbTraceLedger      = nullTracer
         , cdbRegistry         = registry
         , cdbGcDelay          = 0
         }
