@@ -445,9 +445,11 @@ addBlock cdb@CDB{..} b = do
           -- The chain must be changed in the meantime such that our chain is
           -- no longer preferred.
           _ -> return (curChain, False)
-      trace $ if switched
-              then SwitchedToChain  curChain newChain
-              else ChainChangedInBg curChain newChain
+      if switched then do
+        trace $ SwitchedToChain curChain newChain
+        traceWith cdbTraceLedger newLedger
+      else do
+        trace $ ChainChangedInBg curChain newChain
 
     -- | Build a cache from the headers in the fragment.
     cacheHeaders :: AnchoredFragment (Header blk)

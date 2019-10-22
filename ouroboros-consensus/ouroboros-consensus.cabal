@@ -102,6 +102,7 @@ library
                        Ouroboros.Consensus.Util.Singletons
                        Ouroboros.Consensus.Util.SlotBounded
                        Ouroboros.Consensus.Util.STM
+                       Ouroboros.Consensus.Util.TraceSize
 
                        -- Storing things on disk
                        Ouroboros.Storage.Common

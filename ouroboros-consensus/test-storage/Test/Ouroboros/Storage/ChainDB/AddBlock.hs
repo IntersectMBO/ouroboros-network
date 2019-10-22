@@ -263,6 +263,7 @@ mkArgs cfg initLedger tracer registry
 
     -- Misc
     , cdbTracer           = tracer
+    , cdbTraceLedger      = nullTracer
     , cdbRegistry         = registry
     , cdbGcDelay          = 0
     }

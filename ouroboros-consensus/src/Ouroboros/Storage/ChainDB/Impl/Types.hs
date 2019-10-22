@@ -198,6 +198,7 @@ data ChainDbEnv m blk = CDB
     -- Note that 'copyToImmDB' can still be executed concurrently with all
     -- others functions, just not with itself.
   , cdbTracer         :: !(Tracer m (TraceEvent blk))
+  , cdbTraceLedger    :: !(Tracer m (LgrDB.LedgerDB blk))
   , cdbRegistry       :: !(ResourceRegistry m)
     -- ^ Resource registry that will be used to (re)start the background
     -- threads, see 'cdbBgThreads'.

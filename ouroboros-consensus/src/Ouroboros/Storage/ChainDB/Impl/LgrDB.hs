@@ -156,6 +156,7 @@ data LgrDbArgs m blk = forall h. LgrDbArgs {
     , lgrDiskPolicy       :: DiskPolicy m
     , lgrGenesis          :: m (ExtLedgerState blk)
     , lgrTracer           :: Tracer m (TraceEvent (Point blk))
+    , lgrTraceLedger      :: Tracer m (LedgerDB blk)
     }
   deriving NoUnexpectedThunks via OnlyCheckIsWHNF "LgrDbArgs" (LgrDbArgs m blk)
 
@@ -187,6 +188,7 @@ defaultArgs fp = LgrDbArgs {
     , lgrDiskPolicy       = error "no default for lgrDiskPolicy"
     , lgrGenesis          = error "no default for lgrGenesis"
     , lgrTracer           = nullTracer
+    , lgrTraceLedger      = nullTracer
     }
 
 -- | Open the ledger DB

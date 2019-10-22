@@ -140,6 +140,7 @@ openDBInternal args launchBgTasks = do
                   , cdbNextReaderId   = varNextReaderId
                   , cdbCopyLock       = varCopyLock
                   , cdbTracer         = tracer
+                  , cdbTraceLedger    = Args.cdbTraceLedger args
                   , cdbRegistry       = Args.cdbRegistry args
                   , cdbGcDelay        = Args.cdbGcDelay args
                   , cdbBgThreads      = varBgThreads
