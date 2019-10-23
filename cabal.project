@@ -32,13 +32,19 @@ source-repository-package
   type: git
   location: https://github.com/input-output-hk/iohk-monitoring-framework
   subdir: iohk-monitoring
-  tag: 1ebe57df3a76a8ae4e3b5a31a9b85132f71534fc
+  tag: 5b91f7a10465ae1215522a39d42df7e970ab8e8f
 
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/iohk-monitoring-framework
   subdir:   contra-tracer
-  tag: 1ebe57df3a76a8ae4e3b5a31a9b85132f71534fc
+  tag: 5b91f7a10465ae1215522a39d42df7e970ab8e8f
+
+source-repository-package
+  type: git
+  location: https://github.com/Soostone/katip.git
+  tag: cf60f0e14640ae9702c111bb51aeca7eed50ad48
+  subdir: katip
 
 source-repository-package
   type: git
