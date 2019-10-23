@@ -7,7 +7,7 @@ module DeltaQ.Examples.AWS where
 import Algebra.Graph.Labelled.AdjacencyMap hiding (edge)
 import qualified Algebra.Graph.Labelled.AdjacencyMap as Graph
 import Algebra.Graph.Labelled.AdjacencyMap.ShortestPath
-import qualified Data.List as List (sortBy, head, null, foldl')
+import qualified Data.List as List (sortBy, filter, foldl', head, null)
 import qualified Data.Map.Strict as Map
 import Data.Semigroup (Last (..))
 import qualified Data.Set as Set
@@ -178,15 +178,23 @@ stt1 iw size = (ttc', rate, lp)
 -- for a given number of bytes, by comparing the GS at that number of bytes and
 -- taking the dual order if desired. Actually computing the maximal/minimal
 -- such cycle would be quite hard; it's travelling salesman on 15 nodes.
+--
 awsCycle :: (SimpleGS -> SimpleGS -> Ordering) -> NetNode -> Topography SimpleGS NetNode
-awsCycle ordering start = fst (construct (Graph.empty, unidirectional) start)
+awsCycle ordering start = case finalEdges of
+  [] -> newGraph
+  -- Add the final edge, to get a cycle.
+  edgesFrom@(_:_) -> Graph.overlay
+    newGraph
+    (Graph.edge (snd (List.head (List.sortBy ordering' edgesFrom))) finalNode start)
   where
+  finalEdges = List.filter (\(v, _) -> v == start) (Map.toList (postSetEdges finalNode unidirectional))
+  (finalNode, newGraph, oldGraph) = construct (Graph.empty, unidirectional) start
   construct :: (Topography SimpleGS NetNode, Topography SimpleGS NetNode)
             -> NetNode
-            -> (Topography SimpleGS NetNode, Topography SimpleGS NetNode)
+            -> (NetNode, Topography SimpleGS NetNode, Topography SimpleGS NetNode)
   construct (newGraph, oldGraph) node = case Map.toList (postSetEdges node oldGraph) of
     -- Cycle ends here.
-    []              -> (newGraph, oldGraph)
+    []              -> (node, newGraph, oldGraph)
     edgesFrom@(_:_) -> construct (newGraph', oldGraph') node'
       where
         (node', minimale) = List.head (List.sortBy ordering' edgesFrom)
