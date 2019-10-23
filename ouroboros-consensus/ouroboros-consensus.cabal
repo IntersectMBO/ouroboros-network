@@ -147,8 +147,6 @@ library
                        Ouroboros.Storage.VolatileDB.Index
                        Ouroboros.Storage.VolatileDB.Types
                        Ouroboros.Storage.VolatileDB.Util
-  if os(windows)
-     exposed-modules:  Ouroboros.Storage.Seek
 
   default-language:    Haskell2010
   other-extensions:
@@ -226,7 +224,7 @@ library
                        vector            >=0.12  && <0.13
 
   if os(windows)
-     build-depends:       Win32
+     build-depends:       Win32 >= 2.6.2.0
   else
      build-depends:       unix
 

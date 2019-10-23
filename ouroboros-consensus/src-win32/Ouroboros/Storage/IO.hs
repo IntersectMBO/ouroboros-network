@@ -19,15 +19,12 @@ import           Data.ByteString
 import           Data.ByteString.Internal as Internal
 import           Data.Word (Word32, Word64, Word8)
 import           Foreign (Int64, Ptr)
-
--- Dodgy import when Win32 >= 2.6.2.0
-import           System.Win32 hiding (setFilePointerEx)
+import           System.Win32
 
 import           Ouroboros.Storage.FS.API.Types (AllowExisting (..),
                      FsError (..), FsErrorType (..), OpenMode (..),
                      SeekMode (..))
 import           Ouroboros.Storage.FS.Handle
-import           Ouroboros.Storage.Seek (setFilePointerEx)
 
 type FHandle = HandleOS HANDLE
 
