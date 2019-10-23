@@ -163,6 +163,10 @@ class ( Show (ChainState    p)
   compareCandidates :: CanSelect p hdr => NodeConfig p -> hdr -> hdr -> Ordering
 
   -- | Check if a node is the leader
+  --
+  -- The 'LedgerView' and 'ChainState' passed to 'checkIsLeader' are the ledger
+  -- view and chain state for the /currently adopted chain/ (and must therefore
+  -- be consistent with each other).
   checkIsLeader :: (HasNodeState p m, MonadRandom m)
                 => NodeConfig p
                 -> SlotNo
@@ -184,21 +188,18 @@ class ( Show (ChainState    p)
   -- | The slot lengths (across all hard forks)
   protocolSlotLengths :: NodeConfig p -> SlotLengths
 
-  -- | We require that it's possible to reverse the chain state up to @k@
-  -- blocks.
-  --
-  -- This function should attempt to rewind the chain state to the state at some
-  -- given slot, or Origin to rewind to the state with no blocks.
+  -- | Rewind the chain state up to @k@ blocks
   --
   -- PRECONDITION: the slot to rewind to must correspond to the slot of a
   -- header (or 'Origin') that was previously applied to the chain state using
   -- 'applyChainState'.
   --
-  -- Rewinding the chain state is intended to be used when switching to a
-  -- fork, longer or equally long to the chain to which the current chain
-  -- state corresponds. So each rewinding should be followed by rolling
-  -- forward (using 'applyChainState') at least as many blocks that we have
-  -- rewound.
+  -- Rewinding by more than @k@ should be 'Nothing'.
+  --
+  -- Rewinding the chain state is intended to be used when switching to a fork,
+  -- longer than (or as long as) the current chain. So each rewinding should be
+  -- followed by rolling forward (using 'applyChainState') at least as many
+  -- blocks that we have rewound.
   --
   -- Note that repeatedly rewinding a chain state does not make it possible to
   -- rewind it all the way to genesis (this would mean that the whole
@@ -210,11 +211,10 @@ class ( Show (ChainState    p)
                    -> ChainState p
                    -> WithOrigin SlotNo
                    -- ^ Slot to rewind to
-                   --
+                   -> Maybe (ChainState p)
                    -- This should be the state at the /end/ of the specified
                    -- slot (i.e., after the block in that slot, if any, has
                    -- been applied).
-                   -> Maybe (ChainState p)
 
   --
   -- Default chain selection

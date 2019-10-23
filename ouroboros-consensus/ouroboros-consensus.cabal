@@ -89,6 +89,15 @@ library
                        Ouroboros.Consensus.Protocol
                        Ouroboros.Consensus.Protocol.Abstract
                        Ouroboros.Consensus.Protocol.BFT
+                       Ouroboros.Consensus.Protocol.HardFork
+                       Ouroboros.Consensus.Protocol.HardFork.CanHardFork
+                       Ouroboros.Consensus.Protocol.HardFork.CanHardFork.MockPBftToPraos
+                       Ouroboros.Consensus.Protocol.HardFork.ChainState
+                       Ouroboros.Consensus.Protocol.HardFork.Config
+                       Ouroboros.Consensus.Protocol.HardFork.Envelope
+                       Ouroboros.Consensus.Protocol.HardFork.Forked
+                       Ouroboros.Consensus.Protocol.HardFork.OuroborosTag
+                       Ouroboros.Consensus.Protocol.HardFork.ProjectState
                        Ouroboros.Consensus.Protocol.LeaderSchedule
                        Ouroboros.Consensus.Protocol.MockChainSel
                        Ouroboros.Consensus.Protocol.ModChainSel

@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE DerivingVia         #-}
 {-# LANGUAGE RecordWildCards     #-}
@@ -12,6 +13,7 @@ module Ouroboros.Consensus.BlockchainTime.SlotLengths (
   , singletonSlotLengths
   , introduceHardFork
   , tickSlotLengths
+  , slotsUntilFinalSegment
     -- * Focused slot lengths and supported conversions
   , FocusedSlotLengths(..)
   , focusSlotLengths
@@ -149,6 +151,16 @@ tickSlotLengths SlotLengths{..} = (
         Just (SegmentLength n, next) ->
           SlotLengths currentSlotLength (Just (SegmentLength (n - 1), next))
     )
+
+-- | Number of slots until we have reached the final segment
+slotsUntilFinalSegment :: SlotLengths -> Word64
+slotsUntilFinalSegment = go 0
+  where
+    go :: Word64 -> SlotLengths -> Word64
+    go !acc SlotLengths{..} =
+        case nextSlotLengths of
+          Nothing                      -> acc
+          Just (SegmentLength n, next) -> go (acc + n) next
 
 {-------------------------------------------------------------------------------
   Segments
