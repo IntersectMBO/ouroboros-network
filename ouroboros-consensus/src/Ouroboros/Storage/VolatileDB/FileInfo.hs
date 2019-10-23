@@ -8,11 +8,12 @@
 -- Intended for qualified import.
 module Ouroboros.Storage.VolatileDB.FileInfo (
     FileInfo     -- opaque
-  , FileSlotInfo(..) -- TODO: opaque
+  , FileSlotInfo -- opaque
     -- * Construction
   , empty
   , addSlot
   , fromParsedInfo
+  , mkFileSlotInfo
     -- * Queries
   , canGC
   , blockIds
@@ -24,7 +25,6 @@ module Ouroboros.Storage.VolatileDB.FileInfo (
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (mapMaybe)
-import           Data.Word
 import           GHC.Generics (Generic)
 
 import           Cardano.Prelude (NoUnexpectedThunks)
@@ -42,7 +42,7 @@ import           Ouroboros.Storage.VolatileDB.Util
   Types
 -------------------------------------------------------------------------------}
 
--- The Internal information the db keeps for each file.
+-- | The Internal information the db keeps for each file.
 data FileInfo blockId = MkFileInfo {
       fLatestSlot :: !MaxSlotNo
     , fNBlocks    :: !Int
@@ -66,21 +66,22 @@ empty = MkFileInfo {
     , fContents   = Map.empty
     }
 
--- | Add slot to a file
+-- | Adds a slot to a 'FileInfo'.
 addSlot :: SlotNo
         -> SlotOffset
         -> FileSlotInfo blockId
-        -> FileInfo blockId -> FileInfo blockId
+        -> FileInfo blockId
+        -> FileInfo blockId
 addSlot slotNo slotOffset slotInfo MkFileInfo{..} = MkFileInfo {
       fLatestSlot = updateSlotNoBlockId fLatestSlot [slotNo]
     , fNBlocks    = fNBlocks + 1
     , fContents   = Map.insert slotOffset slotInfo fContents
     }
 
--- | Construct 'FileInfo' from the parser result
+-- | Constructs 'FileInfo' from the parser result.
 --
--- Additionally returns information about the last 'SlotOffset' in the file,
--- unless the file is empty.
+-- Additionally, it returns information about the last 'SlotOffset' in the
+-- file, unless the file is empty.
 fromParsedInfo :: ParsedInfo blockId
                -> (FileInfo blockId, Maybe (blockId, SlotNo))
 fromParsedInfo parsed =
@@ -92,18 +93,23 @@ fromParsedInfo parsed =
     nBlocks  = Map.size parsed'
     contents = Map.map sizeAndId parsed'
 
+mkFileSlotInfo :: BlockSize -> blockId -> FileSlotInfo blockId
+mkFileSlotInfo = FileSlotInfo
+
 {-------------------------------------------------------------------------------
   Queries
 -------------------------------------------------------------------------------}
 
--- | Check if this file can be GCed
-canGC :: FileInfo blockId -> SlotNo -> Bool
+-- | Checks if this file can be GCed.
+canGC :: FileInfo blockId
+      -> SlotNo -- ^ The slot number of any block in the immutable DB.
+      -> Bool
 canGC MkFileInfo{..} slot =
     case fLatestSlot of
       NoMaxSlotNo      -> True
       MaxSlotNo latest -> latest < slot
 
--- | All block IDs in this file
+-- | All @blockId@ in this file.
 blockIds :: FileInfo blockId -> [blockId]
 blockIds MkFileInfo{..} = fsBlockId <$> Map.elems fContents
 
@@ -121,21 +127,19 @@ maxSlotInFiles = maxSlotNoFromMaybe
 
 {-------------------------------------------------------------------------------
   Internal auxiliary
-
-  TODO: Some of these functions might still benefit from some cleanup
 -------------------------------------------------------------------------------}
 
 sizeAndId :: (BlockSize, BlockInfo blockId) -> FileSlotInfo blockId
 sizeAndId (size, bInfo) = FileSlotInfo size (bbid bInfo)
 
--- | @blockId@ and 'SlotNo' for the last 'SlotOffset' in the map
+-- | @blockId@ and 'SlotNo' for the last 'SlotOffset' in the map.
 lastSlotInfo :: forall blockId.
-                Map SlotOffset (Word64, BlockInfo blockId)
+                Map SlotOffset (BlockSize, BlockInfo blockId)
              -> Maybe (blockId, SlotNo)
-lastSlotInfo mp = f <$> safeMaximumOn getSlot (Map.elems mp)
+lastSlotInfo mp = getBlockIdAndSlot <$> safeMaximumOn getSlotNo (Map.elems mp)
   where
-    f :: (SlotOffset, BlockInfo blockId) -> (blockId, SlotNo)
-    f (_, bInfo) = (bbid bInfo, bslot bInfo)
+    getBlockIdAndSlot :: (BlockSize, BlockInfo blockId) -> (blockId, SlotNo)
+    getBlockIdAndSlot (_, bInfo) = (bbid bInfo, bslot bInfo)
 
-    getSlot :: (SlotOffset, BlockInfo blockId) -> SlotNo
-    getSlot (_, bInfo) = bslot bInfo
+    getSlotNo :: (BlockSize, BlockInfo blockId) -> SlotNo
+    getSlotNo (_, bInfo) = bslot bInfo

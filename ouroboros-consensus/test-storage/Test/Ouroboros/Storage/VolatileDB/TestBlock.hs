@@ -29,6 +29,7 @@ import           Ouroboros.Storage.Common
 import           Ouroboros.Storage.FS.API (HasFS (..), hGetExactly, hPut,
                      withFile)
 import           Ouroboros.Storage.FS.API.Types
+import qualified Ouroboros.Storage.Util.ErrorHandling as EH
 import           Ouroboros.Storage.VolatileDB
 import qualified Ouroboros.Storage.VolatileDB.Impl as Internal hiding (openDB)
 
@@ -75,17 +76,17 @@ myParser hasFs = Parser {
 parseImpl :: forall m h. (MonadThrow m)
           => HasFS m h
           -> FsPath
-          -> m ([(SlotOffset, (BlockSize, BlockInfo BlockId))], Maybe String)
+          -> m ([(SlotOffset, (Word64, BlockInfo BlockId))], Maybe String)
 parseImpl hasFS@HasFS{..} path =
     withFile hasFS path ReadMode $ \hndl -> do
       fileSize <- hGetSize hndl
       go hndl [] 0 fileSize
   where
     go :: Handle h
-       -> [(SlotOffset, (BlockSize, BlockInfo BlockId))]
+       -> [(SlotOffset, (Word64, BlockInfo BlockId))]
        -> Word64  -- ^ Offset where we will read from next
        -> Word64  -- ^ File size, i.e. the max offset
-       -> m ([(SlotOffset, (BlockSize, BlockInfo BlockId))], Maybe String)
+       -> m ([(SlotOffset, (Word64, BlockInfo BlockId))], Maybe String)
     go hndl ls offset maxOffset
       | offset >= maxOffset
       = return (reverse ls, Nothing)
@@ -154,9 +155,18 @@ createFileImpl :: IOLike m
                -> Internal.VolatileDBEnv m blockId
                -> m ()
 createFileImpl hasFS env = do
-    SomePair _stHasFS st <- Internal.getInternalState env
+    SomePair _stHasFS st <- getInternalState env
     let nextFd = Internal._nextNewFileId st
     let path = Internal.filePath nextFd
     withFile hasFS path (AppendMode MustBeNew) $ \_hndl -> do
         return ()
     return ()
+
+getInternalState :: forall m blockId. IOLike m
+                 => VolatileDBEnv m blockId
+                 -> m (SomePair (HasFS m) (InternalState blockId))
+getInternalState VolatileDBEnv{..} = do
+    mSt <- readMVar _dbInternalState
+    case mSt of
+      VolatileDbClosed  -> EH.throwError _dbErr $ UserError ClosedDBError
+      VolatileDbOpen st -> return $ SomePair _dbHasFS st
