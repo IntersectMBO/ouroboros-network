@@ -1,15 +1,16 @@
 module DeltaQ.Examples.Charts where
 
 import Data.Colour (opaque)
-import Data.Colour.Names (white)
+import Data.Colour.Names
 import Data.Default.Class (def)
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import Graphics.Rendering.Chart.Axis.Types (AxisData (..), PlotValue (..))
 import Graphics.Rendering.Chart.Backend.Types (FillStyle (..))
-import Graphics.Rendering.Chart.Easy (AlphaColour, Layout (..), solidFillStyle, withOpacity)
+import Graphics.Rendering.Chart.Easy (AlphaColour, Layout (..), solidFillStyle, withOpacity, toRenderable)
 import Graphics.Rendering.Chart.Plot.Candle (PlotCandle (..), Candle (..))
 import Graphics.Rendering.Chart.Plot.Types (toPlot)
+import Graphics.Rendering.Chart.Backend.Cairo (renderableToFile)
 
 import qualified DeltaQ.Examples.AWS as AWS
 import DeltaQ.Statistics
@@ -95,9 +96,13 @@ first f (x, y) = (f x, y)
 second :: (a -> b) -> (x, a) -> (x, b)
 second f (x, y) = (x, f y)
 
--- let color_1 = withOpacity red  0.5
---     color_2 = withOpacity blue 0.5
---     data_1 = all_pairs_time_to_send (2 ^ 21) (awsMinCycle' (2 ^ 21) [minBound..maxBound])
---     data_2 = all_pairs_time_to_send (2 ^ 21) (awsMaxCycle' (2 ^ 21) [minBound..maxBound])
---     ps = candle_plots [(color_1, fmap Map.elems data_1), (color_2, fmap Map.elems data_2)]
--- renderableToFile def "file.png" (toRenderable ps)
+--example :: IO ()
+example =
+ let color_1 = withOpacity red  0.5
+     color_2 = withOpacity blue 0.5
+     data_1 = all_pairs_time_to_send (2 ^ 21) (AWS.awsMinCycle' (2 ^ 21) AWS.CanadaAWS)
+     data_2 = all_pairs_time_to_send (2 ^ 21) (AWS.awsMaxCycle' (2 ^ 21) AWS.CanadaAWS)
+     ps = candle_plots [(color_1, fmap Map.elems data_1), (color_2, fmap Map.elems data_2)]
+ in  ps
+ --renderableToFile def "file.png" (toRenderable ps)
+ --pure ()
