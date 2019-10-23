@@ -353,6 +353,6 @@ instance Show ptcl => Show (MuxTrace ptcl) where
     show MuxTraceHandshakeEnd = "Handshake end"
     show (MuxTraceHandshakeClientError e) =
          -- Client Error can include an error string from the peer which could be very large.
-        printf "Handshake Client Error %s" (take 64 $ show e)
+        printf "Handshake Client Error %s" (take 256 $ show e)
     show (MuxTraceHandshakeServerError e) = printf "Handshake Server Error %s" (show e)
 
