@@ -57,11 +57,11 @@ open filename openMode = do
     createNew MustBeNew     = cREATE_NEW
 
 write :: FHandle -> Ptr Word8 -> Int64 -> IO Word32
-write fh data' bytes = withOpenHandle "write" fh $ \h ->
+write fh data' bytes = withExclOpenHandle "write" fh $ \h ->
   win32_WriteFile h data' (fromIntegral bytes) Nothing
 
 seek :: FHandle -> SeekMode -> Int64 -> IO ()
-seek fh seekMode size = void <$> withOpenHandle "seek" fh $ \h ->
+seek fh seekMode size = void <$> withExclOpenHandle "seek" fh $ \h ->
   setFilePointerEx h (fromIntegral size) (fromSeekMode seekMode)
 
 fromSeekMode :: SeekMode -> FilePtrDirection
@@ -70,15 +70,17 @@ fromSeekMode RelativeSeek = fILE_CURRENT
 fromSeekMode SeekFromEnd  = fILE_END
 
 read :: FHandle -> Word64 -> IO ByteString
-read fh bytes = withOpenHandle "read" fh $ \h ->
+read fh bytes = withExclOpenHandle "read" fh $ \h ->
   Internal.createUptoN (fromIntegral bytes) $ \ptr ->
     fromIntegral <$> win32_ReadFile h ptr (fromIntegral bytes) Nothing
 
 getCurrentFileOffset :: HANDLE -> IO Int64
 getCurrentFileOffset h = setFilePointerEx h 0 fILE_CURRENT
 
+-- | @win32_ReadFile@ in Windows always changes the file offset, so it's
+-- not thread safe. That's why we use a exclusive lock for this.
 pread :: FHandle -> Word64 -> Word64 -> IO ByteString
-pread fh bytes pos = withOpenHandle "pread" fh $ \h ->
+pread fh bytes pos = withExclOpenHandle "pread" fh $ \h ->
   Internal.createUptoN (fromIntegral bytes) $ \ptr -> do
     initialOffset <- getCurrentFileOffset h
     _ <- setFilePointerEx h (fromIntegral pos) fILE_BEGIN
@@ -86,10 +88,11 @@ pread fh bytes pos = withOpenHandle "pread" fh $ \h ->
     _ <- setFilePointerEx h initialOffset fILE_BEGIN
     return n
 
--- We only allow truncate in AppendMode, but Windows do not support it, so we manually seek to the end.
--- It is important that the logical end of the handle stays alligned to the physical end of the file.
+-- We only allow truncate in AppendMode, but Windows does not support it, so we
+-- manually seek to the end. It is important that the logical offset of the
+-- handle stays aligned to the physical end of the file.
 truncate :: FHandle -> Word64 -> IO ()
-truncate fh size =  withOpenHandle "truncate" fh $ \h -> do
+truncate fh size =  withExclOpenHandle "truncate" fh $ \h -> do
   _ <- setFilePointerEx h (fromIntegral size) (fromSeekMode AbsoluteSeek)
   setEndOfFile h
 
@@ -97,7 +100,7 @@ close :: FHandle -> IO ()
 close fh = closeHandleOS fh closeHandle
 
 getSize :: FHandle -> IO Word64
-getSize fh = withOpenHandle "getSize" fh $ \h -> do
+getSize fh = withSharedOpenHandle "getSize" fh $ \h ->
   fromIntegral . bhfiSize <$>  getFileInformationByHandle h
 
 -- | For the following error types, our mock FS implementation (and the Posix

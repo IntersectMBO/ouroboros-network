@@ -36,6 +36,7 @@
           (hsPkgs.cardano-prelude)
           (hsPkgs.cardano-slotting)
           (hsPkgs.cborg)
+          (hsPkgs.concurrent-extra)
           (hsPkgs.containers)
           (hsPkgs.cryptonite)
           (hsPkgs.cs-blockchain)

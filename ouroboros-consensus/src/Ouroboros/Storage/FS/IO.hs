@@ -5,7 +5,6 @@ module Ouroboros.Storage.FS.IO (
     , ioHasFS
     ) where
 
-import           Control.Concurrent.MVar
 import qualified Control.Exception as E
 import qualified Data.ByteString.Unsafe as BS
 import qualified Data.Set as Set
@@ -37,8 +36,8 @@ ioHasFS mount = HasFS {
         let path = root fp
         osHandle <- rethrowFsError fp $
             F.open path openMode
-        hVar <- newMVar $ Just osHandle
-        return $ Handle (H.HandleOS path hVar) fp
+        hndl <- H.newHandleOS path osHandle
+        return $ Handle hndl fp
     , hClose = \(Handle h fp) -> rethrowFsError fp $
         F.close h
     , hSeek = \(Handle h fp) mode o -> rethrowFsError fp $
@@ -51,7 +50,7 @@ ioHasFS mount = HasFS {
         F.truncate h sz
     , hGetSize = \(Handle h fp) -> rethrowFsError fp $
         F.getSize h
-    , hPutSome = \(Handle h fp) bs -> rethrowFsError fp $ do
+    , hPutSome = \(Handle h fp) bs -> rethrowFsError fp $
         BS.unsafeUseAsCStringLen bs $ \(ptr, len) ->
             fromIntegral <$> F.write h (castPtr ptr) (fromIntegral len)
     , createDirectory = \fp -> rethrowFsError fp $

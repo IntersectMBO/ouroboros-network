@@ -25,7 +25,7 @@ import           System.Posix (Fd)
 import qualified System.Posix as Posix
 
 -- Package 'unix' exports the same module.
-import "unix-bytestring" System.Posix.IO.ByteString (fdPreadBuf)
+import           "unix-bytestring" System.Posix.IO.ByteString (fdPreadBuf)
 
 import           Ouroboros.Storage.FS.API.Types (AllowExisting (..), FsError,
                      OpenMode (..), SeekMode (..), sameFsError)
@@ -79,7 +79,7 @@ open fp openMode = Posix.openFd fp posixOpenMode fileMode fileFlags
 
 -- | Writes the data pointed by the input 'Ptr Word8' into the input 'FHandle'.
 write :: FHandle -> Ptr Word8 -> Int64 -> IO Word32
-write h data' bytes = withOpenHandle "write" h $ \fd ->
+write h data' bytes = withExclOpenHandle "write" h $ \fd ->
     fromIntegral <$> Posix.fdWriteBuf fd data' (fromIntegral bytes)
 
 -- | Seek within the file.
@@ -89,23 +89,27 @@ write h data' bytes = withOpenHandle "write" h $ \fd ->
 -- We don't return the new offset since the behaviour of lseek is rather odd
 -- (e.g., the file pointer may not actually be moved until a subsequent write)
 seek :: FHandle -> SeekMode -> Int64 -> IO ()
-seek h seekMode offset = withOpenHandle "seek" h $ \fd ->
+seek h seekMode offset = withExclOpenHandle "seek" h $ \fd ->
     void $ Posix.fdSeek fd seekMode (fromIntegral offset)
 
 -- | Reads a given number of bytes from the input 'FHandle'.
+-- 'read' is not thread safe since it alters the file offset, that's why we use
+-- 'withExclOpenHandle' instead of 'withSharedOpenHandle'. Use 'pread' for
+-- thread safety.
 read :: FHandle -> Word64 -> IO ByteString
-read h bytes = withOpenHandle "read" h $ \fd ->
+read h bytes = withExclOpenHandle "read" h $ \fd ->
     Internal.createUptoN (fromIntegral bytes) $ \ptr ->
       fromIntegral <$> Posix.fdReadBuf fd ptr (fromIntegral bytes)
 
+-- | Thread safe version of 'read'.
 pread :: FHandle -> Word64 -> Word64 -> IO ByteString
-pread h bytes offset = withOpenHandle "pread" h $ \fd ->
-    Internal.createUptoN (fromIntegral bytes) $ \ptr ->
-      fromIntegral <$> fdPreadBuf fd ptr (fromIntegral bytes) (fromIntegral offset)
+pread h bytes offset = withSharedOpenHandle "pread" h $ \fd ->
+    Internal.createUptoN (fromIntegral bytes) $ \ptr -> fromIntegral <$>
+      fdPreadBuf fd ptr (fromIntegral bytes) (fromIntegral offset)
 
 -- | Truncates the file managed by the input 'FHandle' to the input size.
 truncate :: FHandle -> Word64 -> IO ()
-truncate h sz = withOpenHandle "truncate" h $ \fd ->
+truncate h sz = withExclOpenHandle "truncate" h $ \fd ->
     Posix.setFdSize fd (fromIntegral sz)
 
 -- | Close handle
@@ -116,11 +120,11 @@ close h = closeHandleOS h Posix.closeFd
 
 -- | File size of the given file pointer
 --
--- NOTE: This is not thread safe (changes made to the file in other threads
--- may affect this thread).
+-- NOTE: 'fileSize' is not thread safe in terms of other writes
+-- (changes made to the file in other threads may affect this thread).
 getSize :: FHandle -> IO Word64
-getSize h = withOpenHandle "getSize" h $ \fd ->
-     fromIntegral . Posix.fileSize <$> Posix.getFdStatus fd
+getSize h = withSharedOpenHandle "getSize" h $
+    fmap (fromIntegral . Posix.fileSize) . Posix.getFdStatus
 
 sameError :: FsError -> FsError -> Bool
 sameError = sameFsError
