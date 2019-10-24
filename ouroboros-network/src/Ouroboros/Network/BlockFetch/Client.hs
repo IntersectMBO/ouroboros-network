@@ -20,7 +20,6 @@ module Ouroboros.Network.BlockFetch.Client (
 import           Control.Monad (unless)
 import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
-import           Control.Monad.Class.MonadTime
 import           Control.Exception (assert)
 
 import qualified Data.Set as Set
@@ -71,7 +70,7 @@ type BlockFetchClient header block m a =
 -- work in conjunction with our fetch logic.
 --
 blockFetchClient :: forall header block m void.
-                    (MonadSTM m, MonadTime m, MonadThrow m,
+                    (MonadSTM m, MonadThrow m,
                      HasHeader header, HasHeader block,
                      HeaderHash header ~ HeaderHash block)
                  => FetchClientContext header block m

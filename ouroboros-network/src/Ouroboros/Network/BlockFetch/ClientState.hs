@@ -466,7 +466,7 @@ addNewFetchRequest tracer blockFetchSize addedReq gsvs
 
 -- | This is used by the fetch client threads.
 --
-acknowledgeFetchRequest :: (MonadSTM m, HasHeader header)
+acknowledgeFetchRequest :: MonadSTM m
                         => Tracer m (TraceFetchClientState header)
                         -> FetchClientStateVars m header
                         -> m ( FetchRequest header
@@ -478,7 +478,7 @@ acknowledgeFetchRequest tracer FetchClientStateVars {fetchClientRequestVar} = do
     traceWith tracer (AcknowledgedFetchRequest request)
     return result
 
-startedFetchBatch :: (MonadSTM m, HasHeader header)
+startedFetchBatch :: MonadSTM m
                   => Tracer m (TraceFetchClientState header)
                   -> PeerFetchInFlightLimits
                   -> ChainRange header

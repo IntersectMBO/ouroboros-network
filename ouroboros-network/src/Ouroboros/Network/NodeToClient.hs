@@ -250,8 +250,7 @@ withServer_V1 muxTracer handshakeTracer tbl addr peeridFn versionData applicatio
 --
 ncSubscriptionWorker
     :: forall appType peerid void x y.
-       ( HasInitiator appType ~ True )
-    => Tracer IO (WithIPList (SubscriptionTrace Socket.SockAddr))
+       Tracer IO (WithIPList (SubscriptionTrace Socket.SockAddr))
     -> Tracer IO (WithMuxBearer peerid (MuxTrace NodeToClientProtocols))
     -> Tracer IO
         (TraceSendRecv
@@ -303,8 +302,7 @@ ncSubscriptionWorker
 --
 ncSubscriptionWorker_V1
     :: forall appType peerid void x y.
-       ( HasInitiator appType ~ True )
-    => Tracer IO (WithIPList (SubscriptionTrace Socket.SockAddr))
+       Tracer IO (WithIPList (SubscriptionTrace Socket.SockAddr))
     -> Tracer IO (WithMuxBearer peerid (MuxTrace NodeToClientProtocols))
     -> Tracer IO (TraceSendRecv (Handshake NodeToClientVersion CBOR.Term) peerid (DecoderFailureOrTooMuchInput DeserialiseFailure))
     -> (Socket.SockAddr -> Socket.SockAddr -> peerid)

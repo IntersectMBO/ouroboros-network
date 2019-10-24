@@ -115,7 +115,7 @@ valid Genesis  = True
 valid (c :> b) = valid c && validExtension c b
 
 validExtension
-  :: (HasCallStack, HasHeader block)
+  :: HasHeader block
   => Chain block -> block -> Bool
 validExtension c b = blockInvariant b
                   && headHash c == blockPrevHash b

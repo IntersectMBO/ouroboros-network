@@ -16,7 +16,6 @@ module Test.Subscription (tests) where
 import           Control.Concurrent hiding (threadDelay)
 import           Control.Monad (replicateM, unless, when)
 import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
@@ -97,8 +96,9 @@ instance Mx.MiniProtocolLimits TestProtocols2 where
   maximumIngressQueue ReqRespPr = defaultMiniProtocolLimit
 
 
-activeTracer :: Show a => Tracer IO a
+activeTracer :: Tracer IO a
 activeTracer = nullTracer
+-- activeTracer :: Show a => Tracer IO a
 -- activeTracer = _verboseTracer -- Dump log messages to stdout.
 
 --
@@ -279,11 +279,7 @@ permCheck a b = L.sort a == L.sort b
 
 prop_resolv :: forall m.
      ( MonadAsync m
-     , MonadSay   m
-     , MonadSTM   m
-     , MonadTime  m
      , MonadTimer m
-     , MonadThrow m
      )
      => LookupResult
      -> m Property

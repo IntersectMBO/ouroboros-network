@@ -27,7 +27,6 @@ import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadSTM (LazyTVar)
 import qualified Control.Monad.Class.MonadSTM as Lazy
 import           Control.Monad.Class.MonadSTM.Strict
-import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
@@ -59,11 +58,7 @@ data Resolver m = Resolver {
 
 dnsResolve :: forall m.
      ( MonadAsync m
-     , MonadSay   m
-     , MonadSTM   m
-     , MonadTime  m
      , MonadTimer m
-     , MonadThrow m
      )
     => Tracer m DnsTrace
     -> Resolver m

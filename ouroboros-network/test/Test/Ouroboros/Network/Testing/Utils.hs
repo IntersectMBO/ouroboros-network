@@ -22,10 +22,7 @@ splits3 bs =
 -- | Check that the codec produces a valid CBOR term
 -- that is decodeable by CBOR.decodeTerm.
 prop_codec_cborM
-  :: forall ps m.
-     ( Monad m
-     , Eq (AnyMessage ps)
-     )
+  :: forall ps m. Monad m
   => Codec ps CBOR.DeserialiseFailure m LBS.ByteString
   -> AnyMessageAndAgency ps
   -> m Bool

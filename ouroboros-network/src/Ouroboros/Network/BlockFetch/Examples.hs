@@ -26,7 +26,6 @@ import           Control.Monad.Class.MonadST
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork
-import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
 import           Control.Tracer (Tracer, nullTracer)
 import           Control.Exception (assert)
@@ -70,7 +69,7 @@ import           Ouroboros.Network.Testing.ConcreteBlock
 --
 blockFetchExample1 :: forall m.
                       (MonadSTM m, MonadST m, MonadAsync m, MonadFork m,
-                       MonadCatch m, MonadTime m, MonadTimer m)
+                       MonadCatch m, MonadTimer m)
                    => Tracer m [TraceLabelPeer Int
                                  (FetchDecision [Point BlockHeader])]
                    -> Tracer m (TraceLabelPeer Int
@@ -220,7 +219,7 @@ runFetchServer tracer peerid channel server =
 runFetchClientAndServerAsync
                :: (MonadCatch m, MonadAsync m, MonadFork m, MonadTimer m,
                    MonadST m, Ord peerid,
-                   Serialise header, Serialise block,
+                   Serialise block,
                    Serialise (HeaderHash block))
                 => Tracer m (TraceSendRecv (BlockFetch block) peerid DeserialiseFailure)
                 -> Tracer m (TraceSendRecv (BlockFetch block) peerid DeserialiseFailure)

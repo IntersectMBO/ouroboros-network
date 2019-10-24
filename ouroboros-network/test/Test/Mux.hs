@@ -52,8 +52,9 @@ tests =
   , testProperty "ChainSync Demo (Sim)" prop_mux_demo_sim
   ]
 
-activeTracer :: forall m a. (MonadSay m, Show a) => Tracer m a
+activeTracer :: forall m a. (Applicative m) => Tracer m a
 activeTracer = nullTracer
+--activeTracer :: forall m a. (MonadSay m, Show a) => Tracer m a
 --activeTracer = showTracing sayTracer
 
 _sayTracer :: MonadSay m => Tracer m String
@@ -80,15 +81,12 @@ demo :: forall m block.
         , MonadMask m
         , MonadSay m
         , MonadST m
-        , MonadSTM m
         , MonadThrow (STM m)
         , MonadTime m
         , MonadTimer m
         , Chain.HasHeader block
         , Serialise (Chain.HeaderHash block)
         , Serialise block
-        , Eq block
-        , Show block
         , Eq (Async m ()) )
      => Chain block -> [ChainUpdate block block] -> DiffTime -> m Property
 demo chain0 updates delay = do

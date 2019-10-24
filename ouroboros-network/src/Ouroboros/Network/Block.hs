@@ -169,7 +169,7 @@ newtype Point block = Point
 deriving newtype instance StandardHash block => Eq   (Point block)
 deriving newtype instance StandardHash block => Ord  (Point block)
 deriving newtype instance StandardHash block => Show (Point block)
-deriving newtype instance (StandardHash block, Typeable block) => NoUnexpectedThunks (Point block)
+deriving newtype instance StandardHash block => NoUnexpectedThunks (Point block)
 
 pattern GenesisPoint :: Point block
 pattern GenesisPoint = Point Origin

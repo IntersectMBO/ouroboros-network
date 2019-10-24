@@ -26,7 +26,6 @@ import           Test.QuickCheck
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
 
-import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadThrow
@@ -86,12 +85,7 @@ test_blockGenerator chain slotDuration = do
         slotTime s = (realToFrac (unSlotNo s) * slotDuration) `addTime` startTime
 
     experiment
-      :: ( MonadSTM m
-         , MonadFork m
-         , MonadTime m
-         , MonadTimer m
-         )
-      => DiffTime
+      :: DiffTime
       -> Probe m (Time, Block)
       -> m ()
     experiment slotDur p = do
@@ -114,8 +108,6 @@ prop_blockGenerator_ST (TestBlockChain chain) (Positive slotDuration) =
 coreToRelaySim :: ( MonadSTM m
                   , MonadFork m
                   , MonadThrow m
-                  , MonadSay m
-                  , MonadTime m
                   , MonadTimer m
                   )
                => Bool              -- ^ two way subscription
@@ -194,8 +186,6 @@ prop_coreToRelay (TestNodeSim chain slotDuration coreTrDelay relayTrDelay) =
 coreToRelaySim2 :: ( MonadSTM m
                    , MonadFork m
                    , MonadThrow m
-                   , MonadSay m
-                   , MonadTime m
                    , MonadTimer m
                    )
                 => Chain Block
@@ -291,8 +281,6 @@ networkGraphSim :: forall m.
                   ( MonadSTM m
                   , MonadFork m
                   , MonadThrow m
-                  , MonadSay m
-                  , MonadTime m
                   , MonadTimer m
                   )
                 => TestNetworkGraph

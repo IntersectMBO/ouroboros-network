@@ -36,8 +36,9 @@ import           Ouroboros.Network.Protocol.ChainSync.Codec as ChainSync
 import           Ouroboros.Network.Protocol.ChainSync.Examples as ChainSync
 import           Ouroboros.Network.Protocol.ChainSync.Server as ChainSync
 
-activeTracer :: Show a => Tracer IO a
+activeTracer :: Tracer IO a
 activeTracer = nullTracer
+--activeTracer :: Show a => Tracer IO a
 --activeTracer = showTracing stdoutTracer
 
 --
@@ -90,7 +91,7 @@ instance Mx.MiniProtocolLimits DemoProtocols where
 -- over a pipe with full message serialisation, framing etc.
 --
 demo :: forall block .
-        (Chain.HasHeader block, Serialise (Chain.HeaderHash block), Serialise block, Eq block )
+        (Chain.HasHeader block, Serialise (Chain.HeaderHash block), Serialise block)
      => Chain block -> [ChainUpdate block block] -> IO Bool
 demo chain0 updates = do
 

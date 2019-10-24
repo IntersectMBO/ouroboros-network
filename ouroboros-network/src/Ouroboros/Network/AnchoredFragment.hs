@@ -189,8 +189,7 @@ infixl 5 :>, :<
 {-# COMPLETE Empty, (:>) #-}
 {-# COMPLETE Empty, (:<) #-}
 
-prettyPrint :: HasHeader block
-            => String
+prettyPrint :: String
             -> (Point block -> String)
             -> (block -> String)
             -> AnchoredFragment block
@@ -259,12 +258,12 @@ lastSlot = either pointSlot (At . blockSlot) . last
 
 -- | TODO. Make a list of blocks from a 'AnchoredFragment', in newest-to-oldest
 -- order.
-toNewestFirst :: HasHeader block => AnchoredFragment block -> [block]
+toNewestFirst :: AnchoredFragment block -> [block]
 toNewestFirst = CF.toNewestFirst . unanchorFragment
 
 -- | \( O(n) \). Make a list of blocks from a 'AnchoredFragment', in
 -- oldest-to-newest order.
-toOldestFirst :: HasHeader block => AnchoredFragment block -> [block]
+toOldestFirst :: AnchoredFragment block -> [block]
 toOldestFirst = CF.toOldestFirst . unanchorFragment
 
 -- | \( O(n) \). Make a 'AnchoredFragment' from a list of blocks in
@@ -464,7 +463,7 @@ AnchoredFragment a1 c1 `isPrefixOf` AnchoredFragment a2 c2 =
 -- * @join before after  == Just f@
 splitAfterPoint
    :: forall block1 block2.
-      (HasHeader block1, HasHeader block2, HeaderHash block1 ~ HeaderHash block2)
+      (HasHeader block1, HeaderHash block1 ~ HeaderHash block2)
    => AnchoredFragment block1
    -> Point block2
    -> Maybe (AnchoredFragment block1, AnchoredFragment block1)
@@ -492,7 +491,7 @@ splitAfterPoint c pt = case CF.splitAfterPoint (unanchorFragment c) pt of
 -- to the given point.
 splitBeforePoint
    :: forall block1 block2.
-      (HasHeader block1, HasHeader block2, HeaderHash block1 ~ HeaderHash block2)
+      (HasHeader block1, HeaderHash block1 ~ HeaderHash block2)
    => AnchoredFragment block1
    -> Point block2
    -> Maybe (AnchoredFragment block1, AnchoredFragment block1)

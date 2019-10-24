@@ -83,8 +83,7 @@ data MuxPeer peerid failure m bytes a where
 -- Run a @'MuxPeer'@ using either @'runPeer'@ or @'runPipelinedPeer'@.
 --
 runMuxPeer
-  :: ( MonadThrow m
-     , MonadCatch m
+  :: ( MonadCatch m
      , MonadAsync m
      , Exception failure
      )
@@ -105,8 +104,7 @@ runMuxPeer (MuxPeerPipelined tracer codec peer) peerid channel =
 -- Each one is simply run either by @'runPeer'@ or @'runPipelinedPeer'@.
 --
 simpleInitiatorApplication
-  :: MonadThrow m
-  => MonadCatch m
+  :: MonadCatch m
   => MonadAsync m
   => Exception failure
   => (ptcl -> MuxPeer peerid failure m bytes a)
@@ -119,8 +117,7 @@ simpleInitiatorApplication fn = OuroborosInitiatorApplication $ \peerid ptcl cha
 -- Smart constructor for @'MuxResponderApplicatin'@, similar to @'simpleMuxInitiator'@.
 --
 simpleResponderApplication
-  :: MonadThrow m
-  => MonadCatch m
+  :: MonadCatch m
   => MonadAsync m
   => Exception failure
   => (ptcl -> MuxPeer peerid failure m bytes a)

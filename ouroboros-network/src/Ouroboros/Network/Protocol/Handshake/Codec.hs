@@ -37,12 +37,9 @@ import           Ouroboros.Network.Protocol.Handshake.Type
 --
 codecHandshake
   :: forall vNumber m.
-     ( Monad m
-     , MonadST m
+     ( MonadST m
      , Ord vNumber
-     , Enum vNumber
      , Serialise vNumber
-     , Show vNumber
      )
   => Codec (Handshake vNumber CBOR.Term) CBOR.DeserialiseFailure m ByteString
 codecHandshake = mkCodecCborLazyBS encode decode

@@ -261,8 +261,7 @@ withServer_V1 muxTracer handshakeTracer tbl addr peeridFn versionData applicatio
 --
 ipSubscriptionWorker
     :: forall appType peerid void x y.
-       ( HasInitiator appType ~ True )
-    => Tracer IO (WithIPList (SubscriptionTrace Socket.SockAddr))
+       Tracer IO (WithIPList (SubscriptionTrace Socket.SockAddr))
     -> Tracer IO (WithMuxBearer peerid (MuxTrace NodeToNodeProtocols))
     -> Tracer IO
         (TraceSendRecv
@@ -314,8 +313,7 @@ ipSubscriptionWorker
 --
 ipSubscriptionWorker_V1
     :: forall appType peerid void x y.
-       ( HasInitiator appType ~ True )
-    => Tracer IO (WithIPList (SubscriptionTrace Socket.SockAddr))
+       Tracer IO (WithIPList (SubscriptionTrace Socket.SockAddr))
     -> Tracer IO (WithMuxBearer peerid (MuxTrace NodeToNodeProtocols))
     -> Tracer IO (TraceSendRecv (Handshake NodeToNodeVersion CBOR.Term) peerid (DecoderFailureOrTooMuchInput DeserialiseFailure))
     -> (Socket.SockAddr -> Socket.SockAddr -> peerid)
@@ -363,8 +361,7 @@ ipSubscriptionWorker_V1
 --
 dnsSubscriptionWorker
     :: forall appType peerid x y void.
-       ( HasInitiator appType ~ True )
-    => Tracer IO (WithDomainName (SubscriptionTrace Socket.SockAddr))
+       Tracer IO (WithDomainName (SubscriptionTrace Socket.SockAddr))
     -> Tracer IO (WithDomainName DnsTrace)
     -> Tracer IO (WithMuxBearer peerid (MuxTrace NodeToNodeProtocols))
     -> Tracer IO
@@ -418,8 +415,7 @@ dnsSubscriptionWorker
 --
 dnsSubscriptionWorker_V1
     :: forall appType peerid x y void.
-       ( HasInitiator appType ~ True)
-    => Tracer IO (WithDomainName (SubscriptionTrace Socket.SockAddr))
+       Tracer IO (WithDomainName (SubscriptionTrace Socket.SockAddr))
     -> Tracer IO (WithDomainName DnsTrace)
     -> Tracer IO (WithMuxBearer peerid (MuxTrace NodeToNodeProtocols))
     -> Tracer IO (TraceSendRecv (Handshake NodeToNodeVersion CBOR.Term) peerid (DecoderFailureOrTooMuchInput DeserialiseFailure))

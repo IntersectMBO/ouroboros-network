@@ -114,7 +114,7 @@ initialServerState = ServerState 0 Seq.empty Map.empty Map.empty 0
 
 txSubmissionInbound
   :: forall txid tx idx m.
-     (Ord txid, Ord idx, MonadSTM m, MonadThrow m)
+     (Ord txid, MonadSTM m, MonadThrow m)
   => Tracer m (TraceTxSubmissionInbound txid tx)
   -> Word16         -- ^ Maximum number of unacknowledged txids allowed
   -> TxSubmissionMempoolWriter txid tx idx m

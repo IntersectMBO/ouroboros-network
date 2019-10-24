@@ -16,7 +16,6 @@ import           Data.ByteString.Lazy (ByteString)
 
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork
-import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadST
 import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
@@ -479,7 +478,6 @@ chainSyncDemoPipelined
      , MonadFork  m
      , MonadAsync m
      , MonadThrow m
-     , MonadSay   m
      )
   => Channel m ByteString
   -> Channel m ByteString

@@ -49,7 +49,6 @@ import           Text.Printf
 import qualified Network.Socket as Socket
 
 import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
@@ -269,9 +268,7 @@ data ConnectResult =
 subscriptionLoop
     :: forall m s sock addr a.
        ( MonadAsync m
-       , MonadFork  m
        , MonadMask  m
-       , MonadSTM   m
        , MonadTime  m
        , MonadTimer m
        , MonadFix   m

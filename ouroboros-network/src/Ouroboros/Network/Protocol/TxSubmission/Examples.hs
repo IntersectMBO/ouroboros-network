@@ -214,7 +214,7 @@ initialServerState = ServerState 0 Seq.empty Map.empty Map.empty 0
 --
 txSubmissionServer
   :: forall txid tx m.
-     (Ord txid, Show txid, Show tx, Monad m)
+     (Ord txid, Monad m)
   => Tracer m (TraceEventServer txid tx)
   -> (tx -> txid)
   -> Word16  -- ^ Maximum number of unacknowledged txids

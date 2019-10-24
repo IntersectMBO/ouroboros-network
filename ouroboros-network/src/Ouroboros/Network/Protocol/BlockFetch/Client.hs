@@ -9,7 +9,6 @@ module Ouroboros.Network.Protocol.BlockFetch.Client where
 import           Network.TypedProtocol.Core
 import           Network.TypedProtocol.Pipelined
 
-import           Ouroboros.Network.Block (StandardHash)
 import           Ouroboros.Network.Protocol.BlockFetch.Type
 
 
@@ -49,10 +48,7 @@ data BlockFetchReceiver block m = BlockFetchReceiver {
   }
 
 blockFetchClientPeer
-  :: forall block m a.
-     ( StandardHash block
-     , Monad m
-     )
+  :: forall block m a. Monad m
   => BlockFetchClient block m a
   -> Peer (BlockFetch block) AsClient BFIdle m a
 blockFetchClientPeer (BlockFetchClient mclient) =

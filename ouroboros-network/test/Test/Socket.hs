@@ -106,8 +106,9 @@ tests =
   ]
 #undef LAST_IP_TEST
 
-activeMuxTracer :: Show a => Tracer IO a
+activeMuxTracer :: Tracer IO a
 activeMuxTracer = nullTracer
+--activeMuxTracer :: Show a => Tracer IO a
 --activeMuxTracer = _verboseTracer -- Dump log messages to stdout.
 
 defaultMiniProtocolLimit :: Int64
@@ -372,7 +373,7 @@ prop_socket_client_connect_error _ xs = ioProperty $ do
 
 demo :: forall block .
         ( Chain.HasHeader block, Serialise (Chain.HeaderHash block)
-        , Serialise block, Eq block, Show block )
+        , Serialise block )
      => Chain block -> [ChainUpdate block block] -> IO Bool
 demo chain0 updates = do
     producerAddress:_ <- Socket.getAddrInfo Nothing (Just "127.0.0.1") (Just "6061")

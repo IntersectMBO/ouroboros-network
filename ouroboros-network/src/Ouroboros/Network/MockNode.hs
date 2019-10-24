@@ -26,7 +26,6 @@ import           Data.Tuple (swap)
 import           GHC.Generics (Generic)
 
 import           Control.Monad.Class.MonadFork
-import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTimer
@@ -274,9 +273,7 @@ relayNode :: forall m block.
              ( MonadSTM m
              , MonadFork m
              , MonadThrow m
-             , MonadSay m
              , HasHeader block
-             , Show block
              , MonadTimer m
              )
           => NodeId
@@ -392,7 +389,6 @@ coreNode :: forall m.
         , MonadFork m
         , MonadThrow m
         , MonadTimer m
-        , MonadSay m
         )
      => NodeId
      -> DiffTime

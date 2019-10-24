@@ -94,13 +94,11 @@ connectToNode
      , Enum ptcl
      , Bounded ptcl
      , Ord vNumber
-     , Enum vNumber
      , Serialise vNumber
      , Typeable vNumber
      , Show vNumber
      , Show ptcl
      , Mx.MiniProtocolLimits ptcl
-     , HasInitiator appType ~ True
      )
   => (forall vData. extra vData -> vData -> CBOR.Term)
   -> (forall vData. extra vData -> CBOR.Term -> Either Text vData)
@@ -150,13 +148,11 @@ connectToNode'
      , Enum ptcl
      , Bounded ptcl
      , Ord vNumber
-     , Enum vNumber
      , Serialise vNumber
      , Typeable vNumber
      , Show vNumber
      , Show ptcl
      , Mx.MiniProtocolLimits ptcl
-     , HasInitiator appType ~ True
      )
   => (forall vData. extra vData -> vData -> CBOR.Term)
   -> (forall vData. extra vData -> CBOR.Term -> Either Text vData)
@@ -230,7 +226,6 @@ beginConnection
        , Show ptcl
        , Mx.MiniProtocolLimits ptcl
        , Ord vNumber
-       , Enum vNumber
        , Serialise vNumber
        , Typeable vNumber
        , Show vNumber
@@ -328,7 +323,6 @@ runNetworkNode'
        , Show ptcl
        , Mx.MiniProtocolLimits ptcl
        , Ord vNumber
-       , Enum vNumber
        , Serialise vNumber
        , Typeable vNumber
        , Show vNumber
@@ -378,7 +372,6 @@ withServerNode
        , Show ptcl
        , Mx.MiniProtocolLimits ptcl
        , Ord vNumber
-       , Enum vNumber
        , Serialise vNumber
        , Typeable vNumber
        , Show vNumber
