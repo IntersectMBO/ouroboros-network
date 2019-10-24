@@ -203,10 +203,8 @@ runNodeNetwork NodeNetworkArgs
 
       return (coreNodeId, pInfoConfig (pInfo coreNodeId), node, readNodeInfo)
 
-    -- Wait some extra time after the end of the test block fetch and chain
-    -- sync to finish
+    -- Wait until the final slot ends
     testBlockchainTimeDone testBtime
-    threadDelay 2000   -- arbitrary "small" duration
 
     -- Close the 'ResourceRegistry': this shuts down the background threads of
     -- a node. This is important because we close the ChainDBs in
