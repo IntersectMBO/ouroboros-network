@@ -579,23 +579,23 @@ getEpochSlot _dbHasFS hashDecoder OpenState {..} _dbErr epochSlot = do
         let indexSeekPosition =
               (fromIntegral (unRelativeSlot relativeSlot)) *
               fromIntegral indexEntrySizeBytes
-        hSeek iHnd AbsoluteSeek indexSeekPosition
         -- Compute the offset on disk and the blob size.
         let nbBytesToGet = fromIntegral indexEntrySizeBytes * 2
-        -- Note the use of hGetExactly: we must get enough bytes from the
+        -- Note the use of hGetExactlyAt: we must get enough bytes from the
         -- index file, otherwise 'decodeIndexEntry' (and its variant) would
         -- fail.
-        bytes <- toStrict <$> hGetExactly _dbHasFS iHnd nbBytesToGet
+        bytes <- toStrict <$> hGetExactlyAt _dbHasFS iHnd nbBytesToGet
+                                                          indexSeekPosition
         let !start = decodeIndexEntry   bytes
             !end   = decodeIndexEntryAt indexEntrySizeBytes bytes
 
         mbEBBHash <- if relativeSlot == 0 && end > start
           then do
+            -- TODO: This case seems to never appear in tests.
             -- Seek till after the offsets so we can read the hash
             epochSize <- epochInfoSize _epochInfo epoch
             let hashOffset = (fromIntegral epochSize + 2) * indexEntrySizeBytes
-            hSeek iHnd AbsoluteSeek (fromIntegral hashOffset)
-            deserialiseHash' =<< hGetAll _dbHasFS iHnd
+            deserialiseHash' =<< hGetAllAt _dbHasFS iHnd (fromIntegral hashOffset)
           else return NoCurrentEBB
 
         return (start, end - start, mbEBBHash)
@@ -610,9 +610,9 @@ getEpochSlot _dbHasFS hashDecoder OpenState {..} _dbErr epochSlot = do
     mbBlob <- case blobSize of
       0 -> return Nothing
       _ -> withFile _dbHasFS epochFile ReadMode $ \eHnd -> do
-        -- Seek in the epoch file
-        hSeek eHnd AbsoluteSeek (fromIntegral blobOffset)
-        Just <$> hGetExactly _dbHasFS eHnd (fromIntegral blobSize)
+        -- Read from the epoch file
+        Just <$> hGetExactlyAt _dbHasFS eHnd (fromIntegral blobSize)
+                                             (fromIntegral blobOffset)
 
     return (mbEBBHash, mbBlob)
   where
