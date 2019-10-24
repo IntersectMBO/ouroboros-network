@@ -93,7 +93,7 @@ pipeAsMuxBearer tracer pcRead pcWrite = do
 runMuxWithPipes
     :: ( Mx.ProtocolEnum ptcl, Ord ptcl, Enum ptcl, Bounded ptcl, Show ptcl
        , Mx.MiniProtocolLimits ptcl)
-    => Tracer IO (Mx.WithMuxBearer (Mx.MuxTrace ptcl))
+    => Tracer IO (Mx.WithMuxBearer String (Mx.MuxTrace ptcl))
     -> peerid
     -> Mx.MuxApplication appType peerid ptcl IO a b
     -> Handle -- ^ read handle

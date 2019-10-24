@@ -80,7 +80,6 @@ run
   :: forall blk peer.
      ( RunNode blk
      , Ord                peer
-     , Show               peer
      , NoUnexpectedThunks peer
      )
   => Tracers IO peer blk                  -- ^ Consensus tracers
@@ -252,9 +251,9 @@ data RunNetworkArgs peer blk = RunNetworkArgs
   { rnaIpSubscriptionTracer  :: Tracer IO (WithIPList (SubscriptionTrace Socket.SockAddr))
     -- ^ IP subscription tracer
   , rnaDnsSubscriptionTracer :: Tracer IO (WithDomainName (SubscriptionTrace Socket.SockAddr))
-  , rnaMuxTracer             :: Tracer IO (WithMuxBearer (MuxTrace NodeToNodeProtocols))
+  , rnaMuxTracer             :: Tracer IO (WithMuxBearer peer (MuxTrace NodeToNodeProtocols))
     -- ^ Mux tracer
-  , rnaMuxLocalTracer        :: Tracer IO (WithMuxBearer (MuxTrace NodeToClientProtocols))
+  , rnaMuxLocalTracer        :: Tracer IO (WithMuxBearer peer (MuxTrace NodeToClientProtocols))
   , rnaHandshakeTracer       :: Tracer IO (TraceSendRecv
                                             (Handshake NodeToNodeVersion CBOR.Term)
                                             peer
@@ -283,7 +282,7 @@ data RunNetworkArgs peer blk = RunNetworkArgs
 
 initNetwork
   :: forall blk peer.
-     (RunNode blk, Ord peer, Show peer)
+     (RunNode blk, Ord peer)
   => ResourceRegistry IO
   -> NodeArgs    IO peer blk
   -> NodeKernel  IO peer blk
