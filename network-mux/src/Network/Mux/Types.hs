@@ -291,14 +291,14 @@ instance Exception MuxError where
 
 -- Type used for tracing mux events.
 --
-data WithMuxBearer a = WithMuxBearer {
-      wmbTag   :: !String
+data WithMuxBearer peerid a = WithMuxBearer {
+      wmbPeerId :: !peerid
       -- ^ A tag that should identify a specific mux bearer.
-    , wmbEvent :: !a
+    , wmbEvent  :: !a
 }
 
-instance Show a => Show (WithMuxBearer a) where
-    show WithMuxBearer {wmbTag, wmbEvent} = printf "Mux %s %s" wmbTag (show wmbEvent)
+instance (Show a, Show peerid) => Show (WithMuxBearer peerid a) where
+    show WithMuxBearer {wmbPeerId, wmbEvent} = printf "Mux %s %s" (show wmbPeerId) (show wmbEvent)
 
 -- | Enumeration of Mux events that can be traced.
 --

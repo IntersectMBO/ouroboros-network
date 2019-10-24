@@ -135,8 +135,7 @@ nodeToClientCodecCBORTerm = CodecCBORTerm {encodeTerm, decodeTerm}
 -- protocol.  This is mostly useful for future enhancements.
 --
 connectTo
-  :: Show peerid
-  => Tracer IO (WithMuxBearer (MuxTrace NodeToClientProtocols))
+  :: Tracer IO (WithMuxBearer peerid (MuxTrace NodeToClientProtocols))
   -> Tracer IO (TraceSendRecv (Handshake NodeToClientVersion CBOR.Term) peerid (DecoderFailureOrTooMuchInput DeserialiseFailure))
   -> (Socket.SockAddr -> Socket.SockAddr -> peerid)
   -- ^ create peerid from local address and remote address
@@ -160,8 +159,7 @@ connectTo =
 -- the 'NodeToClientV_1' version of the protocol.
 --
 connectTo_V1
-  :: Show peerid
-  => Tracer IO (WithMuxBearer (MuxTrace NodeToClientProtocols))
+  :: Tracer IO (WithMuxBearer peerid (MuxTrace NodeToClientProtocols))
   -> Tracer IO (TraceSendRecv (Handshake NodeToClientVersion CBOR.Term) peerid (DecoderFailureOrTooMuchInput DeserialiseFailure))
   -> (Socket.SockAddr -> Socket.SockAddr -> peerid)
   -- ^ create peerid from local address and remote address
@@ -192,8 +190,8 @@ connectTo_V1 muxTracer handshakeTracer peeridFn versionData application =
 -- the protocols.
 --
 withServer
-  :: (HasResponder appType ~ True, Show peerid)
-  => Tracer IO (WithMuxBearer (MuxTrace NodeToClientProtocols))
+  :: ( HasResponder appType ~ True )
+  => Tracer IO (WithMuxBearer peerid (MuxTrace NodeToClientProtocols))
   -> Tracer IO (TraceSendRecv (Handshake NodeToClientVersion CBOR.Term) peerid (DecoderFailureOrTooMuchInput DeserialiseFailure))
   -> ConnectionTable IO Socket.SockAddr
   -> Socket.AddrInfo
@@ -221,8 +219,8 @@ withServer muxTracer handshakeTracer tbl addr peeridFn acceptVersion versions k 
 -- 'NodeToClientV_1' version of the protocol.
 --
 withServer_V1
-  :: (HasResponder appType ~ True, Show peerid)
-  => Tracer IO (WithMuxBearer (MuxTrace NodeToClientProtocols))
+  :: ( HasResponder appType ~ True )
+  => Tracer IO (WithMuxBearer peerid (MuxTrace NodeToClientProtocols))
   -> Tracer IO (TraceSendRecv (Handshake NodeToClientVersion CBOR.Term) peerid (DecoderFailureOrTooMuchInput DeserialiseFailure))
   -> ConnectionTable IO Socket.SockAddr
   -> Socket.AddrInfo
@@ -252,10 +250,9 @@ withServer_V1 muxTracer handshakeTracer tbl addr peeridFn versionData applicatio
 --
 ncSubscriptionWorker
     :: forall appType peerid void x y.
-       ( HasInitiator appType ~ True
-       , Show peerid )
+       ( HasInitiator appType ~ True )
     => Tracer IO (WithIPList (SubscriptionTrace Socket.SockAddr))
-    -> Tracer IO (WithMuxBearer (MuxTrace NodeToClientProtocols))
+    -> Tracer IO (WithMuxBearer peerid (MuxTrace NodeToClientProtocols))
     -> Tracer IO
         (TraceSendRecv
           (Handshake NodeToClientVersion CBOR.Term)
@@ -306,10 +303,9 @@ ncSubscriptionWorker
 --
 ncSubscriptionWorker_V1
     :: forall appType peerid void x y.
-       ( HasInitiator appType ~ True
-       , Show peerid )
+       ( HasInitiator appType ~ True )
     => Tracer IO (WithIPList (SubscriptionTrace Socket.SockAddr))
-    -> Tracer IO (WithMuxBearer (MuxTrace NodeToClientProtocols))
+    -> Tracer IO (WithMuxBearer peerid (MuxTrace NodeToClientProtocols))
     -> Tracer IO (TraceSendRecv (Handshake NodeToClientVersion CBOR.Term) peerid (DecoderFailureOrTooMuchInput DeserialiseFailure))
     -> (Socket.SockAddr -> Socket.SockAddr -> peerid)
     -> ConnectionTable IO Socket.SockAddr

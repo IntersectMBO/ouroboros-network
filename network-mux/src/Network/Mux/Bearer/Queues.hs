@@ -101,7 +101,7 @@ runMuxWithQueues
      , Mx.MiniProtocolLimits ptcl
      , Eq  (Async m ())
      )
-  => Tracer m (Mx.WithMuxBearer (Mx.MuxTrace ptcl))
+  => Tracer m (Mx.WithMuxBearer String (Mx.MuxTrace ptcl))
   -> peerid
   -> Mx.MuxApplication appType peerid ptcl m a b
   -> TBQueue m BL.ByteString
