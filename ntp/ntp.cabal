@@ -1,4 +1,4 @@
-name:                cardano-ntp
+name:                ntp
 version:             0.0.1
 license:             Apache-2.0
 license-files:
@@ -13,23 +13,18 @@ Library
   exposed-modules:      Ntp.Client
                         Ntp.Util
                         Ntp.Packet
-
-  build-depends:        aeson
-                      , aeson-options
-                      , async
+                        Ntp.Trace
+  build-depends:        async
                       , base
                       , binary >= 0.8
                       , bytestring
+                      , contra-tracer
                       , formatting
                       , network
---                      , network-transport
---                      , network-transport-tcp
                       , stm
-                      , text
                       , these
                       , time
                       , time-units
---                      , universum
 
   hs-source-dirs:       src
   default-language:     Haskell2010
@@ -40,6 +35,28 @@ Library
                         OverloadedStrings
                         MonadFailDesugaring
 
+Executable ntp-app
+  hs-source-dirs:       src, test
+  main-is:              NtpApp.hs
+  default-language:     Haskell2010
+  ghc-options:          -Wall -Werror -fwarn-redundant-constraints
+  other-modules:        Ntp.Client
+                        Ntp.Util
+                        Ntp.Packet
+                        Ntp.Trace
+
+  build-depends:        async
+                      , base
+                      , binary >= 0.8
+                      , bytestring
+                      , contra-tracer
+                      , formatting
+                      , network
+                      , stm
+                      , these
+                      , time
+                      , time-units
+                        
 -- test-suite cardano-ntp-test
 --  main-is:             Test.hs
 --  other-modules:       Spec
