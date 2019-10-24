@@ -11,6 +11,9 @@ import qualified Cardano.Chain.Block as Cardano.Block
 import qualified Cardano.Chain.Genesis as Genesis
 import           Cardano.Chain.ProtocolConstants (kEpochSlots)
 import           Cardano.Chain.Slotting (EpochSlots (..))
+import qualified Cardano.Crypto as Crypto
+
+import           Ouroboros.Network.Magic (NetworkMagic (..))
 
 import           Ouroboros.Consensus.BlockchainTime (SystemStart (..))
 import           Ouroboros.Consensus.Ledger.Byron
@@ -47,6 +50,12 @@ instance ByronGiven => RunNode (ByronBlockOrEBB ByronConfig) where
   nodeStartTime          = const
                          $ SystemStart
                          . Genesis.gdStartTime
+                         . extractGenesisData
+
+  nodeNetworkMagic       = const
+                         $ NetworkMagic
+                         . Crypto.unProtocolMagicId
+                         . Genesis.gdProtocolMagicId
                          . extractGenesisData
 
   nodeEncodeBlock        = const encodeByronBlock

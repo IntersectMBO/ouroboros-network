@@ -10,6 +10,8 @@ import           Data.Time.Calendar (fromGregorian)
 import           Data.Time.Clock (UTCTime (..))
 import           Data.Typeable (Typeable)
 
+import           Ouroboros.Network.Magic (NetworkMagic (..))
+
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime (SystemStart (..))
 import           Ouroboros.Consensus.Ledger.Abstract
@@ -43,6 +45,7 @@ instance ( ProtocolLedgerView (SimpleBlock SimpleMockCrypto ext)
     where
       --  This doesn't matter much
       dummyDate = UTCTime (fromGregorian 2019 8 13) 0
+  nodeNetworkMagic       = \_ _ -> NetworkMagic 0x0000ffff
 
   nodeEncodeBlock        = const encode
   nodeEncodeHeader       = const encode

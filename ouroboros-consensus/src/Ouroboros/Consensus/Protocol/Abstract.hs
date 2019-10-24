@@ -41,7 +41,6 @@ import           Cardano.Prelude (NoUnexpectedThunks)
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment (..))
 import           Ouroboros.Network.Block (HasHeader (..), SlotNo (..))
 import           Ouroboros.Network.Point (WithOrigin)
-import           Ouroboros.Network.Magic (NetworkMagic)
 
 import qualified Ouroboros.Consensus.Util.AnchoredFragment as AF
 import           Ouroboros.Consensus.Util.Random
@@ -171,10 +170,6 @@ class ( Show (ChainState    p)
 
   -- | We require that protocols support a @k@ security parameter
   protocolSecurityParam :: NodeConfig p -> SecurityParam
-
-  -- | We require that protocols support a magic number used during version
-  -- negotiation.
-  protocolNetworkMagic  :: NodeConfig p -> NetworkMagic
 
   -- | We require that it's possible to reverse the chain state up to @k@
   -- blocks.

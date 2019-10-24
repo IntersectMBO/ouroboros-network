@@ -18,6 +18,7 @@ import           Data.Proxy (Proxy)
 import           Ouroboros.Network.Block (BlockNo, ChainHash (..), HeaderHash,
                      SlotNo)
 import           Ouroboros.Network.BlockFetch (SizeInBytes)
+import           Ouroboros.Network.Magic (NetworkMagic)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime (SystemStart)
@@ -49,7 +50,9 @@ class (ProtocolLedgerView blk, ApplyTx blk) => RunNode blk where
   nodeStartTime          :: Proxy blk
                          -> NodeConfig (BlockProtocol blk)
                          -> SystemStart
-
+  nodeNetworkMagic       :: Proxy blk
+                         -> NodeConfig (BlockProtocol blk)
+                         -> NetworkMagic
 
   -- Encoders
   nodeEncodeBlock        :: NodeConfig (BlockProtocol blk) -> blk -> Encoding

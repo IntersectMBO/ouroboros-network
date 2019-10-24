@@ -13,8 +13,6 @@ import           Ouroboros.Consensus.NodeId (CoreNodeId (..), NodeId (..))
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.BFT
 
-import           Ouroboros.Network.Magic
-
 protocolInfoBft :: NumCoreNodes
                 -> CoreNodeId
                 -> SecurityParam
@@ -25,7 +23,6 @@ protocolInfoBft (NumCoreNodes numCoreNodes) (CoreNodeId nid) securityParam =
             bftParams   = BftParams {
                               bftNumNodes      = fromIntegral numCoreNodes
                             , bftSecurityParam = securityParam
-                            , bftNetworkMagic  = NetworkMagic 0x0000ffff
                             }
           , bftNodeId   = CoreId nid
           , bftSignKey  = SignKeyMockDSIGN nid

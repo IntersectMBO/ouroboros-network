@@ -72,7 +72,6 @@ instance OuroborosTag p => OuroborosTag (WithEBBs p) where
   preferCandidate       (WithEBBNodeConfig cfg) = preferCandidate       cfg
   compareCandidates     (WithEBBNodeConfig cfg) = compareCandidates     cfg
   protocolSecurityParam (WithEBBNodeConfig cfg) = protocolSecurityParam cfg
-  protocolNetworkMagic  (WithEBBNodeConfig cfg) = protocolNetworkMagic  cfg
 
   applyChainState (WithEBBNodeConfig cfg) lv b cs = case
     eitherHeaderOrEbb cfg b of
