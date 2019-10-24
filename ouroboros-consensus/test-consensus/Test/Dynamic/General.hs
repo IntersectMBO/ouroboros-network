@@ -19,6 +19,7 @@ module Test.Dynamic.General (
   ) where
 
 import           Control.Monad (guard, join)
+import           Data.Function (on)
 import qualified Data.Map as Map
 import           Data.Set (Set)
 import qualified Data.Set as Set
@@ -57,6 +58,7 @@ import           Test.Util.Orphans.Arbitrary ()
 import           Test.Util.Orphans.IOLike ()
 import           Test.Util.Orphans.NoUnexpectedThunks ()
 import           Test.Util.Range
+import           Test.Util.Time (ioSimSecondsToDiffTime)
 
 {-------------------------------------------------------------------------------
   Configuring tests
@@ -79,12 +81,15 @@ genLatencySeed = (InjectLatencies . SM.mkSMGen) <$> arbitrary
 
 shrinkLatencySeed :: LatencyInjection SM.SMGen -> [LatencyInjection SM.SMGen]
 shrinkLatencySeed li =
-    takeWhile (diffCtor li) [DoNotInjectLatencies, InjectTrivialLatencies]
+    takeWhile (not . roughlyEqual li) $
+    [DoNotInjectLatencies, InjectTrivialLatencies]
   where
-    diffCtor DoNotInjectLatencies   DoNotInjectLatencies   = False
-    diffCtor InjectTrivialLatencies InjectTrivialLatencies = False
-    diffCtor InjectLatencies{}      InjectLatencies{}      = False
-    diffCtor _                      _                      = True
+    -- equal to @(==) `on` void@, but intentionally coupled with the type's
+    -- definition
+    roughlyEqual = (==) `on` \case
+        DoNotInjectLatencies   -> 0 :: Int
+        InjectTrivialLatencies -> 1
+        InjectLatencies{}      -> 2
 
 genTestConfig :: NumCoreNodes -> NumSlots -> Gen TestConfig
 genTestConfig numCoreNodes numSlots = do
@@ -197,11 +202,11 @@ runTestNetwork pInfo
       { nnaLatencySeed         = latencySeed
       , nnaLatestReadySlot     = latestReadySlot
       , nnaMaxLatencies    = MaxLatencies
-          { maxSendLatency = 10   -- io-sim "seconds"
-          , maxVar1Latency = 1000   -- io-sim "seconds"
+          { maxSendLatency = ioSimSecondsToDiffTime 10
+          , maxVar1Latency = ioSimSecondsToDiffTime 1000
           }
       , nnaNodeJoinPlan        = nodeJoinPlan
-      , nnaQuiescenceThreshold = 50000   -- io-sim "seconds"
+      , nnaQuiescenceThreshold = ioSimSecondsToDiffTime 50000
       , nnaNodeTopology        = nodeTopology
       , nnaNumCoreNodes        = numCoreNodes
       , nnaProtocol            = pInfo

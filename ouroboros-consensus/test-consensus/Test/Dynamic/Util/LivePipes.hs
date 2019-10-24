@@ -5,7 +5,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE NamedFieldPuns             #-}
-{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
 
 module Test.Dynamic.Util.LivePipes
   ( -- * Latency configuration
@@ -21,7 +21,7 @@ module Test.Dynamic.Util.LivePipes
   , forgetLivePipeSTM
   ) where
 
-import           Control.Monad (forM, forever, when, void)
+import           Control.Monad (forM, forever, void, when)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Time.Clock (picosecondsToDiffTime)
@@ -47,7 +47,7 @@ data LatencyInjection a
   | InjectLatencies a
     -- ^ Inject actual latencies
   | InjectTrivialLatencies
-    -- ^ Inject latencies of 0 duration, just to test affect on scheduler
+    -- ^ Inject latencies of 0 duration, just to test effect on scheduler
   deriving (Eq, Foldable, Functor, Show, Traversable)
 
 -- | The maximum possible latencies used by 'newLivePipe'

@@ -66,6 +66,7 @@ import           Ouroboros.Consensus.Util.STM (Fingerprint (..),
 import           Test.Util.Orphans.Arbitrary ()
 import           Test.Util.Orphans.IOLike ()
 import           Test.Util.TestBlock
+import           Test.Util.Time (ioSimSecondsToDiffTime)
 import           Test.Util.Tracer (recordingTracerTVar)
 
 {-------------------------------------------------------------------------------
@@ -255,7 +256,7 @@ runChainSync securityParam maxClockSkew (ClientUpdates clientUpdates)
     (ServerUpdates serverUpdates) startSyncingAt = withRegistry $ \registry -> do
 
     testBtime <- newTestBlockchainTime registry numSlots
-      (\_s -> threadDelay 100000)   -- io-sim "seconds"
+      (\_s -> threadDelay (ioSimSecondsToDiffTime 100000))
     let btime = testBlockchainTime testBtime
 
     -- Set up the client

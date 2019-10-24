@@ -1,16 +1,16 @@
-{-# LANGUAGE ConstraintKinds            #-}
-{-# LANGUAGE DataKinds                  #-}
-{-# LANGUAGE FlexibleContexts           #-}
-{-# LANGUAGE GADTs                      #-}
-{-# LANGUAGE LambdaCase                 #-}
-{-# LANGUAGE NamedFieldPuns             #-}
-{-# LANGUAGE RankNTypes                 #-}
-{-# LANGUAGE RecordWildCards            #-}
-{-# LANGUAGE ScopedTypeVariables        #-}
-{-# LANGUAGE TupleSections              #-}
-{-# LANGUAGE TypeApplications           #-}
-{-# LANGUAGE TypeFamilies               #-}
-{-# LANGUAGE UndecidableInstances       #-}
+{-# LANGUAGE ConstraintKinds      #-}
+{-# LANGUAGE DataKinds            #-}
+{-# LANGUAGE FlexibleContexts     #-}
+{-# LANGUAGE GADTs                #-}
+{-# LANGUAGE LambdaCase           #-}
+{-# LANGUAGE NamedFieldPuns       #-}
+{-# LANGUAGE RankNTypes           #-}
+{-# LANGUAGE RecordWildCards      #-}
+{-# LANGUAGE ScopedTypeVariables  #-}
+{-# LANGUAGE TupleSections        #-}
+{-# LANGUAGE TypeApplications     #-}
+{-# LANGUAGE TypeFamilies         #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 -- | Setup network
 module Test.Dynamic.Network (
@@ -178,11 +178,11 @@ runNodeNetwork NodeNetworkArgs
         uncheckedNewEmptyMVar (error "no App available yet")
 
     -- spawn threads for each undirected edge
-    mbSMG <- mapM uncheckedNewTVarM mbInitSMG
+    liSMG <- mapM uncheckedNewTVarM mbInitSMG
     let edges = edgesNodeTopology nodeTopology
     forM_ edges $ \edge -> do
       void $ forkLinkedThread registry $ do
-        undirectedEdge nullDebugTracer mbSMG livePipesVar nodeVars edge
+        undirectedEdge nullDebugTracer liSMG livePipesVar nodeVars edge
 
     -- create nodes
     let nodesByJoinSlot =
@@ -232,7 +232,7 @@ runNodeNetwork NodeNetworkArgs
       -> Map CoreNodeId (StrictMVar m (LimitedApp m NodeId blk))
       -> (CoreNodeId, CoreNodeId)
       -> m ()
-    undirectedEdge tr mbSMG livePipesVar nodeVars (node1, node2) = do
+    undirectedEdge tr liSMG livePipesVar nodeVars (node1, node2) = do
       -- block until both endpoints have joined the network
       (endpoint1, endpoint2) <- do
         let lu node = case Map.lookup node nodeVars of
@@ -241,7 +241,7 @@ runNodeNetwork NodeNetworkArgs
         (,) <$> lu node1 <*> lu node2
 
       -- spawn threads for both directed edges
-      let de = directedEdge nnaMaxLatencies tr btime mbSMG livePipesVar
+      let de = directedEdge nnaMaxLatencies tr btime liSMG livePipesVar
       void $ withAsyncsWaitAny $
           de endpoint1 endpoint2 NE.:| [de endpoint2 endpoint1]
 
@@ -447,12 +447,12 @@ directedEdge ::
   -> (CoreNodeId, LimitedApp m NodeId blk)
   -> (CoreNodeId, LimitedApp m NodeId blk)
   -> m ()
-directedEdge maxLatencies tr btime mbSMG livePipesVar nodeapp1 nodeapp2 =
+directedEdge maxLatencies tr btime liSMG livePipesVar nodeapp1 nodeapp2 =
     loopOnMPEE
   where
     loopOnMPEE = do
         (pids, edge) <-
-            directedEdgeInner maxLatencies mbSMG livePipesVar nodeapp1 nodeapp2
+            directedEdgeInner maxLatencies liSMG livePipesVar nodeapp1 nodeapp2
         edge
           `catch` hExpected pids
           `catch` hUnexpected
@@ -492,7 +492,7 @@ directedEdgeInner ::
   -> (CoreNodeId, LimitedApp m NodeId blk)
      -- ^ server threads on this node
   -> m (Set PipeId, m ())
-directedEdgeInner maxLatencies mbSMG livePipesVar (node1, LimitedApp app1) (node2, LimitedApp app2) = do
+directedEdgeInner maxLatencies liSMG livePipesVar (node1, LimitedApp app1) (node2, LimitedApp app2) = do
     mps <- sequence $
         ( miniProtocol
             (wrapMPEE MPEEChainSyncClient naChainSyncClient)
@@ -527,8 +527,8 @@ directedEdgeInner maxLatencies mbSMG livePipesVar (node1, LimitedApp app1) (node
          -- ^ server action to run on node2
       -> m ((PipeId, PipeId), (m (), m ()))
     miniProtocol client server = do
-       (pid1, Pipe pipe1) <- newLivePipe maxLatencies mbSMG livePipesVar
-       (pid2, Pipe pipe2) <- newLivePipe maxLatencies mbSMG livePipesVar
+       (pid1, Pipe pipe1) <- newLivePipe maxLatencies liSMG livePipesVar
+       (pid2, Pipe pipe2) <- newLivePipe maxLatencies liSMG livePipesVar
        let chan1 = Channel{send = send pipe1, recv = recv pipe2}
            chan2 = Channel{send = send pipe2, recv = recv pipe1}
        pure $ (,)
