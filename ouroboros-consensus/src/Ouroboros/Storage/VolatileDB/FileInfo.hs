@@ -20,6 +20,7 @@ module Ouroboros.Storage.VolatileDB.FileInfo (
   , isFull
   , maxSlot
   , maxSlotInFiles
+  , getHandle
   ) where
 
 import           Data.Map.Strict (Map)
@@ -34,18 +35,21 @@ import           Ouroboros.Network.Block (MaxSlotNo (..), SlotNo,
 
 import           Ouroboros.Consensus.Util
 
+import           Ouroboros.Storage.FS.API.Types
 import           Ouroboros.Storage.VolatileDB.Types
 import           Ouroboros.Storage.VolatileDB.Util
+
 
 {-------------------------------------------------------------------------------
   Types
 -------------------------------------------------------------------------------}
 
 -- | The Internal information the db keeps for each file.
-data FileInfo blockId = MkFileInfo {
+data FileInfo blockId h = MkFileInfo {
       fLatestSlot :: !MaxSlotNo
     , fNBlocks    :: !Int
     , fContents   :: !(Map SlotOffset (FileSlotInfo blockId))
+    , fReadHandle :: !(Handle h)
     } deriving (Show, Generic, NoUnexpectedThunks)
 
 -- | Information about a slot in a file
@@ -58,20 +62,21 @@ data FileSlotInfo blockId = FileSlotInfo {
   Construction
 -------------------------------------------------------------------------------}
 
-empty :: FileInfo blockId
-empty = MkFileInfo {
+empty :: Handle h -> FileInfo blockId h
+empty hndl = MkFileInfo {
       fLatestSlot = NoMaxSlotNo
     , fNBlocks    = 0
     , fContents   = Map.empty
+    , fReadHandle = hndl
     }
 
 -- | Adds a slot to a 'FileInfo'.
 addSlot :: SlotNo
         -> SlotOffset
         -> FileSlotInfo blockId
-        -> FileInfo blockId
-        -> FileInfo blockId
-addSlot slotNo slotOffset slotInfo MkFileInfo{..} = MkFileInfo {
+        -> FileInfo blockId h
+        -> FileInfo blockId h
+addSlot slotNo slotOffset slotInfo fileInfo@MkFileInfo{..} = fileInfo {
       fLatestSlot = updateSlotNoBlockId fLatestSlot [slotNo]
     , fNBlocks    = fNBlocks + 1
     , fContents   = Map.insert slotOffset slotInfo fContents
@@ -82,11 +87,12 @@ addSlot slotNo slotOffset slotInfo MkFileInfo{..} = MkFileInfo {
 -- Additionally, it returns information about the last 'SlotOffset' in the
 -- file, unless the file is empty.
 fromParsedInfo :: ParsedInfo blockId
-               -> (FileInfo blockId, Maybe (blockId, SlotNo))
-fromParsedInfo parsed =
+               -> Handle h
+               -> (FileInfo blockId h, Maybe (blockId, SlotNo))
+fromParsedInfo parsed hndl =
     case lastSlotInfo parsed' of
-      Nothing     -> (MkFileInfo NoMaxSlotNo   nBlocks contents, Nothing)
-      Just (b, s) -> (MkFileInfo (MaxSlotNo s) nBlocks contents, Just (b, s))
+      Nothing     -> (MkFileInfo NoMaxSlotNo   nBlocks contents hndl, Nothing)
+      Just (b, s) -> (MkFileInfo (MaxSlotNo s) nBlocks contents hndl, Just (b, s))
   where
     parsed'  = Map.fromList parsed
     nBlocks  = Map.size parsed'
@@ -99,8 +105,9 @@ mkFileSlotInfo = FileSlotInfo
   Queries
 -------------------------------------------------------------------------------}
 
--- | Checks if this file can be GCed.
-canGC :: FileInfo blockId
+-- | Checks if this file can be GCed in terms of its max slot.
+-- This doesn't check for any open read handles.
+canGC :: FileInfo blockId h
       -> SlotNo -- ^ The slot number of any block in the immutable DB.
       -> Bool
 canGC MkFileInfo{..} slot =
@@ -109,20 +116,23 @@ canGC MkFileInfo{..} slot =
       MaxSlotNo latest -> latest < slot
 
 -- | All @blockId@ in this file.
-blockIds :: FileInfo blockId -> [blockId]
+blockIds :: FileInfo blockId h -> [blockId]
 blockIds MkFileInfo{..} = fsBlockId <$> Map.elems fContents
 
 -- | Has this file reached its maximum size?
-isFull :: Int -> FileInfo blockId -> Bool
+isFull :: Int -> FileInfo blockId h -> Bool
 isFull maxNumBlocks MkFileInfo{..} = fNBlocks >= fromIntegral maxNumBlocks
 
-maxSlot :: FileInfo blockId -> MaxSlotNo
+maxSlot :: FileInfo blockId h -> MaxSlotNo
 maxSlot = fLatestSlot
 
-maxSlotInFiles :: [FileInfo blockId] -> MaxSlotNo
+maxSlotInFiles :: [FileInfo blockId h] -> MaxSlotNo
 maxSlotInFiles = maxSlotNoFromMaybe
                . safeMaximum
                . mapMaybe (maxSlotNoToMaybe . maxSlot)
+
+getHandle :: FileInfo blockId h -> Handle h
+getHandle = fReadHandle
 
 {-------------------------------------------------------------------------------
   Internal auxiliary

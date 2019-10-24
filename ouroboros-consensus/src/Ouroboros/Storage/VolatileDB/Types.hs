@@ -57,6 +57,7 @@ data UserError =
 data UnexpectedError =
       FileSystemError FsError
     | ParserError ParserError
+    | FileNotFound FsPath
     deriving (Show)
 
 instance Eq VolatileDBError where
@@ -144,7 +145,8 @@ data BlockInfo blockId = BlockInfo {
 
 -- | The internal information the db keeps for each block.
 data InternalBlockInfo blockId = InternalBlockInfo {
-      ibFile         :: !FsPath
+      ibFileId       :: !FileId
+    , ibFile         :: !FsPath
     , ibSlotOffset   :: !SlotOffset
     , ibBlockSize    :: !BlockSize
     , ibSlot         :: !SlotNo

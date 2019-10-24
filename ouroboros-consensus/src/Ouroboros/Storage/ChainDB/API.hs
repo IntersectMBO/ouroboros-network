@@ -712,10 +712,15 @@ instance Exception ChainDbFailure where
       VolDbFailure e -> case e of
         VolDB.FileSystemError fse -> fsError fse
         VolDB.ParserError {}      -> corruption
+        VolDB.FileNotFound {}     -> internalViolation
       LgrDbFailure fse                    -> fsError fse
       ChainDbMissingBlock {}              -> corruption
     where
-      corruption = "The database got corrupted, please restart with validation mode enabled"
+      corruption =
+        "The database got corrupted, please restart with validation mode enabled"
+
+      internalViolation =
+        "Database violation found: could not find the file to read, please restart."
 
       -- The output will be a bit too detailed, but it will be quite clear.
       fsError :: FsError -> String
