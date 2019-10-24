@@ -13,7 +13,7 @@ module Ouroboros.Storage.IO (
 
 import           Prelude hiding (read, truncate)
 
-import           Control.Monad (void, when)
+import           Control.Monad (void)
 import           Data.Bits ((.|.))
 import           Data.ByteString
 import           Data.ByteString.Internal as Internal
@@ -45,15 +45,16 @@ open filename openMode = do
     -- AppendMode, but we may need to if we add more commands (read and seek
     -- are disabled in AppendMode and truncate only works in AppendMode, write
     -- moves the file offset in all modes).
-    when isAppend $
-      void $ setFilePointerEx h 0 fILE_END
+    case openMode of
+      AppendMode{} -> void $ setFilePointerEx h 0 fILE_END
+      _            -> return ()
     return h
   where
-    (isAppend, accessMode, creationDisposition) = case openMode of
-      ReadMode         -> (False, gENERIC_READ,                   oPEN_EXISTING)
-      AppendMode    ex -> (True,                   gENERIC_WRITE, createNew ex)
-      WriteMode     ex -> (True,  gENERIC_READ .|. gENERIC_WRITE, createNew ex)
-      ReadWriteMode ex -> (True,  gENERIC_READ .|. gENERIC_WRITE, createNew ex)
+    (accessMode, creationDisposition) = case openMode of
+      ReadMode         -> (gENERIC_READ,                   oPEN_EXISTING)
+      AppendMode    ex -> (                 gENERIC_WRITE, createNew ex)
+      WriteMode     ex -> (gENERIC_READ .|. gENERIC_WRITE, createNew ex)
+      ReadWriteMode ex -> (gENERIC_READ .|. gENERIC_WRITE, createNew ex)
     createNew AllowExisting = oPEN_ALWAYS
     createNew MustBeNew     = cREATE_NEW
 
