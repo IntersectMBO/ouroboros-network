@@ -13,7 +13,6 @@ import           Ouroboros.Consensus.Demo
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Protocol
 import           Ouroboros.Consensus.Util.Random
-import           Ouroboros.Network.Magic
 
 import           Test.Dynamic.General
 import           Test.Dynamic.Util
@@ -42,7 +41,7 @@ prop_simple_pbft_convergence
     NumCoreNodes nn = numCoreNodes
 
     sigThd = (1.0 / fromIntegral nn) + 0.1
-    params = PBftParams k (fromIntegral nn) sigThd (NetworkMagic 0xa5a5a5a5)
+    params = PBftParams k (fromIntegral nn) sigThd
 
     testOutput =
         runTestNetwork

@@ -46,8 +46,6 @@ import           Ouroboros.Consensus.Protocol.WithEBBs
 
 import           Ouroboros.Consensus.Ledger.Byron.Config
 
-import           Ouroboros.Network.Magic
-
 import qualified Test.Cardano.Chain.Genesis.Dummy as Dummy
 
 {-------------------------------------------------------------------------------
@@ -123,7 +121,6 @@ protocolInfoByron genesisConfig@Genesis.Config {
                       Genesis.GenesisData {
                         Genesis.gdK                = BlockCount kParam
                       , Genesis.gdGenesisKeyHashes = genesisKeyHashes
-                      , Genesis.gdProtocolMagicId  = protocolMagicId
                       }
                   }
                   mSigThresh pVer sVer mLeader =
@@ -137,7 +134,6 @@ protocolInfoByron genesisConfig@Genesis.Config {
                                            $ genesisKeyHashes
                   , pbftSignatureThreshold = unSignatureThreshold $
                       fromMaybe defaultPBftSignatureThreshold mSigThresh
-                  , pbftNetworkMagic       = NetworkMagic $ Crypto.unProtocolMagicId protocolMagicId
                   }
               , pbftIsLeader =
                   case mLeader of

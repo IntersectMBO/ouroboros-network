@@ -58,7 +58,6 @@ import           Ouroboros.Network.Block (BlockNo, ChainHash (..), ChainUpdate,
                      HasHeader (..), HeaderHash, MaxSlotNo, Point, SlotNo (..),
                      StandardHash)
 import qualified Ouroboros.Network.Block as Block
-import           Ouroboros.Network.Magic
 import           Ouroboros.Network.MockChain.Chain (Chain (..))
 import qualified Ouroboros.Network.MockChain.Chain as Chain
 import           Ouroboros.Network.MockChain.ProducerState (ChainProducerState,
@@ -1005,7 +1004,6 @@ testCfg :: NodeConfig (BlockProtocol Blk)
 testCfg = BftNodeConfig
     { bftParams   = BftParams { bftSecurityParam = k
                               , bftNumNodes      = 1
-                              , bftNetworkMagic  = NetworkMagic 0x0000ffff
                               }
     , bftNodeId   = CoreId 0
     , bftSignKey  = SignKeyMockDSIGN 0

@@ -39,7 +39,6 @@ import           Cardano.Crypto.DSIGN
 import           Cardano.Prelude (NoUnexpectedThunks)
 
 import           Ouroboros.Network.Block
-import           Ouroboros.Network.Magic
 import           Ouroboros.Network.MockChain.Chain (Point)
 import qualified Ouroboros.Network.MockChain.Chain as Chain
 
@@ -324,7 +323,6 @@ singleNodeTestConfig :: NodeConfig (Bft BftMockCrypto)
 singleNodeTestConfig = BftNodeConfig {
       bftParams   = BftParams { bftSecurityParam = k
                               , bftNumNodes      = 1
-                              , bftNetworkMagic  = NetworkMagic 0x0000ffff
                               }
     , bftNodeId   = CoreId 0
     , bftSignKey  = SignKeyMockDSIGN 0
