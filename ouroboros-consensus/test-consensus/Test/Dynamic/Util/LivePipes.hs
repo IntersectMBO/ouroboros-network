@@ -36,6 +36,8 @@ import           Control.Monad.Class.MonadSTM.Strict
 import           Network.TypedProtocol.Channel
 
 import           Ouroboros.Consensus.Util.IOLike
+import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
+import qualified Ouroboros.Consensus.Util.ResourceRegistry as RR
 
 {-------------------------------------------------------------------------------
   Latency Injection specification
@@ -142,6 +144,9 @@ blockUntilQuiescent livePipesVar dur = get >>= go
 -- accurately synthesize those correlations would explore fewer scheduling
 -- permutations.
 --
+-- NOTE Closing the registry fully deallocates all of the returned live pipe's
+-- resources. In particular, it will call 'forgetLivePipeSTM'.
+--
 newLivePipe ::
   forall m a.
      ( IOLike m
@@ -150,27 +155,31 @@ newLivePipe ::
   => MaxLatencies
   -> LatencyInjection (StrictTVar m SMGen)
   -> LivePipesVar m
+  -> ResourceRegistry m
   -> m (PipeId, Pipe m a)
-newLivePipe MaxLatencies{maxVar1Latency, maxSendLatency} liSMG tvar = do
+newLivePipe
+  MaxLatencies{maxVar1Latency, maxSendLatency} liSMG tvar registry = do
     lpmvCount    <- uncheckedNewTVarM (EmptiedCount 0)
     lpmvInFlight <- uncheckedNewTVarM (InFlightCount 0)
-    pid <- atomically $ do
-        LivePipes{nextPipeId, livePipes} <- readTVar tvar
-        writeTVar tvar LivePipes
-          { nextPipeId = succ nextPipeId
-          , livePipes  =
-                Map.insert nextPipeId
-                    LPMetaVars{lpmvCount, lpmvInFlight}
-                    livePipes
-          }
-        pure nextPipeId
+    (_, pid)     <- RR.allocate registry
+        (\_key -> atomically $ do
+            LivePipes{nextPipeId, livePipes} <- readTVar tvar
+            writeTVar tvar LivePipes
+              { nextPipeId = succ nextPipeId
+              , livePipes  =
+                    Map.insert nextPipeId
+                        LPMetaVars{lpmvCount, lpmvInFlight}
+                        livePipes
+              }
+            pure nextPipeId)
+        (atomically . forgetLivePipeSTM tvar)
 
     -- create a thread that reliably and order-preservingly transports messages
     -- down the pipe
     inBuf     <- atomically Q.newTQueue
     outBuf    <- atomically Q.newTQueue
     liVar1SMG <- mapM split liSMG
-    void $ fork $ forever $ do
+    void $ RR.forkThread registry $ forever $ do
         x <- atomically $ Q.readTQueue inBuf
 
         mapM (genDelay maxVar1Latency) liVar1SMG >>= threadDelayLI

@@ -450,28 +450,35 @@ directedEdge ::
 directedEdge maxLatencies tr btime liSMG livePipesVar nodeapp1 nodeapp2 =
     loopOnMPEE
   where
+    edge registry =
+      directedEdgeInner maxLatencies liSMG livePipesVar registry
+        nodeapp1 nodeapp2
+
     loopOnMPEE = do
-        (pids, edge) <-
-            directedEdgeInner maxLatencies liSMG livePipesVar nodeapp1 nodeapp2
-        edge
-          `catch` hExpected pids
+        again <- (Nothing <$ withRegistry edge)
+          `catch` (fmap Just . hExpected)
           `catch` hUnexpected
+
+        -- NB we block only /after/ the former mini protocol instances' pipes
+        -- have already been removed from @livePipesVar@
+        forM_ again $ \(s, e) -> do
+          traceWith tr (s, MiniProtocolDelayed, e)
+          void $ blockUntilSlot btime (succ s)
+          traceWith tr (s, MiniProtocolRestarting, e)
+          loopOnMPEE
       where
         -- Catch and restart on expected exceptions
         --
-        hExpected :: Set PipeId -> MiniProtocolExpectedException blk -> m ()
-        hExpected pids e = do
-          atomically $ mapM_ (forgetLivePipeSTM livePipesVar) pids
-
-          s@(SlotNo i) <- atomically $ getCurrentSlot btime
-          traceWith tr (s, MiniProtocolDelayed, e)
-          void $ blockUntilSlot btime $ SlotNo (succ i)
-          traceWith tr (s, MiniProtocolRestarting, e)
-          loopOnMPEE
+        hExpected ::
+             MiniProtocolExpectedException blk
+          -> m (SlotNo, MiniProtocolExpectedException blk)
+        hExpected e = do
+          s <- atomically $ getCurrentSlot btime
+          pure (s, e)
 
         -- Wrap synchronous exceptions in 'MiniProtocolFatalException'
         --
-        hUnexpected :: SomeException -> m ()
+        hUnexpected :: forall a. SomeException -> m a
         hUnexpected e@(Exn.SomeException e') = case fromException e of
           Just (_ :: Exn.AsyncException) -> throwM e
           Nothing                        -> throwM MiniProtocolFatalException
@@ -483,16 +490,22 @@ directedEdge maxLatencies tr btime liSMG livePipesVar nodeapp1 nodeapp2 =
 --
 -- See 'directedEdge'.
 directedEdgeInner ::
-  forall m blk. (IOLike m, SupportedBlock blk)
+  forall m blk.
+     ( HasCallStack
+     , IOLike m
+     , SupportedBlock blk
+     )
   => MaxLatencies
   -> LatencyInjection (StrictTVar m SMGen)
   -> LivePipesVar m
+  -> ResourceRegistry m
   -> (CoreNodeId, LimitedApp m NodeId blk)
      -- ^ client threads on this node
   -> (CoreNodeId, LimitedApp m NodeId blk)
      -- ^ server threads on this node
-  -> m (Set PipeId, m ())
-directedEdgeInner maxLatencies liSMG livePipesVar (node1, LimitedApp app1) (node2, LimitedApp app2) = do
+  -> m ()
+directedEdgeInner maxLatencies liSMG livePipesVar registry
+  (node1, LimitedApp app1) (node2, LimitedApp app2) = do
     mps <- sequence $
         ( miniProtocol
             (wrapMPEE MPEEChainSyncClient naChainSyncClient)
@@ -505,9 +518,7 @@ directedEdgeInner maxLatencies liSMG livePipesVar (node1, LimitedApp app1) (node
             (wrapMPEE MPEETxSubmissionClient naTxSubmissionClient)
             (wrapMPEE MPEETxSubmissionServer naTxSubmissionServer)
         ]
-    let pids = foldMap (\(x,y) -> Set.insert x (Set.singleton y)) $ fmap fst mps
-        edge = void $ withAsyncsWaitAny $ flattenPairs $ fmap snd mps
-    pure (pids, edge)
+    withAsyncsWaitAny $ flattenPairs mps
   where
     flattenPairs :: forall a. NE.NonEmpty (a, a) -> NE.NonEmpty a
     flattenPairs = uncurry (<>) . NE.unzip
@@ -525,14 +536,14 @@ directedEdgeInner maxLatencies liSMG livePipesVar (node1, LimitedApp app1) (node
          -> Channel m msg
          -> m ())
          -- ^ server action to run on node2
-      -> m ((PipeId, PipeId), (m (), m ()))
+      -> m (m (), m ())
     miniProtocol client server = do
-       (pid1, Pipe pipe1) <- newLivePipe maxLatencies liSMG livePipesVar
-       (pid2, Pipe pipe2) <- newLivePipe maxLatencies liSMG livePipesVar
+       let newLP = newLivePipe maxLatencies liSMG livePipesVar registry
+       (_, Pipe pipe1) <- newLP
+       (_, Pipe pipe2) <- newLP
        let chan1 = Channel{send = send pipe1, recv = recv pipe2}
            chan2 = Channel{send = send pipe2, recv = recv pipe1}
-       pure $ (,)
-         (pid1, pid2)
+       pure
          ( client app1 (fromCoreNodeId node2) chan1
          , server app2 (fromCoreNodeId node1) chan2
          )
