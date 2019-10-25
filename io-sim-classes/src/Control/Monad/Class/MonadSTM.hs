@@ -5,7 +5,6 @@
 {-# LANGUAGE TypeFamilyDependencies #-}
 module Control.Monad.Class.MonadSTM
   ( MonadSTM (..)
-  , Tr
   , LazyTVar
   , LazyTMVar
 
@@ -56,8 +55,6 @@ import           Control.Monad.Reader
 import           GHC.Stack
 import           Numeric.Natural (Natural)
 
-{-# DEPRECATED Tr "Now simply called 'STM'" #-}
-type Tr m = STM m
 
 {-# DEPRECATED LazyTVar  "Renamed back to 'TVar'" #-}
 {-# DEPRECATED LazyTMVar "Renamed back to 'TMVar'" #-}
