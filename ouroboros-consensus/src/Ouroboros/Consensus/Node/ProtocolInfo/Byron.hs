@@ -46,8 +46,6 @@ import           Ouroboros.Consensus.Protocol.WithEBBs
 
 import           Ouroboros.Consensus.Ledger.Byron.Config
 
-import qualified Test.Cardano.Chain.Genesis.Dummy as Dummy
-
 {-------------------------------------------------------------------------------
   Credentials
 -------------------------------------------------------------------------------}
@@ -152,10 +150,6 @@ protocolInfoByron genesisConfig@Genesis.Config {
               , pbftGenesisConfig   = genesisConfig
               , pbftGenesisHash     = genesisHash
               , pbftEpochSlots      = Genesis.configEpochSlots genesisConfig
-              , pbftSecrets         = Dummy.dummyGeneratedSecrets
-                --TODO: These "richmen" secrets ^^ are here to support demos
-                -- where we need to elaborate from mock transactions to real
-                -- ones. It should be removed when we can eliminate elaboration.
               }
           }
       , pInfoInitLedger = ExtLedgerState {

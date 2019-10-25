@@ -24,7 +24,6 @@
           (hsPkgs.typed-protocols-cbor)
           (hsPkgs.io-sim-classes)
           (hsPkgs.contra-tracer)
-          (hsPkgs.cardano-ledger-test)
           (hsPkgs.bifunctors)
           (hsPkgs.bimap)
           (hsPkgs.bytestring)

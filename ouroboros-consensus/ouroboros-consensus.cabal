@@ -194,10 +194,6 @@ library
                        io-sim-classes,
                        contra-tracer,
 
-                       -- TODO: Ideally we'd refactor this so that this
-                       -- only needs to live in cardano-node
-                       cardano-ledger-test,
-
                        bifunctors,
                        bimap             >=0.3   && <0.5,
                        bytestring        >=0.10  && <0.11,
