@@ -80,6 +80,19 @@
             (hsPkgs.time)
             ];
           };
+        "analyse-db" = {
+          depends = [
+            (hsPkgs.base)
+            (hsPkgs.cardano-binary)
+            (hsPkgs.cardano-crypto-wrapper)
+            (hsPkgs.cardano-ledger)
+            (hsPkgs.mtl)
+            (hsPkgs.optparse-applicative)
+            (hsPkgs.ouroboros-consensus)
+            (hsPkgs.ouroboros-network)
+            (hsPkgs.reflection)
+            ];
+          };
         };
       tests = {
         "test-consensus" = {
