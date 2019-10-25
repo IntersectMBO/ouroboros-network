@@ -432,3 +432,18 @@ executable byron-db-converter
    default-language:   Haskell2010
    main-is:            Main.hs
    ghc-options:        -Wall
+
+executable analyse-db
+  hs-source-dirs:      tools/db-analyse
+  main-is:             Main.hs
+  build-depends:       base
+                     , cardano-binary
+                     , cardano-crypto-wrapper
+                     , cardano-ledger
+                     , mtl
+                     , optparse-applicative
+                     , ouroboros-consensus
+                     , ouroboros-network
+                     , reflection
+  default-language:    Haskell2010
+  ghc-options:         -Wall
