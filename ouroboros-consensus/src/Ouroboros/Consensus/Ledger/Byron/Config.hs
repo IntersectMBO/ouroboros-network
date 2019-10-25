@@ -38,3 +38,9 @@ type ByronEBBExtNodeConfig = WithEBBs ByronExtNodeConfig
 
 instance ConfigContainsGenesis ByronConfig where
   genesisConfig = pbftGenesisConfig
+
+instance ConfigContainsGenesis (NodeConfig ByronExtNodeConfig) where
+  genesisConfig = genesisConfig . encNodeConfigExt
+
+instance ConfigContainsGenesis (NodeConfig ByronEBBExtNodeConfig) where
+  genesisConfig = genesisConfig . unWithEBBNodeConfig

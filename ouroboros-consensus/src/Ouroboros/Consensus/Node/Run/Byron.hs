@@ -21,7 +21,6 @@ import           Ouroboros.Consensus.Ledger.Byron.Config
 import           Ouroboros.Consensus.Ledger.Byron.Forge
 import           Ouroboros.Consensus.Node.Run.Abstract
 import           Ouroboros.Consensus.Protocol.ExtNodeConfig
-import           Ouroboros.Consensus.Protocol.WithEBBs
 
 import           Ouroboros.Storage.Common (EpochSize (..))
 
@@ -76,9 +75,5 @@ instance ByronGiven => RunNode (ByronBlockOrEBB ByronConfig) where
   nodeDecodeChainState   = const decodeByronChainState
   nodeDecodeApplyTxError = const decodeByronApplyTxError
 
-extractGenesisData :: NodeConfig (WithEBBs (ExtNodeConfig ByronConfig p))
-                   -> Genesis.GenesisData
-extractGenesisData = Genesis.configGenesisData
-                   . pbftGenesisConfig
-                   . encNodeConfigExt
-                   . unWithEBBNodeConfig
+extractGenesisData :: NodeConfig ByronEBBExtNodeConfig -> Genesis.GenesisData
+extractGenesisData = Genesis.configGenesisData . genesisConfig

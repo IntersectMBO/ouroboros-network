@@ -259,7 +259,9 @@ instance (ByronGiven, Typeable cfg, ConfigContainsGenesis cfg, NoUnexpectedThunk
 
   type LedgerError (ByronBlock cfg) = CC.Block.ChainValidationError
 
-  newtype LedgerConfig (ByronBlock cfg) = ByronLedgerConfig CC.Genesis.Config
+  newtype LedgerConfig (ByronBlock cfg) = ByronLedgerConfig {
+      unByronLedgerConfig :: CC.Genesis.Config
+    }
 
   ledgerConfigView EncNodeConfig{..} = ByronLedgerConfig $
     genesisConfig encNodeConfigExt
@@ -313,6 +315,9 @@ instance (ByronGiven, Typeable cfg, ConfigContainsGenesis cfg, NoUnexpectedThunk
 
 instance ByronGiven => NoUnexpectedThunks (LedgerState (ByronBlock cfg))
   -- use generic instance
+
+instance ConfigContainsGenesis (LedgerConfig (ByronBlock cfg)) where
+  genesisConfig = unByronLedgerConfig
 
 pbftLedgerView :: CC.Block.ChainValidationState
                -> PBftLedgerView PBftCardanoCrypto
@@ -612,7 +617,9 @@ instance ( ByronGiven
     deriving (Eq, Show)
   type LedgerError (ByronBlockOrEBB cfg) = LedgerError (ByronBlock cfg)
 
-  newtype LedgerConfig (ByronBlockOrEBB cfg) = ByronEBBLedgerConfig (LedgerConfig (ByronBlock cfg))
+  newtype LedgerConfig (ByronBlockOrEBB cfg) = ByronEBBLedgerConfig {
+      unByronEBBLedgerConfig :: LedgerConfig (ByronBlock cfg)
+    }
 
   ledgerConfigView = ByronEBBLedgerConfig . ledgerConfigView . unWithEBBNodeConfig
 
@@ -638,6 +645,9 @@ instance ( ByronGiven
   ledgerTipPoint (ByronEBBLedgerState state) = castPoint $ ledgerTipPoint state
 
 deriving newtype instance UpdateLedger (ByronBlock cfg) => NoUnexpectedThunks (LedgerState (ByronBlockOrEBB cfg))
+
+instance ConfigContainsGenesis (LedgerConfig (ByronBlockOrEBB cfg)) where
+  genesisConfig = genesisConfig . unByronEBBLedgerConfig
 
 applyByronLedgerBlockOrEBB :: Given CC.Slot.EpochSlots
                            => ValidationMode
