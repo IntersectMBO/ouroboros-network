@@ -454,7 +454,7 @@ data TraceEvent
   | EventThreadFinished                  -- terminated normally
   | EventThreadUnhandled SomeException   -- terminated due to unhandled exception
 
-  | EventTxComitted    [TVarId] -- tx wrote to these
+  | EventTxCommitted   [TVarId] -- tx wrote to these
                        [TVarId] -- and created these
   | EventTxAborted
   | EventTxBlocked     [TVarId] -- tx blocked reading these
@@ -787,7 +787,7 @@ schedule thread@Thread{
     Atomically a k -> do
       res <- execAtomically nextVid (runSTM a)
       case res of
-        StmTxComitted x written nextVid' -> do
+        StmTxCommitted x written nextVid' -> do
           (wakeup, wokeby) <- threadsUnblockedByWrites written
           mapM_ (\(SomeTVar tvar) -> unblockAllThreadsFromTVar tvar) written
           let thread'     = thread { threadControl = ThreadControl (k x) ctl }
@@ -803,7 +803,7 @@ schedule thread@Thread{
               -- as it is a fair policy (all runnable threads eventually run).
           trace <- deschedule Yield thread' simstate' { nextVid  = nextVid' }
           return $
-            Trace time tid (EventTxComitted vids [nextVid..pred nextVid']) $
+            Trace time tid (EventTxCommitted vids [nextVid..pred nextVid']) $
             traceMany
               [ (time, tid', EventTxWakeup vids')
               | tid' <- unblocked
@@ -1115,13 +1115,13 @@ data TVar s a = TVar {
      }
 
 data StmTxResult s a =
-       -- | A comitted transaction reports the vars that were written (in order
+       -- | A committed transaction reports the vars that were written (in order
        -- of first write) so that the scheduler can unblock other threads that
        -- were blocked in STM transactions that read any of these vars.
        --
        -- It also includes the updated TVarId name supply.
        --
-       StmTxComitted a [SomeTVar s] TVarId -- updated TVarId name supply
+       StmTxCommitted a [SomeTVar s] TVarId -- updated TVarId name supply
 
        -- | A blocked transaction reports the vars that were read so that the
        -- scheduler can block the thread on those vars.
@@ -1178,9 +1178,9 @@ execAtomically =
                         undos <- readTVarUndos tvar
                         assert (null undos) $ return ()
                     ) written
-          
+
           -- Return the vars written, so readers can be unblocked
-          return (StmTxComitted x (reverse writtenSeq) nextVid)
+          return (StmTxCommitted x (reverse writtenSeq) nextVid)
 
         OrElseLeftFrame _b k writtenOuter writtenOuterSeq ctl' -> do
           -- Commit the TVars written in this sub-transaction that are also
