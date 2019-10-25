@@ -88,6 +88,9 @@ class (Monad m, Monad (STM m)) => MonadSTM m where
   modifyTVar   :: TVar m a -> (a -> a) -> STM m ()
   modifyTVar  v f = readTVar v >>= writeTVar v . f
 
+  modifyTVar'  :: TVar m a -> (a -> a) -> STM m ()
+  modifyTVar' v f = readTVar v >>= \x -> writeTVar v $! f x
+
   check        :: Bool -> STM m ()
   check True = return ()
   check _    = retry
@@ -220,6 +223,7 @@ instance MonadSTM IO where
 
   newTVarM    = STM.newTVarIO
   modifyTVar  = STM.modifyTVar
+  modifyTVar' = STM.modifyTVar'
   check       = STM.check
 
   type TMVar IO = STM.TMVar
