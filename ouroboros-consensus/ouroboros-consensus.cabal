@@ -262,8 +262,6 @@ test-suite test-consensus
                     Test.Dynamic.Util.NodeJoinPlan
                     Test.Dynamic.Util.NodeTopology
                     Test.Dynamic.Util.Tests
-                    Test.Ouroboros
-                    Test.Util.DepFn
                     Test.Util.FS.Sim.FsTree
                     Test.Util.FS.Sim.MockFS
                     Test.Util.FS.Sim.STM
