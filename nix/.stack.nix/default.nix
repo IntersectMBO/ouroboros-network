@@ -31,7 +31,6 @@
         io-sim = ./io-sim.nix;
         io-sim-classes = ./io-sim-classes.nix;
         contra-tracer = ./contra-tracer.nix;
-        iohk-monitoring = ./iohk-monitoring.nix;
         cardano-binary = ./cardano-binary.nix;
         cardano-binary-test = ./cardano-binary-test.nix;
         cardano-crypto-class = ./cardano-crypto-class.nix;
@@ -45,8 +44,6 @@
         cardano-crypto-test = ./cardano-crypto-test.nix;
         cardano-prelude = ./cardano-prelude.nix;
         cardano-prelude-test = ./cardano-prelude-test.nix;
-        cardano-shell = ./cardano-shell.nix;
-        cardano-sl-x509 = ./cardano-sl-x509.nix;
         cardano-crypto = ./cardano-crypto.nix;
         };
       compiler.version = "8.6.5";

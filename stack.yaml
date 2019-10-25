@@ -16,7 +16,6 @@ extra-deps:
     commit: 1ebe57df3a76a8ae4e3b5a31a9b85132f71534fc
     subdirs:
       - contra-tracer
-      - iohk-monitoring
 
   - git: https://github.com/input-output-hk/cardano-base
     commit: 64bb761664c9ca8a52a0023dc1a92c9b5b884497
@@ -51,14 +50,6 @@ extra-deps:
     subdirs:
       - .
       - test
-
-  - git: https://github.com/input-output-hk/cardano-shell
-    commit: efba204c14a83b9e1af9bb138c2d551fe3d7a43e
-    subdirs:
-      - cardano-shell
-
-  - git: https://github.com/input-output-hk/cardano-sl-x509
-    commit: 43a036c5bbe68ca2e9cbe611eab7982e2348fe49
 
   - bimap-0.4.0
   - binary-0.8.7.0
