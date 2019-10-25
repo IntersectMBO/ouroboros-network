@@ -41,7 +41,6 @@
           (hsPkgs.filepath)
           (hsPkgs.fingertree)
           (hsPkgs.formatting)
-          (hsPkgs.memory)
           (hsPkgs.mmorph)
           (hsPkgs.mtl)
           (hsPkgs.network)
