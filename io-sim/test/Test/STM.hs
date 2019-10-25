@@ -495,13 +495,6 @@ data SomeExpr where
 deriving instance Show SomeTerm
 deriving instance Show SomeExpr
 
-{-
-instance Show SomeTerm where
-    show (SomeTerm _ t) = showTerm 0 t ""
-
-instance Show SomeExpr where
-    show (SomeExpr e) = showExpr 0 e ""
--}
 
 -- | The generator environment, used to keep track of what names are in scope
 -- in the terms and expressions we generate.
@@ -800,4 +793,3 @@ showTyRep _  TyRepUnit   = showString "()"
 showTyRep _  TyRepInt    = showString "Int"
 showTyRep p (TyRepVar t) = showParen (p > 10) $
                              showString "TVar " . showTyRep 11 t
-

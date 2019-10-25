@@ -313,7 +313,11 @@ prop_threadId_order_order_Sim n = runSimOrThrow $ test_threadId_order n
 prop_wakeup_order_ST :: Property
 prop_wakeup_order_ST = runSimOrThrow $ test_wakeup_order
 
--- It is not deterministic in IO
+-- This property is not actually deterministic in IO. Uncomment the following
+-- and try it! Arguably therefore, this property does not need to be true for
+-- the Sim either. Perhaps we should introduce random scheduling and abandon
+-- this property. In the meantime it's a helpful sanity check.
+
 --prop_wakeup_order_IO = ioProperty test_wakeup_order
 
 test_wakeup_order :: ( MonadFork m
