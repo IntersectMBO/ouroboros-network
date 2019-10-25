@@ -9,9 +9,6 @@ module Control.Monad.Class.MonadSTM
   , LazyTVar
   , LazyTMVar
 
-  -- * Helpers defined in terms of 'MonadSTM'
-  , updateTVar
-
   -- * Default 'TMVar' implementation
   , TMVarDefault (..)
   , newTMVarDefault
@@ -280,16 +277,6 @@ instance Exception BlockedIndefinitely where
 wrapBlockedIndefinitely :: HasCallStack => IO a -> IO a
 wrapBlockedIndefinitely = handle (throwIO . BlockedIndefinitely callStack)
 
---
--- Helpers defined in terms of MonadSTM
---
-
-updateTVar :: MonadSTM m => TVar m a -> (a -> (a, b)) -> STM m b
-updateTVar t f = do
-    a <- readTVar t
-    let (a', b) = f a
-    writeTVar t a'
-    return b
 
 --
 -- Default TMVar implementation in terms of TVars (used by sim)
