@@ -14,12 +14,13 @@ import           Crypto.Random (MonadRandom)
 import           Data.ByteString (ByteString)
 import           Data.Coerce (coerce)
 import           Data.Foldable (foldl')
-import           Data.Reflection (Given (..), give)
+import           Data.Reflection (give)
 
 import           Cardano.Binary (Annotated (..), reAnnotate)
 import qualified Cardano.Chain.Block as CC.Block
 import qualified Cardano.Chain.Common as CC.Common
 import qualified Cardano.Chain.Delegation as CC.Delegation
+import qualified Cardano.Chain.Genesis as CC.Genesis
 import qualified Cardano.Chain.Slotting as CC.Slot
 import qualified Cardano.Chain.Ssc as CC.Ssc
 import qualified Cardano.Chain.Update as CC.Update
@@ -42,8 +43,6 @@ forgeBlockOrEBB
   :: forall m cfg.
      ( HasNodeState_ () m  -- @()@ is the @NodeState@ of PBFT
      , MonadRandom m
-       -- TODO: This 'Given' constraint should not be needed (present in config)
-     , Given Crypto.ProtocolMagicId
      )
   => NodeConfig ByronEBBExtNodeConfig
   -> SlotNo                       -- ^ Current slot
@@ -57,16 +56,17 @@ forgeBlockOrEBB cfg curSlot curNo prevHash txs isLeader = case prevHash of
   BlockHash _ -> forgeBlock cfg curSlot curNo prevHash txs isLeader
 
 forgeGenesisEBB
-  :: Given Crypto.ProtocolMagicId
-  => NodeConfig ByronEBBExtNodeConfig
+  :: NodeConfig ByronEBBExtNodeConfig
   -> SlotNo
   -> ByronBlockOrEBB ByronConfig
 forgeGenesisEBB (WithEBBNodeConfig cfg) curSlot =
         ByronBlockOrEBB
       . CC.Block.ABOBBoundary
-      . annotateBoundary given
+      . annotateBoundary protocolMagicId
       $ boundaryBlock
   where
+    protocolMagicId = CC.Genesis.configProtocolMagicId (genesisConfig cfg)
+
     boundaryBlock :: CC.Block.ABoundaryBlock ()
     boundaryBlock =
       CC.Block.ABoundaryBlock {
@@ -121,8 +121,6 @@ forgeBlock
   :: forall m cfg.
      ( HasNodeState_ () m  -- @()@ is the @NodeState@ of PBFT
      , MonadRandom m
-       -- TODO: This 'Given' constraint should not be needed (present in config)
-     , Given Crypto.ProtocolMagicId
      )
   => NodeConfig ByronEBBExtNodeConfig
   -> SlotNo                            -- ^ Current slot
@@ -132,8 +130,10 @@ forgeBlock
   -> PBftIsLeader PBftCardanoCrypto    -- ^ Leader proof ('IsLeader')
   -> m (ByronBlockOrEBB ByronConfig)
 forgeBlock (WithEBBNodeConfig cfg) curSlot curNo prevHash txs isLeader = do
-    ouroborosPayload <- give (VerKeyCardanoDSIGN headerGenesisKey)
-      $ forgePBftFields isLeader (reAnnotate $ Annotated toSign ())
+    ouroborosPayload <-
+      give (VerKeyCardanoDSIGN headerGenesisKey) $
+      give protocolMagicId $
+      forgePBftFields isLeader (reAnnotate $ Annotated toSign ())
     return $ forge ouroborosPayload
   where
     -- TODO: Might be sufficient to add 'ConfigContainsGenesis' constraint.
@@ -144,6 +144,8 @@ forgeBlock (WithEBBNodeConfig cfg) curSlot curNo prevHash txs isLeader = do
       , pbftSoftwareVersion
       , pbftProtocolMagic
       } = encNodeConfigExt cfg
+
+    protocolMagicId = CC.Genesis.configProtocolMagicId (genesisConfig cfg)
 
     blockPayloads :: BlockPayloads
     blockPayloads = foldl' extendBlockPayloads initBlockPayloads txs
@@ -205,7 +207,8 @@ forgeBlock (WithEBBNodeConfig cfg) curSlot curNo prevHash txs isLeader = do
         }
 
     headerGenesisKey :: Crypto.VerificationKey
-    VerKeyCardanoDSIGN headerGenesisKey = dlgCertGenVerKey $ pbftDlgCert isLeader
+    VerKeyCardanoDSIGN headerGenesisKey = give protocolMagicId $
+      dlgCertGenVerKey $ pbftDlgCert isLeader
 
     dlgCertificate :: CC.Delegation.Certificate
     dlgCertificate = pbftDlgCert isLeader

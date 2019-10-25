@@ -32,9 +32,6 @@ library
                        Ouroboros.Consensus.ChainSyncClient
                        Ouroboros.Consensus.ChainSyncServer
                        Ouroboros.Consensus.Crypto.DSIGN.Cardano
-                       Ouroboros.Consensus.Demo
-                       Ouroboros.Consensus.Demo.Byron.Elaborate
-                       Ouroboros.Consensus.Demo.Run
                        Ouroboros.Consensus.Ledger.Abstract
                        Ouroboros.Consensus.Ledger.Byron
                        Ouroboros.Consensus.Ledger.Byron.Config
@@ -197,10 +194,6 @@ library
                        io-sim-classes,
                        contra-tracer,
 
-                       -- TODO: Ideally we'd refactor this so that this
-                       -- only needs to live in cardano-node
-                       cardano-ledger-test,
-
                        bifunctors,
                        bimap             >=0.3   && <0.5,
                        bytestring        >=0.10  && <0.11,
@@ -218,7 +211,6 @@ library
                        filepath          >=1.4   && <1.5,
                        fingertree        >=0.1.4.2 && <0.2,
                        formatting        >=6.3   && <6.4,
-                       memory            >=0.14  && <0.15,
                        mmorph            >=1.1   && <1.2,
                        mtl               >=2.2   && <2.3,
                        network,
@@ -269,8 +261,6 @@ test-suite test-consensus
                     Test.Dynamic.Util.NodeJoinPlan
                     Test.Dynamic.Util.NodeTopology
                     Test.Dynamic.Util.Tests
-                    Test.Ouroboros
-                    Test.Util.DepFn
                     Test.Util.FS.Sim.FsTree
                     Test.Util.FS.Sim.MockFS
                     Test.Util.FS.Sim.STM

@@ -8,7 +8,6 @@ import           Test.QuickCheck
 import           Test.Tasty
 import           Test.Tasty.QuickCheck
 
-import           Ouroboros.Consensus.Demo
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Protocol
 import           Ouroboros.Consensus.Util.Random
@@ -24,7 +23,7 @@ tests = testGroup "Dynamic chain generation" [
         prop_simple_bft_convergence k
     ]
   where
-    k = defaultSecurityParam
+    k = SecurityParam 5
 
 prop_simple_bft_convergence :: SecurityParam
                             -> TestConfig

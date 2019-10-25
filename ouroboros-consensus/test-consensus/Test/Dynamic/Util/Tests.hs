@@ -6,7 +6,6 @@ import           Test.Tasty
 import           Test.Tasty.QuickCheck
 
 import           Ouroboros.Consensus.BlockchainTime (NumSlots (..))
-import           Ouroboros.Consensus.Demo (defaultSecurityParam)
 import           Ouroboros.Consensus.Node.ProtocolInfo.Abstract
                      (NumCoreNodes (..))
 import           Ouroboros.Consensus.Protocol.Abstract (SecurityParam (..))
@@ -19,8 +18,10 @@ import           Test.Util.Orphans.Arbitrary ()
 tests :: TestTree
 tests = testGroup "Test.Dynamic.Util.Tests" $
     [ testProperty "0 = determineForkLength roundRobinLeaderSchedule" $
-          prop_roundRobin_forkLength defaultSecurityParam
+          prop_roundRobin_forkLength securityParam
     ]
+  where
+    securityParam = SecurityParam 5
 
 -- | A round-robin schedule should reach consensus
 prop_roundRobin_forkLength ::

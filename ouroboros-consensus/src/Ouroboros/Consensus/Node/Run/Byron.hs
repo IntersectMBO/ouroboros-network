@@ -5,7 +5,6 @@
 module Ouroboros.Consensus.Node.Run.Byron () where
 
 import           Data.Coerce (coerce)
-import           Data.Reflection (given)
 
 import qualified Cardano.Chain.Block as Cardano.Block
 import qualified Cardano.Chain.Genesis as Genesis
@@ -21,7 +20,6 @@ import           Ouroboros.Consensus.Ledger.Byron.Config
 import           Ouroboros.Consensus.Ledger.Byron.Forge
 import           Ouroboros.Consensus.Node.Run.Abstract
 import           Ouroboros.Consensus.Protocol.ExtNodeConfig
-import           Ouroboros.Consensus.Protocol.WithEBBs
 
 import           Ouroboros.Storage.Common (EpochSize (..))
 
@@ -67,8 +65,8 @@ instance ByronGiven => RunNode (ByronBlockOrEBB ByronConfig) where
   nodeEncodeChainState   = const encodeByronChainState
   nodeEncodeApplyTxError = const encodeByronApplyTxError
 
-  nodeDecodeBlock        = const (decodeByronBlock given)
-  nodeDecodeHeader       = const (decodeByronHeader given)
+  nodeDecodeBlock        = decodeByronBlock  . extractEpochSlots
+  nodeDecodeHeader       = decodeByronHeader . extractEpochSlots
   nodeDecodeGenTx        = decodeByronGenTx
   nodeDecodeGenTxId      = decodeByronGenTxId
   nodeDecodeHeaderHash   = const decodeByronHeaderHash
@@ -76,9 +74,8 @@ instance ByronGiven => RunNode (ByronBlockOrEBB ByronConfig) where
   nodeDecodeChainState   = const decodeByronChainState
   nodeDecodeApplyTxError = const decodeByronApplyTxError
 
-extractGenesisData :: NodeConfig (WithEBBs (ExtNodeConfig ByronConfig p))
-                   -> Genesis.GenesisData
-extractGenesisData = Genesis.configGenesisData
-                   . pbftGenesisConfig
-                   . encNodeConfigExt
-                   . unWithEBBNodeConfig
+extractGenesisData :: NodeConfig ByronEBBExtNodeConfig -> Genesis.GenesisData
+extractGenesisData = Genesis.configGenesisData . genesisConfig
+
+extractEpochSlots :: NodeConfig ByronEBBExtNodeConfig -> EpochSlots
+extractEpochSlots = Genesis.configEpochSlots . genesisConfig

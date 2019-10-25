@@ -1,4 +1,5 @@
-{-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE NamedFieldPuns  #-}
+{-# LANGUAGE RecordWildCards #-}
 
 module Test.Dynamic.LeaderSchedule (
     tests
@@ -15,7 +16,6 @@ import           Test.Tasty.QuickCheck
 import           Ouroboros.Network.Block (SlotNo (..))
 
 import           Ouroboros.Consensus.BlockchainTime
-import           Ouroboros.Consensus.Demo
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.NodeId
 import           Ouroboros.Consensus.Protocol
@@ -35,8 +35,13 @@ tests = testGroup "Dynamic chain generation"
             prop
     ]
   where
-    params@PraosParams{praosSecurityParam = k, praosSlotsPerEpoch} =
-        defaultDemoPraosParams
+    params@PraosParams{praosSecurityParam = k, ..} = PraosParams {
+        praosSecurityParam = SecurityParam 5
+      , praosSlotsPerEpoch = 3
+      , praosLeaderF       = 0.5
+      , praosLifetimeKES   = 1000000
+      }
+
     numCoreNodes = NumCoreNodes 3
     numSlots  = NumSlots $ fromEnum $
         maxRollbacks k * praosSlotsPerEpoch * numEpochs

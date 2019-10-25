@@ -13,7 +13,7 @@ module Ouroboros.Consensus.Protocol.PBFT.Crypto (
   ) where
 
 import           Data.Constraint
-import           Data.Reflection (Given (..), give)
+import           Data.Reflection (Given, give)
 import           Data.Typeable
 
 import           Cardano.Binary (Decoded)
