@@ -95,36 +95,6 @@ percentile n = Stats.quantile contParam k 100 . Vector.fromList
   k = if n >= 100 then 100 else fromIntegral n
   contParam = Stats.s
 
--- | Specifies how to compute a single Double from all pairs shortest paths:
--- first compress the distances for each vertex to all others into a Double,
--- then compress all of those Doubles.
--- TODO rename.
-data Observations = Observations
-  { -- | Compute a "local" statistic for each peer with its distances to all
-    -- other peers.
-    local_observation  :: Statistic
-    -- | Compute a "global" statistic over all of the local statistics.
-  , global_observation :: Statistic
-  }
-
-characteristic_path_length :: Observations
-characteristic_path_length = Observations
-  { local_observation  = mean
-  , global_observation = median
-  }
-
-max_path_length :: Observations
-max_path_length = Observations
-  { local_observation  = percentile 100
-  , global_observation = percentile 100
-  }
-
-average_percentile :: Natural -> Observations
-average_percentile p = Observations
-  { local_observation  = percentile p
-  , global_observation = mean
-  }
-
 -- | Will be used as an edge weight in shortest-path computation. As such, its
 -- Ord instance is key: @Lost@ is greater than everything. Its Semigroup
 -- instance is also essential for it gives the length of multi-edge paths.
@@ -165,6 +135,8 @@ data Edge e where
   Out  :: !e -> Edge e
   In   :: !e -> Edge e
   Both :: !e -> !e -> Edge e
+
+deriving instance Show e => Show (Edge e)
 
 instance Semigroup e => Semigroup (Edge e) where
 
@@ -216,7 +188,7 @@ all_pairs_time_to_send bytes topo = (fmap . fmap) local_length all_sps
 
   all_sps = all_pairs_sp_antireflexive weight graph
 
-  graph     = bidirectional_bearer_graph topo
+  graph    = bidirectional_bearer_graph topo
 
   weight :: peer -> peer -> Edge (Last BearerCharacteristics) -> Latency
   weight _ _ (Out _) = Lost
@@ -237,43 +209,3 @@ all_pairs_time_to_send bytes topo = (fmap . fmap) local_length all_sps
 
   initial_window :: Natural
   initial_window = 4
-
--- | An experiment on a @Topography BearerCharacteristics peer@ that is
--- parameterised by @param@. See @runExperiment@.
-data Experiment peer param = Experiment
-  { topography       :: param -> Topography BearerCharacteristics peer
-  , observations     :: Observations
-  }
-
--- | Runs an @Experiment@ by weighting edges in the graph using
--- @tcpRPCLoadPattern@ (some params hard-coded). Path/edge weights are
--- seconds to complete a transfer of the given number of bytes, or Infinity.
---
--- FIXME we may want to treat the response size (size of block) as a parameter
--- for statistical analysis.
---
--- FIXME infinite distances are removed from the results, because statistics
--- functions will error on NaNs. Maybe we shouldn't do this, instead assume
--- the graph is strongly connected under finite weights?
-runExperiment
-  :: forall peer param .
-     (Ord peer)
-  => Natural
-  -> Experiment peer param
-  -> param
-  -> Double
-runExperiment bytes experiment param = globals
-
-  where
-
-  globals :: Double
-  globals = global_observation (observations experiment) (Map.elems locals)
-
-  locals :: Map peer Double
-  locals = fmap (local_observation (observations experiment)) (fmap Map.elems times)
-
-  times = all_pairs_time_to_send bytes topo
-
-  topo = topography experiment param
-
-
