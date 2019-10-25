@@ -5,7 +5,6 @@
 module Ouroboros.Consensus.Node.Run.Byron () where
 
 import           Data.Coerce (coerce)
-import           Data.Reflection (given)
 
 import qualified Cardano.Chain.Block as Cardano.Block
 import qualified Cardano.Chain.Genesis as Genesis
@@ -66,8 +65,8 @@ instance ByronGiven => RunNode (ByronBlockOrEBB ByronConfig) where
   nodeEncodeChainState   = const encodeByronChainState
   nodeEncodeApplyTxError = const encodeByronApplyTxError
 
-  nodeDecodeBlock        = const (decodeByronBlock given)
-  nodeDecodeHeader       = const (decodeByronHeader given)
+  nodeDecodeBlock        = decodeByronBlock  . extractEpochSlots
+  nodeDecodeHeader       = decodeByronHeader . extractEpochSlots
   nodeDecodeGenTx        = decodeByronGenTx
   nodeDecodeGenTxId      = decodeByronGenTxId
   nodeDecodeHeaderHash   = const decodeByronHeaderHash
@@ -77,3 +76,6 @@ instance ByronGiven => RunNode (ByronBlockOrEBB ByronConfig) where
 
 extractGenesisData :: NodeConfig ByronEBBExtNodeConfig -> Genesis.GenesisData
 extractGenesisData = Genesis.configGenesisData . genesisConfig
+
+extractEpochSlots :: NodeConfig ByronEBBExtNodeConfig -> EpochSlots
+extractEpochSlots = Genesis.configEpochSlots . genesisConfig

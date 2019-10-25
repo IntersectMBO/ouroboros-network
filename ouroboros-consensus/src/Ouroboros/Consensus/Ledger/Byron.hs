@@ -214,14 +214,14 @@ instance (ByronGiven, Typeable cfg, NoUnexpectedThunks cfg)
 
 type instance HeaderHash (ByronBlock  cfg) = ByronHash
 
-instance (ByronGiven, Typeable cfg) => HasHeader (ByronBlock cfg) where
+instance Typeable cfg => HasHeader (ByronBlock cfg) where
   blockHash      =            blockHash     . getHeader
   blockPrevHash  = castHash . blockPrevHash . getHeader
   blockSlot      =            blockSlot     . getHeader
   blockNo        =            blockNo       . getHeader
   blockInvariant = const True
 
-instance (ByronGiven, Typeable cfg) => HasHeader (Header (ByronBlock cfg)) where
+instance Typeable cfg => HasHeader (Header (ByronBlock cfg)) where
   blockHash = byronHeaderHash
 
   blockPrevHash = BlockHash . ByronHash . CC.Block.headerPrevHash . byronHeader
@@ -235,7 +235,7 @@ instance (ByronGiven, Typeable cfg) => HasHeader (Header (ByronBlock cfg)) where
                  . byronHeader
   blockInvariant = const True
 
-instance (ByronGiven, Typeable cfg) => Measured BlockMeasure (ByronBlock cfg) where
+instance Typeable cfg => Measured BlockMeasure (ByronBlock cfg) where
   measure = blockMeasure
 
 instance StandardHash (ByronBlock cfg)
@@ -649,8 +649,7 @@ deriving newtype instance UpdateLedger (ByronBlock cfg) => NoUnexpectedThunks (L
 instance ConfigContainsGenesis (LedgerConfig (ByronBlockOrEBB cfg)) where
   genesisConfig = genesisConfig . unByronEBBLedgerConfig
 
-applyByronLedgerBlockOrEBB :: Given CC.Slot.EpochSlots
-                           => ValidationMode
+applyByronLedgerBlockOrEBB :: ValidationMode
                            -> LedgerConfig (ByronBlockOrEBB cfg)
                            -> ByronBlockOrEBB cfg
                            -> LedgerState (ByronBlockOrEBB cfg)
@@ -671,7 +670,8 @@ applyByronLedgerBlockOrEBB validationMode
           }
       where
         hdr = CC.Block.boundaryHeader b
-        CC.Slot.EpochSlots epochSlots = given
+        CC.Slot.EpochSlots epochSlots =
+          CC.Genesis.configEpochSlots $ unByronLedgerConfig cfg
 
 -- | Construct Byron block from unannotated 'CC.Block.Block'
 --
@@ -1030,7 +1030,7 @@ instance (ByronGiven, Typeable cfg, ConfigContainsGenesis cfg, NoUnexpectedThunk
       ByronUpdateProposal _ prop   -> annotatedEnc prop   == canonicalEnc prop
       ByronUpdateVote     _ vote   -> annotatedEnc vote   == canonicalEnc vote
     where
-      annotatedEnc :: (Functor f, Decoded (f ByteString))
+      annotatedEnc :: Decoded (f ByteString)
                    => f ByteString -> ByteString
       annotatedEnc = recoverBytes
       canonicalEnc :: (Functor f, ToCBOR (f ()))
