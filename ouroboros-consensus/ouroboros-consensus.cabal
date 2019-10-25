@@ -32,9 +32,6 @@ library
                        Ouroboros.Consensus.ChainSyncClient
                        Ouroboros.Consensus.ChainSyncServer
                        Ouroboros.Consensus.Crypto.DSIGN.Cardano
-                       Ouroboros.Consensus.Demo
-                       Ouroboros.Consensus.Demo.Byron.Elaborate
-                       Ouroboros.Consensus.Demo.Run
                        Ouroboros.Consensus.Ledger.Abstract
                        Ouroboros.Consensus.Ledger.Byron
                        Ouroboros.Consensus.Ledger.Byron.Config

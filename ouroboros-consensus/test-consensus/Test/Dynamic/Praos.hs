@@ -11,7 +11,6 @@ import           Test.Tasty
 import           Test.Tasty.QuickCheck
 
 import           Ouroboros.Consensus.BlockchainTime
-import           Ouroboros.Consensus.Demo
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Protocol
 import           Ouroboros.Consensus.Util.Random
@@ -72,12 +71,16 @@ tests = testGroup "Dynamic chain generation"
             params
 
     numCoreNodes = NumCoreNodes 3
+    numEpochs = 3
     numSlots = NumSlots $ fromIntegral $
         maxRollbacks k * praosSlotsPerEpoch * numEpochs
 
-    params@PraosParams{..} = defaultDemoPraosParams
-    k = praosSecurityParam
-    numEpochs = 3
+    params@PraosParams{praosSecurityParam = k, ..} = PraosParams {
+        praosSecurityParam = SecurityParam 5
+      , praosSlotsPerEpoch = 3
+      , praosLeaderF       = 0.5
+      , praosLifetimeKES   = 1000000
+      }
 
 prop_simple_praos_convergence :: PraosParams
                               -> TestConfig
