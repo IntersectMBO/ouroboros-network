@@ -39,7 +39,8 @@ module Algebra.Graph.Labelled.AdjacencyMap (
     emap, induce, induceJust,
 
     -- * Relational operations
-    {- closure, reflexiveClosure, symmetricClosure, transitiveClosure, -}
+    {- closure, reflexiveClosure, transitiveClosure, -}
+    symmetricClosure,
 
     -- * Miscellaneous
     consistent
@@ -601,6 +602,20 @@ induceJust = AM . Map.map catMaybesMap . catMaybesMap . adjacencyMap
   where
     catMaybesMap = Map.mapKeysMonotonic fromJust . Map.delete Nothing
 
+-- | Compute the /symmetric closure/ of a graph by overlaying it with its own
+-- transpose.
+-- Complexity: /O((n + m) * log(n))/ time.
+--
+-- @
+-- symmetricClosure 'empty'              == 'empty'
+-- symmetricClosure ('vertex' x)         == 'vertex' x
+-- symmetricClosure ('edge' e x y)       == 'edges' [(e,x,y), (e,y,x)]
+-- symmetricClosure x                  == 'overlay' x ('transpose' x)
+-- symmetricClosure . symmetricClosure == symmetricClosure
+-- @
+symmetricClosure :: (Semigroup e, Ord a) => AdjacencyMap e a -> AdjacencyMap e a
+symmetricClosure m = overlay m (transpose m)
+
 {-
 -- | Compute the /reflexive and transitive closure/ of a graph over the
 -- underlying star semiring using the Warshall-Floyd-Kleene algorithm.
@@ -631,20 +646,6 @@ closure = goWarshallFloydKleene . reflexiveClosure
 -- @
 reflexiveClosure :: (Ord a, Semiring e) => AdjacencyMap e a -> AdjacencyMap e a
 reflexiveClosure (AM m) = AM $ Map.mapWithKey (\k -> Map.insertWith (<+>) k one) m
-
--- | Compute the /symmetric closure/ of a graph by overlaying it with its own
--- transpose.
--- Complexity: /O((n + m) * log(n))/ time.
---
--- @
--- symmetricClosure 'empty'              == 'empty'
--- symmetricClosure ('vertex' x)         == 'vertex' x
--- symmetricClosure ('edge' e x y)       == 'edges' [(e,x,y), (e,y,x)]
--- symmetricClosure x                  == 'overlay' x ('transpose' x)
--- symmetricClosure . symmetricClosure == symmetricClosure
--- @
-symmetricClosure :: (Semigroup e, Ord a) => AdjacencyMap e a -> AdjacencyMap e a
-symmetricClosure m = overlay m (transpose m)
 
 -- | Compute the /transitive closure/ of a graph over the underlying star
 -- semiring using a modified version of the Warshall-Floyd-Kleene algorithm,
