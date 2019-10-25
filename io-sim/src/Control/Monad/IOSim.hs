@@ -55,7 +55,8 @@ import           Data.Time
                    ( DiffTime, NominalDiffTime, UTCTime(..)
                    , diffUTCTime, addUTCTime, fromGregorian )
 
-import           Control.Monad (join, mapM_)
+import           Control.Applicative (Applicative(..), Alternative(..))
+import           Control.Monad (join, MonadPlus, mapM_)
 import           Control.Exception
                    ( Exception(..), SomeException
                    , ErrorCall(..), throw, assert
@@ -175,6 +176,9 @@ instance Monad (SimM s) where
 
     fail = MonadFail.fail
 
+instance MonadFail (SimM s) where
+  fail msg = SimM $ \_ -> Throw (toException (IO.Error.userError msg))
+
 
 instance Functor (STM s) where
     {-# INLINE fmap #-}
@@ -202,11 +206,15 @@ instance Monad (STM s) where
 
     fail = MonadFail.fail
 
-instance MonadFail (SimM s) where
-  fail msg = SimM $ \_ -> Throw (toException (IO.Error.userError msg))
-
 instance MonadFail (STM s) where
   fail msg = STM $ \_ -> ThrowStm (toException (ErrorCall msg))
+
+instance Alternative (STM s) where
+    empty = retry
+    (<|>) = orElse
+
+instance MonadPlus (STM s) where
+
 
 instance MonadSay (SimM s) where
   say msg = SimM $ \k -> Say msg (k ())
