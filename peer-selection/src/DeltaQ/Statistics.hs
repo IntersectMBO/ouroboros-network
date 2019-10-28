@@ -16,7 +16,7 @@ import qualified Algebra.Graph.Labelled.AdjacencyMap as Graph
 import Algebra.Graph.Labelled.AdjacencyMap.ShortestPath
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
-import Data.Maybe (fromMaybe, mapMaybe)
+import Data.Maybe (fromMaybe)
 import Data.Semigroup (Last (..))
 import Data.Vector.Unboxed (Vector)
 import qualified Data.Vector.Unboxed as Vector
@@ -57,14 +57,14 @@ distances to_double = Vector.fromList . fmap total_weight_inf . Map.elems
 edf :: Vector Double -> Double -> Double
 edf samples x
   | num_samples == 0 = 0.0
-  | otherwise        = fromRational (toRational (num_samples_lt samples x) / toRational num_samples)
+  | otherwise        = fromRational (toRational (num_samples_lt samples) / toRational num_samples)
   where
   num_samples :: Natural
   num_samples = fromIntegral (Vector.length samples)
 
   -- | Count the number of samples less than or equal to a given value.
-  num_samples_lt :: Vector Double -> Double -> Natural
-  num_samples_lt samples x = Vector.foldr include 0 samples
+  num_samples_lt :: Vector Double -> Natural
+  num_samples_lt smpls = Vector.foldr include (0 :: Natural) smpls
 
   include :: Double -> Natural -> Natural
   include a !n = if a <= x then n+1 else n
@@ -149,6 +149,8 @@ instance Semigroup e => Semigroup (Edge e) where
   In i <> Both o i' = Both o (i <> i')
 
   Both i o <> Both i' o' = Both (i <> i') (o <> o')
+  Both i o <> Out o'     = Both i         (o <> o')
+  Both i o <> In  i'     = Both (i <> i') o
 
 -- | Transform a topography graph so that each edge label may be suitable for
 -- use with @tcpRPCLoadPattern@. It works like this: the graph is overlayed
@@ -171,7 +173,7 @@ bidirectional_bearer_graph graph = Graph.overlay
 --
 -- TODO accept more parameters, for the TCP load pattern?
 all_pairs_time_to_send
-  :: forall peer param .
+  :: forall peer .
      (Ord peer)
   => Natural
   -> Topography BearerCharacteristics peer

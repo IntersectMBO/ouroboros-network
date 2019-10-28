@@ -29,4 +29,4 @@ updateLinkAnnotation :: ( Ord a )
                      -> Topography edge a -> Topography edge' a
 updateLinkAnnotation f = edges . map f' . edgeList
   where
-    f' = \(edges,a,a') -> (fmap (f a a') edges, a, a')
+    f' = \(theedges,a,a') -> (fmap (f a a') theedges, a, a')

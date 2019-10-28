@@ -4,12 +4,11 @@
 
 module DeltaQ.Examples.Gen where
 
-import Algebra.Graph.Labelled.AdjacencyMap (AdjacencyMap (..), adjacencyMap)
+import Algebra.Graph.Labelled.AdjacencyMap (AdjacencyMap (..))
 import qualified Algebra.Graph.Labelled.AdjacencyMap as GR
 import Data.Foldable (foldlM)
 import Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
-import Data.Semigroup (Last (..))
 import Data.Set (Set)
 import qualified Data.Set as Set
 import Numeric.Natural (Natural)
@@ -32,8 +31,8 @@ path
   -> m t
 path mkE vs k = go vs GR.empty
   where
-  go (last NE.:| [])     !gr = k last gr
-  go (v    NE.:| (u:vs)) !gr = mkE >>= \e -> go (u NE.:| vs) (GR.overlay gr (GR.edge e v u))
+  go (v NE.:| [])      !gr = k v gr
+  go (v NE.:| (u:vs')) !gr = mkE >>= \e -> go (u NE.:| vs') (GR.overlay gr (GR.edge e v u))
 
 -- | A 'path' in which an edge from last vertex to the first vertex is included.
 cycle
@@ -115,9 +114,9 @@ random_list_element
   -> m v
 random_list_element genDouble lst = go (NE.length lst) lst
   where
-  go len lst = do
+  go len lst' = do
     d <- genDouble
-    case (d <= (1.0 / fromIntegral len), lst) of
+    case (d <= (1.0 / fromIntegral len), lst') of
       (True,  x NE.:| _)      -> pure x
       (False, _ NE.:| (x:xs)) -> go (len-1) (x NE.:| xs)
       -- The double is not less or equal to 1.0... oh well

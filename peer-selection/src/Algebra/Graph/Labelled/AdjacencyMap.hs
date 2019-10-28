@@ -79,10 +79,10 @@ instance (Ord a, Show a, Show e) => Show (AdjacencyMap e a) where
         vs   = vertexSet lam
         es   = edgeList lam
         used = referredToVertexSet m
-        vshow vs = case Set.toAscList vs of
+        vshow vs' = case Set.toAscList vs' of
             [x] -> showString "vertex "   . showsPrec 11 x
             xs  -> showString "vertices " . showsPrec 11 xs
-        eshow es = case es of
+        eshow es' = case es' of
             [(e, x, y)] -> showString "edge "  . showsPrec 11 e .
                            showString " "      . showsPrec 11 x .
                            showString " "      . showsPrec 11 y
@@ -96,7 +96,7 @@ instance (Eq e, Semigroup e, Ord a) => Ord (AdjacencyMap e a) where
         , compare (eSet        x) (eSet        y)
         , cmp ]
       where
-        eSet = Set.map (\(_, x, y) -> (x, y)) . edgeSet
+        eSet = Set.map (\(_, w, z) -> (w, z)) . edgeSet
         cmp | x == y               = EQ
             | overlays [x, y] == y = LT
             | otherwise            = compare x y
@@ -287,7 +287,7 @@ fromAdjacencyMaps xs = AM $ Map.unionWith (<>) vs es
 isSubgraphOf :: (Eq e, Semigroup e, Ord a) => AdjacencyMap e a -> AdjacencyMap e a -> Bool
 isSubgraphOf (AM x) (AM y) = Map.isSubmapOfBy (Map.isSubmapOfBy le) x y
   where
-    le x y = (x <> y) == y
+    le w z = (w <> z) == z
 
 -- | Check if a graph is empty.
 -- Complexity: /O(1)/ time.
