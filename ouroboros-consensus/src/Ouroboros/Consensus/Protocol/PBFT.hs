@@ -170,14 +170,14 @@ data PBftIsLeaderOrNot c
   | PBftIsNotALeader
   deriving (Generic, NoUnexpectedThunks)
 
-instance (PBftCrypto c, Typeable c) => OuroborosTag (PBft c) where
-  -- | (Static) node configuration
-  data NodeConfig (PBft c) = PBftNodeConfig {
-        pbftParams   :: !PBftParams
-      , pbftIsLeader :: !(PBftIsLeaderOrNot c)
-      }
-    deriving (Generic, NoUnexpectedThunks)
+-- | (Static) node configuration
+data instance NodeConfig (PBft c) = PBftNodeConfig {
+      pbftParams   :: !PBftParams
+    , pbftIsLeader :: !(PBftIsLeaderOrNot c)
+    }
+  deriving (Generic, NoUnexpectedThunks)
 
+instance (PBftCrypto c, Typeable c) => OuroborosTag (PBft c) where
   type ValidationErr   (PBft c) = PBftValidationErr c
   type SupportedHeader (PBft c) = HeaderSupportsPBft c
   type NodeState       (PBft c) = ()

@@ -53,21 +53,22 @@ class ( HasHeader hoe
 -- This is entirely a legacy concern, and should go away after the Byron era.
 data WithEBBs p
 
+newtype instance NodeConfig (WithEBBs p) = WithEBBNodeConfig {
+      unWithEBBNodeConfig :: NodeConfig p
+    }
+  deriving (Generic)
+
 instance OuroborosTag p => OuroborosTag (WithEBBs p) where
   --
   -- Most types remain the same
   --
 
-  type ChainState      (WithEBBs p) = ChainStateWithEBBs p
-  type NodeState       (WithEBBs p) = NodeState      p
-  type LedgerView      (WithEBBs p) = LedgerView     p
-  type ValidationErr   (WithEBBs p) = ValidationErr  p
-  type IsLeader        (WithEBBs p) = IsLeader       p
-
+  type ChainState      (WithEBBs p) = ChainStateWithEBBs    p
+  type NodeState       (WithEBBs p) = NodeState             p
+  type LedgerView      (WithEBBs p) = LedgerView            p
+  type ValidationErr   (WithEBBs p) = ValidationErr         p
+  type IsLeader        (WithEBBs p) = IsLeader              p
   type SupportedHeader (WithEBBs p) = HeaderSupportsWithEBB p
-
-  newtype NodeConfig   (WithEBBs p) = WithEBBNodeConfig {unWithEBBNodeConfig :: NodeConfig p}
-    deriving (Generic)
 
   preferCandidate       (WithEBBNodeConfig cfg) = preferCandidate       cfg
   compareCandidates     (WithEBBNodeConfig cfg) = compareCandidates     cfg
@@ -134,8 +135,8 @@ data ChainStateWithEBBs p = UnsafeChainStateWithEBBs
 mkChainStateWithEBBs :: Maybe SlotNo -> ChainState p -> ChainStateWithEBBs p
 mkChainStateWithEBBs mSlot underlying =
     case mSlot of
-      Nothing    -> UnsafeChainStateWithEBBs Nothing     underlying
-      Just !slot -> UnsafeChainStateWithEBBs (Just slot) underlying
+      Nothing      -> UnsafeChainStateWithEBBs Nothing     underlying
+      Just (!slot) -> UnsafeChainStateWithEBBs (Just slot) underlying
 
 deriving instance OuroborosTag p => NoUnexpectedThunks (ChainStateWithEBBs p)
 deriving instance OuroborosTag p => Show (ChainStateWithEBBs p)

@@ -205,17 +205,17 @@ newtype PraosNodeState c = PraosNodeState {
 instance PraosCrypto c => NoUnexpectedThunks (PraosNodeState c) where
   showTypeOf _ = show $ typeRep (Proxy @(PraosNodeState c))
 
-instance PraosCrypto c => OuroborosTag (Praos c) where
-  data NodeConfig (Praos c) = PraosNodeConfig
-    { praosParams        :: !PraosParams
-    , praosInitialEta    :: !Natural
-    , praosInitialStake  :: !StakeDist
-    , praosNodeId        :: !NodeId
-    , praosSignKeyVRF    :: !(SignKeyVRF (PraosVRF c))
-    , praosVerKeys       :: !(IntMap (VerKeyKES (PraosKES c), VerKeyVRF (PraosVRF c)))
-    }
-    deriving (Generic)
+data instance NodeConfig (Praos c) = PraosNodeConfig
+  { praosParams       :: !PraosParams
+  , praosInitialEta   :: !Natural
+  , praosInitialStake :: !StakeDist
+  , praosNodeId       :: !NodeId
+  , praosSignKeyVRF   :: !(SignKeyVRF (PraosVRF c))
+  , praosVerKeys      :: !(IntMap (VerKeyKES (PraosKES c), VerKeyVRF (PraosVRF c)))
+  }
+  deriving (Generic)
 
+instance PraosCrypto c => OuroborosTag (Praos c) where
   protocolSecurityParam = praosSecurityParam . praosParams
 
   type NodeState       (Praos c) = PraosNodeState c

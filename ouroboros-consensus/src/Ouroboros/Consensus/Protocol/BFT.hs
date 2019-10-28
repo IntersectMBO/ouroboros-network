@@ -107,16 +107,16 @@ data BftParams = BftParams {
     }
   deriving (Generic, NoUnexpectedThunks)
 
-instance BftCrypto c => OuroborosTag (Bft c) where
-  -- | (Static) node configuration
-  data NodeConfig (Bft c) = BftNodeConfig {
-        bftParams   :: !BftParams
-      , bftNodeId   :: !NodeId
-      , bftSignKey  :: !(SignKeyDSIGN (BftDSIGN c))
-      , bftVerKeys  :: !(Map NodeId (VerKeyDSIGN (BftDSIGN c)))
-      }
-    deriving (Generic)
+-- | (Static) node configuration
+data instance NodeConfig (Bft c) = BftNodeConfig {
+      bftParams  :: !BftParams
+    , bftNodeId  :: !NodeId
+    , bftSignKey :: !(SignKeyDSIGN (BftDSIGN c))
+    , bftVerKeys :: !(Map NodeId (VerKeyDSIGN (BftDSIGN c)))
+    }
+  deriving (Generic)
 
+instance BftCrypto c => OuroborosTag (Bft c) where
   type ValidationErr   (Bft c) = BftValidationErr
   type SupportedHeader (Bft c) = HeaderSupportsBft c
   type NodeState       (Bft c) = ()

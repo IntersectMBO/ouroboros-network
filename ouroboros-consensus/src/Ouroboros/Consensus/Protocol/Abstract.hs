@@ -14,6 +14,7 @@
 module Ouroboros.Consensus.Protocol.Abstract (
     -- * Abstract definition of the Ouroboros protocol
     OuroborosTag(..)
+  , NodeConfig
   , SecurityParam(..)
     -- * State monad for Ouroboros state
   , HasNodeState
@@ -47,6 +48,17 @@ import           Ouroboros.Consensus.Util.Random
 
 import           GHC.Stack
 
+-- | Static node configuration
+--
+-- Every method in the 'OuroborosTag' class takes the node configuration as a
+-- parameter, so having this as a data family rather than a type family resolves
+-- most ambiguity.
+--
+-- Defined out of the class so that protocols can define this type without
+-- having to define the entire protocol at the same time (or indeed in the same
+-- module).
+data family NodeConfig p :: *
+
 -- | The (open) universe of Ouroboros protocols
 --
 -- This class encodes the part that is independent from any particular
@@ -58,13 +70,6 @@ class ( Show (ChainState    p)
       , NoUnexpectedThunks (NodeState   p)
       , Typeable p -- so that p can appear in exceptions
       ) => OuroborosTag p where
-
-  -- | Static node configuration
-  --
-  -- Every method in this class takes the node configuration as a parameter,
-  -- so having this as a data family rather than a type family resolves most
-  -- ambiguity.
-  data family NodeConfig p :: *
 
   -- | State of the node required to run the protocol
   type family NodeState p :: *
