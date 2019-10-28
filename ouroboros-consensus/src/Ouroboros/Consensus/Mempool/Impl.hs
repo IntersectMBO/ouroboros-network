@@ -305,8 +305,7 @@ implAddTxs mpEnv accum txs = assert (all txInvariant txs) $ do
     -- possible, returning the last 'ValidationResult' and the remaining
     -- transactions which couldn't be added due to the mempool capacity being
     -- reached.
-    validateNew :: (IOLike m, ApplyTx blk)
-                => ValidationResult blk
+    validateNew :: ValidationResult blk
                 -> STM m (ValidationResult blk, [GenTx blk])
     validateNew res =
         let res' = res { vrInvalid = [] }

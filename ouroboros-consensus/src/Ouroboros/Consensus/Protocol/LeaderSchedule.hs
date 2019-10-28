@@ -45,21 +45,20 @@ instance Condense LeaderSchedule where
 -- | Extension of protocol @p@ by a static leader schedule.
 data WithLeaderSchedule p
 
-instance OuroborosTag p => OuroborosTag (WithLeaderSchedule p) where
+data instance NodeConfig (WithLeaderSchedule p) = WLSNodeConfig
+  { lsNodeConfigSchedule :: !LeaderSchedule
+  , lsNodeConfigP        :: !(NodeConfig p)
+  , lsNodeConfigNodeId   :: !CoreNodeId
+  }
+  deriving (Generic)
 
+instance OuroborosTag p => OuroborosTag (WithLeaderSchedule p) where
   type ChainState      (WithLeaderSchedule p) = ()
   type NodeState       (WithLeaderSchedule p) = ()
   type LedgerView      (WithLeaderSchedule p) = ()
   type ValidationErr   (WithLeaderSchedule p) = ()
   type IsLeader        (WithLeaderSchedule p) = ()
   type SupportedHeader (WithLeaderSchedule p) = Empty
-
-  data NodeConfig (WithLeaderSchedule p) = WLSNodeConfig
-    { lsNodeConfigSchedule :: !LeaderSchedule
-    , lsNodeConfigP        :: !(NodeConfig p)
-    , lsNodeConfigNodeId   :: !CoreNodeId
-    }
-    deriving (Generic)
 
   preferCandidate       WLSNodeConfig{..} = preferCandidate       lsNodeConfigP
   compareCandidates     WLSNodeConfig{..} = compareCandidates     lsNodeConfigP

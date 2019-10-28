@@ -42,15 +42,16 @@ class OuroborosTag p => ChainSelection p s where
 
 data ModChainSel p s
 
-instance (Typeable p, Typeable s, ChainSelection p s) => OuroborosTag (ModChainSel p s) where
+newtype instance NodeConfig (ModChainSel p s) = McsNodeConfig (NodeConfig p)
+  deriving (Generic)
 
-    newtype NodeConfig      (ModChainSel p s)    = McsNodeConfig (NodeConfig p) deriving (Generic)
-    type    NodeState       (ModChainSel p s)    = NodeState p
-    type    ChainState      (ModChainSel p s)    = ChainState p
-    type    IsLeader        (ModChainSel p s)    = IsLeader p
-    type    LedgerView      (ModChainSel p s)    = LedgerView p
-    type    ValidationErr   (ModChainSel p s)    = ValidationErr p
-    type    SupportedHeader (ModChainSel p s)    = SupportedHeader p
+instance (Typeable p, Typeable s, ChainSelection p s) => OuroborosTag (ModChainSel p s) where
+    type NodeState       (ModChainSel p s) = NodeState       p
+    type ChainState      (ModChainSel p s) = ChainState      p
+    type IsLeader        (ModChainSel p s) = IsLeader        p
+    type LedgerView      (ModChainSel p s) = LedgerView      p
+    type ValidationErr   (ModChainSel p s) = ValidationErr   p
+    type SupportedHeader (ModChainSel p s) = SupportedHeader p
 
     checkIsLeader         (McsNodeConfig cfg) = checkIsLeader         cfg
     applyChainState       (McsNodeConfig cfg) = applyChainState       cfg

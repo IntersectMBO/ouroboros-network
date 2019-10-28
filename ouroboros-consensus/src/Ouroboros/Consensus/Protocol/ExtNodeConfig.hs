@@ -28,6 +28,12 @@ import           Ouroboros.Consensus.Protocol.Abstract
 -- | Extension of protocol @p@ by additional static node configuration @cfg@.
 data ExtNodeConfig cfg p
 
+data instance NodeConfig (ExtNodeConfig cfg p) = EncNodeConfig {
+      encNodeConfigP   :: NodeConfig p
+    , encNodeConfigExt :: cfg
+    }
+  deriving (Generic)
+
 instance ( Typeable cfg
          , OuroborosTag p
          , NoUnexpectedThunks cfg
@@ -37,22 +43,12 @@ instance ( Typeable cfg
   -- Most types remain the same
   --
 
-  type ChainState      (ExtNodeConfig cfg p) = ChainState     p
-  type NodeState       (ExtNodeConfig cfg p) = NodeState      p
-  type LedgerView      (ExtNodeConfig cfg p) = LedgerView     p
-  type ValidationErr   (ExtNodeConfig cfg p) = ValidationErr  p
-  type IsLeader        (ExtNodeConfig cfg p) = IsLeader       p
+  type ChainState      (ExtNodeConfig cfg p) = ChainState      p
+  type NodeState       (ExtNodeConfig cfg p) = NodeState       p
+  type LedgerView      (ExtNodeConfig cfg p) = LedgerView      p
+  type ValidationErr   (ExtNodeConfig cfg p) = ValidationErr   p
+  type IsLeader        (ExtNodeConfig cfg p) = IsLeader        p
   type SupportedHeader (ExtNodeConfig cfg p) = SupportedHeader p
-
-  --
-  -- Only type that changes is the node config
-  --
-
-  data NodeConfig (ExtNodeConfig cfg p) = EncNodeConfig {
-        encNodeConfigP   :: NodeConfig p
-      , encNodeConfigExt :: cfg
-      }
-    deriving (Generic)
 
   --
   -- Propagate changes
