@@ -5,7 +5,6 @@ module Algebra.Graph.Labelled.AdjacencyMap.Viz where
 import Algebra.Graph.Labelled.AdjacencyMap
 import qualified Data.Map as Map
 import Data.GraphViz
-import Data.GraphViz.Attributes
 import Data.GraphViz.Attributes.Complete
 import Data.Text.Lazy (Text)
 
@@ -18,13 +17,13 @@ toGraphvizDot
   => GraphvizParams Int nl el cl l
   -> AdjacencyMap el nl
   -> DotGraph Int
-toGraphvizDot params gr = graphElemsToDot params vertices edges
+toGraphvizDot params gr = graphElemsToDot params vertices' edges'
   where
-  vertices :: [(Int, nl)]
-  vertices = Map.toList (Map.mapWithKey (const . toEnum) map)
-  edges :: [(Int, Int, el)]
-  edges = [ (n1, n2, e) | (n1, adj) <- Map.toList map, (n2, e) <- Map.toList adj ]
-  map = fmap (Map.mapKeys fromEnum) (Map.mapKeys fromEnum (adjacencyMap gr))
+  vertices' :: [(Int, nl)]
+  vertices' = Map.toList (Map.mapWithKey (const . toEnum) map')
+  edges' :: [(Int, Int, el)]
+  edges' = [ (n1, n2, e) | (n1, adj) <- Map.toList map', (n2, e) <- Map.toList adj ]
+  map' = fmap (Map.mapKeys fromEnum) (Map.mapKeys fromEnum (adjacencyMap gr))
 
 -- | Just like 'Data.GraphViz.quickParams', but doesn't demand the ad-hoc
 -- Labellable typeclass instance on node and edge labels.

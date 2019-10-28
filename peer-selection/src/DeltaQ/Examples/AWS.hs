@@ -1,16 +1,15 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE GADTSyntax #-}
+{-# LANGUAGE BangPatterns #-}
 
 module DeltaQ.Examples.AWS where
 
 import Algebra.Graph.Labelled.AdjacencyMap hiding (edge)
 import qualified Algebra.Graph.Labelled.AdjacencyMap as Graph
-import Algebra.Graph.Labelled.AdjacencyMap.ShortestPath
-import qualified Data.List as List (sortBy, filter, foldl', head, null)
+import qualified Data.List as List (sortBy, filter, head)
 import qualified Data.Map.Strict as Map
 import Data.Semigroup (Last (..))
-import qualified Data.Set as Set
 import Data.Time.Clock
 import Numeric.Natural
 
@@ -54,7 +53,7 @@ awsMinCycle bytes = awsCycle (compareAt bytes)
 awsMaxCycle :: Natural -> NetNode -> Topography SimpleGS NetNode
 awsMaxCycle bytes = awsCycle (flipOrder (compareAt bytes))
   where
-  flipOrder compare a b = case compare a b of
+  flipOrder docompare a b = case docompare a b of
     EQ -> EQ
     LT -> GT
     GT -> LT
@@ -112,7 +111,7 @@ addRestriction dft tr a b gs = case mlr of
 simpleBearerTest :: SimpleGS
                  -> [(DiffTime, Natural)]
                  -> [(DiffTime, Natural)]
-simpleBearerTest dq
+simpleBearerTest _dq
   = bearerTransitDelay b
   where
     e = ethernetR 10e6 1500
@@ -151,7 +150,10 @@ minTTC gr a b size =
     Just (Last a2b) = edgeLabel a b gr
     Just (Last b2a) = edgeLabel b a gr
 
+sbt1 :: [(DiffTime, Natural)]
 sbt1 = simpleBearerTest (mkGS' 0.1 8e6) [(x, 1500) | x <- [0,0.1..1]]
+
+sbt2 :: [(DiffTime, Natural)]
 sbt2 = simpleBearerTest (mkGS' 0.1 1e6) $ replicate 10 (0,1500)
 
 -- time to complete
@@ -160,6 +162,7 @@ ttc :: [(DiffTime, b)] -> DiffTime
 ttc = fst . last
 
 -- simple time to complete
+stt1 :: Natural -> Natural -> (DiffTime, Double, [(DiffTime, Natural)])
 stt1 iw size = (ttc', rate, lp)
   where
     -- load pattern, 60 octet PDH, 400 octet request - no congestion
@@ -181,14 +184,14 @@ stt1 iw size = (ttc', rate, lp)
 --
 awsCycle :: (SimpleGS -> SimpleGS -> Ordering) -> NetNode -> Topography SimpleGS NetNode
 awsCycle ordering start = case finalEdges of
-  [] -> newGraph
+  [] -> finalGraph
   -- Add the final edge, to get a cycle.
   edgesFrom@(_:_) -> Graph.overlay
-    newGraph
+    finalGraph
     (Graph.edge (snd (List.head (List.sortBy ordering' edgesFrom))) finalNode start)
   where
   finalEdges = List.filter (\(v, _) -> v == start) (Map.toList (postSetEdges finalNode unidirectional))
-  (finalNode, newGraph, oldGraph) = construct (Graph.empty, unidirectional) start
+  (finalNode, finalGraph, _) = construct (Graph.empty, unidirectional) start
   construct :: (Topography SimpleGS NetNode, Topography SimpleGS NetNode)
             -> NetNode
             -> (NetNode, Topography SimpleGS NetNode, Topography SimpleGS NetNode)

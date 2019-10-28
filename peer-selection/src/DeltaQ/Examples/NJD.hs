@@ -2,7 +2,6 @@ module DeltaQ.Examples.NJD
 where
 
 import           Algebra.Graph.Labelled.AdjacencyMap
-import           Data.List
 import           Data.Map.Strict
 import           Data.Semigroup (Last (..))
 import           Data.Set (Set)
@@ -12,7 +11,6 @@ import           DeltaQ.Examples.AWS
 import           DeltaQ.LinkRestriction
 import           DeltaQ.SimpleGS
 import           DeltaQ.TCP
-import           DeltaQ.Topography
 import           Numeric.Natural
 
 testVertexSet :: Set NetNode
@@ -43,10 +41,10 @@ singleHopTimeToComplete :: Natural
                         -> AdjacencyMap (Last BearerCharacteristics) NetNode
                         -> AdjacencyMap (Last DiffTime) NetNode
 singleHopTimeToComplete responseSize topography
-  = fromAdjacencyMaps . toList $ mapWithKey ttc g
+  = fromAdjacencyMaps . toList $ mapWithKey ttc' g
   where
     g = adjacencyMap topography
-    ttc v = mapWithKey  (between v)
+    ttc' v = mapWithKey  (between v)
     between v v' out
       = Last $
         singleHopTransferTime

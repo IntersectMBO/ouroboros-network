@@ -139,7 +139,7 @@ tcpRPCLoadPattern a2b b2a ohead iw' mws irs rs
     iw = iw' * mss `min` (2 * mss `max` 14600)
 
     -- the size of an acknowledgment is a PDH size
-    ack'size = ohead
+    _ack'size = ohead
 
     -- the a -> b bearer with quality attenutation, transforms from SDU to PDU.
     a2b'bearer :: [(DiffTime, Natural)] -> [(DiffTime, Natural)]
@@ -164,6 +164,7 @@ tcpRPCLoadPattern a2b b2a ohead iw' mws irs rs
       = (ack'time, to'send) : tcp'data'flow'unb 0 acks
       | to'send <= 0
       = []
+    tcp'data'flow'unb _       _ = error "tcp'data'flow'unb partial"
 
 
 -- | Given a bearer and sequence of offered load, calculate what the
@@ -188,21 +189,21 @@ bearerTransitDelay b as
     -- link restriction).
     evolve :: DiffTime -> [(DiffTime, Natural)] -> [(DiffTime, Natural)]
     evolve _ [] = []
-    evolve next'idle (e@(t,n):as)
+    evolve next'idle (e@(t,n):as')
       -- The time offset at which to send (t) is later than the time offset at
       -- which the link becomes ready, so we can simply add the transit time to
       -- this list entry. step'idle i set for the recursive case so that
       -- if the next loading pattern time offset is less than that, the delay
       -- will show up in the output.
       | t >= next'idle
-        = (t + transit'time e, n) : evolve (step'idle e) as
+        = (t + transit'time e, n) : evolve (step'idle e) as'
       -- The link is the bottleneck here. The data will leave at next'idle.
       | otherwise
-        = evolve next'idle ((next'idle, n) : as)
+        = evolve next'idle ((next'idle, n) : as')
 
     -- Use the simple G/S ∆Q to determine transit time.
     transit'time :: (DiffTime, Natural) -> DiffTime
-    transit'time (t, n)
+    transit'time (_, n)
       = dqG (linkDeltaQ b) + dqS (linkDeltaQ b) n
 
     -- Use the link restriction to determine idle time: 

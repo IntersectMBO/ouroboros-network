@@ -4,7 +4,6 @@ import Numeric.Natural
 import Data.Time.Clock
 import Data.Ord
 
-import DeltaQ.Topography
 import DeltaQ.SimpleGS
 
 -- | Note that we are primarily interested in resource consumption. So
@@ -42,7 +41,7 @@ instance Semigroup LinkRestriction where
      eval x = e2ePDUServiceTime x 1
 
 instance Monoid LinkRestriction where
-  mempty = LinkR (const 0) (10^12) -- way out there, but not quite unbounded!
+  mempty = LinkR (const 0) ((10 :: Natural)^(12 :: Natural)) -- way out there, but not quite unbounded!
 
 type BitServiceRate = Double
 

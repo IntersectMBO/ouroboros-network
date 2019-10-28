@@ -114,22 +114,16 @@ dijkstra mkWeight start gr = loop initialPQ gr Map.empty
 
   where
 
-  -- The initial shortest paths has every vertex at infinite distance (weight).
-  -- This will be refined by Map.insert for vertices which have a path of
-  -- finite weight.
-  initialMap :: ShortestPaths vertex edge weight
-  initialMap = fmap (const []) (adjacencyMap gr)
-
   loop :: PQueue weight (Candidate vertex edge weight)
        -> AdjacencyMap edge vertex
        -> ShortestPaths vertex edge weight
        -> ShortestPaths vertex edge weight
-  loop pq gr sps = case PQ.minViewWithKey pq of
+  loop pq gr' sps = case PQ.minViewWithKey pq of
     Nothing -> sps
-    Just ((weight, candidate), pq') -> case Map.lookup (candidateHead candidate) (adjacencyMap gr) of
+    Just ((weight, candidate), pq') -> case Map.lookup (candidateHead candidate) (adjacencyMap gr') of
       -- If the candidate is not in the graph, we must have already reached it
       -- and included it in the shortest paths. Ignore this step.
-      Nothing -> loop pq' gr sps
+      Nothing -> loop pq' gr' sps
       Just neighbours ->
         let -- The frontier is all vertices reachable in the graph so far (the
             -- graph shrinks at each step to exclude the candidate that was
@@ -142,13 +136,13 @@ dijkstra mkWeight start gr = loop initialPQ gr Map.empty
             weights = fmap (\(v, e) -> (v, e, mkWeight (candidateHead candidate) v e)) frontier
             candidates :: [(weight, Candidate vertex edge weight)]
             candidates = fmap (\(v, e, w) -> (weight <> w, extend_candidate v e w candidate)) weights
-            pq' :: PQueue weight (Candidate vertex edge weight)
-            pq' = PQ.union pq (PQ.fromList candidates)
-            gr' :: AdjacencyMap edge vertex
-            gr' = removeVertex (candidateHead candidate) gr
+            pq'' :: PQueue weight (Candidate vertex edge weight)
+            pq'' = PQ.union pq (PQ.fromList candidates)
+            gr'' :: AdjacencyMap edge vertex
+            gr'' = removeVertex (candidateHead candidate) gr'
             sps' :: ShortestPaths vertex edge weight
             sps' = Map.insert (candidateHead candidate) (candidateTail candidate) sps
-        in  loop pq' gr' sps'
+        in  loop pq'' gr'' sps'
 
   initialPQ :: PQueue weight (Candidate vertex edge weight)
   initialPQ = PQ.singleton mempty initialCandidate
