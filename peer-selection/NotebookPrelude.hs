@@ -30,6 +30,7 @@ module NotebookPrelude
   , chart_numeric_xy
   , showPlot
   , showPlot'
+  , percentile_candlestick
 
   -- * AWS data
   , module AWS
@@ -65,7 +66,7 @@ import qualified Data.Map.Strict as Map (elems)
 
 import Control.Monad.Trans.State
 import Graphics.Rendering.Chart.Easy as Chart
-import DeltaQ.Examples.Charts as Chart
+import Graphics.Rendering.Chart.Plot.Candle (Candle (..))
 
 import DeltaQ.Examples.AWS as AWS
 
@@ -134,3 +135,15 @@ showPlot = plot . pure
 
 showPlot' :: (ToPlot p, Default (p x y)) => State (p x y) () -> EC (Layout x y) ()
 showPlot' = showPlot . mk
+
+-- | Make a candle by using the 0th, 25th, 50th, 75th, and 100th percentiles of
+-- a data set.
+percentile_candlestick :: label -> [Double] -> Candle label Double
+percentile_candlestick xlabel ds = Candle
+  { candle_x     = xlabel
+  , candle_low   = percentile 0   ds
+  , candle_open  = percentile 25  ds
+  , candle_mid   = percentile 50  ds
+  , candle_close = percentile 75  ds
+  , candle_high  = percentile 100 ds
+  }

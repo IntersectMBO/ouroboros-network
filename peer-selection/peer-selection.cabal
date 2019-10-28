@@ -23,7 +23,6 @@ library
                        DeltaQ.Topography,
                        DeltaQ.TCP,
                        DeltaQ.Examples.AWS,
-                       DeltaQ.Examples.Charts,
                        DeltaQ.Examples.NJD,
                        DeltaQ.Examples.Gen
   -- other-modules:
