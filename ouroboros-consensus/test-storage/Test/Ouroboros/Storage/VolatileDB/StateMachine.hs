@@ -511,7 +511,17 @@ newer Nothing _   = True
 newer (Just a) a' = a' >= a
 
 shrinkerImpl :: Model Symbolic -> At CmdErr Symbolic -> [At CmdErr Symbolic]
-shrinkerImpl _ _ = []
+shrinkerImpl m (At (CmdErr cmd mbErr)) = fmap At $
+    [ CmdErr cmd mbErr' | mbErr' <- shrink mbErr ] ++
+    [ CmdErr cmd' mbErr | cmd'   <- shrinkCmd m cmd ]
+
+shrinkCmd :: Model Symbolic -> Cmd -> [Cmd]
+shrinkCmd Model{..} cmd = case cmd of
+    AskIfMember bids    -> AskIfMember <$> shrink bids
+    GetPredecessor bids -> GetPredecessor <$> shrink bids
+    Corrupt cors        -> Corrupt . NE.fromList <$>
+                             shrinkList shrinkNothing (NE.toList cors)
+    _                   -> []
 
 semanticsImplErr :: IOLike m
                  => StrictTVar m Errors
