@@ -1,4 +1,5 @@
 {-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE FlexibleInstances   #-}
 {-# LANGUAGE KindSignatures      #-}
 {-# LANGUAGE NamedFieldPuns      #-}
@@ -54,6 +55,10 @@ module Ouroboros.Network.NodeToNode (
   , Handshake
   , LocalAddresses (..)
 
+  -- ** Protocol start and restart logic
+  , simpleResponderControl
+  , simpleInitiatorControl
+
   -- ** Error Policies and Peer state
   , ErrorPolicies (..)
   , remoteNetworkErrorPolicy
@@ -74,6 +79,7 @@ module Ouroboros.Network.NodeToNode (
 
 import qualified Control.Concurrent.Async as Async
 import           Control.Exception (IOException)
+import           Control.Monad (void, forever)
 import qualified Data.ByteString.Lazy as BL
 import           Data.Time.Clock (DiffTime)
 import           Data.Text (Text)
@@ -86,6 +92,10 @@ import qualified Codec.CBOR.Term as CBOR
 import           Codec.Serialise (Serialise (..), DeserialiseFailure)
 import           Codec.SerialiseTerm
 import qualified Network.Socket as Socket
+
+import           Control.Monad.Class.MonadAsync (async, MonadAsync)
+import           Control.Monad.Class.MonadSTM.Strict
+import           Control.Monad.Class.MonadTimer
 
 import           Network.Mux.Types
 import           Network.Mux.Interface
@@ -247,7 +257,7 @@ withServer tracers networkState addr versions errPolicies =
     (\(DictVersion _) -> acceptEq)
     versions
     errPolicies
-    (\_ async -> Async.wait async)
+    (\_ as -> Async.wait as)
 
 
 -- | Like 'withServer' but specific to 'NodeToNodeV_1'.
@@ -538,3 +548,74 @@ localNetworkErrorPolicy = ErrorPolicies {
   where
     ourBug :: SuspendDecision DiffTime
     ourBug = Throw
+
+-- | Simple responder control function that discards the Protocol result.
+simpleResponderControl :: forall m a. (MonadSTM m)
+                       => (NodeToNodeProtocols -> MiniProtocolResponderControl m a)
+                       -> m ()
+simpleResponderControl rspFn = forever $
+    -- Fetch, but ignore the result of any miniprotocol so that it can
+    -- be restarted incase the initiator decides to talk to us again.
+    void $ atomically $ fetchResponderResult ChainSyncWithHeadersPtcl
+               `orElse` fetchResponderResult BlockFetchPtcl
+               `orElse` fetchResponderResult TxSubmissionPtcl
+  where
+    fetchResponderResult :: MonadSTM m => NodeToNodeProtocols -> STM m a
+    fetchResponderResult ptcl =
+        let (MiniProtocolResponderControl action) = rspFn ptcl in
+        action
+
+-- | Result of waiting on a list of miniprotocols to finish. Only used by simpleInitiatorControl
+data MiniProtocolClientResult = MpcRestart NodeToNodeProtocols
+                              | MpcResult  NodeToNodeProtocols
+
+-- | Simple initiator control function that starts all NodeToNodeProtocols and if one of them
+-- finishes it will wait for restartDelay seconds before restarting the protocol.
+simpleInitiatorControl :: forall m a.
+                          ( MonadAsync m
+                          , MonadSTM m
+                          , MonadTimer m
+                          )
+                       => DiffTime
+                       -> (NodeToNodeProtocols -> MiniProtocolInitiatorControl m a)
+                       -> m ()
+simpleInitiatorControl restartDelay ctrlFn = do
+    startQ <- atomically $ newTBQueue 3
+    atomically $ do
+        writeTBQueue startQ ChainSyncWithHeadersPtcl
+        writeTBQueue startQ BlockFetchPtcl
+        writeTBQueue startQ TxSubmissionPtcl
+    clientK startQ []
+
+  where
+    clientK :: TBQueue m NodeToNodeProtocols -> [(NodeToNodeProtocols, STM m a)] -> m ()
+    clientK restartQ resultActions = do
+        cr <- atomically $ waitOnRestartQueue restartQ
+                `orElse` foldr (orElse . waitOnMiniProtocolClientResult) retry resultActions
+        case cr of
+                (MpcRestart ptcl) -> do
+                    let (MiniProtocolInitiatorControl restart) = ctrlFn ptcl
+                    resultAction <- atomically restart
+                    clientK restartQ ((ptcl, resultAction):resultActions)
+                (MpcResult ptcl) -> do
+                    -- The return type is ignored, but one could act on the result here
+
+                    -- Schedule a restart of the miniprotocol in the future
+                    void $ async $ delayRestart restartQ ptcl
+                    clientK restartQ $ filter (\(mp, _) -> mp /= ptcl) resultActions
+
+    delayRestart :: TBQueue m NodeToNodeProtocols -> NodeToNodeProtocols -> m ()
+    delayRestart q ptcl = do
+        threadDelay restartDelay
+        atomically $ writeTBQueue q ptcl
+
+    waitOnRestartQueue :: TBQueue m NodeToNodeProtocols -> STM m MiniProtocolClientResult
+    waitOnRestartQueue q = do
+        ptcl <- readTBQueue q
+        return $ MpcRestart ptcl
+
+    waitOnMiniProtocolClientResult :: (NodeToNodeProtocols, STM m a)
+                                    -> STM m MiniProtocolClientResult
+    waitOnMiniProtocolClientResult (ptcl, fetchResult) = do
+        void fetchResult
+        return $ MpcResult ptcl

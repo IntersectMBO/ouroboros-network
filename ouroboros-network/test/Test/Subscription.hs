@@ -14,7 +14,7 @@
 module Test.Subscription (tests) where
 
 import           Control.Concurrent hiding (threadDelay)
-import           Control.Monad (replicateM, unless, when)
+import           Control.Monad (replicateM, unless, when, forever)
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadSTM.Strict
@@ -118,7 +118,6 @@ tests =
         , testProperty "Send Recive with Dns worker (IO)" prop_send_recv
         , testProperty "Send Recieve with IP worker, Initiator and responder (IO)"
                prop_send_recv_init_and_rsp
-        -- , testProperty "subscription demo" _demo
         ]
 
 data LookupResult = LookupResult {
@@ -527,36 +526,46 @@ prop_send_recv f xs first = ioProperty $ do
 
     cv <- newEmptyTMVarM
     sv <- newEmptyTMVarM
-    siblingVar <- newTVarM 2
     tbl <- newConnectionTable
     clientTbl <- newConnectionTable
 
     let -- Server Node; only req-resp server
-        responderApp :: OuroborosApplication ResponderApp ConnectionId TestProtocols2 IO BL.ByteString Void ()
-        responderApp = OuroborosResponderApplication $
-          \peerid ReqRespPr channel -> do
-            r <- runPeer (tagTrace "Responder" activeTracer)
-                         ReqResp.codecReqResp
-                         peerid
-                         channel
-                         (ReqResp.reqRespServerPeer (ReqResp.reqRespServerMapAccumL (\a -> pure . f a) 0))
-            atomically $ putTMVar sv r
-            waitSiblingSub siblingVar
+        responderApp :: OuroborosApplication ResponderApp ConnectionId TestProtocols2 IO BL.ByteString Void Int
+        responderApp = OuroborosResponderApplication serverK $
+          \peerid ReqRespPr channel ->
+            runPeer (tagTrace "Responder" activeTracer)
+                    ReqResp.codecReqResp
+                    peerid
+                    channel
+                    (ReqResp.reqRespServerPeer (ReqResp.reqRespServerMapAccumL (\a -> pure . f a) 0))
 
         -- Client Node; only req-resp client
-        initiatorApp :: OuroborosApplication InitiatorApp ConnectionId TestProtocols2 IO BL.ByteString () Void
-        initiatorApp = OuroborosInitiatorApplication $
-          \peerid ReqRespPr channel -> do
-            r <- runPeer (tagTrace "Initiator" activeTracer)
-                         ReqResp.codecReqResp
-                         peerid
-                         channel
-                         (ReqResp.reqRespClientPeer (ReqResp.reqRespClientMap xs))
-            atomically $ putTMVar cv r
-            waitSiblingSub siblingVar
+        initiatorApp :: OuroborosApplication InitiatorApp ConnectionId TestProtocols2 IO BL.ByteString [Int] Void
+        initiatorApp = OuroborosInitiatorApplication clientK $
+          \peerid ReqRespPr channel ->
+            runPeer (tagTrace "Initiator" activeTracer)
+                    ReqResp.codecReqResp
+                    peerid
+                    channel
+                    (ReqResp.reqRespClientPeer (ReqResp.reqRespClientMap xs))
+
+        clientK ctrlFn = do
+            let (Mx.MiniProtocolInitiatorControl release) = ctrlFn ReqRespPr
+
+            result <- atomically release
+            atomically $ do
+                r <- result
+                putTMVar cv r
+            return ()
+
+        serverK rspFn = do
+            let (Mx.MiniProtocolResponderControl result) = rspFn ReqRespPr
+
+            atomically $ result >>= putTMVar sv
+            return ()
 
     peerStatesVar <- newPeerStatesVar
-    withDummyServer faultyAddress $
+    void $ withDummyServer faultyAddress $
       withServerNode
         nullNetworkServerTracers
         (NetworkMutableState tbl peerStatesVar)
@@ -565,7 +574,7 @@ prop_send_recv f xs first = ioProperty $ do
         (\(DictVersion _) -> acceptEq)
         (simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData $ NetworkMagic 0) (DictVersion nodeToNodeCodecCBORTerm) responderApp)
         nullErrorPolicies
-        $ \_ _ -> do
+        $ \_ _ ->
           dnsSubscriptionWorker'
             activeTracer activeTracer activeTracer
             (NetworkMutableState clientTbl peerStatesVar)
@@ -580,7 +589,7 @@ prop_send_recv f xs first = ioProperty $ do
                 spErrorPolicies = nullErrorPolicies,
                 spSubscriptionTarget = DnsSubscriptionTarget "shelley-0.iohk.example" 6062 1
               }
-            (\_ -> waitSiblingSTM siblingVar)
+            (\_ -> readTMVar cv *> readTMVar sv)
             (connectToNode'
                 cborTermVersionDataCodec
                 nullNetworkConnectTracers
@@ -607,14 +616,13 @@ data ReqRspCfg = ReqRspCfg {
       rrcTag         :: !String
     , rrcServerVar   :: !(StrictTMVar IO Int)
     , rrcClientVar   :: !(StrictTMVar IO [Int])
-    , rrcSiblingVar  :: !(StrictTVar IO Int)
 }
 
-newReqRspCfg :: String -> StrictTVar IO Int -> IO ReqRspCfg
-newReqRspCfg tag siblingVar = do
+newReqRspCfg :: String -> IO ReqRspCfg
+newReqRspCfg tag = do
     sv <- newEmptyTMVarM
     cv <- newEmptyTMVarM
-    return $ ReqRspCfg tag sv cv siblingVar
+    return $ ReqRspCfg tag sv cv
 
 prop_send_recv_init_and_rsp
     :: (Int -> Int -> (Int, Int))
@@ -628,16 +636,11 @@ prop_send_recv_init_and_rsp f xs = ioProperty $ do
     addrAVar <- newEmptyTMVarM
     addrBVar <- newEmptyTMVarM
 
-    siblingVar <- newTVarM 4
-    {- 4 comes from one initiator and responder running on the server and one initiator and
-     - and responder running on the client.
-     -}
-
     tblA <- newConnectionTable
     tblB <- newConnectionTable
 
-    rrcfgA <- newReqRspCfg "A" siblingVar
-    rrcfgB <- newReqRspCfg "B" siblingVar
+    rrcfgA <- newReqRspCfg "A"
+    rrcfgB <- newReqRspCfg "B"
 
     stVar <- newPeerStatesVar
 
@@ -660,31 +663,44 @@ prop_send_recv_init_and_rsp f xs = ioProperty $ do
     return $ (resA == mapAccumL f 0 xs) && (resB == mapAccumL f 0 xs)
 
   where
+    initiatorK ReqRspCfg {rrcClientVar} ctrlFn = do
+        let (Mx.MiniProtocolInitiatorControl intRelease) = ctrlFn ReqRespPr
 
-    appX :: ReqRspCfg -> OuroborosApplication InitiatorAndResponderApp ConnectionId TestProtocols2 IO BL.ByteString () ()
-    appX ReqRspCfg {rrcTag, rrcServerVar, rrcClientVar, rrcSiblingVar} = OuroborosInitiatorAndResponderApplication
+        intResult <- atomically intRelease
+
+        i <- atomically intResult
+        atomically $ putTMVar rrcClientVar i
+
+        -- We don't wan't to restart the initiator side of the protocol so we wait until the
+        -- subscriber/server thread notices that we're done.
+        threadDelay 0xffff
+
+    responderK ReqRspCfg {rrcServerVar} rspFn = do
+        let (Mx.MiniProtocolResponderControl rspResult) = rspFn ReqRespPr
+        forever $ do
+            r <- atomically rspResult
+            atomically $ putTMVar rrcServerVar r
+
+    appX :: ReqRspCfg -> OuroborosApplication InitiatorAndResponderApp ConnectionId TestProtocols2 IO BL.ByteString [Int] Int
+    appX rrcfg = OuroborosInitiatorAndResponderApplication
             -- Initiator
-            (\peerid ReqRespPr channel -> do
-             r <- runPeer (tagTrace (rrcTag ++ " Initiator") activeTracer)
+            (initiatorK rrcfg)
+            (\peerid ReqRespPr channel ->
+             runPeer (tagTrace (rrcTag rrcfg ++ " Initiator") activeTracer)
                          ReqResp.codecReqResp
                          peerid
                          channel
                          (ReqResp.reqRespClientPeer (ReqResp.reqRespClientMap xs))
-             atomically $ putTMVar rrcClientVar r
-             -- wait for our responder and peer
-             waitSiblingSub rrcSiblingVar
             )
             -- Responder
-            (\peerid ReqRespPr channel -> do
-             r <- runPeer (tagTrace (rrcTag ++ " Responder") activeTracer)
+            (responderK rrcfg)
+            (\peerid ReqRespPr channel ->
+             runPeer (tagTrace (rrcTag rrcfg ++ " Responder") activeTracer)
                          ReqResp.codecReqResp
                          peerid
                          channel
                          (ReqResp.reqRespServerPeer (ReqResp.reqRespServerMapAccumL
                            (\a -> pure . f a) 0))
-             atomically $ putTMVar rrcServerVar r
-             -- wait for our initiator and peer
-             waitSiblingSub rrcSiblingVar
             )
 
     startPassiveServer tbl stVar responderAddr localAddrVar rrcfg = withServerNode
@@ -697,10 +713,8 @@ prop_send_recv_init_and_rsp f xs = ioProperty $ do
         nullErrorPolicies
         $ \localAddr _ -> do
           atomically $ putTMVar localAddrVar localAddr
-          r <- atomically $ (,) <$> takeTMVar (rrcServerVar rrcfg)
-                                <*> takeTMVar (rrcClientVar rrcfg)
-          waitSibling (rrcSiblingVar rrcfg)
-          return r
+          atomically $ (,) <$> takeTMVar (rrcServerVar rrcfg)
+                           <*> takeTMVar (rrcClientVar rrcfg)
 
     startActiveServer tbl stVar responderAddr localAddrVar remoteAddrVar rrcfg = withServerNode
         nullNetworkServerTracers
@@ -708,7 +722,7 @@ prop_send_recv_init_and_rsp f xs = ioProperty $ do
         responderAddr
         cborTermVersionDataCodec
         (\(DictVersion _) -> acceptEq)
-        ((simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData $ NetworkMagic 0) (DictVersion nodeToNodeCodecCBORTerm) (appX rrcfg)))
+        (simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData $ NetworkMagic 0) (DictVersion nodeToNodeCodecCBORTerm) (appX rrcfg))
         nullErrorPolicies
         $ \localAddr _ -> do
           peerStatesVar <- newPeerStatesVar
@@ -725,106 +739,14 @@ prop_send_recv_init_and_rsp f xs = ioProperty $ do
                 wpValency = 1
               }
             nullErrorPolicies
-            (\_ -> waitSiblingSTM (rrcSiblingVar rrcfg))
+            (\_ -> readTMVar (rrcClientVar rrcfg) *> readTMVar (rrcServerVar rrcfg))
             (connectToNode'
                 cborTermVersionDataCodec
                 nullNetworkConnectTracers
                 (simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData $ NetworkMagic 0)
                 (DictVersion nodeToNodeCodecCBORTerm) $ appX rrcfg))
-
           atomically $ (,) <$> takeTMVar (rrcServerVar rrcfg)
                            <*> takeTMVar (rrcClientVar rrcfg)
-
-waitSiblingSub :: StrictTVar IO Int -> IO ()
-waitSiblingSub cntVar = do
-    atomically $ modifyTVar cntVar (\a -> a - 1)
-    waitSibling cntVar
-
-waitSiblingSTM :: StrictTVar IO Int -> STM IO ()
-waitSiblingSTM cntVar = do
-    cnt <- readTVar cntVar
-    unless (cnt == 0) retry
-
-waitSibling :: StrictTVar IO Int -> IO ()
-waitSibling = atomically . waitSiblingSTM
-
-{-
- - XXX Doesn't really test anything, doesn't exit in a resonable time.
- - XXX Depends on external network config
- - unbound DNS config example:
-local-data: "shelley-1.iohk.example. IN A 192.168.1.115"
-local-data: "shelley-1.iohk.example. IN A 192.168.1.215"
-local-data: "shelley-1.iohk.example. IN A 192.168.1.216"
-local-data: "shelley-1.iohk.example. IN A 192.168.1.100"
-local-data: "shelley-1.iohk.example. IN A 192.168.1.101"
-local-data: "shelley-1.iohk.example. IN A 127.0.0.1"
-local-data: "shelley-1.iohk.example. IN AAAA ::1"
-
-local-data: "shelley-0.iohk.example. IN AAAA ::1"
--}
-_demo :: Property
-_demo = ioProperty $ do
-    server:_ <- Socket.getAddrInfo Nothing (Just "192.168.1.100") (Just "6062")
-    server':_ <- Socket.getAddrInfo Nothing (Just "127.0.0.1") (Just "6062")
-    server6:_ <- Socket.getAddrInfo Nothing (Just "::1") (Just "6062")
-    server6':_ <- Socket.getAddrInfo Nothing (Just "::1") (Just "6064")
-    client:_ <- Socket.getAddrInfo Nothing (Just "127.0.0.1") (Just "0")
-    client6:_ <- Socket.getAddrInfo Nothing (Just "::1") (Just "0")
-
-    tbl <- newConnectionTable
-    clientTbl <- newConnectionTable
-    peerStatesVar <- newPeerStatesVar
-    stVar <- newPeerStatesVar
-
-    spawnServer tbl stVar server 10000
-    spawnServer tbl stVar server' 10000
-    spawnServer tbl stVar server6 100
-    spawnServer tbl stVar server6' 45
-
-    _ <- dnsSubscriptionWorker
-            activeTracer activeTracer activeTracer
-            (NetworkMutableState clientTbl peerStatesVar)
-            SubscriptionParams {
-                spLocalAddresses =
-                  LocalAddresses
-                    (Just $ Socket.addrAddress client)
-                    (Just $ Socket.addrAddress client6)
-                    Nothing,
-                spConnectionAttemptDelay = \_ -> Just minConnectionAttemptDelay,
-                spSubscriptionTarget = DnsSubscriptionTarget "shelley-0.iohk.example" 6064 1,
-                spErrorPolicies = nullErrorPolicies
-
-              }
-            (connectToNode'
-                cborTermVersionDataCodec
-                nullNetworkConnectTracers
-                (simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData $ NetworkMagic 0)
-                (DictVersion nodeToNodeCodecCBORTerm) appReq))
-
-    threadDelay 130
-    -- bring the servers back again
-    spawnServer tbl stVar server6 10000
-    spawnServer tbl stVar server6' 10000
-    threadDelay 1000
-    return ()
-
-  where
-
-    spawnServer tbl stVar addr delay =
-        void $ async $ withServerNode
-            nullNetworkServerTracers
-            (NetworkMutableState tbl stVar)
-            addr
-            cborTermVersionDataCodec
-            (\(DictVersion _) -> acceptEq)
-            (simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData $ NetworkMagic 0)
-                (DictVersion nodeToNodeCodecCBORTerm) appRsp)
-            nullErrorPolicies
-            (\_ _ -> threadDelay delay)
-
-
-    appReq = OuroborosInitiatorApplication (\_ ChainSyncPr -> error "req fail")
-    appRsp = OuroborosResponderApplication (\_ ChainSyncPr -> error "rsp fail")
 
 
 data WithThreadAndTime a = WithThreadAndTime {

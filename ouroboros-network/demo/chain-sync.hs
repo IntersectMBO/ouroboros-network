@@ -160,7 +160,7 @@ clientPingPong pipelined =
                                 ConnectionId
                                 DemoProtocol0
                                 IO LBS.ByteString () Void
-    app = simpleInitiatorApplication protocols
+    app = simpleInitiatorApplication clientK protocols
 
     protocols :: DemoProtocol0 -> MuxPeer ConnectionId
                                           DeserialiseFailure
@@ -176,6 +176,12 @@ clientPingPong pipelined =
         (contramap show stdoutTracer)
         codecPingPong
         (pingPongClientPeer (pingPongClientCount 5))
+
+    clientK ctrlFn = do
+        let (MiniProtocolInitiatorControl ppRelease) = ctrlFn PingPong0
+
+        ppResult <- atomically ppRelease
+        void $ atomically ppResult
 
 
 pingPongClientCount :: Applicative m => Int -> PingPongClient m ()
@@ -201,7 +207,7 @@ serverPingPong = do
                                 ConnectionId
                                 DemoProtocol0
                                 IO LBS.ByteString Void ()
-    app = simpleResponderApplication protocols
+    app = simpleResponderApplication serverK protocols
 
     protocols :: DemoProtocol0 -> MuxPeer ConnectionId
                                           DeserialiseFailure
@@ -211,6 +217,11 @@ serverPingPong = do
         (contramap show stdoutTracer)
         codecPingPong
         (pingPongServerPeer pingPongServerStandard)
+
+    serverK rspFn = do
+        let (MiniProtocolResponderControl ppResult) = rspFn PingPong0
+
+        void $ atomically ppResult
 
 pingPongServerStandard
   :: Applicative m
@@ -254,7 +265,7 @@ clientPingPong2 =
                                 ConnectionId
                                 DemoProtocol1
                                 IO LBS.ByteString () Void
-    app = simpleInitiatorApplication protocols
+    app = simpleInitiatorApplication clientK protocols
 
     protocols :: DemoProtocol1 -> MuxPeer ConnectionId
                                           DeserialiseFailure
@@ -270,6 +281,13 @@ clientPingPong2 =
         (contramap (show . (,) (2 :: Int)) stdoutTracer)
         codecPingPong
         (pingPongClientPeer (pingPongClientCount 5))
+
+    clientK ctrlFn = do
+        let (MiniProtocolInitiatorControl ppRelease) = ctrlFn PingPong1
+            (MiniProtocolInitiatorControl ppRelease') = ctrlFn PingPong1'
+
+        (ppResult, ppResult') <- atomically $ (,) <$> ppRelease <*> ppRelease'
+        void $ atomically $ ppResult *> ppResult'
 
 pingPongClientPipelinedMax
   :: forall m. Monad m
@@ -308,7 +326,7 @@ serverPingPong2 = do
                                 ConnectionId
                                 DemoProtocol1
                                 IO LBS.ByteString Void ()
-    app = simpleResponderApplication protocols
+    app = simpleResponderApplication serverK protocols
 
     protocols :: DemoProtocol1 -> MuxPeer ConnectionId
                                           DeserialiseFailure
@@ -325,6 +343,11 @@ serverPingPong2 = do
         codecPingPong
         (pingPongServerPeer pingPongServerStandard)
 
+    serverK rspFn = do
+        let (MiniProtocolResponderControl ppResult) = rspFn PingPong1
+            (MiniProtocolResponderControl ppResult') = rspFn PingPong1'
+
+        void $ atomically $ ppResult *> ppResult'
 
 --
 -- Chain sync demo
@@ -358,7 +381,7 @@ clientChainSync sockAddrs =
                                 ConnectionId
                                 DemoProtocol2
                                 IO LBS.ByteString () Void
-    app = simpleInitiatorApplication protocols
+    app = simpleInitiatorApplication clientK protocols
 
     protocols :: DemoProtocol2 -> MuxPeer ConnectionId
                                           DeserialiseFailure
@@ -369,6 +392,11 @@ clientChainSync sockAddrs =
          codecChainSync
         (ChainSync.chainSyncClientPeer chainSyncClient)
 
+    clientK ctrlFn = do
+        let (MiniProtocolInitiatorControl csRelease) = ctrlFn ChainSync2
+
+        csResult <- atomically csRelease
+        void $ atomically $ csResult
 
 serverChainSync :: FilePath -> IO Void
 serverChainSync sockAddr = do
@@ -391,7 +419,7 @@ serverChainSync sockAddr = do
                                 ConnectionId
                                 DemoProtocol2
                                 IO LBS.ByteString Void ()
-    app = simpleResponderApplication protocols
+    app = simpleResponderApplication serverK protocols
 
     protocols :: DemoProtocol2 -> MuxPeer ConnectionId
                                           DeserialiseFailure
@@ -401,6 +429,11 @@ serverChainSync sockAddr = do
         (contramap show stdoutTracer)
          codecChainSync
         (ChainSync.chainSyncServerPeer (chainSyncServer prng))
+
+    serverK rspFn = do
+        let (MiniProtocolResponderControl csResult) = rspFn ChainSync2
+
+        void $ atomically $ csResult
 
 
 codecChainSync :: ( CBOR.Serialise (HeaderHash block)
@@ -449,7 +482,7 @@ clientBlockFetch sockAddrs = do
                                     ConnectionId
                                     DemoProtocol3
                                     IO LBS.ByteString () Void
-        app = OuroborosInitiatorApplication protocols
+        app = OuroborosInitiatorApplication clientK protocols
 
         protocols :: ConnectionId
                   -> DemoProtocol3
@@ -542,6 +575,14 @@ clientBlockFetch sockAddrs = do
                                  AF.headPoint currentChain')
           chainSelection fingerprint'
 
+        clientK ctrlFn = do
+            let (MiniProtocolInitiatorControl csRelease) = ctrlFn ChainSync3
+                (MiniProtocolInitiatorControl bfRelease) = ctrlFn BlockFetch3
+
+            (csResult, bfResult) <- atomically $ (,) <$> csRelease <*> bfRelease
+            void $ atomically $ csResult *> bfResult
+
+
     peerAsyncs <- sequence
                     [ async $
                         connectToNode
@@ -599,7 +640,7 @@ serverBlockFetch sockAddr = do
                                 ConnectionId
                                 DemoProtocol3
                                 IO LBS.ByteString Void ()
-    app = simpleResponderApplication protocols
+    app = simpleResponderApplication serverK protocols
 
     protocols :: DemoProtocol3 -> MuxPeer ConnectionId
                                           DeserialiseFailure
@@ -615,6 +656,13 @@ serverBlockFetch sockAddr = do
         (contramap show stdoutTracer)
          codecBlockFetch
         (BlockFetch.blockFetchServerPeer (blockFetchServer prng))
+
+    serverK rspFn = do
+        let (MiniProtocolResponderControl csResult) = rspFn ChainSync3
+            (MiniProtocolResponderControl bfResult) = rspFn BlockFetch3
+
+        void $ atomically $ csResult *> bfResult
+
 
 codecBlockFetch :: Codec (BlockFetch.BlockFetch Block)
                          CBOR.DeserialiseFailure

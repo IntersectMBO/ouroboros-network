@@ -106,7 +106,7 @@ demo chain0 updates = do
         target = Chain.headPoint expectedChain
 
         consumerApp :: OuroborosApplication InitiatorApp String DemoProtocols IO BL.ByteString () Void
-        consumerApp = simpleInitiatorApplication $
+        consumerApp = simpleInitiatorApplication consumerK $
           \ChainSync ->
             MuxPeer nullTracer
                     (ChainSync.codecChainSync encode             (fmap const decode)
@@ -120,13 +120,27 @@ demo chain0 updates = do
         server = ChainSync.chainSyncServerExample () producerVar
 
         producerApp ::OuroborosApplication ResponderApp String DemoProtocols IO BL.ByteString Void ()
-        producerApp = simpleResponderApplication $
+        producerApp = simpleResponderApplication producerK $
           \ChainSync ->
             MuxPeer nullTracer
                     (ChainSync.codecChainSync encode             (fmap const decode)
                                               encode             decode
                                               (encodeTip encode) (decodeTip decode))
                     (ChainSync.chainSyncServerPeer server)
+
+        consumerK ctrlFn = do
+            let (Mx.MiniProtocolInitiatorControl release) = ctrlFn ChainSync
+
+            result <- atomically $ release
+
+            _ <- atomically $ result
+            return ()
+
+        producerK rspFn = do
+            let (Mx.MiniProtocolResponderControl result) = rspFn ChainSync
+
+            _ <- atomically $ result
+            return ()
 
     _ <- async $ Mx.runMuxWithPipes activeTracer "producer" (toApplication producerApp) hndRead1 hndWrite2
     _ <- async $ Mx.runMuxWithPipes activeTracer "consumer" (toApplication consumerApp) hndRead2 hndWrite1

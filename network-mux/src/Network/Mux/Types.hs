@@ -10,6 +10,10 @@ module Network.Mux.Types (
     , ProtocolEnum (..)
     , MiniProtocolId (..)
     , MiniProtocolMode (..)
+    , MiniProtocolInitiatorControlTable (..)
+    , MiniProtocolResponderControlTable (..)
+    , MiniProtocolInitiatorControl (..)
+    , MiniProtocolResponderControl (..)
     , MuxBearer (..)
     , muxBearerAsControlChannel
     , MuxBearerState (..)
@@ -150,6 +154,14 @@ instance (MiniProtocolLimits ptcl) => MiniProtocolLimits (MiniProtocolId ptcl) w
     maximumIngressQueue DeltaQ     = 0xffff
     maximumIngressQueue (AppProtocolId pid) = maximumIngressQueue pid
 
+-- | Control Interface for the Initiator side of Miniprotocols.
+-- The outer STM action is used to signal that the miniprotocol should start.
+-- The inner STM action provides the result of the miniprotocol.
+newtype MiniProtocolInitiatorControl m a = MiniProtocolInitiatorControl (STM m (STM m a))
+
+-- | STM action for reading the result of the responder side of a Miniprotocol.
+newtype MiniProtocolResponderControl m b = MiniProtocolResponderControl (STM m b)
+
 --
 -- Mux internal types
 --
@@ -157,6 +169,13 @@ instance (MiniProtocolLimits ptcl) => MiniProtocolLimits (MiniProtocolId ptcl) w
 newtype MiniProtocolDispatch ptcl m =
         MiniProtocolDispatch (Array (MiniProtocolId ptcl, MiniProtocolMode)
                                     (StrictTVar m BL.ByteString))
+
+newtype MiniProtocolInitiatorControlTable ptcl m a =
+        MiniProtocolInitiatorControlTable (Array (MiniProtocolId ptcl)
+                                                 (StrictTMVar m (), StrictTMVar m a))
+newtype MiniProtocolResponderControlTable ptcl m b =
+        MiniProtocolResponderControlTable (Array (MiniProtocolId ptcl)
+                                                 (StrictTMVar m b))
 
 data MiniProtocolMode = ModeInitiator | ModeResponder
   deriving (Eq, Ord, Ix, Enum, Bounded, Show)
@@ -349,6 +368,12 @@ data MuxTrace ptcl =
     | MuxTraceHandshakeServerEnd
     | forall e. Exception e => MuxTraceHandshakeClientError e DiffTime
     | forall e. Exception e => MuxTraceHandshakeServerError e
+    | MuxTraceBrooderResponderBrood (MiniProtocolId ptcl)
+    | MuxTraceBrooderResponderHatch (MiniProtocolId ptcl)
+    | MuxTraceBrooderResponderDone (MiniProtocolId ptcl)
+    | MuxTraceBrooderInitiatorBrood (MiniProtocolId ptcl)
+    | MuxTraceBrooderInitiatorHatch (MiniProtocolId ptcl)
+    | MuxTraceBrooderInitiatorDone (MiniProtocolId ptcl)
 
 instance Show ptcl => Show (MuxTrace ptcl) where
     show MuxTraceRecvHeaderStart = printf "Bearer Receive Header Start"
@@ -388,5 +413,11 @@ instance Show ptcl => Show (MuxTrace ptcl) where
     show (MuxTraceHandshakeClientError e duration) =
          -- Client Error can include an error string from the peer which could be very large.
         printf "Handshake Client Error %s duration %s" (take 256 $ show e) (show duration)
-    show (MuxTraceHandshakeServerError e ) = printf "Handshake Server Error %s" (show e)
+    show (MuxTraceHandshakeServerError e) = printf "Handshake Server Error %s" (show e)
+    show (MuxTraceBrooderResponderBrood mid) = printf "Responder Brood on %s" (show mid)
+    show (MuxTraceBrooderResponderHatch mid) = printf "Responder Hatch on %s" (show mid)
+    show (MuxTraceBrooderResponderDone mid) = printf "Responder Done on %s" (show mid)
+    show (MuxTraceBrooderInitiatorBrood mid) = printf "Initiator Brood on %s" (show mid)
+    show (MuxTraceBrooderInitiatorHatch mid) = printf "Initiator Hatch on %s" (show mid)
+    show (MuxTraceBrooderInitiatorDone mid) = printf "Initiator Done on %s" (show mid)
 
