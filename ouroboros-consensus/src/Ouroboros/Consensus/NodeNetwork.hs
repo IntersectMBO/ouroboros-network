@@ -33,6 +33,9 @@ import           Data.ByteString.Lazy (ByteString)
 import           Data.Proxy (Proxy (..))
 import           Data.Void (Void)
 
+import           Control.Monad.Class.MonadAsync (MonadAsync)
+import           Control.Monad.Class.MonadSTM.Strict (MonadSTM)
+import           Control.Monad.Class.MonadTimer (MonadTimer)
 import           Control.Monad.Class.MonadThrow
 import           Control.Tracer
 
@@ -359,22 +362,28 @@ data NetworkApplication m peer
 -- for the 'NodeToNodeProtocols'.
 --
 initiatorNetworkApplication
-  :: NetworkApplication m peer bytes bytes bytes bytes bytes bytes a
+  :: MonadAsync m
+  => MonadTimer m
+  => NetworkApplication m peer bytes bytes bytes bytes bytes bytes a
   -> OuroborosApplication 'InitiatorApp peer NodeToNodeProtocols m bytes a Void
 initiatorNetworkApplication NetworkApplication {..} =
-    OuroborosInitiatorApplication $ \them ptcl -> case ptcl of
+    OuroborosInitiatorApplication (simpleInitiatorControl restartDelay) $ \them ptcl -> case ptcl of
       ChainSyncWithHeadersPtcl -> naChainSyncClient them
       BlockFetchPtcl           -> naBlockFetchClient them
       TxSubmissionPtcl         -> naTxSubmissionClient them
+  where
+    restartDelay :: DiffTime
+    restartDelay = 60 -- Restart finished initiator protocols after a 60s delay
 
 -- | A projection from 'NetworkApplication' to a server-side 'MuxApplication'
 -- for the 'NodeToNodeProtocols'.
 --
 responderNetworkApplication
-  :: NetworkApplication m peer bytes bytes bytes bytes bytes bytes a
+  :: MonadSTM m
+  => NetworkApplication m peer bytes bytes bytes bytes bytes bytes a
   -> OuroborosApplication 'ResponderApp peer NodeToNodeProtocols m bytes Void a
 responderNetworkApplication NetworkApplication {..} =
-    OuroborosResponderApplication $ \them ptcl -> case ptcl of
+    OuroborosResponderApplication simpleResponderControl $ \them ptcl -> case ptcl of
       ChainSyncWithHeadersPtcl -> naChainSyncServer them
       BlockFetchPtcl           -> naBlockFetchServer them
       TxSubmissionPtcl         -> naTxSubmissionServer them
@@ -383,10 +392,11 @@ responderNetworkApplication NetworkApplication {..} =
 -- for the 'NodeToClientProtocols'.
 --
 localResponderNetworkApplication
-  :: NetworkApplication m peer bytes bytes bytes bytes bytes bytes a
+  :: MonadSTM m
+  => NetworkApplication m peer bytes bytes bytes bytes bytes bytes a
   -> OuroborosApplication 'ResponderApp peer NodeToClientProtocols m bytes Void a
 localResponderNetworkApplication NetworkApplication {..} =
-    OuroborosResponderApplication $ \peer  ptcl -> case ptcl of
+    OuroborosResponderApplication ncSimpleResponderControl $ \peer  ptcl -> case ptcl of
       ChainSyncWithBlocksPtcl -> naLocalChainSyncServer peer
       LocalTxSubmissionPtcl   -> naLocalTxSubmissionServer peer
 

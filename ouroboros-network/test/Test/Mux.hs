@@ -109,6 +109,7 @@ demo chain0 updates delay = do
                           (ChainSync.chainSyncClientExample consumerVar
                           (consumerClient done target consumerVar))
         consumerApp = Mx.simpleInitiatorApplication
+                        consumerK
                         (\ChainSyncPr ->
                         Mx.MuxPeer
                         nullTracer
@@ -121,6 +122,7 @@ demo chain0 updates delay = do
         producerPeer :: Peer (ChainSync.ChainSync block (Tip block)) AsServer ChainSync.StIdle m ()
         producerPeer = ChainSync.chainSyncServerPeer (ChainSync.chainSyncServerExample () producerVar)
         producerApp = Mx.simpleResponderApplication
+                        producerK
                         (\ChainSyncPr ->
                         Mx.MuxPeer
                         nullTracer
@@ -129,6 +131,20 @@ demo chain0 updates delay = do
                         encode             decode
                         (encodeTip encode) (decodeTip decode))
                         producerPeer)
+
+        consumerK ctrlFn = do
+            let (Mx.MiniProtocolInitiatorControl release) = ctrlFn ChainSyncPr
+
+            result <- atomically $ release
+
+            _ <- atomically $ result
+            return ()
+
+        producerK rspFn = do
+            let (Mx.MiniProtocolResponderControl result) = rspFn ChainSyncPr
+
+            _ <- atomically $ result
+            return ()
 
     clientAsync <- async $ Mx.runMuxWithQueues activeTracer "consumer" (Mx.toApplication consumerApp) client_w client_r sduLen Nothing
     serverAsync <- async $ Mx.runMuxWithQueues activeTracer "producer" (Mx.toApplication producerApp) server_w server_r sduLen Nothing

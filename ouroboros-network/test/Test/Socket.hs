@@ -211,15 +211,9 @@ prop_socket_send_recv initiatorAddr responderAddr f xs = do
     sv <- newEmptyTMVarM
     networkState <- newNetworkMutableState
 
-    {- The siblingVar is used by the initiator and responder to wait on each other before exiting.
-     - Without this wait there is a risk that one side will finish first causing the Muxbearer to
-     - be torn down and the other side exiting before it has a chance to write to its result TMVar.
-     -}
-    siblingVar <- newTVarM 2
-
     let -- Server Node; only req-resp server
         responderApp :: OuroborosApplication Mx.ResponderApp ConnectionId TestProtocols2 IO BL.ByteString Void ()
-        responderApp = OuroborosResponderApplication $
+        responderApp = OuroborosResponderApplication serverK $
           \peerid ReqRespPr channel -> do
             r <- runPeer nullTracer
                          ReqResp.codecReqResp
@@ -227,11 +221,10 @@ prop_socket_send_recv initiatorAddr responderAddr f xs = do
                          channel
                          (ReqResp.reqRespServerPeer (ReqResp.reqRespServerMapAccumL (\a -> pure . f a) 0))
             atomically $ putTMVar sv r
-            waitSibling siblingVar
 
         -- Client Node; only req-resp client
         initiatorApp :: OuroborosApplication Mx.InitiatorApp ConnectionId TestProtocols2 IO BL.ByteString () Void
-        initiatorApp = OuroborosInitiatorApplication $
+        initiatorApp = OuroborosInitiatorApplication clientK $
           \peerid ReqRespPr channel -> do
             r <- runPeer nullTracer
                          ReqResp.codecReqResp
@@ -239,7 +232,20 @@ prop_socket_send_recv initiatorAddr responderAddr f xs = do
                          channel
                          (ReqResp.reqRespClientPeer (ReqResp.reqRespClientMap xs))
             atomically $ putTMVar cv r
-            waitSibling siblingVar
+
+        clientK ctrlFn = do
+            let (Mx.MiniProtocolInitiatorControl release) = ctrlFn ReqRespPr
+
+            result <- atomically $ release
+
+            _ <- atomically $ result
+            return ()
+
+        serverK rspFn = do
+            let (Mx.MiniProtocolResponderControl result) = rspFn ReqRespPr
+
+            _ <- atomically $ result
+            return ()
 
     res <-
       withServerNode
@@ -269,13 +275,6 @@ prop_socket_send_recv initiatorAddr responderAddr f xs = do
       }
 
 
-    waitSibling :: StrictTVar IO Int -> IO ()
-    waitSibling cntVar = do
-        atomically $ modifyTVar cntVar (\a -> a - 1)
-        atomically $ do
-            cnt <- readTVar cntVar
-            unless (cnt == 0) retry
-
 -- |
 -- Verify that we raise the correct exception in case a socket closes during
 -- a read.
@@ -287,7 +286,7 @@ prop_socket_recv_close f _ = ioProperty $ do
     sv   <- newEmptyTMVarM
 
     let app :: OuroborosApplication ResponderApp () TestProtocols2 IO BL.ByteString Void ()
-        app = OuroborosResponderApplication $
+        app = OuroborosResponderApplication serverK $
           \peerid ReqRespPr channel -> do
             r <- runPeer nullTracer
                          ReqResp.codecReqResp
@@ -295,6 +294,12 @@ prop_socket_recv_close f _ = ioProperty $ do
                          channel
                          (ReqResp.reqRespServerPeer (ReqResp.reqRespServerMapAccumL (\a -> pure . f a) 0))
             atomically $ putTMVar sv r
+
+        serverK rspFn = do
+            let (Mx.MiniProtocolResponderControl result) = rspFn ReqRespPr
+
+            _ <- atomically $ result
+            return ()
 
     bracket
       (Socket.socket Socket.AF_INET Socket.Stream Socket.defaultProtocol)
@@ -345,7 +350,7 @@ prop_socket_client_connect_error _ xs = ioProperty $ do
     cv <- newEmptyTMVarM
 
     let app :: OuroborosApplication Mx.InitiatorApp ConnectionId TestProtocols2 IO BL.ByteString () Void
-        app = OuroborosInitiatorApplication $
+        app = OuroborosInitiatorApplication clientK $
                 \peerid ReqRespPr channel -> do
                   _ <- runPeer nullTracer
                           ReqResp.codecReqResp
@@ -354,6 +359,14 @@ prop_socket_client_connect_error _ xs = ioProperty $ do
                           (ReqResp.reqRespClientPeer (ReqResp.reqRespClientMap xs)
                                   :: Peer (ReqResp.ReqResp Int Int) AsClient ReqResp.StIdle IO [Int])
                   atomically $ putTMVar cv ()
+
+        clientK ctrlFn = do
+            let (Mx.MiniProtocolInitiatorControl release) = ctrlFn ReqRespPr
+
+            result <- atomically $ release
+
+            _ <- atomically $ result
+            return ()
 
 
     (res :: Either IOException Bool)
@@ -385,7 +398,7 @@ demo chain0 updates = do
         target = Chain.headPoint expectedChain
 
         initiatorApp :: OuroborosApplication Mx.InitiatorApp ConnectionId TestProtocols1 IO BL.ByteString () Void
-        initiatorApp = simpleInitiatorApplication $
+        initiatorApp = simpleInitiatorApplication consumerK $
           \ChainSyncPr ->
               MuxPeer nullTracer
                       codecChainSync
@@ -397,7 +410,7 @@ demo chain0 updates = do
         server = ChainSync.chainSyncServerExample () producerVar
 
         responderApp :: OuroborosApplication Mx.ResponderApp ConnectionId TestProtocols1 IO BL.ByteString Void ()
-        responderApp = simpleResponderApplication $
+        responderApp = simpleResponderApplication producerK $
           \ChainSyncPr ->
             MuxPeer nullTracer
                     codecChainSync
@@ -406,6 +419,20 @@ demo chain0 updates = do
         codecChainSync = ChainSync.codecChainSync encode (fmap const decode)
                                                   encode             decode
                                                   (encodeTip encode) (decodeTip decode)
+
+        consumerK ctrlFn = do
+            let (Mx.MiniProtocolInitiatorControl release) = ctrlFn ChainSyncPr
+
+            result <- atomically $ release
+
+            _ <- atomically $ result
+            return ()
+
+        producerK rspFn = do
+            let (Mx.MiniProtocolResponderControl result) = rspFn ChainSyncPr
+
+            _ <- atomically $ result
+            return ()
 
     withServerNode
       nullNetworkServerTracers

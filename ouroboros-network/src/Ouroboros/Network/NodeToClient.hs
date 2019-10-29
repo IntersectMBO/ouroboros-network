@@ -39,6 +39,10 @@ module Ouroboros.Network.NodeToClient (
   , chainSyncClientNull
   , localTxSubmissionClientNull
 
+  -- * Protocol start and restart logic
+  , ncSimpleResponderControl
+  , ncSimpleInitiatorControl
+
   -- * Re-exports
   , ConnectionId (..)
   , ErrorPolicies (..)
@@ -59,6 +63,7 @@ module Ouroboros.Network.NodeToClient (
 
 import qualified Control.Concurrent.Async as Async
 import           Control.Exception (IOException)
+import           Control.Monad (void, forever)
 import qualified Data.ByteString.Lazy as BL
 import           Data.Text (Text)
 import qualified Data.Text as T
@@ -71,6 +76,10 @@ import qualified Codec.CBOR.Term as CBOR
 import           Codec.Serialise (Serialise (..), DeserialiseFailure)
 import           Codec.SerialiseTerm
 import qualified Network.Socket as Socket
+
+import           Control.Monad.Class.MonadAsync (async, MonadAsync)
+import           Control.Monad.Class.MonadSTM.Strict
+import           Control.Monad.Class.MonadTimer
 
 import           Network.Mux.Types
 import           Network.Mux.Interface
@@ -222,7 +231,7 @@ withServer tracers networkState addr versions errPolicies =
     (\(DictVersion _) -> acceptEq)
     versions
     errPolicies
-    (\_ async -> Async.wait async)
+    (\_ as -> Async.wait as)
 
 -- | A specialised version of 'withServer' which can only communicate using
 -- 'NodeToClientV_1' version of the protocol.
@@ -386,3 +395,72 @@ networkErrorPolicies = ErrorPolicies
 
     shortDelay :: DiffTime
     shortDelay = 20 -- seconds
+
+-- | Simple responder control function that discards the Protocol result.
+ncSimpleResponderControl :: forall m a. (MonadSTM m)
+                       => (NodeToClientProtocols -> MiniProtocolResponderControl m a)
+                       -> m ()
+ncSimpleResponderControl rspFn = forever $
+    -- Fetch, but ignore the result of any miniprotocol so that it can
+    -- be restarted incase the initiator decides to talk to us again.
+    void $ atomically $ fetchResponderResult ChainSyncWithBlocksPtcl
+               `orElse` fetchResponderResult LocalTxSubmissionPtcl
+  where
+    fetchResponderResult :: MonadSTM m => NodeToClientProtocols -> STM m a
+    fetchResponderResult ptcl =
+        let (MiniProtocolResponderControl action) = rspFn ptcl in
+        action
+
+-- | Result of waiting on a list of miniprotocols to finish. Only used by ncSimpleInitiatorControl
+data MiniProtocolClientResult = MpcRestart NodeToClientProtocols
+                              | MpcResult  NodeToClientProtocols
+
+-- | Simple initiator control function that starts all NodeToClientProtocols and if one of them
+-- finishes it will wait for restartDelay seconds before restarting the protocol.
+ncSimpleInitiatorControl :: forall m a.
+                            ( MonadAsync m
+                            , MonadSTM m
+                            , MonadTimer m
+                            )
+                         => DiffTime
+                         -> (NodeToClientProtocols -> MiniProtocolInitiatorControl m a)
+                         -> m ()
+ncSimpleInitiatorControl restartDelay ctrlFn = do
+    startQ <- atomically $ newTBQueue 2
+    atomically $ do
+        writeTBQueue startQ ChainSyncWithBlocksPtcl
+        writeTBQueue startQ LocalTxSubmissionPtcl
+    clientK startQ []
+
+  where
+    clientK :: TBQueue m NodeToClientProtocols -> [(NodeToClientProtocols, STM m a)] -> m ()
+    clientK restartQ resultActions = do
+        cr <- atomically $ waitOnRestartQueue restartQ
+                `orElse` foldr (orElse . waitOnMiniProtocolClientResult) retry resultActions
+        case cr of
+                (MpcRestart ptcl) -> do
+                    let (MiniProtocolInitiatorControl restart) = ctrlFn ptcl
+                    resultAction <- atomically restart
+                    clientK restartQ ((ptcl, resultAction):resultActions)
+                (MpcResult ptcl) -> do
+                    -- The return type is ignored, but one could act on the result here
+
+                    -- Schedule a restart of the miniprotocol in the future
+                    void $ async $ delayRestart restartQ ptcl
+                    clientK restartQ $ filter (\(mp, _) -> mp /= ptcl) resultActions
+
+    delayRestart :: TBQueue m NodeToClientProtocols -> NodeToClientProtocols -> m ()
+    delayRestart q ptcl = do
+        threadDelay restartDelay
+        atomically $ writeTBQueue q ptcl
+
+    waitOnRestartQueue :: TBQueue m NodeToClientProtocols -> STM m MiniProtocolClientResult
+    waitOnRestartQueue q = do
+        ptcl <- readTBQueue q
+        return $ MpcRestart ptcl
+
+    waitOnMiniProtocolClientResult :: (NodeToClientProtocols, STM m a)
+                                    -> STM m MiniProtocolClientResult
+    waitOnMiniProtocolClientResult (ptcl, fetchResult) = do
+        void fetchResult
+        return $ MpcResult ptcl

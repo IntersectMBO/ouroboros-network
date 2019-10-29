@@ -27,6 +27,8 @@ import           Network.TypedProtocol.Driver
 import           Network.TypedProtocol.Pipelined
 
 import           Network.Mux.Interface
+import           Network.Mux.Types ( MiniProtocolInitiatorControl
+                                   , MiniProtocolResponderControl)
 
 import           Ouroboros.Network.Channel
 
@@ -35,30 +37,38 @@ import           Ouroboros.Network.Channel
 --
 data OuroborosApplication (appType :: AppType) peerid ptcl m bytes a b where
      OuroborosInitiatorApplication
-       :: (peerid -> ptcl -> Channel m bytes -> m a)
+       :: ((ptcl -> MiniProtocolInitiatorControl m a) -> m ())
+       -> (peerid -> ptcl -> Channel m bytes -> m a)
        -> OuroborosApplication InitiatorApp peerid ptcl m bytes a Void
 
      OuroborosResponderApplication
-       :: (peerid -> ptcl -> Channel m bytes -> m a)
+       :: ((ptcl -> MiniProtocolResponderControl m a) -> m ())
+       -> (peerid -> ptcl -> Channel m bytes -> m a)
        -> OuroborosApplication ResponderApp peerid ptcl m bytes Void a
 
      OuroborosInitiatorAndResponderApplication
-       :: (peerid -> ptcl -> Channel m bytes -> m a)
+       :: ((ptcl -> MiniProtocolInitiatorControl m a) -> m ())
+       -> (peerid -> ptcl -> Channel m bytes -> m a)
+       -> ((ptcl -> MiniProtocolResponderControl m b) -> m ())
        -> (peerid -> ptcl -> Channel m bytes -> m b)
        -> OuroborosApplication InitiatorAndResponderApp peerid ptcl m bytes a b
 
 
 toApplication :: OuroborosApplication appType peerid ptcl m LBS.ByteString a b
               -> MuxApplication appType peerid ptcl m a b
-toApplication (OuroborosInitiatorApplication f) =
+toApplication (OuroborosInitiatorApplication i f) =
     MuxInitiatorApplication
+      i
       (\peerid ptcl channel -> f peerid ptcl (fromChannel channel))
-toApplication (OuroborosResponderApplication f) =
+toApplication (OuroborosResponderApplication r f) =
     MuxResponderApplication
+      r
       (\peerid ptcl channel -> f peerid ptcl (fromChannel channel))
-toApplication (OuroborosInitiatorAndResponderApplication f g) =
+toApplication (OuroborosInitiatorAndResponderApplication i f r g) =
     MuxInitiatorAndResponderApplication
+      i
       (\peerid ptcl channel -> f peerid ptcl (fromChannel channel))
+      r
       (\peerid ptcl channel -> g peerid ptcl (fromChannel channel))
 
 
@@ -109,9 +119,10 @@ simpleInitiatorApplication
   => MonadCatch m
   => MonadAsync m
   => Exception failure
-  => (ptcl -> MuxPeer peerid failure m bytes a)
+  => ((ptcl -> MiniProtocolInitiatorControl m a) -> m ())
+  -> (ptcl -> MuxPeer peerid failure m bytes a)
   -> OuroborosApplication InitiatorApp peerid ptcl m bytes a Void
-simpleInitiatorApplication fn = OuroborosInitiatorApplication $ \peerid ptcl channel ->
+simpleInitiatorApplication ci fn = OuroborosInitiatorApplication ci $ \peerid ptcl channel ->
   runMuxPeer (fn ptcl) peerid channel
 
 
@@ -123,7 +134,8 @@ simpleResponderApplication
   => MonadCatch m
   => MonadAsync m
   => Exception failure
-  => (ptcl -> MuxPeer peerid failure m bytes a)
+  => ((ptcl -> MiniProtocolResponderControl m a) -> m ())
+  -> (ptcl -> MuxPeer peerid failure m bytes a)
   -> OuroborosApplication ResponderApp peerid ptcl m bytes Void a
-simpleResponderApplication fn = OuroborosResponderApplication $ \peerid ptcl channel ->
+simpleResponderApplication cr fn = OuroborosResponderApplication cr $ \peerid ptcl channel ->
   runMuxPeer (fn ptcl) peerid channel
