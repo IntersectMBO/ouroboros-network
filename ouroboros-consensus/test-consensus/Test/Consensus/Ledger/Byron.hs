@@ -152,7 +152,7 @@ prop_roundtrip_ApplyTxErr =
   Generators
 -------------------------------------------------------------------------------}
 
-type Block = ByronBlockOrEBB ByronConfig
+type Block = ByronBlockOrEBB
 
 epochSlots :: EpochSlots
 epochSlots = EpochSlots 2160

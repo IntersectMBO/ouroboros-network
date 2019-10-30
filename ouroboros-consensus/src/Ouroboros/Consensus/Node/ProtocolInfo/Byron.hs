@@ -34,7 +34,8 @@ import qualified Cardano.Chain.Update as Update
 import qualified Cardano.Crypto as Crypto
 
 import           Ouroboros.Consensus.Crypto.DSIGN.Cardano
-import           Ouroboros.Consensus.Ledger.Byron hiding (genesisConfig)
+import           Ouroboros.Consensus.Ledger.Byron
+import           Ouroboros.Consensus.Ledger.Byron.Config hiding (genesisConfig)
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Node.ProtocolInfo.Abstract
 import           Ouroboros.Consensus.NodeId (CoreNodeId)
@@ -42,8 +43,6 @@ import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.PBFT
 import qualified Ouroboros.Consensus.Protocol.PBFT.ChainState as CS
 import           Ouroboros.Consensus.Protocol.WithEBBs
-
-import           Ouroboros.Consensus.Ledger.Byron.Config
 
 {-------------------------------------------------------------------------------
   Credentials
@@ -111,7 +110,7 @@ protocolInfoByron :: Genesis.Config
                   -> Update.ProtocolVersion
                   -> Update.SoftwareVersion
                   -> Maybe PBftLeaderCredentials
-                  -> ProtocolInfo (ByronBlockOrEBB ByronConfig)
+                  -> ProtocolInfo ByronBlockOrEBB
 protocolInfoByron genesisConfig@Genesis.Config {
                     Genesis.configGenesisHash = genesisHash
                   , Genesis.configGenesisData =

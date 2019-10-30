@@ -43,7 +43,6 @@ import qualified Options.Applicative as Options
 import           Options.Generic
 import           Ouroboros.Consensus.Ledger.Byron (ByronBlockOrEBB)
 import qualified Ouroboros.Consensus.Ledger.Byron as Byron
-import           Ouroboros.Consensus.Ledger.Byron.Config (ByronConfig (..))
 import           Ouroboros.Consensus.Node.ProtocolInfo.Abstract (pInfoConfig,
                      pInfoInitLedger)
 import           Ouroboros.Consensus.Node.ProtocolInfo.Byron
@@ -160,7 +159,7 @@ convertEpochFile es inFile outDir =
           runResourceT $ runExceptT $ S.mapM_ (liftIO . BS.hPut h) . S.map encode $ inStream
 
 validateChainDb
-  :: forall blk. (blk ~ ByronBlockOrEBB ByronConfig)
+  :: forall blk. (blk ~ ByronBlockOrEBB)
   => Path Abs Dir -- ^ DB directory
   -> CC.Genesis.Config
   -> Bool -- Immutable DB only?

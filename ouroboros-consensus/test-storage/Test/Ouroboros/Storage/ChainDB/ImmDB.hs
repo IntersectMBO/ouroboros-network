@@ -23,7 +23,6 @@ import           Ouroboros.Network.Block (SlotNo (..), blockHash, blockPoint)
 
 import           Ouroboros.Consensus.Block (BlockProtocol)
 import           Ouroboros.Consensus.Ledger.Byron (ByronBlockOrEBB, ByronGiven)
-import           Ouroboros.Consensus.Ledger.Byron.Config (ByronConfig)
 import           Ouroboros.Consensus.Ledger.Byron.Forge (forgeGenesisEBB)
 import           Ouroboros.Consensus.Node.ProtocolInfo (NumCoreNodes (..),
                      PBftSignatureThreshold (..), ProtocolInfo (..),
@@ -66,7 +65,7 @@ test_getBlockWithPoint_EBB_at_tip =
 withImmDB :: forall m blk a.
              ( IOLike m
              , ByronGiven
-             , blk ~ ByronBlockOrEBB ByronConfig
+             , blk ~ ByronBlockOrEBB
              )
           => (ImmDB m blk -> m a) -> m a
 withImmDB k = do
@@ -89,7 +88,7 @@ withImmDB k = do
       , immTracer      = nullTracer
       }
 
-testCfg :: NodeConfig (BlockProtocol (ByronBlockOrEBB ByronConfig))
+testCfg :: NodeConfig (BlockProtocol ByronBlockOrEBB)
 testCfg = pInfoConfig $ protocolInfo (NumCoreNodes 1) (CoreNodeId 0) prot
   where
     prot = ProtocolRealPBFT

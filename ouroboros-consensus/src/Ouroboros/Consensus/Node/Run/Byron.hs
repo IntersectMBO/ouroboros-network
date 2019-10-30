@@ -27,7 +27,7 @@ import           Ouroboros.Storage.Common (EpochSize (..))
   RunNode instance
 -------------------------------------------------------------------------------}
 
-instance ByronGiven => RunNode (ByronBlockOrEBB ByronConfig) where
+instance ByronGiven => RunNode ByronBlockOrEBB where
   nodeForgeBlock         = forgeBlockOrEBB
   nodeBlockMatchesHeader = byronBlockOrEBBMatchesHeader
   nodeBlockFetchSize     = const 2000 -- TODO #593

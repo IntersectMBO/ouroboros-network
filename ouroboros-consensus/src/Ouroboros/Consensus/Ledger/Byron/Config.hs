@@ -6,6 +6,7 @@ module Ouroboros.Consensus.Ledger.Byron.Config (
     ByronConfig(..)
   , ByronExtNodeConfig
   , ByronEBBExtNodeConfig
+  , ConfigContainsGenesis(..)
   ) where
 
 import           GHC.Generics (Generic)
@@ -17,7 +18,6 @@ import qualified Cardano.Chain.Slotting as CC.Slot
 import qualified Cardano.Chain.Update as CC.Update
 import qualified Cardano.Crypto as Crypto
 
-import           Ouroboros.Consensus.Ledger.Byron
 import           Ouroboros.Consensus.Protocol.ExtNodeConfig
 import           Ouroboros.Consensus.Protocol.PBFT
 import           Ouroboros.Consensus.Protocol.WithEBBs
@@ -35,6 +35,10 @@ data ByronConfig = ByronConfig {
 
 type ByronExtNodeConfig    = PBft ByronConfig PBftCardanoCrypto
 type ByronEBBExtNodeConfig = WithEBBs ByronExtNodeConfig
+
+-- TODO: This really shouldn't live here
+class ConfigContainsGenesis cfg where
+  genesisConfig :: cfg -> CC.Genesis.Config
 
 instance ConfigContainsGenesis ByronConfig where
   genesisConfig = pbftGenesisConfig
