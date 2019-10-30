@@ -133,7 +133,7 @@ forgeBlock (WithEBBNodeConfig cfg) curSlot curNo prevHash txs isLeader = do
     ouroborosPayload <-
       give (VerKeyCardanoDSIGN headerGenesisKey) $
       give protocolMagicId $
-      forgePBftFields isLeader (reAnnotate $ Annotated toSign ())
+      forgePBftFields cfg isLeader (reAnnotate $ Annotated toSign ())
     return $ forge ouroborosPayload
   where
     -- TODO: Might be sufficient to add 'ConfigContainsGenesis' constraint.

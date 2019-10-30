@@ -4,6 +4,7 @@
 
 module Ouroboros.Consensus.Ledger.Byron.Config (
     ByronConfig(..)
+  , pbftProtocolMagicId
   ) where
 
 import           GHC.Generics (Generic)
@@ -25,3 +26,6 @@ data ByronConfig = ByronConfig {
     , pbftGenesisHash     :: !CC.Genesis.GenesisHash
     }
   deriving (Generic, NoUnexpectedThunks)
+
+pbftProtocolMagicId :: ByronConfig -> Crypto.ProtocolMagicId
+pbftProtocolMagicId = Crypto.getProtocolMagicId . pbftProtocolMagic

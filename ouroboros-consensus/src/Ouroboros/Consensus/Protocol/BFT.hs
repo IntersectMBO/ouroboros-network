@@ -75,7 +75,7 @@ forgeBftFields :: ( MonadRandom m
                -> toSign
                -> m (BftFields c toSign)
 forgeBftFields BftNodeConfig{..} toSign = do
-      signature <- signedDSIGN toSign bftSignKey
+      signature <- signedDSIGN () toSign bftSignKey
       return $ BftFields {
           bftSignature = signature
         }
@@ -138,6 +138,7 @@ instance BftCrypto c => OuroborosTag (Bft c) where
   applyChainState cfg@BftNodeConfig{..} _l b _cs = do
       -- TODO: Should deal with unknown node IDs
       case verifySignedDSIGN
+           ()
            (bftVerKeys Map.! expectedLeader)
            (headerSigned b)
            bftSignature of
@@ -170,6 +171,7 @@ class ( Typeable c
       , DSIGNAlgorithm (BftDSIGN c)
       , Condense (SigDSIGN (BftDSIGN c))
       , NoUnexpectedThunks (SigDSIGN (BftDSIGN c))
+      , ContextDSIGN (BftDSIGN c) ~ ()
       ) => BftCrypto c where
   type family BftDSIGN c :: *
 

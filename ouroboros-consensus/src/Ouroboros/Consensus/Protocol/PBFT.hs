@@ -1,6 +1,7 @@
 {-# LANGUAGE DeriveAnyClass          #-}
 {-# LANGUAGE DeriveGeneric           #-}
 {-# LANGUAGE FlexibleContexts        #-}
+{-# LANGUAGE FlexibleInstances       #-}
 {-# LANGUAGE LambdaCase              #-}
 {-# LANGUAGE MultiParamTypeClasses   #-}
 {-# LANGUAGE NamedFieldPuns          #-}
@@ -27,6 +28,7 @@ module Ouroboros.Consensus.Protocol.PBFT (
   , PBftMockCrypto
   , PBftCardanoCrypto
   , HeaderSupportsPBft(..)
+  , ConstructContextDSIGN(..)
     -- * Type instances
   , NodeConfig(..)
   ) where
@@ -38,7 +40,7 @@ import           Data.Bimap (Bimap)
 import qualified Data.Bimap as Bimap
 import           Data.Reflection (give)
 import qualified Data.Set as Set
-import           Data.Typeable (Proxy (..), Typeable)
+import           Data.Typeable (Typeable)
 import           Data.Word (Word64)
 import           GHC.Generics (Generic)
 
@@ -51,6 +53,7 @@ import           Ouroboros.Network.Block (HasHeader (..), SlotNo (..))
 import           Ouroboros.Network.Point (WithOrigin (At))
 
 import           Ouroboros.Consensus.Crypto.DSIGN.Cardano
+import           Ouroboros.Consensus.Ledger.Byron.Config
 import           Ouroboros.Consensus.NodeId (CoreNodeId (..))
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.PBFT.ChainState (PBftChainState)
@@ -81,24 +84,29 @@ instance (PBftCrypto c, Typeable toSign) => NoUnexpectedThunks (PBftFields c toS
 
 class ( HasHeader hdr
       , SignedHeader hdr
-      , PBftSigningConstraints c hdr
+      , Signable (PBftDSIGN c) (Signed hdr)
       ) => HeaderSupportsPBft c hdr where
   headerPBftFields :: proxy (PBft cfg c) -> hdr -> PBftFields c (Signed hdr)
 
 forgePBftFields :: ( MonadRandom m
                    , PBftCrypto c
                    , Signable (PBftDSIGN c) toSign
+                   , ConstructContextDSIGN cfg c
                    )
-                => IsLeader (PBft cfg c)
+                => NodeConfig (PBft cfg c)
+                -> IsLeader (PBft cfg c)
                 -> toSign
                 -> m (PBftFields c toSign)
-forgePBftFields PBftIsLeader{..} toSign = do
-    signature <- signedDSIGN toSign pbftSignKey
+forgePBftFields cfg PBftIsLeader{..} toSign = do
+    signature <- signedDSIGN (constructContextDSIGN cfg genKey) toSign pbftSignKey
     return $ PBftFields {
-        pbftIssuer    = dlgCertDlgVerKey pbftDlgCert
-      , pbftGenKey    = dlgCertGenVerKey pbftDlgCert
+        pbftIssuer    = issuer
+      , pbftGenKey    = genKey
       , pbftSignature = signature
       }
+  where
+    issuer = dlgCertDlgVerKey pbftDlgCert
+    genKey = dlgCertGenVerKey pbftDlgCert
 
 {-------------------------------------------------------------------------------
   Information PBFT requires from the ledger
@@ -181,7 +189,12 @@ data instance NodeConfig (PBft cfg c) = PBftNodeConfig {
     }
   deriving (Generic, NoUnexpectedThunks)
 
-instance (PBftCrypto c, Typeable c, NoUnexpectedThunks cfg, Typeable cfg)
+instance ( PBftCrypto c
+         , Typeable c
+         , NoUnexpectedThunks cfg
+         , Typeable cfg
+         , ConstructContextDSIGN cfg c
+         )
       => OuroborosTag (PBft cfg c) where
   type ValidationErr   (PBft cfg c) = PBftValidationErr c
   type SupportedHeader (PBft cfg c) = HeaderSupportsPBft c
@@ -214,9 +227,8 @@ instance (PBftCrypto c, Typeable c, NoUnexpectedThunks cfg, Typeable cfg)
   applyChainState cfg@PBftNodeConfig{..} lv@(PBftLedgerView dms) (b :: hdr) chainState = do
       -- Check that the issuer signature verifies, and that it's a delegate of a
       -- genesis key, and that genesis key hasn't voted too many times.
-      case verifyPBftSigned
-             (Proxy :: Proxy (c, hdr))
-             pbftGenKey
+      case verifySignedDSIGN
+             (constructContextDSIGN cfg pbftGenKey)
              pbftIssuer
              (headerSigned b)
              pbftSignature of
@@ -246,6 +258,21 @@ instance (PBftCrypto c, Typeable c, NoUnexpectedThunks cfg, Typeable cfg)
       wt = floor $ pbftSignatureThreshold * fromIntegral winSize
 
   rewindChainState _ cs mSlot = CS.rewind mSlot cs
+
+{-------------------------------------------------------------------------------
+  Extract necessary context
+-------------------------------------------------------------------------------}
+
+class ConstructContextDSIGN cfg c where
+  constructContextDSIGN :: NodeConfig (PBft cfg c)
+                        -> VerKeyDSIGN (PBftDSIGN c)
+                        -> ContextDSIGN (PBftDSIGN c)
+
+instance ConstructContextDSIGN ext PBftMockCrypto where
+  constructContextDSIGN _cfg _genKey = ()
+
+instance ConstructContextDSIGN ByronConfig PBftCardanoCrypto where
+  constructContextDSIGN cfg genKey = (pbftExtConfig cfg, genKey)
 
 {-------------------------------------------------------------------------------
   PBFT node order
