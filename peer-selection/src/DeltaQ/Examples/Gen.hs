@@ -2,122 +2,347 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module DeltaQ.Examples.Gen where
+module DeltaQ.Examples.Gen
+  ( Builder
+  , buildIO
+  , buildFromSeed
+  , build
+  , Directed (..)
+  , directed
+  , Undirected (..)
+  , undirected
+  , mirror
+  , component
+  , overlay
+  , freshVertex
+  , freshVertices
+  , outEdges
+  , edge
+  , pathOn
+  , cycleOn
+  , cycleWithShortcutsOn
+  , kregular
+  , degrees
+  , isRegular
+
+  , Random (..)
+  , random
+  , uniform
+  , normal
+  , exponential
+  , randomGS
+  , shuffle
+  , pickN
+  , pickNPairs
+  ) where
 
 import Algebra.Graph.Labelled.AdjacencyMap (AdjacencyMap (..))
 import qualified Algebra.Graph.Labelled.AdjacencyMap as GR
+import Control.Monad (ap, forM, forM_, unless)
+import Control.Monad.ST
+import Control.Monad.Trans.Class (lift)
+import Control.Monad.Trans.State.Strict
+import Control.Monad.Trans.Reader
 import Data.Foldable (foldlM)
+import qualified Data.List as List (head, last, splitAt)
 import Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
+import Data.Map.Strict (Map)
+import qualified Data.Map.Strict as Map
+import Data.Semigroup (Last (..))
 import Data.Set (Set)
 import qualified Data.Set as Set
+import Data.Time.Clock (picosecondsToDiffTime)
+import qualified Data.Vector as Vector (fromList, toList)
+import Data.Word (Word32)
 import Numeric.Natural (Natural)
+import qualified System.Random.MWC as MWC
+import qualified System.Random.MWC.Distributions as MWC
+import qualified Control.Monad.Primitive as MWC (PrimMonad, PrimState)
 
--- | A path on a non-empty list of vertices.
--- 
--- The continuation is given the final vertex in the list (and therefore
--- in the path), and the constructed path.
---
--- The edge is inside some @m@ to admit the possibility of generating it
--- pseudorandomly.
---
--- NB: if there are duplicate vertices in the list (under its Eq instance)
--- then this may contain cycles.
-path
-  :: ( Monad m, Ord vertex, Semigroup edge )
-  => m edge
-  -> NonEmpty vertex
-  -> (vertex -> AdjacencyMap edge vertex -> m t)
-  -> m t
-path mkE vs k = go vs GR.empty
+import DeltaQ.SimpleGS
+
+-- | A monad for pseudorandom values.
+newtype Random t = Random
+  { runRandom :: forall m . MWC.PrimMonad m => MWC.Gen (MWC.PrimState m) -> m t }
+
+instance Functor Random where
+  fmap f rand = Random $ \gen -> fmap f (runRandom rand gen)
+
+instance Applicative Random where
+  pure x = Random (const (pure x))
+  (<*>) = ap
+
+instance Monad Random where
+  return = pure
+  rand >>= k = Random $ \gen -> do
+    t <- runRandom rand gen
+    runRandom (k t) gen
+
+-- | Uniformly-distributed pseudorandom value within the given bounds.
+uniform :: MWC.Variate t => t -> t -> Random t
+uniform low high = Random $ MWC.uniformR (low, high)
+
+-- | Normally-distributed pseudorandom double with given mean and standard
+-- deviation (in that order).
+normal :: Double -> Double -> Random Double
+normal mean stdDev = Random $ MWC.normal mean stdDev
+
+-- | Exponentially-distributed pseudorandom double with given parameter.
+exponential :: Double -> Random Double
+exponential lambda = Random $ MWC.exponential lambda
+
+-- | Shuffle a list randomly. Useful for getting a random order of vertices, for
+-- example.
+shuffle :: [v] -> Random [v]
+shuffle vs = Random $ \gen ->
+  fmap Vector.toList (MWC.uniformShuffle (Vector.fromList vs) gen)
+
+-- | Pick n elements from a set without replacement.
+-- If the set has fewer than the number, then you get the whole set as a list.
+pickN :: Natural -> Set v -> Random [v]
+pickN n set = go n (Set.size set) [] (Set.toList set)
   where
-  go (v NE.:| [])      !gr = k v gr
-  go (v NE.:| (u:vs')) !gr = mkE >>= \e -> go (u NE.:| vs') (GR.overlay gr (GR.edge e v u))
+  go :: Natural -> Int -> [v] -> [v] -> Random [v]
+  go n m vs lst | n == 0    = pure vs
+                | m == 0    = pure vs
+                | otherwise = do
+                    idx <- Random $ MWC.uniformR (0, m-1)
+                    let (prefix, v:suffix) = List.splitAt idx lst
+                    go (n-1) (m-1) (v:vs) (prefix ++ suffix)
 
--- | A 'path' in which an edge from last vertex to the first vertex is included.
-cycle
-  :: ( Monad m, Ord vertex, Semigroup edge )
-  => m edge
-  -> NonEmpty vertex
-  -> m (AdjacencyMap edge vertex)
-cycle mkE vs = path mkE vs $ \lastVertex thePath -> mkE >>= \e ->
-  pure (GR.overlay thePath (GR.edge e lastVertex (NE.head vs)))
-
--- To add "shortcuts" to a cycle, you can generate random a 1-regular graph on
--- a random subset of the vertex set, then overlay it.
-
--- How to express randomly selecting a vertex?
---
---   forall v. Ord v => Set v -> m v
---
--- that type guarantees that the @v@ is in the set.
-
-type VertexSelector m = forall v . Ord v => Set v -> m v
-
--- | For every vertex in the set, generate a list of edges and put them in the
--- graph.
---
--- The type of the generator for edges ensures that every edge actually lies
--- within the vertex set.
-gen_for_each
-  :: ( Monad m, Ord vertex, Semigroup edge )
-  => (forall v . Ord v => v -> Set v -> m [(edge, v)])
-  -> Set vertex
-  -> m (AdjacencyMap edge vertex)
-gen_for_each genEdges vertices = foldlM includeEdges GR.empty (Set.toList vertices)
+-- | Pick n pairs randomly from a set. If the set does not have at least 2*n
+-- elements, then fewer than n pairs are returned.
+pickNPairs :: Natural -> Set v -> Random [(v, v)]
+pickNPairs n set = fmap collate (pickN (2 * n) set)
   where
-  includeEdges gr v = do
-    es <- genEdges v vertices
-    let gr' = GR.edges (fmap (\(e, terminus) -> (e, v, terminus)) es)
-    pure (GR.overlay gr gr')
+  collate :: [v] -> [(v,v)]
+  collate []       = []
+  collate [_]      = []
+  collate (v:w:vs) = (v,w):collate vs
 
--- | A regular graph of given degree. If the degree is greater than or equal
--- to one less the size of the vertex set, it's a complete graph.
---
--- It uses gen_for_each but takes a slightly different kind of edge generator:
--- given the current vertex and a vertex set, generate a vertex, an edge, and
--- another set. The new set must be derived from the given vertices. This
--- generator will be run degree times for each vertex.
---
--- This graph is not necessarily connected. To guarantee a connected graph, one
--- could start with an arbitrary cycle, and then overlay a regular graph.
-regular
-  :: forall m vertex edge .
-     ( Monad m, Ord vertex, Semigroup edge )
-  => (forall v . Ord v => v -> Set v -> m (edge, v, Set v))
-  -> Natural -- ^ Degree
-  -> Set vertex
-  -> m (AdjacencyMap edge vertex)
-regular genEdge degree vertices = gen_for_each genEdges vertices
+-- | Use random picoseconds for G and S to get a random G/S.
+randomGS :: Random Integer -> Random Integer -> Random SimpleGS
+randomGS rg rs = mk <$> rg <*> rs
   where
-  genEdges :: forall v . Ord v => v -> Set v -> m [(edge, v)]
-  genEdges = go degree []
-  go :: forall v . Ord v => Natural -> [(edge, v)] -> v -> Set v -> m [(edge, v)]
-  go 0 acc _ _  = pure acc
-  go n acc v vs = do
-    (edge, v', vs') <- genEdge v vs
-    go (n-1) ((edge, v'):acc) v vs'
+  mk g s = mkGS (picosecondsToDiffTime g) (picosecondsToDiffTime s)
 
--- | Simple generator for a regular graph. Select an edge at random from
--- the set, favouring *not* the current vertex.
-simple_edge_gen :: (Monad m, Ord v) => m Double -> v -> Set v -> m ((), v, Set v)
-simple_edge_gen genDouble v vs = case Set.toList (Set.delete v vs) of
-  []       -> pure ((), v, vs)
-  (v':vs') -> do
-    u <- random_list_element genDouble (v' NE.:| vs')
-    pure ((), u, Set.delete u vs)
+data Stream v = Stream !v (Stream v)
 
-random_list_element
-  :: ( Monad m )
-  => m Double -- ^ in (0.0, 1.0)
-  -> NonEmpty v
-  -> m v
-random_list_element genDouble lst = go (NE.length lst) lst
+type MakeEdge f e v = f e -> v -> v -> AdjacencyMap (Last e) v
+
+data BuilderState s e v = BuilderState
+  { builderUnusedVertices :: !(Stream v)
+  , builderGraph          :: !(AdjacencyMap (Last e) v)
+  , builderEntropy        :: !(MWC.Gen s)
+  }
+
+-- | Used to monadically construct graphs with pseudorandomness available.
+type Builder s f e v = ReaderT (MakeEdge f e v) (StateT (BuilderState s e v) (ST s))
+
+-- | Use pseudorandomness in a 'Builder'.
+random :: Random t -> Builder s f e v t
+random k = do
+  -- No need to explicitly update the state. It's done automatically in ST.
+  gen <- lift $ gets builderEntropy
+  runRandom k gen
+
+newtype NoEdges t = NoEdges (forall e . e)
+
+noMakeEdge :: forall e v . MakeEdge NoEdges e v
+noMakeEdge (NoEdges impossible) = impossible
+
+newtype Directed e = Directed { getDirectedEdge :: e }
+
+directedEdge :: Ord v => MakeEdge Directed e v
+directedEdge (Directed e) u v = GR.edge (Last e) u v
+
+newtype Undirected e = Undirected { getUndirectedEdge :: (e, e) }
+
+undirectedEdge :: Ord v => MakeEdge Undirected e v
+undirectedEdge (Undirected (forward, backward)) u v = GR.overlay
+  (GR.edge (Last forward)  u v)
+  (GR.edge (Last backward) v u)
+
+-- | Run a builder using system entropy. The seed is also returned so that you
+-- can reproduce it (using 'buildFromSeed').
+buildIO
+  :: (forall r f v . Ord v => Builder r f e v t)
+  -> IO ((t, AdjacencyMap (Last e) Word32), MWC.Seed)
+buildIO it = MWC.withSystemRandom $ \gen -> do
+  seed <- MWC.save gen
+  outcome <- build gen it
+  pure (outcome, seed)
+
+buildFromSeed
+  :: MWC.Seed
+  -> (forall r f v . Ord v => Builder r f e v t)
+  -> ST s (t, AdjacencyMap (Last e) Word32)
+buildFromSeed seed it = do
+  gen <- MWC.restore seed
+  build gen it
+
+build
+  :: MWC.Gen s
+  -> (forall r f v . Ord v => Builder r f e v t)
+  -> ST s (t, AdjacencyMap (Last e) Word32)
+build gen it = do
+  let st = BuilderState (vertexStream 0) GR.empty gen
+  (t, st') <- runStateT (runReaderT it noMakeEdge) st
+  pure (t, builderGraph st')
   where
-  go len lst' = do
-    d <- genDouble
-    case (d <= (1.0 / fromIntegral len), lst') of
-      (True,  x NE.:| _)      -> pure x
-      (False, _ NE.:| (x:xs)) -> go (len-1) (x NE.:| xs)
-      -- The double is not less or equal to 1.0... oh well
-      (False, x NE.:| [])     -> pure x
+  vertexStream :: Word32 -> Stream Word32
+  vertexStream w = Stream w (vertexStream (w+1))
+
+directed :: Ord v => Builder s Directed e v t -> Builder s f e v t
+directed bdr = lift $ runReaderT bdr directedEdge
+
+-- | Make a directed graph undirected by copying each edge in reverse.
+mirror :: Builder s Directed e v t -> Builder s Undirected e v t
+mirror bdr = do
+  mkDirected <- ask
+  lift $ runReaderT bdr (\(Directed e) -> mkDirected (Undirected (e,e)))
+
+undirected :: Ord v => Builder s Undirected e v t -> Builder s f e v t
+undirected bdr = lift $ runReaderT bdr undirectedEdge
+
+overlay
+  :: ( Ord v )
+  => AdjacencyMap (Last e) v
+  -> Builder s f e v ()
+overlay gr = lift $ modify $ \st ->
+  st { builderGraph = GR.overlay (builderGraph st) gr }
+
+-- | Make a new graph component: run the builder on an empty graph but with
+-- the current unused vertex set, then overlay the component with the current
+-- graph. The two parts will have no edges between them, since the vertex sets
+-- are disjoint. The only vertices which can be used in the parameter Builder
+-- _must_ have been generated within it, because of the universally quantified
+-- vertex type. So this won't type check:
+--
+-- > should_not_compile :: Ord v => Builder s () v ()
+-- > should_not_compile = do
+-- >   v <- freshVertex
+-- >   component $ do
+-- >     w <- freshVertex
+-- >     overlay (edge () v w)
+--
+component :: Ord v => (forall w . Ord w => Builder s f e w t) -> Builder s f e v t
+component bdr = do
+  rdr <- ask
+  st <- lift get
+  (t, st') <- lift . lift $ runStateT (runReaderT bdr rdr) (st { builderGraph = GR.empty })
+  let vs = builderUnusedVertices st'
+      gr = GR.overlay (builderGraph st) (builderGraph st')
+      st'' = st' { builderGraph = gr, builderUnusedVertices = vs }
+  lift $ put st''
+  pure t
+
+freshVertex :: Builder s f e v v
+freshVertex = do
+  st <- lift get
+  let Stream v vs = builderUnusedVertices st
+  lift $ put (st { builderUnusedVertices = vs })
+  pure v
+
+freshVertices :: Natural -> Builder s f e v [v]
+freshVertices n = forM [0..(n-1)] (const freshVertex)
+
+-- | Create an edge and include it in the graph.
+edge :: Ord v => f e -> v -> v -> Builder s f e v ()
+edge e u v = do
+  mk <- ask
+  overlay (mk e u v)
+
+outEdges :: Ord v => v -> Builder s f e v (Map v e)
+outEdges v = do
+  gr <- lift $ gets builderGraph
+  pure (fmap getLast (GR.postSetEdges v gr))
+
+-- | Make a path on a given list of vertices, with edges randomly generated
+-- by the given function.
+pathOn :: Ord v => [v] -> Random e -> Builder s Directed e v ()
+pathOn vs randomEdge = forM_ (adjacentPairs vs) $ \(v, w) -> do
+  e <- random randomEdge
+  edge (Directed e) v w
+
+-- | Pair up adjacenct elements in a list.
+adjacentPairs :: [w] -> [(w,w)]
+adjacentPairs []     = []
+adjacentPairs (w:ws) = adjacentPairs' w ws
+  where
+  adjacentPairs' :: w -> [w] -> [(w,w)]
+  adjacentPairs' u (w:us) = (u, w) : adjacentPairs' w us
+  adjacentPairs' _ []     = []
+
+-- | Make a cyle on a given list of vertices, with edges randomly generated
+-- by the given function.
+cycleOn :: Ord v => [v] -> Random e -> Builder s Directed e v ()
+cycleOn vs randomEdge = case vs of
+  []    -> pure ()
+  (_:_) -> do
+    pathOn vs randomEdge
+    let start = List.head vs
+        end   = List.last vs
+    e <- random randomEdge
+    edge (Directed e) end start
+
+-- | 'cycleOn' and then "shortcut" edges added between randomly-selected
+-- pairs which are not already adjacent in the cycle.
+cycleWithShortcutsOn
+  :: Ord v
+  => [v]
+  -> Random e
+  -> Random Natural -- ^ Number of shortcuts to put in.
+  -> Builder s Directed e v ()
+cycleWithShortcutsOn vs randomEdge randomN = do
+  cycleOn vs randomEdge
+  pairs <- random $ do
+    n <- randomN
+    pickNPairs n (Set.fromList vs)
+  forM_ pairs $ \(v, w) -> do
+    e <- random randomEdge
+    edge (Directed e) v w
+
+-- | Make a directed k regular (our-degree) connected graph.
+-- It's not necessarily connected.
+--
+-- NB: making this undirected, by way of 'mirror' for instance, will not
+-- necessarily give a regular graph in the undirected sense.
+kregular
+  :: Ord v
+  => [v]
+  -> Random Natural -- ^ Degree
+  -> Random e
+  -> Builder s Directed e v ()
+kregular vs randomK randomEdge = forM_ vs $ \v -> do
+  es <- outEdges v
+  k <- random randomK
+  let k' = fromIntegral (Map.size es)
+  -- If this node already has at least k neighbours (should never exceed k by
+  -- design of this program) then do nothing.
+  unless (k' >= k) $ do
+    let n = k - k'
+    -- Consider only vertices that have degree less than k.
+    -- Remove adjacent vertices from the list of new vertices to consider
+    -- connecting to.
+    ws <- random $ pickN n (Set.delete v (vset Set.\\ Map.keysSet es))
+    forM_ ws $ \w -> do
+      e <- random $ randomEdge
+      edge (Directed e) v w
+  where
+  vset = Set.fromList vs
+
+-- | Out-degrees of all vertices.
+degrees :: Ord v => AdjacencyMap e v -> Map v Natural
+degrees gr = fmap (fromIntegral . Map.size) (adjacencyMap gr)
+
+-- | Check that the graph is (out-degree) regular.
+isRegular :: Ord v => AdjacencyMap e v -> Maybe Natural
+isRegular gr = case Map.toList (adjacencyMap gr) of
+  [] -> Just 0
+  ((_,es):vs) -> fmap fromIntegral (foldl go (Just (Map.size es)) (fmap snd vs))
+    where
+    go Nothing  _   = Nothing
+    go (Just n) es' = if Map.size es' == n then Just n else Nothing
+
