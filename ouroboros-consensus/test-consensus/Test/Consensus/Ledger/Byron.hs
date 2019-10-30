@@ -27,7 +27,6 @@ import           Ouroboros.Consensus.Ledger.Byron
 import           Ouroboros.Consensus.Ledger.Byron.Config
 import           Ouroboros.Consensus.Mempool.API (ApplyTxErr)
 import           Ouroboros.Consensus.Protocol.Abstract (ChainState)
-import           Ouroboros.Consensus.Protocol.ExtNodeConfig
 import           Ouroboros.Consensus.Protocol.PBFT
 import           Ouroboros.Consensus.Protocol.PBFT.ChainState
 import           Ouroboros.Consensus.Protocol.WithEBBs
@@ -208,8 +207,7 @@ instance Arbitrary (PBftChainState PBftCardanoCrypto) where
   arbitrary = give protocolMagicId $
     fromMap <$> oneof [return Origin, At <$> arbitrary] <*> arbitrary
 
-instance Arbitrary (ChainStateWithEBBs
-                     (ExtNodeConfig ByronConfig (PBft PBftCardanoCrypto))) where
+instance Arbitrary (ChainStateWithEBBs (PBft ByronConfig PBftCardanoCrypto)) where
   arbitrary = mkChainStateWithEBBs <$> arbitrary <*> arbitrary
 
 instance Arbitrary (GenTx Block) where

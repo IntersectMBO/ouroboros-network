@@ -33,14 +33,14 @@ data ByronConfig = ByronConfig {
     }
   deriving (Generic, NoUnexpectedThunks)
 
-type ByronExtNodeConfig = ExtNodeConfig ByronConfig (PBft PBftCardanoCrypto)
+type ByronExtNodeConfig    = PBft ByronConfig PBftCardanoCrypto
 type ByronEBBExtNodeConfig = WithEBBs ByronExtNodeConfig
 
 instance ConfigContainsGenesis ByronConfig where
   genesisConfig = pbftGenesisConfig
 
 instance ConfigContainsGenesis (NodeConfig ByronExtNodeConfig) where
-  genesisConfig = genesisConfig . encNodeConfigExt
+  genesisConfig = genesisConfig . pbftExtConfig
 
 instance ConfigContainsGenesis (NodeConfig ByronEBBExtNodeConfig) where
   genesisConfig = genesisConfig . unWithEBBNodeConfig

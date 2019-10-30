@@ -128,7 +128,6 @@ import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Byron.Orphans ()
 import           Ouroboros.Consensus.Mempool.API
 import           Ouroboros.Consensus.Protocol.Abstract
-import           Ouroboros.Consensus.Protocol.ExtNodeConfig
 import           Ouroboros.Consensus.Protocol.PBFT
 import           Ouroboros.Consensus.Protocol.Signed
 import           Ouroboros.Consensus.Protocol.WithEBBs
@@ -263,8 +262,8 @@ instance (ByronGiven, Typeable cfg, ConfigContainsGenesis cfg, NoUnexpectedThunk
       unByronLedgerConfig :: CC.Genesis.Config
     }
 
-  ledgerConfigView EncNodeConfig{..} = ByronLedgerConfig $
-    genesisConfig encNodeConfigExt
+  ledgerConfigView PBftNodeConfig{..} = ByronLedgerConfig $
+    genesisConfig pbftExtConfig
 
   applyChainTick (ByronLedgerConfig cfg) slotNo
                  (ByronLedgerState state snapshots) = do
@@ -403,8 +402,7 @@ allowedDelegators
   Support for PBFT consensus algorithm
 -------------------------------------------------------------------------------}
 
-type instance BlockProtocol (ByronBlock cfg) =
-  ExtNodeConfig cfg (PBft PBftCardanoCrypto)
+type instance BlockProtocol (ByronBlock cfg) = PBft cfg PBftCardanoCrypto
 
 instance ByronGiven => SignedHeader (Header (ByronBlock cfg)) where
   type Signed (Header (ByronBlock cfg)) = Annotated CC.Block.ToSign ByteString
@@ -596,15 +594,14 @@ instance (ByronGiven, Typeable cfg) => Measured BlockMeasure (ByronBlockOrEBB cf
 instance StandardHash (ByronBlockOrEBB cfg)
 
 instance (ByronGiven, Typeable cfg)
-  => HeaderSupportsWithEBB (ExtNodeConfig cfg (PBft PBftCardanoCrypto)) (Header (ByronBlockOrEBB cfg)) where
+  => HeaderSupportsWithEBB (PBft cfg PBftCardanoCrypto) (Header (ByronBlockOrEBB cfg)) where
   type HeaderOfBlock (Header (ByronBlockOrEBB cfg)) = Header (ByronBlock cfg)
   type HeaderOfEBB (Header (ByronBlockOrEBB cfg)) = CC.Block.ABoundaryHeader ByteString
 
   eitherHeaderOrEbb _ (ByronHeaderRegular  mb _)  = Right (mkByronHeader mb)
   eitherHeaderOrEbb _ (ByronHeaderBoundary ebb _) = Left ebb
 
-type instance BlockProtocol (ByronBlockOrEBB cfg) =
-  WithEBBs (ExtNodeConfig cfg (PBft PBftCardanoCrypto))
+type instance BlockProtocol (ByronBlockOrEBB cfg) = WithEBBs (PBft cfg PBftCardanoCrypto)
 
 instance ( ByronGiven
          , Typeable cfg
@@ -1264,7 +1261,7 @@ instance (ByronGiven, Typeable cfg, ConfigContainsGenesis cfg, NoUnexpectedThunk
                     (\sd -> At (convertSlot (V.Scheduling.sdSlot sd)) <= slot)
                     dsScheduled
 
-      SecurityParam paramK = pbftSecurityParam . pbftParams . encNodeConfigP $ cfg
+      SecurityParam paramK = pbftSecurityParam . pbftParams $ cfg
 
       lvUB = SlotNo $ unSlotNo currentSlot + (2 * paramK)
       lvLB

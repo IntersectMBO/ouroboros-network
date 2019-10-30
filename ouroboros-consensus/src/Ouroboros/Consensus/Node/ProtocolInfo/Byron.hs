@@ -39,7 +39,6 @@ import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Node.ProtocolInfo.Abstract
 import           Ouroboros.Consensus.NodeId (CoreNodeId)
 import           Ouroboros.Consensus.Protocol.Abstract
-import           Ouroboros.Consensus.Protocol.ExtNodeConfig
 import           Ouroboros.Consensus.Protocol.PBFT
 import qualified Ouroboros.Consensus.Protocol.PBFT.ChainState as CS
 import           Ouroboros.Consensus.Protocol.WithEBBs
@@ -123,27 +122,25 @@ protocolInfoByron genesisConfig@Genesis.Config {
                   }
                   mSigThresh pVer sVer mLeader =
     ProtocolInfo {
-        pInfoConfig = WithEBBNodeConfig $ EncNodeConfig {
-            encNodeConfigP   = PBftNodeConfig {
-                pbftParams          =  PBftParams
-                  { pbftSecurityParam      = SecurityParam (fromIntegral kParam)
-                  , pbftNumNodes           = fromIntegral . Set.size
-                                           . Genesis.unGenesisKeyHashes
-                                           $ genesisKeyHashes
-                  , pbftSignatureThreshold = unSignatureThreshold $
-                      fromMaybe defaultPBftSignatureThreshold mSigThresh
+        pInfoConfig = WithEBBNodeConfig $ PBftNodeConfig {
+            pbftParams          =  PBftParams
+              { pbftSecurityParam      = SecurityParam (fromIntegral kParam)
+              , pbftNumNodes           = fromIntegral . Set.size
+                                       . Genesis.unGenesisKeyHashes
+                                       $ genesisKeyHashes
+              , pbftSignatureThreshold = unSignatureThreshold $
+                  fromMaybe defaultPBftSignatureThreshold mSigThresh
+              }
+          , pbftIsLeader =
+              case mLeader of
+                Nothing                                  -> PBftIsNotALeader
+                Just (PBftLeaderCredentials sk cert nid) ->
+                  PBftIsALeader PBftIsLeader {
+                    pbftCoreNodeId = nid
+                  , pbftSignKey    = SignKeyCardanoDSIGN sk
+                  , pbftDlgCert    = cert
                   }
-              , pbftIsLeader =
-                  case mLeader of
-                    Nothing                                  -> PBftIsNotALeader
-                    Just (PBftLeaderCredentials sk cert nid) ->
-                      PBftIsALeader PBftIsLeader {
-                        pbftCoreNodeId = nid
-                      , pbftSignKey    = SignKeyCardanoDSIGN sk
-                      , pbftDlgCert    = cert
-                      }
-            }
-          , encNodeConfigExt = ByronConfig {
+          , pbftExtConfig = ByronConfig {
                 pbftProtocolMagic   = Genesis.configProtocolMagic genesisConfig
               , pbftProtocolVersion = pVer
               , pbftSoftwareVersion = sVer
