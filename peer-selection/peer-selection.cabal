@@ -37,11 +37,14 @@ library
                        deepseq,
                        fingertree,
                        graphviz,
+                       mwc-random,
+                       primitive,
                        random,
                        statistics,
                        text,
                        time,
+                       transformers,
                        vector
   hs-source-dirs:      src
   default-language:    Haskell2010
-  ghc-options:         -Wall
+  ghc-options:         -Wall -fno-warn-name-shadowing -fno-warn-unused-imports

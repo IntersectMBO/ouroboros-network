@@ -13,8 +13,10 @@ module NotebookPrelude
   -- * Defining/generating topologies
   , module Gen
   , ethernet_bearer
+  {-
   , path_of_length
   , cycle_of_length
+  -}
 
   -- * Showing topologies.
   , showTopology
@@ -34,10 +36,14 @@ module NotebookPrelude
 
   -- * AWS data
   , module AWS
+
+  , module Control.Monad
   ) where
 
+import Control.Monad
+
 -- Hide 'edge' because we use the 'edge' defined in DeltaQ.Topography.
-import Algebra.Graph.Labelled.AdjacencyMap as Topo hiding (edge)
+import Algebra.Graph.Labelled.AdjacencyMap hiding (edge)
 import Algebra.Graph.Labelled.AdjacencyMap.Viz as Topo
 import Algebra.Graph.Labelled.AdjacencyMap.ShortestPath as Topo
 -- For edge semigroups.
@@ -46,13 +52,14 @@ import Data.Semigroup as Topo (Last(..))
 import DeltaQ.LinkRestriction as DeltaQ
 import DeltaQ.SimpleGS as DeltaQ
 import DeltaQ.TCP as DeltaQ
-import DeltaQ.Topography as DeltaQ
+import DeltaQ.Topography as DeltaQ hiding (edge)
 
 import Data.Time.Clock as Gen (DiffTime)
 import Data.List.NonEmpty as Gen (NonEmpty(..))
 -- Useful as vertex types.
 import Data.Word as Gen
 import DeltaQ.Examples.Gen as Gen
+import qualified System.Random.MWC.Distributions as Distributions
 
 import qualified Data.Text.Lazy as Text (pack, unpack)
 import Data.GraphViz
@@ -70,16 +77,32 @@ import Graphics.Rendering.Chart.Plot.Candle (Candle (..))
 
 import DeltaQ.Examples.AWS as AWS
 
+import Numeric.Natural (Natural)
+
 -- | Use 'ethernetR 1e9 1500' and given g/s.
 -- Useful for expressing edges in a topology.
 ethernet_bearer :: DiffTime -> DiffTime -> BearerCharacteristics
 ethernet_bearer g s = Bearer (mkGS g s) (ethernetR 1e9 1500)
 
-cycle_of_length :: DiffTime -> DiffTime -> Word -> AdjacencyMap (Last BearerCharacteristics) Word
-cycle_of_length g v n = runIdentity (Gen.cycle (pure (edge (ethernet_bearer g v))) (0 :| [1..(n-1)]))
+cycle_of_length
+  :: Ord v
+  => DiffTime
+  -> DiffTime
+  -> Natural
+  -> Builder e Directed BearerCharacteristics v ()
+cycle_of_length g v n = do
+  vs <- freshVertices n
+  Gen.cycleOn vs (pure (ethernet_bearer g v))
 
-path_of_length :: DiffTime -> DiffTime -> Word -> AdjacencyMap (Last BearerCharacteristics) Word
-path_of_length g v n = runIdentity (Gen.path (pure (edge (ethernet_bearer g v))) (0 :| [1..(n-1)]) (const pure))
+path_of_length
+  :: Ord v
+  => DiffTime
+  -> DiffTime
+  -> Natural
+  -> Builder e Directed BearerCharacteristics v ()
+path_of_length g v n = do
+  vs <- freshVertices n
+  Gen.pathOn vs (pure (ethernet_bearer g v))
 
 -- TODO Working with randomness...
 --
