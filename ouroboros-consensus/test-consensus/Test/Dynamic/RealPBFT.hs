@@ -116,7 +116,7 @@ prop_simple_real_pbft_convergence
                                     genesisConfig genesisSecrets))
             testConfig seed
 
-    finalChains :: [Chain (ByronBlockOrEBB ByronConfig)]
+    finalChains :: [Chain ByronBlockOrEBB]
     finalChains = Map.elems $ nodeOutputFinalChain <$> testOutputNodes testOutput
 
     giveByron :: forall a. (ByronGiven => a) -> a
@@ -133,7 +133,7 @@ mkProtocolRealPBFT :: NumCoreNodes
                    -> CoreNodeId
                    -> Genesis.Config
                    -> Genesis.GeneratedSecrets
-                   -> Protocol (ByronBlockOrEBB ByronConfig)
+                   -> Protocol ByronBlockOrEBB
 mkProtocolRealPBFT (NumCoreNodes n) (CoreNodeId i)
                    genesisConfig genesisSecrets =
     ProtocolRealPBFT

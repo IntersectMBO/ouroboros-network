@@ -20,8 +20,8 @@ import           Data.Reflection (give)
 
 import qualified Cardano.Chain.Block as Block
 import qualified Cardano.Chain.Genesis as Genesis
-import qualified Cardano.Crypto as Crypto
 import qualified Cardano.Chain.Update as Update
+import qualified Cardano.Crypto as Crypto
 
 import           Ouroboros.Consensus.Ledger.Byron
 import           Ouroboros.Consensus.Ledger.Byron.Config
@@ -46,8 +46,8 @@ import           Ouroboros.Consensus.Util
 type ProtocolMockBFT        = Bft BftMockCrypto
 type ProtocolMockPraos      = ExtNodeConfig AddrDist (Praos PraosMockCrypto)
 type ProtocolLeaderSchedule = WithLeaderSchedule (Praos PraosCryptoUnused)
-type ProtocolMockPBFT       = ExtNodeConfig (PBftLedgerView PBftMockCrypto) (PBft PBftMockCrypto)
-type ProtocolRealPBFT       = ExtNodeConfig ByronConfig (PBft PBftCardanoCrypto)
+type ProtocolMockPBFT       = PBft (PBftLedgerView PBftMockCrypto) PBftMockCrypto
+type ProtocolRealPBFT       = PBft ByronConfig PBftCardanoCrypto
 
 {-------------------------------------------------------------------------------
   Abstract over the various protocols
@@ -83,7 +83,7 @@ data Protocol blk where
     -> Update.ProtocolVersion
     -> Update.SoftwareVersion
     -> Maybe PBftLeaderCredentials
-    -> Protocol (ByronBlockOrEBB ByronConfig)
+    -> Protocol ByronBlockOrEBB
 
 {-------------------------------------------------------------------------------
   Evidence that we can run all the supported protocols

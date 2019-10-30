@@ -32,33 +32,33 @@ import           Ouroboros.Network.Block
 
 import           Ouroboros.Consensus.Crypto.DSIGN.Cardano
 import           Ouroboros.Consensus.Ledger.Byron
+import           Ouroboros.Consensus.Ledger.Byron.ContainsGenesis
 import           Ouroboros.Consensus.Protocol.Abstract
-import           Ouroboros.Consensus.Protocol.ExtNodeConfig
 import           Ouroboros.Consensus.Protocol.PBFT
 import           Ouroboros.Consensus.Protocol.WithEBBs
 
 import           Ouroboros.Consensus.Ledger.Byron.Config
 
 forgeBlockOrEBB
-  :: forall m cfg.
+  :: forall m.
      ( HasNodeState_ () m  -- @()@ is the @NodeState@ of PBFT
      , MonadRandom m
      )
-  => NodeConfig ByronEBBExtNodeConfig
-  -> SlotNo                       -- ^ Current slot
-  -> BlockNo                      -- ^ Current block number
-  -> ChainHash (ByronBlockOrEBB cfg)   -- ^ Previous hash
-  -> [GenTx (ByronBlockOrEBB cfg)]     -- ^ Txs to add in the block
-  -> PBftIsLeader PBftCardanoCrypto    -- ^ Leader proof ('IsLeader')
-  -> m (ByronBlockOrEBB ByronConfig)
+  => NodeConfig ByronEBBNodeConfig
+  -> SlotNo                          -- ^ Current slot
+  -> BlockNo                         -- ^ Current block number
+  -> ChainHash ByronBlockOrEBB       -- ^ Previous hash
+  -> [GenTx ByronBlockOrEBB]         -- ^ Txs to add in the block
+  -> PBftIsLeader PBftCardanoCrypto  -- ^ Leader proof ('IsLeader')
+  -> m ByronBlockOrEBB
 forgeBlockOrEBB cfg curSlot curNo prevHash txs isLeader = case prevHash of
   GenesisHash -> return $ forgeGenesisEBB cfg curSlot
   BlockHash _ -> forgeBlock cfg curSlot curNo prevHash txs isLeader
 
 forgeGenesisEBB
-  :: NodeConfig ByronEBBExtNodeConfig
+  :: NodeConfig ByronEBBNodeConfig
   -> SlotNo
-  -> ByronBlockOrEBB ByronConfig
+  -> ByronBlockOrEBB
 forgeGenesisEBB (WithEBBNodeConfig cfg) curSlot =
         ByronBlockOrEBB
       . CC.Block.ABOBBoundary
@@ -86,7 +86,7 @@ forgeGenesisEBB (WithEBBNodeConfig cfg) curSlot =
       where
         ByronConfig { pbftGenesisHash
                     , pbftEpochSlots
-                    } = encNodeConfigExt cfg
+                    } = pbftExtConfig cfg
         CC.Slot.EpochNumber epoch =
             CC.Slot.epochNo
           . CC.Slot.fromSlotNumber pbftEpochSlots
@@ -98,10 +98,10 @@ forgeGenesisEBB (WithEBBNodeConfig cfg) curSlot =
 --
 -- n.b. This data type is not to be exposed from this module.
 data BlockPayloads = BlockPayloads
-  { bpTxs         :: ![CC.UTxO.TxAux]
-  , bpDlgCerts    :: ![CC.Delegation.Certificate]
-  , bpUpVotes     :: ![CC.Update.Vote]
-  , bpUpProposal  :: !(Maybe CC.Update.Proposal)
+  { bpTxs        :: ![CC.UTxO.TxAux]
+  , bpDlgCerts   :: ![CC.Delegation.Certificate]
+  , bpUpVotes    :: ![CC.Update.Vote]
+  , bpUpProposal :: !(Maybe CC.Update.Proposal)
     -- ^ 'Just' if there is at least one 'CC.Update.Proposal' in a list of
     -- Byron 'GenTx's and 'Nothing' if there are none. It is worth noting that
     -- if we encounter multiple 'CC.Update.Proposal's in a collection of
@@ -118,17 +118,17 @@ initBlockPayloads = BlockPayloads
   }
 
 forgeBlock
-  :: forall m cfg.
+  :: forall m.
      ( HasNodeState_ () m  -- @()@ is the @NodeState@ of PBFT
      , MonadRandom m
      )
-  => NodeConfig ByronEBBExtNodeConfig
+  => NodeConfig ByronEBBNodeConfig
   -> SlotNo                            -- ^ Current slot
   -> BlockNo                           -- ^ Current block number
-  -> ChainHash (ByronBlockOrEBB cfg)   -- ^ Previous hash
-  -> [GenTx (ByronBlockOrEBB cfg)]     -- ^ Txs to add in the block
+  -> ChainHash ByronBlockOrEBB         -- ^ Previous hash
+  -> [GenTx ByronBlockOrEBB]           -- ^ Txs to add in the block
   -> PBftIsLeader PBftCardanoCrypto    -- ^ Leader proof ('IsLeader')
-  -> m (ByronBlockOrEBB ByronConfig)
+  -> m ByronBlockOrEBB
 forgeBlock (WithEBBNodeConfig cfg) curSlot curNo prevHash txs isLeader = do
     ouroborosPayload <-
       give (VerKeyCardanoDSIGN headerGenesisKey) $
@@ -143,7 +143,7 @@ forgeBlock (WithEBBNodeConfig cfg) curSlot curNo prevHash txs isLeader = do
       , pbftProtocolVersion
       , pbftSoftwareVersion
       , pbftProtocolMagic
-      } = encNodeConfigExt cfg
+      } = pbftExtConfig cfg
 
     protocolMagicId = CC.Genesis.configProtocolMagicId (genesisConfig cfg)
 
@@ -161,7 +161,7 @@ forgeBlock (WithEBBNodeConfig cfg) curSlot curNo prevHash txs isLeader = do
                                       (bpUpVotes blockPayloads)
 
     extendBlockPayloads :: BlockPayloads
-                        -> GenTx (ByronBlockOrEBB cfg)
+                        -> GenTx ByronBlockOrEBB
                         -> BlockPayloads
     extendBlockPayloads bp@BlockPayloads{bpTxs, bpDlgCerts, bpUpVotes} genTx =
       -- TODO: We should try to use 'recoverProof' (and other variants of
@@ -214,7 +214,7 @@ forgeBlock (WithEBBNodeConfig cfg) curSlot curNo prevHash txs isLeader = do
     dlgCertificate = pbftDlgCert isLeader
 
     forge :: PBftFields PBftCardanoCrypto (Annotated CC.Block.ToSign ByteString)
-          -> ByronBlockOrEBB ByronConfig
+          -> ByronBlockOrEBB
     forge ouroborosPayload =
        annotateByronBlock pbftEpochSlots block
       where

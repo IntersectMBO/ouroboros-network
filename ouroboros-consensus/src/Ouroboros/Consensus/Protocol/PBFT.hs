@@ -83,13 +83,13 @@ class ( HasHeader hdr
       , SignedHeader hdr
       , PBftSigningConstraints c hdr
       ) => HeaderSupportsPBft c hdr where
-  headerPBftFields :: proxy (PBft c) -> hdr -> PBftFields c (Signed hdr)
+  headerPBftFields :: proxy (PBft cfg c) -> hdr -> PBftFields c (Signed hdr)
 
 forgePBftFields :: ( MonadRandom m
                    , PBftCrypto c
                    , Signable (PBftDSIGN c) toSign
                    )
-                => IsLeader (PBft c)
+                => IsLeader (PBft cfg c)
                 -> toSign
                 -> m (PBftFields c toSign)
 forgePBftFields PBftIsLeader{..} toSign = do
@@ -128,7 +128,7 @@ instance (Serialise (PBftVerKeyHash c), Ord (PBftVerKeyHash c))
 -- | Permissive BFT
 --
 -- As defined in https://hydra.iohk.io/job/Cardano/cardano-ledger-specs/byronChainSpec/latest/download-by-type/doc-pdf/blockchain-spec
-data PBft c
+data PBft cfg c
 
 -- | Protocol parameters
 data PBftParams = PBftParams {
@@ -171,24 +171,29 @@ data PBftIsLeaderOrNot c
   deriving (Generic, NoUnexpectedThunks)
 
 -- | (Static) node configuration
-data instance NodeConfig (PBft c) = PBftNodeConfig {
-      pbftParams   :: !PBftParams
-    , pbftIsLeader :: !(PBftIsLeaderOrNot c)
+--
+-- We explicitly allow for additional context here, so that we can provide
+-- this context to the crypto functions.
+data instance NodeConfig (PBft cfg c) = PBftNodeConfig {
+      pbftParams    :: !PBftParams
+    , pbftIsLeader  :: !(PBftIsLeaderOrNot c)
+    , pbftExtConfig :: !cfg
     }
   deriving (Generic, NoUnexpectedThunks)
 
-instance (PBftCrypto c, Typeable c) => OuroborosTag (PBft c) where
-  type ValidationErr   (PBft c) = PBftValidationErr c
-  type SupportedHeader (PBft c) = HeaderSupportsPBft c
-  type NodeState       (PBft c) = ()
+instance (PBftCrypto c, Typeable c, NoUnexpectedThunks cfg, Typeable cfg)
+      => OuroborosTag (PBft cfg c) where
+  type ValidationErr   (PBft cfg c) = PBftValidationErr c
+  type SupportedHeader (PBft cfg c) = HeaderSupportsPBft c
+  type NodeState       (PBft cfg c) = ()
 
   -- | We require two things from the ledger state:
   --
   --   - Protocol parameters, for the signature window and threshold.
   --   - The delegation map.
-  type LedgerView     (PBft c) = PBftLedgerView c
-  type IsLeader       (PBft c) = PBftIsLeader   c
-  type ChainState     (PBft c) = PBftChainState c
+  type LedgerView     (PBft cfg c) = PBftLedgerView c
+  type IsLeader       (PBft cfg c) = PBftIsLeader   c
+  type ChainState     (PBft cfg c) = PBftChainState c
 
   protocolSecurityParam = pbftSecurityParam . pbftParams
 

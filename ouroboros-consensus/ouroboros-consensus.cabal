@@ -35,6 +35,7 @@ library
                        Ouroboros.Consensus.Ledger.Abstract
                        Ouroboros.Consensus.Ledger.Byron
                        Ouroboros.Consensus.Ledger.Byron.Config
+                       Ouroboros.Consensus.Ledger.Byron.ContainsGenesis
                        Ouroboros.Consensus.Ledger.Byron.Forge
                        Ouroboros.Consensus.Ledger.Byron.Orphans
                        Ouroboros.Consensus.Ledger.Extended

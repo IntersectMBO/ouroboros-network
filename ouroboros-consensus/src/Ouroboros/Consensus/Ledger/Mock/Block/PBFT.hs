@@ -26,7 +26,6 @@ import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Mock.Block
 import           Ouroboros.Consensus.Ledger.Mock.Forge
-import           Ouroboros.Consensus.Protocol.ExtNodeConfig
 import           Ouroboros.Consensus.Protocol.PBFT
 import           Ouroboros.Consensus.Protocol.Signed
 import           Ouroboros.Consensus.Util.Condense
@@ -64,8 +63,7 @@ data SignedSimplePBft c c' = SignedSimplePBft {
   deriving (Generic)
 
 -- | PBFT requires the ledger view; for the mock ledger, this is constant
-type instance BlockProtocol (SimplePBftBlock c c') =
-  ExtNodeConfig (PBftLedgerView c') (PBft c')
+type instance BlockProtocol (SimplePBftBlock c c') = PBft (PBftLedgerView c') c'
 
 -- | Sanity check that block and header type synonyms agree
 _simplePBftHeader :: SimplePBftBlock c c' -> SimplePBftHeader c c'
@@ -88,9 +86,7 @@ instance ( SimpleCrypto c
 instance ( SimpleCrypto c
          , PBftCrypto c'
          , Signable (PBftDSIGN c') (SignedSimplePBft c c')
-         ) => ForgeExt (ExtNodeConfig ext (PBft c'))
-                       c
-                       (SimplePBftExt c c') where
+         ) => ForgeExt (PBft ext c') c (SimplePBftExt c c') where
   forgeExt _cfg isLeader SimpleBlock{..} = do
       ext :: SimplePBftExt c c' <- fmap SimplePBftExt $
         forgePBftFields isLeader $
@@ -113,10 +109,10 @@ instance ( SimpleCrypto c
 instance ( SimpleCrypto c
          , Signable MockDSIGN (SignedSimplePBft c PBftMockCrypto)
          ) => ProtocolLedgerView (SimplePBftBlock c PBftMockCrypto) where
-  protocolLedgerView (EncNodeConfig _ pbftParams) _ls =
-      pbftParams
-  anachronisticProtocolLedgerView (EncNodeConfig _ pbftParams) _ _ =
-      Right $ SB.unbounded pbftParams
+  protocolLedgerView PBftNodeConfig{..} _ls =
+      pbftExtConfig
+  anachronisticProtocolLedgerView PBftNodeConfig{..} _ _ =
+      Right $ SB.unbounded pbftExtConfig
 
 {-------------------------------------------------------------------------------
   Serialisation

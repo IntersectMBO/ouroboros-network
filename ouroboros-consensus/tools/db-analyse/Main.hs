@@ -26,7 +26,6 @@ import           Ouroboros.Network.Block (HasHeader (..), SlotNo (..),
 import           Ouroboros.Consensus.Ledger.Byron (ByronBlockOrEBB, ByronGiven,
                      ByronHash)
 import qualified Ouroboros.Consensus.Ledger.Byron as Byron
-import           Ouroboros.Consensus.Ledger.Byron.Config (ByronConfig)
 import           Ouroboros.Consensus.Node.Run.Abstract
 import           Ouroboros.Consensus.Node.Run.Byron ()
 import           Ouroboros.Consensus.Util.ResourceRegistry
@@ -243,7 +242,7 @@ withByronGiven genesisConfig io =
   Interface with the ImmDB
 -------------------------------------------------------------------------------}
 
-type Blk = ByronBlockOrEBB ByronConfig
+type Blk = ByronBlockOrEBB
 
 openImmDB :: ByronGiven => FilePath -> EpochInfo IO -> IO (ImmDB IO Blk)
 openImmDB fp epochInfo = openDB args
