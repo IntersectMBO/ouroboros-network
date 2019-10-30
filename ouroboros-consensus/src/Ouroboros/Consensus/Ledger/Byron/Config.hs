@@ -4,9 +4,6 @@
 
 module Ouroboros.Consensus.Ledger.Byron.Config (
     ByronConfig(..)
-  , ByronExtNodeConfig
-  , ByronEBBExtNodeConfig
-  , ConfigContainsGenesis(..)
   ) where
 
 import           GHC.Generics (Generic)
@@ -18,10 +15,6 @@ import qualified Cardano.Chain.Slotting as CC.Slot
 import qualified Cardano.Chain.Update as CC.Update
 import qualified Cardano.Crypto as Crypto
 
-import           Ouroboros.Consensus.Protocol.ExtNodeConfig
-import           Ouroboros.Consensus.Protocol.PBFT
-import           Ouroboros.Consensus.Protocol.WithEBBs
-
 -- | Extended configuration we need for Byron
 data ByronConfig = ByronConfig {
       pbftProtocolMagic   :: !Crypto.ProtocolMagic
@@ -32,19 +25,3 @@ data ByronConfig = ByronConfig {
     , pbftGenesisHash     :: !CC.Genesis.GenesisHash
     }
   deriving (Generic, NoUnexpectedThunks)
-
-type ByronExtNodeConfig    = PBft ByronConfig PBftCardanoCrypto
-type ByronEBBExtNodeConfig = WithEBBs ByronExtNodeConfig
-
--- TODO: This really shouldn't live here
-class ConfigContainsGenesis cfg where
-  genesisConfig :: cfg -> CC.Genesis.Config
-
-instance ConfigContainsGenesis ByronConfig where
-  genesisConfig = pbftGenesisConfig
-
-instance ConfigContainsGenesis (NodeConfig ByronExtNodeConfig) where
-  genesisConfig = genesisConfig . pbftExtConfig
-
-instance ConfigContainsGenesis (NodeConfig ByronEBBExtNodeConfig) where
-  genesisConfig = genesisConfig . unWithEBBNodeConfig

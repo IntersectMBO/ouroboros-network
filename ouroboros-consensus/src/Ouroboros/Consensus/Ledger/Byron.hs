@@ -36,6 +36,9 @@ module Ouroboros.Consensus.Ledger.Byron
     -- * Ledger
   , LedgerState (..)
   , LedgerConfig (..)
+    -- * Config
+  , ByronNodeConfig
+  , ByronEBBNodeConfig
     -- * Serialisation
   , encodeByronHeader
   , encodeByronBlock
@@ -125,6 +128,7 @@ import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Crypto.DSIGN.Cardano
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Byron.Config
+import           Ouroboros.Consensus.Ledger.Byron.ContainsGenesis
 import           Ouroboros.Consensus.Ledger.Byron.Orphans ()
 import           Ouroboros.Consensus.Mempool.API
 import           Ouroboros.Consensus.Protocol.Abstract
@@ -134,6 +138,9 @@ import           Ouroboros.Consensus.Protocol.WithEBBs
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.SlotBounded (SlotBounded (..))
 import qualified Ouroboros.Consensus.Util.SlotBounded as SB
+
+type ByronNodeConfig    = PBft ByronConfig PBftCardanoCrypto
+type ByronEBBNodeConfig = WithEBBs ByronNodeConfig
 
 {-------------------------------------------------------------------------------
   Header hash

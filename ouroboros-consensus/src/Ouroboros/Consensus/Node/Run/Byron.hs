@@ -16,7 +16,7 @@ import           Ouroboros.Network.Magic (NetworkMagic (..))
 
 import           Ouroboros.Consensus.BlockchainTime (SystemStart (..))
 import           Ouroboros.Consensus.Ledger.Byron
-import           Ouroboros.Consensus.Ledger.Byron.Config
+import           Ouroboros.Consensus.Ledger.Byron.ContainsGenesis
 import           Ouroboros.Consensus.Ledger.Byron.Forge
 import           Ouroboros.Consensus.Node.Run.Abstract
 import           Ouroboros.Consensus.Protocol.ExtNodeConfig
@@ -74,8 +74,8 @@ instance ByronGiven => RunNode ByronBlockOrEBB where
   nodeDecodeChainState   = const decodeByronChainState
   nodeDecodeApplyTxError = const decodeByronApplyTxError
 
-extractGenesisData :: NodeConfig ByronEBBExtNodeConfig -> Genesis.GenesisData
+extractGenesisData :: NodeConfig ByronEBBNodeConfig -> Genesis.GenesisData
 extractGenesisData = Genesis.configGenesisData . genesisConfig
 
-extractEpochSlots :: NodeConfig ByronEBBExtNodeConfig -> EpochSlots
+extractEpochSlots :: NodeConfig ByronEBBNodeConfig -> EpochSlots
 extractEpochSlots = Genesis.configEpochSlots . genesisConfig

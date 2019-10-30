@@ -32,6 +32,7 @@ import           Ouroboros.Network.Block
 
 import           Ouroboros.Consensus.Crypto.DSIGN.Cardano
 import           Ouroboros.Consensus.Ledger.Byron
+import           Ouroboros.Consensus.Ledger.Byron.ContainsGenesis
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.PBFT
 import           Ouroboros.Consensus.Protocol.WithEBBs
@@ -43,7 +44,7 @@ forgeBlockOrEBB
      ( HasNodeState_ () m  -- @()@ is the @NodeState@ of PBFT
      , MonadRandom m
      )
-  => NodeConfig ByronEBBExtNodeConfig
+  => NodeConfig ByronEBBNodeConfig
   -> SlotNo                          -- ^ Current slot
   -> BlockNo                         -- ^ Current block number
   -> ChainHash ByronBlockOrEBB       -- ^ Previous hash
@@ -55,7 +56,7 @@ forgeBlockOrEBB cfg curSlot curNo prevHash txs isLeader = case prevHash of
   BlockHash _ -> forgeBlock cfg curSlot curNo prevHash txs isLeader
 
 forgeGenesisEBB
-  :: NodeConfig ByronEBBExtNodeConfig
+  :: NodeConfig ByronEBBNodeConfig
   -> SlotNo
   -> ByronBlockOrEBB
 forgeGenesisEBB (WithEBBNodeConfig cfg) curSlot =
@@ -121,7 +122,7 @@ forgeBlock
      ( HasNodeState_ () m  -- @()@ is the @NodeState@ of PBFT
      , MonadRandom m
      )
-  => NodeConfig ByronEBBExtNodeConfig
+  => NodeConfig ByronEBBNodeConfig
   -> SlotNo                            -- ^ Current slot
   -> BlockNo                           -- ^ Current block number
   -> ChainHash ByronBlockOrEBB         -- ^ Previous hash
