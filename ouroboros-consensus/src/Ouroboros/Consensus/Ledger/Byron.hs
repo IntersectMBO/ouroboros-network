@@ -405,8 +405,9 @@ type instance BlockProtocol ByronBlock = PBft ByronConfig PBftCardanoCrypto
 
 instance ByronGiven => SignedHeader (Header ByronBlock) where
   type Signed (Header ByronBlock) = Annotated CC.Block.ToSign ByteString
-  headerSigned _ = CC.Block.recoverSignedBytes given
-                 . byronHeader
+  headerSigned cfg = CC.Block.recoverSignedBytes epochSlots . byronHeader
+    where
+      epochSlots = pbftEpochSlots $ pbftExtConfig cfg
 
 instance ByronGiven => HeaderSupportsPBft ByronConfig PBftCardanoCrypto (Header ByronBlock) where
   headerPBftFields _ (ByronHeader hdr _) = PBftFields {
