@@ -31,7 +31,7 @@ instance ByronGiven => RunNode ByronBlockOrEBB where
   nodeForgeBlock         = forgeBlockOrEBB
   nodeBlockMatchesHeader = byronBlockOrEBBMatchesHeader
   nodeBlockFetchSize     = const 2000 -- TODO #593
-  nodeIsEBB              = \blk -> case unByronBlockOrEBB blk of
+  nodeIsEBB              = \blk -> case bbRaw blk of
     Cardano.Block.ABOBBlock _    -> False
     Cardano.Block.ABOBBoundary _ -> True
 

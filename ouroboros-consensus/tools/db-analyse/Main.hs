@@ -54,8 +54,7 @@ data AnalysisName =
     ShowSlotBlockNo
   | CountTxOutputs
 
-type Analysis = ByronGiven
-             => ImmDB IO Blk
+type Analysis = ImmDB IO Blk
              -> EpochInfo IO
              -> ResourceRegistry IO
              -> IO ()
@@ -91,7 +90,7 @@ countTxOutputs immDB epochInfo rr = do
     go :: IORef Int -> Either EpochNo SlotNo -> Blk -> IO ()
     go cumulative isEBB blk =
         case (isEBB, blk) of
-          (Right slotNo, Byron.ByronBlockOrEBB (Chain.ABOBBlock regularBlk)) ->
+          (Right slotNo, Byron.ByronBlockOrEBB (Chain.ABOBBlock regularBlk) _) ->
             go' cumulative slotNo regularBlk
           _otherwise ->
             return () -- Skip EBBs
@@ -139,8 +138,7 @@ relativeSlotNo epochInfo (SlotNo absSlot) = do
   Auxiliary: processing all blocks in the imm DB
 -------------------------------------------------------------------------------}
 
-processAll :: ByronGiven
-           => ImmDB IO Blk
+processAll :: ImmDB IO Blk
            -> ResourceRegistry IO
            -> (Either EpochNo SlotNo -> Blk -> IO ())
            -> IO ()

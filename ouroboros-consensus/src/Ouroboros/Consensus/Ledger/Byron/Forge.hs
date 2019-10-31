@@ -60,12 +60,15 @@ forgeGenesisEBB
   -> SlotNo
   -> ByronBlockOrEBB
 forgeGenesisEBB (WithEBBNodeConfig cfg) curSlot =
-        ByronBlockOrEBB
+        mkByronBlockOrEBB pbftEpochSlots
       . CC.Block.ABOBBoundary
       . annotateBoundary protocolMagicId
       $ boundaryBlock
   where
     protocolMagicId = CC.Genesis.configProtocolMagicId (genesisConfig cfg)
+    ByronConfig { pbftGenesisHash
+                , pbftEpochSlots
+                } = pbftExtConfig cfg
 
     boundaryBlock :: CC.Block.ABoundaryBlock ()
     boundaryBlock =
@@ -84,9 +87,6 @@ forgeGenesisEBB (WithEBBNodeConfig cfg) curSlot =
       (CC.Common.ChainDifficulty 0)
       ()
       where
-        ByronConfig { pbftGenesisHash
-                    , pbftEpochSlots
-                    } = pbftExtConfig cfg
         CC.Slot.EpochNumber epoch =
             CC.Slot.epochNo
           . CC.Slot.fromSlotNumber pbftEpochSlots
