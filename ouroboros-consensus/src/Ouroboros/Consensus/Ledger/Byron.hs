@@ -400,21 +400,26 @@ instance SignedHeader (Header ByronBlock) where
       epochSlots = pbftEpochSlots $ pbftExtConfig cfg
 
 instance HeaderSupportsPBft ByronConfig PBftCardanoCrypto (Header ByronBlock) where
-  headerPBftFields _ (ByronHeader hdr _) = PBftFields {
-        pbftIssuer    = VerKeyCardanoDSIGN
-                      . CC.Delegation.delegateVK
-                      . CC.Block.delegationCertificate
-                      . CC.Block.headerSignature
-                      $ hdr
-      , pbftGenKey    = VerKeyCardanoDSIGN
-                      . CC.Block.headerGenesisKey
-                      $ hdr
-      , pbftSignature = SignedDSIGN
-                      . SigCardanoDSIGN
-                      . CC.Block.signature
-                      . CC.Block.headerSignature
-                      $ hdr
-      }
+  type OptSigned (Header ByronBlock) =
+          Signed (Header ByronBlock)
+  headerPBftFields cfg byronHeader@(ByronHeader hdr _) = Just (
+        PBftFields {
+          pbftIssuer    = VerKeyCardanoDSIGN
+                        . CC.Delegation.delegateVK
+                        . CC.Block.delegationCertificate
+                        . CC.Block.headerSignature
+                        $ hdr
+        , pbftGenKey    = VerKeyCardanoDSIGN
+                        . CC.Block.headerGenesisKey
+                        $ hdr
+        , pbftSignature = SignedDSIGN
+                        . SigCardanoDSIGN
+                        . CC.Block.signature
+                        . CC.Block.headerSignature
+                        $ hdr
+        }
+      , headerSigned cfg byronHeader
+      )
 
 {-------------------------------------------------------------------------------
   Auxiliary

@@ -59,7 +59,6 @@ import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.PBFT.ChainState (PBftChainState)
 import qualified Ouroboros.Consensus.Protocol.PBFT.ChainState as CS
 import           Ouroboros.Consensus.Protocol.PBFT.Crypto
-import           Ouroboros.Consensus.Protocol.Signed
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Orphans ()
 
@@ -82,12 +81,20 @@ deriving instance PBftCrypto c => Eq   (PBftFields c toSign)
 instance (PBftCrypto c, Typeable toSign) => NoUnexpectedThunks (PBftFields c toSign)
   -- use generic instance
 
+-- | Headers that can support PBFT
+--
+-- PBFT is the only protocol does can't use the standard 'Signed' class, because
+-- it is the only protocol in which signatures are optional: not all blocks in
+-- PBFT have a signature! This is necessary in order to support (what else)
+-- epoch boundary blocks (EBBs), which are unsigned. Of course the intention
+-- here is that 'headerPBftFields' will return 'Just' for regular blocks.
 class ( HasHeader hdr
-      , SignedHeader hdr
-      , Signable (PBftDSIGN c) (Signed hdr)
+      , Signable (PBftDSIGN c) (OptSigned hdr)
       , BlockProtocol hdr ~ PBft cfg c
       ) => HeaderSupportsPBft cfg c hdr where
-  headerPBftFields :: NodeConfig (PBft cfg c) -> hdr -> PBftFields c (Signed hdr)
+  type family OptSigned hdr :: *
+  headerPBftFields :: NodeConfig (PBft cfg c)
+                   -> hdr -> Maybe (PBftFields c (OptSigned hdr), OptSigned hdr)
 
 forgePBftFields :: ( MonadRandom m
                    , PBftCrypto c
@@ -225,35 +232,39 @@ instance ( PBftCrypto c
             PBftIsLeader{pbftCoreNodeId = CoreNodeId i} = credentials
             PBftParams{pbftNumNodes}                    = pbftParams
 
-  applyChainState cfg@PBftNodeConfig{..} lv@(PBftLedgerView dms) (b :: hdr) chainState = do
-      -- Check that the issuer signature verifies, and that it's a delegate of a
-      -- genesis key, and that genesis key hasn't voted too many times.
-      case verifySignedDSIGN
-             (constructContextDSIGN cfg pbftGenKey)
-             pbftIssuer
-             (headerSigned cfg b)
-             pbftSignature of
-        Right () -> return ()
-        Left err -> throwError $ PBftInvalidSignature err
+  applyChainState cfg@PBftNodeConfig{..} lv@(PBftLedgerView dms) (b :: hdr) chainState =
+      case headerPBftFields cfg b of
+        Nothing ->
+          -- EBB. Nothing to do
+          return chainState
+        Just (PBftFields{..}, signed) -> do
+          -- Check that the issuer signature verifies, and that it's a delegate of a
+          -- genesis key, and that genesis key hasn't voted too many times.
+          case verifySignedDSIGN
+                 (constructContextDSIGN cfg pbftGenKey)
+                 pbftIssuer
+                 signed
+                 pbftSignature of
+            Right () -> return ()
+            Left err -> throwError $ PBftInvalidSignature err
 
-      -- FIXME confirm that non-strict inequality is ok in general.
-      -- It's here because EBBs have the same slot as the first block of their
-      -- epoch.
-      unless (At (blockSlot b) >= CS.lastSlot chainState)
-        $ throwError PBftInvalidSlot
+          -- FIXME confirm that non-strict inequality is ok in general.
+          -- It's here because EBBs have the same slot as the first block of their
+          -- epoch.
+          unless (At (blockSlot b) >= CS.lastSlot chainState)
+            $ throwError PBftInvalidSlot
 
-      case Bimap.lookupR (hashVerKey pbftIssuer) dms of
-        Nothing -> throwError $ PBftNotGenesisDelegate (hashVerKey pbftIssuer) lv
-        Just gk -> do
-          let chainState'  = CS.prune winSize $ CS.insert gk (blockSlot b) $ chainState
-              totalSigners = CS.size          chainState'
-              gkSigners    = CS.countSignedBy chainState' gk
-          when (totalSigners >= winSize && gkSigners > wt)
-            $ throwError (PBftExceededSignThreshold (show (pbftSecurityParam, chainState')) totalSigners gkSigners)
-          return $! chainState'
+          case Bimap.lookupR (hashVerKey pbftIssuer) dms of
+            Nothing -> throwError $ PBftNotGenesisDelegate (hashVerKey pbftIssuer) lv
+            Just gk -> do
+              let chainState'  = CS.prune winSize $ CS.insert gk (blockSlot b) $ chainState
+                  totalSigners = CS.size          chainState'
+                  gkSigners    = CS.countSignedBy chainState' gk
+              when (totalSigners >= winSize && gkSigners > wt)
+                $ throwError (PBftExceededSignThreshold (show (pbftSecurityParam, chainState')) totalSigners gkSigners)
+              return $! chainState'
     where
       PBftParams{..} = pbftParams
-      PBftFields{..} = headerPBftFields cfg b
       winSize = k
       SecurityParam (fromIntegral -> k) = pbftSecurityParam
       wt = floor $ pbftSignatureThreshold * fromIntegral winSize
