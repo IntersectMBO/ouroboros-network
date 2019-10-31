@@ -13,7 +13,6 @@ import           Data.Foldable (find)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (fromJust)
-import           Data.Reflection (give)
 import           Data.Time (Day (..), UTCTime (..))
 
 import           Test.QuickCheck
@@ -24,7 +23,7 @@ import           Ouroboros.Network.MockChain.Chain (Chain)
 import qualified Ouroboros.Network.MockChain.Chain as Chain
 
 import           Ouroboros.Consensus.BlockchainTime
-import           Ouroboros.Consensus.Ledger.Byron (ByronBlockOrEBB, ByronGiven)
+import           Ouroboros.Consensus.Ledger.Byron (ByronBlockOrEBB)
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Node.ProtocolInfo.Byron (plcCoreNodeId)
 import           Ouroboros.Consensus.NodeId
@@ -97,7 +96,6 @@ prop_simple_real_pbft_convergence :: TestConfig
                                   -> Property
 prop_simple_real_pbft_convergence
   testConfig@TestConfig{numCoreNodes, numSlots} seed =
-    giveByron $
     prop_general k
         testConfig
         (Just $ roundRobinLeaderSchedule numCoreNodes numSlots)
@@ -109,7 +107,7 @@ prop_simple_real_pbft_convergence
       (Genesis.gdK . Genesis.configGenesisData) $
       genesisConfig
 
-    testOutput = giveByron $
+    testOutput =
         runTestNetwork
             (\nid -> protocolInfo numCoreNodes nid
                 (mkProtocolRealPBFT numCoreNodes nid
@@ -118,11 +116,6 @@ prop_simple_real_pbft_convergence
 
     finalChains :: [Chain ByronBlockOrEBB]
     finalChains = Map.elems $ nodeOutputFinalChain <$> testOutputNodes testOutput
-
-    giveByron :: forall a. (ByronGiven => a) -> a
-    giveByron a =
-      give (Genesis.gdProtocolMagicId $ Genesis.configGenesisData genesisConfig) $
-      give (Genesis.configEpochSlots genesisConfig) a
 
     genesisConfig  :: Genesis.Config
     genesisSecrets :: Genesis.GeneratedSecrets

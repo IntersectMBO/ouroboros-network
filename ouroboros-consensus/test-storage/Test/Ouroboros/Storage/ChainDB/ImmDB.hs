@@ -9,20 +9,18 @@ module Test.Ouroboros.Storage.ChainDB.ImmDB
   ) where
 
 import           Data.Proxy (Proxy (..))
-import           Data.Reflection (give)
 
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.IOSim (runSimOrThrow)
 
 import           Control.Tracer (nullTracer)
 
-import qualified Cardano.Chain.Genesis as Genesis
 import qualified Cardano.Chain.Update as Update
 
 import           Ouroboros.Network.Block (SlotNo (..), blockHash, blockPoint)
 
 import           Ouroboros.Consensus.Block (BlockProtocol)
-import           Ouroboros.Consensus.Ledger.Byron (ByronBlockOrEBB, ByronGiven)
+import           Ouroboros.Consensus.Ledger.Byron (ByronBlockOrEBB)
 import           Ouroboros.Consensus.Ledger.Byron.Forge (forgeGenesisEBB)
 import           Ouroboros.Consensus.Node.ProtocolInfo (NumCoreNodes (..),
                      PBftSignatureThreshold (..), ProtocolInfo (..),
@@ -55,16 +53,15 @@ tests = testGroup "ImmDB"
 
 test_getBlockWithPoint_EBB_at_tip :: Assertion
 test_getBlockWithPoint_EBB_at_tip =
-    runSimOrThrow $ giveByron $ withImmDB $ \immDB -> do
+    runSimOrThrow $ withImmDB $ \immDB -> do
       ImmDB.appendBlock immDB ebb
       mbEbb' <- ImmDB.getBlockWithPoint immDB (blockPoint ebb)
       return $ mbEbb' @?= Just ebb
   where
-    ebb = giveByron $ forgeGenesisEBB testCfg (SlotNo 0)
+    ebb = forgeGenesisEBB testCfg (SlotNo 0)
 
 withImmDB :: forall m blk a.
              ( IOLike m
-             , ByronGiven
              , blk ~ ByronBlockOrEBB
              )
           => (ImmDB m blk -> m a) -> m a
@@ -97,8 +94,3 @@ testCfg = pInfoConfig $ protocolInfo (NumCoreNodes 1) (CoreNodeId 0) prot
       (Update.ProtocolVersion 1 0 0)
       (Update.SoftwareVersion (Update.ApplicationName "Cardano Test") 2)
       Nothing
-
-giveByron :: forall a. (ByronGiven => a) -> a
-giveByron a =
-  give (Genesis.gdProtocolMagicId Dummy.dummyGenesisData) $
-  give Dummy.dummyEpochSlots a
