@@ -9,10 +9,11 @@
 
 -- | This module implements functionality of NTP client.
 
-module Ntp.Client
+module Network.NTP.Client
     ( NtpClientSettings (..)
-    , NtpStatus (..)
-    , withNtpClient
+    , NtpClient (..)
+    , withNtpClient -- do we want that ?
+    , forkNtpClient
     ) where
 
 import           Control.Concurrent (threadDelay)
@@ -33,23 +34,13 @@ import           Data.Typeable (Typeable)
 import qualified Network.Socket as Socket
 import           Network.Socket.ByteString (recvFrom)
 
-import           Ntp.Packet (NtpOffset (..) , NtpPacket (..), clockOffset,
+import           Network.NTP.Packet (NtpOffset (..) , NtpPacket (..), clockOffset,
                      mkNtpPacket, ntpPacketSize)
-import           Ntp.Trace (NtpTrace (..))
-import           Ntp.Util (AddrFamily (..), Addresses, Sockets,
+import           Network.NTP.Trace (NtpTrace (..))
+import           Network.NTP.Util (AddrFamily (..), Addresses, Sockets,
                      WithAddrFamily (..), createAndBindSock,
                      resolveNtpHost,
                      runWithAddrFamily, sendPacket, udpLocalAddresses)
-
-
-data NtpStatus =
-      -- | The difference between NTP time and local system time
-      NtpDrift NtpOffset
-      -- | NTP client has send requests to the servers
-    | NtpSyncPending
-      -- | NTP is not available: the client has not received any respond within
-      -- `ntpResponseTimeout` or NTP was not configured.
-    | NtpSyncUnavailable deriving (Eq, Show)
 
 data NtpClientSettings = NtpClientSettings
     { ntpServers         :: [String]
@@ -65,6 +56,51 @@ data NtpClientSettings = NtpClientSettings
     }
 
 data NtpClient = NtpClient
+    { ntpGetStatus        :: IO NtpStatus -- Use STM here ?
+      -- ^ Query the current status (non-blocking).
+    , ntpForceCheck           :: IO ()
+      -- ^ Bypass all internal threadDelays and trigger a new ntp query.
+--    , ntpForceCheck       :: IO NtpStatus
+--      -- ^ Perform a ntp query and wait for the results (blocking with timeout).
+    , ntpAbort            :: IO () --todo/discuss
+    }
+
+data NtpStatus =
+      -- | The difference between NTP time and local system time
+      NtpDrift NtpOffset
+      -- | NTP client has send requests to the servers
+    | NtpSyncPending
+      -- | NTP is not available: the client has not received any respond within
+      -- `ntpResponseTimeout` or NTP was not configured.
+    | NtpSyncUnavailable deriving (Eq, Show)
+
+
+-- Do we need a with-style wrapper ?
+withNtpClient :: Tracer IO NtpTrace -> NtpClientSettings -> (NtpClient -> IO a) -> IO a
+withNtpClient = error "withNtpClient"
+
+-- This function should be called once, it will run an NTP client in a new
+-- thread until the program terminates.
+forkNtpClient :: Tracer IO NtpTrace -> NtpClientSettings -> IO NtpClient
+forkNtpClient tracer ntpSettings = do
+    traceWith tracer NtpTraceStartNtpClient
+    ncStatus <- newTVarIO NtpSyncPending
+    -- using async so the NTP thread will be left running even if the parent
+    -- thread finished.
+    _ <- async (spawnNtpClient tracer ntpSettings ncStatus)
+    return $ NtpClient
+        { ntpGetStatus = do
+            traceWith tracer NtpTraceClientGetStatus
+            atomically $ readTVar ncStatus
+        , ntpForceCheck    = do
+            traceWith tracer NtpTraceClientActNow
+            atomically $ writeTVar ncStatus NtpSyncPending
+        , ntpAbort = do
+            traceWith tracer NtpTraceClientAbort
+            error "ntpForceAbortClient: Todo"         
+        }
+
+data NtpState = NtpState
     { ncSockets  :: TVar Sockets
       -- ^ Ntp client sockets: ipv4 / ipv6 / both.
     , ncState    :: TVar [NtpOffset]
@@ -78,18 +114,18 @@ data NtpClient = NtpClient
       -- ^ Ntp client configuration.
     }
 
-mkNtpClient :: NtpClientSettings -> TVar NtpStatus -> Sockets -> IO NtpClient
+mkNtpClient :: NtpClientSettings -> TVar NtpStatus -> Sockets -> IO NtpState
 mkNtpClient ncSettings ncStatus sock = do
     ncSockets <- newTVarIO sock
     ncState   <- newTVarIO []
-    return NtpClient{..}
+    return NtpState{..}
 
 data NoHostResolved = NoHostResolved
     deriving (Show, Typeable)
 
 instance Exception NoHostResolved
 
-updateStatus :: Tracer IO NtpTrace -> NtpClient -> IO ()
+updateStatus :: Tracer IO NtpTrace -> NtpState -> IO ()
 updateStatus tracer cli = do
     offsets <- readTVarIO (ncState cli)
     status <- case offsets of
@@ -108,7 +144,7 @@ updateStatus tracer cli = do
 -- `ntpResponseTimeout` passesed.  If at least one server responded
 -- `handleCollectedResponses` will update `ncStatus` in `NtpClient` with a new
 -- drift.
-sendLoop :: Tracer IO NtpTrace -> NtpClient -> [Addresses] -> IO ()
+sendLoop :: Tracer IO NtpTrace -> NtpState -> [Addresses] -> IO ()
 sendLoop tracer cli addrs = forever $ do
     let respTimeout = ntpResponseTimeout (ncSettings cli)
     let poll        = ntpPollDelay (ncSettings cli)
@@ -150,7 +186,7 @@ sendLoop tracer cli addrs = forever $ do
 
 -- |
 -- Listen for responses on the socket @'ncSockets'@
-receiveLoop :: Tracer IO NtpTrace -> NtpClient -> IO ()
+receiveLoop :: Tracer IO NtpTrace -> NtpState -> IO ()
 receiveLoop tracer cli =
     readTVarIO (ncSockets cli) >>= \case
         These (Last (WithIPv6 sock_ipv6)) (Last (WithIPv4 sock_ipv4)) ->
@@ -264,21 +300,6 @@ spawnNtpClient tracer settings ncStatus = do
               )
             resolve
           else return addrs
-
--- |
--- Run NTP client in a separate thread; it returns a mutable cell which holds
--- @'NtpStatus'@.
---
--- This function should be called once, it will run an NTP client in a new
--- thread until the program terminates.
-withNtpClient :: Tracer IO NtpTrace -> NtpClientSettings -> IO (TVar NtpStatus)
-withNtpClient tracer ntpSettings = do
-    traceWith tracer NtpTraceWithNtpClient
-    ncStatus <- newTVarIO NtpSyncPending
-    -- using async so the NTP thread will be left running even if the parent
-    -- thread finished.
-    _ <- async (spawnNtpClient tracer ntpSettings ncStatus)
-    return ncStatus
 
 -- Try to create IPv4 and IPv6 socket.
 mkSockets :: Tracer IO NtpTrace -> NtpClientSettings -> IO Sockets
