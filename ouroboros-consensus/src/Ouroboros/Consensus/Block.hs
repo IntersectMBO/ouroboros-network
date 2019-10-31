@@ -48,6 +48,8 @@ class GetHeader blk where
   data family Header blk :: *
   getHeader :: blk -> Header blk
 
+type instance BlockProtocol (Header blk) = BlockProtocol blk
+
 {-------------------------------------------------------------------------------
   Some automatic instances for 'Header'
 

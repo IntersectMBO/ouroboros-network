@@ -40,6 +40,7 @@ import           GHC.Generics (Generic)
 
 import           Ouroboros.Network.Block
 
+import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.NodeId (NodeId (..))
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.Signed
@@ -64,6 +65,7 @@ instance (BftCrypto c, Typeable toSign) => NoUnexpectedThunks (BftFields c toSig
 class ( HasHeader hdr
       , SignedHeader hdr
       , Signable (BftDSIGN c) (Signed hdr)
+      , BlockProtocol hdr ~ Bft c
       ) => HeaderSupportsBft c hdr where
   headerBftFields :: NodeConfig (Bft c) -> hdr -> BftFields c (Signed hdr)
 
@@ -140,7 +142,7 @@ instance BftCrypto c => OuroborosTag (Bft c) where
       case verifySignedDSIGN
            ()
            (bftVerKeys Map.! expectedLeader)
-           (headerSigned b)
+           (headerSigned cfg b)
            bftSignature of
         Right () -> return ()
         Left err -> throwError $ BftInvalidSignature err

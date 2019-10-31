@@ -62,6 +62,7 @@ import           Cardano.Prelude (NoUnexpectedThunks (..))
 import           Ouroboros.Network.Block (HasHeader (..), SlotNo (..))
 import           Ouroboros.Network.Point (WithOrigin (At))
 
+import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.NodeId (CoreNodeId (..), NodeId (..))
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.Signed
@@ -102,7 +103,8 @@ instance PraosCrypto c => NoUnexpectedThunks (PraosExtraFields c)
 class ( HasHeader hdr
       , SignedHeader hdr
       , Cardano.Crypto.KES.Class.Signable (PraosKES c) (Signed hdr)
-      ) => HeaderSupportsPraos c hdr where
+      , BlockProtocol hdr ~ Praos cfg c
+      ) => HeaderSupportsPraos cfg c hdr where
   headerPraosFields :: NodeConfig (Praos cfg c) -> hdr -> PraosFields c (Signed hdr)
 
 forgePraosFields :: ( HasNodeState (Praos cfg c) m
@@ -227,7 +229,7 @@ instance ( PraosCrypto c
   type LedgerView      (Praos cfg c) = StakeDist
   type IsLeader        (Praos cfg c) = PraosProof c
   type ValidationErr   (Praos cfg c) = PraosValidationError c
-  type SupportedHeader (Praos cfg c) = HeaderSupportsPraos c
+  type SupportedHeader (Praos cfg c) = HeaderSupportsPraos cfg c
   type ChainState      (Praos cfg c) = [BlockInfo c]
 
   checkIsLeader cfg@PraosNodeConfig{..} slot _u cs =
@@ -249,7 +251,7 @@ instance ( PraosCrypto c
   applyChainState cfg@PraosNodeConfig{..} sd b cs = do
     let PraosFields{..}      = headerPraosFields cfg b
         PraosExtraFields{..} = praosExtraFields
-        toSign               = headerSigned b
+        toSign               = headerSigned cfg b
         slot                 = blockSlot b
         CoreNodeId nid       = praosCreator
 

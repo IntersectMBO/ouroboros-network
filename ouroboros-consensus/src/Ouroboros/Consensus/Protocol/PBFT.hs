@@ -52,6 +52,7 @@ import           Cardano.Prelude (NoUnexpectedThunks)
 import           Ouroboros.Network.Block (HasHeader (..), SlotNo (..))
 import           Ouroboros.Network.Point (WithOrigin (At))
 
+import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Crypto.DSIGN.Cardano
 import           Ouroboros.Consensus.Ledger.Byron.Config
 import           Ouroboros.Consensus.NodeId (CoreNodeId (..))
@@ -85,7 +86,8 @@ instance (PBftCrypto c, Typeable toSign) => NoUnexpectedThunks (PBftFields c toS
 class ( HasHeader hdr
       , SignedHeader hdr
       , Signable (PBftDSIGN c) (Signed hdr)
-      ) => HeaderSupportsPBft c hdr where
+      , BlockProtocol hdr ~ PBft cfg c
+      ) => HeaderSupportsPBft cfg c hdr where
   headerPBftFields :: NodeConfig (PBft cfg c) -> hdr -> PBftFields c (Signed hdr)
 
 forgePBftFields :: ( MonadRandom m
@@ -197,7 +199,7 @@ instance ( PBftCrypto c
          )
       => OuroborosTag (PBft cfg c) where
   type ValidationErr   (PBft cfg c) = PBftValidationErr c
-  type SupportedHeader (PBft cfg c) = HeaderSupportsPBft c
+  type SupportedHeader (PBft cfg c) = HeaderSupportsPBft cfg c
   type NodeState       (PBft cfg c) = ()
 
   -- | We require two things from the ledger state:
@@ -230,7 +232,7 @@ instance ( PBftCrypto c
       case verifySignedDSIGN
              (constructContextDSIGN cfg pbftGenKey)
              pbftIssuer
-             (headerSigned b)
+             (headerSigned cfg b)
              pbftSignature of
         Right () -> return ()
         Left err -> throwError $ PBftInvalidSignature err

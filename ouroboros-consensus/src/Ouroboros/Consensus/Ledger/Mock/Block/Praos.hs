@@ -65,7 +65,8 @@ data SignedSimplePraos c c' = SignedSimplePraos {
     }
 
 -- | See 'ProtocolLedgerView' instance for why we need the 'AddrDist'
-type instance BlockProtocol (SimplePraosBlock c c') = Praos AddrDist c'
+type instance BlockProtocol (SimplePraosBlock  c c') = Praos AddrDist c'
+type instance BlockProtocol (SimplePraosHeader c c') = BlockProtocol (SimplePraosBlock c c')
 
 -- | Sanity check that block and header type synonyms agree
 _simplePraosHeader :: SimplePraosBlock c c' -> SimplePraosHeader c c'
@@ -78,7 +79,7 @@ _simplePraosHeader = simpleHeader
 instance PraosCrypto c' => SignedHeader (SimplePraosHeader c c') where
   type Signed (SimplePraosHeader c c') = SignedSimplePraos c c'
 
-  headerSigned SimpleHeader{..} = SignedSimplePraos {
+  headerSigned _ SimpleHeader{..} = SignedSimplePraos {
         signedSimplePraos = simpleHeaderStd
       , signedPraosFields = praosExtraFields (simplePraosExt simpleHeaderExt)
       }
@@ -86,7 +87,7 @@ instance PraosCrypto c' => SignedHeader (SimplePraosHeader c c') where
 instance ( SimpleCrypto c
          , PraosCrypto c'
          , Signable (PraosKES c') (SignedSimplePraos c c')
-         ) => HeaderSupportsPraos c' (SimplePraosHeader c c') where
+         ) => HeaderSupportsPraos AddrDist c' (SimplePraosHeader c c') where
   headerPraosFields _ = simplePraosExt . simpleHeaderExt
 
 instance ( SimpleCrypto c

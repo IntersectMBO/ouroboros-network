@@ -405,10 +405,10 @@ type instance BlockProtocol ByronBlock = PBft ByronConfig PBftCardanoCrypto
 
 instance ByronGiven => SignedHeader (Header ByronBlock) where
   type Signed (Header ByronBlock) = Annotated CC.Block.ToSign ByteString
-  headerSigned = CC.Block.recoverSignedBytes given
-               . byronHeader
+  headerSigned _ = CC.Block.recoverSignedBytes given
+                 . byronHeader
 
-instance ByronGiven => HeaderSupportsPBft PBftCardanoCrypto (Header ByronBlock) where
+instance ByronGiven => HeaderSupportsPBft ByronConfig PBftCardanoCrypto (Header ByronBlock) where
   headerPBftFields _ (ByronHeader hdr _) = PBftFields {
         pbftIssuer    = VerKeyCardanoDSIGN
                       . CC.Delegation.delegateVK
