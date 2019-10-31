@@ -103,7 +103,7 @@ class ( HasHeader hdr
       , SignedHeader hdr
       , Cardano.Crypto.KES.Class.Signable (PraosKES c) (Signed hdr)
       ) => HeaderSupportsPraos c hdr where
-  headerPraosFields :: proxy (Praos cfg c) -> hdr -> PraosFields c (Signed hdr)
+  headerPraosFields :: NodeConfig (Praos cfg c) -> hdr -> PraosFields c (Signed hdr)
 
 forgePraosFields :: ( HasNodeState (Praos cfg c) m
                     , MonadRandom m

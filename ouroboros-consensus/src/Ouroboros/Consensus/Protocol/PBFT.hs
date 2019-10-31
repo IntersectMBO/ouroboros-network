@@ -86,7 +86,7 @@ class ( HasHeader hdr
       , SignedHeader hdr
       , Signable (PBftDSIGN c) (Signed hdr)
       ) => HeaderSupportsPBft c hdr where
-  headerPBftFields :: proxy (PBft cfg c) -> hdr -> PBftFields c (Signed hdr)
+  headerPBftFields :: NodeConfig (PBft cfg c) -> hdr -> PBftFields c (Signed hdr)
 
 forgePBftFields :: ( MonadRandom m
                    , PBftCrypto c
