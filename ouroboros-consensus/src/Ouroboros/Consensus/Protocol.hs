@@ -15,13 +15,8 @@ module Ouroboros.Consensus.Protocol (
   , module X
   ) where
 
-import           Data.Coerce
-import           Data.Reflection (give)
-
-import qualified Cardano.Chain.Block as Block
 import qualified Cardano.Chain.Genesis as Genesis
 import qualified Cardano.Chain.Update as Update
-import qualified Cardano.Crypto as Crypto
 
 import           Ouroboros.Consensus.Ledger.Byron
 import           Ouroboros.Consensus.Ledger.Byron.Config
@@ -92,12 +87,4 @@ runProtocol ProtocolMockBFT{}        = Dict
 runProtocol ProtocolMockPraos{}      = Dict
 runProtocol ProtocolLeaderSchedule{} = Dict
 runProtocol ProtocolMockPBFT{}       = Dict
-runProtocol (ProtocolRealPBFT
-             gc@Genesis.Config{ Genesis.configGenesisData
-                              , Genesis.configGenesisHash}
-             _msigthd _pv _sv _mplc) =
-  let Genesis.GenesisData{Genesis.gdProtocolMagicId} = configGenesisData
-  in give (Genesis.configEpochSlots gc)
-     $ give gdProtocolMagicId
-     $ give (coerce @_ @Block.HeaderHash configGenesisHash)
-     $ Dict
+runProtocol ProtocolRealPBFT{}       = Dict

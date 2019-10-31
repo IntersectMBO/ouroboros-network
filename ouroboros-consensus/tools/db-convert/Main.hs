@@ -25,7 +25,7 @@ import qualified Cardano.Chain.Genesis as CC.Genesis
 import           Cardano.Chain.Slotting (EpochSlots (..))
 import qualified Cardano.Chain.Update as CC.Update
 import           Cardano.Crypto (Hash, RequiresNetworkMagic (..),
-                     decodeAbstractHash, getAProtocolMagicId)
+                     decodeAbstractHash)
 import           Control.Exception (Exception, bracket, throwIO)
 import           Control.Monad.Except (liftIO, runExceptT)
 import           Control.Monad.Trans.Resource (runResourceT)
@@ -34,7 +34,6 @@ import           Data.Bifunctor (first)
 import qualified Data.ByteString as BS
 import           Data.Foldable (for_)
 import           Data.List (sort)
-import           Data.Reflection (give)
 import qualified Data.Text as Text
 import           Data.Time (UTCTime)
 import           Data.Typeable (Typeable)
@@ -166,7 +165,7 @@ validateChainDb
   -> Bool -- Verbose
   -> IO ()
 validateChainDb dbDir cfg onlyImmDB verbose =
-  withRegistry $ \registry -> give protocolMagicId $ give epochSlots $
+  withRegistry $ \registry ->
     if onlyImmDB
     then
       let (immDBArgs, _, _, _) = Args.fromChainDbArgs $ args registry
@@ -195,7 +194,6 @@ validateChainDb dbDir cfg onlyImmDB verbose =
           2
         )
         Nothing
-    protocolMagicId = CB.unAnnotated . getAProtocolMagicId $ CC.Genesis.configProtocolMagic cfg
     epochSlots = CC.Genesis.configEpochSlots cfg
     securityParam = SecurityParam $ CC.unBlockCount k
     k = CC.Genesis.configK cfg
@@ -223,13 +221,7 @@ validateChainDb dbDir cfg onlyImmDB verbose =
           CC.ABOBBoundary ebb -> Just (Byron.ByronHash (CC.boundaryHashAnnotated ebb))
           -- Misc
         , ChainDB.cdbTracer = if verbose
-            then
-              contramap
-                ( give protocolMagicId $
-                  give epochSlots $
-                  show
-                )
-                debugTracer
+            then contramap show debugTracer
             else nullTracer
         , ChainDB.cdbRegistry = registry
         , ChainDB.cdbGcDelay = 0

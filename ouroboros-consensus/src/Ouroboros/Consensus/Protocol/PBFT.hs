@@ -38,7 +38,6 @@ import           Control.Monad.Except
 import           Crypto.Random (MonadRandom)
 import           Data.Bimap (Bimap)
 import qualified Data.Bimap as Bimap
-import           Data.Reflection (give)
 import qualified Data.Set as Set
 import           Data.Typeable (Typeable)
 import           Data.Word (Word64)
@@ -290,7 +289,6 @@ genesisKeyCoreNodeId :: CC.Genesis.Config
                         -- ^ The genesis verification key
                      -> Maybe CoreNodeId
 genesisKeyCoreNodeId gc vkey =
-  Data.Reflection.give (CC.Genesis.configProtocolMagicId gc) $
   CoreNodeId <$> Set.lookupIndex (hashVerKey vkey) genesisKeyHashes
   where
     genesisKeyHashes :: Set.Set CC.Common.KeyHash

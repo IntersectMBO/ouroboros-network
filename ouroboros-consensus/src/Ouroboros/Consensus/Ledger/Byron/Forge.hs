@@ -14,7 +14,6 @@ import           Crypto.Random (MonadRandom)
 import           Data.ByteString (ByteString)
 import           Data.Coerce (coerce)
 import           Data.Foldable (foldl')
-import           Data.Reflection (give)
 
 import           Cardano.Binary (Annotated (..), reAnnotate)
 import qualified Cardano.Chain.Block as CC.Block
@@ -131,8 +130,6 @@ forgeBlock
   -> m ByronBlockOrEBB
 forgeBlock (WithEBBNodeConfig cfg) curSlot curNo prevHash txs isLeader = do
     ouroborosPayload <-
-      give (VerKeyCardanoDSIGN headerGenesisKey) $
-      give protocolMagicId $
       forgePBftFields cfg isLeader (reAnnotate $ Annotated toSign ())
     return $ forge ouroborosPayload
   where
@@ -144,8 +141,6 @@ forgeBlock (WithEBBNodeConfig cfg) curSlot curNo prevHash txs isLeader = do
       , pbftSoftwareVersion
       , pbftProtocolMagic
       } = pbftExtConfig cfg
-
-    protocolMagicId = CC.Genesis.configProtocolMagicId (genesisConfig cfg)
 
     blockPayloads :: BlockPayloads
     blockPayloads = foldl' extendBlockPayloads initBlockPayloads txs
@@ -207,8 +202,7 @@ forgeBlock (WithEBBNodeConfig cfg) curSlot curNo prevHash txs isLeader = do
         }
 
     headerGenesisKey :: Crypto.VerificationKey
-    VerKeyCardanoDSIGN headerGenesisKey = give protocolMagicId $
-      dlgCertGenVerKey $ pbftDlgCert isLeader
+    VerKeyCardanoDSIGN headerGenesisKey = dlgCertGenVerKey $ pbftDlgCert isLeader
 
     dlgCertificate :: CC.Delegation.Certificate
     dlgCertificate = pbftDlgCert isLeader
