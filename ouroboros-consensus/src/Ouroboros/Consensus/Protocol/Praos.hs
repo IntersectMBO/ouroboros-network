@@ -62,6 +62,7 @@ import           Cardano.Prelude (NoUnexpectedThunks (..))
 import           Ouroboros.Network.Block (HasHeader (..), SlotNo (..))
 import           Ouroboros.Network.Point (WithOrigin (At))
 
+import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.NodeId (CoreNodeId (..), NodeId (..))
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.Signed
@@ -102,15 +103,16 @@ instance PraosCrypto c => NoUnexpectedThunks (PraosExtraFields c)
 class ( HasHeader hdr
       , SignedHeader hdr
       , Cardano.Crypto.KES.Class.Signable (PraosKES c) (Signed hdr)
-      ) => HeaderSupportsPraos c hdr where
-  headerPraosFields :: proxy (Praos c) -> hdr -> PraosFields c (Signed hdr)
+      , BlockProtocol hdr ~ Praos cfg c
+      ) => HeaderSupportsPraos cfg c hdr where
+  headerPraosFields :: NodeConfig (Praos cfg c) -> hdr -> PraosFields c (Signed hdr)
 
-forgePraosFields :: ( HasNodeState (Praos c) m
+forgePraosFields :: ( HasNodeState (Praos cfg c) m
                     , MonadRandom m
                     , PraosCrypto c
                     , Cardano.Crypto.KES.Class.Signable (PraosKES c) toSign
                     )
-                 => NodeConfig (Praos c)
+                 => NodeConfig (Praos cfg c)
                  -> PraosProof c
                  -> (PraosExtraFields c -> toSign)
                  -> m (PraosFields c toSign)
@@ -186,7 +188,7 @@ deriving instance PraosCrypto c => NoUnexpectedThunks (BlockInfo c)
   Protocol proper
 -------------------------------------------------------------------------------}
 
-data Praos c
+data Praos cfg c
 
 -- | Praos parameters that are node independent
 data PraosParams = PraosParams {
@@ -206,25 +208,29 @@ newtype PraosNodeState c = PraosNodeState {
 instance PraosCrypto c => NoUnexpectedThunks (PraosNodeState c) where
   showTypeOf _ = show $ typeRep (Proxy @(PraosNodeState c))
 
-data instance NodeConfig (Praos c) = PraosNodeConfig
+data instance NodeConfig (Praos cfg c) = PraosNodeConfig
   { praosParams       :: !PraosParams
   , praosInitialEta   :: !Natural
   , praosInitialStake :: !StakeDist
   , praosNodeId       :: !NodeId
   , praosSignKeyVRF   :: !(SignKeyVRF (PraosVRF c))
   , praosVerKeys      :: !(IntMap (VerKeyKES (PraosKES c), VerKeyVRF (PraosVRF c)))
+  , praosExtConfig    :: !cfg
   }
   deriving (Generic)
 
-instance PraosCrypto c => OuroborosTag (Praos c) where
+instance ( PraosCrypto c
+         , NoUnexpectedThunks cfg
+         , Typeable cfg
+         ) => OuroborosTag (Praos cfg c) where
   protocolSecurityParam = praosSecurityParam . praosParams
 
-  type NodeState       (Praos c) = PraosNodeState c
-  type LedgerView      (Praos c) = StakeDist
-  type IsLeader        (Praos c) = PraosProof c
-  type ValidationErr   (Praos c) = PraosValidationError c
-  type SupportedHeader (Praos c) = HeaderSupportsPraos c
-  type ChainState      (Praos c) = [BlockInfo c]
+  type NodeState       (Praos cfg c) = PraosNodeState c
+  type LedgerView      (Praos cfg c) = StakeDist
+  type IsLeader        (Praos cfg c) = PraosProof c
+  type ValidationErr   (Praos cfg c) = PraosValidationError c
+  type SupportedHeader (Praos cfg c) = HeaderSupportsPraos cfg c
+  type ChainState      (Praos cfg c) = [BlockInfo c]
 
   checkIsLeader cfg@PraosNodeConfig{..} slot _u cs =
     case praosNodeId of
@@ -245,7 +251,7 @@ instance PraosCrypto c => OuroborosTag (Praos c) where
   applyChainState cfg@PraosNodeConfig{..} sd b cs = do
     let PraosFields{..}      = headerPraosFields cfg b
         PraosExtraFields{..} = praosExtraFields
-        toSign               = headerSigned b
+        toSign               = headerSigned cfg b
         slot                 = blockSlot b
         CoreNodeId nid       = praosCreator
 
@@ -330,20 +336,21 @@ instance PraosCrypto c => OuroborosTag (Praos c) where
       k :: Word64
       k = maxRollbacks praosSecurityParam
 
-instance PraosCrypto c => NoUnexpectedThunks (NodeConfig (Praos c))
+instance (PraosCrypto c, NoUnexpectedThunks cfg)
+      => NoUnexpectedThunks (NodeConfig (Praos cfg c))
   -- use generic instance
 
-slotEpoch :: NodeConfig (Praos c) -> SlotNo -> EpochNo
+slotEpoch :: NodeConfig (Praos cfg c) -> SlotNo -> EpochNo
 slotEpoch PraosNodeConfig{..} s =
     runIdentity $ epochInfoEpoch epochInfo s
   where
     epochInfo = fixedSizeEpochInfo (EpochSize praosSlotsPerEpoch)
     PraosParams{..} = praosParams
 
-blockInfoEpoch :: NodeConfig (Praos c) -> BlockInfo c -> EpochNo
+blockInfoEpoch :: NodeConfig (Praos cfg c) -> BlockInfo c -> EpochNo
 blockInfoEpoch l = slotEpoch l . biSlot
 
-epochFirst :: NodeConfig (Praos c) -> EpochNo -> SlotNo
+epochFirst :: NodeConfig (Praos cfg c) -> EpochNo -> SlotNo
 epochFirst PraosNodeConfig{..} e =
     runIdentity $ epochInfoFirst epochInfo e
   where
@@ -354,8 +361,8 @@ infosSlice :: SlotNo -> SlotNo -> [BlockInfo c] -> [BlockInfo c]
 infosSlice from to xs = takeWhile (\b -> biSlot b >= from)
                       $ dropWhile (\b -> biSlot b > to) xs
 
-infosEta :: forall c. (PraosCrypto c)
-         => NodeConfig (Praos c)
+infosEta :: forall cfg c. (PraosCrypto c)
+         => NodeConfig (Praos cfg c)
          -> [BlockInfo c]
          -> EpochNo
          -> Natural
@@ -371,7 +378,7 @@ infosEta l xs e =
   where
     PraosParams{..} = praosParams l
 
-infosStake :: NodeConfig (Praos c) -> [BlockInfo c] -> EpochNo -> StakeDist
+infosStake :: NodeConfig (Praos cfg c) -> [BlockInfo c] -> EpochNo -> StakeDist
 infosStake s@PraosNodeConfig{..} xs e = case ys of
     []                  -> praosInitialStake
     (BlockInfo{..} : _) -> biStake
@@ -381,13 +388,13 @@ infosStake s@PraosNodeConfig{..} xs e = case ys of
     e' = if e >= 2 then EpochNo (unEpochNo e - 2) else 0
     ys = dropWhile (\b -> blockInfoEpoch s b > e') xs
 
-phi :: NodeConfig (Praos c) -> Rational -> Double
+phi :: NodeConfig (Praos cfg c) -> Rational -> Double
 phi PraosNodeConfig{..} r = 1 - (1 - praosLeaderF) ** fromRational r
   where
     PraosParams{..} = praosParams
 
-leaderThreshold :: forall c. PraosCrypto c
-                => NodeConfig (Praos c)
+leaderThreshold :: forall cfg c. PraosCrypto c
+                => NodeConfig (Praos cfg c)
                 -> [BlockInfo c]
                 -> SlotNo
                 -> Int
@@ -397,7 +404,7 @@ leaderThreshold st xs s n =
     in  2 ^ (byteCount (Proxy :: Proxy (PraosHash c)) * 8) * phi st a
 
 rhoYT :: PraosCrypto c
-      => NodeConfig (Praos c)
+      => NodeConfig (Praos cfg c)
       -> [BlockInfo c]
       -> SlotNo
       -> Int

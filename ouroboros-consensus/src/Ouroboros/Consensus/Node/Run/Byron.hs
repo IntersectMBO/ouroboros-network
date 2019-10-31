@@ -19,7 +19,7 @@ import           Ouroboros.Consensus.Ledger.Byron
 import           Ouroboros.Consensus.Ledger.Byron.ContainsGenesis
 import           Ouroboros.Consensus.Ledger.Byron.Forge
 import           Ouroboros.Consensus.Node.Run.Abstract
-import           Ouroboros.Consensus.Protocol.ExtNodeConfig
+import           Ouroboros.Consensus.Protocol.Abstract
 
 import           Ouroboros.Storage.Common (EpochSize (..))
 
@@ -27,7 +27,7 @@ import           Ouroboros.Storage.Common (EpochSize (..))
   RunNode instance
 -------------------------------------------------------------------------------}
 
-instance ByronGiven => RunNode ByronBlockOrEBB where
+instance RunNode ByronBlockOrEBB where
   nodeForgeBlock         = forgeBlockOrEBB
   nodeBlockMatchesHeader = byronBlockOrEBBMatchesHeader
   nodeBlockFetchSize     = const 2000 -- TODO #593

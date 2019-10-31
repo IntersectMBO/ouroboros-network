@@ -9,7 +9,6 @@ import           Data.Coerce
 import           Data.Foldable (asum)
 import           Data.IORef
 import           Data.List (foldl', intercalate)
-import           Data.Reflection
 import           Data.Word
 import           Options.Applicative
 
@@ -23,8 +22,7 @@ import qualified Cardano.Crypto as Crypto
 import           Ouroboros.Network.Block (HasHeader (..), SlotNo (..),
                      genesisPoint)
 
-import           Ouroboros.Consensus.Ledger.Byron (ByronBlockOrEBB, ByronGiven,
-                     ByronHash)
+import           Ouroboros.Consensus.Ledger.Byron (ByronBlockOrEBB, ByronHash)
 import qualified Ouroboros.Consensus.Ledger.Byron as Byron
 import           Ouroboros.Consensus.Node.Run.Abstract
 import           Ouroboros.Consensus.Node.Run.Byron ()
@@ -40,10 +38,10 @@ main :: IO ()
 main = do
     CmdLine{..}   <- getCmdLine
     genesisConfig <- openGenesis clConfig clIsMainNet
-    withByronGiven genesisConfig $ do
-      let epochInfo = fixedSizeEpochInfo (coerce (given :: EpochSlots))
-      immDB <- openImmDB clImmDB epochInfo
-      withRegistry $ runAnalysis clAnalysis immDB epochInfo
+    let epochSlots = Genesis.configEpochSlots genesisConfig
+        epochInfo  = fixedSizeEpochInfo (coerce epochSlots)
+    immDB <- openImmDB clImmDB epochSlots epochInfo
+    withRegistry $ runAnalysis clAnalysis immDB epochInfo
     putStrLn "Done"
 
 {-------------------------------------------------------------------------------
@@ -221,34 +219,18 @@ openGenesis configFile onMainNet = do
     return genesisConfig
 
 {-------------------------------------------------------------------------------
-  Attempt to isolate the nasty reflection required by the Byron instances
--------------------------------------------------------------------------------}
-
-withByronGiven :: Genesis.Config -> (Byron.ByronGiven => IO a) -> IO a
-withByronGiven genesisConfig io =
-      give protocolMagicId
-    $ give epochSlots
-    $ io
-  where
-    protocolMagicId :: Crypto.ProtocolMagicId
-    epochSlots      :: EpochSlots
-
-    protocolMagicId = Genesis.configProtocolMagicId genesisConfig
-    epochSlots      = Genesis.configEpochSlots      genesisConfig
-
-{-------------------------------------------------------------------------------
   Interface with the ImmDB
 -------------------------------------------------------------------------------}
 
 type Blk = ByronBlockOrEBB
 
-openImmDB :: ByronGiven => FilePath -> EpochInfo IO -> IO (ImmDB IO Blk)
-openImmDB fp epochInfo = openDB args
+openImmDB :: FilePath -> EpochSlots -> EpochInfo IO -> IO (ImmDB IO Blk)
+openImmDB fp epochSlots epochInfo = openDB args
   where
     args :: ImmDbArgs IO Blk
     args = (defaultArgs fp) {
           immDecodeHash  = Byron.decodeByronHeaderHash
-        , immDecodeBlock = Byron.decodeByronBlock (given :: EpochSlots)
+        , immDecodeBlock = Byron.decodeByronBlock epochSlots
         , immEncodeHash  = Byron.encodeByronHeaderHash
         , immEncodeBlock = Byron.encodeByronBlock
         , immEpochInfo   = epochInfo

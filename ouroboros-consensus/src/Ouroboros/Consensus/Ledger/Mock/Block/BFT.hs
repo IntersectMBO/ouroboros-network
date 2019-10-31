@@ -56,8 +56,8 @@ data SignedSimpleBft c c' = SignedSimpleBft {
     }
   deriving (Generic)
 
-type instance BlockProtocol (SimpleBftBlock c c') =
-  Bft c'
+type instance BlockProtocol (SimpleBftBlock  c c') = Bft c'
+type instance BlockProtocol (SimpleBftHeader c c') = BlockProtocol (SimpleBftBlock c c')
 
 -- | Sanity check that block and header type synonyms agree
 _simpleBFtHeader :: SimpleBftBlock c c' -> SimpleBftHeader c c'
@@ -70,7 +70,7 @@ _simpleBFtHeader = simpleHeader
 instance SignedHeader (SimpleBftHeader c c') where
   type Signed (SimpleBftHeader c c') = SignedSimpleBft c c'
 
-  headerSigned = SignedSimpleBft . simpleHeaderStd
+  headerSigned _ = SignedSimpleBft . simpleHeaderStd
 
 instance ( SimpleCrypto c
          , BftCrypto c'

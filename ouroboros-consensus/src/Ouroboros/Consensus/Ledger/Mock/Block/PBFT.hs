@@ -63,7 +63,8 @@ data SignedSimplePBft c c' = SignedSimplePBft {
   deriving (Generic)
 
 -- | PBFT requires the ledger view; for the mock ledger, this is constant
-type instance BlockProtocol (SimplePBftBlock c c') = PBft (PBftLedgerView c') c'
+type instance BlockProtocol (SimplePBftBlock  c c') = PBft (PBftLedgerView c') c'
+type instance BlockProtocol (SimplePBftHeader c c') = BlockProtocol (SimplePBftBlock c c')
 
 -- | Sanity check that block and header type synonyms agree
 _simplePBftHeader :: SimplePBftBlock c c' -> SimplePBftHeader c c'
@@ -76,11 +77,14 @@ _simplePBftHeader = simpleHeader
 instance SignedHeader (SimplePBftHeader c c') where
   type Signed (SimplePBftHeader c c') = SignedSimplePBft c c'
 
-  headerSigned = SignedSimplePBft . simpleHeaderStd
+  headerSigned _ = SignedSimplePBft . simpleHeaderStd
 
 instance ( SimpleCrypto c
          , Signable MockDSIGN (SignedSimplePBft c PBftMockCrypto)
-         ) => HeaderSupportsPBft PBftMockCrypto (SimplePBftHeader c PBftMockCrypto) where
+         ) => HeaderSupportsPBft
+                (PBftLedgerView PBftMockCrypto)
+                PBftMockCrypto
+                (SimplePBftHeader c PBftMockCrypto) where
   headerPBftFields _ = simplePBftExt . simpleHeaderExt
 
 instance ( SimpleCrypto c

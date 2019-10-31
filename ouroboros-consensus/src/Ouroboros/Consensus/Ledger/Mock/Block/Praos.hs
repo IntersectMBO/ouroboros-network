@@ -29,7 +29,6 @@ import           Ouroboros.Consensus.Ledger.Mock.Address
 import           Ouroboros.Consensus.Ledger.Mock.Block
 import           Ouroboros.Consensus.Ledger.Mock.Forge
 import           Ouroboros.Consensus.Ledger.Mock.Stake
-import           Ouroboros.Consensus.Protocol.ExtNodeConfig
 import           Ouroboros.Consensus.Protocol.Praos
 import           Ouroboros.Consensus.Protocol.Signed
 import           Ouroboros.Consensus.Util.Condense
@@ -66,8 +65,8 @@ data SignedSimplePraos c c' = SignedSimplePraos {
     }
 
 -- | See 'ProtocolLedgerView' instance for why we need the 'AddrDist'
-type instance BlockProtocol (SimplePraosBlock c c') =
-  ExtNodeConfig AddrDist (Praos c')
+type instance BlockProtocol (SimplePraosBlock  c c') = Praos AddrDist c'
+type instance BlockProtocol (SimplePraosHeader c c') = BlockProtocol (SimplePraosBlock c c')
 
 -- | Sanity check that block and header type synonyms agree
 _simplePraosHeader :: SimplePraosBlock c c' -> SimplePraosHeader c c'
@@ -80,7 +79,7 @@ _simplePraosHeader = simpleHeader
 instance PraosCrypto c' => SignedHeader (SimplePraosHeader c c') where
   type Signed (SimplePraosHeader c c') = SignedSimplePraos c c'
 
-  headerSigned SimpleHeader{..} = SignedSimplePraos {
+  headerSigned _ SimpleHeader{..} = SignedSimplePraos {
         signedSimplePraos = simpleHeaderStd
       , signedPraosFields = praosExtraFields (simplePraosExt simpleHeaderExt)
       }
@@ -88,16 +87,16 @@ instance PraosCrypto c' => SignedHeader (SimplePraosHeader c c') where
 instance ( SimpleCrypto c
          , PraosCrypto c'
          , Signable (PraosKES c') (SignedSimplePraos c c')
-         ) => HeaderSupportsPraos c' (SimplePraosHeader c c') where
+         ) => HeaderSupportsPraos AddrDist c' (SimplePraosHeader c c') where
   headerPraosFields _ = simplePraosExt . simpleHeaderExt
 
 instance ( SimpleCrypto c
          , PraosCrypto c'
          , Signable (PraosKES c') (SignedSimplePraos c c')
-         ) => ForgeExt (ExtNodeConfig ext (Praos c')) c (SimplePraosExt c c') where
+         ) => ForgeExt (Praos ext c') c (SimplePraosExt c c') where
   forgeExt cfg isLeader SimpleBlock{..} = do
       ext :: SimplePraosExt c c' <- fmap SimplePraosExt $
-        forgePraosFields (encNodeConfigP cfg)
+        forgePraosFields cfg
                          isLeader
                          $ \praosExtraFields ->
           SignedSimplePraos {
@@ -128,11 +127,11 @@ instance ( SimpleCrypto c
          , PraosCrypto c'
          , Signable (PraosKES c') (SignedSimplePraos c c')
          ) => ProtocolLedgerView (SimplePraosBlock c c') where
-  protocolLedgerView (EncNodeConfig _ addrDist) _ =
-      equalStakeDist addrDist
+  protocolLedgerView PraosNodeConfig{..} _ =
+      equalStakeDist praosExtConfig
 
-  anachronisticProtocolLedgerView (EncNodeConfig _ addrDist) _ _ =
-      Right $ SB.unbounded $ equalStakeDist addrDist
+  anachronisticProtocolLedgerView PraosNodeConfig{..} _ _ =
+      Right $ SB.unbounded $ equalStakeDist praosExtConfig
 
 {-------------------------------------------------------------------------------
   Serialisation

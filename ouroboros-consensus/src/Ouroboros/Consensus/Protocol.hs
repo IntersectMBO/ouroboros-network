@@ -15,13 +15,8 @@ module Ouroboros.Consensus.Protocol (
   , module X
   ) where
 
-import           Data.Coerce
-import           Data.Reflection (give)
-
-import qualified Cardano.Chain.Block as Block
 import qualified Cardano.Chain.Genesis as Genesis
 import qualified Cardano.Chain.Update as Update
-import qualified Cardano.Crypto as Crypto
 
 import           Ouroboros.Consensus.Ledger.Byron
 import           Ouroboros.Consensus.Ledger.Byron.Config
@@ -32,20 +27,18 @@ import           Ouroboros.Consensus.Node.ProtocolInfo.Mock.Praos ()
 import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.Protocol.Abstract as X
 import           Ouroboros.Consensus.Protocol.BFT as X
-import           Ouroboros.Consensus.Protocol.ExtNodeConfig as X
 import           Ouroboros.Consensus.Protocol.LeaderSchedule as X
 import           Ouroboros.Consensus.Protocol.PBFT as X
 import           Ouroboros.Consensus.Protocol.Praos as X
 import           Ouroboros.Consensus.Util
-
 
 {-------------------------------------------------------------------------------
   Supported protocols
 -------------------------------------------------------------------------------}
 
 type ProtocolMockBFT        = Bft BftMockCrypto
-type ProtocolMockPraos      = ExtNodeConfig AddrDist (Praos PraosMockCrypto)
-type ProtocolLeaderSchedule = WithLeaderSchedule (Praos PraosCryptoUnused)
+type ProtocolMockPraos      = Praos AddrDist PraosMockCrypto
+type ProtocolLeaderSchedule = WithLeaderSchedule (Praos () PraosCryptoUnused)
 type ProtocolMockPBFT       = PBft (PBftLedgerView PBftMockCrypto) PBftMockCrypto
 type ProtocolRealPBFT       = PBft ByronConfig PBftCardanoCrypto
 
@@ -94,12 +87,4 @@ runProtocol ProtocolMockBFT{}        = Dict
 runProtocol ProtocolMockPraos{}      = Dict
 runProtocol ProtocolLeaderSchedule{} = Dict
 runProtocol ProtocolMockPBFT{}       = Dict
-runProtocol (ProtocolRealPBFT
-             gc@Genesis.Config{ Genesis.configGenesisData
-                              , Genesis.configGenesisHash}
-             _msigthd _pv _sv _mplc) =
-  let Genesis.GenesisData{Genesis.gdProtocolMagicId} = configGenesisData
-  in give (Genesis.configEpochSlots gc)
-     $ give gdProtocolMagicId
-     $ give (coerce @_ @Block.HeaderHash configGenesisHash)
-     $ Dict
+runProtocol ProtocolRealPBFT{}       = Dict

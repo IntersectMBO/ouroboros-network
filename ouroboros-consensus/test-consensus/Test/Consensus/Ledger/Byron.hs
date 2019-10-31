@@ -10,7 +10,6 @@ import           Codec.CBOR.Read (deserialiseFromBytes)
 import           Codec.CBOR.Write (toLazyByteString)
 import qualified Data.ByteString as Strict
 import qualified Data.ByteString.Lazy as Lazy
-import           Data.Reflection (give)
 
 import           Cardano.Binary (ByteSpan, fromCBOR, slice, toCBOR)
 import           Cardano.Chain.Block (ABlockOrBoundary (..))
@@ -48,7 +47,7 @@ import           Test.Util.Orphans.Arbitrary ()
 
 
 tests :: TestTree
-tests = give protocolMagicId $ testGroup "Byron"
+tests = testGroup "Byron"
   [ testGroup "Serialisation roundtrips"
       [ testProperty "roundtrip Block"       prop_roundtrip_Block
       , testProperty "roundtrip Header"      prop_roundtrip_Header
@@ -133,7 +132,7 @@ prop_roundtrip_HeaderHash =
     roundtrip encodeByronHeaderHash decodeByronHeaderHash
 
 prop_roundtrip_ChainState :: ChainState (BlockProtocol Block) -> Property
-prop_roundtrip_ChainState = give protocolMagicId $
+prop_roundtrip_ChainState =
     roundtrip encodeByronChainState decodeByronChainState
 
 prop_roundtrip_GenTx :: GenTx Block -> Property
@@ -204,7 +203,7 @@ instance Arbitrary KeyHash where
   arbitrary = hedgehog CC.genKeyHash
 
 instance Arbitrary (PBftChainState PBftCardanoCrypto) where
-  arbitrary = give protocolMagicId $
+  arbitrary =
     fromMap <$> oneof [return Origin, At <$> arbitrary] <*> arbitrary
 
 instance Arbitrary (ChainStateWithEBBs (PBft ByronConfig PBftCardanoCrypto)) where

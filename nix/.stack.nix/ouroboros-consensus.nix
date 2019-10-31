@@ -44,7 +44,6 @@
           (hsPkgs.mtl)
           (hsPkgs.network)
           (hsPkgs.pipes)
-          (hsPkgs.reflection)
           (hsPkgs.serialise)
           (hsPkgs.stm)
           (hsPkgs.text)
@@ -72,7 +71,6 @@
             (hsPkgs.ouroboros-consensus)
             (hsPkgs.path)
             (hsPkgs.path-io)
-            (hsPkgs.reflection)
             (hsPkgs.resourcet)
             (hsPkgs.streaming)
             (hsPkgs.text)
@@ -89,7 +87,6 @@
             (hsPkgs.optparse-applicative)
             (hsPkgs.ouroboros-consensus)
             (hsPkgs.ouroboros-network)
-            (hsPkgs.reflection)
             ];
           };
         };
@@ -126,7 +123,6 @@
             (hsPkgs.QuickCheck)
             (hsPkgs.quickcheck-state-machine)
             (hsPkgs.random)
-            (hsPkgs.reflection)
             (hsPkgs.serialise)
             (hsPkgs.tasty)
             (hsPkgs.tasty-hunit)
@@ -166,7 +162,6 @@
             (hsPkgs.QuickCheck)
             (hsPkgs.quickcheck-state-machine)
             (hsPkgs.random)
-            (hsPkgs.reflection)
             (hsPkgs.serialise)
             (hsPkgs.tasty)
             (hsPkgs.tasty-hunit)
