@@ -6,6 +6,7 @@ packages: ./typed-protocols
           ./ouroboros-consensus
           ./io-sim
           ./io-sim-classes
+          ./ntp
 
 constraints:
   graphviz == 2999.20.0.3
