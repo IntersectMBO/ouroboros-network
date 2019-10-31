@@ -29,7 +29,6 @@ import           Ouroboros.Consensus.Ledger.Mock.Address
 import           Ouroboros.Consensus.Ledger.Mock.Block
 import           Ouroboros.Consensus.Ledger.Mock.Forge
 import           Ouroboros.Consensus.Ledger.Mock.Stake
-import           Ouroboros.Consensus.Protocol.ExtNodeConfig
 import           Ouroboros.Consensus.Protocol.Praos
 import           Ouroboros.Consensus.Protocol.Signed
 import           Ouroboros.Consensus.Util.Condense
@@ -66,8 +65,7 @@ data SignedSimplePraos c c' = SignedSimplePraos {
     }
 
 -- | See 'ProtocolLedgerView' instance for why we need the 'AddrDist'
-type instance BlockProtocol (SimplePraosBlock c c') =
-  ExtNodeConfig AddrDist (Praos c')
+type instance BlockProtocol (SimplePraosBlock c c') = Praos AddrDist c'
 
 -- | Sanity check that block and header type synonyms agree
 _simplePraosHeader :: SimplePraosBlock c c' -> SimplePraosHeader c c'
@@ -94,10 +92,10 @@ instance ( SimpleCrypto c
 instance ( SimpleCrypto c
          , PraosCrypto c'
          , Signable (PraosKES c') (SignedSimplePraos c c')
-         ) => ForgeExt (ExtNodeConfig ext (Praos c')) c (SimplePraosExt c c') where
+         ) => ForgeExt (Praos ext c') c (SimplePraosExt c c') where
   forgeExt cfg isLeader SimpleBlock{..} = do
       ext :: SimplePraosExt c c' <- fmap SimplePraosExt $
-        forgePraosFields (encNodeConfigP cfg)
+        forgePraosFields cfg
                          isLeader
                          $ \praosExtraFields ->
           SignedSimplePraos {
@@ -128,11 +126,11 @@ instance ( SimpleCrypto c
          , PraosCrypto c'
          , Signable (PraosKES c') (SignedSimplePraos c c')
          ) => ProtocolLedgerView (SimplePraosBlock c c') where
-  protocolLedgerView (EncNodeConfig _ addrDist) _ =
-      equalStakeDist addrDist
+  protocolLedgerView PraosNodeConfig{..} _ =
+      equalStakeDist praosExtConfig
 
-  anachronisticProtocolLedgerView (EncNodeConfig _ addrDist) _ _ =
-      Right $ SB.unbounded $ equalStakeDist addrDist
+  anachronisticProtocolLedgerView PraosNodeConfig{..} _ _ =
+      Right $ SB.unbounded $ equalStakeDist praosExtConfig
 
 {-------------------------------------------------------------------------------
   Serialisation
