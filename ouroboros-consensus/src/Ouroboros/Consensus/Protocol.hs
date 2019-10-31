@@ -32,12 +32,10 @@ import           Ouroboros.Consensus.Node.ProtocolInfo.Mock.Praos ()
 import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.Protocol.Abstract as X
 import           Ouroboros.Consensus.Protocol.BFT as X
-import           Ouroboros.Consensus.Protocol.ExtNodeConfig as X
 import           Ouroboros.Consensus.Protocol.LeaderSchedule as X
 import           Ouroboros.Consensus.Protocol.PBFT as X
 import           Ouroboros.Consensus.Protocol.Praos as X
 import           Ouroboros.Consensus.Util
-
 
 {-------------------------------------------------------------------------------
   Supported protocols
