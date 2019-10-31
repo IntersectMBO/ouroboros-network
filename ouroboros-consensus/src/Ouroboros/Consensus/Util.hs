@@ -1,4 +1,5 @@
 {-# LANGUAGE BangPatterns        #-}
+{-# LANGUAGE ConstraintKinds     #-}
 {-# LANGUAGE FlexibleInstances   #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE PolyKinds           #-}
@@ -37,15 +38,18 @@ module Ouroboros.Consensus.Util (
 
 import qualified Data.ByteString as Strict
 import qualified Data.ByteString.Lazy as Lazy
-import           Data.Constraint
 import           Data.Function (on)
 import           Data.Functor.Identity
+import           Data.Kind
 import           Data.List (foldl', maximumBy)
 import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Void
 import           Data.Word (Word64)
 import           GHC.Stack
+
+data Dict :: Constraint -> * where
+  Dict :: a => Dict a
 
 class Empty a
 instance Empty a

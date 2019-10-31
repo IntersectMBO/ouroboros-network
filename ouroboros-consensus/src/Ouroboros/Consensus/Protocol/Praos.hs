@@ -122,6 +122,7 @@ forgePraosFields PraosNodeConfig{..} PraosProof{..} mkToSign = do
         , praosY       = praosProofY
         }
     m <- signedKES
+           ()
            (fromIntegral (unSlotNo praosProofSlot))
            (mkToSign signedFields)
            keyKES
@@ -230,8 +231,8 @@ instance PraosCrypto c => OuroborosTag (Praos c) where
         RelayId _  -> return Nothing
         CoreId nid -> do
           let (rho', y', t) = rhoYT cfg cs slot nid
-          rho <- evalCertified rho' praosSignKeyVRF
-          y   <- evalCertified y'   praosSignKeyVRF
+          rho <- evalCertified () rho' praosSignKeyVRF
+          y   <- evalCertified () y'   praosSignKeyVRF
           return $ if fromIntegral (certifiedNatural y) < t
               then Just PraosProof {
                        praosProofRho  = rho
@@ -261,6 +262,7 @@ instance PraosCrypto c => OuroborosTag (Praos c) where
 
     -- verify block signature
     case verifySignedKES
+           ()
            vkKES
            (fromIntegral $ unSlotNo slot)
            toSign
@@ -275,7 +277,7 @@ instance PraosCrypto c => OuroborosTag (Praos c) where
     let (rho', y', t) = rhoYT cfg cs slot nid
 
     -- verify rho proof
-    unless (verifyCertified vkVRF rho' praosRho) $
+    unless (verifyCertified () vkVRF rho' praosRho) $
         throwError $ PraosInvalidCert
             vkVRF
             (toCBOR rho')
@@ -283,7 +285,7 @@ instance PraosCrypto c => OuroborosTag (Praos c) where
             (certifiedProof praosRho)
 
     -- verify y proof
-    unless (verifyCertified vkVRF y' praosY) $
+    unless (verifyCertified () vkVRF y' praosY) $
         throwError $ PraosInvalidCert
             vkVRF
             (toCBOR y')
@@ -422,6 +424,8 @@ class ( KESAlgorithm  (PraosKES  c)
       , Typeable (PraosVRF c)
       , Condense (SigKES (PraosKES c))
       , Cardano.Crypto.VRF.Class.Signable (PraosVRF c) (Natural, SlotNo, VRFType)
+      , ContextKES (PraosKES c) ~ ()
+      , ContextVRF (PraosVRF c) ~ ()
       ) => PraosCrypto (c :: *) where
   type family PraosKES  c :: *
   type family PraosVRF  c :: *

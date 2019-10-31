@@ -24,59 +24,46 @@ module Ouroboros.Consensus.Crypto.DSIGN.Cardano
 import           Cardano.Binary
 import qualified Cardano.Chain.Block as CC.Block
 import qualified Cardano.Chain.UTxO as CC.UTxO
-import           Cardano.Crypto (ProtocolMagicId, SignTag (..), Signature,
-                     SigningKey, VerificationKey, keyGen, signRaw,
-                     toVerification, verifySignatureRaw)
+import           Cardano.Crypto (SignTag (..), Signature, SigningKey,
+                     VerificationKey, keyGen, signRaw, toVerification,
+                     verifySignatureRaw)
 import           Cardano.Crypto.DSIGN.Class
 import qualified Cardano.Crypto.Signing as Crypto
 import           Cardano.Prelude (NoUnexpectedThunks, UseIsNormalForm (..))
 import           Data.ByteString (ByteString)
 import           Data.Coerce (coerce)
-import           Data.Constraint
 import           Data.Proxy (Proxy (..))
-import           Data.Reflection (Given (..))
 import           GHC.Generics (Generic)
 
+import           Ouroboros.Consensus.Ledger.Byron.Config
 import           Ouroboros.Consensus.Util.Condense
 
 class (HasSignTag a, Decoded a) => ByronSignable a
 instance (HasSignTag a, Decoded a) => ByronSignable a
 
 class HasSignTag a where
-  signTag :: proxy a -> SignTag
+  signTag :: ByronConfig -> VerKeyDSIGN CardanoDSIGN -> proxy a -> SignTag
 
-signTagFor :: forall a. HasSignTag a => a -> SignTag
-signTagFor _ = signTag (Proxy @a)
+signTagFor :: forall a. HasSignTag a
+           => ByronConfig -> VerKeyDSIGN CardanoDSIGN -> a -> SignTag
+signTagFor cfg genKey _ = signTag cfg genKey (Proxy @a)
 
 instance HasSignTag CC.UTxO.TxSigData where
-  signTag = const SignTx
+  signTag _ _ = const SignTx
 
--- Unfortunately, the sign tag for a block also incorporates extra information
--- related to the hybrid lightweight/heavyweight delegation scheme used in the
--- Byron era. Specifically, when signing a block, we also include the
--- verification key of the genesis stakeholder of which the signing node is a delegate.
---
--- In order to avoid this specific case requiring a redesign of the whole system,
--- we do some annoying trickery to make this available:
---
--- - Require a given constraint here containing the relevant verification key
--- - Use a class reifying this instance head/body relationship to propagate this constraint.
-instance Given (VerKeyDSIGN CardanoDSIGN)
-        => HasSignTag (Annotated CC.Block.ToSign ByteString) where
-  signTag = const $ SignBlock vk
-    where VerKeyCardanoDSIGN vk = given
-
--- See https://hackage.haskell.org/package/constraints-0.10.1/docs/Data-Constraint.html#t::-61--62-
---
--- This instance reflects the instance head/body relationship, and allows us to
--- reconstruct the `HasSignTag` constraint using the relevant `Given` constraint.
-instance Given (VerKeyDSIGN CardanoDSIGN)
-        :=> HasSignTag (Annotated CC.Block.ToSign ByteString) where
-  ins = Sub Dict
+instance HasSignTag (Annotated CC.Block.ToSign ByteString) where
+  signTag _ (VerKeyCardanoDSIGN vk) = const $ SignBlock vk
 
 data CardanoDSIGN
 
-instance Given ProtocolMagicId => DSIGNAlgorithm CardanoDSIGN where
+instance DSIGNAlgorithm CardanoDSIGN where
+    -- Context required for Cardano digital signatures
+    --
+    -- We require the ByronConfig (from which we just extract the protocol
+    -- magic) as well as the verification key of the genesis stakeholder of
+    -- which the signing node is a delegate, which is required for signing
+    -- blocks.
+    type ContextDSIGN CardanoDSIGN = (ByronConfig, VerKeyDSIGN CardanoDSIGN)
 
     newtype VerKeyDSIGN CardanoDSIGN = VerKeyCardanoDSIGN VerificationKey
         deriving (Show, Eq, Generic)
@@ -105,13 +92,13 @@ instance Given ProtocolMagicId => DSIGNAlgorithm CardanoDSIGN where
 
     deriveVerKeyDSIGN (SignKeyCardanoDSIGN sk) = VerKeyCardanoDSIGN $ toVerification sk
 
-    signDSIGN a (SignKeyCardanoDSIGN sk) = return
+    signDSIGN (cfg, genKey) a (SignKeyCardanoDSIGN sk) = return
         . SigCardanoDSIGN
         . coerce
-        $ signRaw given (Just $ signTagFor a) sk (recoverBytes a)
+        $ signRaw (pbftProtocolMagicId cfg) (Just $ signTagFor cfg genKey a) sk (recoverBytes a)
 
-    verifyDSIGN (VerKeyCardanoDSIGN vk) a (SigCardanoDSIGN sig) =
-        if verifySignatureRaw vk (Crypto.signTag given (signTagFor a) <> recoverBytes a) $ coerce sig
+    verifyDSIGN (cfg, genKey) (VerKeyCardanoDSIGN vk) a (SigCardanoDSIGN sig) =
+        if verifySignatureRaw vk (Crypto.signTag (pbftProtocolMagicId cfg) (signTagFor cfg genKey a) <> recoverBytes a) $ coerce sig
           then Right ()
           else Left "Verification failed"
 

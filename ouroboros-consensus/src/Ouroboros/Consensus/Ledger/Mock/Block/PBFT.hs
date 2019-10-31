@@ -86,10 +86,11 @@ instance ( SimpleCrypto c
 instance ( SimpleCrypto c
          , PBftCrypto c'
          , Signable (PBftDSIGN c') (SignedSimplePBft c c')
+         , ConstructContextDSIGN ext c'
          ) => ForgeExt (PBft ext c') c (SimplePBftExt c c') where
-  forgeExt _cfg isLeader SimpleBlock{..} = do
+  forgeExt cfg isLeader SimpleBlock{..} = do
       ext :: SimplePBftExt c c' <- fmap SimplePBftExt $
-        forgePBftFields isLeader $
+        forgePBftFields cfg isLeader $
           SignedSimplePBft {
               signedSimplePBft = simpleHeaderStd
             }
