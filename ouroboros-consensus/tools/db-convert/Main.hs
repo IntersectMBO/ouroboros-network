@@ -147,7 +147,7 @@ convertEpochFile
 convertEpochFile es inFile outDir =
   let inStream = CC.parseEpochFileWithBoundary es (toFilePath inFile)
       dbDir = outDir </> [reldir|immutable|]
-      encode = CB.serializeEncoding' . Byron.encodeByronBlock . Byron.ByronBlockOrEBB
+      encode = CB.serializeEncoding' . Byron.encodeByronBlock . Byron.mkByronBlockOrEBB es
    in do
         createDirIfMissing True dbDir
         -- Old filename format is XXXXX.dat, new is epoch-XXX.dat
@@ -218,7 +218,7 @@ validateChainDb dbDir cfg onlyImmDB verbose =
           -- Integration
         , ChainDB.cdbNodeConfig = pInfoConfig byronProtocolInfo
         , ChainDB.cdbEpochInfo = fixedSizeEpochInfo . EpochSize . unEpochSlots $ epochSlots
-        , ChainDB.cdbIsEBB = \blk -> case Byron.unByronBlockOrEBB blk of
+        , ChainDB.cdbIsEBB = \blk -> case Byron.bbRaw blk of
           CC.ABOBBlock _      -> Nothing
           CC.ABOBBoundary ebb -> Just (Byron.ByronHash (CC.boundaryHashAnnotated ebb))
           -- Misc

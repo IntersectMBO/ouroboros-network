@@ -172,7 +172,7 @@ instance Arbitrary Block where
         hedgehog (CC.genBlock protocolMagicId epochSlots)
       genBoundaryBlock :: Gen Block
       genBoundaryBlock =
-        ByronBlockOrEBB . ABOBBoundary . annotateBoundary protocolMagicId <$>
+        mkByronBlockOrEBB epochSlots . ABOBBoundary . annotateBoundary protocolMagicId <$>
         hedgehog (CC.genBoundaryBlock)
 
 
@@ -184,14 +184,14 @@ instance Arbitrary (Header Block) where
     where
       genHeader :: Gen (Header Block)
       genHeader =
-        mkByronHeaderOrEBB . Right .
+        mkByronHeaderOrEBB epochSlots . Right .
         annotate
           (CC.Block.toCBORHeader epochSlots)
           (CC.Block.fromCBORAHeader epochSlots) <$>
         hedgehog (CC.genHeader protocolMagicId epochSlots)
       genBoundaryHeader :: Gen (Header Block)
       genBoundaryHeader =
-        mkByronHeaderOrEBB . Left .
+        mkByronHeaderOrEBB epochSlots . Left .
         annotate
           (CC.Block.toCBORABoundaryHeader protocolMagicId)
           CC.Block.fromCBORABoundaryHeader <$>
