@@ -31,6 +31,7 @@ module Test.Util.FS.Sim.MockFS (
   , hClose
   , hSeek
   , hGetSome
+  , hGetSomeAt
   , hPutSome
   , hTruncate
   , hGetSize
@@ -537,6 +538,47 @@ hGetSome err@ErrorHandling{..} h n =
         fsErrorType   = FsInvalidArgument
       , fsErrorPath   = fp
       , fsErrorString = "cannot hGetSome in " <> mode <> " mode"
+      , fsErrorNo     = Nothing
+      , fsErrorStack  = callStack
+      , fsLimitation  = True
+      }
+
+-- | Thread safe version of 'hGetSome', which doesn't modify or read the file
+-- offset.
+hGetSomeAt :: CanSimFS m
+           => ErrorHandling FsError m
+           -> Handle'
+           -> Word64
+           -> AbsOffset
+           -> m ByteString
+hGetSomeAt err@ErrorHandling{..} h n o =
+  withOpenHandleRead err h $ \fs hs@OpenHandle{..} -> do
+      file <- checkFsTree err $ FS.getFile openFilePath (mockFiles fs)
+      let o' = unAbsOffset o
+      let fsize = fromIntegral (BS.length file) :: Word64
+      case openPtr  of
+        RW r _ _ -> do
+          unless r $ throwError (errNoReadAccess openFilePath "write")
+          let bs = BS.take (fromIntegral n) . BS.drop (fromIntegral o') $ file
+          -- This is the same fsLimitation we get when we seek past the end of
+          -- EOF, in AbsoluteSeek mode.
+          when (o' > fsize) $ throwError (errPastEnd openFilePath)
+          return (bs, hs)
+        Append -> throwError (errNoReadAccess openFilePath "append")
+  where
+    errNoReadAccess fp mode = FsError {
+        fsErrorType   = FsInvalidArgument
+      , fsErrorPath   = fp
+      , fsErrorString = "cannot hGetSomeAt in " <> mode <> " mode"
+      , fsErrorNo     = Nothing
+      , fsErrorStack  = callStack
+      , fsLimitation  = True
+      }
+
+    errPastEnd fp = FsError {
+        fsErrorType   = FsInvalidArgument
+      , fsErrorPath   = fp
+      , fsErrorString = "hGetSomeAt offset past EOF not supported"
       , fsErrorNo     = Nothing
       , fsErrorStack  = callStack
       , fsLimitation  = True

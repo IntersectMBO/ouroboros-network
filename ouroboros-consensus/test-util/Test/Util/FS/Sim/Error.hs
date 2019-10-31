@@ -232,6 +232,7 @@ data Errors = Errors
   , _hClose                   :: ErrorStream
   , _hSeek                    :: ErrorStream
   , _hGetSome                 :: ErrorStreamGetSome
+  , _hGetSomeAt               :: ErrorStreamGetSome
   , _hPutSome                 :: ErrorStreamPutSome
   , _hTruncate                :: ErrorStream
   , _hGetSize                 :: ErrorStream
@@ -252,6 +253,7 @@ allNull Errors {..} = null _dumpState
                    && null _hClose
                    && null _hSeek
                    && null _hGetSome
+                   && null _hGetSomeAt
                    && null _hPutSome
                    && null _hTruncate
                    && null _hGetSize
@@ -281,6 +283,7 @@ instance Show Errors where
         , s "_hClose"                   _hClose
         , s "_hSeek"                    _hSeek
         , s "_hGetSome"                 _hGetSome
+        , s "_hGetSomeAt"               _hGetSomeAt
         , s "_hPutSome"                 _hPutSome
         , s "_hTruncate"                _hTruncate
         , s "_hGetSize"                 _hGetSize
@@ -299,6 +302,7 @@ instance Semigroup Errors where
       , _hClose                   = combine _hClose
       , _hSeek                    = combine _hSeek
       , _hGetSome                 = combine _hGetSome
+      , _hGetSomeAt               = combine _hGetSomeAt
       , _hPutSome                 = combine _hPutSome
       , _hTruncate                = combine _hTruncate
       , _hGetSize                 = combine _hGetSize
@@ -326,6 +330,7 @@ simpleErrors es = Errors
     , _hClose                   = es
     , _hSeek                    = es
     , _hGetSome                 =  Left                <$> es
+    , _hGetSomeAt               =  Left                <$> es
     , _hPutSome                 = (Left . (, Nothing)) <$> es
     , _hTruncate                = es
     , _hGetSize                 = es
@@ -363,6 +368,9 @@ genErrors genPartialWrites genSubstituteWithJunk = do
     _hGetSome   <- mkStreamGen 20 $ QC.frequency
       [ (1, return $ Left FsReachedEOF)
       , (3, Right <$> arbitrary) ]
+    _hGetSomeAt <- mkStreamGen 20 $ QC.frequency
+      [ (1, return $ Left FsReachedEOF)
+      , (3, Right <$> arbitrary) ]
     _hPutSome   <- mkStreamGen 5 $ QC.frequency
       [ (1, Left . (FsDeviceFull, ) <$> QC.frequency
             [ (2, return Nothing)
@@ -395,6 +403,7 @@ instance Arbitrary Errors where
       , (\s' -> err { _hClose = s' })                   <$> dropLast _hClose
       , (\s' -> err { _hSeek = s' })                    <$> dropLast _hSeek
       , (\s' -> err { _hGetSome = s' })                 <$> dropLast _hGetSome
+      , (\s' -> err { _hGetSomeAt = s' })               <$> dropLast _hGetSomeAt
       , (\s' -> err { _hPutSome = s' })                 <$> dropLast _hPutSome
       , (\s' -> err { _hTruncate = s' })                <$> dropLast _hTruncate
       , (\s' -> err { _hGetSize = s' })                 <$> dropLast _hGetSize
@@ -438,6 +447,7 @@ mkSimErrorHasFS err fsVar errorsVar =
             withErr' err errorsVar h (hSeek h m n) "hSeek"
             _hSeek (\e es -> es { _hSeek = e })
         , hGetSome   = hGetSome' err errorsVar hGetSome
+        , hGetSomeAt = hGetSomeAt' err errorsVar hGetSomeAt
         , hPutSome   = hPutSome' err errorsVar hPutSome
         , hTruncate  = \h w ->
             withErr' err errorsVar h (hTruncate h w) "hTruncate"
@@ -561,7 +571,7 @@ hGetSome'  :: (MonadSTM m, HasCallStack)
            -> StrictTVar m Errors
            -> (Handle HandleMock -> Word64 -> m BS.ByteString)  -- ^ Wrapped 'hGetSome'
            -> Handle HandleMock -> Word64 -> m BS.ByteString
-hGetSome' ErrorHandling{..} errorsVar hGetSomeWrapped handle n = do
+hGetSome' ErrorHandling{..} errorsVar hGetSomeWrapped handle n =
     next errorsVar _hGetSome (\e es -> es { _hGetSome = e }) >>= \case
       Nothing             -> hGetSomeWrapped handle n
       Just (Left errType) -> throwError FsError
@@ -575,6 +585,26 @@ hGetSome' ErrorHandling{..} errorsVar hGetSomeWrapped handle n = do
       Just (Right partial) ->
         hGetSomeWrapped handle (hGetSomePartial partial n)
 
+-- | In the thread safe version of 'hGetSome', we simulate exactly the same errors.
+hGetSomeAt' :: (MonadSTM m, HasCallStack)
+            => ErrorHandling FsError m
+            -> StrictTVar m Errors
+            -> (Handle HandleMock -> Word64 -> AbsOffset -> m BS.ByteString)  -- ^ Wrapped 'hGetSomeAt'
+            -> Handle HandleMock -> Word64 -> AbsOffset -> m BS.ByteString
+hGetSomeAt' ErrorHandling{..} errorsVar hGetSomeAtWrapped handle n offset =
+    next errorsVar _hGetSomeAt (\e es -> es { _hGetSomeAt = e }) >>= \case
+      Nothing             -> hGetSomeAtWrapped handle n offset
+      Just (Left errType) -> throwError FsError
+        { fsErrorType   = errType
+        , fsErrorPath   = handlePath handle
+        , fsErrorString = "simulated error: hGetSomeAt"
+        , fsErrorNo     = Nothing
+        , fsErrorStack  = callStack
+        , fsLimitation  = False
+        }
+      Just (Right partial) ->
+        hGetSomeAtWrapped handle (hGetSomePartial partial n) offset
+
 -- | Execute the wrapped 'hPutSome', throw an error and apply possible
 -- corruption to the blob to write, or simulate a partial write, depending on
 -- the corresponding 'ErrorStreamPutSome' (see 'nextError').
@@ -583,7 +613,7 @@ hPutSome' :: (MonadSTM m, HasCallStack)
           -> StrictTVar m Errors
           -> (Handle HandleMock -> BS.ByteString -> m Word64)  -- ^ Wrapped 'hPutSome'
           -> Handle HandleMock -> BS.ByteString -> m Word64
-hPutSome' ErrorHandling{..} errorsVar hPutSomeWrapped handle bs = do
+hPutSome' ErrorHandling{..} errorsVar hPutSomeWrapped handle bs =
     next errorsVar _hPutSome (\e es -> es { _hPutSome = e }) >>= \case
       Nothing                       -> hPutSomeWrapped handle bs
       Just (Left (errType, mbCorr)) -> do
