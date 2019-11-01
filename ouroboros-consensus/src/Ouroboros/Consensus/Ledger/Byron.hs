@@ -36,8 +36,7 @@ module Ouroboros.Consensus.Ledger.Byron
   , LedgerState (..)
   , LedgerConfig (..)
     -- * Config
-  , ByronNodeConfig
-  , ByronEBBNodeConfig
+  , ByronConsensusProtocol
     -- * Serialisation
   , encodeByronHeader
   , encodeByronBlock
@@ -133,13 +132,11 @@ import           Ouroboros.Consensus.Mempool.API
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.PBFT
 import           Ouroboros.Consensus.Protocol.Signed
-import           Ouroboros.Consensus.Protocol.WithEBBs
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.SlotBounded (SlotBounded (..))
 import qualified Ouroboros.Consensus.Util.SlotBounded as SB
 
-type ByronNodeConfig    = PBft ByronConfig PBftCardanoCrypto
-type ByronEBBNodeConfig = WithEBBs ByronNodeConfig
+type ByronConsensusProtocol = PBft ByronConfig PBftCardanoCrypto
 
 {-------------------------------------------------------------------------------
   Header hash
@@ -609,14 +606,30 @@ instance Measured BlockMeasure ByronBlockOrEBB where
 
 instance StandardHash ByronBlockOrEBB
 
-instance HeaderSupportsWithEBB (PBft ByronConfig PBftCardanoCrypto) (Header ByronBlockOrEBB) where
-  type HeaderOfBlock (Header ByronBlockOrEBB) = Header ByronBlock
-  type HeaderOfEBB (Header ByronBlockOrEBB) = CC.Block.ABoundaryHeader ByteString
+instance HeaderSupportsPBft ByronConfig PBftCardanoCrypto (Header ByronBlockOrEBB) where
+  type OptSigned (Header ByronBlockOrEBB) = Signed (Header ByronBlock)
 
-  eitherHeaderOrEbb _ (ByronHeaderRegular  mb  _ _) = Right (mkByronHeader mb)
-  eitherHeaderOrEbb _ (ByronHeaderBoundary ebb _ _) = Left ebb
+  headerPBftFields _   (ByronHeaderBoundary{}) = Nothing
+  headerPBftFields cfg (ByronHeaderRegular hdr _slotNo h) = Just (
+        PBftFields {
+          pbftIssuer    = VerKeyCardanoDSIGN
+                        . CC.Delegation.delegateVK
+                        . CC.Block.delegationCertificate
+                        . CC.Block.headerSignature
+                        $ hdr
+        , pbftGenKey    = VerKeyCardanoDSIGN
+                        . CC.Block.headerGenesisKey
+                        $ hdr
+        , pbftSignature = SignedDSIGN
+                        . SigCardanoDSIGN
+                        . CC.Block.signature
+                        . CC.Block.headerSignature
+                        $ hdr
+        }
+      , headerSigned cfg (ByronHeader hdr h)
+      )
 
-type instance BlockProtocol ByronBlockOrEBB = WithEBBs (PBft ByronConfig PBftCardanoCrypto)
+type instance BlockProtocol ByronBlockOrEBB = ByronConsensusProtocol
 
 instance UpdateLedger ByronBlockOrEBB where
 
@@ -628,7 +641,7 @@ instance UpdateLedger ByronBlockOrEBB where
       unByronEBBLedgerConfig :: LedgerConfig ByronBlock
     }
 
-  ledgerConfigView = ByronEBBLedgerConfig . ledgerConfigView . unWithEBBNodeConfig
+  ledgerConfigView = ByronEBBLedgerConfig . ledgerConfigView
 
   applyChainTick (ByronEBBLedgerConfig cfg) slotNo (ByronEBBLedgerState state) =
     ByronEBBLedgerState <$> applyChainTick cfg slotNo state
@@ -830,7 +843,7 @@ encodeByronLedgerState (ByronEBBLedgerState ByronLedgerState{..}) = mconcat
     ]
 
 encodeByronChainState :: ChainState (BlockProtocol ByronBlockOrEBB) -> Encoding
-encodeByronChainState = encodeChainStateWithEBBs encode
+encodeByronChainState = encode
 
 decodeByronHeaderHash :: Decoder s (HeaderHash ByronBlockOrEBB)
 decodeByronHeaderHash = fromCBOR
@@ -899,7 +912,7 @@ decodeByronLedgerState = ByronEBBLedgerState <$> do
     ByronLedgerState <$> decode <*> decode
 
 decodeByronChainState :: Decoder s (ChainState (BlockProtocol ByronBlockOrEBB))
-decodeByronChainState = decodeChainStateWithEBBs decode
+decodeByronChainState = decode
 
 decodeByronApplyTxError :: Decoder s (ApplyTxErr ByronBlockOrEBB)
 decodeByronApplyTxError = fromCBOR
@@ -1248,7 +1261,7 @@ instance ProtocolLedgerView ByronBlockOrEBB where
   --   upcoming delegations to see what new delegations will be made in the
   --   future, and update the current delegation map based on that.
   anachronisticProtocolLedgerView
-    (WithEBBNodeConfig cfg)
+    cfg
     (ByronEBBLedgerState (ByronLedgerState ls ss)) slot =
       case find (containsSlot slot) ss of
         -- We can find a snapshot which supports this slot

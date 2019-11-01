@@ -42,7 +42,6 @@ import           Ouroboros.Consensus.NodeId (CoreNodeId)
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.PBFT
 import qualified Ouroboros.Consensus.Protocol.PBFT.ChainState as CS
-import           Ouroboros.Consensus.Protocol.WithEBBs
 
 {-------------------------------------------------------------------------------
   Credentials
@@ -121,8 +120,8 @@ protocolInfoByron genesisConfig@Genesis.Config {
                   }
                   mSigThresh pVer sVer mLeader =
     ProtocolInfo {
-        pInfoConfig = WithEBBNodeConfig $ PBftNodeConfig {
-            pbftParams          =  PBftParams
+        pInfoConfig = PBftNodeConfig {
+            pbftParams = PBftParams
               { pbftSecurityParam      = SecurityParam (fromIntegral kParam)
               , pbftNumNodes           = fromIntegral . Set.size
                                        . Genesis.unGenesisKeyHashes
@@ -153,7 +152,7 @@ protocolInfoByron genesisConfig@Genesis.Config {
                 blsCurrent   = initState
               , blsSnapshots = Seq.empty
               }
-          , ouroborosChainState = initChainStateWithEBBs CS.empty
+          , ouroborosChainState = CS.empty
           }
       , pInfoInitState  = ()
       }

@@ -74,8 +74,8 @@ instance RunNode ByronBlockOrEBB where
   nodeDecodeChainState   = const decodeByronChainState
   nodeDecodeApplyTxError = const decodeByronApplyTxError
 
-extractGenesisData :: NodeConfig ByronEBBNodeConfig -> Genesis.GenesisData
+extractGenesisData :: NodeConfig ByronConsensusProtocol -> Genesis.GenesisData
 extractGenesisData = Genesis.configGenesisData . genesisConfig
 
-extractEpochSlots :: NodeConfig ByronEBBNodeConfig -> EpochSlots
+extractEpochSlots :: NodeConfig ByronConsensusProtocol -> EpochSlots
 extractEpochSlots = Genesis.configEpochSlots . genesisConfig
