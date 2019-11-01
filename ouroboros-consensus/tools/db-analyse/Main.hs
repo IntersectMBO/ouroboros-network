@@ -88,7 +88,7 @@ countTxOutputs immDB epochInfo rr = do
     go :: IORef Int -> Either EpochNo SlotNo -> Blk -> IO ()
     go cumulative isEBB blk =
         case (isEBB, blk) of
-          (Right slotNo, Byron.ByronBlockOrEBB (Chain.ABOBBlock regularBlk) _) ->
+          (Right slotNo, Byron.ByronBlockOrEBB (Chain.ABOBBlock regularBlk) _ _) ->
             go' cumulative slotNo regularBlk
           _otherwise ->
             return () -- Skip EBBs

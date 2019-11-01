@@ -148,7 +148,7 @@ protocolInfoByron genesisConfig@Genesis.Config {
               }
           }
       , pInfoInitLedger = ExtLedgerState {
-            ledgerState = ByronEBBLedgerState $ ByronLedgerState {
+            ledgerState = ByronLedgerState {
                 blsCurrent   = initState
               , blsSnapshots = Seq.empty
               }
