@@ -23,7 +23,7 @@ module Ntp.Util
     , pairThese
     ) where
 
-import           Control.Exception (Exception, IOException, catch, throw)
+import           Control.Exception (IOException, catch)
 import           Control.Monad (void)
 import           Control.Tracer
 import           Data.Bifunctor (Bifunctor (..))
@@ -205,26 +205,31 @@ udpLocalAddresses = do
     --                 Hints        Host    Service
     Socket.getAddrInfo (Just hints) Nothing (Just $ show port)
 
-data SendToException
-    = NoMatchingSocket
-    | SendToIOException AddrFamily IOException
-    deriving Show
-
-instance Exception SendToException
-
-
 -- |
 -- Send a request to @addr :: Addresses@ using @sock :: Sockets@.
-sendTo
-    :: Sockets
-    -> ByteString
-    -> Addresses
-    -- ^ addresses to send to
-    -> IO ()
-sendTo sock bs addr = case pairThese sock addr of
-    Just s -> foldThese $ bimap fn fn s
-    Nothing -> throw NoMatchingSocket
     where
+-- |
+-- Low level primitive which sends a request to a single NTP server.
+sendPacket
+    :: Tracer IO NtpTrace
+    -> Sockets
+    -> NtpPacket
+    -> [Addresses]
+    -> IO ()
+sendPacket tracer sock packet addrs
+    = traverse_ (\addr -> sendTo addr) addrs
+  where
+    bs :: ByteString
+    bs = LBS.toStrict $ encode $ packet
+
+    sendTo
+        :: Addresses
+        -- ^ addresses to send to
+        -> IO ()
+    sendTo addr = case pairThese sock addr of
+        Just s -> foldThese $ bimap fn fn s
+        Nothing -> traceWith tracer $ NtpTraceSendPacketNoMatchingSocket (show addr) (show sock)
+
     fn :: ( Last (WithAddrFamily t Socket)
           , First (WithAddrFamily t SockAddr)
           )
@@ -234,37 +239,4 @@ sendTo sock bs addr = case pairThese sock addr of
             `catch` handleIOException (getAddrFamily addr_)
 
     handleIOException :: AddrFamily -> IOException -> IO ()
-    handleIOException addressFamily e = throw (SendToIOException addressFamily e)
-
--- |
--- Low level primitive which sends a request to a single NTP server.
-sendPacket
-    :: Tracer IO NtpTrace
-    -> Sockets
-    -> NtpPacket
-    -> [Addresses]
-    -> IO ()
-sendPacket tracer sock packet addrs = do
-    let bs = LBS.toStrict $ encode $ packet
-    traverse_
-        (\addr ->
-            (sendTo sock bs addr)
-                `catch` handleSendToException addr
-        )
-        addrs
-  where
-    handleSendToException :: Addresses -> SendToException -> IO ()
-    handleSendToException addr NoMatchingSocket =
-        traceWith tracer $ NtpTraceSendPacketNoMatchingSocket (show addr) (show sock)
-    handleSendToException addr (SendToIOException addressFamily ioerr) = do
-        traceWith tracer $ NtpTraceSentToIOException (show addressFamily) ioerr
-        case (addr, addressFamily) of
-            -- try to send the packet to the other address in case the current
-            -- system does not support IPv4/6.
-            (These _ r, IPv6) -> do
-                traceWith tracer $ NtpTraceSentTryResend $ show $ runWithAddrFamily $ getFirst r
-                sendPacket tracer sock packet [That r]
-            (These l _, IPv4) -> do
-                traceWith tracer $ NtpTraceSentTryResend $ show $ runWithAddrFamily $ getFirst l
-                sendPacket tracer sock packet [This  l]
-            _                 -> traceWith tracer $ NtpTraceSentNotRetrying
+    handleIOException addressFamily e = traceWith tracer $ NtpTraceSentToIOException (show addressFamily) e
