@@ -20,7 +20,7 @@ import qualified Cardano.Chain.Update as Update
 import           Ouroboros.Network.Block (SlotNo (..), blockHash, blockPoint)
 
 import           Ouroboros.Consensus.Block (BlockProtocol)
-import           Ouroboros.Consensus.Ledger.Byron (ByronBlockOrEBB)
+import           Ouroboros.Consensus.Ledger.Byron (ByronBlock)
 import           Ouroboros.Consensus.Ledger.Byron.Forge (forgeGenesisEBB)
 import           Ouroboros.Consensus.Node.ProtocolInfo (NumCoreNodes (..),
                      PBftSignatureThreshold (..), ProtocolInfo (..),
@@ -59,22 +59,18 @@ test_getBlockWithPoint_EBB_at_tip =
   where
     ebb = forgeGenesisEBB testCfg (SlotNo 0)
 
-withImmDB :: forall m blk a.
-             ( IOLike m
-             , blk ~ ByronBlockOrEBB
-             )
-          => (ImmDB m blk -> m a) -> m a
+withImmDB :: IOLike m => (ImmDB m ByronBlock -> m a) -> m a
 withImmDB k = do
     immDbFsVar <- uncheckedNewTVarM Mock.empty
-    epochInfo  <- newEpochInfo $ nodeEpochSize (Proxy @blk) testCfg
+    epochInfo  <- newEpochInfo $ nodeEpochSize (Proxy @ByronBlock) testCfg
     bracket (ImmDB.openDB (mkArgs immDbFsVar epochInfo)) ImmDB.closeDB k
   where
     mkArgs immDbFsVar epochInfo = ImmDbArgs
       { immErr         = EH.monadCatch
       , immHasFS       = simHasFS EH.monadCatch immDbFsVar
-      , immDecodeHash  = nodeDecodeHeaderHash (Proxy @blk)
+      , immDecodeHash  = nodeDecodeHeaderHash (Proxy @ByronBlock)
       , immDecodeBlock = nodeDecodeBlock testCfg
-      , immEncodeHash  = nodeEncodeHeaderHash (Proxy @blk)
+      , immEncodeHash  = nodeEncodeHeaderHash (Proxy @ByronBlock)
       , immEncodeBlock = nodeEncodeBlock testCfg
       , immEpochInfo   = epochInfo
       , immValidation  = ValidateMostRecentEpoch
@@ -84,7 +80,7 @@ withImmDB k = do
       , immTracer      = nullTracer
       }
 
-testCfg :: NodeConfig (BlockProtocol ByronBlockOrEBB)
+testCfg :: NodeConfig (BlockProtocol ByronBlock)
 testCfg = pInfoConfig $ protocolInfo (NumCoreNodes 1) prot
   where
     prot = ProtocolRealPBFT

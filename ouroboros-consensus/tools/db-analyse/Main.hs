@@ -22,7 +22,7 @@ import qualified Cardano.Crypto as Crypto
 import           Ouroboros.Network.Block (HasHeader (..), SlotNo (..),
                      genesisPoint)
 
-import           Ouroboros.Consensus.Ledger.Byron (ByronBlockOrEBB, ByronHash)
+import           Ouroboros.Consensus.Ledger.Byron (ByronBlock, ByronHash)
 import qualified Ouroboros.Consensus.Ledger.Byron as Byron
 import           Ouroboros.Consensus.Node.Run.Abstract
 import           Ouroboros.Consensus.Node.Run.Byron ()
@@ -52,7 +52,7 @@ data AnalysisName =
     ShowSlotBlockNo
   | CountTxOutputs
 
-type Analysis = ImmDB IO Blk
+type Analysis = ImmDB IO ByronBlock
              -> EpochInfo IO
              -> ResourceRegistry IO
              -> IO ()
@@ -69,7 +69,7 @@ showSlotBlockNo :: Analysis
 showSlotBlockNo immDB _epochInfo rr =
     processAll immDB rr go
   where
-    go :: Either EpochNo SlotNo -> Blk -> IO ()
+    go :: Either EpochNo SlotNo -> ByronBlock -> IO ()
     go isEBB blk = putStrLn $ intercalate "\t" [
                        show isEBB
                      , show (blockNo   blk)
@@ -85,10 +85,10 @@ countTxOutputs immDB epochInfo rr = do
     cumulative <- newIORef 0
     processAll immDB rr (go cumulative)
   where
-    go :: IORef Int -> Either EpochNo SlotNo -> Blk -> IO ()
+    go :: IORef Int -> Either EpochNo SlotNo -> ByronBlock -> IO ()
     go cumulative isEBB blk =
         case (isEBB, blk) of
-          (Right slotNo, Byron.ByronBlockOrEBB (Chain.ABOBBlock regularBlk) _ _) ->
+          (Right slotNo, Byron.ByronBlock (Chain.ABOBBlock regularBlk) _ _) ->
             go' cumulative slotNo regularBlk
           _otherwise ->
             return () -- Skip EBBs
@@ -136,15 +136,15 @@ relativeSlotNo epochInfo (SlotNo absSlot) = do
   Auxiliary: processing all blocks in the imm DB
 -------------------------------------------------------------------------------}
 
-processAll :: ImmDB IO Blk
+processAll :: ImmDB IO ByronBlock
            -> ResourceRegistry IO
-           -> (Either EpochNo SlotNo -> Blk -> IO ())
+           -> (Either EpochNo SlotNo -> ByronBlock -> IO ())
            -> IO ()
 processAll immDB rr callback = do
     Right itr <- streamBlocksFrom immDB rr $ StreamFromExclusive genesisPoint
     go itr
   where
-    go :: Iterator ByronHash IO Blk -> IO ()
+    go :: Iterator ByronHash IO ByronBlock -> IO ()
     go itr = do
         itrResult <- ImmDB.iteratorNext itr
         case itrResult of
@@ -222,12 +222,10 @@ openGenesis configFile onMainNet = do
   Interface with the ImmDB
 -------------------------------------------------------------------------------}
 
-type Blk = ByronBlockOrEBB
-
-openImmDB :: FilePath -> EpochSlots -> EpochInfo IO -> IO (ImmDB IO Blk)
+openImmDB :: FilePath -> EpochSlots -> EpochInfo IO -> IO (ImmDB IO ByronBlock)
 openImmDB fp epochSlots epochInfo = openDB args
   where
-    args :: ImmDbArgs IO Blk
+    args :: ImmDbArgs IO ByronBlock
     args = (defaultArgs fp) {
           immDecodeHash  = Byron.decodeByronHeaderHash
         , immDecodeBlock = Byron.decodeByronBlock epochSlots

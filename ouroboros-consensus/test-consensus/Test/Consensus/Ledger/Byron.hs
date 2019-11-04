@@ -117,31 +117,31 @@ annotate encode decoder =
   Serialisation roundtrips
 -------------------------------------------------------------------------------}
 
-prop_roundtrip_Block :: Block -> Property
+prop_roundtrip_Block :: ByronBlock -> Property
 prop_roundtrip_Block b =
     roundtrip' encodeByronBlock (decodeByronBlock epochSlots) b
 
-prop_roundtrip_Header :: Header Block -> Property
+prop_roundtrip_Header :: Header ByronBlock -> Property
 prop_roundtrip_Header h =
     roundtrip' encodeByronHeader (decodeByronHeader epochSlots) h
 
-prop_roundtrip_HeaderHash :: HeaderHash Block -> Property
+prop_roundtrip_HeaderHash :: HeaderHash ByronBlock -> Property
 prop_roundtrip_HeaderHash =
     roundtrip encodeByronHeaderHash decodeByronHeaderHash
 
-prop_roundtrip_ChainState :: ChainState (BlockProtocol Block) -> Property
+prop_roundtrip_ChainState :: ChainState (BlockProtocol ByronBlock) -> Property
 prop_roundtrip_ChainState =
     roundtrip encodeByronChainState decodeByronChainState
 
-prop_roundtrip_GenTx :: GenTx Block -> Property
+prop_roundtrip_GenTx :: GenTx ByronBlock -> Property
 prop_roundtrip_GenTx =
     roundtrip encodeByronGenTx decodeByronGenTx
 
-prop_roundtrip_GenTxId :: GenTxId Block -> Property
+prop_roundtrip_GenTxId :: GenTxId ByronBlock -> Property
 prop_roundtrip_GenTxId =
     roundtrip encodeByronGenTxId decodeByronGenTxId
 
-prop_roundtrip_ApplyTxErr :: ApplyTxErr Block -> Property
+prop_roundtrip_ApplyTxErr :: ApplyTxErr ByronBlock -> Property
 prop_roundtrip_ApplyTxErr =
     roundtrip encodeByronApplyTxError decodeByronApplyTxError
 
@@ -149,46 +149,44 @@ prop_roundtrip_ApplyTxErr =
   Generators
 -------------------------------------------------------------------------------}
 
-type Block = ByronBlockOrEBB
-
 epochSlots :: EpochSlots
 epochSlots = EpochSlots 2160
 
 protocolMagicId :: ProtocolMagicId
 protocolMagicId = ProtocolMagicId 100
 
-instance Arbitrary Block where
+instance Arbitrary ByronBlock where
   arbitrary = frequency
       [ (3, genBlock)
       , (1, genBoundaryBlock)
       ]
     where
-      genBlock :: Gen Block
+      genBlock :: Gen ByronBlock
       genBlock =
         annotateByronBlock epochSlots <$>
         hedgehog (CC.genBlock protocolMagicId epochSlots)
-      genBoundaryBlock :: Gen Block
+      genBoundaryBlock :: Gen ByronBlock
       genBoundaryBlock =
-        mkByronBlockOrEBB epochSlots . ABOBBoundary . annotateBoundary protocolMagicId <$>
+        mkByronBlock epochSlots . ABOBBoundary . annotateBoundary protocolMagicId <$>
         hedgehog (CC.genBoundaryBlock)
 
 
-instance Arbitrary (Header Block) where
+instance Arbitrary (Header ByronBlock) where
   arbitrary = frequency
       [ (3, genHeader)
       , (1, genBoundaryHeader)
       ]
     where
-      genHeader :: Gen (Header Block)
+      genHeader :: Gen (Header ByronBlock)
       genHeader =
-        mkByronHeaderOrEBB epochSlots . Right .
+        mkByronHeader epochSlots . Right .
         annotate
           (CC.Block.toCBORHeader epochSlots)
           (CC.Block.fromCBORAHeader epochSlots) <$>
         hedgehog (CC.genHeader protocolMagicId epochSlots)
-      genBoundaryHeader :: Gen (Header Block)
+      genBoundaryHeader :: Gen (Header ByronBlock)
       genBoundaryHeader =
-        mkByronHeaderOrEBB epochSlots . Left .
+        mkByronHeader epochSlots . Left .
         annotate
           (CC.Block.toCBORABoundaryHeader protocolMagicId)
           CC.Block.fromCBORABoundaryHeader <$>
@@ -204,12 +202,12 @@ instance Arbitrary (PBftChainState PBftCardanoCrypto) where
   arbitrary =
     fromMap <$> oneof [return Origin, At <$> arbitrary] <*> arbitrary
 
-instance Arbitrary (GenTx Block) where
+instance Arbitrary (GenTx ByronBlock) where
   arbitrary =
     mkByronGenTx . annotate toCBOR fromCBOR <$>
     hedgehog (CC.genMempoolPayload protocolMagicId)
 
-instance Arbitrary (GenTxId Block) where
+instance Arbitrary (GenTxId ByronBlock) where
   arbitrary = oneof
       [ ByronTxId             <$> hedgehog CC.genTxId
       , ByronDlgId            <$> hedgehog genCertificateId

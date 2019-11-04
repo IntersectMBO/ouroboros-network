@@ -109,7 +109,7 @@ protocolInfoByron :: Genesis.Config
                   -> Update.ProtocolVersion
                   -> Update.SoftwareVersion
                   -> Maybe PBftLeaderCredentials
-                  -> ProtocolInfo ByronBlockOrEBB
+                  -> ProtocolInfo ByronBlock
 protocolInfoByron genesisConfig@Genesis.Config {
                     Genesis.configGenesisHash = genesisHash
                   , Genesis.configGenesisData =

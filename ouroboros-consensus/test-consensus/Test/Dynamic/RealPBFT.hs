@@ -23,7 +23,7 @@ import           Ouroboros.Network.MockChain.Chain (Chain)
 import qualified Ouroboros.Network.MockChain.Chain as Chain
 
 import           Ouroboros.Consensus.BlockchainTime
-import           Ouroboros.Consensus.Ledger.Byron (ByronBlockOrEBB)
+import           Ouroboros.Consensus.Ledger.Byron (ByronBlock)
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Node.ProtocolInfo.Byron (plcCoreNodeId)
 import           Ouroboros.Consensus.NodeId
@@ -114,7 +114,7 @@ prop_simple_real_pbft_convergence
                                     genesisConfig genesisSecrets))
             testConfig seed
 
-    finalChains :: [Chain ByronBlockOrEBB]
+    finalChains :: [Chain ByronBlock]
     finalChains = Map.elems $ nodeOutputFinalChain <$> testOutputNodes testOutput
 
     genesisConfig  :: Genesis.Config
@@ -126,7 +126,7 @@ mkProtocolRealPBFT :: NumCoreNodes
                    -> CoreNodeId
                    -> Genesis.Config
                    -> Genesis.GeneratedSecrets
-                   -> Protocol ByronBlockOrEBB
+                   -> Protocol ByronBlock
 mkProtocolRealPBFT (NumCoreNodes n) (CoreNodeId i)
                    genesisConfig genesisSecrets =
     ProtocolRealPBFT

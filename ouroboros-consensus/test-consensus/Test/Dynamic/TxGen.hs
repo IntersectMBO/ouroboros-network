@@ -86,10 +86,10 @@ genSimpleTx addrs u = do
             Just x  -> return x
 
 {-------------------------------------------------------------------------------
-  TxGen ByronBlockOrEBB
+  TxGen ByronBlock
 -------------------------------------------------------------------------------}
 
-instance TxGen ByronBlockOrEBB where
+instance TxGen ByronBlock where
   testGenTx = error "TODO #855 testGenTx"
   -- 'testGenTxs' is used by the tests, not 'testGenTx'.
   testGenTxs _ _ _ = return []

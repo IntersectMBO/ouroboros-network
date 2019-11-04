@@ -27,9 +27,9 @@ import           Ouroboros.Storage.Common (EpochSize (..))
   RunNode instance
 -------------------------------------------------------------------------------}
 
-instance RunNode ByronBlockOrEBB where
-  nodeForgeBlock         = forgeBlockOrEBB
-  nodeBlockMatchesHeader = byronBlockOrEBBMatchesHeader
+instance RunNode ByronBlock where
+  nodeForgeBlock         = forgeByronBlock
+  nodeBlockMatchesHeader = byronBlockMatchesHeader
   nodeBlockFetchSize     = const 2000 -- TODO #593
   nodeIsEBB              = \blk -> case bbRaw blk of
     Cardano.Block.ABOBBlock _    -> False

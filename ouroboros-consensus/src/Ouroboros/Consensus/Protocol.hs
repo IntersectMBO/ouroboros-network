@@ -81,7 +81,7 @@ data Protocol blk where
     -> Update.ProtocolVersion
     -> Update.SoftwareVersion
     -> Maybe PBftLeaderCredentials
-    -> Protocol ByronBlockOrEBB
+    -> Protocol ByronBlock
 
 {-------------------------------------------------------------------------------
   Evidence that we can run all the supported protocols
