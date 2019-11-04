@@ -114,7 +114,7 @@ import qualified Cardano.Crypto as Crypto
 import           Cardano.Crypto.DSIGN
 import           Cardano.Crypto.Hash
 import           Cardano.Prelude (NoUnexpectedThunks (..),
-                     UseIsNormalFormNamed (..), allNoUnexpectedThunks)
+                     UseIsNormalFormNamed (..))
 
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.Point (WithOrigin (..))
@@ -177,7 +177,7 @@ convertSlot = coerce
 data ByronBlockOrEBB = ByronBlockOrEBB
   { bbRaw    :: !(CC.Block.ABlockOrBoundary ByteString)
   , bbSlotNo :: !SlotNo
-  , bbHash   :: ByronHash
+  , bbHash   :: !ByronHash
   } deriving (Eq, Show)
 
 -- | Internal: construct @Header ByronBlockOrEBB@ with known hash
@@ -223,19 +223,10 @@ computeHeaderSlot epochSlots (Left hdr) =
     SlotNo $ CC.Slot.unEpochSlots epochSlots * CC.Block.boundaryEpoch hdr
 
 instance GetHeader ByronBlockOrEBB where
-  -- | The only acceptable formats for constructing a 'ByronHeaderOrEBB' are
-  --
-  -- > ByronHeaderRegular  x slotNo (computeHash x)
-  -- > ByronHeaderBoundary x slotNo (computeHash x)
-  --
-  -- for some variable (not expression) @x@.
-  --
-  -- This guarantees that the lazily evaluated hash won't retain anything more
-  -- than is retained /anyway/ by the header itself.
   data Header ByronBlockOrEBB =
-        ByronHeaderRegular  !(CC.Block.AHeader         ByteString) !SlotNo ByronHash
-      | ByronHeaderBoundary !(CC.Block.ABoundaryHeader ByteString) !SlotNo ByronHash
-      deriving (Eq, Show)
+        ByronHeaderRegular  !(CC.Block.AHeader         ByteString) !SlotNo !ByronHash
+      | ByronHeaderBoundary !(CC.Block.ABoundaryHeader ByteString) !SlotNo !ByronHash
+      deriving (Eq, Show, Generic)
 
   getHeader (ByronBlockOrEBB (CC.Block.ABOBBlock b) slotNo hdrHash) =
       ByronHeaderRegular (CC.Block.blockHeader b) slotNo hdrHash
@@ -246,18 +237,6 @@ type instance HeaderHash ByronBlockOrEBB = ByronHash
 
 instance NoUnexpectedThunks (Header ByronBlockOrEBB) where
   showTypeOf _ = show $ typeRep (Proxy @(Header ByronBlockOrEBB))
-
-  -- We explicitly allow the hash to be a thunk
-  whnfNoUnexpectedThunks ctxt (ByronHeaderRegular mb slotNo _) =
-      allNoUnexpectedThunks [
-          noUnexpectedThunks ctxt mb
-        , noUnexpectedThunks ctxt slotNo
-        ]
-  whnfNoUnexpectedThunks ctxt (ByronHeaderBoundary ebb slotNo _) =
-      allNoUnexpectedThunks [
-          noUnexpectedThunks ctxt ebb
-        , noUnexpectedThunks ctxt slotNo
-        ]
 
 instance SupportedBlock ByronBlockOrEBB
 
