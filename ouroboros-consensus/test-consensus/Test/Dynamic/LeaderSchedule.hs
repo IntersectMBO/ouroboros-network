@@ -78,8 +78,8 @@ prop_simple_leader_schedule_convergence
   where
     testOutput@TestOutput{testOutputNodes} =
         runTestNetwork
-            (\nid -> protocolInfo numCoreNodes nid
-                 (ProtocolLeaderSchedule params schedule))
+            (\nid -> protocolInfo numCoreNodes
+                 (ProtocolLeaderSchedule nid params schedule))
             testConfig seed
 
 {-------------------------------------------------------------------------------
