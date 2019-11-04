@@ -109,7 +109,7 @@ prop_simple_real_pbft_convergence
 
     testOutput =
         runTestNetwork
-            (\nid -> protocolInfo numCoreNodes nid
+            (\nid -> protocolInfo numCoreNodes
                 (mkProtocolRealPBFT numCoreNodes nid
                                     genesisConfig genesisSecrets))
             testConfig seed

@@ -26,7 +26,6 @@ import           Ouroboros.Consensus.Node.ProtocolInfo (NumCoreNodes (..),
                      PBftSignatureThreshold (..), ProtocolInfo (..),
                      protocolInfo)
 import           Ouroboros.Consensus.Node.Run (RunNode (..))
-import           Ouroboros.Consensus.NodeId (CoreNodeId (..))
 import           Ouroboros.Consensus.Protocol
 import           Ouroboros.Consensus.Util.IOLike
 
@@ -86,7 +85,7 @@ withImmDB k = do
       }
 
 testCfg :: NodeConfig (BlockProtocol ByronBlockOrEBB)
-testCfg = pInfoConfig $ protocolInfo (NumCoreNodes 1) (CoreNodeId 0) prot
+testCfg = pInfoConfig $ protocolInfo (NumCoreNodes 1) prot
   where
     prot = ProtocolRealPBFT
       Dummy.dummyConfig

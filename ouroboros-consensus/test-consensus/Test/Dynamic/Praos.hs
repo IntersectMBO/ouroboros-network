@@ -94,5 +94,5 @@ prop_simple_praos_convergence
   where
     testOutput@TestOutput{testOutputNodes} =
         runTestNetwork
-            (\nid -> protocolInfo numCoreNodes nid (ProtocolMockPraos params))
+            (\nid -> protocolInfo numCoreNodes (ProtocolMockPraos nid params))
             testConfig seed
