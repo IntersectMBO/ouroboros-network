@@ -307,7 +307,7 @@ instance UpdateLedger TestBlock where
 
 instance ProtocolLedgerView TestBlock where
   protocolLedgerView _ _ = ()
-  anachronisticProtocolLedgerView _ _ _ = Right $ SB.unbounded ()
+  anachronisticProtocolLedgerView _ _ _ = Right $ SB.maximal ()
 
 testInitLedger :: LedgerState TestBlock
 testInitLedger = TestLedger GenesisPoint GenesisHash

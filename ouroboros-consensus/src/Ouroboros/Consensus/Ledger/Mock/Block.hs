@@ -364,10 +364,6 @@ instance Condense ext' => Condense (SimpleBlock' c ext ext') where
       SimpleStdHeader{..} = simpleHeaderStd
       SimpleBody{..}      = simpleBody
 
-instance Condense (ChainHash (SimpleBlock' c ext ext')) where
-  condense GenesisHash     = "genesis"
-  condense (BlockHash hdr) = show hdr
-
 {-------------------------------------------------------------------------------
   Serialise instances
 -------------------------------------------------------------------------------}

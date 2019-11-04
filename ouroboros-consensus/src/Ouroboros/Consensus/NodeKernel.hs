@@ -294,6 +294,10 @@ forkBlockProduction IS{..} =
       -- of 'atomically'.
       mNewBlock <- withSyncState mempool $ \MempoolSnapshot{snapshotTxs} -> do
         l@ExtLedgerState{..} <- ChainDB.getCurrentLedger chainDB
+        -- TODO: I think this is wrong. This uses the ledger view as it was
+        -- after the last applied block. But that ledger view might have some
+        -- scheduled updates which should be applied by the time we reach
+        -- 'currentSlot'.
         mIsLeader            <- runProtocol varDRG $
                                    checkIsLeader
                                      cfg

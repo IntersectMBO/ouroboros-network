@@ -23,7 +23,6 @@ module Ouroboros.Consensus.Node.ProtocolInfo.Byron (
 import           Control.Exception (Exception)
 import           Control.Monad.Except
 import           Data.Maybe
-import qualified Data.Sequence.Strict as Seq
 import qualified Data.Set as Set
 
 import qualified Cardano.Chain.Block as Block
@@ -35,7 +34,7 @@ import qualified Cardano.Crypto as Crypto
 
 import           Ouroboros.Consensus.Crypto.DSIGN.Cardano
 import           Ouroboros.Consensus.Ledger.Byron
-import           Ouroboros.Consensus.Ledger.Byron.Config
+import qualified Ouroboros.Consensus.Ledger.Byron.DelegationHistory as History
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Node.ProtocolInfo.Abstract
 import           Ouroboros.Consensus.NodeId (CoreNodeId)
@@ -149,8 +148,8 @@ protocolInfoByron genesisConfig@Genesis.Config {
           }
       , pInfoInitLedger = ExtLedgerState {
             ledgerState = ByronLedgerState {
-                blsCurrent   = initState
-              , blsSnapshots = Seq.empty
+                byronLedgerState       = initState
+              , byronDelegationHistory = History.empty
               }
           , ouroborosChainState = CS.empty
           }

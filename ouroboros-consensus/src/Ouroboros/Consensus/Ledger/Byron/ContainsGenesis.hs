@@ -12,11 +12,11 @@ import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.PBFT
 
 class ConfigContainsGenesis cfg where
-  genesisConfig :: cfg -> CC.Genesis.Config
+  getGenesisConfig :: cfg -> CC.Genesis.Config
 
 instance ConfigContainsGenesis ByronConfig where
-  genesisConfig = pbftGenesisConfig
+  getGenesisConfig = pbftGenesisConfig
 
 instance ConfigContainsGenesis cfg
       => ConfigContainsGenesis (NodeConfig (PBft cfg c)) where
-  genesisConfig = genesisConfig . pbftExtConfig
+  getGenesisConfig = getGenesisConfig . pbftExtConfig

@@ -34,10 +34,17 @@ library
                        Ouroboros.Consensus.Crypto.DSIGN.Cardano
                        Ouroboros.Consensus.Ledger.Abstract
                        Ouroboros.Consensus.Ledger.Byron
+                       Ouroboros.Consensus.Ledger.Byron.Aux
+                       Ouroboros.Consensus.Ledger.Byron.Block
                        Ouroboros.Consensus.Ledger.Byron.Config
                        Ouroboros.Consensus.Ledger.Byron.ContainsGenesis
+                       Ouroboros.Consensus.Ledger.Byron.Conversions
+                       Ouroboros.Consensus.Ledger.Byron.DelegationHistory
                        Ouroboros.Consensus.Ledger.Byron.Forge
+                       Ouroboros.Consensus.Ledger.Byron.Ledger
+                       Ouroboros.Consensus.Ledger.Byron.Mempool
                        Ouroboros.Consensus.Ledger.Byron.Orphans
+                       Ouroboros.Consensus.Ledger.Byron.PBFT
                        Ouroboros.Consensus.Ledger.Extended
                        Ouroboros.Consensus.Ledger.Mock
                        Ouroboros.Consensus.Ledger.Mock.Address

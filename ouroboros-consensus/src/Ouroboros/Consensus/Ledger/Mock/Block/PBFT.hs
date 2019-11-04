@@ -122,7 +122,7 @@ instance ( SimpleCrypto c
   protocolLedgerView PBftNodeConfig{..} _ls =
       pbftExtConfig
   anachronisticProtocolLedgerView PBftNodeConfig{..} _ _ =
-      Right $ SB.unbounded pbftExtConfig
+      Right $ SB.maximal pbftExtConfig
 
 {-------------------------------------------------------------------------------
   Serialisation

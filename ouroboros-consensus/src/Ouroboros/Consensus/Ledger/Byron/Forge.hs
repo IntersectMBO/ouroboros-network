@@ -29,12 +29,14 @@ import           Cardano.Crypto.DSIGN
 import           Ouroboros.Network.Block
 
 import           Ouroboros.Consensus.Crypto.DSIGN.Cardano
-import           Ouroboros.Consensus.Ledger.Byron
+import           Ouroboros.Consensus.Ledger.Byron.Aux
+import           Ouroboros.Consensus.Ledger.Byron.Block
+import           Ouroboros.Consensus.Ledger.Byron.Config
 import           Ouroboros.Consensus.Ledger.Byron.ContainsGenesis
+import           Ouroboros.Consensus.Ledger.Byron.Mempool
+import           Ouroboros.Consensus.Ledger.Byron.PBFT
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.PBFT
-
-import           Ouroboros.Consensus.Ledger.Byron.Config
 
 forgeByronBlock
   :: forall m.
@@ -59,10 +61,10 @@ forgeGenesisEBB
 forgeGenesisEBB cfg curSlot =
         mkByronBlock pbftEpochSlots
       . CC.Block.ABOBBoundary
-      . annotateBoundary protocolMagicId
+      . reAnnotateBoundary protocolMagicId
       $ boundaryBlock
   where
-    protocolMagicId = CC.Genesis.configProtocolMagicId (genesisConfig cfg)
+    protocolMagicId = CC.Genesis.configProtocolMagicId (getGenesisConfig cfg)
     ByronConfig { pbftGenesisHash
                 , pbftEpochSlots
                 } = pbftExtConfig cfg
@@ -70,8 +72,7 @@ forgeGenesisEBB cfg curSlot =
     boundaryBlock :: CC.Block.ABoundaryBlock ()
     boundaryBlock =
       CC.Block.ABoundaryBlock {
-        CC.Block.boundaryBlockLength = 0 -- Since this is a demo and we
-                                         -- ignore the length, set this to 0
+        CC.Block.boundaryBlockLength = 0 -- Used only in testing anyway
       , CC.Block.boundaryHeader
       , CC.Block.boundaryBody        = CC.Block.ABoundaryBody ()
       , CC.Block.boundaryAnnotation  = ()

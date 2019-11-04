@@ -58,6 +58,7 @@ import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util
+import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.MonadSTM.NormalForm (checkInvariant,
                      unsafeNoThunks)
@@ -665,8 +666,13 @@ chainSyncClient mkPipelineDecision0 getTipBlockNo tracer cfg btime
                   }
             Left TooFarAhead  -> retry
             Right view -> case view `SB.at` hdrSlot of
-                Nothing -> error "anachronisticProtocolLedgerView invariant violated"
                 Just lv -> return lv
+                Nothing -> error $ mconcat [
+                    "anachronisticProtocolLedgerView invariant violated: "
+                  , condense hdrSlot
+                  , " not within bounds "
+                  , condense (SB.bounds view)
+                  ]
               where
                 hdrSlot = case pointSlot hdrPoint of
                   Origin      -> SlotNo 0
