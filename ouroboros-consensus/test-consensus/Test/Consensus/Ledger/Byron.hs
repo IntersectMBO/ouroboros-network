@@ -23,12 +23,10 @@ import           Ouroboros.Network.Point (WithOrigin (..))
 
 import           Ouroboros.Consensus.Block (BlockProtocol, Header)
 import           Ouroboros.Consensus.Ledger.Byron
-import           Ouroboros.Consensus.Ledger.Byron.Config
 import           Ouroboros.Consensus.Mempool.API (ApplyTxErr)
 import           Ouroboros.Consensus.Protocol.Abstract (ChainState)
 import           Ouroboros.Consensus.Protocol.PBFT
 import           Ouroboros.Consensus.Protocol.PBFT.ChainState
-import           Ouroboros.Consensus.Protocol.WithEBBs
 
 import           Test.QuickCheck
 import           Test.QuickCheck.Hedgehog (hedgehog)
@@ -205,9 +203,6 @@ instance Arbitrary KeyHash where
 instance Arbitrary (PBftChainState PBftCardanoCrypto) where
   arbitrary =
     fromMap <$> oneof [return Origin, At <$> arbitrary] <*> arbitrary
-
-instance Arbitrary (ChainStateWithEBBs (PBft ByronConfig PBftCardanoCrypto)) where
-  arbitrary = mkChainStateWithEBBs <$> arbitrary <*> arbitrary
 
 instance Arbitrary (GenTx Block) where
   arbitrary =

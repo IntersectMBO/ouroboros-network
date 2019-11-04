@@ -34,7 +34,6 @@ import           Ouroboros.Consensus.Ledger.Byron
 import           Ouroboros.Consensus.Ledger.Byron.ContainsGenesis
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.PBFT
-import           Ouroboros.Consensus.Protocol.WithEBBs
 
 import           Ouroboros.Consensus.Ledger.Byron.Config
 
@@ -43,7 +42,7 @@ forgeBlockOrEBB
      ( HasNodeState_ () m  -- @()@ is the @NodeState@ of PBFT
      , MonadRandom m
      )
-  => NodeConfig ByronEBBNodeConfig
+  => NodeConfig ByronConsensusProtocol
   -> SlotNo                          -- ^ Current slot
   -> BlockNo                         -- ^ Current block number
   -> ChainHash ByronBlockOrEBB       -- ^ Previous hash
@@ -55,10 +54,10 @@ forgeBlockOrEBB cfg curSlot curNo prevHash txs isLeader = case prevHash of
   BlockHash _ -> forgeBlock cfg curSlot curNo prevHash txs isLeader
 
 forgeGenesisEBB
-  :: NodeConfig ByronEBBNodeConfig
+  :: NodeConfig ByronConsensusProtocol
   -> SlotNo
   -> ByronBlockOrEBB
-forgeGenesisEBB (WithEBBNodeConfig cfg) curSlot =
+forgeGenesisEBB cfg curSlot =
         mkByronBlockOrEBB pbftEpochSlots
       . CC.Block.ABOBBoundary
       . annotateBoundary protocolMagicId
@@ -121,14 +120,14 @@ forgeBlock
      ( HasNodeState_ () m  -- @()@ is the @NodeState@ of PBFT
      , MonadRandom m
      )
-  => NodeConfig ByronEBBNodeConfig
+  => NodeConfig ByronConsensusProtocol
   -> SlotNo                            -- ^ Current slot
   -> BlockNo                           -- ^ Current block number
   -> ChainHash ByronBlockOrEBB         -- ^ Previous hash
   -> [GenTx ByronBlockOrEBB]           -- ^ Txs to add in the block
   -> PBftIsLeader PBftCardanoCrypto    -- ^ Leader proof ('IsLeader')
   -> m ByronBlockOrEBB
-forgeBlock (WithEBBNodeConfig cfg) curSlot curNo prevHash txs isLeader = do
+forgeBlock cfg curSlot curNo prevHash txs isLeader = do
     ouroborosPayload <-
       forgePBftFields cfg isLeader (reAnnotate $ Annotated toSign ())
     return $ forge ouroborosPayload

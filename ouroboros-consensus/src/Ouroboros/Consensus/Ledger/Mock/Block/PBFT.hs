@@ -85,7 +85,12 @@ instance ( SimpleCrypto c
                 (PBftLedgerView PBftMockCrypto)
                 PBftMockCrypto
                 (SimplePBftHeader c PBftMockCrypto) where
-  headerPBftFields _ = simplePBftExt . simpleHeaderExt
+  type OptSigned (SimplePBftHeader c PBftMockCrypto) =
+          Signed (SimplePBftHeader c PBftMockCrypto)
+  headerPBftFields cfg hdr = Just (
+        simplePBftExt (simpleHeaderExt hdr)
+      , headerSigned cfg hdr
+      )
 
 instance ( SimpleCrypto c
          , PBftCrypto c'

@@ -248,7 +248,7 @@ prune maxSize st
 --
 -- * Rewinding to the anchor will leave the state empty
 --
---   > size (rewind (anchor s) st) == 0
+--   > size (rewind (anchor st) st) == 0
 --
 -- * But rewinding to a more recent block will not
 --
