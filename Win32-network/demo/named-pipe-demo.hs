@@ -15,7 +15,7 @@ import System.Exit
 import           System.Win32 (HANDLE)
 import qualified System.Win32.NamedPipes as Win32
 import qualified System.Win32 as Win32
-import qualified System.Win32.Async as Win32.Async
+import qualified System.Win32.Async as Win32
 import System.Environment
 
 main :: IO ()
@@ -39,7 +39,7 @@ putStrLn_ :: String -> IO ()
 putStrLn_ = BSC.putStrLn . BSC.pack
 
 server :: IO ()
-server = Win32.Async.withIOManager loop
+server = Win32.withIOManager loop
   where
     loop iocp = do
       putStrLn_ "creating pipe..."
@@ -51,9 +51,9 @@ server = Win32.Async.withIOManager loop
                                      512
                                      0
                                      Nothing
-      Win32.Async.associateWithIOCompletionPort hpipe iocp
+      Win32.associateWithIOCompletionPort hpipe iocp
       putStrLn_ "created pipe, waiting for client"
-      Win32.Async.connectNamedPipe hpipe
+      Win32.connectNamedPipe hpipe
       putStrLn_ "client connected"
       _ <- forkIO $ do
              putStrLn_ "starting client conversation"
@@ -73,24 +73,24 @@ hGetLine h = go ""
     where
       go :: String -> IO String
       go !s = do
-        [x] <- BSC.unpack <$> Win32.Async.readHandle h 1
+        [x] <- BSC.unpack <$> Win32.readHandle h 1
         if x == '\n'
           then pure (reverse s)
           else go (x : s)
 
 serverLoop :: HANDLE -> IO ()
 serverLoop hpipe = do
-  _ <- Win32.Async.writeHandle hpipe (encodeMsg "Hi! >")
+  _ <- Win32.writeHandle hpipe (encodeMsg "Hi! >")
   putStrLn "Sent prompt, awaiting reply"
   resp <- hGetLine hpipe
   putStrLn $ "received: " ++ show resp
   let reply = "reversed: " ++ show (reverse resp)
   putStrLn $ "replying: " ++ show reply
-  _ <- Win32.Async.writeHandle hpipe (encodeMsg reply)
+  _ <- Win32.writeHandle hpipe (encodeMsg reply)
   serverLoop hpipe
 
 client :: IO ()
-client = Win32.Async.withIOManager $ \iocp -> do
+client = Win32.withIOManager $ \iocp -> do
     hpipe <- Win32.createFile pipeName
                               (Win32.gENERIC_READ .|. Win32.gENERIC_WRITE)
                               Win32.fILE_SHARE_NONE
@@ -98,7 +98,7 @@ client = Win32.Async.withIOManager $ \iocp -> do
                               Win32.oPEN_EXISTING
                               Win32.fILE_FLAG_OVERLAPPED
                               Nothing
-    Win32.Async.associateWithIOCompletionPort hpipe iocp
+    Win32.associateWithIOCompletionPort hpipe iocp
     putStrLn "opened pipe"
     clientLoop hpipe
       `finally` Win32.closeHandle hpipe
@@ -112,7 +112,7 @@ clientLoop hpipe = do
   case reply of
     "quit" -> return ()
     _      -> do putStrLn $ "sending reply: " ++ show reply
-                 _ <- Win32.Async.writeHandle hpipe (encodeMsg reply)
+                 _ <- Win32.writeHandle hpipe (encodeMsg reply)
                  putStrLn "reply sent"
                  putStrLn "reply flushed"
                  resp <- hGetLine hpipe
