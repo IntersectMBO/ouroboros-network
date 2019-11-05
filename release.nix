@@ -18,6 +18,7 @@ in commonLib.nix-tools.release-nix {
                "ouroboros-consensus"
                "io-sim"
                "io-sim-classes"
+               "ntp-client"               
              ];
 
   # The set of jobs we consider crutial for each CI run.

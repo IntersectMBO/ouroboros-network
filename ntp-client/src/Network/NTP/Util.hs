@@ -6,7 +6,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications    #-}
 
-module Ntp.Util
+module Network.NTP.Util
     ( ntpPort
     , WithAddrFamily (..)
     , runWithAddrFamily
@@ -43,8 +43,8 @@ import           Network.Socket (AddrInfo,
 import qualified Network.Socket as Socket
 import qualified Network.Socket.ByteString as Socket.ByteString (sendTo)
 
-import           Ntp.Packet (NtpPacket)
-import           Ntp.Trace (NtpTrace (..))
+import           Network.NTP.Packet (NtpPacket)
+import           Network.NTP.Trace (NtpTrace (..))
 
 data AddrFamily = IPv4 | IPv6
     deriving Show

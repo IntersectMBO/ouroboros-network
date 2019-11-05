@@ -2,7 +2,7 @@
 {-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE ViewPatterns               #-}
 
-module Ntp.Packet
+module Network.NTP.Packet
     ( NtpPacket (..)
     , ntpPacketSize
     , mkNtpPacket

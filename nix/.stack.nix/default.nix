@@ -11,6 +11,7 @@
         "hedgehog-quickcheck" = (((hackage.hedgehog-quickcheck)."0.1.1").revisions).default;
         "quickcheck-state-machine" = (((hackage.quickcheck-state-machine)."0.6.0").revisions).default;
         "splitmix" = (((hackage.splitmix)."0.0.2").revisions).default;
+        "time-units" = (((hackage.time-units)."1.0.0").revisions).default;
         "tasty-hedgehog" = (((hackage.tasty-hedgehog)."1.0.0.1").revisions).default;
         "Unique" = (((hackage.Unique)."0.4.7.6").revisions).default;
         "Win32" = (((hackage.Win32)."2.6.2.0").revisions).default;
@@ -30,6 +31,7 @@
         ouroboros-consensus = ./ouroboros-consensus.nix;
         io-sim = ./io-sim.nix;
         io-sim-classes = ./io-sim-classes.nix;
+        ntp-client = ./ntp-client.nix;
         contra-tracer = ./contra-tracer.nix;
         cardano-binary = ./cardano-binary.nix;
         cardano-binary-test = ./cardano-binary-test.nix;

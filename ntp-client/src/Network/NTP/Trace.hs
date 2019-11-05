@@ -1,10 +1,14 @@
-module Ntp.Trace
+module Network.NTP.Trace
 where
 import           Control.Exception (IOException)
 import           Data.Time.Units (Microsecond)
 
 data NtpTrace
-    = NtpTraceWithNtpClient
+    = NtpTraceStartNtpClient
+    | NtpTraceClientGetStatus
+    | NtpTraceClientActNow
+    | NtpTraceClientForceCheck
+    | NtpTraceClientAbort
     | NtpTraceUpdateStatusNoResponses
     | NtpTraceUpdateStatusClockOffset Microsecond
     | NtpTraceSendLoopCollectedAllResponses

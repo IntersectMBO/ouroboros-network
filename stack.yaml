@@ -10,6 +10,7 @@ packages:
   - ./ouroboros-consensus
   - ./io-sim
   - ./io-sim-classes
+  - ./ntp-client
 
 extra-deps:
   - git: https://github.com/input-output-hk/iohk-monitoring-framework
@@ -58,6 +59,7 @@ extra-deps:
   - hedgehog-quickcheck-0.1.1
   - quickcheck-state-machine-0.6.0
   - splitmix-0.0.2
+  - time-units-1.0.0
   - tasty-hedgehog-1.0.0.1
   - Unique-0.4.7.6
 
