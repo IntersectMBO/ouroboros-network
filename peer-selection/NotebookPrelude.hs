@@ -13,10 +13,8 @@ module NotebookPrelude
   -- * Defining/generating topologies
   , module Gen
   , ethernet_bearer
-  {-
   , path_of_length
   , cycle_of_length
-  -}
 
   -- * Showing topologies.
   , showTopology
