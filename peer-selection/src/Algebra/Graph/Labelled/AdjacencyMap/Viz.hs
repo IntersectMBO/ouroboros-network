@@ -25,6 +25,12 @@ toGraphvizDot params gr = graphElemsToDot params vertices' edges'
   edges' = [ (n1, n2, e) | (n1, adj) <- Map.toList map', (n2, e) <- Map.toList adj ]
   map' = fmap (Map.mapKeys fromEnum) (Map.mapKeys fromEnum (adjacencyMap gr))
 
+viz_directed :: GraphvizParams n nl el cl nl -> GraphvizParams n nl el cl nl
+viz_directed gp = gp { isDirected = True }
+
+viz_undirected :: GraphvizParams n nl el cl nl -> GraphvizParams n nl el cl nl
+viz_undirected gp = gp { isDirected = False }
+
 -- | Just like 'Data.GraphViz.quickParams', but doesn't demand the ad-hoc
 -- Labellable typeclass instance on node and edge labels.
 simpleGraphvizParams
