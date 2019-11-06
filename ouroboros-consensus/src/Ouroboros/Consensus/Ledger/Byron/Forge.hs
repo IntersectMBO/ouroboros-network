@@ -13,7 +13,6 @@ import           Control.Monad (void)
 import           Crypto.Random (MonadRandom)
 import           Data.ByteString (ByteString)
 import           Data.Coerce (coerce)
-import           Data.Foldable (foldl')
 
 import           Cardano.Binary (Annotated (..), reAnnotate)
 import qualified Cardano.Chain.Block as CC.Block
@@ -142,7 +141,7 @@ forgeBlock cfg curSlot curNo prevHash txs isLeader = do
       } = pbftExtConfig cfg
 
     blockPayloads :: BlockPayloads
-    blockPayloads = foldl' extendBlockPayloads initBlockPayloads txs
+    blockPayloads = foldr extendBlockPayloads initBlockPayloads txs
 
     txPayload :: CC.UTxO.TxPayload
     txPayload = CC.UTxO.mkTxPayload (bpTxs blockPayloads)
@@ -154,10 +153,10 @@ forgeBlock cfg curSlot curNo prevHash txs isLeader = do
     updatePayload = CC.Update.payload (bpUpProposal blockPayloads)
                                       (bpUpVotes blockPayloads)
 
-    extendBlockPayloads :: BlockPayloads
-                        -> GenTx ByronBlockOrEBB
+    extendBlockPayloads :: GenTx ByronBlockOrEBB
                         -> BlockPayloads
-    extendBlockPayloads bp@BlockPayloads{bpTxs, bpDlgCerts, bpUpVotes} genTx =
+                        -> BlockPayloads
+    extendBlockPayloads genTx bp@BlockPayloads{bpTxs, bpDlgCerts, bpUpVotes} =
       -- TODO: We should try to use 'recoverProof' (and other variants of
       -- 'recoverBytes') here as opposed to throwing away the serializations
       -- (the 'ByteString' annotations) with 'void' as we're currently doing.
