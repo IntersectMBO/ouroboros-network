@@ -76,9 +76,9 @@ import           Ouroboros.Storage.FS.API (HasFS (..))
 import           Ouroboros.Storage.FS.API.Types (FsError (..), FsPath)
 import           Ouroboros.Storage.ImmutableDB hiding (BlockOrEBB (..))
 import qualified Ouroboros.Storage.ImmutableDB as ImmDB
+import           Ouroboros.Storage.ImmutableDB.Impl.Util (renderFile, tryImmDB)
 import           Ouroboros.Storage.ImmutableDB.Layout
-import           Ouroboros.Storage.ImmutableDB.Util (epochFileParser,
-                     renderFile, tryImmDB)
+import           Ouroboros.Storage.ImmutableDB.Parser (epochFileParser)
 import qualified Ouroboros.Storage.Util.ErrorHandling as EH
 
 import           Test.Util.FS.Sim.Error (Errors, mkSimErrorHasFS, withErrors)

@@ -29,19 +29,20 @@ import           Test.Tasty.QuickCheck (testProperty)
 
 import           Ouroboros.Network.Block (blockHash)
 
-import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Block (IsEBB (..))
+import           Ouroboros.Consensus.Util.IOLike
 
 import           Ouroboros.Storage.Common
 import           Ouroboros.Storage.EpochInfo
 import           Ouroboros.Storage.FS.API
 import           Ouroboros.Storage.FS.API.Types
 import           Ouroboros.Storage.ImmutableDB
-import           Ouroboros.Storage.ImmutableDB.Index
+import           Ouroboros.Storage.ImmutableDB.Impl.Index
+import           Ouroboros.Storage.ImmutableDB.Impl.SlotOffsets (SlotOffsets)
+import qualified Ouroboros.Storage.ImmutableDB.Impl.SlotOffsets as SlotOffsets
+import           Ouroboros.Storage.ImmutableDB.Impl.Util (tryImmDB)
 import           Ouroboros.Storage.ImmutableDB.Layout
-import           Ouroboros.Storage.ImmutableDB.SlotOffsets (SlotOffsets)
-import qualified Ouroboros.Storage.ImmutableDB.SlotOffsets as SlotOffsets
-import           Ouroboros.Storage.ImmutableDB.Util (epochFileParser, tryImmDB)
+import           Ouroboros.Storage.ImmutableDB.Parser (epochFileParser)
 import           Ouroboros.Storage.Util (decodeIndexEntryAt)
 import           Ouroboros.Storage.Util.ErrorHandling (ErrorHandling)
 import qualified Ouroboros.Storage.Util.ErrorHandling as EH

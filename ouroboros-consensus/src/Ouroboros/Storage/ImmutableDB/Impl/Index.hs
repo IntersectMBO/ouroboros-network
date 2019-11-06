@@ -5,7 +5,7 @@
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module Ouroboros.Storage.ImmutableDB.Index
+module Ouroboros.Storage.ImmutableDB.Impl.Index
   ( Index
   , getEBBHash
   , indexSlots
@@ -52,15 +52,15 @@ import           Ouroboros.Storage.Common
 import           Ouroboros.Storage.Util (decodeIndexEntryAt, encodeIndexEntry)
 import           Ouroboros.Storage.Util.ErrorHandling (ErrorHandling (..))
 
+import           Ouroboros.Storage.ImmutableDB.Impl.SlotOffsets (SlotOffsets)
+import qualified Ouroboros.Storage.ImmutableDB.Impl.SlotOffsets as SlotOffsets
+import           Ouroboros.Storage.ImmutableDB.Impl.Util (deserialiseHash,
+                     renderFile, serialiseHash, throwUnexpectedError)
 import           Ouroboros.Storage.ImmutableDB.Layout
-import           Ouroboros.Storage.ImmutableDB.SlotOffsets (SlotOffsets)
-import qualified Ouroboros.Storage.ImmutableDB.SlotOffsets as SlotOffsets
 import           Ouroboros.Storage.ImmutableDB.Types (CurrentEBB (..),
                      ImmutableDBError,
                      UnexpectedError (DeserialisationError, InvalidFileError),
                      hasCurrentEBB)
-import           Ouroboros.Storage.ImmutableDB.Util (deserialiseHash,
-                     renderFile, serialiseHash, throwUnexpectedError)
 
 {------------------------------------------------------------------------------
   Index

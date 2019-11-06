@@ -136,11 +136,12 @@ library
                        Ouroboros.Storage.ImmutableDB
                        Ouroboros.Storage.ImmutableDB.API
                        Ouroboros.Storage.ImmutableDB.Impl
-                       Ouroboros.Storage.ImmutableDB.Index
+                       Ouroboros.Storage.ImmutableDB.Impl.Index
+                       Ouroboros.Storage.ImmutableDB.Impl.SlotOffsets
+                       Ouroboros.Storage.ImmutableDB.Impl.Util
                        Ouroboros.Storage.ImmutableDB.Layout
-                       Ouroboros.Storage.ImmutableDB.SlotOffsets
+                       Ouroboros.Storage.ImmutableDB.Parser
                        Ouroboros.Storage.ImmutableDB.Types
-                       Ouroboros.Storage.ImmutableDB.Util
                        Ouroboros.Storage.IO
                        Ouroboros.Storage.LedgerDB.Conf
                        Ouroboros.Storage.LedgerDB.DiskPolicy

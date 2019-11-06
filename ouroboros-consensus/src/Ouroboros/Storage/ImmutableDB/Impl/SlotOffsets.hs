@@ -4,8 +4,8 @@
 -- | SlotOffsets
 --
 -- Intended for qualified import
--- > import qualified Ouroboros.Storage.ImmutableDB.SlotOffsets as SlotOffsets
-module Ouroboros.Storage.ImmutableDB.SlotOffsets
+-- > import qualified Ouroboros.Storage.ImmutableDB.Impl.SlotOffsets as SlotOffsets
+module Ouroboros.Storage.ImmutableDB.Impl.SlotOffsets
   ( SlotOffsets (..)
   , isFirst
   , last
@@ -42,10 +42,10 @@ import           Ouroboros.Storage.FS.API.Types (AllowExisting (..),
 import           Ouroboros.Storage.Common
 import           Ouroboros.Storage.Util (encodeIndexEntry)
 
+import           Ouroboros.Storage.ImmutableDB.Impl.Util (indexBackfill,
+                     renderFile, serialiseHash)
 import           Ouroboros.Storage.ImmutableDB.Layout
 import           Ouroboros.Storage.ImmutableDB.Types (CurrentEBB (..))
-import           Ouroboros.Storage.ImmutableDB.Util (indexBackfill, renderFile,
-                     serialiseHash)
 
 {------------------------------------------------------------------------------
   SlotOffsets

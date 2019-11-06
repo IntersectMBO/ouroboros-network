@@ -24,7 +24,7 @@ import           Ouroboros.Storage.FS.IO (ioHasFS)
 import           Ouroboros.Storage.ImmutableDB (ImmutableDBError (..),
                      prettyImmutableDBError, sameImmutableDBError)
 import qualified Ouroboros.Storage.ImmutableDB as Immutable
-import           Ouroboros.Storage.ImmutableDB.Util (tryImmDB)
+import           Ouroboros.Storage.ImmutableDB.Impl.Util (tryImmDB)
 import           Ouroboros.Storage.IO (sameError)
 import           Ouroboros.Storage.Util.ErrorHandling (ErrorHandling)
 import qualified Ouroboros.Storage.Util.ErrorHandling as EH

@@ -184,11 +184,11 @@ import           Ouroboros.Storage.Util.ErrorHandling (ErrorHandling (..))
 import qualified Ouroboros.Storage.Util.ErrorHandling as EH
 
 import           Ouroboros.Storage.ImmutableDB.API
-import           Ouroboros.Storage.ImmutableDB.Index
+import           Ouroboros.Storage.ImmutableDB.Impl.Index
 import           Ouroboros.Storage.ImmutableDB.Layout
-import           Ouroboros.Storage.ImmutableDB.SlotOffsets (SlotOffsets (..))
-import qualified Ouroboros.Storage.ImmutableDB.SlotOffsets as SlotOffsets
-import           Ouroboros.Storage.ImmutableDB.Util
+import           Ouroboros.Storage.ImmutableDB.Impl.SlotOffsets (SlotOffsets (..))
+import qualified Ouroboros.Storage.ImmutableDB.Impl.SlotOffsets as SlotOffsets
+import           Ouroboros.Storage.ImmutableDB.Impl.Util
 
 {------------------------------------------------------------------------------
   Main types
