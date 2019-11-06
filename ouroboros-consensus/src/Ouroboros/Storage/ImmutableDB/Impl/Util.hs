@@ -1,4 +1,5 @@
 {-# LANGUAGE LambdaCase          #-}
+{-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -14,6 +15,10 @@ module Ouroboros.Storage.ImmutableDB.Impl.Util
   , parseDBFile
   , validateIteratorRange
   , indexBackfill
+  , onException
+  , epochSlotToTip
+  , dbFilesOnDisk
+  , removeFilesStartingFrom
     -- * Encoding and decoding the EBB hash
   , deserialiseHash
   , serialiseHash
@@ -23,9 +28,11 @@ import           Codec.CBOR.Decoding (Decoder)
 import           Codec.CBOR.Encoding (Encoding)
 import           Codec.CBOR.Read (DeserialiseFailure, deserialiseFromBytes)
 import           Codec.CBOR.Write (toLazyByteString)
-import           Control.Monad (when)
+import           Control.Monad (forM_, when)
 import           Data.Bifunctor (second)
 import qualified Data.ByteString.Lazy as BL
+import           Data.Set (Set)
+import qualified Data.Set as Set
 import qualified Data.Text as T
 import           GHC.Stack (HasCallStack, callStack, popCallStack)
 import           Text.Printf (printf)
@@ -35,6 +42,7 @@ import           Ouroboros.Consensus.Util (whenJust)
 
 import           Ouroboros.Storage.Common
 import           Ouroboros.Storage.EpochInfo.API
+import           Ouroboros.Storage.FS.API
 import           Ouroboros.Storage.FS.API.Types
 import           Ouroboros.Storage.Util.ErrorHandling (ErrorHandling (..))
 import qualified Ouroboros.Storage.Util.ErrorHandling as EH
@@ -45,7 +53,6 @@ import           Ouroboros.Storage.ImmutableDB.Types
 {------------------------------------------------------------------------------
   Utilities
 ------------------------------------------------------------------------------}
-
 
 renderFile :: String -> EpochNo -> FsPath
 renderFile fileType (EpochNo epoch) = mkFsPath [printf "%s-%03d.dat" fileType epoch]
@@ -145,6 +152,7 @@ validateIteratorRange err epochInfo tip mbStart mbEnd = do
       Tip (EBB   lastEpoch) -> (slot >) <$> epochInfoFirst epochInfo lastEpoch
       Tip (Block lastSlot)  -> return $ slot > lastSlot
 
+-- TODO move to a better place
 -- | Return the slots to backfill the index file with.
 --
 -- A situation may arise in which we \"skip\" some relative slots, and we
@@ -188,6 +196,47 @@ indexBackfill (RelativeSlot slot) (RelativeSlot nextExpected) lastOffset =
     replicate gap lastOffset
   where
     gap = fromIntegral $ slot - nextExpected
+
+-- | Execute some error handler when an 'ImmutableDBError' or an 'FsError' is
+-- thrown while executing an action.
+onException :: Monad m
+            => ErrorHandling FsError m
+            -> ErrorHandling ImmutableDBError m
+            -> m b  -- ^ What to do when an error is thrown
+            -> m a  -- ^ The action to execute
+            -> m a
+onException fsErr err onErr m =
+    EH.onException fsErr (EH.onException err m onErr) onErr
+
+
+-- | Convert an 'EpochSlot' to a 'Tip'
+epochSlotToTip :: Monad m => EpochInfo m -> EpochSlot -> m ImmTip
+epochSlotToTip _         (EpochSlot epoch 0) = return $ Tip (EBB epoch)
+epochSlotToTip epochInfo epochSlot           = Tip . Block <$>
+    epochInfoAbsolute epochInfo epochSlot
+
+-- | Go through all files, making two sets: the set of epoch-xxx.dat
+-- files, and the set of index-xxx.dat files, discarding all others.
+dbFilesOnDisk :: Set String -> (Set EpochNo, Set EpochNo)
+dbFilesOnDisk = foldr categorise mempty
+  where
+    categorise file fs@(epochFiles, indexFiles) = case parseDBFile file of
+      Just ("epoch", n) -> (Set.insert n epochFiles, indexFiles)
+      Just ("index", n) -> (epochFiles, Set.insert n indexFiles)
+      _                 -> fs
+
+-- | Remove all epoch and index starting from the given epoch (included).
+removeFilesStartingFrom :: (HasCallStack, Monad m)
+                        => HasFS m h
+                        -> EpochNo
+                        -> m ()
+removeFilesStartingFrom HasFS { removeFile, listDirectory } epoch = do
+    filesInDBFolder <- listDirectory (mkFsPath [])
+    let (epochFiles, indexFiles) = dbFilesOnDisk filesInDBFolder
+    forM_ (takeWhile (>= epoch) (Set.toDescList epochFiles)) $ \e ->
+      removeFile (renderFile "epoch" e)
+    forM_ (takeWhile (>= epoch) (Set.toDescList indexFiles)) $ \i ->
+      removeFile (renderFile "index" i)
 
 {-------------------------------------------------------------------------------
   Encoding and decoding the EBB hash
