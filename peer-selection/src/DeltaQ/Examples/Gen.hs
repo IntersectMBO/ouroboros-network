@@ -167,29 +167,34 @@ undirectedEdge (Undirected (forward, backward)) u v = GR.overlay
 -- | Run a builder using system entropy. The seed is also returned so that you
 -- can reproduce it (using 'buildFromSeed').
 buildIO
-  :: (forall r f v . Ord v => Builder r f e v t)
-  -> IO ((t, AdjacencyMap (Last e) Word32), MWC.Seed)
+  :: (forall r f v . Ord v => Builder r f e v ())
+  -> IO (AdjacencyMap (Last e) Word32, MWC.Seed)
 buildIO it = MWC.withSystemRandom $ \gen -> do
   seed <- MWC.save gen
   outcome <- build gen it
   pure (outcome, seed)
 
+-- | Like 'buildIO' but you give the seed. Useful if you want to reproduce
+-- something that was produced randomly ('buildIO' gives the seed that will
+-- reproduce it).
 buildFromSeed
   :: MWC.Seed
-  -> (forall r f v . Ord v => Builder r f e v t)
-  -> ST s (t, AdjacencyMap (Last e) Word32)
+  -> (forall r f v . Ord v => Builder r f e v ())
+  -> ST s (AdjacencyMap (Last e) Word32)
 buildFromSeed seed it = do
   gen <- MWC.restore seed
   build gen it
 
+-- | Run a builder with a given source of randomness.
+-- Vertices are @Word32@s.
 build
   :: MWC.Gen s
-  -> (forall r f v . Ord v => Builder r f e v t)
-  -> ST s (t, AdjacencyMap (Last e) Word32)
+  -> (forall r f v . Ord v => Builder r f e v ())
+  -> ST s (AdjacencyMap (Last e) Word32)
 build gen it = do
   let st = BuilderState (vertexStream 0) GR.empty gen
-  (t, st') <- runStateT (runReaderT it noMakeEdge) st
-  pure (t, builderGraph st')
+  ((), st') <- runStateT (runReaderT it noMakeEdge) st
+  pure (builderGraph st')
   where
   vertexStream :: Word32 -> Stream Word32
   vertexStream w = Stream w (vertexStream (w+1))
@@ -197,14 +202,14 @@ build gen it = do
 directed :: Ord v => Builder s Directed e v t -> Builder s f e v t
 directed bdr = lift $ runReaderT bdr directedEdge
 
+undirected :: Ord v => Builder s Undirected e v t -> Builder s f e v t
+undirected bdr = lift $ runReaderT bdr undirectedEdge
+
 -- | Make a directed graph undirected by copying each edge in reverse.
 mirror :: Builder s Directed e v t -> Builder s Undirected e v t
 mirror bdr = do
   mkDirected <- ask
   lift $ runReaderT bdr (\(Directed e) -> mkDirected (Undirected (e,e)))
-
-undirected :: Ord v => Builder s Undirected e v t -> Builder s f e v t
-undirected bdr = lift $ runReaderT bdr undirectedEdge
 
 overlay
   :: ( Ord v )
@@ -289,6 +294,9 @@ cycleOn vs randomEdge = case vs of
 
 -- | 'cycleOn' and then "shortcut" edges added between randomly-selected
 -- pairs which are not already adjacent in the cycle.
+--
+-- FIXME not yet right. Doesn't ensure the shortcuts are not duplicate
+-- edges.
 cycleWithShortcutsOn
   :: Ord v
   => [v]
@@ -309,6 +317,9 @@ cycleWithShortcutsOn vs randomEdge randomN = do
 --
 -- NB: making this undirected, by way of 'mirror' for instance, will not
 -- necessarily give a regular graph in the undirected sense.
+--
+-- NB: not the most general regular graph! It starts with a cycle on the
+-- vertices, so that the graph is always connected.
 kregular
   :: Ord v
   => [v]
@@ -316,13 +327,16 @@ kregular
   -> Random e
   -> Builder s Directed e v ()
 kregular vs randomK randomEdge = forM_ vs $ \v -> do
+  cycleOn vs randomEdge
   es <- outEdges v
   k <- random randomK
   let k' = fromIntegral (Map.size es)
   -- If this node already has at least k neighbours (should never exceed k by
   -- design of this program) then do nothing.
-  unless (k' >= k) $ do
-    let n = k - k'
+  --
+  -- Subtract one since the cycle is 1-regular.
+  unless (k' >= (k - 1)) $ do
+    let n = (k - 1) - k'
     -- Consider only vertices that have degree less than k.
     -- Remove adjacent vertices from the list of new vertices to consider
     -- connecting to.
@@ -345,4 +359,9 @@ isRegular gr = case Map.toList (adjacencyMap gr) of
     where
     go Nothing  _   = Nothing
     go (Just n) es' = if Map.size es' == n then Just n else Nothing
-
+-- TODO we shall plot the candlesticks of the 95th percentile time to transmit
+-- of a given number of samples _for each parameter_ where the parameter is
+-- the size of the cycle/kregular graph.
+--
+-- TODO also, some way to visualize the likelihood that a random graph is
+-- strongly connected
