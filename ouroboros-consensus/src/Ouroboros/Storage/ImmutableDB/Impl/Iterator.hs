@@ -120,11 +120,11 @@ streamBinaryBlobsImpl :: forall m hash.
                       -- ^ When to stop streaming (inclusive).
                       -> m (Iterator hash m ByteString)
 streamBinaryBlobsImpl dbEnv mbStart mbEnd = withOpenState dbEnv $ \hasFS st -> do
-    let ImmutableDBEnv { _dbErr } = dbEnv
-        HasFS {..}                = hasFS
-        OpenState {..}            = st
+    let ImmutableDBEnv { _dbErr, _dbEpochInfo } = dbEnv
+        HasFS {..}     = hasFS
+        OpenState {..} = st
 
-    validateIteratorRange _dbErr _epochInfo _currentTip mbStart mbEnd
+    validateIteratorRange _dbErr _dbEpochInfo _currentTip mbStart mbEnd
 
     emptyOrEndBound <- case _currentTip of
           TipGen -> return $ Nothing
@@ -134,16 +134,16 @@ streamBinaryBlobsImpl dbEnv mbStart mbEnd = withOpenState dbEnv $ \hasFS st -> d
                   -- regular block or an EBB here. We conservatively assume it
                   -- must a regular block (which would come /after/ the EBB),
                   -- and then check this when we actually reach the end.
-                  endEpochSlot <- epochInfoBlockRelative _epochInfo endSlot
+                  endEpochSlot <- epochInfoBlockRelative _dbEpochInfo endSlot
                   return $ Just (endEpochSlot, ItrEndHash endHash)
             | otherwise
             -> return $ Just (EpochSlot epoch 0, ItrNoEndHash)
           Tip (Block lastSlot')
             | Just (endSlot, endHash) <- mbEnd
-            -> do endEpochSlot <- epochInfoBlockRelative _epochInfo endSlot
+            -> do endEpochSlot <- epochInfoBlockRelative _dbEpochInfo endSlot
                   return $ Just (endEpochSlot, ItrEndHash endHash)
             | otherwise
-            -> do endEpochSlot <- epochInfoBlockRelative _epochInfo lastSlot'
+            -> do endEpochSlot <- epochInfoBlockRelative _dbEpochInfo lastSlot'
                   return $ Just (endEpochSlot, ItrNoEndHash)
 
     case emptyOrEndBound of
@@ -155,7 +155,7 @@ streamBinaryBlobsImpl dbEnv mbStart mbEnd = withOpenState dbEnv $ \hasFS st -> d
         (start@(EpochSlot startEpoch startRelSlot), mbStartHash) <-
           case mbStart of
             Just (startSlot, startHash) -> do
-              startEpochSlot <- epochInfoBlockRelative _epochInfo startSlot
+              startEpochSlot <- epochInfoBlockRelative _dbEpochInfo startSlot
               return $ case startEpochSlot of
                   -- Include the EBB by setting the start relative slot to 0
                   EpochSlot epoch 1 -> (EpochSlot epoch 0, Just startHash)
@@ -169,7 +169,7 @@ streamBinaryBlobsImpl dbEnv mbStart mbEnd = withOpenState dbEnv $ \hasFS st -> d
               = return $ indexFromSlotOffsets _currentEpochOffsets
                   _currentEBBHash
               | otherwise
-              = epochInfoSize _epochInfo epoch >>= \size ->
+              = epochInfoSize _dbEpochInfo epoch >>= \size ->
                 loadIndex (_dbHashDecoder dbEnv) hasFS _dbErr epoch (succ size)
 
         startIndex <- openIndex startEpoch
@@ -328,7 +328,7 @@ iteratorNextImpl dbEnv it@IteratorHandle {_it_hasFS = hasFS :: HasFS m h, ..} st
       IteratorStateExhausted -> return IteratorExhausted
       -- Valid @next@ thanks to Invariant 1, so go ahead and read it
       IteratorStateOpen iteratorState@IteratorState{..} -> withOpenState dbEnv $ \_ st -> do
-        slot <- epochInfoAbsolute (_epochInfo st) _it_next
+        slot <- epochInfoAbsolute (_dbEpochInfo dbEnv) _it_next
         blob <- readNext iteratorState
         case _it_next of
           -- It's an EBB
@@ -374,7 +374,7 @@ iteratorNextImpl dbEnv it@IteratorHandle {_it_hasFS = hasFS :: HasFS m h, ..} st
     -- Move the iterator to the next position that can be read from, advancing
     -- epochs if necessary. If no next position can be found, the iterator is
     -- closed.
-    stepIterator :: OpenState m hash h' -> IteratorState hash h -> m ()
+    stepIterator :: OpenState hash h' -> IteratorState hash h -> m ()
     stepIterator st its@IteratorState { _it_epoch_handle = eHnd
                                       , _it_next = EpochSlot epoch currentRelSlot
                                       , _it_epoch_index = index } =
@@ -402,7 +402,7 @@ iteratorNextImpl dbEnv it@IteratorHandle {_it_hasFS = hasFS :: HasFS m h, ..} st
     -- Start opening epochs (starting from the given epoch number) until we
     -- encounter a non-empty one, then update the iterator state accordingly.
     -- If no non-empty epoch can be found, the iterator is closed.
-    openNextNonEmptyEpoch :: EpochNo -> OpenState m hash h' -> m ()
+    openNextNonEmptyEpoch :: EpochNo -> OpenState hash h' -> m ()
     openNextNonEmptyEpoch epoch st@OpenState {..}
       | epoch > _epoch _it_end
       = iteratorCloseImpl it
@@ -411,7 +411,7 @@ iteratorNextImpl dbEnv it@IteratorHandle {_it_hasFS = hasFS :: HasFS m h, ..} st
         -- know that _epoch _it_end is <= _currentEpoch, so we know that epoch
         -- <= _currentEpoch.
         index <- case epoch == _currentEpoch of
-          False -> epochInfoSize _epochInfo epoch >>= \size ->
+          False -> epochInfoSize (_dbEpochInfo dbEnv) epoch >>= \size ->
                    loadIndex (_dbHashDecoder dbEnv) hasFS (_dbErr dbEnv) epoch (succ size)
           True  -> return $
             indexFromSlotOffsets _currentEpochOffsets _currentEBBHash

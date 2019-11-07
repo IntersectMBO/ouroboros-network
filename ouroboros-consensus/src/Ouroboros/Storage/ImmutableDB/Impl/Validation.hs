@@ -50,7 +50,7 @@ validateAndReopen :: forall m hash h e.
                   -> EpochFileParser e hash m (Word64, SlotNo)
                   -> BaseIteratorID
                   -> Tracer m (TraceEvent e)
-                  -> m (OpenState m hash h)
+                  -> m (OpenState hash h)
 validateAndReopen
   hashDecoder
   hashEncoder
@@ -67,12 +67,12 @@ validateAndReopen
     case mbLastValidLocationAndIndex of
       Nothing -> do
         traceWith tracer $ NoValidLastLocation
-        mkOpenStateNewEpoch hasFS 0 epochInfo nextIteratorID TipGen
+        mkOpenStateNewEpoch hasFS 0 nextIteratorID TipGen
       Just (lastValidLocation, index) -> do
         tip <- epochSlotToTip epochInfo lastValidLocation
         let epoch = _epoch lastValidLocation
         traceWith tracer $ ValidatedLastLocation epoch tip
-        mkOpenState hasFS epoch epochInfo nextIteratorID tip index
+        mkOpenState hasFS epoch nextIteratorID tip index
 
 -- | Internal data type used as the result of @validateEpoch@.
 data ValidateResult hash

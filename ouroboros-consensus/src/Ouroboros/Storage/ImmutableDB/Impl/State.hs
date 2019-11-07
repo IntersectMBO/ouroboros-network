@@ -57,24 +57,25 @@ import           Ouroboros.Storage.ImmutableDB.Types
 data ImmutableDBEnv m hash = forall h e. ImmutableDBEnv
     { _dbHasFS           :: !(HasFS m h)
     , _dbErr             :: !(ErrorHandling ImmutableDBError m)
-    , _dbInternalState   :: !(StrictMVar m (InternalState m hash h))
+    , _dbInternalState   :: !(StrictMVar m (InternalState hash h))
     , _dbEpochFileParser :: !(EpochFileParser e hash m (Word64, SlotNo))
     , _dbHashDecoder     :: !(forall s . Decoder s hash)
     , _dbHashEncoder     :: !(hash -> Encoding)
+    , _dbEpochInfo       :: !(EpochInfo m)
     , _dbTracer          :: !(Tracer m (TraceEvent e))
     }
 
-data InternalState m hash h =
-    DbClosed !(ClosedState m)
-  | DbOpen !(OpenState m hash h)
+data InternalState hash h =
+    DbClosed !ClosedState
+  | DbOpen !(OpenState hash h)
   deriving (Generic, NoUnexpectedThunks)
 
-dbIsOpen :: InternalState m hash h -> Bool
+dbIsOpen :: InternalState hash h -> Bool
 dbIsOpen (DbClosed _) = False
 dbIsOpen (DbOpen _)   = True
 
 -- | Internal state when the database is open.
-data OpenState m hash h = OpenState
+data OpenState hash h = OpenState
     { _currentEpoch            :: !EpochNo
     -- ^ The current 'EpochNo' the immutable store is writing to.
     , _currentEpochWriteHandle :: !(Handle h)
@@ -87,8 +88,6 @@ data OpenState m hash h = OpenState
     -- index file when finalising the current epoch.
     , _currentTip              :: !ImmTip
     -- ^ The current tip of the database.
-    , _epochInfo               :: !(EpochInfo m)
-    -- ^ Function to get the size of an epoch.
     , _nextIteratorID          :: !BaseIteratorID
     -- ^ The ID of the next iterator that will be created.
     }
@@ -97,11 +96,9 @@ data OpenState m hash h = OpenState
 -- | Internal state when the database is closed. This contains data that
 -- should be restored when the database is reopened. Data not present here
 -- will be recovered when reopening.
-data ClosedState m = ClosedState
-    { _closedEpochInfo      :: !(EpochInfo m)
-    -- ^ See '_epochInfo'.
-    , _closedNextIteratorID :: !BaseIteratorID
-    -- ^ See '_nextIteratorID'.
+data ClosedState = ClosedState
+    { _closedNextIteratorID :: !BaseIteratorID
+      -- ^ See '_nextIteratorID'.
     }
   deriving (Generic, NoUnexpectedThunks)
 
@@ -115,12 +112,11 @@ data ClosedState m = ClosedState
 mkOpenState :: (HasCallStack, MonadThrow m)
             => HasFS m h
             -> EpochNo
-            -> EpochInfo m
             -> BaseIteratorID
             -> ImmTip
             -> Index hash
-            -> m (OpenState m hash h)
-mkOpenState HasFS{..} epoch epochInfo nextIteratorID tip index = do
+            -> m (OpenState hash h)
+mkOpenState HasFS{..} epoch nextIteratorID tip index = do
     let epochFile     = renderFile "epoch" epoch
         epochOffsets  = indexToSlotOffsets index
 
@@ -132,7 +128,6 @@ mkOpenState HasFS{..} epoch epochInfo nextIteratorID tip index = do
       , _currentEpochOffsets     = epochOffsets
       , _currentEBBHash          = getEBBHash index
       , _currentTip              = tip
-      , _epochInfo               = epochInfo
       , _nextIteratorID          = nextIteratorID
       }
 
@@ -142,11 +137,10 @@ mkOpenState HasFS{..} epoch epochInfo nextIteratorID tip index = do
 mkOpenStateNewEpoch :: (HasCallStack, MonadThrow m)
                     => HasFS m h
                     -> EpochNo
-                    -> EpochInfo m
                     -> BaseIteratorID
                     -> ImmTip
-                    -> m (OpenState m hash h)
-mkOpenStateNewEpoch HasFS{..} epoch epochInfo nextIteratorID tip = do
+                    -> m (OpenState hash h)
+mkOpenStateNewEpoch HasFS{..} epoch nextIteratorID tip = do
     let epochFile    = renderFile "epoch" epoch
         epochOffsets = SlotOffsets.empty
 
@@ -158,7 +152,6 @@ mkOpenStateNewEpoch HasFS{..} epoch epochInfo nextIteratorID tip = do
       , _currentEpochOffsets     = epochOffsets
       , _currentEBBHash          = NoCurrentEBB
       , _currentTip              = tip
-      , _epochInfo               = epochInfo
       , _nextIteratorID          = nextIteratorID
       }
 
@@ -173,7 +166,7 @@ mkOpenStateNewEpoch HasFS{..} epoch epochInfo nextIteratorID tip = do
 -- @h@ parameters would not be known to match.
 getOpenState :: (HasCallStack, IOLike m)
              => ImmutableDBEnv m hash
-             -> m (SomePair (HasFS m) (OpenState m hash))
+             -> m (SomePair (HasFS m) (OpenState hash))
 getOpenState ImmutableDBEnv {..} = do
     internalState <- readMVar _dbInternalState
     case internalState of
@@ -198,7 +191,7 @@ getOpenState ImmutableDBEnv {..} = do
 -- @MVar@.
 modifyOpenState :: forall m hash r. (HasCallStack, IOLike m)
                 => ImmutableDBEnv m hash
-                -> (forall h. HasFS m h -> StateT (OpenState m hash h) m r)
+                -> (forall h. HasFS m h -> StateT (OpenState hash h) m r)
                 -> m r
 modifyOpenState ImmutableDBEnv {_dbHasFS = hasFS :: HasFS m h, ..} action = do
     (mr, ()) <- generalBracket open close (tryImmDB hasFsErr _dbErr . mutation)
@@ -213,11 +206,11 @@ modifyOpenState ImmutableDBEnv {_dbHasFS = hasFS :: HasFS m h, ..} action = do
     -- so that 'close' knows which error is thrown (@Either e (s, r)@ vs. @(s,
     -- r)@).
 
-    open :: m (InternalState m hash h)
+    open :: m (InternalState hash h)
     open = takeMVar _dbInternalState
 
-    close :: InternalState m hash h
-          -> ExitCase (Either ImmutableDBError (r, OpenState m hash h))
+    close :: InternalState hash h
+          -> ExitCase (Either ImmutableDBError (r, OpenState hash h))
           -> m ()
     close !st ec = case ec of
       -- Restore the original state in case of an abort
@@ -241,13 +234,13 @@ modifyOpenState ImmutableDBEnv {_dbHasFS = hasFS :: HasFS m h, ..} action = do
         putMVar _dbInternalState st
 
     mutation :: HasCallStack
-             => InternalState m hash h
-             -> m (r, OpenState m hash h)
+             => InternalState hash h
+             -> m (r, OpenState hash h)
     mutation (DbClosed _) = throwUserError _dbErr ClosedDBError
     mutation (DbOpen ost) = runStateT (action hasFS) ost
 
     -- TODO what if this fails?
-    closeOpenHandles :: InternalState m hash h -> m ()
+    closeOpenHandles :: InternalState hash h -> m ()
     closeOpenHandles (DbClosed _)            = return ()
     closeOpenHandles (DbOpen OpenState {..}) = hClose _currentEpochWriteHandle
 
@@ -260,7 +253,7 @@ modifyOpenState ImmutableDBEnv {_dbHasFS = hasFS :: HasFS m h, ..} action = do
 -- potentially inconsistent state.
 withOpenState :: forall m hash r. (HasCallStack, IOLike m)
               => ImmutableDBEnv m hash
-              -> (forall h. HasFS m h -> OpenState m hash h -> m r)
+              -> (forall h. HasFS m h -> OpenState hash h -> m r)
               -> m r
 withOpenState ImmutableDBEnv {_dbHasFS = hasFS :: HasFS m h, ..} action = do
     (mr, ()) <- generalBracket open (const close) (tryImmDB hasFsErr _dbErr . access)
@@ -271,7 +264,7 @@ withOpenState ImmutableDBEnv {_dbHasFS = hasFS :: HasFS m h, ..} action = do
     HasFS{..}         = hasFS
     ErrorHandling{..} = _dbErr
 
-    open :: m (InternalState m hash h)
+    open :: m (InternalState hash h)
     open = readMVar _dbInternalState
 
     -- close doesn't take the state that @open@ returned, because the state
@@ -298,21 +291,20 @@ withOpenState ImmutableDBEnv {_dbHasFS = hasFS :: HasFS m h, ..} action = do
       ExitCaseSuccess (Left (UserError {})) -> return ()
 
     access :: HasCallStack
-           => InternalState m hash h
+           => InternalState hash h
            -> m r
     access (DbClosed _) = throwUserError _dbErr ClosedDBError
     access (DbOpen ost) = action hasFS ost
 
     -- TODO what if this fails?
-    closeOpenHandles :: InternalState m hash h -> m ()
+    closeOpenHandles :: InternalState hash h -> m ()
     closeOpenHandles (DbClosed _)            = return ()
     closeOpenHandles (DbOpen OpenState {..}) = hClose _currentEpochWriteHandle
 
 
 -- | Create a 'ClosedState' from an internal state, open or closed.
-closedStateFromInternalState :: InternalState m hash h -> ClosedState m
+closedStateFromInternalState :: InternalState hash h -> ClosedState
 closedStateFromInternalState (DbClosed cst) = cst
 closedStateFromInternalState (DbOpen OpenState {..}) = ClosedState
-  { _closedEpochInfo       = _epochInfo
-  , _closedNextIteratorID  = _nextIteratorID
-  }
+    { _closedNextIteratorID  = _nextIteratorID
+    }
