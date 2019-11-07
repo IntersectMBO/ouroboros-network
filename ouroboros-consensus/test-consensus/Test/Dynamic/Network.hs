@@ -224,7 +224,7 @@ runNodeNetwork NodeNetworkArgs
 
     undirectedEdge ::
          HasCallStack
-      => Tracer m (SlotNo, MiniProtocolState, MiniProtocolExpectedException blk)
+      => Tracer m (SlotNo, MiniProtocolState, Maybe (MiniProtocolExpectedException blk))
       -> LatencyInjection (StrictTVar m SMGen)
       -> LivePipesVar m
       -> Map CoreNodeId (StrictMVar m (LimitedApp m NodeId blk))
@@ -438,7 +438,7 @@ runNodeNetwork NodeNetworkArgs
 directedEdge ::
   forall m blk. (IOLike m, SupportedBlock blk)
   => MaxLatencies
-  -> Tracer m (SlotNo, MiniProtocolState, MiniProtocolExpectedException blk)
+  -> Tracer m (SlotNo, MiniProtocolState, Maybe (MiniProtocolExpectedException blk))
   -> BlockchainTime m
   -> LatencyInjection (StrictTVar m SMGen)
   -> LivePipesVar m
@@ -446,33 +446,32 @@ directedEdge ::
   -> (CoreNodeId, LimitedApp m NodeId blk)
   -> m ()
 directedEdge maxLatencies tr btime liSMG livePipesVar nodeapp1 nodeapp2 =
-    loopOnMPEE
+    loopOnMPEE Nothing
   where
     edge registry =
       directedEdgeInner maxLatencies liSMG livePipesVar registry
         nodeapp1 nodeapp2
 
-    loopOnMPEE = do
+    loopOnMPEE mbE = do
+        s <- atomically $ getCurrentSlot btime
+        traceWith tr (s, MiniProtocolUp, mbE)
         again <- (Nothing <$ withRegistry edge)
           `catch` (fmap Just . hExpected)
           `catch` hUnexpected
 
         -- NB we block only /after/ the former mini protocol instances' pipes
         -- have already been removed from @livePipesVar@
-        forM_ again $ \(s, e) -> do
-          traceWith tr (s, MiniProtocolDelayed, e)
+        forM_ again $ \e -> do
+          traceWith tr (s, MiniProtocolDown, Just e)
           void $ blockUntilSlot btime (succ s)
-          traceWith tr (s, MiniProtocolRestarting, e)
-          loopOnMPEE
+          loopOnMPEE (Just e)
       where
         -- Catch and restart on expected exceptions
         --
         hExpected ::
              MiniProtocolExpectedException blk
-          -> m (SlotNo, MiniProtocolExpectedException blk)
-        hExpected e = do
-          s <- atomically $ getCurrentSlot btime
-          pure (s, e)
+          -> m (MiniProtocolExpectedException blk)
+        hExpected = pure
 
         -- Wrap synchronous exceptions in 'MiniProtocolFatalException'
         --
@@ -795,7 +794,7 @@ data MiniProtocolExpectedException blk
 
 instance (SupportedBlock blk) => Exception (MiniProtocolExpectedException blk)
 
-data MiniProtocolState = MiniProtocolDelayed | MiniProtocolRestarting
+data MiniProtocolState = MiniProtocolDown | MiniProtocolUp
   deriving (Show)
 
 data TraceMiniProtocolRestart peer blk
