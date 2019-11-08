@@ -12,14 +12,10 @@ module Main (main) where
 import           Test.Tasty
 
 import qualified Test.Async
-import qualified Test.NamedPipes
-import qualified Test.Event
 
 main :: IO ()
 main = defaultMain $ testGroup "Win32"
   [ Test.Async.tests
-  , Test.NamedPipes.tests
-  , Test.Event.tests
   ]
 #else
 main :: IO ()

@@ -13,13 +13,10 @@ module System.Win32.NamedPipes (
 
     -- * Named pipe server APIs
     createNamedPipe,
-    connectNamedPipe,
     pIPE_UNLIMITED_INSTANCES,
 
     -- ** Paramater types
     LPSECURITY_ATTRIBUTES,
-    LPOVERLAPPED,
-    OVERLAPPED (..),
     OpenMode,
     pIPE_ACCESS_DUPLEX,
     pIPE_ACCESS_INBOUND,
@@ -32,27 +29,12 @@ module System.Win32.NamedPipes (
 
     -- * Named pipe client APIs
     -- | This directly reuses other Win32 file APIs
-    createFile,
-    disconnectPipe,
+    createFile
   ) where
 
 
-import Control.Monad (unless)
-
-import Foreign
 import System.Win32.Types
-#if MIN_VERSION_Win32 (2, 7, 0)
-import System.Win32.File hiding ( win32_ReadFile, c_ReadFile
-                                , win32_WriteFile, c_WriteFile
-                                , c_FlushFileBuffers
-                                )
-#else
-import System.Win32.Types.Overlapped
-import System.Win32.File hiding ( LPOVERLAPPED, win32_ReadFile, c_ReadFile
-                                , win32_WriteFile, c_WriteFile
-                                , c_FlushFileBuffers
-                                )
-#endif
+import System.Win32.File
 
 -- | The named pipe open mode.
 --
@@ -146,46 +128,3 @@ foreign import ccall unsafe "windows.h CreateNamedPipeW"
                     -> DWORD
                     -> LPSECURITY_ATTRIBUTES
                     -> IO HANDLE
-
--- | Enables a named pipe server process to wait for a client process to
--- connect to an instance of a named pipe. A client process connects by
--- calling the 'createFile' function.
---
--- 'connectNamedPipe' can only be called on a fresh pipe, which is not
--- connected to other client, or after calling @DisconnectNamedPipe@ windows
--- API (which we don't expose yet).  This is quite different to Berkeley
--- socket `accept` call.
---
-connectNamedPipe :: HANDLE -> IO ()
-connectNamedPipe hpipe = do
-    ok <- c_ConnectNamedPipe hpipe nullPtr
-    if ok
-       then return ()
-       else do
-         -- If a client connects before the function is called, the function
-         -- returns zero and GetLastError returns ERROR_PIPE_CONNECTED.
-         -- This can happen if a client connects in the interval between the
-         -- call to CreateNamedPipe and the call to ConnectNamedPipe. In this
-         -- situation, there is a good connection between client and server,
-         -- even though the function returns zero.
-         errCode <- getLastError
-         unless (  errCode == eRROR_PIPE_CONNECTED
-                || errCode == eRROR_PIPE_LISTENING)
-                (failWith ("ConnectNamedPipe (" ++ show errCode ++ ")") errCode)
-
-eRROR_PIPE_CONNECTED :: ErrCode
-eRROR_PIPE_CONNECTED = #const ERROR_PIPE_CONNECTED
-
-eRROR_PIPE_LISTENING :: ErrCode
-eRROR_PIPE_LISTENING = #const ERROR_PIPE_LISTENING
-
-foreign import ccall interruptible "windows.h ConnectNamedPipe"
-  c_ConnectNamedPipe :: HANDLE
-                     -> LPOVERLAPPED
-                     -> IO Bool
-
-foreign import ccall interruptible "windows.h DisconnectNamedPipe"
-  c_DisconnectNamedPipe :: HANDLE -> IO Bool
-
-disconnectPipe :: HANDLE -> IO ()
-disconnectPipe = failIfFalse_ "DisconnectNamedPipe" . c_DisconnectNamedPipe

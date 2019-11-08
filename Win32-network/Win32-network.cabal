@@ -24,10 +24,7 @@ library
   if os(windows)
     exposed-modules:   System.Win32.NamedPipes
                        System.Win32.Async
-                       System.Win32.Event
                        System.Win32.CompletionPort
-                       System.Win32.Types.Overlapped
-                       System.Win32.File.Interruptible
     c-sources:         cbits/Win32Async.c
     build-depends:     base              >= 4.5  && < 4.13,
                        bytestring        >= 0.10 && < 0.11,
@@ -58,9 +55,7 @@ test-suite test-Win32-network
   ghc-options:         -Wall
                        -threaded
   if os(windows)
-    other-modules:       Test.NamedPipes
-                         Test.Async
-                         Test.Event
+    other-modules:       Test.Async
     build-depends:       async,
                          base,
                          binary,
