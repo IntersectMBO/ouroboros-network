@@ -8,19 +8,16 @@ module Test.IOSim
     , arbitraryAcyclicGraph
     ) where
 
-import           Control.Monad
-import           Control.Exception
-                   ( ArithException(..) )
-import           System.IO.Error
 import           Data.Array
 import           Data.Fixed (Fixed (..), Micro)
 import           Data.Graph
 import           Data.List (sort)
 import           Data.Time.Clock (DiffTime, picosecondsToDiffTime)
 
-import           Test.QuickCheck
-import           Test.Tasty
-import           Test.Tasty.QuickCheck
+import           Control.Monad
+import           Control.Exception
+                   ( ArithException(..) )
+import           System.IO.Error (IOError, isUserError, ioeGetErrorString)
 
 import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadSTM.Strict
@@ -29,9 +26,16 @@ import           Control.Monad.Class.MonadTimer
 import           Control.Monad.Class.MonadSay
 import           Control.Monad.IOSim
 
+import           Test.STM
+
+import           Test.QuickCheck
+import           Test.Tasty
+import           Test.Tasty.QuickCheck
+
+
 tests :: TestTree
 tests =
-  testGroup "STM simulator"
+  testGroup "IO simulator"
   [ testProperty "read/write graph (IO)"   prop_stm_graph_io
   , testProperty "read/write graph (SimM)" (withMaxSuccess 1000 prop_stm_graph_sim)
   , testProperty "timers (SimM)"           (withMaxSuccess 1000 prop_timers_ST)
@@ -40,6 +44,7 @@ tests =
   , testProperty "threadId order (SimM)"   (withMaxSuccess 1000 prop_threadId_order_order_Sim)
   , testProperty "fork order (SimM)"       (withMaxSuccess 1000 prop_fork_order_ST)
   , testProperty "fork order (IO)"         (expectFailure prop_fork_order_IO)
+  , testProperty "STM wakeup order"        prop_wakeup_order_ST
   , testGroup "throw/catch unit tests"
     [ testProperty "0" unit_catch_0
     , testProperty "1" unit_catch_1
@@ -70,6 +75,10 @@ tests =
     , testProperty "14" unit_async_14
     , testProperty "15" unit_async_15
     , testProperty "16" unit_async_16
+    ]
+  , testGroup "STM reference semantics"
+    [ testProperty "Reference vs IO"    prop_stm_referenceIO
+    , testProperty "Reference vs Sim"   prop_stm_referenceSim
     ]
   ]
 
@@ -299,6 +308,38 @@ test_threadId_order = \(Positive n) -> do
 
 prop_threadId_order_order_Sim :: Positive Int -> Property
 prop_threadId_order_order_Sim n = runSimOrThrow $ test_threadId_order n
+
+
+prop_wakeup_order_ST :: Property
+prop_wakeup_order_ST = runSimOrThrow $ test_wakeup_order
+
+-- This property is not actually deterministic in IO. Uncomment the following
+-- and try it! Arguably therefore, this property does not need to be true for
+-- the Sim either. Perhaps we should introduce random scheduling and abandon
+-- this property. In the meantime it's a helpful sanity check.
+
+--prop_wakeup_order_IO = ioProperty test_wakeup_order
+
+test_wakeup_order :: ( MonadFork m
+                     , MonadSTM m
+                     , MonadTimer m
+                     )
+                => m Property
+test_wakeup_order = do
+    v          <- atomically $ newTVar False
+    wakupOrder <-
+      withProbe $ \p -> do
+        sequence_
+          [ do _ <- fork $ do
+                 atomically $ do
+                   x <- readTVar v
+                   check x
+                 probeOutput p (n :: Int)
+               threadDelay 0.1
+          | n <- [0..9] ]
+        atomically $ writeTVar v True
+        threadDelay 0.1
+    return (wakupOrder === [0..9]) --FIFO order
 
 
 --
@@ -758,6 +799,40 @@ unit_async_16 =
           say "parent done")
  ===
    ["child", "child masked", "handler", "child done", "parent done"]
+
+
+--
+-- Tests vs STM operational semantics
+--
+
+-- | Compare the behaviour of the STM reference operational semantics with
+-- the behaviour of the real IO STM implementation.
+--
+prop_stm_referenceIO :: SomeTerm -> Property
+prop_stm_referenceIO t =
+    ioProperty (prop_stm_referenceM t)
+
+-- | Compare the behaviour of the STM reference operational semantics with
+-- the behaviour of the IO simulator's STM implementation.
+--
+prop_stm_referenceSim :: SomeTerm -> Property
+prop_stm_referenceSim t =
+    runSimOrThrow (prop_stm_referenceM t)
+
+--TODO: would be nice to also have stronger tests here:
+-- * compare all the tvar values in the heap
+-- * compare the read and write sets
+
+-- | Compare the behaviour of the STM reference operational semantics with
+-- the behaviour of any 'MonadSTM' STM implementation.
+--
+prop_stm_referenceM :: (MonadSTM m, MonadThrow (STM m), MonadCatch m)
+                    => SomeTerm -> m Property
+prop_stm_referenceM (SomeTerm _tyrep t) = do
+    let (r1, _heap) = evalAtomically t
+    r2 <- execAtomically t
+    return (r1 === r2)
+
 
 
 --
