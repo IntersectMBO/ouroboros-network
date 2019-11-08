@@ -24,18 +24,17 @@ import           GHC.Generics (Generic)
 import           Cardano.Prelude (NoUnexpectedThunks)
 
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
-import           Ouroboros.Network.Block (HasHeader)
 
 import           Ouroboros.Consensus.Protocol.Abstract
 
 class OuroborosTag p => ChainSelection p s where
-  preferCandidate' :: HasHeader b
+  preferCandidate' :: SupportedHeader p b
                    => proxy s
                    -> NodeConfig p
                    -> AnchoredFragment b      -- ^ Our chain
                    -> AnchoredFragment b      -- ^ Candidate
                    -> Bool
-  compareCandidates' :: HasHeader b
+  compareCandidates' :: SupportedHeader p b
                      => proxy s
                      -> NodeConfig p
                      -> AnchoredFragment b -> AnchoredFragment b -> Ordering
