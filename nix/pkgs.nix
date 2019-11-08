@@ -36,12 +36,19 @@ let
         packages.typed-protocols-cbor.configureFlags = [ "--ghc-option=-Werror" ];
         packages.io-sim.configureFlags = [ "--ghc-option=-Werror" ];
         packages.io-sim-classes.configureFlags = [ "--ghc-option=-Werror" ];
+        packages.Win32-network.configureFlags = [ "--ghc-option=-Werror" ];
         packages.network-mux.configureFlags = [ "--ghc-option=-Werror" ];
         packages.ouroboros-network.configureFlags = [ "--ghc-option=-Werror" ];
         packages.ouroboros-network.flags.cddl = true;
         packages.ouroboros-network.components.tests.cddl.build-tools = [pkgs.cddl pkgs.cbor-diag];
         packages.ouroboros-consensus.configureFlags = [ "--ghc-option=-Werror" ];
         packages.prometheus.components.library.doExactConfig = true;
+      }
+      {
+        # disable test-Win32-network tests
+        packages.Win32-network.components.tests = {
+          test-Win32-network.preCheck = "echo OK > $out; exit 0";
+        };
       }
     ];
   };
