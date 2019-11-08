@@ -44,6 +44,12 @@ let
         packages.ouroboros-consensus.configureFlags = [ "--ghc-option=-Werror" ];
         packages.prometheus.components.library.doExactConfig = true;
       }
+      {
+        # disable test-Win32-network tests
+        packages.Win32-network.components.tests = {
+          test-Win32-network.preCheck = "echo OK > $out; exit 0";
+        };
+      }
     ];
   };
 
