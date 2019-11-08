@@ -60,6 +60,9 @@ deriving instance Show (TyRep t)
 -- distinction here because it makes the encoding and generation of terms
 -- easier, and the restriction is not fundamental for the STM semantics.
 --
+-- Note that we choose not to implement @catch@ as we do not need it. But it
+-- should be straightforward to add if it becomes necessary.
+--
 data Term (t :: Type) where
 
     Return    :: Expr t -> Term t
@@ -291,6 +294,9 @@ deriving instance Show (NfTerm t)
 
 -- | The STM transition rules. They reduce a 'Term' to a normal-form 'NfTerm'.
 --
+-- Compare the implementation of this against the operational semantics in
+-- Figure 4 in the paper. Note that @catch@ is not included.
+--
 evalTerm :: Env -> Heap -> Allocs -> Term t -> (NfTerm t, Heap, Allocs)
 evalTerm !env !heap !allocs term = case term of
 
@@ -304,16 +310,19 @@ evalTerm !env !heap !allocs term = case term of
 
     Retry    -> (NfRetry,                   heap, allocs)
 
+    -- Rule READ
     ReadTVar nvar -> (NfReturn (readVar heap var), heap,  allocs)
       where
         ValVar var = lookupEnv env nvar
 
+    -- Rule WRITE
     WriteTVar nvar exp -> (NfReturn ValUnit, heap', allocs)
       where
         heap'             = writeVar heap var val
         (ValVar var)      = lookupEnv env nvar
         val               = evalExpr env exp
 
+    -- Rule NEW
     NewTVar exp ->
       let val                   = evalExpr env exp
           (var, heap', allocs') = extendHeap (heap, allocs) val
@@ -322,17 +331,29 @@ evalTerm !env !heap !allocs term = case term of
     Bind t1 name t2 ->
       let (nf1, heap', allocs') = evalTerm env heap allocs t1 in
       case nf1 of
+
+        -- Rule BIND
         NfReturn v -> evalTerm env' heap' allocs' t2
           where
             env' = extendEnv name v env
+
+        -- Rule THROW
         NfThrow v  -> (NfThrow v, heap', allocs')
+
+        -- Rule RETRY
         NfRetry    -> (NfRetry,   heap', allocs')
 
     OrElse t1 t2 ->
       let (nft1, heap', allocs') = evalTerm env heap allocs t1 in
       case nft1 of
+
+        -- Rule OR1
         NfReturn v -> (NfReturn v, heap', allocs')
+
+        -- Rule OR2
         NfThrow  v -> (NfThrow  v, heap', allocs')
+
+        -- Rule OR3
         NfRetry    -> evalTerm env heap allocs t2
 
 -- | The top level rule for STM transitions (on closed terms).
@@ -344,13 +365,22 @@ evalAtomically t =
         allocs               = mempty
         (t', heap', allocs') = evalTerm env heap allocs t in
     case t' of
-      NfReturn v -> (TxComitted v', heap')            -- ARET
+
+      -- Rule ARET
+      NfReturn v -> (TxComitted v', heap')
                       where v' = snapshotValue heap' v
 
-      NfThrow  v -> (TxAborted  v', heap <> allocs')  -- ATHROW
+      -- Rule ATHROW
+      NfThrow  v -> (TxAborted  v', heap <> allocs')
                       where v' = snapshotValue heap' v
 
-      NfRetry    -> (TxBlocked, heap)  -- heap unchanged for retry.
+      -- There is no rule in the paper for atomic retry because the lack of
+      -- that case means the system has to progress by picking a different
+      -- thread which is exactly what one wants for retry.
+      --
+      -- But we have to have a total result. So we have a blocked result
+      -- with the heap unchanged.
+      NfRetry    -> (TxBlocked, heap)
 
 -- | Capture an immutable snapshot of a value, given the current value of the
 -- mutable variable heap.
@@ -466,7 +496,7 @@ execAtomically t =
     toTxResult <$> try (atomically action')
   where
     action  = snapshotExecValue =<< execTerm mempty t
-             
+
     action' = fmap Just action `orElse` return Nothing
     -- We want to observe if the transaction would block. If we trust the STM
     -- implementation then we can just use 'orElse' to observe the blocking.
