@@ -20,15 +20,11 @@ import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Text (Text, unpack)
 import           Data.Word
-import           Formatting (sformat)
+import           Formatting (build, sformat)
 import           Numeric.Natural
 import           Text.Printf (printf)
 
-import qualified Cardano.Chain.Delegation as CC.Delegation
-import qualified Cardano.Chain.Update as CC.Update
-import qualified Cardano.Chain.UTxO as CC.UTxO
-
-import           Cardano.Crypto (shortHashF)
+import           Cardano.Crypto (VerificationKey)
 import           Cardano.Crypto.DSIGN (Ed448DSIGN, MockDSIGN, SigDSIGN,
                      pattern SigEd448DSIGN, pattern SigMockDSIGN,
                      SignedDSIGN (..))
@@ -38,14 +34,23 @@ import           Cardano.Crypto.KES (MockKES, NeverKES, SigKES,
                      pattern SignKeyMockKES, SignedKES (..), SimpleKES,
                      pattern VerKeyMockKES)
 
-import           Ouroboros.Network.Block (BlockNo (..), SlotNo (..))
+import           Ouroboros.Network.Block (BlockNo (..), ChainHash (..),
+                     HeaderHash, SlotNo (..))
 
 import           Ouroboros.Consensus.Util.HList (All, HList (..))
 import qualified Ouroboros.Consensus.Util.HList as HList
 
+{-------------------------------------------------------------------------------
+  Main class
+-------------------------------------------------------------------------------}
+
 -- | Condensed but human-readable output
 class Condense a where
   condense :: a -> String
+
+{-------------------------------------------------------------------------------
+  Rank-1 types
+-------------------------------------------------------------------------------}
 
 class Condense1 f where
   liftCondense :: (a -> String) -> f a -> String
@@ -53,6 +58,10 @@ class Condense1 f where
 -- | Lift the standard 'condense' function through the type constructor
 condense1 :: (Condense1 f, Condense a) => f a -> String
 condense1 = liftCondense condense
+
+{-------------------------------------------------------------------------------
+  Instances for standard types
+-------------------------------------------------------------------------------}
 
 instance Condense String where
   condense = id
@@ -100,9 +109,6 @@ instance Condense a => Condense (Maybe a) where
 instance Condense a => Condense (Set a) where
   condense = condense1
 
-instance All Condense as => Condense (HList as) where
-  condense as = "(" ++ intercalate "," (HList.collapse (Proxy @Condense) condense as) ++ ")"
-
 instance (Condense a, Condense b) => Condense (a, b) where
   condense (a, b) = condense (a :* b :* Nil)
 
@@ -123,6 +129,38 @@ instance Condense BS.Strict.ByteString where
 
 instance Condense BS.Lazy.ByteString where
   condense bs = show bs ++ "<" ++ show (BS.Lazy.length bs) ++ "b>"
+
+{-------------------------------------------------------------------------------
+  Consensus specific general purpose types
+-------------------------------------------------------------------------------}
+
+instance All Condense as => Condense (HList as) where
+  condense as = "(" ++ intercalate "," (HList.collapse (Proxy @Condense) condense as) ++ ")"
+
+{-------------------------------------------------------------------------------
+  Orphans for ouroboros-network
+-------------------------------------------------------------------------------}
+
+instance Condense BlockNo where
+  condense (BlockNo n) = show n
+
+instance Condense SlotNo where
+  condense (SlotNo n) = show n
+
+instance Condense (HeaderHash b) => Condense (ChainHash b) where
+  condense GenesisHash   = "genesis"
+  condense (BlockHash h) = condense h
+
+{-------------------------------------------------------------------------------
+  Orphans for cardano-crypto-wrapper
+-------------------------------------------------------------------------------}
+
+instance Condense VerificationKey where
+  condense = unpack . sformat build
+
+{-------------------------------------------------------------------------------
+  Orphans for cardano-crypto-classes
+-------------------------------------------------------------------------------}
 
 instance Condense (SigDSIGN v) => Condense (SignedDSIGN v a) where
   condense (SignedDSIGN sig) = condense sig
@@ -154,21 +192,3 @@ instance Condense (SigDSIGN d) => Condense (SigKES (SimpleKES d)) where
 
 instance Condense (Hash h a) where
     condense = show
-
-instance Condense CC.UTxO.TxId where
-  condense hash = "txid:" <> unpack (sformat shortHashF hash)
-
-instance Condense BlockNo where
-  condense (BlockNo n) = show n
-
-instance Condense SlotNo where
-  condense (SlotNo n) = show n
-
-instance Condense CC.Update.UpId where
-  condense hash = "upid:" <> unpack (sformat shortHashF hash)
-
-instance Condense CC.Delegation.CertificateId where
-  condense hash = "certificateid: " <> unpack (sformat shortHashF hash)
-
-instance Condense CC.Update.VoteId where
-  condense hash = "voteid: " <> unpack (sformat shortHashF hash)

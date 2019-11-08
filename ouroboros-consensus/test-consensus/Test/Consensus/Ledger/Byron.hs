@@ -8,10 +8,9 @@ import           Codec.CBOR.Decoding (Decoder)
 import           Codec.CBOR.Encoding (Encoding)
 import           Codec.CBOR.Read (deserialiseFromBytes)
 import           Codec.CBOR.Write (toLazyByteString)
-import qualified Data.ByteString as Strict
 import qualified Data.ByteString.Lazy as Lazy
 
-import           Cardano.Binary (ByteSpan, fromCBOR, slice, toCBOR)
+import           Cardano.Binary (fromCBOR, toCBOR)
 import           Cardano.Chain.Block (ABlockOrBoundary (..))
 import qualified Cardano.Chain.Block as CC.Block
 import           Cardano.Chain.Common (KeyHash)
@@ -23,6 +22,7 @@ import           Ouroboros.Network.Point (WithOrigin (..))
 
 import           Ouroboros.Consensus.Block (BlockProtocol, Header)
 import           Ouroboros.Consensus.Ledger.Byron
+import           Ouroboros.Consensus.Ledger.Byron.Aux
 import           Ouroboros.Consensus.Mempool.API (ApplyTxErr)
 import           Ouroboros.Consensus.Protocol.Abstract (ChainState)
 import           Ouroboros.Consensus.Protocol.PBFT
@@ -92,56 +92,35 @@ roundtrip' enc dec a = case deserialiseFromBytes dec bs of
   where
     bs = toLazyByteString (enc a)
 
-annotate :: forall f. Functor f
-         => (f () -> Encoding)
-         -> (forall s. Decoder s (f ByteSpan))
-         -> f ()
-         -> f Strict.ByteString
-annotate encode decoder =
-      (\bs -> splice bs (deserialiseFromBytes decoder bs))
-    . toLazyByteString
-    . encode
-  where
-    splice :: Lazy.ByteString
-           -> Either err (Lazy.ByteString, f ByteSpan)
-           -> f Strict.ByteString
-    splice _ (Left _err) =
-        error "annotate: serialization roundtrip failure"
-    splice bs (Right (bs', x))
-      | Lazy.null bs'
-      = Lazy.toStrict . slice bs <$> x
-      | otherwise
-      = error ("left-over bytes: " <> show bs')
-
 {-------------------------------------------------------------------------------
   Serialisation roundtrips
 -------------------------------------------------------------------------------}
 
-prop_roundtrip_Block :: Block -> Property
+prop_roundtrip_Block :: ByronBlock -> Property
 prop_roundtrip_Block b =
     roundtrip' encodeByronBlock (decodeByronBlock epochSlots) b
 
-prop_roundtrip_Header :: Header Block -> Property
+prop_roundtrip_Header :: Header ByronBlock -> Property
 prop_roundtrip_Header h =
     roundtrip' encodeByronHeader (decodeByronHeader epochSlots) h
 
-prop_roundtrip_HeaderHash :: HeaderHash Block -> Property
+prop_roundtrip_HeaderHash :: HeaderHash ByronBlock -> Property
 prop_roundtrip_HeaderHash =
     roundtrip encodeByronHeaderHash decodeByronHeaderHash
 
-prop_roundtrip_ChainState :: ChainState (BlockProtocol Block) -> Property
+prop_roundtrip_ChainState :: ChainState (BlockProtocol ByronBlock) -> Property
 prop_roundtrip_ChainState =
     roundtrip encodeByronChainState decodeByronChainState
 
-prop_roundtrip_GenTx :: GenTx Block -> Property
+prop_roundtrip_GenTx :: GenTx ByronBlock -> Property
 prop_roundtrip_GenTx =
     roundtrip encodeByronGenTx decodeByronGenTx
 
-prop_roundtrip_GenTxId :: GenTxId Block -> Property
+prop_roundtrip_GenTxId :: GenTxId ByronBlock -> Property
 prop_roundtrip_GenTxId =
     roundtrip encodeByronGenTxId decodeByronGenTxId
 
-prop_roundtrip_ApplyTxErr :: ApplyTxErr Block -> Property
+prop_roundtrip_ApplyTxErr :: ApplyTxErr ByronBlock -> Property
 prop_roundtrip_ApplyTxErr =
     roundtrip encodeByronApplyTxError decodeByronApplyTxError
 
@@ -149,47 +128,45 @@ prop_roundtrip_ApplyTxErr =
   Generators
 -------------------------------------------------------------------------------}
 
-type Block = ByronBlockOrEBB
-
 epochSlots :: EpochSlots
 epochSlots = EpochSlots 2160
 
 protocolMagicId :: ProtocolMagicId
 protocolMagicId = ProtocolMagicId 100
 
-instance Arbitrary Block where
+instance Arbitrary ByronBlock where
   arbitrary = frequency
       [ (3, genBlock)
       , (1, genBoundaryBlock)
       ]
     where
-      genBlock :: Gen Block
+      genBlock :: Gen ByronBlock
       genBlock =
         annotateByronBlock epochSlots <$>
         hedgehog (CC.genBlock protocolMagicId epochSlots)
-      genBoundaryBlock :: Gen Block
+      genBoundaryBlock :: Gen ByronBlock
       genBoundaryBlock =
-        mkByronBlockOrEBB epochSlots . ABOBBoundary . annotateBoundary protocolMagicId <$>
+        mkByronBlock epochSlots . ABOBBoundary . reAnnotateBoundary protocolMagicId <$>
         hedgehog (CC.genBoundaryBlock)
 
 
-instance Arbitrary (Header Block) where
+instance Arbitrary (Header ByronBlock) where
   arbitrary = frequency
       [ (3, genHeader)
       , (1, genBoundaryHeader)
       ]
     where
-      genHeader :: Gen (Header Block)
+      genHeader :: Gen (Header ByronBlock)
       genHeader =
-        mkByronHeaderOrEBB epochSlots . Right .
-        annotate
+        mkByronHeader epochSlots . ABOBBlockHdr .
+        reAnnotateUsing
           (CC.Block.toCBORHeader epochSlots)
           (CC.Block.fromCBORAHeader epochSlots) <$>
         hedgehog (CC.genHeader protocolMagicId epochSlots)
-      genBoundaryHeader :: Gen (Header Block)
+      genBoundaryHeader :: Gen (Header ByronBlock)
       genBoundaryHeader =
-        mkByronHeaderOrEBB epochSlots . Left .
-        annotate
+        mkByronHeader epochSlots . ABOBBoundaryHdr .
+        reAnnotateUsing
           (CC.Block.toCBORABoundaryHeader protocolMagicId)
           CC.Block.fromCBORABoundaryHeader <$>
         hedgehog CC.genBoundaryHeader
@@ -204,12 +181,12 @@ instance Arbitrary (PBftChainState PBftCardanoCrypto) where
   arbitrary =
     fromMap <$> oneof [return Origin, At <$> arbitrary] <*> arbitrary
 
-instance Arbitrary (GenTx Block) where
+instance Arbitrary (GenTx ByronBlock) where
   arbitrary =
-    mkByronGenTx . annotate toCBOR fromCBOR <$>
+    fromMempoolPayload . reAnnotateUsing toCBOR fromCBOR <$>
     hedgehog (CC.genMempoolPayload protocolMagicId)
 
-instance Arbitrary (GenTxId Block) where
+instance Arbitrary (GenTxId ByronBlock) where
   arbitrary = oneof
       [ ByronTxId             <$> hedgehog CC.genTxId
       , ByronDlgId            <$> hedgehog genCertificateId
@@ -220,13 +197,13 @@ instance Arbitrary (GenTxId Block) where
       genCertificateId = CC.genAbstractHash (CC.genCertificate protocolMagicId)
       genUpdateVoteId  = CC.genAbstractHash (CC.genVote protocolMagicId)
 
-instance Arbitrary ByronApplyTxError where
+instance Arbitrary ApplyMempoolPayloadErr where
   arbitrary = oneof
-    [ ByronApplyTxError             <$> hedgehog CC.genUTxOValidationError
-    , ByronApplyDlgError            <$> hedgehog CC.genError
+    [ MempoolTxErr  <$> hedgehog CC.genUTxOValidationError
+    , MempoolDlgErr <$> hedgehog CC.genError
     -- TODO there is no generator for
     -- Cardano.Chain.Update.Validation.Interface.Error and we can't write one
     -- either because the different Error types it wraps are not exported.
-    -- , ByronApplyUpdateProposalError <$> arbitrary
-    -- , ByronApplyUpdateVoteError     <$> arbitrary
+    -- , MempoolUpdateProposalErr <$> arbitrary
+    -- , MempoolUpdateVoteErr     <$> arbitrary
     ]

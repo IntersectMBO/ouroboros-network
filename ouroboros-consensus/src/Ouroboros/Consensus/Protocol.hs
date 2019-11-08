@@ -19,7 +19,6 @@ import qualified Cardano.Chain.Genesis as Genesis
 import qualified Cardano.Chain.Update as Update
 
 import           Ouroboros.Consensus.Ledger.Byron
-import           Ouroboros.Consensus.Ledger.Byron.Config
 import           Ouroboros.Consensus.Ledger.Mock
 import           Ouroboros.Consensus.Node.ProtocolInfo.Byron
 import           Ouroboros.Consensus.Node.ProtocolInfo.Mock.PBFT ()
@@ -81,7 +80,7 @@ data Protocol blk where
     -> Update.ProtocolVersion
     -> Update.SoftwareVersion
     -> Maybe PBftLeaderCredentials
-    -> Protocol ByronBlockOrEBB
+    -> Protocol ByronBlock
 
 {-------------------------------------------------------------------------------
   Evidence that we can run all the supported protocols

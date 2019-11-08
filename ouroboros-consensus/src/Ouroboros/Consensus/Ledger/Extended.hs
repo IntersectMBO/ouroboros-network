@@ -74,6 +74,23 @@ data BlockPreviouslyApplied =
   -- ^ The block has not been previously applied to the given ledger state and
   -- all block validations should be performed.
 
+-- | Update the extended ledger state
+--
+-- Updating the extended state happens in 3 steps:
+--
+-- * We call 'applyChainTick' to process any changes that happen at epoch
+--   boundaries.
+-- * We call 'applyLedgerBlock' to process the block itself; this looks at both
+--   the header and the body of the block, but /only/ involves the ledger,
+--   not the consensus chain state.
+-- * Finally, we pass the updated ledger view to then update the consensus
+--   chain state.
+--
+-- Note: for Byron, this currently deviates from the spec. We apply scheduled
+-- updates /before/ checking the signature, but the spec does this the other
+-- way around. This means that in the spec delegation updates scheduled for
+-- slot @n@ are really only in effect at slot @n+1@.
+-- See <https://github.com/input-output-hk/cardano-ledger-specs/issues/1007>
 applyExtLedgerState :: ( UpdateLedger blk
                        , ProtocolLedgerView blk
                        , HasCallStack

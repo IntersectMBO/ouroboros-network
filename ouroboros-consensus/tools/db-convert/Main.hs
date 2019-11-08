@@ -40,7 +40,7 @@ import           Data.Typeable (Typeable)
 import           Data.Word (Word64)
 import qualified Options.Applicative as Options
 import           Options.Generic
-import           Ouroboros.Consensus.Ledger.Byron (ByronBlockOrEBB)
+import           Ouroboros.Consensus.Ledger.Byron (ByronBlock)
 import qualified Ouroboros.Consensus.Ledger.Byron as Byron
 import           Ouroboros.Consensus.Node.ProtocolInfo.Abstract (pInfoConfig,
                      pInfoInitLedger)
@@ -146,7 +146,7 @@ convertEpochFile
 convertEpochFile es inFile outDir =
   let inStream = CC.parseEpochFileWithBoundary es (toFilePath inFile)
       dbDir = outDir </> [reldir|immutable|]
-      encode = CB.serializeEncoding' . Byron.encodeByronBlock . Byron.mkByronBlockOrEBB es
+      encode = CB.serializeEncoding' . Byron.encodeByronBlock . Byron.mkByronBlock es
    in do
         createDirIfMissing True dbDir
         -- Old filename format is XXXXX.dat, new is epoch-XXX.dat
@@ -158,8 +158,7 @@ convertEpochFile es inFile outDir =
           runResourceT $ runExceptT $ S.mapM_ (liftIO . BS.hPut h) . S.map encode $ inStream
 
 validateChainDb
-  :: forall blk. (blk ~ ByronBlockOrEBB)
-  => Path Abs Dir -- ^ DB directory
+  :: Path Abs Dir -- ^ DB directory
   -> CC.Genesis.Config
   -> Bool -- Immutable DB only?
   -> Bool -- Verbose
@@ -198,7 +197,7 @@ validateChainDb dbDir cfg onlyImmDB verbose =
     securityParam = SecurityParam $ CC.unBlockCount k
     k = CC.Genesis.configK cfg
     args registry =
-      (ChainDB.defaultArgs @blk (toFilePath dbDir))
+      (ChainDB.defaultArgs @ByronBlock (toFilePath dbDir))
         { ChainDB.cdbGenesis = return $ pInfoInitLedger byronProtocolInfo
         , ChainDB.cdbDecodeBlock = Byron.decodeByronBlock epochSlots
         , ChainDB.cdbDecodeChainState = Byron.decodeByronChainState
@@ -216,7 +215,7 @@ validateChainDb dbDir cfg onlyImmDB verbose =
           -- Integration
         , ChainDB.cdbNodeConfig = pInfoConfig byronProtocolInfo
         , ChainDB.cdbEpochInfo = fixedSizeEpochInfo . EpochSize . unEpochSlots $ epochSlots
-        , ChainDB.cdbIsEBB = \blk -> case Byron.bbRaw blk of
+        , ChainDB.cdbIsEBB = \blk -> case Byron.byronBlockRaw blk of
           CC.ABOBBlock _      -> Nothing
           CC.ABOBBoundary ebb -> Just (Byron.ByronHash (CC.boundaryHashAnnotated ebb))
           -- Misc

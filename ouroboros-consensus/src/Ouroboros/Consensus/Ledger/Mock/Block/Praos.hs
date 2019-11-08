@@ -131,7 +131,7 @@ instance ( SimpleCrypto c
       equalStakeDist praosExtConfig
 
   anachronisticProtocolLedgerView PraosNodeConfig{..} _ _ =
-      Right $ SB.unbounded $ equalStakeDist praosExtConfig
+      Right $ SB.maximal $ equalStakeDist praosExtConfig
 
 {-------------------------------------------------------------------------------
   Serialisation

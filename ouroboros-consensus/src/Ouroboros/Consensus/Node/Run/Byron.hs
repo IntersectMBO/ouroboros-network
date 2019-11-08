@@ -16,8 +16,6 @@ import           Ouroboros.Network.Magic (NetworkMagic (..))
 
 import           Ouroboros.Consensus.BlockchainTime (SystemStart (..))
 import           Ouroboros.Consensus.Ledger.Byron
-import           Ouroboros.Consensus.Ledger.Byron.ContainsGenesis
-import           Ouroboros.Consensus.Ledger.Byron.Forge
 import           Ouroboros.Consensus.Node.Run.Abstract
 import           Ouroboros.Consensus.Protocol.Abstract
 
@@ -27,11 +25,11 @@ import           Ouroboros.Storage.Common (EpochSize (..))
   RunNode instance
 -------------------------------------------------------------------------------}
 
-instance RunNode ByronBlockOrEBB where
-  nodeForgeBlock         = forgeBlockOrEBB
-  nodeBlockMatchesHeader = byronBlockOrEBBMatchesHeader
+instance RunNode ByronBlock where
+  nodeForgeBlock         = forgeByronBlock
+  nodeBlockMatchesHeader = byronBlockMatchesHeader
   nodeBlockFetchSize     = const 2000 -- TODO #593
-  nodeIsEBB              = \blk -> case bbRaw blk of
+  nodeIsEBB              = \blk -> case byronBlockRaw blk of
     Cardano.Block.ABOBBlock _    -> False
     Cardano.Block.ABOBBoundary _ -> True
 
@@ -75,7 +73,7 @@ instance RunNode ByronBlockOrEBB where
   nodeDecodeApplyTxError = const decodeByronApplyTxError
 
 extractGenesisData :: NodeConfig ByronConsensusProtocol -> Genesis.GenesisData
-extractGenesisData = Genesis.configGenesisData . genesisConfig
+extractGenesisData = Genesis.configGenesisData . getGenesisConfig
 
 extractEpochSlots :: NodeConfig ByronConsensusProtocol -> EpochSlots
-extractEpochSlots = Genesis.configEpochSlots . genesisConfig
+extractEpochSlots = Genesis.configEpochSlots . getGenesisConfig

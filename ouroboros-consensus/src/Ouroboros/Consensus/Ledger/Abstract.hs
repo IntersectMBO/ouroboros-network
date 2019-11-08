@@ -1,3 +1,4 @@
+{-# LANGUAGE DataKinds               #-}
 {-# LANGUAGE FlexibleContexts        #-}
 {-# LANGUAGE TypeFamilies            #-}
 {-# LANGUAGE UndecidableSuperClasses #-}
@@ -21,7 +22,7 @@ import           Ouroboros.Network.Point (WithOrigin)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Protocol.Abstract
-import           Ouroboros.Consensus.Util.SlotBounded (SlotBounded)
+import           Ouroboros.Consensus.Util.SlotBounded (Bounds (..), SlotBounded)
 
 {-------------------------------------------------------------------------------
   Interaction with the ledger layer
@@ -127,7 +128,7 @@ class UpdateLedger blk => ProtocolLedgerView blk where
     :: NodeConfig (BlockProtocol blk)
     -> LedgerState blk
     -> WithOrigin SlotNo -- ^ Slot for which you would like a ledger view
-    -> Either AnachronyFailure (SlotBounded (LedgerView (BlockProtocol blk)))
+    -> Either AnachronyFailure (SlotBounded IX (LedgerView (BlockProtocol blk)))
 
 -- | See 'anachronisticProtocolLedgerView'.
 data AnachronyFailure
