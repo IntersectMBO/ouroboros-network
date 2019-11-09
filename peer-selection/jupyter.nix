@@ -6,10 +6,13 @@ let
   };
   nixpkgs = import nixpkgsSrc;
 
-  ihaskellSrc = builtins.fetchTarball {
-    url = "https://github.com/avieth/IHaskell/archive/f0cccec63df6874ea0244adc4102caa4bff549fd.tar.gz";
-    sha256 = "0wj88ys3qvjl7j3cj0krqy7im34naknpgc5ll8rzdzfdsyx550wl";
-  };
+  # The source of the IHaskell _cabal_ project. jupyterWith will not look for
+  # a _default.nix_ here, it wants a _cabal_ file.
+  ihaskellSrc = /home/alex/work/well-typed/iohk/IHaskell;
+  #ihaskellSrc = builtins.fetchTarball {
+  #  url = "https://github.com/avieth/IHaskell/archive/f0cccec63df6874ea0244adc4102caa4bff549fd.tar.gz";
+  #  sha256 = "0wj88ys3qvjl7j3cj0krqy7im34naknpgc5ll8rzdzfdsyx550wl";
+  #};
 
   # Custom jupyterWith allows for setting the IHaskell and nixpkgs revisions.
   jupyterWithSrc = builtins.fetchTarball {
@@ -69,6 +72,7 @@ let
     # Need the dot executable in order to use ihaskell-graphviz
     extrapkgs = pkgs: with pkgs; [
       graphviz
+      ghc
     ];
   };
 in

@@ -17,12 +17,13 @@ module NotebookPrelude
   , cycle_of_length
 
   -- * Showing topologies.
+  , module Viz
   , showTopology
-  , graphShowLabels
 
   -- * Computing statistics
   , module Stats
   , flatten_data
+  , no_nothings
 
   -- * Plotting charts
   , module Chart
@@ -36,13 +37,18 @@ module NotebookPrelude
   , module AWS
 
   , module Control.Monad
+  , module Control.Arrow
+  , module Numeric.Natural
+  , adjacencyMap
   ) where
 
+import Control.Arrow
 import Control.Monad
+import Data.Maybe (mapMaybe)
 
 -- Hide 'edge' because we use the 'edge' defined in DeltaQ.Topography.
 import Algebra.Graph.Labelled.AdjacencyMap hiding (edge)
-import Algebra.Graph.Labelled.AdjacencyMap.Viz as Topo
+import Algebra.Graph.Labelled.AdjacencyMap.Viz as Viz
 import Algebra.Graph.Labelled.AdjacencyMap.ShortestPath as Topo
 -- For edge semigroups.
 import Data.Semigroup as Topo (Last(..))
@@ -117,18 +123,24 @@ showTopology
   -> Graphviz
 showTopology ps = IHaskell.Display.Graphviz.dot . Text.unpack . renderDot . toDot . toGraphvizDot ps
 
--- | Uses show instances for vertex and edge labels. Usage:
---
--- @showTopology graphShowLabels my_topology@
---
--- will quickly get you a picture of your topology.
-graphShowLabels :: (Show nl, Show el) => GraphvizParams n nl el () nl
-graphShowLabels = simpleGraphvizParams (Text.pack . show) (Text.pack . show)
-
 -- | May be useful when you have the result of an all pairs shortest path
 -- computation, but don't care about the vertex labels.
-flatten_data :: Map a (Map b c) -> [c]
-flatten_data outer = [ c | inner <- Map.elems outer, c <- Map.elems inner ]
+-- The Kleisli is used to transform and possibly eliminate the data in the
+-- map. For instance if @c ~ Maybe Int@, @arr fromIntegral . no_nothings@ can
+-- be used to take only the @Just@ terms and convert them to @Double@, so the
+-- resulting list is ready for statistical analysis.
+flatten_data :: Kleisli Maybe c d -> Map a (Map b c) -> [d]
+flatten_data f outer = mapMaybe (runKleisli f)
+  [ c | inner <- Map.elems outer, c <- Map.elems inner]
+
+everything :: Kleisli Maybe c c
+everything = Kleisli Just
+
+-- | Useful for dealing with shortest path data, in which Nothing appears to
+-- indicate that there is no path. By filtering those out, it becomes possible
+-- to do statistics on the resulting data.
+no_nothings :: Kleisli Maybe (Maybe c) c
+no_nothings = Kleisli id
 
 -- | Useful for state-monad-lens style construction, which is actually quite
 -- nice when working in an interactive notebook. You use the lens @.=@ to

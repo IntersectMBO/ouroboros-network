@@ -29,12 +29,15 @@ import qualified Statistics.Sample as Stats
 -- | Make an unboxed vector of total distances, suitable for use with the
 -- statistics package. 'Statistics.Sample.meanVariance' and
 -- 'Statistics.Quantile.median' may be of interest.
+--
 -- The identifiers of the other nodes are forgotten.
+--
 -- The semigroup instance on weight is needed in order to compute the total
 -- length of each path. Then the total length is made a Double by the given
 -- function. It would also make sense to map these weights to Double first,
 -- then use the Sum semigroup. Thus that function should be a semigroup
 -- homomorphism to @(Double, (+), 0.0)@.
+--
 -- If there are unreachable nodes, infinity is used. But NB this makes the
 -- result useless as far as the statistics package is concerned. So you
 -- probably want to ensure the graph is strongly connected before using this.
@@ -211,3 +214,18 @@ all_pairs_time_to_send bytes topo = (fmap . fmap) local_length all_sps
 
   initial_window :: Natural
   initial_window = 4
+
+-- | Compute the path length in hops for a graph where the edges can be
+-- weighted by anything.
+--
+-- Pairs for which there is no path are removed.
+--
+all_pairs_hop_length
+  :: forall peer anything .
+     (Ord peer)
+  => Topography anything peer
+  -> Map peer (Map peer (Maybe Hops))
+all_pairs_hop_length topo = all_sps
+  where
+  all_sps = (fmap . fmap) total_weight (all_pairs_sp_antireflexive weight topo)
+  weight _ _ _ = Hops 1

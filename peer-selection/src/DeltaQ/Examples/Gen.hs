@@ -24,6 +24,7 @@ module DeltaQ.Examples.Gen
   , kregular
   , degrees
   , isRegular
+  , cylinder
 
   , Random (..)
   , random
@@ -38,7 +39,7 @@ module DeltaQ.Examples.Gen
 
 import Algebra.Graph.Labelled.AdjacencyMap (AdjacencyMap (..))
 import qualified Algebra.Graph.Labelled.AdjacencyMap as GR
-import Control.Monad (ap, forM, forM_, unless)
+import Control.Monad (ap, forM, forM_, when)
 import Control.Monad.ST
 import Control.Monad.Trans.Class (lift)
 import Control.Monad.Trans.State.Strict
@@ -152,15 +153,15 @@ newtype NoEdges t = NoEdges (forall e . e)
 noMakeEdge :: forall e v . MakeEdge NoEdges e v
 noMakeEdge (NoEdges impossible) = impossible
 
-newtype Directed e = Directed { getDirectedEdge :: e }
+newtype Directed e = DirectedEdge { getDirectedEdge :: e }
 
 directedEdge :: Ord v => MakeEdge Directed e v
-directedEdge (Directed e) u v = GR.edge (Last e) u v
+directedEdge (DirectedEdge e) u v = GR.edge (Last e) u v
 
-newtype Undirected e = Undirected { getUndirectedEdge :: (e, e) }
+newtype Undirected e = UndirectedEdge { getUndirectedEdge :: (e, e) }
 
 undirectedEdge :: Ord v => MakeEdge Undirected e v
-undirectedEdge (Undirected (forward, backward)) u v = GR.overlay
+undirectedEdge (UndirectedEdge (forward, backward)) u v = GR.overlay
   (GR.edge (Last forward)  u v)
   (GR.edge (Last backward) v u)
 
@@ -209,7 +210,7 @@ undirected bdr = lift $ runReaderT bdr undirectedEdge
 mirror :: Builder s Directed e v t -> Builder s Undirected e v t
 mirror bdr = do
   mkDirected <- ask
-  lift $ runReaderT bdr (\(Directed e) -> mkDirected (Undirected (e,e)))
+  lift $ runReaderT bdr (\(DirectedEdge e) -> mkDirected (UndirectedEdge (e,e)))
 
 overlay
   :: ( Ord v )
@@ -243,14 +244,15 @@ component bdr = do
   lift $ put st''
   pure t
 
-freshVertex :: Builder s f e v v
+freshVertex :: Ord v => Builder s f e v v
 freshVertex = do
   st <- lift get
   let Stream v vs = builderUnusedVertices st
   lift $ put (st { builderUnusedVertices = vs })
+  overlay (GR.vertex v)
   pure v
 
-freshVertices :: Natural -> Builder s f e v [v]
+freshVertices :: Ord v => Natural -> Builder s f e v [v]
 freshVertices n = forM [0..(n-1)] (const freshVertex)
 
 -- | Create an edge and include it in the graph.
@@ -269,7 +271,7 @@ outEdges v = do
 pathOn :: Ord v => [v] -> Random e -> Builder s Directed e v ()
 pathOn vs randomEdge = forM_ (adjacentPairs vs) $ \(v, w) -> do
   e <- random randomEdge
-  edge (Directed e) v w
+  edge (DirectedEdge e) v w
 
 -- | Pair up adjacenct elements in a list.
 adjacentPairs :: [w] -> [(w,w)]
@@ -290,7 +292,7 @@ cycleOn vs randomEdge = case vs of
     let start = List.head vs
         end   = List.last vs
     e <- random randomEdge
-    edge (Directed e) end start
+    edge (DirectedEdge e) end start
 
 -- | 'cycleOn' and then "shortcut" edges added between randomly-selected
 -- pairs which are not already adjacent in the cycle.
@@ -310,7 +312,7 @@ cycleWithShortcutsOn vs randomEdge randomN = do
     pickNPairs n (Set.fromList vs)
   forM_ pairs $ \(v, w) -> do
     e <- random randomEdge
-    edge (Directed e) v w
+    edge (DirectedEdge e) v w
 
 -- | Make a directed k regular (our-degree) connected graph.
 -- It's not necessarily connected.
@@ -326,26 +328,24 @@ kregular
   -> Random Natural -- ^ Degree
   -> Random e
   -> Builder s Directed e v ()
-kregular vs randomK randomEdge = forM_ vs $ \v -> do
+kregular vs randomK randomEdge = do
   cycleOn vs randomEdge
-  es <- outEdges v
-  k <- random randomK
-  let k' = fromIntegral (Map.size es)
-  -- If this node already has at least k neighbours (should never exceed k by
-  -- design of this program) then do nothing.
-  --
-  -- Subtract one since the cycle is 1-regular.
-  unless (k' >= (k - 1)) $ do
-    let n = (k - 1) - k'
-    -- Consider only vertices that have degree less than k.
-    -- Remove adjacent vertices from the list of new vertices to consider
-    -- connecting to.
-    ws <- random $ pickN n (Set.delete v (vset Set.\\ Map.keysSet es))
-    forM_ ws $ \w -> do
-      e <- random $ randomEdge
-      edge (Directed e) v w
-  where
-  vset = Set.fromList vs
+  let vset = Set.fromList vs
+  forM_ vs $ \v -> do
+    es <- outEdges v
+    k <- random randomK
+    let currentK :: Natural
+        currentK = fromIntegral (Map.size es)
+    -- This forM_ iteratively adds edges, so for each, we need to check that
+    -- it does not already have enough edges.
+    when (k > currentK) $ do
+      let n = k - currentK
+      -- Pick n vertices from the set of vertices not already reachable from
+      -- this one, and not this one itself (no loops).
+      ws <- random $ pickN n (Set.delete v (vset Set.\\ Map.keysSet es))
+      forM_ ws $ \w -> do
+        e <- random $ randomEdge
+        edge (DirectedEdge e) v w
 
 -- | Out-degrees of all vertices.
 degrees :: Ord v => AdjacencyMap e v -> Map v Natural
@@ -365,3 +365,22 @@ isRegular gr = case Map.toList (adjacencyMap gr) of
 --
 -- TODO also, some way to visualize the likelihood that a random graph is
 -- strongly connected
+
+-- | Given a list of rows, each row is connected in a cycle, and every vertex
+-- in that row is connected to the corresponding vertex in the previous row,
+-- or nothing if the previous row was smaller.
+cylinder :: Ord v => [[v]] -> Random e -> Builder s Directed e v ()
+cylinder vss randomEdge = case vss of
+  [] -> pure ()
+  [vs] -> cycleOn vs randomEdge
+  (vs:vs':vss') -> go vs vs' vss'
+  where
+  go vs vs' vss' = do
+    cycleOn vs randomEdge
+    -- Connect this cross-section to the next cross-section.
+    forM_ (zip vs vs') $ \(v,v') -> do
+      e <- random randomEdge
+      edge (DirectedEdge e) v' v
+    case vss' of
+      [] -> cycleOn vs' randomEdge
+      (vs'':vss'') -> go vs' vs'' vss''
