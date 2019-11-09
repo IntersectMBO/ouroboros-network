@@ -5,7 +5,7 @@
 {-# LANGUAGE TupleSections       #-}
 {-# LANGUAGE TypeApplications    #-}
 
-module Test.Async (tests) where
+module Test.Async.Handle (tests) where
 
 import           Control.Concurrent.Async
 import           Control.Concurrent.MVar
@@ -37,7 +37,7 @@ pipeName = "\\\\.\\pipe\\test-Win32-network-async"
 
 tests :: TestTree
 tests =
-  testGroup "Win32.Async"
+  testGroup "Win32.Async.Handle"
   [ testCase "interruptible connectNamedPipe"
       test_interruptible_connectNamedPipe
   , testCase "interruptible readHandle"

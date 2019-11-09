@@ -24,7 +24,10 @@ library
   if os(windows)
     exposed-modules:   System.Win32.NamedPipes
                        System.Win32.Async
-                       System.Win32.CompletionPort
+                       System.Win32.Async.File
+                       System.Win32.Async.ErrCode
+                       System.Win32.Async.IOManager
+                       System.Win32.Async.Internal
     c-sources:         cbits/Win32Async.c
     build-depends:     base              >= 4.5  && < 4.13,
                        bytestring        >= 0.10 && < 0.11,
@@ -55,7 +58,7 @@ test-suite test-Win32-network
   ghc-options:         -Wall
                        -threaded
   if os(windows)
-    other-modules:       Test.Async
+    other-modules:       Test.Async.Handle
     build-depends:       async,
                          base,
                          binary,
