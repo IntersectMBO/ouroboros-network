@@ -28,6 +28,8 @@ import qualified GHC.Event as GHC (TimeoutKey, getSystemTimerManager,
 import           Control.Monad.Class.MonadFork (MonadFork(..))
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
+import           Debug.Trace (trace)
+import           Text.Printf (printf)
 
 
 data TimeoutState = TimeoutPending | TimeoutFired | TimeoutCancelled
@@ -187,7 +189,12 @@ diffTimeToMicrosecondsAsInt d =
         usec = diffTimeToPicoseconds d `div` 1000000 in
     -- Can only represent usec times that fit within an Int, which on 32bit
     -- systems means 2^31 usec, which is only ~35 minutes.
-    assert (usec <= fromIntegral (maxBound :: Int)) $
+    assert (if (usec <= fromIntegral (maxBound :: Int))
+            then True
+            else (trace
+                  (printf "d=%s, usec=%s, maxBound=%s, fromIntegral (maxBound :: Int)=%s"
+                          (show d) (show usec) (show (maxBound :: Int)) (show $ (fromIntegral (maxBound :: Int) :: Integer)))
+                  $ usec <= fromIntegral (maxBound :: Int))) $
     fromIntegral usec
 
 {-------------------------------------------------------------------------------
