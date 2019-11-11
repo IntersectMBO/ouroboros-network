@@ -13,7 +13,7 @@
 
 module Test.Ouroboros.Storage.VolatileDB.StateMachine
     ( tests
-    , showLabelledExamples
+    , printLabelledExamples
     ) where
 
 import           Prelude hiding (elem)
@@ -288,7 +288,7 @@ sm env dbm = StateMachine {
     , semantics     = semanticsImpl env
     , mock          = mockImpl
     , invariant     = Nothing
-    , distribution  = Nothing
+    , cleanup       = noCleanup
     }
 
 initModelImpl :: DBModel BlockId -> Model r
@@ -301,7 +301,7 @@ preconditionImpl :: Model Symbolic -> At CmdErr Symbolic -> Logic
 preconditionImpl Model{..} (At (CmdErr cmd mbErrors)) =
     compatibleWithError .&& case cmd of
       Corruption cors ->
-        forall (corruptionFiles cors) (`elem` getDBFiles dbModel)
+        forall (corruptionFiles cors) (`member` getDBFiles dbModel)
 
       -- When duplicating a block by appending it to some other file, make
       -- sure that both the file and the block exists, and that we're adding
@@ -800,15 +800,15 @@ execCmds model (Commands cs) = go model cs
     go _ []        = []
     go m (c : css) = let ev = execCmd m c in ev : go (eventAfter ev) css
 
-showLabelledExamples :: IO ()
-showLabelledExamples = showLabelledExamples' Nothing 1000
+printLabelledExamples :: IO ()
+printLabelledExamples = printLabelledExamples' Nothing 1000
 
-showLabelledExamples' :: Maybe Int
+printLabelledExamples' :: Maybe Int
                       -- ^ Seed
                       -> Int
                       -- ^ Number of tests to run to find examples
                       -> IO ()
-showLabelledExamples' mReplay numTests = do
+printLabelledExamples' mReplay numTests = do
     replaySeed <- case mReplay of
         Nothing   -> getStdRandom (randomR (1,999999))
         Just seed -> return seed

@@ -532,7 +532,7 @@ precondition (Model mock hs) (At c) =
     checkRef r =
         case lookup r hs of
           Nothing -> Bot
-          Just r' -> r' `elem` mockLiveThreads (threads mock)
+          Just r' -> r' `member` mockLiveThreads (threads mock)
 
 postcondition :: (IOLike m)
               => Model m      Concrete
@@ -563,10 +563,10 @@ sm alive reg = StateMachine {
     , postcondition = postcondition
     , invariant     = Nothing
     , generator     = generator
-    , distribution  = Nothing
     , shrinker      = shrinker
     , semantics     = semantics alive reg
     , mock          = symbolicResp
+    , cleanup       = noCleanup
     }
 
 prop_sequential :: QC.Property

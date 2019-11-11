@@ -51,7 +51,8 @@ import           Text.Show.Pretty (ppShow)
 import           Test.QuickCheck
 import qualified Test.QuickCheck.Monadic as QC
 import           Test.QuickCheck.Random (mkQCGen)
-import           Test.StateMachine
+import           Test.StateMachine hiding (showLabelledExamples,
+                     showLabelledExamples')
 import qualified Test.StateMachine.Sequential as QSM
 import qualified Test.StateMachine.Types as QSM
 import qualified Test.StateMachine.Types.Rank2 as Rank2
@@ -724,15 +725,15 @@ mock model cmdErr = At <$> traverse (const genSym) resp
 
 precondition :: Model m Symbolic -> At CmdErr m Symbolic -> Logic
 precondition Model {..} (At (CmdErr { _cmd = cmd })) =
-   forall (iters cmd) (`elem` RE.keys knownIters) .&&
+   forall (iters cmd) (`member` RE.keys knownIters) .&&
     case cmd of
       AppendBlock    _ _ b -> fitsOnTip b
       AppendEBB      _ _ b -> fitsOnTip b
-      DeleteAfter tip      -> tip `elem` NE.toList (tips dbModel)
+      DeleteAfter tip      -> tip `member` NE.toList (tips dbModel)
       Corruption corr ->
         forall
           (corruptionFiles (getCorruptions corr))
-          (`elem` getDBFiles dbModel)
+          (`member` getDBFiles dbModel)
       ReopenInThePast _ curSlot ->
         0 .<= curSlot .&& curSlot .<= lastSlot
       _ -> Top
@@ -855,7 +856,7 @@ sm env dbm = StateMachine
   , semantics     = semantics env
   , mock          = mock
   , invariant     = Nothing
-  , distribution  = Nothing
+  , cleanup       = noCleanup
   }
 
 {-------------------------------------------------------------------------------

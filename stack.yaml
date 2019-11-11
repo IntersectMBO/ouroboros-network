@@ -74,17 +74,28 @@ extra-deps:
       - .
       - test
 
+  - git: https://github.com/advancedtelematic/quickcheck-state-machine
+    commit: 41718e9b17e3151178ce27600f84ca1d9d852c65
+    subdirs:
+      - .
+
   - bimap-0.4.0
   - binary-0.8.7.0
   - generic-monoid-0.1.0.0
   - graphviz-2999.20.0.3
   - hedgehog-quickcheck-0.1.1
-  - quickcheck-state-machine-0.6.0
   - splitmix-0.0.2
   - tasty-hedgehog-1.0.0.1
   - Unique-0.4.7.6
   - statistics-linreg-0.3
+<<<<<<< HEAD
   - network-3.1.0.1
+=======
+  - these-0.8
+  - assoc-1
+  - QuickCheck-2.13.2@sha256:ad4e5adbd1c9dc0221a44307b992cb040c515f31095182e47aa7e974bc461df1,6952
+  - markov-chain-usage-model-0.0.0@sha256:1afa95faeb9213c4d960a669190078b41b89169462b8edd910472980671ba8c0,2112
+>>>>>>> Use newer qsm version
 
   # Windows only
   - Win32-2.6.2.0
