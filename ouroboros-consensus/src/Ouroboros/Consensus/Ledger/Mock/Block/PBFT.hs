@@ -87,7 +87,7 @@ instance ( SimpleCrypto c
                 (SimplePBftHeader c PBftMockCrypto) where
   type OptSigned (SimplePBftHeader c PBftMockCrypto) =
           Signed (SimplePBftHeader c PBftMockCrypto)
-  headerPBftFields cfg hdr = Just (
+  headerPBftFields _ hdr = Just (
         simplePBftExt (simpleHeaderExt hdr)
       , headerSigned hdr
       )
