@@ -35,6 +35,7 @@ import           Data.Word
 import qualified Generics.SOP as SOP
 import           GHC.Generics
 import           GHC.Stack
+import qualified System.Directory as Dir
 import           System.Random (getStdRandom, randomR)
 import           Text.Show.Pretty (ppShow)
 
@@ -52,6 +53,7 @@ import           Ouroboros.Consensus.Storage.ChainDB.Impl.VolDB
 import           Ouroboros.Consensus.Storage.Common
 import           Ouroboros.Consensus.Storage.FS.API (HasFS, hPutAll, withFile)
 import           Ouroboros.Consensus.Storage.FS.API.Types
+import           Ouroboros.Consensus.Storage.FS.IO
 import           Ouroboros.Consensus.Storage.VolatileDB
 import           Ouroboros.Consensus.Storage.VolatileDB.Util
 
@@ -64,6 +66,15 @@ import           Test.StateMachine.Types
 import qualified Test.StateMachine.Types.Rank2 as Rank2
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
+-- import           Ouroboros.Storage.ChainDB.Impl.VolDB (blockFileParser')
+-- import           Ouroboros.Storage.Common
+-- import           Ouroboros.Storage.FS.API
+-- import           Ouroboros.Storage.FS.API.Types
+-- import           Ouroboros.Storage.FS.IO
+-- import qualified Ouroboros.Storage.Util.ErrorHandling as EH
+-- import           Ouroboros.Storage.VolatileDB.API
+-- import qualified Ouroboros.Storage.VolatileDB.Impl as Internal hiding (openDB)
+-- import           Ouroboros.Storage.VolatileDB.Util
 
 import           Test.Util.FS.Sim.Error hiding (null)
 import qualified Test.Util.FS.Sim.MockFS as Mock
@@ -276,19 +287,20 @@ runPureErr :: DBModel BlockId
 runPureErr dbm (CmdErr cmd _mbErrors) = runPure cmd dbm
 
 sm :: VolatileDBEnv h
+   -> GenerationArgs
    -> DBModel BlockId
    -> StateMachine Model (At CmdErr) IO (At Resp)
-sm env dbm = StateMachine {
+sm env generatingEnv dbm = StateMachine {
       initModel     = initModelImpl dbm
     , transition    = transitionImpl
     , precondition  = preconditionImpl
     , postcondition = postconditionImpl
-    , generator     = generatorImpl
+    , generator     = generatorImpl generatingEnv
     , shrinker      = shrinkerImpl
     , semantics     = semanticsImpl env
     , mock          = mockImpl
     , invariant     = Nothing
-    , cleanup       = noCleanup
+    , cleanup       = cleanupDB env
     }
 
 initModelImpl :: DBModel BlockId -> Model r
@@ -338,11 +350,11 @@ postconditionImpl model cmdErr resp =
   where
     ev = lockstep model cmdErr
 
-generatorCmdImpl :: Model Symbolic -> Gen Cmd
-generatorCmdImpl Model {..} = frequency
+generatorCmdImpl :: GenerationArgs -> Model Symbolic -> Gen Cmd
+generatorCmdImpl GenerationArgs{..} Model{..} = frequency
     [ (3, PutBlock <$> genTestBlock)
     , (1, return IsOpen)
-    , (1, return Close)
+    , (onlySequential 1, return Close)
       -- When the DB is closed, we try to reopen it ASAP.
     , (if open dbModel then 1 else 5, return ReOpen)
     , (2, GetBlockComponent <$> genBlockId)
@@ -351,16 +363,22 @@ generatorCmdImpl Model {..} = frequency
     , (2, GetSuccessors <$> listOf genWithOriginBlockId)
     , (2, return GetMaxSlotNo)
 
-    , (if null dbFiles then 0 else 1,
+    , (if null dbFiles then 0 else onlySequential 1,
        Corruption <$> generateCorruptions (NE.fromList dbFiles))
-    , (if isEmpty then 0 else 1, genDuplicateBlock)
+    , (if isEmpty then 0 else onlySequential 1, genDuplicateBlock)
     ]
   where
+
     blockIdx = blockIndex dbModel
 
     dbFiles = getDBFiles dbModel
 
     isEmpty = Map.null blockIdx
+
+    onlySequential :: Int -> Int
+    onlySequential n = case parallelism of
+       Sequential -> n
+       Parallel   -> 0
 
     getSlot :: BlockId -> Maybe SlotNo
     getSlot bid = bslot . fst <$> Map.lookup bid blockIdx
@@ -445,12 +463,13 @@ generatorCmdImpl Model {..} = frequency
       fileId <- elements (getDBFileIds dbModel) `suchThat` (>= originalFileId)
       return $ DuplicateBlock fileId bid bytes
 
-generatorImpl :: Model Symbolic -> Maybe (Gen (At CmdErr Symbolic))
-generatorImpl m@Model {..} = Just $ do
-    cmd <- generatorCmdImpl m
+generatorImpl :: GenerationArgs -> Model Symbolic -> Maybe (Gen (At CmdErr Symbolic))
+generatorImpl env@GenerationArgs{..} m@Model {..} = Just $ do
+    cmd <- generatorCmdImpl env m
     err <- frequency
       [ (9, return Nothing)
-      , (if allowErrorFor cmd && open dbModel then 1 else 0,
+      , ( if allowErrorFor cmd && open dbModel && allowError
+          then 1 else 0,
          -- Don't simulate errors while closed, because they won't have any
          -- effect, but also because we would reopen, which would not be
          -- idempotent.
@@ -475,25 +494,38 @@ shrinkCmd Model{..} cmd = case cmd of
     Corruption cors      -> Corruption <$> shrinkCorruptions cors
     _                    -> []
 
--- | Environment to run commands against the real VolatileDB implementation.
+
+data Parallelism = Sequential | Parallel
+    deriving (Eq, Show)
+
+-- | Environment to generate and run commands.
 data VolatileDBEnv h = VolatileDBEnv
-  { varErrors :: StrictTVar IO Errors
-  , hasFS     :: HasFS IO h
-  , db        :: VolatileDB BlockId IO
+  { varErrors    :: Maybe (StrictTVar IO Errors)
+  , hasFS        :: HasFS IO h
+  , db           :: VolatileDB BlockId IO
+  , cleanupDB    :: Model Concrete -> IO ()
   }
+
+data GenerationArgs = GenerationArgs {
+    parallelism :: Parallelism
+  , allowError  :: Bool
+}
+
+defaultSeqArgs :: GenerationArgs
+defaultSeqArgs = GenerationArgs Sequential True
 
 semanticsImpl :: VolatileDBEnv h -> At CmdErr Concrete -> IO (At Resp Concrete)
 semanticsImpl env@VolatileDBEnv { db, varErrors }  (At (CmdErr cmd mbErrors)) =
     At . Resp <$> case mbErrors of
-      Nothing     -> tryVolDB (runDB env cmd)
-      Just errors -> do
-        _ <- withErrors varErrors errors $
+      Just errors | Just varErr <- varErrors -> do
+        _ <- withErrors varErr errors $
           tryVolDB (runDB env cmd)
         -- As all operations on the VolatileDB are idempotent, close
         -- (idempotent), reopen it, and run the command again.
         closeDB  db
         reOpenDB db
         tryVolDB (runDB env cmd)
+      _ -> tryVolDB (runDB env cmd)
 
 runDB :: HasCallStack
       => VolatileDBEnv h
@@ -529,10 +561,9 @@ mockImpl model cmdErr = At <$> return mockResp
   where
     (mockResp, _dbModel') = step model cmdErr
 
-
 prop_sequential :: Property
 prop_sequential = forAllCommands smUnused Nothing $ \cmds -> monadicIO $ do
-    (hist, prop) <- test cmds
+    (hist, prop) <- test cmds defaultSeqArgs
     let events = execCmds (initModel smUnused) cmds
     prettyCommands smUnused hist
         $ tabulate "Tags"
@@ -548,7 +579,7 @@ prop_sequential = forAllCommands smUnused Nothing $ \cmds -> monadicIO $ do
         $ prop
   where
     dbm = initDBModel maxBlocksPerFile
-    smUnused = sm unusedEnv dbm
+    smUnused = sm unusedEnv defaultSeqArgs dbm
 
     groupIsMember n
       | n < 5     = show n
@@ -557,8 +588,9 @@ prop_sequential = forAllCommands smUnused Nothing $ \cmds -> monadicIO $ do
       | otherwise = ">=100"
 
 test :: Commands (At CmdErr) (At Resp)
+     -> GenerationArgs
      -> PropertyM IO (History (At CmdErr) (At Resp), Property)
-test cmds = do
+test cmds generatingEnv = do
     varErrors          <- run $ uncheckedNewTVarM mempty
     varFs              <- run $ uncheckedNewTVarM Mock.empty
     (tracer, getTrace) <- run $ recordingTracerIORef
@@ -570,8 +602,8 @@ test cmds = do
 
     db <- run $ openDB hasFS parser tracer maxBlocksPerFile
 
-    let env = VolatileDBEnv { varErrors, db, hasFS }
-        sm' = sm env dbm
+    let env = VolatileDBEnv { varErrors = Just varErrors, db, hasFS, cleanupDB }
+        sm' = sm env generatingEnv dbm
     (hist, _model, res) <- runCommands sm' cmds
 
     trace <- run $ getTrace
@@ -584,6 +616,53 @@ test cmds = do
     return (hist, res === Ok)
   where
     dbm = initDBModel maxBlocksPerFile
+    cleanupDB = noCleanup
+
+testParallel :: ParallelCommandsF [] (At CmdErr) (At Resp)
+             -> GenerationArgs
+             -> PropertyM IO [(History (At CmdErr) (At Resp), Logic)]
+testParallel cmds generatingEnv = do
+    run $ do
+      Dir.removePathForcibly path
+      Dir.createDirectory path
+    (tracer, getTrace) <- run $ recordingTracerIORef
+    let hasFS  = ioHasFS $ MountPoint path
+        parser = blockFileParser' hasFS testBlockIsEBB
+          testBlockToBinaryInfo (const <$> decode) testBlockIsValid
+          ValidateAll
+
+    db <- run $ openDB hasFS parser tracer maxBlocksPerFile
+
+    let env = VolatileDBEnv { varErrors = Nothing, db, hasFS, cleanupDB = cleanupDB db }
+        sm' = sm env generatingEnv dbm
+    hist <- runNParallelCommandsNTimes 30 sm' cmds
+
+    trace <- run $ getTrace
+
+    monitor $ counterexample ("Trace: " <> unlines (map show trace))
+
+    run $ closeDB db
+    run $ Dir.removePathForcibly path
+    return hist
+  where
+    dbm = initDBModel maxBlocksPerFile
+    path = "parallel-volDB-qsm-tests"
+    cleanupDB db _ = do
+      closeDB db
+      Dir.removePathForcibly path
+      Dir.createDirectory path
+      reOpenDB db
+
+prop_parallel :: Property
+prop_parallel = forAllNParallelCommands smUnused 2 $
+    \cmds -> checkCommandNamesParallel cmds $ monadicIO $ do
+      hist <- testParallel cmds generatingEnv
+      prettyNParallelCommands cmds hist
+  where
+    dbm = initDBModel maxBlocksPerFile
+    generatingEnv = GenerationArgs Parallel False
+    smUnused :: StateMachine Model (At CmdErr) IO (At Resp)
+    smUnused = sm unusedEnv generatingEnv dbm
 
 maxBlocksPerFile :: BlocksPerFile
 maxBlocksPerFile = mkBlocksPerFile 3
@@ -593,11 +672,12 @@ unusedEnv = error "VolatileDBEnv used during command generation"
 
 tests :: TestTree
 tests = testGroup "VolatileDB q-s-m" [
-      testProperty "sequential" prop_sequential
+--      testProperty "sequential" prop_sequential
+     testProperty "parallel" prop_parallel
     ]
 
 {-------------------------------------------------------------------------------
-  Labelling
+  Labelling. For now this only works for sequential tests.
 -------------------------------------------------------------------------------}
 
 -- | Predicate on events
@@ -823,4 +903,4 @@ printLabelledExamples' mReplay numTests = do
                 property True
   where
     dbm      = initDBModel maxBlocksPerFile
-    smUnused = sm unusedEnv dbm
+    smUnused = sm unusedEnv defaultSeqArgs dbm
