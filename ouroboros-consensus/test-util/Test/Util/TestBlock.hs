@@ -211,7 +211,7 @@ type instance BlockProtocol TestBlock = Bft BftMockCrypto
 
 instance SignedHeader (Header TestBlock) where
   type Signed (Header TestBlock) = ()
-  headerSigned _ _ = ()
+  headerSigned _ = ()
 
 instance HeaderSupportsBft BftMockCrypto (Header TestBlock) where
   headerBftFields cfg (TestHeader tb) = BftFields {

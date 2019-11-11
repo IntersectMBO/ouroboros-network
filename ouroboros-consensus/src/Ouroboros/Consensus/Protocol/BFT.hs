@@ -142,7 +142,7 @@ instance BftCrypto c => OuroborosTag (Bft c) where
       case verifySignedDSIGN
            ()
            (bftVerKeys Map.! expectedLeader)
-           (headerSigned cfg b)
+           (headerSigned b)
            bftSignature of
         Right () -> return ()
         Left err -> throwError $ BftInvalidSignature err

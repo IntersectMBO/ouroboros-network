@@ -79,7 +79,7 @@ _simplePraosHeader = simpleHeader
 instance PraosCrypto c' => SignedHeader (SimplePraosHeader c c') where
   type Signed (SimplePraosHeader c c') = SignedSimplePraos c c'
 
-  headerSigned _ SimpleHeader{..} = SignedSimplePraos {
+  headerSigned SimpleHeader{..} = SignedSimplePraos {
         signedSimplePraos = simpleHeaderStd
       , signedPraosFields = praosExtraFields (simplePraosExt simpleHeaderExt)
       }

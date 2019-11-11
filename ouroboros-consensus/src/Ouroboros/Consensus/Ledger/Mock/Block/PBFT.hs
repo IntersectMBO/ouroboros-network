@@ -77,7 +77,7 @@ _simplePBftHeader = simpleHeader
 instance SignedHeader (SimplePBftHeader c c') where
   type Signed (SimplePBftHeader c c') = SignedSimplePBft c c'
 
-  headerSigned _ = SignedSimplePBft . simpleHeaderStd
+  headerSigned = SignedSimplePBft . simpleHeaderStd
 
 instance ( SimpleCrypto c
          , Signable MockDSIGN (SignedSimplePBft c PBftMockCrypto)
@@ -89,7 +89,7 @@ instance ( SimpleCrypto c
           Signed (SimplePBftHeader c PBftMockCrypto)
   headerPBftFields cfg hdr = Just (
         simplePBftExt (simpleHeaderExt hdr)
-      , headerSigned cfg hdr
+      , headerSigned hdr
       )
 
 instance ( SimpleCrypto c

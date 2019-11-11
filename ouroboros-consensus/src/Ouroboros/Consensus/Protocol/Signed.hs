@@ -5,9 +5,6 @@ module Ouroboros.Consensus.Protocol.Signed (
     SignedHeader(..)
   ) where
 
-import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.Protocol.Abstract
-
 -- | Header that contain a signed part
 --
 -- This class enforces that signatures are computed over the header only
@@ -20,4 +17,4 @@ class SignedHeader hdr where
   type family Signed hdr :: *
 
   -- | Extract the part of the header that the signature should be computed over
-  headerSigned :: NodeConfig (BlockProtocol hdr) -> hdr -> Signed hdr
+  headerSigned :: hdr -> Signed hdr
