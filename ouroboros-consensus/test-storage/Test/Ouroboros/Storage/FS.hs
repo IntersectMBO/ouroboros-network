@@ -11,21 +11,18 @@ import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.HUnit
 
 import           Ouroboros.Storage.FS.API
-import           Ouroboros.Storage.FS.API.Types
 
 tests :: FilePath -> TestTree
 tests tmpDir = testGroup "HasFS"
     [ StateMachine.tests tmpDir
-      -- hOpen
-    , testCase "hOpen ReadOnly and hPut" test_hOpenWriteInvalid
     ]
 
 {------------------------------------------------------------------------------
  The tests proper
 -------------------------------------------------------------------------------}
 
-test_hOpenWriteInvalid :: Assertion
-test_hOpenWriteInvalid = apiEquivalenceFs (expectFsError FsInvalidArgument) $ \hasFS@HasFS{..} _err -> do
-    _  <- hOpen (mkFsPath ["foo.txt"]) (WriteMode MustBeNew)
-    h2 <- hOpen (mkFsPath ["foo.txt"]) ReadMode
-    hPut hasFS h2 "haskell-is-nice"
+-- | A unit test example.
+_test_example :: Assertion
+_test_example =
+  apiEquivalenceFs (expectFsResult (@?= ())) $ \HasFS{..} _err ->
+    return ()

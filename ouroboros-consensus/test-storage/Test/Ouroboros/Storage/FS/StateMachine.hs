@@ -444,7 +444,7 @@ generator Model{..} = oneof $ concat [
   where
     withoutHandle :: [Gen (Cmd :@ Symbolic)]
     withoutHandle = [
-          fmap At $ Open               <$> genPathExpr <*> genMode
+          fmap At $                        genOpen
         , fmap At $ CreateDir          <$> genPathExpr
         , fmap At $ CreateDirIfMissing <$> arbitrary <*> genPathExpr
         , fmap At $ ListDirectory      <$> genPathExpr
@@ -464,6 +464,12 @@ generator Model{..} = oneof $ concat [
         , fmap At $ GetSize  <$> genHandle
         ]
 
+    genOpen :: Gen (Cmd (PathRef Symbolic) (HandleRef Symbolic))
+    genOpen = do
+      path <- genPath
+      mode <- genMode $ elem path (RE.elems knownPaths)
+      return $ Open (PExpPath path) mode
+
     -- Wrap path in a simple path expression
     -- (References are generated during shrinking only)
     genPathExpr :: Gen (PathExpr fp)
@@ -480,13 +486,16 @@ generator Model{..} = oneof $ concat [
     genHandle :: Gen (HandleRef Symbolic)
     genHandle = elements (RE.keys knownHandles)
 
-    genMode :: Gen OpenMode
-    genMode = oneof [
-          return ReadMode
-        , WriteMode     <$> genAllowExisting
-        , AppendMode    <$> genAllowExisting
-        , ReadWriteMode <$> genAllowExisting
+    genMode :: Bool -> Gen OpenMode
+    genMode fileExists = frequency [
+          (rf, return ReadMode)
+        , (wf, WriteMode     <$> genAllowExisting)
+        , (wf, AppendMode    <$> genAllowExisting)
+        , (wf, ReadWriteMode <$> genAllowExisting)
         ]
+      where
+        -- we try to avoid 'ReadMode' when the file does not exist.
+        (rf, wf) = if fileExists then (10,3) else (1,3)
 
     genAllowExisting :: Gen AllowExisting
     genAllowExisting = elements [AllowExisting, MustBeNew]
@@ -1185,11 +1194,10 @@ tag = C.classify [
           Left TagReadInvalid
         _otherwise -> Right $ tagReadInvalid openAppend
 
-    -- never succeeds, not sure why.
     tagWriteInvalid :: Set HandleMock -> EventPred
     tagWriteInvalid openRead = C.predicate $ \ev ->
       case (eventMockCmd ev, eventMockResp ev) of
-        (Open _ ReadMode, Resp (Right (WHandle _ (Handle h _)))) ->
+        (Open _ ReadMode, Resp (Right (RHandle (Handle h _)))) ->
           Right $ tagWriteInvalid $ Set.insert h openRead
         (Close (Handle h _), Resp (Right _)) ->
           Right $ tagWriteInvalid $ Set.delete h openRead
