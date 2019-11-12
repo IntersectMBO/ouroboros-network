@@ -70,7 +70,7 @@ _simpleBFtHeader = simpleHeader
 instance SignedHeader (SimpleBftHeader c c') where
   type Signed (SimpleBftHeader c c') = SignedSimpleBft c c'
 
-  headerSigned _ = SignedSimpleBft . simpleHeaderStd
+  headerSigned = SignedSimpleBft . simpleHeaderStd
 
 instance ( SimpleCrypto c
          , BftCrypto c'

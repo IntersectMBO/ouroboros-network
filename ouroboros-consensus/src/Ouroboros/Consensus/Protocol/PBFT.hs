@@ -93,8 +93,9 @@ class ( HasHeader hdr
       , BlockProtocol hdr ~ PBft cfg c
       ) => HeaderSupportsPBft cfg c hdr where
   type family OptSigned hdr :: *
-  headerPBftFields :: NodeConfig (PBft cfg c)
-                   -> hdr -> Maybe (PBftFields c (OptSigned hdr), OptSigned hdr)
+  headerPBftFields :: cfg
+                   -> hdr
+                   -> Maybe (PBftFields c (OptSigned hdr), OptSigned hdr)
 
 forgePBftFields :: ( MonadRandom m
                    , PBftCrypto c
@@ -106,7 +107,7 @@ forgePBftFields :: ( MonadRandom m
                 -> toSign
                 -> m (PBftFields c toSign)
 forgePBftFields cfg PBftIsLeader{..} toSign = do
-    signature <- signedDSIGN (constructContextDSIGN cfg genKey) toSign pbftSignKey
+    signature <- signedDSIGN ctxtDSIGN toSign pbftSignKey
     return $ PBftFields {
         pbftIssuer    = issuer
       , pbftGenKey    = genKey
@@ -115,6 +116,7 @@ forgePBftFields cfg PBftIsLeader{..} toSign = do
   where
     issuer = dlgCertDlgVerKey pbftDlgCert
     genKey = dlgCertGenVerKey pbftDlgCert
+    ctxtDSIGN = constructContextDSIGN cfg (pbftExtConfig cfg) genKey
 
 {-------------------------------------------------------------------------------
   Information PBFT requires from the ledger
@@ -233,7 +235,7 @@ instance ( PBftCrypto c
             PBftParams{pbftNumNodes}                    = pbftParams
 
   applyChainState cfg@PBftNodeConfig{..} lv@(PBftLedgerView dms) (b :: hdr) chainState =
-      case headerPBftFields cfg b of
+      case headerPBftFields pbftExtConfig b of
         Nothing ->
           -- EBB. Nothing to do
           return chainState
@@ -241,7 +243,7 @@ instance ( PBftCrypto c
           -- Check that the issuer signature verifies, and that it's a delegate of a
           -- genesis key, and that genesis key hasn't voted too many times.
           case verifySignedDSIGN
-                 (constructContextDSIGN cfg pbftGenKey)
+                 (constructContextDSIGN cfg pbftExtConfig pbftGenKey)
                  pbftIssuer
                  signed
                  pbftSignature of
@@ -276,15 +278,16 @@ instance ( PBftCrypto c
 -------------------------------------------------------------------------------}
 
 class ConstructContextDSIGN cfg c where
-  constructContextDSIGN :: NodeConfig (PBft cfg c)
+  constructContextDSIGN :: proxy (PBft cfg c)
+                        -> cfg
                         -> VerKeyDSIGN (PBftDSIGN c)
                         -> ContextDSIGN (PBftDSIGN c)
 
 instance ConstructContextDSIGN ext PBftMockCrypto where
-  constructContextDSIGN _cfg _genKey = ()
+  constructContextDSIGN _p _cfg _genKey = ()
 
 instance ConstructContextDSIGN ByronConfig PBftCardanoCrypto where
-  constructContextDSIGN cfg genKey = (pbftExtConfig cfg, genKey)
+  constructContextDSIGN _p cfg genKey = (cfg, genKey)
 
 {-------------------------------------------------------------------------------
   PBFT node order

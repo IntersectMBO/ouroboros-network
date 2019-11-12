@@ -251,7 +251,7 @@ instance ( PraosCrypto c
   applyChainState cfg@PraosNodeConfig{..} sd b cs = do
     let PraosFields{..}      = headerPraosFields cfg b
         PraosExtraFields{..} = praosExtraFields
-        toSign               = headerSigned cfg b
+        toSign               = headerSigned b
         slot                 = blockSlot b
         CoreNodeId nid       = praosCreator
 

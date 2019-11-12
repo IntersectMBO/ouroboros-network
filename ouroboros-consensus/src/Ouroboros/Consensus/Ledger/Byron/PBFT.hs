@@ -60,7 +60,7 @@ instance HeaderSupportsPBft ByronConfig PBftCardanoCrypto (Header ByronBlock) wh
           , CC.recoverSignedBytes epochSlots hdr
           )
     where
-      epochSlots = pbftEpochSlots $ pbftExtConfig cfg
+      epochSlots = pbftEpochSlots cfg
 
 instance SupportedBlock ByronBlock
 
