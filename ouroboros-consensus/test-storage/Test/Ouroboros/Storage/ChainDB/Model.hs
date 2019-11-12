@@ -204,7 +204,11 @@ empty initLedger = Model {
     , isOpen        = True
     }
 
-addBlock :: forall blk. ProtocolLedgerView blk
+addBlock :: forall blk. (
+              ProtocolLedgerView blk
+              -- Chain selection is normally done on /headers/ only
+            , CanSelect (BlockProtocol blk) blk
+            )
          => NodeConfig (BlockProtocol blk) -> blk -> Model blk -> Model blk
 addBlock cfg blk m
     -- If the block is as old as the tip of the ImmutableDB, i.e. older than
@@ -250,7 +254,7 @@ addBlock cfg blk m
     (newChain, newLedger) = fromMaybe (currentChain m, currentLedger m) $
                               selectChain cfg (currentChain m) candidates
 
-addBlocks :: ProtocolLedgerView blk
+addBlocks :: (ProtocolLedgerView blk, CanSelect (BlockProtocol blk) blk)
           => NodeConfig (BlockProtocol blk) -> [blk] -> Model blk -> Model blk
 addBlocks cfg = repeatedly (addBlock cfg)
 
@@ -407,7 +411,10 @@ chains bs = go Chain.Genesis
     fwd :: Map (ChainHash blk) (Map (HeaderHash blk) blk)
     fwd = successors (Map.elems bs)
 
-validChains :: forall blk. ProtocolLedgerView blk
+validChains :: forall blk. (
+                 ProtocolLedgerView blk
+               , CanSelect (BlockProtocol blk) blk
+               )
             => NodeConfig (BlockProtocol blk)
             -> ExtLedgerState blk
             -> Map (HeaderHash blk) blk

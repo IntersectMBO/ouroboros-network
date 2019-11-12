@@ -186,6 +186,7 @@ data Success blk it rdr
 type TestConstraints blk =
   ( OuroborosTag   (BlockProtocol blk)
   , ProtocolLedgerView            blk
+  , CanSelect (BlockProtocol blk) blk
   , Eq (ChainState (BlockProtocol blk))
   , Eq (LedgerState               blk)
   , Eq                            blk
@@ -725,7 +726,10 @@ precondition Model {..} (At cmd) =
         Left  _ -> Bot
         Right _ -> Top
 
-equallyPreferable :: (OuroborosTag (BlockProtocol blk), HasHeader blk)
+equallyPreferable :: ( OuroborosTag (BlockProtocol blk)
+                     , HasHeader blk
+                     , CanSelect (BlockProtocol blk) blk
+                     )
                   => NodeConfig (BlockProtocol blk)
                   -> Chain blk -> Chain blk -> Bool
 equallyPreferable cfg chain1 chain2 =

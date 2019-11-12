@@ -206,9 +206,10 @@ instance ( PBftCrypto c
          , ConstructContextDSIGN cfg c
          )
       => OuroborosTag (PBft cfg c) where
-  type ValidationErr   (PBft cfg c) = PBftValidationErr c
-  type SupportedHeader (PBft cfg c) = HeaderSupportsPBft cfg c
-  type NodeState       (PBft cfg c) = ()
+  type ValidationErr (PBft cfg c) = PBftValidationErr c
+  type CanValidate   (PBft cfg c) = HeaderSupportsPBft cfg c
+  type CanSelect     (PBft cfg c) = HasHeader
+  type NodeState     (PBft cfg c) = ()
 
   -- | We require two things from the ledger state:
   --
