@@ -1,6 +1,6 @@
-{-# LANGUAGE RankNTypes                 #-}
-{-# LANGUAGE ScopedTypeVariables        #-}
-{-# LANGUAGE TupleSections              #-}
+{-# LANGUAGE RankNTypes          #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TupleSections       #-}
 
 module Ouroboros.Consensus.Protocol.MockChainSel where
 
@@ -30,7 +30,11 @@ import           Ouroboros.Network.MockChain.Chain hiding (selectChain)
 -- somehow fail if the selected chain turns out to be invalid.)
 --
 -- Returns 'Nothing' if we stick with our current chain.
-selectChain :: forall p hdr l. (OuroborosTag p, HasHeader hdr)
+selectChain :: forall p hdr l. (
+                 OuroborosTag p
+               , HasHeader hdr
+               , CanSelect p hdr
+               )
             => NodeConfig p
             -> Chain hdr           -- ^ Our chain
             -> [(Chain hdr, l)]    -- ^ Upstream chains
@@ -51,7 +55,11 @@ selectChain cfg ours' candidates' =
       = error "impossible: fragment was anchored at genesis"
 
 -- | Chain selection on unvalidated chains
-selectUnvalidatedChain :: forall p hdr. (OuroborosTag p, HasHeader hdr)
+selectUnvalidatedChain :: forall p hdr. (
+                            OuroborosTag p
+                          , HasHeader hdr
+                          , CanSelect p hdr
+                          )
                        => NodeConfig p
                        -> Chain hdr
                        -> [Chain hdr]

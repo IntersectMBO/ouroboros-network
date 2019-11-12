@@ -17,6 +17,7 @@ module Ouroboros.Consensus.Protocol.ModChainSel (
   , NodeConfig (..)
   ) where
 
+import           Data.Kind
 import           Data.Proxy (Proxy (..))
 import           Data.Typeable (Typeable)
 import           GHC.Generics (Generic)
@@ -24,18 +25,19 @@ import           GHC.Generics (Generic)
 import           Cardano.Prelude (NoUnexpectedThunks)
 
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
-import           Ouroboros.Network.Block (HasHeader)
 
 import           Ouroboros.Consensus.Protocol.Abstract
 
 class OuroborosTag p => ChainSelection p s where
-  preferCandidate' :: HasHeader b
+  type family CanSelect' p :: * -> Constraint
+
+  preferCandidate' :: CanSelect' p b
                    => proxy s
                    -> NodeConfig p
                    -> AnchoredFragment b      -- ^ Our chain
                    -> AnchoredFragment b      -- ^ Candidate
                    -> Bool
-  compareCandidates' :: HasHeader b
+  compareCandidates' :: CanSelect' p b
                      => proxy s
                      -> NodeConfig p
                      -> AnchoredFragment b -> AnchoredFragment b -> Ordering
@@ -51,7 +53,8 @@ instance (Typeable p, Typeable s, ChainSelection p s) => OuroborosTag (ModChainS
     type IsLeader        (ModChainSel p s) = IsLeader        p
     type LedgerView      (ModChainSel p s) = LedgerView      p
     type ValidationErr   (ModChainSel p s) = ValidationErr   p
-    type SupportedHeader (ModChainSel p s) = SupportedHeader p
+    type CanValidate     (ModChainSel p s) = CanValidate     p
+    type CanSelect       (ModChainSel p s) = CanSelect'      p
 
     checkIsLeader         (McsNodeConfig cfg) = checkIsLeader         cfg
     applyChainState       (McsNodeConfig cfg) = applyChainState       cfg

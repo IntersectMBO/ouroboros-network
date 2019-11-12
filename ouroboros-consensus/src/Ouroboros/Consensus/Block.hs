@@ -90,7 +90,8 @@ class ( GetHeader blk
       , HasHeader blk
       , HasHeader (Header blk)
       , OuroborosTag (BlockProtocol blk)
-      , SupportedHeader (BlockProtocol blk) (Header blk)
+      , CanValidate  (BlockProtocol blk) (Header blk)
+      , CanSelect    (BlockProtocol blk) (Header blk)
       , NoUnexpectedThunks (Header blk)
       ) => SupportedBlock blk
 

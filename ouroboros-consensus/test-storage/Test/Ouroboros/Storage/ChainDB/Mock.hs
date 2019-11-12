@@ -28,7 +28,11 @@ import           Ouroboros.Storage.ChainDB.API
 import           Test.Ouroboros.Storage.ChainDB.Model (Model)
 import qualified Test.Ouroboros.Storage.ChainDB.Model as Model
 
-openDB :: forall m blk. (IOLike m, ProtocolLedgerView blk)
+openDB :: forall m blk. (
+            IOLike m
+          , ProtocolLedgerView blk
+          , CanSelect (BlockProtocol blk) blk
+          )
        => NodeConfig (BlockProtocol blk)
        -> ExtLedgerState blk
        -> m (ChainDB m blk)

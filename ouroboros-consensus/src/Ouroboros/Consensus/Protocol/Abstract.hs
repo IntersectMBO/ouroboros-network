@@ -1,4 +1,5 @@
 {-# LANGUAGE ConstraintKinds            #-}
+{-# LANGUAGE DefaultSignatures          #-}
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE FlexibleInstances          #-}
@@ -124,8 +125,11 @@ class ( Show (ChainState    p)
   -- | Validation errors
   type family ValidationErr p :: *
 
-  -- | Headers of blocks that the protocol can run on
-  type family SupportedHeader p :: * -> Constraint
+  -- | Constraint required in order to validate a header
+  type family CanValidate p :: * -> Constraint
+
+  -- | Constraint required in order to able to select between two chains
+  type family CanSelect p :: * -> Constraint
 
   -- | Do we prefer the candidate chain over ours?
   --
@@ -137,14 +141,11 @@ class ( Show (ChainState    p)
   --
   -- Note: we do not assume that the candidate fragments fork less than @k@
   -- blocks back.
-  preferCandidate :: HasHeader hdr
+  preferCandidate :: CanSelect p hdr
                   => NodeConfig p
                   -> AnchoredFragment hdr      -- ^ Our chain
                   -> AnchoredFragment hdr      -- ^ Candidate
                   -> Bool
-  preferCandidate _ ours cand =
-    AF.compareHeadBlockNo cand ours == GT
-    -- TODO handle genesis
 
   -- | Compare two candidates, both of which we prefer to our own chain
   --
@@ -152,10 +153,9 @@ class ( Show (ChainState    p)
   --
   -- Note: we do not assume that the candidate fragments fork less than @k@
   -- blocks back.
-  compareCandidates :: HasHeader hdr
+  compareCandidates :: CanSelect p hdr
                     => NodeConfig p
                     -> AnchoredFragment hdr -> AnchoredFragment hdr -> Ordering
-  compareCandidates _ = AF.compareHeadBlockNo
 
   -- | Check if a node is the leader
   checkIsLeader :: (HasNodeState p m, MonadRandom m)
@@ -166,7 +166,7 @@ class ( Show (ChainState    p)
                 -> m (Maybe (IsLeader p))
 
   -- | Apply a header
-  applyChainState :: (SupportedHeader p hdr, HasCallStack)
+  applyChainState :: (CanValidate p hdr, HasCallStack)
                   => NodeConfig p
                   -> LedgerView p -- /Updated/ ledger state
                   -> hdr
@@ -207,6 +207,25 @@ class ( Show (ChainState    p)
                    -- slot (i.e., after the block in that slot, if any, has
                    -- been applied).
                    -> Maybe (ChainState p)
+
+  --
+  -- Default chain selection
+  --
+  -- The default simply compares length
+  --
+
+  default preferCandidate :: HasHeader hdr
+                          => NodeConfig p
+                          -> AnchoredFragment hdr      -- ^ Our chain
+                          -> AnchoredFragment hdr      --` ^ Candidate
+                          -> Bool
+  preferCandidate _ ours cand =
+    AF.compareHeadBlockNo cand ours == GT
+
+  default compareCandidates :: HasHeader hdr
+                            => NodeConfig p
+                            -> AnchoredFragment hdr -> AnchoredFragment hdr -> Ordering
+  compareCandidates _ = AF.compareHeadBlockNo
 
 -- | Protocol security parameter
 --

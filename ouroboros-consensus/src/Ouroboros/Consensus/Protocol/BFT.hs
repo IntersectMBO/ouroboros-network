@@ -119,12 +119,13 @@ data instance NodeConfig (Bft c) = BftNodeConfig {
   deriving (Generic)
 
 instance BftCrypto c => OuroborosTag (Bft c) where
-  type ValidationErr   (Bft c) = BftValidationErr
-  type SupportedHeader (Bft c) = HeaderSupportsBft c
-  type NodeState       (Bft c) = ()
-  type LedgerView      (Bft c) = ()
-  type IsLeader        (Bft c) = ()
-  type ChainState      (Bft c) = ()
+  type ValidationErr (Bft c) = BftValidationErr
+  type CanValidate   (Bft c) = HeaderSupportsBft c
+  type CanSelect     (Bft c) = HasHeader
+  type NodeState     (Bft c) = ()
+  type LedgerView    (Bft c) = ()
+  type IsLeader      (Bft c) = ()
+  type ChainState    (Bft c) = ()
 
   protocolSecurityParam = bftSecurityParam . bftParams
 

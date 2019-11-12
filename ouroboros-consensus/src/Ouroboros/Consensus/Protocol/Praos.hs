@@ -225,12 +225,13 @@ instance ( PraosCrypto c
          ) => OuroborosTag (Praos cfg c) where
   protocolSecurityParam = praosSecurityParam . praosParams
 
-  type NodeState       (Praos cfg c) = PraosNodeState c
-  type LedgerView      (Praos cfg c) = StakeDist
-  type IsLeader        (Praos cfg c) = PraosProof c
-  type ValidationErr   (Praos cfg c) = PraosValidationError c
-  type SupportedHeader (Praos cfg c) = HeaderSupportsPraos cfg c
-  type ChainState      (Praos cfg c) = [BlockInfo c]
+  type NodeState     (Praos cfg c) = PraosNodeState c
+  type LedgerView    (Praos cfg c) = StakeDist
+  type IsLeader      (Praos cfg c) = PraosProof c
+  type ValidationErr (Praos cfg c) = PraosValidationError c
+  type CanValidate   (Praos cfg c) = HeaderSupportsPraos cfg c
+  type CanSelect     (Praos cfg c) = HasHeader
+  type ChainState    (Praos cfg c) = [BlockInfo c]
 
   checkIsLeader cfg@PraosNodeConfig{..} slot _u cs =
     case praosNodeId of

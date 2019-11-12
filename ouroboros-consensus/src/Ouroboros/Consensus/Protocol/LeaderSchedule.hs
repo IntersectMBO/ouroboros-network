@@ -58,7 +58,8 @@ instance OuroborosTag p => OuroborosTag (WithLeaderSchedule p) where
   type LedgerView      (WithLeaderSchedule p) = ()
   type ValidationErr   (WithLeaderSchedule p) = ()
   type IsLeader        (WithLeaderSchedule p) = ()
-  type SupportedHeader (WithLeaderSchedule p) = Empty
+  type CanValidate     (WithLeaderSchedule p) = Empty
+  type CanSelect       (WithLeaderSchedule p) = CanSelect p
 
   preferCandidate       WLSNodeConfig{..} = preferCandidate       lsNodeConfigP
   compareCandidates     WLSNodeConfig{..} = compareCandidates     lsNodeConfigP
