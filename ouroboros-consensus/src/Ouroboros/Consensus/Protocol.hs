@@ -20,6 +20,7 @@ import qualified Cardano.Chain.Update as Update
 
 import           Ouroboros.Consensus.Ledger.Byron
 import           Ouroboros.Consensus.Ledger.Mock
+import           Ouroboros.Consensus.Node.ProtocolInfo.Abstract (NumCoreNodes)
 import           Ouroboros.Consensus.Node.ProtocolInfo.Byron
 import           Ouroboros.Consensus.Node.ProtocolInfo.Mock.PBFT ()
 import           Ouroboros.Consensus.Node.ProtocolInfo.Mock.Praos ()
@@ -50,26 +51,30 @@ type ProtocolRealPBFT       = PBft ByronConfig PBftCardanoCrypto
 data Protocol blk where
   -- | Run BFT against the mock ledger
   ProtocolMockBFT
-    :: CoreNodeId
+    :: NumCoreNodes
+    -> CoreNodeId
     -> SecurityParam
     -> Protocol (SimpleBftBlock SimpleMockCrypto BftMockCrypto)
 
   -- | Run Praos against the mock ledger
   ProtocolMockPraos
-    :: CoreNodeId
+    :: NumCoreNodes
+    -> CoreNodeId
     -> PraosParams
     -> Protocol (SimplePraosBlock SimpleMockCrypto PraosMockCrypto)
 
   -- | Run Praos against the mock ledger but with an explicit leader schedule
   ProtocolLeaderSchedule
-    :: CoreNodeId
+    :: NumCoreNodes
+    -> CoreNodeId
     -> PraosParams
     -> LeaderSchedule
     -> Protocol (SimplePraosRuleBlock SimpleMockCrypto)
 
   -- | Run PBFT against the mock ledger
   ProtocolMockPBFT
-    :: CoreNodeId
+    :: NumCoreNodes
+    -> CoreNodeId
     -> PBftParams
     -> Protocol (SimplePBftBlock SimpleMockCrypto PBftMockCrypto)
 

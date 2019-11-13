@@ -20,12 +20,18 @@ import           Ouroboros.Consensus.Protocol
 -------------------------------------------------------------------------------}
 
 -- | Data required to run the selected protocol
-protocolInfo :: NumCoreNodes
-             -> Protocol blk
-             -> ProtocolInfo blk
-protocolInfo nodes demoProtocol = case demoProtocol of
-    ProtocolMockBFT        nid params           -> protocolInfoBft       nodes nid params
-    ProtocolMockPraos      nid params           -> protocolInfoPraos     nodes nid params
-    ProtocolLeaderSchedule nid params schedule  -> protocolInfoPraosRule nodes nid params schedule
-    ProtocolMockPBFT       nid params           -> protocolInfoMockPBFT  nodes nid params
-    ProtocolRealPBFT       gc mthr prv swv mplc -> protocolInfoByron     gc mthr prv swv mplc
+protocolInfo :: Protocol blk -> ProtocolInfo blk
+protocolInfo (ProtocolMockBFT nodes nid params) =
+    protocolInfoBft nodes nid params
+
+protocolInfo (ProtocolMockPraos nodes nid params) =
+    protocolInfoPraos nodes nid params
+
+protocolInfo (ProtocolLeaderSchedule nodes nid params schedule) =
+    protocolInfoPraosRule nodes nid params schedule
+
+protocolInfo (ProtocolMockPBFT nodes nid params) =
+    protocolInfoMockPBFT nodes nid params
+
+protocolInfo (ProtocolRealPBFT gc mthr prv swv mplc) =
+    protocolInfoByron gc mthr prv swv mplc

@@ -22,8 +22,8 @@ import           Ouroboros.Network.Block (SlotNo (..), blockHash, blockPoint)
 import           Ouroboros.Consensus.Block (BlockProtocol)
 import           Ouroboros.Consensus.Ledger.Byron (ByronBlock)
 import           Ouroboros.Consensus.Ledger.Byron.Forge (forgeGenesisEBB)
-import           Ouroboros.Consensus.Node.ProtocolInfo (NumCoreNodes (..),
-                     PBftSignatureThreshold (..), ProtocolInfo (..),
+import           Ouroboros.Consensus.Node.ProtocolInfo
+                     (PBftSignatureThreshold (..), ProtocolInfo (..),
                      protocolInfo)
 import           Ouroboros.Consensus.Node.Run (RunNode (..))
 import           Ouroboros.Consensus.Protocol
@@ -81,7 +81,7 @@ withImmDB k = do
       }
 
 testCfg :: NodeConfig (BlockProtocol ByronBlock)
-testCfg = pInfoConfig $ protocolInfo (NumCoreNodes 1) prot
+testCfg = pInfoConfig $ protocolInfo prot
   where
     prot = ProtocolRealPBFT
       Dummy.dummyConfig
