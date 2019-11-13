@@ -20,12 +20,21 @@ Assumed by the test infrastructure:
 Guaranteed by the test infrastructure:
 
   * The test infrastructure maintains the *actual* delegation map.
+    
+    EdV: This is the only part of this plan that I feel needs some clarification. 
+    What does the "actual" delegation map mean, in the context of a blockchain with 
+    potential forks? Actual according to who? How does this relate to the
+    delegation map in the chain?
 
   * The genesis chain's ledger delegation map equals the initial actual
     delegation map.
 
   * Each ledger delegation map is either synchronized with the actual
     delegation map or else out-of-date.
+    
+    EdV: Not sure I understand "out of date". This and the point I commented on 
+    above suggest that history is linear, and nodes may merely be "behind" on
+    updates. But what if they disagree?
 
   * When the test infrastucture changes the actual delegation map, it also
     promptly generates the necessary delegation certificate transactions to
@@ -68,5 +77,21 @@ Concern:
 
 It seems like the new node may need to persistently re-generate that
 transaction until it finds it in its immutable DB.
+
+EdV: So these are not test concerns, these are concerns inherent in delegating.
+Indeed, a wallet node would do something similar to this (monitor the chain
+to see if its transactions have been included, and resubmit after a while). 
+I'm not sure that we should include this ability in the node right now; let's
+perhaps open a ticket for that particular subproblem. 
+
+EdV: One thing that is useful to realize is that a node _can_ safely start
+producing blocks as soon as a certificate has been included on the chain; 
+it doesn't need to wait. After all, other nodes that synchronize that same
+chain will see the certificate before the new blocks, and so the certificate
+will come first; if they are on a different chain, they won't see either.
+
+EdV: Note however that the spec limits when delegation certificates can take
+effect, precisely to address some chain stability problems. See the Byron
+ledger specification. 
 
 -}
