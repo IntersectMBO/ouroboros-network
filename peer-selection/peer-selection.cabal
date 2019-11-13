@@ -15,6 +15,7 @@ extra-source-files:  CHANGELOG.md
 
 library
   exposed-modules:     Algebra.Graph.Labelled.AdjacencyMap,
+                       Algebra.Graph.Labelled.AdjacencyMap.Builder,
                        Algebra.Graph.Labelled.AdjacencyMap.ShortestPath,
                        Algebra.Graph.Labelled.AdjacencyMap.Viz,
                        DeltaQ.SimpleGS,
@@ -23,8 +24,7 @@ library
                        DeltaQ.Topography,
                        DeltaQ.TCP,
                        DeltaQ.Examples.AWS,
-                       DeltaQ.Examples.NJD,
-                       DeltaQ.Examples.Gen
+                       DeltaQ.Examples.NJD
   -- other-modules:
   -- other-extensions:
   build-depends:       base >=4.11.0.0,
