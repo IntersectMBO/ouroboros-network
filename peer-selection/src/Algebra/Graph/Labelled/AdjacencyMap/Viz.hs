@@ -66,6 +66,9 @@ nodeWidth d = constAttributes [Width d]
 nodeHeight :: Double -> VizNode n nl
 nodeHeight d = constAttributes [Height d]
 
+strlabel :: (s -> String) -> SetAttributes s
+strlabel tt = attributeList $ \s -> [Label (StrLabel (pack (tt s)))]
+
 tooltip :: (s -> String) -> SetAttributes s
 tooltip tt = attributeList $ \s -> [Tooltip (pack (tt s))]
 
