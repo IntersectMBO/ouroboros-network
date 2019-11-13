@@ -109,9 +109,9 @@ prop_simple_real_pbft_convergence
 
     testOutput =
         runTestNetwork
-            (\nid -> protocolInfo numCoreNodes
-                (mkProtocolRealPBFT numCoreNodes nid
-                                    genesisConfig genesisSecrets))
+            (\nid -> protocolInfo
+                       (mkProtocolRealPBFT numCoreNodes nid
+                                           genesisConfig genesisSecrets))
             testConfig seed
 
     finalChains :: [Chain ByronBlock]
