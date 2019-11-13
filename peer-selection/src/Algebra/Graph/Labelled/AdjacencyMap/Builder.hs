@@ -2,7 +2,7 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module DeltaQ.Examples.Gen
+module Algebra.Graph.Labelled.AdjacencyMap.Builder
   ( Builder
   , buildIO
   , buildFromSeed

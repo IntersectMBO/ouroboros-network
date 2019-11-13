@@ -11,7 +11,7 @@ module NotebookPrelude
   , module DeltaQ
 
   -- * Defining/generating topologies
-  , module Gen
+  , module Builder
   , ethernet_bearer
   , path_of_length
   , cycle_of_length
@@ -58,12 +58,12 @@ import DeltaQ.SimpleGS as DeltaQ
 import DeltaQ.TCP as DeltaQ
 import DeltaQ.Topography as DeltaQ hiding (edge)
 
-import Data.Time.Clock as Gen (DiffTime)
-import Data.List.NonEmpty as Gen (NonEmpty(..))
+import Algebra.Graph.Labelled.AdjacencyMap.Builder as Builder
+import Data.Time.Clock as Builder (DiffTime)
+import Data.List.NonEmpty as Builder (NonEmpty(..))
 -- Useful as vertex types.
-import Data.Word as Gen
-import DeltaQ.Examples.Gen as Gen
-import qualified System.Random.MWC.Distributions as Distributions
+import Data.Word as Builder
+import qualified System.Random.MWC.Distributions as Builder
 
 import qualified Data.Text.Lazy as Text (pack, unpack)
 import Data.GraphViz
@@ -96,7 +96,7 @@ cycle_of_length
   -> Builder e Directed BearerCharacteristics v ()
 cycle_of_length g v n = do
   vs <- freshVertices n
-  Gen.cycleOn vs (pure (ethernet_bearer g v))
+  Builder.cycleOn vs (pure (ethernet_bearer g v))
 
 path_of_length
   :: Ord v
@@ -106,7 +106,7 @@ path_of_length
   -> Builder e Directed BearerCharacteristics v ()
 path_of_length g v n = do
   vs <- freshVertices n
-  Gen.pathOn vs (pure (ethernet_bearer g v))
+  Builder.pathOn vs (pure (ethernet_bearer g v))
 
 -- TODO Working with randomness...
 --
