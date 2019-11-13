@@ -7,15 +7,21 @@ module Algebra.Graph.Labelled.AdjacencyMap.Builder
   , buildIO
   , buildFromSeed
   , build
+  , Vertex (..)
+  , VertexRep
   , Directed (..)
   , directed
+  , directedEdge
   , Undirected (..)
   , undirected
+  , undirectedEdge
   , mirror
   , component
   , overlay
   , freshVertex
   , freshVertices
+  , setLabel
+  , getLabel
   , outEdges
   , edge
   , pathOn
@@ -128,21 +134,26 @@ randomGS rg rs = mk <$> rg <*> rs
   where
   mk g s = mkGS (picosecondsToDiffTime g) (picosecondsToDiffTime s)
 
-data Stream v = Stream !v (Stream v)
+type MakeEdge f e v = f e -> Vertex v -> Vertex v -> AdjacencyMap (Last e) (Vertex v)
 
-type MakeEdge f e v = f e -> v -> v -> AdjacencyMap (Last e) v
+type VertexRep = Word32
 
-data BuilderState s e v = BuilderState
-  { builderUnusedVertices :: !(Stream v)
-  , builderGraph          :: !(AdjacencyMap (Last e) v)
+-- | The @v@ plays a role similar to that of the phantom type in @STRef@.
+data Vertex v = Vertex { getVertexRep :: !Word32 }
+  deriving (Eq, Ord)
+
+data BuilderState s r e v = BuilderState
+  { builderNextVertex     :: !VertexRep
+  , builderVertexLabels   :: !(Map VertexRep v)
+  , builderGraph          :: !(AdjacencyMap (Last e) (Vertex r))
   , builderEntropy        :: !(MWC.Gen s)
   }
 
 -- | Used to monadically construct graphs with pseudorandomness available.
-type Builder s f e v = ReaderT (MakeEdge f e v) (StateT (BuilderState s e v) (ST s))
+type Builder s r f e v = ReaderT (MakeEdge f e r) (StateT (BuilderState s r e v) (ST s))
 
 -- | Use pseudorandomness in a 'Builder'.
-random :: Random t -> Builder s f e v t
+random :: Random t -> Builder s r f e v t
 random k = do
   -- No need to explicitly update the state. It's done automatically in ST.
   gen <- lift $ gets builderEntropy
@@ -155,21 +166,23 @@ noMakeEdge (NoEdges impossible) = impossible
 
 newtype Directed e = DirectedEdge { getDirectedEdge :: e }
 
-directedEdge :: Ord v => MakeEdge Directed e v
-directedEdge (DirectedEdge e) u v = GR.edge (Last e) u v
+makeDirectedEdge :: MakeEdge Directed e r
+makeDirectedEdge (DirectedEdge e) u v = GR.edge (Last e) u v
 
 newtype Undirected e = UndirectedEdge { getUndirectedEdge :: (e, e) }
 
-undirectedEdge :: Ord v => MakeEdge Undirected e v
-undirectedEdge (UndirectedEdge (forward, backward)) u v = GR.overlay
+makeUndirectedEdge :: MakeEdge Undirected e r
+makeUndirectedEdge (UndirectedEdge (forward, backward)) u v = GR.overlay
   (GR.edge (Last forward)  u v)
   (GR.edge (Last backward) v u)
+
+type VertexLabels v = VertexRep -> Maybe v
 
 -- | Run a builder using system entropy. The seed is also returned so that you
 -- can reproduce it (using 'buildFromSeed').
 buildIO
-  :: (forall r f v . Ord v => Builder r f e v ())
-  -> IO (AdjacencyMap (Last e) Word32, MWC.Seed)
+  :: (forall s f . Builder s r f e v x)
+  -> IO ((AdjacencyMap (Last e) VertexRep, VertexLabels v), MWC.Seed)
 buildIO it = MWC.withSystemRandom $ \gen -> do
   seed <- MWC.save gen
   outcome <- build gen it
@@ -180,8 +193,8 @@ buildIO it = MWC.withSystemRandom $ \gen -> do
 -- reproduce it).
 buildFromSeed
   :: MWC.Seed
-  -> (forall r f v . Ord v => Builder r f e v ())
-  -> ST s (AdjacencyMap (Last e) Word32)
+  -> (forall s f . Builder s r f e v x)
+  -> ST s (AdjacencyMap (Last e) VertexRep, VertexLabels v)
 buildFromSeed seed it = do
   gen <- MWC.restore seed
   build gen it
@@ -190,32 +203,28 @@ buildFromSeed seed it = do
 -- Vertices are @Word32@s.
 build
   :: MWC.Gen s
-  -> (forall r f v . Ord v => Builder r f e v ())
-  -> ST s (AdjacencyMap (Last e) Word32)
+  -> (forall s f . Builder s r f e v x)
+  -> ST s (AdjacencyMap (Last e) VertexRep, VertexLabels v)
 build gen it = do
-  let st = BuilderState (vertexStream 0) GR.empty gen
-  ((), st') <- runStateT (runReaderT it noMakeEdge) st
-  pure (builderGraph st')
-  where
-  vertexStream :: Word32 -> Stream Word32
-  vertexStream w = Stream w (vertexStream (w+1))
+  let st = BuilderState 0 Map.empty GR.empty gen
+  (_, st') <- runStateT (runReaderT it noMakeEdge) st
+  pure (GR.gmap getVertexRep (builderGraph st'), flip Map.lookup (builderVertexLabels st'))
 
-directed :: Ord v => Builder s Directed e v t -> Builder s f e v t
-directed bdr = lift $ runReaderT bdr directedEdge
+directed :: Builder s r Directed e v t -> Builder s r f e v t
+directed bdr = lift $ runReaderT bdr makeDirectedEdge
 
-undirected :: Ord v => Builder s Undirected e v t -> Builder s f e v t
-undirected bdr = lift $ runReaderT bdr undirectedEdge
+undirected :: Builder s r Undirected e v t -> Builder s r f e v t
+undirected bdr = lift $ runReaderT bdr makeUndirectedEdge
 
 -- | Make a directed graph undirected by copying each edge in reverse.
-mirror :: Builder s Directed e v t -> Builder s Undirected e v t
+mirror :: Builder s r Directed e v t -> Builder s r Undirected e v t
 mirror bdr = do
   mkDirected <- ask
   lift $ runReaderT bdr (\(DirectedEdge e) -> mkDirected (UndirectedEdge (e,e)))
 
 overlay
-  :: ( Ord v )
-  => AdjacencyMap (Last e) v
-  -> Builder s f e v ()
+  :: AdjacencyMap (Last e) (Vertex r)
+  -> Builder s r f e v ()
 overlay gr = lift $ modify $ \st ->
   st { builderGraph = GR.overlay (builderGraph st) gr }
 
@@ -233,42 +242,55 @@ overlay gr = lift $ modify $ \st ->
 -- >     w <- freshVertex
 -- >     overlay (edge () v w)
 --
-component :: Ord v => (forall w . Ord w => Builder s f e w t) -> Builder s f e v t
+component :: (forall q . Builder s q f e v t) -> Builder s r f e v t
 component bdr = do
   rdr <- ask
   st <- lift get
   (t, st') <- lift . lift $ runStateT (runReaderT bdr rdr) (st { builderGraph = GR.empty })
-  let vs = builderUnusedVertices st'
+  let v  = builderNextVertex st'
       gr = GR.overlay (builderGraph st) (builderGraph st')
-      st'' = st' { builderGraph = gr, builderUnusedVertices = vs }
+      st'' = st' { builderGraph = gr, builderNextVertex = v }
   lift $ put st''
   pure t
 
-freshVertex :: Ord v => Builder s f e v v
+freshVertex :: Builder s r f e v (Vertex r)
 freshVertex = do
   st <- lift get
-  let Stream v vs = builderUnusedVertices st
-  lift $ put (st { builderUnusedVertices = vs })
-  overlay (GR.vertex v)
-  pure v
+  let v = builderNextVertex st
+  lift $ put (st { builderNextVertex = succ v })
+  overlay (GR.vertex (Vertex v))
+  pure (Vertex v)
 
-freshVertices :: Ord v => Natural -> Builder s f e v [v]
+freshVertices :: Natural -> Builder s r f e v [Vertex r]
 freshVertices n = forM [0..(n-1)] (const freshVertex)
 
+setLabel :: Vertex r -> v -> Builder s r f e v ()
+setLabel v lab = lift $ modify $ \st ->
+  st { builderVertexLabels = Map.insert (getVertexRep v) lab (builderVertexLabels st) }
+
+getLabel :: Vertex r -> Builder s r f e v (Maybe v)
+getLabel v = lift $ gets $ \st -> Map.lookup (getVertexRep v) (builderVertexLabels st)
+
 -- | Create an edge and include it in the graph.
-edge :: Ord v => f e -> v -> v -> Builder s f e v ()
+edge :: f e -> Vertex r -> Vertex r -> Builder s r f e v ()
 edge e u v = do
   mk <- ask
   overlay (mk e u v)
 
-outEdges :: Ord v => v -> Builder s f e v (Map v e)
+directedEdge :: e -> Vertex r -> Vertex r -> Builder s r Directed e v ()
+directedEdge e = edge (DirectedEdge e)
+
+undirectedEdge :: e -> Vertex r -> Vertex r -> Builder s r Undirected e v ()
+undirectedEdge e = edge (UndirectedEdge (e, e))
+
+outEdges :: Vertex r -> Builder s r f e v (Map (Vertex r) e)
 outEdges v = do
   gr <- lift $ gets builderGraph
   pure (fmap getLast (GR.postSetEdges v gr))
 
 -- | Make a path on a given list of vertices, with edges randomly generated
 -- by the given function.
-pathOn :: Ord v => [v] -> Random e -> Builder s Directed e v ()
+pathOn :: [Vertex r] -> Random e -> Builder s r Directed e v ()
 pathOn vs randomEdge = forM_ (adjacentPairs vs) $ \(v, w) -> do
   e <- random randomEdge
   edge (DirectedEdge e) v w
@@ -284,7 +306,7 @@ adjacentPairs (w:ws) = adjacentPairs' w ws
 
 -- | Make a cyle on a given list of vertices, with edges randomly generated
 -- by the given function.
-cycleOn :: Ord v => [v] -> Random e -> Builder s Directed e v ()
+cycleOn :: [Vertex r] -> Random e -> Builder s r Directed e v ()
 cycleOn vs randomEdge = case vs of
   []    -> pure ()
   (_:_) -> do
@@ -300,11 +322,10 @@ cycleOn vs randomEdge = case vs of
 -- FIXME not yet right. Doesn't ensure the shortcuts are not duplicate
 -- edges.
 cycleWithShortcutsOn
-  :: Ord v
-  => [v]
+  :: [Vertex r]
   -> Random e
   -> Random Natural -- ^ Number of shortcuts to put in.
-  -> Builder s Directed e v ()
+  -> Builder s r Directed e v ()
 cycleWithShortcutsOn vs randomEdge randomN = do
   cycleOn vs randomEdge
   pairs <- random $ do
@@ -323,11 +344,10 @@ cycleWithShortcutsOn vs randomEdge randomN = do
 -- NB: not the most general regular graph! It starts with a cycle on the
 -- vertices, so that the graph is always connected.
 kregular
-  :: Ord v
-  => [v]
+  :: [Vertex r]
   -> Random Natural -- ^ Degree
   -> Random e
-  -> Builder s Directed e v ()
+  -> Builder s r Directed e v ()
 kregular vs randomK randomEdge = do
   cycleOn vs randomEdge
   let vset = Set.fromList vs
@@ -369,7 +389,7 @@ isRegular gr = case Map.toList (adjacencyMap gr) of
 -- | Given a list of rows, each row is connected in a cycle, and every vertex
 -- in that row is connected to the corresponding vertex in the previous row,
 -- or nothing if the previous row was smaller.
-cylinder :: Ord v => [[v]] -> Random e -> Builder s Directed e v ()
+cylinder :: [[Vertex r]] -> Random e -> Builder s r Directed e v ()
 cylinder vss randomEdge = case vss of
   [] -> pure ()
   [vs] -> cycleOn vs randomEdge

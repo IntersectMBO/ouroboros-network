@@ -39,12 +39,13 @@ module NotebookPrelude
   , module Control.Monad
   , module Control.Arrow
   , module Numeric.Natural
+  , module Data.Maybe
   , adjacencyMap
   ) where
 
 import Control.Arrow
 import Control.Monad
-import Data.Maybe (mapMaybe)
+import Data.Maybe
 
 -- Hide 'edge' because we use the 'edge' defined in DeltaQ.Topography.
 import Algebra.Graph.Labelled.AdjacencyMap hiding (edge)
@@ -93,7 +94,7 @@ cycle_of_length
   => DiffTime
   -> DiffTime
   -> Natural
-  -> Builder e Directed BearerCharacteristics v ()
+  -> Builder e r Directed BearerCharacteristics v ()
 cycle_of_length g v n = do
   vs <- freshVertices n
   Builder.cycleOn vs (pure (ethernet_bearer g v))
@@ -103,7 +104,7 @@ path_of_length
   => DiffTime
   -> DiffTime
   -> Natural
-  -> Builder e Directed BearerCharacteristics v ()
+  -> Builder e r Directed BearerCharacteristics v ()
 path_of_length g v n = do
   vs <- freshVertices n
   Builder.pathOn vs (pure (ethernet_bearer g v))
