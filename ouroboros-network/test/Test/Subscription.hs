@@ -176,7 +176,7 @@ mockResolverIO firstDoneMVar portMap lr = Resolver lA lAAAA
     lAAAA _ = do
         when (lrioFirst lr == Socket.AF_INET) $ do
             void $ atomically $ takeTMVar firstDoneMVar
-            threadDelay $ 0.01 + resolutionDelay
+            threadDelay $ 0.1 + resolutionDelay
         let r = case lrioIpv6Result lr of
                      (Right sids) -> Right $ map (\sid ->
                          Socket.SockAddrInet6 (fromIntegral $ sidToPort (Socket.AF_INET6, sid)) 0
