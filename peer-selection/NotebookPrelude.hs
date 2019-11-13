@@ -40,6 +40,8 @@ module NotebookPrelude
   , module Control.Arrow
   , module Numeric.Natural
   , module Data.Maybe
+  , secondsToDiffTime
+  , picosecondsToDiffTime
   , adjacencyMap
   ) where
 
@@ -83,6 +85,7 @@ import Graphics.Rendering.Chart.Plot.Candle (Candle (..))
 import DeltaQ.Examples.AWS as AWS
 
 import Numeric.Natural (Natural)
+import Data.Time.Clock (picosecondsToDiffTime, secondsToDiffTime)
 
 -- | Use 'ethernetR 1e9 1500' and given g/s.
 -- Useful for expressing edges in a topology.
