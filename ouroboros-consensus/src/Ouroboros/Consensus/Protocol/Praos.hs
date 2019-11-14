@@ -65,7 +65,6 @@ import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.NodeId (CoreNodeId (..), NodeId (..))
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.Signed
-import qualified Ouroboros.Consensus.Util.AnchoredFragment as AF
 import           Ouroboros.Consensus.Util.Condense
 
 import           Ouroboros.Consensus.Ledger.Mock.Stake
@@ -333,16 +332,8 @@ instance ( PraosCrypto c
       -- This may drop us back to the empty list if we go back to genesis
       Just $ dropWhile (\bi -> At (biSlot bi) > rewindTo) cs
 
-  -- NOTE: We redefine `preferCandidate` but NOT `compareCandidates`
-  -- NOTE: See note regarding clock skew.
-  preferCandidate PraosNodeConfig{..} ours cand =
-      AF.forksAtMostKBlocks k ours cand &&
-      AF.compareHeadBlockNo cand ours == GT
-    where
-      PraosParams{..} = praosParams
-
-      k :: Word64
-      k = maxRollbacks praosSecurityParam
+  -- (Standard) Praos uses the standard chain selection rule, so no need to
+  -- override (though see note regarding clock skew).
 
 instance (PraosCrypto c, NoUnexpectedThunks cfg)
       => NoUnexpectedThunks (NodeConfig (Praos cfg c))

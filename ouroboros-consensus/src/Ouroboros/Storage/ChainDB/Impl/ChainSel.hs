@@ -57,6 +57,7 @@ import           Ouroboros.Consensus.BlockchainTime (BlockchainTime (..))
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Protocol.Abstract
+import           Ouroboros.Consensus.Util.AnchoredFragment
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.STM (WithFingerprint (..))
 
@@ -103,7 +104,7 @@ initialChainSelection immDB volDB lgrDB tracer cfg varInvalid curSlot = do
     let curChain          = Empty (castPoint i)
         curChainAndLedger = mkChainAndLedger curChain ledger
 
-    case NE.nonEmpty (filter (preferCandidate cfg curChain) chains) of
+    case NE.nonEmpty (filter (preferAnchoredCandidate cfg curChain) chains) of
       -- If there are no candidates, no chain selection is needed
       Nothing      -> return curChainAndLedger
       Just chains' -> fromMaybe curChainAndLedger <$>
@@ -146,7 +147,7 @@ initialChainSelection immDB volDB lgrDB tracer cfg varInvalid curSlot = do
       assert (all ((LgrDB.currentPoint ledger ==) .
                    castPoint . AF.anchorPoint)
                   candidates) $
-      assert (all (preferCandidate cfg curChain) candidates) $
+      assert (all (preferAnchoredCandidate cfg curChain) candidates) $
       chainSelection
         lgrDB
         (contramap (TraceInitChainSelEvent . InitChainSelValidation) tracer)
@@ -365,7 +366,7 @@ chainSelectionForBlock cdb@CDB{..} hdr = do
               return $ AF.fromOldestFirst curHead (hdr : hdrs)
 
         let candidateSuffixes = NE.nonEmpty
-              $ NE.filter (preferCandidate cdbNodeConfig curChain . _suffix)
+              $ NE.filter (preferAnchoredCandidate cdbNodeConfig curChain . _suffix)
               $ fmap (mkCandidateSuffix 0) candidates
         -- All candidates are longer than the current chain, so they will be
         -- preferred over it, /unless/ the block we just added is an EBB,
@@ -418,7 +419,7 @@ chainSelectionForBlock cdb@CDB{..} hdr = do
                 -- The suffixes all fork off from the current chain within @k@
                 -- blocks, so it satisfies the precondition of
                 -- 'preferCandidate'.
-                filter (preferCandidate cdbNodeConfig curChain . _suffix)
+                filter (preferAnchoredCandidate cdbNodeConfig curChain . _suffix)
               . mapMaybe (intersectCandidateSuffix curChain)
               $ NE.toList candidates
 
@@ -499,7 +500,7 @@ chainSelectionForBlock cdb@CDB{..} hdr = do
         case AF.intersect curChain newChain of
           Just (curChainPrefix, _newChainPrefix, curChainSuffix, newChainSuffix)
             | fromIntegral (AF.length curChainSuffix) <= k
-            , preferCandidate cdbNodeConfig curChain newChain
+            , preferAnchoredCandidate cdbNodeConfig curChain newChain
             -> do
               -- The current chain might still contain some old headers that
               -- have not yet been written to the ImmutableDB. We must make
@@ -615,13 +616,13 @@ chainSelection
      -- chain.
 chainSelection lgrDB tracer cfg varInvalid
                curChainAndLedger@(ChainAndLedger curChain _) candidates =
-  assert (all (preferCandidate cfg curChain . _suffix) candidates) $
+  assert (all (preferAnchoredCandidate cfg curChain . _suffix) candidates) $
   assert (all (isJust . fitCandidateSuffixOn curChain) candidates) $
     go (sortCandidates (NE.toList candidates))
   where
     sortCandidates :: [CandidateSuffix blk] -> [CandidateSuffix blk]
     sortCandidates =
-      sortBy (flip (compareCandidates cfg) `on` _suffix)
+      sortBy (flip (compareAnchoredCandidates cfg) `on` _suffix)
 
     validate :: ChainAndLedger  blk  -- ^ Current chain and ledger
              -> CandidateSuffix blk  -- ^ Candidate fragment
@@ -672,7 +673,7 @@ chainSelection lgrDB tracer cfg varInvalid
     truncateInvalidCandidates cands = do
       isInvalid <- flip Map.member . forgetFingerprint <$>
         atomically (readTVar varInvalid)
-      return $ filter (preferCandidate cfg curChain . _suffix)
+      return $ filter (preferAnchoredCandidate cfg curChain . _suffix)
              $ mapMaybe (truncateInvalidCandidate isInvalid) cands
 
     -- [Ouroboros]
@@ -742,7 +743,7 @@ validateCandidate lgrDB tracer cfg varInvalid
         -- The candidate is now a prefix of the original candidate, and might be
         -- shorter than (or as long as) the current chain. We must check again
         -- whether it is preferred over the current chain.
-        if preferCandidate cfg curChain candidate'
+        if preferAnchoredCandidate cfg curChain candidate'
           then do
             trace (ValidCandidate (_suffix candSuffix))
             return $ Just $ mkChainAndLedger candidate' ledger'

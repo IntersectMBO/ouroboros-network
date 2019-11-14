@@ -74,6 +74,7 @@ import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.NodeId (NodeId (..))
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.BFT
+import           Ouroboros.Consensus.Util.AnchoredFragment
 import           Ouroboros.Consensus.Util.Condense (condense)
 import           Ouroboros.Consensus.Util.IOLike hiding (fork)
 import           Ouroboros.Consensus.Util.ResourceRegistry
@@ -837,14 +838,20 @@ precondition Model {..} (At cmd) =
           Map.notMember (blockHash blk) $
           forgetFingerprint (Model.invalid dbModel)
 
-equallyPreferable :: ( OuroborosTag (BlockProtocol blk)
+equallyPreferable :: forall blk.
+                     ( OuroborosTag (BlockProtocol blk)
                      , HasHeader blk
                      , CanSelect (BlockProtocol blk) blk
                      )
                   => NodeConfig (BlockProtocol blk)
                   -> Chain blk -> Chain blk -> Bool
 equallyPreferable cfg chain1 chain2 =
-    compareCandidates cfg (Chain.toAnchoredFragment chain1) (Chain.toAnchoredFragment chain2) == EQ
+    not (preferAnchoredCandidate cfg chain1' chain2') &&
+    not (preferAnchoredCandidate cfg chain2' chain1')
+  where
+    chain1', chain2' :: AnchoredFragment blk
+    chain1' = Chain.toAnchoredFragment chain1
+    chain2' = Chain.toAnchoredFragment chain2
 
 
 transition :: (TestConstraints blk, Show1 r, Eq1 r)

@@ -4,15 +4,15 @@
 
 module Ouroboros.Consensus.Protocol.MockChainSel where
 
-import           Data.Bifunctor (first)
 import           Data.Function (on)
 import           Data.List (sortBy)
 import           Data.Maybe (listToMaybe)
 
-import           Ouroboros.Consensus.Protocol.Abstract
-import           Ouroboros.Network.AnchoredFragment (AnchoredFragment (..))
 import           Ouroboros.Network.Block (HasHeader (..))
-import           Ouroboros.Network.MockChain.Chain hiding (selectChain)
+import           Ouroboros.Network.MockChain.Chain (Chain)
+import qualified Ouroboros.Network.MockChain.Chain as Chain
+
+import           Ouroboros.Consensus.Protocol.Abstract
 
 {-------------------------------------------------------------------------------
   Chain selection
@@ -30,29 +30,38 @@ import           Ouroboros.Network.MockChain.Chain hiding (selectChain)
 -- somehow fail if the selected chain turns out to be invalid.)
 --
 -- Returns 'Nothing' if we stick with our current chain.
-selectChain :: forall p hdr l. (
-                 OuroborosTag p
-               , HasHeader hdr
-               , CanSelect p hdr
-               )
+selectChain :: forall p hdr l. (OuroborosTag p, HasHeader hdr, CanSelect p hdr)
             => NodeConfig p
             -> Chain hdr           -- ^ Our chain
             -> [(Chain hdr, l)]    -- ^ Upstream chains
             -> Maybe (Chain hdr, l)
-selectChain cfg ours' candidates' =
-    fmap (first toChain) $ listToMaybe $
-    sortBy (flip (compareCandidates cfg `on` fst)) preferred
+selectChain cfg ours candidates =
+    listToMaybe $
+      sortBy (flip (compareCandidates' `on` fst)) preferredCandidates
   where
-    ours       = toAnchoredFragment ours'
-    candidates = map (first toAnchoredFragment) candidates'
-    preferred :: [(AnchoredFragment hdr, l)]
-    preferred = filter (preferCandidate cfg ours . fst) candidates
-    toChain :: AnchoredFragment hdr -> Chain hdr
-    toChain af
-      | Just c <- fromAnchoredFragment af
-      = c
-      | otherwise
-      = error "impossible: fragment was anchored at genesis"
+    preferredCandidates :: [(Chain hdr, l)]
+    preferredCandidates = filter (preferCandidate' . fst) candidates
+
+    -- A non-empty chain is always preferred over an empty one
+
+    preferCandidate' :: Chain hdr -> Bool
+    preferCandidate' theirs =
+        go (Chain.head ours) (Chain.head theirs)
+      where
+        go :: Maybe hdr -> Maybe hdr -> Bool
+        go Nothing  Nothing  = False
+        go Nothing  (Just _) = True
+        go (Just _) Nothing  = False
+        go (Just a) (Just b) = preferCandidate cfg a b
+
+    compareCandidates' :: Chain hdr -> Chain hdr -> Ordering
+    compareCandidates' = go `on` Chain.head
+      where
+        go :: Maybe hdr -> Maybe hdr -> Ordering
+        go Nothing  Nothing  = EQ
+        go Nothing  (Just _) = LT
+        go (Just _) Nothing  = GT
+        go (Just a) (Just b) = compareCandidates cfg a b
 
 -- | Chain selection on unvalidated chains
 selectUnvalidatedChain :: forall p hdr. (

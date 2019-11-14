@@ -57,6 +57,7 @@ module Test.Ouroboros.Storage.ChainDB.Model (
   , reopen
   , advanceCurSlot
   , toDeserialisable
+  , chains
   ) where
 
 import           Control.Monad (unless)
@@ -563,7 +564,8 @@ validChains cfg initLedger bs =
     chains bs
   where
     sortChains :: [Chain blk] -> [Chain blk]
-    sortChains = sortBy (flip (compareCandidates cfg `on` Chain.toAnchoredFragment))
+    sortChains = sortBy (flip (Fragment.compareAnchoredCandidates cfg `on`
+                                 Chain.toAnchoredFragment))
 
     classify :: ValidationResult blk
              -> ( Map (HeaderHash blk) (InvalidBlockReason blk, SlotNo)

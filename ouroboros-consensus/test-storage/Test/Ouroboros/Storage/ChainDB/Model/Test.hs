@@ -53,6 +53,7 @@ prop_getBlock_addBlock bt p =
 
 prop_getChain_addChain :: BlockChain -> Property
 prop_getChain_addChain bc =
+    counterexample ("model: " ++ show model) $
     blockChain bc === M.currentChain model
   where
     blocks = chainToBlocks bc
@@ -74,7 +75,7 @@ prop_alwaysPickPreferredChain bt p =
     SecurityParam k = protocolSecurityParam singleNodeTestConfig
 
     preferCandidate' candidate =
-        preferCandidate singleNodeTestConfig curFragment candFragment &&
+        AF.preferAnchoredCandidate singleNodeTestConfig curFragment candFragment &&
         AF.forksAtMostKBlocks k curFragment candFragment
       where
         candFragment = Chain.toAnchoredFragment candidate
