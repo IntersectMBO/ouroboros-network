@@ -41,7 +41,7 @@ import qualified Cardano.Chain.Genesis as Gen
 import qualified Cardano.Chain.ValidationMode as CC
 
 import           Ouroboros.Network.Block (Point (..), SlotNo (..),
-                     genesisSlotNo)
+                     blockSlot, genesisSlotNo)
 import           Ouroboros.Network.Point (WithOrigin (..))
 import qualified Ouroboros.Network.Point as Point
 
@@ -75,14 +75,6 @@ instance UpdateLedger ByronBlock where
 
   ledgerConfigView PBftNodeConfig{..} = ByronLedgerConfig $
       pbftGenesisConfig pbftExtConfig
-
-  applyChainTick cfg slotNo ByronLedgerState{..} = return ByronLedgerState {
-        byronDelegationHistory = byronDelegationHistory
-      , byronLedgerState       = applyEpochTransition
-                                   (unByronLedgerConfig cfg)
-                                   (toByronSlotNo slotNo)
-                                   byronLedgerState
-      }
 
   applyLedgerBlock = applyByronBlock validationMode
     where
@@ -259,11 +251,13 @@ applyByronBlock :: CC.ValidationMode
                 -> LedgerState ByronBlock
                 -> Except (LedgerError ByronBlock) (LedgerState ByronBlock)
 applyByronBlock validationMode
-                (ByronLedgerConfig cfg)
-                (ByronBlock blk _ (ByronHash blkHash)) =
-    case blk of
-      CC.ABOBBlock    blk' -> applyABlock validationMode cfg blk' blkHash
-      CC.ABOBBoundary blk' -> applyABoundaryBlock        cfg blk'
+                fcfg@(ByronLedgerConfig cfg)
+                fblk@(ByronBlock blk _ (ByronHash blkHash))
+                ls =
+    let ls' = applyChainTick fcfg (blockSlot fblk) ls
+    in case blk of
+      CC.ABOBBlock    blk' -> applyABlock validationMode cfg blk' blkHash ls'
+      CC.ABOBBoundary blk' -> applyABoundaryBlock        cfg blk' ls'
 
 applyABlock :: CC.ValidationMode
             -> Gen.Config
@@ -297,6 +291,23 @@ applyABoundaryBlock cfg blk ByronLedgerState{..} = do
     current' <- validateBoundary cfg blk byronLedgerState
     return $ ByronLedgerState current' byronDelegationHistory
 
+-- | Apply state transformations that might occur when encountering a new
+--   block, but happen before full header and body processing. In the Byron
+--   era this is used to perform epoch transitions on receipt of the first
+--   block in the new epoch.
+applyChainTick
+  :: LedgerConfig ByronBlock
+  -> SlotNo
+  -> LedgerState ByronBlock
+  -> LedgerState ByronBlock
+applyChainTick cfg slotNo ByronLedgerState{..} =
+    ByronLedgerState {
+      byronDelegationHistory = byronDelegationHistory
+    , byronLedgerState       = applyEpochTransition
+                                  (unByronLedgerConfig cfg)
+                                  (toByronSlotNo slotNo)
+                                  byronLedgerState
+    }
 {-------------------------------------------------------------------------------
   Serialisation
 -------------------------------------------------------------------------------}

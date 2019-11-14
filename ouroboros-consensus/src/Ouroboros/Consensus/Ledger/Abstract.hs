@@ -45,15 +45,6 @@ class ( SupportedBlock blk
   ledgerConfigView :: NodeConfig (BlockProtocol blk)
                    -> LedgerConfig blk
 
-  -- | Apply state transformations that might occur when encountering a new
-  --   block, but happen before full header and body processing. In the Byron
-  --   era this is used to perform epoch transitions on receipt of the first
-  --   block in the new epoch.
-  applyChainTick :: LedgerConfig blk
-                 -> SlotNo
-                 -> LedgerState blk
-                 -> Except (LedgerError blk) (LedgerState blk)
-
   -- | Apply a block to the ledger state.
   applyLedgerBlock :: LedgerConfig blk
                    -> blk

@@ -224,7 +224,6 @@ instance (SimpleCrypto c, Typeable ext, SupportedBlock (SimpleBlock c ext))
 
   type LedgerError (SimpleBlock c ext) = MockError (SimpleBlock c ext)
 
-  applyChainTick _ _ = return
   applyLedgerBlock _cfg = updateSimpleLedgerState
   reapplyLedgerBlock _cfg = (mustSucceed . runExcept) .: updateSimpleLedgerState
     where

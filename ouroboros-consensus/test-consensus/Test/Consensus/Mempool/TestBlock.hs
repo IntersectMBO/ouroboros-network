@@ -117,8 +117,6 @@ instance UpdateLedger TestBlock where
 
   ledgerConfigView _ = LedgerConfig
 
-  applyChainTick _ _ = notNeeded
-
   applyLedgerBlock = notNeeded
 
   reapplyLedgerBlock = notNeeded
