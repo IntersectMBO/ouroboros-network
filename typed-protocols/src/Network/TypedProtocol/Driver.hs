@@ -234,13 +234,27 @@ runPipelinedPeer
   -> Channel m bytes
   -> PeerPipelined ps pr st m a
   -> m a
-runPipelinedPeer tr codec peerid channel (PeerPipelined peer) = do
+runPipelinedPeer tr codec peerid channel =
+    runPipelinedPeerWithDriver
+      (driverSimple codec channel) tr codec peerid channel
+
+runPipelinedPeerWithDriver
+  :: forall ps (st :: ps) pr peerid failure bytes m a.
+     (MonadSTM m, MonadAsync m, MonadThrow m, Exception failure)
+  => Driver ps m
+  -> Tracer m (TraceSendRecv ps peerid failure)
+  -> Codec ps failure m bytes
+  -> peerid
+  -> Channel m bytes
+  -> PeerPipelined ps pr st m a
+  -> m a
+runPipelinedPeerWithDriver driver tr codec peerid channel (PeerPipelined peer) = do
     receiveQueue <- atomically newTQueue
     collectQueue <- atomically newTQueue
     a <- runPipelinedPeerReceiverQueue tr receiveQueue collectQueue
                                           codec peerid channel
            `withAsyncLoop`
-         runPipelinedPeerSender        tr receiveQueue collectQueue
+         runPipelinedPeerSender        tr receiveQueue collectQueue driver
                                           codec peerid channel peer
     return a
 
@@ -310,13 +324,14 @@ runPipelinedPeerSender
   => Tracer m (TraceSendRecv ps peerid failure)
   -> TQueue m (ReceiveHandler bytes ps pr m c)
   -> TQueue m (c, Maybe bytes)
+  -> Driver ps m
   -> Codec ps failure m bytes
   -> peerid
   -> Channel m bytes
   -> PeerSender ps pr st Z c m a
   -> m a
 runPipelinedPeerSender tr receiveQueue collectQueue
-                       Codec{encode, decode} peerid channel@Channel{send} =
+                       Driver{sendMessage} Codec{decode} peerid channel =
     go Zero (MaybeTrailing Nothing)
   where
     go :: forall st' n.
@@ -330,7 +345,7 @@ runPipelinedPeerSender tr receiveQueue collectQueue
 
     go Zero trailing (SenderYield stok msg k) = do
       traceWith tr (TraceSendMsg peerid (AnyMessage msg))
-      send (encode stok msg)
+      sendMessage stok msg
       go Zero trailing k
 
     go Zero (MaybeTrailing trailing) (SenderAwait stok k) = do
@@ -347,7 +362,7 @@ runPipelinedPeerSender tr receiveQueue collectQueue
     go n trailing (SenderPipeline stok msg receiver k) = do
       atomically (writeTQueue receiveQueue (ReceiveHandler trailing receiver))
       traceWith tr (TraceSendMsg peerid (AnyMessage msg))
-      send (encode stok msg)
+      sendMessage stok msg
       go (Succ n) NoTrailing k
 
     go (Succ n) NoTrailing (SenderCollect Nothing k) = do
