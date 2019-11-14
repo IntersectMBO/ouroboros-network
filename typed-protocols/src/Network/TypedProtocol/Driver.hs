@@ -182,7 +182,7 @@ runPeerWithDriver
   -> Channel m bytes
   -> Peer ps pr st m a
   -> m a
-runPeerWithDriver Driver{sendMessage} tr Codec{decode} peerid channel =
+runPeerWithDriver Driver{sendMessage, recvMessage} tr Codec{decode} peerid channel =
     go Nothing
   where
     go :: forall st'.
@@ -204,8 +204,7 @@ runPeerWithDriver Driver{sendMessage} tr Codec{decode} peerid channel =
       go trailing k
 
     go trailing (Await stok k) = do
-      decoder <- decode stok
-      res <- runDecoderWithChannel channel trailing decoder
+      res <- recvMessage stok trailing
       case res of
         Right (SomeMessage msg, trailing') -> do
           traceWith tr (TraceRecvMsg peerid (AnyMessage msg))
@@ -264,7 +263,7 @@ runPipelinedPeerWithDriver
 runPipelinedPeerWithDriver driver tr codec peerid channel (PeerPipelined peer) = do
     receiveQueue <- atomically newTQueue
     collectQueue <- atomically newTQueue
-    a <- runPipelinedPeerReceiverQueue tr receiveQueue collectQueue
+    a <- runPipelinedPeerReceiverQueue tr receiveQueue collectQueue driver
                                           codec peerid channel
            `withAsyncLoop`
          runPipelinedPeerSender        tr receiveQueue collectQueue driver
@@ -344,7 +343,7 @@ runPipelinedPeerSender
   -> PeerSender ps pr st Z c m a
   -> m a
 runPipelinedPeerSender tr receiveQueue collectQueue
-                       Driver{sendMessage} Codec{decode} peerid channel =
+                       Driver{sendMessage, recvMessage} Codec{decode} peerid channel =
     go Zero (MaybeTrailing Nothing)
   where
     go :: forall st' n.
@@ -362,8 +361,7 @@ runPipelinedPeerSender tr receiveQueue collectQueue
       go Zero trailing k
 
     go Zero (MaybeTrailing trailing) (SenderAwait stok k) = do
-      decoder <- decode stok
-      res <- runDecoderWithChannel channel trailing decoder
+      res <- recvMessage stok trailing
       case res of
         Right (SomeMessage msg, trailing') -> do
           traceWith tr (TraceRecvMsg peerid (AnyMessage msg))
@@ -402,11 +400,12 @@ runPipelinedPeerReceiverQueue
   => Tracer m (TraceSendRecv ps peerid failure)
   -> TQueue m (ReceiveHandler bytes ps pr m c)
   -> TQueue m (c, Maybe bytes)
+  -> Driver ps failure bytes m
   -> Codec ps failure m bytes
   -> peerid
   -> Channel m bytes
   -> m Void
-runPipelinedPeerReceiverQueue tr receiveQueue collectQueue codec peerid channel =
+runPipelinedPeerReceiverQueue tr receiveQueue collectQueue driver codec peerid channel =
     go Nothing
   where
     go :: Maybe bytes -> m Void
@@ -416,7 +415,7 @@ runPipelinedPeerReceiverQueue tr receiveQueue collectQueue codec peerid channel 
       let trailing = case (senderTrailing, receiverTrailing) of
                        (MaybeTrailing t, _) -> t
                        (NoTrailing,      t) -> t
-      (c, trailing') <- runPipelinedPeerReceiver tr codec peerid channel trailing receiver
+      (c, trailing') <- runPipelinedPeerReceiver driver tr codec peerid channel trailing receiver
       atomically (writeTQueue collectQueue (c, trailing'))
       go trailing'
 
@@ -424,14 +423,15 @@ runPipelinedPeerReceiverQueue tr receiveQueue collectQueue codec peerid channel 
 runPipelinedPeerReceiver
   :: forall ps (st :: ps) (stdone :: ps) pr peerid failure bytes m c.
      (MonadThrow m, Exception failure)
-  => Tracer m (TraceSendRecv ps peerid failure)
+  => Driver ps failure bytes m
+  -> Tracer m (TraceSendRecv ps peerid failure)
   -> Codec ps failure m bytes
   -> peerid
   -> Channel m bytes
   -> Maybe bytes
   -> PeerReceiver ps pr (st :: ps) (stdone :: ps) m c
   -> m (c, Maybe bytes)
-runPipelinedPeerReceiver tr Codec{decode} peerid channel = go
+runPipelinedPeerReceiver Driver{recvMessage} tr Codec{decode} peerid channel = go
   where
     go :: forall st' st''.
           Maybe bytes
@@ -442,8 +442,7 @@ runPipelinedPeerReceiver tr Codec{decode} peerid channel = go
     go trailing (ReceiverDone x) = return (x, trailing)
 
     go trailing (ReceiverAwait stok k) = do
-      decoder <- decode stok
-      res <- runDecoderWithChannel channel trailing decoder
+      res <- recvMessage stok trailing
       case res of
         Right (SomeMessage msg, trailing') -> do
           traceWith tr (TraceRecvMsg peerid (AnyMessage msg))
