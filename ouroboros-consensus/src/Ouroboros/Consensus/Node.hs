@@ -301,8 +301,8 @@ initNetwork registry nodeArgs kernel RunNetworkArgs{..} = do
     -- serve downstream nodes
     connTable  <- newConnectionTable
     peerStatesVar <- newPeerStatesVar
-    -- every 200s clean peer states
-    forkLinkedThread registry (NodeToNode.cleanPeerStates 200 peerStatesVar)
+    -- clean peer states every 200s
+    cleanPeerStatesThread <- forkLinkedThread registry (NodeToNode.cleanPeerStates 200 peerStatesVar)
     peerServers <- forM rnaMyAddrs
         (\a -> forkLinkedThread registry $ runPeerServer connTable peerStatesVar a)
 
@@ -321,7 +321,7 @@ initNetwork registry nodeArgs kernel RunNetworkArgs{..} = do
        forkLinkedThread registry $
          runDnsSubscriptionWorker connTable peerStatesVar ipv4Address ipv6Address dnsProducer
 
-    let threads = localServer : ipSubscriptions : dnsSubscriptions ++ peerServers
+    let threads = localServer : ipSubscriptions : cleanPeerStatesThread : dnsSubscriptions ++ peerServers
     void $ waitAnyThread threads
   where
     networkApps :: NetworkApps peer
