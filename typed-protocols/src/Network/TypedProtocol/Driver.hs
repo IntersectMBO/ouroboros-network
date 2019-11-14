@@ -128,20 +128,23 @@ data Driver ps failure bytes m =
                       -> m (Either failure (SomeMessage st, Maybe bytes))
         }
 
-driverSimple :: forall ps failure bytes m.
+driverSimple :: forall ps peerid failure bytes m.
                 (MonadThrow m, Exception failure)
-             => Codec ps failure m bytes
+             => Tracer m (TraceSendRecv ps peerid failure)
+             -> peerid
+             -> Codec ps failure m bytes
              -> Channel m bytes
              -> Driver ps failure bytes m
-driverSimple Codec{encode, decode} channel@Channel{send} =
+driverSimple tr peerid Codec{encode, decode} channel@Channel{send} =
     Driver {sendMessage, recvMessage}
   where
     sendMessage :: forall (pr :: PeerRole) (st :: ps) (st' :: ps).
                    PeerHasAgency pr st
                 -> Message ps st st'
                 -> m ()
-    sendMessage stok msg =
+    sendMessage stok msg = do
       send (encode stok msg)
+      traceWith tr (TraceSendMsg peerid (AnyMessage msg))
 
     recvMessage :: forall (pr :: PeerRole) (st :: ps).
                    PeerHasAgency pr st
@@ -149,7 +152,13 @@ driverSimple Codec{encode, decode} channel@Channel{send} =
                 -> m (Either failure (SomeMessage st, Maybe bytes))
     recvMessage stok trailing = do
       decoder <- decode stok
-      runDecoderWithChannel channel trailing decoder
+      result  <- runDecoderWithChannel channel trailing decoder
+      case result of
+        Right (SomeMessage msg, _trailing') ->
+          traceWith tr (TraceRecvMsg peerid (AnyMessage msg))
+        Left failure ->
+          traceWith tr (TraceDecoderFailure peerid stok failure)
+      return result
 
 
 --
@@ -170,7 +179,7 @@ runPeer
   -> Peer ps pr st m a
   -> m a
 runPeer tr codec peerid channel =
-  runPeerWithDriver (driverSimple codec channel) tr peerid
+  runPeerWithDriver (driverSimple tr peerid codec channel) tr peerid
 
 runPeerWithDriver
   :: forall ps (st :: ps) pr peerid failure bytes m a .
@@ -197,7 +206,6 @@ runPeerWithDriver Driver{sendMessage, recvMessage} tr peerid =
     -- would need to move to a Channel type that can push back trailing data.
 
     go trailing (Yield stok msg k) = do
-      traceWith tr (TraceSendMsg peerid (AnyMessage msg))
       sendMessage stok msg
       go trailing k
 
@@ -205,7 +213,6 @@ runPeerWithDriver Driver{sendMessage, recvMessage} tr peerid =
       res <- recvMessage stok trailing
       case res of
         Right (SomeMessage msg, trailing') -> do
-          traceWith tr (TraceRecvMsg peerid (AnyMessage msg))
           go trailing' (k msg)
         Left failure ->
           throwM failure
@@ -246,7 +253,7 @@ runPipelinedPeer
   -> m a
 runPipelinedPeer tr codec peerid channel =
     runPipelinedPeerWithDriver
-      (driverSimple codec channel) tr peerid
+      (driverSimple tr peerid codec channel) tr peerid
 
 runPipelinedPeerWithDriver
   :: forall ps (st :: ps) pr peerid failure bytes m a.
@@ -350,7 +357,6 @@ runPipelinedPeerSender tr receiveQueue collectQueue
     --TODO: same issue with trailing as the 'Done' case for 'runPeer' above.
 
     go Zero trailing (SenderYield stok msg k) = do
-      traceWith tr (TraceSendMsg peerid (AnyMessage msg))
       sendMessage stok msg
       go Zero trailing k
 
@@ -358,15 +364,12 @@ runPipelinedPeerSender tr receiveQueue collectQueue
       res <- recvMessage stok trailing
       case res of
         Right (SomeMessage msg, trailing') -> do
-          traceWith tr (TraceRecvMsg peerid (AnyMessage msg))
           go Zero (MaybeTrailing trailing') (k msg)
         Left failure -> do
-          traceWith tr (TraceDecoderFailure peerid stok failure)
           throwM failure
 
     go n trailing (SenderPipeline stok msg receiver k) = do
       atomically (writeTQueue receiveQueue (ReceiveHandler trailing receiver))
-      traceWith tr (TraceSendMsg peerid (AnyMessage msg))
       sendMessage stok msg
       go (Succ n) NoTrailing k
 
@@ -435,7 +438,6 @@ runPipelinedPeerReceiver Driver{recvMessage} tr peerid = go
       res <- recvMessage stok trailing
       case res of
         Right (SomeMessage msg, trailing') -> do
-          traceWith tr (TraceRecvMsg peerid (AnyMessage msg))
           go trailing' (k msg)
         Left failure ->
           throwM failure
