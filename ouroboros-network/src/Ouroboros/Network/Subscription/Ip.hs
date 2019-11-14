@@ -70,10 +70,10 @@ ipSubscriptionWorker
     -> IPSubscriptionTarget
     -> (Socket.Socket -> IO a)
     -> IO void
-ipSubscriptionWorker tracer errTracer tbl peerStatesVar localAddresses connectionAttemptDelay errPolicies ips k = do
+ipSubscriptionWorker tracer errorPolicyTracer tbl peerStatesVar localAddresses connectionAttemptDelay errPolicies ips k = do
     subscriptionWorker
             tracer'
-            errTracer
+            errorPolicyTracer
             tbl
             peerStatesVar
             localAddresses
@@ -167,14 +167,15 @@ subscriptionWorker
     -- ^ application to run on each connection
     -> IO x
 subscriptionWorker
-  tracer errTracer tbl sVar localAddresses
+  tracer errorPolicyTracer tbl sVar localAddresses
   connectionAttemptDelay getTargets valency errPolicies main k =
     worker tracer
+           errorPolicyTracer
            tbl
            sVar
            ioSocket
            socketStateChangeTx
-           (completeApplicationTx errTracer errPolicies)
+           (completeApplicationTx errPolicies)
            main
            localAddresses
            selectAddr connectionAttemptDelay

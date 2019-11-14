@@ -220,11 +220,11 @@ withServer
   -> ErrorPolicies Socket.SockAddr ()
   -> (Async () -> IO t)
   -> IO t
-withServer muxTracer handshakeTracer  errTracer tbl stVar addr peeridFn acceptVersion versions errPolicies k =
+withServer muxTracer handshakeTracer  errorPolicyTracer tbl stVar addr peeridFn acceptVersion versions errPolicies k =
   withServerNode
     muxTracer
     handshakeTracer
-    errTracer
+    errorPolicyTracer
     tbl
     stVar
     addr
@@ -259,9 +259,9 @@ withServer_V1
   -> ErrorPolicies Socket.SockAddr ()
   -> (Async () -> IO t)
   -> IO t
-withServer_V1 muxTracer handshakeTracer errTracer tbl stVar addr peeridFn versionData application =
+withServer_V1 muxTracer handshakeTracer errorPolicyTracer tbl stVar addr peeridFn versionData application =
     withServer
-      muxTracer handshakeTracer errTracer tbl stVar addr peeridFn
+      muxTracer handshakeTracer errorPolicyTracer tbl stVar addr peeridFn
       (\(DictVersion _) -> acceptEq)
       (simpleSingletonVersions
         NodeToClientV_1

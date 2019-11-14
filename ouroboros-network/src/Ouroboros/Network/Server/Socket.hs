@@ -1,6 +1,7 @@
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE RecursiveDo #-}
+{-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE BangPatterns #-}
@@ -13,6 +14,7 @@ module Ouroboros.Network.Server.Socket
   , HandleConnection (..)
   , ApplicationStart
   , CompleteConnection
+  , CompleteApplicationResult (..)
   , Result (..)
   , Main
   , run
@@ -28,8 +30,12 @@ import Control.Concurrent.STM (STM)
 import qualified Control.Concurrent.STM as STM
 import Control.Monad (forever, forM_, join)
 import Control.Monad.Class.MonadTime (Time, getMonotonicTime)
+import Control.Tracer (Tracer, traceWith)
+import Data.Foldable (traverse_)
 import Data.Set (Set)
 import qualified Data.Set as Set
+
+import Ouroboros.Network.ErrorPolicy (CompleteApplicationResult (..), WithAddr, ErrorPolicyTrace)
 
 -- | Abstraction of something that can provide connections.
 -- A `Network.Socket` can be used to get a
@@ -72,7 +78,10 @@ type ApplicationStart addr st = addr -> Async () -> st -> STM st
 
 -- | How to update state when a connection finishes. Can use `throwSTM` to
 -- terminate the server.
-type CompleteConnection addr st r = Result addr r -> st -> STM (st, IO ())
+--
+-- TODO: remove 'async', use `Async m ()` from 'MonadAsync'.
+type CompleteConnection addr st tr r =
+    Result addr r -> st -> STM (CompleteApplicationResult IO addr st)
 
 -- | Given a current state, `retry` unless you want to stop the server.
 -- When this transaction returns, any running threads spawned by the server
@@ -194,14 +203,15 @@ acceptOne resQ threadsVar statusVar beginConnection applicationStart acceptExcep
 -- the results of connection threads, as well as the `Main` action, which
 -- determines when/if the server should stop.
 mainLoop
-  :: forall addr st r t .
-     ResultQ addr r
+  :: forall addr st tr r t .
+     Tracer IO (WithAddr addr ErrorPolicyTrace)
+  -> ResultQ addr r
   -> ThreadsVar
   -> StatusVar st
-  -> CompleteConnection addr st r
+  -> CompleteConnection addr st tr r
   -> Main st t
   -> IO t
-mainLoop resQ threadsVar statusVar complete main =
+mainLoop errorPolicyTrace resQ threadsVar statusVar complete main =
   join (STM.atomically $ mainTx `STM.orElse` connectionTx)
 
   where
@@ -220,29 +230,41 @@ mainLoop resQ threadsVar statusVar complete main =
   connectionTx = do
     result <- STM.readTQueue resQ
     st <- STM.readTVar statusVar
-    (!st', io) <- complete result st
-    STM.writeTVar statusVar st'
+    CompleteApplicationResult
+      { carState
+      , carThreads
+      , carTrace
+      } <- complete result st
+    -- 'CompleteConnectionResult' is strict in 'ccrState', thus we write
+    -- evaluted state to 'statusVar'
+    STM.writeTVar statusVar carState
     -- It was inserted by `spawnOne`.
     STM.modifyTVar' threadsVar (Set.delete (resultThread result))
-    pure $ io >> mainLoop resQ threadsVar statusVar complete main
+    pure $ do
+      traverse_ Async.cancel carThreads
+      traverse_ (traceWith errorPolicyTrace) carTrace
+      mainLoop errorPolicyTrace resQ threadsVar statusVar complete main
 
 -- | Run a server.
 run
-  :: Socket addr channel
+  :: Tracer IO (WithAddr addr ErrorPolicyTrace)
+  -- TODO: extend this trace to trace server action (this might be useful for
+  -- debugging)
+  -> Socket addr channel
   -> (SomeException -> IO ())
   -> BeginConnection addr channel st r
   -> ApplicationStart addr st
-  -> CompleteConnection addr st r
+  -> CompleteConnection addr st tr r
   -> Main st t
   -> STM.TVar st
   -> IO t
-run socket acceptException beginConnection applicationStart complete main statusVar = do
+run errroPolicyTrace socket acceptException beginConnection applicationStart complete main statusVar = do
   resQ <- STM.newTQueueIO
   threadsVar <- STM.newTVarIO Set.empty
   let acceptLoopDo = acceptLoop resQ threadsVar statusVar beginConnection applicationStart acceptException socket
       -- The accept loop is killed when the main loop stops.
       mainDo = Async.withAsync acceptLoopDo $ \_ ->
-        mainLoop resQ threadsVar statusVar complete main
+        mainLoop errroPolicyTrace resQ threadsVar statusVar complete main
       killChildren = do
         children <- STM.atomically $ STM.readTVar threadsVar
         forM_ (Set.toList children) Async.cancel

@@ -337,6 +337,7 @@ prop_subscriptionWorker
       tbl <- newConnectionTable
       peerStatesVar <- newPeerStatesVar
       worker nullTracer
+             nullTracer
              tbl
              peerStatesVar
              (mkSocket sockType remoteAddr)
@@ -361,7 +362,6 @@ prop_subscriptionWorker
                 (void $ atomically $ tryPutTMVar doneVar ()))
   where
     completeTx = completeApplicationTx
-       nullTracer
        (ErrorPolicies
           appErrPolicies
           conErrPolicies

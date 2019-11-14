@@ -526,8 +526,8 @@ runBeforeConnect sVar beforeConnect addr = do
     atomically $ do
       d <- readTVar sVar >>= beforeConnect t addr
       case d of
-        AllowConnection s -> True  <$ writeTVar sVar s
-        DisallowConnection s      -> False <$ writeTVar sVar s
+        AllowConnection s    -> True  <$ writeTVar sVar s
+        DisallowConnection s -> False <$ writeTVar sVar s
 
 
 -- | 'BeforeConnect' callback: it updates peer state and return boolean value

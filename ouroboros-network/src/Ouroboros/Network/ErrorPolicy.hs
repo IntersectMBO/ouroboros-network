@@ -14,6 +14,7 @@ module Ouroboros.Network.ErrorPolicy
   , evalErrorPolicy
   , evalErrorPolicies
   , CompleteApplication
+  , CompleteApplicationResult (..)
   , Result (..)
   , completeApplicationTx
 
@@ -29,7 +30,6 @@ module Ouroboros.Network.ErrorPolicy
 
 import           Control.Exception (Exception, SomeException (..))
 import           Data.List.NonEmpty (NonEmpty (..))
-import           Data.Foldable (traverse_)
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (fromMaybe, mapMaybe)
 import           Data.Semigroup (sconcat)
@@ -46,7 +46,6 @@ import           Text.Printf
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadTime
-import           Control.Tracer
 
 import           Data.Semigroup.Action
 
@@ -122,9 +121,11 @@ data ConnectionOrApplicationExceptionTrace err =
    | ApplicationExceptionTrace err
    deriving (Show, Functor)
 
+
 -- | Complete a connection, which receive application result (or exception).
 --
-type CompleteApplication m s addr r = Result addr r -> s -> STM m (s, m ())
+type CompleteApplication m s addr r =
+    Result addr r -> s -> STM m (CompleteApplicationResult m addr s)
 
 
 -- | Result of the connection thread.  It's either result of an application, or
@@ -157,6 +158,18 @@ data Result addr r where
        -> Result addr r
 
 
+data CompleteApplicationResult m addr s =
+    CompleteApplicationResult {
+        carState   :: !s,
+        -- ^ new state
+        carThreads :: Set (Async m ()),
+        -- ^ threads to kill
+        carTrace   :: Maybe (WithAddr addr ErrorPolicyTrace)
+        -- ^ trace points
+      }
+  deriving Functor
+
+
 -- | 'CompleteApplication' callback
 --
 completeApplicationTx
@@ -165,18 +178,22 @@ completeApplicationTx
      , Ord addr
      , Ord (Async m ())
      )
-  => Tracer m (WithAddr addr ErrorPolicyTrace)
-  -> ErrorPolicies addr a
+  => ErrorPolicies addr a
   -> CompleteApplication m
        (PeerStates m addr)
        addr
        a
 
 -- the 'ResultQ' did not throw the exception yet; it should not happen.
-completeApplicationTx _ _ _ ps@ThrowException{} = pure ( ps, pure () )
+completeApplicationTx _ _ ps@ThrowException{} = pure $
+    CompleteApplicationResult {
+        carState   = ps,
+        carThreads = Set.empty,
+        carTrace   = Nothing
+      }
 
 -- application returned; classify the return value and update the state.
-completeApplicationTx tracer ErrorPolicies {epReturnCallback} (ApplicationResult t addr r) (PeerStates ps) =
+completeApplicationTx ErrorPolicies {epReturnCallback} (ApplicationResult t addr r) (PeerStates ps) =
   let cmd = epReturnCallback t addr r
       fn :: Maybe (PeerState m)
          -> ( Set (Async m ())
@@ -186,45 +203,53 @@ completeApplicationTx tracer ErrorPolicies {epReturnCallback} (ApplicationResult
                 , mbps <| (flip addTime t <$> cmd)
                 )
   in case alterAndLookup fn addr ps of
-    (ps', mbthreads) -> pure
-      ( PeerStates ps'
-      , do
-          traverse_ (traceWith tracer . WithAddr addr)
-                    (traceErrorPolicy (Right r) cmd)
-          traverse_ cancel
-                    (fromMaybe Set.empty mbthreads)
-      )
+    (ps', mbthreads) -> pure $
+      CompleteApplicationResult {
+          carState   = PeerStates ps', 
+          carThreads = fromMaybe Set.empty mbthreads,
+          carTrace   = WithAddr addr <$> traceErrorPolicy (Right r) cmd
+        }
 
 -- application errored
-completeApplicationTx tracer ErrorPolicies {epAppErrorPolicies} (ApplicationError t addr e) ps =
+completeApplicationTx ErrorPolicies {epAppErrorPolicies} (ApplicationError t addr e) ps =
   case evalErrorPolicies e epAppErrorPolicies of
     -- the error is not handled by any policy; we're not rethrowing the
     -- error from the main thread, we only trace it.  This will only kill
     -- the local consumer application.
-    Nothing  -> pure ( ps
-                     , traceWith tracer
+    Nothing  -> pure $
+      CompleteApplicationResult {
+          carState   = ps,
+          carThreads = Set.empty,
+          carTrace   = Just
                         (WithAddr addr
                           (ErrorPolicyUnhandledApplicationException
                             (SomeException e)))
-                     )
+        }
     -- the error was classified; act with the 'SuspendDecision' on the state
     -- and find threads to cancel.
     Just cmd -> case runSuspendDecision t addr e cmd ps of
       (ps', threads) ->
-        pure ( ps'
-             , do
-                traverse_ (traceWith tracer . WithAddr addr)
-                          (traceErrorPolicy (Left $ ApplicationExceptionTrace (SomeException e))
-                                            cmd)
-                traverse_ cancel threads
-            )
+        pure $
+          CompleteApplicationResult {
+              carState   = ps',
+              carThreads = threads,
+              carTrace   = WithAddr addr <$>
+                            traceErrorPolicy
+                              (Left $ ApplicationExceptionTrace (SomeException e))
+                              cmd
+            }
 
 -- we connected to a peer; this does not require to update the 'PeerState'.
-completeApplicationTx _ _ (Connected _t  _addr) ps =
-  pure ( ps, pure () )
+completeApplicationTx _ (Connected _t  _addr) ps =
+    pure $
+      CompleteApplicationResult {
+          carState   = ps,
+          carThreads = Set.empty,
+          carTrace   = Nothing
+        }
 
 -- error raised by the 'connect' call
-completeApplicationTx tracer ErrorPolicies {epConErrorPolicies} (ConnectionError t addr e) ps =
+completeApplicationTx ErrorPolicies {epConErrorPolicies} (ConnectionError t addr e) ps =
   case evalErrorPolicies e epConErrorPolicies of
     Nothing  ->
       let fn p@(HotPeer producers consumers)
@@ -234,22 +259,29 @@ completeApplicationTx tracer ErrorPolicies {epConErrorPolicies} (ConnectionError
              = Just p
           fn p = Just p
 
-      in pure ( case ps of
+      in pure $
+          CompleteApplicationResult {
+              carState =
+                case ps of
                   PeerStates peerStates -> PeerStates $ Map.update fn addr peerStates
-                  ThrowException{} -> ps
-              , traceWith tracer
-                 (WithAddr addr
-                   (ErrorPolicyUnhandledConnectionException
-                     (SomeException e)))
-              )
+                  ThrowException{}      -> ps,
+              carThreads = Set.empty,
+              carTrace   = Just $
+                            WithAddr addr
+                             (ErrorPolicyUnhandledConnectionException
+                               (SomeException e))
+            }
     Just cmd -> case runSuspendDecision t addr e cmd ps of
       (ps', threads) ->
-        pure ( ps'
-             , do
-                 traverse_ (traceWith tracer . WithAddr addr)
-                           (traceErrorPolicy (Left $ ConnectionExceptionTrace (SomeException e)) cmd)
-                 traverse_ cancel threads
-             )
+        pure $
+          CompleteApplicationResult {
+              carState   = ps',
+              carThreads = threads,
+              carTrace   = WithAddr addr <$>
+                           (traceErrorPolicy
+                             (Left $ ConnectionExceptionTrace (SomeException e))
+                             cmd)
+            }
 
 --
 -- Traces

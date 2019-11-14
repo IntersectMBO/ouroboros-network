@@ -217,10 +217,10 @@ dnsSubscriptionWorker'
     -> Main IO (PeerStates IO Socket.SockAddr) x
     -> (Socket.Socket -> IO a)
     -> IO x
-dnsSubscriptionWorker' subTracer dnsTracer errTracer tbl peerStatesVar resolver localAddresses
+dnsSubscriptionWorker' subTracer dnsTracer errorPolicyTracer tbl peerStatesVar resolver localAddresses
   connectionAttemptDelay errPolicies dst main k = do
     subscriptionWorker (WithDomainName (dstDomain dst) `contramap` subTracer)
-                       errTracer
+                       errorPolicyTracer
                        tbl
                        peerStatesVar
                        localAddresses

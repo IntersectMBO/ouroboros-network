@@ -39,6 +39,7 @@ import           Control.Exception (SomeException (..))
 import qualified Control.Concurrent.STM as STM
 import           Control.Monad (forever, join, when, unless)
 import           Control.Monad.Fix (MonadFix)
+import           Data.Foldable (traverse_)
 import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Void (Void)
@@ -55,7 +56,7 @@ import           Control.Monad.Class.MonadTimer
 import           Control.Monad.Class.MonadThrow
 import           Control.Tracer
 
-import           Ouroboros.Network.ErrorPolicy (CompleteApplication, Result (..))
+import           Ouroboros.Network.ErrorPolicy (CompleteApplication, Result (..), CompleteApplicationResult (..), WithAddr, ErrorPolicyTrace)
 import           Ouroboros.Network.Server.ConnectionTable
 import           Ouroboros.Network.Subscription.Subscriber
 
@@ -80,16 +81,17 @@ maxConnectionAttemptDelay = 2 -- 2s delay
 ipRetryDelay :: DiffTime
 ipRetryDelay = 10 -- 10s delay
 
-data ResOrAct m addr r =
+data ResOrAct m addr tr r =
      Res !(Result addr r)
-   | Act (m ())
+   | Act (Set (Async m ())) -- ^ threads to kill
+         (Maybe tr)         -- ^ trace point
 
 -- | Result queue.  The spawned threads will keep writing to it, while the main
 -- server will read from it.
 --
-type ResultQ m addr r = TQueue m (ResOrAct m addr r)
+type ResultQ m addr tr r = TQueue m (ResOrAct m addr tr r)
 
-newResultQ :: forall m addr r. MonadSTM m => m (ResultQ m addr r)
+newResultQ :: forall m addr tr r. MonadSTM m => m (ResultQ m addr tr r)
 newResultQ = atomically $ newTQueue
 
 -- | Mutable state kept by the worker.  All the workers in this module are
@@ -247,7 +249,7 @@ subscriptionLoop
 
     -- various state variables of the subscription loop
     -> ConnectionTable     m   addr
-    -> ResultQ             m   addr a
+    -> ResultQ             m   addr (WithAddr addr ErrorPolicyTrace) a
     -> StateVar            m s
     -> ThreadsVar          m
 
@@ -434,9 +436,14 @@ subscriptionLoop
           atomically $ do
             -- remove thread from active connections threads
             modifyTVar conThreads (Set.delete thread)
-            (!s, m) <- readTVar sVar >>= completeApplicationTx (ConnectionError t remoteAddr e)
-            writeTVar sVar s
-            writeTQueue resQ (Act m)
+
+            CompleteApplicationResult
+              { carState
+              , carThreads
+              , carTrace
+              } <- readTVar sVar >>= completeApplicationTx (ConnectionError t remoteAddr e)
+            writeTVar sVar carState
+            writeTQueue resQ (Act carThreads carTrace)
 
         -- connection succeeded
         Right _ -> do
@@ -449,9 +456,13 @@ subscriptionLoop
             if v > 0
               then do
                 addConnection tbl remoteAddr localAddr (Just valencyVar)
-                (!s, m) <- readTVar sVar >>= completeApplicationTx (Connected t remoteAddr)
-                writeTVar sVar s
-                writeTQueue resQ (Act m)
+                CompleteApplicationResult
+                  { carState
+                  , carThreads
+                  , carTrace
+                  } <- readTVar sVar >>= completeApplicationTx (Connected t remoteAddr)
+                writeTVar sVar carState
+                writeTQueue resQ (Act carThreads carTrace)
                 return $ if v == 1
                           then ConnectSuccessLast
                           else ConnectSuccess
@@ -499,13 +510,14 @@ subscriptionLoop
 --
 mainLoop
   :: forall s r addr t.
-     ResultQ IO addr r
+     Tracer IO (WithAddr addr ErrorPolicyTrace)
+  -> ResultQ IO addr (WithAddr addr ErrorPolicyTrace) r
   -> ThreadsVar IO
   -> StateVar IO s
   -> CompleteApplication IO s addr r
   -> Main IO s t
   -> IO t
-mainLoop resQ threadsVar statusVar completeApplicationTx main = do
+mainLoop errorPolicyTracer resQ threadsVar statusVar completeApplicationTx main = do
     join (atomically $ mainTx `STM.orElse` connectionTx)
   where
     -- Sample the state, and run the main action. If it does not retry, then
@@ -521,12 +533,22 @@ mainLoop resQ threadsVar statusVar completeApplicationTx main = do
     connectionTx = do
       result <- STM.readTQueue resQ
       case result of
-        Act m -> pure $ m >> mainLoop resQ threadsVar statusVar completeApplicationTx main
+        Act threads tr -> pure $ do
+          traverse_ cancel threads
+          traverse_ (traceWith errorPolicyTracer) tr 
+          mainLoop errorPolicyTracer resQ threadsVar statusVar completeApplicationTx main
         Res r -> do
           s <- readTVar statusVar
-          (!s', m) <- completeApplicationTx r s
-          writeTVar statusVar s'
-          pure $ m >> mainLoop resQ threadsVar statusVar completeApplicationTx main
+          CompleteApplicationResult
+            { carState
+            , carThreads
+            , carTrace
+            } <- completeApplicationTx r s
+          writeTVar statusVar carState
+          pure $ do
+            traverse_ cancel carThreads
+            traverse_ (traceWith errorPolicyTracer) carTrace
+            mainLoop errorPolicyTracer resQ threadsVar statusVar completeApplicationTx main
 
 
 --
@@ -547,6 +569,7 @@ worker
        , Show addr
        )
     => Tracer              IO (SubscriptionTrace addr)
+    -> Tracer              IO (WithAddr addr ErrorPolicyTrace)
     -> ConnectionTable     IO   addr
     -> StateVar            IO s
 
@@ -570,7 +593,7 @@ worker
     -> (sock -> IO a)
     -- ^ application
     -> IO t
-worker tr tbl sVar socket
+worker tr errTrace tbl sVar socket
        socketStateChangeTx
        completeApplicationTx mainTx
        localAddresses selectAddr
@@ -583,7 +606,7 @@ worker tr tbl sVar socket
          completeApplicationTx
          localAddresses selectAddr connectionAttemptDelay
          getTargets valency k) $ \_ ->
-           mainLoop resQ threadsVar sVar completeApplicationTx mainTx
+           mainLoop errTrace resQ threadsVar sVar completeApplicationTx mainTx
            `finally` killThreads threadsVar
   where
     killThreads threadsVar = do

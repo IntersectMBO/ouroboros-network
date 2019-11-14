@@ -237,11 +237,11 @@ withServer
   -> ErrorPolicies Socket.SockAddr ()
   -> (Async () -> IO t)
   -> IO t
-withServer muxTracer handshakeTracer errTracer tbl stVar addr peeridFn acceptVersion versions errPolicies k =
+withServer muxTracer handshakeTracer errorPolicyTracer tbl stVar addr peeridFn acceptVersion versions errPolicies k =
   withServerNode
     muxTracer
     handshakeTracer
-    errTracer
+    errorPolicyTracer
     tbl
     stVar
     addr
@@ -271,9 +271,9 @@ withServer_V1
   -> ErrorPolicies Socket.SockAddr ()
   -> (Async () -> IO t)
   -> IO t
-withServer_V1 muxTracer handshakeTracer errTracer tbl stVar addr peeridFn versionData application =
+withServer_V1 muxTracer handshakeTracer errorPolicyTracer tbl stVar addr peeridFn versionData application =
     withServer
-      muxTracer handshakeTracer errTracer tbl stVar addr peeridFn
+      muxTracer handshakeTracer errorPolicyTracer tbl stVar addr peeridFn
       (\(DictVersion _) -> acceptEq)
       (simpleSingletonVersions
           NodeToNodeV_1
@@ -317,7 +317,7 @@ ipSubscriptionWorker
   subscriptionTracer
   muxTracer
   handshakeTracer
-  errTracer
+  errorPolicyTracer
   peeridFn
   tbl
   peerStatesVar
@@ -328,7 +328,7 @@ ipSubscriptionWorker
   versions
     = Subscription.ipSubscriptionWorker
         subscriptionTracer
-        errTracer
+        errorPolicyTracer
         tbl
         peerStatesVar
         localAddr
@@ -372,7 +372,7 @@ ipSubscriptionWorker_V1
   subscriptionTracer
   muxTracer
   handshakeTracer
-  errTracer
+  errorPolicyTracer
   peeridFn
   tbl
   peerStatesVar
@@ -386,7 +386,7 @@ ipSubscriptionWorker_V1
         subscriptionTracer
         muxTracer
         handshakeTracer
-        errTracer
+        errorPolicyTracer
         peeridFn
         tbl
         peerStatesVar
@@ -437,7 +437,7 @@ dnsSubscriptionWorker
   dnsTracer
   muxTracer
   handshakeTracer
-  errTracer
+  errorPolicyTracer
   peeridFn
   tbl
   peerStatesVar
@@ -449,7 +449,7 @@ dnsSubscriptionWorker
     Subscription.dnsSubscriptionWorker
       subscriptionTracer
       dnsTracer
-      errTracer
+      errorPolicyTracer
       tbl
       peerStatesVar
       localAddresses
@@ -494,7 +494,7 @@ dnsSubscriptionWorker_V1
   dnsTracer
   muxTracer
   handshakeTracer
-  errTracer
+  errorPolicyTracer
   peeridFn
   tbl
   peerStatesVar
@@ -509,7 +509,7 @@ dnsSubscriptionWorker_V1
       dnsTracer
       muxTracer
       handshakeTracer
-      errTracer
+      errorPolicyTracer
       peeridFn
       tbl
       peerStatesVar

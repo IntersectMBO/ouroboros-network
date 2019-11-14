@@ -343,6 +343,7 @@ runNetworkNode'
        )
     => Tracer IO (Mx.WithMuxBearer peerid (Mx.MuxTrace ptcl))
     -> Tracer IO (TraceSendRecv (Handshake vNumber CBOR.Term) peerid (DecoderFailureOrTooMuchInput DeserialiseFailure))
+    -> Tracer IO (WithAddr (Socket.SockAddr) ErrorPolicyTrace)
     -> ConnectionTable IO Socket.SockAddr
     -> StrictTVar IO (PeerStates IO Socket.SockAddr)
     -> Socket.Socket
@@ -359,11 +360,15 @@ runNetworkNode'
                 (PeerStates IO Socket.SockAddr)
                 vNumber extra peerid ptcl IO BL.ByteString))
     -> Server.ApplicationStart Socket.SockAddr (PeerStates IO Socket.SockAddr)
-    -> Server.CompleteConnection Socket.SockAddr (PeerStates IO Socket.SockAddr) ()
+    -> Server.CompleteConnection Socket.SockAddr
+                                 (PeerStates IO Socket.SockAddr)
+                                 (WithAddr Socket.SockAddr ErrorPolicyTrace)
+                                 ()
     -> Server.Main (PeerStates IO Socket.SockAddr) t
     -> IO t
-runNetworkNode' muxTracer handshakeTrace tbl stVar sd encodeData decodeData acceptVersion acceptException acceptConn applicationStart complete
+runNetworkNode' muxTracer handshakeTrace errorPolicyTracer tbl stVar sd encodeData decodeData acceptVersion acceptException acceptConn applicationStart complete
     main = Server.run
+        errorPolicyTracer
         (fromSocket tbl sd)
         acceptException
         (beginConnection muxTracer handshakeTrace encodeData decodeData acceptVersion acceptConn)
@@ -422,13 +427,14 @@ withServerNode
     -- Note: the server thread will terminate when the callback returns or
     -- throws an exception.
     -> IO t
-withServerNode muxTracer handshakeTracer errTracer tbl stVar addr encodeData decodeData peeridFn acceptVersion versions errPolicies k =
+withServerNode muxTracer handshakeTracer errorPolicyTracer tbl stVar addr encodeData decodeData peeridFn acceptVersion versions errPolicies k =
     bracket (mkListeningSocket (Socket.addrFamily addr) (Just $ Socket.addrAddress addr)) Socket.close $ \sd -> do
       addr' <- Socket.getSocketName sd
       withAsync
         (runNetworkNode'
           muxTracer
           handshakeTracer
+          errorPolicyTracer
           tbl
           stVar
           sd
@@ -457,7 +463,7 @@ withServerNode muxTracer handshakeTracer errTracer tbl stVar addr encodeData dec
                       (PeerStates IO Socket.SockAddr)
                       Socket.SockAddr
                       ()
-      completeTx = completeApplicationTx errTracer errPolicies
+      completeTx = completeApplicationTx errPolicies
 
       -- When a connection completes, we do nothing. State is ().
       -- Crucially: we don't re-throw exceptions, because doing so would
@@ -465,12 +471,14 @@ withServerNode muxTracer handshakeTracer errTracer tbl stVar addr encodeData dec
       complete :: Server.CompleteConnection
                     Socket.SockAddr
                     (PeerStates IO Socket.SockAddr)
+                    (WithAddr Socket.SockAddr ErrorPolicyTrace)
                     ()
       complete result st = case result of
-        Server.Result thread remoteAddr t (Left (SomeException e)) -> do
-          (st', io) <- completeTx (ApplicationError t remoteAddr e) st
-          pure (unregisterProducer remoteAddr thread st', io)
-        Server.Result thread remoteAddr t (Right r) -> do
-          (st', io) <- completeTx (ApplicationResult t remoteAddr r) st
-          pure (unregisterProducer remoteAddr thread st', io)
 
+        Server.Result thread remoteAddr t (Left (SomeException e)) ->
+          fmap (unregisterProducer remoteAddr thread)
+            <$> completeTx (ApplicationError t remoteAddr e) st
+
+        Server.Result thread remoteAddr t (Right r) ->
+          fmap (unregisterProducer remoteAddr thread)
+            <$> completeTx (ApplicationResult t remoteAddr r) st
