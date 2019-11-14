@@ -1,6 +1,7 @@
 module Main
 where
 import Control.Concurrent (threadDelay)
+import Control.Concurrent.STM (atomically)
 import Control.Concurrent.Async
 import Control.Monad
 import Control.Tracer
@@ -16,11 +17,9 @@ settings = NtpClientSettings
     }
 
 main :: IO ()
-main = do
-    ntpClient <- forkNtpClient (contramapM (return . show) stdoutTracer) settings
-    race_ getLine $ forever $ do
-        status <- ntpGetStatus ntpClient
-        traceWith stdoutTracer $ show ("main",status)
-        threadDelay 3000000
-    ntpAbort ntpClient
-    return ()
+main = withNtpClient (contramapM (return . show) stdoutTracer) settings runClient
+  where
+    runClient ntpClient = race_ getLine $ forever $ do
+            status <- atomically $ ntpGetStatus ntpClient
+            traceWith stdoutTracer $ show ("main",status)
+            threadDelay 3000000
