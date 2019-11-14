@@ -12,8 +12,7 @@
 module Network.NTP.Client
     ( NtpClientSettings (..)
     , NtpClient (..)
-    , withNtpClient -- do we want that ?
-    , forkNtpClient
+    , withNtpClient
     ) where
 
 import           Control.Concurrent (threadDelay)
@@ -56,13 +55,11 @@ data NtpClientSettings = NtpClientSettings
     }
 
 data NtpClient = NtpClient
-    { ntpGetStatus        :: IO NtpStatus -- Use STM here ?
-      -- ^ Query the current status (non-blocking).
-    , ntpForceCheck           :: IO ()
-      -- ^ Bypass all internal threadDelays and trigger a new ntp query.
---    , ntpForceCheck       :: IO NtpStatus
---      -- ^ Perform a ntp query and wait for the results (blocking with timeout).
-    , ntpAbort            :: IO () --todo/discuss
+    { -- | Query the current NTP status.
+      ntpGetStatus        :: STM NtpStatus
+
+      -- | Bypass all internal threadDelays and trigger a new NTP query.
+    , ntpTriggerUpdate    :: IO ()
     }
 
 data NtpStatus =
@@ -74,10 +71,11 @@ data NtpStatus =
       -- `ntpResponseTimeout` or NTP was not configured.
     | NtpSyncUnavailable deriving (Eq, Show)
 
-
--- Do we need a with-style wrapper ?
+-- | Setup a NtpClient and run a computation that uses that client.
+-- Todo : proper bracket-style tear-down of the NTP client.
 withNtpClient :: Tracer IO NtpTrace -> NtpClientSettings -> (NtpClient -> IO a) -> IO a
-withNtpClient = error "withNtpClient"
+withNtpClient tracer ntpSettings action
+   = forkNtpClient tracer ntpSettings >>= action
 
 -- This function should be called once, it will run an NTP client in a new
 -- thread until the program terminates.
@@ -89,15 +87,10 @@ forkNtpClient tracer ntpSettings = do
     -- thread finished.
     _ <- async (spawnNtpClient tracer ntpSettings ncStatus)
     return $ NtpClient
-        { ntpGetStatus = do
-            traceWith tracer NtpTraceClientGetStatus
-            atomically $ readTVar ncStatus
-        , ntpForceCheck    = do
+        { ntpGetStatus = readTVar ncStatus
+        , ntpTriggerUpdate = do
             traceWith tracer NtpTraceClientActNow
             atomically $ writeTVar ncStatus NtpSyncPending
-        , ntpAbort = do
-            traceWith tracer NtpTraceClientAbort
-            error "ntpForceAbortClient: Todo"         
         }
 
 data NtpState = NtpState

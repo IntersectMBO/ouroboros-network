@@ -5,7 +5,6 @@ import           Data.Time.Units (Microsecond)
 
 data NtpTrace
     = NtpTraceStartNtpClient
-    | NtpTraceClientGetStatus
     | NtpTraceClientActNow
     | NtpTraceClientForceCheck
     | NtpTraceClientAbort
