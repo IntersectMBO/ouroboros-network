@@ -111,9 +111,36 @@ instance ( Show peerid
     , show err
     ]
 
+--
+-- Driver interface
+--
+
+data Driver ps m =
+        Driver {
+          sendMessage :: forall (pr :: PeerRole) (st :: ps) (st' :: ps).
+                         PeerHasAgency pr st
+                      -> Message ps st st'
+                      -> m ()
+        }
+
+driverSimple :: forall ps failure bytes m.
+                (MonadThrow m, Exception failure)
+             => Codec ps failure m bytes
+             -> Channel m bytes
+             -> Driver ps m
+driverSimple Codec{encode} Channel{send} =
+    Driver{sendMessage}
+  where
+    sendMessage :: forall (pr :: PeerRole) (st :: ps) (st' :: ps).
+                   PeerHasAgency pr st
+                -> Message ps st st'
+                -> m ()
+    sendMessage stok msg =
+      send (encode stok msg)
+
 
 --
--- Driver for normal peers
+-- Running normal non-pipelined peers
 --
 
 -- | Run a peer with the given channel via the given codec.
@@ -176,7 +203,7 @@ runPeer tr Codec{encode, decode} peerid channel@Channel{send} =
 
 
 --
--- Driver for pipelined peers
+-- Running pipelined peers
 --
 
 -- | Run a pipelined peer with the given channel via the given codec.
