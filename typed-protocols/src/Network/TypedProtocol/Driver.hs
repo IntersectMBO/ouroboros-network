@@ -115,21 +115,26 @@ instance ( Show peerid
 -- Driver interface
 --
 
-data Driver ps m =
+data Driver ps failure bytes m =
         Driver {
           sendMessage :: forall (pr :: PeerRole) (st :: ps) (st' :: ps).
                          PeerHasAgency pr st
                       -> Message ps st st'
                       -> m ()
+
+        , recvMessage :: forall (pr :: PeerRole) (st :: ps).
+                         PeerHasAgency pr st
+                      -> Maybe bytes
+                      -> m (Either failure (SomeMessage st, Maybe bytes))
         }
 
 driverSimple :: forall ps failure bytes m.
                 (MonadThrow m, Exception failure)
              => Codec ps failure m bytes
              -> Channel m bytes
-             -> Driver ps m
-driverSimple Codec{encode} Channel{send} =
-    Driver{sendMessage}
+             -> Driver ps failure bytes m
+driverSimple Codec{encode, decode} channel@Channel{send} =
+    Driver {sendMessage, recvMessage}
   where
     sendMessage :: forall (pr :: PeerRole) (st :: ps) (st' :: ps).
                    PeerHasAgency pr st
@@ -137,6 +142,14 @@ driverSimple Codec{encode} Channel{send} =
                 -> m ()
     sendMessage stok msg =
       send (encode stok msg)
+
+    recvMessage :: forall (pr :: PeerRole) (st :: ps).
+                   PeerHasAgency pr st
+                -> Maybe bytes
+                -> m (Either failure (SomeMessage st, Maybe bytes))
+    recvMessage stok trailing = do
+      decoder <- decode stok
+      runDecoderWithChannel channel trailing decoder
 
 
 --
@@ -162,7 +175,7 @@ runPeer tr codec peerid channel =
 runPeerWithDriver
   :: forall ps (st :: ps) pr peerid failure bytes m a .
      (MonadThrow m, Exception failure)
-  => Driver ps m
+  => Driver ps failure bytes m
   -> Tracer m (TraceSendRecv ps peerid failure)
   -> Codec ps failure m bytes
   -> peerid
@@ -241,7 +254,7 @@ runPipelinedPeer tr codec peerid channel =
 runPipelinedPeerWithDriver
   :: forall ps (st :: ps) pr peerid failure bytes m a.
      (MonadSTM m, MonadAsync m, MonadThrow m, Exception failure)
-  => Driver ps m
+  => Driver ps failure bytes m
   -> Tracer m (TraceSendRecv ps peerid failure)
   -> Codec ps failure m bytes
   -> peerid
@@ -324,7 +337,7 @@ runPipelinedPeerSender
   => Tracer m (TraceSendRecv ps peerid failure)
   -> TQueue m (ReceiveHandler bytes ps pr m c)
   -> TQueue m (c, Maybe bytes)
-  -> Driver ps m
+  -> Driver ps failure bytes m
   -> Codec ps failure m bytes
   -> peerid
   -> Channel m bytes
