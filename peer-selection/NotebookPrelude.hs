@@ -50,7 +50,7 @@ import Control.Monad
 import Data.Maybe
 
 -- Hide 'edge' because we use the 'edge' defined in DeltaQ.Topography.
-import Algebra.Graph.Labelled.AdjacencyMap hiding (edge)
+import Algebra.Graph.Labelled.AdjacencyMap as Topo hiding (edge, overlay)
 import Algebra.Graph.Labelled.AdjacencyMap.Viz as Viz
 import Algebra.Graph.Labelled.AdjacencyMap.ShortestPath as Topo
 -- For edge semigroups.
