@@ -170,19 +170,17 @@ runPeer
   -> Peer ps pr st m a
   -> m a
 runPeer tr codec peerid channel =
-  runPeerWithDriver (driverSimple codec channel) tr codec peerid channel
+  runPeerWithDriver (driverSimple codec channel) tr peerid
 
 runPeerWithDriver
   :: forall ps (st :: ps) pr peerid failure bytes m a .
      (MonadThrow m, Exception failure)
   => Driver ps failure bytes m
   -> Tracer m (TraceSendRecv ps peerid failure)
-  -> Codec ps failure m bytes
   -> peerid
-  -> Channel m bytes
   -> Peer ps pr st m a
   -> m a
-runPeerWithDriver Driver{sendMessage, recvMessage} tr Codec{decode} peerid channel =
+runPeerWithDriver Driver{sendMessage, recvMessage} tr peerid =
     go Nothing
   where
     go :: forall st'.
@@ -248,26 +246,24 @@ runPipelinedPeer
   -> m a
 runPipelinedPeer tr codec peerid channel =
     runPipelinedPeerWithDriver
-      (driverSimple codec channel) tr codec peerid channel
+      (driverSimple codec channel) tr peerid
 
 runPipelinedPeerWithDriver
   :: forall ps (st :: ps) pr peerid failure bytes m a.
      (MonadSTM m, MonadAsync m, MonadThrow m, Exception failure)
   => Driver ps failure bytes m
   -> Tracer m (TraceSendRecv ps peerid failure)
-  -> Codec ps failure m bytes
   -> peerid
-  -> Channel m bytes
   -> PeerPipelined ps pr st m a
   -> m a
-runPipelinedPeerWithDriver driver tr codec peerid channel (PeerPipelined peer) = do
+runPipelinedPeerWithDriver driver tr peerid (PeerPipelined peer) = do
     receiveQueue <- atomically newTQueue
     collectQueue <- atomically newTQueue
     a <- runPipelinedPeerReceiverQueue tr receiveQueue collectQueue driver
-                                          codec peerid channel
+                                          peerid
            `withAsyncLoop`
          runPipelinedPeerSender        tr receiveQueue collectQueue driver
-                                          codec peerid channel peer
+                                          peerid peer
     return a
 
   where
@@ -337,13 +333,11 @@ runPipelinedPeerSender
   -> TQueue m (ReceiveHandler bytes ps pr m c)
   -> TQueue m (c, Maybe bytes)
   -> Driver ps failure bytes m
-  -> Codec ps failure m bytes
   -> peerid
-  -> Channel m bytes
   -> PeerSender ps pr st Z c m a
   -> m a
 runPipelinedPeerSender tr receiveQueue collectQueue
-                       Driver{sendMessage, recvMessage} Codec{decode} peerid channel =
+                       Driver{sendMessage, recvMessage} peerid =
     go Zero (MaybeTrailing Nothing)
   where
     go :: forall st' n.
@@ -401,11 +395,9 @@ runPipelinedPeerReceiverQueue
   -> TQueue m (ReceiveHandler bytes ps pr m c)
   -> TQueue m (c, Maybe bytes)
   -> Driver ps failure bytes m
-  -> Codec ps failure m bytes
   -> peerid
-  -> Channel m bytes
   -> m Void
-runPipelinedPeerReceiverQueue tr receiveQueue collectQueue driver codec peerid channel =
+runPipelinedPeerReceiverQueue tr receiveQueue collectQueue driver peerid =
     go Nothing
   where
     go :: Maybe bytes -> m Void
@@ -415,7 +407,7 @@ runPipelinedPeerReceiverQueue tr receiveQueue collectQueue driver codec peerid c
       let trailing = case (senderTrailing, receiverTrailing) of
                        (MaybeTrailing t, _) -> t
                        (NoTrailing,      t) -> t
-      (c, trailing') <- runPipelinedPeerReceiver driver tr codec peerid channel trailing receiver
+      (c, trailing') <- runPipelinedPeerReceiver driver tr peerid trailing receiver
       atomically (writeTQueue collectQueue (c, trailing'))
       go trailing'
 
@@ -425,13 +417,11 @@ runPipelinedPeerReceiver
      (MonadThrow m, Exception failure)
   => Driver ps failure bytes m
   -> Tracer m (TraceSendRecv ps peerid failure)
-  -> Codec ps failure m bytes
   -> peerid
-  -> Channel m bytes
   -> Maybe bytes
   -> PeerReceiver ps pr (st :: ps) (stdone :: ps) m c
   -> m (c, Maybe bytes)
-runPipelinedPeerReceiver Driver{recvMessage} tr Codec{decode} peerid channel = go
+runPipelinedPeerReceiver Driver{recvMessage} tr peerid = go
   where
     go :: forall st' st''.
           Maybe bytes
