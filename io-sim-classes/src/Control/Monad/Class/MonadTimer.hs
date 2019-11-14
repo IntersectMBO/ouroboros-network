@@ -29,6 +29,8 @@ import           Control.Monad.Class.MonadFork (MonadFork(..))
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
 
+import qualified System.Timeout as IO
+
 
 data TimeoutState = TimeoutPending | TimeoutFired | TimeoutCancelled
 
@@ -97,6 +99,8 @@ class (MonadSTM m, Eq (Timeout m)) => MonadTimer m where
     t <- newTimeout d
     _ <- fork $ atomically (awaitTimeout t >>= writeTVar v)
     return v
+
+  timeout :: DiffTime -> m a -> m (Maybe a)
 
 
 --
@@ -176,6 +180,9 @@ instance MonadTimer IO where
   threadDelay d = IO.threadDelay (diffTimeToMicrosecondsAsInt d)
 
   registerDelay = STM.registerDelay . diffTimeToMicrosecondsAsInt
+
+  timeout = IO.timeout . diffTimeToMicrosecondsAsInt
+
 
 diffTimeToMicrosecondsAsInt :: DiffTime -> Int
 diffTimeToMicrosecondsAsInt d =

@@ -22,7 +22,6 @@ module Ouroboros.Network.Subscription.Dns
     , WithDomainName (..)
     ) where
 
-import           Control.Monad (unless)
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadSTM (LazyTVar)
 import qualified Control.Monad.Class.MonadSTM as Lazy
@@ -180,9 +179,9 @@ dnsResolve tracer resolver (DnsSubscriptionTarget domain _ _) = do
                   -}
                  timeoutVar <- registerDelay resolutionDelay
                  atomically $ do
-                     timeout <- Lazy.readTVar timeoutVar
+                     timedOut   <- Lazy.readTVar timeoutVar
                      gotIpv6Rsp <- Lazy.readTVar gotIpv6RspVar
-                     unless (timeout || gotIpv6Rsp) retry
+                     check (timedOut || gotIpv6Rsp)
 
                  -- XXX Addresses should be sorted here based on DeltaQueue.
                  atomically $ putTMVar rspsVar r

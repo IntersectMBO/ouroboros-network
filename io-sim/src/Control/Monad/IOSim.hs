@@ -40,6 +40,7 @@ module Control.Monad.IOSim (
 
 import           Prelude hiding (read)
 
+import           Data.Functor (void)
 import           Data.OrdPSQ (OrdPSQ)
 import qualified Data.OrdPSQ as PSQ
 import qualified Data.List as List
@@ -57,7 +58,8 @@ import           Data.Time
 import           Control.Monad (mapM_)
 import           Control.Exception
                    ( Exception(..), SomeException
-                   , ErrorCall(..), throw, assert )
+                   , ErrorCall(..), throw, assert
+                   , asyncExceptionToException, asyncExceptionFromException )
 import qualified System.IO.Error as IO.Error (userError)
 
 import           Control.Monad (when)
@@ -389,6 +391,33 @@ instance MonadTimer (SimM s) where
   newTimeout      d = SimM $ \k -> NewTimeout      d k
   updateTimeout t d = SimM $ \k -> UpdateTimeout t d (k ())
   cancelTimeout t   = SimM $ \k -> CancelTimeout t   (k ())
+
+  timeout d action
+    | d <  0    = Just <$> action
+    | d == 0    = return Nothing
+    | otherwise = do
+        pid <- myThreadId
+        t@(Timeout _ tid) <- newTimeout d
+        handleJust
+          (\(TimeoutException tid') -> if tid' == tid
+                                         then Just ()
+                                         else Nothing)
+          (\_ -> return Nothing) $
+          bracket
+            (void $ fork $ do
+                fired <- atomically $ awaitTimeout t
+                when fired $ throwTo pid (TimeoutException tid))
+            (\_ -> cancelTimeout t)
+            (\_ -> Just <$> action)
+
+newtype TimeoutException = TimeoutException TimeoutId deriving Eq
+
+instance Show TimeoutException where
+    show _ = "<<timeout>>"
+
+instance Exception TimeoutException where
+  toException   = asyncExceptionToException
+  fromException = asyncExceptionFromException
 
 traceM :: Typeable a => a -> SimM s ()
 traceM x = SimM $ \k -> Output (toDyn x) (k ())
@@ -743,9 +772,9 @@ schedule thread@Thread{
     NewTimeout d k -> do
       tvar <- execNewTVar nextVid TimeoutPending
       let expiry  = d `addTime` time
-          timeout = Timeout tvar nextTmid
+          t       = Timeout tvar nextTmid
           timers' = PSQ.insert nextTmid expiry tvar timers
-          thread' = thread { threadControl = ThreadControl (k timeout) ctl }
+          thread' = thread { threadControl = ThreadControl (k t) ctl }
       trace <- schedule thread' simstate { timers   = timers'
                                          , nextVid  = succ nextVid
                                          , nextTmid = succ nextTmid }
