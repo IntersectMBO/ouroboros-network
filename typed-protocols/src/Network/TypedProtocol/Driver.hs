@@ -156,8 +156,20 @@ runPeer
   -> Channel m bytes
   -> Peer ps pr st m a
   -> m a
+runPeer tr codec peerid channel =
+  runPeerWithDriver (driverSimple codec channel) tr codec peerid channel
 
-runPeer tr Codec{encode, decode} peerid channel@Channel{send} =
+runPeerWithDriver
+  :: forall ps (st :: ps) pr peerid failure bytes m a .
+     (MonadThrow m, Exception failure)
+  => Driver ps m
+  -> Tracer m (TraceSendRecv ps peerid failure)
+  -> Codec ps failure m bytes
+  -> peerid
+  -> Channel m bytes
+  -> Peer ps pr st m a
+  -> m a
+runPeerWithDriver Driver{sendMessage} tr Codec{decode} peerid channel =
     go Nothing
   where
     go :: forall st'.
@@ -175,7 +187,7 @@ runPeer tr Codec{encode, decode} peerid channel@Channel{send} =
 
     go trailing (Yield stok msg k) = do
       traceWith tr (TraceSendMsg peerid (AnyMessage msg))
-      send (encode stok msg)
+      sendMessage stok msg
       go trailing k
 
     go trailing (Await stok k) = do
