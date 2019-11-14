@@ -380,9 +380,6 @@ setCurrentTime t = SimM $ \k -> SetWallTime t (k ())
 unshareClock :: SimM s ()
 unshareClock = SimM $ \k -> UnshareClock (k ())
 
-instance Eq (Timeout (SimM s)) where
-  Timeout _ key == Timeout _ key' = key == key'
-
 instance MonadTimer (SimM s) where
   data Timeout (SimM s) = Timeout !(TVar s TimeoutState) !TimeoutId
 

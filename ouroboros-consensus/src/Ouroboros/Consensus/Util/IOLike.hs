@@ -62,7 +62,7 @@ module Ouroboros.Consensus.Util.IOLike (
   , getCurrentTime
     -- *** MonadTimer
   , threadDelay
-  , timeoutAfter
+  , timeout
     -- *** Cardano prelude
   , NoUnexpectedThunks(..)
   ) where
