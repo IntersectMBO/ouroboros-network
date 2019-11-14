@@ -142,10 +142,6 @@ instance MonadTimer IO where
           TimeoutCancelled -> return ()
       mgr <- GHC.getSystemTimerManager
       GHC.unregisterTimeout mgr key
-
-  threadDelay d = IO.threadDelay (diffTimeToMicrosecondsAsInt d)
-
-  registerDelay = STM.registerDelay . diffTimeToMicrosecondsAsInt
 #else
 instance Eq (Timeout IO) where
   TimeoutIO _ cancelvar == TimeoutIO _ cancelvar' = cancelvar == cancelvar'
@@ -175,11 +171,11 @@ instance MonadTimer IO where
     STM.atomically $ do
       fired <- STM.readTVar =<< STM.readTVar timeoutvarvar
       when (not fired) $ STM.writeTVar cancelvar True
+#endif
 
   threadDelay d = IO.threadDelay (diffTimeToMicrosecondsAsInt d)
 
   registerDelay = STM.registerDelay . diffTimeToMicrosecondsAsInt
-#endif
 
 diffTimeToMicrosecondsAsInt :: DiffTime -> Int
 diffTimeToMicrosecondsAsInt d =
