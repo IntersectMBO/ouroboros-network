@@ -197,8 +197,8 @@ runPeerWithDriver Driver{sendMessage, recvMessage, startDState} =
           dstate
        -> Peer ps pr st' m a
        -> m a
-    go  trailing (Effect k) = k >>= go trailing
-    go _trailing (Done _ x) = return x
+    go  dstate (Effect k) = k >>= go dstate
+    go _dstate (Done _ x) = return x
     -- TODO: we should return the trailing here to allow for one protocols to
     -- be run after another on the same channel. It could be the case that the
     -- opening message of the next protocol arrives in the same data chunk as
@@ -206,13 +206,13 @@ runPeerWithDriver Driver{sendMessage, recvMessage, startDState} =
     -- would need to pass in any trailing data as an input. Alternatively we
     -- would need to move to a Channel type that can push back trailing data.
 
-    go trailing (Yield stok msg k) = do
+    go dstate (Yield stok msg k) = do
       sendMessage stok msg
-      go trailing k
+      go dstate k
 
-    go trailing (Await stok k) = do
-      (SomeMessage msg, trailing') <- recvMessage stok trailing
-      go trailing' (k msg)
+    go dstate (Await stok k) = do
+      (SomeMessage msg, dstate') <- recvMessage stok dstate
+      go dstate' (k msg)
 
     -- Note that we do not complain about trailing data in any case, neither
     -- the 'Await' nor 'Done' cases.
@@ -343,37 +343,37 @@ runPipelinedPeerSender receiveQueue collectQueue
        -> MaybeDState dstate n
        -> PeerSender ps pr st' n c m a
        -> m a
-    go n     trailing (SenderEffect k) = k >>= go n trailing
-    go Zero _trailing (SenderDone _ x) = return x
+    go n     dstate (SenderEffect k) = k >>= go n dstate
+    go Zero _dstate (SenderDone _ x) = return x
     --TODO: same issue with trailing as the 'Done' case for 'runPeer' above.
 
-    go Zero trailing (SenderYield stok msg k) = do
+    go Zero dstate (SenderYield stok msg k) = do
       sendMessage stok msg
-      go Zero trailing k
+      go Zero dstate k
 
-    go Zero (HasDState trailing) (SenderAwait stok k) = do
-      (SomeMessage msg, trailing') <- recvMessage stok trailing
-      go Zero (HasDState trailing') (k msg)
+    go Zero (HasDState dstate) (SenderAwait stok k) = do
+      (SomeMessage msg, dstate') <- recvMessage stok dstate
+      go Zero (HasDState dstate') (k msg)
 
-    go n trailing (SenderPipeline stok msg receiver k) = do
-      atomically (writeTQueue receiveQueue (ReceiveHandler trailing receiver))
+    go n dstate (SenderPipeline stok msg receiver k) = do
+      atomically (writeTQueue receiveQueue (ReceiveHandler dstate receiver))
       sendMessage stok msg
       go (Succ n) NoDState k
 
     go (Succ n) NoDState (SenderCollect Nothing k) = do
-      (c, trailing) <- atomically (readTQueue collectQueue)
+      (c, dstate) <- atomically (readTQueue collectQueue)
       case n of
-        Zero    -> go Zero      (HasDState trailing) (k c)
-        Succ n' -> go (Succ n')  NoDState              (k c)
+        Zero    -> go Zero      (HasDState dstate) (k c)
+        Succ n' -> go (Succ n')  NoDState          (k c)
 
     go (Succ n) NoDState (SenderCollect (Just k') k) = do
       mc <- atomically (tryReadTQueue collectQueue)
       case mc of
         Nothing  -> go (Succ n) NoDState  k'
-        Just (c, trailing) ->
+        Just (c, dstate) ->
           case n of
-            Zero    -> go Zero      (HasDState trailing) (k c)
-            Succ n' -> go (Succ n')  NoDState            (k c)
+            Zero    -> go Zero      (HasDState dstate) (k c)
+            Succ n' -> go (Succ n')  NoDState          (k c)
 
 
 -- NOTE: @'runPipelinedPeer'@ assumes that @'runPipelinedPeerReceiverQueue'@ is
@@ -390,15 +390,15 @@ runPipelinedPeerReceiverQueue receiveQueue collectQueue
     go startDState
   where
     go :: dstate -> m Void
-    go receiverTrailing = do
-      ReceiveHandler senderTrailing receiver
+    go receiverDState = do
+      ReceiveHandler senderDState receiver
         <- atomically (readTQueue receiveQueue)
-      let trailing = case (senderTrailing, receiverTrailing) of
+      let dstate = case (senderDState, receiverDState) of
                        (HasDState t, _) -> t
                        (NoDState,    t) -> t
-      (c, trailing') <- runPipelinedPeerReceiver driver trailing receiver
-      atomically (writeTQueue collectQueue (c, trailing'))
-      go trailing'
+      (c, dstate') <- runPipelinedPeerReceiver driver dstate receiver
+      atomically (writeTQueue collectQueue (c, dstate'))
+      go dstate'
 
 
 runPipelinedPeerReceiver
@@ -414,13 +414,13 @@ runPipelinedPeerReceiver Driver{recvMessage} = go
           dstate
        -> PeerReceiver ps pr st' st'' m c
        -> m (c, dstate)
-    go trailing (ReceiverEffect k) = k >>= go trailing
+    go dstate (ReceiverEffect k) = k >>= go dstate
 
-    go trailing (ReceiverDone x) = return (x, trailing)
+    go dstate (ReceiverDone x) = return (x, dstate)
 
-    go trailing (ReceiverAwait stok k) = do
-      (SomeMessage msg, trailing') <- recvMessage stok trailing
-      go trailing' (k msg)
+    go dstate (ReceiverAwait stok k) = do
+      (SomeMessage msg, dstate') <- recvMessage stok dstate
+      go dstate' (k msg)
 
 
 --
