@@ -1,4 +1,4 @@
-resolver: https://raw.githubusercontent.com/input-output-hk/cardano-prelude/dc40b2e60cee4e808ffaa275926ade74a6c987d1/snapshot.yaml
+resolver: https://raw.githubusercontent.com/input-output-hk/cardano-prelude/3c40edcf5bdba8721d3430d0aaaeea8770ce9bec/snapshot.yaml
 
 packages:
   - ./typed-transitions
@@ -20,7 +20,7 @@ extra-deps:
       - contra-tracer
 
   - git: https://github.com/input-output-hk/cardano-base
-    commit: 47b85629e2bb5568e3174afd6b9c2fea8cb682e4
+    commit: 1f2802d85f1032d37c90ded44e03cee8d57d47be
     subdirs:
       - binary
       - binary/test
@@ -48,7 +48,7 @@ extra-deps:
       - crypto/test
 
   - git: https://github.com/input-output-hk/cardano-prelude
-    commit: dc40b2e60cee4e808ffaa275926ade74a6c987d1
+    commit: 3c40edcf5bdba8721d3430d0aaaeea8770ce9bec
     subdirs:
       - .
       - test
