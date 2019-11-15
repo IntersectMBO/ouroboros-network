@@ -26,6 +26,7 @@ library
                    , Network.TypedProtocol.Driver
                    , Network.TypedProtocol.Driver.General
                    , Network.TypedProtocol.Driver.Simple
+                   , Network.TypedProtocol.Driver.Limits
                    , Network.TypedProtocol.Driver.ByteLimit
                    , Network.TypedProtocol.Proofs
 
@@ -69,6 +70,7 @@ test-suite test-protocols
                    , Network.TypedProtocol.Driver
                    , Network.TypedProtocol.Driver.General
                    , Network.TypedProtocol.Driver.Simple
+                   , Network.TypedProtocol.Driver.Limits
                    , Network.TypedProtocol.Driver.ByteLimit
                    , Network.TypedProtocol.PingPong.Client
                    , Network.TypedProtocol.PingPong.Codec

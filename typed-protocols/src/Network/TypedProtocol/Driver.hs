@@ -10,10 +10,12 @@ module Network.TypedProtocol.Driver (
   runPeer,
   runPeerWithDriver,
   TraceSendRecv(..),
+  runPeerWithLimits,
 
   -- * Pipelined peers
   runPipelinedPeer,
   runPipelinedPeerWithDriver,
+  runPipelinedPeerWithLimits,
 
   -- * Connected peers
   runConnectedPeers,
@@ -27,4 +29,5 @@ module Network.TypedProtocol.Driver (
 
 import Network.TypedProtocol.Driver.General
 import Network.TypedProtocol.Driver.Simple
+import Network.TypedProtocol.Driver.Limits
 
