@@ -71,6 +71,7 @@ socketAsMuxBearer tracer sd = do
                   traceWith tracer $ Mx.MuxTraceRecvPayloadStart (fromIntegral $ Mx.msLength header)
                   blob <- recvLen' False (fromIntegral $ Mx.msLength header) []
                   ts <- getMonotonicTime
+                  traceWith tracer (Mx.MuxTraceRecvDeltaQueue header ts)
                   traceWith tracer $ Mx.MuxTraceRecvPayloadEnd blob
                   --hexDump blob ""
                   return (header {Mx.msBlob = blob}, ts)

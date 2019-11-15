@@ -325,6 +325,7 @@ data MuxTrace ptcl =
     | MuxTraceRecvHeaderEnd (MuxSDU ptcl)
     | MuxTraceRecvPayloadStart Int
     | MuxTraceRecvPayloadEnd BL.ByteString
+    | MuxTraceRecvDeltaQueue (MuxSDU ptcl) Time
     | MuxTraceRecvStart Int
     | MuxTraceRecvEnd BL.ByteString
     | MuxTraceSendStart (MuxSDU ptcl)
@@ -350,6 +351,10 @@ instance Show ptcl => Show (MuxTrace ptcl) where
         (msLength sdu)
     show (MuxTraceRecvPayloadStart len) = printf "Bearer Receive Body Start: length %d" len
     show (MuxTraceRecvPayloadEnd blob) = printf "Bearer Receive Body End: length %d" (BL.length blob)
+    show (MuxTraceRecvDeltaQueue sdu ts) = printf "Bearer DeltaQueue sample: remote ts %d local ts %s length %d"
+        (unRemoteClockModel $ msTimestamp sdu)
+        (show ts)
+        (msLength sdu)
     show (MuxTraceRecvStart len) = printf "Bearer Receive Start: length %d" len
     show (MuxTraceRecvEnd blob) = printf "Bearer Receive End: length %d" (BL.length blob)
     show (MuxTraceSendStart sdu) = printf "Bearer Send Start: ts: 0x%08x %s %s length %d"
