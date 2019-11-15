@@ -115,7 +115,7 @@ instance ( Show peerid
 -- Driver interface
 --
 
-data Driver ps failure bytes m =
+data Driver ps bytes m =
         Driver {
           sendMessage :: forall (pr :: PeerRole) (st :: ps) (st' :: ps).
                          PeerHasAgency pr st
@@ -125,7 +125,7 @@ data Driver ps failure bytes m =
         , recvMessage :: forall (pr :: PeerRole) (st :: ps).
                          PeerHasAgency pr st
                       -> Maybe bytes
-                      -> m (Either failure (SomeMessage st, Maybe bytes))
+                      -> m (SomeMessage st, Maybe bytes)
         }
 
 driverSimple :: forall ps peerid failure bytes m.
@@ -134,7 +134,7 @@ driverSimple :: forall ps peerid failure bytes m.
              -> peerid
              -> Codec ps failure m bytes
              -> Channel m bytes
-             -> Driver ps failure bytes m
+             -> Driver ps bytes m
 driverSimple tr peerid Codec{encode, decode} channel@Channel{send} =
     Driver {sendMessage, recvMessage}
   where
@@ -149,16 +149,17 @@ driverSimple tr peerid Codec{encode, decode} channel@Channel{send} =
     recvMessage :: forall (pr :: PeerRole) (st :: ps).
                    PeerHasAgency pr st
                 -> Maybe bytes
-                -> m (Either failure (SomeMessage st, Maybe bytes))
+                -> m (SomeMessage st, Maybe bytes)
     recvMessage stok trailing = do
       decoder <- decode stok
       result  <- runDecoderWithChannel channel trailing decoder
       case result of
-        Right (SomeMessage msg, _trailing') ->
+        Right x@(SomeMessage msg, _trailing') -> do
           traceWith tr (TraceRecvMsg peerid (AnyMessage msg))
-        Left failure ->
+          return x
+        Left failure -> do
           traceWith tr (TraceDecoderFailure peerid stok failure)
-      return result
+          throwM failure
 
 
 --
@@ -182,9 +183,9 @@ runPeer tr codec peerid channel =
   runPeerWithDriver (driverSimple tr peerid codec channel)
 
 runPeerWithDriver
-  :: forall ps (st :: ps) pr failure bytes m a .
-     (MonadThrow m, Exception failure)
-  => Driver ps failure bytes m
+  :: forall ps (st :: ps) pr bytes m a .
+     Monad m
+  => Driver ps bytes m
   -> Peer ps pr st m a
   -> m a
 runPeerWithDriver Driver{sendMessage, recvMessage} =
@@ -208,12 +209,8 @@ runPeerWithDriver Driver{sendMessage, recvMessage} =
       go trailing k
 
     go trailing (Await stok k) = do
-      res <- recvMessage stok trailing
-      case res of
-        Right (SomeMessage msg, trailing') -> do
-          go trailing' (k msg)
-        Left failure ->
-          throwM failure
+      (SomeMessage msg, trailing') <- recvMessage stok trailing
+      go trailing' (k msg)
 
     -- Note that we do not complain about trailing data in any case, neither
     -- the 'Await' nor 'Done' cases.
@@ -254,9 +251,9 @@ runPipelinedPeer tr codec peerid channel =
       (driverSimple tr peerid codec channel)
 
 runPipelinedPeerWithDriver
-  :: forall ps (st :: ps) pr failure bytes m a.
-     (MonadSTM m, MonadAsync m, MonadThrow m, Exception failure)
-  => Driver ps failure bytes m
+  :: forall ps (st :: ps) pr bytes m a.
+     (MonadSTM m, MonadAsync m)
+  => Driver ps bytes m
   -> PeerPipelined ps pr st m a
   -> m a
 runPipelinedPeerWithDriver driver (PeerPipelined peer) = do
@@ -328,11 +325,11 @@ data MaybeTrailing bytes (n :: N) where
 
 
 runPipelinedPeerSender
-  :: forall ps (st :: ps) pr failure bytes c m a.
-     (MonadSTM m, MonadThrow m, Exception failure)
+  :: forall ps (st :: ps) pr bytes c m a.
+     MonadSTM m
   => TQueue m (ReceiveHandler bytes ps pr m c)
   -> TQueue m (c, Maybe bytes)
-  -> Driver ps failure bytes m
+  -> Driver ps bytes m
   -> PeerSender ps pr st Z c m a
   -> m a
 runPipelinedPeerSender receiveQueue collectQueue
@@ -353,12 +350,8 @@ runPipelinedPeerSender receiveQueue collectQueue
       go Zero trailing k
 
     go Zero (MaybeTrailing trailing) (SenderAwait stok k) = do
-      res <- recvMessage stok trailing
-      case res of
-        Right (SomeMessage msg, trailing') -> do
-          go Zero (MaybeTrailing trailing') (k msg)
-        Left failure -> do
-          throwM failure
+      (SomeMessage msg, trailing') <- recvMessage stok trailing
+      go Zero (MaybeTrailing trailing') (k msg)
 
     go n trailing (SenderPipeline stok msg receiver k) = do
       atomically (writeTQueue receiveQueue (ReceiveHandler trailing receiver))
@@ -384,11 +377,11 @@ runPipelinedPeerSender receiveQueue collectQueue
 -- NOTE: @'runPipelinedPeer'@ assumes that @'runPipelinedPeerReceiverQueue'@ is
 -- an infinite loop which never returns.
 runPipelinedPeerReceiverQueue
-  :: forall ps pr failure bytes m c.
-     (MonadSTM m, MonadThrow m, Exception failure)
+  :: forall ps pr bytes m c.
+     MonadSTM m
   => TQueue m (ReceiveHandler bytes ps pr m c)
   -> TQueue m (c, Maybe bytes)
-  -> Driver ps failure bytes m
+  -> Driver ps bytes m
   -> m Void
 runPipelinedPeerReceiverQueue receiveQueue collectQueue driver =
     go Nothing
@@ -406,9 +399,9 @@ runPipelinedPeerReceiverQueue receiveQueue collectQueue driver =
 
 
 runPipelinedPeerReceiver
-  :: forall ps (st :: ps) (stdone :: ps) pr failure bytes m c.
-     (MonadThrow m, Exception failure)
-  => Driver ps failure bytes m
+  :: forall ps (st :: ps) (stdone :: ps) pr bytes m c.
+     Monad m
+  => Driver ps bytes m
   -> Maybe bytes
   -> PeerReceiver ps pr (st :: ps) (stdone :: ps) m c
   -> m (c, Maybe bytes)
@@ -423,12 +416,8 @@ runPipelinedPeerReceiver Driver{recvMessage} = go
     go trailing (ReceiverDone x) = return (x, trailing)
 
     go trailing (ReceiverAwait stok k) = do
-      res <- recvMessage stok trailing
-      case res of
-        Right (SomeMessage msg, trailing') -> do
-          go trailing' (k msg)
-        Left failure ->
-          throwM failure
+      (SomeMessage msg, trailing') <- recvMessage stok trailing
+      go trailing' (k msg)
 
 
 --
