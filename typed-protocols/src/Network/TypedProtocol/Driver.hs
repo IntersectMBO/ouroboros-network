@@ -115,7 +115,7 @@ instance ( Show peerid
 -- Driver interface
 --
 
-data Driver ps bytes m =
+data Driver ps dstate m =
         Driver {
           sendMessage :: forall (pr :: PeerRole) (st :: ps) (st' :: ps).
                          PeerHasAgency pr st
@@ -124,8 +124,10 @@ data Driver ps bytes m =
 
         , recvMessage :: forall (pr :: PeerRole) (st :: ps).
                          PeerHasAgency pr st
-                      -> Maybe bytes
-                      -> m (SomeMessage st, Maybe bytes)
+                      -> dstate
+                      -> m (SomeMessage st, dstate)
+
+        , startDState :: dstate
         }
 
 driverSimple :: forall ps peerid failure bytes m.
@@ -134,9 +136,9 @@ driverSimple :: forall ps peerid failure bytes m.
              -> peerid
              -> Codec ps failure m bytes
              -> Channel m bytes
-             -> Driver ps bytes m
+             -> Driver ps (Maybe bytes) m
 driverSimple tr peerid Codec{encode, decode} channel@Channel{send} =
-    Driver {sendMessage, recvMessage}
+    Driver { sendMessage, recvMessage, startDState = Nothing }
   where
     sendMessage :: forall (pr :: PeerRole) (st :: ps) (st' :: ps).
                    PeerHasAgency pr st
@@ -183,16 +185,16 @@ runPeer tr codec peerid channel =
   runPeerWithDriver (driverSimple tr peerid codec channel)
 
 runPeerWithDriver
-  :: forall ps (st :: ps) pr bytes m a .
+  :: forall ps (st :: ps) pr dstate m a.
      Monad m
-  => Driver ps bytes m
+  => Driver ps dstate m
   -> Peer ps pr st m a
   -> m a
-runPeerWithDriver Driver{sendMessage, recvMessage} =
-    go Nothing
+runPeerWithDriver Driver{sendMessage, recvMessage, startDState} =
+    go startDState
   where
     go :: forall st'.
-          Maybe bytes
+          dstate
        -> Peer ps pr st' m a
        -> m a
     go  trailing (Effect k) = k >>= go trailing
@@ -251,9 +253,9 @@ runPipelinedPeer tr codec peerid channel =
       (driverSimple tr peerid codec channel)
 
 runPipelinedPeerWithDriver
-  :: forall ps (st :: ps) pr bytes m a.
+  :: forall ps (st :: ps) pr dstate m a.
      (MonadSTM m, MonadAsync m)
-  => Driver ps bytes m
+  => Driver ps dstate m
   -> PeerPipelined ps pr st m a
   -> m a
 runPipelinedPeerWithDriver driver (PeerPipelined peer) = do
@@ -273,10 +275,10 @@ runPipelinedPeerWithDriver driver (PeerPipelined peer) = do
         Left v  -> case v of {}
         Right a -> return a
 
-data ReceiveHandler bytes ps pr m c where
-     ReceiveHandler :: MaybeTrailing bytes n
+data ReceiveHandler dstate ps pr m c where
+     ReceiveHandler :: MaybeDState dstate n
                     -> PeerReceiver ps pr (st :: ps) (st' :: ps) m c
-                    -> ReceiveHandler bytes ps pr m c
+                    -> ReceiveHandler dstate ps pr m c
 
 -- | The handling of trailing data here is quite subtle. Trailing data is data
 -- we have read from the channel but the decoder has told us that it comes
@@ -319,26 +321,26 @@ data ReceiveHandler bytes ps pr m c where
 -- receiver thread, it simply overrides any trailing data it already had, since
 -- we now know that copy to be stale.
 --
-data MaybeTrailing bytes (n :: N) where
-     MaybeTrailing :: Maybe bytes -> MaybeTrailing bytes Z
-     NoTrailing    ::                MaybeTrailing bytes (S n)
+data MaybeDState dstate (n :: N) where
+     HasDState :: dstate -> MaybeDState dstate Z
+     NoDState  ::           MaybeDState dstate (S n)
 
 
 runPipelinedPeerSender
-  :: forall ps (st :: ps) pr bytes c m a.
+  :: forall ps (st :: ps) pr dstate c m a.
      MonadSTM m
-  => TQueue m (ReceiveHandler bytes ps pr m c)
-  -> TQueue m (c, Maybe bytes)
-  -> Driver ps bytes m
+  => TQueue m (ReceiveHandler dstate ps pr m c)
+  -> TQueue m (c, dstate)
+  -> Driver ps dstate m
   -> PeerSender ps pr st Z c m a
   -> m a
 runPipelinedPeerSender receiveQueue collectQueue
-                       Driver{sendMessage, recvMessage} =
-    go Zero (MaybeTrailing Nothing)
+                       Driver{sendMessage, recvMessage, startDState} =
+    go Zero (HasDState startDState)
   where
     go :: forall st' n.
           Nat n
-       -> MaybeTrailing bytes n
+       -> MaybeDState dstate n
        -> PeerSender ps pr st' n c m a
        -> m a
     go n     trailing (SenderEffect k) = k >>= go n trailing
@@ -349,68 +351,69 @@ runPipelinedPeerSender receiveQueue collectQueue
       sendMessage stok msg
       go Zero trailing k
 
-    go Zero (MaybeTrailing trailing) (SenderAwait stok k) = do
+    go Zero (HasDState trailing) (SenderAwait stok k) = do
       (SomeMessage msg, trailing') <- recvMessage stok trailing
-      go Zero (MaybeTrailing trailing') (k msg)
+      go Zero (HasDState trailing') (k msg)
 
     go n trailing (SenderPipeline stok msg receiver k) = do
       atomically (writeTQueue receiveQueue (ReceiveHandler trailing receiver))
       sendMessage stok msg
-      go (Succ n) NoTrailing k
+      go (Succ n) NoDState k
 
-    go (Succ n) NoTrailing (SenderCollect Nothing k) = do
+    go (Succ n) NoDState (SenderCollect Nothing k) = do
       (c, trailing) <- atomically (readTQueue collectQueue)
       case n of
-        Zero    -> go Zero      (MaybeTrailing trailing) (k c)
-        Succ n' -> go (Succ n')  NoTrailing              (k c)
+        Zero    -> go Zero      (HasDState trailing) (k c)
+        Succ n' -> go (Succ n')  NoDState              (k c)
 
-    go (Succ n) NoTrailing (SenderCollect (Just k') k) = do
+    go (Succ n) NoDState (SenderCollect (Just k') k) = do
       mc <- atomically (tryReadTQueue collectQueue)
       case mc of
-        Nothing  -> go (Succ n) NoTrailing  k'
+        Nothing  -> go (Succ n) NoDState  k'
         Just (c, trailing) ->
           case n of
-            Zero    -> go Zero      (MaybeTrailing trailing) (k c)
-            Succ n' -> go (Succ n')  NoTrailing              (k c)
+            Zero    -> go Zero      (HasDState trailing) (k c)
+            Succ n' -> go (Succ n')  NoDState            (k c)
 
 
 -- NOTE: @'runPipelinedPeer'@ assumes that @'runPipelinedPeerReceiverQueue'@ is
 -- an infinite loop which never returns.
 runPipelinedPeerReceiverQueue
-  :: forall ps pr bytes m c.
+  :: forall ps pr dstate m c.
      MonadSTM m
-  => TQueue m (ReceiveHandler bytes ps pr m c)
-  -> TQueue m (c, Maybe bytes)
-  -> Driver ps bytes m
+  => TQueue m (ReceiveHandler dstate ps pr m c)
+  -> TQueue m (c, dstate)
+  -> Driver ps dstate m
   -> m Void
-runPipelinedPeerReceiverQueue receiveQueue collectQueue driver =
-    go Nothing
+runPipelinedPeerReceiverQueue receiveQueue collectQueue
+                              driver@Driver{startDState} =
+    go startDState
   where
-    go :: Maybe bytes -> m Void
+    go :: dstate -> m Void
     go receiverTrailing = do
       ReceiveHandler senderTrailing receiver
         <- atomically (readTQueue receiveQueue)
       let trailing = case (senderTrailing, receiverTrailing) of
-                       (MaybeTrailing t, _) -> t
-                       (NoTrailing,      t) -> t
+                       (HasDState t, _) -> t
+                       (NoDState,    t) -> t
       (c, trailing') <- runPipelinedPeerReceiver driver trailing receiver
       atomically (writeTQueue collectQueue (c, trailing'))
       go trailing'
 
 
 runPipelinedPeerReceiver
-  :: forall ps (st :: ps) (stdone :: ps) pr bytes m c.
+  :: forall ps (st :: ps) (stdone :: ps) pr dstate m c.
      Monad m
-  => Driver ps bytes m
-  -> Maybe bytes
+  => Driver ps dstate m
+  -> dstate
   -> PeerReceiver ps pr (st :: ps) (stdone :: ps) m c
-  -> m (c, Maybe bytes)
+  -> m (c, dstate)
 runPipelinedPeerReceiver Driver{recvMessage} = go
   where
     go :: forall st' st''.
-          Maybe bytes
+          dstate
        -> PeerReceiver ps pr st' st'' m c
-       -> m (c, Maybe bytes)
+       -> m (c, dstate)
     go trailing (ReceiverEffect k) = k >>= go trailing
 
     go trailing (ReceiverDone x) = return (x, trailing)
