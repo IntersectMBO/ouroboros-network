@@ -181,30 +181,27 @@ runPeer
   -> Channel m bytes
   -> Peer ps pr st m a
   -> m a
-runPeer tr codec peerid channel =
-  runPeerWithDriver (driverSimple tr peerid codec channel)
+runPeer tr codec peerid channel peer =
+    fst <$> runPeerWithDriver driver peer (startDState driver)
+  where
+    driver = driverSimple tr peerid codec channel
 
 runPeerWithDriver
   :: forall ps (st :: ps) pr dstate m a.
      Monad m
   => Driver ps dstate m
   -> Peer ps pr st m a
-  -> m a
-runPeerWithDriver Driver{sendMessage, recvMessage, startDState} =
-    go startDState
+  -> dstate
+  -> m (a, dstate)
+runPeerWithDriver Driver{sendMessage, recvMessage} =
+    flip go
   where
     go :: forall st'.
           dstate
        -> Peer ps pr st' m a
-       -> m a
-    go  dstate (Effect k) = k >>= go dstate
-    go _dstate (Done _ x) = return x
-    -- TODO: we should return the trailing here to allow for one protocols to
-    -- be run after another on the same channel. It could be the case that the
-    -- opening message of the next protocol arrives in the same data chunk as
-    -- the final message of the previous protocol. This would also mean we
-    -- would need to pass in any trailing data as an input. Alternatively we
-    -- would need to move to a Channel type that can push back trailing data.
+       -> m (a, dstate)
+    go dstate (Effect k) = k >>= go dstate
+    go dstate (Done _ x) = return (x, dstate)
 
     go dstate (Yield stok msg k) = do
       sendMessage stok msg
@@ -248,22 +245,24 @@ runPipelinedPeer
   -> Channel m bytes
   -> PeerPipelined ps pr st m a
   -> m a
-runPipelinedPeer tr codec peerid channel =
-    runPipelinedPeerWithDriver
-      (driverSimple tr peerid codec channel)
+runPipelinedPeer tr codec peerid channel peer =
+    fst <$> runPipelinedPeerWithDriver driver peer (startDState driver)
+  where
+    driver = driverSimple tr peerid codec channel
 
 runPipelinedPeerWithDriver
   :: forall ps (st :: ps) pr dstate m a.
      (MonadSTM m, MonadAsync m)
   => Driver ps dstate m
   -> PeerPipelined ps pr st m a
-  -> m a
-runPipelinedPeerWithDriver driver (PeerPipelined peer) = do
+  -> dstate
+  -> m (a, dstate)
+runPipelinedPeerWithDriver driver (PeerPipelined peer) dstate0 = do
     receiveQueue <- atomically newTQueue
     collectQueue <- atomically newTQueue
     a <- runPipelinedPeerReceiverQueue receiveQueue collectQueue driver
            `withAsyncLoop`
-         runPipelinedPeerSender        receiveQueue collectQueue driver peer
+         runPipelinedPeerSender        receiveQueue collectQueue driver peer dstate0
     return a
 
   where
@@ -333,19 +332,20 @@ runPipelinedPeerSender
   -> TQueue m (c, dstate)
   -> Driver ps dstate m
   -> PeerSender ps pr st Z c m a
-  -> m a
+  -> dstate
+  -> m (a, dstate)
 runPipelinedPeerSender receiveQueue collectQueue
-                       Driver{sendMessage, recvMessage, startDState} =
-    go Zero (HasDState startDState)
+                       Driver{sendMessage, recvMessage}
+                       peer dstate0 =
+    go Zero (HasDState dstate0) peer
   where
     go :: forall st' n.
           Nat n
        -> MaybeDState dstate n
        -> PeerSender ps pr st' n c m a
-       -> m a
-    go n     dstate (SenderEffect k) = k >>= go n dstate
-    go Zero _dstate (SenderDone _ x) = return x
-    --TODO: same issue with trailing as the 'Done' case for 'runPeer' above.
+       -> m (a, dstate)
+    go n    dstate             (SenderEffect k) = k >>= go n dstate
+    go Zero (HasDState dstate) (SenderDone _ x) = return (x, dstate)
 
     go Zero dstate (SenderYield stok msg k) = do
       sendMessage stok msg
