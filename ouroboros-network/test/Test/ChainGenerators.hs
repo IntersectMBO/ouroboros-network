@@ -195,7 +195,6 @@ instance CoArbitrary Block
 instance CoArbitrary BlockHeader
 instance CoArbitrary SlotNo
 instance CoArbitrary BlockNo
-instance CoArbitrary BlockSigner
 instance CoArbitrary BodyHash
 instance CoArbitrary BlockBody
 instance CoArbitrary (ChainHash BlockHeader)
