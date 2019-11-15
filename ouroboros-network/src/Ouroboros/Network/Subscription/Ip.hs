@@ -1,6 +1,7 @@
 {-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE CPP                 #-}
 {-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -9,9 +10,21 @@
 module Ouroboros.Network.Subscription.Ip
     ( ipSubscriptionWorker
     , subscriptionWorker
-    , SubscriptionTrace (..)
     , IPSubscriptionTarget (..)
+    , ipSubscriptionTarget
+
+    --  * Traces
+    , SubscriptionTrace (..)
+    , ErrorPolicyTrace (..)
     , WithIPList (..)
+
+    -- * 'PeerState' STM transactions
+    , BeforeConnect
+    , runBeforeConnect
+    , beforeConnectTx
+    , completeApplicationTx
+    , socketStateChangeTx
+    , mainTx
     ) where
 
 
@@ -20,15 +33,18 @@ module Ouroboros.Network.Subscription.Ip
  -}
 
 import           Control.Monad.Class.MonadSTM.Strict
+import           Control.Monad.Class.MonadTime
+import           Control.Monad.Class.MonadThrow
 import           Control.Tracer
 import           Data.Time.Clock (DiffTime)
 import qualified Network.Socket as Socket
 import           Text.Printf
 
 import           Ouroboros.Network.Socket
+import           Ouroboros.Network.ErrorPolicy
+import           Ouroboros.Network.Subscription.PeerState
 import           Ouroboros.Network.Subscription.Subscriber
 import           Ouroboros.Network.Subscription.Worker
-
 
 data IPSubscriptionTarget = IPSubscriptionTarget {
     -- | List of destinations to possibly connect to
@@ -37,58 +53,106 @@ data IPSubscriptionTarget = IPSubscriptionTarget {
     , ispValency :: !Int
     } deriving (Eq, Show)
 
-
-
 -- | Spawns a subscription worker which will attempt to keep the specified
 -- number of connections (Valency) active towards the list of IP addresses
 -- given in IPSubscriptionTarget.
 --
 ipSubscriptionWorker
-    :: forall a x.
+    :: forall a void.
        Tracer IO (WithIPList (SubscriptionTrace Socket.SockAddr))
+    -> Tracer IO (WithAddr Socket.SockAddr ErrorPolicyTrace)
     -> ConnectionTable IO Socket.SockAddr
+    -> StrictTVar IO (PeerStates IO Socket.SockAddr)
     -> LocalAddresses Socket.SockAddr
     -> (Socket.SockAddr -> Maybe DiffTime)
     -- ^ Lookup function, should return expected delay for the given address
+    -> ErrorPolicies Socket.SockAddr a
     -> IPSubscriptionTarget
-    -> Main IO () x
     -> (Socket.Socket -> IO a)
-    -> IO x
-ipSubscriptionWorker tracer tbl localAddresses connectionAttemptDelay ips main k = do
-    sVar <- newTVarM ()
+    -> IO void
+ipSubscriptionWorker tracer errorPolicyTracer tbl peerStatesVar localAddresses connectionAttemptDelay errPolicies ips k = do
     subscriptionWorker
-            (WithIPList localAddresses (ispIps ips)
-              `contramap` tracer)
+            tracer'
+            errorPolicyTracer
             tbl
-            sVar
-            ioSocket
-            (\_ s -> pure s)
-            (\_ s -> pure (s, pure ()))
-            main
+            peerStatesVar
             localAddresses
             connectionAttemptDelay
-            getTargets
+            (pure $ ipSubscriptionTarget tracer' peerStatesVar $ ispIps ips)
             (ispValency ips)
+            errPolicies
+            mainTx
             k
   where
-    getTargets :: IO (SubscriptionTarget IO Socket.SockAddr)
-    getTargets = pure $ listSubscriptionTarget $ ispIps ips
+    tracer' = (WithIPList localAddresses (ispIps ips)
+                `contramap` tracer)
+
+ipSubscriptionTarget :: forall m addr.
+                        ( MonadSTM  m
+                        , MonadTime m
+                        , Ord addr
+                        )
+                     => Tracer m (SubscriptionTrace addr)
+                     -> StrictTVar m (PeerStates m addr)
+                     -> [addr]
+                     -> SubscriptionTarget m addr
+ipSubscriptionTarget tr peerStatesVar ips = go ips
+  where
+    go :: [addr]
+       -> SubscriptionTarget m addr
+    go [] = SubscriptionTarget $ pure Nothing
+    go (a : as) = SubscriptionTarget $ do
+      b <- runBeforeConnect peerStatesVar beforeConnectTx a
+      if b
+        then do
+          traceWith tr $ SubscriptionTraceTryConnectToPeer a
+          pure $ Just (a, go as)
+        else do
+          traceWith tr $ SubscriptionTraceSkippingPeer a
+          getSubscriptionTarget $ go as
 
 
--- | Like 'worker' but in 'IO'; It only instantness local address selection.
+-- when creating a new socket: register consumer thread
+-- when tearing down a socket: unregister consumer thread
+socketStateChangeTx
+    :: ( Ord addr
+       , Show addr
+       )
+    => SocketStateChange IO
+        (PeerStates IO addr)
+        addr
+
+socketStateChangeTx (CreatedSocket addr thread) ps =
+  pure (registerConsumer addr thread ps)
+
+socketStateChangeTx ClosedSocket{} ps@ThrowException{} =
+  pure ps
+
+socketStateChangeTx (ClosedSocket addr thread) ps =
+  pure $ unregisterConsumer addr thread ps
+
+
+-- | Main callback.  It throws an exception when the state becomes
+-- 'ThrowException'.  This exception is thrown from the main thread.
+--
+mainTx :: ( MonadThrow m
+          , MonadThrow (STM m)
+          , MonadSTM m
+          )
+       => Main m (PeerStates m addr) void
+mainTx (ThrowException e) = throwM e
+mainTx PeerStates{}       = retry
+
+
+-- | Like 'worker' but in 'IO'; It provides address selection function,
+-- 'SocketStateChange' and 'CompleteApplication' callbacks.  The 'Main'
+-- callback is left as it's useful for testing purposes.
 --
 subscriptionWorker
     :: Tracer IO (SubscriptionTrace Socket.SockAddr)
+    -> Tracer IO (WithAddr Socket.SockAddr ErrorPolicyTrace)
     -> ConnectionTable IO Socket.SockAddr
-    -> StateVar IO s
-
-    -> Socket IO Socket.SockAddr Socket.Socket
-    -- callbacks
-    -> SocketStateChange   IO s Socket.SockAddr
-    -> CompleteApplication IO s Socket.SockAddr a
-    -- ^ complete connection callback
-    -> Main IO s t
-    -- ^ main callback
+    -> StateVar IO (PeerStates IO Socket.SockAddr)
 
     -> LocalAddresses Socket.SockAddr
     -> (Socket.SockAddr -> Maybe DiffTime)
@@ -96,18 +160,23 @@ subscriptionWorker
     -- ^ subscription targets
     -> Int
     -- ^ valency
+    -> ErrorPolicies Socket.SockAddr a
+    -> Main IO (PeerStates IO Socket.SockAddr) x
+    -- ^ main callback
     -> (Socket.Socket -> IO a)
     -- ^ application to run on each connection
-    -> IO t
+    -> IO x
 subscriptionWorker
-  tr tbl sVar socket
-  socketStateChangeTx
-  completeApplicationTx mainTx
-  localAddresses
-  connectionAttemptDelay getTargets valency k =
-    worker tr tbl sVar socket
+  tracer errorPolicyTracer tbl sVar localAddresses
+  connectionAttemptDelay getTargets valency errPolicies main k =
+    worker tracer
+           errorPolicyTracer
+           tbl
+           sVar
+           ioSocket
            socketStateChangeTx
-           completeApplicationTx mainTx
+           (completeApplicationTx errPolicies)
+           main
            localAddresses
            selectAddr connectionAttemptDelay
            getTargets valency k

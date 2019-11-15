@@ -183,16 +183,22 @@ pingPongClientCount n = SendMsgPing (pure (pingPongClientCount (n-1)))
 serverPingPong :: IO ()
 serverPingPong = do
     tbl <- newConnectionTable
+    peerStatesVar <- newPeerStatesVar
+    _ <- async $ cleanPeerStates 200 peerStatesVar
     withServerNode
       nullTracer
       nullTracer
+      nullTracer
       tbl
+      peerStatesVar
       defaultLocalSocketAddrInfo
       (\(DictVersion codec)-> encodeTerm codec)
       (\(DictVersion codec)-> decodeTerm codec)
       (,)
       (\(DictVersion _) -> acceptEq)
-      (simpleSingletonVersions (0::Int) (NodeToNodeVersionData $ NetworkMagic 0) (DictVersion nodeToNodeCodecCBORTerm) app) $ \_ serverAsync ->
+      (simpleSingletonVersions (0::Int) (NodeToNodeVersionData $ NetworkMagic 0) (DictVersion nodeToNodeCodecCBORTerm) app)
+      nullErrorPolicies
+      $ \_ serverAsync ->
         wait serverAsync   -- block until async exception
   where
     app :: OuroborosApplication ResponderApp (Socket.SockAddr, Socket.SockAddr) DemoProtocol0 IO LBS.ByteString Void ()
@@ -285,16 +291,22 @@ pingPongClientPipelinedMax c =
 serverPingPong2 :: IO ()
 serverPingPong2 = do
     tbl <- newConnectionTable
+    peerStatesVar <- newPeerStatesVar
+    _ <- async $ cleanPeerStates 200 peerStatesVar
     withServerNode
       nullTracer
       nullTracer
+      nullTracer
       tbl
+      peerStatesVar
       defaultLocalSocketAddrInfo
       (\(DictVersion codec)-> encodeTerm codec)
       (\(DictVersion codec)-> decodeTerm codec)
       (,)
       (\(DictVersion _) -> acceptEq)
-      (simpleSingletonVersions (0::Int) (NodeToNodeVersionData $ NetworkMagic 0) (DictVersion nodeToNodeCodecCBORTerm) app) $ \_ serverAsync ->
+      (simpleSingletonVersions (0::Int) (NodeToNodeVersionData $ NetworkMagic 0) (DictVersion nodeToNodeCodecCBORTerm) app)
+      nullErrorPolicies
+      $ \_ serverAsync ->
         wait serverAsync   -- block until async exception
   where
     app :: OuroborosApplication ResponderApp (Socket.SockAddr, Socket.SockAddr) DemoProtocol1 IO LBS.ByteString Void ()
@@ -361,16 +373,22 @@ clientChainSync sockAddrs =
 serverChainSync :: FilePath -> IO ()
 serverChainSync sockAddr = do
     tbl <- newConnectionTable
+    peerStatesVar <- newPeerStatesVar
+    _ <- async $ cleanPeerStates 200 peerStatesVar
     withServerNode
       nullTracer
       nullTracer
+      nullTracer
       tbl
+      peerStatesVar
       (mkLocalSocketAddrInfo sockAddr)
       (\(DictVersion codec)-> encodeTerm codec)
       (\(DictVersion codec)-> decodeTerm codec)
       (,)
       (\(DictVersion _) -> acceptEq)
-      (simpleSingletonVersions (0::Int) (NodeToNodeVersionData $ NetworkMagic 0) (DictVersion nodeToNodeCodecCBORTerm) app) $ \_ serverAsync ->
+      (simpleSingletonVersions (0::Int) (NodeToNodeVersionData $ NetworkMagic 0) (DictVersion nodeToNodeCodecCBORTerm) app)
+      nullErrorPolicies
+      $ \_ serverAsync ->
         wait serverAsync   -- block until async exception
   where
     prng = mkSMGen 0
@@ -565,16 +583,22 @@ clientBlockFetch sockAddrs = do
 serverBlockFetch :: FilePath -> IO ()
 serverBlockFetch sockAddr = do
     tbl <- newConnectionTable
+    peerStatesVar <- newPeerStatesVar
+    _ <- async $ cleanPeerStates 200 peerStatesVar
     withServerNode
       nullTracer
       nullTracer
+      nullTracer
       tbl
+      peerStatesVar
       (mkLocalSocketAddrInfo sockAddr)
       (\(DictVersion codec)-> encodeTerm codec)
       (\(DictVersion codec)-> decodeTerm codec)
       (,)
       (\(DictVersion _) -> acceptEq)
-      (simpleSingletonVersions (0::Int) (NodeToNodeVersionData $ NetworkMagic 0) (DictVersion nodeToNodeCodecCBORTerm) app) $ \_ serverAsync ->
+      (simpleSingletonVersions (0::Int) (NodeToNodeVersionData $ NetworkMagic 0) (DictVersion nodeToNodeCodecCBORTerm) app)
+      nullErrorPolicies
+      $ \_ serverAsync ->
         wait serverAsync   -- block until async exception
   where
     prng = mkSMGen 0

@@ -1,6 +1,9 @@
-{-# LANGUAGE GADTSyntax #-}
+{-# LANGUAGE GADTs #-}
+{-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE RecursiveDo #-}
+{-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE BangPatterns #-}
 
 -- `accept` is shadowed, but so what?
@@ -9,7 +12,10 @@
 module Ouroboros.Network.Server.Socket
   ( BeginConnection
   , HandleConnection (..)
+  , ApplicationStart
   , CompleteConnection
+  , CompleteApplicationResult (..)
+  , Result (..)
   , Main
   , run
 
@@ -17,14 +23,19 @@ module Ouroboros.Network.Server.Socket
   , ioSocket
   ) where
 
-import Control.Exception (SomeException, mask, mask_, finally, onException, try)
+import Control.Exception (SomeException (..), mask, mask_, finally, onException, try)
 import Control.Concurrent.Async (Async)
 import qualified Control.Concurrent.Async as Async
 import Control.Concurrent.STM (STM)
 import qualified Control.Concurrent.STM as STM
 import Control.Monad (forever, forM_, join)
+import Control.Monad.Class.MonadTime (Time, getMonotonicTime)
+import Control.Tracer (Tracer, traceWith)
+import Data.Foldable (traverse_)
 import Data.Set (Set)
 import qualified Data.Set as Set
+
+import Ouroboros.Network.ErrorPolicy (CompleteApplicationResult (..), WithAddr, ErrorPolicyTrace)
 
 -- | Abstraction of something that can provide connections.
 -- A `Network.Socket` can be used to get a
@@ -56,11 +67,21 @@ data HandleConnection channel st r where
   Accept :: !st -> !(channel -> IO r) -> HandleConnection channel st r
 
 -- | What to do on a new connection: accept and run this `IO`, or reject.
-type BeginConnection addr channel st r = addr -> st -> STM (HandleConnection channel st r)
+type BeginConnection addr channel st r = Time -> addr -> st -> STM (HandleConnection channel st r)
+
+-- | A call back which runs when application starts;
+--
+-- It is needed only because 'BeginConnection' does not have access to the
+-- thread which runs the application.
+--
+type ApplicationStart addr st = addr -> Async () -> st -> STM st
 
 -- | How to update state when a connection finishes. Can use `throwSTM` to
 -- terminate the server.
-type CompleteConnection st r = Either SomeException r -> st -> STM st
+--
+-- TODO: remove 'async', use `Async m ()` from 'MonadAsync'.
+type CompleteConnection addr st tr r =
+    Result addr r -> st -> STM (CompleteApplicationResult IO addr st)
 
 -- | Given a current state, `retry` unless you want to stop the server.
 -- When this transaction returns, any running threads spawned by the server
@@ -77,17 +98,20 @@ type Main st t = st -> STM t
 -- potential deadlock when shutting down the server and killing spawned threads:
 -- the server can stop pulling from the queue, without causing the child
 -- threads to hang attempting to write to it.
-type ResultQ r = STM.TQueue (Result r)
+type ResultQ addr r = STM.TQueue (Result addr r)
 
 -- | The product of a spawned thread. We catch all (even async) exceptions.
-data Result r = Result
+data Result addr r = Result
   { resultThread :: !(Async ())
+  , resultAddr   :: !addr
+  , resultTime   :: !Time 
   , resultValue  :: !(Either SomeException r)
   }
 
 -- | The set of all spawned threads. Used for waiting or cancelling them when
 -- the server shuts down.
 type ThreadsVar = STM.TVar (Set (Async ()))
+
 
 -- | The action runs inside `try`, and when it finishes, puts its result
 -- into the `ResultQ`. Takes care of inserting/deleting from the `ThreadsVar`.
@@ -96,48 +120,60 @@ type ThreadsVar = STM.TVar (Set (Async ()))
 -- always gets into the `ThreadsVar`. Exceptions are unmasked in the
 -- spawned thread.
 spawnOne
-  :: ResultQ r
+  :: addr
+  -> StatusVar st
+  -> ResultQ addr r
   -> ThreadsVar
+  -> ApplicationStart addr st
   -> IO r
   -> IO ()
-spawnOne resQ threadsVar io = mask_ $ do
+spawnOne remoteAddr statusVar resQ threadsVar applicationStart io = mask_ $ do
   rec let threadAction = \unmask -> do
+            STM.atomically $
+                  STM.readTVar statusVar
+              >>= applicationStart remoteAddr thread
+              >>= (STM.writeTVar statusVar $!)
             val <- try (unmask io)
+            t <- getMonotonicTime
             -- No matter what the exception, async or sync, this will not
             -- deadlock, since we use a `TQueue`. If the server kills its
             -- children, and stops clearing the queue, it will be collected
             -- shortly thereafter, so no problem.
-            STM.atomically $ STM.writeTQueue resQ (Result thread val)
-      thread <- Async.asyncWithUnmask threadAction
+            STM.atomically $ STM.writeTQueue resQ (Result thread remoteAddr t val)
+      thread <- Async.asyncWithUnmask $ \unmask ->
+          threadAction unmask
   -- The main loop `connectionTx` will remove this entry from the set, once
   -- it receives the result.
   STM.atomically $ STM.modifyTVar' threadsVar (Set.insert thread)
+
 
 -- | The accept thread is controlled entirely by the `accept` call. To
 -- stop it, whether normally or exceptionally, it must be killed by an async
 -- exception, or the exception callback here must re-throw.
 acceptLoop
-  :: ResultQ r
+  :: ResultQ addr r
   -> ThreadsVar
   -> StatusVar st
   -> BeginConnection addr channel st r
+  -> ApplicationStart addr st
   -> (SomeException -> IO ()) -- ^ Exception on `Socket.accept`.
   -> Socket addr channel
   -> IO x
-acceptLoop resQ threadsVar statusVar beginConnection acceptException socket = forever $
-  acceptOne resQ threadsVar statusVar beginConnection acceptException socket
+acceptLoop resQ threadsVar statusVar beginConnection applicationStart acceptException socket = forever $
+  acceptOne resQ threadsVar statusVar beginConnection applicationStart acceptException socket
 
 -- | Accept once from the socket, use the `Accept` to make a decision (accept
 -- or reject), and spawn the thread if accepted.
 acceptOne
-  :: ResultQ r
+  :: ResultQ addr r
   -> ThreadsVar
   -> StatusVar st
   -> BeginConnection addr channel st r
+  -> ApplicationStart addr st
   -> (SomeException -> IO ()) -- ^ Exception on `Socket.accept`.
   -> Socket addr channel
   -> IO ()
-acceptOne resQ threadsVar statusVar beginConnection acceptException socket = mask $ \restore -> do
+acceptOne resQ threadsVar statusVar beginConnection applicationStart acceptException socket = mask $ \restore -> do
   -- mask is to assure that every socket is closed.
   outcome <- try (restore (acceptConnection socket))
   case outcome of
@@ -145,9 +181,10 @@ acceptOne resQ threadsVar statusVar beginConnection acceptException socket = mas
     Right (addr, channel, close) -> do
       -- Decide whether to accept or reject, using the current state, and
       -- update it according to the decision.
+      t <- getMonotonicTime
       let decision = STM.atomically $ do
             st <- STM.readTVar statusVar
-            !handleConn <- beginConnection addr st
+            !handleConn <- beginConnection t addr st
             case handleConn of
               Reject st' -> do
                 STM.writeTVar statusVar st'
@@ -160,20 +197,21 @@ acceptOne resQ threadsVar statusVar beginConnection acceptException socket = mas
       choice <- decision `onException` close
       case choice of
         Nothing -> close
-        Just io -> spawnOne resQ threadsVar (io channel `finally` close)
+        Just io -> spawnOne addr statusVar resQ threadsVar applicationStart (io channel `finally` close)
 
 -- | Main server loop, which runs alongside the `acceptLoop`. It waits for
 -- the results of connection threads, as well as the `Main` action, which
 -- determines when/if the server should stop.
 mainLoop
-  :: forall st r t .
-     ResultQ r
+  :: forall addr st tr r t .
+     Tracer IO (WithAddr addr ErrorPolicyTrace)
+  -> ResultQ addr r
   -> ThreadsVar
   -> StatusVar st
-  -> CompleteConnection st r
+  -> CompleteConnection addr st tr r
   -> Main st t
   -> IO t
-mainLoop resQ threadsVar statusVar complete main =
+mainLoop errorPolicyTrace resQ threadsVar statusVar complete main =
   join (STM.atomically $ mainTx `STM.orElse` connectionTx)
 
   where
@@ -192,29 +230,41 @@ mainLoop resQ threadsVar statusVar complete main =
   connectionTx = do
     result <- STM.readTQueue resQ
     st <- STM.readTVar statusVar
-    !st' <- complete (resultValue result) st
-    STM.writeTVar statusVar st'
+    CompleteApplicationResult
+      { carState
+      , carThreads
+      , carTrace
+      } <- complete result st
+    -- 'CompleteConnectionResult' is strict in 'ccrState', thus we write
+    -- evaluted state to 'statusVar'
+    STM.writeTVar statusVar carState
     -- It was inserted by `spawnOne`.
     STM.modifyTVar' threadsVar (Set.delete (resultThread result))
-    pure $ mainLoop resQ threadsVar statusVar complete main
+    pure $ do
+      traverse_ Async.cancel carThreads
+      traverse_ (traceWith errorPolicyTrace) carTrace
+      mainLoop errorPolicyTrace resQ threadsVar statusVar complete main
 
 -- | Run a server.
 run
-  :: Socket addr channel
+  :: Tracer IO (WithAddr addr ErrorPolicyTrace)
+  -- TODO: extend this trace to trace server action (this might be useful for
+  -- debugging)
+  -> Socket addr channel
   -> (SomeException -> IO ())
   -> BeginConnection addr channel st r
-  -> CompleteConnection st r
+  -> ApplicationStart addr st
+  -> CompleteConnection addr st tr r
   -> Main st t
-  -> st
+  -> STM.TVar st
   -> IO t
-run socket acceptException beginConnection complete main st = do
+run errroPolicyTrace socket acceptException beginConnection applicationStart complete main statusVar = do
   resQ <- STM.newTQueueIO
   threadsVar <- STM.newTVarIO Set.empty
-  statusVar <- STM.newTVarIO st
-  let acceptLoopDo = acceptLoop resQ threadsVar statusVar beginConnection acceptException socket
+  let acceptLoopDo = acceptLoop resQ threadsVar statusVar beginConnection applicationStart acceptException socket
       -- The accept loop is killed when the main loop stops.
       mainDo = Async.withAsync acceptLoopDo $ \_ ->
-        mainLoop resQ threadsVar statusVar complete main
+        mainLoop errroPolicyTrace resQ threadsVar statusVar complete main
       killChildren = do
         children <- STM.atomically $ STM.readTVar threadsVar
         forM_ (Set.toList children) Async.cancel

@@ -61,7 +61,9 @@ import           Ouroboros.Network.NodeToNode hiding ( ipSubscriptionWorker
                                                      )
 import           Ouroboros.Network.Socket
 import           Ouroboros.Network.Subscription
+import           Ouroboros.Network.Subscription.Ip
 import           Ouroboros.Network.Subscription.Dns
+import           Ouroboros.Network.Subscription.PeerState
 import           Ouroboros.Network.Subscription.Subscriber
 
 defaultMiniProtocolLimit :: Int64
@@ -290,7 +292,8 @@ prop_resolv :: forall m.
 prop_resolv lr =  do
     --say $ printf "%s" $ show lr
     let resolver = mockResolver lr
-    x <- dnsResolve nullTracer resolver $ DnsSubscriptionTarget "shelley-1.iohk.example" 1 2
+    peerStatesVar <- newTVarM ()
+    x <- dnsResolve nullTracer resolver peerStatesVar (\_ _ s -> pure (AllowConnection s)) $ DnsSubscriptionTarget "shelley-1.iohk.example" 1 2
     !res <- checkResult <$> extractResult x []
 
     {-
@@ -419,13 +422,17 @@ prop_sub_io lr = ioProperty $ do
         when (c > 0) retry
 
     serverPortMap <- atomically $ readTVar serverPortMapVar
-    dnsSubscriptionWorker' activeTracer activeTracer clientTbl
+    peerStatesVar <- newPeerStatesVar
+    dnsSubscriptionWorker' activeTracer activeTracer activeTracer
+            clientTbl
+            peerStatesVar
             (mockResolverIO firstDoneVar serverPortMap lr)
             (LocalAddresses
               (Just $ Socket.addrAddress ipv4Client)
               (Just $ Socket.addrAddress ipv6Client)
               Nothing)
             (\_ -> Just minConnectionAttemptDelay)
+            nullErrorPolicies
             (DnsSubscriptionTarget "shelley-0.iohk.example" 6062 (lrioValency lr))
             (\_ -> do
               c <- readTVar clientCountVar
@@ -544,27 +551,33 @@ prop_send_recv f xs first = ioProperty $ do
             atomically $ putTMVar cv r
             waitSiblingSub siblingVar
 
+    peerStatesVar <- newPeerStatesVar
     withDummyServer faultyAddress $
       withServerNode
         nullTracer
         nullTracer
+        nullTracer
         tbl
+        peerStatesVar
         responderAddr
         (\(DictVersion codec) -> encodeTerm codec)
         (\(DictVersion codec) -> decodeTerm codec)
         (,)
         (\(DictVersion _) -> acceptEq)
         (simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData $ NetworkMagic 0) (DictVersion nodeToNodeCodecCBORTerm) responderApp)
-        $ \_ _ ->
+        nullErrorPolicies
+        $ \_ _ -> do
           dnsSubscriptionWorker'
-            activeTracer activeTracer
+            activeTracer activeTracer activeTracer
             clientTbl
+            peerStatesVar
             (mockResolverIO firstDoneVar serverPortMap lr)
             (LocalAddresses
                 (Just $ Socket.addrAddress initiatorAddr4)
                 (Just $ Socket.addrAddress initiatorAddr6)
                 Nothing)
             (\_ -> Just minConnectionAttemptDelay)
+            nullErrorPolicies
             (DnsSubscriptionTarget "shelley-0.iohk.example" 6062 1)
             (\_ -> waitSiblingSTM siblingVar)
             (connectToNode'
@@ -628,14 +641,18 @@ prop_send_recv_init_and_rsp f xs = ioProperty $ do
     rrcfgA <- newReqRspCfg "A" siblingVar
     rrcfgB <- newReqRspCfg "B" siblingVar
 
+    stVar <- newPeerStatesVar
+
     a_aid <- async $ startPassiveServer
       tblA
+      stVar
       responderAddr4A
       addrAVar
       rrcfgA
 
     b_aid <- async $ startActiveServer
       tblB
+      stVar
       responderAddr4B
       addrBVar
       addrAVar
@@ -672,16 +689,19 @@ prop_send_recv_init_and_rsp f xs = ioProperty $ do
              waitSiblingSub rrcSiblingVar
             )
 
-    startPassiveServer tbl responderAddr localAddrVar rrcfg = withServerNode
+    startPassiveServer tbl stVar responderAddr localAddrVar rrcfg = withServerNode
+        nullTracer
         nullTracer
         nullTracer
         tbl
+        stVar
         responderAddr
         (\(DictVersion codec) -> encodeTerm codec)
         (\(DictVersion codec) -> decodeTerm codec)
         (,)
         (\(DictVersion _) -> acceptEq)
         (simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData $ NetworkMagic 0) (DictVersion nodeToNodeCodecCBORTerm) (appX rrcfg))
+        nullErrorPolicies
         $ \localAddr _ -> do
           atomically $ putTMVar localAddrVar localAddr
           r <- atomically $ (,) <$> takeTMVar (rrcServerVar rrcfg)
@@ -689,25 +709,33 @@ prop_send_recv_init_and_rsp f xs = ioProperty $ do
           waitSibling (rrcSiblingVar rrcfg)
           return r
 
-    startActiveServer tbl responderAddr localAddrVar remoteAddrVar rrcfg = withServerNode
+    startActiveServer tbl stVar responderAddr localAddrVar remoteAddrVar rrcfg = withServerNode
+        nullTracer
         nullTracer
         nullTracer
         tbl
+        stVar
         responderAddr
         (\(DictVersion codec) -> encodeTerm codec)
         (\(DictVersion codec) -> decodeTerm codec)
         (,)
         (\(DictVersion _) -> acceptEq)
         ((simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData $ NetworkMagic 0) (DictVersion nodeToNodeCodecCBORTerm) (appX rrcfg)))
+        nullErrorPolicies
         $ \localAddr _ -> do
+          peerStatesVar <- newPeerStatesVar
           atomically $ putTMVar localAddrVar localAddr
           remoteAddr <- atomically $ takeTMVar remoteAddrVar
-          _ <- ipSubscriptionWorker
+          _ <- subscriptionWorker
+            activeTracer
             activeTracer
             tbl
+            peerStatesVar
             (LocalAddresses (Just localAddr) Nothing Nothing)
             (\_ -> Just minConnectionAttemptDelay)
-            (IPSubscriptionTarget [remoteAddr] 1)
+            (pure $ listSubscriptionTarget [remoteAddr])
+            1
+            nullErrorPolicies
             (\_ -> waitSiblingSTM (rrcSiblingVar rrcfg))
             (connectToNode'
                 (\(DictVersion codec) -> encodeTerm codec)
@@ -759,20 +787,24 @@ _demo = ioProperty $ do
 
     tbl <- newConnectionTable
     clientTbl <- newConnectionTable
+    peerStatesVar <- newPeerStatesVar
+    stVar <- newPeerStatesVar
 
-    spawnServer tbl server 10000
-    spawnServer tbl server' 10000
-    spawnServer tbl server6 100
-    spawnServer tbl server6' 45
+    spawnServer tbl stVar server 10000
+    spawnServer tbl stVar server' 10000
+    spawnServer tbl stVar server6 100
+    spawnServer tbl stVar server6' 45
 
-    _ <- dnsSubscriptionWorker activeTracer activeTracer clientTbl
+    _ <- dnsSubscriptionWorker activeTracer activeTracer activeTracer
+            clientTbl
+            peerStatesVar
             (LocalAddresses
                 (Just $ Socket.addrAddress client)
                 (Just $ Socket.addrAddress client6)
                 Nothing)
             (\_ -> Just minConnectionAttemptDelay)
+            nullErrorPolicies
             (DnsSubscriptionTarget "shelley-0.iohk.example" 6064 1)
-            (\_ -> retry)
             (connectToNode'
                 (\(DictVersion codec) -> encodeTerm codec)
                 (\(DictVersion codec) -> decodeTerm codec)
@@ -784,18 +816,20 @@ _demo = ioProperty $ do
 
     threadDelay 130
     -- bring the servers back again
-    spawnServer tbl server6 10000
-    spawnServer tbl server6' 10000
+    spawnServer tbl stVar server6 10000
+    spawnServer tbl stVar server6' 10000
     threadDelay 1000
     return ()
 
   where
 
-    spawnServer tbl addr delay =
+    spawnServer tbl stVar addr delay =
         void $ async $ withServerNode
             nullTracer
             nullTracer
+            nullTracer
             tbl
+            stVar
             addr
             (\(DictVersion codec) -> encodeTerm codec)
             (\(DictVersion codec) -> decodeTerm codec)
@@ -803,6 +837,7 @@ _demo = ioProperty $ do
             (\(DictVersion _) -> acceptEq)
             (simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData $ NetworkMagic 0)
                 (DictVersion nodeToNodeCodecCBORTerm) appRsp)
+            nullErrorPolicies
             (\_ _ -> threadDelay delay)
 
 

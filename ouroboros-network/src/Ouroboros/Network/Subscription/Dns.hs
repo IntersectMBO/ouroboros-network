@@ -18,8 +18,12 @@ module Ouroboros.Network.Subscription.Dns
     , dnsResolve
     , resolutionDelay
 
+      -- * Traces
+    , SubscriptionTrace (..)
     , DnsTrace (..)
+    , ErrorPolicyTrace (..)
     , WithDomainName (..)
+    , WithAddr (..)
     ) where
 
 import           Control.Monad (unless)
@@ -37,6 +41,7 @@ import qualified Network.DNS as DNS
 import qualified Network.Socket as Socket
 import           Text.Printf
 
+import           Ouroboros.Network.ErrorPolicy
 import           Ouroboros.Network.Subscription.Ip
 import           Ouroboros.Network.Subscription.Subscriber
 import           Ouroboros.Network.Subscription.Worker
@@ -57,7 +62,7 @@ data Resolver m = Resolver {
     , lookupAAAA :: DNS.Domain -> m (Either DNS.DNSError [Socket.SockAddr])
     }
 
-dnsResolve :: forall m.
+dnsResolve :: forall m s.
      ( MonadAsync m
      , MonadSay   m
      , MonadSTM   m
@@ -67,9 +72,11 @@ dnsResolve :: forall m.
      )
     => Tracer m DnsTrace
     -> Resolver m
+    -> StrictTVar m s
+    -> BeforeConnect m s Socket.SockAddr
     -> DnsSubscriptionTarget
     -> m (SubscriptionTarget m Socket.SockAddr)
-dnsResolve tracer resolver (DnsSubscriptionTarget domain _ _) = do
+dnsResolve tracer resolver peerStatesVar beforeConnect (DnsSubscriptionTarget domain _ _) = do
     ipv6Rsps <- newEmptyTMVarM
     ipv4Rsps <- newEmptyTMVarM
     gotIpv6Rsp <- Lazy.newTVarM False
@@ -114,8 +121,11 @@ dnsResolve tracer resolver (DnsSubscriptionTarget domain _ _) = do
     listTargets (Left []) ipvB = listTargets ipvB (Left [])
 
     -- Result for one address family
-    listTargets (Left (addr : addrs)) ipvB =
-        return $ Just (addr, SubscriptionTarget (listTargets ipvB (Left addrs)))
+    listTargets (Left (addr : addrs)) ipvB = do
+        b <- runBeforeConnect peerStatesVar beforeConnect addr
+        if b
+          then pure $ Just (addr, SubscriptionTarget (listTargets ipvB (Left addrs)))
+          else listTargets ipvB (Left addrs)
 
     -- No result for either family yet.
     listTargets (Right addrsVarA) (Right addrsVarB) = do
@@ -132,7 +142,12 @@ dnsResolve tracer resolver (DnsSubscriptionTarget domain _ _) = do
                                       Right a -> (a, Right addrsVarA)
         if null addrs
            then listTargets (Right addrsVarB) (Left [])
-           else return $ Just (head addrs, SubscriptionTarget (listTargets nextAddrs (Left $ tail addrs)))
+           else do
+             let addr = head addrs
+             b <- runBeforeConnect peerStatesVar beforeConnect addr
+             if b
+               then return $ Just (head addrs, SubscriptionTarget (listTargets nextAddrs (Left $ tail addrs)))
+               else listTargets nextAddrs (Left $ tail addrs)
 
     -- Wait on the result for one family.
     listTargets (Right addrsVar) (Left []) = do
@@ -191,52 +206,63 @@ dnsResolve tracer resolver (DnsSubscriptionTarget domain _ _) = do
 dnsSubscriptionWorker'
     :: Tracer IO (WithDomainName (SubscriptionTrace Socket.SockAddr))
     -> Tracer IO (WithDomainName DnsTrace)
+    -> Tracer IO (WithAddr Socket.SockAddr ErrorPolicyTrace)
     -> ConnectionTable IO Socket.SockAddr
+    -> StrictTVar IO (PeerStates IO Socket.SockAddr)
     -> Resolver IO
     -> LocalAddresses Socket.SockAddr
     -> (Socket.SockAddr -> Maybe DiffTime)
+    -> ErrorPolicies Socket.SockAddr a
     -> DnsSubscriptionTarget
-    -> Main IO () t
+    -> Main IO (PeerStates IO Socket.SockAddr) x
     -> (Socket.Socket -> IO a)
-    -> IO t
-dnsSubscriptionWorker' subTracer dnsTracer tbl resolver localAddresses
-  connectionAttemptDelay dst main k = do
-    statesVar <- newTVarM ()
+    -> IO x
+dnsSubscriptionWorker' subTracer dnsTracer errorPolicyTracer tbl peerStatesVar resolver localAddresses
+  connectionAttemptDelay errPolicies dst main k = do
     subscriptionWorker (WithDomainName (dstDomain dst) `contramap` subTracer)
+                       errorPolicyTracer
                        tbl
-                       statesVar
-                       ioSocket
-                       (\_ s -> pure s)
-                       (\_ s -> pure (s, pure ()))
-                       main
+                       peerStatesVar
                        localAddresses
                        connectionAttemptDelay
                        (dnsResolve
                           (WithDomainName (dstDomain dst) `contramap` dnsTracer)
-                          resolver dst)
+                          resolver peerStatesVar beforeConnectTx dst)
                        (dstValency dst)
+                       errPolicies
+                       main
                        k
 
 
 dnsSubscriptionWorker
     :: Tracer IO (WithDomainName (SubscriptionTrace Socket.SockAddr))
     -> Tracer IO (WithDomainName DnsTrace)
+    -> Tracer IO (WithAddr Socket.SockAddr ErrorPolicyTrace)
     -> ConnectionTable IO Socket.SockAddr
+    -> StrictTVar IO (PeerStates IO Socket.SockAddr)
     -> LocalAddresses Socket.SockAddr
     -> (Socket.SockAddr -> Maybe DiffTime)
+    -> ErrorPolicies Socket.SockAddr a
     -> DnsSubscriptionTarget
-    -> Main IO () t
     -> (Socket.Socket -> IO a)
-    -> IO t
-dnsSubscriptionWorker subTracer dnsTracer tbl localAddresses connectionAttemptDelay dst
-  main k = do
+    -> IO void
+dnsSubscriptionWorker subTracer dnsTracer errTrace tbl peerStateVar localAddresses
+  connectionAttemptDelay errPolicies dst k = do
     rs <- DNS.makeResolvSeed DNS.defaultResolvConf
 
     DNS.withResolver rs $ \dnsResolver ->
         let resolver = Resolver (ipv4ToSockAddr (dstPort dst) dnsResolver)
                                 (ipv6ToSockAddr (dstPort dst) dnsResolver) in
-        dnsSubscriptionWorker' subTracer dnsTracer tbl resolver localAddresses
-                               connectionAttemptDelay dst main k
+        dnsSubscriptionWorker' subTracer dnsTracer errTrace
+                               tbl
+                               peerStateVar
+                               resolver
+                               localAddresses
+                               connectionAttemptDelay
+                               errPolicies
+                               dst
+                               mainTx
+                               k
   where
     ipv4ToSockAddr port dnsResolver d = do
         r <- DNS.lookupA dnsResolver d

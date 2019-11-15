@@ -39,7 +39,7 @@ import           Control.Exception (SomeException (..))
 import qualified Control.Concurrent.STM as STM
 import           Control.Monad (forever, join, when, unless)
 import           Control.Monad.Fix (MonadFix)
--- import           Data.Functor.Identity (Identity (..))
+import           Data.Foldable (traverse_)
 import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Void (Void)
@@ -56,6 +56,7 @@ import           Control.Monad.Class.MonadTimer
 import           Control.Monad.Class.MonadThrow
 import           Control.Tracer
 
+import           Ouroboros.Network.ErrorPolicy (CompleteApplication, Result (..), CompleteApplicationResult (..), WithAddr, ErrorPolicyTrace)
 import           Ouroboros.Network.Server.ConnectionTable
 import           Ouroboros.Network.Subscription.Subscriber
 
@@ -80,46 +81,17 @@ maxConnectionAttemptDelay = 2 -- 2s delay
 ipRetryDelay :: DiffTime
 ipRetryDelay = 10 -- 10s delay
 
-
--- | Result of the connection thread.  It's either result of an application, or
--- an exception thrown by it.
---
-data Result addr r where
-     ApplicationResult
-       :: !Time
-       -> !addr
-       -> !r
-       -> Result addr r
-
-     Connected
-       :: !Time
-       -> !addr
-       -> Result addr r
-
-     ConnectionError
-       :: Exception e
-       => !Time
-       -> !addr
-       -> !e
-       -> Result addr r
-
-     ApplicationError
-       :: Exception e
-       => !Time
-       -> !addr
-       -> !e
-       -> Result addr r
-
-data ResOrAct m addr r =
+data ResOrAct m addr tr r =
      Res !(Result addr r)
-   | Act (m ())
+   | Act (Set (Async m ())) -- ^ threads to kill
+         (Maybe tr)         -- ^ trace point
 
 -- | Result queue.  The spawned threads will keep writing to it, while the main
 -- server will read from it.
 --
-type ResultQ m addr r = TQueue m (ResOrAct m addr r)
+type ResultQ m addr tr r = TQueue m (ResOrAct m addr tr r)
 
-newResultQ :: forall m addr r. MonadSTM m => m (ResultQ m addr r)
+newResultQ :: forall m addr tr r. MonadSTM m => m (ResultQ m addr tr r)
 newResultQ = atomically $ newTQueue
 
 -- | Mutable state kept by the worker.  All the workers in this module are
@@ -144,15 +116,9 @@ data SocketState m addr
    = CreatedSocket !addr !(Async m ())
    | ClosedSocket  !addr !(Async m ())
 
--- | Callback which firest: when we create or close a socket.
---
--- Note: this callback runs with async exceptions masked.
+-- | Callback which fires: when we create or close a socket.
 --
 type SocketStateChange m s addr = SocketState m addr -> s -> STM m s
-
--- | Complete a connection, which receive application result (or exception).
---
-type CompleteApplication m s addr r = Result addr r -> s -> STM m (s, m ())
 
 -- | Given current state 'retry' too keep the subscription worker going.
 -- When this transaction returns, all the threads spawned by the worker will be
@@ -277,12 +243,13 @@ subscriptionLoop
        , MonadFix   m
        , Ord (Async m ())
        , Ord addr
+       , Show addr
        )
     => Tracer              m (SubscriptionTrace addr)
 
     -- various state variables of the subscription loop
     -> ConnectionTable     m   addr
-    -> ResultQ             m   addr a
+    -> ResultQ             m   addr (WithAddr addr ErrorPolicyTrace) a
     -> StateVar            m s
     -> ThreadsVar          m
 
@@ -469,9 +436,14 @@ subscriptionLoop
           atomically $ do
             -- remove thread from active connections threads
             modifyTVar conThreads (Set.delete thread)
-            (!s, m) <- readTVar sVar >>= completeApplicationTx (ConnectionError t remoteAddr e)
-            writeTVar sVar s
-            writeTQueue resQ (Act m)
+
+            CompleteApplicationResult
+              { carState
+              , carThreads
+              , carTrace
+              } <- readTVar sVar >>= completeApplicationTx (ConnectionError t remoteAddr e)
+            writeTVar sVar carState
+            writeTQueue resQ (Act carThreads carTrace)
 
         -- connection succeeded
         Right _ -> do
@@ -484,9 +456,13 @@ subscriptionLoop
             if v > 0
               then do
                 addConnection tbl remoteAddr localAddr (Just valencyVar)
-                (!s, m) <- readTVar sVar >>= completeApplicationTx (Connected t remoteAddr)
-                writeTVar sVar s
-                writeTQueue resQ (Act m)
+                CompleteApplicationResult
+                  { carState
+                  , carThreads
+                  , carTrace
+                  } <- readTVar sVar >>= completeApplicationTx (Connected t remoteAddr)
+                writeTVar sVar carState
+                writeTQueue resQ (Act carThreads carTrace)
                 return $ if v == 1
                           then ConnectSuccessLast
                           else ConnectSuccess
@@ -515,6 +491,10 @@ subscriptionLoop
               appRes :: Either SomeException a
                 <- try $ unmask (k sock)
 
+              case appRes of
+                Right _ -> pure ()
+                Left e -> traceWith tr $ SubscriptionTraceApplicationException remoteAddr e
+
               t' <- getMonotonicTime
               atomically $ do
                 case appRes of
@@ -530,13 +510,14 @@ subscriptionLoop
 --
 mainLoop
   :: forall s r addr t.
-     ResultQ IO addr r
+     Tracer IO (WithAddr addr ErrorPolicyTrace)
+  -> ResultQ IO addr (WithAddr addr ErrorPolicyTrace) r
   -> ThreadsVar IO
   -> StateVar IO s
   -> CompleteApplication IO s addr r
   -> Main IO s t
   -> IO t
-mainLoop resQ threadsVar statusVar completeApplicationTx main = do
+mainLoop errorPolicyTracer resQ threadsVar statusVar completeApplicationTx main = do
     join (atomically $ mainTx `STM.orElse` connectionTx)
   where
     -- Sample the state, and run the main action. If it does not retry, then
@@ -552,12 +533,22 @@ mainLoop resQ threadsVar statusVar completeApplicationTx main = do
     connectionTx = do
       result <- STM.readTQueue resQ
       case result of
-        Act m -> pure $ m >> mainLoop resQ threadsVar statusVar completeApplicationTx main
+        Act threads tr -> pure $ do
+          traverse_ cancel threads
+          traverse_ (traceWith errorPolicyTracer) tr 
+          mainLoop errorPolicyTracer resQ threadsVar statusVar completeApplicationTx main
         Res r -> do
           s <- readTVar statusVar
-          (!s', m) <- completeApplicationTx r s
-          writeTVar statusVar s'
-          pure $ m >> mainLoop resQ threadsVar statusVar completeApplicationTx main
+          CompleteApplicationResult
+            { carState
+            , carThreads
+            , carTrace
+            } <- completeApplicationTx r s
+          writeTVar statusVar carState
+          pure $ do
+            traverse_ cancel carThreads
+            traverse_ (traceWith errorPolicyTracer) carTrace
+            mainLoop errorPolicyTracer resQ threadsVar statusVar completeApplicationTx main
 
 
 --
@@ -574,8 +565,11 @@ mainLoop resQ threadsVar statusVar completeApplicationTx main = do
 --
 worker
     :: forall s sock addr a t.
-       Ord addr
+       ( Ord addr
+       , Show addr
+       )
     => Tracer              IO (SubscriptionTrace addr)
+    -> Tracer              IO (WithAddr addr ErrorPolicyTrace)
     -> ConnectionTable     IO   addr
     -> StateVar            IO s
 
@@ -599,7 +593,7 @@ worker
     -> (sock -> IO a)
     -- ^ application
     -> IO t
-worker tr tbl sVar socket
+worker tr errTrace tbl sVar socket
        socketStateChangeTx
        completeApplicationTx mainTx
        localAddresses selectAddr
@@ -612,7 +606,7 @@ worker tr tbl sVar socket
          completeApplicationTx
          localAddresses selectAddr connectionAttemptDelay
          getTargets valency k) $ \_ ->
-           mainLoop resQ threadsVar sVar completeApplicationTx mainTx
+           mainLoop errTrace resQ threadsVar sVar completeApplicationTx mainTx
            `finally` killThreads threadsVar
   where
     killThreads threadsVar = do
@@ -651,9 +645,11 @@ instance Exception SubscriberError where
 data SubscriptionTrace addr =
       SubscriptionTraceConnectStart addr
     | SubscriptionTraceConnectEnd addr ConnectResult
-    | forall e. Exception e => SubscriptionTraceConnectException addr e
     | forall e. Exception e => SubscriptionTraceSocketAllocationException addr e
-    | SubscriptionTraceConnectCleanup addr
+    | forall e. Exception e => SubscriptionTraceConnectException addr e
+    | forall e. Exception e => SubscriptionTraceApplicationException addr e
+    | SubscriptionTraceTryConnectToPeer addr
+    | SubscriptionTraceSkippingPeer addr
     | SubscriptionTraceSubscriptionRunning
     | SubscriptionTraceSubscriptionWaiting Int
     | SubscriptionTraceSubscriptionFailed
@@ -663,7 +659,6 @@ data SubscriptionTrace addr =
     | SubscriptionTraceConnectionExist addr
     | SubscriptionTraceUnsupportedRemoteAddr addr
     | SubscriptionTraceMissingLocalAddress
-    | SubscriptionApplicationException SomeException
     | SubscriptionTraceAllocateSocket addr
     | SubscriptionTraceCloseSocket addr
 
@@ -676,8 +671,10 @@ instance Show addr => Show (SubscriptionTrace addr) where
         "Socket Allocation Exception, destination " ++ show dst ++ " exception: " ++ show e
     show (SubscriptionTraceConnectException dst e) =
         "Connection Attempt Exception, destination " ++ show dst ++ " exception: " ++ show e
-    show (SubscriptionTraceConnectCleanup dst) =
-        "Connection Cleanup, destination " ++ show dst
+    show (SubscriptionTraceTryConnectToPeer addr) =
+        "Trying to connect to " ++ show addr
+    show (SubscriptionTraceSkippingPeer addr) =
+        "Skipping peer " ++ show addr
     show SubscriptionTraceSubscriptionRunning =
         "Required subscriptions started"
     show (SubscriptionTraceSubscriptionWaiting d) =
@@ -697,8 +694,8 @@ instance Show addr => Show (SubscriptionTrace addr) where
     -- TODO: add address family
     show SubscriptionTraceMissingLocalAddress =
         "Missing local address"
-    show (SubscriptionApplicationException e) =
-        "Application Exception: " ++ show e
+    show (SubscriptionTraceApplicationException addr e) =
+        "Application Exception: " ++ show addr ++ " " ++ show e
     show (SubscriptionTraceAllocateSocket addr) =
         "Allocate socket to " ++ show addr
     show (SubscriptionTraceCloseSocket addr) =

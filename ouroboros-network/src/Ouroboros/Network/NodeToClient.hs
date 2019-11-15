@@ -26,6 +26,18 @@ module Ouroboros.Network.NodeToClient (
   -- * Re-exported clients
   , chainSyncClientNull
   , localTxSubmissionClientNull
+
+  -- * Re-exports
+  , ErrorPolicies (..)
+  , nullErrorPolicies
+  , ErrorPolicy (..)
+  , ErrorPolicyTrace (..)
+  , WithAddr (..)
+  , PeerStates (..)
+  , newPeerStatesVar
+  , cleanPeerStates
+  , PeerState (..)
+  , SuspendDecision (..)
   , newConnectionTable
   , TraceSendRecv (..)
   , DecoderFailureOrTooMuchInput
@@ -37,7 +49,6 @@ module Ouroboros.Network.NodeToClient (
   ) where
 
 import           Control.Concurrent.Async (Async)
-import           Control.Monad.Class.MonadSTM.Strict
 import qualified Data.ByteString.Lazy as BL
 import           Data.Text (Text)
 import qualified Data.Text as T
@@ -48,12 +59,19 @@ import qualified Codec.CBOR.Decoding as CBOR
 import qualified Codec.CBOR.Term as CBOR
 import           Codec.Serialise (Serialise (..), DeserialiseFailure)
 import           Codec.SerialiseTerm
-
 import qualified Network.Socket as Socket
+
+import           Control.Monad.Class.MonadSTM.Strict
+import           Control.Tracer (Tracer)
+
 import           Network.Mux.Types
 import           Network.Mux.Interface
+import           Network.TypedProtocol.Driver.ByteLimit (DecoderFailureOrTooMuchInput)
+import           Network.TypedProtocol.Driver (TraceSendRecv (..))
 
 import           Ouroboros.Network.Magic
+import           Ouroboros.Network.ErrorPolicy
+import           Ouroboros.Network.Subscription.PeerState
 import           Ouroboros.Network.Mux
 import           Ouroboros.Network.Protocol.ChainSync.Client (chainSyncClientNull)
 import           Ouroboros.Network.Protocol.LocalTxSubmission.Client (localTxSubmissionClientNull)
@@ -66,9 +84,6 @@ import           Ouroboros.Network.Subscription.Ip ( IPSubscriptionTarget (..)
                                                    , SubscriptionTrace (..)
                                                    )
 import           Ouroboros.Network.Subscription.Worker (LocalAddresses (..))
-import           Network.TypedProtocol.Driver.ByteLimit (DecoderFailureOrTooMuchInput)
-import           Network.TypedProtocol.Driver (TraceSendRecv (..))
-import           Control.Tracer (Tracer)
 
 -- | An index type used with the mux to enumerate all the mini-protocols that
 -- make up the overall node-to-client protocol.
@@ -193,26 +208,32 @@ withServer
   :: ( HasResponder appType ~ True )
   => Tracer IO (WithMuxBearer peerid (MuxTrace NodeToClientProtocols))
   -> Tracer IO (TraceSendRecv (Handshake NodeToClientVersion CBOR.Term) peerid (DecoderFailureOrTooMuchInput DeserialiseFailure))
+  -> Tracer IO (WithAddr Socket.SockAddr ErrorPolicyTrace)
   -> ConnectionTable IO Socket.SockAddr
+  -> StrictTVar IO (PeerStates IO Socket.SockAddr)
   -> Socket.AddrInfo
   -> (Socket.SockAddr -> Socket.SockAddr -> peerid)
   -- ^ create peerid from local address and remote address
   -> (forall vData. DictVersion vData -> vData -> vData -> Accept)
   -> Versions NodeToClientVersion DictVersion
               (OuroborosApplication appType peerid NodeToClientProtocols IO BL.ByteString a b)
+  -> ErrorPolicies Socket.SockAddr ()
   -> (Async () -> IO t)
   -> IO t
-withServer muxTracer handshakeTracer tbl addr peeridFn acceptVersion versions k =
+withServer muxTracer handshakeTracer  errorPolicyTracer tbl stVar addr peeridFn acceptVersion versions errPolicies k =
   withServerNode
     muxTracer
     handshakeTracer
+    errorPolicyTracer
     tbl
+    stVar
     addr
     (\(DictVersion codec) -> encodeTerm codec)
     (\(DictVersion codec) -> decodeTerm codec)
     peeridFn
     acceptVersion
     versions
+    errPolicies
     (\_ -> k)
 
 -- | A specialised version of 'withServer' which can only communicate using
@@ -222,7 +243,9 @@ withServer_V1
   :: ( HasResponder appType ~ True )
   => Tracer IO (WithMuxBearer peerid (MuxTrace NodeToClientProtocols))
   -> Tracer IO (TraceSendRecv (Handshake NodeToClientVersion CBOR.Term) peerid (DecoderFailureOrTooMuchInput DeserialiseFailure))
+  -> Tracer IO (WithAddr Socket.SockAddr ErrorPolicyTrace)
   -> ConnectionTable IO Socket.SockAddr
+  -> StrictTVar IO (PeerStates IO Socket.SockAddr)
   -> Socket.AddrInfo
   -> (Socket.SockAddr -> Socket.SockAddr -> peerid)
   -- ^ create peerid from local address and remote address
@@ -233,11 +256,12 @@ withServer_V1
   -- ^ applications which has the reponder side, i.e.
   -- 'OuroborosResponderApplication' or
   -- 'OuroborosInitiatorAndResponderApplication'.
+  -> ErrorPolicies Socket.SockAddr ()
   -> (Async () -> IO t)
   -> IO t
-withServer_V1 muxTracer handshakeTracer tbl addr peeridFn versionData application =
+withServer_V1 muxTracer handshakeTracer errorPolicyTracer tbl stVar addr peeridFn versionData application =
     withServer
-      muxTracer handshakeTracer tbl addr peeridFn
+      muxTracer handshakeTracer errorPolicyTracer tbl stVar addr peeridFn
       (\(DictVersion _) -> acceptEq)
       (simpleSingletonVersions
         NodeToClientV_1
@@ -258,11 +282,14 @@ ncSubscriptionWorker
           (Handshake NodeToClientVersion CBOR.Term)
           peerid
           (DecoderFailureOrTooMuchInput DeserialiseFailure))
+    -> Tracer IO (WithAddr Socket.SockAddr ErrorPolicyTrace)
     -> (Socket.SockAddr -> Socket.SockAddr -> peerid)
     -> ConnectionTable IO Socket.SockAddr
+    -> StrictTVar IO (PeerStates IO Socket.SockAddr)
     -> LocalAddresses Socket.SockAddr
     -> (Socket.SockAddr -> Maybe DiffTime)
     -- ^ Lookup function, should return expected delay for the given address
+    -> ErrorPolicies Socket.SockAddr ()
     -> IPSubscriptionTarget
     -> Versions
         NodeToClientVersion
@@ -277,19 +304,24 @@ ncSubscriptionWorker
   subscriptionTracer
   muxTracer
   handshakeTracer
+  errTracer
   peeridFn
   tbl
+  peerStatesVar
   localAddr
   connectionAttemptDelay
+  errPolicies
   ips
   versions
     = Subscription.ipSubscriptionWorker
         subscriptionTracer
+        errTracer
         tbl
+        peerStatesVar
         localAddr
         connectionAttemptDelay
+        errPolicies
         ips
-        (\_ -> retry)
         (connectToNode'
           (\(DictVersion codec) -> encodeTerm codec)
           (\(DictVersion codec) -> decodeTerm codec)
@@ -307,11 +339,14 @@ ncSubscriptionWorker_V1
     => Tracer IO (WithIPList (SubscriptionTrace Socket.SockAddr))
     -> Tracer IO (WithMuxBearer peerid (MuxTrace NodeToClientProtocols))
     -> Tracer IO (TraceSendRecv (Handshake NodeToClientVersion CBOR.Term) peerid (DecoderFailureOrTooMuchInput DeserialiseFailure))
+    -> Tracer IO (WithAddr Socket.SockAddr ErrorPolicyTrace)
     -> (Socket.SockAddr -> Socket.SockAddr -> peerid)
     -> ConnectionTable IO Socket.SockAddr
+    -> StrictTVar IO (PeerStates IO Socket.SockAddr)
     -> LocalAddresses Socket.SockAddr
     -> (Socket.SockAddr -> Maybe DiffTime)
     -- ^ Lookup function, should return expected delay for the given address
+    -> ErrorPolicies Socket.SockAddr ()
     -> IPSubscriptionTarget
     -> NodeToClientVersionData
     -> (OuroborosApplication
@@ -324,10 +359,13 @@ ncSubscriptionWorker_V1
   subscriptionTracer
   muxTracer
   handshakeTracer
+  errTracer
   peeridFn
   tbl
+  peerStatesVar
   localAddresses
   connectionAttemptDelay
+  errPolicies
   ips
   versionData
   application
@@ -335,15 +373,16 @@ ncSubscriptionWorker_V1
         subscriptionTracer
         muxTracer
         handshakeTracer
+        errTracer
         peeridFn
         tbl
+        peerStatesVar
         localAddresses
         connectionAttemptDelay
+        errPolicies
         ips
         (simpleSingletonVersions
           NodeToClientV_1
           versionData
           (DictVersion nodeToClientCodecCBORTerm)
           application)
-
-

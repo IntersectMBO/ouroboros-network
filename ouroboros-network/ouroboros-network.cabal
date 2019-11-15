@@ -40,6 +40,7 @@ library
   exposed-modules:     Codec.SerialiseTerm
                        Data.FingerTree.Strict
                        Data.Sequence.Strict
+                       Data.Semigroup.Action
                        Ouroboros.Network.AnchoredFragment
                        Ouroboros.Network.Block
                        Ouroboros.Network.BlockFetch
@@ -53,6 +54,7 @@ library
                        Ouroboros.Network.Channel
                        Ouroboros.Network.DeltaQ
                        Ouroboros.Network.Magic
+                       Ouroboros.Network.ErrorPolicy
                        Ouroboros.Network.Mux
                        Ouroboros.Network.NodeToNode
                        Ouroboros.Network.NodeToClient
@@ -66,6 +68,7 @@ library
                        Ouroboros.Network.Subscription.Ip
                        Ouroboros.Network.Subscription.Dns
                        Ouroboros.Network.Subscription.Subscriber
+                       Ouroboros.Network.Subscription.PeerState
                        Ouroboros.Network.Subscription.Worker
                        Ouroboros.Network.Protocol.ChainSync.Client
                        Ouroboros.Network.Protocol.ChainSync.ClientPipelined
@@ -133,6 +136,7 @@ library
                        cborg             >=0.2.1 && <0.3,
                        containers,
                        dns,
+                       mtl,
                        fingertree        >=0.1.4.2 && <0.2,
                        iproute           >=1.7.0 && <1.8,
                        network,
@@ -159,6 +163,7 @@ test-suite test-network
   other-modules:       Codec.SerialiseTerm
                        Data.FingerTree.Strict
                        Data.Sequence.Strict
+                       Data.Semigroup.Action
                        Ouroboros.Network.AnchoredFragment
                        Ouroboros.Network.Testing.ConcreteBlock
                        Ouroboros.Network.Block
@@ -176,6 +181,7 @@ test-suite test-network
                        Ouroboros.Network.Channel
                        Ouroboros.Network.DeltaQ
                        Ouroboros.Network.Magic
+                       Ouroboros.Network.ErrorPolicy
                        Ouroboros.Network.Mux
                        Ouroboros.Network.MockNode
                        Ouroboros.Network.NodeToNode
@@ -222,6 +228,7 @@ test-suite test-network
                        Ouroboros.Network.Subscription
                        Ouroboros.Network.Subscription.Ip
                        Ouroboros.Network.Subscription.Dns
+                       Ouroboros.Network.Subscription.PeerState
                        Ouroboros.Network.Subscription.Subscriber
                        Ouroboros.Network.Subscription.Worker
                        Ouroboros.Network.TxSubmission.Inbound
@@ -239,6 +246,7 @@ test-suite test-network
                        Test.Pipe
                        Test.Socket
                        Test.Subscription
+                       Test.PeerState
   default-language:    Haskell2010
   build-depends:       base,
                        array,
