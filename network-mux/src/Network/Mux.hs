@@ -89,6 +89,7 @@ muxStart
        , Enum ptcl
        , Bounded ptcl
        , Show ptcl
+       , ProtocolEnum ptcl
        , MiniProtocolLimits ptcl
        , Eq (Async m ())
        )

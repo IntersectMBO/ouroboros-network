@@ -536,7 +536,7 @@ prop_mux_starvation (Uneven response0 response1) =
    -- We can't make 100% sure that both servers start responding at the same
    -- time but once they are both up and running messages should alternate
    -- between Mx.ReqResp2 and Mx.ReqResp3
-    verifyStarvation :: [Mx.MiniProtocolId TestProtocols2] -> Property
+    verifyStarvation :: Eq a => [a] -> Property
     verifyStarvation [] = property True
     verifyStarvation ms =
       let ms' = dropWhileEnd (\e -> e == last ms)
@@ -691,7 +691,8 @@ prop_demux_sdu a = do
     writeSdu _ payload | payload == BL.empty = return ()
     writeSdu queue payload = do
         let (!frag, !rest) = BL.splitAt 0xffff payload
-            sdu' = Mx.MuxSDU (Mx.RemoteClockModel 0) (Mx.AppProtocolId ReqRespSmall)
+            sdu' = Mx.MuxSDU (Mx.RemoteClockModel 0)
+                             (Mx.fromProtocolEnum (Mx.AppProtocolId ReqRespSmall))
                               Mx.ModeInitiator
                              (fromIntegral $ BL.length frag) frag
             !pkt = Mx.encodeMuxSDU (sdu' :: Mx.MuxSDU TestProtocolsSmall)

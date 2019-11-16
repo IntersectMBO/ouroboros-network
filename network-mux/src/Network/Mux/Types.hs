@@ -9,6 +9,7 @@ module Network.Mux.Types (
     , MiniProtocolLimits (..)
     , ProtocolEnum (..)
     , MiniProtocolId (..)
+    , MiniProtocolCode
     , MiniProtocolMode (..)
     , MuxBearer (..)
     , muxBearerAsControlChannel
@@ -69,9 +70,10 @@ remoteClockPrecision = 1e-6
 --
 class ProtocolEnum ptcl where
 
-    fromProtocolEnum :: ptcl -> Word16
-    toProtocolEnum   :: Word16 -> Maybe ptcl
+    fromProtocolEnum :: ptcl -> MiniProtocolCode
+    toProtocolEnum   :: MiniProtocolCode -> Maybe ptcl
 
+type MiniProtocolCode = Word16
 
 -- | The Ids of mini-protocols that the mux manages. This is expected to be
 -- used with custom bounded enumerations that list all the mini-protocols in
@@ -163,7 +165,7 @@ data MiniProtocolMode = ModeInitiator | ModeResponder
 
 data MuxSDU ptcl = MuxSDU {
       msTimestamp :: !RemoteClockModel
-    , msId        :: !(MiniProtocolId ptcl)
+    , msCode      :: !MiniProtocolCode
     , msMode      :: !MiniProtocolMode
     , msLength    :: !Word16
     , msBlob      :: !BL.ByteString
@@ -255,7 +257,7 @@ muxBearerAsControlChannel bearer mode = Channel {
       wrap blob = MuxSDU {
             -- it will be filled when the 'MuxSDU' is send by the 'bearer'
             msTimestamp = RemoteClockModel 0,
-            msId = Muxcontrol,
+            msCode = 0,
             msMode = mode,
             msLength = fromIntegral $ BL.length blob,
             msBlob = blob
@@ -354,7 +356,7 @@ instance Show ptcl => Show (MuxTrace ptcl) where
     show MuxTraceRecvHeaderStart = printf "Bearer Receive Header Start"
     show (MuxTraceRecvHeaderEnd sdu) = printf "Bearer Receive Header End: ts: 0x%08x %s %s len %d"
         (unRemoteClockModel $ msTimestamp sdu)
-        (show $ msId sdu)
+        (show $ msCode sdu)
         (show $ msMode sdu)
         (msLength sdu)
     show (MuxTraceRecvPayloadStart len) = printf "Bearer Receive Body Start: length %d" len
@@ -369,7 +371,7 @@ instance Show ptcl => Show (MuxTrace ptcl) where
     show (MuxTraceRecvEnd blob) = printf "Bearer Receive End: length %d" (BL.length blob)
     show (MuxTraceSendStart sdu) = printf "Bearer Send Start: ts: 0x%08x %s %s length %d chunks %d"
         (unRemoteClockModel $ msTimestamp sdu)
-        (show $ msId sdu)
+        (show $ msCode sdu)
         (show $ msMode sdu)
         (BL.length $ msBlob sdu)
         (length $ BL.toChunks $ msBlob sdu)

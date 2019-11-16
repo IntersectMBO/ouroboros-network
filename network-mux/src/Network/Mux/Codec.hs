@@ -23,17 +23,15 @@ import           Network.Mux.Types
 --
 -- All fields are in big endian byteorder.
 --
-encodeMuxSDU :: ProtocolEnum ptcl => MuxSDU ptcl -> BL.ByteString
+encodeMuxSDU :: MuxSDU ptcl -> BL.ByteString
 encodeMuxSDU sdu =
   let hdr = Bin.runPut enc in
   BL.append hdr $ msBlob sdu
   where
     enc = do
         Bin.putWord32be $ unRemoteClockModel $ msTimestamp sdu
-        putId (msId sdu) (putMode $ msMode sdu)
+        Bin.putWord16be $ msCode sdu .|. putMode (msMode sdu)
         Bin.putWord16be $ fromIntegral $ BL.length $ msBlob sdu
-
-    putId ptcl mode = Bin.putWord16be $ fromProtocolEnum ptcl .|. mode
 
     putMode :: MiniProtocolMode -> Word16
     putMode ModeInitiator = 0
@@ -42,23 +40,21 @@ encodeMuxSDU sdu =
 
 -- | Decode a 'MuSDU' header.  A left inverse of 'encodeMuxSDU'.
 --
-decodeMuxSDU :: (HasCallStack , ProtocolEnum ptcl)
-                   => BL.ByteString -> Either MuxError (MuxSDU ptcl)
+decodeMuxSDU :: HasCallStack
+             => BL.ByteString -> Either MuxError (MuxSDU ptcl)
 decodeMuxSDU buf =
     case Bin.runGetOrFail dec buf of
          Left  (_, _, e)  -> Left $ MuxError MuxDecodeError e callStack
          Right (_, _, ph) ->
-             let mode  = getMode $ mshIdAndMode ph
-                 mid_m = getId $ mshIdAndMode ph .&. 0x7fff in
-             case mid_m of
-                  Left  e   -> Left  $ MuxError MuxUnknownMiniProtocol ("id = " ++ show e) callStack
-                  Right mid -> Right $ MuxSDU {
-                        msTimestamp = mshTimestamp ph
-                      , msId = mid
-                      , msMode = mode
-                      , msLength = mshLength ph
-                      , msBlob = BL.empty
-                      }
+             let mode = getMode $ mshIdAndMode ph
+                 code = mshIdAndMode ph .&. 0x7fff in
+             Right $ MuxSDU {
+                   msTimestamp = mshTimestamp ph
+                 , msCode = code
+                 , msMode = mode
+                 , msLength = mshLength ph
+                 , msBlob = BL.empty
+                 }
   where
     dec = do
         ts <- Bin.getWord32be
@@ -69,8 +65,3 @@ decodeMuxSDU buf =
     getMode mid =
         if mid .&. 0x8000 == 0 then ModeInitiator
                                else ModeResponder
-
-    getId :: ProtocolEnum ptcl => Word16 -> Either Word16 (MiniProtocolId ptcl)
-    getId n | Just ptcl <- toProtocolEnum n
-            = Right ptcl
-    getId a = Left a
