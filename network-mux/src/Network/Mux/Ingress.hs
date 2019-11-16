@@ -73,14 +73,14 @@ negMiniProtocolMode ModeResponder = ModeInitiator
 -- | demux runs as a single separate thread and reads complete 'MuxSDU's from
 -- the underlying Mux Bearer and forwards it to the matching ingress queue.
 demux :: (MonadSTM m, MonadSay m, MonadThrow m, MonadThrow (STM m)
-         , Ord ptcl, Enum ptcl, Show ptcl, ProtocolEnum ptcl
+         , Ord ptcl, Enum ptcl, Show ptcl
          , MiniProtocolLimits ptcl, HasCallStack)
       => PerMuxSharedState ptcl m -> m ()
 demux pmss = forever $ do
     (sdu, _) <- Network.Mux.Types.read $ bearer pmss
     -- say $ printf "demuxing sdu on mid %s mode %s lenght %d " (show $ msId sdu) (show $ msMode sdu)
     --             (BL.length $ msBlob sdu)
-    msId <- case toProtocolEnum (msCode sdu) of
+    msId <- case fromMiniProtocolCode (protocolCodes pmss) (msCode sdu) of
               Nothing   -> throwM (MuxError MuxUnknownMiniProtocol
                                      ("id = " ++ show (msCode sdu)) callStack)
               Just msId -> return msId

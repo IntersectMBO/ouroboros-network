@@ -103,7 +103,7 @@ muxStart tracer peerid app bearer = do
     tq <- atomically $ newTBQueue 100
     cnt <- newTVarM 0
 
-    let pmss = PerMuxSS tbl tq bearer
+    let pmss = PerMuxSS tbl tq codesTbl bearer
         jobs = [ (demux pmss, "Demuxer")
                , (mux cnt pmss, "Muxer")
                , (muxControl pmss ModeResponder, "MuxControl Responder")
@@ -137,6 +137,24 @@ muxStart tracer peerid app bearer = do
                              return ((ptcl, mode), q)
                         | ptcl <- [minBound..maxBound]
                         , mode <- [ModeInitiator, ModeResponder] ]
+
+    -- Construct the arrays mapping between protocol ids and protocol codes
+    codesTbl :: MiniProtocolCodes ptcl
+    codesTbl =
+        MiniProtocolCodes
+            (array (minBound, maxBound)
+                   [ (ptcl, code)
+                   | ptcl <- [minBound..maxBound]
+                   , let code = fromProtocolEnum ptcl ])
+            (array (mincode, maxcode)
+                   [ (code, mptcl)
+                   | code <- [mincode..maxcode]
+                   , let mptcl = toProtocolEnum code ])
+      where
+        codes   = map fromProtocolEnum
+                      ([minBound..maxBound] :: [MiniProtocolId ptcl])
+        mincode = minimum codes
+        maxcode = maximum codes
 
 
     mpsJob

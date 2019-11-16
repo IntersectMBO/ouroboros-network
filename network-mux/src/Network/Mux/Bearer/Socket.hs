@@ -41,9 +41,7 @@ hexDump buf out = hexDump (BL.tail buf) (out ++ printf "0x%02x " (BL.head buf))
 -- 'MuxError'.
 --
 socketAsMuxBearer
-  :: forall ptcl.
-     Mx.ProtocolEnum ptcl
-  => Tracer IO (Mx.MuxTrace ptcl)
+  :: Tracer IO (Mx.MuxTrace ptcl)
   -> Socket.Socket
   -> IO (MuxBearer IO)
 socketAsMuxBearer tracer sd = do

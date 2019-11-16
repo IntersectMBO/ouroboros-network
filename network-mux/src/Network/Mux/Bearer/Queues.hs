@@ -30,7 +30,6 @@ queuesAsMuxBearer
      ( MonadSTM   m
      , MonadTime  m
      , MonadThrow m
-     , Mx.ProtocolEnum ptcl
      , Eq  (Async m ())
      )
   => Tracer m (Mx.MuxTrace ptcl)

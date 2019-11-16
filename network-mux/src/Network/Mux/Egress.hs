@@ -105,10 +105,10 @@ import           Network.Mux.Types
 -- shared FIFO that contains the items of work. This is processed so
 -- that each active demand gets a `maxSDU`s work of data processed
 -- each time it gets to the front of the queue
-mux :: (MonadSTM m, ProtocolEnum ptcl)
-     => StrictTVar m Int
-     -> PerMuxSharedState ptcl m
-     -> m ()
+mux :: (MonadSTM m, Ord ptcl, Enum ptcl)
+    => StrictTVar m Int
+    -> PerMuxSharedState ptcl m
+    -> m ()
 mux cnt pmss = go
   where
   go = do
@@ -120,7 +120,7 @@ mux cnt pmss = go
 -- data remaining requeue the `TranslocationServiceRequest` (this
 -- ensures that any other items on the queue will get some service
 -- first.
-processSingleWanton :: (MonadSTM m, ProtocolEnum ptcl)
+processSingleWanton :: (MonadSTM m, Ord ptcl, Enum ptcl)
                     => PerMuxSharedState ptcl m
                     -> MiniProtocolId ptcl
                     -> MiniProtocolMode
@@ -144,7 +144,8 @@ processSingleWanton pmss mpi md wanton cnt = do
           modifyTVar cnt (+ 1)
       -- return data to send
       pure frag
-    let sdu = MuxSDU (RemoteClockModel 0) (fromProtocolEnum mpi)
+    let sdu = MuxSDU (RemoteClockModel 0)
+                     (toMiniProtocolCode (protocolCodes pmss) mpi)
                      md (fromIntegral $ BL.length blob) blob
     void $ write (bearer pmss) sdu
     atomically $ modifyTVar cnt (\a -> a - 1)

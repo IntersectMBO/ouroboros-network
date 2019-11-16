@@ -26,13 +26,7 @@ import qualified Network.Mux.Time as Mx
 
 
 pipeAsMuxBearer
-  :: forall ptcl.
-     ( Mx.ProtocolEnum ptcl
-     , Ord ptcl
-     , Enum ptcl
-     , Bounded ptcl
-     )
-  => Tracer IO (Mx.MuxTrace ptcl)
+  :: Tracer IO (Mx.MuxTrace ptcl)
   -> Handle -- ^ read handle
   -> Handle -- ^ write handle
   -> IO (MuxBearer IO)
