@@ -5,6 +5,8 @@ where
 import           Data.IntMap.Strict (IntMap)
 import qualified Data.IntMap.Strict as IM
 import           Data.Maybe
+import           Data.Word (Word32)
+
 
 import           Control.Monad.Class.MonadTime
 import           Network.Mux.Types
@@ -18,30 +20,43 @@ newtype SISec2 = S2 Float -- are there performance reasons to use Double?
 squareSISec :: SISec -> SISec2
 squareSISec (S x) = S2 $ x * x
 
--- the observation step
+-- the per observation procesing step
 step :: StatsA -> RemoteClockModel -> Time -> Int -> (Maybe Sample, StatsA)
 step s remoteTS localTS obsSize
- | isNothing (referenceTimePoint s)
-   = step (s { referenceTimePoint = Just $! (remoteTS, localTS)
+ | isNothing (referenceTimePoint s) -- first observation this sample period
+   = step (s { referenceTimePoint = Just $! (unRemoteClockModel remoteTS, localTS)
              , nextSampleAt       = sampleInterval `addTime` localTS
              , timeLastObs        = localTS -- for single observation in sample case
              })
          remoteTS localTS obsSize
- | localTS <= nextSampleAt s
+ | localTS <= nextSampleAt s    -- still in a sample period
   = let Just refTimePoint = referenceTimePoint s
         transitTime       = calcTransitTime refTimePoint remoteTS localTS
     in (Nothing, recordObservation s localTS obsSize transitTime)
- | otherwise
+ | otherwise                    -- need to start next sample period
   = let sample  = constructSample s
         (_, s') = step initialStatsA remoteTS localTS obsSize
     in (Just sample, s')
 
-calcTransitTime :: (RemoteClockModel, Time)
+-- Calculate the transit time by transforming the remotely reported
+-- emit time into local clock domain then calculating differences.
+calcTransitTime :: (Word32, Time)
                 -> RemoteClockModel
                 -> Time
                 -> SISec
-calcTransitTime (_remoteRef, _localRef) _rts _lts
-  = undefined
+calcTransitTime (remoteRefTS, localRefTS) remoteTS' localTS
+  = let remoteTS
+          = unRemoteClockModel remoteTS'
+        remoteClockDiffAsTimeDiff
+          = (1e-6 *) . fromRational . fromIntegral
+        correctedEmitTime
+          | remoteTS >= remoteRefTS
+          = (remoteClockDiffAsTimeDiff $ remoteTS - remoteRefTS)
+            `addTime` localRefTS
+          | otherwise -- wrap has occurred
+          = (remoteClockDiffAsTimeDiff $ maxBound - (remoteRefTS - remoteTS))
+            `addTime` localRefTS
+    in S $! fromRational (toRational (localTS `diffTime` correctedEmitTime))
 
 recordObservation :: StatsA -> Time -> Int -> SISec -> StatsA
 recordObservation s obsTime obsSize transitTime
@@ -61,7 +76,7 @@ data Sample
 -- | Statistics accumulator
 data StatsA = StatsA
   { -- per sample
-    referenceTimePoint :: !(Maybe (RemoteClockModel, Time))
+    referenceTimePoint :: !(Maybe (Word32, Time))
   , nextSampleAt       :: !Time
     -- per observation
   , numObservations    :: !Int
