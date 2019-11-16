@@ -48,7 +48,7 @@ calcTransitTime (remoteRefTS, localRefTS) remoteTS' localTS
   = let remoteTS
           = unRemoteClockModel remoteTS'
         remoteClockDiffAsTimeDiff
-          = (1e-6 *) . fromRational . fromIntegral
+          = (remoteClockPrecision *) . fromRational . fromIntegral
         correctedEmitTime
           | remoteTS >= remoteRefTS
           = (remoteClockDiffAsTimeDiff $ remoteTS - remoteRefTS)
@@ -121,7 +121,7 @@ makePerSizeRecord tt = PSR
 
 -- NOTE this interval must be less than the wrap around time of the
 -- `RemoteClockModel`. The remote clock model has a precision of
--- microseconds.
+-- `remoteClockPrecision`.
 sampleInterval :: DiffTime
 sampleInterval = check 10
   where
@@ -133,4 +133,4 @@ sampleInterval = check 10
     ticksPerRemoteClockWrap -- how many micro secs?
       = fromIntegral $ (maxBound `asTypeOf` (unRemoteClockModel undefined))
     wrapInterval
-      = 1e-6 * (fromRational ticksPerRemoteClockWrap)
+      = remoteClockPrecision * (fromRational ticksPerRemoteClockWrap)
