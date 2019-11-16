@@ -85,6 +85,8 @@ library
                        Ouroboros.Network.Protocol.Handshake.Type
                        Ouroboros.Network.Protocol.Handshake.Codec
                        Ouroboros.Network.Protocol.Handshake.Version
+                       Ouroboros.Network.Protocol.LocalStateQuery.Type
+                       Ouroboros.Network.Protocol.LocalTxMonitor.Type
                        Ouroboros.Network.Protocol.TxSubmission.Type
                        Ouroboros.Network.Protocol.TxSubmission.Client
                        Ouroboros.Network.Protocol.TxSubmission.Server
