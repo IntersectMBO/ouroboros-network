@@ -35,7 +35,7 @@ pipeAsMuxBearer
   => Tracer IO (Mx.MuxTrace ptcl)
   -> Handle -- ^ read handle
   -> Handle -- ^ write handle
-  -> IO (MuxBearer ptcl IO)
+  -> IO (MuxBearer IO)
 pipeAsMuxBearer tracer pcRead pcWrite = do
       mxState <- atomically $ newTVar Mx.Larval
       return $ Mx.MuxBearer {
@@ -45,8 +45,7 @@ pipeAsMuxBearer tracer pcRead pcWrite = do
           Mx.state = mxState
         }
     where
-      readPipe :: (HasCallStack)
-               => IO (Mx.MuxSDU ptcl, Time)
+      readPipe :: HasCallStack => IO (Mx.MuxSDU, Time)
       readPipe = do
           traceWith tracer $ Mx.MuxTraceRecvHeaderStart
           hbuf <- recvLen' pcRead 8 []
@@ -75,8 +74,7 @@ pipeAsMuxBearer tracer pcRead pcWrite = do
                   traceWith tracer $ Mx.MuxTraceRecvEnd buf
                   recvLen' pd (l - fromIntegral (BL.length buf)) (buf : bufs)
 
-      writePipe :: Mx.MuxSDU ptcl
-                -> IO Time
+      writePipe :: Mx.MuxSDU -> IO Time
       writePipe sdu = do
           ts <- getMonotonicTime
           let ts32 = Mx.timestampMicrosecondsLow32Bits ts

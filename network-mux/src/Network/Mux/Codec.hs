@@ -23,7 +23,7 @@ import           Network.Mux.Types
 --
 -- All fields are in big endian byteorder.
 --
-encodeMuxSDU :: MuxSDU ptcl -> BL.ByteString
+encodeMuxSDU :: MuxSDU -> BL.ByteString
 encodeMuxSDU sdu =
   let hdr = Bin.runPut enc in
   BL.append hdr $ msBlob sdu
@@ -41,7 +41,7 @@ encodeMuxSDU sdu =
 -- | Decode a 'MuSDU' header.  A left inverse of 'encodeMuxSDU'.
 --
 decodeMuxSDU :: HasCallStack
-             => BL.ByteString -> Either MuxError (MuxSDU ptcl)
+             => BL.ByteString -> Either MuxError MuxSDU
 decodeMuxSDU buf =
     case Bin.runGetOrFail dec buf of
          Left  (_, _, e)  -> Left $ MuxError MuxDecodeError e callStack

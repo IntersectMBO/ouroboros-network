@@ -45,7 +45,7 @@ socketAsMuxBearer
      Mx.ProtocolEnum ptcl
   => Tracer IO (Mx.MuxTrace ptcl)
   -> Socket.Socket
-  -> IO (MuxBearer ptcl IO)
+  -> IO (MuxBearer IO)
 socketAsMuxBearer tracer sd = do
       mxState <- atomically $ newTVar Mx.Larval
       return $ Mx.MuxBearer {
@@ -55,7 +55,7 @@ socketAsMuxBearer tracer sd = do
           Mx.state   = mxState
         }
     where
-      readSocket :: (HasCallStack) => IO (Mx.MuxSDU ptcl, Time)
+      readSocket :: HasCallStack => IO (Mx.MuxSDU, Time)
       readSocket = do
           traceWith tracer $ Mx.MuxTraceRecvHeaderStart
           hbuf <- recvLen' True 8 []
@@ -95,7 +95,7 @@ socketAsMuxBearer tracer sd = do
                   traceWith tracer $ Mx.MuxTraceRecvEnd buf
                   recvLen' False (l - fromIntegral (BL.length buf)) (buf : bufs)
 
-      writeSocket :: Mx.MuxSDU ptcl -> IO Time
+      writeSocket :: Mx.MuxSDU -> IO Time
       writeSocket sdu = do
           --say "write"
           ts <- getMonotonicTime

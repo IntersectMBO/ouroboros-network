@@ -78,7 +78,6 @@ import           Network.TypedProtocol.Driver (TraceSendRecv)
 import qualified Network.Mux as Mx
 import Network.Mux.DeltaQ.TraceTransformer
 import qualified Network.Mux.Types as Mx
-import           Network.Mux.Types (MuxBearer)
 import           Network.Mux.Interface
 import qualified Network.Mux.Bearer.Socket as Mx
 
@@ -303,7 +302,7 @@ beginConnection muxTracer handshakeTracer versionDataCodec acceptVersion fn t ad
     case accept of
       AcceptConnection st' peerid versions -> pure $ Server.Accept st' $ \sd -> do
         muxTracer' <- initDeltaQTracer' $ Mx.WithMuxBearer peerid `contramap` muxTracer
-        (bearer :: MuxBearer ptcl IO) <- Mx.socketAsMuxBearer muxTracer' sd
+        bearer <- Mx.socketAsMuxBearer muxTracer' sd
         Mx.muxBearerSetState muxTracer' bearer Mx.Connected
         traceWith muxTracer' $ Mx.MuxTraceHandshakeStart
         mapp <- runPeerWithByteLimit

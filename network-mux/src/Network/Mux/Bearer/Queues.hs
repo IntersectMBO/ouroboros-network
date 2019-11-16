@@ -38,7 +38,7 @@ queuesAsMuxBearer
   -> TBQueue m BL.ByteString
   -> Word16
   -> Maybe (TBQueue m (Mx.MiniProtocolCode, Mx.MiniProtocolMode, Time))
-  -> m (MuxBearer ptcl m)
+  -> m (MuxBearer m)
 queuesAsMuxBearer tracer writeQueue readQueue sduSize traceQueue = do
       mxState <- atomically $ newTVar Mx.Larval
       return $ Mx.MuxBearer {
@@ -48,7 +48,7 @@ queuesAsMuxBearer tracer writeQueue readQueue sduSize traceQueue = do
           Mx.state   = mxState
         }
     where
-      readMux :: m (Mx.MuxSDU ptcl, Time)
+      readMux :: m (Mx.MuxSDU, Time)
       readMux = do
           traceWith tracer $ Mx.MuxTraceRecvHeaderStart
           buf <- atomically $ readTBQueue readQueue
@@ -69,8 +69,7 @@ queuesAsMuxBearer tracer writeQueue readQueue sduSize traceQueue = do
                   traceWith tracer $ Mx.MuxTraceRecvPayloadEnd payload
                   return (header {Mx.msBlob = payload}, ts)
 
-      writeMux :: Mx.MuxSDU ptcl
-               -> m Time
+      writeMux :: Mx.MuxSDU -> m Time
       writeMux sdu = do
           ts <- getMonotonicTime
           let ts32 = Mx.timestampMicrosecondsLow32Bits ts

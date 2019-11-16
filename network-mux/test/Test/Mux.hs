@@ -695,7 +695,7 @@ prop_demux_sdu a = do
                              (Mx.fromProtocolEnum (Mx.AppProtocolId ReqRespSmall))
                               Mx.ModeInitiator
                              (fromIntegral $ BL.length frag) frag
-            !pkt = Mx.encodeMuxSDU (sdu' :: Mx.MuxSDU TestProtocolsSmall)
+            !pkt = Mx.encodeMuxSDU (sdu' :: Mx.MuxSDU)
 
         atomically $ writeTBQueue queue pkt
         writeSdu queue rest

@@ -96,7 +96,7 @@ muxStart
     => Tracer m (MuxTrace ptcl)
     -> peerid
     -> MuxApplication appType peerid ptcl m a b
-    -> MuxBearer ptcl m
+    -> MuxBearer m
     -> m ()
 muxStart tracer peerid app bearer = do
     tbl <- setupTbl
@@ -271,7 +271,7 @@ muxChannel tracer pmss mid md cnt = do
 
 muxBearerSetState :: (MonadSTM m, Ord ptcl, Enum ptcl, Bounded ptcl)
                   => Tracer m (MuxTrace ptcl)
-                  -> MuxBearer ptcl m
+                  -> MuxBearer m
                   -> MuxBearerState
                   -> m ()
 muxBearerSetState tracer bearer newState = do

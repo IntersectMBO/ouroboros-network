@@ -45,6 +45,7 @@ import           Control.Tracer
 -- TODO: remove Mx prefixes
 import qualified Network.Mux as Mx
 import qualified Network.Mux.Bearer.Socket as Mx
+import qualified Network.Mux.Types as Mx
 import           Ouroboros.Network.Mux as Mx
 
 import           Ouroboros.Network.Socket
@@ -307,15 +308,16 @@ prop_socket_recv_close f _ = ioProperty $ do
         Socket.listen sd 1
 
         withAsync
-          (do
+          (let tracer :: Tracer IO (Mx.MuxTrace TestProtocols2)
+               tracer = nullTracer
               -- accept a connection and start mux on it
-              bracket
+           in bracket
                 (Socket.accept sd)
                 (\(sd',_) -> Socket.close sd')
                 $ \(sd',_) -> do
-                  bearer <- Mx.socketAsMuxBearer nullTracer sd'
-                  Mx.muxBearerSetState nullTracer bearer Mx.Connected
-                  Mx.muxStart nullTracer () (toApplication app) bearer
+                  bearer <- Mx.socketAsMuxBearer tracer sd'
+                  Mx.muxBearerSetState tracer bearer Mx.Connected
+                  Mx.muxStart tracer () (toApplication app) bearer
           )
           $ \muxAsync -> do
 
