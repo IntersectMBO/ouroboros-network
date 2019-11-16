@@ -40,7 +40,7 @@ calcTransitTime :: (RemoteClockModel, Time)
                 -> RemoteClockModel
                 -> Time
                 -> SISec
-calcTransitTime _rt _rts _lts
+calcTransitTime (_remoteRef, _localRef) _rts _lts
   = undefined
 
 recordObservation :: StatsA -> Time -> Int -> SISec -> StatsA
@@ -104,5 +104,18 @@ makePerSizeRecord tt = PSR
 
 -- May want to make this a configuration variable
 
+-- NOTE this interval must be less than the wrap around time of the
+-- `RemoteClockModel`. The remote clock model has a precision of
+-- microseconds.
 sampleInterval :: DiffTime
-sampleInterval = 10
+sampleInterval = check 10
+  where
+    check n
+     | n > 0 && n < wrapInterval
+       = n
+     | otherwise
+       = error "Infeasible sampleInterval"
+    ticksPerRemoteClockWrap -- how many micro secs?
+      = fromIntegral $ (maxBound `asTypeOf` (unRemoteClockModel undefined))
+    wrapInterval
+      = 1e-6 * (fromRational ticksPerRemoteClockWrap)
