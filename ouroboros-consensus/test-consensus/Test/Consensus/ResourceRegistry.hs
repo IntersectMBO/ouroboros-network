@@ -349,7 +349,7 @@ runIO :: forall m. (IOLike m, Typeable m)
       => StrictTVar m [TestThread m]
       -> ResourceRegistry m
       -> Cmd (TestThread m) -> m (Resp (TestThread m))
-runIO alive reg cmd = catchEx $ timeoutAfter 1 $
+runIO alive reg cmd = catchEx $ timeout 1 $
     case cmd of
       Fork ->
         Spawned <$> newThread alive reg DontLink
