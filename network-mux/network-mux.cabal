@@ -30,6 +30,7 @@ library
                        bytestring      >=0.10 && <0.11,
                        cborg           >=0.2.1 && <0.3,
                        containers,
+                       ieee754,
                        network,
                        process         >=1.6 && <1.7,
                        time            >=1.6 && <1.10

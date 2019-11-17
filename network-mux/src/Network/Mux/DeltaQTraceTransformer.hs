@@ -5,6 +5,7 @@ import           Data.IntMap.Strict (IntMap)
 import qualified Data.IntMap.Strict as IM
 import           Data.Maybe
 import           Data.Word (Word32)
+import           Numeric.IEEE (nan)
 
 
 import           Control.Monad.Class.MonadTime
@@ -16,7 +17,8 @@ import           Network.Mux.Types
 step :: StatsA                  -- ^ accumulation state
      -> RemoteClockModel        -- ^ Remote clock timestamp
      -> Time                    -- ^ Local clock timestamp
-     -> Int                     -- ^ the size of the observable
+     -> Int                     -- ^ the number of octets in the
+                                --   observed outcome
      -> (Maybe OneWayDeltaQSample, StatsA)
 step s remoteTS localTS obsSize
  | isNothing (referenceTimePoint s) -- first observation this sample period
@@ -66,25 +68,55 @@ recordObservation s obsTime obsSize transitTime
 -- This might benefit from some strictness analysis, what are the
 -- likely usage patterns?, do we want a single use collapse the
 -- collective set of thunks or not?
+--
+-- There is the issue of "bias" (in its statistical meaning) here. The
+-- approach here is pragmatic, we are going to use the uncorrected
+-- sample standard deviation here as it has a defined solution for a
+-- single sample.
+--
+-- Given that the consumer of this statistic also has access to the
+-- population size, they could reconstruct the underlying measures and
+-- take it from there.
+--
+-- We return `NaN` for the appropraiate satistics when the population
+-- is empty.
 constructSample :: StatsA -> OneWayDeltaQSample
 constructSample sa = OneWaySample
-  { sumPackets     = numObservations sa
+  { sumPackets     = population
   , sumTotalSDU    = totalSDUOctets
-  , estDeltaQS     = 0 -- placeholder
-  , estDeltaQVMean = 0 -- placeholder
-  , estDeltaQVStd  = 0 -- placeholder
+  , estDeltaQS     = popCheck dQSEst
+  , estDeltaQVMean = popCheck
+                     $ vSum / (fromIntegral population)
+  , estDeltaQVStd  = popCheck . sqrt
+                     $ (vSum2 - (vSum * vSum)) / (fromIntegral population)
   }
-  -- calculate the G,S
-  -- adjust the per-size observations
   where
-    (totalSDUOctets, _minSRev)
+    -- the sample population size
+    population = numObservations sa
+    -- Handle the empty population condition
+    popCheck x
+      | population > 0 = x
+      | otherwise      = nan
+    -- gather the data for the G,S estimations
+    (totalSDUOctets, minSRev)
       = IM.foldrWithKey accum (0, []) $ observables sa
-    accum sduLen psr (sumSize, minS)
-      = ( sumSize + (count psr) * sduLen
-        , (sduSize, minTransitTime psr) : minS)
-
-
-
+    accum nOctets psr (sumSize, minS)
+      = ( sumSize + (count psr) * nOctets
+        , (nOctets, minTransitTime psr) : minS)
+    -- fit a line to get the G,S estimation
+    (dQGEst, dQSEst, _REst) = estimateGS minSRev
+    -- calculate the total population V stats
+    (vSum, vSum2)
+      = let S  v  = vSum'
+            S2 v2 = vSum2'
+        in (fromRational . toRational $ v, fromRational . toRational $ v2)
+    (vSum', vSum2')
+      = IM.foldrWithKey vCalc (0,0) $ observables sa
+    vCalc nOctets psr' (x, x2)
+      = let norm = S . fromRational . toRational
+                   $ dQGEst + (fromIntegral nOctets) * dQSEst
+            psr  = normalisePSR norm psr'
+        in (x + sumTransitTime psr, x2 + sumTransitTimeSq psr)
 
 -- | One way measurement for interval. Note that the fields are lazy
 --   here so that only calcuation necessary to satisfy strictness of
@@ -108,7 +140,6 @@ data StatsA = StatsA
   , timeLastObs        :: !Time
   , observables        :: !(IntMap PerSizeRecord)
   }
-
 
 -- This _may_ not be the best representation, but it does appear to be
 -- an adequate one. There are known issues with numerical stabilty for
@@ -155,6 +186,16 @@ instance Semigroup PerSizeRecord where
                , sumTransitTime   = sumTransitTime a + sumTransitTime b
                , sumTransitTimeSq = sumTransitTimeSq a + sumTransitTimeSq b
                }
+
+-- | Normalise given the calculated G,S for the size
+normalisePSR :: SISec -> PerSizeRecord -> PerSizeRecord
+normalisePSR norm psr
+  = psr { minTransitTime   = minTransitTime   psr + norm
+        , sumTransitTime   = sumTransitTime   psr + adj
+        , sumTransitTimeSq = sumTransitTimeSq psr + squareSISec adj
+        }
+    where
+      adj = (fromIntegral (count psr) * norm)
 
 initialStatsA :: StatsA
 initialStatsA = StatsA

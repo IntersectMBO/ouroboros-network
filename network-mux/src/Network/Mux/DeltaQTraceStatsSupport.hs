@@ -12,3 +12,7 @@ where
 --
 -- Definite space/time optimisation task here.
 
+import Network.Mux.DeltaQTraceTypes
+
+estimateGS :: [(Int, SISec)] -> (Double, Double, Double)
+estimateGS = undefined
