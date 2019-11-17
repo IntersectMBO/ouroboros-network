@@ -47,19 +47,35 @@ data OuroborosApplication (appType :: AppType) peerid ptcl m bytes a b where
        -> (peerid -> ptcl -> Channel m bytes -> m b)
        -> OuroborosApplication InitiatorAndResponderApp peerid ptcl m bytes a b
 
+--TODO: the OuroborosApplication type needs to be updated to follow the new
+-- structure of the MuxApplication, which no longer uses the bounded enumeration
+-- idiom. For now, toApplication converts from the bounded enumeration style to
+-- the simple list style that MuxApplication now uses.
 
-toApplication :: OuroborosApplication appType peerid ptcl m LBS.ByteString a b
+toApplication :: (Enum ptcl, Bounded ptcl)
+              => OuroborosApplication appType peerid ptcl m LBS.ByteString a b
               -> MuxApplication appType peerid ptcl m a b
 toApplication (OuroborosInitiatorApplication f) =
-    MuxInitiatorApplication
-      (\peerid ptcl channel -> f peerid ptcl (fromChannel channel))
+    MuxApplication
+      [ InitiatorProtocolOnly
+          ptcl
+          (\peerid channel -> f peerid ptcl (fromChannel channel))
+      | ptcl <- [minBound..maxBound] ]
+
 toApplication (OuroborosResponderApplication f) =
-    MuxResponderApplication
-      (\peerid ptcl channel -> f peerid ptcl (fromChannel channel))
+    MuxApplication
+      [ ResponderProtocolOnly
+          ptcl
+          (\peerid channel -> f peerid ptcl (fromChannel channel))
+      | ptcl <- [minBound..maxBound] ]
+
 toApplication (OuroborosInitiatorAndResponderApplication f g) =
-    MuxInitiatorAndResponderApplication
-      (\peerid ptcl channel -> f peerid ptcl (fromChannel channel))
-      (\peerid ptcl channel -> g peerid ptcl (fromChannel channel))
+    MuxApplication
+      [ InitiatorAndResponderProtocol
+          ptcl
+          (\peerid channel -> f peerid ptcl (fromChannel channel))
+          (\peerid channel -> g peerid ptcl (fromChannel channel))
+      | ptcl <- [minBound..maxBound] ]
 
 
 -- |

@@ -339,15 +339,21 @@ prop_mux_snd_recv messages = ioProperty $ do
     let server_w = client_r
         server_r = client_w
 
-    (verify, clientApp, serverApp) <- setupMiniReqRsp
+    (verify, client_mp, server_mp) <- setupMiniReqRsp
                                         (return ()) endMpsVar messages
 
+    let clientApp = Mx.MuxApplication
+                      [ Mx.InitiatorProtocolOnly ReqResp1 (const client_mp) ]
+
+        serverApp = Mx.MuxApplication
+                      [ Mx.ResponderProtocolOnly ReqResp1 (const server_mp) ]
+
     clientAsync <-
-      async $ Mx.runMuxWithQueues activeTracer "client" (Mx.MuxInitiatorApplication
-        $ \_ ReqResp1 -> clientApp) client_w client_r sduLen Nothing
+      async $ Mx.runMuxWithQueues activeTracer "client"
+                                  clientApp client_w client_r sduLen Nothing
     serverAsync <-
-      async $ Mx.runMuxWithQueues activeTracer "server" (Mx.MuxResponderApplication
-        $ \_ ReqResp1 -> serverApp) server_w server_r sduLen Nothing
+      async $ Mx.runMuxWithQueues activeTracer "server"
+                                  serverApp server_w server_r sduLen Nothing
 
     r <- waitBoth clientAsync serverAsync
     case r of
@@ -455,14 +461,16 @@ prop_mux_2_minis msgTrace0 msgTrace1 = ioProperty $ do
     (verify_1, client_mp1, server_mp1) <-
         setupMiniReqRsp (return ()) endMpsVar msgTrace1
 
-    let clientApp _ ReqResp2 = client_mp0
-        clientApp _ ReqResp3 = client_mp1
+    let clientApp = Mx.MuxApplication
+                      [ Mx.InitiatorProtocolOnly ReqResp2 (const client_mp0)
+                      , Mx.InitiatorProtocolOnly ReqResp3 (const client_mp1) ]
 
-        serverApp _ ReqResp2 = server_mp0
-        serverApp _ ReqResp3 = server_mp1
+        serverApp = Mx.MuxApplication
+                      [ Mx.ResponderProtocolOnly ReqResp2 (const server_mp0)
+                      , Mx.ResponderProtocolOnly ReqResp3 (const server_mp1) ]
 
-    clientAsync <- async $ Mx.runMuxWithQueues activeTracer "client" (Mx.MuxInitiatorApplication clientApp) client_w client_r sduLen Nothing
-    serverAsync <- async $ Mx.runMuxWithQueues activeTracer "server" (Mx.MuxResponderApplication serverApp) server_w server_r sduLen Nothing
+    clientAsync <- async $ Mx.runMuxWithQueues activeTracer "client" clientApp client_w client_r sduLen Nothing
+    serverAsync <- async $ Mx.runMuxWithQueues activeTracer "server" serverApp server_w server_r sduLen Nothing
 
 
     r <- waitBoth clientAsync serverAsync
@@ -507,14 +515,16 @@ prop_mux_starvation (Uneven response0 response1) =
         setupMiniReqRsp (waitOnAllClients activeMpsVar 2)
                         endMpsVar $ DummyTrace [(request, response1)]
 
-    let clientApp _ ReqResp2 = client_short
-        clientApp _ ReqResp3 = client_long
+    let clientApp = Mx.MuxApplication
+                      [ Mx.InitiatorProtocolOnly ReqResp2 (const client_short)
+                      , Mx.InitiatorProtocolOnly ReqResp3 (const client_long) ]
 
-        serverApp _ ReqResp2 = server_short
-        serverApp _ ReqResp3 = server_long
+        serverApp = Mx.MuxApplication
+                      [ Mx.ResponderProtocolOnly ReqResp2 (const server_short)
+                      , Mx.ResponderProtocolOnly ReqResp3 (const server_long) ]
 
-    clientAsync <- async $ Mx.runMuxWithQueues activeTracer "client" (Mx.MuxInitiatorApplication clientApp) client_w client_r sduLen (Just traceQueueVar)
-    serverAsync <- async $ Mx.runMuxWithQueues activeTracer "server" (Mx.MuxResponderApplication serverApp) server_w server_r sduLen Nothing
+    clientAsync <- async $ Mx.runMuxWithQueues activeTracer "client" clientApp client_w client_r sduLen (Just traceQueueVar)
+    serverAsync <- async $ Mx.runMuxWithQueues activeTracer "server" serverApp server_w server_r sduLen Nothing
 
     -- First verify that all messages where received correctly
     r <- waitBoth clientAsync serverAsync
@@ -607,7 +617,8 @@ prop_demux_sdu a = do
         -- To trigger MuxIngressQueueOverRun we use a special test protocol
         -- with an ingress queue which is less than 0xffff so that it can be
         -- triggered by a single segment.
-        let server_mps = Mx.MuxResponderApplication (\_ ReqRespSmall -> serverRsp stopVar)
+        let server_mps = Mx.MuxApplication
+                           [ Mx.ResponderProtocolOnly ReqRespSmall (const (serverRsp stopVar)) ]
 
         (client_w, said) <- plainServer server_mps
         setup state client_w
@@ -627,7 +638,8 @@ prop_demux_sdu a = do
     run (ArbitraryValidSDU sdu state err_m) = do
         stopVar <- newEmptyTMVarM
 
-        let server_mps = Mx.MuxResponderApplication (\_ ReqResp1 -> serverRsp stopVar)
+        let server_mps = Mx.MuxApplication
+                           [ Mx.ResponderProtocolOnly ReqResp1 (const (serverRsp stopVar)) ]
 
         (client_w, said) <- plainServer server_mps
 
@@ -649,7 +661,8 @@ prop_demux_sdu a = do
     run (ArbitraryInvalidSDU badSdu state err) = do
         stopVar <- newEmptyTMVarM
 
-        let server_mps = Mx.MuxResponderApplication (\_ ReqResp1 -> serverRsp stopVar)
+        let server_mps = Mx.MuxApplication
+                           [ Mx.ResponderProtocolOnly ReqResp1 (const (serverRsp stopVar)) ]
 
         (client_w, said) <- plainServer server_mps
 

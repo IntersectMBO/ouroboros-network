@@ -17,8 +17,7 @@ module Network.Mux.Interface
   , HasInitiator
   , HasResponder
   , MuxApplication (..)
-  , initiatorApplication
-  , responderApplication
+  , MuxMiniProtocol (..)
   , ProtocolEnum (..)
   , MiniProtocolLimits (..)
   , TraceLabelPeer (..)
@@ -78,43 +77,30 @@ type family HasResponder (appType :: AppType) :: Bool where
 --   serving downstream peers using server side of each protocol and getting
 --   updates from upstream peers using client side of each of the protocols.
 --
-data MuxApplication (appType :: AppType) peerid ptcl m a b where
-  MuxInitiatorApplication
+newtype MuxApplication (appType :: AppType) peerid ptcl m a b =
+        MuxApplication [MuxMiniProtocol appType peerid ptcl m a b]
+
+data MuxMiniProtocol (appType :: AppType) peerid ptcl m a b where
+  InitiatorProtocolOnly
     -- Initiator application; most simple application will be @'runPeer'@ or
     -- @'runPipelinedPeer'@ supplied with a codec and a @'Peer'@ for each
     -- @ptcl@.  But it allows to handle resources if just application of
     -- @'runPeer'@ is not enough.  It will be run as @'ModeInitiator'@.
-    :: (peerid -> ptcl -> Channel m -> m a)
-    -> MuxApplication InitiatorApp peerid ptcl m a Void
+    :: ptcl
+    -> (peerid -> Channel m -> m a)
+    -> MuxMiniProtocol InitiatorApp peerid ptcl m a Void
 
-  MuxResponderApplication
+  ResponderProtocolOnly
     -- Responder application; similarly to the @'MuxInitiatorApplication'@ but it
     -- will be run using @'ModeResponder'@.
-    :: (peerid -> ptcl -> Channel m -> m a)
-    -> MuxApplication ResponderApp peerid ptcl m Void a
+    :: ptcl
+    -> (peerid -> Channel m -> m a)
+    -> MuxMiniProtocol ResponderApp peerid ptcl m Void a
 
-  MuxInitiatorAndResponderApplication
+  InitiatorAndResponderProtocol
     -- Initiator and server applications.
-    :: (peerid -> ptcl -> Channel m -> m a)
-    -> (peerid -> ptcl -> Channel m -> m b)
-    -> MuxApplication InitiatorAndResponderApp peerid ptcl m a b
+    :: ptcl
+    -> (peerid -> Channel m -> m a)
+    -> (peerid -> Channel m -> m b)
+    -> MuxMiniProtocol InitiatorAndResponderApp peerid ptcl m a b
 
--- |
--- Accessor for the client side of a @'MuxApplication'@.
---
-initiatorApplication
-  :: HasInitiator appType ~ True
-  => MuxApplication appType peerid ptcl m a b
-  -> (peerid -> ptcl -> Channel m ->  m a)
-initiatorApplication (MuxInitiatorApplication app) = \peerid ptcl channel -> app peerid ptcl channel
-initiatorApplication (MuxInitiatorAndResponderApplication app _) = \peerid ptcl channel -> app peerid ptcl channel
-
--- |
--- Accessor for the client side of a @'MuxApplication'@.
---
-responderApplication
-  :: HasResponder appType ~ True
-  => MuxApplication appType peerid ptcl m a b
-  -> (peerid -> ptcl -> Channel m ->  m b)
-responderApplication (MuxResponderApplication app) = app
-responderApplication (MuxInitiatorAndResponderApplication _ app) = app

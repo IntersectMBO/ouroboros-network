@@ -98,7 +98,7 @@ muxStart
     -> MuxApplication appType peerid ptcl m a b
     -> MuxBearer m
     -> m ()
-muxStart tracer peerid app bearer = do
+muxStart tracer peerid (MuxApplication ptcls) bearer = do
     tbl <- setupTbl
     tq <- atomically $ newTBQueue 100
     cnt <- newTVarM 0
@@ -109,11 +109,10 @@ muxStart tracer peerid app bearer = do
                , (muxControl pmss ModeResponder, "MuxControl Responder")
                , (muxControl pmss ModeInitiator, "MuxControl Initiator")
                ]
-    mjobs <- sequence [ mpsJob cnt pmss ptcl
-                      | ptcl <- [minBound..maxBound] ]
+             ++ concatMap (mpsJob cnt pmss) ptcls
 
     mask $ \unmask -> do
-      aidsAndNames <- traverse (\(io, name) -> (,name) <$> async (unmask io)) (jobs ++ concat mjobs)
+      aidsAndNames <- traverse (\(io, name) -> (,name) <$> async (unmask io)) jobs
 
       muxBearerSetState tracer bearer Mature
       unmask $ do
@@ -160,35 +159,33 @@ muxStart tracer peerid app bearer = do
     mpsJob
       :: StrictTVar m Int
       -> PerMuxSharedState ptcl m
-      -> ptcl
-      -> m [(m (), String)]
-    mpsJob cnt pmss mpdId = do
-
-        initiatorChannel <- muxChannel tracer
-                              pmss
-                              (AppProtocolId mpdId)
-                              ModeInitiator
-                              cnt
-
-        responderChannel <- muxChannel tracer
-                              pmss
-                              (AppProtocolId mpdId)
-                              ModeResponder
-                              cnt
-
-        return $ case app of
-          MuxInitiatorApplication initiator ->
-            [ ( initiator peerid mpdId initiatorChannel >> mpsJobExit cnt
+      -> MuxMiniProtocol appType peerid ptcl m a b
+      -> [(m (), String)]
+    mpsJob cnt pmss ptcl =
+        case ptcl of
+          InitiatorProtocolOnly mpdId initiator ->
+            [ ( do chan <- mkChannel ModeInitiator mpdId
+                   _    <- initiator peerid chan
+                   mpsJobExit cnt
               , show mpdId ++ " Initiator" )]
-          MuxResponderApplication responder ->
-            [ ( responder peerid mpdId responderChannel >> mpsJobExit cnt
+          ResponderProtocolOnly mpdId responder ->
+            [ ( do chan <- mkChannel ModeResponder mpdId
+                   _    <- responder peerid chan
+                   mpsJobExit cnt
               , show mpdId ++ " Responder" )]
-          MuxInitiatorAndResponderApplication initiator responder ->
-            [ ( initiator peerid mpdId initiatorChannel >> mpsJobExit cnt
+          InitiatorAndResponderProtocol mpdId initiator responder ->
+            [ ( do chan <- mkChannel ModeInitiator mpdId
+                   _    <- initiator peerid chan
+                   mpsJobExit cnt
               , show mpdId ++ " Initiator" )
-            , (responder peerid mpdId responderChannel >> mpsJobExit cnt
+            , ( do chan <- mkChannel ModeResponder mpdId
+                   _    <- responder peerid chan
+                   mpsJobExit cnt
               , show mpdId ++ " Responder" )
             ]
+      where
+        mkChannel mode mpdId =
+            muxChannel tracer pmss (AppProtocolId mpdId) mode cnt
 
     -- cnt represent the number of SDUs that are queued but not yet sent.  Job
     -- threads will be prevented from exiting until all SDUs have been
