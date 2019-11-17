@@ -59,7 +59,7 @@ queuesAsMuxBearer tracer writeQueue readQueue sduSize traceQueue = do
                   traceWith tracer $ Mx.MuxTraceRecvHeaderEnd header
                   traceWith tracer $ Mx.MuxTraceRecvPayloadStart $ fromIntegral $ BL.length payload
                   ts <- getMonotonicTime
-                  traceWith tracer (Mx.MuxTraceRecvDeltaQueue header ts)
+                  traceWith tracer (Mx.MuxTraceRecvDeltaQObservation header ts)
                   case traceQueue of
                         Just q  -> atomically $ do
                             full <- isFullTBQueue q

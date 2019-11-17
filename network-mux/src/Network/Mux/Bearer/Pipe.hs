@@ -59,7 +59,7 @@ pipeAsMuxBearer tracer pcRead pcWrite = do
                   traceWith tracer $ Mx.MuxTraceRecvPayloadStart (fromIntegral $ Mx.msLength header)
                   blob <- recvLen' pcRead (fromIntegral $ Mx.msLength header) []
                   ts <- getMonotonicTime
-                  traceWith tracer (Mx.MuxTraceRecvDeltaQueue header ts)
+                  traceWith tracer (Mx.MuxTraceRecvDeltaQObservation header ts)
                   traceWith tracer $ Mx.MuxTraceRecvPayloadEnd blob
                   --hexDump blob ""
                   return (header {Mx.msBlob = blob}, ts)
