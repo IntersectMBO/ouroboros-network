@@ -52,6 +52,7 @@ library
                        Network.Mux.Bearer.Pipe
                        Network.Mux.Bearer.Queues
                        Network.Mux.Bearer.Socket
+                       Network.Mux.DeltaQTraceStats
                        Network.Mux.DeltaQTraceStatsSupport
                        Network.Mux.DeltaQTraceTransformer
                        Network.Mux.DeltaQTraceTypes
