@@ -34,6 +34,7 @@ module Ouroboros.Consensus.Protocol.PBFT (
   ) where
 
 import           Codec.Serialise (Serialise (..))
+import qualified Control.Exception as Exn
 import           Control.Monad.Except
 import           Crypto.Random (MonadRandom)
 import           Data.Bimap (Bimap)
@@ -108,7 +109,7 @@ forgePBftFields :: ( MonadRandom m
                 -> m (PBftFields c toSign)
 forgePBftFields cfg PBftIsLeader{..} toSign = do
     signature <- signedDSIGN ctxtDSIGN toSign pbftSignKey
-    return $ PBftFields {
+    return $ Exn.assert (issuer == deriveVerKeyDSIGN pbftSignKey) $ PBftFields {
         pbftIssuer    = issuer
       , pbftGenKey    = genKey
       , pbftSignature = signature
