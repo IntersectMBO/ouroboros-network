@@ -1,4 +1,3 @@
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 module Network.Mux.DeltaQTraceTransformer
 where
 
@@ -9,16 +8,9 @@ import           Data.Word (Word32)
 
 
 import           Control.Monad.Class.MonadTime
+import           Network.Mux.DeltaQTraceStatsSupport
+import           Network.Mux.DeltaQTraceTypes
 import           Network.Mux.Types
-
--- Map time intervals to real numbers, for the arithmetic.
-newtype SISec  = S  Float -- this is all the precision we need,
-  deriving (Eq, Ord, Num)
-newtype SISec2 = S2 Float -- are there performance reasons to use Double?
-  deriving (Eq, Ord, Num)
-
-squareSISec :: SISec -> SISec2
-squareSISec (S x) = S2 $ x * x
 
 -- the per observation procesing step
 step :: StatsA                  -- ^ accumulation state
