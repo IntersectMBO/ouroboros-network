@@ -33,6 +33,8 @@ library
                        ieee754,
                        network,
                        process         >=1.6 && <1.7,
+                       statistics-linreg,
+                       vector,
                        time            >=1.6 && <1.10
 
   ghc-options:         -Wall

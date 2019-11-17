@@ -1,9 +1,10 @@
 module Network.Mux.DeltaQTraceStatsSupport
 where
 
--- This module is making use of hackage libararies. They are not the
--- most efficicient approches for this particlular use case, and they
--- will increase the package dependencies for the final binaries.
+-- This module is making use of hackage statisitical libraries. They
+-- are not the most efficicient approches for this particlular use
+-- case, and they may increase the package dependencies for the final
+-- binaries (they have a lot of dependencies).
 --
 -- It may well be worthwhile constructing specialsed version for the
 -- specific use case, but building those and creating the associated
@@ -12,7 +13,14 @@ where
 --
 -- Definite space/time optimisation task here.
 
-import Network.Mux.DeltaQTraceTypes
+import           Network.Mux.DeltaQTraceTypes
 
+import qualified Data.Vector.Unboxed as V
+import           Statistics.LinearRegression
+  
 estimateGS :: [(Int, SISec)] -> (Double, Double, Double)
-estimateGS = undefined
+estimateGS xys
+  = let (xs', ys') = unzip xys
+        xs = V.fromList $ map fromIntegral xs'
+        ys = V.fromList $ map (\(S x) -> fromRational . toRational $ x) ys' 
+    in linearRegressionRSqr xs ys
