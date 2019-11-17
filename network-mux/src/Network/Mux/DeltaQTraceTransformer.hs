@@ -21,7 +21,11 @@ squareSISec :: SISec -> SISec2
 squareSISec (S x) = S2 $ x * x
 
 -- the per observation procesing step
-step :: StatsA -> RemoteClockModel -> Time -> Int -> (Maybe Sample, StatsA)
+step :: StatsA                  -- ^ accumulation state
+     -> RemoteClockModel        -- ^ Remote clock timestamp
+     -> Time                    -- ^ Local clock timestamp
+     -> Int                     -- ^ the size of the observable
+     -> (Maybe OneWayDeltaQSample, StatsA)
 step s remoteTS localTS obsSize
  | isNothing (referenceTimePoint s) -- first observation this sample period
    = step (s { referenceTimePoint = Just $! (unRemoteClockModel remoteTS, localTS)
@@ -67,13 +71,42 @@ recordObservation s obsTime obsSize transitTime
          , observables     = IM.alter f obsSize (observables s)
          }
 
-constructSample :: StatsA -> Sample
-constructSample _ = undefined
+-- This might benefit from some strictness analysis, what are the
+-- likely usage patterns?, do we want a single use collapse the
+-- collective set of thunks or not?
+constructSample :: StatsA -> OneWayDeltaQSample
+constructSample sa = OneWaySample
+  { sumPackets     = numObservations sa
+  , sumTotalSDU    = totalSDUOctets
+  , estDeltaQS     = 0 -- placeholder
+  , estDeltaQVMean = 0 -- placeholder
+  , estDeltaQVStd  = 0 -- placeholder
+  }
+  -- calculate the G,S
+  -- adjust the per-size observations
+  where
+    (totalSDUOctets, _minSRev)
+      = IM.foldrWithKey accum (0, []) $ observables sa
+    accum sduLen psr (sumSize, minS)
+      = ( sumSize + (count psr) * sduLen
+        , (sduSize, minTransitTime psr) : minS)
 
--- temp
-data Sample
 
--- | Statistics accumulator
+
+
+-- | One way measurement for interval. Note that the fields are lazy
+--   here so that only calcuation necessary to satisfy strictness of
+--   use occurs.
+data OneWayDeltaQSample = OneWaySample
+  { sumPackets     :: Int
+  , sumTotalSDU    :: Int
+  , estDeltaQS     :: Double -- octets per second
+  , estDeltaQVMean :: Double -- SI Seconds
+  , estDeltaQVStd  :: Double
+  }
+
+-- | Statistics accumulator. Strict evaluation used to keep the memory
+--   footprint strictly bounded.
 data StatsA = StatsA
   { -- per sample
     referenceTimePoint :: !(Maybe (Word32, Time))
@@ -91,7 +124,7 @@ data StatsA = StatsA
 -- values being measured are "large" and the variablity in the sampled
 -- population is "small" (i.e the inherent rounding effect of floating
 -- point arithmetic has an effect).
--- 
+--
 -- This is very unlikely to cause an issue here as:
 --
 --   a) the modulo model of the RemoteClockModel (and hence the
