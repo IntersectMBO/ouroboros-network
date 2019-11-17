@@ -20,27 +20,28 @@ import           Network.Mux.DeltaQTraceTypes
 import           Network.Mux.Types
 
 -- the per observation procesing step
-step :: StatsA                  -- ^ accumulation state
-     -> RemoteClockModel        -- ^ Remote clock timestamp
+step :: RemoteClockModel        -- ^ Remote clock timestamp
      -> Time                    -- ^ Local clock timestamp
      -> Int                     -- ^ the number of octets in the
                                 --   observed outcome
-     -> (Maybe OneWayDeltaQSample, StatsA)
-step s remoteTS localTS obsSize
+     -> StatsA                  -- ^ accumulation state
+     -> (StatsA, Maybe OneWayDeltaQSample)
+step remoteTS localTS obsSize s
  | isNothing (referenceTimePoint s) -- first observation this sample period
-   = step (s { referenceTimePoint = Just $! (unRemoteClockModel remoteTS, localTS)
+   = step remoteTS localTS obsSize
+          (s { referenceTimePoint = Just $! (unRemoteClockModel remoteTS, localTS)
              , nextSampleAt       = sampleInterval `addTime` localTS
              , timeLastObs        = localTS -- for single observation in sample case
              })
-         remoteTS localTS obsSize
+
  | localTS <= nextSampleAt s    -- still in a sample period
   = let Just refTimePoint = referenceTimePoint s
         transitTime       = calcTransitTime refTimePoint remoteTS localTS
-    in (Nothing, recordObservation s localTS obsSize transitTime)
+    in (recordObservation s localTS obsSize transitTime, Nothing)
  | otherwise                    -- need to start next sample period
   = let sample  = constructSample s
-        (_, s') = step initialStatsA remoteTS localTS obsSize
-    in (Just sample, s')
+        (s', _) = step remoteTS localTS obsSize initialStatsA
+    in (s', Just sample)
 
 -- Calculate the transit time by transforming the remotely reported
 -- emit time into local clock domain then calculating differences.
@@ -88,7 +89,10 @@ recordObservation s obsTime obsSize transitTime
 -- is empty.
 constructSample :: StatsA -> OneWayDeltaQSample
 constructSample sa = OneWaySample
-  { sumPackets     = population
+  { duration       = fromRational . toRational $ 
+                     maybe 0 (\(_,a) -> a `diffTime` timeLastObs sa)
+                             (referenceTimePoint sa)
+  , sumPackets     = population
   , sumTotalSDU    = totalSDUOctets
   , estDeltaQS     = popCheck dQSEst
   , estDeltaQVMean = popCheck
@@ -128,7 +132,8 @@ constructSample sa = OneWaySample
 --   here so that only calcuation necessary to satisfy strictness of
 --   use occurs.
 data OneWayDeltaQSample = OneWaySample
-  { sumPackets     :: Int
+  { duration       :: Double -- SI Seconds of activity captured
+  , sumPackets     :: Int
   , sumTotalSDU    :: Int
   , estDeltaQS     :: Double -- octets per second
   , estDeltaQVMean :: Double -- SI Seconds
