@@ -87,7 +87,6 @@ muxStart
        , MonadMask m
        , Ord ptcl
        , Enum ptcl
-       , Bounded ptcl
        , Show ptcl
        , ProtocolEnum ptcl
        , MiniProtocolLimits ptcl
@@ -99,17 +98,26 @@ muxStart
     -> MuxBearer m
     -> m ()
 muxStart tracer peerid (MuxApplication ptcls) bearer = do
-    tbl <- setupTbl
+    ctlPtclInfo <- mkMiniProtocolInfo Muxcontrol
+    appPtclInfo <- mapM (mkMiniProtocolInfo . AppProtocolId . miniProtocolId) ptcls
+    let ptclsInfo = ctlPtclInfo : appPtclInfo
+        tbl   = setupTbl ptclsInfo
+        codes = codesTbl ptclsInfo
     tq <- atomically $ newTBQueue 100
     cnt <- newTVarM 0
 
-    let pmss = PerMuxSS tbl tq codesTbl bearer
+    let pmss = PerMuxSS tbl tq codes bearer
         jobs = [ (demux pmss, "Demuxer")
                , (mux cnt pmss, "Muxer")
-               , (muxControl pmss ModeResponder, "MuxControl Responder")
-               , (muxControl pmss ModeInitiator, "MuxControl Initiator")
                ]
-             ++ concatMap (mpsJob cnt pmss) ptcls
+            ++ [ (muxControl q, name)
+               | let (_,_,_,_, initQ, respQ) = ctlPtclInfo
+               , (q, name) <- [(initQ, "Initiator"), (respQ, "Responder")]
+               ]
+            ++ [ job
+               | ((_, mc, _qMax, msgMax, initQ, respQ), ptcl) <- zip appPtclInfo ptcls
+               , job <- mpsJob cnt pmss mc msgMax initQ respQ (miniProtocolRun ptcl)
+               ]
 
     mask $ \unmask -> do
       aidsAndNames <- traverse (\(io, name) -> (,name) <$> async (unmask io)) jobs
@@ -127,29 +135,63 @@ muxStart tracer peerid (MuxApplication ptcls) bearer = do
       muxBearerSetState tracer bearer Dead
 
   where
+    mkMiniProtocolInfo :: MiniProtocolId ptcl
+                       -> m ( MiniProtocolId ptcl
+                            , MiniProtocolCode
+                            , Int64
+                            , Int64
+                            , StrictTVar m BL.ByteString
+                            , StrictTVar m BL.ByteString
+                            )
+    mkMiniProtocolInfo mpid = do
+        initiatorQ <- newTVarM BL.empty
+        responderQ <- newTVarM BL.empty
+        return ( mpid
+               , fromProtocolEnum mpid
+               , maximumIngressQueue mpid
+               , maximumMessageSize mpid
+               , initiatorQ
+               , responderQ
+               )
+
     -- Construct the array of TBQueues, one for each protocol id, and each mode
-    setupTbl :: m (MiniProtocolDispatch ptcl m)
-    setupTbl = MiniProtocolDispatch
-            -- cover full range of type (MiniProtocolId ptcl, MiniProtocolMode)
-             . array (minBound, maxBound)
-           <$> sequence [ do q <- atomically (newTVar BL.empty)
-                             let dispatchInfo = MiniProtocolDispatchInfo
-                                                  q (maximumIngressQueue ptcl)
-                             return ((ptcl, mode), dispatchInfo)
-                        | ptcl <- [minBound..maxBound]
-                        , mode <- [ModeInitiator, ModeResponder] ]
+    setupTbl :: [( MiniProtocolId ptcl
+                 , MiniProtocolCode
+                 , Int64
+                 , Int64
+                 , StrictTVar m BL.ByteString
+                 , StrictTVar m BL.ByteString
+                 )]
+             -> MiniProtocolDispatch ptcl m
+    setupTbl ptclsInfo =
+        MiniProtocolDispatch
+          (array ((minpid, ModeInitiator), (maxpid, ModeResponder))
+                 [ ((mpid, mode), dispatchInfo)
+                 | (mpid, _mc, qMax, _msgMax, initQ, respQ) <- ptclsInfo
+                 , (mode, q) <- [ (ModeInitiator, initQ)
+                                , (ModeResponder, respQ) ]
+                 , let dispatchInfo = MiniProtocolDispatchInfo q qMax ])
+      where
+        mpids  = [ mpid | (mpid, _, _, _, _, _) <- ptclsInfo ]
+        minpid = minimum mpids
+        maxpid = maximum mpids
 
     -- Construct the arrays mapping between protocol ids and protocol codes
-    codesTbl :: MiniProtocolCodes ptcl
-    codesTbl =
+    codesTbl :: [( MiniProtocolId ptcl
+                 , MiniProtocolCode
+                 , Int64
+                 , Int64
+                 , StrictTVar m BL.ByteString
+                 , StrictTVar m BL.ByteString
+                 )]
+             -> MiniProtocolCodes ptcl
+    codesTbl ptclsInfo =
         MiniProtocolCodes
-            (array (mincode, maxcode)
-                   [ (code, mptcl)
-                   | code <- [mincode..maxcode]
-                   , let mptcl = toProtocolEnum code ])
+            (array (mincode, maxcode) $
+                   [ (code, Nothing)    | code <- [mincode..maxcode] ]
+                ++ [ (code, Just mptcl) | (mptcl, code, _, _, _, _) <- ptclsInfo ])
       where
-        codes   = map fromProtocolEnum
-                      ([minBound..maxBound] :: [MiniProtocolId ptcl])
+        codes   = [ mc | (_, mc, _, _, _, _) <- ptclsInfo ]
         mincode = minimum codes
         maxcode = maximum codes
 
@@ -157,37 +199,37 @@ muxStart tracer peerid (MuxApplication ptcls) bearer = do
     mpsJob
       :: StrictTVar m Int
       -> PerMuxSharedState ptcl m
-      -> MuxMiniProtocol appType peerid ptcl m a b
+      -> MiniProtocolCode
+      -> Int64
+      -> StrictTVar m BL.ByteString
+      -> StrictTVar m BL.ByteString
+      -> RunMiniProtocol appType peerid m a b
       -> [(m (), String)]
-    mpsJob cnt pmss (MuxMiniProtocol mpdId run) =
+    mpsJob cnt pmss mc msgMax initQ respQ run =
         case run of
           InitiatorProtocolOnly initiator ->
-            [ ( do chan <- mkChannel ModeInitiator mpdId
+            [ ( do chan <- mkChannel ModeInitiator
                    _    <- initiator peerid chan
                    mpsJobExit cnt
-              , show mpdId ++ " Initiator" )]
+              , show mc ++ " Initiator" )]
           ResponderProtocolOnly responder ->
-            [ ( do chan <- mkChannel ModeResponder mpdId
+            [ ( do chan <- mkChannel ModeResponder
                    _    <- responder peerid chan
                    mpsJobExit cnt
-              , show mpdId ++ " Responder" )]
+              , show mc ++ " Responder" )]
           InitiatorAndResponderProtocol initiator responder ->
-            [ ( do chan <- mkChannel ModeInitiator mpdId
+            [ ( do chan <- mkChannel ModeInitiator
                    _    <- initiator peerid chan
                    mpsJobExit cnt
-              , show mpdId ++ " Initiator" )
-            , ( do chan <- mkChannel ModeResponder mpdId
+              , show mc ++ " Initiator" )
+            , ( do chan <- mkChannel ModeResponder
                    _    <- responder peerid chan
                    mpsJobExit cnt
-              , show mpdId ++ " Responder" )
+              , show mc ++ " Responder" )
             ]
       where
-        mkChannel mode mpdId =
-            muxChannel tracer pmss mid mc mode msgMax cnt
-          where
-            mid    = AppProtocolId mpdId
-            mc     = fromProtocolEnum mid
-            msgMax = maximumMessageSize mid
+        mkChannel ModeInitiator = muxChannel tracer pmss mc ModeInitiator msgMax initQ cnt
+        mkChannel ModeResponder = muxChannel tracer pmss mc ModeResponder msgMax respQ cnt
 
     -- cnt represent the number of SDUs that are queued but not yet sent.  Job
     -- threads will be prevented from exiting until all SDUs have been
@@ -200,14 +242,11 @@ muxStart tracer peerid (MuxApplication ptcls) bearer = do
             c <- readTVar cnt
             unless (c == 0) retry
 
-muxControl :: (HasCallStack, MonadSTM m, MonadSay m, MonadThrow m, Ord ptcl, Enum ptcl)
-           => PerMuxSharedState ptcl m
-           -> MiniProtocolMode
+muxControl :: (HasCallStack, MonadSTM m, MonadSay m, MonadThrow m)
+           => StrictTVar m BL.ByteString
            -> m ()
-muxControl pmss md = do
+muxControl q = do
     _ <- atomically $ do
-        let MiniProtocolDispatchInfo q _ =
-              ingressQueue (dispatchTable pmss) Muxcontrol md
         buf <- readTVar q
         when (buf == BL.empty)
             retry
@@ -221,20 +260,17 @@ muxChannel
        ( MonadSTM m
        , MonadSay m
        , MonadThrow m
-       , Ord ptcl
-       , Enum ptcl
-       , Show ptcl
        , HasCallStack
        )
     => Tracer m (MuxTrace ptcl)
     -> PerMuxSharedState ptcl m
-    -> MiniProtocolId ptcl
     -> MiniProtocolCode
     -> MiniProtocolMode
     -> Int64
+    -> StrictTVar m BL.ByteString
     -> StrictTVar m Int
     -> m (Channel m)
-muxChannel tracer pmss mid mc md msgMax cnt = do
+muxChannel tracer pmss mc md msgMax q cnt = do
     w <- newTVarM BL.empty
     return $ Channel { send = send (Wanton w)
                      , recv}
@@ -279,8 +315,6 @@ muxChannel tracer pmss mid mc md msgMax cnt = do
         -- matching ingress queueu. This is the same queue the 'demux' thread writes to.
         traceWith tracer $ MuxTraceChannelRecvStart mc
         blob <- atomically $ do
-            let MiniProtocolDispatchInfo q _ =
-                  ingressQueue (dispatchTable pmss) mid md
             blob <- readTVar q
             if blob == BL.empty
                 then retry
@@ -289,7 +323,7 @@ muxChannel tracer pmss mid mc md msgMax cnt = do
         traceWith tracer $ MuxTraceChannelRecvEnd mc blob
         return $ Just blob
 
-muxBearerSetState :: (MonadSTM m, Ord ptcl, Enum ptcl, Bounded ptcl)
+muxBearerSetState :: MonadSTM m
                   => Tracer m (MuxTrace ptcl)
                   -> MuxBearer m
                   -> MuxBearerState
