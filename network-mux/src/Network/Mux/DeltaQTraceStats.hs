@@ -97,8 +97,11 @@ constructSample sa = OneWaySample
   , estDeltaQS     = popCheck dQSEst
   , estDeltaQVMean = popCheck
                      $ vSum / (fromIntegral population)
-  , estDeltaQVStd  = popCheck $ sqrt
+  , estDeltaQVVar  = popCheck
                      $ (vSum2 - (vSum * vSum)) / (fromIntegral population)
+  , sizeDist       = show [ (a,count b)
+                          | (a, b) <- IM.toAscList (observables sa)
+                          , count b > 0]
   }
   where
     -- the sample population size
@@ -137,7 +140,8 @@ data OneWayDeltaQSample = OneWaySample
   , sumTotalSDU    :: Int
   , estDeltaQS     :: Double -- octets per second
   , estDeltaQVMean :: Double -- SI Seconds
-  , estDeltaQVStd  :: Double
+  , estDeltaQVVar  :: Double
+  , sizeDist       :: String -- temporary to show size distribution
   }
 
 -- | Statistics accumulator. Strict evaluation used to keep the memory

@@ -53,4 +53,5 @@ dqTracer sTvar tr = Tracer go
 
     formatSample (OneWaySample {..})
       = MuxTraceRecvDeltaQSample duration sumPackets sumTotalSDU
-                                 estDeltaQS estDeltaQVMean estDeltaQVStd
+                                 estDeltaQS estDeltaQVMean estDeltaQVVar
+                                 sizeDist
