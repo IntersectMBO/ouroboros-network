@@ -63,6 +63,7 @@ import           Network.TypedProtocol.Driver.ByteLimit
 import           Network.TypedProtocol.Driver (TraceSendRecv)
 
 import qualified Network.Mux as Mx
+import Network.Mux.DeltaQTraceTransformer
 import qualified Network.Mux.Types as Mx
 import           Network.Mux.Types (MuxBearer)
 import           Network.Mux.Interface
@@ -177,7 +178,7 @@ connectToNode'
   -> IO ()
 connectToNode' encodeData decodeData muxTracer handshakeTracer peeridFn versions sd = do
     peerid <- peeridFn <$> Socket.getSocketName sd <*> Socket.getPeerName sd
-    let muxTracer' = Mx.WithMuxBearer peerid `contramap` muxTracer
+    muxTracer' <- initDeltaQTracer' $ Mx.WithMuxBearer peerid `contramap` muxTracer
     bearer <- Mx.socketAsMuxBearer muxTracer' sd
     Mx.muxBearerSetState muxTracer' bearer Mx.Connected
     traceWith muxTracer' $ Mx.MuxTraceHandshakeStart

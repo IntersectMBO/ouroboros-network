@@ -1,6 +1,7 @@
 {-# LANGUAGE RecordWildCards #-}
 module Network.Mux.DeltaQTraceTransformer
-  (initDeltaQTracer)
+  (initDeltaQTracer
+  ,initDeltaQTracer')
 where
 
 import Control.Tracer
@@ -17,6 +18,12 @@ initDeltaQTracer :: MonadSTM m
                  => m (Tracer m (MuxTrace pctl) -> Tracer m (MuxTrace pctl))
 initDeltaQTracer = newTVarM initialStatsA >>= pure . dqTracer
 
+initDeltaQTracer' :: MonadSTM m
+                  => Tracer m (MuxTrace ptcl)
+                  -> m (Tracer m (MuxTrace ptcl))
+initDeltaQTracer' tr = do
+    v <- newTVarM initialStatsA
+    return $ dqTracer v tr
 
 dqTracer :: MonadSTM m
          => StrictTVar m StatsA
