@@ -54,11 +54,14 @@ import           Ouroboros.Network.Subscription.PeerState
 data ErrorPolicy where
      ErrorPolicy :: forall e.
                       Exception e
-                   => (e -> SuspendDecision DiffTime)
+                   => (e -> Maybe (SuspendDecision DiffTime))
+                   -- ^ @Nothing@ means no decision. It is equivalent to not
+                   -- having the policy at all. In 'evalErrorPolicies' this will
+                   -- fall-through and match against the remaining policies.
                    -> ErrorPolicy
 
 instance Show ErrorPolicy where
-    show (ErrorPolicy (_err :: e -> SuspendDecision DiffTime)) =
+    show (ErrorPolicy (_err :: e -> Maybe (SuspendDecision DiffTime))) =
            "ErrorPolicy ("
         ++ tyConName (typeRepTyCon (typeRep (Proxy :: Proxy e)))
         ++ ")"
@@ -71,10 +74,10 @@ evalErrorPolicy :: forall e.
                 -> Maybe (SuspendDecision DiffTime)
 evalErrorPolicy e p =
     case p of
-      ErrorPolicy (f :: e' -> SuspendDecision DiffTime)
+      ErrorPolicy (f :: e' -> Maybe (SuspendDecision DiffTime))
         -> case cast e :: Maybe e' of
               Nothing -> Nothing
-              Just e' -> Just $ f e'
+              Just e' -> f e'
 
 -- | Evaluate a list of 'ErrorPolicy's; If none of them applies this function
 -- returns 'Nothing', in this case the exception will be traced and not thrown.
@@ -205,7 +208,7 @@ completeApplicationTx ErrorPolicies {epReturnCallback} (ApplicationResult t addr
   in case alterAndLookup fn addr ps of
     (ps', mbthreads) -> pure $
       CompleteApplicationResult {
-          carState   = PeerStates ps', 
+          carState   = PeerStates ps',
           carThreads = fromMaybe Set.empty mbthreads,
           carTrace   = WithAddr addr <$> traceErrorPolicy (Right r) cmd
         }

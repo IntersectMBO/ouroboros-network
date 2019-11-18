@@ -196,9 +196,9 @@ data ArbErrorPolicies = ArbErrorPolicies [ErrorPolicy] -- application error poli
 genErrorPolicy :: Gen (SuspendDecision DiffTime)
                -> Gen (ErrorPolicy)
 genErrorPolicy genCmd = oneof
-    [ (\cmd -> ErrorPolicy (\(_e :: ArithException) -> cmd)) <$> genCmd,
-      (\cmd -> ErrorPolicy (\(_e :: AsyncException) -> cmd)) <$> genCmd,
-      (\cmd -> ErrorPolicy (\(_e :: NonTermination) -> cmd)) <$> genCmd
+    [ (\cmd -> ErrorPolicy (\(_e :: ArithException) -> Just cmd)) <$> genCmd,
+      (\cmd -> ErrorPolicy (\(_e :: AsyncException) -> Just cmd)) <$> genCmd,
+      (\cmd -> ErrorPolicy (\(_e :: NonTermination) -> Just cmd)) <$> genCmd
     ]
 
 instance Arbitrary ArbErrorPolicies where
