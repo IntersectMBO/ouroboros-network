@@ -90,14 +90,14 @@ recordObservation s obsTime obsSize transitTime
 constructSample :: StatsA -> OneWayDeltaQSample
 constructSample sa = OneWaySample
   { duration       = fromRational . toRational $ 
-                     maybe 0 (\(_,a) -> a `diffTime` timeLastObs sa)
+                     maybe 0 (\(_,a) -> timeLastObs sa `diffTime` a)
                              (referenceTimePoint sa)
   , sumPackets     = population
   , sumTotalSDU    = totalSDUOctets
   , estDeltaQS     = popCheck dQSEst
   , estDeltaQVMean = popCheck
                      $ vSum / (fromIntegral population)
-  , estDeltaQVStd  = popCheck . sqrt
+  , estDeltaQVStd  = popCheck $ sqrt
                      $ (vSum2 - (vSum * vSum)) / (fromIntegral population)
   }
   where
@@ -105,7 +105,7 @@ constructSample sa = OneWaySample
     population = numObservations sa
     -- Handle the empty population condition
     popCheck x
-      | population > 0 = x
+      | population > 1 = x
       | otherwise      = nan
     -- gather the data for the G,S estimations
     (totalSDUOctets, minSRev)
