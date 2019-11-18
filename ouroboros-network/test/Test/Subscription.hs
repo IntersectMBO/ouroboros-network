@@ -72,7 +72,7 @@ defaultMiniProtocolLimit = 3000000
 data TestProtocols1 = ChainSyncPr
   deriving (Eq, Ord, Enum, Bounded, Show)
 
-instance Mx.ProtocolEnum TestProtocols1 where
+instance ProtocolEnum TestProtocols1 where
   fromProtocolEnum ChainSyncPr = 2
 
   toProtocolEnum 2 = Just ChainSyncPr
@@ -88,7 +88,7 @@ instance Mx.MiniProtocolLimits TestProtocols1 where
 data TestProtocols2 = ReqRespPr
   deriving (Eq, Ord, Enum, Bounded, Show)
 
-instance Mx.ProtocolEnum TestProtocols2 where
+instance ProtocolEnum TestProtocols2 where
   fromProtocolEnum ReqRespPr = 4
 
   toProtocolEnum 4 = Just ReqRespPr

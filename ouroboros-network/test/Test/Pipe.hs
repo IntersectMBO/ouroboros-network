@@ -77,7 +77,7 @@ defaultMiniProtocolLimit = 3000000
 data DemoProtocols = ChainSync
   deriving (Eq, Ord, Enum, Bounded, Show)
 
-instance Mx.ProtocolEnum DemoProtocols where
+instance ProtocolEnum DemoProtocols where
   fromProtocolEnum ChainSync = 2
 
   toProtocolEnum 2 = Just ChainSync

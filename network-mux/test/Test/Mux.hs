@@ -87,12 +87,6 @@ _sayTracer = Tracer say
 data TestProtocols1 = ReqResp1
   deriving (Eq, Ord, Enum, Bounded, Show)
 
-instance Mx.ProtocolEnum TestProtocols1 where
-  fromProtocolEnum ReqResp1 = 2
-
-  toProtocolEnum 2 = Just ReqResp1
-  toProtocolEnum _ = Nothing
-
 instance Mx.MiniProtocolLimits TestProtocols1 where
   maximumMessageSize ReqResp1  = defaultMiniProtocolLimit
   maximumIngressQueue ReqResp1 = defaultMiniProtocolLimit
@@ -103,26 +97,12 @@ instance Mx.MiniProtocolLimits TestProtocols1 where
 data TestProtocols2 = ReqResp2 | ReqResp3
   deriving (Eq, Ord, Enum, Bounded, Show)
 
-instance Mx.ProtocolEnum TestProtocols2 where
-  fromProtocolEnum ReqResp2 = 2
-  fromProtocolEnum ReqResp3 = 3
-
-  toProtocolEnum 2 = Just ReqResp2
-  toProtocolEnum 3 = Just ReqResp3
-  toProtocolEnum _ = Nothing
-
 instance Mx.MiniProtocolLimits TestProtocols2 where
   maximumMessageSize _  = defaultMiniProtocolLimit
   maximumIngressQueue _ = defaultMiniProtocolLimit
 
 data TestProtocolsSmall = ReqRespSmall
   deriving (Eq, Ord, Enum, Bounded, Show)
-
-instance Mx.ProtocolEnum TestProtocolsSmall where
-  fromProtocolEnum ReqRespSmall = 2
-
-  toProtocolEnum 2 = Just ReqRespSmall
-  toProtocolEnum _ = Nothing
 
 instance Mx.MiniProtocolLimits TestProtocolsSmall where
   maximumMessageSize ReqRespSmall  = smallMiniProtocolLimit
@@ -766,7 +746,7 @@ prop_demux_sdu a = do
     writeSdu queue payload = do
         let (!frag, !rest) = BL.splitAt 0xffff payload
             sdu' = Mx.MuxSDU (Mx.RemoteClockModel 0)
-                             (Mx.fromProtocolEnum (Mx.AppProtocolId ReqRespSmall))
+                             (2 :: Mx.MiniProtocolCode)
                               Mx.ModeInitiator
                              (fromIntegral $ BL.length frag) frag
             !pkt = Mx.encodeMuxSDU (sdu' :: Mx.MuxSDU)

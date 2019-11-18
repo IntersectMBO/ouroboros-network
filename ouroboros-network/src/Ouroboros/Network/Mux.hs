@@ -6,6 +6,7 @@ module Ouroboros.Network.Mux
   ( AppType (..)
   , OuroborosApplication (..)
   , MuxPeer (..)
+  , ProtocolEnum (..)
   , runMuxPeer
   , simpleInitiatorApplication
   , simpleResponderApplication
@@ -27,6 +28,7 @@ import           Network.TypedProtocol.Driver
 import           Network.TypedProtocol.Pipelined
 
 import           Network.Mux.Interface
+import           Network.Mux.Types
 
 import           Ouroboros.Network.Channel
 
@@ -51,6 +53,11 @@ data OuroborosApplication (appType :: AppType) peerid ptcl m bytes a b where
 -- structure of the MuxApplication, which no longer uses the bounded enumeration
 -- idiom. For now, toApplication converts from the bounded enumeration style to
 -- the simple list style that MuxApplication now uses.
+
+class ProtocolEnum ptcl where
+
+    fromProtocolEnum :: ptcl -> MiniProtocolCode
+    toProtocolEnum   :: MiniProtocolCode -> Maybe ptcl
 
 toApplication :: (Enum ptcl, Bounded ptcl, ProtocolEnum ptcl)
               => OuroborosApplication appType peerid ptcl m LBS.ByteString a b

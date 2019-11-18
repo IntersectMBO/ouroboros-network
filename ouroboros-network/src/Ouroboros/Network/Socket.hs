@@ -148,7 +148,7 @@ maxTransmissionUnit = 4 * 1440
 -- Exceptions thrown by @'MuxApplication'@ are rethrown by @'connectTo'@.
 connectToNode
   :: forall appType ptcl vNumber extra a b.
-     ( Mx.ProtocolEnum ptcl
+     ( ProtocolEnum ptcl
      , Ord ptcl
      , Enum ptcl
      , Bounded ptcl
@@ -201,7 +201,7 @@ connectToNode versionDataCodec tracers versions localAddr remoteAddr =
 -- Exceptions thrown by @'MuxApplication'@ are rethrown by @'connectTo'@.
 connectToNode'
   :: forall appType ptcl vNumber extra a b.
-     ( Mx.ProtocolEnum ptcl
+     ( ProtocolEnum ptcl
      , Ord ptcl
      , Enum ptcl
      , Bounded ptcl
@@ -278,7 +278,7 @@ data AcceptConnection st vNumber extra peerid ptcl m bytes where
 --
 beginConnection
     :: forall peerid ptcl vNumber extra addr st.
-       ( Mx.ProtocolEnum ptcl
+       ( ProtocolEnum ptcl
        , Ord ptcl
        , Enum ptcl
        , Bounded ptcl
@@ -427,7 +427,7 @@ cleanNetworkMutableState NetworkMutableState {nmsPeerStates} =
 runServerThread
     :: forall appType ptcl vNumber extra a b.
        ( HasResponder appType ~ True
-       , Mx.ProtocolEnum ptcl
+       , ProtocolEnum ptcl
        , Ord ptcl
        , Enum ptcl
        , Bounded ptcl
@@ -521,7 +521,7 @@ runServerThread NetworkServerTracers { nstMuxTracer
 withServerNode
     :: forall appType ptcl vNumber extra t a b.
        ( HasResponder appType ~ True
-       , Mx.ProtocolEnum ptcl
+       , ProtocolEnum ptcl
        , Ord ptcl
        , Enum ptcl
        , Bounded ptcl

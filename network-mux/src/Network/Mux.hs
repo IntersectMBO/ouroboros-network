@@ -10,8 +10,8 @@ module Network.Mux (
       muxStart
     , muxBearerSetState
     , MuxSDU (..)
+    , MiniProtocolCode
     , MiniProtocolLimits (..)
-    , ProtocolEnum (..)
     , MiniProtocolId (..)
     , MiniProtocolMode (..)
     , MuxBearerState (..)

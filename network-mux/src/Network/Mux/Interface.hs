@@ -19,7 +19,6 @@ module Network.Mux.Interface
   , MuxApplication (..)
   , MuxMiniProtocol (..)
   , RunMiniProtocol (..)
-  , ProtocolEnum (..)
   , MiniProtocolLimits (..)
   , TraceLabelPeer (..)
   ) where
@@ -28,7 +27,6 @@ import           Data.Void (Void)
 
 import           Network.Mux.Types ( MiniProtocolCode
                                    , MiniProtocolLimits (..)
-                                   , ProtocolEnum (..)
                                    )
 import           Network.Mux.Channel
 
