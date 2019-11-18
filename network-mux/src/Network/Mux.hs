@@ -141,10 +141,6 @@ muxStart tracer peerid (MuxApplication ptcls) bearer = do
     codesTbl :: MiniProtocolCodes ptcl
     codesTbl =
         MiniProtocolCodes
-            (array (minBound, maxBound)
-                   [ (ptcl, code)
-                   | ptcl <- [minBound..maxBound]
-                   , let code = fromProtocolEnum ptcl ])
             (array (mincode, maxcode)
                    [ (code, mptcl)
                    | code <- [mincode..maxcode]

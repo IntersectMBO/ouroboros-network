@@ -7,7 +7,6 @@
 module Network.Mux.Types (
       MiniProtocolDispatch (..)
     , MiniProtocolCodes (..)
-    , toMiniProtocolCode
     , fromMiniProtocolCode
     , MiniProtocolLimits (..)
     , ProtocolEnum (..)
@@ -166,20 +165,13 @@ newtype MiniProtocolDispatch ptcl m =
 data MiniProtocolMode = ModeInitiator | ModeResponder
   deriving (Eq, Ord, Ix, Enum, Bounded, Show)
 
-data MiniProtocolCodes ptcl =
-     MiniProtocolCodes !(Array (MiniProtocolId ptcl) MiniProtocolCode)
-                       !(Array MiniProtocolCode (Maybe (MiniProtocolId ptcl)))
-
-toMiniProtocolCode :: (Ord ptcl, Enum ptcl)
-                   => MiniProtocolCodes ptcl
-                   -> MiniProtocolId ptcl
-                   -> MiniProtocolCode
-toMiniProtocolCode (MiniProtocolCodes tbl _) ptcl = tbl ! ptcl
+newtype MiniProtocolCodes ptcl =
+        MiniProtocolCodes (Array MiniProtocolCode (Maybe (MiniProtocolId ptcl)))
 
 fromMiniProtocolCode :: MiniProtocolCodes ptcl
                      -> MiniProtocolCode
                      -> Maybe (MiniProtocolId ptcl)
-fromMiniProtocolCode (MiniProtocolCodes _ tbl) code
+fromMiniProtocolCode (MiniProtocolCodes tbl) code
   | inRange (bounds tbl) code = tbl ! code
   | otherwise                 = Nothing
 
