@@ -202,8 +202,8 @@ data MuxSDUHeader = MuxSDUHeader {
 --  arbitrary (yet bounded) size. This multiplexing layer is
 --  responsible for the segmentation of concrete representation into
 --  appropriate SDU's for onward transmission.
-data TranslocationServiceRequest ptcl m
-  = TLSRDemand (MiniProtocolId ptcl) MiniProtocolMode (Wanton m)
+data TranslocationServiceRequest m
+  = TLSRDemand MiniProtocolCode MiniProtocolMode (Wanton m)
 
 -- | A Wanton represent the concrete data to be translocated, note that the
 --  TMVar becoming empty indicates -- that the last fragment of the data has
@@ -218,7 +218,7 @@ data PerMuxSharedState ptcl m = PerMuxSS {
   -- | Ingress dispatch table, fixed and known at instantiation.
     dispatchTable :: MiniProtocolDispatch ptcl m
   -- | Egress queue, shared by all miniprotocols
-  , tsrQueue      :: TBQueue m (TranslocationServiceRequest ptcl m)
+  , tsrQueue      :: TBQueue m (TranslocationServiceRequest m)
   , protocolCodes :: MiniProtocolCodes ptcl
   , bearer        :: MuxBearer m
   }
