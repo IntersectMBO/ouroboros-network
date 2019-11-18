@@ -159,19 +159,19 @@ muxStart tracer peerid (MuxApplication ptcls) bearer = do
       -> PerMuxSharedState ptcl m
       -> MuxMiniProtocol appType peerid ptcl m a b
       -> [(m (), String)]
-    mpsJob cnt pmss ptcl =
-        case ptcl of
-          InitiatorProtocolOnly mpdId initiator ->
+    mpsJob cnt pmss (MuxMiniProtocol mpdId run) =
+        case run of
+          InitiatorProtocolOnly initiator ->
             [ ( do chan <- mkChannel ModeInitiator mpdId
                    _    <- initiator peerid chan
                    mpsJobExit cnt
               , show mpdId ++ " Initiator" )]
-          ResponderProtocolOnly mpdId responder ->
+          ResponderProtocolOnly responder ->
             [ ( do chan <- mkChannel ModeResponder mpdId
                    _    <- responder peerid chan
                    mpsJobExit cnt
               , show mpdId ++ " Responder" )]
-          InitiatorAndResponderProtocol mpdId initiator responder ->
+          InitiatorAndResponderProtocol initiator responder ->
             [ ( do chan <- mkChannel ModeInitiator mpdId
                    _    <- initiator peerid chan
                    mpsJobExit cnt

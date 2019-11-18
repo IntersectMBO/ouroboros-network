@@ -343,10 +343,18 @@ prop_mux_snd_recv messages = ioProperty $ do
                                         (return ()) endMpsVar messages
 
     let clientApp = Mx.MuxApplication
-                      [ Mx.InitiatorProtocolOnly ReqResp1 (const client_mp) ]
+                      [ Mx.MuxMiniProtocol {
+                          Mx.miniProtocolId  = ReqResp1,
+                          Mx.miniProtocolRun = Mx.InitiatorProtocolOnly (const client_mp)
+                        }
+                      ]
 
         serverApp = Mx.MuxApplication
-                      [ Mx.ResponderProtocolOnly ReqResp1 (const server_mp) ]
+                      [ Mx.MuxMiniProtocol {
+                          Mx.miniProtocolId  = ReqResp1,
+                          Mx.miniProtocolRun = Mx.ResponderProtocolOnly (const server_mp)
+                        }
+                      ]
 
     clientAsync <-
       async $ Mx.runMuxWithQueues activeTracer "client"
@@ -462,12 +470,26 @@ prop_mux_2_minis msgTrace0 msgTrace1 = ioProperty $ do
         setupMiniReqRsp (return ()) endMpsVar msgTrace1
 
     let clientApp = Mx.MuxApplication
-                      [ Mx.InitiatorProtocolOnly ReqResp2 (const client_mp0)
-                      , Mx.InitiatorProtocolOnly ReqResp3 (const client_mp1) ]
+                      [ Mx.MuxMiniProtocol {
+                          Mx.miniProtocolId  = ReqResp2,
+                          Mx.miniProtocolRun = Mx.InitiatorProtocolOnly (const client_mp0)
+                        }
+                      , Mx.MuxMiniProtocol {
+                          Mx.miniProtocolId  = ReqResp3,
+                          Mx.miniProtocolRun = Mx.InitiatorProtocolOnly (const client_mp1)
+                        }
+                      ]
 
         serverApp = Mx.MuxApplication
-                      [ Mx.ResponderProtocolOnly ReqResp2 (const server_mp0)
-                      , Mx.ResponderProtocolOnly ReqResp3 (const server_mp1) ]
+                      [ Mx.MuxMiniProtocol {
+                          Mx.miniProtocolId  = ReqResp2,
+                          Mx.miniProtocolRun = Mx.ResponderProtocolOnly (const server_mp0)
+                        }
+                      , Mx.MuxMiniProtocol {
+                          Mx.miniProtocolId  = ReqResp3,
+                          Mx.miniProtocolRun = Mx.ResponderProtocolOnly (const server_mp1)
+                        }
+                      ]
 
     clientAsync <- async $ Mx.runMuxWithQueues activeTracer "client" clientApp client_w client_r sduLen Nothing
     serverAsync <- async $ Mx.runMuxWithQueues activeTracer "server" serverApp server_w server_r sduLen Nothing
@@ -516,12 +538,26 @@ prop_mux_starvation (Uneven response0 response1) =
                         endMpsVar $ DummyTrace [(request, response1)]
 
     let clientApp = Mx.MuxApplication
-                      [ Mx.InitiatorProtocolOnly ReqResp2 (const client_short)
-                      , Mx.InitiatorProtocolOnly ReqResp3 (const client_long) ]
+                      [ Mx.MuxMiniProtocol {
+                          Mx.miniProtocolId  = ReqResp2,
+                          Mx.miniProtocolRun = Mx.InitiatorProtocolOnly (const client_short)
+                        }
+                      , Mx.MuxMiniProtocol  {
+                          Mx.miniProtocolId  = ReqResp3,
+                          Mx.miniProtocolRun = Mx.InitiatorProtocolOnly (const client_long)
+                        }
+                      ]
 
         serverApp = Mx.MuxApplication
-                      [ Mx.ResponderProtocolOnly ReqResp2 (const server_short)
-                      , Mx.ResponderProtocolOnly ReqResp3 (const server_long) ]
+                      [ Mx.MuxMiniProtocol {
+                          Mx.miniProtocolId  = ReqResp2,
+                          Mx.miniProtocolRun = Mx.ResponderProtocolOnly (const server_short)
+                        }
+                      , Mx.MuxMiniProtocol {
+                          Mx.miniProtocolId  = ReqResp3,
+                          Mx.miniProtocolRun = Mx.ResponderProtocolOnly (const server_long)
+                        }
+                      ]
 
     clientAsync <- async $ Mx.runMuxWithQueues activeTracer "client" clientApp client_w client_r sduLen (Just traceQueueVar)
     serverAsync <- async $ Mx.runMuxWithQueues activeTracer "server" serverApp server_w server_r sduLen Nothing
@@ -618,7 +654,11 @@ prop_demux_sdu a = do
         -- with an ingress queue which is less than 0xffff so that it can be
         -- triggered by a single segment.
         let server_mps = Mx.MuxApplication
-                           [ Mx.ResponderProtocolOnly ReqRespSmall (const (serverRsp stopVar)) ]
+                           [ Mx.MuxMiniProtocol {
+                               Mx.miniProtocolId  = ReqRespSmall,
+                               Mx.miniProtocolRun = Mx.ResponderProtocolOnly (const (serverRsp stopVar))
+                             }
+                           ]
 
         (client_w, said) <- plainServer server_mps
         setup state client_w
@@ -639,7 +679,11 @@ prop_demux_sdu a = do
         stopVar <- newEmptyTMVarM
 
         let server_mps = Mx.MuxApplication
-                           [ Mx.ResponderProtocolOnly ReqResp1 (const (serverRsp stopVar)) ]
+                           [ Mx.MuxMiniProtocol {
+                               Mx.miniProtocolId  = ReqResp1,
+                               Mx.miniProtocolRun = Mx.ResponderProtocolOnly (const (serverRsp stopVar))
+                             }
+                           ]
 
         (client_w, said) <- plainServer server_mps
 
@@ -662,7 +706,11 @@ prop_demux_sdu a = do
         stopVar <- newEmptyTMVarM
 
         let server_mps = Mx.MuxApplication
-                           [ Mx.ResponderProtocolOnly ReqResp1 (const (serverRsp stopVar)) ]
+                           [ Mx.MuxMiniProtocol {
+                               Mx.miniProtocolId  = ReqResp1,
+                               Mx.miniProtocolRun = Mx.ResponderProtocolOnly (const (serverRsp stopVar))
+                             }
+                           ]
 
         (client_w, said) <- plainServer server_mps
 

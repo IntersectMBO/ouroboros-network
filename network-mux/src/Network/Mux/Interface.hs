@@ -18,6 +18,7 @@ module Network.Mux.Interface
   , HasResponder
   , MuxApplication (..)
   , MuxMiniProtocol (..)
+  , RunMiniProtocol (..)
   , ProtocolEnum (..)
   , MiniProtocolLimits (..)
   , TraceLabelPeer (..)
@@ -80,27 +81,30 @@ type family HasResponder (appType :: AppType) :: Bool where
 newtype MuxApplication (appType :: AppType) peerid ptcl m a b =
         MuxApplication [MuxMiniProtocol appType peerid ptcl m a b]
 
-data MuxMiniProtocol (appType :: AppType) peerid ptcl m a b where
+data MuxMiniProtocol (appType :: AppType) peerid ptcl m a b =
+     MuxMiniProtocol {
+       miniProtocolId  :: !ptcl,
+       miniProtocolRun :: !(RunMiniProtocol appType peerid m a b)
+     }
+
+data RunMiniProtocol (appType :: AppType) peerid m a b where
   InitiatorProtocolOnly
     -- Initiator application; most simple application will be @'runPeer'@ or
     -- @'runPipelinedPeer'@ supplied with a codec and a @'Peer'@ for each
     -- @ptcl@.  But it allows to handle resources if just application of
     -- @'runPeer'@ is not enough.  It will be run as @'ModeInitiator'@.
-    :: ptcl
-    -> (peerid -> Channel m -> m a)
-    -> MuxMiniProtocol InitiatorApp peerid ptcl m a Void
+    :: (peerid -> Channel m -> m a)
+    -> RunMiniProtocol InitiatorApp peerid m a Void
 
   ResponderProtocolOnly
     -- Responder application; similarly to the @'MuxInitiatorApplication'@ but it
     -- will be run using @'ModeResponder'@.
-    :: ptcl
-    -> (peerid -> Channel m -> m a)
-    -> MuxMiniProtocol ResponderApp peerid ptcl m Void a
+    :: (peerid -> Channel m -> m a)
+    -> RunMiniProtocol ResponderApp peerid m Void a
 
   InitiatorAndResponderProtocol
     -- Initiator and server applications.
-    :: ptcl
-    -> (peerid -> Channel m -> m a)
+    :: (peerid -> Channel m -> m a)
     -> (peerid -> Channel m -> m b)
-    -> MuxMiniProtocol InitiatorAndResponderApp peerid ptcl m a b
+    -> RunMiniProtocol InitiatorAndResponderApp peerid m a b
 
