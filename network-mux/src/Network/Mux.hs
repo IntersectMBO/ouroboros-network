@@ -165,17 +165,17 @@ muxStart tracer peerid (MuxApplication ptcls) bearer = do
         MiniProtocolDispatch
           (array (mincode, maxcode) $
                  [ (code, Nothing)    | code <- [mincode..maxcode] ]
-              ++ [ (code, Just mptcl) | (mptcl, code, _, _, _, _) <- ptclsInfo ])
-          (array ((minpid, ModeInitiator), (maxpid, ModeResponder))
-                 [ ((mpid, mode), dispatchInfo)
-                 | (mpid, _mc, qMax, _msgMax, initQ, respQ) <- ptclsInfo
+              ++ [ (code, Just pix)
+                 | (pix, (_, code, _, _, _, _)) <- zip [0..] ptclsInfo ])
+          (array ((minpix, ModeInitiator), (maxpix, ModeResponder))
+                 [ ((pix, mode), dispatchInfo)
+                 | (pix, (_mpid, _mc, qMax, _msgMax, initQ, respQ)) <- zip [0..] ptclsInfo
                  , (mode, q) <- [ (ModeInitiator, initQ)
                                 , (ModeResponder, respQ) ]
                  , let dispatchInfo = MiniProtocolDispatchInfo q qMax ])
       where
-        mpids  = [ mpid | (mpid, _, _, _, _, _) <- ptclsInfo ]
-        minpid = minimum mpids
-        maxpid = maximum mpids
+        minpix = 0
+        maxpix = length ptclsInfo - 1
 
         codes   = [ mc | (_, mc, _, _, _, _) <- ptclsInfo ]
         mincode = minimum codes

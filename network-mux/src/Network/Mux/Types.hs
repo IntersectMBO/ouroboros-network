@@ -160,9 +160,11 @@ instance (MiniProtocolLimits ptcl) => MiniProtocolLimits (MiniProtocolId ptcl) w
 
 data MiniProtocolDispatch ptcl m =
      MiniProtocolDispatch
-       !(Array MiniProtocolCode (Maybe (MiniProtocolId ptcl)))
-       !(Array (MiniProtocolId ptcl, MiniProtocolMode)
+       !(Array MiniProtocolCode (Maybe MiniProtocolIx))
+       !(Array (MiniProtocolIx, MiniProtocolMode)
                (MiniProtocolDispatchInfo m))
+
+type MiniProtocolIx = Int
 
 data MiniProtocolMode = ModeInitiator | ModeResponder
   deriving (Eq, Ord, Ix, Enum, Bounded, Show)
