@@ -183,8 +183,11 @@ muxStart tracer peerid (MuxApplication ptcls) bearer = do
             ]
       where
         mkChannel mode mpdId =
-            muxChannel tracer pmss (AppProtocolId mpdId)
-                       (fromProtocolEnum (AppProtocolId mpdId)) mode cnt
+            muxChannel tracer pmss mid mc mode msgMax cnt
+          where
+            mid    = AppProtocolId mpdId
+            mc     = fromProtocolEnum mid
+            msgMax = maximumMessageSize mid
 
     -- cnt represent the number of SDUs that are queued but not yet sent.  Job
     -- threads will be prevented from exiting until all SDUs have been
@@ -221,7 +224,6 @@ muxChannel
        , Ord ptcl
        , Enum ptcl
        , Show ptcl
-       , MiniProtocolLimits ptcl
        , HasCallStack
        )
     => Tracer m (MuxTrace ptcl)
@@ -229,9 +231,10 @@ muxChannel
     -> MiniProtocolId ptcl
     -> MiniProtocolCode
     -> MiniProtocolMode
+    -> Int64
     -> StrictTVar m Int
     -> m (Channel m)
-muxChannel tracer pmss mid mc md cnt = do
+muxChannel tracer pmss mid mc md msgMax cnt = do
     w <- newTVarM BL.empty
     return $ Channel { send = send (Wanton w)
                      , recv}
@@ -249,10 +252,10 @@ muxChannel tracer pmss mid mc md cnt = do
         -- This check is dependant on the good will of the sender and a receiver can't
         -- assume that it will never receive messages larger than maximumMessageSize.
         --say $ printf "send mid %s mode %s" (show mid) (show md)
-        when (BL.length encoding > maximumMessageSize mid) $
+        when (BL.length encoding > msgMax) $
             throwM $ MuxError MuxTooLargeMessage
                 (printf "Attempting to send a message of size %d on %s %s" (BL.length encoding)
-                        (show mid) (show $ md))
+                        (show mc) (show md))
                 callStack
 
         traceWith tracer $ MuxTraceChannelSendStart mc encoding
