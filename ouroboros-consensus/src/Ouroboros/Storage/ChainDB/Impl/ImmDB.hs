@@ -206,7 +206,7 @@ mkImmDB immDB decBlock encBlock epochInfo isEBB err = ImmDB {..}
 -- 'ReadFutureSlotError' wrapped in a 'ImmDbFailure' is thrown.
 getBlockWithPoint :: forall m blk. (MonadCatch m, HasHeader blk, HasCallStack)
                   => ImmDB m blk -> Point blk -> m (Maybe blk)
-getBlockWithPoint _  GenesisPoint   = throwM $ NoGenesisBlock @blk
+getBlockWithPoint _  GenesisPoint   = throwM NoGenesisBlock
 getBlockWithPoint db BlockPoint { withHash = hash, atSlot = slot } =
     -- Unfortunately a point does not give us enough information to determine
     -- whether this corresponds to a regular block or an EBB. We will
@@ -421,8 +421,8 @@ streamBlocksFrom db registry from = runExceptT $ case from of
         else do
           lift $ iteratorClose db it
           throwError $ MissingBlock pt
-    StreamFromInclusive    GenesisPoint ->
-      throwM $ NoGenesisBlock @blk
+    StreamFromInclusive GenesisPoint ->
+      throwM NoGenesisBlock
   where
     -- | Check if the slot of the lower bound is <= the slot of the tip. If
     -- not, throw a 'MissingBlock' error.
@@ -473,8 +473,8 @@ streamBlocksFromUnchecked db registry from = case from of
       stream Nothing Nothing
     StreamFromInclusive BlockPoint { atSlot = slot, withHash = hash } ->
       stream (Just (slot, hash)) Nothing
-    StreamFromInclusive    GenesisPoint ->
-      throwM $ NoGenesisBlock @blk
+    StreamFromInclusive GenesisPoint ->
+      throwM NoGenesisBlock
   where
     stream start end = parseIterator db <$>
       registeredStream db registry start end

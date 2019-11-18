@@ -208,7 +208,7 @@ getAnyBlock
   -> Point blk
   -> m (Maybe blk)
 getAnyBlock immDB volDB p = case pointHash p of
-    GenesisHash    -> throwM $ NoGenesisBlock @blk
+    GenesisHash    -> throwM NoGenesisBlock
     BlockHash hash -> do
       -- Note: to determine whether a block is in the ImmutableDB, we can look
       -- at the slot of its tip, which we'll call @immTipSlot@. If the slot of

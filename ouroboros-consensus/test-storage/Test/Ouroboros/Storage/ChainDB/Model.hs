@@ -125,7 +125,7 @@ hasBlock hash = isJust . getBlock hash
 
 getBlockByPoint :: HasHeader blk
                 => Point blk -> Model blk
-                -> Either (ChainDbError blk) (Maybe blk)
+                -> Either ChainDbError (Maybe blk)
 getBlockByPoint pt = case Block.pointHash pt of
     GenesisHash    -> const $ Left NoGenesisBlock
     BlockHash hash -> Right . getBlock hash
@@ -266,7 +266,7 @@ streamBlocks :: HasHeader blk
              => SecurityParam
              -> StreamFrom blk -> StreamTo blk
              -> Model blk
-             -> Either (ChainDbError blk)
+             -> Either ChainDbError
                        (Either (UnknownRange blk) IteratorId, Model blk)
 streamBlocks securityParam from to m = do
     unless (validBounds from to) $ Left (InvalidIteratorRange from to)
@@ -304,7 +304,7 @@ readerExists rdrId = CPS.readerExists rdrId . cps
 
 checkIfReaderExists :: CPS.ReaderId -> Model blk
                     -> a
-                    -> Either (ChainDbError blk) a
+                    -> Either ChainDbError a
 checkIfReaderExists rdrId m a
     | readerExists rdrId m
     = Right a
@@ -319,7 +319,7 @@ readBlocks m = (rdrId, m { cps = cps' })
 readerInstruction :: forall blk. HasHeader blk
                   => CPS.ReaderId
                   -> Model blk
-                  -> Either (ChainDbError blk)
+                  -> Either ChainDbError
                             (Maybe (ChainUpdate blk blk), Model blk)
 readerInstruction rdrId m = checkIfReaderExists rdrId m $
     rewrap $ CPS.readerInstruction rdrId (cps m)
@@ -333,7 +333,7 @@ readerForward :: HasHeader blk
               => CPS.ReaderId
               -> [Point blk]
               -> Model blk
-              -> Either (ChainDbError blk)
+              -> Either ChainDbError
                         (Maybe (Point blk), Model blk)
 readerForward rdrId points m = checkIfReaderExists rdrId m $
     case CPS.findFirstPoint points (cps m) of

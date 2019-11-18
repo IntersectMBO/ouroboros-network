@@ -297,7 +297,7 @@ instance Eq blk => Eq (MaybeGCedBlock blk) where
 
 -- | Responses are either successful termination or an error.
 newtype Resp blk it rdr = Resp
-  { getResp :: Either (ChainDbError blk) (Success blk it rdr) }
+  { getResp :: Either ChainDbError (Success blk it rdr) }
   deriving (Functor, Foldable, Traversable)
 
 deriving instance (TestConstraints blk, Show it, Show rdr)
@@ -364,8 +364,7 @@ runPure cfg = \case
     -- Executed whether the ChainDB is open or closed.
     openOrClosed f = first (Resp . Right . Unit) . f
 
-runIO :: TestConstraints blk
-      => ChainDB          IO blk
+runIO :: ChainDB          IO blk
       -> ChainDB.Internal IO blk
       -> ResourceRegistry IO
       ->     Cmd  blk (Iterator IO blk) (Reader IO blk blk)

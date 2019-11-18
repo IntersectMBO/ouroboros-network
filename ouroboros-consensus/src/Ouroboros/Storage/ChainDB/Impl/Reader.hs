@@ -50,25 +50,25 @@ import           Ouroboros.Storage.ChainDB.Impl.Types
 -- Otherwise, execute the given function on the 'ChainDbEnv' and 'ReaderState'
 -- 'StrictTVar'.
 getReader
-  :: forall m blk r. (IOLike m, HasHeader blk)
+  :: forall m blk r. IOLike m
   => ChainDbHandle m blk
   -> ReaderId
   -> (ChainDbEnv m blk -> StrictTVar m (ReaderState m blk) -> m r)
   -> m r
 getReader (CDBHandle varState) readerId f = do
     (env, varRdr) <- atomically $ readTVar varState >>= \case
-      ChainDbClosed _env -> throwM $ ClosedDBError @blk
+      ChainDbClosed _env -> throwM ClosedDBError
       -- See the docstring of 'ChainDbReopening'
       ChainDbReopening   -> error "ChainDB used while reopening"
       ChainDbOpen    env ->
         Map.lookup readerId <$> readTVar (cdbReaders env) >>= \case
-          Nothing  -> throwM $ ClosedReaderError @blk readerId
+          Nothing  -> throwM $ ClosedReaderError readerId
           Just varRdr -> return (env, varRdr)
     f env varRdr
 
 -- | Variant 'of 'getReader' for functions taking one argument.
 getReader1
-  :: forall m blk a r. (IOLike m, HasHeader blk)
+  :: forall m blk a r. IOLike m
   => ChainDbHandle m blk
   -> ReaderId
   -> (ChainDbEnv m blk -> StrictTVar m (ReaderState m blk) -> a -> m r)

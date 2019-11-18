@@ -7,6 +7,7 @@
 {-# LANGUAGE PatternSynonyms            #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE StandaloneDeriving         #-}
+{-# LANGUAGE TypeApplications           #-}
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE UndecidableInstances       #-}
 
@@ -38,7 +39,7 @@ import qualified Codec.CBOR.Read as CBOR
 import           Control.Exception (Exception)
 import qualified Data.ByteString.Lazy as Lazy
 import           Data.Function (on)
-import           Data.Typeable (Typeable)
+import           Data.Typeable
 import           GHC.Generics (Generic)
 import           GHC.Stack
 
@@ -563,7 +564,7 @@ instance (StandardHash blk, Typeable blk) => Exception (ChainDbFailure blk)
 -- | Database error
 --
 -- Thrown upon incorrect use: invalid input.
-data ChainDbError blk =
+data ChainDbError =
     -- | Thrown when requesting the genesis block from the database
     --
     -- Although the genesis block has a hash and a point associated with it,
@@ -589,7 +590,26 @@ data ChainDbError blk =
     -- * The lower and upper bound are not on the same chain.
     -- * The bounds don't make sense, e.g., the lower bound starts after the
     --   upper bound, or the lower bound starts from genesis, /inclusive/.
-  | InvalidIteratorRange (StreamFrom blk) (StreamTo blk)
-  deriving (Eq, Show, Typeable)
+  | forall blk. (Typeable blk, StandardHash blk) =>
+      InvalidIteratorRange (StreamFrom blk) (StreamTo blk)
+  deriving (Typeable)
 
-instance (StandardHash blk, Typeable blk) => Exception (ChainDbError blk)
+deriving instance Show ChainDbError
+
+instance Eq ChainDbError where
+  NoGenesisBlock == NoGenesisBlock = True
+  NoGenesisBlock == _              = False
+
+  ClosedDBError == ClosedDBError = True
+  ClosedDBError == _             = False
+
+  ClosedReaderError rid == ClosedReaderError rid' = rid == rid'
+  ClosedReaderError _   == _                      = False
+
+  InvalidIteratorRange (fr :: StreamFrom blk) to == InvalidIteratorRange (fr' :: StreamFrom blk') to' =
+    case eqT @blk @blk' of
+      Nothing   -> False
+      Just Refl -> fr == fr' && to == to'
+  InvalidIteratorRange _ _ == _ = False
+
+instance Exception ChainDbError

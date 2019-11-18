@@ -43,12 +43,12 @@ openDB cfg initLedger = do
         querySTM f = readTVar db >>= \m ->
           if Model.isOpen m
             then return (f m)
-            else throwM $ ClosedDBError @blk
+            else throwM ClosedDBError
 
         query :: (Model blk -> a) -> m a
         query = atomically . querySTM
 
-        queryE :: (Model blk -> Either (ChainDbError blk) a) -> m a
+        queryE :: (Model blk -> Either ChainDbError a) -> m a
         queryE f = query f >>= either throwM return
 
         updateSTM :: (Model blk -> (a, Model blk)) -> STM m a
@@ -57,9 +57,9 @@ openDB cfg initLedger = do
           if Model.isOpen m
             then let (a, m') = f m in writeTVar db m' >> return a
             else
-              throwM $ ClosedDBError @blk
+              throwM ClosedDBError
 
-        updateSTME :: (Model blk -> Either (ChainDbError blk) (a, Model blk))
+        updateSTME :: (Model blk -> Either ChainDbError (a, Model blk))
                    -> STM m a
         updateSTME f = do
             m <- readTVar db
@@ -68,12 +68,12 @@ openDB cfg initLedger = do
                 Left e        -> throwM e
                 Right (a, m') -> writeTVar db m' >> return a
               else
-                throwM $ ClosedDBError @blk
+                throwM ClosedDBError
 
         update :: (Model blk -> (a, Model blk)) -> m a
         update = atomically . updateSTM
 
-        updateE :: (Model blk -> Either (ChainDbError blk) (a, Model blk))
+        updateE :: (Model blk -> Either ChainDbError (a, Model blk))
                 -> m a
         updateE = atomically . updateSTME
 
@@ -102,7 +102,7 @@ openDB cfg initLedger = do
             }
           where
             readerInstruction' :: Model blk
-                               -> Either (ChainDbError blk)
+                               -> Either ChainDbError
                                          (Maybe (ChainUpdate blk blk), Model blk)
             readerInstruction' = Model.readerInstruction rdrId
 
