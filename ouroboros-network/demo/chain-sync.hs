@@ -829,13 +829,9 @@ genBlockHeader g prevHeader body =
       headerPrevHash = maybe GenesisHash (BlockHash . headerHash) prevHeader,
       headerSlot     = maybe 1 (addSlotGap slotGap  . headerSlot) prevHeader,
       headerBlockNo  = maybe 1 (succ             . headerBlockNo) prevHeader,
-      headerSigner   = expectedBFTSigner (headerSlot header),
       headerBodyHash = hashBody body
     }
     (slotGap, _) = randomR (1,3) g
-
-    expectedBFTSigner :: SlotNo -> BlockSigner
-    expectedBFTSigner (SlotNo n) = BlockSigner (n `mod` 7)
 
     addSlotGap :: Int -> SlotNo -> SlotNo
     addSlotGap m (SlotNo n) = SlotNo (n + fromIntegral m)

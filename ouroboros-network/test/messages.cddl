@@ -122,11 +122,16 @@ refuseReasonRefused              = [2, versionNumber, tstr]
 ; The following encodings are used in the test code.
 
 block           = [blockHeader, blockBody]
-blockHeader     = [int, chainHash, word64, word64 , word64, int]
+
+blockHeader     = [headerHash, chainHash, headerSlot, headerBlockNo , headerBodyHash]
+headerHash      = int
 chainHash       = genesisHash / blockHash
 genesisHash     = []
 blockHash       = [int]
 blockBody       = tstr
+headerSlot      = word64
+headerBlockNo   = word64
+headerBodyHash  = int
 
 point           = origin / blockHeaderHash
 origin          = []

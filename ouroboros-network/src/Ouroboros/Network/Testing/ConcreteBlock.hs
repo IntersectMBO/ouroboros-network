@@ -21,7 +21,6 @@ module Ouroboros.Network.Testing.ConcreteBlock (
     Block(..)
   , BlockHeader(..)
   , BlockBody(..)
-  , BlockSigner(..)
   , hashHeader
   , BodyHash(..)
   , ConcreteHeaderHash(..)
@@ -55,7 +54,6 @@ import           Data.Hashable
 import           Data.Maybe (fromMaybe)
 import           Data.String (IsString)
 import qualified Data.Text as Text
-import           Data.Word (Word64)
 
 import           Cardano.Prelude (NoUnexpectedThunks)
 
@@ -103,26 +101,14 @@ data BlockHeader = BlockHeader {
        headerPrevHash :: ChainHash BlockHeader,   -- ^ The 'headerHash' of the previous block header
        headerSlot     :: SlotNo,                  -- ^ The Ouroboros time slot index of this block
        headerBlockNo  :: BlockNo,                 -- ^ The block index from the Genesis
-       headerSigner   :: BlockSigner,             -- ^ Who signed this block
        headerBodyHash :: BodyHash                 -- ^ The hash of the corresponding block body
      }
    deriving (Show, Eq, Generic)
 
--- | An identifier for someone signing a block.
---
--- We model this as if there were an enumerated set of valid block signers
--- (which for Ouroboros BFT is actually the case), and omit the cryptography
--- and model things as if the signatures were valid.
---
--- TODO: This can probably go, the network layer does not need to worry
--- about signatures.
-newtype BlockSigner = BlockSigner Word64
-  deriving (Show, Eq, Ord, Generic, Hashable)
-
 -- | Compute the 'HeaderHash' of the 'BlockHeader'.
 --
 hashHeader :: BlockHeader -> ConcreteHeaderHash
-hashHeader (BlockHeader _ b c d e f) = HeaderHash (hash (b, c, d, e, f))
+hashHeader (BlockHeader _ b c d e) = HeaderHash (hash (b, c, d, e))
 
 deriving instance Hashable SlotNo
 deriving instance Hashable BlockNo
@@ -241,7 +227,6 @@ mkPartialBlockHeader :: SlotNo -> BlockBody -> BlockHeader
 mkPartialBlockHeader sl body =
     BlockHeader {
       headerSlot     = sl,
-      headerSigner   = expectedBFTSigner sl,
       headerHash     = partialField "headerHash",
       headerPrevHash = partialField "headerPrevHash",
       headerBlockNo  = partialField "headerBlockNo",
@@ -249,9 +234,6 @@ mkPartialBlockHeader sl body =
     }
   where
     partialField n = error ("mkPartialBlock: you didn't fill in field " ++ n)
-
-    expectedBFTSigner :: SlotNo -> BlockSigner
-    expectedBFTSigner (SlotNo n) = BlockSigner (n `mod` 7)
 
 {-------------------------------------------------------------------------------
   "Fixup" is used for chain construction in the network tests. These functions
@@ -413,24 +395,21 @@ instance Serialise BlockHeader where
          headerPrevHash = headerPrevHash,
          headerSlot     = SlotNo headerSlot,
          headerBlockNo  = BlockNo headerBlockNo,
-         headerSigner   = BlockSigner headerSigner,
          headerBodyHash = BodyHash headerBodyHash
        } =
-      encodeListLen 6
+      encodeListLen 5
    <> encode     headerHash
    <> encode     headerPrevHash
    <> encodeWord64 headerSlot
    <> encodeWord64 headerBlockNo
-   <> encodeWord64 headerSigner
    <> encodeInt  headerBodyHash
 
   decode = do
-      decodeListLenOf 6
+      decodeListLenOf 5
       BlockHeader <$> decode
                   <*> decode
                   <*> (SlotNo <$> decodeWord64)
                   <*> (BlockNo <$> decodeWord64)
-                  <*> (BlockSigner <$> decodeWord64)
                   <*> (BodyHash <$> decodeInt)
 
 instance Serialise BlockBody where
