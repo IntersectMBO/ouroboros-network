@@ -353,10 +353,10 @@ data MuxTrace ptcl =
     | MuxTraceStateChange MuxBearerState MuxBearerState
     | MuxTraceCleanExit String
     | MuxTraceExceptionExit SomeException String
-    | MuxTraceChannelRecvStart (MiniProtocolId ptcl)
-    | MuxTraceChannelRecvEnd (MiniProtocolId ptcl) BL.ByteString
-    | MuxTraceChannelSendStart (MiniProtocolId ptcl) BL.ByteString
-    | MuxTraceChannelSendEnd (MiniProtocolId ptcl)
+    | MuxTraceChannelRecvStart MiniProtocolCode
+    | MuxTraceChannelRecvEnd MiniProtocolCode BL.ByteString
+    | MuxTraceChannelSendStart MiniProtocolCode BL.ByteString
+    | MuxTraceChannelSendEnd MiniProtocolCode
     | MuxTraceHandshakeStart
     | MuxTraceHandshakeClientEnd DiffTime
     | MuxTraceHandshakeServerEnd
