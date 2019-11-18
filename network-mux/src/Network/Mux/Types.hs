@@ -332,7 +332,7 @@ data MuxTrace ptcl =
     | MuxTraceRecvPayloadStart Int
     | MuxTraceRecvPayloadEnd BL.ByteString
     | MuxTraceRecvDeltaQObservation (MuxSDU ptcl) Time
-    | MuxTraceRecvDeltaQSample Double Int Int Double Double Double String
+    | MuxTraceRecvDeltaQSample Double Int Int Double Double Double Double String
     | MuxTraceRecvStart Int
     | MuxTraceRecvEnd BL.ByteString
     | MuxTraceSendStart (MuxSDU ptcl)

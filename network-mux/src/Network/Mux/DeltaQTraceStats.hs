@@ -99,6 +99,7 @@ constructSample sa = OneWaySample
                      $ vSum / (fromIntegral population)
   , estDeltaQVVar  = popCheck
                      $ (vSum2 - (vSum * vSum)) / (fromIntegral population)
+  , estR           = popCheck rEst
   , sizeDist       = show [ (a,count b)
                           | (a, b) <- IM.toAscList (observables sa)
                           , count b > 0]
@@ -117,7 +118,7 @@ constructSample sa = OneWaySample
       = ( sumSize + (count psr) * nOctets
         , (nOctets, minTransitTime psr) : minS)
     -- fit a line to get the G,S estimation
-    (dQGEst, dQSEst, _REst) = estimateGS minSRev
+    (dQGEst, dQSEst, rEst) = estimateGS minSRev
     -- calculate the total population V stats
     (vSum, vSum2)
       = let S  v  = vSum'
@@ -141,6 +142,7 @@ data OneWayDeltaQSample = OneWaySample
   , estDeltaQS     :: Double -- octets per second
   , estDeltaQVMean :: Double -- SI Seconds
   , estDeltaQVVar  :: Double
+  , estR           :: Double -- R estimate
   , sizeDist       :: String -- temporary to show size distribution
   }
 
