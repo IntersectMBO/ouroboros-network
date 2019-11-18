@@ -63,6 +63,7 @@ library
                        Ouroboros.Consensus.Mempool.TxSeq
                        Ouroboros.Consensus.Node
                        Ouroboros.Consensus.Node.DbMarker
+                       Ouroboros.Consensus.Node.ErrorPolicy
                        Ouroboros.Consensus.Node.ProtocolInfo
                        Ouroboros.Consensus.Node.ProtocolInfo.Abstract
                        Ouroboros.Consensus.Node.ProtocolInfo.Byron
