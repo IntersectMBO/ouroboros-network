@@ -54,7 +54,7 @@ import           Ouroboros.Storage.VolatileDB.Types
   FileId utilities
 ------------------------------------------------------------------------------}
 
-parseFd :: FsPath -> Either (VolatileDBError blockId) FileId
+parseFd :: FsPath -> Either VolatileDBError FileId
 parseFd file = maybe err Right $
     parseFilename <=< lastMaybe $ fsPathToList file
   where
@@ -70,15 +70,11 @@ parseFd file = maybe err Right $
 
 -- | Parses the 'FileId' of each 'FsPath' and zips them together.
 -- When parsing fails, we abort with the corresponding parse error.
-parseAllFds :: forall blockId.
-               [FsPath]
-            -> Either (VolatileDBError blockId) [(FileId, FsPath)]
+parseAllFds :: [FsPath] -> Either VolatileDBError [(FileId, FsPath)]
 parseAllFds = mapM $ \f -> (,f) <$> parseFd f
 
 -- | When parsing fails, we abort with the corresponding parse error.
-findLastFd :: forall blockId.
-              Set FsPath
-           -> Either (VolatileDBError blockId) (Maybe FileId)
+findLastFd :: Set FsPath -> Either VolatileDBError (Maybe FileId)
 findLastFd = fmap safeMaximum . mapM parseFd . Set.toList
 
 filePath :: FileId -> FsPath
@@ -115,8 +111,8 @@ modifyMVar m action =
        ) action
 
 wrapFsError :: Monad m
-            => ErrorHandling FsError                   m
-            -> ErrorHandling (VolatileDBError blockId) m
+            => ErrorHandling FsError         m
+            -> ErrorHandling VolatileDBError m
             -> m a -> m a
 wrapFsError fsErr volDBErr action =
     tryVolDB fsErr volDBErr action >>= either (throwError volDBErr) return
@@ -128,16 +124,16 @@ wrapFsError fsErr volDBErr action =
 -- This should be used whenever you want to run an action on the VolatileDB
 -- and catch the 'VolatileDBError' and the 'FsError' (wrapped in the former)
 -- it may thrown.
-tryVolDB :: forall m blockId a. Monad m
-         => ErrorHandling FsError                   m
-         -> ErrorHandling (VolatileDBError blockId) m
-         -> m a -> m (Either (VolatileDBError blockId) a)
+tryVolDB :: forall m a. Monad m
+         => ErrorHandling FsError         m
+         -> ErrorHandling VolatileDBError m
+         -> m a -> m (Either VolatileDBError a)
 tryVolDB fsErr volDBErr = fmap squash . EH.try fsErr . EH.try volDBErr
   where
     fromFS = UnexpectedError . FileSystemError
 
-    squash :: Either FsError (Either (VolatileDBError blockId) a)
-           -> Either (VolatileDBError blockId) a
+    squash :: Either FsError (Either VolatileDBError a)
+           -> Either VolatileDBError a
     squash = either (Left . fromFS) id
 
 {------------------------------------------------------------------------------

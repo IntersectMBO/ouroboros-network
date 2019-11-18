@@ -542,7 +542,7 @@ data ChainDbFailure blk =
     -- | The volatile DB throw an "unexpected error"
     --
     -- These are errors indicative of a disk failure (as opposed to API misuse)
-  | VolDbFailure (VolDB.UnexpectedError (HeaderHash blk))
+  | VolDbFailure VolDB.UnexpectedError
 
     -- | The ledger DB threw a file-system error
   | LgrDbFailure FsError

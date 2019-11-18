@@ -95,8 +95,8 @@ data VolDB m blk = VolDB {
       -- ^ TODO introduce a newtype wrapper around the @s@ so we can use
       -- generics to derive the NoUnexpectedThunks instance.
     , encBlock :: blk -> Encoding
-    , err      :: ErrorHandling (VolatileDBError (HeaderHash blk)) m
-    , errSTM   :: ThrowCantCatch (VolatileDBError (HeaderHash blk)) (STM m)
+    , err      :: ErrorHandling VolatileDBError m
+    , errSTM   :: ThrowCantCatch VolatileDBError (STM m)
     }
 
 -- Universal type; we can't use generics
@@ -116,8 +116,8 @@ instance NoUnexpectedThunks (VolDB m blk) where
 
 data VolDbArgs m blk = forall h. VolDbArgs {
       volHasFS         :: HasFS m h
-    , volErr           :: ErrorHandling (VolatileDBError (HeaderHash blk)) m
-    , volErrSTM        :: ThrowCantCatch (VolatileDBError (HeaderHash blk)) (STM m)
+    , volErr           :: ErrorHandling VolatileDBError m
+    , volErrSTM        :: ThrowCantCatch VolatileDBError (STM m)
     , volBlocksPerFile :: Int
     , volDecodeBlock   :: forall s. Decoder s (Lazy.ByteString -> blk)
     , volEncodeBlock   :: blk -> Encoding
@@ -130,7 +130,7 @@ data VolDbArgs m blk = forall h. VolDbArgs {
 -- * 'volBlocksPerFile'
 -- * 'volDecodeBlock'
 -- * 'volEncodeBlock'
-defaultArgs :: StandardHash blk => FilePath -> VolDbArgs IO blk
+defaultArgs :: FilePath -> VolDbArgs IO blk
 defaultArgs fp = VolDbArgs {
       volErr    = EH.exceptions
     , volErrSTM = EH.throwSTM
@@ -162,8 +162,8 @@ openDB args@VolDbArgs{..} = do
 mkVolDB :: VolatileDB (HeaderHash blk) m
         -> (forall s. Decoder s (Lazy.ByteString -> blk))
         -> (blk -> Encoding)
-        -> ErrorHandling (VolatileDBError (HeaderHash blk)) m
-        -> ThrowCantCatch (VolatileDBError (HeaderHash blk)) (STM m)
+        -> ErrorHandling VolatileDBError m
+        -> ThrowCantCatch VolatileDBError (STM m)
         -> VolDB m blk
 mkVolDB volDB decBlock encBlock err errSTM = VolDB {..}
 
@@ -463,12 +463,12 @@ withDB :: forall m blk x. (MonadThrow m, StandardHash blk, Typeable blk)
        -> m x
 withDB VolDB{..} k = EH.catchError err (k volDB) rethrow
   where
-    rethrow :: VolatileDBError (HeaderHash blk) -> m x
+    rethrow :: VolatileDBError -> m x
     rethrow e = case wrap e of
                   Just e' -> throwM e'
                   Nothing -> throwM e
 
-    wrap :: VolatileDBError (HeaderHash blk) -> Maybe (ChainDbFailure blk)
+    wrap :: VolatileDBError -> Maybe (ChainDbFailure blk)
     wrap (VolDB.UnexpectedError e) = Just (VolDbFailure e)
     wrap VolDB.UserError{}         = Nothing
 

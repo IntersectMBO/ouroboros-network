@@ -1,7 +1,9 @@
-{-# LANGUAGE DeriveAnyClass      #-}
-{-# LANGUAGE DeriveGeneric       #-}
-{-# LANGUAGE RankNTypes          #-}
-{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE DeriveAnyClass            #-}
+{-# LANGUAGE DeriveGeneric             #-}
+{-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE RankNTypes                #-}
+{-# LANGUAGE ScopedTypeVariables       #-}
+{-# LANGUAGE StandaloneDeriving        #-}
 
 module Ouroboros.Storage.VolatileDB.Types
     (
@@ -37,11 +39,11 @@ type ReverseIndex blockId = Map blockId (InternalBlockInfo blockId)
 type SuccessorsIndex blockId = Map (WithOrigin blockId) (Set blockId)
 
 -- | Errors which might arise when working with this database.
-data VolatileDBError blockId =
+data VolatileDBError =
       UserError UserError
     -- ^ An error thrown because of incorrect usage of the VolatileDB
     -- by the user.
-    | UnexpectedError (UnexpectedError blockId)
+    | UnexpectedError UnexpectedError
     -- ^ An unexpected error thrown because something went wrong on a lower
     -- layer.
     deriving Show
@@ -51,37 +53,37 @@ data UserError =
     | ClosedDBError
     deriving (Show, Eq)
 
-data UnexpectedError blockId =
+data UnexpectedError =
       FileSystemError FsError
-    | ParserError (ParserError blockId)
+    | ParserError ParserError
     deriving (Show)
 
-instance Eq blockId => Eq (VolatileDBError blockId) where
+instance Eq VolatileDBError where
     (==) = sameVolatileDBError
 
-instance (Show blockId, Typeable blockId) => Exception (VolatileDBError blockId) where
+instance Exception VolatileDBError where
     displayException = show
 
-data ParserError blockId =
-      DuplicatedSlot blockId FsPath FsPath
+data ParserError =
+      forall blockId. (Typeable blockId, Eq blockId, Show blockId) =>
+        DuplicatedSlot blockId FsPath FsPath
     | InvalidFilename FsPath
-    deriving (Show)
 
-instance Eq blockId => Eq (ParserError blockId) where
+deriving instance Show ParserError
+
+instance Eq ParserError where
     (==) = sameParseError
 
-sameVolatileDBError :: Eq blockId
-                    => VolatileDBError blockId
-                    -> VolatileDBError blockId
+sameVolatileDBError :: VolatileDBError
+                    -> VolatileDBError
                     -> Bool
 sameVolatileDBError e1 e2 = case (e1, e2) of
     (UserError ue1, UserError ue2)             -> ue1 == ue2
     (UnexpectedError ue1, UnexpectedError ue2) -> sameUnexpectedError ue1 ue2
     _                                          -> False
 
-sameUnexpectedError :: Eq blockId
-                    => UnexpectedError blockId
-                    -> UnexpectedError blockId
+sameUnexpectedError :: UnexpectedError
+                    -> UnexpectedError
                     -> Bool
 sameUnexpectedError e1 e2 = case (e1, e2) of
     (FileSystemError fs1, FileSystemError fs2) -> sameFsError fs1 fs2
@@ -92,7 +94,7 @@ sameUnexpectedError e1 e2 = case (e1, e2) of
 -- deterministic which duplication we find. In other words, it's possible that
 -- there are multiple pairs of duplicate blocks and our algorithm does not
 -- guarantee we always find the same.
-sameParseError :: ParserError blockId -> ParserError blockId -> Bool
+sameParseError :: ParserError -> ParserError -> Bool
 sameParseError e1 e2 = case (e1, e2) of
     (DuplicatedSlot {}, DuplicatedSlot {})       -> True
     (InvalidFilename str1, InvalidFilename str2) -> str1 == str2

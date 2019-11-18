@@ -18,7 +18,7 @@ import           Data.Time.Clock (DiffTime, secondsToDiffTime)
 
 import           Control.Tracer (Tracer, contramap)
 
-import           Ouroboros.Network.Block (HeaderHash, StandardHash)
+import           Ouroboros.Network.Block (HeaderHash)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Ledger.Abstract
@@ -57,8 +57,8 @@ data ChainDbArgs m blk = forall h1 h2 h3. ChainDbArgs {
 
       -- Error handling
     , cdbErrImmDb         :: ErrorHandling ImmDB.ImmutableDBError m
-    , cdbErrVolDb         :: ErrorHandling (VolDB.VolatileDBError (HeaderHash blk)) m
-    , cdbErrVolDbSTM      :: ThrowCantCatch (VolDB.VolatileDBError (HeaderHash blk)) (STM m)
+    , cdbErrVolDb         :: ErrorHandling VolDB.VolatileDBError m
+    , cdbErrVolDbSTM      :: ThrowCantCatch VolDB.VolatileDBError (STM m)
 
       -- HasFS instances
     , cdbHasFSImmDb       :: HasFS m h1
@@ -113,9 +113,7 @@ defaultSpecificArgs = ChainDbSpecificArgs{
 -- See 'ImmDB.defaultArgs', 'VolDB.defaultArgs', 'LgrDB.defaultArgs', and
 -- 'defaultSpecificArgs' for a list of which fields are not given a default
 -- and must therefore be set explicitly.
-defaultArgs :: StandardHash blk
-            => FilePath
-            -> ChainDbArgs IO blk
+defaultArgs :: FilePath -> ChainDbArgs IO blk
 defaultArgs fp = toChainDbArgs (ImmDB.defaultArgs fp)
                                (VolDB.defaultArgs fp)
                                (LgrDB.defaultArgs fp)

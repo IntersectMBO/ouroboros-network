@@ -38,6 +38,7 @@ import qualified Data.Map as Map
 import           Data.Maybe (fromMaybe, isNothing, mapMaybe)
 import           Data.Set (Set)
 import qualified Data.Set as Set
+import           Data.Typeable
 import           GHC.Stack.Types
 
 import           Ouroboros.Network.Point (WithOrigin)
@@ -59,7 +60,7 @@ import           Test.Ouroboros.Storage.VolatileDB.TestBlock (Corruptions,
 data DBModel blockId = DBModel {
       blocksPerFile  :: Int
       -- ^ How many blocks each file has (should follow the real Impl).
-    , parseError     :: Maybe (ParserError blockId)
+    , parseError     :: Maybe ParserError
       -- ^ An error indicates a broken db and that parsing will fail.
     , open           :: Bool
       -- ^ Indicates if the db is open.
@@ -102,7 +103,7 @@ isOpenModel = do
     return open
 
 reOpenModel :: MonadState (DBModel blockId) m
-            => ThrowCantCatch (VolatileDBError blockId) m
+            => ThrowCantCatch VolatileDBError m
             -> m ()
 reOpenModel err = do
     dbm <- get
@@ -112,7 +113,7 @@ reOpenModel err = do
     put dbm' {open = True}
 
 getBlockModel :: forall m blockId. (MonadState (DBModel blockId) m, Ord blockId)
-              => ThrowCantCatch (VolatileDBError blockId) m
+              => ThrowCantCatch VolatileDBError m
               -> blockId
               -> m (Maybe ByteString)
 getBlockModel err sl = do
@@ -122,7 +123,7 @@ getBlockModel err sl = do
 
 putBlockModel :: MonadState (DBModel blockId) m
               => Ord blockId
-              => ThrowCantCatch (VolatileDBError blockId) m
+              => ThrowCantCatch VolatileDBError m
               -> Maybe Errors
               -> BlockInfo blockId
               -> Builder
@@ -178,7 +179,7 @@ putBlockModel err cmdErr BlockInfo{..} bs = do
 
 garbageCollectModel :: forall m blockId
                      . MonadState (DBModel blockId) m
-                    => ThrowCantCatch (VolatileDBError blockId) m
+                    => ThrowCantCatch VolatileDBError m
                     -> Maybe Errors
                     -> SlotNo
                     -> m ()
@@ -235,7 +236,7 @@ garbageCollectModel err cmdErr sl = do
 
 getBlockIdsModel :: forall m blockId
                  . MonadState (DBModel blockId) m
-                 => ThrowCantCatch (VolatileDBError blockId) m
+                 => ThrowCantCatch VolatileDBError m
                  -> m [blockId]
 getBlockIdsModel err = do
     DBModel {..} <- get
@@ -245,7 +246,7 @@ getBlockIdsModel err = do
 getSuccessorsModel :: forall m blockId
                    . MonadState (DBModel blockId) m
                    => Ord blockId
-                   => ThrowCantCatch (VolatileDBError blockId) m
+                   => ThrowCantCatch VolatileDBError m
                    -> m (WithOrigin blockId -> Set blockId)
 getSuccessorsModel err = do
     DBModel {..} <- get
@@ -256,7 +257,7 @@ getSuccessorsModel err = do
 getPredecessorModel :: forall m blockId
                     . MonadState (DBModel blockId) m
                     => Ord blockId
-                    => ThrowCantCatch (VolatileDBError blockId) m
+                    => ThrowCantCatch VolatileDBError m
                     -> m (blockId -> WithOrigin blockId)
 getPredecessorModel err = do
     DBModel {..} <- get
@@ -268,7 +269,7 @@ getPredecessorModel err = do
 
 getMaxSlotNoModel :: forall m blockId
                   . MonadState (DBModel blockId) m
-                  => ThrowCantCatch (VolatileDBError blockId) m
+                  => ThrowCantCatch VolatileDBError m
                   -> m MaxSlotNo
 getMaxSlotNoModel err = do
     DBModel {..} <- get
@@ -357,7 +358,12 @@ createInvalidFileModel file = do
     db <- get
     put $ db {parseError = Just $ InvalidFilename file}
 
-duplicateBlockModel :: forall blockId m. MonadState (DBModel blockId) m
+duplicateBlockModel :: forall blockId m. (
+                         MonadState (DBModel blockId) m
+                       , Typeable blockId
+                       , Eq       blockId
+                       , Show     blockId
+                       )
                     => (FsPath, blockId)
                     -> m ()
 duplicateBlockModel (file, bid) = do
@@ -366,7 +372,7 @@ duplicateBlockModel (file, bid) = do
     put $ db {parseError = Just $ DuplicatedSlot bid file current}
 
 recover :: MonadState (DBModel blockId) m
-        => ThrowCantCatch (VolatileDBError blockId) m
+        => ThrowCantCatch VolatileDBError m
         -> DBModel blockId
         -> m (DBModel blockId)
 recover err dbm@DBModel {..} = do
@@ -405,7 +411,7 @@ newFileInfo = (NoMaxSlotNo, 0, [])
 
 getIsMemberModel :: MonadState (DBModel blockId) m
                  => Ord blockId
-                 => ThrowCantCatch (VolatileDBError blockId) m
+                 => ThrowCantCatch VolatileDBError m
                  -> m (blockId -> Bool)
 getIsMemberModel err = do
     DBModel {..} <- get
