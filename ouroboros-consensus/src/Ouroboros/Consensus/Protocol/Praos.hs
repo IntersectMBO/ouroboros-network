@@ -33,7 +33,6 @@ module Ouroboros.Consensus.Protocol.Praos (
   ) where
 
 import           Cardano.Binary (ToCBOR (..))
-import           Codec.CBOR.Encoding (Encoding)
 import           Codec.Serialise (Serialise (..))
 import           Control.Monad (unless)
 import           Control.Monad.Except (throwError)
@@ -168,10 +167,11 @@ data PraosValidationError c =
       PraosInvalidSlot SlotNo SlotNo
     | PraosUnknownCoreId Int
     | PraosInvalidSig String (VerKeyKES (PraosKES c)) Natural (SigKES (PraosKES c))
-    | PraosInvalidCert (VerKeyVRF (PraosVRF c)) Encoding Natural (CertVRF (PraosVRF c))
+    | PraosInvalidCert (VerKeyVRF (PraosVRF c)) (Natural, SlotNo, VRFType) Natural (CertVRF (PraosVRF c))
     | PraosInsufficientStake Double Natural
 
 deriving instance PraosCrypto c => Show (PraosValidationError c)
+deriving instance PraosCrypto c => Eq   (PraosValidationError c)
 
 data BlockInfo c = BlockInfo
     { biSlot  :: !SlotNo
@@ -287,7 +287,7 @@ instance ( PraosCrypto c
     unless (verifyCertified () vkVRF rho' praosRho) $
         throwError $ PraosInvalidCert
             vkVRF
-            (toCBOR rho')
+            rho'
             (certifiedNatural praosRho)
             (certifiedProof praosRho)
 
@@ -295,7 +295,7 @@ instance ( PraosCrypto c
     unless (verifyCertified () vkVRF y' praosY) $
         throwError $ PraosInvalidCert
             vkVRF
-            (toCBOR y')
+            y'
             (certifiedNatural praosY)
             (certifiedProof praosY)
 

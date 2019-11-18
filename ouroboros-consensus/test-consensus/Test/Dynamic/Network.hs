@@ -187,7 +187,7 @@ runNodeNetwork registry testBtime numCoreNodes nodeJoinPlan nodeTopology
 
     undirectedEdge ::
          HasCallStack
-      => Tracer m (SlotNo, MiniProtocolState, MiniProtocolExpectedException blk)
+      => Tracer m (SlotNo, MiniProtocolState, MiniProtocolExpectedException)
       -> Map CoreNodeId (StrictMVar m (LimitedApp m NodeId blk))
       -> (CoreNodeId, CoreNodeId)
       -> m ()
@@ -393,8 +393,8 @@ runNodeNetwork registry testBtime numCoreNodes nodeJoinPlan nodeTopology
 -- tear down the whole hierarchy of test threads. See
 -- 'MiniProtocolExpectedException'.
 directedEdge ::
-  forall m blk. (IOLike m, SupportedBlock blk)
-  => Tracer m (SlotNo, MiniProtocolState, MiniProtocolExpectedException blk)
+  forall m blk. IOLike m
+  => Tracer m (SlotNo, MiniProtocolState, MiniProtocolExpectedException)
   -> BlockchainTime m
   -> (CoreNodeId, LimitedApp m NodeId blk)
   -> (CoreNodeId, LimitedApp m NodeId blk)
@@ -409,7 +409,7 @@ directedEdge tr btime nodeapp1 nodeapp2 =
       where
         -- Catch and restart on expected exceptions
         --
-        hExpected :: MiniProtocolExpectedException blk -> m ()
+        hExpected :: MiniProtocolExpectedException -> m ()
         hExpected e = do
           s@(SlotNo i) <- atomically $ getCurrentSlot btime
           traceWith tr (s, MiniProtocolDelayed, e)
@@ -431,7 +431,7 @@ directedEdge tr btime nodeapp1 nodeapp2 =
 --
 -- See 'directedEdge'.
 directedEdgeInner ::
-  forall m blk. (IOLike m, SupportedBlock blk)
+  forall m blk. IOLike m
   => (CoreNodeId, LimitedApp m NodeId blk)
      -- ^ client threads on this node
   -> (CoreNodeId, LimitedApp m NodeId blk)
@@ -479,7 +479,7 @@ directedEdgeInner (node1, LimitedApp app1) (node2, LimitedApp app2) = do
 
     wrapMPEE ::
          Exception e
-      => (e -> MiniProtocolExpectedException blk)
+      => (e -> MiniProtocolExpectedException)
       -> (app -> peer -> chan -> m a)
       -> (app -> peer -> chan -> m a)
     wrapMPEE f m = \app them chan ->
@@ -706,8 +706,8 @@ type LimitedApp' m peer blk unused1 unused2 =
 
 -- | Non-fatal exceptions expected from the threads of a 'directedEdge'
 --
-data MiniProtocolExpectedException blk
-  = MPEEChainSyncClient (CSClient.ChainSyncClientException blk)
+data MiniProtocolExpectedException
+  = MPEEChainSyncClient CSClient.ChainSyncClientException
     -- ^ see "Ouroboros.Consensus.ChainSyncClient"
     --
     -- NOTE: the second type in 'ChainSyncClientException' denotes the 'tip'.
@@ -724,17 +724,17 @@ data MiniProtocolExpectedException blk
     -- ^ see "Ouroboros.Network.TxSubmission.Inbound"
   deriving (Show)
 
-instance (SupportedBlock blk) => Exception (MiniProtocolExpectedException blk)
+instance Exception MiniProtocolExpectedException
 
 data MiniProtocolState = MiniProtocolDelayed | MiniProtocolRestarting
   deriving (Show)
 
-data TraceMiniProtocolRestart peer blk
+data TraceMiniProtocolRestart peer
   = TraceMiniProtocolRestart
       peer peer
       SlotNo
       MiniProtocolState
-      (MiniProtocolExpectedException blk)
+      MiniProtocolExpectedException
     -- ^ us them when-start-blocking state reason
   deriving (Show)
 

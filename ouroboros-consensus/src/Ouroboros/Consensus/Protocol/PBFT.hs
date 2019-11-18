@@ -327,7 +327,8 @@ data PBftValidationErr c
   | PBftExceededSignThreshold String Int Int
   | PBftInvalidSlot
 
-deriving instance (Show (PBftLedgerView c), PBftCrypto c) => Show (PBftValidationErr c)
+deriving instance PBftCrypto c => Show (PBftValidationErr c)
+deriving instance PBftCrypto c => Eq   (PBftValidationErr c)
 
 {-------------------------------------------------------------------------------
   Condense

@@ -4,6 +4,7 @@
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE DuplicateRecordFields      #-}
+{-# LANGUAGE ExistentialQuantification  #-}
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase                 #-}
@@ -236,7 +237,6 @@ chainSyncClient
     :: forall m blk.
        ( IOLike m
        , ProtocolLedgerView blk
-       , Exception (ChainSyncClientException blk)
        )
     => MkPipelineDecision
     -> Tracer m (TraceChainSyncClientEvent blk)
@@ -268,7 +268,7 @@ chainSyncClient mkPipelineDecision0 tracer cfg btime
     -- intersect, disconnect by throwing the exception obtained by calling the
     -- passed function.
     findIntersection
-      :: (Our (Tip blk) -> Their (Tip blk) -> ChainSyncClientException blk)
+      :: (Our (Tip blk) -> Their (Tip blk) -> ChainSyncClientException)
          -- ^ Exception to throw when no intersection is found.
       -> Stateful m blk () (ClientPipelinedStIdle Z)
     findIntersection mkEx = Stateful $ \() -> do
@@ -732,12 +732,12 @@ chainSyncClient mkPipelineDecision0 tracer cfg btime
     -- | Disconnect from the upstream node by throwing the given exception.
     -- The cleanup is handled in 'bracketChainSyncClient'.
     disconnect :: forall m' x'. MonadThrow m'
-               => ChainSyncClientException blk -> m' x'
+               => ChainSyncClientException -> m' x'
     disconnect = throwM
 
     -- | Trace any 'ChainSyncClientException' if thrown.
     traceException :: m a -> m a
-    traceException m = m `catch` \(e :: ChainSyncClientException blk) -> do
+    traceException m = m `catch` \(e :: ChainSyncClientException) -> do
       traceWith tracer $ TraceException e
       throwM e
 
@@ -841,12 +841,12 @@ continueWithState !s (Stateful f) = checkInvariant (unsafeNoThunks s) $ f s
   Exception
 -------------------------------------------------------------------------------}
 
-data ChainSyncClientException blk =
+data ChainSyncClientException =
       -- | The header we received was for a slot too far in the future.
       --
       -- I.e., the slot of the received header was > current slot (according
       -- to the wall time) + the max clock skew.
-      HeaderExceedsClockSkew
+      forall blk. SupportedBlock blk => HeaderExceedsClockSkew
       { _receivedHeader    :: Point blk
       , _currentWallSlotNo :: SlotNo
       , _ourTip            :: Our   (Tip blk)
@@ -854,80 +854,138 @@ data ChainSyncClientException blk =
       }
 
       -- | The server we're connecting to forked more than @k@ blocks ago.
-    | ForkTooDeep
-      { _intersection :: Point blk
-      , _ourTip       :: Our   (Tip blk)
-      , _theirTip     :: Their (Tip blk)
-      }
+    | forall blk. SupportedBlock blk =>
+        ForkTooDeep
+        { _intersection :: Point blk
+        , _ourTip       :: Our   (Tip blk)
+        , _theirTip     :: Their (Tip blk)
+        }
 
       -- | The chain validation threw an error.
-    | ChainError
-      { _newPoint           :: Point blk
-      , _chainValidationErr :: ValidationErr (BlockProtocol blk)
-      , _ourTip             :: Our   (Tip blk)
-      , _theirTip           :: Their (Tip blk)
-      }
+    | forall blk. SupportedBlock blk =>
+        ChainError
+        { _newPoint           :: Point blk
+        , _chainValidationErr :: ValidationErr (BlockProtocol blk)
+        , _ourTip             :: Our   (Tip blk)
+        , _theirTip           :: Their (Tip blk)
+        }
 
       -- | The upstream node rolled forward to a point too far in our past.
       -- This may happen if, during catch-up, our local node has moved too far
       -- ahead of the upstream node.
-    | InvalidRollForward
-      { _newPoint :: Point blk
-      , _ourTip   :: Our   (Tip blk)
-      , _theirTip :: Their (Tip blk)
-      }
+    | forall blk. SupportedBlock blk =>
+        InvalidRollForward
+        { _newPoint :: Point blk
+        , _ourTip   :: Our   (Tip blk)
+        , _theirTip :: Their (Tip blk)
+        }
 
       -- | The upstream node rolled back more than @k@ blocks.
-    | InvalidRollBack
-      { _newPoint :: Point blk
-      , _ourTip   :: Our   (Tip blk)
-      , _theirTip :: Their (Tip blk)
-      }
+    | forall blk. SupportedBlock blk =>
+        InvalidRollBack
+        { _newPoint :: Point blk
+        , _ourTip   :: Our   (Tip blk)
+        , _theirTip :: Their (Tip blk)
+        }
 
       -- | We send the upstream node a bunch of points from a chain fragment and
       -- the upstream node responded with an intersection point that is not on
       -- our chain fragment, and thus not among the points we sent.
       --
       -- We store the intersection point the upstream node sent us.
-    | InvalidIntersection
-      { _intersection :: Point blk
-      , _ourTip       :: Our   (Tip blk)
-      , _theirTip     :: Their (Tip blk)
-      }
+    | forall blk. SupportedBlock blk =>
+        InvalidIntersection
+        { _intersection :: Point blk
+        , _ourTip       :: Our   (Tip blk)
+        , _theirTip     :: Their (Tip blk)
+        }
 
       -- | Our chain changed such that it no longer intersects with the
       -- candidate's fragment, and asking for a new intersection did not yield
       -- one.
-    | NoMoreIntersection
-      { _ourTip   :: Our   (Tip blk)
-      , _theirTip :: Their (Tip blk)
-      }
+    | forall blk. SupportedBlock blk =>
+        NoMoreIntersection
+        { _ourTip   :: Our   (Tip blk)
+        , _theirTip :: Their (Tip blk)
+        }
 
       -- | The received header to roll forward doesn't fit onto the previous
       -- one.
       --
       -- The first 'ChainHash' is the previous hash of the received header and
       -- the second 'ChainHash' is that of the previous one.
-    | DoesntFit
-      { _receivedPrevHash :: ChainHash blk
-      , _expectedPrevHash :: ChainHash blk
-      , _ourTip           :: Our   (Tip blk)
-      , _theirTip         :: Their (Tip blk)
-      }
+    | forall blk. SupportedBlock blk =>
+        DoesntFit
+        { _receivedPrevHash :: ChainHash blk
+        , _expectedPrevHash :: ChainHash blk
+        , _ourTip           :: Our   (Tip blk)
+        , _theirTip         :: Their (Tip blk)
+        }
 
       -- | The upstream node's chain contained a block that we know is invalid.
-    | InvalidBlock
-      { _invalidBlock :: Point blk
-      }
+    | forall blk. SupportedBlock blk =>
+        InvalidBlock
+        { _invalidBlock :: Point blk
+        }
 
-deriving instance ( SupportedBlock blk
-                  ) => Show (ChainSyncClientException blk)
-deriving instance ( SupportedBlock blk
-                  , Eq (ValidationErr (BlockProtocol blk))
-                  )
-               => Eq (ChainSyncClientException blk)
-instance ( SupportedBlock blk
-         ) => Exception (ChainSyncClientException blk)
+deriving instance Show ChainSyncClientException
+
+instance Eq ChainSyncClientException where
+  HeaderExceedsClockSkew (a :: Point blk) b c d == HeaderExceedsClockSkew (a' :: Point blk') b' c' d' =
+    case eqT @blk @blk' of
+      Nothing   -> False
+      Just Refl -> (a, b, c, d) == (a', b', c', d')
+  HeaderExceedsClockSkew{} == _ = False
+
+  ForkTooDeep (a :: Point blk) b c == ForkTooDeep (a' :: Point blk') b' c' =
+    case eqT @blk @blk' of
+      Nothing   -> False
+      Just Refl -> (a, b, c) == (a', b', c')
+  ForkTooDeep{} == _ = False
+
+  ChainError (a :: Point blk) b c d == ChainError (a' :: Point blk') b' c' d' =
+    case eqT @blk @blk' of
+      Nothing   -> False
+      Just Refl -> (a, b, c, d) == (a', b', c', d')
+  ChainError{} == _ = False
+
+  InvalidRollForward (a :: Point blk) b c == InvalidRollForward (a' :: Point blk') b' c' =
+    case eqT @blk @blk' of
+      Nothing   -> False
+      Just Refl -> (a, b, c) == (a', b', c')
+  InvalidRollForward{} == _ = False
+
+  InvalidRollBack (a :: Point blk) b c == InvalidRollBack (a' :: Point blk') b' c' =
+    case eqT @blk @blk' of
+      Nothing   -> False
+      Just Refl -> (a, b, c) == (a', b', c')
+  InvalidRollBack{} == _ = False
+
+  InvalidIntersection (a :: Point blk) b c == InvalidIntersection (a' :: Point blk') b' c' =
+    case eqT @blk @blk' of
+      Nothing   -> False
+      Just Refl -> (a, b, c) == (a', b', c')
+  InvalidIntersection{} == _ = False
+
+  NoMoreIntersection (a :: Our (Tip blk)) b == NoMoreIntersection (a' :: Our (Tip blk')) b' =
+    case eqT @blk @blk' of
+      Nothing   -> False
+      Just Refl -> (a, b) == (a', b')
+  NoMoreIntersection{} == _ = False
+
+  DoesntFit (a :: ChainHash blk) b c d == DoesntFit (a' :: ChainHash blk') b' c' d' =
+    case eqT @blk @blk' of
+      Nothing   -> False
+      Just Refl -> (a, b, c, d) == (a', b', c', d')
+  DoesntFit{} == _ = False
+
+  InvalidBlock (a :: Point blk) == InvalidBlock (a' :: Point blk') =
+    case eqT @blk @blk' of
+      Nothing   -> False
+      Just Refl -> a == a'
+  InvalidBlock{} == _ = False
+
+instance Exception ChainSyncClientException
 
 {-------------------------------------------------------------------------------
   TODO #221: Implement genesis
@@ -985,7 +1043,7 @@ data TraceChainSyncClientEvent blk
   | TraceFoundIntersection (Point blk) (Our (Tip blk)) (Their (Tip blk))
     -- ^ We found an intersection between our chain fragment and the
     -- candidate's chain.
-  | TraceException (ChainSyncClientException blk)
+  | TraceException ChainSyncClientException
     -- ^ An exception was thrown by the Chain Sync Client.
 
 deriving instance ( SupportedBlock blk
