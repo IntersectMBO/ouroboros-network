@@ -30,8 +30,8 @@ import qualified Network.Socket as Socket
 import qualified Network.Socket.ByteString.Lazy as Socket (sendAll)
 #ifndef mingw32_HOST_OS
 import           System.Directory (removeFile)
-import           System.IO.Error
 #endif
+import           System.IO.Error
 
 import           Network.TypedProtocol.Core
 import           Network.TypedProtocol.Driver
@@ -74,12 +74,6 @@ import           Test.Tasty.QuickCheck (testProperty)
 import           Text.Printf
 import           Text.Show.Functions ()
 
-{-
- - The travis build hosts does not support IPv6 so those test cases are hidden
- - behind the OUROBOROS_NETWORK_IPV6 define for now.
- -}
--- #define OUROBOROS_NETWORK_IPV6
-
 --
 -- The list of all tests
 --
@@ -88,24 +82,18 @@ tests :: TestTree
 tests =
   testGroup "Socket"
   [ testProperty "socket send receive IPv4"              prop_socket_send_recv_ipv4
-#ifdef OUROBOROS_NETWORK_IPV6
   , after AllFinish "socket send receive IPv4" $
     testProperty "socket send receive IPv6"              prop_socket_send_recv_ipv6
-#define LAST_IP_TEST "socket send receive IPv6"
-#else
-#define LAST_IP_TEST "socket send receive IPv4"
-#endif
 #ifndef mingw32_HOST_OS
   , testProperty "socket send receive Unix"              prop_socket_send_recv_unix
 #endif
-  , after AllFinish LAST_IP_TEST $
+  , after AllFinish "socket send receive IPv6" $
     testProperty "socket close during receive"           prop_socket_recv_close
   , after AllFinish "socket close during receive" $
     testProperty "socket client connection failure"      prop_socket_client_connect_error
   , after AllFinish "socket client connection failure" $
     testProperty "socket sync demo"                      prop_socket_demo
   ]
-#undef LAST_IP_TEST
 
 activeMuxTracer :: Show a => Tracer IO a
 activeMuxTracer = nullTracer
@@ -163,17 +151,20 @@ prop_socket_send_recv_ipv4 f xs = ioProperty $ do
     prop_socket_send_recv client server f xs
 
 
-#ifdef OUROBOROS_NETWORK_IPV6
-
 -- | Send and receive over IPv6
 prop_socket_send_recv_ipv6 :: (Int ->  Int -> (Int, Int))
                            -> [Int]
                            -> Property
 prop_socket_send_recv_ipv6 request response = ioProperty $ do
-    server:_ <- Socket.getAddrInfo Nothing (Just "::1") (Just "6061")
-    client:_ <- Socket.getAddrInfo Nothing (Just "::1") (Just "0")
-    prop_socket_send_recv client server request response
-#endif
+    r_e <- tryIOError $ Socket.getAddrInfo Nothing (Just "::1") (Just "6061")
+    case r_e of
+         Left e           ->
+             -- getAddrInfo throws a NoSuchThing IOError incase IPv6 isn't supported.
+             return $ isDoesNotExistError e
+         Right []         -> return False
+         Right (server:_) -> do
+             client:_ <- Socket.getAddrInfo Nothing (Just "::1") (Just "0")
+             prop_socket_send_recv client server request response
 
 #ifndef mingw32_HOST_OS
 prop_socket_send_recv_unix :: (Int ->  Int -> (Int, Int))

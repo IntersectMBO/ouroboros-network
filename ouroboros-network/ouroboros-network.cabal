@@ -16,12 +16,6 @@ extra-source-files:
   test/messages.cddl
 cabal-version:       >=1.10
 
-Flag ipv6
-  Description: Enable IPv6 test cases
-  Manual: True
-  -- Default to False since travis lacks IPv6 support
-  Default: False
-
 flag cddl
   Description: Enable CDDL based tests of the CBOR encoding
   Manual: True
@@ -289,8 +283,6 @@ test-suite test-network
                        -Wno-unticked-promoted-constructors
                        -fno-ignore-asserts
                        -threaded
-  if flag(ipv6)
-    cpp-options:       -DOUROBOROS_NETWORK_IPV6
 
 test-suite cddl
   type:                exitcode-stdio-1.0

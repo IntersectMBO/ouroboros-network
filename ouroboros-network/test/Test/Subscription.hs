@@ -33,6 +33,7 @@ import           Data.Void (Void)
 import           Data.Word
 import qualified Network.DNS as DNS
 import qualified Network.Socket as Socket
+import           System.IO.Error (tryIOError)
 import           Test.QuickCheck
 import           Test.Tasty (TestTree, testGroup)
 import           Text.Printf
@@ -381,9 +382,21 @@ prop_resolv_sim lr =
 _prop_resolv_io :: LookupResult -> Property
 _prop_resolv_io lr = ioProperty $ prop_resolv lr
 
+isIPv6Supported :: IO Bool
+isIPv6Supported = do
+     r_e <- tryIOError $ Socket.getAddrInfo Nothing (Just "::1") (Just "0")
+     case r_e of
+         Left _  -> return False
+         Right _ -> return True
+
 prop_sub_io :: LookupResultIO
             -> Property
 prop_sub_io lr = ioProperty $ do
+  ipv6Support <- isIPv6Supported
+  if not ipv6Support
+  then return $ property True
+  else do
+
     let serverIdsv4 = case lrioIpv4Result lr of
                            Left  _ -> []
                            Right r -> zip (repeat Socket.AF_INET) r
@@ -506,7 +519,10 @@ prop_send_recv
     -> Socket.Family
     -> Property
 prop_send_recv f xs first = ioProperty $ do
-
+  ipv6Support <- isIPv6Supported
+  if not ipv6Support
+  then return $ True
+  else do
     let lr = LookupResultIO (Right [0]) (Right [0]) first 1
         serverPortMap = M.fromList [((Socket.AF_INET, 0), 6062), ((Socket.AF_INET6, 0), 6062)]
 
