@@ -223,8 +223,8 @@ connectToNode'
 connectToNode' versionDataCodec NetworkConnectTracers {nctMuxTracer, nctHandshakeTracer } versions sd = do
     connectionId <- ConnectionId <$> Socket.getSocketName sd <*> Socket.getPeerName sd
     muxTracer <- initDeltaQTracer' $ Mx.WithMuxBearer connectionId `contramap` nctMuxTracer
-    bearer <- Mx.socketAsMuxBearer muxTracer sd
-    Mx.muxBearerSetState muxTracer bearer Mx.Connected
+    let bearer = Mx.socketAsMuxBearer muxTracer sd
+    Mx.traceMuxBearerState muxTracer Mx.Connected
     traceWith muxTracer $ Mx.MuxTraceHandshakeStart
     ts_start <- getMonotonicTime
     !mapp <- runPeerWithByteLimit
@@ -302,8 +302,8 @@ beginConnection muxTracer handshakeTracer versionDataCodec acceptVersion fn t ad
     case accept of
       AcceptConnection st' peerid versions -> pure $ Server.Accept st' $ \sd -> do
         muxTracer' <- initDeltaQTracer' $ Mx.WithMuxBearer peerid `contramap` muxTracer
-        bearer <- Mx.socketAsMuxBearer muxTracer' sd
-        Mx.muxBearerSetState muxTracer' bearer Mx.Connected
+        let bearer = Mx.socketAsMuxBearer muxTracer' sd
+        Mx.traceMuxBearerState muxTracer' Mx.Connected
         traceWith muxTracer' $ Mx.MuxTraceHandshakeStart
         mapp <- runPeerWithByteLimit
                 maxTransmissionUnit

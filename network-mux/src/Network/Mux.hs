@@ -8,7 +8,7 @@
 
 module Network.Mux (
       muxStart
-    , muxBearerSetState
+    , traceMuxBearerState
     , MuxSDU (..)
     , MiniProtocolNum (..)
     , MiniProtocolLimits (..)
@@ -21,7 +21,6 @@ module Network.Mux (
 
 import           Control.Monad
 import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 import           Control.Tracer
@@ -74,12 +73,9 @@ import           Network.Mux.Types
 -- * at any given time each @TranslocationServiceRequest@ contains a non-empty
 -- 'Wanton'
 --
--- TODO: replace MonadSay with iohk-monitoring-framework.
---
 muxStart
     :: forall m appType peerid a b.
        ( MonadAsync m
-       , MonadSay m
        , MonadSTM m
        , MonadThrow m
        , MonadThrow (STM m)
@@ -119,7 +115,7 @@ muxStart tracer peerid (MuxApplication ptcls) bearer = do
     mask $ \unmask -> do
       aidsAndNames <- traverse (\(io, name) -> (,name) <$> async (unmask io)) jobs
 
-      muxBearerSetState tracer bearer Mature
+      traceWith tracer (MuxTraceState Mature)
       unmask $ do
         (fa, r_e) <- waitAnyCatchCancel $ map fst aidsAndNames
         let faName = fromMaybe "Unknown Protocol" (lookup fa aidsAndNames)
@@ -129,7 +125,7 @@ muxStart tracer peerid (MuxApplication ptcls) bearer = do
                  throwM e
              Right _                 -> traceWith tracer $ MuxTraceCleanExit faName
 
-      muxBearerSetState tracer bearer Dead
+      traceWith tracer (MuxTraceState Dead)
 
   where
     mkMiniProtocolInfo :: MiniProtocolNum
@@ -219,12 +215,12 @@ muxStart tracer peerid (MuxApplication ptcls) bearer = do
     -- jobs will be cancelled directly.
     mpsJobExit :: StrictTVar m Int -> m ()
     mpsJobExit cnt = do
-        muxBearerSetState tracer bearer Dying
+        traceWith tracer (MuxTraceState Dying)
         atomically $ do
             c <- readTVar cnt
             unless (c == 0) retry
 
-muxControl :: (HasCallStack, MonadSTM m, MonadSay m, MonadThrow m)
+muxControl :: (HasCallStack, MonadSTM m, MonadThrow m)
            => StrictTVar m BL.ByteString
            -> m ()
 muxControl q = do
@@ -304,15 +300,6 @@ muxChannel tracer pmss mc md msgMax q cnt = do
         traceWith tracer $ MuxTraceChannelRecvEnd mc blob
         return $ Just blob
 
-muxBearerSetState :: MonadSTM m
-                  => Tracer m MuxTrace
-                  -> MuxBearer m
-                  -> MuxBearerState
-                  -> m ()
-muxBearerSetState tracer bearer newState = do
-    oldState <- atomically $ do
-        -- TODO: reimplement with swapTVar once it is added to MonadSTM
-        old <- readTVar (state bearer)
-        writeTVar (state bearer) newState
-        return old
-    traceWith tracer $ MuxTraceStateChange oldState newState
+traceMuxBearerState :: Tracer m MuxTrace -> MuxBearerState -> m ()
+traceMuxBearerState tracer state =
+    traceWith tracer (MuxTraceState state)

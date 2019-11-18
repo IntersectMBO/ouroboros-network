@@ -10,7 +10,6 @@ import qualified Data.ByteString.Lazy as BL
 import           Data.Word (Word16)
 
 import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
@@ -37,15 +36,13 @@ queuesAsMuxBearer
   -> TBQueue m BL.ByteString
   -> Word16
   -> Maybe (TBQueue m (Mx.MiniProtocolNum, Mx.MiniProtocolMode, Time))
-  -> m (MuxBearer m)
+  -> MuxBearer m
 queuesAsMuxBearer tracer writeQueue readQueue sduSize traceQueue = do
-      mxState <- atomically $ newTVar Mx.Larval
-      return $ Mx.MuxBearer {
-          Mx.read    = readMux,
-          Mx.write   = writeMux,
-          Mx.sduSize = sduSize,
-          Mx.state   = mxState
-        }
+      Mx.MuxBearer {
+        Mx.read    = readMux,
+        Mx.write   = writeMux,
+        Mx.sduSize = sduSize
+      }
     where
       readMux :: m (Mx.MuxSDU, Time)
       readMux = do
@@ -83,7 +80,6 @@ runMuxWithQueues
   :: ( MonadAsync m
      , MonadCatch m
      , MonadMask m
-     , MonadSay m
      , MonadSTM m
      , MonadThrow m
      , MonadThrow (STM m)
@@ -99,11 +95,10 @@ runMuxWithQueues
   -> Word16
   -> Maybe (TBQueue m (Mx.MiniProtocolNum, Mx.MiniProtocolMode, Time))
   -> m (Maybe SomeException)
-runMuxWithQueues tracer peerid app wq rq mtu trace =
-    let muxTracer = Mx.WithMuxBearer "Queue" `contramap` tracer in
-    bracket (queuesAsMuxBearer muxTracer wq rq mtu trace)
-      (\_ -> pure ()) $ \bearer -> do
-        res_e <- try $ Mx.muxStart muxTracer peerid app bearer
-        case res_e of
-             Left  e -> return (Just e)
-             Right _ -> return Nothing
+runMuxWithQueues tracer peerid app wq rq mtu trace = do
+    let muxTracer = Mx.WithMuxBearer "Queue" `contramap` tracer
+        bearer    = queuesAsMuxBearer muxTracer wq rq mtu trace
+    res_e <- try $ Mx.muxStart muxTracer peerid app bearer
+    case res_e of
+         Left  e -> return (Just e)
+         Right _ -> return Nothing
