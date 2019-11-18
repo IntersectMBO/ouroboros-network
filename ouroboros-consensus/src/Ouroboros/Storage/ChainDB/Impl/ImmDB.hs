@@ -270,7 +270,7 @@ getBlockWithPoint db BlockPoint { withHash = hash, atSlot = slot } =
           | otherwise
           -> return $ Nothing
         Nothing -- EBB is missing
-          -> throwM $ ImmDbMissingBlock @blk (Left epochNo)
+          -> throwM $ ImmDbMissingBlock (Left epochNo)
 
     -- Important: we check whether the block's hash matches the point's hash
     getBlockWithHash :: Either EpochNo SlotNo -> m (Maybe blk)
@@ -278,7 +278,7 @@ getBlockWithPoint db BlockPoint { withHash = hash, atSlot = slot } =
       Just block | blockHash block == hash -> return $ Just block
       _                                    -> return $ Nothing
 
-getBlockAtTip :: (MonadCatch m, HasHeader blk, HasCallStack)
+getBlockAtTip :: (MonadCatch m, HasCallStack)
               => ImmDB m blk -> m (Maybe blk)
 getBlockAtTip db = do
     immTip <- withDB db $ \imm -> ImmDB.getTip imm
@@ -296,8 +296,7 @@ getPointAtTip = fmap mbBlockToPoint . getBlockAtTip
     mbBlockToPoint Nothing    = genesisPoint
     mbBlockToPoint (Just blk) = blockPoint blk
 
-getSlotNoAtTip :: (MonadCatch m, HasHeader blk)
-               => ImmDB m blk -> m (WithOrigin SlotNo)
+getSlotNoAtTip :: MonadCatch m => ImmDB m blk -> m (WithOrigin SlotNo)
 getSlotNoAtTip db = do
     immTip <- withDB db $ \imm -> ImmDB.getTip imm
     case immTip of
@@ -310,7 +309,7 @@ getSlotNoAtTip db = do
 -- | Get known block from the ImmutableDB that we know should exist
 --
 -- If it does not exist, we are dealing with data corruption.
-getKnownBlock :: (MonadCatch m, HasHeader blk, HasCallStack)
+getKnownBlock :: (MonadCatch m, HasCallStack)
               => ImmDB m blk -> Either EpochNo SlotNo -> m blk
 getKnownBlock db epochOrSlot = do
     mBlock <- mustExist epochOrSlot <$> getBlock db epochOrSlot
@@ -319,7 +318,7 @@ getKnownBlock db epochOrSlot = do
       Left err -> throwM err
 
 -- | Get block from the ImmutableDB
-getBlock :: (MonadCatch m, HasHeader blk, HasCallStack)
+getBlock :: (MonadCatch m, HasCallStack)
          => ImmDB m blk -> Either EpochNo SlotNo -> m (Maybe blk)
 getBlock db epochOrSlot = do
     mBlob <- fmap (parse (decBlock db) epochOrSlot) <$> getBlob db epochOrSlot
@@ -328,7 +327,7 @@ getBlock db epochOrSlot = do
       Just (Right b)  -> return $ Just b
       Just (Left err) -> throwM $ err
 
-getBlob :: (MonadCatch m, HasHeader blk, HasCallStack)
+getBlob :: (MonadCatch m, HasCallStack)
         => ImmDB m blk -> Either EpochNo SlotNo -> m (Maybe Lazy.ByteString)
 getBlob db epochOrSlot = withDB db $ \imm ->
     case epochOrSlot of
@@ -364,7 +363,7 @@ appendBlock db@ImmDB{..} b = withDB db $ \imm -> case isEBB b of
 --
 -- When the returned iterator is closed, it will be 'release'd from the
 -- 'ResourceRegistry'.
-registeredStream :: (IOLike m, HasHeader blk)
+registeredStream :: IOLike m
                  => ImmDB m blk
                  -> ResourceRegistry m
                  -> Maybe (SlotNo, HeaderHash blk)
@@ -459,7 +458,7 @@ streamBlocksFrom db registry from = runExceptT $ case from of
 --
 -- When passed @'StreamFromInclusive' pt@ where @pt@ refers to Genesis, a
 -- 'NoGenesisBlock' exception will be thrown.
-streamBlocksFromUnchecked  :: forall m blk. (IOLike m, HasHeader blk)
+streamBlocksFromUnchecked  :: forall m blk. IOLike m
                            => ImmDB m blk
                            -> ResourceRegistry m
                            -> StreamFrom blk
@@ -544,7 +543,7 @@ streamBlobsAfter db registry low = do
                   throwM $ ImmDbUnexpectedIteratorExhausted low
 
 -- | Parse the bytestrings returned by an iterator as blocks.
-parseIterator :: (MonadCatch m, HasHeader blk)
+parseIterator :: MonadCatch m
               => ImmDB m blk
               -> Iterator (HeaderHash blk) m Lazy.ByteString
               -> Iterator (HeaderHash blk) m blk
@@ -556,7 +555,7 @@ parseIterator db itr = Iterator {
     , iteratorID      = ImmDB.DerivedIteratorID $ ImmDB.iteratorID itr
     }
 
-parseIteratorResult :: (MonadThrow m, HasHeader blk)
+parseIteratorResult :: MonadThrow m
                     => ImmDB m blk
                     -> IteratorResult (HeaderHash blk) Lazy.ByteString
                     -> m (IteratorResult (HeaderHash blk) blk)
@@ -579,7 +578,7 @@ parseIteratorResult db result =
 
 -- | Wrap calls to the ImmutableDB and rethrow exceptions that may indicate
 -- disk failure and should therefore trigger recovery
-withDB :: forall m blk x. (MonadCatch m, HasHeader blk)
+withDB :: forall m blk x. MonadCatch m
        => ImmDB m blk -> (ImmutableDB (HeaderHash blk) m -> m x) -> m x
 withDB ImmDB{..} k = EH.catchError err (k immDB) rethrow
   where
@@ -588,13 +587,13 @@ withDB ImmDB{..} k = EH.catchError err (k immDB) rethrow
                     Just e' -> throwM e'
                     Nothing -> throwM e
 
-    wrap :: ImmDB.ImmutableDBError -> Maybe (ChainDbFailure blk)
+    wrap :: ImmDB.ImmutableDBError -> Maybe ChainDbFailure
     wrap (ImmDB.UnexpectedError e) = Just (ImmDbFailure e)
     wrap ImmDB.UserError{}         = Nothing
 
 mustExist :: Either EpochNo SlotNo
           -> Maybe blk
-          -> Either (ChainDbFailure blk) blk
+          -> Either ChainDbFailure blk
 mustExist epochOrSlot Nothing  = Left  $ ImmDbMissingBlock epochOrSlot
 mustExist _           (Just b) = Right $ b
 
@@ -602,13 +601,13 @@ parse :: forall blk.
          (forall s. Decoder s (Lazy.ByteString -> blk))
       -> Either EpochNo SlotNo
       -> Lazy.ByteString
-      -> Either (ChainDbFailure blk) blk
+      -> Either ChainDbFailure blk
 parse dec epochOrSlot bytes =
     aux (CBOR.deserialiseFromBytes dec bytes)
   where
     aux :: Either CBOR.DeserialiseFailure
                   (Lazy.ByteString, Lazy.ByteString -> blk)
-        -> Either (ChainDbFailure blk) blk
+        -> Either ChainDbFailure blk
     aux (Right (bs, blk))
       | Lazy.null bs = Right (blk bytes)
       | otherwise    = Left $ ImmDbTrailingData epochOrSlot bs
@@ -618,36 +617,34 @@ parse dec epochOrSlot bytes =
   Wrappers
 -------------------------------------------------------------------------------}
 
-closeDB :: (MonadCatch m, HasHeader blk, HasCallStack)
-        => ImmDB m blk -> m ()
+closeDB :: (MonadCatch m, HasCallStack) => ImmDB m blk -> m ()
 closeDB db = withDB db ImmDB.closeDB
 
-reopen :: (MonadCatch m, HasHeader blk, HasCallStack)
-       => ImmDB m blk -> m ()
+reopen :: (MonadCatch m, HasCallStack) => ImmDB m blk -> m ()
 reopen db = withDB db $ \imm ->
     ImmDB.reopen imm ImmDB.ValidateMostRecentEpoch
 
 -- These wrappers ensure that we correctly rethrow exceptions using 'withDB'.
 
-iteratorNext :: (HasCallStack, MonadCatch m, HasHeader blk)
+iteratorNext :: (HasCallStack, MonadCatch m)
              => ImmDB m blk
              -> ImmDB.Iterator (HeaderHash blk) m a
              -> m (ImmDB.IteratorResult (HeaderHash blk) a)
 iteratorNext db it = withDB db $ const $ ImmDB.iteratorNext it
 
-iteratorHasNext :: (HasCallStack, MonadCatch m, HasHeader blk)
+iteratorHasNext :: (HasCallStack, MonadCatch m)
                 => ImmDB m blk
                 -> ImmDB.Iterator (HeaderHash blk) m a
                 -> m Bool
 iteratorHasNext db it = withDB db $ const $ ImmDB.iteratorHasNext it
 
-iteratorPeek :: (HasCallStack, MonadCatch m, HasHeader blk)
+iteratorPeek :: (HasCallStack, MonadCatch m)
              => ImmDB m blk
              -> ImmDB.Iterator (HeaderHash blk) m a
              -> m (ImmDB.IteratorResult (HeaderHash blk) a)
 iteratorPeek db it = withDB db $ const $ ImmDB.iteratorPeek it
 
-iteratorClose :: (HasCallStack, MonadCatch m, HasHeader blk)
+iteratorClose :: (HasCallStack, MonadCatch m)
               => ImmDB m blk
               -> ImmDB.Iterator (HeaderHash blk) m a
               -> m ()

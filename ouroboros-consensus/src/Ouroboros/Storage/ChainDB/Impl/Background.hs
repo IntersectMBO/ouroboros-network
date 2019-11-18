@@ -31,7 +31,6 @@ import           Control.Exception (assert)
 import           Control.Monad (forM_, forever, void)
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (fromMaybe)
-import           Data.Typeable (Typeable)
 import           GHC.Stack (HasCallStack)
 
 import           Control.Monad.Class.MonadThrow
@@ -40,7 +39,7 @@ import           Control.Tracer
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment (..))
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block (ChainHash (..), HasHeader, Point,
-                     SlotNo, StandardHash, pointHash, pointSlot)
+                     SlotNo, pointHash, pointSlot)
 import           Ouroboros.Network.Point (WithOrigin (..))
 
 import           Ouroboros.Consensus.Block
@@ -215,11 +214,7 @@ copyToImmDBRunner cdb@CDB{..} gcSchedule = forever $ do
 --
 -- TODO will a long GC be a bottleneck? It will block any other calls to
 -- @putBlock@ and @getBlock@.
-garbageCollect
-  :: forall m blk. (IOLike m, HasHeader blk)
-  => ChainDbEnv m blk
-  -> SlotNo
-  -> m ()
+garbageCollect :: forall m blk. IOLike m => ChainDbEnv m blk -> SlotNo -> m ()
 garbageCollect CDB{..} slotNo = do
     VolDB.garbageCollect cdbVolDB slotNo
     atomically $ do
@@ -310,20 +305,14 @@ gcScheduleRunner (GcSchedule queue) runGc = forever $ do
 
 -- | Write a snapshot of the LedgerDB to disk and remove old snapshots
 -- (typically one) so that only 'onDiskNumSnapshots' snapshots are on disk.
-updateLedgerSnapshots
-  :: forall m blk. (IOLike m, StandardHash blk, Typeable blk)
-  => ChainDbEnv m blk
-  -> m ()
+updateLedgerSnapshots :: IOLike m => ChainDbEnv m blk -> m ()
 updateLedgerSnapshots CDB{..} = do
     -- TODO avoid taking multiple snapshots corresponding to the same tip.
     void $ LgrDB.takeSnapshot  cdbLgrDB
     void $ LgrDB.trimSnapshots cdbLgrDB
 
 -- | Execute 'updateLedgerSnapshots', wait 'onDiskWriteInterval', and repeat.
-updateLedgerSnapshotsRunner
-  :: forall m blk. (IOLike m, StandardHash blk, Typeable blk)
-  => ChainDbEnv m blk
-  -> m ()
+updateLedgerSnapshotsRunner :: IOLike m => ChainDbEnv m blk -> m ()
 updateLedgerSnapshotsRunner cdb@CDB{..} = loop
   where
     LgrDB.DiskPolicy{..} = LgrDB.getDiskPolicy cdbLgrDB

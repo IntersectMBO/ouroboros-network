@@ -1,3 +1,4 @@
+{-# LANGUAGE AllowAmbiguousTypes        #-}
 {-# LANGUAGE DeriveAnyClass             #-}
 {-# LANGUAGE DeriveFunctor              #-}
 {-# LANGUAGE DeriveGeneric              #-}
@@ -491,7 +492,7 @@ instance Eq (Reader m blk a) where
 -- what went wrong, in case sysadmins want to investigate the disk failure.
 -- The Chain DB itself does not differentiate; all disk failures are treated
 -- equal and all trigger the same recovery procedure.
-data ChainDbFailure blk =
+data ChainDbFailure =
     -- | A block in the immutable DB failed to parse
     ImmDbParseFailure (Either EpochNo SlotNo) CBOR.DeserialiseFailure
 
@@ -511,7 +512,8 @@ data ChainDbFailure blk =
     -- gets thrown when the block at the given slot (1st argument) in the
     -- immutable DB had another (3rd argument) hash than the expected one (2nd
     -- argument).
-  | ImmDbHashMismatch (Point blk) (HeaderHash blk) (HeaderHash blk)
+  | forall blk. (Typeable blk, StandardHash blk) =>
+      ImmDbHashMismatch (Point blk) (HeaderHash blk) (HeaderHash blk)
 
     -- | We requested an iterator that was immediately exhausted
     --
@@ -520,7 +522,8 @@ data ChainDbFailure blk =
     -- exhausted immediately: the start position is inclusive, the DB would
     -- throw an exception if the slot number is beyond the last written block,
     -- and the DB does not contain any trailing empty slots.
-  | ImmDbUnexpectedIteratorExhausted (Point blk)
+  | forall blk. (Typeable blk, StandardHash blk) =>
+      ImmDbUnexpectedIteratorExhausted (Point blk)
 
     -- | The immutable DB threw an "unexpected error"
     --
@@ -528,17 +531,20 @@ data ChainDbFailure blk =
   | ImmDbFailure ImmDB.UnexpectedError
 
     -- | A block in the volatile DB failed to parse
-  | VolDbParseFailure (HeaderHash blk) CBOR.DeserialiseFailure
+  | forall blk. (Typeable blk, StandardHash blk) =>
+      VolDbParseFailure (HeaderHash blk) CBOR.DeserialiseFailure
 
     -- | When parsing a block from the volatile DB, we got some trailing data
-  | VolDbTrailingData (HeaderHash blk) Lazy.ByteString
+  | forall blk. (Typeable blk, StandardHash blk) =>
+      VolDbTrailingData (HeaderHash blk) Lazy.ByteString
 
     -- | Block missing from the volatile DB
     --
     -- This exception gets thrown when a block that we /know/ should exist
     -- in the DB (for example, because its hash exists in the volatile DB's
     -- successor index) nonetheless was not found
-  | VolDbMissingBlock (HeaderHash blk)
+  | forall blk. (Typeable blk, StandardHash blk) =>
+      VolDbMissingBlock (HeaderHash blk)
 
     -- | The volatile DB throw an "unexpected error"
     --
@@ -551,11 +557,13 @@ data ChainDbFailure blk =
     -- | Block missing from the chain DB
     --
     -- Thrown when we are not sure in which DB the block /should/ have been.
-  | ChainDbMissingBlock (Point blk)
-  deriving (Show, Typeable)
+  | forall blk. (Typeable blk, StandardHash blk) =>
+      ChainDbMissingBlock (Point blk)
+  deriving (Typeable)
 
-instance (StandardHash blk, Typeable blk) => Exception (ChainDbFailure blk)
+deriving instance Show ChainDbFailure
 
+instance Exception ChainDbFailure
 
 {-------------------------------------------------------------------------------
   Exceptions

@@ -5,6 +5,7 @@
 {-# LANGUAGE RecordWildCards           #-}
 {-# LANGUAGE ScopedTypeVariables       #-}
 {-# LANGUAGE StandaloneDeriving        #-}
+{-# LANGUAGE TypeApplications          #-}
 {-# LANGUAGE TypeFamilies              #-}
 {-# LANGUAGE UndecidableInstances      #-}
 
@@ -190,16 +191,13 @@ putBlock :: (MonadCatch m, HasHeader blk) => VolDB m blk -> blk -> m ()
 putBlock db@VolDB{..} b = withDB db $ \vol ->
     VolDB.putBlock vol (extractInfo b) (CBOR.toBuilder (encBlock b))
 
-closeDB :: (MonadCatch m, HasHeader blk, HasCallStack)
-        => VolDB m blk -> m ()
+closeDB :: (MonadCatch m, HasCallStack) => VolDB m blk -> m ()
 closeDB db = withDB db VolDB.closeDB
 
-reopen :: (MonadCatch m, HasHeader blk, HasCallStack)
-       => VolDB m blk -> m ()
+reopen :: (MonadCatch m, HasCallStack) => VolDB m blk -> m ()
 reopen db = withDB db VolDB.reOpenDB
 
-garbageCollect :: (MonadCatch m, HasHeader blk)
-               => VolDB m blk -> SlotNo -> m ()
+garbageCollect :: MonadCatch m => VolDB m blk -> SlotNo -> m ()
 garbageCollect db slotNo = withDB db $ \vol ->
     VolDB.garbageCollect vol slotNo
 
@@ -457,7 +455,7 @@ blockFileParser VolDbArgs{..} =
 
 -- | Wrap calls to the VolatileDB and rethrow exceptions that may indicate
 -- disk failure and should therefore trigger recovery
-withDB :: forall m blk x. (MonadThrow m, StandardHash blk, Typeable blk)
+withDB :: forall m blk x. MonadThrow m
        => VolDB m blk
        -> (VolatileDB (HeaderHash blk) m -> m x)
        -> m x
@@ -468,7 +466,7 @@ withDB VolDB{..} k = EH.catchError err (k volDB) rethrow
                   Just e' -> throwM e'
                   Nothing -> throwM e
 
-    wrap :: VolatileDBError -> Maybe (ChainDbFailure blk)
+    wrap :: VolatileDBError -> Maybe ChainDbFailure
     wrap (VolDB.UnexpectedError e) = Just (VolDbFailure e)
     wrap VolDB.UserError{}         = Nothing
 
@@ -480,27 +478,28 @@ withSTM :: VolDB m blk
         -> STM m x
 withSTM VolDB{..} k = k volDB
 
-mustExist :: HeaderHash blk
+mustExist :: forall blk. (Typeable blk, StandardHash blk)
+          => HeaderHash blk
           -> Maybe blk
-          -> Either (ChainDbFailure blk) blk
-mustExist hash Nothing  = Left  $ VolDbMissingBlock hash
+          -> Either ChainDbFailure blk
+mustExist hash Nothing  = Left  $ VolDbMissingBlock @blk hash
 mustExist _    (Just b) = Right $ b
 
-parse :: forall blk.
-         (forall s. Decoder s (Lazy.ByteString -> blk))
+parse :: forall blk. (Typeable blk, StandardHash blk)
+      => (forall s. Decoder s (Lazy.ByteString -> blk))
       -> HeaderHash blk
       -> Lazy.ByteString
-      -> Either (ChainDbFailure blk) blk
+      -> Either ChainDbFailure blk
 parse dec hash bytes =
     aux (CBOR.deserialiseFromBytes dec bytes)
   where
     aux :: Either CBOR.DeserialiseFailure
                   (Lazy.ByteString, Lazy.ByteString -> blk)
-        -> Either (ChainDbFailure blk) blk
+        -> Either ChainDbFailure blk
     aux (Right (bs, blk))
       | Lazy.null bs = Right (blk bytes)
-      | otherwise    = Left $ VolDbTrailingData hash bs
-    aux (Left err)   = Left $ VolDbParseFailure hash err
+      | otherwise    = Left $ VolDbTrailingData @blk hash bs
+    aux (Left err)   = Left $ VolDbParseFailure @blk hash err
 
 {-------------------------------------------------------------------------------
   Auxiliary

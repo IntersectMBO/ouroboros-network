@@ -174,11 +174,7 @@ makeNewBlockOrHeaderReader h readerId registry = Reader {..}
     readerForward             = getReader1 h readerId $ forward           registry
     readerClose               = getEnv     h          $ close readerId
 
-close
-  :: forall m blk. (IOLike m, HasHeader blk)
-  => ReaderId
-  -> ChainDbEnv m blk
-  -> m ()
+close :: forall m blk. IOLike m => ReaderId -> ChainDbEnv m blk -> m ()
 close readerId CDB{..} = do
     mbReaderState <- atomically $ do
       readers <- readTVar cdbReaders
@@ -197,7 +193,7 @@ close readerId CDB{..} = do
 
 -- | Close the given 'ReaderState' by closing any 'ImmDB.Iterator' it might
 -- contain.
-closeReaderState :: (MonadCatch m, HasHeader blk)
+closeReaderState :: MonadCatch m
                  => ImmDB.ImmDB m blk -> ReaderState m blk -> m ()
 closeReaderState immDB = \case
      ReaderInMem _         -> return ()
@@ -474,10 +470,7 @@ switchFork ipoint newChain readerState =
           -> readerState
 
 -- | Close all open 'Reader's.
-closeAllReaders
-  :: (IOLike m, HasHeader blk)
-  => ChainDbEnv m blk
-  -> m ()
+closeAllReaders :: IOLike m => ChainDbEnv m blk -> m ()
 closeAllReaders CDB{..} = do
     readerStates <- atomically $ do
       readerStates <- readTVar cdbReaders >>= traverse readTVar . Map.elems
