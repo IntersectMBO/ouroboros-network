@@ -100,13 +100,11 @@ muxStart
 muxStart tracer peerid (MuxApplication ptcls) bearer = do
     ctlPtclInfo <- mkMiniProtocolInfo Muxcontrol
     appPtclInfo <- mapM (mkMiniProtocolInfo . AppProtocolId . miniProtocolId) ptcls
-    let ptclsInfo = ctlPtclInfo : appPtclInfo
-        tbl   = setupTbl ptclsInfo
-        codes = codesTbl ptclsInfo
+    let tbl = setupTbl (ctlPtclInfo : appPtclInfo)
     tq <- atomically $ newTBQueue 100
     cnt <- newTVarM 0
 
-    let pmss = PerMuxSS tbl tq codes bearer
+    let pmss = PerMuxSS tbl tq bearer
         jobs = [ (demux pmss, "Demuxer")
                , (mux cnt pmss, "Muxer")
                ]
@@ -165,6 +163,9 @@ muxStart tracer peerid (MuxApplication ptcls) bearer = do
              -> MiniProtocolDispatch ptcl m
     setupTbl ptclsInfo =
         MiniProtocolDispatch
+          (array (mincode, maxcode) $
+                 [ (code, Nothing)    | code <- [mincode..maxcode] ]
+              ++ [ (code, Just mptcl) | (mptcl, code, _, _, _, _) <- ptclsInfo ])
           (array ((minpid, ModeInitiator), (maxpid, ModeResponder))
                  [ ((mpid, mode), dispatchInfo)
                  | (mpid, _mc, qMax, _msgMax, initQ, respQ) <- ptclsInfo
@@ -176,21 +177,6 @@ muxStart tracer peerid (MuxApplication ptcls) bearer = do
         minpid = minimum mpids
         maxpid = maximum mpids
 
-    -- Construct the arrays mapping between protocol ids and protocol codes
-    codesTbl :: [( MiniProtocolId ptcl
-                 , MiniProtocolCode
-                 , Int64
-                 , Int64
-                 , StrictTVar m BL.ByteString
-                 , StrictTVar m BL.ByteString
-                 )]
-             -> MiniProtocolCodes ptcl
-    codesTbl ptclsInfo =
-        MiniProtocolCodes
-            (array (mincode, maxcode) $
-                   [ (code, Nothing)    | code <- [mincode..maxcode] ]
-                ++ [ (code, Just mptcl) | (mptcl, code, _, _, _, _) <- ptclsInfo ])
-      where
         codes   = [ mc | (_, mc, _, _, _, _) <- ptclsInfo ]
         mincode = minimum codes
         maxcode = maximum codes

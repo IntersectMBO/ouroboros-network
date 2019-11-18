@@ -7,12 +7,10 @@
 module Network.Mux.Ingress (
     -- $ingress
       demux
-    , ingressQueue
     ) where
 
 import           Control.Monad
 import qualified Data.ByteString.Lazy as BL
-import           Data.Array
 import           GHC.Stack
 import           Text.Printf
 
@@ -79,32 +77,19 @@ demux pmss = forever $ do
     (sdu, _) <- Network.Mux.Types.read $ bearer pmss
     -- say $ printf "demuxing sdu on mid %s mode %s lenght %d " (show $ msId sdu) (show $ msMode sdu)
     --             (BL.length $ msBlob sdu)
-    msId <- case fromMiniProtocolCode (protocolCodes pmss) (msCode sdu) of
-              Nothing   -> throwM (MuxError MuxUnknownMiniProtocol
-                                     ("id = " ++ show (msCode sdu)) callStack)
-              Just msId -> return msId
-    atomically $ do
-        -- Notice the mode reversal, ModeResponder is delivered to ModeInitiator and vice versa.
-        let MiniProtocolDispatchInfo q qMax =
-              ingressQueue (dispatchTable pmss) msId (negMiniProtocolMode $ msMode sdu)
-        buf <- readTVar q
-        if BL.length buf + BL.length (msBlob sdu) <= qMax
-            then writeTVar q $ BL.append buf (msBlob sdu)
-            else throwM $ MuxError MuxIngressQueueOverRun
-                              (printf "Ingress Queue overrun on %s %s"
-                               (show msId) (show $ msMode sdu))
-                              callStack
-
--- | Return the ingress queueu for a given 'MiniProtocolId' and 'MiniProtocolMode'.
-ingressQueue :: (MonadSTM m, Ord ptcl, Enum ptcl)
-             => MiniProtocolDispatch ptcl m
-             -> MiniProtocolId ptcl
-             -> MiniProtocolMode
-             -> MiniProtocolDispatchInfo m
-ingressQueue (MiniProtocolDispatch tbl) dis mode =
-    tbl ! (dis, mode)
-    -- We can use array indexing here, because we constructed the dispatch
-    -- table to cover the full range of the type given by 'MiniProtocolId ptcl'
-
-
+    case lookupMiniProtocol (dispatchTable pmss) (msCode sdu)
+                            -- Notice the mode reversal, ModeResponder is
+                            -- delivered to ModeInitiator and vice versa:
+                            (negMiniProtocolMode $ msMode sdu) of
+      Nothing   -> throwM (MuxError MuxUnknownMiniProtocol
+                          ("id = " ++ show (msCode sdu)) callStack)
+      Just (MiniProtocolDispatchInfo q qMax) ->
+        atomically $ do
+          buf <- readTVar q
+          if BL.length buf + BL.length (msBlob sdu) <= qMax
+              then writeTVar q $ BL.append buf (msBlob sdu)
+              else throwM $ MuxError MuxIngressQueueOverRun
+                                (printf "Ingress Queue overrun on %s %s"
+                                 (show $ msCode sdu) (show $ msMode sdu))
+                                callStack
 

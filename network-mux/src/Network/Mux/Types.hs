@@ -7,8 +7,7 @@
 module Network.Mux.Types (
       MiniProtocolDispatch (..)
     , MiniProtocolDispatchInfo (..)
-    , MiniProtocolCodes (..)
-    , fromMiniProtocolCode
+    , lookupMiniProtocol
     , MiniProtocolLimits (..)
     , ProtocolEnum (..)
     , MiniProtocolId (..)
@@ -159,9 +158,11 @@ instance (MiniProtocolLimits ptcl) => MiniProtocolLimits (MiniProtocolId ptcl) w
 -- Mux internal types
 --
 
-newtype MiniProtocolDispatch ptcl m =
-        MiniProtocolDispatch (Array (MiniProtocolId ptcl, MiniProtocolMode)
-                                    (MiniProtocolDispatchInfo m))
+data MiniProtocolDispatch ptcl m =
+     MiniProtocolDispatch
+       !(Array MiniProtocolCode (Maybe (MiniProtocolId ptcl)))
+       !(Array (MiniProtocolId ptcl, MiniProtocolMode)
+               (MiniProtocolDispatchInfo m))
 
 data MiniProtocolMode = ModeInitiator | ModeResponder
   deriving (Eq, Ord, Ix, Enum, Bounded, Show)
@@ -171,15 +172,16 @@ data MiniProtocolDispatchInfo m =
        !(StrictTVar m BL.ByteString)
        !Int64
 
-newtype MiniProtocolCodes ptcl =
-        MiniProtocolCodes (Array MiniProtocolCode (Maybe (MiniProtocolId ptcl)))
 
-fromMiniProtocolCode :: MiniProtocolCodes ptcl
-                     -> MiniProtocolCode
-                     -> Maybe (MiniProtocolId ptcl)
-fromMiniProtocolCode (MiniProtocolCodes tbl) code
-  | inRange (bounds tbl) code = tbl ! code
-  | otherwise                 = Nothing
+lookupMiniProtocol :: (Ord ptcl, Enum ptcl)
+                   => MiniProtocolDispatch ptcl m
+                   -> MiniProtocolCode
+                   -> MiniProtocolMode
+                   -> Maybe (MiniProtocolDispatchInfo m)
+lookupMiniProtocol (MiniProtocolDispatch codeTbl ptclTbl) code mode
+  | inRange (bounds codeTbl) code
+  , Just mpid <- codeTbl ! code = Just (ptclTbl ! (mpid, mode))
+  | otherwise                   = Nothing
 
 data MuxSDU = MuxSDU {
       msTimestamp :: !RemoteClockModel
@@ -217,7 +219,6 @@ data PerMuxSharedState ptcl m = PerMuxSS {
     dispatchTable :: MiniProtocolDispatch ptcl m
   -- | Egress queue, shared by all miniprotocols
   , tsrQueue      :: TBQueue m (TranslocationServiceRequest m)
-  , protocolCodes :: MiniProtocolCodes ptcl
   , bearer        :: MuxBearer m
   }
 
