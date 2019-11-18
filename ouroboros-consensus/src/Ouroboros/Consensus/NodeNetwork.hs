@@ -148,7 +148,6 @@ protocolHandlers NodeArgs {btime, maxClockSkew, tracers, maxUnackTxs, chainSyncP
       phChainSyncClient =
         chainSyncClient
           chainSyncPipelining
-          tipBlockNo
           (chainSyncClientTracer tracers)
           getNodeConfig
           btime
@@ -522,7 +521,7 @@ consensusNetworkApps kernel ProtocolTracers {..} ProtocolCodecs {..} ProtocolHan
         channel
         (localTxSubmissionServerPeer (pure phLocalTxSubmissionServer))
 
-chainDbView :: IOLike m => ChainDB m blk -> ChainDbView m blk (Tip blk)
+chainDbView :: IOLike m => ChainDB m blk -> ChainDbView m blk
 chainDbView chainDB = ChainDbView
   { getCurrentChain   = ChainDB.getCurrentChain       chainDB
   , getCurrentLedger  = ChainDB.getCurrentLedger      chainDB

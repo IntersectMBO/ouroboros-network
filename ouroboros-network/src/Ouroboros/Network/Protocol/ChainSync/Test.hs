@@ -31,7 +31,7 @@ import           Network.TypedProtocol.Proofs (connect, connectPipelined)
 
 import           Ouroboros.Network.Channel
 
-import           Ouroboros.Network.Block (BlockNo, StandardHash)
+import           Ouroboros.Network.Block (StandardHash, Tip(..), encodeTip, decodeTip)
 import           Ouroboros.Network.MockChain.Chain (Chain, Point)
 import qualified Ouroboros.Network.MockChain.Chain as Chain
 import qualified Ouroboros.Network.MockChain.ProducerState as ChainProducerState
@@ -41,8 +41,7 @@ import           Ouroboros.Network.Protocol.ChainSync.ClientPipelined
 import           Ouroboros.Network.Protocol.ChainSync.Codec
 import           Ouroboros.Network.Protocol.ChainSync.Direct
 import           Ouroboros.Network.Protocol.ChainSync.DirectPipelined
-import           Ouroboros.Network.Protocol.ChainSync.Examples (Client,
-                     ExampleTip (..))
+import           Ouroboros.Network.Protocol.ChainSync.Examples (Client)
 import qualified Ouroboros.Network.Protocol.ChainSync.Examples as ChainSyncExamples
 import qualified Ouroboros.Network.Protocol.ChainSync.ExamplesPipelined as ChainSyncExamples
 import           Ouroboros.Network.Protocol.ChainSync.Server
@@ -123,8 +122,8 @@ chainSyncForkExperiment
      ( MonadST m
      , MonadSTM m
      )
-  => (forall a b. ChainSyncServer Block (ExampleTip Block) m a
-      -> ChainSyncClient Block (ExampleTip Block) m b
+  => (forall a b. ChainSyncServer Block (Tip Block) m a
+      -> ChainSyncClient Block (Tip Block) m b
       -> m ())
   -> ChainProducerStateForkTest
   -> m Property
@@ -181,12 +180,12 @@ chainSyncPipelinedForkExperiment
      ( MonadST m
      , MonadSTM m
      )
-  => (forall a b. ChainSyncServer Block (ExampleTip Block) m a
-      -> ChainSyncClientPipelined Block (ExampleTip Block) m b
+  => (forall a b. ChainSyncServer Block (Tip Block) m a
+      -> ChainSyncClientPipelined Block (Tip Block) m b
       -> m ())
   -> (forall a. StrictTVar m (Chain Block)
-      -> Client Block (ExampleTip Block) m a
-      -> ChainSyncClientPipelined Block (ExampleTip Block) m a)
+      -> Client Block (Tip Block) m a
+      -> ChainSyncClientPipelined Block (Tip Block) m a)
   -> ChainProducerStateForkTest
   -> m Bool
 chainSyncPipelinedForkExperiment run mkClient (ChainProducerStateForkTest cps chain) = do
@@ -197,7 +196,7 @@ chainSyncPipelinedForkExperiment run mkClient (ChainProducerStateForkTest cps ch
   let server = ChainSyncExamples.chainSyncServerExample
         (error "chainSyncServerExample: lazy in the result type")
         cpsVar
-      client :: ChainSyncClientPipelined Block (ExampleTip Block) m ()
+      client :: ChainSyncClientPipelined Block (Tip Block) m ()
       client = mkClient chainVar (testClient doneVar (Chain.headPoint pchain))
   _ <- run server client
 
@@ -317,39 +316,41 @@ propChainSyncPipelinedMinConnectIO cps choices (Positive omax) =
         (ChainSyncExamples.chainSyncClientPipelinedMin omax)
         cps
 
-instance Arbitrary (AnyMessageAndAgency (ChainSync BlockHeader (Point BlockHeader, BlockNo))) where
+instance Arbitrary (AnyMessageAndAgency (ChainSync BlockHeader (Tip BlockHeader))) where
   arbitrary = oneof
     [ return $ AnyMessageAndAgency (ClientAgency TokIdle) MsgRequestNext
     , return $ AnyMessageAndAgency (ServerAgency (TokNext TokCanAwait)) MsgAwaitReply
 
     , AnyMessageAndAgency (ServerAgency (TokNext TokCanAwait))
         <$> (MsgRollForward <$> arbitrary
-                            <*> arbitrary)
+                            <*> arbitraryTip)
 
     , AnyMessageAndAgency (ServerAgency (TokNext TokMustReply))
         <$> (MsgRollForward <$> arbitrary
-                            <*> arbitrary)
+                            <*> arbitraryTip)
 
     , AnyMessageAndAgency (ServerAgency (TokNext TokCanAwait))
         <$> (MsgRollBackward <$> arbitrary
-                             <*> arbitrary)
+                             <*> arbitraryTip)
 
     , AnyMessageAndAgency (ServerAgency (TokNext TokMustReply))
         <$> (MsgRollBackward <$> arbitrary
-                             <*> arbitrary)
+                             <*> arbitraryTip)
 
     , AnyMessageAndAgency (ClientAgency TokIdle) . MsgFindIntersect
         <$> arbitrary
 
     , AnyMessageAndAgency (ServerAgency TokIntersect)
         <$> (MsgIntersectFound <$> arbitrary
-                               <*> arbitrary)
+                               <*> arbitraryTip)
 
     , AnyMessageAndAgency (ServerAgency TokIntersect)
-        <$> (MsgIntersectNotFound <$> arbitrary)
+        <$> (MsgIntersectNotFound <$> arbitraryTip)
 
     , return $ AnyMessageAndAgency (ClientAgency TokIdle) MsgDone
     ]
+    where
+      arbitraryTip = Tip <$> arbitrary <*> arbitrary
 
 instance (StandardHash header, Show header, Show tip) => Show (AnyMessageAndAgency (ChainSync header tip)) where
   show (AnyMessageAndAgency _ msg) = show msg
@@ -371,23 +372,22 @@ instance ( StandardHash header
 codec :: ( MonadST m
          , S.Serialise block
          , S.Serialise (Chain.HeaderHash block)
-         , S.Serialise tip
          )
-      => Codec (ChainSync block tip)
+      => Codec (ChainSync block (Tip block))
                S.DeserialiseFailure
                m ByteString
 codec = codecChainSync S.encode (fmap const S.decode)
                        S.encode             S.decode
-                       S.encode             S.decode
+                       (encodeTip S.encode) (decodeTip S.decode)
 
 prop_codec_ChainSync
-  :: AnyMessageAndAgency (ChainSync BlockHeader (Point BlockHeader, BlockNo))
+  :: AnyMessageAndAgency (ChainSync BlockHeader (Tip BlockHeader))
   -> Bool
 prop_codec_ChainSync msg =
     ST.runST $ prop_codecM codec msg
 
 prop_codec_splits2_ChainSync
-  :: AnyMessageAndAgency (ChainSync BlockHeader (Point BlockHeader, BlockNo))
+  :: AnyMessageAndAgency (ChainSync BlockHeader (Tip BlockHeader))
   -> Bool
 prop_codec_splits2_ChainSync msg =
     ST.runST $ prop_codec_splitsM
@@ -396,7 +396,7 @@ prop_codec_splits2_ChainSync msg =
       msg
 
 prop_codec_splits3_ChainSync
-  :: AnyMessageAndAgency (ChainSync BlockHeader (Point BlockHeader, BlockNo))
+  :: AnyMessageAndAgency (ChainSync BlockHeader (Tip BlockHeader))
   -> Bool
 prop_codec_splits3_ChainSync msg =
     ST.runST $ prop_codec_splitsM
@@ -404,7 +404,7 @@ prop_codec_splits3_ChainSync msg =
       codec
       msg
 prop_codec_cbor
-  :: AnyMessageAndAgency (ChainSync BlockHeader (Point BlockHeader, BlockNo))
+  :: AnyMessageAndAgency (ChainSync BlockHeader (Tip BlockHeader))
   -> Bool
 prop_codec_cbor msg =
     ST.runST (prop_codec_cborM codec msg)
@@ -426,12 +426,12 @@ chainSyncDemo clientChan serverChan (ChainProducerStateForkTest cps chain) = do
   chainVar <- atomically $ newTVar chain
   doneVar  <- atomically $ newTVar False
 
-  let server :: ChainSyncServer Block (ExampleTip Block) m a
+  let server :: ChainSyncServer Block (Tip Block) m a
       server = ChainSyncExamples.chainSyncServerExample
         (error "chainSyncServerExample: lazy in the result type")
         cpsVar
 
-      client :: ChainSyncClient Block (ExampleTip Block) m ()
+      client :: ChainSyncClient Block (Tip Block) m ()
       client = ChainSyncExamples.chainSyncClientExample chainVar (testClient doneVar (Chain.headPoint pchain))
 
   void $ fork (void $ runPeer nullTracer codec "server" serverChan (chainSyncServerPeer server))
@@ -484,8 +484,8 @@ chainSyncDemoPipelined
   => Channel m ByteString
   -> Channel m ByteString
   -> (forall a. StrictTVar m (Chain Block)
-      -> Client Block (ExampleTip Block) m a
-      -> ChainSyncClientPipelined Block (ExampleTip Block) m a)
+      -> Client Block (Tip Block) m a
+      -> ChainSyncClientPipelined Block (Tip Block) m a)
   -> ChainProducerStateForkTest
   -> m Property
 chainSyncDemoPipelined clientChan serverChan mkClient (ChainProducerStateForkTest cps chain) = do
@@ -494,12 +494,12 @@ chainSyncDemoPipelined clientChan serverChan mkClient (ChainProducerStateForkTes
   chainVar <- atomically $ newTVar chain
   doneVar  <- atomically $ newTVar False
 
-  let server :: ChainSyncServer Block (ExampleTip Block) m a
+  let server :: ChainSyncServer Block (Tip Block) m a
       server = ChainSyncExamples.chainSyncServerExample
         (error "chainSyncServerExample: lazy in the result type")
         cpsVar
 
-      client :: ChainSyncClientPipelined Block (ExampleTip Block) m ()
+      client :: ChainSyncClientPipelined Block (Tip Block) m ()
       client = mkClient chainVar (testClient doneVar (Chain.headPoint pchain))
 
   void $ fork (void $ runPeer nullTracer codec "server" serverChan (chainSyncServerPeer server))

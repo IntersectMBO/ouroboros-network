@@ -345,7 +345,7 @@ newThread alive parentReg = \shouldLink -> do
               putMVar result ()
               error "crashing"
 
-runIO :: forall m. (IOLike m, Typeable m)
+runIO :: forall m. IOLike m
       => StrictTVar m [TestThread m]
       -> ResourceRegistry m
       -> Cmd (TestThread m) -> m (Resp (TestThread m))

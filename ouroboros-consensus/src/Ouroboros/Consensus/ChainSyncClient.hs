@@ -76,14 +76,14 @@ newtype ClockSkew = ClockSkew { unClockSkew :: Word64 }
   deriving stock   (Show, Eq, Ord)
   deriving newtype (Enum, Bounded, Num)
 
-type Consensus (client :: * -> * -> (* -> *) -> * -> *) blk tip m =
-   client (Header blk) tip m Void
+type Consensus (client :: * -> * -> (* -> *) -> * -> *) blk m =
+   client (Header blk) (Tip blk) m Void
 
 -- | Abstract over the ChainDB
-data ChainDbView m blk tip = ChainDbView
+data ChainDbView m blk = ChainDbView
   { getCurrentChain   :: STM m (AnchoredFragment (Header blk))
   , getCurrentLedger  :: STM m (ExtLedgerState blk)
-  , getOurTip         :: STM m tip
+  , getOurTip         :: STM m (Tip blk)
   , getIsInvalidBlock :: STM m (WithFingerprint (HeaderHash blk -> Bool))
   }
 
@@ -100,11 +100,9 @@ bracketChainSyncClient
     :: ( IOLike m
        , Ord peer
        , SupportedBlock blk
-       , Typeable tip
-       , Show tip
        )
-    => Tracer m (TraceChainSyncClientEvent blk tip)
-    -> ChainDbView m blk tip
+    => Tracer m (TraceChainSyncClientEvent blk)
+    -> ChainDbView m blk
     -> StrictTVar m (Map peer (StrictTVar m (AnchoredFragment (Header blk))))
        -- ^ The candidate chains, we need the whole map because we
        -- (de)register nodes (@peer@).
@@ -179,7 +177,7 @@ bracketChainSyncClient tracer ChainDbView { getIsInvalidBlock } varCandidates
 
 -- | State used when the intersection between the candidate and the current
 -- chain is unknown.
-data UnknownIntersectionState blk tip = UnknownIntersectionState
+data UnknownIntersectionState blk = UnknownIntersectionState
   { ourFrag       :: !(AnchoredFragment (Header blk))
     -- ^ A view of the current chain fragment. Note that this might be
     -- temporarily out of date w.r.t. the actual current chain until we update
@@ -192,19 +190,18 @@ data UnknownIntersectionState blk tip = UnknownIntersectionState
   , ourChainState :: !(ChainState (BlockProtocol blk))
     -- ^ 'ChainState' corresponding to the tip (most recent block) of
     -- 'ourFrag'.
-  , ourTip        :: !(Our tip)
+  , ourTip        :: !(Our (Tip blk))
     -- ^ INVARIANT: must correspond to the tip of 'ourFrag'.
   }
   deriving (Generic)
 
 instance ( ProtocolLedgerView blk
-         , NoUnexpectedThunks tip
-         ) => NoUnexpectedThunks (UnknownIntersectionState blk tip) where
+         ) => NoUnexpectedThunks (UnknownIntersectionState blk) where
   showTypeOf _ = show $ typeRep (Proxy @(UnknownIntersectionState blk))
 
 -- | State used when the intersection between the candidate and the current
 -- chain is known.
-data KnownIntersectionState blk tip = KnownIntersectionState
+data KnownIntersectionState blk = KnownIntersectionState
   { theirFrag       :: !(AnchoredFragment (Header blk))
     -- ^ The candidate, the synched fragment of their chain.
   , theirChainState :: !(ChainState (BlockProtocol blk))
@@ -221,14 +218,13 @@ data KnownIntersectionState blk tip = KnownIntersectionState
     -- this follows that both fragments intersect. This also means that
     -- 'theirFrag' forks off within the last @k@ headers/blocks of the
     -- 'ourFrag'.
-  , ourTip          :: !(Our tip)
+  , ourTip          :: !(Our (Tip blk))
     -- ^ INVARIANT: must correspond to the tip of 'ourFrag'.
   }
   deriving (Generic)
 
 instance ( ProtocolLedgerView blk
-         , NoUnexpectedThunks tip
-         ) => NoUnexpectedThunks (KnownIntersectionState blk tip) where
+         ) => NoUnexpectedThunks (KnownIntersectionState blk) where
   showTypeOf _ = show $ typeRep (Proxy @(KnownIntersectionState blk))
 
 -- | Chain sync client
@@ -237,22 +233,20 @@ instance ( ProtocolLedgerView blk
 -- is thrown. The network layer classifies exception such that the
 -- corresponding peer will never be chosen again.
 chainSyncClient
-    :: forall m blk tip.
+    :: forall m blk.
        ( IOLike m
        , ProtocolLedgerView blk
-       , NoUnexpectedThunks tip
-       , Exception (ChainSyncClientException blk tip)
+       , Exception (ChainSyncClientException blk)
        )
     => MkPipelineDecision
-    -> (tip -> BlockNo)
-    -> Tracer m (TraceChainSyncClientEvent blk tip)
+    -> Tracer m (TraceChainSyncClientEvent blk)
     -> NodeConfig (BlockProtocol blk)
     -> BlockchainTime m
     -> ClockSkew   -- ^ Maximum clock skew
-    -> ChainDbView m blk tip
+    -> ChainDbView m blk
     -> StrictTVar m (AnchoredFragment (Header blk))
-    -> Consensus ChainSyncClientPipelined blk tip m
-chainSyncClient mkPipelineDecision0 getTipBlockNo tracer cfg btime
+    -> Consensus ChainSyncClientPipelined blk m
+chainSyncClient mkPipelineDecision0 tracer cfg btime
                 (ClockSkew maxSkew)
                 ChainDbView
                 { getCurrentChain
@@ -265,7 +259,7 @@ chainSyncClient mkPipelineDecision0 getTipBlockNo tracer cfg btime
   where
     -- | Start ChainSync by looking for an intersection between our current
     -- chain fragment and their chain.
-    initialise :: Stateful m blk tip () (ClientPipelinedStIdle Z)
+    initialise :: Stateful m blk () (ClientPipelinedStIdle Z)
     initialise = findIntersection (ForkTooDeep GenesisPoint)
 
     -- | Try to find an intersection by sending points of our current chain to
@@ -274,9 +268,9 @@ chainSyncClient mkPipelineDecision0 getTipBlockNo tracer cfg btime
     -- intersect, disconnect by throwing the exception obtained by calling the
     -- passed function.
     findIntersection
-      :: (Our tip -> Their tip -> ChainSyncClientException blk tip)
+      :: (Our (Tip blk) -> Their (Tip blk) -> ChainSyncClientException blk)
          -- ^ Exception to throw when no intersection is found.
-      -> Stateful m blk tip () (ClientPipelinedStIdle Z)
+      -> Stateful m blk () (ClientPipelinedStIdle Z)
     findIntersection mkEx = Stateful $ \() -> do
       (ourFrag, ourChainState, ourTip) <- atomically $ (,,)
         <$> getCurrentChain
@@ -306,9 +300,9 @@ chainSyncClient mkPipelineDecision0 getTipBlockNo tracer cfg btime
     -- | One of the points we sent intersected our chain. This intersection
     -- point will become the new tip of the candidate chain.
     intersectFound :: Point blk  -- ^ Intersection
-                   -> Their tip
-                   -> Stateful m blk tip
-                        (UnknownIntersectionState blk tip)
+                   -> Their (Tip blk)
+                   -> Stateful m blk
+                        (UnknownIntersectionState blk)
                         (ClientPipelinedStIdle Z)
     intersectFound intersection theirTip
                  = Stateful $ \UnknownIntersectionState
@@ -364,8 +358,8 @@ chainSyncClient mkPipelineDecision0 getTipBlockNo tracer cfg btime
     -- fragment to the new current chain fragment's anchor point. If not,
     -- return 'Nothing'.
     intersectsWithCurrentChain
-      :: KnownIntersectionState blk tip
-      -> STM m (Maybe (KnownIntersectionState blk tip))
+      :: KnownIntersectionState blk
+      -> STM m (Maybe (KnownIntersectionState blk))
     intersectsWithCurrentChain kis@KnownIntersectionState
                                { theirFrag
                                , ourFrag
@@ -423,9 +417,9 @@ chainSyncClient mkPipelineDecision0 getTipBlockNo tracer cfg btime
     -- changed.
     nextStep :: MkPipelineDecision
              -> Nat n
-             -> Their tip
-             -> Stateful m blk tip
-                  (KnownIntersectionState blk tip)
+             -> Their (Tip blk)
+             -> Stateful m blk
+                  (KnownIntersectionState blk)
                   (ClientPipelinedStIdle n)
     nextStep mkPipelineDecision n theirTip = Stateful $ \kis -> do
       mKis' <- atomically $ intersectsWithCurrentChain kis
@@ -463,13 +457,13 @@ chainSyncClient mkPipelineDecision0 getTipBlockNo tracer cfg btime
     -- finally execute the given action.
     drainThePipe :: forall s n. NoUnexpectedThunks s
                  => Nat n
-                 -> Stateful m blk tip s (ClientPipelinedStIdle Z)
-                 -> Stateful m blk tip s (ClientPipelinedStIdle n)
+                 -> Stateful m blk s (ClientPipelinedStIdle Z)
+                 -> Stateful m blk s (ClientPipelinedStIdle n)
     drainThePipe n0 m = Stateful $ go n0
       where
         go :: forall n'. Nat n'
            -> s
-           -> m (Consensus (ClientPipelinedStIdle n') blk tip m)
+           -> m (Consensus (ClientPipelinedStIdle n') blk m)
         go n s = case n of
           Zero    -> continueWithState s m
           Succ n' -> return $ CollectResponse Nothing $ ClientStNext
@@ -477,12 +471,12 @@ chainSyncClient mkPipelineDecision0 getTipBlockNo tracer cfg btime
             , recvMsgRollBackward = \_pt  _tip -> go n' s
             }
 
-    requestNext :: KnownIntersectionState blk tip
+    requestNext :: KnownIntersectionState blk
                 -> MkPipelineDecision
                 -> Nat n
-                -> Their tip
+                -> Their (Tip blk)
                 -> BlockNo
-                -> Consensus (ClientPipelinedStIdle n) blk tip m
+                -> Consensus (ClientPipelinedStIdle n) blk m
     requestNext kis mkPipelineDecision n theirTip candTipBlockNo =
         case (n, decision) of
           (Zero, (Request, mkPipelineDecision')) ->
@@ -502,17 +496,17 @@ chainSyncClient mkPipelineDecision0 getTipBlockNo tracer cfg btime
               Nothing
               (handleNext kis mkPipelineDecision' n')
       where
-        theirTipBlockNo = getTipBlockNo (unTheir theirTip)
+        theirTipBlockNo = tipBlockNo (unTheir theirTip)
         decision = runPipelineDecision
           mkPipelineDecision
           n
           candTipBlockNo
           theirTipBlockNo
 
-    handleNext :: KnownIntersectionState blk tip
+    handleNext :: KnownIntersectionState blk
                -> MkPipelineDecision
                -> Nat n
-               -> Consensus (ClientStNext n) blk tip m
+               -> Consensus (ClientStNext n) blk m
     handleNext kis mkPipelineDecision n = ClientStNext
       { recvMsgRollForward  = \hdr theirTip -> do
           traceWith tracer $ TraceDownloadedHeader hdr
@@ -529,9 +523,9 @@ chainSyncClient mkPipelineDecision0 getTipBlockNo tracer cfg btime
     rollForward :: MkPipelineDecision
                 -> Nat n
                 -> Header blk
-                -> Their tip
-                -> Stateful m blk tip
-                     (KnownIntersectionState blk tip)
+                -> Their (Tip blk)
+                -> Stateful m blk
+                     (KnownIntersectionState blk)
                      (ClientPipelinedStIdle n)
     rollForward mkPipelineDecision n hdr theirTip
               = Stateful $ \kis@KnownIntersectionState
@@ -641,8 +635,8 @@ chainSyncClient mkPipelineDecision0 getTipBlockNo tracer cfg btime
     -- we will not be able to verify it and so we will not be able to switch
     -- to this fork.
     getLedgerView :: Header blk
-                  -> Our tip
-                  -> Their tip
+                  -> Our (Tip blk)
+                  -> Their (Tip blk)
                   -> STM m (LedgerView (BlockProtocol blk))
     getLedgerView hdr ourTip theirTip = do
         curLedger <- ledgerState <$> getCurrentLedger
@@ -683,9 +677,9 @@ chainSyncClient mkPipelineDecision0 getTipBlockNo tracer cfg btime
     rollBackward :: MkPipelineDecision
                  -> Nat n
                  -> Point blk
-                 -> Their tip
-                 -> Stateful m blk tip
-                      (KnownIntersectionState blk tip)
+                 -> Their (Tip blk)
+                 -> Stateful m blk
+                      (KnownIntersectionState blk)
                       (ClientPipelinedStIdle n)
     rollBackward mkPipelineDecision n intersection
                  theirTip
@@ -738,12 +732,12 @@ chainSyncClient mkPipelineDecision0 getTipBlockNo tracer cfg btime
     -- | Disconnect from the upstream node by throwing the given exception.
     -- The cleanup is handled in 'bracketChainSyncClient'.
     disconnect :: forall m' x'. MonadThrow m'
-               => ChainSyncClientException blk tip -> m' x'
+               => ChainSyncClientException blk -> m' x'
     disconnect = throwM
 
     -- | Trace any 'ChainSyncClientException' if thrown.
     traceException :: m a -> m a
-    traceException m = m `catch` \(e :: ChainSyncClientException blk tip) -> do
+    traceException m = m `catch` \(e :: ChainSyncClientException blk) -> do
       traceWith tracer $ TraceException e
       throwM e
 
@@ -793,13 +787,11 @@ chainSyncClient mkPipelineDecision0 getTipBlockNo tracer cfg btime
 -- is invalid (typically \( O(\log(invalid)) \) where /invalid/ is the number
 -- of invalid blocks).
 rejectInvalidBlocks
-    :: forall m blk tip.
+    :: forall m blk.
        ( IOLike m
        , SupportedBlock blk
-       , Typeable tip
-       , Show tip
        )
-    => Tracer m (TraceChainSyncClientEvent blk tip)
+    => Tracer m (TraceChainSyncClientEvent blk)
     -> ResourceRegistry m
     -> STM m (WithFingerprint (HeaderHash blk -> Bool))
        -- ^ Get the invalid block checker
@@ -839,17 +831,17 @@ rejectInvalidBlocks tracer registry getIsInvalidBlock getCandidate =
 -- at all times, but since we don't use a TVar to store it, we cannot reuse
 -- the existing infrastructure for checking TVars for NF. Instead, we make
 -- the state explicit in the types and do the check in 'continueWithState'.
-newtype Stateful m blk tip s st = Stateful (s -> m (Consensus st blk tip m))
+newtype Stateful m blk s st = Stateful (s -> m (Consensus st blk m))
 
-continueWithState :: forall m blk tip s st. NoUnexpectedThunks s
-                  => s -> Stateful m blk tip s st -> m (Consensus st blk tip m)
+continueWithState :: forall m blk s st. NoUnexpectedThunks s
+                  => s -> Stateful m blk s st -> m (Consensus st blk m)
 continueWithState !s (Stateful f) = checkInvariant (unsafeNoThunks s) $ f s
 
 {-------------------------------------------------------------------------------
   Exception
 -------------------------------------------------------------------------------}
 
-data ChainSyncClientException blk tip =
+data ChainSyncClientException blk =
       -- | The header we received was for a slot too far in the future.
       --
       -- I.e., the slot of the received header was > current slot (according
@@ -857,23 +849,23 @@ data ChainSyncClientException blk tip =
       HeaderExceedsClockSkew
       { _receivedHeader    :: Point blk
       , _currentWallSlotNo :: SlotNo
-      , _ourTip            :: Our   tip
-      , _theirTip          :: Their tip
+      , _ourTip            :: Our   (Tip blk)
+      , _theirTip          :: Their (Tip blk)
       }
 
       -- | The server we're connecting to forked more than @k@ blocks ago.
     | ForkTooDeep
       { _intersection :: Point blk
-      , _ourTip       :: Our   tip
-      , _theirTip     :: Their tip
+      , _ourTip       :: Our   (Tip blk)
+      , _theirTip     :: Their (Tip blk)
       }
 
       -- | The chain validation threw an error.
     | ChainError
       { _newPoint           :: Point blk
       , _chainValidationErr :: ValidationErr (BlockProtocol blk)
-      , _ourTip             :: Our   tip
-      , _theirTip           :: Their tip
+      , _ourTip             :: Our   (Tip blk)
+      , _theirTip           :: Their (Tip blk)
       }
 
       -- | The upstream node rolled forward to a point too far in our past.
@@ -881,15 +873,15 @@ data ChainSyncClientException blk tip =
       -- ahead of the upstream node.
     | InvalidRollForward
       { _newPoint :: Point blk
-      , _ourTip   :: Our   tip
-      , _theirTip :: Their tip
+      , _ourTip   :: Our   (Tip blk)
+      , _theirTip :: Their (Tip blk)
       }
 
       -- | The upstream node rolled back more than @k@ blocks.
     | InvalidRollBack
       { _newPoint :: Point blk
-      , _ourTip   :: Our   tip
-      , _theirTip :: Their tip
+      , _ourTip   :: Our   (Tip blk)
+      , _theirTip :: Their (Tip blk)
       }
 
       -- | We send the upstream node a bunch of points from a chain fragment and
@@ -899,16 +891,16 @@ data ChainSyncClientException blk tip =
       -- We store the intersection point the upstream node sent us.
     | InvalidIntersection
       { _intersection :: Point blk
-      , _ourTip       :: Our   tip
-      , _theirTip     :: Their tip
+      , _ourTip       :: Our   (Tip blk)
+      , _theirTip     :: Their (Tip blk)
       }
 
       -- | Our chain changed such that it no longer intersects with the
       -- candidate's fragment, and asking for a new intersection did not yield
       -- one.
     | NoMoreIntersection
-      { _ourTip   :: Our   tip
-      , _theirTip :: Their tip
+      { _ourTip   :: Our   (Tip blk)
+      , _theirTip :: Their (Tip blk)
       }
 
       -- | The received header to roll forward doesn't fit onto the previous
@@ -919,8 +911,8 @@ data ChainSyncClientException blk tip =
     | DoesntFit
       { _receivedPrevHash :: ChainHash blk
       , _expectedPrevHash :: ChainHash blk
-      , _ourTip           :: Our   tip
-      , _theirTip         :: Their tip
+      , _ourTip           :: Our   (Tip blk)
+      , _theirTip         :: Their (Tip blk)
       }
 
       -- | The upstream node's chain contained a block that we know is invalid.
@@ -929,18 +921,13 @@ data ChainSyncClientException blk tip =
       }
 
 deriving instance ( SupportedBlock blk
-                  , Show tip
-                  ) => Show (ChainSyncClientException blk tip)
+                  ) => Show (ChainSyncClientException blk)
 deriving instance ( SupportedBlock blk
                   , Eq (ValidationErr (BlockProtocol blk))
-                  , Eq tip
                   )
-               => Eq (ChainSyncClientException blk tip)
+               => Eq (ChainSyncClientException blk)
 instance ( SupportedBlock blk
-         , Typeable tip
-         , Show tip
-         ) => Exception (ChainSyncClientException blk tip)
-
+         ) => Exception (ChainSyncClientException blk)
 
 {-------------------------------------------------------------------------------
   TODO #221: Implement genesis
@@ -989,26 +976,24 @@ instance ( SupportedBlock blk
 -------------------------------------------------------------------------------}
 
 -- | Events traced by the Chain Sync Client.
-data TraceChainSyncClientEvent blk tip
+data TraceChainSyncClientEvent blk
   = TraceDownloadedHeader (Header blk)
     -- ^ While following a candidate chain, we rolled forward by downloading a
     -- header.
   | TraceRolledBack (Point blk)
     -- ^ While following a candidate chain, we rolled back to the given point.
-  | TraceFoundIntersection (Point blk) (Our tip) (Their tip)
+  | TraceFoundIntersection (Point blk) (Our (Tip blk)) (Their (Tip blk))
     -- ^ We found an intersection between our chain fragment and the
     -- candidate's chain.
-  | TraceException (ChainSyncClientException blk tip)
+  | TraceException (ChainSyncClientException blk)
     -- ^ An exception was thrown by the Chain Sync Client.
 
 deriving instance ( SupportedBlock blk
                   , Eq (ValidationErr (BlockProtocol blk))
                   , Eq (Header blk)
-                  , Eq tip
                   )
-               => Eq   (TraceChainSyncClientEvent blk tip)
+               => Eq   (TraceChainSyncClientEvent blk)
 deriving instance ( SupportedBlock blk
                   , Show (Header blk)
-                  , Show tip
                   )
-               => Show (TraceChainSyncClientEvent blk tip)
+               => Show (TraceChainSyncClientEvent blk)

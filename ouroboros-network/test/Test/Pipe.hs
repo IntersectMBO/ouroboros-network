@@ -28,6 +28,7 @@ import qualified Network.Mux.Bearer.Pipe as Mx
 import qualified Network.Mux.Types as Mx
 import           Ouroboros.Network.Mux
 
+import           Ouroboros.Network.Block (encodeTip, decodeTip)
 import           Ouroboros.Network.MockChain.Chain (Chain, ChainUpdate, Point)
 import qualified Ouroboros.Network.MockChain.Chain as Chain
 import qualified Ouroboros.Network.MockChain.ProducerState as CPS
@@ -108,23 +109,23 @@ demo chain0 updates = do
         consumerApp = simpleInitiatorApplication $
           \ChainSync ->
             MuxPeer nullTracer
-                    (ChainSync.codecChainSync encode (fmap const decode)
-                                              encode decode
-                                              encode decode)
+                    (ChainSync.codecChainSync encode             (fmap const decode)
+                                              encode             decode
+                                              (encodeTip encode) (decodeTip decode))
                     (ChainSync.chainSyncClientPeer
                       (ChainSync.chainSyncClientExample consumerVar
                       (consumerClient done target consumerVar)))
 
-        server :: ChainSyncServer block (ExampleTip block) IO ()
+        server :: ChainSyncServer block (Tip block) IO ()
         server = ChainSync.chainSyncServerExample () producerVar
 
         producerApp ::OuroborosApplication ResponderApp String DemoProtocols IO BL.ByteString Void ()
         producerApp = simpleResponderApplication $
           \ChainSync ->
             MuxPeer nullTracer
-                    (ChainSync.codecChainSync encode (fmap const decode)
-                                              encode decode
-                                              encode decode)
+                    (ChainSync.codecChainSync encode             (fmap const decode)
+                                              encode             decode
+                                              (encodeTip encode) (decodeTip decode))
                     (ChainSync.chainSyncServerPeer server)
 
     _ <- async $ Mx.runMuxWithPipes activeTracer "producer" (toApplication producerApp) hndRead1 hndWrite2
@@ -151,7 +152,7 @@ demo chain0 updates = do
     consumerClient :: StrictTMVar IO Bool
                    -> Point block
                    -> StrictTVar IO (Chain block)
-                   -> ChainSync.Client block (ExampleTip block) IO ()
+                   -> ChainSync.Client block (Tip block) IO ()
     consumerClient done target chain =
       ChainSync.Client
         { ChainSync.rollforward = \_ -> checkTip target chain >>= \b ->
