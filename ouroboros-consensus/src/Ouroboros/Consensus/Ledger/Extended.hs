@@ -29,8 +29,6 @@ import           GHC.Stack
 
 import           Cardano.Prelude (NoUnexpectedThunks (..))
 
-import           Ouroboros.Network.Block (blockSlot)
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Protocol.Abstract
@@ -101,30 +99,25 @@ applyExtLedgerState :: ( UpdateLedger blk
                     -> ExtLedgerState blk
                     -> Except (ExtValidationError blk) (ExtLedgerState blk)
 applyExtLedgerState prevApplied cfg blk ExtLedgerState{..} = do
-    ledgerState'         <- withExcept ExtValidationErrorLedger $
-                              applyChainTick
-                                (ledgerConfigView cfg)
-                                (blockSlot blk)
-                                ledgerState
-    ledgerState''        <- case prevApplied of
+    ledgerState'        <- case prevApplied of
                               BlockNotPreviouslyApplied ->
                                 withExcept ExtValidationErrorLedger $
                                   applyLedgerBlock
                                     (ledgerConfigView cfg)
                                     blk
-                                    ledgerState'
+                                    ledgerState
                               BlockPreviouslyApplied -> pure $
                                 reapplyLedgerBlock
                                   (ledgerConfigView cfg)
                                   blk
-                                  ledgerState'
+                                  ledgerState
     ouroborosChainState' <- withExcept ExtValidationErrorOuroboros $
                               applyChainState
                                 cfg
-                                (protocolLedgerView cfg ledgerState'')
+                                (protocolLedgerView cfg ledgerState')
                                 (getHeader blk)
                                 ouroborosChainState
-    return $ ExtLedgerState ledgerState'' ouroborosChainState'
+    return $ ExtLedgerState ledgerState' ouroborosChainState'
 
 foldExtLedgerState :: (ProtocolLedgerView blk, HasCallStack)
                    => BlockPreviouslyApplied
