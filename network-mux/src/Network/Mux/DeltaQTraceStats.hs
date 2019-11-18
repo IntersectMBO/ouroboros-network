@@ -100,8 +100,8 @@ constructSample sa = OneWaySample
   , estDeltaQVVar  = popCheck
                      $ (vSum2 - (vSum * vSum)) / (fromIntegral population)
   , estR           = popCheck rEst
-  , sizeDist       = show [ (a,count b)
-                          | (a, b) <- IM.toAscList (observables sa)
+  , sizeDist       = show [ (a,count b, let S mtt = minTransitTime b in mtt)
+                          | (a, b) <- IM.toAscList normalisedObservations
                           , count b > 0]
   }
   where
@@ -119,18 +119,21 @@ constructSample sa = OneWaySample
         , (nOctets, minTransitTime psr) : minS)
     -- fit a line to get the G,S estimation
     (dQGEst, dQSEst, rEst) = estimateGS minSRev
+    -- normalise all the observations
+    normalisedObservations
+      = let norm n = S . fromRational . toRational
+                     $ dQGEst + (fromIntegral n) * dQSEst
+                     
+        in IM.mapWithKey (\k -> normalisePSR (norm k)) (observables sa)
     -- calculate the total population V stats
     (vSum, vSum2)
       = let S  v  = vSum'
             S2 v2 = vSum2'
         in (fromRational . toRational $ v, fromRational . toRational $ v2)
     (vSum', vSum2')
-      = IM.foldrWithKey vCalc (0,0) $ observables sa
-    vCalc nOctets psr' (x, x2)
-      = let norm = S . fromRational . toRational
-                   $ dQGEst + (fromIntegral nOctets) * dQSEst
-            psr  = normalisePSR norm psr'
-        in (x + sumTransitTime psr, x2 + sumTransitTimeSq psr)
+      = IM.foldr vCalc (0,0) normalisedObservations
+    vCalc psr (x, x2)
+      = (x + sumTransitTime psr, x2 + sumTransitTimeSq psr)
 
 -- | One way measurement for interval. Note that the fields are lazy
 --   here so that only calcuation necessary to satisfy strictness of
