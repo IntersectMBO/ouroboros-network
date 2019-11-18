@@ -105,9 +105,9 @@ import           Network.Mux.Types
 -- shared FIFO that contains the items of work. This is processed so
 -- that each active demand gets a `maxSDU`s work of data processed
 -- each time it gets to the front of the queue
-mux :: (MonadSTM m, Ord ptcl, Enum ptcl)
+mux :: MonadSTM m
     => StrictTVar m Int
-    -> PerMuxSharedState ptcl m
+    -> PerMuxSharedState m
     -> m ()
 mux cnt pmss = go
   where
@@ -120,8 +120,8 @@ mux cnt pmss = go
 -- data remaining requeue the `TranslocationServiceRequest` (this
 -- ensures that any other items on the queue will get some service
 -- first.
-processSingleWanton :: (MonadSTM m, Ord ptcl, Enum ptcl)
-                    => PerMuxSharedState ptcl m
+processSingleWanton :: MonadSTM m
+                    => PerMuxSharedState m
                     -> MiniProtocolCode
                     -> MiniProtocolMode
                     -> Wanton m

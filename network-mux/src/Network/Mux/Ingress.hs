@@ -14,7 +14,6 @@ import qualified Data.ByteString.Lazy as BL
 import           GHC.Stack
 import           Text.Printf
 
-import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 
@@ -70,9 +69,8 @@ negMiniProtocolMode ModeResponder = ModeInitiator
 
 -- | demux runs as a single separate thread and reads complete 'MuxSDU's from
 -- the underlying Mux Bearer and forwards it to the matching ingress queue.
-demux :: (MonadSTM m, MonadSay m, MonadThrow m, MonadThrow (STM m)
-         , Ord ptcl, Enum ptcl, Show ptcl, HasCallStack)
-      => PerMuxSharedState ptcl m -> m ()
+demux :: (MonadSTM m, MonadThrow m, MonadThrow (STM m), HasCallStack)
+      => PerMuxSharedState m -> m ()
 demux pmss = forever $ do
     (sdu, _) <- Network.Mux.Types.read $ bearer pmss
     -- say $ printf "demuxing sdu on mid %s mode %s lenght %d " (show $ msId sdu) (show $ msMode sdu)

@@ -109,11 +109,11 @@ muxStart tracer peerid (MuxApplication ptcls) bearer = do
                , (mux cnt pmss, "Muxer")
                ]
             ++ [ (muxControl q, name)
-               | let (_,_,_,_, initQ, respQ) = ctlPtclInfo
+               | let (_,_,_, initQ, respQ) = ctlPtclInfo
                , (q, name) <- [(initQ, "Initiator"), (respQ, "Responder")]
                ]
             ++ [ job
-               | ((_, mc, _qMax, msgMax, initQ, respQ), ptcl) <- zip appPtclInfo ptcls
+               | ((mc, _qMax, msgMax, initQ, respQ), ptcl) <- zip appPtclInfo ptcls
                , job <- mpsJob cnt pmss mc msgMax initQ respQ (miniProtocolRun ptcl)
                ]
 
@@ -134,8 +134,7 @@ muxStart tracer peerid (MuxApplication ptcls) bearer = do
 
   where
     mkMiniProtocolInfo :: MiniProtocolId ptcl
-                       -> m ( MiniProtocolId ptcl
-                            , MiniProtocolCode
+                       -> m ( MiniProtocolCode
                             , Int64
                             , Int64
                             , StrictTVar m BL.ByteString
@@ -144,8 +143,7 @@ muxStart tracer peerid (MuxApplication ptcls) bearer = do
     mkMiniProtocolInfo mpid = do
         initiatorQ <- newTVarM BL.empty
         responderQ <- newTVarM BL.empty
-        return ( mpid
-               , fromProtocolEnum mpid
+        return ( fromProtocolEnum mpid
                , maximumIngressQueue mpid
                , maximumMessageSize mpid
                , initiatorQ
@@ -153,23 +151,22 @@ muxStart tracer peerid (MuxApplication ptcls) bearer = do
                )
 
     -- Construct the array of TBQueues, one for each protocol id, and each mode
-    setupTbl :: [( MiniProtocolId ptcl
-                 , MiniProtocolCode
+    setupTbl :: [( MiniProtocolCode
                  , Int64
                  , Int64
                  , StrictTVar m BL.ByteString
                  , StrictTVar m BL.ByteString
                  )]
-             -> MiniProtocolDispatch ptcl m
+             -> MiniProtocolDispatch m
     setupTbl ptclsInfo =
         MiniProtocolDispatch
           (array (mincode, maxcode) $
                  [ (code, Nothing)    | code <- [mincode..maxcode] ]
               ++ [ (code, Just pix)
-                 | (pix, (_, code, _, _, _, _)) <- zip [0..] ptclsInfo ])
+                 | (pix, (code, _, _, _, _)) <- zip [0..] ptclsInfo ])
           (array ((minpix, ModeInitiator), (maxpix, ModeResponder))
                  [ ((pix, mode), dispatchInfo)
-                 | (pix, (_mpid, _mc, qMax, _msgMax, initQ, respQ)) <- zip [0..] ptclsInfo
+                 | (pix, (_mc, qMax, _msgMax, initQ, respQ)) <- zip [0..] ptclsInfo
                  , (mode, q) <- [ (ModeInitiator, initQ)
                                 , (ModeResponder, respQ) ]
                  , let dispatchInfo = MiniProtocolDispatchInfo q qMax ])
@@ -177,14 +174,14 @@ muxStart tracer peerid (MuxApplication ptcls) bearer = do
         minpix = 0
         maxpix = length ptclsInfo - 1
 
-        codes   = [ mc | (_, mc, _, _, _, _) <- ptclsInfo ]
+        codes   = [ mc | (mc, _, _, _, _) <- ptclsInfo ]
         mincode = minimum codes
         maxcode = maximum codes
 
 
     mpsJob
       :: StrictTVar m Int
-      -> PerMuxSharedState ptcl m
+      -> PerMuxSharedState m
       -> MiniProtocolCode
       -> Int64
       -> StrictTVar m BL.ByteString
@@ -249,7 +246,7 @@ muxChannel
        , HasCallStack
        )
     => Tracer m (MuxTrace ptcl)
-    -> PerMuxSharedState ptcl m
+    -> PerMuxSharedState m
     -> MiniProtocolCode
     -> MiniProtocolMode
     -> Int64

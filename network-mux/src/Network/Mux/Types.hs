@@ -158,7 +158,7 @@ instance (MiniProtocolLimits ptcl) => MiniProtocolLimits (MiniProtocolId ptcl) w
 -- Mux internal types
 --
 
-data MiniProtocolDispatch ptcl m =
+data MiniProtocolDispatch m =
      MiniProtocolDispatch
        !(Array MiniProtocolCode (Maybe MiniProtocolIx))
        !(Array (MiniProtocolIx, MiniProtocolMode)
@@ -175,8 +175,7 @@ data MiniProtocolDispatchInfo m =
        !Int64
 
 
-lookupMiniProtocol :: (Ord ptcl, Enum ptcl)
-                   => MiniProtocolDispatch ptcl m
+lookupMiniProtocol :: MiniProtocolDispatch m
                    -> MiniProtocolCode
                    -> MiniProtocolMode
                    -> Maybe (MiniProtocolDispatchInfo m)
@@ -216,9 +215,9 @@ newtype Wanton m = Wanton { want :: StrictTVar m BL.ByteString }
 -- de-multiplexing details (for despatch of incoming mesages to mini
 -- protocols) and for dispatching incoming SDUs.  This is shared
 -- between the muxIngress and the bearerIngress processes.
-data PerMuxSharedState ptcl m = PerMuxSS {
+data PerMuxSharedState m = PerMuxSS {
   -- | Ingress dispatch table, fixed and known at instantiation.
-    dispatchTable :: MiniProtocolDispatch ptcl m
+    dispatchTable :: MiniProtocolDispatch m
   -- | Egress queue, shared by all miniprotocols
   , tsrQueue      :: TBQueue m (TranslocationServiceRequest m)
   , bearer        :: MuxBearer m
