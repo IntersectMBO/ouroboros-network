@@ -9,7 +9,6 @@ module Network.Mux.Types (
     , MiniProtocolDispatchInfo (..)
     , lookupMiniProtocol
     , MiniProtocolLimits (..)
-    , MiniProtocolId (..)
     , MiniProtocolCode
     , MiniProtocolMode (..)
     , MuxBearer (..)
@@ -70,53 +69,6 @@ remoteClockPrecision = 1e-6
 -- messages.
 --
 type MiniProtocolCode = Word16
-
--- | The Ids of mini-protocols that the mux manages. This is expected to be
--- used with custom bounded enumerations that list all the mini-protocols in
--- that instance of the overall muxed protocol.
---
--- It is necessary to have 'Ord', 'Enum' and 'Bounded' instances. For example:
---
--- > data NodeToClient = ChainSyncWithBlocks
--- >                   | ClientRPC
--- >   deriving (Eq, Ord, Enum, Bounded, Show)
---
-data MiniProtocolId ptcl = Muxcontrol
-                         -- ^ indicates 'MuxSDU's which belong to initial
-                         -- handshake using the 'Hanshake' protocol.
-                         | DeltaQ
-                         | AppProtocolId ptcl
-                    deriving (Eq, Ord, Show)
-
--- | Shift the inner enumeration up by two, to account for the two mux built-in
--- mini-protocols. This instance is never used for the wire format, just for
--- internal purposes such as dispatch tables.
---
-instance Enum ptcl => Enum (MiniProtocolId ptcl) where
-  fromEnum Muxcontrol          = 0
-  fromEnum DeltaQ              = 1
-  fromEnum (AppProtocolId pid) = 2 + fromEnum pid
-
-  toEnum 0 = Muxcontrol
-  toEnum 1 = DeltaQ
-  toEnum n = AppProtocolId (toEnum (n-2))
-
--- | We will be indexing arrays by the mini-protocol id, so need @Ix@.
---
-instance (Ord ptcl, Enum ptcl) => Ix (MiniProtocolId ptcl) where
-  range   (from, to)       = enumFromTo from to
-  inRange (from, to) x     = x >= from && x <= to
-  index   (from, to) x
-    | inRange (from, to) x = fromEnum x - fromEnum from
-    | otherwise            = throw (IndexOutOfBounds msg)
-       where msg = "not inRange " ++ show (fromEnum from, fromEnum to)
-                           ++ " " ++ show (fromEnum x)
-
--- | Need bounds to be able to construct arrays of mini-protocols.
---
-instance Bounded ptcl => Bounded (MiniProtocolId ptcl) where
-  minBound = Muxcontrol
-  maxBound = AppProtocolId maxBound
 
 -- | Per Miniprotocol limits
 -- maximumIngressQueue must be >= maximumMessageSize

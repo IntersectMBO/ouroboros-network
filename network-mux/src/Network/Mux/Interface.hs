@@ -77,12 +77,11 @@ type family HasResponder (appType :: AppType) :: Bool where
 --   serving downstream peers using server side of each protocol and getting
 --   updates from upstream peers using client side of each of the protocols.
 --
-newtype MuxApplication (appType :: AppType) peerid ptcl m a b =
-        MuxApplication [MuxMiniProtocol appType peerid ptcl m a b]
+newtype MuxApplication (appType :: AppType) peerid m a b =
+        MuxApplication [MuxMiniProtocol appType peerid m a b]
 
-data MuxMiniProtocol (appType :: AppType) peerid ptcl m a b =
+data MuxMiniProtocol (appType :: AppType) peerid m a b =
      MuxMiniProtocol {
-       miniProtocolId     :: !ptcl,
        miniProtocolCode   :: !MiniProtocolCode,
        miniProtocolLimits :: !MiniProtocolLimits,
        miniProtocolRun    :: !(RunMiniProtocol appType peerid m a b)

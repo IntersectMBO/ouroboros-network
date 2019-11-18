@@ -68,11 +68,10 @@ class MiniProtocolLimits ptcl where
 toApplication :: (Enum ptcl, Bounded ptcl,
                   ProtocolEnum ptcl, MiniProtocolLimits ptcl)
               => OuroborosApplication appType peerid ptcl m LBS.ByteString a b
-              -> MuxApplication appType peerid ptcl m a b
+              -> MuxApplication appType peerid m a b
 toApplication (OuroborosInitiatorApplication f) =
     MuxApplication
       [ MuxMiniProtocol {
-          miniProtocolId     = ptcl,
           miniProtocolCode   = fromProtocolEnum ptcl,
           miniProtocolLimits = Mux.MiniProtocolLimits {
                                  Mux.maximumMessageSize  = maximumMessageSize ptcl,
@@ -87,7 +86,6 @@ toApplication (OuroborosInitiatorApplication f) =
 toApplication (OuroborosResponderApplication f) =
     MuxApplication
       [ MuxMiniProtocol {
-          miniProtocolId     = ptcl,
           miniProtocolCode   = fromProtocolEnum ptcl,
           miniProtocolLimits = Mux.MiniProtocolLimits {
                                  Mux.maximumMessageSize  = maximumMessageSize ptcl,
@@ -102,7 +100,6 @@ toApplication (OuroborosResponderApplication f) =
 toApplication (OuroborosInitiatorAndResponderApplication f g) =
     MuxApplication
       [ MuxMiniProtocol {
-          miniProtocolId     = ptcl,
           miniProtocolCode   = fromProtocolEnum ptcl,
           miniProtocolLimits = Mux.MiniProtocolLimits {
                                  Mux.maximumMessageSize  = maximumMessageSize ptcl,

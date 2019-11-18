@@ -12,7 +12,6 @@ module Network.Mux (
     , MuxSDU (..)
     , MiniProtocolCode
     , MiniProtocolLimits (..)
-    , MiniProtocolId (..)
     , MiniProtocolMode (..)
     , MuxBearerState (..)
     , MuxError (..)
@@ -78,27 +77,23 @@ import           Network.Mux.Types
 -- TODO: replace MonadSay with iohk-monitoring-framework.
 --
 muxStart
-    :: forall m appType peerid ptcl a b.
+    :: forall m appType peerid a b.
        ( MonadAsync m
        , MonadSay m
        , MonadSTM m
        , MonadThrow m
        , MonadThrow (STM m)
        , MonadMask m
-       , Ord ptcl
-       , Enum ptcl
-       , Show ptcl
        , Eq (Async m ())
        )
     => Tracer m MuxTrace
     -> peerid
-    -> MuxApplication appType peerid ptcl m a b
+    -> MuxApplication appType peerid m a b
     -> MuxBearer m
     -> m ()
 muxStart tracer peerid (MuxApplication ptcls) bearer = do
-    ctlPtclInfo <- mkMiniProtocolInfo Muxcontrol 0 (MiniProtocolLimits 0xffff 0xffff)
-    appPtclInfo <- sequence [ mkMiniProtocolInfo (AppProtocolId (miniProtocolId ptcl))
-                                                 (miniProtocolCode ptcl)
+    ctlPtclInfo <- mkMiniProtocolInfo 0 (MiniProtocolLimits 0xffff 0xffff)
+    appPtclInfo <- sequence [ mkMiniProtocolInfo (miniProtocolCode ptcl)
                                                  (miniProtocolLimits ptcl)
                             | ptcl <- ptcls ]
     let tbl = setupTbl (ctlPtclInfo : appPtclInfo)
@@ -136,15 +131,14 @@ muxStart tracer peerid (MuxApplication ptcls) bearer = do
       muxBearerSetState tracer bearer Dead
 
   where
-    mkMiniProtocolInfo :: MiniProtocolId ptcl
-                       -> MiniProtocolCode
+    mkMiniProtocolInfo :: MiniProtocolCode
                        -> MiniProtocolLimits
                        -> m ( MiniProtocolCode
                             , MiniProtocolLimits
                             , StrictTVar m BL.ByteString
                             , StrictTVar m BL.ByteString
                             )
-    mkMiniProtocolInfo mpid mpcode mplimits = do
+    mkMiniProtocolInfo mpcode mplimits = do
         initiatorQ <- newTVarM BL.empty
         responderQ <- newTVarM BL.empty
         return ( mpcode

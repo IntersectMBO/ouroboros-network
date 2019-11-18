@@ -95,22 +95,6 @@ _sayTracer :: MonadSay m => Tracer m String
 _sayTracer = Tracer say
 
 --
--- Various ProtocolEnum instances used in tests
---
-
-data TestProtocols1 = ReqResp1
-  deriving (Eq, Ord, Enum, Bounded, Show)
-
--- |
--- Allows to run two copies of ReqResp protocol.t
---
-data TestProtocols2 = ReqResp2 | ReqResp3
-  deriving (Eq, Ord, Enum, Bounded, Show)
-
-data TestProtocolsSmall = ReqRespSmall
-  deriving (Eq, Ord, Enum, Bounded, Show)
-
---
 -- Generators
 --
 
@@ -326,19 +310,17 @@ prop_mux_snd_recv messages = ioProperty $ do
 
     let clientApp = Mx.MuxApplication
                       [ Mx.MuxMiniProtocol {
-                          Mx.miniProtocolId  = ReqResp1,
-                          Mx.miniProtocolCode= 2,
+                          Mx.miniProtocolCode   = 2,
                           Mx.miniProtocolLimits = defaultMiniProtocolLimits,
-                          Mx.miniProtocolRun = Mx.InitiatorProtocolOnly (const client_mp)
+                          Mx.miniProtocolRun    = Mx.InitiatorProtocolOnly (const client_mp)
                         }
                       ]
 
         serverApp = Mx.MuxApplication
                       [ Mx.MuxMiniProtocol {
-                          Mx.miniProtocolId  = ReqResp1,
-                          Mx.miniProtocolCode= 2,
+                          Mx.miniProtocolCode   = 2,
                           Mx.miniProtocolLimits = defaultMiniProtocolLimits,
-                          Mx.miniProtocolRun = Mx.ResponderProtocolOnly (const server_mp)
+                          Mx.miniProtocolRun    = Mx.ResponderProtocolOnly (const server_mp)
                         }
                       ]
 
@@ -457,31 +439,27 @@ prop_mux_2_minis msgTrace0 msgTrace1 = ioProperty $ do
 
     let clientApp = Mx.MuxApplication
                       [ Mx.MuxMiniProtocol {
-                          Mx.miniProtocolId  = ReqResp2,
-                          Mx.miniProtocolCode= 2,
+                          Mx.miniProtocolCode   = 2,
                           Mx.miniProtocolLimits = defaultMiniProtocolLimits,
-                          Mx.miniProtocolRun = Mx.InitiatorProtocolOnly (const client_mp0)
+                          Mx.miniProtocolRun    = Mx.InitiatorProtocolOnly (const client_mp0)
                         }
                       , Mx.MuxMiniProtocol {
-                          Mx.miniProtocolId  = ReqResp3,
-                          Mx.miniProtocolCode= 3,
+                          Mx.miniProtocolCode   = 3,
                           Mx.miniProtocolLimits = defaultMiniProtocolLimits,
-                          Mx.miniProtocolRun = Mx.InitiatorProtocolOnly (const client_mp1)
+                          Mx.miniProtocolRun    = Mx.InitiatorProtocolOnly (const client_mp1)
                         }
                       ]
 
         serverApp = Mx.MuxApplication
                       [ Mx.MuxMiniProtocol {
-                          Mx.miniProtocolId  = ReqResp2,
-                          Mx.miniProtocolCode= 2,
+                          Mx.miniProtocolCode   = 2,
                           Mx.miniProtocolLimits = defaultMiniProtocolLimits,
-                          Mx.miniProtocolRun = Mx.ResponderProtocolOnly (const server_mp0)
+                          Mx.miniProtocolRun    = Mx.ResponderProtocolOnly (const server_mp0)
                         }
                       , Mx.MuxMiniProtocol {
-                          Mx.miniProtocolId  = ReqResp3,
-                          Mx.miniProtocolCode= 3,
+                          Mx.miniProtocolCode   = 3,
                           Mx.miniProtocolLimits = defaultMiniProtocolLimits,
-                          Mx.miniProtocolRun = Mx.ResponderProtocolOnly (const server_mp1)
+                          Mx.miniProtocolRun    = Mx.ResponderProtocolOnly (const server_mp1)
                         }
                       ]
 
@@ -533,31 +511,27 @@ prop_mux_starvation (Uneven response0 response1) =
 
     let clientApp = Mx.MuxApplication
                       [ Mx.MuxMiniProtocol {
-                          Mx.miniProtocolId  = ReqResp2,
-                          Mx.miniProtocolCode= 2,
+                          Mx.miniProtocolCode   = 2,
                           Mx.miniProtocolLimits = defaultMiniProtocolLimits,
-                          Mx.miniProtocolRun = Mx.InitiatorProtocolOnly (const client_short)
+                          Mx.miniProtocolRun    = Mx.InitiatorProtocolOnly (const client_short)
                         }
                       , Mx.MuxMiniProtocol  {
-                          Mx.miniProtocolId  = ReqResp3,
-                          Mx.miniProtocolCode= 3,
+                          Mx.miniProtocolCode   = 3,
                           Mx.miniProtocolLimits = defaultMiniProtocolLimits,
-                          Mx.miniProtocolRun = Mx.InitiatorProtocolOnly (const client_long)
+                          Mx.miniProtocolRun    = Mx.InitiatorProtocolOnly (const client_long)
                         }
                       ]
 
         serverApp = Mx.MuxApplication
                       [ Mx.MuxMiniProtocol {
-                          Mx.miniProtocolId  = ReqResp2,
-                          Mx.miniProtocolCode= 2,
+                          Mx.miniProtocolCode   = 2,
                           Mx.miniProtocolLimits = defaultMiniProtocolLimits,
-                          Mx.miniProtocolRun = Mx.ResponderProtocolOnly (const server_short)
+                          Mx.miniProtocolRun    = Mx.ResponderProtocolOnly (const server_short)
                         }
                       , Mx.MuxMiniProtocol {
-                          Mx.miniProtocolId  = ReqResp3,
-                          Mx.miniProtocolCode= 3,
+                          Mx.miniProtocolCode   = 3,
                           Mx.miniProtocolLimits = defaultMiniProtocolLimits,
-                          Mx.miniProtocolRun = Mx.ResponderProtocolOnly (const server_long)
+                          Mx.miniProtocolRun    = Mx.ResponderProtocolOnly (const server_long)
                         }
                       ]
 
@@ -657,10 +631,9 @@ prop_demux_sdu a = do
         -- triggered by a single segment.
         let server_mps = Mx.MuxApplication
                            [ Mx.MuxMiniProtocol {
-                               Mx.miniProtocolId  = ReqRespSmall,
-                               Mx.miniProtocolCode= 2,
+                               Mx.miniProtocolCode   = 2,
                                Mx.miniProtocolLimits = smallMiniProtocolLimits,
-                               Mx.miniProtocolRun = Mx.ResponderProtocolOnly (const (serverRsp stopVar))
+                               Mx.miniProtocolRun    = Mx.ResponderProtocolOnly (const (serverRsp stopVar))
                              }
                            ]
 
@@ -684,10 +657,9 @@ prop_demux_sdu a = do
 
         let server_mps = Mx.MuxApplication
                            [ Mx.MuxMiniProtocol {
-                               Mx.miniProtocolId  = ReqResp1,
-                               Mx.miniProtocolCode= 2,
+                               Mx.miniProtocolCode   = 2,
                                Mx.miniProtocolLimits = defaultMiniProtocolLimits,
-                               Mx.miniProtocolRun = Mx.ResponderProtocolOnly (const (serverRsp stopVar))
+                               Mx.miniProtocolRun    = Mx.ResponderProtocolOnly (const (serverRsp stopVar))
                              }
                            ]
 
@@ -713,10 +685,9 @@ prop_demux_sdu a = do
 
         let server_mps = Mx.MuxApplication
                            [ Mx.MuxMiniProtocol {
-                               Mx.miniProtocolId  = ReqResp1,
-                               Mx.miniProtocolCode= 2,
+                               Mx.miniProtocolCode   = 2,
                                Mx.miniProtocolLimits = defaultMiniProtocolLimits,
-                               Mx.miniProtocolRun = Mx.ResponderProtocolOnly (const (serverRsp stopVar))
+                               Mx.miniProtocolRun    = Mx.ResponderProtocolOnly (const (serverRsp stopVar))
                              }
                            ]
 

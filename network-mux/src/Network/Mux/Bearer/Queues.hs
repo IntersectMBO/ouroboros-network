@@ -89,15 +89,11 @@ runMuxWithQueues
      , MonadThrow (STM m)
      , MonadTime m
      , MonadTimer m
-     , Ord ptcl
-     , Enum ptcl
-     , Bounded ptcl
-     , Show ptcl
      , Eq  (Async m ())
      )
   => Tracer m (Mx.WithMuxBearer String Mx.MuxTrace)
   -> peerid
-  -> Mx.MuxApplication appType peerid ptcl m a b
+  -> Mx.MuxApplication appType peerid m a b
   -> TBQueue m BL.ByteString
   -> TBQueue m BL.ByteString
   -> Word16
