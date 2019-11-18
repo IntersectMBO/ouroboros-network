@@ -312,6 +312,8 @@ data ErrorPolicyTrace
   | ErrorPolicyUnhandledConnectionException SomeException
   -- ^ 'connect' throwed an exception, which was not handled by any
   -- 'ErrorPolicy'.
+  | ErrorPolicyAccept SomeException
+  -- ^ 'accept' throwed an exception
   deriving Show
 
 traceErrorPolicy :: Either (ConnectionOrApplicationExceptionTrace SomeException) r
