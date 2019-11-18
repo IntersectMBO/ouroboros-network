@@ -73,8 +73,7 @@ negMiniProtocolMode ModeResponder = ModeInitiator
 -- | demux runs as a single separate thread and reads complete 'MuxSDU's from
 -- the underlying Mux Bearer and forwards it to the matching ingress queue.
 demux :: (MonadSTM m, MonadSay m, MonadThrow m, MonadThrow (STM m)
-         , Ord ptcl, Enum ptcl, Show ptcl
-         , MiniProtocolLimits ptcl, HasCallStack)
+         , Ord ptcl, Enum ptcl, Show ptcl, HasCallStack)
       => PerMuxSharedState ptcl m -> m ()
 demux pmss = forever $ do
     (sdu, _) <- Network.Mux.Types.read $ bearer pmss
@@ -86,9 +85,10 @@ demux pmss = forever $ do
               Just msId -> return msId
     atomically $ do
         -- Notice the mode reversal, ModeResponder is delivered to ModeInitiator and vice versa.
-        let q = ingressQueue (dispatchTable pmss) msId (negMiniProtocolMode $ msMode sdu)
+        let MiniProtocolDispatchInfo q qMax =
+              ingressQueue (dispatchTable pmss) msId (negMiniProtocolMode $ msMode sdu)
         buf <- readTVar q
-        if BL.length buf + BL.length (msBlob sdu) <= maximumIngressQueue msId
+        if BL.length buf + BL.length (msBlob sdu) <= qMax
             then writeTVar q $ BL.append buf (msBlob sdu)
             else throwM $ MuxError MuxIngressQueueOverRun
                               (printf "Ingress Queue overrun on %s %s"
@@ -100,7 +100,7 @@ ingressQueue :: (MonadSTM m, Ord ptcl, Enum ptcl)
              => MiniProtocolDispatch ptcl m
              -> MiniProtocolId ptcl
              -> MiniProtocolMode
-             -> StrictTVar m BL.ByteString
+             -> MiniProtocolDispatchInfo m
 ingressQueue (MiniProtocolDispatch tbl) dis mode =
     tbl ! (dis, mode)
     -- We can use array indexing here, because we constructed the dispatch

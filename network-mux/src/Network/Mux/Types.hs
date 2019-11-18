@@ -6,6 +6,7 @@
 
 module Network.Mux.Types (
       MiniProtocolDispatch (..)
+    , MiniProtocolDispatchInfo (..)
     , MiniProtocolCodes (..)
     , fromMiniProtocolCode
     , MiniProtocolLimits (..)
@@ -160,10 +161,15 @@ instance (MiniProtocolLimits ptcl) => MiniProtocolLimits (MiniProtocolId ptcl) w
 
 newtype MiniProtocolDispatch ptcl m =
         MiniProtocolDispatch (Array (MiniProtocolId ptcl, MiniProtocolMode)
-                                    (StrictTVar m BL.ByteString))
+                                    (MiniProtocolDispatchInfo m))
 
 data MiniProtocolMode = ModeInitiator | ModeResponder
   deriving (Eq, Ord, Ix, Enum, Bounded, Show)
+
+data MiniProtocolDispatchInfo m =
+     MiniProtocolDispatchInfo
+       !(StrictTVar m BL.ByteString)
+       !Int64
 
 newtype MiniProtocolCodes ptcl =
         MiniProtocolCodes (Array MiniProtocolCode (Maybe (MiniProtocolId ptcl)))

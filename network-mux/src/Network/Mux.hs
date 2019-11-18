@@ -133,7 +133,9 @@ muxStart tracer peerid (MuxApplication ptcls) bearer = do
             -- cover full range of type (MiniProtocolId ptcl, MiniProtocolMode)
              . array (minBound, maxBound)
            <$> sequence [ do q <- atomically (newTVar BL.empty)
-                             return ((ptcl, mode), q)
+                             let dispatchInfo = MiniProtocolDispatchInfo
+                                                  q (maximumIngressQueue ptcl)
+                             return ((ptcl, mode), dispatchInfo)
                         | ptcl <- [minBound..maxBound]
                         , mode <- [ModeInitiator, ModeResponder] ]
 
@@ -195,14 +197,15 @@ muxStart tracer peerid (MuxApplication ptcls) bearer = do
             c <- readTVar cnt
             unless (c == 0) retry
 
-muxControl :: (HasCallStack, MonadSTM m, MonadSay m, MonadThrow m, Ord ptcl, Enum ptcl
-              , MiniProtocolLimits ptcl)
+muxControl :: (HasCallStack, MonadSTM m, MonadSay m, MonadThrow m, Ord ptcl, Enum ptcl)
            => PerMuxSharedState ptcl m
            -> MiniProtocolMode
            -> m ()
 muxControl pmss md = do
     _ <- atomically $ do
-        buf <- readTVar (ingressQueue (dispatchTable pmss) Muxcontrol md)
+        let MiniProtocolDispatchInfo q _ =
+              ingressQueue (dispatchTable pmss) Muxcontrol md
+        buf <- readTVar q
         when (buf == BL.empty)
             retry
     throwM $ MuxError MuxControlProtocolError "MuxControl message on mature MuxBearer" callStack
@@ -273,7 +276,8 @@ muxChannel tracer pmss mid mc md cnt = do
         -- matching ingress queueu. This is the same queue the 'demux' thread writes to.
         traceWith tracer $ MuxTraceChannelRecvStart mc
         blob <- atomically $ do
-            let q = ingressQueue (dispatchTable pmss) mid md
+            let MiniProtocolDispatchInfo q _ =
+                  ingressQueue (dispatchTable pmss) mid md
             blob <- readTVar q
             if blob == BL.empty
                 then retry
