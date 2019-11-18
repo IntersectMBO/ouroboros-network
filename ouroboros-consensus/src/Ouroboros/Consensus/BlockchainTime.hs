@@ -12,7 +12,6 @@ module Ouroboros.Consensus.BlockchainTime (
     BlockchainTime(..)
   , blockUntilSlot
   , onSlotChange
-  , onSlot
     -- * Use in testing
   , NumSlots(..)
   , TestBlockchainTime(..)
@@ -33,7 +32,6 @@ module Ouroboros.Consensus.BlockchainTime (
   , SlotNo (..)
   ) where
 
-import           Control.Exception (Exception (..))
 import           Control.Monad
 import           Data.Fixed
 import           Data.Time.Clock (NominalDiffTime, addUTCTime, diffUTCTime)
@@ -41,8 +39,6 @@ import           Data.Void
 import           Data.Word (Word64)
 import           GHC.Generics (Generic)
 import           GHC.Stack
-
-import           Control.Monad.Class.MonadThrow
 
 import           Cardano.Prelude (NoUnexpectedThunks)
 
@@ -71,17 +67,6 @@ data BlockchainTime m = BlockchainTime {
       --
       -- Use sites should call 'onSlotChange' rather than 'onSlotChange_'.
     , onSlotChange_  :: HasCallStack => (SlotNo -> m ()) -> m ()
-
-      -- | Spawn a thread to run an action when reaching the specified slot
-      --
-      -- The thread will be linked to the registry in which the 'BlockchainTime'
-      -- itself was created.
-      --
-      -- Unlike the thread created by 'onSlotChange_', this thread will
-      -- terminate as soon as the action does.
-      --
-      -- Use sites should call 'onSlot' rather than 'onSlot_'.
-    , onSlot_        :: HasCallStack => SlotNo -> m () -> m ()
     }
 
 -- | Returns 'True' immediately if the requested slot is already over, else
@@ -105,38 +90,6 @@ blockUntilSlot btime slot = do
 -- See documentation of 'onSlotChange_'.
 onSlotChange :: HasCallStack => BlockchainTime m -> (SlotNo -> m ()) -> m ()
 onSlotChange = onSlotChange_
-
--- | Wrapper around 'onSlot_' to ensure 'HasCallStack' constraint
-onSlot :: HasCallStack => BlockchainTime m -> SlotNo -> m () -> m ()
-onSlot = onSlot_
-
--- | Default implementation of 'onSlot' (used internally only)
-defaultOnSlot :: forall m. (IOLike m, HasCallStack)
-              => ResourceRegistry m
-              -> STM m SlotNo
-              -> SlotNo
-              -> m ()
-              -> m ()
-defaultOnSlot registry getCurrentSlot slot action = do
-    startingSlot <- atomically getCurrentSlot
-    when (startingSlot >= slot) $
-      throwM $ OnSlotTooLate slot startingSlot
-    runWhenJust registry waitForSlot (\() -> action)
-  where
-    waitForSlot :: STM m (Maybe ())
-    waitForSlot = do
-        currentSlot <- getCurrentSlot
-        return $ if currentSlot >= slot
-                   then Just ()
-                   else Nothing
-
-data OnSlotException =
-    -- | An action was scheduled via 'onSlot' for a slot in the past.
-    -- First slot is requested, second slot is current as of raising.
-    OnSlotTooLate SlotNo SlotNo
-  deriving (Eq, Show)
-
-instance Exception OnSlotException
 
 {-------------------------------------------------------------------------------
   Use in testing
@@ -194,7 +147,6 @@ newTestBlockchainTime registry (NumSlots numSlots) slotLen = do
         btime :: BlockchainTime m
         btime = BlockchainTime {
             getCurrentSlot = get
-          , onSlot_        = defaultOnSlot registry get
           , onSlotChange_  = onEachChange registry Running (Just initVal) get
           }
 
@@ -235,7 +187,6 @@ realBlockchainTime registry slotLen start = do
     void $ forkLinkedThread registry $ loop slot
     return BlockchainTime {
         getCurrentSlot = readTVar slot
-      , onSlot_        = defaultOnSlot registry (readTVar slot)
       , onSlotChange_  = onEachChange registry id (Just first) (readTVar slot)
       }
   where
