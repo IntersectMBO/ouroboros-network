@@ -1,10 +1,12 @@
-{-# LANGUAGE EmptyDataDeriving    #-}
-{-# LANGUAGE FlexibleContexts     #-}
-{-# LANGUAGE ScopedTypeVariables  #-}
-{-# LANGUAGE StandaloneDeriving   #-}
-{-# LANGUAGE TypeApplications     #-}
-{-# LANGUAGE TypeFamilies         #-}
-{-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE AllowAmbiguousTypes       #-}
+{-# LANGUAGE EmptyDataDeriving         #-}
+{-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE FlexibleContexts          #-}
+{-# LANGUAGE ScopedTypeVariables       #-}
+{-# LANGUAGE StandaloneDeriving        #-}
+{-# LANGUAGE TypeApplications          #-}
+{-# LANGUAGE TypeFamilies              #-}
+{-# LANGUAGE UndecidableInstances      #-}
 module Ouroboros.Consensus.BlockFetchServer
   ( blockFetchServer
     -- * Trace events
@@ -30,7 +32,7 @@ import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
 import           Ouroboros.Storage.ChainDB (ChainDB, IteratorResult (..))
 import qualified Ouroboros.Storage.ChainDB as ChainDB
 
-data BlockFetchServerException blk =
+data BlockFetchServerException =
       -- | A block that was supposed to be included in a batch was garbage
       -- collected since we started the batch and can no longer be sent.
       --
@@ -43,12 +45,12 @@ data BlockFetchServerException blk =
       -- exception, as the block to stream from the old fork could have been
       -- garbage collected. However, the network protocol will have timed out
       -- long before this happens.
-      BlockGCed (HeaderHash blk)
+      forall blk. (Typeable blk, StandardHash blk) =>
+        BlockGCed (HeaderHash blk)
 
-deriving instance StandardHash blk => Show (BlockFetchServerException blk)
+deriving instance Show BlockFetchServerException
 
-instance (Typeable blk, StandardHash blk)
-      => Exception (BlockFetchServerException blk)
+instance Exception BlockFetchServerException
 
 -- | Block fetch server based on
 -- 'Ouroboros.Network.BlockFetch.Examples.mockBlockFetchServer1', but using

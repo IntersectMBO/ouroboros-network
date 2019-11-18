@@ -716,7 +716,7 @@ data MiniProtocolExpectedException blk
     -- exception.
   | MPEEBlockFetchClient BFClient.BlockFetchProtocolFailure
     -- ^ see "Ouroboros.Network.BlockFetch.Client"
-  | MPEEBlockFetchServer (BFServer.BlockFetchServerException blk)
+  | MPEEBlockFetchServer BFServer.BlockFetchServerException
     -- ^ see "Ouroboros.Consensus.BlockFetchServer"
   | MPEETxSubmissionClient TxOutbound.TxSubmissionProtocolError
     -- ^ see "Ouroboros.Network.TxSubmission.Outbound"
