@@ -707,7 +707,7 @@ type LimitedApp' m peer blk unused1 unused2 =
 -- | Non-fatal exceptions expected from the threads of a 'directedEdge'
 --
 data MiniProtocolExpectedException blk
-  = MPEEChainSyncClient (CSClient.ChainSyncClientException blk (Tip blk))
+  = MPEEChainSyncClient (CSClient.ChainSyncClientException blk)
     -- ^ see "Ouroboros.Consensus.ChainSyncClient"
     --
     -- NOTE: the second type in 'ChainSyncClientException' denotes the 'tip'.

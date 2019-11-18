@@ -12,14 +12,15 @@ module Ouroboros.Consensus.Node.Tracers
 import           Control.Tracer (Tracer, nullTracer, showTracing)
 import qualified Network.Socket as Socket
 
-import           Ouroboros.Network.Block (Point, SlotNo, Tip)
+import           Ouroboros.Network.Block (Point, SlotNo)
 import           Ouroboros.Network.BlockFetch (FetchDecision,
                      TraceFetchClientState, TraceLabelPeer)
+import           Ouroboros.Network.Subscription.Ip (SubscriptionTrace,
+                     WithIPList)
 import           Ouroboros.Network.TxSubmission.Inbound
                      (TraceTxSubmissionInbound)
 import           Ouroboros.Network.TxSubmission.Outbound
                      (TraceTxSubmissionOutbound)
-import           Ouroboros.Network.Subscription.Ip (SubscriptionTrace, WithIPList)
 
 import           Ouroboros.Consensus.Block (Header, SupportedBlock)
 import           Ouroboros.Consensus.BlockFetchServer
@@ -35,8 +36,8 @@ import           Ouroboros.Consensus.TxSubmission
   All tracers of a node bundled together
 -------------------------------------------------------------------------------}
 
-data Tracers' peer blk tip f = Tracers
-  { chainSyncClientTracer         :: f (TraceChainSyncClientEvent blk tip)
+data Tracers' peer blk f = Tracers
+  { chainSyncClientTracer         :: f (TraceChainSyncClientEvent blk)
   , chainSyncServerHeaderTracer   :: f (TraceChainSyncServerEvent blk (Header blk))
   , chainSyncServerBlockTracer    :: f (TraceChainSyncServerEvent blk blk)
   , blockFetchDecisionTracer      :: f [TraceLabelPeer peer (FetchDecision [Point (Header blk)])]
@@ -51,7 +52,7 @@ data Tracers' peer blk tip f = Tracers
   }
 
 -- | A record of 'Tracer's for the node.
-type Tracers m peer blk = Tracers' peer blk (Tip blk) (Tracer m)
+type Tracers m peer blk = Tracers' peer blk (Tracer m)
 
 -- | Use a 'nullTracer' for each of the 'Tracer's in 'Tracers'
 nullTracers :: Monad m => Tracers m peer blk

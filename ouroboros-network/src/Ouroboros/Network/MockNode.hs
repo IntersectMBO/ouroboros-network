@@ -281,7 +281,7 @@ relayNode :: forall m block.
              )
           => NodeId
           -> Chain block
-          -> NodeChannels m block (ExampleTip block)
+          -> NodeChannels m block (Tip block)
           -> m (StrictTVar m (ChainProducerState block))
 relayNode nid initChain chans = do
   -- Mutable state
@@ -304,7 +304,7 @@ relayNode nid initChain chans = do
     -- state between producers than necessary (here are producers share chain
     -- state and all the reader states, while we could share just the chain).
     startConsumer :: Int
-                  -> Channel m (AnyMessage (ChainSync block (ExampleTip block)))
+                  -> Channel m (AnyMessage (ChainSync block (Tip block)))
                   -> m (StrictTVar m (Chain block))
     startConsumer cid channel = do
       chainVar <- atomically $ newTVar Genesis
@@ -316,9 +316,9 @@ relayNode nid initChain chans = do
                                    consumer
       return chainVar
 
-    startProducer :: Peer (ChainSync block (ExampleTip block)) AsServer StIdle m ()
+    startProducer :: Peer (ChainSync block (Tip block)) AsServer StIdle m ()
                   -> Int
-                  -> Channel m (AnyMessage (ChainSync block (ExampleTip block)))
+                  -> Channel m (AnyMessage (ChainSync block (Tip block)))
                   -> m ()
     startProducer producer pid channel =
       -- use 'void' because 'fork' only works with 'm ()'
@@ -398,7 +398,7 @@ coreNode :: forall m.
      -> DiffTime
      -- ^ slot duration
      -> [Block]
-     -> NodeChannels m Block (ExampleTip Block)
+     -> NodeChannels m Block (Tip Block)
      -> m (StrictTVar m (ChainProducerState Block))
 coreNode nid slotDuration gchain chans = do
   cpsVar <- relayNode nid Genesis chans

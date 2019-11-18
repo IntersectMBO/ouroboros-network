@@ -29,7 +29,7 @@ import Codec.CBOR.Term as CBOR
 import Codec.CBOR.Read
 import Codec.CBOR.Write (toLazyByteString)
 
-import Ouroboros.Network.Block (BlockNo, HeaderHash, Point)
+import Ouroboros.Network.Block (HeaderHash, Point, Tip, encodeTip, decodeTip)
 import Ouroboros.Network.Testing.ConcreteBlock (BlockHeader (..), Block)
 
 import Ouroboros.Network.Protocol.ChainSync.Type as CS
@@ -82,7 +82,7 @@ tests =
 
 -- The concrete/monomorphic types used for the test.
 type MonoCodec x = Codec x Codec.CBOR.Read.DeserialiseFailure IO ByteString
-type CS = ChainSync BlockHeader (Point BlockHeader, BlockNo)
+type CS = ChainSync BlockHeader (Tip BlockHeader)
 type RR = ReqResp DummyBytes DummyBytes
 type BF = BlockFetch Block
 type HS = Handshake VersionNumber CBOR.Term
@@ -91,7 +91,7 @@ type TS = TxSubmission TxId Tx
 codecCS :: MonoCodec CS
 codecCS = codecChainSync Serialise.encode (fmap const Serialise.decode)
                          Serialise.encode (Serialise.decode :: CBOR.Decoder s (Point BlockHeader))
-                         Serialise.encode (Serialise.decode :: CBOR.Decoder s (Point BlockHeader, BlockNo))
+                         (encodeTip Serialise.encode) (decodeTip Serialise.decode)
 
 codecBF :: MonoCodec BF
 codecBF = codecBlockFetch Serialise.encode (fmap const Serialise.decode) Serialise.encode Serialise.decode

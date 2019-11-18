@@ -110,8 +110,8 @@ prop_chainSync ChainSyncClientSetup {..} =
         label "InvalidRollBack" $
         counterexample ("InvalidRollBack intersection: " <> ppPoint intersection) $
         not (AF.withinFragmentBounds intersection synchedFragment)
-      Just (NoMoreIntersection { _ourTip   = Our   (ExampleTip ourHead   _)
-                               , _theirTip = Their (ExampleTip theirHead _)
+      Just (NoMoreIntersection { _ourTip   = Our   (Tip ourHead   _)
+                               , _theirTip = Their (Tip theirHead _)
                                }) ->
         label "NoMoreIntersection" $
         counterexample ("NoMoreIntersection ourHead: " <> ppPoint ourHead <>
@@ -168,7 +168,7 @@ serverId :: CoreNodeId
 serverId = CoreNodeId 1
 
 -- | Terser notation
-type ChainSyncException = ChainSyncClientException TestBlock (ExampleTip TestBlock)
+type ChainSyncException = ChainSyncClientException TestBlock
 
 -- | Using slots as times, a schedule plans updates to a chain on certain
 -- slots.
@@ -210,8 +210,8 @@ newtype ServerUpdates =
   deriving (Show)
 
 type TraceEvent = (SlotNo, Either
-  (TraceChainSyncClientEvent TestBlock (ExampleTip TestBlock))
-  (TraceSendRecv (ChainSync (Header TestBlock) (ExampleTip TestBlock))
+  (TraceChainSyncClientEvent TestBlock)
+  (TraceSendRecv (ChainSync (Header TestBlock) (Tip TestBlock))
                  CoreNodeId
                  CodecFailure))
 
@@ -271,7 +271,7 @@ runChainSync securityParam maxClockSkew (ClientUpdates clientUpdates)
     let chainSyncTracer = contramap Left  tracer
         protocolTracer  = contramap Right tracer
 
-    let chainDbView :: ChainDbView m TestBlock (ExampleTip TestBlock)
+    let chainDbView :: ChainDbView m TestBlock
         chainDbView = ChainDbView
           { getCurrentChain   =
               AF.mapAnchoredFragment TestHeader . AF.anchorNewest k .
@@ -280,7 +280,7 @@ runChainSync securityParam maxClockSkew (ClientUpdates clientUpdates)
           , getCurrentLedger  = snd <$> readTVar varClientState
           , getOurTip         = do
               chain <- fst <$> readTVar varClientState
-              return $ ExampleTip (Chain.headPoint chain) (Chain.headBlockNo chain)
+              return $ Tip (Chain.headPoint chain) (Chain.headBlockNo chain)
           , getIsInvalidBlock = return $
               WithFingerprint (const False) (Fingerprint 0)
           }
@@ -288,11 +288,9 @@ runChainSync securityParam maxClockSkew (ClientUpdates clientUpdates)
         client :: StrictTVar m (AnchoredFragment (Header TestBlock))
                -> Consensus ChainSyncClientPipelined
                     TestBlock
-                    (ExampleTip TestBlock)
                     m
         client = chainSyncClient
                    (pipelineDecisionLowHighMark 10 20)
-                   exampleTipBlock
                    chainSyncTracer
                    (nodeCfg clientId)
                    btime
@@ -301,7 +299,7 @@ runChainSync securityParam maxClockSkew (ClientUpdates clientUpdates)
 
     -- Set up the server
     varChainProducerState <- uncheckedNewTVarM $ initChainProducerState Genesis
-    let server :: ChainSyncServer (Header TestBlock) (ExampleTip TestBlock) m ()
+    let server :: ChainSyncServer (Header TestBlock) (Tip TestBlock) m ()
         server = chainSyncServerExample () varChainProducerState
 
     -- Schedule updates of the client and server chains
