@@ -26,7 +26,8 @@ module Network.Mux.Interface
 
 import           Data.Void (Void)
 
-import           Network.Mux.Types ( MiniProtocolLimits (..)
+import           Network.Mux.Types ( MiniProtocolCode
+                                   , MiniProtocolLimits (..)
                                    , ProtocolEnum (..)
                                    )
 import           Network.Mux.Channel
@@ -83,8 +84,9 @@ newtype MuxApplication (appType :: AppType) peerid ptcl m a b =
 
 data MuxMiniProtocol (appType :: AppType) peerid ptcl m a b =
      MuxMiniProtocol {
-       miniProtocolId  :: !ptcl,
-       miniProtocolRun :: !(RunMiniProtocol appType peerid m a b)
+       miniProtocolId     :: !ptcl,
+       miniProtocolCode   :: !MiniProtocolCode,
+       miniProtocolRun    :: !(RunMiniProtocol appType peerid m a b)
      }
 
 data RunMiniProtocol (appType :: AppType) peerid m a b where

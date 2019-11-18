@@ -52,14 +52,15 @@ data OuroborosApplication (appType :: AppType) peerid ptcl m bytes a b where
 -- idiom. For now, toApplication converts from the bounded enumeration style to
 -- the simple list style that MuxApplication now uses.
 
-toApplication :: (Enum ptcl, Bounded ptcl)
+toApplication :: (Enum ptcl, Bounded ptcl, ProtocolEnum ptcl)
               => OuroborosApplication appType peerid ptcl m LBS.ByteString a b
               -> MuxApplication appType peerid ptcl m a b
 toApplication (OuroborosInitiatorApplication f) =
     MuxApplication
       [ MuxMiniProtocol {
-          miniProtocolId  = ptcl,
-          miniProtocolRun =
+          miniProtocolId   = ptcl,
+          miniProtocolCode = fromProtocolEnum ptcl,
+          miniProtocolRun  =
             InitiatorProtocolOnly
               (\peerid channel -> f peerid ptcl (fromChannel channel))
         }
@@ -68,8 +69,9 @@ toApplication (OuroborosInitiatorApplication f) =
 toApplication (OuroborosResponderApplication f) =
     MuxApplication
       [ MuxMiniProtocol {
-          miniProtocolId  = ptcl,
-          miniProtocolRun =
+          miniProtocolId   = ptcl,
+          miniProtocolCode = fromProtocolEnum ptcl,
+          miniProtocolRun  =
             ResponderProtocolOnly
               (\peerid channel -> f peerid ptcl (fromChannel channel))
         }
@@ -78,8 +80,9 @@ toApplication (OuroborosResponderApplication f) =
 toApplication (OuroborosInitiatorAndResponderApplication f g) =
     MuxApplication
       [ MuxMiniProtocol {
-          miniProtocolId  = ptcl,
-          miniProtocolRun =
+          miniProtocolId   = ptcl,
+          miniProtocolCode = fromProtocolEnum ptcl,
+          miniProtocolRun  =
             InitiatorAndResponderProtocol
               (\peerid channel -> f peerid ptcl (fromChannel channel))
               (\peerid channel -> g peerid ptcl (fromChannel channel))

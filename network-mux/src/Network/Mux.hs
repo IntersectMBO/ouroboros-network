@@ -88,7 +88,6 @@ muxStart
        , Ord ptcl
        , Enum ptcl
        , Show ptcl
-       , ProtocolEnum ptcl
        , MiniProtocolLimits ptcl
        , Eq (Async m ())
        )
@@ -98,8 +97,10 @@ muxStart
     -> MuxBearer m
     -> m ()
 muxStart tracer peerid (MuxApplication ptcls) bearer = do
-    ctlPtclInfo <- mkMiniProtocolInfo Muxcontrol
-    appPtclInfo <- mapM (mkMiniProtocolInfo . AppProtocolId . miniProtocolId) ptcls
+    ctlPtclInfo <- mkMiniProtocolInfo Muxcontrol 0
+    appPtclInfo <- sequence [ mkMiniProtocolInfo (AppProtocolId (miniProtocolId ptcl))
+                                                 (miniProtocolCode ptcl)
+                            | ptcl <- ptcls ]
     let tbl = setupTbl (ctlPtclInfo : appPtclInfo)
     tq <- atomically $ newTBQueue 100
     cnt <- newTVarM 0
@@ -134,16 +135,17 @@ muxStart tracer peerid (MuxApplication ptcls) bearer = do
 
   where
     mkMiniProtocolInfo :: MiniProtocolId ptcl
+                       -> MiniProtocolCode
                        -> m ( MiniProtocolCode
                             , Int64
                             , Int64
                             , StrictTVar m BL.ByteString
                             , StrictTVar m BL.ByteString
                             )
-    mkMiniProtocolInfo mpid = do
+    mkMiniProtocolInfo mpid mpcode = do
         initiatorQ <- newTVarM BL.empty
         responderQ <- newTVarM BL.empty
-        return ( fromProtocolEnum mpid
+        return ( mpcode
                , maximumIngressQueue mpid
                , maximumMessageSize mpid
                , initiatorQ
