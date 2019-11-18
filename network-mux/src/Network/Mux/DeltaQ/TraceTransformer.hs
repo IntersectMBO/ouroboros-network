@@ -15,20 +15,20 @@ import Network.Mux.DeltaQ.TraceStats
 --   `MuxTraceRecvDeltaQSample` no more frequently than every 10
 --   seconds (when in use).
 initDeltaQTracer :: MonadSTM m
-                 => m (Tracer m (MuxTrace pctl) -> Tracer m (MuxTrace pctl))
+                 => m (Tracer m MuxTrace -> Tracer m MuxTrace)
 initDeltaQTracer = newTVarM initialStatsA >>= pure . dqTracer
 
 initDeltaQTracer' :: MonadSTM m
-                  => Tracer m (MuxTrace ptcl)
-                  -> m (Tracer m (MuxTrace ptcl))
+                  => Tracer m MuxTrace
+                  -> m (Tracer m MuxTrace)
 initDeltaQTracer' tr = do
     v <- newTVarM initialStatsA
     return $ dqTracer v tr
 
 dqTracer :: MonadSTM m
          => StrictTVar m StatsA
-         -> Tracer m (MuxTrace pctl)
-         -> Tracer m (MuxTrace pctl)
+         -> Tracer m MuxTrace
+         -> Tracer m MuxTrace
 dqTracer sTvar tr = Tracer go
   where
     go (MuxTraceRecvDeltaQObservation pdu t)

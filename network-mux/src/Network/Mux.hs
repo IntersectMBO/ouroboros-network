@@ -92,7 +92,7 @@ muxStart
        , MiniProtocolLimits ptcl
        , Eq (Async m ())
        )
-    => Tracer m (MuxTrace ptcl)
+    => Tracer m MuxTrace
     -> peerid
     -> MuxApplication appType peerid ptcl m a b
     -> MuxBearer m
@@ -239,13 +239,12 @@ muxControl q = do
 -- 'MiniProtocolMode'.
 --
 muxChannel
-    :: forall m ptcl.
+    :: forall m.
        ( MonadSTM m
-       , MonadSay m
        , MonadThrow m
        , HasCallStack
        )
-    => Tracer m (MuxTrace ptcl)
+    => Tracer m MuxTrace
     -> PerMuxSharedState m
     -> MiniProtocolCode
     -> MiniProtocolMode
@@ -307,7 +306,7 @@ muxChannel tracer pmss mc md msgMax q cnt = do
         return $ Just blob
 
 muxBearerSetState :: MonadSTM m
-                  => Tracer m (MuxTrace ptcl)
+                  => Tracer m MuxTrace
                   -> MuxBearer m
                   -> MuxBearerState
                   -> m ()

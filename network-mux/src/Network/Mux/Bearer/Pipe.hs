@@ -26,7 +26,7 @@ import qualified Network.Mux.Time as Mx
 
 
 pipeAsMuxBearer
-  :: Tracer IO (Mx.MuxTrace ptcl)
+  :: Tracer IO Mx.MuxTrace
   -> Handle -- ^ read handle
   -> Handle -- ^ write handle
   -> IO (MuxBearer IO)
@@ -84,7 +84,7 @@ pipeAsMuxBearer tracer pcRead pcWrite = do
 runMuxWithPipes
     :: ( Mx.ProtocolEnum ptcl, Ord ptcl, Enum ptcl, Bounded ptcl, Show ptcl
        , Mx.MiniProtocolLimits ptcl)
-    => Tracer IO (Mx.WithMuxBearer String (Mx.MuxTrace ptcl))
+    => Tracer IO (Mx.WithMuxBearer String Mx.MuxTrace)
     -> peerid
     -> Mx.MuxApplication appType peerid ptcl IO a b
     -> Handle -- ^ read handle

@@ -96,7 +96,7 @@ import           Ouroboros.Network.Server.ConnectionTable
 -- 'Ouroboros.Network.NodeToClient.connectTo).
 --
 data NetworkConnectTracers ptcl vNumber = NetworkConnectTracers {
-      nctMuxTracer         :: Tracer IO (Mx.WithMuxBearer ConnectionId (Mx.MuxTrace ptcl)),
+      nctMuxTracer         :: Tracer IO (Mx.WithMuxBearer ConnectionId Mx.MuxTrace),
       -- ^ low level mux-network tracer, which logs mux sdu (send and received)
       -- and other low level multiplexing events.
       nctHandshakeTracer   :: Tracer IO (TraceSendRecv (Handshake vNumber CBOR.Term)
@@ -290,7 +290,7 @@ beginConnection
        , Typeable vNumber
        , Show vNumber
        )
-    => Tracer IO (Mx.WithMuxBearer peerid (Mx.MuxTrace ptcl))
+    => Tracer IO (Mx.WithMuxBearer peerid Mx.MuxTrace)
     -> Tracer IO (TraceSendRecv (Handshake vNumber CBOR.Term) peerid (DecoderFailureOrTooMuchInput DeserialiseFailure))
     -> VersionDataCodec extra CBOR.Term
     -> (forall vData. extra vData -> vData -> vData -> Accept)
@@ -373,7 +373,7 @@ fromSocket tblVar sd = Server.Socket
 -- | Tracers required by a server which handles inbound connections.
 --
 data NetworkServerTracers ptcl vNumber = NetworkServerTracers {
-      nstMuxTracer         :: Tracer IO (Mx.WithMuxBearer ConnectionId (Mx.MuxTrace ptcl)),
+      nstMuxTracer         :: Tracer IO (Mx.WithMuxBearer ConnectionId Mx.MuxTrace),
       -- ^ low level mux-network tracer, which logs mux sdu (send and received)
       -- and other low level multiplexing events.
       nstHandshakeTracer   :: Tracer IO (TraceSendRecv (Handshake vNumber CBOR.Term)
