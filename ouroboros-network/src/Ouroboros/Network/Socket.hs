@@ -78,7 +78,7 @@ import           Network.TypedProtocol.Driver (TraceSendRecv)
 import qualified Network.Mux as Mx
 import Network.Mux.DeltaQ.TraceTransformer
 import qualified Network.Mux.Types as Mx
-import           Network.Mux.Interface
+import           Network.Mux.Interface hiding (MiniProtocolLimits(..))
 import qualified Network.Mux.Bearer.Socket as Mx
 
 import           Ouroboros.Network.ErrorPolicy
@@ -158,7 +158,7 @@ connectToNode
      , Typeable vNumber
      , Show vNumber
      , Show ptcl
-     , Mx.MiniProtocolLimits ptcl
+     , MiniProtocolLimits ptcl
      , HasInitiator appType ~ True
      )
   => VersionDataCodec extra CBOR.Term
@@ -211,7 +211,7 @@ connectToNode'
      , Typeable vNumber
      , Show vNumber
      , Show ptcl
-     , Mx.MiniProtocolLimits ptcl
+     , MiniProtocolLimits ptcl
      , HasInitiator appType ~ True
      )
   => VersionDataCodec extra CBOR.Term
@@ -283,7 +283,7 @@ beginConnection
        , Enum ptcl
        , Bounded ptcl
        , Show ptcl
-       , Mx.MiniProtocolLimits ptcl
+       , MiniProtocolLimits ptcl
        , Ord vNumber
        , Enum vNumber
        , Serialise vNumber
@@ -432,7 +432,7 @@ runServerThread
        , Enum ptcl
        , Bounded ptcl
        , Show ptcl
-       , Mx.MiniProtocolLimits ptcl
+       , MiniProtocolLimits ptcl
        , Ord vNumber
        , Enum vNumber
        , Serialise vNumber
@@ -526,7 +526,7 @@ withServerNode
        , Enum ptcl
        , Bounded ptcl
        , Show ptcl
-       , Mx.MiniProtocolLimits ptcl
+       , MiniProtocolLimits ptcl
        , Ord vNumber
        , Enum vNumber
        , Serialise vNumber

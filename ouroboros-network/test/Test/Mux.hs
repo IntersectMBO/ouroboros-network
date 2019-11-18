@@ -41,7 +41,6 @@ import qualified Ouroboros.Network.Protocol.ChainSync.Server as ChainSync
 import qualified Ouroboros.Network.Protocol.ChainSync.Type as ChainSync
 
 import qualified Network.Mux.Bearer.Queues as Mx
-import qualified Network.Mux.Types as Mx
 import qualified Ouroboros.Network.Mux as Mx
 
 

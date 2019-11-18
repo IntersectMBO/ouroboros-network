@@ -36,8 +36,6 @@ import System.Random.SplitMix
 import           Codec.Serialise (DeserialiseFailure)
 import qualified Codec.Serialise as CBOR
 
-import           Network.Mux
-
 import qualified Network.Socket as Socket
 
 import Ouroboros.Network.Block

@@ -84,6 +84,7 @@ data MuxMiniProtocol (appType :: AppType) peerid ptcl m a b =
      MuxMiniProtocol {
        miniProtocolId     :: !ptcl,
        miniProtocolCode   :: !MiniProtocolCode,
+       miniProtocolLimits :: !MiniProtocolLimits,
        miniProtocolRun    :: !(RunMiniProtocol appType peerid m a b)
      }
 

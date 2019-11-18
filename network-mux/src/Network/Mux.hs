@@ -88,7 +88,6 @@ muxStart
        , Ord ptcl
        , Enum ptcl
        , Show ptcl
-       , MiniProtocolLimits ptcl
        , Eq (Async m ())
        )
     => Tracer m MuxTrace
@@ -97,9 +96,10 @@ muxStart
     -> MuxBearer m
     -> m ()
 muxStart tracer peerid (MuxApplication ptcls) bearer = do
-    ctlPtclInfo <- mkMiniProtocolInfo Muxcontrol 0
+    ctlPtclInfo <- mkMiniProtocolInfo Muxcontrol 0 (MiniProtocolLimits 0xffff 0xffff)
     appPtclInfo <- sequence [ mkMiniProtocolInfo (AppProtocolId (miniProtocolId ptcl))
                                                  (miniProtocolCode ptcl)
+                                                 (miniProtocolLimits ptcl)
                             | ptcl <- ptcls ]
     let tbl = setupTbl (ctlPtclInfo : appPtclInfo)
     tq <- atomically $ newTBQueue 100
@@ -110,12 +110,14 @@ muxStart tracer peerid (MuxApplication ptcls) bearer = do
                , (mux cnt pmss, "Muxer")
                ]
             ++ [ (muxControl q, name)
-               | let (_,_,_, initQ, respQ) = ctlPtclInfo
+               | let (_,_, initQ, respQ) = ctlPtclInfo
                , (q, name) <- [(initQ, "Initiator"), (respQ, "Responder")]
                ]
             ++ [ job
-               | ((mc, _qMax, msgMax, initQ, respQ), ptcl) <- zip appPtclInfo ptcls
-               , job <- mpsJob cnt pmss mc msgMax initQ respQ (miniProtocolRun ptcl)
+               | ((mpcode, mplimits, initQ, respQ), ptcl) <- zip appPtclInfo ptcls
+               , job <- mpsJob cnt pmss mpcode
+                               (maximumMessageSize mplimits)
+                               initQ respQ (miniProtocolRun ptcl)
                ]
 
     mask $ \unmask -> do
@@ -136,26 +138,24 @@ muxStart tracer peerid (MuxApplication ptcls) bearer = do
   where
     mkMiniProtocolInfo :: MiniProtocolId ptcl
                        -> MiniProtocolCode
+                       -> MiniProtocolLimits
                        -> m ( MiniProtocolCode
-                            , Int64
-                            , Int64
+                            , MiniProtocolLimits
                             , StrictTVar m BL.ByteString
                             , StrictTVar m BL.ByteString
                             )
-    mkMiniProtocolInfo mpid mpcode = do
+    mkMiniProtocolInfo mpid mpcode mplimits = do
         initiatorQ <- newTVarM BL.empty
         responderQ <- newTVarM BL.empty
         return ( mpcode
-               , maximumIngressQueue mpid
-               , maximumMessageSize mpid
+               , mplimits
                , initiatorQ
                , responderQ
                )
 
     -- Construct the array of TBQueues, one for each protocol id, and each mode
     setupTbl :: [( MiniProtocolCode
-                 , Int64
-                 , Int64
+                 , MiniProtocolLimits
                  , StrictTVar m BL.ByteString
                  , StrictTVar m BL.ByteString
                  )]
@@ -165,18 +165,20 @@ muxStart tracer peerid (MuxApplication ptcls) bearer = do
           (array (mincode, maxcode) $
                  [ (code, Nothing)    | code <- [mincode..maxcode] ]
               ++ [ (code, Just pix)
-                 | (pix, (code, _, _, _, _)) <- zip [0..] ptclsInfo ])
+                 | (pix, (code, _, _, _)) <- zip [0..] ptclsInfo ])
           (array ((minpix, ModeInitiator), (maxpix, ModeResponder))
                  [ ((pix, mode), dispatchInfo)
-                 | (pix, (_mc, qMax, _msgMax, initQ, respQ)) <- zip [0..] ptclsInfo
+                 | (pix, (_mpcode, mplimits, initQ, respQ)) <- zip [0..] ptclsInfo
                  , (mode, q) <- [ (ModeInitiator, initQ)
                                 , (ModeResponder, respQ) ]
-                 , let dispatchInfo = MiniProtocolDispatchInfo q qMax ])
+                 , let dispatchInfo = MiniProtocolDispatchInfo q
+                                        (maximumIngressQueue mplimits)
+                 ])
       where
         minpix = 0
         maxpix = length ptclsInfo - 1
 
-        codes   = [ mc | (mc, _, _, _, _) <- ptclsInfo ]
+        codes   = [ mc | (mc, _, _, _) <- ptclsInfo ]
         mincode = minimum codes
         maxcode = maximum codes
 

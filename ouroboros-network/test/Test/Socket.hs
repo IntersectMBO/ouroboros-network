@@ -43,7 +43,7 @@ import qualified Network.TypedProtocol.ReqResp.Type as ReqResp
 import           Control.Tracer
 
 -- TODO: remove Mx prefixes
-import qualified Network.Mux as Mx
+import qualified Network.Mux as Mx hiding (MiniProtocolLimits(..))
 import qualified Network.Mux.Bearer.Socket as Mx
 import           Ouroboros.Network.Mux as Mx
 

@@ -67,8 +67,22 @@ tests =
     ]
   ]
 
+defaultMiniProtocolLimits :: Mx.MiniProtocolLimits
+defaultMiniProtocolLimits =
+    Mx.MiniProtocolLimits {
+      Mx.maximumMessageSize  = defaultMiniProtocolLimit,
+      Mx.maximumIngressQueue = defaultMiniProtocolLimit
+    }
+
 defaultMiniProtocolLimit :: Int64
 defaultMiniProtocolLimit = 3000000
+
+smallMiniProtocolLimits :: Mx.MiniProtocolLimits
+smallMiniProtocolLimits =
+    Mx.MiniProtocolLimits {
+      Mx.maximumMessageSize  = smallMiniProtocolLimit,
+      Mx.maximumIngressQueue = smallMiniProtocolLimit
+    }
 
 smallMiniProtocolLimit :: Int64
 smallMiniProtocolLimit = 16*1024
@@ -87,26 +101,14 @@ _sayTracer = Tracer say
 data TestProtocols1 = ReqResp1
   deriving (Eq, Ord, Enum, Bounded, Show)
 
-instance Mx.MiniProtocolLimits TestProtocols1 where
-  maximumMessageSize ReqResp1  = defaultMiniProtocolLimit
-  maximumIngressQueue ReqResp1 = defaultMiniProtocolLimit
-
 -- |
 -- Allows to run two copies of ReqResp protocol.t
 --
 data TestProtocols2 = ReqResp2 | ReqResp3
   deriving (Eq, Ord, Enum, Bounded, Show)
 
-instance Mx.MiniProtocolLimits TestProtocols2 where
-  maximumMessageSize _  = defaultMiniProtocolLimit
-  maximumIngressQueue _ = defaultMiniProtocolLimit
-
 data TestProtocolsSmall = ReqRespSmall
   deriving (Eq, Ord, Enum, Bounded, Show)
-
-instance Mx.MiniProtocolLimits TestProtocolsSmall where
-  maximumMessageSize ReqRespSmall  = smallMiniProtocolLimit
-  maximumIngressQueue ReqRespSmall = smallMiniProtocolLimit
 
 --
 -- Generators
@@ -326,6 +328,7 @@ prop_mux_snd_recv messages = ioProperty $ do
                       [ Mx.MuxMiniProtocol {
                           Mx.miniProtocolId  = ReqResp1,
                           Mx.miniProtocolCode= 2,
+                          Mx.miniProtocolLimits = defaultMiniProtocolLimits,
                           Mx.miniProtocolRun = Mx.InitiatorProtocolOnly (const client_mp)
                         }
                       ]
@@ -334,6 +337,7 @@ prop_mux_snd_recv messages = ioProperty $ do
                       [ Mx.MuxMiniProtocol {
                           Mx.miniProtocolId  = ReqResp1,
                           Mx.miniProtocolCode= 2,
+                          Mx.miniProtocolLimits = defaultMiniProtocolLimits,
                           Mx.miniProtocolRun = Mx.ResponderProtocolOnly (const server_mp)
                         }
                       ]
@@ -455,11 +459,13 @@ prop_mux_2_minis msgTrace0 msgTrace1 = ioProperty $ do
                       [ Mx.MuxMiniProtocol {
                           Mx.miniProtocolId  = ReqResp2,
                           Mx.miniProtocolCode= 2,
+                          Mx.miniProtocolLimits = defaultMiniProtocolLimits,
                           Mx.miniProtocolRun = Mx.InitiatorProtocolOnly (const client_mp0)
                         }
                       , Mx.MuxMiniProtocol {
                           Mx.miniProtocolId  = ReqResp3,
                           Mx.miniProtocolCode= 3,
+                          Mx.miniProtocolLimits = defaultMiniProtocolLimits,
                           Mx.miniProtocolRun = Mx.InitiatorProtocolOnly (const client_mp1)
                         }
                       ]
@@ -468,11 +474,13 @@ prop_mux_2_minis msgTrace0 msgTrace1 = ioProperty $ do
                       [ Mx.MuxMiniProtocol {
                           Mx.miniProtocolId  = ReqResp2,
                           Mx.miniProtocolCode= 2,
+                          Mx.miniProtocolLimits = defaultMiniProtocolLimits,
                           Mx.miniProtocolRun = Mx.ResponderProtocolOnly (const server_mp0)
                         }
                       , Mx.MuxMiniProtocol {
                           Mx.miniProtocolId  = ReqResp3,
                           Mx.miniProtocolCode= 3,
+                          Mx.miniProtocolLimits = defaultMiniProtocolLimits,
                           Mx.miniProtocolRun = Mx.ResponderProtocolOnly (const server_mp1)
                         }
                       ]
@@ -527,11 +535,13 @@ prop_mux_starvation (Uneven response0 response1) =
                       [ Mx.MuxMiniProtocol {
                           Mx.miniProtocolId  = ReqResp2,
                           Mx.miniProtocolCode= 2,
+                          Mx.miniProtocolLimits = defaultMiniProtocolLimits,
                           Mx.miniProtocolRun = Mx.InitiatorProtocolOnly (const client_short)
                         }
                       , Mx.MuxMiniProtocol  {
                           Mx.miniProtocolId  = ReqResp3,
                           Mx.miniProtocolCode= 3,
+                          Mx.miniProtocolLimits = defaultMiniProtocolLimits,
                           Mx.miniProtocolRun = Mx.InitiatorProtocolOnly (const client_long)
                         }
                       ]
@@ -540,11 +550,13 @@ prop_mux_starvation (Uneven response0 response1) =
                       [ Mx.MuxMiniProtocol {
                           Mx.miniProtocolId  = ReqResp2,
                           Mx.miniProtocolCode= 2,
+                          Mx.miniProtocolLimits = defaultMiniProtocolLimits,
                           Mx.miniProtocolRun = Mx.ResponderProtocolOnly (const server_short)
                         }
                       , Mx.MuxMiniProtocol {
                           Mx.miniProtocolId  = ReqResp3,
                           Mx.miniProtocolCode= 3,
+                          Mx.miniProtocolLimits = defaultMiniProtocolLimits,
                           Mx.miniProtocolRun = Mx.ResponderProtocolOnly (const server_long)
                         }
                       ]
@@ -647,6 +659,7 @@ prop_demux_sdu a = do
                            [ Mx.MuxMiniProtocol {
                                Mx.miniProtocolId  = ReqRespSmall,
                                Mx.miniProtocolCode= 2,
+                               Mx.miniProtocolLimits = smallMiniProtocolLimits,
                                Mx.miniProtocolRun = Mx.ResponderProtocolOnly (const (serverRsp stopVar))
                              }
                            ]
@@ -673,6 +686,7 @@ prop_demux_sdu a = do
                            [ Mx.MuxMiniProtocol {
                                Mx.miniProtocolId  = ReqResp1,
                                Mx.miniProtocolCode= 2,
+                               Mx.miniProtocolLimits = defaultMiniProtocolLimits,
                                Mx.miniProtocolRun = Mx.ResponderProtocolOnly (const (serverRsp stopVar))
                              }
                            ]
@@ -701,6 +715,7 @@ prop_demux_sdu a = do
                            [ Mx.MuxMiniProtocol {
                                Mx.miniProtocolId  = ReqResp1,
                                Mx.miniProtocolCode= 2,
+                               Mx.miniProtocolLimits = defaultMiniProtocolLimits,
                                Mx.miniProtocolRun = Mx.ResponderProtocolOnly (const (serverRsp stopVar))
                              }
                            ]

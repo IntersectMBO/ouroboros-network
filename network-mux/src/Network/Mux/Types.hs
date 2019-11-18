@@ -120,20 +120,19 @@ instance Bounded ptcl => Bounded (MiniProtocolId ptcl) where
 
 -- | Per Miniprotocol limits
 -- maximumIngressQueue must be >= maximumMessageSize
-class MiniProtocolLimits ptcl where
-    -- | Limit on the maximum message that can be sent over a given miniprotocol.
-    maximumMessageSize :: ptcl -> Int64
-    -- | Limit on the maximum number of bytes that can be queued in the miniprotocol's ingress queue.
-    maximumIngressQueue :: ptcl -> Int64
+data MiniProtocolLimits =
+     MiniProtocolLimits {
+       -- | Limit on the maximum size of an individual message that can be sent
+       -- over a given miniprotocol.
+       --
+       maximumMessageSize :: !Int64,
 
-instance (MiniProtocolLimits ptcl) => MiniProtocolLimits (MiniProtocolId ptcl) where
-    maximumMessageSize Muxcontrol = 0xffff
-    maximumMessageSize DeltaQ     = 0xffff
-    maximumMessageSize (AppProtocolId pid) = maximumMessageSize pid
+       -- | Limit on the maximum number of bytes that can be queued in the
+       -- miniprotocol's ingress queue.
+       --
+       maximumIngressQueue :: !Int64
+     }
 
-    maximumIngressQueue Muxcontrol = 0xffff
-    maximumIngressQueue DeltaQ     = 0xffff
-    maximumIngressQueue (AppProtocolId pid) = maximumIngressQueue pid
 
 --
 -- Mux internal types

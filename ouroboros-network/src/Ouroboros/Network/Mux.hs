@@ -7,6 +7,7 @@ module Ouroboros.Network.Mux
   , OuroborosApplication (..)
   , MuxPeer (..)
   , ProtocolEnum (..)
+  , MiniProtocolLimits (..)
   , runMuxPeer
   , simpleInitiatorApplication
   , simpleResponderApplication
@@ -18,7 +19,9 @@ import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadThrow
 import           Control.Exception (Exception)
 import           Control.Tracer (Tracer)
+
 import           Data.Void (Void)
+import           Data.Int (Int64)
 import qualified Data.ByteString.Lazy as LBS
 
 import           Network.TypedProtocol.Core
@@ -27,8 +30,9 @@ import           Network.TypedProtocol.Channel
 import           Network.TypedProtocol.Driver
 import           Network.TypedProtocol.Pipelined
 
-import           Network.Mux.Interface
-import           Network.Mux.Types
+import           Network.Mux.Interface hiding (MiniProtocolLimits(..))
+import           Network.Mux.Types     hiding (MiniProtocolLimits(..))
+import qualified Network.Mux.Types as Mux
 
 import           Ouroboros.Network.Channel
 
@@ -57,15 +61,24 @@ data OuroborosApplication (appType :: AppType) peerid ptcl m bytes a b where
 class ProtocolEnum ptcl where
     fromProtocolEnum :: ptcl -> MiniProtocolCode
 
-toApplication :: (Enum ptcl, Bounded ptcl, ProtocolEnum ptcl)
+class MiniProtocolLimits ptcl where
+    maximumMessageSize :: ptcl -> Int64
+    maximumIngressQueue :: ptcl -> Int64
+
+toApplication :: (Enum ptcl, Bounded ptcl,
+                  ProtocolEnum ptcl, MiniProtocolLimits ptcl)
               => OuroborosApplication appType peerid ptcl m LBS.ByteString a b
               -> MuxApplication appType peerid ptcl m a b
 toApplication (OuroborosInitiatorApplication f) =
     MuxApplication
       [ MuxMiniProtocol {
-          miniProtocolId   = ptcl,
-          miniProtocolCode = fromProtocolEnum ptcl,
-          miniProtocolRun  =
+          miniProtocolId     = ptcl,
+          miniProtocolCode   = fromProtocolEnum ptcl,
+          miniProtocolLimits = Mux.MiniProtocolLimits {
+                                 Mux.maximumMessageSize  = maximumMessageSize ptcl,
+                                 Mux.maximumIngressQueue = maximumIngressQueue ptcl
+                               },
+          miniProtocolRun    =
             InitiatorProtocolOnly
               (\peerid channel -> f peerid ptcl (fromChannel channel))
         }
@@ -74,9 +87,13 @@ toApplication (OuroborosInitiatorApplication f) =
 toApplication (OuroborosResponderApplication f) =
     MuxApplication
       [ MuxMiniProtocol {
-          miniProtocolId   = ptcl,
-          miniProtocolCode = fromProtocolEnum ptcl,
-          miniProtocolRun  =
+          miniProtocolId     = ptcl,
+          miniProtocolCode   = fromProtocolEnum ptcl,
+          miniProtocolLimits = Mux.MiniProtocolLimits {
+                                 Mux.maximumMessageSize  = maximumMessageSize ptcl,
+                                 Mux.maximumIngressQueue = maximumIngressQueue ptcl
+                               },
+          miniProtocolRun    =
             ResponderProtocolOnly
               (\peerid channel -> f peerid ptcl (fromChannel channel))
         }
@@ -85,9 +102,13 @@ toApplication (OuroborosResponderApplication f) =
 toApplication (OuroborosInitiatorAndResponderApplication f g) =
     MuxApplication
       [ MuxMiniProtocol {
-          miniProtocolId   = ptcl,
-          miniProtocolCode = fromProtocolEnum ptcl,
-          miniProtocolRun  =
+          miniProtocolId     = ptcl,
+          miniProtocolCode   = fromProtocolEnum ptcl,
+          miniProtocolLimits = Mux.MiniProtocolLimits {
+                                 Mux.maximumMessageSize  = maximumMessageSize ptcl,
+                                 Mux.maximumIngressQueue = maximumIngressQueue ptcl
+                               },
+          miniProtocolRun    =
             InitiatorAndResponderProtocol
               (\peerid channel -> f peerid ptcl (fromChannel channel))
               (\peerid channel -> g peerid ptcl (fromChannel channel))
