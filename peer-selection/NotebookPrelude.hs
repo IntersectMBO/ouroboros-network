@@ -19,6 +19,7 @@ module NotebookPrelude
   -- * Showing topologies.
   , module Viz
   , showTopology
+  , dotTopology
 
   -- * Computing statistics
   , module Stats
@@ -68,7 +69,8 @@ import Data.List.NonEmpty as Builder (NonEmpty(..))
 import Data.Word as Builder
 import qualified System.Random.MWC.Distributions as Builder
 
-import qualified Data.Text.Lazy as Text (pack, unpack)
+import qualified Data.Text.Lazy as Lazy (Text)
+import qualified Data.Text.Lazy as Lazy.Text (pack, unpack)
 import Data.GraphViz
 import Data.GraphViz.Printing
 import IHaskell.Display.Graphviz (Graphviz)
@@ -125,7 +127,15 @@ showTopology
   => GraphvizParams Int nl el cl l
   -> AdjacencyMap el nl
   -> Graphviz
-showTopology ps = IHaskell.Display.Graphviz.dot . Text.unpack . renderDot . toDot . toGraphvizDot ps
+showTopology ps = IHaskell.Display.Graphviz.dot . Lazy.Text.unpack . dotTopology ps
+
+-- | Produce the dot file contents for a graph.
+dotTopology
+  :: (Ord cl, Enum nl)
+  => GraphvizParams Int nl el cl l
+  -> AdjacencyMap el nl
+  -> Lazy.Text
+dotTopology ps = renderDot . toDot . toGraphvizDot ps
 
 -- | May be useful when you have the result of an all pairs shortest path
 -- computation, but don't care about the vertex labels.
