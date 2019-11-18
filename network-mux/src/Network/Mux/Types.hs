@@ -362,8 +362,8 @@ instance Show ptcl => Show (MuxTrace ptcl) where
         (unRemoteClockModel $ msTimestamp sdu)
         (show ts)
         (msLength sdu)
-    show (MuxTraceRecvDeltaQSample d sp so dqs dqvm dqvs sdud) = printf "Bearer DeltaQ Sample: duration %.3e packets %d sumBytes %d DeltaQ_S %.3e DeltaQ_VMean %.3e DeltaQ_VStd %.3e sizeDist %s"
-         d sp so dqs dqvm dqvs sdud
+    show (MuxTraceRecvDeltaQSample d sp so dqs dqvm dqvs estR sdud) = printf "Bearer DeltaQ Sample: duration %.3e packets %d sumBytes %d DeltaQ_S %.3e DeltaQ_VMean %.3e DeltaQ_VStd %.3e DeltaQ_estR %.3e sizeDist %s"
+         d sp so dqs dqvm dqvs estR sdud
     show (MuxTraceRecvStart len) = printf "Bearer Receive Start: length %d" len
     show (MuxTraceRecvEnd blob) = printf "Bearer Receive End: length %d" (BL.length blob)
     show (MuxTraceSendStart sdu) = printf "Bearer Send Start: ts: 0x%08x %s %s length %d"
