@@ -8,6 +8,7 @@ module Ouroboros.Network.Mux
   , MuxPeer (..)
   , ProtocolEnum (..)
   , MiniProtocolLimits (..)
+  , MiniProtocolNum (..)
   , runMuxPeer
   , simpleInitiatorApplication
   , simpleResponderApplication
@@ -59,7 +60,7 @@ data OuroborosApplication (appType :: AppType) peerid ptcl m bytes a b where
 -- the simple list style that MuxApplication now uses.
 
 class ProtocolEnum ptcl where
-    fromProtocolEnum :: ptcl -> MiniProtocolCode
+    fromProtocolEnum :: ptcl -> MiniProtocolNum
 
 class MiniProtocolLimits ptcl where
     maximumMessageSize :: ptcl -> Int64
@@ -72,7 +73,7 @@ toApplication :: (Enum ptcl, Bounded ptcl,
 toApplication (OuroborosInitiatorApplication f) =
     MuxApplication
       [ MuxMiniProtocol {
-          miniProtocolCode   = fromProtocolEnum ptcl,
+          miniProtocolNum    = fromProtocolEnum ptcl,
           miniProtocolLimits = Mux.MiniProtocolLimits {
                                  Mux.maximumMessageSize  = maximumMessageSize ptcl,
                                  Mux.maximumIngressQueue = maximumIngressQueue ptcl
@@ -86,7 +87,7 @@ toApplication (OuroborosInitiatorApplication f) =
 toApplication (OuroborosResponderApplication f) =
     MuxApplication
       [ MuxMiniProtocol {
-          miniProtocolCode   = fromProtocolEnum ptcl,
+          miniProtocolNum    = fromProtocolEnum ptcl,
           miniProtocolLimits = Mux.MiniProtocolLimits {
                                  Mux.maximumMessageSize  = maximumMessageSize ptcl,
                                  Mux.maximumIngressQueue = maximumIngressQueue ptcl
@@ -100,7 +101,7 @@ toApplication (OuroborosResponderApplication f) =
 toApplication (OuroborosInitiatorAndResponderApplication f g) =
     MuxApplication
       [ MuxMiniProtocol {
-          miniProtocolCode   = fromProtocolEnum ptcl,
+          miniProtocolNum    = fromProtocolEnum ptcl,
           miniProtocolLimits = Mux.MiniProtocolLimits {
                                  Mux.maximumMessageSize  = maximumMessageSize ptcl,
                                  Mux.maximumIngressQueue = maximumIngressQueue ptcl

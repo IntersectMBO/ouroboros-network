@@ -116,7 +116,7 @@ data TestProtocols1 = ChainSyncPr
   deriving (Eq, Ord, Enum, Bounded, Show)
 
 instance Mx.ProtocolEnum TestProtocols1 where
-  fromProtocolEnum ChainSyncPr = 2
+  fromProtocolEnum ChainSyncPr = MiniProtocolNum 2
 
 instance Mx.MiniProtocolLimits TestProtocols1 where
   maximumMessageSize ChainSyncPr  = defaultMiniProtocolLimit
@@ -129,7 +129,7 @@ data TestProtocols2 = ReqRespPr
   deriving (Eq, Ord, Enum, Bounded, Show)
 
 instance Mx.ProtocolEnum TestProtocols2 where
-  fromProtocolEnum ReqRespPr = 4
+  fromProtocolEnum ReqRespPr = MiniProtocolNum 4
 
 instance Mx.MiniProtocolLimits TestProtocols2 where
   maximumMessageSize ReqRespPr  = defaultMiniProtocolLimit

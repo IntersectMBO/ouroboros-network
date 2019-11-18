@@ -77,7 +77,7 @@ data DemoProtocols = ChainSync
   deriving (Eq, Ord, Enum, Bounded, Show)
 
 instance ProtocolEnum DemoProtocols where
-  fromProtocolEnum ChainSync = 2
+  fromProtocolEnum ChainSync = MiniProtocolNum 2
 
 instance MiniProtocolLimits DemoProtocols where
   maximumMessageSize ChainSync  = defaultMiniProtocolLimit

@@ -75,12 +75,12 @@ demux pmss = forever $ do
     (sdu, _) <- Network.Mux.Types.read $ bearer pmss
     -- say $ printf "demuxing sdu on mid %s mode %s lenght %d " (show $ msId sdu) (show $ msMode sdu)
     --             (BL.length $ msBlob sdu)
-    case lookupMiniProtocol (dispatchTable pmss) (msCode sdu)
+    case lookupMiniProtocol (dispatchTable pmss) (msNum sdu)
                             -- Notice the mode reversal, ModeResponder is
                             -- delivered to ModeInitiator and vice versa:
                             (negMiniProtocolMode $ msMode sdu) of
       Nothing   -> throwM (MuxError MuxUnknownMiniProtocol
-                          ("id = " ++ show (msCode sdu)) callStack)
+                          ("id = " ++ show (msNum sdu)) callStack)
       Just (MiniProtocolDispatchInfo q qMax) ->
         atomically $ do
           buf <- readTVar q
@@ -88,6 +88,6 @@ demux pmss = forever $ do
               then writeTVar q $ BL.append buf (msBlob sdu)
               else throwM $ MuxError MuxIngressQueueOverRun
                                 (printf "Ingress Queue overrun on %s %s"
-                                 (show $ msCode sdu) (show $ msMode sdu))
+                                 (show $ msNum sdu) (show $ msMode sdu))
                                 callStack
 

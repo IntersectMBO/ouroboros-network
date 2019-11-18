@@ -122,7 +122,7 @@ mux cnt pmss = go
 -- first.
 processSingleWanton :: MonadSTM m
                     => PerMuxSharedState m
-                    -> MiniProtocolCode
+                    -> MiniProtocolNum
                     -> MiniProtocolMode
                     -> Wanton m
                     -> StrictTVar m Int

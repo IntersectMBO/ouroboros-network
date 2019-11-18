@@ -67,7 +67,7 @@ instance Mx.MiniProtocolLimits TestProtocols where
     maximumIngressQueue _ = 0xffff
 
 instance Mx.ProtocolEnum TestProtocols where
-  fromProtocolEnum ChainSyncPr = 2
+  fromProtocolEnum ChainSyncPr = Mx.MiniProtocolNum 2
 
 
 demo :: forall m block.

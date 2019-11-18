@@ -3,13 +3,15 @@
 {-# LANGUAGE NamedFieldPuns            #-}
 {-# LANGUAGE RankNTypes                #-}
 {-# LANGUAGE TypeFamilies              #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving#-}
+
 
 module Network.Mux.Types (
       MiniProtocolDispatch (..)
     , MiniProtocolDispatchInfo (..)
     , lookupMiniProtocol
     , MiniProtocolLimits (..)
-    , MiniProtocolCode
+    , MiniProtocolNum (..)
     , MiniProtocolMode (..)
     , MuxBearer (..)
     , muxBearerAsControlChannel
@@ -68,7 +70,8 @@ remoteClockPrecision = 1e-6
 -- Note: the values @0@ and @1@ are reserved for 'Muxcontrol' and 'DeltaQ'
 -- messages.
 --
-type MiniProtocolCode = Word16
+newtype MiniProtocolNum = MiniProtocolNum Word16
+  deriving (Eq, Ord, Enum, Ix, Show)
 
 -- | Per Miniprotocol limits
 -- maximumIngressQueue must be >= maximumMessageSize
@@ -92,7 +95,7 @@ data MiniProtocolLimits =
 
 data MiniProtocolDispatch m =
      MiniProtocolDispatch
-       !(Array MiniProtocolCode (Maybe MiniProtocolIx))
+       !(Array MiniProtocolNum (Maybe MiniProtocolIx))
        !(Array (MiniProtocolIx, MiniProtocolMode)
                (MiniProtocolDispatchInfo m))
 
@@ -108,7 +111,7 @@ data MiniProtocolDispatchInfo m =
 
 
 lookupMiniProtocol :: MiniProtocolDispatch m
-                   -> MiniProtocolCode
+                   -> MiniProtocolNum
                    -> MiniProtocolMode
                    -> Maybe (MiniProtocolDispatchInfo m)
 lookupMiniProtocol (MiniProtocolDispatch codeTbl ptclTbl) code mode
@@ -118,16 +121,16 @@ lookupMiniProtocol (MiniProtocolDispatch codeTbl ptclTbl) code mode
 
 data MuxSDU = MuxSDU {
       msTimestamp :: !RemoteClockModel
-    , msCode      :: !MiniProtocolCode
+    , msNum       :: !MiniProtocolNum
     , msMode      :: !MiniProtocolMode
     , msLength    :: !Word16
     , msBlob      :: !BL.ByteString
     }
 
 data MuxSDUHeader = MuxSDUHeader {
-      mshTimestamp :: !RemoteClockModel
-    , mshIdAndMode :: !Word16
-    , mshLength    :: !Word16
+      mshTimestamp  :: !RemoteClockModel
+    , mshNumAndMode :: !Word16
+    , mshLength     :: !Word16
     }
 
 -- | A TranslocationServiceRequest is a demand for the translocation
@@ -136,7 +139,7 @@ data MuxSDUHeader = MuxSDUHeader {
 --  responsible for the segmentation of concrete representation into
 --  appropriate SDU's for onward transmission.
 data TranslocationServiceRequest m
-  = TLSRDemand MiniProtocolCode MiniProtocolMode (Wanton m)
+  = TLSRDemand MiniProtocolNum MiniProtocolMode (Wanton m)
 
 -- | A Wanton represent the concrete data to be translocated, note that the
 --  TMVar becoming empty indicates -- that the last fragment of the data has
@@ -208,7 +211,7 @@ muxBearerAsControlChannel bearer mode = Channel {
       wrap blob = MuxSDU {
             -- it will be filled when the 'MuxSDU' is send by the 'bearer'
             msTimestamp = RemoteClockModel 0,
-            msCode = 0,
+            msNum  = MiniProtocolNum 0,
             msMode = mode,
             msLength = fromIntegral $ BL.length blob,
             msBlob = blob
@@ -293,10 +296,10 @@ data MuxTrace =
     | MuxTraceStateChange MuxBearerState MuxBearerState
     | MuxTraceCleanExit String
     | MuxTraceExceptionExit SomeException String
-    | MuxTraceChannelRecvStart MiniProtocolCode
-    | MuxTraceChannelRecvEnd MiniProtocolCode BL.ByteString
-    | MuxTraceChannelSendStart MiniProtocolCode BL.ByteString
-    | MuxTraceChannelSendEnd MiniProtocolCode
+    | MuxTraceChannelRecvStart MiniProtocolNum
+    | MuxTraceChannelRecvEnd MiniProtocolNum BL.ByteString
+    | MuxTraceChannelSendStart MiniProtocolNum BL.ByteString
+    | MuxTraceChannelSendEnd MiniProtocolNum
     | MuxTraceHandshakeStart
     | MuxTraceHandshakeClientEnd DiffTime
     | MuxTraceHandshakeServerEnd
@@ -307,7 +310,7 @@ instance Show MuxTrace where
     show MuxTraceRecvHeaderStart = printf "Bearer Receive Header Start"
     show (MuxTraceRecvHeaderEnd sdu) = printf "Bearer Receive Header End: ts: 0x%08x %s %s len %d"
         (unRemoteClockModel $ msTimestamp sdu)
-        (show $ msCode sdu)
+        (show $ msNum sdu)
         (show $ msMode sdu)
         (msLength sdu)
     show (MuxTraceRecvPayloadStart len) = printf "Bearer Receive Body Start: length %d" len
@@ -322,7 +325,7 @@ instance Show MuxTrace where
     show (MuxTraceRecvEnd blob) = printf "Bearer Receive End: length %d" (BL.length blob)
     show (MuxTraceSendStart sdu) = printf "Bearer Send Start: ts: 0x%08x %s %s length %d chunks %d"
         (unRemoteClockModel $ msTimestamp sdu)
-        (show $ msCode sdu)
+        (show $ msNum sdu)
         (show $ msMode sdu)
         (BL.length $ msBlob sdu)
         (length $ BL.toChunks $ msBlob sdu)

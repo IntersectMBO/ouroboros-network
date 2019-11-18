@@ -36,7 +36,7 @@ queuesAsMuxBearer
   -> TBQueue m BL.ByteString
   -> TBQueue m BL.ByteString
   -> Word16
-  -> Maybe (TBQueue m (Mx.MiniProtocolCode, Mx.MiniProtocolMode, Time))
+  -> Maybe (TBQueue m (Mx.MiniProtocolNum, Mx.MiniProtocolMode, Time))
   -> m (MuxBearer m)
 queuesAsMuxBearer tracer writeQueue readQueue sduSize traceQueue = do
       mxState <- atomically $ newTVar Mx.Larval
@@ -63,7 +63,7 @@ queuesAsMuxBearer tracer writeQueue readQueue sduSize traceQueue = do
                         Just q  -> atomically $ do
                             full <- isFullTBQueue q
                             if full then return ()
-                                    else writeTBQueue q (Mx.msCode header, Mx.msMode header, ts)
+                                    else writeTBQueue q (Mx.msNum header, Mx.msMode header, ts)
                         Nothing -> return ()
                   traceWith tracer $ Mx.MuxTraceRecvPayloadEnd payload
                   return (header {Mx.msBlob = payload}, ts)
@@ -97,7 +97,7 @@ runMuxWithQueues
   -> TBQueue m BL.ByteString
   -> TBQueue m BL.ByteString
   -> Word16
-  -> Maybe (TBQueue m (Mx.MiniProtocolCode, Mx.MiniProtocolMode, Time))
+  -> Maybe (TBQueue m (Mx.MiniProtocolNum, Mx.MiniProtocolMode, Time))
   -> m (Maybe SomeException)
 runMuxWithQueues tracer peerid app wq rq mtu trace =
     let muxTracer = Mx.WithMuxBearer "Queue" `contramap` tracer in

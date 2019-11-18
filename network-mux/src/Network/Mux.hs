@@ -10,7 +10,7 @@ module Network.Mux (
       muxStart
     , muxBearerSetState
     , MuxSDU (..)
-    , MiniProtocolCode
+    , MiniProtocolNum (..)
     , MiniProtocolLimits (..)
     , MiniProtocolMode (..)
     , MuxBearerState (..)
@@ -92,8 +92,9 @@ muxStart
     -> MuxBearer m
     -> m ()
 muxStart tracer peerid (MuxApplication ptcls) bearer = do
-    ctlPtclInfo <- mkMiniProtocolInfo 0 (MiniProtocolLimits 0xffff 0xffff)
-    appPtclInfo <- sequence [ mkMiniProtocolInfo (miniProtocolCode ptcl)
+    ctlPtclInfo <- mkMiniProtocolInfo (MiniProtocolNum 0)
+                                      (MiniProtocolLimits 0xffff 0xffff)
+    appPtclInfo <- sequence [ mkMiniProtocolInfo (miniProtocolNum ptcl)
                                                  (miniProtocolLimits ptcl)
                             | ptcl <- ptcls ]
     let tbl = setupTbl (ctlPtclInfo : appPtclInfo)
@@ -131,9 +132,9 @@ muxStart tracer peerid (MuxApplication ptcls) bearer = do
       muxBearerSetState tracer bearer Dead
 
   where
-    mkMiniProtocolInfo :: MiniProtocolCode
+    mkMiniProtocolInfo :: MiniProtocolNum
                        -> MiniProtocolLimits
-                       -> m ( MiniProtocolCode
+                       -> m ( MiniProtocolNum
                             , MiniProtocolLimits
                             , StrictTVar m BL.ByteString
                             , StrictTVar m BL.ByteString
@@ -148,7 +149,7 @@ muxStart tracer peerid (MuxApplication ptcls) bearer = do
                )
 
     -- Construct the array of TBQueues, one for each protocol id, and each mode
-    setupTbl :: [( MiniProtocolCode
+    setupTbl :: [( MiniProtocolNum
                  , MiniProtocolLimits
                  , StrictTVar m BL.ByteString
                  , StrictTVar m BL.ByteString
@@ -180,7 +181,7 @@ muxStart tracer peerid (MuxApplication ptcls) bearer = do
     mpsJob
       :: StrictTVar m Int
       -> PerMuxSharedState m
-      -> MiniProtocolCode
+      -> MiniProtocolNum
       -> Int64
       -> StrictTVar m BL.ByteString
       -> StrictTVar m BL.ByteString
@@ -244,7 +245,7 @@ muxChannel
        )
     => Tracer m MuxTrace
     -> PerMuxSharedState m
-    -> MiniProtocolCode
+    -> MiniProtocolNum
     -> MiniProtocolMode
     -> Int64
     -> StrictTVar m BL.ByteString

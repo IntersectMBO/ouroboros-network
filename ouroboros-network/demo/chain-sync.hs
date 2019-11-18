@@ -136,7 +136,7 @@ data DemoProtocol0 = PingPong0
   deriving (Eq, Ord, Enum, Bounded, Show)
 
 instance ProtocolEnum DemoProtocol0 where
-  fromProtocolEnum PingPong0 = 2
+  fromProtocolEnum PingPong0 = MiniProtocolNum 2
 
 instance MiniProtocolLimits DemoProtocol0 where
   maximumMessageSize _ = maxBound
@@ -226,8 +226,8 @@ data DemoProtocol1 = PingPong1 | PingPong1'
   deriving (Eq, Ord, Enum, Bounded, Show)
 
 instance ProtocolEnum DemoProtocol1 where
-  fromProtocolEnum PingPong1  = 2
-  fromProtocolEnum PingPong1' = 3
+  fromProtocolEnum PingPong1  = MiniProtocolNum 2
+  fromProtocolEnum PingPong1' = MiniProtocolNum 3
 
 instance MiniProtocolLimits DemoProtocol1 where
   maximumMessageSize _ = maxBound
@@ -327,7 +327,7 @@ data DemoProtocol2 = ChainSync2
   deriving (Eq, Ord, Enum, Bounded, Show)
 
 instance ProtocolEnum DemoProtocol2 where
-  fromProtocolEnum ChainSync2  = 2
+  fromProtocolEnum ChainSync2  = MiniProtocolNum 2
 
 instance MiniProtocolLimits DemoProtocol2 where
   maximumMessageSize _ = maxBound
@@ -415,8 +415,8 @@ data DemoProtocol3 = BlockFetch3 | ChainSync3
   deriving (Eq, Ord, Enum, Bounded, Show)
 
 instance ProtocolEnum DemoProtocol3 where
-  fromProtocolEnum ChainSync3  = 2
-  fromProtocolEnum BlockFetch3 = 3
+  fromProtocolEnum ChainSync3  = MiniProtocolNum 2
+  fromProtocolEnum BlockFetch3 = MiniProtocolNum 3
 
 instance MiniProtocolLimits DemoProtocol3 where
   maximumMessageSize _ = maxBound

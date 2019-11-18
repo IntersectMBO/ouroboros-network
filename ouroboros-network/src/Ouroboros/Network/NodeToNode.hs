@@ -141,9 +141,9 @@ data NodeToNodeProtocols = ChainSyncWithHeadersPtcl
 -- wireshark plugins.
 --
 instance ProtocolEnum NodeToNodeProtocols where
-  fromProtocolEnum ChainSyncWithHeadersPtcl = 2
-  fromProtocolEnum BlockFetchPtcl           = 3
-  fromProtocolEnum TxSubmissionPtcl         = 4
+  fromProtocolEnum ChainSyncWithHeadersPtcl = MiniProtocolNum 2
+  fromProtocolEnum BlockFetchPtcl           = MiniProtocolNum 3
+  fromProtocolEnum TxSubmissionPtcl         = MiniProtocolNum 4
 
 instance MiniProtocolLimits NodeToNodeProtocols where
   -- TODO: provide sensible limits

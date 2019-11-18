@@ -310,7 +310,7 @@ prop_mux_snd_recv messages = ioProperty $ do
 
     let clientApp = Mx.MuxApplication
                       [ Mx.MuxMiniProtocol {
-                          Mx.miniProtocolCode   = 2,
+                          Mx.miniProtocolNum    = Mx.MiniProtocolNum 2,
                           Mx.miniProtocolLimits = defaultMiniProtocolLimits,
                           Mx.miniProtocolRun    = Mx.InitiatorProtocolOnly (const client_mp)
                         }
@@ -318,7 +318,7 @@ prop_mux_snd_recv messages = ioProperty $ do
 
         serverApp = Mx.MuxApplication
                       [ Mx.MuxMiniProtocol {
-                          Mx.miniProtocolCode   = 2,
+                          Mx.miniProtocolNum    = Mx.MiniProtocolNum 2,
                           Mx.miniProtocolLimits = defaultMiniProtocolLimits,
                           Mx.miniProtocolRun    = Mx.ResponderProtocolOnly (const server_mp)
                         }
@@ -439,12 +439,12 @@ prop_mux_2_minis msgTrace0 msgTrace1 = ioProperty $ do
 
     let clientApp = Mx.MuxApplication
                       [ Mx.MuxMiniProtocol {
-                          Mx.miniProtocolCode   = 2,
+                          Mx.miniProtocolNum    = Mx.MiniProtocolNum 2,
                           Mx.miniProtocolLimits = defaultMiniProtocolLimits,
                           Mx.miniProtocolRun    = Mx.InitiatorProtocolOnly (const client_mp0)
                         }
                       , Mx.MuxMiniProtocol {
-                          Mx.miniProtocolCode   = 3,
+                          Mx.miniProtocolNum    = Mx.MiniProtocolNum 3,
                           Mx.miniProtocolLimits = defaultMiniProtocolLimits,
                           Mx.miniProtocolRun    = Mx.InitiatorProtocolOnly (const client_mp1)
                         }
@@ -452,12 +452,12 @@ prop_mux_2_minis msgTrace0 msgTrace1 = ioProperty $ do
 
         serverApp = Mx.MuxApplication
                       [ Mx.MuxMiniProtocol {
-                          Mx.miniProtocolCode   = 2,
+                          Mx.miniProtocolNum    = Mx.MiniProtocolNum 2,
                           Mx.miniProtocolLimits = defaultMiniProtocolLimits,
                           Mx.miniProtocolRun    = Mx.ResponderProtocolOnly (const server_mp0)
                         }
                       , Mx.MuxMiniProtocol {
-                          Mx.miniProtocolCode   = 3,
+                          Mx.miniProtocolNum    = Mx.MiniProtocolNum 3,
                           Mx.miniProtocolLimits = defaultMiniProtocolLimits,
                           Mx.miniProtocolRun    = Mx.ResponderProtocolOnly (const server_mp1)
                         }
@@ -511,12 +511,12 @@ prop_mux_starvation (Uneven response0 response1) =
 
     let clientApp = Mx.MuxApplication
                       [ Mx.MuxMiniProtocol {
-                          Mx.miniProtocolCode   = 2,
+                          Mx.miniProtocolNum    = Mx.MiniProtocolNum 2,
                           Mx.miniProtocolLimits = defaultMiniProtocolLimits,
                           Mx.miniProtocolRun    = Mx.InitiatorProtocolOnly (const client_short)
                         }
                       , Mx.MuxMiniProtocol  {
-                          Mx.miniProtocolCode   = 3,
+                          Mx.miniProtocolNum    = Mx.MiniProtocolNum 3,
                           Mx.miniProtocolLimits = defaultMiniProtocolLimits,
                           Mx.miniProtocolRun    = Mx.InitiatorProtocolOnly (const client_long)
                         }
@@ -524,12 +524,12 @@ prop_mux_starvation (Uneven response0 response1) =
 
         serverApp = Mx.MuxApplication
                       [ Mx.MuxMiniProtocol {
-                          Mx.miniProtocolCode   = 2,
+                          Mx.miniProtocolNum    = Mx.MiniProtocolNum 2,
                           Mx.miniProtocolLimits = defaultMiniProtocolLimits,
                           Mx.miniProtocolRun    = Mx.ResponderProtocolOnly (const server_short)
                         }
                       , Mx.MuxMiniProtocol {
-                          Mx.miniProtocolCode   = 3,
+                          Mx.miniProtocolNum    = Mx.MiniProtocolNum 3,
                           Mx.miniProtocolLimits = defaultMiniProtocolLimits,
                           Mx.miniProtocolRun    = Mx.ResponderProtocolOnly (const server_long)
                         }
@@ -631,7 +631,7 @@ prop_demux_sdu a = do
         -- triggered by a single segment.
         let server_mps = Mx.MuxApplication
                            [ Mx.MuxMiniProtocol {
-                               Mx.miniProtocolCode   = 2,
+                               Mx.miniProtocolNum    = Mx.MiniProtocolNum 2,
                                Mx.miniProtocolLimits = smallMiniProtocolLimits,
                                Mx.miniProtocolRun    = Mx.ResponderProtocolOnly (const (serverRsp stopVar))
                              }
@@ -657,7 +657,7 @@ prop_demux_sdu a = do
 
         let server_mps = Mx.MuxApplication
                            [ Mx.MuxMiniProtocol {
-                               Mx.miniProtocolCode   = 2,
+                               Mx.miniProtocolNum    = Mx.MiniProtocolNum 2,
                                Mx.miniProtocolLimits = defaultMiniProtocolLimits,
                                Mx.miniProtocolRun    = Mx.ResponderProtocolOnly (const (serverRsp stopVar))
                              }
@@ -685,7 +685,7 @@ prop_demux_sdu a = do
 
         let server_mps = Mx.MuxApplication
                            [ Mx.MuxMiniProtocol {
-                               Mx.miniProtocolCode   = 2,
+                               Mx.miniProtocolNum    = Mx.MiniProtocolNum 2,
                                Mx.miniProtocolLimits = defaultMiniProtocolLimits,
                                Mx.miniProtocolRun    = Mx.ResponderProtocolOnly (const (serverRsp stopVar))
                              }
@@ -732,7 +732,7 @@ prop_demux_sdu a = do
     writeSdu queue payload = do
         let (!frag, !rest) = BL.splitAt 0xffff payload
             sdu' = Mx.MuxSDU (Mx.RemoteClockModel 0)
-                             (2 :: Mx.MiniProtocolCode)
+                             (Mx.MiniProtocolNum 2)
                               Mx.ModeInitiator
                              (fromIntegral $ BL.length frag) frag
             !pkt = Mx.encodeMuxSDU (sdu' :: Mx.MuxSDU)
