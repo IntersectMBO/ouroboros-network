@@ -66,6 +66,7 @@ data family NodeConfig p :: *
 -- block representation.
 class ( Show (ChainState    p)
       , Show (ValidationErr p)
+      , Eq   (ValidationErr p)
       , NoUnexpectedThunks (NodeConfig  p)
       , NoUnexpectedThunks (ChainState  p)
       , NoUnexpectedThunks (NodeState   p)

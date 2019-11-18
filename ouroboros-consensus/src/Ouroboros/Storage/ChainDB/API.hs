@@ -1,3 +1,4 @@
+{-# LANGUAGE AllowAmbiguousTypes        #-}
 {-# LANGUAGE DeriveAnyClass             #-}
 {-# LANGUAGE DeriveFunctor              #-}
 {-# LANGUAGE DeriveGeneric              #-}
@@ -7,6 +8,7 @@
 {-# LANGUAGE PatternSynonyms            #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE StandaloneDeriving         #-}
+{-# LANGUAGE TypeApplications           #-}
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE UndecidableInstances       #-}
 
@@ -38,7 +40,7 @@ import qualified Codec.CBOR.Read as CBOR
 import           Control.Exception (Exception)
 import qualified Data.ByteString.Lazy as Lazy
 import           Data.Function (on)
-import           Data.Typeable (Typeable)
+import           Data.Typeable
 import           GHC.Generics (Generic)
 import           GHC.Stack
 
@@ -490,7 +492,7 @@ instance Eq (Reader m blk a) where
 -- what went wrong, in case sysadmins want to investigate the disk failure.
 -- The Chain DB itself does not differentiate; all disk failures are treated
 -- equal and all trigger the same recovery procedure.
-data ChainDbFailure blk =
+data ChainDbFailure =
     -- | A block in the immutable DB failed to parse
     ImmDbParseFailure (Either EpochNo SlotNo) CBOR.DeserialiseFailure
 
@@ -510,7 +512,8 @@ data ChainDbFailure blk =
     -- gets thrown when the block at the given slot (1st argument) in the
     -- immutable DB had another (3rd argument) hash than the expected one (2nd
     -- argument).
-  | ImmDbHashMismatch (Point blk) (HeaderHash blk) (HeaderHash blk)
+  | forall blk. (Typeable blk, StandardHash blk) =>
+      ImmDbHashMismatch (Point blk) (HeaderHash blk) (HeaderHash blk)
 
     -- | We requested an iterator that was immediately exhausted
     --
@@ -519,7 +522,8 @@ data ChainDbFailure blk =
     -- exhausted immediately: the start position is inclusive, the DB would
     -- throw an exception if the slot number is beyond the last written block,
     -- and the DB does not contain any trailing empty slots.
-  | ImmDbUnexpectedIteratorExhausted (Point blk)
+  | forall blk. (Typeable blk, StandardHash blk) =>
+      ImmDbUnexpectedIteratorExhausted (Point blk)
 
     -- | The immutable DB threw an "unexpected error"
     --
@@ -527,22 +531,25 @@ data ChainDbFailure blk =
   | ImmDbFailure ImmDB.UnexpectedError
 
     -- | A block in the volatile DB failed to parse
-  | VolDbParseFailure (HeaderHash blk) CBOR.DeserialiseFailure
+  | forall blk. (Typeable blk, StandardHash blk) =>
+      VolDbParseFailure (HeaderHash blk) CBOR.DeserialiseFailure
 
     -- | When parsing a block from the volatile DB, we got some trailing data
-  | VolDbTrailingData (HeaderHash blk) Lazy.ByteString
+  | forall blk. (Typeable blk, StandardHash blk) =>
+      VolDbTrailingData (HeaderHash blk) Lazy.ByteString
 
     -- | Block missing from the volatile DB
     --
     -- This exception gets thrown when a block that we /know/ should exist
     -- in the DB (for example, because its hash exists in the volatile DB's
     -- successor index) nonetheless was not found
-  | VolDbMissingBlock (HeaderHash blk)
+  | forall blk. (Typeable blk, StandardHash blk) =>
+      VolDbMissingBlock (HeaderHash blk)
 
     -- | The volatile DB throw an "unexpected error"
     --
     -- These are errors indicative of a disk failure (as opposed to API misuse)
-  | VolDbFailure (VolDB.UnexpectedError (HeaderHash blk))
+  | VolDbFailure VolDB.UnexpectedError
 
     -- | The ledger DB threw a file-system error
   | LgrDbFailure FsError
@@ -550,11 +557,13 @@ data ChainDbFailure blk =
     -- | Block missing from the chain DB
     --
     -- Thrown when we are not sure in which DB the block /should/ have been.
-  | ChainDbMissingBlock (Point blk)
-  deriving (Show, Typeable)
+  | forall blk. (Typeable blk, StandardHash blk) =>
+      ChainDbMissingBlock (Point blk)
+  deriving (Typeable)
 
-instance (StandardHash blk, Typeable blk) => Exception (ChainDbFailure blk)
+deriving instance Show ChainDbFailure
 
+instance Exception ChainDbFailure
 
 {-------------------------------------------------------------------------------
   Exceptions
@@ -563,7 +572,7 @@ instance (StandardHash blk, Typeable blk) => Exception (ChainDbFailure blk)
 -- | Database error
 --
 -- Thrown upon incorrect use: invalid input.
-data ChainDbError blk =
+data ChainDbError =
     -- | Thrown when requesting the genesis block from the database
     --
     -- Although the genesis block has a hash and a point associated with it,
@@ -589,7 +598,26 @@ data ChainDbError blk =
     -- * The lower and upper bound are not on the same chain.
     -- * The bounds don't make sense, e.g., the lower bound starts after the
     --   upper bound, or the lower bound starts from genesis, /inclusive/.
-  | InvalidIteratorRange (StreamFrom blk) (StreamTo blk)
-  deriving (Eq, Show, Typeable)
+  | forall blk. (Typeable blk, StandardHash blk) =>
+      InvalidIteratorRange (StreamFrom blk) (StreamTo blk)
+  deriving (Typeable)
 
-instance (StandardHash blk, Typeable blk) => Exception (ChainDbError blk)
+deriving instance Show ChainDbError
+
+instance Eq ChainDbError where
+  NoGenesisBlock == NoGenesisBlock = True
+  NoGenesisBlock == _              = False
+
+  ClosedDBError == ClosedDBError = True
+  ClosedDBError == _             = False
+
+  ClosedReaderError rid == ClosedReaderError rid' = rid == rid'
+  ClosedReaderError _   == _                      = False
+
+  InvalidIteratorRange (fr :: StreamFrom blk) to == InvalidIteratorRange (fr' :: StreamFrom blk') to' =
+    case eqT @blk @blk' of
+      Nothing   -> False
+      Just Refl -> fr == fr' && to == to'
+  InvalidIteratorRange _ _ == _ = False
+
+instance Exception ChainDbError

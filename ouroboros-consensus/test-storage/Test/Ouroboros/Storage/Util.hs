@@ -9,8 +9,6 @@ module Test.Ouroboros.Storage.Util where
 import           Control.Exception (Exception, SomeException)
 import qualified Control.Exception as E
 
-import           Data.Typeable
-
 import           System.Directory (getTemporaryDirectory)
 import           System.IO.Temp (withTempDirectory)
 
@@ -114,9 +112,8 @@ expectImmDBResult :: (a -> Assertion)
                   -> Assertion
 expectImmDBResult = expectResult prettyImmutableDBError
 
-expectVolDBResult :: (Show blockId)
-                  => (a -> Assertion)
-                  -> Either (VolatileDBError blockId) a
+expectVolDBResult :: (a -> Assertion)
+                  -> Either VolatileDBError a
                   -> Assertion
 expectVolDBResult = expectResult show
 
@@ -176,9 +173,9 @@ apiEquivalenceImmDB = apiEquivalence try prettyImmutableDBError sameImmutableDBE
   where
     try = tryImmDB EH.exceptions EH.exceptions
 
-apiEquivalenceVolDB :: (HasCallStack, Eq a, Show a, Show blockId, Typeable blockId, Eq blockId)
-                    => (Either (VolatileDBError blockId) a -> Assertion)
-                    -> (forall h. HasFS IO h -> ErrorHandling (VolatileDBError blockId) IO -> IO a)
+apiEquivalenceVolDB :: (HasCallStack, Eq a, Show a)
+                    => (Either VolatileDBError a -> Assertion)
+                    -> (forall h. HasFS IO h -> ErrorHandling VolatileDBError IO -> IO a)
                     -> Assertion
 apiEquivalenceVolDB = apiEquivalence try show sameVolatileDBError
   where

@@ -18,6 +18,7 @@ import           Data.List (intercalate, span, unfoldr)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (fromMaybe, isJust)
+import           Data.Typeable
 
 import           Test.QuickCheck
 import           Test.Tasty
@@ -63,6 +64,7 @@ import           Ouroboros.Consensus.Util.ResourceRegistry
 import           Ouroboros.Consensus.Util.STM (Fingerprint (..),
                      WithFingerprint (..))
 
+import           Test.Util.BlockchainTime
 import           Test.Util.Orphans.Arbitrary ()
 import           Test.Util.Orphans.IOLike ()
 import           Test.Util.TestBlock
@@ -105,11 +107,11 @@ prop_chainSync ChainSyncClientSetup {..} =
       Just (ForkTooDeep { _intersection = intersection })     ->
         label "ForkTooDeep" $
         counterexample ("ForkTooDeep intersection: " <> ppPoint intersection) $
-        not (AF.withinFragmentBounds intersection clientFragment)
+        not (withinFragmentBounds intersection clientFragment)
       Just (InvalidRollBack { _newPoint = intersection }) ->
         label "InvalidRollBack" $
         counterexample ("InvalidRollBack intersection: " <> ppPoint intersection) $
-        not (AF.withinFragmentBounds intersection synchedFragment)
+        not (withinFragmentBounds intersection synchedFragment)
       Just (NoMoreIntersection { _ourTip   = Our   (Tip ourHead   _)
                                , _theirTip = Their (Tip theirHead _)
                                }) ->
@@ -144,6 +146,18 @@ prop_chainSync ChainSyncClientSetup {..} =
       Just (_ourPrefix, _theirPrefix, ourSuffix, _theirSuffix) ->
         fromIntegral (AF.length ourSuffix) <= k
 
+-- | Generalization of 'AF.withinFragmentBounds' that returns false if the
+-- types don't line up
+--
+-- This kind of "dynamic type checking" is a bit ugly but is only necessary
+-- for the tests.
+withinFragmentBounds :: forall blk blk'. (HasHeader blk, Typeable blk')
+                     => Point blk -> AnchoredFragment blk' -> Bool
+withinFragmentBounds p af =
+    case eqT @blk @blk' of
+      Just Refl -> AF.withinFragmentBounds p af
+      Nothing   -> False
+
 -- | Check whether the anchored fragment is a suffix of the chain.
 isSuffixOf :: AnchoredFragment TestBlock -> Chain TestBlock -> Property
 isSuffixOf fragment chain =
@@ -166,9 +180,6 @@ clientId = CoreNodeId 0
 -- | Chain Sync Server
 serverId :: CoreNodeId
 serverId = CoreNodeId 1
-
--- | Terser notation
-type ChainSyncException = ChainSyncClientException TestBlock
 
 -- | Using slots as times, a schedule plans updates to a chain on certain
 -- slots.
@@ -246,7 +257,7 @@ runChainSync
     -> ServerUpdates
     -> SlotNo  -- ^ Start chain syncing at this slot.
     -> m (Chain TestBlock, Chain TestBlock,
-          AnchoredFragment TestBlock, Maybe ChainSyncException,
+          AnchoredFragment TestBlock, Maybe ChainSyncClientException,
           [TraceEvent])
        -- ^ (The final client chain, the final server chain, the synced
        --    candidate fragment, exception thrown by the chain sync client,
@@ -355,7 +366,7 @@ runChainSync securityParam maxClockSkew (ClientUpdates clientUpdates)
                Map.insert serverId varCandidate
              runPipelinedPeer protocolTracer codecChainSyncId serverId clientChannel $
                chainSyncClientPeerPipelined $ client varCandidate
-        `catch` \(e :: ChainSyncException) -> do
+        `catch` \(e :: ChainSyncClientException) -> do
           -- TODO: Is this necessary? Wouldn't the Async's internal MVar do?
           atomically $ writeTVar varClientException (Just e)
           -- Rethrow, but it will be ignored anyway.
@@ -726,7 +737,7 @@ frequency' xs0 = lift (choose (1, tot)) >>= (`pick` xs0)
 ppBlock :: TestBlock -> String
 ppBlock = condense
 
-ppPoint :: Point TestBlock -> String
+ppPoint :: StandardHash blk => Point blk -> String
 ppPoint (Point Origin)   = "Origin"
 ppPoint (Point (At blk)) =
     "(S:" <> show s <> "; H:" <> show h <> ")"

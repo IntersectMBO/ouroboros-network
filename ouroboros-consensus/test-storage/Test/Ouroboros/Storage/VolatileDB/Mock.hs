@@ -17,7 +17,7 @@ import           Test.Ouroboros.Storage.VolatileDB.Model
 
 openDBMock  :: forall m blockId. IOLike m
             => (Ord blockId)
-            => ThrowCantCatch (VolatileDBError blockId) (STM m)
+            => ThrowCantCatch VolatileDBError (STM m)
             -> Int
             -> m (DBModel blockId, VolatileDB blockId m)
 openDBMock err maxNumPerFile = do
@@ -41,7 +41,7 @@ openDBMock err maxNumPerFile = do
         , getMaxSlotNo   = wrapModel  dbVar  $ getMaxSlotNoModel   err'
         }
 
-    err' :: ThrowCantCatch (VolatileDBError blockId)
+    err' :: ThrowCantCatch VolatileDBError
                            (StateT (DBModel blockId) (STM m))
     err' = EH.liftThrowT err
 

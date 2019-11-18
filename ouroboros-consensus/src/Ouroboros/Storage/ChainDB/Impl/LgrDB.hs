@@ -59,7 +59,6 @@ import           Data.Foldable (foldl')
 import           Data.Functor ((<&>))
 import           Data.Set (Set)
 import qualified Data.Set as Set
-import           Data.Typeable (Typeable)
 import           Data.Word (Word64)
 import           GHC.Generics (Generic)
 import           GHC.Stack (HasCallStack)
@@ -72,7 +71,7 @@ import           Control.Tracer
 
 import           Ouroboros.Network.Block (pattern BlockPoint,
                      pattern GenesisPoint, HasHeader (..), HeaderHash, Point,
-                     SlotNo, StandardHash, blockPoint, castPoint)
+                     SlotNo, blockPoint, castPoint)
 import qualified Ouroboros.Network.Block as Block
 import           Ouroboros.Network.Point (WithOrigin (At))
 
@@ -330,8 +329,7 @@ currentPoint = ledgerTipPoint
              . ledgerState
              . LedgerDB.ledgerDbCurrent
 
-takeSnapshot :: (IOLike m, StandardHash blk, Typeable blk)
-             => LgrDB m blk -> m (DiskSnapshot, Point blk)
+takeSnapshot :: IOLike m => LgrDB m blk -> m (DiskSnapshot, Point blk)
 takeSnapshot lgrDB@LgrDB{ args = args@LgrDbArgs{..} } = wrapFailure args $ do
     ledgerDB <- atomically $ getCurrent lgrDB
     second tipToPoint <$> LedgerDB.takeSnapshot
@@ -341,9 +339,7 @@ takeSnapshot lgrDB@LgrDB{ args = args@LgrDbArgs{..} } = wrapFailure args $ do
       (Block.encodePoint lgrEncodeHash)
       ledgerDB
 
-trimSnapshots :: (MonadThrow m, StandardHash blk, Typeable blk)
-              => LgrDB m blk
-              -> m [DiskSnapshot]
+trimSnapshots :: MonadThrow m => LgrDB m blk -> m [DiskSnapshot]
 trimSnapshots LgrDB{ args = args@LgrDbArgs{..} } = wrapFailure args $
     LedgerDB.trimSnapshots lgrTracer lgrHasFS lgrDiskPolicy
 
@@ -435,13 +431,12 @@ garbageCollectPrevApplied LgrDB{..} slotNo = modifyTVar varPrevApplied $
 
 -- | Wrap exceptions that may indicate disk failure in a 'ChainDbFailure'
 -- exception using the 'LgrDbFailure' constructor.
-wrapFailure :: forall m blk x. (MonadThrow m, StandardHash blk, Typeable blk)
-            => LgrDbArgs m blk -> m x -> m x
+wrapFailure :: forall m blk x. MonadThrow m => LgrDbArgs m blk -> m x -> m x
 wrapFailure LgrDbArgs{ lgrHasFS = hasFS } k =
     EH.catchError (hasFsErr hasFS) k rethrow
   where
     rethrow :: FsError -> m x
-    rethrow err = throwM $ LgrDbFailure @blk err
+    rethrow err = throwM $ LgrDbFailure err
 
 {-------------------------------------------------------------------------------
   Auxiliary

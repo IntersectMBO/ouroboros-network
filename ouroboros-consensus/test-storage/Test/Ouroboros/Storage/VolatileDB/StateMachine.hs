@@ -34,7 +34,7 @@ import qualified Data.Map as M
 import           Data.Maybe (fromJust, isJust, mapMaybe)
 import           Data.Set (Set)
 import qualified Data.Set as S
-import           Data.TreeDiff (ToExpr)
+import           Data.TreeDiff (ToExpr (..), defaultExprViaShow)
 import           GHC.Generics
 import           GHC.Stack
 import           System.Random (getStdRandom, randomR)
@@ -82,7 +82,7 @@ data Success
   | Blocks   [BlockId]
   | Bl       Bool
   | IsMember [Bool] -- We compare two functions based on their results on a list of inputs.
-  | SimulatedError (Either (VolatileDBError BlockId) Success)
+  | SimulatedError (Either VolatileDBError Success)
   | Successors [Set BlockId]
   | Predecessor [Predecessor]
   | MaxSlot  MaxSlotNo
@@ -109,7 +109,7 @@ instance Eq Success where
     MaxSlot _        == _                = False
 
 
-newtype Resp = Resp {getResp :: Either (VolatileDBError BlockId) Success}
+newtype Resp = Resp {getResp :: Either VolatileDBError Success}
     deriving (Eq, Show)
 
 data Cmd
@@ -153,13 +153,14 @@ deriving instance Show1 r => Show (Resp :@ r)
 deriving instance Generic (DBModel BlockId)
 deriving instance ToExpr SlotNo
 deriving instance Generic BlockId
-deriving instance Generic (ParserError BlockId)
 deriving instance ToExpr FsPath
-deriving instance ToExpr (ParserError BlockId)
 deriving instance ToExpr MaxSlotNo
 deriving instance ToExpr (DBModel BlockId)
 deriving instance ToExpr (Model r)
 deriving instance ToExpr (WithOrigin BlockId)
+
+instance ToExpr ParserError where
+  toExpr = defaultExprViaShow
 
 instance CommandNames (At Cmd) where
     cmdName (At cmd) = case cmd of
@@ -190,7 +191,7 @@ data Model (r :: Type -> Type) = Model
   , shouldEnd :: Bool
   } deriving (Generic, Show)
 
-type PureM = ExceptT (VolatileDBError BlockId) (State (DBModel BlockId))
+type PureM = ExceptT VolatileDBError (State (DBModel BlockId))
 
 -- | An event records the model before and after a command along with the
 -- command itself, and a mocked version of the response.
@@ -241,7 +242,7 @@ runPure dbm (CmdErr cmd err) =
                 modify $ \dbm' -> dbm' {open = False}
                 return $ Right $ SimulatedError resp
     where
-        tnc :: EH.ThrowCantCatch (VolatileDBError BlockId) PureM = EH.throwCantCatch EH.exceptT
+        tnc :: EH.ThrowCantCatch VolatileDBError PureM = EH.throwCantCatch EH.exceptT
         go :: PureM Success
         go = case cmd of
             GetBlock bid       -> do

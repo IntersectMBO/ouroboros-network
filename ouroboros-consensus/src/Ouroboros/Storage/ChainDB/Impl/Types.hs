@@ -50,7 +50,7 @@ import           Cardano.Prelude (NoUnexpectedThunks)
 
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import           Ouroboros.Network.Block (BlockNo, HasHeader, HeaderHash, Point,
-                     SlotNo, StandardHash)
+                     SlotNo)
 import           Ouroboros.Network.Point (WithOrigin)
 
 import           Ouroboros.Consensus.Block (BlockProtocol, Header, IsEBB (..))
@@ -78,25 +78,25 @@ newtype ChainDbHandle m blk = CDBHandle (StrictTVar m (ChainDbState m blk))
 
 -- | Check if the ChainDB is open, if so, executing the given function on the
 -- 'ChainDbEnv', otherwise, throw a 'CloseDBError'.
-getEnv :: forall m blk r. (IOLike m, StandardHash blk, Typeable blk)
+getEnv :: forall m blk r. IOLike m
        => ChainDbHandle m blk
        -> (ChainDbEnv m blk -> m r)
        -> m r
 getEnv (CDBHandle varState) f = atomically (readTVar varState) >>= \case
     ChainDbOpen    env -> f env
-    ChainDbClosed _env -> throwM $ ClosedDBError @blk
+    ChainDbClosed _env -> throwM ClosedDBError
     -- See the docstring of 'ChainDbReopening'
     ChainDbReopening   -> error "ChainDB used while reopening"
 
 -- | Variant 'of 'getEnv' for functions taking one argument.
-getEnv1 :: (IOLike m, StandardHash blk, Typeable blk)
+getEnv1 :: IOLike m
         => ChainDbHandle m blk
         -> (ChainDbEnv m blk -> a -> m r)
         -> a -> m r
 getEnv1 h f a = getEnv h (\env -> f env a)
 
 -- | Variant 'of 'getEnv' for functions taking two arguments.
-getEnv2 :: (IOLike m, StandardHash blk, Typeable blk)
+getEnv2 :: IOLike m
         => ChainDbHandle m blk
         -> (ChainDbEnv m blk -> a -> b -> m r)
         -> a -> b -> m r
@@ -104,13 +104,13 @@ getEnv2 h f a b = getEnv h (\env -> f env a b)
 
 
 -- | Variant of 'getEnv' that works in 'STM'.
-getEnvSTM :: forall m blk r. (IOLike m, StandardHash blk, Typeable  blk)
+getEnvSTM :: forall m blk r. IOLike m
           => ChainDbHandle m blk
           -> (ChainDbEnv m blk -> STM m r)
           -> STM m r
 getEnvSTM (CDBHandle varState) f = readTVar varState >>= \case
     ChainDbOpen    env -> f env
-    ChainDbClosed _env -> throwM $ ClosedDBError @blk
+    ChainDbClosed _env -> throwM ClosedDBError
     -- See the docstring of 'ChainDbReopening'
     ChainDbReopening   -> error "ChainDB used while reopening"
 

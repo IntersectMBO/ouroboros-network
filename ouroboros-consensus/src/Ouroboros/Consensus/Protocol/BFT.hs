@@ -163,7 +163,7 @@ instance BftCrypto c => NoUnexpectedThunks (NodeConfig (Bft c))
 -------------------------------------------------------------------------------}
 
 data BftValidationErr = BftInvalidSignature String
-  deriving (Show)
+  deriving (Show, Eq)
 
 {-------------------------------------------------------------------------------
   Crypto models

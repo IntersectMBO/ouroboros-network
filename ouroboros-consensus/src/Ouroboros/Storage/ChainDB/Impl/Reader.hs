@@ -50,25 +50,25 @@ import           Ouroboros.Storage.ChainDB.Impl.Types
 -- Otherwise, execute the given function on the 'ChainDbEnv' and 'ReaderState'
 -- 'StrictTVar'.
 getReader
-  :: forall m blk r. (IOLike m, HasHeader blk)
+  :: forall m blk r. IOLike m
   => ChainDbHandle m blk
   -> ReaderId
   -> (ChainDbEnv m blk -> StrictTVar m (ReaderState m blk) -> m r)
   -> m r
 getReader (CDBHandle varState) readerId f = do
     (env, varRdr) <- atomically $ readTVar varState >>= \case
-      ChainDbClosed _env -> throwM $ ClosedDBError @blk
+      ChainDbClosed _env -> throwM ClosedDBError
       -- See the docstring of 'ChainDbReopening'
       ChainDbReopening   -> error "ChainDB used while reopening"
       ChainDbOpen    env ->
         Map.lookup readerId <$> readTVar (cdbReaders env) >>= \case
-          Nothing  -> throwM $ ClosedReaderError @blk readerId
+          Nothing  -> throwM $ ClosedReaderError readerId
           Just varRdr -> return (env, varRdr)
     f env varRdr
 
 -- | Variant 'of 'getReader' for functions taking one argument.
 getReader1
-  :: forall m blk a r. (IOLike m, HasHeader blk)
+  :: forall m blk a r. IOLike m
   => ChainDbHandle m blk
   -> ReaderId
   -> (ChainDbEnv m blk -> StrictTVar m (ReaderState m blk) -> a -> m r)
@@ -174,11 +174,7 @@ makeNewBlockOrHeaderReader h readerId registry = Reader {..}
     readerForward             = getReader1 h readerId $ forward           registry
     readerClose               = getEnv     h          $ close readerId
 
-close
-  :: forall m blk. (IOLike m, HasHeader blk)
-  => ReaderId
-  -> ChainDbEnv m blk
-  -> m ()
+close :: forall m blk. IOLike m => ReaderId -> ChainDbEnv m blk -> m ()
 close readerId CDB{..} = do
     mbReaderState <- atomically $ do
       readers <- readTVar cdbReaders
@@ -197,7 +193,7 @@ close readerId CDB{..} = do
 
 -- | Close the given 'ReaderState' by closing any 'ImmDB.Iterator' it might
 -- contain.
-closeReaderState :: (MonadCatch m, HasHeader blk)
+closeReaderState :: MonadCatch m
                  => ImmDB.ImmDB m blk -> ReaderState m blk -> m ()
 closeReaderState immDB = \case
      ReaderInMem _         -> return ()
@@ -474,10 +470,7 @@ switchFork ipoint newChain readerState =
           -> readerState
 
 -- | Close all open 'Reader's.
-closeAllReaders
-  :: (IOLike m, HasHeader blk)
-  => ChainDbEnv m blk
-  -> m ()
+closeAllReaders :: IOLike m => ChainDbEnv m blk -> m ()
 closeAllReaders CDB{..} = do
     readerStates <- atomically $ do
       readerStates <- readTVar cdbReaders >>= traverse readTVar . Map.elems

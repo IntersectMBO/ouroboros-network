@@ -395,7 +395,7 @@ newIterator itEnv@IteratorEnv{..} getItEnv registry from to = do
 -- | Close the iterator and remove it from the map of iterators ('itIterators'
 -- and thus 'cdbIterators').
 implIteratorClose
-  :: (IOLike m, HasHeader blk)
+  :: IOLike m
   => StrictTVar m (IteratorState m blk)
   -> IteratorId
   -> IteratorEnv m blk

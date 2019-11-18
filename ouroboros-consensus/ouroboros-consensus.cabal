@@ -262,6 +262,7 @@ test-suite test-consensus
                     Test.Dynamic.Util.NodeJoinPlan
                     Test.Dynamic.Util.NodeTopology
                     Test.Dynamic.Util.Tests
+                    Test.Util.BlockchainTime
                     Test.Util.FS.Sim.FsTree
                     Test.Util.FS.Sim.MockFS
                     Test.Util.FS.Sim.STM

@@ -51,7 +51,6 @@ isOpen (CDBHandle varState) = readTVar varState <&> \case
 closeDB
   :: forall m blk.
      ( IOLike m
-     , HasHeader blk
      , HasHeader (Header blk)
      , HasCallStack
      )
