@@ -16,6 +16,11 @@ extra-source-files:
   test/messages.cddl
 cabal-version:       >=1.10
 
+flag asserts
+  description: Enable assertionss
+  manual:      False
+  default:     False
+
 Flag ipv6
   Description: Enable IPv6 test cases
   Manual: True
@@ -148,7 +153,8 @@ library
 
   ghc-options:         -Wall
                        -Wno-unticked-promoted-constructors
-                       -fno-ignore-asserts
+  if flag(asserts)
+    ghc-options:       -fno-ignore-asserts
 
   -- Still in the lib for now as they're used in ouroboros-consensus.
   -- They should be moved to the separate test lib if they're still needed.
