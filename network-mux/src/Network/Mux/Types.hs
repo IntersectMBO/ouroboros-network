@@ -319,9 +319,9 @@ data MuxTrace ptcl =
     | MuxTraceChannelSendStart (MiniProtocolId ptcl) BL.ByteString
     | MuxTraceChannelSendEnd (MiniProtocolId ptcl)
     | MuxTraceHandshakeStart
-    | MuxTraceHandshakeEnd
-    | forall e. Exception e => MuxTraceHandshakeClientError e
-    | forall e. Exception e => MuxTraceHandshakeServerError e
+    | MuxTraceHandshakeEnd DiffTime
+    | forall e. Exception e => MuxTraceHandshakeClientError e DiffTime
+    | forall e. Exception e => MuxTraceHandshakeServerError e DiffTime
 
 instance Show ptcl => Show (MuxTrace ptcl) where
     show MuxTraceRecvHeaderStart = printf "Bearer Receive Header Start"
@@ -350,9 +350,10 @@ instance Show ptcl => Show (MuxTrace ptcl) where
         (BL.length blob)
     show (MuxTraceChannelSendEnd mid) = printf "Channel Send End on %s" (show mid)
     show MuxTraceHandshakeStart = "Handshake start"
-    show MuxTraceHandshakeEnd = "Handshake end"
-    show (MuxTraceHandshakeClientError e) =
+    show (MuxTraceHandshakeEnd duration) = printf "Handshake end, duration %s" (show duration)
+    show (MuxTraceHandshakeClientError e duration) =
          -- Client Error can include an error string from the peer which could be very large.
-        printf "Handshake Client Error %s" (take 256 $ show e)
-    show (MuxTraceHandshakeServerError e) = printf "Handshake Server Error %s" (show e)
+        printf "Handshake Client Error %s duration %s" (take 256 $ show e) (show duration)
+    show (MuxTraceHandshakeServerError e duration ) = printf "Handshake Server Error %s duration %s"
+        (show e) (show duration)
 
