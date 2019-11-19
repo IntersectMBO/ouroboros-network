@@ -1,9 +1,10 @@
-{-# LANGUAGE DataKinds         #-}
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE KindSignatures    #-}
-{-# LANGUAGE NamedFieldPuns    #-}
-{-# LANGUAGE RankNTypes        #-}
-{-# LANGUAGE TypeFamilies      #-}
+{-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE FlexibleInstances   #-}
+{-# LANGUAGE KindSignatures      #-}
+{-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE RankNTypes          #-}
+{-# LANGUAGE TypeFamilies        #-}
 
 -- | This is the starting point for a module that will bring together the
 -- overall node to node protocol, as a collection of mini-protocols.
@@ -43,6 +44,7 @@ module Ouroboros.Network.NodeToNode (
 
   -- ** Error Policies and Peer state
   , ErrorPolicies (..)
+  , networkErrorPolicy
   , nullErrorPolicies
   , ErrorPolicy (..)
   , PeerStates (..)
@@ -62,6 +64,7 @@ module Ouroboros.Network.NodeToNode (
   ) where
 
 import           Control.Concurrent.Async (Async)
+import           Control.Exception (IOException)
 import qualified Data.ByteString.Lazy as BL
 import           Data.Time.Clock (DiffTime)
 import           Data.Text (Text)
@@ -88,6 +91,9 @@ import           Ouroboros.Network.Subscription.PeerState
 import           Ouroboros.Network.Mux
 import           Ouroboros.Network.Protocol.Handshake.Type
 import           Ouroboros.Network.Protocol.Handshake.Version
+import           Ouroboros.Network.BlockFetch.Client (BlockFetchProtocolFailure)
+import qualified Ouroboros.Network.TxSubmission.Inbound as TxInbound
+import qualified Ouroboros.Network.TxSubmission.Outbound as TxOutbound
 import           Ouroboros.Network.Socket
 import           Ouroboros.Network.Server.ConnectionTable ( ConnectionTable
                                                           , newConnectionTable
@@ -522,3 +528,92 @@ dnsSubscriptionWorker_V1
           versionData
           (DictVersion nodeToNodeCodecCBORTerm)
           application)
+
+-- | A minimal error policy, which only handles exceptions raised by
+-- `ouroboros-network`
+--
+networkErrorPolicy :: ErrorPolicies Socket.SockAddr a
+networkErrorPolicy = ErrorPolicies {
+      epAppErrorPolicies = [
+          -- Handshake client protocol error: we either did not recognise received
+          -- version or we refused it.  This is only for outbound connections,
+          -- thus we suspend the consumer.
+          ErrorPolicy
+            $ \(_ :: HandshakeClientProtocolError NodeToNodeVersion)
+                  -> Just misconfiguredPeer
+        
+          -- exception thrown by `runDecoderWithByteLimit`
+        , ErrorPolicy
+            $ \(_ :: DecoderFailureOrTooMuchInput DeserialiseFailure)
+                   -> Just theyBuggyOrEvil
+
+          -- deserialisation failure; this means that the remote peer is either
+          -- buggy, adversarial, or the connection return garbage.  In the last
+          -- case it's also good to shutdown both the consumer and the
+          -- producer, as it's likely that the other side of the connection
+          -- will return grabage as well.
+        , ErrorPolicy
+            $ \(_ :: DeserialiseFailure)
+                  -> Just theyBuggyOrEvil
+
+          -- the connection was unexpectedly closed, we suspend the peer for
+          -- a 'shortDelay'
+        , ErrorPolicy
+            $ \(e :: MuxError)
+                  -> case errorType e of
+                        MuxUnknownMiniProtocol  -> Just theyBuggyOrEvil
+                        MuxDecodeError          -> Just theyBuggyOrEvil
+                        MuxIngressQueueOverRun  -> Just theyBuggyOrEvil
+                        MuxControlProtocolError -> Just theyBuggyOrEvil
+                        MuxTooLargeMessage      -> Just theyBuggyOrEvil
+
+                        -- in case of bearer closed / or IOException we suspend
+                        -- the peer for a short time
+                        --
+                        -- TODO: an exponential backoff would be nicer than a fixed 20s
+                        -- TODO: right now we cannot suspend just the
+                        -- 'responder'.  If a 'responder' throws 'MuxError' we
+                        -- might not want to shutdown the consumer (which is
+                        -- using different connection), as we do below:
+                        MuxBearerClosed         -> Just (SuspendPeer shortDelay shortDelay)
+                        MuxIOException{}        -> Just (SuspendPeer shortDelay shortDelay)
+
+          -- Error policy for TxSubmission protocol: outbound side (client role)
+        , ErrorPolicy
+            $ \(_ :: TxOutbound.TxSubmissionProtocolError)
+                  -> Just theyBuggyOrEvil
+
+          -- Error policy for TxSubmission protocol: inbound side (server role)
+        , ErrorPolicy
+            $ \(_ :: TxInbound.TxSubmissionProtocolError)
+                  -> Just theyBuggyOrEvil
+
+          -- Error policy for BlockFetch protocol: consumer side (client role)
+        , ErrorPolicy
+            $ \(_ :: BlockFetchProtocolFailure)
+                  -> Just theyBuggyOrEvil
+        ],
+
+      -- Exception raised during connect
+      epConErrorPolicies = [
+          ErrorPolicy $ \(_ :: IOException) -> Just $
+            SuspendConsumer defaultDelay
+        ],
+
+      epReturnCallback = \_ _ _ -> ourBug
+    }
+  where
+    theyBuggyOrEvil :: SuspendDecision DiffTime
+    theyBuggyOrEvil = SuspendPeer defaultDelay defaultDelay
+
+    misconfiguredPeer :: SuspendDecision DiffTime
+    misconfiguredPeer = SuspendConsumer defaultDelay
+
+    ourBug :: SuspendDecision DiffTime
+    ourBug = Throw
+
+    defaultDelay :: DiffTime
+    defaultDelay = 200 -- seconds
+
+    shortDelay :: DiffTime
+    shortDelay = 20 -- seconds

@@ -2,7 +2,6 @@
 
 module Ouroboros.Consensus.Node.ErrorPolicy (consensusErrorPolicy) where
 
-import           Control.Exception
 import           Data.Time.Clock (DiffTime)
 
 import           Control.Monad.Class.MonadAsync (ExceptionInLinkedThread (..))
@@ -30,10 +29,7 @@ consensusErrorPolicy = ErrorPolicies {
       -- Exception raised during connect
       --
       -- This is entirely a network-side concern.
-      epConErrorPolicies = [
-          ErrorPolicy $ \(_ :: IOException) -> Just $
-            SuspendConsumer defaultDelay
-        ]
+      epConErrorPolicies = []
 
       -- What to do when the protocol exits cleanly
       --
