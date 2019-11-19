@@ -1,8 +1,9 @@
-{-# LANGUAGE DataKinds      #-}
-{-# LANGUAGE KindSignatures #-}
-{-# LANGUAGE NamedFieldPuns #-}
-{-# LANGUAGE RankNTypes     #-}
-{-# LANGUAGE TypeFamilies   #-}
+{-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE KindSignatures      #-}
+{-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE RankNTypes          #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeFamilies        #-}
 
 -- | This is the starting point for a module that will bring together the
 -- overall node to client protocol, as a collection of mini-protocols.
@@ -29,6 +30,7 @@ module Ouroboros.Network.NodeToClient (
 
   -- * Re-exports
   , ErrorPolicies (..)
+  , networkErrorPolicies
   , nullErrorPolicies
   , ErrorPolicy (..)
   , ErrorPolicyTrace (..)
@@ -49,6 +51,7 @@ module Ouroboros.Network.NodeToClient (
   ) where
 
 import           Control.Concurrent.Async (Async)
+import           Control.Exception (IOException)
 import qualified Data.ByteString.Lazy as BL
 import           Data.Text (Text)
 import qualified Data.Text as T
@@ -386,3 +389,70 @@ ncSubscriptionWorker_V1
           versionData
           (DictVersion nodeToClientCodecCBORTerm)
           application)
+
+-- | 'ErrorPolicies' for client application.  Additional rules can be added by
+-- means of a 'Semigroup' instance of 'ErrorPolicies'.
+--
+-- This error policies will try to preserve `subscriptionWorker`, e.g. if the
+-- connect function throws an `IOException` we will suspend it for
+-- a 'shortDelay', and try to re-connect.
+--
+-- This allows to recover from a situation where a node temporarily shutsdown,
+-- or running a client application which is subscribed two more than one node
+-- (possibly over network).
+--
+-- If a trusted node sends us a wrong data or 
+--
+networkErrorPolicies :: ErrorPolicies Socket.SockAddr a
+networkErrorPolicies = ErrorPolicies
+    { epAppErrorPolicies = [
+        -- Handshake client protocol error: we either did not recognise received
+        -- version or we refused it.  This is only for outbound connections to
+        -- a local node, thus we throw the exception.
+        ErrorPolicy
+          $ \(_ :: HandshakeClientProtocolError NodeToClientVersion)
+                -> Just ourBug
+
+        -- exception thrown by `runDecoderWithByteLimit`
+        -- trusted node send too much input
+      , ErrorPolicy
+          $ \(_ :: DecoderFailureOrTooMuchInput DeserialiseFailure)
+                -> Just ourBug
+
+        -- deserialisation failure of a message from a trusted node
+      , ErrorPolicy
+          $ \(_ :: DeserialiseFailure)
+                -> Just ourBug
+
+      , ErrorPolicy
+          $ \(e :: MuxError)
+                -> case errorType e of
+                      MuxUnknownMiniProtocol  -> Just ourBug
+                      MuxDecodeError          -> Just ourBug
+                      MuxIngressQueueOverRun  -> Just ourBug
+                      MuxControlProtocolError -> Just ourBug
+                      MuxTooLargeMessage      -> Just ourBug
+
+                      -- in case of bearer closed / or IOException we suspend
+                      -- the peer for a short time
+                      --
+                      -- TODO: the same notes apply as to
+                      -- 'NodeToNode.networkErrorPolicies'
+                      MuxBearerClosed         -> Just (SuspendPeer shortDelay shortDelay)
+                      MuxIOException{}        -> Just (SuspendPeer shortDelay shortDelay)
+      ]
+    , epConErrorPolicies = [
+        -- If an 'IOException' is thrown by the 'connect' call we suspend the
+        -- peer for 'shortDelay' and we will try to re-connect to it after that
+        -- period.
+        ErrorPolicy $ \(_ :: IOException) -> Just $
+          SuspendPeer shortDelay shortDelay
+      ]
+    , epReturnCallback = \_ _ _ -> ourBug
+    }
+  where
+    ourBug :: SuspendDecision DiffTime
+    ourBug = Throw
+
+    shortDelay :: DiffTime
+    shortDelay = 20 -- seconds
