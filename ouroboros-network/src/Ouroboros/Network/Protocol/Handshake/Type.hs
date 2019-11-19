@@ -22,6 +22,7 @@ module Ouroboros.Network.Protocol.Handshake.Type
   , ServerHasAgency (..)
   , NobodyHasAgency (..)
   , RefuseReason (..)
+  , HandshakeClientProtocolError (..)
 
   -- ** Handshake client
   , handshakeClientPeer
@@ -171,12 +172,13 @@ encodeVersions encoder (Versions vs) = go <$> vs
 -- Client errors, which extends handshake error @'RefuseReason'@ type,
 -- by client specific errors.
 --
-data ClientProtocolError vNumber
+data HandshakeClientProtocolError vNumber
   = HandshakeError (RefuseReason vNumber)
   | NotRecognisedVersion vNumber
   deriving (Eq, Show)
 
-instance (Typeable vNumber, Show vNumber) => Exception (ClientProtocolError vNumber)
+instance (Typeable vNumber, Show vNumber)
+    => Exception (HandshakeClientProtocolError vNumber)
 
 -- |
 -- Handshake client which offers @'Versions' vNumber vData@ to the
@@ -188,7 +190,7 @@ handshakeClientPeer
   => (forall vData. extra vData -> vData -> CBOR.Term)
   -> (forall vData. extra vData -> CBOR.Term -> Either Text vData)
   -> Versions vNumber extra r
-  -> Peer (Handshake vNumber CBOR.Term) AsClient StPropose m (Either (ClientProtocolError vNumber) r)
+  -> Peer (Handshake vNumber CBOR.Term) AsClient StPropose m (Either (HandshakeClientProtocolError vNumber) r)
 handshakeClientPeer encodeData decodeData versions =
   -- send known versions
   Yield (ClientAgency TokPropose) (MsgProposeVersions $ encodeVersions encodeData versions) $
