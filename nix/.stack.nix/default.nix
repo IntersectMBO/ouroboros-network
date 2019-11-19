@@ -21,7 +21,6 @@
         "streaming-binary" = (((hackage.streaming-binary)."0.3.0.1").revisions).default;
         "cborg" = (((hackage.cborg)."0.2.2.0").revisions).default;
         "canonical-json" = (((hackage.canonical-json)."0.6.0.0").revisions).default;
-        } // {
         typed-transitions = ./typed-transitions.nix;
         typed-protocols = ./typed-protocols.nix;
         typed-protocols-cbor = ./typed-protocols-cbor.nix;
@@ -53,5 +52,23 @@
       compiler.nix-name = "ghc865";
       };
   resolver = "lts-13.26";
+  modules = [
+    ({ lib, ... }:
+      {
+        packages = {
+          "ouroboros-network" = {
+            flags = { "asserts" = lib.mkOverride 900 true; };
+            };
+          "network-mux" = { flags = { "asserts" = lib.mkOverride 900 true; }; };
+          "ouroboros-consensus" = {
+            flags = { "asserts" = lib.mkOverride 900 true; };
+            };
+          "io-sim-classes" = {
+            flags = { "asserts" = lib.mkOverride 900 true; };
+            };
+          };
+        })
+    { packages = {}; }
+    ];
   compiler = "ghc-8.6.5";
   }
