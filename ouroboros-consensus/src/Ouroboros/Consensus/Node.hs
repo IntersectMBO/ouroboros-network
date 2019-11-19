@@ -60,6 +60,7 @@ import           Ouroboros.Consensus.ChainSyncClient (ClockSkew (..))
 import           Ouroboros.Consensus.Ledger.Extended (ExtLedgerState)
 import           Ouroboros.Consensus.Mempool (GenTx, MempoolCapacity (..))
 import           Ouroboros.Consensus.Node.DbMarker
+import           Ouroboros.Consensus.Node.ErrorPolicy
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.Node.Tracers
@@ -362,7 +363,7 @@ initNetwork registry nodeArgs kernel RunNetworkArgs{..} = do
         rnaMkPeer
         nodeToClientVersionData
         (localResponderNetworkApplication networkApps)
-        nullErrorPolicies
+        consensusErrorPolicy
         wait
 
     runPeerServer :: ConnectionTable IO Socket.SockAddr
@@ -380,7 +381,7 @@ initNetwork registry nodeArgs kernel RunNetworkArgs{..} = do
         rnaMkPeer
         nodeToNodeVersionData
         (responderNetworkApplication networkApps)
-        nullErrorPolicies
+        consensusErrorPolicy
         wait
 
     runIpSubscriptionWorker :: ConnectionTable IO Socket.SockAddr
@@ -399,7 +400,7 @@ initNetwork registry nodeArgs kernel RunNetworkArgs{..} = do
       -- the comments in dnsSbuscriptionWorker call apply
       (LocalAddresses ipv4 ipv6 Nothing)
       (const Nothing)
-      nullErrorPolicies
+      consensusErrorPolicy
       IPSubscriptionTarget
         { ispIps     = rnaIpProducers
         , ispValency = length rnaIpProducers
@@ -434,7 +435,7 @@ initNetwork registry nodeArgs kernel RunNetworkArgs{..} = do
         ipv6
         Nothing)
       (const Nothing)
-      nullErrorPolicies
+      consensusErrorPolicy
       dnsProducer
       nodeToNodeVersionData
       (initiatorNetworkApplication networkApps)

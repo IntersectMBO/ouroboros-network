@@ -11,6 +11,8 @@
 
 module Ouroboros.Consensus.Util.ResourceRegistry (
     ResourceRegistry -- opaque
+  , RegistryClosedException(..)
+  , ResourceRegistryThreadException
     -- * Creating and releasing the registry itself
   , withRegistry
   , registryThread
