@@ -94,23 +94,22 @@ constructSample sa = OneWaySample
                              (referenceTimePoint sa)
   , sumPackets     = population
   , sumTotalSDU    = totalSDUOctets
-  , estDeltaQS     = popCheck dQSEst
-  , estDeltaQVMean = popCheck
-                     $ vSum / (fromIntegral population)
-  , estDeltaQVVar  = popCheck
-                     $ (vSum2 - (vSum * vSum)) / (fromIntegral population)
-  , estR           = popCheck rEst
+  , estDeltaQS     = normCheck dQSEst
+  , estDeltaQVMean = normCheck $ vSum / pop
+  , estDeltaQVVar  = normCheck $ (vSum2 - vSum * vSum / pop) / pop
+  , estR           = normCheck rEst
   , sizeDist       = show [ (a,count b, let S mtt = minTransitTime b in mtt)
-                          | (a, b) <- IM.toAscList normalisedObservations
+                          | (a, b) <- IM.toAscList (observables sa)
                           , count b > 0]
   }
   where
     -- the sample population size
     population = numObservations sa
+    pop        = fromIntegral population
     -- Handle the empty population condition
-    popCheck x
-      | population > 1 = x
-      | otherwise      = nan
+    normCheck x
+      | IM.size (observables sa) > 1 = x
+      | otherwise                    = nan
     -- gather the data for the G,S estimations
     (totalSDUOctets, minSRev)
       = IM.foldrWithKey accum (0, []) $ observables sa
@@ -123,7 +122,6 @@ constructSample sa = OneWaySample
     normalisedObservations
       = let norm n = S . fromRational . toRational
                      $ dQGEst + (fromIntegral n) * dQSEst
-                     
         in IM.mapWithKey (\k -> normalisePSR (norm k)) (observables sa)
     -- calculate the total population V stats
     (vSum, vSum2)
@@ -210,12 +208,15 @@ instance Semigroup PerSizeRecord where
 -- | Normalise given the calculated G,S for the size
 normalisePSR :: SISec -> PerSizeRecord -> PerSizeRecord
 normalisePSR norm psr
-  = psr { minTransitTime   = minTransitTime   psr + norm
-        , sumTransitTime   = sumTransitTime   psr + adj
-        , sumTransitTimeSq = sumTransitTimeSq psr + squareSISec adj
-        }
-    where
-      adj = (fromIntegral (count psr) * norm)
+  = let r   = psr { minTransitTime   = minTransitTime   psr - norm
+                  , sumTransitTime   = sumTransitTime   psr - adj
+                  , sumTransitTimeSq = sumTransitTimeSq psr
+                                       - norm `ttt` (2 * sumTransitTime r + norm)
+                  }
+        adj = (fromIntegral (count psr) * norm)
+        ttt (S a) (S b)
+          = S2 $ a * b
+    in r 
 
 -- | Initial StatsA
 initialStatsA :: StatsA
