@@ -441,7 +441,7 @@ withServerNode muxTracer handshakeTracer errorPolicyTracer tbl stVar addr encode
           encodeData
           decodeData
           acceptVersion
-          throwIO
+          (acceptException addr')
           (\t connAddr st -> do
             d <- beforeConnectTx t connAddr st
             case d of
@@ -482,3 +482,8 @@ withServerNode muxTracer handshakeTracer errorPolicyTracer tbl stVar addr encode
         Server.Result thread remoteAddr t (Right r) ->
           fmap (unregisterProducer remoteAddr thread)
             <$> completeTx (ApplicationResult t remoteAddr r) st
+
+      acceptException :: Socket.SockAddr -> SomeException -> IO ()
+      acceptException a e = do
+        traceWith (WithAddr a `contramap` errorPolicyTracer) $ ErrorPolicyAccept e
+        throwIO e
