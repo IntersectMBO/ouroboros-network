@@ -14,7 +14,7 @@ build-type:          Simple
 cabal-version:       >=1.10
 
 flag asserts
-  description: Enable assertionss
+  description: Enable assertions
   manual:      False
   default:     False
 

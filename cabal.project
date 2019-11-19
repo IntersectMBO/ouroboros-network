@@ -19,6 +19,12 @@ constraints:
 package Win32-network
   tests: True
 
+package io-sim-classes
+  flags: +asserts
+
+package network-mux
+  flags: +asserts
+
 package typed-protocols
   tests: True
 
@@ -33,9 +39,11 @@ package mux
 
 package ouroboros-network
   tests: True
+  flags: +asserts
 
 package ouroboros-consensus
   tests: True
+  flags: +asserts
 
 package contra-tracer
   tests: False
