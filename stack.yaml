@@ -13,6 +13,16 @@ packages:
   - ./ntp-client
   - ./Win32-network
 
+flags:
+  io-sim-classes:
+    asserts: true
+  network-mux:
+    asserts: true
+  ouroboros-network:
+    asserts: true
+  ouroboros-consensus:
+    asserts: true
+
 extra-deps:
   - git: https://github.com/input-output-hk/iohk-monitoring-framework
     commit: b4268cedecbbe2a35437effc17a8af10abda8ea8
