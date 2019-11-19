@@ -89,7 +89,7 @@ recordObservation s obsTime obsSize transitTime
 -- is empty.
 constructSample :: StatsA -> OneWayDeltaQSample
 constructSample sa = OneWaySample
-  { duration       = fromRational . toRational $ 
+  { duration       = fromRational . toRational $
                      maybe 0 (\(_,a) -> timeLastObs sa `diffTime` a)
                              (referenceTimePoint sa)
   , sumPackets     = population
@@ -208,15 +208,16 @@ instance Semigroup PerSizeRecord where
 -- | Normalise given the calculated G,S for the size
 normalisePSR :: SISec -> PerSizeRecord -> PerSizeRecord
 normalisePSR norm psr
-  = let r   = psr { minTransitTime   = minTransitTime   psr - norm
-                  , sumTransitTime   = sumTransitTime   psr - adj
-                  , sumTransitTimeSq = sumTransitTimeSq psr
-                                       - norm `ttt` (2 * sumTransitTime r + norm)
-                  }
-        adj = (fromIntegral (count psr) * norm)
+  = let adj  = (fromIntegral (count psr) * norm)
+        stt' = (sumTransitTime psr) - adj
         ttt (S a) (S b)
-          = S2 $ a * b
-    in r 
+             = S2 $ a * b
+    in psr { minTransitTime   = minTransitTime   psr - norm
+           , sumTransitTime   = stt'
+           , sumTransitTimeSq = sumTransitTimeSq psr
+                                - norm `ttt` (2 * stt' + norm)
+           }
+
 
 -- | Initial StatsA
 initialStatsA :: StatsA
