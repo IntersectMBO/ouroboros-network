@@ -1,39 +1,52 @@
-{-# LANGUAGE DataKinds                 #-}
 {-# LANGUAGE DeriveAnyClass            #-}
 {-# LANGUAGE DeriveGeneric             #-}
-{-# LANGUAGE DerivingVia               #-}
 {-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE LambdaCase                #-}
 {-# LANGUAGE NamedFieldPuns            #-}
 {-# LANGUAGE QuantifiedConstraints     #-}
 {-# LANGUAGE RecordWildCards           #-}
 {-# LANGUAGE ScopedTypeVariables       #-}
+{-# LANGUAGE TupleSections             #-}
 {-# LANGUAGE UndecidableInstances      #-}
+{-# OPTIONS_GHC -Wredundant-constraints #-}
 module Ouroboros.Storage.ImmutableDB.Impl.Iterator
-  ( streamBinaryBlobsImpl
+  ( streamImpl
+  , BlocksOrHeaders (..)
+  , CurrentEpochInfo (..)
   ) where
 
-import           Control.Monad (unless, when)
+import           Control.Exception (assert)
+import           Control.Monad (when)
+import           Control.Monad.Except
 import           Control.Monad.State.Strict (state)
 import           Data.ByteString.Lazy (ByteString)
-import           Data.Maybe (fromMaybe)
+import           Data.Foldable (find)
+import           Data.List.NonEmpty (NonEmpty)
+import qualified Data.List.NonEmpty as NE
+import           Data.Maybe (isNothing)
+import           Data.Word (Word32, Word64)
 import           GHC.Generics (Generic)
 
 import           Cardano.Prelude (NoUnexpectedThunks (..),
-                     UseIsNormalFormNamed (..), allNoUnexpectedThunks)
+                     allNoUnexpectedThunks)
 
 import           GHC.Stack (HasCallStack)
 
-import           Control.Monad.Class.MonadThrow hiding (onException)
-
+import           Ouroboros.Consensus.Block (IsEBB (..))
 import           Ouroboros.Consensus.Util.IOLike
 
 import           Ouroboros.Storage.Common
-import           Ouroboros.Storage.EpochInfo
 import           Ouroboros.Storage.FS.API
 import           Ouroboros.Storage.FS.API.Types
+import           Ouroboros.Storage.Util.ErrorHandling (ErrorHandling)
 
 import           Ouroboros.Storage.ImmutableDB.API
-import           Ouroboros.Storage.ImmutableDB.Impl.Index
+import           Ouroboros.Storage.ImmutableDB.Impl.Index.Primary
+                     (SecondaryOffset)
+import qualified Ouroboros.Storage.ImmutableDB.Impl.Index.Primary as Primary
+import           Ouroboros.Storage.ImmutableDB.Impl.Index.Secondary
+                     (BlockOffset (..), BlockSize (..))
+import qualified Ouroboros.Storage.ImmutableDB.Impl.Index.Secondary as Secondary
 import           Ouroboros.Storage.ImmutableDB.Impl.State
 import           Ouroboros.Storage.ImmutableDB.Impl.Util
 import           Ouroboros.Storage.ImmutableDB.Layout
@@ -42,20 +55,17 @@ import           Ouroboros.Storage.ImmutableDB.Layout
   ImmutableDB Iterator Implementation
 ------------------------------------------------------------------------------}
 
-
 -- | Internal handle to an iterator
 data IteratorHandle hash m = forall h. IteratorHandle
-  { _it_hasFS    :: !(HasFS m h)
+  { itHasFS   :: !(HasFS m h)
     -- ^ Bundled HasFS instance allows to hide type parameters
-  , _it_state    :: !(StrictTVar m (IteratorStateOrExhausted hash h))
+  , itState   :: !(StrictTVar m (IteratorStateOrExhausted hash h))
     -- ^ The state of the iterator. If it is 'Nothing', the iterator is
     -- exhausted and/or closed.
-  , _it_end      :: !EpochSlot
+  , itEnd     :: !EpochSlot
     -- ^ The end of the iterator: the last 'EpochSlot' it should return.
-  , _it_end_hash :: !(IteratorEndHash hash)
-    -- ^ The @hash@ of the last block the iterator should return. 'Nothing'
-    -- when no @hash@ was specified, then only '_it_end' will be used to
-    -- determine when to stop streaming.
+  , itEndHash :: !hash
+    -- ^ The @hash@ of the last block the iterator should return.
   }
 
 data IteratorStateOrExhausted hash h =
@@ -67,395 +77,510 @@ iteratorStateIsOpen :: IteratorStateOrExhausted hash h -> Bool
 iteratorStateIsOpen (IteratorStateOpen _)  = True
 iteratorStateIsOpen IteratorStateExhausted = False
 
-data IteratorEndHash hash =
-    ItrNoEndHash
-  | ItrEndHash !hash
-  deriving NoUnexpectedThunks via UseIsNormalFormNamed "IteratorEndHash" (IteratorEndHash hash)
-
 -- Existential type; we can't use generics
 instance ( forall a. NoUnexpectedThunks (StrictTVar m a)
+         , NoUnexpectedThunks hash
          ) => NoUnexpectedThunks (IteratorHandle hash m) where
   showTypeOf _ = "IteratorHandle"
   whnfNoUnexpectedThunks ctxt IteratorHandle{..} =
       allNoUnexpectedThunks [
-          noUnexpectedThunks ctxt _it_hasFS
-        , noUnexpectedThunks ctxt _it_state
-        , noUnexpectedThunks ctxt _it_end
-        , noUnexpectedThunks ctxt _it_end_hash
+          noUnexpectedThunks ctxt itHasFS
+        , noUnexpectedThunks ctxt itState
+        , noUnexpectedThunks ctxt itEnd
+        , noUnexpectedThunks ctxt itEndHash
         ]
 
 data IteratorState hash h = IteratorState
-  { _it_next         :: !EpochSlot
-    -- ^ The location of the next binary blob to read.
+  { itEpoch        :: !EpochNo
+    -- ^ The current epoch the iterator is streaming from.
+  , itEpochHandle  :: !(Handle h)
+    -- ^ A handle to the epoch file corresponding with 'itEpoch'.
+  , itEpochEntries :: !(NonEmpty (Secondary.Entry hash, Word32))
+    -- ^ The entries from the secondary index corresponding to the current
+    -- epoch. The first entry in the list is the next one to stream.
     --
-    -- TODO check invariants with code/assertions + check them in the tests
-    --
-    -- Let @next@ be the 'EpochSlot' in '_it_next' and @index@ the 'Index' in
-    -- '_it_epoch_index':
-    --
-    -- __Invariant 1__: @next <= '_it_end'@
-    --
-    -- __Invariant 2__: @'_epoch' next@ matches the epoch of '_it_epoch_handle'
-    -- and '_it_epoch_index'.
-    --
-    -- __Invariant 3__: @'_relativeSlot' next@ points to a filled slot in the
-    -- index.
-    --
-    -- __Invariant 4__: '_it_epoch_handle' points to where @next@ can be read
-    -- from.
-  , _it_epoch_handle :: !(Handle h)
-    -- ^ A handle to the epoch file corresponding with '_it_next'.
-  , _it_epoch_index  :: Index hash
-    -- ^ We load the index file for the epoch we are currently iterating over
-    -- in-memory, as it's going to be small anyway (usually ~150kb).
+    -- Invariant: all the entries in this list must be included in the stream.
+    -- In other words, entries corresponding to blocks after the end bound are
+    -- not included in this list.
   }
   deriving (Generic, NoUnexpectedThunks)
 
-streamBinaryBlobsImpl :: forall m hash.
-                         (HasCallStack, IOLike m, Eq hash)
-                      => ImmutableDBEnv m hash
-                      -> Maybe (SlotNo, hash)
-                      -- ^ When to start streaming (inclusive).
-                      -> Maybe (SlotNo, hash)
-                      -- ^ When to stop streaming (inclusive).
-                      -> m (Iterator hash m ByteString)
-streamBinaryBlobsImpl dbEnv mbStart mbEnd = withOpenState dbEnv $ \hasFS st -> do
-    let ImmutableDBEnv { _dbErr, _dbEpochInfo } = dbEnv
-        HasFS {..}     = hasFS
-        OpenState {..} = st
+-- | Used by 'streamImpl' to choose between streaming blocks or headers.
+data BlocksOrHeaders = Blocks | Headers
 
-    validateIteratorRange _dbErr _dbEpochInfo _currentTip mbStart mbEnd
+-- | Auxiliary data type that combines the '_currentEpoch' and
+-- '_currentEpochOffset' fields from 'OpenState'. This is used to avoid
+-- passing the whole state around, and moreover, it avoids issues with
+-- existential @h@ type parameter.
+data CurrentEpochInfo = CurrentEpochInfo !EpochNo !BlockOffset
 
-    emptyOrEndBound <- case _currentTip of
-          TipGen -> return $ Nothing
-          Tip (EBB epoch)
-            | Just (endSlot, endHash) <- mbEnd
-            -> do -- We don't really know if the upper bound points at a
-                  -- regular block or an EBB here. We conservatively assume it
-                  -- must a regular block (which would come /after/ the EBB),
-                  -- and then check this when we actually reach the end.
-                  endEpochSlot <- epochInfoBlockRelative _dbEpochInfo endSlot
-                  return $ Just (endEpochSlot, ItrEndHash endHash)
-            | otherwise
-            -> return $ Just (EpochSlot epoch 0, ItrNoEndHash)
-          Tip (Block lastSlot')
-            | Just (endSlot, endHash) <- mbEnd
-            -> do endEpochSlot <- epochInfoBlockRelative _dbEpochInfo endSlot
-                  return $ Just (endEpochSlot, ItrEndHash endHash)
-            | otherwise
-            -> do endEpochSlot <- epochInfoBlockRelative _dbEpochInfo lastSlot'
-                  return $ Just (endEpochSlot, ItrNoEndHash)
+streamImpl
+  :: forall m hash. (HasCallStack, IOLike m, Eq hash, NoUnexpectedThunks hash)
+  => ImmutableDBEnv m hash
+  -> BlocksOrHeaders
+  -> Maybe (SlotNo, hash)
+     -- ^ When to start streaming (inclusive).
+  -> Maybe (SlotNo, hash)
+     -- ^ When to stop streaming (inclusive).
+  -> m (Either (WrongBoundError hash)
+               (Iterator hash m ByteString))
+streamImpl dbEnv blocksOrHeaders mbStart mbEnd =
+    withOpenState dbEnv $ \hasFS OpenState{..} -> runExceptT $ do
+      lift $ validateIteratorRange _dbErr _dbEpochInfo (fst <$> _currentTip)
+        mbStart mbEnd
 
-    case emptyOrEndBound of
-      -- The database is empty, just return an empty iterator (directly
-      -- exhausted)
-      Nothing -> mkEmptyIterator
-      Just (end, mbEndHash) -> do
-        -- Fill in missing start bound
-        (start@(EpochSlot startEpoch startRelSlot), mbStartHash) <-
-          case mbStart of
-            Just (startSlot, startHash) -> do
-              startEpochSlot <- epochInfoBlockRelative _dbEpochInfo startSlot
-              return $ case startEpochSlot of
-                  -- Include the EBB by setting the start relative slot to 0
-                  EpochSlot epoch 1 -> (EpochSlot epoch 0, Just startHash)
-                  epochSlot         -> (epochSlot,         Just startHash)
-            _otherwise ->
-              return (EpochSlot 0 0, Nothing)
+      -- TODO cache index files: we might open the same primary and secondary
+      -- indices to validate the end bound as for the start bound
 
-        -- Helper function to open the index file of an epoch.
-        let openIndex epoch
-              | epoch == _currentEpoch
-              = return $ indexFromSlotOffsets _currentEpochOffsets
-                  _currentEBBHash
-              | otherwise
-              = epochInfoSize _dbEpochInfo epoch >>= \size ->
-                loadIndex (_dbHashDecoder dbEnv) hasFS _dbErr epoch (succ size)
+      case _currentTip of
+        TipGen ->
+          -- If any of the two bounds were specified, 'validateIteratorRange'
+          -- would have thrown a 'ReadFutureSlotError'.
+          assert (isNothing mbStart && isNothing mbEnd) $ lift mkEmptyIterator
+        Tip tip -> do
+          (endEpochSlot, endHash)  <- fillInEndBound   hasFS tip mbEnd
+          (secondaryOffset, start) <- fillInStartBound hasFS     mbStart
 
-        startIndex <- openIndex startEpoch
+          lift $ do
+            -- 'validateIteratorRange' will catch nearly all invalid ranges,
+            -- except for one: streaming from the regular block to the EBB in
+            -- the same slot. The EBB comes before the regular block, so these
+            -- bounds are invalid. However, to distinguish the EBB from the
+            -- regular block, as both have the same slot number, we need to
+            -- look at the hashes. 'validateIteratorRange' doesn't have enough
+            -- information to do that.
+            let (startEpochSlot, _startHash) = start
+            when (startEpochSlot > endEpochSlot) $ do
+              startSlot <- epochInfoAbsolute _dbEpochInfo startEpochSlot
+              endSlot   <- epochInfoAbsolute _dbEpochInfo endEpochSlot
+              throwUserError _dbErr $ InvalidIteratorRangeError startSlot endSlot
 
-        -- True: use @start@ as the first 'EpochSlot' to start streaming from.
-        --
-        -- False: start searching after @start@ for an 'EpochSlot' to start
-        -- streaming from.
-        let useStartOtherwiseSearch :: Bool
-            useStartOtherwiseSearch
-              | containsSlot startIndex startRelSlot
-                -- The above 'containsSlot' condition is needed because we do
-                -- not know whether the index has the right size, which is a
-                -- precondition for 'isFilledSlot'.
-              , isFilledSlot startIndex startRelSlot
-              = case startRelSlot of
-                  -- If the startSlot refers to the first relative slot (0) of
-                  -- the epoch and the hash doesn't match the EBB hash, then
-                  -- skip the EBB and start from the block after it
-                  0 | Just startHash <- mbStartHash
-                      -- If slot 0 is filled, there must be an EBB hash
-                    , let ebbHash = fromMaybe (error "missing EBB hash") $
-                            getCurrentEBB (getEBBHash startIndex)
-                    , ebbHash /= startHash
-                    -> False
-                    | otherwise
-                      -- The startSlot refers to the first relative slot (0),
-                      -- but either no start hash was defined or it matched
-                      -- that of the EBB, so start from the EBB.
-                    -> True
-                  -- The startSlot refers to a filled relative slot other than
-                  -- the first (0), so start from that relative slot. We don't
-                  -- care about hashes, as only the EBB in relative slot 0 has
-                  -- a hash.
-                  _ -> True
-              | otherwise
-                -- The slot was not filled, so indicate that we should search
-                -- for a filled after it
-              = False
+            let EpochSlot startEpoch startRelSlot = startEpochSlot
+                startIsEBB | startRelSlot == 0 = IsEBB
+                           | otherwise         = IsNotEBB
+                curEpochInfo = CurrentEpochInfo _currentEpoch _currentEpochOffset
 
-        -- If we can't start from @start@, find the next filled 'EpochSlot' to
-        -- start from. If there is none in this epoch, open the next epoch
-        -- until you find one. If we didn't find a filled slot before reaching
-        -- @end@, return Nothing.
-        mbIndexAndNext <- if useStartOtherwiseSearch
-          then return $ Just (startIndex, start)
-          else case nextFilledSlot startIndex startRelSlot of
-            -- We no longer case about the start hash, as we are starting at a
-            -- later slot anyway. We don't care for end hash either, as we're
-            -- still in the same epoch so there can be no more EBB that we
-            -- would have to check the hash of.
-            Just relSlot
-              -- There is a filled slot, but we've gone too far
-              | EpochSlot startEpoch relSlot > end
-              -> return Nothing
-              -- There is a filled slot after startSlot in this epoch
-              | otherwise
-              -> return $ Just (startIndex, EpochSlot startEpoch relSlot)
-            -- No filled slot in the start epoch, open the next
-            Nothing -> lookInLaterEpochs (startEpoch + 1)
-              where
-                lookInLaterEpochs epoch
-                  -- Because we have checked that @end@ is valid, this check
-                  -- is enough to guarantee that we will never open the index
-                  -- of a future epoch, i.e. try to open a non-existing index
-                  -- file.
-                  | epoch > _epoch end = return Nothing
-                  | otherwise = do
-                    index <- openIndex epoch
-                    case firstFilledSlot index of
-                      Just relSlot
-                        -- We've gone too far
-                        | EpochSlot epoch relSlot > end
-                        -> return Nothing
-                        | otherwise
-                        -- This @relSlot@ might refer to the first relative
-                        -- slot (0) of an epoch, so it might refer to an EBB.
-                        -- However, we don't have to check the EBB hash, as
-                        -- the EBB must be included in the stream whether the
-                        -- hash matches or not, because the EBB comes before
-                        -- the block stored at the same 'SlotNo'. When
-                        -- advancing the iterator, we will check whether we
-                        -- should stop after the EBB or include the next
-                        -- block.
-                        -> return $ Just (index, EpochSlot epoch relSlot)
-                      Nothing -> lookInLaterEpochs (epoch + 1)
+            -- TODO avoid rereading the indices of the start epoch. We read
+            -- from both the primary and secondary index in 'fillInStartBound'
 
-        mbIteratorState <- case mbIndexAndNext of
-          -- No filled slot found, so just create a closed iterator
-          Nothing -> return IteratorStateExhausted
-          Just (index, next@(EpochSlot nextEpoch nextRelSlot)) -> do
-            -- Invariant 1 = OK by the search above for a filled slot
+            iteratorState <- iteratorStateForEpoch hasFS _dbErr _dbHashInfo
+              curEpochInfo endHash startEpoch secondaryOffset startIsEBB
 
-            eHnd <- hOpen (renderFile "epoch" nextEpoch) ReadMode
-            -- Invariant 2 = OK
+            varIteratorState <- newTVarM $ IteratorStateOpen iteratorState
 
-            -- Invariant 3 = OK by the search above for a filled slot
-
-            -- Position the epoch handle at the right place. Invariant 4 = OK
-            let offset = fromIntegral (offsetOfSlot index nextRelSlot)
-            -- Close the handle if the seek fails
-            onException hasFsErr _dbErr (hClose eHnd) $
-              hSeek eHnd AbsoluteSeek offset
-
-            return $ IteratorStateOpen IteratorState
-              { _it_next         = next
-              , _it_epoch_handle = eHnd
-              , _it_epoch_index  = index
+            mkIterator IteratorHandle
+              { itHasFS   = hasFS
+              , itState   = varIteratorState
+              , itEnd     = endEpochSlot
+              , itEndHash = endHash
               }
-
-        itState <- newTVarM mbIteratorState
-
-        let ith = IteratorHandle
-              { _it_hasFS    = hasFS
-              , _it_state    = itState
-              , _it_end      = end
-              , _it_end_hash = mbEndHash
-              }
-        -- Safely increment '_nextIteratorID' in the 'OpenState'.
-        modifyOpenState dbEnv $ \_hasFS -> state $ \st'@OpenState {..} ->
-          let it = Iterator
-                { iteratorNext    = iteratorNextImpl  dbEnv ith True
-                , iteratorPeek    = iteratorNextImpl  dbEnv ith False
-                , iteratorHasNext = iteratorHasNextImpl     ith
-                , iteratorClose   = iteratorCloseImpl       ith
-                , iteratorID      = BaseIteratorID _nextIteratorID
-                }
-          in (it, st' { _nextIteratorID = succ _nextIteratorID })
   where
+    ImmutableDBEnv { _dbErr, _dbEpochInfo, _dbHashInfo } = dbEnv
+
+    -- | Fill in the end bound: if 'Nothing', use the current tip. Otherwise,
+    -- check whether the bound exists in the database and return the
+    -- corresponding 'EpochSlot'.
+    --
+    -- PRECONDITION: the bound is in the past.
+    --
+    -- PRECONDITION: the database is not empty.
+    fillInEndBound
+      :: HasCallStack
+      => HasFS m h
+      -> (BlockOrEBB, hash)    -- ^ Current tip
+      -> Maybe (SlotNo, hash)  -- ^ End bound
+      -> ExceptT (WrongBoundError hash) m (EpochSlot, hash)
+    fillInEndBound hasFS currentTip = \case
+      -- End bound given, check whether it corresponds to a regular block or
+      -- an EBB. Convert the 'SlotNo' to an 'EpochSlot' accordingly.
+      Just end -> snd <$> checkBound hasFS end
+
+      -- No end bound given, use the current tip, but convert the 'BlockOrEBB'
+      -- to an 'EpochSlot'.
+      Nothing  -> lift $ flip overFst currentTip $ \case
+        EBB epoch      -> return (EpochSlot epoch 0)
+        Block lastSlot -> epochInfoBlockRelative _dbEpochInfo lastSlot
+
+    overFst :: forall a b c f. Functor f => (a -> f c) -> (a, b) -> f (c, b)
+    overFst f (a, b) = (, b) <$> f a
+
+    -- | Fill in the start bound: if 'Nothing', use the first block in the
+    -- database. Otherwise, check whether the bound exists in the database and
+    -- return the corresponding 'EpochSlot' and 'SecondaryOffset'.
+    --
+    -- PRECONDITION: the bound is in the past.
+    --
+    -- PRECONDITION: the database is not empty.
+    fillInStartBound
+      :: HasCallStack
+      => HasFS m h
+      -> Maybe (SlotNo, hash)  -- ^ Start bound
+      -> ExceptT (WrongBoundError hash) m (SecondaryOffset, (EpochSlot, hash))
+    fillInStartBound hasFS = \case
+      -- Start bound given, check whether it corresponds to a regular block or
+      -- an EBB. Convert the 'SlotNo' to an 'EpochSlot' accordingly.
+      Just start -> checkBound hasFS start
+
+      -- No start bound given, use the first block in the ImmutableDB as the
+      -- start bound.
+      Nothing -> lift $ findFirstFilledSlot 0
+        where
+          findFirstFilledSlot epoch =
+            Primary.readFirstFilledSlot hasFS _dbErr epoch >>= \case
+              -- We know the database is not empty, so this loop must end
+              -- before we reach an epoch that doesn't yet exist (which would
+              -- result in an error).
+              Nothing      -> findFirstFilledSlot (epoch + 1)
+              Just relSlot -> do
+                  (Secondary.Entry { headerHash }, _) <-
+                    Secondary.readEntry hasFS _dbErr _dbHashInfo epoch isEBB
+                      secondaryOffset
+                  return (secondaryOffset, (EpochSlot epoch relSlot, headerHash))
+                where
+                  -- The first entry in the secondary index file (i.e. the
+                  -- first filled slot in the primary index) always starts at
+                  -- 0.
+                  secondaryOffset = 0
+                  isEBB | relSlot == 0 = IsEBB
+                        | otherwise    = IsNotEBB
+
+    -- | Check whether the given bound exists in the ImmutableDB, otherwise a
+    -- 'WrongBoundError' is returned. The 'SecondaryOffset' and 'EpochSlot'
+    -- for the bound are returned.
+    --
+    -- The primary index is read to find out whether the slot is filled and
+    -- what the 'SecondaryOffset' is for the slot. The secondary index is read
+    -- to check the hash.
+    --
+    -- PRECONDITION: the bound is in the past.
+    --
+    -- PRECONDITION: the database is not empty.
+    checkBound
+      :: HasCallStack
+      => HasFS m h
+      -> (SlotNo, hash)  -- ^ Bound
+      -> ExceptT (WrongBoundError hash) m (SecondaryOffset, (EpochSlot, hash))
+    checkBound hasFS (slot, hash) = do
+        epochSlot@(EpochSlot epoch relSlot) <- lift $
+          epochInfoBlockRelative _dbEpochInfo slot
+        -- 'epochInfoBlockRelative' always assumes the given 'SlotNo' refers
+        -- to a regular block and will return 1 as the relative slot number
+        -- when given an EBB.
+        let couldBeEBB = relSlot == 1
+
+        -- Obtain the offsets in the secondary index file from the primary
+        -- index file. The block /could/ still correspond to an EBB, a regular
+        -- block or both. We will know which one it is when we can check the
+        -- hashes from the secondary index file with the hash we have.
+        toRead :: NonEmpty (IsEBB, SecondaryOffset) <- if couldBeEBB then
+            lift (Primary.readOffsets hasFS _dbErr epoch (Two 0 1)) >>= \case
+              Two Nothing Nothing                   ->
+                throwError $ EmptySlotError slot
+              Two (Just ebbOffset) (Just blkOffset) ->
+                return ((IsEBB, ebbOffset) NE.:| [(IsNotEBB, blkOffset)])
+              Two (Just ebbOffset) Nothing          ->
+                return ((IsEBB, ebbOffset) NE.:| [])
+              Two Nothing (Just blkOffset)          ->
+                return ((IsNotEBB, blkOffset) NE.:| [])
+          else
+            lift (Primary.readOffset hasFS _dbErr epoch relSlot) >>= \case
+              Nothing        ->
+                throwError $ EmptySlotError slot
+              Just blkOffset ->
+                return ((IsNotEBB, blkOffset) NE.:| [])
+
+        entries :: NonEmpty (Secondary.Entry hash) <- lift $ fmap fst <$>
+          Secondary.readEntries hasFS _dbErr _dbHashInfo epoch toRead
+
+        -- The entry from the secondary index file that matches the expected
+        -- hash.
+        (secondaryOffset, entry) :: (SecondaryOffset, Secondary.Entry hash) <-
+          case find ((== hash) . Secondary.headerHash . snd)
+                    (NE.zip (fmap snd toRead) entries) of
+            Just found -> return found
+            Nothing    -> throwError $ WrongHashError slot hash hashes
+              where
+                hashes = Secondary.headerHash <$> entries
+
+        -- Use the secondary index entry to determine whether the slot + hash
+        -- correspond to an EBB or a regular block.
+        return $ (secondaryOffset,) $ (, hash) $
+          case Secondary.blockOrEBB entry of
+            Block _ -> epochSlot
+            EBB   _ -> EpochSlot epoch 0
+
+    -- TODO we're calling 'modifyOpenState' from within 'withOpenState', ok?
+    withNewIteratorID
+      :: (IteratorID -> Iterator hash m ByteString)
+      -> m (Iterator hash m ByteString)
+    withNewIteratorID mkIter = modifyOpenState dbEnv $ \_hasFS ->
+      state $ \st@OpenState { _nextIteratorID = itID } ->
+        (mkIter (BaseIteratorID itID), st { _nextIteratorID = succ itID })
+
     mkEmptyIterator :: m (Iterator hash m ByteString)
-    mkEmptyIterator =
-      modifyOpenState dbEnv $ \_hasFS -> state $ \st@OpenState {..} ->
-        let it = Iterator
-              { iteratorNext    = return IteratorExhausted
-              , iteratorPeek    = return IteratorExhausted
-              , iteratorHasNext = return False
-              , iteratorClose   = return ()
-              , iteratorID      = BaseIteratorID _nextIteratorID
-              }
-        in (it, st { _nextIteratorID = succ _nextIteratorID })
+    mkEmptyIterator = withNewIteratorID $ \itID -> Iterator
+      { iteratorNext    = return IteratorExhausted
+      , iteratorPeek    = return IteratorExhausted
+      , iteratorHasNext = return False
+      , iteratorClose   = return ()
+      , iteratorID      = itID
+      }
 
+    mkIterator :: IteratorHandle hash m -> m (Iterator hash m ByteString)
+    mkIterator ith = withNewIteratorID $ \itID -> Iterator
+      { iteratorNext    = iteratorNextImpl dbEnv ith blocksOrHeaders True
+      , iteratorPeek    = iteratorNextImpl dbEnv ith blocksOrHeaders False
+      , iteratorHasNext = iteratorHasNextImpl    ith
+      , iteratorClose   = iteratorCloseImpl      ith
+      , iteratorID      = itID
+      }
 
-iteratorNextImpl :: forall m hash.
-                    (IOLike m, Eq hash)
-                 => ImmutableDBEnv m hash
-                 -> IteratorHandle hash m
-                 -> Bool  -- ^ Step the iterator after reading iff True
-                 -> m (IteratorResult hash ByteString)
-iteratorNextImpl dbEnv it@IteratorHandle {_it_hasFS = hasFS :: HasFS m h, ..} step = do
-    -- The idea is that if the state is not Nothing, then '_it_next' is always
-    -- ready to be read. After reading it with 'readNext', 'stepIterator' will
-    -- advance the iterator to the next valid epoch slot if @step@ is True.
-    mbIteratorState <- atomically $ readTVar _it_state
-    case mbIteratorState of
+iteratorNextImpl
+  :: forall m hash. (IOLike m, Eq hash)
+  => ImmutableDBEnv m hash
+  -> IteratorHandle hash m
+  -> BlocksOrHeaders
+  -> Bool  -- ^ Step the iterator after reading iff True
+  -> m (IteratorResult hash ByteString)
+iteratorNextImpl dbEnv it@IteratorHandle {itHasFS = hasFS :: HasFS m h, ..}
+                 blocksOrHeaders step = do
+    -- The idea is that if the state is not 'IteratorStateExhausted, then the
+    -- head of 'itEpochEntries' is always ready to be read. After reading it
+    -- with 'readNextBlock' or 'readNextHeader', 'stepIterator' will advance
+    -- the iterator to the next valid epoch slot if @step@ is True.
+    atomically (readTVar itState) >>= \case
       -- Iterator already closed
       IteratorStateExhausted -> return IteratorExhausted
-      -- Valid @next@ thanks to Invariant 1, so go ahead and read it
-      IteratorStateOpen iteratorState@IteratorState{..} -> withOpenState dbEnv $ \_ st -> do
-        slot <- epochInfoAbsolute (_dbEpochInfo dbEnv) _it_next
-        blob <- readNext iteratorState
-        case _it_next of
-          -- It's an EBB
-          EpochSlot epoch 0
-            | let ebbHash = fromMaybe (error "missing EBB hash") $
-                    getCurrentEBB (getEBBHash _it_epoch_index)
-            -> do
-              when step $ case (_it_end, _it_end_hash) of
-                -- Special case: if the thing we are returning is an EBB and
-                -- its 'EpochSlot' matches '_it_end' and its EBB hash matches
-                -- '_it_end_hash', then we must stop after this EBB. Note that
-                -- the '_it_end' will refer to relative slot 1, even though
-                -- the EBB is stored at relative slot 0, because at the time
-                -- we calculate '_it_end"", we don't know yet whether to stop
-                -- at the EBB or the block stored in the same slot (after the
-                -- EBB).
-                (EpochSlot endEpoch 1, ItrEndHash endHash)
-                  | epoch == endEpoch, endHash == ebbHash
-                  -> iteratorCloseImpl it
-                _ -> stepIterator st iteratorState
-              return $ IteratorEBB epoch ebbHash blob
-          _ -> do
-            -- If @step@ is True, advance the iterator before returning the
-            -- read blob, so it has a valid @next@ to read the next time.
-            when step $ stepIterator st iteratorState
-            return $ IteratorResult slot blob
+      IteratorStateOpen iteratorState@IteratorState{..} ->
+        withOpenState dbEnv $ \_ st -> do
+          let entryAndBlockSize@(entry, _) = NE.head itEpochEntries
+              hash = Secondary.headerHash entry
+              curEpochInfo = CurrentEpochInfo
+                (_currentEpoch       st)
+                (_currentEpochOffset st)
+          blob <- case blocksOrHeaders of
+            Blocks  -> readNextBlock  itEpochHandle entryAndBlockSize
+            Headers -> readNextHeader itEpochHandle entry
+          when step $ stepIterator curEpochInfo iteratorState
+          return $ case Secondary.blockOrEBB entry of
+            Block slot  -> IteratorResult slot  hash blob
+            EBB   epoch -> IteratorEBB    epoch hash blob
   where
-    HasFS{..} = hasFS
+    ImmutableDBEnv { _dbErr, _dbEpochInfo, _dbHashInfo } = dbEnv
+    HasFS { hClose } = hasFS
 
-    readNext :: IteratorState hash h -> m ByteString
-    readNext IteratorState { _it_epoch_handle = eHnd
-                           , _it_next = EpochSlot _ relSlot
-                           , _it_epoch_index = index } = do
-      -- Grab the blob size from the cached index
-      let blobSize = sizeOfSlot index relSlot
+    -- TODO check checksum
+    readNextBlock
+      :: Handle h
+      -> (Secondary.Entry hash, Word32)
+      -> m ByteString
+    readNextBlock eHnd (Secondary.Entry { blockOffset }, size) =
+        hGetExactlyAt hasFS eHnd (fromIntegral size) offset
+      where
+        offset = AbsOffset $ Secondary.unBlockOffset blockOffset
 
-      -- Read from the epoch file. No need for seeking: as we are streaming,
-      -- we are already positioned at the correct place (Invariant 4).
-      hGetExactly hasFS eHnd (fromIntegral blobSize)
-        `finally`
-        -- Seek to the previous position if we shouldn't step to the next.
-        unless step (hSeek eHnd RelativeSeek (negate (fromIntegral blobSize)))
-    -- Move the iterator to the next position that can be read from, advancing
-    -- epochs if necessary. If no next position can be found, the iterator is
-    -- closed.
-    stepIterator :: OpenState hash h' -> IteratorState hash h -> m ()
-    stepIterator st its@IteratorState { _it_epoch_handle = eHnd
-                                      , _it_next = EpochSlot epoch currentRelSlot
-                                      , _it_epoch_index = index } =
-      case nextFilledSlot index currentRelSlot of
-        -- We're still in the same epoch
-        Just nextRelSlot
-          | next <= _it_end
-            -- We don't have to look at the end hash, because the next filled
-            -- slot can never refer to an EBB (only stored at slot 0), and
-            -- only when looking at an EBB can we check the hash.
-          -> atomically $ writeTVar _it_state $ IteratorStateOpen its { _it_next = next }
-             -- Invariant 1 is OK (see condition), Invariant 2 is unchanged,
-             -- Invariant 3 is OK (thanks to nextFilledSlot), Invariant 4 is
-             -- OK (readNext moved the handle + nextFilledSlot).
-          | otherwise
-          -> iteratorCloseImpl it
-          where
-            next = EpochSlot epoch nextRelSlot
+    -- | We don't rely on the position of the handle, we always use
+    -- 'hGetExactlyAt', i.e. @pread@ for reading from a given offset.
+    readNextHeader
+      :: Handle h
+      -> Secondary.Entry hash
+      -> m ByteString
+    readNextHeader eHnd Secondary.Entry { blockOffset, headerOffset, headerSize } =
+        hGetExactlyAt hasFS eHnd size offset
+      where
+        size   = fromIntegral $ Secondary.unHeaderSize headerSize
+        offset = AbsOffset $
+          (Secondary.unBlockOffset blockOffset) +
+          fromIntegral (Secondary.unHeaderOffset headerOffset)
 
-        -- EpochNo exhausted, open the next epoch
+    -- | Move the iterator to the next position that can be read from,
+    -- advancing epochs if necessary. If no next position can be found, the
+    -- iterator is closed.
+    stepIterator :: CurrentEpochInfo -> IteratorState hash h -> m ()
+    stepIterator curEpochInfo iteratorState@IteratorState {..} =
+      case NE.nonEmpty (NE.tail itEpochEntries) of
+        -- There are entries left in this epoch, so continue. See the
+        -- invariant on 'itEpochEntries'
+        Just itEpochEntries' -> atomically $ writeTVar itState $
+          IteratorStateOpen iteratorState { itEpochEntries = itEpochEntries' }
+
+        -- No more entries in this epoch, so open the next.
         Nothing -> do
-          hClose eHnd
-          openNextNonEmptyEpoch (epoch + 1) st
+          hClose itEpochHandle
+          -- If this was the final epoch, close the iterator
+          if itEpoch >= _epoch itEnd then
+            iteratorCloseImpl it
 
-    -- Start opening epochs (starting from the given epoch number) until we
-    -- encounter a non-empty one, then update the iterator state accordingly.
-    -- If no non-empty epoch can be found, the iterator is closed.
-    openNextNonEmptyEpoch :: EpochNo -> OpenState hash h' -> m ()
-    openNextNonEmptyEpoch epoch st@OpenState {..}
-      | epoch > _epoch _it_end
-      = iteratorCloseImpl it
-      | otherwise = do
-        -- Thanks to the guard we know that epoch <= _epoch _it_end. We also
-        -- know that _epoch _it_end is <= _currentEpoch, so we know that epoch
-        -- <= _currentEpoch.
-        index <- case epoch == _currentEpoch of
-          False -> epochInfoSize (_dbEpochInfo dbEnv) epoch >>= \size ->
-                   loadIndex (_dbHashDecoder dbEnv) hasFS (_dbErr dbEnv) epoch (succ size)
-          True  -> return $
-            indexFromSlotOffsets _currentEpochOffsets _currentEBBHash
+          else
+            openNextEpoch curEpochInfo itEnd (itEpoch + 1) >>= \iteratorState' ->
+            atomically $ writeTVar itState $ IteratorStateOpen iteratorState'
 
-        case firstFilledSlot index of
-          -- Empty epoch -> try the next one
-          Nothing -> openNextNonEmptyEpoch (epoch + 1) st
-          Just relSlot
-            -- Slot is after the end -> stop
-            | EpochSlot epoch relSlot > _it_end -> iteratorCloseImpl it
-            | otherwise -> do
-              let epochFile = renderFile "epoch" epoch
-              eHnd <- hOpen epochFile ReadMode
-              -- No seek needed, as we will start streaming from the first
-              -- offset.
-              --
-              -- Invariant 1 is OK (see the guard above), Invariant 2 is OK,
-              -- Invariant 3 is OK (thanks to firstFilledSlot), Invariant 4 is
-              -- OK.
-              atomically $ writeTVar _it_state $ IteratorStateOpen IteratorState
-                { _it_next = EpochSlot epoch relSlot
-                , _it_epoch_handle = eHnd
-                , _it_epoch_index = index
-                }
+    openNextEpoch
+      :: CurrentEpochInfo
+      -> EpochSlot  -- ^ The end bound
+      -> EpochNo    -- ^ The epoch to open
+      -> m (IteratorState hash h)
+    openNextEpoch curEpochInfo end epoch =
+      Primary.readFirstFilledSlot hasFS _dbErr epoch >>= \case
+        -- This epoch is empty, look in the next one.
+        --
+        -- We still haven't encountered the end bound, so this loop must end
+        -- when we reach the non-empty epoch containing the end bound. This
+        -- cannot loop forever as an error would be thrown when opening the
+        -- index file(s) of a non-existing epoch.
+        Nothing      -> openNextEpoch curEpochInfo end (epoch + 1)
+        Just relSlot -> do
+          -- Note that the only reason we actually open the primary index file
+          -- is to see whether the first block in the epoch is an EBB or not.
+          -- To see whether the epoch is empty, we could open the secondary
+          -- index file directly and see whether it contains any blocks. The
+          -- 'secondaryOffset' will be 0, as the first entry in the secondary
+          -- index file always starts at offset 0. The same is true for
+          -- 'findFirstFilledSlot'.
+          let firstIsEBB | relSlot == 0 = IsEBB
+                         | otherwise    = IsNotEBB
+              secondaryOffset = 0
 
-iteratorHasNextImpl :: (HasCallStack, IOLike m)
-                    => IteratorHandle hash m
-                    -> m Bool
-iteratorHasNextImpl IteratorHandle { _it_state } =
-    fmap iteratorStateIsOpen $ atomically $ readTVar _it_state
+          iteratorStateForEpoch hasFS _dbErr _dbHashInfo curEpochInfo itEndHash
+            epoch secondaryOffset firstIsEBB
 
-iteratorCloseImpl :: (HasCallStack, IOLike m)
-                  => IteratorHandle hash m
-                  -> m ()
+iteratorHasNextImpl
+  :: (HasCallStack, IOLike m)
+  => IteratorHandle hash m
+  -> m Bool
+iteratorHasNextImpl IteratorHandle { itState } =
+    atomically $ iteratorStateIsOpen <$> readTVar itState
+
+iteratorCloseImpl
+  :: (HasCallStack, IOLike m)
+  => IteratorHandle hash m
+  -> m ()
 iteratorCloseImpl IteratorHandle {..} = do
-    mbIteratorState <- atomically $ readTVar _it_state
-    case mbIteratorState of
+    atomically (readTVar itState) >>= \case
       -- Already closed
       IteratorStateExhausted -> return ()
       IteratorStateOpen IteratorState {..} -> do
         -- First set it to Nothing to indicate it is closed, as the call to
-        -- hClose might fail, which would leave the iterator open in an
+        -- 'hClose' might fail, which would leave the iterator open in an
         -- invalid state.
-        atomically $ writeTVar _it_state IteratorStateExhausted
-        hClose _it_epoch_handle
+        atomically $ writeTVar itState IteratorStateExhausted
+        hClose itEpochHandle
   where
-    HasFS{..} = _it_hasFS
+    HasFS { hClose } = itHasFS
+
+iteratorStateForEpoch
+  :: (HasCallStack, IOLike m, Eq hash)
+  => HasFS m h
+  -> ErrorHandling ImmutableDBError m
+  -> HashInfo hash
+  -> CurrentEpochInfo
+  -> hash
+     -- ^ Hash of the end bound
+  -> EpochNo
+  -> SecondaryOffset
+     -- ^ Where to start in the secondary index
+  -> IsEBB
+     -- ^ Whether the first expected block will be an EBB or not.
+  -> m (IteratorState hash h)
+iteratorStateForEpoch hasFS err hashInfo
+                      (CurrentEpochInfo curEpoch curEpochOffset) endHash
+                      epoch secondaryOffset firstIsEBB = do
+    entries <- Secondary.readAllEntries hasFS err hashInfo secondaryOffset
+      epoch ((== endHash) . Secondary.headerHash) firstIsEBB
+
+    -- Open the epoch file
+    eHnd <- hOpen (renderFile "epoch" epoch) ReadMode
+
+    -- If we don't close the handle when an exception is thrown, we leak a
+    -- file handle, since this handle is not stored in a state that can be
+    -- closed yet.
+    onException hasFsErr err (hClose eHnd) $ do
+
+      -- If the last entry in @entries@ corresponds to the last block in the
+      -- epoch, we cannot calculate the block size based on the next block.
+      -- Instead, we calculate it based on the size of the epoch file. We do
+      -- that in 'fillInLastBlockSize'.
+      --
+      -- IMPORTANT: for older epochs, this is fine, as the secondary index
+      -- (entries) and the epoch file (size) are immutable. However, when
+      -- doing this for the current epoch, there is a potential race condition
+      -- between reading of the entries from the secondary index and obtaining
+      -- the epoch file size: what if a new block was appended after reading
+      -- the entries but before obtaining the epoch file size? Then the epoch
+      -- file size will not correspond to the last entry we read, but to the
+      -- block after it. Similarly if we switch the order of the two
+      -- operations.
+      --
+      -- To avoid this race condition, we use the value of
+      -- '_currentEpochOffset' from the state as the file size of the current
+      -- epoch (stored in 'CurrentEpochInfo'). This value corresponds to the
+      -- epoch file size at the time we /read the state/. We also know that
+      -- the end bound of our iterator is always <= the tip from that same
+      -- state, so all @entries@ must be <= the tip from that state because
+      -- we'll never stream beyond the tip. Remember that we only actually use
+      -- the current epoch file size if the last entry we have read from the
+      -- secondary index is the last entry in the file, in which case it would
+      -- correspond to the tip from the state. In this case, the epoch file
+      -- size (@curEpochOffset@) we are passed is consistent with the tip, as
+      -- it was obtained from the same consistent state.
+      epochFileSize <- if epoch == curEpoch
+        then return (unBlockOffset curEpochOffset)
+        else hGetSize eHnd
+
+
+      case NE.nonEmpty (fillInLastBlockSize epochFileSize entries) of
+        -- We still haven't encountered the end bound, so it cannot be
+        -- that this non-empty epoch contains no entries <= the end bound.
+        Nothing             -> error
+          "impossible: there must be entries according to the primary index"
+
+        Just itEpochEntries -> do
+          let (nextEntry, _) NE.:| _ = itEpochEntries
+              offset = fromIntegral $ Secondary.unBlockOffset $
+                Secondary.blockOffset nextEntry
+
+          -- Seek the handle so that we can read the first block to
+          -- stream.
+          hSeek eHnd AbsoluteSeek offset
+
+          return IteratorState
+            { itEpoch       = epoch
+            , itEpochHandle = eHnd
+            , itEpochEntries
+            }
+  where
+    HasFS { hOpen, hClose, hSeek, hGetSize, hasFsErr } = hasFS
+
+-- | When reading the entries from the secondary index files, we can calculate
+-- the block size corresponding to each entry based on the offset of the entry
+-- and offset of the entry after it. We cannot do this for the last entry, as
+-- there is no entry after it. We assign 'LastEntry' to that entry so that we
+-- know that when we try to read the corresponding block, it is the last block
+-- in the epoch file, which means we don't need to know the size of the block,
+-- as we can simply read the epoch file until the end.
+--
+-- This works fine when we read the last block directly after obtaining its
+-- corresponding entry. However, in the case of iterators, we read all
+-- entries, but before we try to read the block corresponding to the last
+-- entry, another block may have been appended to the same epoch file. In this
+-- case, reading the epoch file until the end would mean that we read two
+-- blocks instead of one!
+--
+-- For this reason, we try to replace the 'LastEntry' of the last block with
+-- the actual block size using the current size of the epoch file.
+--
+-- It could be that the entry with 'LastEntry' was removed from the list
+-- when dropping blocks that come after the end bound, in which case the
+-- original input list is returned.
+fillInLastBlockSize
+  :: Word64  -- ^ The size of the epoch file
+  -> [(Secondary.Entry hash, BlockSize)]
+  -> [(Secondary.Entry hash, Word32)]
+fillInLastBlockSize epochFileSize = go
+  where
+    go [] = []
+    go [(e@Secondary.Entry { blockOffset }, LastEntry)] = [(e, sz)]
+      where
+        sz = fromIntegral (epochFileSize - Secondary.unBlockOffset blockOffset)
+    go ((e, BlockSize size):xs) = (e, size):go xs
+    go ((_, LastEntry):_)       = error "LastEntry for entry that was not last"

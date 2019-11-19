@@ -8,7 +8,6 @@
 module Ouroboros.Storage.VolatileDB.Types
     (
       module Ouroboros.Storage.VolatileDB.Types
-    , module Ouroboros.Storage.Common
     , module Ouroboros.Network.Block
     ) where
 
@@ -23,7 +22,6 @@ import           Cardano.Prelude (NoUnexpectedThunks, first)
 
 import           Ouroboros.Network.Block hiding (Tip, decodeTip, encodeTip)
 import           Ouroboros.Network.Point (WithOrigin)
-import           Ouroboros.Storage.Common
 import           Ouroboros.Storage.FS.API.Types
 
 -- | The 'FileId' is the unique identifier of each file found in the db.
@@ -121,6 +119,9 @@ getParsedInfo (Parser parser) path =
     toParsedInfo :: [(Word64, (Word64, BlockInfo blockId))]
                  -> ParsedInfo blockId
     toParsedInfo = fmap $ \(o, (s, a)) -> (o, (BlockSize s, a))
+
+-- | The offset of a slot in a file.
+type SlotOffset = Word64
 
 -- | Information returned by the parser about a single file
 --

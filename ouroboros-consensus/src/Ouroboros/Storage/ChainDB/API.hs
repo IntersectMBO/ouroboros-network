@@ -506,14 +506,11 @@ data ChainDbFailure =
     -- not found
   | ImmDbMissingBlock (Either EpochNo SlotNo)
 
-    -- | A block at a certain slot in the immutable DB had an unexpected hash.
+    -- | Block missing from the immutable DB
     --
-    -- The immutable DB only knows of slots and not of hashes. This exception
-    -- gets thrown when the block at the given slot (1st argument) in the
-    -- immutable DB had another (3rd argument) hash than the expected one (2nd
-    -- argument).
+    -- Same as 'ImmDbMissingBlock', but we only know the 'Point' of the block.
   | forall blk. (Typeable blk, StandardHash blk) =>
-      ImmDbHashMismatch (Point blk) (HeaderHash blk) (HeaderHash blk)
+      ImmDbMissingBlockPoint (Point blk)
 
     -- | We requested an iterator that was immediately exhausted
     --

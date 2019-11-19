@@ -1,3 +1,4 @@
+{-# LANGUAGE DeriveTraversable   #-}
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE OverloadedStrings   #-}
@@ -6,7 +7,8 @@
 {-# LANGUAGE TupleSections       #-}
 module Ouroboros.Storage.ImmutableDB.Impl.Util
   ( -- * Utilities
-    renderFile
+    Two (..)
+  , renderFile
   , handleUser
   , handleUnexpected
   , throwUserError
@@ -14,23 +16,18 @@ module Ouroboros.Storage.ImmutableDB.Impl.Util
   , tryImmDB
   , parseDBFile
   , validateIteratorRange
-  , indexBackfill
   , onException
   , epochSlotToTip
   , dbFilesOnDisk
   , removeFilesStartingFrom
-    -- * Encoding and decoding the EBB hash
-  , deserialiseHash
-  , serialiseHash
+  , runGet
+  , runGetWithUnconsumed
   ) where
 
-import           Codec.CBOR.Decoding (Decoder)
-import           Codec.CBOR.Encoding (Encoding)
-import           Codec.CBOR.Read (DeserialiseFailure, deserialiseFromBytes)
-import           Codec.CBOR.Write (toLazyByteString)
 import           Control.Monad (forM_, when)
-import           Data.Bifunctor (second)
-import qualified Data.ByteString.Lazy as BL
+import           Data.Binary.Get (Get)
+import qualified Data.Binary.Get as Get
+import qualified Data.ByteString.Lazy as Lazy
 import           Data.Set (Set)
 import qualified Data.Set as Set
 import qualified Data.Text as T
@@ -54,8 +51,13 @@ import           Ouroboros.Storage.ImmutableDB.Types
   Utilities
 ------------------------------------------------------------------------------}
 
+-- | Useful when you have exactly two values of some type and want to
+-- 'traverse' over both of them (which is not possible with a tuple).
+data Two a = Two a a
+  deriving (Functor, Foldable, Traversable)
+
 renderFile :: String -> EpochNo -> FsPath
-renderFile fileType (EpochNo epoch) = mkFsPath [printf "%s-%03d.dat" fileType epoch]
+renderFile fileType (EpochNo epoch) = mkFsPath [printf "%05d.%s" epoch fileType]
 
 handleUser :: HasCallStack
            => ErrorHandling ImmutableDBError m
@@ -101,14 +103,14 @@ tryImmDB fsErr immDBErr = fmap squash . EH.try fsErr . EH.try immDBErr
 -- | Parse the prefix and epoch number from the filename of an index or epoch
 -- file.
 --
--- > parseDBFile "epoch-001.dat"
+-- > parseDBFile "00001.epoch"
 -- Just ("epoch", 1)
--- > parseDBFile "index-012.dat"
--- Just ("index", 12)
+-- > parseDBFile "00012.primary"
+-- Just ("primary", 12)
 parseDBFile :: String -> Maybe (String, EpochNo)
-parseDBFile s = case T.splitOn "-" . fst . T.breakOn "." . T.pack $ s of
-    [prefix, n] -> (T.unpack prefix,) . EpochNo <$> readMaybe (T.unpack n)
-    _           -> Nothing
+parseDBFile s = case T.splitOn "." $ T.pack s of
+    [n, ext] -> (T.unpack ext,) . EpochNo <$> readMaybe (T.unpack n)
+    _        -> Nothing
 
 -- | Check whether the given iterator range is valid.
 --
@@ -152,51 +154,6 @@ validateIteratorRange err epochInfo tip mbStart mbEnd = do
       Tip (EBB   lastEpoch) -> (slot >) <$> epochInfoFirst epochInfo lastEpoch
       Tip (Block lastSlot)  -> return $ slot > lastSlot
 
--- TODO move to a better place
--- | Return the slots to backfill the index file with.
---
--- A situation may arise in which we \"skip\" some relative slots, and we
--- write into the DB, for example, every other relative slot. In this case, we
--- need to backfill the index file with offsets for the skipped relative
--- slots. Similarly, before we start a new epoch, we must backfill the index
--- file of the current epoch file to indicate that it is finalised.
---
--- For example, say we have written \"a\" to relative slot 0 and \"bravo\" to
--- relative slot 1. We have the following index file:
---
--- > slot:     0   1   2
--- >         ┌───┬───┬───┐
--- > offset: │ 0 │ 1 │ 6 │
--- >         └───┴───┴───┘
---
--- Now we want to store \"haskell\" in relative slot 4, skipping 2 and 3. We
--- first have to backfill the index by repeating the last offset for the two
--- missing slots:
---
--- > slot:     0   1   2   3   4
--- >         ┌───┬───┬───┬───┬───┐
--- > offset: │ 0 │ 1 │ 6 │ 6 │ 6 │
--- >         └───┴───┴───┴───┴───┘
---
--- After backfilling (writing the offset 6 twice), we can write the next
--- offset:
---
--- > slot:     0   1   2   3   4   5
--- >         ┌───┬───┬───┬───┬───┬───┐
--- > offset: │ 0 │ 1 │ 6 │ 6 │ 6 │ 13│
--- >         └───┴───┴───┴───┴───┴───┘
---
--- For the example above, the output of this funciton would thus be: @[6, 6]@.
---
-indexBackfill :: RelativeSlot  -- ^ The slot to write to (>= next expected slot)
-              -> RelativeSlot  -- ^ The next expected slot to write to
-              -> SlotOffset    -- ^ The last 'SlotOffset' written to
-              -> [SlotOffset]
-indexBackfill (RelativeSlot slot) (RelativeSlot nextExpected) lastOffset =
-    replicate gap lastOffset
-  where
-    gap = fromIntegral $ slot - nextExpected
-
 -- | Execute some error handler when an 'ImmutableDBError' or an 'FsError' is
 -- thrown while executing an action.
 onException :: Monad m
@@ -208,22 +165,23 @@ onException :: Monad m
 onException fsErr err onErr m =
     EH.onException fsErr (EH.onException err m onErr) onErr
 
-
 -- | Convert an 'EpochSlot' to a 'Tip'
 epochSlotToTip :: Monad m => EpochInfo m -> EpochSlot -> m ImmTip
 epochSlotToTip _         (EpochSlot epoch 0) = return $ Tip (EBB epoch)
 epochSlotToTip epochInfo epochSlot           = Tip . Block <$>
     epochInfoAbsolute epochInfo epochSlot
 
--- | Go through all files, making two sets: the set of epoch-xxx.dat
--- files, and the set of index-xxx.dat files, discarding all others.
-dbFilesOnDisk :: Set String -> (Set EpochNo, Set EpochNo)
+-- | Go through all files, making three sets: the set of epoch files, primary
+-- index files, and secondary index files,, discarding all others.
+dbFilesOnDisk :: Set String -> (Set EpochNo, Set EpochNo, Set EpochNo)
 dbFilesOnDisk = foldr categorise mempty
   where
-    categorise file fs@(epochFiles, indexFiles) = case parseDBFile file of
-      Just ("epoch", n) -> (Set.insert n epochFiles, indexFiles)
-      Just ("index", n) -> (epochFiles, Set.insert n indexFiles)
-      _                 -> fs
+    categorise file fs@(epoch, primary, secondary) =
+      case parseDBFile file of
+        Just ("epoch",     n) -> (Set.insert n epoch, primary, secondary)
+        Just ("primary",   n) -> (epoch, Set.insert n primary, secondary)
+        Just ("secondary", n) -> (epoch, primary, Set.insert n secondary)
+        _                     -> fs
 
 -- | Remove all epoch and index starting from the given epoch (included).
 removeFilesStartingFrom :: (HasCallStack, Monad m)
@@ -232,27 +190,42 @@ removeFilesStartingFrom :: (HasCallStack, Monad m)
                         -> m ()
 removeFilesStartingFrom HasFS { removeFile, listDirectory } epoch = do
     filesInDBFolder <- listDirectory (mkFsPath [])
-    let (epochFiles, indexFiles) = dbFilesOnDisk filesInDBFolder
+    let (epochFiles, primaryFiles, secondaryFiles) = dbFilesOnDisk filesInDBFolder
     forM_ (takeWhile (>= epoch) (Set.toDescList epochFiles)) $ \e ->
       removeFile (renderFile "epoch" e)
-    forM_ (takeWhile (>= epoch) (Set.toDescList indexFiles)) $ \i ->
-      removeFile (renderFile "index" i)
+    forM_ (takeWhile (>= epoch) (Set.toDescList primaryFiles)) $ \i ->
+      removeFile (renderFile "primary" i)
+    forM_ (takeWhile (>= epoch) (Set.toDescList secondaryFiles)) $ \i ->
+      removeFile (renderFile "secondary" i)
 
-{-------------------------------------------------------------------------------
-  Encoding and decoding the EBB hash
+-- | Wrapper around 'Get.runGetOrFail' that throws an 'InvalidFileError' when
+-- it failed or when there was unconsumed input.
+runGet
+  :: (HasCallStack, Monad m)
+  => ErrorHandling ImmutableDBError m
+  -> FsPath
+  -> Get a
+  -> Lazy.ByteString
+  -> m a
+runGet err file get bl = case Get.runGetOrFail get bl of
+    Right (unconsumed, _, primary)
+      | Lazy.null unconsumed
+      -> return primary
+      | otherwise
+      -> throwUnexpectedError err $ InvalidFileError file "left-over bytes" callStack
+    Left (_, _, msg)
+      -> throwUnexpectedError err $ InvalidFileError file msg callStack
 
-  When no EBB is present we use an empty bytestring.
--------------------------------------------------------------------------------}
-
-deserialiseHash :: (forall s. Decoder s hash)
-                -> BL.ByteString
-                -> Either DeserialiseFailure (BL.ByteString, CurrentEBB hash)
-deserialiseHash hashDecoder bs
-  | BL.null bs = Right (BL.empty, NoCurrentEBB)
-  | otherwise  = second CurrentEBB <$> (deserialiseFromBytes hashDecoder bs)
-
-serialiseHash :: (hash -> Encoding)
-              -> CurrentEBB hash
-              -> BL.ByteString
-serialiseHash _           NoCurrentEBB      = BL.empty
-serialiseHash hashEncoder (CurrentEBB hash) = toLazyByteString (hashEncoder hash)
+-- | Same as 'runGet', but allows unconsumed input and returns it.
+runGetWithUnconsumed
+  :: (HasCallStack, Monad m)
+  => ErrorHandling ImmutableDBError m
+  -> FsPath
+  -> Get a
+  -> Lazy.ByteString
+  -> m (Lazy.ByteString, a)
+runGetWithUnconsumed err file get bl = case Get.runGetOrFail get bl of
+    Right (unconsumed, _, primary)
+      -> return (unconsumed, primary)
+    Left (_, _, msg)
+      -> throwUnexpectedError err $ InvalidFileError file msg callStack

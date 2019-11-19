@@ -30,23 +30,27 @@ openDBMock err epochSize = do
     return (dbModel, immDB dbVar)
   where
     db :: ImmutableDB hash (MockM hash)
-    (dbModel, db) = openDBModel err' epochSize
+    (dbModel, db, _internal) = openDBModel err' epochSize
 
     err' :: ErrorHandling ImmutableDBError (MockM hash)
     err' = EH.liftErrState (Proxy @(DBModel hash)) EH.exceptT
 
     immDB :: StrictTVar m (DBModel hash) -> ImmutableDB hash m
     immDB dbVar = ImmutableDB
-        { closeDB           = wrap  $   closeDB          db
-        , isOpen            = wrap  $   isOpen           db
-        , reopen            = wrap  .   reopen           db
-        , deleteAfter       = wrap  .   deleteAfter      db
-        , getTip            = wrap  $   getTip           db
-        , getBinaryBlob     = wrap  .   getBinaryBlob    db
-        , getEBB            = wrap  .   getEBB           db
-        , appendBinaryBlob  = wrap  .:  appendBinaryBlob db
-        , appendEBB         = wrap  ..: appendEBB        db
-        , streamBinaryBlobs = wrapI .: streamBinaryBlobs db
+        { closeDB           = wrap  $   closeDB       db
+        , isOpen            = wrap  $   isOpen        db
+        , reopen            = wrap  .   reopen        db
+        , getTip            = wrap  $   getTip        db
+        , getBlock          = wrap  .   getBlock      db
+        , getBlockHeader    = wrap  .   getBlock      db
+        , getBlockHash      = wrap  .   getBlockHash  db
+        , getEBB            = wrap  .   getEBB        db
+        , getEBBHeader      = wrap  .   getEBBHeader  db
+        , getEBBHash        = wrap  .   getEBBHash    db
+        , appendBlock       = wrap  ..: appendBlock   db
+        , appendEBB         = wrap  ..: appendEBB     db
+        , streamBlocks      = wrapI .:  streamBlocks  db
+        , streamHeaders     = wrapI .:  streamHeaders db
         , immutableDBErr    = err
         }
       where
@@ -65,9 +69,10 @@ openDBMock err epochSize = do
 
     wrapIter :: forall a.
                 StrictTVar m (DBModel hash)
-             -> Iterator hash (MockM hash) a
-             -> Iterator hash m a
-    wrapIter dbVar it = Iterator
+             -> Either (WrongBoundError hash) (Iterator hash (MockM hash) a)
+             -> Either (WrongBoundError hash) (Iterator hash m a)
+    wrapIter _dbVar (Left e)   = Left e
+    wrapIter  dbVar (Right it) = Right Iterator
         { iteratorNext    = wrap $ iteratorNext    it
         , iteratorPeek    = wrap $ iteratorPeek    it
         , iteratorHasNext = wrap $ iteratorHasNext it

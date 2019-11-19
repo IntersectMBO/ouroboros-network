@@ -1,4 +1,5 @@
 {-# LANGUAGE FlexibleInstances   #-}
+{-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
@@ -8,6 +9,8 @@ import           Codec.CBOR.Decoding (Decoder)
 import           Codec.CBOR.Encoding (Encoding)
 import           Codec.CBOR.Read (deserialiseFromBytes)
 import           Codec.CBOR.Write (toLazyByteString)
+import qualified Data.Binary.Get as Get
+import qualified Data.Binary.Put as Put
 import qualified Data.ByteString.Lazy as Lazy
 
 import           Cardano.Binary (fromCBOR, toCBOR)
@@ -27,6 +30,8 @@ import           Ouroboros.Consensus.Mempool.API (ApplyTxErr)
 import           Ouroboros.Consensus.Protocol.Abstract (ChainState)
 import           Ouroboros.Consensus.Protocol.PBFT
 import           Ouroboros.Consensus.Protocol.PBFT.ChainState
+
+import           Ouroboros.Storage.ImmutableDB (BinaryInfo (..), HashInfo (..))
 
 import           Test.QuickCheck
 import           Test.QuickCheck.Hedgehog (hedgehog)
@@ -56,6 +61,12 @@ tests = testGroup "Byron"
       , testProperty "roundtrip ApplyTxErr"  prop_roundtrip_ApplyTxErr
       ]
       -- TODO LedgerState
+
+  , testProperty "BinaryInfo sanity check"   prop_encodeByronBlockWithInfo
+  , testGroup "HashInfo sanity check"
+      [ testProperty "putHash/getHash roundtrip" prop_byronHashInfo_roundtrip
+      , testProperty "hashSize"                  prop_byronHashInfo_hashSize
+      ]
   ]
 
 {-------------------------------------------------------------------------------
@@ -123,6 +134,56 @@ prop_roundtrip_GenTxId =
 prop_roundtrip_ApplyTxErr :: ApplyTxErr ByronBlock -> Property
 prop_roundtrip_ApplyTxErr =
     roundtrip encodeByronApplyTxError decodeByronApplyTxError
+
+{-------------------------------------------------------------------------------
+  BinaryInfo
+-------------------------------------------------------------------------------}
+
+prop_encodeByronBlockWithInfo :: ByronBlock -> Property
+prop_encodeByronBlockWithInfo blk =
+    headerAnnotation === extractedHeader
+  where
+    BinaryInfo { binaryBlob, headerOffset, headerSize } =
+      encodeByronBlockWithInfo blk
+
+    extractedHeader :: Lazy.ByteString
+    extractedHeader =
+        Lazy.take (fromIntegral headerSize)   $
+        Lazy.drop (fromIntegral headerOffset) $
+        toLazyByteString binaryBlob
+
+    headerAnnotation :: Lazy.ByteString
+    headerAnnotation = Lazy.fromStrict $ case byronBlockRaw blk of
+      ABOBBoundary b -> CC.Block.boundaryHeaderAnnotation $ CC.Block.boundaryHeader b
+      ABOBBlock    b -> CC.Block.headerAnnotation         $ CC.Block.blockHeader    b
+
+{-------------------------------------------------------------------------------
+  HashInfo
+-------------------------------------------------------------------------------}
+
+prop_byronHashInfo_roundtrip :: ByronHash -> Property
+prop_byronHashInfo_roundtrip h =
+    case Get.runGetOrFail getHash serialisedHash of
+      Left (_, _, e)
+        -> counterexample e $ property False
+      Right (unconsumed, _, h')
+        | Lazy.null unconsumed
+        -> h === h'
+        | otherwise
+        -> counterexample ("unconsumed bytes: " <> show unconsumed) $
+           property False
+  where
+    HashInfo { getHash, putHash } = byronHashInfo
+
+    serialisedHash = Put.runPut (putHash h)
+
+prop_byronHashInfo_hashSize :: ByronHash -> Property
+prop_byronHashInfo_hashSize h =
+    hashSize === fromIntegral (Lazy.length serialisedHash)
+  where
+    HashInfo { hashSize, putHash } = byronHashInfo
+
+    serialisedHash = Put.runPut (putHash h)
 
 {-------------------------------------------------------------------------------
   Generators

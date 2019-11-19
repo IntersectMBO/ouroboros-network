@@ -3,8 +3,8 @@
 {-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
+{-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE TypeApplications           #-}
 {-# LANGUAGE TypeFamilies               #-}
@@ -13,6 +13,7 @@ module Ouroboros.Consensus.Ledger.Byron.Block (
     -- * Hash
     ByronHash(..)
   , mkByronHash
+  , byronHashInfo
     -- * Block
   , ByronBlock(..)
   , mkByronBlock
@@ -22,6 +23,7 @@ module Ouroboros.Consensus.Ledger.Byron.Block (
   , mkByronHeader
   , byronBlockMatchesHeader
     -- * Serialisation
+  , encodeByronBlockWithInfo
   , encodeByronBlock
   , decodeByronBlock
   , encodeByronHeader
@@ -30,11 +32,17 @@ module Ouroboros.Consensus.Ledger.Byron.Block (
   , decodeByronHeaderHash
   ) where
 
+import           Data.Binary (Get, Put)
+import qualified Data.Binary.Get as Get
+import qualified Data.Binary.Put as Put
+import qualified Data.ByteArray as ByteArray
 import           Data.ByteString (ByteString)
+import qualified Data.ByteString as Strict
 import qualified Data.ByteString.Lazy as Lazy
 import           Data.FingerTree.Strict (Measured (..))
 import           Data.Proxy
 import           Data.Typeable
+import           Data.Word (Word32)
 import           GHC.Generics (Generic)
 
 import           Codec.CBOR.Decoding (Decoder)
@@ -44,8 +52,11 @@ import qualified Codec.CBOR.Encoding as CBOR
 import           Cardano.Binary
 import           Cardano.Prelude (NoUnexpectedThunks (..))
 
+import qualified Crypto.Hash as Crypto
+
 import qualified Cardano.Chain.Block as CC
 import qualified Cardano.Chain.Slotting as CC
+import qualified Cardano.Crypto.Hashing as CC
 
 import           Ouroboros.Network.Block
 
@@ -54,6 +65,8 @@ import           Ouroboros.Consensus.Ledger.Byron.Aux
 import           Ouroboros.Consensus.Ledger.Byron.Conversions
 import           Ouroboros.Consensus.Ledger.Byron.Orphans ()
 import           Ouroboros.Consensus.Util.Condense
+
+import           Ouroboros.Storage.ImmutableDB (BinaryInfo (..), HashInfo (..))
 
 {-------------------------------------------------------------------------------
   Header hash
@@ -66,6 +79,23 @@ newtype ByronHash = ByronHash { unByronHash :: CC.HeaderHash }
 
 mkByronHash :: ABlockOrBoundaryHdr ByteString -> ByronHash
 mkByronHash = ByronHash . abobHdrHash
+
+byronHashInfo :: HashInfo ByronHash
+byronHashInfo = HashInfo { hashSize, getHash, putHash }
+  where
+    hashSize :: Word32
+    hashSize = fromIntegral $ CC.hashDigestSize' @Crypto.Blake2b_256
+
+    getHash :: Get ByronHash
+    getHash = do
+      bytes <- Get.getByteString (fromIntegral hashSize)
+      case Crypto.digestFromByteString bytes of
+        Nothing     -> fail "digestFromByteString failed"
+        Just digest -> return $ ByronHash $ CC.AbstractHash digest
+
+    putHash :: ByronHash -> Put
+    putHash (ByronHash (CC.AbstractHash digest)) =
+      Put.putByteString $ ByteArray.convert digest
 
 {-------------------------------------------------------------------------------
   Block
@@ -183,6 +213,27 @@ encodeByronHeaderHash = toCBOR
 
 decodeByronHeaderHash :: Decoder s (HeaderHash ByronBlock)
 decodeByronHeaderHash = fromCBOR
+
+-- | 'encodeByronBlock' including the offset and size of the header within the
+-- resulting bytestring.
+--
+-- NOTE: the bytestring obtained by slicing the serialised block using the
+-- header offset and size will correspond to the /header annotation/, but not
+-- to the serialised header, as we add an envelope ('encodeListLen' + tag)
+-- around a header in 'encodeByronHeader'. This envelope must thus still be
+-- added to the sliced bytestring before it can be deserialised using
+-- 'decodeByronHeader'.
+encodeByronBlockWithInfo :: ByronBlock -> BinaryInfo Encoding
+encodeByronBlockWithInfo blk = BinaryInfo
+    { binaryBlob   = encodeByronBlock blk
+    , headerOffset = 1 {- 'encodeListLen' of the outer 'Either' envelope -}
+                   + 1 {- the tag -}
+                   + 1 {- 'encodeListLen' of the block: header + body + ...  -}
+      -- Compute the length of the annotated header
+    , headerSize   = fromIntegral $ Strict.length $ case byronBlockRaw blk of
+        CC.ABOBBoundary b -> CC.boundaryHeaderAnnotation $ CC.boundaryHeader b
+        CC.ABOBBlock    b -> CC.headerAnnotation         $ CC.blockHeader    b
+    }
 
 -- | Encode a block
 --

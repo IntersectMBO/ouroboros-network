@@ -548,8 +548,13 @@ implIteratorNext registry varItState IteratorEnv{..} =
             -- 'ReadFutureEBBError' because if the block is missing, it /must/
             -- have been garbage-collected, which means that its slot was
             -- older than the slot of the tip of the ImmutableDB.
-            immIt <- ImmDB.streamBlocksFromUnchecked itImmDB registry continueFrom
-            nextInImmDBRetry Nothing immIt (hash NE.:| hashes)
+            ImmDB.streamBlocksFrom itImmDB registry continueFrom >>= \case
+              -- The block was not found in the ImmutableDB, it must have been
+              -- garbage-collected
+              Left   _    -> do
+                trace $ BlockGCedFromVolDB hash
+                return $ IteratorBlockGCed hash
+              Right immIt -> nextInImmDBRetry Nothing immIt (hash NE.:| hashes)
 
         -- Block is there
         Just blk | Just hashes' <- NE.nonEmpty hashes -> do
@@ -662,9 +667,9 @@ implIteratorNext registry varItState IteratorEnv{..} =
         itRes   <- ImmDB.iteratorNext    itImmDB immIt
         hasNext <- ImmDB.iteratorHasNext itImmDB immIt
         case itRes of
-          ImmDB.IteratorResult _ blk -> select blk hasNext
-          ImmDB.IteratorEBB  _ _ blk -> select blk hasNext
-          ImmDB.IteratorExhausted    -> return Done
+          ImmDB.IteratorResult _ _ blk -> select blk hasNext
+          ImmDB.IteratorEBB    _ _ blk -> select blk hasNext
+          ImmDB.IteratorExhausted      -> return Done
       where
         close = ImmDB.iteratorClose itImmDB immIt
 

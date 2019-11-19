@@ -2,21 +2,22 @@
 {-# LANGUAGE DeriveAnyClass             #-}
 {-# LANGUAGE DeriveFunctor              #-}
 {-# LANGUAGE DeriveGeneric              #-}
-{-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE DerivingVia                #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase                 #-}
 module Ouroboros.Storage.ImmutableDB.Types
   ( SlotNo (..)
   , ImmTip
+  , ImmTipWithHash
   , BlockOrEBB (..)
-  , TipEpochSlot (..)
-  , TruncateTo (..)
+  , HashInfo (..)
+  , BinaryInfo (..)
   , EpochFileParser (..)
   , ValidationPolicy (..)
   , BaseIteratorID
   , IteratorID(..)
   , initialIteratorID
+  , WrongBoundError (..)
   , ImmutableDBError (..)
   , sameImmutableDBError
   , prettyImmutableDBError
@@ -32,21 +33,22 @@ module Ouroboros.Storage.ImmutableDB.Types
   , getCurrentEBB
   ) where
 
-import           Codec.Serialise (DeserialiseFailure)
 import           Control.Exception (Exception (..))
-
+import           Data.Binary (Get, Put)
+import           Data.Word
 import           GHC.Generics (Generic)
 import           GHC.Stack (CallStack, prettyCallStack)
+import           Data.List.NonEmpty (NonEmpty)
 
 import           Cardano.Prelude (NoUnexpectedThunks (..),
                      UseIsNormalFormNamed (..))
 
 import           Ouroboros.Network.Block (SlotNo (..))
+import           Ouroboros.Network.Point (WithOrigin)
 
 import           Ouroboros.Storage.Common
 import           Ouroboros.Storage.FS.API.Types (FsError, FsPath, prettyFsError,
                      sameFsError)
-import           Ouroboros.Storage.ImmutableDB.Layout
 
 data BlockOrEBB
   = Block !SlotNo
@@ -55,48 +57,57 @@ data BlockOrEBB
 
 type ImmTip = Tip BlockOrEBB
 
--- | Variant of 'Tip' that uses 'EpochSlot' instead of 'EpochNo' or 'SlotNo'.
-data TipEpochSlot
-  = TipEpochSlotGenesis
-  | TipEpochSlot !EpochSlot
-  deriving (Eq, Show)
+-- TODO let this replace 'ImmTip' and integrate @hash@ in 'BlockOrEBB'?
+type ImmTipWithHash hash = Tip (BlockOrEBB, hash)
 
-instance Ord TipEpochSlot where
-  compare te1 te2 = case (te1, te2) of
-    (TipEpochSlotGenesis, TipEpochSlotGenesis) -> EQ
-    (TipEpochSlotGenesis, _)                   -> LT
-    (_,                   TipEpochSlotGenesis) -> GT
-    (TipEpochSlot es1,    TipEpochSlot es2)    -> compare es1 es2
+-- | How to get/put the header hash of a block and how many bytes it occupies
+-- on-disk.
+data HashInfo hash = HashInfo
+  { hashSize :: !Word32
+    -- ^ A fixed size
+  , getHash  :: !(Get hash)
+  , putHash  :: !(hash -> Put)
+  }
 
+-- | Information about the serialised block.
+data BinaryInfo blob = BinaryInfo
+  { binaryBlob   :: !blob
+  , headerOffset :: !Word16
+    -- ^ The offset within the 'binaryBlob' at which the header starts.
+  , headerSize   :: !Word16
+    -- ^ How many bytes the header is long. Extracting the 'headerSize' bytes
+    -- from 'binaryBlob' starting from 'headerOffset' should yield the header.
 
--- | Truncate the database to some 'Tip'. This means that everything in the
--- database that comes after the 'Tip' will be removed, excluding the EBB or
--- block the 'Tip' points to.
-newtype TruncateTo = TruncateTo { getTruncateTo :: ImmTip }
-  deriving (Eq, Show, Generic)
+    -- In the future, i.e. Shelley, we might want to extend this to include a
+    -- field to tell where the transaction body ends and where the transaction
+    -- witnesses begin so we can only extract the transaction body.
+  } deriving (Show, Generic, Functor)
 
 -- | Parse the contents of an epoch file.
 --
 -- The parsing may include validation of the contents of the epoch file.
 --
--- The 'SlotOffset' is the offset (in bytes) of the start of the corresponding
--- @t@ (block). The returned 'SlotOffset's are from __first to last__ and
--- __strictly__ monotonically increasing. The first 'SlotOffset' must be 0.
+-- @entry@ will be instantiated with @(Secondary.Entry hash, WithOrigin
+-- hash)@, i.e. an entry from the secondary index corresponding to a block and
+-- the hash of the block before it. To avoid cyclic dependencies, it is left
+-- abstract.
 --
--- The @Maybe hash@ is the hash of the EBB, if present. The EBB itself should
--- be the first entry in the list, if present.
+-- The parser should validate that each entry fits onto the previous one, i.e.
+-- that the hashes line up.
 --
 -- We assume the output of 'EpochFileParser' to be correct, we will not
 -- validate it.
 --
--- An error may be returned in the form of @'Maybe' e@. The 'SlotOffset's may
--- be accompanied with other data of type @t@. Note that we are not using
--- @Either e ..@ because the error @e@ might occur after some valid slots have
--- been parsed successfully, in which case we still want these valid slots,
--- but also want to know about the error so we can truncate the file to get
--- rid of the unparseable data.
-newtype EpochFileParser e hash m t = EpochFileParser
-  { runEpochFileParser :: FsPath -> m ([(SlotOffset, t)], CurrentEBB hash, Maybe e) }
+-- An error may be returned in the form of @('Maybe' e, 'Word64')@. The
+-- 'Word64' must correspond to the offset in the file where the last valid
+-- entry ends. Truncating to this offset should remove all invalid data from
+-- the file and just leave the valid entries before it. Note that we are not
+-- using @Either e ..@ because the error @e@ might occur after some valid
+-- entries have been parsed successfully, in which case we still want these
+-- valid entries, but also want to know about the error so we can truncate the
+-- file to get rid of the unparseable data.
+newtype EpochFileParser e m entry = EpochFileParser
+  { runEpochFileParser :: FsPath -> m ([entry], Maybe (e, Word64)) }
   deriving (Functor)
 
 -- | The validation policy used when (re)opening an
@@ -149,6 +160,24 @@ data IteratorID = BaseIteratorID BaseIteratorID | DerivedIteratorID IteratorID
 -- | Initial identifier number, use 'succ' to generate the next one.
 initialIteratorID :: BaseIteratorID
 initialIteratorID = MkBaseIteratorID 0
+
+-- | Returned by 'streamBlocks' and 'streamHeaders' when a bound is wrong.
+--
+-- NOTE: this is not a 'UserError' that is thrown as an exception, but an
+-- admissible error, returned in an 'Either'. This is because we expect wrong
+-- bounds to be passed in practice. The functions to stream the blocks are
+-- best placed to validate the bounds, instead of requiring the users of the
+-- functions to do the validation beforehand.
+data WrongBoundError hash
+  = EmptySlotError SlotNo
+    -- ^ There is no block in the given slot.
+  | WrongHashError SlotNo hash (NonEmpty hash)
+    -- ^ The block and/or EBB in the given slot have a different hash.
+    --
+    -- The first @hash@ is the one given as bound. In the list of @hash@es,
+    -- the EBB's hash will come first and the regular block's hash will come
+    -- second.
+  deriving (Eq, Show, Generic)
 
 -- | Errors that might arise when working with this database.
 data ImmutableDBError
@@ -238,54 +267,55 @@ prettyUserError = \case
 data UnexpectedError
   = FileSystemError FsError -- An FsError already stores the callstack
     -- ^ An IO operation on the file-system threw an error.
-  | InvalidFileError FsPath CallStack
+  | InvalidFileError FsPath String CallStack
     -- ^ When loading an epoch or index file, its contents did not pass
     -- validation.
   | MissingFileError FsPath CallStack
     -- ^ A missing epoch or index file.
-  | DeserialisationError DeserialiseFailure CallStack
-    -- ^ Deserialisation ('Codec.Serialise.Serialise') went wrong.
   deriving (Show, Generic)
 
 -- | Check if two 'Ouroboros.Storage.ImmutableDB.Types.UnexpectedError's are
 -- equal while ignoring their 'CallStack's.
 sameUnexpectedError :: UnexpectedError -> UnexpectedError -> Bool
 sameUnexpectedError ue1 ue2 = case (ue1, ue2) of
-    (FileSystemError fse1,       FileSystemError fse2)       -> sameFsError fse1 fse2
-    (FileSystemError {},         _)                          -> False
-    (InvalidFileError p1 _,      InvalidFileError p2 _)      -> p1 == p2
-    (InvalidFileError {},        _)                          -> False
-    (MissingFileError p1 _,      MissingFileError p2 _)      -> p1 == p2
-    (MissingFileError {},        _)                          -> False
-    (DeserialisationError df1 _, DeserialisationError df2 _) -> df1 == df2
-    (DeserialisationError {},    _)                          -> False
+    (FileSystemError fse1,     FileSystemError fse2)     -> sameFsError fse1 fse2
+    (FileSystemError {},       _)                        -> False
+    (InvalidFileError p1 m1 _, InvalidFileError p2 m2 _) -> p1 == p2 && m1 == m2
+    (InvalidFileError {},      _)                        -> False
+    (MissingFileError p1 _,    MissingFileError p2 _)    -> p1 == p2
+    (MissingFileError {},      _)                        -> False
 
 -- | Pretty-print an 'Ouroboros.Storage.ImmutableDB.Types.UnexpectedError',
 -- including its callstack.
 prettyUnexpectedError :: UnexpectedError -> String
 prettyUnexpectedError = \case
     FileSystemError fse -> prettyFsError fse
-    InvalidFileError path cs ->
+    InvalidFileError path msg cs ->
       "InvalidFileError (" <> show path <> "): " <>
+      msg <> " " <>
       prettyCallStack cs
     MissingFileError path cs ->
       "MissingFileError (" <> show path <> "): " <>
       prettyCallStack cs
-    DeserialisationError df cs ->
-      "DeserialisationError (" <> displayException df <> "): " <>
-      prettyCallStack cs
 
-data TraceEvent e
+data TraceEvent e hash
     = NoValidLastLocation
     | ValidatedLastLocation EpochNo ImmTip
       -- Validation of previous DB
-    | ValidatingEpoch EpochNo
-    | ValidatingEpochMissing EpochNo
-    | ValidatingEpochErrorParsing e
-    | ReconstructIndexLastSlotMissing
-    | ValidatingEpochIndexIncomplete EpochNo
+    | ValidatingEpoch  EpochNo
+    | MissingEpochFile EpochNo
+    | InvalidEpochFile EpochNo e
+    | EpochFileDoesntFit (WithOrigin hash) (WithOrigin hash)
+      -- ^ The hash of the last block in the previous epoch doesn't match the
+      -- previous hash of the first block in the current epoch
+    | MissingPrimaryIndex   EpochNo
+    | MissingSecondaryIndex EpochNo
+    | InvalidPrimaryIndex   EpochNo
+    | InvalidSecondaryIndex EpochNo
+    | RewritePrimaryIndex   EpochNo
+    | RewriteSecondaryIndex EpochNo
       -- Delete after
-    | DeletingAfter TipEpochSlot TipEpochSlot
+    | DeletingAfter ImmTip
       -- Closing the DB
     | DBAlreadyClosed
     | DBClosed

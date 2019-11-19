@@ -4,7 +4,6 @@
 {-# LANGUAGE RankNTypes                #-}
 {-# LANGUAGE RecordWildCards           #-}
 {-# LANGUAGE ScopedTypeVariables       #-}
-{-# LANGUAGE TypeApplications          #-}
 
 {-# OPTIONS_GHC -Wredundant-constraints #-}
 -- | Thin wrapper around the ImmutableDB
@@ -26,7 +25,6 @@ module Ouroboros.Storage.ChainDB.Impl.ImmDB (
   , appendBlock
     -- * Streaming
   , streamBlocksFrom
-  , streamBlocksFromUnchecked
   , streamBlocksAfter
     -- * Wrappers
   , closeDB
@@ -36,13 +34,15 @@ module Ouroboros.Storage.ChainDB.Impl.ImmDB (
   , iteratorPeek
   , iteratorClose
     -- * Tracing
-  , ImmDB.TraceEvent
+  , TraceEvent
   , ImmDB.EpochFileError
     -- * Re-exports
   , Iterator
   , IteratorResult(..)
   , ImmDB.ValidationPolicy(..)
   , ImmDB.ImmutableDBError
+  , ImmDB.BinaryInfo (..)
+  , ImmDB.HashInfo (..)
     -- * Exported for testing purposes
   , mkImmDB
     -- * Exported for utilities
@@ -73,7 +73,7 @@ import           Ouroboros.Network.Point (WithOrigin (..))
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.Orphans ()
 import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry,
-                     allocate, unsafeRelease)
+                     allocateEither, unsafeRelease)
 
 import           Ouroboros.Storage.ChainDB.API (ChainDbError (..),
                      ChainDbFailure (..), StreamFrom (..), UnknownRange (..))
@@ -82,8 +82,8 @@ import           Ouroboros.Storage.EpochInfo (EpochInfo (..))
 import           Ouroboros.Storage.FS.API (HasFS, createDirectoryIfMissing)
 import           Ouroboros.Storage.FS.API.Types (MountPoint (..), mkFsPath)
 import           Ouroboros.Storage.FS.IO (ioHasFS)
-import           Ouroboros.Storage.ImmutableDB (ImmutableDB,
-                     Iterator (Iterator), IteratorResult (..))
+import           Ouroboros.Storage.ImmutableDB (BinaryInfo (..), HashInfo (..),
+                     ImmutableDB, Iterator (Iterator), IteratorResult (..))
 import qualified Ouroboros.Storage.ImmutableDB as ImmDB
 import qualified Ouroboros.Storage.ImmutableDB.Parser as ImmDB
 import           Ouroboros.Storage.Util.ErrorHandling (ErrorHandling)
@@ -95,9 +95,9 @@ data ImmDB m blk = ImmDB {
     , decBlock  :: !(forall s. Decoder s (Lazy.ByteString -> blk))
       -- ^ TODO introduce a newtype wrapper around the @s@ so we can use
       -- generics to derive the NoUnexpectedThunks instance.
-    , encBlock  :: !(blk -> Encoding)
+    , encBlock  :: !(blk -> BinaryInfo Encoding)
     , epochInfo :: !(EpochInfo m)
-    , isEBB     :: !(blk -> Maybe (HeaderHash blk))
+    , isEBB     :: !(blk -> Maybe EpochNo)
     , err       :: !(ErrorHandling ImmDB.ImmutableDBError m)
     }
 
@@ -114,6 +114,10 @@ instance NoUnexpectedThunks (ImmDB m blk) where
     , noUnexpectedThunks ctxt err
     ]
 
+-- | Short-hand for events traced by the ImmDB wrapper.
+type TraceEvent blk =
+  ImmDB.TraceEvent (ImmDB.EpochFileError (HeaderHash blk)) (HeaderHash blk)
+
 {-------------------------------------------------------------------------------
   Initialization
 -------------------------------------------------------------------------------}
@@ -125,13 +129,14 @@ data ImmDbArgs m blk = forall h. ImmDbArgs {
       immDecodeHash  :: forall s. Decoder s (HeaderHash blk)
     , immDecodeBlock :: forall s. Decoder s (Lazy.ByteString -> blk)
     , immEncodeHash  :: HeaderHash blk -> Encoding
-    , immEncodeBlock :: blk -> Encoding
+    , immEncodeBlock :: blk -> BinaryInfo Encoding
     , immErr         :: ErrorHandling ImmDB.ImmutableDBError m
     , immEpochInfo   :: EpochInfo m
+    , immHashInfo    :: HashInfo (HeaderHash blk)
     , immValidation  :: ImmDB.ValidationPolicy
-    , immIsEBB       :: blk -> Maybe (HeaderHash blk)
+    , immIsEBB       :: blk -> Maybe EpochNo
     , immHasFS       :: HasFS m h
-    , immTracer      :: Tracer m (ImmDB.TraceEvent ImmDB.EpochFileError)
+    , immTracer      :: Tracer m (TraceEvent blk)
     }
 
 -- | Default arguments when using the 'IO' monad
@@ -143,6 +148,7 @@ data ImmDbArgs m blk = forall h. ImmDbArgs {
 -- * 'immEncodeHash'
 -- * 'immEncodeBlock'
 -- * 'immEpochInfo'
+-- * 'immHashInfo'
 -- * 'immValidation'
 -- * 'immIsEBB'
 defaultArgs :: FilePath -> ImmDbArgs IO blk
@@ -155,6 +161,7 @@ defaultArgs fp = ImmDbArgs{
     , immEncodeHash  = error "no default for immEncodeHash"
     , immEncodeBlock = error "no default for immEncodeBlock"
     , immEpochInfo   = error "no default for immEpochInfo"
+    , immHashInfo    = error "no default for immHashInfo"
     , immValidation  = error "no default for immValidation"
     , immIsEBB       = error "no default for immIsEBB"
     , immTracer      = nullTracer
@@ -164,13 +171,12 @@ openDB :: (IOLike m, HasHeader blk) => ImmDbArgs m blk -> m (ImmDB m blk)
 openDB ImmDbArgs{..} = do
     createDirectoryIfMissing immHasFS True (mkFsPath [])
     immDB <- ImmDB.openDB
-               immDecodeHash
-               immEncodeHash
                immHasFS
                immErr
                immEpochInfo
+               immHashInfo
                immValidation
-               (ImmDB.epochFileParser immHasFS immDecodeBlock immIsEBB)
+               parser
                immTracer
     return ImmDB
       { immDB        = immDB
@@ -180,13 +186,18 @@ openDB ImmDbArgs{..} = do
       , isEBB        = immIsEBB
       , err          = immErr
       }
+  where
+    parser = ImmDB.epochFileParser immHasFS immDecodeBlock immIsEBB
+      -- TODO a more efficient to accomplish this?
+      (void . immEncodeBlock)
+
 
 -- | For testing purposes
 mkImmDB :: ImmutableDB (HeaderHash blk) m
         -> (forall s. Decoder s (Lazy.ByteString -> blk))
-        -> (blk -> Encoding)
+        -> (blk -> BinaryInfo Encoding)
         -> EpochInfo m
-        -> (blk -> Maybe (HeaderHash blk))
+        -> (blk -> Maybe EpochNo)
         -> ErrorHandling ImmDB.ImmutableDBError m
         -> ImmDB m blk
 mkImmDB immDB decBlock encBlock epochInfo isEBB err = ImmDB {..}
@@ -205,7 +216,7 @@ mkImmDB immDB decBlock encBlock epochInfo isEBB err = ImmDB {..}
 -- 'ReadFutureSlotError' wrapped in a 'ImmDbFailure' is thrown.
 getBlockWithPoint :: forall m blk. (MonadCatch m, HasHeader blk, HasCallStack)
                   => ImmDB m blk -> Point blk -> m (Maybe blk)
-getBlockWithPoint _  GenesisPoint   = throwM NoGenesisBlock
+getBlockWithPoint _  GenesisPoint = throwM NoGenesisBlock
 getBlockWithPoint db BlockPoint { withHash = hash, atSlot = slot } =
     -- Unfortunately a point does not give us enough information to determine
     -- whether this corresponds to a regular block or an EBB. We will
@@ -242,6 +253,7 @@ getBlockWithPoint db BlockPoint { withHash = hash, atSlot = slot } =
       Tip (ImmDB.Block _)     -> return Nothing
       TipGen                  -> return Nothing
 
+    -- TODO do this more efficiently in the ImmutableDB
     -- | First try to read the block at the slot, if the block's hash doesn't
     -- match the expect hash, try reading the EBB at that slot.
     getBlockThenEBB :: m (Maybe blk)
@@ -329,9 +341,12 @@ getBlock db epochOrSlot = do
 getBlob :: (MonadCatch m, HasCallStack)
         => ImmDB m blk -> Either EpochNo SlotNo -> m (Maybe Lazy.ByteString)
 getBlob db epochOrSlot = withDB db $ \imm ->
+    -- TODO return hash
     case epochOrSlot of
       Left epochNo -> fmap snd <$> ImmDB.getEBB imm epochNo
-      Right slotNo -> ImmDB.getBinaryBlob imm slotNo
+      Right slotNo -> fmap snd <$> ImmDB.getBlock imm slotNo
+
+-- TODO 'getHeader'
 
 {-------------------------------------------------------------------------------
   Appending a block
@@ -343,12 +358,12 @@ getBlob db epochOrSlot = withDB db $ \imm ->
 appendBlock :: (MonadCatch m, HasHeader blk, HasCallStack)
             => ImmDB m blk -> blk -> m ()
 appendBlock db@ImmDB{..} b = withDB db $ \imm -> case isEBB b of
-    Nothing   ->
-      ImmDB.appendBinaryBlob imm slotNo (CBOR.toBuilder (encBlock b))
-    Just hash -> do
-      epochNo <- epochInfoEpoch slotNo
-      ImmDB.appendEBB imm epochNo hash (CBOR.toBuilder (encBlock b))
+    Nothing      ->
+      ImmDB.appendBlock imm slotNo  hash (CBOR.toBuilder <$> encBlock b)
+    Just epochNo ->
+      ImmDB.appendEBB   imm epochNo hash (CBOR.toBuilder <$> encBlock b)
   where
+    hash   = blockHash b
     slotNo = blockSlot b
     EpochInfo{..} = epochInfo
 
@@ -362,23 +377,42 @@ appendBlock db@ImmDB{..} b = withDB db $ \imm -> case isEBB b of
 --
 -- When the returned iterator is closed, it will be 'release'd from the
 -- 'ResourceRegistry'.
-registeredStream :: IOLike m
+registeredStream :: forall m blk. IOLike m
                  => ImmDB m blk
                  -> ResourceRegistry m
                  -> Maybe (SlotNo, HeaderHash blk)
                  -> Maybe (SlotNo, HeaderHash blk)
-                 -> m (ImmDB.Iterator (HeaderHash blk) m Lazy.ByteString)
+                 -> m (Either (UnknownRange blk)
+                              (ImmDB.Iterator (HeaderHash blk) m Lazy.ByteString))
 registeredStream db registry start end = do
-    (key, it) <- allocate registry
-      (\_key -> withDB db $ \imm -> ImmDB.streamBinaryBlobs imm start end)
+    errOrKeyAndIt <- allocateEither registry
+      (\_key -> withDB db $ \imm -> ImmDB.streamBlocks imm start end)
       (iteratorClose db)
-    -- The iterator will be used by a thread that is unknown to the registry
-    -- (which, after all, is entirely internal to the chain DB). This means
-    -- that the registry cannot guarantee that the iterator will be live for
-    -- the duration of that thread, and indeed, it may not be: the chain DB
-    -- might be closed before that thread terminates. We will deal with this
-    -- in the chain DB itself (throw ClosedDBError exception).
-    return it { ImmDB.iteratorClose = unsafeRelease key }
+    return $ case errOrKeyAndIt of
+      Left e          -> Left (toUnknownRange e)
+      -- The iterator will be used by a thread that is unknown to the registry
+      -- (which, after all, is entirely internal to the chain DB). This means
+      -- that the registry cannot guarantee that the iterator will be live for
+      -- the duration of that thread, and indeed, it may not be: the chain DB
+      -- might be closed before that thread terminates. We will deal with this
+      -- in the chain DB itself (throw ClosedDBError exception).
+      Right (key, it) -> Right it { ImmDB.iteratorClose = unsafeRelease key }
+  where
+    toUnknownRange :: ImmDB.WrongBoundError (HeaderHash blk) -> UnknownRange blk
+    toUnknownRange e
+      | Just (startSlot, startHash) <- start
+      , wrongBoundErrorSlotNo e == startSlot
+      = MissingBlock (BlockPoint startSlot startHash)
+      | Just (endSlot, endHash) <- end
+      , wrongBoundErrorSlotNo e == endSlot
+      = MissingBlock (BlockPoint endSlot endHash)
+      | otherwise
+      = error "WrongBoundError for a different bound than we gave"
+
+    wrongBoundErrorSlotNo :: ImmDB.WrongBoundError (HeaderHash blk) -> SlotNo
+    wrongBoundErrorSlotNo = \case
+      ImmDB.EmptySlotError slot     -> slot
+      ImmDB.WrongHashError slot _ _ -> slot
 
 -- | Stream blocks from the given 'StreamFrom'.
 --
@@ -392,7 +426,7 @@ registeredStream db registry start end = do
 --
 -- When passed @'StreamFromInclusive' pt@ where @pt@ refers to Genesis, a
 -- 'NoGenesisBlock' exception will be thrown.
-streamBlocksFrom :: forall m blk. (IOLike m, HasHeader blk)
+streamBlocksFrom :: forall m blk. IOLike m
                  => ImmDB m blk
                  -> ResourceRegistry m
                  -> StreamFrom blk
@@ -401,24 +435,15 @@ streamBlocksFrom :: forall m blk. (IOLike m, HasHeader blk)
 streamBlocksFrom db registry from = runExceptT $ case from of
     StreamFromExclusive pt@BlockPoint { atSlot = slot, withHash = hash } -> do
       checkFutureSlot pt
-      it    <- stream (Just (slot, hash)) Nothing
-      itRes <- lift $ iteratorNext db it
-      if blockMatchesPoint itRes pt
-        then return it
-        else do
-          lift $ iteratorClose db it
-          throwError $ MissingBlock pt
+      it <- stream (Just (slot, hash)) Nothing
+      -- Skip the first block, as the bound is exclusive
+      void $ lift $ iteratorNext db it
+      return it
     StreamFromExclusive    GenesisPoint ->
       stream Nothing Nothing
     StreamFromInclusive pt@BlockPoint { atSlot = slot, withHash = hash } -> do
       checkFutureSlot pt
-      it    <- stream (Just (slot, hash)) Nothing
-      itRes <- lift $ iteratorPeek db it
-      if blockMatchesPoint itRes pt
-        then return it
-        else do
-          lift $ iteratorClose db it
-          throwError $ MissingBlock pt
+      stream (Just (slot, hash)) Nothing
     StreamFromInclusive GenesisPoint ->
       throwM NoGenesisBlock
   where
@@ -436,110 +461,38 @@ streamBlocksFrom db registry from = runExceptT $ case from of
       when (pointSlot pt > slotNoAtTip) $
         throwError $ MissingBlock pt
 
-    stream start end = lift $ parseIterator db <$>
-      registeredStream db registry start end
-
-    -- | Check that the result of the iterator is a block that matches the
-    -- given point.
-    blockMatchesPoint :: ImmDB.IteratorResult (HeaderHash blk) blk
-                      -> Point blk
-                      -> Bool
-    blockMatchesPoint itRes pt = case itRes of
-      ImmDB.IteratorExhausted    -> False
-      ImmDB.IteratorResult _ blk -> blockPoint blk == pt
-      ImmDB.IteratorEBB  _ _ blk -> blockPoint blk == pt
-
--- | Same as 'streamBlocksFrom', but without checking the hash of the lower
--- bound.
---
--- There is still a cost when the lower bound is 'StreamFromExclusive': the
--- block will be read from disk, but it won't be parsed.
---
--- When passed @'StreamFromInclusive' pt@ where @pt@ refers to Genesis, a
--- 'NoGenesisBlock' exception will be thrown.
-streamBlocksFromUnchecked  :: forall m blk. IOLike m
-                           => ImmDB m blk
-                           -> ResourceRegistry m
-                           -> StreamFrom blk
-                           -> m (ImmDB.Iterator (HeaderHash blk) m blk)
-streamBlocksFromUnchecked db registry from = case from of
-    StreamFromExclusive BlockPoint { atSlot = slot, withHash = hash } -> do
-      it <- registeredStream db registry (Just (slot, hash)) Nothing
-      void $ iteratorNext db it
-      return $ parseIterator db it
-    StreamFromExclusive    GenesisPoint ->
-      stream Nothing Nothing
-    StreamFromInclusive BlockPoint { atSlot = slot, withHash = hash } ->
-      stream (Just (slot, hash)) Nothing
-    StreamFromInclusive GenesisPoint ->
-      throwM NoGenesisBlock
-  where
-    stream start end = parseIterator db <$>
+    stream start end = ExceptT $ fmap (parseIterator db) <$>
       registeredStream db registry start end
 
 -- | Stream blocks after the given point
 --
--- See also 'streamBlobsAfter'.
---
--- PRECONDITION: the exclusive lower bound is part of the ImmutableDB.
+-- PRECONDITION: the exclusive lower bound is part of the ImmutableDB, if not,
+-- 'ImmDbMissingBlockPoint' is thrown.
 streamBlocksAfter :: forall m blk. (IOLike m, HasHeader blk)
                   => ImmDB m blk
                   -> ResourceRegistry m
                   -> Point blk -- ^ Exclusive lower bound
                   -> m (Iterator (HeaderHash blk) m blk)
 streamBlocksAfter db registry low =
-    parseIterator db <$> streamBlobsAfter db registry low
-
--- | Stream blobs after the given point
---
--- Our 'Point' based API and the 'SlotNo' + @hash@ based API of the
--- 'ImmutableDB' have a slight impedance mismatch: the bounds offered by the
--- 'ImmutableDB' are inclusive, /if specified/. We can't offer that here,
--- since it does not make sense to stream /from/ (inclusive) the genesis
--- block. Therefore we provide an /exclusive/ lower bound as a 'Point': if the
--- 'Point' refers to the genesis block we don't give the 'ImmutableDB' a lower
--- bound at all; if it doesn't, we pass the hash as the lower bound to the
--- 'ImmutableDB' and then step the iterator one block to skip that first
--- block.
-streamBlobsAfter :: forall m blk. (IOLike m, HasHeader blk)
-                 => ImmDB m blk
-                 -> ResourceRegistry m
-                 -> Point blk -- ^ Exclusive lower bound
-                 -> m (Iterator (HeaderHash blk) m Lazy.ByteString)
-streamBlobsAfter db registry low = do
-    itr <- registeredStream db registry low' Nothing
-    skipAndCheck itr
-    return itr
+    registeredStream db registry low' Nothing >>= \case
+      Left  _   -> throwM $ ImmDbMissingBlockPoint low
+      Right itr -> do
+        case low of
+          GenesisPoint           -> return ()
+          -- Skip the exclusive lower bound
+          BlockPoint _slot _hash -> iteratorNext db itr >>= \case
+              IteratorExhausted        ->
+                throwM $ ImmDbUnexpectedIteratorExhausted low
+              -- The hash must match the lower bound's hash. The ImmutableDB
+              -- already checks this.
+              IteratorResult {} -> return ()
+              IteratorEBB    {} -> return ()
+        return $ parseIterator db itr
   where
     low' :: Maybe (SlotNo, HeaderHash blk)
     low' = case low of
       GenesisPoint         -> Nothing
       BlockPoint slot hash -> Just (slot, hash)
-
-    -- Skip the first block (if any) to provide an /exclusive/ lower bound
-    --
-    -- Take advantage of the opportunity to also verify the hash (which the
-    -- ImmutableDB can't, since it cannot compute hashes)
-    skipAndCheck :: Iterator (HeaderHash blk) m Lazy.ByteString -> m ()
-    skipAndCheck itr =
-        case low' of
-          Nothing           -> return ()
-          Just (slot, hash) -> do
-            skipped <- parseIteratorResult db =<< iteratorNext db itr
-            case skipped of
-              IteratorResult slot' blk ->
-                  unless (hash == hash' && slot == slot') $
-                    throwM $ ImmDbHashMismatch low hash hash'
-                where
-                  hash' = blockHash blk
-              IteratorEBB _epoch hash' _ebb ->
-                  -- We can't easily verify the slot, since all we have is the
-                  -- epoch number. We could do the conversion but it doesn't
-                  -- really matter: the hash uniquely determines the block.
-                  unless (hash == hash') $
-                    throwM $ ImmDbHashMismatch low hash hash'
-              IteratorExhausted ->
-                  throwM $ ImmDbUnexpectedIteratorExhausted low
 
 -- | Parse the bytestrings returned by an iterator as blocks.
 parseIterator :: MonadCatch m
@@ -562,11 +515,11 @@ parseIteratorResult db result =
     case result of
       IteratorExhausted ->
         return IteratorExhausted
-      (IteratorResult slotNo bs) ->
+      IteratorResult slotNo hash bs ->
         case parse (decBlock db) (Right slotNo) bs of
           Left  err -> throwM err
-          Right blk -> return $ IteratorResult slotNo blk
-      (IteratorEBB epochNo hash bs) ->
+          Right blk -> return $ IteratorResult slotNo hash blk
+      IteratorEBB epochNo hash bs ->
         case parse (decBlock db) (Left epochNo) bs of
           Left  err -> throwM err
           Right blk -> return $ IteratorEBB epochNo hash blk

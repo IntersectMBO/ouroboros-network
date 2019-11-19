@@ -148,9 +148,9 @@ processAll immDB rr callback = do
     go itr = do
         itrResult <- ImmDB.iteratorNext itr
         case itrResult of
-          IteratorExhausted             -> return ()
-          IteratorResult slotNo     blk -> callback (Right slotNo) blk >> go itr
-          IteratorEBB epochNo _hash blk -> callback (Left epochNo) blk >> go itr
+          IteratorExhausted                -> return ()
+          IteratorResult slotNo  _hash blk -> callback (Right slotNo) blk >> go itr
+          IteratorEBB    epochNo _hash blk -> callback (Left epochNo) blk >> go itr
 
 {-------------------------------------------------------------------------------
   Command line args
@@ -230,10 +230,8 @@ openImmDB fp epochSlots epochInfo = openDB args
           immDecodeHash  = Byron.decodeByronHeaderHash
         , immDecodeBlock = Byron.decodeByronBlock epochSlots
         , immEncodeHash  = Byron.encodeByronHeaderHash
-        , immEncodeBlock = Byron.encodeByronBlock
+        , immEncodeBlock = Byron.encodeByronBlockWithInfo
         , immEpochInfo   = epochInfo
         , immValidation  = ValidateMostRecentEpoch
-        , immIsEBB       = \blk -> if nodeIsEBB blk
-                                 then Just (blockHash blk)
-                                 else Nothing
+        , immIsEBB       = nodeIsEBB
         }

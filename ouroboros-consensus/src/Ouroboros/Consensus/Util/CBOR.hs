@@ -28,6 +28,7 @@ import           Data.ByteString.Builder.Extra (defaultChunkSize)
 import qualified Data.ByteString.Lazy as LBS
 import           Data.IORef
 import           Data.Word (Word64)
+import           GHC.Stack (HasCallStack)
 
 import           Ouroboros.Consensus.Util.IOLike
 
@@ -143,18 +144,20 @@ readIncremental hasFS@HasFS{..} decoder fp = withLiftST $ \liftST -> do
 
 -- | Read multiple @a@s incrementally from a file.
 --
--- Return the offset ('Word64') of the start of each @a@ and the size ('Word64')
--- of each @a@. When deserialising fails, return all already deserialised @a@s
--- and the error.
-readIncrementalOffsets :: forall m h a. IOLike m
-                       => HasFS m h
-                       -> (forall s . CBOR.Decoder s (LBS.ByteString -> a))
-                       -> FsPath
-                       -> m ([(Word64, (Word64, a))], Maybe ReadIncrementalErr)
-                          -- ^ ((the offset of the start of @a@ in the file,
-                          --     (the size of @a@ in bytes,
-                          --      @a@ itself)),
-                          --     error encountered during deserialisation)
+-- Return the offset ('Word64') of the start of each @a@, the size ('Word64')
+-- of each @a@, and each @a@ itself. When deserialising fails, return all
+-- already deserialised @a@s, the error, and the offset after which the
+-- failure occurred.
+readIncrementalOffsets
+  :: forall m h a. (IOLike m, HasCallStack)
+  => HasFS m h
+  -> (forall s . CBOR.Decoder s (LBS.ByteString -> a))
+  -> FsPath
+  -> m ([(Word64, (Word64, a))], Maybe (ReadIncrementalErr, Word64))
+     -- ^ ((the offset of the start of @a@ in the file,
+     --     (the size of @a@, and @a@ itself)),
+     --     error encountered during deserialisation and the offset after
+     --     which it occurred)
 readIncrementalOffsets hasFS@HasFS{..} decoder fp = withLiftST $ \liftST ->
     withFile hasFS fp ReadMode $ \h -> do
       fileSize <- hGetSize h
@@ -166,13 +169,13 @@ readIncrementalOffsets hasFS@HasFS{..} decoder fp = withLiftST $ \liftST ->
   where
     go :: (forall x. ST s x -> m x)
        -> Handle h
-       -> Word64                  -- ^ Offset
-       -> [(Word64, (Word64, a))] -- ^ Already deserialised (reverse order)
-       -> Maybe ByteString        -- ^ Unconsumed bytes from last time
-       -> [ByteString]            -- ^ Chunks pushed for this item (rev order)
-       -> Word64                  -- ^ Total file size
+       -> Word64                   -- ^ Offset
+       -> [(Word64, (Word64, a))]  -- ^ Already deserialised (reverse order)
+       -> Maybe ByteString         -- ^ Unconsumed bytes from last time
+       -> [ByteString]             -- ^ Chunks pushed for this item (rev order)
+       -> Word64                   -- ^ Total file size
        -> CBOR.IDecode s (LBS.ByteString -> a)
-       -> m ([(Word64, (Word64, a))], Maybe ReadIncrementalErr)
+       -> m ([(Word64, (Word64, a))], Maybe (ReadIncrementalErr, Word64))
     go liftST h offset deserialised mbUnconsumed bss fileSize dec = case dec of
       CBOR.Partial k -> do
         -- First use the unconsumed bytes from a previous read before read
@@ -201,7 +204,7 @@ readIncrementalOffsets hasFS@HasFS{..} decoder fp = withLiftST $ \liftST ->
             -- hash. If we don't force the value it returned here, we're just
             -- putting a thunk that references the whole block in the list
             -- instead of merely the hash.
-            !a'            = a aBytes
+            !a'           = a aBytes
             deserialised' = (offset, (fromIntegral size, a')) : deserialised
         case checkEmpty leftover of
           Nothing
@@ -212,7 +215,12 @@ readIncrementalOffsets hasFS@HasFS{..} decoder fp = withLiftST $ \liftST ->
           mbLeftover -> liftST (CBOR.deserialiseIncremental decoder) >>=
             go liftST h nextOffset deserialised' mbLeftover [] fileSize
 
-      CBOR.Fail _ _ err -> return (reverse deserialised, Just (ReadFailed err))
+      CBOR.Fail _ _ err ->
+        assert
+          (case deserialised of
+             []                        -> offset == 0
+             (prevOffset, (size, _)):_ -> offset == prevOffset + size)
+          return (reverse deserialised, Just (ReadFailed err, offset))
 
     checkEmpty :: ByteString -> Maybe ByteString
     checkEmpty bs | BS.null bs = Nothing

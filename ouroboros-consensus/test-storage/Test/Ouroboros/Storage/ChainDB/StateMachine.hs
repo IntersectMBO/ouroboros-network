@@ -891,8 +891,8 @@ deriving instance SOP.Generic         (LedgerDB.TraceEvent r)
 deriving instance SOP.HasDatatypeInfo (LedgerDB.TraceEvent r)
 deriving instance SOP.Generic         (LedgerDB.TraceReplayEvent r replayTo blockInfo)
 deriving instance SOP.HasDatatypeInfo (LedgerDB.TraceReplayEvent r replayTo blockInfo)
-deriving instance SOP.Generic         (ImmDB.TraceEvent e)
-deriving instance SOP.HasDatatypeInfo (ImmDB.TraceEvent e)
+deriving instance SOP.Generic         (ImmDB.TraceEvent e hash)
+deriving instance SOP.HasDatatypeInfo (ImmDB.TraceEvent e hash)
 
 -- TODO labelling
 
@@ -1179,7 +1179,7 @@ mkArgs cfg initLedger tracer registry
     , cdbDecodeChainState = decode
 
       -- Encoders
-    , cdbEncodeBlock      = encode
+    , cdbEncodeBlock      = testBlockToBinaryInfo
     , cdbEncodeHash       = encode
     , cdbEncodeLedger     = encode
     , cdbEncodeChainState = encode
@@ -1203,9 +1203,8 @@ mkArgs cfg initLedger tracer registry
       -- Integration
     , cdbNodeConfig       = cfg
     , cdbEpochInfo        = fixedSizeEpochInfo fixedEpochSize
-    , cdbIsEBB            = \b -> case testBlockIsEBB b of
-                              IsEBB    -> Just (blockHash b)
-                              IsNotEBB -> Nothing
+    , cdbHashInfo         = testHashInfo
+    , cdbIsEBB            = testBlockEpochNoIfEBB fixedEpochSize
     , cdbGenesis          = return initLedger
 
     -- Misc

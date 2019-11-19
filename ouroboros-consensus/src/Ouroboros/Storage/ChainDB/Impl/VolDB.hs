@@ -443,8 +443,9 @@ blockFileParser :: forall m blk. (IOLike m, HasHeader blk)
                      Util.CBOR.ReadIncrementalErr
                      m
                      (HeaderHash blk)
-blockFileParser VolDbArgs{..} =
-    VolDB.Parser $ Util.CBOR.readIncrementalOffsets volHasFS decoder'
+blockFileParser VolDbArgs{..} = VolDB.Parser $
+       fmap (fmap (fmap fst)) -- Drop the offset of the error
+     . Util.CBOR.readIncrementalOffsets volHasFS decoder'
   where
     decoder' :: forall s. Decoder s (Lazy.ByteString -> VolDB.BlockInfo (HeaderHash blk))
     decoder' = (extractInfo .) <$> volDecodeBlock

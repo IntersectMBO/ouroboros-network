@@ -1,5 +1,6 @@
 {-# LANGUAGE DeriveAnyClass             #-}
 {-# LANGUAGE DeriveGeneric              #-}
+{-# LANGUAGE DeriveTraversable          #-}
 {-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE RankNTypes                 #-}
@@ -8,8 +9,6 @@ module Ouroboros.Storage.Common (
     -- * Epochs
     EpochNo(..)
   , EpochSize(..)
-    -- * File formats
-  , SlotOffset
     -- * Indexing
   , Tip(..)
   , tipIsGenesis
@@ -48,19 +47,20 @@ newtype EpochSize = EpochSize { unEpochSize :: Word64 }
   deriving newtype (Enum, Num, Real, Integral, NoUnexpectedThunks)
 
 {-------------------------------------------------------------------------------
-  File formats
--------------------------------------------------------------------------------}
-
--- | The offset of a slot in an index file.
-type SlotOffset = Word64
-
-{-------------------------------------------------------------------------------
   Indexing
 -------------------------------------------------------------------------------}
 
 -- | Tip of the chain
 data Tip r = Tip !r | TipGen
-  deriving (Show, Eq, Generic, NoUnexpectedThunks)
+  deriving (Show, Eq, Functor, Foldable, Traversable, Generic, NoUnexpectedThunks)
+
+-- | 'TipGen' is always smaller than 'Tip'
+instance Ord r => Ord (Tip r) where
+  compare x y = case (x, y) of
+    (TipGen, TipGen) -> EQ
+    (TipGen, Tip _)  -> LT
+    (Tip _,  TipGen) -> GT
+    (Tip a,  Tip b)  -> compare a b
 
 instance Condense r => Condense (Tip r) where
   condense TipGen  = "genesis"

@@ -6,433 +6,413 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 module Ouroboros.Storage.ImmutableDB.Impl.Validation
   ( validateAndReopen
-  , reconstructIndex
+  , ValidateEnv (..)
+    -- * Exported for testing purposes
+  , reconstructPrimaryIndex
+  , ShouldBeFinalised (..)
   ) where
 
-import           Codec.CBOR.Decoding (Decoder)
-import           Codec.CBOR.Encoding (Encoding)
-import           Control.Monad (when)
+import           Control.Exception (assert)
+import           Control.Monad (unless, when)
+import           Control.Monad.Except (ExceptT, lift, runExceptT, throwError)
 import           Control.Tracer (Tracer, traceWith)
-
-import           Data.Functor ((<&>))
+import           Data.Functor (($>))
+import           Data.Maybe (fromMaybe)
 import qualified Data.Set as Set
-import           Data.Word
 
 import           GHC.Stack (HasCallStack)
 
-import           Control.Monad.Class.MonadThrow hiding (onException)
+import           Ouroboros.Network.Point (WithOrigin (..))
 
+import           Ouroboros.Consensus.Block (IsEBB (..))
+import           Ouroboros.Consensus.Util (lastMaybe, whenJust)
+import           Ouroboros.Consensus.Util.IOLike
 
 import           Ouroboros.Storage.Common
 import           Ouroboros.Storage.EpochInfo
 import           Ouroboros.Storage.FS.API
 import           Ouroboros.Storage.FS.API.Types
-import           Ouroboros.Storage.Util.ErrorHandling (ErrorHandling (..))
+import           Ouroboros.Storage.Util.ErrorHandling (ErrorHandling)
 import qualified Ouroboros.Storage.Util.ErrorHandling as EH
 
 import           Ouroboros.Storage.ImmutableDB.API
-import           Ouroboros.Storage.ImmutableDB.Impl.Index
-import qualified Ouroboros.Storage.ImmutableDB.Impl.SlotOffsets as SlotOffsets
+import           Ouroboros.Storage.ImmutableDB.Impl.Index.Primary (PrimaryIndex,
+                     SecondaryOffset)
+import qualified Ouroboros.Storage.ImmutableDB.Impl.Index.Primary as Primary
+import qualified Ouroboros.Storage.ImmutableDB.Impl.Index.Secondary as Secondary
 import           Ouroboros.Storage.ImmutableDB.Impl.State
 import           Ouroboros.Storage.ImmutableDB.Impl.Util
 import           Ouroboros.Storage.ImmutableDB.Layout
 
+-- | Bundle of arguments used most validation functions.
+data ValidateEnv m hash h e = ValidateEnv
+  { hasFS     :: !(HasFS m h)
+  , err       :: !(ErrorHandling ImmutableDBError m)
+  , epochInfo :: !(EpochInfo m)
+  , hashInfo  :: !(HashInfo hash)
+  , parser    :: !(EpochFileParser e m (Secondary.Entry hash, WithOrigin hash))
+  , tracer    :: !(Tracer m (TraceEvent e hash))
+  }
+
 -- | Perform validation as per the 'ValidationPolicy' using 'validate' and
--- create an 'OpenState' corresponding to its outcome.
-validateAndReopen :: forall m hash h e.
-                     (HasCallStack, MonadThrow m, Eq hash)
-                  => (forall s . Decoder s hash)
-                  -> (hash -> Encoding)
-                  -> HasFS m h
-                  -> ErrorHandling ImmutableDBError m
-                  -> EpochInfo m
-                  -> ValidationPolicy
-                  -> EpochFileParser e hash m (Word64, SlotNo)
-                  -> BaseIteratorID
-                  -> Tracer m (TraceEvent e)
-                  -> m (OpenState hash h)
+-- create an 'OpenState' corresponding to its outcome using 'mkOpenState'.
 validateAndReopen
-  hashDecoder
-  hashEncoder
-  hasFS
-  err
-  epochInfo
-  valPol
-  parser
-  nextIteratorID
-  tracer = do
-    mbLastValidLocationAndIndex <-
-      validate hashDecoder hashEncoder hasFS err epochInfo valPol parser tracer
-
-    case mbLastValidLocationAndIndex of
-      Nothing -> do
-        traceWith tracer $ NoValidLastLocation
-        mkOpenStateNewEpoch hasFS 0 nextIteratorID TipGen
-      Just (lastValidLocation, index) -> do
-        tip <- epochSlotToTip epochInfo lastValidLocation
-        let epoch = _epoch lastValidLocation
-        traceWith tracer $ ValidatedLastLocation epoch tip
-        mkOpenState hasFS epoch nextIteratorID tip index
-
--- | Internal data type used as the result of @validateEpoch@.
-data ValidateResult hash
-  = Missing
-    -- ^ The epoch file is missing. The epoch and index files corresponding to
-    -- the epoch are guaranteed to be no longer on disk.
-  | Complete   (Index hash)
-    -- ^ There is a valid epoch file and a valid index file on disk (this may
-    -- be the result of recovery). The index is complete, i.e. finalised,
-    -- according to the index or because the last slot of the epoch was
-    -- filled.
-    --
-    -- The index may end with an empty slot.
-  | Incomplete (Index hash)
-    -- ^ There is a valid epoch file on disk. There is no index file on disk
-    -- (this may have been removed during recovery). The index is incomplete.
-    --
-    -- Either the index ends with a filled slot or it is empty.
+  :: forall m hash h e. (IOLike m, Eq hash, HasCallStack)
+  => ValidateEnv m hash h e
+  -> ValidationPolicy
+  -> BaseIteratorID
+  -> m (OpenState hash h)
+validateAndReopen validateEnv valPol nextIteratorID =
+    validate validateEnv valPol >>= \case
+      (epoch, TipGen) -> assert (epoch == 0) $ do
+        traceWith tracer NoValidLastLocation
+        mkOpenState hasFS epoch nextIteratorID TipGen MustBeNew
+      (epoch, tip)    -> do
+        traceWith tracer $ ValidatedLastLocation epoch (fst <$> tip)
+        mkOpenState hasFS epoch nextIteratorID tip    AllowExisting
+  where
+    ValidateEnv { hasFS, tracer } = validateEnv
 
 -- | Execute the 'ValidationPolicy'.
---
--- * Invalid or missing files will cause truncation. Later epoch and index
---   files are removed. Trailing empty slots are truncated so that the tip of
---   the database will always point to a valid block or EBB.
---
--- * Epoch files are the main source of truth. Index files can be
---   reconstructed from the epoch files using the 'EpochFileParser'.
---
--- * Only complete index files (with the same number of slots as the epoch
---   size) are valid.
---
--- * The last, unfinalised epoch will not have an index file. We do our best
---   to only reconstruct its index once.
---
--- * Index files are checked against the indices reconstructed from the epoch
---   files. Reconstructed indices are unaware of empty trailing slots. Special
---   case: when the last slot of an epoch is filled, the reconstructed index
---   gives us all the information we need, because there can't be any trailing
---   empty slots that only the index file could know about. In this case, we
---   overwrite the index file if it is missing or invalid instead of
---   truncating the database. This means that if all index files are missing,
---   but the last slot of each epoch is filled, we can reconstruct all index
---   files from the epochs without needing any truncation.
-validate :: forall m hash h e.
-            (HasCallStack, MonadThrow m, Eq hash)
-         => (forall s . Decoder s hash)
-         -> (hash -> Encoding)
-         -> HasFS m h
-         -> ErrorHandling ImmutableDBError m
-         -> EpochInfo m
-         -> ValidationPolicy
-         -> EpochFileParser e hash m (Word64, SlotNo)
-         -> Tracer m (TraceEvent e)
-         -> m (Maybe (EpochSlot, Index hash))
-            -- ^ The 'EpochSlot' pointing at the last valid block or EBB on
-            -- disk and the 'Index' of the corresponding epoch. 'Nothing' if
-            -- the database is empty.
-validate hashDecoder hashEncoder hasFS@HasFS{..} err epochInfo valPol parser tracer = do
+validate
+  :: forall m hash h e. (IOLike m, Eq hash, HasCallStack)
+  => ValidateEnv m hash h e
+  -> ValidationPolicy
+  -> m (EpochNo, ImmTipWithHash hash)
+validate validateEnv@ValidateEnv{ hasFS } valPol = do
     filesInDBFolder <- listDirectory (mkFsPath [])
-    let epochFiles = fst $ dbFilesOnDisk filesInDBFolder
+    let (epochFiles, _, _) = dbFilesOnDisk filesInDBFolder
     case Set.lookupMax epochFiles of
       Nothing              -> do
         -- Remove left-over index files
-        removeFilesStartingFrom hasFS 0
         -- TODO calls listDirectory again
-        return Nothing
+        removeFilesStartingFrom hasFS 0
+        return (0, TipGen)
 
       Just lastEpochOnDisk -> case valPol of
-        ValidateMostRecentEpoch -> validateMostRecentEpoch lastEpochOnDisk
-        ValidateAllEpochs       -> validateAllEpochs lastEpochOnDisk
+        ValidateAllEpochs       ->
+          validateAllEpochs       validateEnv lastEpochOnDisk
+        ValidateMostRecentEpoch ->
+          validateMostRecentEpoch validateEnv lastEpochOnDisk
   where
-    -- | Validate the most recent (given) epoch using 'validateEpoch'.
-    --
-    -- Starts from the given epoch, if that is invalid or empty, it is
-    -- truncated and the epoch before it is validated, and so on.
-    --
-    -- Validation stops as soon as we have found a valid non-empty epoch.
-    --
-    -- The location of the last valid block or EBB, along with the index of
-    -- the corresponding epoch, is returned.
-    --
-    -- All data after the last valid block or EBB is truncated.
-    validateMostRecentEpoch :: HasCallStack
-                            => EpochNo
-                            -> m (Maybe (EpochSlot, Index hash))
-    validateMostRecentEpoch = go
-      where
-        go epoch = do
-          validateRes <- validateEpoch epoch
-          let continueIfPossible | epoch == 0 = return Nothing
-                                 | otherwise  = go (epoch - 1)
-          case validateRes of
-            Missing
-              -> continueIfPossible
-            Incomplete index
-              | Just lastRelativeSlot <- lastFilledSlot index
-              -> return $ Just (EpochSlot epoch lastRelativeSlot, index)
-              | otherwise
-              -> do
-                removeFile (renderFile "epoch" epoch)
-                continueIfPossible
-            Complete index
-              | Just lastRelativeSlot <- lastFilledSlot index
-              -> do
-                index' <- if
-                  | lastSlot index == lastRelativeSlot -> return index
-                    -- If the index contains empty trailing slots, truncate
-                    -- them.
-                  | otherwise                          -> do
-                    -- As the epoch will no longer be complete, remove the
-                    -- index file.
-                    removeFile (renderFile "index" epoch)
-                    let newIndexSize = EpochSize . unRelativeSlot
-                                     $ succ lastRelativeSlot
-                    return $ truncateToSlots newIndexSize index
-                return $ Just (EpochSlot epoch lastRelativeSlot, index')
-              | otherwise
-              -> do
-                removeFile (renderFile "epoch" epoch)
-                removeFile (renderFile "index" epoch)
-                continueIfPossible
+    HasFS { listDirectory } = hasFS
 
-    -- | Validate all the epochs using @validateEpoch@, starting from the most
-    -- recent (given) epoch.
-    --
-    -- Starts from the given epoch, if that is invalid or empty, it is
-    -- truncated and the epoch before it is validated, and so on.
-    --
-    -- When a valid non-empty epoch is encountered, the location of the last
-    -- valid block or EBB in it is remembered, but validation continues until
-    -- all epochs are validated. Epoch 0 will be the last epoch to validate.
-    --
-    -- The location of the last valid block or EBB that was remembered, along
-    -- with the index of the corresponding epoch, is returned. All data before
-    -- this location will have been validated.
-    --
-    -- All data after the last valid block or EBB is truncated.
-    validateAllEpochs :: HasCallStack
-                      => EpochNo
-                      -> m (Maybe (EpochSlot, Index hash))
-    validateAllEpochs = go Nothing
-      where
-        go lastValid epoch = do
-          traceWith tracer $ ValidatingEpoch epoch
-          validateRes <- validateEpoch epoch
+-- | Validate epochs from oldest to newest, stop after the most recent epoch
+-- on disk. During this validation, keep track of the last valid block we
+-- encountered. If at the end, that block is not in the last epoch on disk,
+-- remove the epoch and index files after that epoch.
+validateAllEpochs
+  :: forall m hash h e. (IOLike m, Eq hash, HasCallStack)
+  => ValidateEnv m hash h e
+  -> EpochNo
+     -- ^ Most recent epoch on disk
+  -> m (EpochNo, ImmTipWithHash hash)
+validateAllEpochs validateEnv@ValidateEnv { hasFS, err, epochInfo } lastEpoch =
+    go (0, TipGen) 0 Origin
+  where
+    go
+      :: (EpochNo, ImmTipWithHash hash)  -- ^ The last valid epoch and tip
+      -> EpochNo                         -- ^ The epoch to validate now
+      -> WithOrigin hash                 -- ^ The hash of the last block of
+                                         -- the previous epoch
+      -> m (EpochNo, ImmTipWithHash hash)
+    go lastValid epoch prevHash = do
+      shouldBeFinalised <- if epoch == lastEpoch
+        then return ShouldNotBeFinalised
+        else ShouldBeFinalised <$> epochInfoSize epochInfo epoch
+      runExceptT
+        (validateEpoch validateEnv shouldBeFinalised epoch (Just prevHash)) >>= \case
+          Left  ()              -> cleanup lastValid epoch $> lastValid
+          Right Nothing         -> continueOrStop lastValid             epoch prevHash
+          Right (Just validBlk) -> continueOrStop (epoch, Tip validBlk) epoch prevHash'
+            where
+              prevHash' = At (snd validBlk)
 
-          let continueIfPossible lastValid'
-                | epoch == 0 = return lastValid'
-                | otherwise  = go lastValid' (epoch - 1)
-          case validateRes of
-            Missing -> do
-              traceWith tracer $ ValidatingEpochMissing epoch
-              -- Remove all valid files that may come after it. Note that
-              -- 'Invalid' guarantees that there is no epoch or index file for
-              -- this epoch.
-              removeFilesStartingFrom hasFS (succ epoch)
-              continueIfPossible Nothing
-            Incomplete index -> do
-              traceWith tracer $ ValidatingEpochIndexIncomplete epoch
-              case firstFilledSlot index of
-                -- If the index is empty, remove the index and epoch file too
-                Nothing -> removeFilesStartingFrom hasFS epoch
-                Just _  -> removeFilesStartingFrom hasFS (succ epoch)
-              let lastValid' = lastFilledSlot index <&> \lastRelativeSlot ->
-                    (EpochSlot epoch lastRelativeSlot, index)
-              continueIfPossible lastValid'
-            Complete index
-              | Just _ <- lastValid
-                -- If we have a valid epoch after this epoch to start at (and
-                -- all epochs in between are also valid), just continue
-                -- validating.
-              -> continueIfPossible lastValid
-              | Just lastRelativeSlot <- lastFilledSlot index
-                -- If there are no valid epochs after this one, and this one
-                -- is not empty, use it as lastValid
-              -> do
-                index' <- if
-                  | lastSlot index == lastRelativeSlot -> return index
-                    -- If the index contains empty trailing slots, truncate
-                    -- them.
-                  | otherwise                          -> do
-                    -- As the epoch will no longer be complete, remove the
-                    -- index file.
-                    removeFile (renderFile "index" epoch)
-                    let newIndexSize = EpochSize . unRelativeSlot
-                                     $ succ lastRelativeSlot
-                    return $ truncateToSlots newIndexSize index
-                continueIfPossible $ Just (EpochSlot epoch lastRelativeSlot, index')
-              | otherwise
-                -- If there are no valid epochs after this one, and this one
-                -- is empty, we can't use it as lastValid, so remove it and
-                -- continue.
-              -> do
-                removeFile (renderFile "epoch" epoch)
-                removeFile (renderFile "index" epoch)
-                continueIfPossible Nothing
+    -- | Validate the next epoch, unless the epoch just validated is the last
+    -- epoch to validate. Cleanup files corresponding to epochs after the
+    -- epoch in which we found the last valid block. Return that epoch and the
+    -- tip corresponding to that block.
+    continueOrStop
+      :: (EpochNo, ImmTipWithHash hash)
+      -> EpochNo         -- ^ The epoch just validated
+      -> WithOrigin hash -- ^ The hash of the last block of the previous epoch
+      -> m (EpochNo, ImmTipWithHash hash)
+    continueOrStop lastValid epoch prevHash
+      | epoch < lastEpoch
+      = go lastValid (epoch + 1) prevHash
+      | otherwise
+      = assert (epoch == lastEpoch) $ do
+        -- Cleanup is only needed when the final epoch was empty, yet valid.
+        cleanup lastValid epoch
+        return lastValid
 
-    -- | Validates the epoch and index file of the given epoch.
-    --
-    -- Reconstructs the index by parsing the epoch file. If there remains
-    -- unparsed data, the epoch file is truncated.
-    --
-    -- If there is no epoch file, the result will be 'Missing'. An empty epoch
-    -- file will result in 'Incomplete'.
-    --
-    -- Reads the index from the index file.
-    --
-    -- The epoch is 'Complete' when the index file is valid (remember that we
-    -- only write index files for complete epochs).
-    --
-    -- Special case: if the last slot of the epoch is filled, the epoch is
-    -- 'Complete' without there having to be a valid index file. As the index
-    -- file wouldn't be able to give us more information than the
-    -- reconstructed index already gives us, e.g., trailing empty slots. The
-    -- index file will be overwritten with the reconstructed index when
-    -- invalid or missing.
-    --
-    -- An invalid index file is deleted when the epoch is 'Incomplete'.
-    --
-    -- Note that an index file can tell us more than the reconstructed index,
-    -- i.e. the presence of trailing empty slots, which we will accept as the
-    -- truth.
-    validateEpoch :: HasCallStack
-                  => EpochNo
-                  -> m (ValidateResult hash)
-    validateEpoch epoch = do
-      epochSize <- epochInfoSize epochInfo epoch
+    -- | Remove left over files from epochs newer than the last epoch
+    -- containing a valid file. Also unfinalise it if necessary.
+    cleanup
+      :: (EpochNo, ImmTipWithHash hash)  -- ^ The last valid epoch and tip
+      -> EpochNo  -- ^ The last validated epoch, could have been invalid or
+                  -- empty
+      -> m ()
+    cleanup (lastValidEpoch, tip) lastValidatedEpoch = case tip of
+      TipGen ->
+        removeFilesStartingFrom hasFS 0
+      Tip _  -> do
+        removeFilesStartingFrom hasFS (lastValidEpoch + 1)
+        when (lastValidEpoch < lastValidatedEpoch) $
+          Primary.unfinalise hasFS err lastValidEpoch
 
-      let indexSize = succ epochSize  -- One extra slot for the EBB
-          indexFile = renderFile "index" epoch
-          epochFile = renderFile "epoch" epoch
+-- | Validate the given most recent epoch. If that epoch contains no valid
+-- block, try the epoch before it, and so on. Stop as soon as an epoch with a
+-- valid block is found, returning that epoch and the tip corresponding to
+-- that block. If no valid blocks are found, epoch 0 and 'TipGen' is returned.
+validateMostRecentEpoch
+  :: forall m hash h e. (IOLike m, Eq hash, HasCallStack)
+  => ValidateEnv m hash h e
+  -> EpochNo
+     -- ^ Most recent epoch on disk, the epoch to validate
+  -> m (EpochNo, ImmTipWithHash hash)
+validateMostRecentEpoch validateEnv@ValidateEnv { hasFS } = go
+  where
+    go :: EpochNo -> m (EpochNo, ImmTipWithHash hash)
+    go epoch = runExceptT
+      (validateEpoch validateEnv ShouldNotBeFinalised epoch Nothing) >>= \case
+        Right (Just validBlk) -> do
+            -- Found a valid block, we can stop now.
+            removeFilesStartingFrom hasFS (epoch + 1)
+            return (epoch, Tip validBlk)
+        _  -- This epoch file is unusable: either the epoch is empty or
+           -- everything after it should be truncated.
+          | epoch > 0 -> go (epoch - 1)
+          | otherwise -> do
+            -- Found no valid blocks on disk.
+            -- TODO be more precise in which cases we need which cleanup.
+            removeFilesStartingFrom hasFS 0
+            return (0, TipGen)
 
-      epochFileExists <- doesFileExist epochFile
-      indexFileExists <- doesFileExist indexFile
-      if not epochFileExists
-        then do
-          when indexFileExists $ removeFile indexFile
-          return Missing
-        else do
-
-          -- Read the epoch file and reconstruct an index from it.
-          (reconstructedIndex, mbErr) <- reconstructIndex epochFile
-            parser epochInfo
-
-          -- If there was an error parsing the epoch file, truncate it
-          case mbErr of
-            -- If there was an error parsing the epoch file, truncate it
-            Just _err -> do
-              traceWith tracer $ ValidatingEpochErrorParsing _err
-              withFile hasFS epochFile (AppendMode AllowExisting) $ \eHnd ->
-                hTruncate eHnd (lastSlotOffset reconstructedIndex)
-            -- If not, check that the last offset matches the epoch file size.
-            -- If it does not, it means the 'EpochFileParser' is incorrect. We
-            -- can't recover from this.
-            Nothing -> do
-              epochFileSize <- withFile hasFS epochFile ReadMode hGetSize
-              -- TODO assert?
-              when (lastSlotOffset reconstructedIndex /= epochFileSize) $
-                error $ "EpochFileParser incorrect: expected last offset = " <>
-                        show (lastSlotOffset reconstructedIndex) <>
-                        ", actual last offset = " <> show epochFileSize
-
-          -- If the last slot of the epoch is filled, we don't need an index
-          -- file. We can reconstruct it and don't have to throw an error.
-          let lastSlotFilled = indexSlots reconstructedIndex == indexSize
-              -- Handle only InvalidFileError and DeserialisationError
-              loadErr :: ErrorHandling UnexpectedError m
-              loadErr = EH.embed UnexpectedError
-                (\case
-                  UnexpectedError (e@InvalidFileError {})     -> Just e
-                  UnexpectedError (e@DeserialisationError {}) -> Just e
-                  _ -> Nothing) err
-
-          if
-            | lastSlotFilled -> do
-              -- If the last slot of the epoch is filled, we know all we need
-              -- to know from the reconstructed index, as there can't be any
-              -- trailing empty slots that the reconstructed index will be
-              -- unaware of. Write the reconstructed index to disk if needed.
-              overwrite <- if indexFileExists
-                then do
-                  indexFromFileOrError <- EH.try loadErr $
-                    loadIndex hashDecoder hasFS err epoch indexSize
-                  case indexFromFileOrError of
-                    Left _              -> return True
-                    Right indexFromFile ->
-                      return $ indexFromFile /= reconstructedIndex
-                else return True
-              when overwrite $
-                -- TODO log
-                writeIndex hashEncoder hasFS epoch reconstructedIndex
-              return $ Complete reconstructedIndex
-
-            | indexFileExists -> do
-              indexFromFileOrError <- EH.try loadErr $
-                loadIndex hashDecoder hasFS err epoch indexSize
-              case indexFromFileOrError of
-                Left _              -> return $ Incomplete reconstructedIndex
-                Right indexFromFile
-                  | reconstructedIndex `isPrefixOf` indexFromFile -> do
-                    -- A reconstructed index knows nothing about trailing
-                    -- empty slots whereas an index from an index file may be
-                    -- aware of trailing empty slots in the epoch.
-                    --
-                    -- If the index from the index file pads the end of the
-                    -- reconstructed index with empty slots so that the epoch
-                    -- is full, we accept it, otherwise it is incomplete and
-                    -- thus invalid.
-                    --
-                    -- We don't want an index that ends with empty slots
-                    -- unless it is a finalised epoch, as such an index cannot
-                    -- be the result of regular operations.
-                    let extendedIndex = extendWithTrailingUnfilledSlotsFrom
-                          reconstructedIndex indexFromFile
-                    if indexSlots extendedIndex /= indexSize ||
-                       indexSlots indexFromFile > indexSlots extendedIndex
-                      then do
-                        removeFile indexFile
-                        return $ Incomplete reconstructedIndex
-                      else return $ Complete extendedIndex
-
-                  | otherwise -> do
-                    -- No prefix: the index file is invalid
-                    removeFile indexFile
-                    return $ Incomplete reconstructedIndex
-
-            -- No index file, either because it is missing or because the
-            -- epoch was not finalised
-            | otherwise -> do
-              traceWith tracer ReconstructIndexLastSlotMissing
-              return $ Incomplete reconstructedIndex
-
--- | Reconstruct an 'Index' from the given epoch file using the
--- 'EpochFileParser'.
+-- | Iff the epoch is the most recent epoch, it should not be finalised.
 --
--- Also returns the error returned by the 'EpochFileParser'.
-reconstructIndex :: forall m e hash. MonadThrow m
-                 => FsPath
-                 -> EpochFileParser e hash m (Word64, SlotNo)
-                 -> EpochInfo m
-                 -> m (Index hash, Maybe e)
-reconstructIndex epochFile parser epochInfo = do
-    (offsetsAndSizesAndSlots, ebbHash, mbErr) <-
-      runEpochFileParser parser epochFile
-    offsetsAndSizesAndRelSlots <- case offsetsAndSizesAndSlots of
-      [] -> return []
-      (offset0, (size0, _slot0)) : offsetsAndSizesAndSlots'
-        | CurrentEBB _ <- ebbHash
-          -- If there is an EBB, then the first entry in the list must
-          -- correspond to the EBB
-        -> ((offset0, (size0, 0)) :) <$> slotsToRelSlots offsetsAndSizesAndSlots'
-        | otherwise
-        -> slotsToRelSlots offsetsAndSizesAndSlots
+-- With finalising, we mean: if there are one or more empty slots at the end
+-- of the epoch, the primary index should be padded with offsets to indicate
+-- that these slots are empty. See 'Primary.backfill'.
+data ShouldBeFinalised
+  = ShouldBeFinalised EpochSize
+  | ShouldNotBeFinalised
+  deriving (Show)
 
-    let slotOffsets = SlotOffsets.reconstruct offsetsAndSizesAndRelSlots
-        index       = indexFromSlotOffsets slotOffsets ebbHash
-    return (index, mbErr)
+-- | Validate the given epoch
+--
+-- * Invalid or missing epoch files will cause truncation. All blocks after a
+--   gap in blocks (due to a missing blocks or invalid block(s)) are
+--   truncated.
+--
+-- * Epoch files are the main source of truth. Primary and secondary index
+--   files can be reconstructed from the epoch files using the
+--   'EpochFileParser'. If index files are missing, corrupt, or do not match
+--   the epoch files, they are overwritten.
+--
+-- * The 'EpochFileParser' checks whether the hashes (header hash) line up
+--   within an epoch. When they do not, we truncate the epoch, including the
+--   block of which its previous hash does not match the hash of the previous
+--   block.
+--
+-- * This function checks whether the first block in the epoch fits onto the
+--   last block of the previous epoch by checking the hashes. If they do not
+--   fit, this epoch is truncated and @()@ is thrown.
+--
+-- * When an invalid block needs to be truncated, trailing empty slots are
+--   also truncated so that the tip of the database will always point to a
+--   valid block or EBB.
+--
+-- * All but the most recent epoch in the database should be finalised, i.e.
+--   padded to the size of the epoch.
+--
+-- TODO currently, we focus on detecting partial writes, not on detecting all
+-- kinds of corruptions, i.e. bitflips. In reality, the likeliness of a
+-- bitflip happening in an epoch file is much larger than one happening in a
+-- secondary index file. So when the checksums don't match, it will probably
+-- be because the block is corrupt, not because the checksum got corrupted in
+-- the secondary index file. We currently assume the epoch file is correct and
+-- overwrite the secondary index file with the new checksum.
+--
+-- In the future, we will be able to check the integrity of a block on its own
+-- so we can determine whether the block or the checksum got corrupted. See
+-- #1253.
+validateEpoch
+  :: forall m hash h e. (IOLike m, Eq hash, HasCallStack)
+  => ValidateEnv m hash h e
+  -> ShouldBeFinalised
+  -> EpochNo
+  -> Maybe (WithOrigin hash)
+     -- ^ The hash of the last block of the previous epoch. 'Nothing' if
+     -- unknown. When this is the first epoch, it should be 'Just Origin'.
+  -> ExceptT () m (Maybe (BlockOrEBB, hash))
+     -- ^ When non-empty, return the 'BlockOrEBB' and @hash@ of the last valid
+     -- block in the epoch.
+     --
+     -- When the epoch file is missing or when we should truncate starting
+     -- from this epoch because it doesn't fit onto the previous one, @()@ is
+     -- thrown.
+     --
+     -- Note that when an invalid block is detected, we don't throw, but we
+     -- truncate the epoch file. When validating the epoch file after it, we
+     -- would notice it doesn't fit anymore, and then throw.
+validateEpoch ValidateEnv{..} shouldBeFinalised epoch mbPrevHash = do
+    trace $ ValidatingEpoch epoch
+    --  Parse the epoch file, return a list of 'Secondary.Entry's with one for
+    --  each block in the file. If the parser returns a deserialisation error,
+    --  truncate the epoch file. Don't truncate the database just yet, because
+    --  the deserialisation error may be due to some extra random bytes that
+    --  shouldn't have been there in the first place.
+    epochFileExists <- lift $ doesFileExist epochFile
+    unless epochFileExists $ do
+      trace $ MissingEpochFile epoch
+      throwError ()
+
+    (entriesWithPrevHashes, mbErr) <- lift $ runEpochFileParser parser epochFile
+
+    case entriesWithPrevHashes of
+      (_, actualPrevHash) : _
+        | Just expectedPrevHash <- mbPrevHash
+        , expectedPrevHash /= actualPrevHash
+          -- The previous hash of the first block in the epoch does not match
+          -- the hash of the last block of the previous epoch. There must be a
+          -- gap. This epoch should be truncated
+        -> do
+          trace $ EpochFileDoesntFit expectedPrevHash actualPrevHash
+          throwError ()
+      _ -> return ()
+
+    lift $ do
+
+      whenJust mbErr $ \(parseErr, endOfLastValidBlock) -> do
+        -- If there was an error parsing the epoch file, truncate it
+        traceWith tracer $ InvalidEpochFile epoch parseErr
+        withFile hasFS epochFile (AppendMode AllowExisting) $ \eHnd ->
+          hTruncate eHnd endOfLastValidBlock
+
+      -- Read the secondary index file, if it is missing, parsing fails, or it
+      -- does not match the 'Secondary.Entry's from the epoch file, overwrite
+      -- it using those (truncate first).
+      let entries = map fst entriesWithPrevHashes
+          isEBB
+            | entry:_ <- entries, EBB _ <- Secondary.blockOrEBB entry
+            = IsEBB
+            | otherwise
+            = IsNotEBB
+
+      secondaryIndexFileExists  <- doesFileExist secondaryIndexFile
+      secondaryIndexFileMatches <- if secondaryIndexFileExists
+        then EH.try errLoad
+          (Secondary.readAllEntries hasFS err hashInfo 0 epoch (const False) isEBB) >>= \case
+            Left _                -> do
+              traceWith tracer $ InvalidSecondaryIndex epoch
+              return False
+            -- TODO what if a hash or a checksum doesn't match? Who's speaking
+            -- the truth? If the checksums match, then the hash of the epoch
+            -- file is the right one. If the checksums don't match, we'd have
+            -- to check the signature and whether the body of the block
+            -- matches the body hash in the header to know which checksum is
+            -- correct. If the signature check and so on pass, then the
+            -- checksum of the block is correct, not the checksum in the
+            -- secondary index entry. If they don't, the the block is corrupt
+            -- and we should truncate it.
+            --
+            -- CURRENT APPROACH: we assume the contents of the epoch file are
+            -- correct (however unrealistic that may be, as the chance of a
+            -- bit flip in an epoch file is much greater than in an index
+            -- file). We will do the right thing in the future.
+            Right entriesFromFile -> return $ map fst entriesFromFile == entries
+        else do
+          traceWith tracer $ MissingSecondaryIndex epoch
+          return False
+      unless secondaryIndexFileMatches $ do
+        traceWith tracer $ RewriteSecondaryIndex epoch
+        Secondary.writeAllEntries hasFS hashInfo epoch entries
+
+      -- Reconstruct the primary index from the 'Secondary.Entry's.
+      --
+      -- Read the primary index file, if it is missing, parsing fails, or it
+      -- does not match the reconstructed primary index, overwrite it using
+      -- the reconstructed index (truncate first).
+      primaryIndex            <- reconstructPrimaryIndex epochInfo hashInfo
+        shouldBeFinalised (map Secondary.blockOrEBB entries)
+      primaryIndexFileExists  <- doesFileExist primaryIndexFile
+      primaryIndexFileMatches <- if primaryIndexFileExists
+        then EH.try errLoad (Primary.load hasFS err epoch) >>= \case
+          Left _                     -> do
+            traceWith tracer $ InvalidPrimaryIndex epoch
+            return False
+          Right primaryIndexFromFile ->
+            return $ primaryIndexFromFile == primaryIndex
+        else do
+          traceWith tracer $ MissingPrimaryIndex epoch
+          return False
+      unless primaryIndexFileMatches $ do
+        traceWith tracer $ RewritePrimaryIndex epoch
+        Primary.write hasFS epoch primaryIndex
+
+      return $  (\entry -> (Secondary.blockOrEBB entry, Secondary.headerHash entry))
+            <$> lastMaybe entries
   where
-    slotsToRelSlots :: [(SlotOffset, (Word64, SlotNo))]
-                    -> m [(SlotOffset, (Word64, RelativeSlot))]
-    slotsToRelSlots = mapM $ \(offset, (size, slot)) -> do
-      relSlot <- _relativeSlot <$> epochInfoBlockRelative epochInfo slot
-      return (offset, (size, relSlot))
+    epochFile          = renderFile "epoch"     epoch
+    primaryIndexFile   = renderFile "primary"   epoch
+    secondaryIndexFile = renderFile "secondary" epoch
+
+    HasFS { hTruncate, doesFileExist } = hasFS
+
+    trace = lift . traceWith tracer
+
+    -- | Handle only 'InvalidFileError', which is the only error that can be
+    -- thrown while load a primary or a secondary index file
+    errLoad :: ErrorHandling UnexpectedError m
+    errLoad = EH.embed UnexpectedError
+      (\case
+        UnexpectedError (e@InvalidFileError {}) -> Just e
+        _ -> Nothing) err
+
+-- | Reconstruct a 'PrimaryIndex' based on a list of 'Secondary.Entry's.
+reconstructPrimaryIndex
+  :: forall m hash. Monad m
+  => EpochInfo m
+  -> HashInfo hash
+  -> ShouldBeFinalised
+  -> [BlockOrEBB]
+  -> m PrimaryIndex
+reconstructPrimaryIndex epochInfo HashInfo { hashSize } shouldBeFinalised
+                        blockOrEBBs = do
+    relSlots <- mapM toRelativeSlot blockOrEBBs
+    let secondaryOffsets = 0 : go 0 0 relSlots
+
+    -- This can only fail if the slot numbers of the entries are not
+    -- monotonically increasing.
+    return $ fromMaybe (error msg) $ Primary.mk secondaryOffsets
+  where
+    msg = "blocks have non-increasing slot numbers"
+
+    toRelativeSlot :: BlockOrEBB -> m RelativeSlot
+    toRelativeSlot (EBB _)      = return 0
+    toRelativeSlot (Block slot) = _relativeSlot <$>
+      epochInfoBlockRelative epochInfo slot
+
+    go
+      :: HasCallStack
+      => RelativeSlot
+      -> SecondaryOffset
+      -> [RelativeSlot]
+      -> [SecondaryOffset]
+    go nextExpectedRelSlot lastSecondaryOffset = \case
+      [] -> case shouldBeFinalised of
+        ShouldNotBeFinalised        -> []
+        ShouldBeFinalised epochSize ->
+          Primary.backfillEpoch epochSize nextExpectedRelSlot lastSecondaryOffset
+
+      relSlot:relSlots'
+        | relSlot < nextExpectedRelSlot
+        -> error msg
+        | otherwise
+        -> let backfilled = Primary.backfill relSlot nextExpectedRelSlot
+                 lastSecondaryOffset
+               secondaryOffset = lastSecondaryOffset
+                               + Secondary.entrySize hashSize
+           in backfilled ++ secondaryOffset :
+              go (succ relSlot) secondaryOffset relSlots'

@@ -296,9 +296,9 @@ instructionHelper registry fromMaybeSTM fromPure CDB{..} varReader = do
 
     nextBlock :: ImmDB.Iterator (HeaderHash blk) m blk -> m (Maybe blk)
     nextBlock immIt = ImmDB.iteratorNext cdbImmDB immIt <&> \case
-      ImmDB.IteratorResult _ blk -> Just blk
-      ImmDB.IteratorEBB  _ _ blk -> Just blk
-      ImmDB.IteratorExhausted    -> Nothing
+      ImmDB.IteratorResult _ _ blk -> Just blk
+      ImmDB.IteratorEBB    _ _ blk -> Just blk
+      ImmDB.IteratorExhausted      -> Nothing
 
     rollForwardImmDB :: ImmDB.Iterator (HeaderHash blk) m blk -> Point blk
                      -> m r

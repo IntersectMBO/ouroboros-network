@@ -2,11 +2,13 @@
 {-# LANGUAGE DeriveAnyClass            #-}
 {-# LANGUAGE DeriveGeneric             #-}
 {-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE LambdaCase                #-}
+{-# LANGUAGE NamedFieldPuns            #-}
 {-# LANGUAGE RankNTypes                #-}
 {-# LANGUAGE RecordWildCards           #-}
 {-# LANGUAGE ScopedTypeVariables       #-}
 module Ouroboros.Storage.ImmutableDB.Impl.State
-  ( -- * Main types
+  ( -- * State types
     ImmutableDBEnv (..)
   , InternalState (..)
   , dbIsOpen
@@ -14,24 +16,24 @@ module Ouroboros.Storage.ImmutableDB.Impl.State
   , ClosedState (..)
     -- * State helpers
   , mkOpenState
-  , mkOpenStateNewEpoch
   , getOpenState
   , modifyOpenState
   , withOpenState
   , closedStateFromInternalState
+  , closeOpenHandles
+  , closeOpenStateHandles
   ) where
 
-import           Codec.CBOR.Decoding (Decoder)
-import           Codec.CBOR.Encoding (Encoding)
 import           Control.Monad.State.Strict
 import           Control.Tracer (Tracer)
-import           Data.Word (Word64)
 import           GHC.Generics (Generic)
 import           GHC.Stack (HasCallStack)
 
 import           Cardano.Prelude (NoUnexpectedThunks (..))
 
-import           Control.Monad.Class.MonadThrow
+import           Control.Monad.Class.MonadThrow hiding (onException)
+
+import           Ouroboros.Network.Point (WithOrigin)
 
 import           Ouroboros.Consensus.Util (SomePair (..))
 import           Ouroboros.Consensus.Util.IOLike
@@ -41,11 +43,14 @@ import           Ouroboros.Storage.EpochInfo
 import           Ouroboros.Storage.FS.API
 import           Ouroboros.Storage.FS.API.Types
 import           Ouroboros.Storage.Util.ErrorHandling (ErrorHandling (..))
+import qualified Ouroboros.Storage.Util.ErrorHandling as EH
 
-import           Ouroboros.Storage.ImmutableDB.Impl.Index
-import           Ouroboros.Storage.ImmutableDB.Impl.SlotOffsets
-                     (SlotOffsets (..))
-import qualified Ouroboros.Storage.ImmutableDB.Impl.SlotOffsets as SlotOffsets
+import           Ouroboros.Storage.ImmutableDB.Impl.Index.Primary
+                     (SecondaryOffset)
+import qualified Ouroboros.Storage.ImmutableDB.Impl.Index.Primary as Primary
+import           Ouroboros.Storage.ImmutableDB.Impl.Index.Secondary
+                     (BlockOffset (..))
+import qualified Ouroboros.Storage.ImmutableDB.Impl.Index.Secondary as Secondary
 import           Ouroboros.Storage.ImmutableDB.Impl.Util
 import           Ouroboros.Storage.ImmutableDB.Types
 
@@ -58,11 +63,10 @@ data ImmutableDBEnv m hash = forall h e. ImmutableDBEnv
     { _dbHasFS           :: !(HasFS m h)
     , _dbErr             :: !(ErrorHandling ImmutableDBError m)
     , _dbInternalState   :: !(StrictMVar m (InternalState hash h))
-    , _dbEpochFileParser :: !(EpochFileParser e hash m (Word64, SlotNo))
-    , _dbHashDecoder     :: !(forall s . Decoder s hash)
-    , _dbHashEncoder     :: !(hash -> Encoding)
+    , _dbEpochFileParser :: !(EpochFileParser e m (Secondary.Entry hash, WithOrigin hash))
     , _dbEpochInfo       :: !(EpochInfo m)
-    , _dbTracer          :: !(Tracer m (TraceEvent e))
+    , _dbHashInfo        :: !(HashInfo hash)
+    , _dbTracer          :: !(Tracer m (TraceEvent e hash))
     }
 
 data InternalState hash h =
@@ -76,20 +80,24 @@ dbIsOpen (DbOpen _)   = True
 
 -- | Internal state when the database is open.
 data OpenState hash h = OpenState
-    { _currentEpoch            :: !EpochNo
-    -- ^ The current 'EpochNo' the immutable store is writing to.
-    , _currentEpochWriteHandle :: !(Handle h)
-    -- ^ The write handle for the current epoch file.
-    , _currentEpochOffsets     :: !SlotOffsets
-    -- ^ The offsets to which blobs have been written in the current epoch
-    -- file, stored from last to first.
-    , _currentEBBHash          :: !(CurrentEBB hash)
-    -- ^ The hash of the EBB of the current epoch that must be appended to the
-    -- index file when finalising the current epoch.
-    , _currentTip              :: !ImmTip
-    -- ^ The current tip of the database.
-    , _nextIteratorID          :: !BaseIteratorID
-    -- ^ The ID of the next iterator that will be created.
+    { _currentEpoch           :: !EpochNo
+      -- ^ The current 'EpochNo' the immutable store is writing to.
+    , _currentEpochOffset     :: !BlockOffset
+      -- ^ The offset at which the next block will be written in the current
+      -- epoch file.
+    , _currentSecondaryOffset :: !SecondaryOffset
+      -- ^ The offset at which the next index entry will be written in the
+      -- current secondary index.
+    , _currentEpochHandle     :: !(Handle h)
+      -- ^ The write handle for the current epoch file.
+    , _currentPrimaryHandle   :: !(Handle h)
+      -- ^ The write handle for the current primary index file.
+    , _currentSecondaryHandle :: !(Handle h)
+      -- ^ The write handle for the current secondary index file.
+    , _currentTip             :: !(ImmTipWithHash hash)
+      -- ^ The current tip of the database.
+    , _nextIteratorID         :: !BaseIteratorID
+      -- ^ The ID of the next iterator that will be created.
     }
   deriving (Generic, NoUnexpectedThunks)
 
@@ -106,54 +114,40 @@ data ClosedState = ClosedState
   State helpers
 ------------------------------------------------------------------------------}
 
--- | Create the internal open state based on an epoch with the given 'Index'.
---
--- Open the epoch file for appending.
-mkOpenState :: (HasCallStack, MonadThrow m)
-            => HasFS m h
-            -> EpochNo
-            -> BaseIteratorID
-            -> ImmTip
-            -> Index hash
-            -> m (OpenState hash h)
-mkOpenState HasFS{..} epoch nextIteratorID tip index = do
-    let epochFile     = renderFile "epoch" epoch
-        epochOffsets  = indexToSlotOffsets index
+-- | Create the internal open state for the given epoch.
+mkOpenState
+  :: forall m hash h. (HasCallStack, MonadThrow m)
+  => HasFS m h
+  -> EpochNo
+  -> BaseIteratorID
+  -> ImmTipWithHash hash
+  -> AllowExisting
+  -> m (OpenState hash h)
+mkOpenState hasFS@HasFS{..} epoch nextIteratorID tip existing =
+    -- TODO use a ResourceRegistry for this
+    closeOnException     (hOpen (renderFile "epoch" epoch)     appendMode) $ \eHnd ->
+      closeOnException   (Primary.open hasFS epoch existing)               $ \pHnd ->
+        closeOnException (hOpen (renderFile "secondary" epoch) appendMode) $ \sHnd -> do
+          epochOffset     <- hGetSize eHnd
+          secondaryOffset <- hGetSize sHnd
+          return OpenState
+            { _currentEpoch           = epoch
+            , _currentEpochOffset     = BlockOffset epochOffset
+            , _currentSecondaryOffset = fromIntegral secondaryOffset
+            , _currentEpochHandle     = eHnd
+            , _currentPrimaryHandle   = pHnd
+            , _currentSecondaryHandle = sHnd
+            , _currentTip             = tip
+            , _nextIteratorID         = nextIteratorID
+            }
+  where
+    appendMode = AppendMode existing
 
-    eHnd <- hOpen epochFile (AppendMode AllowExisting)
-
-    return OpenState
-      { _currentEpoch            = epoch
-      , _currentEpochWriteHandle = eHnd
-      , _currentEpochOffsets     = epochOffsets
-      , _currentEBBHash          = getEBBHash index
-      , _currentTip              = tip
-      , _nextIteratorID          = nextIteratorID
-      }
-
--- | Create the internal open state for a new empty epoch.
---
--- Create the epoch file for appending.
-mkOpenStateNewEpoch :: (HasCallStack, MonadThrow m)
-                    => HasFS m h
-                    -> EpochNo
-                    -> BaseIteratorID
-                    -> ImmTip
-                    -> m (OpenState hash h)
-mkOpenStateNewEpoch HasFS{..} epoch nextIteratorID tip = do
-    let epochFile    = renderFile "epoch" epoch
-        epochOffsets = SlotOffsets.empty
-
-    eHnd <- hOpen epochFile (AppendMode MustBeNew)
-
-    return OpenState
-      { _currentEpoch            = epoch
-      , _currentEpochWriteHandle = eHnd
-      , _currentEpochOffsets     = epochOffsets
-      , _currentEBBHash          = NoCurrentEBB
-      , _currentTip              = tip
-      , _nextIteratorID          = nextIteratorID
-      }
+    -- | Open the handle and run a function using that handle, but if it
+    -- throws an 'FsError', close the handle.
+    closeOnException :: m (Handle h) -> (Handle h -> m a) -> m a
+    closeOnException open k = open >>= \h ->
+      EH.onException hasFsErr (k h) (hClose h)
 
 -- | Get the 'OpenState' of the given database, throw a 'ClosedDBError' in
 -- case it is closed.
@@ -185,10 +179,6 @@ getOpenState ImmutableDBEnv {..} = do
 -- 'Control.Concurrent.MVar.modifyMVar' does. Consequently, it has the same
 -- gotchas that @modifyMVar@ does; the effects are observable and it is
 -- susceptible to deadlock.
---
--- TODO(adn): we should really just use 'Control.Concurrent.MVar.MVar' rather
--- than 'TMVar', but we currently don't have a simulator for code using
--- @MVar@.
 modifyOpenState :: forall m hash r. (HasCallStack, IOLike m)
                 => ImmutableDBEnv m hash
                 -> (forall h. HasFS m h -> StateT (OpenState hash h) m r)
@@ -219,7 +209,7 @@ modifyOpenState ImmutableDBEnv {_dbHasFS = hasFS :: HasFS m h, ..} action = do
       ExitCaseException _ex -> do
         let !cst = closedStateFromInternalState st
         putMVar _dbInternalState (DbClosed cst)
-        closeOpenHandles st
+        closeOpenHandles hasFS st
       -- In case of success, update to the newest state
       ExitCaseSuccess (Right (_, ost)) ->
         putMVar _dbInternalState (DbOpen ost)
@@ -228,7 +218,7 @@ modifyOpenState ImmutableDBEnv {_dbHasFS = hasFS :: HasFS m h, ..} action = do
         -- When unexpected, close the DB for safety
         let !cst = closedStateFromInternalState st
         putMVar _dbInternalState (DbClosed cst)
-        closeOpenHandles st
+        closeOpenHandles hasFS st
       ExitCaseSuccess (Left (UserError {})) ->
         -- When a user error, just restore the previous state
         putMVar _dbInternalState st
@@ -238,11 +228,6 @@ modifyOpenState ImmutableDBEnv {_dbHasFS = hasFS :: HasFS m h, ..} action = do
              -> m (r, OpenState hash h)
     mutation (DbClosed _) = throwUserError _dbErr ClosedDBError
     mutation (DbOpen ost) = runStateT (action hasFS) ost
-
-    -- TODO what if this fails?
-    closeOpenHandles :: InternalState hash h -> m ()
-    closeOpenHandles (DbClosed _)            = return ()
-    closeOpenHandles (DbOpen OpenState {..}) = hClose _currentEpochWriteHandle
 
 -- | Perform an action that accesses the internal state of an open database.
 --
@@ -279,7 +264,7 @@ withOpenState ImmutableDBEnv {_dbHasFS = hasFS :: HasFS m h, ..} action = do
       ExitCaseException _ex -> do
         st <- updateMVar _dbInternalState $ \st ->
                 (DbClosed (closedStateFromInternalState st), st)
-        closeOpenHandles st
+        closeOpenHandles hasFS st
       ExitCaseSuccess (Right _) -> return ()
       -- In case of an ImmutableDBError, close when unexpected
       ExitCaseSuccess (Left (UnexpectedError {})) -> do
@@ -287,7 +272,7 @@ withOpenState ImmutableDBEnv {_dbHasFS = hasFS :: HasFS m h, ..} action = do
         -- behind our back
         st <- updateMVar _dbInternalState $ \st ->
                 (DbClosed (closedStateFromInternalState st), st)
-        closeOpenHandles st
+        closeOpenHandles hasFS st
       ExitCaseSuccess (Left (UserError {})) -> return ()
 
     access :: HasCallStack
@@ -296,11 +281,17 @@ withOpenState ImmutableDBEnv {_dbHasFS = hasFS :: HasFS m h, ..} action = do
     access (DbClosed _) = throwUserError _dbErr ClosedDBError
     access (DbOpen ost) = action hasFS ost
 
-    -- TODO what if this fails?
-    closeOpenHandles :: InternalState hash h -> m ()
-    closeOpenHandles (DbClosed _)            = return ()
-    closeOpenHandles (DbOpen OpenState {..}) = hClose _currentEpochWriteHandle
+closeOpenHandles :: Monad m => HasFS m h -> InternalState hash h -> m ()
+closeOpenHandles hasFS = \case
+    DbClosed _       -> return ()
+    DbOpen openState -> closeOpenStateHandles hasFS openState
 
+-- TODO what if this fails? Use a 'ResourceRegistry'?
+closeOpenStateHandles :: Monad m => HasFS m h -> OpenState hash h -> m ()
+closeOpenStateHandles HasFS { hClose } OpenState {..}  = do
+    hClose _currentEpochHandle
+    hClose _currentPrimaryHandle
+    hClose _currentSecondaryHandle
 
 -- | Create a 'ClosedState' from an internal state, open or closed.
 closedStateFromInternalState :: InternalState hash h -> ClosedState
