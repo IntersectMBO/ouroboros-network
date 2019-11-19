@@ -39,6 +39,9 @@ hexDump buf out = hexDump (BL.tail buf) (out ++ printf "0x%02x " (BL.head buf))
 -- |
 -- Create @'MuxBearer'@ from a socket.
 --
+-- Note: 'IOException's thrown by 'sendAll' and 'recv' are wrapped in
+-- 'MuxError'.
+--
 socketAsMuxBearer
   :: forall ptcl.
      Mx.ProtocolEnum ptcl
@@ -77,6 +80,7 @@ socketAsMuxBearer tracer sd = do
       recvLen' waitingOnNxtHeader l bufs = do
           traceWith tracer $ Mx.MuxTraceRecvStart $ fromIntegral l
           buf <- Socket.recv sd l
+                    `catch` Mx.handleIOException "recv errored"
           if BL.null buf
               then do
                   when (waitingOnNxtHeader) $
@@ -102,6 +106,7 @@ socketAsMuxBearer tracer sd = do
           --hexDump buf ""
           traceWith tracer $ Mx.MuxTraceSendStart sdu'
           Socket.sendAll sd buf
+            `catch` Mx.handleIOException "sendAll errored"
           traceWith tracer $ Mx.MuxTraceSendEnd
           return ts
 

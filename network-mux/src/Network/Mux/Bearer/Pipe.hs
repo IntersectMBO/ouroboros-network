@@ -68,6 +68,7 @@ pipeAsMuxBearer tracer pcRead pcWrite = do
       recvLen' pd l bufs = do
           traceWith tracer $ Mx.MuxTraceRecvStart l
           buf <- BL.hGet pd l
+                    `catch` Mx.handleIOException "hGet errored"
           if BL.null buf
               then throwM $ Mx.MuxError Mx.MuxBearerClosed "Pipe closed when reading data" callStack
               else do
@@ -83,6 +84,7 @@ pipeAsMuxBearer tracer pcRead pcWrite = do
               buf  = Mx.encodeMuxSDU sdu'
           traceWith tracer $ Mx.MuxTraceSendStart sdu'
           BL.hPut pcWrite buf
+              `catch` Mx.handleIOException "hPut errored"
           hFlush pcWrite
           traceWith tracer $ Mx.MuxTraceSendEnd
           return ts

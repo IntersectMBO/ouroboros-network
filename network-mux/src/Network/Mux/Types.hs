@@ -15,6 +15,7 @@ module Network.Mux.Types (
     , MuxBearerState (..)
     , MuxError (..)
     , MuxErrorType (..)
+    , handleIOException
     , MuxSDU (..)
     , MuxSDUHeader (..)
     , MuxTrace (..)
@@ -38,6 +39,7 @@ import           GHC.Stack
 import           Text.Printf
 
 import           Control.Monad.Class.MonadSTM.Strict
+import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
 
 import           Network.TypedProtocol.Channel (Channel(Channel))
@@ -277,9 +279,11 @@ data MuxErrorType = MuxUnknownMiniProtocol
                   | MuxControlProtocolError
                   -- ^ thrown by 'muxControl' (mux control thread), when
                   -- received a 'Muxcontrol' message on a mature 'MuxBearer'.
-                  |  MuxTooLargeMessage
+                  | MuxTooLargeMessage
                   -- ^ thrown by 'muxChannel' when violationg
                   -- 'maximumMessageSize' byte limit.
+                  | MuxIOException IOException
+                  -- ^ 'IOException' thrown by 
                   deriving (Show, Eq)
 
 instance Exception MuxError where
@@ -288,6 +292,20 @@ instance Exception MuxError where
           (show errorType)
           (show errorMsg)
           (prettyCallStack errorStack)
+
+
+-- | Handler for 'IOException's which wrappes them in 'MuxError'.
+--
+-- It is used various 'MuxBearer' implementations:
+-- * 'socketAsMuxBearer'
+-- * 'pipeAsMuxBearer'
+--
+handleIOException :: MonadThrow m => String -> IOException -> m a
+handleIOException errorMsg e = throwM MuxError {
+    errorType  = MuxIOException e,
+    errorMsg   = '(' : errorMsg ++ ")",
+    errorStack = callStack 
+  }
 
 -- Type used for tracing mux events.
 --
