@@ -142,12 +142,10 @@ mux :: MonadSTM m
     => StrictTVar m Int
     -> MuxState m
     -> m ()
-mux cnt muxstate@MuxState{egressQueue} = go
-  where
-  go = do
-    w <- atomically $ readTBQueue egressQueue
-    case w of
-         TLSRDemand mpc md d -> processSingleWanton muxstate mpc md d cnt >> go
+mux cnt muxstate@MuxState{egressQueue} =
+    forever $ do
+      TLSRDemand mpc md d <- atomically $ readTBQueue egressQueue
+      processSingleWanton muxstate mpc md d cnt
 
 -- | Pull a `maxSDU`s worth of data out out the `Wanton` - if there is
 -- data remaining requeue the `TranslocationServiceRequest` (this
