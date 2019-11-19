@@ -18,6 +18,7 @@ module Ouroboros.Consensus.Util.ResourceRegistry (
   , registryThread
     -- * Allocating and releasing regular resources
   , allocate
+  , allocateEither
   , release
   , unsafeRelease
     -- * Threads
@@ -56,6 +57,7 @@ import           Control.Monad.Class.MonadThrow
 import           Cardano.Prelude (NoUnexpectedThunks (..), OnlyCheckIsWHNF (..),
                      UseIsNormalFormNamed (..), allNoUnexpectedThunks)
 
+import           Ouroboros.Consensus.Util (mustBeRight)
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.Orphans ()
 
@@ -592,7 +594,15 @@ allocate :: forall m a. (IOLike m, HasCallStack)
          -> (ResourceId -> m a)
          -> (a -> m ())
          -> m (ResourceKey m, a)
-allocate rr alloc free = do
+allocate rr alloc = fmap mustBeRight . allocateEither rr (fmap Right . alloc)
+
+-- | Generalization of 'allocate' for allocation functions that may fail
+allocateEither :: forall m e a. (IOLike m, HasCallStack)
+               => ResourceRegistry m
+               -> (ResourceId -> m (Either e a))
+               -> (a -> m ())
+               -> m (Either e (ResourceKey m, a))
+allocateEither rr alloc free = do
     context <- captureContext
     ensureKnownThread rr context
     -- We check if the registry has been closed when we allocate the key, so
@@ -602,20 +612,23 @@ allocate rr alloc free = do
       Left closed ->
         throwRegistryClosed context closed
       Right key -> mask_ $ do
-        a <- alloc key
-        -- TODO: Might want to have an exception handler around this call to
-        -- 'updateState' just in case /that/ throws an exception.
-        inserted <- updateState rr $ insertResource key (mkResource context a)
-        case inserted of
-          Left closed -> do
-            -- Despite the earlier check, it's possible that the registry got
-            -- closed after we allocated a new key but before we got a chance to
-            -- register the resource. In this case, we must deallocate the
-            -- resource again before throwing the exception.
-            free a
-            throwRegistryClosed context closed
-          Right () ->
-            return (ResourceKey rr key, a)
+        ma <- alloc key
+        case ma of
+          Left  e -> return $ Left e
+          Right a -> do
+            -- TODO: Might want to have an exception handler around this call to
+            -- 'updateState' just in case /that/ throws an exception.
+            inserted <- updateState rr $ insertResource key (mkResource context a)
+            case inserted of
+              Left closed -> do
+                -- Despite the earlier check, it's possible that the registry
+                -- got closed after we allocated a new key but before we got a
+                -- chance to register the resource. In this case, we must
+                -- deallocate the resource again before throwing the exception.
+                free a
+                throwRegistryClosed context closed
+              Right () ->
+                return $ Right (ResourceKey rr key, a)
   where
     mkResource :: Context m -> a -> Resource m
     mkResource context a = Resource {
