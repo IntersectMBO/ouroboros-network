@@ -78,7 +78,6 @@ import           Network.TypedProtocol.Driver (TraceSendRecv)
 import qualified Network.Mux as Mx
 import Network.Mux.DeltaQ.TraceTransformer
 import qualified Network.Mux.Types as Mx
-import           Network.Mux.Interface hiding (MiniProtocolLimits(..))
 import qualified Network.Mux.Bearer.Socket as Mx
 
 import           Ouroboros.Network.ErrorPolicy
@@ -159,7 +158,7 @@ connectToNode
      , Show vNumber
      , Show ptcl
      , MiniProtocolLimits ptcl
-     , HasInitiator appType ~ True
+     , Mx.HasInitiator appType ~ True
      )
   => VersionDataCodec extra CBOR.Term
   -> NetworkConnectTracers ptcl vNumber
@@ -212,7 +211,7 @@ connectToNode'
      , Show vNumber
      , Show ptcl
      , MiniProtocolLimits ptcl
-     , HasInitiator appType ~ True
+     , Mx.HasInitiator appType ~ True
      )
   => VersionDataCodec extra CBOR.Term
   -> NetworkConnectTracers ptcl vNumber
@@ -260,7 +259,7 @@ data AcceptConnection st vNumber extra peerid ptcl m bytes where
 
     AcceptConnection
       :: forall appType st vNumber extra peerid ptcl m bytes a b.
-         HasResponder appType ~ True
+         Mx.HasResponder appType ~ True
       => !st
       -> !peerid
       -> Versions vNumber extra (OuroborosApplication appType peerid ptcl m bytes a b)
@@ -426,7 +425,7 @@ cleanNetworkMutableState NetworkMutableState {nmsPeerStates} =
 --
 runServerThread
     :: forall appType ptcl vNumber extra a b.
-       ( HasResponder appType ~ True
+       ( Mx.HasResponder appType ~ True
        , ProtocolEnum ptcl
        , Ord ptcl
        , Enum ptcl
@@ -520,7 +519,7 @@ runServerThread NetworkServerTracers { nstMuxTracer
 -- need to guarantee that a socket is open before we try to connect to it.
 withServerNode
     :: forall appType ptcl vNumber extra t a b.
-       ( HasResponder appType ~ True
+       ( Mx.HasResponder appType ~ True
        , ProtocolEnum ptcl
        , Ord ptcl
        , Enum ptcl

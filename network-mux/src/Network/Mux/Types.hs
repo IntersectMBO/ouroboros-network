@@ -1,9 +1,21 @@
-{-# LANGUAGE GeneralizedNewtypeDeriving#-}
+{-# LANGUAGE GADTs                      #-}
+{-# LANGUAGE TypeFamilies               #-}
+{-# LANGUAGE DataKinds                  #-}
+{-# LANGUAGE KindSignatures             #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
 module Network.Mux.Types (
       MiniProtocolLimits (..)
     , MiniProtocolNum (..)
     , MiniProtocolMode (..)
+
+    , AppType (..)
+    , HasInitiator
+    , HasResponder
+    , MuxApplication (..)
+    , MuxMiniProtocol (..)
+    , RunMiniProtocol (..)
+
     , MuxBearer (..)
     , muxBearerAsControlChannel
     , MuxSDU (..)
@@ -13,16 +25,17 @@ module Network.Mux.Types (
 
 import           Prelude hiding (read)
 
-import qualified Data.ByteString.Lazy as BL
+import           Data.Void (Void)
 import           Data.Functor (void)
 import           Data.Int
 import           Data.Ix (Ix (..))
 import           Data.Word
+import qualified Data.ByteString.Lazy as BL
 
 import           Control.Monad.Class.MonadTime
 
-import           Network.TypedProtocol.Channel (Channel(Channel))
-import qualified Network.TypedProtocol.Channel as Channel
+import           Network.Mux.Channel (Channel)
+import qualified Network.TypedProtocol.Channel as TypedProtocol
 
 newtype RemoteClockModel
   = RemoteClockModel { unRemoteClockModel :: Word32 }
@@ -64,6 +77,76 @@ data MiniProtocolLimits =
      }
 
 
+-- $interface
+--
+-- To run a node you will also need a bearer and a way to run a server, see
+--
+-- * @'Ouroboros.Network.Socket'@ module provides a socket based bearer and
+--   a server that accepts connections and allows to connect to remote peers.
+--
+-- * @'Ouroboros.Network.Pipe'@ module provides a pipe based bearer with
+--   a function that runs the mux layer on it.
+--
+
+data AppType where
+    InitiatorApp             :: AppType
+    ResponderApp             :: AppType
+    InitiatorAndResponderApp :: AppType
+
+type family HasInitiator (appType :: AppType) :: Bool where
+    HasInitiator InitiatorApp             = True
+    HasInitiator ResponderApp             = False
+    HasInitiator InitiatorAndResponderApp = True
+
+type family HasResponder (appType :: AppType) :: Bool where
+    HasResponder InitiatorApp             = False
+    HasResponder ResponderApp             = True
+    HasResponder InitiatorAndResponderApp = True
+
+-- | Application run by mux layer.
+--
+-- * enumeration of client application, e.g. a wallet application communicating
+--   with a node using ChainSync and TxSubmission protocols; this only requires
+--   to run client side of each protocol.
+--
+-- * enumeration of server applications: this application type is mostly useful
+--   tests.
+--
+-- * enumeration of both client and server applications, e.g. a full node
+--   serving downstream peers using server side of each protocol and getting
+--   updates from upstream peers using client side of each of the protocols.
+--
+newtype MuxApplication (appType :: AppType) peerid m a b =
+        MuxApplication [MuxMiniProtocol appType peerid m a b]
+
+data MuxMiniProtocol (appType :: AppType) peerid m a b =
+     MuxMiniProtocol {
+       miniProtocolNum    :: !MiniProtocolNum,
+       miniProtocolLimits :: !MiniProtocolLimits,
+       miniProtocolRun    :: !(RunMiniProtocol appType peerid m a b)
+     }
+
+data RunMiniProtocol (appType :: AppType) peerid m a b where
+  InitiatorProtocolOnly
+    -- Initiator application; most simple application will be @'runPeer'@ or
+    -- @'runPipelinedPeer'@ supplied with a codec and a @'Peer'@ for each
+    -- @ptcl@.  But it allows to handle resources if just application of
+    -- @'runPeer'@ is not enough.  It will be run as @'ModeInitiator'@.
+    :: (peerid -> Channel m -> m a)
+    -> RunMiniProtocol InitiatorApp peerid m a Void
+
+  ResponderProtocolOnly
+    -- Responder application; similarly to the @'MuxInitiatorApplication'@ but it
+    -- will be run using @'ModeResponder'@.
+    :: (peerid -> Channel m -> m a)
+    -> RunMiniProtocol ResponderApp peerid m Void a
+
+  InitiatorAndResponderProtocol
+    -- Initiator and server applications.
+    :: (peerid -> Channel m -> m a)
+    -> (peerid -> Channel m -> m b)
+    -> RunMiniProtocol InitiatorAndResponderApp peerid m a b
+
 --
 -- Mux internal types
 --
@@ -103,10 +186,11 @@ data MuxBearer m = MuxBearer {
 muxBearerAsControlChannel
   :: MuxBearer IO
   -> MiniProtocolMode
-  -> Channel IO BL.ByteString
-muxBearerAsControlChannel bearer mode = Channel {
-        Channel.send = send,
-        Channel.recv = recv
+  -> TypedProtocol.Channel IO BL.ByteString
+muxBearerAsControlChannel bearer mode =
+      TypedProtocol.Channel {
+        TypedProtocol.send = send,
+        TypedProtocol.recv = recv
       }
     where
       send blob = void $ write bearer (wrap blob)

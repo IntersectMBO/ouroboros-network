@@ -40,7 +40,6 @@ import           Text.Show.Functions ()
 
 import           Test.Tasty.QuickCheck (shuffle, testProperty)
 
-import           Network.Mux.Interface hiding (MiniProtocolLimits(..))
 import           Network.Mux.Time (microsecondsToDiffTime)
 
 import           Network.TypedProtocol.Driver

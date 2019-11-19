@@ -31,8 +31,7 @@ import           Network.TypedProtocol.Channel
 import           Network.TypedProtocol.Driver
 import           Network.TypedProtocol.Pipelined
 
-import           Network.Mux.Interface hiding (MiniProtocolLimits(..))
-import           Network.Mux.Types     hiding (MiniProtocolLimits(..))
+import           Network.Mux.Types hiding (MiniProtocolLimits(..))
 import qualified Network.Mux.Types as Mux
 
 import           Ouroboros.Network.Channel

@@ -51,7 +51,6 @@ library
                        Network.Mux.Codec
                        Network.Mux.Egress
                        Network.Mux.Ingress
-                       Network.Mux.Interface
                        Network.Mux.Time
                        Network.Mux.Types
                        Network.Mux.Trace
@@ -73,7 +72,6 @@ test-suite test-network-mux
                        Network.Mux.Codec
                        Network.Mux.Egress
                        Network.Mux.Ingress
-                       Network.Mux.Interface
                        Network.Mux.Time
                        Network.Mux.Types
                        Network.Mux.Trace
