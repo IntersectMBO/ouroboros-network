@@ -26,7 +26,7 @@ import           Data.ByteString.Lazy (ByteString)
 
 import           Network.TypedProtocol.Driver (TraceSendRecv (..))
 import           Network.TypedProtocol.Driver.ByteLimit (DecoderFailureOrTooMuchInput (..))
-import           Network.Mux.Types (MuxTrace (..), WithMuxBearer (..))
+import           Network.Mux (MuxTrace (..), WithMuxBearer (..))
 import           Network.Socket (SockAddr, AddrInfo)
 import qualified Network.Socket as Socket
 

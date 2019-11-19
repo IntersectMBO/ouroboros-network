@@ -8,15 +8,30 @@
 
 module Network.Mux (
       muxStart
-    , traceMuxBearerState
-    , MuxSDU (..)
+
+      -- * Mux bearers
+    , MuxBearer
+
+    -- * Defining 'MuxApplication's
+    , AppType (..)
+    , HasInitiator
+    , HasResponder
+    , MuxApplication (..)
+    , MuxMiniProtocol (..)
+    , RunMiniProtocol (..)
     , MiniProtocolNum (..)
     , MiniProtocolLimits (..)
     , MiniProtocolMode (..)
-    , MuxBearerState (..)
+
+      -- * Errors
     , MuxError (..)
     , MuxErrorType (..)
-    , RemoteClockModel (..)
+
+      -- * Tracing
+    , traceMuxBearerState
+    , MuxBearerState (..)
+    , MuxTrace (..)
+    , WithMuxBearer (..)
     ) where
 
 import           Control.Monad
@@ -37,6 +52,7 @@ import           Network.Mux.Interface
 import           Network.Mux.Egress  as Egress
 import           Network.Mux.Ingress as Ingress
 import           Network.Mux.Types
+import           Network.Mux.Trace
 
 
 -- | muxStart starts a mux bearer for the specified protocols corresponding to

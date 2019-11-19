@@ -8,6 +8,7 @@ import Control.Tracer
 import Control.Monad.Class.MonadSTM.Strict
 
 import Network.Mux.Types
+import Network.Mux.Trace
 import Network.Mux.DeltaQ.TraceStats
 
 

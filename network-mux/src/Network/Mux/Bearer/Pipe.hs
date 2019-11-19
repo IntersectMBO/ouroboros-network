@@ -19,8 +19,8 @@ import           System.IO (Handle, hFlush)
 import qualified Network.Mux as Mx
 import           Network.Mux.Types (MuxBearer)
 import qualified Network.Mux.Types as Mx
+import qualified Network.Mux.Trace as Mx
 import qualified Network.Mux.Codec as Mx
-import qualified Network.Mux.Interface as Mx
 import qualified Network.Mux.Time as Mx
 
 

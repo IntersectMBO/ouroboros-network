@@ -20,7 +20,6 @@ module Network.Mux.Interface
   , MuxMiniProtocol (..)
   , RunMiniProtocol (..)
   , MiniProtocolLimits (..)
-  , TraceLabelPeer (..)
   ) where
 
 import           Data.Void (Void)
@@ -30,11 +29,6 @@ import           Network.Mux.Types ( MiniProtocolNum
                                    )
 import           Network.Mux.Channel
 
--- | A peer label for use in 'Tracer's. This annotates tracer output as being
--- associated with a given peer identifier.
---
-data TraceLabelPeer peerid a = TraceLabelPeer peerid a
-  deriving (Eq, Functor, Show)
 
 
 -- $interface

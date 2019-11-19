@@ -87,8 +87,7 @@ import           Codec.Serialise (Serialise (..), DeserialiseFailure)
 import           Codec.SerialiseTerm
 import qualified Network.Socket as Socket
 
-import           Network.Mux.Types     hiding (MiniProtocolLimits(..))
-import           Network.Mux.Interface hiding (MiniProtocolLimits(..))
+import           Network.Mux hiding (MiniProtocolLimits(..))
 import           Network.TypedProtocol.Driver.ByteLimit (DecoderFailureOrTooMuchInput)
 import           Network.TypedProtocol.Driver (TraceSendRecv (..))
 

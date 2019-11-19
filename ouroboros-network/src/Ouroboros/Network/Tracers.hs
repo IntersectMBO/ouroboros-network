@@ -10,7 +10,7 @@ import qualified Codec.CBOR.Term as CBOR
 import           Codec.Serialise (DeserialiseFailure)
 
 import           Network.Socket (SockAddr)
-import           Network.Mux.Types
+import           Network.Mux.Trace
 
 import           Network.TypedProtocol.Driver (TraceSendRecv)
 import           Network.TypedProtocol.Driver.ByteLimit

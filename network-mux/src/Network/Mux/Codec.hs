@@ -8,6 +8,7 @@ import           Data.Word
 import           GHC.Stack
 
 import           Network.Mux.Types
+import           Network.Mux.Trace
 
 
 -- | Encode a 'MuxSDU' as a 'ByteString'.
