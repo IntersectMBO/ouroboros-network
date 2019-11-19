@@ -7,10 +7,7 @@
 
 
 module Network.Mux.Types (
-      MiniProtocolDispatch (..)
-    , MiniProtocolDispatchInfo (..)
-    , lookupMiniProtocol
-    , MiniProtocolLimits (..)
+      MiniProtocolLimits (..)
     , MiniProtocolNum (..)
     , MiniProtocolMode (..)
     , MuxBearer (..)
@@ -20,20 +17,15 @@ module Network.Mux.Types (
     , MuxErrorType (..)
     , handleIOException
     , MuxSDU (..)
-    , MuxSDUHeader (..)
     , MuxTrace (..)
-    , PerMuxSharedState (..)
     , RemoteClockModel (..)
     , remoteClockPrecision
-    , TranslocationServiceRequest (..)
-    , Wanton (..)
     , WithMuxBearer (..)
     ) where
 
 import           Prelude hiding (read)
 
 import           Control.Exception
-import           Data.Array
 import qualified Data.ByteString.Lazy as BL
 import           Data.Functor (void)
 import           Data.Int
@@ -42,7 +34,6 @@ import           Data.Word
 import           GHC.Stack
 import           Text.Printf
 
-import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
 
@@ -93,31 +84,8 @@ data MiniProtocolLimits =
 -- Mux internal types
 --
 
-data MiniProtocolDispatch m =
-     MiniProtocolDispatch
-       !(Array MiniProtocolNum (Maybe MiniProtocolIx))
-       !(Array (MiniProtocolIx, MiniProtocolMode)
-               (MiniProtocolDispatchInfo m))
-
-type MiniProtocolIx = Int
-
 data MiniProtocolMode = ModeInitiator | ModeResponder
   deriving (Eq, Ord, Ix, Enum, Bounded, Show)
-
-data MiniProtocolDispatchInfo m =
-     MiniProtocolDispatchInfo
-       !(StrictTVar m BL.ByteString)
-       !Int64
-
-
-lookupMiniProtocol :: MiniProtocolDispatch m
-                   -> MiniProtocolNum
-                   -> MiniProtocolMode
-                   -> Maybe (MiniProtocolDispatchInfo m)
-lookupMiniProtocol (MiniProtocolDispatch codeTbl ptclTbl) code mode
-  | inRange (bounds codeTbl) code
-  , Just mpid <- codeTbl ! code = Just (ptclTbl ! (mpid, mode))
-  | otherwise                   = Nothing
 
 data MuxSDU = MuxSDU {
       msTimestamp :: !RemoteClockModel
@@ -127,36 +95,6 @@ data MuxSDU = MuxSDU {
     , msBlob      :: !BL.ByteString
     }
 
-data MuxSDUHeader = MuxSDUHeader {
-      mshTimestamp  :: !RemoteClockModel
-    , mshNumAndMode :: !Word16
-    , mshLength     :: !Word16
-    }
-
--- | A TranslocationServiceRequest is a demand for the translocation
---  of a single mini-protocol message. This message can be of
---  arbitrary (yet bounded) size. This multiplexing layer is
---  responsible for the segmentation of concrete representation into
---  appropriate SDU's for onward transmission.
-data TranslocationServiceRequest m
-  = TLSRDemand MiniProtocolNum MiniProtocolMode (Wanton m)
-
--- | A Wanton represent the concrete data to be translocated, note that the
---  TMVar becoming empty indicates -- that the last fragment of the data has
---  been enqueued on the -- underlying bearer.
-newtype Wanton m = Wanton { want :: StrictTVar m BL.ByteString }
-
--- | Each peer's multiplexer has some state that provides both
--- de-multiplexing details (for despatch of incoming mesages to mini
--- protocols) and for dispatching incoming SDUs.  This is shared
--- between the muxIngress and the bearerIngress processes.
-data PerMuxSharedState m = PerMuxSS {
-  -- | Ingress dispatch table, fixed and known at instantiation.
-    dispatchTable :: MiniProtocolDispatch m
-  -- | Egress queue, shared by all miniprotocols
-  , tsrQueue      :: TBQueue m (TranslocationServiceRequest m)
-  , bearer        :: MuxBearer m
-  }
 
 data MuxBearerState = Larval
                     -- ^ Newly created MuxBearer.

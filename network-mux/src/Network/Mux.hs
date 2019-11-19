@@ -34,8 +34,8 @@ import           Text.Printf
 
 import           Network.Mux.Channel
 import           Network.Mux.Interface
-import           Network.Mux.Egress
-import           Network.Mux.Ingress
+import           Network.Mux.Egress  as Egress
+import           Network.Mux.Ingress as Ingress
 import           Network.Mux.Types
 
 
@@ -97,9 +97,8 @@ muxStart tracer peerid (MuxApplication ptcls) bearer = do
     tq <- atomically $ newTBQueue 100
     cnt <- newTVarM 0
 
-    let pmss = PerMuxSS tbl tq bearer
-        jobs = [ (demux pmss, "Demuxer")
-               , (mux cnt pmss, "Muxer")
+    let jobs = [ (demux DemuxState { dispatchTable = tbl, Ingress.bearer }, "Demuxer")
+               , (mux cnt MuxState { egressQueue   = tq,  Egress.bearer }, "Muxer")
                ]
             ++ [ (muxControl q, name)
                | let (_,_, initQ, respQ) = ctlPtclInfo
@@ -107,7 +106,7 @@ muxStart tracer peerid (MuxApplication ptcls) bearer = do
                ]
             ++ [ job
                | ((mpcode, mplimits, initQ, respQ), ptcl) <- zip appPtclInfo ptcls
-               , job <- mpsJob cnt pmss mpcode
+               , job <- mpsJob cnt tq mpcode
                                (maximumMessageSize mplimits)
                                initQ respQ (miniProtocolRun ptcl)
                ]
@@ -176,14 +175,14 @@ muxStart tracer peerid (MuxApplication ptcls) bearer = do
 
     mpsJob
       :: StrictTVar m Int
-      -> PerMuxSharedState m
+      -> EgressQueue m
       -> MiniProtocolNum
       -> Int64
       -> StrictTVar m BL.ByteString
       -> StrictTVar m BL.ByteString
       -> RunMiniProtocol appType peerid m a b
       -> [(m (), String)]
-    mpsJob cnt pmss mc msgMax initQ respQ run =
+    mpsJob cnt tq mc msgMax initQ respQ run =
         case run of
           InitiatorProtocolOnly initiator ->
             [ ( do chan <- mkChannel ModeInitiator
@@ -206,8 +205,8 @@ muxStart tracer peerid (MuxApplication ptcls) bearer = do
               , show mc ++ " Responder" )
             ]
       where
-        mkChannel ModeInitiator = muxChannel tracer pmss mc ModeInitiator msgMax initQ cnt
-        mkChannel ModeResponder = muxChannel tracer pmss mc ModeResponder msgMax respQ cnt
+        mkChannel ModeInitiator = muxChannel tracer tq mc ModeInitiator msgMax initQ cnt
+        mkChannel ModeResponder = muxChannel tracer tq mc ModeResponder msgMax respQ cnt
 
     -- cnt represent the number of SDUs that are queued but not yet sent.  Job
     -- threads will be prevented from exiting until all SDUs have been
@@ -240,14 +239,14 @@ muxChannel
        , HasCallStack
        )
     => Tracer m MuxTrace
-    -> PerMuxSharedState m
+    -> EgressQueue m
     -> MiniProtocolNum
     -> MiniProtocolMode
     -> Int64
     -> StrictTVar m BL.ByteString
     -> StrictTVar m Int
     -> m (Channel m)
-muxChannel tracer pmss mc md msgMax q cnt = do
+muxChannel tracer tq mc md msgMax q cnt = do
     w <- newTVarM BL.empty
     return $ Channel { send = send (Wanton w)
                      , recv}
@@ -281,7 +280,7 @@ muxChannel tracer pmss mc md msgMax q cnt = do
                    writeTVar w (BL.append buf encoding)
                    when wasEmpty $ do
                        modifyTVar cnt (+ 1)
-                       writeTBQueue (tsrQueue pmss) (TLSRDemand mc md want)
+                       writeTBQueue tq (TLSRDemand mc md want)
                else retry
 
         traceWith tracer $ MuxTraceChannelSendEnd mc

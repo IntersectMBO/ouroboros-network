@@ -65,3 +65,10 @@ decodeMuxSDU buf =
     getMode mid =
         if mid .&. 0x8000 == 0 then ModeInitiator
                                else ModeResponder
+
+data MuxSDUHeader = MuxSDUHeader {
+      mshTimestamp  :: !RemoteClockModel
+    , mshNumAndMode :: !Word16
+    , mshLength     :: !Word16
+    }
+

@@ -1,3 +1,4 @@
+{-# LANGUAGE NamedFieldPuns        #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE RankNTypes            #-}
 {-# LANGUAGE TypeFamilies          #-}
@@ -6,6 +7,11 @@ module Network.Mux.Egress (
       mux
     -- $egress
     -- $servicingsSemantics
+
+    , MuxState(..)
+    , EgressQueue
+    , TranslocationServiceRequest (..)
+    , Wanton (..)
     ) where
 
 import           Control.Monad
@@ -101,37 +107,64 @@ import           Network.Mux.Types
 -- >                           ▼
 -- >                           ●
 
+-- | Each peer's multiplexer has some state that provides both
+-- de-multiplexing details (for despatch of incoming mesages to mini
+-- protocols) and for dispatching incoming SDUs.  This is shared
+-- between the muxIngress and the bearerIngress processes.
+--
+data MuxState m = MuxState {
+       -- | Egress queue, shared by all miniprotocols
+       egressQueue :: EgressQueue m,
+       bearer      :: MuxBearer m
+     }
+
+type EgressQueue m = TBQueue m (TranslocationServiceRequest m)
+
+-- | A TranslocationServiceRequest is a demand for the translocation
+--  of a single mini-protocol message. This message can be of
+--  arbitrary (yet bounded) size. This multiplexing layer is
+--  responsible for the segmentation of concrete representation into
+--  appropriate SDU's for onward transmission.
+data TranslocationServiceRequest m =
+     TLSRDemand !MiniProtocolNum !MiniProtocolMode !(Wanton m)
+
+-- | A Wanton represent the concrete data to be translocated, note that the
+--  TVar becoming empty indicates -- that the last fragment of the data has
+--  been enqueued on the -- underlying bearer.
+newtype Wanton m = Wanton { want :: StrictTVar m BL.ByteString }
+
+
 -- | Process the messages from the mini protocols - there is a single
 -- shared FIFO that contains the items of work. This is processed so
 -- that each active demand gets a `maxSDU`s work of data processed
 -- each time it gets to the front of the queue
 mux :: MonadSTM m
     => StrictTVar m Int
-    -> PerMuxSharedState m
+    -> MuxState m
     -> m ()
-mux cnt pmss = go
+mux cnt muxstate@MuxState{egressQueue} = go
   where
   go = do
-    w <- atomically $ readTBQueue $ tsrQueue pmss
+    w <- atomically $ readTBQueue egressQueue
     case w of
-         TLSRDemand mpc md d -> processSingleWanton pmss mpc md d cnt >> go
+         TLSRDemand mpc md d -> processSingleWanton muxstate mpc md d cnt >> go
 
 -- | Pull a `maxSDU`s worth of data out out the `Wanton` - if there is
 -- data remaining requeue the `TranslocationServiceRequest` (this
 -- ensures that any other items on the queue will get some service
 -- first.
 processSingleWanton :: MonadSTM m
-                    => PerMuxSharedState m
+                    => MuxState m
                     -> MiniProtocolNum
                     -> MiniProtocolMode
                     -> Wanton m
                     -> StrictTVar m Int
                     -> m ()
-processSingleWanton pmss mpc md wanton cnt = do
+processSingleWanton MuxState{egressQueue, bearer} mpc md wanton cnt = do
     blob <- atomically $ do
       -- extract next SDU
       d <- readTVar (want wanton)
-      let (frag, rest) = BL.splitAt (fromIntegral $ sduSize $ bearer pmss) d
+      let (frag, rest) = BL.splitAt (fromIntegral (sduSize bearer)) d
       -- if more to process then enqueue remaining work
       if BL.null rest
         then writeTVar (want wanton) BL.empty
@@ -140,12 +173,12 @@ processSingleWanton pmss mpc md wanton cnt = do
           -- miniprotocol the readTVar and writeTVar operations
           -- must be inside the same STM transaction.
           writeTVar (want wanton) rest
-          writeTBQueue (tsrQueue pmss) (TLSRDemand mpc md wanton)
+          writeTBQueue egressQueue (TLSRDemand mpc md wanton)
           modifyTVar cnt (+ 1)
       -- return data to send
       pure frag
     let sdu = MuxSDU (RemoteClockModel 0)
                      mpc md (fromIntegral $ BL.length blob) blob
-    void $ write (bearer pmss) sdu
+    void $ write bearer sdu
     atomically $ modifyTVar cnt (\a -> a - 1)
     --paceTransmission tNow
