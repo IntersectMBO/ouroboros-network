@@ -1,4 +1,5 @@
 {-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications    #-}
@@ -31,7 +32,7 @@ module Ouroboros.Consensus.Node
 import qualified Codec.CBOR.Read as CBOR
 import qualified Codec.CBOR.Term as CBOR
 import           Control.Monad (forM, void)
-import           Control.Tracer
+import           Control.Tracer (Tracer)
 import           Crypto.Random
 import           Data.ByteString.Lazy (ByteString)
 import           Data.List (any)
@@ -42,11 +43,12 @@ import           Network.Socket as Socket
 
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadSTM.Strict
+import           Control.Monad.Class.MonadThrow
 
 import           Ouroboros.Network.Block
 import qualified Ouroboros.Network.Block as Block
-import           Ouroboros.Network.Magic
 import           Ouroboros.Network.ErrorPolicy
+import           Ouroboros.Network.Magic
 import           Ouroboros.Network.NodeToClient as NodeToClient
 import           Ouroboros.Network.NodeToNode as NodeToNode
 import           Ouroboros.Network.Protocol.ChainSync.PipelineDecision
@@ -57,6 +59,7 @@ import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.ChainSyncClient (ClockSkew (..))
 import           Ouroboros.Consensus.Ledger.Extended (ExtLedgerState)
 import           Ouroboros.Consensus.Mempool (GenTx, MempoolCapacity (..))
+import           Ouroboros.Consensus.Node.DbMarker
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.Node.Tracers
@@ -70,6 +73,8 @@ import           Ouroboros.Consensus.Util.ResourceRegistry
 import           Ouroboros.Storage.ChainDB (ChainDB, ChainDbArgs)
 import qualified Ouroboros.Storage.ChainDB as ChainDB
 import           Ouroboros.Storage.EpochInfo (newEpochInfo)
+import           Ouroboros.Storage.FS.API.Types
+import           Ouroboros.Storage.FS.IO (ioHasFS)
 import           Ouroboros.Storage.ImmutableDB (ValidationPolicy (..))
 import           Ouroboros.Storage.LedgerDB.DiskPolicy (defaultDiskPolicy)
 import           Ouroboros.Storage.LedgerDB.InMemory (ledgerDbDefaultParams)
@@ -100,7 +105,16 @@ run
      -- layer is initialised.
   -> IO ()
 run tracers chainDbTracer rna dbPath pInfo
-    customiseChainDbArgs customiseNodeArgs onNodeKernel =
+    customiseChainDbArgs customiseNodeArgs onNodeKernel = do
+    -- TODO: Enable once new index format lands.
+    if False then do
+      let mountPoint = MountPoint dbPath
+      either throwM return =<< checkDbMarker
+        (ioHasFS mountPoint)
+        mountPoint
+        (nodeProtocolMagicId (Proxy @blk) cfg)
+    else
+      return () -- Skipping check for now
     withRegistry $ \registry -> do
 
       chainDB <- initChainDB

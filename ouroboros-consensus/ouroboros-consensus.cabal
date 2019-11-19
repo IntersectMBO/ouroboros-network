@@ -62,6 +62,7 @@ library
                        Ouroboros.Consensus.Mempool.Impl
                        Ouroboros.Consensus.Mempool.TxSeq
                        Ouroboros.Consensus.Node
+                       Ouroboros.Consensus.Node.DbMarker
                        Ouroboros.Consensus.Node.ProtocolInfo
                        Ouroboros.Consensus.Node.ProtocolInfo.Abstract
                        Ouroboros.Consensus.Node.ProtocolInfo.Byron
@@ -247,6 +248,7 @@ test-suite test-consensus
                     Test.Consensus.Mempool
                     Test.Consensus.Mempool.TestBlock
                     Test.Consensus.Mempool.TestTx
+                    Test.Consensus.Node
                     Test.Consensus.Protocol.PBFT
                     Test.Consensus.ResourceRegistry
                     Test.Dynamic.BFT

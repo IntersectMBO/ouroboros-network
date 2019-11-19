@@ -6,6 +6,7 @@ import qualified Test.Consensus.BlockchainTime (tests)
 import qualified Test.Consensus.ChainSyncClient (tests)
 import qualified Test.Consensus.Ledger.Byron (tests)
 import qualified Test.Consensus.Mempool (tests)
+import qualified Test.Consensus.Node (tests)
 import qualified Test.Consensus.Protocol.PBFT (tests)
 import qualified Test.Consensus.ResourceRegistry (tests)
 import qualified Test.Dynamic.BFT (tests)
@@ -25,6 +26,7 @@ tests =
   , Test.Consensus.ChainSyncClient.tests
   , Test.Consensus.Ledger.Byron.tests
   , Test.Consensus.Mempool.tests
+  , Test.Consensus.Node.tests
   , Test.Consensus.Protocol.PBFT.tests
   , Test.Consensus.ResourceRegistry.tests
   , Test.Dynamic.Util.Tests.tests
