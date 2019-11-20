@@ -53,6 +53,7 @@ tests =
     ]
   , testProperty "arbtirary node graph" (withMaxSuccess 50 prop_networkGraph)
   , testProperty "blockGenerator invariant SimM" prop_blockGenerator_ST
+  , testProperty "blockGenerator invariant IO" prop_blockGenerator_IO
   ]
 
 
@@ -79,7 +80,14 @@ test_blockGenerator chain slotDuration = do
   where
     isValid :: Time -> [(Time, Block)] -> Property
     isValid startTime = foldl'
-        (\r (t, b) -> r .&&. t === slotTime (blockSlot b))
+      (\r (t, b) -> r .&&. counterexample (show t
+                                           ++ " ≱ "
+                                           ++ show (slotTime (blockSlot b)))
+                                           (t >= slotTime (blockSlot b))
+                      .&&. counterexample (show t
+                                           ++ " ≮ "
+                                           ++ show (slotTime (succ $ blockSlot b)))
+                                           (t <  (slotTime (succ $ blockSlot b))))
         (property True)
       where
         slotTime :: SlotNo -> Time
@@ -110,6 +118,14 @@ prop_blockGenerator_ST :: TestBlockChain -> Positive Micro -> Property
 prop_blockGenerator_ST (TestBlockChain chain) (Positive slotDuration) =
     Sim.runSimOrThrow $
       test_blockGenerator chain (realToFrac slotDuration)
+
+prop_blockGenerator_IO :: TestBlockChain -> Positive Int -> Property
+prop_blockGenerator_IO (TestBlockChain chain) (Positive slotDuration) =
+    ioProperty $
+      test_blockGenerator chain slotDuration'
+  where
+    slotDuration' :: DiffTime
+    slotDuration' = fromIntegral slotDuration
 
 coreToRelaySim :: ( MonadSTM m
                   , MonadFork m
