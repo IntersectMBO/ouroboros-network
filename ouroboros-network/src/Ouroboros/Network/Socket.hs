@@ -485,5 +485,5 @@ withServerNode muxTracer handshakeTracer errorPolicyTracer tbl stVar addr encode
 
       acceptException :: Socket.SockAddr -> SomeException -> IO ()
       acceptException a e = do
-        traceWith (WithAddr a `contramap` errorPolicyTracer) $ ErrorPolicyAccept e
+        traceWith (WithAddr a `contramap` errorPolicyTracer) $ ErrorPolicyAcceptException e
         throwIO e

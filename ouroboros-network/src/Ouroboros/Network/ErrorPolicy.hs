@@ -312,7 +312,7 @@ data ErrorPolicyTrace
   | ErrorPolicyUnhandledConnectionException SomeException
   -- ^ 'connect' throwed an exception, which was not handled by any
   -- 'ErrorPolicy'.
-  | ErrorPolicyAccept SomeException
+  | ErrorPolicyAcceptException SomeException
   -- ^ 'accept' throwed an exception
   deriving Show
 
