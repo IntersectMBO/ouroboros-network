@@ -596,81 +596,40 @@ chainSyncClient mkPipelineDecision0 tracer cfg btime
     -- outdated) view of our chain, i.e. 'ourFrag', we /only/ use
     -- @curLedger@ to validate /their/ header, even in the special case
     -- discussed below.
-    --
-    -- NOTE: Low density chains
-    --
-    -- The ledger gives us an "anachronistic ledger view", which allows us
-    -- to validate headers within a certain range of slots, provided that we
-    -- maintain the invariant that the intersection between our tip and the
-    -- tip of the peer fragment is within @k@ blocks from our tip (see
-    -- detailed description at 'anachronisticProtocolLedgerView'). This
-    -- range is in terms of /slots/, not blocks: this is important, because
-    -- certain transitions on the ledger happen at slot boundaries (for
-    -- instance, update proposals).
-    --
-    -- Under normal circumstances this is fine, but it can be problematic in
-    -- the case of low density chains. For example, we might get the header
-    -- for a block which is only two /blocks/ away from our current tip, but
-    -- many slots (because for whatever reason simply no blocks were produced
-    -- at all in that period).
-    --
-    -- We can mitigate this to /some/ degree by introducing one special case:
-    -- if the header that we receive fits /directly/ onto our current chain,
-    -- we can validate it even if it is outside the anachronistic ledger view
-    -- window (based on its slot number). This is a useful special case
-    -- because it means that we can catch up with a node that has an extension
-    -- of our chain, even if there are many empty slots in between.
-    --
-    -- It is important to realize however that this special case does not help
-    -- with forks. Suppose we have
-    --
-    -- >    our tip
-    -- >      v
-    -- > --*--*
-    -- >   |
-    -- >   \--*--*--*--*-- (chain we might be able to switch to)
-    -- >      A
-    --
-    -- If the slot number for the block marked @A@ is way in the future,
-    -- we will not be able to verify it and so we will not be able to switch
-    -- to this fork.
     getLedgerView :: Header blk
                   -> Our (Tip blk)
                   -> Their (Tip blk)
                   -> STM m (LedgerView (BlockProtocol blk))
     getLedgerView hdr ourTip theirTip = do
         curLedger <- ledgerState <$> getCurrentLedger
-        if headerPrevHash hdr == pointHash (ledgerTipPoint curLedger) then
-          -- Special case mentioned above
-          return $ protocolLedgerView cfg curLedger
-        else
-          -- The invariant guarantees us that the intersection of their tip
-          -- and our tip is within k blocks from our tip. This means that the
-          -- anachronistic ledger view must be available, unless they are
-          -- too far /ahead/ of us. In this case we must simply wait
 
-          -- TODO: Chain sync Client: Reuse anachronistic ledger view? #581
-          case anachronisticProtocolLedgerView cfg curLedger (pointSlot hdrPoint) of
-            -- unexpected alternative; see comment before this case expression
-            Left TooFarBehind ->
-                disconnect InvalidRollForward
-                  { _newPoint = hdrPoint
-                  , _ourTip   = ourTip
-                  , _theirTip = theirTip
-                  }
-            Left TooFarAhead  -> retry
-            Right view -> case view `SB.at` hdrSlot of
-                Just lv -> return lv
-                Nothing -> error $ mconcat [
-                    "anachronisticProtocolLedgerView invariant violated: "
-                  , condense hdrSlot
-                  , " not within bounds "
-                  , condense (SB.bounds view)
-                  ]
-              where
-                hdrSlot = case pointSlot hdrPoint of
-                  Origin      -> SlotNo 0
-                  At thisSlot -> thisSlot
+        -- The invariant guarantees us that the intersection of their tip
+        -- and our tip is within k blocks from our tip. This means that the
+        -- anachronistic ledger view must be available, unless they are
+        -- too far /ahead/ of us. In this case we must simply wait
+
+        -- TODO: Chain sync Client: Reuse anachronistic ledger view? #581
+        case anachronisticProtocolLedgerView cfg curLedger (pointSlot hdrPoint) of
+          -- unexpected alternative; see comment before this case expression
+          Left TooFarBehind ->
+              disconnect InvalidRollForward
+                { _newPoint = hdrPoint
+                , _ourTip   = ourTip
+                , _theirTip = theirTip
+                }
+          Left TooFarAhead  -> retry
+          Right view -> case view `SB.at` hdrSlot of
+              Just lv -> return lv
+              Nothing -> error $ mconcat [
+                  "anachronisticProtocolLedgerView invariant violated: "
+                , condense hdrSlot
+                , " not within bounds "
+                , condense (SB.bounds view)
+                ]
+            where
+              hdrSlot = case pointSlot hdrPoint of
+                Origin      -> SlotNo 0
+                At thisSlot -> thisSlot
       where
         hdrPoint = headerPoint hdr
 

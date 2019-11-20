@@ -68,7 +68,8 @@ data TestConfig = TestConfig
 
 genTestConfig :: NumCoreNodes -> NumSlots -> Gen TestConfig
 genTestConfig numCoreNodes numSlots = do
-    nodeJoinPlan <- genNodeJoinPlan numCoreNodes numSlots
+    -- nodeJoinPlan <- genNodeJoinPlan numCoreNodes numSlots -- TODO #1257
+    let nodeJoinPlan = trivialNodeJoinPlan numCoreNodes
     nodeTopology <- genNodeTopology numCoreNodes
     pure TestConfig{numCoreNodes, numSlots, nodeJoinPlan, nodeTopology}
 
