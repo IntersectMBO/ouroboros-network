@@ -63,7 +63,7 @@ import           Network.TypedProtocol.Driver.ByteLimit
 import           Network.TypedProtocol.Driver (TraceSendRecv)
 
 import qualified Network.Mux as Mx
-import Network.Mux.DeltaQTraceTransformer
+import Network.Mux.DeltaQ.TraceTransformer
 import qualified Network.Mux.Types as Mx
 import           Network.Mux.Types (MuxBearer)
 import           Network.Mux.Interface
