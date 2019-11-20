@@ -28,7 +28,7 @@ module Ouroboros.Network.ErrorPolicy
   , SuspendDecision (..)
   ) where
 
-import           Control.Exception (Exception, SomeException (..))
+import           Control.Exception (Exception, IOException, SomeException (..))
 import           Data.List.NonEmpty (NonEmpty (..))
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (fromMaybe, mapMaybe)
@@ -312,7 +312,7 @@ data ErrorPolicyTrace
   | ErrorPolicyUnhandledConnectionException SomeException
   -- ^ 'connect' throwed an exception, which was not handled by any
   -- 'ErrorPolicy'.
-  | ErrorPolicyAcceptException SomeException
+  | ErrorPolicyAcceptException IOException
   -- ^ 'accept' throwed an exception
   deriving Show
 

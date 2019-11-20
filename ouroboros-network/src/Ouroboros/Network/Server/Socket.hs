@@ -23,7 +23,7 @@ module Ouroboros.Network.Server.Socket
   , ioSocket
   ) where
 
-import Control.Exception (SomeException (..), mask, mask_, finally, onException, try)
+import Control.Exception (SomeException (..), IOException, mask, mask_, finally, onException, try)
 import Control.Concurrent.Async (Async)
 import qualified Control.Concurrent.Async as Async
 import Control.Concurrent.STM (STM)
@@ -156,7 +156,7 @@ acceptLoop
   -> StatusVar st
   -> BeginConnection addr channel st r
   -> ApplicationStart addr st
-  -> (SomeException -> IO ()) -- ^ Exception on `Socket.accept`.
+  -> (IOException -> IO ()) -- ^ Exception on `Socket.accept`.
   -> Socket addr channel
   -> IO x
 acceptLoop resQ threadsVar statusVar beginConnection applicationStart acceptException socket = forever $
@@ -165,18 +165,19 @@ acceptLoop resQ threadsVar statusVar beginConnection applicationStart acceptExce
 -- | Accept once from the socket, use the `Accept` to make a decision (accept
 -- or reject), and spawn the thread if accepted.
 acceptOne
-  :: ResultQ addr r
+  :: forall addr channel st r.
+     ResultQ addr r
   -> ThreadsVar
   -> StatusVar st
   -> BeginConnection addr channel st r
   -> ApplicationStart addr st
-  -> (SomeException -> IO ()) -- ^ Exception on `Socket.accept`.
+  -> (IOException -> IO ()) -- ^ Exception on `Socket.accept`.
   -> Socket addr channel
   -> IO ()
 acceptOne resQ threadsVar statusVar beginConnection applicationStart acceptException socket = mask $ \restore -> do
   -- mask is to assure that every socket is closed.
   outcome <- try (restore (acceptConnection socket))
-  case outcome of
+  case outcome :: Either IOException (addr, channel, IO ()) of
     Left ex -> restore (acceptException ex)
     Right (addr, channel, close) -> do
       -- Decide whether to accept or reject, using the current state, and
@@ -251,7 +252,7 @@ run
   -- TODO: extend this trace to trace server action (this might be useful for
   -- debugging)
   -> Socket addr channel
-  -> (SomeException -> IO ())
+  -> (IOException -> IO ())
   -> BeginConnection addr channel st r
   -> ApplicationStart addr st
   -> CompleteConnection addr st tr r
