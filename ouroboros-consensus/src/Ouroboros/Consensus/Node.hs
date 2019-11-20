@@ -107,15 +107,11 @@ run
   -> IO ()
 run tracers chainDbTracer rna dbPath pInfo
     customiseChainDbArgs customiseNodeArgs onNodeKernel = do
-    -- TODO: Enable once new index format lands.
-    if False then do
-      let mountPoint = MountPoint dbPath
-      either throwM return =<< checkDbMarker
-        (ioHasFS mountPoint)
-        mountPoint
-        (nodeProtocolMagicId (Proxy @blk) cfg)
-    else
-      return () -- Skipping check for now
+    let mountPoint = MountPoint dbPath
+    either throwM return =<< checkDbMarker
+      (ioHasFS mountPoint)
+      mountPoint
+      (nodeProtocolMagicId (Proxy @blk) cfg)
     withRegistry $ \registry -> do
 
       chainDB <- initChainDB
