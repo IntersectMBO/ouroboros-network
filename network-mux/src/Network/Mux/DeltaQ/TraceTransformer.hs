@@ -1,5 +1,5 @@
 {-# LANGUAGE RecordWildCards #-}
-module Network.Mux.DeltaQTraceTransformer
+module Network.Mux.DeltaQ.TraceTransformer
   (initDeltaQTracer
   ,initDeltaQTracer')
 where
@@ -8,7 +8,7 @@ import Control.Tracer
 import Control.Monad.Class.MonadSTM.Strict
 
 import Network.Mux.Types
-import Network.Mux.DeltaQTraceStats
+import Network.Mux.DeltaQ.TraceStats
 
 
 -- | Create a trace transformer that will emit

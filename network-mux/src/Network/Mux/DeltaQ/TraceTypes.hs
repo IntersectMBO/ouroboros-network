@@ -1,5 +1,5 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
-module Network.Mux.DeltaQTraceTypes
+module Network.Mux.DeltaQ.TraceTypes
  ( SISec(..)
  , SISec2(..)
  , squareSISec

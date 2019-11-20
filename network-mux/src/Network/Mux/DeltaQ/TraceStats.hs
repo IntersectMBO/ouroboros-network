@@ -1,4 +1,4 @@
-module Network.Mux.DeltaQTraceStats
+module Network.Mux.DeltaQ.TraceStats
  ( step
  , OneWayDeltaQSample(..)
  , constructSample
@@ -11,12 +11,10 @@ import           Data.IntMap.Strict (IntMap)
 import qualified Data.IntMap.Strict as IM
 import           Data.Maybe
 import           Data.Word (Word32)
-import           Numeric.IEEE (nan)
-
 
 import           Control.Monad.Class.MonadTime
-import           Network.Mux.DeltaQTraceStatsSupport
-import           Network.Mux.DeltaQTraceTypes
+import           Network.Mux.DeltaQ.TraceStatsSupport
+import           Network.Mux.DeltaQ.TraceTypes
 import           Network.Mux.Types
 
 -- the per observation procesing step
@@ -252,7 +250,8 @@ sampleInterval = check 10
        = n
      | otherwise
        = error "Infeasible sampleInterval"
-    ticksPerRemoteClockWrap -- how many micro secs?
-      = fromIntegral $ (maxBound `asTypeOf` (unRemoteClockModel undefined))
     wrapInterval
-      = remoteClockPrecision * (fromRational ticksPerRemoteClockWrap)
+      = remoteClockPrecision * (fromIntegral $ unRemoteClockModel maxBound)
+
+nan :: Double
+nan = 0/0

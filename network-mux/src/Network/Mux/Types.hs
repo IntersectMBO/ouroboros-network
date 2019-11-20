@@ -48,7 +48,7 @@ import qualified Network.TypedProtocol.Channel as Channel
 
 newtype RemoteClockModel
   = RemoteClockModel { unRemoteClockModel :: Word32 }
-  deriving Eq
+  deriving (Eq, Bounded)
 
 -- | The `DiffTime` represented by a tick in the `RemoteClockModel`
 remoteClockPrecision :: DiffTime

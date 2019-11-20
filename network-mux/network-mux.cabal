@@ -30,7 +30,6 @@ library
                        bytestring      >=0.10 && <0.11,
                        cborg           >=0.2.1 && <0.3,
                        containers,
-                       ieee754,
                        network,
                        process         >=1.6 && <1.7,
                        statistics-linreg,
@@ -52,10 +51,10 @@ library
                        Network.Mux.Bearer.Pipe
                        Network.Mux.Bearer.Queues
                        Network.Mux.Bearer.Socket
-                       Network.Mux.DeltaQTraceStats
-                       Network.Mux.DeltaQTraceStatsSupport
-                       Network.Mux.DeltaQTraceTransformer
-                       Network.Mux.DeltaQTraceTypes
+                       Network.Mux.DeltaQ.TraceStats
+                       Network.Mux.DeltaQ.TraceStatsSupport
+                       Network.Mux.DeltaQ.TraceTransformer
+                       Network.Mux.DeltaQ.TraceTypes
   default-language:    Haskell2010
 
 test-suite test-network-mux

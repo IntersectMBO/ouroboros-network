@@ -1,4 +1,4 @@
-module Network.Mux.DeltaQTraceStatsSupport
+module Network.Mux.DeltaQ.TraceStatsSupport
 where
 
 -- This module is making use of hackage statisitical libraries. They
@@ -13,7 +13,7 @@ where
 --
 -- Definite space/time optimisation task here.
 
-import           Network.Mux.DeltaQTraceTypes
+import           Network.Mux.DeltaQ.TraceTypes
 
 import qualified Data.Vector.Unboxed as V
 import           Statistics.LinearRegression
