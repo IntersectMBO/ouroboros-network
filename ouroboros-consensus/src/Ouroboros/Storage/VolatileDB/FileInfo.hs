@@ -34,7 +34,6 @@ import           Ouroboros.Network.Block (MaxSlotNo (..), SlotNo,
 
 import           Ouroboros.Consensus.Util
 
-import           Ouroboros.Storage.Common
 import           Ouroboros.Storage.VolatileDB.Types
 import           Ouroboros.Storage.VolatileDB.Util
 

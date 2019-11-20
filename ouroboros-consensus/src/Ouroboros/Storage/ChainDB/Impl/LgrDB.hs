@@ -412,8 +412,8 @@ streamAPI immDB = StreamAPI streamAfter
             -> m (NextBlock (Point blk) blk)
     getNext itr = ImmDB.iteratorNext immDB itr <&> \case
       ImmDB.IteratorExhausted    -> NoMoreBlocks
-      ImmDB.IteratorResult _ blk -> NextBlock (Block.blockPoint blk, blk)
-      ImmDB.IteratorEBB  _ _ blk -> NextBlock (Block.blockPoint blk, blk)
+      ImmDB.IteratorResult _ _ blk -> NextBlock (Block.blockPoint blk, blk)
+      ImmDB.IteratorEBB    _ _ blk -> NextBlock (Block.blockPoint blk, blk)
 
 {-------------------------------------------------------------------------------
   Garbage collect points of previously applied blocks

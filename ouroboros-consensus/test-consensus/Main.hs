@@ -5,6 +5,7 @@ import           Test.Tasty
 import qualified Test.Consensus.BlockchainTime (tests)
 import qualified Test.Consensus.ChainSyncClient (tests)
 import qualified Test.Consensus.Ledger.Byron (tests)
+import qualified Test.Consensus.Ledger.Mock (tests)
 import qualified Test.Consensus.Mempool (tests)
 import qualified Test.Consensus.Node (tests)
 import qualified Test.Consensus.Protocol.PBFT (tests)
@@ -25,6 +26,7 @@ tests =
   [ Test.Consensus.BlockchainTime.tests
   , Test.Consensus.ChainSyncClient.tests
   , Test.Consensus.Ledger.Byron.tests
+  , Test.Consensus.Ledger.Mock.tests
   , Test.Consensus.Mempool.tests
   , Test.Consensus.Node.tests
   , Test.Consensus.Protocol.PBFT.tests

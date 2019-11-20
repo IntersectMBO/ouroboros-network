@@ -19,60 +19,66 @@ import           Ouroboros.Consensus.Ledger.Byron
 import           Ouroboros.Consensus.Node.Run.Abstract
 import           Ouroboros.Consensus.Protocol.Abstract
 
-import           Ouroboros.Storage.Common (EpochSize (..))
+import           Ouroboros.Storage.Common (EpochNo (..), EpochSize (..))
 
 {-------------------------------------------------------------------------------
   RunNode instance
 -------------------------------------------------------------------------------}
 
 instance RunNode ByronBlock where
-  nodeForgeBlock         = forgeByronBlock
-  nodeBlockMatchesHeader = byronBlockMatchesHeader
-  nodeBlockFetchSize     = const 2000 -- TODO #593
-  nodeIsEBB              = \blk -> case byronBlockRaw blk of
-    Cardano.Block.ABOBBlock _    -> False
-    Cardano.Block.ABOBBoundary _ -> True
+  nodeForgeBlock          = forgeByronBlock
+  nodeBlockMatchesHeader  = byronBlockMatchesHeader
+  nodeBlockFetchSize      = const 2000 -- TODO #593
+  nodeIsEBB               = \blk -> case byronBlockRaw blk of
+    Cardano.Block.ABOBBlock _      -> Nothing
+    Cardano.Block.ABOBBoundary ebb -> Just
+                                    . EpochNo
+                                    . Cardano.Block.boundaryEpoch
+                                    . Cardano.Block.boundaryHeader
+                                    $ ebb
 
   -- The epoch size is fixed and can be derived from @k@ by the ledger
   -- ('kEpochSlots').
-  nodeEpochSize          = \_proxy cfg _epochNo -> return
-                             . (coerce :: EpochSlots -> EpochSize)
-                             . kEpochSlots
-                             . Genesis.gdK
-                             . extractGenesisData
-                             $ cfg
+  nodeEpochSize           = \_proxy cfg _epochNo -> return
+                              . (coerce :: EpochSlots -> EpochSize)
+                              . kEpochSlots
+                              . Genesis.gdK
+                              . extractGenesisData
+                              $ cfg
 
   -- Extract it from the 'Genesis.Config'
-  nodeStartTime          = const
-                         $ SystemStart
-                         . Genesis.gdStartTime
-                         . extractGenesisData
-  nodeNetworkMagic       = const
-                         $ NetworkMagic
-                         . Crypto.unProtocolMagicId
-                         . Genesis.gdProtocolMagicId
-                         . extractGenesisData
-  nodeProtocolMagicId    = const
-                         $ Genesis.gdProtocolMagicId
-                         . extractGenesisData
+  nodeStartTime           = const
+                          $ SystemStart
+                          . Genesis.gdStartTime
+                          . extractGenesisData
+  nodeNetworkMagic        = const
+                          $ NetworkMagic
+                          . Crypto.unProtocolMagicId
+                          . Genesis.gdProtocolMagicId
+                          . extractGenesisData
+  nodeProtocolMagicId     = const
+                          $ Genesis.gdProtocolMagicId
+                          . extractGenesisData
+  nodeHashInfo            = const byronHashInfo
 
-  nodeEncodeBlock        = const encodeByronBlock
-  nodeEncodeHeader       = const encodeByronHeader
-  nodeEncodeGenTx        = encodeByronGenTx
-  nodeEncodeGenTxId      = encodeByronGenTxId
-  nodeEncodeHeaderHash   = const encodeByronHeaderHash
-  nodeEncodeLedgerState  = const encodeByronLedgerState
-  nodeEncodeChainState   = const encodeByronChainState
-  nodeEncodeApplyTxError = const encodeByronApplyTxError
 
-  nodeDecodeBlock        = decodeByronBlock  . extractEpochSlots
-  nodeDecodeHeader       = decodeByronHeader . extractEpochSlots
-  nodeDecodeGenTx        = decodeByronGenTx
-  nodeDecodeGenTxId      = decodeByronGenTxId
-  nodeDecodeHeaderHash   = const decodeByronHeaderHash
-  nodeDecodeLedgerState  = const decodeByronLedgerState
-  nodeDecodeChainState   = const decodeByronChainState
-  nodeDecodeApplyTxError = const decodeByronApplyTxError
+  nodeEncodeBlockWithInfo = const encodeByronBlockWithInfo
+  nodeEncodeHeader        = const encodeByronHeader
+  nodeEncodeGenTx         = encodeByronGenTx
+  nodeEncodeGenTxId       = encodeByronGenTxId
+  nodeEncodeHeaderHash    = const encodeByronHeaderHash
+  nodeEncodeLedgerState   = const encodeByronLedgerState
+  nodeEncodeChainState    = const encodeByronChainState
+  nodeEncodeApplyTxError  = const encodeByronApplyTxError
+
+  nodeDecodeBlock         = decodeByronBlock  . extractEpochSlots
+  nodeDecodeHeader        = decodeByronHeader . extractEpochSlots
+  nodeDecodeGenTx         = decodeByronGenTx
+  nodeDecodeGenTxId       = decodeByronGenTxId
+  nodeDecodeHeaderHash    = const decodeByronHeaderHash
+  nodeDecodeLedgerState   = const decodeByronLedgerState
+  nodeDecodeChainState    = const decodeByronChainState
+  nodeDecodeApplyTxError  = const decodeByronApplyTxError
 
 extractGenesisData :: NodeConfig ByronConsensusProtocol -> Genesis.GenesisData
 extractGenesisData = Genesis.configGenesisData . getGenesisConfig

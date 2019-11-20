@@ -7,10 +7,8 @@ module Ouroboros.Storage.ImmutableDB.API
   ( ImmutableDB (..)
   , withDB
   , Iterator (..)
-  , withIterator
   , IteratorResult (..)
   , iteratorToList
-  , blobProducer
 
   , module Ouroboros.Storage.ImmutableDB.Types
   ) where
@@ -24,8 +22,6 @@ import           Data.Function (on)
 
 import           GHC.Generics (Generic)
 import           GHC.Stack (HasCallStack)
-
-import           Pipes (Producer, lift, yield)
 
 import           Control.Monad.Class.MonadThrow
 
@@ -98,19 +94,6 @@ data ImmutableDB hash m = ImmutableDB
   , reopen
       :: HasCallStack => ValidationPolicy -> m ()
 
-    -- | Delete everything in the database after 'Tip'.
-    --
-    -- Trailing empty slots are also deleted so that the new tip of the
-    -- database points at a filled slot (or EBB). If the given tip is not
-    -- before the current tip, but newer, then nothing will be deleted.
-    --
-    -- Consequently, the result of calling 'getTip' after this call completed
-    -- will return a tip <= the given tip.
-    --
-    -- Throws a 'ClosedDBError' if the database is closed.
-  , deleteAfter
-      :: HasCallStack => ImmTip -> m ()
-
     -- | Return the tip of the database.
     --
     -- The tip of the database will never point to an unfilled slot or missing
@@ -120,7 +103,8 @@ data ImmutableDB hash m = ImmutableDB
   , getTip
       :: HasCallStack => m ImmTip
 
-    -- | Get the binary blob stored at the given 'SlotNo'.
+    -- | Get the block as a 'ByteString' and its header hash stored at the given
+    -- 'SlotNo'.
     --
     -- Returns 'Nothing' if no blob was stored at the given slot.
     --
@@ -128,10 +112,19 @@ data ImmutableDB hash m = ImmutableDB
     -- i.e > the result of 'getTip'.
     --
     -- Throws a 'ClosedDBError' if the database is closed.
-  , getBinaryBlob
-      :: HasCallStack => SlotNo -> m (Maybe ByteString)
+  , getBlock
+      :: HasCallStack => SlotNo -> m (Maybe (hash, ByteString))
 
-    -- | Get the EBB (Epoch Boundary Block) and its hash of the given epoch.
+    -- | TODO
+  , getBlockHeader
+      :: HasCallStack => SlotNo -> m (Maybe (hash, ByteString))
+
+    -- | TODO
+  , getBlockHash
+      :: HasCallStack => SlotNo -> m (Maybe hash)
+
+    -- | Get the EBB (Epoch Boundary Block) as a 'ByteString' and its header
+    -- hash of the given epoch.
     --
     -- Returns 'Nothing' if no EEB was stored for the given epoch.
     --
@@ -141,7 +134,15 @@ data ImmutableDB hash m = ImmutableDB
   , getEBB
       :: HasCallStack => EpochNo -> m (Maybe (hash, ByteString))
 
-    -- | Appends a binary blob at the given slot.
+    -- | TODO
+  , getEBBHeader
+      :: HasCallStack => EpochNo -> m (Maybe (hash, ByteString))
+
+    -- | TODO
+  , getEBBHash
+      :: HasCallStack => EpochNo -> m (Maybe hash)
+
+    -- | Appends a block at the given slot.
     --
     -- Throws an 'AppendToSlotInThePastError' if the given slot is <= the
     -- result of 'getTip'.
@@ -149,10 +150,10 @@ data ImmutableDB hash m = ImmutableDB
     -- Throws a 'ClosedDBError' if the database is closed.
     --
     -- TODO the given binary blob may not be empty.
-  , appendBinaryBlob
-      :: HasCallStack => SlotNo -> Builder -> m ()
+  , appendBlock
+      :: HasCallStack => SlotNo -> hash -> BinaryInfo Builder -> m ()
 
-    -- | Appends a binary blob as the EBB of the given epoch.
+    -- | Appends a block as the EBB of the given epoch.
     --
     -- The EEB can only be added before regular blobs are appended to the
     -- current epoch.
@@ -165,34 +166,39 @@ data ImmutableDB hash m = ImmutableDB
     --
     -- TODO the given binary blob may not be empty.
   , appendEBB
-      :: HasCallStack => EpochNo -> hash -> Builder -> m ()
+      :: HasCallStack => EpochNo -> hash -> BinaryInfo Builder -> m ()
 
     -- | Return an 'Iterator' to efficiently stream binary blocks out of the
     -- database.
     --
     -- Optionally, a start position (first argument) and/or a stop position
-    -- (second argument) can be given that will be used to determine from
-    -- which 'SlotNo' streaming will start and/or stop (both inclusive bounds).
+    -- (second argument) can be given that will be used to determine which
+    -- range of blocks should be streamed.
     --
-    -- The @hash@ argument is used to distinguish the EBB from the regular
-    -- block stored at the same slot. Note that the database only stores the
-    -- hash of the EBB explicitly, so if the given hash matches the EBB's, we
-    -- know the bound refers to the EBB. If it doesn't match, we assume it
-    -- matches the regular block's hash, but we don't verify this. In order to
-    -- to verify this, we would either have to store the hash of each block,
-    -- or parse the contents of the block.
+    -- The start and stop position are of type @(SlotNo, hash)@. Both are
+    -- inclusive bounds. The 'SlotNo' can refer to an EBB, in which case the
+    -- @hash@ is used to distinguish it from the regular block in the same
+    -- slot. When there is no block (or EBB) in the given slot with the given
+    -- hash, a 'WrongBoundError' is returned.
     --
     -- When no start position is given, streaming wil start from the first
-    -- blob in the database. When no stop position is given, streaming will
-    -- stop at the last blob currently stored in the database. This means that
-    -- appends happening while streaming will not be visible to the iterator.
+    -- block in the database. When no stop position is given, streaming will
+    -- stop at the tip of the database at the time of opening the iterator.
+    -- This means that appends happening while streaming will not be visible
+    -- to the iterator.
     --
-    -- Use 'iteratorNext' to get a blob from the iterator and to advance it.
-    --
-    -- Slots that do not store a blob are skipped by the iterator.
+    -- Slots that do not store a block are skipped by the iterator.
     --
     -- Throws an 'InvalidIteratorRangeError' if the start of the range is
     -- greater than the end of the range.
+    --
+    -- NOTE: 'WrongBoundError' is returned, but 'InvalidIteratorRangeError' is
+    -- thrown. This is because the former is expected to occur during normal
+    -- operation: the user doesn't know upfront if those blocks can be
+    -- streamed or not. Checking it beforehand would be expensive and
+    -- inefficient, and 'streamBlocks' is the best place to do it anyway. The
+    -- latter exception indicates incorrect usage and should not happen during
+    -- normal operation.
     --
     -- Throws a 'ReadFutureSlotError' if the start or end 'SlotNo' are in the
     -- future.
@@ -201,12 +207,21 @@ data ImmutableDB hash m = ImmutableDB
     --
     -- The iterator is automatically closed when exhausted, and can be
     -- prematurely closed with 'iteratorClose'.
-  , streamBinaryBlobs
+  , streamBlocks
       :: HasCallStack
       => Maybe (SlotNo, hash)
       -> Maybe (SlotNo, hash)
-      -> m (Iterator hash m ByteString)
-      -- TODO inclusive + exclusive bounds
+      -> m (Either (WrongBoundError hash)
+                   (Iterator hash m ByteString))
+
+    -- | Same as 'streamBlocks', but only the headers are streamed, not the
+    -- whole blocks.
+  , streamHeaders
+      :: HasCallStack
+      => Maybe (SlotNo, hash)
+      -> Maybe (SlotNo, hash)
+      -> m (Either (WrongBoundError hash)
+                   (Iterator hash m ByteString))
 
     -- | Throw 'ImmutableDB' errors
   , immutableDBErr :: ErrorHandling ImmutableDBError m
@@ -274,24 +289,6 @@ instance Functor m => Functor (Iterator hash m) where
       , iteratorID      = DerivedIteratorID $ iteratorID itr
       }
 
--- | Create an iterator from the given 'ImmutableDB' using
--- 'streamBinaryBlobs'. Perform the given action using the iterator, and close
--- the iterator using its 'iteratorClose' function, in case of success or when
--- an exception was thrown.
-withIterator :: (HasCallStack, MonadThrow m)
-             => ImmutableDB hash m
-             -- ^ The database
-             -> Maybe (SlotNo, hash)
-             -- ^ Start streaming from here
-             -> Maybe (SlotNo, hash)
-             -- ^ End streaming here
-             -> (Iterator hash m ByteString -> m a)
-             -- ^ Action to perform on the iterator
-             -> m a
-withIterator db start end =
-    bracket (streamBinaryBlobs db start end) iteratorClose
-
-
 -- | Equality based on 'iteratorID'
 instance Eq (Iterator hash m a) where
   (==) = (==) `on` iteratorID
@@ -302,7 +299,7 @@ instance Ord (Iterator hash m a) where
 -- | The result of stepping an 'Iterator'.
 data IteratorResult hash a
   = IteratorExhausted
-  | IteratorResult    SlotNo       a
+  | IteratorResult    SlotNo  hash a
   | IteratorEBB       EpochNo hash a
   deriving (Show, Eq, Generic, Functor)
 
@@ -318,22 +315,3 @@ iteratorToList it = go
       case next of
         IteratorExhausted -> return []
         _                 -> (next:) <$> go
-
--- | A 'Producer' that streams binary blobs from the database in the given
--- range.
-blobProducer :: (Monad m, HasCallStack)
-             => ImmutableDB hash m
-             -> Maybe (SlotNo, hash)   -- ^ When to start streaming (inclusive).
-             -> Maybe (SlotNo, hash)   -- ^ When to stop streaming (inclusive).
-             -> Producer (Either (SlotNo, ByteString)
-                                 (EpochNo, hash, ByteString))
-                         m ()
-blobProducer db start end = do
-    it <- lift $ streamBinaryBlobs db start end
-    let loop = do
-          res <- lift $ iteratorNext it
-          case res of
-            IteratorExhausted           -> lift $ iteratorClose it
-            IteratorResult    slot blob -> yield (Left  (slot,  blob))       *> loop
-            IteratorEBB epoch hash blob -> yield (Right (epoch, hash, blob)) *> loop
-    loop

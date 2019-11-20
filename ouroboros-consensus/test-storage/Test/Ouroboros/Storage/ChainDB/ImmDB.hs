@@ -17,7 +17,7 @@ import           Control.Tracer (nullTracer)
 
 import qualified Cardano.Chain.Update as Update
 
-import           Ouroboros.Network.Block (SlotNo (..), blockHash, blockPoint)
+import           Ouroboros.Network.Block (SlotNo (..), blockPoint)
 
 import           Ouroboros.Consensus.Block (BlockProtocol)
 import           Ouroboros.Consensus.Ledger.Byron (ByronBlock)
@@ -71,12 +71,11 @@ withImmDB k = do
       , immDecodeHash  = nodeDecodeHeaderHash (Proxy @ByronBlock)
       , immDecodeBlock = nodeDecodeBlock testCfg
       , immEncodeHash  = nodeEncodeHeaderHash (Proxy @ByronBlock)
-      , immEncodeBlock = nodeEncodeBlock testCfg
+      , immEncodeBlock = nodeEncodeBlockWithInfo testCfg
       , immEpochInfo   = epochInfo
+      , immHashInfo    = nodeHashInfo (Proxy @ByronBlock)
       , immValidation  = ValidateMostRecentEpoch
-      , immIsEBB       = \blk -> if nodeIsEBB blk
-                                 then Just (blockHash blk)
-                                 else Nothing
+      , immIsEBB       = nodeIsEBB
       , immTracer      = nullTracer
       }
 

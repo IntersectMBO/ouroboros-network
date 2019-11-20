@@ -26,7 +26,7 @@ import qualified Data.ByteString.Builder as BS
 import qualified Data.ByteString.Lazy as BL
 import           Data.Int (Int64)
 import           Data.Set (Set)
-import           Data.Word (Word64)
+import           Data.Word
 import           GHC.Stack
 
 import           Control.Monad.Class.MonadThrow
@@ -244,7 +244,6 @@ hPutAllStrict hasFS h = go 0
       if BS.null bs'
         then return written'
         else go written' bs'
-
 
 -- | This function makes sure that the whole 'BL.ByteString' is written.
 hPutAll :: forall m h

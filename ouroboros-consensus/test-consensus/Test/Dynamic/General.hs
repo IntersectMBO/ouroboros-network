@@ -17,6 +17,7 @@ module Test.Dynamic.General (
 
 import           Control.Monad (guard, join)
 import qualified Data.Map as Map
+import           Data.Maybe (isJust)
 import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Word (Word64)
@@ -250,7 +251,7 @@ prop_general k TestConfig{numSlots, nodeJoinPlan, nodeTopology} mbSchedule
             guard $ j <= s
 
             guard $ not $
-                nodeIsEBB b || Set.member (blockPoint b) invalids
+                isJust (nodeIsEBB b) || Set.member (blockPoint b) invalids
 
             pure [cid]
 

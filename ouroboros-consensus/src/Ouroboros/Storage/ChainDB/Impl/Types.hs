@@ -292,7 +292,7 @@ data TraceEvent blk
   | TraceIteratorEvent     (TraceIteratorEvent     blk)
   | TraceLedgerEvent       (LgrDB.TraceEvent (Point blk))
   | TraceLedgerReplayEvent (LgrDB.TraceLedgerReplayEvent blk)
-  | TraceImmDBEvent        (ImmDB.TraceEvent ImmDB.EpochFileError)
+  | TraceImmDBEvent        (ImmDB.TraceEvent       blk)
   deriving (Generic)
 
 deriving instance

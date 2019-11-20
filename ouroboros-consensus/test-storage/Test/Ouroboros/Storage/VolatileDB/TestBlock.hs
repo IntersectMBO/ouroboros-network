@@ -25,7 +25,6 @@ import           Ouroboros.Network.Point (WithOrigin, withOriginFromMaybe,
 import           Ouroboros.Consensus.Util (SomePair (..))
 import           Ouroboros.Consensus.Util.IOLike
 
-import           Ouroboros.Storage.Common
 import           Ouroboros.Storage.FS.API (HasFS (..), hGetExactly, hPut,
                      withFile)
 import           Ouroboros.Storage.FS.API.Types

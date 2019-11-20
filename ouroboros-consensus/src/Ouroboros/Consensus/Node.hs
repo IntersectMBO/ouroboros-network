@@ -107,15 +107,11 @@ run
   -> IO ()
 run tracers chainDbTracer rna dbPath pInfo
     customiseChainDbArgs customiseNodeArgs onNodeKernel = do
-    -- TODO: Enable once new index format lands.
-    if False then do
-      let mountPoint = MountPoint dbPath
-      either throwM return =<< checkDbMarker
-        (ioHasFS mountPoint)
-        mountPoint
-        (nodeProtocolMagicId (Proxy @blk) cfg)
-    else
-      return () -- Skipping check for now
+    let mountPoint = MountPoint dbPath
+    either throwM return =<< checkDbMarker
+      (ioHasFS mountPoint)
+      mountPoint
+      (nodeProtocolMagicId (Proxy @blk) cfg)
     withRegistry $ \registry -> do
 
       chainDB <- initChainDB
@@ -188,20 +184,19 @@ initChainDB tracer registry dbPath cfg initLedger slotLength
 
     mkArgs epochInfo = customiseArgs $ (ChainDB.defaultArgs dbPath)
       { ChainDB.cdbBlocksPerFile    = 1000
-      , ChainDB.cdbDecodeBlock      = nodeDecodeBlock       cfg
-      , ChainDB.cdbDecodeChainState = nodeDecodeChainState  (Proxy @blk)
-      , ChainDB.cdbDecodeHash       = nodeDecodeHeaderHash  (Proxy @blk)
-      , ChainDB.cdbDecodeLedger     = nodeDecodeLedgerState cfg
-      , ChainDB.cdbEncodeBlock      = nodeEncodeBlock       cfg
-      , ChainDB.cdbEncodeChainState = nodeEncodeChainState  (Proxy @blk)
-      , ChainDB.cdbEncodeHash       = nodeEncodeHeaderHash  (Proxy @blk)
-      , ChainDB.cdbEncodeLedger     = nodeEncodeLedgerState cfg
+      , ChainDB.cdbDecodeBlock      = nodeDecodeBlock         cfg
+      , ChainDB.cdbDecodeChainState = nodeDecodeChainState    (Proxy @blk)
+      , ChainDB.cdbDecodeHash       = nodeDecodeHeaderHash    (Proxy @blk)
+      , ChainDB.cdbDecodeLedger     = nodeDecodeLedgerState   cfg
+      , ChainDB.cdbEncodeBlock      = nodeEncodeBlockWithInfo cfg
+      , ChainDB.cdbEncodeChainState = nodeEncodeChainState    (Proxy @blk)
+      , ChainDB.cdbEncodeHash       = nodeEncodeHeaderHash    (Proxy @blk)
+      , ChainDB.cdbEncodeLedger     = nodeEncodeLedgerState   cfg
       , ChainDB.cdbEpochInfo        = epochInfo
+      , ChainDB.cdbHashInfo         = nodeHashInfo            (Proxy @blk)
       , ChainDB.cdbGenesis          = return initLedger
       , ChainDB.cdbDiskPolicy       = defaultDiskPolicy secParam slotDiffTime
-      , ChainDB.cdbIsEBB            = \blk -> if nodeIsEBB blk
-                                              then Just (blockHash blk)
-                                              else Nothing
+      , ChainDB.cdbIsEBB            = nodeIsEBB
       , ChainDB.cdbParamsLgrDB      = ledgerDbDefaultParams secParam
       , ChainDB.cdbNodeConfig       = cfg
       , ChainDB.cdbRegistry         = registry

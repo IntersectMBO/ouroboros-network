@@ -2,6 +2,7 @@
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE MultiWayIf          #-}
+{-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# OPTIONS_GHC -Wredundant-constraints #-}
@@ -20,9 +21,11 @@ module Test.Ouroboros.Storage.ImmutableDB.Model
   , openDBModel
   , simulateCorruptions
   , rollBackToTip
+  , tips
   ) where
 
 import           Control.Monad (when)
+import           Control.Monad.Except (lift, liftEither, runExceptT)
 import           Control.Monad.State.Strict (MonadState, get, gets, modify, put)
 
 import           Data.ByteString.Builder (Builder, toLazyByteString)
@@ -34,7 +37,7 @@ import           Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
 import           Data.Map (Map)
 import qualified Data.Map as Map
-import           Data.Maybe (fromMaybe, mapMaybe)
+import           Data.Maybe (catMaybes, fromMaybe, mapMaybe)
 import qualified Data.Text as Text
 import           Data.Word (Word64)
 
@@ -49,17 +52,20 @@ import           Ouroboros.Storage.Common
 import           Ouroboros.Storage.EpochInfo
 import           Ouroboros.Storage.FS.API.Types (FsPath, fsPathSplit)
 import           Ouroboros.Storage.ImmutableDB.API
+import           Ouroboros.Storage.ImmutableDB.Impl (Internal (..))
+import           Ouroboros.Storage.ImmutableDB.Impl.Iterator
+                     (BlocksOrHeaders (..))
+import           Ouroboros.Storage.ImmutableDB.Impl.Util
 import           Ouroboros.Storage.ImmutableDB.Layout
-import           Ouroboros.Storage.ImmutableDB.Util
 import           Ouroboros.Storage.Util.ErrorHandling (ErrorHandling (..))
 
 import           Test.Ouroboros.Storage.TestBlock
 
 data DBModel hash = DBModel
-  { dbmChain        :: [Maybe ByteString]
+  { dbmChain        :: [Maybe (hash, BinaryInfo ByteString)]
     -- ^ 'Nothing' when a slot is empty
   , dbmTip          :: ImmTip
-  , dbmEBBs         :: Map EpochNo (hash, ByteString)
+  , dbmEBBs         :: Map EpochNo (hash, BinaryInfo ByteString)
     -- ^ The EBB for each 'EpochNo'
   , dbmEpochInfo    :: EpochInfo Identity
   , dbmIterators    :: Map IteratorID (IteratorModel hash)
@@ -85,12 +91,14 @@ dbmCurrentEpoch dbm@DBModel{..} =
       Tip (EBB epoch') -> epoch'
 
 dbmBlobs :: DBModel hash
-         -> Map (EpochSlot, SlotNo) (Either (hash, ByteString) ByteString)
+         -> Map (EpochSlot, SlotNo)
+                (Either (hash, BinaryInfo ByteString)
+                        (hash, BinaryInfo ByteString))
 dbmBlobs dbm@DBModel {..} = foldr add ebbs (zip (map SlotNo [0..]) dbmChain)
   where
-    add (_,    Nothing)   = id
-    add (slot, Just blob) =
-      Map.insert (slotToEpochSlot dbm slot, slot) (Right blob)
+    add (_,    Nothing)                = id
+    add (slot, Just hashAndBinaryInfo) =
+      Map.insert (slotToEpochSlot dbm slot, slot) (Right hashAndBinaryInfo)
 
     ebbs = dbmEBBs
          & Map.map Left
@@ -102,8 +110,8 @@ dbmBlobs dbm@DBModel {..} = foldr add ebbs (zip (map SlotNo [0..]) dbmChain)
 dbmTipBlock :: DBModel hash -> Maybe TestBlock
 dbmTipBlock dbm = testBlockFromLazyByteString <$> case dbmTip dbm of
     TipGen            -> Nothing
-    Tip (Block _slot) -> Just $ mustBeJust $ last $ dbmChain dbm
-    Tip (EBB epoch)   -> Just $ snd $ dbmEBBs dbm Map.! epoch
+    Tip (Block _slot) -> Just $ binaryBlob $ snd $ mustBeJust $ last $ dbmChain dbm
+    Tip (EBB epoch)   -> Just $ binaryBlob $ snd $ dbmEBBs dbm Map.! epoch
   where
     mustBeJust = fromMaybe (error "chain ends with an empty slot")
 
@@ -125,22 +133,29 @@ newtype IteratorModel hash = IteratorModel [IteratorResult hash ByteString]
 openDBModel :: (MonadState (DBModel hash) m, Eq hash)
             => ErrorHandling ImmutableDBError m
             -> (EpochNo -> EpochSize)
-            -> (DBModel hash, ImmutableDB hash m)
-openDBModel err getEpochSize = (dbModel, db)
+            -> (DBModel hash, ImmutableDB hash m, Internal hash m)
+openDBModel err getEpochSize = (dbModel, db, internal)
   where
     dbModel = initDBModel (getEpochSize 0)
     db = ImmutableDB
-      { closeDB           = return ()
-      , isOpen            = return True
-      , reopen            = \_ -> return ()
-      , deleteAfter       = deleteAfterModel
-      , getTip            = getTipModel
-      , getBinaryBlob     = getBinaryBlobModel     err
-      , getEBB            = getEBBModel            err
-      , appendBinaryBlob  = appendBinaryBlobModel  err
-      , appendEBB         = appendEBBModel         err
-      , streamBinaryBlobs = streamBinaryBlobsModel err
-      , immutableDBErr    = err
+      { closeDB        = return ()
+      , isOpen         = return True
+      , reopen         = \_ -> return ()
+      , getTip         = getTipModel
+      , getBlock       = getBlockModel       err
+      , getBlockHeader = getBlockHeaderModel err
+      , getBlockHash   = getBlockHashModel   err
+      , getEBB         = getEBBModel         err
+      , getEBBHeader   = getEBBHeaderModel   err
+      , getEBBHash     = getEBBHashModel     err
+      , appendBlock    = appendBlockModel    err
+      , appendEBB      = appendEBBModel      err
+      , streamBlocks   = streamModel         err Blocks
+      , streamHeaders  = streamModel         err Headers
+      , immutableDBErr = err
+      }
+    internal = Internal
+      { deleteAfter = deleteAfterModel
       }
 
 {------------------------------------------------------------------------------
@@ -252,12 +267,13 @@ tipsAfter dbm tip = map toTip $ dropWhile isBeforeTip blobLocations
 blobsInEpoch :: DBModel hash -> EpochNo -> [ByteString]
 blobsInEpoch dbm@DBModel {..} epoch =
     maybe id (:) mbEBBBlob       $
+    map (binaryBlob . snd)       $
     mapMaybe snd                 $
     takeWhile ((== epoch) . fst) $
     dropWhile ((/= epoch) . fst) $
     zip (map (slotToEpoch dbm . SlotNo) [0..]) dbmChain
   where
-    mbEBBBlob = snd <$> Map.lookup epoch dbmEBBs
+    mbEBBBlob = binaryBlob . snd <$> Map.lookup epoch dbmEBBs
 
 {------------------------------------------------------------------------------
   Simulation corruptions and restoring afterwards
@@ -311,9 +327,11 @@ findCorruptionRollBackPoint :: FileCorruption -> FsPath -> DBModel hash
                             -> RollBackPoint
 findCorruptionRollBackPoint corr file dbm =
     case (Text.unpack . snd <$> fsPathSplit file) >>= parseDBFile of
-      Just ("epoch", epoch) -> findEpochCorruptionRollBackPoint corr epoch dbm
-      Just ("index", epoch) -> findIndexCorruptionRollBackPoint corr epoch dbm
-      _                     -> error "Invalid file to corrupt"
+      Just ("epoch",     epoch)  -> findEpochCorruptionRollBackPoint corr epoch dbm
+      -- Index files are always recoverable
+      Just ("primary",   _epoch) -> DontRollBack
+      Just ("secondary", _epoch) -> DontRollBack
+      _                          -> error "Invalid file to corrupt"
 
 findEpochDropLastBytesRollBackPoint :: Word64 -> EpochNo -> DBModel hash
                                     -> RollBackPoint
@@ -367,26 +385,6 @@ rollbackToLastFilledSlotBefore epoch dbm = case lastMaybe beforeEpoch of
   where
     (beforeEpoch, _, _) = filledEpochSlots dbm epoch
 
-findIndexCorruptionRollBackPoint :: FileCorruption -> EpochNo -> DBModel hash
-                                 -> RollBackPoint
-findIndexCorruptionRollBackPoint _corr epoch dbm
-    | Just lastFilledSlotOfEpoch     <- lastMaybe inEpoch
-    = if isLastSlotOfEpoch lastFilledSlotOfEpoch
-        -- If the last slot is filled, the complete index file can be
-        -- recovered from the epoch file
-      then DontRollBack
-        -- Otherwise roll back to the last filled slot.
-      else RollBackToEpochSlot lastFilledSlotOfEpoch
-    | Just lastFilledSlotBeforeEpoch <- lastMaybe beforeEpoch
-    = RollBackToEpochSlot lastFilledSlotBeforeEpoch
-    | otherwise  -- there are no filled slots, roll back to genesis
-    = RollBackToGenesis
-  where
-    (beforeEpoch, inEpoch, _afterEpoch) = filledEpochSlots dbm epoch
-    isLastSlotOfEpoch (EpochSlot epoch' relSlot) =
-      relSlot == maxRelativeSlot (lookupEpochSize dbm epoch')
-
-
 {------------------------------------------------------------------------------
   ImmutableDB Implementation
 ------------------------------------------------------------------------------}
@@ -402,12 +400,12 @@ deleteAfterModel tip =
   where
     rollBackToLastValidTip dbm = rollBackToTip (NE.last (tips dbm)) dbm
 
-getBinaryBlobModel :: (HasCallStack, MonadState (DBModel hash) m)
+getBlockBinaryInfo :: (HasCallStack, MonadState (DBModel hash) m)
                    => ErrorHandling ImmutableDBError m
                    -> SlotNo
-                   -> m (Maybe ByteString)
-getBinaryBlobModel err slot = do
-    DBModel {..} <- get
+                   -> m (Maybe (hash, BinaryInfo ByteString))
+getBlockBinaryInfo err slot = do
+    DBModel { dbmTip, dbmChain } <- get
 
     -- Check that the slot is not in the future
     let inTheFuture = case dbmTip of
@@ -420,11 +418,36 @@ getBinaryBlobModel err slot = do
 
     return $ lookupBySlot slot dbmChain
 
-getEBBModel :: (HasCallStack, MonadState (DBModel hash) m)
-            => ErrorHandling ImmutableDBError m
-            -> EpochNo
-            -> m (Maybe (hash, ByteString))
-getEBBModel err epoch = do
+extractHeader :: BinaryInfo ByteString -> ByteString
+extractHeader BinaryInfo { binaryBlob, headerOffset, headerSize } =
+    Lazy.take (fromIntegral headerSize) $
+    Lazy.drop (fromIntegral headerOffset) binaryBlob
+
+getBlockModel :: (HasCallStack, MonadState (DBModel hash) m)
+              => ErrorHandling ImmutableDBError m
+              -> SlotNo
+              -> m (Maybe (hash, ByteString))
+getBlockModel err slot =
+  fmap (fmap binaryBlob) <$> getBlockBinaryInfo err slot
+
+getBlockHeaderModel :: (HasCallStack, MonadState (DBModel hash) m)
+                    => ErrorHandling ImmutableDBError m
+                    -> SlotNo
+                    -> m (Maybe (hash, ByteString))
+getBlockHeaderModel err slot =
+    fmap (fmap extractHeader) <$> getBlockBinaryInfo err slot
+
+getBlockHashModel :: (HasCallStack, MonadState (DBModel hash) m)
+                  => ErrorHandling ImmutableDBError m
+                  -> SlotNo
+                  -> m (Maybe hash)
+getBlockHashModel err slot = fmap fst <$> getBlockModel err slot
+
+getEBBBinaryInfo :: (HasCallStack, MonadState (DBModel hash) m)
+                => ErrorHandling ImmutableDBError m
+                -> EpochNo
+                -> m (Maybe (hash, BinaryInfo ByteString))
+getEBBBinaryInfo err epoch = do
     dbm@DBModel {..} <- get
     let currentEpoch = dbmCurrentEpoch dbm
         inTheFuture  = epoch > currentEpoch || dbmTip == TipGen
@@ -434,12 +457,33 @@ getEBBModel err epoch = do
 
     return $ Map.lookup epoch dbmEBBs
 
-appendBinaryBlobModel :: (HasCallStack, MonadState (DBModel hash) m)
-                      => ErrorHandling ImmutableDBError m
-                      -> SlotNo
-                      -> Builder
-                      -> m ()
-appendBinaryBlobModel err slot bld = do
+getEBBModel :: (HasCallStack, MonadState (DBModel hash) m)
+            => ErrorHandling ImmutableDBError m
+            -> EpochNo
+            -> m (Maybe (hash, ByteString))
+getEBBModel err epoch =
+  fmap (fmap binaryBlob) <$> getEBBBinaryInfo err epoch
+
+getEBBHeaderModel :: (HasCallStack, MonadState (DBModel hash) m)
+                  => ErrorHandling ImmutableDBError m
+                  -> EpochNo
+                  -> m (Maybe (hash, ByteString))
+getEBBHeaderModel err epoch =
+    fmap (fmap extractHeader) <$> getEBBBinaryInfo err epoch
+
+getEBBHashModel :: (HasCallStack, MonadState (DBModel hash) m)
+                => ErrorHandling ImmutableDBError m
+                -> EpochNo
+                -> m (Maybe hash)
+getEBBHashModel err epoch = fmap fst <$> getEBBModel err epoch
+
+appendBlockModel :: (HasCallStack, MonadState (DBModel hash) m)
+                 => ErrorHandling ImmutableDBError m
+                 -> SlotNo
+                 -> hash
+                 -> BinaryInfo Builder
+                 -> m ()
+appendBlockModel err slot hash binaryInfo = do
     dbm@DBModel {..} <- get
 
     -- Check that we're not appending to the past
@@ -451,12 +495,12 @@ appendBinaryBlobModel err slot bld = do
     when inThePast $
       throwUserError err $ AppendToSlotInThePastError slot dbmTip
 
-    let blob  = toLazyByteString bld
-        toPad = fromIntegral (unSlotNo slot) - length dbmChain
+    let binaryInfo' = toLazyByteString <$> binaryInfo
+        toPad       = fromIntegral (unSlotNo slot) - length dbmChain
 
     -- TODO snoc list?
     put dbm
-      { dbmChain = dbmChain ++ replicate toPad Nothing ++ [Just blob]
+      { dbmChain = dbmChain ++ replicate toPad Nothing ++ [Just (hash, binaryInfo')]
       , dbmTip   = Tip (Block slot)
       }
 
@@ -464,9 +508,9 @@ appendEBBModel :: (MonadState (DBModel hash) m)
                => ErrorHandling ImmutableDBError m
                -> EpochNo
                -> hash
-               -> Builder
+               -> BinaryInfo Builder
                -> m ()
-appendEBBModel err epoch hash bld = do
+appendEBBModel err epoch hash binaryInfo = do
     dbm@DBModel {..} <- get
 
     -- Check that we're not appending to the past
@@ -476,7 +520,7 @@ appendEBBModel err epoch hash bld = do
     when inThePast $
       throwUserError err $ AppendToEBBInThePastError epoch currentEpoch
 
-    let blob         = toLazyByteString bld
+    let binaryInfo'  = toLazyByteString <$> binaryInfo
         ebbEpochSlot = EpochSlot epoch 0
         ebbSlot      = epochSlotToSlot dbm ebbEpochSlot
         toPad        = fromIntegral (unSlotNo ebbSlot) - length dbmChain
@@ -484,84 +528,128 @@ appendEBBModel err epoch hash bld = do
     put dbm
       { dbmChain = dbmChain ++ replicate toPad Nothing
       , dbmTip   = Tip (EBB epoch)
-      , dbmEBBs  = Map.insert epoch (hash, blob) dbmEBBs
+      , dbmEBBs  = Map.insert epoch (hash, binaryInfo') dbmEBBs
       }
 
-streamBinaryBlobsModel :: forall m hash.
-                          (MonadState (DBModel hash) m, Eq hash)
-                       => ErrorHandling ImmutableDBError m
-                       -> Maybe (SlotNo, hash)
-                       -> Maybe (SlotNo, hash)
-                       -> m (Iterator hash m ByteString)
-streamBinaryBlobsModel err mbStart mbEnd = do
+streamModel
+  :: forall m hash. (MonadState (DBModel hash) m, Eq hash)
+  => ErrorHandling ImmutableDBError m
+  -> BlocksOrHeaders
+  -> Maybe (SlotNo, hash)
+  -> Maybe (SlotNo, hash)
+  -> m (Either (WrongBoundError hash)
+               (Iterator hash m ByteString))
+streamModel err blocksOrHeaders mbStart mbEnd = do
     dbm@DBModel {..} <- get
-
-    validateIteratorRange err (generalizeEpochInfo dbmEpochInfo) dbmTip mbStart mbEnd
-
-    let results = iteratorResults dbm
-        itm     = IteratorModel results
-        itID    = BaseIteratorID dbmNextIterator
-    put dbm
-      { dbmNextIterator = succ dbmNextIterator
-      , dbmIterators    = Map.insert itID itm dbmIterators
-      }
-    return Iterator
-      { iteratorNext    = iteratorNextModel    itID
-      , iteratorPeek    = iteratorPeekModel    itID
-      , iteratorHasNext = iteratorHasNextModel itID
-      , iteratorClose   = iteratorCloseModel   itID
-      , iteratorID      = itID
-      }
+    validateIteratorRange err (generalizeEpochInfo dbmEpochInfo) dbmTip
+      mbStart mbEnd
+    go dbm >>= \case
+      Left  e       -> return $ Left e
+      Right results -> Right <$> do
+        let itm  = IteratorModel results
+            itID = BaseIteratorID dbmNextIterator
+        put dbm
+          { dbmNextIterator = succ dbmNextIterator
+          , dbmIterators    = Map.insert itID itm dbmIterators
+          }
+        return Iterator
+          { iteratorNext    = iteratorNextModel    itID
+          , iteratorPeek    = iteratorPeekModel    itID
+          , iteratorHasNext = iteratorHasNextModel itID
+          , iteratorClose   = iteratorCloseModel   itID
+          , iteratorID      = itID
+          }
   where
-    iteratorResults dbm@DBModel {..} =
-        map snd $ takeUntilEnd $ dropUntilStart $
-        map toIteratorResult $ Map.toAscList $ dbmBlobs dbm
-      where
-        toIteratorResult (k@(EpochSlot epoch _, slot), v) = case v of
-          Left (hash, blob) -> (k, IteratorEBB epoch hash blob)
-          Right blob        -> (k, IteratorResult slot blob)
+    go
+      :: DBModel hash
+      -> m (Either (WrongBoundError hash)
+                   [IteratorResult hash ByteString])
+    go dbm = runExceptT $ do
+        -- The real implementation checks the end bound first, so we do the
+        -- same to get the same errors
+        mbEnd'   <- liftEither $ mapM checkBound mbEnd
+        mbStart' <- liftEither $ mapM checkBound mbStart
 
-        dropUntilStart = case mbStart of
-          Nothing                -> id
-          Just (startSlot, hash) -> dropWhile $ \((_, slot), res) -> if
-            | slot < startSlot   -> True
-            | slot == startSlot  -> case res of
-              -- If an EBB is stored in the slot, we'll encounter the EBB
-              -- before we'd encounter a block at the same slot. If the hash
-              -- is that of the EBB, stop dropping because we want to include
-              -- it in the results.
-              IteratorEBB _ hash' _ | hash' == hash -> False
-              -- If the hash doesn't match that of the EBB, it must be the
-              -- hash of the block (which we can't verify!). Drop the EBB
-              -- because we should start at the next block.
-                                    | otherwise     -> True
-              -- If the slot is that of a regular block, stop dropping and
-              -- include the block in the results, regardless the hash.
-              _ -> False
-            | otherwise -> False
-        takeUntilEnd = case mbEnd of
-            Nothing              -> id
-            Just (endSlot, hash) -> go
-              where
-                go [] = []
-                go (x@((_, slot), res):xs)
-                  | slot < endSlot  = x : go xs
-                  | slot == endSlot = case res of
-                    -- If an EBB is stored in the slot, we'll encounter the
-                    -- EBB before we'd encounter a block at the same slot. If
-                    -- the hash is that of the EBB, we want to include it and
-                    -- stop.
-                    IteratorEBB _ hash' _ | hash' == hash -> [x]
-                    -- If the hash doesn't match that of the EBB, it must be
-                    -- the hash of the next block at the same slot (which we
-                    -- can't verify!), so include the EBB and continue so we
-                    -- can include the next block.
-                                          | otherwise     -> x : go xs
-                    -- If the slot is that of a regular block, include it and
-                    -- stop. It can't be that the hash was of the EBB because,
-                    -- then we would have already stopped.
-                    _ -> [x]
-                  | otherwise = []
+        -- 'validateIteratorRange', which doesn't know about hashes, can't
+        -- detect that streaming from the regular block to the EBB in the same
+        -- slot is invalid, as the EBB comes before the regular block. Here,
+        -- we do know about the hashes and 'EpochSlot's.
+        case (mbStart', mbEnd') of
+          (Just start, Just end)
+            | start > end
+            -> lift $ throwUserError err $ InvalidIteratorRangeError
+                 (epochSlotToSlot dbm start) (epochSlotToSlot dbm start)
+          _ -> return ()
+
+        return $ iteratorResults mbStart' mbEnd'
+      where
+        blobs = dbmBlobs dbm
+
+        checkBound
+          :: (SlotNo, hash) -> Either (WrongBoundError hash) EpochSlot
+        checkBound (slotNo, hash) = case slotToEpochSlot dbm slotNo of
+          EpochSlot epoch 1 ->
+            case (Map.lookup (EpochSlot epoch 0, slotNo) blobs,
+                  Map.lookup (EpochSlot epoch 1, slotNo) blobs) of
+              (Nothing, Nothing)
+                -> Left $ EmptySlotError slotNo
+              (Just res1, _)
+                | either fst fst res1 == hash
+                -> return $ EpochSlot epoch 0
+              (_, Just res2)
+                | either fst fst res2 == hash
+                -> return $ EpochSlot epoch 1
+              (mbRes1, mbRes2)
+                -> Left $ WrongHashError slotNo hash $ NE.fromList $
+                   map (either fst fst) $ catMaybes [mbRes1, mbRes2]
+          epochSlot         ->
+            case Map.lookup (epochSlot, slotNo) blobs of
+              Nothing  -> Left $ EmptySlotError slotNo
+              Just res
+                  | hash' == hash -> return epochSlot
+                  | otherwise     -> Left $ WrongHashError slotNo hash (hash' NE.:| [])
+                where
+                  hash' = either fst fst res
+
+        iteratorResults
+          :: Maybe EpochSlot -> Maybe EpochSlot
+          -> [IteratorResult hash ByteString]
+        iteratorResults mbStart' mbEnd' =
+            blobs
+          & Map.toAscList
+          & map toIteratorResult
+          & dropUntilStart mbStart'
+          & takeUntilEnd mbEnd'
+          & map snd
+
+        toIteratorResult
+          :: ((EpochSlot, SlotNo),
+              Either (hash, BinaryInfo ByteString)
+                     (hash, BinaryInfo ByteString))
+          -> ((EpochSlot, SlotNo), IteratorResult hash ByteString)
+        toIteratorResult (k@(EpochSlot epoch _, slot), v) = case v of
+            Left  (hash, bi) -> (k, IteratorEBB    epoch hash (extractBlob bi))
+            Right (hash, bi) -> (k, IteratorResult slot  hash (extractBlob bi))
+          where
+            extractBlob = case blocksOrHeaders of
+              Blocks  -> binaryBlob
+              Headers -> extractHeader
+
+        dropUntilStart
+          :: Maybe EpochSlot
+          -> [((EpochSlot, SlotNo), IteratorResult hash ByteString)]
+          -> [((EpochSlot, SlotNo), IteratorResult hash ByteString)]
+        dropUntilStart = \case
+            Nothing    -> id
+            Just start -> dropWhile ((< start) . fst . fst)
+
+        takeUntilEnd
+          :: Maybe EpochSlot
+          -> [((EpochSlot, SlotNo), IteratorResult hash ByteString)]
+          -> [((EpochSlot, SlotNo), IteratorResult hash ByteString)]
+        takeUntilEnd = \case
+            Nothing  -> id
+            Just end -> takeWhile ((<= end) . fst . fst)
 
 iteratorNextModel :: MonadState (DBModel hash) m
                   => IteratorID
