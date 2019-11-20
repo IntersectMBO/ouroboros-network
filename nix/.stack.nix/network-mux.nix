@@ -26,7 +26,6 @@
           (hsPkgs.bytestring)
           (hsPkgs.cborg)
           (hsPkgs.containers)
-          (hsPkgs.ieee754)
           (hsPkgs.network)
           (hsPkgs.process)
           (hsPkgs.statistics-linreg)
