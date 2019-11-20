@@ -597,7 +597,7 @@ networkErrorPolicy = ErrorPolicies {
       -- Exception raised during connect
       epConErrorPolicies = [
           ErrorPolicy $ \(_ :: IOException) -> Just $
-            SuspendConsumer defaultDelay
+            SuspendConsumer 10 -- seconds
         ],
 
       epReturnCallback = \_ _ _ -> ourBug
