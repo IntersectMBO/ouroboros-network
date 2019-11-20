@@ -15,12 +15,12 @@ packages:
 
 extra-deps:
   - git: https://github.com/input-output-hk/iohk-monitoring-framework
-    commit: b4268cedecbbe2a35437effc17a8af10abda8ea8
+    commit: 4956b32f039579a0e7e4fd10793f65b4c77d9044
     subdirs:
       - contra-tracer
 
   - git: https://github.com/input-output-hk/cardano-base
-    commit: 74a8e3a1172e4281a37ae13271fb89af71151f68
+    commit: 057d8a9a3e751f88fc7677df5713c5ecc47a37c4
     subdirs:
       - binary
       - binary/test
