@@ -339,7 +339,8 @@ initNetwork registry nodeArgs kernel RunNetworkArgs{..} = do
     let threads = localServer : ipSubscriptions : cleanPeerStatesThread : dnsSubscriptions ++ peerServers
     void $ waitAnyThread threads
   where
-    errorPolicy = networkErrorPolicy <> consensusErrorPolicy
+    remoteErrorPolicy = remoteNetworkErrorPolicy <> consensusErrorPolicy
+    localErrorPolicy  = localNetworkErrorPolicy <> consensusErrorPolicy
 
     networkApps :: NetworkApps peer
     networkApps = consensusNetworkApps
@@ -365,7 +366,7 @@ initNetwork registry nodeArgs kernel RunNetworkArgs{..} = do
         rnaMkPeer
         nodeToClientVersionData
         (localResponderNetworkApplication networkApps)
-        errorPolicy
+        localErrorPolicy
         wait
 
     runPeerServer :: ConnectionTable IO Socket.SockAddr
@@ -383,7 +384,7 @@ initNetwork registry nodeArgs kernel RunNetworkArgs{..} = do
         rnaMkPeer
         nodeToNodeVersionData
         (responderNetworkApplication networkApps)
-        errorPolicy
+        remoteErrorPolicy
         wait
 
     runIpSubscriptionWorker :: ConnectionTable IO Socket.SockAddr
@@ -402,7 +403,7 @@ initNetwork registry nodeArgs kernel RunNetworkArgs{..} = do
       -- the comments in dnsSbuscriptionWorker call apply
       (LocalAddresses ipv4 ipv6 Nothing)
       (const Nothing)
-      errorPolicy
+      remoteErrorPolicy
       IPSubscriptionTarget
         { ispIps     = rnaIpProducers
         , ispValency = length rnaIpProducers
@@ -437,7 +438,7 @@ initNetwork registry nodeArgs kernel RunNetworkArgs{..} = do
         ipv6
         Nothing)
       (const Nothing)
-      errorPolicy
+      remoteErrorPolicy
       dnsProducer
       nodeToNodeVersionData
       (initiatorNetworkApplication networkApps)
