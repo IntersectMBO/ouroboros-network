@@ -25,6 +25,7 @@ module Ouroboros.Consensus.NodeNetwork (
   , consensusNetworkApps
   , initiatorNetworkApplication
   , responderNetworkApplication
+  , initiatorAndResponderNetworkApplication
   , localResponderNetworkApplication
   ) where
 
@@ -366,6 +367,22 @@ responderNetworkApplication NetworkApplication {..} =
       ChainSyncWithHeadersPtcl -> naChainSyncServer them
       BlockFetchPtcl           -> naBlockFetchServer them
       TxSubmissionPtcl         -> naTxSubmissionServer them
+
+initiatorAndResponderNetworkApplication
+  :: NetworkApplication m peer bytes bytes bytes bytes bytes a
+  -> OuroborosApplication 'InitiatorAndResponderApp peer NodeToNodeProtocols m bytes a a
+initiatorAndResponderNetworkApplication NetworkApplication {..} =
+    OuroborosInitiatorAndResponderApplication
+        (\them ptcl -> case ptcl of
+          ChainSyncWithHeadersPtcl -> naChainSyncClient them
+          BlockFetchPtcl           -> naBlockFetchClient them
+          TxSubmissionPtcl         -> naTxSubmissionClient them
+        )
+        (\them ptcl -> case ptcl of
+          ChainSyncWithHeadersPtcl -> naChainSyncServer them
+          BlockFetchPtcl           -> naBlockFetchServer them
+          TxSubmissionPtcl         -> naTxSubmissionServer them
+        )
 
 -- | A projection from 'NetworkApplication' to a server-side 'MuxApplication'
 -- for the 'NodeToClientProtocols'.

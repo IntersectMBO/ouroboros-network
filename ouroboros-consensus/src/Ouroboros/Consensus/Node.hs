@@ -35,7 +35,7 @@ import           Control.Monad (forM, void)
 import           Control.Tracer (Tracer)
 import           Crypto.Random
 import           Data.ByteString.Lazy (ByteString)
-import           Data.List (any)
+import           Data.List (find)
 import           Data.Proxy (Proxy (..))
 import           Data.Time.Clock (secondsToDiffTime)
 import           Network.Mux.Types (MuxTrace, WithMuxBearer)
@@ -316,12 +316,8 @@ initNetwork registry nodeArgs kernel RunNetworkArgs{..} = do
     peerServers <- forM rnaMyAddrs
         (\a -> forkLinkedThread registry $ runPeerServer connTable peerStatesVar a)
 
-    let ipv4Address = if any (\ai -> Socket.addrFamily ai == Socket.AF_INET) rnaMyAddrs
-                         then Just (Socket.SockAddrInet 0 0)
-                         else Nothing
-        ipv6Address = if any (\ai -> Socket.addrFamily ai == Socket.AF_INET6) rnaMyAddrs
-                         then Just (Socket.SockAddrInet6 0 0 (0, 0, 0, 0) 0)
-                         else Nothing
+    let ipv4Address = Socket.addrAddress <$> find (\ai -> Socket.addrFamily ai == Socket.AF_INET) rnaMyAddrs
+        ipv6Address = Socket.addrAddress <$> find (\ai -> Socket.addrFamily ai == Socket.AF_INET6) rnaMyAddrs
 
     ipSubscriptions <- forkLinkedThread registry $
                          runIpSubscriptionWorker connTable peerStatesVar ipv4Address ipv6Address
@@ -378,7 +374,7 @@ initNetwork registry nodeArgs kernel RunNetworkArgs{..} = do
         myAddr
         rnaMkPeer
         nodeToNodeVersionData
-        (responderNetworkApplication networkApps)
+        (initiatorAndResponderNetworkApplication networkApps)
         remoteErrorPolicy
         wait
 
@@ -404,7 +400,7 @@ initNetwork registry nodeArgs kernel RunNetworkArgs{..} = do
         , ispValency = length rnaIpProducers
         }
       nodeToNodeVersionData
-      (initiatorNetworkApplication networkApps)
+      (initiatorAndResponderNetworkApplication networkApps)
 
     runDnsSubscriptionWorker :: ConnectionTable IO Socket.SockAddr
                              -> StrictTVar IO (PeerStates IO Socket.SockAddr)
