@@ -63,6 +63,7 @@ import           Network.TypedProtocol.Driver.ByteLimit
 import           Network.TypedProtocol.Driver (TraceSendRecv)
 
 import qualified Network.Mux as Mx
+import Network.Mux.DeltaQ.TraceTransformer
 import qualified Network.Mux.Types as Mx
 import           Network.Mux.Types (MuxBearer)
 import           Network.Mux.Interface
@@ -177,11 +178,12 @@ connectToNode'
   -> IO ()
 connectToNode' encodeData decodeData muxTracer handshakeTracer peeridFn versions sd = do
     peerid <- peeridFn <$> Socket.getSocketName sd <*> Socket.getPeerName sd
-    let muxTracer' = Mx.WithMuxBearer peerid `contramap` muxTracer
+    muxTracer' <- initDeltaQTracer' $ Mx.WithMuxBearer peerid `contramap` muxTracer
     bearer <- Mx.socketAsMuxBearer muxTracer' sd
     Mx.muxBearerSetState muxTracer' bearer Mx.Connected
     traceWith muxTracer' $ Mx.MuxTraceHandshakeStart
-    mapp <- runPeerWithByteLimit
+    ts_start <- getMonotonicTime
+    !mapp <- runPeerWithByteLimit
               maxTransmissionUnit
               BL.length
               handshakeTracer
@@ -189,12 +191,13 @@ connectToNode' encodeData decodeData muxTracer handshakeTracer peeridFn versions
               peerid
               (Mx.muxBearerAsControlChannel bearer Mx.ModeInitiator)
               (handshakeClientPeer encodeData decodeData versions)
+    ts_end <- getMonotonicTime
     case mapp of
          Left err -> do
-             traceWith muxTracer' $ Mx.MuxTraceHandshakeClientError err
+             traceWith muxTracer' $ Mx.MuxTraceHandshakeClientError err (diffTime ts_end ts_start)
              throwIO err
          Right app -> do
-             traceWith muxTracer' Mx.MuxTraceHandshakeEnd
+             traceWith muxTracer' $ Mx.MuxTraceHandshakeClientEnd (diffTime ts_end ts_start)
              Mx.muxStart muxTracer' peerid (toApplication app) bearer
 
 
@@ -255,7 +258,7 @@ beginConnection muxTracer handshakeTracer encodeData decodeData acceptVersion fn
     accept <- fn t addr st
     case accept of
       AcceptConnection st' peerid versions -> pure $ Server.Accept st' $ \sd -> do
-        let muxTracer' = Mx.WithMuxBearer peerid `contramap` muxTracer
+        muxTracer' <- initDeltaQTracer' $ Mx.WithMuxBearer peerid `contramap` muxTracer
         (bearer :: MuxBearer ptcl IO) <- Mx.socketAsMuxBearer muxTracer' sd
         Mx.muxBearerSetState muxTracer' bearer Mx.Connected
         traceWith muxTracer' $ Mx.MuxTraceHandshakeStart
@@ -272,7 +275,7 @@ beginConnection muxTracer handshakeTracer encodeData decodeData acceptVersion fn
             traceWith muxTracer' $ Mx.MuxTraceHandshakeServerError err
             throwIO err
           Right app -> do
-            traceWith muxTracer' $ Mx.MuxTraceHandshakeEnd
+            traceWith muxTracer' $ Mx.MuxTraceHandshakeServerEnd
             Mx.muxStart muxTracer' peerid (toApplication app) bearer
       RejectConnection st' _peerid -> pure $ Server.Reject st'
 

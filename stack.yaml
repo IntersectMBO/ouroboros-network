@@ -63,6 +63,7 @@ extra-deps:
   - time-units-1.0.0
   - tasty-hedgehog-1.0.0.1
   - Unique-0.4.7.6
+  - statistics-linreg-0.3
 
   # Windows only
   - Win32-2.6.2.0

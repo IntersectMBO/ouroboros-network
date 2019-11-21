@@ -21,6 +21,7 @@ module Network.Mux.Types (
     , MuxTrace (..)
     , PerMuxSharedState (..)
     , RemoteClockModel (..)
+    , remoteClockPrecision
     , TranslocationServiceRequest (..)
     , Wanton (..)
     , WithMuxBearer (..)
@@ -45,8 +46,13 @@ import           Control.Monad.Class.MonadTime
 import           Network.TypedProtocol.Channel (Channel(Channel))
 import qualified Network.TypedProtocol.Channel as Channel
 
-newtype RemoteClockModel = RemoteClockModel { unRemoteClockModel :: Word32 } deriving Eq
+newtype RemoteClockModel
+  = RemoteClockModel { unRemoteClockModel :: Word32 }
+  deriving (Eq, Bounded)
 
+-- | The `DiffTime` represented by a tick in the `RemoteClockModel`
+remoteClockPrecision :: DiffTime
+remoteClockPrecision = 1e-6
 
 --
 -- Mini-protocol numbers
@@ -325,6 +331,8 @@ data MuxTrace ptcl =
     | MuxTraceRecvHeaderEnd (MuxSDU ptcl)
     | MuxTraceRecvPayloadStart Int
     | MuxTraceRecvPayloadEnd BL.ByteString
+    | MuxTraceRecvDeltaQObservation (MuxSDU ptcl) Time
+    | MuxTraceRecvDeltaQSample Double Int Int Double Double Double Double String
     | MuxTraceRecvStart Int
     | MuxTraceRecvEnd BL.ByteString
     | MuxTraceSendStart (MuxSDU ptcl)
@@ -337,8 +345,9 @@ data MuxTrace ptcl =
     | MuxTraceChannelSendStart (MiniProtocolId ptcl) BL.ByteString
     | MuxTraceChannelSendEnd (MiniProtocolId ptcl)
     | MuxTraceHandshakeStart
-    | MuxTraceHandshakeEnd
-    | forall e. Exception e => MuxTraceHandshakeClientError e
+    | MuxTraceHandshakeClientEnd DiffTime
+    | MuxTraceHandshakeServerEnd
+    | forall e. Exception e => MuxTraceHandshakeClientError e DiffTime
     | forall e. Exception e => MuxTraceHandshakeServerError e
 
 instance Show ptcl => Show (MuxTrace ptcl) where
@@ -350,6 +359,12 @@ instance Show ptcl => Show (MuxTrace ptcl) where
         (msLength sdu)
     show (MuxTraceRecvPayloadStart len) = printf "Bearer Receive Body Start: length %d" len
     show (MuxTraceRecvPayloadEnd blob) = printf "Bearer Receive Body End: length %d" (BL.length blob)
+    show (MuxTraceRecvDeltaQObservation sdu ts) = printf "Bearer DeltaQ observation: remote ts %d local ts %s length %d"
+        (unRemoteClockModel $ msTimestamp sdu)
+        (show ts)
+        (msLength sdu)
+    show (MuxTraceRecvDeltaQSample d sp so dqs dqvm dqvs estR sdud) = printf "Bearer DeltaQ Sample: duration %.3e packets %d sumBytes %d DeltaQ_S %.3e DeltaQ_VMean %.3e DeltaQ_VVar %.3e DeltaQ_estR %.3e sizeDist %s"
+         d sp so dqs dqvm dqvs estR sdud
     show (MuxTraceRecvStart len) = printf "Bearer Receive Start: length %d" len
     show (MuxTraceRecvEnd blob) = printf "Bearer Receive End: length %d" (BL.length blob)
     show (MuxTraceSendStart sdu) = printf "Bearer Send Start: ts: 0x%08x %s %s length %d"
@@ -368,9 +383,10 @@ instance Show ptcl => Show (MuxTrace ptcl) where
         (BL.length blob)
     show (MuxTraceChannelSendEnd mid) = printf "Channel Send End on %s" (show mid)
     show MuxTraceHandshakeStart = "Handshake start"
-    show MuxTraceHandshakeEnd = "Handshake end"
-    show (MuxTraceHandshakeClientError e) =
+    show (MuxTraceHandshakeClientEnd duration) = printf "Handshake Client end, duration %s" (show duration)
+    show MuxTraceHandshakeServerEnd = "Handshake Server end"
+    show (MuxTraceHandshakeClientError e duration) =
          -- Client Error can include an error string from the peer which could be very large.
-        printf "Handshake Client Error %s" (take 256 $ show e)
-    show (MuxTraceHandshakeServerError e) = printf "Handshake Server Error %s" (show e)
+        printf "Handshake Client Error %s duration %s" (take 256 $ show e) (show duration)
+    show (MuxTraceHandshakeServerError e ) = printf "Handshake Server Error %s" (show e)
 
