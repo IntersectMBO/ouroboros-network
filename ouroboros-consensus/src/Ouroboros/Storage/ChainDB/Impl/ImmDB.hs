@@ -71,8 +71,7 @@ import           Control.Monad.Class.MonadThrow
 
 import           Ouroboros.Network.Block (pattern BlockPoint,
                      pattern GenesisPoint, HasHeader (..), HeaderHash, Point,
-                     Serialised (..), SlotNo, atSlot, blockPoint, genesisPoint,
-                     pointSlot, withHash)
+                     Serialised (..), SlotNo, atSlot, pointSlot, withHash)
 import           Ouroboros.Network.Point (WithOrigin (..))
 
 import           Ouroboros.Consensus.Util.IOLike
@@ -305,23 +304,19 @@ getBlockAtTip db = do
       Tip (ImmDB.Block slotNo) -> Just <$> getKnownBlock db (Right slotNo)
 
 getPointAtTip :: forall m blk.
-                 (MonadCatch m, HasHeader blk, HasCallStack)
+                 (MonadCatch m, HasCallStack)
               => ImmDB m blk -> m (Point blk)
-getPointAtTip = fmap mbBlockToPoint . getBlockAtTip
-  where
-    mbBlockToPoint :: Maybe blk -> Point blk
-    mbBlockToPoint Nothing    = genesisPoint
-    mbBlockToPoint (Just blk) = blockPoint blk
-
-getSlotNoAtTip :: MonadCatch m => ImmDB m blk -> m (WithOrigin SlotNo)
-getSlotNoAtTip db = do
+getPointAtTip db = do
     immTip <- withDB db $ \imm -> ImmDB.getTip imm
-    case fst <$> immTip of
-      TipGen                   -> return Origin
-      Tip (ImmDB.EBB epochNo)  -> At <$> epochInfoFirst epochNo
-      Tip (ImmDB.Block slotNo) -> return (At slotNo)
+    case immTip of
+      TipGen                         -> return GenesisPoint
+      Tip (ImmDB.EBB epochNo, hash)  -> (`BlockPoint` hash) <$> epochInfoFirst epochNo
+      Tip (ImmDB.Block slotNo, hash) -> return (BlockPoint slotNo hash)
   where
     EpochInfo{..} = epochInfo db
+
+getSlotNoAtTip :: MonadCatch m => ImmDB m blk -> m (WithOrigin SlotNo)
+getSlotNoAtTip db = pointSlot <$> getPointAtTip db
 
 -- | Get known block from the ImmutableDB that we know should exist
 --
