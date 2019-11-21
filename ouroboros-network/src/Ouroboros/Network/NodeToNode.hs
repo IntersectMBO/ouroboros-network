@@ -44,7 +44,8 @@ module Ouroboros.Network.NodeToNode (
 
   -- ** Error Policies and Peer state
   , ErrorPolicies (..)
-  , networkErrorPolicy
+  , remoteNetworkErrorPolicy
+  , localNetworkErrorPolicy
   , nullErrorPolicies
   , ErrorPolicy (..)
   , PeerStates (..)
@@ -529,11 +530,11 @@ dnsSubscriptionWorker_V1
           (DictVersion nodeToNodeCodecCBORTerm)
           application)
 
--- | A minimal error policy, which only handles exceptions raised by
--- `ouroboros-network`
+-- | A minimal error policy for remote peers, which only handles exceptions
+-- raised by `ouroboros-network`.
 --
-networkErrorPolicy :: ErrorPolicies Socket.SockAddr a
-networkErrorPolicy = ErrorPolicies {
+remoteNetworkErrorPolicy :: ErrorPolicies Socket.SockAddr a
+remoteNetworkErrorPolicy = ErrorPolicies {
       epAppErrorPolicies = [
           -- Handshake client protocol error: we either did not recognise received
           -- version or we refused it.  This is only for outbound connections,
@@ -594,10 +595,11 @@ networkErrorPolicy = ErrorPolicies {
                   -> Just theyBuggyOrEvil
         ],
 
-      -- Exception raised during connect
+      -- Exception raised during connect; suspend connecting to that peer for
+      -- a 'shortDelay'
       epConErrorPolicies = [
           ErrorPolicy $ \(_ :: IOException) -> Just $
-            SuspendConsumer defaultDelay
+            SuspendConsumer shortDelay
         ],
 
       epReturnCallback = \_ _ _ -> ourBug
@@ -617,3 +619,38 @@ networkErrorPolicy = ErrorPolicies {
 
     shortDelay :: DiffTime
     shortDelay = 20 -- seconds
+
+-- | Error policy for local clients.  This is equivalent to
+-- 'nullErrorPolicies', but explicit in the errors which can be catched.
+--
+-- We are very permissive here, and very strict in the
+-- `NodeToClient.networkErrorPolicy`.  After any failure the client will be
+-- killed and not penalised by this policy.  This allows to restart the local
+-- client without a delay.
+--
+localNetworkErrorPolicy :: ErrorPolicies Socket.SockAddr a
+localNetworkErrorPolicy = ErrorPolicies {
+      epAppErrorPolicies = [
+          -- exception thrown by `runDecoderWithByteLimit`
+          ErrorPolicy
+            $ \(_ :: DecoderFailureOrTooMuchInput DeserialiseFailure)
+                  -> Nothing
+
+          -- deserialisation failure
+        , ErrorPolicy
+            $ \(_ :: DeserialiseFailure) -> Nothing
+
+          -- the connection was unexpectedly closed, we suspend the peer for
+          -- a 'shortDelay'
+        , ErrorPolicy
+          $ \(_ :: MuxError) -> Nothing
+        ],
+
+      -- The node never connects to a local client
+      epConErrorPolicies = [],
+
+      epReturnCallback = \_ _ _ -> ourBug
+    }
+  where
+    ourBug :: SuspendDecision DiffTime
+    ourBug = Throw
