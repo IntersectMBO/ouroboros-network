@@ -115,11 +115,11 @@ data ImmutableDB hash m = ImmutableDB
   , getBlock
       :: HasCallStack => SlotNo -> m (Maybe (hash, ByteString))
 
-    -- | TODO
+    -- | Variant of 'getBlock' that only reads the header.
   , getBlockHeader
       :: HasCallStack => SlotNo -> m (Maybe (hash, ByteString))
 
-    -- | TODO
+    -- | Variant of 'getBlock' that only reads the hash.
   , getBlockHash
       :: HasCallStack => SlotNo -> m (Maybe hash)
 
@@ -134,11 +134,11 @@ data ImmutableDB hash m = ImmutableDB
   , getEBB
       :: HasCallStack => EpochNo -> m (Maybe (hash, ByteString))
 
-    -- | TODO
+    -- | Variant of 'getEBB' that only reads the header.
   , getEBBHeader
       :: HasCallStack => EpochNo -> m (Maybe (hash, ByteString))
 
-    -- | TODO
+    -- | Variant of 'getEBB' that only returns the hash.
   , getEBBHash
       :: HasCallStack => EpochNo -> m (Maybe hash)
 
