@@ -262,7 +262,7 @@ run ChainDB{..} internal@ChainDB.Internal{..} registry varCurSlot = \case
   where
     mbGCedBlock = MbGCedBlock . MaybeGCedBlock True
     iterResultGCed = IterResultGCed . IteratorResultGCed True
-    iter = either UnknownRange Iter
+    iter = either UnknownRange (Iter . deserialiseIterator)
     ignore _ = Unit ()
 
     advanceAndAdd newCurSlot blk = do

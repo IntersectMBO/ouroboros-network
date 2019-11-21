@@ -1,8 +1,8 @@
-{-# LANGUAGE DataKinds     #-}
-{-# LANGUAGE DeriveFunctor #-}
-{-# LANGUAGE DeriveGeneric #-}
-{-# LANGUAGE DerivingVia   #-}
-{-# LANGUAGE RankNTypes    #-}
+{-# LANGUAGE DataKinds         #-}
+{-# LANGUAGE DeriveGeneric     #-}
+{-# LANGUAGE DeriveTraversable #-}
+{-# LANGUAGE DerivingVia       #-}
+{-# LANGUAGE RankNTypes        #-}
 module Ouroboros.Storage.ImmutableDB.API
   ( ImmutableDB (..)
   , withDB
@@ -301,7 +301,7 @@ data IteratorResult hash a
   = IteratorExhausted
   | IteratorResult    SlotNo  hash a
   | IteratorEBB       EpochNo hash a
-  deriving (Show, Eq, Generic, Functor)
+  deriving (Show, Eq, Generic, Functor, Foldable, Traversable)
 
 -- | Consume an 'Iterator' by stepping until it is exhausted. A list of all
 -- the 'IteratorResult's (excluding the final 'IteratorExhausted') produced by

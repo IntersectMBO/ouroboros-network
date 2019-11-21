@@ -1,5 +1,6 @@
 {-# LANGUAGE DeriveGeneric        #-}
 {-# LANGUAGE FlexibleContexts     #-}
+{-# LANGUAGE LambdaCase           #-}
 {-# LANGUAGE PatternSynonyms      #-}
 {-# LANGUAGE RecordWildCards      #-}
 {-# LANGUAGE ScopedTypeVariables  #-}
@@ -36,6 +37,7 @@ module Test.Ouroboros.Storage.ChainDB.Model (
     -- * Iterators
   , streamBlocks
   , iteratorNext
+  , iteratorNextDeserialised
   , iteratorClose
     -- * Readers
   , readBlocks
@@ -58,6 +60,7 @@ module Test.Ouroboros.Storage.ChainDB.Model (
 
 import           Control.Monad (unless)
 import           Control.Monad.Except (runExcept)
+import           Data.Bifunctor (first)
 import           Data.Function (on)
 import           Data.List (sortBy)
 import           Data.List.NonEmpty (NonEmpty)
@@ -71,7 +74,8 @@ import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import qualified Ouroboros.Network.AnchoredFragment as Fragment
 import           Ouroboros.Network.Block (BlockNo, pattern BlockPoint,
                      ChainHash (..), pattern GenesisPoint, HasHeader,
-                     HeaderHash, MaxSlotNo (..), Point, SlotNo)
+                     HeaderHash, MaxSlotNo (..), Point, Serialised (..),
+                     SlotNo)
 import qualified Ouroboros.Network.Block as Block
 import           Ouroboros.Network.MockChain.Chain (Chain (..), ChainUpdate)
 import qualified Ouroboros.Network.MockChain.Chain as Chain
@@ -88,9 +92,9 @@ import           Ouroboros.Consensus.Util.STM (Fingerprint (..),
                      WithFingerprint (..))
 
 import           Ouroboros.Storage.ChainDB.API (ChainDbError (..),
-                     InvalidBlockReason (..), IteratorId (..),
-                     IteratorResult (..), StreamFrom (..), StreamTo (..),
-                     UnknownRange (..), validBounds)
+                     Deserialisable (..), InvalidBlockReason (..),
+                     IteratorId (..), IteratorResult (..), StreamFrom (..),
+                     StreamTo (..), UnknownRange (..), validBounds)
 
 -- | Model of the chain DB
 data Model blk = Model {
@@ -378,6 +382,27 @@ iteratorNext itrId m =
                      , m { iterators = Map.insert itrId bs (iterators m) }
                      )
       Nothing      -> error "iteratorNext: unknown iterator ID"
+
+iteratorNextDeserialised
+  :: forall m blk. (Monad m, HasHeader blk)
+  => IteratorId -> Model blk
+  -> (IteratorResult (Deserialisable m blk), Model blk)
+iteratorNextDeserialised itrId m =
+    first convert $ iteratorNext itrId m
+  where
+    convert :: IteratorResult blk -> IteratorResult (Deserialisable m blk)
+    convert = \case
+      IteratorExhausted      -> IteratorExhausted
+      IteratorResult blk     -> IteratorResult (toDeserialisable blk)
+      IteratorBlockGCed hash -> IteratorBlockGCed hash
+
+    toDeserialisable :: blk -> Deserialisable m blk
+    toDeserialisable b = Deserialisable
+      { serialised         = Serialised mempty -- Currently unused
+      , deserialisableSlot = Block.blockSlot b
+      , deserialisableHash = Block.blockHash b
+      , deserialise        = return b
+      }
 
 -- We never delete iterators such that we can use the size of the map as the
 -- next iterator id.

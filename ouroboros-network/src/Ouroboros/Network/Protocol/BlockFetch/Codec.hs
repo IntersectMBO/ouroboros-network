@@ -9,6 +9,7 @@
 
 module Ouroboros.Network.Protocol.BlockFetch.Codec
   ( codecBlockFetch
+  , codecBlockFetchSerialised
   , codecBlockFetchId
   ) where
 
@@ -25,20 +26,21 @@ import qualified Codec.CBOR.Write    as CBOR
 import           Network.TypedProtocol.Codec
 import           Network.TypedProtocol.Codec.Cbor
 
-import           Ouroboros.Network.Block (HeaderHash, Point)
+import           Ouroboros.Network.Block (HeaderHash, Point, Serialised (..))
 import qualified Ouroboros.Network.Block as Block
 import           Ouroboros.Network.Protocol.BlockFetch.Type
 
-codecBlockFetch
+-- | 'codecBlockFetch' but without the CBOR-in-CBOR trick
+codecBlockFetchUnwrapped
   :: forall block m.
      MonadST m
   => (block            -> CBOR.Encoding)
-  -> (forall s. CBOR.Decoder s (LBS.ByteString -> block))
+  -> (forall s. CBOR.Decoder s block)
   -> (HeaderHash block -> CBOR.Encoding)
   -> (forall s. CBOR.Decoder s (HeaderHash block))
   -> Codec (BlockFetch block) CBOR.DeserialiseFailure m LBS.ByteString
-codecBlockFetch encodeBlock     decodeBlock
-                encodeBlockHash decodeBlockHash =
+codecBlockFetchUnwrapped encodeBlock     decodeBlock
+                         encodeBlockHash decodeBlockHash =
     mkCodecCborLazyBS encode decode
  where
   encode :: forall (pr :: PeerRole) st st'.
@@ -55,7 +57,7 @@ codecBlockFetch encodeBlock     decodeBlock
   encode (ServerAgency TokBusy) MsgNoBlocks =
     CBOR.encodeListLen 1 <> CBOR.encodeWord 3
   encode (ServerAgency TokStreaming) (MsgBlock block) =
-    CBOR.encodeListLen 2 <> CBOR.encodeWord 4 <> encodeBlockWrapped block
+    CBOR.encodeListLen 2 <> CBOR.encodeWord 4 <> encodeBlock block
   encode (ServerAgency TokStreaming) MsgBatchDone =
     CBOR.encodeListLen 1 <> CBOR.encodeWord 5
 
@@ -74,7 +76,7 @@ codecBlockFetch encodeBlock     decodeBlock
       (ServerAgency TokBusy, 2) -> return $ SomeMessage MsgStartBatch
       (ServerAgency TokBusy, 3) -> return $ SomeMessage MsgNoBlocks
       (ServerAgency TokStreaming, 4) -> SomeMessage . MsgBlock
-                                          <$> decodeBlockWrapped
+                                          <$> decodeBlock
       (ServerAgency TokStreaming, 5) -> return $ SomeMessage MsgBatchDone
 
       -- TODO proper exceptions
@@ -89,6 +91,17 @@ codecBlockFetch encodeBlock     decodeBlock
   decodePoint :: forall s. CBOR.Decoder s (Point block)
   decodePoint = Block.decodePoint decodeBlockHash
 
+codecBlockFetch
+  :: forall block m.
+     MonadST m
+  => (block            -> CBOR.Encoding)
+  -> (forall s. CBOR.Decoder s (LBS.ByteString -> block))
+  -> (HeaderHash block -> CBOR.Encoding)
+  -> (forall s. CBOR.Decoder s (HeaderHash block))
+  -> Codec (BlockFetch block) CBOR.DeserialiseFailure m LBS.ByteString
+codecBlockFetch encodeBlock decodeBlock =
+    codecBlockFetchUnwrapped encodeBlockWrapped decodeBlockWrapped
+ where
   encodeBlockWrapped :: block -> CBOR.Encoding
   encodeBlockWrapped block =
     --TODO: replace with encodeEmbeddedCBOR from cborg-0.2.4 once
@@ -109,6 +122,32 @@ codecBlockFetch encodeBlock     decodeBlock
         | not (LBS.null trailing) -> fail "trailing bytes in CBOR-in-CBOR"
         | otherwise               -> return (block payload)
 
+codecBlockFetchSerialised
+  :: forall block m.
+     MonadST m
+  => (HeaderHash block -> CBOR.Encoding)
+  -> (forall s. CBOR.Decoder s (HeaderHash block))
+  -> Codec (BlockFetch (Serialised block)) CBOR.DeserialiseFailure m LBS.ByteString
+codecBlockFetchSerialised =
+  codecBlockFetchUnwrapped encodeBlockWrapped decodeBlock
+ where
+  -- Avoid converting to a strict ByteString, as that requires copying O(n)
+  -- in case the lazy ByteString consists of more than one chunks.
+  encodeBlockWrapped :: Serialised block -> CBOR.Encoding
+  encodeBlockWrapped (Serialised bytes) =
+    --TODO: replace with encodeEmbeddedCBOR from cborg-0.2.4 once
+    -- it is available, since that will be faster.
+      CBOR.encodeTag 24
+      -- TODO can this be improved?
+   <> CBOR.encodeBytes (LBS.toStrict bytes)
+
+  decodeBlock :: forall s. CBOR.Decoder s (Serialised block)
+  decodeBlock = do
+    --TODO: replace this with decodeEmbeddedCBOR from cborg-0.2.4 once
+    -- it is available, since that will be faster.
+    tag <- CBOR.decodeTag
+    when (tag /= 24) $ fail "expected tag 24 (CBOR-in-CBOR)"
+    Serialised . LBS.fromStrict <$> CBOR.decodeBytes
 
 codecBlockFetchId
   :: forall block m. Monad m

@@ -16,6 +16,9 @@
 module Ouroboros.Storage.ChainDB.API (
     -- * Main ChainDB API
     ChainDB(..)
+    -- * Deserialisable block/header
+  , Deserialisable(..)
+  , deserialisablePoint
     -- * Support for tests
   , toChain
   , fromChain
@@ -26,6 +29,8 @@ module Ouroboros.Storage.ChainDB.API (
   , IteratorId(..)
   , IteratorResult(..)
   , UnknownRange(..)
+  , deserialiseIterator
+  , deserialiseIteratorResult
   , validBounds
   , streamAll
     -- * Invalid block reason
@@ -52,8 +57,8 @@ import           Cardano.Prelude (NoUnexpectedThunks)
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import           Ouroboros.Network.Block (BlockNo, pattern BlockPoint,
                      ChainUpdate, pattern GenesisPoint, HasHeader (..),
-                     HeaderHash, MaxSlotNo, Point, SlotNo, StandardHash,
-                     atSlot, genesisPoint)
+                     HeaderHash, MaxSlotNo, Point, Serialised, SlotNo,
+                     StandardHash, atSlot, genesisPoint)
 
 import           Ouroboros.Consensus.Block (GetHeader (..))
 import           Ouroboros.Consensus.Ledger.Abstract (ProtocolLedgerView)
@@ -220,9 +225,10 @@ data ChainDB m blk = ChainDB {
       --
       -- To stream all blocks from the current chain, use 'streamAll', as it
       -- correctly handles an empty ChainDB.
-    , streamBlocks       :: ResourceRegistry m
-                         -> StreamFrom blk -> StreamTo blk
-                         -> m (Either (UnknownRange blk) (Iterator m blk))
+    , streamBlocks
+        :: ResourceRegistry m
+        -> StreamFrom blk -> StreamTo blk
+        -> m (Either (UnknownRange blk) (Iterator m (Deserialisable m blk)))
 
       -- | Chain reader
       --
@@ -279,6 +285,24 @@ data ChainDB m blk = ChainDB {
     }
 
 {-------------------------------------------------------------------------------
+  Deserialisable block/header
+-------------------------------------------------------------------------------}
+
+-- | A @'Serialised' blk@ together with a monadic function to deserialise it.
+data Deserialisable m blk = Deserialisable
+   { serialised         :: !(Serialised blk)
+   , deserialisableSlot :: !SlotNo
+   , deserialisableHash :: !(HeaderHash blk)
+   , deserialise        :: !(m blk)
+   }
+
+deserialisablePoint :: Deserialisable m blk -> Point blk
+deserialisablePoint d = BlockPoint (deserialisableSlot d) (deserialisableHash d)
+
+type instance HeaderHash (Deserialisable m blk) = HeaderHash blk
+instance StandardHash blk => StandardHash (Deserialisable m blk)
+
+{-------------------------------------------------------------------------------
   Support for tests
 -------------------------------------------------------------------------------}
 
@@ -329,6 +353,15 @@ data Iterator m blk = Iterator {
     , iteratorId    :: IteratorId
     }
 
+-- | Deserialise the results of an iterator that yields serialised blocks.
+deserialiseIterator
+  :: Monad m => Iterator m (Deserialisable m blk) -> Iterator m blk
+deserialiseIterator it = Iterator
+    { iteratorNext  = iteratorNext  it >>= deserialiseIteratorResult
+    , iteratorClose = iteratorClose it
+    , iteratorId    = iteratorId    it
+    }
+
 -- | Equality instance for iterators
 --
 -- This relies on the iterator IDs assigned by the database.
@@ -354,6 +387,16 @@ data IteratorResult blk =
 
 deriving instance (Eq   blk, Eq   (HeaderHash blk)) => Eq   (IteratorResult blk)
 deriving instance (Show blk, Show (HeaderHash blk)) => Show (IteratorResult blk)
+
+-- | Deserialise the 'IteratorResult' of an iterator that yields serialised
+-- blocks.
+deserialiseIteratorResult
+  :: Monad m
+  => IteratorResult (Deserialisable m blk) -> m (IteratorResult blk)
+deserialiseIteratorResult = \case
+    IteratorExhausted      -> return $ IteratorExhausted
+    IteratorBlockGCed hash -> return $ IteratorBlockGCed hash
+    IteratorResult    blk  -> IteratorResult <$> deserialise blk
 
 data UnknownRange blk =
     -- | The block at the given point was not found in the ChainDB.
@@ -426,7 +469,7 @@ streamAll chainDB registry = do
           -- changed significantly between getting the tip and asking for the
           -- stream.
           Left  e  -> error (show e)
-          Right it -> return $ Just it
+          Right it -> return $ Just $ deserialiseIterator it
 
 {-------------------------------------------------------------------------------
   Invalid block reason

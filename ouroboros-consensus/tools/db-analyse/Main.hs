@@ -142,7 +142,7 @@ processAll :: ImmDB IO ByronBlock
            -> IO ()
 processAll immDB rr callback = do
     Right itr <- streamBlocksFrom immDB rr $ StreamFromExclusive genesisPoint
-    go itr
+    go (deserialiseIterator immDB itr)
   where
     go :: Iterator ByronHash IO ByronBlock -> IO ()
     go itr = do

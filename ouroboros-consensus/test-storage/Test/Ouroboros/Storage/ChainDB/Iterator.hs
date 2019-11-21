@@ -30,7 +30,7 @@ import           Ouroboros.Consensus.Util.ResourceRegistry
 
 import           Ouroboros.Storage.ChainDB.API (Iterator (..), IteratorId (..),
                      IteratorResult (..), StreamFrom (..), StreamTo (..),
-                     UnknownRange)
+                     UnknownRange, deserialiseIterator)
 import           Ouroboros.Storage.ChainDB.Impl.ImmDB (ImmDB, getPointAtTip,
                      mkImmDB)
 import           Ouroboros.Storage.ChainDB.Impl.Iterator (IteratorEnv (..),
@@ -226,7 +226,7 @@ runIterator setup from to = runSimOrThrow $ withRegistry $ \r -> do
     itEnv <- initIteratorEnv setup tracer
     res <- runExceptT $ do
       it <- ExceptT $ newIterator itEnv ($ itEnv) r from to
-      lift $ consume it
+      lift $ consume (deserialiseIterator it)
     trace <- getTrace
     return (trace, res)
   where
