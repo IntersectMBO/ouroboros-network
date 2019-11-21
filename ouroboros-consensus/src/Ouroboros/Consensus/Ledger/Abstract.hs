@@ -22,7 +22,6 @@ import           Ouroboros.Network.Point (WithOrigin)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Protocol.Abstract
-import           Ouroboros.Consensus.Util.SlotBounded (Bounds (..), SlotBounded)
 
 {-------------------------------------------------------------------------------
   Interaction with the ledger layer
@@ -105,13 +104,7 @@ class UpdateLedger blk => ProtocolLedgerView blk where
   -- directly onto the tip of our chain.
   --
   -- The anachronistic ledger state at point B is precisely the ledger state
-  -- that can be used to validate this set of headers. The bounds (in terms of
-  -- slots) are a hint about its valid range: how far into the past can we look
-  -- (at least @k@) and how far into the future (depending on the maximum
-  -- distance supported by the ledger). It is however important to realize that
-  -- this is not a full specification: after all, blocks @A@ and @A'@ have the
-  -- same slot number, but @A@ can be validated using the anachronistic ledger
-  -- view at @B@ whereas @A'@ can not.
+  -- that can be used to validate this set of headers.
   --
   -- Invariant: when calling this function with slot @s@ yields a
   -- 'SlotBounded' @sb@, then @'atSlot' sb@ yields a 'Just'.
@@ -119,7 +112,7 @@ class UpdateLedger blk => ProtocolLedgerView blk where
     :: NodeConfig (BlockProtocol blk)
     -> LedgerState blk
     -> WithOrigin SlotNo -- ^ Slot for which you would like a ledger view
-    -> Either AnachronyFailure (SlotBounded IX (LedgerView (BlockProtocol blk)))
+    -> Either AnachronyFailure (LedgerView (BlockProtocol blk))
 
 -- | See 'anachronisticProtocolLedgerView'.
 data AnachronyFailure

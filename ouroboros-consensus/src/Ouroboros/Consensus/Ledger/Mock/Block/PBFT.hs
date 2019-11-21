@@ -29,7 +29,6 @@ import           Ouroboros.Consensus.Ledger.Mock.Forge
 import           Ouroboros.Consensus.Protocol.PBFT
 import           Ouroboros.Consensus.Protocol.Signed
 import           Ouroboros.Consensus.Util.Condense
-import qualified Ouroboros.Consensus.Util.SlotBounded as SB
 
 {-------------------------------------------------------------------------------
   Instantiate the @ext@ to suit PBFT
@@ -122,7 +121,7 @@ instance ( SimpleCrypto c
   protocolLedgerView PBftNodeConfig{..} _ls =
       pbftExtConfig
   anachronisticProtocolLedgerView PBftNodeConfig{..} _ _ =
-      Right $ SB.maximal pbftExtConfig
+      Right $ pbftExtConfig
 
 {-------------------------------------------------------------------------------
   Serialisation

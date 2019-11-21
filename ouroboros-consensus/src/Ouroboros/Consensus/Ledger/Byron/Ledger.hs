@@ -29,7 +29,6 @@ import           Control.Monad.Except
 import           Data.ByteString (ByteString)
 import           Data.Sequence (Seq)
 import qualified Data.Sequence as Seq.Lazy
-import qualified Data.Sequence.Strict as Seq
 import           GHC.Generics (Generic)
 
 import           Cardano.Prelude (NoUnexpectedThunks)
@@ -40,8 +39,7 @@ import qualified Cardano.Chain.Delegation.Validation.Scheduling as D.Sched
 import qualified Cardano.Chain.Genesis as Gen
 import qualified Cardano.Chain.ValidationMode as CC
 
-import           Ouroboros.Network.Block (Point (..), SlotNo (..),
-                     blockSlot, genesisSlotNo)
+import           Ouroboros.Network.Block (Point (..), SlotNo (..), blockSlot)
 import           Ouroboros.Network.Point (WithOrigin (..))
 import qualified Ouroboros.Network.Point as Point
 
@@ -57,7 +55,6 @@ import qualified Ouroboros.Consensus.Ledger.Byron.DelegationHistory as History
 import           Ouroboros.Consensus.Ledger.Byron.PBFT
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.PBFT
-import qualified Ouroboros.Consensus.Util.SlotBounded as SB
 
 instance UpdateLedger ByronBlock where
 
@@ -159,40 +156,18 @@ instance ProtocolLedgerView ByronBlock where
   -- i.e., that delegate is allowed to issue a block in that very same slot.
   anachronisticProtocolLedgerView cfg (ByronLedgerState ls ss) slot =
       case History.find slot ss of
-        Just sb -> Right (toPBftLedgerView <$> sb) -- Case (A)
+        Just sb -> Right (toPBftLedgerView sb) -- Case (A)
         Nothing -- Case (B), (C) or (D)
           | slot <  At maxLo -> Left TooFarBehind -- lower bound is inclusive
           | slot >= At maxHi -> Left TooFarAhead  -- upper bound is exclusive
-          | otherwise        -> Right $ toPBftLedgerView <$>
+          | otherwise        -> Right $ toPBftLedgerView $
 
               let toApply :: Seq D.Sched.ScheduledDelegation
-                  future  :: Seq D.Sched.ScheduledDelegation
-                  (toApply, future) = splitScheduledDelegations slot $
-                                        getScheduledDelegations ls
+                  _future :: Seq D.Sched.ScheduledDelegation
+                  (toApply, _future) = splitScheduledDelegations slot $
+                                         getScheduledDelegations ls
 
-                  lo, hi :: SlotNo
-                  lo = case (toApply, History.toSequence ss) of
-                         (_ Seq.Lazy.:|> upd, _) ->
-                           -- Case (D)
-                           fromByronSlotNo (D.Sched.sdSlot upd)
-                         (Seq.Lazy.Empty, _ Seq.:|> prev) ->
-                           -- Case (B) or (C)
-                           SB.sbUpper prev
-                         (Seq.Lazy.Empty, Seq.Empty) ->
-                           -- History never changed
-                           genesisSlotNo
-                  hi = case future of
-                         Seq.Lazy.Empty ->
-                           -- No known future delegations
-                           --
-                           -- The spec mandates that new delegation certificates
-                           -- cannot kick in within 2k slots, so this is a safe
-                           -- upper bound.
-                           maxHi
-                         upd Seq.Lazy.:<| _ ->
-                           fromByronSlotNo (D.Sched.sdSlot upd)
-
-              in SB.bounded lo hi $ applyScheduledDelegations toApply dsNow
+              in applyScheduledDelegations toApply dsNow
     where
       SecurityParam k = pbftSecurityParam . pbftParams $ cfg
 

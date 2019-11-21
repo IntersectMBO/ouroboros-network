@@ -59,12 +59,10 @@ import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util
-import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.MonadSTM.NormalForm (checkInvariant,
                      unsafeNoThunks)
 import           Ouroboros.Consensus.Util.ResourceRegistry
-import           Ouroboros.Consensus.Util.SlotBounded as SB
 import           Ouroboros.Consensus.Util.STM (WithFingerprint (..),
                      onEachChange)
 
@@ -607,9 +605,9 @@ chainSyncClient mkPipelineDecision0 tracer cfg btime
         -- and our tip is within k blocks from our tip. This means that the
         -- anachronistic ledger view must be available, unless they are
         -- too far /ahead/ of us. In this case we must simply wait
-
-        -- TODO: Chain sync Client: Reuse anachronistic ledger view? #581
         case anachronisticProtocolLedgerView cfg curLedger (pointSlot hdrPoint) of
+          Right lv          -> return lv
+          Left TooFarAhead  -> retry
           -- unexpected alternative; see comment before this case expression
           Left TooFarBehind ->
               disconnect InvalidRollForward
@@ -617,19 +615,6 @@ chainSyncClient mkPipelineDecision0 tracer cfg btime
                 , _ourTip   = ourTip
                 , _theirTip = theirTip
                 }
-          Left TooFarAhead  -> retry
-          Right view -> case view `SB.at` hdrSlot of
-              Just lv -> return lv
-              Nothing -> error $ mconcat [
-                  "anachronisticProtocolLedgerView invariant violated: "
-                , condense hdrSlot
-                , " not within bounds "
-                , condense (SB.bounds view)
-                ]
-            where
-              hdrSlot = case pointSlot hdrPoint of
-                Origin      -> SlotNo 0
-                At thisSlot -> thisSlot
       where
         hdrPoint = headerPoint hdr
 

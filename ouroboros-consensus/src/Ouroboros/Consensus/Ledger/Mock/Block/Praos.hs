@@ -32,7 +32,6 @@ import           Ouroboros.Consensus.Ledger.Mock.Stake
 import           Ouroboros.Consensus.Protocol.Praos
 import           Ouroboros.Consensus.Protocol.Signed
 import           Ouroboros.Consensus.Util.Condense
-import qualified Ouroboros.Consensus.Util.SlotBounded as SB
 
 {-------------------------------------------------------------------------------
   Instantiate the @ext@ to suit Praos
@@ -131,7 +130,7 @@ instance ( SimpleCrypto c
       equalStakeDist praosExtConfig
 
   anachronisticProtocolLedgerView PraosNodeConfig{..} _ _ =
-      Right $ SB.maximal $ equalStakeDist praosExtConfig
+      Right $ equalStakeDist praosExtConfig
 
 {-------------------------------------------------------------------------------
   Serialisation

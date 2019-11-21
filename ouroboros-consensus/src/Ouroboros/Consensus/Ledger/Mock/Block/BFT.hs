@@ -29,7 +29,6 @@ import           Ouroboros.Consensus.Ledger.Mock.Forge
 import           Ouroboros.Consensus.Protocol.BFT
 import           Ouroboros.Consensus.Protocol.Signed
 import           Ouroboros.Consensus.Util.Condense
-import qualified Ouroboros.Consensus.Util.SlotBounded as SB
 
 {-------------------------------------------------------------------------------
   Instantiate the @ext@ to suit BFT
@@ -106,7 +105,7 @@ instance ( SimpleCrypto c
          , Signable (BftDSIGN c') (SignedSimpleBft c c')
          ) => ProtocolLedgerView (SimpleBftBlock c c') where
   protocolLedgerView _ _ = ()
-  anachronisticProtocolLedgerView _ _ _ = Right $ SB.maximal ()
+  anachronisticProtocolLedgerView _ _ _ = Right ()
 
 {-------------------------------------------------------------------------------
   Serialisation

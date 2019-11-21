@@ -30,7 +30,6 @@ import           Ouroboros.Consensus.NodeId (CoreNodeId)
 import           Ouroboros.Consensus.Protocol.LeaderSchedule
 import           Ouroboros.Consensus.Protocol.Praos
 import           Ouroboros.Consensus.Util.Condense
-import qualified Ouroboros.Consensus.Util.SlotBounded as SB
 
 {-------------------------------------------------------------------------------
   Instantiate @ext@
@@ -85,7 +84,7 @@ instance SimpleCrypto c
 instance SimpleCrypto c
       => ProtocolLedgerView (SimplePraosRuleBlock c) where
   protocolLedgerView _ _ = ()
-  anachronisticProtocolLedgerView _ _ _ = Right $ SB.maximal ()
+  anachronisticProtocolLedgerView _ _ _ = Right ()
 
 {-------------------------------------------------------------------------------
   We don't need crypto for this protocol
