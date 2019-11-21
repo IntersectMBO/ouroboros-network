@@ -93,7 +93,6 @@ getTipHeader
   :: forall m blk.
      ( IOLike m
      , GetHeader blk
-     , HasHeader blk
      , HasHeader (Header blk)
      )
   => ChainDbEnv m blk
