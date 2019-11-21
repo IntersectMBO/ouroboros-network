@@ -37,21 +37,23 @@ openDBMock err epochSize = do
 
     immDB :: StrictTVar m (DBModel hash) -> ImmutableDB hash m
     immDB dbVar = ImmutableDB
-        { closeDB           = wrap  $   closeDB       db
-        , isOpen            = wrap  $   isOpen        db
-        , reopen            = wrap  .   reopen        db
-        , getTip            = wrap  $   getTip        db
-        , getBlock          = wrap  .   getBlock      db
-        , getBlockHeader    = wrap  .   getBlock      db
-        , getBlockHash      = wrap  .   getBlockHash  db
-        , getEBB            = wrap  .   getEBB        db
-        , getEBBHeader      = wrap  .   getEBBHeader  db
-        , getEBBHash        = wrap  .   getEBBHash    db
-        , appendBlock       = wrap  ..: appendBlock   db
-        , appendEBB         = wrap  ..: appendEBB     db
-        , streamBlocks      = wrapI .:  streamBlocks  db
-        , streamHeaders     = wrapI .:  streamHeaders db
-        , immutableDBErr    = err
+        { closeDB             = wrap  $   closeDB             db
+        , isOpen              = wrap  $   isOpen              db
+        , reopen              = wrap  .   reopen              db
+        , getTip              = wrap  $   getTip              db
+        , getBlock            = wrap  .   getBlock            db
+        , getBlockHeader      = wrap  .   getBlock            db
+        , getBlockHash        = wrap  .   getBlockHash        db
+        , getEBB              = wrap  .   getEBB              db
+        , getEBBHeader        = wrap  .   getEBBHeader        db
+        , getEBBHash          = wrap  .   getEBBHash          db
+        , getBlockOrEBB       = wrap  .:  getBlockOrEBB       db
+        , getBlockOrEBBHeader = wrap  .:  getBlockOrEBBHeader db
+        , appendBlock         = wrap  ..: appendBlock         db
+        , appendEBB           = wrap  ..: appendEBB           db
+        , streamBlocks        = wrapI .:  streamBlocks        db
+        , streamHeaders       = wrapI .:  streamHeaders       db
+        , immutableDBErr      = err
         }
       where
         wrap  = wrapModel dbVar

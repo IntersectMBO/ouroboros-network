@@ -11,6 +11,7 @@
 {-# OPTIONS_GHC -Wredundant-constraints #-}
 module Ouroboros.Storage.ImmutableDB.Impl.Iterator
   ( streamImpl
+  , getSlotInfo
   , BlocksOrHeaders (..)
   , CurrentEpochInfo (..)
   ) where
@@ -36,6 +37,7 @@ import           Ouroboros.Consensus.Block (IsEBB (..))
 import           Ouroboros.Consensus.Util.IOLike
 
 import           Ouroboros.Storage.Common
+import           Ouroboros.Storage.EpochInfo
 import           Ouroboros.Storage.FS.API
 import           Ouroboros.Storage.FS.API.Types
 import           Ouroboros.Storage.FS.CRC
@@ -199,7 +201,10 @@ streamImpl dbEnv blocksOrHeaders mbStart mbEnd =
     fillInEndBound hasFS currentTip = \case
       -- End bound given, check whether it corresponds to a regular block or
       -- an EBB. Convert the 'SlotNo' to an 'EpochSlot' accordingly.
-      Just end -> snd <$> checkBound hasFS end
+      Just end -> do
+        (epochSlot, (entry, _blockSize), _secondaryOffset) <-
+          getSlotInfo hasFS _dbErr _dbEpochInfo _dbHashInfo end
+        return (WithHash (Secondary.headerHash entry) epochSlot)
 
       -- No end bound given, use the current tip, but convert the 'BlockOrEBB'
       -- to an 'EpochSlot'.
@@ -224,7 +229,10 @@ streamImpl dbEnv blocksOrHeaders mbStart mbEnd =
     fillInStartBound hasFS = \case
       -- Start bound given, check whether it corresponds to a regular block or
       -- an EBB. Convert the 'SlotNo' to an 'EpochSlot' accordingly.
-      Just start -> checkBound hasFS start
+      Just start -> do
+        (epochSlot, (entry, _blockSize), secondaryOffset) <-
+          getSlotInfo hasFS _dbErr _dbEpochInfo _dbHashInfo start
+        return (secondaryOffset, WithHash (Secondary.headerHash entry) epochSlot)
 
       -- No start bound given, use the first block in the ImmutableDB as the
       -- start bound.
@@ -249,73 +257,6 @@ streamImpl dbEnv blocksOrHeaders mbStart mbEnd =
                   isEBB | relSlot == 0 = IsEBB
                         | otherwise    = IsNotEBB
                   epochSlot = EpochSlot epoch relSlot
-
-    -- | Check whether the given bound exists in the ImmutableDB, otherwise a
-    -- 'WrongBoundError' is returned. The 'SecondaryOffset' and 'EpochSlot'
-    -- for the bound are returned.
-    --
-    -- The primary index is read to find out whether the slot is filled and
-    -- what the 'SecondaryOffset' is for the slot. The secondary index is read
-    -- to check the hash.
-    --
-    -- PRECONDITION: the bound is in the past.
-    --
-    -- PRECONDITION: the database is not empty.
-    checkBound
-      :: HasCallStack
-      => HasFS m h
-      -> (SlotNo, hash)  -- ^ Bound
-      -> ExceptT (WrongBoundError hash)
-                 m
-                 (SecondaryOffset, WithHash hash EpochSlot)
-    checkBound hasFS (slot, hash) = do
-        epochSlot@(EpochSlot epoch relSlot) <- lift $
-          epochInfoBlockRelative _dbEpochInfo slot
-        -- 'epochInfoBlockRelative' always assumes the given 'SlotNo' refers
-        -- to a regular block and will return 1 as the relative slot number
-        -- when given an EBB.
-        let couldBeEBB = relSlot == 1
-
-        -- Obtain the offsets in the secondary index file from the primary
-        -- index file. The block /could/ still correspond to an EBB, a regular
-        -- block or both. We will know which one it is when we can check the
-        -- hashes from the secondary index file with the hash we have.
-        toRead :: NonEmpty (IsEBB, SecondaryOffset) <- if couldBeEBB then
-            lift (Primary.readOffsets hasFS _dbErr epoch (Two 0 1)) >>= \case
-              Two Nothing Nothing                   ->
-                throwError $ EmptySlotError slot
-              Two (Just ebbOffset) (Just blkOffset) ->
-                return ((IsEBB, ebbOffset) NE.:| [(IsNotEBB, blkOffset)])
-              Two (Just ebbOffset) Nothing          ->
-                return ((IsEBB, ebbOffset) NE.:| [])
-              Two Nothing (Just blkOffset)          ->
-                return ((IsNotEBB, blkOffset) NE.:| [])
-          else
-            lift (Primary.readOffset hasFS _dbErr epoch relSlot) >>= \case
-              Nothing        ->
-                throwError $ EmptySlotError slot
-              Just blkOffset ->
-                return ((IsNotEBB, blkOffset) NE.:| [])
-
-        entries :: NonEmpty (Secondary.Entry hash) <- lift $ fmap fst <$>
-          Secondary.readEntries hasFS _dbErr _dbHashInfo epoch toRead
-
-        -- The entry from the secondary index file that matches the expected
-        -- hash.
-        (secondaryOffset, entry) :: (SecondaryOffset, Secondary.Entry hash) <-
-          case find ((== hash) . Secondary.headerHash . snd)
-                    (NE.zip (fmap snd toRead) entries) of
-            Just found -> return found
-            Nothing    -> throwError $ WrongHashError slot hash hashes
-              where
-                hashes = Secondary.headerHash <$> entries
-
-        -- Use the secondary index entry to determine whether the slot + hash
-        -- correspond to an EBB or a regular block.
-        return $ (secondaryOffset,) $ WithHash hash $
-          case Secondary.blockOrEBB entry of
-            Block _ -> epochSlot
-            EBB   _ -> EpochSlot epoch 0
 
     -- TODO we're calling 'modifyOpenState' from within 'withOpenState', ok?
     withNewIteratorID
@@ -342,6 +283,80 @@ streamImpl dbEnv blocksOrHeaders mbStart mbEnd =
       , iteratorClose   = iteratorCloseImpl      ith
       , iteratorID      = itID
       }
+
+-- | Get information about the block or EBB at the given slot with the given
+-- hash. If no such block exists, because the slot is empty or it contains a
+-- block and/or EBB with a different hash, return a 'WrongBoundError'.
+--
+-- Return the 'EpochSlot' corresponding to the block or EBB, the corresponding
+-- entry (and 'BlockSize') from the secondary index file, and the
+-- 'SecondaryOffset' of that entry.
+--
+-- The primary index is read to find out whether the slot is filled and what
+-- the 'SecondaryOffset' is for the slot. The secondary index is read to check
+-- the hash and to return the 'Secondary.Entry'.
+--
+-- PRECONDITION: the bound is in the past.
+--
+-- PRECONDITION: the database is not empty.
+getSlotInfo
+  :: (HasCallStack, IOLike m, Eq hash)
+  => HasFS m h
+  -> ErrorHandling ImmutableDBError m
+  -> EpochInfo m
+  -> HashInfo hash
+  -> (SlotNo, hash)
+  -> ExceptT (WrongBoundError hash) m
+             (EpochSlot, (Secondary.Entry hash, BlockSize), SecondaryOffset)
+getSlotInfo hasFS err epochInfo hashInfo (slot, hash) = do
+    epochSlot@(EpochSlot epoch relSlot) <- lift $
+      epochInfoBlockRelative epochInfo slot
+    -- 'epochInfoBlockRelative' always assumes the given 'SlotNo' refers to a
+    -- regular block and will return 1 as the relative slot number when given
+    -- an EBB.
+    let couldBeEBB = relSlot == 1
+
+    -- Obtain the offsets in the secondary index file from the primary index
+    -- file. The block /could/ still correspond to an EBB, a regular block or
+    -- both. We will know which one it is when we can check the hashes from
+    -- the secondary index file with the hash we have.
+    toRead :: NonEmpty (IsEBB, SecondaryOffset) <- if couldBeEBB then
+        lift (Primary.readOffsets hasFS err epoch (Two 0 1)) >>= \case
+          Two Nothing Nothing                   ->
+            throwError $ EmptySlotError slot
+          Two (Just ebbOffset) (Just blkOffset) ->
+            return ((IsEBB, ebbOffset) NE.:| [(IsNotEBB, blkOffset)])
+          Two (Just ebbOffset) Nothing          ->
+            return ((IsEBB, ebbOffset) NE.:| [])
+          Two Nothing (Just blkOffset)          ->
+            return ((IsNotEBB, blkOffset) NE.:| [])
+      else
+        lift (Primary.readOffset hasFS err epoch relSlot) >>= \case
+          Nothing        ->
+            throwError $ EmptySlotError slot
+          Just blkOffset ->
+            return ((IsNotEBB, blkOffset) NE.:| [])
+
+    entriesWithBlockSizes :: NonEmpty (Secondary.Entry hash, BlockSize) <- lift $
+      Secondary.readEntries hasFS err hashInfo epoch toRead
+
+    -- Return the entry from the secondary index file that matches the
+    -- expected hash.
+    (secondaryOffset, (entry, blockSize))
+      :: (SecondaryOffset, (Secondary.Entry hash, BlockSize)) <-
+      case find ((== hash) . Secondary.headerHash . fst . snd)
+                (NE.zip (fmap snd toRead) entriesWithBlockSizes) of
+        Just found -> return found
+        Nothing    -> throwError $ WrongHashError slot hash hashes
+          where
+            hashes = Secondary.headerHash . fst <$> entriesWithBlockSizes
+
+    -- Use the secondary index entry to determine whether the slot + hash
+    -- correspond to an EBB or a regular block.
+    let epochSlot' = case Secondary.blockOrEBB entry of
+          Block _ -> epochSlot
+          EBB   _ -> EpochSlot epoch 0
+    return (epochSlot', (entry, blockSize), secondaryOffset)
 
 iteratorNextImpl
   :: forall m hash. (IOLike m, Eq hash)
