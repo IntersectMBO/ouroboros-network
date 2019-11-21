@@ -7,6 +7,7 @@
 
 module Ouroboros.Consensus.Mempool.API (
     Mempool(..)
+  , BlockSlot(..)
   , MempoolSnapshot(..)
   , ApplyTx(..)
   , TraceEventMempool(..)
@@ -17,6 +18,8 @@ module Ouroboros.Consensus.Mempool.API (
 import           Control.Monad.Except
 import           GHC.Stack (HasCallStack)
 
+import           Ouroboros.Network.Block (SlotNo)
+import           Ouroboros.Network.Point (WithOrigin)
 import           Ouroboros.Network.Protocol.TxSubmission.Type (TxSizeInBytes)
 
 import           Ouroboros.Consensus.Ledger.Abstract
@@ -53,7 +56,18 @@ class ( UpdateLedger blk
   type family ApplyTxErr blk :: *
 
   -- | Apply transaction we have not previously seen before
+  --
+  -- A transaction needs to be validated not just with respect to a particular
+  -- ledger state, but also in a particular /slot/: the ledger state might
+  -- schedule certain changes for the "future" (for example, the Byron ledger
+  -- state might schedule some delegations), and so we need to know with respect
+  -- to which slot we are validating this transaction. If we are merely storing
+  -- transactions in the mempool, we might not yet know in which block they will
+  -- be included and so for which slot; in this case, we will have no choice but
+  -- to evaluate them against the most recent ledger state instead (or 'Origin'
+  -- if no blocks have been produced yet).
   applyTx :: LedgerConfig blk
+          -> WithOrigin SlotNo
           -> GenTx blk
           -> LedgerState blk
           -> Except (ApplyTxErr blk) (LedgerState blk)
@@ -65,6 +79,7 @@ class ( UpdateLedger blk
   -- checks (such as checking for double spending) must still be done.
   reapplyTx :: HasCallStack
             => LedgerConfig blk
+            -> WithOrigin SlotNo
             -> GenTx blk
             -> LedgerState blk
             -> Except (ApplyTxErr blk) (LedgerState blk)
@@ -73,9 +88,13 @@ class ( UpdateLedger blk
   --
   -- In this case no error can occur.
   --
+  -- NOTE: This function should /ONLY/ be called if /both/ the state /and/
+  -- the slot number are the identical.
+  --
   -- See also 'ldbConfReapply' for comments on implementing this function.
   reapplyTxSameState :: HasCallStack
                      => LedgerConfig blk
+                     -> WithOrigin SlotNo
                      -> GenTx blk
                      -> LedgerState blk
                      -> LedgerState blk
@@ -207,7 +226,10 @@ data Mempool m blk idx = Mempool {
       -- n.b. in our current implementation, when one opens a mempool, we
       -- spawn a thread which performs this action whenever the 'ChainDB' tip
       -- point changes.
-    , withSyncState :: forall a. (MempoolSnapshot blk idx -> STM m a) -> m a
+    , withSyncState :: forall a.
+                       BlockSlot
+                    -> (MempoolSnapshot blk idx -> STM m a)
+                    -> m a
 
       -- | Get a snapshot of the current mempool state. This allows for
       -- further pure queries on the snapshot.
@@ -217,6 +239,31 @@ data Mempool m blk idx = Mempool {
       -- counter will start (i.e. the zeroth ticket number).
     , zeroIdx       :: idx
     }
+
+-- | Slot number we're validating transactions against
+--
+-- Transactions are not only validated against a specific ledger tip, but also
+-- against a specific point in time. An obvious example is a transaction TTL:
+-- the transaction might be valid against the point at the tip of the ledger,
+-- but may no longer be valid in the slot for which are producing a block.
+--
+-- Byron: two delegations for the same slot?
+-- Mempool: overwrite? Shelley?
+-- update proposals may become invalid after epoch boundary
+data BlockSlot =
+    -- | We're validating the transactions against the slot number of the block
+    -- we are producing
+    TxsForBlockInSlot SlotNo
+
+    -- | We're validating transactions ahead of time, and can therefore only
+    -- validate them against the tip of the ledger DB
+    --
+    -- NOTE: We will need to revise this design once we have transactions that
+    -- will only become valid /after/ a certain point (as opposed to
+    -- transactions that are valid /until/ a certain point).
+    -- See <https://github.com/input-output-hk/ouroboros-network/issues/1290>
+  | TxsForUnknownBlock
+
 
 -- | A pure snapshot of the contents of the mempool. It allows fetching
 -- information about transactions in the mempool, and fetching individual

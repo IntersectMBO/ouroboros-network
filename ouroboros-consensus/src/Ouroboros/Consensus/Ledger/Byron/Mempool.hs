@@ -51,14 +51,19 @@ import           Cardano.Prelude (NoUnexpectedThunks (..), UseIsNormalForm (..),
 import qualified Cardano.Chain.Block as CC
 import qualified Cardano.Chain.Delegation as Delegation
 import qualified Cardano.Chain.MempoolPayload as CC
+import qualified Cardano.Chain.Slotting as CC
 import qualified Cardano.Chain.Update.Proposal as Update
 import qualified Cardano.Chain.Update.Vote as Update
 import qualified Cardano.Chain.UTxO as Utxo
 import qualified Cardano.Chain.ValidationMode as CC
 
+import           Ouroboros.Network.Block (SlotNo, genesisSlotNo)
+import           Ouroboros.Network.Point (WithOrigin (..))
+
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Byron.Aux
 import           Ouroboros.Consensus.Ledger.Byron.Block
+import           Ouroboros.Consensus.Ledger.Byron.Conversions
 import           Ouroboros.Consensus.Ledger.Byron.Ledger
 import           Ouroboros.Consensus.Ledger.Byron.Orphans ()
 import           Ouroboros.Consensus.Mempool.API
@@ -117,9 +122,9 @@ instance ApplyTx ByronBlock where
     where
       validationMode = CC.ValidationMode CC.NoBlockValidation Utxo.TxValidationNoCrypto
 
-  reapplyTxSameState cfg tx st =
+  reapplyTxSameState cfg currentSlot tx st =
       validationErrorImpossible $
-        applyByronGenTx validationMode cfg tx st
+        applyByronGenTx validationMode cfg currentSlot tx st
     where
       validationMode = CC.ValidationMode CC.NoBlockValidation Utxo.NoTxValidation
 
@@ -177,16 +182,28 @@ instance Show (GenTxId ByronBlock) where
 
 applyByronGenTx :: CC.ValidationMode
                 -> LedgerConfig ByronBlock
+                -> WithOrigin SlotNo
                 -> GenTx ByronBlock
                 -> LedgerState ByronBlock
                 -> Except (ApplyTxErr ByronBlock) (LedgerState ByronBlock)
-applyByronGenTx validationMode cfg genTx st =
+applyByronGenTx validationMode cfg currentSlot genTx st =
     (\state -> st {byronLedgerState = state}) <$>
       applyMempoolPayload
         validationMode
         (unByronLedgerConfig cfg)
+        currentSlot'
         (toMempoolPayload genTx)
         (byronLedgerState st)
+  where
+    -- The 'Origin' case here is awkward. It must mean we are evaluating
+    -- transactions in the mempool against a ledger state (i.e., we're not
+    -- producing a block yet) in which no blocks have been applied yet. We have
+    -- no choice but to pretend they will live in block 0.
+    currentSlot' :: CC.SlotNumber
+    currentSlot' =
+      case currentSlot of
+        At slot -> toByronSlotNo slot
+        Origin  -> toByronSlotNo genesisSlotNo
 
 {-------------------------------------------------------------------------------
   Serialisation

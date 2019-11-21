@@ -7,6 +7,7 @@
 module Ouroboros.Consensus.Ledger.Abstract (
     -- * Interaction with the ledger layer
     UpdateLedger(..)
+  , ledgerTipSlot
   , BlockProtocol
   , ProtocolLedgerView(..)
   , AnachronyFailure(..)
@@ -17,7 +18,7 @@ import           GHC.Stack (HasCallStack)
 
 import           Cardano.Prelude (NoUnexpectedThunks)
 
-import           Ouroboros.Network.Block (Point, SlotNo)
+import           Ouroboros.Network.Block (Point, SlotNo, pointSlot)
 import           Ouroboros.Network.Point (WithOrigin)
 
 import           Ouroboros.Consensus.Block
@@ -71,6 +72,10 @@ class ( SupportedBlock blk
   --
   -- Should be 'genesisPoint' when no blocks have been applied yet
   ledgerTipPoint :: LedgerState blk -> Point blk
+
+-- | (Derived) slot number of the most recently applied block
+ledgerTipSlot :: UpdateLedger blk => LedgerState blk -> WithOrigin SlotNo
+ledgerTipSlot = pointSlot . ledgerTipPoint
 
 -- | Link protocol to ledger
 class UpdateLedger blk => ProtocolLedgerView blk where

@@ -28,7 +28,7 @@ import           Control.Monad.IOSim (runSimOrThrow)
 import           Control.Tracer (Tracer (..))
 
 import           Ouroboros.Network.Block (pattern BlockPoint, SlotNo (..),
-                     atSlot, pointSlot, withHash)
+                     atSlot, withHash)
 import           Ouroboros.Network.Point (WithOrigin (..))
 
 import           Ouroboros.Consensus.Ledger.Abstract
@@ -279,7 +279,7 @@ prop_Mempool_Capacity mcts = withTestMempool mctsTestSetup $
             -- Sync the mempool with the ledger.
             -- Now all of the transactions in the mempool should have been
             -- removed.
-            withSyncState (const (return ()))
+            withSyncState TxsForUnknownBlock (const (return ()))
 
             -- Indicate that we've removed the transactions from the mempool.
             atomically $ do
@@ -362,7 +362,7 @@ prop_Mempool_TraceRemovedTxs setup =
 
       -- Sync the mempool with the ledger. Now all of the transactions in the
       -- mempool should have been removed.
-      withSyncState (const (return ()))
+      withSyncState TxsForUnknownBlock (const (return ()))
 
       evs  <- getTraceEvents
       -- Also check that 'addTxsToLedger' never resulted in an error.
@@ -513,12 +513,24 @@ applyTxToLedger :: LedgerState TestBlock
 applyTxToLedger = \ledgerState tx ->
     -- We need to change the 'ledgerTipPoint' because that is used to check
     -- whether the ledger state has changed.
-    updateLedgerTipPoint <$> applyTx LedgerConfig (TestGenTx tx) ledgerState
+    updateLedgerTipPoint <$>
+      applyTx LedgerConfig fakeSlotNo (TestGenTx tx) ledgerState
   where
+    -- TODO: Transaction validation does not only happen with respect to a
+    -- particular ledger state, but also with respect to a particular /slot/;
+    -- see 'BlockSlot' for detailed discussion. For the test ledger however
+    -- this does not matter, and so we can basically pass in any slot. At
+    -- some point we should have a test ledger in which this /does/ matter, but
+    -- when we do, the 'updateLedgerTipPoint' function below is very wrong:
+    -- the slot at the tip of the ledger should only change when we apply
+    -- blocks.
+    fakeSlotNo :: WithOrigin SlotNo
+    fakeSlotNo = Origin
+
     updateLedgerTipPoint ledgerState = ledgerState
         { tlLastApplied = BlockPoint { withHash = unSlotNo slot', atSlot = slot' } }
       where
-        slot' = case pointSlot (ledgerTipPoint ledgerState) of
+        slot' = case ledgerTipSlot ledgerState of
           Origin  -> SlotNo 0
           At slot -> succ slot
 
@@ -787,7 +799,7 @@ prop_TxSeq_lookupByTicketNo_complete xs =
     and [ case TxSeq.lookupByTicketNo txseq tn of
             Just tx' -> tx == tx'
             Nothing  -> False
-        | (tx, tn) <- TxSeq.fromTxSeq txseq ]
+        | TxTicket tx tn <- TxSeq.fromTxSeq txseq ]
   where
     txseq :: TxSeq Int
     txseq = foldl' (TxSeq.:>) TxSeq.Empty
@@ -943,7 +955,7 @@ executeAction testMempool action = case action of
     RemoveTx tx -> do
       void $ atomically $ addTxsToLedger [tx]
       -- Synchronise the Mempool with the updated chain
-      withSyncState $ \_snapshot -> return ()
+      withSyncState TxsForUnknownBlock $ \_snapshot -> return ()
       expectTraceEvent $ \case
         TraceMempoolRemoveTxs [TestGenTx tx'] _
           | tx == tx'
@@ -970,8 +982,11 @@ executeAction testMempool action = case action of
 currentTicketAssignment :: IOLike m
                         => Mempool m TestBlock TicketNo -> m TicketAssignment
 currentTicketAssignment Mempool { withSyncState } =
-    withSyncState $ \MempoolSnapshot { snapshotTxs } -> return $ Map.fromList
-      [ (ticketNo, testTxId (unTestGenTx tx)) | (tx, ticketNo) <- snapshotTxs ]
+    withSyncState TxsForUnknownBlock $ \MempoolSnapshot { snapshotTxs } ->
+      return $ Map.fromList
+        [ (ticketNo, testTxId (unTestGenTx tx))
+        | (tx, ticketNo) <- snapshotTxs
+        ]
 
 instance Arbitrary Actions where
   arbitrary = sized $ \n -> do

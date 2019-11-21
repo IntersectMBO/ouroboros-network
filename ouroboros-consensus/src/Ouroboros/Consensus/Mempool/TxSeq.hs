@@ -162,10 +162,8 @@ splitAfterTicketNo (TxSeq txs) n =
 
 -- | Convert a 'TxSeq' to a list of pairs of transactions and their
 -- associated 'TicketNo's.
-fromTxSeq :: TxSeq tx -> [(tx, TicketNo)]
-fromTxSeq (TxSeq ftree) = fmap
-  (\(TxTicket tx tn) -> (tx, tn))
-  (Foldable.toList $ ftree)
+fromTxSeq :: TxSeq tx -> [TxTicket tx]
+fromTxSeq (TxSeq ftree) = Foldable.toList ftree
 
 -- | \( O(n) \). Filter the 'TxSeq'.
 filterTxs :: (TxTicket tx -> Bool) -> TxSeq tx -> TxSeq tx

@@ -194,6 +194,9 @@ mkBodyEnvironment cfg params slotNo = CC.BodyEnvironment {
                                 slotNo
     }
 
+-- TODO: Use this in tx validation code
+-- TODO: Shouldn't this also set cvsLastSlot?
+-- TODO: Make this update the delegation state?
 applyEpochTransition :: Gen.Config
                      -> CC.SlotNumber
                      -> CC.ChainValidationState
@@ -313,37 +316,39 @@ mkUtxoEnvironment cfg state = Utxo.Environment {
     protocolMagic = reAnnotateMagic (Gen.configProtocolMagic cfg)
     updateState   = CC.cvsUpdateState state
 
+-- | Construct the delegation environment
+--
+-- The delegation environment doesn't just depend on the tip of the ledger:
+-- the tip of the ledger might have a certain active delegation map, but it
+-- may /also/ have some scheduled delegations, and so if we are now some
+-- slots away from the tip, those delegations might have to be applied. We
+-- therefore need to know which slot we are interested in.
 mkDelegationEnvironment :: Gen.Config
-                        -> CC.ChainValidationState
+                        -> CC.SlotNumber
                         -> D.Iface.Environment
-mkDelegationEnvironment cfg state = D.Iface.Environment {
+mkDelegationEnvironment cfg currentSlot = D.Iface.Environment {
       D.Iface.protocolMagic     = getAProtocolMagicId protocolMagic
     , D.Iface.allowedDelegators = allowedDelegators cfg
     , D.Iface.k                 = k
-      -- By rights the 'currentEpoch' for checking a delegation certificate
-      -- should be the epoch of the block in which the delegation certificate
-      -- is included. However, we don't have such a block yet, and so we can
-      -- only use the epoch from the ledger state. This does mean that we might
-      -- say a transaction is valid now, but will become invalid by the time we
-      -- actually include it in a block.
     , D.Iface.currentEpoch      = currentEpoch
     , D.Iface.currentSlot       = currentSlot
     }
   where
     k             = Gen.configK cfg
     protocolMagic = reAnnotateMagic (Gen.configProtocolMagic cfg)
-    currentSlot   = CC.cvsLastSlot state
     currentEpoch  = CC.slotNumberEpoch (Gen.configEpochSlots cfg) currentSlot
 
+-- TODO: Are we passing the right slot here? Why would this be different to
+-- delegation?
 mkUpdateEnvironment :: Gen.Config
                     -> CC.ChainValidationState
                     -> U.Iface.Environment
 mkUpdateEnvironment cfg state = U.Iface.Environment {
       U.Iface.protocolMagic = getAProtocolMagicId protocolMagic
     , U.Iface.k             = k
-    , U.Iface.currentSlot   = currentSlot
+    , U.Iface.currentSlot   = currentSlot   -- TODO: wrong
     , U.Iface.numGenKeys    = numGenKeys
-    , U.Iface.delegationMap = delegationMap
+    , U.Iface.delegationMap = delegationMap -- TODO: wrong
     }
   where
     k             = Gen.configK cfg
@@ -377,13 +382,14 @@ applyTxAux validationMode cfg txs state =
 
 applyCertificate :: MonadError D.Sched.Error m
                  => Gen.Config
+                 -> CC.SlotNumber -- ^ See mkDelegationEnvironment
                  -> [Delegation.ACertificate ByteString]
                  -> CC.ChainValidationState -> m CC.ChainValidationState
-applyCertificate cfg certs state =
+applyCertificate cfg currentSlot certs state =
     (`setDelegationState` state) <$>
       D.Iface.updateDelegation dlgEnv dlgState certs
   where
-    dlgEnv   = mkDelegationEnvironment cfg state
+    dlgEnv   = mkDelegationEnvironment cfg currentSlot
     dlgState = CC.cvsDelegationState state
 
 applyUpdateProposal :: MonadError U.Iface.Error m
@@ -405,6 +411,7 @@ applyUpdateVote cfg vote state =
     (`setUpdateState` state) <$>
       U.Iface.registerVote updateEnv updateState vote
   where
+    -- TODO: Here we are using the wrong slot
     updateEnv   = mkUpdateEnvironment cfg state
     updateState = CC.cvsUpdateState state
 
@@ -448,16 +455,17 @@ instance FromCBOR ApplyMempoolPayloadErr where
 applyMempoolPayload :: MonadError ApplyMempoolPayloadErr m
                     => CC.ValidationMode
                     -> Gen.Config
+                    -> CC.SlotNumber -- ^ See mkDelegationEnvironment
                     -> CC.AMempoolPayload ByteString
                     -> CC.ChainValidationState -> m CC.ChainValidationState
-applyMempoolPayload validationMode cfg payload =
+applyMempoolPayload validationMode cfg currentSlot payload =
     case payload of
       CC.MempoolTx tx ->
         (`wrapError` MempoolTxErr) .
           applyTxAux validationMode cfg [tx]
       CC.MempoolDlg cert ->
         (`wrapError` MempoolDlgErr) .
-          applyCertificate cfg [cert]
+          applyCertificate cfg currentSlot [cert]
       CC.MempoolUpdateProposal proposal ->
         (`wrapError` MempoolUpdateProposalErr) .
           applyUpdateProposal cfg proposal

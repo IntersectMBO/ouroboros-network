@@ -25,8 +25,9 @@ import           GHC.Generics (Generic)
 
 import           Control.Tracer
 
-import           Ouroboros.Network.Block (ChainHash, StandardHash)
+import           Ouroboros.Network.Block (Point, SlotNo, StandardHash)
 import qualified Ouroboros.Network.Block as Block
+import           Ouroboros.Network.Point (WithOrigin (..))
 
 import           Ouroboros.Storage.ChainDB (ChainDB)
 import qualified Ouroboros.Storage.ChainDB.API as ChainDB
@@ -109,7 +110,7 @@ data InternalState blk = IS {
       isTxs          :: !(TxSeq (GenTx blk))
 
       -- | The tip of the chain that 'isTxs' was validated against
-    , isTip          :: !(ChainHash blk)
+    , isTip          :: !(Point blk)
 
       -- | The mempool 'TicketNo' counter.
       --
@@ -132,7 +133,7 @@ data MempoolEnv m blk = MempoolEnv {
     }
 
 initInternalState :: InternalState blk
-initInternalState = IS TxSeq.Empty Block.GenesisHash zeroTicketNo
+initInternalState = IS TxSeq.Empty Block.genesisPoint zeroTicketNo
 
 initMempoolEnv :: (IOLike m, ApplyTx blk)
                => LedgerInterface m blk
@@ -152,17 +153,20 @@ initMempoolEnv ledgerInterface cfg capacity tracer = do
 
 -- | Spawn a thread which syncs the 'Mempool' state whenever the 'LedgerState'
 -- changes.
-forkSyncStateOnTipPointChange :: (IOLike m, ApplyTx blk)
+forkSyncStateOnTipPointChange :: forall m blk. (IOLike m, ApplyTx blk)
                               => ResourceRegistry m
                               -> MempoolEnv m blk
                               -> m ()
 forkSyncStateOnTipPointChange registry menv =
     onEachChange registry id Nothing getCurrentTip action
   where
-    action _tipPoint = implWithSyncState menv (const (return ()))
-    MempoolEnv { mpEnvLedger } = menv
+    action :: Point blk -> m ()
+    action _tipPoint = implWithSyncState menv TxsForUnknownBlock $ \_ ->
+                         return ()
+
     -- Using the tip ('Point') allows for quicker equality checks
-    getCurrentTip = ledgerTipPoint <$> getCurrentLedgerState mpEnvLedger
+    getCurrentTip :: STM m (Point blk)
+    getCurrentTip = ledgerTipPoint <$> getCurrentLedgerState (mpEnvLedger menv)
 
 {-------------------------------------------------------------------------------
   Mempool Implementation
@@ -240,7 +244,7 @@ implAddTxs mpEnv accum txs = assert (all txInvariant txs) $ do
         , vrValid
         , vrInvalid = removed
         , vrLastTicketNo
-        } <- validateIS mpEnv
+        } <- validateIS mpEnv TxsForUnknownBlock
 
       -- Determine whether the tip was updated after a call to 'validateIS'
       --
@@ -390,7 +394,7 @@ implRemoveTxs mpEnv@MempoolEnv{mpEnvTracer, mpEnvStateVar} txIds = do
         , vrValid
         , vrInvalid
         , vrLastTicketNo
-        } <- validateIS mpEnv
+        } <- validateIS mpEnv TxsForUnknownBlock
       writeTVar mpEnvStateVar IS
         { isTxs          = vrValid
         , isTip          = vrBefore
@@ -409,16 +413,17 @@ implRemoveTxs mpEnv@MempoolEnv{mpEnvTracer, mpEnvStateVar} txIds = do
 implWithSyncState
   :: (IOLike m, ApplyTx blk)
   => MempoolEnv m blk
+  -> BlockSlot
   -> (MempoolSnapshot blk TicketNo -> STM m a)
   -> m a
-implWithSyncState mpEnv@MempoolEnv{mpEnvTracer, mpEnvStateVar} f = do
+implWithSyncState mpEnv@MempoolEnv{mpEnvTracer, mpEnvStateVar} blockSlot f = do
     (removed, mempoolSize, res) <- atomically $ do
       ValidationResult
         { vrBefore
         , vrValid
         , vrInvalid
         , vrLastTicketNo
-        } <- validateIS mpEnv
+        } <- validateIS mpEnv blockSlot
       writeTVar mpEnvStateVar IS
         { isTxs          = vrValid
         , isTip          = vrBefore
@@ -462,7 +467,8 @@ implSnapshotGetTxsAfter :: InternalState blk
                         -> TicketNo
                         -> [(GenTx blk, TicketNo)]
 implSnapshotGetTxsAfter IS{isTxs} tn =
-    fromTxSeq $ snd $ splitAfterTicketNo isTxs tn
+      map (\(TxTicket tx no) -> (tx, no))
+    $ fromTxSeq (snd (splitAfterTicketNo isTxs tn))
 
 implSnapshotGetTx :: InternalState blk
                   -> TicketNo
@@ -475,7 +481,10 @@ implSnapshotGetTx IS{isTxs} tn = isTxs `lookupByTicketNo` tn
 
 data ValidationResult blk = ValidationResult {
     -- | The tip of the chain before applying these transactions
-    vrBefore       :: ChainHash blk
+    vrBefore       :: Point blk
+
+    -- | The slot number of the block in which the transaction will be included
+  , vrBlockSlot    :: BlockSlot
 
     -- | The transactions that were found to be valid (oldest to newest)
   , vrValid        :: TxSeq (GenTx blk)
@@ -508,28 +517,68 @@ data ValidationResult blk = ValidationResult {
   , vrLastTicketNo :: TicketNo
   }
 
--- | Initialize 'ValidationResult' from a ledger state and a list of
--- transactions /known/ to be valid in that ledger state
-initVR :: forall blk. ApplyTx blk
-       => LedgerConfig blk
-       -> TxSeq (GenTx blk)
-       -> (ChainHash blk, LedgerState blk)
-       -> TicketNo
-       -> ValidationResult blk
-initVR cfg = \knownValid (tip, st) lastTicketNo -> ValidationResult {
-      vrBefore       = tip
-    , vrValid        = knownValid
+-- | The actual slot number against we will be validating the transactions
+vrSlotNo :: ValidationResult blk -> WithOrigin SlotNo
+vrSlotNo ValidationResult{vrBlockSlot, vrBefore} =
+    case vrBlockSlot of
+      TxsForBlockInSlot s -> At s
+      TxsForUnknownBlock  -> Block.pointSlot vrBefore
+
+-- | Empty 'ValidationResult' (used when re-evaluating all transactions in the
+-- mempool once we learn the slot number of the block we are producing)
+emptyVR :: UpdateLedger blk
+        => SlotNo
+        -> LedgerState blk
+        -> TicketNo
+        -> ValidationResult blk
+emptyVR blockSlot st lastTicketNo = ValidationResult {
+      vrBefore       = ledgerTipPoint st
+    , vrBlockSlot    = TxsForBlockInSlot blockSlot
+    , vrValid        = TxSeq.Empty
     , vrNewValid     = []
-    , vrAfter        = afterKnownValid
-                         (Foldable.toList knownValid)
-                         st
+    , vrAfter        = st
     , vrInvalid      = []
     , vrLastTicketNo = lastTicketNo
     }
+
+-- | Initialize 'ValidationResult' from a ledger state and a list of
+-- transactions /known/ to be valid in that ledger state
+--
+-- If we are not yet producing a block, all transactions are evaluated against
+-- the slot number of the last applied block. However, when we are producing a
+-- block, we will now have a concrete slot number we should evaluate the
+-- transactions against, and they might have become invalid by now.
+initVR :: forall blk. ApplyTx blk
+       => LedgerConfig blk
+       -> BlockSlot
+       -> TxSeq (GenTx blk)
+       -> LedgerState blk
+       -> TicketNo
+       -> ValidationResult blk
+initVR cfg TxsForUnknownBlock knownValid st lastTicketNo =
+    ValidationResult {
+        vrBefore       = ledgerTipPoint st
+      , vrBlockSlot    = TxsForUnknownBlock
+      , vrValid        = knownValid
+      , vrNewValid     = []
+      , vrAfter        = afterKnownValid
+                           (Foldable.toList knownValid)
+                           st
+      , vrInvalid      = []
+      , vrLastTicketNo = lastTicketNo
+      }
   where
     afterKnownValid :: [GenTx blk] -> LedgerState blk -> LedgerState blk
     afterKnownValid []       = id
-    afterKnownValid (tx:txs) = afterKnownValid txs . reapplyTxSameState cfg tx
+    afterKnownValid (tx:txs) = afterKnownValid txs
+                             . reapplyTxSameState cfg (ledgerTipSlot st) tx
+initVR cfg (TxsForBlockInSlot blockSlot) previouslyValid st lastTicketNo =
+    go previouslyValid (emptyVR blockSlot st lastTicketNo)
+  where
+    go :: TxSeq (GenTx blk) -> ValidationResult blk -> ValidationResult blk
+    go Empty       = id
+    go (tx :< txs) = go txs . extendVRPrevApplied cfg tx
+
 
 -- | Extend 'ValidationResult' with a previously validated transaction that
 -- may or may not be valid in this ledger state
@@ -541,15 +590,15 @@ initVR cfg = \knownValid (tip, st) lastTicketNo -> ValidationResult {
 -- signatures.
 extendVRPrevApplied :: ApplyTx blk
                     => LedgerConfig blk
-                    -> (GenTx blk, TicketNo)
+                    -> TxTicket (GenTx blk)
                     -> ValidationResult blk
                     -> ValidationResult blk
-extendVRPrevApplied cfg (tx, tn)
+extendVRPrevApplied cfg ticket@(TxTicket tx _)
          vr@ValidationResult{vrValid, vrAfter, vrInvalid} =
-    case runExcept (reapplyTx cfg tx vrAfter) of
+    case runExcept (reapplyTx cfg (vrSlotNo vr) tx vrAfter) of
       Left err  -> vr { vrInvalid = (tx, err) : vrInvalid
                       }
-      Right st' -> vr { vrValid   = vrValid :> TxTicket tx tn
+      Right st' -> vr { vrValid   = vrValid :> ticket
                       , vrAfter   = st'
                       }
 
@@ -568,7 +617,7 @@ extendVRNew cfg tx
                              , vrNewValid
                              } =
     let nextTicketNo = succ vrLastTicketNo
-    in  case runExcept (applyTx cfg tx vrAfter) of
+    in  case runExcept (applyTx cfg (vrSlotNo vr) tx vrAfter) of
       Left err  -> vr { vrInvalid      = (tx, err) : vrInvalid
                       }
       Right st' -> vr { vrValid        = vrValid :> TxTicket tx nextTicketNo
@@ -579,18 +628,18 @@ extendVRNew cfg tx
 
 -- | Validate internal state
 validateIS :: forall m blk. (IOLike m, ApplyTx blk)
-           => MempoolEnv m blk -> STM m (ValidationResult blk)
-validateIS MempoolEnv{mpEnvLedger, mpEnvLedgerCfg, mpEnvStateVar} =
+           => MempoolEnv m blk
+           -> BlockSlot
+           -> STM m (ValidationResult blk)
+validateIS MempoolEnv{mpEnvLedger, mpEnvLedgerCfg, mpEnvStateVar} blockSlot =
     go <$> getCurrentLedgerState mpEnvLedger <*> readTVar mpEnvStateVar
   where
     go :: LedgerState      blk
        -> InternalState    blk
        -> ValidationResult blk
     go st IS{isTxs, isTip, isLastTicketNo}
-        | tip == isTip
-        = initVR mpEnvLedgerCfg isTxs (tip, st) isLastTicketNo
+        | isTip == ledgerTipPoint st
+        = initVR mpEnvLedgerCfg blockSlot isTxs st isLastTicketNo
         | otherwise
         = repeatedly (extendVRPrevApplied mpEnvLedgerCfg) (fromTxSeq isTxs)
-        $ initVR mpEnvLedgerCfg TxSeq.Empty (tip, st) isLastTicketNo
-      where
-        tip = Block.pointHash $ ledgerTipPoint st
+        $ initVR mpEnvLedgerCfg blockSlot TxSeq.Empty st isLastTicketNo

@@ -152,13 +152,14 @@ instance ApplyTx TestBlock where
 
   type ApplyTxErr TestBlock = TestTxError
 
-  applyTx _ (TestGenTx tx) ledger@TestLedger { tlTxIds } = do
+  applyTx _ _ (TestGenTx tx) ledger@TestLedger { tlTxIds } = do
     testTxValidate tx tlTxIds
     return ledger { tlTxIds = testTxId tx : tlTxIds }
 
   reapplyTx = applyTx
 
-  reapplyTxSameState cfg tx ledger = mustBeRight $ applyTx cfg tx ledger
+  reapplyTxSameState cfg slot tx ledger =
+      mustBeRight $ applyTx cfg slot tx ledger
     where
       mustBeRight = either (error "cannot fail") id . runExcept
 
