@@ -21,8 +21,10 @@ module Ouroboros.Network.NodeToClient (
   , withServer_V1
   , withServer
 
+  , SubscriptionWorkerV2 (..)
   , ncSubscriptionWorker
   , ncSubscriptionWorker_V1
+  , ncSubscriptionWorker_V2
 
   -- * Re-exported clients
   , chainSyncClientNull
@@ -390,6 +392,44 @@ ncSubscriptionWorker_V1
           (DictVersion nodeToClientCodecCBORTerm)
           application)
 
+
+data SubscriptionWorkerV2 appType peerid void x y = SubscriptionWorkerV2
+  { sw2SubscriptionTrace :: Tracer IO (WithIPList (SubscriptionTrace Socket.SockAddr))
+  , sw2MuxBearerTrace :: Tracer IO (WithMuxBearer peerid (MuxTrace NodeToClientProtocols))
+  , sw2SendRecvTrace :: Tracer IO (TraceSendRecv (Handshake NodeToClientVersion CBOR.Term) peerid (DecoderFailureOrTooMuchInput DeserialiseFailure))
+  , sw2AddrTrace :: Tracer IO (WithAddr Socket.SockAddr ErrorPolicyTrace)
+  , sw2PeerFunc :: (Socket.SockAddr -> Socket.SockAddr -> peerid)
+  , sw2ConnTable :: ConnectionTable IO Socket.SockAddr
+  , sw2PeerStates :: StrictTVar IO (PeerStates IO Socket.SockAddr)
+  , sw2LocalAddress :: LocalAddresses Socket.SockAddr
+  , sw2ConnAttemptDelay :: Socket.SockAddr -> Maybe DiffTime
+  , sw2ErrorPolicies :: ErrorPolicies Socket.SockAddr ()
+  , sw2SunscriptionTarget :: IPSubscriptionTarget
+  , sw2VersionData :: NodeToClientVersionData
+  , sw2Application :: OuroborosApplication appType peerid NodeToClientProtocols IO BL.ByteString x y
+  }
+
+ncSubscriptionWorker_V2
+    :: forall appType peerid void x y.
+       ( HasInitiator appType ~ True )
+    => SubscriptionWorkerV2 appType peerid void x y -> IO void
+ncSubscriptionWorker_V2 sw2 =
+  ncSubscriptionWorker_V1
+    (sw2SubscriptionTrace sw2)
+    (sw2MuxBearerTrace sw2)
+    (sw2SendRecvTrace sw2)
+    (sw2AddrTrace sw2)
+    (sw2PeerFunc sw2)
+    (sw2ConnTable sw2)
+    (sw2PeerStates sw2)
+    (sw2LocalAddress sw2)
+    (sw2ConnAttemptDelay sw2)
+    (sw2ErrorPolicies sw2)
+    (sw2SunscriptionTarget sw2)
+    (sw2VersionData sw2)
+    (sw2Application sw2)
+
+
 -- | 'ErrorPolicies' for client application.  Additional rules can be added by
 -- means of a 'Semigroup' instance of 'ErrorPolicies'.
 --
@@ -401,7 +441,7 @@ ncSubscriptionWorker_V1
 -- or running a client application which is subscribed two more than one node
 -- (possibly over network).
 --
--- If a trusted node sends us a wrong data or 
+-- If a trusted node sends us a wrong data or
 --
 networkErrorPolicies :: ErrorPolicies Socket.SockAddr a
 networkErrorPolicies = ErrorPolicies
