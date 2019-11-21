@@ -171,7 +171,7 @@ data Success it
   | Iter         (Either (WrongBoundError Hash) it)
   | IterResult   (IteratorResult Hash ByteString)
   | IterHasNext  Bool
-  | Tip          ImmTip
+  | Tip          (ImmTipWithHash Hash)
   deriving (Eq, Show, Functor, Foldable, Traversable)
 
 -- | How to run a 'Corruption' command.
@@ -715,7 +715,7 @@ semantics errorsVar hasFS db internal (At cmdErr) =
         run (semanticsCorruption hasFS) its db internal cmd
 
       CmdErr (Just errors) cmd its -> do
-        tipBefore <- getTip db
+        tipBefore <- fmap fst <$> getTip db
         res       <- withErrors errorsVar errors $ try $
           run (semanticsCorruption hasFS) its db internal cmd
         case res of

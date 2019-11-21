@@ -101,7 +101,7 @@ data ImmutableDB hash m = ImmutableDB
     --
     -- Throws a 'ClosedDBError' if the database is closed.
   , getTip
-      :: HasCallStack => m ImmTip
+      :: HasCallStack => m (ImmTipWithHash hash)
 
     -- | Get the block as a 'ByteString' and its header hash stored at the given
     -- 'SlotNo'.
