@@ -24,6 +24,7 @@ import           Ouroboros.Consensus.BlockFetchServer
                      (TraceBlockFetchServerEvent)
 import           Ouroboros.Consensus.ChainSyncClient (TraceChainSyncClientEvent)
 import           Ouroboros.Consensus.ChainSyncServer (TraceChainSyncServerEvent)
+import           Ouroboros.Consensus.Ledger.Abstract (AnachronyFailure)
 import           Ouroboros.Consensus.Mempool.API (ApplyTxErr, GenTx, GenTxId,
                      TraceEventMempool)
 import           Ouroboros.Consensus.TxSubmission
@@ -96,4 +97,12 @@ showTracers tr = Tracers
 data TraceForgeEvent blk
   -- | The forged block and at which slot it was forged.
   = TraceForgeEvent SlotNo blk
+
+  -- | We should have produced a block, but didn't, due to too many missing
+  -- blocks between the tip of our chain and the current slot
+  --
+  -- As a sanity check, we record also the failure returned by
+  -- 'anachronisticProtocolLedgerView', although we expect this to be
+  -- 'TooFarAhead', never 'TooFarBehind'.
+  | TraceCouldNotForge SlotNo AnachronyFailure
   deriving (Eq, Show)

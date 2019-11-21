@@ -56,7 +56,6 @@ import           Ouroboros.Consensus.Mempool
 import           Ouroboros.Consensus.Mempool.TxSeq (TicketNo)
 import           Ouroboros.Consensus.Node.Tracers
 import           Ouroboros.Consensus.Protocol.Abstract
-import           Ouroboros.Consensus.Util
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.Orphans ()
 import           Ouroboros.Consensus.Util.Random
@@ -283,6 +282,16 @@ initBlockFetchConsensusInterface cfg chainDB getCandidates blockFetchSize
                            -> Ordering
     compareCandidateChains = compareCandidates cfg
 
+data LeaderResult blk =
+    -- | We weren't the slot leader, and therefore didn't produce a block
+    NotLeader
+
+    -- | We were the leader and we produced a block
+  | ProducedBlock blk
+
+    -- | We should have produced a block, but couldn't
+  | FailedToProduce AnachronyFailure
+
 forkBlockProduction
     :: forall m peer blk.
        (IOLike m, ProtocolLedgerView blk)
@@ -292,33 +301,41 @@ forkBlockProduction IS{..} =
       varDRG <- newTVarM =<< (PRNG <$> produceDRG)
       -- See the docstring of 'withSyncState' for why we're using it instead
       -- of 'atomically'.
-      mNewBlock <- withSyncState mempool $ \MempoolSnapshot{snapshotTxs} -> do
+      leaderResult <- withSyncState mempool $ \MempoolSnapshot{snapshotTxs} -> do
         l@ExtLedgerState{..} <- ChainDB.getCurrentLedger chainDB
-        -- TODO: I think this is wrong. This uses the ledger view as it was
-        -- after the last applied block. But that ledger view might have some
-        -- scheduled updates which should be applied by the time we reach
-        -- 'currentSlot'.
-        mIsLeader            <- runProtocol varDRG $
-                                   checkIsLeader
-                                     cfg
-                                     currentSlot
-                                     (protocolLedgerView cfg ledgerState)
-                                     ouroborosChainState
 
-        case mIsLeader of
-          Nothing    -> return Nothing
-          Just proof -> do
-            (prevPoint, prevNo) <- prevPointAndBlockNo currentSlot <$>
-                                     ChainDB.getCurrentChain chainDB
-            newBlock            <- runProtocol varDRG $
-                                     produceBlock
-                                       proof
-                                       l
-                                       currentSlot
-                                       prevPoint
-                                       prevNo
-                                       (map fst snapshotTxs)
-            return $ Just newBlock
+        case anachronisticProtocolLedgerView cfg ledgerState (At currentSlot) of
+          Right ledgerView -> do
+            mIsLeader <- runProtocol varDRG $
+                            checkIsLeader
+                              cfg
+                              currentSlot
+                              ledgerView
+                              ouroborosChainState
+
+            case mIsLeader of
+              Nothing    -> return NotLeader
+              Just proof -> do
+                (prevPoint, prevNo) <- prevPointAndBlockNo currentSlot <$>
+                                         ChainDB.getCurrentChain chainDB
+                newBlock            <- runProtocol varDRG $
+                                         produceBlock
+                                           proof
+                                           l
+                                           currentSlot
+                                           prevPoint
+                                           prevNo
+                                           (map fst snapshotTxs)
+                return $ ProducedBlock newBlock
+
+          Left err ->
+            -- There are so many empty slots between the tip of our chain and
+            -- the current slot that we cannot even get an accurate ledger view
+            -- anymore. This is indicative of a serious problem: we are not
+            -- receiving blocks. It is /possible/ it's just due to our network
+            -- connectivity, and we might still get these blocks at some point;
+            -- but we certainly can't produce a block of our own.
+            return $ FailedToProduce err
 
       -- Note that there is a possible race condition here: we have produced a
       -- block containing valid transactions w.r.t. the current ledger state
@@ -327,9 +344,14 @@ forkBlockProduction IS{..} =
       -- changed to a longer chain (than the one at the time of producing the
       -- block), chain selection will not select the block we just produced
       -- ourselves, as it would mean switching to a shorter chain.
-      whenJust mNewBlock $ \newBlock -> do
-        traceWith (forgeTracer tracers) $ TraceForgeEvent currentSlot newBlock
-        ChainDB.addBlock chainDB newBlock
+      case leaderResult of
+        NotLeader ->
+          return ()
+        ProducedBlock newBlock -> do
+          traceWith (forgeTracer tracers) $ TraceForgeEvent currentSlot newBlock
+          ChainDB.addBlock chainDB newBlock
+        FailedToProduce err ->
+          traceWith (forgeTracer tracers) $ TraceCouldNotForge currentSlot err
   where
     NodeCallbacks{..} = callbacks
 
