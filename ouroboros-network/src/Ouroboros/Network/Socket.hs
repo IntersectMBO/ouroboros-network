@@ -39,7 +39,7 @@ module Ouroboros.Network.Socket (
     ) where
 
 import           Control.Concurrent.Async
-import           Control.Exception (SomeException (..))
+import           Control.Exception (IOException, SomeException (..))
 import           Control.Monad (when)
 -- TODO: remove this, it will not be needed when `orElse` PR will be merged.
 import qualified Control.Monad.STM as STM
@@ -351,7 +351,7 @@ runNetworkNode'
     -> (forall vData. extra vData -> CBOR.Term -> Either Text vData)
     -> (forall vData. extra vData -> vData -> vData -> Accept)
     -- -> Versions vNumber extra (MuxApplication ServerApp ptcl IO)
-    -> (SomeException -> IO ())
+    -> (IOException -> IO ())
     -> (Time
           -> Socket.SockAddr
           -> PeerStates IO Socket.SockAddr
@@ -483,7 +483,6 @@ withServerNode muxTracer handshakeTracer errorPolicyTracer tbl stVar addr encode
           fmap (unregisterProducer remoteAddr thread)
             <$> completeTx (ApplicationResult t remoteAddr r) st
 
-      acceptException :: Socket.SockAddr -> SomeException -> IO ()
+      acceptException :: Socket.SockAddr -> IOException -> IO ()
       acceptException a e = do
-        traceWith (WithAddr a `contramap` errorPolicyTracer) $ ErrorPolicyAccept e
-        throwIO e
+        traceWith (WithAddr a `contramap` errorPolicyTracer) $ ErrorPolicyAcceptException e
