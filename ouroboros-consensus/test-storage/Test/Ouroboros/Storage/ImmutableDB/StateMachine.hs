@@ -429,7 +429,7 @@ generateCmd Model {..} = At <$> frequency
     [ -- Block
       (1, elements [GetBlock, GetBlockHeader, GetBlockHash] <*> genGetBlockSlot)
       -- EBB
-    , (1, elements [GetEBB, GetEBBHeader, GetEBBHash] <*> genEpoch)
+    , (1, elements [GetEBB, GetEBBHeader, GetEBBHash] <*> genGetEBB)
     , (3, do
             let mbPrevBlock = dbmTipBlock dbModel
             slotNo  <- frequency
@@ -524,10 +524,11 @@ generateCmd Model {..} = At <$> frequency
       , (1,  genSlotInTheFuture)
       , (1,  genSmallSlotNo) ]
 
-    genEpoch :: Gen EpochNo
-    genEpoch = frequency
-      [ (if empty then 0 else 10, chooseEpoch (0, currentEpoch))
-      , (1, chooseEpoch (0, 5)) ]
+    genGetEBB :: Gen EpochNo
+    genGetEBB = frequency
+      [ (if noEBBs then 0 else 5, elements $ Map.keys dbmEBBs)
+      , (1, chooseEpoch (0, 5))
+      ]
 
     chooseWord64 :: Coercible a Word64 => (a, a) -> Gen a
     chooseWord64 (start, end) = coerce $ choose @Word64 (coerce start, coerce end)
