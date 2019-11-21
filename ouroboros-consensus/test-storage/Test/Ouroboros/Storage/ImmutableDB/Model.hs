@@ -138,21 +138,23 @@ openDBModel err getEpochSize = (dbModel, db, internal)
   where
     dbModel = initDBModel (getEpochSize 0)
     db = ImmutableDB
-      { closeDB        = return ()
-      , isOpen         = return True
-      , reopen         = \_ -> return ()
-      , getTip         = getTipModel
-      , getBlock       = getBlockModel       err
-      , getBlockHeader = getBlockHeaderModel err
-      , getBlockHash   = getBlockHashModel   err
-      , getEBB         = getEBBModel         err
-      , getEBBHeader   = getEBBHeaderModel   err
-      , getEBBHash     = getEBBHashModel     err
-      , appendBlock    = appendBlockModel    err
-      , appendEBB      = appendEBBModel      err
-      , streamBlocks   = streamModel         err Blocks
-      , streamHeaders  = streamModel         err Headers
-      , immutableDBErr = err
+      { closeDB             = return ()
+      , isOpen              = return True
+      , reopen              = \_ -> return ()
+      , getTip              = getTipModel
+      , getBlock            = getBlockModel            err
+      , getBlockHeader      = getBlockHeaderModel      err
+      , getBlockHash        = getBlockHashModel        err
+      , getEBB              = getEBBModel              err
+      , getEBBHeader        = getEBBHeaderModel        err
+      , getEBBHash          = getEBBHashModel          err
+      , getBlockOrEBB       = getBlockOrEBBModel       err
+      , getBlockOrEBBHeader = getBlockOrEBBHeaderModel err
+      , appendBlock         = appendBlockModel         err
+      , appendEBB           = appendEBBModel           err
+      , streamBlocks        = streamModel              err Blocks
+      , streamHeaders       = streamModel              err Headers
+      , immutableDBErr      = err
       }
     internal = Internal
       { deleteAfter = deleteAfterModel
@@ -179,7 +181,7 @@ lookupBySlot (SlotNo i) = go i
   where
     go 0 (blob:_)  = blob
     go n (_:blobs) = go (n - 1) blobs
-    go _ []        = error "lookupBySlot: index out of bounds"
+    go _ []        = error ("lookupBySlot: index out of bounds: " <> show i)
 
 -- | Rolls back the chain so that the given 'Tip' is the new tip.
 --
@@ -486,6 +488,68 @@ getEBBHashModel :: (HasCallStack, MonadState (DBModel hash) m)
                 -> EpochNo
                 -> m (Maybe hash)
 getEBBHashModel err epoch = fmap fst <$> getEBBModel err epoch
+
+getBlockOrEBBBinaryInfo
+  :: (HasCallStack, MonadState (DBModel hash) m, Eq hash)
+  => ErrorHandling ImmutableDBError m
+  -> SlotNo
+  -> hash
+  -> m (Maybe (Either EpochNo SlotNo, BinaryInfo ByteString))
+getBlockOrEBBBinaryInfo err = \slot hash -> do
+    dbm@DBModel { dbmTip, dbmChain, dbmEBBs } <- get
+
+    -- Check that the slot is not in the future
+    let inTheFuture = case fst <$> dbmTip of
+          TipGen               -> True
+          Tip (Block lastSlot) -> slot > lastSlot
+          Tip (EBB   epoch)    -> slot > epochSlotToSlot dbm (EpochSlot epoch 0)
+
+    when inTheFuture $
+      throwUserError err $ ReadFutureSlotError slot (fst <$> dbmTip)
+
+    let (epoch, couldBeEBB) = case slotToEpochSlot dbm slot of
+          EpochSlot e 1 -> (e, True)
+          EpochSlot e _ -> (e, False)
+
+    -- The chain can be too short if there's an EBB at the tip
+    case lookupBySlotMaybe slot dbmChain of
+      Just (hash', binaryInfo)
+        | hash' == hash
+        -> return $ Just (Right slot, binaryInfo)
+      -- Fall back to EBB
+      _ | couldBeEBB
+        , Just (hash', binaryInfo) <- Map.lookup epoch dbmEBBs
+        , hash' == hash
+        -> return $ Just (Left epoch, binaryInfo)
+        | otherwise
+        -> return Nothing
+  where
+    -- Return 'Nothing' when the chain is too short. In contrast to
+    -- 'lookupBySlot', which would throw an error.
+    lookupBySlotMaybe (SlotNo i') dbmChain
+      | let i = fromIntegral i'
+      , i < length dbmChain
+      = dbmChain !! i
+      | otherwise
+      = Nothing
+
+getBlockOrEBBModel
+  :: (HasCallStack, MonadState (DBModel hash) m, Eq hash)
+  => ErrorHandling ImmutableDBError m
+  -> SlotNo
+  -> hash
+  -> m (Maybe (Either EpochNo SlotNo, ByteString))
+getBlockOrEBBModel err slot hash =
+    fmap (fmap binaryBlob) <$> getBlockOrEBBBinaryInfo err slot hash
+
+getBlockOrEBBHeaderModel
+  :: (HasCallStack, MonadState (DBModel hash) m, Eq hash)
+  => ErrorHandling ImmutableDBError m
+  -> SlotNo
+  -> hash
+  -> m (Maybe (Either EpochNo SlotNo, ByteString))
+getBlockOrEBBHeaderModel err slot hash =
+    fmap (fmap extractHeader) <$> getBlockOrEBBBinaryInfo err slot hash
 
 appendBlockModel :: (HasCallStack, MonadState (DBModel hash) m)
                  => ErrorHandling ImmutableDBError m

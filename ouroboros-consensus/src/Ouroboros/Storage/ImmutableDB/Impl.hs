@@ -95,6 +95,7 @@ module Ouroboros.Storage.ImmutableDB.Impl
 import           Prelude hiding (truncate)
 
 import           Control.Monad (replicateM_, when)
+import           Control.Monad.Except (runExceptT)
 import           Control.Monad.State.Strict (StateT (..), get, lift, modify,
                      put)
 import           Control.Tracer (Tracer, traceWith)
@@ -123,7 +124,8 @@ import           Ouroboros.Storage.Util.ErrorHandling (ErrorHandling (..))
 import           Ouroboros.Storage.ImmutableDB.API
 import qualified Ouroboros.Storage.ImmutableDB.Impl.Index.Primary as Primary
 import           Ouroboros.Storage.ImmutableDB.Impl.Index.Secondary
-                     (BlockOffset (..), HeaderOffset (..), HeaderSize (..))
+                     (BlockOffset (..), BlockSize, HeaderOffset (..),
+                     HeaderSize (..))
 import qualified Ouroboros.Storage.ImmutableDB.Impl.Index.Secondary as Secondary
 import           Ouroboros.Storage.ImmutableDB.Impl.Iterator
 import           Ouroboros.Storage.ImmutableDB.Impl.State
@@ -198,21 +200,23 @@ data Internal hash m = Internal
 mkDBRecord :: (IOLike m, Eq hash, NoUnexpectedThunks hash)
            => ImmutableDBEnv m hash -> ImmutableDB hash m
 mkDBRecord dbEnv = ImmutableDB
-    { closeDB        = closeDBImpl     dbEnv
-    , isOpen         = isOpenImpl      dbEnv
-    , reopen         = reopenImpl      dbEnv
-    , getTip         = getTipImpl      dbEnv
-    , getBlock       = getBlockImpl    dbEnv GetBlock
-    , getBlockHeader = getBlockImpl    dbEnv GetHeader
-    , getBlockHash   = getBlockImpl    dbEnv GetHash
-    , getEBB         = getEBBImpl      dbEnv GetBlock
-    , getEBBHeader   = getEBBImpl      dbEnv GetHeader
-    , getEBBHash     = getEBBImpl      dbEnv GetHash
-    , appendBlock    = appendBlockImpl dbEnv
-    , appendEBB      = appendEBBImpl   dbEnv
-    , streamBlocks   = streamImpl      dbEnv Blocks
-    , streamHeaders  = streamImpl      dbEnv Headers
-    , immutableDBErr = _dbErr          dbEnv
+    { closeDB             = closeDBImpl       dbEnv
+    , isOpen              = isOpenImpl        dbEnv
+    , reopen              = reopenImpl        dbEnv
+    , getTip              = getTipImpl        dbEnv
+    , getBlock            = getBlockImpl      dbEnv GetBlock
+    , getBlockHeader      = getBlockImpl      dbEnv GetHeader
+    , getBlockHash        = getBlockImpl      dbEnv GetHash
+    , getEBB              = getEBBImpl        dbEnv GetBlock
+    , getEBBHeader        = getEBBImpl        dbEnv GetHeader
+    , getEBBHash          = getEBBImpl        dbEnv GetHash
+    , getBlockOrEBB       = getBlockOrEBBImpl dbEnv GetBlock
+    , getBlockOrEBBHeader = getBlockOrEBBImpl dbEnv GetHeader
+    , appendBlock         = appendBlockImpl   dbEnv
+    , appendEBB           = appendEBBImpl     dbEnv
+    , streamBlocks        = streamImpl        dbEnv Blocks
+    , streamHeaders       = streamImpl        dbEnv Headers
+    , immutableDBErr      = _dbErr            dbEnv
     }
 
 openDBInternal
@@ -403,7 +407,7 @@ getBlockImpl
   -> GetWhat hash res
   -> SlotNo
   -> m (Maybe res)
-getBlockImpl dbEnv getWhat slot =
+getBlockImpl dbEnv what slot =
     withOpenState dbEnv $ \_dbHasFS OpenState{..} -> do
       inTheFuture <- case _currentTip of
         TipGen                    -> return $ True
@@ -420,7 +424,7 @@ getBlockImpl dbEnv getWhat slot =
 
       let curEpochInfo = CurrentEpochInfo _currentEpoch _currentEpochOffset
       epochSlot <- epochInfoBlockRelative _dbEpochInfo slot
-      getEpochSlot _dbHasFS _dbHashInfo _dbErr curEpochInfo getWhat epochSlot
+      getEpochSlot _dbHasFS _dbHashInfo _dbErr curEpochInfo what epochSlot
   where
     ImmutableDBEnv { _dbEpochInfo, _dbErr, _dbHashInfo } = dbEnv
 
@@ -430,7 +434,7 @@ getEBBImpl
   -> GetWhat hash res
   -> EpochNo
   -> m (Maybe res)
-getEBBImpl dbEnv getWhat epoch =
+getEBBImpl dbEnv what epoch =
     withOpenState dbEnv $ \_dbHasFS OpenState{..} -> do
       let inTheFuture = case _currentTip of
             TipGen           -> True
@@ -441,7 +445,117 @@ getEBBImpl dbEnv getWhat epoch =
         throwUserError _dbErr $ ReadFutureEBBError epoch _currentEpoch
 
       let curEpochInfo = CurrentEpochInfo _currentEpoch _currentEpochOffset
-      getEpochSlot _dbHasFS _dbHashInfo _dbErr curEpochInfo getWhat (EpochSlot epoch 0)
+      getEpochSlot _dbHasFS _dbHashInfo _dbErr curEpochInfo what (EpochSlot epoch 0)
+  where
+    ImmutableDBEnv { _dbEpochInfo, _dbErr, _dbHashInfo } = dbEnv
+
+getWhat
+  :: forall m h hash res. (HasCallStack, IOLike m)
+  => HasFS m h
+  -> ErrorHandling ImmutableDBError m
+  -> EpochNo
+  -> CurrentEpochInfo
+  -> (Secondary.Entry hash, BlockSize)
+  -> GetWhat hash res
+  -> m res
+getWhat hasFS err epoch curEpochInfo (entry, blockSize) = \case
+    GetHash  -> return headerHash
+
+    -- In case the requested epoch is the current epoch, we will be reading
+    -- from the epoch file while we're also writing to it. Are we guaranteed
+    -- to read what have written? Duncan says: this is guaranteed at the OS
+    -- level (POSIX), but not for Haskell handles, which might perform other
+    -- buffering. However, the 'HasFS' implementation we're using uses POSIX
+    -- file handles ("Ouroboros.Storage.IO") so we're safe (other
+    -- implementations of the 'HasFS' API guarantee this too).
+
+    GetBlock -> do
+      -- Get the whole block
+      let offset = AbsOffset $ unBlockOffset blockOffset
+      (bl, checksum') <- withFile hasFS epochFile ReadMode $ \eHnd ->
+        case blockSize of
+          -- It is the last entry in the file, so we don't know the size
+          -- of the block.
+          Secondary.LastEntry
+            | epoch == curEpoch
+              -- Even though it was the last block in the secondary
+              -- index file (and thus in the epoch file) when we read
+              -- the secondary index file, it is possible that more
+              -- blocks have been appended in the meantime. For this
+              -- reason, we cannot simply read the until the end of the
+              -- epoch file, because we would read the newly appended
+              -- blocks too.
+              --
+              -- Instead, we derive the size of the block from
+              -- @curEpochOffset@, which corresponds to the qoffset at
+              -- the end of that block /at the time we read the state/.
+              -- Note that we don't allow reading a block newer than the
+              -- tip, which we obtained from the /same state/.
+            -> let size = curEpochOffset - blockOffset in
+               hGetExactlyAtCRC hasFS eHnd (fromIntegral size) offset
+            | otherwise
+              -- If it is in an epoch in the past, it is immutable,
+              -- so no blocks can have been appended since we retrieved
+              -- the entry. We can simply read all remaining bytes, as
+              -- it is the last block in the file.
+            -> hGetAllAtCRC     hasFS eHnd                     offset
+          Secondary.BlockSize size
+            -> hGetExactlyAtCRC hasFS eHnd (fromIntegral size) offset
+      checkChecksum err epochFile blockOrEBB checksum checksum'
+      return (headerHash, bl)
+
+    GetHeader -> fmap (headerHash,) $
+        -- Get just the header
+        withFile hasFS epochFile ReadMode $ \eHnd ->
+          -- We cannot check the checksum in this case, as we're not reading
+          -- the whole block
+          hGetExactlyAt hasFS eHnd size offset
+      where
+        size   = fromIntegral $ unHeaderSize headerSize
+        offset = AbsOffset $
+          unBlockOffset blockOffset +
+          fromIntegral (unHeaderOffset headerOffset)
+  where
+    Secondary.Entry
+      { blockOffset, headerOffset, headerSize, headerHash, checksum
+      , blockOrEBB
+      } = entry
+    CurrentEpochInfo curEpoch curEpochOffset = curEpochInfo
+    epochFile = renderFile "epoch" epoch
+
+getBlockOrEBBImpl
+  :: forall m hash. (HasCallStack, IOLike m, Eq hash)
+  => ImmutableDBEnv m hash
+  -> GetWhat hash (hash, ByteString)
+  -> SlotNo
+  -> hash
+  -> m (Maybe (Either EpochNo SlotNo, ByteString))
+getBlockOrEBBImpl dbEnv what slot hash =
+    withOpenState dbEnv $ \_dbHasFS OpenState{..} -> do
+
+      inTheFuture <- case _currentTip of
+        TipGen                    -> return True
+        Tip (Block lastSlot, _)   -> return $ slot > lastSlot
+        Tip (EBB lastEBBEpoch, _) -> do
+          ebbSlot <- epochInfoFirst _dbEpochInfo lastEBBEpoch
+          return $ slot > ebbSlot
+
+      when inTheFuture $
+        throwUserError _dbErr $ ReadFutureSlotError slot (fst <$> _currentTip)
+
+      let curEpochInfo = CurrentEpochInfo _currentEpoch _currentEpochOffset
+
+      errOrRes <- runExceptT $
+        checkBound _dbHasFS _dbErr _dbEpochInfo _dbHashInfo (slot, hash)
+      case errOrRes of
+        Left _ ->
+          return Nothing
+        Right (EpochSlot epoch relSlot, (entry, blockSize), _secondaryOffset) ->
+            Just . (epochOrSlot, ) . snd <$>
+              getWhat _dbHasFS _dbErr epoch curEpochInfo (entry, blockSize) what
+          where
+            epochOrSlot | relSlot == 0 = Left epoch
+                        | otherwise    = Right slot
   where
     ImmutableDBEnv { _dbEpochInfo, _dbErr, _dbHashInfo } = dbEnv
 
@@ -458,7 +572,7 @@ getEpochSlot
   -> GetWhat hash res
   -> EpochSlot
   -> m (Maybe res)
-getEpochSlot hasFS hashInfo err curEpochInfo getWhat epochSlot =
+getEpochSlot hasFS hashInfo err curEpochInfo what epochSlot =
     -- Check the primary index first
     Primary.readOffset hasFS err epoch relativeSlot >>= \case
       -- Empty slot
@@ -469,76 +583,11 @@ getEpochSlot hasFS hashInfo err curEpochInfo getWhat epochSlot =
         -- TODO only read the hash in case of 'GetHash'?
         (entry, blockSize) <-
           Secondary.readEntry hasFS err hashInfo epoch isEBB secondaryOffset
-        let Secondary.Entry
-              { blockOffset, headerOffset, headerSize, headerHash, checksum
-              , blockOrEBB
-              } = entry
-
-        -- In case the requested epoch is the current epoch, we will be reading
-        -- from the epoch file while we're also writing to it. Are we guaranteed
-        -- to read what have written? Duncan says: this is guaranteed at the OS
-        -- level (POSIX), but not for Haskell handles, which might perform other
-        -- buffering. However, the 'HasFS' implementation we're using uses POSIX
-        -- file handles ("Ouroboros.Storage.IO") so we're safe (other
-        -- implementations of the 'HasFS' API guarantee this too).
-
-        Just <$> case getWhat of
-          GetHash  -> return headerHash
-
-          GetBlock -> do
-            -- Get the whole block
-            let offset = AbsOffset $ unBlockOffset blockOffset
-            (bl, checksum') <- withFile hasFS epochFile ReadMode $ \eHnd ->
-              case blockSize of
-                -- It is the last entry in the file, so we don't know the size
-                -- of the block.
-                Secondary.LastEntry
-                  | epoch == curEpoch
-                    -- Even though it was the last block in the secondary
-                    -- index file (and thus in the epoch file) when we read
-                    -- the secondary index file, it is possible that more
-                    -- blocks have been appended in the meantime. For this
-                    -- reason, we cannot simply read the until the end of the
-                    -- epoch file, because we would read the newly appended
-                    -- blocks too.
-                    --
-                    -- Instead, we derive the size of the block from
-                    -- @curEpochOffset@, which corresponds to the qoffset at
-                    -- the end of that block /at the time we read the state/.
-                    -- Note that we don't allow reading a block newer than the
-                    -- tip, which we obtained from the /same state/.
-                  -> let size = curEpochOffset - blockOffset in
-                     hGetExactlyAtCRC hasFS eHnd (fromIntegral size) offset
-                  | otherwise
-                    -- If it is in an epoch in the past, it is immutable,
-                    -- so no blocks can have been appended since we retrieved
-                    -- the entry. We can simply read all remaining bytes, as
-                    -- it is the last block in the file.
-                  -> hGetAllAtCRC     hasFS eHnd                     offset
-                Secondary.BlockSize size
-                  -> hGetExactlyAtCRC hasFS eHnd (fromIntegral size) offset
-            checkChecksum err epochFile blockOrEBB checksum checksum'
-            return (headerHash, bl)
-
-          GetHeader -> fmap (headerHash,) $
-              -- Get just the header
-              withFile hasFS epochFile ReadMode $ \eHnd ->
-                -- We cannot check the checksum in this case, as we're not
-                -- reading the whole block
-                hGetExactlyAt hasFS eHnd size offset
-            where
-              size   = fromIntegral $ unHeaderSize headerSize
-              offset = AbsOffset $
-                unBlockOffset blockOffset +
-                fromIntegral (unHeaderOffset headerOffset)
-
+        Just <$> getWhat hasFS err epoch curEpochInfo (entry, blockSize) what
   where
-    HasFS{..}                                = hasFS
-    EpochSlot epoch relativeSlot             = epochSlot
-    CurrentEpochInfo curEpoch curEpochOffset = curEpochInfo
-    epochFile                                = renderFile "epoch" epoch
-    isEBB | relativeSlot == 0                = IsEBB
-          | otherwise                        = IsNotEBB
+    EpochSlot epoch relativeSlot = epochSlot
+    isEBB | relativeSlot == 0    = IsEBB
+          | otherwise            = IsNotEBB
 
 appendBlockImpl
   :: forall m hash. (HasCallStack, IOLike m)
