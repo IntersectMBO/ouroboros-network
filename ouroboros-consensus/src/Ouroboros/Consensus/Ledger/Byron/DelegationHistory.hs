@@ -141,8 +141,9 @@ trim k now = withDelegationHistory go
     earliest :: SlotNo
     earliest = now - 2 * coerce k
 
-find :: WithOrigin SlotNo -> DelegationHistory -> Maybe Snapshot
-find slot = Foldable.find (`SB.contains` slot') . toSequence
+find :: WithOrigin SlotNo -> DelegationHistory -> Maybe Delegation.Map
+find slot (DelegationHistory history) =
+    Foldable.asum $ map (`SB.at` slot') (Foldable.toList history)
   where
     slot' :: SlotNo
     slot' = fromWithOrigin genesisSlotNo slot

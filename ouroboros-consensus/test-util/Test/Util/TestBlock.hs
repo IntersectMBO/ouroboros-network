@@ -83,7 +83,6 @@ import           Ouroboros.Consensus.Protocol.MockChainSel
 import           Ouroboros.Consensus.Protocol.Signed
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Orphans ()
-import qualified Ouroboros.Consensus.Util.SlotBounded as SB
 
 import           Ouroboros.Storage.ImmutableDB (HashInfo (..))
 
@@ -297,7 +296,7 @@ instance UpdateLedger TestBlock where
 
 instance ProtocolLedgerView TestBlock where
   protocolLedgerView _ _ = ()
-  anachronisticProtocolLedgerView _ _ _ = Right $ SB.maximal ()
+  anachronisticProtocolLedgerView _ _ _ = Right ()
 
 testInitLedger :: LedgerState TestBlock
 testInitLedger = TestLedger Block.genesisPoint GenesisHash
