@@ -13,6 +13,7 @@
 module Ouroboros.Network.Subscription.Dns
     ( DnsSubscriptionTarget (..)
     , Resolver (..)
+    , DnsSubscriptionParams
     , dnsSubscriptionWorker'
     , dnsSubscriptionWorker
     , dnsResolve
@@ -46,9 +47,11 @@ import           Ouroboros.Network.Subscription.Subscriber
 import           Ouroboros.Network.Subscription.Worker
 import           Ouroboros.Network.Socket
 
+
 -- | Time to wait for an AAAA response after receiving an A response.
 resolutionDelay :: DiffTime
 resolutionDelay = 0.05 -- 50ms delay
+
 
 data DnsSubscriptionTarget = DnsSubscriptionTarget {
       dstDomain :: !DNS.Domain
@@ -56,10 +59,12 @@ data DnsSubscriptionTarget = DnsSubscriptionTarget {
     , dstValency :: !Int
     } deriving (Eq, Show)
 
+
 data Resolver m = Resolver {
       lookupA    :: DNS.Domain -> m (Either DNS.DNSError [Socket.SockAddr])
     , lookupAAAA :: DNS.Domain -> m (Either DNS.DNSError [Socket.SockAddr])
     }
+
 
 dnsResolve :: forall m s.
      ( MonadAsync m
@@ -85,30 +90,40 @@ dnsResolve tracer resolver peerStatesVar beforeConnect (DnsSubscriptionTarget do
 
     rd_e <- waitEitherCatch aid_ipv6 aid_ipv4
     handleResult ipv6Rsps ipv4Rsps rd_e
-
   where
+    handleResult :: StrictTMVar m [Socket.SockAddr]
+                 -> StrictTMVar m [Socket.SockAddr]
+                 -> Either
+                      (Either SomeException (Maybe DNS.DNSError))
+                      (Either SomeException (Maybe DNS.DNSError))
+                 -> m (SubscriptionTarget m Socket.SockAddr)
+
     handleResult _ ipv4Rsps (Left (Left e_ipv6)) = do
         -- AAAA lookup finished first, but with an error.
         traceWith tracer $ DnsTraceLookupException e_ipv6
         return $ SubscriptionTarget $ listTargets (Right ipv4Rsps) (Left [])
+
     handleResult ipv6Rsps ipv4Rsps (Left (Right _)) = do
         -- Try to use IPv6 result first.
         traceWith tracer DnsTraceLookupIPv6First
         ipv6Res <- atomically $ takeTMVar ipv6Rsps
         return $ SubscriptionTarget $ listTargets (Left ipv6Res) (Right ipv4Rsps)
+
     handleResult ipv6Rsps _ (Right (Left e_ipv4)) = do
         -- A lookup finished first, but with an error.
         traceWith tracer $ DnsTraceLookupException e_ipv4
         return $ SubscriptionTarget $ listTargets (Right ipv6Rsps) (Left [])
+
     handleResult ipv6Rsps ipv4Rsps (Right (Right _)) = do
         -- Try to use IPv4 result first.
         traceWith tracer DnsTraceLookupIPv4First
         return $ SubscriptionTarget $ listTargets (Right ipv4Rsps) (Right ipv6Rsps)
 
-    {-
-     - Returns a series of SockAddr, where the address family will alternate
-     - between IPv4 and IPv6 as soon as the corresponding lookup call has completed.
-     -}
+
+    -- | Returns a series of SockAddr, where the address family will alternate
+    -- between IPv4 and IPv6 as soon as the corresponding lookup call has
+    -- completed.
+    --
     listTargets :: Either [Socket.SockAddr] (StrictTMVar m [Socket.SockAddr])
                 -> Either [Socket.SockAddr] (StrictTMVar m [Socket.SockAddr])
                 -> m (Maybe (Socket.SockAddr, SubscriptionTarget m Socket.SockAddr))
@@ -202,62 +217,65 @@ dnsResolve tracer resolver peerStatesVar beforeConnect (DnsSubscriptionTarget do
                  atomically $ putTMVar rspsVar r
                  return Nothing
 
+
 dnsSubscriptionWorker'
     :: Tracer IO (WithDomainName (SubscriptionTrace Socket.SockAddr))
     -> Tracer IO (WithDomainName DnsTrace)
     -> Tracer IO (WithAddr Socket.SockAddr ErrorPolicyTrace)
     -> NetworkMutableState
     -> Resolver IO
-    -> LocalAddresses Socket.SockAddr
-    -> (Socket.SockAddr -> Maybe DiffTime)
-    -> ErrorPolicies Socket.SockAddr a
-    -> DnsSubscriptionTarget
+    -> DnsSubscriptionParams a
     -> Main IO (PeerStates IO Socket.SockAddr) x
     -> (Socket.Socket -> IO a)
     -> IO x
-dnsSubscriptionWorker' subTracer dnsTracer errorPolicyTracer networkState@NetworkMutableState { nmsPeerStates } resolver localAddresses
-  connectionAttemptDelay errPolicies dst main k = do
+dnsSubscriptionWorker' subTracer dnsTracer errorPolicyTracer
+                       networkState@NetworkMutableState { nmsPeerStates }
+                       resolver
+                       SubscriptionParams { spLocalAddresses
+                                          , spConnectionAttemptDelay
+                                          , spSubscriptionTarget = dst
+                                          , spErrorPolicies
+                                          }
+                       main k =
     subscriptionWorker (WithDomainName (dstDomain dst) `contramap` subTracer)
                        errorPolicyTracer
                        networkState
-                       localAddresses
-                       connectionAttemptDelay
-                       (dnsResolve
-                          (WithDomainName (dstDomain dst) `contramap` dnsTracer)
-                          resolver nmsPeerStates beforeConnectTx dst)
-                       (dstValency dst)
-                       errPolicies
+                       WorkerParams { wpLocalAddresses = spLocalAddresses
+                                    , wpConnectionAttemptDelay = spConnectionAttemptDelay
+                                    , wpSubscriptionTarget =
+                                        dnsResolve
+                                          (WithDomainName (dstDomain dst) `contramap` dnsTracer)
+                                          resolver nmsPeerStates beforeConnectTx dst
+                                    , wpValency = dstValency dst
+                                    }
+                       spErrorPolicies
                        main
                        k
 
+
+type DnsSubscriptionParams a = SubscriptionParams a DnsSubscriptionTarget
 
 dnsSubscriptionWorker
     :: Tracer IO (WithDomainName (SubscriptionTrace Socket.SockAddr))
     -> Tracer IO (WithDomainName DnsTrace)
     -> Tracer IO (WithAddr Socket.SockAddr ErrorPolicyTrace)
     -> NetworkMutableState
-    -> LocalAddresses Socket.SockAddr
-    -> (Socket.SockAddr -> Maybe DiffTime)
-    -> ErrorPolicies Socket.SockAddr a
-    -> DnsSubscriptionTarget
+    -> DnsSubscriptionParams a
     -> (Socket.Socket -> IO a)
     -> IO void
-dnsSubscriptionWorker subTracer dnsTracer errTrace networkState localAddresses
-  connectionAttemptDelay errPolicies dst k = do
-    rs <- DNS.makeResolvSeed DNS.defaultResolvConf
-
-    DNS.withResolver rs $ \dnsResolver ->
-        let resolver = Resolver (ipv4ToSockAddr (dstPort dst) dnsResolver)
-                                (ipv6ToSockAddr (dstPort dst) dnsResolver) in
-        dnsSubscriptionWorker' subTracer dnsTracer errTrace
-                               networkState
-                               resolver
-                               localAddresses
-                               connectionAttemptDelay
-                               errPolicies
-                               dst
-                               mainTx
-                               k
+dnsSubscriptionWorker subTracer dnsTracer errTrace networkState
+                      params@SubscriptionParams { spSubscriptionTarget } k =
+    do rs <- DNS.makeResolvSeed DNS.defaultResolvConf
+       DNS.withResolver rs $ \dnsResolver ->
+         dnsSubscriptionWorker'
+           subTracer dnsTracer errTrace
+           networkState
+           (Resolver
+             (ipv4ToSockAddr (dstPort spSubscriptionTarget) dnsResolver)
+             (ipv6ToSockAddr (dstPort spSubscriptionTarget) dnsResolver))
+           params
+           mainTx
+           k
   where
     ipv4ToSockAddr port dnsResolver d = do
         r <- DNS.lookupA dnsResolver d
@@ -271,6 +289,7 @@ dnsSubscriptionWorker subTracer dnsTracer errTrace networkState localAddresses
         case r of
              (Right ips) -> return $ Right $ map (\ip -> Socket.SockAddrInet6 (fromIntegral port) 0 (IP.toHostAddress6 ip) 0) ips
              (Left e)    -> return $ Left e
+
 
 data WithDomainName a = WithDomainName {
       wdnDomain :: !DNS.Domain

@@ -34,11 +34,14 @@ module Ouroboros.Network.NodeToNode (
   , IPSubscriptionTarget (..)
   , NetworkIPSubscriptionTracers (..)
   , nullNetworkIPSubscriptionTracers
+  , SubscriptionParams (..)
+  , IPSubscriptionParams
   , ipSubscriptionWorker
   , ipSubscriptionWorker_V1
 
   -- ** DNS subscription worker
   , DnsSubscriptionTarget (..)
+  , DnsSubscriptionParams
   , NetworkDNSSubscriptionTracers (..)
   , nullNetworkDNSSubscriptionTracers
   , dnsSubscriptionWorker
@@ -108,11 +111,13 @@ import           Ouroboros.Network.Server.ConnectionTable ( ConnectionTable
                                                           , newConnectionTable
                                                           )
 import           Ouroboros.Network.Tracers
+import           Ouroboros.Network.Subscription.Ip (IPSubscriptionParams, SubscriptionParams (..))
 import qualified Ouroboros.Network.Subscription.Ip as Subscription
 import           Ouroboros.Network.Subscription.Ip ( IPSubscriptionTarget (..)
                                                    , WithIPList (..)
                                                    , SubscriptionTrace (..)
                                                    )
+import           Ouroboros.Network.Subscription.Dns (DnsSubscriptionParams)
 import qualified Ouroboros.Network.Subscription.Dns as Subscription
 import           Ouroboros.Network.Subscription.Dns ( DnsSubscriptionTarget (..)
                                                     , DnsTrace (..)
@@ -292,11 +297,7 @@ ipSubscriptionWorker
     => NetworkIPSubscriptionTracers NodeToNodeProtocols NodeToNodeVersion peerid
     -> (Socket.SockAddr -> Socket.SockAddr -> peerid)
     -> NetworkMutableState
-    -> LocalAddresses Socket.SockAddr
-    -> (Socket.SockAddr -> Maybe DiffTime)
-    -- ^ Lookup function, should return expected delay for the given address
-    -> ErrorPolicies Socket.SockAddr ()
-    -> IPSubscriptionTarget
+    -> IPSubscriptionParams ()
     -> Versions
         NodeToNodeVersion
         DictVersion
@@ -315,19 +316,13 @@ ipSubscriptionWorker
     }
   peeridFn
   networkState
-  localAddr
-  connectionAttemptDelay
-  errPolicies
-  ips
+  subscriptionParams
   versions
     = Subscription.ipSubscriptionWorker
         nistSubscriptionTracer
         nistErrorPolicyTracer
         networkState
-        localAddr
-        connectionAttemptDelay
-        errPolicies
-        ips
+        subscriptionParams
         (connectToNode'
           cborTermVersionDataCodec
           (NetworkConnectTracers nistMuxTracer nistHandshakeTracer)
@@ -343,11 +338,7 @@ ipSubscriptionWorker_V1
     => NetworkIPSubscriptionTracers NodeToNodeProtocols NodeToNodeVersion peerid
     -> (Socket.SockAddr -> Socket.SockAddr -> peerid)
     -> NetworkMutableState
-    -> LocalAddresses Socket.SockAddr
-    -> (Socket.SockAddr -> Maybe DiffTime)
-    -- ^ Lookup function, should return expected delay for the given address
-    -> ErrorPolicies Socket.SockAddr ()
-    -> IPSubscriptionTarget
+    -> IPSubscriptionParams ()
     -> NodeToNodeVersionData
     -> (OuroborosApplication
           appType
@@ -359,20 +350,14 @@ ipSubscriptionWorker_V1
   tracers
   peeridFn
   networkState
-  localAddresses
-  connectionAttemptDelay
-  errPolicies
-  ips
+  subscriptionParams
   versionData
   application
     = ipSubscriptionWorker
         tracers
         peeridFn
         networkState
-        localAddresses
-        connectionAttemptDelay
-        errPolicies
-        ips
+        subscriptionParams
         (simpleSingletonVersions
           NodeToNodeV_1
           versionData
@@ -389,10 +374,7 @@ dnsSubscriptionWorker
     => NetworkDNSSubscriptionTracers NodeToNodeProtocols NodeToNodeVersion peerid
     -> (Socket.SockAddr -> Socket.SockAddr -> peerid)
     -> NetworkMutableState
-    -> LocalAddresses Socket.SockAddr
-    -> (Socket.SockAddr -> Maybe DiffTime)
-    -> ErrorPolicies Socket.SockAddr ()
-    -> DnsSubscriptionTarget
+    -> DnsSubscriptionParams ()
     -> Versions
         NodeToNodeVersion
         DictVersion
@@ -412,20 +394,14 @@ dnsSubscriptionWorker
     }
   peeridFn
   networkState
-  localAddresses
-  connectionAttemptDelay
-  errPolicies
-  dst
+  subscriptionParams
   versions =
     Subscription.dnsSubscriptionWorker
       ndstSubscriptionTracer
       ndstDnsTracer
       ndstErrorPolicyTracer
       networkState
-      localAddresses
-      connectionAttemptDelay
-      errPolicies
-      dst
+      subscriptionParams
       (connectToNode'
         cborTermVersionDataCodec
         (NetworkConnectTracers ndstMuxTracer ndstHandshakeTracer)
@@ -441,10 +417,7 @@ dnsSubscriptionWorker_V1
     => NetworkDNSSubscriptionTracers NodeToNodeProtocols NodeToNodeVersion peerid
     -> (Socket.SockAddr -> Socket.SockAddr -> peerid)
     -> NetworkMutableState
-    -> LocalAddresses Socket.SockAddr
-    -> (Socket.SockAddr -> Maybe DiffTime)
-    -> ErrorPolicies Socket.SockAddr ()
-    -> DnsSubscriptionTarget
+    -> DnsSubscriptionParams ()
     -> NodeToNodeVersionData
     -> (OuroborosApplication
           appType
@@ -456,20 +429,14 @@ dnsSubscriptionWorker_V1
   tracers
   peeridFn
   networkState
-  localAddresses
-  connectionAttemptDelay
-  errPolicies
-  dst
+  subscriptionParams
   versionData
   application =
      dnsSubscriptionWorker
       tracers
       peeridFn
       networkState
-      localAddresses
-      connectionAttemptDelay
-      errPolicies
-      dst
+      subscriptionParams
       (simpleSingletonVersions
           NodeToNodeV_1
           versionData
