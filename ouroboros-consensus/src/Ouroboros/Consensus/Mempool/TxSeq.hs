@@ -14,6 +14,7 @@ module Ouroboros.Consensus.Mempool.TxSeq (
   , lookupByTicketNo
   , splitAfterTicketNo
   , zeroTicketNo
+  , filterTxs
   ) where
 
 import           Data.FingerTree.Strict (StrictFingerTree)
@@ -165,3 +166,12 @@ fromTxSeq :: TxSeq tx -> [(tx, TicketNo)]
 fromTxSeq (TxSeq ftree) = fmap
   (\(TxTicket tx tn) -> (tx, tn))
   (Foldable.toList $ ftree)
+
+-- | \( O(n) \). Filter the 'TxSeq'.
+filterTxs :: (TxTicket tx -> Bool) -> TxSeq tx -> TxSeq tx
+filterTxs p (TxSeq ftree) =
+      TxSeq
+    . FingerTree.fromList
+    . filter p
+    . Foldable.toList
+    $ ftree

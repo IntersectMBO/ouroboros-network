@@ -69,6 +69,7 @@ nullTracers = Tracers
 
 showTracers :: ( Show blk
                , Show (GenTx blk)
+               , Show (GenTxId blk)
                , Show (ApplyTxErr blk)
                , Show (Header blk)
                , Show peer
