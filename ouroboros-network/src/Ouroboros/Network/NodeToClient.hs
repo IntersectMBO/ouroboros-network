@@ -170,10 +170,7 @@ connectTo
   -> Socket.AddrInfo
   -- ^ remote address
   -> IO ()
-connectTo =
-  connectToNode
-    (\(DictVersion codec) -> encodeTerm codec)
-    (\(DictVersion codec) -> decodeTerm codec)
+connectTo = connectToNode cborTermVersionDataCodec
 
 -- | A version of 'Ouroboros.Network.Socket.connectToNode' which connects using
 -- the 'NodeToClientV_1' version of the protocol.
@@ -225,8 +222,7 @@ withServer tracers networkState addr peeridFn acceptVersion versions errPolicies
     tracers
     networkState
     addr
-    (\(DictVersion codec) -> encodeTerm codec)
-    (\(DictVersion codec) -> decodeTerm codec)
+    cborTermVersionDataCodec
     peeridFn
     acceptVersion
     versions
@@ -309,8 +305,7 @@ ncSubscriptionWorker
         errPolicies
         ips
         (connectToNode'
-          (\(DictVersion codec) -> encodeTerm codec)
-          (\(DictVersion codec) -> decodeTerm codec)
+          cborTermVersionDataCodec
           (NetworkConnectTracers nistMuxTracer nistHandshakeTracer)
           peeridFn
           versions)

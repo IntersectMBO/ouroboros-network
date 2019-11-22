@@ -59,7 +59,6 @@ import           Control.Exception (throwIO)
 import qualified Codec.CBOR.Term     as CBOR
 import           Codec.CBOR.Read (DeserialiseFailure)
 import           Codec.Serialise (Serialise)
-import           Data.Text (Text)
 import           Data.Typeable (Typeable)
 import qualified Data.ByteString.Lazy as BL
 import           Data.Int
@@ -134,8 +133,7 @@ connectToNode
      , Mx.MiniProtocolLimits ptcl
      , HasInitiator appType ~ True
      )
-  => (forall vData. extra vData -> vData -> CBOR.Term)
-  -> (forall vData. extra vData -> CBOR.Term -> Either Text vData)
+  => VersionDataCodec extra CBOR.Term
   -> NetworkConnectTracers ptcl vNumber peerid
   -> (Socket.SockAddr -> Socket.SockAddr -> peerid)
   -> Versions vNumber extra (OuroborosApplication appType peerid ptcl IO BL.ByteString a b)
@@ -145,7 +143,7 @@ connectToNode
   -> Socket.AddrInfo
   -- ^ remote address
   -> IO ()
-connectToNode encodeData decodeData tracers peeridFn versions localAddr remoteAddr =
+connectToNode versionDataCodec tracers peeridFn versions localAddr remoteAddr =
     bracket
       (Socket.socket (Socket.addrFamily remoteAddr) Socket.Stream Socket.defaultProtocol)
       Socket.close
@@ -163,7 +161,7 @@ connectToNode encodeData decodeData tracers peeridFn versions localAddr remoteAd
               Socket.bind sd (Socket.addrAddress addr)
             Nothing   -> return ()
           Socket.connect sd (Socket.addrAddress remoteAddr)
-          connectToNode' encodeData decodeData tracers peeridFn versions sd
+          connectToNode' versionDataCodec tracers peeridFn versions sd
       )
 
 -- |
@@ -189,15 +187,14 @@ connectToNode'
      , Mx.MiniProtocolLimits ptcl
      , HasInitiator appType ~ True
      )
-  => (forall vData. extra vData -> vData -> CBOR.Term)
-  -> (forall vData. extra vData -> CBOR.Term -> Either Text vData)
+  => VersionDataCodec extra CBOR.Term
   -> NetworkConnectTracers ptcl vNumber peerid
   -> (Socket.SockAddr -> Socket.SockAddr -> peerid)
   -> Versions vNumber extra (OuroborosApplication appType peerid ptcl IO BL.ByteString a b)
   -- ^ application to run over the connection
   -> Socket.Socket
   -> IO ()
-connectToNode' encodeData decodeData NetworkConnectTracers {nctMuxTracer, nctHandshakeTracer } peeridFn versions sd = do
+connectToNode' versionDataCodec NetworkConnectTracers {nctMuxTracer, nctHandshakeTracer } peeridFn versions sd = do
     peerid <- peeridFn <$> Socket.getSocketName sd <*> Socket.getPeerName sd
     muxTracer <- initDeltaQTracer' $ Mx.WithMuxBearer peerid `contramap` nctMuxTracer
     bearer <- Mx.socketAsMuxBearer muxTracer sd
@@ -211,7 +208,7 @@ connectToNode' encodeData decodeData NetworkConnectTracers {nctMuxTracer, nctHan
               codecHandshake
               peerid
               (Mx.muxBearerAsControlChannel bearer Mx.ModeInitiator)
-              (handshakeClientPeer encodeData decodeData versions)
+              (handshakeClientPeer versionDataCodec versions)
     ts_end <- getMonotonicTime
     case mapp of
          Left err -> do
@@ -269,13 +266,12 @@ beginConnection
        )
     => Tracer IO (Mx.WithMuxBearer peerid (Mx.MuxTrace ptcl))
     -> Tracer IO (TraceSendRecv (Handshake vNumber CBOR.Term) peerid (DecoderFailureOrTooMuchInput DeserialiseFailure))
-    -> (forall vData. extra vData -> vData -> CBOR.Term)
-    -> (forall vData. extra vData -> CBOR.Term -> Either Text vData)
+    -> VersionDataCodec extra CBOR.Term
     -> (forall vData. extra vData -> vData -> vData -> Accept)
     -> (Time -> addr -> st -> STM.STM (AcceptConnection st vNumber extra peerid ptcl IO BL.ByteString))
     -- ^ either accept or reject a connection.
     -> Server.BeginConnection addr Socket.Socket st ()
-beginConnection muxTracer handshakeTracer encodeData decodeData acceptVersion fn t addr st = do
+beginConnection muxTracer handshakeTracer versionDataCodec acceptVersion fn t addr st = do
     accept <- fn t addr st
     case accept of
       AcceptConnection st' peerid versions -> pure $ Server.Accept st' $ \sd -> do
@@ -290,7 +286,7 @@ beginConnection muxTracer handshakeTracer encodeData decodeData acceptVersion fn
                 codecHandshake
                 peerid
                 (Mx.muxBearerAsControlChannel bearer Mx.ModeResponder)
-                (handshakeServerPeer encodeData decodeData acceptVersion versions)
+                (handshakeServerPeer versionDataCodec acceptVersion versions)
         case mapp of
           Left err -> do
             traceWith muxTracer' $ Mx.MuxTraceHandshakeServerError err
@@ -403,8 +399,7 @@ runNetworkNode'
     => NetworkServerTracers ptcl vNumber peerid
     -> NetworkMutableState
     -> Socket.Socket
-    -> (forall vData. extra vData -> vData -> CBOR.Term)
-    -> (forall vData. extra vData -> CBOR.Term -> Either Text vData)
+    -> VersionDataCodec extra CBOR.Term
     -> (forall vData. extra vData -> vData -> vData -> Accept)
     -- -> Versions vNumber extra (MuxApplication ServerApp ptcl IO)
     -> (IOException -> IO ())
@@ -424,13 +419,13 @@ runNetworkNode'
     -> IO t
 runNetworkNode' NetworkServerTracers { nstMuxTracer, nstHandshakeTracer, nstErrorPolicyTracer }
                 NetworkMutableState { nmsConnectionTable, nmsPeerStates }
-                sd encodeData decodeData acceptVersion
+                sd versionDataCodec acceptVersion
                 acceptException acceptConn applicationStart complete
     main = Server.run
         nstErrorPolicyTracer
         (fromSocket nmsConnectionTable sd)
         acceptException
-        (beginConnection nstMuxTracer nstHandshakeTracer encodeData decodeData acceptVersion acceptConn)
+        (beginConnection nstMuxTracer nstHandshakeTracer versionDataCodec acceptVersion acceptConn)
         applicationStart
         complete main (toLazyTVar nmsPeerStates)
 
@@ -469,8 +464,7 @@ withServerNode
     => NetworkServerTracers ptcl vNumber peerid
     -> NetworkMutableState
     -> Socket.AddrInfo
-    -> (forall vData. extra vData -> vData -> CBOR.Term)
-    -> (forall vData. extra vData -> CBOR.Term -> Either Text vData)
+    -> VersionDataCodec extra CBOR.Term
     -> (Socket.SockAddr -> Socket.SockAddr -> peerid)
     -> (forall vData. extra vData -> vData -> vData -> Accept)
     -> Versions vNumber extra (OuroborosApplication appType peerid ptcl IO BL.ByteString a b)
@@ -483,7 +477,7 @@ withServerNode
     -- Note: the server thread will terminate when the callback returns or
     -- throws an exception.
     -> IO t
-withServerNode tracers@NetworkServerTracers { nstErrorPolicyTracer } networkState addr encodeData decodeData peeridFn acceptVersion versions errPolicies k =
+withServerNode tracers@NetworkServerTracers { nstErrorPolicyTracer } networkState addr versionDataCodec peeridFn acceptVersion versions errPolicies k =
     bracket (mkListeningSocket (Socket.addrFamily addr) (Just $ Socket.addrAddress addr)) Socket.close $ \sd -> do
       addr' <- Socket.getSocketName sd
       withAsync
@@ -491,8 +485,7 @@ withServerNode tracers@NetworkServerTracers { nstErrorPolicyTracer } networkStat
           tracers
           networkState
           sd
-          encodeData
-          decodeData
+          versionDataCodec
           acceptVersion
           (acceptException addr')
           (\t connAddr st -> do

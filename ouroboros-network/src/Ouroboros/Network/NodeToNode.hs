@@ -205,10 +205,7 @@ connectTo
   -> Maybe Socket.AddrInfo
   -> Socket.AddrInfo
   -> IO ()
-connectTo =
-  connectToNode
-    (\(DictVersion codec) -> encodeTerm codec)
-    (\(DictVersion codec) -> decodeTerm codec)
+connectTo = connectToNode cborTermVersionDataCodec
 
 
 -- | Like 'connectTo' but specific to 'NodeToNodeV_1'.
@@ -253,8 +250,7 @@ withServer tracers networkState addr peeridFn acceptVersion versions errPolicies
     tracers
     networkState
     addr
-    (\(DictVersion codec) -> encodeTerm codec)
-    (\(DictVersion codec) -> decodeTerm codec)
+    cborTermVersionDataCodec
     peeridFn
     acceptVersion
     versions
@@ -333,8 +329,7 @@ ipSubscriptionWorker
         errPolicies
         ips
         (connectToNode'
-          (\(DictVersion codec) -> encodeTerm codec)
-          (\(DictVersion codec) -> decodeTerm codec)
+          cborTermVersionDataCodec
           (NetworkConnectTracers nistMuxTracer nistHandshakeTracer)
           peeridFn
           versions)
@@ -432,8 +427,7 @@ dnsSubscriptionWorker
       errPolicies
       dst
       (connectToNode'
-        (\(DictVersion codec) -> encodeTerm codec)
-        (\(DictVersion codec) -> decodeTerm codec)
+        cborTermVersionDataCodec
         (NetworkConnectTracers ndstMuxTracer ndstHandshakeTracer)
         peeridFn
         versions)

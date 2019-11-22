@@ -31,6 +31,11 @@ module Ouroboros.Network.Protocol.Handshake.Type
   , Accept (..)
   , acceptEq
 
+
+  -- ** Version data codec
+  , VersionDataCodec (..)
+  , cborTermVersionDataCodec
+
   -- ** Tests
   , pureHandshake
   )
@@ -50,6 +55,7 @@ import qualified Codec.CBOR.Decoding as CBOR
 import qualified Codec.CBOR.Term     as CBOR
 import           Codec.Serialise (Serialise)
 import qualified Codec.Serialise     as CBOR
+import           Codec.SerialiseTerm
 
 import           Network.TypedProtocol.Core
 
@@ -180,6 +186,24 @@ data HandshakeClientProtocolError vNumber
 instance (Typeable vNumber, Show vNumber)
     => Exception (HandshakeClientProtocolError vNumber)
 
+-- | Codec for version data ('vData' in code) exchanged by the handshake
+-- protocol.
+--
+data VersionDataCodec extra bites = VersionDataCodec {
+    encodeData :: forall vData. extra vData -> vData -> bites,
+    -- ^ encoder of 'vData' which has access to 'extra vData' which can bring
+    -- extra instances into the scope (by means of pattern matching on a GADT).
+    decodeData :: forall vData. extra vData -> bites -> Either Text vData
+    -- ^ decoder of 'vData'.
+  }
+
+cborTermVersionDataCodec :: VersionDataCodec DictVersion CBOR.Term
+cborTermVersionDataCodec = VersionDataCodec {
+      encodeData = \(DictVersion codec) -> encodeTerm codec,
+      decodeData = \(DictVersion codec) -> decodeTerm codec
+    }
+
+
 -- |
 -- Handshake client which offers @'Versions' vNumber vData@ to the
 -- remote peer.
@@ -187,11 +211,10 @@ instance (Typeable vNumber, Show vNumber)
 -- TODO: GADT encoding of the client (@Handshake.Client@ module).
 handshakeClientPeer
   :: Ord vNumber
-  => (forall vData. extra vData -> vData -> CBOR.Term)
-  -> (forall vData. extra vData -> CBOR.Term -> Either Text vData)
+  => VersionDataCodec extra CBOR.Term
   -> Versions vNumber extra r
   -> Peer (Handshake vNumber CBOR.Term) AsClient StPropose m (Either (HandshakeClientProtocolError vNumber) r)
-handshakeClientPeer encodeData decodeData versions =
+handshakeClientPeer VersionDataCodec {encodeData, decodeData} versions =
   -- send known versions
   Yield (ClientAgency TokPropose) (MsgProposeVersions $ encodeVersions encodeData versions) $
 
@@ -244,12 +267,11 @@ acceptEq v1 v2 | v1 == v2 = Accept
 -- TODO: GADT encoding of the server (@Handshake.Server@ module).
 handshakeServerPeer
   :: Ord vNumber
-  => (forall vData. extra vData -> vData -> vParams)
-  -> (forall vData. extra vData -> vParams -> Either Text vData)
+  => VersionDataCodec extra vParams
   -> (forall vData. extra vData -> vData -> vData -> Accept)
   -> Versions vNumber extra r
   -> Peer (Handshake vNumber vParams) AsServer StPropose m (Either (RefuseReason vNumber) r)
-handshakeServerPeer encodeData decodeData acceptVersion versions =
+handshakeServerPeer VersionDataCodec {encodeData, decodeData} acceptVersion versions =
     -- await for versions proposed by a client
     Await (ClientAgency TokPropose) $ \msg -> case msg of
 
