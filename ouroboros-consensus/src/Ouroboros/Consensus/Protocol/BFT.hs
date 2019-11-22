@@ -15,6 +15,7 @@ module Ouroboros.Consensus.Protocol.BFT (
     Bft
   , BftFields(..)
   , BftParams(..)
+  , BftValidationErr(..)
   , forgeBftFields
     -- * Classes
   , BftCrypto(..)
