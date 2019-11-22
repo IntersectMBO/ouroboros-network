@@ -326,7 +326,7 @@ null = CF.null . unanchorFragment
 -- | \( O(1) \). Add a block to the right of the anchored fragment.
 --
 -- Synonym for ':>'.
-addBlock :: HasHeader block
+addBlock :: (HasHeader block, HasCallStack)
          => block -> AnchoredFragment block -> AnchoredFragment block
 addBlock b c = c :> b
 
