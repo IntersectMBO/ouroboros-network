@@ -64,6 +64,7 @@ import qualified Ouroboros.Consensus.BlockFetchServer as BFServer
 import           Ouroboros.Consensus.ChainSyncClient (ClockSkew (..))
 import qualified Ouroboros.Consensus.ChainSyncClient as CSClient
 import           Ouroboros.Consensus.ChainSyncServer (Tip)
+import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.Mock
 import           Ouroboros.Consensus.Mempool
@@ -632,7 +633,7 @@ nullDebugTracer = nullTracer `asTypeOf` showTracing debugTracer
 nullDebugTracers ::
      ( Monad m
      , Show peer
-     , SupportedBlock blk
+     , ProtocolLedgerView blk
      , TracingConstraints blk
      )
   => Tracers m peer blk

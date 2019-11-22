@@ -286,16 +286,17 @@ data LeaderResult blk =
     -- | We weren't the slot leader, and therefore didn't produce a block
     NotLeader
 
-    -- | We were the leader and we produced a block
-  | ProducedBlock blk
+    -- | We were the leader and we produced a block with the given transactions
+  | ProducedBlock blk [GenTx blk]
 
     -- | We should have produced a block, but couldn't
   | FailedToProduce AnachronyFailure
 
 forkBlockProduction
     :: forall m peer blk.
-       (IOLike m, ProtocolLedgerView blk)
-    => InternalState m peer blk -> m ()
+       (IOLike m, ProtocolLedgerView blk, ApplyTx blk)
+    => InternalState m peer blk
+    -> m ()
 forkBlockProduction IS{..} =
     onSlotChange btime $ \currentSlot -> do
       varDRG <- newTVarM =<< (PRNG <$> produceDRG)
@@ -303,6 +304,7 @@ forkBlockProduction IS{..} =
       -- of 'atomically'.
       leaderResult <- withSyncState mempool $ \MempoolSnapshot{snapshotTxs} -> do
         l@ExtLedgerState{..} <- ChainDB.getCurrentLedger chainDB
+        let txs = map fst snapshotTxs
 
         case anachronisticProtocolLedgerView cfg ledgerState (At currentSlot) of
           Right ledgerView -> do
@@ -325,8 +327,8 @@ forkBlockProduction IS{..} =
                                            currentSlot
                                            prevPoint
                                            prevNo
-                                           (map fst snapshotTxs)
-                return $ ProducedBlock newBlock
+                                           txs
+                return $ ProducedBlock newBlock txs
 
           Left err ->
             -- There are so many empty slots between the tip of our chain and
@@ -347,11 +349,34 @@ forkBlockProduction IS{..} =
       case leaderResult of
         NotLeader ->
           return ()
-        ProducedBlock newBlock -> do
-          trace $ TraceForgeEvent currentSlot newBlock
-          ChainDB.addBlock chainDB newBlock
         FailedToProduce err ->
           trace $ TraceCouldNotForge currentSlot err
+        ProducedBlock newBlock txs -> do
+          trace $ TraceForgeEvent currentSlot newBlock
+          -- Adding a block is synchronous
+          ChainDB.addBlock chainDB newBlock
+          -- Check whether we adopted our block
+          curTip <- atomically $ ChainDB.getTipPoint chainDB
+          if curTip == blockPoint newBlock then
+            trace $ TraceAdoptedBlock currentSlot newBlock
+          else do
+            isInvalid <- atomically $
+              ($ blockHash newBlock) . forgetFingerprint <$>
+              ChainDB.getIsInvalidBlock chainDB
+            case isInvalid of
+              Nothing ->
+                trace $ TraceDidntAdoptBlock currentSlot newBlock
+              Just reason -> do
+                trace $ TraceForgedInvalidBlock currentSlot newBlock reason
+                -- We just produced a block that is invalid according to the
+                -- ledger in the ChainDB, while the mempool said it is valid.
+                -- There is an inconsistency between the two!
+                --
+                -- Remove all the transactions in that block, otherwise we'll
+                -- run the risk of forging the same invalid block again. This
+                -- means that we'll throw away some good transactions in the
+                -- process.
+                removeTxs mempool (map txId txs)
   where
     NodeCallbacks{..} = callbacks
 
