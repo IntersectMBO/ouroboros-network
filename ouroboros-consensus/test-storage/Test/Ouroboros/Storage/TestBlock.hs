@@ -299,7 +299,7 @@ data TestBlockError
     -- ^ The hashes don't line up
   | InvalidBlock
     -- ^ The block itself is invalid
-  deriving (Show)
+  deriving (Show, Generic, NoUnexpectedThunks)
 
 instance SupportedBlock TestBlock
 

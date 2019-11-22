@@ -79,7 +79,7 @@ type Utxo  = Map TxIn TxOut
 newtype InvalidInputs = InvalidInputs (Set TxIn)
   deriving stock    (Generic)
   deriving newtype  (Show, Condense)
-  deriving anyclass (Serialise)
+  deriving anyclass (Serialise, NoUnexpectedThunks)
 
 class HasUtxo a where
   txIns      :: a -> Set TxIn

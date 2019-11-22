@@ -326,6 +326,7 @@ data PBftValidationErr c
   --   the PBFT signature threshold (rounded down).
   | PBftExceededSignThreshold String Int Int
   | PBftInvalidSlot
+  deriving (Generic, NoUnexpectedThunks)
 
 deriving instance PBftCrypto c => Show (PBftValidationErr c)
 deriving instance PBftCrypto c => Eq   (PBftValidationErr c)

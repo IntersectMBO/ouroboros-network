@@ -33,6 +33,7 @@ class ( SupportedBlock blk
       , Show (LedgerError blk)
       , Eq   (LedgerState blk)
       , NoUnexpectedThunks (LedgerState blk)
+      , NoUnexpectedThunks (LedgerError blk)
       ) => UpdateLedger blk where
   data family LedgerState blk :: *
   type family LedgerError blk :: *
