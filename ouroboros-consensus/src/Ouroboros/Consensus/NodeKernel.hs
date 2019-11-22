@@ -348,12 +348,14 @@ forkBlockProduction IS{..} =
         NotLeader ->
           return ()
         ProducedBlock newBlock -> do
-          traceWith (forgeTracer tracers) $ TraceForgeEvent currentSlot newBlock
+          trace $ TraceForgeEvent currentSlot newBlock
           ChainDB.addBlock chainDB newBlock
         FailedToProduce err ->
-          traceWith (forgeTracer tracers) $ TraceCouldNotForge currentSlot err
+          trace $ TraceCouldNotForge currentSlot err
   where
     NodeCallbacks{..} = callbacks
+
+    trace = traceWith (forgeTracer tracers)
 
     -- Return the point and block number of the most recent block in the
     -- current chain with a slot < the given slot. These will either
