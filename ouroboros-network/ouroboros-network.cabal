@@ -58,6 +58,7 @@ library
                        Ouroboros.Network.Mux
                        Ouroboros.Network.NodeToNode
                        Ouroboros.Network.NodeToClient
+                       Ouroboros.Network.Tracers
                        Ouroboros.Network.Point
                        Ouroboros.Network.Server.ConnectionTable
                        Ouroboros.Network.Server.Socket

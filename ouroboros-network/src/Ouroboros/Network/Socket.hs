@@ -19,6 +19,12 @@ module Ouroboros.Network.Socket (
     , connectToNode
     , connectToNode'
 
+    -- * Traces
+    , NetworkConnectTracers (..)
+    , nullNetworkConnectTracers
+    , NetworkServerTracers (..)
+    , nullNetworkServerTracers
+
     -- * Helper function for creating servers
     , fromSocket
     , beginConnection
@@ -78,6 +84,20 @@ import           Ouroboros.Network.Mux
 import qualified Ouroboros.Network.Server.Socket as Server
 import           Ouroboros.Network.Server.ConnectionTable
 
+
+data NetworkConnectTracers ptcl vNumber peerid = NetworkConnectTracers {
+      nctMuxTracer         :: Tracer IO (Mx.WithMuxBearer peerid (Mx.MuxTrace ptcl)),
+      nctHandshakeTracer   :: Tracer IO (TraceSendRecv (Handshake vNumber CBOR.Term)
+                                                      peerid
+                                                      (DecoderFailureOrTooMuchInput DeserialiseFailure))
+    }
+
+nullNetworkConnectTracers :: NetworkConnectTracers ptcl vNumber peerid
+nullNetworkConnectTracers = NetworkConnectTracers {
+      nctMuxTracer       = nullTracer,
+      nctHandshakeTracer = nullTracer
+    }
+
 -- |
 -- We assume that a TCP segment size of 1440 bytes with initial window of size
 -- 4.  This sets upper limit of 5760 bytes on each message of handshake
@@ -113,8 +133,7 @@ connectToNode
      )
   => (forall vData. extra vData -> vData -> CBOR.Term)
   -> (forall vData. extra vData -> CBOR.Term -> Either Text vData)
-  -> Tracer IO (Mx.WithMuxBearer peerid (Mx.MuxTrace ptcl))
-  -> Tracer IO (TraceSendRecv (Handshake vNumber CBOR.Term) peerid (DecoderFailureOrTooMuchInput DeserialiseFailure))
+  -> NetworkConnectTracers ptcl vNumber peerid
   -> (Socket.SockAddr -> Socket.SockAddr -> peerid)
   -> Versions vNumber extra (OuroborosApplication appType peerid ptcl IO BL.ByteString a b)
   -- ^ application to run over the connection
@@ -123,7 +142,7 @@ connectToNode
   -> Socket.AddrInfo
   -- ^ remote address
   -> IO ()
-connectToNode encodeData decodeData muxTracer handshakeTracer peeridFn versions localAddr remoteAddr =
+connectToNode encodeData decodeData tracers peeridFn versions localAddr remoteAddr =
     bracket
       (Socket.socket (Socket.addrFamily remoteAddr) Socket.Stream Socket.defaultProtocol)
       Socket.close
@@ -141,7 +160,7 @@ connectToNode encodeData decodeData muxTracer handshakeTracer peeridFn versions 
               Socket.bind sd (Socket.addrAddress addr)
             Nothing   -> return ()
           Socket.connect sd (Socket.addrAddress remoteAddr)
-          connectToNode' encodeData decodeData muxTracer handshakeTracer peeridFn versions sd
+          connectToNode' encodeData decodeData tracers peeridFn versions sd
       )
 
 -- |
@@ -169,24 +188,23 @@ connectToNode'
      )
   => (forall vData. extra vData -> vData -> CBOR.Term)
   -> (forall vData. extra vData -> CBOR.Term -> Either Text vData)
-  -> Tracer IO (Mx.WithMuxBearer peerid (Mx.MuxTrace ptcl))
-  -> Tracer IO (TraceSendRecv (Handshake vNumber CBOR.Term) peerid (DecoderFailureOrTooMuchInput DeserialiseFailure))
+  -> NetworkConnectTracers ptcl vNumber peerid
   -> (Socket.SockAddr -> Socket.SockAddr -> peerid)
   -> Versions vNumber extra (OuroborosApplication appType peerid ptcl IO BL.ByteString a b)
   -- ^ application to run over the connection
   -> Socket.Socket
   -> IO ()
-connectToNode' encodeData decodeData muxTracer handshakeTracer peeridFn versions sd = do
+connectToNode' encodeData decodeData NetworkConnectTracers {nctMuxTracer, nctHandshakeTracer } peeridFn versions sd = do
     peerid <- peeridFn <$> Socket.getSocketName sd <*> Socket.getPeerName sd
-    muxTracer' <- initDeltaQTracer' $ Mx.WithMuxBearer peerid `contramap` muxTracer
-    bearer <- Mx.socketAsMuxBearer muxTracer' sd
-    Mx.muxBearerSetState muxTracer' bearer Mx.Connected
-    traceWith muxTracer' $ Mx.MuxTraceHandshakeStart
+    muxTracer <- initDeltaQTracer' $ Mx.WithMuxBearer peerid `contramap` nctMuxTracer
+    bearer <- Mx.socketAsMuxBearer muxTracer sd
+    Mx.muxBearerSetState muxTracer bearer Mx.Connected
+    traceWith muxTracer $ Mx.MuxTraceHandshakeStart
     ts_start <- getMonotonicTime
     !mapp <- runPeerWithByteLimit
               maxTransmissionUnit
               BL.length
-              handshakeTracer
+              nctHandshakeTracer
               codecHandshake
               peerid
               (Mx.muxBearerAsControlChannel bearer Mx.ModeInitiator)
@@ -194,11 +212,11 @@ connectToNode' encodeData decodeData muxTracer handshakeTracer peeridFn versions
     ts_end <- getMonotonicTime
     case mapp of
          Left err -> do
-             traceWith muxTracer' $ Mx.MuxTraceHandshakeClientError err (diffTime ts_end ts_start)
+             traceWith muxTracer $ Mx.MuxTraceHandshakeClientError err (diffTime ts_end ts_start)
              throwIO err
          Right app -> do
-             traceWith muxTracer' $ Mx.MuxTraceHandshakeClientEnd (diffTime ts_end ts_start)
-             Mx.muxStart muxTracer' peerid (toApplication app) bearer
+             traceWith muxTracer $ Mx.MuxTraceHandshakeClientEnd (diffTime ts_end ts_start)
+             Mx.muxStart muxTracer peerid (toApplication app) bearer
 
 
 -- |
@@ -327,6 +345,22 @@ fromSocket tblVar sd = Server.Socket
         Socket.close sd'
 
 
+data NetworkServerTracers ptcl vNumber peerid = NetworkServerTracers {
+      nstMuxTracer         :: Tracer IO (Mx.WithMuxBearer peerid (Mx.MuxTrace ptcl)),
+      nstHandshakeTracer   :: Tracer IO (TraceSendRecv (Handshake vNumber CBOR.Term)
+                                                      peerid
+                                                      (DecoderFailureOrTooMuchInput DeserialiseFailure)),
+      nstErrorPolicyTracer :: Tracer IO (WithAddr Socket.SockAddr ErrorPolicyTrace)
+    }
+
+nullNetworkServerTracers :: NetworkServerTracers ptcl vNumber peerid
+nullNetworkServerTracers = NetworkServerTracers {
+      nstMuxTracer         = nullTracer,
+      nstHandshakeTracer   = nullTracer,
+      nstErrorPolicyTracer = nullTracer
+    }
+
+
 -- |
 -- Thin wrapper around @'Server.run'@.
 --
@@ -344,9 +378,7 @@ runNetworkNode'
        , Typeable vNumber
        , Show vNumber
        )
-    => Tracer IO (Mx.WithMuxBearer peerid (Mx.MuxTrace ptcl))
-    -> Tracer IO (TraceSendRecv (Handshake vNumber CBOR.Term) peerid (DecoderFailureOrTooMuchInput DeserialiseFailure))
-    -> Tracer IO (WithAddr (Socket.SockAddr) ErrorPolicyTrace)
+    => NetworkServerTracers ptcl vNumber peerid
     -> ConnectionTable IO Socket.SockAddr
     -> StrictTVar IO (PeerStates IO Socket.SockAddr)
     -> Socket.Socket
@@ -369,12 +401,12 @@ runNetworkNode'
                                  ()
     -> Server.Main (PeerStates IO Socket.SockAddr) t
     -> IO t
-runNetworkNode' muxTracer handshakeTrace errorPolicyTracer tbl stVar sd encodeData decodeData acceptVersion acceptException acceptConn applicationStart complete
+runNetworkNode' NetworkServerTracers { nstMuxTracer, nstHandshakeTracer, nstErrorPolicyTracer } tbl stVar sd encodeData decodeData acceptVersion acceptException acceptConn applicationStart complete
     main = Server.run
-        errorPolicyTracer
+        nstErrorPolicyTracer
         (fromSocket tbl sd)
         acceptException
-        (beginConnection muxTracer handshakeTrace encodeData decodeData acceptVersion acceptConn)
+        (beginConnection nstMuxTracer nstHandshakeTracer encodeData decodeData acceptVersion acceptConn)
         applicationStart
         complete main (toLazyTVar stVar)
 
@@ -410,9 +442,7 @@ withServerNode
        , Typeable vNumber
        , Show vNumber
        )
-    => Tracer IO (Mx.WithMuxBearer peerid (Mx.MuxTrace ptcl))
-    -> Tracer IO (TraceSendRecv (Handshake vNumber CBOR.Term) peerid (DecoderFailureOrTooMuchInput DeserialiseFailure))
-    -> Tracer IO (WithAddr Socket.SockAddr ErrorPolicyTrace)
+    => NetworkServerTracers ptcl vNumber peerid
     -> ConnectionTable IO Socket.SockAddr
     -> StrictTVar IO (PeerStates IO Socket.SockAddr)
     -> Socket.AddrInfo
@@ -430,14 +460,12 @@ withServerNode
     -- Note: the server thread will terminate when the callback returns or
     -- throws an exception.
     -> IO t
-withServerNode muxTracer handshakeTracer errorPolicyTracer tbl stVar addr encodeData decodeData peeridFn acceptVersion versions errPolicies k =
+withServerNode tracers@NetworkServerTracers { nstErrorPolicyTracer } tbl stVar addr encodeData decodeData peeridFn acceptVersion versions errPolicies k =
     bracket (mkListeningSocket (Socket.addrFamily addr) (Just $ Socket.addrAddress addr)) Socket.close $ \sd -> do
       addr' <- Socket.getSocketName sd
       withAsync
         (runNetworkNode'
-          muxTracer
-          handshakeTracer
-          errorPolicyTracer
+          tracers
           tbl
           stVar
           sd
@@ -488,4 +516,4 @@ withServerNode muxTracer handshakeTracer errorPolicyTracer tbl stVar addr encode
 
       acceptException :: Socket.SockAddr -> IOException -> IO ()
       acceptException a e = do
-        traceWith (WithAddr a `contramap` errorPolicyTracer) $ ErrorPolicyAcceptException e
+        traceWith (WithAddr a `contramap` nstErrorPolicyTracer) $ ErrorPolicyAcceptException e

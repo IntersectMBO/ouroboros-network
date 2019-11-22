@@ -18,6 +18,8 @@ module Ouroboros.Network.NodeToClient (
   , connectTo_V1
   , connectTo
 
+  , NetworkServerTracers (..)
+  , nullNetworkServerTracers
   , withServer_V1
   , withServer
 
@@ -65,7 +67,6 @@ import           Codec.SerialiseTerm
 import qualified Network.Socket as Socket
 
 import           Control.Monad.Class.MonadSTM.Strict
-import           Control.Tracer (Tracer)
 
 import           Network.Mux.Types
 import           Network.Mux.Interface
@@ -75,6 +76,7 @@ import           Network.TypedProtocol.Driver (TraceSendRecv (..))
 import           Ouroboros.Network.Magic
 import           Ouroboros.Network.ErrorPolicy
 import           Ouroboros.Network.Subscription.PeerState
+import           Ouroboros.Network.Tracers
 import           Ouroboros.Network.Mux
 import           Ouroboros.Network.Protocol.ChainSync.Client (chainSyncClientNull)
 import           Ouroboros.Network.Protocol.LocalTxSubmission.Client (localTxSubmissionClientNull)
@@ -153,8 +155,7 @@ nodeToClientCodecCBORTerm = CodecCBORTerm {encodeTerm, decodeTerm}
 -- protocol.  This is mostly useful for future enhancements.
 --
 connectTo
-  :: Tracer IO (WithMuxBearer peerid (MuxTrace NodeToClientProtocols))
-  -> Tracer IO (TraceSendRecv (Handshake NodeToClientVersion CBOR.Term) peerid (DecoderFailureOrTooMuchInput DeserialiseFailure))
+  :: NetworkConnectTracers NodeToClientProtocols NodeToClientVersion peerid
   -> (Socket.SockAddr -> Socket.SockAddr -> peerid)
   -- ^ create peerid from local address and remote address
   -> Versions NodeToClientVersion
@@ -177,8 +178,7 @@ connectTo =
 -- the 'NodeToClientV_1' version of the protocol.
 --
 connectTo_V1
-  :: Tracer IO (WithMuxBearer peerid (MuxTrace NodeToClientProtocols))
-  -> Tracer IO (TraceSendRecv (Handshake NodeToClientVersion CBOR.Term) peerid (DecoderFailureOrTooMuchInput DeserialiseFailure))
+  :: NetworkConnectTracers NodeToClientProtocols NodeToClientVersion peerid
   -> (Socket.SockAddr -> Socket.SockAddr -> peerid)
   -- ^ create peerid from local address and remote address
   -> NodeToClientVersionData
@@ -192,10 +192,9 @@ connectTo_V1
   -> Socket.AddrInfo
   -- ^ remote address
   -> IO ()
-connectTo_V1 muxTracer handshakeTracer peeridFn versionData application =
+connectTo_V1 tracers peeridFn versionData application =
   connectTo
-    muxTracer
-    handshakeTracer
+    tracers
     peeridFn
     (simpleSingletonVersions
       NodeToClientV_1
@@ -209,9 +208,7 @@ connectTo_V1 muxTracer handshakeTracer peeridFn versionData application =
 --
 withServer
   :: ( HasResponder appType ~ True )
-  => Tracer IO (WithMuxBearer peerid (MuxTrace NodeToClientProtocols))
-  -> Tracer IO (TraceSendRecv (Handshake NodeToClientVersion CBOR.Term) peerid (DecoderFailureOrTooMuchInput DeserialiseFailure))
-  -> Tracer IO (WithAddr Socket.SockAddr ErrorPolicyTrace)
+  => NetworkServerTracers NodeToClientProtocols NodeToClientVersion peerid
   -> ConnectionTable IO Socket.SockAddr
   -> StrictTVar IO (PeerStates IO Socket.SockAddr)
   -> Socket.AddrInfo
@@ -223,11 +220,9 @@ withServer
   -> ErrorPolicies Socket.SockAddr ()
   -> (Async () -> IO t)
   -> IO t
-withServer muxTracer handshakeTracer  errorPolicyTracer tbl stVar addr peeridFn acceptVersion versions errPolicies k =
+withServer tracers tbl stVar addr peeridFn acceptVersion versions errPolicies k =
   withServerNode
-    muxTracer
-    handshakeTracer
-    errorPolicyTracer
+    tracers
     tbl
     stVar
     addr
@@ -244,9 +239,7 @@ withServer muxTracer handshakeTracer  errorPolicyTracer tbl stVar addr peeridFn 
 --
 withServer_V1
   :: ( HasResponder appType ~ True )
-  => Tracer IO (WithMuxBearer peerid (MuxTrace NodeToClientProtocols))
-  -> Tracer IO (TraceSendRecv (Handshake NodeToClientVersion CBOR.Term) peerid (DecoderFailureOrTooMuchInput DeserialiseFailure))
-  -> Tracer IO (WithAddr Socket.SockAddr ErrorPolicyTrace)
+  => NetworkServerTracers NodeToClientProtocols NodeToClientVersion peerid
   -> ConnectionTable IO Socket.SockAddr
   -> StrictTVar IO (PeerStates IO Socket.SockAddr)
   -> Socket.AddrInfo
@@ -262,9 +255,9 @@ withServer_V1
   -> ErrorPolicies Socket.SockAddr ()
   -> (Async () -> IO t)
   -> IO t
-withServer_V1 muxTracer handshakeTracer errorPolicyTracer tbl stVar addr peeridFn versionData application =
+withServer_V1 tracers tbl stVar addr peeridFn versionData application =
     withServer
-      muxTracer handshakeTracer errorPolicyTracer tbl stVar addr peeridFn
+      tracers tbl stVar addr peeridFn
       (\(DictVersion _) -> acceptEq)
       (simpleSingletonVersions
         NodeToClientV_1
@@ -278,14 +271,7 @@ withServer_V1 muxTracer handshakeTracer errorPolicyTracer tbl stVar addr peeridF
 ncSubscriptionWorker
     :: forall appType peerid void x y.
        ( HasInitiator appType ~ True )
-    => Tracer IO (WithIPList (SubscriptionTrace Socket.SockAddr))
-    -> Tracer IO (WithMuxBearer peerid (MuxTrace NodeToClientProtocols))
-    -> Tracer IO
-        (TraceSendRecv
-          (Handshake NodeToClientVersion CBOR.Term)
-          peerid
-          (DecoderFailureOrTooMuchInput DeserialiseFailure))
-    -> Tracer IO (WithAddr Socket.SockAddr ErrorPolicyTrace)
+    => NetworkIPSubscriptionTracers NodeToClientProtocols NodeToClientVersion peerid
     -> (Socket.SockAddr -> Socket.SockAddr -> peerid)
     -> ConnectionTable IO Socket.SockAddr
     -> StrictTVar IO (PeerStates IO Socket.SockAddr)
@@ -304,10 +290,12 @@ ncSubscriptionWorker
           IO BL.ByteString x y)
     -> IO void
 ncSubscriptionWorker
-  subscriptionTracer
-  muxTracer
-  handshakeTracer
-  errTracer
+  NetworkIPSubscriptionTracers
+    { nistSubscriptionTracer
+    , nistMuxTracer
+    , nistHandshakeTracer
+    , nistErrorPolicyTracer
+    }
   peeridFn
   tbl
   peerStatesVar
@@ -317,8 +305,8 @@ ncSubscriptionWorker
   ips
   versions
     = Subscription.ipSubscriptionWorker
-        subscriptionTracer
-        errTracer
+        nistSubscriptionTracer
+        nistErrorPolicyTracer
         tbl
         peerStatesVar
         localAddr
@@ -328,8 +316,7 @@ ncSubscriptionWorker
         (connectToNode'
           (\(DictVersion codec) -> encodeTerm codec)
           (\(DictVersion codec) -> decodeTerm codec)
-          muxTracer
-          handshakeTracer
+          (NetworkConnectTracers nistMuxTracer nistHandshakeTracer)
           peeridFn
           versions)
 
@@ -339,10 +326,7 @@ ncSubscriptionWorker
 ncSubscriptionWorker_V1
     :: forall appType peerid void x y.
        ( HasInitiator appType ~ True )
-    => Tracer IO (WithIPList (SubscriptionTrace Socket.SockAddr))
-    -> Tracer IO (WithMuxBearer peerid (MuxTrace NodeToClientProtocols))
-    -> Tracer IO (TraceSendRecv (Handshake NodeToClientVersion CBOR.Term) peerid (DecoderFailureOrTooMuchInput DeserialiseFailure))
-    -> Tracer IO (WithAddr Socket.SockAddr ErrorPolicyTrace)
+    => NetworkIPSubscriptionTracers NodeToClientProtocols NodeToClientVersion peerid
     -> (Socket.SockAddr -> Socket.SockAddr -> peerid)
     -> ConnectionTable IO Socket.SockAddr
     -> StrictTVar IO (PeerStates IO Socket.SockAddr)
@@ -359,10 +343,7 @@ ncSubscriptionWorker_V1
           IO BL.ByteString x y)
     -> IO void
 ncSubscriptionWorker_V1
-  subscriptionTracer
-  muxTracer
-  handshakeTracer
-  errTracer
+  tracers
   peeridFn
   tbl
   peerStatesVar
@@ -373,10 +354,7 @@ ncSubscriptionWorker_V1
   versionData
   application
     = ncSubscriptionWorker
-        subscriptionTracer
-        muxTracer
-        handshakeTracer
-        errTracer
+        tracers
         peeridFn
         tbl
         peerStatesVar
