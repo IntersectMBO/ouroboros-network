@@ -73,35 +73,24 @@ genNodeJoinPlan numCoreNodes@(NumCoreNodes n) numSlots@(NumSlots t)
 
 -- | Shrink a node join plan
 --
--- The new plans must be usable with the same number of nodes and slots as the
--- old plan
+-- INVARIANT no inter-join delay increases
+--
+-- Specifically, we shrink by setting some of the delays to 0.
 --
 shrinkNodeJoinPlan :: NodeJoinPlan -> [NodeJoinPlan]
-shrinkNodeJoinPlan (NodeJoinPlan m) =
-    map (NodeJoinPlan . Map.fromList) $
-    reverse $   -- favor eliminating more delays
-    zeroedInits id (Map.toAscList m)
+shrinkNodeJoinPlan (NodeJoinPlan m0) =
+    init $   -- the last one is the same as the input
+    map (NodeJoinPlan . snd) $ go diffs0
   where
-    -- TODO more sophisticated shrinks. I anticipate that they'll need to use
-    -- 'Test.QuickCheck.Shrinking' or else risk very slow responses
+    slots  = map snd (Map.toDescList m0) ++ [0]
+    diffs0 = zipWith (\j2 j1 -> j2 - j1) slots (tail slots)
 
-    -- For example, @zeroedInits id [(c0, 0), (c1, 1), (c2, 2), (c3, 3)]@ is
-    -- > [ [(c0, 0), (c1, 0), (c2, 2), (c3, 3)]
-    -- > , [(c0, 0), (c1, 0), (c2, 0), (c3, 3)]
-    -- > , [(c0, 0), (c1, 0), (c2, 0), (c3, 0)]
-    -- > ]
-    --
-    -- (And note that we elsewhere reverse the order of those results.)
-    zeroedInits ::
-        forall cnid plan.
-        ([(cnid, SlotNo)] -> plan) -> [(cnid, SlotNo)] -> [plan]
-    zeroedInits fromTail = \case
-        [] -> []
-        (cnid, slot) : pairs ->
-            fromTail' pairs `cons` zeroedInits fromTail' pairs
-          where
-            fromTail' = fromTail . (:) (cnid, SlotNo 0)
-            cons x xs = if SlotNo 0 == slot then xs else x:xs
+    go = \case
+        []   -> [((CoreNodeId 0, 0), Map.empty)]
+        d:ds -> do
+            ((CoreNodeId i, mx), m) <- go ds
+            let f s = ((CoreNodeId (succ i), s), Map.insert (CoreNodeId i) s m)
+            [f mx] ++ [f (mx + d) | d > 0]
 
 -- | Partial; @error@ for a node not in the plan
 --
