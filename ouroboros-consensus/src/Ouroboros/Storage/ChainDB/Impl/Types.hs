@@ -298,7 +298,7 @@ data TraceEvent blk
 deriving instance
   ( HasHeader blk
   , Eq (Header blk)
-  , Eq (ExtValidationError blk)
+  , ProtocolLedgerView blk
   ) => Eq (TraceEvent blk)
 deriving instance
   ( HasHeader blk
@@ -371,7 +371,7 @@ data TraceAddBlockEvent blk
 deriving instance
   ( HasHeader                 blk
   , Eq (Header                blk)
-  , Eq (ExtValidationError    blk)
+  , ProtocolLedgerView        blk
   ) => Eq (TraceAddBlockEvent blk)
 deriving instance
   ( HasHeader                   blk
@@ -408,7 +408,7 @@ data TraceValidationEvent blk
 deriving instance
   ( HasHeader                 blk
   , Eq (Header                blk)
-  , Eq (ExtValidationError    blk)
+  , ProtocolLedgerView        blk
   ) => Eq (TraceValidationEvent blk)
 deriving instance
   ( Show (Header                blk)
@@ -424,7 +424,7 @@ data TraceInitChainSelEvent blk
 deriving instance
   ( HasHeader                     blk
   , Eq (Header                    blk)
-  , Eq (ExtValidationError        blk)
+  , ProtocolLedgerView            blk
   ) => Eq (TraceInitChainSelEvent blk)
 deriving instance
   ( Show (Header                    blk)

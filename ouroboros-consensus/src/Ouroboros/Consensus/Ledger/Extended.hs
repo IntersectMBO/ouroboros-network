@@ -56,6 +56,7 @@ instance ProtocolLedgerView blk => NoUnexpectedThunks (ExtValidationError blk)
 
 deriving instance ProtocolLedgerView blk => Show (ExtLedgerState     blk)
 deriving instance ProtocolLedgerView blk => Show (ExtValidationError blk)
+deriving instance ProtocolLedgerView blk => Eq   (ExtValidationError blk)
 
 -- | We override 'showTypeOf' to show the type of the block
 --
