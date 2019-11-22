@@ -413,10 +413,12 @@ instance Arbitrary TestSetup where
     -- TODO we could shrink @testLedgerState@ too
     [ TestSetup { testLedgerState
                 , testInitialTxs = testInitialTxs'
-                , testMempoolCap = testMempoolCap'
+                , testMempoolCap = MempoolCapacity mpCap'
                 }
-    | testInitialTxs' <- shrinkList (const []) testInitialTxs,
-      testMempoolCap' <- map MempoolCapacity (shrinkIntegral mpCap) ]
+    | testInitialTxs' <- shrinkList (const []) testInitialTxs
+    , mpCap' <- shrinkIntegral mpCap
+    , mpCap' > 0
+    ]
 
 -- | Generate a number of valid and invalid transactions and apply the valid
 -- transactions to the given 'LedgerState'. The transactions along with a
