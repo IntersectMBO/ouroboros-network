@@ -24,6 +24,8 @@ module Ouroboros.Storage.ChainDB.Impl.Types (
   , ReaderState (..)
   , ReaderRollState (..)
   , readerRollStatePoint
+    -- * Invalid blocks
+  , InvalidBlocks
     -- * Trace types
   , TraceEvent (..)
   , TraceAddBlockEvent (..)
@@ -64,8 +66,9 @@ import           Ouroboros.Consensus.Util.STM (WithFingerprint)
 import           Ouroboros.Storage.Common (EpochNo)
 import           Ouroboros.Storage.EpochInfo (EpochInfo)
 
-import           Ouroboros.Storage.ChainDB.API (ChainDbError (..), IteratorId,
-                     ReaderId, StreamFrom, StreamTo, UnknownRange)
+import           Ouroboros.Storage.ChainDB.API (ChainDbError (..),
+                     InvalidBlockReason, IteratorId, ReaderId, StreamFrom,
+                     StreamTo, UnknownRange)
 
 import           Ouroboros.Storage.ChainDB.Impl.ImmDB (ImmDB)
 import qualified Ouroboros.Storage.ChainDB.Impl.ImmDB as ImmDB
@@ -179,13 +182,8 @@ data ChainDbEnv m blk = CDB
     -- of the current chain fragment (retrieved 'cdbGetCurrentChain', not by
     -- reading 'cdbChain' directly).
   , cdbNodeConfig     :: !(NodeConfig (BlockProtocol blk))
-  , cdbInvalid        :: !(StrictTVar m (WithFingerprint (Map (HeaderHash blk) SlotNo)))
-    -- ^ Hashes corresponding to invalid blocks. This is used to ignore these
-    -- blocks during chain selection.
-    --
-    -- The slot number of the block is stored too, so that whenever a garbage
-    -- collection is performed on the VolatileDB for some slot @s@, the hashes
-    -- older or equal to @s@ can be removed from this map.
+  , cdbInvalid        :: !(StrictTVar m (WithFingerprint (InvalidBlocks blk)))
+    -- ^ See the docstring of 'InvalidBlocks'.
     --
     -- The 'Fingerprint' changes every time a hash is added to the map, but
     -- not when hashes are garbage-collected from the map.
@@ -276,6 +274,19 @@ data ReaderRollState blk
 readerRollStatePoint :: ReaderRollState blk -> Point blk
 readerRollStatePoint (RollBackTo      pt) = pt
 readerRollStatePoint (RollForwardFrom pt) = pt
+
+{-------------------------------------------------------------------------------
+  Invalid blocks
+-------------------------------------------------------------------------------}
+
+-- | Hashes corresponding to invalid blocks. This is used to ignore these
+-- blocks during chain selection.
+--
+-- In addition to the reason why a block is invalid, the slot number of
+-- the block is stored, so that whenever a garbage collection is performed
+-- on the VolatileDB for some slot @s@, the hashes older or equal to @s@
+-- can be removed from this map.
+type InvalidBlocks blk = Map (HeaderHash blk) (InvalidBlockReason blk, SlotNo)
 
 {-------------------------------------------------------------------------------
   Trace types

@@ -388,7 +388,7 @@ consensusNetworkApps
        ( IOLike m
        , Ord peer
        , Exception failure
-       , SupportedBlock blk
+       , ProtocolLedgerView blk
        )
     => NodeKernel m peer blk
     -> ProtocolTracers m peer blk failure

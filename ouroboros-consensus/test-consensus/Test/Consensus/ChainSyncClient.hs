@@ -293,7 +293,7 @@ runChainSync securityParam maxClockSkew (ClientUpdates clientUpdates)
               chain <- fst <$> readTVar varClientState
               return $ Tip (Chain.headPoint chain) (Chain.headBlockNo chain)
           , getIsInvalidBlock = return $
-              WithFingerprint (const False) (Fingerprint 0)
+              WithFingerprint (const Nothing) (Fingerprint 0)
           }
 
         client :: StrictTVar m (AnchoredFragment (Header TestBlock))

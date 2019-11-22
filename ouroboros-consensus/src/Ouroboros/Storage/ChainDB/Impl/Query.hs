@@ -1,7 +1,6 @@
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeApplications    #-}
 
 {-# OPTIONS_GHC -Wredundant-constraints #-}
 -- | Queries
@@ -40,7 +39,7 @@ import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.STM (WithFingerprint)
 
 import           Ouroboros.Storage.ChainDB.API (ChainDbError (..),
-                     ChainDbFailure (..))
+                     ChainDbFailure (..), InvalidBlockReason)
 
 import           Ouroboros.Storage.ChainDB.Impl.ImmDB (ImmDB)
 import qualified Ouroboros.Storage.ChainDB.Impl.ImmDB as ImmDB
@@ -158,8 +157,10 @@ getIsFetched CDB{..} = basedOnHash <$> VolDB.getIsMember cdbVolDB
 
 getIsInvalidBlock
   :: forall m blk. (IOLike m, HasHeader blk)
-  => ChainDbEnv m blk -> STM m (WithFingerprint (HeaderHash blk -> Bool))
-getIsInvalidBlock CDB{..} = fmap (flip Map.member) <$> readTVar cdbInvalid
+  => ChainDbEnv m blk
+  -> STM m (WithFingerprint (HeaderHash blk -> Maybe (InvalidBlockReason blk)))
+getIsInvalidBlock CDB{..} =
+  fmap (fmap (fmap fst) . flip Map.lookup) <$> readTVar cdbInvalid
 
 getMaxSlotNo
   :: forall m blk. (IOLike m, HasHeader (Header blk))
