@@ -140,7 +140,7 @@ infixl 5 :>, :<
 {-# COMPLETE Empty, (:<) #-}
 
 
--- | \( O(\log(n) \). Look up a transaction in the sequence by its 'TicketNo'.
+-- | \( O(\log(n)) \). Look up a transaction in the sequence by its 'TicketNo'.
 --
 lookupByTicketNo :: TxSeq tx -> TicketNo -> Maybe tx
 lookupByTicketNo (TxSeq txs) n =
@@ -149,7 +149,7 @@ lookupByTicketNo (TxSeq txs) n =
       FingerTree.Position _ (TxTicket tx n') _ | n' == n -> Just tx
       _                                                  -> Nothing
 
--- | \( O(\log(n) \). Split the sequence of transactions into two parts
+-- | \( O(\log(n)) \). Split the sequence of transactions into two parts
 -- based on the given 'TicketNo'. The first part has transactions with tickets
 -- less than or equal to the given ticket, and the second part has transactions
 -- with tickets strictly greater than the given ticket.
