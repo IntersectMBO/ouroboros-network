@@ -15,6 +15,9 @@ module Ouroboros.Network.Socket (
       ConnectionTable
     , ConnectionTableRef (..)
     , ValencyCounter
+    , NetworkMutableState (..)
+    , newNetworkMutableState
+    , newNetworkMutableStateSTM
     , withServerNode
     , connectToNode
     , connectToNode'
@@ -361,6 +364,25 @@ nullNetworkServerTracers = NetworkServerTracers {
     }
 
 
+-- | Mutable state maintained by the network component.
+--
+data NetworkMutableState = NetworkMutableState {
+    nmsConnectionTable :: ConnectionTable IO Socket.SockAddr,
+    -- ^ 'ConnectionTable' which maintains information about current upstream and
+    -- downstream connections.
+    nmsPeerStates      :: StrictTVar IO (PeerStates IO Socket.SockAddr)
+    -- ^ 'PeerStates' which maintains state of each downstream / upstream peer
+    -- that errored, misbehaved or was not interesting to us.
+  }
+
+newNetworkMutableStateSTM :: STM.STM NetworkMutableState
+newNetworkMutableStateSTM =
+    NetworkMutableState <$> newConnectionTableSTM
+                        <*> newPeerStatesVarSTM
+
+newNetworkMutableState :: IO NetworkMutableState
+newNetworkMutableState = atomically newNetworkMutableStateSTM
+
 -- |
 -- Thin wrapper around @'Server.run'@.
 --
@@ -379,8 +401,7 @@ runNetworkNode'
        , Show vNumber
        )
     => NetworkServerTracers ptcl vNumber peerid
-    -> ConnectionTable IO Socket.SockAddr
-    -> StrictTVar IO (PeerStates IO Socket.SockAddr)
+    -> NetworkMutableState
     -> Socket.Socket
     -> (forall vData. extra vData -> vData -> CBOR.Term)
     -> (forall vData. extra vData -> CBOR.Term -> Either Text vData)
@@ -401,14 +422,17 @@ runNetworkNode'
                                  ()
     -> Server.Main (PeerStates IO Socket.SockAddr) t
     -> IO t
-runNetworkNode' NetworkServerTracers { nstMuxTracer, nstHandshakeTracer, nstErrorPolicyTracer } tbl stVar sd encodeData decodeData acceptVersion acceptException acceptConn applicationStart complete
+runNetworkNode' NetworkServerTracers { nstMuxTracer, nstHandshakeTracer, nstErrorPolicyTracer }
+                NetworkMutableState { nmsConnectionTable, nmsPeerStates }
+                sd encodeData decodeData acceptVersion
+                acceptException acceptConn applicationStart complete
     main = Server.run
         nstErrorPolicyTracer
-        (fromSocket tbl sd)
+        (fromSocket nmsConnectionTable sd)
         acceptException
         (beginConnection nstMuxTracer nstHandshakeTracer encodeData decodeData acceptVersion acceptConn)
         applicationStart
-        complete main (toLazyTVar stVar)
+        complete main (toLazyTVar nmsPeerStates)
 
 
 -- |
@@ -443,8 +467,7 @@ withServerNode
        , Show vNumber
        )
     => NetworkServerTracers ptcl vNumber peerid
-    -> ConnectionTable IO Socket.SockAddr
-    -> StrictTVar IO (PeerStates IO Socket.SockAddr)
+    -> NetworkMutableState
     -> Socket.AddrInfo
     -> (forall vData. extra vData -> vData -> CBOR.Term)
     -> (forall vData. extra vData -> CBOR.Term -> Either Text vData)
@@ -460,14 +483,13 @@ withServerNode
     -- Note: the server thread will terminate when the callback returns or
     -- throws an exception.
     -> IO t
-withServerNode tracers@NetworkServerTracers { nstErrorPolicyTracer } tbl stVar addr encodeData decodeData peeridFn acceptVersion versions errPolicies k =
+withServerNode tracers@NetworkServerTracers { nstErrorPolicyTracer } networkState addr encodeData decodeData peeridFn acceptVersion versions errPolicies k =
     bracket (mkListeningSocket (Socket.addrFamily addr) (Just $ Socket.addrAddress addr)) Socket.close $ \sd -> do
       addr' <- Socket.getSocketName sd
       withAsync
         (runNetworkNode'
           tracers
-          tbl
-          stVar
+          networkState
           sd
           encodeData
           decodeData

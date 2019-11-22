@@ -23,6 +23,9 @@ module Ouroboros.Network.NodeToNode (
 
   , NetworkServerTracers (..)
   , nullNetworkServerTracers
+  , NetworkMutableState (..)
+  , newNetworkMutableState
+  , newNetworkMutableStateSTM
   , withServer
   , withServer_V1
 
@@ -85,8 +88,6 @@ import qualified Codec.CBOR.Term as CBOR
 import           Codec.Serialise (Serialise (..), DeserialiseFailure)
 import           Codec.SerialiseTerm
 import qualified Network.Socket as Socket
-
-import           Control.Monad.Class.MonadSTM.Strict
 
 import           Network.Mux.Types
 import           Network.Mux.Interface
@@ -238,8 +239,7 @@ connectTo_V1 tracers peeridFn versionData application localAddr remoteAddr =
 withServer
   :: ( HasResponder appType ~ True)
   => NetworkServerTracers NodeToNodeProtocols NodeToNodeVersion peerid
-  -> ConnectionTable IO Socket.SockAddr
-  -> StrictTVar IO (PeerStates IO Socket.SockAddr)
+  -> NetworkMutableState
   -> Socket.AddrInfo
   -> (Socket.SockAddr -> Socket.SockAddr -> peerid)
   -- ^ create peerid from local address and remote address
@@ -248,11 +248,10 @@ withServer
   -> ErrorPolicies Socket.SockAddr ()
   -> (Async () -> IO t)
   -> IO t
-withServer tracers tbl stVar addr peeridFn acceptVersion versions errPolicies k =
+withServer tracers networkState addr peeridFn acceptVersion versions errPolicies k =
   withServerNode
     tracers
-    tbl
-    stVar
+    networkState
     addr
     (\(DictVersion codec) -> encodeTerm codec)
     (\(DictVersion codec) -> decodeTerm codec)
@@ -268,8 +267,7 @@ withServer tracers tbl stVar addr peeridFn acceptVersion versions errPolicies k 
 withServer_V1
   :: ( HasResponder appType ~ True )
   => NetworkServerTracers NodeToNodeProtocols NodeToNodeVersion peerid
-  -> ConnectionTable IO Socket.SockAddr
-  -> StrictTVar IO (PeerStates IO Socket.SockAddr)
+  -> NetworkMutableState
   -> Socket.AddrInfo
   -> (Socket.SockAddr -> Socket.SockAddr -> peerid)
   -- ^ create peerid from local address and remote address
@@ -278,9 +276,9 @@ withServer_V1
   -> ErrorPolicies Socket.SockAddr ()
   -> (Async () -> IO t)
   -> IO t
-withServer_V1 tracers tbl stVar addr peeridFn versionData application =
+withServer_V1 tracers networkState addr peeridFn versionData application =
     withServer
-      tracers tbl stVar addr peeridFn
+      tracers networkState addr peeridFn
       (\(DictVersion _) -> acceptEq)
       (simpleSingletonVersions
           NodeToNodeV_1
@@ -297,8 +295,7 @@ ipSubscriptionWorker
        ( HasInitiator appType ~ True )
     => NetworkIPSubscriptionTracers NodeToNodeProtocols NodeToNodeVersion peerid
     -> (Socket.SockAddr -> Socket.SockAddr -> peerid)
-    -> ConnectionTable IO Socket.SockAddr
-    -> StrictTVar IO (PeerStates IO Socket.SockAddr)
+    -> NetworkMutableState
     -> LocalAddresses Socket.SockAddr
     -> (Socket.SockAddr -> Maybe DiffTime)
     -- ^ Lookup function, should return expected delay for the given address
@@ -321,8 +318,7 @@ ipSubscriptionWorker
     , nistErrorPolicyTracer
     }
   peeridFn
-  tbl
-  peerStatesVar
+  networkState
   localAddr
   connectionAttemptDelay
   errPolicies
@@ -331,8 +327,7 @@ ipSubscriptionWorker
     = Subscription.ipSubscriptionWorker
         nistSubscriptionTracer
         nistErrorPolicyTracer
-        tbl
-        peerStatesVar
+        networkState
         localAddr
         connectionAttemptDelay
         errPolicies
@@ -352,8 +347,7 @@ ipSubscriptionWorker_V1
        ( HasInitiator appType ~ True )
     => NetworkIPSubscriptionTracers NodeToNodeProtocols NodeToNodeVersion peerid
     -> (Socket.SockAddr -> Socket.SockAddr -> peerid)
-    -> ConnectionTable IO Socket.SockAddr
-    -> StrictTVar IO (PeerStates IO Socket.SockAddr)
+    -> NetworkMutableState
     -> LocalAddresses Socket.SockAddr
     -> (Socket.SockAddr -> Maybe DiffTime)
     -- ^ Lookup function, should return expected delay for the given address
@@ -369,8 +363,7 @@ ipSubscriptionWorker_V1
 ipSubscriptionWorker_V1
   tracers
   peeridFn
-  tbl
-  peerStatesVar
+  networkState
   localAddresses
   connectionAttemptDelay
   errPolicies
@@ -380,8 +373,7 @@ ipSubscriptionWorker_V1
     = ipSubscriptionWorker
         tracers
         peeridFn
-        tbl
-        peerStatesVar
+        networkState
         localAddresses
         connectionAttemptDelay
         errPolicies
@@ -401,8 +393,7 @@ dnsSubscriptionWorker
        ( HasInitiator appType ~ True )
     => NetworkDNSSubscriptionTracers NodeToNodeProtocols NodeToNodeVersion peerid
     -> (Socket.SockAddr -> Socket.SockAddr -> peerid)
-    -> ConnectionTable IO Socket.SockAddr
-    -> StrictTVar IO (PeerStates IO Socket.SockAddr)
+    -> NetworkMutableState
     -> LocalAddresses Socket.SockAddr
     -> (Socket.SockAddr -> Maybe DiffTime)
     -> ErrorPolicies Socket.SockAddr ()
@@ -425,8 +416,7 @@ dnsSubscriptionWorker
     , ndstErrorPolicyTracer
     }
   peeridFn
-  tbl
-  peerStatesVar
+  networkState
   localAddresses
   connectionAttemptDelay
   errPolicies
@@ -436,8 +426,7 @@ dnsSubscriptionWorker
       ndstSubscriptionTracer
       ndstDnsTracer
       ndstErrorPolicyTracer
-      tbl
-      peerStatesVar
+      networkState
       localAddresses
       connectionAttemptDelay
       errPolicies
@@ -457,8 +446,7 @@ dnsSubscriptionWorker_V1
        ( HasInitiator appType ~ True )
     => NetworkDNSSubscriptionTracers NodeToNodeProtocols NodeToNodeVersion peerid
     -> (Socket.SockAddr -> Socket.SockAddr -> peerid)
-    -> ConnectionTable IO Socket.SockAddr
-    -> StrictTVar IO (PeerStates IO Socket.SockAddr)
+    -> NetworkMutableState
     -> LocalAddresses Socket.SockAddr
     -> (Socket.SockAddr -> Maybe DiffTime)
     -> ErrorPolicies Socket.SockAddr ()
@@ -473,8 +461,7 @@ dnsSubscriptionWorker_V1
 dnsSubscriptionWorker_V1
   tracers
   peeridFn
-  tbl
-  peerStatesVar
+  networkState
   localAddresses
   connectionAttemptDelay
   errPolicies
@@ -484,8 +471,7 @@ dnsSubscriptionWorker_V1
      dnsSubscriptionWorker
       tracers
       peeridFn
-      tbl
-      peerStatesVar
+      networkState
       localAddresses
       connectionAttemptDelay
       errPolicies

@@ -61,8 +61,7 @@ ipSubscriptionWorker
     :: forall a void.
        Tracer IO (WithIPList (SubscriptionTrace Socket.SockAddr))
     -> Tracer IO (WithAddr Socket.SockAddr ErrorPolicyTrace)
-    -> ConnectionTable IO Socket.SockAddr
-    -> StrictTVar IO (PeerStates IO Socket.SockAddr)
+    -> NetworkMutableState
     -> LocalAddresses Socket.SockAddr
     -> (Socket.SockAddr -> Maybe DiffTime)
     -- ^ Lookup function, should return expected delay for the given address
@@ -70,15 +69,14 @@ ipSubscriptionWorker
     -> IPSubscriptionTarget
     -> (Socket.Socket -> IO a)
     -> IO void
-ipSubscriptionWorker tracer errorPolicyTracer tbl peerStatesVar localAddresses connectionAttemptDelay errPolicies ips k = do
+ipSubscriptionWorker tracer errorPolicyTracer networkState@NetworkMutableState { nmsPeerStates } localAddresses connectionAttemptDelay errPolicies ips k = do
     subscriptionWorker
             tracer'
             errorPolicyTracer
-            tbl
-            peerStatesVar
+            networkState
             localAddresses
             connectionAttemptDelay
-            (pure $ ipSubscriptionTarget tracer' peerStatesVar $ ispIps ips)
+            (pure $ ipSubscriptionTarget tracer' nmsPeerStates $ ispIps ips)
             (ispValency ips)
             errPolicies
             mainTx
@@ -151,8 +149,7 @@ mainTx PeerStates{}       = retry
 subscriptionWorker
     :: Tracer IO (SubscriptionTrace Socket.SockAddr)
     -> Tracer IO (WithAddr Socket.SockAddr ErrorPolicyTrace)
-    -> ConnectionTable IO Socket.SockAddr
-    -> StateVar IO (PeerStates IO Socket.SockAddr)
+    -> NetworkMutableState
 
     -> LocalAddresses Socket.SockAddr
     -> (Socket.SockAddr -> Maybe DiffTime)
@@ -167,12 +164,12 @@ subscriptionWorker
     -- ^ application to run on each connection
     -> IO x
 subscriptionWorker
-  tracer errorPolicyTracer tbl sVar localAddresses
+  tracer errorPolicyTracer NetworkMutableState { nmsConnectionTable, nmsPeerStates } localAddresses
   connectionAttemptDelay getTargets valency errPolicies main k =
     worker tracer
            errorPolicyTracer
-           tbl
-           sVar
+           nmsConnectionTable
+           nmsPeerStates
            ioSocket
            socketStateChangeTx
            (completeApplicationTx errPolicies)

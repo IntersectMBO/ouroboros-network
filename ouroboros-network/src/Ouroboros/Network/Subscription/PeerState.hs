@@ -21,6 +21,7 @@ module Ouroboros.Network.Subscription.PeerState
   , threadsToCancel
   , PeerStates (..)
   , newPeerStatesVar
+  , newPeerStatesVarSTM
   , cleanPeerStates
   , runSuspendDecision
   , registerConsumer
@@ -253,8 +254,11 @@ instance Eq addr
     _ == _ = False
 
 
+newPeerStatesVarSTM :: MonadSTM m => STM m (StrictTVar m (PeerStates m addr))
+newPeerStatesVarSTM = newTVar (PeerStates Map.empty)
+
 newPeerStatesVar :: MonadSTM m => m (StrictTVar m (PeerStates m addr))
-newPeerStatesVar = newTVarM (PeerStates Map.empty)
+newPeerStatesVar = atomically newPeerStatesVarSTM
 
 
 -- | Periodically clean 'PeerState'.  It will stop when 'PeerState' becomes

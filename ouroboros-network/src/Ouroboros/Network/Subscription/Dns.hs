@@ -206,8 +206,7 @@ dnsSubscriptionWorker'
     :: Tracer IO (WithDomainName (SubscriptionTrace Socket.SockAddr))
     -> Tracer IO (WithDomainName DnsTrace)
     -> Tracer IO (WithAddr Socket.SockAddr ErrorPolicyTrace)
-    -> ConnectionTable IO Socket.SockAddr
-    -> StrictTVar IO (PeerStates IO Socket.SockAddr)
+    -> NetworkMutableState
     -> Resolver IO
     -> LocalAddresses Socket.SockAddr
     -> (Socket.SockAddr -> Maybe DiffTime)
@@ -216,17 +215,16 @@ dnsSubscriptionWorker'
     -> Main IO (PeerStates IO Socket.SockAddr) x
     -> (Socket.Socket -> IO a)
     -> IO x
-dnsSubscriptionWorker' subTracer dnsTracer errorPolicyTracer tbl peerStatesVar resolver localAddresses
+dnsSubscriptionWorker' subTracer dnsTracer errorPolicyTracer networkState@NetworkMutableState { nmsPeerStates } resolver localAddresses
   connectionAttemptDelay errPolicies dst main k = do
     subscriptionWorker (WithDomainName (dstDomain dst) `contramap` subTracer)
                        errorPolicyTracer
-                       tbl
-                       peerStatesVar
+                       networkState
                        localAddresses
                        connectionAttemptDelay
                        (dnsResolve
                           (WithDomainName (dstDomain dst) `contramap` dnsTracer)
-                          resolver peerStatesVar beforeConnectTx dst)
+                          resolver nmsPeerStates beforeConnectTx dst)
                        (dstValency dst)
                        errPolicies
                        main
@@ -237,15 +235,14 @@ dnsSubscriptionWorker
     :: Tracer IO (WithDomainName (SubscriptionTrace Socket.SockAddr))
     -> Tracer IO (WithDomainName DnsTrace)
     -> Tracer IO (WithAddr Socket.SockAddr ErrorPolicyTrace)
-    -> ConnectionTable IO Socket.SockAddr
-    -> StrictTVar IO (PeerStates IO Socket.SockAddr)
+    -> NetworkMutableState
     -> LocalAddresses Socket.SockAddr
     -> (Socket.SockAddr -> Maybe DiffTime)
     -> ErrorPolicies Socket.SockAddr a
     -> DnsSubscriptionTarget
     -> (Socket.Socket -> IO a)
     -> IO void
-dnsSubscriptionWorker subTracer dnsTracer errTrace tbl peerStateVar localAddresses
+dnsSubscriptionWorker subTracer dnsTracer errTrace networkState localAddresses
   connectionAttemptDelay errPolicies dst k = do
     rs <- DNS.makeResolvSeed DNS.defaultResolvConf
 
@@ -253,8 +250,7 @@ dnsSubscriptionWorker subTracer dnsTracer errTrace tbl peerStateVar localAddress
         let resolver = Resolver (ipv4ToSockAddr (dstPort dst) dnsResolver)
                                 (ipv6ToSockAddr (dstPort dst) dnsResolver) in
         dnsSubscriptionWorker' subTracer dnsTracer errTrace
-                               tbl
-                               peerStateVar
+                               networkState
                                resolver
                                localAddresses
                                connectionAttemptDelay
