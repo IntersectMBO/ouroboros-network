@@ -83,25 +83,25 @@ source-repository-package
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-ledger
-  tag: dbdb643722e431e4d232345a0eafdc7bdeab7b60
+  tag: 8ce6f8181c48fc2180735f0d7a0a5883065f3c8a
   subdir: cardano-ledger
 
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-ledger
-  tag: dbdb643722e431e4d232345a0eafdc7bdeab7b60
+  tag: 8ce6f8181c48fc2180735f0d7a0a5883065f3c8a
   subdir: crypto
 
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-ledger
-  tag: dbdb643722e431e4d232345a0eafdc7bdeab7b60
+  tag: 8ce6f8181c48fc2180735f0d7a0a5883065f3c8a
   subdir: cardano-ledger/test
 
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-ledger
-  tag: dbdb643722e431e4d232345a0eafdc7bdeab7b60
+  tag: 8ce6f8181c48fc2180735f0d7a0a5883065f3c8a
   subdir: crypto/test
 
 source-repository-package

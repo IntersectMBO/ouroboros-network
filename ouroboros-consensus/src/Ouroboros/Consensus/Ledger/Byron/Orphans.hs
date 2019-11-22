@@ -43,14 +43,14 @@ instance Serialise CC.KeyHash where
 instance Condense CC.HeaderHash where
   condense = formatToString CC.headerHashF
 
-instance Condense (CC.ABlock ByteString) where
+instance Condense CC.Block where
   condense = unpack
            . sformat build
            . CC.txpTxs
            . CC.bodyTxPayload
            . CC.blockBody
 
-instance Condense (CC.AHeader ByteString) where
+instance Condense CC.Header where
   condense hdr = mconcat [
         "( hash: "         <> unpack condensedHash
       , ", previousHash: " <> unpack condensedPrevHash
@@ -63,26 +63,25 @@ instance Condense (CC.AHeader ByteString) where
       psigCert = CC.delegationCertificate $ CC.headerSignature hdr
       issuer   = CC.issuerVK   psigCert
       delegate = CC.delegateVK psigCert
-      hdrHash  = CC.headerHashAnnotated hdr
+      hdrHash  = CC.hashHeader hdr
 
       condensedHash     = sformat CC.headerHashF $ hdrHash
       condensedPrevHash = sformat CC.headerHashF $ CC.headerPrevHash hdr
-      condensedSlot     = sformat build $
-                            Cardano.Binary.unAnnotated (CC.aHeaderSlot hdr)
+      condensedSlot     = sformat build $ CC.headerSlot hdr
 
-instance Condense (CC.ABoundaryBlock ByteString) where
+instance Condense CC.BoundaryBlock where
   condense = condense . CC.boundaryHeader
 
-instance Condense (CC.ABlockOrBoundary ByteString) where
-  condense (CC.ABOBBlock blk) = mconcat [
+instance Condense CC.BlockOrBoundary where
+  condense (CC.BOBBlock blk) = mconcat [
         "( header: " <> condense (CC.blockHeader blk)
       , ", body: "   <> condense blk
       , ")"
       ]
-  condense (CC.ABOBBoundary ebb) =
+  condense (CC.BOBBoundary ebb) =
       condense ebb
 
-instance Condense (CC.ABoundaryHeader ByteString) where
+instance Condense CC.BoundaryHeader where
   condense hdr = mconcat [
         "( ebb: true"
       , ", hash: "         <> condensedHash
@@ -93,8 +92,7 @@ instance Condense (CC.ABoundaryHeader ByteString) where
       condensedHash =
             unpack
           . sformat CC.headerHashF
-          . coerce
-          . Cardano.Crypto.hashDecoded . fmap CC.wrapBoundaryBytes
+          . CC.boundaryHeaderHashAnnotated
           $ hdr
 
       condensedPrevHash =
@@ -114,12 +112,12 @@ instance Condense CC.CertificateId where
 instance Condense CC.VoteId where
   condense hash = "voteid: " <> unpack (sformat shortHashF hash)
 
-instance Condense (CC.AMempoolPayload a) where
+instance Condense CC.MempoolPayload where
     condense (CC.MempoolTx tx) =
-      "tx: " <> unpack (sformat build (void tx))
+      "tx: " <> unpack (sformat build tx)
     condense (CC.MempoolDlg cert) =
-      "dlg: " <> unpack (sformat build (void cert))
+      "dlg: " <> unpack (sformat build cert)
     condense (CC.MempoolUpdateProposal p) =
-      "updateproposal: " <> unpack (sformat build (void p))
+      "updateproposal: " <> unpack (sformat build p)
     condense (CC.MempoolUpdateVote vote) =
-      "updatevote: " <> unpack (sformat build (void vote))
+      "updatevote: " <> unpack (sformat build vote)
