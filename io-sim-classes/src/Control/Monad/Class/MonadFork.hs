@@ -10,7 +10,8 @@ module Control.Monad.Class.MonadFork
 
 import qualified Control.Concurrent as IO
 import qualified GHC.Conc.Sync as IO (labelThread)
-import           Control.Exception (Exception(..), SomeException)
+import           Control.Exception (Exception(..), SomeException,
+                                    AsyncException(ThreadKilled))
 import           Control.Monad.Reader
 import           System.IO (hFlush, hPutStrLn, stderr)
 import           System.IO.Unsafe (unsafePerformIO)
@@ -36,6 +37,9 @@ class MonadThread m => MonadFork m where
   forkWithUnmask :: ((forall a. m a -> m a) -> m ()) -> m (ThreadId m)
   throwTo        :: Exception e => ThreadId m -> e -> m ()
 
+  killThread     :: ThreadId m -> m ()
+  killThread tid = throwTo tid ThreadKilled
+
 
 instance MonadThread IO where
   type ThreadId IO = IO.ThreadId
@@ -56,6 +60,7 @@ instance MonadFork IO where
 
   forkWithUnmask = IO.forkIOWithUnmask
   throwTo        = IO.throwTo
+  killThread     = IO.killThread
 
 instance MonadThread m => MonadThread (ReaderT e m) where
   type ThreadId (ReaderT e m) = ThreadId m
