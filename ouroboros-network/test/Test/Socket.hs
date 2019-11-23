@@ -23,7 +23,6 @@ import qualified Data.ByteString.Lazy as BL
 import           Data.Functor ((<$))
 import           Data.Int (Int64)
 import           Data.List (mapAccumL)
-import qualified Data.Map.Strict as Map
 import           Data.Time.Clock (UTCTime, getCurrentTime)
 import           Data.Void (Void)
 import qualified Network.Socket as Socket
@@ -41,7 +40,6 @@ import qualified Network.TypedProtocol.ReqResp.Examples as ReqResp
 import qualified Network.TypedProtocol.ReqResp.Server as ReqResp
 import qualified Network.TypedProtocol.ReqResp.Type as ReqResp
 
-import           Codec.SerialiseTerm
 import           Control.Tracer
 
 -- TODO: remove Mx prefixes
@@ -61,7 +59,7 @@ import qualified Ouroboros.Network.Protocol.ChainSync.Client as ChainSync
 import qualified Ouroboros.Network.Protocol.ChainSync.Codec as ChainSync
 import qualified Ouroboros.Network.Protocol.ChainSync.Examples as ChainSync
 import qualified Ouroboros.Network.Protocol.ChainSync.Server as ChainSync
-import           Ouroboros.Network.Protocol.Handshake.Type (acceptEq)
+import           Ouroboros.Network.Protocol.Handshake.Type (acceptEq, cborTermVersionDataCodec)
 import           Ouroboros.Network.Protocol.Handshake.Version
                      (simpleSingletonVersions)
 import           Ouroboros.Network.Testing.Serialise
@@ -211,8 +209,7 @@ prop_socket_send_recv initiatorAddr responderAddr f xs = do
 
     cv <- newEmptyTMVarM
     sv <- newEmptyTMVarM
-    tbl <- newConnectionTable
-    stVar <- newTVarM (PeerStates Map.empty)
+    networkState <- newNetworkMutableState
 
     {- The siblingVar is used by the initiator and responder to wait on each other before exiting.
      - Without this wait there is a risk that one side will finish first causing the Muxbearer to
@@ -221,7 +218,7 @@ prop_socket_send_recv initiatorAddr responderAddr f xs = do
     siblingVar <- newTVarM 2
 
     let -- Server Node; only req-resp server
-        responderApp :: OuroborosApplication Mx.ResponderApp () TestProtocols2 IO BL.ByteString Void ()
+        responderApp :: OuroborosApplication Mx.ResponderApp ConnectionId TestProtocols2 IO BL.ByteString Void ()
         responderApp = OuroborosResponderApplication $
           \peerid ReqRespPr channel -> do
             r <- runPeer nullTracer
@@ -233,7 +230,7 @@ prop_socket_send_recv initiatorAddr responderAddr f xs = do
             waitSibling siblingVar
 
         -- Client Node; only req-resp client
-        initiatorApp :: OuroborosApplication Mx.InitiatorApp () TestProtocols2 IO BL.ByteString () Void
+        initiatorApp :: OuroborosApplication Mx.InitiatorApp ConnectionId TestProtocols2 IO BL.ByteString () Void
         initiatorApp = OuroborosInitiatorApplication $
           \peerid ReqRespPr channel -> do
             r <- runPeer nullTracer
@@ -246,25 +243,17 @@ prop_socket_send_recv initiatorAddr responderAddr f xs = do
 
     res <-
       withServerNode
-        activeMuxTracer
-        nullTracer
-        nullTracer
-        tbl
-        stVar
+        networkTracers
+        networkState
         responderAddr
-        (\(DictVersion codec) -> encodeTerm codec)
-        (\(DictVersion codec) -> decodeTerm codec)
-        (\_ _ -> ())
+        cborTermVersionDataCodec
         (\(DictVersion _) -> acceptEq)
         (simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData $ NetworkMagic 0) (DictVersion nodeToNodeCodecCBORTerm) responderApp)
         nullErrorPolicies
         $ \_ _ -> do
           connectToNode
-            (\(DictVersion codec) -> encodeTerm codec)
-            (\(DictVersion codec) -> decodeTerm codec)
-            activeMuxTracer
-            nullTracer
-            (\_ _ -> ())
+            cborTermVersionDataCodec
+            (NetworkConnectTracers activeMuxTracer nullTracer)
             (simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData $ NetworkMagic 0) (DictVersion nodeToNodeCodecCBORTerm) initiatorApp)
             (Just initiatorAddr)
             responderAddr
@@ -273,6 +262,13 @@ prop_socket_send_recv initiatorAddr responderAddr f xs = do
     return (res == mapAccumL f 0 xs)
 
   where
+    networkTracers = NetworkServerTracers {
+        nstMuxTracer         = activeMuxTracer,
+        nstHandshakeTracer   = nullTracer,
+        nstErrorPolicyTracer = nullTracer
+      }
+
+
     waitSibling :: StrictTVar IO Int -> IO ()
     waitSibling cntVar = do
         atomically $ modifyTVar cntVar (\a -> a - 1)
@@ -348,7 +344,7 @@ prop_socket_client_connect_error _ xs = ioProperty $ do
 
     cv <- newEmptyTMVarM
 
-    let app :: OuroborosApplication Mx.InitiatorApp (Socket.SockAddr, Socket.SockAddr) TestProtocols2 IO BL.ByteString () Void
+    let app :: OuroborosApplication Mx.InitiatorApp ConnectionId TestProtocols2 IO BL.ByteString () Void
         app = OuroborosInitiatorApplication $
                 \peerid ReqRespPr channel -> do
                   _ <- runPeer nullTracer
@@ -362,11 +358,8 @@ prop_socket_client_connect_error _ xs = ioProperty $ do
 
     (res :: Either IOException Bool)
       <- try $ False <$ connectToNode
-        (\(DictVersion codec) -> encodeTerm codec)
-        (\(DictVersion codec) -> decodeTerm codec)
-        nullTracer
-        nullTracer
-        (,)
+        cborTermVersionDataCodec
+        nullNetworkConnectTracers
         (simpleSingletonVersions (0::Int) (NodeToNodeVersionData $ NetworkMagic 0) (DictVersion nodeToNodeCodecCBORTerm) app)
         (Just clientAddr)
         serverAddr
@@ -386,13 +379,12 @@ demo chain0 updates = do
     producerVar <- newTVarM (CPS.initChainProducerState chain0)
     consumerVar <- newTVarM chain0
     done <- atomically newEmptyTMVar
-    tbl <- newConnectionTable
-    stVar <- newTVarM (PeerStates Map.empty)
+    networkState <- newNetworkMutableState
 
     let Just expectedChain = Chain.applyChainUpdates updates chain0
         target = Chain.headPoint expectedChain
 
-        initiatorApp :: OuroborosApplication Mx.InitiatorApp (Socket.SockAddr, Socket.SockAddr) TestProtocols1 IO BL.ByteString () Void
+        initiatorApp :: OuroborosApplication Mx.InitiatorApp ConnectionId TestProtocols1 IO BL.ByteString () Void
         initiatorApp = simpleInitiatorApplication $
           \ChainSyncPr ->
               MuxPeer nullTracer
@@ -404,7 +396,7 @@ demo chain0 updates = do
         server :: ChainSync.ChainSyncServer block (Tip block) IO ()
         server = ChainSync.chainSyncServerExample () producerVar
 
-        responderApp :: OuroborosApplication Mx.ResponderApp (Socket.SockAddr, Socket.SockAddr) TestProtocols1 IO BL.ByteString Void ()
+        responderApp :: OuroborosApplication Mx.ResponderApp ConnectionId TestProtocols1 IO BL.ByteString Void ()
         responderApp = simpleResponderApplication $
           \ChainSyncPr ->
             MuxPeer nullTracer
@@ -416,26 +408,18 @@ demo chain0 updates = do
                                                   (encodeTip encode) (decodeTip decode)
 
     withServerNode
-      nullTracer
-      nullTracer
-      nullTracer
-      tbl
-      stVar
+      nullNetworkServerTracers
+      networkState
       producerAddress
-      (\(DictVersion codec)-> encodeTerm codec)
-      (\(DictVersion codec)-> decodeTerm codec)
-      (,)
+      cborTermVersionDataCodec
       (\(DictVersion _) -> acceptEq)
       (simpleSingletonVersions (0::Int) (NodeToNodeVersionData $ NetworkMagic 0) (DictVersion nodeToNodeCodecCBORTerm) responderApp)
       nullErrorPolicies
       $ \_ _ -> do
       withAsync
         (connectToNode
-          (\(DictVersion codec) -> encodeTerm codec)
-          (\(DictVersion codec) -> decodeTerm codec)
-          nullTracer
-          nullTracer
-          (,)
+          cborTermVersionDataCodec
+          nullNetworkConnectTracers
           (simpleSingletonVersions (0::Int) (NodeToNodeVersionData $ NetworkMagic 0) (DictVersion nodeToNodeCodecCBORTerm) initiatorApp)
           (Just consumerAddress)
           producerAddress)
