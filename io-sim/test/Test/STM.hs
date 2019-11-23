@@ -399,7 +399,7 @@ data ExecValue m (t :: Type) where
 
     ExecValUnit ::                           ExecValue m TyUnit
     ExecValInt  :: Int                    -> ExecValue m TyInt
-    ExecValVar  :: LazyTVar m (ExecValue m t) 
+    ExecValVar  :: TVar m (ExecValue m t)
                 -> TyRep t                -> ExecValue m (TyVar t)
 
 instance Show (ExecValue m t) where

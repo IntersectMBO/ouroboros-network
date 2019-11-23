@@ -27,7 +27,7 @@ module Ouroboros.Network.Subscription.Dns
     ) where
 
 import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadSTM (LazyTVar)
+import           Control.Monad.Class.MonadSTM (TVar)
 import qualified Control.Monad.Class.MonadSTM as Lazy
 import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadSay
@@ -176,7 +176,7 @@ dnsResolve tracer resolver peerStatesVar beforeConnect (DnsSubscriptionTarget do
                  atomically $ Lazy.writeTVar gotIpv6RspVar True
                  return Nothing
 
-    resolveA :: LazyTVar m Bool -> StrictTMVar m [Socket.SockAddr] -> m (Maybe DNS.DNSError)
+    resolveA :: TVar m Bool -> StrictTMVar m [Socket.SockAddr] -> m (Maybe DNS.DNSError)
     resolveA gotIpv6RspVar rspsVar= do
         r_e <- lookupA resolver domain
         case r_e of
