@@ -17,19 +17,20 @@ import           Network.TypedProtocol.Driver.ByteLimit
 
 import           Ouroboros.Network.ErrorPolicy
 import           Ouroboros.Network.Protocol.Handshake.Type
+import           Ouroboros.Network.Socket (ConnectionId)
 import           Ouroboros.Network.Subscription.Ip
 import           Ouroboros.Network.Subscription.Dns
 
-data NetworkIPSubscriptionTracers ptcl vNumber peerid = NetworkIPSubscriptionTracers {
-      nistMuxTracer          :: Tracer IO (WithMuxBearer peerid (MuxTrace ptcl)),
+data NetworkIPSubscriptionTracers ptcl vNumber = NetworkIPSubscriptionTracers {
+      nistMuxTracer          :: Tracer IO (WithMuxBearer ConnectionId (MuxTrace ptcl)),
       nistHandshakeTracer    :: Tracer IO (TraceSendRecv (Handshake vNumber CBOR.Term)
-                                                       peerid
-                                                       (DecoderFailureOrTooMuchInput DeserialiseFailure)),
+                                                         ConnectionId
+                                                         (DecoderFailureOrTooMuchInput DeserialiseFailure)),
       nistErrorPolicyTracer  :: Tracer IO (WithAddr SockAddr ErrorPolicyTrace),
       nistSubscriptionTracer :: Tracer IO (WithIPList (SubscriptionTrace SockAddr))
     }
 
-nullNetworkIPSubscriptionTracers :: NetworkIPSubscriptionTracers ptcl vNumber peerid
+nullNetworkIPSubscriptionTracers :: NetworkIPSubscriptionTracers ptcl vNumber
 nullNetworkIPSubscriptionTracers = NetworkIPSubscriptionTracers {
       nistMuxTracer          = nullTracer,
       nistHandshakeTracer    = nullTracer,

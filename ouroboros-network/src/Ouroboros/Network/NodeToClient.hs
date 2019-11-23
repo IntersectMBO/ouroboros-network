@@ -159,12 +159,10 @@ nodeToClientCodecCBORTerm = CodecCBORTerm {encodeTerm, decodeTerm}
 -- protocol.  This is mostly useful for future enhancements.
 --
 connectTo
-  :: NetworkConnectTracers NodeToClientProtocols NodeToClientVersion peerid
-  -> (Socket.SockAddr -> Socket.SockAddr -> peerid)
-  -- ^ create peerid from local address and remote address
+  :: NetworkConnectTracers NodeToClientProtocols NodeToClientVersion
   -> Versions NodeToClientVersion
               DictVersion
-              (OuroborosApplication InitiatorApp peerid NodeToClientProtocols IO BL.ByteString a b)
+              (OuroborosApplication InitiatorApp ConnectionId NodeToClientProtocols IO BL.ByteString a b)
   -- ^ A dictionary of protocol versions & applications to run on an established
   -- connection.  The application to run will be chosen by initial handshake
   -- protocol (the highest shared version will be chosen).
@@ -179,13 +177,11 @@ connectTo = connectToNode cborTermVersionDataCodec
 -- the 'NodeToClientV_1' version of the protocol.
 --
 connectTo_V1
-  :: NetworkConnectTracers NodeToClientProtocols NodeToClientVersion peerid
-  -> (Socket.SockAddr -> Socket.SockAddr -> peerid)
-  -- ^ create peerid from local address and remote address
+  :: NetworkConnectTracers NodeToClientProtocols NodeToClientVersion
   -> NodeToClientVersionData
   -- ^ Client version data sent during initial handshake protocol.  Client and
   -- server must agree on it.
-  -> (OuroborosApplication InitiatorApp peerid NodeToClientProtocols IO BL.ByteString a b)
+  -> (OuroborosApplication InitiatorApp ConnectionId NodeToClientProtocols IO BL.ByteString a b)
   -- ^ 'OuroborosInitiatorApplication' which is run on an established connection
   -- using a multiplexer after the initial handshake protocol suceeds.
   -> Maybe Socket.AddrInfo
@@ -193,10 +189,9 @@ connectTo_V1
   -> Socket.AddrInfo
   -- ^ remote address
   -> IO ()
-connectTo_V1 tracers peeridFn versionData application =
+connectTo_V1 tracers versionData application =
   connectTo
     tracers
-    peeridFn
     (simpleSingletonVersions
       NodeToClientV_1
       versionData
@@ -209,24 +204,21 @@ connectTo_V1 tracers peeridFn versionData application =
 --
 withServer
   :: ( HasResponder appType ~ True )
-  => NetworkServerTracers NodeToClientProtocols NodeToClientVersion peerid
+  => NetworkServerTracers NodeToClientProtocols NodeToClientVersion
   -> NetworkMutableState
   -> Socket.AddrInfo
-  -> (Socket.SockAddr -> Socket.SockAddr -> peerid)
-  -- ^ create peerid from local address and remote address
   -> (forall vData. DictVersion vData -> vData -> vData -> Accept)
   -> Versions NodeToClientVersion DictVersion
-              (OuroborosApplication appType peerid NodeToClientProtocols IO BL.ByteString a b)
+              (OuroborosApplication appType ConnectionId NodeToClientProtocols IO BL.ByteString a b)
   -> ErrorPolicies Socket.SockAddr ()
   -> (Async () -> IO t)
   -> IO t
-withServer tracers networkState addr peeridFn acceptVersion versions errPolicies k =
+withServer tracers networkState addr acceptVersion versions errPolicies k =
   withServerNode
     tracers
     networkState
     addr
     cborTermVersionDataCodec
-    peeridFn
     acceptVersion
     versions
     errPolicies
@@ -237,24 +229,22 @@ withServer tracers networkState addr peeridFn acceptVersion versions errPolicies
 --
 withServer_V1
   :: ( HasResponder appType ~ True )
-  => NetworkServerTracers NodeToClientProtocols NodeToClientVersion peerid
+  => NetworkServerTracers NodeToClientProtocols NodeToClientVersion
   -> NetworkMutableState
   -> Socket.AddrInfo
-  -> (Socket.SockAddr -> Socket.SockAddr -> peerid)
-  -- ^ create peerid from local address and remote address
   -> NodeToClientVersionData
   -- ^ Client version data sent during initial handshake protocol.  Client and
   -- server must agree on it.
-  -> (OuroborosApplication appType peerid NodeToClientProtocols IO BL.ByteString a b)
+  -> (OuroborosApplication appType ConnectionId NodeToClientProtocols IO BL.ByteString a b)
   -- ^ applications which has the reponder side, i.e.
   -- 'OuroborosResponderApplication' or
   -- 'OuroborosInitiatorAndResponderApplication'.
   -> ErrorPolicies Socket.SockAddr ()
   -> (Async () -> IO t)
   -> IO t
-withServer_V1 tracers networkState addr peeridFn versionData application =
+withServer_V1 tracers networkState addr versionData application =
     withServer
-      tracers networkState addr peeridFn
+      tracers networkState addr
       (\(DictVersion _) -> acceptEq)
       (simpleSingletonVersions
         NodeToClientV_1
@@ -266,10 +256,9 @@ withServer_V1 tracers networkState addr peeridFn versionData application =
 -- established connection.
 --
 ncSubscriptionWorker
-    :: forall appType peerid void x y.
+    :: forall appType void x y.
        ( HasInitiator appType ~ True )
-    => NetworkIPSubscriptionTracers NodeToClientProtocols NodeToClientVersion peerid
-    -> (Socket.SockAddr -> Socket.SockAddr -> peerid)
+    => NetworkIPSubscriptionTracers NodeToClientProtocols NodeToClientVersion
     -> NetworkMutableState
     -> IPSubscriptionParams ()
     -> Versions
@@ -277,7 +266,7 @@ ncSubscriptionWorker
         DictVersion
         (OuroborosApplication
           appType
-          peerid
+          ConnectionId
           NodeToClientProtocols
           IO BL.ByteString x y)
     -> IO void
@@ -288,7 +277,6 @@ ncSubscriptionWorker
     , nistHandshakeTracer
     , nistErrorPolicyTracer
     }
-  peeridFn
   networkState
   subscriptionParams
   versions
@@ -300,36 +288,32 @@ ncSubscriptionWorker
         (connectToNode'
           cborTermVersionDataCodec
           (NetworkConnectTracers nistMuxTracer nistHandshakeTracer)
-          peeridFn
           versions)
 
 
 -- | Like 'ncSubscriptionWorker' but specific to 'NodeToClientV_1'.
 --
 ncSubscriptionWorker_V1
-    :: forall appType peerid void x y.
+    :: forall appType void x y.
        ( HasInitiator appType ~ True )
-    => NetworkIPSubscriptionTracers NodeToClientProtocols NodeToClientVersion peerid
-    -> (Socket.SockAddr -> Socket.SockAddr -> peerid)
+    => NetworkIPSubscriptionTracers NodeToClientProtocols NodeToClientVersion
     -> NetworkMutableState
     -> IPSubscriptionParams ()
     -> NodeToClientVersionData
     -> (OuroborosApplication
           appType
-          peerid
+          ConnectionId
           NodeToClientProtocols
           IO BL.ByteString x y)
     -> IO void
 ncSubscriptionWorker_V1
   tracers
-  peeridFn
   networkState
   subscriptionParams
   versionData
   application
     = ncSubscriptionWorker
         tracers
-        peeridFn
         networkState
         subscriptionParams
         (simpleSingletonVersions

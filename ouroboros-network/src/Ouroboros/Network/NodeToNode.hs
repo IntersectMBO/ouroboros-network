@@ -201,12 +201,10 @@ nodeToNodeCodecCBORTerm = CodecCBORTerm {encodeTerm, decodeTerm}
 -- | A specialised version of @'Ouroboros.Network.Socket.connectToNode'@.
 --
 connectTo
-  :: NetworkConnectTracers NodeToNodeProtocols NodeToNodeVersion peerid
-  -> (Socket.SockAddr -> Socket.SockAddr -> peerid)
-  -- ^ create peerid from local address and remote address
+  :: NetworkConnectTracers NodeToNodeProtocols NodeToNodeVersion
   -> Versions NodeToNodeVersion
               DictVersion
-              (OuroborosApplication InitiatorApp peerid NodeToNodeProtocols IO BL.ByteString a b)
+              (OuroborosApplication InitiatorApp ConnectionId NodeToNodeProtocols IO BL.ByteString a b)
   -> Maybe Socket.AddrInfo
   -> Socket.AddrInfo
   -> IO ()
@@ -216,18 +214,15 @@ connectTo = connectToNode cborTermVersionDataCodec
 -- | Like 'connectTo' but specific to 'NodeToNodeV_1'.
 --
 connectTo_V1
-  :: NetworkConnectTracers NodeToNodeProtocols NodeToNodeVersion peerid
-  -> (Socket.SockAddr -> Socket.SockAddr -> peerid)
-  -- ^ create peerid from local address and remote address
+  :: NetworkConnectTracers NodeToNodeProtocols NodeToNodeVersion
   -> NodeToNodeVersionData
-  -> (OuroborosApplication InitiatorApp peerid NodeToNodeProtocols IO BL.ByteString a b)
+  -> (OuroborosApplication InitiatorApp ConnectionId NodeToNodeProtocols IO BL.ByteString a b)
   -> Maybe Socket.AddrInfo
   -> Socket.AddrInfo
   -> IO ()
-connectTo_V1 tracers peeridFn versionData application localAddr remoteAddr =
+connectTo_V1 tracers versionData application localAddr remoteAddr =
     connectTo
       tracers
-      peeridFn
       (simpleSingletonVersions
           NodeToNodeV_1
           versionData
@@ -240,23 +235,20 @@ connectTo_V1 tracers peeridFn versionData application localAddr remoteAddr =
 --
 withServer
   :: ( HasResponder appType ~ True)
-  => NetworkServerTracers NodeToNodeProtocols NodeToNodeVersion peerid
+  => NetworkServerTracers NodeToNodeProtocols NodeToNodeVersion
   -> NetworkMutableState
   -> Socket.AddrInfo
-  -> (Socket.SockAddr -> Socket.SockAddr -> peerid)
-  -- ^ create peerid from local address and remote address
   -> (forall vData. DictVersion vData -> vData -> vData -> Accept)
-  -> Versions NodeToNodeVersion DictVersion (OuroborosApplication appType peerid NodeToNodeProtocols IO BL.ByteString a b)
+  -> Versions NodeToNodeVersion DictVersion (OuroborosApplication appType ConnectionId NodeToNodeProtocols IO BL.ByteString a b)
   -> ErrorPolicies Socket.SockAddr ()
   -> (Async () -> IO t)
   -> IO t
-withServer tracers networkState addr peeridFn acceptVersion versions errPolicies k =
+withServer tracers networkState addr acceptVersion versions errPolicies k =
   withServerNode
     tracers
     networkState
     addr
     cborTermVersionDataCodec
-    peeridFn
     acceptVersion
     versions
     errPolicies
@@ -267,19 +259,17 @@ withServer tracers networkState addr peeridFn acceptVersion versions errPolicies
 --
 withServer_V1
   :: ( HasResponder appType ~ True )
-  => NetworkServerTracers NodeToNodeProtocols NodeToNodeVersion peerid
+  => NetworkServerTracers NodeToNodeProtocols NodeToNodeVersion
   -> NetworkMutableState
   -> Socket.AddrInfo
-  -> (Socket.SockAddr -> Socket.SockAddr -> peerid)
-  -- ^ create peerid from local address and remote address
   -> NodeToNodeVersionData
-  -> (OuroborosApplication appType peerid NodeToNodeProtocols IO BL.ByteString x y)
+  -> (OuroborosApplication appType ConnectionId NodeToNodeProtocols IO BL.ByteString x y)
   -> ErrorPolicies Socket.SockAddr ()
   -> (Async () -> IO t)
   -> IO t
-withServer_V1 tracers networkState addr peeridFn versionData application =
+withServer_V1 tracers networkState addr versionData application =
     withServer
-      tracers networkState addr peeridFn
+      tracers networkState addr
       (\(DictVersion _) -> acceptEq)
       (simpleSingletonVersions
           NodeToNodeV_1
@@ -292,10 +282,9 @@ withServer_V1 tracers networkState addr peeridFn versionData application =
 -- established connection.
 --
 ipSubscriptionWorker
-    :: forall appType peerid void x y.
+    :: forall appType void x y.
        ( HasInitiator appType ~ True )
-    => NetworkIPSubscriptionTracers NodeToNodeProtocols NodeToNodeVersion peerid
-    -> (Socket.SockAddr -> Socket.SockAddr -> peerid)
+    => NetworkIPSubscriptionTracers NodeToNodeProtocols NodeToNodeVersion
     -> NetworkMutableState
     -> IPSubscriptionParams ()
     -> Versions
@@ -303,7 +292,7 @@ ipSubscriptionWorker
         DictVersion
         (OuroborosApplication
           appType
-          peerid
+          ConnectionId
           NodeToNodeProtocols
           IO BL.ByteString x y)
     -> IO void
@@ -314,7 +303,6 @@ ipSubscriptionWorker
     , nistHandshakeTracer
     , nistErrorPolicyTracer
     }
-  peeridFn
   networkState
   subscriptionParams
   versions
@@ -326,36 +314,32 @@ ipSubscriptionWorker
         (connectToNode'
           cborTermVersionDataCodec
           (NetworkConnectTracers nistMuxTracer nistHandshakeTracer)
-          peeridFn
           versions)
 
 
 -- | Like 'ipSubscriptionWorker' but specific to 'NodeToNodeV_1'.
 --
 ipSubscriptionWorker_V1
-    :: forall appType peerid void x y.
+    :: forall appType void x y.
        ( HasInitiator appType ~ True )
-    => NetworkIPSubscriptionTracers NodeToNodeProtocols NodeToNodeVersion peerid
-    -> (Socket.SockAddr -> Socket.SockAddr -> peerid)
+    => NetworkIPSubscriptionTracers NodeToNodeProtocols NodeToNodeVersion
     -> NetworkMutableState
     -> IPSubscriptionParams ()
     -> NodeToNodeVersionData
     -> (OuroborosApplication
           appType
-          peerid
+          ConnectionId
           NodeToNodeProtocols
           IO BL.ByteString x y)
     -> IO void
 ipSubscriptionWorker_V1
   tracers
-  peeridFn
   networkState
   subscriptionParams
   versionData
   application
     = ipSubscriptionWorker
         tracers
-        peeridFn
         networkState
         subscriptionParams
         (simpleSingletonVersions
@@ -369,10 +353,9 @@ ipSubscriptionWorker_V1
 -- established connection.
 --
 dnsSubscriptionWorker
-    :: forall appType peerid x y void.
+    :: forall appType x y void.
        ( HasInitiator appType ~ True )
-    => NetworkDNSSubscriptionTracers NodeToNodeProtocols NodeToNodeVersion peerid
-    -> (Socket.SockAddr -> Socket.SockAddr -> peerid)
+    => NetworkDNSSubscriptionTracers NodeToNodeProtocols NodeToNodeVersion ConnectionId
     -> NetworkMutableState
     -> DnsSubscriptionParams ()
     -> Versions
@@ -380,7 +363,7 @@ dnsSubscriptionWorker
         DictVersion
         (OuroborosApplication
           appType
-          peerid
+          ConnectionId
           NodeToNodeProtocols
           IO BL.ByteString x y)
     -> IO void
@@ -392,7 +375,6 @@ dnsSubscriptionWorker
     , ndstHandshakeTracer
     , ndstErrorPolicyTracer
     }
-  peeridFn
   networkState
   subscriptionParams
   versions =
@@ -405,36 +387,32 @@ dnsSubscriptionWorker
       (connectToNode'
         cborTermVersionDataCodec
         (NetworkConnectTracers ndstMuxTracer ndstHandshakeTracer)
-        peeridFn
         versions)
 
 
 -- | Like 'dnsSubscriptionWorker' but specific to 'NodeToNodeV_1'.
 --
 dnsSubscriptionWorker_V1
-    :: forall appType peerid x y void.
+    :: forall appType x y void.
        ( HasInitiator appType ~ True )
-    => NetworkDNSSubscriptionTracers NodeToNodeProtocols NodeToNodeVersion peerid
-    -> (Socket.SockAddr -> Socket.SockAddr -> peerid)
+    => NetworkDNSSubscriptionTracers NodeToNodeProtocols NodeToNodeVersion ConnectionId
     -> NetworkMutableState
     -> DnsSubscriptionParams ()
     -> NodeToNodeVersionData
     -> (OuroborosApplication
           appType
-          peerid
+          ConnectionId
           NodeToNodeProtocols
           IO BL.ByteString x y)
     -> IO void
 dnsSubscriptionWorker_V1
   tracers
-  peeridFn
   networkState
   subscriptionParams
   versionData
   application =
      dnsSubscriptionWorker
       tracers
-      peeridFn
       networkState
       subscriptionParams
       (simpleSingletonVersions
