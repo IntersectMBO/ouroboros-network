@@ -12,6 +12,7 @@ module Main where
 
 import           Data.List
 import qualified Data.ByteString.Lazy as LBS
+import           Data.Functor (void)
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 import           Data.Set (Set)
@@ -83,22 +84,22 @@ main = do
       "pingpong":"client-pipelined":[] -> clientPingPong True
       "pingpong":"server":[] -> do
         rmIfExists defaultLocalSocketAddrPath
-        serverPingPong
+        void serverPingPong
 
       "pingpong2":"client":[] -> clientPingPong2
       "pingpong2":"server":[] -> do
         rmIfExists defaultLocalSocketAddrPath
-        serverPingPong2
+        void serverPingPong2
 
       "chainsync":"client":sockAddrs   -> clientChainSync sockAddrs
       "chainsync":"server":sockAddr:[] -> do
         rmIfExists sockAddr
-        serverChainSync sockAddr
+        void $ serverChainSync sockAddr
 
       "blockfetch":"client":sockAddrs   -> clientBlockFetch sockAddrs
       "blockfetch":"server":sockAddr:[] -> do
         rmIfExists sockAddr
-        serverBlockFetch sockAddr
+        void $ serverBlockFetch sockAddr
 
       _          -> usage
 
@@ -181,7 +182,7 @@ pingPongClientCount :: Applicative m => Int -> PingPongClient m ()
 pingPongClientCount 0 = PingPong.SendMsgDone ()
 pingPongClientCount n = SendMsgPing (pure (pingPongClientCount (n-1)))
 
-serverPingPong :: IO ()
+serverPingPong :: IO Void
 serverPingPong = do
     networkState <- newNetworkMutableState
     _ <- async $ cleanNetworkMutableState networkState
@@ -288,7 +289,7 @@ pingPongClientPipelinedMax c =
                           Nothing
                           (\n' -> go (Right n' : acc) o n)
 
-serverPingPong2 :: IO ()
+serverPingPong2 :: IO Void
 serverPingPong2 = do
     networkState <- newNetworkMutableState
     _ <- async $ cleanNetworkMutableState networkState
@@ -369,7 +370,7 @@ clientChainSync sockAddrs =
         (ChainSync.chainSyncClientPeer chainSyncClient)
 
 
-serverChainSync :: FilePath -> IO ()
+serverChainSync :: FilePath -> IO Void
 serverChainSync sockAddr = do
     networkState <- newNetworkMutableState
     _ <- async $ cleanNetworkMutableState networkState
@@ -577,7 +578,7 @@ clientBlockFetch sockAddrs = do
     chainTracer = contramap (\x -> "cur chain  : " ++ show x) stdoutTracer
 
 
-serverBlockFetch :: FilePath -> IO ()
+serverBlockFetch :: FilePath -> IO Void
 serverBlockFetch sockAddr = do
     networkState <- newNetworkMutableState
     _ <- async $ cleanNetworkMutableState networkState

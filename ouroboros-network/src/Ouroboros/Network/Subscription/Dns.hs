@@ -37,6 +37,7 @@ import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
 import           Control.Tracer
 import qualified Data.IP as IP
+import           Data.Void (Void)
 import qualified Network.DNS as DNS
 import qualified Network.Socket as Socket
 import           Text.Printf
@@ -262,7 +263,7 @@ dnsSubscriptionWorker
     -> NetworkMutableState
     -> DnsSubscriptionParams a
     -> (Socket.Socket -> IO a)
-    -> IO void
+    -> IO Void
 dnsSubscriptionWorker subTracer dnsTracer errTrace networkState
                       params@SubscriptionParams { spSubscriptionTarget } k =
     do rs <- DNS.makeResolvSeed DNS.defaultResolvConf

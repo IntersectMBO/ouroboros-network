@@ -78,6 +78,7 @@ import           Data.Time.Clock (DiffTime)
 import           Data.Text (Text)
 import qualified Data.Text as T
 import           Data.Typeable (Typeable)
+import           Data.Void (Void)
 import qualified Codec.CBOR.Encoding as CBOR
 import qualified Codec.CBOR.Decoding as CBOR
 import qualified Codec.CBOR.Term as CBOR
@@ -229,7 +230,7 @@ withServer
   -> Socket.AddrInfo
   -> Versions NodeToNodeVersion DictVersion (OuroborosApplication appType ConnectionId NodeToNodeProtocols IO BL.ByteString a b)
   -> ErrorPolicies Socket.SockAddr ()
-  -> (Async () -> IO t)
+  -> (Async Void -> IO t)
   -> IO t
 withServer tracers networkState addr versions errPolicies k =
   withServerNode
@@ -253,7 +254,7 @@ withServer_V1
   -> NodeToNodeVersionData
   -> (OuroborosApplication appType ConnectionId NodeToNodeProtocols IO BL.ByteString x y)
   -> ErrorPolicies Socket.SockAddr ()
-  -> (Async () -> IO t)
+  -> (Async Void -> IO t)
   -> IO t
 withServer_V1 tracers networkState addr versionData application =
     withServer
@@ -269,7 +270,7 @@ withServer_V1 tracers networkState addr versionData application =
 -- established connection.
 --
 ipSubscriptionWorker
-    :: forall appType void x y.
+    :: forall appType x y.
        ( HasInitiator appType ~ True )
     => NetworkIPSubscriptionTracers NodeToNodeProtocols NodeToNodeVersion
     -> NetworkMutableState
@@ -282,7 +283,7 @@ ipSubscriptionWorker
           ConnectionId
           NodeToNodeProtocols
           IO BL.ByteString x y)
-    -> IO void
+    -> IO Void
 ipSubscriptionWorker
   NetworkIPSubscriptionTracers
     { nistSubscriptionTracer
@@ -307,7 +308,7 @@ ipSubscriptionWorker
 -- | Like 'ipSubscriptionWorker' but specific to 'NodeToNodeV_1'.
 --
 ipSubscriptionWorker_V1
-    :: forall appType void x y.
+    :: forall appType x y.
        ( HasInitiator appType ~ True )
     => NetworkIPSubscriptionTracers NodeToNodeProtocols NodeToNodeVersion
     -> NetworkMutableState
@@ -318,7 +319,7 @@ ipSubscriptionWorker_V1
           ConnectionId
           NodeToNodeProtocols
           IO BL.ByteString x y)
-    -> IO void
+    -> IO Void
 ipSubscriptionWorker_V1
   tracers
   networkState
@@ -340,7 +341,7 @@ ipSubscriptionWorker_V1
 -- established connection.
 --
 dnsSubscriptionWorker
-    :: forall appType x y void.
+    :: forall appType x y.
        ( HasInitiator appType ~ True )
     => NetworkDNSSubscriptionTracers NodeToNodeProtocols NodeToNodeVersion ConnectionId
     -> NetworkMutableState
@@ -353,7 +354,7 @@ dnsSubscriptionWorker
           ConnectionId
           NodeToNodeProtocols
           IO BL.ByteString x y)
-    -> IO void
+    -> IO Void
 dnsSubscriptionWorker
   NetworkDNSSubscriptionTracers
     { ndstSubscriptionTracer
@@ -380,7 +381,7 @@ dnsSubscriptionWorker
 -- | Like 'dnsSubscriptionWorker' but specific to 'NodeToNodeV_1'.
 --
 dnsSubscriptionWorker_V1
-    :: forall appType x y void.
+    :: forall appType x y.
        ( HasInitiator appType ~ True )
     => NetworkDNSSubscriptionTracers NodeToNodeProtocols NodeToNodeVersion ConnectionId
     -> NetworkMutableState
@@ -391,7 +392,7 @@ dnsSubscriptionWorker_V1
           ConnectionId
           NodeToNodeProtocols
           IO BL.ByteString x y)
-    -> IO void
+    -> IO Void
 dnsSubscriptionWorker_V1
   tracers
   networkState

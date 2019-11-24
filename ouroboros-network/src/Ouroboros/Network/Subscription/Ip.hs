@@ -39,6 +39,7 @@ import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadThrow
 import           Control.Tracer
 import           Data.Time.Clock (DiffTime)
+import           Data.Void (Void)
 import qualified Network.Socket as Socket
 import           Text.Printf
 
@@ -74,13 +75,13 @@ type IPSubscriptionParams a = SubscriptionParams a IPSubscriptionTarget
 -- given in IPSubscriptionTarget.
 --
 ipSubscriptionWorker
-    :: forall a void.
+    :: forall a.
        Tracer IO (WithIPList (SubscriptionTrace Socket.SockAddr))
     -> Tracer IO (WithAddr Socket.SockAddr ErrorPolicyTrace)
     -> NetworkMutableState
     -> IPSubscriptionParams a
     -> (Socket.Socket -> IO a)
-    -> IO void
+    -> IO Void
 ipSubscriptionWorker subscriptionTracer errorPolicyTracer
                      networkState@NetworkMutableState { nmsPeerStates }
                      SubscriptionParams { spLocalAddresses
@@ -162,7 +163,7 @@ mainTx :: ( MonadThrow m
           , MonadThrow (STM m)
           , MonadSTM m
           )
-       => Main m (PeerStates m addr) void
+       => Main m (PeerStates m addr) Void
 mainTx (ThrowException e) = throwM e
 mainTx PeerStates{}       = retry
 

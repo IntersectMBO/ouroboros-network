@@ -31,13 +31,14 @@ module Ouroboros.Consensus.Node
 
 import qualified Codec.CBOR.Read as CBOR
 import qualified Codec.CBOR.Term as CBOR
-import           Control.Monad (forM, void)
+import           Control.Monad (forM_, void)
 import           Control.Tracer (Tracer)
 import           Crypto.Random
 import           Data.ByteString.Lazy (ByteString)
 import           Data.List (any)
 import           Data.Proxy (Proxy (..))
 import           Data.Time.Clock (secondsToDiffTime)
+import           Data.Void (Void)
 import           Network.Mux.Types (MuxTrace, WithMuxBearer)
 import           Network.Socket as Socket
 
@@ -309,10 +310,10 @@ initNetwork registry nodeArgs kernel RunNetworkArgs{..} = do
     cleanLocalPeerStatesThread <- forkLinkedThread registry (NodeToNode.cleanNetworkMutableState networkLocalState)
 
     -- serve local clients (including tx submission)
-    localServer <- forkLinkedThread registry (runLocalServer networkLocalState)
+    _ <- forkLinkedThread registry (runLocalServer networkLocalState)
 
     -- serve downstream nodes
-    peerServers <- forM rnaMyAddrs
+    forM_ rnaMyAddrs
         (\a -> forkLinkedThread registry $ runPeerServer networkState a)
 
     let ipv4Address = if any (\ai -> Socket.addrFamily ai == Socket.AF_INET) rnaMyAddrs
@@ -322,16 +323,20 @@ initNetwork registry nodeArgs kernel RunNetworkArgs{..} = do
                          then Just (Socket.SockAddrInet6 0 0 (0, 0, 0, 0) 0)
                          else Nothing
 
-    ipSubscriptions <- forkLinkedThread registry $
+    _ <- forkLinkedThread registry $
                          runIpSubscriptionWorker networkState ipv4Address ipv6Address
 
     -- dns subscription managers
-    dnsSubscriptions <- forM rnaDnsProducers $ \dnsProducer -> do
+    forM_ rnaDnsProducers $ \dnsProducer -> do
        forkLinkedThread registry $
          runDnsSubscriptionWorker networkState ipv4Address ipv6Address dnsProducer
 
-    let threads = localServer : ipSubscriptions : cleanPeerStatesThread : cleanLocalPeerStatesThread : dnsSubscriptions ++ peerServers
-    void $ waitAnyThread threads
+    -- the only thread that terminates is 'cleanNetworkStateThread', all the
+    -- other threads return `Void`, thus they can only throw, since all of them
+    -- are linked to this thread we can just wait on the 'cleanNetworkStateThread'
+    -- Also note that 'cleanNetworkStateThread' terminates only if one of the
+    -- other threads throws an exception.
+    void $ waitAnyThread [cleanNetworkStateThread, cleanLocalPeerStatesThread]
   where
     remoteErrorPolicy = remoteNetworkErrorPolicy <> consensusErrorPolicy
     localErrorPolicy  = localNetworkErrorPolicy <> consensusErrorPolicy
@@ -347,7 +352,7 @@ initNetwork registry nodeArgs kernel RunNetworkArgs{..} = do
     nodeToClientVersionData = NodeToClientVersionData { networkMagic = rnaNetworkMagic }
 
     runLocalServer :: NetworkMutableState
-                   -> IO ()
+                   -> IO Void
     runLocalServer networkLocalState =
       NodeToClient.withServer_V1
         (NetworkServerTracers
@@ -363,7 +368,7 @@ initNetwork registry nodeArgs kernel RunNetworkArgs{..} = do
 
     runPeerServer :: NetworkMutableState
                   -> Socket.AddrInfo
-                  -> IO ()
+                  -> IO Void
     runPeerServer networkState myAddr =
       NodeToNode.withServer_V1
         (NetworkServerTracers
@@ -380,7 +385,7 @@ initNetwork registry nodeArgs kernel RunNetworkArgs{..} = do
     runIpSubscriptionWorker :: NetworkMutableState
                             -> Maybe Socket.SockAddr
                             -> Maybe Socket.SockAddr
-                            -> IO ()
+                            -> IO Void
     runIpSubscriptionWorker networkState ipv4 ipv6 = ipSubscriptionWorker_V1
       (NetworkIPSubscriptionTracers
         rnaMuxTracer
@@ -406,7 +411,7 @@ initNetwork registry nodeArgs kernel RunNetworkArgs{..} = do
                              -> Maybe Socket.SockAddr
                              -> Maybe Socket.SockAddr
                              -> DnsSubscriptionTarget
-                             -> IO ()
+                             -> IO Void
     runDnsSubscriptionWorker networkState ipv4 ipv6 dnsProducer = dnsSubscriptionWorker_V1
       (NetworkDNSSubscriptionTracers
         rnaMuxTracer

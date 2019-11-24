@@ -60,6 +60,7 @@ import           Data.Text (Text)
 import qualified Data.Text as T
 import           Data.Time.Clock
 import           Data.Typeable (Typeable)
+import           Data.Void (Void)
 import qualified Codec.CBOR.Encoding as CBOR
 import qualified Codec.CBOR.Decoding as CBOR
 import qualified Codec.CBOR.Term as CBOR
@@ -205,7 +206,7 @@ withServer
   -> Versions NodeToClientVersion DictVersion
               (OuroborosApplication appType ConnectionId NodeToClientProtocols IO BL.ByteString a b)
   -> ErrorPolicies Socket.SockAddr ()
-  -> (Async () -> IO t)
+  -> (Async Void -> IO t)
   -> IO t
 withServer tracers networkState addr versions errPolicies k =
   withServerNode
@@ -234,7 +235,7 @@ withServer_V1
   -- 'OuroborosResponderApplication' or
   -- 'OuroborosInitiatorAndResponderApplication'.
   -> ErrorPolicies Socket.SockAddr ()
-  -> (Async () -> IO t)
+  -> (Async Void -> IO t)
   -> IO t
 withServer_V1 tracers networkState addr versionData application =
     withServer
@@ -249,7 +250,7 @@ withServer_V1 tracers networkState addr versionData application =
 -- established connection.
 --
 ncSubscriptionWorker
-    :: forall appType void x y.
+    :: forall appType x y.
        ( HasInitiator appType ~ True )
     => NetworkIPSubscriptionTracers NodeToClientProtocols NodeToClientVersion
     -> NetworkMutableState
@@ -262,7 +263,7 @@ ncSubscriptionWorker
           ConnectionId
           NodeToClientProtocols
           IO BL.ByteString x y)
-    -> IO void
+    -> IO Void
 ncSubscriptionWorker
   NetworkIPSubscriptionTracers
     { nistSubscriptionTracer
@@ -287,7 +288,7 @@ ncSubscriptionWorker
 -- | Like 'ncSubscriptionWorker' but specific to 'NodeToClientV_1'.
 --
 ncSubscriptionWorker_V1
-    :: forall appType void x y.
+    :: forall appType x y.
        ( HasInitiator appType ~ True )
     => NetworkIPSubscriptionTracers NodeToClientProtocols NodeToClientVersion
     -> NetworkMutableState
@@ -298,7 +299,7 @@ ncSubscriptionWorker_V1
           ConnectionId
           NodeToClientProtocols
           IO BL.ByteString x y)
-    -> IO void
+    -> IO Void
 ncSubscriptionWorker_V1
   tracers
   networkState

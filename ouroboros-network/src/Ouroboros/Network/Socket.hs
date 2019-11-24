@@ -64,6 +64,7 @@ import           Codec.Serialise (Serialise)
 import           Data.Typeable (Typeable)
 import qualified Data.ByteString.Lazy as BL
 import           Data.Int
+import           Data.Void
 
 import qualified Network.Socket as Socket hiding (recv)
 
@@ -496,7 +497,7 @@ withServerNode
     -- a given address.  Note that if @'MuxClientAndServerApplication'@ is
     -- returned, the connection will run a full duplex set of mini-protocols.
     -> ErrorPolicies Socket.SockAddr ()
-    -> (Socket.SockAddr -> Async () -> IO t)
+    -> (Socket.SockAddr -> Async Void -> IO t)
     -- ^ callback which takes the @Async@ of the thread that is running the server.
     -- Note: the server thread will terminate when the callback returns or
     -- throws an exception.
@@ -525,7 +526,7 @@ withServerNode tracers@NetworkServerTracers { nstErrorPolicyTracer } networkStat
           main) (k addr')
 
     where
-      main :: Server.Main (PeerStates IO Socket.SockAddr) ()
+      main :: Server.Main (PeerStates IO Socket.SockAddr) Void
       main (ThrowException e) = throwM e
       main PeerStates{}       = retry
 
