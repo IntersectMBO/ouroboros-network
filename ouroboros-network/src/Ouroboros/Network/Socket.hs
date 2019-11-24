@@ -18,6 +18,7 @@ module Ouroboros.Network.Socket (
     , NetworkMutableState (..)
     , newNetworkMutableState
     , newNetworkMutableStateSTM
+    , cleanNetworkMutableState
     , ConnectionId (..)
     , withServerNode
     , connectToNode
@@ -395,6 +396,13 @@ newNetworkMutableStateSTM =
 
 newNetworkMutableState :: IO NetworkMutableState
 newNetworkMutableState = atomically newNetworkMutableStateSTM
+
+-- | Clean 'PeerStates' within 'NetworkMutableState' every 200s
+--
+cleanNetworkMutableState :: NetworkMutableState
+                         -> IO ()
+cleanNetworkMutableState NetworkMutableState {nmsPeerStates} =
+    cleanPeerStates 200 nmsPeerStates
 
 -- |
 -- Thin wrapper around @'Server.run'@.

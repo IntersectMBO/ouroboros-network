@@ -23,6 +23,7 @@ module Ouroboros.Network.NodeToClient (
   , NetworkMutableState (..)
   , newNetworkMutableState
   , newNetworkMutableStateSTM
+  , cleanNetworkMutableState
   , withServer_V1
   , withServer
 
@@ -42,12 +43,7 @@ module Ouroboros.Network.NodeToClient (
   , ErrorPolicy (..)
   , ErrorPolicyTrace (..)
   , WithAddr (..)
-  , PeerStates (..)
-  , newPeerStatesVar
-  , cleanPeerStates
-  , PeerState (..)
   , SuspendDecision (..)
-  , newConnectionTable
   , TraceSendRecv (..)
   , DecoderFailureOrTooMuchInput
   , Handshake
@@ -78,7 +74,6 @@ import           Network.TypedProtocol.Driver (TraceSendRecv (..))
 
 import           Ouroboros.Network.Magic
 import           Ouroboros.Network.ErrorPolicy
-import           Ouroboros.Network.Subscription.PeerState
 import           Ouroboros.Network.Tracers
 import           Ouroboros.Network.Mux
 import           Ouroboros.Network.Protocol.ChainSync.Client (chainSyncClientNull)

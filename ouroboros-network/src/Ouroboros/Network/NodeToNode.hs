@@ -26,6 +26,7 @@ module Ouroboros.Network.NodeToNode (
   , NetworkMutableState (..)
   , newNetworkMutableState
   , newNetworkMutableStateSTM
+  , cleanNetworkMutableState
   , withServer
   , withServer_V1
 
@@ -52,20 +53,12 @@ module Ouroboros.Network.NodeToNode (
   , Handshake
   , LocalAddresses (..)
 
-  -- ** Connection table
-  , ConnectionTable
-  , newConnectionTable
-
   -- ** Error Policies and Peer state
   , ErrorPolicies (..)
   , remoteNetworkErrorPolicy
   , localNetworkErrorPolicy
   , nullErrorPolicies
   , ErrorPolicy (..)
-  , PeerStates (..)
-  , newPeerStatesVar
-  , cleanPeerStates
-  , PeerState (..)
   , SuspendDecision (..)
 
   -- ** Traces
@@ -99,7 +92,6 @@ import           Network.TypedProtocol.Driver (TraceSendRecv (..))
 
 import           Ouroboros.Network.Magic
 import           Ouroboros.Network.ErrorPolicy
-import           Ouroboros.Network.Subscription.PeerState
 import           Ouroboros.Network.Mux
 import           Ouroboros.Network.Protocol.Handshake.Type
 import           Ouroboros.Network.Protocol.Handshake.Version
@@ -107,9 +99,6 @@ import           Ouroboros.Network.BlockFetch.Client (BlockFetchProtocolFailure)
 import qualified Ouroboros.Network.TxSubmission.Inbound as TxInbound
 import qualified Ouroboros.Network.TxSubmission.Outbound as TxOutbound
 import           Ouroboros.Network.Socket
-import           Ouroboros.Network.Server.ConnectionTable ( ConnectionTable
-                                                          , newConnectionTable
-                                                          )
 import           Ouroboros.Network.Tracers
 import           Ouroboros.Network.Subscription.Ip (IPSubscriptionParams, SubscriptionParams (..))
 import qualified Ouroboros.Network.Subscription.Ip as Subscription

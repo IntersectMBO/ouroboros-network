@@ -305,8 +305,8 @@ initNetwork registry nodeArgs kernel RunNetworkArgs{..} = do
     networkState <- newNetworkMutableState
     networkLocalState <- newNetworkMutableState
     -- clean peer states every 200s
-    cleanPeerStatesThread <- forkLinkedThread registry (NodeToNode.cleanPeerStates 200 (nmsPeerStates networkState))
-    cleanLocalPeerStatesThread <- forkLinkedThread registry (NodeToNode.cleanPeerStates 200 (nmsPeerStates networkLocalState))
+    cleanNetworkStateThread <- forkLinkedThread registry (NodeToNode.cleanNetworkMutableState networkState)
+    cleanLocalPeerStatesThread <- forkLinkedThread registry (NodeToNode.cleanNetworkMutableState networkLocalState)
 
     -- serve local clients (including tx submission)
     localServer <- forkLinkedThread registry (runLocalServer networkLocalState)
