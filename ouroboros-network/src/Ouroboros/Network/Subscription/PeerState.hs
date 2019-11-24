@@ -294,12 +294,12 @@ cleanPeerStates interval v = go
     cleanPeerState _t ColdPeer{}   = Nothing
     cleanPeerState _  ps@HotPeer{} = Just ps
     cleanPeerState  t ps@(SuspendedConsumer producers consT)
-      |      Set.null producers  && consT >= t
+      | Set.null producers  && consT >= t
       -- the consumer is not suspended anymore, but there is no producer thread
       -- running, we can safely remove the peer from 'PeerStates'
       = Nothing
 
-      | not (Set.null producers) && consT >= t
+      | consT >= t
       -- the consumer is not suspended anymore, there are running producer
       -- threads, and thus return a 'HotPeer'.
       = Just (HotPeer producers Set.empty)
@@ -314,7 +314,7 @@ cleanPeerStates interval v = go
       = Just ps
 
       | consT < t
-      -- only the consumer is still not suspended
+      -- only the consumer is still suspended
       = Just (SuspendedConsumer Set.empty consT)
 
       | otherwise
