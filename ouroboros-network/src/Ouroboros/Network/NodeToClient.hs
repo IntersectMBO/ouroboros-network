@@ -207,19 +207,18 @@ withServer
   => NetworkServerTracers NodeToClientProtocols NodeToClientVersion
   -> NetworkMutableState
   -> Socket.AddrInfo
-  -> (forall vData. DictVersion vData -> vData -> vData -> Accept)
   -> Versions NodeToClientVersion DictVersion
               (OuroborosApplication appType ConnectionId NodeToClientProtocols IO BL.ByteString a b)
   -> ErrorPolicies Socket.SockAddr ()
   -> (Async () -> IO t)
   -> IO t
-withServer tracers networkState addr acceptVersion versions errPolicies k =
+withServer tracers networkState addr versions errPolicies k =
   withServerNode
     tracers
     networkState
     addr
     cborTermVersionDataCodec
-    acceptVersion
+    (\(DictVersion _) -> acceptEq)
     versions
     errPolicies
     (\_ -> k)
@@ -245,7 +244,6 @@ withServer_V1
 withServer_V1 tracers networkState addr versionData application =
     withServer
       tracers networkState addr
-      (\(DictVersion _) -> acceptEq)
       (simpleSingletonVersions
         NodeToClientV_1
         versionData
