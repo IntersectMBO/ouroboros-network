@@ -301,13 +301,17 @@ initNetwork
   -> RunNetworkArgs ConnectionId blk
   -> IO ()
 initNetwork registry nodeArgs kernel RunNetworkArgs{..} = do
-    -- serve local clients (including tx submission)
-    localServer <- forkLinkedThread registry runLocalServer
-
-    -- serve downstream nodes
+    -- networking mutable state
     networkState <- newNetworkMutableState
+    networkLocalState <- newNetworkMutableState
     -- clean peer states every 200s
     cleanPeerStatesThread <- forkLinkedThread registry (NodeToNode.cleanPeerStates 200 (nmsPeerStates networkState))
+    cleanLocalPeerStatesThread <- forkLinkedThread registry (NodeToNode.cleanPeerStates 200 (nmsPeerStates networkLocalState))
+
+    -- serve local clients (including tx submission)
+    localServer <- forkLinkedThread registry (runLocalServer networkLocalState)
+
+    -- serve downstream nodes
     peerServers <- forM rnaMyAddrs
         (\a -> forkLinkedThread registry $ runPeerServer networkState a)
 
@@ -326,7 +330,7 @@ initNetwork registry nodeArgs kernel RunNetworkArgs{..} = do
        forkLinkedThread registry $
          runDnsSubscriptionWorker networkState ipv4Address ipv6Address dnsProducer
 
-    let threads = localServer : ipSubscriptions : cleanPeerStatesThread : dnsSubscriptions ++ peerServers
+    let threads = localServer : ipSubscriptions : cleanPeerStatesThread : cleanLocalPeerStatesThread : dnsSubscriptions ++ peerServers
     void $ waitAnyThread threads
   where
     remoteErrorPolicy = remoteNetworkErrorPolicy <> consensusErrorPolicy
@@ -342,16 +346,15 @@ initNetwork registry nodeArgs kernel RunNetworkArgs{..} = do
     nodeToNodeVersionData   = NodeToNodeVersionData { networkMagic   = rnaNetworkMagic }
     nodeToClientVersionData = NodeToClientVersionData { networkMagic = rnaNetworkMagic }
 
-    runLocalServer :: IO ()
-    runLocalServer = do
-      networkState <- newNetworkMutableState
-      _ <- forkLinkedThread registry (NodeToNode.cleanPeerStates 200 (nmsPeerStates networkState))
+    runLocalServer :: NetworkMutableState
+                   -> IO ()
+    runLocalServer networkLocalState =
       NodeToClient.withServer_V1
         (NetworkServerTracers
           rnaMuxLocalTracer
           rnaHandshakeLocalTracer
           rnaErrorPolicyTracer)
-        networkState
+        networkLocalState
         rnaMyLocalAddr
         nodeToClientVersionData
         (localResponderNetworkApplication networkApps)
