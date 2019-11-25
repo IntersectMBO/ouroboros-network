@@ -141,7 +141,7 @@ forgePraosFields PraosNodeConfig{..} PraosProof{..} mkToSign = do
 -------------------------------------------------------------------------------}
 
 data VRFType = NONCE | TEST
-    deriving (Show, Eq, Ord, Generic)
+    deriving (Show, Eq, Ord, Generic, NoUnexpectedThunks)
 
 instance Serialise VRFType
   -- use generic instance
@@ -169,6 +169,11 @@ data PraosValidationError c =
     | PraosInvalidSig String (VerKeyKES (PraosKES c)) Natural (SigKES (PraosKES c))
     | PraosInvalidCert (VerKeyVRF (PraosVRF c)) (Natural, SlotNo, VRFType) Natural (CertVRF (PraosVRF c))
     | PraosInsufficientStake Double Natural
+    deriving (Generic)
+
+-- We override 'showTypeOf' to make sure to show @c@
+instance PraosCrypto c => NoUnexpectedThunks (PraosValidationError c) where
+  showTypeOf _ = show $ typeRep (Proxy @(PraosValidationError c))
 
 deriving instance PraosCrypto c => Show (PraosValidationError c)
 deriving instance PraosCrypto c => Eq   (PraosValidationError c)

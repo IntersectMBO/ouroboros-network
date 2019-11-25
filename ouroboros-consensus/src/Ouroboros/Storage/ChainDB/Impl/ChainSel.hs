@@ -2,6 +2,7 @@
 {-# LANGUAGE GADTs                #-}
 {-# LANGUAGE LambdaCase           #-}
 {-# LANGUAGE MultiWayIf           #-}
+{-# LANGUAGE PatternSynonyms      #-}
 {-# LANGUAGE RecordWildCards      #-}
 {-# LANGUAGE ScopedTypeVariables  #-}
 {-# LANGUAGE StandaloneDeriving   #-}
@@ -43,17 +44,20 @@ import           Control.Tracer (Tracer, contramap, traceWith)
 
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment (..))
 import qualified Ouroboros.Network.AnchoredFragment as AF
-import           Ouroboros.Network.Block (BlockNo, HasHeader (..), HeaderHash,
-                     Point, SlotNo, blockPoint, castPoint, pointHash)
+import           Ouroboros.Network.Block (BlockNo, pattern BlockPoint,
+                     pattern GenesisPoint, HasHeader (..), HeaderHash, Point,
+                     blockPoint, castPoint, pointHash)
 import           Ouroboros.Network.Point (WithOrigin)
 
 import           Ouroboros.Consensus.Block (BlockProtocol, GetHeader (..),
                      toIsEBB)
 import           Ouroboros.Consensus.Ledger.Abstract
+import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.STM (WithFingerprint (..))
 
+import           Ouroboros.Storage.ChainDB.API (InvalidBlockReason (..))
 import           Ouroboros.Storage.ChainDB.Impl.ImmDB (ImmDB)
 import qualified Ouroboros.Storage.ChainDB.Impl.ImmDB as ImmDB
 import           Ouroboros.Storage.ChainDB.Impl.LgrDB (LgrDB)
@@ -77,7 +81,7 @@ initialChainSelection
   -> LgrDB m blk
   -> Tracer m (TraceEvent blk)
   -> NodeConfig (BlockProtocol blk)
-  -> StrictTVar m (WithFingerprint (Map (HeaderHash blk) SlotNo)) -- ^ 'cdbInvalid'
+  -> StrictTVar m (WithFingerprint (InvalidBlocks blk))
   -> m (ChainAndLedger blk)
 initialChainSelection immDB volDB lgrDB tracer cfg varInvalid = do
     -- We follow the steps from section "## Initialization" in ChainDB.md
@@ -521,8 +525,7 @@ chainSelection
   => LgrDB m blk
   -> Tracer m (TraceValidationEvent blk)
   -> NodeConfig (BlockProtocol blk)
-  -> StrictTVar m (WithFingerprint (Map (HeaderHash blk) SlotNo))
-     -- ^ The invalid blocks
+  -> StrictTVar m (WithFingerprint (InvalidBlocks blk))
   -> ChainAndLedger blk              -- ^ The current chain and ledger
   -> NonEmpty (CandidateSuffix blk)  -- ^ Candidates
   -> m (Maybe (ChainAndLedger blk))
@@ -632,8 +635,7 @@ validateCandidate
   => LgrDB m blk
   -> Tracer m (TraceValidationEvent blk)
   -> NodeConfig (BlockProtocol blk)
-  -> StrictTVar m (WithFingerprint (Map (HeaderHash blk) SlotNo))
-     -- ^ The invalid blocks
+  -> StrictTVar m (WithFingerprint (InvalidBlocks blk))
   -> ChainAndLedger  blk                   -- ^ Current chain and ledger
   -> CandidateSuffix blk                   -- ^ Candidate fragment
   -> m (Maybe (ChainAndLedger blk))
@@ -652,7 +654,7 @@ validateCandidate lgrDB tracer cfg varInvalid
             candidate' = fromMaybe
               (error "cannot rollback to point on fragment") $
               AF.rollback lastValid candidate
-        addInvalidBlocks (hashesStartingFrom pt)
+        addInvalidBlocks (mkNewInvalidBlocks e pt)
         trace (InvalidBlock e pt)
 
         -- The candidate is now a prefix of the original candidate, and might be
@@ -678,23 +680,29 @@ validateCandidate lgrDB tracer cfg varInvalid
 
     -- | Add the given map of invalid points to 'cdbInvalid' and change its
     -- fingerprint.
-    addInvalidBlocks :: Map (HeaderHash blk) SlotNo -> m ()
+    addInvalidBlocks :: InvalidBlocks blk -> m ()
     addInvalidBlocks invalidBlocksInCand = atomically $
       modifyTVar varInvalid $ \(WithFingerprint invalid fp) ->
         WithFingerprint (Map.union invalid invalidBlocksInCand) (succ fp)
 
-    -- | Make a list of all the points after from the given point (inclusive)
-    -- in the candidate fragment and turn it into a map from hash to slot that
-    -- can be added to 'cdbInvalid'.
+    -- | Make an 'InvalidBlocks' for all the points after the given point
+    -- (inclusive) in the candidate fragment that can be added to
+    -- 'cdbInvalid'.
     --
     -- PRECONDITON: the given point is on the candidate fragment.
-    hashesStartingFrom :: HasCallStack
-                       => Point blk -> Map (HeaderHash blk) SlotNo
-    hashesStartingFrom pt = case AF.splitBeforePoint suffix pt of
-        Nothing                  -> error "point not on fragment"
-        Just (_, startingFromPt) -> Map.fromList $
-          map (\hdr -> (blockHash hdr, blockSlot hdr)) $
-          AF.toOldestFirst startingFromPt
+    mkNewInvalidBlocks :: HasCallStack
+                       => ExtValidationError blk
+                       -> Point blk
+                       -> InvalidBlocks blk
+    mkNewInvalidBlocks e pt = case pt of
+      GenesisPoint         -> error "cannot have validated genesis"
+      BlockPoint slot hash -> case AF.splitAfterPoint suffix pt of
+        Nothing           -> error "point not on fragment"
+        Just (_, afterPt) ->
+          Map.insert hash (ValidationError e, slot) $ Map.fromList
+            [ (blockHash hdr, (InChainAfterInvalidBlock pt e, blockSlot hdr))
+            | hdr <- AF.toOldestFirst afterPt
+            ]
 
 {-------------------------------------------------------------------------------
   Auxiliary data types for 'cdbAddBlock'
@@ -824,7 +832,7 @@ truncateInvalidCandidate isInvalid (CandidateSuffix rollback suffix)
 ignoreInvalid
   :: HasHeader blk
   => proxy blk
-  -> Map (HeaderHash blk) SlotNo  -- ^ 'cdbInvalid'
+  -> InvalidBlocks blk
   -> (HeaderHash blk -> Bool)
   -> (HeaderHash blk -> Bool)
 ignoreInvalid _ invalid isMember hash
@@ -836,7 +844,7 @@ ignoreInvalid _ invalid isMember hash
 ignoreInvalidSuc
   :: HasHeader blk
   => proxy blk
-  -> Map (HeaderHash blk) SlotNo  -- ^ 'cdbInvalid'
+  -> InvalidBlocks blk
   -> (WithOrigin (HeaderHash blk) -> Set (HeaderHash blk))
   -> (WithOrigin (HeaderHash blk) -> Set (HeaderHash blk))
 ignoreInvalidSuc _ invalid succsOf =

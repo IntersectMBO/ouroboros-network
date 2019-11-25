@@ -27,6 +27,8 @@ module Ouroboros.Storage.ChainDB.API (
   , UnknownRange(..)
   , validBounds
   , streamAll
+    -- * Invalid block reason
+  , InvalidBlockReason(..)
     -- * Readers
   , Reader(..)
   , ReaderId
@@ -53,6 +55,7 @@ import           Ouroboros.Network.Block (BlockNo, pattern BlockPoint,
                      atSlot, genesisPoint)
 
 import           Ouroboros.Consensus.Block (GetHeader (..))
+import           Ouroboros.Consensus.Ledger.Abstract (ProtocolLedgerView)
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
@@ -256,7 +259,7 @@ data ChainDB m blk = ChainDB {
       -- Note that when invalid blocks are garbage collected and thus no
       -- longer detected by this function, the 'Fingerprint' doesn't have to
       -- change, since the function will not detect new invalid blocks.
-    , getIsInvalidBlock :: STM m (WithFingerprint (HeaderHash blk -> Bool))
+    , getIsInvalidBlock :: STM m (WithFingerprint (HeaderHash blk -> Maybe (InvalidBlockReason blk)))
 
       -- | Close the ChainDB
       --
@@ -420,6 +423,22 @@ streamAll chainDB registry = do
           -- stream.
           Left  e  -> error (show e)
           Right it -> return $ Just it
+
+{-------------------------------------------------------------------------------
+  Invalid block reason
+-------------------------------------------------------------------------------}
+
+-- | The reason why a block is invalid.
+data InvalidBlockReason blk
+  = ValidationError !(ExtValidationError blk)
+    -- ^ The ledger found the block to be invalid with the following reason.
+  | InChainAfterInvalidBlock !(Point blk) !(ExtValidationError blk)
+    -- ^ The block occurs in a chain after block that was found to be invalid
+    -- by the ledger. The point and reason corresponding to the original
+    -- invalid block are stored.
+  deriving (Eq, Show, Generic)
+
+instance ProtocolLedgerView blk => NoUnexpectedThunks (InvalidBlockReason blk)
 
 {-------------------------------------------------------------------------------
   Readers

@@ -1,5 +1,8 @@
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE DataKinds          #-}
+{-# LANGUAGE DerivingVia        #-}
+{-# LANGUAGE FlexibleInstances  #-}
+{-# LANGUAGE OverloadedStrings  #-}
+{-# LANGUAGE StandaloneDeriving #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 module Ouroboros.Consensus.Ledger.Byron.Orphans () where
@@ -10,6 +13,8 @@ import           Data.ByteString (ByteString)
 import           Data.Coerce
 import           Data.Text (unpack)
 import           Formatting
+
+import           Cardano.Prelude (NoUnexpectedThunks, UseIsNormalForm (..))
 
 import qualified Cardano.Binary
 import           Cardano.Crypto (shortHashF)
@@ -123,3 +128,15 @@ instance Condense (CC.AMempoolPayload a) where
       "updateproposal: " <> unpack (sformat build (void p))
     condense (CC.MempoolUpdateVote vote) =
       "updatevote: " <> unpack (sformat build (void vote))
+
+{-------------------------------------------------------------------------------
+  NoUnexpectedThunks
+-------------------------------------------------------------------------------}
+
+-- TODO <https://github.com/input-output-hk/cardano-ledger/issues/685>
+--
+-- Cardano.Chain.Delegation.Validation.Registration.TooLarge is not exported,
+-- but occurs somewhere in CC.ChainValidationError, so we use
+-- 'UseIsNormalForm' instead of deriving one using Generics.
+deriving via UseIsNormalForm CC.ChainValidationError
+  instance NoUnexpectedThunks CC.ChainValidationError

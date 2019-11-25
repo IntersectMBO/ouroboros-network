@@ -15,6 +15,7 @@ module Ouroboros.Consensus.Protocol.BFT (
     Bft
   , BftFields(..)
   , BftParams(..)
+  , BftValidationErr(..)
   , forgeBftFields
     -- * Classes
   , BftCrypto(..)
@@ -163,7 +164,7 @@ instance BftCrypto c => NoUnexpectedThunks (NodeConfig (Bft c))
 -------------------------------------------------------------------------------}
 
 data BftValidationErr = BftInvalidSignature String
-  deriving (Show, Eq)
+  deriving (Show, Eq, Generic, NoUnexpectedThunks)
 
 {-------------------------------------------------------------------------------
   Crypto models

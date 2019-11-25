@@ -33,6 +33,7 @@ import           Ouroboros.Network.Point (WithOrigin (..), fromWithOrigin)
 
 import           Ouroboros.Consensus.Ledger.Byron.PBFT
 import           Ouroboros.Consensus.Protocol.PBFT
+import           Ouroboros.Consensus.Util (firstJust)
 import           Ouroboros.Consensus.Util.SlotBounded (Bounds (..),
                      SlotBounded (..))
 import qualified Ouroboros.Consensus.Util.SlotBounded as SB
@@ -143,7 +144,7 @@ trim k now = withDelegationHistory go
 
 find :: WithOrigin SlotNo -> DelegationHistory -> Maybe Delegation.Map
 find slot (DelegationHistory history) =
-    Foldable.asum $ map (`SB.at` slot') (Foldable.toList history)
+    firstJust (`SB.at` slot') history
   where
     slot' :: SlotNo
     slot' = fromWithOrigin genesisSlotNo slot

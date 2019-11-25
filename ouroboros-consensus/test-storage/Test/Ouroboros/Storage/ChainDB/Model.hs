@@ -4,6 +4,7 @@
 {-# LANGUAGE RecordWildCards      #-}
 {-# LANGUAGE ScopedTypeVariables  #-}
 {-# LANGUAGE StandaloneDeriving   #-}
+{-# LANGUAGE TupleSections        #-}
 {-# LANGUAGE TypeFamilies         #-}
 {-# LANGUAGE UndecidableInstances #-}
 
@@ -84,8 +85,9 @@ import           Ouroboros.Consensus.Util.STM (Fingerprint (..),
                      WithFingerprint (..))
 
 import           Ouroboros.Storage.ChainDB.API (ChainDbError (..),
-                     IteratorId (..), IteratorResult (..), StreamFrom (..),
-                     StreamTo (..), UnknownRange (..), validBounds)
+                     InvalidBlockReason (..), IteratorId (..),
+                     IteratorResult (..), StreamFrom (..), StreamTo (..),
+                     UnknownRange (..), validBounds)
 
 -- | Model of the chain DB
 data Model blk = Model {
@@ -94,7 +96,7 @@ data Model blk = Model {
     , currentLedger :: ExtLedgerState blk
     , initLedger    :: ExtLedgerState blk
     , iterators     :: Map IteratorId [blk]
-    , invalid       :: WithFingerprint (Map (HeaderHash blk) SlotNo)
+    , invalid       :: WithFingerprint (Map (HeaderHash blk) (InvalidBlockReason blk, SlotNo))
     , isOpen        :: Bool
       -- ^ While the model tracks whether it is closed or not, the queries and
       -- other functions in this module ignore this for simplicity. The mock
@@ -237,7 +239,7 @@ addBlock cfg blk m
     blocks' :: Map (HeaderHash blk) blk
     blocks' = Map.insert (Block.blockHash blk) blk (blocks m)
 
-    invalidBlocks' :: Map (HeaderHash blk) SlotNo
+    invalidBlocks' :: Map (HeaderHash blk) (InvalidBlockReason blk, SlotNo)
     candidates     :: [(Chain blk, ExtLedgerState blk)]
     (invalidBlocks', candidates) = validChains cfg (initLedger m) blocks'
 
@@ -418,7 +420,7 @@ validChains :: forall blk. (
             => NodeConfig (BlockProtocol blk)
             -> ExtLedgerState blk
             -> Map (HeaderHash blk) blk
-            -> ( Map (HeaderHash blk) SlotNo
+            -> ( Map (HeaderHash blk) (InvalidBlockReason blk, SlotNo)
                , [(Chain blk, ExtLedgerState blk)]
                )
 validChains cfg initLedger bs =
@@ -446,14 +448,21 @@ validChains cfg initLedger bs =
     sortChains = sortBy (flip (compareCandidates cfg `on` Chain.toAnchoredFragment))
 
     classify :: ValidationResult blk
-             -> ( Map (HeaderHash blk) SlotNo
+             -> ( Map (HeaderHash blk) (InvalidBlockReason blk, SlotNo)
                 , [(Chain blk, ExtLedgerState blk)]
                 )
     classify (ValidChain chain ledger) = (mempty, [(chain, ledger)])
-    classify (InvalidChain _ invalid chain ledger) =
-        ( Map.fromList . map pointToHashAndSlot . NE.toList $ invalid
+    classify (InvalidChain e invalid chain ledger) =
+        ( mkInvalid e invalid
         , [(chain, ledger)]
         )
+
+    mkInvalid :: ExtValidationError blk -> NonEmpty (Point blk)
+              -> Map (HeaderHash blk) (InvalidBlockReason blk, SlotNo)
+    mkInvalid e (pt NE.:| after) =
+      uncurry Map.insert (fmap (ValidationError e,) (pointToHashAndSlot pt)) $
+      Map.fromList $ map (fmap (InChainAfterInvalidBlock pt e,) .
+                          pointToHashAndSlot) after
 
     pointToHashAndSlot GenesisPoint    = error "genesis cannot be invalid"
     pointToHashAndSlot BlockPoint {..} = (withHash, atSlot)

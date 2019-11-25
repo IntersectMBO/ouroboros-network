@@ -1,17 +1,16 @@
 {-# LANGUAGE BangPatterns               #-}
 {-# LANGUAGE DataKinds                  #-}
-{-# LANGUAGE DeriveAnyClass             #-}
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE DuplicateRecordFields      #-}
 {-# LANGUAGE ExistentialQuantification  #-}
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE MultiWayIf                 #-}
 {-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE StandaloneDeriving         #-}
+{-# LANGUAGE TupleSections              #-}
 {-# LANGUAGE TypeApplications           #-}
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE UndecidableInstances       #-}
@@ -28,12 +27,12 @@ module Ouroboros.Consensus.ChainSyncClient (
   , Their (..)
     -- * Trace events
   , TraceChainSyncClientEvent (..)
+  , InvalidBlockReason
   ) where
 
 import           Control.Monad
 import           Control.Monad.Except
 import           Control.Tracer
-import           Data.List (find)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (isJust)
@@ -66,6 +65,8 @@ import           Ouroboros.Consensus.Util.ResourceRegistry
 import           Ouroboros.Consensus.Util.STM (WithFingerprint (..),
                      onEachChange)
 
+import           Ouroboros.Storage.ChainDB (InvalidBlockReason)
+
 -- | Clock skew: the number of slots the chain of an upstream node may be
 -- ahead of the current slot (according to 'BlockchainTime').
 --
@@ -83,7 +84,7 @@ data ChainDbView m blk = ChainDbView
   { getCurrentChain   :: STM m (AnchoredFragment (Header blk))
   , getCurrentLedger  :: STM m (ExtLedgerState blk)
   , getOurTip         :: STM m (Tip blk)
-  , getIsInvalidBlock :: STM m (WithFingerprint (HeaderHash blk -> Bool))
+  , getIsInvalidBlock :: STM m (WithFingerprint (HeaderHash blk -> Maybe (InvalidBlockReason blk)))
   }
 
 -- newtype wrappers to avoid confusing our tip with their tip.
@@ -99,6 +100,7 @@ bracketChainSyncClient
     :: ( IOLike m
        , Ord peer
        , SupportedBlock blk
+       , ProtocolLedgerView blk
        )
     => Tracer m (TraceChainSyncClientEvent blk)
     -> ChainDbView m blk
@@ -535,8 +537,8 @@ chainSyncClient mkPipelineDecision0 tracer cfg btime
       let hdrHash  = headerHash hdr
           hdrPoint = headerPoint hdr
       isInvalidBlock <- atomically $ forgetFingerprint <$> getIsInvalidBlock
-      when (isInvalidBlock hdrHash) $
-        disconnect $ InvalidBlock hdrPoint
+      whenJust (isInvalidBlock hdrHash) $ \reason ->
+        disconnect $ InvalidBlock hdrPoint reason
 
       -- Get the ledger view required to validate the header
       -- NOTE: This will block if we are too far behind.
@@ -734,10 +736,11 @@ rejectInvalidBlocks
     :: forall m blk.
        ( IOLike m
        , SupportedBlock blk
+       , ProtocolLedgerView blk
        )
     => Tracer m (TraceChainSyncClientEvent blk)
     -> ResourceRegistry m
-    -> STM m (WithFingerprint (HeaderHash blk -> Bool))
+    -> STM m (WithFingerprint (HeaderHash blk -> Maybe (InvalidBlockReason blk)))
        -- ^ Get the invalid block checker
     -> STM m (AnchoredFragment (Header blk))
     -> m ()
@@ -749,17 +752,18 @@ rejectInvalidBlocks tracer registry getIsInvalidBlock getCandidate =
       getIsInvalidBlock
       (checkInvalid . forgetFingerprint)
   where
-    checkInvalid :: (HeaderHash blk -> Bool) -> m ()
+    checkInvalid :: (HeaderHash blk -> Maybe (InvalidBlockReason blk)) -> m ()
     checkInvalid isInvalidBlock = do
       theirFrag <- atomically getCandidate
       -- The invalid block is likely to be a more recent block, so check from
       -- newest to oldest.
-      mapM_ disconnect $
-        find (isInvalidBlock . headerHash) (AF.toNewestFirst theirFrag)
+      mapM_ (uncurry disconnect) $ firstJust
+        (\hdr -> (hdr,) <$> isInvalidBlock (headerHash hdr))
+        (AF.toNewestFirst theirFrag)
 
-    disconnect :: Header blk -> m ()
-    disconnect invalidHeader = do
-      let ex = InvalidBlock (headerPoint invalidHeader)
+    disconnect :: Header blk -> InvalidBlockReason blk -> m ()
+    disconnect invalidHeader reason = do
+      let ex = InvalidBlock (headerPoint invalidHeader) reason
       traceWith tracer $ TraceException ex
       throwM ex
 
@@ -867,9 +871,10 @@ data ChainSyncClientException =
         }
 
       -- | The upstream node's chain contained a block that we know is invalid.
-    | forall blk. SupportedBlock blk =>
+    | forall blk. ProtocolLedgerView blk =>
         InvalidBlock
         { _invalidBlock :: Point blk
+        , _reason       :: InvalidBlockReason blk
         }
 
 deriving instance Show ChainSyncClientException
@@ -923,10 +928,10 @@ instance Eq ChainSyncClientException where
       Just Refl -> (a, b, c, d) == (a', b', c', d')
   DoesntFit{} == _ = False
 
-  InvalidBlock (a :: Point blk) == InvalidBlock (a' :: Point blk') =
+  InvalidBlock (a :: Point blk) b == InvalidBlock (a' :: Point blk') b' =
     case eqT @blk @blk' of
       Nothing   -> False
-      Just Refl -> a == a'
+      Just Refl -> (a, b) == (a', b')
   InvalidBlock{} == _ = False
 
 instance Exception ChainSyncClientException

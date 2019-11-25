@@ -842,16 +842,22 @@ deriving instance ( ToExpr blk
                   )
                  => ToExpr (ChainProducerState blk)
 deriving instance ToExpr a => ToExpr (WithFingerprint a)
+deriving instance ( ToExpr (HeaderHash blk)
+                  , ToExpr (ExtValidationError blk)
+                  )
+                 => ToExpr (InvalidBlockReason blk)
 deriving instance ( ToExpr blk
                   , ToExpr (HeaderHash blk)
                   , ToExpr (ChainState (BlockProtocol blk))
                   , ToExpr (LedgerState blk)
+                  , ToExpr (ExtValidationError blk)
                   )
                  => ToExpr (DBModel blk)
 deriving instance ( ToExpr blk
                   , ToExpr (HeaderHash blk)
                   , ToExpr (ChainState (BlockProtocol blk))
                   , ToExpr (LedgerState blk)
+                  , ToExpr (ExtValidationError blk)
                   )
                  => ToExpr (Model blk IO Concrete)
 
@@ -862,8 +868,11 @@ deriving instance ToExpr TestHeader
 deriving instance ToExpr TestHeaderHash
 deriving instance ToExpr TestBody
 deriving instance ToExpr TestBodyHash
+deriving instance ToExpr TestBlockError
 deriving instance ToExpr Blk
 deriving instance ToExpr (LedgerState Blk)
+deriving instance ToExpr BftValidationErr
+deriving instance ToExpr (ExtValidationError Blk)
 
 {-------------------------------------------------------------------------------
   Labelling

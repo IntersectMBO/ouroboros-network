@@ -67,9 +67,10 @@ data family NodeConfig p :: *
 class ( Show (ChainState    p)
       , Show (ValidationErr p)
       , Eq   (ValidationErr p)
-      , NoUnexpectedThunks (NodeConfig  p)
-      , NoUnexpectedThunks (ChainState  p)
-      , NoUnexpectedThunks (NodeState   p)
+      , NoUnexpectedThunks (NodeConfig    p)
+      , NoUnexpectedThunks (ChainState    p)
+      , NoUnexpectedThunks (NodeState     p)
+      , NoUnexpectedThunks (ValidationErr p)
       , Typeable p -- so that p can appear in exceptions
       ) => OuroborosTag p where
 

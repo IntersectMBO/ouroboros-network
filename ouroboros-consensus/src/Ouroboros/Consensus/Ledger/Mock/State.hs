@@ -47,9 +47,10 @@ deriving instance Serialise (HeaderHash blk) => Serialise (MockState blk)
 data MockError blk =
     MockInvalidInputs InvalidInputs
   | MockInvalidHash (ChainHash blk) (ChainHash blk)
-  deriving (Generic)
+  deriving (Generic, NoUnexpectedThunks)
 
 deriving instance StandardHash blk => Show (MockError blk)
+deriving instance StandardHash blk => Eq   (MockError blk)
 deriving instance Serialise (HeaderHash blk) => Serialise (MockError blk)
 
 updateMockState :: ( Monad m
