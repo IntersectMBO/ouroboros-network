@@ -222,7 +222,7 @@ txSubmissionServer
   -> Word16  -- ^ Maximum number of txs to request in any one go
   -> TxSubmissionServerPipelined txid tx m [tx]
 txSubmissionServer tracer txId maxUnacked maxTxIdsToRequest maxTxToRequest =
-    TxSubmissionServerPipelined (serverIdle [] Zero initialServerState)
+    TxSubmissionServerPipelined (pure $ serverIdle [] Zero initialServerState)
   where
     serverIdle :: forall (n :: N).
                   [tx]

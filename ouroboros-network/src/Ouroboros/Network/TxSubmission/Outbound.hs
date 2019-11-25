@@ -66,7 +66,8 @@ data TxSubmissionMempoolReader txid tx idx m =
 data MempoolSnapshot txid tx idx =
      MempoolSnapshot {
        mempoolTxIdsAfter :: idx -> [(txid, idx, TxSizeInBytes)],
-       mempoolLookupTx   :: idx -> Maybe tx
+       mempoolLookupTx   :: idx -> Maybe tx,
+       mempoolHasTx      :: txid -> Bool
      }
 
 data TraceTxSubmissionOutbound txid tx

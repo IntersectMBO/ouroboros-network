@@ -609,13 +609,15 @@ getMempoolReader mempool = Outbound.TxSubmissionMempoolReader
     convertSnapshot
       :: MempoolSnapshot          blk                       TicketNo
       -> Outbound.MempoolSnapshot (GenTxId blk) (GenTx blk) TicketNo
-    convertSnapshot MempoolSnapshot{snapshotTxsAfter, snapshotLookupTx} =
+    convertSnapshot MempoolSnapshot { snapshotTxsAfter, snapshotLookupTx,
+                                      snapshotHasTx } =
       Outbound.MempoolSnapshot
         { mempoolTxIdsAfter = \idx ->
             [ (txId tx, idx', txSize tx)
             | (tx, idx') <- snapshotTxsAfter idx
             ]
         , mempoolLookupTx   = snapshotLookupTx
+        , mempoolHasTx      = snapshotHasTx
         }
 
 getMempoolWriter
