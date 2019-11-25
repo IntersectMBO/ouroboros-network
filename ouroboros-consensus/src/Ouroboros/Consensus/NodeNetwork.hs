@@ -31,10 +31,10 @@ module Ouroboros.Consensus.NodeNetwork (
 
 import           Codec.Serialise (Serialise)
 import           Control.Monad (void)
+import           Control.Tracer
 import           Data.ByteString.Lazy (ByteString)
 import           Data.Proxy (Proxy (..))
 import           Data.Void (Void)
-import           Control.Tracer
 
 import           Network.Mux
 import           Network.TypedProtocol.Channel
@@ -151,7 +151,7 @@ protocolHandlers
     -> NodeKernel m peer blk
     -> ProtocolHandlers m peer blk
 protocolHandlers NodeArgs {btime, maxClockSkew, tracers, maxUnackTxs, chainSyncPipelining}
-                 NodeKernel {getChainDB, getMempool, getTopLevelConfig} =
+                 NodeKernel {getChainDB, getMempool, getTopLevelConfig, getRecentTxIds} =
     --TODO: bundle needed NodeArgs into the NodeKernel
     -- so we do not have to pass it separately
     --TODO: need to review the use of the peer id in the tracers.
@@ -183,6 +183,7 @@ protocolHandlers NodeArgs {btime, maxClockSkew, tracers, maxUnackTxs, chainSyncP
         txSubmissionInbound
           (txInboundTracer tracers)
           maxUnackTxs
+          getRecentTxIds
           (getMempoolWriter getMempool)
 
     , phLocalChainSyncServer =

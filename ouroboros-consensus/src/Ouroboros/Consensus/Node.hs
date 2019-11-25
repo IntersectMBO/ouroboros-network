@@ -23,6 +23,7 @@ module Ouroboros.Consensus.Node
   , NodeKernel (..)
   , MaxBlockSizeOverride (..)
   , MempoolCapacityBytesOverride (..)
+  , RecentTxIds.ExpiryThreshold (..)
   , IPSubscriptionTarget (..)
   , DnsSubscriptionTarget (..)
   , ConnectionId (..)
@@ -49,6 +50,7 @@ import           Ouroboros.Network.NodeToNode (NodeToNodeVersionData (..),
                      RemoteConnectionId, nodeToNodeCodecCBORTerm)
 import           Ouroboros.Network.Protocol.ChainSync.PipelineDecision
                      (pipelineDecisionLowHighMark)
+import qualified Ouroboros.Network.RecentTxIds as RecentTxIds
 
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.ChainSyncClient (ClockSkew (..))
@@ -329,19 +331,20 @@ mkNodeArgs
 mkNodeArgs registry cfg initState tracers btime chainDB isProducer = NodeArgs
     { tracers
     , registry
-    , maxClockSkew       = ClockSkew 1
+    , maxClockSkew            = ClockSkew 1
     , cfg
     , initState
     , btime
     , chainDB
-    , initChainDB         = nodeInitChainDB
+    , initChainDB             = nodeInitChainDB
     , blockProduction
-    , blockFetchSize      = nodeBlockFetchSize
-    , blockMatchesHeader  = nodeBlockMatchesHeader
-    , maxUnackTxs         = 100 -- TODO
-    , maxBlockSize        = NoOverride
-    , mempoolCap          = NoMempoolCapacityBytesOverride
-    , chainSyncPipelining = pipelineDecisionLowHighMark 200 300 -- TODO
+    , blockFetchSize          = nodeBlockFetchSize
+    , blockMatchesHeader      = nodeBlockMatchesHeader
+    , recentTxIdsExpiryThresh = RecentTxIds.ExpiryThreshold (secondsToDiffTime 60)
+    , maxUnackTxs             = 100 -- TODO
+    , maxBlockSize            = NoOverride
+    , mempoolCap              = NoMempoolCapacityBytesOverride
+    , chainSyncPipelining     = pipelineDecisionLowHighMark 200 300 -- TODO
     }
   where
     blockProduction = case isProducer of

@@ -34,8 +34,8 @@ import           Ouroboros.Network.Protocol.TxSubmission.Type
 
 data TxSubmissionServerPipelined txid tx m a where
   TxSubmissionServerPipelined
-    :: ServerStIdle              Z txid tx m a
-    -> TxSubmissionServerPipelined txid tx m a
+    :: m (ServerStIdle              Z txid tx m a)
+    ->    TxSubmissionServerPipelined txid tx m a
 
 
 -- | This is the type of the pipelined results, collected by 'CollectPipelined'.
@@ -97,7 +97,7 @@ txSubmissionServerPeerPipelined
     => TxSubmissionServerPipelined txid tx m a
     -> PeerPipelined (TxSubmission txid tx) AsServer StIdle m a
 txSubmissionServerPeerPipelined (TxSubmissionServerPipelined server) =
-    PeerPipelined (go server)
+    PeerPipelined $ SenderEffect (go <$> server)
   where
     go :: forall (n :: N).
           ServerStIdle n txid tx m a
@@ -140,4 +140,3 @@ txSubmissionServerPeerPipelined (TxSubmissionServerPipelined server) =
       SenderCollect
         (fmap go mNone)
         (SenderEffect . fmap go . collect)
-

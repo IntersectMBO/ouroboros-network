@@ -45,6 +45,7 @@ import           Data.Maybe (isNothing, maybeToList)
 import           Data.Proxy (Proxy (..))
 import           Data.Set (Set)
 import qualified Data.Set as Set
+import           Data.Time.Clock (secondsToDiffTime)
 import qualified Data.Typeable as Typeable
 import           GHC.Stack
 
@@ -55,6 +56,7 @@ import           Network.TypedProtocol.Codec (AnyMessage (..), CodecFailure,
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.MockChain.Chain (Chain (Genesis))
 import           Ouroboros.Network.Point (WithOrigin (..), fromWithOrigin)
+import qualified Ouroboros.Network.RecentTxIds as RecentTxIds
 
 import qualified Ouroboros.Network.BlockFetch.Client as BFClient
 import           Ouroboros.Network.Protocol.ChainSync.PipelineDecision
@@ -635,19 +637,20 @@ runThreadNetwork ThreadNetworkArgs
                 -- ChainDB
                 instrumentationTracers <> nullDebugTracers
             , registry
-            , maxClockSkew        = ClockSkew 1
-            , cfg                 = pInfoConfig
-            , initState           = pInfoInitState
+            , maxClockSkew            = ClockSkew 1
+            , cfg                     = pInfoConfig
+            , initState               = pInfoInitState
             , btime
             , chainDB
-            , initChainDB         = nodeInitChainDB
-            , blockProduction     = Just blockProduction
-            , blockFetchSize      = nodeBlockFetchSize
-            , blockMatchesHeader  = nodeBlockMatchesHeader
-            , maxUnackTxs         = 1000 -- TODO
-            , maxBlockSize        = NoOverride
-            , mempoolCap          = NoMempoolCapacityBytesOverride
-            , chainSyncPipelining = pipelineDecisionLowHighMark 2 4
+            , initChainDB             = nodeInitChainDB
+            , blockProduction         = Just blockProduction
+            , blockFetchSize          = nodeBlockFetchSize
+            , blockMatchesHeader      = nodeBlockMatchesHeader
+            , recentTxIdsExpiryThresh = RecentTxIds.ExpiryThreshold (secondsToDiffTime 60)
+            , maxUnackTxs             = 1000 -- TODO
+            , maxBlockSize            = NoOverride
+            , mempoolCap              = NoMempoolCapacityBytesOverride
+            , chainSyncPipelining     = pipelineDecisionLowHighMark 2 4
             }
 
       nodeKernel <- initNodeKernel nodeArgs

@@ -31,6 +31,7 @@ import           Data.Maybe (isJust, isNothing)
 import           Data.Proxy
 import           Data.Word (Word16, Word32)
 
+import           Control.Monad.Class.MonadTime (Time (..))
 import           Control.Tracer
 
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment (..))
@@ -41,6 +42,8 @@ import           Ouroboros.Network.BlockFetch.State (FetchMode (..))
 import           Ouroboros.Network.Point (WithOrigin (..))
 import           Ouroboros.Network.Protocol.ChainSync.PipelineDecision
                      (MkPipelineDecision)
+import           Ouroboros.Network.RecentTxIds (RecentTxIds)
+import qualified Ouroboros.Network.RecentTxIds as RecentTxIds
 import           Ouroboros.Network.TxSubmission.Inbound
                      (TxSubmissionMempoolWriter)
 import qualified Ouroboros.Network.TxSubmission.Inbound as Inbound
@@ -91,6 +94,10 @@ data NodeKernel m peer blk = NodeKernel {
 
       -- | The fetch client registry, used for the block fetch clients.
     , getFetchClientRegistry :: FetchClientRegistry peer (Header blk) blk m
+
+      -- | The IDs of transactions that we've most recently added to the
+      -- mempool from instances of the transaction submission server.
+    , getRecentTxIds         :: StrictTVar m (RecentTxIds (GenTxId blk))
 
       -- | Read the current candidates
     , getNodeCandidates      :: StrictTVar m (Map peer (StrictTVar m (AnchoredFragment (Header blk))))
@@ -159,21 +166,22 @@ data MempoolCapacityBytesOverride
 
 -- | Arguments required when initializing a node
 data NodeArgs m peer blk = NodeArgs {
-      tracers             :: Tracers m peer blk
-    , registry            :: ResourceRegistry m
-    , maxClockSkew        :: ClockSkew
-    , cfg                 :: TopLevelConfig blk
-    , initState           :: NodeState blk
-    , btime               :: BlockchainTime m
-    , chainDB             :: ChainDB m blk
-    , initChainDB         :: TopLevelConfig blk -> ChainDB m blk -> m ()
-    , blockFetchSize      :: Header blk -> SizeInBytes
-    , blockProduction     :: Maybe (BlockProduction m blk)
-    , blockMatchesHeader  :: Header blk -> blk -> Bool
-    , maxUnackTxs         :: Word16
-    , maxBlockSize        :: MaxBlockSizeOverride
-    , mempoolCap          :: MempoolCapacityBytesOverride
-    , chainSyncPipelining :: MkPipelineDecision
+      tracers                 :: Tracers m peer blk
+    , registry                :: ResourceRegistry m
+    , maxClockSkew            :: ClockSkew
+    , cfg                     :: TopLevelConfig blk
+    , initState               :: NodeState blk
+    , btime                   :: BlockchainTime m
+    , chainDB                 :: ChainDB m blk
+    , initChainDB             :: TopLevelConfig blk -> ChainDB m blk -> m ()
+    , blockFetchSize          :: Header blk -> SizeInBytes
+    , blockProduction         :: Maybe (BlockProduction m blk)
+    , blockMatchesHeader      :: Header blk -> blk -> Bool
+    , recentTxIdsExpiryThresh :: RecentTxIds.ExpiryThreshold
+    , maxUnackTxs             :: Word16
+    , maxBlockSize            :: MaxBlockSizeOverride
+    , mempoolCap              :: MempoolCapacityBytesOverride
+    , chainSyncPipelining     :: MkPipelineDecision
     }
 
 initNodeKernel
@@ -195,7 +203,7 @@ initNodeKernel args@NodeArgs { registry, cfg, tracers, maxBlockSize
     whenJust blockProduction $ forkBlockProduction maxBlockSize st
 
     let IS { blockFetchInterface, fetchClientRegistry, varCandidates,
-             mempool } = st
+             mempool, recentTxIds } = st
 
     -- Run the block fetch logic in the background. This will call
     -- 'addFetchedBlock' whenever a new block is downloaded.
@@ -211,6 +219,7 @@ initNodeKernel args@NodeArgs { registry, cfg, tracers, maxBlockSize
       , getMempool             = mempool
       , getTopLevelConfig      = cfg
       , getFetchClientRegistry = fetchClientRegistry
+      , getRecentTxIds         = recentTxIds
       , getNodeCandidates      = varCandidates
       , getTracers             = tracers
       }
@@ -237,6 +246,7 @@ data InternalState m peer blk = IS {
     , varCandidates       :: StrictTVar m (Map peer (StrictTVar m (AnchoredFragment (Header blk))))
     , varState            :: StrictTVar m (NodeState blk)
     , mempool             :: Mempool m blk TicketNo
+    , recentTxIds         :: StrictTVar m (RecentTxIds (GenTxId blk))
     }
 
 initInternalState
@@ -251,9 +261,10 @@ initInternalState
     -> m (InternalState m peer blk)
 initInternalState NodeArgs { tracers, chainDB, registry, cfg,
                              blockFetchSize, blockMatchesHeader, btime,
-                             initState, mempoolCap } = do
+                             initState, mempoolCap, recentTxIdsExpiryThresh } = do
     varCandidates  <- newTVarM mempty
     varState       <- newTVarM initState
+    recentTxIds    <- openRecentTxIds registry recentTxIdsExpiryThresh
     mpCap          <- atomically $ do
       -- If no override is provided, calculate the default mempool capacity as
       -- 2x the current ledger's maximum block size.
@@ -346,6 +357,48 @@ initBlockFetchConsensusInterface cfg chainDB getCandidates blockFetchSize
                            -> AnchoredFragment (Header blk)
                            -> Ordering
     compareCandidateChains = compareAnchoredCandidates cfg
+
+-- | Construct an 'empty' 'RecentTxIds' and spawn a thread that periodically
+-- attempts to remove expired elements.
+openRecentTxIds
+    :: (Ord txid, IOLike m)
+    => ResourceRegistry m
+    -> RecentTxIds.ExpiryThreshold
+    -> m (StrictTVar m (RecentTxIds txid))
+openRecentTxIds registry recentTxIdsExpiryThresh = do
+    t <- newTVarM RecentTxIds.empty
+    forkExpireRecentTxIds registry recentTxIdsExpiryThresh t
+    pure t
+
+-- | Spawn a thread that periodically attempts to remove expired elements from
+-- a 'RecentTxIds'.
+forkExpireRecentTxIds
+    :: forall m txid. (Ord txid, IOLike m)
+    => ResourceRegistry m
+    -> RecentTxIds.ExpiryThreshold
+    -> StrictTVar m (RecentTxIds txid)
+    -> m ()
+forkExpireRecentTxIds registry recentTxIdsExpiryThresh t =
+    void $ forkLinkedThread registry $ forever $ do
+      timeScheduledForExpiry <- atomically $ do
+        txids <- readTVar t
+        case RecentTxIds.earliestInsertionTime txids of
+          Nothing            -> retry
+          Just insertionTime -> pure (threshold `addTime` insertionTime)
+
+      waitUntil timeScheduledForExpiry
+
+      currentTime <- getMonotonicTime
+      atomically $ modifyTVar t $
+        snd . RecentTxIds.expireTxIds recentTxIdsExpiryThresh currentTime
+  where
+    RecentTxIds.ExpiryThreshold threshold = recentTxIdsExpiryThresh
+
+    waitUntil :: Time -> m ()
+    waitUntil untilTime = do
+      currentTime <- getMonotonicTime
+      let toWait = max 0 (untilTime `diffTime` currentTime)
+      threadDelay toWait
 
 forkBlockProduction
     :: forall m peer blk.
