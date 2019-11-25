@@ -92,11 +92,19 @@ import qualified Ouroboros.Network.Server.Socket as Server
 import           Ouroboros.Network.Server.ConnectionTable
 
 
+-- | Tracer used by 'connectToNode' (and derivatives, like
+-- 'Ouroboros.Network.NodeToNode.connectTo' or
+-- 'Ouroboros.Network.NodeToClient.connectTo).
+--
 data NetworkConnectTracers ptcl vNumber = NetworkConnectTracers {
       nctMuxTracer         :: Tracer IO (Mx.WithMuxBearer ConnectionId (Mx.MuxTrace ptcl)),
+      -- ^ low level mux-network tracer, which logs mux sdu (send and received)
+      -- and other low level multiplexing events.
       nctHandshakeTracer   :: Tracer IO (TraceSendRecv (Handshake vNumber CBOR.Term)
                                                        ConnectionId
                                                        (DecoderFailureOrTooMuchInput DeserialiseFailure))
+      -- ^ handshake protocol tracer; it is important for analysing version
+      -- negotation mismatches.
     }
 
 nullNetworkConnectTracers :: NetworkConnectTracers ptcl vNumber
@@ -363,12 +371,21 @@ fromSocket tblVar sd = Server.Socket
         Socket.close sd'
 
 
+-- | Tracers required by a server which handles inbound connections.
+--
 data NetworkServerTracers ptcl vNumber = NetworkServerTracers {
       nstMuxTracer         :: Tracer IO (Mx.WithMuxBearer ConnectionId (Mx.MuxTrace ptcl)),
+      -- ^ low level mux-network tracer, which logs mux sdu (send and received)
+      -- and other low level multiplexing events.
       nstHandshakeTracer   :: Tracer IO (TraceSendRecv (Handshake vNumber CBOR.Term)
                                                        ConnectionId
                                                        (DecoderFailureOrTooMuchInput DeserialiseFailure)),
+      -- ^ handshake protocol tracer; it is important for analysing version
+      -- negotation mismatches.
       nstErrorPolicyTracer :: Tracer IO (WithAddr Socket.SockAddr ErrorPolicyTrace)
+      -- ^ error policy tracer; must not be 'nullTracer', otherwise all the
+      -- exceptions which are not matched by any error policy will be caught
+      -- and not logged or rethrown.
     }
 
 nullNetworkServerTracers :: NetworkServerTracers ptcl vNumber
