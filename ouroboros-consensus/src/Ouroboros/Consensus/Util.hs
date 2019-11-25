@@ -34,10 +34,12 @@ module Ouroboros.Consensus.Util (
   , safeMaximum
   , safeMaximumBy
   , safeMaximumOn
+  , firstJust
   ) where
 
 import qualified Data.ByteString as Strict
 import qualified Data.ByteString.Lazy as Lazy
+import           Data.Foldable (asum, toList)
 import           Data.Function (on)
 import           Data.Functor.Identity
 import           Data.Kind
@@ -183,3 +185,6 @@ safeMaximumBy cmp ls  = Just $ maximumBy cmp ls
 
 safeMaximumOn :: Ord b => (a -> b) -> [a] -> Maybe a
 safeMaximumOn f = safeMaximumBy (compare `on` f)
+
+firstJust :: forall a b f. Foldable f => (a -> Maybe b) -> f a -> Maybe b
+firstJust f = asum . fmap f . toList

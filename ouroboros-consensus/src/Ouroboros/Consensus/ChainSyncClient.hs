@@ -10,6 +10,7 @@
 {-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE StandaloneDeriving         #-}
+{-# LANGUAGE TupleSections              #-}
 {-# LANGUAGE TypeApplications           #-}
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE UndecidableInstances       #-}
@@ -756,16 +757,9 @@ rejectInvalidBlocks tracer registry getIsInvalidBlock getCandidate =
       theirFrag <- atomically getCandidate
       -- The invalid block is likely to be a more recent block, so check from
       -- newest to oldest.
-      mapM_ (uncurry disconnect) $
-        firstHit (isInvalidBlock . headerHash) (AF.toNewestFirst theirFrag)
-
-    firstHit :: forall a b. (a -> Maybe b) -> [a] -> Maybe (a, b)
-    firstHit f = go
-      where
-        go []     = Nothing
-        go (x:xs) = case f x of
-          Just y  -> Just (x, y)
-          Nothing -> go xs
+      mapM_ (uncurry disconnect) $ firstJust
+        (\hdr -> (hdr,) <$> isInvalidBlock (headerHash hdr))
+        (AF.toNewestFirst theirFrag)
 
     disconnect :: Header blk -> InvalidBlockReason blk -> m ()
     disconnect invalidHeader reason = do
