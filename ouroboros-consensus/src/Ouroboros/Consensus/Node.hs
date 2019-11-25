@@ -278,8 +278,6 @@ data RunNetworkArgs peer blk = RunNetworkArgs
     -- ^ DNS resolver tracer
   , rnaErrorPolicyTracer     :: Tracer IO (WithAddr Socket.SockAddr ErrorPolicyTrace)
     -- ^ Error Policy tracer
-  , rnaMkPeer                :: SockAddr -> SockAddr -> peer
-    -- ^ How to create a peer
   , rnaMyAddrs               :: [AddrInfo]
     -- ^ The node's own addresses
   , rnaMyLocalAddr           :: AddrInfo
