@@ -90,7 +90,7 @@ run
      RunNode blk
   => Tracers IO ConnectionId blk          -- ^ Consensus tracers
   -> Tracer  IO (ChainDB.TraceEvent blk)  -- ^ ChainDB tracer
-  -> RunNetworkArgs ConnectionId blk      -- ^ Network args
+  -> RunNetworkArgs blk      -- ^ Network args
   -> FilePath                             -- ^ Database path
   -> ProtocolInfo blk
   -> (ChainDbArgs IO blk -> ChainDbArgs IO blk)
@@ -202,14 +202,14 @@ initChainDB tracer registry dbPath cfg initLedger slotLength
       }
 
 mkNodeArgs
-  :: forall blk peer. RunNode blk
+  :: forall blk. RunNode blk
   => ResourceRegistry IO
   -> NodeConfig (BlockProtocol blk)
   -> NodeState  (BlockProtocol blk)
-  -> Tracers IO peer blk
+  -> Tracers IO ConnectionId blk
   -> BlockchainTime IO
   -> ChainDB IO blk
-  -> NodeArgs IO peer blk
+  -> NodeArgs IO ConnectionId blk
 mkNodeArgs registry cfg initState tracers btime chainDB = NodeArgs
     { tracers
     , registry
@@ -257,21 +257,21 @@ type NetworkApps peer =
     ByteString ByteString ByteString ByteString ByteString ()
 
 -- | Arguments specific to the network stack
-data RunNetworkArgs peer blk = RunNetworkArgs
+data RunNetworkArgs blk = RunNetworkArgs
   { rnaIpSubscriptionTracer  :: Tracer IO (WithIPList (SubscriptionTrace Socket.SockAddr))
     -- ^ IP subscription tracer
   , rnaDnsSubscriptionTracer :: Tracer IO (WithDomainName (SubscriptionTrace Socket.SockAddr))
-  , rnaMuxTracer             :: Tracer IO (WithMuxBearer peer (MuxTrace NodeToNodeProtocols))
+  , rnaMuxTracer             :: Tracer IO (WithMuxBearer ConnectionId (MuxTrace NodeToNodeProtocols))
     -- ^ Mux tracer
-  , rnaMuxLocalTracer        :: Tracer IO (WithMuxBearer peer (MuxTrace NodeToClientProtocols))
+  , rnaMuxLocalTracer        :: Tracer IO (WithMuxBearer ConnectionId (MuxTrace NodeToClientProtocols))
   , rnaHandshakeTracer       :: Tracer IO (TraceSendRecv
                                             (Handshake NodeToNodeVersion CBOR.Term)
-                                            peer
+                                            ConnectionId
                                             (DecoderFailureOrTooMuchInput CBOR.DeserialiseFailure))
     -- ^ Handshake protocol tracer
   , rnaHandshakeLocalTracer  :: Tracer IO (TraceSendRecv
                                             (Handshake NodeToClientVersion CBOR.Term)
-                                            peer
+                                            ConnectionId
                                             (DecoderFailureOrTooMuchInput CBOR.DeserialiseFailure))
     -- ^ DNS subscription tracer
   , rnaDnsResolverTracer     :: Tracer IO (WithDomainName DnsTrace)
@@ -296,7 +296,7 @@ initNetwork
   => ResourceRegistry IO
   -> NodeArgs    IO ConnectionId blk
   -> NodeKernel  IO ConnectionId blk
-  -> RunNetworkArgs ConnectionId blk
+  -> RunNetworkArgs blk
   -> IO ()
 initNetwork registry nodeArgs kernel RunNetworkArgs{..} = do
     -- networking mutable state
