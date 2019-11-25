@@ -19,6 +19,7 @@ module Ouroboros.Consensus.Mempool.Impl (
 import           Control.Exception (assert)
 import           Control.Monad.Except
 import qualified Data.Foldable as Foldable
+import qualified Data.Set as Set
 import           Data.Typeable
 import           GHC.Generics (Generic)
 
@@ -76,6 +77,7 @@ mkMempool :: (IOLike m, ApplyTx blk)
           => MempoolEnv m blk -> Mempool m blk TicketNo
 mkMempool env = Mempool
     { addTxs        = implAddTxs env []
+    , removeTxs     = implRemoveTxs env
     , withSyncState = implWithSyncState env
     , getSnapshot   = implGetSnapshot env
     , zeroIdx       = zeroTicketNo
@@ -366,6 +368,43 @@ implAddTxs mpEnv accum txs = assert (all txInvariant txs) $ do
                                -- last 'ValidationResult' as well as the
                                -- remaining transactions (those not yet
                                -- validated).
+
+implRemoveTxs
+  :: (IOLike m, ApplyTx blk)
+  => MempoolEnv m blk
+  -> [GenTxId blk]
+  -> m ()
+implRemoveTxs mpEnv@MempoolEnv{mpEnvTracer, mpEnvStateVar} txIds = do
+    (removed, mempoolSize) <- atomically $ do
+      -- Filtering is O(n), but this function will so rarely be used, as it is
+      -- an escape hatch when there's an inconsistency between the ledger and
+      -- the mempool.
+      modifyTVar mpEnvStateVar $ \is@IS{isTxs} -> is
+        { isTxs = TxSeq.filterTxs
+            (\(TxTicket tx _) -> txId tx `notElem` toRemove)
+            isTxs
+        }
+      -- TODO some duplication with 'implWithSyncState'
+      ValidationResult
+        { vrBefore
+        , vrValid
+        , vrInvalid
+        , vrLastTicketNo
+        } <- validateIS mpEnv
+      writeTVar mpEnvStateVar IS
+        { isTxs          = vrValid
+        , isTip          = vrBefore
+        , isLastTicketNo = vrLastTicketNo
+        }
+      -- The number of transactions in the mempool /after/ manually removing
+      -- the transactions.
+      mempoolSize <- getMempoolSize mpEnv
+      return (map fst vrInvalid, mempoolSize)
+    unless (null txIds) $
+      traceWith mpEnvTracer $
+        TraceMempoolManuallyRemovedTxs txIds removed mempoolSize
+  where
+    toRemove = Set.fromList txIds
 
 implWithSyncState
   :: (IOLike m, ApplyTx blk)

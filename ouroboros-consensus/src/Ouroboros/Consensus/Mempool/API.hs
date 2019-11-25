@@ -176,6 +176,9 @@ data Mempool m blk idx = Mempool {
       -- to the mempool.
       addTxs        :: [GenTx blk] -> m [(GenTx blk, Maybe (ApplyTxErr blk))]
 
+      -- | Manually remove the given transactions from the mempool.
+    , removeTxs     :: [GenTxId blk] -> m ()
+
       -- | Sync the transactions in the mempool with the current ledger state
       --  of the 'ChainDB'.
       --
@@ -264,11 +267,25 @@ data TraceEventMempool blk
       -- from the Mempool.
       !Word
       -- ^ The total number of transactions now in the Mempool.
+  | TraceMempoolManuallyRemovedTxs
+      ![GenTxId blk]
+      -- ^ Transactions that have been manually removed from the Mempool.
+      ![GenTx blk]
+      -- ^ Previously valid transactions that are no longer valid because they
+      -- dependend on transactions that were manually removed from the
+      -- Mempool. These transactions have also been removed from the Mempool.
+      --
+      -- This list shares not transactions with the list of manually removed
+      -- transactions.
+      !Word
+      -- ^ The total number of transactions now in the Mempool.
 
 deriving instance ( Eq (GenTx blk)
+                  , Eq (GenTxId blk)
                   , Eq (ApplyTxErr blk)
                   ) => Eq (TraceEventMempool blk)
 
 deriving instance ( Show (GenTx blk)
+                  , Show (GenTxId blk)
                   , Show (ApplyTxErr blk)
                   ) => Show (TraceEventMempool blk)

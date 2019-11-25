@@ -101,6 +101,9 @@ data ChainDB m blk = ChainDB {
       -- to the current chain; even if the block is valid, it will not become
       -- part of the chain if there are other chains available that are
       -- preferred by the consensus algorithm (typically, longer chains).
+      --
+      -- This function triggers chain selection (if necessary) and terminates
+      -- after chain selection is done.
       addBlock           :: blk -> m ()
 
       -- | Get the current chain fragment

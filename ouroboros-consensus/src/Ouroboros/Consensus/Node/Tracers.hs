@@ -19,12 +19,14 @@ import           Ouroboros.Network.TxSubmission.Inbound
 import           Ouroboros.Network.TxSubmission.Outbound
                      (TraceTxSubmissionOutbound)
 
-import           Ouroboros.Consensus.Block (Header, SupportedBlock)
+import           Ouroboros.Consensus.Block (Header)
 import           Ouroboros.Consensus.BlockFetchServer
                      (TraceBlockFetchServerEvent)
-import           Ouroboros.Consensus.ChainSyncClient (TraceChainSyncClientEvent)
+import           Ouroboros.Consensus.ChainSyncClient (InvalidBlockReason,
+                     TraceChainSyncClientEvent)
 import           Ouroboros.Consensus.ChainSyncServer (TraceChainSyncServerEvent)
-import           Ouroboros.Consensus.Ledger.Abstract (AnachronyFailure)
+import           Ouroboros.Consensus.Ledger.Abstract (AnachronyFailure,
+                     ProtocolLedgerView)
 import           Ouroboros.Consensus.Mempool.API (ApplyTxErr, GenTx, GenTxId,
                      TraceEventMempool)
 import           Ouroboros.Consensus.TxSubmission
@@ -69,10 +71,11 @@ nullTracers = Tracers
 
 showTracers :: ( Show blk
                , Show (GenTx blk)
+               , Show (GenTxId blk)
                , Show (ApplyTxErr blk)
                , Show (Header blk)
                , Show peer
-               , SupportedBlock blk
+               , ProtocolLedgerView blk
                )
             => Tracer m String -> Tracers m peer blk
 showTracers tr = Tracers
@@ -105,4 +108,18 @@ data TraceForgeEvent blk
   -- 'anachronisticProtocolLedgerView', although we expect this to be
   -- 'TooFarAhead', never 'TooFarBehind'.
   | TraceCouldNotForge SlotNo AnachronyFailure
+
+  -- | We adopted the block we produced
+  | TraceAdoptedBlock SlotNo blk
+
+  -- | We did not adopt the block we produced, but the block was valid. We
+  -- must have adopted a block that another leader of the same slot produced
+  -- before we got the chance of adopting our own block. This is very rare,
+  -- this warrants a warning.
+  | TraceDidntAdoptBlock SlotNo blk
+
+  -- | We forged a block that is invalid according to the ledger in the
+  -- ChainDB. This means there is an inconsistency between the mempool
+  -- validation and the ledger validation. This is a serious error!
+  | TraceForgedInvalidBlock SlotNo blk (InvalidBlockReason blk)
   deriving (Eq, Show)

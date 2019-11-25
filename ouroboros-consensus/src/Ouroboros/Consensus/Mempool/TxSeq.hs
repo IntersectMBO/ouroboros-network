@@ -14,6 +14,7 @@ module Ouroboros.Consensus.Mempool.TxSeq (
   , lookupByTicketNo
   , splitAfterTicketNo
   , zeroTicketNo
+  , filterTxs
   ) where
 
 import           Data.FingerTree.Strict (StrictFingerTree)
@@ -140,7 +141,7 @@ infixl 5 :>, :<
 {-# COMPLETE Empty, (:<) #-}
 
 
--- | \( O(\log(n) \). Look up a transaction in the sequence by its 'TicketNo'.
+-- | \( O(\log(n)) \). Look up a transaction in the sequence by its 'TicketNo'.
 --
 lookupByTicketNo :: TxSeq tx -> TicketNo -> Maybe tx
 lookupByTicketNo (TxSeq txs) n =
@@ -149,7 +150,7 @@ lookupByTicketNo (TxSeq txs) n =
       FingerTree.Position _ (TxTicket tx n') _ | n' == n -> Just tx
       _                                                  -> Nothing
 
--- | \( O(\log(n) \). Split the sequence of transactions into two parts
+-- | \( O(\log(n)) \). Split the sequence of transactions into two parts
 -- based on the given 'TicketNo'. The first part has transactions with tickets
 -- less than or equal to the given ticket, and the second part has transactions
 -- with tickets strictly greater than the given ticket.
@@ -165,3 +166,12 @@ fromTxSeq :: TxSeq tx -> [(tx, TicketNo)]
 fromTxSeq (TxSeq ftree) = fmap
   (\(TxTicket tx tn) -> (tx, tn))
   (Foldable.toList $ ftree)
+
+-- | \( O(n) \). Filter the 'TxSeq'.
+filterTxs :: (TxTicket tx -> Bool) -> TxSeq tx -> TxSeq tx
+filterTxs p (TxSeq ftree) =
+      TxSeq
+    . FingerTree.fromList
+    . filter p
+    . Foldable.toList
+    $ ftree

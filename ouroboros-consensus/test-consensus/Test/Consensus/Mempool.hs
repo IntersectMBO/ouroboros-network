@@ -60,6 +60,7 @@ tests = testGroup "Mempool"
   , testProperty "Rejected invalid txs are traced"         prop_Mempool_TraceRejectedTxs
   , testProperty "Removed invalid txs are traced"          prop_Mempool_TraceRemovedTxs
   , testProperty "idx consistency"                         prop_Mempool_idx_consistency
+  , testProperty "removeTxs"                               prop_Mempool_removeTxs
   ]
 
 {-------------------------------------------------------------------------------
@@ -127,6 +128,20 @@ prop_Mempool_InvalidTxsNeverAdded setup =
         | txInMempool <- txsInMempoolAfter
         , txInMempool `notElem` txsInMempoolBefore
         ]
+
+-- | After removing a transaction from the Mempool, it's actually gone.
+prop_Mempool_removeTxs :: TestSetupWithTxInMempool -> Property
+prop_Mempool_removeTxs (TestSetupWithTxInMempool testSetup tx) =
+    withTestMempool testSetup $ \TestMempool { mempool } -> do
+      let Mempool { removeTxs, getSnapshot } = mempool
+      removeTxs [txId txToRemove]
+      txsInMempoolAfter <- map fst . snapshotTxs <$> atomically getSnapshot
+      return $ counterexample
+        ("Transactions in the mempool after removing (" <>
+         show txToRemove <> "): " <> show txsInMempoolAfter)
+        (txToRemove `notElem` txsInMempoolAfter)
+  where
+    txToRemove = TestGenTx tx
 
 -- | When the mempool is at capacity, test that 'addTxs' blocks when
 -- attempting to add one more transaction and that it unblocks when there is
@@ -289,6 +304,8 @@ prop_Mempool_Capacity mcts = withTestMempool mctsTestSetup $
       TraceMempoolAddTxs      txs mpSz -> TraceMempoolAddTxs      (sort txs) mpSz
       TraceMempoolRemoveTxs   txs mpSz -> TraceMempoolRemoveTxs   (sort txs) mpSz
       TraceMempoolRejectedTxs txs mpSz -> TraceMempoolRejectedTxs (sort txs) mpSz
+      TraceMempoolManuallyRemovedTxs txIds txs mpSz ->
+        TraceMempoolManuallyRemovedTxs (sort txIds) (sort txs) mpSz
 
 -- | Test that all valid transactions added to a 'Mempool' via 'addTxs' are
 -- appropriately represented in the trace of events.
@@ -413,10 +430,12 @@ instance Arbitrary TestSetup where
     -- TODO we could shrink @testLedgerState@ too
     [ TestSetup { testLedgerState
                 , testInitialTxs = testInitialTxs'
-                , testMempoolCap = testMempoolCap'
+                , testMempoolCap = MempoolCapacity mpCap'
                 }
-    | testInitialTxs' <- shrinkList (const []) testInitialTxs,
-      testMempoolCap' <- map MempoolCapacity (shrinkIntegral mpCap) ]
+    | testInitialTxs' <- shrinkList (const []) testInitialTxs
+    , mpCap' <- shrinkIntegral mpCap
+    , mpCap' > 0
+    ]
 
 -- | Generate a number of valid and invalid transactions and apply the valid
 -- transactions to the given 'LedgerState'. The transactions along with a
@@ -555,6 +574,29 @@ revalidate TestSetup { testLedgerState, testInitialTxs } =
       tx:txs' -> case runExcept (applyTxToLedger ledgerState tx) of
         Left _             -> go ledgerState  ((tx, False):revalidated) txs'
         Right ledgerState' -> go ledgerState' ((tx, True):revalidated)  txs'
+
+{-------------------------------------------------------------------------------
+  TestSetupWithTxInMempol: a mempool and a transaction that is in the mempool
+-------------------------------------------------------------------------------}
+
+-- | A 'TestSetup' along with a transaction that is in the Mempool.
+--
+-- > 'txInMempool' `elem` 'testInitialTxs' 'testSetup'
+data TestSetupWithTxInMempool = TestSetupWithTxInMempool TestSetup TestTx
+  deriving (Show)
+
+instance Arbitrary TestSetupWithTxInMempool where
+  arbitrary = do
+    TestSetupWithTxs { testSetup } <-
+      arbitrary `suchThat` (not . null . testInitialTxs . testSetup)
+    tx <- elements (testInitialTxs testSetup)
+    return $ TestSetupWithTxInMempool testSetup tx
+  shrink (TestSetupWithTxInMempool testSetup _tx) =
+    [ TestSetupWithTxInMempool testSetup tx'
+    | testSetup' <- shrink testSetup
+    , not . null . testInitialTxs $ testSetup'
+    , tx' <- testInitialTxs testSetup'
+    ]
 
 {-------------------------------------------------------------------------------
   TestMempool: a mempool with random contents
