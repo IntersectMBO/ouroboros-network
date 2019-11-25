@@ -23,7 +23,6 @@ module Ouroboros.Storage.ChainDB.Impl.ChainSel
   ) where
 
 import           Control.Exception (assert)
-import           Control.Monad (unless)
 import           Control.Monad.Except
 import           Control.Monad.Trans.State.Strict
 import           Data.Foldable (foldl')
@@ -220,42 +219,47 @@ addBlock cdb@CDB{..} b = do
     -- We follow the steps from section "## Adding a block" in ChainDB.md
 
     -- ### Ignore
-    unless ((blockNo b <= immBlockNo && blockNo b /= 0) ||
-            isMember (blockHash b)  ||
-            Map.member (blockHash b) invalid) $ do
+    if
+      | blockNo b <= immBlockNo && blockNo b /= 0 ->
+        trace $ IgnoreBlockOlderThanK (blockPoint b)
+      | isMember (blockHash b) ->
+        trace $ IgnoreBlockAlreadyInVolDB (blockPoint b)
+      | Just (reason, _) <- Map.lookup (blockHash b) invalid ->
+        trace $ IgnoreInvalidBlock (blockPoint b) reason
+      | otherwise -> do
 
-      -- Write the block to the VolatileDB in all other cases
-      VolDB.putBlock cdbVolDB b
-      trace $ AddedBlockToVolDB (blockPoint b) (blockNo b) (toIsEBB (cdbIsEBB b))
+        -- Write the block to the VolatileDB in all other cases
+        VolDB.putBlock cdbVolDB b
+        trace $ AddedBlockToVolDB (blockPoint b) (blockNo b) (toIsEBB (cdbIsEBB b))
 
-      -- We need to get these after adding the block to the VolatileDB
-      (isMember', succsOf, predecessor) <- atomically $
-         (,,) <$> (ignoreInvalid    cdb invalid <$> VolDB.getIsMember    cdbVolDB)
-              <*> (ignoreInvalidSuc cdb invalid <$> VolDB.getSuccessors  cdbVolDB)
-              <*> VolDB.getPredecessor cdbVolDB
+        -- We need to get these after adding the block to the VolatileDB
+        (isMember', succsOf, predecessor) <- atomically $
+           (,,) <$> (ignoreInvalid    cdb invalid <$> VolDB.getIsMember    cdbVolDB)
+                <*> (ignoreInvalidSuc cdb invalid <$> VolDB.getSuccessors  cdbVolDB)
+                <*> VolDB.getPredecessor cdbVolDB
 
-      -- The block @b@ fits onto the end of our current chain
-      if | pointHash tipPoint == blockPrevHash b -> do
-           -- ### Add to current chain
-           trace (TryAddToCurrentChain (blockPoint b))
-           addToCurrentChain succsOf curChainAndLedger
+        -- The block @b@ fits onto the end of our current chain
+        if | pointHash tipPoint == blockPrevHash b -> do
+             -- ### Add to current chain
+             trace (TryAddToCurrentChain (blockPoint b))
+             addToCurrentChain succsOf curChainAndLedger
 
-         | Just hashes <- VolDB.isReachable predecessor isMember'
-             i (blockPoint b) -> do
-           -- ### Switch to a fork
-           trace (TrySwitchToAFork (blockPoint b) hashes)
-           switchToAFork succsOf curChainAndLedger hashes
+           | Just hashes <- VolDB.isReachable predecessor isMember'
+               i (blockPoint b) -> do
+             -- ### Switch to a fork
+             trace (TrySwitchToAFork (blockPoint b) hashes)
+             switchToAFork succsOf curChainAndLedger hashes
 
-         | otherwise ->
-           -- ### Store but don't change the current chain
+           | otherwise ->
+             -- ### Store but don't change the current chain
 
-           -- We have already stored the block in the VolatileDB
-           trace (StoreButDontChange (blockPoint b))
+             -- We have already stored the block in the VolatileDB
+             trace (StoreButDontChange (blockPoint b))
 
-      -- Note that we may have extended the chain, but have not trimmed it to
-      -- @k@ blocks/headers. That is the job of the background thread, which
-      -- will first copy the blocks/headers to trim (from the end of the
-      -- fragment) from the VolatileDB to the ImmutableDB.
+        -- Note that we may have extended the chain, but have not trimmed it to
+        -- @k@ blocks/headers. That is the job of the background thread, which
+        -- will first copy the blocks/headers to trim (from the end of the
+        -- fragment) from the VolatileDB to the ImmutableDB.
 
   where
     secParam@(SecurityParam k) = protocolSecurityParam cdbNodeConfig

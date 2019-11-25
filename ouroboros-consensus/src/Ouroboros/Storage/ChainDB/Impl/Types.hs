@@ -346,7 +346,17 @@ data TraceOpenEvent blk
 
 -- | Trace type for the various events that occur when adding a block.
 data TraceAddBlockEvent blk
-  = AddedBlockToVolDB    !(Point blk) !BlockNo !IsEBB
+  = IgnoreBlockOlderThanK (Point blk)
+    -- ^ A block with a 'BlockNo' more than @k@ back than the current tip was
+    -- ignored.
+
+  | IgnoreBlockAlreadyInVolDB (Point blk)
+    -- ^ A block that is already in the Volatile DB was ignored.
+
+  | IgnoreInvalidBlock (Point blk) (InvalidBlockReason blk)
+    -- ^ A block that is know to be invalid was ignored.
+
+  | AddedBlockToVolDB    !(Point blk) !BlockNo !IsEBB
     -- ^ A block was added to the Volatile DB
 
   | TryAddToCurrentChain (Point blk)
