@@ -568,16 +568,28 @@ remoteNetworkErrorPolicy = ErrorPolicies {
                         MuxControlProtocolError -> Just theyBuggyOrEvil
                         MuxTooLargeMessage      -> Just theyBuggyOrEvil
 
-                        -- in case of bearer closed / or IOException we suspend
-                        -- the peer for a short time
-                        --
-                        -- TODO: an exponential backoff would be nicer than a fixed 20s
-                        -- TODO: right now we cannot suspend just the
-                        -- 'responder'.  If a 'responder' throws 'MuxError' we
-                        -- might not want to shutdown the consumer (which is
-                        -- using different connection), as we do below:
-                        MuxBearerClosed         -> Just (SuspendPeer shortDelay shortDelay)
-                        MuxIOException{}        -> Just (SuspendPeer shortDelay shortDelay)
+                        -- MuxBearerClosed && IOExcepctions (during read
+                        -- & write operations) can happen in two cases:
+                        --   network error
+                        --   the remote peer closed the connection
+                        -- In the first case:
+                        --   It would be nice to implement exponential backoff,
+                        --   and this could be done in subscription worker.
+                        -- In the second case: there are two cases:
+                        --   the error was thrown in a responder thread:
+                        --     It might be that the peer is not interested in our
+                        --     chain, in which case the local node should not
+                        --     penalise the remote peer. 'SuspendConsumer' (and
+                        --     thus 'SuspendPeer') will actually hurt the local
+                        --     node - it will not be able to download chain from
+                        --     the remote peer.
+                        --   the error was thrown in an initiator thread:
+                        --    it is likely that the local node misbehaved
+                        --    / presented invalid data.  The remote peer
+                        --    penalised the local node for that, no action is
+                        --    needed.
+                        MuxBearerClosed         -> Nothing
+                        MuxIOException{}        -> Nothing
 
           -- Error policy for TxSubmission protocol: outbound side (client role)
         , ErrorPolicy
