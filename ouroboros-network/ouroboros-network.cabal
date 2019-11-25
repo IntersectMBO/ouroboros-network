@@ -202,6 +202,7 @@ test-suite test-network
                        Ouroboros.Network.PeerSelection.RootPeersDNS
                        Ouroboros.Network.PeerSelection.JobPool
                        Ouroboros.Network.PeerSelection.Governor
+                       Ouroboros.Network.PeerSelection.Examples
                        Ouroboros.Network.Protocol.BlockFetch.Client
                        Ouroboros.Network.Protocol.BlockFetch.Codec
                        Ouroboros.Network.Protocol.BlockFetch.Direct

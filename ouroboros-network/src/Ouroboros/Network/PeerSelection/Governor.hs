@@ -25,6 +25,7 @@ module Ouroboros.Network.PeerSelection.Governor (
     peerChurnGovernor,
 
     sanePeerSelectionTargets, --TODO: perhaps better to move to Types module
+    PeerSelectionState(..),
 ) where
 
 import           Data.Void (Void)
