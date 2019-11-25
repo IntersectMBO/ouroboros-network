@@ -15,6 +15,8 @@ module Ouroboros.Network.NodeToClient (
   , DictVersion (..)
   , nodeToClientCodecCBORTerm
 
+  , NetworkConnectTracers (..)
+  , nullNetworkConnectTracers
   , connectTo_V1
   , connectTo
 
