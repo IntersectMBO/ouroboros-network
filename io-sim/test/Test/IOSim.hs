@@ -843,6 +843,6 @@ runSimTraceSay :: (forall s. SimM s a) -> [String]
 runSimTraceSay action = selectTraceSay (runSimTrace action)
 
 selectTraceSay :: Trace a -> [String]
-selectTraceSay (Trace _ _ (EventSay msg) trace) = msg : selectTraceSay trace
-selectTraceSay (Trace _ _ _              trace) = selectTraceSay trace
-selectTraceSay  _                               = []
+selectTraceSay (Trace _ _ _ (EventSay msg) trace) = msg : selectTraceSay trace
+selectTraceSay (Trace _ _ _ _              trace) = selectTraceSay trace
+selectTraceSay  _                                 = []

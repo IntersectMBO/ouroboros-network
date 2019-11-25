@@ -23,7 +23,7 @@ import qualified GHC.Event as GHC (TimeoutKey, getSystemTimerManager,
 import           Control.Monad (when)
 #endif
 
-import           Control.Monad.Class.MonadFork (MonadFork(..))
+import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadSTM
 
 import qualified System.Timeout as IO
@@ -88,9 +88,9 @@ class MonadSTM m => MonadTimer m where
   threadDelay    :: DiffTime -> m ()
   threadDelay d   = void . atomically . awaitTimeout =<< newTimeout d
 
-  registerDelay :: DiffTime -> m (LazyTVar m Bool)
+  registerDelay :: DiffTime -> m (TVar m Bool)
 
-  default registerDelay :: MonadFork m => DiffTime -> m (LazyTVar m Bool)
+  default registerDelay :: MonadFork m => DiffTime -> m (TVar m Bool)
   registerDelay d = do
     v <- atomically $ newTVar False
     t <- newTimeout d

@@ -54,13 +54,13 @@ import           Cardano.Prelude (NoUnexpectedThunks (..))
 data StrictMVar m a = StrictMVar
   { invariant :: !(a -> Maybe String)
     -- ^ Invariant checked whenever updating the 'StrictMVar'.
-  , tmvar     :: !(Lazy.LazyTMVar m a)
+  , tmvar     :: !(Lazy.TMVar m a)
     -- ^ The main TMVar supporting this 'StrictMVar'
-  , tvar      :: !(Lazy.LazyTVar m a)
+  , tvar      :: !(Lazy.TVar m a)
     -- ^ TVar for supporting 'readMVarSTM'
     --
-    -- This TVar is always kept up to date with the 'LazyTMVar', but holds on
-    -- the old value of the 'LazyTMVar' when it is empty. This is very useful
+    -- This TVar is always kept up to date with the 'Lazy.TMVar', but holds on
+    -- the old value of the 'Lazy.TMVar' when it is empty. This is very useful
     -- to support single writer/many reader scenarios.
     --
     -- NOTE: We should always update the 'tmvar' before the 'tvar' so that if
