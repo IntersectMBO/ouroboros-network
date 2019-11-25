@@ -37,6 +37,7 @@ module Ouroboros.Network.NodeToClient (
   , localTxSubmissionClientNull
 
   -- * Re-exports
+  , ConnectionId (..)
   , ErrorPolicies (..)
   , networkErrorPolicies
   , nullErrorPolicies

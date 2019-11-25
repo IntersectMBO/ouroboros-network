@@ -49,6 +49,7 @@ module Ouroboros.Network.NodeToNode (
   , dnsSubscriptionWorker_V1
 
   -- * Re-exports
+  , ConnectionId (..)
   , DecoderFailureOrTooMuchInput
   , Handshake
   , LocalAddresses (..)
