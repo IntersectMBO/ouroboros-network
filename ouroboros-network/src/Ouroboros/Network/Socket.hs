@@ -408,9 +408,10 @@ cleanNetworkMutableState NetworkMutableState {nmsPeerStates} =
 -- |
 -- Thin wrapper around @'Server.run'@.
 --
-runNetworkNode'
-    :: forall ptcl vNumber extra t.
-       ( Mx.ProtocolEnum ptcl
+runServerThread
+    :: forall appType ptcl vNumber extra a b.
+       ( HasResponder appType ~ True
+       , Mx.ProtocolEnum ptcl
        , Ord ptcl
        , Enum ptcl
        , Bounded ptcl
@@ -427,33 +428,62 @@ runNetworkNode'
     -> Socket.Socket
     -> VersionDataCodec extra CBOR.Term
     -> (forall vData. extra vData -> vData -> vData -> Accept)
-    -- -> Versions vNumber extra (MuxApplication ServerApp ptcl IO)
-    -> (IOException -> IO ())
-    -> (Time
-          -> Socket.SockAddr
-          -> PeerStates IO Socket.SockAddr
-          -> STM.STM
-              (AcceptConnection
-                (PeerStates IO Socket.SockAddr)
-                vNumber extra ConnectionId ptcl IO BL.ByteString))
-    -> Server.ApplicationStart Socket.SockAddr (PeerStates IO Socket.SockAddr)
-    -> Server.CompleteConnection Socket.SockAddr
-                                 (PeerStates IO Socket.SockAddr)
-                                 (WithAddr Socket.SockAddr ErrorPolicyTrace)
-                                 ()
-    -> Server.Main (PeerStates IO Socket.SockAddr) t
-    -> IO t
-runNetworkNode' NetworkServerTracers { nstMuxTracer, nstHandshakeTracer, nstErrorPolicyTracer }
-                NetworkMutableState { nmsConnectionTable, nmsPeerStates }
-                sd versionDataCodec acceptVersion
-                acceptException acceptConn applicationStart complete
-    main = Server.run
+    -> Versions vNumber extra (OuroborosApplication appType ConnectionId ptcl IO BL.ByteString a b)
+    -> ErrorPolicies Socket.SockAddr ()
+    -> IO Void
+runServerThread NetworkServerTracers { nstMuxTracer
+                                     , nstHandshakeTracer
+                                     , nstErrorPolicyTracer }
+                NetworkMutableState { nmsConnectionTable
+                                    , nmsPeerStates }
+                sd
+                versionDataCodec
+                acceptVersion
+                versions
+                errorPolicies = do
+    sockAddr <- Socket.getSocketName sd
+    Server.run
         nstErrorPolicyTracer
         (fromSocket nmsConnectionTable sd)
-        acceptException
-        (beginConnection nstMuxTracer nstHandshakeTracer versionDataCodec acceptVersion acceptConn)
-        applicationStart
-        complete main (toLazyTVar nmsPeerStates)
+        (acceptException sockAddr)
+        (beginConnection nstMuxTracer nstHandshakeTracer versionDataCodec acceptVersion (acceptConnectionTx sockAddr))
+        -- register producer when application starts, it will be unregistered
+        -- using 'CompleteConnection'
+        (\remoteAddr thread st -> pure $ registerProducer remoteAddr thread
+        st)
+        completeTx mainTx (toLazyTVar nmsPeerStates)
+  where
+    mainTx :: Server.Main (PeerStates IO Socket.SockAddr) Void
+    mainTx (ThrowException e) = throwM e
+    mainTx PeerStates{}       = retry
+
+    -- When a connection completes, we do nothing. State is ().
+    -- Crucially: we don't re-throw exceptions, because doing so would
+    -- bring down the server.
+    completeTx :: Server.CompleteConnection
+                    Socket.SockAddr
+                    (PeerStates IO Socket.SockAddr)
+                    (WithAddr Socket.SockAddr ErrorPolicyTrace)
+                    ()
+    completeTx result st = case result of
+
+      Server.Result thread remoteAddr t (Left (SomeException e)) ->
+        fmap (unregisterProducer remoteAddr thread)
+          <$> completeApplicationTx errorPolicies (ApplicationError t remoteAddr e) st
+
+      Server.Result thread remoteAddr t (Right r) ->
+        fmap (unregisterProducer remoteAddr thread)
+          <$> completeApplicationTx errorPolicies (ApplicationResult t remoteAddr r) st
+
+    acceptException :: Socket.SockAddr -> IOException -> IO ()
+    acceptException a e = do
+      traceWith (WithAddr a `contramap` nstErrorPolicyTracer) $ ErrorPolicyAcceptException e
+
+    acceptConnectionTx sockAddr t connAddr st = do
+      d <- beforeConnectTx t connAddr st
+      case d of
+        AllowConnection st'    -> pure $ AcceptConnection st' (ConnectionId sockAddr connAddr) versions
+        DisallowConnection st' -> pure $ RejectConnection st' (ConnectionId sockAddr connAddr)
 
 
 -- |
@@ -502,58 +532,16 @@ withServerNode
     -- Note: the server thread will terminate when the callback returns or
     -- throws an exception.
     -> IO t
-withServerNode tracers@NetworkServerTracers { nstErrorPolicyTracer } networkState addr versionDataCodec acceptVersion versions errPolicies k =
+withServerNode tracers networkState addr versionDataCodec acceptVersion versions errorPolicies k =
     bracket (mkListeningSocket (Socket.addrFamily addr) (Just $ Socket.addrAddress addr)) Socket.close $ \sd -> do
       addr' <- Socket.getSocketName sd
       withAsync
-        (runNetworkNode'
+        (runServerThread
           tracers
           networkState
           sd
           versionDataCodec
           acceptVersion
-          (acceptException addr')
-          (\t connAddr st -> do
-            d <- beforeConnectTx t connAddr st
-            case d of
-              AllowConnection st'    -> pure $ AcceptConnection st' (ConnectionId addr' connAddr) versions
-              DisallowConnection st' -> pure $ RejectConnection st' (ConnectionId addr' connAddr))
-              -- register producer when application starts, it will be
-              -- unregistered using 'CompleteConnection'
-          (\remoteAddr thread st -> pure $ registerProducer remoteAddr thread
-          st)
-          complete
-          main) (k addr')
-
-    where
-      main :: Server.Main (PeerStates IO Socket.SockAddr) Void
-      main (ThrowException e) = throwM e
-      main PeerStates{}       = retry
-
-      completeTx :: CompleteApplication IO
-                      (PeerStates IO Socket.SockAddr)
-                      Socket.SockAddr
-                      ()
-      completeTx = completeApplicationTx errPolicies
-
-      -- When a connection completes, we do nothing. State is ().
-      -- Crucially: we don't re-throw exceptions, because doing so would
-      -- bring down the server.
-      complete :: Server.CompleteConnection
-                    Socket.SockAddr
-                    (PeerStates IO Socket.SockAddr)
-                    (WithAddr Socket.SockAddr ErrorPolicyTrace)
-                    ()
-      complete result st = case result of
-
-        Server.Result thread remoteAddr t (Left (SomeException e)) ->
-          fmap (unregisterProducer remoteAddr thread)
-            <$> completeTx (ApplicationError t remoteAddr e) st
-
-        Server.Result thread remoteAddr t (Right r) ->
-          fmap (unregisterProducer remoteAddr thread)
-            <$> completeTx (ApplicationResult t remoteAddr r) st
-
-      acceptException :: Socket.SockAddr -> IOException -> IO ()
-      acceptException a e = do
-        traceWith (WithAddr a `contramap` nstErrorPolicyTracer) $ ErrorPolicyAcceptException e
+          versions
+          errorPolicies)
+        (k addr')

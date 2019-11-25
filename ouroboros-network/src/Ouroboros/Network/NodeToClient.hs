@@ -53,7 +53,7 @@ module Ouroboros.Network.NodeToClient (
   , WithIPList (..)
   ) where
 
-import           Control.Concurrent.Async (Async)
+import qualified Control.Concurrent.Async as Async
 import           Control.Exception (IOException)
 import qualified Data.ByteString.Lazy as BL
 import           Data.Text (Text)
@@ -198,6 +198,8 @@ connectTo_V1 tracers versionData application =
 -- 'withServer_V1' instead of you would like to use 'NodeToCLientV_1' version of
 -- the protocols.
 --
+-- Comments to 'Ouroboros.Network.NodeToNode.withServer' apply here as well.
+--
 withServer
   :: ( HasResponder appType ~ True )
   => NetworkServerTracers NodeToClientProtocols NodeToClientVersion
@@ -206,9 +208,8 @@ withServer
   -> Versions NodeToClientVersion DictVersion
               (OuroborosApplication appType ConnectionId NodeToClientProtocols IO BL.ByteString a b)
   -> ErrorPolicies Socket.SockAddr ()
-  -> (Async Void -> IO t)
-  -> IO t
-withServer tracers networkState addr versions errPolicies k =
+  -> IO Void
+withServer tracers networkState addr versions errPolicies =
   withServerNode
     tracers
     networkState
@@ -217,7 +218,7 @@ withServer tracers networkState addr versions errPolicies k =
     (\(DictVersion _) -> acceptEq)
     versions
     errPolicies
-    (\_ -> k)
+    (\_ async -> Async.wait async)
 
 -- | A specialised version of 'withServer' which can only communicate using
 -- 'NodeToClientV_1' version of the protocol.
@@ -235,8 +236,7 @@ withServer_V1
   -- 'OuroborosResponderApplication' or
   -- 'OuroborosInitiatorAndResponderApplication'.
   -> ErrorPolicies Socket.SockAddr ()
-  -> (Async Void -> IO t)
-  -> IO t
+  -> IO Void
 withServer_V1 tracers networkState addr versionData application =
     withServer
       tracers networkState addr

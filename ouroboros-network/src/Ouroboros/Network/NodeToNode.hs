@@ -71,7 +71,7 @@ module Ouroboros.Network.NodeToNode (
   , WithAddr (..)
   ) where
 
-import           Control.Concurrent.Async (Async)
+import qualified Control.Concurrent.Async as Async
 import           Control.Exception (IOException)
 import qualified Data.ByteString.Lazy as BL
 import           Data.Time.Clock (DiffTime)
@@ -221,7 +221,13 @@ connectTo_V1 tracers versionData application localAddr remoteAddr =
       localAddr
       remoteAddr
 
--- | A specialised version of @'Ouroboros.Network.Socket.withServerNode'@
+-- | A specialised version of @'Ouroboros.Network.Socket.withServerNode'@.
+-- It forks a thread which runs an accept loop (server thread):
+--
+-- * when the server thread throws an exception the main thread rethrows
+--   it (by 'Async.wait')
+-- * when an async exception is thrown to kill the main thread the server thread
+--   will be cancelled as well (by 'withAsync')
 --
 withServer
   :: ( HasResponder appType ~ True)
@@ -230,9 +236,8 @@ withServer
   -> Socket.AddrInfo
   -> Versions NodeToNodeVersion DictVersion (OuroborosApplication appType ConnectionId NodeToNodeProtocols IO BL.ByteString a b)
   -> ErrorPolicies Socket.SockAddr ()
-  -> (Async Void -> IO t)
-  -> IO t
-withServer tracers networkState addr versions errPolicies k =
+  -> IO Void
+withServer tracers networkState addr versions errPolicies =
   withServerNode
     tracers
     networkState
@@ -241,7 +246,7 @@ withServer tracers networkState addr versions errPolicies k =
     (\(DictVersion _) -> acceptEq)
     versions
     errPolicies
-    (\_ -> k)
+    (\_ async -> Async.wait async)
 
 
 -- | Like 'withServer' but specific to 'NodeToNodeV_1'.
@@ -254,8 +259,7 @@ withServer_V1
   -> NodeToNodeVersionData
   -> (OuroborosApplication appType ConnectionId NodeToNodeProtocols IO BL.ByteString x y)
   -> ErrorPolicies Socket.SockAddr ()
-  -> (Async Void -> IO t)
-  -> IO t
+  -> IO Void
 withServer_V1 tracers networkState addr versionData application =
     withServer
       tracers networkState addr

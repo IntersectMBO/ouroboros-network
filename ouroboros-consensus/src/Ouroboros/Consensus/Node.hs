@@ -42,7 +42,6 @@ import           Data.Void (Void)
 import           Network.Mux.Types (MuxTrace, WithMuxBearer)
 import           Network.Socket as Socket
 
-import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadThrow
 
 import           Ouroboros.Network.Block
@@ -364,7 +363,6 @@ initNetwork registry nodeArgs kernel RunNetworkArgs{..} = do
         nodeToClientVersionData
         (localResponderNetworkApplication networkApps)
         localErrorPolicy
-        wait
 
     runPeerServer :: NetworkMutableState
                   -> Socket.AddrInfo
@@ -380,7 +378,6 @@ initNetwork registry nodeArgs kernel RunNetworkArgs{..} = do
         nodeToNodeVersionData
         (responderNetworkApplication networkApps)
         remoteErrorPolicy
-        wait
 
     runIpSubscriptionWorker :: NetworkMutableState
                             -> Maybe Socket.SockAddr
