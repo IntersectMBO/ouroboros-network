@@ -29,6 +29,7 @@ module Ouroboros.Network.NodeToClient (
   , withServer_V1
   , withServer
 
+  , NetworkIPSubscriptionTracers (..)
   , IPSubscriptionParams
   , SubscriptionParams (..)
   , ncSubscriptionWorker
