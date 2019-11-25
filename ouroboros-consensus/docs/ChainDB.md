@@ -195,10 +195,11 @@ The initialization of the chain DB proceeds as follows.
     candidates(I, V)
     ```
 
-    ignoring known-to-be-invalid blocks (if any), and order them using (`⊑`) so
-    that we process the preferred candidate first[^selectThenValidate]. We also
-    ignore any candidates that are prefixes of other candidates (justified by
-    the "Always Extend" property).
+    ignoring known-to-be-invalid blocks (if any) and blocks from the future
+    (i.e., `blockSlot B > currentSlot`), and order them using (`⊑`) so that we
+    process the preferred candidate first[^selectThenValidate]. We also ignore
+    any candidates that are prefixes of other candidates (justified by the
+    "Always Extend" property).
 
 3.  Not all of these candidates may be valid, because the volatile DB stores blocks
     whose _header_ have been validated, but whose _body_ is still unverified
@@ -262,40 +263,28 @@ We can just ignore the block if either of the following is true.
 
 ### Store but don't change the current chain
 
-We store the block, but do nothing else, when either of the following is true.
+We store the block, but do nothing else as we are missing one of the
+(transitive) predecessors of the block.
 
-*   We are missing one of the (transitive) predecessors of the block.
+We can check this by following back pointers until we reach a block `B'` such
+that `B' ∉ V` and `B' ≠ I`. The cost of this is bounded by the length of the
+longest fragment in the volatile DB, and will typically be low; moreover, the
+chain fragment we are constructing this way will be used in the switch-to-fork
+case.[^firstCheckTip]
 
-    We can check this by following back pointers until we reach a block `B'`
-    such that `B' ∉ V` and `B' ≠ I`. The cost of this is bounded by the length
-    of the longest fragment in the volatile DB, and will typically
-    be low; moreover, the chain fragment we are constructing this way will be
-    used in the switch-to-fork case.[^firstCheckTip]
+At this point we _could_ do a single query on the immutable DB to check if
+`B'` is in the immutable DB or not. If it is, then this block is on a distant
+branch that we will never switch to, and so we can ignore it. If it is not, we
+may or may not need this block later and we must store it; if it turns out we
+will never need it, it will eventually be garbage collected.[^gc]
 
-    At this point we _could_ do a single query on the immutable
-    DB to check if `B'` is in the immutable DB or not. If it is, then this block
-    is on a distant branch that we will never switch to, and so we can ignore it.
-    If it is not, we may or may not need this block later and we must store it;
-    if it turns out we will never need it, it will eventually be garbage
-    collected[^gc].
-
-    Alternatively, and easier, we can also just omit the check on the immutable
-    DB and just assume we might need the block and rely on GC to eventually
-    remove it if we don't.
-
-*   The block belongs to a future slot[^future]
-
-    ```
-      blockSlot B > currentSlot
-    ```
+Alternatively, and easier, we can also just omit the check on the immutable DB
+and just assume we might need the block and rely on GC to eventually remove it
+if we don't.
 
 [^firstCheckTip]: It might make sense to check the "Add to current chain"
 case before doing the missing predecessor check (provided that the block is
 not in the future).
-
-[^future]: It will be the responsibility of the chain sync client not to accept
-blocks _too_ far in the future. However, we don't want to reject blocks in
-the near future as invalid since we want to allow for clock skew.
 
 [^gc]: Blocks on chains that are never selected, or indeed blocks whose
 predecessor we never learn, will eventually be garbage collected when their
@@ -304,6 +293,36 @@ The chain DB (more specifically, the volatile DB) can still grow without bound
 if we allow upstream nodes to rapidly switch between forks; this should be
 addressed at the network layer (for instance, by introducing rate limiting for
 rollback in the chain sync client).
+
+### Store but schedule chain selection
+
+When the block belongs to a future slot:
+
+```
+  blockSlot B > currentSlot
+```
+
+We write the block to the VolatileDB and then schedule a chain selection for
+`B` at `blockSlot B`.
+
+We have the following bound on the number of blocks that can arrive from the
+future:
+
+    nbPeers * maxClockSkew * chainSyncRateLimit
+
+The _max clock skew_ is a parameter of the chain sync client, which accepts
+the header of a block `B` from the future, provided that:
+
+```
+blockSlot B < currentSlot + maxClockSkew
+```
+
+The headers of such blocks will be included in candidate chains, which are
+advertised to the block fetch client, which can decide to download the
+corresponding blocks and add them to the chain database.
+
+The `chainSyncRateLimit` is the rate limit on the number of headers that will
+be processed from a particular peer.
 
 ### Add to current chain
 
