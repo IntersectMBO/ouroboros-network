@@ -318,6 +318,8 @@ instance UpdateLedger TestBlock where
 
   ledgerConfigView _ = LedgerConfig
 
+  applyChainTick _ _ = return
+
   applyLedgerBlock _ tb@TestBlock{..} TestLedger{..}
     | blockPrevHash tb /= lastAppliedHash
     = throwError $ InvalidHash lastAppliedHash (blockPrevHash tb)
