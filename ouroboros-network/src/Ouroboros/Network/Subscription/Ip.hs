@@ -8,7 +8,9 @@
 
 -- | IP subscription worker implentation.
 module Ouroboros.Network.Subscription.Ip
-    ( ipSubscriptionWorker
+    ( SubscriptionParams (..)
+    , IPSubscriptionParams
+    , ipSubscriptionWorker
     , subscriptionWorker
     , IPSubscriptionTarget (..)
     , ipSubscriptionTarget
@@ -37,6 +39,7 @@ import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadThrow
 import           Control.Tracer
 import           Data.Time.Clock (DiffTime)
+import           Data.Void (Void)
 import qualified Network.Socket as Socket
 import           Text.Printf
 
@@ -46,6 +49,7 @@ import           Ouroboros.Network.Subscription.PeerState
 import           Ouroboros.Network.Subscription.Subscriber
 import           Ouroboros.Network.Subscription.Worker
 
+
 data IPSubscriptionTarget = IPSubscriptionTarget {
     -- | List of destinations to possibly connect to
       ispIps     :: ![Socket.SockAddr]
@@ -53,39 +57,59 @@ data IPSubscriptionTarget = IPSubscriptionTarget {
     , ispValency :: !Int
     } deriving (Eq, Show)
 
+
+-- | 'ipSubscriptionWorker' and 'dnsSubscriptionWorker' parameters
+--
+data SubscriptionParams a target = SubscriptionParams
+  { spLocalAddresses         :: LocalAddresses Socket.SockAddr
+  , spConnectionAttemptDelay :: Socket.SockAddr -> Maybe DiffTime
+    -- ^ should return expected delay for the given address
+  , spErrorPolicies          :: ErrorPolicies Socket.SockAddr a
+  , spSubscriptionTarget     :: target
+  }
+
+type IPSubscriptionParams a = SubscriptionParams a IPSubscriptionTarget
+
 -- | Spawns a subscription worker which will attempt to keep the specified
 -- number of connections (Valency) active towards the list of IP addresses
 -- given in IPSubscriptionTarget.
 --
 ipSubscriptionWorker
-    :: forall a void.
+    :: forall a.
        Tracer IO (WithIPList (SubscriptionTrace Socket.SockAddr))
     -> Tracer IO (WithAddr Socket.SockAddr ErrorPolicyTrace)
-    -> ConnectionTable IO Socket.SockAddr
-    -> StrictTVar IO (PeerStates IO Socket.SockAddr)
-    -> LocalAddresses Socket.SockAddr
-    -> (Socket.SockAddr -> Maybe DiffTime)
-    -- ^ Lookup function, should return expected delay for the given address
-    -> ErrorPolicies Socket.SockAddr a
-    -> IPSubscriptionTarget
+    -> NetworkMutableState
+    -> IPSubscriptionParams a
     -> (Socket.Socket -> IO a)
-    -> IO void
-ipSubscriptionWorker tracer errorPolicyTracer tbl peerStatesVar localAddresses connectionAttemptDelay errPolicies ips k = do
-    subscriptionWorker
-            tracer'
-            errorPolicyTracer
-            tbl
-            peerStatesVar
-            localAddresses
-            connectionAttemptDelay
-            (pure $ ipSubscriptionTarget tracer' peerStatesVar $ ispIps ips)
-            (ispValency ips)
-            errPolicies
-            mainTx
-            k
+    -> IO Void
+ipSubscriptionWorker subscriptionTracer errorPolicyTracer
+                     networkState@NetworkMutableState { nmsPeerStates }
+                     SubscriptionParams { spLocalAddresses
+                                        , spConnectionAttemptDelay
+                                        , spSubscriptionTarget
+                                        , spErrorPolicies
+                                        }
+                     k =
+    subscriptionWorker subscriptionTracer'
+                       errorPolicyTracer
+                       networkState
+                       workerParams
+                       spErrorPolicies
+                       mainTx
+                       k
   where
-    tracer' = (WithIPList localAddresses (ispIps ips)
-                `contramap` tracer)
+    workerParams = WorkerParams {
+        wpLocalAddresses         = spLocalAddresses,
+        wpConnectionAttemptDelay = spConnectionAttemptDelay,
+        wpSubscriptionTarget     =
+          pure $ ipSubscriptionTarget subscriptionTracer' nmsPeerStates
+                                      (ispIps spSubscriptionTarget),
+        wpValency                = ispValency spSubscriptionTarget
+      }
+
+    subscriptionTracer' = (WithIPList spLocalAddresses (ispIps spSubscriptionTarget)
+              `contramap` subscriptionTracer)
+
 
 ipSubscriptionTarget :: forall m addr.
                         ( MonadSTM  m
@@ -139,7 +163,7 @@ mainTx :: ( MonadThrow m
           , MonadThrow (STM m)
           , MonadSTM m
           )
-       => Main m (PeerStates m addr) void
+       => Main m (PeerStates m addr) Void
 mainTx (ThrowException e) = throwM e
 mainTx PeerStates{}       = retry
 
@@ -151,44 +175,42 @@ mainTx PeerStates{}       = retry
 subscriptionWorker
     :: Tracer IO (SubscriptionTrace Socket.SockAddr)
     -> Tracer IO (WithAddr Socket.SockAddr ErrorPolicyTrace)
-    -> ConnectionTable IO Socket.SockAddr
-    -> StateVar IO (PeerStates IO Socket.SockAddr)
-
-    -> LocalAddresses Socket.SockAddr
-    -> (Socket.SockAddr -> Maybe DiffTime)
-    -> IO (SubscriptionTarget IO Socket.SockAddr)
-    -- ^ subscription targets
-    -> Int
-    -- ^ valency
+    -> NetworkMutableState
+    -> WorkerParams IO Socket.SockAddr
     -> ErrorPolicies Socket.SockAddr a
     -> Main IO (PeerStates IO Socket.SockAddr) x
     -- ^ main callback
     -> (Socket.Socket -> IO a)
     -- ^ application to run on each connection
     -> IO x
-subscriptionWorker
-  tracer errorPolicyTracer tbl sVar localAddresses
-  connectionAttemptDelay getTargets valency errPolicies main k =
+subscriptionWorker tracer
+                   errorPolicyTracer
+                   NetworkMutableState { nmsConnectionTable, nmsPeerStates }
+                   workerParams
+                   errorPolicies
+                   main k =
     worker tracer
            errorPolicyTracer
-           tbl
-           sVar
+           nmsConnectionTable
+           nmsPeerStates
            ioSocket
-           socketStateChangeTx
-           (completeApplicationTx errPolicies)
-           main
-           localAddresses
-           selectAddr connectionAttemptDelay
-           getTargets valency k
+           WorkerCallbacks
+             { wcSocketStateChangeTx   = socketStateChangeTx
+             , wcCompleteApplicationTx = completeApplicationTx errorPolicies
+             , wcMainTx                = main
+             }
+           workerParams
+           selectAddress
+           k
 
   where
-    selectAddr :: Socket.SockAddr
-               -> LocalAddresses Socket.SockAddr
-               -> Maybe Socket.SockAddr
-    selectAddr Socket.SockAddrInet{}  (LocalAddresses (Just localAddr) _ _ ) = Just localAddr
-    selectAddr Socket.SockAddrInet6{} (LocalAddresses _ (Just localAddr) _ ) = Just localAddr
-    selectAddr Socket.SockAddrUnix{}  (LocalAddresses _ _ (Just localAddr) ) = Just localAddr
-    selectAddr _ _ = Nothing
+    selectAddress :: Socket.SockAddr
+                  -> LocalAddresses Socket.SockAddr
+                  -> Maybe Socket.SockAddr
+    selectAddress Socket.SockAddrInet{}  (LocalAddresses (Just localAddr) _ _ ) = Just localAddr
+    selectAddress Socket.SockAddrInet6{} (LocalAddresses _ (Just localAddr) _ ) = Just localAddr
+    selectAddress Socket.SockAddrUnix{}  (LocalAddresses _ _ (Just localAddr) ) = Just localAddr
+    selectAddress _ _ = Nothing
 
 data WithIPList a = WithIPList {
       wilSrc   :: !(LocalAddresses Socket.SockAddr)

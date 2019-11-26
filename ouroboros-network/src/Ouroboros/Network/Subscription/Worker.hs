@@ -17,6 +17,10 @@ module Ouroboros.Network.Subscription.Worker
   , Main
   , StateVar
   , LocalAddresses (..)
+
+    -- * Subscription worker
+  , WorkerCallbacks (..)
+  , WorkerParams (..)
   , worker
     -- * Socket API
   , Socket (..)
@@ -233,7 +237,7 @@ data ConnectResult =
 -- | Traverse 'SubscriptionTarget's in an infinite loop.
 --
 subscriptionLoop
-    :: forall m s sock addr a.
+    :: forall m s sock addr a x.
        ( MonadAsync m
        , MonadFork  m
        , MonadMask  m
@@ -254,28 +258,26 @@ subscriptionLoop
     -> ThreadsVar          m
 
     -> Socket              m   addr sock
-    -> SocketStateChange   m s addr
-    -> CompleteApplication m s addr a
-    -- ^ callback which fires when either 'connect' fails or the application
-    -- returns.
 
-    -> LocalAddresses addr
+    -> WorkerCallbacks m s addr a x
+    -> WorkerParams m addr
     -> (addr -> LocalAddresses addr -> Maybe addr)
-    -- ^ given remote address, pick the local one
-    -> (addr -> Maybe DiffTime)
-    -- ^ delay after a connection attempt to 'addr'
-    -> m (SubscriptionTarget m addr)
-    -> Int
-    -- ^ valency
+    -- ^ given a remote address, pick the local one
     -> (sock -> m a)
     -- ^ application
     -> m Void
 subscriptionLoop
       tr tbl resQ sVar threadsVar socket
-      socketStateChangeTx
-      completeApplicationTx
-      localAddresses selectAddr connectionAttemptDelay
-      getTargets valency k = do
+      WorkerCallbacks { wcSocketStateChangeTx   = socketStateChangeTx
+                      , wcCompleteApplicationTx = completeApplicationTx
+                      }
+      WorkerParams { wpLocalAddresses         = localAddresses
+                   , wpConnectionAttemptDelay = connectionAttemptDelay
+                   , wpSubscriptionTarget     = subscriptionTargets
+                   , wpValency                = valency
+                   }
+      selectAddress
+      k = do
     valencyVar <- atomically $ newValencyCounter tbl valency
 
     -- outer loop: set new 'conThread' variable, get targets and traverse
@@ -283,7 +285,7 @@ subscriptionLoop
     forever $ do
       start <- getMonotonicTime
       conThreads <- atomically $ newTVar Set.empty
-      sTarget <- getTargets
+      sTarget <- subscriptionTargets
       traceWith tr (SubscriptionTraceStart valency)
       innerLoop conThreads valencyVar sTarget
       atomically $ waitValencyCounter valencyVar
@@ -360,7 +362,7 @@ subscriptionLoop
       r <- refConnection tbl remoteAddr valencyVar
       case r of
         ConnectionTableCreate ->
-          case selectAddr remoteAddr localAddresses of
+          case selectAddress remoteAddr localAddresses of
             Nothing ->
               traceWith tr (SubscriptionTraceUnsupportedRemoteAddr remoteAddr)
 
@@ -422,7 +424,7 @@ subscriptionLoop
                -> StrictTVar m (Set (Async m ()))
                -> ValencyCounter m
                -> addr
-               -> (forall x. m x -> m x) -- unmask exceptions
+               -> (forall y. m y -> m y) -- unmask exceptions
                -> sock
                -> Either SomeException ()
                -> m ()
@@ -555,6 +557,24 @@ mainLoop errorPolicyTracer resQ threadsVar statusVar completeApplicationTx main 
 -- Worker
 --
 
+-- | Worker STM callbacks
+--
+data WorkerCallbacks m s addr a t = WorkerCallbacks {
+    wcSocketStateChangeTx   :: SocketStateChange m s addr,
+    wcCompleteApplicationTx :: CompleteApplication m s addr a,
+    wcMainTx                :: Main m s t
+  }
+
+-- | Worker parameters
+--
+data WorkerParams m addr = WorkerParams {
+    wpLocalAddresses         :: LocalAddresses addr,
+    wpConnectionAttemptDelay :: addr -> Maybe DiffTime,
+    -- ^ delay after a connection attempt to 'addr'
+    wpSubscriptionTarget     :: m (SubscriptionTarget m addr),
+    wpValency                :: Int
+  }
+
 -- |  This is the most abstract worker, which puts all the pieces together.  It
 -- will execute until @main :: Main m s t@ returns.  It runs
 -- 'subscriptionLoop' in a new threads and will exit when it dies.  Spawn
@@ -564,7 +584,7 @@ mainLoop errorPolicyTracer resQ threadsVar statusVar completeApplicationTx main 
 -- 'orElse', PR #432.
 --
 worker
-    :: forall s sock addr a t.
+    :: forall s sock addr a x.
        ( Ord addr
        , Show addr
        )
@@ -575,38 +595,20 @@ worker
 
     -> Socket              IO   addr sock
 
-    -- callbacks
-    -> SocketStateChange   IO s addr
-    -> CompleteApplication IO s addr a
-    -> Main                IO s      t
-
-    -> LocalAddresses addr
+    -> WorkerCallbacks     IO s addr a x
+    -> WorkerParams        IO   addr
     -> (addr -> LocalAddresses addr -> Maybe addr)
-    -- ^ given a remote address, pick the local one
-    -> (addr -> Maybe DiffTime)
-    -- ^ delay after a connection attempt to 'addr'
-
-    -> IO (SubscriptionTarget IO addr)
-    -> Int
-    -- ^ valency
 
     -> (sock -> IO a)
     -- ^ application
-    -> IO t
-worker tr errTrace tbl sVar socket
-       socketStateChangeTx
-       completeApplicationTx mainTx
-       localAddresses selectAddr
-       connectionAttemptDelay getTargets valency k = do
+    -> IO x
+worker tr errTrace tbl sVar socket workerCallbacks@WorkerCallbacks {wcCompleteApplicationTx, wcMainTx} workerParams selectAddress k = do
     resQ <- newResultQ
     threadsVar <- atomically $ newTVar Set.empty
     withAsync
       (subscriptionLoop tr tbl resQ sVar threadsVar socket
-         socketStateChangeTx
-         completeApplicationTx
-         localAddresses selectAddr connectionAttemptDelay
-         getTargets valency k) $ \_ ->
-           mainLoop errTrace resQ threadsVar sVar completeApplicationTx mainTx
+         workerCallbacks workerParams selectAddress k) $ \_ ->
+           mainLoop errTrace resQ threadsVar sVar wcCompleteApplicationTx wcMainTx
            `finally` killThreads threadsVar
   where
     killThreads threadsVar = do

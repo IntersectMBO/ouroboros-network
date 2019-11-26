@@ -58,6 +58,7 @@ library
                        Ouroboros.Network.Mux
                        Ouroboros.Network.NodeToNode
                        Ouroboros.Network.NodeToClient
+                       Ouroboros.Network.Tracers
                        Ouroboros.Network.Point
                        Ouroboros.Network.Server.ConnectionTable
                        Ouroboros.Network.Server.Socket
@@ -129,12 +130,12 @@ library
                        io-sim-classes    >=0.1 && < 0.2,
 
                        contra-tracer,
-                       cardano-prelude,
 
                        async             >=2.2 && <2.3,
                        binary            >=0.8 && <0.9,
                        bytestring        >=0.10 && <0.11,
                        cardano-binary,
+                       cardano-prelude,
                        cborg             >=0.2.1 && <0.3,
                        containers,
                        dns,
@@ -185,6 +186,7 @@ test-suite test-network
                        Ouroboros.Network.Magic
                        Ouroboros.Network.ErrorPolicy
                        Ouroboros.Network.Mux
+                       Ouroboros.Network.Tracers
                        Ouroboros.Network.MockNode
                        Ouroboros.Network.NodeToNode
                        Ouroboros.Network.Point

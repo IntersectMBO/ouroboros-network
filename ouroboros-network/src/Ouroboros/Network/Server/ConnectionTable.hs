@@ -10,6 +10,7 @@ module Ouroboros.Network.Server.ConnectionTable (
     , ConnectionTableRef (..)
     , ValencyCounter
 
+    , newConnectionTableSTM
     , newConnectionTable
     , refConnectionSTM
     , refConnection
@@ -115,11 +116,14 @@ waitValencyCounter vc = do
     retry
 
 -- | Create a new ConnectionTable.
-newConnectionTable :: MonadSTM m => m (ConnectionTable m addr)
-newConnectionTable =  do
-    tbl <- newTVarM M.empty
-    li <- newTVarM 0
+newConnectionTableSTM :: MonadSTM m => STM m (ConnectionTable m addr)
+newConnectionTableSTM =  do
+    tbl <- newTVar M.empty
+    li <- newTVar 0
     return $ ConnectionTable tbl li
+
+newConnectionTable :: MonadSTM m => m (ConnectionTable m addr)
+newConnectionTable = atomically newConnectionTableSTM
 
 -- | Insert a new connection into the ConnectionTable.
 addConnection

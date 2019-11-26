@@ -12,6 +12,7 @@ module Main where
 
 import           Data.List
 import qualified Data.ByteString.Lazy as LBS
+import           Data.Functor (void)
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 import           Data.Set (Set)
@@ -34,7 +35,6 @@ import System.Random.SplitMix
 
 import           Codec.Serialise (DeserialiseFailure)
 import qualified Codec.Serialise as CBOR
-import           Codec.SerialiseTerm
 
 import           Network.Mux
 
@@ -84,22 +84,22 @@ main = do
       "pingpong":"client-pipelined":[] -> clientPingPong True
       "pingpong":"server":[] -> do
         rmIfExists defaultLocalSocketAddrPath
-        serverPingPong
+        void serverPingPong
 
       "pingpong2":"client":[] -> clientPingPong2
       "pingpong2":"server":[] -> do
         rmIfExists defaultLocalSocketAddrPath
-        serverPingPong2
+        void serverPingPong2
 
       "chainsync":"client":sockAddrs   -> clientChainSync sockAddrs
       "chainsync":"server":sockAddr:[] -> do
         rmIfExists sockAddr
-        serverChainSync sockAddr
+        void $ serverChainSync sockAddr
 
       "blockfetch":"client":sockAddrs   -> clientBlockFetch sockAddrs
       "blockfetch":"server":sockAddr:[] -> do
         rmIfExists sockAddr
-        serverBlockFetch sockAddr
+        void $ serverBlockFetch sockAddr
 
       _          -> usage
 
@@ -150,19 +150,21 @@ instance MiniProtocolLimits DemoProtocol0 where
 clientPingPong :: Bool -> IO ()
 clientPingPong pipelined =
     connectToNode
-      (\(DictVersion codec) -> encodeTerm codec)
-      (\(DictVersion codec) -> decodeTerm codec)
-      nullTracer
-      nullTracer
-      (,)
+      cborTermVersionDataCodec
+      nullNetworkConnectTracers
       (simpleSingletonVersions (0::Int) (NodeToNodeVersionData $ NetworkMagic 0) (DictVersion nodeToNodeCodecCBORTerm) app)
       Nothing
       defaultLocalSocketAddrInfo
   where
-    app :: OuroborosApplication InitiatorApp (Socket.SockAddr, Socket.SockAddr) DemoProtocol0 IO LBS.ByteString () Void
+    app :: OuroborosApplication InitiatorApp
+                                ConnectionId
+                                DemoProtocol0
+                                IO LBS.ByteString () Void
     app = simpleInitiatorApplication protocols
 
-    protocols :: DemoProtocol0 -> MuxPeer (Socket.SockAddr, Socket.SockAddr) DeserialiseFailure IO LBS.ByteString ()
+    protocols :: DemoProtocol0 -> MuxPeer ConnectionId
+                                          DeserialiseFailure
+                                          IO LBS.ByteString ()
     protocols PingPong0 | pipelined =
       MuxPeerPipelined
         (contramap show stdoutTracer)
@@ -180,31 +182,30 @@ pingPongClientCount :: Applicative m => Int -> PingPongClient m ()
 pingPongClientCount 0 = PingPong.SendMsgDone ()
 pingPongClientCount n = SendMsgPing (pure (pingPongClientCount (n-1)))
 
-serverPingPong :: IO ()
+serverPingPong :: IO Void
 serverPingPong = do
-    tbl <- newConnectionTable
-    peerStatesVar <- newPeerStatesVar
-    _ <- async $ cleanPeerStates 200 peerStatesVar
+    networkState <- newNetworkMutableState
+    _ <- async $ cleanNetworkMutableState networkState
     withServerNode
-      nullTracer
-      nullTracer
-      nullTracer
-      tbl
-      peerStatesVar
+      nullNetworkServerTracers
+      networkState
       defaultLocalSocketAddrInfo
-      (\(DictVersion codec)-> encodeTerm codec)
-      (\(DictVersion codec)-> decodeTerm codec)
-      (,)
+      cborTermVersionDataCodec
       (\(DictVersion _) -> acceptEq)
       (simpleSingletonVersions (0::Int) (NodeToNodeVersionData $ NetworkMagic 0) (DictVersion nodeToNodeCodecCBORTerm) app)
       nullErrorPolicies
       $ \_ serverAsync ->
         wait serverAsync   -- block until async exception
   where
-    app :: OuroborosApplication ResponderApp (Socket.SockAddr, Socket.SockAddr) DemoProtocol0 IO LBS.ByteString Void ()
+    app :: OuroborosApplication ResponderApp
+                                ConnectionId
+                                DemoProtocol0
+                                IO LBS.ByteString Void ()
     app = simpleResponderApplication protocols
 
-    protocols :: DemoProtocol0 -> MuxPeer (Socket.SockAddr, Socket.SockAddr) DeserialiseFailure IO LBS.ByteString ()
+    protocols :: DemoProtocol0 -> MuxPeer ConnectionId
+                                          DeserialiseFailure
+                                          IO LBS.ByteString ()
     protocols PingPong0 =
       MuxPeer
         (contramap show stdoutTracer)
@@ -243,21 +244,21 @@ instance MiniProtocolLimits DemoProtocol1 where
 clientPingPong2 :: IO ()
 clientPingPong2 =
     connectToNode
-      (\(DictVersion codec) -> encodeTerm codec)
-      (\(DictVersion codec) -> decodeTerm codec)
-      nullTracer
-      nullTracer
-      (,)
+      cborTermVersionDataCodec
+      nullNetworkConnectTracers
       (simpleSingletonVersions (0::Int) (NodeToNodeVersionData $ NetworkMagic 0) (DictVersion nodeToNodeCodecCBORTerm) app)
       Nothing
       defaultLocalSocketAddrInfo
   where
-    app :: OuroborosApplication InitiatorApp (Socket.SockAddr, Socket.SockAddr) DemoProtocol1 IO LBS.ByteString () Void
+    app :: OuroborosApplication InitiatorApp
+                                ConnectionId
+                                DemoProtocol1
+                                IO LBS.ByteString () Void
     app = simpleInitiatorApplication protocols
 
-    protocols :: DemoProtocol1 -> MuxPeer
-                                    (Socket.SockAddr, Socket.SockAddr)
-                                    DeserialiseFailure IO LBS.ByteString ()
+    protocols :: DemoProtocol1 -> MuxPeer ConnectionId
+                                          DeserialiseFailure
+                                          IO LBS.ByteString ()
     protocols PingPong1 =
       MuxPeer
         (contramap (show . (,) (1 :: Int)) stdoutTracer)
@@ -288,32 +289,30 @@ pingPongClientPipelinedMax c =
                           Nothing
                           (\n' -> go (Right n' : acc) o n)
 
-serverPingPong2 :: IO ()
+serverPingPong2 :: IO Void
 serverPingPong2 = do
-    tbl <- newConnectionTable
-    peerStatesVar <- newPeerStatesVar
-    _ <- async $ cleanPeerStates 200 peerStatesVar
+    networkState <- newNetworkMutableState
+    _ <- async $ cleanNetworkMutableState networkState
     withServerNode
-      nullTracer
-      nullTracer
-      nullTracer
-      tbl
-      peerStatesVar
+      nullNetworkServerTracers
+      networkState
       defaultLocalSocketAddrInfo
-      (\(DictVersion codec)-> encodeTerm codec)
-      (\(DictVersion codec)-> decodeTerm codec)
-      (,)
+      cborTermVersionDataCodec
       (\(DictVersion _) -> acceptEq)
       (simpleSingletonVersions (0::Int) (NodeToNodeVersionData $ NetworkMagic 0) (DictVersion nodeToNodeCodecCBORTerm) app)
       nullErrorPolicies
       $ \_ serverAsync ->
         wait serverAsync   -- block until async exception
   where
-    app :: OuroborosApplication ResponderApp (Socket.SockAddr, Socket.SockAddr) DemoProtocol1 IO LBS.ByteString Void ()
+    app :: OuroborosApplication ResponderApp
+                                ConnectionId
+                                DemoProtocol1
+                                IO LBS.ByteString Void ()
     app = simpleResponderApplication protocols
 
-    protocols :: DemoProtocol1 -> MuxPeer (Socket.SockAddr, Socket.SockAddr)
-                                           DeserialiseFailure IO LBS.ByteString ()
+    protocols :: DemoProtocol1 -> MuxPeer ConnectionId
+                                          DeserialiseFailure
+                                          IO LBS.ByteString ()
     protocols PingPong1 =
       MuxPeer
         (contramap (show . (,) (1 :: Int)) stdoutTracer)
@@ -349,20 +348,21 @@ clientChainSync :: [FilePath] -> IO ()
 clientChainSync sockAddrs =
     forConcurrently_ sockAddrs $ \sockAddr ->
       connectToNode
-        (\(DictVersion codec) -> encodeTerm codec)
-        (\(DictVersion codec) -> decodeTerm codec)
-        nullTracer
-        nullTracer
-        (,)
+        cborTermVersionDataCodec
+        nullNetworkConnectTracers
         (simpleSingletonVersions (0::Int) (NodeToNodeVersionData $ NetworkMagic 0) (DictVersion nodeToNodeCodecCBORTerm) app)
         Nothing
         (mkLocalSocketAddrInfo sockAddr)
   where
-    app :: OuroborosApplication InitiatorApp (Socket.SockAddr, Socket.SockAddr) DemoProtocol2 IO LBS.ByteString () Void
+    app :: OuroborosApplication InitiatorApp
+                                ConnectionId
+                                DemoProtocol2
+                                IO LBS.ByteString () Void
     app = simpleInitiatorApplication protocols
 
-    protocols :: DemoProtocol2 -> MuxPeer (Socket.SockAddr, Socket.SockAddr)
-                                          DeserialiseFailure IO LBS.ByteString ()
+    protocols :: DemoProtocol2 -> MuxPeer ConnectionId
+                                          DeserialiseFailure
+                                          IO LBS.ByteString ()
     protocols ChainSync2 =
       MuxPeer
         (contramap show stdoutTracer)
@@ -370,21 +370,15 @@ clientChainSync sockAddrs =
         (ChainSync.chainSyncClientPeer chainSyncClient)
 
 
-serverChainSync :: FilePath -> IO ()
+serverChainSync :: FilePath -> IO Void
 serverChainSync sockAddr = do
-    tbl <- newConnectionTable
-    peerStatesVar <- newPeerStatesVar
-    _ <- async $ cleanPeerStates 200 peerStatesVar
+    networkState <- newNetworkMutableState
+    _ <- async $ cleanNetworkMutableState networkState
     withServerNode
-      nullTracer
-      nullTracer
-      nullTracer
-      tbl
-      peerStatesVar
+      nullNetworkServerTracers
+      networkState
       (mkLocalSocketAddrInfo sockAddr)
-      (\(DictVersion codec)-> encodeTerm codec)
-      (\(DictVersion codec)-> decodeTerm codec)
-      (,)
+      cborTermVersionDataCodec
       (\(DictVersion _) -> acceptEq)
       (simpleSingletonVersions (0::Int) (NodeToNodeVersionData $ NetworkMagic 0) (DictVersion nodeToNodeCodecCBORTerm) app)
       nullErrorPolicies
@@ -393,11 +387,15 @@ serverChainSync sockAddr = do
   where
     prng = mkSMGen 0
 
-    app :: OuroborosApplication ResponderApp (Socket.SockAddr, Socket.SockAddr) DemoProtocol2 IO LBS.ByteString Void ()
+    app :: OuroborosApplication ResponderApp
+                                ConnectionId
+                                DemoProtocol2
+                                IO LBS.ByteString Void ()
     app = simpleResponderApplication protocols
 
-    protocols :: DemoProtocol2 -> MuxPeer (Socket.SockAddr, Socket.SockAddr)
-                                          DeserialiseFailure IO LBS.ByteString ()
+    protocols :: DemoProtocol2 -> MuxPeer ConnectionId
+                                          DeserialiseFailure
+                                          IO LBS.ByteString ()
     protocols ChainSync2 =
       MuxPeer
         (contramap show stdoutTracer)
@@ -447,10 +445,13 @@ clientBlockFetch sockAddrs = do
     candidateChainsVar <- newTVarIO Map.empty
     currentChainVar    <- newTVarIO genesisChainFragment
 
-    let app :: OuroborosApplication InitiatorApp (Socket.SockAddr, Socket.SockAddr) DemoProtocol3 IO LBS.ByteString () Void
+    let app :: OuroborosApplication InitiatorApp
+                                    ConnectionId
+                                    DemoProtocol3
+                                    IO LBS.ByteString () Void
         app = OuroborosInitiatorApplication protocols
 
-        protocols :: (Socket.SockAddr, Socket.SockAddr)
+        protocols :: ConnectionId
                   -> DemoProtocol3
                   -> Channel IO LBS.ByteString
                   -> IO ()
@@ -482,8 +483,8 @@ clientBlockFetch sockAddrs = do
               channel
               (blockFetchClient clientCtx)
 
-        blockFetchPolicy :: BlockFetchConsensusInterface (Socket.SockAddr, Socket.SockAddr)
-                              BlockHeader Block IO
+        blockFetchPolicy :: BlockFetchConsensusInterface
+                             ConnectionId BlockHeader Block IO
         blockFetchPolicy =
             BlockFetchConsensusInterface {
               readCandidateChains    = readTVar candidateChainsVar
@@ -544,11 +545,8 @@ clientBlockFetch sockAddrs = do
     peerAsyncs <- sequence
                     [ async $
                         connectToNode
-                          (\(DictVersion codec) -> encodeTerm codec)
-                          (\(DictVersion codec) -> decodeTerm codec)
-                          nullTracer
-                          nullTracer
-                          (,)
+                          cborTermVersionDataCodec
+                          nullNetworkConnectTracers
                           (simpleSingletonVersions (0::Int) (NodeToNodeVersionData $ NetworkMagic 0) (DictVersion nodeToNodeCodecCBORTerm) app)
                           Nothing
                           (mkLocalSocketAddrInfo sockAddr)
@@ -580,21 +578,15 @@ clientBlockFetch sockAddrs = do
     chainTracer = contramap (\x -> "cur chain  : " ++ show x) stdoutTracer
 
 
-serverBlockFetch :: FilePath -> IO ()
+serverBlockFetch :: FilePath -> IO Void
 serverBlockFetch sockAddr = do
-    tbl <- newConnectionTable
-    peerStatesVar <- newPeerStatesVar
-    _ <- async $ cleanPeerStates 200 peerStatesVar
+    networkState <- newNetworkMutableState
+    _ <- async $ cleanNetworkMutableState networkState
     withServerNode
-      nullTracer
-      nullTracer
-      nullTracer
-      tbl
-      peerStatesVar
+      nullNetworkServerTracers
+      networkState
       (mkLocalSocketAddrInfo sockAddr)
-      (\(DictVersion codec)-> encodeTerm codec)
-      (\(DictVersion codec)-> decodeTerm codec)
-      (,)
+      cborTermVersionDataCodec
       (\(DictVersion _) -> acceptEq)
       (simpleSingletonVersions (0::Int) (NodeToNodeVersionData $ NetworkMagic 0) (DictVersion nodeToNodeCodecCBORTerm) app)
       nullErrorPolicies
@@ -603,11 +595,15 @@ serverBlockFetch sockAddr = do
   where
     prng = mkSMGen 0
 
-    app :: OuroborosApplication ResponderApp (Socket.SockAddr, Socket.SockAddr) DemoProtocol3 IO LBS.ByteString Void ()
+    app :: OuroborosApplication ResponderApp
+                                ConnectionId
+                                DemoProtocol3
+                                IO LBS.ByteString Void ()
     app = simpleResponderApplication protocols
 
-    protocols :: DemoProtocol3 -> MuxPeer (Socket.SockAddr, Socket.SockAddr)
-                                          DeserialiseFailure IO LBS.ByteString ()
+    protocols :: DemoProtocol3 -> MuxPeer ConnectionId
+                                          DeserialiseFailure
+                                          IO LBS.ByteString ()
     protocols ChainSync3 =
       MuxPeer
         (contramap show stdoutTracer)

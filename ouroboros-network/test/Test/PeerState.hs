@@ -341,22 +341,27 @@ prop_subscriptionWorker
              tbl
              peerStatesVar
              (mkSocket sockType remoteAddr)
-             (\ss s -> do
-              s' <- socketStateChangeTx ss s
-              case ss of
-                CreatedSocket{} -> pure s'
-                ClosedSocket{}  -> tryPutTMVar doneVar () >> pure s')
-             completeTx
-             (main doneVar)
-             (LocalAddresses {
-                laIpv4 = Just localAddr,
-                laIpv6 = Just localAddr,
-                laUnix = Nothing
-                })
-                (\_ LocalAddresses {laIpv4, laIpv6} -> getFirst (First laIpv4 <> First laIpv6))
-             (const Nothing)
-             (pure $ ipSubscriptionTarget nullTracer peerStatesVar [remoteAddr])
-             1
+             WorkerCallbacks {
+                 wcSocketStateChangeTx = \ss s -> do
+                   s' <- socketStateChangeTx ss s
+                   case ss of
+                     CreatedSocket{} -> pure s'
+                     ClosedSocket{}  -> tryPutTMVar doneVar () >> pure s',
+                 wcCompleteApplicationTx = completeTx,
+                 wcMainTx = main doneVar
+               }
+             WorkerParams {
+                 wpLocalAddresses = LocalAddresses {
+                     laIpv4 = Just localAddr,
+                     laIpv6 = Just localAddr,
+                     laUnix = Nothing
+                   },
+                 wpConnectionAttemptDelay = const Nothing,
+                 wpSubscriptionTarget = 
+                   pure $ ipSubscriptionTarget nullTracer peerStatesVar [remoteAddr],
+                 wpValency = 1
+               }
+             (\_ LocalAddresses {laIpv4, laIpv6} -> getFirst (First laIpv4 <> First laIpv6))
              (\sock -> app sock
                 `finally`
                 (void $ atomically $ tryPutTMVar doneVar ()))

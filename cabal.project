@@ -9,6 +9,18 @@ packages: ./typed-protocols
           ./ntp-client
           ./Win32-network
 
+source-repository-package
+  type: git
+  location: https://github.com/input-output-hk/cardano-prelude
+  tag: 3c40edcf5bdba8721d3430d0aaaeea8770ce9bec
+  subdir: .
+
+source-repository-package
+  type: git
+  location: https://github.com/input-output-hk/cardano-prelude
+  tag: 3c40edcf5bdba8721d3430d0aaaeea8770ce9bec
+  subdir: .
+
 constraints:
   graphviz == 2999.20.0.3
 

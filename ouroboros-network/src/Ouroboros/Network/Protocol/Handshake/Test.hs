@@ -341,12 +341,10 @@ prop_connect (ArbitraryVersions clientVersions serverVersions) =
   in case runSimOrThrow
            (connect
               (handshakeClientPeer
-                (\(DictVersion codec) -> encodeTerm codec)
-                (\(DictVersion codec) -> decodeTerm codec)
+                cborTermVersionDataCodec
                 clientVersions)
               (handshakeServerPeer
-                (\(DictVersion codec) -> encodeTerm codec)
-                (\(DictVersion codec) -> decodeTerm codec)
+                cborTermVersionDataCodec
                 (\(DictVersion _) vData vData' -> bool (Refuse $ T.pack "refused") Accept $ vData == vData')
                 serverVersions)) of
       (clientRes', serverRes', TerminalStates TokDone TokDone) ->
@@ -380,12 +378,10 @@ prop_channel createChannels clientVersions serverVersions =
         "client"
         "server"
         (handshakeClientPeer
-          (\(DictVersion codec) -> encodeTerm codec)
-          (\(DictVersion codec) -> decodeTerm codec)
+          cborTermVersionDataCodec
           clientVersions)
         (handshakeServerPeer
-          (\(DictVersion codec) -> encodeTerm codec)
-          (\(DictVersion codec) -> decodeTerm codec)
+          cborTermVersionDataCodec
           (\(DictVersion _) vData vData' -> bool (Refuse $ T.pack "") Accept $ vData == vData')
           serverVersions)
     return $ 

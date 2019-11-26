@@ -15,9 +15,20 @@ module Ouroboros.Network.Socket (
       ConnectionTable
     , ConnectionTableRef (..)
     , ValencyCounter
+    , NetworkMutableState (..)
+    , newNetworkMutableState
+    , newNetworkMutableStateSTM
+    , cleanNetworkMutableState
+    , ConnectionId (..)
     , withServerNode
     , connectToNode
     , connectToNode'
+
+    -- * Traces
+    , NetworkConnectTracers (..)
+    , nullNetworkConnectTracers
+    , NetworkServerTracers (..)
+    , nullNetworkServerTracers
 
     -- * Helper function for creating servers
     , fromSocket
@@ -50,12 +61,14 @@ import           Control.Exception (throwIO)
 import qualified Codec.CBOR.Term     as CBOR
 import           Codec.CBOR.Read (DeserialiseFailure)
 import           Codec.Serialise (Serialise)
-import           Data.Text (Text)
 import           Data.Typeable (Typeable)
 import qualified Data.ByteString.Lazy as BL
 import           Data.Int
+import           Data.Void
 
 import qualified Network.Socket as Socket hiding (recv)
+
+import           Cardano.Prelude (NoUnexpectedThunks (..), ThunkInfo (..))
 
 import           Control.Tracer
 
@@ -78,6 +91,44 @@ import           Ouroboros.Network.Mux
 import qualified Ouroboros.Network.Server.Socket as Server
 import           Ouroboros.Network.Server.ConnectionTable
 
+
+-- | Tracer used by 'connectToNode' (and derivatives, like
+-- 'Ouroboros.Network.NodeToNode.connectTo' or
+-- 'Ouroboros.Network.NodeToClient.connectTo).
+--
+data NetworkConnectTracers ptcl vNumber = NetworkConnectTracers {
+      nctMuxTracer         :: Tracer IO (Mx.WithMuxBearer ConnectionId (Mx.MuxTrace ptcl)),
+      -- ^ low level mux-network tracer, which logs mux sdu (send and received)
+      -- and other low level multiplexing events.
+      nctHandshakeTracer   :: Tracer IO (TraceSendRecv (Handshake vNumber CBOR.Term)
+                                                       ConnectionId
+                                                       (DecoderFailureOrTooMuchInput DeserialiseFailure))
+      -- ^ handshake protocol tracer; it is important for analysing version
+      -- negotation mismatches.
+    }
+
+nullNetworkConnectTracers :: NetworkConnectTracers ptcl vNumber
+nullNetworkConnectTracers = NetworkConnectTracers {
+      nctMuxTracer       = nullTracer,
+      nctHandshakeTracer = nullTracer
+    }
+
+
+-- | Connection is identified by local and remote address.
+--
+-- TODO: the type variable which this data type fills in is called `peerid`.  We
+-- should renamed to `connectionId`.
+--
+data ConnectionId = ConnectionId {
+    localAddress  :: !Socket.SockAddr,
+    remoteAddress :: !Socket.SockAddr
+  }
+  deriving (Eq, Ord, Show)
+
+instance NoUnexpectedThunks ConnectionId where
+    showTypeOf _ = "Peer"
+    whnfNoUnexpectedThunks _ctxt _act = return NoUnexpectedThunks
+
 -- |
 -- We assume that a TCP segment size of 1440 bytes with initial window of size
 -- 4.  This sets upper limit of 5760 bytes on each message of handshake
@@ -97,7 +148,7 @@ maxTransmissionUnit = 4 * 1440
 --
 -- Exceptions thrown by @'MuxApplication'@ are rethrown by @'connectTo'@.
 connectToNode
-  :: forall appType peerid ptcl vNumber extra a b.
+  :: forall appType ptcl vNumber extra a b.
      ( Mx.ProtocolEnum ptcl
      , Ord ptcl
      , Enum ptcl
@@ -111,19 +162,16 @@ connectToNode
      , Mx.MiniProtocolLimits ptcl
      , HasInitiator appType ~ True
      )
-  => (forall vData. extra vData -> vData -> CBOR.Term)
-  -> (forall vData. extra vData -> CBOR.Term -> Either Text vData)
-  -> Tracer IO (Mx.WithMuxBearer peerid (Mx.MuxTrace ptcl))
-  -> Tracer IO (TraceSendRecv (Handshake vNumber CBOR.Term) peerid (DecoderFailureOrTooMuchInput DeserialiseFailure))
-  -> (Socket.SockAddr -> Socket.SockAddr -> peerid)
-  -> Versions vNumber extra (OuroborosApplication appType peerid ptcl IO BL.ByteString a b)
+  => VersionDataCodec extra CBOR.Term
+  -> NetworkConnectTracers ptcl vNumber
+  -> Versions vNumber extra (OuroborosApplication appType ConnectionId ptcl IO BL.ByteString a b)
   -- ^ application to run over the connection
   -> Maybe Socket.AddrInfo
   -- ^ local address; the created socket will bind to it
   -> Socket.AddrInfo
   -- ^ remote address
   -> IO ()
-connectToNode encodeData decodeData muxTracer handshakeTracer peeridFn versions localAddr remoteAddr =
+connectToNode versionDataCodec tracers versions localAddr remoteAddr =
     bracket
       (Socket.socket (Socket.addrFamily remoteAddr) Socket.Stream Socket.defaultProtocol)
       Socket.close
@@ -141,7 +189,7 @@ connectToNode encodeData decodeData muxTracer handshakeTracer peeridFn versions 
               Socket.bind sd (Socket.addrAddress addr)
             Nothing   -> return ()
           Socket.connect sd (Socket.addrAddress remoteAddr)
-          connectToNode' encodeData decodeData muxTracer handshakeTracer peeridFn versions sd
+          connectToNode' versionDataCodec tracers versions sd
       )
 
 -- |
@@ -153,7 +201,7 @@ connectToNode encodeData decodeData muxTracer handshakeTracer peeridFn versions 
 --
 -- Exceptions thrown by @'MuxApplication'@ are rethrown by @'connectTo'@.
 connectToNode'
-  :: forall appType peerid ptcl vNumber extra a b.
+  :: forall appType ptcl vNumber extra a b.
      ( Mx.ProtocolEnum ptcl
      , Ord ptcl
      , Enum ptcl
@@ -167,38 +215,35 @@ connectToNode'
      , Mx.MiniProtocolLimits ptcl
      , HasInitiator appType ~ True
      )
-  => (forall vData. extra vData -> vData -> CBOR.Term)
-  -> (forall vData. extra vData -> CBOR.Term -> Either Text vData)
-  -> Tracer IO (Mx.WithMuxBearer peerid (Mx.MuxTrace ptcl))
-  -> Tracer IO (TraceSendRecv (Handshake vNumber CBOR.Term) peerid (DecoderFailureOrTooMuchInput DeserialiseFailure))
-  -> (Socket.SockAddr -> Socket.SockAddr -> peerid)
-  -> Versions vNumber extra (OuroborosApplication appType peerid ptcl IO BL.ByteString a b)
+  => VersionDataCodec extra CBOR.Term
+  -> NetworkConnectTracers ptcl vNumber
+  -> Versions vNumber extra (OuroborosApplication appType ConnectionId ptcl IO BL.ByteString a b)
   -- ^ application to run over the connection
   -> Socket.Socket
   -> IO ()
-connectToNode' encodeData decodeData muxTracer handshakeTracer peeridFn versions sd = do
-    peerid <- peeridFn <$> Socket.getSocketName sd <*> Socket.getPeerName sd
-    muxTracer' <- initDeltaQTracer' $ Mx.WithMuxBearer peerid `contramap` muxTracer
-    bearer <- Mx.socketAsMuxBearer muxTracer' sd
-    Mx.muxBearerSetState muxTracer' bearer Mx.Connected
-    traceWith muxTracer' $ Mx.MuxTraceHandshakeStart
+connectToNode' versionDataCodec NetworkConnectTracers {nctMuxTracer, nctHandshakeTracer } versions sd = do
+    connectionId <- ConnectionId <$> Socket.getSocketName sd <*> Socket.getPeerName sd
+    muxTracer <- initDeltaQTracer' $ Mx.WithMuxBearer connectionId `contramap` nctMuxTracer
+    bearer <- Mx.socketAsMuxBearer muxTracer sd
+    Mx.muxBearerSetState muxTracer bearer Mx.Connected
+    traceWith muxTracer $ Mx.MuxTraceHandshakeStart
     ts_start <- getMonotonicTime
     !mapp <- runPeerWithByteLimit
               maxTransmissionUnit
               BL.length
-              handshakeTracer
+              nctHandshakeTracer
               codecHandshake
-              peerid
+              connectionId
               (Mx.muxBearerAsControlChannel bearer Mx.ModeInitiator)
-              (handshakeClientPeer encodeData decodeData versions)
+              (handshakeClientPeer versionDataCodec versions)
     ts_end <- getMonotonicTime
     case mapp of
          Left err -> do
-             traceWith muxTracer' $ Mx.MuxTraceHandshakeClientError err (diffTime ts_end ts_start)
+             traceWith muxTracer $ Mx.MuxTraceHandshakeClientError err (diffTime ts_end ts_start)
              throwIO err
          Right app -> do
-             traceWith muxTracer' $ Mx.MuxTraceHandshakeClientEnd (diffTime ts_end ts_start)
-             Mx.muxStart muxTracer' peerid (toApplication app) bearer
+             traceWith muxTracer $ Mx.MuxTraceHandshakeClientEnd (diffTime ts_end ts_start)
+             Mx.muxStart muxTracer connectionId (toApplication app) bearer
 
 
 -- |
@@ -248,13 +293,12 @@ beginConnection
        )
     => Tracer IO (Mx.WithMuxBearer peerid (Mx.MuxTrace ptcl))
     -> Tracer IO (TraceSendRecv (Handshake vNumber CBOR.Term) peerid (DecoderFailureOrTooMuchInput DeserialiseFailure))
-    -> (forall vData. extra vData -> vData -> CBOR.Term)
-    -> (forall vData. extra vData -> CBOR.Term -> Either Text vData)
+    -> VersionDataCodec extra CBOR.Term
     -> (forall vData. extra vData -> vData -> vData -> Accept)
     -> (Time -> addr -> st -> STM.STM (AcceptConnection st vNumber extra peerid ptcl IO BL.ByteString))
     -- ^ either accept or reject a connection.
     -> Server.BeginConnection addr Socket.Socket st ()
-beginConnection muxTracer handshakeTracer encodeData decodeData acceptVersion fn t addr st = do
+beginConnection muxTracer handshakeTracer versionDataCodec acceptVersion fn t addr st = do
     accept <- fn t addr st
     case accept of
       AcceptConnection st' peerid versions -> pure $ Server.Accept st' $ \sd -> do
@@ -269,7 +313,7 @@ beginConnection muxTracer handshakeTracer encodeData decodeData acceptVersion fn
                 codecHandshake
                 peerid
                 (Mx.muxBearerAsControlChannel bearer Mx.ModeResponder)
-                (handshakeServerPeer encodeData decodeData acceptVersion versions)
+                (handshakeServerPeer versionDataCodec acceptVersion versions)
         case mapp of
           Left err -> do
             traceWith muxTracer' $ Mx.MuxTraceHandshakeServerError err
@@ -327,12 +371,64 @@ fromSocket tblVar sd = Server.Socket
         Socket.close sd'
 
 
+-- | Tracers required by a server which handles inbound connections.
+--
+data NetworkServerTracers ptcl vNumber = NetworkServerTracers {
+      nstMuxTracer         :: Tracer IO (Mx.WithMuxBearer ConnectionId (Mx.MuxTrace ptcl)),
+      -- ^ low level mux-network tracer, which logs mux sdu (send and received)
+      -- and other low level multiplexing events.
+      nstHandshakeTracer   :: Tracer IO (TraceSendRecv (Handshake vNumber CBOR.Term)
+                                                       ConnectionId
+                                                       (DecoderFailureOrTooMuchInput DeserialiseFailure)),
+      -- ^ handshake protocol tracer; it is important for analysing version
+      -- negotation mismatches.
+      nstErrorPolicyTracer :: Tracer IO (WithAddr Socket.SockAddr ErrorPolicyTrace)
+      -- ^ error policy tracer; must not be 'nullTracer', otherwise all the
+      -- exceptions which are not matched by any error policy will be caught
+      -- and not logged or rethrown.
+    }
+
+nullNetworkServerTracers :: NetworkServerTracers ptcl vNumber
+nullNetworkServerTracers = NetworkServerTracers {
+      nstMuxTracer         = nullTracer,
+      nstHandshakeTracer   = nullTracer,
+      nstErrorPolicyTracer = nullTracer
+    }
+
+
+-- | Mutable state maintained by the network component.
+--
+data NetworkMutableState = NetworkMutableState {
+    nmsConnectionTable :: ConnectionTable IO Socket.SockAddr,
+    -- ^ 'ConnectionTable' which maintains information about current upstream and
+    -- downstream connections.
+    nmsPeerStates      :: StrictTVar IO (PeerStates IO Socket.SockAddr)
+    -- ^ 'PeerStates' which maintains state of each downstream / upstream peer
+    -- that errored, misbehaved or was not interesting to us.
+  }
+
+newNetworkMutableStateSTM :: STM.STM NetworkMutableState
+newNetworkMutableStateSTM =
+    NetworkMutableState <$> newConnectionTableSTM
+                        <*> newPeerStatesVarSTM
+
+newNetworkMutableState :: IO NetworkMutableState
+newNetworkMutableState = atomically newNetworkMutableStateSTM
+
+-- | Clean 'PeerStates' within 'NetworkMutableState' every 200s
+--
+cleanNetworkMutableState :: NetworkMutableState
+                         -> IO ()
+cleanNetworkMutableState NetworkMutableState {nmsPeerStates} =
+    cleanPeerStates 200 nmsPeerStates
+
 -- |
 -- Thin wrapper around @'Server.run'@.
 --
-runNetworkNode'
-    :: forall peerid ptcl vNumber extra t.
-       ( Mx.ProtocolEnum ptcl
+runServerThread
+    :: forall appType ptcl vNumber extra a b.
+       ( HasResponder appType ~ True
+       , Mx.ProtocolEnum ptcl
        , Ord ptcl
        , Enum ptcl
        , Bounded ptcl
@@ -344,39 +440,67 @@ runNetworkNode'
        , Typeable vNumber
        , Show vNumber
        )
-    => Tracer IO (Mx.WithMuxBearer peerid (Mx.MuxTrace ptcl))
-    -> Tracer IO (TraceSendRecv (Handshake vNumber CBOR.Term) peerid (DecoderFailureOrTooMuchInput DeserialiseFailure))
-    -> Tracer IO (WithAddr (Socket.SockAddr) ErrorPolicyTrace)
-    -> ConnectionTable IO Socket.SockAddr
-    -> StrictTVar IO (PeerStates IO Socket.SockAddr)
+    => NetworkServerTracers ptcl vNumber
+    -> NetworkMutableState
     -> Socket.Socket
-    -> (forall vData. extra vData -> vData -> CBOR.Term)
-    -> (forall vData. extra vData -> CBOR.Term -> Either Text vData)
+    -> VersionDataCodec extra CBOR.Term
     -> (forall vData. extra vData -> vData -> vData -> Accept)
-    -- -> Versions vNumber extra (MuxApplication ServerApp ptcl IO)
-    -> (IOException -> IO ())
-    -> (Time
-          -> Socket.SockAddr
-          -> PeerStates IO Socket.SockAddr
-          -> STM.STM
-              (AcceptConnection
-                (PeerStates IO Socket.SockAddr)
-                vNumber extra peerid ptcl IO BL.ByteString))
-    -> Server.ApplicationStart Socket.SockAddr (PeerStates IO Socket.SockAddr)
-    -> Server.CompleteConnection Socket.SockAddr
-                                 (PeerStates IO Socket.SockAddr)
-                                 (WithAddr Socket.SockAddr ErrorPolicyTrace)
-                                 ()
-    -> Server.Main (PeerStates IO Socket.SockAddr) t
-    -> IO t
-runNetworkNode' muxTracer handshakeTrace errorPolicyTracer tbl stVar sd encodeData decodeData acceptVersion acceptException acceptConn applicationStart complete
-    main = Server.run
-        errorPolicyTracer
-        (fromSocket tbl sd)
-        acceptException
-        (beginConnection muxTracer handshakeTrace encodeData decodeData acceptVersion acceptConn)
-        applicationStart
-        complete main (toLazyTVar stVar)
+    -> Versions vNumber extra (OuroborosApplication appType ConnectionId ptcl IO BL.ByteString a b)
+    -> ErrorPolicies Socket.SockAddr ()
+    -> IO Void
+runServerThread NetworkServerTracers { nstMuxTracer
+                                     , nstHandshakeTracer
+                                     , nstErrorPolicyTracer }
+                NetworkMutableState { nmsConnectionTable
+                                    , nmsPeerStates }
+                sd
+                versionDataCodec
+                acceptVersion
+                versions
+                errorPolicies = do
+    sockAddr <- Socket.getSocketName sd
+    Server.run
+        nstErrorPolicyTracer
+        (fromSocket nmsConnectionTable sd)
+        (acceptException sockAddr)
+        (beginConnection nstMuxTracer nstHandshakeTracer versionDataCodec acceptVersion (acceptConnectionTx sockAddr))
+        -- register producer when application starts, it will be unregistered
+        -- using 'CompleteConnection'
+        (\remoteAddr thread st -> pure $ registerProducer remoteAddr thread
+        st)
+        completeTx mainTx (toLazyTVar nmsPeerStates)
+  where
+    mainTx :: Server.Main (PeerStates IO Socket.SockAddr) Void
+    mainTx (ThrowException e) = throwM e
+    mainTx PeerStates{}       = retry
+
+    -- When a connection completes, we do nothing. State is ().
+    -- Crucially: we don't re-throw exceptions, because doing so would
+    -- bring down the server.
+    completeTx :: Server.CompleteConnection
+                    Socket.SockAddr
+                    (PeerStates IO Socket.SockAddr)
+                    (WithAddr Socket.SockAddr ErrorPolicyTrace)
+                    ()
+    completeTx result st = case result of
+
+      Server.Result thread remoteAddr t (Left (SomeException e)) ->
+        fmap (unregisterProducer remoteAddr thread)
+          <$> completeApplicationTx errorPolicies (ApplicationError t remoteAddr e) st
+
+      Server.Result thread remoteAddr t (Right r) ->
+        fmap (unregisterProducer remoteAddr thread)
+          <$> completeApplicationTx errorPolicies (ApplicationResult t remoteAddr r) st
+
+    acceptException :: Socket.SockAddr -> IOException -> IO ()
+    acceptException a e = do
+      traceWith (WithAddr a `contramap` nstErrorPolicyTracer) $ ErrorPolicyAcceptException e
+
+    acceptConnectionTx sockAddr t connAddr st = do
+      d <- beforeConnectTx t connAddr st
+      case d of
+        AllowConnection st'    -> pure $ AcceptConnection st' (ConnectionId sockAddr connAddr) versions
+        DisallowConnection st' -> pure $ RejectConnection st' (ConnectionId sockAddr connAddr)
 
 
 -- |
@@ -396,7 +520,7 @@ runNetworkNode' muxTracer handshakeTrace errorPolicyTracer tbl stVar sd encodeDa
 -- thread which runs the server.  This makes it useful for testing, where we
 -- need to guarantee that a socket is open before we try to connect to it.
 withServerNode
-    :: forall appType peerid ptcl vNumber extra t a b.
+    :: forall appType ptcl vNumber extra t a b.
        ( HasResponder appType ~ True
        , Mx.ProtocolEnum ptcl
        , Ord ptcl
@@ -410,82 +534,31 @@ withServerNode
        , Typeable vNumber
        , Show vNumber
        )
-    => Tracer IO (Mx.WithMuxBearer peerid (Mx.MuxTrace ptcl))
-    -> Tracer IO (TraceSendRecv (Handshake vNumber CBOR.Term) peerid (DecoderFailureOrTooMuchInput DeserialiseFailure))
-    -> Tracer IO (WithAddr Socket.SockAddr ErrorPolicyTrace)
-    -> ConnectionTable IO Socket.SockAddr
-    -> StrictTVar IO (PeerStates IO Socket.SockAddr)
+    => NetworkServerTracers ptcl vNumber
+    -> NetworkMutableState
     -> Socket.AddrInfo
-    -> (forall vData. extra vData -> vData -> CBOR.Term)
-    -> (forall vData. extra vData -> CBOR.Term -> Either Text vData)
-    -> (Socket.SockAddr -> Socket.SockAddr -> peerid)
+    -> VersionDataCodec extra CBOR.Term
     -> (forall vData. extra vData -> vData -> vData -> Accept)
-    -> Versions vNumber extra (OuroborosApplication appType peerid ptcl IO BL.ByteString a b)
+    -> Versions vNumber extra (OuroborosApplication appType ConnectionId ptcl IO BL.ByteString a b)
     -- ^ The mux application that will be run on each incoming connection from
     -- a given address.  Note that if @'MuxClientAndServerApplication'@ is
     -- returned, the connection will run a full duplex set of mini-protocols.
     -> ErrorPolicies Socket.SockAddr ()
-    -> (Socket.SockAddr -> Async () -> IO t)
+    -> (Socket.SockAddr -> Async Void -> IO t)
     -- ^ callback which takes the @Async@ of the thread that is running the server.
     -- Note: the server thread will terminate when the callback returns or
     -- throws an exception.
     -> IO t
-withServerNode muxTracer handshakeTracer errorPolicyTracer tbl stVar addr encodeData decodeData peeridFn acceptVersion versions errPolicies k =
+withServerNode tracers networkState addr versionDataCodec acceptVersion versions errorPolicies k =
     bracket (mkListeningSocket (Socket.addrFamily addr) (Just $ Socket.addrAddress addr)) Socket.close $ \sd -> do
       addr' <- Socket.getSocketName sd
       withAsync
-        (runNetworkNode'
-          muxTracer
-          handshakeTracer
-          errorPolicyTracer
-          tbl
-          stVar
+        (runServerThread
+          tracers
+          networkState
           sd
-          encodeData
-          decodeData
+          versionDataCodec
           acceptVersion
-          (acceptException addr')
-          (\t connAddr st -> do
-            d <- beforeConnectTx t connAddr st
-            case d of
-              AllowConnection st'    -> pure $ AcceptConnection st' (peeridFn addr' connAddr) versions
-              DisallowConnection st' -> pure $ RejectConnection st' (peeridFn addr' connAddr))
-              -- register producer when application starts, it will be
-              -- unregistered using 'CompleteConnection'
-          (\remoteAddr thread st -> pure $ registerProducer remoteAddr thread
-          st)
-          complete
-          main) (k addr')
-
-    where
-      main :: Server.Main (PeerStates IO Socket.SockAddr) ()
-      main (ThrowException e) = throwM e
-      main PeerStates{}       = retry
-
-      completeTx :: CompleteApplication IO
-                      (PeerStates IO Socket.SockAddr)
-                      Socket.SockAddr
-                      ()
-      completeTx = completeApplicationTx errPolicies
-
-      -- When a connection completes, we do nothing. State is ().
-      -- Crucially: we don't re-throw exceptions, because doing so would
-      -- bring down the server.
-      complete :: Server.CompleteConnection
-                    Socket.SockAddr
-                    (PeerStates IO Socket.SockAddr)
-                    (WithAddr Socket.SockAddr ErrorPolicyTrace)
-                    ()
-      complete result st = case result of
-
-        Server.Result thread remoteAddr t (Left (SomeException e)) ->
-          fmap (unregisterProducer remoteAddr thread)
-            <$> completeTx (ApplicationError t remoteAddr e) st
-
-        Server.Result thread remoteAddr t (Right r) ->
-          fmap (unregisterProducer remoteAddr thread)
-            <$> completeTx (ApplicationResult t remoteAddr r) st
-
-      acceptException :: Socket.SockAddr -> IOException -> IO ()
-      acceptException a e = do
-        traceWith (WithAddr a `contramap` errorPolicyTracer) $ ErrorPolicyAcceptException e
+          versions
+          errorPolicies)
+        (k addr')
