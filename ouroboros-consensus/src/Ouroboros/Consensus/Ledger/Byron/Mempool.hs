@@ -178,10 +178,10 @@ instance Show (GenTxId ByronBlock) where
 applyByronGenTx :: CC.ValidationMode
                 -> LedgerConfig ByronBlock
                 -> GenTx ByronBlock
-                -> LedgerState ByronBlock
-                -> Except (ApplyTxErr ByronBlock) (LedgerState ByronBlock)
-applyByronGenTx validationMode cfg genTx st =
-    (\state -> st {byronLedgerState = state}) <$>
+                -> TickedLedgerState ByronBlock
+                -> Except (ApplyTxErr ByronBlock) (TickedLedgerState ByronBlock)
+applyByronGenTx validationMode cfg genTx (TickedLedgerState st) =
+    (\state -> TickedLedgerState $ st {byronLedgerState = state}) <$>
       applyMempoolPayload
         validationMode
         (unByronLedgerConfig cfg)

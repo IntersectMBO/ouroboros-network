@@ -318,7 +318,7 @@ instance UpdateLedger TestBlock where
 
   ledgerConfigView _ = LedgerConfig
 
-  applyChainTick _ _ = return
+  applyChainTick _ _ = TickedLedgerState
 
   applyLedgerBlock _ tb@TestBlock{..} TestLedger{..}
     | blockPrevHash tb /= lastAppliedHash

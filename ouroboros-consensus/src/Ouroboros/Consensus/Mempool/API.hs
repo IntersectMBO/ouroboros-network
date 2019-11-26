@@ -7,6 +7,7 @@
 
 module Ouroboros.Consensus.Mempool.API (
     Mempool(..)
+  , BlockSlot(..)
   , MempoolSnapshot(..)
   , ApplyTx(..)
   , TraceEventMempool(..)
@@ -17,6 +18,7 @@ module Ouroboros.Consensus.Mempool.API (
 import           Control.Monad.Except
 import           GHC.Stack (HasCallStack)
 
+import           Ouroboros.Network.Block (SlotNo)
 import           Ouroboros.Network.Protocol.TxSubmission.Type (TxSizeInBytes)
 
 import           Ouroboros.Consensus.Ledger.Abstract
@@ -55,8 +57,8 @@ class ( UpdateLedger blk
   -- | Apply transaction we have not previously seen before
   applyTx :: LedgerConfig blk
           -> GenTx blk
-          -> LedgerState blk
-          -> Except (ApplyTxErr blk) (LedgerState blk)
+          -> TickedLedgerState blk
+          -> Except (ApplyTxErr blk) (TickedLedgerState blk)
 
   -- | Re-apply a transaction
   --
@@ -66,8 +68,8 @@ class ( UpdateLedger blk
   reapplyTx :: HasCallStack
             => LedgerConfig blk
             -> GenTx blk
-            -> LedgerState blk
-            -> Except (ApplyTxErr blk) (LedgerState blk)
+            -> TickedLedgerState blk
+            -> Except (ApplyTxErr blk) (TickedLedgerState blk)
 
   -- | Re-apply a transaction to the very same state it was applied in before
   --
@@ -77,8 +79,8 @@ class ( UpdateLedger blk
   reapplyTxSameState :: HasCallStack
                      => LedgerConfig blk
                      -> GenTx blk
-                     -> LedgerState blk
-                     -> LedgerState blk
+                     -> TickedLedgerState blk
+                     -> TickedLedgerState blk
 
 -- | Mempool
 --
@@ -207,7 +209,10 @@ data Mempool m blk idx = Mempool {
       -- n.b. in our current implementation, when one opens a mempool, we
       -- spawn a thread which performs this action whenever the 'ChainDB' tip
       -- point changes.
-    , withSyncState :: forall a. (MempoolSnapshot blk idx -> STM m a) -> m a
+    , withSyncState :: forall a.
+                       BlockSlot
+                    -> (MempoolSnapshot blk idx -> STM m a)
+                    -> m a
 
       -- | Get a snapshot of the current mempool state. This allows for
       -- further pure queries on the snapshot.
@@ -217,6 +222,30 @@ data Mempool m blk idx = Mempool {
       -- counter will start (i.e. the zeroth ticket number).
     , zeroIdx       :: idx
     }
+
+-- | The slot of the block in which the transactions in the mempool will end up
+--
+-- The transactions in the mempool will be part of the body of a block, but a
+-- block consists of a header and a body, and the full validation of a block
+-- consists of first processing its header and only then processing the body.
+-- This is important, because processing the header may change the state of the
+-- ledger: the update system might be updated, scheduled delegations might be
+-- applied, etc., and such changes should take effect before we validate any
+-- transactions.
+data BlockSlot =
+    -- | The slot number of the block is known
+    --
+    -- This will only be the case when we realized that we are the slot leader
+    -- and we are actually producing a block.
+    TxsForBlockInSlot SlotNo
+
+    -- | The slot number of the block is not yet known
+    --
+    -- When we are validating transactions before we know in which block they
+    -- will end up, we have to make an assumption about which slot number to use
+    -- for 'applyChainTick' to prepare the ledger state; we will assume that
+    -- they will end up in the slot after the slot at the tip of the ledger.
+  | TxsForUnknownBlock
 
 -- | A pure snapshot of the contents of the mempool. It allows fetching
 -- information about transactions in the mempool, and fetching individual

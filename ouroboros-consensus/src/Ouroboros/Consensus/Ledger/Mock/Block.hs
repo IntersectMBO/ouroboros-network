@@ -235,7 +235,7 @@ instance (SimpleCrypto c, Typeable ext, SupportedBlock (SimpleBlock c ext))
 
   type LedgerError (SimpleBlock c ext) = MockError (SimpleBlock c ext)
 
-  applyChainTick _ _ = return
+  applyChainTick _ _ = TickedLedgerState
   applyLedgerBlock _cfg = updateSimpleLedgerState
   reapplyLedgerBlock _cfg = (mustSucceed . runExcept) .: updateSimpleLedgerState
     where
@@ -255,12 +255,12 @@ updateSimpleLedgerState b (SimpleLedgerState st) =
 
 updateSimpleUTxO :: (Monad m, HasUtxo a)
                  => a
-                 -> LedgerState (SimpleBlock c ext)
+                 -> TickedLedgerState (SimpleBlock c ext)
                  -> ExceptT (MockError (SimpleBlock c ext))
                             m
-                            (LedgerState (SimpleBlock c ext))
-updateSimpleUTxO b (SimpleLedgerState st) =
-    SimpleLedgerState <$> updateMockUTxO b st
+                            (TickedLedgerState (SimpleBlock c ext))
+updateSimpleUTxO b (TickedLedgerState (SimpleLedgerState st)) =
+    TickedLedgerState . SimpleLedgerState <$> updateMockUTxO b st
 
 genesisSimpleLedgerState :: AddrDist -> LedgerState (SimpleBlock c ext)
 genesisSimpleLedgerState = SimpleLedgerState . genesisMockState
