@@ -38,6 +38,7 @@ import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Storage.Common
 import           Ouroboros.Storage.FS.API
 import           Ouroboros.Storage.FS.API.Types
+import           Ouroboros.Storage.FS.CRC
 import           Ouroboros.Storage.Util.ErrorHandling (ErrorHandling)
 
 import           Ouroboros.Storage.ImmutableDB.API
@@ -359,7 +360,7 @@ iteratorNextImpl dbEnv it@IteratorHandle {itHasFS = hasFS :: HasFS m h, ..}
                 (_currentEpoch       st)
                 (_currentEpochOffset st)
           blob <- case blocksOrHeaders of
-            Blocks  -> readNextBlock  itEpochHandle entryAndBlockSize
+            Blocks  -> readNextBlock  itEpochHandle entryAndBlockSize itEpoch
             Headers -> readNextHeader itEpochHandle entry
           when step $ stepIterator curEpochInfo iteratorState
           return $ case Secondary.blockOrEBB entry of
@@ -369,15 +370,19 @@ iteratorNextImpl dbEnv it@IteratorHandle {itHasFS = hasFS :: HasFS m h, ..}
     ImmutableDBEnv { _dbErr, _dbEpochInfo, _dbHashInfo } = dbEnv
     HasFS { hClose } = hasFS
 
-    -- TODO check checksum
     readNextBlock
       :: Handle h
       -> (Secondary.Entry hash, Word32)
+      -> EpochNo
       -> m ByteString
-    readNextBlock eHnd (Secondary.Entry { blockOffset }, size) =
-        hGetExactlyAt hasFS eHnd (fromIntegral size) offset
+    readNextBlock eHnd (entry, size) epoch = do
+        (bl, checksum') <- hGetExactlyAtCRC hasFS eHnd (fromIntegral size) offset
+        checkChecksum _dbErr epochFile blockOrEBB checksum checksum'
+        return bl
       where
-        offset = AbsOffset $ Secondary.unBlockOffset blockOffset
+        Secondary.Entry { blockOffset, checksum, blockOrEBB } = entry
+        offset    = AbsOffset $ Secondary.unBlockOffset blockOffset
+        epochFile = renderFile "epoch" epoch
 
     -- | We don't rely on the position of the handle, we always use
     -- 'hGetExactlyAt', i.e. @pread@ for reading from a given offset.
@@ -386,6 +391,8 @@ iteratorNextImpl dbEnv it@IteratorHandle {itHasFS = hasFS :: HasFS m h, ..}
       -> Secondary.Entry hash
       -> m ByteString
     readNextHeader eHnd Secondary.Entry { blockOffset, headerOffset, headerSize } =
+        -- We cannot check the checksum in this case, as we're not reading the
+        -- whole block
         hGetExactlyAt hasFS eHnd size offset
       where
         size   = fromIntegral $ Secondary.unHeaderSize headerSize

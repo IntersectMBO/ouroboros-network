@@ -13,6 +13,8 @@ module Ouroboros.Storage.FS.CRC (
     -- * File system functions with CRC functionality
   , hPutAllCRC
   , hPutCRC
+  , hGetExactlyAtCRC
+  , hGetAllAtCRC
   ) where
 
 import           Control.Monad (foldM)
@@ -30,6 +32,7 @@ import           GHC.Stack
 import           Cardano.Prelude (NoUnexpectedThunks)
 
 import           Ouroboros.Storage.FS.API
+import           Ouroboros.Storage.FS.API.Types (AbsOffset (..))
 
 {-------------------------------------------------------------------------------
   Wrap functionality from digest
@@ -73,3 +76,30 @@ hPutCRC :: forall m h. (HasCallStack, Monad m)
         -> Builder
         -> m (Word64, CRC)
 hPutCRC hasFS g = hPutAllCRC hasFS g . BS.toLazyByteString
+
+-- | Variation on 'hGetExactlyAt' that also computes a CRC
+hGetExactlyAtCRC :: forall m h. (HasCallStack, Monad m)
+                 => HasFS m h
+                 -> Handle h
+                 -> Word64    -- ^ The number of bytes to read.
+                 -> AbsOffset -- ^ The offset at which to read.
+                 -> m (BL.ByteString, CRC)
+hGetExactlyAtCRC hasFS h n offset = do
+    -- TODO Interleave reading with computing the CRC. Better cache locality
+    -- and fits better with incremental parsing, when we add support for that.
+    bs <- hGetExactlyAt hasFS h n offset
+    let !crc = computeCRC bs
+    return (bs, crc)
+
+-- | Variation on 'hGetAllAt' that also computes a CRC
+hGetAllAtCRC :: forall m h. (HasCallStack, Monad m)
+             => HasFS m h
+             -> Handle h
+             -> AbsOffset -- ^ The offset at which to read.
+             -> m (BL.ByteString, CRC)
+hGetAllAtCRC hasFS h offset = do
+    -- TODO Interleave reading with computing the CRC. Better cache locality
+    -- and fits better with incremental parsing, when we add support for that.
+    bs <- hGetAllAt hasFS h offset
+    let !crc = computeCRC bs
+    return (bs, crc)
