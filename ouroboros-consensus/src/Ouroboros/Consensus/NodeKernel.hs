@@ -211,6 +211,7 @@ initInternalState NodeArgs { tracers, chainDB, registry, cfg,
     mempool        <- openMempool registry
                                   (chainDBLedgerInterface chainDB)
                                   (ledgerConfigView cfg)
+                                  btime
                                   mempoolCap
                                   (mempoolTracer tracers)
 

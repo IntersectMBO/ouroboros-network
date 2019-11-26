@@ -28,11 +28,12 @@ import           Control.Tracer
 import           Ouroboros.Network.Block (ChainHash, Point, SlotNo,
                      StandardHash)
 import qualified Ouroboros.Network.Block as Block
-import           Ouroboros.Network.Point (WithOrigin (..))
 
 import           Ouroboros.Storage.ChainDB (ChainDB)
 import qualified Ouroboros.Storage.ChainDB.API as ChainDB
 
+import           Ouroboros.Consensus.BlockchainTime (BlockchainTime,
+                     getCurrentSlot)
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Mempool.API
@@ -53,11 +54,12 @@ openMempool :: (IOLike m, ApplyTx blk)
             => ResourceRegistry m
             -> LedgerInterface m blk
             -> LedgerConfig blk
+            -> BlockchainTime m
             -> MempoolCapacity
             -> Tracer m (TraceEventMempool blk)
             -> m (Mempool m blk TicketNo)
-openMempool registry ledger cfg capacity tracer = do
-    env <- initMempoolEnv ledger cfg capacity tracer
+openMempool registry ledger cfg btime capacity tracer = do
+    env <- initMempoolEnv ledger cfg btime capacity tracer
     forkSyncStateOnTipPointChange registry env
     return $ mkMempool env
 
@@ -69,11 +71,12 @@ openMempoolWithoutSyncThread
   :: (IOLike m, ApplyTx blk)
   => LedgerInterface m blk
   -> LedgerConfig blk
+  -> BlockchainTime m
   -> MempoolCapacity
   -> Tracer m (TraceEventMempool blk)
   -> m (Mempool m blk TicketNo)
-openMempoolWithoutSyncThread ledger cfg capacity tracer =
-    mkMempool <$> initMempoolEnv ledger cfg capacity tracer
+openMempoolWithoutSyncThread ledger cfg btime capacity tracer =
+    mkMempool <$> initMempoolEnv ledger cfg btime capacity tracer
 
 mkMempool :: (IOLike m, ApplyTx blk)
           => MempoolEnv m blk -> Mempool m blk TicketNo
@@ -126,11 +129,12 @@ deriving instance ( NoUnexpectedThunks (GenTx blk)
                   ) => NoUnexpectedThunks (InternalState blk)
 
 data MempoolEnv m blk = MempoolEnv {
-      mpEnvLedger    :: LedgerInterface m blk
-    , mpEnvLedgerCfg :: LedgerConfig blk
-    , mpEnvCapacity  :: !MempoolCapacity
-    , mpEnvStateVar  :: StrictTVar m (InternalState blk)
-    , mpEnvTracer    :: Tracer m (TraceEventMempool blk)
+      mpEnvLedger         :: LedgerInterface m blk
+    , mpEnvLedgerCfg      :: LedgerConfig blk
+    , mpEnvBlockchainTime :: !(BlockchainTime m)
+    , mpEnvCapacity       :: !MempoolCapacity
+    , mpEnvStateVar       :: StrictTVar m (InternalState blk)
+    , mpEnvTracer         :: Tracer m (TraceEventMempool blk)
     }
 
 initInternalState :: InternalState blk
@@ -139,17 +143,19 @@ initInternalState = IS TxSeq.Empty Block.GenesisHash zeroTicketNo
 initMempoolEnv :: (IOLike m, ApplyTx blk)
                => LedgerInterface m blk
                -> LedgerConfig blk
+               -> BlockchainTime m
                -> MempoolCapacity
                -> Tracer m (TraceEventMempool blk)
                -> m (MempoolEnv m blk)
-initMempoolEnv ledgerInterface cfg capacity tracer = do
+initMempoolEnv ledgerInterface cfg btime capacity tracer = do
     isVar <- newTVarM initInternalState
     return MempoolEnv
-      { mpEnvLedger    = ledgerInterface
-      , mpEnvLedgerCfg = cfg
-      , mpEnvCapacity  = capacity
-      , mpEnvStateVar  = isVar
-      , mpEnvTracer    = tracer
+      { mpEnvLedger         = ledgerInterface
+      , mpEnvLedgerCfg      = cfg
+      , mpEnvBlockchainTime = btime
+      , mpEnvCapacity       = capacity
+      , mpEnvStateVar       = isVar
+      , mpEnvTracer         = tracer
       }
 
 -- | Spawn a thread which syncs the 'Mempool' state whenever the 'LedgerState'
@@ -587,14 +593,31 @@ extendVRNew cfg tx
 -- | Validate internal state
 validateIS :: forall m blk. (IOLike m, ApplyTx blk)
            => MempoolEnv m blk -> BlockSlot -> STM m (ValidationResult blk)
-validateIS MempoolEnv{mpEnvLedger, mpEnvLedgerCfg, mpEnvStateVar} blockSlot =
+validateIS mpEnv blockSlot =
     go <$> getCurrentLedgerState mpEnvLedger
        <*> readTVar mpEnvStateVar
+       <*> getSlot
   where
+    MempoolEnv
+      { mpEnvLedger
+      , mpEnvLedgerCfg
+      , mpEnvBlockchainTime
+      , mpEnvStateVar
+      } = mpEnv
+
+    -- If we don't yet know the slot number, optimistically assume that the
+    -- mempool's contents will be included in a block in the next available
+    -- slot.
+    getSlot :: STM m SlotNo
+    getSlot = case blockSlot of
+      TxsForBlockInSlot s -> pure s
+      TxsForUnknownBlock  -> succ <$> getCurrentSlot mpEnvBlockchainTime
+
     go :: LedgerState      blk
        -> InternalState    blk
+       -> SlotNo
        -> ValidationResult blk
-    go st IS{isTxs, isTip, isLastTicketNo}
+    go st IS{isTxs, isTip, isLastTicketNo} slot
         | ledgerTipHash (getTickedLedgerState st') == isTip
         = initVR mpEnvLedgerCfg isTxs st' isLastTicketNo
         | otherwise
@@ -603,15 +626,3 @@ validateIS MempoolEnv{mpEnvLedger, mpEnvLedgerCfg, mpEnvStateVar} blockSlot =
       where
         st' :: TickedLedgerState blk
         st' = applyChainTick mpEnvLedgerCfg slot st
-
-        -- If we don't yet know the slot number, optimistically assume that they
-        -- will be included in a block in the next available slot
-        slot :: SlotNo
-        slot = case blockSlot of
-                 TxsForBlockInSlot s -> s
-                 TxsForUnknownBlock  ->
-                   case ledgerTipSlot st of
-                     -- TODO: 'genesisSlotNo' is badly named. This is the slot
-                     -- number of the first real block.
-                     Origin -> Block.genesisSlotNo
-                     At s   -> succ s

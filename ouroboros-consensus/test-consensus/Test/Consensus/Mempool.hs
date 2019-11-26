@@ -18,6 +18,7 @@ import qualified Data.Map as Map
 import           Data.Maybe (isJust, isNothing)
 import           Data.Set (Set)
 import qualified Data.Set as Set
+import           Data.Time.Clock (secondsToDiffTime)
 
 import           Test.QuickCheck
 import           Test.Tasty (TestTree, testGroup)
@@ -31,6 +32,8 @@ import           Ouroboros.Network.Block (pattern BlockPoint, SlotNo (..),
                      atSlot, withHash)
 import           Ouroboros.Network.Point (WithOrigin (..))
 
+import           Ouroboros.Consensus.BlockchainTime (NumSlots (..),
+                     TestBlockchainTime (..), newTestBlockchainTime)
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Mempool
 import           Ouroboros.Consensus.Mempool.TxSeq as TxSeq
@@ -70,7 +73,7 @@ tests = testGroup "Mempool"
 -- | Test that @snapshotTxs == snapshotTxsAfter zeroIdx@.
 prop_Mempool_snapshotTxs_snapshotTxsAfter :: TestSetup -> Property
 prop_Mempool_snapshotTxs_snapshotTxsAfter setup =
-    withTestMempool setup $ \TestMempool { mempool } -> do
+    withTestMempool setup $ \TestMempool { mempool } _ -> do
       let Mempool { zeroIdx, getSnapshot } = mempool
       MempoolSnapshot { snapshotTxs, snapshotTxsAfter} <- atomically getSnapshot
       return $ snapshotTxs === snapshotTxsAfter zeroIdx
@@ -79,7 +82,7 @@ prop_Mempool_snapshotTxs_snapshotTxsAfter setup =
 -- afterward.
 prop_Mempool_addTxs_getTxs :: TestSetupWithTxs -> Property
 prop_Mempool_addTxs_getTxs setup =
-    withTestMempool (testSetup setup) $ \TestMempool { mempool } -> do
+    withTestMempool (testSetup setup) $ \TestMempool { mempool } _ -> do
       let Mempool { addTxs, getSnapshot } = mempool
       _ <- addTxs (allTxs setup)
       MempoolSnapshot { snapshotTxs } <- atomically getSnapshot
@@ -90,7 +93,7 @@ prop_Mempool_addTxs_getTxs setup =
 -- instead of all at once.
 prop_Mempool_addTxs_one_vs_multiple :: TestSetupWithTxs -> Property
 prop_Mempool_addTxs_one_vs_multiple setup =
-    withTestMempool (testSetup setup) $ \TestMempool { mempool } -> do
+    withTestMempool (testSetup setup) $ \TestMempool { mempool } _ -> do
       let Mempool { addTxs, getSnapshot } = mempool
       forM_ (allTxs setup) $ \tx -> addTxs [tx]
       MempoolSnapshot { snapshotTxs } <- atomically getSnapshot
@@ -102,7 +105,7 @@ prop_Mempool_addTxs_one_vs_multiple setup =
 -- valid transactions don't.
 prop_Mempool_addTxs_result :: TestSetupWithTxs -> Property
 prop_Mempool_addTxs_result setup =
-    withTestMempool (testSetup setup) $ \TestMempool { mempool } -> do
+    withTestMempool (testSetup setup) $ \TestMempool { mempool } _ -> do
       let Mempool { addTxs } = mempool
       result <- addTxs (allTxs setup)
       return $ counterexample (ppTxs (txs setup)) $
@@ -112,7 +115,7 @@ prop_Mempool_addTxs_result setup =
 -- | Test that invalid transactions are never added to the 'Mempool'.
 prop_Mempool_InvalidTxsNeverAdded :: TestSetupWithTxs -> Property
 prop_Mempool_InvalidTxsNeverAdded setup =
-    withTestMempool (testSetup setup) $ \TestMempool { mempool } -> do
+    withTestMempool (testSetup setup) $ \TestMempool { mempool } _ -> do
       let Mempool { addTxs, getSnapshot } = mempool
       txsInMempoolBefore <- map fst . snapshotTxs <$> atomically getSnapshot
       _ <- addTxs (allTxs setup)
@@ -132,7 +135,7 @@ prop_Mempool_InvalidTxsNeverAdded setup =
 -- | After removing a transaction from the Mempool, it's actually gone.
 prop_Mempool_removeTxs :: TestSetupWithTxInMempool -> Property
 prop_Mempool_removeTxs (TestSetupWithTxInMempool testSetup tx) =
-    withTestMempool testSetup $ \TestMempool { mempool } -> do
+    withTestMempool testSetup $ \TestMempool { mempool } _ -> do
       let Mempool { removeTxs, getSnapshot } = mempool
       removeTxs [txId txToRemove]
       txsInMempoolAfter <- map fst . snapshotTxs <$> atomically getSnapshot
@@ -164,28 +167,28 @@ prop_Mempool_Capacity mcts = withTestMempool mctsTestSetup $
     runCapacityTest :: forall m. IOLike m
                     => [GenTx TestBlock]
                     -> TestMempool m
+                    -> ResourceRegistry m
                     -> m Property
-    runCapacityTest txs testMempool@TestMempool{getTraceEvents} =
-      withRegistry $ \registry -> do
-        env@MempoolCapTestEnv
-          { mctEnvAddedTxs
-          , mctEnvRemovedTxs
-          } <- initMempoolCapTestEnv
-        void $ forkAddValidTxs  env registry testMempool txs
-        void $ forkUpdateLedger env registry testMempool txs
+    runCapacityTest txs testMempool@TestMempool{getTraceEvents} registry = do
+      env@MempoolCapTestEnv
+        { mctEnvAddedTxs
+        , mctEnvRemovedTxs
+        } <- initMempoolCapTestEnv
+      void $ forkAddValidTxs  env registry testMempool txs
+      void $ forkUpdateLedger env registry testMempool txs
 
-        -- Before we check the order of events, we must block until we've:
-        -- * Added all of the transactions to the mempool
-        -- * Removed all of the transactions from the mempool
-        atomically $ do
-          envAdded   <- readTVar mctEnvAddedTxs
-          envRemoved <- readTVar mctEnvRemovedTxs
-          check $  envAdded   == fromIntegral (length txs)
-                && envRemoved == fromIntegral (length txs)
+      -- Before we check the order of events, we must block until we've:
+      -- * Added all of the transactions to the mempool
+      -- * Removed all of the transactions from the mempool
+      atomically $ do
+        envAdded   <- readTVar mctEnvAddedTxs
+        envRemoved <- readTVar mctEnvRemovedTxs
+        check $  envAdded   == fromIntegral (length txs)
+              && envRemoved == fromIntegral (length txs)
 
-        -- Check the order of events
-        events <- getTraceEvents
-        pure $ checkTraceEvents events
+      -- Check the order of events
+      events <- getTraceEvents
+      pure $ checkTraceEvents events
 
     -- | Spawn a new thread which continuously attempts to fill the mempool to
     -- capacity until no more transactions remain. This should block whenever
@@ -311,7 +314,7 @@ prop_Mempool_Capacity mcts = withTestMempool mctsTestSetup $
 -- appropriately represented in the trace of events.
 prop_Mempool_TraceValidTxs :: TestSetupWithTxs -> Property
 prop_Mempool_TraceValidTxs setup =
-    withTestMempool (testSetup setup) $ \testMempool -> do
+    withTestMempool (testSetup setup) $ \testMempool _ -> do
       let TestMempool { mempool, getTraceEvents } = testMempool
           Mempool { addTxs } = mempool
       _ <- addTxs (allTxs setup)
@@ -331,7 +334,7 @@ prop_Mempool_TraceValidTxs setup =
 -- appropriately represented in the trace of events.
 prop_Mempool_TraceRejectedTxs :: TestSetupWithTxs -> Property
 prop_Mempool_TraceRejectedTxs setup =
-    withTestMempool (testSetup setup) $ \testMempool -> do
+    withTestMempool (testSetup setup) $ \testMempool _ -> do
       let TestMempool { mempool, getTraceEvents } = testMempool
           Mempool { addTxs } = mempool
       _ <- addTxs (allTxs setup)
@@ -352,7 +355,7 @@ prop_Mempool_TraceRejectedTxs setup =
 -- trace of events.
 prop_Mempool_TraceRemovedTxs :: TestSetup -> Property
 prop_Mempool_TraceRemovedTxs setup =
-    withTestMempool setup $ \testMempool -> do
+    withTestMempool setup $ \testMempool _ -> do
       let TestMempool { mempool, getTraceEvents, addTxsToLedger } = testMempool
           Mempool { getSnapshot, withSyncState } = mempool
       MempoolSnapshot { snapshotTxs } <- atomically getSnapshot
@@ -635,7 +638,7 @@ data TestMempool m = TestMempool
 withTestMempool
   :: forall prop. Testable prop
   => TestSetup
-  -> (forall m. IOLike m => TestMempool m -> m prop)
+  -> (forall m. IOLike m => TestMempool m -> ResourceRegistry m -> m prop)
   -> Property
 withTestMempool setup@TestSetup { testLedgerState, testInitialTxs, testMempoolCap } prop =
     counterexample (ppTestSetup setup) $
@@ -646,7 +649,12 @@ withTestMempool setup@TestSetup { testLedgerState, testInitialTxs, testMempoolCa
     cfg = ledgerConfigView singleNodeTestConfig
 
     setUpAndRun :: forall m. IOLike m => m Property
-    setUpAndRun = do
+    setUpAndRun = withRegistry $ \registry -> do
+
+      -- Set up the BlockchainTime
+      TestBlockchainTime
+        { testBlockchainTime
+        } <- newTestBlockchainTime registry (NumSlots 1) (secondsToDiffTime 0)
 
       -- Set up the LedgerInterface
       varCurrentLedgerState <- uncheckedNewTVarM testLedgerState
@@ -662,6 +670,7 @@ withTestMempool setup@TestSetup { testLedgerState, testInitialTxs, testMempoolCa
       -- Open the mempool and add the initial transactions
       mempool <- openMempoolWithoutSyncThread ledgerInterface
                                               cfg
+                                              testBlockchainTime
                                               testMempoolCap
                                               tracer
       result  <- addTxs mempool (map TestGenTx testInitialTxs)
@@ -672,12 +681,14 @@ withTestMempool setup@TestSetup { testLedgerState, testInitialTxs, testMempoolCa
       atomically $ writeTVar varEvents []
 
       -- Apply the property to the 'TestMempool' record
-      property <$> prop TestMempool
-        { mempool
-        , getTraceEvents   = atomically $ reverse <$> readTVar varEvents
-        , eraseTraceEvents = atomically $ writeTVar varEvents []
-        , addTxsToLedger   = addTxsToLedger varCurrentLedgerState
-        }
+      property <$> prop
+        TestMempool
+          { mempool
+          , getTraceEvents   = atomically $ reverse <$> readTVar varEvents
+          , eraseTraceEvents = atomically $ writeTVar varEvents []
+          , addTxsToLedger   = addTxsToLedger varCurrentLedgerState
+          }
+        registry
 
     addTxToLedger :: forall m. IOLike m
                   => StrictTVar m (LedgerState TestBlock)
@@ -857,7 +868,7 @@ prop_TxSeq_lookupByTicketNo_sound smalls small =
 -- into account.
 prop_Mempool_idx_consistency :: Actions -> Property
 prop_Mempool_idx_consistency (Actions actions) =
-    withTestMempool emptyTestSetup $ \testMempool@TestMempool { mempool } ->
+    withTestMempool emptyTestSetup $ \testMempool@TestMempool { mempool } _ ->
       fmap conjoin $ forM actions $ \action -> do
         txsInMempool      <- map (unTestGenTx . fst) . snapshotTxs <$>
                              atomically (getSnapshot mempool)
