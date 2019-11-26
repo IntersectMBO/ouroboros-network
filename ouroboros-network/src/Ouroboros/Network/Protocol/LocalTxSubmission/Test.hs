@@ -11,6 +11,8 @@
 
 module Ouroboros.Network.Protocol.LocalTxSubmission.Test (
     tests
+  , Tx (..)
+  , Reject (..)
   ) where
 
 import           Data.ByteString.Lazy (ByteString)

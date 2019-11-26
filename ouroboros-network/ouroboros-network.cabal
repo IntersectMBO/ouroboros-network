@@ -338,6 +338,14 @@ test-suite cddl
                        Ouroboros.Network.Protocol.TxSubmission.Server
                        Ouroboros.Network.Protocol.TxSubmission.Test
                        Ouroboros.Network.Protocol.TxSubmission.Type
+                       Ouroboros.Network.Protocol.LocalTxSubmission.Codec
+                       Ouroboros.Network.Protocol.LocalTxSubmission.Type
+                       Ouroboros.Network.Protocol.LocalTxSubmission.Test
+                       Ouroboros.Network.Protocol.LocalTxSubmission.Client
+                       Ouroboros.Network.Protocol.LocalTxSubmission.Direct
+                       Ouroboros.Network.Protocol.LocalTxSubmission.Examples
+                       Ouroboros.Network.Protocol.LocalTxSubmission.Server                      
+
                        Ouroboros.Network.Testing.ConcreteBlock
 
                        Test.ChainGenerators
