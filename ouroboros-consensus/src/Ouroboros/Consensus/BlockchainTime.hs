@@ -2,6 +2,7 @@
 {-# LANGUAGE DeriveAnyClass      #-}
 {-# LANGUAGE DeriveGeneric       #-}
 {-# LANGUAGE DerivingVia         #-}
+{-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE NumericUnderscores  #-}
@@ -17,6 +18,7 @@ module Ouroboros.Consensus.BlockchainTime (
   , NumSlots(..)
   , TestBlockchainTime(..)
   , newTestBlockchainTime
+  , fixedBlockchainTime
     -- * Real blockchain time
   , realBlockchainTime
     -- * Time to slots and back again
@@ -169,6 +171,14 @@ newTestBlockchainTime registry (NumSlots numSlots) slotLen = do
         putMVar doneVar ()
 
     initVal = Initializing
+
+-- | A 'BlockchainTime' that is fixed to the given slot. 'onSlotChange_' does
+-- nothing.
+fixedBlockchainTime :: (Monad m, Monad (STM m)) => SlotNo -> BlockchainTime m
+fixedBlockchainTime slot = BlockchainTime
+    { getCurrentSlot = return slot
+    , onSlotChange_  = const (return ())
+    }
 
 {-------------------------------------------------------------------------------
   "Real" blockchain time
