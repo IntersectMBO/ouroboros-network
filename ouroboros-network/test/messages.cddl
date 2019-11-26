@@ -2,12 +2,45 @@
 ; ! allMessages is NOT a valid wire format !
 
 allMessages
-    = [0,chainSyncMessage]
-    / [1,reqRespMessage]
-    / [2,pingPongMessage]
-    / [3,blockFetchMessage]
-    / [4,txSubmissionMessage]
-    / [5,handshakeMessage]
+    = [0, chainSyncMessage]
+    / [1, reqRespMessage]
+    / [2, pingPongMessage]
+    / [3, blockFetchMessage]
+    / [4, txSubmissionMessage]
+    / [5, handshakeMessage]
+    / [6, localTxSubmissionMessage]
+
+; The Request Response Protocol and the PingPing protocol
+; are uses as examples and for testing.
+
+; Request Response Protocol :
+; reference implementation of the codec in
+; typed-protocols/src/Network/TypedProtocol/ReqResp/Codec.hs
+
+reqRespMessage
+    = msgRequest
+    / msgResponse
+    / reqRespMsgDone
+
+msgRequest     = [0, requestData]
+msgResponse    = [1, responseData]
+reqRespMsgDone = [2]
+
+requestData  = bytes .cbor any
+responseData = bytes .cbor any
+
+; Ping-Pong Protocol
+; reference implementation of the codec in
+; typed-protocols/src/Network/TypedProtocol/PingPong/Codec.hs
+
+pingPongMessage
+    = msgPing
+    / msgPong
+    / pingPongMsgDone
+
+msgPing = 0
+msgPong = 1
+pingPongMsgDone = 2
 
 ; ChainSync Protocol
 ; reference implementation of the codec in :
@@ -79,7 +112,7 @@ txIdAndSize     = [txId, txSizeInBytes]
 txId            = int
 txSizeInBytes   = word32
 
-; The Handshake Protool
+; The handshake Protocol
 ; reference implementation of the codec in:
 ; ouroboros-network/src/Ouroboros/Network/Protocol/Handshake/Codec.hs
 
@@ -117,6 +150,20 @@ refuseReasonVersionMismatch      = [0, [ *versionNumber ] ]
 refuseReasonHandshakeDecodeError = [1, versionNumber, tstr]
 refuseReasonRefused              = [2, versionNumber, tstr]
 
+; The local transaction submission protocol.
+; Reference implementation of the codec in:
+; ouroboros-network/src/Ouroboros/Network/Protocol/LocalTxSubmission/Codec.hs
+
+localTxSubmissionMessage
+    = msgSubmitTx
+    / msgAcceptTx
+    / msgRejectTx
+    / ltMsgDone
+
+msgSubmitTx = [0, transaction ]
+msgAcceptTx = [1]
+msgRejectTx = [2, rejectReason ]
+ltMsgDone   = [3]
 
 ; The Codecs are polymorphic in the underlying data types for blocks, points, slot numbers etc..
 ; The following encodings are used in the test code.
@@ -138,37 +185,8 @@ origin          = []
 blockHeaderHash = [slotNo, int]
 slotNo          = word64
 
-; The Request Response Protocol and the PingPing protocol
-; are uses as examples and for testing.
-
-; Request Response Protocol :
-; reference implementation of the codec in
-; typed-protocols/src/Network/TypedProtocol/ReqResp/Codec.hs
-
-reqRespMessage
-    = msgRequest
-    / msgResponse
-    / reqRespMsgDone
-
-msgRequest     = [0, requestData]
-msgResponse    = [1, responseData]
-reqRespMsgDone = [2]
-
-requestData  = bytes .cbor any
-responseData = bytes .cbor any
-
-; Ping-Pong Protocol
-; reference implementation of the codec in
-; typed-protocols/src/Network/TypedProtocol/PingPong/Codec.hs
-
-pingPongMessage
-    = msgPing
-    / msgPong
-    / pingPongMsgDone
-
-msgPing = 0
-msgPong = 1
-pingPongMsgDone = 2
+transaction  = int
+rejectReason = int
 
 word16 = uint
 word32 = uint

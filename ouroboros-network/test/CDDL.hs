@@ -44,6 +44,10 @@ import Ouroboros.Network.Protocol.Handshake.Test (VersionNumber)
 import Ouroboros.Network.Protocol.TxSubmission.Codec (codecTxSubmission)
 import Ouroboros.Network.Protocol.TxSubmission.Type as TxSubmission
 import Ouroboros.Network.Protocol.TxSubmission.Test (TxId, Tx)
+import Ouroboros.Network.Protocol.LocalTxSubmission.Codec (codecLocalTxSubmission)
+import Ouroboros.Network.Protocol.LocalTxSubmission.Type as LocalTxSubmission
+import qualified Ouroboros.Network.Protocol.LocalTxSubmission.Test as LocalTxSubmission (Tx, Reject)
+
 
 import Network.TypedProtocol.Codec
 import Network.TypedProtocol.ReqResp.Codec.Cbor (codecReqResp)
@@ -76,7 +80,8 @@ tests =
   , testProperty "encode TxSubmission"          prop_specTxSubmission
   , testProperty "encode Handshake"             prop_specHandshake
   , testProperty "encode PingPong"              prop_specPingPong
--- Test the parsers with CDDL-generated messages.
+  , testProperty "encode local Tx submission"   prop_specLocalTxSubmission
+  -- Test the parsers with CDDL-generated messages.
   , testProperty "generate and decode" $ ioProperty $ generateAndDecode 100 specFile
   ]
 
@@ -87,6 +92,7 @@ type RR = ReqResp DummyBytes DummyBytes
 type BF = BlockFetch Block
 type HS = Handshake VersionNumber CBOR.Term
 type TS = TxSubmission TxId Tx
+type LT = LocalTxSubmission LocalTxSubmission.Tx LocalTxSubmission.Reject
 
 codecCS :: MonoCodec CS
 codecCS = codecChainSync Serialise.encode (fmap const Serialise.decode)
@@ -98,6 +104,9 @@ codecBF = codecBlockFetch Serialise.encode (fmap const Serialise.decode) Seriali
 
 codecTS :: MonoCodec TS
 codecTS = codecTxSubmission Serialise.encode Serialise.decode Serialise.encode Serialise.decode
+
+codecLT :: MonoCodec LT
+codecLT = codecLocalTxSubmission Serialise.encode Serialise.decode Serialise.encode Serialise.decode
 
 prop_specCS :: AnyMessageAndAgency CS -> Property
 prop_specCS = prop_CDDLSpec (0, codecCS)
@@ -113,6 +122,9 @@ prop_specBF = prop_CDDLSpec (3, codecBF)
 
 prop_specTxSubmission :: AnyMessageAndAgency TS -> Property
 prop_specTxSubmission = prop_CDDLSpec (4, codecTS)
+
+prop_specLocalTxSubmission :: AnyMessageAndAgency LT -> Property
+prop_specLocalTxSubmission = prop_CDDLSpec (6, codecLT)
 
 prop_specHandshake :: AnyMessageAndAgency HS -> Property
 prop_specHandshake = prop_CDDLSpec (5, codecHandshake)
@@ -199,12 +211,13 @@ decodeTopTerm input
 -- Decode a message. Throw an error if the message is not decodeable.
 decodeMsg :: (Word, ByteString) -> IO ()
 decodeMsg (tag, input) = case tag of
-    0 -> tryParsers ["chainSync"]     chainSyncParsers
-    1 -> tryParsers ["reqResp"]       reqRespParsers
-    2 -> tryParsers ["pingPong"]      pingPongParsers
-    3 -> tryParsers ["blockFetch"]    blockFetchParsers
-    4 -> tryParsers ["txSubmission"]  txSubmissionParsers
-    5 -> tryParsers ["handshake"]     handshakeParsers
+    0 -> tryParsers ["chainSync"]             chainSyncParsers
+    1 -> tryParsers ["reqResp"]               reqRespParsers
+    2 -> tryParsers ["pingPong"]              pingPongParsers
+    3 -> tryParsers ["blockFetch"]            blockFetchParsers
+    4 -> tryParsers ["txSubmission"]          txSubmissionParsers
+    5 -> tryParsers ["handshake"]             handshakeParsers
+    6 -> tryParsers ["localTxSubmission"]     localTxSubmissionParsers
     _ -> error "unkown tag"
     where
         -- typed-protocols codecs are parameterized on the tokens which
@@ -281,6 +294,13 @@ decodeMsg (tag, input) = case tag of
             , runTS (ClientAgency (TokTxIds TokNonBlocking))
             , runTS (ClientAgency TokTxs)
             ]
+
+        runLT = run codecLT
+        localTxSubmissionParsers = [
+              runLT (ClientAgency LocalTxSubmission.TokIdle)
+            , runLT (ServerAgency LocalTxSubmission.TokBusy)
+            ]
+
 
 instance (Arbitrary req, Arbitrary resp) => Arbitrary (AnyMessageAndAgency (ReqResp req resp)) where
   arbitrary = oneof
