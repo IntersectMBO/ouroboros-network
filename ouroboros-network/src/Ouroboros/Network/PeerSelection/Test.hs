@@ -6,7 +6,7 @@
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
-module Ouroboros.Network.PeerSelection.Examples where
+module Ouroboros.Network.PeerSelection.Test where
 
 import           Data.Void (Void)
 import           Data.Typeable (Typeable)
@@ -37,22 +37,39 @@ import qualified Ouroboros.Network.PeerSelection.Governor as Governor
 import qualified Ouroboros.Network.PeerSelection.KnownPeers as KnownPeers
 
 import           Test.QuickCheck
+import           Test.Tasty (TestTree, testGroup, localOption)
+import           Test.Tasty.QuickCheck (testProperty, QuickCheckMaxSize(..))
 
 
--- Things we might like to test...
---
--- * for even insane environments, there are no invariant violations or insane behaviour
--- * for vaguely stable envs, we do stablise at our target number of cold peers
--- * we stabilise without going insane even if the available nodes are fewer than the target
--- * time to stabilise after a change is not crazy
--- * time to find new nodes after a graph change is ok
+tests :: TestTree
+tests =
+  testGroup "Ouroboros.Network.PeerSelection"
+  [ testGroup "generators"
+    [ testProperty "arbitrary for PeerSelectionTargets"    prop_arbitrary_PeerSelectionTargets
+    , testProperty "shrink for PeerSelectionTargets"       prop_shrink_PeerSelectionTargets
+    , testProperty "arbitrary for PeerGraph"               prop_arbitrary_PeerGraph
+    , localOption (QuickCheckMaxSize 30) $
+      testProperty "shrink for PeerGraph"                  prop_shrink_PeerGraph
+    , testProperty "arbitrary for GovernorMockEnvironment" prop_arbitrary_GovernorMockEnvironment
+    , localOption (QuickCheckMaxSize 30) $
+      testProperty "shrink for GovernorMockEnvironment"    prop_shrink_GovernorMockEnvironment
+    ]
+  , testProperty "governor sanity"             prop_governor_sanity
+  , testProperty "governor reachable in 1hr"   prop_governor_reachable_1hr
+  ]
 
---TODO: this doesn't make the targets or root peer set dynamic.
 
 --
 -- Mock environment types
 --
 
+-- | The data needed to execute the peer selection governor in a test with a
+-- mock network environment. It contains the data needed to provide the
+-- 'PeerSelectionActions' and 'PeerSelectionPolicy' to run the governor.
+--
+-- The representations are chosen to be easily shrinkable. See the @Arbitrary@
+-- instances.
+--
 data GovernorMockEnvironment = GovernorMockEnvironment {
        peerGraph               :: PeerGraph,
        rootPeers               :: RootPeers PeerAddr,
@@ -62,23 +79,52 @@ data GovernorMockEnvironment = GovernorMockEnvironment {
      }
   deriving Show
 
+-- | Simple address representation for the tests
+--
 newtype PeerAddr = PeerAddr Int
   deriving (Eq, Ord, Show)
 
+-- | The peer graph is the graph of all the peers in the mock p2p network, in
+-- traditional adjacency representation.
+--
 newtype PeerGraph = PeerGraph [(PeerInfo, PeerAddr, [PeerAddr])]
   deriving (Eq, Show)
 
+-- | For now the information associated with each node is just the gossip
+-- script.
+--
 type PeerInfo = GossipScript
 
+-- | The gossip script is the script we interpret to provide answers to gossip
+-- requests that the governor makes. After each gossip request to a peer we
+-- move on to the next entry in the script, unless we get to the end in which
+-- case that becomes the reply for all remaining gossips.
+--
+-- A @Nothing@ indicates failure. The @[PeerAddr]@ is the list of peers to
+-- return which must always be a subset of the actual edges in the p2p graph.
+--
+-- This representation was chosen because it allows easy shrinking.
+--
 newtype GossipScript = GossipScript (NonEmpty (Maybe ([PeerAddr], GossipTime)))
   deriving (Eq, Show)
 
+-- | The gossp time is our simulation of elapsed time to respond to gossip
+-- requests. This is important because the governor uses timeouts and behaves
+-- differently in these three cases.
+--
 data GossipTime = GossipTimeQuick | GossipTimeSlow | GossipTimeTimeout
   deriving (Eq, Show)
 
+-- | A pick script is used to interpret the 'policyPickKnownPeersForGossip' and
+-- the 'policyPickColdPeersToForget'. It selects elements from the given
+-- choices by their index (modulo the number of choices). This representation
+-- was chosen because it allows easy shrinking.
+--
 newtype PickScript = PickScript (NonEmpty (NonEmpty (NonNegative Int)))
   deriving (Eq, Show)
 
+-- | Invariant. Used to check the QC generator and shrinker.
+--
 validGovernorMockEnvironment :: GovernorMockEnvironment -> Bool
 validGovernorMockEnvironment GovernorMockEnvironment {
                                peerGraph,
@@ -88,7 +134,13 @@ validGovernorMockEnvironment GovernorMockEnvironment {
       validPeerGraph peerGraph
    && validRootPeers (allPeers peerGraph) rootPeers
    && sanePeerSelectionTargets targets
+  where
+    validRootPeers :: Set PeerAddr -> Map PeerAddr a -> Bool
+    validRootPeers allpeers rootpeers =
+        Map.keysSet rootpeers `Set.isSubsetOf` allpeers
 
+-- | Invariant. Used to check the QC generator and shrinker.
+--
 validPeerGraph :: PeerGraph -> Bool
 validPeerGraph g@(PeerGraph adjacency) =
     and [ edgesSet  `Set.isSubsetOf` allpeersSet &&
@@ -101,64 +153,19 @@ validPeerGraph g@(PeerGraph adjacency) =
                                 , x <- xs ]
         ]
 
-validRootPeers :: Set PeerAddr -> Map PeerAddr a -> Bool
-validRootPeers allpeers rootpeers =
-    Map.keysSet rootpeers `Set.isSubsetOf` allpeers
-
 allPeers :: PeerGraph -> Set PeerAddr
 allPeers (PeerGraph g) = Set.fromList [ addr | (_, addr, _) <- g ]
-
-peerGraphAsGraph :: PeerGraph
-                 -> ( Graph
-                    , Graph.Vertex -> PeerAddr
-                    , PeerAddr -> Graph.Vertex
-                    )
-peerGraphAsGraph (PeerGraph adjacency) =
-    simpleGraphRep $
-      Graph.graphFromEdges adjacency
-
-firstGossipGraph :: PeerGraph
-                 -> ( Graph
-                    , Graph.Vertex -> PeerAddr
-                    , PeerAddr -> Graph.Vertex
-                    )
-firstGossipGraph (PeerGraph adjacency) =
-    simpleGraphRep $
-    Graph.graphFromEdges
-      [ ((), node, gossipScriptEdges gossip)
-      | (gossip, node, _edges) <- adjacency ]
-
-gossipScriptEdges :: GossipScript -> [PeerAddr]
-gossipScriptEdges (GossipScript (script :| _)) =
-  case script of
-    Nothing                     -> []
-    Just (_, GossipTimeTimeout) -> []
-    Just (edges, _)             -> edges
-
-simpleGraphRep :: forall a n.
-                  ( Graph
-                  , Graph.Vertex -> (a, n, [n])
-                  , n -> Maybe Graph.Vertex
-                  )
-               -> ( Graph
-                  , Graph.Vertex -> n
-                  , n -> Graph.Vertex
-                  )
-simpleGraphRep (graph, vertexInfo, lookupVertex) =
-    (graph, vertexToAddr, addrToVertex)
-  where
-    vertexToAddr :: Graph.Vertex -> n
-    vertexToAddr v = addr where (_,addr,_) = vertexInfo v
-
-    addrToVertex :: n -> Graph.Vertex
-    addrToVertex addr = v where Just v = lookupVertex addr
-
 
 
 --
 -- Execution in the mock environment
 --
 
+-- | Run the 'peerSelectionGovernor' in the mock environment dictated by the
+-- data in the 'GovernorMockEnvironment'.
+--
+-- The result is an execution trace.
+--
 runGovernorInMockEnvironment :: GovernorMockEnvironment -> Trace Void
 runGovernorInMockEnvironment mockEnv =
     runSimTrace $ do
@@ -168,10 +175,6 @@ runGovernorInMockEnvironment mockEnv =
         dynamicTracer
         actions
         policy
-
-dynamicTracer :: Typeable a => Tracer (SimM s) a
-dynamicTracer = Tracer traceM
-
 
 mockPeerSelectionActions :: (MonadSTM m, MonadTimer m)
                          => GovernorMockEnvironment
@@ -264,13 +267,32 @@ pickMapKeys m ns =
 
 
 --
--- Main properties, using mock environment
+-- QuickCheck properties
 --
 
--- | Just run the governor and see if it throws any exceptions
+-- Things we might like to test...
 --
-prop_governor_basic :: GovernorMockEnvironment -> Property
-prop_governor_basic env =
+-- * for even insane environments, there is no insane behaviour
+--   trace properties:
+--   * progress: all actions should make monotonic progress
+--   * no busy work: limit on number of governor iterations before time advances
+--   * trace sanity: model of state can be reconstructed from trace events
+--
+-- * for vaguely stable envs, we do stablise at our target number of cold peers
+-- * we stabilise without going insane even if the available nodes are fewer than the target
+-- * time to stabilise after a change is not crazy
+-- * time to find new nodes after a graph change is ok
+-- * targets or root peer set dynamic
+
+
+-- | Run the governor for up to 24 hours (simulated obviously) and see if it
+-- throws any exceptions. This uses static targets and root peers.
+--
+-- This tells us that even for insane environments there are no invariant
+-- violations.
+--
+prop_governor_sanity :: GovernorMockEnvironment -> Property
+prop_governor_sanity env =
     let trace = selectPeerSelectionTraceEvents $
                   runGovernorInMockEnvironment env
      in      property (noFailures trace)
@@ -287,39 +309,32 @@ prop_governor_basic env =
     noFailures :: [(Time, TracePeerSelection PeerAddr)] -> Bool
     noFailures = foldl const True . takeFirstNHours 24
 
-selectPeerSelectionTraceEvents :: Trace a -> [(Time, TracePeerSelection PeerAddr)]
-selectPeerSelectionTraceEvents = go
+
+-- | Run the governor for up to 1 hour (simulated obviously) and look at the
+-- set of known peers it has selected. This uses static targets and root peers.
+--
+-- As a basic correctness property, the peers the governor selects must be a
+-- subset of those that are in principle reachable in the mock network
+-- environment.
+--
+-- More interestingly, we expect the governor to find enough peers. Either it
+-- must find all the reachable ones, or if the target for the number of known
+-- peers to find is too low then it should at least find the target number.
+--
+prop_governor_reachable_1hr :: GovernorMockEnvironment -> Property
+prop_governor_reachable_1hr env@GovernorMockEnvironment{
+                              peerGraph,
+                              rootPeers,
+                              targets
+                            } =
+    let trace      = selectPeerSelectionTraceEvents $
+                       runGovernorInMockEnvironment env
+        Just found = knownPeersAfter1Hour trace
+        reachable  = firstGossipReachablePeers peerGraph rootPeers
+     in subsetProperty    found reachable
+   .&&. bigEnoughProperty found reachable
   where
-    go (Trace t _ _ (EventLog e) trace)
-     | Just x <- fromDynamic e    = (t,x) : go trace
-    go (Trace _ _ _ _ trace)      =         go trace
-    go (TraceMainException _ e _) = throw e
-    go (TraceDeadlock      _   _) = [] -- expected result in many cases
-    go (TraceMainReturn    _ _ _) = []
-
-takeFirstNHours :: DiffTime
-                -> [(Time, TracePeerSelection PeerAddr)]
-                -> [(Time, TracePeerSelection PeerAddr)]
-takeFirstNHours h = takeWhile (\(t,_) -> t < Time (60*60*h))
-
-
-prop_governor_reachable :: GovernorMockEnvironment -> Property
-prop_governor_reachable env@GovernorMockEnvironment{
-                          peerGraph,
-                          rootPeers,
-                          targets
-                        } =
-    let trace     = selectPeerSelectionTraceEvents $
-                    runGovernorInMockEnvironment env
-        reachable = firstGossipReachablePeers peerGraph rootPeers
-     in
-    case knownPeersStabiliseAt trace of
-      Nothing  -> counterexample "does not stabilise" $
-                  property False
-      Just found -> subsetProperty    found reachable
-               .&&. bigEnoughProperty found reachable
-  where
-    knownPeersStabiliseAt trace =
+    knownPeersAfter1Hour trace =
       listToMaybe
         [ Map.keysSet (KnownPeers.toMap (Governor.knownPeers st))
         | (_, TraceGovernorLoopDebug st _) <- reverse (takeFirstNHours 1 trace) ]
@@ -340,22 +355,29 @@ prop_governor_reachable env@GovernorMockEnvironment{
       property (Set.size found == expected)
       where
         expected = Set.size reachable `min` targetNumberOfKnownPeers targets
-{-
-GovernorMockEnvironment {
-  peerGraph = PeerGraph [(GossipScript (Nothing :| [Just ([PeerAddr 2],GossipTimeQuick)]),PeerAddr 1,[PeerAddr 2])
-                        ,(GossipScript (Nothing :| []),PeerAddr 2,[])],
-  rootPeers = fromList [(PeerAddr 1,RootPeerInfo {rootPeerAdvertise = False})],
-  targets = PeerSelectionTargets {
-              targetNumberOfKnownPeers = 2,
-              targetNumberOfEstablishedPeers = 0,
-              targetNumberOfActivePeers = 0
-            },
-  pickKnownPeersForGossip = PickScript ((NonNegative {getNonNegative = 0} :| []) :| []),
-  pickColdPeersToForget   = PickScript ((NonNegative {getNonNegative = 0} :| []) :| [])
-}
-reachable: fromList [PeerAddr 1]
-found:     fromList [PeerAddr 1,PeerAddr 2]
--}
+
+
+--
+-- Utils for properties
+--
+
+dynamicTracer :: Typeable a => Tracer (SimM s) a
+dynamicTracer = Tracer traceM
+
+selectPeerSelectionTraceEvents :: Trace a -> [(Time, TracePeerSelection PeerAddr)]
+selectPeerSelectionTraceEvents = go
+  where
+    go (Trace t _ _ (EventLog e) trace)
+     | Just x <- fromDynamic e    = (t,x) : go trace
+    go (Trace _ _ _ _ trace)      =         go trace
+    go (TraceMainException _ e _) = throw e
+    go (TraceDeadlock      _   _) = [] -- expected result in many cases
+    go (TraceMainReturn    _ _ _) = []
+
+takeFirstNHours :: DiffTime
+                -> [(Time, TracePeerSelection PeerAddr)]
+                -> [(Time, TracePeerSelection PeerAddr)]
+takeFirstNHours h = takeWhile (\(t,_) -> t < Time (60*60*h))
 
 -- | The peers that are notionally reachable from the root set. It is notional
 -- in the sense that it only takes account of the connectivity graph and not
@@ -384,12 +406,38 @@ firstGossipReachablePeers pg roots =
   where
     (graph, vertexToAddr, addrToVertex) = firstGossipGraph pg
 
+peerGraphAsGraph :: PeerGraph
+                 -> (Graph, Graph.Vertex -> PeerAddr, PeerAddr -> Graph.Vertex)
+peerGraphAsGraph (PeerGraph adjacency) =
+    simpleGraphRep $
+      Graph.graphFromEdges adjacency
 
-peerGraphNumStronglyConnectedComponents :: PeerGraph -> Int
-peerGraphNumStronglyConnectedComponents pg =
-    length (Graph.scc g)
+firstGossipGraph :: PeerGraph
+                 -> (Graph, Graph.Vertex -> PeerAddr, PeerAddr -> Graph.Vertex)
+firstGossipGraph (PeerGraph adjacency) =
+    simpleGraphRep $
+      Graph.graphFromEdges
+        [ ((), node, gossipScriptEdges gossip)
+        | (gossip, node, _edges) <- adjacency ]
   where
-    (g,_,_) = peerGraphAsGraph pg
+    gossipScriptEdges :: GossipScript -> [PeerAddr]
+    gossipScriptEdges (GossipScript (script :| _)) =
+      case script of
+        Nothing                     -> []
+        Just (_, GossipTimeTimeout) -> []
+        Just (edges, _)             -> edges
+
+simpleGraphRep :: forall a n.
+                  (Graph, Graph.Vertex -> (a, n, [n]), n -> Maybe Graph.Vertex)
+               -> (Graph, Graph.Vertex -> n, n -> Graph.Vertex)
+simpleGraphRep (graph, vertexInfo, lookupVertex) =
+    (graph, vertexToAddr, addrToVertex)
+  where
+    vertexToAddr :: Graph.Vertex -> n
+    vertexToAddr v = addr where (_,addr,_) = vertexInfo v
+
+    addrToVertex :: n -> Graph.Vertex
+    addrToVertex addr = v where Just v = lookupVertex addr
 
 
 --
@@ -477,7 +525,6 @@ instance Arbitrary PeerGraph where
        ++ [ (GossipScript script', nodeaddr, edges)
           | script' <- shrink script ]
 
-
 arbitraryGossipScript :: [PeerAddr] -> Gen GossipScript
 arbitraryGossipScript peers =
     sized $ \sz ->
@@ -507,7 +554,6 @@ prunePeerGraphEdges graph =
           script' = pruneGossipScript (Set.fromList edges') script
     ]
   where
-
     pruneEdgeList :: Set PeerAddr -> [PeerAddr] -> [PeerAddr]
     pruneEdgeList nodes = filter (`Set.member` nodes)
 
@@ -569,8 +615,16 @@ instance Arbitrary PeerSelectionTargets where
     , let targets' = PeerSelectionTargets k' e' a'
     , sanePeerSelectionTargets targets' ]
 
+
+--
+-- Tests for the QC Arbitrary instances
+--
+
 prop_arbitrary_PeerGraph :: PeerGraph -> Property
 prop_arbitrary_PeerGraph pg =
+    -- We are interested in the distribution of the graph size (in nodes)
+    -- and the number of separate components so that we can see that we
+    -- get some coverage of graphs that are not fully connected.
     tabulate  "graph size"       [graphSize] $
     tabulate  "graph components" [graphComponents] $
     validPeerGraph pg
@@ -588,10 +642,15 @@ prop_arbitrary_PeerGraph pg =
       | n <= 4    = show n
       | otherwise = renderRanges 5 n
 
+peerGraphNumStronglyConnectedComponents :: PeerGraph -> Int
+peerGraphNumStronglyConnectedComponents pg =
+    length (Graph.scc g)
+  where
+    (g,_,_) = peerGraphAsGraph pg
+
 prop_shrink_PeerGraph :: PeerGraph -> Bool
 prop_shrink_PeerGraph =
     all validPeerGraph . shrink
-
 
 prop_arbitrary_PeerSelectionTargets :: PeerSelectionTargets -> Bool
 prop_arbitrary_PeerSelectionTargets =
@@ -600,7 +659,6 @@ prop_arbitrary_PeerSelectionTargets =
 prop_shrink_PeerSelectionTargets :: PeerSelectionTargets -> Bool
 prop_shrink_PeerSelectionTargets =
     all sanePeerSelectionTargets . shrink
-
 
 prop_arbitrary_GovernorMockEnvironment :: GovernorMockEnvironment -> Property
 prop_arbitrary_GovernorMockEnvironment env =
