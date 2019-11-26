@@ -28,7 +28,7 @@ import           Control.Monad.IOSim (runSimOrThrow)
 import           Control.Tracer (Tracer (..))
 
 import           Ouroboros.Network.Block (pattern BlockPoint, SlotNo (..),
-                     atSlot, pointSlot, withHash)
+                     atSlot, withHash)
 import           Ouroboros.Network.Point (WithOrigin (..))
 
 import           Ouroboros.Consensus.Ledger.Abstract
@@ -279,7 +279,7 @@ prop_Mempool_Capacity mcts = withTestMempool mctsTestSetup $
             -- Sync the mempool with the ledger.
             -- Now all of the transactions in the mempool should have been
             -- removed.
-            withSyncState (const (return ()))
+            withSyncState TxsForUnknownBlock (const (return ()))
 
             -- Indicate that we've removed the transactions from the mempool.
             atomically $ do
@@ -362,7 +362,7 @@ prop_Mempool_TraceRemovedTxs setup =
 
       -- Sync the mempool with the ledger. Now all of the transactions in the
       -- mempool should have been removed.
-      withSyncState (const (return ()))
+      withSyncState TxsForUnknownBlock (const (return ()))
 
       evs  <- getTraceEvents
       -- Also check that 'addTxsToLedger' never resulted in an error.
@@ -513,12 +513,19 @@ applyTxToLedger :: LedgerState TestBlock
 applyTxToLedger = \ledgerState tx ->
     -- We need to change the 'ledgerTipPoint' because that is used to check
     -- whether the ledger state has changed.
-    updateLedgerTipPoint <$> applyTx LedgerConfig (TestGenTx tx) ledgerState
+    -- TODO: We pretend that the ledger state is "ticked" here; this does not
+    -- matter for our test ledger. We should at some point test with a test
+    -- ledger in which we chain tick /does/ make a difference; it would be
+    -- great if we had tests for instance with test blocks with a TTL.
+    -- If we do change that here, however, then the 'updateLedgerTipPoint'
+    -- function below is also not acceptable.
+    updateLedgerTipPoint <$>
+      applyTx LedgerConfig (TestGenTx tx) (TickedLedgerState ledgerState)
   where
-    updateLedgerTipPoint ledgerState = ledgerState
+    updateLedgerTipPoint (TickedLedgerState ledgerState) = ledgerState
         { tlLastApplied = BlockPoint { withHash = unSlotNo slot', atSlot = slot' } }
       where
-        slot' = case pointSlot (ledgerTipPoint ledgerState) of
+        slot' = case ledgerTipSlot ledgerState of
           Origin  -> SlotNo 0
           At slot -> succ slot
 
@@ -943,7 +950,7 @@ executeAction testMempool action = case action of
     RemoveTx tx -> do
       void $ atomically $ addTxsToLedger [tx]
       -- Synchronise the Mempool with the updated chain
-      withSyncState $ \_snapshot -> return ()
+      withSyncState TxsForUnknownBlock $ \_snapshot -> return ()
       expectTraceEvent $ \case
         TraceMempoolRemoveTxs [TestGenTx tx'] _
           | tx == tx'
@@ -970,8 +977,11 @@ executeAction testMempool action = case action of
 currentTicketAssignment :: IOLike m
                         => Mempool m TestBlock TicketNo -> m TicketAssignment
 currentTicketAssignment Mempool { withSyncState } =
-    withSyncState $ \MempoolSnapshot { snapshotTxs } -> return $ Map.fromList
-      [ (ticketNo, testTxId (unTestGenTx tx)) | (tx, ticketNo) <- snapshotTxs ]
+    withSyncState TxsForUnknownBlock $ \MempoolSnapshot { snapshotTxs } ->
+      return $ Map.fromList
+        [ (ticketNo, testTxId (unTestGenTx tx))
+        | (tx, ticketNo) <- snapshotTxs
+        ]
 
 instance Arbitrary Actions where
   arbitrary = sized $ \n -> do

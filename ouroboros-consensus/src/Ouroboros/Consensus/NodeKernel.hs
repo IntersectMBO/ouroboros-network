@@ -302,7 +302,11 @@ forkBlockProduction IS{..} =
       varDRG <- newTVarM =<< (PRNG <$> produceDRG)
       -- See the docstring of 'withSyncState' for why we're using it instead
       -- of 'atomically'.
-      leaderResult <- withSyncState mempool $ \MempoolSnapshot{snapshotTxs} -> do
+
+      let withTxs :: (MempoolSnapshot blk TicketNo -> STM m a) -> m a
+          withTxs = withSyncState mempool (TxsForBlockInSlot currentSlot)
+
+      leaderResult <- withTxs $ \MempoolSnapshot{snapshotTxs} -> do
         l@ExtLedgerState{..} <- ChainDB.getCurrentLedger chainDB
         let txs = map fst snapshotTxs
 

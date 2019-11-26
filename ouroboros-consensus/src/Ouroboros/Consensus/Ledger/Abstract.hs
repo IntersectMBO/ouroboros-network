@@ -7,6 +7,9 @@
 module Ouroboros.Consensus.Ledger.Abstract (
     -- * Interaction with the ledger layer
     UpdateLedger(..)
+  , TickedLedgerState(..)
+  , ledgerTipHash
+  , ledgerTipSlot
   , BlockProtocol
   , ProtocolLedgerView(..)
   , AnachronyFailure(..)
@@ -17,7 +20,8 @@ import           GHC.Stack (HasCallStack)
 
 import           Cardano.Prelude (NoUnexpectedThunks)
 
-import           Ouroboros.Network.Block (Point, SlotNo)
+import           Ouroboros.Network.Block (ChainHash, Point, SlotNo, pointHash,
+                     pointSlot)
 import           Ouroboros.Network.Point (WithOrigin)
 
 import           Ouroboros.Consensus.Block
@@ -59,10 +63,17 @@ class ( SupportedBlock blk
   -- primarily when validating transactions in the mempool (which, conceptually,
   -- live in "some block in the future") or when extracting valid transactions
   -- from the mempool to insert into a new block to be produced.
+  --
+  -- This is not allowed to throw any errors. After all, if this could fail,
+  -- it would mean a /previous/ block set up the ledger state in such a way
+  -- that as soon as a certain slot was reached, /any/ block would be invalid.
+  --
+  -- PRECONDITION: The slot number must be strictly greater than the slot at
+  -- the tip of the ledger.
   applyChainTick :: LedgerConfig blk
                  -> SlotNo
                  -> LedgerState blk
-                 -> Except (LedgerError blk) (LedgerState blk)
+                 -> TickedLedgerState blk
 
   -- | Apply a block to the ledger state.
   --
@@ -91,6 +102,20 @@ class ( SupportedBlock blk
   --
   -- Should be 'genesisPoint' when no blocks have been applied yet
   ledgerTipPoint :: LedgerState blk -> Point blk
+
+ledgerTipHash :: UpdateLedger blk => LedgerState blk -> ChainHash blk
+ledgerTipHash = pointHash . ledgerTipPoint
+
+ledgerTipSlot :: UpdateLedger blk => LedgerState blk -> WithOrigin SlotNo
+ledgerTipSlot = pointSlot . ledgerTipPoint
+
+-- | Ledger state with the chain tick function already applied
+--
+-- This is merely a marker, so that we can keep track at the type level whether
+-- or not the chain tick function has been applied.
+newtype TickedLedgerState blk = TickedLedgerState {
+      getTickedLedgerState :: LedgerState blk
+    }
 
 -- | Link protocol to ledger
 class UpdateLedger blk => ProtocolLedgerView blk where
