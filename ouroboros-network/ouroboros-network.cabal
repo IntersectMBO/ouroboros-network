@@ -38,9 +38,6 @@ library
   -- At this experiment/prototype stage everything is exposed.
   -- This has to be tidied up once the design becomes clear.
   exposed-modules:     Codec.SerialiseTerm
-                       Data.FingerTree.Strict
-                       Data.Sequence.Strict
-                       Data.Semigroup.Action
                        Ouroboros.Network.AnchoredFragment
                        Ouroboros.Network.Block
                        Ouroboros.Network.BlockFetch
