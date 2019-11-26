@@ -1,10 +1,11 @@
+{-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE DeriveAnyClass      #-}
 {-# LANGUAGE DeriveGeneric       #-}
+{-# LANGUAGE DerivingVia         #-}
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE NumericUnderscores  #-}
 {-# LANGUAGE RankNTypes          #-}
-{-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Ouroboros.Consensus.BlockchainTime (
@@ -40,7 +41,7 @@ import           Data.Word (Word64)
 import           GHC.Generics (Generic)
 import           GHC.Stack
 
-import           Cardano.Prelude (NoUnexpectedThunks)
+import           Cardano.Prelude (NoUnexpectedThunks, OnlyCheckIsWHNF (..))
 
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
@@ -68,6 +69,7 @@ data BlockchainTime m = BlockchainTime {
       -- Use sites should call 'onSlotChange' rather than 'onSlotChange_'.
     , onSlotChange_  :: HasCallStack => (SlotNo -> m ()) -> m ()
     }
+  deriving NoUnexpectedThunks via OnlyCheckIsWHNF "BlockchainTime" (BlockchainTime m)
 
 -- | Returns 'True' immediately if the requested slot is already over, else
 -- blocks as requested and then returns 'False'
