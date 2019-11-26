@@ -44,7 +44,7 @@ import           Ouroboros.Network.Point (WithOrigin (..))
 import qualified Ouroboros.Network.Point as Point
 
 import           Ouroboros.Consensus.Ledger.Abstract
-import           Ouroboros.Consensus.Ledger.Byron.Aux
+import qualified Ouroboros.Consensus.Ledger.Byron.Aux as Aux
 import           Ouroboros.Consensus.Ledger.Byron.Block
 import           Ouroboros.Consensus.Ledger.Byron.Config
 import           Ouroboros.Consensus.Ledger.Byron.ContainsGenesis
@@ -73,6 +73,14 @@ instance UpdateLedger ByronBlock where
   ledgerConfigView PBftNodeConfig{..} = ByronLedgerConfig $
       pbftGenesisConfig pbftExtConfig
 
+  applyChainTick cfg slotNo ByronLedgerState{..} = return ByronLedgerState {
+        byronDelegationHistory = byronDelegationHistory
+      , byronLedgerState       = Aux.applyChainTick
+                                    (unByronLedgerConfig cfg)
+                                    (toByronSlotNo slotNo)
+                                    byronLedgerState
+      }
+
   applyLedgerBlock = applyByronBlock validationMode
     where
       validationMode = CC.fromBlockValidationMode CC.BlockValidation
@@ -98,7 +106,7 @@ instance ConfigContainsGenesis (LedgerConfig ByronBlock) where
 instance ProtocolLedgerView ByronBlock where
   protocolLedgerView _cfg =
         toPBftLedgerView
-      . getDelegationMap
+      . Aux.getDelegationMap
       . byronLedgerState
 
   -- Delegation state for a particular point in time
@@ -165,14 +173,14 @@ instance ProtocolLedgerView ByronBlock where
               let toApply :: Seq D.Sched.ScheduledDelegation
                   _future :: Seq D.Sched.ScheduledDelegation
                   (toApply, _future) = splitScheduledDelegations slot $
-                                         getScheduledDelegations ls
+                                         Aux.getScheduledDelegations ls
 
-              in applyScheduledDelegations toApply dsNow
+              in Aux.applyScheduledDelegations toApply dsNow
     where
       SecurityParam k = pbftSecurityParam . pbftParams $ cfg
 
       dsNow :: Delegation.Map
-      dsNow = getDelegationMap ls
+      dsNow = Aux.getDelegationMap ls
 
       now, maxHi, maxLo :: SlotNo
       now   = fromByronSlotNo $ CC.cvsLastSlot ls
@@ -228,11 +236,11 @@ applyByronBlock :: CC.ValidationMode
 applyByronBlock validationMode
                 fcfg@(ByronLedgerConfig cfg)
                 fblk@(ByronBlock blk _ (ByronHash blkHash))
-                ls =
-    let ls' = applyChainTick fcfg (blockSlot fblk) ls
-    in case blk of
+                ls = do
+    ls' <- applyChainTick fcfg (blockSlot fblk) ls
+    case blk of
       CC.ABOBBlock    blk' -> applyABlock validationMode cfg blk' blkHash ls'
-      CC.ABOBBoundary blk' -> applyABoundaryBlock        cfg blk' ls'
+      CC.ABOBBoundary blk' -> applyABoundaryBlock        cfg blk'         ls'
 
 applyABlock :: CC.ValidationMode
             -> Gen.Config
@@ -241,7 +249,7 @@ applyABlock :: CC.ValidationMode
             -> LedgerState (ByronBlock)
             -> Except (LedgerError ByronBlock) (LedgerState ByronBlock)
 applyABlock validationMode cfg blk blkHash ByronLedgerState{..} = do
-    state' <- validateBlock cfg validationMode blk blkHash byronLedgerState
+    state' <- Aux.validateBlock cfg validationMode blk blkHash byronLedgerState
     -- If the delegation state changed, take a snapshot of the old state
     let history'
           |    CC.cvsDelegationState state'
@@ -250,7 +258,7 @@ applyABlock validationMode cfg blk blkHash ByronLedgerState{..} = do
           | otherwise = History.snapOld
                           (Gen.configK cfg)
                           (fromByronSlotNo $ CC.blockSlot blk)
-                          (getDelegationMap byronLedgerState) -- the old state!
+                          (Aux.getDelegationMap byronLedgerState) -- the old state!
                           byronDelegationHistory
     return $ ByronLedgerState state' history'
 
@@ -263,26 +271,9 @@ applyABoundaryBlock :: Gen.Config
                     -> LedgerState ByronBlock
                     -> Except (LedgerError ByronBlock) (LedgerState ByronBlock)
 applyABoundaryBlock cfg blk ByronLedgerState{..} = do
-    current' <- validateBoundary cfg blk byronLedgerState
+    current' <- Aux.validateBoundary cfg blk byronLedgerState
     return $ ByronLedgerState current' byronDelegationHistory
 
--- | Apply state transformations that might occur when encountering a new
---   block, but happen before full header and body processing. In the Byron
---   era this is used to perform epoch transitions on receipt of the first
---   block in the new epoch.
-applyChainTick
-  :: LedgerConfig ByronBlock
-  -> SlotNo
-  -> LedgerState ByronBlock
-  -> LedgerState ByronBlock
-applyChainTick cfg slotNo ByronLedgerState{..} =
-    ByronLedgerState {
-      byronDelegationHistory = byronDelegationHistory
-    , byronLedgerState       = applyEpochTransition
-                                  (unByronLedgerConfig cfg)
-                                  (toByronSlotNo slotNo)
-                                  byronLedgerState
-    }
 {-------------------------------------------------------------------------------
   Serialisation
 -------------------------------------------------------------------------------}

@@ -25,7 +25,7 @@ module Ouroboros.Consensus.Ledger.Byron.Aux (
   , getProtocolParams
   , getScheduledDelegations
     -- * Applying blocks
-  , applyEpochTransition
+  , applyChainTick
   , validateBlock
   , validateBoundary
   , applyScheduledDelegations
@@ -65,6 +65,7 @@ import           Data.Either (isRight)
 import qualified Data.Foldable as Foldable
 import           Data.List (intercalate)
 import           Data.Sequence (Seq)
+import qualified Data.Sequence as Seq
 import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Word
@@ -77,6 +78,7 @@ import           Cardano.Prelude (NoUnexpectedThunks, cborError, wrapError)
 import qualified Cardano.Chain.Block as CC
 import qualified Cardano.Chain.Common as CC
 import qualified Cardano.Chain.Delegation as Delegation
+import qualified Cardano.Chain.Delegation.Validation.Activation as D.Act
 import qualified Cardano.Chain.Delegation.Validation.Interface as D.Iface
 import qualified Cardano.Chain.Delegation.Validation.Scheduling as D.Sched
 import qualified Cardano.Chain.Genesis as Gen
@@ -142,6 +144,41 @@ setUpdateState :: U.Iface.State
 setUpdateState newUpdate state = state { CC.cvsUpdateState = newUpdate }
 
 {-------------------------------------------------------------------------------
+  Tick the delegation state
+
+  See 'applyChainTick' for discussion.
+-------------------------------------------------------------------------------}
+
+-- | Update the delegation state (without applying new certs)
+--
+-- This is adapted from 'updateDelegation'.
+tickDelegation :: CC.EpochSlots
+               -> CC.SlotNumber -> D.Iface.State -> D.Iface.State
+tickDelegation epochSlots currentSlot is =
+  let
+    D.Sched.State delegations keyEpochs = D.Iface.schedulingState is
+
+  -- Activate certificates up to this slot
+    as = foldl
+      D.Act.activateDelegation
+      (D.Iface.activationState is)
+      (Seq.filter ((<= currentSlot) . D.Sched.sdSlot) delegations)
+
+  -- Remove stale values from 'Scheduling.State'
+    ss' = D.Sched.State
+      { D.Sched.scheduledDelegations = Seq.filter
+        ((currentSlot + 1 <=) . D.Sched.sdSlot)
+        delegations
+      , D.Sched.keyEpochDelegations = Set.filter
+        ((>= currentEpoch) . fst)
+        keyEpochs
+      }
+
+  in D.Iface.State {schedulingState = ss', activationState = as}
+ where
+   currentEpoch = CC.slotNumberEpoch epochSlots currentSlot
+
+{-------------------------------------------------------------------------------
   Applying blocks
 -------------------------------------------------------------------------------}
 
@@ -194,21 +231,42 @@ mkBodyEnvironment cfg params slotNo = CC.BodyEnvironment {
                                 slotNo
     }
 
-applyEpochTransition :: Gen.Config
-                     -> CC.SlotNumber
-                     -> CC.ChainValidationState
-                     -> CC.ChainValidationState
-applyEpochTransition cfg slotNo state = state {
-      CC.cvsUpdateState = CC.epochTransition
-                            (mkEpochEnvironment cfg state)
-                            (CC.cvsUpdateState state)
-                            slotNo
+-- | Apply chain tick
+--
+-- This is the part of block processing that depends only on the slot number of
+-- the block: We update
+--
+-- * The update state
+-- * The delegation state
+-- * The last applied slot number
+--
+-- NOTE: The spec currently only updates the update state here; this is not good
+-- enough. Fortunately, updating the delegation state and slot number here
+-- (currently done in body processing) is at least /conform/ spec, as these
+-- updates are conform spec. See
+--
+-- <https://github.com/input-output-hk/cardano-ledger-specs/issues/1046>
+-- <https://github.com/input-output-hk/ouroboros-network/issues/1291>
+applyChainTick :: Gen.Config
+               -> CC.SlotNumber
+               -> CC.ChainValidationState
+               -> CC.ChainValidationState
+applyChainTick cfg slotNo state = state {
+      CC.cvsLastSlot        = slotNo
+    , CC.cvsUpdateState     = CC.epochTransition
+                                (mkEpochEnvironment cfg state)
+                                (CC.cvsUpdateState state)
+                                slotNo
+    , CC.cvsDelegationState = tickDelegation
+                                (Gen.configEpochSlots cfg)
+                                slotNo
+                                (CC.cvsDelegationState state)
     }
 
 -- | Validate header
 --
 -- NOTE: Header validation does not produce any state changes; the only state
--- changes arising from processing headers come from 'applyEpochTransition'.
+-- changes arising from processing headers come from 'applyChainTick'.
 validateHeader :: MonadError CC.ChainValidationError m
                => CC.ValidationMode
                -> U.Iface.State -> CC.AHeader ByteString -> m ()

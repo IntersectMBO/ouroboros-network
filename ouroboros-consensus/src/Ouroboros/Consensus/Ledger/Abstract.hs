@@ -46,7 +46,27 @@ class ( SupportedBlock blk
   ledgerConfigView :: NodeConfig (BlockProtocol blk)
                    -> LedgerConfig blk
 
+  -- | Apply "slot based" state transformations
+  --
+  -- When a block is applied to the ledger state, a number of things happen
+  -- purely based on the slot number of that block. For example:
+  --
+  -- * In Byron, scheduled updates are applied, and the update system state is
+  --   updated.
+  -- * In Shelley, delegation state is updated (on epoch boundaries).
+  --
+  -- The consensus layer must be able to apply such a "chain tick" function,
+  -- primarily when validating transactions in the mempool (which, conceptually,
+  -- live in "some block in the future") or when extracting valid transactions
+  -- from the mempool to insert into a new block to be produced.
+  applyChainTick :: LedgerConfig blk
+                 -> SlotNo
+                 -> LedgerState blk
+                 -> Except (LedgerError blk) (LedgerState blk)
+
   -- | Apply a block to the ledger state.
+  --
+  -- This should apply the /entire/ block (i.e., including 'applyChainTick').
   applyLedgerBlock :: LedgerConfig blk
                    -> blk
                    -> LedgerState blk
