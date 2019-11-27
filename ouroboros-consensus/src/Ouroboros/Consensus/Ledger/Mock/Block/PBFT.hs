@@ -98,7 +98,8 @@ instance (PBftCrypto c', Serialise (PBftVerKeyHash c'))
       => RunMockProtocol (PBft ext c') where
   mockProtocolMagicId  = const constructMockProtocolMagicId
   mockEncodeChainState = const CS.encodePBftChainState
-  mockDecodeChainState = const CS.decodePBftChainState
+  mockDecodeChainState = \cfg -> let k = pbftSecurityParam $ pbftParams cfg
+                                 in CS.decodePBftChainState k (pbftWindowSize k)
 
 instance ( SimpleCrypto c
          , PBftCrypto c'

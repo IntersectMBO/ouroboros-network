@@ -184,9 +184,9 @@ class ( Show (ChainState    p)
   -- This function should attempt to rewind the chain state to the state at some
   -- given slot, or Origin to rewind to the state with no blocks.
   --
-  -- Implementers should take care that this function accurately reflects the
-  -- slot number, rather than the number of blocks, since naively the
-  -- 'ChainState' will be updated only on processing an actual block.
+  -- PRECONDITION: the slot to rewind to must correspond to the slot of a
+  -- header (or 'Origin') that was previously applied to the chain state using
+  -- 'applyChainState'.
   --
   -- Rewinding the chain state is intended to be used when switching to a
   -- fork, longer or equally long to the chain to which the current chain

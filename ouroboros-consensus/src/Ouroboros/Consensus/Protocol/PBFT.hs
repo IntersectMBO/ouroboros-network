@@ -12,7 +12,6 @@
 {-# LANGUAGE TypeOperators           #-}
 {-# LANGUAGE UndecidableInstances    #-}
 {-# LANGUAGE UndecidableSuperClasses #-}
-{-# LANGUAGE ViewPatterns            #-}
 
 module Ouroboros.Consensus.Protocol.PBFT (
     PBft
@@ -23,6 +22,7 @@ module Ouroboros.Consensus.Protocol.PBFT (
   , PBftIsLeaderOrNot(..)
   , forgePBftFields
   , genesisKeyCoreNodeId
+  , pbftWindowSize
     -- * Classes
   , PBftCrypto(..)
   , PBftMockCrypto
@@ -260,19 +260,89 @@ instance ( PBftCrypto c
           case Bimap.lookupR (hashVerKey pbftIssuer) dms of
             Nothing -> throwError $ PBftNotGenesisDelegate (hashVerKey pbftIssuer) lv
             Just gk -> do
-              let chainState'  = CS.prune winSize $ CS.insert gk (blockSlot b) $ chainState
-                  totalSigners = CS.size          chainState'
-                  gkSigners    = CS.countSignedBy chainState' gk
-              when (totalSigners >= winSize && gkSigners > wt)
-                $ throwError (PBftExceededSignThreshold (show (pbftSecurityParam, chainState')) totalSigners gkSigners)
-              return $! chainState'
+              let chainState' = append cfg params (blockSlot b, gk) chainState
+              case exceedsThreshold params chainState' gk of
+                Nothing -> return $! chainState'
+                Just n  -> throwError $ PBftExceededSignThreshold gk n
     where
-      PBftParams{..} = pbftParams
-      winSize = k
-      SecurityParam (fromIntegral -> k) = pbftSecurityParam
-      wt = floor $ pbftSignatureThreshold * fromIntegral winSize
+      params = pbftWindowParams cfg
 
-  rewindChainState _ cs mSlot = CS.rewind mSlot cs
+  rewindChainState cfg = flip (rewind cfg params)
+    where
+      params = pbftWindowParams cfg
+
+{-------------------------------------------------------------------------------
+  Internal: thin wrapper on top of 'PBftChainState'
+-------------------------------------------------------------------------------}
+
+-- | Parameters for the window check
+data PBftWindowParams = PBftWindowParams {
+      -- | Window size
+      windowSize :: CS.WindowSize
+
+      -- | Threshold (maximum number of slots anyone is allowed to sign)
+    , threshold  :: Word64
+    }
+
+-- | Compute window check parameters from the node config
+pbftWindowParams :: NodeConfig (PBft cfg c) -> PBftWindowParams
+pbftWindowParams PBftNodeConfig{..} = PBftWindowParams {
+      windowSize = winSize
+    , threshold  = floor $ pbftSignatureThreshold * fromIntegral winSize
+    }
+  where
+    PBftParams{..} = pbftParams
+    winSize        = pbftWindowSize pbftSecurityParam
+
+-- | Window size used by PBFT
+--
+-- We set the window size to be equal to k.
+pbftWindowSize :: SecurityParam -> CS.WindowSize
+pbftWindowSize (SecurityParam k) = CS.WindowSize k
+
+-- | Should we check the threshold?
+--
+-- We should check only once we have a sufficient number of signatures.
+--
+-- This will be true unless near genesis.
+shouldCheckThreshold :: PBftWindowParams -> PBftChainState c -> Bool
+shouldCheckThreshold PBftWindowParams{..} st =
+    CS.countInWindow st >= CS.getWindowSize windowSize
+
+-- | Does the number of blocks signed by this key exceed the threshold?
+--
+-- Returns @Just@ the number of blocks signed if exceeded.
+-- Returns 'Nothing' if not 'shouldCheckThreshold'
+exceedsThreshold :: PBftCrypto c
+                 => PBftWindowParams
+                 -> PBftChainState c -> PBftVerKeyHash c -> Maybe Word64
+exceedsThreshold params@PBftWindowParams{..} st gk =
+    if shouldCheckThreshold params st && numSigned > threshold
+      then Just numSigned
+      else Nothing
+  where
+    numSigned = CS.countSignedBy st gk
+
+append :: PBftCrypto c
+       => NodeConfig (PBft cfg c)
+       -> PBftWindowParams
+       -> (SlotNo, PBftVerKeyHash c)
+       -> PBftChainState c -> PBftChainState c
+append PBftNodeConfig{..} PBftWindowParams{..} =
+    CS.append pbftSecurityParam windowSize . uncurry CS.PBftSigner
+  where
+    PBftParams{..} = pbftParams
+
+rewind :: PBftCrypto c
+       => NodeConfig (PBft cfg c)
+       -> PBftWindowParams
+       -> WithOrigin SlotNo
+       -> PBftChainState c
+       -> Maybe (PBftChainState c)
+rewind PBftNodeConfig{..} PBftWindowParams{..} =
+    CS.rewind pbftSecurityParam windowSize
+  where
+    PBftParams{..} = pbftParams
 
 {-------------------------------------------------------------------------------
   Extract necessary context
@@ -318,13 +388,8 @@ genesisKeyCoreNodeId gc vkey =
 data PBftValidationErr c
   = PBftInvalidSignature String
   | PBftNotGenesisDelegate (PBftVerKeyHash c) (PBftLedgerView c)
-  -- | The first number is the total number of signers observed.
-  -- The second is the number of genesis key signers.
-  -- This is given if both
-  -- - The former is greater than or equal to the PBFT signature window.
-  -- - The latter exceeds (strictly) the PBFT signature window multiplied by
-  --   the PBFT signature threshold (rounded down).
-  | PBftExceededSignThreshold String Int Int
+  -- | We record how many slots this key signed
+  | PBftExceededSignThreshold (PBftVerKeyHash c) Word64
   | PBftInvalidSlot
   deriving (Generic, NoUnexpectedThunks)
 

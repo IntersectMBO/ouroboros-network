@@ -198,7 +198,7 @@ validateChainDb dbDir cfg onlyImmDB verbose =
       (ChainDB.defaultArgs @ByronBlock (toFilePath dbDir))
         { ChainDB.cdbGenesis = return $ pInfoInitLedger byronProtocolInfo
         , ChainDB.cdbDecodeBlock = Byron.decodeByronBlock epochSlots
-        , ChainDB.cdbDecodeChainState = Byron.decodeByronChainState
+        , ChainDB.cdbDecodeChainState = Byron.decodeByronChainState securityParam
         , ChainDB.cdbDecodeHash = Byron.decodeByronHeaderHash
         , ChainDB.cdbDecodeLedger = Byron.decodeByronLedgerState
         , ChainDB.cdbEncodeBlock = Byron.encodeByronBlockWithInfo
