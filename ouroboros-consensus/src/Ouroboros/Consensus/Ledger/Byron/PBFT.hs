@@ -15,7 +15,6 @@ module Ouroboros.Consensus.Ledger.Byron.PBFT (
 
 import           Codec.CBOR.Decoding (Decoder)
 import           Codec.CBOR.Encoding (Encoding)
-import           Codec.Serialise (decode, encode)
 import           Data.ByteString (ByteString)
 
 import           Cardano.Binary (Annotated)
@@ -31,6 +30,7 @@ import           Ouroboros.Consensus.Ledger.Byron.Block
 import           Ouroboros.Consensus.Ledger.Byron.Config
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.PBFT
+import qualified Ouroboros.Consensus.Protocol.PBFT.ChainState as CS
 
 type ByronConsensusProtocol = PBft ByronConfig PBftCardanoCrypto
 type instance BlockProtocol ByronBlock = ByronConsensusProtocol
@@ -71,7 +71,7 @@ fromPBftLedgerView :: PBftLedgerView PBftCardanoCrypto -> Delegation.Map
 fromPBftLedgerView = Delegation.Map . pbftDelegates
 
 encodeByronChainState :: ChainState (BlockProtocol ByronBlock) -> Encoding
-encodeByronChainState = encode
+encodeByronChainState = CS.encodePBftChainState
 
 decodeByronChainState :: Decoder s (ChainState (BlockProtocol ByronBlock))
-decodeByronChainState = decode
+decodeByronChainState = CS.decodePBftChainState

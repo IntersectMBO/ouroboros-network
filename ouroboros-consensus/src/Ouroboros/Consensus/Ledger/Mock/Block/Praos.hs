@@ -7,6 +7,8 @@
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE UndecidableInstances       #-}
 
+{-# OPTIONS_GHC -fno-warn-orphans #-}
+
 module Ouroboros.Consensus.Ledger.Mock.Block.Praos (
     SimplePraosBlock
   , SimplePraosHeader
@@ -14,7 +16,9 @@ module Ouroboros.Consensus.Ledger.Mock.Block.Praos (
   , SignedSimplePraos(..)
   ) where
 
+import           Codec.CBOR.Decoding (decodeListLenOf)
 import qualified Codec.CBOR.Decoding as CBOR
+import           Codec.CBOR.Encoding (encodeListLen)
 import qualified Codec.CBOR.Encoding as CBOR
 import           Codec.Serialise (Serialise (..))
 import           GHC.Generics (Generic)
@@ -27,7 +31,7 @@ import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Mock.Address
 import           Ouroboros.Consensus.Ledger.Mock.Block
-import           Ouroboros.Consensus.Ledger.Mock.Forge
+import           Ouroboros.Consensus.Ledger.Mock.Run
 import           Ouroboros.Consensus.Ledger.Mock.Stake
 import           Ouroboros.Consensus.Protocol.Praos
 import           Ouroboros.Consensus.Protocol.Signed
@@ -89,10 +93,29 @@ instance ( SimpleCrypto c
          ) => HeaderSupportsPraos AddrDist c' (SimplePraosHeader c c') where
   headerPraosFields _ = simplePraosExt . simpleHeaderExt
 
+instance PraosCrypto c' => RunMockProtocol (Praos ext c') where
+  mockProtocolMagicId  = const constructMockProtocolMagicId
+  mockEncodeChainState = const encode
+  mockDecodeChainState = const decode
+
+instance PraosCrypto c' => Serialise (BlockInfo c') where
+  encode BlockInfo {..} = mconcat
+    [ encodeListLen 3
+    , encode biSlot
+    , toCBOR biRho
+    , encode biStake
+    ]
+  decode = do
+    decodeListLenOf 3
+    biSlot  <- decode
+    biRho   <- fromCBOR
+    biStake <- decode
+    return BlockInfo {..}
+
 instance ( SimpleCrypto c
          , PraosCrypto c'
          , Signable (PraosKES c') (SignedSimplePraos c c')
-         ) => ForgeExt (Praos ext c') c (SimplePraosExt c c') where
+         ) => RunMockBlock (Praos ext c') c (SimplePraosExt c c') where
   forgeExt cfg isLeader SimpleBlock{..} = do
       ext :: SimplePraosExt c c' <- fmap SimplePraosExt $
         forgePraosFields cfg

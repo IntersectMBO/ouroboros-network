@@ -46,13 +46,13 @@ import           Control.Monad.Class.MonadThrow
 
 import           Ouroboros.Network.Block
 import qualified Ouroboros.Network.Block as Block
-import           Ouroboros.Network.Socket (ConnectionId)
 import           Ouroboros.Network.ErrorPolicy
 import           Ouroboros.Network.Magic
 import           Ouroboros.Network.NodeToClient as NodeToClient
 import           Ouroboros.Network.NodeToNode as NodeToNode
 import           Ouroboros.Network.Protocol.ChainSync.PipelineDecision
                      (pipelineDecisionLowHighMark)
+import           Ouroboros.Network.Socket (ConnectionId)
 
 import           Ouroboros.Consensus.Block (BlockProtocol)
 import           Ouroboros.Consensus.BlockchainTime
@@ -181,11 +181,11 @@ initChainDB tracer registry dbPath cfg initLedger slotLength
     mkArgs epochInfo = customiseArgs $ (ChainDB.defaultArgs dbPath)
       { ChainDB.cdbBlocksPerFile    = 1000
       , ChainDB.cdbDecodeBlock      = nodeDecodeBlock         cfg
-      , ChainDB.cdbDecodeChainState = nodeDecodeChainState    (Proxy @blk)
+      , ChainDB.cdbDecodeChainState = nodeDecodeChainState    (Proxy @blk) cfg
       , ChainDB.cdbDecodeHash       = nodeDecodeHeaderHash    (Proxy @blk)
       , ChainDB.cdbDecodeLedger     = nodeDecodeLedgerState   cfg
       , ChainDB.cdbEncodeBlock      = nodeEncodeBlockWithInfo cfg
-      , ChainDB.cdbEncodeChainState = nodeEncodeChainState    (Proxy @blk)
+      , ChainDB.cdbEncodeChainState = nodeEncodeChainState    (Proxy @blk) cfg
       , ChainDB.cdbEncodeHash       = nodeEncodeHeaderHash    (Proxy @blk)
       , ChainDB.cdbEncodeLedger     = nodeEncodeLedgerState   cfg
       , ChainDB.cdbEpochInfo        = epochInfo

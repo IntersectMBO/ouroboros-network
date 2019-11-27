@@ -1,4 +1,3 @@
-{-# LANGUAGE BangPatterns               #-}
 {-# LANGUAGE DeriveAnyClass             #-}
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE FlexibleContexts           #-}
@@ -26,10 +25,15 @@ module Ouroboros.Consensus.Protocol.PBFT.ChainState (
   , lastSlot
     -- * Support for tests
   , fromMap
+    -- ** Serialization
+  , encodePBftChainState
+  , decodePBftChainState
   ) where
 
 import           Codec.Serialise (Serialise (..))
+import           Codec.Serialise.Decoding (Decoder)
 import qualified Codec.Serialise.Decoding as Serialise
+import           Codec.Serialise.Encoding (Encoding)
 import qualified Codec.Serialise.Encoding as Serialise
 import           Data.Foldable (toList)
 import           Data.List (sortOn)
@@ -324,17 +328,17 @@ fromMap anchor perKey = PBftChainState {
   Serialization
 -------------------------------------------------------------------------------}
 
--- | Don't require PBftCrypto (we don't need the 'Given' constraint here)
-instance ( Ord       (PBftVerKeyHash c)
-         , Serialise (PBftVerKeyHash c)
-         ) => Serialise (PBftChainState c) where
-  encode PBftChainState{..} = mconcat [
-        Serialise.encodeListLen 2
-      , encode (withOriginToMaybe anchor)
-      , encode signers
-      ]
+encodePBftChainState :: (PBftCrypto c, Serialise (PBftVerKeyHash c))
+                     => PBftChainState c -> Encoding
+encodePBftChainState PBftChainState{..} = mconcat [
+      Serialise.encodeListLen 2
+    , encode (withOriginToMaybe anchor)
+    , encode signers
+    ]
 
-  decode = do
+decodePBftChainState :: (PBftCrypto c, Serialise (PBftVerKeyHash c))
+                     => Decoder s (PBftChainState c)
+decodePBftChainState = do
       Serialise.decodeListLenOf 2
       anchor  <- withOriginFromMaybe <$> decode
       signers <- decode

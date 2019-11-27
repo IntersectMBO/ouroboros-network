@@ -3,10 +3,7 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
 
-module Ouroboros.Consensus.Ledger.Mock.Forge (
-    forgeSimple
-  , ForgeExt(..)
-  ) where
+module Ouroboros.Consensus.Ledger.Mock.Forge (forgeSimple) where
 
 import           Codec.Serialise (Serialise (..), serialise)
 import           Crypto.Random (MonadRandom)
@@ -18,21 +15,14 @@ import           Cardano.Crypto.Hash
 import           Ouroboros.Network.Block (BlockNo, ChainHash, SlotNo)
 
 import           Ouroboros.Consensus.Ledger.Mock.Block
+import           Ouroboros.Consensus.Ledger.Mock.Run
 import           Ouroboros.Consensus.Protocol.Abstract
-
-class ForgeExt p c ext where
-  -- | Construct the protocol specific part of the block
-  forgeExt :: (HasNodeState p m, MonadRandom m)
-           => NodeConfig p
-           -> IsLeader p
-           -> SimpleBlock' c ext ()
-           -> m (SimpleBlock c ext)
 
 forgeSimple :: forall p c m ext.
                ( HasNodeState p m
                , MonadRandom m
                , SimpleCrypto c
-               , ForgeExt p c ext
+               , RunMockBlock p c ext
                )
             => NodeConfig p
             -> SlotNo                         -- ^ Current slot

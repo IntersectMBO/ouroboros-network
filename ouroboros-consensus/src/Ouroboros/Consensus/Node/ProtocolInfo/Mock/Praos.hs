@@ -6,13 +6,9 @@ module Ouroboros.Consensus.Node.ProtocolInfo.Mock.Praos (
     protocolInfoPraos
   ) where
 
-import           Codec.CBOR.Decoding (decodeListLenOf)
-import           Codec.CBOR.Encoding (encodeListLen)
-import           Codec.Serialise (Serialise (..))
 import           Data.IntMap (IntMap)
 import qualified Data.IntMap as IntMap
 
-import           Cardano.Binary (fromCBOR, toCBOR)
 import           Cardano.Crypto.KES
 import           Cardano.Crypto.VRF
 
@@ -55,17 +51,3 @@ protocolInfoPraos (NumCoreNodes numCoreNodes) (CoreNodeId nid) params =
     verKeys = IntMap.fromList [ (nd, (VerKeyMockKES nd, VerKeyMockVRF nd))
                               | nd <- [0 .. numCoreNodes - 1]
                               ]
-
-instance Serialise (BlockInfo PraosMockCrypto) where
-  encode BlockInfo {..} = mconcat
-    [ encodeListLen 3
-    , encode biSlot
-    , toCBOR biRho
-    , encode biStake
-    ]
-  decode = do
-    decodeListLenOf 3
-    biSlot  <- decode
-    biRho   <- fromCBOR
-    biStake <- decode
-    return BlockInfo {..}
