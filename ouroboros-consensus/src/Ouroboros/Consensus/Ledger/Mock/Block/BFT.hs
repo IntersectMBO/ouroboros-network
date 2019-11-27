@@ -7,6 +7,8 @@
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE UndecidableInstances       #-}
 
+{-# OPTIONS_GHC -fno-warn-orphans #-}
+
 module Ouroboros.Consensus.Ledger.Mock.Block.BFT (
     SimpleBftBlock
   , SimpleBftHeader
@@ -25,7 +27,7 @@ import           Cardano.Prelude (NoUnexpectedThunks)
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Mock.Block
-import           Ouroboros.Consensus.Ledger.Mock.Forge
+import           Ouroboros.Consensus.Ledger.Mock.Run
 import           Ouroboros.Consensus.Protocol.BFT
 import           Ouroboros.Consensus.Protocol.Signed
 import           Ouroboros.Consensus.Util.Condense
@@ -77,11 +79,16 @@ instance ( SimpleCrypto c
          ) => HeaderSupportsBft c' (SimpleBftHeader c c') where
   headerBftFields _ = simpleBftExt . simpleHeaderExt
 
+instance RunMockProtocol (Bft c') where
+  mockProtocolMagicId  = const constructMockProtocolMagicId
+  mockEncodeChainState = const encode
+  mockDecodeChainState = const decode
+
 instance ( SimpleCrypto c
          , BftCrypto c'
          , Signable (BftDSIGN c') (SignedSimpleBft c c')
          )
-      => ForgeExt (Bft c') c (SimpleBftExt c c') where
+      => RunMockBlock (Bft c') c (SimpleBftExt c c') where
   forgeExt cfg () SimpleBlock{..} = do
       ext :: SimpleBftExt c c' <- fmap SimpleBftExt $
         forgeBftFields cfg $

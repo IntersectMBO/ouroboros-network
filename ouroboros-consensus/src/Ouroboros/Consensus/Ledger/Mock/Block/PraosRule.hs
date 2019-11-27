@@ -6,6 +6,8 @@
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE UndecidableInstances       #-}
 
+{-# OPTIONS_GHC -fno-warn-orphans #-}
+
 -- | Test the Praos chain selection rule (with explicit leader schedule)
 module Ouroboros.Consensus.Ledger.Mock.Block.PraosRule (
     SimplePraosRuleBlock
@@ -25,7 +27,7 @@ import           Cardano.Prelude (NoUnexpectedThunks)
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Mock.Block
-import           Ouroboros.Consensus.Ledger.Mock.Forge
+import           Ouroboros.Consensus.Ledger.Mock.Run
 import           Ouroboros.Consensus.NodeId (CoreNodeId)
 import           Ouroboros.Consensus.Protocol.LeaderSchedule
 import           Ouroboros.Consensus.Protocol.Praos
@@ -67,8 +69,13 @@ _simplePraosRuleHeader = simpleHeader
   Evidence that 'SimpleBlock' can support Praos with an explicit leader schedule
 -------------------------------------------------------------------------------}
 
+instance RunMockProtocol (WithLeaderSchedule p) where
+  mockProtocolMagicId  = const constructMockProtocolMagicId
+  mockEncodeChainState = const encode
+  mockDecodeChainState = const decode
+
 instance SimpleCrypto c
-      => ForgeExt (WithLeaderSchedule p) c SimplePraosRuleExt where
+      => RunMockBlock (WithLeaderSchedule p) c SimplePraosRuleExt where
   forgeExt cfg () SimpleBlock{..} = do
       let ext = SimplePraosRuleExt $ lsNodeConfigNodeId cfg
       return SimpleBlock {

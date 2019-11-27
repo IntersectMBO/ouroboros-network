@@ -54,6 +54,7 @@ library
                        Ouroboros.Consensus.Ledger.Mock.Block.Praos
                        Ouroboros.Consensus.Ledger.Mock.Block.PraosRule
                        Ouroboros.Consensus.Ledger.Mock.Forge
+                       Ouroboros.Consensus.Ledger.Mock.Run
                        Ouroboros.Consensus.Ledger.Mock.Stake
                        Ouroboros.Consensus.Ledger.Mock.State
                        Ouroboros.Consensus.Ledger.Mock.UTxO
@@ -222,6 +223,7 @@ library
                        filepath          >=1.4   && <1.5,
                        fingertree        >=0.1.4.2 && <0.2,
                        formatting        >=6.3   && <6.4,
+                       hashable,
                        memory,
                        mmorph            >=1.1   && <1.2,
                        mtl               >=2.2   && <2.3,

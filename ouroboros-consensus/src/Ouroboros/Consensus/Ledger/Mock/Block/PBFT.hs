@@ -7,6 +7,8 @@
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE UndecidableInstances       #-}
 
+{-# OPTIONS_GHC -fno-warn-orphans #-}
+
 module Ouroboros.Consensus.Ledger.Mock.Block.PBFT (
     SimplePBftBlock
   , SimplePBftHeader
@@ -25,8 +27,9 @@ import           Cardano.Prelude (NoUnexpectedThunks)
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Mock.Block
-import           Ouroboros.Consensus.Ledger.Mock.Forge
+import           Ouroboros.Consensus.Ledger.Mock.Run
 import           Ouroboros.Consensus.Protocol.PBFT
+import qualified Ouroboros.Consensus.Protocol.PBFT.ChainState as CS
 import           Ouroboros.Consensus.Protocol.Signed
 import           Ouroboros.Consensus.Util.Condense
 
@@ -91,11 +94,18 @@ instance ( SimpleCrypto c
       , headerSigned hdr
       )
 
+instance (PBftCrypto c', Serialise (PBftVerKeyHash c'))
+      => RunMockProtocol (PBft ext c') where
+  mockProtocolMagicId  = const constructMockProtocolMagicId
+  mockEncodeChainState = const CS.encodePBftChainState
+  mockDecodeChainState = const CS.decodePBftChainState
+
 instance ( SimpleCrypto c
          , PBftCrypto c'
          , Signable (PBftDSIGN c') (SignedSimplePBft c c')
          , ConstructContextDSIGN ext c'
-         ) => ForgeExt (PBft ext c') c (SimplePBftExt c c') where
+         , Serialise (PBftVerKeyHash c')
+         ) => RunMockBlock (PBft ext c') c (SimplePBftExt c c') where
   forgeExt cfg isLeader SimpleBlock{..} = do
       ext :: SimplePBftExt c c' <- fmap SimplePBftExt $
         forgePBftFields cfg isLeader $

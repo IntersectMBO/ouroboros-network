@@ -68,7 +68,7 @@ instance RunNode ByronBlock where
   nodeEncodeGenTxId       = encodeByronGenTxId
   nodeEncodeHeaderHash    = const encodeByronHeaderHash
   nodeEncodeLedgerState   = const encodeByronLedgerState
-  nodeEncodeChainState    = const encodeByronChainState
+  nodeEncodeChainState    = \_proxy _cfg -> encodeByronChainState
   nodeEncodeApplyTxError  = const encodeByronApplyTxError
 
   nodeDecodeBlock         = decodeByronBlock  . extractEpochSlots
@@ -77,7 +77,7 @@ instance RunNode ByronBlock where
   nodeDecodeGenTxId       = decodeByronGenTxId
   nodeDecodeHeaderHash    = const decodeByronHeaderHash
   nodeDecodeLedgerState   = const decodeByronLedgerState
-  nodeDecodeChainState    = const decodeByronChainState
+  nodeDecodeChainState    = \_proxy _cfg -> decodeByronChainState
   nodeDecodeApplyTxError  = const decodeByronApplyTxError
 
 extractGenesisData :: NodeConfig ByronConsensusProtocol -> Genesis.GenesisData
