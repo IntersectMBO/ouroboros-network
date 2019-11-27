@@ -42,6 +42,7 @@
           (hsPkgs.filepath)
           (hsPkgs.fingertree)
           (hsPkgs.formatting)
+          (hsPkgs.hashable)
           (hsPkgs.memory)
           (hsPkgs.mmorph)
           (hsPkgs.mtl)
