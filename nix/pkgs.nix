@@ -2,6 +2,7 @@
 , iohk-extras ? {}
 , iohk-module ? {}
 , haskell
+, extras ? (_: [])
 , ...
 }:
 let
@@ -19,9 +20,9 @@ let
   compiler = (stack-pkgs.extras haskell.hackage).compiler;
   pkgSet = haskell.mkStackPkgSet {
     inherit stack-pkgs;
-    pkg-def-extras = [
-      iohk-extras.${compiler.nix-name}
-    ];
+    pkg-def-extras = if iohk-extras ? ${compiler.nix-name}
+      then [ iohk-extras.${compiler.nix-name} extras ]
+      else [ extras ];
     modules = [
       # the iohk-module will supply us with the necessary
       # cross compilation plumbing to make Template Haskell

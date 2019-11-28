@@ -15,6 +15,7 @@ packages:
   - ./peer-selection
 
 extra-deps:
+  - hsc2hs-0.68.6
   - git: https://github.com/input-output-hk/iohk-monitoring-framework
     commit: 4956b32f039579a0e7e4fd10793f65b4c77d9044
     subdirs:

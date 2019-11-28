@@ -4,6 +4,7 @@
       packages = {
         "moo" = (((hackage.moo)."1.2").revisions).default;
         "gray-code" = (((hackage.gray-code)."0.3.1").revisions).default;
+        "hsc2hs" = (((hackage.hsc2hs)."0.68.6").revisions).default;
         "bimap" = (((hackage.bimap)."0.4.0").revisions).default;
         "binary" = (((hackage.binary)."0.8.7.0").revisions).default;
         "generic-monoid" = (((hackage.generic-monoid)."0.1.0.0").revisions).default;
@@ -34,6 +35,7 @@
         io-sim-classes = ./io-sim-classes.nix;
         ntp-client = ./ntp-client.nix;
         Win32-network = ./Win32-network.nix;
+        peer-selection = ./peer-selection.nix;
         contra-tracer = ./contra-tracer.nix;
         cardano-binary = ./cardano-binary.nix;
         cardano-binary-test = ./cardano-binary-test.nix;
