@@ -7,13 +7,10 @@
 --
 -- Intended for qualified import.
 --
--- > import qualified Ouroboros.Consensus.Node as Node
--- > import Ouroboros.Consensus.Node (RunNetworkArgs (..))
--- > ..
--- > Node.run ..
 module Ouroboros.Consensus.Node
-  ( run
-  , RunNetworkArgs (..)
+  ( DiffusionTracers (..)
+  , DiffusionArguments (..)
+  , run
     -- * Exposed by 'run'
   , RunNode (..)
   , Tracers
@@ -23,33 +20,35 @@ module Ouroboros.Consensus.Node
   , ChainDbArgs (..)
   , NodeArgs (..)
   , NodeKernel (..)
+  , IPSubscriptionTarget (..)
+  , DnsSubscriptionTarget (..)
+  , ConnectionId (..)
     -- * Internal helpers
   , initChainDB
   , mkNodeArgs
-  , initNetwork
   ) where
 
-import qualified Codec.CBOR.Read as CBOR
-import qualified Codec.CBOR.Term as CBOR
-import           Control.Monad (forM_, void)
 import           Control.Tracer (Tracer)
 import           Crypto.Random
 import           Data.ByteString.Lazy (ByteString)
-import           Data.List (any)
 import           Data.Proxy (Proxy (..))
 import           Data.Time.Clock (secondsToDiffTime)
-import           Data.Void (Void)
-import           Network.Mux.Types (MuxTrace, WithMuxBearer)
-import           Network.Socket as Socket
 
 import           Control.Monad.Class.MonadThrow
 
 import           Ouroboros.Network.Block
 import qualified Ouroboros.Network.Block as Block
-import           Ouroboros.Network.ErrorPolicy
 import           Ouroboros.Network.Magic
-import           Ouroboros.Network.NodeToClient as NodeToClient
-import           Ouroboros.Network.NodeToNode as NodeToNode
+import           Ouroboros.Network.NodeToClient ( NodeToClientVersion (..)
+                                                , NodeToClientVersionData (..)
+                                                , DictVersion (..)
+                                                , nodeToClientCodecCBORTerm
+                                                )
+import           Ouroboros.Network.NodeToNode   ( NodeToNodeVersion (..)
+                                                , NodeToNodeVersionData (..)
+                                                , nodeToNodeCodecCBORTerm
+                                                )
+import           Ouroboros.Network.Diffusion
 import           Ouroboros.Network.Protocol.ChainSync.PipelineDecision
                      (pipelineDecisionLowHighMark)
 import           Ouroboros.Network.Socket (ConnectionId)
@@ -90,7 +89,9 @@ run
      RunNode blk
   => Tracers IO ConnectionId blk          -- ^ Consensus tracers
   -> Tracer  IO (ChainDB.TraceEvent blk)  -- ^ ChainDB tracer
-  -> RunNetworkArgs blk      -- ^ Network args
+  -> DiffusionTracers                     -- ^ Diffusion tracers
+  -> DiffusionArguments                   -- ^ Diffusion arguments
+  -> NetworkMagic
   -> FilePath                             -- ^ Database path
   -> ProtocolInfo blk
   -> (ChainDbArgs IO blk -> ChainDbArgs IO blk)
@@ -101,7 +102,7 @@ run
      -- ^ Called on the 'NodeKernel' after creating it, but before the network
      -- layer is initialised.
   -> IO ()
-run tracers chainDbTracer rna dbPath pInfo
+run tracers chainDbTracer diffusionTracers diffusionArguments networkMagic dbPath pInfo
     customiseChainDbArgs customiseNodeArgs onNodeKernel = do
     let mountPoint = MountPoint dbPath
     either throwM return =<< checkDbMarker
@@ -133,14 +134,45 @@ run tracers chainDbTracer rna dbPath pInfo
             chainDB
 
       nodeKernel <- initNodeKernel nodeArgs
-
       onNodeKernel registry nodeKernel
+      let networkApps :: NetworkApplication
+                           IO ConnectionId
+                           ByteString ByteString ByteString ByteString ByteString
+                           ()
+          networkApps = consensusNetworkApps
+            nodeKernel
+            nullProtocolTracers
+            (protocolCodecs (getNodeConfig nodeKernel))
+            (protocolHandlers nodeArgs nodeKernel)
 
-      initNetwork
-        registry
-        nodeArgs
-        nodeKernel
-        rna
+          diffusionApplications = DiffusionApplications
+           { daResponderApplication =
+               simpleSingletonVersions
+                 NodeToNodeV_1
+                 nodeToNodeVersionData
+                 (DictVersion nodeToNodeCodecCBORTerm)
+                 (responderNetworkApplication networkApps)
+           , daInitiatorApplication =
+               simpleSingletonVersions
+                 NodeToNodeV_1
+                 nodeToNodeVersionData
+                 (DictVersion nodeToNodeCodecCBORTerm)
+                 (initiatorNetworkApplication networkApps)
+           , daLocalResponderApplication =
+               simpleSingletonVersions
+                 NodeToClientV_1
+                 nodeToClientVersionData
+                 (DictVersion nodeToClientCodecCBORTerm)
+                 (localResponderNetworkApplication networkApps)
+           , daErrorPolicies = consensusErrorPolicy
+           }
+
+      runDataDiffusion diffusionTracers
+                       diffusionArguments
+                       diffusionApplications
+
+
+
   where
     ProtocolInfo
       { pInfoConfig     = cfg
@@ -153,6 +185,9 @@ run tracers chainDbTracer rna dbPath pInfo
     --
     -- For now, we hard-code it to Byron's 20 seconds.
     slotLength = slotLengthFromMillisec (20 * 1000)
+
+    nodeToNodeVersionData   = NodeToNodeVersionData { networkMagic   = networkMagic }
+    nodeToClientVersionData = NodeToClientVersionData { networkMagic = networkMagic }
 
 initChainDB
   :: forall blk. RunNode blk
@@ -250,187 +285,3 @@ mkNodeArgs registry cfg initState tracers btime chainDB = NodeArgs
 
         prevHash :: ChainHash blk
         prevHash = castHash (Block.pointHash prevPoint)
-
--- | Short-hand for the instantiated 'NetworkApplication'
-type NetworkApps peer =
-  NetworkApplication IO peer
-    ByteString ByteString ByteString ByteString ByteString ()
-
--- | Arguments specific to the network stack
-data RunNetworkArgs blk = RunNetworkArgs
-  { rnaIpSubscriptionTracer  :: Tracer IO (WithIPList (SubscriptionTrace Socket.SockAddr))
-    -- ^ IP subscription tracer
-  , rnaDnsSubscriptionTracer :: Tracer IO (WithDomainName (SubscriptionTrace Socket.SockAddr))
-  , rnaMuxTracer             :: Tracer IO (WithMuxBearer ConnectionId (MuxTrace NodeToNodeProtocols))
-    -- ^ Mux tracer
-  , rnaMuxLocalTracer        :: Tracer IO (WithMuxBearer ConnectionId (MuxTrace NodeToClientProtocols))
-  , rnaHandshakeTracer       :: Tracer IO (TraceSendRecv
-                                            (Handshake NodeToNodeVersion CBOR.Term)
-                                            ConnectionId
-                                            (DecoderFailureOrTooMuchInput CBOR.DeserialiseFailure))
-    -- ^ Handshake protocol tracer
-  , rnaHandshakeLocalTracer  :: Tracer IO (TraceSendRecv
-                                            (Handshake NodeToClientVersion CBOR.Term)
-                                            ConnectionId
-                                            (DecoderFailureOrTooMuchInput CBOR.DeserialiseFailure))
-    -- ^ DNS subscription tracer
-  , rnaDnsResolverTracer     :: Tracer IO (WithDomainName DnsTrace)
-    -- ^ DNS resolver tracer
-  , rnaErrorPolicyTracer     :: Tracer IO (WithAddr Socket.SockAddr ErrorPolicyTrace)
-    -- ^ Error Policy tracer
-  , rnaMyAddrs               :: [AddrInfo]
-    -- ^ The node's own addresses
-  , rnaMyLocalAddr           :: AddrInfo
-    -- ^ The node's own local address
-  , rnaIpProducers           :: [SockAddr]
-    -- ^ IP producers
-  , rnaDnsProducers          :: [DnsSubscriptionTarget]
-    -- ^ DNS producers
-  , rnaNetworkMagic          :: NetworkMagic
-    -- ^ Network protocol magic, differentiates between mainnet, staging and testnetworks.
-  }
-
-initNetwork
-  :: forall blk.
-     RunNode blk
-  => ResourceRegistry IO
-  -> NodeArgs    IO ConnectionId blk
-  -> NodeKernel  IO ConnectionId blk
-  -> RunNetworkArgs blk
-  -> IO ()
-initNetwork registry nodeArgs kernel RunNetworkArgs{..} = do
-    -- networking mutable state
-    networkState <- newNetworkMutableState
-    networkLocalState <- newNetworkMutableState
-    -- clean peer states every 200s
-    cleanNetworkStateThread <- forkLinkedThread registry (NodeToNode.cleanNetworkMutableState networkState)
-    cleanLocalPeerStatesThread <- forkLinkedThread registry (NodeToNode.cleanNetworkMutableState networkLocalState)
-
-    -- serve local clients (including tx submission)
-    _ <- forkLinkedThread registry (runLocalServer networkLocalState)
-
-    -- serve downstream nodes
-    forM_ rnaMyAddrs
-        (\a -> forkLinkedThread registry $ runPeerServer networkState a)
-
-    let ipv4Address = if any (\ai -> Socket.addrFamily ai == Socket.AF_INET) rnaMyAddrs
-                         then Just (Socket.SockAddrInet 0 0)
-                         else Nothing
-        ipv6Address = if any (\ai -> Socket.addrFamily ai == Socket.AF_INET6) rnaMyAddrs
-                         then Just (Socket.SockAddrInet6 0 0 (0, 0, 0, 0) 0)
-                         else Nothing
-
-    _ <- forkLinkedThread registry $
-                         runIpSubscriptionWorker networkState ipv4Address ipv6Address
-
-    -- dns subscription managers
-    forM_ rnaDnsProducers $ \dnsProducer -> do
-       forkLinkedThread registry $
-         runDnsSubscriptionWorker networkState ipv4Address ipv6Address dnsProducer
-
-    -- the only thread that terminates is 'cleanNetworkStateThread', all the
-    -- other threads return `Void`, thus they can only throw, since all of them
-    -- are linked to this thread we can just wait on the 'cleanNetworkStateThread'
-    -- Also note that 'cleanNetworkStateThread' terminates only if one of the
-    -- other threads throws an exception.
-    void $ waitAnyThread [cleanNetworkStateThread, cleanLocalPeerStatesThread]
-  where
-    remoteErrorPolicy = remoteNetworkErrorPolicy <> consensusErrorPolicy
-    localErrorPolicy  = localNetworkErrorPolicy <> consensusErrorPolicy
-
-    networkApps :: NetworkApps ConnectionId
-    networkApps = consensusNetworkApps
-      kernel
-      nullProtocolTracers
-      (protocolCodecs (getNodeConfig kernel))
-      (protocolHandlers nodeArgs kernel)
-
-    nodeToNodeVersionData   = NodeToNodeVersionData { networkMagic   = rnaNetworkMagic }
-    nodeToClientVersionData = NodeToClientVersionData { networkMagic = rnaNetworkMagic }
-
-    runLocalServer :: NetworkMutableState
-                   -> IO Void
-    runLocalServer networkLocalState =
-      NodeToClient.withServer_V1
-        (NetworkServerTracers
-          rnaMuxLocalTracer
-          rnaHandshakeLocalTracer
-          rnaErrorPolicyTracer)
-        networkLocalState
-        rnaMyLocalAddr
-        nodeToClientVersionData
-        (localResponderNetworkApplication networkApps)
-        localErrorPolicy
-
-    runPeerServer :: NetworkMutableState
-                  -> Socket.AddrInfo
-                  -> IO Void
-    runPeerServer networkState myAddr =
-      NodeToNode.withServer_V1
-        (NetworkServerTracers
-          rnaMuxTracer
-          rnaHandshakeTracer
-          rnaErrorPolicyTracer)
-        networkState
-        myAddr
-        nodeToNodeVersionData
-        (responderNetworkApplication networkApps)
-        remoteErrorPolicy
-
-    runIpSubscriptionWorker :: NetworkMutableState
-                            -> Maybe Socket.SockAddr
-                            -> Maybe Socket.SockAddr
-                            -> IO Void
-    runIpSubscriptionWorker networkState ipv4 ipv6 = ipSubscriptionWorker_V1
-      (NetworkIPSubscriptionTracers
-        rnaMuxTracer
-        rnaHandshakeTracer
-        rnaErrorPolicyTracer
-        rnaIpSubscriptionTracer)
-      networkState
-      -- the comments in dnsSbuscriptionWorker call apply
-      SubscriptionParams
-        { spLocalAddresses         = LocalAddresses ipv4 ipv6 Nothing
-        , spConnectionAttemptDelay = const Nothing
-        , spErrorPolicies          = remoteErrorPolicy
-        , spSubscriptionTarget =
-            IPSubscriptionTarget
-              { ispIps     = rnaIpProducers
-              , ispValency = length rnaIpProducers
-              }
-        }
-      nodeToNodeVersionData
-      (initiatorNetworkApplication networkApps)
-
-    runDnsSubscriptionWorker :: NetworkMutableState
-                             -> Maybe Socket.SockAddr
-                             -> Maybe Socket.SockAddr
-                             -> DnsSubscriptionTarget
-                             -> IO Void
-    runDnsSubscriptionWorker networkState ipv4 ipv6 dnsProducer = dnsSubscriptionWorker_V1
-      (NetworkDNSSubscriptionTracers
-        rnaMuxTracer
-        rnaHandshakeTracer
-        rnaErrorPolicyTracer
-        rnaDnsSubscriptionTracer
-        rnaDnsResolverTracer)
-      networkState
-      SubscriptionParams
-        { spLocalAddresses =
-            LocalAddresses
-            -- IPv4 address
-            --
-            -- We can't share portnumber with our server since we run separate
-            -- 'MuxInitiatorApplication' and 'MuxResponderApplication'
-            -- applications instead of a 'MuxInitiatorAndResponderApplication'.
-            -- This means we don't utilise full duplex connection.
-            ipv4
-            -- IPv6 address
-            ipv6
-            Nothing
-        , spConnectionAttemptDelay = const Nothing
-        , spErrorPolicies          = remoteErrorPolicy
-        , spSubscriptionTarget     = dnsProducer
-        }
-      nodeToNodeVersionData
-      (initiatorNetworkApplication networkApps)
