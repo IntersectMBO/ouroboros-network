@@ -66,6 +66,7 @@ import qualified Ouroboros.Network.MockChain.ProducerState as CPS
 import qualified Ouroboros.Network.Point as Point
 
 import           Ouroboros.Consensus.Block (IsEBB (..), getHeader)
+import           Ouroboros.Consensus.BlockchainTime (BlockchainTime (..))
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.NodeId (NodeId (..))
@@ -206,9 +207,10 @@ run :: forall m blk. (IOLike m)
     => ChainDB          m blk
     -> ChainDB.Internal m blk
     -> ResourceRegistry m
+    -> StrictTVar m SlotNo
     ->    Cmd     blk (Iterator m blk) (Reader m blk blk)
     -> m (Success blk (Iterator m blk) (Reader m blk blk))
-run ChainDB{..} ChainDB.Internal{..} registry = \case
+run ChainDB{..} ChainDB.Internal{..} registry varCurSlot = \case
     AddBlock blk          -> Unit          <$> addBlock blk
     GetCurrentChain       -> Chain         <$> atomically getCurrentChain
     GetCurrentLedger      -> Ledger        <$> atomically getCurrentLedger
@@ -367,9 +369,11 @@ runPure cfg = \case
 runIO :: ChainDB          IO blk
       -> ChainDB.Internal IO blk
       -> ResourceRegistry IO
+      -> StrictTVar       IO SlotNo
       ->     Cmd  blk (Iterator IO blk) (Reader IO blk blk)
       -> IO (Resp blk (Iterator IO blk) (Reader IO blk blk))
-runIO db internal registry cmd = Resp <$> try (run db internal registry cmd)
+runIO db internal registry varCurSlot cmd =
+    Resp <$> try (run db internal registry varCurSlot cmd)
 
 {-------------------------------------------------------------------------------
   Collect arguments
@@ -757,17 +761,19 @@ semantics :: forall blk. TestConstraints blk
           => ChainDB IO blk
           -> ChainDB.Internal IO blk
           -> ResourceRegistry IO
+          -> StrictTVar       IO SlotNo
           -> At Cmd blk IO Concrete
           -> IO (At Resp blk IO Concrete)
-semantics db internal registry (At cmd) =
+semantics db internal registry varCurSlot (At cmd) =
     At . (bimap (QSM.reference . QSM.Opaque) (QSM.reference . QSM.Opaque)) <$>
-    runIO db internal registry (bimap QSM.opaque QSM.opaque cmd)
+    runIO db internal registry varCurSlot (bimap QSM.opaque QSM.opaque cmd)
 
 -- | The state machine proper
 sm :: TestConstraints blk
    => ChainDB          IO       blk
    -> ChainDB.Internal IO       blk
    -> ResourceRegistry IO
+   -> StrictTVar       IO SlotNo
    -> BlockGen                  blk IO
    -> NodeConfig (BlockProtocol blk)
    -> ExtLedgerState            blk
@@ -775,14 +781,14 @@ sm :: TestConstraints blk
                    (At Cmd      blk IO)
                                     IO
                    (At Resp     blk IO)
-sm db internal registry genBlock env initLedger = StateMachine
+sm db internal registry varCurSlot genBlock env initLedger = StateMachine
   { initModel     = initModel env initLedger
   , transition    = transition
   , precondition  = precondition
   , postcondition = postcondition
   , generator     = Just . generator genBlock
   , shrinker      = shrinker
-  , semantics     = semantics db internal registry
+  , semantics     = semantics db internal registry varCurSlot
   , mock          = mock
   , invariant     = Nothing
   , distribution  = Nothing
@@ -1033,8 +1039,22 @@ internalUnused = error "ChainDB.Internal used during command generation"
 registryUnunused :: ResourceRegistry m
 registryUnunused = error "ResourceRegistry used during command generation"
 
+varCurSlotUnused :: StrictTVar m SlotNo
+varCurSlotUnused = error "StrictTVar m SlotNo used during command generation"
+
 smUnused :: StateMachine (Model Blk IO) (At Cmd Blk IO) IO (At Resp Blk IO)
-smUnused = sm dbUnused internalUnused registryUnunused genBlk testCfg testInitExtLedger
+smUnused =
+    sm dbUnused internalUnused registryUnunused varCurSlotUnused genBlk
+      testCfg testInitExtLedger
+
+-- | The current slot can be changed by modifying the given 'StrictTVar'.
+-- 'onSlotChange_' is not implemented as it is currently not used by the
+-- ChainDB.
+settableBlockchainTime :: IOLike m => StrictTVar m SlotNo -> BlockchainTime m
+settableBlockchainTime varCurSlot = BlockchainTime {
+      getCurrentSlot = readTVar varCurSlot
+    , onSlotChange_  = error "unimplemented onSlotChange_"
+    }
 
 prop_sequential :: Property
 prop_sequential = forAllCommands smUnused Nothing $ \cmds -> QC.monadicIO $ do
@@ -1051,13 +1071,14 @@ prop_sequential = forAllCommands smUnused Nothing $ \cmds -> QC.monadicIO $ do
       threadRegistry     <- QC.run unsafeNewRegistry
       iteratorRegistry   <- QC.run unsafeNewRegistry
       (tracer, getTrace) <- QC.run recordingTracerIORef
+      varCurSlot         <- QC.run $ uncheckedNewTVarM 0
       fsVars             <- QC.run $ (,,)
         <$> uncheckedNewTVarM Mock.empty
         <*> uncheckedNewTVarM Mock.empty
         <*> uncheckedNewTVarM Mock.empty
-      let args = mkArgs testCfg testInitExtLedger tracer threadRegistry fsVars
+      let args = mkArgs testCfg testInitExtLedger tracer threadRegistry varCurSlot fsVars
       (db, internal)     <- QC.run $ openDBInternal args False
-      let sm' = sm db internal iteratorRegistry genBlk testCfg testInitExtLedger
+      let sm' = sm db internal iteratorRegistry varCurSlot genBlk testCfg testInitExtLedger
       (hist, model, res) <- runCommands sm' cmds
       (realChain, realChain', trace, fses, remainingCleanups) <- QC.run $ do
         trace <- getTrace
@@ -1176,10 +1197,11 @@ mkArgs :: IOLike m
        -> ExtLedgerState Blk
        -> Tracer m (TraceEvent Blk)
        -> ResourceRegistry m
+       -> StrictTVar m SlotNo
        -> (StrictTVar m MockFS, StrictTVar m MockFS, StrictTVar m MockFS)
           -- ^ ImmutableDB, VolatileDB, LedgerDB
        -> ChainDbArgs m Blk
-mkArgs cfg initLedger tracer registry
+mkArgs cfg initLedger tracer registry varCurSlot
        (immDbFsVar, volDbFsVar, lgrDbFsVar) = ChainDbArgs
     { -- Decoders
       cdbDecodeHash       = decode
@@ -1215,6 +1237,7 @@ mkArgs cfg initLedger tracer registry
     , cdbHashInfo         = testHashInfo
     , cdbIsEBB            = testBlockEpochNoIfEBB fixedEpochSize
     , cdbGenesis          = return initLedger
+    , cdbBlockchainTime   = settableBlockchainTime varCurSlot
 
     -- Misc
     , cdbTracer           = tracer
@@ -1235,6 +1258,7 @@ tests = testGroup "ChainDB q-s-m"
 -- | Debugging utility: run some commands against the real implementation.
 _runCmds :: [Cmd Blk IteratorId ReaderId] -> IO [Resp Blk IteratorId ReaderId]
 _runCmds cmds = withRegistry $ \registry -> do
+    varCurSlot <- uncheckedNewTVarM 0
     fsVars <- (,,)
       <$> uncheckedNewTVarM Mock.empty
       <*> uncheckedNewTVarM Mock.empty
@@ -1244,21 +1268,23 @@ _runCmds cmds = withRegistry $ \registry -> do
           testInitExtLedger
           (showTracing stdoutTracer)
           registry
+          varCurSlot
           fsVars
     (db, internal) <- openDBInternal args False
-    evalStateT (mapM (go db internal registry) cmds) emptyRunCmdState
+    evalStateT (mapM (go db internal registry varCurSlot) cmds) emptyRunCmdState
   where
     go :: ChainDB IO Blk -> ChainDB.Internal IO Blk
        -> ResourceRegistry IO
+       -> StrictTVar IO SlotNo
        -> Cmd Blk IteratorId ReaderId
        -> StateT RunCmdState
                  IO
                  (Resp Blk IteratorId ReaderId)
-    go db internal resourceRegistry cmd = do
+    go db internal resourceRegistry varCurSlot cmd = do
       RunCmdState { _knownIters, _knownReaders} <- get
       let cmd' = At $
             bimap (revLookup _knownIters) (revLookup _knownReaders) cmd
-      resp <- lift $ unAt <$> semantics db internal resourceRegistry cmd'
+      resp <- lift $ unAt <$> semantics db internal resourceRegistry varCurSlot cmd'
       newIters <- RE.fromList <$>
        mapM (\rdr -> (rdr, ) <$> newIteratorId) (iters resp)
       newReaders <- RE.fromList <$>

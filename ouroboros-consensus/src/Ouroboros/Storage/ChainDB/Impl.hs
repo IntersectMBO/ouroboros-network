@@ -146,6 +146,7 @@ openDBInternal args launchBgTasks = do
                   , cdbBgThreads      = varBgThreads
                   , cdbEpochInfo      = Args.cdbEpochInfo args
                   , cdbIsEBB          = isJust . Args.cdbIsEBB args
+                  , cdbBlockchainTime = Args.cdbBlockchainTime args
                   }
     h <- fmap CDBHandle $ newTVarM $ ChainDbOpen env
     let chainDB = ChainDB

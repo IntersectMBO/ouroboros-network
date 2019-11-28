@@ -56,6 +56,7 @@ import           Ouroboros.Network.Block (BlockNo, HasHeader, HeaderHash, Point,
 import           Ouroboros.Network.Point (WithOrigin)
 
 import           Ouroboros.Consensus.Block (BlockProtocol, Header, IsEBB (..))
+import           Ouroboros.Consensus.BlockchainTime (BlockchainTime)
 import           Ouroboros.Consensus.Ledger.Abstract (ProtocolLedgerView)
 import           Ouroboros.Consensus.Ledger.Extended (ExtValidationError)
 import           Ouroboros.Consensus.Protocol.Abstract (NodeConfig)
@@ -207,6 +208,7 @@ data ChainDbEnv m blk = CDB
     -- ^ The background threads.
   , cdbEpochInfo      :: !(EpochInfo m)
   , cdbIsEBB          :: !(blk -> Bool)
+  , cdbBlockchainTime :: !(BlockchainTime m)
   } deriving (Generic)
 
 -- | We include @blk@ in 'showTypeOf' because it helps resolving type families

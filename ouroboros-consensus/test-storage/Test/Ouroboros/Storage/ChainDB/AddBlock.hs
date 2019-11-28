@@ -22,6 +22,7 @@ import           Control.Tracer
 import           Ouroboros.Network.MockChain.Chain (Chain)
 import qualified Ouroboros.Network.MockChain.Chain as Chain
 
+import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Protocol.Abstract
@@ -263,6 +264,7 @@ mkArgs cfg initLedger tracer registry hashInfo
     , cdbEpochInfo        = fixedSizeEpochInfo fixedEpochSize
     , cdbHashInfo         = hashInfo
     , cdbIsEBB            = const Nothing
+    , cdbBlockchainTime   = fixedBlockchainTime maxBound
     , cdbGenesis          = return initLedger
 
     -- Misc
