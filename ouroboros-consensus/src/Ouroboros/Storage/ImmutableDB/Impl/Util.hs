@@ -22,6 +22,7 @@ module Ouroboros.Storage.ImmutableDB.Impl.Util
   , removeFilesStartingFrom
   , runGet
   , runGetWithUnconsumed
+  , checkChecksum
   ) where
 
 import           Control.Monad (forM_, when)
@@ -41,6 +42,7 @@ import           Ouroboros.Storage.Common
 import           Ouroboros.Storage.EpochInfo.API
 import           Ouroboros.Storage.FS.API
 import           Ouroboros.Storage.FS.API.Types
+import           Ouroboros.Storage.FS.CRC
 import           Ouroboros.Storage.Util.ErrorHandling (ErrorHandling (..))
 import qualified Ouroboros.Storage.Util.ErrorHandling as EH
 
@@ -229,3 +231,20 @@ runGetWithUnconsumed err file get bl = case Get.runGetOrFail get bl of
       -> return (unconsumed, primary)
     Left (_, _, msg)
       -> throwUnexpectedError err $ InvalidFileError file msg callStack
+
+-- | Check whether the given checksums match. If not, throw a
+-- 'ChecksumMismatchError'.
+checkChecksum
+  :: (HasCallStack, Monad m)
+  => ErrorHandling ImmutableDBError m
+  -> FsPath
+  -> BlockOrEBB
+  -> CRC  -- ^ Expected checksum
+  -> CRC  -- ^ Actual checksum
+  -> m ()
+checkChecksum err epochFile blockOrEBB expected actual
+    | expected == actual
+    = return ()
+    | otherwise
+    = throwUnexpectedError err $
+      ChecksumMismatchError blockOrEBB expected actual epochFile callStack

@@ -467,8 +467,12 @@ getEpochSlot hasFS hashInfo err curEpochInfo getWhat epochSlot =
       -- index
       Just secondaryOffset -> do
         -- TODO only read the hash in case of 'GetHash'?
-        (Secondary.Entry { blockOffset, headerOffset, headerSize, headerHash }, blockSize) <-
+        (entry, blockSize) <-
           Secondary.readEntry hasFS err hashInfo epoch isEBB secondaryOffset
+        let Secondary.Entry
+              { blockOffset, headerOffset, headerSize, headerHash, checksum
+              , blockOrEBB
+              } = entry
 
         -- In case the requested epoch is the current epoch, we will be reading
         -- from the epoch file while we're also writing to it. Are we guaranteed
@@ -481,10 +485,11 @@ getEpochSlot hasFS hashInfo err curEpochInfo getWhat epochSlot =
         Just <$> case getWhat of
           GetHash  -> return headerHash
 
-          GetBlock -> fmap (headerHash,) $
-              -- Get the whole block
-              withFile hasFS epochFile ReadMode $ \eHnd -> case blockSize of
-                -- TODO check checksum
+          GetBlock -> do
+            -- Get the whole block
+            let offset = AbsOffset $ unBlockOffset blockOffset
+            (bl, checksum') <- withFile hasFS epochFile ReadMode $ \eHnd ->
+              case blockSize of
                 -- It is the last entry in the file, so we don't know the size
                 -- of the block.
                 Secondary.LastEntry
@@ -503,23 +508,23 @@ getEpochSlot hasFS hashInfo err curEpochInfo getWhat epochSlot =
                     -- Note that we don't allow reading a block newer than the
                     -- tip, which we obtained from the /same state/.
                   -> let size = curEpochOffset - blockOffset in
-                     hGetExactlyAt hasFS eHnd (fromIntegral size) offset
+                     hGetExactlyAtCRC hasFS eHnd (fromIntegral size) offset
                   | otherwise
                     -- If it is in an epoch in the past, it is immutable,
                     -- so no blocks can have been appended since we retrieved
                     -- the entry. We can simply read all remaining bytes, as
                     -- it is the last block in the file.
-                  -> hGetAllAt     hasFS eHnd                     offset
+                  -> hGetAllAtCRC     hasFS eHnd                     offset
                 Secondary.BlockSize size
-                  -> hGetExactlyAt hasFS eHnd (fromIntegral size) offset
-            where
-              offset = AbsOffset $ unBlockOffset blockOffset
+                  -> hGetExactlyAtCRC hasFS eHnd (fromIntegral size) offset
+            checkChecksum err epochFile blockOrEBB checksum checksum'
+            return (headerHash, bl)
 
           GetHeader -> fmap (headerHash,) $
               -- Get just the header
               withFile hasFS epochFile ReadMode $ \eHnd ->
-                -- TODO we cannot check the checksum in this case, as we're
-                -- not reading the whole block
+                -- We cannot check the checksum in this case, as we're not
+                -- reading the whole block
                 hGetExactlyAt hasFS eHnd size offset
             where
               size   = fromIntegral $ unHeaderSize headerSize
@@ -532,7 +537,7 @@ getEpochSlot hasFS hashInfo err curEpochInfo getWhat epochSlot =
     EpochSlot epoch relativeSlot             = epochSlot
     CurrentEpochInfo curEpoch curEpochOffset = curEpochInfo
     epochFile                                = renderFile "epoch" epoch
-    isEBB | relativeSlot                     == 0    = IsEBB
+    isEBB | relativeSlot == 0                = IsEBB
           | otherwise                        = IsNotEBB
 
 appendBlockImpl

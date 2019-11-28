@@ -49,6 +49,7 @@ import           Ouroboros.Network.Point (WithOrigin)
 import           Ouroboros.Storage.Common
 import           Ouroboros.Storage.FS.API.Types (FsError, FsPath, prettyFsError,
                      sameFsError)
+import           Ouroboros.Storage.FS.CRC (CRC)
 
 data BlockOrEBB
   = Block !SlotNo
@@ -272,6 +273,10 @@ data UnexpectedError
     -- validation.
   | MissingFileError FsPath CallStack
     -- ^ A missing epoch or index file.
+  | ChecksumMismatchError BlockOrEBB CRC CRC FsPath CallStack
+    -- ^ There was a checksum mismatch when reading the block at the given
+    -- 'BlockOrEBB'. The first 'CRC' is the expected one, the second one the
+    -- actual one.
   deriving (Show, Generic)
 
 -- | Check if two 'Ouroboros.Storage.ImmutableDB.Types.UnexpectedError's are
@@ -284,6 +289,10 @@ sameUnexpectedError ue1 ue2 = case (ue1, ue2) of
     (InvalidFileError {},      _)                        -> False
     (MissingFileError p1 _,    MissingFileError p2 _)    -> p1 == p2
     (MissingFileError {},      _)                        -> False
+    (ChecksumMismatchError s1 e1 a1 p1 _,
+     ChecksumMismatchError s2 e2 a2 p2 _)                -> s1 == s2 && e1 == e2
+                                                         && a1 == a2 && p1 == p2
+    (ChecksumMismatchError {}, _)                        -> False
 
 -- | Pretty-print an 'Ouroboros.Storage.ImmutableDB.Types.UnexpectedError',
 -- including its callstack.
@@ -296,6 +305,11 @@ prettyUnexpectedError = \case
       prettyCallStack cs
     MissingFileError path cs ->
       "MissingFileError (" <> show path <> "): " <>
+      prettyCallStack cs
+    ChecksumMismatchError epochSlot expected actual path cs ->
+      "ChecksumMismatchError (" <> show path <> "): for epoch slot " <>
+      show epochSlot <> " expected " <> show expected <>
+      " but got " <> show actual <>
       prettyCallStack cs
 
 data TraceEvent e hash
