@@ -1,6 +1,5 @@
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeApplications    #-}
 {-# LANGUAGE TypeFamilies        #-}
 
 module Test.Ouroboros.Storage.ChainDB.Mock (
@@ -16,6 +15,7 @@ import           Ouroboros.Network.Block (ChainUpdate)
 import qualified Ouroboros.Network.MockChain.ProducerState as CPS
 
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Protocol.Abstract
@@ -35,9 +35,12 @@ openDB :: forall m blk. (
           )
        => NodeConfig (BlockProtocol blk)
        -> ExtLedgerState blk
+       -> BlockchainTime m
        -> m (ChainDB m blk)
-openDB cfg initLedger = do
-    db :: StrictTVar m (Model blk) <- uncheckedNewTVarM (Model.empty initLedger)
+openDB cfg initLedger btime = do
+    curSlot <- atomically $ getCurrentSlot btime
+    let initM = (Model.empty initLedger) { Model.currentSlot = curSlot }
+    db :: StrictTVar m (Model blk) <- uncheckedNewTVarM initM
 
     let querySTM :: (Model blk -> a) -> STM m a
         querySTM f = readTVar db >>= \m ->
@@ -105,6 +108,8 @@ openDB cfg initLedger = do
                                -> Either ChainDbError
                                          (Maybe (ChainUpdate blk blk), Model blk)
             readerInstruction' = Model.readerInstruction rdrId
+
+    onSlotChange btime $ update_ . Model.advanceCurSlot cfg
 
     return ChainDB {
         addBlock            = update_  . Model.addBlock cfg

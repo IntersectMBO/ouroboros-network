@@ -20,6 +20,7 @@ module Test.Ouroboros.Storage.ChainDB.Model (
     -- * Queries
   , currentChain
   , currentLedger
+  , currentSlot
   , lastK
   , tipBlock
   , tipPoint
@@ -51,6 +52,7 @@ module Test.Ouroboros.Storage.ChainDB.Model (
   , garbageCollect
   , closeDB
   , reopen
+  , advanceCurSlot
   ) where
 
 import           Control.Monad (unless)
@@ -68,7 +70,7 @@ import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import qualified Ouroboros.Network.AnchoredFragment as Fragment
 import           Ouroboros.Network.Block (BlockNo, pattern BlockPoint,
                      ChainHash (..), pattern GenesisPoint, HasHeader,
-                     HeaderHash, MaxSlotNo, Point, SlotNo, maxSlotNoFromMaybe)
+                     HeaderHash, MaxSlotNo (..), Point, SlotNo)
 import qualified Ouroboros.Network.Block as Block
 import           Ouroboros.Network.MockChain.Chain (Chain (..), ChainUpdate)
 import qualified Ouroboros.Network.MockChain.Chain as Chain
@@ -79,7 +81,7 @@ import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.MockChainSel
-import           Ouroboros.Consensus.Util (repeatedly, safeMaximum)
+import           Ouroboros.Consensus.Util (repeatedly)
 import qualified Ouroboros.Consensus.Util.AnchoredFragment as Fragment
 import           Ouroboros.Consensus.Util.STM (Fingerprint (..),
                      WithFingerprint (..))
@@ -97,6 +99,16 @@ data Model blk = Model {
     , initLedger    :: ExtLedgerState blk
     , iterators     :: Map IteratorId [blk]
     , invalid       :: WithFingerprint (Map (HeaderHash blk) (InvalidBlockReason blk, SlotNo))
+    , currentSlot   :: SlotNo
+    , futureBlocks  :: Map SlotNo [blk]
+      -- ^ Blocks that were added in a slot < than the 'blockSlot' of the
+      -- block. Blocks are added to this map by 'addBlock' and will be removed
+      -- from it by 'runScheduledChainSelections'. The blocks are stored in
+      -- reverse chronological order under the slot they are scheduled to be
+      -- added in.
+    , maxSlotNo     :: MaxSlotNo
+      -- ^ We can't calculate this from 'blocks' and 'futureBlocks', so we
+      -- track it separately. See [MaxSlotNo and future blocks].
     , isOpen        :: Bool
       -- ^ While the model tracks whether it is closed or not, the queries and
       -- other functions in this module ignore this for simplicity. The mock
@@ -111,6 +123,28 @@ deriving instance
   , Block.StandardHash          blk
   , Show                        blk
   ) => Show (Model blk)
+
+-- [MaxSlotNo and future blocks]
+--
+-- Consider the following scenario: a future block arrives, but when its time
+-- is there to perform chain selection for the block, it is older than @k@ and
+-- we ignore it.
+--
+-- In the real implementation, that future block is added to the VolatileDB
+-- directly when it arrives. When its scheduled chain selection is performed,
+-- the block is ignored because it is older than @k@.
+--
+-- In the model, the future block is added to the model at the block's slot,
+-- at which point the chain selection for the block ignores the block because
+-- it is older than @k@. At this point, the block is removed from
+-- 'futureBlocks'.
+--
+-- Here the real implementation and the model can diverge: in the real
+-- implementation, that block is still stored in the VolatileDB and the block
+-- affects the result of 'getMaxSlotNo'. In the model, that block is not in
+-- the model anymore, not even in 'futureBlocks', so if we were to calculate
+-- 'MaxSlotNo' using 'blocks' and 'futureBlocks', we do not take the block
+-- into account.
 
 {-------------------------------------------------------------------------------
   Queries
@@ -184,13 +218,6 @@ immutableSlotNo (SecurityParam k) =
       . Chain.drop (fromIntegral k)
       . currentChain
 
-maxSlotNo :: HasHeader blk => Model blk -> MaxSlotNo
-maxSlotNo = maxSlotNoFromMaybe
-          . safeMaximum
-          . map Block.blockSlot
-          . Map.elems
-          . blocks
-
 {-------------------------------------------------------------------------------
   Construction
 -------------------------------------------------------------------------------}
@@ -203,15 +230,51 @@ empty initLedger = Model {
     , initLedger    = initLedger
     , iterators     = Map.empty
     , invalid       = WithFingerprint Map.empty (Fingerprint 0)
+    , currentSlot   = 0
+    , futureBlocks  = Map.empty
+    , maxSlotNo     = NoMaxSlotNo
     , isOpen        = True
     }
+
+-- | Advance the 'currentSlot' of the model to the given 'SlotNo' if the
+-- current slot of the model < the given 'SlotNo'.
+--
+-- Besides updating the 'currentSlot', future blocks are also added to the
+-- model.
+advanceCurSlot
+  :: forall blk.
+     ( ProtocolLedgerView blk
+     , CanSelect (BlockProtocol blk) blk
+     )
+  => NodeConfig (BlockProtocol blk)
+  -> SlotNo  -- ^ The new current slot
+  -> Model blk -> Model blk
+advanceCurSlot cfg curSlot m =
+    advance curSlot $
+    repeatedly
+      (\(slot, blk) -> addBlock cfg blk . advance slot)
+      blksWithSlots
+      (m { futureBlocks = after })
+  where
+    (before, at, after) = Map.splitLookup curSlot (futureBlocks m)
+    blksWithSlots =
+      [ (slot, blkAtSlot)
+      | (slot, blksAtSlot) <- Map.toAscList before
+      , blkAtSlot <- reverse blksAtSlot
+      ] <>
+      zip (repeat curSlot) (reverse (fromMaybe [] at))
+
+    advance :: SlotNo -> Model blk -> Model blk
+    advance slot m' = m' { currentSlot = slot `max` currentSlot m' }
 
 addBlock :: forall blk. (
               ProtocolLedgerView blk
               -- Chain selection is normally done on /headers/ only
             , CanSelect (BlockProtocol blk) blk
             )
-         => NodeConfig (BlockProtocol blk) -> blk -> Model blk -> Model blk
+         => NodeConfig (BlockProtocol blk)
+         -> blk
+         -> Model blk -> Model blk
 addBlock cfg blk m
     -- If the block is as old as the tip of the ImmutableDB, i.e. older than
     -- @k@, we ignore it, as we can never switch to it. TODO what about EBBs?
@@ -221,13 +284,25 @@ addBlock cfg blk m
     -- to ignore it in this case.
   , not addingGenesisEBBToEmptyDB
   = m
-  | otherwise = Model {
+    -- The block is from the future, don't add it now, but remember when to
+    -- add it.
+  | slot > currentSlot m
+  = m {
+      futureBlocks  = Map.insertWith (<>) slot [blk] (futureBlocks m)
+      -- Imitate the model, see [MaxSlotNo and future blocks]
+    , maxSlotNo     = maxSlotNo m `max` MaxSlotNo slot
+    }
+  | otherwise
+  = Model {
       blocks        = blocks'
     , cps           = CPS.switchFork newChain (cps m)
     , currentLedger = newLedger
     , initLedger    = initLedger m
     , iterators     = iterators  m
     , invalid       = WithFingerprint invalidBlocks' fingerprint'
+    , currentSlot   = currentSlot  m
+    , futureBlocks  = futureBlocks m
+    , maxSlotNo     = maxSlotNo m `max` MaxSlotNo slot
     , isOpen        = True
     }
   where
@@ -235,6 +310,8 @@ addBlock cfg blk m
 
     addingGenesisEBBToEmptyDB = tipPoint m == GenesisPoint
                              && Block.blockNo blk == Block.genesisBlockNo
+
+    slot = Block.blockSlot blk
 
     blocks' :: Map (HeaderHash blk) blk
     blocks' = Map.insert (Block.blockHash blk) blk (blocks m)
@@ -257,7 +334,9 @@ addBlock cfg blk m
                               selectChain cfg (currentChain m) candidates
 
 addBlocks :: (ProtocolLedgerView blk, CanSelect (BlockProtocol blk) blk)
-          => NodeConfig (BlockProtocol blk) -> [blk] -> Model blk -> Model blk
+          => NodeConfig (BlockProtocol blk)
+          -> [blk]
+          -> Model blk -> Model blk
 addBlocks cfg = repeatedly (addBlock cfg)
 
 {-------------------------------------------------------------------------------

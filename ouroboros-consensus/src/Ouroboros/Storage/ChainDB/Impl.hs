@@ -34,6 +34,7 @@ import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block (blockNo, blockPoint, blockSlot,
                      castPoint, genesisBlockNo, genesisPoint)
 
+import           Ouroboros.Consensus.BlockchainTime (getCurrentSlot)
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util.IOLike
@@ -103,6 +104,7 @@ openDBInternal args launchBgTasks = do
 
     varInvalid <- newTVarM (WithFingerprint Map.empty (Fingerprint 0))
 
+    curSlot        <- atomically $ getCurrentSlot (Args.cdbBlockchainTime args)
     chainAndLedger <- ChainSel.initialChainSelection
       immDB
       volDB
@@ -110,6 +112,7 @@ openDBInternal args launchBgTasks = do
       tracer
       (Args.cdbNodeConfig args)
       varInvalid
+      curSlot
 
     let chain      = ChainSel.clChain  chainAndLedger
         ledger     = ChainSel.clLedger chainAndLedger
@@ -126,6 +129,7 @@ openDBInternal args launchBgTasks = do
     varNextReaderId   <- newTVarM 0
     varCopyLock       <- newMVar  ()
     varBgThreads      <- newTVarM []
+    varFutureBlocks   <- newTVarM Map.empty
 
     let env = CDB { cdbImmDB          = immDB
                   , cdbVolDB          = volDB
@@ -147,6 +151,7 @@ openDBInternal args launchBgTasks = do
                   , cdbEpochInfo      = Args.cdbEpochInfo args
                   , cdbIsEBB          = isJust . Args.cdbIsEBB args
                   , cdbBlockchainTime = Args.cdbBlockchainTime args
+                  , cdbFutureBlocks   = varFutureBlocks
                   }
     h <- fmap CDBHandle $ newTVarM $ ChainDbOpen env
     let chainDB = ChainDB
@@ -168,11 +173,12 @@ openDBInternal args launchBgTasks = do
           , isOpen             = Reopen.isOpen  h
           }
         testing = Internal
-          { intReopen                = Reopen.reopen  h
-          , intCopyToImmDB           = getEnv  h Background.copyToImmDB
-          , intGarbageCollect        = getEnv1 h Background.garbageCollect
-          , intUpdateLedgerSnapshots = getEnv  h Background.updateLedgerSnapshots
-          , intBgThreads             = varBgThreads
+          { intReopen                  = Reopen.reopen  h
+          , intCopyToImmDB             = getEnv  h Background.copyToImmDB
+          , intGarbageCollect          = getEnv1 h Background.garbageCollect
+          , intUpdateLedgerSnapshots   = getEnv  h Background.updateLedgerSnapshots
+          , intScheduledChainSelection = getEnv1 h Background.scheduledChainSelection
+          , intBgThreads               = varBgThreads
           }
 
     traceWith tracer $ TraceOpenEvent $ OpenedDB

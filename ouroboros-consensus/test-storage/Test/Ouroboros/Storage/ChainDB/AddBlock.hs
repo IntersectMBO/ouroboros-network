@@ -128,9 +128,12 @@ prop_addBlock_multiple_threads bpt =
     -- The current chain after all the given blocks were added to a fresh
     -- model.
     modelAddBlocks :: [TestBlock] -> Chain TestBlock
-    modelAddBlocks = Model.currentChain . foldr (Model.addBlock cfg) initModel
-      where
-        initModel = Model.empty initLedger
+    modelAddBlocks theBlks =
+        Model.currentChain $
+        Model.addBlocks cfg theBlks $
+        -- Make sure no blocks are "from the future"
+        Model.advanceCurSlot cfg maxBound $
+        Model.empty initLedger
 
     equallyPreferable :: Chain TestBlock -> Chain TestBlock -> Bool
     equallyPreferable chain1 chain2 =

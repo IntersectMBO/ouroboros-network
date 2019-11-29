@@ -33,6 +33,13 @@ tests = testGroup "Model" [
     , testProperty "between_currentChain"     prop_between_currentChain
     ]
 
+addBlocks :: [TestBlock] -> M.Model TestBlock
+addBlocks blks = M.addBlocks cfg blks m
+  where
+    cfg = singleNodeTestConfig
+    -- Set the current slot to 'maxBound' so that no block is in the future
+    m   = M.advanceCurSlot cfg maxBound (M.empty testInitExtLedger)
+
 prop_getBlock_addBlock :: BlockTree -> Permutation -> Property
 prop_getBlock_addBlock bt p =
         M.getBlock (blockHash newBlock) (M.addBlock singleNodeTestConfig newBlock model)
@@ -41,7 +48,7 @@ prop_getBlock_addBlock bt p =
         else Nothing
   where
     (newBlock:initBlocks) = permute p $ treeToBlocks bt
-    model = M.addBlocks singleNodeTestConfig initBlocks (M.empty testInitExtLedger)
+    model = addBlocks initBlocks
     secParam = protocolSecurityParam singleNodeTestConfig
 
 prop_getChain_addChain :: BlockChain -> Property
@@ -49,7 +56,7 @@ prop_getChain_addChain bc =
     blockChain bc === M.currentChain model
   where
     blocks = chainToBlocks bc
-    model  = M.addBlocks singleNodeTestConfig blocks (M.empty testInitExtLedger)
+    model  = addBlocks blocks
 
 prop_alwaysPickPreferredChain :: BlockTree -> Permutation -> Property
 prop_alwaysPickPreferredChain bt p =
@@ -59,7 +66,7 @@ prop_alwaysPickPreferredChain bt p =
       ]
   where
     blocks  = permute p $ treeToBlocks bt
-    model   = M.addBlocks singleNodeTestConfig blocks (M.empty testInitExtLedger)
+    model   = addBlocks blocks
     current = M.currentChain model
 
     curFragment = Chain.toAnchoredFragment current
@@ -79,7 +86,7 @@ prop_between_currentChain bt =
     M.between secParam from to model
   where
     blocks   = treeToBlocks bt
-    model    = M.addBlocks singleNodeTestConfig blocks (M.empty testInitExtLedger)
+    model    = addBlocks blocks
     from     = StreamFromExclusive genesisPoint
     to       = StreamToInclusive $ M.tipPoint model
     secParam = protocolSecurityParam singleNodeTestConfig
