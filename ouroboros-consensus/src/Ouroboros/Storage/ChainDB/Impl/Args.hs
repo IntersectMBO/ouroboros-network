@@ -21,6 +21,7 @@ import           Control.Tracer (Tracer, contramap)
 import           Ouroboros.Network.Block (HeaderHash)
 
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.BlockchainTime (BlockchainTime)
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Protocol.Abstract
@@ -80,6 +81,7 @@ data ChainDbArgs m blk = forall h1 h2 h3. ChainDbArgs {
     , cdbHashInfo         :: HashInfo (HeaderHash blk)
     , cdbIsEBB            :: blk -> Maybe EpochNo
     , cdbGenesis          :: m (ExtLedgerState blk)
+    , cdbBlockchainTime   :: BlockchainTime m
 
       -- Misc
     , cdbTracer           :: Tracer m (TraceEvent blk)
@@ -91,9 +93,10 @@ data ChainDbArgs m blk = forall h1 h2 h3. ChainDbArgs {
 -- | Arguments specific to the ChainDB, not to the ImmutableDB, VolatileDB, or
 -- LedgerDB.
 data ChainDbSpecificArgs m blk = ChainDbSpecificArgs {
-      cdbsTracer   :: Tracer m (TraceEvent blk)
-    , cdbsRegistry :: ResourceRegistry m
-    , cdbsGcDelay  :: DiffTime
+      cdbsTracer         :: Tracer m (TraceEvent blk)
+    , cdbsRegistry       :: ResourceRegistry m
+    , cdbsGcDelay        :: DiffTime
+    , cdbsBlockchainTime :: BlockchainTime m
     }
 
 -- | Default arguments
@@ -104,10 +107,11 @@ data ChainDbSpecificArgs m blk = ChainDbSpecificArgs {
 -- * 'cdbsRegistry'
 defaultSpecificArgs :: ChainDbSpecificArgs m blk
 defaultSpecificArgs = ChainDbSpecificArgs{
-      cdbsGcDelay  = oneHour
+      cdbsGcDelay        = oneHour
       -- Fields without a default
-    , cdbsTracer   = error "no default for cdbsTracer"
-    , cdbsRegistry = error "no default for cdbsRegistry"
+    , cdbsTracer         = error "no default for cdbsTracer"
+    , cdbsRegistry       = error "no default for cdbsRegistry"
+    , cdbsBlockchainTime = error "no default for cdbsBlockchainTime"
     }
   where
     oneHour = secondsToDiffTime 60 * 60
@@ -173,6 +177,7 @@ fromChainDbArgs ChainDbArgs{..} = (
           cdbsTracer          = cdbTracer
         , cdbsRegistry        = cdbRegistry
         , cdbsGcDelay         = cdbGcDelay
+        , cdbsBlockchainTime  = cdbBlockchainTime
         }
     )
 
@@ -218,6 +223,7 @@ toChainDbArgs ImmDB.ImmDbArgs{..}
     , cdbHashInfo         = immHashInfo
     , cdbIsEBB            = immIsEBB
     , cdbGenesis          = lgrGenesis
+    , cdbBlockchainTime   = cdbsBlockchainTime
       -- Misc
     , cdbTracer           = cdbsTracer
     , cdbTraceLedger      = lgrTraceLedger

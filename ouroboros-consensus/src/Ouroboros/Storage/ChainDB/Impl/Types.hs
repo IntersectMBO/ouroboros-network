@@ -56,6 +56,7 @@ import           Ouroboros.Network.Block (BlockNo, HasHeader, HeaderHash, Point,
 import           Ouroboros.Network.Point (WithOrigin)
 
 import           Ouroboros.Consensus.Block (BlockProtocol, Header, IsEBB (..))
+import           Ouroboros.Consensus.BlockchainTime (BlockchainTime)
 import           Ouroboros.Consensus.Ledger.Abstract (ProtocolLedgerView)
 import           Ouroboros.Consensus.Ledger.Extended (ExtValidationError)
 import           Ouroboros.Consensus.Protocol.Abstract (NodeConfig)
@@ -207,6 +208,16 @@ data ChainDbEnv m blk = CDB
     -- ^ The background threads.
   , cdbEpochInfo      :: !(EpochInfo m)
   , cdbIsEBB          :: !(blk -> Bool)
+  , cdbBlockchainTime :: !(BlockchainTime m)
+  , cdbFutureBlocks   :: !(StrictTVar m (Map SlotNo (NonEmpty (Header blk))))
+    -- ^ Scheduled chain selections for blocks with a slot in the future.
+    --
+    -- When a block with slot @s@, which is > the current slot is added, we
+    -- add its header to the front of the list of headers stored under its
+    -- slot number. We prepend to the list, so the headers are in reverse
+    -- order w.r.t. the order in which they were added.
+    --
+    -- INVARIANT: all slots in the map are > the current slot.
   } deriving (Generic)
 
 -- | We include @blk@ in 'showTypeOf' because it helps resolving type families
@@ -221,7 +232,7 @@ instance (IOLike m, ProtocolLedgerView blk)
 -------------------------------------------------------------------------------}
 
 data Internal m blk = Internal
-  { intReopen                :: Bool -> m ()
+  { intReopen                  :: Bool -> m ()
     -- ^ Reopen a closed ChainDB.
     --
     -- A no-op if the ChainDB is still open.
@@ -231,17 +242,19 @@ data Internal m blk = Internal
     --
     -- The 'Bool' arguments indicates whether the background tasks should be
     -- relaunched after reopening the ChainDB.
-  , intCopyToImmDB           :: m (WithOrigin SlotNo)
+  , intCopyToImmDB             :: m (WithOrigin SlotNo)
     -- ^ Copy the blocks older than @k@ from to the VolatileDB to the
     -- ImmutableDB and update the in-memory chain fragment correspondingly.
     --
     -- The 'SlotNo' of the tip of the ImmutableDB after copying the blocks is
     -- returned. This can be used for a garbage collection on the VolatileDB.
-  , intGarbageCollect        :: SlotNo -> m ()
+  , intGarbageCollect          :: SlotNo -> m ()
     -- ^ Perform garbage collection for blocks <= the given 'SlotNo'.
-  , intUpdateLedgerSnapshots :: m ()
+  , intUpdateLedgerSnapshots   :: m ()
     -- ^ Write a new LedgerDB snapshot to disk and remove the oldest one(s).
-  , intBgThreads             :: StrictTVar m [Thread m ()]
+  , intScheduledChainSelection :: SlotNo -> m ()
+    -- ^ Run the scheduled chain selections for the given 'SlotNo'.
+  , intBgThreads               :: StrictTVar m [Thread m ()]
       -- ^ The background threads.
   }
 
@@ -346,7 +359,21 @@ data TraceOpenEvent blk
 
 -- | Trace type for the various events that occur when adding a block.
 data TraceAddBlockEvent blk
-  = AddedBlockToVolDB    !(Point blk) !BlockNo !IsEBB
+  = IgnoreBlockOlderThanK (Point blk)
+    -- ^ A block with a 'BlockNo' more than @k@ back than the current tip was
+    -- ignored.
+
+  | IgnoreBlockAlreadyInVolDB (Point blk)
+    -- ^ A block that is already in the Volatile DB was ignored.
+
+  | IgnoreInvalidBlock (Point blk) (InvalidBlockReason blk)
+    -- ^ A block that is know to be invalid was ignored.
+
+  | BlockInTheFuture (Point blk) SlotNo
+    -- ^ The block is from the future, i.e., its slot number is greater than
+    -- the current slot (the second argument).
+
+  | AddedBlockToVolDB    !(Point blk) !BlockNo !IsEBB
     -- ^ A block was added to the Volatile DB
 
   | TryAddToCurrentChain (Point blk)
@@ -377,6 +404,16 @@ data TraceAddBlockEvent blk
 
   | AddBlockValidation (TraceValidationEvent blk)
     -- ^ An event traced during validating performed while adding a block.
+
+  | ScheduledChainSelection (Point blk) SlotNo Word64
+    -- ^ A chain selection was scheduled in the future for the given block (at
+    -- its slot number). The current slot number and the total number of
+    -- scheduled chain selections is included.
+
+  | RunningScheduledChainSelection (NonEmpty (Point blk)) SlotNo Word64
+    -- ^ Scheduled chain selections are executed for the blocks corresponding
+    -- to the given points at the given current slot number. The total number
+    -- of scheduled chain selections is included.
   deriving (Generic)
 
 deriving instance

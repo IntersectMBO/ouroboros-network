@@ -1,5 +1,6 @@
 {-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE PatternSynonyms     #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
@@ -8,7 +9,8 @@
 --
 -- * Copying blocks from the VolatileDB to the ImmutableDB
 -- * Performing and scheduling garbage collections on the VolatileDB
--- * Writing snapshots of the LedgerDB to disk and deleting old ones.
+-- * Writing snapshots of the LedgerDB to disk and deleting old ones
+-- * Executing scheduled chain selections
 module Ouroboros.Storage.ChainDB.Impl.Background
   ( -- * Launch background tasks
     launchBgTasks
@@ -25,10 +27,14 @@ module Ouroboros.Storage.ChainDB.Impl.Background
     -- * Taking and trimming ledger snapshots
   , updateLedgerSnapshots
   , updateLedgerSnapshotsRunner
+    -- * Executing scheduled chain selections
+  , scheduledChainSelection
+  , scheduledChainSelectionRunner
   ) where
 
 import           Control.Exception (assert)
 import           Control.Monad (forM_, forever, void)
+import qualified Data.List.NonEmpty as NE
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (fromMaybe)
 import           GHC.Stack (HasCallStack)
@@ -43,11 +49,15 @@ import           Ouroboros.Network.Block (ChainHash (..), HasHeader, Point,
 import           Ouroboros.Network.Point (WithOrigin (..))
 
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.BlockchainTime (onSlotChange)
 import           Ouroboros.Consensus.Ledger.Abstract (ProtocolLedgerView)
 import           Ouroboros.Consensus.Protocol.Abstract
+import           Ouroboros.Consensus.Util (whenJust)
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
 
+import           Ouroboros.Storage.ChainDB.Impl.ChainSel
+                     (chainSelectionForBlock)
 import qualified Ouroboros.Storage.ChainDB.Impl.ImmDB as ImmDB
 import qualified Ouroboros.Storage.ChainDB.Impl.LgrDB as LgrDB
 import           Ouroboros.Storage.ChainDB.Impl.Types
@@ -69,8 +79,10 @@ launchBgTasks cdb@CDB{..} = do
       copyToImmDBRunner cdb gcSchedule
     !lgrSnapshotThread <- launch $
       updateLedgerSnapshotsRunner cdb
+    !chainSyncThread <- launch $
+      scheduledChainSelectionRunner cdb
     atomically $ writeTVar cdbBgThreads
-      [gcThread, copyThread, lgrSnapshotThread]
+      [gcThread, copyThread, lgrSnapshotThread, chainSyncThread]
   where
     launch :: m () -> m (Thread m ())
     launch = forkLinkedThread cdbRegistry
@@ -322,3 +334,52 @@ updateLedgerSnapshotsRunner cdb@CDB{..} = loop
     waitInterval = do
       interval <- atomically onDiskWriteInterval
       threadDelay interval
+
+{-------------------------------------------------------------------------------
+  Executing scheduled chain selections
+-------------------------------------------------------------------------------}
+
+-- | Retrieve the blocks from 'cdbFutureBlocks' for which chain selection was
+-- scheduled at the current slot. Run chain selection for each of them.
+scheduledChainSelection
+  :: (IOLike m, ProtocolLedgerView blk, HasCallStack)
+  => ChainDbEnv m blk
+  -> SlotNo  -- ^ The current slot
+  -> m ()
+scheduledChainSelection cdb@CDB{..} curSlot = do
+    (mbHdrs, remaining)
+      <- atomically $ updateTVar cdbFutureBlocks $ \futureBlocks ->
+        -- Extract and delete the value stored at @curSlot@
+        let (mbHdrs, remaining) = Map.updateLookupWithKey
+              (\_ _ -> Nothing) curSlot futureBlocks
+        in (remaining, (mbHdrs, remaining))
+    -- The list of headers is stored in reverse order so we can easily
+    -- prepend. We reverse them here now so we add them in chronological
+    -- order, even though this should not matter, as they are all blocks for
+    -- the same slot: at most one block per slot can be adopted.
+    --
+    -- The only exception is an EBB, which shares the slot with a regular
+    -- block. Either order of adding them would result in the same chain, but
+    -- adding the EBB before the regular block is cheaper, as we can simply
+    -- extend the current chain instead of adding a disconnected block first
+    -- and then switching to a very short fork.
+    whenJust (NE.reverse <$> mbHdrs) $ \hdrs -> do
+      let nbScheduled = fromIntegral $ sum $ length <$> Map.elems remaining
+      traceWith cdbTracer $
+        TraceAddBlockEvent $
+        RunningScheduledChainSelection (fmap headerPoint hdrs) curSlot nbScheduled
+      -- If an exception occurs during a call to 'chainSelectionForBlock',
+      -- then no chain selection will be performed for the blocks after it.
+      -- Only real errors that would shut down the ChainDB could be thrown. In
+      -- which case, the ChainDB has to be (re)started, triggering a full
+      -- chain selection, which would include these blocks. So there is no
+      -- risk of "forgetting" to add a block.
+      mapM_ (chainSelectionForBlock cdb) hdrs
+
+-- | Whenever the current slot changes, call 'scheduledChainSelection' for the
+-- (new) current slot.
+scheduledChainSelectionRunner
+  :: (IOLike m, ProtocolLedgerView blk, HasCallStack)
+  => ChainDbEnv m blk -> m ()
+scheduledChainSelectionRunner cdb@CDB{..} =
+    onSlotChange cdbBlockchainTime (scheduledChainSelection cdb)

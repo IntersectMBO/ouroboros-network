@@ -22,6 +22,7 @@ import           Control.Tracer
 import           Ouroboros.Network.MockChain.Chain (Chain)
 import qualified Ouroboros.Network.MockChain.Chain as Chain
 
+import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Protocol.Abstract
@@ -127,9 +128,12 @@ prop_addBlock_multiple_threads bpt =
     -- The current chain after all the given blocks were added to a fresh
     -- model.
     modelAddBlocks :: [TestBlock] -> Chain TestBlock
-    modelAddBlocks = Model.currentChain . foldr (Model.addBlock cfg) initModel
-      where
-        initModel = Model.empty initLedger
+    modelAddBlocks theBlks =
+        Model.currentChain $
+        Model.addBlocks cfg theBlks $
+        -- Make sure no blocks are "from the future"
+        Model.advanceCurSlot cfg maxBound $
+        Model.empty initLedger
 
     equallyPreferable :: Chain TestBlock -> Chain TestBlock -> Bool
     equallyPreferable chain1 chain2 =
@@ -263,6 +267,7 @@ mkArgs cfg initLedger tracer registry hashInfo
     , cdbEpochInfo        = fixedSizeEpochInfo fixedEpochSize
     , cdbHashInfo         = hashInfo
     , cdbIsEBB            = const Nothing
+    , cdbBlockchainTime   = fixedBlockchainTime maxBound
     , cdbGenesis          = return initLedger
 
     -- Misc

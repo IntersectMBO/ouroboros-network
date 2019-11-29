@@ -1,19 +1,20 @@
-{-# LANGUAGE ConstraintKinds      #-}
-{-# LANGUAGE DeriveAnyClass       #-}
-{-# LANGUAGE DeriveGeneric        #-}
-{-# LANGUAGE DeriveTraversable    #-}
-{-# LANGUAGE FlexibleContexts     #-}
-{-# LANGUAGE FlexibleInstances    #-}
-{-# LANGUAGE LambdaCase           #-}
-{-# LANGUAGE NamedFieldPuns       #-}
-{-# LANGUAGE RecordWildCards      #-}
-{-# LANGUAGE ScopedTypeVariables  #-}
-{-# LANGUAGE StandaloneDeriving   #-}
-{-# LANGUAGE TemplateHaskell      #-}
-{-# LANGUAGE TupleSections        #-}
-{-# LANGUAGE TypeApplications     #-}
-{-# LANGUAGE TypeFamilies         #-}
-{-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE ConstraintKinds       #-}
+{-# LANGUAGE DeriveAnyClass        #-}
+{-# LANGUAGE DeriveGeneric         #-}
+{-# LANGUAGE DeriveTraversable     #-}
+{-# LANGUAGE DuplicateRecordFields #-}
+{-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE FlexibleInstances     #-}
+{-# LANGUAGE LambdaCase            #-}
+{-# LANGUAGE NamedFieldPuns        #-}
+{-# LANGUAGE RecordWildCards       #-}
+{-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE StandaloneDeriving    #-}
+{-# LANGUAGE TemplateHaskell       #-}
+{-# LANGUAGE TupleSections         #-}
+{-# LANGUAGE TypeApplications      #-}
+{-# LANGUAGE TypeFamilies          #-}
+{-# LANGUAGE UndecidableInstances  #-}
 
 {-# OPTIONS_GHC -Wno-orphans -Wredundant-constraints #-}
 module Test.Ouroboros.Storage.ChainDB.StateMachine ( tests ) where
@@ -21,7 +22,7 @@ module Test.Ouroboros.Storage.ChainDB.StateMachine ( tests ) where
 import           Prelude hiding (elem)
 
 import           Codec.Serialise (decode, encode)
-import           Control.Monad (replicateM, unless)
+import           Control.Monad (forM_, replicateM, unless, when)
 import           Control.Monad.State (StateT, evalStateT, get, lift, modify,
                      put)
 import           Data.Bifoldable
@@ -65,7 +66,8 @@ import           Ouroboros.Network.MockChain.ProducerState (ChainProducerState,
 import qualified Ouroboros.Network.MockChain.ProducerState as CPS
 import qualified Ouroboros.Network.Point as Point
 
-import           Ouroboros.Consensus.Block (IsEBB (..), getHeader)
+import           Ouroboros.Consensus.Block (IsEBB (..), fromIsEBB, getHeader)
+import           Ouroboros.Consensus.BlockchainTime (BlockchainTime (..))
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.NodeId (NodeId (..))
@@ -108,6 +110,7 @@ import           Test.Util.Tracer (recordingTracerIORef)
 -- | Commands
 data Cmd blk it rdr
   = AddBlock          blk
+  | AddFutureBlock    blk SlotNo -- ^ The current slot number
   | GetCurrentChain
   | GetCurrentLedger
   | GetTipBlock
@@ -120,6 +123,8 @@ data Cmd blk it rdr
   | GetMaxSlotNo
   | StreamBlocks      (StreamFrom blk) (StreamTo blk)
   | IteratorNext      it
+  | IteratorNextGCed  it
+    -- ^ Only for blocks that may have been garbage collected.
   | IteratorClose     it
   | NewBlockReader
     -- ^ Subsumes 'newHeaderReader' as it will include the same code path.
@@ -135,6 +140,8 @@ data Cmd blk it rdr
   | RunBgTasks
   deriving (Generic, Show, Functor, Foldable, Traversable)
 
+-- = Invalid blocks
+--
 -- We don't test 'getIsInvalidBlock' because the simple chain selection in the
 -- model and the incremental chain selection in the real implementation differ
 -- non-trivially.
@@ -161,26 +168,46 @@ data Cmd blk it rdr
 -- something we are testing in 'prop_trace', see
 -- 'invalidBlockNeverValidatedAgain'.
 
+-- = Blocks from the future
+--
+-- In the real implementation, blocks from the future are added to the
+-- VolatileDB directly, but the chain selection triggered by that block is
+-- scheduled for the slot of the block.
+--
+-- This means the implementation relies on the 'BlockchainTime'. In the tests,
+-- we advance the slot number only when a new block is added, as that is the
+-- only mutation of the ChainDB. Whenever a new block is added, the current
+-- slot number is advanced to the slot of that block (unless that slot is in
+-- the past). Blocks from the future include an extra slot number, which is
+-- treated as the current slot number while adding the block. This slot number
+-- must be >= the actual current slot number.
+--
+-- Whenever we advance the current slot number, we trigger the corresponding
+-- scheduled chain selections in the real implementation. For the model, we
+-- call 'Model.advanceCurSlot' which adds the blocks to the model stored in
+-- 'Model.futureBlocks' which are no longer in the future.
+
 deriving instance SOP.Generic         (Cmd blk it rdr)
 deriving instance SOP.HasDatatypeInfo (Cmd blk it rdr)
 
 -- | Return type for successful database operations.
 data Success blk it rdr
-  = Unit          ()
-  | Chain         (AnchoredFragment (Header blk))
-  | Ledger        (ExtLedgerState blk)
-  | MbBlock       (Maybe blk)
-  | MbGCedBlock   (MaybeGCedBlock blk)
-  | MbHeader      (Maybe (Header blk))
-  | Point         (Point blk)
-  | BlockNo       BlockNo
-  | UnknownRange  (UnknownRange blk)
-  | Iter          it
-  | IterResult    (IteratorResult blk)
-  | BlockReader   rdr
-  | MbChainUpdate (Maybe (ChainUpdate blk blk))
-  | MbPoint       (Maybe (Point blk))
-  | MaxSlot       MaxSlotNo
+  = Unit           ()
+  | Chain          (AnchoredFragment (Header blk))
+  | Ledger         (ExtLedgerState blk)
+  | MbBlock        (Maybe blk)
+  | MbGCedBlock    (MaybeGCedBlock blk)
+  | MbHeader       (Maybe (Header blk))
+  | Point          (Point blk)
+  | BlockNo        BlockNo
+  | UnknownRange   (UnknownRange blk)
+  | Iter           it
+  | IterResult     (IteratorResult blk)
+  | IterResultGCed (IteratorResultGCed blk)
+  | BlockReader    rdr
+  | MbChainUpdate  (Maybe (ChainUpdate blk blk))
+  | MbPoint        (Maybe (Point blk))
+  | MaxSlot        MaxSlotNo
   deriving (Functor, Foldable, Traversable)
 
 type TestConstraints blk =
@@ -202,44 +229,60 @@ deriving instance (TestConstraints blk, Eq   it, Eq   rdr)
 deriving instance (TestConstraints blk, Show it, Show rdr)
                => Show (Success blk it rdr)
 
-run :: forall m blk. (IOLike m)
+run :: forall m blk. (IOLike m, HasHeader blk)
     => ChainDB          m blk
     -> ChainDB.Internal m blk
     -> ResourceRegistry m
+    -> StrictTVar m SlotNo
     ->    Cmd     blk (Iterator m blk) (Reader m blk blk)
     -> m (Success blk (Iterator m blk) (Reader m blk blk))
-run ChainDB{..} ChainDB.Internal{..} registry = \case
-    AddBlock blk          -> Unit          <$> addBlock blk
-    GetCurrentChain       -> Chain         <$> atomically getCurrentChain
-    GetCurrentLedger      -> Ledger        <$> atomically getCurrentLedger
-    GetTipBlock           -> MbBlock       <$> getTipBlock
-    GetTipHeader          -> MbHeader      <$> getTipHeader
-    GetTipPoint           -> Point         <$> atomically getTipPoint
-    GetTipBlockNo         -> BlockNo       <$> atomically getTipBlockNo
-    GetBlock pt           -> MbBlock       <$> getBlock pt
-    GetGCedBlock pt       -> mbGCedBlock   <$> getBlock pt
-    GetMaxSlotNo          -> MaxSlot       <$> atomically getMaxSlotNo
-    StreamBlocks from to  -> iter          <$> streamBlocks registry from to
-    IteratorNext  it      -> IterResult    <$> iteratorNext it
-    IteratorClose it      -> Unit          <$> iteratorClose it
-    NewBlockReader        -> BlockReader   <$> newBlockReader registry
-    ReaderInstruction rdr -> MbChainUpdate <$> readerInstruction rdr
-    ReaderForward rdr pts -> MbPoint       <$> readerForward rdr pts
-    ReaderClose rdr       -> Unit          <$> readerClose rdr
-    Close                 -> Unit          <$> closeDB
-    Reopen                -> Unit          <$> intReopen False
-    RunBgTasks            -> ignore        <$> runBgTasks
+run ChainDB{..} internal@ChainDB.Internal{..} registry varCurSlot = \case
+    AddBlock blk          -> Unit           <$> (advanceAndAdd (blockSlot blk) blk)
+    AddFutureBlock blk s  -> Unit           <$> (advanceAndAdd s               blk)
+    GetCurrentChain       -> Chain          <$> atomically getCurrentChain
+    GetCurrentLedger      -> Ledger         <$> atomically getCurrentLedger
+    GetTipBlock           -> MbBlock        <$> getTipBlock
+    GetTipHeader          -> MbHeader       <$> getTipHeader
+    GetTipPoint           -> Point          <$> atomically getTipPoint
+    GetTipBlockNo         -> BlockNo        <$> atomically getTipBlockNo
+    GetBlock pt           -> MbBlock        <$> getBlock pt
+    GetGCedBlock pt       -> mbGCedBlock    <$> getBlock pt
+    GetMaxSlotNo          -> MaxSlot        <$> atomically getMaxSlotNo
+    StreamBlocks from to  -> iter           <$> streamBlocks registry from to
+    IteratorNext  it      -> IterResult     <$> iteratorNext it
+    IteratorNextGCed  it  -> iterResultGCed <$> iteratorNext it
+    IteratorClose it      -> Unit           <$> iteratorClose it
+    NewBlockReader        -> BlockReader    <$> newBlockReader registry
+    ReaderInstruction rdr -> MbChainUpdate  <$> readerInstruction rdr
+    ReaderForward rdr pts -> MbPoint        <$> readerForward rdr pts
+    ReaderClose rdr       -> Unit           <$> readerClose rdr
+    Close                 -> Unit           <$> closeDB
+    Reopen                -> Unit           <$> intReopen False
+    RunBgTasks            -> ignore         <$> runBgTasks internal
   where
     mbGCedBlock = MbGCedBlock . MaybeGCedBlock True
+    iterResultGCed = IterResultGCed . IteratorResultGCed True
     iter = either UnknownRange Iter
     ignore _ = Unit ()
 
-    runBgTasks = do
-      mSlotNo <- intCopyToImmDB
-      case mSlotNo of
-        Point.Origin    -> pure ()
-        Point.At slotNo -> intGarbageCollect slotNo
-      intUpdateLedgerSnapshots
+    advanceAndAdd newCurSlot blk = do
+      open <- atomically isOpen
+      when open $ do
+        prevCurSlot <- atomically $ readTVar varCurSlot
+        -- Tick each slot and execute the scheduled chain selections for that
+        -- slot
+        forM_ [prevCurSlot + 1..newCurSlot] $ \slot -> do
+          atomically $ writeTVar varCurSlot slot
+          intScheduledChainSelection slot
+      addBlock blk
+
+runBgTasks :: IOLike m => ChainDB.Internal m blk -> m ()
+runBgTasks ChainDB.Internal{..} = do
+    mSlotNo <- intCopyToImmDB
+    case mSlotNo of
+      Point.Origin    -> pure ()
+      Point.At slotNo -> intGarbageCollect slotNo
+    intUpdateLedgerSnapshots
 
 -- | Result type for 'getBlock'. Note that the real implementation of
 -- 'getBlock' is non-deterministic: if the requested block is older than @k@
@@ -290,6 +333,32 @@ instance Eq blk => Eq (MaybeGCedBlock blk) where
         (Just b1, Just b2) -> b1 == b2
         _                  -> True
 
+-- | Similar to 'MaybeGCedBlock', but for the block returned by
+-- 'iteratorNext'. A garbage-collected block could result in
+-- 'IteratorBlockGCed' instead of 'IteratorResult'.
+data IteratorResultGCed blk = IteratorResultGCed
+  { real       :: Bool
+    -- ^ 'True':  result of calling 'getBlock' on the real implementation
+    -- ^ 'False': result of calling 'getBlock' on the model implementation
+  , iterResult :: IteratorResult blk
+  }
+
+deriving instance (Show blk, Show (HeaderHash blk))
+               => Show (IteratorResultGCed blk)
+
+instance (Eq blk, Eq (HeaderHash blk)) => Eq (IteratorResultGCed blk) where
+  IteratorResultGCed real1 iterResult1 == IteratorResultGCed real2 iterResult2 =
+      case (real1, real2) of
+        (False, False) -> iterResult1 == iterResult2
+        (True,  _)     -> eqIfNotGCed
+        (_,     True)  -> eqIfNotGCed
+    where
+      eqIfNotGCed = case (iterResult1, iterResult2) of
+        (IteratorBlockGCed {}, _)                    -> True
+        (_,                    IteratorBlockGCed {}) -> True
+        (IteratorResult b1,    IteratorResult b2)    -> b1 == b2
+        (IteratorExhausted,    IteratorExhausted)    -> True
+        _                                            -> False
 
 {-------------------------------------------------------------------------------
   Instantiating the semantics
@@ -317,32 +386,38 @@ runPure :: forall blk.
         -> DBModel                   blk
         -> (Resp                     blk   IteratorId ReaderId, DBModel blk)
 runPure cfg = \case
-    AddBlock blk          -> ok  Unit          $ update_ (Model.addBlock cfg blk)
-    GetCurrentChain       -> ok  Chain         $ query   (Model.lastK k getHeader)
-    GetCurrentLedger      -> ok  Ledger        $ query    Model.currentLedger
-    GetTipBlock           -> ok  MbBlock       $ query    Model.tipBlock
-    GetTipHeader          -> ok  MbHeader      $ query   (fmap getHeader . Model.tipBlock)
-    GetTipPoint           -> ok  Point         $ query    Model.tipPoint
-    GetTipBlockNo         -> ok  BlockNo       $ query    Model.tipBlockNo
-    GetBlock pt           -> err MbBlock       $ query   (Model.getBlockByPoint pt)
-    GetGCedBlock pt       -> err mbGCedBlock   $ query   (Model.getBlockByPoint pt)
-    GetMaxSlotNo          -> ok  MaxSlot       $ query    Model.maxSlotNo
-    StreamBlocks from to  -> err iter          $ updateE (Model.streamBlocks k from to)
-    IteratorNext  it      -> ok  IterResult    $ update  (Model.iteratorNext  it)
-    IteratorClose it      -> ok  Unit          $ update_ (Model.iteratorClose it)
-    NewBlockReader        -> ok  BlockReader   $ update   Model.readBlocks
-    ReaderInstruction rdr -> err MbChainUpdate $ updateE (Model.readerInstruction rdr)
-    ReaderForward rdr pts -> err MbPoint       $ updateE (Model.readerForward rdr pts)
-    ReaderClose rdr       -> ok  Unit          $ update_ (Model.readerClose rdr)
+    AddBlock blk          -> ok  Unit           $ update_ (advanceAndAdd (blockSlot blk) blk)
+    AddFutureBlock blk s  -> ok  Unit           $ update_ (advanceAndAdd s               blk)
+    GetCurrentChain       -> ok  Chain          $ query   (Model.lastK k getHeader)
+    GetCurrentLedger      -> ok  Ledger         $ query    Model.currentLedger
+    GetTipBlock           -> ok  MbBlock        $ query    Model.tipBlock
+    GetTipHeader          -> ok  MbHeader       $ query   (fmap getHeader . Model.tipBlock)
+    GetTipPoint           -> ok  Point          $ query    Model.tipPoint
+    GetTipBlockNo         -> ok  BlockNo        $ query    Model.tipBlockNo
+    GetBlock pt           -> err MbBlock        $ query   (Model.getBlockByPoint pt)
+    GetGCedBlock pt       -> err mbGCedBlock    $ query   (Model.getBlockByPoint pt)
+    GetMaxSlotNo          -> ok  MaxSlot        $ query    Model.maxSlotNo
+    StreamBlocks from to  -> err iter           $ updateE (Model.streamBlocks k from to)
+    IteratorNext  it      -> ok  IterResult     $ update  (Model.iteratorNext  it)
+    IteratorNextGCed it   -> ok  iterResultGCed $ update  (Model.iteratorNext  it)
+    IteratorClose it      -> ok  Unit           $ update_ (Model.iteratorClose it)
+    NewBlockReader        -> ok  BlockReader    $ update   Model.readBlocks
+    ReaderInstruction rdr -> err MbChainUpdate  $ updateE (Model.readerInstruction rdr)
+    ReaderForward rdr pts -> err MbPoint        $ updateE (Model.readerForward rdr pts)
+    ReaderClose rdr       -> ok  Unit           $ update_ (Model.readerClose rdr)
     -- TODO can this execute while closed?
-    RunBgTasks            -> ok  Unit          $ update_ (Model.garbageCollect k)
-    Close                 -> openOrClosed      $ update_  Model.closeDB
-    Reopen                -> openOrClosed      $ update_  Model.reopen
+    RunBgTasks            -> ok  Unit           $ update_ (Model.garbageCollect k)
+    Close                 -> openOrClosed       $ update_  Model.closeDB
+    Reopen                -> openOrClosed       $ update_  Model.reopen
   where
     k = protocolSecurityParam cfg
 
+    advanceAndAdd slot blk =
+      Model.addBlock cfg blk . Model.advanceCurSlot cfg slot
+
     iter = either UnknownRange Iter
     mbGCedBlock = MbGCedBlock . MaybeGCedBlock False
+    iterResultGCed = IterResultGCed . IteratorResultGCed False
 
     query   f m = (f m, m)
 
@@ -364,12 +439,15 @@ runPure cfg = \case
     -- Executed whether the ChainDB is open or closed.
     openOrClosed f = first (Resp . Right . Unit) . f
 
-runIO :: ChainDB          IO blk
+runIO :: HasHeader blk
+      => ChainDB          IO blk
       -> ChainDB.Internal IO blk
       -> ResourceRegistry IO
+      -> StrictTVar       IO SlotNo
       ->     Cmd  blk (Iterator IO blk) (Reader IO blk blk)
       -> IO (Resp blk (Iterator IO blk) (Reader IO blk blk))
-runIO db internal registry cmd = Resp <$> try (run db internal registry cmd)
+runIO db internal registry varCurSlot cmd =
+    Resp <$> try (run db internal registry varCurSlot cmd)
 
 {-------------------------------------------------------------------------------
   Collect arguments
@@ -448,10 +526,9 @@ step model@Model { dbModel, modelConfig } cmd =
 newtype At t blk m r = At { unAt :: t blk (IterRef blk m r) (ReaderRef blk m r) }
   deriving (Generic)
 
--- | Don't print the 'At' constructor.
-instance Show (t blk (IterRef blk m r) (ReaderRef blk m r))
-      => Show (At t blk m r) where
-  show = show . unAt
+
+deriving instance Show (t blk (IterRef blk m r) (ReaderRef blk m r))
+               => Show (At t blk m r)
 
 deriving instance (TestConstraints blk, Eq1 r) => Eq (At Resp blk m r)
 
@@ -533,7 +610,7 @@ generator :: forall       blk m.
           -> Model        blk m Symbolic
           -> Gen (At Cmd  blk m Symbolic)
 generator genBlock m@Model {..} = At <$> frequency
-    [ (30, AddBlock <$> genBlock m)
+    [ (30, genAddBlock)
     , (if empty then 1 else 10, return GetCurrentChain)
     , (if empty then 1 else 10, return GetCurrentLedger)
     , (if empty then 1 else 10, return GetTipBlock)
@@ -601,6 +678,18 @@ generator genBlock m@Model {..} = At <$> frequency
         then GetGCedBlock pt
         else GetBlock     pt
 
+    genAddBlock = do
+      let curSlot = Model.currentSlot dbModel
+      blk <- genBlock m
+      if blockSlot blk > Model.currentSlot dbModel
+        -- When the slot of the block is in the future, we can either advance
+        -- the current time ('AddBlock') or choose to add a block from the
+        -- future ('AddFutureBlock')
+        then frequency
+          [ (1, return $ AddBlock blk)
+          , (1, AddFutureBlock blk <$> chooseSlot curSlot (blockSlot blk - 1))
+          ]
+        else return $ AddBlock blk
 
     genBounds :: Gen (StreamFrom blk, StreamTo blk)
     genBounds = frequency
@@ -630,8 +719,14 @@ generator genBlock m@Model {..} = At <$> frequency
       (,) <$> (genFromInEx <*> return start)
           <*> (genToInEx   <*> return end)
 
-    genIteratorNext  = IteratorNext  <$> elements iterators
     genIteratorClose = IteratorClose <$> elements iterators
+    genIteratorNext  = do
+      it <- elements iterators
+      let blockCanBeGCed = Model.garbageCollectableIteratorNext
+            secParam dbModel (knownIters RE.! it)
+      return $ if blockCanBeGCed
+        then IteratorNextGCed it
+        else IteratorNext     it
 
     genReaderInstruction = ReaderInstruction <$> elements readers
     genReaderForward     = ReaderForward     <$> elements readers
@@ -645,6 +740,9 @@ generator genBlock m@Model {..} = At <$> frequency
     genReaderForwardPoint = genPoint
 
     genReaderClose = ReaderClose <$> elements readers
+
+chooseSlot :: SlotNo -> SlotNo -> Gen SlotNo
+chooseSlot (SlotNo start) (SlotNo end) = SlotNo <$> choose (start, end)
 
 {-------------------------------------------------------------------------------
   Shrinking
@@ -682,6 +780,8 @@ precondition Model {..} (At cmd) =
      -- it.
      GetBlock     pt      -> Not $ garbageCollectable pt
      GetGCedBlock pt      -> garbageCollectable pt
+     IteratorNext     it  -> Not $ garbageCollectableIteratorNext it
+     IteratorNextGCed it  -> garbageCollectableIteratorNext it
 
      -- TODO The real implementation allows streaming blocks from the
      -- VolatileDB that have no path to the current chain. The model
@@ -695,11 +795,18 @@ precondition Model {..} (At cmd) =
      -- than the current one when reopening, which would bring us out of sync
      -- with the model.
      Close                -> Not equallyPreferableFork
+     -- To be in the future, @blockSlot blk@ must be greater than @slot@.
+     AddFutureBlock blk s -> s .>= Model.currentSlot dbModel .&&
+                             blockSlot blk .> s
      _                    -> Top
   where
     garbageCollectable :: Point blk -> Logic
     garbageCollectable =
       Boolean . Model.garbageCollectablePoint secParam dbModel
+
+    garbageCollectableIteratorNext :: IterRef blk m Symbolic -> Logic
+    garbageCollectableIteratorNext it = Boolean $
+      Model.garbageCollectableIteratorNext secParam dbModel (knownIters RE.! it)
 
     curChain :: Chain blk
     curChain = Model.currentChain dbModel
@@ -722,8 +829,11 @@ precondition Model {..} (At cmd) =
     isValidIterator :: StreamFrom blk -> StreamTo blk -> Logic
     isValidIterator from to =
       case Model.between secParam from to dbModel of
-        Left  _ -> Bot
-        Right _ -> Top
+        Left  _    -> Bot
+        -- All blocks must be valid
+        Right blks -> forall blks $ \blk -> Boolean $
+          Map.notMember (blockHash blk) $
+          forgetFingerprint (Model.invalid dbModel)
 
 equallyPreferable :: ( OuroborosTag (BlockProtocol blk)
                      , HasHeader blk
@@ -757,17 +867,19 @@ semantics :: forall blk. TestConstraints blk
           => ChainDB IO blk
           -> ChainDB.Internal IO blk
           -> ResourceRegistry IO
+          -> StrictTVar       IO SlotNo
           -> At Cmd blk IO Concrete
           -> IO (At Resp blk IO Concrete)
-semantics db internal registry (At cmd) =
+semantics db internal registry varCurSlot (At cmd) =
     At . (bimap (QSM.reference . QSM.Opaque) (QSM.reference . QSM.Opaque)) <$>
-    runIO db internal registry (bimap QSM.opaque QSM.opaque cmd)
+    runIO db internal registry varCurSlot (bimap QSM.opaque QSM.opaque cmd)
 
 -- | The state machine proper
 sm :: TestConstraints blk
    => ChainDB          IO       blk
    -> ChainDB.Internal IO       blk
    -> ResourceRegistry IO
+   -> StrictTVar       IO SlotNo
    -> BlockGen                  blk IO
    -> NodeConfig (BlockProtocol blk)
    -> ExtLedgerState            blk
@@ -775,14 +887,14 @@ sm :: TestConstraints blk
                    (At Cmd      blk IO)
                                     IO
                    (At Resp     blk IO)
-sm db internal registry genBlock env initLedger = StateMachine
+sm db internal registry varCurSlot genBlock env initLedger = StateMachine
   { initModel     = initModel env initLedger
   , transition    = transition
   , precondition  = precondition
   , postcondition = postcondition
   , generator     = Just . generator genBlock
   , shrinker      = shrinker
-  , semantics     = semantics db internal registry
+  , semantics     = semantics db internal registry varCurSlot
   , mock          = mock
   , invariant     = Nothing
   , distribution  = Nothing
@@ -831,6 +943,7 @@ deriving instance ToExpr BlockNo
 deriving instance ToExpr SlotNo
 deriving instance ToExpr ReaderNext
 deriving instance ToExpr IteratorId
+deriving instance ToExpr MaxSlotNo
 deriving instance ToExpr blk  => ToExpr (Point.WithOrigin blk)
 deriving instance ToExpr hash => ToExpr (Point.Block SlotNo hash)
 deriving instance ToExpr (HeaderHash blk) => ToExpr (ChainHash blk)
@@ -989,7 +1102,10 @@ genBlk Model{..} = frequency
                 slotNo <- chooseSlot (blockSlot b + 1) (blockSlot b + 3)
                 body   <- genBody
                 return $ mkNextBlock b slotNo body)
-        , (1, do
+        -- An EBB is never followed directly by another EBB, otherwise they
+        -- would have the same 'BlockNo', as the EBB has the same 'BlockNo' of
+        -- the block before it.
+        , (if fromIsEBB (testBlockIsEBB b) then 0 else 1, do
                 let SlotNo prevSlotNo   = blockSlot b
                     EpochSize epochSize = fixedEpochSize
                     nextEBBSlotNo = SlotNo $
@@ -997,16 +1113,12 @@ genBlk Model{..} = frequency
                 slotNo <- frequency
                   [ (7, return $ nextEBBSlotNo)
                     -- Skip an epoch
-                  , (2, return $ nextEBBSlotNo + SlotNo (1 * epochSize))
+                  , (1, return $ nextEBBSlotNo + SlotNo (1 * epochSize))
                     -- Skip two epochs
-                  , (1, return $ nextEBBSlotNo + SlotNo (2 * epochSize))
                   ]
                 body   <- genBody
                 return $ mkNextEBB b slotNo body)
         ]
-
-    chooseSlot :: SlotNo -> SlotNo -> Gen SlotNo
-    chooseSlot (SlotNo start) (SlotNo end) = SlotNo <$> choose (start, end)
 
 {-------------------------------------------------------------------------------
   Top-level tests
@@ -1033,8 +1145,22 @@ internalUnused = error "ChainDB.Internal used during command generation"
 registryUnunused :: ResourceRegistry m
 registryUnunused = error "ResourceRegistry used during command generation"
 
+varCurSlotUnused :: StrictTVar m SlotNo
+varCurSlotUnused = error "StrictTVar m SlotNo used during command generation"
+
 smUnused :: StateMachine (Model Blk IO) (At Cmd Blk IO) IO (At Resp Blk IO)
-smUnused = sm dbUnused internalUnused registryUnunused genBlk testCfg testInitExtLedger
+smUnused =
+    sm dbUnused internalUnused registryUnunused varCurSlotUnused genBlk
+      testCfg testInitExtLedger
+
+-- | The current slot can be changed by modifying the given 'StrictTVar'.
+-- 'onSlotChange_' is not implemented as it is currently not used by the
+-- ChainDB.
+settableBlockchainTime :: IOLike m => StrictTVar m SlotNo -> BlockchainTime m
+settableBlockchainTime varCurSlot = BlockchainTime {
+      getCurrentSlot = readTVar varCurSlot
+    , onSlotChange_  = error "unimplemented onSlotChange_"
+    }
 
 prop_sequential :: Property
 prop_sequential = forAllCommands smUnused Nothing $ \cmds -> QC.monadicIO $ do
@@ -1051,18 +1177,24 @@ prop_sequential = forAllCommands smUnused Nothing $ \cmds -> QC.monadicIO $ do
       threadRegistry     <- QC.run unsafeNewRegistry
       iteratorRegistry   <- QC.run unsafeNewRegistry
       (tracer, getTrace) <- QC.run recordingTracerIORef
+      varCurSlot         <- QC.run $ uncheckedNewTVarM 0
       fsVars             <- QC.run $ (,,)
         <$> uncheckedNewTVarM Mock.empty
         <*> uncheckedNewTVarM Mock.empty
         <*> uncheckedNewTVarM Mock.empty
-      let args = mkArgs testCfg testInitExtLedger tracer threadRegistry fsVars
+      let args = mkArgs testCfg testInitExtLedger tracer threadRegistry varCurSlot fsVars
       (db, internal)     <- QC.run $ openDBInternal args False
-      let sm' = sm db internal iteratorRegistry genBlk testCfg testInitExtLedger
+      let sm' = sm db internal iteratorRegistry varCurSlot genBlk testCfg testInitExtLedger
       (hist, model, res) <- runCommands sm' cmds
       (realChain, realChain', trace, fses, remainingCleanups) <- QC.run $ do
         trace <- getTrace
         open <- atomically $ isOpen db
         unless open $ intReopen internal False
+        -- Copy blocks from our chain to the ImmutableDB, otherwise we might
+        -- pick a longer chain that forked off more than @k@ blocks back when
+        -- restarting
+        runBgTasks internal
+
         realChain <- toChain db
         closeDB db
         -- We already generate a command to test 'reopenDB', but since that
@@ -1103,12 +1235,17 @@ prop_sequential = forAllCommands smUnused Nothing $ \cmds -> QC.monadicIO $ do
             counterexample ("TraceEvents: " <> unlines (map show trace)) $
             tabulate "Chain length" [show (Chain.length realChain)]      $
             tabulate "TraceEvents" (map traceEventName trace)            $
-            res === Ok               .&&.
-            realChain =:= modelChain .&&.
-            prop_trace trace         .&&.
+            res === Ok .&&.
+            counterexample
+              ("Real chain and model chain differ")
+              (realChain =:= modelChain) .&&.
+            prop_trace trace .&&.
             -- Another equally preferable fork may be selected when opening
             -- the DB.
-            equallyPreferable (cdbNodeConfig args) realChain realChain' .&&.
+            counterexample
+             ("Real chain after reopening: " <> show realChain' <> "\n" <>
+              "Chain after reopening not equally preferable to previous chain")
+             (equallyPreferable (cdbNodeConfig args) realChain realChain') .&&.
             counterexample "ImmutableDB is leaking file handles"
                            (Mock.numOpenHandles immDbFs === 0) .&&.
             counterexample "VolatileDB is leaking file handles"
@@ -1176,10 +1313,11 @@ mkArgs :: IOLike m
        -> ExtLedgerState Blk
        -> Tracer m (TraceEvent Blk)
        -> ResourceRegistry m
+       -> StrictTVar m SlotNo
        -> (StrictTVar m MockFS, StrictTVar m MockFS, StrictTVar m MockFS)
           -- ^ ImmutableDB, VolatileDB, LedgerDB
        -> ChainDbArgs m Blk
-mkArgs cfg initLedger tracer registry
+mkArgs cfg initLedger tracer registry varCurSlot
        (immDbFsVar, volDbFsVar, lgrDbFsVar) = ChainDbArgs
     { -- Decoders
       cdbDecodeHash       = decode
@@ -1215,6 +1353,7 @@ mkArgs cfg initLedger tracer registry
     , cdbHashInfo         = testHashInfo
     , cdbIsEBB            = testBlockEpochNoIfEBB fixedEpochSize
     , cdbGenesis          = return initLedger
+    , cdbBlockchainTime   = settableBlockchainTime varCurSlot
 
     -- Misc
     , cdbTracer           = tracer
@@ -1235,6 +1374,7 @@ tests = testGroup "ChainDB q-s-m"
 -- | Debugging utility: run some commands against the real implementation.
 _runCmds :: [Cmd Blk IteratorId ReaderId] -> IO [Resp Blk IteratorId ReaderId]
 _runCmds cmds = withRegistry $ \registry -> do
+    varCurSlot <- uncheckedNewTVarM 0
     fsVars <- (,,)
       <$> uncheckedNewTVarM Mock.empty
       <*> uncheckedNewTVarM Mock.empty
@@ -1244,21 +1384,23 @@ _runCmds cmds = withRegistry $ \registry -> do
           testInitExtLedger
           (showTracing stdoutTracer)
           registry
+          varCurSlot
           fsVars
     (db, internal) <- openDBInternal args False
-    evalStateT (mapM (go db internal registry) cmds) emptyRunCmdState
+    evalStateT (mapM (go db internal registry varCurSlot) cmds) emptyRunCmdState
   where
     go :: ChainDB IO Blk -> ChainDB.Internal IO Blk
        -> ResourceRegistry IO
+       -> StrictTVar IO SlotNo
        -> Cmd Blk IteratorId ReaderId
        -> StateT RunCmdState
                  IO
                  (Resp Blk IteratorId ReaderId)
-    go db internal resourceRegistry cmd = do
+    go db internal resourceRegistry varCurSlot cmd = do
       RunCmdState { _knownIters, _knownReaders} <- get
       let cmd' = At $
             bimap (revLookup _knownIters) (revLookup _knownReaders) cmd
-      resp <- lift $ unAt <$> semantics db internal resourceRegistry cmd'
+      resp <- lift $ unAt <$> semantics db internal resourceRegistry varCurSlot cmd'
       newIters <- RE.fromList <$>
        mapM (\rdr -> (rdr, ) <$> newIteratorId) (iters resp)
       newReaders <- RE.fromList <$>

@@ -261,7 +261,7 @@ mkNextEBB prev slotNo testBody = mkBlock
     testBody
     (BlockHash (blockHash prev))
     slotNo
-    (succ (blockNo prev))
+    (blockNo prev)
     IsEBB
 
 

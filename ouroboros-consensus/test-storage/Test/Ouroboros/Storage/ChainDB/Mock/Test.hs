@@ -14,6 +14,7 @@ import           Control.Monad.IOSim
 import           Ouroboros.Network.MockChain.Chain (Chain (..), ChainUpdate)
 import qualified Ouroboros.Network.MockChain.Chain as Chain
 
+import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
 
@@ -86,4 +87,8 @@ instance Exception InvalidUpdate
 -------------------------------------------------------------------------------}
 
 openDB :: forall s. SimM s (ChainDB (SimM s) TestBlock)
-openDB = Mock.openDB singleNodeTestConfig testInitExtLedger
+openDB = Mock.openDB
+    singleNodeTestConfig
+    testInitExtLedger
+    -- We don't care about time or future here
+    (fixedBlockchainTime maxBound)

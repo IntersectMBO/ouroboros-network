@@ -14,6 +14,7 @@
 module Ouroboros.Storage.ChainDB.Impl.ChainSel
   ( initialChainSelection
   , addBlock
+  , chainSelectionForBlock
     -- * Type for in-sync chain and ledger
   , ChainAndLedger -- Opaque
   , clChain
@@ -23,7 +24,6 @@ module Ouroboros.Storage.ChainDB.Impl.ChainSel
   ) where
 
 import           Control.Exception (assert)
-import           Control.Monad (unless)
 import           Control.Monad.Except
 import           Control.Monad.Trans.State.Strict
 import           Data.Foldable (foldl')
@@ -46,11 +46,12 @@ import           Ouroboros.Network.AnchoredFragment (AnchoredFragment (..))
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block (BlockNo, pattern BlockPoint,
                      pattern GenesisPoint, HasHeader (..), HeaderHash, Point,
-                     blockPoint, castPoint, pointHash)
+                     SlotNo, blockPoint, castHash, castPoint, pointHash)
 import           Ouroboros.Network.Point (WithOrigin)
 
 import           Ouroboros.Consensus.Block (BlockProtocol, GetHeader (..),
-                     toIsEBB)
+                     headerHash, headerPoint, toIsEBB)
+import           Ouroboros.Consensus.BlockchainTime (BlockchainTime (..))
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Protocol.Abstract
@@ -82,8 +83,9 @@ initialChainSelection
   -> Tracer m (TraceEvent blk)
   -> NodeConfig (BlockProtocol blk)
   -> StrictTVar m (WithFingerprint (InvalidBlocks blk))
+  -> SlotNo -- ^ Current slot
   -> m (ChainAndLedger blk)
-initialChainSelection immDB volDB lgrDB tracer cfg varInvalid = do
+initialChainSelection immDB volDB lgrDB tracer cfg varInvalid curSlot = do
     -- We follow the steps from section "## Initialization" in ChainDB.md
 
     i :: Point blk <- ImmDB.getPointAtTip immDB
@@ -96,9 +98,10 @@ initialChainSelection immDB volDB lgrDB tracer cfg varInvalid = do
 
     -- We use the empty fragment anchored at @i@ as the current chain (and
     -- ledger) and the default in case there is no better candidate.
-    let curChainAndLedger = mkChainAndLedger (Empty (castPoint i)) ledger
+    let curChain          = Empty (castPoint i)
+        curChainAndLedger = mkChainAndLedger curChain ledger
 
-    case NE.nonEmpty chains of
+    case NE.nonEmpty (filter (preferCandidate cfg curChain) chains) of
       -- If there are no candidates, no chain selection is needed
       Nothing      -> return curChainAndLedger
       Just chains' -> fromMaybe curChainAndLedger <$>
@@ -120,7 +123,8 @@ initialChainSelection immDB volDB lgrDB tracer cfg varInvalid = do
                                  m
                                  (AnchoredFragment (Header blk))
         constructChain hashes =
-          AF.fromOldestFirst (castPoint i) <$>
+          AF.fromOldestFirst (castPoint i) .
+          takeWhile ((<= curSlot) . blockSlot) <$>
           mapM (getKnownHeaderThroughCache volDB) (NE.toList hashes)
 
     -- | Perform chain selection (including validation) on the given
@@ -140,9 +144,6 @@ initialChainSelection immDB volDB lgrDB tracer cfg varInvalid = do
       assert (all ((LgrDB.currentPoint ledger ==) .
                    castPoint . AF.anchorPoint)
                   candidates) $
-      -- Since all these candidates are longer than the current chain, they
-      -- will be preferred over it. However, in the future, it might no longer
-      -- be that a longer chain always implies that 'preferCandidate' is true.
       assert (all (preferCandidate cfg curChain) candidates) $
       chainSelection
         lgrDB
@@ -154,15 +155,76 @@ initialChainSelection immDB volDB lgrDB tracer cfg varInvalid = do
 
 -- | Add a block to the ChainDB.
 --
--- This is the only operation that actually changes the ChainDB. It will add
--- store the block on disk and trigger chain selection, possibly switching to
--- a fork.
+-- This is the only operation that actually changes the ChainDB. It will store
+-- the block on disk and trigger chain selection, possibly switching to a
+-- fork.
 --
--- PRECONDITION: The slot number of the new block may not be too far in the
--- future: @blockSlot b <= currentSlot + maxSkew@ where @b@ is the new block,
--- @currentSlot@ is the current slot according to @BlockchainTime@ and
--- @maxSkew@ is the maximum allowed @ClockSkew@. The chain sync client
--- guarantees this.
+-- When the slot of the block is > the current slot, a chain selection will be
+-- scheduled in the slot of the block.
+addBlock
+  :: forall m blk.
+     ( IOLike m
+     , HasHeader blk
+     , ProtocolLedgerView blk
+     , HasCallStack
+     )
+  => ChainDbEnv m blk
+  -> blk
+  -> m ()
+addBlock cdb@CDB{..} b = do
+    -- No need to be in the same STM transaction
+    curSlot <- atomically $ getCurrentSlot cdbBlockchainTime
+
+    (isMember, invalid, immBlockNo) <- atomically $ (,,)
+      <$> VolDB.getIsMember               cdbVolDB
+      <*> (forgetFingerprint <$> readTVar cdbInvalid)
+      <*> readTVar                        cdbImmBlockNo
+
+    -- We follow the steps from section "## Adding a block" in ChainDB.md
+
+    -- ### Ignore
+    if
+      | blockNo b <= immBlockNo && blockNo b /= 0 ->
+        trace $ IgnoreBlockOlderThanK (blockPoint b)
+      | isMember (blockHash b) ->
+        trace $ IgnoreBlockAlreadyInVolDB (blockPoint b)
+      | Just (reason, _) <- Map.lookup (blockHash b) invalid ->
+        trace $ IgnoreInvalidBlock (blockPoint b) reason
+
+      --- ### Store but schedule chain selection
+      | blockSlot b > curSlot -> do
+
+        VolDB.putBlock cdbVolDB b
+        trace $ BlockInTheFuture (blockPoint b) curSlot
+        trace $ AddedBlockToVolDB (blockPoint b) (blockNo b) (toIsEBB (cdbIsEBB b))
+        scheduleChainSelection curSlot (blockSlot b) (getHeader b)
+
+      -- The remaining cases
+      | otherwise -> do
+        VolDB.putBlock cdbVolDB b
+        trace $ AddedBlockToVolDB (blockPoint b) (blockNo b) (toIsEBB (cdbIsEBB b))
+        chainSelectionForBlock cdb (getHeader b)
+  where
+    trace :: TraceAddBlockEvent blk -> m ()
+    trace = traceWith (contramap TraceAddBlockEvent cdbTracer)
+
+    scheduleChainSelection
+      :: SlotNo  -- ^ Current slot number
+      -> SlotNo  -- ^ Slot number of the block
+      -> Header blk
+      -> m ()
+    scheduleChainSelection curSlot slot hdr = do
+      nbScheduled <- atomically $ updateTVar cdbFutureBlocks $ \futureBlocks ->
+        let futureBlocks' = Map.insertWith (<>) slot (hdr NE.:| []) futureBlocks
+            nbScheduled   = fromIntegral $ sum $ length <$> Map.elems futureBlocks
+        in (futureBlocks', nbScheduled)
+      trace $ ScheduledChainSelection (headerPoint hdr) curSlot nbScheduled
+
+-- | Trigger chain selection for the given block.
+--
+-- PRECONDITION: the block is in the VolatileDB.
+--
+-- PRECONDITION: the slot of the block <= the current (wall) slot
 --
 -- = Constructing candidate fragments
 --
@@ -188,7 +250,7 @@ initialChainSelection immDB volDB lgrDB tracer cfg varInvalid = do
 -- * when we switch to a distant fork
 --
 -- This cost is currently deemed acceptable.
-addBlock
+chainSelectionForBlock
   :: forall m blk.
      ( IOLike m
      , HasHeader blk
@@ -196,69 +258,71 @@ addBlock
      , HasCallStack
      )
   => ChainDbEnv m blk
-  -> blk
+  -> Header blk
   -> m ()
-addBlock cdb@CDB{..} b = do
-    (isMember, curChain, tipPoint, ledgerDB, invalid, immBlockNo) <-
-      atomically $ (,,,,,)
-        <$> VolDB.getIsMember           cdbVolDB
-        <*> Query.getCurrentChain       cdb
-        <*> Query.getTipPoint           cdb
-        <*> LgrDB.getCurrent            cdbLgrDB
-        <*> (forgetFingerprint <$> readTVar cdbInvalid)
-        <*> readTVar                    cdbImmBlockNo
+chainSelectionForBlock cdb@CDB{..} hdr = do
+    curSlot <- atomically $ getCurrentSlot cdbBlockchainTime
+
+    (invalid, isMember, succsOf, predecessor, curChain, tipPoint, ledgerDB, immBlockNo)
+      <- atomically $ (,,,,,,,)
+          <$> (forgetFingerprint <$> readTVar cdbInvalid)
+          <*> VolDB.getIsMember               cdbVolDB
+          <*> VolDB.getSuccessors             cdbVolDB
+          <*> VolDB.getPredecessor            cdbVolDB
+          <*> Query.getCurrentChain           cdb
+          <*> Query.getTipPoint               cdb
+          <*> LgrDB.getCurrent                cdbLgrDB
+          <*> readTVar                        cdbImmBlockNo
     let curChainAndLedger =
           -- The current chain we're working with here is not longer than @k@
           -- blocks (see 'getCurrentChain' and 'cdbChain'), which is easier to
           -- reason about when doing chain selection, etc.
           assert (fromIntegral (AF.length curChain) <= k) $
           mkChainAndLedger curChain ledgerDB
-        -- See 'getCurrentChain'
         i :: Point blk
         i = castPoint $ AF.anchorPoint curChain
+        -- Let these two functions ignore invalid blocks
+        isMember' = ignoreInvalid    cdb invalid isMember
+        succsOf'  = ignoreInvalidSuc cdb invalid succsOf
 
-    -- We follow the steps from section "## Adding a block" in ChainDB.md
+    -- The preconditions
+    assert (blockSlot hdr <= curSlot)  $ return ()
+    assert (isMember (headerHash hdr)) $ return ()
 
-    -- ### Ignore
-    unless ((blockNo b <= immBlockNo && blockNo b /= 0) ||
-            isMember (blockHash b)  ||
-            Map.member (blockHash b) invalid) $ do
+    if
+      -- The chain might have grown since we added the block such that the
+      -- block is older than @k@.
+      | blockNo hdr <= immBlockNo && blockNo hdr /= 0 ->
+        trace $ IgnoreBlockOlderThanK p
 
-      -- Write the block to the VolatileDB in all other cases
-      VolDB.putBlock cdbVolDB b
-      trace $ AddedBlockToVolDB (blockPoint b) (blockNo b) (toIsEBB (cdbIsEBB b))
-
-      -- We need to get these after adding the block to the VolatileDB
-      (isMember', succsOf, predecessor) <- atomically $
-         (,,) <$> (ignoreInvalid    cdb invalid <$> VolDB.getIsMember    cdbVolDB)
-              <*> (ignoreInvalidSuc cdb invalid <$> VolDB.getSuccessors  cdbVolDB)
-              <*> VolDB.getPredecessor cdbVolDB
+      -- We might have validated the block in the meantime
+      | Just (reason, _) <- Map.lookup (headerHash hdr) invalid ->
+        trace $ IgnoreInvalidBlock p reason
 
       -- The block @b@ fits onto the end of our current chain
-      if | pointHash tipPoint == blockPrevHash b -> do
-           -- ### Add to current chain
-           trace (TryAddToCurrentChain (blockPoint b))
-           addToCurrentChain succsOf curChainAndLedger
+      | pointHash tipPoint == castHash (blockPrevHash hdr) -> do
+        -- ### Add to current chain
+        trace (TryAddToCurrentChain p)
+        addToCurrentChain succsOf' curChainAndLedger curSlot
 
-         | Just hashes <- VolDB.isReachable predecessor isMember'
-             i (blockPoint b) -> do
-           -- ### Switch to a fork
-           trace (TrySwitchToAFork (blockPoint b) hashes)
-           switchToAFork succsOf curChainAndLedger hashes
+      | Just hashes <- VolDB.isReachable predecessor isMember' i p -> do
+        -- ### Switch to a fork
+        trace (TrySwitchToAFork p hashes)
+        switchToAFork succsOf' curChainAndLedger hashes curSlot
 
-         | otherwise ->
-           -- ### Store but don't change the current chain
+      | otherwise ->
+        -- ### Store but don't change the current chain
+        trace (StoreButDontChange p)
 
-           -- We have already stored the block in the VolatileDB
-           trace (StoreButDontChange (blockPoint b))
-
-      -- Note that we may have extended the chain, but have not trimmed it to
-      -- @k@ blocks/headers. That is the job of the background thread, which
-      -- will first copy the blocks/headers to trim (from the end of the
-      -- fragment) from the VolatileDB to the ImmutableDB.
-
+    -- Note that we may have extended the chain, but have not trimmed it to
+    -- @k@ blocks/headers. That is the job of the background thread, which
+    -- will first copy the blocks/headers to trim (from the end of the
+    -- fragment) from the VolatileDB to the ImmutableDB.
   where
     secParam@(SecurityParam k) = protocolSecurityParam cdbNodeConfig
+
+    p :: Point blk
+    p = headerPoint hdr
 
     trace :: TraceAddBlockEvent blk -> m ()
     trace = traceWith (contramap TraceAddBlockEvent cdbTracer)
@@ -269,52 +333,55 @@ addBlock cdb@CDB{..} b = do
                       => (WithOrigin (HeaderHash blk) -> Set (HeaderHash blk))
                       -> ChainAndLedger blk
                          -- ^ The current chain and ledger
+                      -> SlotNo
+                         -- ^ The current slot
                       -> m ()
-    addToCurrentChain succsOf curChainAndLedger@(ChainAndLedger curChain _) =
-        assert (AF.validExtension curChain hdr) $ do
-          let suffixesAfterB = VolDB.candidates succsOf (blockPoint b)
+    addToCurrentChain succsOf curChainAndLedger@(ChainAndLedger curChain _)
+                      curSlot = assert (AF.validExtension curChain hdr) $ do
+        let suffixesAfterB = VolDB.candidates succsOf p
 
-          -- Fragments that are anchored at @curHead@, i.e. suffixes of the
-          -- current chain.
-          candidates <- case NE.nonEmpty suffixesAfterB of
-            -- If there are no suffixes after @b@, just use the suffix just
-            -- containing @b@ as the sole candidate.
-            Nothing              ->
-              return $ (AF.fromOldestFirst curHead [hdr]) NE.:| []
-            Just suffixesAfterB' ->
-              -- We can start with an empty cache, because we're only looking
-              -- up the headers /after/ b, so they won't be on the current
-              -- chain.
-              flip evalStateT Map.empty $ forM suffixesAfterB' $ \hashes -> do
-                hdrs <- mapM (getKnownHeaderThroughCache cdbVolDB) $
-                  NE.toList hashes
-                return $ AF.fromOldestFirst curHead (hdr : hdrs)
+        -- Fragments that are anchored at @curHead@, i.e. suffixes of the
+        -- current chain.
+        candidates <- case NE.nonEmpty suffixesAfterB of
+          -- If there are no suffixes after @b@, just use the suffix just
+          -- containing @b@ as the sole candidate.
+          Nothing              ->
+            return $ (AF.fromOldestFirst curHead [hdr]) NE.:| []
+          Just suffixesAfterB' ->
+            -- We can start with an empty cache, because we're only looking
+            -- up the headers /after/ b, so they won't be on the current
+            -- chain.
+            flip evalStateT Map.empty $ forM suffixesAfterB' $ \hashes -> do
+              -- Ignore headers/blocks from the future
+              hdrs <- fmap (takeWhile ((<= curSlot) . blockSlot)) $
+                mapM (getKnownHeaderThroughCache cdbVolDB) $
+                NE.toList hashes
+              return $ AF.fromOldestFirst curHead (hdr : hdrs)
 
-          let candidateSuffixes = NE.nonEmpty
-                $ NE.filter (preferCandidate cdbNodeConfig curChain . _suffix)
-                $ fmap (mkCandidateSuffix 0) candidates
-          -- All candidates are longer than the current chain, so they will be
-          -- preferred over it, /unless/ the block we just added is an EBB,
-          -- which has the same 'BlockNo' as the block before it, so when
-          -- using the 'BlockNo' as the proxy for the length (note that some
-          -- protocols might do it differently), the candidate with the EBB
-          -- appended will not be preferred over the current chain.
-          --
-          -- The consequence of this is that when adding an EBB, it will not
-          -- be selected by chain selection and thus not appended to the chain
-          -- until the block after it is added, which will again result in a
-          -- candidate preferred over the current chain. In this case, the
-          -- candidate will be a two-block (the EBB and the new block)
-          -- extension of the current chain.
-          case candidateSuffixes of
-            Nothing                 -> return ()
-            Just candidateSuffixes' ->
-              chainSelection' curChainAndLedger candidateSuffixes' >>= \case
-                Nothing                -> return ()
-                Just newChainAndLedger -> trySwitchTo newChainAndLedger
+        let candidateSuffixes = NE.nonEmpty
+              $ NE.filter (preferCandidate cdbNodeConfig curChain . _suffix)
+              $ fmap (mkCandidateSuffix 0) candidates
+        -- All candidates are longer than the current chain, so they will be
+        -- preferred over it, /unless/ the block we just added is an EBB,
+        -- which has the same 'BlockNo' as the block before it, so when
+        -- using the 'BlockNo' as the proxy for the length (note that some
+        -- protocols might do it differently), the candidate with the EBB
+        -- appended will not be preferred over the current chain.
+        --
+        -- The consequence of this is that when adding an EBB, it will not
+        -- be selected by chain selection and thus not appended to the chain
+        -- until the block after it is added, which will again result in a
+        -- candidate preferred over the current chain. In this case, the
+        -- candidate will be a two-block (the EBB and the new block)
+        -- extension of the current chain.
+        case candidateSuffixes of
+          Nothing                 -> return ()
+          Just candidateSuffixes' ->
+            chainSelection' curChainAndLedger candidateSuffixes' >>= \case
+              Nothing                -> return ()
+              Just newChainAndLedger -> trySwitchTo newChainAndLedger
       where
         curHead = AF.headPoint curChain
-        hdr     = getHeader b
 
     -- | We have found a path of hashes to the new block through the
     -- VolatileDB. We try to extend this path by looking for forks that start
@@ -326,17 +393,20 @@ addBlock cdb@CDB{..} b = do
                      -- ^ The current chain (anchored at @i@) and ledger
                   -> NonEmpty (HeaderHash blk)
                      -- ^ An uninterrupted path of hashes @(i,b]@.
+                  -> SlotNo
+                     -- ^ The current slot
                   -> m ()
-    switchToAFork succsOf curChainAndLedger@(ChainAndLedger curChain _) hashes = do
-        let suffixesAfterB = VolDB.candidates succsOf (blockPoint b)
-            initCache      = Map.insert (blockHash b) hdr (cacheHeaders curChain)
+    switchToAFork succsOf curChainAndLedger@(ChainAndLedger curChain _) hashes
+                  curSlot = do
+        let suffixesAfterB = VolDB.candidates succsOf p
+            initCache      = Map.insert (headerHash hdr) hdr (cacheHeaders curChain)
         -- Fragments that are anchored at @i@.
         candidates <- flip evalStateT initCache $
           case NE.nonEmpty suffixesAfterB of
             -- If there are no suffixes after @b@, just use the fragment that
             -- ends in @b@ as the sole candidate.
-            Nothing              -> (NE.:| []) <$> constructFork i hashes []
-            Just suffixesAfterB' -> mapM (constructFork i hashes . NE.toList)
+            Nothing              -> (NE.:| []) <$> constructFork curSlot i hashes []
+            Just suffixesAfterB' -> mapM (constructFork curSlot i hashes . NE.toList)
                                          suffixesAfterB'
         let candidateSuffixes =
                 -- The suffixes all fork off from the current chain within @k@
@@ -354,8 +424,7 @@ addBlock cdb@CDB{..} b = do
               Nothing                -> return ()
               Just newChainAndLedger -> trySwitchTo newChainAndLedger
       where
-        i   = castPoint $ anchorPoint curChain
-        hdr = getHeader b
+        i = castPoint $ anchorPoint curChain
 
 
     -- | 'chainSelection' partially applied to the parameters from the
@@ -459,7 +528,7 @@ addBlock cdb@CDB{..} b = do
     cacheHeaders :: AnchoredFragment (Header blk)
                  -> Map (HeaderHash blk) (Header blk)
     cacheHeaders =
-      foldl' (\m hdr -> Map.insert (blockHash hdr) hdr m) Map.empty .
+      foldl' (\m h -> Map.insert (blockHash h) h m) Map.empty .
       AF.toNewestFirst
 
     -- | We have a new block @b@ that doesn't fit onto the current chain, but
@@ -473,13 +542,15 @@ addBlock cdb@CDB{..} b = do
     -- * The next header in @f@ is the header for @b@
     -- * Finally, @f@ ends with the headers corresponding to the hashes
     --   @(b,?]@ of the suffix @s@.
+    -- * Any headers from the future are dropped.
     --
     -- Note that we need to read the headers corresponding to the hashes
     -- @(i,b]@ and @(b,?]@ from disk. It is likely that many of these headers
     -- are actually on the current chain, so when possible, we reuse these
     -- headers instead of reading them from disk.
     constructFork
-      :: Point blk                  -- ^ Tip of ImmutableDB @i@
+      :: SlotNo                     -- ^ Current slot
+      -> Point blk                  -- ^ Tip of ImmutableDB @i@
       -> NonEmpty (HeaderHash blk)  -- ^ Hashes of @(i,b]@
       -> [HeaderHash blk]           -- ^ Suffix @s@, hashes of @(b,?]@
       -> StateT (Map (HeaderHash blk) (Header blk))
@@ -487,8 +558,9 @@ addBlock cdb@CDB{..} b = do
                 (AnchoredFragment (Header blk))
          -- ^ Fork, anchored at @i@, contains (the header of) @b@ and ends
          -- with the suffix @s@.
-    constructFork i hashes suffixHashes
-      = fmap (AF.fromOldestFirst (castPoint i))
+    constructFork curSlot i hashes suffixHashes
+      = fmap (AF.fromOldestFirst (castPoint i)
+      .       takeWhile ((<= curSlot) . blockSlot))
       $ mapM (getKnownHeaderThroughCache cdbVolDB)
       $ NE.toList hashes <> suffixHashes
 
@@ -534,6 +606,7 @@ chainSelection
      -- chain.
 chainSelection lgrDB tracer cfg varInvalid
                curChainAndLedger@(ChainAndLedger curChain _) candidates =
+  assert (all (preferCandidate cfg curChain . _suffix) candidates) $
   assert (all (isJust . fitCandidateSuffixOn curChain) candidates) $
     go (sortCandidates (NE.toList candidates))
   where

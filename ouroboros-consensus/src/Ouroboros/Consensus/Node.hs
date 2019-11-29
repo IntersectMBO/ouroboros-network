@@ -111,19 +111,20 @@ run tracers chainDbTracer diffusionTracers diffusionArguments networkMagic dbPat
       (nodeProtocolMagicId (Proxy @blk) cfg)
     withRegistry $ \registry -> do
 
+      btime <- realBlockchainTime
+        registry
+        slotLength
+        (nodeStartTime (Proxy @blk) cfg)
+
       chainDB <- initChainDB
         chainDbTracer
         registry
+        btime
         dbPath
         cfg
         initLedger
         slotLength
         customiseChainDbArgs
-
-      btime <- realBlockchainTime
-        registry
-        slotLength
-        (nodeStartTime (Proxy @blk) cfg)
 
       let nodeArgs = customiseNodeArgs $ mkNodeArgs
             registry
@@ -193,6 +194,7 @@ initChainDB
   :: forall blk. RunNode blk
   => Tracer IO (ChainDB.TraceEvent blk)
   -> ResourceRegistry IO
+  -> BlockchainTime IO
   -> FilePath
      -- ^ Database path
   -> NodeConfig (BlockProtocol blk)
@@ -202,7 +204,7 @@ initChainDB
   -> (ChainDbArgs IO blk -> ChainDbArgs IO blk)
       -- ^ Customise the 'ChainDbArgs'
   -> IO (ChainDB IO blk)
-initChainDB tracer registry dbPath cfg initLedger slotLength
+initChainDB tracer registry btime dbPath cfg initLedger slotLength
             customiseArgs = do
     epochInfo <- newEpochInfo $ nodeEpochSize (Proxy @blk) cfg
     ChainDB.openDB $ mkArgs epochInfo
@@ -234,6 +236,7 @@ initChainDB tracer registry dbPath cfg initLedger slotLength
       , ChainDB.cdbTracer           = tracer
       , ChainDB.cdbValidation       = ValidateMostRecentEpoch
       , ChainDB.cdbGcDelay          = secondsToDiffTime 10
+      , ChainDB.cdbBlockchainTime   = btime
       }
 
 mkNodeArgs

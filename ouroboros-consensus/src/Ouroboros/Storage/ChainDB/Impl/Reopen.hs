@@ -24,6 +24,7 @@ import           Ouroboros.Network.Block (HasHeader (..), blockPoint, castPoint,
                      genesisBlockNo, genesisPoint)
 
 import           Ouroboros.Consensus.Block (Header)
+import           Ouroboros.Consensus.BlockchainTime (getCurrentSlot)
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util (whenJust)
@@ -145,6 +146,7 @@ reopen (CDBHandle varState) launchBgTasks = do
         LgrDB.reopen cdbLgrDB cdbImmDB lgrReplayTracer
         traceWith cdbTracer $ TraceOpenEvent OpenedLgrDB
 
+        curSlot        <- atomically $ getCurrentSlot cdbBlockchainTime
         chainAndLedger <- initialChainSelection
            cdbImmDB
            cdbVolDB
@@ -152,6 +154,7 @@ reopen (CDBHandle varState) launchBgTasks = do
            cdbTracer
            cdbNodeConfig
            cdbInvalid
+           curSlot
 
         let chain      = clChain  chainAndLedger
             ledger     = clLedger chainAndLedger

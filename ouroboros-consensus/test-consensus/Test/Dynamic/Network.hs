@@ -267,6 +267,7 @@ runNodeNetwork registry testBtime numCoreNodes nodeJoinPlan nodeTopology
         , cdbHashInfo         = nodeHashInfo (Proxy @blk)
         , cdbIsEBB            = nodeIsEBB
         , cdbGenesis          = return initLedger
+        , cdbBlockchainTime   = btime
         -- Misc
         , cdbTracer           = Tracer $ \case
               ChainDB.TraceAddBlockEvent

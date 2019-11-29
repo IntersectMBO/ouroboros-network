@@ -1,10 +1,12 @@
+{-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE DeriveAnyClass      #-}
 {-# LANGUAGE DeriveGeneric       #-}
+{-# LANGUAGE DerivingVia         #-}
+{-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE NumericUnderscores  #-}
 {-# LANGUAGE RankNTypes          #-}
-{-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Ouroboros.Consensus.BlockchainTime (
@@ -16,6 +18,7 @@ module Ouroboros.Consensus.BlockchainTime (
   , NumSlots(..)
   , TestBlockchainTime(..)
   , newTestBlockchainTime
+  , fixedBlockchainTime
     -- * Real blockchain time
   , realBlockchainTime
     -- * Time to slots and back again
@@ -40,7 +43,7 @@ import           Data.Word (Word64)
 import           GHC.Generics (Generic)
 import           GHC.Stack
 
-import           Cardano.Prelude (NoUnexpectedThunks)
+import           Cardano.Prelude (NoUnexpectedThunks, OnlyCheckIsWHNF (..))
 
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
@@ -68,6 +71,7 @@ data BlockchainTime m = BlockchainTime {
       -- Use sites should call 'onSlotChange' rather than 'onSlotChange_'.
     , onSlotChange_  :: HasCallStack => (SlotNo -> m ()) -> m ()
     }
+  deriving NoUnexpectedThunks via OnlyCheckIsWHNF "BlockchainTime" (BlockchainTime m)
 
 -- | Returns 'True' immediately if the requested slot is already over, else
 -- blocks as requested and then returns 'False'
@@ -167,6 +171,14 @@ newTestBlockchainTime registry (NumSlots numSlots) slotLen = do
         putMVar doneVar ()
 
     initVal = Initializing
+
+-- | A 'BlockchainTime' that is fixed to the given slot. 'onSlotChange_' does
+-- nothing.
+fixedBlockchainTime :: (Monad m, Monad (STM m)) => SlotNo -> BlockchainTime m
+fixedBlockchainTime slot = BlockchainTime
+    { getCurrentSlot = return slot
+    , onSlotChange_  = const (return ())
+    }
 
 {-------------------------------------------------------------------------------
   "Real" blockchain time
