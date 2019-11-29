@@ -18,6 +18,7 @@ import           Ouroboros.Consensus.BlockchainTime (SystemStart (..))
 import           Ouroboros.Consensus.Ledger.Byron
 import           Ouroboros.Consensus.Node.Run.Abstract
 import           Ouroboros.Consensus.Protocol.Abstract
+import           Ouroboros.Consensus.Protocol.PBFT
 
 import           Ouroboros.Storage.Common (EpochNo (..), EpochSize (..))
 
@@ -77,7 +78,9 @@ instance RunNode ByronBlock where
   nodeDecodeGenTxId       = decodeByronGenTxId
   nodeDecodeHeaderHash    = const decodeByronHeaderHash
   nodeDecodeLedgerState   = const decodeByronLedgerState
-  nodeDecodeChainState    = \_proxy _cfg -> decodeByronChainState
+  nodeDecodeChainState    = \_proxy cfg ->
+                               let k = pbftSecurityParam $ pbftParams cfg
+                               in decodeByronChainState k
   nodeDecodeApplyTxError  = const decodeByronApplyTxError
 
 extractGenesisData :: NodeConfig ByronConsensusProtocol -> Genesis.GenesisData

@@ -1,12 +1,11 @@
 {-# LANGUAGE DeriveAnyClass             #-}
 {-# LANGUAGE DeriveGeneric              #-}
+{-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE StandaloneDeriving         #-}
-{-# LANGUAGE TupleSections              #-}
 {-# LANGUAGE UndecidableInstances       #-}
 
 -- | PBFT chain state
@@ -14,17 +13,22 @@
 -- Intended for qualified import.
 module Ouroboros.Consensus.Protocol.PBFT.ChainState (
     PBftChainState(..)
+  , WindowSize(..)
     -- * Construction
   , empty
-  , insert
-  , prune
+  , append
+  , appendMany
   , rewind
     -- * Queries
-  , size
+  , countSignatures
+  , countInWindow
   , countSignedBy
   , lastSlot
     -- * Support for tests
-  , fromMap
+  , invariant
+  , toList
+  , fromList
+  , PBftSigner(..)
     -- ** Serialization
   , encodePBftChainState
   , decodePBftChainState
@@ -35,14 +39,15 @@ import           Codec.Serialise.Decoding (Decoder)
 import qualified Codec.Serialise.Decoding as Serialise
 import           Codec.Serialise.Encoding (Encoding)
 import qualified Codec.Serialise.Encoding as Serialise
-import           Data.Foldable (toList)
-import           Data.List (sortOn)
+import           Control.Monad.Except
+import qualified Data.Foldable as Foldable
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
-import           Data.Sequence.Strict (StrictSeq ((:<|), (:|>)), (|>))
+import           Data.Sequence.Strict (StrictSeq ((:<|), (:|>), Empty), (|>))
 import qualified Data.Sequence.Strict as Seq
 import           Data.Word
 import           GHC.Generics (Generic)
+import           GHC.Stack
 
 import           Cardano.Prelude (NoUnexpectedThunks)
 
@@ -50,8 +55,9 @@ import           Ouroboros.Network.Block (SlotNo (..))
 import           Ouroboros.Network.Point (WithOrigin (..), withOriginFromMaybe,
                      withOriginToMaybe)
 
+import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.PBFT.Crypto
-import           Ouroboros.Consensus.Util (nTimes, repeatedly)
+import           Ouroboros.Consensus.Util (repeatedly)
 
 {-------------------------------------------------------------------------------
   Types
@@ -59,71 +65,135 @@ import           Ouroboros.Consensus.Util (nTimes, repeatedly)
 
 -- | PBFT chain state
 --
--- The PBFT chain state records for the last @n@ slots who signed those slots
--- (in terms of genesis keys). It is used to check that a single node has not
--- signed more than a certain percentage threshold of the slots (that check
--- is not implemented here, however).
+-- For a window size of @n@ and a security parameter @k@, the PBFT chain state
+-- is a sequence of signatures over the last @k+n@ slots
 --
--- The window size @n@ can be set pretty much arbitrarily. However, in order for
--- the chain state to be able to roll back at least @k@ blocks, we must have
--- that @n >= k@.
+-- > +------------------------------------------------|
+-- > |                signatures                      |
+-- > |-------------------------------+----------------|
+-- >           <-n->                 ^      <-k->
+-- >                               anchor
+-- > ^^^^^^^^^^^^^^|^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+-- >    k extra                window of n
 --
--- The performance of this code is not that important during normal node
--- operation, as it will only be used when a new block comes in. However, it
--- can potentially become a bottleneck during syncing.
+-- We need the last @n@ signatures to verify that no single key has signed more
+-- than a certain threshold percentage of the slots. The anchor indicates the
+-- maximum rollback; we need the signatures /before/ the anchor point because
+-- if we have a rollback, and drop part of the history
+--
+-- > +----------------------------------------|
+-- > |              signatures                | <dropped>
+-- > |-------------------------------+--------|
+-- >                                 ^
+-- >                               anchor
+-- >        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+-- >                   window of n
+--
+-- the signatures of the blocks that get appended /after the rollback/ should
+-- still be evaluated with respect to a full window of size @n@ (note that the
+-- position of the anchor does not change after a rollback: rolling back does
+-- not change the maximum rollback point).
+--
+-- This means that unless we are near genesis, we will at least have @n@
+-- signatures in the history (after a maximum rollback of @k@), and under
+-- normal circumstances (i.e., when not halfway a switch to a fork), @k+n@
+-- signatures.
+--
+-- The window size itself is pretty much arbitrary and will be fixed by a
+-- particular blockchain specification (e.g., Byron).
+--
+-- The performance of this code is not critical during normal node operation, as
+-- it will only be used when a new block comes in. However, it can become a
+-- bottleneck during syncing.
 data PBftChainState c = PBftChainState {
-      -- | Anchor
-      --
-      -- The anchor is the slot number of the block before the first block
-      -- in the state.
-      --
-      -- Suppose we have a window size of 5 (i.e., we 'prune' the state with a
-      -- maximum size of 5). Then the state evolves as follows (G = genesis):
-      --
-      -- > anchor | max rollback | blocks
-      -- > --------------------------------------------
-      -- > G      | 0 (G)        | []
-      -- > G      | 1 (G)        | [B1]
-      -- > G      | 2 (G)        | [B1, B2]
-      -- > G      | 3 (G)        | [B1, B2, B3]
-      -- > G      | 4 (G)        | [B1, B2, B3, B4]
-      -- > G      | 4 (B1)       | [B1, B2, B3, B4, B5]
-      -- > S1     | 4 (B2)       | [B2, B3, B4, B5, B6]       (S1 slot of B1)
-      -- > S2     | 4 (B3)       | [B3, B4, B5, B6, B7]
-      --
-      -- The table above also shows the maximum rollback, as well as the oldest
-      -- block we should be able to roll back to, given @k=4@.
-      --
-      -- Note what happens when we set the window size to be /equal/ to @k@:
-      --
-      -- > anchor | max rollback | blocks
-      -- > ----------------------------------------
-      -- > G      | 0 (G)        | []
-      -- > G      | 1 (G)        | [B1]
-      -- > G      | 2 (G)        | [B1, B2]
-      -- > G      | 3 (G)        | [B1, B2, B3]
-      -- > G      | 4 (G)        | [B1, B2, B3, B4]
-      -- > S1     | 4 (B1)       | [B2, B3, B4, B5]
-      -- > S2     | 4 (B2)       | [B3, B4, B5, B6]
-      -- > S3     | 4 (B3)       | [B4, B5, B6, B7]
-      --
-      -- At this point the anchor becomes equal to the (slot number of) the
-      -- oldest block that we can roll back to.
-      anchor  :: !(WithOrigin SlotNo)
+      -- | Signatures up to (including) the anchor
+      preAnchor  :: !(StrictSeq (PBftSigner c))
 
-      -- | Sequence in increasing order of slots and corresponding genesis keys
-    , signers :: !(StrictSeq (PBftSigner c))
+      -- | Signatures after the anchor
+      --
+      -- We should have precisely @k@ signatures after the anchor, unless
+      --
+      -- 1. We are near genesis, or
+      -- 2. After a during (during a switch-to-fork)
+    , postAnchor :: !(StrictSeq (PBftSigner c))
 
-      -- | Count for each genesis key
+      -- | Signatures before the window
+    , preWindow  :: !(StrictSeq (PBftSigner c))
+
+      -- | Signatures in the window
       --
-      -- Invariant:
-      --
-      -- > counts == fromSlots signers
-      --
-      -- We maintain it as an explicit value for improved performance.
-    , counts  :: !(Map (PBftVerKeyHash c) Int)
+      -- We should have precisely @n@ signatures the window, unless we are
+      -- near genesis.
+    , inWindow   :: !(StrictSeq (PBftSigner c))
+
+      -- | Cached counts of the signatures in the window
+    , counts     :: !(Map (PBftVerKeyHash c) Word64)
     }
   deriving (Generic)
+
+{-------------------------------------------------------------------------------
+  Invariant
+-------------------------------------------------------------------------------}
+
+size :: Num b => StrictSeq a -> b
+size = fromIntegral . Seq.length
+
+-- | Re-compute cached counts
+computeCounts :: PBftCrypto c
+              => StrictSeq (PBftSigner c)  -> Map (PBftVerKeyHash c) Word64
+computeCounts inWindow =
+    repeatedly (incrementKey . pbftSignerGenesisKey)
+               (Foldable.toList inWindow)
+               Map.empty
+
+invariant :: PBftCrypto c
+          => SecurityParam -> WindowSize -> PBftChainState c -> Either String ()
+invariant (SecurityParam k)
+          (WindowSize n)
+          st@PBftChainState{..}
+        = runExcept $ do
+    unless (size postAnchor <= k) $
+      failure "Too many post-anchor signatures"
+
+    unless (size preAnchor <= n) $
+      failure "Too many pre-anchor signatures"
+
+    unless (size inWindow <= n) $
+      failure "Too many in-window signatures"
+
+    unless (size preWindow <= k) $
+      failure "Too many pre-window signatures"
+
+    unless (size preWindow + size inWindow <= k + n) $
+      failure "Too many signatures"
+
+    unless (preAnchor <> postAnchor == preWindow <> inWindow) $
+      failure "Inconsistent signature split"
+
+    unless (computeCounts inWindow == counts) $
+      failure "Cached counts incorrect"
+  where
+    failure :: String -> Except String ()
+    failure err = throwError $ err ++ ": " ++ show st
+
+-- | The 'PBftChainState' tests don't rely on this flag but check the
+-- invariant manually. This flag is here so that the invariant checks could be
+-- enabled while running other consensus tests, just as a sanity check.
+--
+-- TODO: Make this a CPP flag, see #1248.
+enableInvariant :: Bool
+enableInvariant = False
+
+assertInvariant :: (HasCallStack, PBftCrypto c)
+                => SecurityParam
+                -> WindowSize
+                -> PBftChainState c -> PBftChainState c
+assertInvariant k n st
+  | enableInvariant =
+      case invariant k n st of
+        Right () -> st
+        Left err -> error $ "Invariant violation: " ++ err
+  | otherwise = st
 
 -- | Slot and corresponding genesis key
 data PBftSigner c = PBftSigner {
@@ -131,6 +201,13 @@ data PBftSigner c = PBftSigner {
     , pbftSignerGenesisKey :: !(PBftVerKeyHash c)
     }
   deriving (Generic)
+
+-- | Window size
+--
+-- See 'PBftChainState' itself for a detailed discussion on the window size
+-- versus the number of signatures.
+newtype WindowSize = WindowSize { getWindowSize :: Word64 }
+  deriving newtype (Show, Eq, Ord, Enum, Num, Real, Integral)
 
 deriving instance PBftCrypto c => Show (PBftChainState c)
 deriving instance PBftCrypto c => Eq   (PBftChainState c)
@@ -147,28 +224,31 @@ deriving instance PBftCrypto c => NoUnexpectedThunks (PBftSigner c)
 -- | Total number of signed slots
 --
 -- This is in terms of /blocks/, not slots.
+countSignatures :: PBftChainState c -> Word64
+countSignatures PBftChainState{..} = size preWindow + size inWindow
+
+-- | Number of signatures in the window
 --
--- Pruning limits the size:
---
--- > size (prune n st) <= n
--- > size (prune n st) == n  if  size st >= n
-size :: PBftChainState c -> Int
-size = Seq.length . signers
+-- This will be equal to the specified window size, unless near genesis
+countInWindow :: PBftChainState c -> Word64
+countInWindow PBftChainState{..} = size inWindow
 
 -- | The number of blocks signed by the specified genesis key
-countSignedBy :: PBftCrypto c => PBftChainState c -> PBftVerKeyHash c -> Int
-countSignedBy st gk = Map.findWithDefault 0 gk (counts st)
+--
+-- This only considers the signatures within the window, not in the pre-window;
+-- see 'PBftChainState' for detailed discussion.
+countSignedBy :: PBftCrypto c => PBftChainState c -> PBftVerKeyHash c -> Word64
+countSignedBy PBftChainState{..} gk = Map.findWithDefault 0 gk counts
 
 -- | The last (most recent) signed slot in the window
 --
--- Any new blocks should be in slots /after/ the 'lastSlot'.
---
--- Returns the anchor if empty.
+-- Returns 'Origin' if there are no signatures in the window (this will happen
+-- near genesis only).
 lastSlot :: PBftChainState c -> WithOrigin SlotNo
-lastSlot st =
-    case signers st of
-      _ :|> PBftSigner slot _ -> At slot
-      _otherwise              -> anchor st
+lastSlot PBftChainState{..} =
+    case inWindow of
+      _ :|> signer -> At (pbftSignerSlotNo signer)
+      _otherwise   -> Origin
 
 {-------------------------------------------------------------------------------
   Construction
@@ -179,45 +259,55 @@ lastSlot st =
 -- In other words, the PBFT chain state corresponding to genesis.
 empty :: PBftChainState c
 empty = PBftChainState {
-      anchor  = Origin
-    , signers = Seq.empty
-    , counts  = Map.empty
+      preAnchor  = Empty
+    , postAnchor = Empty
+    , preWindow  = Empty
+    , inWindow   = Empty
+    , counts     = Map.empty
     }
 
--- | Insert new signed block into the state
-insert :: PBftCrypto c
-       => PBftVerKeyHash c -> SlotNo -> PBftChainState c -> PBftChainState c
-insert gk slot st = PBftChainState {
-      anchor  = anchor st -- anchor doesn't change because first block doesn't
-    , signers = signers st |> PBftSigner slot gk
-    , counts  = incrementKey gk (counts st)
-    }
-
--- | Internal: drop the oldest slot (if one exists)
+-- | Append new signature
 --
--- Precondition: state is not empty.
---
--- (Used in 'prune', which establishes the precondition.)
-dropOldest :: PBftCrypto c => PBftChainState c -> PBftChainState c
-dropOldest st =
-    case signers st of
-      PBftSigner slot gk :<| signers' ->
-        PBftChainState {
-            anchor  = At slot
-          , signers = signers'
-          , counts  = decrementKey gk (counts st)
-          }
-      _otherwise ->
-        error "dropOldest: empty PBftChainState"
-
--- | Prune to the given maximum size
-prune :: forall c. PBftCrypto c => Int -> PBftChainState c -> PBftChainState c
-prune maxSize st
-  | size st > maxSize = nTimes dropOldest toDrop st
-  | otherwise         = st
+-- Drops the oldest signature, provided we have reached the required number.
+append :: forall c. PBftCrypto c
+       => SecurityParam
+       -> WindowSize
+       -> PBftSigner c
+       -> PBftChainState c -> PBftChainState c
+append k n signer@(PBftSigner _ gk) PBftChainState{..} = assertInvariant k n $
+    PBftChainState {
+        preAnchor  = preAnchor'
+      , postAnchor = postAnchor'
+      , preWindow  = preWindow'
+      , inWindow   = inWindow'
+      , counts     = updateCounts counts
+      }
   where
-    toDrop :: Word64
-    toDrop = fromIntegral (size st - maxSize)
+    (preAnchor', postAnchor') =
+      case postAnchor of
+        x :<| xs | size postAnchor == maxRollbacks k ->
+          prune k n (preAnchor |> x, xs |> signer)
+        _otherwise ->
+          (preAnchor, postAnchor |> signer) -- We assume k >= 1
+
+    ((preWindow', inWindow'), updateCounts) =
+      case inWindow of
+        x :<| xs | size inWindow == getWindowSize n ->
+          ( prune k n (preWindow |> x, xs |> signer)
+          , incrementKey gk . decrementKey (pbftSignerGenesisKey x)
+          )
+        _otherwise ->
+          ( (preWindow, inWindow |> signer)
+          , incrementKey gk
+          )
+
+-- | Append a bunch of blocks
+appendMany :: forall c. PBftCrypto c
+           => SecurityParam
+           -> WindowSize
+           -> [PBftSigner c] -- ^ Old to new
+           -> PBftChainState c -> PBftChainState c
+appendMany k n = repeatedly (append k n)
 
 -- | Rewind the state to the specified slot
 --
@@ -227,102 +317,136 @@ prune maxSize st
 --
 -- NOTE: It only makes sense to rewind to a slot containing a block that we have
 -- previously applied (the "genesis block" can be understood as having been
--- implicitly applied). This will be implicitly assumed in the properies below.
+-- implicitly applied).
 --
--- = Properties
---
--- * Rewinding to the last applied block is an identity
---
---   > rewind (lastSlot st) st == Just st
---
--- * Rewinding to the same slot should be idempotent:
---
---   > rewind s st == Just st'  ==>  rewind s st' == Just st'
---
--- * Rewinding fails only if the slot is before the anchor
---
---   > rewind s st == Nothing  iff  s < anchor st
---
---   (See documentation of 'anchor' for motivation)
---
--- * If rewinding to a particular slot fails, rewinding to any slot prior to
---   that will also fail
---
---   > rewind s st == Nothing, s' < s  ==>  rewind s' st == Nothing
---
--- * Rewinding to the anchor will leave the state empty
---
---   > size (rewind (anchor st) st) == 0
---
--- * But rewinding to a more recent block will not
---
---   > s > anchor st  ==>  size (rewind s st) > 0
-rewind :: PBftCrypto c
-       => WithOrigin SlotNo -> PBftChainState c -> Maybe (PBftChainState c)
-rewind slot st
-  | slot < anchor st = Nothing
-  | otherwise = Just $ PBftChainState {
-        anchor  = anchor st
-      , signers = keep
-      -- Typically we only drop a few blocks (and keep most), so updating
-      -- the counts based on what we drop will in most cases be faster than
-      -- recomputing it from the blocks we keep.
-      , counts  = repeatedly (decrementKey . pbftSignerGenesisKey)
-                             (toList discard)
-                             (counts st)
-      }
+-- In addition to preserving the invariant, we also have the guarantee that
+-- rolling back to a point (within @k@) and then reapplying the blocks that were
+-- rolled back results in the original state.
+rewind :: forall c. PBftCrypto c
+       => SecurityParam
+       -> WindowSize
+       -> WithOrigin SlotNo
+       -> PBftChainState c -> Maybe (PBftChainState c)
+rewind k n mSlot PBftChainState{..} =
+    case mSlot of
+      At slot ->
+        -- We scan from the right, since block to roll back to likely at end
+        case Seq.spanr (\(PBftSigner slot' _) -> slot' > slot) postAnchor of
+
+          -- We found the slot to roll back to post-anchor. Discard everything
+          -- after that slot.
+          (toDiscard, toKeep@(_ :|> x)) ->
+            if slot == pbftSignerSlotNo x
+              then Just $ go toDiscard toKeep
+              else notPreviouslyApplied
+
+          -- The slot was not found post-anchor. If the slot matches the last
+          -- slot pre-anchor, all is well, discarding everything post-anchor.
+          -- Otherwise, the rollback is too far.
+          (toDiscard, Empty) ->
+            case preAnchor of
+              _ :|> x
+                | slot == pbftSignerSlotNo x -> Just $ go toDiscard Empty
+                | slot <  pbftSignerSlotNo x -> rollbackTooFar
+                | otherwise                  -> notPreviouslyApplied
+              _otherwise ->
+                notPreviouslyApplied
+
+      -- We can only roll back to origin if there are no signatures
+      -- pre-anchor. Rolling back to origin would leave the chain empty. This
+      -- is only possible if we have at most @k@ blocks in the chain. If we
+      -- have more than @k@ blocks, the pre-anchor will not be empty.
+      Origin ->
+        case preAnchor of
+          Empty      -> Just $ go postAnchor Empty
+          _otherwise -> rollbackTooFar
   where
-    (keep, discard) = Seq.spanl (\(PBftSigner slot' _) -> At slot' <= slot) (signers st)
+    notPreviouslyApplied :: forall x. x
+    notPreviouslyApplied =
+      error $ "rewind: rollback to block not previously applied"
+
+    rollbackTooFar :: Maybe x
+    rollbackTooFar = Nothing
+
+    -- Construct new state, given the remaining post-anchor signatures
+    --
+    -- NOTE: we don't optimize this case as rollbacks in Byron are exceedingly
+    -- rare.
+    go :: StrictSeq (PBftSigner c)
+       -> StrictSeq (PBftSigner c)
+       -> PBftChainState c
+    go postAnchorDiscard postAnchorKeep = assertInvariant k n $ PBftChainState {
+          preAnchor  = preAnchor -- can't change by definition
+        , postAnchor = postAnchorKeep
+        , preWindow  = preWindow'
+        , inWindow   = inWindow'
+        , counts     = computeCounts inWindow' -- for simplicity, just recount
+        }
+      where
+        -- Reconstruct the window
+        (preWindow', inWindow') =
+          Seq.splitAtEnd (fromIntegral n) $
+            Seq.dropLast (Seq.length postAnchorDiscard) (preWindow <> inWindow)
 
 {-------------------------------------------------------------------------------
   Internal
 -------------------------------------------------------------------------------}
 
-fromSlots :: Ord (PBftVerKeyHash c)
-          => StrictSeq (PBftSigner c) -> Map (PBftVerKeyHash c) Int
-fromSlots slots = repeatedly (incrementKey . pbftSignerGenesisKey)
-                             (toList slots)
-                             Map.empty
-
-incrementKey :: Ord gk => gk -> Map gk Int -> Map gk Int
+incrementKey :: Ord gk => gk -> Map gk Word64 -> Map gk Word64
 incrementKey = Map.alter inc
   where
-    inc :: Maybe Int -> Maybe Int
+    inc :: Maybe Word64 -> Maybe Word64
     inc Nothing  = Just 1
     inc (Just n) = Just (n + 1)
 
-decrementKey :: Ord gk => gk -> Map gk Int -> Map gk Int
+decrementKey :: Ord gk => gk -> Map gk Word64 -> Map gk Word64
 decrementKey = Map.alter dec
   where
-    dec :: Maybe Int -> Maybe Int
+    dec :: Maybe Word64 -> Maybe Word64
     dec Nothing  = error "decrementKey: key does not exist"
     dec (Just 1) = Nothing
     dec (Just n) = Just (n - 1)
 
+-- | Internal: drop elements from the first list, keeping max size at most @k+n@
+prune :: SecurityParam
+      -> WindowSize
+      -> (StrictSeq a, StrictSeq a)
+      -> (StrictSeq a, StrictSeq a)
+prune (SecurityParam n) (WindowSize k) (xs, ys) =
+    (Seq.drop (fromIntegral toDrop) xs, ys)
+  where
+    totalSize, maxSize, toDrop :: Word64
+    totalSize = size xs + size ys
+    maxSize   = n + k
+    toDrop    = if totalSize > maxSize
+                  then totalSize - maxSize
+                  else 0
+
 {-------------------------------------------------------------------------------
-  Support for tests
+  Conversion
 -------------------------------------------------------------------------------}
 
--- | Construct PBFT chain state from map listing signed slots per key
-fromMap :: forall c. PBftCrypto c
-        => WithOrigin SlotNo -- ^ Anchor
-        -> Map (PBftVerKeyHash c) [SlotNo]
-        -> PBftChainState c
-fromMap anchor perKey = PBftChainState {
-      anchor  = anchor
-    , signers = perSlot
-    , counts  = fromSlots perSlot
-    }
-  where
-    perSlot :: StrictSeq (PBftSigner c)
-    perSlot = Seq.fromList
-            . sortOn pbftSignerSlotNo
-            . distrib
-            . Map.toList
-            $ perKey
+toList :: PBftChainState c -> (WithOrigin SlotNo, StrictSeq (PBftSigner c))
+toList PBftChainState{..} = (
+      case preAnchor of
+        Empty   -> Origin
+        _ :|> x -> At (pbftSignerSlotNo x)
+    , preWindow <> inWindow
+    )
 
-    distrib :: [(PBftVerKeyHash c, [SlotNo])] -> [PBftSigner c]
-    distrib = concatMap $ \(k, ss) -> map (\s -> PBftSigner s k) ss
+fromList :: PBftCrypto c
+         => SecurityParam
+         -> WindowSize
+         -> (WithOrigin SlotNo, StrictSeq (PBftSigner c))
+         -> PBftChainState c
+fromList k n (anchor, signers) = assertInvariant k n $ PBftChainState {..}
+  where
+    inPreAnchor :: PBftSigner c -> Bool
+    inPreAnchor (PBftSigner slot _) = At slot <= anchor
+
+    (preAnchor, postAnchor) = Seq.spanl inPreAnchor signers
+    (preWindow, inWindow)   = Seq.splitAtEnd (fromIntegral n) signers
+    counts                  = computeCounts inWindow
 
 {-------------------------------------------------------------------------------
   Serialization
@@ -330,20 +454,23 @@ fromMap anchor perKey = PBftChainState {
 
 encodePBftChainState :: (PBftCrypto c, Serialise (PBftVerKeyHash c))
                      => PBftChainState c -> Encoding
-encodePBftChainState PBftChainState{..} = mconcat [
+encodePBftChainState st = mconcat [
       Serialise.encodeListLen 2
     , encode (withOriginToMaybe anchor)
     , encode signers
     ]
+  where
+    (anchor, signers) = toList st
 
 decodePBftChainState :: (PBftCrypto c, Serialise (PBftVerKeyHash c))
-                     => Decoder s (PBftChainState c)
-decodePBftChainState = do
+                     => SecurityParam
+                     -> WindowSize
+                     -> Decoder s (PBftChainState c)
+decodePBftChainState k n = do
       Serialise.decodeListLenOf 2
       anchor  <- withOriginFromMaybe <$> decode
       signers <- decode
-      let counts = fromSlots signers
-      return $ PBftChainState{..}
+      return $ fromList k n (anchor, signers)
 
 instance Serialise (PBftVerKeyHash c) => Serialise (PBftSigner c) where
   encode = encode . toPair

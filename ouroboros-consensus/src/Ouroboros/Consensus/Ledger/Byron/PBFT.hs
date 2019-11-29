@@ -73,5 +73,6 @@ fromPBftLedgerView = Delegation.Map . pbftDelegates
 encodeByronChainState :: ChainState (BlockProtocol ByronBlock) -> Encoding
 encodeByronChainState = CS.encodePBftChainState
 
-decodeByronChainState :: Decoder s (ChainState (BlockProtocol ByronBlock))
-decodeByronChainState = CS.decodePBftChainState
+decodeByronChainState :: SecurityParam
+                      -> Decoder s (ChainState (BlockProtocol ByronBlock))
+decodeByronChainState k = CS.decodePBftChainState k (pbftWindowSize k)

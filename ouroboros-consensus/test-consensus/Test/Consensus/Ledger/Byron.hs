@@ -1,6 +1,7 @@
 {-# LANGUAGE FlexibleInstances   #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE RankNTypes          #-}
+{-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
 module Test.Consensus.Ledger.Byron (tests) where
@@ -21,15 +22,12 @@ import           Cardano.Chain.Slotting (EpochSlots (..))
 import           Cardano.Crypto (ProtocolMagicId (..))
 
 import           Ouroboros.Network.Block (HeaderHash)
-import           Ouroboros.Network.Point (WithOrigin (..))
 
-import           Ouroboros.Consensus.Block (BlockProtocol, Header)
+import           Ouroboros.Consensus.Block (Header)
 import           Ouroboros.Consensus.Ledger.Byron
 import           Ouroboros.Consensus.Ledger.Byron.Aux
 import           Ouroboros.Consensus.Mempool.API (ApplyTxErr)
-import           Ouroboros.Consensus.Protocol.Abstract (ChainState)
-import           Ouroboros.Consensus.Protocol.PBFT
-import           Ouroboros.Consensus.Protocol.PBFT.ChainState
+import qualified Ouroboros.Consensus.Protocol.PBFT.ChainState as CS
 
 import           Ouroboros.Storage.ImmutableDB (BinaryInfo (..), HashInfo (..))
 
@@ -46,8 +44,8 @@ import qualified Test.Cardano.Chain.Update.Gen as CC
 import qualified Test.Cardano.Chain.UTxO.Gen as CC
 import qualified Test.Cardano.Crypto.Gen as CC
 
+import           Test.Consensus.Protocol.PBFT (TestChainState (..))
 import           Test.Util.Orphans.Arbitrary ()
-
 
 tests :: TestTree
 tests = testGroup "Byron"
@@ -119,9 +117,13 @@ prop_roundtrip_HeaderHash :: HeaderHash ByronBlock -> Property
 prop_roundtrip_HeaderHash =
     roundtrip encodeByronHeaderHash decodeByronHeaderHash
 
-prop_roundtrip_ChainState :: ChainState (BlockProtocol ByronBlock) -> Property
-prop_roundtrip_ChainState =
-    roundtrip encodeByronChainState decodeByronChainState
+-- | For now we test the roundtrip using mock crypto instead of real crypto
+prop_roundtrip_ChainState :: TestChainState -> Property
+prop_roundtrip_ChainState TestChainState{..} =
+    roundtrip
+      (CS.encodePBftChainState)
+      (CS.decodePBftChainState testChainStateK testChainStateN)
+      testChainState
 
 prop_roundtrip_GenTx :: GenTx ByronBlock -> Property
 prop_roundtrip_GenTx =
@@ -190,7 +192,7 @@ prop_byronHashInfo_hashSize h =
 -------------------------------------------------------------------------------}
 
 epochSlots :: EpochSlots
-epochSlots = EpochSlots 2160
+epochSlots = EpochSlots 21600
 
 protocolMagicId :: ProtocolMagicId
 protocolMagicId = ProtocolMagicId 100
@@ -237,10 +239,6 @@ instance Arbitrary ByronHash where
 
 instance Arbitrary KeyHash where
   arbitrary = hedgehog CC.genKeyHash
-
-instance Arbitrary (PBftChainState PBftCardanoCrypto) where
-  arbitrary =
-    fromMap <$> oneof [return Origin, At <$> arbitrary] <*> arbitrary
 
 instance Arbitrary (GenTx ByronBlock) where
   arbitrary =

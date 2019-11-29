@@ -37,16 +37,20 @@ module Data.Sequence.Strict
   , dropWhileL
   , dropWhileR
   , spanl
+  , spanr
 
     -- * Indexing
   , take
+  , takeLast
   , drop
+  , dropLast
   , splitAt
+  , splitAtEnd
   ) where
 
-import           Prelude hiding (drop, length, null, scanl, splitAt, take)
 import           Cardano.Prelude (NoUnexpectedThunks (..), forceElemsToWHNF,
                      noUnexpectedThunksInValues)
+import           Prelude hiding (drop, length, null, scanl, splitAt, take)
 
 import           Codec.Serialise (Serialise)
 import           Data.Foldable (foldl', toList)
@@ -193,6 +197,13 @@ dropWhileR p (StrictSeq xs) = StrictSeq (Seq.dropWhileR p xs)
 spanl :: (a -> Bool) -> StrictSeq a -> (StrictSeq a, StrictSeq a)
 spanl p (StrictSeq xs) = toStrictSeqTuple (Seq.spanl p xs)
 
+-- | \( O(i) \) where \( i \) is the suffix length.  'spanr', applied to a
+-- predicate @p@ and a sequence @xs@, returns a pair whose /first/ element
+-- is the longest /suffix/ (possibly empty) of @xs@ of elements that
+-- satisfy @p@ and the second element is the remainder of the sequence.
+spanr :: (a -> Bool) -> StrictSeq a -> (StrictSeq a, StrictSeq a)
+spanr p (StrictSeq xs) = toStrictSeqTuple (Seq.spanr p xs)
+
 {-------------------------------------------------------------------------------
   Indexing
 -------------------------------------------------------------------------------}
@@ -204,6 +215,16 @@ spanl p (StrictSeq xs) = toStrictSeqTuple (Seq.spanl p xs)
 take :: Int -> StrictSeq a -> StrictSeq a
 take i (StrictSeq xs) = StrictSeq (Seq.take i xs)
 
+-- | Take the last @n@ elements
+--
+-- Returns the entire sequence if it has fewer than @n@ elements.
+--
+-- Inherits asymptotic complexity from @drop@.
+takeLast :: Int -> StrictSeq a -> StrictSeq a
+takeLast i xs
+  | length xs >= i = drop (length xs - i) xs
+  | otherwise      = xs
+
 -- | \( O(\log(\min(i,n-i))) \). Elements of a sequence after the first @i@.
 -- If @i@ is negative, @'drop' i s@ yields the whole sequence.
 -- If the sequence contains fewer than @i@ elements, the empty sequence
@@ -211,10 +232,28 @@ take i (StrictSeq xs) = StrictSeq (Seq.take i xs)
 drop :: Int -> StrictSeq a -> StrictSeq a
 drop i (StrictSeq xs) = StrictSeq (Seq.drop i xs)
 
+-- | Drop the last @n@ elements
+--
+-- Returns the @Empty@ sequence if it has fewer than @n@ elements.
+--
+-- Inherits asymptotic complexity from @take@.
+dropLast :: Int -> StrictSeq a -> StrictSeq a
+dropLast i xs
+  | length xs >= i = take (length xs - i) xs
+  | otherwise      = Empty
+
 -- | \( O(\log(\min(i,n-i))) \). Split a sequence at a given position.
 -- @'splitAt' i s = ('take' i s, 'drop' i s)@.
 splitAt :: Int -> StrictSeq a -> (StrictSeq a, StrictSeq a)
 splitAt i (StrictSeq xs) = toStrictSeqTuple (Seq.splitAt i xs)
+
+-- | Split at the given position counting from the end of the sequence.
+--
+-- Inherits asymptotic complexity from 'splitAt'.
+splitAtEnd :: Int -> StrictSeq a -> (StrictSeq a, StrictSeq a)
+splitAtEnd i xs
+  | length xs >= i = splitAt (length xs - i) xs
+  | otherwise      = (Empty, xs)
 
 {-------------------------------------------------------------------------------
   Helpers
