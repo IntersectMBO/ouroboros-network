@@ -49,6 +49,7 @@ module Ouroboros.Storage.ChainDB.Impl.ImmDB (
   , ImmDB.epochFileParser
   ) where
 
+import           Cardano.Binary (WrappedDecoder)
 import           Codec.CBOR.Decoding (Decoder)
 import           Codec.CBOR.Encoding (Encoding)
 import qualified Codec.CBOR.Read as CBOR
@@ -126,8 +127,8 @@ type TraceEvent blk =
 --
 -- See also 'defaultArgs'.
 data ImmDbArgs m blk = forall h. ImmDbArgs {
-      immDecodeHash  :: forall s. Decoder s (HeaderHash blk)
-    , immDecodeBlock :: forall s. Decoder s (Lazy.ByteString -> blk)
+      immDecodeHash  :: WrappedDecoder (HeaderHash blk)
+    , immDecodeBlock :: WrappedDecoder blk
     , immEncodeHash  :: HeaderHash blk -> Encoding
     , immEncodeBlock :: blk -> BinaryInfo Encoding
     , immErr         :: ErrorHandling ImmDB.ImmutableDBError m

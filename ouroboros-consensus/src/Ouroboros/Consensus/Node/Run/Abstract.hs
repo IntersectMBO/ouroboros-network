@@ -1,5 +1,8 @@
+{-# LANGUAGE DeriveFunctor           #-}
 {-# LANGUAGE FlexibleContexts        #-}
 {-# LANGUAGE RankNTypes              #-}
+{-# LANGUAGE ScopedTypeVariables     #-}
+{-# LANGUAGE TypeApplications        #-}
 {-# LANGUAGE UndecidableSuperClasses #-}
 
 -- | Infrastructure required to run a node
@@ -9,11 +12,15 @@ module Ouroboros.Consensus.Node.Run.Abstract
   ( RunNode (..)
   ) where
 
+import           Cardano.Binary (WrappedDecoder, DecoderError
+                                , decodeWrapped)
 import           Codec.CBOR.Decoding (Decoder)
 import           Codec.CBOR.Encoding (Encoding)
 import           Crypto.Random (MonadRandom)
 import qualified Data.ByteString.Lazy as Lazy
-import           Data.Proxy (Proxy)
+import           Data.Proxy (Proxy(..))
+import qualified Data.Text as T
+import           Data.Typeable (Typeable, typeRep)
 
 import           Cardano.Crypto (ProtocolMagicId)
 
@@ -75,11 +82,11 @@ class (ProtocolLedgerView blk, ApplyTx blk) => RunNode blk where
   nodeEncodeApplyTxError  :: Proxy blk -> ApplyTxErr blk -> Encoding
 
   -- Decoders
-  nodeDecodeHeader        :: forall s. NodeConfig (BlockProtocol blk) -> Decoder s (Lazy.ByteString -> Header blk)
-  nodeDecodeBlock         :: forall s. NodeConfig (BlockProtocol blk) -> Decoder s (Lazy.ByteString -> blk)
-  nodeDecodeGenTx         :: forall s. Decoder s (GenTx blk)
-  nodeDecodeGenTxId       :: forall s. Decoder s (GenTxId blk)
-  nodeDecodeHeaderHash    :: forall s. Proxy blk -> Decoder s (HeaderHash blk)
-  nodeDecodeLedgerState   :: forall s. NodeConfig (BlockProtocol blk) -> Decoder s (LedgerState blk)
-  nodeDecodeChainState    :: forall s. Proxy blk -> Decoder s (ChainState (BlockProtocol blk))
-  nodeDecodeApplyTxError  :: forall s. Proxy blk -> Decoder s (ApplyTxErr blk)
+  nodeDecodeHeader        :: NodeConfig (BlockProtocol blk) -> WrappedDecoder (Header blk)
+  nodeDecodeBlock         :: NodeConfig (BlockProtocol blk) -> WrappedDecoder blk
+  nodeDecodeGenTx         :: WrappedDecoder (GenTx blk)
+  nodeDecodeGenTxId       :: WrappedDecoder (GenTxId blk)
+  nodeDecodeHeaderHash    :: Proxy blk -> WrappedDecoder (HeaderHash blk)
+  nodeDecodeLedgerState   :: NodeConfig (BlockProtocol blk) -> WrappedDecoder (LedgerState blk)
+  nodeDecodeChainState    :: Proxy blk -> WrappedDecoder (ChainState (BlockProtocol blk))
+  nodeDecodeApplyTxError  :: Proxy blk -> WrappedDecoder (ApplyTxErr blk)

@@ -9,7 +9,6 @@ module Ouroboros.Consensus.Ledger.Byron.Forge (
   , forgeGenesisEBB
   ) where
 
-import           Control.Monad (void)
 import           Crypto.Random (MonadRandom)
 import           Data.ByteString (ByteString)
 import           Data.Coerce (coerce)
@@ -29,7 +28,6 @@ import           Cardano.Crypto.DSIGN
 import           Ouroboros.Network.Block
 
 import           Ouroboros.Consensus.Crypto.DSIGN.Cardano
-import           Ouroboros.Consensus.Ledger.Byron.Aux
 import           Ouroboros.Consensus.Ledger.Byron.Block
 import           Ouroboros.Consensus.Ledger.Byron.Config
 import           Ouroboros.Consensus.Ledger.Byron.ContainsGenesis
@@ -60,8 +58,7 @@ forgeGenesisEBB
   -> ByronBlock
 forgeGenesisEBB cfg curSlot =
         mkByronBlock pbftEpochSlots
-      . CC.Block.ABOBBoundary
-      . reAnnotateBoundary protocolMagicId
+      . CC.Block.BOBBoundary
       $ boundaryBlock
   where
     protocolMagicId = CC.Genesis.configProtocolMagicId (getGenesisConfig cfg)
@@ -69,21 +66,19 @@ forgeGenesisEBB cfg curSlot =
                 , pbftEpochSlots
                 } = pbftExtConfig cfg
 
-    boundaryBlock :: CC.Block.ABoundaryBlock ()
+    boundaryBlock :: CC.Block.BoundaryBlock
     boundaryBlock =
-      CC.Block.ABoundaryBlock {
-        CC.Block.boundaryBlockLength = 0 -- Used only in testing anyway
-      , CC.Block.boundaryHeader
-      , CC.Block.boundaryBody        = CC.Block.ABoundaryBody ()
-      , CC.Block.boundaryAnnotation  = ()
+      CC.Block.BoundaryBlock {
+        CC.Block.boundaryHeader
+      , CC.Block.boundaryBody        = CC.Block.BoundaryBody
       }
 
-    boundaryHeader :: CC.Block.ABoundaryHeader ()
-    boundaryHeader = CC.Block.mkABoundaryHeader
+    boundaryHeader :: CC.Block.BoundaryHeader
+    boundaryHeader = CC.Block.mkBoundaryHeader
+      protocolMagicId
       (Left pbftGenesisHash)
       epoch
       (CC.Common.ChainDifficulty 0)
-      ()
       where
         CC.Slot.EpochNumber epoch =
             CC.Slot.epochNo
@@ -145,13 +140,13 @@ forgeRegularBlock cfg curSlot curNo prevHash txs isLeader = do
     blockPayloads = foldr extendBlockPayloads initBlockPayloads txs
 
     txPayload :: CC.UTxO.TxPayload
-    txPayload = CC.UTxO.mkTxPayload (bpTxs blockPayloads)
+    txPayload = CC.UTxO.TxPayload (bpTxs blockPayloads)
 
     dlgPayload :: CC.Delegation.Payload
-    dlgPayload = CC.Delegation.unsafePayload (bpDlgCerts blockPayloads)
+    dlgPayload = CC.Delegation.UnsafePayload (bpDlgCerts blockPayloads)
 
     updatePayload :: CC.Update.Payload
-    updatePayload = CC.Update.payload (bpUpProposal blockPayloads)
+    updatePayload = CC.Update.Payload (bpUpProposal blockPayloads)
                                       (bpUpVotes blockPayloads)
 
     extendBlockPayloads :: GenTx ByronBlock
@@ -162,17 +157,17 @@ forgeRegularBlock cfg curSlot curNo prevHash txs isLeader = do
       -- 'recoverBytes') here as opposed to throwing away the serializations
       -- (the 'ByteString' annotations) with 'void' as we're currently doing.
       case genTx of
-        ByronTx             _ tx   -> bp { bpTxs        = void tx : bpTxs }
-        ByronDlg            _ cert -> bp { bpDlgCerts   = void cert : bpDlgCerts }
+        ByronTx             _ tx   -> bp { bpTxs        = tx : bpTxs }
+        ByronDlg            _ cert -> bp { bpDlgCerts   = cert : bpDlgCerts }
         -- TODO: We should throw an error if we encounter multiple
         -- 'ByronUpdateProposal's (i.e. if 'bpUpProposal' 'isJust').
         -- This is because we should only be provided with a maximum of one
         -- 'ByronUpdateProposal' to include in a block payload.
-        ByronUpdateProposal _ prop -> bp { bpUpProposal = Just (void prop) }
-        ByronUpdateVote     _ vote -> bp { bpUpVotes    = void vote : bpUpVotes }
+        ByronUpdateProposal _ prop -> bp { bpUpProposal = Just prop }
+        ByronUpdateVote     _ vote -> bp { bpUpVotes    = vote : bpUpVotes }
 
     body :: CC.Block.Body
-    body = CC.Block.ABody {
+    body = CC.Block.Body {
           CC.Block.bodyTxPayload     = txPayload
         , CC.Block.bodySscPayload    = CC.Ssc.SscPayload
         , CC.Block.bodyDlgPayload    = dlgPayload
@@ -212,32 +207,27 @@ forgeRegularBlock cfg curSlot curNo prevHash txs isLeader = do
        annotateByronBlock pbftEpochSlots block
       where
         block :: CC.Block.Block
-        block = CC.Block.ABlock {
+        block = CC.Block.Block {
               CC.Block.blockHeader     = header
             , CC.Block.blockBody       = body
-            , CC.Block.blockAnnotation = ()
             }
 
         headerSignature :: CC.Block.BlockSignature
-        headerSignature = CC.Block.ABlockSignature dlgCertificate (coerce sig)
+        headerSignature = CC.Block.BlockSignature dlgCertificate (coerce sig)
           where
             sig :: Crypto.Signature CC.Block.ToSign
             SignedDSIGN (SigCardanoDSIGN sig) = pbftSignature ouroborosPayload
 
         header :: CC.Block.Header
-        header = CC.Block.AHeader {
-              CC.Block.aHeaderProtocolMagicId = ann (Crypto.getProtocolMagicId pbftProtocolMagic)
-            , CC.Block.aHeaderPrevHash        = ann prevHeaderHash
-            , CC.Block.aHeaderSlot            = ann (coerce curSlot)
-            , CC.Block.aHeaderDifficulty      = ann (coerce curNo)
+        header = CC.Block.UnsafeHeader {
+              CC.Block.headerProtocolMagicId  =  (Crypto.getProtocolMagicId pbftProtocolMagic)
+            , CC.Block.headerPrevHash         =  prevHeaderHash
+            , CC.Block.headerSlot             =  (coerce curSlot)
+            , CC.Block.headerDifficulty       =  (coerce curNo)
             , CC.Block.headerProtocolVersion  = pbftProtocolVersion
             , CC.Block.headerSoftwareVersion  = pbftSoftwareVersion
-            , CC.Block.aHeaderProof           = ann proof
+            , CC.Block.headerProof            =  proof
             , CC.Block.headerGenesisKey       = headerGenesisKey
             , CC.Block.headerSignature        = headerSignature
-            , CC.Block.headerAnnotation       = ()
-            , CC.Block.headerExtraAnnotation  = ()
+            , CC.Block.headerEpochSlots       = pbftEpochSlots
             }
-
-        ann :: b -> Annotated b ()
-        ann b = Annotated b ()

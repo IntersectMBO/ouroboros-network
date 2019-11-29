@@ -45,6 +45,7 @@ module Ouroboros.Storage.ChainDB.Impl.VolDB (
   , mkVolDB
   ) where
 
+import           Cardano.Binary (WrappedDecoder)
 import           Codec.CBOR.Decoding (Decoder)
 import           Codec.CBOR.Encoding (Encoding)
 import qualified Codec.CBOR.Read as CBOR
@@ -92,7 +93,7 @@ import qualified Ouroboros.Storage.VolatileDB as VolDB
 -- module.
 data VolDB m blk = VolDB {
       volDB    :: VolatileDB (HeaderHash blk) m
-    , decBlock :: forall s. Decoder s (Lazy.ByteString -> blk)
+    , decBlock :: WrappedDecoder blk
       -- ^ TODO introduce a newtype wrapper around the @s@ so we can use
       -- generics to derive the NoUnexpectedThunks instance.
     , encBlock :: blk -> Encoding
@@ -120,7 +121,7 @@ data VolDbArgs m blk = forall h. VolDbArgs {
     , volErr           :: ErrorHandling VolatileDBError m
     , volErrSTM        :: ThrowCantCatch VolatileDBError (STM m)
     , volBlocksPerFile :: Int
-    , volDecodeBlock   :: forall s. Decoder s (Lazy.ByteString -> blk)
+    , volDecodeBlock   :: WrappedDecoder blk
     , volEncodeBlock   :: blk -> Encoding
     }
 
@@ -161,7 +162,7 @@ openDB args@VolDbArgs{..} = do
 
 -- | For testing purposes
 mkVolDB :: VolatileDB (HeaderHash blk) m
-        -> (forall s. Decoder s (Lazy.ByteString -> blk))
+        -> (WrappedDecoder blk)
         -> (blk -> Encoding)
         -> ErrorHandling VolatileDBError m
         -> ThrowCantCatch VolatileDBError (STM m)
@@ -447,7 +448,7 @@ blockFileParser VolDbArgs{..} = VolDB.Parser $
        fmap (fmap (fmap fst)) -- Drop the offset of the error
      . Util.CBOR.readIncrementalOffsets volHasFS decoder'
   where
-    decoder' :: forall s. Decoder s (Lazy.ByteString -> VolDB.BlockInfo (HeaderHash blk))
+    decoder' :: WrappedDecoder (VolDB.BlockInfo (HeaderHash blk))
     decoder' = (extractInfo .) <$> volDecodeBlock
 
 {-------------------------------------------------------------------------------

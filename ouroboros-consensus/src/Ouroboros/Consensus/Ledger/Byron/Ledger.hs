@@ -231,14 +231,14 @@ applyByronBlock validationMode
                 ls =
     let ls' = applyChainTick fcfg (blockSlot fblk) ls
     in case blk of
-      CC.ABOBBlock    blk' -> applyABlock validationMode cfg blk' blkHash ls'
-      CC.ABOBBoundary blk' -> applyABoundaryBlock        cfg blk' ls'
+      CC.BOBBlock    blk' -> applyABlock validationMode cfg blk' blkHash ls'
+      CC.BOBBoundary blk' -> applyABoundaryBlock        cfg blk' ls'
 
 applyABlock :: CC.ValidationMode
             -> Gen.Config
-            -> CC.ABlock ByteString
+            -> CC.Block
             -> CC.HeaderHash
-            -> LedgerState (ByronBlock)
+            -> LedgerState ByronBlock
             -> Except (LedgerError ByronBlock) (LedgerState ByronBlock)
 applyABlock validationMode cfg blk blkHash ByronLedgerState{..} = do
     state' <- validateBlock cfg validationMode blk blkHash byronLedgerState
@@ -259,7 +259,7 @@ applyABlock validationMode cfg blk blkHash ByronLedgerState{..} = do
 -- Since boundary blocks don't modify the delegation state, they also don't
 -- modify the delegation history.
 applyABoundaryBlock :: Gen.Config
-                    -> CC.ABoundaryBlock ByteString
+                    -> CC.BoundaryBlock
                     -> LedgerState ByronBlock
                     -> Except (LedgerError ByronBlock) (LedgerState ByronBlock)
 applyABoundaryBlock cfg blk ByronLedgerState{..} = do

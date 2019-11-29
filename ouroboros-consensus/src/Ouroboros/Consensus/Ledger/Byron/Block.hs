@@ -36,9 +36,7 @@ import           Data.Binary (Get, Put)
 import qualified Data.Binary.Get as Get
 import qualified Data.Binary.Put as Put
 import qualified Data.ByteArray as ByteArray
-import           Data.ByteString (ByteString)
 import qualified Data.ByteString as Strict
-import qualified Data.ByteString.Lazy as Lazy
 import           Data.FingerTree.Strict (Measured (..))
 import           Data.Proxy
 import           Data.Typeable
@@ -77,8 +75,8 @@ newtype ByronHash = ByronHash { unByronHash :: CC.HeaderHash }
   deriving newtype (ToCBOR, FromCBOR, Condense)
   deriving anyclass NoUnexpectedThunks
 
-mkByronHash :: ABlockOrBoundaryHdr ByteString -> ByronHash
-mkByronHash = ByronHash . abobHdrHash
+mkByronHash :: BlockOrBoundaryHdr -> ByronHash
+mkByronHash = ByronHash . bobHdrHash
 
 byronHashInfo :: HashInfo ByronHash
 byronHashInfo = HashInfo { hashSize, getHash, putHash }
@@ -109,7 +107,7 @@ byronHashInfo = HashInfo { hashSize, getHash, putHash }
 --   Having it cached allows us to e.g. give a 'HasHeader' instance.
 -- * We cache the hash as this is expensive to compute and we need it often.
 data ByronBlock = ByronBlock {
-      byronBlockRaw    :: !(CC.ABlockOrBoundary ByteString)
+      byronBlockRaw    :: !CC.BlockOrBoundary
     , byronBlockSlotNo :: !SlotNo
     , byronBlockHash   :: !ByronHash
     }
@@ -118,21 +116,21 @@ data ByronBlock = ByronBlock {
 instance Condense ByronBlock where
   condense = condense . byronBlockRaw
 
-mkByronBlock :: CC.EpochSlots -> CC.ABlockOrBoundary ByteString -> ByronBlock
+mkByronBlock :: CC.EpochSlots -> CC.BlockOrBoundary -> ByronBlock
 mkByronBlock epochSlots blk = ByronBlock {
       byronBlockRaw    = blk
-    , byronBlockSlotNo = fromByronSlotNo $ abobHdrSlotNo epochSlots hdr
+    , byronBlockSlotNo = fromByronSlotNo $ bobHdrSlotNo epochSlots hdr
     , byronBlockHash   = mkByronHash hdr
     }
   where
-    hdr = abobHdrFromBlock blk
+    hdr = bobHdrFromBlock blk
 
 -- | Construct Byron block from unannotated 'CC.Block'
 --
 -- This should be used only when forging blocks (not when receiving blocks
 -- over the wire).
 annotateByronBlock :: CC.EpochSlots -> CC.Block -> ByronBlock
-annotateByronBlock es = mkByronBlock es . CC.ABOBBlock . reAnnotateBlock es
+annotateByronBlock es = mkByronBlock es . CC.BOBBlock
 
 {-------------------------------------------------------------------------------
   Header
@@ -143,37 +141,37 @@ instance GetHeader ByronBlock where
   --
   -- See 'ByronBlock' for comments on why we cache certain values.
   data Header ByronBlock = ByronHeader {
-        byronHeaderRaw    :: !(ABlockOrBoundaryHdr ByteString)
+        byronHeaderRaw    :: !BlockOrBoundaryHdr
       , byronHeaderSlotNo :: !SlotNo
       , byronHeaderHash   :: !ByronHash
       }
     deriving (Eq, Show, Generic)
 
   getHeader ByronBlock{..} = ByronHeader{
-        byronHeaderRaw    = abobHdrFromBlock byronBlockRaw
+        byronHeaderRaw    = bobHdrFromBlock byronBlockRaw
       , byronHeaderSlotNo = byronBlockSlotNo
       , byronHeaderHash   = byronBlockHash
       }
 
 instance Condense (Header ByronBlock) where
-  condense = aBlockOrBoundaryHdr condense condense . byronHeaderRaw
+  condense = blockOrBoundaryHdr condense condense . byronHeaderRaw
 
 instance NoUnexpectedThunks (Header ByronBlock) where
   showTypeOf _ = show $ typeRep (Proxy @(Header ByronBlock))
 
 mkByronHeader :: CC.EpochSlots
-              -> ABlockOrBoundaryHdr ByteString
+              -> BlockOrBoundaryHdr
               -> Header ByronBlock
 mkByronHeader epochSlots hdr = ByronHeader {
       byronHeaderRaw    = hdr
-    , byronHeaderSlotNo = fromByronSlotNo $ abobHdrSlotNo epochSlots hdr
+    , byronHeaderSlotNo = fromByronSlotNo $ bobHdrSlotNo epochSlots hdr
     , byronHeaderHash   = mkByronHash hdr
     }
 
 -- | Check if a block matches its header
 byronBlockMatchesHeader :: Header ByronBlock -> ByronBlock -> Bool
 byronBlockMatchesHeader hdr blk =
-    abobMatchesBody (byronHeaderRaw hdr) (byronBlockRaw blk)
+    bobMatchesBody (byronHeaderRaw hdr) (byronBlockRaw blk)
 
 {-------------------------------------------------------------------------------
   HasHeader instances
@@ -194,8 +192,8 @@ instance HasHeader ByronBlock where
 instance HasHeader (Header ByronBlock) where
   blockHash      = byronHeaderHash
   blockSlot      = byronHeaderSlotNo
-  blockPrevHash  = fromByronPrevHash' . abobHdrPrevHash        . byronHeaderRaw
-  blockNo        = fromByronBlockNo   . abobHdrChainDifficulty . byronHeaderRaw
+  blockPrevHash  = fromByronPrevHash' . bobHdrPrevHash        . byronHeaderRaw
+  blockNo        = fromByronBlockNo   . bobHdrChainDifficulty . byronHeaderRaw
   blockInvariant = const True
 
 instance Measured BlockMeasure ByronBlock where
@@ -231,8 +229,8 @@ encodeByronBlockWithInfo blk = BinaryInfo
                    + 1 {- 'encodeListLen' of the block: header + body + ...  -}
       -- Compute the length of the annotated header
     , headerSize   = fromIntegral $ Strict.length $ case byronBlockRaw blk of
-        CC.ABOBBoundary b -> CC.boundaryHeaderAnnotation $ CC.boundaryHeader b
-        CC.ABOBBlock    b -> CC.headerAnnotation         $ CC.blockHeader    b
+        CC.BOBBoundary b -> serialize' $ CC.boundaryHeader b
+        CC.BOBBlock    b -> serialize' $ CC.blockHeader    b
     }
 
 -- | Encode a block
@@ -247,26 +245,20 @@ encodeByronBlock :: ByronBlock -> Encoding
 encodeByronBlock blk = mconcat [
       CBOR.encodeListLen 2
     , case byronBlockRaw blk of
-        CC.ABOBBoundary b -> mconcat [
+        CC.BOBBoundary b -> mconcat [
             CBOR.encodeWord 0
-          , CBOR.encodePreEncoded $ CC.boundaryAnnotation b
+          , CBOR.encodePreEncoded $ serialize' b
           ]
-        CC.ABOBBlock b -> mconcat [
+        CC.BOBBlock b -> mconcat [
             CBOR.encodeWord 1
-          , CBOR.encodePreEncoded $ CC.blockAnnotation b
+          , CBOR.encodePreEncoded $ serialize' b
           ]
     ]
 
 -- | Inverse of 'encodeByronBlock'
-decodeByronBlock :: CC.EpochSlots -> Decoder s (Lazy.ByteString -> ByronBlock)
+decodeByronBlock :: CC.EpochSlots -> AnnotatedDecoder s ByronBlock
 decodeByronBlock epochSlots =
-    fillInByteString <$> CC.fromCBORABlockOrBoundary epochSlots
-  where
-    fillInByteString :: CC.ABlockOrBoundary ByteSpan
-                     -> Lazy.ByteString
-                     -> ByronBlock
-    fillInByteString it theBytes = mkByronBlock epochSlots $
-      Lazy.toStrict . slice theBytes <$> it
+  mkByronBlock epochSlots <$> CC.fromCBORBlockOrBoundary epochSlots
 
 -- | Encode a header
 --
@@ -278,24 +270,18 @@ encodeByronHeader :: Header ByronBlock -> Encoding
 encodeByronHeader hdr = mconcat [
       CBOR.encodeListLen 2
     , case byronHeaderRaw hdr of
-        ABOBBoundaryHdr h -> mconcat [
+        BOBBoundaryHdr h -> mconcat [
             CBOR.encodeWord 0
-          , CBOR.encodePreEncoded $ CC.boundaryHeaderAnnotation h
+          , CBOR.encodePreEncoded $ serialize' h
           ]
-        ABOBBlockHdr h -> mconcat [
+        BOBBlockHdr h -> mconcat [
             CBOR.encodeWord 1
-          , CBOR.encodePreEncoded $ CC.headerAnnotation h
+          , CBOR.encodePreEncoded $ serialize' h
           ]
     ]
 
 -- | Inverse of 'encodeByronHeader'
 decodeByronHeader :: CC.EpochSlots
-                  -> Decoder s (Lazy.ByteString -> Header ByronBlock)
+                  -> AnnotatedDecoder s (Header ByronBlock)
 decodeByronHeader epochSlots =
-    fillInByteString <$> fromCBORABlockOrBoundaryHdr epochSlots
-  where
-    fillInByteString :: ABlockOrBoundaryHdr ByteSpan
-                     -> Lazy.ByteString
-                     -> Header ByronBlock
-    fillInByteString it theBytes = mkByronHeader epochSlots $
-      Lazy.toStrict . slice theBytes <$> it
+  mkByronHeader epochSlots <$> fromCBORBlockOrBoundaryHdr epochSlots

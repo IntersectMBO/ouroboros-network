@@ -30,12 +30,12 @@ instance RunNode ByronBlock where
   nodeBlockMatchesHeader  = byronBlockMatchesHeader
   nodeBlockFetchSize      = const 2000 -- TODO #593
   nodeIsEBB               = \blk -> case byronBlockRaw blk of
-    Cardano.Block.ABOBBlock _      -> Nothing
-    Cardano.Block.ABOBBoundary ebb -> Just
-                                    . EpochNo
-                                    . Cardano.Block.boundaryEpoch
-                                    . Cardano.Block.boundaryHeader
-                                    $ ebb
+    Cardano.Block.BOBBlock _      -> Nothing
+    Cardano.Block.BOBBoundary ebb -> Just
+                                   . EpochNo
+                                   . Cardano.Block.boundaryEpoch
+                                   . Cardano.Block.boundaryHeader
+                                   $ ebb
 
   -- The epoch size is fixed and can be derived from @k@ by the ledger
   -- ('kEpochSlots').
@@ -71,14 +71,14 @@ instance RunNode ByronBlock where
   nodeEncodeChainState    = const encodeByronChainState
   nodeEncodeApplyTxError  = const encodeByronApplyTxError
 
-  nodeDecodeBlock         = decodeByronBlock  . extractEpochSlots
-  nodeDecodeHeader        = decodeByronHeader . extractEpochSlots
-  nodeDecodeGenTx         = decodeByronGenTx
-  nodeDecodeGenTxId       = decodeByronGenTxId
-  nodeDecodeHeaderHash    = const decodeByronHeaderHash
-  nodeDecodeLedgerState   = const decodeByronLedgerState
-  nodeDecodeChainState    = const decodeByronChainState
-  nodeDecodeApplyTxError  = const decodeByronApplyTxError
+  nodeDecodeBlock       c = Ann $ decodeByronBlock $ extractEpochSlots c
+  nodeDecodeHeader      c = Ann $ decodeByronHeader $ extractEpochSlots c
+  nodeDecodeGenTx         = Ann decodeByronGenTx
+  nodeDecodeGenTxId       = Plain decodeByronGenTxId
+  nodeDecodeHeaderHash    = const $ Plain decodeByronHeaderHash
+  nodeDecodeLedgerState   = const $ Plain decodeByronLedgerState
+  nodeDecodeChainState    = const $ Plain decodeByronChainState
+  nodeDecodeApplyTxError  = const $ Ann decodeByronApplyTxError
 
 extractGenesisData :: NodeConfig ByronConsensusProtocol -> Genesis.GenesisData
 extractGenesisData = Genesis.configGenesisData . getGenesisConfig

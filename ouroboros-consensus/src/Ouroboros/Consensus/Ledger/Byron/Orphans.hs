@@ -5,15 +5,11 @@
 module Ouroboros.Consensus.Ledger.Byron.Orphans () where
 
 import           Codec.Serialise (Serialise, decode, encode)
-import           Control.Monad (void)
-import           Data.ByteString (ByteString)
-import           Data.Coerce
 import           Data.Text (unpack)
 import           Formatting
 
 import qualified Cardano.Binary
 import           Cardano.Crypto (shortHashF)
-import qualified Cardano.Crypto
 
 import qualified Cardano.Chain.Block as CC
 import qualified Cardano.Chain.Common as CC

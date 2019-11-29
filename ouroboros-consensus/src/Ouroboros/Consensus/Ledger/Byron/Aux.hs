@@ -33,37 +33,27 @@ module Ouroboros.Consensus.Ledger.Byron.Aux (
   , ApplyMempoolPayloadErr(..)
   , applyMempoolPayload
   , mempoolPayloadRecoverBytes
-  , mempoolPayloadReencode
-    -- * Annotations
-  , reAnnotateBlock
-  , reAnnotateBoundary
-  , reAnnotateUsing
     -- * Headers
-  , ABlockOrBoundaryHdr(..)
-  , aBlockOrBoundaryHdr
-  , fromCBORABlockOrBoundaryHdr
-  , abobHdrFromBlock
-  , abobHdrSlotNo
-  , abobHdrChainDifficulty
-  , abobHdrHash
-  , abobHdrPrevHash
-  , abobMatchesBody
+  , BlockOrBoundaryHdr(..)
+  , blockOrBoundaryHdr
+  , fromCBORBlockOrBoundaryHdr
+  , bobHdrFromBlock
+  , bobHdrSlotNo
+  , bobHdrChainDifficulty
+  , bobHdrHash
+  , bobHdrPrevHash
+  , bobMatchesBody
   ) where
 
-import           Codec.CBOR.Decoding (Decoder)
 import qualified Codec.CBOR.Decoding as CBOR
 import qualified Codec.CBOR.Encoding as CBOR
-import qualified Codec.CBOR.Read as CBOR
-import qualified Codec.CBOR.Write as CBOR
 import           Control.Monad.Except
 import           Control.Monad.Reader
 import           Data.Bimap (Bimap)
 import qualified Data.Bimap as Bimap
 import           Data.ByteString (ByteString)
-import qualified Data.ByteString.Lazy as Lazy
 import           Data.Either (isRight)
 import qualified Data.Foldable as Foldable
-import           Data.List (intercalate)
 import           Data.Sequence (Seq)
 import           Data.Set (Set)
 import qualified Data.Set as Set
@@ -435,15 +425,15 @@ instance ToCBOR ApplyMempoolPayloadErr where
   toCBOR (MempoolUpdateVoteErr err) =
     CBOR.encodeListLen 2 <> toCBOR (3 :: Word8) <> toCBOR err
 
-instance FromCBOR ApplyMempoolPayloadErr where
-  fromCBOR = do
-    enforceSize "ApplyMempoolPayloadErr" 2
-    CBOR.decodeWord8 >>= \case
-      0   -> MempoolTxErr             <$> fromCBOR
-      1   -> MempoolDlgErr            <$> fromCBOR
-      2   -> MempoolUpdateProposalErr <$> fromCBOR
-      3   -> MempoolUpdateVoteErr     <$> fromCBOR
-      tag -> cborError $ DecoderErrorUnknownTag "ApplyMempoolPayloadErr" tag
+instance FromCBORAnnotated ApplyMempoolPayloadErr where
+  fromCBORAnnotated = do
+    lift $ enforceSize "ApplyMempoolPayloadErr" 2
+    (lift CBOR.decodeWord8) >>= \case
+      0   -> MempoolTxErr             <$> fromCBORAnnotated
+      1   -> MempoolDlgErr            <$> lift fromCBOR
+      2   -> MempoolUpdateProposalErr <$> lift fromCBOR
+      3   -> MempoolUpdateVoteErr     <$> lift fromCBOR
+      tag -> lift . cborError $ DecoderErrorUnknownTag "ApplyMempoolPayloadErr" tag
 
 applyMempoolPayload :: MonadError ApplyMempoolPayloadErr m
                     => CC.ValidationMode
@@ -485,32 +475,6 @@ reAnnotateMagicId pmi = reAnnotate $ Annotated pmi ()
 reAnnotateMagic :: ProtocolMagic -> AProtocolMagic ByteString
 reAnnotateMagic (AProtocolMagic a b) = AProtocolMagic (reAnnotate a) b
 
--- | Generalization of 'reAnnotate'
-reAnnotateUsing :: forall f a. Functor f
-                => (f a -> Encoding)
-                -> (forall s. Decoder s (f ByteSpan))
-                -> f a -> f ByteString
-reAnnotateUsing encoder decoder =
-      (\bs -> splice bs $ CBOR.deserialiseFromBytes decoder bs)
-    . CBOR.toLazyByteString
-    . encoder
-  where
-    splice :: Show err
-           => Lazy.ByteString
-           -> Either err (Lazy.ByteString, f ByteSpan)
-           -> f ByteString
-    splice bs (Right (left, fSpan))
-       | Lazy.null left = (Lazy.toStrict . slice bs) <$> fSpan
-       | otherwise      = roundtripFailure "leftover bytes"
-    splice _ (Left err) = roundtripFailure $ show err
-
-    roundtripFailure :: forall x. String -> x
-    roundtripFailure err = error $ intercalate ": " $ [
-          "annotateBoundary"
-        , "serialization roundtrip failure"
-        , show err
-        ]
-
 {-------------------------------------------------------------------------------
   Header of a regular block or EBB
 
@@ -522,48 +486,48 @@ data BlockOrBoundaryHdr  =
   | BOBBoundaryHdr !CC.BoundaryHeader
   deriving (Eq, Show, Generic, NoUnexpectedThunks)
 
-fromCBORABlockOrBoundaryHdr :: CC.EpochSlots
-                            -> Decoder s BlockOrBoundaryHdr
-fromCBORABlockOrBoundaryHdr epochSlots = do
-    enforceSize "ABlockOrBoundaryHdr" 2
-    fromCBOR @Word >>= \case
-      0 -> BOBBoundaryHdr <$> fromCBORAnnotated'
+fromCBORBlockOrBoundaryHdr :: CC.EpochSlots
+                            -> AnnotatedDecoder s BlockOrBoundaryHdr
+fromCBORBlockOrBoundaryHdr epochSlots = do
+    lift $ enforceSize "ABlockOrBoundaryHdr" 2
+    (lift $ fromCBOR @Word) >>= \case
+      0 -> BOBBoundaryHdr <$> fromCBORAnnotated
       1 -> BOBBlockHdr    <$> CC.fromCBORHeader epochSlots
       t -> error $ "Unknown tag in encoded HeaderOrBoundary" <> show t
 
 -- | The analogue of 'Data.Either.either'
-aBlockOrBoundaryHdr :: (CC.Header         -> b)
+blockOrBoundaryHdr :: (CC.Header         -> b)
                     -> (CC.BoundaryHeader -> b)
                     -> BlockOrBoundaryHdr -> b
-aBlockOrBoundaryHdr f _ (BOBBlockHdr    hdr) = f hdr
-aBlockOrBoundaryHdr _ g (BOBBoundaryHdr hdr) = g hdr
+blockOrBoundaryHdr f _ (BOBBlockHdr    hdr) = f hdr
+blockOrBoundaryHdr _ g (BOBBoundaryHdr hdr) = g hdr
 
-abobHdrFromBlock :: CC.BlockOrBoundary -> BlockOrBoundaryHdr
-abobHdrFromBlock (CC.BOBBlock    blk) = BOBBlockHdr    $ CC.blockHeader    blk
-abobHdrFromBlock (CC.BOBBoundary blk) = BOBBoundaryHdr $ CC.boundaryHeader blk
+bobHdrFromBlock :: CC.BlockOrBoundary -> BlockOrBoundaryHdr
+bobHdrFromBlock (CC.BOBBlock    blk) = BOBBlockHdr    $ CC.blockHeader    blk
+bobHdrFromBlock (CC.BOBBoundary blk) = BOBBoundaryHdr $ CC.boundaryHeader blk
 
 -- | Slot number of the header
 --
 -- NOTE: Epoch slot number calculation must match the one in 'applyBoundary'.
-abobHdrSlotNo :: CC.EpochSlots -> BlockOrBoundaryHdr -> CC.SlotNumber
-abobHdrSlotNo epochSlots =
-    aBlockOrBoundaryHdr
+bobHdrSlotNo :: CC.EpochSlots -> BlockOrBoundaryHdr -> CC.SlotNumber
+bobHdrSlotNo epochSlots =
+    blockOrBoundaryHdr
       CC.headerSlot
       (boundaryBlockSlot epochSlots . CC.boundaryEpoch)
 
-abobHdrChainDifficulty :: BlockOrBoundaryHdr -> CC.ChainDifficulty
-abobHdrChainDifficulty =
-    aBlockOrBoundaryHdr
+bobHdrChainDifficulty :: BlockOrBoundaryHdr -> CC.ChainDifficulty
+bobHdrChainDifficulty =
+    blockOrBoundaryHdr
       CC.headerDifficulty
       CC.boundaryDifficulty
 
-abobHdrHash :: BlockOrBoundaryHdr -> CC.HeaderHash
-abobHdrHash (BOBBoundaryHdr hdr) = CC.boundaryHeaderHashAnnotated hdr
-abobHdrHash (BOBBlockHdr    hdr) = CC.hashHeader         hdr
+bobHdrHash :: BlockOrBoundaryHdr -> CC.HeaderHash
+bobHdrHash (BOBBoundaryHdr hdr) = CC.boundaryHeaderHashAnnotated hdr
+bobHdrHash (BOBBlockHdr    hdr) = CC.hashHeader         hdr
 
-abobHdrPrevHash :: BlockOrBoundaryHdr -> Maybe CC.HeaderHash
-abobHdrPrevHash =
-    aBlockOrBoundaryHdr
+bobHdrPrevHash :: BlockOrBoundaryHdr -> Maybe CC.HeaderHash
+bobHdrPrevHash =
+    blockOrBoundaryHdr
       (Just                        . CC.headerPrevHash)
       (either (const Nothing) Just . CC.boundaryPrevHash)
 
@@ -573,10 +537,10 @@ abobHdrPrevHash =
 -- header-body validation but only checking whether an EBB header and EBB block
 -- were provided. This seems to be fine as it won't cause any loss of consensus
 -- with the old `cardano-sl` nodes.
-abobMatchesBody :: BlockOrBoundaryHdr
-                -> CC.BlockOrBoundary
-                -> Bool
-abobMatchesBody hdr blk =
+bobMatchesBody :: BlockOrBoundaryHdr
+               -> CC.BlockOrBoundary
+               -> Bool
+bobMatchesBody hdr blk =
     case (hdr, blk) of
       (BOBBlockHdr hdr', CC.BOBBlock blk') -> matchesBody hdr' blk'
       (BOBBoundaryHdr _, CC.BOBBoundary _) -> True
