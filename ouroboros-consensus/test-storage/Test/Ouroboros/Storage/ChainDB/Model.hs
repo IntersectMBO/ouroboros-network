@@ -49,6 +49,7 @@ module Test.Ouroboros.Storage.ChainDB.Model (
   , initLedger
   , garbageCollectable
   , garbageCollectablePoint
+  , garbageCollectableIteratorNext
   , garbageCollect
   , closeDB
   , reopen
@@ -328,10 +329,17 @@ addBlock cfg blk m
       = succ fingerprint
     WithFingerprint invalidBlocks fingerprint = invalid m
 
+    currentChainFrag = Chain.toAnchoredFragment (currentChain m)
+
     newChain  :: Chain blk
     newLedger :: ExtLedgerState blk
-    (newChain, newLedger) = fromMaybe (currentChain m, currentLedger m) $
-                              selectChain cfg (currentChain m) candidates
+    (newChain, newLedger) =
+      fromMaybe (currentChain m, currentLedger m) $
+      selectChain cfg (currentChain m) $
+      filter
+        (Fragment.forksAtMostKBlocks (maxRollbacks secParam) currentChainFrag .
+         Chain.toAnchoredFragment . fst)
+        candidates
 
 addBlocks :: (ProtocolLedgerView blk, CanSelect (BlockProtocol blk) blk)
           => NodeConfig (BlockProtocol blk)
@@ -671,6 +679,18 @@ garbageCollectablePoint secParam m@Model{..} pt
     = garbageCollectable secParam m blk
     | otherwise
     = True
+
+-- | Return 'True' when the next block the given iterator would produced is
+-- eligible for garbage collection, i.e. the real implementation might have
+-- garbage collected it.
+garbageCollectableIteratorNext
+  :: forall blk. HasHeader blk
+  => SecurityParam -> Model blk -> IteratorId -> Bool
+garbageCollectableIteratorNext secParam m itId =
+    case fst (iteratorNext itId m) of
+      IteratorExhausted    -> True -- TODO
+      IteratorBlockGCed {} -> error "model doesn't return IteratorBlockGCed"
+      IteratorResult blk   -> garbageCollectable secParam m blk
 
 garbageCollect :: forall blk. HasHeader blk
                => SecurityParam -> Model blk -> Model blk
