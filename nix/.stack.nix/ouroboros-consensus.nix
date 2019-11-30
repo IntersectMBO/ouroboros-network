@@ -39,6 +39,7 @@
           (hsPkgs.deepseq)
           (hsPkgs.digest)
           (hsPkgs.directory)
+          (hsPkgs.filelock)
           (hsPkgs.filepath)
           (hsPkgs.fingertree)
           (hsPkgs.formatting)

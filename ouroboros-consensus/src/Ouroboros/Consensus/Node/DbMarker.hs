@@ -5,6 +5,7 @@
 module Ouroboros.Consensus.Node.DbMarker (
     DbMarkerError(..)
   , checkDbMarker
+  , lockDbMarkerFile
     -- * For the benefit of testing only
   , dbMarkerFile
   , dbMarkerContents
@@ -20,11 +21,14 @@ import           Data.ByteString.Lazy (fromStrict, toStrict)
 import qualified Data.Set as Set
 import           Data.Text (Text)
 import           Data.Word
+import           System.FileLock
 import           Text.Read (readMaybe)
 
 import           Control.Monad.Class.MonadThrow
 
 import           Cardano.Crypto (ProtocolMagicId (..))
+
+import           Ouroboros.Consensus.Util.ResourceRegistry
 
 import           Ouroboros.Storage.FS.API
 import           Ouroboros.Storage.FS.API.Types
@@ -130,6 +134,10 @@ data DbMarkerError =
     -- be read. The file has been tampered with or it was corrupted somehow.
   | CorruptDbMarker
       FilePath         -- ^ The full path to the 'dbMarkerFile'
+
+    -- | The database is used by another process.
+  | DbLocked
+      FilePath         -- ^ The full path to the 'dbMarkerFile'
   deriving (Eq, Show)
 
 instance Exception DbMarkerError where
@@ -141,6 +149,29 @@ instance Exception DbMarkerError where
       "Missing \"" <> f <> "\" but the folder was not empty"
     CorruptDbMarker f ->
       "Corrupt or unreadable \"" <> f <> "\""
+    DbLocked f ->
+      "The db is used by another process. File \"" <> f <> "\" is locked"
+
+{-------------------------------------------------------------------------------
+  Locking
+-------------------------------------------------------------------------------}
+
+-- | If the file is locked, it throws an exception.
+-- The file is unlocked when the @registry@ is closed.
+lockDbMarkerFile :: ResourceRegistry IO -> FilePath -> IO ()
+lockDbMarkerFile registry dbPath = do
+    mlockFile <- allocateEither
+                    registry
+                    (const $ justToRight <$> tryLockFile fullPath Exclusive)
+                    unlockFile
+    case mlockFile of
+      Left () -> throwM $ DbLocked fullPath
+      Right _ -> return ()
+  where
+    pFile    = fsPathFromList [dbMarkerFile]
+    fullPath = fsToFilePath (MountPoint dbPath) pFile
+
+    justToRight = maybe (Left ()) Right
 
 {-------------------------------------------------------------------------------
   Configuration (filename, file format)
