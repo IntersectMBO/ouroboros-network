@@ -894,7 +894,8 @@ publicRootPeersJob PeerSelectionActions{requestPublicRootPeers}
     job = do
       (results, ttl) <- requestPublicRootPeers numExtraAllowed
       return $ Completion $ \st now ->
-        let newPeers         = results Set.\\ publicRootPeers st
+        let newPeers         = results Set.\\ Map.keysSet (localRootPeers st)
+                                       Set.\\ publicRootPeers st
             publicRootPeers' = publicRootPeers st <> newPeers
             knownPeers'      = KnownPeers.insert
                                  PeerSourcePublicRoot
@@ -1143,7 +1144,8 @@ knownPeersAboveTarget PeerSelectionPolicy {
                         publicRootPeers,
                         knownPeers,
                         targets = PeerSelectionTargets {
-                                    targetNumberOfKnownPeers
+                                    targetNumberOfKnownPeers,
+                                    targetNumberOfRootPeers
                                   }
                       }
     -- Are we above the target for number of known peers?
@@ -1154,10 +1156,22 @@ knownPeersAboveTarget PeerSelectionPolicy {
   = Guarded Nothing $ do
       -- We must never pick local root peers to forget as this would violate
       -- our invariant that the localRootPeers is a subset of the knownPeers.
-      let availableToForget = KnownPeers.toMap knownPeers Map.\\ localRootPeers
+      --
+      -- We also need to avoid picking public root peers if that would put us
+      -- below the target for root peers.
+      --
       -- Since the targetNumberOfKnownPeers is at least the size of the root
       -- peers set (another invariant) then we know that if numPeersToForget > 0
       -- then availableToForget here is non-empty.
+      --
+      let numRootPeersCanForget = Map.size localRootPeers
+                                + Set.size publicRootPeers
+                                - targetNumberOfRootPeers
+          protectedRootPeers    = Map.keysSet localRootPeers
+                               <> Set.drop numRootPeersCanForget publicRootPeers
+          availableToForget     = KnownPeers.toMap knownPeers
+                                    `Map.withoutKeys` protectedRootPeers
+
       assert (not (Map.null availableToForget)) $ return ()
 
       selectedToForget <- NonEmpty.toList
@@ -1215,6 +1229,7 @@ changedLocalRootPeers :: (MonadSTM m, Ord peeraddr)
 changedLocalRootPeers PeerSelectionActions{readLocalRootPeers}
                       st@PeerSelectionState{
                         localRootPeers,
+                        publicRootPeers,
                         knownPeers,
                         targets = PeerSelectionTargets{targetNumberOfKnownPeers}
                       } =
@@ -1227,14 +1242,17 @@ changedLocalRootPeers PeerSelectionActions{readLocalRootPeers}
 
       let (knownPeers', _removed) =
             KnownPeers.adjustRootSet localRootPeers localRootPeers' knownPeers
-      --TODO: adjust the publicRootPeers to maintain the invariant
+          -- Have to adjust the publicRootPeers to maintain the invariant that
+          -- the local and public sets are non-overlapping.
+          publicRootPeers' = publicRootPeers Set.\\ Map.keysSet localRootPeers'
       --TODO: when we have established/active peers and they're
       -- removed then we should disconnect from them.
       return Decision {
         decisionTrace = TraceLocalRootPeersChanged localRootPeers localRootPeers',
         decisionState = st {
-                          localRootPeers = localRootPeers',
-                          knownPeers     = knownPeers'
+                          localRootPeers  = localRootPeers',
+                          publicRootPeers = publicRootPeers',
+                          knownPeers      = knownPeers'
                         },
         decisionEnact = Nothing
       }

@@ -57,7 +57,7 @@ tests =
     , localOption (QuickCheckMaxSize 30) $
       testProperty "shrink for GovernorMockEnvironment"    prop_shrink_GovernorMockEnvironment
     ]
-  , testProperty "governor sanity"             prop_governor_sanity
+  , testProperty "governor no livelock"        prop_governor_nolivelock
   , testProperty "governor reachable in 1hr"   prop_governor_reachable_1hr
   ]
 
@@ -75,7 +75,8 @@ tests =
 --
 data GovernorMockEnvironment = GovernorMockEnvironment {
        peerGraph               :: PeerGraph,
-       rootPeers               :: Map PeerAddr PeerAdvertise,
+       localRootPeers          :: Map PeerAddr PeerAdvertise,
+       publicRootPeers         :: Set PeerAddr,
        targets                 :: PeerSelectionTargets,
        pickKnownPeersForGossip :: PickScript,
        pickColdPeersToForget   :: PickScript
@@ -131,16 +132,16 @@ newtype PickScript = PickScript (NonEmpty (NonEmpty (NonNegative Int)))
 validGovernorMockEnvironment :: GovernorMockEnvironment -> Bool
 validGovernorMockEnvironment GovernorMockEnvironment {
                                peerGraph,
-                               rootPeers,
+                               localRootPeers,
+                               publicRootPeers,
                                targets
                              } =
       validPeerGraph peerGraph
-   && validRootPeers (allPeers peerGraph) rootPeers
+   && Map.keysSet localRootPeers `Set.isSubsetOf` allPeersSet
+   &&            publicRootPeers `Set.isSubsetOf` allPeersSet
    && sanePeerSelectionTargets targets
   where
-    validRootPeers :: Set PeerAddr -> Map PeerAddr a -> Bool
-    validRootPeers allpeers rootpeers =
-        Map.keysSet rootpeers `Set.isSubsetOf` allpeers
+    allPeersSet = allPeers peerGraph
 
 -- | Invariant. Used to check the QC generator and shrinker.
 --
@@ -184,7 +185,8 @@ mockPeerSelectionActions :: (MonadSTM m, MonadTimer m)
                          -> m (PeerSelectionActions PeerAddr m)
 mockPeerSelectionActions GovernorMockEnvironment {
                            peerGraph = PeerGraph adjacency,
-                           rootPeers,
+                           localRootPeers,
+                           publicRootPeers,
                            targets
                          } = do
     scriptVars <-
@@ -196,8 +198,8 @@ mockPeerSelectionActions GovernorMockEnvironment {
           where
             Just scriptVar = Map.lookup addr scriptVars
     return PeerSelectionActions {
-      readLocalRootPeers       = return rootPeers,
-      requestPublicRootPeers   = \_ -> return (Set.empty, 0), --TODO
+      readLocalRootPeers       = return localRootPeers,
+      requestPublicRootPeers   = \_ -> return (publicRootPeers, 0),
       readPeerSelectionTargets = return targets,
       requestPeerGossip
     }
@@ -291,29 +293,45 @@ pickMapKeys m ns =
 
 
 -- | Run the governor for up to 24 hours (simulated obviously) and see if it
--- throws any exceptions. This uses static targets and root peers.
+-- throws any exceptions (assertions such as invariant violations) or if it
+-- encounters a livelock situation.
 --
--- This tells us that even for insane environments there are no invariant
--- violations.
+-- | It is easy to get bugs where the governor is stuck in a busy loop working
+-- but not making progress. This kind of bug would result in the governor
+-- thread consuming all the cpu, but wouldn't actually stop the node, so might
+-- not be easily noticed.
 --
-prop_governor_sanity :: GovernorMockEnvironment -> Property
-prop_governor_sanity env =
-    let trace = selectPeerSelectionTraceEvents $
+-- We check for this condition by requiring that trace events a certain number
+-- of events apart are sufficiently far apart in time too. This will be
+-- violated if the governor starts making very slow forward progress.
+--
+-- This uses static targets and root peers.
+--
+prop_governor_nolivelock :: GovernorMockEnvironment -> Property
+prop_governor_nolivelock env =
+    let trace = takeFirstNHours 24 .
+                selectPeerSelectionTraceEvents $
                   runGovernorInMockEnvironment env
-     in      property (noFailures trace)
-        .&&. if targetNumberOfKnownPeers (targets env) > 0
-               then hasOutput trace
-               else property True
+     in      hasOutput trace
+        .&&. property (makesAdequateProgress
+                         10 -- 100 events should take longer than 10 seconds
+                         (map fst trace))
   where
-    hasOutput :: [(Time, TracePeerSelection PeerAddr)] -> Property
+    hasOutput :: [a] -> Property
     hasOutput (_:_) = property True
     hasOutput []    = counterexample "no trace output" $
                       property False
 
-    -- Just evaluate to force any exception
-    noFailures :: [(Time, TracePeerSelection PeerAddr)] -> Bool
-    noFailures = foldl const True . takeFirstNHours 24
-
+    -- Check that events that are 100 events apart have an adequate time
+    -- between them, to indicate we're not in a busy livelock situation.
+    makesAdequateProgress :: DiffTime -> [Time] -> Bool
+    makesAdequateProgress adequate ts =
+        go ts (drop 100 ts)
+      where
+        go (a:as) (b:bs)
+          | diffTime b a < adequate = False
+          | otherwise               = go as bs
+        go _ _ = True
 
 -- | Run the governor for up to 1 hour (simulated obviously) and look at the
 -- set of known peers it has selected. This uses static targets and root peers.
@@ -329,13 +347,15 @@ prop_governor_sanity env =
 prop_governor_reachable_1hr :: GovernorMockEnvironment -> Property
 prop_governor_reachable_1hr env@GovernorMockEnvironment{
                               peerGraph,
-                              rootPeers,
+                              localRootPeers,
+                              publicRootPeers,
                               targets
                             } =
     let trace      = selectPeerSelectionTraceEvents $
                        runGovernorInMockEnvironment env
         Just found = knownPeersAfter1Hour trace
-        reachable  = firstGossipReachablePeers peerGraph rootPeers
+        reachable  = firstGossipReachablePeers peerGraph
+                       (Map.keysSet localRootPeers <> publicRootPeers)
      in subsetProperty    found reachable
    .&&. bigEnoughProperty found reachable
   where
@@ -351,13 +371,24 @@ prop_governor_reachable_1hr env@GovernorMockEnvironment{
       property (found `Set.isSubsetOf` reachable)
 
     -- We expect to find enough of them, either the target number or the
-    -- maximum reachable
-    bigEnoughProperty found reachable =
-      counterexample ("reachable : " ++ show reachable ++ "\n" ++
-                      "found     : " ++ show found ++ "\n" ++
-                      "found #   : " ++ show (Set.size found) ++ "\n" ++
-                      "expected #: " ++ show expected) $
-      property (Set.size found == expected)
+    -- maximum reachable.
+    bigEnoughProperty found reachable
+        -- But there's an awkward corner case: if the number of public roots
+        -- available is bigger than the target then we will likely not get
+        -- all the roots (but which subset we get is random), but if we don't
+        -- get all the roots then the set of peers actually reachable is
+        -- incomplete, so we cannot expect to reach the usual target.
+        --
+        -- But we can at least expect to hit the target for root peers.
+      | Set.size publicRootPeers > targetNumberOfRootPeers targets
+      = property (Set.size found >= targetNumberOfRootPeers targets)
+
+      | otherwise
+      = counterexample ("reachable : " ++ show reachable ++ "\n" ++
+                        "found     : " ++ show found ++ "\n" ++
+                        "found #   : " ++ show (Set.size found) ++ "\n" ++
+                        "expected #: " ++ show expected) $
+        property (Set.size found == expected)
       where
         expected = Set.size reachable `min` targetNumberOfKnownPeers targets
 
@@ -389,25 +420,25 @@ takeFirstNHours h = takeWhile (\(t,_) -> t < Time (60*60*h))
 -- the 'GossipScript's which determine what subset of edges the governor
 -- actually sees when it tries to gossip.
 --
-notionallyReachablePeers :: PeerGraph -> Map PeerAddr a -> Set PeerAddr
+notionallyReachablePeers :: PeerGraph -> Set PeerAddr -> Set PeerAddr
 notionallyReachablePeers pg roots =
     Set.fromList
   . map vertexToAddr
   . concatMap Tree.flatten 
   . Graph.dfs graph
   . map addrToVertex
-  $ Map.keys roots
+  $ Set.toList roots
   where
     (graph, vertexToAddr, addrToVertex) = peerGraphAsGraph pg
 
-firstGossipReachablePeers :: PeerGraph -> Map PeerAddr a -> Set PeerAddr
+firstGossipReachablePeers :: PeerGraph -> Set PeerAddr -> Set PeerAddr
 firstGossipReachablePeers pg roots =
     Set.fromList
   . map vertexToAddr
   . concatMap Tree.flatten 
   . Graph.dfs graph
   . map addrToVertex
-  $ Map.keys roots
+  $ Set.toList roots
   where
     (graph, vertexToAddr, addrToVertex) = firstGossipGraph pg
 
@@ -452,8 +483,9 @@ simpleGraphRep (graph, vertexInfo, lookupVertex) =
 instance Arbitrary GovernorMockEnvironment where
   arbitrary = do
       -- Dependency of the root set on the graph
-      peerGraph <- arbitrary
-      rootPeers <- arbitraryRootPeers (allPeers peerGraph)
+      peerGraph         <- arbitrary
+      (localRootPeers,
+       publicRootPeers) <- arbitraryRootPeers (allPeers peerGraph)
 
       -- But the others are independent
       targets                 <- arbitrary
@@ -461,43 +493,62 @@ instance Arbitrary GovernorMockEnvironment where
       pickColdPeersToForget   <- arbitrary
       return GovernorMockEnvironment{..}
     where
-      arbitraryRootPeers :: Set PeerAddr -> Gen (Map PeerAddr PeerAdvertise)
-      arbitraryRootPeers peers | Set.null peers = return Map.empty
+      arbitraryRootPeers :: Set PeerAddr
+                         -> Gen (Map PeerAddr PeerAdvertise, Set PeerAddr)
+      arbitraryRootPeers peers | Set.null peers = return (Map.empty, Set.empty)
       arbitraryRootPeers peers = do
         -- We decide how many we want and then pick randomly.
-        numroots  <- choose (1, ceiling . sqrt . (fromIntegral :: Int -> Double)
-                                        . length $ peers)
+        sz <- getSize
+        let minroots
+              | sz >= 10  = 1
+              | otherwise = 0
+            maxroots      = ceiling
+                          . sqrt
+                          . (fromIntegral :: Int -> Double)
+                          . length
+                          $ peers
+        numroots  <- choose (minroots, maxroots)
         ixs       <- vectorOf numroots (getNonNegative <$> arbitrary)
         let pick n    = Set.elemAt i peers where i = n `mod` Set.size peers
             rootPeers = nub (map pick ixs)
-        peerinfos <- vectorOf (length rootPeers) arbitrary
-        return $ Map.fromList (zip rootPeers peerinfos)
+        -- divide into local and public, but with a bit of overlap:
+        local <- vectorOf (length rootPeers) (choose (0, 10 :: Int))
+        let localRoots  = [ x | (x, v) <- zip rootPeers local, v <= 5 ]
+            publicRoots = [ x | (x, v) <- zip rootPeers local, v >= 5 ]
+        peerinfos <- vectorOf (length localRoots) arbitrary
+        let localRootsMap  = Map.fromList (zip localRoots peerinfos)
+            publicRootsSet = Set.fromList publicRoots
+        return (localRootsMap, publicRootsSet)
 
   shrink env@GovernorMockEnvironment {
            peerGraph,
-           rootPeers,
+           localRootPeers,
+           publicRootPeers,
            targets,
            pickKnownPeersForGossip,
            pickColdPeersToForget
          } =
-      -- Special rule for shrinking the peerGraph because the rootPeers
+      -- Special rule for shrinking the peerGraph because the localRootPeers
       -- depends on it so has to be updated too.
       [ env {
-          peerGraph = peerGraph',
-          rootPeers = Map.restrictKeys rootPeers (allPeers peerGraph')
+          peerGraph       = peerGraph',
+          localRootPeers  = Map.restrictKeys localRootPeers nodes',
+          publicRootPeers = publicRootPeers `Set.intersection` nodes'
         }
-      | peerGraph' <- shrink peerGraph ]
+      | peerGraph' <- shrink peerGraph
+      , let nodes' = allPeers peerGraph' ]
       -- All the others are generic.
    ++ [ env {
-          rootPeers               = rootPeers',
+          localRootPeers          = localRootPeers',
+          publicRootPeers         = publicRootPeers',
           targets                 = targets',
           pickKnownPeersForGossip = pickKnownPeersForGossip',
           pickColdPeersToForget   = pickColdPeersToForget'
         }
-      | (rootPeers', targets',
+      | (localRootPeers', publicRootPeers', targets',
          pickKnownPeersForGossip',
          pickColdPeersToForget')
-          <- shrink (rootPeers, targets,
+          <- shrink (localRootPeers, publicRootPeers, targets,
                      pickKnownPeersForGossip,
                      pickColdPeersToForget)
       ]
@@ -670,12 +721,21 @@ prop_shrink_PeerSelectionTargets =
 
 prop_arbitrary_GovernorMockEnvironment :: GovernorMockEnvironment -> Property
 prop_arbitrary_GovernorMockEnvironment env =
-    classify (not emptyGraph && emptyRootPeers) "empty root peers" $
-    tabulate "num root peers" [show (Map.size (rootPeers env))] $
+    tabulate "num root peers"        [show (Map.size (localRootPeers env)
+                                          + Set.size (publicRootPeers env))] $
+    tabulate "num local root peers"  [show (Map.size (localRootPeers env))] $
+    tabulate "num public root peers" [show (Set.size (publicRootPeers env))] $
+    tabulate "empty root peers" [show $ not emptyGraph && emptyRootPeers]  $
+    tabulate "overlapping local/public roots" [show overlappingRootPeers]  $
+
     validGovernorMockEnvironment env
   where
     emptyGraph     = null g where PeerGraph g = peerGraph env
-    emptyRootPeers = Map.null (rootPeers env)
+    emptyRootPeers = Map.null (localRootPeers env)
+                  && Set.null (publicRootPeers env)
+    overlappingRootPeers =
+      not $ Set.null $ Set.intersection (Map.keysSet (localRootPeers env))
+                                        (publicRootPeers env)
 
 prop_shrink_GovernorMockEnvironment :: GovernorMockEnvironment -> Bool
 prop_shrink_GovernorMockEnvironment =
