@@ -47,7 +47,9 @@ import           Ouroboros.Network.PeerSelection.Types
 data KnownPeerInfo = KnownPeerInfo {
 
        -- | Should we advertise this peer when other nodes send us gossip requests?
-       knownPeerAdvertise :: !Bool
+       knownPeerAdvertise :: !PeerAdvertise,
+
+       knownPeerSource    :: !PeerSource
 {-
        -- | The current number of consecutive connection attempt failures. This
        -- is reset as soon as there is a successful connection. It is used
@@ -66,7 +68,6 @@ data KnownPeerInfo = KnownPeerInfo {
 -}
      }
   deriving (Eq, Show)
-
 
 -- | The set of known peers. To a first approximation it can be thought of as
 -- a 'Map' from @peeraddr@ to the 'KnownPeerInfo' for each one.
@@ -118,6 +119,7 @@ empty =
       knownPeersNextGossipTimes    = PSQ.empty
     }
 
+-- | /O(1)/
 toMap :: KnownPeers peeraddr -> Map peeraddr KnownPeerInfo
 toMap = knownPeersByAddr
 
@@ -126,10 +128,12 @@ availableForGossip KnownPeers {knownPeersByAddr, knownPeersAvailableForGossip} =
     Map.restrictKeys knownPeersByAddr knownPeersAvailableForGossip
 
 insert :: Ord peeraddr
-       => [peeraddr]
+       => PeerSource
+       -> PeerAdvertise
+       -> [peeraddr]
        -> KnownPeers peeraddr
        -> KnownPeers peeraddr
-insert peeraddrs
+insert peersource peeradvertise peeraddrs
        knownPeers@KnownPeers {
          knownPeersByAddr,
          knownPeersAvailableForGossip
@@ -144,7 +148,11 @@ insert peeraddrs
         }
     in assert (invariant knownPeers') knownPeers'
   where
-    newPeers = Map.fromList [ (p, KnownPeerInfo True) | p <- peeraddrs ]
+    newPeers = Map.fromList [ (p, peerInfo) | p <- peeraddrs ]
+    peerInfo = KnownPeerInfo {
+                 knownPeerSource    = peersource,
+                 knownPeerAdvertise = peeradvertise
+               }
 
 delete :: Ord peeraddr
        => [peeraddr]
@@ -242,9 +250,10 @@ setGossipTime peeraddrs time
     in assert (invariant knownPeers') knownPeers'
 
 
+--TODO: have this re-implemented in terms of insert and delete
 adjustRootSet :: Ord peeraddr
-              => RootPeers peeraddr
-              -> RootPeers peeraddr
+              => Map peeraddr PeerAdvertise
+              -> Map peeraddr PeerAdvertise
               -> KnownPeers peeraddr
               -> (KnownPeers peeraddr, Set peeraddr)
 adjustRootSet rootPeers rootPeers'
@@ -282,9 +291,10 @@ adjustRootSet rootPeers rootPeers'
       k { knownPeerAdvertise = knownPeerAdvertise r }
 
     -- Root peer to a KnownPeer with minimal info, as if previously unknown.
-    rootToKnownPeer RootPeerInfo{rootPeerAdvertise} =
+    rootToKnownPeer peerAdvertise =
       KnownPeerInfo {
-        knownPeerAdvertise = rootPeerAdvertise
+        knownPeerSource    = PeerSourceLocalRoot,
+        knownPeerAdvertise = peerAdvertise
       }
 
 -- | Select a random subset of the known peers that are available to publish.

@@ -30,14 +30,15 @@ module Ouroboros.Network.PeerSelection.Governor (
 
 import           Data.Void (Void)
 import           Data.Maybe (fromMaybe)
+import           Data.Semigroup (Min(..))
 import qualified Data.List.NonEmpty as NonEmpty
 import           Data.List.NonEmpty (NonEmpty(..))
 import qualified Data.Map.Strict as Map
 import           Data.Map.Strict (Map)
---import qualified Data.Set as Set
---import           Data.Set (Set)
+import qualified Data.Set as Set
+import           Data.Set (Set)
 
-import           Control.Applicative (Alternative(empty, (<|>)))
+import           Control.Applicative (Alternative((<|>)))
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadSTM
@@ -433,6 +434,7 @@ data PeerSelectionPolicy peeraddr m = PeerSelectionPolicy {
 --     policyPickWarmPeersToDemote   :: Map peeraddr () -> Int -> STM m (NonEmpty peeraddr),
        policyPickColdPeersToForget   :: Map peeraddr KnownPeerInfo -> Int -> STM m (NonEmpty peeraddr),
 
+       policyFindPublicRootTimeout   :: !DiffTime,
        policyMaxInProgressGossipReqs :: !Int,
        policyGossipRetryTime         :: !DiffTime,
        policyGossipBatchWaitTime     :: !DiffTime,
@@ -445,8 +447,17 @@ data PeerSelectionPolicy peeraddr m = PeerSelectionPolicy {
 -- the peer churn governor loop as knobs to adjust, to influence the peer
 -- selection governor.
 --
+-- The /known/, /established/ and /active/ peer targets are targets both from
+-- below and from above: the governor will attempt to grow or shrink the sets
+-- to hit these targets.
+--
+-- Unlike the other targets, the /root/ peer target is \"one sided\", it is
+-- only a target from below. The governor does not try to shrink the root set
+-- to hit it, it simply stops looking for more.
+--
 data PeerSelectionTargets = PeerSelectionTargets {
 
+       targetNumberOfRootPeers        :: !Int,
        targetNumberOfKnownPeers       :: !Int,
        targetNumberOfEstablishedPeers :: !Int,
        targetNumberOfActivePeers      :: !Int
@@ -461,6 +472,7 @@ data PeerSelectionTargets = PeerSelectionTargets {
 nullPeerSelectionTargets :: PeerSelectionTargets
 nullPeerSelectionTargets =
     PeerSelectionTargets {
+       targetNumberOfRootPeers        = 0,
        targetNumberOfKnownPeers       = 0,
        targetNumberOfEstablishedPeers = 0,
        targetNumberOfActivePeers      = 0
@@ -474,6 +486,8 @@ sanePeerSelectionTargets PeerSelectionTargets{..} =
                                  0 <= targetNumberOfActivePeers
  && targetNumberOfActivePeers      <= targetNumberOfEstablishedPeers
  && targetNumberOfEstablishedPeers <= targetNumberOfKnownPeers
+ &&      targetNumberOfRootPeers   <= targetNumberOfKnownPeers
+ && 0 <= targetNumberOfRootPeers
 
  && targetNumberOfActivePeers      <= 100
  && targetNumberOfEstablishedPeers <= 1000
@@ -489,34 +503,32 @@ sanePeerSelectionTargets PeerSelectionTargets{..} =
 --
 data PeerSelectionActions peeraddr m = PeerSelectionActions {
 
-       -- | Read the current set of root peers.
+       readPeerSelectionTargets :: STM m PeerSelectionTargets,
+
+       -- | Read the current set of locally or privately known root peers.
        --
        -- In general this is expected to be updated asynchronously by some
-       -- other thread. It is intended to cover use cases including:
+       -- other thread. It is intended to cover the use case of peers from
+       -- local configuration. It could be dynamic due to DNS resolution, or
+       -- due to dynamic configuration updates.
        --
-       -- * statically configured peers
+       readLocalRootPeers :: STM m (Map peeraddr PeerAdvertise),
+
+       -- | Request a sample of public root peers.
        --
-       readRootPeers :: STM m (RootPeers peeraddr),
-{-
-       -- | Read the current set of root peers.
-       --
-       -- In general this is expected to be updated asynchronously by some
-       -- other thread. It is intended to cover use cases including:
+       -- It is intended to cover use cases including:
        --
        -- * federated relays from a DNS pool
        -- * stake pool relays published in the blockchain
+       -- * a pre-distributed snapshot of stake pool relays from the blockchain
        --
-       readRootPeers :: STM m (RootPeers peeraddr),
--}
-       readPeerSelectionTargets :: STM m PeerSelectionTargets,
+       requestPublicRootPeers :: Int -> m (Set peeraddr, DiffTime),
 
        -- | The action to contact a known peer and request a sample of its
        -- known peers.
        --
        -- This is synchronous, but it should expect to be interrupted by a
-       -- timeout asynchronous exception.
-       --
-       -- TODO: decide how to handle failures: throw exceptions or return?
+       -- timeout asynchronous exception. Failures are throw as exceptions.
        --
        requestPeerGossip :: peeraddr -> m [peeraddr]
 
@@ -525,13 +537,18 @@ data PeerSelectionActions peeraddr m = PeerSelectionActions {
 
 -- | The internal state used by the 'peerSelectionGovernor'.
 --
+-- The local and public root sets are disjoint, and their union is the
+-- overall root set.
+--
 data PeerSelectionState peeraddr = PeerSelectionState {
 
        targets              :: !PeerSelectionTargets,
 
-       -- | The current set of root peers.
+       -- | The current set of local root peers.
        --
-       rootPeers            :: !(RootPeers peeraddr),
+       localRootPeers       :: !(Map peeraddr PeerAdvertise),
+
+       publicRootPeers      :: !(Set peeraddr),
 
        -- |
        --
@@ -545,7 +562,22 @@ data PeerSelectionState peeraddr = PeerSelectionState {
        --
        activePeers          :: !(Map peeraddr ()),
 
-       inProgressGossipReqs :: Int
+       -- | A counter to manage the exponential backoff strategy for when to
+       -- retry querying for more public root peers. It is negative for retry
+       -- counts after failure, and positive for retry counts that are
+       -- successful but make no progress.
+       --
+       publicRootBackoffs   :: !Int,
+
+       -- | The earliest time we would be prepared to request more public root
+       -- peers. This is used with the 'publicRootBackoffs' to manage the
+       -- exponential backoff.
+       --
+       publicRootRetryTime  :: !Time,
+
+       inProgressPublicRootsReq :: !Bool,
+
+       inProgressGossipReqs     :: !Int
 
 --     TODO: need something like this to distinguish between lots of bad peers
 --     and us getting disconnected from the network locally. We don't want a
@@ -560,10 +592,14 @@ emptyPeerSelectionState :: PeerSelectionState peeraddr
 emptyPeerSelectionState =
     PeerSelectionState {
       targets              = nullPeerSelectionTargets,
-      rootPeers            = Map.empty,
+      localRootPeers       = Map.empty,
+      publicRootPeers      = Set.empty,
       knownPeers           = KnownPeers.empty,
       establishedPeers     = Map.empty,
       activePeers          = Map.empty,
+      publicRootBackoffs   = 0,
+      publicRootRetryTime  = Time 0,
+      inProgressPublicRootsReq = False,
       inProgressGossipReqs = 0
     }
 
@@ -571,13 +607,42 @@ invariantPeerSelectionState :: Ord peeraddr
                             => PeerSelectionState peeraddr -> Bool
 invariantPeerSelectionState PeerSelectionState{..} =
     KnownPeers.invariant knownPeers
+
+    -- The activePeers is a subset of the establishedPeers
+    -- which is a subset of the known peers
  && Map.isSubmapOfBy (\_ _ -> True) activePeers establishedPeers
  && Map.isSubmapOfBy (\_ _ -> True) establishedPeers (KnownPeers.toMap knownPeers)
- && Map.isSubmapOfBy (\_ _ -> True) rootPeers (KnownPeers.toMap knownPeers)
-    -- We don't want to pick root peers to forget, so it had better be the case
-    -- that there's fewer of them than our target number.
- && Map.size rootPeers <= targetNumberOfKnownPeers targets
+
+    -- The localRootPeers and publicRootPeers must not overlap.
+ && Set.null (Set.intersection
+                (Map.keysSet localRootPeers)
+                publicRootPeers)
+
+    -- The localRootPeers are a subset of the knownPeers,
+    -- and with correct source and other info in the knownPeers.
+ && Map.isSubmapOfBy (\rootPeerAdvertise
+                       KnownPeerInfo {knownPeerAdvertise, knownPeerSource} ->
+                           knownPeerSource == PeerSourceLocalRoot
+                        && knownPeerAdvertise == rootPeerAdvertise)
+                     localRootPeers
+                     (KnownPeers.toMap knownPeers)
+
+    -- The publicRootPeers are a subset of the knownPeers,
+    -- and with correct source info in the knownPeers.
+ && Map.isSubmapOfBy (\_ KnownPeerInfo {knownPeerSource} ->
+                         knownPeerSource == PeerSourcePublicRoot)
+                     (Map.fromSet (const ()) publicRootPeers)
+                     (KnownPeers.toMap knownPeers)
+
+    -- We don't want to pick local root peers to forget, so it had better be
+    -- the case that there's fewer of them than our target number.
+ && Map.size localRootPeers <= targetNumberOfKnownPeers targets
+
+    -- No constraint for publicRootBackoffs, publicRootRetryTime
+    -- or inProgressPublicRootsReq
+
  && inProgressGossipReqs >= 0
+
 
 -- |
 --
@@ -631,30 +696,45 @@ peerSelectionGovernorLoop tracer
       now <- getMonotonicTime
       let knownPeers' = KnownPeers.setCurrentTime now (knownPeers st)
           st'         = st { knownPeers = knownPeers' }
-      traceWith tracer (TraceGovernorLoopDebug st' now)
-      mbTimeout <- case KnownPeers.minGossipTime knownPeers' of
-                     Nothing -> return Nothing
-                     Just t  -> Just <$> newTimeout (diffTime t now)
 
-      Decision { decisionTrace, decisionEnact, decisionState = st'' } <-
-        atomically $
-          evalGuarded $
-            guardedDecisions now mbTimeout st'
+      decision <- evalGuardedDecisions now st'
 
+      let Decision { decisionTrace, decisionEnact, decisionState } = decision
       traceWith tracer decisionTrace
-      maybe (return ()) cancelTimeout mbTimeout
       case decisionEnact of
         Nothing  -> return ()
         Just job -> JobPool.forkJob jobPool job
-      loop st''
+      loop decisionState
+
+    evalGuardedDecisions :: Time
+                         -> PeerSelectionState peeraddr
+                         -> m (Decision m peeraddr)
+    evalGuardedDecisions now st =
+      case guardedDecisions now st of
+        GuardedSkip _ ->
+          -- impossible since guardedDecisions always has something to wait for
+          fail "peerSelectionGovernorLoop: impossible: nothing to do"
+
+        Guarded Nothing decisionAction -> do
+          traceWith tracer (TraceGovernorLoopDebug st Nothing)
+          atomically decisionAction
+
+        Guarded (Just (Min wakeupAt)) decisionAction -> do
+          let wakeupIn = diffTime wakeupAt now
+          traceWith tracer (TraceGovernorLoopDebug st (Just wakeupIn))
+          wakupTimeout <- newTimeout wakeupIn
+          let wakeup    = awaitTimeout wakupTimeout >> pure (wakeupDecision st)
+          decision     <- atomically (decisionAction <|> wakeup)
+          cancelTimeout wakupTimeout
+          return decision
 
     guardedDecisions :: Time
-                     -> Maybe (Timeout m)
                      -> PeerSelectionState peeraddr
                      -> Guarded (STM m) (Decision m peeraddr)
-    guardedDecisions now mbTimeout st =
+    guardedDecisions now st =
       -- All the alternative non-blocking internal decisions.
-         knownPeersBelowTarget actions policy st now
+         rootPeersBelowTarget  actions        st now
+      <> knownPeersBelowTarget actions policy st now
       <> knownPeersAboveTarget         policy st
       <> establishedPeersBelowTarget   policy st
       <> establishedPeersAboveTarget   policy st
@@ -662,13 +742,14 @@ peerSelectionGovernorLoop tracer
       <> activePeersAboveTarget        policy st
 
       -- All the alternative potentially-blocking decisions.
-      <> changedTargets      actions st
-      <> changedRootPeers    actions st
-      <> jobCompleted        jobPool st
-      <> establishedConnectionFailed st
-      <> timeoutFired      mbTimeout st
+      <> changedTargets                actions st
+      <> changedLocalRootPeers         actions st
+      <> jobCompleted                  jobPool st now
+      <> establishedConnectionFailed           st
 
-      -- The changedTargets needs to come before the changedRootPeers in
+      -- There is no rootPeersAboveTarget since the roots target is one sided.
+
+      -- The changedTargets needs to come before the changedLocalRootPeers in
       -- the list of alternates above because our invariant requires that
       -- the number of root nodes be less than our target for known peers,
       -- but at startup our initial targets are 0, so we need to read and set
@@ -677,17 +758,14 @@ peerSelectionGovernorLoop tracer
       -- roots peers because we'd be above target for known peers).
 
 
-data Guarded m a = GuardedSkip | Guarded (m a)
+data Guarded m a = GuardedSkip !(Maybe (Min Time))
+                 | Guarded     !(Maybe (Min Time)) (m a)
 
 instance Alternative m => Semigroup (Guarded m a) where
-  Guarded a   <> Guarded b   = Guarded (a <|> b)
-  Guarded a   <> GuardedSkip = Guarded a
-  GuardedSkip <> Guarded b   = Guarded b
-  GuardedSkip <> GuardedSkip = GuardedSkip
-
-evalGuarded :: Alternative m => Guarded m a -> m a
-evalGuarded GuardedSkip = empty
-evalGuarded (Guarded a) = a
+  Guarded     ta a <> Guarded     tb b = Guarded     (ta <> tb) (a <|> b)
+  Guarded     ta a <> GuardedSkip tb   = Guarded     (ta <> tb)  a
+  GuardedSkip ta   <> Guarded     tb b = Guarded     (ta <> tb)  b
+  GuardedSkip ta   <> GuardedSkip tb   = GuardedSkip (ta <> tb)
 
 
 data Decision m peeraddr = Decision {
@@ -704,18 +782,159 @@ data Decision m peeraddr = Decision {
        decisionEnact :: Maybe (Job m (Completion m peeraddr))
      }
 
+wakeupDecision :: PeerSelectionState peeraddr -> Decision m peeraddr
+wakeupDecision st =
+  Decision {
+    decisionTrace = TraceGovernorWakeup,
+    decisionState = st,
+    decisionEnact = Nothing
+  }
+
 newtype Completion m peeraddr =
-        Completion (PeerSelectionState peeraddr -> Decision m peeraddr)
+        Completion (PeerSelectionState peeraddr -> Time -> Decision m peeraddr)
 
 data TracePeerSelection peeraddr =
-       TraceRootPeersChanged  (RootPeers peeraddr) (RootPeers peeraddr)
+       TraceLocalRootPeersChanged (Map peeraddr PeerAdvertise)
+                                  (Map peeraddr PeerAdvertise)
      | TraceTargetsChanged     PeerSelectionTargets PeerSelectionTargets
+     | TracePublicRootsRequest Int Int
+     | TracePublicRootsResults (Set peeraddr) Int DiffTime
+     | TracePublicRootsFailure SomeException Int DiffTime
      | TraceGossipRequests     Int Int (Map peeraddr KnownPeerInfo) [peeraddr] -- target, actual, selected
      | TraceGossipResults      [(peeraddr, Either SomeException [peeraddr])] --TODO: classify failures
      | TraceForgetKnownPeers   Int Int [peeraddr] -- target, actual, selected
-     | TraceGovernorLoopDebug  (PeerSelectionState peeraddr) Time
-     | TraceGossipTimeoutFired
+     | TraceGovernorLoopDebug  (PeerSelectionState peeraddr) (Maybe DiffTime)
+     | TraceGovernorWakeup
   deriving Show
+
+
+rootPeersBelowTarget :: (MonadSTM m, Ord peeraddr)
+                     => PeerSelectionActions peeraddr m
+                     -> PeerSelectionState peeraddr
+                     -> Time
+                     -> Guarded (STM m) (Decision m peeraddr)
+rootPeersBelowTarget actions
+                     st@PeerSelectionState {
+                       localRootPeers,
+                       publicRootPeers,
+                       publicRootRetryTime,
+                       inProgressPublicRootsReq,
+                       targets = PeerSelectionTargets {
+                                   targetNumberOfRootPeers
+                                 }
+                     }
+                     now
+    -- Are we under target for number of root peers?
+  | maxExtraRootPeers > 0
+
+    -- Are we already requesting more root peers?
+  , not inProgressPublicRootsReq
+
+    -- We limit how frequently we make requests, are we allowed to do it yet?
+  , now >= publicRootRetryTime
+  = Guarded Nothing $
+      return Decision {
+        decisionTrace = TracePublicRootsRequest
+                          targetNumberOfRootPeers
+                          numRootPeers,
+        decisionState = st { inProgressPublicRootsReq = True },
+        decisionEnact = Just (publicRootPeersJob actions maxExtraRootPeers)
+      }
+
+    -- If we would be able to do the request except for the time, return the
+    -- next retry time.
+  | maxExtraRootPeers > 0
+  , not inProgressPublicRootsReq
+  = GuardedSkip (Just (Min publicRootRetryTime))
+
+  | otherwise
+  = GuardedSkip Nothing
+  where
+    numRootPeers      = Map.size localRootPeers + Set.size publicRootPeers
+    maxExtraRootPeers = targetNumberOfRootPeers - numRootPeers
+
+publicRootPeersJob :: forall m peeraddr.
+                      (Monad m, Ord peeraddr)
+                   => PeerSelectionActions peeraddr m
+                   -> Int
+                   -> Job m (Completion m peeraddr)
+publicRootPeersJob PeerSelectionActions{requestPublicRootPeers}
+                   numExtraAllowed =
+    Job job handler
+  where
+    handler :: SomeException -> Completion m peeraddr
+    handler e =
+      Completion $ \st now ->
+      -- This is a failure, so move the backoff counter one in the failure
+      -- direction (negative) and schedule the next retry time accordingly.
+      -- We use an exponential backoff strategy. The max retry time of 2^12
+      -- seconds is just over an hour.
+      let publicRootBackoffs'      :: Int
+          publicRootBackoffs'      = (publicRootBackoffs st `min` 0) - 1
+
+          publicRootRetryDiffTime' :: DiffTime
+          publicRootRetryDiffTime' = 2 ^ (abs publicRootBackoffs' `min` 12)
+
+          publicRootRetryTime'     :: Time
+          publicRootRetryTime'     = addTime publicRootRetryDiffTime' now
+       in Decision {
+            decisionTrace = TracePublicRootsFailure
+                              e
+                              publicRootBackoffs'
+                              publicRootRetryDiffTime',
+            decisionState = st {
+                              inProgressPublicRootsReq = False,
+                              publicRootBackoffs  = publicRootBackoffs',
+                              publicRootRetryTime = publicRootRetryTime'
+                            },
+            decisionEnact = Nothing
+          }
+
+    job :: m (Completion m peeraddr)
+    job = do
+      (results, ttl) <- requestPublicRootPeers numExtraAllowed
+      return $ Completion $ \st now ->
+        let newPeers         = results Set.\\ publicRootPeers st
+            publicRootPeers' = publicRootPeers st <> newPeers
+            knownPeers'      = KnownPeers.insert
+                                 PeerSourcePublicRoot
+                                 DoAdvertisePeer
+                                 (Set.toList newPeers) --TODO: perhaps as Set
+                                 (knownPeers st)
+
+            -- We got a successful response to our request, but if we're still
+            -- below target we're going to want to try again at some point.
+            -- If we made progress towards our target then we will retry at the
+            -- suggested ttl. But if we did not make progress then we want to
+            -- follow an exponential backoff strategy. The max retry time of 2^12
+            -- seconds is just over an hour.
+            publicRootBackoffs' :: Int
+            publicRootBackoffs'
+              | Set.null newPeers = (publicRootBackoffs st `max` 0) + 1
+              | otherwise         = 0
+
+            publicRootRetryDiffTime :: DiffTime
+            publicRootRetryDiffTime
+              | publicRootBackoffs' == 0
+                          = ttl
+              | otherwise = 2^(publicRootBackoffs' `min` 12)
+
+            publicRootRetryTime :: Time
+            publicRootRetryTime = addTime publicRootRetryDiffTime now
+         in Decision {
+              decisionTrace = TracePublicRootsResults
+                                newPeers
+                                publicRootBackoffs'
+                                publicRootRetryDiffTime,
+              decisionState = st {
+                                publicRootPeers     = publicRootPeers',
+                                knownPeers          = knownPeers',
+                                publicRootBackoffs  = publicRootBackoffs',
+                                publicRootRetryTime = publicRootRetryTime,
+                                inProgressPublicRootsReq = False
+                              },
+              decisionEnact = Nothing
+            }
 
 
 knownPeersBelowTarget :: (MonadAsync m, MonadTimer m, Ord peeraddr)
@@ -739,19 +958,15 @@ knownPeersBelowTarget actions
                       }
                       now
     -- Are we under target for number of known peers?
-  | let numKnownPeers = KnownPeers.size knownPeers
-  , numKnownPeers < targetNumberOfKnownPeers
+  | numKnownPeers < targetNumberOfKnownPeers
 
     -- Are we at our limit for number of gossip requests?
-  , let numGossipReqsPossible = policyMaxInProgressGossipReqs
-                              - inProgressGossipReqs
   , numGossipReqsPossible > 0
 
     -- Are there any known peers that we can send a gossip request to?
     -- We can only ask ones where we have not asked them within a certain time.
-  , let availableForGossip = KnownPeers.availableForGossip knownPeers
   , not (Map.null availableForGossip)
-  = Guarded $ do
+  = Guarded Nothing $ do
       selectedForGossip <- NonEmpty.toList
                        <$> policyPickKnownPeersForGossip
                              availableForGossip
@@ -774,8 +989,21 @@ knownPeersBelowTarget actions
         decisionEnact = Just (gossipsJob actions policy selectedForGossip)
       }
 
+    -- If we could gossip except that there are none currently available
+    -- then we return the next wakeup time (if any)
+  | numKnownPeers < targetNumberOfKnownPeers
+  , numGossipReqsPossible > 0
+  , Map.null availableForGossip
+  = GuardedSkip (Min <$> KnownPeers.minGossipTime knownPeers)
+
   | otherwise
-  = GuardedSkip
+  = GuardedSkip Nothing
+  where
+    numKnownPeers         = KnownPeers.size knownPeers
+    numGossipReqsPossible = policyMaxInProgressGossipReqs
+                          - inProgressGossipReqs
+    availableForGossip    = KnownPeers.availableForGossip knownPeers
+
 
 gossipsJob :: forall m peeraddr.
               (MonadAsync m, MonadTimer m, Ord peeraddr)
@@ -789,7 +1017,7 @@ gossipsJob PeerSelectionActions{requestPeerGossip}
   where
     handler :: [peeraddr] -> SomeException -> Completion m peeraddr
     handler peers e =
-      Completion $ \st ->
+      Completion $ \st _ ->
       Decision {
         decisionTrace = TraceGossipResults [ (p, Left e) | p <- peers ],
         decisionState = st {
@@ -815,11 +1043,14 @@ gossipsJob PeerSelectionActions{requestPeerGossip}
         Right totalResults -> do
           let peerResults = zip peers totalResults
               newPeers    = [ p | Right ps <- totalResults, p <- ps ]
-          return $ Completion $ \st -> Decision {
+          return $ Completion $ \st _ -> Decision {
             decisionTrace = TraceGossipResults peerResults,
             decisionState = st {
                               --TODO: also update with the failures
-                              knownPeers = KnownPeers.insert newPeers (knownPeers st),
+                              knownPeers = KnownPeers.insert
+                                             PeerSourceGossip
+                                             DoAdvertisePeer
+                                             newPeers (knownPeers st),
                               inProgressGossipReqs = inProgressGossipReqs st
                                                    - length peers
                             },
@@ -842,11 +1073,14 @@ gossipsJob PeerSelectionActions{requestPeerGossip}
               gossipsRemaining = [  a
                                  | (a, Nothing) <- zip gossips partialResults ]
 
-          return $ Completion $ \st -> Decision {
+          return $ Completion $ \st _ -> Decision {
             decisionTrace = TraceGossipResults peerResults,
             decisionState = st {
                               --TODO: also update with the failures
-                              knownPeers = KnownPeers.insert newPeers (knownPeers st),
+                              knownPeers = KnownPeers.insert
+                                             PeerSourceGossip
+                                             DoAdvertisePeer
+                                             newPeers (knownPeers st),
                               inProgressGossipReqs = inProgressGossipReqs st
                                                    - length peerResults
                             },
@@ -882,11 +1116,14 @@ gossipsJob PeerSelectionActions{requestPeerGossip}
 
       mapM_ cancel gossipsIncomplete
 
-      return $ Completion $ \st -> Decision {
+      return $ Completion $ \st _ -> Decision {
         decisionTrace = TraceGossipResults peerResults,
         decisionState = st {
                           --TODO: also update with the failures
-                          knownPeers = KnownPeers.insert newPeers (knownPeers st),
+                          knownPeers = KnownPeers.insert
+                                         PeerSourceGossip
+                                         DoAdvertisePeer
+                                         newPeers (knownPeers st),
                           inProgressGossipReqs = inProgressGossipReqs st
                                                - length peers
                         },
@@ -902,7 +1139,8 @@ knownPeersAboveTarget PeerSelectionPolicy {
                         policyPickColdPeersToForget
                       }
                       st@PeerSelectionState {
-                        rootPeers,
+                        localRootPeers,
+                        publicRootPeers,
                         knownPeers,
                         targets = PeerSelectionTargets {
                                     targetNumberOfKnownPeers
@@ -913,10 +1151,10 @@ knownPeersAboveTarget PeerSelectionPolicy {
         numKnownPeers    = KnownPeers.size knownPeers
         numPeersToForget = numKnownPeers - targetNumberOfKnownPeers
   , numPeersToForget > 0
-  = Guarded $ do
-      -- We must never pick root peers to forget as this would violate our
-      -- invariant that the root peers set is a subset of the known peers set.
-      let availableToForget = KnownPeers.toMap knownPeers Map.\\ rootPeers
+  = Guarded Nothing $ do
+      -- We must never pick local root peers to forget as this would violate
+      -- our invariant that the localRootPeers is a subset of the knownPeers.
+      let availableToForget = KnownPeers.toMap knownPeers Map.\\ localRootPeers
       -- Since the targetNumberOfKnownPeers is at least the size of the root
       -- peers set (another invariant) then we know that if numPeersToForget > 0
       -- then availableToForget here is non-empty.
@@ -932,133 +1170,122 @@ knownPeersAboveTarget PeerSelectionPolicy {
                           numKnownPeers
                           selectedToForget,
         decisionState = st {
-                          knownPeers = KnownPeers.delete
-                                         selectedToForget
-                                         knownPeers
+                          knownPeers      = KnownPeers.delete
+                                              selectedToForget
+                                              knownPeers,
+                          publicRootPeers = publicRootPeers
+                                              Set.\\ Set.fromList selectedToForget
                         },
         decisionEnact = Nothing
       }
 
   | otherwise
-  = GuardedSkip
+  = GuardedSkip Nothing
 
 
 establishedPeersBelowTarget :: PeerSelectionPolicy peeraddr m
                             -> PeerSelectionState peeraddr
                             -> Guarded (STM m) (Decision m peeraddr)
-establishedPeersBelowTarget _ _ = GuardedSkip
+establishedPeersBelowTarget _ _ = GuardedSkip Nothing
 
 
 establishedPeersAboveTarget :: PeerSelectionPolicy peeraddr m
                             -> PeerSelectionState peeraddr
                             -> Guarded (STM m) (Decision m peeraddr)
-establishedPeersAboveTarget _ _ = GuardedSkip
+establishedPeersAboveTarget _ _ = GuardedSkip Nothing
 
 
 activePeersBelowTarget :: PeerSelectionPolicy peeraddr m
                        -> PeerSelectionState peeraddr
                        -> Guarded (STM m) (Decision m peeraddr)
-activePeersBelowTarget _ _ = GuardedSkip
+activePeersBelowTarget _ _ = GuardedSkip Nothing
 
 
 activePeersAboveTarget :: PeerSelectionPolicy peeraddr m
                       -> PeerSelectionState peeraddr
                        -> Guarded (STM m) (Decision m peeraddr)
-activePeersAboveTarget _ _ = GuardedSkip
+activePeersAboveTarget _ _ = GuardedSkip Nothing
 
 
 
-changedRootPeers :: (MonadSTM m, Ord peeraddr)
-                 => PeerSelectionActions peeraddr m
-                 -> PeerSelectionState peeraddr
-                 -> Guarded (STM m) (Decision m peeraddr)
-changedRootPeers PeerSelectionActions{readRootPeers}
-                 st@PeerSelectionState{
-                   rootPeers,
-                   knownPeers,
-                   targets = PeerSelectionTargets{targetNumberOfKnownPeers}
-                 } =
-    Guarded $ do
+changedLocalRootPeers :: (MonadSTM m, Ord peeraddr)
+                      => PeerSelectionActions peeraddr m
+                      -> PeerSelectionState peeraddr
+                      -> Guarded (STM m) (Decision m peeraddr)
+changedLocalRootPeers PeerSelectionActions{readLocalRootPeers}
+                      st@PeerSelectionState{
+                        localRootPeers,
+                        knownPeers,
+                        targets = PeerSelectionTargets{targetNumberOfKnownPeers}
+                      } =
+    Guarded Nothing $ do
       -- We have to enforce the invariant that the number of root peers is
       -- not more than the target number of known peers. It's unlikely in
       -- practice so it's ok to resolve it arbitrarily using Map.take.
-      rootPeers' <- Map.take targetNumberOfKnownPeers <$> readRootPeers
-      check (rootPeers' /= rootPeers)
+      localRootPeers' <- Map.take targetNumberOfKnownPeers <$> readLocalRootPeers
+      check (localRootPeers' /= localRootPeers)
 
       let (knownPeers', _removed) =
-            KnownPeers.adjustRootSet rootPeers rootPeers' knownPeers
+            KnownPeers.adjustRootSet localRootPeers localRootPeers' knownPeers
+      --TODO: adjust the publicRootPeers to maintain the invariant
       --TODO: when we have established/active peers and they're
       -- removed then we should disconnect from them.
       return Decision {
-        decisionTrace = TraceRootPeersChanged rootPeers rootPeers',
+        decisionTrace = TraceLocalRootPeersChanged localRootPeers localRootPeers',
         decisionState = st {
-                          rootPeers  = rootPeers',
-                          knownPeers = knownPeers'
+                          localRootPeers = localRootPeers',
+                          knownPeers     = knownPeers'
                         },
         decisionEnact = Nothing
       }
 
 
-changedTargets :: forall peeraddr m. MonadSTM m
+changedTargets :: MonadSTM m
                => PeerSelectionActions peeraddr m
                -> PeerSelectionState peeraddr
                -> Guarded (STM m) (Decision m peeraddr)
 changedTargets PeerSelectionActions{readPeerSelectionTargets}
                st@PeerSelectionState{
-                 rootPeers,
+                 localRootPeers,
                  targets = targets@PeerSelectionTargets{targetNumberOfKnownPeers}
                } =
-    Guarded $ do
+    Guarded Nothing $ do
       targets' <- readPeerSelectionTargets
       check (targets' /= targets)
 
       -- We have to enforce the invariant that the number of root peers is
       -- not more than the target number of known peers. It's unlikely in
       -- practice so it's ok to resolve it arbitrarily using Map.take.
-      let rootPeers' :: RootPeers peeraddr
-          rootPeers' = Map.take targetNumberOfKnownPeers rootPeers
+      let localRootPeers' = Map.take targetNumberOfKnownPeers localRootPeers
 
       return Decision {
         decisionTrace = TraceTargetsChanged targets targets',
         decisionEnact = Nothing,
         decisionState = assert (sanePeerSelectionTargets targets')
-                        st { targets = targets', rootPeers = rootPeers' }
+                        st {
+                          targets        = targets',
+                          localRootPeers = localRootPeers'
+                        }
       }
 
 
 jobCompleted :: MonadSTM m
              => JobPool m (Completion m peeraddr)
              -> PeerSelectionState peeraddr
+             -> Time
              -> Guarded (STM m) (Decision m peeraddr)
-jobCompleted jobPool st =
+jobCompleted jobPool st now =
     -- This case is simple because the job pool returns a 'Completion' which is
     -- just a function from the current state to a new 'Decision'.
-    Guarded $ do
+    Guarded Nothing $ do
       Completion completion <- JobPool.collect jobPool
-      return $! completion st
+      return $! completion st now
 
 
 establishedConnectionFailed :: MonadSTM m
                             => PeerSelectionState peeraddr
                             -> Guarded (STM m) (Decision m peeraddr)
-establishedConnectionFailed _ = GuardedSkip
-
-
-timeoutFired :: MonadTimer m
-             => Maybe (Timeout m)
-             -> PeerSelectionState peeraddr
-             -> Guarded (STM m) (Decision m peeraddr)
-timeoutFired Nothing  _  = GuardedSkip
-timeoutFired (Just t) st =
-    Guarded $ do
-      completed <- awaitTimeout t
-      check completed -- rather than cancelled
-      return Decision {
-        decisionTrace = TraceGossipTimeoutFired,
-        decisionEnact = Nothing,
-        decisionState = st
-      }
-
+establishedConnectionFailed _ = GuardedSkip Nothing
 
 
 ------------------------

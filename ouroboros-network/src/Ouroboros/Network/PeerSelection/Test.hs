@@ -12,6 +12,7 @@ import           Data.Void (Void)
 import           Data.Typeable (Typeable)
 import           Data.Dynamic (fromDynamic)
 import           Data.Maybe (listToMaybe)
+import qualified Data.ByteString.Char8 as BS
 import           Data.List (nub)
 import qualified Data.List.NonEmpty as NonEmpty
 import           Data.List.NonEmpty (NonEmpty(..))
@@ -35,6 +36,8 @@ import           Ouroboros.Network.PeerSelection.Types
 import           Ouroboros.Network.PeerSelection.Governor hiding (PeerSelectionState(..))
 import qualified Ouroboros.Network.PeerSelection.Governor as Governor
 import qualified Ouroboros.Network.PeerSelection.KnownPeers as KnownPeers
+import           Ouroboros.Network.PeerSelection.RootPeersDNS
+import qualified Network.DNS as DNS (defaultResolvConf)
 
 import           Test.QuickCheck
 import           Test.Tasty (TestTree, testGroup, localOption)
@@ -72,7 +75,7 @@ tests =
 --
 data GovernorMockEnvironment = GovernorMockEnvironment {
        peerGraph               :: PeerGraph,
-       rootPeers               :: RootPeers PeerAddr,
+       rootPeers               :: Map PeerAddr PeerAdvertise,
        targets                 :: PeerSelectionTargets,
        pickKnownPeersForGossip :: PickScript,
        pickColdPeersToForget   :: PickScript
@@ -193,7 +196,8 @@ mockPeerSelectionActions GovernorMockEnvironment {
           where
             Just scriptVar = Map.lookup addr scriptVars
     return PeerSelectionActions {
-      readRootPeers            = return rootPeers,
+      readLocalRootPeers       = return rootPeers,
+      requestPublicRootPeers   = \_ -> return (Set.empty, 0), --TODO
       readPeerSelectionTargets = return targets,
       requestPeerGossip
     }
@@ -228,6 +232,7 @@ mockPeerSelectionPolicy GovernorMockEnvironment {
     return PeerSelectionPolicy {
       policyPickKnownPeersForGossip = interpretPickScript pickKnownPeersForGossipVar,
       policyPickColdPeersToForget   = interpretPickScript pickColdPeersToForgetVar,
+      policyFindPublicRootTimeout   = 5,    -- seconds
       policyMaxInProgressGossipReqs = 2,
       policyGossipRetryTime         = 3600, -- seconds
       policyGossipBatchWaitTime     = 3,    -- seconds
@@ -384,7 +389,7 @@ takeFirstNHours h = takeWhile (\(t,_) -> t < Time (60*60*h))
 -- the 'GossipScript's which determine what subset of edges the governor
 -- actually sees when it tries to gossip.
 --
-notionallyReachablePeers :: PeerGraph -> RootPeers PeerAddr -> Set PeerAddr
+notionallyReachablePeers :: PeerGraph -> Map PeerAddr a -> Set PeerAddr
 notionallyReachablePeers pg roots =
     Set.fromList
   . map vertexToAddr
@@ -395,7 +400,7 @@ notionallyReachablePeers pg roots =
   where
     (graph, vertexToAddr, addrToVertex) = peerGraphAsGraph pg
 
-firstGossipReachablePeers :: PeerGraph -> RootPeers PeerAddr -> Set PeerAddr
+firstGossipReachablePeers :: PeerGraph -> Map PeerAddr a -> Set PeerAddr
 firstGossipReachablePeers pg roots =
     Set.fromList
   . map vertexToAddr
@@ -456,7 +461,7 @@ instance Arbitrary GovernorMockEnvironment where
       pickColdPeersToForget   <- arbitrary
       return GovernorMockEnvironment{..}
     where
-      arbitraryRootPeers :: Set PeerAddr -> Gen (RootPeers PeerAddr)
+      arbitraryRootPeers :: Set PeerAddr -> Gen (Map PeerAddr PeerAdvertise)
       arbitraryRootPeers peers | Set.null peers = return Map.empty
       arbitraryRootPeers peers = do
         -- We decide how many we want and then pick randomly.
@@ -584,7 +589,6 @@ instance Arbitrary a => Arbitrary (NonEmpty a) where
       from :: NonEmptyList a -> NonEmpty a
       from (NonEmpty xs) = NonEmpty.fromList xs
 
-
 instance Arbitrary GossipTime where
   arbitrary = frequency [ (2, pure GossipTimeQuick)
                         , (2, pure GossipTimeSlow)
@@ -594,25 +598,29 @@ instance Arbitrary GossipTime where
   shrink GossipTimeSlow    = [GossipTimeQuick]
   shrink GossipTimeQuick   = []
 
-instance Arbitrary RootPeerInfo where
-  arbitrary = RootPeerInfo <$> arbitrary
-  shrink    = genericShrink
+instance Arbitrary PeerAdvertise where
+  arbitrary = elements [ DoAdvertisePeer, DoNotAdvertisePeer ]
+
+  shrink DoAdvertisePeer    = []
+  shrink DoNotAdvertisePeer = [DoAdvertisePeer]
 
 instance Arbitrary PeerSelectionTargets where
   arbitrary = do
     targetNumberOfKnownPeers       <-            min 10000 . getNonNegative <$> arbitrary
+    targetNumberOfRootPeers        <- choose (0, min 100  targetNumberOfKnownPeers)
     targetNumberOfEstablishedPeers <- choose (0, min 1000 targetNumberOfKnownPeers)
     targetNumberOfActivePeers      <- choose (0, min 100  targetNumberOfEstablishedPeers)
     return PeerSelectionTargets {
+      targetNumberOfRootPeers,
       targetNumberOfKnownPeers,
       targetNumberOfEstablishedPeers,
       targetNumberOfActivePeers
     }
 
-  shrink (PeerSelectionTargets k e a) =
+  shrink (PeerSelectionTargets r k e a) =
     [ targets'
-    | (k',e',a') <- shrink (k,e,a)
-    , let targets' = PeerSelectionTargets k' e' a'
+    | (r',k',e',a') <- shrink (r,k,e,a)
+    , let targets' = PeerSelectionTargets r' k' e' a'
     , sanePeerSelectionTargets targets' ]
 
 
@@ -678,4 +686,47 @@ renderRanges r n = show lower ++ " -- " ++ show upper
   where
     lower = n - n `mod` r
     upper = lower + (r-1)
+
+
+--
+-- Live examples
+--
+
+governorFindingPublicRoots :: Int -> [Domain] -> IO Void
+governorFindingPublicRoots targetNumberOfRootPeers domains =
+    publicRootPeersProvider
+      tracer
+      DNS.defaultResolvConf
+      domains $ \requestPublicRootPeers ->
+
+        peerSelectionGovernor
+          tracer
+          actions { requestPublicRootPeers }
+          policy
+  where
+    tracer :: Show a => Tracer IO a
+    tracer  = Tracer (BS.putStrLn . BS.pack . show)
+    actions = PeerSelectionActions {
+                readLocalRootPeers       = return Map.empty,
+                readPeerSelectionTargets = return targets,
+                requestPeerGossip        = \_ -> return [],
+                requestPublicRootPeers   = \_ -> return (Set.empty, 0)
+              }
+    targets = PeerSelectionTargets {
+                targetNumberOfRootPeers        = targetNumberOfRootPeers,
+                targetNumberOfKnownPeers       = targetNumberOfRootPeers,
+                targetNumberOfEstablishedPeers = 0,
+                targetNumberOfActivePeers      = 0
+              }
+    policy  = PeerSelectionPolicy {
+                policyPickKnownPeersForGossip = pickTrivially,
+                policyPickColdPeersToForget   = pickTrivially,
+                policyFindPublicRootTimeout   = 5,
+                policyMaxInProgressGossipReqs = 0,
+                policyGossipRetryTime         = 0, -- seconds
+                policyGossipBatchWaitTime     = 0, -- seconds
+                policyGossipOverallTimeout    = 0  -- seconds
+              }
+    pickTrivially :: Applicative m => Map IPv4 a -> Int -> m (NonEmpty IPv4)
+    pickTrivially m n = pure . NonEmpty.fromList . take n . Map.keys $ m
 
