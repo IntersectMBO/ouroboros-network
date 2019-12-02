@@ -89,8 +89,8 @@ runPeerWithByteLimit limit byteLength tr Codec{encode, decode} peerid channel@Ch
     go _        (Done _ x) = return x
 
     go trailing (Yield stok msg k) = do
-      traceWith tr (TraceSendMsg peerid (AnyMessage msg))
       send (encode stok msg)
+      traceWith tr (TraceSendMsg peerid (AnyMessage msg))
       go trailing k
 
     go trailing (Await stok k) = do
