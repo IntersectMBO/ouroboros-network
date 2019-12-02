@@ -25,6 +25,7 @@ module Ouroboros.Consensus.Node
   , ConnectionId (..)
     -- * Internal helpers
   , initChainDB
+  , mkChainDbArgs
   , mkNodeArgs
   ) where
 
@@ -38,17 +39,13 @@ import           Control.Monad.Class.MonadThrow
 
 import           Ouroboros.Network.Block
 import qualified Ouroboros.Network.Block as Block
-import           Ouroboros.Network.Magic
-import           Ouroboros.Network.NodeToClient ( NodeToClientVersion (..)
-                                                , NodeToClientVersionData (..)
-                                                , DictVersion (..)
-                                                , nodeToClientCodecCBORTerm
-                                                )
-import           Ouroboros.Network.NodeToNode   ( NodeToNodeVersion (..)
-                                                , NodeToNodeVersionData (..)
-                                                , nodeToNodeCodecCBORTerm
-                                                )
 import           Ouroboros.Network.Diffusion
+import           Ouroboros.Network.Magic
+import           Ouroboros.Network.NodeToClient (DictVersion (..),
+                     NodeToClientVersion (..), NodeToClientVersionData (..),
+                     nodeToClientCodecCBORTerm)
+import           Ouroboros.Network.NodeToNode (NodeToNodeVersion (..),
+                     NodeToNodeVersionData (..), nodeToNodeCodecCBORTerm)
 import           Ouroboros.Network.Protocol.ChainSync.PipelineDecision
                      (pipelineDecisionLowHighMark)
 import           Ouroboros.Network.Socket (ConnectionId)
@@ -71,7 +68,7 @@ import           Ouroboros.Consensus.Util.ResourceRegistry
 
 import           Ouroboros.Storage.ChainDB (ChainDB, ChainDbArgs)
 import qualified Ouroboros.Storage.ChainDB as ChainDB
-import           Ouroboros.Storage.EpochInfo (newEpochInfo)
+import           Ouroboros.Storage.EpochInfo (EpochInfo, newEpochInfo)
 import           Ouroboros.Storage.FS.API.Types
 import           Ouroboros.Storage.FS.IO (ioHasFS)
 import           Ouroboros.Storage.ImmutableDB (ValidationPolicy (..))
@@ -204,38 +201,55 @@ initChainDB
 initChainDB tracer registry btime dbPath cfg initLedger slotLength
             customiseArgs = do
     epochInfo <- newEpochInfo $ nodeEpochSize (Proxy @blk) cfg
-    ChainDB.openDB $ mkArgs epochInfo
+    let args = customiseArgs $
+          mkChainDbArgs tracer registry btime dbPath cfg initLedger slotLength
+          epochInfo
+    ChainDB.openDB args
+
+mkChainDbArgs
+  :: forall blk. RunNode blk
+  => Tracer IO (ChainDB.TraceEvent blk)
+  -> ResourceRegistry IO
+  -> BlockchainTime IO
+  -> FilePath
+     -- ^ Database path
+  -> NodeConfig (BlockProtocol blk)
+  -> ExtLedgerState blk
+     -- ^ Initial ledger
+  -> SlotLength
+  -> EpochInfo IO
+  -> ChainDbArgs IO blk
+mkChainDbArgs tracer registry btime dbPath cfg initLedger slotLength
+              epochInfo = (ChainDB.defaultArgs dbPath)
+    { ChainDB.cdbBlocksPerFile    = 1000
+    , ChainDB.cdbDecodeBlock      = nodeDecodeBlock         cfg
+    , ChainDB.cdbDecodeChainState = nodeDecodeChainState    (Proxy @blk) cfg
+    , ChainDB.cdbDecodeHash       = nodeDecodeHeaderHash    (Proxy @blk)
+    , ChainDB.cdbDecodeLedger     = nodeDecodeLedgerState   cfg
+    , ChainDB.cdbEncodeBlock      = nodeEncodeBlockWithInfo cfg
+    , ChainDB.cdbEncodeChainState = nodeEncodeChainState    (Proxy @blk) cfg
+    , ChainDB.cdbEncodeHash       = nodeEncodeHeaderHash    (Proxy @blk)
+    , ChainDB.cdbEncodeLedger     = nodeEncodeLedgerState   cfg
+    , ChainDB.cdbEpochInfo        = epochInfo
+    , ChainDB.cdbHashInfo         = nodeHashInfo            (Proxy @blk)
+    , ChainDB.cdbGenesis          = return initLedger
+    , ChainDB.cdbDiskPolicy       = defaultDiskPolicy secParam slotDiffTime
+    , ChainDB.cdbIsEBB            = nodeIsEBB
+    , ChainDB.cdbCheckIntegrity   = nodeCheckIntegrity      cfg
+    , ChainDB.cdbParamsLgrDB      = ledgerDbDefaultParams secParam
+    , ChainDB.cdbNodeConfig       = cfg
+    , ChainDB.cdbRegistry         = registry
+    , ChainDB.cdbTracer           = tracer
+    , ChainDB.cdbValidation       = ValidateMostRecentEpoch
+    , ChainDB.cdbGcDelay          = secondsToDiffTime 10
+    , ChainDB.cdbBlockchainTime   = btime
+    }
   where
     secParam = protocolSecurityParam cfg
 
     -- TODO cleaner way with subsecond precision
     slotDiffTime = secondsToDiffTime
       (slotLengthToMillisec slotLength `div` 1000)
-
-    mkArgs epochInfo = customiseArgs $ (ChainDB.defaultArgs dbPath)
-      { ChainDB.cdbBlocksPerFile    = 1000
-      , ChainDB.cdbDecodeBlock      = nodeDecodeBlock         cfg
-      , ChainDB.cdbDecodeChainState = nodeDecodeChainState    (Proxy @blk) cfg
-      , ChainDB.cdbDecodeHash       = nodeDecodeHeaderHash    (Proxy @blk)
-      , ChainDB.cdbDecodeLedger     = nodeDecodeLedgerState   cfg
-      , ChainDB.cdbEncodeBlock      = nodeEncodeBlockWithInfo cfg
-      , ChainDB.cdbEncodeChainState = nodeEncodeChainState    (Proxy @blk) cfg
-      , ChainDB.cdbEncodeHash       = nodeEncodeHeaderHash    (Proxy @blk)
-      , ChainDB.cdbEncodeLedger     = nodeEncodeLedgerState   cfg
-      , ChainDB.cdbEpochInfo        = epochInfo
-      , ChainDB.cdbHashInfo         = nodeHashInfo            (Proxy @blk)
-      , ChainDB.cdbGenesis          = return initLedger
-      , ChainDB.cdbDiskPolicy       = defaultDiskPolicy secParam slotDiffTime
-      , ChainDB.cdbIsEBB            = nodeIsEBB
-      , ChainDB.cdbCheckIntegrity   = nodeCheckIntegrity      cfg
-      , ChainDB.cdbParamsLgrDB      = ledgerDbDefaultParams secParam
-      , ChainDB.cdbNodeConfig       = cfg
-      , ChainDB.cdbRegistry         = registry
-      , ChainDB.cdbTracer           = tracer
-      , ChainDB.cdbValidation       = ValidateMostRecentEpoch
-      , ChainDB.cdbGcDelay          = secondsToDiffTime 10
-      , ChainDB.cdbBlockchainTime   = btime
-      }
 
 mkNodeArgs
   :: forall blk. RunNode blk
