@@ -60,11 +60,13 @@ consensusErrorPolicy = ErrorPolicies {
           -- them, we'd somehow have to distinguish between IO exceptions
           -- arising from disk I/O (shutdownNode) and those arising from
           -- network failures (SuspendConsumer).
-          ErrorPolicy $ \(_ :: VolatileDBError)  -> Just shutdownNode
+          ErrorPolicy $ \(_ :: DbMarkerError)    -> Just shutdownNode
         , ErrorPolicy $ \(_ :: ChainDbFailure)   -> Just shutdownNode
+          -- The three exceptions below will always be wrapped in a
+          -- 'ChainDbFailure', but we include them in the policy just in case.
+        , ErrorPolicy $ \(_ :: VolatileDBError)  -> Just shutdownNode
         , ErrorPolicy $ \(_ :: FsError)          -> Just shutdownNode
         , ErrorPolicy $ \(_ :: ImmutableDBError) -> Just shutdownNode
-        , ErrorPolicy $ \(_ :: DbMarkerError)    -> Just shutdownNode
 
           -- Node configuration failure
         , ErrorPolicy $ \(_ :: PBftLeaderCredentialsError) -> Just shutdownNode
