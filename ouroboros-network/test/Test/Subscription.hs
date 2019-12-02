@@ -531,23 +531,17 @@ prop_send_recv f xs first = ioProperty $ do
 
     let -- Server Node; only req-resp server
         responderApp :: OuroborosApplication ResponderApp ConnectionId TestProtocols2 IO BL.ByteString Void Int
-        responderApp = OuroborosResponderApplication serverK $
-          \peerid ReqRespPr channel ->
-            runPeer (tagTrace "Responder" activeTracer)
-                    ReqResp.codecReqResp
-                    peerid
-                    channel
-                    (ReqResp.reqRespServerPeer (ReqResp.reqRespServerMapAccumL (\a -> pure . f a) 0))
+        responderApp = simpleResponderApplication serverK $
+          \ReqRespPr -> MuxPeer (tagTrace "Responder" activeTracer)
+                                ReqResp.codecReqResp
+                                (ReqResp.reqRespServerPeer (ReqResp.reqRespServerMapAccumL (\a -> pure . f a) 0))
 
         -- Client Node; only req-resp client
         initiatorApp :: OuroborosApplication InitiatorApp ConnectionId TestProtocols2 IO BL.ByteString [Int] Void
-        initiatorApp = OuroborosInitiatorApplication clientK $
-          \peerid ReqRespPr channel ->
-            runPeer (tagTrace "Initiator" activeTracer)
-                    ReqResp.codecReqResp
-                    peerid
-                    channel
-                    (ReqResp.reqRespClientPeer (ReqResp.reqRespClientMap xs))
+        initiatorApp = simpleInitiatorApplication clientK $
+          \ReqRespPr -> MuxPeer (tagTrace "Initiator" activeTracer)
+                                ReqResp.codecReqResp
+                                (ReqResp.reqRespClientPeer (ReqResp.reqRespClientMap xs))
 
         clientK ctrlFn = do
             let (Mx.MiniProtocolInitiatorControl release) = ctrlFn ReqRespPr
@@ -629,7 +623,6 @@ prop_send_recv_init_and_rsp
     -> [Int]
     -> Property
 prop_send_recv_init_and_rsp f xs = ioProperty $ do
-
     responderAddr4A:_ <- Socket.getAddrInfo Nothing (Just "127.0.0.1") (Just "0")
     responderAddr4B:_ <- Socket.getAddrInfo Nothing (Just "127.0.0.1") (Just "0")
 
@@ -642,9 +635,12 @@ prop_send_recv_init_and_rsp f xs = ioProperty $ do
     rrcfgA <- newReqRspCfg "A"
     rrcfgB <- newReqRspCfg "B"
 
+    peerVar <- newTVarM (2 :: Integer)
+
     stVar <- newPeerStatesVar
 
     a_aid <- async $ startPassiveServer
+      peerVar
       tblA
       stVar
       responderAddr4A
@@ -652,6 +648,7 @@ prop_send_recv_init_and_rsp f xs = ioProperty $ do
       rrcfgA
 
     b_aid <- async $ startActiveServer
+      peerVar
       tblB
       stVar
       responderAddr4B
@@ -663,6 +660,13 @@ prop_send_recv_init_and_rsp f xs = ioProperty $ do
     return $ (resA == mapAccumL f 0 xs) && (resB == mapAccumL f 0 xs)
 
   where
+    waitPeer cnt = do
+        atomically $ modifyTVar cnt (\a -> a - 1)
+        atomically $ do
+            c <- readTVar cnt
+            unless (c == 0) retry
+
+
     initiatorK ReqRspCfg {rrcClientVar} ctrlFn = do
         let (Mx.MiniProtocolInitiatorControl intRelease) = ctrlFn ReqRespPr
 
@@ -686,7 +690,7 @@ prop_send_recv_init_and_rsp f xs = ioProperty $ do
             -- Initiator
             (initiatorK rrcfg)
             (\peerid ReqRespPr channel ->
-             runPeer (tagTrace (rrcTag rrcfg ++ " Initiator") activeTracer)
+             runPeer' (tagTrace (rrcTag rrcfg ++ " Initiator") activeTracer)
                          ReqResp.codecReqResp
                          peerid
                          channel
@@ -695,7 +699,7 @@ prop_send_recv_init_and_rsp f xs = ioProperty $ do
             -- Responder
             (responderK rrcfg)
             (\peerid ReqRespPr channel ->
-             runPeer (tagTrace (rrcTag rrcfg ++ " Responder") activeTracer)
+             runPeer' (tagTrace (rrcTag rrcfg ++ " Responder") activeTracer)
                          ReqResp.codecReqResp
                          peerid
                          channel
@@ -703,7 +707,7 @@ prop_send_recv_init_and_rsp f xs = ioProperty $ do
                            (\a -> pure . f a) 0))
             )
 
-    startPassiveServer tbl stVar responderAddr localAddrVar rrcfg = withServerNode
+    startPassiveServer peer tbl stVar responderAddr localAddrVar rrcfg = withServerNode
         nullNetworkServerTracers
         (NetworkMutableState tbl stVar)
         responderAddr
@@ -713,10 +717,12 @@ prop_send_recv_init_and_rsp f xs = ioProperty $ do
         nullErrorPolicies
         $ \localAddr _ -> do
           atomically $ putTMVar localAddrVar localAddr
-          atomically $ (,) <$> takeTMVar (rrcServerVar rrcfg)
-                           <*> takeTMVar (rrcClientVar rrcfg)
+          r <- atomically $ (,) <$> takeTMVar (rrcServerVar rrcfg)
+                                <*> takeTMVar (rrcClientVar rrcfg)
+          waitPeer peer
+          return r
 
-    startActiveServer tbl stVar responderAddr localAddrVar remoteAddrVar rrcfg = withServerNode
+    startActiveServer peer tbl stVar responderAddr localAddrVar remoteAddrVar rrcfg = withServerNode
         nullNetworkServerTracers
         (NetworkMutableState tbl stVar)
         responderAddr
@@ -725,6 +731,7 @@ prop_send_recv_init_and_rsp f xs = ioProperty $ do
         (simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData $ NetworkMagic 0) (DictVersion nodeToNodeCodecCBORTerm) (appX rrcfg))
         nullErrorPolicies
         $ \localAddr _ -> do
+          done <- newEmptyTMVarM
           peerStatesVar <- newPeerStatesVar
           atomically $ putTMVar localAddrVar localAddr
           remoteAddr <- atomically $ takeTMVar remoteAddrVar
@@ -739,14 +746,20 @@ prop_send_recv_init_and_rsp f xs = ioProperty $ do
                 wpValency = 1
               }
             nullErrorPolicies
-            (\_ -> readTMVar (rrcClientVar rrcfg) *> readTMVar (rrcServerVar rrcfg))
+            (\_ -> do
+                modifyTVar peer (\a -> a - 1)
+                c <- readTVar peer
+                unless (c == 0) retry
+                sv <- takeTMVar (rrcServerVar rrcfg)
+                cv <- takeTMVar (rrcClientVar rrcfg)
+                putTMVar done (sv, cv))
             (connectToNode'
                 cborTermVersionDataCodec
                 nullNetworkConnectTracers
                 (simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData $ NetworkMagic 0)
                 (DictVersion nodeToNodeCodecCBORTerm) $ appX rrcfg))
-          atomically $ (,) <$> takeTMVar (rrcServerVar rrcfg)
-                           <*> takeTMVar (rrcClientVar rrcfg)
+          r <- atomically $ takeTMVar done
+          return r
 
 
 data WithThreadAndTime a = WithThreadAndTime {

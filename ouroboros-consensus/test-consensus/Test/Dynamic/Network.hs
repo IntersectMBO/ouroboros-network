@@ -504,20 +504,20 @@ directedEdgeInner (node1, LimitedApp app1) (node2, LimitedApp app2) = do
             LimitedApp' m NodeId blk unused1 unused2
          -> NodeId
          -> Channel m msg
-         -> m ())
+         -> m ((), Maybe msg))
         -- ^ client action to run on node1
       -> (forall unused1 unused2.
             LimitedApp' m NodeId blk unused1 unused2
          -> NodeId
          -> Channel m msg
-         -> m ())
+         -> m ((), Maybe msg))
          -- ^ server action to run on node2
       -> m (m (), m ())
     miniProtocol client server = do
        (chan, dualChan) <- createConnectedChannels
        pure
-         ( client app1 (fromCoreNodeId node2) chan
-         , server app2 (fromCoreNodeId node1) dualChan
+         ( fst <$> client app1 (fromCoreNodeId node2) chan
+         , fst <$> server app2 (fromCoreNodeId node1) dualChan
          )
 
     wrapMPEE ::

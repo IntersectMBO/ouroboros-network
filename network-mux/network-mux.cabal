@@ -103,5 +103,6 @@ test-suite test-network-mux
   ghc-options:         -Wall
                        -Wno-unticked-promoted-constructors
                        -fno-ignore-asserts
+                       -threaded
   if flag(ipv6)
     cpp-options:       -DOUROBOROS_NETWORK_IPV6

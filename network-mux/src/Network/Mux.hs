@@ -29,6 +29,7 @@ import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 import           Control.Tracer
 import           Data.Array
+import           Data.Int (Int64)
 import qualified Data.ByteString.Lazy as BL
 import           Data.List (lookup)
 import           Data.Maybe (fromMaybe)
@@ -209,13 +210,13 @@ muxStart tracer peerid app bearer = do
 
         return $ case app of
           MuxInitiatorApplication _ _ ->
-            [ ( mpsInitiatorBrooder itbl mpdId app initiatorChannel
+            [ ( mpsInitiatorBrooder pmss itbl mpdId app initiatorChannel
               , show mpdId ++ " Initiator" )]
           MuxResponderApplication _ _ ->
             [ (mpsResponderBrooder pmss rtbl mpdId app responderChannel
             , show mpdId ++ " Responder" )]
           MuxInitiatorAndResponderApplication _ _ _ _ ->
-            [ ( mpsInitiatorBrooder itbl mpdId app initiatorChannel
+            [ ( mpsInitiatorBrooder pmss itbl mpdId app initiatorChannel
               , show mpdId ++ " Initiator" )
             , (mpsResponderBrooder pmss rtbl mpdId app responderChannel
               , show mpdId ++ " Responder" )
@@ -239,27 +240,33 @@ muxStart tracer peerid app bearer = do
                 retry
         -- Initiator is active, start the responder side
         traceWith tracer $ MuxTraceBrooderResponderHatch (AppProtocolId mpdId)
-        b <- responderApplication rspApp peerid mpdId channel
+        (b, remainder) <- responderApplication rspApp peerid mpdId channel
         -- Responder side exited, wait until we should hatch another responder
-        traceWith tracer $ MuxTraceBrooderResponderDone (AppProtocolId mpdId)
+        len <- requeue pmss mpdId ModeResponder remainder
+        traceWith tracer $ MuxTraceBrooderResponderDone (AppProtocolId mpdId) len
         -- Propagate the miniprotocol result.
         atomically $ putTMVar (rtbl ! AppProtocolId mpdId) b
 
     -- Start and restart initiator side miniprotocols on demand.
     mpsInitiatorBrooder
       :: HasInitiator appType ~ True
-      => MiniProtocolInitiatorControlTable ptcl m a
+      => PerMuxSharedState ptcl m
+      -> MiniProtocolInitiatorControlTable ptcl m a
       -> ptcl
       -> MuxApplication appType peerid ptcl m a b
       -> Channel m
       -> m ()
-    mpsInitiatorBrooder (MiniProtocolInitiatorControlTable itbl) mpdId reqApp channel = forever $ do
+    mpsInitiatorBrooder pmss (MiniProtocolInitiatorControlTable itbl) mpdId reqApp channel = forever $ do
         traceWith tracer $ MuxTraceBrooderInitiatorBrood (AppProtocolId mpdId)
         -- Wait for controller to signal that we should start the application
         void $ atomically $ takeTMVar (fst $ itbl ! AppProtocolId mpdId)
         traceWith tracer $ MuxTraceBrooderInitiatorHatch (AppProtocolId mpdId)
-        a <- initiatorApplication reqApp peerid mpdId channel
-        traceWith tracer $ MuxTraceBrooderInitiatorDone (AppProtocolId mpdId)
+        (a, remainder) <- initiatorApplication reqApp peerid mpdId channel
+        -- TODO
+        -- Ending up with unconsumed data for the initiator is odd and probably indicates a protocol
+        -- violation by the responder. Perhaps we should teardown the bearer incase len > 0.
+        len <- requeue pmss mpdId ModeInitiator remainder
+        traceWith tracer $ MuxTraceBrooderInitiatorDone (AppProtocolId mpdId) len
         -- Propagate the miniprotocol result.
         atomically $ putTMVar (snd $ itbl ! AppProtocolId mpdId) a
 
@@ -273,6 +280,21 @@ muxStart tracer peerid app bearer = do
         atomically $ do
             c <- readTVar cnt
             unless (c == 0) retry
+
+    -- Incase the application didn't consume all the input we put it back in the reciever
+    -- queue since it is part the data needed for the next time the application restarts.
+    requeue :: PerMuxSharedState ptcl m
+            -> ptcl
+            -> MiniProtocolMode
+            -> Maybe BL.ByteString
+            -> m Int64
+    requeue _ _ _ Nothing = return 0
+    requeue pmss mpdId mode (Just remainder) = atomically $ do
+        let q = ingressQueue (dispatchTable pmss) (AppProtocolId mpdId) mode
+        buf <- readTVar q
+        writeTVar q $ BL.append remainder buf
+        return $ BL.length remainder + BL.length buf
+
 
 muxControl :: (HasCallStack, MonadSTM m, MonadSay m, MonadThrow m, Ord ptcl, Enum ptcl
               , MiniProtocolLimits ptcl)

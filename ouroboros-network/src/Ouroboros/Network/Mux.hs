@@ -25,6 +25,7 @@ import           Network.TypedProtocol.Codec
 import           Network.TypedProtocol.Channel
 import           Network.TypedProtocol.Driver
 import           Network.TypedProtocol.Pipelined
+import           Network.TypedProtocol.Driver.Simple (driverSimple)
 
 import           Network.Mux.Interface
 import           Network.Mux.Types ( MiniProtocolInitiatorControl
@@ -38,27 +39,33 @@ import           Ouroboros.Network.Channel
 data OuroborosApplication (appType :: AppType) peerid ptcl m bytes a b where
      OuroborosInitiatorApplication
        :: ((ptcl -> MiniProtocolInitiatorControl m a) -> m ())
-       -> (peerid -> ptcl -> Channel m bytes -> m a)
+       -> (peerid -> ptcl -> Channel m bytes -> m (a, Maybe bytes))
        -> OuroborosApplication InitiatorApp peerid ptcl m bytes a Void
 
      OuroborosResponderApplication
        :: ((ptcl -> MiniProtocolResponderControl m a) -> m ())
-       -> (peerid -> ptcl -> Channel m bytes -> m a)
+       -> (peerid -> ptcl -> Channel m bytes -> m (a, Maybe bytes))
        -> OuroborosApplication ResponderApp peerid ptcl m bytes Void a
 
      OuroborosInitiatorAndResponderApplication
        :: ((ptcl -> MiniProtocolInitiatorControl m a) -> m ())
-       -> (peerid -> ptcl -> Channel m bytes -> m a)
+       -> (peerid -> ptcl -> Channel m bytes -> m (a, Maybe bytes))
        -> ((ptcl -> MiniProtocolResponderControl m b) -> m ())
-       -> (peerid -> ptcl -> Channel m bytes -> m b)
+       -> (peerid -> ptcl -> Channel m bytes -> m (b, Maybe bytes))
        -> OuroborosApplication InitiatorAndResponderApp peerid ptcl m bytes a b
 
 
-toApplication :: OuroborosApplication appType peerid ptcl m LBS.ByteString a b
+-- TODO:
+-- The "pure LBS.empty" is only a workaround until #PR1231 is merged,
+-- and it needs to be addressed since it could result in a deadlock.
+toApplication :: Functor m
+              => Applicative m
+              => OuroborosApplication appType peerid ptcl m LBS.ByteString a b
               -> MuxApplication appType peerid ptcl m a b
 toApplication (OuroborosInitiatorApplication i f) =
     MuxInitiatorApplication
       i
+      --(\peerid ptcl channel -> (,) <$> f peerid ptcl (fromChannel channel) <*> (pure LBS.empty))
       (\peerid ptcl channel -> f peerid ptcl (fromChannel channel))
 toApplication (OuroborosResponderApplication r f) =
     MuxResponderApplication
@@ -101,12 +108,16 @@ runMuxPeer
   => MuxPeer peerid failure m bytes a
   -> peerid
   -> Channel m bytes
-  -> m a
+  -> m (a, Maybe bytes)
 runMuxPeer (MuxPeer tracer codec peer) peerid channel =
-    runPeer tracer codec peerid channel peer
+    runPeerWithDriver driver peer (startDState driver)
+  where
+    driver = driverSimple tracer peerid codec channel
 
 runMuxPeer (MuxPeerPipelined tracer codec peer) peerid channel =
-    runPipelinedPeer tracer codec peerid channel peer
+    runPipelinedPeerWithDriver driver peer (startDState driver)
+  where
+    driver = driverSimple tracer peerid codec channel
 
 
 -- |
@@ -134,6 +145,7 @@ simpleResponderApplication
   => MonadCatch m
   => MonadAsync m
   => Exception failure
+  => Monoid bytes
   => ((ptcl -> MiniProtocolResponderControl m a) -> m ())
   -> (ptcl -> MuxPeer peerid failure m bytes a)
   -> OuroborosApplication ResponderApp peerid ptcl m bytes Void a

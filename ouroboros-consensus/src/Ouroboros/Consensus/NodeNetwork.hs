@@ -331,30 +331,30 @@ data NetworkApplication m peer
                         bytesLCS bytesLTX a = NetworkApplication {
       -- | Start a chain sync client that communicates with the given upstream
       -- node.
-      naChainSyncClient         :: peer -> Channel m bytesCS -> m a
+      naChainSyncClient         :: peer -> Channel m bytesCS -> m (a, Maybe bytesCS)
 
       -- | Start a chain sync server.
-    , naChainSyncServer         :: peer -> Channel m bytesCS -> m a
+    , naChainSyncServer         :: peer -> Channel m bytesCS -> m (a, Maybe bytesCS)
 
       -- | Start a block fetch client that communicates with the given
       -- upstream node.
-    , naBlockFetchClient        :: peer -> Channel m bytesBF -> m a
+    , naBlockFetchClient        :: peer -> Channel m bytesBF -> m (a, Maybe bytesBF)
 
       -- | Start a block fetch server.
-    , naBlockFetchServer        :: peer -> Channel m bytesBF -> m a
+    , naBlockFetchServer        :: peer -> Channel m bytesBF -> m (a, Maybe bytesBF)
 
       -- | Start a transaction submission client that communicates with the
       -- given upstream node.
-    , naTxSubmissionClient      :: peer -> Channel m bytesTX -> m a
+    , naTxSubmissionClient      :: peer -> Channel m bytesTX -> m (a, Maybe bytesTX)
 
       -- | Start a transaction submission server.
-    , naTxSubmissionServer      :: peer -> Channel m bytesTX -> m a
+    , naTxSubmissionServer      :: peer -> Channel m bytesTX -> m (a, Maybe bytesTX)
 
       -- | Start a local chain sync server.
-    , naLocalChainSyncServer    :: peer -> Channel m bytesLCS -> m a
+    , naLocalChainSyncServer    :: peer -> Channel m bytesLCS -> m (a, Maybe bytesLCS)
 
       -- | Start a local transaction submission server.
-    , naLocalTxSubmissionServer :: peer -> Channel m bytesLTX -> m a
+    , naLocalTxSubmissionServer :: peer -> Channel m bytesLTX -> m (a, Maybe bytesLTX)
     }
 
 
@@ -432,17 +432,16 @@ consensusNetworkApps kernel ProtocolTracers {..} ProtocolCodecs {..} ProtocolHan
     naChainSyncClient
       :: peer
       -> Channel m bytesCS
-      -> m ()
-    naChainSyncClient them channel =
-      void $
+      -> m ((), Maybe bytesCS)
+    naChainSyncClient them channel = do
       -- Note that it is crucial that we sync with the fetch client "outside"
       -- of registering the state for the sync client. This is needed to
       -- maintain a state invariant required by the block fetch logic: that for
       -- each candidate chain there is a corresponding block fetch client that
       -- can be used to fetch blocks for that chain.
-      bracketSyncWithFetchClient
+      void $ bracketSyncWithFetchClient
         (getFetchClientRegistry kernel) them $
-      bracketChainSyncClient
+       bracketChainSyncClient
           (chainSyncClientTracer (getTracers kernel))
           (chainDbView (getChainDB kernel))
           (getNodeCandidates kernel)
@@ -454,13 +453,14 @@ consensusNetworkApps kernel ProtocolTracers {..} ProtocolCodecs {..} ProtocolHan
           channel
           $ chainSyncClientPeerPipelined
           $ phChainSyncClient varCandidate
+      return ((), Nothing) -- TODO Chainsync client should be able to return
 
     naChainSyncServer
       :: peer
       -> Channel m bytesCS
-      -> m ()
+      -> m ((), Maybe bytesCS)
     naChainSyncServer them channel = withRegistry $ \registry ->
-      runPeer
+      runPeer'
         ptChainSyncTracer
         pcChainSyncCodec
         them
@@ -471,10 +471,10 @@ consensusNetworkApps kernel ProtocolTracers {..} ProtocolCodecs {..} ProtocolHan
     naBlockFetchClient
       :: peer
       -> Channel m bytesBF
-      -> m ()
+      -> m ((), Maybe bytesBF)
     naBlockFetchClient them channel =
       bracketFetchClient (getFetchClientRegistry kernel) them $ \clientCtx ->
-        runPipelinedPeer
+        runPipelinedPeer'
           ptBlockFetchTracer
           pcBlockFetchCodec
           them
@@ -484,9 +484,9 @@ consensusNetworkApps kernel ProtocolTracers {..} ProtocolCodecs {..} ProtocolHan
     naBlockFetchServer
       :: peer
       -> Channel m bytesBF
-      -> m ()
+      -> m ((), Maybe bytesBF)
     naBlockFetchServer them channel = withRegistry $ \registry ->
-      runPeer
+      runPeer'
         ptBlockFetchSerialisedTracer
         pcBlockFetchCodecSerialised
         them
@@ -497,9 +497,9 @@ consensusNetworkApps kernel ProtocolTracers {..} ProtocolCodecs {..} ProtocolHan
     naTxSubmissionClient
       :: peer
       -> Channel m bytesTX
-      -> m ()
+      -> m ((), Maybe bytesTX)
     naTxSubmissionClient them channel =
-      runPeer
+      runPeer'
         ptTxSubmissionTracer
         pcTxSubmissionCodec
         them
@@ -509,9 +509,9 @@ consensusNetworkApps kernel ProtocolTracers {..} ProtocolCodecs {..} ProtocolHan
     naTxSubmissionServer
       :: peer
       -> Channel m bytesTX
-      -> m ()
+      -> m ((), Maybe bytesTX)
     naTxSubmissionServer them channel =
-      runPipelinedPeer
+      runPipelinedPeer'
         ptTxSubmissionTracer
         pcTxSubmissionCodec
         them
@@ -521,9 +521,9 @@ consensusNetworkApps kernel ProtocolTracers {..} ProtocolCodecs {..} ProtocolHan
     naLocalChainSyncServer
       :: peer
       -> Channel m bytesLCS
-      -> m ()
+      -> m ((), Maybe bytesLCS)
     naLocalChainSyncServer them channel = withRegistry $ \registry ->
-      runPeer
+      runPeer'
         ptLocalChainSyncTracer
         pcLocalChainSyncCodec
         them
@@ -534,9 +534,9 @@ consensusNetworkApps kernel ProtocolTracers {..} ProtocolCodecs {..} ProtocolHan
     naLocalTxSubmissionServer
       :: peer
       -> Channel m bytesLTX
-      -> m ()
+      -> m ((), Maybe bytesLTX)
     naLocalTxSubmissionServer them channel =
-      runPeer
+      runPeer'
         ptLocalTxSubmissionTracer
         pcLocalTxSubmissionCodec
         them

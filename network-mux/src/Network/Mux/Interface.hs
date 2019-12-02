@@ -34,6 +34,7 @@ import           Network.Mux.Types ( MiniProtocolLimits (..)
                                    , ProtocolEnum (..)
                                    )
 import           Network.Mux.Channel
+import qualified Data.ByteString.Lazy as BL
 
 -- | A peer label for use in 'Tracer's. This annotates tracer output as being
 -- associated with a given peer identifier.
@@ -89,22 +90,22 @@ data MuxApplication (appType :: AppType) peerid ptcl m a b where
     -- @ptcl@.  But it allows to handle resources if just application of
     -- @'runPeer'@ is not enough.  It will be run as @'ModeInitiator'@.
     :: ((ptcl -> MiniProtocolInitiatorControl m a) -> m ())
-    -> (peerid -> ptcl -> Channel m -> m a)
+    -> (peerid -> ptcl -> Channel m -> m (a, Maybe BL.ByteString))
     -> MuxApplication InitiatorApp peerid ptcl m a Void
 
   MuxResponderApplication
     -- Responder application; similarly to the @'MuxInitiatorApplication'@ but it
     -- will be run using @'ModeResponder'@.
     :: ((ptcl -> MiniProtocolResponderControl m a) -> m ())
-    -> (peerid -> ptcl -> Channel m -> m a)
+    -> (peerid -> ptcl -> Channel m -> m (a, Maybe BL.ByteString))
     -> MuxApplication ResponderApp peerid ptcl m Void a
 
   MuxInitiatorAndResponderApplication
     -- Initiator and server applications.
     :: ((ptcl -> MiniProtocolInitiatorControl m a) -> m ())
-    -> (peerid -> ptcl -> Channel m -> m a)
+    -> (peerid -> ptcl -> Channel m -> m (a, Maybe BL.ByteString))
     -> ((ptcl -> MiniProtocolResponderControl m b) -> m ())
-    -> (peerid -> ptcl -> Channel m -> m b)
+    -> (peerid -> ptcl -> Channel m -> m (b, Maybe BL.ByteString))
     -> MuxApplication InitiatorAndResponderApp peerid ptcl m a b
 
 -- |
@@ -113,7 +114,7 @@ data MuxApplication (appType :: AppType) peerid ptcl m a b where
 initiatorApplication
   :: HasInitiator appType ~ True
   => MuxApplication appType peerid ptcl m a b
-  -> (peerid -> ptcl -> Channel m ->  m a)
+  -> (peerid -> ptcl -> Channel m ->  m (a, Maybe BL.ByteString))
 initiatorApplication (MuxInitiatorApplication _ app) = \peerid ptcl channel -> app peerid ptcl channel
 initiatorApplication (MuxInitiatorAndResponderApplication _ app _ _) = \peerid ptcl channel -> app peerid ptcl channel
 
@@ -123,6 +124,6 @@ initiatorApplication (MuxInitiatorAndResponderApplication _ app _ _) = \peerid p
 responderApplication
   :: HasResponder appType ~ True
   => MuxApplication appType peerid ptcl m a b
-  -> (peerid -> ptcl -> Channel m ->  m b)
+  -> (peerid -> ptcl -> Channel m ->  m (b, Maybe BL.ByteString))
 responderApplication (MuxResponderApplication _ app) = app
 responderApplication (MuxInitiatorAndResponderApplication _ _ _ app) = app
