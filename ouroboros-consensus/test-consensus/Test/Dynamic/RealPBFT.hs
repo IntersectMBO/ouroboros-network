@@ -237,7 +237,22 @@ genRealPBFTNodeJoinPlan params numSlots@(NumSlots t)
     go nodeJoinPlan@(NodeJoinPlan m) st
       | i == n    = pure $ NodeJoinPlan m
       | otherwise = do
-            -- Does this slot make the invariant unsatisfiable?
+            -- @True@ if this join slot for @nid@ is viable
+            --
+            -- /Viable/ means the desired chain density invariant remains
+            -- satisfiable, at the very least the nodes after @nid@ may need to
+            -- also join in this same slot.
+            --
+            -- Assuming @nodeJoinPlan@ is indeed viable and @st@ is indeed not
+            -- ahead of it, then we should be able to find a join slot for
+            -- @nid@ that is also viable: the viability of @nodeJoinPlan@ means
+            -- @nid@ can at least join \"immediately\" wrt to @nodeJoinPlan@.
+            --
+            -- The base case is that the empty join plan and empty state are
+            -- viable, which assumes that the invariant would be satisified if
+            -- all nodes join in slot 0. For uninterrupted round-robin, that
+            -- merely requires @n * floor (k * t) >= k@. (TODO Does that
+            -- *always* suffice?)
         let check s' =
                 Ref.viable params lastSlot
                     (NodeJoinPlan (Map.insert nid s' m))
