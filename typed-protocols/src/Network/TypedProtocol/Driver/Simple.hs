@@ -123,8 +123,8 @@ driverSimple tr peerid Codec{encode, decode} channel@Channel{send} =
                 -> Message ps st st'
                 -> m ()
     sendMessage stok msg = do
-      traceWith tr (TraceSendMsg peerid (AnyMessage msg))
       send (encode stok msg)
+      traceWith tr (TraceSendMsg peerid (AnyMessage msg))
 
     recvMessage :: forall (pr :: PeerRole) (st :: ps).
                    PeerHasAgency pr st
