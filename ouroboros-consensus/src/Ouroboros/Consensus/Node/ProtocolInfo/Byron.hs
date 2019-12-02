@@ -1,5 +1,6 @@
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE FlexibleInstances     #-}
+{-# LANGUAGE LambdaCase            #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE NamedFieldPuns        #-}
 {-# LANGUAGE OverloadedStrings     #-}
@@ -20,7 +21,7 @@ module Ouroboros.Consensus.Node.ProtocolInfo.Byron (
   , plcCoreNodeId
   ) where
 
-import           Control.Exception (Exception)
+import           Control.Exception (Exception (..))
 import           Control.Monad.Except
 import           Data.Maybe
 import qualified Data.Set as Set
@@ -86,8 +87,12 @@ data PBftLeaderCredentialsError =
      | DelegationCertificateNotFromGenesisKey
   deriving (Eq, Show)
 
-instance Exception PBftLeaderCredentialsError
-
+instance Exception PBftLeaderCredentialsError where
+  displayException = \case
+    NodeSigningKeyDoesNotMatchDelegationCertificate ->
+      "The signing key does not match the delegation certificate"
+    DelegationCertificateNotFromGenesisKey ->
+      "Could not find a delegation certificate corresponding to the genesis key"
 
 {-------------------------------------------------------------------------------
   ProtocolInfo
