@@ -370,10 +370,10 @@ data MuxTrace ptcl =
     | forall e. Exception e => MuxTraceHandshakeServerError e
     | MuxTraceBrooderResponderBrood (MiniProtocolId ptcl)
     | MuxTraceBrooderResponderHatch (MiniProtocolId ptcl)
-    | MuxTraceBrooderResponderDone (MiniProtocolId ptcl)
+    | MuxTraceBrooderResponderDone (MiniProtocolId ptcl) Int64
     | MuxTraceBrooderInitiatorBrood (MiniProtocolId ptcl)
     | MuxTraceBrooderInitiatorHatch (MiniProtocolId ptcl)
-    | MuxTraceBrooderInitiatorDone (MiniProtocolId ptcl)
+    | MuxTraceBrooderInitiatorDone (MiniProtocolId ptcl) Int64
 
 instance Show ptcl => Show (MuxTrace ptcl) where
     show MuxTraceRecvHeaderStart = printf "Bearer Receive Header Start"
@@ -416,8 +416,8 @@ instance Show ptcl => Show (MuxTrace ptcl) where
     show (MuxTraceHandshakeServerError e) = printf "Handshake Server Error %s" (show e)
     show (MuxTraceBrooderResponderBrood mid) = printf "Responder Brood on %s" (show mid)
     show (MuxTraceBrooderResponderHatch mid) = printf "Responder Hatch on %s" (show mid)
-    show (MuxTraceBrooderResponderDone mid) = printf "Responder Done on %s" (show mid)
+    show (MuxTraceBrooderResponderDone mid len) = printf "Responder Done on %s %d bytes left" (show mid) len
     show (MuxTraceBrooderInitiatorBrood mid) = printf "Initiator Brood on %s" (show mid)
     show (MuxTraceBrooderInitiatorHatch mid) = printf "Initiator Hatch on %s" (show mid)
-    show (MuxTraceBrooderInitiatorDone mid) = printf "Initiator Done on %s" (show mid)
+    show (MuxTraceBrooderInitiatorDone mid len) = printf "Initiator Done on %s  %d bytes left" (show mid) len
 

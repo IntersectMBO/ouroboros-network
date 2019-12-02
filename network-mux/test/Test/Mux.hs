@@ -404,8 +404,8 @@ setupMiniReqRsp :: IO ()     -- | Action performed by responder before processin
                  -> DummyRun  -- | Trace of messages
                  -> IO ( TQueue IO DummyTrace
                        , TQueue IO DummyTrace
-                       , Mx.Channel IO -> IO Bool
-                       , Mx.Channel IO -> IO Bool)
+                       , Mx.Channel IO -> IO (Bool, Maybe BL.ByteString)
+                       , Mx.Channel IO -> IO (Bool, Maybe BL.ByteString))
 setupMiniReqRsp serverAction (DummyRun messages) = do
     clientQ <- atomically newTQueue
     serverQ <- atomically newTQueue
@@ -437,14 +437,14 @@ setupMiniReqRsp serverAction (DummyRun messages) = do
 
     clientApp :: TQueue IO DummyTrace
               -> Mx.Channel IO
-              -> IO Bool
+              -> IO (Bool, Maybe BL.ByteString)
     clientApp q clientChan = do
         (requests, responses) <- atomically $ unzip . unDummyTrace <$> readTQueue q
         runClient nullTracer clientChan (reqRespClient responses requests)
 
     serverApp :: TQueue IO DummyTrace
               -> Mx.Channel IO
-              -> IO Bool
+              -> IO (Bool, Maybe BL.ByteString)
     serverApp q serverChan = do
         (requests, responses) <- atomically $ unzip . unDummyTrace <$> readTQueue q
         runServer nullTracer serverChan (reqRespServer requests responses)
@@ -464,7 +464,6 @@ waitOnAllClients clientVar clientTot = do
 prop_mux_2_minis :: DummyRun
                  -> DummyRun
                  -> Property
-
 prop_mux_2_minis msg0 msg1 = ioProperty $ do
     let sduLen = 14000
 
@@ -493,11 +492,14 @@ prop_mux_2_minis msg0 msg1 = ioProperty $ do
             clientCtrl ctrlFn [(ReqResp2, client_q0, result2), (ReqResp3, client_q1, result3)]
 
         clientCtrl _ [] = do
+            -- Let server know we're done
             atomically $ putTMVar clientResultVar True
-            void $ atomically $ readTMVar serverResultVar
+            -- Wait for server
+            void $ atomically $ takeTMVar serverResultVar
+            -- Let verify know we're done
+            atomically $ putTMVar clientResultVar True
 
         clientCtrl ctrlFn resultActions = do
-
             res <- atomically $ foldr (orElse . waitOnMiniProtocolClientResult) retry resultActions
             case res of
                  (_, _, False)       -> -- One miniprotocol failed
@@ -518,7 +520,8 @@ prop_mux_2_minis msg0 msg1 = ioProperty $ do
                    -> IO ()
         serverCtrl Nothing Nothing = do
             atomically $ putTMVar serverResultVar True
-            void $ atomically $ readTMVar clientResultVar
+            void $ atomically $ takeTMVar clientResultVar
+            atomically $ putTMVar serverResultVar True
         serverCtrl result2_m result3_m = do
             res <- atomically $ orElse (fetchServerResult ReqResp2 server_q0 result2_m) (fetchServerResult ReqResp3 server_q1 result3_m)
             case res of
@@ -804,7 +807,7 @@ prop_demux_sdu a = do
     serverRsp stopVar doneVar chan =
         atomically (takeTMVar stopVar) >>= loop
       where
-        loop e | e == BL.empty = atomically $ putTMVar doneVar ()
+        loop e | e == BL.empty = atomically $ putTMVar doneVar () >> return ((), Nothing)
         loop e = do
             msg_m <- Mx.recv chan
             case msg_m of

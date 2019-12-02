@@ -215,23 +215,25 @@ prop_socket_send_recv initiatorAddr responderAddr f xs = do
         responderApp :: OuroborosApplication Mx.ResponderApp ConnectionId TestProtocols2 IO BL.ByteString Void ()
         responderApp = OuroborosResponderApplication serverK $
           \peerid ReqRespPr channel -> do
-            r <- runPeer nullTracer
+            (r, remBytes) <- runPeer' nullTracer
                          ReqResp.codecReqResp
                          peerid
                          channel
                          (ReqResp.reqRespServerPeer (ReqResp.reqRespServerMapAccumL (\a -> pure . f a) 0))
             atomically $ putTMVar sv r
+            return ((), remBytes)
 
         -- Client Node; only req-resp client
         initiatorApp :: OuroborosApplication Mx.InitiatorApp ConnectionId TestProtocols2 IO BL.ByteString () Void
         initiatorApp = OuroborosInitiatorApplication clientK $
           \peerid ReqRespPr channel -> do
-            r <- runPeer nullTracer
+            (r, remBytes) <- runPeer' nullTracer
                          ReqResp.codecReqResp
                          peerid
                          channel
                          (ReqResp.reqRespClientPeer (ReqResp.reqRespClientMap xs))
             atomically $ putTMVar cv r
+            return ((), remBytes)
 
         clientK ctrlFn = do
             let (Mx.MiniProtocolInitiatorControl release) = ctrlFn ReqRespPr
@@ -288,12 +290,13 @@ prop_socket_recv_close f _ = ioProperty $ do
     let app :: OuroborosApplication ResponderApp () TestProtocols2 IO BL.ByteString Void ()
         app = OuroborosResponderApplication serverK $
           \peerid ReqRespPr channel -> do
-            r <- runPeer nullTracer
+            (r, remBytes) <- runPeer' nullTracer
                          ReqResp.codecReqResp
                          peerid
                          channel
                          (ReqResp.reqRespServerPeer (ReqResp.reqRespServerMapAccumL (\a -> pure . f a) 0))
             atomically $ putTMVar sv r
+            return ((), remBytes)
 
         serverK rspFn = do
             let (Mx.MiniProtocolResponderControl result) = rspFn ReqRespPr
@@ -352,13 +355,14 @@ prop_socket_client_connect_error _ xs = ioProperty $ do
     let app :: OuroborosApplication Mx.InitiatorApp ConnectionId TestProtocols2 IO BL.ByteString () Void
         app = OuroborosInitiatorApplication clientK $
                 \peerid ReqRespPr channel -> do
-                  _ <- runPeer nullTracer
+                  _ <- runPeer' nullTracer
                           ReqResp.codecReqResp
                           peerid
                           channel
                           (ReqResp.reqRespClientPeer (ReqResp.reqRespClientMap xs)
                                   :: Peer (ReqResp.ReqResp Int Int) AsClient ReqResp.StIdle IO [Int])
                   atomically $ putTMVar cv ()
+                  return ((), Nothing)
 
         clientK ctrlFn = do
             let (Mx.MiniProtocolInitiatorControl release) = ctrlFn ReqRespPr

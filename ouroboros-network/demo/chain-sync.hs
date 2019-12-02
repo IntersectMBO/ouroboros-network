@@ -487,10 +487,10 @@ clientBlockFetch sockAddrs = do
         protocols :: ConnectionId
                   -> DemoProtocol3
                   -> Channel IO LBS.ByteString
-                  -> IO ()
+                  -> IO ((), Maybe LBS.ByteString)
         protocols peerid ChainSync3 channel =
           bracket register unregister $ \chainVar ->
-          runPeer
+          runPeer'
             nullTracer -- (contramap (show . TraceLabelPeer peerid) stdoutTracer)
             codecChainSync
             peerid
@@ -509,7 +509,7 @@ clientBlockFetch sockAddrs = do
 
         protocols peerid BlockFetch3 channel =
           bracketFetchClient registry peerid $ \clientCtx ->
-            runPipelinedPeer
+            runPipelinedPeer'
               nullTracer -- (contramap (show . TraceLabelPeer peerid) stdoutTracer)
               codecBlockFetch
               peerid
