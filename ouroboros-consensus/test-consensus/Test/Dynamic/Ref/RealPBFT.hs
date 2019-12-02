@@ -54,6 +54,9 @@ data Outcome
 
   | Nominal
     -- ^ the leader extended the networks' common chain with a valid block
+    --
+    -- (We're using /nominal/ in the engineer's sense of \"according to
+    -- plan\".)
 
   | Unable
     -- ^ the leader could not forge a valid block
@@ -72,7 +75,7 @@ data Outcome
 -- | The state of the RealPBFT net
 --
 data State = State
-  { ids      :: !(Seq CoreNodeId)
+  { forgers  :: !(Seq CoreNodeId)
     -- ^ who forged each of the last @k@ blocks
 
   , nomCount :: !NumNominals
@@ -83,8 +86,10 @@ data State = State
   , outs     :: !(Seq Outcome)
     -- ^ the outcome of each the last @2k@ slots
   }
+  deriving (Eq, Show)
 
 newtype NumNominals = NumNominals Int
+  deriving (Eq, Ord, Show)
 
 emptyState :: State
 emptyState = State Seq.empty (NumNominals 0) 0 Seq.empty
@@ -92,15 +97,15 @@ emptyState = State Seq.empty (NumNominals 0) 0 Seq.empty
 -- | There are no recorded forgings
 --
 nullState :: State -> Bool
-nullState State{ids} = Seq.null ids
+nullState State{forgers} = Seq.null forgers
 
 -- | Record the latest forging in the state
 --
--- Should be followed by a call to 'extendOut'.
+-- Should be followed by a call to 'extendOutcome'.
 --
-extendId :: PBftParams -> State -> CoreNodeId -> State
-extendId params st@State{ids} i = st
-  { ids      = snd $ prune (oneK params) $ ids Seq.|> i
+extendForger :: PBftParams -> State -> CoreNodeId -> State
+extendForger params st@State{forgers} i = st
+  { forgers = snd $ prune (oneK params) $ forgers Seq.|> i
   }
 
 count :: (Eq a, Foldable t) => a -> t a -> Int
@@ -113,9 +118,9 @@ prune lim x = Seq.splitAt excess x
 
 -- | Record the latest outcome in the state
 --
-extendOut :: PBftParams -> State -> Outcome -> State
-extendOut params State{ids, nomCount, nextSlot, outs} out = State
-  { ids
+extendOutcome :: PBftParams -> State -> Outcome -> State
+extendOutcome params State{forgers, nomCount, nextSlot, outs} out = State
+  { forgers
   , nomCount = nomCount'
   , outs     = outs'
   , nextSlot = succ nextSlot
@@ -131,9 +136,9 @@ extendOut params State{ids, nomCount, nextSlot, outs} out = State
 -- | @True@ if the state would violate 'pbftSignatureThreshold'
 --
 tooMany :: PBftParams -> State -> CoreNodeId -> Bool
-tooMany params State{ids} i =
+tooMany params State{forgers} i =
     not $
-    Seq.length ids < k || count i ids <= most
+    Seq.length forgers < k || count i forgers <= most
   where
     PBftParams{pbftSignatureThreshold} = params
 
@@ -184,7 +189,7 @@ step params nodeJoinPlan st
   | maybe True (s <) mbJ       = stuck Absent
   | Just s == mbJ, not isFirst = stuck Wasted
   | tooMany params st' i       = stuck Unable
-  | otherwise                  = extendOut params st' Nominal
+  | otherwise                  = extendOutcome params st' Nominal
   where
     s = nextSlot st
 
@@ -198,9 +203,9 @@ step params nodeJoinPlan st
     isFirst = nullState st
 
     -- the state that @i@ would make
-    st' = extendId params st i
+    st' = extendForger params st i
 
-    stuck o = extendOut params st o
+    stuck o = extendOutcome params st o
 
 -- | Iterate 'step'
 --

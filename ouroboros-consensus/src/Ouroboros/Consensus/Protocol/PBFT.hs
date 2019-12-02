@@ -169,7 +169,7 @@ data PBftParams = PBftParams {
       -- parameter to the ambient security parameter @k@.
     , pbftSignatureThreshold :: !Double
     }
-  deriving (Generic, NoUnexpectedThunks)
+  deriving (Generic, NoUnexpectedThunks, Show)
 
 -- | If we are a core node (i.e. a block producing node) we know which core
 -- node we are, and we have the operational key pair and delegation certificate.

@@ -113,6 +113,7 @@
             (hsPkgs.ouroboros-consensus)
             (hsPkgs.io-sim-classes)
             (hsPkgs.io-sim)
+            (hsPkgs.binary-search)
             (hsPkgs.cborg)
             (hsPkgs.containers)
             (hsPkgs.contra-tracer)

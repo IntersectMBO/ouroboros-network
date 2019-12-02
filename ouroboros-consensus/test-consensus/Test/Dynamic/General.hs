@@ -9,13 +9,13 @@ module Test.Dynamic.General (
   , runTestNetwork
     -- * TestConfig
   , TestConfig (..)
-  , genTestConfig
-  , shrinkTestConfig
+  , truncateNodeJoinPlan
+  , truncateNodeTopology
     -- * Re-exports
   , TestOutput (..)
   ) where
 
-import           Control.Monad (guard, join)
+import           Control.Monad (guard)
 import qualified Data.Map as Map
 import           Data.Maybe (isJust)
 import           Data.Set (Set)
@@ -68,66 +68,44 @@ data TestConfig = TestConfig
   }
   deriving (Show)
 
-genTestConfig :: NumCoreNodes -> NumSlots -> Gen TestConfig
-genTestConfig numCoreNodes numSlots = do
-    -- nodeJoinPlan <- genNodeJoinPlan numCoreNodes numSlots -- TODO #1257
-    let nodeJoinPlan = trivialNodeJoinPlan numCoreNodes
-    nodeTopology <- genNodeTopology numCoreNodes
-    pure TestConfig{numCoreNodes, numSlots, nodeJoinPlan, nodeTopology}
+truncateNodeJoinPlan ::
+    NodeJoinPlan -> NumCoreNodes -> (NumSlots, NumSlots) -> NodeJoinPlan
+truncateNodeJoinPlan
+  (NodeJoinPlan m) (NumCoreNodes n') (NumSlots t, NumSlots t') =
+    NodeJoinPlan $
+    -- scale by t' / t
+    Map.map (\(SlotNo i) -> SlotNo $ (i * toEnum t') `div` toEnum t) $
+    -- discard discarded nodes
+    Map.filterWithKey (\(CoreNodeId nid) _ -> nid < n') $
+    m
 
--- | Shrink without changing the number of nodes or slots
-shrinkTestConfig :: TestConfig -> [TestConfig]
-shrinkTestConfig testConfig@TestConfig{nodeJoinPlan, nodeTopology} =
-  TestConfig{numCoreNodes, numSlots, nodeJoinPlan, nodeTopology} =
-    dropId $
-    [ TestConfig
-        { numCoreNodes
-        , numSlots
-        , nodeJoinPlan = p'
-        , nodeTopology = top'
-        }
-    | p'   <- andId shrinkNodeJoinPlan nodeJoinPlan
-    , top' <- andId shrinkNodeTopology nodeTopology
-    ]
-
--- | Shrink, including the number of nodes and slots
-shrinkTestConfigFreely :: TestConfig -> [TestConfig]
-shrinkTestConfigFreely
-  TestConfig{numCoreNodes, numSlots, nodeJoinPlan, nodeTopology} =
-    dropId $
-    [ TestConfig
-        { numCoreNodes = n'
-        , numSlots     = t'
-        , nodeJoinPlan = p'
-        , nodeTopology = top'
-        }
-    | n'             <- andId shrink numCoreNodes
-    , t'             <- andId shrink numSlots
-    , let adjustedP   = adjustedNodeJoinPlan n' t'
-    , let adjustedTop = adjustedNodeTopology n'
-    , p'             <- andId shrinkNodeJoinPlan adjustedP
-    , top'           <- andId shrinkNodeTopology adjustedTop
-    ]
-  where
-    adjustedNodeJoinPlan (NumCoreNodes n') (NumSlots t') =
-        NodeJoinPlan $
-        -- scale by t' / t
-        Map.map (\(SlotNo i) -> SlotNo $ (i * toEnum t') `div` toEnum t) $
-        -- discard discarded nodes
-        Map.filterWithKey (\(CoreNodeId nid) _ -> nid < n') $
-        m
-      where
-        NumSlots t = numSlots
-        NodeJoinPlan m = nodeJoinPlan
-
-    adjustedNodeTopology (NumCoreNodes n') =
-        NodeTopology $ Map.filterWithKey (\(CoreNodeId i) _ -> i < n') m
-      where
-        NodeTopology m = nodeTopology
+truncateNodeTopology :: NodeTopology -> NumCoreNodes -> NodeTopology
+truncateNodeTopology (NodeTopology m) (NumCoreNodes n') =
+    NodeTopology $ Map.filterWithKey (\(CoreNodeId i) _ -> i < n') m
 
 instance Arbitrary TestConfig where
-  arbitrary = join $ genTestConfig <$> arbitrary <*> arbitrary
-  shrink    = shrinkTestConfigFreely
+  arbitrary = do
+      numCoreNodes <- arbitrary
+      numSlots     <- arbitrary
+      nodeJoinPlan <- genNodeJoinPlan numCoreNodes numSlots
+      nodeTopology <- genNodeTopology numCoreNodes
+      pure TestConfig{numCoreNodes, numSlots, nodeJoinPlan, nodeTopology}
+
+  shrink TestConfig{numCoreNodes, numSlots, nodeJoinPlan, nodeTopology} =
+      dropId $
+      [ TestConfig
+          { numCoreNodes = n'
+          , numSlots     = t'
+          , nodeJoinPlan = p'
+          , nodeTopology = top'
+          }
+      | n'             <- andId shrink numCoreNodes
+      , t'             <- andId shrink numSlots
+      , let adjustedP   = truncateNodeJoinPlan nodeJoinPlan n' (numSlots, t')
+      , let adjustedTop = truncateNodeTopology nodeTopology n'
+      , p'             <- andId shrinkNodeJoinPlan adjustedP
+      , top'           <- andId shrinkNodeTopology adjustedTop
+      ]
 
 {-------------------------------------------------------------------------------
   Running tests
