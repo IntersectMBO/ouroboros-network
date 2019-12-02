@@ -5,6 +5,7 @@
 {-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE GADTs                      #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE PatternSynonyms            #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE StandaloneDeriving         #-}
@@ -39,7 +40,7 @@ module Ouroboros.Storage.ChainDB.API (
   ) where
 
 import qualified Codec.CBOR.Read as CBOR
-import           Control.Exception (Exception)
+import           Control.Exception (Exception (..))
 import qualified Data.ByteString.Lazy as Lazy
 import           Data.Function (on)
 import           Data.Typeable
@@ -582,7 +583,32 @@ data ChainDbFailure =
 
 deriving instance Show ChainDbFailure
 
-instance Exception ChainDbFailure
+instance Exception ChainDbFailure where
+  displayException = \case
+      ImmDbParseFailure {}                -> corruption
+      ImmDbTrailingData {}                -> corruption
+      ImmDbMissingBlock {}                -> corruption
+      ImmDbMissingBlockPoint {}           -> corruption
+      ImmDbUnexpectedIteratorExhausted {} -> corruption
+      ImmDbFailure e -> case e of
+        ImmDB.FileSystemError fse      -> fsError fse
+        ImmDB.InvalidFileError {}      -> corruption
+        ImmDB.MissingFileError {}      -> corruption
+        ImmDB.ChecksumMismatchError {} -> corruption
+      VolDbParseFailure {}                -> corruption
+      VolDbTrailingData {}                -> corruption
+      VolDbMissingBlock {}                -> corruption
+      VolDbFailure e -> case e of
+        VolDB.FileSystemError fse -> fsError fse
+        VolDB.ParserError {}      -> corruption
+      LgrDbFailure fse                    -> fsError fse
+      ChainDbMissingBlock {}              -> corruption
+    where
+      corruption = "The database got corrupted, please restart with validation mode enabled"
+
+      -- The output will be a bit too detailed, but it will be quite clear.
+      fsError :: FsError -> String
+      fsError = displayException
 
 {-------------------------------------------------------------------------------
   Exceptions
@@ -639,4 +665,19 @@ instance Eq ChainDbError where
       Just Refl -> fr == fr' && to == to'
   InvalidIteratorRange _ _ == _ = False
 
-instance Exception ChainDbError
+instance Exception ChainDbError where
+  displayException = \case
+    -- The user should not see the exception below, a fatal exception with
+    -- more information about the specific will have been thrown. This
+    -- exception will only be thrown if some thread still tries to use the
+    -- ChainDB afterwards, which should not happen.
+    ClosedDBError {} ->
+      "The database was used after it was closed because it encountered an unrecoverable error"
+
+    -- The user won't see the exceptions below, they are not fatal.
+    NoGenesisBlock {} ->
+      "The non-existing genesis block was requested"
+    ClosedReaderError {} ->
+      "The block/header reader was used after it was closed"
+    InvalidIteratorRange {} ->
+      "An invalid range of blocks was requested"
