@@ -13,7 +13,8 @@
 module Network.TypedProtocol.Driver.Limits (
 
   -- * Limits
-  ProtocolLimits(..),
+  ProtocolSizeLimits(..),
+  ProtocolTimeLimits(..),
   ProtocolLimitFailure(..),
 
   -- * Normal peers
@@ -44,14 +45,16 @@ import Network.TypedProtocol.Channel
 import Network.TypedProtocol.Codec
 
 
-data ProtocolLimits ps bytes = ProtocolLimits {
-       timeLimitForState :: forall (pr :: PeerRole) (st :: ps).
-                            PeerHasAgency pr st -> Maybe DiffTime,
-
+data ProtocolSizeLimits ps bytes = ProtocolSizeLimits {
        sizeLimitForState :: forall (pr :: PeerRole) (st :: ps).
                             PeerHasAgency pr st -> Word,
 
        dataSize          :: bytes -> Word
+     }
+
+data ProtocolTimeLimits ps = ProtocolTimeLimits {
+       timeLimitForState :: forall (pr :: PeerRole) (st :: ps).
+                            PeerHasAgency pr st -> Maybe DiffTime
      }
 
 data ProtocolLimitFailure = ExceededSizeLimit
@@ -66,11 +69,13 @@ driverWithLimits :: forall ps peerid failure bytes m.
                  => Tracer m (TraceSendRecv ps peerid failure)
                  -> peerid
                  -> Codec ps failure m bytes
-                 -> ProtocolLimits ps bytes
+                 -> ProtocolSizeLimits ps bytes
+                 -> ProtocolTimeLimits ps
                  -> Channel m bytes
                  -> Driver ps (Maybe bytes) m
 driverWithLimits tr peerid Codec{encode, decode}
-                 ProtocolLimits{timeLimitForState, sizeLimitForState, dataSize}
+                 ProtocolSizeLimits{sizeLimitForState, dataSize}
+                 ProtocolTimeLimits{timeLimitForState}
                  channel@Channel{send} =
     Driver { sendMessage, recvMessage, startDState = Nothing }
   where
@@ -155,14 +160,15 @@ runPeerWithLimits
   => Tracer m (TraceSendRecv ps peerid failure)
   -> peerid
   -> Codec ps failure m bytes
-  -> ProtocolLimits ps bytes
+  -> ProtocolSizeLimits ps bytes
+  -> ProtocolTimeLimits ps
   -> Channel m bytes
   -> Peer ps pr st m a
   -> m a
-runPeerWithLimits tr peerid codec limits channel peer =
+runPeerWithLimits tr peerid codec slimits tlimits channel peer =
     fst <$> runPeerWithDriver driver peer (startDState driver)
   where
-    driver = driverWithLimits tr peerid codec limits channel
+    driver = driverWithLimits tr peerid codec slimits tlimits channel
 
 
 -- | Run a pipelined peer with the given channel via the given codec.
@@ -178,12 +184,13 @@ runPipelinedPeerWithLimits
   => Tracer m (TraceSendRecv ps peerid failure)
   -> peerid
   -> Codec ps failure m bytes
-  -> ProtocolLimits ps bytes
+  -> ProtocolSizeLimits ps bytes
+  -> ProtocolTimeLimits ps
   -> Channel m bytes
   -> PeerPipelined ps pr st m a
   -> m a
-runPipelinedPeerWithLimits tr peerid codec limits channel peer =
+runPipelinedPeerWithLimits tr peerid codec slimits tlimits channel peer =
     fst <$> runPipelinedPeerWithDriver driver peer (startDState driver)
   where
-    driver = driverWithLimits tr peerid codec limits channel
+    driver = driverWithLimits tr peerid codec slimits tlimits channel
 
