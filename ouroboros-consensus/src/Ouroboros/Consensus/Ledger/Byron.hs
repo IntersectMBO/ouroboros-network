@@ -14,6 +14,7 @@ import           Ouroboros.Consensus.Ledger.Byron.ContainsGenesis as X
 import           Ouroboros.Consensus.Ledger.Byron.DelegationHistory as X
                      (DelegationHistory)
 import           Ouroboros.Consensus.Ledger.Byron.Forge as X
+import           Ouroboros.Consensus.Ledger.Byron.Integrity as X
 import           Ouroboros.Consensus.Ledger.Byron.Ledger as X
 import           Ouroboros.Consensus.Ledger.Byron.Mempool as X
 import           Ouroboros.Consensus.Ledger.Byron.PBFT as X

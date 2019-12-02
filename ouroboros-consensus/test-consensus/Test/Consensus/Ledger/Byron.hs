@@ -1,8 +1,11 @@
-{-# LANGUAGE FlexibleInstances   #-}
-{-# LANGUAGE NamedFieldPuns      #-}
-{-# LANGUAGE RankNTypes          #-}
-{-# LANGUAGE RecordWildCards     #-}
-{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE DerivingStrategies         #-}
+{-# LANGUAGE FlexibleInstances          #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE NamedFieldPuns             #-}
+{-# LANGUAGE OverloadedStrings          #-}
+{-# LANGUAGE RankNTypes                 #-}
+{-# LANGUAGE RecordWildCards            #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
 module Test.Consensus.Ledger.Byron (tests) where
 
@@ -21,6 +24,7 @@ import           Cardano.Chain.Block (ABlockOrBoundary (..))
 import qualified Cardano.Chain.Block as CC.Block
 import           Cardano.Chain.Common (KeyHash)
 import           Cardano.Chain.Slotting (EpochSlots (..))
+import qualified Cardano.Chain.Update as CC.Update
 import           Cardano.Crypto (ProtocolMagicId (..))
 
 import           Ouroboros.Network.Block (HeaderHash)
@@ -31,6 +35,8 @@ import           Ouroboros.Consensus.Ledger.Byron
 import           Ouroboros.Consensus.Ledger.Byron.Auxiliary
 import qualified Ouroboros.Consensus.Ledger.Byron.DelegationHistory as DH
 import           Ouroboros.Consensus.Mempool.API (ApplyTxErr)
+import           Ouroboros.Consensus.Node.ProtocolInfo
+import           Ouroboros.Consensus.Protocol
 import           Ouroboros.Consensus.Protocol.Abstract (SecurityParam (..))
 import qualified Ouroboros.Consensus.Protocol.PBFT.ChainState as CS
 
@@ -82,6 +88,11 @@ tests = testGroup "Byron"
       , test_golden_LedgerState
       , test_golden_GenTxId
       ]
+
+  , testGroup "Integrity"
+      [ testProperty "detect corruption in RegularBlock" prop_detectCorruption_RegularBlock
+      ]
+
   ]
 
 {-------------------------------------------------------------------------------
@@ -257,6 +268,78 @@ goldenTestCBOR name enc a path =
     bs = toLazyByteString (enc a)
 
 {-------------------------------------------------------------------------------
+  Integrity
+-------------------------------------------------------------------------------}
+
+-- | Test that we can detect random bitflips in blocks.
+--
+-- We cannot do this for EBBs, as they are not signed nor have a hash, so we
+-- only test with regular blocks.
+prop_detectCorruption_RegularBlock :: RegularBlock -> Corruption -> Property
+prop_detectCorruption_RegularBlock (RegularBlock blk) =
+    detectCorruption
+      encodeByronBlock
+      (decodeByronBlock epochSlots)
+      (verifyBlockIntegrity testCfg)
+      blk
+
+testCfg :: NodeConfig ByronConsensusProtocol
+testCfg = pInfoConfig $ protocolInfo prot
+  where
+    prot = ProtocolRealPBFT
+      CC.dummyConfig
+      (Just (PBftSignatureThreshold 0.5))
+      (CC.Update.ProtocolVersion 1 0 0)
+      (CC.Update.SoftwareVersion (CC.Update.ApplicationName "Cardano Test") 2)
+      Nothing
+
+newtype Corruption = Corruption Word
+  deriving stock   (Show)
+  deriving newtype (Arbitrary)
+
+-- | Increment (overflow if necessary) the byte at position @i@ in the
+-- bytestring, where @i = n `mod` length bs@.
+--
+-- If the bytestring is empty, return it unmodified.
+applyCorruption :: Corruption -> Lazy.ByteString -> Lazy.ByteString
+applyCorruption (Corruption n) bs
+    | Lazy.null bs
+    = bs
+    | otherwise
+    = before <> Lazy.cons (Lazy.head atAfter + 1) (Lazy.tail atAfter)
+  where
+    offset = fromIntegral n `mod` Lazy.length bs
+    (before, atAfter) = Lazy.splitAt offset bs
+
+-- | Serialise @a@, apply the given corruption, deserialise it, when that
+-- fails, the corruption was detected. When deserialising the corrupted
+-- bytestring succeeds, pass the deserialised value to the integrity checking
+-- function. If that function returns 'False', the corruption was detected, if
+-- it returns 'True', the corruption was not detected and the test fails.
+detectCorruption
+  :: Show a
+  => (a -> Encoding)
+  -> (forall s. Decoder s (Lazy.ByteString -> a))
+  -> (a -> Bool)
+     -- ^ Integrity check that should detect the corruption. Return 'False'
+     -- when corrupt.
+  -> a
+  -> Corruption
+  -> Property
+detectCorruption enc dec isValid a cor = case deserialiseFromBytes dec bs of
+    Right (_, mkA')
+        | not (isValid a')
+        -> label "corruption detected" $ property True
+        | otherwise
+        -> label "corruption not detected" $
+           counterexample ("Corruption not detected: " <> show a') False
+      where
+        a' = mkA' bs
+    Left _ -> label "corruption detected by decoder" $ property True
+  where
+    bs = applyCorruption cor $ toLazyByteString (enc a)
+
+{-------------------------------------------------------------------------------
   Generators
 -------------------------------------------------------------------------------}
 
@@ -266,6 +349,15 @@ epochSlots = EpochSlots 21600
 protocolMagicId :: ProtocolMagicId
 protocolMagicId = ProtocolMagicId 100
 
+-- | A 'ByronBlock' that is never an EBB.
+newtype RegularBlock = RegularBlock { unRegularBlock :: ByronBlock }
+  deriving (Eq, Show)
+
+instance Arbitrary RegularBlock where
+  arbitrary =
+    RegularBlock .annotateByronBlock epochSlots <$>
+    hedgehog (CC.genBlock protocolMagicId epochSlots)
+
 instance Arbitrary ByronBlock where
   arbitrary = frequency
       [ (3, genBlock)
@@ -273,9 +365,7 @@ instance Arbitrary ByronBlock where
       ]
     where
       genBlock :: Gen ByronBlock
-      genBlock =
-        annotateByronBlock epochSlots <$>
-        hedgehog (CC.genBlock protocolMagicId epochSlots)
+      genBlock = unRegularBlock <$> arbitrary
       genBoundaryBlock :: Gen ByronBlock
       genBoundaryBlock =
         mkByronBlock epochSlots . ABOBBoundary . reAnnotateBoundary protocolMagicId <$>

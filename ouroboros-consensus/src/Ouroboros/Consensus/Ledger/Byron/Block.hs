@@ -21,7 +21,6 @@ module Ouroboros.Consensus.Ledger.Byron.Block (
     -- * Header
   , Header(..)
   , mkByronHeader
-  , byronBlockMatchesHeader
     -- * Serialisation
   , encodeByronBlockWithInfo
   , encodeByronBlock
@@ -169,11 +168,6 @@ mkByronHeader epochSlots hdr = ByronHeader {
     , byronHeaderSlotNo = fromByronSlotNo $ abobHdrSlotNo epochSlots hdr
     , byronHeaderHash   = mkByronHash hdr
     }
-
--- | Check if a block matches its header
-byronBlockMatchesHeader :: Header ByronBlock -> ByronBlock -> Bool
-byronBlockMatchesHeader hdr blk =
-    abobMatchesBody (byronHeaderRaw hdr) (byronBlockRaw blk)
 
 {-------------------------------------------------------------------------------
   HasHeader instances
