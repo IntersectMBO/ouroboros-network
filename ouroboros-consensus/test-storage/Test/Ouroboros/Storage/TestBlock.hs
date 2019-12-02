@@ -177,6 +177,13 @@ testBlockEpochNoIfEBB fixedEpochSize b = case testBlockIsEBB b of
     IsEBB    -> Just $
       EpochNo (unSlotNo (blockSlot b) `div` unEpochSize fixedEpochSize)
 
+-- | Check whether the header matches its hash and whether the body matches
+-- its hash.
+testBlockIsValid :: TestBlock -> Bool
+testBlockIsValid (TestBlock hdr body) =
+  thHash     hdr == hashHeader hdr &&
+  thBodyHash hdr == hashBody   body
+
 testBlockToBuilder :: TestBlock -> Builder
 testBlockToBuilder = CBOR.toBuilder . encode
 
