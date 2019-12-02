@@ -287,6 +287,7 @@ test-suite test-consensus
                     Test.Util.QSM
                     Test.Util.Range
                     Test.Util.SOP
+                    Test.Util.Shrink
                     Test.Util.TestBlock
                     Test.Util.Tracer
   build-depends:    base,

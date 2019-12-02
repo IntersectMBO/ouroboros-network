@@ -54,6 +54,7 @@ import           Test.Util.Orphans.Arbitrary ()
 import           Test.Util.Orphans.IOLike ()
 import           Test.Util.Orphans.NoUnexpectedThunks ()
 import           Test.Util.Range
+import           Test.Util.Shrink (andId, dropId)
 
 {-------------------------------------------------------------------------------
   Configuring tests
@@ -77,34 +78,37 @@ genTestConfig numCoreNodes numSlots = do
 -- | Shrink without changing the number of nodes or slots
 shrinkTestConfig :: TestConfig -> [TestConfig]
 shrinkTestConfig testConfig@TestConfig{nodeJoinPlan, nodeTopology} =
-    tail $ -- drop the identity output
-    [ testConfig{nodeJoinPlan = p', nodeTopology = top'}
-    | p' <- nodeJoinPlan : shrinkNodeJoinPlan nodeJoinPlan
-    , top' <- nodeTopology : shrinkNodeTopology nodeTopology
+  TestConfig{numCoreNodes, numSlots, nodeJoinPlan, nodeTopology} =
+    dropId $
+    [ TestConfig
+        { numCoreNodes
+        , numSlots
+        , nodeJoinPlan = p'
+        , nodeTopology = top'
+        }
+    | p'   <- andId shrinkNodeJoinPlan nodeJoinPlan
+    , top' <- andId shrinkNodeTopology nodeTopology
     ]
 
 -- | Shrink, including the number of nodes and slots
 shrinkTestConfigFreely :: TestConfig -> [TestConfig]
 shrinkTestConfigFreely
   TestConfig{numCoreNodes, numSlots, nodeJoinPlan, nodeTopology} =
-    tail $   -- drop the identity result
+    dropId $
     [ TestConfig
         { numCoreNodes = n'
-        , numSlots = t'
+        , numSlots     = t'
         , nodeJoinPlan = p'
         , nodeTopology = top'
         }
-    | n' <- idAnd shrink numCoreNodes
-    , t' <- idAnd shrink numSlots
-    , let adjustedP = adjustedNodeJoinPlan n' t'
+    | n'             <- andId shrink numCoreNodes
+    , t'             <- andId shrink numSlots
+    , let adjustedP   = adjustedNodeJoinPlan n' t'
     , let adjustedTop = adjustedNodeTopology n'
-    , p' <- idAnd shrinkNodeJoinPlan adjustedP
-    , top' <- idAnd shrinkNodeTopology adjustedTop
+    , p'             <- andId shrinkNodeJoinPlan adjustedP
+    , top'           <- andId shrinkNodeTopology adjustedTop
     ]
   where
-    idAnd :: forall a. (a -> [a]) -> a -> [a]
-    idAnd f x = x : f x
-
     adjustedNodeJoinPlan (NumCoreNodes n') (NumSlots t') =
         NodeJoinPlan $
         -- scale by t' / t
@@ -123,7 +127,7 @@ shrinkTestConfigFreely
 
 instance Arbitrary TestConfig where
   arbitrary = join $ genTestConfig <$> arbitrary <*> arbitrary
-  shrink = shrinkTestConfigFreely
+  shrink    = shrinkTestConfigFreely
 
 {-------------------------------------------------------------------------------
   Running tests
