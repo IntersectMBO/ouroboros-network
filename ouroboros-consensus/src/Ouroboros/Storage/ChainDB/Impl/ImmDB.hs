@@ -132,17 +132,18 @@ type TraceEvent blk =
 --
 -- See also 'defaultArgs'.
 data ImmDbArgs m blk = forall h. ImmDbArgs {
-      immDecodeHash  :: forall s. Decoder s (HeaderHash blk)
-    , immDecodeBlock :: forall s. Decoder s (Lazy.ByteString -> blk)
-    , immEncodeHash  :: HeaderHash blk -> Encoding
-    , immEncodeBlock :: blk -> BinaryInfo Encoding
-    , immErr         :: ErrorHandling ImmDB.ImmutableDBError m
-    , immEpochInfo   :: EpochInfo m
-    , immHashInfo    :: HashInfo (HeaderHash blk)
-    , immValidation  :: ImmDB.ValidationPolicy
-    , immIsEBB       :: blk -> Maybe EpochNo
-    , immHasFS       :: HasFS m h
-    , immTracer      :: Tracer m (TraceEvent blk)
+      immDecodeHash     :: forall s. Decoder s (HeaderHash blk)
+    , immDecodeBlock    :: forall s. Decoder s (Lazy.ByteString -> blk)
+    , immEncodeHash     :: HeaderHash blk -> Encoding
+    , immEncodeBlock    :: blk -> BinaryInfo Encoding
+    , immErr            :: ErrorHandling ImmDB.ImmutableDBError m
+    , immEpochInfo      :: EpochInfo m
+    , immHashInfo       :: HashInfo (HeaderHash blk)
+    , immValidation     :: ImmDB.ValidationPolicy
+    , immIsEBB          :: blk -> Maybe EpochNo
+    , immCheckIntegrity :: blk -> Bool
+    , immHasFS          :: HasFS m h
+    , immTracer         :: Tracer m (TraceEvent blk)
     }
 
 -- | Default arguments when using the 'IO' monad
@@ -157,20 +158,22 @@ data ImmDbArgs m blk = forall h. ImmDbArgs {
 -- * 'immHashInfo'
 -- * 'immValidation'
 -- * 'immIsEBB'
+-- * 'immCheckIntegrity'
 defaultArgs :: FilePath -> ImmDbArgs IO blk
 defaultArgs fp = ImmDbArgs{
       immErr   = EH.exceptions
     , immHasFS = ioHasFS $ MountPoint (fp </> "immutable")
       -- Fields without a default
-    , immDecodeHash  = error "no default for immDecodeHash"
-    , immDecodeBlock = error "no default for immDecodeBlock"
-    , immEncodeHash  = error "no default for immEncodeHash"
-    , immEncodeBlock = error "no default for immEncodeBlock"
-    , immEpochInfo   = error "no default for immEpochInfo"
-    , immHashInfo    = error "no default for immHashInfo"
-    , immValidation  = error "no default for immValidation"
-    , immIsEBB       = error "no default for immIsEBB"
-    , immTracer      = nullTracer
+    , immDecodeHash     = error "no default for immDecodeHash"
+    , immDecodeBlock    = error "no default for immDecodeBlock"
+    , immEncodeHash     = error "no default for immEncodeHash"
+    , immEncodeBlock    = error "no default for immEncodeBlock"
+    , immEpochInfo      = error "no default for immEpochInfo"
+    , immHashInfo       = error "no default for immHashInfo"
+    , immValidation     = error "no default for immValidation"
+    , immIsEBB          = error "no default for immIsEBB"
+    , immCheckIntegrity = error "no default for immCheckIntegrity"
+    , immTracer         = nullTracer
     }
 
 openDB :: (IOLike m, HasHeader blk) => ImmDbArgs m blk -> m (ImmDB m blk)
@@ -185,12 +188,12 @@ openDB ImmDbArgs{..} = do
                parser
                immTracer
     return ImmDB
-      { immDB        = immDB
-      , decBlock     = immDecodeBlock
-      , encBlock     = immEncodeBlock
-      , epochInfo    = immEpochInfo
-      , isEBB        = immIsEBB
-      , err          = immErr
+      { immDB     = immDB
+      , decBlock  = immDecodeBlock
+      , encBlock  = immEncodeBlock
+      , epochInfo = immEpochInfo
+      , isEBB     = immIsEBB
+      , err       = immErr
       }
   where
     parser = ImmDB.epochFileParser immHasFS immDecodeBlock immIsEBB

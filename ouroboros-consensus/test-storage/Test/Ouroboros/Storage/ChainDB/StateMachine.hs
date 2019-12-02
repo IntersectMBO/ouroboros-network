@@ -1355,6 +1355,7 @@ mkArgs cfg initLedger tracer registry varCurSlot
     , cdbEpochInfo        = fixedSizeEpochInfo fixedEpochSize
     , cdbHashInfo         = testHashInfo
     , cdbIsEBB            = testBlockEpochNoIfEBB fixedEpochSize
+    , cdbCheckIntegrity   = testBlockIsValid
     , cdbGenesis          = return initLedger
     , cdbBlockchainTime   = settableBlockchainTime varCurSlot
 

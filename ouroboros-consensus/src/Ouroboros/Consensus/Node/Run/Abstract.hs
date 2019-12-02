@@ -62,6 +62,18 @@ class (ProtocolLedgerView blk, ApplyTx blk) => RunNode blk where
   nodeHashInfo            :: Proxy blk
                           -> HashInfo (HeaderHash blk)
 
+  -- | Check the integrity of a block, i.e., that it has not been corrupted by
+  -- a bitflip.
+  --
+  -- Check this by, e.g., verifying whether the block has a valid signature
+  -- and that the hash of the body matches the body hash stores in the header.
+  --
+  -- This does not check the validity of the contents of the block, e.g.,
+  -- whether the transactions are valid w.r.t. the ledger, or whether it's
+  -- sent by a malicious node.
+  nodeCheckIntegrity      :: NodeConfig (BlockProtocol blk)
+                          -> blk -> Bool
+
   -- Encoders
   nodeEncodeBlockWithInfo :: NodeConfig (BlockProtocol blk) -> blk -> BinaryInfo Encoding
   nodeEncodeBlock         :: NodeConfig (BlockProtocol blk) -> blk -> Encoding

@@ -227,6 +227,7 @@ initChainDB tracer registry btime dbPath cfg initLedger slotLength
       , ChainDB.cdbGenesis          = return initLedger
       , ChainDB.cdbDiskPolicy       = defaultDiskPolicy secParam slotDiffTime
       , ChainDB.cdbIsEBB            = nodeIsEBB
+      , ChainDB.cdbCheckIntegrity   = nodeCheckIntegrity      cfg
       , ChainDB.cdbParamsLgrDB      = ledgerDbDefaultParams secParam
       , ChainDB.cdbNodeConfig       = cfg
       , ChainDB.cdbRegistry         = registry

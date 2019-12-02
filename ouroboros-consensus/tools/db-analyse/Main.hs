@@ -1,6 +1,8 @@
-{-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE RankNTypes       #-}
-{-# LANGUAGE RecordWildCards  #-}
+{-# LANGUAGE FlexibleContexts  #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE RankNTypes        #-}
+{-# LANGUAGE RecordWildCards   #-}
+{-# LANGUAGE TypeApplications  #-}
 
 module Main (main) where
 
@@ -9,6 +11,7 @@ import           Data.Coerce
 import           Data.Foldable (asum)
 import           Data.IORef
 import           Data.List (foldl', intercalate)
+import           Data.Proxy (Proxy (..))
 import           Data.Word
 import           Options.Applicative
 
@@ -16,16 +19,20 @@ import           Cardano.Binary (unAnnotated)
 import qualified Cardano.Chain.Block as Chain
 import qualified Cardano.Chain.Genesis as Genesis
 import           Cardano.Chain.Slotting (EpochSlots (..))
+import qualified Cardano.Chain.Update as Update
 import qualified Cardano.Chain.UTxO as Chain
 import qualified Cardano.Crypto as Crypto
 
 import           Ouroboros.Network.Block (HasHeader (..), SlotNo (..),
                      genesisPoint)
 
-import           Ouroboros.Consensus.Ledger.Byron (ByronBlock, ByronHash)
+import           Ouroboros.Consensus.Ledger.Byron (ByronBlock,
+                     ByronConsensusProtocol, ByronHash)
 import qualified Ouroboros.Consensus.Ledger.Byron as Byron
+import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Node.Run.Abstract
 import           Ouroboros.Consensus.Node.Run.Byron ()
+import           Ouroboros.Consensus.Protocol.Abstract (NodeConfig)
 import           Ouroboros.Consensus.Util.ResourceRegistry
 
 import           Ouroboros.Storage.ChainDB.API (StreamFrom (..))
@@ -40,7 +47,8 @@ main = do
     genesisConfig <- openGenesis clConfig clIsMainNet
     let epochSlots = Genesis.configEpochSlots genesisConfig
         epochInfo  = fixedSizeEpochInfo (coerce epochSlots)
-    immDB <- openImmDB clImmDB epochSlots epochInfo
+        cfg        = mkPBftNodeConfig genesisConfig
+    immDB <- openImmDB clImmDB cfg epochInfo
     withRegistry $ runAnalysis clAnalysis immDB epochInfo
     putStrLn "Done"
 
@@ -219,19 +227,34 @@ openGenesis configFile onMainNet = do
     return genesisConfig
 
 {-------------------------------------------------------------------------------
+  PBFT NodeConfig
+-------------------------------------------------------------------------------}
+
+mkPBftNodeConfig :: Genesis.Config -> NodeConfig ByronConsensusProtocol
+mkPBftNodeConfig genesisConfig = pInfoConfig $
+    protocolInfoByron
+      genesisConfig
+      Nothing
+      (Update.ProtocolVersion 1 0 0)
+      (Update.SoftwareVersion (Update.ApplicationName "db-analyse") 2)
+      Nothing
+
+{-------------------------------------------------------------------------------
   Interface with the ImmDB
 -------------------------------------------------------------------------------}
 
-openImmDB :: FilePath -> EpochSlots -> EpochInfo IO -> IO (ImmDB IO ByronBlock)
-openImmDB fp epochSlots epochInfo = openDB args
+openImmDB :: FilePath -> NodeConfig ByronConsensusProtocol -> EpochInfo IO
+          -> IO (ImmDB IO ByronBlock)
+openImmDB fp cfg epochInfo = openDB args
   where
     args :: ImmDbArgs IO ByronBlock
     args = (defaultArgs fp) {
-          immDecodeHash  = Byron.decodeByronHeaderHash
-        , immDecodeBlock = Byron.decodeByronBlock epochSlots
-        , immEncodeHash  = Byron.encodeByronHeaderHash
-        , immEncodeBlock = Byron.encodeByronBlockWithInfo
-        , immEpochInfo   = epochInfo
-        , immValidation  = ValidateMostRecentEpoch
-        , immIsEBB       = nodeIsEBB
+          immDecodeHash     = nodeDecodeHeaderHash    (Proxy @ByronBlock)
+        , immDecodeBlock    = nodeDecodeBlock         cfg
+        , immEncodeHash     = nodeEncodeHeaderHash    (Proxy @ByronBlock)
+        , immEncodeBlock    = nodeEncodeBlockWithInfo cfg
+        , immEpochInfo      = epochInfo
+        , immValidation     = ValidateMostRecentEpoch
+        , immIsEBB          = nodeIsEBB
+        , immCheckIntegrity = nodeCheckIntegrity      cfg
         }

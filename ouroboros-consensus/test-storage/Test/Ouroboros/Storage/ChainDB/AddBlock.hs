@@ -267,6 +267,7 @@ mkArgs cfg initLedger tracer registry hashInfo
     , cdbEpochInfo        = fixedSizeEpochInfo fixedEpochSize
     , cdbHashInfo         = hashInfo
     , cdbIsEBB            = const Nothing
+    , cdbCheckIntegrity   = const True
     , cdbBlockchainTime   = fixedBlockchainTime maxBound
     , cdbGenesis          = return initLedger
 

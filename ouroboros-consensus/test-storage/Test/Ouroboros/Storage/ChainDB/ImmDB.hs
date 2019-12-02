@@ -66,17 +66,18 @@ withImmDB k = do
     bracket (ImmDB.openDB (mkArgs immDbFsVar epochInfo)) ImmDB.closeDB k
   where
     mkArgs immDbFsVar epochInfo = ImmDbArgs
-      { immErr         = EH.monadCatch
-      , immHasFS       = simHasFS EH.monadCatch immDbFsVar
-      , immDecodeHash  = nodeDecodeHeaderHash (Proxy @ByronBlock)
-      , immDecodeBlock = nodeDecodeBlock testCfg
-      , immEncodeHash  = nodeEncodeHeaderHash (Proxy @ByronBlock)
-      , immEncodeBlock = nodeEncodeBlockWithInfo testCfg
-      , immEpochInfo   = epochInfo
-      , immHashInfo    = nodeHashInfo (Proxy @ByronBlock)
-      , immValidation  = ValidateMostRecentEpoch
-      , immIsEBB       = nodeIsEBB
-      , immTracer      = nullTracer
+      { immErr            = EH.monadCatch
+      , immHasFS          = simHasFS EH.monadCatch immDbFsVar
+      , immDecodeHash     = nodeDecodeHeaderHash (Proxy @ByronBlock)
+      , immDecodeBlock    = nodeDecodeBlock testCfg
+      , immEncodeHash     = nodeEncodeHeaderHash (Proxy @ByronBlock)
+      , immEncodeBlock    = nodeEncodeBlockWithInfo testCfg
+      , immEpochInfo      = epochInfo
+      , immHashInfo       = nodeHashInfo (Proxy @ByronBlock)
+      , immValidation     = ValidateMostRecentEpoch
+      , immIsEBB          = nodeIsEBB
+      , immCheckIntegrity = nodeCheckIntegrity testCfg
+      , immTracer         = nullTracer
       }
 
 testCfg :: NodeConfig (BlockProtocol ByronBlock)
