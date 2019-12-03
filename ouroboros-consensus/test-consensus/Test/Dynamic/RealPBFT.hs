@@ -15,6 +15,7 @@ import qualified Data.Map.Strict as Map
 import           Data.Maybe (fromJust)
 import           Data.Time (Day (..), UTCTime (..))
 
+import           Numeric.Search.Range (searchFromTo)
 import           Test.QuickCheck
 import           Test.Tasty
 import           Test.Tasty.QuickCheck
@@ -257,8 +258,17 @@ genRealPBFTNodeJoinPlan params numSlots@(NumSlots t)
                 Ref.viable params lastSlot
                     (NodeJoinPlan (Map.insert nid s' m))
                     st
-        s' <- genSlot (Ref.nextSlot st) lastSlot
-            `suchThat` check
+            lo = Ref.nextSlot st
+
+            -- @check@ is downward-closed, but 'searchFromTo' requires
+            -- upward-closed, so we search in dualized range
+            inn = (maxBound -) . unSlotNo
+            out = SlotNo . (maxBound -)
+        s' <- case out <$> searchFromTo (check . out) (inn lastSlot) (inn lo) of
+            Just hi -> genSlot lo hi
+            Nothing -> error $
+                "Cannot find viable RealPBFT NodeJoinPlan: " ++
+                show (nodeJoinPlan, st)
 
         let m'  = Map.insert nid s' m
 

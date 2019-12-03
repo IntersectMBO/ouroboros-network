@@ -83,8 +83,10 @@ data State = State
   , outs     :: !(Seq Outcome)
     -- ^ the outcome of each the last @2k@ slots
   }
+  deriving (Eq, Show)
 
 newtype NumNominals = NumNominals Int
+  deriving (Eq, Ord, Show)
 
 emptyState :: State
 emptyState = State Seq.empty (NumNominals 0) 0 Seq.empty

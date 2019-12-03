@@ -308,6 +308,7 @@ test-suite test-consensus
                     io-sim-classes,
                     io-sim,
 
+                    binary-search,
                     cborg,
                     containers,
                     contra-tracer,
