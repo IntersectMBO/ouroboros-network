@@ -327,7 +327,7 @@ rewind :: forall c. PBftCrypto c
        -> WindowSize
        -> WithOrigin SlotNo
        -> PBftChainState c -> Maybe (PBftChainState c)
-rewind k n mSlot PBftChainState{..} =
+rewind k n mSlot cs@PBftChainState{..} =
     case mSlot of
       At slot ->
         -- We scan from the right, since block to roll back to likely at end
@@ -349,8 +349,15 @@ rewind k n mSlot PBftChainState{..} =
                 | slot == pbftSignerSlotNo x -> Just $ go toDiscard Empty
                 | slot <  pbftSignerSlotNo x -> rollbackTooFar
                 | otherwise                  -> notPreviouslyApplied
-              _otherwise ->
-                notPreviouslyApplied
+              Empty
+                -- In the current tests, slot 0 is always an EBB, which means
+                -- there is no record of it in the chain state. But we need to
+                -- be able to rewind to it.
+                --
+                -- TODO Eliminate this very specific adhoc case; see Issue
+                -- #1312.
+                | slot == 0 -> rewind k n Origin cs
+                | otherwise -> notPreviouslyApplied
 
       -- We can only roll back to origin if there are no signatures
       -- pre-anchor. Rolling back to origin would leave the chain empty. This

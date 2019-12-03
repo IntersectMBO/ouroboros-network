@@ -74,8 +74,28 @@ tests = testGroup "Dynamic chain generation"
               ]
             , nodeTopology = meshNodeTopology ncn
             }
-    , testProperty "simple Real PBFT convergence" $ \seed ->
+    , testProperty "worked around in PBFT.ChainState.rewind (see Issue #1312)" $
+      once $
+      let ncn = NumCoreNodes 2 in
+      -- When node 1 joins in slot 1, it leads with an empty chain and so
+      -- forges the 0-EBB again. This causes it to report slot 0 as the found
+      -- intersection point to node 0, which causes node 0 to \"rewind\" to
+      -- slot 0 (even though it's already there). That rewind fails since its
+      -- chain state is empty since EBBs don't affect the PBFT chain state.
+      --
+      -- But we currently have a workaround to handle this behavior for slot 0,
+      -- and we currently only ever forge the 0-EBB, not later ones, so this
+      -- test passes. TODO Issue #1312 will actually resolve the problem.
+      prop_simple_real_pbft_convergence
+        TestConfig { numCoreNodes = ncn
+                   , numSlots     = NumSlots 2
+                   , nodeJoinPlan = NodeJoinPlan (Map.fromList [(CoreNodeId 0,SlotNo 0),(CoreNodeId 1,SlotNo 1)])
+                   , nodeTopology = meshNodeTopology ncn
+                   }
+        Seed {getSeed = (15069526818753326002,9758937467355895013,16548925776947010688,13173070736975126721,13719483751339084974)}
+    , testProperty "simple Real PBFT convergence" $
         forAllShrink genRealPBFTTestConfig shrinkRealPBFTTestConfig $ \testConfig ->
+        forAll arbitrary $ \seed ->
         prop_simple_real_pbft_convergence testConfig seed
     ]
 
