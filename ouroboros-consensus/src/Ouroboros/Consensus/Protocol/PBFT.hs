@@ -238,9 +238,8 @@ instance ( PBftCrypto c
 
   applyChainState cfg@PBftNodeConfig{..} lv@(PBftLedgerView dms) (b :: hdr) chainState =
       case headerPBftFields pbftExtConfig b of
-        Nothing ->
-          -- EBB. Nothing to do
-          return chainState
+        Nothing -> do
+          return $! appendEBB cfg params (blockSlot b) chainState
         Just (PBftFields{..}, signed) -> do
           -- Check that the issuer signature verifies, and that it's a delegate of a
           -- genesis key, and that genesis key hasn't voted too many times.
@@ -255,7 +254,7 @@ instance ( PBftCrypto c
           -- FIXME confirm that non-strict inequality is ok in general.
           -- It's here because EBBs have the same slot as the first block of their
           -- epoch.
-          unless (At (blockSlot b) >= CS.lastSlot chainState)
+          unless (At (blockSlot b) >= CS.lastSignedSlot chainState)
             $ throwError PBftInvalidSlot
 
           case Bimap.lookupR (hashVerKey pbftIssuer) dms of
@@ -331,6 +330,16 @@ append :: PBftCrypto c
        -> PBftChainState c -> PBftChainState c
 append PBftNodeConfig{..} PBftWindowParams{..} =
     CS.append pbftSecurityParam windowSize . uncurry CS.PBftSigner
+  where
+    PBftParams{..} = pbftParams
+
+appendEBB :: PBftCrypto c
+          => NodeConfig (PBft cfg c)
+          -> PBftWindowParams
+          -> SlotNo
+          -> PBftChainState c -> PBftChainState c
+appendEBB PBftNodeConfig{..} PBftWindowParams{..} =
+    CS.appendEBB pbftSecurityParam windowSize
   where
     PBftParams{..} = pbftParams
 
