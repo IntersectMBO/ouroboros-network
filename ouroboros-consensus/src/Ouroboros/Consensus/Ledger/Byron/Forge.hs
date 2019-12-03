@@ -6,7 +6,7 @@ module Ouroboros.Consensus.Ledger.Byron.Forge (
     forgeByronBlock
   , forgeRegularBlock
     -- * For testing purposes
-  , forgeGenesisEBB
+  , forgeEBB
   ) where
 
 import           Control.Monad (void)
@@ -51,14 +51,16 @@ forgeByronBlock
   -> PBftIsLeader PBftCardanoCrypto  -- ^ Leader proof ('IsLeader')
   -> m ByronBlock
 forgeByronBlock cfg curSlot curNo prevHash txs isLeader = case prevHash of
-  GenesisHash -> return $ forgeGenesisEBB cfg curSlot
+  GenesisHash -> return $ forgeEBB cfg curSlot 0 GenesisHash
   BlockHash _ -> forgeRegularBlock cfg curSlot curNo prevHash txs isLeader
 
-forgeGenesisEBB
+forgeEBB
   :: NodeConfig ByronConsensusProtocol
-  -> SlotNo
+  -> SlotNo                          -- ^ Current slot
+  -> BlockNo                         -- ^ Current block number
+  -> ChainHash ByronBlock            -- ^ Previous hash
   -> ByronBlock
-forgeGenesisEBB cfg curSlot =
+forgeEBB cfg curSlot curNo prevHash =
         mkByronBlock pbftEpochSlots
       . CC.Block.ABOBBoundary
       . reAnnotateBoundary protocolMagicId
@@ -68,6 +70,11 @@ forgeGenesisEBB cfg curSlot =
     ByronConfig { pbftGenesisHash
                 , pbftEpochSlots
                 } = pbftExtConfig cfg
+
+    prevHeaderHash :: Either CC.Genesis.GenesisHash CC.Block.HeaderHash
+    prevHeaderHash = case prevHash of
+      GenesisHash             -> Left  pbftGenesisHash
+      BlockHash (ByronHash h) -> Right h
 
     boundaryBlock :: CC.Block.ABoundaryBlock ()
     boundaryBlock =
@@ -80,9 +87,9 @@ forgeGenesisEBB cfg curSlot =
 
     boundaryHeader :: CC.Block.ABoundaryHeader ()
     boundaryHeader = CC.Block.mkABoundaryHeader
-      (Left pbftGenesisHash)
+      prevHeaderHash
       epoch
-      (CC.Common.ChainDifficulty 0)
+      (coerce curNo)
       ()
       where
         CC.Slot.EpochNumber epoch =

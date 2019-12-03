@@ -16,11 +16,12 @@ import           Control.Tracer (nullTracer)
 
 import qualified Cardano.Chain.Update as Update
 
-import           Ouroboros.Network.Block (SlotNo (..), blockPoint)
+import           Ouroboros.Network.Block (BlockNo (..), ChainHash (..),
+                     SlotNo (..), blockPoint)
 
 import           Ouroboros.Consensus.Block (BlockProtocol)
 import           Ouroboros.Consensus.Ledger.Byron (ByronBlock)
-import           Ouroboros.Consensus.Ledger.Byron.Forge (forgeGenesisEBB)
+import           Ouroboros.Consensus.Ledger.Byron.Forge (forgeEBB)
 import           Ouroboros.Consensus.Node.ProtocolInfo
                      (PBftSignatureThreshold (..), ProtocolInfo (..),
                      protocolInfo)
@@ -58,7 +59,7 @@ test_getBlockWithPoint_EBB_at_tip =
       mbEbb' <- ImmDB.getBlockOrHeaderWithPoint immDB Block (blockPoint ebb)
       return $ mbEbb' @?= Just ebb
   where
-    ebb = forgeGenesisEBB testCfg (SlotNo 0)
+    ebb = forgeEBB testCfg (SlotNo 0) (BlockNo 0) GenesisHash
 
 withImmDB :: IOLike m => (ImmDB m ByronBlock -> m a) -> m a
 withImmDB k = withRegistry $ \registry -> do
