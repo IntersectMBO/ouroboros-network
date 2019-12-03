@@ -59,16 +59,19 @@ import           Control.Applicative (Applicative(..), Alternative(..))
 import           Control.Monad (join, MonadPlus, mapM_)
 import           Control.Exception
                    ( Exception(..), SomeException
-                   , ErrorCall(..), throw, assert
+                   , ErrorCall(..), NonTermination(..), throw, assert
                    , asyncExceptionToException, asyncExceptionFromException )
 import qualified System.IO.Error as IO.Error (userError)
 
 import           Control.Monad (when)
 import           Control.Monad.ST.Lazy
 import qualified Control.Monad.ST.Strict as StrictST
+import qualified Control.Monad.ST.Unsafe as StrictST
 import           Data.STRef.Lazy
+import qualified Data.STRef as StrictST
 
 import           Control.Monad.Fail as MonadFail
+import           Control.Monad.Fix
 import qualified Control.Monad.Catch as Exceptions
 
 import           Control.Monad.Class.MonadFork hiding (ThreadId)
@@ -179,6 +182,18 @@ instance Monad (SimM s) where
 instance MonadFail (SimM s) where
   fail msg = SimM $ \_ -> Throw (toException (IO.Error.userError msg))
 
+instance MonadFix (SimM s) where
+  mfix act = do
+    -- Impl much like that of System.IO.Unsafe.unsafeFixIO.
+    -- Though based on the comments in fixST if we want to be safe with
+    -- parallel spark evaluation then we might need to use MVars like fixST.
+    (ref, ans) <- liftST $ do
+      ref <- StrictST.newSTRef (throw NonTermination)
+      ans <- StrictST.unsafeInterleaveST (StrictST.readSTRef ref)
+      return (ref, ans)
+    result <- act ans
+    liftST $ StrictST.writeSTRef ref result
+    return result
 
 instance Functor (STM s) where
     {-# INLINE fmap #-}
