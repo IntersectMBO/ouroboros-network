@@ -24,16 +24,17 @@ module Ouroboros.Network.Server.Socket
   ) where
 
 import Control.Exception (SomeException (..), IOException, mask, mask_, finally, onException, try)
+import Control.Concurrent (ThreadId)
 import Control.Concurrent.Async (Async)
 import qualified Control.Concurrent.Async as Async
 import Control.Concurrent.STM (STM)
 import qualified Control.Concurrent.STM as STM
-import Control.Monad (forever, forM_, join)
+import Control.Monad (forever, join)
 import Control.Monad.Class.MonadTime (Time, getMonotonicTime)
 import Control.Tracer (Tracer, traceWith)
 import Data.Foldable (traverse_)
-import Data.Set (Set)
-import qualified Data.Set as Set
+import Data.Map (Map)
+import qualified Data.Map.Strict as Map
 
 import Ouroboros.Network.ErrorPolicy (CompleteApplicationResult (..), WithAddr, ErrorPolicyTrace)
 
@@ -110,7 +111,7 @@ data Result addr r = Result
 
 -- | The set of all spawned threads. Used for waiting or cancelling them when
 -- the server shuts down.
-type ThreadsVar = STM.TVar (Set (Async ()))
+type ThreadsVar = STM.TVar (Map ThreadId (Async ()))
 
 
 -- | The action runs inside `try`, and when it finishes, puts its result
@@ -144,7 +145,8 @@ spawnOne remoteAddr statusVar resQ threadsVar applicationStart io = mask_ $ do
           threadAction unmask
   -- The main loop `connectionTx` will remove this entry from the set, once
   -- it receives the result.
-  STM.atomically $ STM.modifyTVar' threadsVar (Set.insert thread)
+  STM.atomically $
+    STM.modifyTVar' threadsVar (Map.insert (Async.asyncThreadId thread) thread)
 
 
 -- | The accept thread is controlled entirely by the `accept` call. To
@@ -240,7 +242,7 @@ mainLoop errorPolicyTrace resQ threadsVar statusVar complete main =
     -- evaluted state to 'statusVar'
     STM.writeTVar statusVar carState
     -- It was inserted by `spawnOne`.
-    STM.modifyTVar' threadsVar (Set.delete (resultThread result))
+    STM.modifyTVar' threadsVar (Map.delete (Async.asyncThreadId (resultThread result)))
     pure $ do
       traverse_ Async.cancel carThreads
       traverse_ (traceWith errorPolicyTrace) carTrace
@@ -261,14 +263,14 @@ run
   -> IO t
 run errroPolicyTrace socket acceptException beginConnection applicationStart complete main statusVar = do
   resQ <- STM.newTQueueIO
-  threadsVar <- STM.newTVarIO Set.empty
+  threadsVar <- STM.newTVarIO Map.empty
   let acceptLoopDo = acceptLoop resQ threadsVar statusVar beginConnection applicationStart acceptException socket
       -- The accept loop is killed when the main loop stops.
       mainDo = Async.withAsync acceptLoopDo $ \_ ->
         mainLoop errroPolicyTrace resQ threadsVar statusVar complete main
       killChildren = do
         children <- STM.atomically $ STM.readTVar threadsVar
-        forM_ (Set.toList children) Async.cancel
+        mapM_ Async.cancel (Map.elems children)
   -- After both the main and accept loop have been killed, any remaining
   -- spawned threads are cancelled.
   mainDo `finally` killChildren
