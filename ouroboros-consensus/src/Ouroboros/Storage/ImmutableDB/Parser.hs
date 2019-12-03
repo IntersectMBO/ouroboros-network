@@ -48,9 +48,17 @@ data EpochFileError hash =
   | EpochErrHashMismatch
       (WithOrigin hash)  -- ^ The hash of the previous block
       (WithOrigin hash)  -- ^ The previous hash of the block
+
+    -- | The integrity verification of the block with the given hash and
+    -- 'BlockOrEBB' number returned 'False', indicating that the block got
+    -- corrupted.
+  | EpochErrCorrupt hash BlockOrEBB
   deriving (Eq, Show)
 
-type BlockInfo hash = BinaryInfo (hash, WithOrigin hash, CRC, BlockOrEBB)
+-- | Type used internally in 'epochFileParser'': 'BinaryInfo' + the block
+-- hash, the previous hash, the CRC, 'BlockOrEBB', and whether the block is
+-- not corrupted ('False' = corrupted).
+type BlockInfo hash = BinaryInfo (hash, WithOrigin hash, CRC, BlockOrEBB, Bool)
 
 epochFileParser'
   :: forall m blk hash h. (IOLike m, Eq hash)
@@ -61,13 +69,15 @@ epochFileParser'
   -> (forall s. Decoder s (BL.ByteString -> blk))
   -> (blk -> Maybe EpochNo)    -- ^ If an EBB, return the epoch number
   -> (blk -> BinaryInfo ())
+  -> (blk -> Bool)             -- ^ Check integrity of the block. 'False' =
+                               -- corrupt.
   -> EpochFileParser
        (EpochFileError hash)
        m
        (Secondary.Entry hash, WithOrigin hash)
-epochFileParser' getSlotNo getHash getPrevHash
-                 hasFS decodeBlock isEBB getBinaryInfo = EpochFileParser $
-      fmap (checkIfHashesLineUp . first (fmap extractEntry))
+epochFileParser' getSlotNo getHash getPrevHash hasFS decodeBlock isEBB
+                 getBinaryInfo isNotCorrupt = EpochFileParser $
+      fmap (checkIfHashesLineUp . first (fmap extractEntry) . stopAtCorruption)
     . Util.CBOR.readIncrementalOffsets hasFS decoder
   where
     decoder :: forall s. Decoder s (BL.ByteString -> BlockInfo hash)
@@ -79,23 +89,41 @@ epochFileParser' getSlotNo getHash getPrevHash
     extractBlockInfo :: (BL.ByteString -> blk)
                      -> (BL.ByteString -> BlockInfo hash)
     extractBlockInfo f bs =
-        getBinaryInfo blk $> (hash, prevHash, crc, blockOrEBB)
+        getBinaryInfo blk $> (hash, prevHash, crc, blockOrEBB, notCorrupted)
       where
-        !blk        = f bs
-        !hash       = getHash blk
-        !prevHash   = getPrevHash blk
-        !crc        = computeCRC bs
-        !blockOrEBB = case isEBB blk of
+        !blk          = f bs
+        !hash         = getHash blk
+        !prevHash     = getPrevHash blk
+        !crc          = computeCRC bs
+        !blockOrEBB   = case isEBB blk of
           Just epoch -> EBB epoch
           Nothing    -> Block (getSlotNo blk)
+        !notCorrupted = isNotCorrupt blk
+
+    -- TODO two traversals with an accumulator now + in
+    -- 'readIncrementalOffsets' as well.
+    stopAtCorruption
+      :: ([(Word64, (Word64, BlockInfo hash))],
+          Maybe (Util.CBOR.ReadIncrementalErr, Word64))
+      -> ([(Word64, (Word64, BlockInfo hash))],
+          Maybe (EpochFileError hash, Word64))
+    stopAtCorruption (xs, mbErr) = go [] xs
+      where
+        go acc = \case
+          [] -> (reverse acc, first EpochErrRead <$> mbErr)
+          x@(offset, (_, BinaryInfo (hash, _, _, blockOrEBB, notCorrupted) _ _)):xs'
+            | notCorrupted
+            -> go (x:acc) xs'
+            | otherwise  -- The block is corrupt
+            -> (reverse acc, Just (EpochErrCorrupt hash blockOrEBB, offset))
 
     checkIfHashesLineUp
       :: ([(Secondary.Entry hash, WithOrigin hash)],
-          Maybe (Util.CBOR.ReadIncrementalErr, Word64))
+          Maybe (EpochFileError hash, Word64))
       -> ([(Secondary.Entry hash, WithOrigin hash)],
           Maybe (EpochFileError hash, Word64))
     checkIfHashesLineUp (es, mbErr) = case es of
-        []               -> ([], first EpochErrRead <$> mbErr)
+        []               -> ([], mbErr)
         e@(entry, _):es' -> go (At (Secondary.headerHash entry)) [e] es'
       where
         go hashOfPrevBlock acc =
@@ -103,7 +131,7 @@ epochFileParser' getSlotNo getHash getPrevHash
           -- block in @acc@ (the most recently checked one).
           assert (hashOfPrevBlock ==
                   At (Secondary.headerHash (fst (head acc)))) $ \case
-          [] -> (reverse acc, first EpochErrRead <$> mbErr)
+          [] -> (reverse acc, mbErr)
           e@(entry, prevHash):es'
             | prevHash == hashOfPrevBlock
             -> go (At (Secondary.headerHash entry)) (e:acc) es'
@@ -118,7 +146,7 @@ epochFileParser' getSlotNo getHash getPrevHash
     extractEntry (offset, (_size, blockInfo)) = (entry, prevHash)
       where
         BinaryInfo
-          { binaryBlob = (headerHash, prevHash, checksum, blockOrEBB)
+          { binaryBlob = (headerHash, prevHash, checksum, blockOrEBB, _notCorrupted)
           , headerOffset
           , headerSize
           } = blockInfo
@@ -138,6 +166,8 @@ epochFileParser
   -> (forall s. Decoder s (BL.ByteString -> blk))
   -> (blk -> Maybe EpochNo)  -- ^ If an EBB, return the epoch number
   -> (blk -> BinaryInfo ())
+  -> (blk -> Bool)           -- ^ Check integrity of the block. 'False' =
+                             -- corrupt.
   -> EpochFileParser
        (EpochFileError (HeaderHash blk))
        m

@@ -198,7 +198,7 @@ openDB ImmDbArgs{..} = do
   where
     parser = ImmDB.epochFileParser immHasFS immDecodeBlock immIsEBB
       -- TODO a more efficient to accomplish this?
-      (void . immEncodeBlock)
+      (void . immEncodeBlock) immCheckIntegrity
 
 
 -- | For testing purposes

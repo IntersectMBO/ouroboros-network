@@ -1246,7 +1246,8 @@ prop_sequential = forAllCommands smUnused Nothing $ \cmds -> QC.monadicIO $ do
                   , Property
                   )
         test fsVar errorsVar hasFS = do
-          let parser = epochFileParser hasFS (const <$> decode) isEBB getBinaryInfo
+          let parser = epochFileParser hasFS (const <$> decode) isEBB
+                getBinaryInfo testBlockIsValid
           (tracer, getTrace) <- QC.run recordingTracerIORef
           (db, internal) <- QC.run $ openDBInternal hasFS EH.monadCatch
             (fixedSizeEpochInfo fixedEpochSize) testHashInfo
