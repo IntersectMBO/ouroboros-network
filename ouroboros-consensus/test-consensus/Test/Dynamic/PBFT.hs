@@ -45,4 +45,4 @@ prop_simple_pbft_convergence
     testOutput =
         runTestNetwork
             (\nid -> protocolInfo (ProtocolMockPBFT numCoreNodes nid params))
-            testConfig seed
+            testConfig seed mempty

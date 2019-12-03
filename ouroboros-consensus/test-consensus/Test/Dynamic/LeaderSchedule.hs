@@ -81,7 +81,7 @@ prop_simple_leader_schedule_convergence
             (\nid -> protocolInfo
                        (ProtocolLeaderSchedule numCoreNodes nid
                                                params schedule))
-            testConfig seed
+            testConfig seed mempty
 
 {-------------------------------------------------------------------------------
   Dependent generation and shrinking of leader schedules

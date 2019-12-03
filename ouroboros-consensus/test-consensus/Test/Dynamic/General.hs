@@ -2,6 +2,7 @@
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE PatternSynonyms     #-}
+{-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Test.Dynamic.General (
@@ -125,10 +126,11 @@ runTestNetwork ::
   => (CoreNodeId -> ProtocolInfo blk)
   -> TestConfig
   -> Seed
+  -> (forall m. IOLike m => NodeHook m blk)
   -> TestOutput blk
 runTestNetwork pInfo
   TestConfig{numCoreNodes, numSlots, nodeJoinPlan, nodeTopology}
-  seed = runSimOrThrow $ do
+  seed nodeHook = runSimOrThrow $ do
     registry  <- unsafeNewRegistry
     testBtime <- newTestBlockchainTime registry numSlots slotLen
     runNodeNetwork
@@ -140,6 +142,7 @@ runTestNetwork pInfo
       pInfo
       (seedToChaCha seed)
       slotLen
+      nodeHook
   where
     slotLen :: DiffTime
     slotLen = 100000

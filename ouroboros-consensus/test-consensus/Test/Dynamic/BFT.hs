@@ -39,4 +39,4 @@ prop_simple_bft_convergence k
     testOutput =
         runTestNetwork
             (\nid -> protocolInfo (ProtocolMockBFT numCoreNodes nid k))
-            testConfig seed
+            testConfig seed mempty

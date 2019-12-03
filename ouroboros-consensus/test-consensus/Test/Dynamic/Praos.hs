@@ -95,4 +95,4 @@ prop_simple_praos_convergence
     testOutput@TestOutput{testOutputNodes} =
         runTestNetwork
             (\nid -> protocolInfo (ProtocolMockPraos numCoreNodes nid params))
-            testConfig seed
+            testConfig seed mempty

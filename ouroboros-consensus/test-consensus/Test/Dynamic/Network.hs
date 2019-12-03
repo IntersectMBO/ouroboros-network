@@ -16,6 +16,7 @@
 module Test.Dynamic.Network (
     runNodeNetwork
   , TracingConstraints
+  , NodeHook (..)
     -- * Tracers
   , MiniProtocolExpectedException (..)
   , MiniProtocolFatalException (..)
@@ -117,9 +118,10 @@ runNodeNetwork :: forall m blk.
                  -> (CoreNodeId -> ProtocolInfo blk)
                  -> ChaChaDRG
                  -> DiffTime
+                 -> NodeHook m blk
                  -> m (TestOutput blk)
 runNodeNetwork registry testBtime numCoreNodes nodeJoinPlan nodeTopology
-  pInfo initRNG slotLen = do
+  pInfo initRNG slotLen nodeHook = do
     -- This function is organized around the notion of a network of nodes as a
     -- simple graph with no loops. The graph topology is determined by
     -- @nodeTopology@.
@@ -366,7 +368,28 @@ runNodeNetwork registry testBtime numCoreNodes nodeJoinPlan nodeTopology
         (ChainDB.getCurrentLedger chainDB)
         (getMempool nodeKernel)
 
+      getNodeHook nodeHook registry btime nodeKernel epochInfo
+
       return (nodeKernel, readNodeInfo, LimitedApp app)
+
+
+-- | Hook called after setting up each node.
+--
+-- This will be called in the main thread.
+newtype NodeHook m blk = NodeHook {
+    getNodeHook :: ResourceRegistry m
+                -> BlockchainTime m
+                -> NodeKernel m NodeId blk
+                -> EpochInfo m
+                -> m ()
+  }
+
+instance Applicative m => Semigroup (NodeHook m blk) where
+  NodeHook f <> NodeHook g = NodeHook $ \r b n e -> f r b n e *> g r b n e
+
+instance Applicative m => Monoid (NodeHook m blk) where
+  mappend = (<>)
+  mempty  = NodeHook $ \_ _ _ _ -> pure ()
 
 {-------------------------------------------------------------------------------
   Running the Mini Protocols on an Ordered Pair of Nodes

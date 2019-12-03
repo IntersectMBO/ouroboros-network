@@ -116,7 +116,7 @@ prop_simple_real_pbft_convergence
             (\nid -> protocolInfo
                        (mkProtocolRealPBFT numCoreNodes nid
                                            genesisConfig genesisSecrets))
-            testConfig seed
+            testConfig seed mempty
 
     finalChains :: [Chain ByronBlock]
     finalChains = Map.elems $ nodeOutputFinalChain <$> testOutputNodes testOutput
