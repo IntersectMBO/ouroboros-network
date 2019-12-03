@@ -268,6 +268,7 @@ test-suite test-consensus
                     Test.Dynamic.PBFT
                     Test.Dynamic.Praos
                     Test.Dynamic.RealPBFT
+                    Test.Dynamic.Ref.RealPBFT
                     Test.Dynamic.TxGen
                     Test.Dynamic.Util
                     Test.Dynamic.Util.Expectations
@@ -286,6 +287,7 @@ test-suite test-consensus
                     Test.Util.QSM
                     Test.Util.Range
                     Test.Util.SOP
+                    Test.Util.Shrink
                     Test.Util.TestBlock
                     Test.Util.Tracer
   build-depends:    base,
@@ -306,6 +308,7 @@ test-suite test-consensus
                     io-sim-classes,
                     io-sim,
 
+                    binary-search,
                     cborg,
                     containers,
                     contra-tracer,

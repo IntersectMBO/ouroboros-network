@@ -15,6 +15,7 @@ import qualified Data.Map.Strict as Map
 import           Data.Maybe (fromJust)
 import           Data.Time (Day (..), UTCTime (..))
 
+import           Numeric.Search.Range (searchFromTo)
 import           Test.QuickCheck
 import           Test.Tasty
 import           Test.Tasty.QuickCheck
@@ -39,11 +40,13 @@ import qualified Test.Cardano.Chain.Genesis.Dummy as Dummy
 
 import           Test.Dynamic.General
 import           Test.Dynamic.Network (NodeOutput (..))
+import qualified Test.Dynamic.Ref.RealPBFT as Ref
 import           Test.Dynamic.Util
 import           Test.Dynamic.Util.NodeJoinPlan
 import           Test.Dynamic.Util.NodeTopology
 
 import           Test.Util.Orphans.Arbitrary ()
+import           Test.Util.Shrink (andId, dropId)
 
 tests :: TestTree
 tests = testGroup "Dynamic chain generation"
@@ -71,8 +74,29 @@ tests = testGroup "Dynamic chain generation"
               ]
             , nodeTopology = meshNodeTopology ncn
             }
+    , testProperty "worked around in PBFT.ChainState.rewind (see Issue #1312)" $
+      once $
+      let ncn = NumCoreNodes 2 in
+      -- When node 1 joins in slot 1, it leads with an empty chain and so
+      -- forges the 0-EBB again. This causes it to report slot 0 as the found
+      -- intersection point to node 0, which causes node 0 to \"rewind\" to
+      -- slot 0 (even though it's already there). That rewind fails since its
+      -- chain state is empty since EBBs don't affect the PBFT chain state.
+      --
+      -- But we currently have a workaround to handle this behavior for slot 0,
+      -- and we currently only ever forge the 0-EBB, not later ones, so this
+      -- test passes. TODO Issue #1312 will actually resolve the problem.
+      prop_simple_real_pbft_convergence
+        TestConfig { numCoreNodes = ncn
+                   , numSlots     = NumSlots 2
+                   , nodeJoinPlan = NodeJoinPlan (Map.fromList [(CoreNodeId 0,SlotNo 0),(CoreNodeId 1,SlotNo 1)])
+                   , nodeTopology = meshNodeTopology ncn
+                   }
+        Seed {getSeed = (15069526818753326002,9758937467355895013,16548925776947010688,13173070736975126721,13719483751339084974)}
     , testProperty "simple Real PBFT convergence" $
-        prop_simple_real_pbft_convergence
+        forAllShrink genRealPBFTTestConfig shrinkRealPBFTTestConfig $ \testConfig ->
+        forAll arbitrary $ \seed ->
+        prop_simple_real_pbft_convergence testConfig seed
     ]
 
 prop_setup_coreNodeId ::
@@ -127,11 +151,11 @@ mkProtocolRealPBFT :: NumCoreNodes
                    -> Genesis.Config
                    -> Genesis.GeneratedSecrets
                    -> Protocol ByronBlock
-mkProtocolRealPBFT (NumCoreNodes n) (CoreNodeId i)
+mkProtocolRealPBFT numCoreNodes (CoreNodeId i)
                    genesisConfig genesisSecrets =
     ProtocolRealPBFT
       genesisConfig
-      (Just signatureThreshold)
+      (Just $ PBftSignatureThreshold pbftSignatureThreshold)
       (Update.ProtocolVersion 1 0 0)
       (Update.SoftwareVersion (Update.ApplicationName "Cardano Test") 2)
       (Just leaderCredentials)
@@ -143,8 +167,7 @@ mkProtocolRealPBFT (NumCoreNodes n) (CoreNodeId i)
           dlgKey
           dlgCert
 
-    signatureThreshold = PBftSignatureThreshold $
-      (1.0 / fromIntegral n) + 0.1
+    PBftParams{pbftSignatureThreshold} = realPBftParams numCoreNodes
 
     dlgKey :: Crypto.SigningKey
     dlgKey = fromJust $
@@ -159,15 +182,34 @@ mkProtocolRealPBFT (NumCoreNodes n) (CoreNodeId i)
            $ Genesis.gdHeavyDelegation
            $ Genesis.configGenesisData genesisConfig
 
+{-------------------------------------------------------------------------------
+  Generating the genesis configuration
+-------------------------------------------------------------------------------}
+
+realPBftParams :: NumCoreNodes -> PBftParams
+realPBftParams numCoreNodes = PBftParams
+  { pbftNumNodes           = n
+  , pbftSecurityParam      = SecurityParam k
+  , pbftSignatureThreshold = (1 / n) + (1 / k)
+    -- crucially: @floor (k * t) >= ceil (k / n)@
+  }
+    where
+      n :: Num a => a
+      n = fromIntegral x where NumCoreNodes x = numCoreNodes
+
+      k :: Num a => a
+      k = 10
 
 -- Instead of using 'Dummy.dummyConfig', which hard codes the number of rich
 -- men (= CoreNodes for us) to 4, we generate a dummy config with the given
 -- number of rich men.
 generateGenesisConfig :: NumCoreNodes -> (Genesis.Config, Genesis.GeneratedSecrets)
-generateGenesisConfig (NumCoreNodes n) =
+generateGenesisConfig numCoreNodes =
     either (error . show) id $ Genesis.generateGenesisConfig startTime spec
   where
     startTime = UTCTime (ModifiedJulianDay 0) 0
+    NumCoreNodes n = numCoreNodes
+    PBftParams{pbftSecurityParam} = realPBftParams numCoreNodes
 
     spec :: Genesis.GenesisSpec
     spec = Dummy.dummyGenesisSpec
@@ -177,4 +219,138 @@ generateGenesisConfig (NumCoreNodes n) =
               -- The nodes are the richmen
               { Genesis.tboRichmen = fromIntegral n }
         }
+      , Genesis.gsK = Common.BlockCount $ maxRollbacks pbftSecurityParam
       }
+
+{-------------------------------------------------------------------------------
+  Generating node join plans that ensure sufficiently dense chains
+-------------------------------------------------------------------------------}
+
+genSlot :: SlotNo -> SlotNo -> Gen SlotNo
+genSlot lo hi = SlotNo <$> choose (unSlotNo lo, unSlotNo hi)
+
+-- | As 'genNodeJoinPlan', but ensures an additional invariant
+--
+-- INVARIANT this 'NodeJoinPlan' ensures that -- under \"ideal circumstances\"
+-- -- the chain includes at least @k@ blocks within every @2k@-slot window.
+--
+-- Note that there is only one chain: at any slot onset, the net's fork only
+-- has one tine.
+--
+genRealPBFTNodeJoinPlan :: PBftParams -> NumSlots -> Gen NodeJoinPlan
+genRealPBFTNodeJoinPlan params numSlots@(NumSlots t)
+  | n < 0 || t < 1 = error $ "Cannot generate RealPBFT NodeJoinPlan: "
+    ++ show (params, numSlots)
+  | otherwise      = go (NodeJoinPlan Map.empty) Ref.emptyState
+  where
+    PBftParams{pbftNumNodes} = params
+    n                        = fromIntegral pbftNumNodes
+
+    lastSlot = SlotNo $ fromIntegral $ t - 1
+
+    go ::
+         NodeJoinPlan
+         -- ^ an /incomplete/ and /viable/ node join plan
+      -> Ref.State
+         -- ^ a state whose 'Ref.nextSlot' is <= the last join slot in given
+         -- plan (or 0 if the plan is empty)
+      -> Gen NodeJoinPlan
+    go nodeJoinPlan@(NodeJoinPlan m) st
+      | i == n    = pure $ NodeJoinPlan m
+      | otherwise = do
+            -- @True@ if this join slot for @nid@ is viable
+            --
+            -- /Viable/ means the desired chain density invariant remains
+            -- satisfiable, at the very least the nodes after @nid@ may need to
+            -- also join in this same slot.
+            --
+            -- Assuming @nodeJoinPlan@ is indeed viable and @st@ is indeed not
+            -- ahead of it, then we should be able to find a join slot for
+            -- @nid@ that is also viable: the viability of @nodeJoinPlan@ means
+            -- @nid@ can at least join \"immediately\" wrt to @nodeJoinPlan@.
+            --
+            -- The base case is that the empty join plan and empty state are
+            -- viable, which assumes that the invariant would be satisified if
+            -- all nodes join in slot 0. For uninterrupted round-robin, that
+            -- merely requires @n * floor (k * t) >= k@. (TODO Does that
+            -- *always* suffice?)
+        let check s' =
+                Ref.viable params lastSlot
+                    (NodeJoinPlan (Map.insert nid s' m))
+                    st
+            lo = Ref.nextSlot st
+
+            -- @check@ is downward-closed, but 'searchFromTo' requires
+            -- upward-closed, so we search in dualized range
+            inn = (maxBound -) . unSlotNo
+            out = SlotNo . (maxBound -)
+        s' <- case out <$> searchFromTo (check . out) (inn lastSlot) (inn lo) of
+            Just hi -> genSlot lo hi
+            Nothing -> error $
+                "Cannot find viable RealPBFT NodeJoinPlan: " ++
+                show (nodeJoinPlan, st)
+
+        let m'  = Map.insert nid s' m
+
+            -- optimization: avoid simulating from the same inputs multiple
+            -- times
+            --
+            -- We've decided that @nid@ joins in @s'@, so advance the state to
+            -- /just/ /before/ @s'@, since we might want @nid+1@ to also join
+            -- in @s'@.
+            --
+            -- NOTE @m@ is congruent to @m'@ for all slots prior to @s'@
+            st' = Ref.advanceUpTo params nodeJoinPlan st s'
+        go (NodeJoinPlan m') st'
+      where
+        -- the next node to be added to the incomplete join plan
+        nid = CoreNodeId i
+        i   = case fst <$> Map.lookupMax m of
+            Nothing             -> 0
+            Just (CoreNodeId h) -> succ h
+
+genRealPBFTTestConfig :: Gen TestConfig
+genRealPBFTTestConfig = do
+    numCoreNodes <- arbitrary
+    numSlots     <- arbitrary
+
+    let params = realPBftParams numCoreNodes
+    nodeJoinPlan <- genRealPBFTNodeJoinPlan params numSlots
+    nodeTopology <- genNodeTopology numCoreNodes
+
+    pure TestConfig
+      { nodeJoinPlan
+      , nodeTopology
+      , numCoreNodes
+      , numSlots
+      }
+
+shrinkRealPBFTTestConfig :: TestConfig -> [TestConfig]
+shrinkRealPBFTTestConfig  = shrinkTestConfigSlotsOnly
+  -- NOTE 'shrink' at type 'NodePlanJoin' never increases inter-join delays
+  --
+  -- and we're neither shrinking the security parameter nor /increasing/ the
+  -- number of slots, so the invariant established by 'genRealPBFTNodeJoinPlan'
+  -- will be preserved
+
+-- | Shrink, including the number of slots but not number of nodes
+--
+shrinkTestConfigSlotsOnly :: TestConfig -> [TestConfig]
+shrinkTestConfigSlotsOnly TestConfig
+  { numCoreNodes
+  , numSlots
+  , nodeJoinPlan
+  , nodeTopology
+  } =
+    dropId $
+    [ TestConfig
+        { nodeJoinPlan = p'
+        , nodeTopology = top'
+        , numCoreNodes
+        , numSlots     = t'
+        }
+    | t'            <- andId shrink numSlots
+    , let adjustedP  = truncateNodeJoinPlan nodeJoinPlan numCoreNodes (numSlots, t')
+    , p'            <- andId shrinkNodeJoinPlan adjustedP
+    , top'          <- andId shrinkNodeTopology nodeTopology
+    ]
