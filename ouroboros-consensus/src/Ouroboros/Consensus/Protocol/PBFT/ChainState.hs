@@ -327,7 +327,7 @@ rewind :: forall c. PBftCrypto c
        -> WindowSize
        -> WithOrigin SlotNo
        -> PBftChainState c -> Maybe (PBftChainState c)
-rewind k n mSlot PBftChainState{..} =
+rewind k n mSlot cs@PBftChainState{..} =
     case mSlot of
       At slot ->
         -- We scan from the right, since block to roll back to likely at end
@@ -349,8 +349,16 @@ rewind k n mSlot PBftChainState{..} =
                 | slot == pbftSignerSlotNo x -> Just $ go toDiscard Empty
                 | slot <  pbftSignerSlotNo x -> rollbackTooFar
                 | otherwise                  -> notPreviouslyApplied
-              _otherwise ->
-                notPreviouslyApplied
+              _otherwise
+                -- Rewinding to slot 0 but no block at slot 0 was previously
+                -- applied. Either this is a bug /or/ we're rewinding to the
+                -- genesis EBB at slot 0 before we got a block for slot 0.
+                -- This EBB was not previously applied since EBBs are not
+                -- signed and thus don't affect the 'PBftChainState'. Since we
+                -- can't distinguish this valid case from a bug, we allow it
+                -- and treat it as if we're rewinding to Origin.
+                | slot == 0 -> rewind k n Origin cs
+                | otherwise -> notPreviouslyApplied
 
       -- We can only roll back to origin if there are no signatures
       -- pre-anchor. Rolling back to origin would leave the chain empty. This
@@ -361,9 +369,11 @@ rewind k n mSlot PBftChainState{..} =
           Empty      -> Just $ go postAnchor Empty
           _otherwise -> rollbackTooFar
   where
-    notPreviouslyApplied :: forall x. x
+    -- TODO Shouldn't we also end up here when rewinding to a slot containing
+    -- an EBB but no regular block? This is not yet triggered in the tests.
+    notPreviouslyApplied :: forall x. HasCallStack => x
     notPreviouslyApplied =
-      error $ "rewind: rollback to block not previously applied"
+      error $ "rewind: rollback to block not previously applied: " <> show mSlot
 
     rollbackTooFar :: Maybe x
     rollbackTooFar = Nothing
