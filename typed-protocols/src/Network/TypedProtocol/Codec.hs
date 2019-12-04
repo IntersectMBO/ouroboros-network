@@ -17,6 +17,7 @@ module Network.TypedProtocol.Codec (
     Codec(..)
   , hoistCodec
   , isoCodec
+  , mapFailureCodec
     -- ** Related types
   , PeerRole(..)
   , PeerHasAgency(..)
@@ -146,6 +147,15 @@ isoCodec f finv Codec {encode, decode} = Codec {
       decode = \tok -> isoDecodeStep f finv <$> decode tok
     }
 
+mapFailureCodec
+  :: Functor m
+  => (failure -> failure')
+  -> Codec ps failure  m bytes
+  -> Codec ps failure' m bytes
+mapFailureCodec f Codec {encode, decode} = Codec {
+    encode = encode,
+    decode = \tok -> mapFailureDecodeStep f <$> decode tok
+  }
 
 -- The types here are pretty fancy. The decode is polymorphic in the protocol
 -- state, but only for kinds that are the same kind as the protocol state.
@@ -203,6 +213,16 @@ hoistDecodeStep nat step = case step of
   DecodeDone a mb -> DecodeDone a mb
   DecodeFail fail_AvoidNameShadow -> DecodeFail fail_AvoidNameShadow
   DecodePartial k -> DecodePartial (fmap (hoistDecodeStep nat) . nat . k)
+
+mapFailureDecodeStep
+  :: Functor m
+  => (failure -> failure')
+  -> DecodeStep bytes failure  m a
+  -> DecodeStep bytes failure' m a
+mapFailureDecodeStep f step = case step of
+  DecodeDone a mb    -> DecodeDone a mb
+  DecodeFail failure -> DecodeFail (f failure)
+  DecodePartial k    -> DecodePartial (fmap (mapFailureDecodeStep f) . k)
 
 -- | When decoding a 'Message' we only know the expected \"from\" state. We
 -- cannot know the \"to\" state as this depends on the message we decode. To
