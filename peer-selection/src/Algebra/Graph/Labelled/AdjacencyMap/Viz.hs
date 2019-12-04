@@ -78,6 +78,9 @@ filled = constAttributes [Style [SItem Filled []]]
 fillColour :: Word8 -> Word8 -> Word8 -> SetAttributes s
 fillColour r g b = constAttributes [FillColor [toWC (RGB r g b)]]
 
+fillColourHSV :: Double -> Double -> Double -> SetAttributes s
+fillColourHSV h s v = constAttributes [FillColor [toWC (HSV h s v)]]
+
 setEither :: (s -> Either a b) -> SetAttributes a -> SetAttributes b -> SetAttributes s
 setEither k left right = SetAttributes $ \s ->
   either (setAttributes left) (setAttributes right) (k s)
