@@ -21,7 +21,7 @@
 -----------------------------------------------------------------------------
 module Algebra.Graph.Labelled.AdjacencyMap (
     -- * Data structure
-    AdjacencyMap, adjacencyMap,
+    AdjacencyMap, adjacencyMap, toAdjacencyList,
 
     -- * Basic graph construction primitives
     empty, vertex, edge, (-<), (>-), overlay, connect, vertices, edges,
@@ -100,6 +100,10 @@ instance (Eq e, Semigroup e, Ord a) => Ord (AdjacencyMap e a) where
         cmp | x == y               = EQ
             | overlays [x, y] == y = LT
             | otherwise            = compare x y
+
+-- | Forget the edge labels and give the adjacency list representation.
+toAdjacencyList :: AdjacencyMap e a -> [(a, [a])]
+toAdjacencyList (AM m) = Map.toList (fmap (Set.toList . Map.keysSet) m)
 
 -- | Construct the /empty graph/.
 -- Complexity: /O(1)/ time and memory.

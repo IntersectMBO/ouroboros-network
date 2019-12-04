@@ -2,9 +2,9 @@
   extras = hackage:
     {
       packages = {
+        "hsc2hs" = (((hackage.hsc2hs)."0.68.6").revisions).default;
         "moo" = (((hackage.moo)."1.2").revisions).default;
         "gray-code" = (((hackage.gray-code)."0.3.1").revisions).default;
-        "hsc2hs" = (((hackage.hsc2hs)."0.68.6").revisions).default;
         "bimap" = (((hackage.bimap)."0.4.0").revisions).default;
         "binary" = (((hackage.binary)."0.8.7.0").revisions).default;
         "generic-monoid" = (((hackage.generic-monoid)."0.1.0.0").revisions).default;

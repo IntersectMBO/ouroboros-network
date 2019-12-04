@@ -68,6 +68,7 @@ library
                        Ouroboros.Network.PeerSelection.RootPeersDNS
                        Ouroboros.Network.PeerSelection.JobPool
                        Ouroboros.Network.PeerSelection.Governor
+                       Ouroboros.Network.PeerSelection.Test
                        Ouroboros.Network.Server.ConnectionTable
                        Ouroboros.Network.Server.Socket
                        Ouroboros.Network.Server.Version.CBOR
@@ -155,7 +156,12 @@ library
                        psqueues          >=0.2.3 && <0.3,
                        serialise         >=0.2 && <0.3,
                        stm               >=2.4 && <2.6,
-                       time              >=1.6 && <1.10
+                       time              >=1.6 && <1.10,
+
+                       QuickCheck,
+                       tasty,
+                       tasty-quickcheck,
+                       io-sim
 
   ghc-options:         -Wall
                        -Wno-unticked-promoted-constructors

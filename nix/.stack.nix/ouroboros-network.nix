@@ -40,6 +40,10 @@
           (hsPkgs.serialise)
           (hsPkgs.stm)
           (hsPkgs.time)
+          (hsPkgs.QuickCheck)
+          (hsPkgs.tasty)
+          (hsPkgs.tasty-quickcheck)
+          (hsPkgs.io-sim)
           (hsPkgs.hashable)
           (hsPkgs.text)
           ];

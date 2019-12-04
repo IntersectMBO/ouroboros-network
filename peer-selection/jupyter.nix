@@ -102,7 +102,13 @@ let
       ihaskell-charts
       ihaskell-graphviz
 
+      typed-protocols
+      typed-protocols-cbor
+      network-mux
       ouroboros-network
+      ouroboros-consensus
+      io-sim
+      io-sim-classes
     ];
   };
   ipythonKernel = jupyterWith.kernels.iPythonWith {
