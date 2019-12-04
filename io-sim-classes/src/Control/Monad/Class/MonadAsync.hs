@@ -30,8 +30,6 @@ import           Data.Proxy
 
 class ( MonadSTM m
       , MonadThread m
-      , forall a. Eq  (Async m a)
-      , forall a. Ord (Async m a)
       , Functor (Async m)
       ) => MonadAsync m where
 
