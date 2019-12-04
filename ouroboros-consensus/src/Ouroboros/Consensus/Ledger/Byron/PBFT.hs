@@ -21,13 +21,13 @@ import           Cardano.Binary (Annotated)
 import           Cardano.Crypto.DSIGN
 
 import qualified Cardano.Chain.Block as CC
+import qualified Cardano.Chain.Byron.API as CC
 import qualified Cardano.Chain.Delegation as Delegation
 
 import           Ouroboros.Network.Block (HasHeader (..))
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Crypto.DSIGN.Cardano
-import           Ouroboros.Consensus.Ledger.Byron.Auxiliary
 import           Ouroboros.Consensus.Ledger.Byron.Block
 import           Ouroboros.Consensus.Ledger.Byron.Config
 import           Ouroboros.Consensus.Protocol.Abstract
@@ -41,8 +41,8 @@ type instance BlockProtocol ByronBlock = ByronConsensusProtocol
 instance SupportedBlock ByronBlock where
   validateView cfg hdr@ByronHeader{..} =
       case byronHeaderRaw of
-        ABOBBoundaryHdr _    -> pbftValidateBoundary hdr
-        ABOBBlockHdr regular ->
+        CC.ABOBBoundaryHdr _    -> pbftValidateBoundary hdr
+        CC.ABOBBlockHdr regular ->
           let pbftFields :: PBftFields PBftCardanoCrypto
                                        (Annotated CC.ToSign ByteString)
               pbftFields = PBftFields {
