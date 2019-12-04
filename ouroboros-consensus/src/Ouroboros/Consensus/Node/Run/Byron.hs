@@ -31,12 +31,12 @@ instance RunNode ByronBlock where
   nodeBlockMatchesHeader  = byronBlockMatchesHeader
   nodeBlockFetchSize      = const 2000 -- TODO #593
   nodeIsEBB               = \blk -> case byronBlockRaw blk of
-    Cardano.Block.ABOBBlock _      -> Nothing
-    Cardano.Block.ABOBBoundary ebb -> Just
-                                    . EpochNo
-                                    . Cardano.Block.boundaryEpoch
-                                    . Cardano.Block.boundaryHeader
-                                    $ ebb
+    Cardano.Block.BOBBlock _      -> Nothing
+    Cardano.Block.BOBBoundary ebb -> Just
+                                   . EpochNo
+                                   . Cardano.Block.boundaryEpoch
+                                   . Cardano.Block.boundaryHeader
+                                   $ ebb
 
   -- The epoch size is fixed and can be derived from @k@ by the ledger
   -- ('kEpochSlots').

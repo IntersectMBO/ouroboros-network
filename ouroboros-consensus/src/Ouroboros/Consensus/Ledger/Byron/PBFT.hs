@@ -40,8 +40,8 @@ instance HeaderSupportsPBft ByronConfig PBftCardanoCrypto (Header ByronBlock) wh
 
   headerPBftFields cfg ByronHeader{..} =
       case byronHeaderRaw of
-        ABOBBoundaryHdr _   -> Nothing
-        ABOBBlockHdr    hdr -> Just (
+        BOBBoundaryHdr _   -> Nothing
+        BOBBlockHdr    hdr -> Just (
             PBftFields {
               pbftIssuer    = VerKeyCardanoDSIGN
                             . Delegation.delegateVK
