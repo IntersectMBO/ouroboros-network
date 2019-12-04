@@ -49,6 +49,7 @@ import           Cardano.Prelude (NoUnexpectedThunks (..), UseIsNormalForm (..),
                      cborError)
 
 import qualified Cardano.Chain.Block as CC
+import           Cardano.Chain.Byron.Auxiliary
 import qualified Cardano.Chain.Delegation as Delegation
 import qualified Cardano.Chain.MempoolPayload as CC
 import qualified Cardano.Chain.Update.Proposal as Update
@@ -57,7 +58,6 @@ import qualified Cardano.Chain.UTxO as Utxo
 import qualified Cardano.Chain.ValidationMode as CC
 
 import           Ouroboros.Consensus.Ledger.Abstract
-import           Ouroboros.Consensus.Ledger.Byron.Auxiliary
 import           Ouroboros.Consensus.Ledger.Byron.Block
 import           Ouroboros.Consensus.Ledger.Byron.Ledger
 import           Ouroboros.Consensus.Ledger.Byron.Orphans ()

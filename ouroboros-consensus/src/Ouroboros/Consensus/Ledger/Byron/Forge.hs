@@ -16,6 +16,7 @@ import           Data.Coerce (coerce)
 
 import           Cardano.Binary (Annotated (..), reAnnotate)
 import qualified Cardano.Chain.Block as CC.Block
+import           Cardano.Chain.Byron.Auxiliary
 import qualified Cardano.Chain.Common as CC.Common
 import qualified Cardano.Chain.Delegation as CC.Delegation
 import qualified Cardano.Chain.Genesis as CC.Genesis
@@ -29,7 +30,6 @@ import           Cardano.Crypto.DSIGN
 import           Ouroboros.Network.Block
 
 import           Ouroboros.Consensus.Crypto.DSIGN.Cardano
-import           Ouroboros.Consensus.Ledger.Byron.Auxiliary
 import           Ouroboros.Consensus.Ledger.Byron.Block
 import           Ouroboros.Consensus.Ledger.Byron.Config
 import           Ouroboros.Consensus.Ledger.Byron.ContainsGenesis

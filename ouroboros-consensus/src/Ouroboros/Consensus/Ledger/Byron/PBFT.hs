@@ -21,11 +21,11 @@ import           Cardano.Binary (Annotated)
 import           Cardano.Crypto.DSIGN
 
 import qualified Cardano.Chain.Block as CC
+import           Cardano.Chain.Byron.Auxiliary
 import qualified Cardano.Chain.Delegation as Delegation
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Crypto.DSIGN.Cardano
-import           Ouroboros.Consensus.Ledger.Byron.Auxiliary
 import           Ouroboros.Consensus.Ledger.Byron.Block
 import           Ouroboros.Consensus.Ledger.Byron.Config
 import           Ouroboros.Consensus.Protocol.Abstract

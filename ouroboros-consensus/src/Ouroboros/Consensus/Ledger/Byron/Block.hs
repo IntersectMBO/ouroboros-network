@@ -55,13 +55,13 @@ import           Cardano.Prelude (NoUnexpectedThunks (..))
 import qualified Crypto.Hash as Crypto
 
 import qualified Cardano.Chain.Block as CC
+import           Cardano.Chain.Byron.Auxiliary
 import qualified Cardano.Chain.Slotting as CC
 import qualified Cardano.Crypto.Hashing as CC
 
 import           Ouroboros.Network.Block
 
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.Ledger.Byron.Auxiliary
 import           Ouroboros.Consensus.Ledger.Byron.Conversions
 import           Ouroboros.Consensus.Ledger.Byron.Orphans ()
 import           Ouroboros.Consensus.Util.Condense

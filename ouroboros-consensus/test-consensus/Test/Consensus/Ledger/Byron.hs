@@ -19,6 +19,7 @@ import qualified Data.Sequence.Strict as Seq
 import           Cardano.Binary (fromCBOR, toCBOR)
 import           Cardano.Chain.Block (ABlockOrBoundary (..))
 import qualified Cardano.Chain.Block as CC.Block
+import           Cardano.Chain.Byron.Auxiliary
 import           Cardano.Chain.Common (KeyHash)
 import           Cardano.Chain.Slotting (EpochSlots (..))
 import           Cardano.Crypto (ProtocolMagicId (..))
@@ -28,7 +29,6 @@ import           Ouroboros.Network.Point (WithOrigin (At))
 
 import           Ouroboros.Consensus.Block (Header)
 import           Ouroboros.Consensus.Ledger.Byron
-import           Ouroboros.Consensus.Ledger.Byron.Auxiliary
 import qualified Ouroboros.Consensus.Ledger.Byron.DelegationHistory as DH
 import           Ouroboros.Consensus.Mempool.API (ApplyTxErr)
 import           Ouroboros.Consensus.Protocol.Abstract (SecurityParam (..))

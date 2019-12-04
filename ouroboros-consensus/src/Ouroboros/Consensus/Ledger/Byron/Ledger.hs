@@ -34,6 +34,7 @@ import           GHC.Generics (Generic)
 import           Cardano.Prelude (NoUnexpectedThunks)
 
 import qualified Cardano.Chain.Block as CC
+import qualified Cardano.Chain.Byron.Auxiliary as Aux
 import qualified Cardano.Chain.Delegation as Delegation
 import qualified Cardano.Chain.Delegation.Validation.Scheduling as D.Sched
 import qualified Cardano.Chain.Genesis as Gen
@@ -44,7 +45,6 @@ import           Ouroboros.Network.Point (WithOrigin (..))
 import qualified Ouroboros.Network.Point as Point
 
 import           Ouroboros.Consensus.Ledger.Abstract
-import qualified Ouroboros.Consensus.Ledger.Byron.Auxiliary as Aux
 import           Ouroboros.Consensus.Ledger.Byron.Block
 import           Ouroboros.Consensus.Ledger.Byron.Config
 import           Ouroboros.Consensus.Ledger.Byron.ContainsGenesis
