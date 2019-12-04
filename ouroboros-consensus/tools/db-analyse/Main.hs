@@ -254,6 +254,7 @@ openImmDB fp cfg epochInfo = openDB args
         , immEncodeHash     = nodeEncodeHeaderHash    (Proxy @ByronBlock)
         , immEncodeBlock    = nodeEncodeBlockWithInfo cfg
         , immEpochInfo      = epochInfo
+        , immHashInfo       = nodeHashInfo            (Proxy @ByronBlock)
         , immValidation     = ValidateMostRecentEpoch
         , immIsEBB          = nodeIsEBB
         , immCheckIntegrity = nodeCheckIntegrity      cfg
