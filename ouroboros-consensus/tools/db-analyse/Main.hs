@@ -88,13 +88,13 @@ countTxOutputs immDB epochInfo rr = do
     go :: IORef Int -> Either EpochNo SlotNo -> ByronBlock -> IO ()
     go cumulative isEBB blk =
         case (isEBB, blk) of
-          (Right slotNo, Byron.ByronBlock (Chain.ABOBBlock regularBlk) _ _) ->
+          (Right slotNo, Byron.ByronBlock (Chain.BOBBlock regularBlk) _ _) ->
             go' cumulative slotNo regularBlk
           _otherwise ->
             return () -- Skip EBBs
 
-    go' :: IORef Int -> SlotNo -> Chain.ABlock a -> IO ()
-    go' cumulative slotNo Chain.ABlock{..} = do
+    go' :: IORef Int -> SlotNo -> Chain.Block -> IO ()
+    go' cumulative slotNo Chain.Block{..} = do
         countCum  <- atomicModifyIORef cumulative $ \c ->
                        let c' = c + count in (c', c')
         epochSlot <- relativeSlotNo epochInfo slotNo
@@ -105,16 +105,18 @@ countTxOutputs immDB epochInfo rr = do
           , show countCum
           ]
       where
-        Chain.AHeader{..} = blockHeader
-        Chain.ABody{..}   = blockBody
+        -- Chain.Header{..} = blockHeader
+        Chain.Body{..}   = blockBody
 
         count :: Int
         count = countTxPayload bodyTxPayload
 
-    countTxPayload :: Chain.ATxPayload a -> Int
+    countTxPayload :: Chain.TxPayload -> Int
+    countTxPayload = undefined {-
     countTxPayload = sum'
                    . map (countTx . unAnnotated . Chain.aTaTx)
                    . Chain.aUnTxPayload
+                   -}
 
     countTx :: Chain.Tx -> Int
     countTx = length . Chain.txOutputs
