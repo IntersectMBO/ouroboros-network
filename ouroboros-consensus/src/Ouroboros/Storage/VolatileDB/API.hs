@@ -39,7 +39,7 @@ data VolatileDB blockId m = VolatileDB {
       closeDB        :: HasCallStack => m ()
     , isOpenDB       :: HasCallStack => m Bool
     , reOpenDB       :: HasCallStack => m ()
-    , getBlock       :: HasCallStack => blockId -> m (Maybe ByteString)
+    , getBlock       :: HasCallStack => blockId -> m (Maybe (SlotNo, ByteString))
     , putBlock       :: HasCallStack => BlockInfo blockId -> Builder -> m ()
     , getBlockIds    :: HasCallStack => m [blockId]
       -- | Return a function that returns the successors of the block with the

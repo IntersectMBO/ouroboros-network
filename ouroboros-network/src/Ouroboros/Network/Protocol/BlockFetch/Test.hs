@@ -1,6 +1,9 @@
-{-# LANGUAGE GADTs               #-}
-{-# LANGUAGE ParallelListComp    #-}
-{-# LANGUAGE FlexibleInstances   #-}
+{-# LANGUAGE DataKinds         #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE GADTs             #-}
+{-# LANGUAGE KindSignatures    #-}
+{-# LANGUAGE ParallelListComp  #-}
+{-# LANGUAGE RankNTypes        #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
@@ -24,7 +27,8 @@ import           Network.TypedProtocol.Proofs
 
 import           Ouroboros.Network.Channel
 
-import           Ouroboros.Network.Block (StandardHash, genesisPoint)
+import           Ouroboros.Network.Block (Serialised (..), StandardHash,
+                   castPoint, genesisPoint)
 import           Ouroboros.Network.MockChain.Chain (Chain, Point)
 import qualified Ouroboros.Network.MockChain.Chain as Chain
 import           Ouroboros.Network.Testing.ConcreteBlock (Block)
@@ -64,6 +68,14 @@ tests =
   , testProperty "codec 3-splits"    $ withMaxSuccess 30
                                        prop_codec_splits3_BlockFetch
   , testProperty "codec cbor"          prop_codec_cbor_BlockFetch
+
+  , testProperty "codecSerialised"                   prop_codec_BlockFetchSerialised
+  , testProperty "codecSerialised 2-splits"          prop_codec_splits2_BlockFetchSerialised
+  , testProperty "codecSerialised 3-splits"        $ withMaxSuccess 30
+                                                     prop_codec_splits3_BlockFetchSerialised
+  , testProperty "codecSerialised cbor"              prop_codec_cbor_BlockFetchSerialised
+  , testProperty "codec/codecSerialised bin compat"  prop_codec_binary_compat_BlockFetch_BlockFetchSerialised
+  , testProperty "codecSerialised/codec bin compat"  prop_codec_binary_compat_BlockFetchSerialised_BlockFetch
   ]
 
 
@@ -308,19 +320,31 @@ codec :: MonadST m
 codec = codecBlockFetch S.encode (fmap const S.decode)
                         S.encode             S.decode
 
-instance Arbitrary (AnyMessageAndAgency (BlockFetch Block)) where
-  arbitrary = oneof
+codecSerialised :: MonadST m
+                => Codec (BlockFetch (Serialised Block))
+                         S.DeserialiseFailure
+                         m ByteString
+codecSerialised = codecBlockFetchSerialised S.encode S.decode
+
+genBlockFetch :: Gen block
+              -> Gen (ChainRange block)
+              -> Gen (AnyMessageAndAgency (BlockFetch block))
+genBlockFetch genBlock genChainRange = oneof
     [ AnyMessageAndAgency (ClientAgency TokIdle) <$>
-        MsgRequestRange <$> arbitrary
+        MsgRequestRange <$> genChainRange
     , return $ AnyMessageAndAgency (ServerAgency TokBusy) MsgStartBatch
     , return $ AnyMessageAndAgency (ServerAgency TokBusy) MsgNoBlocks
     , AnyMessageAndAgency (ServerAgency TokStreaming) <$>
-        MsgBlock <$> arbitrary
+        MsgBlock <$> genBlock
     , return $ AnyMessageAndAgency (ServerAgency TokStreaming) MsgBatchDone
     , return $ AnyMessageAndAgency (ClientAgency TokIdle) MsgClientDone
     ]
 
-instance Show (AnyMessageAndAgency (BlockFetch Block)) where
+instance Arbitrary (AnyMessageAndAgency (BlockFetch Block)) where
+  arbitrary = genBlockFetch arbitrary arbitrary
+
+instance (StandardHash block, Show block) =>
+         Show (AnyMessageAndAgency (BlockFetch block)) where
   show (AnyMessageAndAgency _ msg) = show msg
 
 instance (StandardHash block, Eq block) =>
@@ -332,6 +356,18 @@ instance (StandardHash block, Eq block) =>
   AnyMessage MsgBatchDone         == AnyMessage MsgBatchDone         = True
   AnyMessage MsgClientDone        == AnyMessage MsgClientDone        = True
   _                               ==                  _              = False
+
+instance Arbitrary (AnyMessageAndAgency (BlockFetch (Serialised Block))) where
+  arbitrary = genBlockFetch (serialiseBlock <$> arbitrary)
+                            (toSerialisedChainRange <$> arbitrary)
+    where
+      serialiseBlock :: Block -> Serialised Block
+      serialiseBlock = Serialised . S.serialise
+
+      toSerialisedChainRange :: ChainRange Block
+                             -> ChainRange (Serialised Block)
+      toSerialisedChainRange (ChainRange l u) =
+        ChainRange (castPoint l) (castPoint u)
 
 prop_codec_BlockFetch
   :: AnyMessageAndAgency (BlockFetch Block)
@@ -356,6 +392,63 @@ prop_codec_cbor_BlockFetch
   -> Bool
 prop_codec_cbor_BlockFetch msg =
   runST (prop_codec_cborM codec msg)
+
+prop_codec_BlockFetchSerialised
+  :: AnyMessageAndAgency (BlockFetch (Serialised Block))
+  -> Bool
+prop_codec_BlockFetchSerialised msg =
+  runST (prop_codecM codecSerialised msg)
+
+prop_codec_splits2_BlockFetchSerialised
+  :: AnyMessageAndAgency (BlockFetch (Serialised Block))
+  -> Bool
+prop_codec_splits2_BlockFetchSerialised msg =
+  runST (prop_codec_splitsM splits2 codecSerialised msg)
+
+prop_codec_splits3_BlockFetchSerialised
+  :: AnyMessageAndAgency (BlockFetch (Serialised Block))
+  -> Bool
+prop_codec_splits3_BlockFetchSerialised msg =
+  runST (prop_codec_splitsM splits3 codecSerialised msg)
+
+prop_codec_cbor_BlockFetchSerialised
+  :: AnyMessageAndAgency (BlockFetch (Serialised Block))
+  -> Bool
+prop_codec_cbor_BlockFetchSerialised msg =
+  runST (prop_codec_cborM codecSerialised msg)
+
+
+prop_codec_binary_compat_BlockFetch_BlockFetchSerialised
+  :: AnyMessageAndAgency (BlockFetch Block)
+  -> Bool
+prop_codec_binary_compat_BlockFetch_BlockFetchSerialised msg =
+    runST (prop_codec_binary_compatM codec codecSerialised stokEq msg)
+  where
+    stokEq
+      :: forall pr (stA :: BlockFetch Block).
+         PeerHasAgency pr stA
+      -> SamePeerHasAgency pr (BlockFetch (Serialised Block))
+    stokEq (ClientAgency ca) = case ca of
+      TokIdle -> SamePeerHasAgency $ ClientAgency TokIdle
+    stokEq (ServerAgency sa) = case sa of
+      TokBusy      -> SamePeerHasAgency $ ServerAgency TokBusy
+      TokStreaming -> SamePeerHasAgency $ ServerAgency TokStreaming
+
+prop_codec_binary_compat_BlockFetchSerialised_BlockFetch
+  :: AnyMessageAndAgency (BlockFetch (Serialised Block))
+  -> Bool
+prop_codec_binary_compat_BlockFetchSerialised_BlockFetch msg =
+    runST (prop_codec_binary_compatM codecSerialised codec stokEq msg)
+  where
+    stokEq
+      :: forall pr (stA :: BlockFetch (Serialised Block)).
+         PeerHasAgency pr stA
+      -> SamePeerHasAgency pr (BlockFetch Block)
+    stokEq (ClientAgency ca) = case ca of
+      TokIdle -> SamePeerHasAgency $ ClientAgency TokIdle
+    stokEq (ServerAgency sa) = case sa of
+      TokBusy      -> SamePeerHasAgency $ ServerAgency TokBusy
+      TokStreaming -> SamePeerHasAgency $ ServerAgency TokStreaming
 
 --
 -- Auxilary functions

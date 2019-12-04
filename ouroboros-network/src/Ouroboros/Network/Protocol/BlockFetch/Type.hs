@@ -51,14 +51,14 @@ instance Protocol (BlockFetch block) where
     MsgClientDone
       :: Message (BlockFetch block) BFIdle BFDone
 
-  data ClientHasAgency ps where
+  data ClientHasAgency st where
     TokIdle :: ClientHasAgency BFIdle
 
-  data ServerHasAgency ps where
+  data ServerHasAgency st where
     TokBusy      :: ServerHasAgency BFBusy
     TokStreaming :: ServerHasAgency BFStreaming
 
-  data NobodyHasAgency ps where
+  data NobodyHasAgency st where
     TokDone :: NobodyHasAgency BFDone
 
   exclusionLemma_ClientAndServerHaveAgency

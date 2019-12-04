@@ -1,5 +1,6 @@
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE FlexibleContexts          #-}
+{-# LANGUAGE LambdaCase                #-}
 {-# LANGUAGE PatternSynonyms           #-}
 {-# LANGUAGE RankNTypes                #-}
 {-# LANGUAGE RecordWildCards           #-}
@@ -28,8 +29,10 @@ module Ouroboros.Storage.ChainDB.Impl.VolDB (
     -- * Getting and parsing blocks
   , getKnownHeader
   , getKnownBlock
+  , getKnownDeserialisableBlock
   , getHeader
   , getBlock
+  , getDeserialisableBlock
     -- * Wrappers
   , getIsMember
   , getPredecessor
@@ -50,6 +53,7 @@ import           Codec.CBOR.Encoding (Encoding)
 import qualified Codec.CBOR.Read as CBOR
 import qualified Codec.CBOR.Write as CBOR
 import qualified Data.ByteString.Lazy as Lazy
+import           Data.Functor ((<&>))
 import           Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
 import           Data.Maybe (mapMaybe)
@@ -65,8 +69,8 @@ import           Control.Monad.Class.MonadThrow
 
 import           Ouroboros.Network.Block (pattern BlockPoint, ChainHash (..),
                      pattern GenesisPoint, HasHeader (..), HeaderHash,
-                     MaxSlotNo, Point, SlotNo, StandardHash, pointHash,
-                     withHash)
+                     MaxSlotNo, Point, Serialised (..), SlotNo, StandardHash,
+                     pointHash, withHash)
 import qualified Ouroboros.Network.Block as Block
 import           Ouroboros.Network.Point (WithOrigin (..))
 
@@ -76,7 +80,8 @@ import qualified Ouroboros.Consensus.Util.CBOR as Util.CBOR
 import           Ouroboros.Consensus.Util.IOLike
 
 import           Ouroboros.Storage.ChainDB.API (ChainDbError (..),
-                     ChainDbFailure (..), StreamFrom (..), StreamTo (..))
+                     ChainDbFailure (..), Deserialisable (..), StreamFrom (..),
+                     StreamTo (..))
 import           Ouroboros.Storage.FS.API (HasFS, createDirectoryIfMissing)
 import           Ouroboros.Storage.FS.API.Types (MountPoint (..), mkFsPath)
 import           Ouroboros.Storage.FS.IO (ioHasFS)
@@ -418,20 +423,38 @@ getKnownBlock db hash = do
       Right b  -> return b
       Left err -> throwM err
 
+getKnownDeserialisableBlock
+  :: (MonadCatch m, StandardHash blk, Typeable blk, Typeable m)
+  => VolDB m blk -> HeaderHash blk -> m (Deserialisable m blk)
+getKnownDeserialisableBlock db hash = do
+    mBlock <- mustExist hash <$> getDeserialisableBlock db hash
+    case mBlock of
+      Right b  -> return b
+      Left err -> throwM err
+
 getHeader :: (MonadCatch m, StandardHash blk, Typeable blk, GetHeader blk)
-               => VolDB m blk -> HeaderHash blk -> m (Maybe (Header blk))
+          => VolDB m blk -> HeaderHash blk -> m (Maybe (Header blk))
 getHeader db@VolDB{..} hash =
     fmap Block.getHeader <$> getBlock db hash
 
 getBlock :: (MonadCatch m, StandardHash blk, Typeable blk)
          => VolDB m blk -> HeaderHash blk -> m (Maybe blk)
-getBlock db hash = do
-    mBlob <- withDB db $ \vol ->
-               fmap (parse (decBlock db) hash) <$> VolDB.getBlock vol hash
-    case mBlob of
-      Nothing         -> return $ Nothing
-      Just (Right b)  -> return $ Just b
-      Just (Left err) -> throwM $ err
+getBlock db hash = traverse deserialise =<< getDeserialisableBlock db hash
+
+getDeserialisableBlock
+  :: (MonadCatch m, StandardHash blk, Typeable blk)
+  => VolDB m blk -> HeaderHash blk -> m (Maybe (Deserialisable m blk))
+getDeserialisableBlock db hash =
+    withDB db (\vol -> VolDB.getBlock vol hash) <&> \case
+      Nothing           -> Nothing
+      Just (slotNo, bs) -> Just Deserialisable
+        { serialised         = Serialised bs
+        , deserialisableSlot = slotNo
+        , deserialisableHash = hash
+        , deserialise        = case parse (decBlock db) hash bs of
+            Left  err -> throwM err
+            Right blk -> return blk
+        }
 
 {-------------------------------------------------------------------------------
   Auxiliary: parsing

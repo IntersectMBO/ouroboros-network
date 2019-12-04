@@ -20,7 +20,8 @@ import           Data.Typeable (Typeable)
 import           Control.Monad.Class.MonadThrow
 import           Control.Tracer (Tracer)
 
-import           Ouroboros.Network.Block (HeaderHash, StandardHash)
+import           Ouroboros.Network.Block (HeaderHash, Serialised (..),
+                     StandardHash, castPoint)
 import           Ouroboros.Network.Protocol.BlockFetch.Server
                      (BlockFetchBlockSender (..), BlockFetchSendBlocks (..),
                      BlockFetchServer (..))
@@ -29,7 +30,8 @@ import           Ouroboros.Network.Protocol.BlockFetch.Type (ChainRange (..))
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
 
-import           Ouroboros.Storage.ChainDB (ChainDB, IteratorResult (..))
+import           Ouroboros.Storage.ChainDB (ChainDB, Deserialisable (..),
+                     IteratorResult (..))
 import qualified Ouroboros.Storage.ChainDB as ChainDB
 
 data BlockFetchServerException =
@@ -64,20 +66,20 @@ blockFetchServer
     => Tracer m (TraceBlockFetchServerEvent blk)
     -> ChainDB m blk
     -> ResourceRegistry m
-    -> BlockFetchServer blk m ()
+    -> BlockFetchServer (Serialised blk) m ()
 blockFetchServer _tracer chainDB registry = senderSide
   where
-    senderSide :: BlockFetchServer blk m ()
+    senderSide :: BlockFetchServer (Serialised blk) m ()
     senderSide = BlockFetchServer receiveReq ()
 
-    receiveReq :: ChainRange blk
-               -> m (BlockFetchBlockSender blk m ())
+    receiveReq :: ChainRange (Serialised blk)
+               -> m (BlockFetchBlockSender (Serialised blk) m ())
     receiveReq (ChainRange start end) = do
       errIt <- ChainDB.streamBlocks
         chainDB
         registry
-        (ChainDB.StreamFromInclusive start)
-        (ChainDB.StreamToInclusive   end)
+        (ChainDB.StreamFromInclusive (castPoint start))
+        (ChainDB.StreamToInclusive   (castPoint end))
       return $ case errIt of
         -- The range is not in the ChainDB or it forks off more than @k@
         -- blocks back.
@@ -87,13 +89,13 @@ blockFetchServer _tracer chainDB registry = senderSide
         -- iterator is empty.
         Right it -> SendMsgStartBatch $ sendBlocks it
 
-
-    sendBlocks :: ChainDB.Iterator m blk
-               -> m (BlockFetchSendBlocks blk m ())
+    sendBlocks :: ChainDB.Iterator m (Deserialisable m blk)
+               -> m (BlockFetchSendBlocks (Serialised blk) m ())
     sendBlocks it = do
       next <- ChainDB.iteratorNext it
       case next of
-        IteratorResult blk     -> return $ SendMsgBlock blk (sendBlocks it)
+        IteratorResult blk     ->
+          return $ SendMsgBlock (serialised blk) (sendBlocks it)
         IteratorExhausted      -> do
           ChainDB.iteratorClose it
           return $ SendMsgBatchDone $ return senderSide

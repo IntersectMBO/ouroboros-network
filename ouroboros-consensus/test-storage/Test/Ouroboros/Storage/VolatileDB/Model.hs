@@ -64,7 +64,7 @@ data DBModel blockId = DBModel {
       -- ^ An error indicates a broken db and that parsing will fail.
     , open           :: Bool
       -- ^ Indicates if the db is open.
-    , mp             :: Map blockId ByteString
+    , mp             :: Map blockId (SlotNo, ByteString)
       -- ^ Superset of blocks in db. Some of them may be gced already.
     , latestGarbaged :: Maybe SlotNo
       -- ^ Last gced slot.
@@ -115,7 +115,7 @@ reOpenModel err = do
 getBlockModel :: forall m blockId. (MonadState (DBModel blockId) m, Ord blockId)
               => ThrowCantCatch VolatileDBError m
               -> blockId
-              -> m (Maybe ByteString)
+              -> m (Maybe (SlotNo, ByteString))
 getBlockModel err sl = do
     DBModel {..} <- get
     if not open then EH.throwError' err $ UserError ClosedDBError
@@ -153,7 +153,7 @@ putBlockModel err cmdErr BlockInfo{..} bs = do
                     , fsLimitation = False
                 }
             Nothing -> do
-                let mp' = Map.insert bbid (toLazyByteString bs) mp
+                let mp' = Map.insert bbid (bslot, toLazyByteString bs) mp
                     (mbid, n, bids) = fromMaybe
                         (error "current file does not exist in index")
                         (Map.lookup currentFile index)

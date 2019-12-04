@@ -28,6 +28,10 @@ module Ouroboros.Network.Block (
   , pointHash
   , castPoint
   , blockPoint
+  , pattern GenesisPoint
+  , pattern BlockPoint
+  , atSlot
+  , withHash
   , Tip(..)
   , encodeTip
   , decodeTip
@@ -46,11 +50,8 @@ module Ouroboros.Network.Block (
   , encodeChainHash
   , decodePoint
   , decodeChainHash
-
-  , pattern GenesisPoint
-  , pattern BlockPoint
-  , atSlot
-  , withHash
+    -- * Serialised block/header
+  , Serialised(..)
   ) where
 
 import           Cardano.Binary (ToCBOR (..))
@@ -59,6 +60,7 @@ import qualified Codec.CBOR.Decoding as Dec
 import           Codec.CBOR.Encoding (Encoding)
 import qualified Codec.CBOR.Encoding as Enc
 import           Codec.Serialise (Serialise (..))
+import qualified Data.ByteString.Lazy as Lazy
 import           Data.FingerTree.Strict (Measured)
 import           Data.Typeable (Typeable)
 import           Data.Word (Word64)
@@ -337,3 +339,18 @@ instance Semigroup BlockMeasure where
 instance Monoid BlockMeasure where
   mempty = BlockMeasure maxBound minBound 0
   mappend = (<>)
+
+{-------------------------------------------------------------------------------
+  Serialised block/header
+-------------------------------------------------------------------------------}
+
+-- | A block or header that is /still serialised/, i.e. not yet deserialised.
+-- When streaming blocks/header from disk to the network, there is often no
+-- need to deserialise them, as we'll just end up serialising them again when
+-- putting them on the wire.
+newtype Serialised block = Serialised
+  { unSerialised :: Lazy.ByteString }
+  deriving (Eq, Show)
+
+type instance HeaderHash (Serialised block) = HeaderHash block
+instance StandardHash block => StandardHash (Serialised block)

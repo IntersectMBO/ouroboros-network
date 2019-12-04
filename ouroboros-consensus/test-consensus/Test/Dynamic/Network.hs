@@ -1,5 +1,6 @@
 {-# LANGUAGE ConstraintKinds      #-}
 {-# LANGUAGE DataKinds            #-}
+{-# LANGUAGE DeriveAnyClass       #-}
 {-# LANGUAGE FlexibleContexts     #-}
 {-# LANGUAGE GADTs                #-}
 {-# LANGUAGE LambdaCase           #-}
@@ -7,7 +8,6 @@
 {-# LANGUAGE RankNTypes           #-}
 {-# LANGUAGE RecordWildCards      #-}
 {-# LANGUAGE ScopedTypeVariables  #-}
-{-# LANGUAGE TupleSections        #-}
 {-# LANGUAGE TypeApplications     #-}
 {-# LANGUAGE TypeFamilies         #-}
 {-# LANGUAGE UndecidableInstances #-}
@@ -27,10 +27,12 @@ module Test.Dynamic.Network (
   , NodeDBs (..)
   ) where
 
+import           Codec.CBOR.Read (DeserialiseFailure)
 import qualified Control.Exception as Exn
 import           Control.Monad
 import           Control.Tracer
 import           Crypto.Random (ChaChaDRG, drgNew)
+import qualified Data.ByteString.Lazy as Lazy
 import qualified Data.List as List
 import qualified Data.List.NonEmpty as NE
 import           Data.Map.Strict (Map)
@@ -44,16 +46,17 @@ import           GHC.Stack
 import           Control.Monad.Class.MonadThrow
 
 import           Network.TypedProtocol.Channel
-import           Network.TypedProtocol.Codec (AnyMessage (..))
+import           Network.TypedProtocol.Codec (AnyMessage (..), CodecFailure,
+                     mapFailureCodec)
 
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.MockChain.Chain
 
 import qualified Ouroboros.Network.BlockFetch.Client as BFClient
-import           Ouroboros.Network.Protocol.BlockFetch.Type
 import           Ouroboros.Network.Protocol.ChainSync.PipelineDecision
                      (pipelineDecisionLowHighMark)
 import           Ouroboros.Network.Protocol.ChainSync.Type
+import           Ouroboros.Network.Protocol.LocalTxSubmission.Type
 import           Ouroboros.Network.Protocol.TxSubmission.Type
 import qualified Ouroboros.Network.TxSubmission.Inbound as TxInbound
 import qualified Ouroboros.Network.TxSubmission.Outbound as TxOutbound
@@ -350,7 +353,7 @@ runNodeNetwork registry testBtime numCoreNodes nodeJoinPlan nodeTopology
       let app = consensusNetworkApps
                   nodeKernel
                   nullDebugProtocolTracers
-                  protocolCodecsId
+                  (customProtocolCodecs pInfoConfig)
                   (protocolHandlers nodeArgs nodeKernel)
 
       void $ forkLinkedThread registry $ do
@@ -368,6 +371,45 @@ runNodeNetwork registry testBtime numCoreNodes nodeJoinPlan nodeTopology
         (getMempool nodeKernel)
 
       return (nodeKernel, readNodeInfo, LimitedApp app)
+
+    customProtocolCodecs
+      :: NodeConfig (BlockProtocol blk)
+      -> ProtocolCodecs blk CodecError m
+           (AnyMessage (ChainSync (Header blk) (Tip blk)))
+           Lazy.ByteString
+           Lazy.ByteString
+           (AnyMessage (TxSubmission (GenTxId blk) (GenTx blk)))
+           (AnyMessage (ChainSync blk (Tip blk)))
+           (AnyMessage (LocalTxSubmission (GenTx blk) (ApplyTxErr blk)))
+    customProtocolCodecs cfg = ProtocolCodecs
+        { pcChainSyncCodec =
+            mapFailureCodec CodecIdFailure $
+            pcChainSyncCodec protocolCodecsId
+        , pcBlockFetchCodec =
+            mapFailureCodec CodecBytesFailure $
+            pcBlockFetchCodec binaryProtocolCodecs
+        , pcBlockFetchCodecSerialised =
+            mapFailureCodec CodecBytesFailure $
+            pcBlockFetchCodecSerialised binaryProtocolCodecs
+        , pcTxSubmissionCodec =
+            mapFailureCodec CodecIdFailure $
+            pcTxSubmissionCodec protocolCodecsId
+        , pcLocalChainSyncCodec =
+            mapFailureCodec CodecIdFailure $
+            pcLocalChainSyncCodec protocolCodecsId
+        , pcLocalTxSubmissionCodec =
+            mapFailureCodec CodecIdFailure $
+            pcLocalTxSubmissionCodec protocolCodecsId
+        }
+      where
+        binaryProtocolCodecs = protocolCodecs cfg
+
+-- | Sum of 'CodecFailure' (from 'protocolCodecsId') and 'DeserialiseFailure'
+-- (from 'protocolCodecs').
+data CodecError
+  = CodecIdFailure    CodecFailure
+  | CodecBytesFailure DeserialiseFailure
+  deriving (Show, Exception)
 
 {-------------------------------------------------------------------------------
   Running the Mini Protocols on an Ordered Pair of Nodes
@@ -684,18 +726,24 @@ withAsyncsWaitAny = go [] . NE.toList
 -- | The partially instantiation of the 'NetworkApplication' type according to
 -- its use in this module
 --
--- Used internal to this module, essentially as an abbreviatiation.
+-- Used internal to this module, essentially as an abbreviation.
 data LimitedApp m peer blk =
    forall unused1 unused2.
    LimitedApp (LimitedApp' m peer blk unused1 unused2)
 
 -- | Argument of 'LimitedApp' data constructor
 --
--- Used internal to this module, essentially as an abbreviatiation.
+-- Used internal to this module, essentially as an abbreviation.
 type LimitedApp' m peer blk unused1 unused2 =
     NetworkApplication m peer
         (AnyMessage (ChainSync (Header blk) (Tip blk)))
-        (AnyMessage (BlockFetch blk))
+        -- We can't use @AnyMessage (BlockFetch x)@ for BlockFetch, as @x =
+        -- blk@ for the client, but @x = Serialised blk@ for the server. Since
+        -- both have to match to be sent across a channel, we instead
+        -- (de)serialise the messages so that they can be sent across the
+        -- channel with the same type on both ends, i.e., 'Lazy.ByteString'.
+        Lazy.ByteString  -- BlockFetch
+        Lazy.ByteString  -- BlockFetch Serialised
         (AnyMessage (TxSubmission (GenTxId blk) (GenTx blk)))
         unused1 -- the local node-to-client channel types
         unused2

@@ -17,6 +17,7 @@ module Network.TypedProtocol.Codec (
     Codec(..)
   , hoistCodec
   , isoCodec
+  , mapFailureCodec
     -- ** Related types
   , PeerRole(..)
   , PeerHasAgency(..)
@@ -35,6 +36,9 @@ module Network.TypedProtocol.Codec (
   , prop_codec
   , prop_codec_splitsM
   , prop_codec_splits
+  , prop_codec_binary_compatM
+  , prop_codec_binary_compat
+  , SamePeerHasAgency(..)
   ) where
 
 import           Control.Exception (Exception)
@@ -146,6 +150,15 @@ isoCodec f finv Codec {encode, decode} = Codec {
       decode = \tok -> isoDecodeStep f finv <$> decode tok
     }
 
+mapFailureCodec
+  :: Functor m
+  => (failure -> failure')
+  -> Codec ps failure  m bytes
+  -> Codec ps failure' m bytes
+mapFailureCodec f Codec {encode, decode} = Codec {
+    encode = encode,
+    decode = \tok -> mapFailureDecodeStep f <$> decode tok
+  }
 
 -- The types here are pretty fancy. The decode is polymorphic in the protocol
 -- state, but only for kinds that are the same kind as the protocol state.
@@ -203,6 +216,16 @@ hoistDecodeStep nat step = case step of
   DecodeDone a mb -> DecodeDone a mb
   DecodeFail fail_AvoidNameShadow -> DecodeFail fail_AvoidNameShadow
   DecodePartial k -> DecodePartial (fmap (hoistDecodeStep nat) . nat . k)
+
+mapFailureDecodeStep
+  :: Functor m
+  => (failure -> failure')
+  -> DecodeStep bytes failure  m a
+  -> DecodeStep bytes failure' m a
+mapFailureDecodeStep f step = case step of
+  DecodeDone a mb    -> DecodeDone a mb
+  DecodeFail failure -> DecodeFail (f failure)
+  DecodePartial k    -> DecodePartial (fmap (mapFailureDecodeStep f) . k)
 
 -- | When decoding a 'Message' we only know the expected \"from\" state. We
 -- cannot know the \"to\" state as this depends on the message we decode. To
@@ -356,3 +379,74 @@ prop_codec_splits
   -> Bool
 prop_codec_splits splits runM codec msg =
     runM $ prop_codec_splitsM splits codec msg
+
+
+-- | Auxiliary definition for 'prop_codec_binary_compatM'.
+--
+-- Used for the existential @st :: ps@ parameter when expressing that for each
+-- value of 'PeerHasAgency' for protocol A, there is a corresponding
+-- 'PeerHasAgency' for protocol B of some @st :: ps@.
+data SamePeerHasAgency (pr :: PeerRole) (ps :: *) where
+  SamePeerHasAgency
+    :: forall (pr :: PeerRole) (st :: ps).
+       PeerHasAgency pr st
+    -> SamePeerHasAgency pr ps
+
+-- | Binary compatibility of two protocols
+--
+-- We check the following property:
+--
+-- 1. Using codec A, we encode a message of protocol @psA@ to @bytes@.
+--
+-- 2. When we decode those @bytes@ using codec B, we get a message of protocol
+-- @ps@B.
+--
+-- 3. When we encode that message again using codec B, we get @bytes@.
+--
+-- 4. When we decode those @bytes@ using codec A, we get the original message
+-- again.
+prop_codec_binary_compatM
+  :: forall psA psB failure m bytes.
+     ( Monad m
+     , Eq (AnyMessage psA)
+     )
+  => Codec psA failure m bytes
+  -> Codec psB failure m bytes
+  -> (forall pr (stA :: psA). PeerHasAgency pr stA -> SamePeerHasAgency pr psB)
+     -- ^ The states of A map directly of states of B.
+  -> AnyMessageAndAgency psA
+  -> m Bool
+prop_codec_binary_compatM
+    codecA codecB stokEq
+    (AnyMessageAndAgency (stokA :: PeerHasAgency pr stA) msgA) =
+  case stokEq stokA of
+    SamePeerHasAgency stokB -> do
+      -- 1.
+      let bytesA = encode codecA stokA msgA
+      -- 2.
+      r1 <- decode codecB stokB >>= runDecoder [bytesA]
+      case r1 of
+        Left _     -> return False
+        Right (SomeMessage msgB) -> do
+          -- 3.
+          let bytesB = encode codecB stokB msgB
+          -- 4.
+          r2 <- decode codecA stokA >>= runDecoder [bytesB]
+          case r2 of
+            Left _                    -> return False
+            Right (SomeMessage msgA') -> return $ AnyMessage msgA' == AnyMessage msgA
+
+-- | Like @'prop_codec_splitsM'@ but run in a pure monad @m@, e.g. @Identity@.
+prop_codec_binary_compat
+  :: forall psA psB failure m bytes.
+     ( Monad m
+     , Eq (AnyMessage psA)
+     )
+  => (forall a. m a -> a)
+  -> Codec psA failure m bytes
+  -> Codec psB failure m bytes
+  -> (forall pr (stA :: psA). PeerHasAgency pr stA -> SamePeerHasAgency pr psB)
+  -> AnyMessageAndAgency psA
+  -> Bool
+prop_codec_binary_compat runM codecA codecB stokEq msgA =
+     runM $ prop_codec_binary_compatM codecA codecB stokEq msgA

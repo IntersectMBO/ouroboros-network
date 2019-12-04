@@ -78,7 +78,7 @@ type (:@) t r = At t r
 
 data Success
   = Unit     ()
-  | Blob     (Maybe ByteString)
+  | Blob     (Maybe (SlotNo, ByteString))
   | Blocks   [BlockId]
   | Bl       Bool
   | IsMember [Bool] -- We compare two functions based on their results on a list of inputs.

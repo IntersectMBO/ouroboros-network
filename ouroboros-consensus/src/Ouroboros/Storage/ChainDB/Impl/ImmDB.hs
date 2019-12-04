@@ -1,5 +1,6 @@
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE LambdaCase                #-}
+{-# LANGUAGE NamedFieldPuns            #-}
 {-# LANGUAGE PatternSynonyms           #-}
 {-# LANGUAGE RankNTypes                #-}
 {-# LANGUAGE RecordWildCards           #-}
@@ -26,6 +27,9 @@ module Ouroboros.Storage.ChainDB.Impl.ImmDB (
     -- * Streaming
   , streamBlocksFrom
   , streamBlocksAfter
+  , deserialiseIterator
+  , deserialisableIterator
+  , parseIterator
     -- * Wrappers
   , closeDB
   , reopen
@@ -57,6 +61,7 @@ import           Control.Monad
 import           Control.Monad.Except
 import           Control.Tracer (Tracer, nullTracer)
 import qualified Data.ByteString.Lazy as Lazy
+import           Data.Functor ((<&>))
 import           GHC.Stack (HasCallStack)
 import           System.FilePath ((</>))
 
@@ -66,8 +71,8 @@ import           Control.Monad.Class.MonadThrow
 
 import           Ouroboros.Network.Block (pattern BlockPoint,
                      pattern GenesisPoint, HasHeader (..), HeaderHash, Point,
-                     SlotNo, atSlot, blockPoint, genesisPoint, pointSlot,
-                     withHash)
+                     Serialised (..), SlotNo, atSlot, blockPoint, genesisPoint,
+                     pointSlot, withHash)
 import           Ouroboros.Network.Point (WithOrigin (..))
 
 import           Ouroboros.Consensus.Util.IOLike
@@ -76,7 +81,8 @@ import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry,
                      allocateEither, unsafeRelease)
 
 import           Ouroboros.Storage.ChainDB.API (ChainDbError (..),
-                     ChainDbFailure (..), StreamFrom (..), UnknownRange (..))
+                     ChainDbFailure (..), Deserialisable (..), StreamFrom (..),
+                     UnknownRange (..))
 import           Ouroboros.Storage.Common
 import           Ouroboros.Storage.EpochInfo (EpochInfo (..))
 import           Ouroboros.Storage.FS.API (HasFS, createDirectoryIfMissing)
@@ -426,12 +432,13 @@ registeredStream db registry start end = do
 --
 -- When passed @'StreamFromInclusive' pt@ where @pt@ refers to Genesis, a
 -- 'NoGenesisBlock' exception will be thrown.
-streamBlocksFrom :: forall m blk. IOLike m
-                 => ImmDB m blk
-                 -> ResourceRegistry m
-                 -> StreamFrom blk
-                 -> m (Either (UnknownRange blk)
-                              (ImmDB.Iterator (HeaderHash blk) m blk))
+streamBlocksFrom
+  :: forall m blk. IOLike m
+  => ImmDB m blk
+  -> ResourceRegistry m
+  -> StreamFrom blk
+  -> m (Either (UnknownRange blk)
+               (ImmDB.Iterator (HeaderHash blk) m (Deserialisable m blk)))
 streamBlocksFrom db registry from = runExceptT $ case from of
     StreamFromExclusive pt@BlockPoint { atSlot = slot, withHash = hash } -> do
       checkFutureSlot pt
@@ -461,7 +468,7 @@ streamBlocksFrom db registry from = runExceptT $ case from of
       when (pointSlot pt > slotNoAtTip) $
         throwError $ MissingBlock pt
 
-    stream start end = ExceptT $ fmap (parseIterator db) <$>
+    stream start end = ExceptT $ fmap (deserialisableIterator db) <$>
       registeredStream db registry start end
 
 -- | Stream blocks after the given point
@@ -494,35 +501,73 @@ streamBlocksAfter db registry low =
       GenesisPoint         -> Nothing
       BlockPoint slot hash -> Just (slot, hash)
 
--- | Parse the bytestrings returned by an iterator as blocks.
-parseIterator :: MonadCatch m
-              => ImmDB m blk
-              -> Iterator (HeaderHash blk) m Lazy.ByteString
-              -> Iterator (HeaderHash blk) m blk
-parseIterator db itr = Iterator {
-      iteratorNext    = parseIteratorResult db =<< iteratorNext db itr
-    , iteratorPeek    = parseIteratorResult db =<< iteratorPeek db itr
+deserialisableIteratorResult
+  :: MonadThrow m
+  => ImmDB m blk
+  -> IteratorResult (HeaderHash blk) Lazy.ByteString
+  -> m (IteratorResult (HeaderHash blk) (Deserialisable m blk))
+deserialisableIteratorResult db@ImmDB { epochInfo } = \case
+    IteratorExhausted             -> return $ IteratorExhausted
+    IteratorResult slotNo hash bs -> return $ IteratorResult slotNo hash $
+      Deserialisable
+        { serialised         = Serialised bs
+        , deserialisableSlot = slotNo
+        , deserialisableHash = hash
+        , deserialise        = case parse (decBlock db) (Right slotNo) bs of
+            Left  err -> throwM err
+            Right blk -> return blk
+        }
+    -- We only need @m@ for this whole function to convert the 'EpochNo' of
+    -- the EBB to a 'SlotNo'.
+    IteratorEBB epochNo hash bs   -> epochInfoFirst epochNo <&> \ebbSlotNo ->
+      IteratorEBB epochNo hash $ Deserialisable
+        { serialised         = Serialised bs
+        , deserialisableSlot = ebbSlotNo
+        , deserialisableHash = hash
+        , deserialise        = case parse (decBlock db) (Left epochNo) bs of
+            Left  err -> throwM err
+            Right blk -> return blk
+        }
+  where
+    EpochInfo { epochInfoFirst } = epochInfo
+
+traverseIterator
+  :: MonadCatch m
+  => ImmDB m blk
+  -> (       IteratorResult (HeaderHash blk) a
+       -> m (IteratorResult (HeaderHash blk) b)
+     )
+  -> Iterator (HeaderHash blk) m a
+  -> Iterator (HeaderHash blk) m b
+traverseIterator db f itr = Iterator {
+      iteratorNext    = iteratorNext db itr >>= f
+    , iteratorPeek    = iteratorPeek db itr >>= f
     , iteratorHasNext = iteratorHasNext db itr
     , iteratorClose   = iteratorClose   db itr
     , iteratorID      = ImmDB.DerivedIteratorID $ ImmDB.iteratorID itr
     }
 
-parseIteratorResult :: MonadThrow m
-                    => ImmDB m blk
-                    -> IteratorResult (HeaderHash blk) Lazy.ByteString
-                    -> m (IteratorResult (HeaderHash blk) blk)
-parseIteratorResult db result =
-    case result of
-      IteratorExhausted ->
-        return IteratorExhausted
-      IteratorResult slotNo hash bs ->
-        case parse (decBlock db) (Right slotNo) bs of
-          Left  err -> throwM err
-          Right blk -> return $ IteratorResult slotNo hash blk
-      IteratorEBB epochNo hash bs ->
-        case parse (decBlock db) (Left epochNo) bs of
-          Left  err -> throwM err
-          Right blk -> return $ IteratorEBB epochNo hash blk
+deserialisableIterator
+  :: MonadCatch m
+  => ImmDB m blk
+  -> Iterator (HeaderHash blk) m Lazy.ByteString
+  -> Iterator (HeaderHash blk) m (Deserialisable m blk)
+deserialisableIterator db = traverseIterator db (deserialisableIteratorResult db)
+
+deserialiseIterator
+  :: MonadCatch m
+  => ImmDB m blk
+  -> Iterator (HeaderHash blk) m (Deserialisable m blk)
+  -> Iterator (HeaderHash blk) m blk
+deserialiseIterator db = traverseIterator db (traverse deserialise)
+
+parseIterator
+  :: MonadCatch m
+  => ImmDB m blk
+  -> Iterator (HeaderHash blk) m Lazy.ByteString
+  -> Iterator (HeaderHash blk) m blk
+parseIterator db = traverseIterator db
+  (deserialisableIteratorResult db >=> traverse deserialise)
 
 {-------------------------------------------------------------------------------
   Error handling

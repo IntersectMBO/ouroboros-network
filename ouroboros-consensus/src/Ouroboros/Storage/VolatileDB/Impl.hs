@@ -279,16 +279,17 @@ reOpenDBImpl VolatileDBEnv{..} =
 getBlockImpl :: (IOLike m, Ord blockId)
              => VolatileDBEnv m blockId
              -> blockId
-             -> m (Maybe ByteString)
-getBlockImpl env@VolatileDBEnv{..} slot =
+             -> m (Maybe (SlotNo, ByteString))
+getBlockImpl env@VolatileDBEnv{..} blockId =
     modifyState env $ \hasFS@HasFS{..} st@InternalState{..} ->
-      case Map.lookup slot _currentRevMap of
+      case Map.lookup blockId _currentRevMap of
         Nothing -> return (st, Nothing)
-        Just InternalBlockInfo {..} ->  do
-          bs <- withFile hasFS ibFile ReadMode $ \hndl -> do
-                  _ <- hSeek hndl AbsoluteSeek (fromIntegral ibSlotOffset)
-                  hGetExactly hasFS hndl $ unBlockSize ibBlockSize
-          return (st, Just bs)
+        Just InternalBlockInfo {..} -> do
+          let size   = unBlockSize ibBlockSize
+              offset = AbsOffset ibSlotOffset
+          bs <- withFile hasFS ibFile ReadMode $ \hndl ->
+            hGetExactlyAt hasFS hndl size offset
+          return (st, Just (ibSlot, bs))
 
 -- | This function follows the approach:
 -- (1) hPut bytes to the file
