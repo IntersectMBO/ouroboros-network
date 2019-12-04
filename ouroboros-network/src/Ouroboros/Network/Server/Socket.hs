@@ -23,7 +23,7 @@ module Ouroboros.Network.Server.Socket
   , ioSocket
   ) where
 
-import Control.Exception (SomeException (..), IOException, mask, mask_, finally, onException, try)
+import Control.Exception (SomeException (..), IOException, mask, finally, onException, try)
 import Control.Concurrent (ThreadId)
 import Control.Concurrent.Async (Async)
 import qualified Control.Concurrent.Async as Async
@@ -128,8 +128,9 @@ spawnOne
   -> ApplicationStart addr st
   -> IO r
   -> IO ()
-spawnOne remoteAddr statusVar resQ threadsVar applicationStart io = mask_ $ do
-  rec let threadAction = \unmask -> do
+spawnOne remoteAddr statusVar resQ threadsVar applicationStart io =
+  mask $ \unmask -> do
+  rec let threadAction = do
             STM.atomically $
                   STM.readTVar statusVar
               >>= applicationStart remoteAddr thread
@@ -141,8 +142,7 @@ spawnOne remoteAddr statusVar resQ threadsVar applicationStart io = mask_ $ do
             -- children, and stops clearing the queue, it will be collected
             -- shortly thereafter, so no problem.
             STM.atomically $ STM.writeTQueue resQ (Result thread remoteAddr t val)
-      thread <- Async.asyncWithUnmask $ \unmask ->
-          threadAction unmask
+      thread <- Async.async threadAction
   -- The main loop `connectionTx` will remove this entry from the set, once
   -- it receives the result.
   STM.atomically $
