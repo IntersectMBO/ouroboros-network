@@ -71,6 +71,7 @@ openTestDB hasFS err = openDB
     nullTracer
   where
     parser = epochFileParser hasFS (const <$> S.decode) isEBB getBinaryInfo
+      testBlockIsValid
     isEBB  = testBlockEpochNoIfEBB fixedEpochSize
     getBinaryInfo = void . testBlockToBinaryInfo
 

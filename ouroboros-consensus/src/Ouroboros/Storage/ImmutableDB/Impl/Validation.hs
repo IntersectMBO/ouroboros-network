@@ -19,8 +19,9 @@ import           Control.Tracer (Tracer, traceWith)
 import           Data.Functor (($>))
 import           Data.Maybe (fromMaybe)
 import qualified Data.Set as Set
-
 import           GHC.Stack (HasCallStack)
+import           Streaming (Of (..))
+import qualified Streaming.Prelude as S
 
 import           Ouroboros.Network.Point (WithOrigin (..))
 
@@ -268,7 +269,9 @@ validateEpoch ValidateEnv{..} shouldBeFinalised epoch mbPrevHash = do
       trace $ MissingEpochFile epoch
       throwError ()
 
-    (entriesWithPrevHashes, mbErr) <- lift $ runEpochFileParser parser epochFile
+    (entriesWithPrevHashes, mbErr) <- lift $
+        runEpochFileParser parser epochFile $ \stream ->
+          (\(es :> mbErr) -> (es, mbErr)) <$> S.toList stream
 
     case entriesWithPrevHashes of
       (_, actualPrevHash) : _

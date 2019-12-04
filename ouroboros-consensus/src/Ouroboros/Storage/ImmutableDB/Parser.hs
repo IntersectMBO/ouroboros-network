@@ -1,4 +1,3 @@
-{-# LANGUAGE BangPatterns             #-}
 {-# LANGUAGE DisambiguateRecordFields #-}
 {-# LANGUAGE LambdaCase               #-}
 {-# LANGUAGE NamedFieldPuns           #-}
@@ -16,11 +15,13 @@ module Ouroboros.Storage.ImmutableDB.Parser
   ) where
 
 import           Codec.CBOR.Decoding (Decoder)
-import           Control.Exception (assert)
 import           Data.Bifunctor (first)
 import qualified Data.ByteString.Lazy as BL
-import           Data.Functor (($>))
+import           Data.Functor (($>), (<&>))
 import           Data.Word (Word64)
+import           Streaming (Of, Stream)
+import qualified Streaming as S
+import qualified Streaming.Prelude as S
 
 import           Ouroboros.Network.Block (ChainHash (..), HasHeader (..),
                      HeaderHash)
@@ -55,10 +56,14 @@ data EpochFileError hash =
   | EpochErrCorrupt hash BlockOrEBB
   deriving (Eq, Show)
 
--- | Type used internally in 'epochFileParser'': 'BinaryInfo' + the block
--- hash, the previous hash, the CRC, 'BlockOrEBB', and whether the block is
--- not corrupted ('False' = corrupted).
-type BlockInfo hash = BinaryInfo (hash, WithOrigin hash, CRC, BlockOrEBB, Bool)
+-- | Type used internally in 'epochFileParser''.
+data BlockInfo hash = BlockInfo
+  { hash         :: !hash
+  , prevHash     :: !(WithOrigin hash)
+  , checksum     :: !CRC
+  , blockOrEBB   :: !BlockOrEBB
+  , notCorrupted :: !Bool
+  }
 
 epochFileParser'
   :: forall m blk hash h. (IOLike m, Eq hash)
@@ -76,77 +81,61 @@ epochFileParser'
        m
        (Secondary.Entry hash, WithOrigin hash)
 epochFileParser' getSlotNo getHash getPrevHash hasFS decodeBlock isEBB
-                 getBinaryInfo isNotCorrupt = EpochFileParser $
-      fmap (checkIfHashesLineUp . first (fmap extractEntry) . stopAtCorruption)
-    . Util.CBOR.readIncrementalOffsets hasFS decoder
+                 getBinaryInfo isNotCorrupt =
+    EpochFileParser $ \fsPath k ->
+      Util.CBOR.withStreamIncrementalOffsets hasFS decoder fsPath
+        (k . checkIfHashesLineUp . S.map extractEntry . stopAtCorruption)
   where
-    decoder :: forall s. Decoder s (BL.ByteString -> BlockInfo hash)
+    decoder :: forall s. Decoder s (BL.ByteString -> BinaryInfo (BlockInfo hash))
     decoder = extractBlockInfo <$> decodeBlock
 
     -- | It is important that we don't first parse all blocks, storing them
     -- all in memory, and only /then/ extract the information we need. So
     -- make sure we don't create thunks refering to the whole block.
     extractBlockInfo :: (BL.ByteString -> blk)
-                     -> (BL.ByteString -> BlockInfo hash)
+                     -> (BL.ByteString -> BinaryInfo (BlockInfo hash))
     extractBlockInfo f bs =
-        getBinaryInfo blk $> (hash, prevHash, crc, blockOrEBB, notCorrupted)
+        getBinaryInfo blk $> BlockInfo
+          { hash         = getHash blk
+          , prevHash     = getPrevHash blk
+          , checksum     = computeCRC bs
+          , blockOrEBB   = case isEBB blk of
+            Just epoch -> EBB epoch
+            Nothing    -> Block (getSlotNo blk)
+          -- TODO do this only when the checksum doesn't match the known one
+          , notCorrupted = isNotCorrupt blk
+           }
       where
-        !blk          = f bs
-        !hash         = getHash blk
-        !prevHash     = getPrevHash blk
-        !crc          = computeCRC bs
-        !blockOrEBB   = case isEBB blk of
-          Just epoch -> EBB epoch
-          Nothing    -> Block (getSlotNo blk)
-        !notCorrupted = isNotCorrupt blk
+        blk = f bs
 
-    -- TODO two traversals with an accumulator now + in
-    -- 'readIncrementalOffsets' as well.
     stopAtCorruption
-      :: ([(Word64, (Word64, BlockInfo hash))],
-          Maybe (Util.CBOR.ReadIncrementalErr, Word64))
-      -> ([(Word64, (Word64, BlockInfo hash))],
-          Maybe (EpochFileError hash, Word64))
-    stopAtCorruption (xs, mbErr) = go [] xs
-      where
-        go acc = \case
-          [] -> (reverse acc, first EpochErrRead <$> mbErr)
-          x@(offset, (_, BinaryInfo (hash, _, _, blockOrEBB, notCorrupted) _ _)):xs'
-            | notCorrupted
-            -> go (x:acc) xs'
-            | otherwise  -- The block is corrupt
-            -> (reverse acc, Just (EpochErrCorrupt hash blockOrEBB, offset))
-
-    checkIfHashesLineUp
-      :: ([(Secondary.Entry hash, WithOrigin hash)],
-          Maybe (EpochFileError hash, Word64))
-      -> ([(Secondary.Entry hash, WithOrigin hash)],
-          Maybe (EpochFileError hash, Word64))
-    checkIfHashesLineUp (es, mbErr) = case es of
-        []               -> ([], mbErr)
-        e@(entry, _):es' -> go (At (Secondary.headerHash entry)) [e] es'
-      where
-        go hashOfPrevBlock acc =
-          -- Loop invariant: the @hashOfPrevBlock@ is the hash of the first
-          -- block in @acc@ (the most recently checked one).
-          assert (hashOfPrevBlock ==
-                  At (Secondary.headerHash (fst (head acc)))) $ \case
-          [] -> (reverse acc, mbErr)
-          e@(entry, prevHash):es'
-            | prevHash == hashOfPrevBlock
-            -> go (At (Secondary.headerHash entry)) (e:acc) es'
-            | otherwise
-            -> let err = EpochErrHashMismatch hashOfPrevBlock prevHash
-                   offset = Secondary.unBlockOffset $ Secondary.blockOffset entry
-               in (reverse acc, Just (err, offset))
+      :: Stream (Of (Word64, (Word64, BinaryInfo (BlockInfo hash))))
+                m
+                (Maybe (Util.CBOR.ReadIncrementalErr, Word64))
+      -> Stream (Of (Word64, (Word64, BinaryInfo (BlockInfo hash))))
+                m
+                (Maybe (EpochFileError hash, Word64))
+    stopAtCorruption input = do
+      -- Stop streaming as soon as we encounter a corrupted one (or exhaust
+      -- the stream)
+      rest <- S.span
+        (\(_, (_, BinaryInfo blockInfo _ _)) -> notCorrupted blockInfo)
+        input
+      S.lift (S.next rest) <&> \case
+        Left mbErr ->
+           first EpochErrRead <$> mbErr
+        Right ((offset, (_, BinaryInfo blockInfo _ _)), _) ->
+            Just (EpochErrCorrupt hash blockOrEBB, offset)
+          where
+            BlockInfo { hash, blockOrEBB } = blockInfo
 
     extractEntry
-      :: (Word64, (Word64, BlockInfo hash))
+      :: (Word64, (Word64, BinaryInfo (BlockInfo hash)))
       -> (Secondary.Entry hash, WithOrigin hash)
     extractEntry (offset, (_size, blockInfo)) = (entry, prevHash)
       where
         BinaryInfo
-          { binaryBlob = (headerHash, prevHash, checksum, blockOrEBB, _notCorrupted)
+          { binaryBlob = BlockInfo { hash, prevHash, checksum, blockOrEBB }
           , headerOffset
           , headerSize
           } = blockInfo
@@ -155,9 +144,37 @@ epochFileParser' getSlotNo getHash getPrevHash hasFS decodeBlock isEBB
           , headerOffset = Secondary.HeaderOffset headerOffset
           , headerSize   = Secondary.HeaderSize   headerSize
           , checksum
-          , headerHash
+          , headerHash   = hash
           , blockOrEBB
           }
+
+    checkIfHashesLineUp
+      :: Stream (Of (Secondary.Entry hash, WithOrigin hash))
+                m
+                (Maybe (EpochFileError hash, Word64))
+      -> Stream (Of (Secondary.Entry hash, WithOrigin hash))
+                m
+                (Maybe (EpochFileError hash, Word64))
+    checkIfHashesLineUp = \input -> S.lift (S.next input) >>= \case
+        Left mbErr ->
+          return mbErr
+        Right ((entry, prevHash), input') ->
+          S.yield (entry, prevHash) *>
+          go (At (Secondary.headerHash entry)) input'
+      where
+        -- Loop invariant: the @hashOfPrevBlock@ is the hash of the most
+        -- recently checked block.
+        go hashOfPrevBlock input = S.lift (S.next input) >>= \case
+          Left mbErr
+            -> return mbErr
+          Right ((entry, prevHash), input')
+            | prevHash == hashOfPrevBlock
+            -> S.yield (entry, prevHash) *>
+               go (At (Secondary.headerHash entry)) input'
+            | otherwise
+            -> let err = EpochErrHashMismatch hashOfPrevBlock prevHash
+                   offset = Secondary.unBlockOffset $ Secondary.blockOffset entry
+               in return $ Just (err, offset)
 
 -- | A version of 'epochFileParser'' for blocks that implement 'HasHeader'.
 epochFileParser

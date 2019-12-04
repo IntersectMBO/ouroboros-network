@@ -50,6 +50,7 @@
           (hsPkgs.network)
           (hsPkgs.serialise)
           (hsPkgs.stm)
+          (hsPkgs.streaming)
           (hsPkgs.text)
           (hsPkgs.time)
           (hsPkgs.transformers)

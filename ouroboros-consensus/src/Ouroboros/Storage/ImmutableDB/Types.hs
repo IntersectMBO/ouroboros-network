@@ -5,6 +5,7 @@
 {-# LANGUAGE DerivingVia                #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase                 #-}
+{-# LANGUAGE RankNTypes                 #-}
 module Ouroboros.Storage.ImmutableDB.Types
   ( SlotNo (..)
   , ImmTip
@@ -40,6 +41,7 @@ import           Data.List.NonEmpty (NonEmpty)
 import           Data.Word
 import           GHC.Generics (Generic)
 import           GHC.Stack (CallStack, prettyCallStack)
+import           Streaming (Of, Stream)
 
 import           Cardano.Prelude (NoUnexpectedThunks (..),
                      UseIsNormalFormNamed (..))
@@ -100,8 +102,11 @@ data HashInfo hash = HashInfo
 -- valid entries, but also want to know about the error so we can truncate the
 -- file to get rid of the unparseable data.
 newtype EpochFileParser e m entry = EpochFileParser
-  { runEpochFileParser :: FsPath -> m ([entry], Maybe (e, Word64)) }
-  deriving (Functor)
+  { runEpochFileParser :: forall r.
+                          FsPath
+                       -> (Stream (Of entry) m (Maybe (e, Word64)) -> m r)
+                       -> m r
+  }
 
 -- | The validation policy used when (re)opening an
 -- 'Ouroboros.Storage.ImmutableDB.API.ImmutableDB'.
