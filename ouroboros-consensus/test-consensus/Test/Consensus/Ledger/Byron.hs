@@ -17,7 +17,7 @@ import qualified Data.ByteString.Lazy as Lazy
 import qualified Data.Sequence.Strict as Seq
 
 import           Cardano.Binary (fromCBOR, toCBOR)
-import           Cardano.Chain.Block (ABlockOrBoundary (..))
+import           Cardano.Chain.Block (BlockOrBoundary (..))
 import qualified Cardano.Chain.Block as CC.Block
 import           Cardano.Chain.Byron.Auxiliary
 import           Cardano.Chain.Common (KeyHash)
@@ -172,9 +172,11 @@ prop_encodeByronBlockWithInfo blk =
         toLazyByteString binaryBlob
 
     headerAnnotation :: Lazy.ByteString
+    headerAnnotation = undefined {-
     headerAnnotation = Lazy.fromStrict $ case byronBlockRaw blk of
       ABOBBoundary b -> CC.Block.boundaryHeaderAnnotation $ CC.Block.boundaryHeader b
       ABOBBlock    b -> CC.Block.headerAnnotation         $ CC.Block.blockHeader    b
+      -}
 
 {-------------------------------------------------------------------------------
   HashInfo
@@ -277,9 +279,10 @@ instance Arbitrary ByronBlock where
         annotateByronBlock epochSlots <$>
         hedgehog (CC.genBlock protocolMagicId epochSlots)
       genBoundaryBlock :: Gen ByronBlock
-      genBoundaryBlock =
+      genBoundaryBlock = undefined {-
         mkByronBlock epochSlots . ABOBBoundary . reAnnotateBoundary protocolMagicId <$>
         hedgehog (CC.genBoundaryBlock)
+        -}
 
 
 instance Arbitrary (Header ByronBlock) where
@@ -289,19 +292,21 @@ instance Arbitrary (Header ByronBlock) where
       ]
     where
       genHeader :: Gen (Header ByronBlock)
-      genHeader =
+      genHeader = undefined {-
         mkByronHeader epochSlots . ABOBBlockHdr .
         reAnnotateUsing
           (CC.Block.toCBORHeader epochSlots)
           (CC.Block.fromCBORAHeader epochSlots) <$>
         hedgehog (CC.genHeader protocolMagicId epochSlots)
+        -}
       genBoundaryHeader :: Gen (Header ByronBlock)
-      genBoundaryHeader =
+      genBoundaryHeader = undefined {-
         mkByronHeader epochSlots . ABOBBoundaryHdr .
         reAnnotateUsing
           (CC.Block.toCBORABoundaryHeader protocolMagicId)
           CC.Block.fromCBORABoundaryHeader <$>
         hedgehog CC.genBoundaryHeader
+        -}
 
 instance Arbitrary ByronHash where
   arbitrary = ByronHash <$> hedgehog CC.genHeaderHash
@@ -310,9 +315,10 @@ instance Arbitrary KeyHash where
   arbitrary = hedgehog CC.genKeyHash
 
 instance Arbitrary (GenTx ByronBlock) where
-  arbitrary =
+  arbitrary = undefined {-
     fromMempoolPayload . reAnnotateUsing toCBOR fromCBOR <$>
     hedgehog (CC.genMempoolPayload protocolMagicId)
+    -}
 
 instance Arbitrary (GenTxId ByronBlock) where
   arbitrary = oneof

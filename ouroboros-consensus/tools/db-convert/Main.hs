@@ -215,12 +215,12 @@ validateChainDb dbDir cfg onlyImmDB verbose =
         , ChainDB.cdbEpochInfo = fixedSizeEpochInfo . EpochSize . unEpochSlots $ epochSlots
         , ChainDB.cdbHashInfo = Byron.byronHashInfo
         , ChainDB.cdbIsEBB = \blk -> case Byron.byronBlockRaw blk of
-            CC.ABOBBlock _      -> Nothing
-            CC.ABOBBoundary ebb -> Just
-                                 . EpochNo
-                                 . CC.boundaryEpoch
-                                 . CC.boundaryHeader
-                                 $ ebb
+            CC.BOBBlock _      -> Nothing
+            CC.BOBBoundary ebb -> Just
+                                . EpochNo
+                                . CC.boundaryEpoch
+                                . CC.boundaryHeader
+                                $ ebb
 
           -- Misc
         , ChainDB.cdbTracer = if verbose
