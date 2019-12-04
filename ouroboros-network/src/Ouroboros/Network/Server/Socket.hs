@@ -23,33 +23,37 @@ module Ouroboros.Network.Server.Socket
   , ioSocket
   ) where
 
-import Control.Exception (SomeException (..), IOException, mask, finally, onException, try)
-import Control.Concurrent (ThreadId)
-import Control.Concurrent.Async (Async)
-import qualified Control.Concurrent.Async as Async
-import Control.Concurrent.STM (STM)
-import qualified Control.Concurrent.STM as STM
-import Control.Monad (forever, join)
-import Control.Monad.Class.MonadTime (Time, getMonotonicTime)
-import Control.Tracer (Tracer, traceWith)
 import Data.Foldable (traverse_)
+import Data.Proxy (Proxy(Proxy))
 import Data.Map (Map)
 import qualified Data.Map.Strict as Map
 
-import Ouroboros.Network.ErrorPolicy (CompleteApplicationResult (..), WithAddr, ErrorPolicyTrace)
+import Control.Monad (forever, join)
+import Control.Monad.Fix (MonadFix)
+import Control.Monad.Class.MonadFork (ThreadId)
+import Control.Monad.Class.MonadAsync as Async
+import Control.Monad.Class.MonadThrow
+import Control.Monad.Class.MonadSTM as STM
+import Control.Monad.Class.MonadTime
+import Control.Tracer (Tracer(..), traceWith)
+import Control.Exception (SomeException, IOException)
+
+import Ouroboros.Network.ErrorPolicy
+         (CompleteApplicationResult (..), WithAddr, ErrorPolicyTrace)
+
 
 -- | Abstraction of something that can provide connections.
 -- A `Network.Socket` can be used to get a
 -- `Socket SockAddr (Channel IO Lazy.ByteString)`
 -- It's not defined in here, though, because we don't want the dependency
 -- on typed-protocols or even on network.
-data Socket addr channel = Socket
-  { acceptConnection :: IO (addr, channel, IO ())
+data Socket m addr channel = Socket
+  { acceptConnection :: m (addr, channel, m ())
     -- ^ The address, a channel, IO to close the channel.
   }
 
 -- | Expected to be useful for testing.
-ioSocket :: IO (addr, channel) -> Socket addr channel
+ioSocket :: Monad m => m (addr, channel) -> Socket m addr channel
 ioSocket io = Socket
   { acceptConnection = do
       (addr, channel) <- io
@@ -63,26 +67,26 @@ type StatusVar st = STM.TVar st
 -- resulting channel.
 -- See also `CompleteConnection`, which is run for every connection when it finishes, and
 -- can also update the state.
-data HandleConnection channel st r where
-  Reject :: !st -> HandleConnection channel st r
-  Accept :: !st -> !(channel -> IO r) -> HandleConnection channel st r
+data HandleConnection m channel st r where
+  Reject :: !st -> HandleConnection m channel st r
+  Accept :: !st -> !(channel -> m r) -> HandleConnection m channel st r
 
 -- | What to do on a new connection: accept and run this `IO`, or reject.
-type BeginConnection addr channel st r = Time -> addr -> st -> STM (HandleConnection channel st r)
+type BeginConnection m addr channel st r = Time -> addr -> st -> STM m (HandleConnection m channel st r)
 
 -- | A call back which runs when application starts;
 --
 -- It is needed only because 'BeginConnection' does not have access to the
 -- thread which runs the application.
 --
-type ApplicationStart addr st = addr -> Async () -> st -> STM st
+type ApplicationStart m addr st = addr -> Async m () -> st -> STM m st
 
 -- | How to update state when a connection finishes. Can use `throwSTM` to
 -- terminate the server.
 --
 -- TODO: remove 'async', use `Async m ()` from 'MonadAsync'.
-type CompleteConnection addr st tr r =
-    Result addr r -> st -> STM (CompleteApplicationResult IO addr st)
+type CompleteConnection m addr st tr r =
+    Result m addr r -> st -> STM m (CompleteApplicationResult m addr st)
 
 -- | Given a current state, `retry` unless you want to stop the server.
 -- When this transaction returns, any running threads spawned by the server
@@ -91,7 +95,7 @@ type CompleteConnection addr st tr r =
 -- It's possible that a connection is accepted after the main thread
 -- returns, but before the server stops. In that case, it will be killed, and
 -- the `CompleteConnection` will not run against it.
-type Main st t = st -> STM t
+type Main m st t = st -> STM m t
 
 -- | To avoid repeatedly blocking on the set of all running threads (a
 -- potentially very large STM transaction) the results come in by way of a
@@ -99,11 +103,11 @@ type Main st t = st -> STM t
 -- potential deadlock when shutting down the server and killing spawned threads:
 -- the server can stop pulling from the queue, without causing the child
 -- threads to hang attempting to write to it.
-type ResultQ addr r = STM.TQueue (Result addr r)
+type ResultQ m addr r = STM.TQueue m (Result m addr r)
 
 -- | The product of a spawned thread. We catch all (even async) exceptions.
-data Result addr r = Result
-  { resultThread :: !(Async ())
+data Result m addr r = Result
+  { resultThread :: !(Async m ())
   , resultAddr   :: !addr
   , resultTime   :: !Time 
   , resultValue  :: !(Either SomeException r)
@@ -111,7 +115,7 @@ data Result addr r = Result
 
 -- | The set of all spawned threads. Used for waiting or cancelling them when
 -- the server shuts down.
-type ThreadsVar = STM.TVar (Map ThreadId (Async ()))
+type ThreadsVar m = STM.TVar m (Map (ThreadId m) (Async m ()))
 
 
 -- | The action runs inside `try`, and when it finishes, puts its result
@@ -121,13 +125,15 @@ type ThreadsVar = STM.TVar (Map ThreadId (Async ()))
 -- always gets into the `ThreadsVar`. Exceptions are unmasked in the
 -- spawned thread.
 spawnOne
-  :: addr
-  -> StatusVar st
-  -> ResultQ addr r
-  -> ThreadsVar
-  -> ApplicationStart addr st
-  -> IO r
-  -> IO ()
+  :: forall m addr st r.
+     (MonadFix m, MonadAsync m, MonadMask m, MonadTime m)
+  => addr
+  -> StatusVar m st
+  -> ResultQ m addr r
+  -> ThreadsVar m
+  -> ApplicationStart m addr st
+  -> m r
+  -> m ()
 spawnOne remoteAddr statusVar resQ threadsVar applicationStart io =
   mask $ \unmask -> do
   rec let threadAction = do
@@ -146,40 +152,43 @@ spawnOne remoteAddr statusVar resQ threadsVar applicationStart io =
   -- The main loop `connectionTx` will remove this entry from the set, once
   -- it receives the result.
   STM.atomically $
-    STM.modifyTVar' threadsVar (Map.insert (Async.asyncThreadId thread) thread)
+    let tid = asyncThreadId (Proxy :: Proxy m) thread in
+    STM.modifyTVar' threadsVar (Map.insert tid thread)
 
 
 -- | The accept thread is controlled entirely by the `accept` call. To
 -- stop it, whether normally or exceptionally, it must be killed by an async
 -- exception, or the exception callback here must re-throw.
 acceptLoop
-  :: ResultQ addr r
-  -> ThreadsVar
-  -> StatusVar st
-  -> BeginConnection addr channel st r
-  -> ApplicationStart addr st
-  -> (IOException -> IO ()) -- ^ Exception on `Socket.accept`.
-  -> Socket addr channel
-  -> IO x
+  :: (MonadFix m, MonadAsync m, MonadMask m, MonadTime m)
+  => ResultQ m addr r
+  -> ThreadsVar m
+  -> StatusVar m st
+  -> BeginConnection m addr channel st r
+  -> ApplicationStart m addr st
+  -> (IOException -> m ()) -- ^ Exception on `Socket.accept`.
+  -> Socket m addr channel
+  -> m x
 acceptLoop resQ threadsVar statusVar beginConnection applicationStart acceptException socket = forever $
   acceptOne resQ threadsVar statusVar beginConnection applicationStart acceptException socket
 
 -- | Accept once from the socket, use the `Accept` to make a decision (accept
 -- or reject), and spawn the thread if accepted.
 acceptOne
-  :: forall addr channel st r.
-     ResultQ addr r
-  -> ThreadsVar
-  -> StatusVar st
-  -> BeginConnection addr channel st r
-  -> ApplicationStart addr st
-  -> (IOException -> IO ()) -- ^ Exception on `Socket.accept`.
-  -> Socket addr channel
-  -> IO ()
+  :: forall m addr channel st r.
+     (MonadFix m, MonadAsync m, MonadMask m, MonadTime m)
+  => ResultQ m addr r
+  -> ThreadsVar m
+  -> StatusVar m st
+  -> BeginConnection m addr channel st r
+  -> ApplicationStart m addr st
+  -> (IOException -> m ()) -- ^ Exception on `Socket.accept`.
+  -> Socket m addr channel
+  -> m ()
 acceptOne resQ threadsVar statusVar beginConnection applicationStart acceptException socket = mask $ \restore -> do
   -- mask is to assure that every socket is closed.
   outcome <- try (restore (acceptConnection socket))
-  case outcome :: Either IOException (addr, channel, IO ()) of
+  case outcome :: Either IOException (addr, channel, m ()) of
     Left ex -> restore (acceptException ex)
     Right (addr, channel, close) -> do
       -- Decide whether to accept or reject, using the current state, and
@@ -206,14 +215,15 @@ acceptOne resQ threadsVar statusVar beginConnection applicationStart acceptExcep
 -- the results of connection threads, as well as the `Main` action, which
 -- determines when/if the server should stop.
 mainLoop
-  :: forall addr st tr r t .
-     Tracer IO (WithAddr addr ErrorPolicyTrace)
-  -> ResultQ addr r
-  -> ThreadsVar
-  -> StatusVar st
-  -> CompleteConnection addr st tr r
-  -> Main st t
-  -> IO t
+  :: forall m addr st tr r t .
+     MonadAsync m
+  => Tracer m (WithAddr addr ErrorPolicyTrace)
+  -> ResultQ m addr r
+  -> ThreadsVar m
+  -> StatusVar m st
+  -> CompleteConnection m addr st tr r
+  -> Main m st t
+  -> m t
 mainLoop errorPolicyTrace resQ threadsVar statusVar complete main =
   join (STM.atomically $ mainTx `STM.orElse` connectionTx)
 
@@ -221,7 +231,7 @@ mainLoop errorPolicyTrace resQ threadsVar statusVar complete main =
 
   -- Sample the status, and run the main action. If it does not retry, then
   -- the `mainLoop` finishes with `pure t` where `t` is the main action result.
-  mainTx :: STM (IO t)
+  mainTx :: STM m (m t)
   mainTx = do
     st <- STM.readTVar statusVar
     t <- main st
@@ -229,7 +239,7 @@ mainLoop errorPolicyTrace resQ threadsVar statusVar complete main =
 
   -- Wait for some connection to finish, update the state with its result,
   -- then recurse onto `mainLoop`.
-  connectionTx :: STM (IO t)
+  connectionTx :: STM m (m t)
   connectionTx = do
     result <- STM.readTQueue resQ
     st <- STM.readTVar statusVar
@@ -242,7 +252,8 @@ mainLoop errorPolicyTrace resQ threadsVar statusVar complete main =
     -- evaluted state to 'statusVar'
     STM.writeTVar statusVar carState
     -- It was inserted by `spawnOne`.
-    STM.modifyTVar' threadsVar (Map.delete (Async.asyncThreadId (resultThread result)))
+    let tid = asyncThreadId (Proxy :: Proxy m) (resultThread result)
+    STM.modifyTVar' threadsVar (Map.delete tid)
     pure $ do
       traverse_ Async.cancel carThreads
       traverse_ (traceWith errorPolicyTrace) carTrace
@@ -250,20 +261,21 @@ mainLoop errorPolicyTrace resQ threadsVar statusVar complete main =
 
 -- | Run a server.
 run
-  :: Tracer IO (WithAddr addr ErrorPolicyTrace)
+  :: (MonadFix m, MonadAsync m, MonadMask m, MonadTime m)
+  => Tracer m (WithAddr addr ErrorPolicyTrace)
   -- TODO: extend this trace to trace server action (this might be useful for
   -- debugging)
-  -> Socket addr channel
-  -> (IOException -> IO ())
-  -> BeginConnection addr channel st r
-  -> ApplicationStart addr st
-  -> CompleteConnection addr st tr r
-  -> Main st t
-  -> STM.TVar st
-  -> IO t
+  -> Socket m addr channel
+  -> (IOException -> m ())
+  -> BeginConnection m addr channel st r
+  -> ApplicationStart m addr st
+  -> CompleteConnection m addr st tr r
+  -> Main m st t
+  -> STM.TVar m st
+  -> m t
 run errroPolicyTrace socket acceptException beginConnection applicationStart complete main statusVar = do
-  resQ <- STM.newTQueueIO
-  threadsVar <- STM.newTVarIO Map.empty
+  resQ <- STM.atomically STM.newTQueue
+  threadsVar <- STM.newTVarM Map.empty
   let acceptLoopDo = acceptLoop resQ threadsVar statusVar beginConnection applicationStart acceptException socket
       -- The accept loop is killed when the main loop stops.
       mainDo = Async.withAsync acceptLoopDo $ \_ ->
