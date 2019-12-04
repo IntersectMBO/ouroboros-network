@@ -34,7 +34,6 @@ library
                        Ouroboros.Consensus.Crypto.DSIGN.Cardano
                        Ouroboros.Consensus.Ledger.Abstract
                        Ouroboros.Consensus.Ledger.Byron
-                       Ouroboros.Consensus.Ledger.Byron.Auxiliary
                        Ouroboros.Consensus.Ledger.Byron.Block
                        Ouroboros.Consensus.Ledger.Byron.Config
                        Ouroboros.Consensus.Ledger.Byron.ContainsGenesis
