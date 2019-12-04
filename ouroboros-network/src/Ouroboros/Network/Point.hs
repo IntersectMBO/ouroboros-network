@@ -20,8 +20,11 @@ import           GHC.Generics (Generic)
 
 import           Cardano.Prelude (NoUnexpectedThunks)
 
+import           Codec.Serialise (Serialise (..))
+
 data WithOrigin t = Origin | At !t
-  deriving (Eq, Ord, Show, Generic, Functor, Foldable, Traversable, NoUnexpectedThunks)
+  deriving (Eq, Ord, Show, Generic, Functor, Foldable, Traversable,
+            NoUnexpectedThunks, Serialise)
 
 data Block slot hash = Block
   { blockPointSlot :: !slot
