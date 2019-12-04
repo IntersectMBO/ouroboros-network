@@ -53,6 +53,11 @@ extra-deps:
       - .
       - test
 
+  - git: https://github.com/acw/time-units
+    commit: 187c41725258b8881c527745b2c63cc5db880056
+    subdirs:
+      - .
+
   - bimap-0.4.0
   - binary-0.8.7.0
   - generic-monoid-0.1.0.0
@@ -60,7 +65,6 @@ extra-deps:
   - hedgehog-quickcheck-0.1.1
   - quickcheck-state-machine-0.6.0
   - splitmix-0.0.2
-  - time-units-1.0.0
   - tasty-hedgehog-1.0.0.1
   - Unique-0.4.7.6
   - statistics-linreg-0.3

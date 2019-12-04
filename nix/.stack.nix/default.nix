@@ -11,7 +11,6 @@
         "hedgehog-quickcheck" = (((hackage.hedgehog-quickcheck)."0.1.1").revisions).default;
         "quickcheck-state-machine" = (((hackage.quickcheck-state-machine)."0.6.0").revisions).default;
         "splitmix" = (((hackage.splitmix)."0.0.2").revisions).default;
-        "time-units" = (((hackage.time-units)."1.0.0").revisions).default;
         "tasty-hedgehog" = (((hackage.tasty-hedgehog)."1.0.0.1").revisions).default;
         "Unique" = (((hackage.Unique)."0.4.7.6").revisions).default;
         "statistics-linreg" = (((hackage.statistics-linreg)."0.3").revisions).default;
@@ -48,6 +47,7 @@
         cardano-crypto-test = ./cardano-crypto-test.nix;
         cardano-prelude = ./cardano-prelude.nix;
         cardano-prelude-test = ./cardano-prelude-test.nix;
+        time-units = ./time-units.nix;
         cardano-crypto = ./cardano-crypto.nix;
         };
       compiler.version = "8.6.5";
