@@ -106,7 +106,10 @@ import           Ouroboros.Consensus.Util (repeatedly)
 -- it will only be used when a new block comes in. However, it can become a
 -- bottleneck during syncing.
 data PBftChainState c = PBftChainState {
-      -- | Signatures up to (including) the anchor
+      -- | Signatures at or before the anchor
+      --
+      -- We should always have at least one signature (the anchor), unless the
+      -- anchor is genesis.
       preAnchor  :: !(StrictSeq (PBftSigner c))
 
       -- | Signatures after the anchor
@@ -114,7 +117,7 @@ data PBftChainState c = PBftChainState {
       -- We should have precisely @k@ signatures after the anchor, unless
       --
       -- 1. We are near genesis, or
-      -- 2. After a during (during a switch-to-fork)
+      -- 2. After a rollback (during a switch-to-fork)
     , postAnchor :: !(StrictSeq (PBftSigner c))
 
       -- | Signatures before the window
@@ -122,7 +125,7 @@ data PBftChainState c = PBftChainState {
 
       -- | Signatures in the window
       --
-      -- We should have precisely @n@ signatures the window, unless we are
+      -- We should have precisely @n@ signatures in the window, unless we are
       -- near genesis.
     , inWindow   :: !(StrictSeq (PBftSigner c))
 
