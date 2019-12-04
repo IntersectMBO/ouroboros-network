@@ -82,10 +82,9 @@ data HashInfo hash = HashInfo
 --
 -- The parsing may include validation of the contents of the epoch file.
 --
--- @entry@ will be instantiated with @(Secondary.Entry hash, WithOrigin
--- hash)@, i.e. an entry from the secondary index corresponding to a block and
--- the hash of the block before it. To avoid cyclic dependencies, it is left
--- abstract.
+-- @entry@ will be instantiated with @(Secondary.Entry hash)@, i.e. an entry
+-- from the secondary index corresponding to a block. To avoid cyclic
+-- dependencies, it is left abstract here.
 --
 -- The parser should validate that each entry fits onto the previous one, i.e.
 -- that the hashes line up.
@@ -93,7 +92,7 @@ data HashInfo hash = HashInfo
 -- We assume the output of 'EpochFileParser' to be correct, we will not
 -- validate it.
 --
--- An error may be returned in the form of @('Maybe' e, 'Word64')@. The
+-- An error may be returned in the form of @'Maybe' (e, 'Word64')@. The
 -- 'Word64' must correspond to the offset in the file where the last valid
 -- entry ends. Truncating to this offset should remove all invalid data from
 -- the file and just leave the valid entries before it. Note that we are not
@@ -101,11 +100,18 @@ data HashInfo hash = HashInfo
 -- entries have been parsed successfully, in which case we still want these
 -- valid entries, but also want to know about the error so we can truncate the
 -- file to get rid of the unparseable data.
-newtype EpochFileParser e m entry = EpochFileParser
-  { runEpochFileParser :: forall r.
-                          FsPath
-                       -> (Stream (Of entry) m (Maybe (e, Word64)) -> m r)
-                       -> m r
+newtype EpochFileParser e m entry hash = EpochFileParser
+  { runEpochFileParser
+      :: forall r.
+         FsPath
+      ->  [CRC]
+          -- The expected checksums are given as input. This list can be empty
+          -- when the secondary index file is missing. If the expected
+          -- checksum matches the actual checksum, we can avoid the expensive
+          -- integrity check of the block.
+      -> (Stream (Of (entry, WithOrigin hash)) m (Maybe (e, Word64)) -> m r)
+          -- Continuation to ensure the file is closed
+      -> m r
   }
 
 -- | The validation policy used when (re)opening an
