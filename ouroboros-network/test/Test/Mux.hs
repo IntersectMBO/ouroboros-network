@@ -135,7 +135,7 @@ demo chain0 updates delay = do
 
     updateAid <- async $ sequence_
         [ do
-            threadDelay delay -- X milliseconds, just to provide interest
+            threadDelay 100 -- X milliseconds, just to provide interest
             atomically $ do
               p <- readTVar producerVar
               let Just p' = CPS.applyChainUpdate update p

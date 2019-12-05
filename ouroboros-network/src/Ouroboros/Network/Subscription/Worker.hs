@@ -303,7 +303,7 @@ subscriptionLoop
           (valency - currentValency)
 
       when (duration < ipRetryDelay) $
-          threadDelay 300
+          threadDelay $ ipRetryDelay - duration
 
   where
     -- if socket allocation errors, we log the exception and rethrow it
@@ -410,7 +410,7 @@ subscriptionLoop
                                 Nothing -> defaultConnectionAttemptDelay
                 traceWith tr
                           (SubscriptionTraceSubscriptionWaitingNewConnection delay)
-                threadDelay 300
+                threadDelay delay
 
         ConnectionTableExist ->
           traceWith tr $ SubscriptionTraceConnectionExist remoteAddr
