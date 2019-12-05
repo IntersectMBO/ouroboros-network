@@ -44,12 +44,12 @@ import           Ouroboros.Network.PeerSelection.Types
 -- Known peer set representation
 --
 
-data KnownPeerInfo = KnownPeerInfo {
+data KnownPeerInfo peeraddr = KnownPeerInfo {
 
        -- | Should we advertise this peer when other nodes send us gossip requests?
        knownPeerAdvertise :: !PeerAdvertise,
 
-       knownPeerSource    :: !PeerSource
+       knownPeerSource    :: !(PeerSource peeraddr)
 {-
        -- | The current number of consecutive connection attempt failures. This
        -- is reset as soon as there is a successful connection. It is used
@@ -85,7 +85,7 @@ data KnownPeers peeraddr = KnownPeers {
 
        -- | All the known peers.
        --
-       knownPeersByAddr             :: !(Map peeraddr KnownPeerInfo),
+       knownPeersByAddr             :: !(Map peeraddr (KnownPeerInfo peeraddr)),
 
        -- | The subset of known peers that we would be allowed to gossip with
        -- now. This is because we have not gossiped with them recently.
@@ -120,15 +120,15 @@ empty =
     }
 
 -- | /O(1)/
-toMap :: KnownPeers peeraddr -> Map peeraddr KnownPeerInfo
+toMap :: KnownPeers peeraddr -> Map peeraddr (KnownPeerInfo peeraddr)
 toMap = knownPeersByAddr
 
-availableForGossip :: Ord peeraddr => KnownPeers peeraddr -> Map peeraddr KnownPeerInfo
+availableForGossip :: Ord peeraddr => KnownPeers peeraddr -> Map peeraddr (KnownPeerInfo peeraddr)
 availableForGossip KnownPeers {knownPeersByAddr, knownPeersAvailableForGossip} =
     Map.restrictKeys knownPeersByAddr knownPeersAvailableForGossip
 
 insert :: Ord peeraddr
-       => PeerSource
+       => (PeerSource peeraddr)
        -> PeerAdvertise
        -> [peeraddr]
        -> KnownPeers peeraddr

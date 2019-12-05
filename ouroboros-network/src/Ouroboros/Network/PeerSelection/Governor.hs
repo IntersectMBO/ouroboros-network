@@ -29,10 +29,11 @@ module Ouroboros.Network.PeerSelection.Governor (
 ) where
 
 import           Data.Void (Void)
-import           Data.Maybe (fromMaybe)
+import           Data.Maybe (fromMaybe, catMaybes)
 import           Data.Semigroup (Min(..))
 import qualified Data.List.NonEmpty as NonEmpty
 import           Data.List.NonEmpty (NonEmpty(..))
+import           Data.List (intersperse)
 import qualified Data.Map.Strict as Map
 import           Data.Map.Strict (Map)
 import qualified Data.Set as Set
@@ -54,7 +55,7 @@ import           Ouroboros.Network.PeerSelection.KnownPeers (KnownPeers, KnownPe
 import qualified Ouroboros.Network.PeerSelection.JobPool    as JobPool
 import           Ouroboros.Network.PeerSelection.JobPool (JobPool, Job(..))
 
-
+import           Text.Printf
 
 {- $overview
 
@@ -427,12 +428,12 @@ base our decision on include:
 data PeerSelectionPolicy peeraddr m = PeerSelectionPolicy {
 
        --TODO: where do we decide how many to pick in one go?
-       policyPickKnownPeersForGossip :: Map peeraddr KnownPeerInfo -> Int -> STM m (NonEmpty peeraddr),
+       policyPickKnownPeersForGossip :: Map peeraddr (KnownPeerInfo peeraddr) -> Int -> STM m (NonEmpty peeraddr),
 --     policyPickColdPeersToPromote  :: Map peeraddr KnownPeerInfo -> Int -> STM m (NonEmpty peeraddr),
 --     policyPickWarmPeersToPromote  :: Map peeraddr () -> Int -> STM m (NonEmpty peeraddr),
 --     policyPickHotPeersToDemote    :: Map peeraddr () -> Int -> STM m (NonEmpty peeraddr),
 --     policyPickWarmPeersToDemote   :: Map peeraddr () -> Int -> STM m (NonEmpty peeraddr),
-       policyPickColdPeersToForget   :: Map peeraddr KnownPeerInfo -> Int -> STM m (NonEmpty peeraddr),
+       policyPickColdPeersToForget   :: Map peeraddr (KnownPeerInfo peeraddr) -> Int -> STM m (NonEmpty peeraddr),
 
        policyFindPublicRootTimeout   :: !DiffTime,
        policyMaxInProgressGossipReqs :: !Int,
@@ -700,7 +701,9 @@ peerSelectionGovernorLoop tracer
       decision <- evalGuardedDecisions now st'
 
       let Decision { decisionTrace, decisionEnact, decisionState } = decision
-      traceWith tracer decisionTrace
+      case decisionTrace of
+           TraceGossipGource grc -> mapM_ (traceWith tracer) (map TraceGossipGourceAdd grc)
+           _ -> traceWith tracer decisionTrace
       case decisionEnact of
         Nothing  -> return ()
         Just job -> JobPool.forkJob jobPool job
@@ -800,13 +803,14 @@ data TracePeerSelection peeraddr =
      | TracePublicRootsRequest Int Int
      | TracePublicRootsResults (Set peeraddr) Int DiffTime
      | TracePublicRootsFailure SomeException Int DiffTime
-     | TraceGossipRequests     Int Int (Map peeraddr KnownPeerInfo) [peeraddr] -- target, actual, selected
+     | TraceGossipRequests     Int Int (Map peeraddr (KnownPeerInfo peeraddr)) [peeraddr] -- target, actual, selected
      | TraceGossipResults      [(peeraddr, Either SomeException [peeraddr])] --TODO: classify failures
+     | TraceGossipGource       [[peeraddr]]
+     | TraceGossipGourceAdd    [peeraddr]
      | TraceForgetKnownPeers   Int Int [peeraddr] -- target, actual, selected
      | TraceGovernorLoopDebug  (PeerSelectionState peeraddr) (Maybe DiffTime)
      | TraceGovernorWakeup
   deriving Show
-
 
 rootPeersBelowTarget :: (MonadSTM m, Ord peeraddr)
                      => PeerSelectionActions peeraddr m
@@ -1028,6 +1032,29 @@ gossipsJob PeerSelectionActions{requestPeerGossip}
         decisionEnact = Nothing
       }
 
+    updateKnownPeers :: (KnownPeers peeraddr, [[peeraddr]])
+                     -> (peeraddr, Either SomeException [peeraddr])
+                     -> (KnownPeers peeraddr, [[peeraddr]])
+    updateKnownPeers a          (_  , Left _)         = a
+    updateKnownPeers (kps, grc) (src, Right newPeers) =
+      let mbSrcKi = fmap KnownPeers.knownPeerSource $ Map.lookup src (KnownPeers.toMap kps)
+          !path = case mbSrcKi of
+                       Just (PeerSourceGossip s) -> s ++ [src]
+                       _                         -> [src]
+
+          grc'  = catMaybes $ map (gourceAddPeer kps path) newPeers in
+      (KnownPeers.insert (PeerSourceGossip path) DoAdvertisePeer newPeers kps, grc ++ grc')
+
+    gourceAddPeer :: KnownPeers peeraddr
+                  -> [peeraddr]
+                  -> peeraddr
+                  -> Maybe [peeraddr]
+    gourceAddPeer kps source peer =
+        case Map.lookup peer (KnownPeers.toMap kps) of
+             Nothing -> Just $ source ++ [peer]
+             Just _  -> Nothing -- Duplicate we know of this peer from somewhere else
+
+
     jobPhase1 :: [peeraddr] -> m (Completion m peeraddr)
     jobPhase1 peers = do
       -- In the typical case, where most requests return within a short
@@ -1043,15 +1070,13 @@ gossipsJob PeerSelectionActions{requestPeerGossip}
       case results of
         Right totalResults -> do
           let peerResults = zip peers totalResults
-              newPeers    = [ p | Right ps <- totalResults, p <- ps ]
-          return $ Completion $ \st _ -> Decision {
-            decisionTrace = TraceGossipResults peerResults,
+          return $ Completion $ \st _ ->
+              let (knownPeers', gource) = foldl updateKnownPeers ((knownPeers st), []) peerResults in
+            Decision {
+            decisionTrace = TraceGossipGource gource,
             decisionState = st {
                               --TODO: also update with the failures
-                              knownPeers = KnownPeers.insert
-                                             PeerSourceGossip
-                                             DoAdvertisePeer
-                                             newPeers (knownPeers st),
+                              knownPeers = knownPeers',
                               inProgressGossipReqs = inProgressGossipReqs st
                                                    - length peers
                             },
@@ -1074,14 +1099,13 @@ gossipsJob PeerSelectionActions{requestPeerGossip}
               gossipsRemaining = [  a
                                  | (a, Nothing) <- zip gossips partialResults ]
 
-          return $ Completion $ \st _ -> Decision {
-            decisionTrace = TraceGossipResults peerResults,
+          return $ Completion $ \st _ ->
+            let (knownPeers', gource) = foldl updateKnownPeers ((knownPeers st), []) peerResults in
+            Decision {
+            decisionTrace = TraceGossipGource gource,
             decisionState = st {
                               --TODO: also update with the failures
-                              knownPeers = KnownPeers.insert
-                                             PeerSourceGossip
-                                             DoAdvertisePeer
-                                             newPeers (knownPeers st),
+                              knownPeers = knownPeers',
                               inProgressGossipReqs = inProgressGossipReqs st
                                                    - length peerResults
                             },
@@ -1117,14 +1141,13 @@ gossipsJob PeerSelectionActions{requestPeerGossip}
 
       mapM_ cancel gossipsIncomplete
 
-      return $ Completion $ \st _ -> Decision {
-        decisionTrace = TraceGossipResults peerResults,
+      return $ Completion $ \st _ ->
+        let (knownPeers', gource) = foldl updateKnownPeers ((knownPeers st), []) peerResults in
+        Decision {
+        decisionTrace = TraceGossipGource gource,
         decisionState = st {
                           --TODO: also update with the failures
-                          knownPeers = KnownPeers.insert
-                                         PeerSourceGossip
-                                         DoAdvertisePeer
-                                         newPeers (knownPeers st),
+                          knownPeers = knownPeers',
                           inProgressGossipReqs = inProgressGossipReqs st
                                                - length peers
                         },

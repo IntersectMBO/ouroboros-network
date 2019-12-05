@@ -11,11 +11,11 @@ import           GHC.Generics (Generic)
 -- | Where did this peer come from? Policy functions can choose to treat
 -- peers differently depending on where we found them from.
 --
-data PeerSource = PeerSourceLocalRoot
+data PeerSource peeraddr = PeerSourceLocalRoot
                 | PeerSourcePublicRoot
-                | PeerSourceGossip
+                | PeerSourceGossip [peeraddr]
 --              | PeerSource -- it requested us to advertise it
-  deriving (Eq, Show, Enum)
+  deriving (Eq, Show)
 
 
 -- | Should this peer be advertised to other peers asking for known peers?

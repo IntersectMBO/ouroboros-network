@@ -43,11 +43,12 @@ import           Test.QuickCheck
 import           Test.Tasty (TestTree, testGroup, localOption)
 import           Test.Tasty.QuickCheck (testProperty, QuickCheckMaxSize(..))
 
+import           Text.Printf
 
 tests :: TestTree
 tests =
   testGroup "Ouroboros.Network.PeerSelection"
-  [ testGroup "generators"
+  [ {-testGroup "generators"
     [ testProperty "arbitrary for PeerSelectionTargets"    prop_arbitrary_PeerSelectionTargets
     , testProperty "shrink for PeerSelectionTargets"       prop_shrink_PeerSelectionTargets
     , testProperty "arbitrary for PeerGraph"               prop_arbitrary_PeerGraph
@@ -56,9 +57,10 @@ tests =
     , testProperty "arbitrary for GovernorMockEnvironment" prop_arbitrary_GovernorMockEnvironment
     , localOption (QuickCheckMaxSize 30) $
       testProperty "shrink for GovernorMockEnvironment"    prop_shrink_GovernorMockEnvironment
-    ]
-  , testProperty "governor no livelock"        prop_governor_nolivelock
-  , testProperty "governor reachable in 1hr"   prop_governor_reachable_1hr
+    ]-}
+  --, testProperty "governor no livelock"        prop_governor_nolivelock
+  --, testProperty "governor reachable in 1hr"   prop_governor_reachable_1hr
+   testProperty "governor reachable in 1hr"   prop_governor_reachable_1hr_gource
   ]
 
 
@@ -358,6 +360,55 @@ prop_governor_reachable_1hr env@GovernorMockEnvironment{
                        (Map.keysSet localRootPeers <> publicRootPeers)
      in subsetProperty    found reachable
    .&&. bigEnoughProperty found reachable
+  where
+    knownPeersAfter1Hour trace =
+      listToMaybe
+        [ Map.keysSet (KnownPeers.toMap (Governor.knownPeers st))
+        | (_, TraceGovernorLoopDebug st _) <- reverse (takeFirstNHours 1 trace) ]
+
+    -- The ones we find should be a subset of the ones possible to find
+    subsetProperty found reachable =
+      counterexample ("reachable: " ++ show reachable ++ "\n" ++
+                      "found:     " ++ show found) $
+      property (found `Set.isSubsetOf` reachable)
+
+    -- We expect to find enough of them, either the target number or the
+    -- maximum reachable.
+    bigEnoughProperty found reachable
+        -- But there's an awkward corner case: if the number of public roots
+        -- available is bigger than the target then we will likely not get
+        -- all the roots (but which subset we get is random), but if we don't
+        -- get all the roots then the set of peers actually reachable is
+        -- incomplete, so we cannot expect to reach the usual target.
+        --
+        -- But we can at least expect to hit the target for root peers.
+      | Set.size publicRootPeers > targetNumberOfRootPeers targets
+      = property (Set.size found >= targetNumberOfRootPeers targets)
+
+      | otherwise
+      = counterexample ("reachable : " ++ show reachable ++ "\n" ++
+                        "found     : " ++ show found ++ "\n" ++
+                        "found #   : " ++ show (Set.size found) ++ "\n" ++
+                        "expected #: " ++ show expected) $
+        property (Set.size found == expected)
+      where
+        expected = Set.size reachable `min` targetNumberOfKnownPeers targets
+
+prop_governor_reachable_1hr_gource :: GovernorMockEnvironment -> Property
+prop_governor_reachable_1hr_gource env@GovernorMockEnvironment{
+                              peerGraph,
+                              localRootPeers,
+                              publicRootPeers,
+                              targets
+                            } = ioProperty $ do
+    let trace      = selectPeerSelectionTraceEvents $
+                       runGovernorInMockEnvironment env
+        Just found = knownPeersAfter1Hour trace
+        reachable  = firstGossipReachablePeers peerGraph
+                       (Map.keysSet localRootPeers <> publicRootPeers)
+    mapM_ (\e -> printf "%s\n" (show e)) $ takeFirstNHours 1 trace
+
+    return True
   where
     knownPeersAfter1Hour trace =
       listToMaybe
