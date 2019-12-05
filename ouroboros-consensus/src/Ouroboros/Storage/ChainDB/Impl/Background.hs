@@ -307,7 +307,7 @@ gcScheduleRunner (GcSchedule queue) runGc = forever $ do
     (timeScheduledForGC, slotNo) <- atomically $ readTQueue queue
     currentTime <- getMonotonicTime
     let toWait = max 0 (timeScheduledForGC `diffTime` currentTime)
-    threadDelay 600000
+    threadDelay toWait
     -- Garbage collection is called synchronously
     runGc slotNo
 
@@ -333,7 +333,7 @@ updateLedgerSnapshotsRunner cdb@CDB{..} = loop
 
     waitInterval = do
       interval <- atomically onDiskWriteInterval
-      threadDelay 600000
+      threadDelay interval
 
 {-------------------------------------------------------------------------------
   Executing scheduled chain selections

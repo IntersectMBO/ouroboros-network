@@ -195,7 +195,7 @@ blockGenerator slotDuration chain = do
   go var mslot (b : bs) = do
     let slot  = blockSlot b
         delay = unSlotNo slot - maybe 0 unSlotNo mslot
-    threadDelay (slotDuration * fromIntegral delay)
+    threadDelay 600000
     atomically (writeTBQueue var (Just b))
     go var (Just slot) bs
 
