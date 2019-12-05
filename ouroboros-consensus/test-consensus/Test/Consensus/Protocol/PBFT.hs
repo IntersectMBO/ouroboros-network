@@ -1,11 +1,17 @@
+{-# LANGUAGE BangPatterns        #-}
+{-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE ViewPatterns        #-}
 module Test.Consensus.Protocol.PBFT (
     tests
     -- * Used in the roundtrip tests
   , TestChainState(..)
   ) where
 
+import           Data.Coerce (coerce)
+import qualified Data.Map.Strict as Map
+import           Data.Maybe (listToMaybe)
 import qualified Data.Sequence.Strict as Seq
 import           Data.Word
 
@@ -18,7 +24,7 @@ import           Ouroboros.Network.Block (SlotNo (..))
 import           Ouroboros.Network.Point (WithOrigin (..))
 
 import           Ouroboros.Consensus.Protocol.Abstract
-import           Ouroboros.Consensus.Protocol.PBFT.ChainState (PBftChainState)
+import           Ouroboros.Consensus.Protocol.PBFT.ChainState (EbbMap (..), PBftChainState)
 import qualified Ouroboros.Consensus.Protocol.PBFT.ChainState as CS
 import           Ouroboros.Consensus.Protocol.PBFT.Crypto
 import           Ouroboros.Consensus.Util (dropLast, repeatedly, takeLast)
@@ -54,19 +60,24 @@ data TestChainState = TestChainState {
       -- #1307: this state does not include the @n@ pre-anchor signatures.
     , testChainOldState       :: PBftChainState PBftMockCrypto
 
-      -- | The slots that were dropped (rollback before this chain state)
-    , testChainDropped        :: [CS.PBftSigner PBftMockCrypto]
+      -- | The slots that were kept (i.e., not rolled back to create
+      -- 'testChainState')
+    , testChainKeptInputs     :: Inputs PBftMockCrypto
 
-      -- | Possible next signers that can be added
+      -- | The slots that were dropped (rolled back to create 'testChainState')
+    , testChainDroppedInputs  :: Inputs PBftMockCrypto
+
+      -- | Possible next inputs that can be added to 'testChainState' and to
+      -- 'testChainOldState'
       --
       -- INVARIANT: the length of this list will be @n + k@.
-    , testChainNextSigners    :: [CS.PBftSigner PBftMockCrypto]
+    , testChainNextInputs     :: Inputs PBftMockCrypto
 
-      -- | Possible next rollback
+      -- | Possible next rollback from 'testChainState'
     , testChainRollback       :: WithOrigin SlotNo
 
-      -- | The blocks that 'testChainRollback' would roll back
-    , testChainRollbackBlocks :: [CS.PBftSigner PBftMockCrypto]
+      -- | The inputs that 'testChainRollback' would roll back
+    , testChainRollbackInputs :: Inputs PBftMockCrypto
     }
   deriving (Show)
 
@@ -87,88 +98,143 @@ instance Arbitrary TestChainState where
       n       <- choose (1, 10)
       numKeys <- choose (1, 4)
 
-      -- Pick number of slots
+      -- Pick number of signed slots
       --
       -- We don't try to be too clever here; we need to test the various edge
       -- cases near genesis more carefully, but also want to test where we are
       -- well past genesis
-      numSlots <- oneof [
+      numSigners <- oneof [
           choose (0, k)
         , choose (0, n)
         , choose (0, k + n)
         , choose (0, 5 * (k + n))
         ]
 
-      -- Generate all the signatures
-      slots <- generateSigners (genMockKey numKeys) numSlots Origin
+      let getFirstInputSlot = SlotNo <$> choose (0, 3)
 
-      -- Compute max rollback point
-      let anchor = case drop (fromIntegral k) (reverse slots) of
-                     []  -> Origin
-                     x:_ -> At (CS.pbftSignerSlotNo x)
+      -- Generate all the inputs
+      inputs <- getFirstInputSlot >>= generateInputs (genMockKey numKeys) numSigners . GenerateInputsState Origin
 
-      -- Pick a number of blocks to drop
-      toDrop <- choose (0, k)
-      let signers = Seq.fromList $ takeLast (n + k - toDrop) (dropLast toDrop slots)
-          state   = CS.fromList
+      -- The chain state after appending all inputs to the empty chain state
+      let _X = appendInputs
+                 (SecurityParam k)
+                 (CS.WindowSize n)
+                 inputs
+                 CS.empty
+
+          -- The suffix of inputs we could \"undo\" from _X without violating k
+      let droppableInputs = takeLastSigners k inputs
+      let maxDrop = lengthInputs droppableInputs
+
+          -- The earliest slot to which we could rewind _X, as limited by k (it
+          -- is necessarily a signed slot)
+          anchor = case safeLastSigner (dropLastInputs maxDrop inputs) of
+                     Nothing -> Origin
+                     Just x  -> At (CS.pbftSignerSlotNo x)
+
+      -- Pick a number of inputs to drop; they'll include at most k signers
+      toDrop <- choose (0, maxDrop)
+
+      let (originalKept, originalDropped) = splitAtLastInputs toDrop inputs
+
+      -- Directly compute the state equivalent to rewinding _X enough to drop
+      -- @toDrop@ many inputs
+      let newInputs = dropLastInputs toDrop $ takeLastSigners (n + k) inputs
+          newState  = fromInputs
+                        (SecurityParam k)
+                        (CS.WindowSize n)
+                        (anchor, newInputs)
+
+      -- Directly compute the analogous state that we would have deserialised
+      -- before #1307: this state does not include the @k@ extra signatures
+      -- before the window.
+      let oldInputs = dropLastInputs toDrop $ takeLastSigners n inputs
+          oldState = fromInputs
                       (SecurityParam k)
                       (CS.WindowSize n)
-                      (anchor, signers)
+                      (anchor, oldInputs)
 
-      -- Compute the state that we would have deserialised before #1307: this
-      -- state does not include the @k@ extra signatures before the window.
-      let oldSigners = Seq.fromList $ takeLast (n - toDrop) (dropLast toDrop slots)
-          oldState = CS.fromList
-                      (SecurityParam k)
-                      (CS.WindowSize n)
-                      (anchor, oldSigners)
-
-      -- Create potential next @k@ signers to be added
-      let lastSlot = case signers of
-                       -- Can only be empty if near genesis, because @toDrop@ is
-                       -- at most @k@ and hence @signers@ must be at least @n@
-                       -- long, unless @slots@ is near genesis.
-                       Seq.Empty                   -> Origin
-                       _ Seq.:|> CS.PBftSigner s _ -> At s
-      nextSigners <- generateSigners (genMockKey numKeys) (n + k) lastSlot
+      -- Create potential next @n + k@ signers to be added
+      resumeInputGenState <- case reverse $ unInputs $ originalKept of
+          []                   -> GenerateInputsState Origin <$> getFirstInputSlot
+          InputEBB prev slot:_ -> pure $ GenerateInputsState prev slot
+          InputSigner x:_      -> pure $ GenerateInputsState (At s) (succ s)
+            where
+              s = CS.pbftSignerSlotNo x
+      nextInputs <- generateInputs (genMockKey numKeys) (n + k) resumeInputGenState
 
       -- Create potential rollback
-      numRollback <- oneof [
-          choose (0, k - toDrop) -- rollback that will succeed
-        , choose (0, numSlots)   -- rollback that might fail (too far)
+      toDrop2 <- oneof [
+          choose (0, maxDrop - toDrop) -- rollback that will succeed
+        , choose (0, lengthInputs inputs) -- rollback that might fail (too far)
         ]
-      let rollback = case drop (fromIntegral (toDrop + numRollback)) (reverse slots) of
-                       []  -> Origin
-                       x:_ -> At (CS.pbftSignerSlotNo x)
+
+      let rollback = case reverse $ slotInputs $ dropLastInputs toDrop2 originalKept of
+                       []     -> Origin
+                       slot:_ -> At slot
 
       return TestChainState {
           testChainStateK         = SecurityParam k
         , testChainStateN         = CS.WindowSize n
         , testChainStateNumKeys   = numKeys
-        , testChainState          = state
+        , testChainState          = newState
         , testChainOldState       = oldState
-        , testChainDropped        = takeLast toDrop slots
-        , testChainNextSigners    = nextSigners
+        , testChainKeptInputs     = originalKept
+        , testChainDroppedInputs  = originalDropped
+        , testChainNextInputs     = nextInputs
         , testChainRollback       = rollback
-        , testChainRollbackBlocks = takeLast numRollback (dropLast toDrop slots)
+        , testChainRollbackInputs =
+            dropWhileNotAfterInputs rollback $  -- If we rolled back to a slot
+                                                -- that had both an EBB and a
+                                                -- signer, then we must ensure
+                                                -- the signer is not in
+                                                -- testChainRollbackInputs
+            takeLastInputs toDrop2 originalKept
         }
 
-generateSigners :: Gen (PBftVerKeyHash c)
-                -> Word64
-                -> WithOrigin SlotNo
-                -> Gen [CS.PBftSigner c]
-generateSigners genKey = go
+data GenerateInputsState = GenerateInputsState !(WithOrigin SlotNo) !SlotNo
+     -- ^ (slot of latest signature, slot of next input)
+
+-- | The output contains the specified number of 'InputSigner's and also some
+-- additional 'InputEBB's
+generateInputs ::
+  forall c.
+     Gen (PBftVerKeyHash c)
+  -> Word64
+  -> GenerateInputsState
+  -> Gen (Inputs c)
+     -- ^ inputs, slot of latest signature, slot of next input
+generateInputs genKey = go
   where
-    go 0        _    = return []
-    go numSlots prev = do
-      slot :: SlotNo <- case prev of
-                          Origin ->
-                            SlotNo <$> choose (0, 3)
-                          At (SlotNo s) -> do
-                            skip <- choose (1, 3)
-                            return $ SlotNo (s + skip)
-      signer <- CS.PBftSigner slot <$> genKey
-      (signer :) <$> go (numSlots - 1) (At slot)
+    plus slot w = slot + SlotNo w
+    advance slot = plus slot <$> choose (0, 3)
+
+    go :: Word64 -> GenerateInputsState -> Gen (Inputs c)
+    go 0 _                               = return (Inputs [])
+    go n (GenerateInputsState prev slot) = do
+      let genEBB = do
+            pure
+              ( n
+              , prev
+                -- an EBB's successor may have the same slot
+              , advance (slot + 1)
+                -- an EBB never has the same slot as its predecessor
+              , InputEBB prev (slot + 1)
+              )
+          genSigner = do
+            key <- genKey
+            pure
+              ( n - 1
+              , At slot
+                -- an non-EBB's successor cannot have the same slot
+              , advance (slot + 1)
+                -- an non-EBB may have the same slot as its predecessor
+              , InputSigner (CS.PBftSigner slot key)
+              )
+
+      (n', prev', genSlot', inp) <- frequency [(1, genEBB), (9, genSigner)]
+      slot' <- genSlot'
+      (\inps -> (inp:) `coerce` inps) <$> go n' (GenerateInputsState prev' slot')
 
 genMockKey :: Int -> Gen (VerKeyDSIGN MockDSIGN)
 genMockKey numKeys = VerKeyMockDSIGN <$> choose (1, numKeys)
@@ -233,7 +299,7 @@ prop_appendPreservesInvariant TestChainState{..} =
     let state' = CS.append
                    testChainStateK
                    testChainStateN
-                   (head testChainNextSigners)
+                   (headSigner testChainNextInputs)
                    testChainState
     in Right () === CS.invariant
                       testChainStateK
@@ -267,10 +333,11 @@ prop_rewindReappendId TestChainState{..} =
     in case rewound of
          Nothing     -> label "rollback too far in the past" True
          Just state' -> label "rollback succeeded" $
-           testChainState === CS.appendMany
+           counterexample ("Rewound: " <> show state') $
+           testChainState === appendInputs
                                 testChainStateK
                                 testChainStateN
-                                testChainRollbackBlocks
+                                testChainRollbackInputs
                                 state'
 
 -- This property holds for the old chain state too
@@ -279,7 +346,7 @@ prop_appendOldStatePreservesInvariant TestChainState{..} =
     let state' = CS.append
                    testChainStateK
                    testChainStateN
-                   (head testChainNextSigners)
+                   (headSigner testChainNextInputs)
                    testChainOldState
     in Right () === CS.invariant
                       testChainStateK
@@ -287,18 +354,17 @@ prop_appendOldStatePreservesInvariant TestChainState{..} =
                       state'
 
 -- | After appending the missing signatures, we should have a 'CS.preWindow'
--- of @k again.
+-- of @k@ again.
 prop_appendOldStateRestoresPreWindow :: TestChainState -> Property
 prop_appendOldStateRestoresPreWindow TestChainState{..} =
     let missing = fromIntegral
                 $ maxRollbacks       testChainStateK
                 + CS.getWindowSize   testChainStateN
                 - CS.countSignatures testChainOldState
-        state' = repeatedly
-                   (CS.append
-                     testChainStateK
-                     testChainStateN)
-                   (take missing testChainNextSigners)
+        state' = appendInputs
+                   testChainStateK
+                   testChainStateN
+                   (takeSigners missing testChainNextInputs)
                    testChainOldState
     in Right () === CS.invariant
                       testChainStateK
@@ -306,6 +372,112 @@ prop_appendOldStateRestoresPreWindow TestChainState{..} =
                       state'
        .&&.
        size (CS.preWindow state') === maxRollbacks testChainStateK
+
+{-------------------------------------------------------------------------------
+  ChainState "Inputs"
+-------------------------------------------------------------------------------}
+
+data Input c
+  = InputEBB !(WithOrigin SlotNo) !SlotNo
+    -- ^ the preceding signed slot, the EBB's slot
+  | InputSigner !(CS.PBftSigner c)
+  deriving (Eq, Show)
+
+newtype Inputs c = Inputs {unInputs :: [Input c]}
+  deriving (Eq, Show)
+
+signatureInputs :: Inputs c -> [CS.PBftSigner c]
+signatureInputs (Inputs inps) = [ signer | InputSigner signer <- inps ]
+
+ebbInputs :: Inputs c -> [(WithOrigin SlotNo, SlotNo)]
+ebbInputs (Inputs inps) = [ (prev, slot) | InputEBB prev slot <- inps ]
+
+slotInput :: Input c -> SlotNo
+slotInput = \case
+  InputEBB _ slot -> slot
+  InputSigner   x -> CS.pbftSignerSlotNo x
+
+slotInputs :: Inputs c -> [SlotNo]
+slotInputs = map slotInput . unInputs
+
+lengthInputs :: Num a => Inputs c -> a
+lengthInputs = fromIntegral . length . unInputs
+
+headSigner :: Inputs c -> CS.PBftSigner c
+headSigner = head . signatureInputs
+
+safeLastSigner :: Inputs c -> Maybe (CS.PBftSigner c)
+safeLastSigner = listToMaybe . reverse . signatureInputs
+
+appendInput ::
+     PBftCrypto c
+  => SecurityParam
+  -> CS.WindowSize
+  -> Input c
+  -> CS.PBftChainState c -> CS.PBftChainState c
+appendInput k n = \case
+  InputEBB _ slot    -> CS.appendEBB k n slot
+  InputSigner signer -> CS.append k n signer
+
+appendInputs ::
+     PBftCrypto c
+  => SecurityParam
+  -> CS.WindowSize
+  -> Inputs c
+  -> CS.PBftChainState c -> CS.PBftChainState c
+appendInputs k n = repeatedly (appendInput k n) . unInputs
+
+-- | May include EBBs before the first signer and after the last signer
+takeSigners :: Word64 -> Inputs c -> Inputs c
+takeSigners = \n0 -> Inputs . go n0 . unInputs
+  where
+    go !n = \case
+      [] -> []
+      inp:inps -> case inp of
+        InputEBB{}    -> inp : go n inps
+        InputSigner{}
+          | n == 0    -> []
+          | otherwise -> inp : go (n - 1) inps
+
+-- | May include EBBs after the last signer *BUT* *NOT* before the first signer
+takeLastSigners :: Word64 -> Inputs c -> Inputs c
+takeLastSigners = \n0 -> Inputs . reverse . go n0 . reverse . unInputs
+  where
+    go 0 = const []
+    go n = \case
+      []       -> []
+      inp:inps -> inp : go n' inps
+        where
+          n' = case inp of
+            InputEBB{}    -> n
+            InputSigner{} -> n - 1
+
+-- | Wrapper around 'CS.fromList' that also sets the 'ebbs' field
+fromInputs ::
+     PBftCrypto c
+  => SecurityParam
+  -> CS.WindowSize
+  -> (WithOrigin SlotNo, Inputs c)
+  -> CS.PBftChainState c
+fromInputs k n (anchor, inputs) =
+    CS.fromList k n (anchor, Seq.fromList $ signatureInputs inputs, EbbMap m)
+  where
+    m = Map.fromList [ (slot, mSlot) | (mSlot, slot) <- ebbInputs inputs ]
+
+splitAtLastInputs :: Word64 -> Inputs c -> (Inputs c, Inputs c)
+splitAtLastInputs n (Inputs inps) = (Inputs l, Inputs r)
+  where
+    (l, r) = splitAt (length inps - fromIntegral n) inps
+
+dropLastInputs :: Word64 -> Inputs c -> Inputs c
+dropLastInputs n = Inputs . dropLast (fromIntegral n) . unInputs
+
+dropWhileNotAfterInputs :: WithOrigin SlotNo -> Inputs c -> Inputs c
+dropWhileNotAfterInputs mSlot =
+  Inputs . dropWhile ((<= mSlot) . At . slotInput) . unInputs
+
+takeLastInputs :: Word64 -> Inputs c -> Inputs c
+takeLastInputs n = Inputs . takeLast (fromIntegral n) . unInputs
 
 {-------------------------------------------------------------------------------
   Auxiliary
