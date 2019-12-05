@@ -166,7 +166,7 @@ newTestBlockchainTime registry (NumSlots numSlots) slotLen = do
           atomically $ modifyTVar slotVar $ Running . \case
             Initializing -> SlotNo 0
             Running slot -> succ slot
-          threadDelay slotLen
+          threadDelay 6000000
         -- signal the end of the final slot
         putMVar doneVar ()
 
@@ -286,5 +286,5 @@ waitUntilNextSlotIO :: IOLike m => SlotLength -> SystemStart -> m SlotNo
 waitUntilNextSlotIO slotLen start = do
     now <- getCurrentTime
     let (delay, nextSlot) = timeUntilNextSlot slotLen start now
-    threadDelay ((realToFrac :: NominalDiffTime -> DiffTime) delay)
+    threadDelay 600000
     return nextSlot
