@@ -154,7 +154,7 @@ instance MonadTimer IO where
       (_, True)  -> return TimeoutFired
 
   newTimeout d = do
-    timeoutvar    <- STM.registerDelay (diffTimeToMicrosecondsAsInt d)
+    timeoutvar    <- STM.registerDelay 300 --(diffTimeToMicrosecondsAsInt d)
     timeoutvarvar <- STM.newTVarIO timeoutvar
     cancelvar     <- STM.newTVarIO False
     return (TimeoutIO timeoutvarvar cancelvar)
