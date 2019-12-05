@@ -169,7 +169,7 @@ instance MonadTimer IO where
       when (not fired) $ STM.writeTVar cancelvar True
 #endif
 
-  threadDelay d = IO.threadDelay 90000000 --(diffTimeToMicrosecondsAsInt d)
+  threadDelay d = IO.threadDelay (diffTimeToMicrosecondsAsInt d)
 
   registerDelay = STM.registerDelay . diffTimeToMicrosecondsAsInt
 

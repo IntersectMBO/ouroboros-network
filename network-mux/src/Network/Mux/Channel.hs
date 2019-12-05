@@ -215,7 +215,7 @@ delayChannel :: ( MonadSTM m
              -> Channel m
              -> Channel m
 delayChannel delay = channelEffect (\_ -> return ())
-                                   (\_ -> threadDelay delay)
+                                   (\_ -> threadDelay 600000)
 
 -- | Channel which logs sent and received messages.
 --
