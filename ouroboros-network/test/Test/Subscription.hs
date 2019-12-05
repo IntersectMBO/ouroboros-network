@@ -141,12 +141,12 @@ mockResolver lr = Resolver lA lAAAA
    where
     lA :: DNS.Domain -> m (Either DNS.DNSError [Socket.SockAddr])
     lA    _ = do
-        threadDelay (lrIpv4Delay lr)
+        threadDelay 300
         return $ lrIpv4Result lr
 
     lAAAA :: DNS.Domain -> m (Either DNS.DNSError [Socket.SockAddr])
     lAAAA _ = do
-        threadDelay (lrIpv6Delay lr)
+        threadDelay 300
         return $ lrIpv6Result lr
 
 mockResolverIO :: StrictTMVar IO ()
@@ -178,7 +178,7 @@ mockResolverIO firstDoneMVar portMap lr = Resolver lA lAAAA
     lAAAA _ = do
         when (lrioFirst lr == Socket.AF_INET) $ do
             void $ atomically $ takeTMVar firstDoneMVar
-            threadDelay $ 0.1 + resolutionDelay
+            threadDelay $ 0.1 + 300
         let r = case lrioIpv6Result lr of
                      (Right sids) -> Right $ map (\sid ->
                          Socket.SockAddrInet6 (fromIntegral $ sidToPort (Socket.AF_INET6, sid)) 0
@@ -355,7 +355,7 @@ prop_resolv lr =  do
         target_m <- getSubscriptionTarget targets
         case target_m of
              Just (addr, nextTargets) -> do
-                 threadDelay (connectionRtt lr)
+                 threadDelay 300
                  extractResult nextTargets (addr:addrs)
              Nothing -> return $ reverse addrs
 
@@ -820,7 +820,7 @@ _demo = ioProperty $ do
             (simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData $ NetworkMagic 0)
                 (DictVersion nodeToNodeCodecCBORTerm) appRsp)
             nullErrorPolicies
-            (\_ _ -> threadDelay delay)
+            (\_ _ -> threadDelay 300)
 
 
     appReq = OuroborosInitiatorApplication (\_ ChainSyncPr -> error "req fail")
@@ -857,5 +857,3 @@ instance (Show a) => Show (WithTag a) where
 
 tagTrace :: String -> Tracer IO (WithTag a) -> Tracer IO a
 tagTrace tag tr = Tracer $ \s -> traceWith tr $ WithTag tag s
-
-
