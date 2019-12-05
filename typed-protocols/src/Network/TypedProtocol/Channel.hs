@@ -109,7 +109,7 @@ fixedInputChannel xs0 = do
 mvarsAsChannel :: MonadSTM m
                => TMVar m a
                -> TMVar m a
-               -> Channel m a 
+               -> Channel m a
 mvarsAsChannel bufferRead bufferWrite =
     Channel{send, recv}
   where
@@ -222,7 +222,7 @@ handlesAsChannel hndRead hndWrite =
 -- | Transform a channel to add an extra action before /every/ send and after
 -- /every/ receive.
 --
-channelEffect :: forall m a. 
+channelEffect :: forall m a.
                  Monad m
               => (a -> m ())        -- ^ Action before 'send'
               -> (Maybe a -> m ())  -- ^ Action after 'recv'
@@ -252,7 +252,7 @@ delayChannel :: ( MonadSTM m
              -> Channel m a
              -> Channel m a
 delayChannel delay = channelEffect (\_ -> return ())
-                                   (\_ -> threadDelay delay)
+                                   (\_ -> threadDelay 300)
 
 
 -- | Channel which logs sent and received messages.
