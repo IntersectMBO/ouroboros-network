@@ -275,7 +275,7 @@ cleanPeerStates :: ( MonadSTM   m
 cleanPeerStates interval v = go
   where
     go = do
-      threadDelay interval
+      threadDelay 60000
       t <- getMonotonicTime
       continue <- atomically $ do
         s <- readTVar v
