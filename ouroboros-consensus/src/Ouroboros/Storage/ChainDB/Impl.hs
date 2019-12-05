@@ -125,7 +125,8 @@ openDBInternal args launchBgTasks = do
     varChain          <- newTVarM chain
     varImmBlockNo     <- newTVarM immBlockNo
     varIterators      <- newTVarM Map.empty
-    varReaders        <- newTVarM Map.empty
+    varBlockReaders   <- newTVarM Map.empty
+    varHeaderReaders  <- newTVarM Map.empty
     varNextIteratorId <- newTVarM (IteratorId 0)
     varNextReaderId   <- newTVarM 0
     varCopyLock       <- newMVar  ()
@@ -138,7 +139,8 @@ openDBInternal args launchBgTasks = do
                   , cdbChain          = varChain
                   , cdbImmBlockNo     = varImmBlockNo
                   , cdbIterators      = varIterators
-                  , cdbReaders        = varReaders
+                  , cdbBlockReaders   = varBlockReaders
+                  , cdbHeaderReaders  = varHeaderReaders
                   , cdbNodeConfig     = cfg
                   , cdbInvalid        = varInvalid
                   , cdbNextIteratorId = varNextIteratorId
@@ -167,8 +169,8 @@ openDBInternal args launchBgTasks = do
           , getIsFetched       = getEnvSTM  h Query.getIsFetched
           , getMaxSlotNo       = getEnvSTM  h Query.getMaxSlotNo
           , streamBlocks       = Iterator.streamBlocks  h
-          , newHeaderReader    = Reader.newHeaderReader h
-          , newBlockReader     = Reader.newBlockReader  h
+          , newHeaderReader    = Reader.newReader h Header
+          , newBlockReader     = Reader.newReader h Block
           , getIsInvalidBlock  = getEnvSTM  h Query.getIsInvalidBlock
           , closeDB            = Reopen.closeDB h
           , isOpen             = Reopen.isOpen  h

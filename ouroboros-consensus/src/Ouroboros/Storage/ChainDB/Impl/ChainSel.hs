@@ -516,8 +516,11 @@ chainSelectionForBlock cdb@CDB{..} hdr = do
               -- 'Reader.switchFork' needs to know the intersection point
               -- (@ipoint@) between the old and the current chain.
               let ipoint = castPoint $ AF.anchorPoint newChainSuffix
-              varReaders <- Map.elems <$> readTVar cdbReaders
-              forM_ varReaders $ \varReader -> modifyTVar varReader $
+              varBlockReaders <- Map.elems <$> readTVar cdbBlockReaders
+              forM_ varBlockReaders $ \varBlockReader -> modifyTVar varBlockReader $
+                Reader.switchFork ipoint newChain'
+              varHeaderReaders <- Map.elems <$> readTVar cdbHeaderReaders
+              forM_ varHeaderReaders $ \varHeaderReader -> modifyTVar varHeaderReader $
                 Reader.switchFork ipoint newChain'
 
               return (curChain, True)

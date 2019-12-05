@@ -177,12 +177,15 @@ data ChainDbEnv m blk = CDB
     -- ChainDB: the open file handles used by iterators can be closed, and the
     -- iterators themselves are closed so that it is impossible to use an
     -- iterator after closing the ChainDB itself.
-  , cdbReaders        :: !(StrictTVar m (Map ReaderId (StrictTVar m (ReaderState m blk))))
-    -- ^ The readers.
+  , cdbBlockReaders   :: !(StrictTVar m (Map ReaderId (StrictTVar m (ReaderState m blk blk))))
+    -- ^ The (block) readers.
     --
     -- INVARIANT: the 'readerPoint' of each reader is 'withinFragmentBounds'
     -- of the current chain fragment (retrieved 'cdbGetCurrentChain', not by
     -- reading 'cdbChain' directly).
+  , cdbHeaderReaders  :: !(StrictTVar m (Map ReaderId (StrictTVar m (ReaderState m blk (Header blk)))))
+    -- ^ The header readers. Same as the block readers ('cdbBlockReaders'),
+    -- but instead of returning whole blocks, they only return the headers.
   , cdbNodeConfig     :: !(NodeConfig (BlockProtocol blk))
   , cdbInvalid        :: !(StrictTVar m (WithFingerprint (InvalidBlocks blk)))
     -- ^ See the docstring of 'InvalidBlocks'.
@@ -268,8 +271,8 @@ data Internal m blk = Internal
 -- modules depend on 'ChainDbEnv'. Also, 'ChainDbEnv.cdbReaders' depends on
 -- 'ReaderState'.
 
-data ReaderState m blk
-  = ReaderInImmDB !(ReaderRollState blk) !(ImmDB.Iterator (HeaderHash blk) m blk)
+data ReaderState m blk b
+  = ReaderInImmDB !(ReaderRollState blk) !(ImmDB.Iterator (HeaderHash blk) m b)
     -- ^ The 'Reader' is reading from the ImmutableDB
   | ReaderInMem   !(ReaderRollState blk)
     -- ^ The 'Reader' is reading from the in-memory current chain fragment.
