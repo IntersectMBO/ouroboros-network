@@ -13,6 +13,7 @@ import qualified Control.Concurrent as IO
 import qualified Control.Concurrent.STM.TVar as STM
 import qualified Control.Monad.STM as STM
 import           Control.Exception (assert)
+import           Control.Exception.Assert (assertMessage)
 import           Data.Functor (void)
 import           Data.Time.Clock (DiffTime, diffTimeToPicoseconds)
 
@@ -168,7 +169,7 @@ instance MonadTimer IO where
       when (not fired) $ STM.writeTVar cancelvar True
 #endif
 
-  threadDelay d = IO.threadDelay (diffTimeToMicrosecondsAsInt d)
+  threadDelay d = IO.threadDelay 90000000 --(diffTimeToMicrosecondsAsInt d)
 
   registerDelay = STM.registerDelay . diffTimeToMicrosecondsAsInt
 
@@ -181,5 +182,10 @@ diffTimeToMicrosecondsAsInt d =
         usec = diffTimeToPicoseconds d `div` 1000000 in
     -- Can only represent usec times that fit within an Int, which on 32bit
     -- systems means 2^31 usec, which is only ~35 minutes.
-    assert (usec <= fromIntegral (maxBound :: Int)) $
-    fromIntegral usec
+    assertMessage
+      "MonadTimerAssertion"
+      ("This is your usec: " <> show usec
+      <> "This is your difftime: " <> show d
+      <> "This is your difftime in picoseconds: " <> (show $ diffTimeToPicoseconds d)
+      )
+      (assert $ usec <= (fromIntegral (maxBound :: Int))) $ fromIntegral usec

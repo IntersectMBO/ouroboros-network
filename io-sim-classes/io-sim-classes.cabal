@@ -51,6 +51,7 @@ library
   build-depends:       base  >=4.9 && <4.13,
                        async >=2.1,
                        bytestring,
+                       assert,
                        mtl   >=2.2 && <2.3,
                        stm   >=2.4 && <2.6,
                        time  >=1.6 && <1.10
