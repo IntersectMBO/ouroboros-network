@@ -426,12 +426,11 @@ base our decision on include:
 
 data PeerSelectionPolicy peeraddr m = PeerSelectionPolicy {
 
-       --TODO: where do we decide how many to pick in one go?
        policyPickKnownPeersForGossip :: Map peeraddr KnownPeerInfo -> Int -> STM m (NonEmpty peeraddr),
---     policyPickColdPeersToPromote  :: Map peeraddr KnownPeerInfo -> Int -> STM m (NonEmpty peeraddr),
---     policyPickWarmPeersToPromote  :: Map peeraddr () -> Int -> STM m (NonEmpty peeraddr),
---     policyPickHotPeersToDemote    :: Map peeraddr () -> Int -> STM m (NonEmpty peeraddr),
---     policyPickWarmPeersToDemote   :: Map peeraddr () -> Int -> STM m (NonEmpty peeraddr),
+       policyPickColdPeersToPromote  :: Map peeraddr KnownPeerInfo -> Int -> STM m (NonEmpty peeraddr),
+       policyPickWarmPeersToPromote  :: Map peeraddr KnownPeerInfo -> Int -> STM m (NonEmpty peeraddr),
+       policyPickHotPeersToDemote    :: Map peeraddr KnownPeerInfo -> Int -> STM m (NonEmpty peeraddr),
+       policyPickWarmPeersToDemote   :: Map peeraddr KnownPeerInfo -> Int -> STM m (NonEmpty peeraddr),
        policyPickColdPeersToForget   :: Map peeraddr KnownPeerInfo -> Int -> STM m (NonEmpty peeraddr),
 
        policyFindPublicRootTimeout   :: !DiffTime,
@@ -501,7 +500,7 @@ sanePeerSelectionTargets PeerSelectionTargets{..} =
 -- * choice of known peer root sets
 -- * running both in simulation and for real
 --
-data PeerSelectionActions peeraddr m = PeerSelectionActions {
+data PeerSelectionActions peeraddr peerconn m = PeerSelectionActions {
 
        readPeerSelectionTargets :: STM m PeerSelectionTargets,
 
@@ -530,17 +529,26 @@ data PeerSelectionActions peeraddr m = PeerSelectionActions {
        -- This is synchronous, but it should expect to be interrupted by a
        -- timeout asynchronous exception. Failures are throw as exceptions.
        --
-       requestPeerGossip :: peeraddr -> m [peeraddr]
+       requestPeerGossip :: peeraddr -> m [peeraddr],
 
+       establishPeerConnection  :: peeraddr -> m peerconn,
+       monitorPeerConnection    :: peerconn -> STM m PeerConnStatus,
+       activatePeerConnection   :: peerconn -> m (),
+       deactivatePeerConnection :: peerconn -> m (),
+       closePeerConnection      :: peerconn -> m ()
      }
 
+data PeerConnStatus =
+       PeerConnActive
+     | PeerConnEstablished
+     | PeerConnClosed
 
 -- | The internal state used by the 'peerSelectionGovernor'.
 --
 -- The local and public root sets are disjoint, and their union is the
 -- overall root set.
 --
-data PeerSelectionState peeraddr = PeerSelectionState {
+data PeerSelectionState peeraddr peerconn = PeerSelectionState {
 
        targets              :: !PeerSelectionTargets,
 
@@ -556,11 +564,11 @@ data PeerSelectionState peeraddr = PeerSelectionState {
 
        -- |
        --
-       establishedPeers     :: !(Map peeraddr ()),
+       establishedPeers     :: !(Map peeraddr peerconn),
 
        -- |
        --
-       activePeers          :: !(Map peeraddr ()),
+       activePeers          :: !(Map peeraddr peerconn),
 
        -- | A counter to manage the exponential backoff strategy for when to
        -- retry querying for more public root peers. It is negative for retry
@@ -588,7 +596,7 @@ data PeerSelectionState peeraddr = PeerSelectionState {
      }
   deriving Show
 
-emptyPeerSelectionState :: PeerSelectionState peeraddr
+emptyPeerSelectionState :: PeerSelectionState peeraddr peerconn
 emptyPeerSelectionState =
     PeerSelectionState {
       targets              = nullPeerSelectionTargets,
@@ -604,7 +612,7 @@ emptyPeerSelectionState =
     }
 
 invariantPeerSelectionState :: Ord peeraddr
-                            => PeerSelectionState peeraddr -> Bool
+                            => PeerSelectionState peeraddr peerconn -> Bool
 invariantPeerSelectionState PeerSelectionState{..} =
     KnownPeers.invariant knownPeers
 
@@ -648,8 +656,8 @@ invariantPeerSelectionState PeerSelectionState{..} =
 --
 peerSelectionGovernor :: (MonadAsync m, MonadMask m, MonadTime m, MonadTimer m,
                           Alternative (STM m), Ord peeraddr)
-                      => Tracer m (TracePeerSelection peeraddr)
-                      -> PeerSelectionActions peeraddr m
+                      => Tracer m (TracePeerSelection peeraddr peerconn)
+                      -> PeerSelectionActions peeraddr peerconn m
                       -> PeerSelectionPolicy  peeraddr m
                       -> m Void
 peerSelectionGovernor tracer actions policy =
@@ -675,15 +683,15 @@ peerSelectionGovernor tracer actions policy =
 -- In each case we trace the action, update the state and execute the
 -- action asynchronously.
 --
-peerSelectionGovernorLoop :: forall m peeraddr.
+peerSelectionGovernorLoop :: forall m peeraddr peerconn.
                              (MonadAsync m, MonadMask m,
                               MonadTime m, MonadTimer m,
                               Alternative (STM m), Ord peeraddr)
-                          => Tracer m (TracePeerSelection peeraddr)
-                          -> PeerSelectionActions peeraddr m
+                          => Tracer m (TracePeerSelection peeraddr peerconn)
+                          -> PeerSelectionActions peeraddr peerconn m
                           -> PeerSelectionPolicy  peeraddr m
-                          -> JobPool m (Completion m peeraddr)
-                          -> PeerSelectionState peeraddr
+                          -> JobPool m (Completion m peeraddr peerconn)
+                          -> PeerSelectionState peeraddr peerconn
                           -> m Void
 peerSelectionGovernorLoop tracer
                           actions@PeerSelectionActions{..}
@@ -691,7 +699,7 @@ peerSelectionGovernorLoop tracer
                           jobPool =
     loop
   where
-    loop :: PeerSelectionState peeraddr -> m Void
+    loop :: PeerSelectionState peeraddr peerconn -> m Void
     loop !st = assert (invariantPeerSelectionState st) $ do
       now <- getMonotonicTime
       let knownPeers' = KnownPeers.setCurrentTime now (knownPeers st)
@@ -707,8 +715,8 @@ peerSelectionGovernorLoop tracer
       loop decisionState
 
     evalGuardedDecisions :: Time
-                         -> PeerSelectionState peeraddr
-                         -> m (Decision m peeraddr)
+                         -> PeerSelectionState peeraddr peerconn
+                         -> m (Decision m peeraddr peerconn)
     evalGuardedDecisions now st =
       case guardedDecisions now st of
         GuardedSkip _ ->
@@ -729,8 +737,8 @@ peerSelectionGovernorLoop tracer
           return decision
 
     guardedDecisions :: Time
-                     -> PeerSelectionState peeraddr
-                     -> Guarded (STM m) (Decision m peeraddr)
+                     -> PeerSelectionState peeraddr peerconn
+                     -> Guarded (STM m) (Decision m peeraddr peerconn)
     guardedDecisions now st =
       -- All the alternative non-blocking internal decisions.
          rootPeersBelowTarget  actions        st now
@@ -768,21 +776,22 @@ instance Alternative m => Semigroup (Guarded m a) where
   GuardedSkip ta   <> GuardedSkip tb   = GuardedSkip (ta <> tb)
 
 
-data Decision m peeraddr = Decision {
+data Decision m peeraddr peerconn = Decision {
          -- | A trace event to classify the decision and action
-       decisionTrace :: TracePeerSelection peeraddr,
+       decisionTrace :: TracePeerSelection peeraddr peerconn,
 
          -- | An updated state to use immediately
-       decisionState :: PeerSelectionState peeraddr,
+       decisionState :: PeerSelectionState peeraddr peerconn,
 
        -- | An optional 'Job' to execute asynchronously. This job leads to
        -- a further 'Decision'. This gives a state update to apply upon
        -- completion, but also allows chaining further job actions.
        --
-       decisionEnact :: Maybe (Job m (Completion m peeraddr))
+       decisionEnact :: Maybe (Job m (Completion m peeraddr peerconn))
      }
 
-wakeupDecision :: PeerSelectionState peeraddr -> Decision m peeraddr
+wakeupDecision :: PeerSelectionState peeraddr peerconn
+               -> Decision m peeraddr peerconn
 wakeupDecision st =
   Decision {
     decisionTrace = TraceGovernorWakeup,
@@ -790,10 +799,11 @@ wakeupDecision st =
     decisionEnact = Nothing
   }
 
-newtype Completion m peeraddr =
-        Completion (PeerSelectionState peeraddr -> Time -> Decision m peeraddr)
+newtype Completion m peeraddr peerconn =
+        Completion (PeerSelectionState peeraddr peerconn
+                 -> Time -> Decision m peeraddr peerconn)
 
-data TracePeerSelection peeraddr =
+data TracePeerSelection peeraddr peerconn =
        TraceLocalRootPeersChanged (Map peeraddr PeerAdvertise)
                                   (Map peeraddr PeerAdvertise)
      | TraceTargetsChanged     PeerSelectionTargets PeerSelectionTargets
@@ -803,16 +813,16 @@ data TracePeerSelection peeraddr =
      | TraceGossipRequests     Int Int (Map peeraddr KnownPeerInfo) [peeraddr] -- target, actual, selected
      | TraceGossipResults      [(peeraddr, Either SomeException [peeraddr])] --TODO: classify failures
      | TraceForgetKnownPeers   Int Int [peeraddr] -- target, actual, selected
-     | TraceGovernorLoopDebug  (PeerSelectionState peeraddr) (Maybe DiffTime)
+     | TraceGovernorLoopDebug  (PeerSelectionState peeraddr peerconn) (Maybe DiffTime)
      | TraceGovernorWakeup
   deriving Show
 
 
 rootPeersBelowTarget :: (MonadSTM m, Ord peeraddr)
-                     => PeerSelectionActions peeraddr m
-                     -> PeerSelectionState peeraddr
+                     => PeerSelectionActions peeraddr peerconn m
+                     -> PeerSelectionState peeraddr peerconn
                      -> Time
-                     -> Guarded (STM m) (Decision m peeraddr)
+                     -> Guarded (STM m) (Decision m peeraddr peerconn)
 rootPeersBelowTarget actions
                      st@PeerSelectionState {
                        localRootPeers,
@@ -853,16 +863,16 @@ rootPeersBelowTarget actions
     numRootPeers      = Map.size localRootPeers + Set.size publicRootPeers
     maxExtraRootPeers = targetNumberOfRootPeers - numRootPeers
 
-publicRootPeersJob :: forall m peeraddr.
+publicRootPeersJob :: forall m peeraddr peerconn.
                       (Monad m, Ord peeraddr)
-                   => PeerSelectionActions peeraddr m
+                   => PeerSelectionActions peeraddr peerconn m
                    -> Int
-                   -> Job m (Completion m peeraddr)
+                   -> Job m (Completion m peeraddr peerconn)
 publicRootPeersJob PeerSelectionActions{requestPublicRootPeers}
                    numExtraAllowed =
     Job job handler
   where
-    handler :: SomeException -> Completion m peeraddr
+    handler :: SomeException -> Completion m peeraddr peerconn
     handler e =
       Completion $ \st now ->
       -- This is a failure, so move the backoff counter one in the failure
@@ -890,7 +900,7 @@ publicRootPeersJob PeerSelectionActions{requestPublicRootPeers}
             decisionEnact = Nothing
           }
 
-    job :: m (Completion m peeraddr)
+    job :: m (Completion m peeraddr peerconn)
     job = do
       (results, ttl) <- requestPublicRootPeers numExtraAllowed
       return $ Completion $ \st now ->
@@ -939,11 +949,11 @@ publicRootPeersJob PeerSelectionActions{requestPublicRootPeers}
 
 
 knownPeersBelowTarget :: (MonadAsync m, MonadTimer m, Ord peeraddr)
-                      => PeerSelectionActions peeraddr m
+                      => PeerSelectionActions peeraddr peerconn m
                       -> PeerSelectionPolicy peeraddr m
-                      -> PeerSelectionState peeraddr
+                      -> PeerSelectionState peeraddr peerconn
                       -> Time
-                      -> Guarded (STM m) (Decision m peeraddr)
+                      -> Guarded (STM m) (Decision m peeraddr peerconn)
 knownPeersBelowTarget actions
                       policy@PeerSelectionPolicy {
                         policyMaxInProgressGossipReqs,
@@ -1006,17 +1016,17 @@ knownPeersBelowTarget actions
     availableForGossip    = KnownPeers.availableForGossip knownPeers
 
 
-gossipsJob :: forall m peeraddr.
+gossipsJob :: forall m peeraddr peerconn.
               (MonadAsync m, MonadTimer m, Ord peeraddr)
-           => PeerSelectionActions peeraddr m
+           => PeerSelectionActions peeraddr peerconn m
            -> PeerSelectionPolicy peeraddr m
            -> [peeraddr]
-           -> Job m (Completion m peeraddr)
+           -> Job m (Completion m peeraddr peerconn)
 gossipsJob PeerSelectionActions{requestPeerGossip}
            PeerSelectionPolicy{..} =
     \peers -> Job (jobPhase1 peers) (handler peers)
   where
-    handler :: [peeraddr] -> SomeException -> Completion m peeraddr
+    handler :: [peeraddr] -> SomeException -> Completion m peeraddr peerconn
     handler peers e =
       Completion $ \st _ ->
       Decision {
@@ -1028,7 +1038,7 @@ gossipsJob PeerSelectionActions{requestPeerGossip}
         decisionEnact = Nothing
       }
 
-    jobPhase1 :: [peeraddr] -> m (Completion m peeraddr)
+    jobPhase1 :: [peeraddr] -> m (Completion m peeraddr peerconn)
     jobPhase1 peers = do
       -- In the typical case, where most requests return within a short
       -- timeout we want to collect all the responses into a batch and
@@ -1089,7 +1099,8 @@ gossipsJob PeerSelectionActions{requestPeerGossip}
                                        (handler peersRemaining)
           }
 
-    jobPhase2 :: [peeraddr] -> [Async m [peeraddr]] -> m (Completion m peeraddr)
+    jobPhase2 :: [peeraddr] -> [Async m [peeraddr]]
+              -> m (Completion m peeraddr peerconn)
     jobPhase2 peers gossips = do
 
       -- Wait again, for all remaining to finish or a timeout.
@@ -1134,8 +1145,8 @@ gossipsJob PeerSelectionActions{requestPeerGossip}
 
 knownPeersAboveTarget :: (MonadSTM m, Ord peeraddr)
                       => PeerSelectionPolicy peeraddr m
-                      -> PeerSelectionState peeraddr
-                      -> Guarded (STM m) (Decision m peeraddr)
+                      -> PeerSelectionState peeraddr peerconn
+                      -> Guarded (STM m) (Decision m peeraddr peerconn)
 knownPeersAboveTarget PeerSelectionPolicy {
                         policyPickColdPeersToForget
                       }
@@ -1198,34 +1209,34 @@ knownPeersAboveTarget PeerSelectionPolicy {
 
 
 establishedPeersBelowTarget :: PeerSelectionPolicy peeraddr m
-                            -> PeerSelectionState peeraddr
-                            -> Guarded (STM m) (Decision m peeraddr)
+                            -> PeerSelectionState peeraddr peerconn
+                            -> Guarded (STM m) (Decision m peeraddr peerconn)
 establishedPeersBelowTarget _ _ = GuardedSkip Nothing
 
 
 establishedPeersAboveTarget :: PeerSelectionPolicy peeraddr m
-                            -> PeerSelectionState peeraddr
-                            -> Guarded (STM m) (Decision m peeraddr)
+                            -> PeerSelectionState peeraddr peerconn
+                            -> Guarded (STM m) (Decision m peeraddr peerconn)
 establishedPeersAboveTarget _ _ = GuardedSkip Nothing
 
 
 activePeersBelowTarget :: PeerSelectionPolicy peeraddr m
-                       -> PeerSelectionState peeraddr
-                       -> Guarded (STM m) (Decision m peeraddr)
+                       -> PeerSelectionState peeraddr peerconn
+                       -> Guarded (STM m) (Decision m peeraddr peerconn)
 activePeersBelowTarget _ _ = GuardedSkip Nothing
 
 
 activePeersAboveTarget :: PeerSelectionPolicy peeraddr m
-                      -> PeerSelectionState peeraddr
-                       -> Guarded (STM m) (Decision m peeraddr)
+                      -> PeerSelectionState peeraddr peerconn
+                       -> Guarded (STM m) (Decision m peeraddr peerconn)
 activePeersAboveTarget _ _ = GuardedSkip Nothing
 
 
 
 changedLocalRootPeers :: (MonadSTM m, Ord peeraddr)
-                      => PeerSelectionActions peeraddr m
-                      -> PeerSelectionState peeraddr
-                      -> Guarded (STM m) (Decision m peeraddr)
+                      => PeerSelectionActions peeraddr peerconn m
+                      -> PeerSelectionState peeraddr peerconn
+                      -> Guarded (STM m) (Decision m peeraddr peerconn)
 changedLocalRootPeers PeerSelectionActions{readLocalRootPeers}
                       st@PeerSelectionState{
                         localRootPeers,
@@ -1259,9 +1270,9 @@ changedLocalRootPeers PeerSelectionActions{readLocalRootPeers}
 
 
 changedTargets :: MonadSTM m
-               => PeerSelectionActions peeraddr m
-               -> PeerSelectionState peeraddr
-               -> Guarded (STM m) (Decision m peeraddr)
+               => PeerSelectionActions peeraddr peerconn m
+               -> PeerSelectionState peeraddr peerconn
+               -> Guarded (STM m) (Decision m peeraddr peerconn)
 changedTargets PeerSelectionActions{readPeerSelectionTargets}
                st@PeerSelectionState{
                  localRootPeers,
@@ -1288,10 +1299,10 @@ changedTargets PeerSelectionActions{readPeerSelectionTargets}
 
 
 jobCompleted :: MonadSTM m
-             => JobPool m (Completion m peeraddr)
-             -> PeerSelectionState peeraddr
+             => JobPool m (Completion m peeraddr peerconn)
+             -> PeerSelectionState peeraddr peerconn
              -> Time
-             -> Guarded (STM m) (Decision m peeraddr)
+             -> Guarded (STM m) (Decision m peeraddr peerconn)
 jobCompleted jobPool st now =
     -- This case is simple because the job pool returns a 'Completion' which is
     -- just a function from the current state to a new 'Decision'.
@@ -1301,8 +1312,8 @@ jobCompleted jobPool st now =
 
 
 establishedConnectionFailed :: MonadSTM m
-                            => PeerSelectionState peeraddr
-                            -> Guarded (STM m) (Decision m peeraddr)
+                            => PeerSelectionState peeraddr peerconn
+                            -> Guarded (STM m) (Decision m peeraddr peerconn)
 establishedConnectionFailed _ = GuardedSkip Nothing
 
 
