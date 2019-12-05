@@ -303,7 +303,7 @@ subscriptionLoop
           (valency - currentValency)
 
       when (duration < ipRetryDelay) $
-          threadDelay $ ipRetryDelay - duration
+          threadDelay 300
 
   where
     -- if socket allocation errors, we log the exception and rethrow it
@@ -410,7 +410,7 @@ subscriptionLoop
                                 Nothing -> defaultConnectionAttemptDelay
                 traceWith tr
                           (SubscriptionTraceSubscriptionWaitingNewConnection delay)
-                threadDelay delay
+                threadDelay 300
 
         ConnectionTableExist ->
           traceWith tr $ SubscriptionTraceConnectionExist remoteAddr
@@ -537,7 +537,7 @@ mainLoop errorPolicyTracer resQ threadsVar statusVar completeApplicationTx main 
       case result of
         Act threads tr -> pure $ do
           traverse_ cancel threads
-          traverse_ (traceWith errorPolicyTracer) tr 
+          traverse_ (traceWith errorPolicyTracer) tr
           mainLoop errorPolicyTracer resQ threadsVar statusVar completeApplicationTx main
         Res r -> do
           s <- readTVar statusVar
