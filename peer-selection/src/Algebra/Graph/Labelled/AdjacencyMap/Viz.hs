@@ -75,11 +75,11 @@ tooltip tt = attributeList $ \s -> [Tooltip (pack (tt s))]
 filled :: SetAttributes s
 filled = constAttributes [Style [SItem Filled []]]
 
-fillColour :: Word8 -> Word8 -> Word8 -> SetAttributes s
-fillColour r g b = constAttributes [FillColor [toWC (RGB r g b)]]
+fillColour :: (s -> (Word8, Word8, Word8)) -> SetAttributes s
+fillColour mkRGB = attributeList $ \s -> let (r, g, b) = mkRGB s in [FillColor [toWC (RGB r g b)]]
 
-fillColourHSV :: Double -> Double -> Double -> SetAttributes s
-fillColourHSV h s v = constAttributes [FillColor [toWC (HSV h s v)]]
+fillColourHSV :: (t -> (Double, Double, Double)) -> SetAttributes t
+fillColourHSV mkHSV = attributeList $ \t -> let (h, s, v) = mkHSV t in [FillColor [toWC (HSV h s v)]]
 
 setEither :: (s -> Either a b) -> SetAttributes a -> SetAttributes b -> SetAttributes s
 setEither k left right = SetAttributes $ \s ->
