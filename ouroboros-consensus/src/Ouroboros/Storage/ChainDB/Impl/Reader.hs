@@ -121,25 +121,13 @@ newReader
   -> ResourceRegistry m
   -> m (Reader m blk (Deserialisable m blk b))
 newReader h encodeHeader blockOrHeader registry = getEnv h $ \cdb@CDB{..} -> do
-    tipPoint <- atomically $ Query.getTipPoint cdb
-    readerState <- if tipPoint == genesisPoint
-      then return $ ReaderInMem rollState
-      else do
-        -- TODO avoid opening an iterator immediately when creating a reader,
-        -- because the user will probably request an intersection with the
-        -- recent chain. OR should we not optimise for the best case?
-        immIt <- ImmDB.streamAfter cdbImmDB registry blockOrHeader genesisPoint
-        return $ ReaderInImmDB rollState immIt
-
     readerId  <- atomically $ updateTVar cdbNextReaderId $ \r -> (succ r, r)
-    varReader <- newTVarM readerState
+    varReader <- newTVarM ReaderInit
     let readersVar = getReadersVar cdb blockOrHeader
     atomically $ modifyTVar readersVar $ Map.insert readerId varReader
     let reader = makeNewReader h encodeHeader readerId blockOrHeader registry
     traceWith cdbTracer $ TraceReaderEvent $ NewReader readerId
     return reader
-  where
-    rollState = RollBackTo genesisPoint
 
 makeNewReader
   :: forall m blk b.
@@ -199,6 +187,7 @@ closeReaderState
   :: MonadCatch m
   => ImmDB.ImmDB m blk -> ReaderState m blk b -> m ()
 closeReaderState immDB = \case
+     ReaderInit            -> return ()
      ReaderInMem _         -> return ()
      -- IMPORTANT: the main reason we're closing readers: to close this open
      -- iterator, which contains a reference to a file handle.
@@ -246,8 +235,13 @@ instructionHelper registry encodeHeader blockOrHeader fromMaybeSTM CDB{..} varRe
     inImmDBOrRes <- atomically $ do
       curChain <- readTVar cdbChain
       readTVar varReader >>= \case
-        -- Just return the contents of the state and end the transaction
-        ReaderInImmDB rollState immIt -> return $ Left (rollState, Just immIt)
+        -- Just return the contents of the state and end the transaction in
+        -- these two cases.
+        ReaderInit
+          -> return $ Left (RollBackTo genesisPoint, Nothing)
+        ReaderInImmDB rollState immIt
+          -> return $ Left (rollState, Just immIt)
+
         ReaderInMem   rollState
           | AF.withinFragmentBounds
             (castPoint (readerRollStatePoint rollState)) curChain
@@ -453,6 +447,7 @@ forward registry blockOrHeader CDB{..} varReader = \pts -> do
       mbCloseImmIt <- atomically $ do
         mbCloseImmIt <- readTVar varReader <&> \case
           ReaderInImmDB _ immIt -> Just (ImmDB.iteratorClose cdbImmDB immIt)
+          ReaderInit            -> Nothing
           ReaderInMem   _       -> Nothing
         writeTVar varReader newReaderState
         return mbCloseImmIt
@@ -472,8 +467,11 @@ switchFork
 switchFork ipoint newChain readerState =
     assert (AF.withinFragmentBounds (castPoint ipoint) newChain) $
       case readerState of
+        -- If the reader is still in the initial state, switching to a fork
+        -- won't affect it.
+        ReaderInit       -> readerState
         -- If the reader is still reading from the ImmutableDB, switching to a
-        -- fork won't affect it at all
+        -- fork won't affect it.
         ReaderInImmDB {} -> readerState
         ReaderInMem   rollState ->
             case pointSlot readerPoint `compare` pointSlot ipoint of

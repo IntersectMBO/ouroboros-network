@@ -272,9 +272,23 @@ data Internal m blk = Internal
 -- 'ReaderState'.
 
 data ReaderState m blk b
-  = ReaderInImmDB !(ReaderRollState blk)
+  = ReaderInit
+    -- ^ The 'Reader' is in its initial state. Its 'ReaderRollState' is
+    -- @'RollBackTo' 'genesisPoint'@.
+    --
+    -- This is equivalent to having a 'ReaderInImmDB' with the same
+    -- 'ReaderRollState' and an iterator streaming after genesis. Opening such
+    -- an iterator has a cost (index files will have to be read). However, in
+    -- most cases, right after opening a Reader, the user of the Reader will
+    -- try to move it forward, moving it from genesis to a more recent point
+    -- on the chain. So we incur the cost of opening the iterator while not
+    -- even using it.
+    --
+    -- Therefore, we have this extra initial state, that avoids this cost.
+    -- When the user doesn't move the Reader forward, an iterator is opened.
+  | ReaderInImmDB !(ReaderRollState blk)
                   !(ImmDB.Iterator (HeaderHash blk) m (Deserialisable m blk b))
-    -- ^ The 'Reader' is reading from the ImmutableDB
+    -- ^ The 'Reader' is reading from the ImmutableDB.
   | ReaderInMem   !(ReaderRollState blk)
     -- ^ The 'Reader' is reading from the in-memory current chain fragment.
   deriving (Generic, NoUnexpectedThunks)
