@@ -519,9 +519,12 @@ toList PBftChainState{..} = (
       case preAnchor of
         Empty   -> Origin
         _ :|> x -> At (pbftSignerSlotNo x)
-    , preWindow <> inWindow
+    , if aSize > wSize then preAnchor <> postAnchor else preWindow <> inWindow
     , ebbs
     )
+  where
+    wSize = size preWindow + size inWindow :: Word64
+    aSize = size preAnchor + size postAnchor
 
 fromList :: PBftCrypto c
          => SecurityParam
