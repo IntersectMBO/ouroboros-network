@@ -9,6 +9,7 @@ module Ouroboros.Storage.FS.Handle (
     , withSharedOpenHandle
     , withExclOpenHandle
     , closeHandleOS
+    , isFHandleClosedError
     ) where
 
 import           Control.Concurrent.ReadWriteVar
@@ -69,12 +70,26 @@ closeHandleOS (HandleOS _ hVar) close =
       Nothing -> return (Nothing, ())
       Just h  -> close h >> return (Nothing, ())
 
+-- | Checks if the error is a user error and its description indicates
+-- that it's a handle closed error.
+isFHandleClosedError :: IOException -> Bool
+isFHandleClosedError err =
+    isUserError err && parsesMsg (IO.ioeGetErrorString err)
+  where
+    parsesMsg msg = dropWhile (/= ':') msg == handleClosedMsg
+
 {-------------------------------------------------------------------------------
   Internal auxiliary
 -------------------------------------------------------------------------------}
 
+-- | When the handle is found closed, we throw a user IOError.
+-- In order to gracefully handle this error, its description must be parsed.
+-- The 'label' should not contain any ":" characters.
 handleClosedException :: FilePath -> String -> IOException
 handleClosedException fp label =
-      flip IO.ioeSetErrorType IO.illegalOperationErrorType
-    $ flip IO.ioeSetFileName fp
-    $ userError (label ++ ": FHandle closed")
+    flip IO.ioeSetFileName fp
+      $ userError (label ++ handleClosedMsg)
+
+-- | Sensitive part of the error description, that the handler has to parse.
+handleClosedMsg :: String
+handleClosedMsg = ": Handle closed"

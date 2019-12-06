@@ -16,6 +16,7 @@ module Ouroboros.Storage.VolatileDB.Util
     , fromEither
     , wrapFsError
     , tryVolDB
+    , fsToVolatileDBError
 
       -- * Map of Set utilities
     , insertMapSet
@@ -114,11 +115,12 @@ tryVolDB :: forall m a. Monad m
          -> m a -> m (Either VolatileDBError a)
 tryVolDB fsErr volDBErr = fmap squash . EH.try fsErr . EH.try volDBErr
   where
-    fromFS = UnexpectedError . FileSystemError
-
     squash :: Either FsError (Either VolatileDBError a)
            -> Either VolatileDBError a
-    squash = either (Left . fromFS) id
+    squash = either (Left . fsToVolatileDBError) id
+
+fsToVolatileDBError :: FsError -> VolatileDBError
+fsToVolatileDBError = UnexpectedError . FileSystemError
 
 {------------------------------------------------------------------------------
   Map of Set utilities

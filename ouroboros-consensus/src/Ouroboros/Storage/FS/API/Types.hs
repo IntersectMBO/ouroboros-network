@@ -34,6 +34,7 @@ module Ouroboros.Storage.FS.API.Types (
   , sameFsError
   , isFsErrorType
   , prettyFsError
+  , isHandleClosedError
     -- * From 'IOError' to 'FsError'
   , ioToFsError
   , ioToFsErrorType
@@ -57,6 +58,7 @@ import qualified System.IO.Error as IO
 import           Cardano.Prelude (NoUnexpectedThunks (..), UseIsNormalForm (..),
                      UseIsNormalFormNamed (..))
 
+import           Ouroboros.Storage.FS.Handle (isFHandleClosedError)
 import           Ouroboros.Consensus.Util.Condense
 
 {-------------------------------------------------------------------------------
@@ -214,6 +216,7 @@ data FsErrorType
   | FsTooManyOpenFiles
   | FsInsufficientPermissions
   | FsInvalidArgument
+  | FsHandleClosed
   | FsOther
     -- ^ Used for all other error types
   deriving (Show, Eq)
@@ -241,6 +244,9 @@ prettyFsError FsError{..} = concat [
     , " at "
     , prettyCallStack fsErrorStack
     ]
+
+isHandleClosedError :: FsError -> Bool
+isHandleClosedError FsError{..} = fsErrorType == FsHandleClosed
 
 {-------------------------------------------------------------------------------
   From 'IOError' to 'FsError'
@@ -309,6 +315,9 @@ ioToFsErrorType ioErr = case Errno <$> GHC.ioe_errno ioErr of
 
       | eType == GHC.InvalidArgument
       -> FsInvalidArgument
+
+      | isFHandleClosedError ioErr
+      -> FsHandleClosed
 
       | otherwise
       -> FsOther

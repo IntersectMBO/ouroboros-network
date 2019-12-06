@@ -97,6 +97,7 @@ module Ouroboros.Storage.VolatileDB.Impl
 
 import           Control.Monad
 import qualified Data.ByteString.Builder as BS
+import           Data.ByteString.Lazy (ByteString)
 import           Data.List (find, sortOn)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
@@ -108,7 +109,7 @@ import           Data.Word (Word64)
 import           GHC.Generics (Generic)
 import           GHC.Stack
 
-import           Control.Monad.Class.MonadThrow
+import           Control.Monad.Class.MonadThrow hiding (try)
 
 import           Ouroboros.Network.Point (WithOrigin)
 
@@ -119,7 +120,7 @@ import           Ouroboros.Storage.Common (BlockComponent (..))
 import           Ouroboros.Storage.FS.API
 import           Ouroboros.Storage.FS.API.Types
 import           Ouroboros.Storage.Util.ErrorHandling (ErrorHandling (..),
-                     ThrowCantCatch (..))
+                     ThrowCantCatch (..), try)
 import qualified Ouroboros.Storage.Util.ErrorHandling as EH
 import           Ouroboros.Storage.VolatileDB.API
 import           Ouroboros.Storage.VolatileDB.FileInfo (FileInfo)
@@ -282,45 +283,102 @@ getBlockComponentImpl
   -> blockId
   -> m (Maybe b)
 getBlockComponentImpl env@VolatileDBEnv{..} blockComponent blockId =
-    withState env $ \hasFS@HasFS{..} InternalState{..} ->
-      case Map.lookup blockId _currentRevMap of
-        Nothing                -> return Nothing
-        Just internalBlockInfo -> Just <$>
-          getBlockComponent hasFS internalBlockInfo _currentMap blockComponent
+    wrapFsError (hasFsErr _dbHasFS) _dbErr $
+      withState env $ \hasFS@HasFS{..} InternalState{..} ->
+        case Map.lookup blockId _currentRevMap of
+          Nothing                -> return Nothing
+          Just internalBlockInfo ->
+            getBlockComponent hasFS internalBlockInfo _currentMap blockComponent
   where
     getBlockComponent
-      :: forall b' h.
-         HasFS m h
+      :: forall b' h. HasFS m h
       -> InternalBlockInfo blockId
       -> Index blockId h
       -> BlockComponent (VolatileDB blockId m) b'
-      -> m b'
+      -> m (Maybe b')
     getBlockComponent hasFS ib@InternalBlockInfo {..} currentMap = \case
-      GetHash         -> return blockId
-      GetSlot         -> return ibSlot
-      GetIsEBB        -> return ibIsEBB
-      GetBlockSize    -> return $ fromIntegral $ unBlockSize ibBlockSize
-      GetHeaderSize   -> return ibHeaderSize
-      GetPure a       -> return a
-      GetApply f bc   ->
-        getBlockComponent hasFS ib currentMap f <*> 
-          getBlockComponent hasFS ib currentMap bc
-      GetBlock        -> return ()
-      GetRawBlock     -> 
-        case FileInfo.getHandle <$> Index.lookup ibFileId currentMap of
+      GetHash         -> return $ Just blockId
+      GetSlot         -> return $ Just ibSlot
+      GetIsEBB        -> return $ Just ibIsEBB
+      GetBlockSize    -> return $ Just $ fromIntegral $ unBlockSize ibBlockSize
+      GetHeaderSize   -> return $ Just ibHeaderSize
+      GetPure a       -> return $ Just a
+      GetBlock        -> return $ Just ()
+      GetRawBlock     -> getRawComponent hasFS ib currentMap RawBlock
+      GetHeader       -> return $ Just ()
+      GetRawHeader    -> getRawComponent hasFS ib currentMap RawHeader
+      GetApply f bc   -> do
+        mfa <- getBlockComponent hasFS ib currentMap f
+        ma  <- getBlockComponent hasFS ib currentMap bc
+        return $ do 
+          fa <- mfa
+          a  <- ma
+          return $ fa a
+
+    getRawComponent :: forall h. 
+         HasFS m h
+      -> InternalBlockInfo blockId
+      -> Index blockId h
+      -> BlockComponentRaw
+      -> m (Maybe ByteString)
+    getRawComponent hasFS ib@InternalBlockInfo {..} currentMap rawComponent = do
+      case FileInfo.getHandle <$> Index.lookup ibFileId currentMap of
           Nothing -> throwError _dbErr $ UnexpectedError $ FileNotFound ibFile
           Just hndl -> do
-            let size   = unBlockSize ibBlockSize
-                offset = ibSlotOffset
-            hGetExactlyAt hasFS hndl size (AbsOffset offset)
-      GetHeader       -> return ()
-      GetRawHeader    -> 
-        case FileInfo.getHandle <$> Index.lookup ibFileId currentMap of
-          Nothing -> throwError _dbErr $ UnexpectedError $ FileNotFound ibFile
-          Just hndl -> do
-            let size   = fromIntegral ibHeaderSize
-                offset = ibSlotOffset + fromIntegral ibHeaderOffset
-            hGetExactlyAt hasFS hndl size (AbsOffset offset)
+            let (offset, size) = getReadPos ib rawComponent
+            eiBs <- try (hasFsErr _dbHasFS) $
+              hGetExactlyAt hasFS hndl size offset
+            case eiBs of
+              Left err | isHandleClosedError err 
+                       -> caseFHandleClosed rawComponent
+              Left err -> throwError _dbErr $ fsToVolatileDBError err
+              Right bs -> return $ Just bs
+
+    getReadPos :: InternalBlockInfo blockId
+               -> BlockComponentRaw
+               -> (AbsOffset, Word64)
+    getReadPos InternalBlockInfo {..} = \case
+      RawBlock ->
+        (AbsOffset ibSlotOffset, unBlockSize ibBlockSize)
+      RawHeader ->
+        ( AbsOffset $ ibSlotOffset + fromIntegral ibHeaderOffset
+        , fromIntegral ibHeaderSize)
+
+    -- | This case can occur if the file of the block is garbage collected,
+    -- while getting the block. We follow the same logic as before, but this
+    -- time while holding the lock, to verify why we got the FHandleClosed
+    -- error (it could indicate some internal violation instead).
+    --
+    -- Using @modifyState@ here doesn't hinder the performance, because this
+    -- case is very rare.
+    caseFHandleClosed :: BlockComponentRaw 
+                      -> m (Maybe ByteString)
+    caseFHandleClosed rawComponent = 
+      modifyState env $ \hasFS@HasFS{..} st@InternalState{..} ->
+        case Map.lookup blockId _currentRevMap of
+          Nothing ->
+            -- We tried to get the block, but its handle is closed. After 
+            -- checking for a second time, the block is not there at all. This
+            -- means the block was indeed garbage collected in the meantime.
+            return (st, Nothing)
+          Just ibInfo@InternalBlockInfo {..} ->
+            case FileInfo.getHandle <$> Index.lookup ibFileId _currentMap of
+              Nothing ->
+                -- All files should be open.
+                throwError _dbErr $ UnexpectedError $ FileNotFound ibFile
+              Just hndl -> do
+                -- After checking for a second time, the block is there again.
+                -- The only legit explanation is that the block was garbage
+                -- collected and reinserted. But this could also indicate an
+                -- internal violation, i.e. the handle was closed for some
+                -- reason. We try to get the block again, but this time with the
+                -- lock and without handling any errors. If it fails it fails,
+                -- this time for good.
+                let (offset, size) = getReadPos ibInfo rawComponent
+                bs <- hGetExactlyAt hasFS hndl size offset
+                return (st, Just bs)
+
+data BlockComponentRaw = RawBlock | RawHeader
 
 -- | This function follows the approach:
 -- (1) hPut bytes to the file

@@ -193,7 +193,7 @@ seekFilePtr err@ErrorHandling{..} MockFS{..} (Handle h _) seekMode o = do
     case mockHandles M.! h of
       HandleClosed ClosedHandle{..} ->
         throwError FsError {
-            fsErrorType   = FsIllegalOperation
+            fsErrorType   = FsHandleClosed
           , fsErrorPath   = closedFilePath
           , fsErrorString = "handle closed"
           , fsErrorNo     = Nothing
@@ -322,7 +322,7 @@ withOpenHandleModify err@ErrorHandling{..} h f =
         second (second HandleOpen) <$> f fs hs
       HandleClosed ClosedHandle{..} ->
         throwError FsError {
-            fsErrorType   = FsIllegalOperation
+            fsErrorType   = FsHandleClosed
           , fsErrorPath   = closedFilePath
           , fsErrorString = "handle closed"
           , fsErrorNo     = Nothing
@@ -345,7 +345,7 @@ withOpenHandleRead err@ErrorHandling{..} h f =
         second HandleOpen <$> f fs hs
       HandleClosed ClosedHandle{..} ->
         throwError FsError {
-            fsErrorType   = FsIllegalOperation
+            fsErrorType   = FsHandleClosed
           , fsErrorPath   = closedFilePath
           , fsErrorString = "handle closed"
           , fsErrorNo     = Nothing
