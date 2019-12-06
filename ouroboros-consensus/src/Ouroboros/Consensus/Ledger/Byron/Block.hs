@@ -59,7 +59,9 @@ import           Cardano.Chain.Byron.Auxiliary
 import qualified Cardano.Chain.Slotting as CC
 import qualified Cardano.Crypto.Hashing as CC
 
-import           Ouroboros.Network.Block
+import           Ouroboros.Network.Block (StandardHash, HasHeader(..),
+                     HeaderHash, ChainHash, BlockMeasure, SlotNo, castHash,
+                     blockMeasure)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Ledger.Byron.Conversions
