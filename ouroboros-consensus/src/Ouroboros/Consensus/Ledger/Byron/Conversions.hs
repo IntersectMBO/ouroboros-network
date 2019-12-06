@@ -13,7 +13,9 @@ import qualified Cardano.Chain.Block as CC
 import qualified Cardano.Chain.Common as CC
 import qualified Cardano.Chain.Slotting as CC
 
-import           Ouroboros.Network.Block
+import           Ouroboros.Network.Block (BlockNo(BlockNo),
+                     ChainHash(BlockHash, GenesisHash), HeaderHash,
+                     SlotNo(SlotNo))
 
 import           Ouroboros.Consensus.Ledger.Byron.Orphans ()
 
