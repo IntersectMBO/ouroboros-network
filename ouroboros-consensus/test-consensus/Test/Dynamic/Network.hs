@@ -748,7 +748,6 @@ type LimitedApp' m peer blk unused1 unused2 =
         -- (de)serialise the messages so that they can be sent across the
         -- channel with the same type on both ends, i.e., 'Lazy.ByteString'.
         Lazy.ByteString  -- BlockFetch
-        Lazy.ByteString  -- BlockFetch Serialised
         (AnyMessage (TxSubmission (GenTxId blk) (GenTx blk)))
         unused1 -- the local node-to-client channel types
         unused2

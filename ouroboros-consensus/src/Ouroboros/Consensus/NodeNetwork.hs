@@ -324,7 +324,7 @@ showProtocolTracers tr = ProtocolTracers {
 -- codecs).
 --
 data NetworkApplication m peer
-                        bytesCS bytesBF bytesSBF bytesTX
+                        bytesCS bytesBF bytesTX
                         bytesLCS bytesLTX a = NetworkApplication {
       -- | Start a chain sync client that communicates with the given upstream
       -- node.
@@ -359,7 +359,7 @@ data NetworkApplication m peer
 -- for the 'NodeToNodeProtocols'.
 --
 initiatorNetworkApplication
-  :: NetworkApplication m peer bytes bytes bytes bytes bytes bytes a
+  :: NetworkApplication m peer bytes bytes bytes bytes bytes a
   -> OuroborosApplication 'InitiatorApp peer NodeToNodeProtocols m bytes a Void
 initiatorNetworkApplication NetworkApplication {..} =
     OuroborosInitiatorApplication $ \them ptcl -> case ptcl of
@@ -371,7 +371,7 @@ initiatorNetworkApplication NetworkApplication {..} =
 -- for the 'NodeToNodeProtocols'.
 --
 responderNetworkApplication
-  :: NetworkApplication m peer bytes bytes bytes bytes bytes bytes a
+  :: NetworkApplication m peer bytes bytes bytes bytes bytes a
   -> OuroborosApplication 'ResponderApp peer NodeToNodeProtocols m bytes Void a
 responderNetworkApplication NetworkApplication {..} =
     OuroborosResponderApplication $ \them ptcl -> case ptcl of
@@ -383,7 +383,7 @@ responderNetworkApplication NetworkApplication {..} =
 -- for the 'NodeToClientProtocols'.
 --
 localResponderNetworkApplication
-  :: NetworkApplication m peer bytes bytes bytes bytes bytes bytes a
+  :: NetworkApplication m peer bytes bytes bytes bytes bytes a
   -> OuroborosApplication 'ResponderApp peer NodeToClientProtocols m bytes Void a
 localResponderNetworkApplication NetworkApplication {..} =
     OuroborosResponderApplication $ \peer  ptcl -> case ptcl of
@@ -406,7 +406,7 @@ consensusNetworkApps
     -> ProtocolTracers m peer blk failure
     -> ProtocolCodecs blk failure m bytesCS bytesBF bytesBF bytesTX bytesLCS bytesLTX
     -> ProtocolHandlers m peer blk
-    -> NetworkApplication m peer bytesCS bytesBF bytesBF bytesTX bytesLCS bytesLTX ()
+    -> NetworkApplication m peer bytesCS bytesBF bytesTX bytesLCS bytesLTX ()
 consensusNetworkApps kernel ProtocolTracers {..} ProtocolCodecs {..} ProtocolHandlers {..} =
     NetworkApplication {
       naChainSyncClient,
