@@ -1,8 +1,8 @@
+{-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE FlexibleInstances   #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeApplications    #-}
 {-# LANGUAGE TypeFamilies        #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
@@ -31,7 +31,8 @@ import           Network.TypedProtocol.Proofs (connect, connectPipelined)
 
 import           Ouroboros.Network.Channel
 
-import           Ouroboros.Network.Block (StandardHash, Tip(..), encodeTip, decodeTip)
+import           Ouroboros.Network.Block (StandardHash, Tip (..), decodeTip,
+                     encodeTip, Serialised (..), castPoint)
 import           Ouroboros.Network.MockChain.Chain (Chain, Point)
 import qualified Ouroboros.Network.MockChain.Chain as Chain
 import qualified Ouroboros.Network.MockChain.ProducerState as ChainProducerState
@@ -76,6 +77,13 @@ tests = testGroup "Ouroboros.Network.Protocol.ChainSyncProtocol"
   , testProperty "codec 2-splits" prop_codec_splits2_ChainSync
   , testProperty "codec 3-splits" $ withMaxSuccess 30 prop_codec_splits3_ChainSync
   , testProperty "codec cbor"     prop_codec_cbor
+  , testProperty "codecSerialised"            prop_codec_ChainSyncSerialised
+  , testProperty "codecSerialised 2-splits"   prop_codec_splits2_ChainSyncSerialised
+  , testProperty "codecSerialised 3-splits" $ withMaxSuccess 30
+                                              prop_codec_splits3_ChainSyncSerialised
+  , testProperty "codecSerialised cbor"       prop_codec_cbor_ChainSyncSerialised
+  , testProperty "codec/codecSerialised bin compat"  prop_codec_binary_compat_ChainSync_ChainSyncSerialised
+  , testProperty "codecSerialised/codec bin compat"  prop_codec_binary_compat_ChainSyncSerialised_ChainSync
   , testProperty "demo ST" propChainSyncDemoST
   , testProperty "demo IO" propChainSyncDemoIO
   , testProperty "demoPipelinedMax ST"     propChainSyncDemoPipelinedMaxST
@@ -316,41 +324,61 @@ propChainSyncPipelinedMinConnectIO cps choices (Positive omax) =
         (ChainSyncExamples.chainSyncClientPipelinedMin omax)
         cps
 
-instance Arbitrary (AnyMessageAndAgency (ChainSync BlockHeader (Tip BlockHeader))) where
-  arbitrary = oneof
+genChainSync :: Gen (Point header)
+             -> Gen header
+             -> Gen tip
+             -> Gen (AnyMessageAndAgency (ChainSync header tip))
+genChainSync genPoint genHeader genTip = oneof
     [ return $ AnyMessageAndAgency (ClientAgency TokIdle) MsgRequestNext
     , return $ AnyMessageAndAgency (ServerAgency (TokNext TokCanAwait)) MsgAwaitReply
 
     , AnyMessageAndAgency (ServerAgency (TokNext TokCanAwait))
-        <$> (MsgRollForward <$> arbitrary
-                            <*> arbitraryTip)
+        <$> (MsgRollForward <$> genHeader
+                            <*> genTip)
 
     , AnyMessageAndAgency (ServerAgency (TokNext TokMustReply))
-        <$> (MsgRollForward <$> arbitrary
-                            <*> arbitraryTip)
+        <$> (MsgRollForward <$> genHeader
+                            <*> genTip)
 
     , AnyMessageAndAgency (ServerAgency (TokNext TokCanAwait))
-        <$> (MsgRollBackward <$> arbitrary
-                             <*> arbitraryTip)
+        <$> (MsgRollBackward <$> genPoint
+                             <*> genTip)
 
     , AnyMessageAndAgency (ServerAgency (TokNext TokMustReply))
-        <$> (MsgRollBackward <$> arbitrary
-                             <*> arbitraryTip)
+        <$> (MsgRollBackward <$> genPoint
+                             <*> genTip)
 
     , AnyMessageAndAgency (ClientAgency TokIdle) . MsgFindIntersect
-        <$> arbitrary
+        <$> listOf genPoint
 
     , AnyMessageAndAgency (ServerAgency TokIntersect)
-        <$> (MsgIntersectFound <$> arbitrary
-                               <*> arbitraryTip)
+        <$> (MsgIntersectFound <$> genPoint
+                               <*> genTip)
 
     , AnyMessageAndAgency (ServerAgency TokIntersect)
-        <$> (MsgIntersectNotFound <$> arbitraryTip)
+        <$> (MsgIntersectNotFound <$> genTip)
 
     , return $ AnyMessageAndAgency (ClientAgency TokIdle) MsgDone
     ]
+
+
+instance Arbitrary (AnyMessageAndAgency (ChainSync BlockHeader (Tip BlockHeader))) where
+  arbitrary = genChainSync arbitrary arbitrary genTip
     where
-      arbitraryTip = Tip <$> arbitrary <*> arbitrary
+      genTip = Tip <$> arbitrary <*> arbitrary
+
+instance Arbitrary (AnyMessageAndAgency (ChainSync (Serialised BlockHeader) (Tip BlockHeader))) where
+  arbitrary = genChainSync (castPoint <$> genPoint)
+                           (serialiseBlock <$> arbitrary)
+                           genTip
+    where
+      genTip = Tip <$> arbitrary <*> arbitrary
+
+      genPoint :: Gen (Point BlockHeader)
+      genPoint = arbitrary
+
+      serialiseBlock :: BlockHeader -> Serialised BlockHeader
+      serialiseBlock = Serialised . S.serialise
 
 instance (StandardHash header, Show header, Show tip) => Show (AnyMessageAndAgency (ChainSync header tip)) where
   show (AnyMessageAndAgency _ msg) = show msg
@@ -408,6 +436,79 @@ prop_codec_cbor
   -> Bool
 prop_codec_cbor msg =
     ST.runST (prop_codec_cborM codec msg)
+
+codecSerialised
+  :: ( MonadST m
+     , S.Serialise (Chain.HeaderHash block)
+     )
+  => Codec (ChainSync (Serialised block) (Tip block))
+           S.DeserialiseFailure
+           m ByteString
+codecSerialised = codecChainSyncSerialised
+    S.encode             S.decode
+    (encodeTip S.encode) (decodeTip S.decode)
+
+prop_codec_ChainSyncSerialised
+  :: AnyMessageAndAgency (ChainSync (Serialised BlockHeader) (Tip BlockHeader))
+  -> Bool
+prop_codec_ChainSyncSerialised msg =
+    ST.runST $ prop_codecM codecSerialised msg
+
+prop_codec_splits2_ChainSyncSerialised
+  :: AnyMessageAndAgency (ChainSync (Serialised BlockHeader) (Tip BlockHeader))
+  -> Bool
+prop_codec_splits2_ChainSyncSerialised msg =
+    ST.runST $ prop_codec_splitsM
+      splits2
+      codecSerialised
+      msg
+
+prop_codec_splits3_ChainSyncSerialised
+  :: AnyMessageAndAgency (ChainSync (Serialised BlockHeader) (Tip BlockHeader))
+  -> Bool
+prop_codec_splits3_ChainSyncSerialised msg =
+    ST.runST $ prop_codec_splitsM
+      splits3
+      codecSerialised
+      msg
+
+prop_codec_cbor_ChainSyncSerialised
+  :: AnyMessageAndAgency (ChainSync (Serialised BlockHeader) (Tip BlockHeader))
+  -> Bool
+prop_codec_cbor_ChainSyncSerialised msg =
+    ST.runST (prop_codec_cborM codecSerialised msg)
+
+prop_codec_binary_compat_ChainSync_ChainSyncSerialised
+  :: AnyMessageAndAgency (ChainSync BlockHeader (Tip BlockHeader))
+  -> Bool
+prop_codec_binary_compat_ChainSync_ChainSyncSerialised msg =
+    ST.runST (prop_codec_binary_compatM codec codecSerialised stokEq msg)
+  where
+    stokEq
+      :: forall pr (stA :: ChainSync BlockHeader (Tip BlockHeader)).
+         PeerHasAgency pr stA
+      -> SamePeerHasAgency pr (ChainSync (Serialised BlockHeader) (Tip BlockHeader))
+    stokEq (ClientAgency ca) = case ca of
+      TokIdle -> SamePeerHasAgency $ ClientAgency TokIdle
+    stokEq (ServerAgency sa) = case sa of
+      TokNext k    -> SamePeerHasAgency $ ServerAgency (TokNext k)
+      TokIntersect -> SamePeerHasAgency $ ServerAgency TokIntersect
+
+prop_codec_binary_compat_ChainSyncSerialised_ChainSync
+  :: AnyMessageAndAgency (ChainSync (Serialised BlockHeader) (Tip BlockHeader))
+  -> Bool
+prop_codec_binary_compat_ChainSyncSerialised_ChainSync msg =
+    ST.runST (prop_codec_binary_compatM codecSerialised codec stokEq msg)
+  where
+    stokEq
+      :: forall pr (stA :: ChainSync (Serialised BlockHeader) (Tip BlockHeader)).
+         PeerHasAgency pr stA
+      -> SamePeerHasAgency pr (ChainSync BlockHeader (Tip BlockHeader))
+    stokEq (ClientAgency ca) = case ca of
+      TokIdle -> SamePeerHasAgency $ ClientAgency TokIdle
+    stokEq (ServerAgency sa) = case sa of
+      TokNext k     -> SamePeerHasAgency $ ServerAgency (TokNext k)
+      TokIntersect -> SamePeerHasAgency $ ServerAgency TokIntersect
 
 chainSyncDemo
   :: forall m.
