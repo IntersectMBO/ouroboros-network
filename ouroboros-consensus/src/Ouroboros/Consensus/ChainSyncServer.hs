@@ -19,7 +19,8 @@ import           Ouroboros.Network.Block (ChainUpdate (..), HeaderHash,
                      Point (..), Tip (..), castPoint)
 import           Ouroboros.Network.Protocol.ChainSync.Server
 
-import           Ouroboros.Storage.ChainDB.API (ChainDB, Reader)
+import           Ouroboros.Storage.ChainDB.API (ChainDB, Reader,
+                     deserialiseReader)
 import qualified Ouroboros.Storage.ChainDB.API as ChainDB
 
 import           Ouroboros.Consensus.Block
@@ -39,7 +40,7 @@ chainSyncHeadersServer
     -> ChainSyncServer (Header blk) (Tip blk) m ()
 chainSyncHeadersServer tracer chainDB registry =
     ChainSyncServer $ do
-      rdr <- ChainDB.newHeaderReader chainDB registry
+      rdr <- deserialiseReader <$> ChainDB.newHeaderReader chainDB registry
       let ChainSyncServer server = chainSyncServerForReader tracer chainDB rdr
       server
 
@@ -56,7 +57,7 @@ chainSyncBlocksServer
     -> ChainSyncServer blk (Tip blk) m ()
 chainSyncBlocksServer tracer chainDB registry =
     ChainSyncServer $ do
-      rdr <- ChainDB.newBlockReader chainDB registry
+      rdr <- deserialiseReader <$> ChainDB.newBlockReader chainDB registry
       let ChainSyncServer server = chainSyncServerForReader tracer chainDB rdr
       server
 

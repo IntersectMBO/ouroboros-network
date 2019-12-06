@@ -407,7 +407,7 @@ streamAPI immDB = StreamAPI streamAfter
         then k Nothing
         else withRegistry $ \registry ->
           ImmDB.streamAfter immDB registry Block (tipToPoint tip) >>=
-            k . Just . getNext
+            k . Just . getNext . ImmDB.deserialiseIterator immDB
 
     getNext :: ImmDB.Iterator (HeaderHash blk) m blk
             -> m (NextBlock (Point blk) blk)

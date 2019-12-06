@@ -40,6 +40,7 @@ module Ouroboros.Storage.ChainDB.API (
     -- * Readers
   , Reader(..)
   , ReaderId
+  , deserialiseReader
     -- * Recovery
   , ChainDbFailure(..)
     -- * Exceptions
@@ -247,7 +248,7 @@ data ChainDB m blk = ChainDB {
       -- Examples of users include the server side of the chain sync
       -- mini-protocol for the node-to-node protocol.
       --
-    , newHeaderReader    :: ResourceRegistry m -> m (Reader m blk (Header blk))
+    , newHeaderReader    :: ResourceRegistry m -> m (Reader m blk (Deserialisable m blk (Header blk)))
 
       -- | This is the same as the reader 'newHeaderReader' but it provides a
       -- reader for /whole blocks/ rather than headers.
@@ -255,7 +256,7 @@ data ChainDB m blk = ChainDB {
       -- Examples of users include the server side of the chain sync
       -- mini-protocol for the node-to-client protocol.
       --
-    , newBlockReader     :: ResourceRegistry m -> m (Reader m blk blk)
+    , newBlockReader     :: ResourceRegistry m -> m (Reader m blk (Deserialisable m blk blk))
 
       -- | Function to check whether a block is known to be invalid.
       --
@@ -557,6 +558,18 @@ data Reader m blk a = Reader {
 
 instance Eq (Reader m blk a) where
   (==) = (==) `on` readerId
+
+-- | Deserialise the results of a reader that yields serialised blocks or
+-- headers.
+deserialiseReader
+  :: Monad m => Reader m blk (Deserialisable m blk b) -> Reader m blk b
+deserialiseReader rdr = Reader
+    { readerInstruction         = readerInstruction         rdr >>= traverse (traverse deserialise)
+    , readerInstructionBlocking = readerInstructionBlocking rdr >>= traverse deserialise
+    , readerForward             = readerForward             rdr
+    , readerClose               = readerClose               rdr
+    , readerId                  = readerId                  rdr
+    }
 
 {-------------------------------------------------------------------------------
   Recovery

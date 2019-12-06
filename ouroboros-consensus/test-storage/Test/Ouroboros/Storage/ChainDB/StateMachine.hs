@@ -253,7 +253,7 @@ run ChainDB{..} internal@ChainDB.Internal{..} registry varCurSlot = \case
     IteratorNext  it      -> IterResult     <$> iteratorNext it
     IteratorNextGCed  it  -> iterResultGCed <$> iteratorNext it
     IteratorClose it      -> Unit           <$> iteratorClose it
-    NewBlockReader        -> BlockReader    <$> newBlockReader registry
+    NewBlockReader        -> blockReader    <$> newBlockReader registry
     ReaderInstruction rdr -> MbChainUpdate  <$> readerInstruction rdr
     ReaderForward rdr pts -> MbPoint        <$> readerForward rdr pts
     ReaderClose rdr       -> Unit           <$> readerClose rdr
@@ -264,6 +264,7 @@ run ChainDB{..} internal@ChainDB.Internal{..} registry varCurSlot = \case
     mbGCedBlock = MbGCedBlock . MaybeGCedBlock True
     iterResultGCed = IterResultGCed . IteratorResultGCed True
     iter = either UnknownRange (Iter . deserialiseIterator)
+    blockReader = BlockReader . deserialiseReader
     ignore _ = Unit ()
 
     advanceAndAdd newCurSlot blk = do
@@ -403,7 +404,7 @@ runPure cfg = \case
     IteratorNextGCed it   -> ok  iterResultGCed $ update  (Model.iteratorNext  it)
     IteratorClose it      -> ok  Unit           $ update_ (Model.iteratorClose it)
     NewBlockReader        -> ok  BlockReader    $ update   Model.readBlocks
-    ReaderInstruction rdr -> err MbChainUpdate  $ updateE (Model.readerInstruction rdr)
+    ReaderInstruction rdr -> err MbChainUpdate  $ updateE (Model.readerInstruction id rdr)
     ReaderForward rdr pts -> err MbPoint        $ updateE (Model.readerForward rdr pts)
     ReaderClose rdr       -> ok  Unit           $ update_ (Model.readerClose rdr)
     -- TODO can this execute while closed?
@@ -1330,8 +1331,9 @@ mkArgs cfg initLedger tracer registry varCurSlot
     , cdbDecodeChainState = decode
 
       -- Encoders
-    , cdbEncodeBlock      = testBlockToBinaryInfo
     , cdbEncodeHash       = encode
+    , cdbEncodeBlock      = testBlockToBinaryInfo
+    , cdbEncodeHeader     = encode
     , cdbEncodeLedger     = encode
     , cdbEncodeChainState = encode
 

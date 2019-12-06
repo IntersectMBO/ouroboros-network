@@ -245,8 +245,9 @@ mkArgs cfg initLedger tracer registry hashInfo
     , cdbDecodeChainState = decode
 
       -- Encoders
-    , cdbEncodeBlock      = addDummyBinaryInfo . encode
     , cdbEncodeHash       = encode
+    , cdbEncodeBlock      = addDummyBinaryInfo . encode
+    , cdbEncodeHeader     = encode
     , cdbEncodeLedger     = encode
     , cdbEncodeChainState = encode
 

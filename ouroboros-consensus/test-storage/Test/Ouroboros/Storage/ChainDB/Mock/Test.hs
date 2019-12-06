@@ -49,7 +49,7 @@ prop_reader bt p = runSimOrThrow test
     test :: forall s. SimM s Property
     test = withRegistry $ \registry -> do
         db       <- openDB
-        reader   <- ChainDB.newBlockReader db registry
+        reader   <- ChainDB.deserialiseReader <$> ChainDB.newBlockReader db registry
         chainVar <- uncheckedNewTVarM Genesis
 
         -- Fork a thread that applies all instructions from the reader

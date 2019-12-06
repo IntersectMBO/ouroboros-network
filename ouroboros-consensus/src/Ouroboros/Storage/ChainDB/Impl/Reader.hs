@@ -13,6 +13,8 @@ module Ouroboros.Storage.ChainDB.Impl.Reader
   , closeAllReaders
   ) where
 
+import           Codec.CBOR.Encoding (Encoding)
+import           Codec.CBOR.Write (toLazyByteString)
 import           Control.Exception (assert)
 import           Control.Monad (sequence_)
 import           Data.Functor ((<&>))
@@ -27,17 +29,19 @@ import           Control.Tracer (contramap, traceWith)
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block (ChainUpdate (..), HasHeader,
-                     HeaderHash, Point, SlotNo, blockPoint, castPoint,
-                     genesisPoint, pointHash, pointSlot)
+                     HeaderHash, Point, Serialised (..), SlotNo, blockSlot,
+                     castPoint, genesisPoint, pointHash, pointSlot)
 import           Ouroboros.Network.Point (WithOrigin (..))
 
-import           Ouroboros.Consensus.Block (GetHeader (..), headerPoint)
+import           Ouroboros.Consensus.Block (GetHeader (..), headerHash,
+                     headerPoint)
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
 import           Ouroboros.Consensus.Util.STM (blockUntilJust)
 
 import           Ouroboros.Storage.ChainDB.API (BlockOrHeader (..),
-                     ChainDbError (..), Reader (..), ReaderId)
+                     ChainDbError (..), Deserialisable (..), Reader (..),
+                     ReaderId, deserialisablePoint)
 
 import qualified Ouroboros.Storage.ChainDB.Impl.ImmDB as ImmDB
 import qualified Ouroboros.Storage.ChainDB.Impl.Query as Query
@@ -107,14 +111,16 @@ newReader
      ( IOLike m
      , HasHeader blk
      , HasHeader (Header blk)
-     , HasHeader b
      , HeaderHash blk ~ HeaderHash b
      )
   => ChainDbHandle m blk
+  -> (Header blk -> Encoding)
+     -- ^ Needed to serialise a deserialised header that we already had in
+     -- memory.
   -> BlockOrHeader blk b
   -> ResourceRegistry m
-  -> m (Reader m blk b)
-newReader h blockOrHeader registry = getEnv h $ \cdb@CDB{..} -> do
+  -> m (Reader m blk (Deserialisable m blk b))
+newReader h encodeHeader blockOrHeader registry = getEnv h $ \cdb@CDB{..} -> do
     tipPoint <- atomically $ Query.getTipPoint cdb
     readerState <- if tipPoint == genesisPoint
       then return $ ReaderInMem rollState
@@ -129,7 +135,7 @@ newReader h blockOrHeader registry = getEnv h $ \cdb@CDB{..} -> do
     varReader <- newTVarM readerState
     let readersVar = getReadersVar cdb blockOrHeader
     atomically $ modifyTVar readersVar $ Map.insert readerId varReader
-    let reader = makeNewReader h readerId blockOrHeader registry
+    let reader = makeNewReader h encodeHeader readerId blockOrHeader registry
     traceWith cdbTracer $ TraceReaderEvent $ NewReader readerId
     return reader
   where
@@ -140,24 +146,24 @@ makeNewReader
      ( IOLike m
      , HasHeader blk
      , HasHeader (Header blk)
-     , HasHeader b
      , HeaderHash blk ~ HeaderHash b
      )
   => ChainDbHandle m blk
+  -> (Header blk -> Encoding)
   -> ReaderId
   -> BlockOrHeader blk b
   -> ResourceRegistry m
-  -> Reader m blk b
-makeNewReader h readerId blockOrHeader registry = Reader {..}
+  -> Reader m blk (Deserialisable m blk b)
+makeNewReader h encodeHeader readerId blockOrHeader registry = Reader {..}
   where
-    readerInstruction :: m (Maybe (ChainUpdate blk b))
+    readerInstruction :: m (Maybe (ChainUpdate blk (Deserialisable m blk b)))
     readerInstruction = getReader h readerId blockOrHeader $
-      instructionHelper registry blockOrHeader id
+      instructionHelper registry encodeHeader blockOrHeader id
 
-    readerInstructionBlocking :: m (ChainUpdate blk b)
+    readerInstructionBlocking :: m (ChainUpdate blk (Deserialisable m blk b))
     readerInstructionBlocking = fmap runIdentity $
       getReader h readerId blockOrHeader $
-      instructionHelper registry blockOrHeader (fmap Identity . blockUntilJust)
+      instructionHelper registry encodeHeader blockOrHeader (fmap Identity . blockUntilJust)
 
     readerForward :: [Point blk] -> m (Maybe (Point blk))
     readerForward = getReader1 h readerId blockOrHeader $
@@ -218,11 +224,11 @@ instructionHelper
      ( IOLike m
      , HasHeader blk
      , HasHeader (Header blk)
-     , HasHeader b
      , HeaderHash blk ~ HeaderHash b
      , Traversable f, Applicative f
      )
   => ResourceRegistry m
+  -> (Header blk -> Encoding)
   -> BlockOrHeader blk b
   -> (    STM m (Maybe (ChainUpdate blk (Header blk)))
        -> STM m (f     (ChainUpdate blk (Header blk))))
@@ -232,8 +238,8 @@ instructionHelper
      -- @Maybe@.
   -> ChainDbEnv m blk
   -> StrictTVar m (ReaderState m blk b)
-  -> m (f (ChainUpdate blk b))
-instructionHelper registry blockOrHeader fromMaybeSTM CDB{..} varReader = do
+  -> m (f (ChainUpdate blk (Deserialisable m blk b)))
+instructionHelper registry encodeHeader blockOrHeader fromMaybeSTM CDB{..} varReader = do
     -- In one transaction: check in which state we are, if in the
     -- @ReaderInMem@ state, just call 'instructionSTM', otherwise,
     -- return the contents of the 'ReaderInImmDB' state.
@@ -261,10 +267,10 @@ instructionHelper registry blockOrHeader fromMaybeSTM CDB{..} varReader = do
       -- We were able to obtain the result inside the transaction as we were
       -- in the 'ReaderInMem' state.
       Right fupdate -> case blockOrHeader of
-        Header -> return fupdate
         -- We only got the header, so we have to read the whole block if
         -- that's requested.
-        Block  -> traverse (traverse (getBlock . headerPoint)) fupdate
+        Block  -> traverse (traverse toDeserialisableBlock)  fupdate
+        Header -> traverse (traverse toDeserialisableHeader) fupdate
       -- We were in the 'ReaderInImmDB' state or we need to switch to it.
       Left (rollState, mbImmIt) -> case rollState of
         RollForwardFrom pt -> do
@@ -287,21 +293,34 @@ instructionHelper registry blockOrHeader fromMaybeSTM CDB{..} varReader = do
   where
     trace = traceWith (contramap TraceReaderEvent cdbTracer)
 
-    getBlock :: Point blk -> m blk
-    getBlock = Query.getAnyKnownBlock cdbImmDB cdbVolDB
+    toDeserialisableHeader :: Header blk -> m (Deserialisable m blk (Header blk))
+    toDeserialisableHeader hdr = return Deserialisable
+      { serialised         = Serialised $ toLazyByteString (encodeHeader hdr)
+      , deserialisableSlot = blockSlot hdr
+      , deserialisableHash = headerHash hdr
+      , deserialise        = return hdr
+      }
 
-    next :: ImmDB.Iterator (HeaderHash blk) m b -> m (Maybe b)
+    toDeserialisableBlock :: Header blk -> m (Deserialisable m blk blk)
+    toDeserialisableBlock hdr = Query.getAnyKnownDeserialisableBlockOrHeader
+      cdbImmDB cdbVolDB Block (headerPoint hdr)
+
+    next
+      :: ImmDB.Iterator (HeaderHash blk) m (Deserialisable m blk b)
+      -> m (Maybe (Deserialisable m blk b))
     next immIt = ImmDB.iteratorNext cdbImmDB immIt <&> \case
       ImmDB.IteratorResult _ _ b -> Just b
       ImmDB.IteratorEBB    _ _ b -> Just b
       ImmDB.IteratorExhausted    -> Nothing
 
-    rollForwardImmDB :: ImmDB.Iterator (HeaderHash blk) m b -> Point blk
-                     -> m (f (ChainUpdate blk b))
+    rollForwardImmDB
+      :: ImmDB.Iterator (HeaderHash blk) m (Deserialisable m blk b)
+      -> Point blk
+      -> m (f (ChainUpdate blk (Deserialisable m blk b)))
     rollForwardImmDB immIt pt = next immIt >>= \case
       Just b -> do
         let pt' :: Point blk
-            pt' = castPoint (blockPoint b)
+            pt' = castPoint (deserialisablePoint b)
             readerState' = ReaderInImmDB (RollForwardFrom pt') immIt
         atomically $ writeTVar varReader readerState'
         return $ pure $ AddBlock b
@@ -332,8 +351,8 @@ instructionHelper registry blockOrHeader fromMaybeSTM CDB{..} varReader = do
                 curChain
                 (writeTVar varReader . ReaderInMem)
             case blockOrHeader of
-              Header -> return fupdate
-              Block  -> traverse (traverse (getBlock . headerPoint)) fupdate
+              Header -> traverse (traverse toDeserialisableHeader) fupdate
+              Block  -> traverse (traverse toDeserialisableBlock)  fupdate
 
           -- Two possibilities:
           --

@@ -588,7 +588,7 @@ streamAfter
   -> ResourceRegistry m
   -> BlockOrHeader blk b
   -> Point blk -- ^ Exclusive lower bound
-  -> m (Iterator (HeaderHash blk) m b)
+  -> m (Iterator (HeaderHash blk) m (Deserialisable m blk b))
 streamAfter db registry blockOrHeader low =
     registeredStream db registry blockOrHeader low' Nothing >>= \case
       Left  _   -> throwM $ ImmDbMissingBlockPoint low
@@ -603,7 +603,7 @@ streamAfter db registry blockOrHeader low =
               -- already checks this.
               IteratorResult {} -> return ()
               IteratorEBB    {} -> return ()
-        return $ parseIterator db blockOrHeader itr
+        return $ deserialisableIterator db blockOrHeader itr
   where
     low' :: Maybe (SlotNo, HeaderHash blk)
     low' = case low of

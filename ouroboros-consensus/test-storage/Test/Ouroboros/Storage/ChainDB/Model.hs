@@ -56,6 +56,7 @@ module Test.Ouroboros.Storage.ChainDB.Model (
   , closeDB
   , reopen
   , advanceCurSlot
+  , toDeserialisable
   ) where
 
 import           Control.Monad (unless)
@@ -396,13 +397,15 @@ iteratorNextDeserialised itrId m =
       IteratorResult blk     -> IteratorResult (toDeserialisable blk)
       IteratorBlockGCed hash -> IteratorBlockGCed hash
 
-    toDeserialisable :: blk -> Deserialisable m blk blk
-    toDeserialisable b = Deserialisable
-      { serialised         = Serialised mempty -- Currently unused
-      , deserialisableSlot = Block.blockSlot b
-      , deserialisableHash = Block.blockHash b
-      , deserialise        = return b
-      }
+toDeserialisable
+  :: (Monad m, HasHeader b, HeaderHash blk ~ HeaderHash b)
+  => b -> Deserialisable m blk b
+toDeserialisable b = Deserialisable
+  { serialised         = Serialised mempty -- Currently unused
+  , deserialisableSlot = Block.blockSlot b
+  , deserialisableHash = Block.blockHash b
+  , deserialise        = return b
+  }
 
 -- We never delete iterators such that we can use the size of the map as the
 -- next iterator id.
@@ -430,18 +433,21 @@ readBlocks m = (rdrId, m { cps = cps' })
   where
     (cps', rdrId) = CPS.initReader Block.genesisPoint (cps m)
 
-readerInstruction :: forall blk. HasHeader blk
-                  => CPS.ReaderId
-                  -> Model blk
-                  -> Either ChainDbError
-                            (Maybe (ChainUpdate blk blk), Model blk)
-readerInstruction rdrId m = checkIfReaderExists rdrId m $
+readerInstruction
+  :: forall blk b. HasHeader blk
+  => (blk -> b)
+  -> CPS.ReaderId
+  -> Model blk
+  -> Either ChainDbError
+            (Maybe (ChainUpdate blk b), Model blk)
+readerInstruction toB rdrId m = checkIfReaderExists rdrId m $
     rewrap $ CPS.readerInstruction rdrId (cps m)
   where
-    rewrap :: Maybe (ChainUpdate blk blk, CPS.ChainProducerState blk)
-           -> (Maybe (ChainUpdate blk blk), Model blk)
+    rewrap
+      :: Maybe (ChainUpdate blk blk, CPS.ChainProducerState blk)
+      -> (Maybe (ChainUpdate blk b), Model blk)
     rewrap Nothing            = (Nothing, m)
-    rewrap (Just (upd, cps')) = (Just upd, m { cps = cps' })
+    rewrap (Just (upd, cps')) = (Just (toB <$> upd), m { cps = cps' })
 
 readerForward :: HasHeader blk
               => CPS.ReaderId

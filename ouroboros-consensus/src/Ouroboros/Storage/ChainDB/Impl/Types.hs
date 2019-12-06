@@ -69,8 +69,8 @@ import           Ouroboros.Storage.Common (EpochNo)
 import           Ouroboros.Storage.EpochInfo (EpochInfo)
 
 import           Ouroboros.Storage.ChainDB.API (ChainDbError (..),
-                     InvalidBlockReason, IteratorId, ReaderId, StreamFrom,
-                     StreamTo, UnknownRange)
+                     Deserialisable, InvalidBlockReason, IteratorId, ReaderId,
+                     StreamFrom, StreamTo, UnknownRange)
 
 import           Ouroboros.Storage.ChainDB.Impl.ImmDB (ImmDB)
 import qualified Ouroboros.Storage.ChainDB.Impl.ImmDB as ImmDB
@@ -272,7 +272,8 @@ data Internal m blk = Internal
 -- 'ReaderState'.
 
 data ReaderState m blk b
-  = ReaderInImmDB !(ReaderRollState blk) !(ImmDB.Iterator (HeaderHash blk) m b)
+  = ReaderInImmDB !(ReaderRollState blk)
+                  !(ImmDB.Iterator (HeaderHash blk) m (Deserialisable m blk b))
     -- ^ The 'Reader' is reading from the ImmutableDB
   | ReaderInMem   !(ReaderRollState blk)
     -- ^ The 'Reader' is reading from the in-memory current chain fragment.

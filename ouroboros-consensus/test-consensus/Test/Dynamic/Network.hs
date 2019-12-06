@@ -248,9 +248,10 @@ runNodeNetwork registry testBtime numCoreNodes nodeJoinPlan nodeTopology
         , cdbDecodeLedger     = nodeDecodeLedgerState cfg
         , cdbDecodeChainState = nodeDecodeChainState (Proxy @blk) cfg
           -- Encoders
-        , cdbEncodeBlock      = nodeEncodeBlockWithInfo cfg
         , cdbEncodeHash       = nodeEncodeHeaderHash (Proxy @blk)
-        , cdbEncodeLedger     = nodeEncodeLedgerState cfg
+        , cdbEncodeBlock      = nodeEncodeBlockWithInfo cfg
+        , cdbEncodeHeader     = nodeEncodeHeader        cfg
+        , cdbEncodeLedger     = nodeEncodeLedgerState   cfg
         , cdbEncodeChainState = nodeEncodeChainState (Proxy @blk) cfg
           -- Error handling
         , cdbErrImmDb         = EH.monadCatch

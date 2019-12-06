@@ -57,8 +57,15 @@ data ChainDbArgs m blk = forall h1 h2 h3. ChainDbArgs {
     , cdbDecodeChainState :: forall s. Decoder s (ChainState (BlockProtocol blk))
 
       -- Encoders
-    , cdbEncodeBlock      :: blk -> BinaryInfo Encoding
     , cdbEncodeHash       :: HeaderHash blk -> Encoding
+    , cdbEncodeBlock      :: blk -> BinaryInfo Encoding
+    , cdbEncodeHeader     :: Header blk -> Encoding
+      -- ^ The returned encoding must include the header envelope
+      -- ('cdbAddHdrEnv').
+      --
+      -- This should be cheap, preferably \( O(1) \), as the Readers will
+      -- often be encoding the in-memory headers. (It is cheap for Byron
+      -- headers, as we store the serialisation in the annotation.)
     , cdbEncodeLedger     :: LedgerState blk -> Encoding
     , cdbEncodeChainState :: ChainState (BlockProtocol blk) -> Encoding
 
@@ -105,6 +112,7 @@ data ChainDbSpecificArgs m blk = ChainDbSpecificArgs {
     , cdbsRegistry       :: ResourceRegistry m
     , cdbsGcDelay        :: DiffTime
     , cdbsBlockchainTime :: BlockchainTime m
+    , cdbsEncodeHeader   :: Header blk -> Encoding
     }
 
 -- | Default arguments
@@ -113,6 +121,8 @@ data ChainDbSpecificArgs m blk = ChainDbSpecificArgs {
 --
 -- * 'cdbsTracer'
 -- * 'cdbsRegistry'
+-- * 'cdbsBlockchainTime'
+-- * 'cdbsEncodeHeader'
 defaultSpecificArgs :: ChainDbSpecificArgs m blk
 defaultSpecificArgs = ChainDbSpecificArgs{
       cdbsGcDelay        = oneHour
@@ -120,6 +130,7 @@ defaultSpecificArgs = ChainDbSpecificArgs{
     , cdbsTracer         = error "no default for cdbsTracer"
     , cdbsRegistry       = error "no default for cdbsRegistry"
     , cdbsBlockchainTime = error "no default for cdbsBlockchainTime"
+    , cdbsEncodeHeader   = error "no default for cdbsEncodeHeader"
     }
   where
     oneHour = secondsToDiffTime 60 * 60
@@ -194,6 +205,7 @@ fromChainDbArgs ChainDbArgs{..} = (
         , cdbsRegistry        = cdbRegistry
         , cdbsGcDelay         = cdbGcDelay
         , cdbsBlockchainTime  = cdbBlockchainTime
+        , cdbsEncodeHeader    = cdbEncodeHeader
         }
     )
 
@@ -217,8 +229,9 @@ toChainDbArgs ImmDB.ImmDbArgs{..}
     , cdbDecodeLedger     = lgrDecodeLedger
     , cdbDecodeChainState = lgrDecodeChainState
       -- Encoders
-    , cdbEncodeBlock      = immEncodeBlock
     , cdbEncodeHash       = immEncodeHash
+    , cdbEncodeBlock      = immEncodeBlock
+    , cdbEncodeHeader     = cdbsEncodeHeader
     , cdbEncodeLedger     = lgrEncodeLedger
     , cdbEncodeChainState = lgrEncodeChainState
       -- Error handling
