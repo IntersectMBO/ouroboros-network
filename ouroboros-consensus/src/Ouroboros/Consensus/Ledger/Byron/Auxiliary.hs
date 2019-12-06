@@ -16,7 +16,7 @@
 --
 -- NOTE: None of these definitions depend on @ouroboros-network@ or
 -- @ouroboros-consensus@ and could probably be moved to @cardano-ledger@.
-module Ouroboros.Consensus.Ledger.Byron.Aux (
+module Ouroboros.Consensus.Ledger.Byron.Auxiliary (
     -- * Extract info from genesis config
     allowedDelegators
   , boundaryBlockSlot
