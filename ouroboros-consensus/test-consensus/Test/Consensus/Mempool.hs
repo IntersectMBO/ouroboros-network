@@ -12,12 +12,14 @@ import           Control.Exception (assert)
 import           Control.Monad (foldM, forM, forM_, void)
 import           Control.Monad.Except (Except, runExcept)
 import           Control.Monad.State (State, evalState, get, modify)
+import           Control.Monad.Class.MonadTime (Time (..))
 import           Data.List (find, foldl', isSuffixOf, nub, sort)
 import           Data.Map (Map)
 import qualified Data.Map as Map
 import           Data.Maybe (isJust, isNothing)
 import           Data.Set (Set)
 import qualified Data.Set as Set
+import           Data.Time.Clock (secondsToDiffTime)
 
 import           Test.QuickCheck
 import           Test.Tasty (TestTree, testGroup)
@@ -301,9 +303,9 @@ prop_Mempool_Capacity mcts = withTestMempool mctsTestSetup $
     sortTxsInTrace :: TraceEventMempool TestBlock
                    -> TraceEventMempool TestBlock
     sortTxsInTrace ev = case ev of
-      TraceMempoolAddTxs      txs mpSz -> TraceMempoolAddTxs      (sort txs) mpSz
-      TraceMempoolRemoveTxs   txs mpSz -> TraceMempoolRemoveTxs   (sort txs) mpSz
-      TraceMempoolRejectedTxs txs mpSz -> TraceMempoolRejectedTxs (sort txs) mpSz
+      TraceMempoolAddTxs      txs mpSz time -> TraceMempoolAddTxs      (sort txs) mpSz time
+      TraceMempoolRemoveTxs   txs mpSz time -> TraceMempoolRemoveTxs   (sort txs) mpSz time
+      TraceMempoolRejectedTxs txs mpSz time -> TraceMempoolRejectedTxs (sort txs) mpSz time
       TraceMempoolManuallyRemovedTxs txIds txs mpSz ->
         TraceMempoolManuallyRemovedTxs (sort txIds) (sort txs) mpSz
 
@@ -319,13 +321,13 @@ prop_Mempool_TraceValidTxs setup =
       return $ counterexample (ppTxs (txs setup)) $
         let addedTxs = maybe
               []
-              (\(TraceMempoolAddTxs txs _) -> txs)
+              (\(TraceMempoolAddTxs txs _ _) -> txs)
               (find isAddTxsEvent evs)
         in sort (validTxs setup)  === sort addedTxs
   where
     isAddTxsEvent :: TraceEventMempool blk -> Bool
-    isAddTxsEvent (TraceMempoolAddTxs _ _) = True
-    isAddTxsEvent _                        = False
+    isAddTxsEvent (TraceMempoolAddTxs _ _ _) = True
+    isAddTxsEvent _                          = False
 
 -- | Test that all invalid rejected transactions returned from 'addTxs' are
 -- appropriately represented in the trace of events.
@@ -339,13 +341,13 @@ prop_Mempool_TraceRejectedTxs setup =
       return $ counterexample (ppTxs (txs setup)) $
         let rejectedTxs = maybe
               []
-              (\(TraceMempoolRejectedTxs txsAndErrs _) -> map fst txsAndErrs)
+              (\(TraceMempoolRejectedTxs txsAndErrs _ _) -> map fst txsAndErrs)
               (find isRejectedTxsEvent evs)
         in sort (invalidTxs setup) === sort rejectedTxs
   where
     isRejectedTxsEvent :: TraceEventMempool blk -> Bool
-    isRejectedTxsEvent (TraceMempoolRejectedTxs _ _) = True
-    isRejectedTxsEvent _                             = False
+    isRejectedTxsEvent (TraceMempoolRejectedTxs _ _ _) = True
+    isRejectedTxsEvent _                               = False
 
 -- | Test that all transactions in the 'Mempool' that have become invalid
 -- because of an update to the ledger are appropriately represented in the
@@ -369,13 +371,13 @@ prop_Mempool_TraceRemovedTxs setup =
       return $ map (const (Right ())) errs === errs .&&.
         let removedTxs = maybe
               []
-              (\(TraceMempoolRemoveTxs txs _) -> txs)
+              (\(TraceMempoolRemoveTxs txs _ _) -> txs)
               (find isRemoveTxsEvent evs)
         in sort txsInMempool === sort removedTxs
   where
     isRemoveTxsEvent :: TraceEventMempool blk -> Bool
-    isRemoveTxsEvent (TraceMempoolRemoveTxs _ _) = True
-    isRemoveTxsEvent _                           = False
+    isRemoveTxsEvent (TraceMempoolRemoveTxs _ _ _) = True
+    isRemoveTxsEvent _                             = False
 
 {-------------------------------------------------------------------------------
   TestSetup: how to set up a TestMempool
@@ -758,9 +760,12 @@ mempoolCapTestExpectedTrace mcts = go chunks
     go (chunk:cs) = chunkExpectedTrace chunk ++ go cs
 
     chunkExpectedTrace chunk =
-      [ TraceMempoolAddTxs    chunk (fromIntegral $ length chunk)
-      , TraceMempoolRemoveTxs chunk 0
+      [ TraceMempoolAddTxs    chunk (fromIntegral $ length chunk) nullTime
+      , TraceMempoolRemoveTxs chunk 0 nullTime
       ]
+
+    nullTime :: Time
+    nullTime = Time $ secondsToDiffTime 0
 
 {-------------------------------------------------------------------------------
   MempoolCapTestEnv: environment for tests related to mempool capacity
@@ -942,7 +947,7 @@ executeAction testMempool action = case action of
     AddTx tx -> do
       void $ addTxs [TestGenTx tx]
       expectTraceEvent $ \case
-        TraceMempoolAddTxs [TestGenTx tx'] _
+        TraceMempoolAddTxs [TestGenTx tx'] _ _
           | tx == tx'
           -> property True
         _ -> counterexample ("Transaction not added: " <> condense tx) False
@@ -952,7 +957,7 @@ executeAction testMempool action = case action of
       -- Synchronise the Mempool with the updated chain
       withSyncState TxsForUnknownBlock $ \_snapshot -> return ()
       expectTraceEvent $ \case
-        TraceMempoolRemoveTxs [TestGenTx tx'] _
+        TraceMempoolRemoveTxs [TestGenTx tx'] _ _
           | tx == tx'
           -> property True
         _ -> counterexample ("Transaction not removed: " <> condense tx) False

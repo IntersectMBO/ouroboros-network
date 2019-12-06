@@ -361,8 +361,12 @@ forkBlockProduction IS{..} =
           ChainDB.addBlock chainDB newBlock
           -- Check whether we adopted our block
           curTip <- atomically $ ChainDB.getTipPoint chainDB
-          if curTip == blockPoint newBlock then
-            trace $ TraceAdoptedBlock currentSlot newBlock
+          if curTip == blockPoint newBlock then do
+            -- We measure the time directly.
+            -- We could also measure it when collecting the trace events, but this
+            -- is much more precise.
+            time <- getMonotonicTime
+            trace $ TraceAdoptedBlock currentSlot newBlock txs time
           else do
             isInvalid <- atomically $
               ($ blockHash newBlock) . forgetFingerprint <$>

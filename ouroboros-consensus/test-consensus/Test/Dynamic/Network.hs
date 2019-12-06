@@ -545,7 +545,7 @@ data NodeInfo blk db ev = NodeInfo
 data NodeEvents blk ev = NodeEvents
   { nodeEventsAdds        :: ev (SlotNo, Point blk, BlockNo)
     -- ^ every 'AddedBlockToVolDB' excluding EBBs
-  , nodeEventsForges      :: ev (TraceForgeEvent blk)
+  , nodeEventsForges      :: ev (TraceForgeEvent blk (GenTx blk))
     -- ^ every 'TraceForgeEvent'
   , nodeEventsInvalids    :: ev (Point blk)
     -- ^ the point of every 'ChainDB.InvalidBlock' event

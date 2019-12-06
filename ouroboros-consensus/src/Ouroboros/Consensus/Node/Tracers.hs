@@ -9,6 +9,7 @@ module Ouroboros.Consensus.Node.Tracers
   , TraceForgeEvent (..)
   ) where
 
+import           Control.Monad.Class.MonadTime (Time)
 import           Control.Tracer (Tracer, nullTracer, showTracing)
 
 import           Ouroboros.Network.Block (Point, SlotNo)
@@ -47,7 +48,7 @@ data Tracers' peer blk f = Tracers
   , txOutboundTracer              :: f (TraceTxSubmissionOutbound (GenTxId blk) (GenTx blk))
   , localTxSubmissionServerTracer :: f (TraceLocalTxSubmissionServerEvent blk)
   , mempoolTracer                 :: f (TraceEventMempool blk)
-  , forgeTracer                   :: f (TraceForgeEvent blk)
+  , forgeTracer                   :: f (TraceForgeEvent blk (GenTx blk))
   }
 
 -- | A record of 'Tracer's for the node.
@@ -97,7 +98,7 @@ showTracers tr = Tracers
 -------------------------------------------------------------------------------}
 
 -- | Trace the forging of a block as a slot leader.
-data TraceForgeEvent blk
+data TraceForgeEvent blk tx
   -- | The forged block and at which slot it was forged.
   = TraceForgeEvent SlotNo blk
 
@@ -109,8 +110,9 @@ data TraceForgeEvent blk
   -- 'TooFarAhead', never 'TooFarBehind'.
   | TraceCouldNotForge SlotNo AnachronyFailure
 
-  -- | We adopted the block we produced
-  | TraceAdoptedBlock SlotNo blk
+  -- | We adopted the block we produced, we also trace the transactions
+  -- and the time the block with the transactions was adopted.
+  | TraceAdoptedBlock SlotNo blk [tx] Time
 
   -- | We did not adopt the block we produced, but the block was valid. We
   -- must have adopted a block that another leader of the same slot produced
