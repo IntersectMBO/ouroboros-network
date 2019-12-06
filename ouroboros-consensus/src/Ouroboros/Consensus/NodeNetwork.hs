@@ -103,7 +103,7 @@ data ProtocolHandlers m peer blk = ProtocolHandlers {
 
     , phChainSyncServer
         :: ResourceRegistry m
-        -> ChainSyncServer (Header blk) (Tip blk) m ()
+        -> ChainSyncServer (Serialised (Header blk)) (Tip blk) m ()
 
     -- TODO block fetch client does not have GADT view of the handlers.
     , phBlockFetchClient
@@ -123,7 +123,7 @@ data ProtocolHandlers m peer blk = ProtocolHandlers {
 
     , phLocalChainSyncServer
         :: ResourceRegistry m
-        -> ChainSyncServer blk (Tip blk) m ()
+        -> ChainSyncServer (Serialised blk) (Tip blk) m ()
 
     , phLocalTxSubmissionServer
         :: LocalTxSubmissionServer (GenTx blk) (ApplyTxErr blk) m ()
@@ -187,17 +187,19 @@ protocolHandlers NodeArgs {btime, maxClockSkew, tracers, maxUnackTxs, chainSyncP
 -- | Protocol codecs needed to run 'ProtocolHandlers'.
 --
 data ProtocolCodecs blk failure m
-                    bytesCS bytesBF bytesSBF bytesTX
+                    bytesCS bytesSCS bytesBF bytesSBF bytesTX
                     bytesLCS bytesLTX = ProtocolCodecs {
     pcChainSyncCodec            :: Codec (ChainSync (Header blk) (Tip blk))
                                          failure m bytesCS
+  , pcChainSyncCodecSerialised  :: Codec (ChainSync (Serialised (Header blk)) (Tip blk))
+                                         failure m bytesSCS
   , pcBlockFetchCodec           :: Codec (BlockFetch blk)
                                          failure m bytesBF
   , pcBlockFetchCodecSerialised :: Codec (BlockFetch (Serialised blk))
                                          failure m bytesSBF
   , pcTxSubmissionCodec         :: Codec (TxSubmission (GenTxId blk) (GenTx blk))
                                          failure m bytesTX
-  , pcLocalChainSyncCodec       :: Codec (ChainSync blk (Tip blk))
+  , pcLocalChainSyncCodec       :: Codec (ChainSync (Serialised blk) (Tip blk))
                                          failure m bytesLCS
   , pcLocalTxSubmissionCodec    :: Codec (LocalTxSubmission (GenTx blk) (ApplyTxErr blk))
                                          failure m bytesLTX
@@ -208,13 +210,20 @@ data ProtocolCodecs blk failure m
 protocolCodecs :: forall m blk. (IOLike m, RunNode blk)
                => NodeConfig (BlockProtocol blk)
                -> ProtocolCodecs blk DeserialiseFailure m
-                                 ByteString ByteString ByteString
-                                 ByteString ByteString ByteString
+                    ByteString ByteString ByteString ByteString ByteString
+                    ByteString ByteString
 protocolCodecs cfg = ProtocolCodecs {
       pcChainSyncCodec =
         codecChainSync
           (nodeEncodeHeader cfg)
           (nodeDecodeHeader cfg)
+          (encodePoint (nodeEncodeHeaderHash (Proxy @blk)))
+          (decodePoint (nodeDecodeHeaderHash (Proxy @blk)))
+          (encodeTip   (nodeEncodeHeaderHash (Proxy @blk)))
+          (decodeTip   (nodeDecodeHeaderHash (Proxy @blk)))
+
+    , pcChainSyncCodecSerialised =
+        codecChainSyncSerialised
           (encodePoint (nodeEncodeHeaderHash (Proxy @blk)))
           (decodePoint (nodeDecodeHeaderHash (Proxy @blk)))
           (encodeTip   (nodeEncodeHeaderHash (Proxy @blk)))
@@ -240,9 +249,7 @@ protocolCodecs cfg = ProtocolCodecs {
           nodeDecodeGenTx
 
     , pcLocalChainSyncCodec =
-        codecChainSync
-          (nodeEncodeBlock cfg)
-          (nodeDecodeBlock cfg)
+        codecChainSyncSerialised
           (encodePoint (nodeEncodeHeaderHash (Proxy @blk)))
           (decodePoint (nodeDecodeHeaderHash (Proxy @blk)))
           (encodeTip   (nodeEncodeHeaderHash (Proxy @blk)))
@@ -261,13 +268,15 @@ protocolCodecs cfg = ProtocolCodecs {
 protocolCodecsId :: Monad m
                  => ProtocolCodecs blk CodecFailure m
                       (AnyMessage (ChainSync (Header blk) (Tip blk)))
+                      (AnyMessage (ChainSync (Serialised (Header blk)) (Tip blk)))
                       (AnyMessage (BlockFetch blk))
                       (AnyMessage (BlockFetch (Serialised blk)))
                       (AnyMessage (TxSubmission (GenTxId blk) (GenTx blk)))
-                      (AnyMessage (ChainSync blk (Tip blk)))
+                      (AnyMessage (ChainSync (Serialised blk) (Tip blk)))
                       (AnyMessage (LocalTxSubmission (GenTx blk) (ApplyTxErr blk)))
 protocolCodecsId = ProtocolCodecs {
       pcChainSyncCodec            = codecChainSyncId
+    , pcChainSyncCodecSerialised  = codecChainSyncId
     , pcBlockFetchCodec           = codecBlockFetchId
     , pcBlockFetchCodecSerialised = codecBlockFetchId
     , pcTxSubmissionCodec         = codecTxSubmissionId
@@ -280,10 +289,11 @@ type ProtocolTracers m peer blk failure = ProtocolTracers' peer blk failure (Tra
 
 data ProtocolTracers' peer blk failure f = ProtocolTracers {
     ptChainSyncTracer            :: f (TraceSendRecv (ChainSync (Header blk) (Tip blk))               peer failure)
+  , ptChainSyncSerialisedTracer  :: f (TraceSendRecv (ChainSync (Serialised (Header blk)) (Tip blk))  peer failure)
   , ptBlockFetchTracer           :: f (TraceSendRecv (BlockFetch blk)                                 peer failure)
   , ptBlockFetchSerialisedTracer :: f (TraceSendRecv (BlockFetch (Serialised blk))                    peer failure)
   , ptTxSubmissionTracer         :: f (TraceSendRecv (TxSubmission (GenTxId blk) (GenTx blk))         peer failure)
-  , ptLocalChainSyncTracer       :: f (TraceSendRecv (ChainSync blk (Tip blk))                        peer failure)
+  , ptLocalChainSyncTracer       :: f (TraceSendRecv (ChainSync (Serialised blk) (Tip blk))           peer failure)
   , ptLocalTxSubmissionTracer    :: f (TraceSendRecv (LocalTxSubmission (GenTx blk) (ApplyTxErr blk)) peer failure)
   }
 
@@ -291,6 +301,7 @@ data ProtocolTracers' peer blk failure f = ProtocolTracers {
 nullProtocolTracers :: Monad m => ProtocolTracers m peer blk failure
 nullProtocolTracers = ProtocolTracers {
     ptChainSyncTracer            = nullTracer
+  , ptChainSyncSerialisedTracer  = nullTracer
   , ptBlockFetchTracer           = nullTracer
   , ptBlockFetchSerialisedTracer = nullTracer
   , ptTxSubmissionTracer         = nullTracer
@@ -310,6 +321,7 @@ showProtocolTracers :: ( Show blk
                     => Tracer m String -> ProtocolTracers m peer blk failure
 showProtocolTracers tr = ProtocolTracers {
     ptChainSyncTracer            = showTracing tr
+  , ptChainSyncSerialisedTracer  = showTracing tr
   , ptBlockFetchTracer           = showTracing tr
   , ptBlockFetchSerialisedTracer = showTracing tr
   , ptTxSubmissionTracer         = showTracing tr
@@ -404,7 +416,7 @@ consensusNetworkApps
        )
     => NodeKernel m peer blk
     -> ProtocolTracers m peer blk failure
-    -> ProtocolCodecs blk failure m bytesCS bytesBF bytesBF bytesTX bytesLCS bytesLTX
+    -> ProtocolCodecs blk failure m bytesCS bytesCS bytesBF bytesBF bytesTX bytesLCS bytesLTX
     -> ProtocolHandlers m peer blk
     -> NetworkApplication m peer bytesCS bytesBF bytesTX bytesLCS bytesLTX ()
 consensusNetworkApps kernel ProtocolTracers {..} ProtocolCodecs {..} ProtocolHandlers {..} =
@@ -451,8 +463,8 @@ consensusNetworkApps kernel ProtocolTracers {..} ProtocolCodecs {..} ProtocolHan
       -> m ()
     naChainSyncServer them channel = withRegistry $ \registry ->
       runPeer
-        ptChainSyncTracer
-        pcChainSyncCodec
+        ptChainSyncSerialisedTracer
+        pcChainSyncCodecSerialised
         them
         channel
         $ chainSyncServerPeer
