@@ -283,12 +283,16 @@ data TraceEventMempool blk
       -- ^ New, valid transaction were added to the Mempool.
       !Word
       -- ^ The total number of transactions now in the Mempool.
+      !Time
+      -- ^ The time at which the transactions were added.
   | TraceMempoolRejectedTxs
       ![(GenTx blk, ApplyTxErr blk)]
       -- ^ New, invalid transaction were rejected and thus not added to the
       -- Mempool.
       !Word
       -- ^ The total number of transactions now in the Mempool.
+      !Time
+      -- ^ The time at which the transactions were rejected.
   | TraceMempoolRemoveTxs
       ![GenTx blk]
       -- ^ Previously valid transactions that are no longer valid because of
@@ -296,6 +300,8 @@ data TraceEventMempool blk
       -- from the Mempool.
       !Word
       -- ^ The total number of transactions now in the Mempool.
+      !Time
+      -- ^ The time at which the transactions were removed.
   | TraceMempoolManuallyRemovedTxs
       ![GenTxId blk]
       -- ^ Transactions that have been manually removed from the Mempool.

@@ -281,9 +281,13 @@ implAddTxs mpEnv accum txs = assert (all txInvariant txs) $ do
 
     let ValidationResult { vrNewValid = accepted } = vr
 
-    traceBatch TraceMempoolRemoveTxs   mempoolSize (map fst removed)
-    traceBatch TraceMempoolAddTxs      mempoolSize accepted
-    traceBatch TraceMempoolRejectedTxs mempoolSize rejected
+    -- We record the time at which the transactions were added to the mempool
+    -- so we can use it in our performance measurements.
+    time <- getMonotonicTime
+
+    traceBatch TraceMempoolRemoveTxs   mempoolSize (map fst removed) time
+    traceBatch TraceMempoolAddTxs      mempoolSize accepted          time
+    traceBatch TraceMempoolRejectedTxs mempoolSize rejected          time
 
     case unvalidated of
       -- All of the provided transactions have been validated.
@@ -299,9 +303,9 @@ implAddTxs mpEnv accum txs = assert (all txInvariant txs) $ do
       , mpEnvCapacity = MempoolCapacity mempoolCap
       } = mpEnv
 
-    traceBatch mkEv size batch
+    traceBatch mkEv size batch time
       | null batch = return ()
-      | otherwise  = traceWith mpEnvTracer (mkEv batch size)
+      | otherwise  = traceWith mpEnvTracer (mkEv batch size time)
 
     mkRes acc accepted rejected =
          [(tx, Just err) | (tx, err) <- rejected]
@@ -436,8 +440,9 @@ implWithSyncState mpEnv@MempoolEnv{mpEnvTracer, mpEnvStateVar} blockSlot f = do
       snapshot    <- implGetSnapshot mpEnv
       res         <- f snapshot
       return (map fst vrInvalid, mempoolSize, res)
-    unless (null removed) $
-      traceWith mpEnvTracer $ TraceMempoolRemoveTxs removed mempoolSize
+    unless (null removed) $ do
+      time <- getMonotonicTime
+      traceWith mpEnvTracer $ TraceMempoolRemoveTxs removed mempoolSize time
     return res
 
 implGetSnapshot :: IOLike m
