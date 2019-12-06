@@ -25,7 +25,7 @@ import           Ouroboros.Network.Block (HeaderHash)
 
 import           Ouroboros.Consensus.Block (Header)
 import           Ouroboros.Consensus.Ledger.Byron
-import           Ouroboros.Consensus.Ledger.Byron.Aux
+import           Ouroboros.Consensus.Ledger.Byron.Auxiliary
 import           Ouroboros.Consensus.Mempool.API (ApplyTxErr)
 import qualified Ouroboros.Consensus.Protocol.PBFT.ChainState as CS
 
