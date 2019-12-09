@@ -1,6 +1,7 @@
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE FlexibleContexts          #-}
 {-# LANGUAGE LambdaCase                #-}
+{-# LANGUAGE NamedFieldPuns            #-}
 {-# LANGUAGE PatternSynonyms           #-}
 {-# LANGUAGE RankNTypes                #-}
 {-# LANGUAGE RecordWildCards           #-}
@@ -82,6 +83,7 @@ import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Storage.ChainDB.API (ChainDbError (..),
                      ChainDbFailure (..), Deserialisable (..), StreamFrom (..),
                      StreamTo (..))
+import           Ouroboros.Storage.Common
 import           Ouroboros.Storage.FS.API (HasFS, createDirectoryIfMissing)
 import           Ouroboros.Storage.FS.API.Types (MountPoint (..), mkFsPath)
 import           Ouroboros.Storage.FS.IO (ioHasFS)
@@ -100,7 +102,7 @@ data VolDB m blk = VolDB {
     , decBlock :: forall s. Decoder s (Lazy.ByteString -> blk)
       -- ^ TODO introduce a newtype wrapper around the @s@ so we can use
       -- generics to derive the NoUnexpectedThunks instance.
-    , encBlock :: blk -> Encoding
+    , encBlock :: blk -> BinaryInfo Encoding
     , err      :: ErrorHandling VolatileDBError m
     , errSTM   :: ThrowCantCatch VolatileDBError (STM m)
     }
@@ -126,7 +128,7 @@ data VolDbArgs m blk = forall h. VolDbArgs {
     , volErrSTM        :: ThrowCantCatch VolatileDBError (STM m)
     , volBlocksPerFile :: Int
     , volDecodeBlock   :: forall s. Decoder s (Lazy.ByteString -> blk)
-    , volEncodeBlock   :: blk -> Encoding
+    , volEncodeBlock   :: blk -> BinaryInfo Encoding
     }
 
 -- | Default arguments when using the 'IO' monad
@@ -167,7 +169,7 @@ openDB args@VolDbArgs{..} = do
 -- | For testing purposes
 mkVolDB :: VolatileDB (HeaderHash blk) m
         -> (forall s. Decoder s (Lazy.ByteString -> blk))
-        -> (blk -> Encoding)
+        -> (blk -> BinaryInfo Encoding)
         -> ErrorHandling VolatileDBError m
         -> ThrowCantCatch VolatileDBError (STM m)
         -> VolDB m blk
@@ -194,7 +196,9 @@ getMaxSlotNo db = withSTM db VolDB.getMaxSlotNo
 
 putBlock :: (MonadCatch m, HasHeader blk) => VolDB m blk -> blk -> m ()
 putBlock db@VolDB{..} b = withDB db $ \vol ->
-    VolDB.putBlock vol (extractInfo b) (CBOR.toBuilder (encBlock b))
+    VolDB.putBlock vol (extractInfo binInfo b) binaryBlob
+  where
+    binInfo@BinaryInfo { binaryBlob } = CBOR.toBuilder <$> encBlock b
 
 closeDB :: (MonadCatch m, HasCallStack) => VolDB m blk -> m ()
 closeDB db = withDB db VolDB.closeDB
@@ -470,8 +474,14 @@ blockFileParser VolDbArgs{..} = VolDB.Parser $
        fmap (fmap (fmap fst)) -- Drop the offset of the error
      . Util.CBOR.readIncrementalOffsets volHasFS decoder'
   where
-    decoder' :: forall s. Decoder s (Lazy.ByteString -> VolDB.BlockInfo (HeaderHash blk))
-    decoder' = (extractInfo .) <$> volDecodeBlock
+    -- TODO: It looks weird that we use an encoding function 'volEncodeBlock'
+    -- during parsing, but this is quite cheap, since the encoding is already
+    -- cached. We should consider improving this, so that it does not create
+    -- confusion.
+    decoder' :: forall s. Decoder s (Lazy.ByteString
+             -> VolDB.BlockInfo (HeaderHash blk))
+    decoder' = ((\blk -> extractInfo (volEncodeBlock blk) blk) .)
+      <$> volDecodeBlock
 
 {-------------------------------------------------------------------------------
   Error handling
@@ -533,9 +543,14 @@ fromChainHash :: ChainHash blk -> WithOrigin (HeaderHash blk)
 fromChainHash GenesisHash      = Origin
 fromChainHash (BlockHash hash) = At hash
 
-extractInfo :: HasHeader blk => blk -> VolDB.BlockInfo (HeaderHash blk)
-extractInfo b = VolDB.BlockInfo {
-      bbid    = blockHash b
-    , bslot   = blockSlot b
-    , bpreBid = fromChainHash (blockPrevHash b)
+extractInfo :: HasHeader blk
+            => BinaryInfo a
+            -> blk
+            -> VolDB.BlockInfo (HeaderHash blk)
+extractInfo BinaryInfo{..} b = VolDB.BlockInfo {
+      bbid          = blockHash b
+    , bslot         = blockSlot b
+    , bpreBid       = fromChainHash (blockPrevHash b)
+    , bheaderOffset = headerOffset
+    , bheaderSize   = headerSize
     }

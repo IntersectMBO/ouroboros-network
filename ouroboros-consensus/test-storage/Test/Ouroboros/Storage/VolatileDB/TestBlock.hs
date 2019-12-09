@@ -99,9 +99,11 @@ parseImpl hasFS@HasFS{..} path =
             where
               ls' = (offset, (binarySize, blockInfo)) : ls
               blockInfo = BlockInfo
-                { bbid    = bid
-                , bslot   = guessSlot bid
-                , bpreBid = prebid
+                { bbid          = bid
+                , bslot         = guessSlot bid
+                , bpreBid       = prebid
+                , bheaderOffset = 0
+                , bheaderSize   = 0
                 }
 
 

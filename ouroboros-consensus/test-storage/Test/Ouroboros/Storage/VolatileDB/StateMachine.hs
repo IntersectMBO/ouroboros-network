@@ -250,7 +250,7 @@ runPure dbm (CmdErr cmd err) =
             GetBlockIds        ->
                 Blocks <$> getBlockIdsModel tnc
             PutBlock b pb      ->
-                Unit <$> putBlockModel tnc err (BlockInfo b (guessSlot b) pb) (BL.lazyByteString $ toBinary (b, pb))
+                Unit <$> putBlockModel tnc err (BlockInfo b (guessSlot b) pb 0 0) (BL.lazyByteString $ toBinary (b, pb))
             GetSuccessors bids -> do
                 successors <- getSuccessorsModel tnc
                 return $ Successors $ successors <$> bids
@@ -294,7 +294,9 @@ runDB :: (HasCallStack, IOLike m)
 runDB restCmd db cmd = case cmd of
     GetBlock bid       -> Blob <$> getBlock db bid
     GetBlockIds        -> Blocks <$> getBlockIds db
-    PutBlock b pb      -> Unit <$> putBlock db (BlockInfo b (guessSlot b) pb) (BL.lazyByteString $ toBinary (b, pb))
+    PutBlock b pb      -> Unit <$> putBlock db
+      (BlockInfo b (guessSlot b) pb 0 0)
+      (BL.lazyByteString $ toBinary (b, pb))
     GetSuccessors bids -> do
         successors <- atomically $ getSuccessors db
         return $ Successors $ successors <$> bids

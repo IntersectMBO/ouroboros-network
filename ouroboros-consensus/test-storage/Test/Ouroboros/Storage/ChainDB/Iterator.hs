@@ -271,7 +271,7 @@ initIteratorEnv TestSetup { immutable, volatile } tracer = do
       (_volDBModel, volDB) <- VolDB.openDBMock EH.throwSTM 1
       forM_ blocks $ \block ->
         VolDB.putBlock volDB (blockInfo block) (serialiseIncremental block)
-      return $ mkVolDB volDB (const <$> decode) encode EH.monadCatch EH.throwSTM
+      return $ mkVolDB volDB (const <$> decode) (addDummyBinaryInfo . encode) EH.monadCatch EH.throwSTM
 
     blockInfo :: TestBlock -> VolDB.BlockInfo (HeaderHash TestBlock)
     blockInfo tb = VolDB.BlockInfo
@@ -280,6 +280,8 @@ initIteratorEnv TestSetup { immutable, volatile } tracer = do
       , VolDB.bpreBid = case blockPrevHash tb of
           GenesisHash -> Origin
           BlockHash h -> At h
+      , VolDB.bheaderOffset = 0
+      , VolDB.bheaderSize   = 0
       }
 
     epochSize :: EpochSize
@@ -298,8 +300,9 @@ initIteratorEnv TestSetup { immutable, volatile } tracer = do
       where
         epochInfo = fixedSizeEpochInfo epochSize
         isEBB     = const Nothing
-        addDummyBinaryInfo blob = ImmDB.BinaryInfo
-          { ImmDB.binaryBlob   = blob
-          , ImmDB.headerOffset = 0
-          , ImmDB.headerSize   = 0
-          }
+
+addDummyBinaryInfo blob = ImmDB.BinaryInfo
+  { ImmDB.binaryBlob   = blob
+  , ImmDB.headerOffset = 0
+  , ImmDB.headerSize   = 0
+  }
