@@ -2,7 +2,7 @@
 , iohk-extras ? {}
 , iohk-module ? {}
 , haskell
-, extras ? (_: [])
+, extras ? (_: {})
 , ...
 }:
 let
