@@ -269,7 +269,7 @@ implAddTxs mpEnv accum txs = assert (all txInvariant txs) $ do
                                      , isTip          = vrBefore
                                      , isLastTicketNo = vrLastTicketNo
                                      }
-          mempoolSize <- getMempoolSize mpEnv
+          (mempoolSize, _) <- getMempoolSize mpEnv
           pure (syncRes, removed, [], txs, mempoolSize)
         else do
           -- The tip was unchanged.
@@ -277,7 +277,7 @@ implAddTxs mpEnv accum txs = assert (all txInvariant txs) $ do
           -- event that we have to 'retry' this STM transaction. Continue by
           -- validating the provided new transactions.
           (vr, unvalidated) <- validateNew syncRes
-          mempoolSize       <- getMempoolSize mpEnv
+          (mempoolSize, _)  <- getMempoolSize mpEnv
           pure (vr, removed, vrInvalid vr, unvalidated, mempoolSize)
 
     let ValidationResult { vrNewValid = accepted } = vr
@@ -367,7 +367,7 @@ implAddTxs mpEnv accum txs = assert (all txInvariant txs) $ do
       -- (those not yet validated due to the mempool capacity being reached).
     validateNewUntilMempoolFull []      vr = pure (vr, [])
     validateNewUntilMempoolFull (t:ts)  vr = do
-      mempoolSize <- getMempoolSize mpEnv
+      (mempoolSize, _) <- getMempoolSize mpEnv
       -- The size of a mempool should never be greater than its capacity.
       assert (mempoolSize <= mempoolCap) $
         -- Here, we check whether we're at the mempool's capacity /before/
@@ -408,7 +408,7 @@ implRemoveTxs mpEnv@MempoolEnv{mpEnvTracer, mpEnvStateVar} txIds = do
         }
       -- The number of transactions in the mempool /after/ manually removing
       -- the transactions.
-      mempoolSize <- getMempoolSize mpEnv
+      (mempoolSize, _) <- getMempoolSize mpEnv
       return (map fst vrInvalid, mempoolSize)
     unless (null txIds) $
       traceWith mpEnvTracer $
@@ -437,9 +437,9 @@ implWithSyncState mpEnv@MempoolEnv{mpEnvTracer, mpEnvStateVar} blockSlot f = do
         }
       -- The number of transactions in the mempool /after/ removing invalid
       -- transactions.
-      mempoolSize <- getMempoolSize mpEnv
-      snapshot    <- implGetSnapshot mpEnv
-      res         <- f snapshot
+      (mempoolSize, _) <- getMempoolSize mpEnv
+      snapshot         <- implGetSnapshot mpEnv
+      res              <- f snapshot
       return (map fst vrInvalid, mempoolSize, res)
     unless (null removed) $ do
       time <- getMonotonicTime
@@ -458,10 +458,18 @@ implGetSnapshot MempoolEnv{mpEnvStateVar} = do
     , snapshotLookupTx   = implSnapshotGetTx         is
     }
 
--- | Return the number of transactions in the Mempool.
-getMempoolSize :: IOLike m => MempoolEnv m blk -> STM m Word
-getMempoolSize MempoolEnv{mpEnvStateVar} =
-    fromIntegral . Foldable.length . isTxs <$> readTVar mpEnvStateVar
+-- | Return the number of transactions in the Mempool paired with their total
+-- size in bytes.
+getMempoolSize :: (IOLike m, ApplyTx blk)
+               => MempoolEnv m blk
+               -> STM m (Word, Word32)
+getMempoolSize MempoolEnv{mpEnvStateVar} = do
+    IS { isTxs } <- readTVar mpEnvStateVar
+    pure $ Foldable.foldl'
+      (\(accNumTxs, accTxSizes) tx ->
+        (accNumTxs + 1, accTxSizes + txSize tx))
+      (0, 0)
+      isTxs
 
 {-------------------------------------------------------------------------------
   MempoolSnapshot Implementation
