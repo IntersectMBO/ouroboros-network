@@ -54,6 +54,7 @@ import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Mempool
 import           Ouroboros.Consensus.Mempool.TxSeq (TicketNo)
+import           Ouroboros.Consensus.Node.Run (RunNode (..))
 import           Ouroboros.Consensus.Node.Tracers
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util (whenJust)
@@ -146,10 +147,9 @@ data NodeArgs m peer blk = NodeArgs {
 initNodeKernel
     :: forall m peer blk.
        ( IOLike m
-       , ProtocolLedgerView blk
+       , RunNode blk
        , NoUnexpectedThunks peer
        , Ord peer
-       , ApplyTx blk
        )
     => NodeArgs m peer blk
     -> m (NodeKernel m peer blk)
@@ -297,7 +297,7 @@ data LeaderResult blk =
 
 forkBlockProduction
     :: forall m peer blk.
-       (IOLike m, ProtocolLedgerView blk, ApplyTx blk)
+       (IOLike m, RunNode blk)
     => Word32  -- ^ Max block body size
     -> InternalState m peer blk
     -> BlockProduction m blk
@@ -410,7 +410,12 @@ forkBlockProduction maxBlockBodySize IS{..} BlockProduction{..} =
           GT -> error "prevPointAndBlockNo: block in future"
           -- The block at the tip has the same slot as the block we're going
           -- to produce (@slot@), so look at the block before it.
-          EQ | _ :> hdr' <- c'
+          EQ
+             | Just{} <- nodeIsEBB hdr
+               -- We allow forging a block that is the successor of an EBB in
+               -- the same slot.
+             -> (headerPoint hdr, blockNo hdr)
+             | _ :> hdr' <- c'
              -> (headerPoint hdr', blockNo hdr')
              | otherwise
                -- If there is no block before it, so use genesis.

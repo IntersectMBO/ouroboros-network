@@ -19,7 +19,7 @@ import qualified Cardano.Chain.Update as Update
 import           Ouroboros.Network.Block (BlockNo (..), ChainHash (..),
                      SlotNo (..), blockPoint)
 
-import           Ouroboros.Consensus.Block (BlockProtocol)
+import           Ouroboros.Consensus.Block (BlockProtocol, getHeader)
 import           Ouroboros.Consensus.Ledger.Byron (ByronBlock)
 import           Ouroboros.Consensus.Ledger.Byron.Forge (forgeEBB)
 import           Ouroboros.Consensus.Node.ProtocolInfo
@@ -78,7 +78,7 @@ withImmDB k = withRegistry $ \registry -> do
       , immEpochInfo      = epochInfo
       , immHashInfo       = nodeHashInfo (Proxy @ByronBlock)
       , immValidation     = ValidateMostRecentEpoch
-      , immIsEBB          = nodeIsEBB
+      , immIsEBB          = nodeIsEBB . getHeader
       , immCheckIntegrity = nodeCheckIntegrity testCfg
       , immAddHdrEnv      = nodeAddHeaderEnvelope (Proxy @ByronBlock)
       , immTracer         = nullTracer

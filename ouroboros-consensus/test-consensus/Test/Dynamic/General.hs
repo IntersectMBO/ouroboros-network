@@ -30,6 +30,7 @@ import           Ouroboros.Network.Block (BlockNo (..), pattern BlockPoint,
                      pattern GenesisPoint, HasHeader, Point, SlotNo (..),
                      blockPoint)
 
+import           Ouroboros.Consensus.Block (getHeader)
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.BlockchainTime.Mock
 import           Ouroboros.Consensus.Node.ProtocolInfo
@@ -233,7 +234,7 @@ prop_general k TestConfig{numSlots, nodeJoinPlan, nodeTopology} mbSchedule
             guard $ j <= s
 
             guard $ not $
-                isJust (nodeIsEBB b) || Set.member (blockPoint b) invalids
+                isJust (nodeIsEBB (getHeader b)) || Set.member (blockPoint b) invalids
 
             pure [cid]
 

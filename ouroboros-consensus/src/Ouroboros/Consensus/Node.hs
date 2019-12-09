@@ -52,7 +52,7 @@ import           Ouroboros.Network.Protocol.ChainSync.PipelineDecision
                      (pipelineDecisionLowHighMark)
 import           Ouroboros.Network.Socket (ConnectionId)
 
-import           Ouroboros.Consensus.Block (BlockProtocol)
+import           Ouroboros.Consensus.Block (BlockProtocol, getHeader)
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.ChainSyncClient (ClockSkew (..))
 import           Ouroboros.Consensus.Ledger.Extended (ExtLedgerState)
@@ -244,7 +244,7 @@ mkChainDbArgs tracer registry btime dbPath cfg initLedger
     , ChainDB.cdbGenesis          = return initLedger
     , ChainDB.cdbAddHdrEnv        = nodeAddHeaderEnvelope   (Proxy @blk)
     , ChainDB.cdbDiskPolicy       = defaultDiskPolicy secParam
-    , ChainDB.cdbIsEBB            = nodeIsEBB
+    , ChainDB.cdbIsEBB            = nodeIsEBB . getHeader
     , ChainDB.cdbCheckIntegrity   = nodeCheckIntegrity      cfg
     , ChainDB.cdbParamsLgrDB      = ledgerDbDefaultParams secParam
     , ChainDB.cdbNodeConfig       = cfg

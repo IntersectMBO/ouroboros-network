@@ -293,7 +293,7 @@ runNodeNetwork numCoreNodes numSlots slotLengths nodeJoinPlan nodeTopology
         , cdbNodeConfig       = cfg
         , cdbEpochInfo        = epochInfo
         , cdbHashInfo         = nodeHashInfo (Proxy @blk)
-        , cdbIsEBB            = nodeIsEBB
+        , cdbIsEBB            = nodeIsEBB . getHeader
         , cdbCheckIntegrity   = nodeCheckIntegrity cfg
         , cdbGenesis          = return initLedger
         , cdbBlockchainTime   = btime

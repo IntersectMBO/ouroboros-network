@@ -16,6 +16,7 @@ import           Ouroboros.Network.Magic (NetworkMagic (..))
 
 import           Ouroboros.Consensus.BlockchainTime (SystemStart (..))
 import           Ouroboros.Consensus.Ledger.Byron
+import qualified Ouroboros.Consensus.Ledger.Byron.Auxiliary as Aux
 import           Ouroboros.Consensus.Node.Run.Abstract
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.PBFT
@@ -30,13 +31,12 @@ instance RunNode ByronBlock where
   nodeForgeBlock          = forgeByronBlock
   nodeBlockMatchesHeader  = verifyBlockMatchesHeader
   nodeBlockFetchSize      = const 2000 -- TODO #593
-  nodeIsEBB               = \blk -> case byronBlockRaw blk of
-    Cardano.Block.ABOBBlock _      -> Nothing
-    Cardano.Block.ABOBBoundary ebb -> Just
-                                    . EpochNo
-                                    . Cardano.Block.boundaryEpoch
-                                    . Cardano.Block.boundaryHeader
-                                    $ ebb
+  nodeIsEBB               = \hdr -> case byronHeaderRaw hdr of
+    Aux.ABOBBlockHdr _       -> Nothing
+    Aux.ABOBBoundaryHdr bhdr -> Just
+                              . EpochNo
+                              . Cardano.Block.boundaryEpoch
+                              $ bhdr
 
   -- The epoch size is fixed and can be derived from @k@ by the ledger
   -- ('kEpochSlots').
