@@ -26,7 +26,7 @@ import qualified Ouroboros.Network.MockChain.Chain as Chain
 
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.BlockchainTime.Mock
-import           Ouroboros.Consensus.Ledger.Byron (ByronBlock)
+import           Ouroboros.Consensus.Ledger.Byron (ByronBlock, forgeEBB)
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Node.ProtocolInfo.Byron (plcCoreNodeId)
 import           Ouroboros.Consensus.NodeId
@@ -41,7 +41,7 @@ import qualified Cardano.Crypto as Crypto
 import qualified Test.Cardano.Chain.Genesis.Dummy as Dummy
 
 import           Test.Dynamic.General
-import           Test.Dynamic.Network (NodeOutput (..))
+import           Test.Dynamic.Network (MaybeForgeEBB (..), NodeOutput (..))
 import qualified Test.Dynamic.Ref.RealPBFT as Ref
 import           Test.Dynamic.Util
 import           Test.Dynamic.Util.NodeJoinPlan
@@ -152,7 +152,7 @@ prop_simple_real_pbft_convergence
             (\nid -> protocolInfo
                        (mkProtocolRealPBFT numCoreNodes nid
                                            genesisConfig genesisSecrets))
-            testConfig seed
+            testConfig (JustForgeEBB forgeEBB) seed
 
     finalChains :: [Chain ByronBlock]
     finalChains = Map.elems $ nodeOutputFinalChain <$> testOutputNodes testOutput

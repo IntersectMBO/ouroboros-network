@@ -17,6 +17,7 @@ import           Ouroboros.Consensus.Protocol
 import           Ouroboros.Consensus.Util.Random
 
 import           Test.Dynamic.General
+import           Test.Dynamic.Network (MaybeForgeEBB (..))
 import           Test.Dynamic.Util
 import           Test.Dynamic.Util.NodeJoinPlan
 import           Test.Dynamic.Util.NodeTopology
@@ -99,4 +100,4 @@ prop_simple_praos_convergence
     testOutput@TestOutput{testOutputNodes} =
         runTestNetwork
             (\nid -> protocolInfo (ProtocolMockPraos numCoreNodes nid params))
-            testConfig seed
+            testConfig NothingForgeEBB seed

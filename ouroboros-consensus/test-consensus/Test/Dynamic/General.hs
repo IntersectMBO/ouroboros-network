@@ -17,7 +17,6 @@ module Test.Dynamic.General (
 
 import           Control.Monad (guard)
 import qualified Data.Map as Map
-import           Data.Maybe (isJust)
 import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Word (Word64)
@@ -30,7 +29,6 @@ import           Ouroboros.Network.Block (BlockNo (..), pattern BlockPoint,
                      pattern GenesisPoint, HasHeader, Point, SlotNo (..),
                      blockPoint)
 
-import           Ouroboros.Consensus.Block (getHeader)
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.BlockchainTime.Mock
 import           Ouroboros.Consensus.Node.ProtocolInfo
@@ -131,10 +129,12 @@ runTestNetwork ::
      )
   => (CoreNodeId -> ProtocolInfo blk)
   -> TestConfig
+  -> MaybeForgeEBB blk
   -> Seed
   -> TestOutput blk
 runTestNetwork pInfo
   TestConfig{numCoreNodes, numSlots, nodeJoinPlan, nodeTopology, slotLengths}
+  mbForgeEBB
   seed = runSimOrThrow $
     runNodeNetwork
       numCoreNodes
@@ -142,6 +142,7 @@ runTestNetwork pInfo
       slotLengths
       nodeJoinPlan
       nodeTopology
+      mbForgeEBB
       pInfo
       (seedToChaCha seed)
 
@@ -202,8 +203,6 @@ prop_general k TestConfig{numSlots, nodeJoinPlan, nodeTopology} mbSchedule
     --
     -- * the node rejected its own new block (eg 'PBftExceededSignThreshold')
     --
-    -- * the node forged an EBB
-    --
     actualLeaderSchedule :: LeaderSchedule
     actualLeaderSchedule =
         foldl (<>) (emptyLeaderSchedule numSlots) $
@@ -233,8 +232,7 @@ prop_general k TestConfig{numSlots, nodeJoinPlan, nodeTopology} mbSchedule
             let j = nodeIdJoinSlot nodeJoinPlan nid
             guard $ j <= s
 
-            guard $ not $
-                isJust (nodeIsEBB (getHeader b)) || Set.member (blockPoint b) invalids
+            guard $ not $ Set.member (blockPoint b) invalids
 
             pure [cid]
 
