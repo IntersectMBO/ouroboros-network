@@ -50,9 +50,7 @@ forgeByronBlock
   -> [GenTx ByronBlock]              -- ^ Txs to add in the block
   -> PBftIsLeader PBftCardanoCrypto  -- ^ Leader proof ('IsLeader')
   -> m ByronBlock
-forgeByronBlock cfg curSlot curNo prevHash txs isLeader = case prevHash of
-  GenesisHash -> return $ forgeEBB cfg curSlot 0 GenesisHash
-  BlockHash _ -> forgeRegularBlock cfg curSlot curNo prevHash txs isLeader
+forgeByronBlock = forgeRegularBlock
 
 forgeEBB
   :: NodeConfig ByronConsensusProtocol
