@@ -311,6 +311,7 @@ forkBlockProduction maxBlockBodySize IS{..} BlockProduction{..} =
       let withTxs :: (MempoolSnapshot blk TicketNo -> STM m a) -> m a
           withTxs = withSyncState mempool (TxsForBlockInSlot currentSlot)
 
+      trace $ TraceForgeAboutToLead currentSlot
       leaderResult <- withTxs $ \MempoolSnapshot{snapshotTxsForSize} -> do
         l@ExtLedgerState{..} <- ChainDB.getCurrentLedger chainDB
         let txs = map fst (snapshotTxsForSize maxBlockBodySize)
