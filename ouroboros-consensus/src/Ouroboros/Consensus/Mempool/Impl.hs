@@ -21,6 +21,7 @@ import           Control.Monad.Except
 import qualified Data.Foldable as Foldable
 import qualified Data.Set as Set
 import           Data.Typeable
+import           Data.Word (Word32)
 import           GHC.Generics (Generic)
 
 import           Control.Tracer
@@ -90,9 +91,9 @@ data LedgerInterface m blk = LedgerInterface
   { getCurrentLedgerState :: STM m (LedgerState blk)
   }
 
--- | Represents the maximum number of transactions that a 'Mempool' can
--- contain.
-newtype MempoolCapacity = MempoolCapacity Word
+-- | Represents the maximum number of bytes worth of transactions that a
+-- 'Mempool' can contain.
+newtype MempoolCapacity = MempoolCapacity Word32
   deriving (Show)
 
 -- | Create a 'LedgerInterface' from a 'ChainDB'.
@@ -235,6 +236,7 @@ implAddTxs :: forall m blk. (IOLike m, ApplyTx blk)
            -> [GenTx blk]
            -- ^ Transactions to validate and add to the mempool.
            -> m [(GenTx blk, Maybe (ApplyTxErr blk))]
+implAddTxs _     _     []  = pure []
 implAddTxs mpEnv accum txs = assert (all txInvariant txs) $ do
     (vr, removed, rejected, unvalidated, mempoolSize) <- atomically $ do
       IS{isTip = initialISTip} <- readTVar mpEnvStateVar
@@ -366,12 +368,16 @@ implAddTxs mpEnv accum txs = assert (all txInvariant txs) $ do
       -- (those not yet validated due to the mempool capacity being reached).
     validateNewUntilMempoolFull []      vr = pure (vr, [])
     validateNewUntilMempoolFull (t:ts)  vr = do
-      MempoolSize { msNumTxs } <- getMempoolSize mpEnv
+      MempoolSize { msNumBytes } <- getMempoolSize mpEnv
+      let newValidSizeInBytes = Foldable.foldl'
+            (\acc tx -> acc + txSize tx)
+            0
+            (vrNewValid vr)
       -- The size of a mempool should never be greater than its capacity.
-      assert (msNumTxs <= mempoolCap) $
+      assert (msNumBytes <= mempoolCap) $
         -- Here, we check whether we're at the mempool's capacity /before/
-        -- attempting to validate another transaction.
-        if (msNumTxs + fromIntegral (length (vrNewValid vr))) < mempoolCap
+        -- attempting to validate the next transaction.
+        if (msNumBytes + newValidSizeInBytes + txSize t) <= mempoolCap
           then validateNewUntilMempoolFull ts (extendVRNew mpEnvLedgerCfg t vr)
           else pure (vr, t:ts) -- if we're at mempool capacity, we return the
                                -- last 'ValidationResult' as well as the
