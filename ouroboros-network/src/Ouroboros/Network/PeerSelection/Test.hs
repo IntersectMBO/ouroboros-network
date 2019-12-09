@@ -13,7 +13,7 @@ module Ouroboros.Network.PeerSelection.Test (tests) where
 
 import           Data.Void (Void)
 import           Data.Function (on)
-import           Data.Typeable (Typeable)
+import           Data.Typeable (Proxy (..), Typeable)
 import           Data.Dynamic (fromDynamic)
 import           Data.Maybe (listToMaybe)
 import qualified Data.ByteString.Char8 as BS
@@ -412,7 +412,7 @@ prop_governor_nolivelock :: GovernorMockEnvironment -> Property
 prop_governor_nolivelock env =
     let trace = takeFirstNHours 24 .
                 selectGovernorEvents .
-                selectPeerSelectionTraceEvents $
+                selectPeerSelectionTraceEvents (Proxy :: Proxy PeerAddr) $
                   runGovernorInMockEnvironment env
 
      in
@@ -498,7 +498,7 @@ prop_governor_gossip_1hr env@GovernorMockEnvironment{
                               publicRootPeers,
                               targets
                             } =
-    let trace      = selectPeerSelectionTraceEvents $
+    let trace      = selectPeerSelectionTraceEvents (Proxy :: Proxy PeerAddr) $
                        runGovernorInMockEnvironment env {
                          targets = singletonScript (targets', NoDelay)
                        }
@@ -516,7 +516,7 @@ prop_governor_gossip_1hr env@GovernorMockEnvironment{
                  targetNumberOfActivePeers      = 0
                }
 
-    knownPeersAfter1Hour :: [(Time, TestTraceEvent)] -> Maybe (Set PeerAddr)
+    knownPeersAfter1Hour :: [(Time, TestTraceEvent PeerAddr)] -> Maybe (Set PeerAddr)
     knownPeersAfter1Hour trace =
       listToMaybe
         [ Map.keysSet (KnownPeers.toMap (Governor.knownPeers st))
@@ -557,7 +557,7 @@ prop_governor_gossip_1hr env@GovernorMockEnvironment{
 prop_governor_connstatus :: GovernorMockEnvironment -> Bool
 prop_governor_connstatus env =
     let trace = takeFirstNHours 1
-              . selectPeerSelectionTraceEvents $
+              . selectPeerSelectionTraceEvents (Proxy :: Proxy PeerAddr) $
                   runGovernorInMockEnvironment env
         --TODO: check any actually get a true status output and try some deliberate bugs
      in all ok (groupBy ((==) `on` fst) trace)
@@ -568,7 +568,7 @@ prop_governor_connstatus env =
     --
     -- We do that by finding the env events and then looking for the last
     -- governor state event before time moves on.
-    ok :: [(Time, TestTraceEvent)] -> Bool
+    ok :: [(Time, TestTraceEvent PeerAddr)] -> Bool
     ok trace =
         case (lastTrueStatus, lastTestStatus) of
           (Nothing, _)                       -> True
@@ -590,9 +590,9 @@ prop_governor_connstatus env =
 -- Utils for properties
 --
 
-data TestTraceEvent = GovernorDebug (DebugPeerSelection PeerAddr ())
-                    | GovernorEvent (TracePeerSelection PeerAddr)
-                    | MockEnvEvent   TraceMockEnv
+data TestTraceEvent addr = GovernorDebug (DebugPeerSelection addr ())
+                         | GovernorEvent (TracePeerSelection addr)
+                         | MockEnvEvent   TraceMockEnv
   deriving Show
 
 tracerTracePeerSelection :: Tracer (SimM s) (TracePeerSelection PeerAddr)
@@ -605,14 +605,18 @@ tracerDebugPeerSelection = contramap (GovernorDebug . fmap (const ()))
 tracerMockEnv :: Tracer (SimM s) TraceMockEnv
 tracerMockEnv = contramap MockEnvEvent tracerTestTraceEvent
 
-tracerTestTraceEvent :: Tracer (SimM s) TestTraceEvent
+tracerTestTraceEvent :: Tracer (SimM s) (TestTraceEvent PeerAddr)
 tracerTestTraceEvent = dynamicTracer
 
 dynamicTracer :: Typeable a => Tracer (SimM s) a
 dynamicTracer = Tracer traceM
 
-selectPeerSelectionTraceEvents :: Trace a -> [(Time, TestTraceEvent)]
-selectPeerSelectionTraceEvents = go
+selectPeerSelectionTraceEvents
+  :: (Typeable addr)
+  => Proxy addr
+  -> Trace a
+  -> [(Time, TestTraceEvent addr)]
+selectPeerSelectionTraceEvents _ = go
   where
     go (Trace t _ _ (EventLog e) trace)
      | Just x <- fromDynamic e    = (t,x) : go trace
@@ -621,8 +625,8 @@ selectPeerSelectionTraceEvents = go
     go (TraceDeadlock      _   _) = [] -- expected result in many cases
     go (TraceMainReturn    _ _ _) = []
 
-selectGovernorEvents :: [(Time, TestTraceEvent)]
-                     -> [(Time, TracePeerSelection PeerAddr)]
+selectGovernorEvents :: [(Time, TestTraceEvent addr)]
+                     -> [(Time, TracePeerSelection addr)]
 selectGovernorEvents trace = [ (t, e) | (t, GovernorEvent e) <- trace ]
 
 takeFirstNHours :: DiffTime -> [(Time, a)] -> [(Time, a)]
