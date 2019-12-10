@@ -16,6 +16,7 @@ module Test.Ouroboros.Storage.VolatileDB.Model
     , garbageCollectModel
     , getBlockIdsModel
     , getBlockModel
+    , getHeaderModel
     , getIsMemberModel
     , getSuccessorsModel
     , getPredecessorModel
@@ -29,8 +30,10 @@ module Test.Ouroboros.Storage.VolatileDB.Model
 
 import           Control.Monad
 import           Control.Monad.State (MonadState, get, modify, put)
+import           Data.Bifunctor (second)
 import           Data.ByteString.Builder
 import           Data.ByteString.Lazy (ByteString)
+import qualified Data.ByteString.Lazy as BL
 import           Data.Either
 import           Data.List (find, sortOn, splitAt, uncons)
 import           Data.Map (Map)
@@ -55,7 +58,8 @@ import           Ouroboros.Storage.VolatileDB.Util
 import           Test.Util.FS.Sim.Error
 
 import           Test.Ouroboros.Storage.VolatileDB.TestBlock (Corruptions,
-                     FileCorruption (..), binarySize)
+                     FileCorruption (..), binarySize, headerOffset,
+                     headerSize)
 
 data DBModel blockId = DBModel {
       blocksPerFile  :: Int
@@ -120,6 +124,16 @@ getBlockModel err sl = do
     DBModel {..} <- get
     if not open then EH.throwError' err $ UserError ClosedDBError
     else return $ Map.lookup sl mp
+
+getHeaderModel :: forall m blockId. (MonadState (DBModel blockId) m, Ord blockId)
+               => ThrowCantCatch VolatileDBError m
+               -> blockId
+               -> m (Maybe (SlotNo, ByteString))
+getHeaderModel err sl = do
+    fmap (second extractHeader) <$> getBlockModel err sl
+  where
+    extractHeader = BL.take (fromIntegral headerSize)
+                  . BL.drop (fromIntegral headerOffset)
 
 putBlockModel :: MonadState (DBModel blockId) m
               => Ord blockId

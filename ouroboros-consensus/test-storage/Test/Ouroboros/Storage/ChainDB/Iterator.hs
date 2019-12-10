@@ -37,7 +37,7 @@ import           Ouroboros.Storage.ChainDB.Impl.Iterator (IteratorEnv (..),
                      newIterator)
 import           Ouroboros.Storage.ChainDB.Impl.Types (TraceIteratorEvent (..))
 import           Ouroboros.Storage.ChainDB.Impl.VolDB (VolDB, mkVolDB)
-import           Ouroboros.Storage.Common (EpochSize)
+import           Ouroboros.Storage.Common (BinaryInfo(..), EpochSize)
 import           Ouroboros.Storage.EpochInfo (fixedSizeEpochInfo)
 import qualified Ouroboros.Storage.ImmutableDB as ImmDB
 import qualified Ouroboros.Storage.Util.ErrorHandling as EH
@@ -275,9 +275,9 @@ initIteratorEnv TestSetup { immutable, volatile } tracer = do
 
     blockInfo :: TestBlock -> VolDB.BlockInfo (HeaderHash TestBlock)
     blockInfo tb = VolDB.BlockInfo
-      { VolDB.bbid    = blockHash tb
-      , VolDB.bslot   = blockSlot tb
-      , VolDB.bpreBid = case blockPrevHash tb of
+      { VolDB.bbid          = blockHash tb
+      , VolDB.bslot         = blockSlot tb
+      , VolDB.bpreBid       = case blockPrevHash tb of
           GenesisHash -> Origin
           BlockHash h -> At h
       , VolDB.bheaderOffset = 0
@@ -301,8 +301,9 @@ initIteratorEnv TestSetup { immutable, volatile } tracer = do
         epochInfo = fixedSizeEpochInfo epochSize
         isEBB     = const Nothing
 
-addDummyBinaryInfo blob = ImmDB.BinaryInfo
-  { ImmDB.binaryBlob   = blob
-  , ImmDB.headerOffset = 0
-  , ImmDB.headerSize   = 0
+addDummyBinaryInfo :: blk -> BinaryInfo blk
+addDummyBinaryInfo blob = BinaryInfo
+  { binaryBlob   = blob
+  , headerOffset = 0
+  , headerSize   = 0
   }
