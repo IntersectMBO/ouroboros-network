@@ -938,7 +938,7 @@ jobReqPublicRootPeers PeerSelectionActions{requestPublicRootPeers}
             knownPeers'      = KnownPeers.insert
                                  PeerSourcePublicRoot
                                  DoAdvertisePeer
-                                 (Set.toList newPeers) --TODO: perhaps as Set
+                                 newPeers
                                  (knownPeers st)
 
             -- We got a successful response to our request, but if we're still
@@ -1090,7 +1090,8 @@ jobGossip PeerSelectionActions{requestPeerGossip}
                               knownPeers = KnownPeers.insert
                                              PeerSourceGossip
                                              DoAdvertisePeer
-                                             newPeers (knownPeers st),
+                                             (Set.fromList newPeers)
+                                             (knownPeers st),
                               inProgressGossipReqs = inProgressGossipReqs st
                                                    - length peers
                             },
@@ -1120,7 +1121,8 @@ jobGossip PeerSelectionActions{requestPeerGossip}
                               knownPeers = KnownPeers.insert
                                              PeerSourceGossip
                                              DoAdvertisePeer
-                                             newPeers (knownPeers st),
+                                             (Set.fromList newPeers)
+                                             (knownPeers st),
                               inProgressGossipReqs = inProgressGossipReqs st
                                                    - length peerResults
                             },
@@ -1164,7 +1166,8 @@ jobGossip PeerSelectionActions{requestPeerGossip}
                           knownPeers = KnownPeers.insert
                                          PeerSourceGossip
                                          DoAdvertisePeer
-                                         newPeers (knownPeers st),
+                                         (Set.fromList newPeers)
+                                         (knownPeers st),
                           inProgressGossipReqs = inProgressGossipReqs st
                                                - length peers
                         },
@@ -1225,7 +1228,7 @@ knownPeersAboveTarget PeerSelectionPolicy {
                           selectedToForget,
         decisionState = st {
                           knownPeers      = KnownPeers.delete
-                                              (Set.toList selectedToForget)
+                                              selectedToForget
                                               knownPeers,
                           publicRootPeers = publicRootPeers
                                               Set.\\ selectedToForget

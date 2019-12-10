@@ -130,7 +130,7 @@ availableForGossip KnownPeers {knownPeersByAddr, knownPeersAvailableForGossip} =
 insert :: Ord peeraddr
        => PeerSource
        -> PeerAdvertise
-       -> [peeraddr]
+       -> Set peeraddr
        -> KnownPeers peeraddr
        -> KnownPeers peeraddr
 insert peersource peeradvertise peeraddrs
@@ -148,14 +148,14 @@ insert peersource peeradvertise peeraddrs
         }
     in assert (invariant knownPeers') knownPeers'
   where
-    newPeers = Map.fromList [ (p, peerInfo) | p <- peeraddrs ]
-    peerInfo = KnownPeerInfo {
-                 knownPeerSource    = peersource,
-                 knownPeerAdvertise = peeradvertise
-               }
+    newPeers    = Map.fromSet (const newPeerInfo) peeraddrs
+    newPeerInfo = KnownPeerInfo {
+                    knownPeerSource    = peersource,
+                    knownPeerAdvertise = peeradvertise
+                  }
 
 delete :: Ord peeraddr
-       => [peeraddr]
+       => Set peeraddr
        -> KnownPeers peeraddr
        -> KnownPeers peeraddr
 delete peeraddrs
@@ -166,16 +166,14 @@ delete peeraddrs
        } =
     knownPeers {
       knownPeersByAddr =
-        Map.withoutKeys knownPeersByAddr peeraddrsSet,
+        Map.withoutKeys knownPeersByAddr peeraddrs,
 
       knownPeersAvailableForGossip =
-        Set.difference knownPeersAvailableForGossip peeraddrsSet,
+        Set.difference knownPeersAvailableForGossip peeraddrs,
 
       knownPeersNextGossipTimes =
         List.foldl' (flip PSQ.delete) knownPeersNextGossipTimes peeraddrs
     }
-  where
-    peeraddrsSet = Set.fromList peeraddrs
 
 size :: KnownPeers peeraddr -> Int
 size = Map.size . knownPeersByAddr
