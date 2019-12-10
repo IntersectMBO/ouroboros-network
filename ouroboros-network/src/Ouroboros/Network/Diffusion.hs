@@ -21,6 +21,7 @@ import           Control.Tracer (Tracer)
 import qualified Codec.CBOR.Read as CBOR
 import qualified Codec.CBOR.Term as CBOR
 import           Data.Functor (void)
+import           Data.List (find)
 import           Data.Void (Void)
 import           Data.ByteString.Lazy (ByteString)
 
@@ -98,25 +99,25 @@ data DiffusionApplications = DiffusionApplications {
                                        NodeToNodeVersion
                                        DictVersion
                                        (OuroborosApplication
-                                         'ResponderApp
+                                         'InitiatorAndResponderApp
                                          ConnectionId
                                          NodeToNodeProtocols
                                          IO
                                          ByteString
-                                         Void
+                                         ()
                                          ())
       -- ^ NodeToNode reposnder application (server role)
 
     , daInitiatorApplication      :: Versions
                                        NodeToNodeVersion
-                                       DictVersion 
+                                       DictVersion
                                        (OuroborosApplication
-                                         'InitiatorApp
+                                         'InitiatorAndResponderApp
                                          ConnectionId
                                          NodeToNodeProtocols
                                          IO
                                          ByteString
-                                         () Void)
+                                         () ())
       -- ^ NodeToNode initiator application (client role)
 
     , daLocalResponderApplication :: Versions
@@ -140,7 +141,7 @@ data DiffusionApplications = DiffusionApplications {
 
 runDataDiffusion
     :: DiffusionTracers
-    -> DiffusionArguments 
+    -> DiffusionArguments
     -> DiffusionApplications
     -> IO ()
 runDataDiffusion tracers
@@ -193,19 +194,10 @@ runDataDiffusion tracers
     initiatorLocalAddresses = LocalAddresses
       { laIpv4 =
           -- IPv4 address
-          --
-          -- We can't share portnumber with our server since we run separate
-          -- 'MuxInitiatorApplication' and 'MuxResponderApplication'
-          -- applications instead of a 'MuxInitiatorAndResponderApplication'.
-          -- This means we don't utilise full duplex connection.
-          if any (\ai -> Socket.addrFamily ai == Socket.AF_INET) daAddresses
-            then Just (Socket.SockAddrInet 0 0)
-            else Nothing
+          Socket.addrAddress <$> find (\ai -> Socket.addrFamily ai == Socket.AF_INET) daAddresses
       , laIpv6 =
           -- IPv6 address
-          if any (\ai -> Socket.addrFamily ai == Socket.AF_INET6) daAddresses
-            then Just (Socket.SockAddrInet6 0 0 (0, 0, 0, 0) 0)
-            else Nothing
+          Socket.addrAddress <$> find (\ai -> Socket.addrFamily ai == Socket.AF_INET6) daAddresses
       , laUnix = Nothing
       }
 

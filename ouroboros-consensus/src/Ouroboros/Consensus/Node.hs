@@ -162,13 +162,13 @@ run tracers chainDbTracer diffusionTracers diffusionArguments networkMagic
                      NodeToNodeV_1
                      nodeToNodeVersionData
                      (DictVersion nodeToNodeCodecCBORTerm)
-                     (responderNetworkApplication networkApps)
+                     (initiatorAndResponderNetworkApplication networkApps)
                , daInitiatorApplication =
                    simpleSingletonVersions
                      NodeToNodeV_1
                      nodeToNodeVersionData
                      (DictVersion nodeToNodeCodecCBORTerm)
-                     (initiatorNetworkApplication networkApps)
+                     (initiatorAndResponderNetworkApplication networkApps)
                , daLocalResponderApplication =
                    simpleSingletonVersions
                      NodeToClientV_1

@@ -25,6 +25,7 @@ module Ouroboros.Consensus.NodeNetwork (
   , consensusNetworkApps
   , initiatorNetworkApplication
   , responderNetworkApplication
+  , initiatorAndResponderNetworkApplication
   , localResponderNetworkApplication
   ) where
 
@@ -399,6 +400,32 @@ responderNetworkApplication NetworkApplication {..} =
       ChainSyncWithHeadersPtcl -> naChainSyncServer them
       BlockFetchPtcl           -> naBlockFetchServer them
       TxSubmissionPtcl         -> naTxSubmissionServer them
+
+-- | A projection from 'NetworkApplication' to both client and server-side 'MuxApplication'
+-- for the 'NodeToNodeProtocols'.
+--
+initiatorAndResponderNetworkApplication
+  :: MonadAsync m
+  => MonadTimer m
+  => NetworkApplication m peer bytes bytes bytes bytes bytes a
+  -> OuroborosApplication 'InitiatorAndResponderApp peer NodeToNodeProtocols m bytes a a
+initiatorAndResponderNetworkApplication NetworkApplication {..} =
+    OuroborosInitiatorAndResponderApplication
+        (simpleInitiatorControl restartDelay)
+        (\them ptcl -> case ptcl of
+          ChainSyncWithHeadersPtcl -> naChainSyncClient them
+          BlockFetchPtcl           -> naBlockFetchClient them
+          TxSubmissionPtcl         -> naTxSubmissionClient them
+        )
+        simpleResponderControl
+        (\them ptcl -> case ptcl of
+          ChainSyncWithHeadersPtcl -> naChainSyncServer them
+          BlockFetchPtcl           -> naBlockFetchServer them
+          TxSubmissionPtcl         -> naTxSubmissionServer them
+        )
+  where
+    restartDelay :: DiffTime
+    restartDelay = 60 -- Restart finished initiator protocols after a 60s delay
 
 -- | A projection from 'NetworkApplication' to a server-side 'MuxApplication'
 -- for the 'NodeToClientProtocols'.
