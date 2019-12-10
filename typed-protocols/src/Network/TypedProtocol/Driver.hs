@@ -8,12 +8,14 @@ module Network.TypedProtocol.Driver (
 
   -- * Normal peers
   runPeer,
+  runPeer',
   runPeerWithDriver,
   TraceSendRecv(..),
   runPeerWithLimits,
 
   -- * Pipelined peers
   runPipelinedPeer,
+  runPipelinedPeer',
   runPipelinedPeerWithDriver,
   runPipelinedPeerWithLimits,
 
