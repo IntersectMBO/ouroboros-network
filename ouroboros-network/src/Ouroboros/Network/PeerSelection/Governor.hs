@@ -1021,7 +1021,7 @@ knownPeersBelowTarget actions
                           inProgressGossipReqs = inProgressGossipReqs
                                                + numGossipReqs,
                           knownPeers = KnownPeers.setGossipTime
-                                         (Set.toList selectedForGossip)
+                                         selectedForGossip
                                          (addTime policyGossipRetryTime now)
                                          knownPeers
                         },

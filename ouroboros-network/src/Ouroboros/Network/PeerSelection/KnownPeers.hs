@@ -18,9 +18,14 @@ module Ouroboros.Network.PeerSelection.KnownPeers (
 
     -- * Special operations
     setCurrentTime,
+    -- ** Tracking when we can gossip
     minGossipTime,
     setGossipTime,
     availableForGossip,
+    -- ** Tracking when we can (re)connect
+    minReconnectTime,
+    setReconnectTime,
+    availableToReconnect,
   ) where
 
 import qualified Data.List as List
@@ -47,23 +52,15 @@ data KnownPeerInfo = KnownPeerInfo {
        -- | Should we advertise this peer when other nodes send us gossip requests?
        knownPeerAdvertise :: !PeerAdvertise,
 
-       knownPeerSource    :: !PeerSource
-{-
+       knownPeerSource    :: !PeerSource,
+
        -- | The current number of consecutive connection attempt failures. This
-       -- is reset as soon as there is a successful connection. It is used
+       -- is reset as soon as there is a successful connection.
        --
-       -- This may be used as part of the policy for picking peers to forget.
+       -- It is used to implement the exponential backoff strategy and may also
+       -- be used by policies to select peers to forget.
        --
-       knownPeerNumFailures :: !Int,
-
-       -- | The last time there was an established connection with this peer.
-       --
-       -- This may be used as part of the policy for picking peers to forget.
-       --
-       knownPeerLastSuccess :: !Time
-
-       knownPeerOther     :: ()
--}
+       knownPeerFailCount :: !Int
      }
   deriving (Eq, Show)
 
@@ -93,37 +90,67 @@ data KnownPeers peeraddr = KnownPeers {
        -- | The subset of known peers that we cannot gossip with now. It keeps
        -- track of the next time we are allowed to gossip with them.
        --
-       knownPeersNextGossipTimes    :: !(OrdPSQ peeraddr Time ())
+       knownPeersNextGossipTimes    :: !(OrdPSQ peeraddr Time ()),
+
+       -- | The subset of known peers that we would be allowed to try to
+       -- establish a connection to now. This is because we have not connected
+       -- with them before or because any failure backoff time has expired.
+       --
+       knownPeersAvailableToConnect :: !(Set peeraddr),
+
+       -- | The subset of known peers that we cannot connect to for the moment.
+       -- It keeps track of the next time we are allowed to make the next
+       -- connection attempt.
+       knownPeersNextConnectTimes   :: !(OrdPSQ peeraddr Time ())
      }
   deriving Show
 
 
 invariant :: Ord peeraddr => KnownPeers peeraddr -> Bool
 invariant KnownPeers{..} =
+       -- The combo of the gossip set + psq = the whole set of peers
        knownPeersAvailableForGossip
     <> Set.fromList (PSQ.keys knownPeersNextGossipTimes)
     == Map.keysSet knownPeersByAddr
 
+       -- The gossip set and psq do not overlap
  && Set.null
       (Set.intersection
          knownPeersAvailableForGossip
         (Set.fromList (PSQ.keys knownPeersNextGossipTimes)))
+
+       -- The combo of the connect set + psq = the whole set of peers
+ &&    knownPeersAvailableToConnect
+    <> Set.fromList (PSQ.keys knownPeersNextConnectTimes)
+    == Map.keysSet knownPeersByAddr
+
+       -- The connect set and psq do not overlap
+ && Set.null
+      (Set.intersection
+         knownPeersAvailableToConnect
+        (Set.fromList (PSQ.keys knownPeersNextConnectTimes)))
+
+
+-------------------------------
+-- Basic container operations
+--
 
 empty :: KnownPeers peeraddr
 empty =
     KnownPeers {
       knownPeersByAddr             = Map.empty,
       knownPeersAvailableForGossip = Set.empty,
-      knownPeersNextGossipTimes    = PSQ.empty
+      knownPeersNextGossipTimes    = PSQ.empty,
+      knownPeersAvailableToConnect = Set.empty,
+      knownPeersNextConnectTimes   = PSQ.empty
     }
+
+size :: KnownPeers peeraddr -> Int
+size = Map.size . knownPeersByAddr
 
 -- | /O(1)/
 toMap :: KnownPeers peeraddr -> Map peeraddr KnownPeerInfo
 toMap = knownPeersByAddr
-
-availableForGossip :: Ord peeraddr => KnownPeers peeraddr -> Map peeraddr KnownPeerInfo
-availableForGossip KnownPeers {knownPeersByAddr, knownPeersAvailableForGossip} =
-    Map.restrictKeys knownPeersByAddr knownPeersAvailableForGossip
 
 insert :: Ord peeraddr
        => PeerSource
@@ -134,15 +161,25 @@ insert :: Ord peeraddr
 insert peersource peeradvertise peeraddrs
        knownPeers@KnownPeers {
          knownPeersByAddr,
-         knownPeersAvailableForGossip
+         knownPeersAvailableForGossip,
+         knownPeersAvailableToConnect
        } =
     let knownPeers' = knownPeers {
           knownPeersByAddr =
+              let (<+>) = Map.unionWith mergePeerInfo in
               knownPeersByAddr
-           <> Map.fromSet newPeerInfo peeraddrs,
+          <+> Map.fromSet newPeerInfo peeraddrs,
 
+          -- The sets tracking peers ready for gossip or to connect to need to
+          -- be updated with any /fresh/ peers, but any already present are
+          -- ignored since they are either already in these sets or they are in
+          -- the corresponding PSQs, for which we also preserve existing info.
           knownPeersAvailableForGossip =
               knownPeersAvailableForGossip
+           <> Set.filter (`Map.notMember` knownPeersByAddr) peeraddrs,
+
+          knownPeersAvailableToConnect =
+              knownPeersAvailableToConnect
            <> Set.filter (`Map.notMember` knownPeersByAddr) peeraddrs
         }
     in assert (invariant knownPeers') knownPeers'
@@ -150,7 +187,15 @@ insert peersource peeradvertise peeraddrs
     newPeerInfo peeraddr =
       KnownPeerInfo {
         knownPeerSource    = peersource,
-        knownPeerAdvertise = peeradvertise peeraddr
+        knownPeerAdvertise = peeradvertise peeraddr,
+        knownPeerFailCount = 0
+      }
+    mergePeerInfo KnownPeerInfo {knownPeerFailCount}
+                  KnownPeerInfo {knownPeerSource, knownPeerAdvertise} =
+      KnownPeerInfo {
+        knownPeerSource,
+        knownPeerAdvertise,
+        knownPeerFailCount
       }
 
 delete :: Ord peeraddr
@@ -161,7 +206,9 @@ delete peeraddrs
        knownPeers@KnownPeers {
          knownPeersByAddr,
          knownPeersAvailableForGossip,
-         knownPeersNextGossipTimes
+         knownPeersNextGossipTimes,
+         knownPeersAvailableToConnect,
+         knownPeersNextConnectTimes
        } =
     knownPeers {
       knownPeersByAddr =
@@ -171,12 +218,19 @@ delete peeraddrs
         Set.difference knownPeersAvailableForGossip peeraddrs,
 
       knownPeersNextGossipTimes =
-        List.foldl' (flip PSQ.delete) knownPeersNextGossipTimes peeraddrs
+        List.foldl' (flip PSQ.delete) knownPeersNextGossipTimes peeraddrs,
+
+      knownPeersAvailableToConnect =
+        Set.difference knownPeersAvailableToConnect peeraddrs,
+
+      knownPeersNextConnectTimes =
+        List.foldl' (flip PSQ.delete) knownPeersNextConnectTimes peeraddrs
     }
 
-size :: KnownPeers peeraddr -> Int
-size = Map.size . knownPeersByAddr
 
+-------------------------------
+-- Special operations
+--
 
 setCurrentTime :: Ord peeraddr
                => Time
@@ -190,21 +244,46 @@ setCurrentTime now knownPeers@KnownPeers { knownPeersNextGossipTimes }
 
 setCurrentTime now knownPeers@KnownPeers {
                      knownPeersAvailableForGossip,
-                     knownPeersNextGossipTimes
+                     knownPeersNextGossipTimes,
+                     knownPeersAvailableToConnect,
+                     knownPeersNextConnectTimes
                    } =
   let knownPeers' =
         knownPeers {
           knownPeersAvailableForGossip = knownPeersAvailableForGossip',
-          knownPeersNextGossipTimes    = knownPeersNextGossipTimes'
+          knownPeersNextGossipTimes    = knownPeersNextGossipTimes',
+          knownPeersAvailableToConnect = knownPeersAvailableToConnect',
+          knownPeersNextConnectTimes   = knownPeersNextConnectTimes'
         }
    in assert (invariant knownPeers') knownPeers'
   where
-    (nowAvailable, knownPeersNextGossipTimes') =
+    (nowAvailableForGossip, knownPeersNextGossipTimes') =
       PSQ.atMostView now knownPeersNextGossipTimes
 
     knownPeersAvailableForGossip' =
          knownPeersAvailableForGossip
-      <> Set.fromList [ peeraddr | (peeraddr, _, _) <- nowAvailable ]
+      <> Set.fromList [ peeraddr | (peeraddr, _, _) <- nowAvailableForGossip ]
+
+    (nowAvailableToConnect, knownPeersNextConnectTimes') =
+      PSQ.atMostView now knownPeersNextConnectTimes
+
+    knownPeersAvailableToConnect' =
+         knownPeersAvailableToConnect
+      <> Set.fromList [ peeraddr | (peeraddr, _, _) <- nowAvailableToConnect ]
+
+
+-------------------------------
+-- Tracking when we can gossip
+--
+
+availableForGossip :: Ord peeraddr
+                   => KnownPeers peeraddr
+                   -> Map peeraddr KnownPeerInfo
+availableForGossip KnownPeers {
+                     knownPeersByAddr,
+                     knownPeersAvailableForGossip
+                   } =
+    knownPeersByAddr `Map.restrictKeys` knownPeersAvailableForGossip
 
 -- | The first time that a peer will become available for gossip. If peers are
 -- already available for gossip, or there are no known peers at all then the
@@ -223,7 +302,7 @@ minGossipTime KnownPeers {
   = Nothing
 
 setGossipTime :: Ord peeraddr
-              => [peeraddr]
+              => Set peeraddr
               -> Time
               -> KnownPeers peeraddr
               -> KnownPeers peeraddr
@@ -236,8 +315,8 @@ setGossipTime peeraddrs time
     assert (all (`Map.member` knownPeersByAddr) peeraddrs) $
     let knownPeers' = knownPeers {
           knownPeersAvailableForGossip =
-                             knownPeersAvailableForGossip
-            `Set.difference` Set.fromList peeraddrs,
+                   knownPeersAvailableForGossip
+            Set.\\ peeraddrs,
 
           knownPeersNextGossipTimes =
             List.foldl' (\psq peeraddr -> PSQ.insert peeraddr time () psq)
@@ -246,6 +325,62 @@ setGossipTime peeraddrs time
         }
     in assert (invariant knownPeers') knownPeers'
 
+
+-----------------------------------
+-- Tracking when we can reconnect
+--
+
+availableToReconnect :: Ord peeraddr
+                     => KnownPeers peeraddr
+                     -> Map peeraddr KnownPeerInfo
+availableToReconnect KnownPeers {
+                       knownPeersByAddr,
+                       knownPeersAvailableToConnect
+                     } =
+    knownPeersByAddr `Map.restrictKeys` knownPeersAvailableToConnect
+
+
+minReconnectTime :: Ord peeraddr => KnownPeers peeraddr -> Maybe Time
+minReconnectTime KnownPeers {
+                   knownPeersAvailableToConnect,
+                   knownPeersNextConnectTimes
+                 }
+  | Set.null knownPeersAvailableToConnect
+  , Just (_k, t, _, _psq) <- PSQ.minView knownPeersNextConnectTimes
+  = Just t
+
+  | otherwise
+  = Nothing
+
+
+setReconnectTime :: Ord peeraddr
+                 => Set peeraddr
+                 -> Time
+                 -> KnownPeers peeraddr
+                 -> KnownPeers peeraddr
+setReconnectTime peeraddrs time
+                 knownPeers@KnownPeers {
+                   knownPeersByAddr,
+                   knownPeersAvailableToConnect,
+                   knownPeersNextConnectTimes
+                 } =
+    assert (all (`Map.member` knownPeersByAddr) peeraddrs) $
+    let knownPeers' = knownPeers {
+          knownPeersAvailableForGossip =
+                   knownPeersAvailableToConnect
+            Set.\\ peeraddrs,
+
+          knownPeersNextGossipTimes =
+            List.foldl' (\psq peeraddr -> PSQ.insert peeraddr time () psq)
+                        knownPeersNextConnectTimes
+                        peeraddrs
+        }
+    in assert (invariant knownPeers') knownPeers'
+
+
+---------------------------------
+-- Selecting peers to advertise
+--
 
 -- | Select a random subset of the known peers that are available to publish.
 --
@@ -259,12 +394,12 @@ setGossipTime peeraddrs time
 -- peers can discover and map out the entire network.
 --
 {-
-samplePublishedPeers :: RandomGen prng
-                     => KnownPeers peeraddr
-                     -> prng
-                     -> Int
-                     -> [peeraddr]
-samplePublishedPeers _ _ _ = []
+sampleAdvertisedPeers :: RandomGen prng
+                      => KnownPeers peeraddr
+                      -> prng
+                      -> Int
+                      -> [peeraddr]
+sampleAdvertisedPeers _ _ _ = []
 -- idea is to generate a sequence of random numbers and map them to locations
 -- in a relatively stable way, that's mostly insensitive to additions or
 -- deletions
