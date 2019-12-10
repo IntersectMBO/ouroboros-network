@@ -404,6 +404,18 @@ ppTestSetup TestSetup { testLedgerState
     ["Mempool capacity:"]                    <>
     [condense mpCap]
 
+-- | Given some transactions, calculate the 'MempoolSize' that they would
+-- occupy if the mempool consisted /only/ of those transactions.
+txsToMempoolSize :: [GenTx TestBlock] -> MempoolSize
+txsToMempoolSize = foldl'
+    (\MempoolSize { msNumTxs, msNumBytes } tx ->
+      MempoolSize
+        { msNumTxs   = msNumTxs + 1
+        , msNumBytes = msNumBytes + txSize tx
+        }
+    )
+    MempoolSize { msNumTxs = 0, msNumBytes = 0 }
+
 -- | Generate a 'TestSetup' and return the ledger obtained by applying all of
 -- the initial transactions.
 --
@@ -762,8 +774,8 @@ mempoolCapTestExpectedTrace mcts = go chunks
     go (chunk:cs) = chunkExpectedTrace chunk ++ go cs
 
     chunkExpectedTrace chunk =
-      [ TraceMempoolAddTxs    chunk (fromIntegral $ length chunk) nullTime
-      , TraceMempoolRemoveTxs chunk 0 nullTime
+      [ TraceMempoolAddTxs    chunk (txsToMempoolSize chunk) nullTime
+      , TraceMempoolRemoveTxs chunk mempty                   nullTime
       ]
 
     nullTime :: Time

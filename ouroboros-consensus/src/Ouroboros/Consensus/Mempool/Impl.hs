@@ -21,7 +21,6 @@ import           Control.Monad.Except
 import qualified Data.Foldable as Foldable
 import qualified Data.Set as Set
 import           Data.Typeable
-import           Data.Word (Word32)
 import           GHC.Generics (Generic)
 
 import           Control.Tracer
@@ -269,7 +268,7 @@ implAddTxs mpEnv accum txs = assert (all txInvariant txs) $ do
                                      , isTip          = vrBefore
                                      , isLastTicketNo = vrLastTicketNo
                                      }
-          (mempoolSize, _) <- getMempoolSize mpEnv
+          mempoolSize <- getMempoolSize mpEnv
           pure (syncRes, removed, [], txs, mempoolSize)
         else do
           -- The tip was unchanged.
@@ -277,7 +276,7 @@ implAddTxs mpEnv accum txs = assert (all txInvariant txs) $ do
           -- event that we have to 'retry' this STM transaction. Continue by
           -- validating the provided new transactions.
           (vr, unvalidated) <- validateNew syncRes
-          (mempoolSize, _)  <- getMempoolSize mpEnv
+          mempoolSize       <- getMempoolSize mpEnv
           pure (vr, removed, vrInvalid vr, unvalidated, mempoolSize)
 
     let ValidationResult { vrNewValid = accepted } = vr
@@ -367,12 +366,12 @@ implAddTxs mpEnv accum txs = assert (all txInvariant txs) $ do
       -- (those not yet validated due to the mempool capacity being reached).
     validateNewUntilMempoolFull []      vr = pure (vr, [])
     validateNewUntilMempoolFull (t:ts)  vr = do
-      (mempoolSize, _) <- getMempoolSize mpEnv
+      MempoolSize { msNumTxs } <- getMempoolSize mpEnv
       -- The size of a mempool should never be greater than its capacity.
-      assert (mempoolSize <= mempoolCap) $
+      assert (msNumTxs <= mempoolCap) $
         -- Here, we check whether we're at the mempool's capacity /before/
         -- attempting to validate another transaction.
-        if (mempoolSize + fromIntegral (length (vrNewValid vr))) < mempoolCap
+        if (msNumTxs + fromIntegral (length (vrNewValid vr))) < mempoolCap
           then validateNewUntilMempoolFull ts (extendVRNew mpEnvLedgerCfg t vr)
           else pure (vr, t:ts) -- if we're at mempool capacity, we return the
                                -- last 'ValidationResult' as well as the
@@ -406,9 +405,8 @@ implRemoveTxs mpEnv@MempoolEnv{mpEnvTracer, mpEnvStateVar} txIds = do
         , isTip          = vrBefore
         , isLastTicketNo = vrLastTicketNo
         }
-      -- The number of transactions in the mempool /after/ manually removing
-      -- the transactions.
-      (mempoolSize, _) <- getMempoolSize mpEnv
+      -- The size of the mempool /after/ manually removing the transactions.
+      mempoolSize <- getMempoolSize mpEnv
       return (map fst vrInvalid, mempoolSize)
     unless (null txIds) $
       traceWith mpEnvTracer $
@@ -435,11 +433,10 @@ implWithSyncState mpEnv@MempoolEnv{mpEnvTracer, mpEnvStateVar} blockSlot f = do
         , isTip          = vrBefore
         , isLastTicketNo = vrLastTicketNo
         }
-      -- The number of transactions in the mempool /after/ removing invalid
-      -- transactions.
-      (mempoolSize, _) <- getMempoolSize mpEnv
-      snapshot         <- implGetSnapshot mpEnv
-      res              <- f snapshot
+      -- The size of the mempool /after/ removing invalid transactions.
+      mempoolSize <- getMempoolSize mpEnv
+      snapshot    <- implGetSnapshot mpEnv
+      res         <- f snapshot
       return (map fst vrInvalid, mempoolSize, res)
     unless (null removed) $ do
       time <- getMonotonicTime
@@ -462,13 +459,17 @@ implGetSnapshot MempoolEnv{mpEnvStateVar} = do
 -- size in bytes.
 getMempoolSize :: (IOLike m, ApplyTx blk)
                => MempoolEnv m blk
-               -> STM m (Word, Word32)
+               -> STM m MempoolSize
 getMempoolSize MempoolEnv{mpEnvStateVar} = do
     IS { isTxs } <- readTVar mpEnvStateVar
     pure $ Foldable.foldl'
-      (\(accNumTxs, accTxSizes) tx ->
-        (accNumTxs + 1, accTxSizes + txSize tx))
-      (0, 0)
+      (\MempoolSize { msNumTxs, msNumBytes } tx ->
+        MempoolSize
+          { msNumTxs = msNumTxs + 1
+          , msNumBytes = msNumBytes + txSize tx
+          }
+      )
+      MempoolSize { msNumTxs = 0, msNumBytes = 0 }
       isTxs
 
 {-------------------------------------------------------------------------------
