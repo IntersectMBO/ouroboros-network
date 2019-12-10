@@ -129,7 +129,7 @@ availableForGossip KnownPeers {knownPeersByAddr, knownPeersAvailableForGossip} =
 
 insert :: Ord peeraddr
        => PeerSource
-       -> PeerAdvertise
+       -> (peeraddr -> PeerAdvertise) -- ^ Usually @const DoAdvertisePeer@
        -> Set peeraddr
        -> KnownPeers peeraddr
        -> KnownPeers peeraddr
@@ -140,19 +140,20 @@ insert peersource peeradvertise peeraddrs
        } =
     let knownPeers' = knownPeers {
           knownPeersByAddr =
-            Map.union knownPeersByAddr newPeers,
+              knownPeersByAddr
+           <> Map.fromSet newPeerInfo peeraddrs,
 
           knownPeersAvailableForGossip =
-            Set.union knownPeersAvailableForGossip
-                      (Map.keysSet (newPeers Map.\\ knownPeersByAddr))
+              knownPeersAvailableForGossip
+           <> Set.filter (`Map.notMember` knownPeersByAddr) peeraddrs
         }
     in assert (invariant knownPeers') knownPeers'
   where
-    newPeers    = Map.fromSet (const newPeerInfo) peeraddrs
-    newPeerInfo = KnownPeerInfo {
-                    knownPeerSource    = peersource,
-                    knownPeerAdvertise = peeradvertise
-                  }
+    newPeerInfo peeraddr =
+      KnownPeerInfo {
+        knownPeerSource    = peersource,
+        knownPeerAdvertise = peeradvertise peeraddr
+      }
 
 delete :: Ord peeraddr
        => Set peeraddr

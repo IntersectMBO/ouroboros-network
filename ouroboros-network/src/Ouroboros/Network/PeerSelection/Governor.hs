@@ -937,7 +937,7 @@ jobReqPublicRootPeers PeerSelectionActions{requestPublicRootPeers}
             publicRootPeers' = publicRootPeers st <> newPeers
             knownPeers'      = KnownPeers.insert
                                  PeerSourcePublicRoot
-                                 DoAdvertisePeer
+                                 (const DoAdvertisePeer)
                                  newPeers
                                  (knownPeers st)
 
@@ -1089,7 +1089,7 @@ jobGossip PeerSelectionActions{requestPeerGossip}
                               --TODO: also update with the failures
                               knownPeers = KnownPeers.insert
                                              PeerSourceGossip
-                                             DoAdvertisePeer
+                                             (const DoAdvertisePeer)
                                              (Set.fromList newPeers)
                                              (knownPeers st),
                               inProgressGossipReqs = inProgressGossipReqs st
@@ -1120,7 +1120,7 @@ jobGossip PeerSelectionActions{requestPeerGossip}
                               --TODO: also update with the failures
                               knownPeers = KnownPeers.insert
                                              PeerSourceGossip
-                                             DoAdvertisePeer
+                                             (const DoAdvertisePeer)
                                              (Set.fromList newPeers)
                                              (knownPeers st),
                               inProgressGossipReqs = inProgressGossipReqs st
@@ -1165,7 +1165,7 @@ jobGossip PeerSelectionActions{requestPeerGossip}
                           --TODO: also update with the failures
                           knownPeers = KnownPeers.insert
                                          PeerSourceGossip
-                                         DoAdvertisePeer
+                                         (const DoAdvertisePeer)
                                          (Set.fromList newPeers)
                                          (knownPeers st),
                           inProgressGossipReqs = inProgressGossipReqs st
