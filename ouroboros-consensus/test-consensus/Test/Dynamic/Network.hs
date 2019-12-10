@@ -505,8 +505,10 @@ directedEdge tr btime nodeapp1 nodeapp2 =
         hUnexpected e@(Exn.SomeException e') = case fromException e of
           Just (_ :: Exn.AsyncException) -> throwM e
           Nothing                        -> throwM MiniProtocolFatalException
-            { mpfeType = Typeable.typeOf e'
-            , mpfeExn = e
+            { mpfeType   = Typeable.typeOf e'
+            , mpfeExn    = e
+            , mpfeClient = fst nodeapp1
+            , mpfeServer = fst nodeapp2
             }
 
 -- | Spawn threads for all of the mini protocols
@@ -833,9 +835,11 @@ data TraceMiniProtocolRestart peer
 -- 'MiniProtocolExpectedException'
 --
 data MiniProtocolFatalException = MiniProtocolFatalException
-  { mpfeType :: !Typeable.TypeRep
+  { mpfeType   :: !Typeable.TypeRep
     -- ^ Including the type explicitly makes it easier for a human to debug
-  , mpfeExn  :: !SomeException
+  , mpfeExn    :: !SomeException
+  , mpfeClient :: !CoreNodeId
+  , mpfeServer :: !CoreNodeId
   }
   deriving (Show)
 
