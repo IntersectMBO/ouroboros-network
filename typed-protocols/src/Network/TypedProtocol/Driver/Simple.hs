@@ -20,10 +20,12 @@ module Network.TypedProtocol.Driver.Simple (
 
   -- * Normal peers
   runPeer,
+  runPeer',
   TraceSendRecv(..),
 
   -- * Pipelined peers
   runPipelinedPeer,
+  runPipelinedPeer',
 
   -- * Connected peers
   runConnectedPeers,
@@ -156,7 +158,23 @@ runPeer
   -> Peer ps pr st m a
   -> m a
 runPeer tr codec peerid channel peer =
-    fst <$> runPeerWithDriver driver peer (startDState driver)
+    fst <$> runPeer' tr codec peerid channel peer
+
+
+-- | Run a peer with the given channel via the given codec.
+--
+-- Like runPeer but returns any unconsumed inputs.
+runPeer'
+  :: forall ps (st :: ps) pr peerid failure bytes m a .
+     (MonadThrow m, Exception failure)
+  => Tracer m (TraceSendRecv ps peerid failure)
+  -> Codec ps failure m bytes
+  -> peerid
+  -> Channel m bytes
+  -> Peer ps pr st m a
+  -> m (a, Maybe bytes)
+runPeer' tr codec peerid channel peer =
+    runPeerWithDriver driver peer (startDState driver)
   where
     driver = driverSimple tr peerid codec channel
 
@@ -178,7 +196,23 @@ runPipelinedPeer
   -> PeerPipelined ps pr st m a
   -> m a
 runPipelinedPeer tr codec peerid channel peer =
-    fst <$> runPipelinedPeerWithDriver driver peer (startDState driver)
+    fst <$> runPipelinedPeer' tr codec peerid channel peer
+
+
+-- | Run a pipelined peer with the given channel via the given codec.
+--
+-- Like runPipelinedPeer but returns any unconsumed inputs.
+runPipelinedPeer'
+  :: forall ps (st :: ps) pr peerid failure bytes m a.
+     (MonadSTM m, MonadAsync m, MonadThrow m, Exception failure)
+  => Tracer m (TraceSendRecv ps peerid failure)
+  -> Codec ps failure m bytes
+  -> peerid
+  -> Channel m bytes
+  -> PeerPipelined ps pr st m a
+  -> m (a, Maybe bytes)
+runPipelinedPeer' tr codec peerid channel peer =
+    runPipelinedPeerWithDriver driver peer (startDState driver)
   where
     driver = driverSimple tr peerid codec channel
 
