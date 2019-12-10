@@ -317,13 +317,15 @@ instructionHelper registry fromMaybeSTM fromPure CDB{..} varReader = do
         -- time of opening the iterator. We must now check whether that is
         -- still the end (blocks might have been added to the ImmutableDB in
         -- the meantime).
-        slotNoAtImmDBTip <- ImmDB.getSlotNoAtTip cdbImmDB
+        pointAtImmDBTip <- ImmDB.getPointAtTip cdbImmDB
+        let slotNoAtImmDBTip = pointSlot pointAtImmDBTip
         case pointSlot pt `compare` slotNoAtImmDBTip of
           -- The ImmutableDB somehow rolled back
           GT -> error "reader streamed beyond tip of the ImmutableDB"
 
           -- The tip is still the same, so switch to the in-memory chain
-          EQ -> do
+          EQ | pt == pointAtImmDBTip
+             -> do
             trace $ ReaderSwitchToMem pt slotNoAtImmDBTip
             atomically $ fromMaybeSTM $ do
               curChain <- readTVar cdbChain
@@ -332,11 +334,16 @@ instructionHelper registry fromMaybeSTM fromPure CDB{..} varReader = do
                 curChain
                 (writeTVar varReader . ReaderInMem)
 
-          -- The tip of the ImmutableDB has progressed since we opened the
-          -- iterator
-          LT -> do
+          -- Two possibilities:
+          --
+          -- 1. (EQ): the tip changed, but the slot number is the same. This
+          --    is only possible when an EBB was at the tip and the regular
+          --    block in the same slot was appended to the ImmutableDB.
+          --
+          -- 2. (LT): the tip of the ImmutableDB has progressed since we
+          --    opened the iterator.
+          _  -> do
             trace $ ReaderNewImmIterator pt slotNoAtImmDBTip
-            -- COST: the block at @pt@ is read.
             immIt' <- ImmDB.streamBlocksAfter cdbImmDB registry pt
             -- Try again with the new iterator
             rollForwardImmDB immIt' pt
