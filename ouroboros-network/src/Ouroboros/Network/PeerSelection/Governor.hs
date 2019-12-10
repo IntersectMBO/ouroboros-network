@@ -1651,8 +1651,13 @@ changedLocalRootPeers PeerSelectionActions{readLocalRootPeers}
       localRootPeers' <- Map.take targetNumberOfKnownPeers <$> readLocalRootPeers
       check (localRootPeers' /= localRootPeers)
 
-      let (knownPeers', _removed) =
-            KnownPeers.adjustRootSet localRootPeers localRootPeers' knownPeers
+      let added       = localRootPeers' Map.\\ localRootPeers
+          removed     = localRootPeers  Map.\\ localRootPeers'
+          knownPeers' = KnownPeers.insert PeerSourceLocalRoot
+                                          (added Map.!)
+                                          (Map.keysSet added)
+                      . KnownPeers.delete (Map.keysSet removed)
+                      $ knownPeers
           -- Have to adjust the publicRootPeers to maintain the invariant that
           -- the local and public sets are non-overlapping.
           publicRootPeers' = publicRootPeers Set.\\ Map.keysSet localRootPeers'

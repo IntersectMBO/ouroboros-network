@@ -21,11 +21,9 @@ module Ouroboros.Network.PeerSelection.KnownPeers (
     minGossipTime,
     setGossipTime,
     availableForGossip,
-    adjustRootSet,
   ) where
 
 import qualified Data.List as List
-import qualified Data.Foldable as Foldable
 import qualified Data.Set as Set
 import           Data.Set (Set)
 import qualified Data.Map.Strict as Map
@@ -248,53 +246,6 @@ setGossipTime peeraddrs time
         }
     in assert (invariant knownPeers') knownPeers'
 
-
---TODO: have this re-implemented in terms of insert and delete
-adjustRootSet :: Ord peeraddr
-              => Map peeraddr PeerAdvertise
-              -> Map peeraddr PeerAdvertise
-              -> KnownPeers peeraddr
-              -> (KnownPeers peeraddr, Set peeraddr)
-adjustRootSet rootPeers rootPeers'
-              knownPeers@KnownPeers {
-                knownPeersByAddr,
-                knownPeersAvailableForGossip,
-                knownPeersNextGossipTimes
-              } =
-    assert (Map.isSubmapOfBy (\_ _ -> True) rootPeers  (toMap knownPeers)) $
-    assert (Map.isSubmapOfBy (\_ _ -> True) rootPeers' (toMap knownPeers')) $
-    assert (invariant knownPeers') $
-    (knownPeers', removed)
-  where
-    knownPeers' =
-      KnownPeers {
-        knownPeersByAddr =
-          Map.unionWith
-            mergeRootAndKnownPeer
-            (Map.map rootToKnownPeer rootPeers')
-            (knownPeersByAddr `Map.withoutKeys` removed),
-
-        knownPeersAvailableForGossip =
-          (knownPeersAvailableForGossip Set.\\ removed) <> added,
-
-        knownPeersNextGossipTimes =
-          Foldable.foldl' (flip PSQ.delete) knownPeersNextGossipTimes removed
-      }
-
-    added   = Map.keysSet (Map.difference rootPeers' rootPeers)
-    removed = Map.keysSet (Map.difference rootPeers rootPeers')
-
-    -- Keep the existing KnownPeer but override things specific to
-    -- root peers
-    mergeRootAndKnownPeer r k =
-      k { knownPeerAdvertise = knownPeerAdvertise r }
-
-    -- Root peer to a KnownPeer with minimal info, as if previously unknown.
-    rootToKnownPeer peerAdvertise =
-      KnownPeerInfo {
-        knownPeerSource    = PeerSourceLocalRoot,
-        knownPeerAdvertise = peerAdvertise
-      }
 
 -- | Select a random subset of the known peers that are available to publish.
 --
