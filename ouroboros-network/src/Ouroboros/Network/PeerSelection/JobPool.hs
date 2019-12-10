@@ -20,7 +20,7 @@ import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork (MonadThread(..))
 import           Control.Monad.Class.MonadThrow
-import           Control.Exception (SomeException)
+import           Control.Exception (SomeException, SomeAsyncException(..))
 
 
 
@@ -56,7 +56,8 @@ forkJob :: forall m a.
 forkJob JobPool{jobsVar, completionQueue} (Job action handler) =
     mask $ \restore -> do
       jobAsync <- async $ do
-        res <- restore action `catch` (return . handler)
+        res <- handleJust notAsyncExceptions (return . handler) $
+                 restore action
         tid <- myThreadId
         atomically $ do
           writeTQueue completionQueue res
@@ -64,6 +65,12 @@ forkJob JobPool{jobsVar, completionQueue} (Job action handler) =
 
       let !tid = asyncThreadId (Proxy :: Proxy m) jobAsync
       atomically $ modifyTVar' jobsVar (Map.insert tid jobAsync)
+  where
+    notAsyncExceptions :: SomeException -> Maybe SomeException
+    notAsyncExceptions e
+      | Just (SomeAsyncException _) <- fromException e
+                  = Nothing
+      | otherwise = Just e
 
 readSize :: MonadSTM m => JobPool m a -> STM m Int
 readSize JobPool{jobsVar} = Map.size <$> readTVar jobsVar
