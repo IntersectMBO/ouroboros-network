@@ -325,6 +325,7 @@ test-suite test-consensus
                     random,
                     serialise,
                     tasty,
+                    tasty-golden,
                     tasty-hunit,
                     tasty-quickcheck,
                     text,

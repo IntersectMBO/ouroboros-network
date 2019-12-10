@@ -10,9 +10,11 @@ import           Codec.CBOR.Decoding (Decoder)
 import           Codec.CBOR.Encoding (Encoding)
 import           Codec.CBOR.Read (deserialiseFromBytes)
 import           Codec.CBOR.Write (toLazyByteString)
+import           Control.Monad.Except (runExcept)
 import qualified Data.Binary.Get as Get
 import qualified Data.Binary.Put as Put
 import qualified Data.ByteString.Lazy as Lazy
+import qualified Data.Sequence.Strict as Seq
 
 import           Cardano.Binary (fromCBOR, toCBOR)
 import           Cardano.Chain.Block (ABlockOrBoundary (..))
@@ -22,11 +24,14 @@ import           Cardano.Chain.Slotting (EpochSlots (..))
 import           Cardano.Crypto (ProtocolMagicId (..))
 
 import           Ouroboros.Network.Block (HeaderHash)
+import           Ouroboros.Network.Point (WithOrigin (At))
 
 import           Ouroboros.Consensus.Block (Header)
 import           Ouroboros.Consensus.Ledger.Byron
 import           Ouroboros.Consensus.Ledger.Byron.Auxiliary
+import qualified Ouroboros.Consensus.Ledger.Byron.DelegationHistory as DH
 import           Ouroboros.Consensus.Mempool.API (ApplyTxErr)
+import           Ouroboros.Consensus.Protocol.Abstract (SecurityParam (..))
 import qualified Ouroboros.Consensus.Protocol.PBFT.ChainState as CS
 
 import           Ouroboros.Storage.ImmutableDB (BinaryInfo (..), HashInfo (..))
@@ -34,13 +39,17 @@ import           Ouroboros.Storage.ImmutableDB (BinaryInfo (..), HashInfo (..))
 import           Test.QuickCheck
 import           Test.QuickCheck.Hedgehog (hedgehog)
 import           Test.Tasty
+import           Test.Tasty.Golden
 import           Test.Tasty.QuickCheck
 
 import qualified Test.Cardano.Chain.Block.Gen as CC
+import qualified Test.Cardano.Chain.Common.Example as CC
 import qualified Test.Cardano.Chain.Common.Gen as CC
 import qualified Test.Cardano.Chain.Delegation.Gen as CC
+import qualified Test.Cardano.Chain.Genesis.Dummy as CC
 import qualified Test.Cardano.Chain.MempoolPayload.Gen as CC
 import qualified Test.Cardano.Chain.Update.Gen as CC
+import qualified Test.Cardano.Chain.UTxO.Example as CC
 import qualified Test.Cardano.Chain.UTxO.Gen as CC
 import qualified Test.Cardano.Crypto.Gen as CC
 
@@ -64,6 +73,14 @@ tests = testGroup "Byron"
   , testGroup "HashInfo sanity check"
       [ testProperty "putHash/getHash roundtrip" prop_byronHashInfo_roundtrip
       , testProperty "hashSize"                  prop_byronHashInfo_hashSize
+      ]
+
+  , testGroup "Golden tests"
+      -- Note that for most Byron types, we simply wrap the en/decoders from
+      -- cardano-ledger, which already has golden tests for them.
+      [ test_golden_ChainState
+      , test_golden_LedgerState
+      , test_golden_GenTxId
       ]
   ]
 
@@ -186,6 +203,58 @@ prop_byronHashInfo_hashSize h =
     HashInfo { hashSize, putHash } = byronHashInfo
 
     serialisedHash = Put.runPut (putHash h)
+
+{-------------------------------------------------------------------------------
+  Golden tests
+-------------------------------------------------------------------------------}
+
+test_golden_ChainState :: TestTree
+test_golden_ChainState = goldenTestCBOR
+    "ChainState"
+    encodeByronChainState
+    exampleChainState
+    "test-consensus/golden/cbor/byron/ChainState"
+  where
+    exampleChainState = CS.appendEBB secParam windowSize 6 $
+      CS.fromList
+        secParam
+        windowSize
+        (At 3, Seq.fromList signers, CS.EbbMap mempty)
+
+    secParam = SecurityParam 2
+    windowSize = CS.WindowSize 3
+    signers = map (`CS.PBftSigner` CC.exampleKeyHash) [1..5]
+
+test_golden_LedgerState :: TestTree
+test_golden_LedgerState = goldenTestCBOR
+    "LedgerState"
+    encodeByronLedgerState
+    exampleLedgerState
+    "test-consensus/golden/cbor/byron/LedgerState"
+  where
+    exampleLedgerState = ByronLedgerState
+      { byronLedgerState       = initState
+      , byronDelegationHistory = DH.empty
+      }
+
+    initState :: CC.Block.ChainValidationState
+    Right initState = runExcept $
+      CC.Block.initialChainValidationState CC.dummyConfig
+
+test_golden_GenTxId :: TestTree
+test_golden_GenTxId = goldenTestCBOR
+    "GenTxId"
+    encodeByronGenTxId
+    exampleGenTxId
+    "test-consensus/golden/cbor/byron/GenTxId"
+  where
+    exampleGenTxId = ByronTxId CC.exampleTxId
+
+goldenTestCBOR :: String -> (a -> Encoding) -> a -> FilePath -> TestTree
+goldenTestCBOR name enc a path =
+    goldenVsString name path (return bs)
+  where
+    bs = toLazyByteString (enc a)
 
 {-------------------------------------------------------------------------------
   Generators
