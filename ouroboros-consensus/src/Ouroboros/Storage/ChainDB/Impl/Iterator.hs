@@ -268,8 +268,12 @@ newIterator itEnv@IteratorEnv{..} getItEnv registry from to = do
                 -- The end point == the tip of the ImmutableDB
              -> streamFromImmDB
              | otherwise
-                -- The end point /= the tip of the ImmutableDB
-             -> throwError $ ForkTooOld from
+                -- The end point /= the tip of the ImmutableDB. Either the
+                -- fork is too old, or the end point (or the tip of the
+                -- ImmutableDB) is an EBB. For example, the tip of the
+                -- ImmutableDB is an EBB and the end point is the regular
+                -- block after it.
+             -> findPathInVolDB
           -- The end point is > the tip of the ImmutableDB
           GT -> findPathInVolDB
 
