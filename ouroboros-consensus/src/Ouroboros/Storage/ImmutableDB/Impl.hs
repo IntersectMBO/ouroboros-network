@@ -386,10 +386,10 @@ deleteAfterImpl dbEnv@ImmutableDBEnv { _dbTracer } newTip =
 getTipImpl
   :: forall m hash. (HasCallStack, IOLike m)
   => ImmutableDBEnv m hash
-  -> m ImmTip
+  -> m (ImmTipWithHash hash)
 getTipImpl dbEnv = do
     SomePair _hasFS OpenState { _currentTip } <- getOpenState dbEnv
-    return (fst <$> _currentTip)
+    return _currentTip
 
 -- | Whether to read the whole block, its header, or the hash
 data GetWhat hash res where

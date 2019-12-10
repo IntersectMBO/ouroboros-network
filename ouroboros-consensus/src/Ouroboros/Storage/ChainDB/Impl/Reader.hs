@@ -2,7 +2,6 @@
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeApplications    #-}
 
 {-# OPTIONS_GHC -Wredundant-constraints #-}
 -- | Readers
@@ -27,7 +26,7 @@ import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block (ChainUpdate (..), HasHeader,
                      HeaderHash, Point, SlotNo, blockPoint, castPoint,
-                     genesisPoint, pointSlot)
+                     genesisPoint, pointHash, pointSlot)
 import           Ouroboros.Network.Point (WithOrigin (..))
 
 import           Ouroboros.Consensus.Block (GetHeader (..), headerPoint)
@@ -318,13 +317,15 @@ instructionHelper registry fromMaybeSTM fromPure CDB{..} varReader = do
         -- time of opening the iterator. We must now check whether that is
         -- still the end (blocks might have been added to the ImmutableDB in
         -- the meantime).
-        slotNoAtImmDBTip <- ImmDB.getSlotNoAtTip cdbImmDB
+        pointAtImmDBTip <- ImmDB.getPointAtTip cdbImmDB
+        let slotNoAtImmDBTip = pointSlot pointAtImmDBTip
         case pointSlot pt `compare` slotNoAtImmDBTip of
           -- The ImmutableDB somehow rolled back
           GT -> error "reader streamed beyond tip of the ImmutableDB"
 
           -- The tip is still the same, so switch to the in-memory chain
-          EQ -> do
+          EQ | pt == pointAtImmDBTip
+             -> do
             trace $ ReaderSwitchToMem pt slotNoAtImmDBTip
             atomically $ fromMaybeSTM $ do
               curChain <- readTVar cdbChain
@@ -333,11 +334,16 @@ instructionHelper registry fromMaybeSTM fromPure CDB{..} varReader = do
                 curChain
                 (writeTVar varReader . ReaderInMem)
 
-          -- The tip of the ImmutableDB has progressed since we opened the
-          -- iterator
-          LT -> do
+          -- Two possibilities:
+          --
+          -- 1. (EQ): the tip changed, but the slot number is the same. This
+          --    is only possible when an EBB was at the tip and the regular
+          --    block in the same slot was appended to the ImmutableDB.
+          --
+          -- 2. (LT): the tip of the ImmutableDB has progressed since we
+          --    opened the iterator.
+          _  -> do
             trace $ ReaderNewImmIterator pt slotNoAtImmDBTip
-            -- COST: the block at @pt@ is read.
             immIt' <- ImmDB.streamBlocksAfter cdbImmDB registry pt
             -- Try again with the new iterator
             rollForwardImmDB immIt' pt
@@ -445,8 +451,7 @@ forward registry CDB{..} varReader = \pts -> do
 -- PRECONDITION: the intersection point must be within the fragment bounds
 -- of the new chain
 switchFork
-  :: forall m blk.
-     HasHeader (Header blk)
+  :: forall m blk. (HasHeader blk, HasHeader (Header blk))
   => Point blk  -- ^ Intersection point between old and new chain
   -> AnchoredFragment (Header blk)  -- ^ The new chain
   -> ReaderState m blk -> ReaderState m blk
@@ -456,18 +461,47 @@ switchFork ipoint newChain readerState =
         -- If the reader is still reading from the ImmutableDB, switching to a
         -- fork won't affect it at all
         ReaderInImmDB {} -> readerState
-        ReaderInMem   rollState
-          | pointSlot (readerRollStatePoint rollState) > pointSlot ipoint
-            -- If the reader point is more recent than the intersection point,
-            -- we have to roll back the reader to the intersection point.
-          -> ReaderInMem $ RollBackTo ipoint
-          | otherwise
-            -- We can keep rolling forward. Note that this does not mean the
-            -- reader point is still on the current fragment, as headers older
-            -- than @k@ might have been moved from the fragment to the
-            -- ImmutableDB. This will be noticed when the next instruction is
-            -- requested; we'll switch to the 'ReaderInImmDB' state.
-          -> readerState
+        ReaderInMem   rollState ->
+            case pointSlot readerPoint `compare` pointSlot ipoint of
+              -- If the reader point is more recent than the intersection point,
+              -- we have to roll back the reader to the intersection point.
+              GT -> ReaderInMem $ RollBackTo ipoint
+
+              -- The reader point and the intersection point are in the same
+              -- slot. We have to be careful here, because one (or both) of them
+              -- could be an EBB.
+              EQ
+                | pointHash readerPoint == pointHash ipoint
+                  -- The same point, so no rollback needed.
+                -> readerState
+                | Just pointAfterRollStatePoint <- headerPoint <$>
+                    AF.successorBlock (castPoint readerPoint) newChain
+                , pointAfterRollStatePoint == ipoint
+                  -- The point after the reader point is the intersection
+                  -- point. It must be that the reader point is an EBB and
+                  -- that the intersection point is a regular block in the
+                  -- same slot. As the reader point is older than the
+                  -- intersection point, no rollback is needed.
+                -> readerState
+                | otherwise
+                  -- Either the intersection point is the EBB before the
+                  -- reader point (referring to the regular block in the same
+                  -- slot), in which case we need to roll back, as the
+                  -- intersection point is older than the reader point. Or,
+                  -- we're dealing with two blocks (could be two EBBs) in the
+                  -- same slot with a different hash, in which case we'll have
+                  -- to rollback to the intersection point.
+                -> ReaderInMem $ RollBackTo ipoint
+
+              -- The reader point is older than the intersection point, so we
+              -- can keep rolling forward. Note that this does not mean the
+              -- reader point is still on the current fragment, as headers older
+              -- than @k@ might have been moved from the fragment to the
+              -- ImmutableDB. This will be noticed when the next instruction is
+              -- requested; we'll switch to the 'ReaderInImmDB' state.
+              LT -> readerState
+          where
+            readerPoint = readerRollStatePoint rollState
 
 -- | Close all open 'Reader's.
 closeAllReaders :: IOLike m => ChainDbEnv m blk -> m ()

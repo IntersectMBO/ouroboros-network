@@ -419,11 +419,11 @@ streamAPI immDB = StreamAPI streamAfter
   Garbage collect points of previously applied blocks
 -------------------------------------------------------------------------------}
 
--- | Remove all points with a slot less than or equal to the given slot from
--- the set of previously applied points.
+-- | Remove all points with a slot older than the given slot from the set of
+-- previously applied points.
 garbageCollectPrevApplied :: IOLike m => LgrDB m blk -> SlotNo -> STM m ()
 garbageCollectPrevApplied LgrDB{..} slotNo = modifyTVar varPrevApplied $
-    Set.filter ((<= (At slotNo)) . Block.pointSlot)
+    Set.filter ((< (At slotNo)) . Block.pointSlot)
 
 {-------------------------------------------------------------------------------
   Error handling

@@ -687,7 +687,7 @@ garbageCollectable secParam m@Model{..} b =
     onCurrentChain = Chain.pointOnChain (Block.blockPoint b) (currentChain m)
     -- Note: we don't use the block number but the slot number, as the
     -- VolatileDB's garbage collection is in terms of slot numbers.
-    olderThanImmutableSlotNo = At (Block.blockSlot b) <= immutableSlotNo secParam m
+    olderThanImmutableSlotNo = At (Block.blockSlot b) < immutableSlotNo secParam m
 
 -- Return 'True' when the model contains the block corresponding to the point
 -- and the block itself is eligible for garbage collection, i.e. the real

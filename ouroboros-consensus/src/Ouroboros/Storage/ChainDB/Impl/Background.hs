@@ -216,8 +216,8 @@ copyToImmDBRunner cdb@CDB{..} gcSchedule = forever $ do
   Executing garbage collection
 -------------------------------------------------------------------------------}
 
--- | Trigger a garbage collection for blocks older or equal to the given
--- 'SlotNo' on the VolatileDB.
+-- | Trigger a garbage collection for blocks older than the given 'SlotNo' on
+-- the VolatileDB.
 --
 -- Also removes the corresponding cached "previously applied points" from the
 -- LedgerDB.
@@ -231,7 +231,7 @@ garbageCollect CDB{..} slotNo = do
     VolDB.garbageCollect cdbVolDB slotNo
     atomically $ do
       LgrDB.garbageCollectPrevApplied cdbLgrDB slotNo
-      modifyTVar cdbInvalid $ fmap $ Map.filter ((> slotNo) . snd)
+      modifyTVar cdbInvalid $ fmap $ Map.filter ((>= slotNo) . snd)
     traceWith cdbTracer $ TraceGCEvent $ PerformedGC slotNo
 
 {-------------------------------------------------------------------------------
