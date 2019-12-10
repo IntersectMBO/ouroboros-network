@@ -1033,7 +1033,7 @@ genBlk :: BlockGen Blk m
 genBlk Model{..} = frequency
     [ (if empty then 0 else 1, genAlreadyInChain)
     , (5,                      genAppendToCurrentChain)
-    , (if empty then 0 else 3, genFitsOnSomewhere)
+    , (5,                      genFitsOnSomewhere)
     , (3,                      genGap)
     ]
   where
@@ -1097,9 +1097,10 @@ genBlk Model{..} = frequency
     -- Helper that generates a block that fits onto the given block.
     genFitsOn :: TestBlock -> Gen TestBlock
     genFitsOn b = frequency
-        -- If we generate too many EBBs, the density of the chain will be low.
         [ (4, do
-                slotNo <- chooseSlot (blockSlot b + 1) (blockSlot b + 3)
+                slotNo <- if fromIsEBB (testBlockIsEBB b)
+                  then chooseSlot (blockSlot b)     (blockSlot b + 2)
+                  else chooseSlot (blockSlot b + 1) (blockSlot b + 3)
                 body   <- genBody
                 return $ mkNextBlock b slotNo body)
         -- An EBB is never followed directly by another EBB, otherwise they
