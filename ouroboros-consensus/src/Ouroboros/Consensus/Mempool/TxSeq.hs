@@ -10,9 +10,12 @@ module Ouroboros.Consensus.Mempool.TxSeq (
     TicketNo(..)
   , TxTicket(..)
   , TxSeq(Empty, (:>), (:<))
+  , toTxSeq
   , fromTxSeq
+  , txTickets
   , lookupByTicketNo
   , splitAfterTicketNo
+  , splitAfterTxSize
   , zeroTicketNo
   , filterTxs
   ) where
@@ -24,6 +27,7 @@ import           Data.Word (Word64)
 import           GHC.Generics (Generic)
 
 import           Cardano.Prelude (NoUnexpectedThunks)
+import           Ouroboros.Network.Protocol.TxSubmission.Type (TxSizeInBytes)
 
 {-------------------------------------------------------------------------------
   Mempool transaction sequence as a finger tree
@@ -40,12 +44,22 @@ newtype TicketNo = TicketNo Word64
 zeroTicketNo :: TicketNo
 zeroTicketNo = TicketNo 0
 
--- | We pair up transactions in the mempool with their ticket number.
+-- | We associate transactions in the mempool with their ticket number and
+-- size in bytes.
 --
-data TxTicket tx = TxTicket !tx !TicketNo
-  deriving (Show, Generic, NoUnexpectedThunks)
+data TxTicket tx = TxTicket
+  { txTicketTx            :: !tx
+    -- ^ The transaction associated with this ticket.
+  , txTicketNo            :: !TicketNo
+    -- ^ The ticket number.
+  , txTicketTxSizeInBytes :: !TxSizeInBytes
+    -- ^ The byte size of the transaction ('txTicketTx') associated with this
+    -- ticket.
+  } deriving (Show, Generic, NoUnexpectedThunks)
 
--- | The mempool is a sequence of transactions with their ticket numbers.
+-- | The mempool is a sequence of transactions with their ticket numbers and
+-- size in bytes.
+--
 -- Transactions are allocated monotonically increasing ticket numbers as they
 -- are appended to the mempool sequence. Transactions can be removed from any
 -- position, not just the front.
@@ -64,7 +78,7 @@ newtype TxSeq tx = TxSeq (StrictFingerTree TxSeqMeasure (TxTicket tx))
   deriving newtype (NoUnexpectedThunks)
 
 instance Foldable TxSeq where
-  foldMap f (TxSeq txs) = Foldable.foldMap (f . (\(TxTicket tx _) -> tx)) txs
+  foldMap f (TxSeq txs) = Foldable.foldMap (f . txTicketTx) txs
   null      (TxSeq txs) = Foldable.null txs
   length    (TxSeq txs) = mSize $ FingerTree.measure txs
 
@@ -82,21 +96,23 @@ instance Foldable TxSeq where
 data TxSeqMeasure = TxSeqMeasure {
        mMinTicket :: !TicketNo,
        mMaxTicket :: !TicketNo,
+       mSizeBytes :: !TxSizeInBytes,
        mSize      :: !Int
      }
   deriving Show
 
 instance FingerTree.Measured TxSeqMeasure (TxTicket tx) where
-  measure (TxTicket _ tno) = TxSeqMeasure tno tno 1
+  measure (TxTicket _ tno tsz) = TxSeqMeasure tno tno tsz 1
 
 instance Semigroup TxSeqMeasure where
   vl <> vr = TxSeqMeasure
                (mMinTicket vl `min` mMinTicket vr)
                (mMaxTicket vl `max` mMaxTicket vr)
+               (mSizeBytes vl   +   mSizeBytes vr)
                (mSize      vl   +   mSize      vr)
 
 instance Monoid TxSeqMeasure where
-  mempty  = TxSeqMeasure maxBound minBound 0
+  mempty  = TxSeqMeasure maxBound minBound 0 0
   mappend = (<>)
 
 -- | A helper function for the ':>' pattern.
@@ -147,8 +163,8 @@ lookupByTicketNo :: TxSeq tx -> TicketNo -> Maybe tx
 lookupByTicketNo (TxSeq txs) n =
     case FingerTree.search (\ml mr -> mMaxTicket ml >= n
                                    && mMinTicket mr >  n) txs of
-      FingerTree.Position _ (TxTicket tx n') _ | n' == n -> Just tx
-      _                                                  -> Nothing
+      FingerTree.Position _ (TxTicket tx n' _) _ | n' == n -> Just tx
+      _                                                    -> Nothing
 
 -- | \( O(\log(n)) \). Split the sequence of transactions into two parts
 -- based on the given 'TicketNo'. The first part has transactions with tickets
@@ -160,11 +176,30 @@ splitAfterTicketNo (TxSeq txs) n =
     case FingerTree.split (\m -> mMaxTicket m > n) txs of
       (l, r) -> (TxSeq l, TxSeq r)
 
+-- | \( O(\log(n)) \). Split the sequence of transactions into two parts
+-- based on the given 'TxSizeInBytes'. The first part has transactions whose
+-- summed 'TxSizeInBytes' is less than or equal to the given 'TxSizeInBytes',
+-- and the second part has the remaining transactions in the sequence.
+--
+splitAfterTxSize :: TxSeq tx -> TxSizeInBytes -> (TxSeq tx, TxSeq tx)
+splitAfterTxSize (TxSeq txs) n =
+    case FingerTree.split (\m -> mSizeBytes m > n) txs of
+      (l, r) -> (TxSeq l, TxSeq r)
+
+-- | Given a list of triples consisting of transactions, ticket numbers, and
+-- the transaction sizes in bytes, construct a 'TxSeq'.
+toTxSeq :: [(tx, TicketNo, TxSizeInBytes)] -> TxSeq tx
+toTxSeq =
+    Foldable.foldl' (\acc triple -> acc :> uncurry3 TxTicket triple) Empty
+  where
+    uncurry3 :: (a -> b -> c -> d) -> ((a, b, c) -> d)
+    uncurry3 f (a, b, c) = f a b c
+
 -- | Convert a 'TxSeq' to a list of pairs of transactions and their
 -- associated 'TicketNo's.
 fromTxSeq :: TxSeq tx -> [(tx, TicketNo)]
 fromTxSeq (TxSeq ftree) = fmap
-  (\(TxTicket tx tn) -> (tx, tn))
+  (\ticket -> (txTicketTx ticket, txTicketNo ticket))
   (Foldable.toList $ ftree)
 
 -- | \( O(n) \). Filter the 'TxSeq'.
@@ -175,3 +210,7 @@ filterTxs p (TxSeq ftree) =
     . filter p
     . Foldable.toList
     $ ftree
+
+-- | Convert a 'TxSeq' to a list of 'TxTicket's.
+txTickets :: TxSeq tx -> [TxTicket tx]
+txTickets (TxSeq ftree) = Foldable.toList ftree

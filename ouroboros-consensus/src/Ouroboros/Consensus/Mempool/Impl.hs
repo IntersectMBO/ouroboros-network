@@ -390,7 +390,7 @@ implRemoveTxs mpEnv@MempoolEnv{mpEnvTracer, mpEnvStateVar} txIds = do
       -- the mempool.
       modifyTVar mpEnvStateVar $ \is@IS{isTxs} -> is
         { isTxs = TxSeq.filterTxs
-            (\(TxTicket tx _) -> txId tx `notElem` toRemove)
+            (\TxTicket { txTicketTx } -> txId txTicketTx `notElem` toRemove)
             isTxs
         }
       -- TODO some duplication with 'implWithSyncState'
@@ -561,7 +561,7 @@ extendVRPrevApplied cfg (tx, tn)
     case runExcept (reapplyTx cfg tx vrAfter) of
       Left err  -> vr { vrInvalid = (tx, err) : vrInvalid
                       }
-      Right st' -> vr { vrValid   = vrValid :> TxTicket tx tn
+      Right st' -> vr { vrValid   = vrValid :> TxTicket tx tn (txSize tx)
                       , vrAfter   = st'
                       }
 
@@ -583,7 +583,7 @@ extendVRNew cfg tx
     in  case runExcept (applyTx cfg tx vrAfter) of
       Left err  -> vr { vrInvalid      = (tx, err) : vrInvalid
                       }
-      Right st' -> vr { vrValid        = vrValid :> TxTicket tx nextTicketNo
+      Right st' -> vr { vrValid        = vrValid :> TxTicket tx nextTicketNo (txSize tx)
                       , vrNewValid     = tx : vrNewValid
                       , vrAfter        = st'
                       , vrLastTicketNo = nextTicketNo
