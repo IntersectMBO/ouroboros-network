@@ -746,11 +746,9 @@ peerSelectionGovernorLoop tracer
 
       decision <- evalGuardedDecisions now st'
 
-      let Decision { decisionTrace, decisionEnact, decisionState } = decision
+      let Decision { decisionTrace, decisionJobs, decisionState } = decision
       traceWith tracer decisionTrace
-      case decisionEnact of
-        Nothing  -> return ()
-        Just job -> JobPool.forkJob jobPool job
+      mapM_ (JobPool.forkJob jobPool) decisionJobs
       loop decisionState
 
     evalGuardedDecisions :: Time
@@ -826,7 +824,7 @@ data Decision m peeraddr peerconn = Decision {
        -- a further 'Decision'. This gives a state update to apply upon
        -- completion, but also allows chaining further job actions.
        --
-       decisionEnact :: Maybe (Job m (Completion m peeraddr peerconn))
+       decisionJobs  :: [Job m (Completion m peeraddr peerconn)]
      }
 
 wakeupDecision :: PeerSelectionState peeraddr peerconn
@@ -835,7 +833,7 @@ wakeupDecision st =
   Decision {
     decisionTrace = TraceGovernorWakeup,
     decisionState = st,
-    decisionEnact = Nothing
+    decisionJobs  = []
   }
 
 newtype Completion m peeraddr peerconn =
@@ -895,7 +893,7 @@ rootPeersBelowTarget actions
                           targetNumberOfRootPeers
                           numRootPeers,
         decisionState = st { inProgressPublicRootsReq = True },
-        decisionEnact = Just (jobReqPublicRootPeers actions maxExtraRootPeers)
+        decisionJobs  = [jobReqPublicRootPeers actions maxExtraRootPeers]
       }
 
     -- If we would be able to do the request except for the time, return the
@@ -944,7 +942,7 @@ jobReqPublicRootPeers PeerSelectionActions{requestPublicRootPeers}
                               publicRootBackoffs  = publicRootBackoffs',
                               publicRootRetryTime = publicRootRetryTime'
                             },
-            decisionEnact = Nothing
+            decisionJobs  = []
           }
 
     job :: m (Completion m peeraddr peerconn)
@@ -991,7 +989,7 @@ jobReqPublicRootPeers PeerSelectionActions{requestPublicRootPeers}
                                 publicRootRetryTime = publicRootRetryTime,
                                 inProgressPublicRootsReq = False
                               },
-              decisionEnact = Nothing
+              decisionJobs  = []
             }
 
 
@@ -1045,8 +1043,8 @@ knownPeersBelowTarget actions
                                          (addTime policyGossipRetryTime now)
                                          knownPeers
                         },
-        decisionEnact = Just (jobGossip actions policy
-                                        (Set.toList selectedForGossip))
+        decisionJobs  = [jobGossip actions policy
+                           (Set.toList selectedForGossip)]
       }
 
     -- If we could gossip except that there are none currently available
@@ -1084,7 +1082,7 @@ jobGossip PeerSelectionActions{requestPeerGossip}
                           inProgressGossipReqs = inProgressGossipReqs st
                                                - length peers
                         },
-        decisionEnact = Nothing
+        decisionJobs  = []
       }
 
     jobPhase1 :: [peeraddr] -> m (Completion m peeraddr peerconn)
@@ -1115,7 +1113,7 @@ jobGossip PeerSelectionActions{requestPeerGossip}
                               inProgressGossipReqs = inProgressGossipReqs st
                                                    - length peers
                             },
-            decisionEnact = Nothing
+            decisionJobs  = []
           }
 
         -- But if any don't make the first timeout then they'll be added later
@@ -1146,8 +1144,8 @@ jobGossip PeerSelectionActions{requestPeerGossip}
                               inProgressGossipReqs = inProgressGossipReqs st
                                                    - length peerResults
                             },
-            decisionEnact = Just $ Job (jobPhase2 peersRemaining gossipsRemaining)
-                                       (handler peersRemaining)
+            decisionJobs  = [Job (jobPhase2 peersRemaining gossipsRemaining)
+                                 (handler peersRemaining)]
           }
 
     jobPhase2 :: [peeraddr] -> [Async m [peeraddr]]
@@ -1191,7 +1189,7 @@ jobGossip PeerSelectionActions{requestPeerGossip}
                           inProgressGossipReqs = inProgressGossipReqs st
                                                - length peers
                         },
-        decisionEnact = Nothing
+        decisionJobs  = []
       }
 
 
@@ -1253,7 +1251,7 @@ knownPeersAboveTarget PeerSelectionPolicy {
                           publicRootPeers = publicRootPeers
                                               Set.\\ selectedToForget
                         },
-        decisionEnact = Nothing
+        decisionJobs  = []
       }
 
   | otherwise
@@ -1316,7 +1314,7 @@ establishedPeersBelowTarget actions
                           inProgressPromoteCold = inProgressPromoteCold
                                                <> selectedToPromote
                         },
-        decisionEnact = Just (jobPromoteColdPeers actions selectedToPromote)
+        decisionJobs  = [jobPromoteColdPeers actions selectedToPromote]
       }
 
   | otherwise
@@ -1341,7 +1339,7 @@ jobPromoteColdPeers PeerSelectionActions{establishPeerConnection}
                           inProgressPromoteCold = inProgressPromoteCold st
                                            Set.\\ selectedToPromote
                         },
-        decisionEnact = Nothing
+        decisionJobs  = []
       }
 
     job :: m (Completion m peeraddr peerconn)
@@ -1352,7 +1350,7 @@ jobPromoteColdPeers PeerSelectionActions{establishPeerConnection}
       return $ Completion $ \st _now -> Decision {
         decisionTrace = undefined,
         decisionState = st,
-        decisionEnact = Nothing
+        decisionJobs  = []
       }
 
 
@@ -1417,7 +1415,7 @@ establishedPeersAboveTarget actions
                           inProgressDemoteWarm = inProgressDemoteWarm
                                               <> selectedToDemote
                         },
-        decisionEnact = Just (jobDemoteEstablishedPeers actions selectedToDemote')
+        decisionJobs  = [jobDemoteEstablishedPeers actions selectedToDemote']
       }
 
   | otherwise
@@ -1445,7 +1443,7 @@ jobDemoteEstablishedPeers PeerSelectionActions{closePeerConnection}
                           inProgressDemoteWarm = inProgressDemoteWarm st
                                           Set.\\ Map.keysSet selectedToDemote
                         },
-        decisionEnact = Nothing
+        decisionJobs  = []
       }
 
     job :: m (Completion m peeraddr peerconn)
@@ -1457,7 +1455,7 @@ jobDemoteEstablishedPeers PeerSelectionActions{closePeerConnection}
         decisionTrace = TraceDemoteWarmDone
                           (Map.keysSet selectedToDemote),
         decisionState = st,
-        decisionEnact = Nothing
+        decisionJobs  = []
       }
 
 activePeersBelowTarget :: forall peeraddr peerconn m.
@@ -1514,7 +1512,7 @@ activePeersBelowTarget actions
                           inProgressPromoteWarm = inProgressPromoteWarm
                                                <> selectedToPromote
                         },
-        decisionEnact = Just (jobPromoteWarmPeers actions selectedToPromote')
+        decisionJobs  = [jobPromoteWarmPeers actions selectedToPromote']
       }
 
   | otherwise
@@ -1540,7 +1538,7 @@ jobPromoteWarmPeers PeerSelectionActions{activatePeerConnection}
                                            Set.\\ Map.keysSet selectedToPromote
 
                         },
-        decisionEnact = Nothing
+        decisionJobs  = []
       }
 
     job :: m (Completion m peeraddr peerconn)
@@ -1551,7 +1549,7 @@ jobPromoteWarmPeers PeerSelectionActions{activatePeerConnection}
       return $ Completion $ \st _now -> Decision {
         decisionTrace = undefined,
         decisionState = st,
-        decisionEnact = Nothing
+        decisionJobs  = []
       }
 
 
@@ -1608,7 +1606,7 @@ activePeersAboveTarget actions
                           inProgressDemoteHot = inProgressDemoteHot
                                              <> selectedToDemote
                         },
-        decisionEnact = Just (jobDemoteActivePeers actions selectedToDemote')
+        decisionJobs  = [jobDemoteActivePeers actions selectedToDemote']
       }
 
   | otherwise
@@ -1636,7 +1634,7 @@ jobDemoteActivePeers PeerSelectionActions{deactivatePeerConnection}
                           inProgressDemoteHot = inProgressDemoteHot st
                                          Set.\\ Map.keysSet selectedToDemote
                         },
-        decisionEnact = Nothing
+        decisionJobs  = []
       }
 
     job :: m (Completion m peeraddr peerconn)
@@ -1648,7 +1646,7 @@ jobDemoteActivePeers PeerSelectionActions{deactivatePeerConnection}
         decisionTrace = TraceDemoteHotDone
                           (Map.keysSet selectedToDemote),
         decisionState = st,
-        decisionEnact = Nothing
+        decisionJobs  = []
       }
 
 
@@ -1690,7 +1688,7 @@ changedLocalRootPeers PeerSelectionActions{readLocalRootPeers}
                           publicRootPeers = publicRootPeers',
                           knownPeers      = knownPeers'
                         },
-        decisionEnact = Nothing
+        decisionJobs  = []
       }
 
 
@@ -1714,7 +1712,7 @@ changedTargets PeerSelectionActions{readPeerSelectionTargets}
 
       return Decision {
         decisionTrace = TraceTargetsChanged targets targets',
-        decisionEnact = Nothing,
+        decisionJobs  = [],
         decisionState = assert (sanePeerSelectionTargets targets')
                         st {
                           targets        = targets',
