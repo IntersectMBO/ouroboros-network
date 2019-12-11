@@ -186,6 +186,9 @@ fixedBlockchainTime slot = BlockchainTime
 
 -- | Real blockchain time
 --
+-- WARNING: if the start time is in the future, 'realBlockchainTime' will
+-- block until the start time has come.
+--
 -- TODO: Right now this requires a single specific slot duration. This is
 -- not going to be the case when we move to Praos. We need to think this
 -- through carefully.
@@ -194,6 +197,10 @@ realBlockchainTime :: forall m. IOLike m
                    -> SlotLength -> SystemStart
                    -> m (BlockchainTime m)
 realBlockchainTime registry slotLen start = do
+    now <- getCurrentTime
+    when (getSystemStart start > now) $ do
+      let delay = getSystemStart start `diffUTCTime` now
+      threadDelay ((realToFrac :: NominalDiffTime -> DiffTime) delay)
     first <- getCurrentSlotIO slotLen start
     slot  <- newTVarM first
     void $ forkLinkedThread registry $ loop slot
