@@ -424,12 +424,12 @@ base our decision on include:
 
 data PeerSelectionPolicy peeraddr m = PeerSelectionPolicy {
 
-       policyPickKnownPeersForGossip :: Map peeraddr KnownPeerInfo -> Int -> STM m (Set peeraddr),
-       policyPickColdPeersToPromote  :: Map peeraddr KnownPeerInfo -> Int -> STM m (Set peeraddr),
-       policyPickWarmPeersToPromote  :: Map peeraddr KnownPeerInfo -> Int -> STM m (Set peeraddr),
-       policyPickHotPeersToDemote    :: Map peeraddr KnownPeerInfo -> Int -> STM m (Set peeraddr),
-       policyPickWarmPeersToDemote   :: Map peeraddr KnownPeerInfo -> Int -> STM m (Set peeraddr),
-       policyPickColdPeersToForget   :: Map peeraddr KnownPeerInfo -> Int -> STM m (Set peeraddr),
+       policyPickKnownPeersForGossip :: PickPolicy peeraddr m,
+       policyPickColdPeersToPromote  :: PickPolicy peeraddr m,
+       policyPickWarmPeersToPromote  :: PickPolicy peeraddr m,
+       policyPickHotPeersToDemote    :: PickPolicy peeraddr m,
+       policyPickWarmPeersToDemote   :: PickPolicy peeraddr m,
+       policyPickColdPeersToForget   :: PickPolicy peeraddr m,
 
        policyFindPublicRootTimeout   :: !DiffTime,
        policyMaxInProgressGossipReqs :: !Int,
@@ -438,14 +438,33 @@ data PeerSelectionPolicy peeraddr m = PeerSelectionPolicy {
        policyGossipOverallTimeout    :: !DiffTime
      }
 
+-- | A peer pick policy is an action that picks a subset of elements from a
+-- map of peers.
+--
+-- The pre-condition is that the map of available choices will be non-empty,
+-- and the requested number to pick will be strictly positive.
+--
+-- The post-condition is that the picked set is non-empty but must not be
+-- bigger than the requested number.
+--
+type PickPolicy peeraddr m = Map peeraddr KnownPeerInfo
+                          -> Int
+                          -> STM m (Set peeraddr)
+
 -- | Check pre-conditions and post-conditions on the pick policies
-pickPeers :: Functor m
+pickPeers :: (Ord peeraddr, Functor m)
           => (Map peeraddr a -> Int -> m (Set peeraddr))
           ->  Map peeraddr a -> Int -> m (Set peeraddr)
-pickPeers policyPickThing available num =
-  assert (not (Map.null available) && num > 0) $
-  fmap (\picked -> assert (not (Set.null picked)) picked)
-       (policyPickThing available num)
+pickPeers pick available num =
+    assert precondition $
+    fmap (\picked -> assert (postcondition picked) picked)
+         (pick available numClamped)
+  where
+    precondition         = not (Map.null available) && num > 0
+    postcondition picked = not (Set.null picked)
+                        && Set.size picked <= numClamped
+                        && picked `Set.isSubsetOf` Map.keysSet available
+    numClamped           = min num (Map.size available)
 
 -- | Adjustable targets for the peer selection mechanism.
 --
