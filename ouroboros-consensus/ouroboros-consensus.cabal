@@ -315,7 +315,9 @@ test-suite test-consensus
                     contra-tracer,
                     cryptonite,
                     deepseq,
+                    directory,
                     fgl,
+                    filepath,
                     fingertree,
                     generics-sop,
                     graphviz,
@@ -329,6 +331,7 @@ test-suite test-consensus
                     tasty-golden,
                     tasty-hunit,
                     tasty-quickcheck,
+                    temporary,
                     text,
                     time,
                     tree-diff
