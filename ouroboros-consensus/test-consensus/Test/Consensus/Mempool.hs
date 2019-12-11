@@ -418,18 +418,6 @@ ppTestSetup TestSetup { testLedgerState
 txSizesInBytes :: [GenTx TestBlock] -> TxSizeInBytes
 txSizesInBytes = foldl' (\acc tx -> acc + txSize tx) 0
 
--- | Given some transactions, calculate the 'MempoolSize' that they would
--- occupy if the mempool consisted /only/ of those transactions.
-txsToMempoolSize :: [GenTx TestBlock] -> MempoolSize
-txsToMempoolSize = foldl'
-    (\MempoolSize { msNumTxs, msNumBytes } tx ->
-      MempoolSize
-        { msNumTxs   = msNumTxs + 1
-        , msNumBytes = msNumBytes + txSize tx
-        }
-    )
-    MempoolSize { msNumTxs = 0, msNumBytes = 0 }
-
 -- | Generate a 'TestSetup' and return the ledger obtained by applying all of
 -- the initial transactions.
 --

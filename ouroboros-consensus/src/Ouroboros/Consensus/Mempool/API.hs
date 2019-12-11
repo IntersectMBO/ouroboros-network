@@ -291,6 +291,13 @@ data MempoolSize = MempoolSize
     -- ^ The summed byte size of all the transactions in the mempool.
   } deriving (Eq, Show)
 
+instance Semigroup MempoolSize where
+  MempoolSize xt xb <> MempoolSize yt yb = MempoolSize (xt + yt) (xb + yb)
+
+instance Monoid MempoolSize where
+  mempty = MempoolSize { msNumTxs = 0, msNumBytes = 0 }
+  mappend = (<>)
+
 -- | Events traced by the Mempool.
 data TraceEventMempool blk
   = TraceMempoolAddTxs

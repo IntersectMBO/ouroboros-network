@@ -11,6 +11,7 @@ module Ouroboros.Consensus.Mempool.Impl (
   , LedgerInterface (..)
   , MempoolCapacity (..)
   , chainDBLedgerInterface
+  , txsToMempoolSize
   , TicketNo
     -- * For testing purposes
   , openMempoolWithoutSyncThread
@@ -466,17 +467,16 @@ implGetSnapshot MempoolEnv{mpEnvStateVar} = do
 getMempoolSize :: (IOLike m, ApplyTx blk)
                => MempoolEnv m blk
                -> STM m MempoolSize
-getMempoolSize MempoolEnv{mpEnvStateVar} = do
-    IS { isTxs } <- readTVar mpEnvStateVar
-    pure $ Foldable.foldl'
-      (\MempoolSize { msNumTxs, msNumBytes } tx ->
-        MempoolSize
-          { msNumTxs = msNumTxs + 1
-          , msNumBytes = msNumBytes + txSize tx
-          }
-      )
-      MempoolSize { msNumTxs = 0, msNumBytes = 0 }
-      isTxs
+getMempoolSize MempoolEnv{mpEnvStateVar} =
+    txsToMempoolSize . isTxs <$> readTVar mpEnvStateVar
+
+-- | Given a 'Foldable' of transactions, calculate what the 'MempoolSize'
+-- would be if a mempool were to consist /only/ of those transactions.
+txsToMempoolSize :: (Foldable t, ApplyTx blk) => t (GenTx blk) -> MempoolSize
+txsToMempoolSize = foldMap toMempoolSize
+  where
+    toMempoolSize :: ApplyTx blk => GenTx blk -> MempoolSize
+    toMempoolSize tx = MempoolSize { msNumTxs = 1, msNumBytes = txSize tx }
 
 {-------------------------------------------------------------------------------
   MempoolSnapshot Implementation
