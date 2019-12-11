@@ -830,7 +830,7 @@ data TracePeerSelection peeraddr peerconn =
      | TracePublicRootsRequest Int Int
      | TracePublicRootsResults (Set peeraddr) Int DiffTime
      | TracePublicRootsFailure SomeException Int DiffTime
-     | TraceGossipRequests     Int Int (Map peeraddr KnownPeerInfo) (Set peeraddr) -- target, actual, selected
+     | TraceGossipRequests     Int Int (Set peeraddr) (Set peeraddr) -- target, actual, selected
      | TraceGossipResults      [(peeraddr, Either SomeException [peeraddr])] --TODO: classify failures
      | TraceForgetColdPeers   Int Int (Set peeraddr) -- target, actual, selected
      | TracePromoteColdPeers   Int Int (Set peeraddr)
@@ -1004,11 +1004,12 @@ knownPeersBelowTarget actions
 
     -- Are there any known peers that we can send a gossip request to?
     -- We can only ask ones where we have not asked them within a certain time.
-  , not (Map.null availableForGossip)
+  , not (Set.null availableForGossip)
   = Guarded Nothing $ do
       selectedForGossip <- pickPeers
                              policyPickKnownPeersForGossip
-                             availableForGossip
+                             (KnownPeers.toMap knownPeers
+                                `Map.restrictKeys` availableForGossip)
                              numGossipReqsPossible
       let numGossipReqs = Set.size selectedForGossip
       return Decision {
@@ -1033,7 +1034,7 @@ knownPeersBelowTarget actions
     -- then we return the next wakeup time (if any)
   | numKnownPeers < targetNumberOfKnownPeers
   , numGossipReqsPossible > 0
-  , Map.null availableForGossip
+  , Set.null availableForGossip
   = GuardedSkip (Min <$> KnownPeers.minGossipTime knownPeers)
 
   | otherwise

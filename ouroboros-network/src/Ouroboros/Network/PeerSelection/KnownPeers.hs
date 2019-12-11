@@ -276,14 +276,8 @@ setCurrentTime now knownPeers@KnownPeers {
 -- Tracking when we can gossip
 --
 
-availableForGossip :: Ord peeraddr
-                   => KnownPeers peeraddr
-                   -> Map peeraddr KnownPeerInfo
-availableForGossip KnownPeers {
-                     knownPeersByAddr,
-                     knownPeersAvailableForGossip
-                   } =
-    knownPeersByAddr `Map.restrictKeys` knownPeersAvailableForGossip
+availableForGossip :: KnownPeers peeraddr -> Set peeraddr
+availableForGossip = knownPeersAvailableForGossip
 
 -- | The first time that a peer will become available for gossip. If peers are
 -- already available for gossip, or there are no known peers at all then the
@@ -330,15 +324,8 @@ setGossipTime peeraddrs time
 -- Tracking when we can reconnect
 --
 
-availableToReconnect :: Ord peeraddr
-                     => KnownPeers peeraddr
-                     -> Map peeraddr KnownPeerInfo
-availableToReconnect KnownPeers {
-                       knownPeersByAddr,
-                       knownPeersAvailableToConnect
-                     } =
-    knownPeersByAddr `Map.restrictKeys` knownPeersAvailableToConnect
-
+availableToReconnect :: KnownPeers peeraddr -> Set peeraddr
+availableToReconnect = knownPeersAvailableToConnect
 
 minReconnectTime :: Ord peeraddr => KnownPeers peeraddr -> Maybe Time
 minReconnectTime KnownPeers {
