@@ -193,13 +193,14 @@ runFetchClient :: (MonadCatch m, MonadAsync m, MonadFork m, MonadST m,
                 -> FetchClientRegistry peerid header block m
                 -> peerid
                 -> Channel m LBS.ByteString
-                -> (  FetchClientContext header block m
+                -> (  StrictTMVar m ()
+                   -> FetchClientContext header block m
                    -> PeerPipelined (BlockFetch block) AsClient BFIdle m a)
                 -> m a
 runFetchClient tracer registry peerid channel client =
-    bracketFetchClient registry peerid $ \clientCtx ->
+    bracketFetchClient registry peerid $ \doneVar clientCtx ->
       runPipelinedPeer tracer codec peerid channel $
-        client clientCtx
+        (client doneVar clientCtx)
   where
     codec = codecBlockFetch encode (fmap const decode) encode decode
 
@@ -226,7 +227,8 @@ runFetchClientAndServerAsync
                 -> Tracer m (TraceSendRecv (BlockFetch block) peerid DeserialiseFailure)
                 -> FetchClientRegistry peerid header block m
                 -> peerid
-                -> (  FetchClientContext header block m
+                -> (  StrictTMVar m ()
+                   -> FetchClientContext header block m
                    -> PeerPipelined (BlockFetch block) AsClient BFIdle m a)
                 -> BlockFetchServer block m b
                 -> m (Async m a, Async m b, Async m ())

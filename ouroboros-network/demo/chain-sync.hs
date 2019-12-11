@@ -508,13 +508,13 @@ clientBlockFetch sockAddrs = do
                                          (Map.delete peerid)
 
         protocols peerid BlockFetch3 channel =
-          bracketFetchClient registry peerid $ \clientCtx ->
+          bracketFetchClient registry peerid $ \doneVar clientCtx ->
             runPipelinedPeer'
               nullTracer -- (contramap (show . TraceLabelPeer peerid) stdoutTracer)
               codecBlockFetch
               peerid
               channel
-              (blockFetchClient clientCtx)
+              (blockFetchClient doneVar clientCtx)
 
         blockFetchPolicy :: BlockFetchConsensusInterface
                              ConnectionId BlockHeader Block IO

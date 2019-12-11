@@ -15,7 +15,7 @@ module Ouroboros.Network.BlockFetch.ClientState (
     initialPeerFetchInFlight,
     FetchRequest(..),
     addNewFetchRequest,
-    acknowledgeFetchRequest,
+    acknowledgeFetchRequestSTM,
     startedFetchBatch,
     completeBlockDownload,
     completeFetchBatch,
@@ -466,17 +466,16 @@ addNewFetchRequest tracer blockFetchSize addedReq gsvs
 
 -- | This is used by the fetch client threads.
 --
-acknowledgeFetchRequest :: (MonadSTM m, HasHeader header)
-                        => Tracer m (TraceFetchClientState header)
-                        -> FetchClientStateVars m header
-                        -> m ( FetchRequest header
-                             , PeerGSV
-                             , PeerFetchInFlightLimits )
-acknowledgeFetchRequest tracer FetchClientStateVars {fetchClientRequestVar} = do
-    result@(request, _, _) <-
-      atomically $ takeTFetchRequestVar fetchClientRequestVar
-    traceWith tracer (AcknowledgedFetchRequest request)
-    return result
+acknowledgeFetchRequestSTM :: (MonadSTM m, HasHeader header)
+                        => FetchClientStateVars m header
+                        -> STM m ( FetchRequest header
+                                 , PeerGSV
+                                 , PeerFetchInFlightLimits
+                                 , TraceFetchClientState header)
+acknowledgeFetchRequestSTM FetchClientStateVars {fetchClientRequestVar} = do
+    (request, gsvs, inflightlimits) <- takeTFetchRequestVar fetchClientRequestVar
+    return (request, gsvs, inflightlimits, AcknowledgedFetchRequest request)
+
 
 startedFetchBatch :: (MonadSTM m, HasHeader header)
                   => Tracer m (TraceFetchClientState header)

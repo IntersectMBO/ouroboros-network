@@ -22,6 +22,7 @@ import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
 import           Control.Exception (assert)
+import           Control.Tracer (traceWith)
 
 import qualified Data.Set as Set
 
@@ -41,7 +42,7 @@ import           Ouroboros.Network.BlockFetch.ClientState
                    , PeerFetchInFlight(..)
                    , TraceFetchClientState
                    , fetchClientCtxStateVars
-                   , acknowledgeFetchRequest
+                   , acknowledgeFetchRequestSTM
                    , startedFetchBatch
                    , completeBlockDownload
                    , completeFetchBatch
@@ -70,13 +71,14 @@ type BlockFetchClient header block m a =
 -- | The implementation of the client side of block fetch protocol designed to
 -- work in conjunction with our fetch logic.
 --
-blockFetchClient :: forall header block m void.
+blockFetchClient :: forall header block m.
                     (MonadSTM m, MonadTime m, MonadThrow m,
                      HasHeader header, HasHeader block,
                      HeaderHash header ~ HeaderHash block)
-                 => FetchClientContext header block m
-                 -> PeerPipelined (BlockFetch block) AsClient BFIdle m void
-blockFetchClient FetchClientContext {
+                 => StrictTMVar m ()
+                 -> FetchClientContext header block m
+                 -> PeerPipelined (BlockFetch block) AsClient BFIdle m ()
+blockFetchClient doneVar FetchClientContext {
                    fetchClientCtxTracer    = tracer,
                    fetchClientCtxPolicy    = FetchClientPolicy {
                                                blockFetchSize,
@@ -90,7 +92,7 @@ blockFetchClient FetchClientContext {
     senderIdle :: forall n.
                   Nat n
                -> PeerSender (BlockFetch block) AsClient
-                             BFIdle n () m void
+                             BFIdle n () m ()
 
     -- We have no requests to send. Check if we have any pending pipelined
     -- results to collect. If so, go round and collect any more. If not, block
@@ -117,7 +119,23 @@ blockFetchClient FetchClientContext {
     senderAwait :: forall n.
                    Nat n
                 -> PeerSender (BlockFetch block) AsClient
-                              BFIdle n () m void
+                              BFIdle n () m ()
+    senderAwait Zero =
+      SenderEffect $ do
+      -- If we have no outstanding requests we may honour a comand to ask
+      -- us to exit cleanly as indicated by doneVar.
+      nxt <- atomically $ (Left  <$> readTMVar doneVar)
+                 `orElse` (Right <$> acknowledgeFetchRequestSTM stateVars)
+      case nxt of
+           Right (request, gsvs, inflightlimits, traceMsg) -> do
+               traceWith tracer traceMsg
+               return $ senderActive Zero gsvs inflightlimits
+                                     (fetchRequestFragments request)
+           Left _ ->
+               return $ SenderYield (ClientAgency TokIdle)
+                                    MsgClientDone
+                                    (SenderDone TokDone ())
+
     senderAwait outstanding =
       SenderEffect $ do
       -- Atomically grab our next request and update our tracking state.
@@ -130,9 +148,9 @@ blockFetchClient FetchClientContext {
       -- in-flight, and the tracking state that the fetch logic uses now
       -- reflects that.
       --
-      (request, gsvs, inflightlimits) <-
-        acknowledgeFetchRequest tracer stateVars
-
+      (request, gsvs, inflightlimits, traceMsg) <- atomically $
+          acknowledgeFetchRequestSTM stateVars
+      traceWith tracer traceMsg
       return $ senderActive outstanding gsvs inflightlimits
                             (fetchRequestFragments request)
 
@@ -142,7 +160,7 @@ blockFetchClient FetchClientContext {
                  -> PeerFetchInFlightLimits
                  -> [ChainFragment header]
                  -> PeerSender (BlockFetch block) AsClient
-                               BFIdle n () m void
+                               BFIdle n () m ()
 
     -- We now do have some requests that we have accepted but have yet to
     -- actually send out. Lets send out the first one.

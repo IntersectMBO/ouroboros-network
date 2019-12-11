@@ -34,7 +34,7 @@ import           Data.Proxy (Proxy (..))
 import           Data.Void (Void)
 
 import           Control.Monad.Class.MonadAsync (MonadAsync)
-import           Control.Monad.Class.MonadSTM.Strict (MonadSTM)
+import           Control.Monad.Class.MonadSTM.Strict (MonadSTM, StrictTMVar)
 import           Control.Monad.Class.MonadTimer (MonadTimer)
 import           Control.Monad.Class.MonadThrow
 import           Control.Tracer
@@ -110,7 +110,8 @@ data ProtocolHandlers m peer blk = ProtocolHandlers {
 
     -- TODO block fetch client does not have GADT view of the handlers.
     , phBlockFetchClient
-        :: BlockFetchClient (Header blk) blk m ()
+        :: StrictTMVar m ()
+        -> BlockFetchClient (Header blk) blk m ()
 
     , phBlockFetchServer
         :: ResourceRegistry m
@@ -510,13 +511,13 @@ consensusNetworkApps kernel ProtocolTracers {..} ProtocolCodecs {..} ProtocolHan
       -> Channel m bytesBF
       -> m ((), Maybe bytesBF)
     naBlockFetchClient them channel =
-      bracketFetchClient (getFetchClientRegistry kernel) them $ \clientCtx ->
+      bracketFetchClient (getFetchClientRegistry kernel) them $ \doneVar clientCtx ->
         runPipelinedPeer'
           ptBlockFetchTracer
           pcBlockFetchCodec
           them
           channel
-          $ phBlockFetchClient clientCtx
+          $ phBlockFetchClient doneVar clientCtx
 
     naBlockFetchServer
       :: peer

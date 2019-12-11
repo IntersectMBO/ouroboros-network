@@ -65,11 +65,11 @@ bracketFetchClient :: forall m a peer header block.
                       (MonadThrow m, MonadSTM m, MonadFork m, Ord peer)
                    => FetchClientRegistry peer header block m
                    -> peer
-                   -> (FetchClientContext header block m -> m a)
+                   -> (StrictTMVar m () -> FetchClientContext header block m -> m a)
                    -> m a
 bracketFetchClient (FetchClientRegistry ctxVar
                       fetchRegistry syncRegistry) peer action =
-    bracket register (uncurry unregister) (action . fst)
+    bracket register (uncurry unregister) (\(ctx, (_, doneVar)) -> action doneVar ctx)
   where
     register :: m ( FetchClientContext header block m
                   , (ThreadId m, StrictTMVar m ()) )
@@ -102,8 +102,21 @@ bracketFetchClient (FetchClientRegistry ctxVar
       -- Signal we are shutting down
       atomically $
         writeTVar (fetchClientStatusVar stateVars) PeerFetchStatusShutdown
-      -- Kill the sync client if it is still running
-      throwTo tid AsyncCancelled
+      -- Kill the sync client if it is still syncing
+      cleanExit <- atomically $ tryReadTMVar doneVar
+      case cleanExit of
+           -- We're exiting due to an exception.
+           -- Mux will cancel the sync client for us along with all
+           -- other protocol threads.
+           -- However at least in SimIO there seems to be a dependency on the order in
+           -- which the threads are cancelled and without this explicit throwTo
+           -- the sync client must be cancelled before blockfetch goes on to wait
+           -- on doneVar.
+           Nothing -> throwTo tid AsyncCancelled
+           -- We're exiting either due to an exception and sync client has already
+           -- exited, or sync client has asked us to exit cleanly, and in that case
+           -- we shouldn't kill the sync client.
+           Just _  -> return ()
       -- Wait for the sync client to terminate and finally unregister ourselves
       atomically $ do
         readTMVar doneVar
