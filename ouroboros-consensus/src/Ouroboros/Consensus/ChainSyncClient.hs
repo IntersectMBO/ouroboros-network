@@ -38,7 +38,6 @@ import qualified Data.Map.Strict as Map
 import           Data.Maybe (isJust)
 import           Data.Proxy
 import           Data.Typeable
-import           Data.Void (Void)
 import           Data.Word (Word64)
 import           GHC.Generics (Generic)
 
@@ -77,7 +76,7 @@ newtype ClockSkew = ClockSkew { unClockSkew :: Word64 }
   deriving newtype (Enum, Bounded, Num)
 
 type Consensus (client :: * -> * -> (* -> *) -> * -> *) blk m =
-   client (Header blk) (Tip blk) m Void
+   client (Header blk) (Tip blk) m ()
 
 -- | Abstract over the ChainDB
 data ChainDbView m blk = ChainDbView
@@ -293,8 +292,10 @@ chainSyncClient mkPipelineDecision0 tracer cfg btime
         { recvMsgIntersectFound = \i theirTip' ->
             continueWithState uis $
               intersectFound (castPoint i) (Their theirTip')
-        , recvMsgIntersectNotFound = \theirTip' -> traceException $
-            disconnect $ mkEx ourTip (Their theirTip')
+        , recvMsgIntersectNotFound = \theirTip' -> do
+            -- We're not interested in this peer at the moment. Terminate the protocol.
+            traceWith tracer $ TraceException $ mkEx ourTip (Their theirTip')
+            pure $ SendMsgDone ()
         }
 
     -- | One of the points we sent intersected our chain. This intersection

@@ -29,7 +29,6 @@ module Ouroboros.Consensus.NodeNetwork (
   , localResponderNetworkApplication
   ) where
 
-import           Control.Monad (void)
 import           Data.ByteString.Lazy (ByteString)
 import           Data.Proxy (Proxy (..))
 import           Data.Void (Void)
@@ -99,7 +98,7 @@ import qualified Ouroboros.Storage.ChainDB.API as ChainDB
 data ProtocolHandlers m peer blk = ProtocolHandlers {
       phChainSyncClient
         :: StrictTVar m (AnchoredFragment (Header blk))
-        -> ChainSyncClientPipelined (Header blk) (Tip blk) m Void
+        -> ChainSyncClientPipelined (Header blk) (Tip blk) m ()
         -- TODO: we should consider either bundling these context parameters
         -- into a record, or extending the protocol handler representation
         -- to support bracket-style initialisation so that we could have the
@@ -472,27 +471,26 @@ consensusNetworkApps kernel ProtocolTracers {..} ProtocolCodecs {..} ProtocolHan
       :: peer
       -> Channel m bytesCS
       -> m ((), Maybe bytesCS)
-    naChainSyncClient them channel = do
+    naChainSyncClient them channel =
       -- Note that it is crucial that we sync with the fetch client "outside"
       -- of registering the state for the sync client. This is needed to
       -- maintain a state invariant required by the block fetch logic: that for
       -- each candidate chain there is a corresponding block fetch client that
       -- can be used to fetch blocks for that chain.
-      void $ bracketSyncWithFetchClient
+      bracketSyncWithFetchClient
         (getFetchClientRegistry kernel) them $
        bracketChainSyncClient
           (chainSyncClientTracer (getTracers kernel))
           (chainDbView (getChainDB kernel))
           (getNodeCandidates kernel)
           them $ \varCandidate->
-        runPipelinedPeer
+        runPipelinedPeer'
           ptChainSyncTracer
           pcChainSyncCodec
           them
           channel
           $ chainSyncClientPeerPipelined
           $ phChainSyncClient varCandidate
-      return ((), Nothing) -- TODO Chainsync client should be able to return
 
     naChainSyncServer
       :: peer
