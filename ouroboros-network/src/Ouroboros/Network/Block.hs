@@ -54,7 +54,6 @@ module Ouroboros.Network.Block (
   , Serialised(..)
   ) where
 
-import           Cardano.Binary (ToCBOR (..))
 import           Codec.CBOR.Decoding (Decoder)
 import qualified Codec.CBOR.Decoding as Dec
 import           Codec.CBOR.Encoding (Encoding)
@@ -63,35 +62,15 @@ import           Codec.Serialise (Serialise (..))
 import qualified Data.ByteString.Lazy as Lazy
 import           Data.FingerTree.Strict (Measured)
 import           Data.Typeable (Typeable)
-import           Data.Word (Word64)
 import           GHC.Generics (Generic)
 
 import           Cardano.Prelude (NoUnexpectedThunks)
+import           Cardano.Slotting.Block
+import           Cardano.Slotting.Slot (SlotNo(..), genesisSlotNo)
 
 import           Ouroboros.Network.Point (WithOrigin (..), block, origin,
                      withOriginToMaybe)
 import qualified Ouroboros.Network.Point as Point (Block (..))
-
--- | The 0-based index for the Ourboros time slot.
-newtype SlotNo = SlotNo { unSlotNo :: Word64 }
-  deriving stock   (Show, Eq, Ord, Generic)
-  deriving newtype (Enum, Bounded, Num, Serialise, NoUnexpectedThunks)
-
-instance ToCBOR SlotNo where
-  toCBOR = encode
-
--- | The 0-based index of the block in the blockchain.
--- BlockNo is <= SlotNo and is only equal at slot N if there is a block
--- for every slot where N <= SlotNo.
-newtype BlockNo = BlockNo { unBlockNo :: Word64 }
-  deriving stock   (Show, Eq, Ord, Generic)
-  deriving newtype (Enum, Bounded, Num, Serialise, NoUnexpectedThunks)
-
-genesisSlotNo :: SlotNo
-genesisSlotNo = SlotNo 0
-
-genesisBlockNo :: BlockNo
-genesisBlockNo = BlockNo 0
 
 genesisPoint :: Point block
 genesisPoint = Point origin
