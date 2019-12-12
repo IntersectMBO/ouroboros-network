@@ -1325,6 +1325,7 @@ mkArgs cfg initLedger tracer registry varCurSlot
     { -- Decoders
       cdbDecodeHash       = decode
     , cdbDecodeBlock      = const <$> decode
+    , cdbDecodeHeader     = const <$> decode
     , cdbDecodeLedger     = decode
     , cdbDecodeChainState = decode
 

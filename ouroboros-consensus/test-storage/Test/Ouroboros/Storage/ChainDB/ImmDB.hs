@@ -69,6 +69,7 @@ withImmDB k = do
       { immErr            = EH.monadCatch
       , immHasFS          = simHasFS EH.monadCatch immDbFsVar
       , immDecodeHash     = nodeDecodeHeaderHash (Proxy @ByronBlock)
+      , immDecodeHeader = nodeDecodeHeader testCfg
       , immDecodeBlock    = nodeDecodeBlock testCfg
       , immEncodeHash     = nodeEncodeHeaderHash (Proxy @ByronBlock)
       , immEncodeBlock    = nodeEncodeBlockWithInfo testCfg

@@ -74,7 +74,7 @@ import           Ouroboros.Network.Block (pattern BlockPoint,
                      Serialised (..), SlotNo, atSlot, pointSlot, withHash)
 import           Ouroboros.Network.Point (WithOrigin (..))
 
-import           Ouroboros.Consensus.Block (IsEBB)
+import           Ouroboros.Consensus.Block (Header, IsEBB)
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.Orphans ()
 import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry,
@@ -99,6 +99,7 @@ import qualified Ouroboros.Storage.Util.ErrorHandling as EH
 -- | Thin wrapper around the ImmutableDB (opaque type)
 data ImmDB m blk = ImmDB {
       immDB     :: !(ImmutableDB (HeaderHash blk) m)
+    , decHeader :: !(forall s. Decoder s (Lazy.ByteString -> Header blk))
     , decBlock  :: !(forall s. Decoder s (Lazy.ByteString -> blk))
       -- ^ TODO introduce a newtype wrapper around the @s@ so we can use
       -- generics to derive the NoUnexpectedThunks instance.
@@ -115,6 +116,7 @@ instance NoUnexpectedThunks (ImmDB m blk) where
   showTypeOf _ = "ImmDB"
   whnfNoUnexpectedThunks ctxt ImmDB {..} = allNoUnexpectedThunks
     [ noUnexpectedThunks ctxt immDB
+    , noUnexpectedThunks ctxt decHeader
     , noUnexpectedThunks ctxt decBlock
     , noUnexpectedThunks ctxt encBlock
     , noUnexpectedThunks ctxt epochInfo
@@ -137,6 +139,7 @@ type TraceEvent blk =
 data ImmDbArgs m blk = forall h. ImmDbArgs {
       immDecodeHash     :: forall s. Decoder s (HeaderHash blk)
     , immDecodeBlock    :: forall s. Decoder s (Lazy.ByteString -> blk)
+    , immDecodeHeader   :: forall s. Decoder s (Lazy.ByteString -> Header blk)
     , immEncodeHash     :: HeaderHash blk -> Encoding
     , immEncodeBlock    :: blk -> BinaryInfo Encoding
     , immErr            :: ErrorHandling ImmDB.ImmutableDBError m
@@ -156,6 +159,7 @@ data ImmDbArgs m blk = forall h. ImmDbArgs {
 --
 -- * 'immDecodeHash'
 -- * 'immDecodeBlock'
+-- * 'immDecodeHeader'
 -- * 'immEncodeHash'
 -- * 'immEncodeBlock'
 -- * 'immEpochInfo'
@@ -166,11 +170,12 @@ data ImmDbArgs m blk = forall h. ImmDbArgs {
 -- * 'immAddHdrEnv'
 defaultArgs :: FilePath -> ImmDbArgs IO blk
 defaultArgs fp = ImmDbArgs{
-      immErr   = EH.exceptions
-    , immHasFS = ioHasFS $ MountPoint (fp </> "immutable")
+      immErr          = EH.exceptions
+    , immHasFS        = ioHasFS $ MountPoint (fp </> "immutable")
       -- Fields without a default
     , immDecodeHash     = error "no default for immDecodeHash"
     , immDecodeBlock    = error "no default for immDecodeBlock"
+    , immDecodeHeader   = error "no default for immDecodeHeader"
     , immEncodeHash     = error "no default for immEncodeHash"
     , immEncodeBlock    = error "no default for immEncodeBlock"
     , immEpochInfo      = error "no default for immEpochInfo"
@@ -195,6 +200,7 @@ openDB ImmDbArgs{..} = do
                immTracer
     return ImmDB
       { immDB     = immDB
+      , decHeader = immDecodeHeader
       , decBlock  = immDecodeBlock
       , encBlock  = immEncodeBlock
       , epochInfo = immEpochInfo
@@ -210,6 +216,7 @@ openDB ImmDbArgs{..} = do
 
 -- | For testing purposes
 mkImmDB :: ImmutableDB (HeaderHash blk) m
+        -> (forall s. Decoder s (Lazy.ByteString -> Header blk))
         -> (forall s. Decoder s (Lazy.ByteString -> blk))
         -> (blk -> BinaryInfo Encoding)
         -> EpochInfo m
@@ -217,7 +224,7 @@ mkImmDB :: ImmutableDB (HeaderHash blk) m
         -> (IsEBB -> Lazy.ByteString -> Lazy.ByteString)
         -> ErrorHandling ImmDB.ImmutableDBError m
         -> ImmDB m blk
-mkImmDB immDB decBlock encBlock epochInfo isEBB addHdrEnv err = ImmDB {..}
+mkImmDB immDB decHeader decBlock encBlock epochInfo isEBB addHdrEnv err = ImmDB {..}
 
 {-------------------------------------------------------------------------------
   Getting and parsing blocks

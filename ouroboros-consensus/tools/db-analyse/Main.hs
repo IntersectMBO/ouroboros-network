@@ -251,6 +251,7 @@ openImmDB fp cfg epochInfo = openDB args
     args = (defaultArgs fp) {
           immDecodeHash     = nodeDecodeHeaderHash    (Proxy @ByronBlock)
         , immDecodeBlock    = nodeDecodeBlock         cfg
+        , immDecodeHeader   = nodeDecodeHeader        cfg
         , immEncodeHash     = nodeEncodeHeaderHash    (Proxy @ByronBlock)
         , immEncodeBlock    = nodeEncodeBlockWithInfo cfg
         , immEpochInfo      = epochInfo

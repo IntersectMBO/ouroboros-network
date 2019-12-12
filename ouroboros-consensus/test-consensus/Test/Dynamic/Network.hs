@@ -243,7 +243,8 @@ runNodeNetwork registry testBtime numCoreNodes nodeJoinPlan nodeTopology
       nodeDBs = ChainDbArgs
         { -- Decoders
           cdbDecodeHash       = nodeDecodeHeaderHash (Proxy @blk)
-        , cdbDecodeBlock      = nodeDecodeBlock cfg
+        , cdbDecodeBlock      = nodeDecodeBlock       cfg
+        , cdbDecodeHeader     = nodeDecodeHeader      cfg
         , cdbDecodeLedger     = nodeDecodeLedgerState cfg
         , cdbDecodeChainState = nodeDecodeChainState (Proxy @blk) cfg
           -- Encoders

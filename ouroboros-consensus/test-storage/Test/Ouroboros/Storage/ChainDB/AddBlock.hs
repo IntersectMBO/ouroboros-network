@@ -237,6 +237,7 @@ mkArgs cfg initLedger tracer registry hashInfo
     { -- Decoders
       cdbDecodeHash       = decode
     , cdbDecodeBlock      = const <$> decode
+    , cdbDecodeHeader     = const <$> decode
     , cdbDecodeLedger     = decode
     , cdbDecodeChainState = decode
 

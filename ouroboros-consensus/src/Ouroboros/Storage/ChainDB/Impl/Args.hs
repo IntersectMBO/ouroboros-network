@@ -50,6 +50,9 @@ data ChainDbArgs m blk = forall h1 h2 h3. ChainDbArgs {
       -- Decoders
       cdbDecodeHash       :: forall s. Decoder s (HeaderHash blk)
     , cdbDecodeBlock      :: forall s. Decoder s (Lazy.ByteString -> blk)
+    , cdbDecodeHeader     :: forall s. Decoder s (Lazy.ByteString -> Header blk)
+      -- ^ The given encoding will include the header envelope
+      -- ('cdbAddHdrEnv').
     , cdbDecodeLedger     :: forall s. Decoder s (LedgerState blk)
     , cdbDecodeChainState :: forall s. Decoder s (ChainState (BlockProtocol blk))
 
@@ -145,6 +148,7 @@ fromChainDbArgs ChainDbArgs{..} = (
       ImmDB.ImmDbArgs {
           immDecodeHash       = cdbDecodeHash
         , immDecodeBlock      = cdbDecodeBlock
+        , immDecodeHeader     = cdbDecodeHeader
         , immEncodeHash       = cdbEncodeHash
         , immEncodeBlock      = cdbEncodeBlock
         , immErr              = cdbErrImmDb
@@ -162,8 +166,9 @@ fromChainDbArgs ChainDbArgs{..} = (
         , volErr              = cdbErrVolDb
         , volErrSTM           = cdbErrVolDbSTM
         , volBlocksPerFile    = cdbBlocksPerFile
-        , volEncodeBlock      = cdbEncodeBlock
+        , volDecodeHeader     = cdbDecodeHeader
         , volDecodeBlock      = cdbDecodeBlock
+        , volEncodeBlock      = cdbEncodeBlock
         , volAddHdrEnv        = cdbAddHdrEnv
         , volIsEBB            = \blk -> case cdbIsEBB blk of
                                           Nothing -> IsNotEBB
@@ -208,6 +213,7 @@ toChainDbArgs ImmDB.ImmDbArgs{..}
       -- Decoders
       cdbDecodeHash       = immDecodeHash
     , cdbDecodeBlock      = immDecodeBlock
+    , cdbDecodeHeader     = immDecodeHeader
     , cdbDecodeLedger     = lgrDecodeLedger
     , cdbDecodeChainState = lgrDecodeChainState
       -- Encoders

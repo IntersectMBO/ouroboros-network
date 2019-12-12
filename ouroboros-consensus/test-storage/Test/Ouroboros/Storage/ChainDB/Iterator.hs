@@ -273,8 +273,9 @@ initIteratorEnv TestSetup { immutable, volatile } tracer = do
         (_volDBModel, volDB) <- VolDB.openDBMock EH.throwSTM 1
         forM_ blocks $ \block ->
           VolDB.putBlock volDB (blockInfo block) (serialiseIncremental block)
-        return $ mkVolDB volDB (const <$> decode) (addDummyBinaryInfo . encode)
-           isEBB addHdrEnv EH.monadCatch EH.throwSTM
+        return $ mkVolDB volDB (const <$> decode) (const <$> decode)
+          (addDummyBinaryInfo . encode) isEBB addHdrEnv
+          EH.monadCatch EH.throwSTM
       where
         isEBB = const IsNotEBB
 
@@ -304,8 +305,8 @@ initIteratorEnv TestSetup { immutable, volatile } tracer = do
           ImmDB.appendBlock immDB
             (blockSlot block) (blockHash block)
             (addDummyBinaryInfo (serialiseIncremental block))
-        return $ mkImmDB immDB (const <$> decode) (addDummyBinaryInfo . encode)
-          epochInfo isEBB addHdrEnv EH.monadCatch
+        return $ mkImmDB immDB (const <$> decode) (const <$> decode)
+          (addDummyBinaryInfo . encode) epochInfo isEBB addHdrEnv EH.monadCatch
       where
         epochInfo = fixedSizeEpochInfo epochSize
         isEBB     = const Nothing
