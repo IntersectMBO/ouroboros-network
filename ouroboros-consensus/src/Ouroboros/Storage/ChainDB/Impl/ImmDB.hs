@@ -6,6 +6,7 @@
 {-# LANGUAGE RankNTypes                #-}
 {-# LANGUAGE RecordWildCards           #-}
 {-# LANGUAGE ScopedTypeVariables       #-}
+{-# LANGUAGE TupleSections             #-}
 
 {-# OPTIONS_GHC -Wredundant-constraints #-}
 -- | Thin wrapper around the ImmutableDB
@@ -16,6 +17,7 @@ module Ouroboros.Storage.ChainDB.Impl.ImmDB (
   , defaultArgs
   , openDB
     -- * Getting and parsing blocks
+  , hasBlock
   , getBlockOrHeaderWithPoint
   , getDeserialisableBlockOrHeaderWithPoint
   , getBlockOrHeaderAtTip
@@ -233,6 +235,54 @@ mkImmDB immDB decHeader decBlock encBlock epochInfo isEBB addHdrEnv err = ImmDB 
 {-------------------------------------------------------------------------------
   Getting and parsing blocks
 -------------------------------------------------------------------------------}
+
+-- | Return 'True' when the given point is in the ImmutableDB.
+--
+-- This is much more efficient than 'getBlockOrHeaderWithPoint' as no block or
+-- header has to be read from disk.
+--
+-- If the point corresponds to some slot in the future, 'False' is returned,
+-- alleviating the user from the non-trivial check that a block is not in the
+-- future.
+hasBlock
+  :: (MonadCatch m, HasHeader blk, HasCallStack)
+  => ImmDB m blk
+  -> Point blk
+  -> m Bool
+hasBlock db = \case
+    GenesisPoint -> throwM NoGenesisBlock
+    BlockPoint { withHash = hash, atSlot = slot } ->
+      withDB db $ \imm -> do
+        immTip <- ImmDB.getTip imm
+        (slotNoAtTip, ebbAtTip) <- case forgetHash <$> immTip of
+          TipGen                   -> return (Origin, Nothing)
+          Tip (ImmDB.EBB epochNo)  -> (, Just epochNo) . At  <$> epochInfoFirst epochNo
+          Tip (ImmDB.Block slotNo) -> return (At slotNo, Nothing)
+
+        case At slot `compare` slotNoAtTip of
+          -- The request is greater than the tip, so we cannot have the block
+          GT -> return False
+          -- Same slot, but our tip is an EBB, so we cannot check if the
+          -- regular block in that slot exists, because that's in the future.
+          EQ | Just epochNo <- ebbAtTip
+             -> (== Just hash) <$> ImmDB.getEBBHash imm epochNo
+          -- Slot in the past or equal to the tip, but the tip is a regular
+          -- block.
+          _ -> do
+            hasRegularBlock <- (== Just hash) <$> ImmDB.getBlockHash imm slot
+            if hasRegularBlock then
+              return True
+            else do
+              epochNo <- epochInfoEpoch slot
+              ebbSlot <- epochInfoFirst epochNo
+              -- If it's a slot that can also contain an EBB, check if we have
+              -- an EBB
+              if slot == ebbSlot then
+                (== Just hash) <$> ImmDB.getEBBHash imm epochNo
+              else
+                return False
+  where
+    EpochInfo{..} = epochInfo db
 
 -- | Return the block or header corresponding to the given point, if it is
 -- part of the ImmutableDB.

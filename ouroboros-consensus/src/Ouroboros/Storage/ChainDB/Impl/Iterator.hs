@@ -35,7 +35,7 @@ import           Control.Tracer
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block (pattern BlockPoint,
                      pattern GenesisPoint, HasHeader, HeaderHash, Point,
-                     StandardHash, atSlot, castPoint, pointSlot, withHash)
+                     StandardHash, atSlot, castPoint, withHash)
 
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
@@ -308,14 +308,10 @@ newIterator itEnv@IteratorEnv{..} getItEnv registry from to = do
     streamFromImmDBHelper checkUpperBound = do
         -- First check whether the block in the ImmDB at the end bound has the
         -- correct hash.
-        when checkUpperBound $ do
-          slotNoAtTip <- lift $ ImmDB.getSlotNoAtTip itImmDB
-          when (pointSlot endPoint > slotNoAtTip) $
-            throwError $ MissingBlock endPoint
-          -- TODO just check the hash, don't read the whole block
-          lift (ImmDB.getBlockOrHeaderWithPoint itImmDB Header endPoint) >>= \case
-            Just _  -> return ()
-            Nothing -> throwError $ MissingBlock endPoint
+        when checkUpperBound $
+          lift (ImmDB.hasBlock itImmDB endPoint) >>= \case
+            True  -> return ()
+            False -> throwError $ MissingBlock endPoint
         -- 'ImmDB.streamBlocksFrom' will check the hash of the block at the
         -- start bound.
         immIt <- ExceptT $ ImmDB.streamFrom itImmDB registry Block from

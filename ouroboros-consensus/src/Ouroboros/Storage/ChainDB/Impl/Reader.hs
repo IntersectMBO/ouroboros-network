@@ -16,7 +16,6 @@ import           Control.Exception (assert)
 import           Data.Functor ((<&>))
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
-import           Data.Maybe (isJust)
 import           GHC.Stack (HasCallStack)
 
 import           Control.Monad.Class.MonadThrow
@@ -413,20 +412,13 @@ forward registry CDB{..} varReader = \pts -> do
           updateState $ ReaderInMem $ RollBackTo pt
           return $ Just pt
 
-        | pointSlot pt > slotNoAtImmDBTip
-          -- The point is after the tip of the ImmutableDB, so don't look in
-          -- the ImmutableDB and skip the point.
-        -> findFirstPointOnChain curChain slotNoAtImmDBTip pts
-
         | otherwise
         -> do
           inImmDB <- if pt == genesisPoint
             then return True -- Genesis is always "in" the ImmutableDB
-            else isJust <$> ImmDB.getBlockOrHeaderWithPoint cdbImmDB ChainDB.Header pt
+            else ImmDB.hasBlock cdbImmDB pt
           if inImmDB
             then do
-              -- TODO combine block checking with opening the iterator to
-              -- avoid reading the same block twice
               immIt <- ImmDB.streamAfter cdbImmDB registry ChainDB.Block pt
               updateState $ ReaderInImmDB (RollBackTo pt) immIt
               return $ Just pt
