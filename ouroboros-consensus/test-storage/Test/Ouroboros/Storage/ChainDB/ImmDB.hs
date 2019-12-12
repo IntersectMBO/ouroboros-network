@@ -77,6 +77,7 @@ withImmDB k = do
       , immValidation     = ValidateMostRecentEpoch
       , immIsEBB          = nodeIsEBB
       , immCheckIntegrity = nodeCheckIntegrity testCfg
+      , immAddHdrEnv      = nodeAddHeaderEnvelope (Proxy @ByronBlock)
       , immTracer         = nullTracer
       }
 

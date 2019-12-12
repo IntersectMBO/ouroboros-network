@@ -272,6 +272,7 @@ runNodeNetwork registry testBtime numCoreNodes nodeJoinPlan nodeTopology
         , cdbCheckIntegrity   = nodeCheckIntegrity cfg
         , cdbGenesis          = return initLedger
         , cdbBlockchainTime   = btime
+        , cdbAddHdrEnv        = nodeAddHeaderEnvelope (Proxy @blk)
         -- Misc
         , cdbTracer           = Tracer $ \case
               ChainDB.TraceAddBlockEvent

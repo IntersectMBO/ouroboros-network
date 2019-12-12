@@ -98,14 +98,15 @@ import qualified Ouroboros.Storage.VolatileDB as VolDB
 -- The intention is that all interaction with the VolatileDB goes through this
 -- module.
 data VolDB m blk = VolDB {
-      volDB    :: VolatileDB (HeaderHash blk) m
-    , decBlock :: forall s. Decoder s (Lazy.ByteString -> blk)
+      volDB     :: VolatileDB (HeaderHash blk) m
+    , decBlock  :: forall s. Decoder s (Lazy.ByteString -> blk)
       -- ^ TODO introduce a newtype wrapper around the @s@ so we can use
       -- generics to derive the NoUnexpectedThunks instance.
-    , encBlock :: blk -> BinaryInfo Encoding
-    , isEBB    :: blk -> IsEBB
-    , err      :: ErrorHandling VolatileDBError m
-    , errSTM   :: ThrowCantCatch VolatileDBError (STM m)
+    , encBlock  :: blk -> BinaryInfo Encoding
+    , isEBB     :: blk -> IsEBB
+    , addHdrEnv :: !(IsEBB -> Lazy.ByteString -> Lazy.ByteString)
+    , err       :: ErrorHandling VolatileDBError m
+    , errSTM    :: ThrowCantCatch VolatileDBError (STM m)
     }
 
 -- Universal type; we can't use generics
@@ -116,6 +117,7 @@ instance NoUnexpectedThunks (VolDB m blk) where
     , noUnexpectedThunks ctxt decBlock
     , noUnexpectedThunks ctxt encBlock
     , noUnexpectedThunks ctxt isEBB
+    , noUnexpectedThunks ctxt addHdrEnv
     , noUnexpectedThunks ctxt err
     , noUnexpectedThunks ctxt errSTM
     ]
@@ -132,6 +134,7 @@ data VolDbArgs m blk = forall h. VolDbArgs {
     , volDecodeBlock   :: forall s. Decoder s (Lazy.ByteString -> blk)
     , volEncodeBlock   :: blk -> BinaryInfo Encoding
     , volIsEBB         :: blk -> IsEBB
+    , volAddHdrEnv     :: IsEBB -> Lazy.ByteString -> Lazy.ByteString
     }
 
 -- | Default arguments when using the 'IO' monad
@@ -142,6 +145,7 @@ data VolDbArgs m blk = forall h. VolDbArgs {
 -- * 'volDecodeBlock'
 -- * 'volEncodeBlock'
 -- * 'volIsEBB'
+-- * 'volAddHdrEnv'
 defaultArgs :: FilePath -> VolDbArgs IO blk
 defaultArgs fp = VolDbArgs {
       volErr    = EH.exceptions
@@ -152,6 +156,7 @@ defaultArgs fp = VolDbArgs {
     , volDecodeBlock   = error "no default for volDecodeBlock"
     , volEncodeBlock   = error "no default for volEncodeBlock"
     , volIsEBB         = error "no default for volIsEBB"
+    , volAddHdrEnv     = error "no default for volAddHdrEnv"
     }
 
 openDB :: (IOLike m, HasHeader blk) => VolDbArgs m blk -> m (VolDB m blk)
@@ -164,12 +169,13 @@ openDB args@VolDbArgs{..} = do
                (blockFileParser args)
                volBlocksPerFile
     return VolDB
-      { volDB    = volDB
-      , err      = volErr
-      , errSTM   = volErrSTM
-      , decBlock = volDecodeBlock
-      , encBlock = volEncodeBlock
-      , isEBB    = volIsEBB
+      { volDB     = volDB
+      , err       = volErr
+      , errSTM    = volErrSTM
+      , decBlock  = volDecodeBlock
+      , encBlock  = volEncodeBlock
+      , addHdrEnv = volAddHdrEnv
+      , isEBB     = volIsEBB
       }
 
 -- | For testing purposes
@@ -177,10 +183,11 @@ mkVolDB :: VolatileDB (HeaderHash blk) m
         -> (forall s. Decoder s (Lazy.ByteString -> blk))
         -> (blk -> BinaryInfo Encoding)
         -> (blk -> IsEBB)
+        -> (IsEBB -> Lazy.ByteString -> Lazy.ByteString)
         -> ErrorHandling VolatileDBError m
         -> ThrowCantCatch VolatileDBError (STM m)
         -> VolDB m blk
-mkVolDB volDB decBlock encBlock isEBB err errSTM = VolDB {..}
+mkVolDB volDB decBlock encBlock isEBB addHdrEnv err errSTM = VolDB {..}
 
 {-------------------------------------------------------------------------------
   Wrappers

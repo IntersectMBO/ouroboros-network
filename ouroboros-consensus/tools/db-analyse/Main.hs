@@ -258,4 +258,5 @@ openImmDB fp cfg epochInfo = openDB args
         , immValidation     = ValidateMostRecentEpoch
         , immIsEBB          = nodeIsEBB
         , immCheckIntegrity = nodeCheckIntegrity      cfg
+        , immAddHdrEnv      = nodeAddHeaderEnvelope   (Proxy @ByronBlock)
         }

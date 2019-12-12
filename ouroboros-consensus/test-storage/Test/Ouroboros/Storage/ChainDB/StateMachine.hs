@@ -1358,6 +1358,7 @@ mkArgs cfg initLedger tracer registry varCurSlot
     , cdbCheckIntegrity   = testBlockIsValid
     , cdbGenesis          = return initLedger
     , cdbBlockchainTime   = settableBlockchainTime varCurSlot
+    , cdbAddHdrEnv        = const id
 
     -- Misc
     , cdbTracer           = tracer

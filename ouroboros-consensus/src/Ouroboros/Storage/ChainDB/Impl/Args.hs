@@ -83,6 +83,10 @@ data ChainDbArgs m blk = forall h1 h2 h3. ChainDbArgs {
     , cdbCheckIntegrity   :: blk -> Bool
     , cdbGenesis          :: m (ExtLedgerState blk)
     , cdbBlockchainTime   :: BlockchainTime m
+    , cdbAddHdrEnv        :: IsEBB -> Lazy.ByteString -> Lazy.ByteString
+      -- ^ The header envelope will only be added after extracting the binary
+      -- header from the binary block. Note that we never have to remove an
+      -- envelope.
 
       -- Misc
     , cdbTracer           :: Tracer m (TraceEvent blk)
@@ -151,6 +155,7 @@ fromChainDbArgs ChainDbArgs{..} = (
         , immCheckIntegrity   = cdbCheckIntegrity
         , immHasFS            = cdbHasFSImmDb
         , immTracer           = contramap TraceImmDBEvent cdbTracer
+        , immAddHdrEnv        = cdbAddHdrEnv
         }
     , VolDB.VolDbArgs {
           volHasFS            = cdbHasFSVolDb
@@ -159,6 +164,7 @@ fromChainDbArgs ChainDbArgs{..} = (
         , volBlocksPerFile    = cdbBlocksPerFile
         , volEncodeBlock      = cdbEncodeBlock
         , volDecodeBlock      = cdbDecodeBlock
+        , volAddHdrEnv        = cdbAddHdrEnv
         , volIsEBB            = \blk -> case cdbIsEBB blk of
                                           Nothing -> IsNotEBB
                                           Just _  -> IsEBB
@@ -230,6 +236,7 @@ toChainDbArgs ImmDB.ImmDbArgs{..}
     , cdbCheckIntegrity   = immCheckIntegrity
     , cdbGenesis          = lgrGenesis
     , cdbBlockchainTime   = cdbsBlockchainTime
+    , cdbAddHdrEnv        = immAddHdrEnv
       -- Misc
     , cdbTracer           = cdbsTracer
     , cdbTraceLedger      = lgrTraceLedger

@@ -74,6 +74,7 @@ import           Ouroboros.Network.Block (pattern BlockPoint,
                      Serialised (..), SlotNo, atSlot, pointSlot, withHash)
 import           Ouroboros.Network.Point (WithOrigin (..))
 
+import           Ouroboros.Consensus.Block (IsEBB)
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.Orphans ()
 import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry,
@@ -104,6 +105,7 @@ data ImmDB m blk = ImmDB {
     , encBlock  :: !(blk -> BinaryInfo Encoding)
     , epochInfo :: !(EpochInfo m)
     , isEBB     :: !(blk -> Maybe EpochNo)
+    , addHdrEnv :: !(IsEBB -> Lazy.ByteString -> Lazy.ByteString)
     , err       :: !(ErrorHandling ImmDB.ImmutableDBError m)
     }
 
@@ -117,6 +119,7 @@ instance NoUnexpectedThunks (ImmDB m blk) where
     , noUnexpectedThunks ctxt encBlock
     , noUnexpectedThunks ctxt epochInfo
     , noUnexpectedThunks ctxt isEBB
+    , noUnexpectedThunks ctxt addHdrEnv
     , noUnexpectedThunks ctxt err
     ]
 
@@ -142,6 +145,7 @@ data ImmDbArgs m blk = forall h. ImmDbArgs {
     , immValidation     :: ImmDB.ValidationPolicy
     , immIsEBB          :: blk -> Maybe EpochNo
     , immCheckIntegrity :: blk -> Bool
+    , immAddHdrEnv      :: IsEBB -> Lazy.ByteString -> Lazy.ByteString
     , immHasFS          :: HasFS m h
     , immTracer         :: Tracer m (TraceEvent blk)
     }
@@ -159,6 +163,7 @@ data ImmDbArgs m blk = forall h. ImmDbArgs {
 -- * 'immValidation'
 -- * 'immIsEBB'
 -- * 'immCheckIntegrity'
+-- * 'immAddHdrEnv'
 defaultArgs :: FilePath -> ImmDbArgs IO blk
 defaultArgs fp = ImmDbArgs{
       immErr   = EH.exceptions
@@ -173,6 +178,7 @@ defaultArgs fp = ImmDbArgs{
     , immValidation     = error "no default for immValidation"
     , immIsEBB          = error "no default for immIsEBB"
     , immCheckIntegrity = error "no default for immCheckIntegrity"
+    , immAddHdrEnv      = error "no default for immAddHdrEnv"
     , immTracer         = nullTracer
     }
 
@@ -193,6 +199,7 @@ openDB ImmDbArgs{..} = do
       , encBlock  = immEncodeBlock
       , epochInfo = immEpochInfo
       , isEBB     = immIsEBB
+      , addHdrEnv = immAddHdrEnv
       , err       = immErr
       }
   where
@@ -207,9 +214,10 @@ mkImmDB :: ImmutableDB (HeaderHash blk) m
         -> (blk -> BinaryInfo Encoding)
         -> EpochInfo m
         -> (blk -> Maybe EpochNo)
+        -> (IsEBB -> Lazy.ByteString -> Lazy.ByteString)
         -> ErrorHandling ImmDB.ImmutableDBError m
         -> ImmDB m blk
-mkImmDB immDB decBlock encBlock epochInfo isEBB err = ImmDB {..}
+mkImmDB immDB decBlock encBlock epochInfo isEBB addHdrEnv err = ImmDB {..}
 
 {-------------------------------------------------------------------------------
   Getting and parsing blocks

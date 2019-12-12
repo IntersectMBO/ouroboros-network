@@ -62,6 +62,7 @@ instance RunNode ByronBlock where
                           . extractGenesisData
   nodeHashInfo            = const byronHashInfo
   nodeCheckIntegrity      = verifyBlockIntegrity
+  nodeAddHeaderEnvelope   = const byronAddHeaderEnvelope
 
   nodeEncodeBlockWithInfo = const encodeByronBlockWithInfo
   nodeEncodeHeader        = const encodeByronHeader

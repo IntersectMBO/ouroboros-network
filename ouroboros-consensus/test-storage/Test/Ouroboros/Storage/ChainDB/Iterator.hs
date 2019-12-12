@@ -12,6 +12,7 @@ import           Test.Tasty.QuickCheck
 import           Codec.Serialise (decode, encode, serialiseIncremental)
 import           Control.Monad.Except
 import           Control.Tracer
+import qualified Data.ByteString.Lazy as Lazy
 import           Data.List (intercalate)
 import qualified Data.Map.Strict as Map
 import           Data.Word (Word64)
@@ -38,7 +39,7 @@ import           Ouroboros.Storage.ChainDB.Impl.Iterator (IteratorEnv (..),
                      newIterator)
 import           Ouroboros.Storage.ChainDB.Impl.Types (TraceIteratorEvent (..))
 import           Ouroboros.Storage.ChainDB.Impl.VolDB (VolDB, mkVolDB)
-import           Ouroboros.Storage.Common (BinaryInfo(..), EpochSize)
+import           Ouroboros.Storage.Common (BinaryInfo (..), EpochSize)
 import           Ouroboros.Storage.EpochInfo (fixedSizeEpochInfo)
 import qualified Ouroboros.Storage.ImmutableDB as ImmDB
 import qualified Ouroboros.Storage.Util.ErrorHandling as EH
@@ -273,7 +274,7 @@ initIteratorEnv TestSetup { immutable, volatile } tracer = do
         forM_ blocks $ \block ->
           VolDB.putBlock volDB (blockInfo block) (serialiseIncremental block)
         return $ mkVolDB volDB (const <$> decode) (addDummyBinaryInfo . encode)
-           isEBB EH.monadCatch EH.throwSTM
+           isEBB addHdrEnv EH.monadCatch EH.throwSTM
       where
         isEBB = const IsNotEBB
 
@@ -292,6 +293,9 @@ initIteratorEnv TestSetup { immutable, volatile } tracer = do
     epochSize :: EpochSize
     epochSize = 10
 
+    addHdrEnv :: IsEBB -> Lazy.ByteString -> Lazy.ByteString
+    addHdrEnv = const id
+
     -- | Open a mock ImmutableDB and add the given chain of blocks
     openImmDB :: Chain TestBlock -> m (ImmDB m TestBlock)
     openImmDB chain = do
@@ -301,7 +305,7 @@ initIteratorEnv TestSetup { immutable, volatile } tracer = do
             (blockSlot block) (blockHash block)
             (addDummyBinaryInfo (serialiseIncremental block))
         return $ mkImmDB immDB (const <$> decode) (addDummyBinaryInfo . encode)
-          epochInfo isEBB EH.monadCatch
+          epochInfo isEBB addHdrEnv EH.monadCatch
       where
         epochInfo = fixedSizeEpochInfo epochSize
         isEBB     = const Nothing

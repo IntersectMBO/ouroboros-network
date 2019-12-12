@@ -74,6 +74,16 @@ class (ProtocolLedgerView blk, ApplyTx blk) => RunNode blk where
   nodeCheckIntegrity      :: NodeConfig (BlockProtocol blk)
                           -> blk -> Bool
 
+  -- | When extracting the bytes corresponding to header from a serialised
+  -- block, it may be necessary to add an envelope to it to obtain a
+  -- bytestring that can actually be decoded as a header.
+  --
+  -- For example, a CBOR tag may have to be added in front.
+  nodeAddHeaderEnvelope   :: Proxy blk
+                          -> IsEBB
+                          -> Lazy.ByteString -> Lazy.ByteString
+  nodeAddHeaderEnvelope _ _ = id  -- Default to no envelope
+
   -- Encoders
   nodeEncodeBlockWithInfo :: NodeConfig (BlockProtocol blk) -> blk -> BinaryInfo Encoding
   nodeEncodeBlock         :: NodeConfig (BlockProtocol blk) -> blk -> Encoding

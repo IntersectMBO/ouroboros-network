@@ -270,6 +270,7 @@ mkArgs cfg initLedger tracer registry hashInfo
     , cdbCheckIntegrity   = const True
     , cdbBlockchainTime   = fixedBlockchainTime maxBound
     , cdbGenesis          = return initLedger
+    , cdbAddHdrEnv        = const id
 
     -- Misc
     , cdbTracer           = tracer
