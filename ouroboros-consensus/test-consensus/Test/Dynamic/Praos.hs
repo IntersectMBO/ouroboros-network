@@ -80,6 +80,7 @@ tests = testGroup "Dynamic chain generation"
       , praosSlotsPerEpoch = 3
       , praosLeaderF       = 0.5
       , praosLifetimeKES   = 1000000
+      , praosSlotLength    = slotLengthFromSec 2
       }
 
 prop_simple_praos_convergence :: PraosParams

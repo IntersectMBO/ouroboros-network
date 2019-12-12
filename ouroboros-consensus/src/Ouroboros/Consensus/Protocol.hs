@@ -54,6 +54,7 @@ data Protocol blk where
     :: NumCoreNodes
     -> CoreNodeId
     -> SecurityParam
+    -> SlotLength
     -> Protocol (SimpleBftBlock SimpleMockCrypto BftMockCrypto)
 
   -- | Run Praos against the mock ledger

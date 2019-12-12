@@ -16,13 +16,15 @@ import           Ouroboros.Consensus.Protocol.BFT
 protocolInfoBft :: NumCoreNodes
                 -> CoreNodeId
                 -> SecurityParam
+                -> SlotLength
                 -> ProtocolInfo (SimpleBftBlock SimpleMockCrypto BftMockCrypto)
-protocolInfoBft (NumCoreNodes numCoreNodes) (CoreNodeId nid) securityParam =
+protocolInfoBft (NumCoreNodes numCoreNodes) (CoreNodeId nid) securityParam slotLength =
     ProtocolInfo {
         pInfoConfig = BftNodeConfig {
             bftParams   = BftParams {
                               bftNumNodes      = fromIntegral numCoreNodes
                             , bftSecurityParam = securityParam
+                            , bftSlotLength    = slotLength
                             }
           , bftNodeId   = CoreId nid
           , bftSignKey  = SignKeyMockDSIGN nid

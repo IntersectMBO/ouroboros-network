@@ -200,6 +200,7 @@ realPBftParams numCoreNodes = PBftParams
   , pbftSecurityParam      = SecurityParam k
   , pbftSignatureThreshold = (1 / n) + (1 / k)
     -- crucially: @floor (k * t) >= ceil (k / n)@
+  , pbftSlotLength         = slotLengthFromSec 20
   }
     where
       n :: Num a => a

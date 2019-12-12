@@ -201,6 +201,7 @@ data PraosParams = PraosParams {
     , praosSecurityParam :: !SecurityParam
     , praosSlotsPerEpoch :: !Word64
     , praosLifetimeKES   :: !Natural
+    , praosSlotLength    :: !SlotLength
     }
   deriving (Generic, NoUnexpectedThunks)
 
@@ -229,6 +230,7 @@ instance ( PraosCrypto c
          , Typeable cfg
          ) => OuroborosTag (Praos cfg c) where
   protocolSecurityParam = praosSecurityParam . praosParams
+  protocolSlotLength    = praosSlotLength . praosParams
 
   type NodeState     (Praos cfg c) = PraosNodeState c
   type LedgerView    (Praos cfg c) = StakeDist

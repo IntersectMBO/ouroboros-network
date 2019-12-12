@@ -26,6 +26,8 @@ import           Control.Monad.Except
 import           Data.Maybe
 import qualified Data.Set as Set
 
+import           Cardano.Prelude (Natural)
+
 import qualified Cardano.Chain.Block as Block
 import           Cardano.Chain.Common (BlockCount (..))
 import qualified Cardano.Chain.Delegation as Delegation
@@ -33,6 +35,7 @@ import qualified Cardano.Chain.Genesis as Genesis
 import qualified Cardano.Chain.Update as Update
 import qualified Cardano.Crypto as Crypto
 
+import           Ouroboros.Consensus.BlockchainTime (slotLengthFromMillisec)
 import           Ouroboros.Consensus.Crypto.DSIGN.Cardano
 import           Ouroboros.Consensus.Ledger.Byron
 import qualified Ouroboros.Consensus.Ledger.Byron.DelegationHistory as History
@@ -132,6 +135,11 @@ protocolInfoByron genesisConfig@Genesis.Config {
                                        $ genesisKeyHashes
               , pbftSignatureThreshold = unSignatureThreshold $
                   fromMaybe defaultPBftSignatureThreshold mSigThresh
+              , pbftSlotLength         = slotLengthFromMillisec
+                                       . (fromIntegral :: Natural -> Integer)
+                                       . Update.ppSlotDuration
+                                       . Genesis.configProtocolParameters
+                                       $ genesisConfig
               }
           , pbftIsLeader =
               case mLeader of
