@@ -181,7 +181,7 @@ streamBlocks
   -> ResourceRegistry m
   -> StreamFrom      blk
   -> StreamTo        blk
-  -> m (Either (UnknownRange blk) (Iterator m (Deserialisable m blk)))
+  -> m (Either (UnknownRange blk) (Iterator m (Deserialisable m blk blk)))
 streamBlocks h registry from to = getEnv h $ \cdb ->
     newIterator (fromChainDbEnv cdb) getItEnv registry from to
   where
@@ -221,7 +221,7 @@ fromChainDbEnv CDB{..} = IteratorEnv
   }
 
 -- | Short-hand we'll use internally
-type DeserialisableIterator m blk = Iterator m (Deserialisable m blk)
+type DeserialisableIterator m blk = Iterator m (Deserialisable m blk blk)
 
 -- | See 'streamBlocks'.
 newIterator
@@ -451,7 +451,7 @@ implIteratorClose varItState itrId IteratorEnv{..} = do
 data IteratorState m blk
   = InImmDB
       !(StreamFrom blk)
-      !(ImmDB.Iterator (HeaderHash blk) m (Deserialisable m blk))
+      !(ImmDB.Iterator (HeaderHash blk) m (Deserialisable m blk blk))
       !(InImmDBEnd blk)
     -- ^ Streaming from the ImmutableDB.
     --
@@ -480,7 +480,7 @@ data IteratorState m blk
     -- the current chain, in which case they will not be in the ImmutableDB.
   | InImmDBRetry
       !(StreamFrom blk)
-      !(ImmDB.Iterator (HeaderHash blk) m (Deserialisable m blk))
+      !(ImmDB.Iterator (HeaderHash blk) m (Deserialisable m blk blk))
       !(NonEmpty (HeaderHash blk))
     -- ^ When streaming blocks (a list of hashes) from the VolatileDB, we
     -- noticed a block was missing from the VolatileDB. It may have moved to
@@ -499,7 +499,7 @@ instance (Typeable blk, StandardHash blk)
 -- | Extract the ImmutableDB Iterator from the 'IteratorState'.
 iteratorStateImmIt
   :: IteratorState m blk
-  -> Maybe (ImmDB.Iterator (HeaderHash blk) m (Deserialisable m blk))
+  -> Maybe (ImmDB.Iterator (HeaderHash blk) m (Deserialisable m blk blk))
 iteratorStateImmIt = \case
     Closed                 -> Nothing
     InImmDB      _ immIt _ -> Just immIt
@@ -522,7 +522,7 @@ implIteratorNext :: forall m blk. (IOLike m, HasHeader blk)
                  => ResourceRegistry m
                  -> StrictTVar m (IteratorState m blk)
                  -> IteratorEnv m blk
-                 -> m (IteratorResult (Deserialisable m blk))
+                 -> m (IteratorResult (Deserialisable m blk blk))
 implIteratorNext registry varItState IteratorEnv{..} =
     atomically (readTVar varItState) >>= \case
       Closed ->
@@ -543,7 +543,7 @@ implIteratorNext registry varItState IteratorEnv{..} =
                    -- lower bound to try to stream it from the ImmutableDB (if
                    -- the block indeed has been moved there).
                 -> NonEmpty (HeaderHash blk)
-                -> m (IteratorResult (Deserialisable m blk))
+                -> m (IteratorResult (Deserialisable m blk blk))
     nextInVolDB continueFrom (hash NE.:| hashes) =
       VolDB.getDeserialisableBlock itVolDB hash >>= \case
         -- Block is missing
@@ -578,9 +578,9 @@ implIteratorNext registry varItState IteratorEnv{..} =
 
     -- | Read the next block while in the 'InImmDB' state.
     nextInImmDB :: StreamFrom blk
-                -> ImmDB.Iterator (HeaderHash blk) m (Deserialisable m blk)
+                -> ImmDB.Iterator (HeaderHash blk) m (Deserialisable m blk blk)
                 -> InImmDBEnd blk
-                -> m (IteratorResult (Deserialisable m blk))
+                -> m (IteratorResult (Deserialisable m blk blk))
     nextInImmDB continueFrom immIt immEnd =
       selectResult immEnd immIt >>= \case
         NotDone blk -> do
@@ -612,9 +612,9 @@ implIteratorNext registry varItState IteratorEnv{..} =
          -- ^ 'Nothing' iff the iterator was just opened and nothing has been
          -- streamed from it yet. This is used to avoid switching right back
          -- to the VolatileDB if we came from there.
-       -> ImmDB.Iterator (HeaderHash blk) m (Deserialisable m blk)
+       -> ImmDB.Iterator (HeaderHash blk) m (Deserialisable m blk blk)
        -> NonEmpty (HeaderHash blk)
-       -> m (IteratorResult (Deserialisable m blk))
+       -> m (IteratorResult (Deserialisable m blk blk))
     nextInImmDBRetry mbContinueFrom immIt (hash NE.:| hashes) =
       selectResult StreamAll immIt >>= \case
         NotDone blk | deserialisableHash blk == hash -> do
@@ -671,8 +671,8 @@ implIteratorNext registry varItState IteratorEnv{..} =
     -- Note that this function closes the iterator when necessary, i.e., when
     -- the return value is 'Done' or 'DoneAfter'.
     selectResult :: InImmDBEnd blk
-                 -> ImmDB.Iterator (HeaderHash blk) m (Deserialisable m blk)
-                 -> m (Done (Deserialisable m blk))
+                 -> ImmDB.Iterator (HeaderHash blk) m (Deserialisable m blk blk)
+                 -> m (Done (Deserialisable m blk blk))
     selectResult immEnd immIt = do
         itRes   <- ImmDB.iteratorNext    itImmDB immIt
         hasNext <- ImmDB.iteratorHasNext itImmDB immIt

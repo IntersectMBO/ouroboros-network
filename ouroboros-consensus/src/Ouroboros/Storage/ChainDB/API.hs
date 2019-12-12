@@ -228,7 +228,7 @@ data ChainDB m blk = ChainDB {
     , streamBlocks
         :: ResourceRegistry m
         -> StreamFrom blk -> StreamTo blk
-        -> m (Either (UnknownRange blk) (Iterator m (Deserialisable m blk)))
+        -> m (Either (UnknownRange blk) (Iterator m (Deserialisable m blk blk)))
 
       -- | Chain reader
       --
@@ -288,19 +288,20 @@ data ChainDB m blk = ChainDB {
   Deserialisable block/header
 -------------------------------------------------------------------------------}
 
--- | A @'Serialised' blk@ together with a monadic function to deserialise it.
-data Deserialisable m blk = Deserialisable
-   { serialised         :: !(Serialised blk)
+-- | A @'Serialised' b@ together with its slot, hash, and a monadic function
+-- to deserialise it. The @b@ will be @blk@ or @'Header' blk@.
+data Deserialisable m blk b = Deserialisable
+   { serialised         :: !(Serialised b)
    , deserialisableSlot :: !SlotNo
    , deserialisableHash :: !(HeaderHash blk)
-   , deserialise        :: !(m blk)
+   , deserialise        :: !(m b)
    }
 
-deserialisablePoint :: Deserialisable m blk -> Point blk
+deserialisablePoint :: Deserialisable m blk b -> Point blk
 deserialisablePoint d = BlockPoint (deserialisableSlot d) (deserialisableHash d)
 
-type instance HeaderHash (Deserialisable m blk) = HeaderHash blk
-instance StandardHash blk => StandardHash (Deserialisable m blk)
+type instance HeaderHash (Deserialisable m blk b) = HeaderHash blk
+instance StandardHash blk => StandardHash (Deserialisable m blk b)
 
 {-------------------------------------------------------------------------------
   Support for tests
@@ -355,7 +356,7 @@ data Iterator m blk = Iterator {
 
 -- | Deserialise the results of an iterator that yields serialised blocks.
 deserialiseIterator
-  :: Monad m => Iterator m (Deserialisable m blk) -> Iterator m blk
+  :: Monad m => Iterator m (Deserialisable m blk blk) -> Iterator m blk
 deserialiseIterator it = Iterator
     { iteratorNext  = iteratorNext  it >>= deserialiseIteratorResult
     , iteratorClose = iteratorClose it
@@ -392,7 +393,7 @@ deriving instance (Show blk, Show (HeaderHash blk)) => Show (IteratorResult blk)
 -- blocks.
 deserialiseIteratorResult
   :: Monad m
-  => IteratorResult (Deserialisable m blk) -> m (IteratorResult blk)
+  => IteratorResult (Deserialisable m blk blk) -> m (IteratorResult blk)
 deserialiseIteratorResult = \case
     IteratorExhausted      -> return $ IteratorExhausted
     IteratorBlockGCed hash -> return $ IteratorBlockGCed hash

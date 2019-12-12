@@ -436,7 +436,7 @@ getKnownBlock db hash = do
 
 getKnownDeserialisableBlock
   :: (MonadCatch m, StandardHash blk, Typeable blk, Typeable m)
-  => VolDB m blk -> HeaderHash blk -> m (Deserialisable m blk)
+  => VolDB m blk -> HeaderHash blk -> m (Deserialisable m blk blk)
 getKnownDeserialisableBlock db hash = do
     mBlock <- mustExist hash <$> getDeserialisableBlock db hash
     case mBlock of
@@ -454,7 +454,7 @@ getBlock db hash = traverse deserialise =<< getDeserialisableBlock db hash
 
 getDeserialisableBlock
   :: (MonadCatch m, StandardHash blk, Typeable blk)
-  => VolDB m blk -> HeaderHash blk -> m (Maybe (Deserialisable m blk))
+  => VolDB m blk -> HeaderHash blk -> m (Maybe (Deserialisable m blk blk))
 getDeserialisableBlock db hash =
     withDB db (\vol -> VolDB.getBlock vol hash) <&> \case
       Nothing                   -> Nothing

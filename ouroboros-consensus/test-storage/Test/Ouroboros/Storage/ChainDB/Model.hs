@@ -386,17 +386,17 @@ iteratorNext itrId m =
 iteratorNextDeserialised
   :: forall m blk. (Monad m, HasHeader blk)
   => IteratorId -> Model blk
-  -> (IteratorResult (Deserialisable m blk), Model blk)
+  -> (IteratorResult (Deserialisable m blk blk), Model blk)
 iteratorNextDeserialised itrId m =
     first convert $ iteratorNext itrId m
   where
-    convert :: IteratorResult blk -> IteratorResult (Deserialisable m blk)
+    convert :: IteratorResult blk -> IteratorResult (Deserialisable m blk blk)
     convert = \case
       IteratorExhausted      -> IteratorExhausted
       IteratorResult blk     -> IteratorResult (toDeserialisable blk)
       IteratorBlockGCed hash -> IteratorBlockGCed hash
 
-    toDeserialisable :: blk -> Deserialisable m blk
+    toDeserialisable :: blk -> Deserialisable m blk blk
     toDeserialisable b = Deserialisable
       { serialised         = Serialised mempty -- Currently unused
       , deserialisableSlot = Block.blockSlot b

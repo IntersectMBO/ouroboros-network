@@ -377,7 +377,7 @@ streamBlocksFrom
   -> ResourceRegistry m
   -> StreamFrom blk
   -> m (Either (UnknownRange blk)
-               (ImmDB.Iterator (HeaderHash blk) m (Deserialisable m blk)))
+               (ImmDB.Iterator (HeaderHash blk) m (Deserialisable m blk blk)))
 streamBlocksFrom db registry from = runExceptT $ case from of
     StreamFromExclusive pt@BlockPoint { atSlot = slot, withHash = hash } -> do
       checkFutureSlot pt
@@ -444,7 +444,7 @@ deserialisableIteratorResult
   :: MonadThrow m
   => ImmDB m blk
   -> IteratorResult (HeaderHash blk) Lazy.ByteString
-  -> m (IteratorResult (HeaderHash blk) (Deserialisable m blk))
+  -> m (IteratorResult (HeaderHash blk) (Deserialisable m blk blk))
 deserialisableIteratorResult db@ImmDB { epochInfo } = \case
     IteratorExhausted             -> return $ IteratorExhausted
     IteratorResult slotNo hash bs -> return $ IteratorResult slotNo hash $
@@ -490,13 +490,13 @@ deserialisableIterator
   :: MonadCatch m
   => ImmDB m blk
   -> Iterator (HeaderHash blk) m Lazy.ByteString
-  -> Iterator (HeaderHash blk) m (Deserialisable m blk)
+  -> Iterator (HeaderHash blk) m (Deserialisable m blk blk)
 deserialisableIterator db = traverseIterator db (deserialisableIteratorResult db)
 
 deserialiseIterator
   :: MonadCatch m
   => ImmDB m blk
-  -> Iterator (HeaderHash blk) m (Deserialisable m blk)
+  -> Iterator (HeaderHash blk) m (Deserialisable m blk blk)
   -> Iterator (HeaderHash blk) m blk
 deserialiseIterator db = traverseIterator db (traverse deserialise)
 

@@ -83,7 +83,7 @@ openDB cfg initLedger btime = do
         update_ :: (Model blk -> Model blk) -> m ()
         update_ f = update (\m -> ((), f m))
 
-        iterator :: IteratorId -> Iterator m (Deserialisable m blk)
+        iterator :: IteratorId -> Iterator m (Deserialisable m blk blk)
         iterator itrId = Iterator {
               iteratorNext  = update  $ Model.iteratorNextDeserialised itrId
             , iteratorClose = update_ $ Model.iteratorClose            itrId
