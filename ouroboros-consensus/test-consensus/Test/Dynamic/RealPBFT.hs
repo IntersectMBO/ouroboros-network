@@ -51,8 +51,10 @@ import           Test.Util.Orphans.Arbitrary ()
 import           Test.Util.Shrink (andId, dropId)
 
 tests :: TestTree
-tests = testGroup "Dynamic chain generation"
-    [ localOption (QuickCheckTests 10) $   -- each takes about 0.5 seconds!
+tests = testGroup "Dynamic chain generation" $
+    [ testProperty "trivial join plan is considered deterministic" $
+          prop_deterministicPlan
+    , localOption (QuickCheckTests 10) $   -- each takes about 0.5 seconds!
       testProperty "check Real PBFT setup" $
         \numCoreNodes ->
           forAll (elements (enumCoreNodes numCoreNodes)) $ \coreNodeId ->
@@ -114,6 +116,11 @@ tests = testGroup "Dynamic chain generation"
   where
     defaultSlotLengths :: SlotLengths
     defaultSlotLengths = singletonSlotLengths (SlotLength 1)
+
+prop_deterministicPlan :: NumSlots -> NumCoreNodes -> Property
+prop_deterministicPlan numSlots numCoreNodes =
+  property $
+  Ref.deterministicPlan numSlots (trivialNodeJoinPlan numCoreNodes)
 
 prop_setup_coreNodeId ::
      NumCoreNodes
@@ -258,7 +265,21 @@ genRealPBFTNodeJoinPlan :: PBftParams -> NumSlots -> Gen NodeJoinPlan
 genRealPBFTNodeJoinPlan params numSlots@(NumSlots t)
   | n < 0 || t < 1 = error $ "Cannot generate RealPBFT NodeJoinPlan: "
     ++ show (params, numSlots)
-  | otherwise      = go (NodeJoinPlan Map.empty) Ref.emptyState
+  | otherwise      =
+    go (NodeJoinPlan Map.empty) Ref.emptyState
+      `suchThat` Ref.deterministicPlan numSlots
+        -- This suchThat might loop a few times, but it should always
+        -- eventually succeed, since the plan where all nodes join immediately
+        -- satisifies it.
+        --
+        -- In a run of 7000 successful RealPBFT tests, this 'suchThat' retried:
+        --
+        -- 486 retried once
+        -- 100 retried twice
+        -- 10 retried 3 times
+        -- 4 retried 4 times
+        -- 4 retried 5 times
+        -- 1 retried 6 times
   where
     PBftParams{pbftNumNodes} = params
     n                        = fromIntegral pbftNumNodes
