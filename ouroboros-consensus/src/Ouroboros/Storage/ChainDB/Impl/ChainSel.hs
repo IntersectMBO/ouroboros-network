@@ -576,7 +576,7 @@ chainSelectionForBlock cdb@CDB{..} hdr = do
 --
 -- PRECONDITION: the header (block) must exist in the VolatileDB.
 getKnownHeaderThroughCache
-  :: (MonadCatch m, HasHeader blk, GetHeader blk)
+  :: (MonadCatch m, HasHeader blk)
   => VolDB m blk
   -> HeaderHash blk
   -> StateT (Map (HeaderHash blk) (Header blk)) m (Header blk)

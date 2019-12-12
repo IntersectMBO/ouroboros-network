@@ -542,7 +542,7 @@ implIteratorNext registry varItState IteratorEnv{..} =
                 -> NonEmpty (HeaderHash blk)
                 -> m (IteratorResult (Deserialisable m blk blk))
     nextInVolDB continueFrom (hash NE.:| hashes) =
-      VolDB.getDeserialisableBlock itVolDB hash >>= \case
+      VolDB.getDeserialisableBlockOrHeader itVolDB Block hash >>= \case
         -- Block is missing
         Nothing -> do
             trace $ BlockMissingFromVolDB hash

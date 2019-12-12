@@ -6,9 +6,12 @@ module Test.Ouroboros.Storage.ChainDB.AddBlock
   ( tests
   ) where
 
+import qualified Codec.CBOR.Encoding as CBOR
+import qualified Codec.CBOR.Write as CBOR
 import           Codec.Serialise (decode, encode)
 import           Control.Exception (throw)
 import           Control.Monad (void)
+import qualified Data.ByteString.Lazy as Lazy
 import           Data.List (permutations, transpose)
 
 import           Test.QuickCheck
@@ -280,8 +283,11 @@ mkArgs cfg initLedger tracer registry hashInfo
     , cdbGcDelay          = 0
     }
   where
+    addDummyBinaryInfo :: CBOR.Encoding -> BinaryInfo CBOR.Encoding
     addDummyBinaryInfo blob = BinaryInfo
       { binaryBlob   = blob
+      -- The serialised @Header TestBlock@ is the same as the serialised
+      -- @TestBlock@
       , headerOffset = 0
-      , headerSize   = 0
+      , headerSize   = fromIntegral $ Lazy.length (CBOR.toLazyByteString blob)
       }
