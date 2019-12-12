@@ -21,6 +21,7 @@ import           Control.Monad.Except
 import qualified Data.Foldable as Foldable
 import qualified Data.Set as Set
 import           Data.Typeable
+import           Data.Word (Word32)
 import           GHC.Generics (Generic)
 
 import           Control.Tracer
@@ -38,7 +39,7 @@ import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Mempool.API
 import           Ouroboros.Consensus.Mempool.TxSeq (TicketNo, TxSeq (..),
                      TxTicket (..), fromTxSeq, lookupByTicketNo,
-                     splitAfterTicketNo, zeroTicketNo)
+                     splitAfterTicketNo, splitAfterTxSize, zeroTicketNo)
 import qualified Ouroboros.Consensus.Mempool.TxSeq as TxSeq
 import           Ouroboros.Consensus.Util (repeatedly)
 import           Ouroboros.Consensus.Util.IOLike
@@ -451,9 +452,10 @@ implGetSnapshot :: IOLike m
 implGetSnapshot MempoolEnv{mpEnvStateVar} = do
   is <- readTVar mpEnvStateVar
   pure MempoolSnapshot
-    { snapshotTxs      = implSnapshotGetTxs      is
-    , snapshotTxsAfter = implSnapshotGetTxsAfter is
-    , snapshotLookupTx = implSnapshotGetTx       is
+    { snapshotTxs        = implSnapshotGetTxs        is
+    , snapshotTxsAfter   = implSnapshotGetTxsAfter   is
+    , snapshotTxsForSize = implSnapshotGetTxsForSize is
+    , snapshotLookupTx   = implSnapshotGetTx         is
     }
 
 -- | Return the number of transactions in the Mempool.
@@ -474,6 +476,12 @@ implSnapshotGetTxsAfter :: InternalState blk
                         -> [(GenTx blk, TicketNo)]
 implSnapshotGetTxsAfter IS{isTxs} tn =
     fromTxSeq $ snd $ splitAfterTicketNo isTxs tn
+
+implSnapshotGetTxsForSize :: InternalState blk
+                          -> Word32
+                          -> [(GenTx blk, TicketNo)]
+implSnapshotGetTxsForSize IS{isTxs} maxSize =
+    fromTxSeq $ fst $ splitAfterTxSize isTxs maxSize
 
 implSnapshotGetTx :: InternalState blk
                   -> TicketNo
