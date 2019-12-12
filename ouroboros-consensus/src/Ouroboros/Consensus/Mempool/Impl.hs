@@ -367,23 +367,29 @@ implAddTxs mpEnv accum txs = assert (all txInvariant txs) $ do
       -> STM m (ValidationResult blk, [GenTx blk])
       -- ^ The last 'ValidationResult' along with the remaining transactions
       -- (those not yet validated due to the mempool capacity being reached).
-    validateNewUntilMempoolFull []      vr = pure (vr, [])
-    validateNewUntilMempoolFull (t:ts)  vr = do
-      MempoolSize { msNumBytes } <- getMempoolSize mpEnv
-      let newValidSizeInBytes = Foldable.foldl'
-            (\acc tx -> acc + txSize tx)
-            0
-            (vrNewValid vr)
+    validateNewUntilMempoolFull []        vr = pure (vr, [])
+    validateNewUntilMempoolFull (tx:txs') vr = do
+      -- Get the current mempool size
+      MempoolSize { msNumBytes = curSizeInBytes } <- getMempoolSize mpEnv
+
+      -- Determine what the mempool size would be if we were to commit the new
+      -- transactions we've validated thus far and also the next transaction
+      -- to validate, 'tx'.
+      -- If this value is greater than the 'MempoolCapacity', then we know not
+      -- to continue validating at this time.
+      let newTxsBytes    = sum (txSize <$> vrNewValid vr) + txSize tx
+          newSizeInBytes = curSizeInBytes + newTxsBytes
+
       -- The size of a mempool should never be greater than its capacity.
-      assert (msNumBytes <= mempoolCap) $
+      assert (curSizeInBytes <= mempoolCap) $
         -- Here, we check whether we're at the mempool's capacity /before/
         -- attempting to validate the next transaction.
-        if (msNumBytes + newValidSizeInBytes + txSize t) <= mempoolCap
-          then validateNewUntilMempoolFull ts (extendVRNew mpEnvLedgerCfg t vr)
-          else pure (vr, t:ts) -- if we're at mempool capacity, we return the
-                               -- last 'ValidationResult' as well as the
-                               -- remaining transactions (those not yet
-                               -- validated).
+        if newSizeInBytes <= mempoolCap
+          then validateNewUntilMempoolFull txs' (extendVRNew mpEnvLedgerCfg tx vr)
+          else pure (vr, tx:txs') -- if we're at mempool capacity, we return the
+                                  -- last 'ValidationResult' as well as the
+                                  -- remaining transactions (those not yet
+                                  -- validated).
 
 implRemoveTxs
   :: (IOLike m, ApplyTx blk)
