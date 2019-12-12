@@ -15,7 +15,7 @@ data PeerSource = PeerSourceLocalRoot
                 | PeerSourcePublicRoot
                 | PeerSourceGossip
 --              | PeerSource -- it requested us to advertise it
-  deriving (Eq, Show, Enum)
+  deriving (Eq, Ord, Show, Enum)
 
 
 -- | Should this peer be advertised to other peers asking for known peers?

@@ -57,8 +57,8 @@ tests =
     , localOption (QuickCheckMaxSize 30) $
       testProperty "shrink for GovernorMockEnvironment"    prop_shrink_GovernorMockEnvironment
     ]
-  , testProperty "governor no livelock"        prop_governor_nolivelock
-  , testProperty "governor reachable in 1hr"   prop_governor_reachable_1hr
+  , testProperty "governor no livelock"             prop_governor_nolivelock
+  , testProperty "governor gossip reachable in 1hr" prop_governor_gossip_1hr
   ]
 
 
@@ -354,15 +354,22 @@ prop_governor_nolivelock env =
 -- must find all the reachable ones, or if the target for the number of known
 -- peers to find is too low then it should at least find the target number.
 --
-prop_governor_reachable_1hr :: GovernorMockEnvironment -> Property
-prop_governor_reachable_1hr env@GovernorMockEnvironment{
+prop_governor_gossip_1hr :: GovernorMockEnvironment -> Property
+prop_governor_gossip_1hr env@GovernorMockEnvironment{
                               peerGraph,
                               localRootPeers,
                               publicRootPeers,
                               targets
                             } =
     let trace      = selectPeerSelectionTraceEvents $
-                       runGovernorInMockEnvironment env
+                       runGovernorInMockEnvironment env {
+                         -- This test is only about testing gossiping,
+                         -- so do not try to establish connections:
+                         targets = targets {
+                           targetNumberOfEstablishedPeers = 0,
+                           targetNumberOfActivePeers      = 0
+                         }
+                       }
         Just found = knownPeersAfter1Hour trace
         reachable  = firstGossipReachablePeers peerGraph
                        (Map.keysSet localRootPeers <> publicRootPeers)

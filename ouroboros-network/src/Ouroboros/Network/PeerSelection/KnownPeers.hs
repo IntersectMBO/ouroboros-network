@@ -193,12 +193,13 @@ insert peersource peeradvertise peeraddrs
         knownPeerAdvertise = peeradvertise peeraddr,
         knownPeerFailCount = 0
       }
-    mergePeerInfo KnownPeerInfo {knownPeerFailCount}
-                  KnownPeerInfo {knownPeerSource, knownPeerAdvertise} =
+    mergePeerInfo old new =
       KnownPeerInfo {
-        knownPeerSource,
-        knownPeerAdvertise,
-        knownPeerFailCount
+        knownPeerSource    = knownPeerSource old `min` knownPeerSource new,
+        knownPeerAdvertise = case knownPeerSource new of
+                               PeerSourceLocalRoot -> knownPeerAdvertise new
+                               _                   -> knownPeerAdvertise old,
+        knownPeerFailCount = knownPeerFailCount old
       }
 
 delete :: Ord peeraddr
