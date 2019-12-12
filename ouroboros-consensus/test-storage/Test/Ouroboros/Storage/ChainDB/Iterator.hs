@@ -24,6 +24,7 @@ import           Ouroboros.Network.MockChain.Chain (Chain)
 import qualified Ouroboros.Network.MockChain.Chain as Chain
 import           Ouroboros.Network.Point (WithOrigin (..))
 
+import           Ouroboros.Consensus.Block (IsEBB (..))
 import           Ouroboros.Consensus.Util.Condense (condense)
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
@@ -268,10 +269,13 @@ initIteratorEnv TestSetup { immutable, volatile } tracer = do
     -- | Open a mock VolatileDB and add the given blocks
     openVolDB :: [TestBlock] -> m (VolDB m TestBlock)
     openVolDB blocks = do
-      (_volDBModel, volDB) <- VolDB.openDBMock EH.throwSTM 1
-      forM_ blocks $ \block ->
-        VolDB.putBlock volDB (blockInfo block) (serialiseIncremental block)
-      return $ mkVolDB volDB (const <$> decode) (addDummyBinaryInfo . encode) EH.monadCatch EH.throwSTM
+        (_volDBModel, volDB) <- VolDB.openDBMock EH.throwSTM 1
+        forM_ blocks $ \block ->
+          VolDB.putBlock volDB (blockInfo block) (serialiseIncremental block)
+        return $ mkVolDB volDB (const <$> decode) (addDummyBinaryInfo . encode)
+           isEBB EH.monadCatch EH.throwSTM
+      where
+        isEBB = const IsNotEBB
 
     blockInfo :: TestBlock -> VolDB.BlockInfo (HeaderHash TestBlock)
     blockInfo tb = VolDB.BlockInfo
@@ -280,6 +284,7 @@ initIteratorEnv TestSetup { immutable, volatile } tracer = do
       , VolDB.bpreBid       = case blockPrevHash tb of
           GenesisHash -> Origin
           BlockHash h -> At h
+      , VolDB.bisEBB        = IsNotEBB
       , VolDB.bheaderOffset = 0
       , VolDB.bheaderSize   = 0
       }

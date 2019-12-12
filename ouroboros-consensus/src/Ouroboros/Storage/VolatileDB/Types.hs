@@ -22,6 +22,9 @@ import           Cardano.Prelude (NoUnexpectedThunks, first)
 
 import           Ouroboros.Network.Block hiding (Tip, decodeTip, encodeTip)
 import           Ouroboros.Network.Point (WithOrigin)
+
+import           Ouroboros.Consensus.Block (IsEBB)
+
 import           Ouroboros.Storage.FS.API.Types
 
 -- | The 'FileId' is the unique identifier of each file found in the db.
@@ -134,6 +137,7 @@ data BlockInfo blockId = BlockInfo {
       bbid          :: !blockId
     , bslot         :: !SlotNo
     , bpreBid       :: !(WithOrigin blockId)
+    , bisEBB        :: !IsEBB
     , bheaderOffset :: !Word16
     , bheaderSize   :: !Word16
     } deriving (Show, Generic, NoUnexpectedThunks)
@@ -145,6 +149,7 @@ data InternalBlockInfo blockId = InternalBlockInfo {
     , ibBlockSize    :: !BlockSize
     , ibSlot         :: !SlotNo
     , ibPreBid       :: !(WithOrigin blockId)
+    , ibIsEBB        :: !IsEBB
     , ibHeaderOffset :: !Word16
     , ibHeaderSize   :: !Word16
     } deriving (Show, Generic, NoUnexpectedThunks)

@@ -75,7 +75,7 @@ import           Ouroboros.Network.Block (pattern BlockPoint, ChainHash (..),
 import qualified Ouroboros.Network.Block as Block
 import           Ouroboros.Network.Point (WithOrigin (..))
 
-import           Ouroboros.Consensus.Block (GetHeader, Header)
+import           Ouroboros.Consensus.Block (GetHeader, Header, IsEBB)
 import qualified Ouroboros.Consensus.Block as Block
 import qualified Ouroboros.Consensus.Util.CBOR as Util.CBOR
 import           Ouroboros.Consensus.Util.IOLike
@@ -103,6 +103,7 @@ data VolDB m blk = VolDB {
       -- ^ TODO introduce a newtype wrapper around the @s@ so we can use
       -- generics to derive the NoUnexpectedThunks instance.
     , encBlock :: blk -> BinaryInfo Encoding
+    , isEBB    :: blk -> IsEBB
     , err      :: ErrorHandling VolatileDBError m
     , errSTM   :: ThrowCantCatch VolatileDBError (STM m)
     }
@@ -114,6 +115,7 @@ instance NoUnexpectedThunks (VolDB m blk) where
     [ noUnexpectedThunks ctxt volDB
     , noUnexpectedThunks ctxt decBlock
     , noUnexpectedThunks ctxt encBlock
+    , noUnexpectedThunks ctxt isEBB
     , noUnexpectedThunks ctxt err
     , noUnexpectedThunks ctxt errSTM
     ]
@@ -129,6 +131,7 @@ data VolDbArgs m blk = forall h. VolDbArgs {
     , volBlocksPerFile :: Int
     , volDecodeBlock   :: forall s. Decoder s (Lazy.ByteString -> blk)
     , volEncodeBlock   :: blk -> BinaryInfo Encoding
+    , volIsEBB         :: blk -> IsEBB
     }
 
 -- | Default arguments when using the 'IO' monad
@@ -138,6 +141,7 @@ data VolDbArgs m blk = forall h. VolDbArgs {
 -- * 'volBlocksPerFile'
 -- * 'volDecodeBlock'
 -- * 'volEncodeBlock'
+-- * 'volIsEBB'
 defaultArgs :: FilePath -> VolDbArgs IO blk
 defaultArgs fp = VolDbArgs {
       volErr    = EH.exceptions
@@ -147,6 +151,7 @@ defaultArgs fp = VolDbArgs {
     , volBlocksPerFile = error "no default for volBlocksPerFile"
     , volDecodeBlock   = error "no default for volDecodeBlock"
     , volEncodeBlock   = error "no default for volEncodeBlock"
+    , volIsEBB         = error "no default for volIsEBB"
     }
 
 openDB :: (IOLike m, HasHeader blk) => VolDbArgs m blk -> m (VolDB m blk)
@@ -164,16 +169,18 @@ openDB args@VolDbArgs{..} = do
       , errSTM   = volErrSTM
       , decBlock = volDecodeBlock
       , encBlock = volEncodeBlock
+      , isEBB    = volIsEBB
       }
 
 -- | For testing purposes
 mkVolDB :: VolatileDB (HeaderHash blk) m
         -> (forall s. Decoder s (Lazy.ByteString -> blk))
         -> (blk -> BinaryInfo Encoding)
+        -> (blk -> IsEBB)
         -> ErrorHandling VolatileDBError m
         -> ThrowCantCatch VolatileDBError (STM m)
         -> VolDB m blk
-mkVolDB volDB decBlock encBlock err errSTM = VolDB {..}
+mkVolDB volDB decBlock encBlock isEBB err errSTM = VolDB {..}
 
 {-------------------------------------------------------------------------------
   Wrappers
@@ -196,7 +203,7 @@ getMaxSlotNo db = withSTM db VolDB.getMaxSlotNo
 
 putBlock :: (MonadCatch m, HasHeader blk) => VolDB m blk -> blk -> m ()
 putBlock db@VolDB{..} b = withDB db $ \vol ->
-    VolDB.putBlock vol (extractInfo binInfo b) binaryBlob
+    VolDB.putBlock vol (extractInfo isEBB binInfo b) binaryBlob
   where
     binInfo@BinaryInfo { binaryBlob } = CBOR.toBuilder <$> encBlock b
 
@@ -450,8 +457,8 @@ getDeserialisableBlock
   => VolDB m blk -> HeaderHash blk -> m (Maybe (Deserialisable m blk))
 getDeserialisableBlock db hash =
     withDB db (\vol -> VolDB.getBlock vol hash) <&> \case
-      Nothing           -> Nothing
-      Just (slotNo, bs) -> Just Deserialisable
+      Nothing                   -> Nothing
+      Just (slotNo, _isEBB, bs) -> Just Deserialisable
         { serialised         = Serialised bs
         , deserialisableSlot = slotNo
         , deserialisableHash = hash
@@ -480,7 +487,7 @@ blockFileParser VolDbArgs{..} = VolDB.Parser $
     -- confusion.
     decoder' :: forall s. Decoder s (Lazy.ByteString
              -> VolDB.BlockInfo (HeaderHash blk))
-    decoder' = ((\blk -> extractInfo (volEncodeBlock blk) blk) .)
+    decoder' = ((\blk -> extractInfo volIsEBB (volEncodeBlock blk) blk) .)
       <$> volDecodeBlock
 
 {-------------------------------------------------------------------------------
@@ -544,13 +551,15 @@ fromChainHash GenesisHash      = Origin
 fromChainHash (BlockHash hash) = At hash
 
 extractInfo :: HasHeader blk
-            => BinaryInfo a
+            => (blk -> IsEBB)
+            -> BinaryInfo a
             -> blk
             -> VolDB.BlockInfo (HeaderHash blk)
-extractInfo BinaryInfo{..} b = VolDB.BlockInfo {
+extractInfo isEBB BinaryInfo{..} b = VolDB.BlockInfo {
       bbid          = blockHash b
     , bslot         = blockSlot b
     , bpreBid       = fromChainHash (blockPrevHash b)
+    , bisEBB        = isEBB b
     , bheaderOffset = headerOffset
     , bheaderSize   = headerSize
     }

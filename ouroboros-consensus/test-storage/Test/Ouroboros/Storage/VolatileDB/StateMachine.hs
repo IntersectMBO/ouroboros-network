@@ -54,6 +54,7 @@ import           Text.Show.Pretty (ppShow)
 import           Ouroboros.Network.Point (WithOrigin)
 import qualified Ouroboros.Network.Point as WithOrigin
 
+import           Ouroboros.Consensus.Block (IsEBB (..))
 import           Ouroboros.Consensus.Util (SomePair (..))
 import qualified Ouroboros.Consensus.Util.Classify as C
 import           Ouroboros.Consensus.Util.IOLike
@@ -80,7 +81,7 @@ type (:@) t r = At t r
 
 data Success
   = Unit     ()
-  | Blob     (Maybe (SlotNo, ByteString))
+  | Blob     (Maybe (SlotNo, IsEBB, ByteString))
   | Blocks   [BlockId]
   | Bl       Bool
   | IsMember [Bool] -- We compare two functions based on their results on a list of inputs.
@@ -121,7 +122,7 @@ data Cmd
     | GetBlock BlockId
     | GetHeader BlockId
     | GetBlockIds
-    | PutBlock BlockId Predecessor ByteString -- ^ @ByteString@ is the header.
+    | PutBlock BlockId Predecessor IsEBB ByteString -- ^ @ByteString@ is the header.
     | GarbageCollect BlockId
     | AskIfMember [BlockId]
     | Corrupt Corruptions
@@ -158,6 +159,7 @@ deriving instance ToExpr SlotNo
 deriving instance Generic BlockId
 deriving instance ToExpr FsPath
 deriving instance ToExpr MaxSlotNo
+deriving instance ToExpr IsEBB
 deriving instance ToExpr (DBModel BlockId)
 deriving instance ToExpr (Model r)
 deriving instance ToExpr (WithOrigin BlockId)
@@ -255,11 +257,12 @@ runPure dbm (CmdErr cmd err) =
                 Blob <$> getHeaderModel tnc bid
             GetBlockIds        ->
                 Blocks <$> getBlockIdsModel tnc
-            PutBlock b pb h    -> do
+            PutBlock b pb isEBB h    -> do
                 let blockInfo = BlockInfo {
                         bbid          = b
                       , bslot         = guessSlot b
                       , bpreBid       = pb
+                      , bisEBB        = isEBB
                       , bheaderOffset = headerOffset
                       , bheaderSize   = headerSize
                       }
@@ -309,8 +312,8 @@ runDB restCmd db cmd = case cmd of
     GetBlock bid       -> Blob <$> getBlock db bid
     GetHeader bid      -> Blob <$> getHeader db bid
     GetBlockIds        -> Blocks <$> getBlockIds db
-    PutBlock b pb h    -> Unit <$> putBlock db
-      (BlockInfo b (guessSlot b) pb headerOffset headerSize)
+    PutBlock b pb e h  -> Unit <$> putBlock db
+      (BlockInfo b (guessSlot b) pb e headerOffset headerSize)
       (BL.lazyByteString $ toBinary (b, pb, h))
     GetSuccessors bids -> do
         successors <- atomically $ getSuccessors db
@@ -410,12 +413,13 @@ generatorCmdImpl terminatingCmd m@Model {..} =
         case bids of
             [] -> return Nothing
             _  -> Just <$> elements bids
+    let isEBB = IsNotEBB  -- TODO we need a proper TestBlock
     let duplicate = (\(f, b, pb) -> DuplicateBlock f b pb) <$> bid
     cmd <- frequency
         [ (150, return $ GetBlock sl)
         , (150, return $ GetHeader sl)
         , (100, return $ GetBlockIds)
-        , (150, return $ PutBlock sl (WithOrigin.At psl) (BL.singleton header))
+        , (150, return $ PutBlock sl (WithOrigin.At psl) isEBB (BL.singleton header))
         , (100, return $ GetSuccessors $ WithOrigin.At sl : (WithOrigin.At <$> possiblePredecessors))
         , (100, return $ GetPredecessor ls)
         , (100, return $ GetMaxSlotNo)
@@ -555,7 +559,7 @@ knownLimitation model (At cmd) = case cmd of
     GetSuccessors {}     -> Bot
     GetPredecessor {}    -> Bot
     GetMaxSlotNo {}      -> Bot
-    PutBlock bid _pbid _ -> Boolean $ isLimitation (latestGarbaged $ dbModel model) (guessSlot bid)
+    PutBlock bid _ _ _   -> Boolean $ isLimitation (latestGarbaged $ dbModel model) (guessSlot bid)
     GarbageCollect _sl   -> Bot
     IsOpen               -> Bot
     Close                -> Bot
@@ -662,7 +666,7 @@ tag ls = C.classify
     tagGarbageCollect keep bids mgced = successful $ \ev suc ->
         if not keep then Right $ tagGarbageCollect keep bids mgced
         else case (mgced, suc, getCmd ev) of
-            (Nothing, _, PutBlock bid _pbid _h)
+            (Nothing, _, PutBlock bid _pbid _isEBB _h)
                 -> Right $ tagGarbageCollect True (S.insert bid bids) Nothing
             (Nothing, _, GarbageCollect bid)
                 -> Right $ tagGarbageCollect True bids (Just bid)

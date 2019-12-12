@@ -159,6 +159,9 @@ fromChainDbArgs ChainDbArgs{..} = (
         , volBlocksPerFile    = cdbBlocksPerFile
         , volEncodeBlock      = cdbEncodeBlock
         , volDecodeBlock      = cdbDecodeBlock
+        , volIsEBB            = \blk -> case cdbIsEBB blk of
+                                          Nothing -> IsNotEBB
+                                          Just _  -> IsEBB
         }
     , LgrDB.LgrDbArgs {
           lgrNodeConfig       = cdbNodeConfig

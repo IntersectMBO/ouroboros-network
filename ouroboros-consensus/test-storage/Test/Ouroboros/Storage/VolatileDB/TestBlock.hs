@@ -22,6 +22,7 @@ import           Control.Monad.Class.MonadThrow
 import           Ouroboros.Network.Point (WithOrigin, withOriginFromMaybe,
                      withOriginToMaybe)
 
+import           Ouroboros.Consensus.Block (IsEBB (..))
 import           Ouroboros.Consensus.Util (SomePair (..))
 import           Ouroboros.Consensus.Util.IOLike
 
@@ -108,6 +109,7 @@ parseImpl hasFS@HasFS{..} path =
                 { bbid          = bid
                 , bslot         = guessSlot bid
                 , bpreBid       = prebid
+                , bisEBB        = IsNotEBB
                 , bheaderOffset = headerOffset
                 , bheaderSize   = headerSize
                 }

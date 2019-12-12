@@ -46,6 +46,7 @@ import           GHC.Stack.Types
 
 import           Ouroboros.Network.Point (WithOrigin)
 
+import           Ouroboros.Consensus.Block (IsEBB)
 import           Ouroboros.Consensus.Util (safeMaximum)
 
 import           Ouroboros.Storage.FS.API.Types
@@ -58,8 +59,7 @@ import           Ouroboros.Storage.VolatileDB.Util
 import           Test.Util.FS.Sim.Error
 
 import           Test.Ouroboros.Storage.VolatileDB.TestBlock (Corruptions,
-                     FileCorruption (..), binarySize, headerOffset,
-                     headerSize)
+                     FileCorruption (..), binarySize, headerOffset, headerSize)
 
 data DBModel blockId = DBModel {
       blocksPerFile  :: Int
@@ -68,7 +68,7 @@ data DBModel blockId = DBModel {
       -- ^ An error indicates a broken db and that parsing will fail.
     , open           :: Bool
       -- ^ Indicates if the db is open.
-    , mp             :: Map blockId (SlotNo, ByteString)
+    , mp             :: Map blockId (SlotNo, IsEBB, ByteString)
       -- ^ Superset of blocks in db. Some of them may be gced already.
     , latestGarbaged :: Maybe SlotNo
       -- ^ Last gced slot.
@@ -119,7 +119,7 @@ reOpenModel err = do
 getBlockModel :: forall m blockId. (MonadState (DBModel blockId) m, Ord blockId)
               => ThrowCantCatch VolatileDBError m
               -> blockId
-              -> m (Maybe (SlotNo, ByteString))
+              -> m (Maybe (SlotNo, IsEBB, ByteString))
 getBlockModel err sl = do
     DBModel {..} <- get
     if not open then EH.throwError' err $ UserError ClosedDBError
@@ -128,7 +128,7 @@ getBlockModel err sl = do
 getHeaderModel :: forall m blockId. (MonadState (DBModel blockId) m, Ord blockId)
                => ThrowCantCatch VolatileDBError m
                -> blockId
-               -> m (Maybe (SlotNo, ByteString))
+               -> m (Maybe (SlotNo, IsEBB, ByteString))
 getHeaderModel err sl = do
     fmap (second extractHeader) <$> getBlockModel err sl
   where
@@ -167,7 +167,7 @@ putBlockModel err cmdErr BlockInfo{..} bs = do
                     , fsLimitation = False
                 }
             Nothing -> do
-                let mp' = Map.insert bbid (bslot, toLazyByteString bs) mp
+                let mp' = Map.insert bbid (bslot, bisEBB, toLazyByteString bs) mp
                     (mbid, n, bids) = fromMaybe
                         (error "current file does not exist in index")
                         (Map.lookup currentFile index)
