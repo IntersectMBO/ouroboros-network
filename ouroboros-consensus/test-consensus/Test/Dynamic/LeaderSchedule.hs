@@ -40,6 +40,7 @@ tests = testGroup "Dynamic chain generation"
       , praosSlotsPerEpoch = 3
       , praosLeaderF       = 0.5
       , praosLifetimeKES   = 1000000
+      , praosSlotLength    = slotLengthFromSec 2
       }
 
     numCoreNodes = NumCoreNodes 3

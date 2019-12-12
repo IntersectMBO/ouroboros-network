@@ -9,6 +9,7 @@ import           Test.QuickCheck
 import           Test.Tasty
 import           Test.Tasty.QuickCheck
 
+import           Ouroboros.Consensus.BlockchainTime (slotLengthFromSec)
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Protocol
 import           Ouroboros.Consensus.Util.Random
@@ -40,7 +41,7 @@ prop_simple_pbft_convergence
     NumCoreNodes nn = numCoreNodes
 
     sigThd = (1.0 / fromIntegral nn) + 0.1
-    params = PBftParams k (fromIntegral nn) sigThd
+    params = PBftParams k (fromIntegral nn) sigThd (slotLengthFromSec 20)
 
     testOutput =
         runTestNetwork

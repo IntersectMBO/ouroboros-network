@@ -67,7 +67,8 @@ import qualified Ouroboros.Network.MockChain.ProducerState as CPS
 import qualified Ouroboros.Network.Point as Point
 
 import           Ouroboros.Consensus.Block (IsEBB (..), fromIsEBB, getHeader)
-import           Ouroboros.Consensus.BlockchainTime (BlockchainTime (..))
+import           Ouroboros.Consensus.BlockchainTime (BlockchainTime (..),
+                     slotLengthFromSec)
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.NodeId (NodeId (..))
@@ -1129,6 +1130,7 @@ testCfg :: NodeConfig (BlockProtocol Blk)
 testCfg = BftNodeConfig
     { bftParams   = BftParams { bftSecurityParam = k
                               , bftNumNodes      = 1
+                              , bftSlotLength    = slotLengthFromSec 20
                               }
     , bftNodeId   = CoreId 0
     , bftSignKey  = SignKeyMockDSIGN 0

@@ -107,6 +107,9 @@ data BftParams = BftParams {
 
       -- | Number of core nodes
     , bftNumNodes      :: !Word64
+
+      -- | Slot length
+    , bftSlotLength    :: !SlotLength
     }
   deriving (Generic, NoUnexpectedThunks)
 
@@ -129,6 +132,7 @@ instance BftCrypto c => OuroborosTag (Bft c) where
   type ChainState    (Bft c) = ()
 
   protocolSecurityParam = bftSecurityParam . bftParams
+  protocolSlotLength    = bftSlotLength    . bftParams
 
   checkIsLeader BftNodeConfig{..} (SlotNo n) _l _cs = do
       return $ case bftNodeId of

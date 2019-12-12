@@ -181,11 +181,7 @@ run tracers chainDbTracer diffusionTracers diffusionArguments networkMagic dbPat
       , pInfoInitState  = initState
       } = pInfo
 
-    -- TODO this will depend on the protocol and can change when a hard-fork
-    -- happens, see #921 and #282.
-    --
-    -- For now, we hard-code it to Byron's 20 seconds.
-    slotLength = slotLengthFromMillisec (20 * 1000)
+    slotLength = protocolSlotLength cfg
 
     nodeToNodeVersionData   = NodeToNodeVersionData { networkMagic   = networkMagic }
     nodeToClientVersionData = NodeToClientVersionData { networkMagic = networkMagic }

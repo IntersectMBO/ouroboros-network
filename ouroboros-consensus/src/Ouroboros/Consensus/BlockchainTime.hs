@@ -23,6 +23,8 @@ module Ouroboros.Consensus.BlockchainTime (
   , realBlockchainTime
     -- * Time to slots and back again
   , SlotLength(..)
+  , slotLengthFromSec
+  , slotLengthToSec
   , slotLengthFromMillisec
   , slotLengthToMillisec
   , SystemStart(..)
@@ -45,6 +47,7 @@ import           GHC.Stack
 
 import           Cardano.Prelude (NoUnexpectedThunks, OnlyCheckIsWHNF (..))
 
+import           Ouroboros.Consensus.Protocol.Abstract (SlotLength (..))
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
 import           Ouroboros.Consensus.Util.STM
@@ -213,9 +216,11 @@ realBlockchainTime registry slotLen start = do
   Time to slots and back again
 -------------------------------------------------------------------------------}
 
--- | Slot length
-newtype SlotLength = SlotLength { getSlotLength :: NominalDiffTime }
-  deriving (Show)
+slotLengthFromSec :: Integer -> SlotLength
+slotLengthFromSec = slotLengthFromMillisec . (* 1000)
+
+slotLengthToSec :: SlotLength -> Integer
+slotLengthToSec = (`div` 1000) . slotLengthToMillisec
 
 slotLengthFromMillisec :: Integer -> SlotLength
 slotLengthFromMillisec = SlotLength . conv

@@ -168,6 +168,9 @@ data PBftParams = PBftParams {
       -- but this implementation follows the specification by fixing that
       -- parameter to the ambient security parameter @k@.
     , pbftSignatureThreshold :: !Double
+
+      -- | Slot length
+    , pbftSlotLength         :: !SlotLength
     }
   deriving (Generic, NoUnexpectedThunks, Show)
 
@@ -221,6 +224,7 @@ instance ( PBftCrypto c
   type ChainState     (PBft cfg c) = PBftChainState c
 
   protocolSecurityParam = pbftSecurityParam . pbftParams
+  protocolSlotLength    = pbftSlotLength    . pbftParams
 
   checkIsLeader PBftNodeConfig{pbftIsLeader, pbftParams} (SlotNo n) _l _cs =
       case pbftIsLeader of
