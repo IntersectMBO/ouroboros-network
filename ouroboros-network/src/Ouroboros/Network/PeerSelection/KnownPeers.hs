@@ -18,10 +18,13 @@ module Ouroboros.Network.PeerSelection.KnownPeers (
 
     -- * Special operations
     setCurrentTime,
+    incrementFailCount,
+
     -- ** Tracking when we can gossip
     minGossipTime,
     setGossipTime,
     availableForGossip,
+
     -- ** Tracking when we can (re)connect
     minConnectTime,
     setConnectTime,
@@ -270,6 +273,19 @@ setCurrentTime now knownPeers@KnownPeers {
     availableToConnect' =
          availableToConnect
       <> Set.fromList [ peeraddr | (peeraddr, _, _) <- nowAvailableToConnect ]
+
+
+incrementFailCount :: Ord peeraddr
+                   => peeraddr
+                   -> KnownPeers peeraddr
+                   -> KnownPeers peeraddr
+incrementFailCount peeraddr knownPeers@KnownPeers{allPeers} =
+    assert (peeraddr `Map.member` allPeers) $
+    knownPeers {
+      allPeers = Map.adjust incr peeraddr allPeers
+    }
+  where
+    incr kpi = kpi { knownPeerFailCount = knownPeerFailCount kpi + 1 }
 
 
 -------------------------------

@@ -652,14 +652,11 @@ invariantPeerSelectionState PeerSelectionState{..} =
 
     -- The activePeers is a subset of the establishedPeers
     -- which is a subset of the known peers
- && Set.isSubsetOf activePeers (Map.keysSet establishedPeers)
- && Set.isSubsetOf (Map.keysSet establishedPeers)
-                   (Map.keysSet (KnownPeers.toMap knownPeers))
+ && Set.isSubsetOf activePeersSet establishedPeersSet
+ && Set.isSubsetOf establishedPeersSet knownPeersSet
 
     -- The localRootPeers and publicRootPeers must not overlap.
- && Set.null (Set.intersection
-                (Map.keysSet localRootPeers)
-                publicRootPeers)
+ && Set.null (Set.intersection localRootPeersSet publicRootPeers)
 
     -- The localRootPeers are a subset of the knownPeers,
     -- and with correct source and other info in the knownPeers.
@@ -681,15 +678,26 @@ invariantPeerSelectionState PeerSelectionState{..} =
     -- the case that there's fewer of them than our target number.
  && Map.size localRootPeers <= targetNumberOfKnownPeers targets
 
+    -- All currently established peers are in the availableToConnect set since
+    -- the alternative is a record of failure, but these are not (yet) failed.
+ && Set.isSubsetOf establishedPeersSet (KnownPeers.availableToConnect knownPeers)
+
     -- No constraint for publicRootBackoffs, publicRootRetryTime
     -- or inProgressPublicRootsReq
 
  && inProgressGossipReqs >= 0
- && Set.isSubsetOf inProgressPromoteCold (Map.keysSet (KnownPeers.toMap knownPeers))
- && Set.isSubsetOf inProgressPromoteWarm (Map.keysSet establishedPeers)
- && Set.isSubsetOf inProgressDemoteWarm  (Map.keysSet establishedPeers)
- && Set.isSubsetOf inProgressDemoteHot                activePeers
-
+ && Set.isSubsetOf inProgressPromoteCold coldPeersSet
+ && Set.isSubsetOf inProgressPromoteWarm warmPeersSet
+ && Set.isSubsetOf inProgressDemoteWarm  warmPeersSet
+ && Set.isSubsetOf inProgressDemoteHot   hotPeersSet
+  where
+    localRootPeersSet   = Map.keysSet localRootPeers
+    knownPeersSet       = Map.keysSet (KnownPeers.toMap knownPeers)
+    establishedPeersSet = Map.keysSet establishedPeers
+    activePeersSet      = activePeers
+    coldPeersSet        = knownPeersSet Set.\\ establishedPeersSet
+    warmPeersSet        = establishedPeersSet Set.\\ activePeersSet
+    hotPeersSet         = activePeersSet
 
 -- |
 --
@@ -851,7 +859,11 @@ data TracePeerSelection peeraddr peerconn =
      | TraceGossipResults      [(peeraddr, Either SomeException [peeraddr])] --TODO: classify failures
      | TraceForgetColdPeers   Int Int (Set peeraddr) -- target, actual, selected
      | TracePromoteColdPeers   Int Int (Set peeraddr)
+     | TracePromoteColdFailed  peeraddr SomeException
+     | TracePromoteColdDone    peeraddr
      | TracePromoteWarmPeers   Int Int (Set peeraddr)
+     | TracePromoteWarmFailed  peeraddr SomeException
+     | TracePromoteWarmDone    peeraddr
      | TraceDemoteWarmPeers    Int Int (Set peeraddr) -- target, actual, selected
      | TraceDemoteWarmFailed   (Set peeraddr) SomeException
      | TraceDemoteWarmDone     (Set peeraddr)
@@ -1277,30 +1289,31 @@ establishedPeersBelowTarget actions
                                         }
                             }
     -- Are we below the target for number of established peers?
-    -- Or more precisely, how many known peers could we promote?
-  | let numEstablishedPeers, numKnownPeers, numPeersToPromote :: Int
-        numEstablishedPeers = Map.size establishedPeers
-        numKnownPeers       = KnownPeers.size knownPeers
-        -- There's the difference between how many we have and the target
-        -- but there's of course also the limit of the number of cold peers
-        -- available to pick from.
-        --
-        -- TODO: we also have to track known peers that we've tried to
-        -- connect to before and we're not yet due to retry
-        -- (exponential backoff)
-        -- TODO: also limit size of inProgressPromoteCold to limit
-        -- concurrent connection attempts
-        numPeersToPromote   = min (targetNumberOfEstablishedPeers
-                                   - numEstablishedPeers)
-                                  (numKnownPeers
-                                   - numEstablishedPeers)
-                            - Set.size inProgressPromoteCold
-  , numPeersToPromote > 0
+  | numEstablishedPeers + numConnectInProgress < targetNumberOfEstablishedPeers
+
+    -- Are there any cold peers we could possibly pick to connect to?
+    -- We can subtract the established ones because by definition they are
+    -- not cold and our invariant is that they are always in the connect set.
+    -- We can also subtract the in progress ones since they are also already
+    -- in the connect set and we cannot pick them again.
+  , Set.size availableToConnect - numEstablishedPeers - numConnectInProgress > 0
   = Guarded Nothing $ do
+      -- The availableToPromote here is non-empty due to the second guard.
+      -- The known peers map restricted to the connect set is the same size as
+      -- the connect set (because it is a subset). The establishedPeers is a
+      -- subset of the connect set and we also know that there is no overlap
+      -- between inProgressPromoteCold and establishedPeers. QED.
+      --
+      -- The numPeersToPromote is positive based on the first guard.
+      --
       let availableToPromote :: Map peeraddr KnownPeerInfo
           availableToPromote = KnownPeers.toMap knownPeers
+                                `Map.restrictKeys` availableToConnect
                                  Map.\\ establishedPeers
                                 `Map.withoutKeys` inProgressPromoteCold
+          numPeersToPromote  = targetNumberOfEstablishedPeers
+                             - numEstablishedPeers
+                             - numConnectInProgress
       selectedToPromote <- pickPeers
                              policyPickColdPeersToPromote
                              availableToPromote
@@ -1314,42 +1327,57 @@ establishedPeersBelowTarget actions
                           inProgressPromoteCold = inProgressPromoteCold
                                                <> selectedToPromote
                         },
-        decisionJobs  = [jobPromoteColdPeers actions selectedToPromote]
+        decisionJobs  = [ jobPromoteColdPeer actions peer
+                        | peer <- Set.toList selectedToPromote ]
       }
+
+    -- If we could connect except that there are no peers currently available
+    -- then we return the next wakeup time (if any)
+  | numEstablishedPeers + numConnectInProgress < targetNumberOfEstablishedPeers
+  = GuardedSkip (Min <$> KnownPeers.minConnectTime knownPeers)
 
   | otherwise
   = GuardedSkip Nothing
+  where
+    numEstablishedPeers, numConnectInProgress :: Int
+    numEstablishedPeers  = Map.size establishedPeers
+    numConnectInProgress = Set.size inProgressPromoteCold
+    availableToConnect   = KnownPeers.availableToConnect knownPeers
 
-
-jobPromoteColdPeers :: forall peeraddr peerconn m.
+jobPromoteColdPeer :: forall peeraddr peerconn m.
                        (Monad m, Ord peeraddr)
-                    => PeerSelectionActions peeraddr peerconn m
-                    -> Set peeraddr
-                    -> Job m (Completion m peeraddr peerconn)
-jobPromoteColdPeers PeerSelectionActions{establishPeerConnection}
-                    selectedToPromote =
+                   => PeerSelectionActions peeraddr peerconn m
+                   -> peeraddr
+                   -> Job m (Completion m peeraddr peerconn)
+jobPromoteColdPeer PeerSelectionActions{establishPeerConnection} peeraddr =
     Job job handler
-    --TODO: fill in our template below
   where
     handler :: SomeException -> Completion m peeraddr peerconn
-    handler _e =
+    handler e =
       Completion $ \st _now -> Decision {
-        decisionTrace = undefined,
+        decisionTrace = TracePromoteColdFailed peeraddr e,
         decisionState = st {
-                          inProgressPromoteCold = inProgressPromoteCold st
-                                           Set.\\ selectedToPromote
+                          knownPeers            = KnownPeers.incrementFailCount
+                                                    peeraddr (knownPeers st),
+                          inProgressPromoteCold = Set.delete peeraddr
+                                                    (inProgressPromoteCold st)
                         },
         decisionJobs  = []
       }
 
     job :: m (Completion m peeraddr peerconn)
     job = do
-      peerconns <- mapM establishPeerConnection (Set.toList selectedToPromote)
-      --TODO: hmm, probably want to do these concurrently with a
-      -- timeout, perhaps like the two step gossip.
+      --TODO: decide if we should do timeouts here or if we should make that
+      -- the responsibility of establishPeerConnection
+      peerconn <- establishPeerConnection peeraddr
       return $ Completion $ \st _now -> Decision {
-        decisionTrace = undefined,
-        decisionState = st,
+        decisionTrace = TracePromoteColdDone peeraddr,
+        decisionState = st {
+                          establishedPeers      = Map.insert peeraddr peerconn
+                                                    (establishedPeers st),
+                          inProgressPromoteCold = Set.delete peeraddr
+                                                    (inProgressPromoteCold st)
+                        },
         decisionJobs  = []
       }
 
@@ -1478,24 +1506,20 @@ activePeersBelowTarget actions
                                    }
                        }
     -- Are we below the target for number of active peers?
-    -- Or more precisely, how many established peers could we promote?
-  | let numEstablishedPeers, numActivePeers, numPeersToPromote :: Int
-        numEstablishedPeers = Map.size establishedPeers
-        numActivePeers      = Set.size activePeers
-        -- There's the difference between how many we have and the target
-        -- but there's of course also the limit of the number of warm peers
-        -- available to pick from.
-        numPeersToPromote   = min (targetNumberOfActivePeers
-                                   - numActivePeers)
-                                  (numEstablishedPeers
-                                   - numActivePeers)
-                            - Set.size inProgressPromoteWarm
-  , numPeersToPromote > 0
+  | numActivePeers + numPromoteInProgress < targetNumberOfActivePeers
+
+    -- Are there any warm peers we could pick to promote?
+  , numEstablishedPeers - numActivePeers - numPromoteInProgress > 0
   = Guarded Nothing $ do
+          -- The availableToPromote is non-empty due to the second guard.
+          -- The numPeersToPromote is positive due to the first guard.
       let availableToPromote :: Map peeraddr KnownPeerInfo
           availableToPromote = KnownPeers.toMap knownPeers
                                  Map.\\ establishedPeers
                                 `Map.withoutKeys` inProgressPromoteWarm
+          numPeersToPromote  = targetNumberOfActivePeers
+                             - numActivePeers
+                             - numPromoteInProgress
       selectedToPromote <- pickPeers
                              policyPickWarmPeersToPromote
                              availableToPromote
@@ -1512,43 +1536,53 @@ activePeersBelowTarget actions
                           inProgressPromoteWarm = inProgressPromoteWarm
                                                <> selectedToPromote
                         },
-        decisionJobs  = [jobPromoteWarmPeers actions selectedToPromote']
+        decisionJobs  = [ jobPromoteWarmPeer actions peeraddr peerconn
+                        | (peeraddr, peerconn) <- Map.assocs selectedToPromote' ]
       }
 
   | otherwise
   = GuardedSkip Nothing
+  where
+    numEstablishedPeers, numActivePeers, numPromoteInProgress :: Int
+    numEstablishedPeers  = Map.size establishedPeers
+    numActivePeers       = Set.size activePeers
+    numPromoteInProgress = Set.size inProgressPromoteWarm
 
 
-jobPromoteWarmPeers :: forall peeraddr peerconn m.
-                       (Monad m, Ord peeraddr)
-                    => PeerSelectionActions peeraddr peerconn m
-                    -> Map peeraddr peerconn
-                    -> Job m (Completion m peeraddr peerconn)
-jobPromoteWarmPeers PeerSelectionActions{activatePeerConnection}
-                    selectedToPromote =
+jobPromoteWarmPeer :: forall peeraddr peerconn m.
+                      (Monad m, Ord peeraddr)
+                   => PeerSelectionActions peeraddr peerconn m
+                   -> peeraddr
+                   -> peerconn
+                   -> Job m (Completion m peeraddr peerconn)
+jobPromoteWarmPeer PeerSelectionActions{activatePeerConnection}
+                   peeraddr peerconn =
     Job job handler
-    --TODO: fill in our template below
   where
     handler :: SomeException -> Completion m peeraddr peerconn
-    handler _e =
+    handler e =
+      --TODO: decide what happens if promotion fails, do we stay warm or go to
+      -- cold? Will this be reported asynchronously via the state monitoring?
       Completion $ \st _now -> Decision {
-        decisionTrace = undefined,
+        decisionTrace = TracePromoteWarmFailed peeraddr e,
         decisionState = st {
-                          inProgressPromoteWarm = inProgressPromoteWarm st
-                                           Set.\\ Map.keysSet selectedToPromote
-
+                          inProgressPromoteWarm = Set.delete peeraddr
+                                                    (inProgressPromoteWarm st)
                         },
         decisionJobs  = []
       }
 
     job :: m (Completion m peeraddr peerconn)
     job = do
-      mapM_ activatePeerConnection selectedToPromote
-      --TODO: hmm, probably want to do these concurrently with a
-      -- timeout, perhaps like the two step gossip.
+      --TODO: decide if we should do timeouts here or if we should make that
+      -- the responsibility of activatePeerConnection
+      activatePeerConnection peerconn
       return $ Completion $ \st _now -> Decision {
-        decisionTrace = undefined,
-        decisionState = st,
+        decisionTrace = TracePromoteWarmDone peeraddr,
+        decisionState = st {
+                          inProgressPromoteWarm = Set.delete peeraddr
+                                                    (inProgressPromoteWarm st)
+                        },
         decisionJobs  = []
       }
 

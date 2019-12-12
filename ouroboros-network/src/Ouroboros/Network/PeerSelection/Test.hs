@@ -88,6 +88,8 @@ data GovernorMockEnvironment = GovernorMockEnvironment {
 newtype PeerAddr = PeerAddr Int
   deriving (Eq, Ord, Show)
 
+data PeerConn
+
 -- | The peer graph is the graph of all the peers in the mock p2p network, in
 -- traditional adjacency representation.
 --
@@ -182,7 +184,7 @@ runGovernorInMockEnvironment mockEnv =
 
 mockPeerSelectionActions :: (MonadSTM m, MonadTimer m)
                          => GovernorMockEnvironment
-                         -> m (PeerSelectionActions PeerAddr m)
+                         -> m (PeerSelectionActions PeerAddr PeerConn m)
 mockPeerSelectionActions GovernorMockEnvironment {
                            peerGraph = PeerGraph adjacency,
                            localRootPeers,
@@ -201,7 +203,12 @@ mockPeerSelectionActions GovernorMockEnvironment {
       readLocalRootPeers       = return localRootPeers,
       requestPublicRootPeers   = \_ -> return (publicRootPeers, 0),
       readPeerSelectionTargets = return targets,
-      requestPeerGossip
+      requestPeerGossip,
+      establishPeerConnection  = fail "establishPeerConnection",
+      monitorPeerConnection    = fail "monitorPeerConnection",
+      activatePeerConnection   = fail "activatePeerConnection",
+      deactivatePeerConnection = fail "deactivatePeerConnection",
+      closePeerConnection      = fail "closePeerConnection"
     }
   where
     stepGossipScript scriptVar = do
@@ -234,6 +241,10 @@ mockPeerSelectionPolicy GovernorMockEnvironment {
     return PeerSelectionPolicy {
       policyPickKnownPeersForGossip = interpretPickScript pickKnownPeersForGossipVar,
       policyPickColdPeersToForget   = interpretPickScript pickColdPeersToForgetVar,
+      policyPickColdPeersToPromote  = fail "policyPickColdPeersToPromote",
+      policyPickWarmPeersToPromote  = fail "policyPickWarmPeersToPromote",
+      policyPickHotPeersToDemote    = fail "policyPickHotPeersToDemote",
+      policyPickWarmPeersToDemote   = fail "policyPickWarmPeersToDemote",
       policyFindPublicRootTimeout   = 5,    -- seconds
       policyMaxInProgressGossipReqs = 2,
       policyGossipRetryTime         = 3600, -- seconds
@@ -245,7 +256,7 @@ interpretPickScript :: (MonadSTM m, Ord peeraddr)
                     => TVar m PickScript
                     -> Map peeraddr a
                     -> Int
-                    -> STM m (NonEmpty peeraddr)
+                    -> STM m (Set peeraddr)
 interpretPickScript scriptVar available pickNum
   | Map.null available
   = error "interpretPickScript: given empty map to pick from"
@@ -253,7 +264,7 @@ interpretPickScript scriptVar available pickNum
   = error "interpretPickScript: given invalid pickNum"
 
   | Map.size available <= pickNum
-  = return (NonEmpty.fromList (Map.keys available))
+  = return (Map.keysSet available)
 
   | otherwise
   = do PickScript (offsets :| script') <- readTVar scriptVar
@@ -261,14 +272,13 @@ interpretPickScript scriptVar available pickNum
          []   -> return ()
          x:xs -> writeTVar scriptVar (PickScript (x :| xs))
        return . pickMapKeys available
-              . NonEmpty.map getNonNegative
-              . NonEmpty.fromList -- safe because pickNum > 0
+              . map getNonNegative
               . NonEmpty.take pickNum
               $ offsets
 
-pickMapKeys :: Ord a => Map a b -> NonEmpty Int -> NonEmpty a
+pickMapKeys :: Ord a => Map a b -> [Int] -> Set a
 pickMapKeys m ns =
-    NonEmpty.nub (NonEmpty.map pick ns)
+    Set.fromList (map pick ns)
   where
     pick n = fst (Map.elemAt i m) where i = n `mod` Map.size m
 
@@ -400,7 +410,8 @@ prop_governor_reachable_1hr env@GovernorMockEnvironment{
 dynamicTracer :: Typeable a => Tracer (SimM s) a
 dynamicTracer = Tracer traceM
 
-selectPeerSelectionTraceEvents :: Trace a -> [(Time, TracePeerSelection PeerAddr)]
+selectPeerSelectionTraceEvents :: Trace a
+                               -> [(Time, TracePeerSelection PeerAddr PeerConn)]
 selectPeerSelectionTraceEvents = go
   where
     go (Trace t _ _ (EventLog e) trace)
@@ -411,8 +422,8 @@ selectPeerSelectionTraceEvents = go
     go (TraceMainReturn    _ _ _) = []
 
 takeFirstNHours :: DiffTime
-                -> [(Time, TracePeerSelection PeerAddr)]
-                -> [(Time, TracePeerSelection PeerAddr)]
+                -> [(Time, TracePeerSelection PeerAddr PeerConn)]
+                -> [(Time, TracePeerSelection PeerAddr PeerConn)]
 takeFirstNHours h = takeWhile (\(t,_) -> t < Time (60*60*h))
 
 -- | The peers that are notionally reachable from the root set. It is notional
@@ -766,27 +777,42 @@ governorFindingPublicRoots targetNumberOfRootPeers domains =
   where
     tracer :: Show a => Tracer IO a
     tracer  = Tracer (BS.putStrLn . BS.pack . show)
+
+    actions :: PeerSelectionActions IPv4 () IO
     actions = PeerSelectionActions {
                 readLocalRootPeers       = return Map.empty,
                 readPeerSelectionTargets = return targets,
                 requestPeerGossip        = \_ -> return [],
-                requestPublicRootPeers   = \_ -> return (Set.empty, 0)
+                requestPublicRootPeers   = \_ -> return (Set.empty, 0),
+                establishPeerConnection  = fail "establishPeerConnection",
+                monitorPeerConnection    = fail "monitorPeerConnection",
+                activatePeerConnection   = fail "activatePeerConnection",
+                deactivatePeerConnection = fail "deactivatePeerConnection",
+                closePeerConnection      = fail "closePeerConnection"
               }
+
+    targets :: PeerSelectionTargets
     targets = PeerSelectionTargets {
                 targetNumberOfRootPeers        = targetNumberOfRootPeers,
                 targetNumberOfKnownPeers       = targetNumberOfRootPeers,
                 targetNumberOfEstablishedPeers = 0,
                 targetNumberOfActivePeers      = 0
               }
+
+    policy :: PeerSelectionPolicy IPv4 IO
     policy  = PeerSelectionPolicy {
                 policyPickKnownPeersForGossip = pickTrivially,
                 policyPickColdPeersToForget   = pickTrivially,
+                policyPickColdPeersToPromote  = pickTrivially,
+                policyPickWarmPeersToPromote  = pickTrivially,
+                policyPickHotPeersToDemote    = pickTrivially,
+                policyPickWarmPeersToDemote   = pickTrivially,
                 policyFindPublicRootTimeout   = 5,
                 policyMaxInProgressGossipReqs = 0,
                 policyGossipRetryTime         = 0, -- seconds
                 policyGossipBatchWaitTime     = 0, -- seconds
                 policyGossipOverallTimeout    = 0  -- seconds
               }
-    pickTrivially :: Applicative m => Map IPv4 a -> Int -> m (NonEmpty IPv4)
-    pickTrivially m n = pure . NonEmpty.fromList . take n . Map.keys $ m
+    pickTrivially :: Applicative m => Map IPv4 a -> Int -> m (Set IPv4)
+    pickTrivially m n = pure . Set.take n . Map.keysSet $ m
 
