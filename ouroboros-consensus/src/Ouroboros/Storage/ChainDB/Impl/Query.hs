@@ -38,8 +38,9 @@ import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.STM (WithFingerprint)
 
-import           Ouroboros.Storage.ChainDB.API (ChainDbError (..),
-                     ChainDbFailure (..), InvalidBlockReason)
+import           Ouroboros.Storage.ChainDB.API (BlockOrHeader (..),
+                     ChainDbError (..), ChainDbFailure (..),
+                     InvalidBlockReason)
 
 import           Ouroboros.Storage.ChainDB.Impl.ImmDB (ImmDB)
 import qualified Ouroboros.Storage.ChainDB.Impl.ImmDB as ImmDB
@@ -92,7 +93,6 @@ getTipBlock cdb@CDB{..} = do
 getTipHeader
   :: forall m blk.
      ( IOLike m
-     , GetHeader blk
      , HasHeader (Header blk)
      )
   => ChainDbEnv m blk
@@ -113,11 +113,11 @@ getTipHeader CDB{..} = do
           -- Note that we can't use 'getBlockAtTip' because a block might have
           -- been appended to the ImmutableDB since we obtained 'anchorOrHdr'.
         -> anchorMustBeThere <$>
-           ImmDB.getBlockWithPoint cdbImmDB (castPoint anchor)
+           ImmDB.getBlockOrHeaderWithPoint cdbImmDB Header (castPoint anchor)
   where
-    anchorMustBeThere :: Maybe blk -> Maybe (Header blk)
+    anchorMustBeThere :: Maybe (Header blk) -> Maybe (Header blk)
     anchorMustBeThere Nothing    = error "block at tip of ImmutableDB missing"
-    anchorMustBeThere (Just blk) = Just (getHeader blk)
+    anchorMustBeThere (Just hdr) = Just hdr
 
 getTipPoint
   :: forall m blk. (IOLike m, HasHeader (Header blk))
@@ -235,7 +235,7 @@ getAnyBlock immDB volDB p = case pointHash p of
             -- It's not supposed to be in the ImmutableDB and the VolatileDB
             -- didn't contain it, so return 'Nothing'.
             then return Nothing
-            else ImmDB.getBlockWithPoint immDB p
+            else ImmDB.getBlockOrHeaderWithPoint immDB Block p
 
 mustExist :: (Typeable blk, StandardHash blk)
           => Point blk -> Maybe blk -> Either ChainDbFailure blk

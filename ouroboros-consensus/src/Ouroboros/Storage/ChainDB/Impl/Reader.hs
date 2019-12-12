@@ -36,6 +36,7 @@ import           Ouroboros.Consensus.Util.STM (blockUntilJust)
 
 import           Ouroboros.Storage.ChainDB.API (ChainDbError (..), Reader (..),
                      ReaderId)
+import qualified Ouroboros.Storage.ChainDB.API as ChainDB
 
 import qualified Ouroboros.Storage.ChainDB.Impl.ImmDB as ImmDB
 import qualified Ouroboros.Storage.ChainDB.Impl.Query as Query
@@ -92,7 +93,7 @@ newReader cdb@CDB{..} h registry = do
         -- TODO avoid opening an iterator immediately when creating a reader,
         -- because the user will probably request an intersection with the
         -- recent chain. OR should we not optimise for the best case?
-        immIt <- ImmDB.streamBlocksAfter cdbImmDB registry genesisPoint
+        immIt <- ImmDB.streamAfter cdbImmDB registry ChainDB.Block genesisPoint
         return $ ReaderInImmDB rollState immIt
 
     readerId  <- atomically $ updateTVar cdbNextReaderId $ \r -> (succ r, r)
@@ -279,14 +280,14 @@ instructionHelper registry fromMaybeSTM fromPure CDB{..} varReader = do
             -- COST: the block at @pt@ is read.
             Nothing    -> do
               trace $ ReaderNoLongerInMem rollState
-              ImmDB.streamBlocksAfter cdbImmDB registry pt
+              ImmDB.streamAfter cdbImmDB registry ChainDB.Block pt
           rollForwardImmDB immIt pt
         RollBackTo      pt -> do
           case mbImmIt of
             Just immIt -> ImmDB.iteratorClose cdbImmDB immIt
             Nothing    -> trace $ ReaderNoLongerInMem rollState
           -- COST: the block at @pt@ is read.
-          immIt' <- ImmDB.streamBlocksAfter cdbImmDB registry pt
+          immIt' <- ImmDB.streamAfter cdbImmDB registry ChainDB.Block pt
           let readerState' = ReaderInImmDB (RollForwardFrom pt) immIt'
           atomically $ writeTVar varReader readerState'
           return $ fromPure $ RollBack pt
@@ -344,7 +345,7 @@ instructionHelper registry fromMaybeSTM fromPure CDB{..} varReader = do
           --    opened the iterator.
           _  -> do
             trace $ ReaderNewImmIterator pt slotNoAtImmDBTip
-            immIt' <- ImmDB.streamBlocksAfter cdbImmDB registry pt
+            immIt' <- ImmDB.streamAfter cdbImmDB registry ChainDB.Block pt
             -- Try again with the new iterator
             rollForwardImmDB immIt' pt
 
@@ -421,12 +422,12 @@ forward registry CDB{..} varReader = \pts -> do
         -> do
           inImmDB <- if pt == genesisPoint
             then return True -- Genesis is always "in" the ImmutableDB
-            else isJust <$> ImmDB.getBlockWithPoint cdbImmDB pt
+            else isJust <$> ImmDB.getBlockOrHeaderWithPoint cdbImmDB ChainDB.Header pt
           if inImmDB
             then do
               -- TODO combine block checking with opening the iterator to
               -- avoid reading the same block twice
-              immIt <- ImmDB.streamBlocksAfter cdbImmDB registry pt
+              immIt <- ImmDB.streamAfter cdbImmDB registry ChainDB.Block pt
               updateState $ ReaderInImmDB (RollBackTo pt) immIt
               return $ Just pt
             else findFirstPointOnChain curChain slotNoAtImmDBTip pts

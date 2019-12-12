@@ -40,10 +40,11 @@ import           Ouroboros.Network.Block (pattern BlockPoint,
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
 
-import           Ouroboros.Storage.ChainDB.API (ChainDbError (..),
-                     Deserialisable (..), Iterator (..), IteratorId (..),
-                     IteratorResult (..), StreamFrom (..), StreamTo (..),
-                     UnknownRange (..), deserialisablePoint, validBounds)
+import           Ouroboros.Storage.ChainDB.API (BlockOrHeader (..),
+                     ChainDbError (..), Deserialisable (..), Iterator (..),
+                     IteratorId (..), IteratorResult (..), StreamFrom (..),
+                     StreamTo (..), UnknownRange (..), deserialisablePoint,
+                     validBounds)
 
 import           Ouroboros.Storage.ChainDB.Impl.ImmDB (ImmDB)
 import qualified Ouroboros.Storage.ChainDB.Impl.ImmDB as ImmDB
@@ -312,12 +313,12 @@ newIterator itEnv@IteratorEnv{..} getItEnv registry from to = do
           when (pointSlot endPoint > slotNoAtTip) $
             throwError $ MissingBlock endPoint
           -- TODO just check the hash, don't read the whole block
-          lift (ImmDB.getBlockWithPoint itImmDB endPoint) >>= \case
+          lift (ImmDB.getBlockOrHeaderWithPoint itImmDB Header endPoint) >>= \case
             Just _  -> return ()
             Nothing -> throwError $ MissingBlock endPoint
         -- 'ImmDB.streamBlocksFrom' will check the hash of the block at the
         -- start bound.
-        immIt <- ExceptT $ ImmDB.streamBlocksFrom itImmDB registry from
+        immIt <- ExceptT $ ImmDB.streamFrom itImmDB registry Block from
         lift $ createIterator $ InImmDB from immIt (StreamTo to)
 
     -- | If we have to stream from both the ImmutableDB and the VolatileDB, we
@@ -368,7 +369,7 @@ newIterator itEnv@IteratorEnv{..} getItEnv registry from to = do
       where
         stream pt hashes' = do
           let immEnd = SwitchToVolDBFrom (StreamToInclusive pt) hashes'
-          immIt <- ExceptT $ ImmDB.streamBlocksFrom itImmDB registry from
+          immIt <- ExceptT $ ImmDB.streamFrom itImmDB registry Block from
           lift $ createIterator $ InImmDB from immIt immEnd
 
     makeIterator :: Bool  -- ^ Register the iterator in 'cdbIterators'?
@@ -558,7 +559,7 @@ implIteratorNext registry varItState IteratorEnv{..} =
             -- 'ReadFutureEBBError' because if the block is missing, it /must/
             -- have been garbage-collected, which means that its slot was
             -- older than the slot of the tip of the ImmutableDB.
-            ImmDB.streamBlocksFrom itImmDB registry continueFrom >>= \case
+            ImmDB.streamFrom itImmDB registry Block continueFrom >>= \case
               -- The block was not found in the ImmutableDB, it must have been
               -- garbage-collected
               Left   _    -> do

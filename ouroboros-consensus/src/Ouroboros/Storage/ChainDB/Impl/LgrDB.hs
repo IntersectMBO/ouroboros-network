@@ -102,7 +102,8 @@ import           Ouroboros.Storage.LedgerDB.OnDisk (DiskSnapshot,
                      TraceReplayEvent (..))
 import qualified Ouroboros.Storage.LedgerDB.OnDisk as LedgerDB
 
-import           Ouroboros.Storage.ChainDB.API (ChainDbFailure (..))
+import           Ouroboros.Storage.ChainDB.API (BlockOrHeader (..),
+                     ChainDbFailure (..))
 import           Ouroboros.Storage.ChainDB.Impl.ImmDB (ImmDB)
 import qualified Ouroboros.Storage.ChainDB.Impl.ImmDB as ImmDB
 
@@ -405,7 +406,7 @@ streamAPI immDB = StreamAPI streamAfter
       if Block.pointSlot (tipToPoint tip) > slotNoAtTip
         then k Nothing
         else withRegistry $ \registry ->
-          ImmDB.streamBlocksAfter immDB registry (tipToPoint tip) >>=
+          ImmDB.streamAfter immDB registry Block (tipToPoint tip) >>=
             k . Just . getNext
 
     getNext :: ImmDB.Iterator (HeaderHash blk) m blk

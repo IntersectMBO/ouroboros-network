@@ -9,6 +9,8 @@ module Test.Ouroboros.Storage.ChainDB.Iterator
 import           Test.Tasty
 import           Test.Tasty.QuickCheck
 
+import           Codec.CBOR.Encoding (Encoding)
+import qualified Codec.CBOR.Write as CBOR
 import           Codec.Serialise (decode, encode, serialiseIncremental)
 import           Control.Monad.Except
 import           Control.Tracer
@@ -274,7 +276,7 @@ initIteratorEnv TestSetup { immutable, volatile } tracer = do
         forM_ blocks $ \block ->
           VolDB.putBlock volDB (blockInfo block) (serialiseIncremental block)
         return $ mkVolDB volDB (const <$> decode) (const <$> decode)
-          (addDummyBinaryInfo . encode) isEBB addHdrEnv
+          encodeWithBinaryInfo isEBB addHdrEnv
           EH.monadCatch EH.throwSTM
       where
         isEBB = const IsNotEBB
@@ -304,16 +306,20 @@ initIteratorEnv TestSetup { immutable, volatile } tracer = do
         forM_ (Chain.toOldestFirst chain) $ \block ->
           ImmDB.appendBlock immDB
             (blockSlot block) (blockHash block)
-            (addDummyBinaryInfo (serialiseIncremental block))
+            (CBOR.toBuilder <$> encodeWithBinaryInfo block)
         return $ mkImmDB immDB (const <$> decode) (const <$> decode)
-          (addDummyBinaryInfo . encode) epochInfo isEBB addHdrEnv EH.monadCatch
+          encodeWithBinaryInfo epochInfo isEBB addHdrEnv EH.monadCatch
       where
         epochInfo = fixedSizeEpochInfo epochSize
         isEBB     = const Nothing
 
-addDummyBinaryInfo :: blk -> BinaryInfo blk
-addDummyBinaryInfo blob = BinaryInfo
-  { binaryBlob   = blob
-  , headerOffset = 0
-  , headerSize   = 0
-  }
+encodeWithBinaryInfo :: TestBlock -> BinaryInfo Encoding
+encodeWithBinaryInfo blk = BinaryInfo
+    { binaryBlob   = enc
+      -- The serialised @Header TestBlock@ is the same as the serialised
+      -- @TestBlock@
+    , headerOffset = 0
+    , headerSize   = fromIntegral $ Lazy.length (CBOR.toLazyByteString enc)
+    }
+  where
+    enc = encode blk

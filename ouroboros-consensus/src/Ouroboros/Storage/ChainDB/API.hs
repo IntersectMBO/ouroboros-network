@@ -16,6 +16,8 @@
 module Ouroboros.Storage.ChainDB.API (
     -- * Main ChainDB API
     ChainDB(..)
+    -- * Block or header
+  , BlockOrHeader(..)
     -- * Deserialisable block/header
   , Deserialisable(..)
   , deserialisablePoint
@@ -283,6 +285,16 @@ data ChainDB m blk = ChainDB {
       -- 'False' when the database is closed.
     , isOpen             :: STM m Bool
     }
+
+{-------------------------------------------------------------------------------
+  Block or header
+-------------------------------------------------------------------------------}
+
+-- | Either a block (@blk@) or a header (@'Header' blk@). Both have the same
+-- @HeaderHash blk@.
+data BlockOrHeader blk b where
+  Block  :: BlockOrHeader blk blk
+  Header :: BlockOrHeader blk (Header blk)
 
 {-------------------------------------------------------------------------------
   Deserialisable block/header
