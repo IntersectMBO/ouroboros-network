@@ -2,6 +2,7 @@
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE PatternSynonyms            #-}
 {-# LANGUAGE ViewPatterns               #-}
@@ -12,12 +13,16 @@ module Ouroboros.Consensus.Mempool.TxSeq (
   , TxSeq(Empty, (:>), (:<))
   , toTxSeq
   , fromTxSeq
+  , fromTxTickets
   , txTickets
   , lookupByTicketNo
   , splitAfterTicketNo
   , splitAfterTxSize
   , zeroTicketNo
   , filterTxs
+
+  -- * Reference implementations for testing
+  , splitAfterTxSizeSpec
   ) where
 
 import           Data.FingerTree.Strict (StrictFingerTree)
@@ -55,7 +60,7 @@ data TxTicket tx = TxTicket
   , txTicketTxSizeInBytes :: !TxSizeInBytes
     -- ^ The byte size of the transaction ('txTicketTx') associated with this
     -- ticket.
-  } deriving (Show, Generic, NoUnexpectedThunks)
+  } deriving (Eq, Show, Generic, NoUnexpectedThunks)
 
 -- | The mempool is a sequence of transactions with their ticket numbers and
 -- size in bytes.
@@ -186,14 +191,44 @@ splitAfterTxSize (TxSeq txs) n =
     case FingerTree.split (\m -> mSizeBytes m > n) txs of
       (l, r) -> (TxSeq l, TxSeq r)
 
+-- | \( O(n) \). Specification of 'splitAfterTxSize'.
+--
+-- Use 'splitAfterTxSize' as it should be faster.
+--
+-- This function is used to verify whether 'splitAfterTxSize' behaves as
+-- expected.
+splitAfterTxSizeSpec :: TxSeq tx -> TxSizeInBytes -> (TxSeq tx, TxSeq tx)
+splitAfterTxSizeSpec txseq n =
+    mapTuple fromTxTickets $ go 0 [] (txTickets txseq)
+  where
+    mapTuple :: (a -> b) -> (a, a) -> (b, b)
+    mapTuple f (x, y) = (f x, f y)
+
+    go :: TxSizeInBytes
+       -> [TxTicket tx]
+       -> [TxTicket tx]
+       -> ([TxTicket tx], [TxTicket tx])
+    go accByteSize accTickets = \case
+      []
+        -> (reverse accTickets, [])
+      t:ts
+        | let accByteSize' = accByteSize + txTicketTxSizeInBytes t
+        , accByteSize' <= n
+        -> go accByteSize' (t:accTickets) ts
+        | otherwise
+        -> (reverse accTickets, t:ts)
+
 -- | Given a list of triples consisting of transactions, ticket numbers, and
 -- the transaction sizes in bytes, construct a 'TxSeq'.
 toTxSeq :: [(tx, TicketNo, TxSizeInBytes)] -> TxSeq tx
-toTxSeq =
-    Foldable.foldl' (\acc triple -> acc :> uncurry3 TxTicket triple) Empty
+toTxSeq ts = fromTxTickets $ map (uncurry3 TxTicket) ts
   where
     uncurry3 :: (a -> b -> c -> d) -> ((a, b, c) -> d)
     uncurry3 f (a, b, c) = f a b c
+
+-- | Given a list of 'TxTicket's, construct a 'TxSeq'.
+fromTxTickets :: [TxTicket tx] -> TxSeq tx
+fromTxTickets = Foldable.foldl' (:>) Empty
 
 -- | Convert a 'TxSeq' to a list of pairs of transactions and their
 -- associated 'TicketNo's.

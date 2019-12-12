@@ -52,6 +52,7 @@ tests = testGroup "Mempool"
       [ testProperty "lookupByTicketNo complete"           prop_TxSeq_lookupByTicketNo_complete
       , testProperty "lookupByTicketNo sound"              prop_TxSeq_lookupByTicketNo_sound
       , testProperty "splitAfterTxSize"                    prop_TxSeq_splitAfterTxSize
+      , testProperty "splitAfterTxSizeSpec"                prop_TxSeq_splitAfterTxSizeSpec
       ]
   , testProperty "snapshotTxs == snapshotTxsAfter zeroIdx" prop_Mempool_snapshotTxs_snapshotTxsAfter
   , testProperty "valid added txs == getTxs"               prop_Mempool_addTxs_getTxs
@@ -851,6 +852,23 @@ prop_TxSeq_splitAfterTxSize tss =
     txSizeSum :: [TxTicket tx] -> TxSizeInBytes
     txSizeSum = sum . map txTicketTxSizeInBytes
 
+
+-- | Test that the results of 'splitAfterTxSizeSpec', a specification of
+-- 'splitAfterTxSize', match those of the real 'splitAfterTxSize'
+-- implementation.
+prop_TxSeq_splitAfterTxSizeSpec :: TxSizeSplitTestSetup -> Property
+prop_TxSeq_splitAfterTxSizeSpec tss =
+         txTickets implBefore === txTickets specBefore
+    .&&. txTickets implAfter  === txTickets specAfter
+  where
+    TxSizeSplitTestSetup { tssTxSizeToSplitOn } = tss
+
+    (implBefore, implAfter) = splitAfterTxSize txseq tssTxSizeToSplitOn
+
+    (specBefore, specAfter) = splitAfterTxSizeSpec txseq tssTxSizeToSplitOn
+
+    txseq :: TxSeq Int
+    txseq = txSizeSplitTestSetupToTxSeq tss
 
 {-------------------------------------------------------------------------------
   TxSizeSplitTestSetup
