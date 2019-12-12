@@ -14,7 +14,7 @@ import qualified Data.ByteString.Lazy as BL
 import           Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
 import           Data.Serialize
-import           Data.Word (Word64)
+import           Data.Word (Word16, Word64)
 import           Test.QuickCheck
 
 import           Control.Monad.Class.MonadThrow
@@ -35,35 +35,41 @@ import qualified Ouroboros.Storage.VolatileDB.Impl as Internal hiding (openDB)
 type BlockId = Word
 type SerialMagic = Int
 type Predecessor = WithOrigin BlockId
-type BlockTestInfo = (BlockId, Predecessor)
+type BlockTestInfo = (BlockId, Predecessor, BL.ByteString)
 
-type TestBlock = (BlockId, Predecessor, SerialMagic)
+type TestBlock = (BlockId, Predecessor, BL.ByteString, SerialMagic)
 
 toBinary :: BlockTestInfo -> BL.ByteString
 toBinary = Binary.encode . convert . toBlock
   where
-    convert :: TestBlock -> (BlockId, Maybe BlockId, SerialMagic)
-    convert (bid, pre, magic) = (bid, withOriginToMaybe pre, magic)
+    convert :: TestBlock -> (BlockId, Maybe BlockId, BL.ByteString, SerialMagic)
+    convert (bid, pre, h, magic) = (bid, withOriginToMaybe pre, h, magic)
 
 fromBinary :: BS.ByteString -> Either String BlockTestInfo
 fromBinary bs = do
     block <- decode bs
     case block of
-        (bid, predb, 1 :: SerialMagic) -> Right (bid, withOriginFromMaybe predb)
-        _                              -> Left "wrong payload"
+        (bid, predb, h, 1 :: SerialMagic) -> Right (bid, withOriginFromMaybe predb, h)
+        _                                 -> Left "wrong payload"
 
 guessSlot :: BlockId -> SlotNo
 guessSlot = SlotNo . fromIntegral
 
 toBlock :: BlockTestInfo -> TestBlock
-toBlock (b, pb) = (b, pb, 1)
+toBlock (b, pb, h) = (b, pb, h, 1)
 
 fromBlock :: TestBlock -> BlockTestInfo
-fromBlock (bid, pbid, 1) = (bid, pbid)
-fromBlock _              = error "wrong payload"
+fromBlock (bid, pbid, h, 1) = (bid, pbid, h)
+fromBlock _                 = error "wrong payload"
 
 binarySize :: Word64
-binarySize = 25
+binarySize = 34
+
+headerOffset :: Word16
+headerOffset = 25
+
+headerSize :: Word16
+headerSize = 1
 
 myParser :: (MonadThrow m)
          => HasFS m h
@@ -94,14 +100,16 @@ parseImpl hasFS@HasFS{..} path =
       | otherwise
       = fromBinary . BL.toStrict <$> hGetExactly hasFS hndl binarySize >>= \case
           Left e              -> return (reverse ls, Just e)
-          Right (bid, prebid) ->
+          Right (bid, prebid, _h) ->
               go hndl ls' (offset + binarySize) maxOffset
             where
               ls' = (offset, (binarySize, blockInfo)) : ls
               blockInfo = BlockInfo
-                { bbid    = bid
-                , bslot   = guessSlot bid
-                , bpreBid = prebid
+                { bbid          = bid
+                , bslot         = guessSlot bid
+                , bpreBid       = prebid
+                , bheaderOffset = headerOffset
+                , bheaderSize   = headerSize
                 }
 
 

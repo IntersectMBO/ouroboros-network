@@ -27,6 +27,7 @@ import           Control.Monad.State
 import           Data.Bifunctor (bimap)
 import qualified Data.ByteString.Builder as BL
 import           Data.ByteString.Lazy (ByteString)
+import qualified Data.ByteString.Lazy as BL
 import           Data.Functor.Classes
 import           Data.Kind (Type)
 import qualified Data.List.NonEmpty as NE
@@ -35,6 +36,7 @@ import           Data.Maybe (fromJust, isJust, mapMaybe)
 import           Data.Set (Set)
 import qualified Data.Set as S
 import           Data.TreeDiff (ToExpr (..), defaultExprViaShow)
+import           Data.Word
 import           GHC.Generics
 import           GHC.Stack
 import           System.Random (getStdRandom, randomR)
@@ -117,8 +119,9 @@ data Cmd
     | Close
     | ReOpen
     | GetBlock BlockId
+    | GetHeader BlockId
     | GetBlockIds
-    | PutBlock BlockId Predecessor
+    | PutBlock BlockId Predecessor ByteString -- ^ @ByteString@ is the header.
     | GarbageCollect BlockId
     | AskIfMember [BlockId]
     | Corrupt Corruptions
@@ -165,6 +168,7 @@ instance ToExpr ParserError where
 instance CommandNames (At Cmd) where
     cmdName (At cmd) = case cmd of
         GetBlock {}          -> "GetBlock"
+        GetHeader {}         -> "GetHeader"
         GetBlockIds          -> "GetBlockIds"
         PutBlock {}          -> "PutBlock"
         GarbageCollect {}    -> "GarbageCollect"
@@ -247,10 +251,20 @@ runPure dbm (CmdErr cmd err) =
         go = case cmd of
             GetBlock bid       -> do
                 Blob <$> getBlockModel tnc bid
+            GetHeader bid ->
+                Blob <$> getHeaderModel tnc bid
             GetBlockIds        ->
                 Blocks <$> getBlockIdsModel tnc
-            PutBlock b pb      ->
-                Unit <$> putBlockModel tnc err (BlockInfo b (guessSlot b) pb) (BL.lazyByteString $ toBinary (b, pb))
+            PutBlock b pb h    -> do
+                let blockInfo = BlockInfo {
+                        bbid          = b
+                      , bslot         = guessSlot b
+                      , bpreBid       = pb
+                      , bheaderOffset = headerOffset
+                      , bheaderSize   = headerSize
+                      }
+                    blob = BL.lazyByteString $ toBinary (b, pb, h)
+                Unit <$> putBlockModel tnc err blockInfo blob
             GetSuccessors bids -> do
                 successors <- getSuccessorsModel tnc
                 return $ Successors $ successors <$> bids
@@ -293,8 +307,11 @@ runDB :: (HasCallStack, IOLike m)
       -> m Success
 runDB restCmd db cmd = case cmd of
     GetBlock bid       -> Blob <$> getBlock db bid
+    GetHeader bid      -> Blob <$> getHeader db bid
     GetBlockIds        -> Blocks <$> getBlockIds db
-    PutBlock b pb      -> Unit <$> putBlock db (BlockInfo b (guessSlot b) pb) (BL.lazyByteString $ toBinary (b, pb))
+    PutBlock b pb h    -> Unit <$> putBlock db
+      (BlockInfo b (guessSlot b) pb headerOffset headerSize)
+      (BL.lazyByteString $ toBinary (b, pb, h))
     GetSuccessors bids -> do
         successors <- atomically $ getSuccessors db
         return $ Successors $ successors <$> bids
@@ -387,6 +404,7 @@ generatorCmdImpl terminatingCmd m@Model {..} =
     let lastGC = latestGarbaged dbModel
     let dbFiles :: [FsPath] = getDBFiles dbModel
     ls <- filter (newer lastGC . guessSlot) <$> (listOf $ blockIdGenerator m)
+    header :: Word8 <- arbitrary
     bid <- do
         let bids = concat $ (\(f,(_, _, bs)) -> map (\(b, pb) -> (f, b, pb)) bs) <$> (M.toList $ index dbModel)
         case bids of
@@ -395,8 +413,9 @@ generatorCmdImpl terminatingCmd m@Model {..} =
     let duplicate = (\(f, b, pb) -> DuplicateBlock f b pb) <$> bid
     cmd <- frequency
         [ (150, return $ GetBlock sl)
+        , (150, return $ GetHeader sl)
         , (100, return $ GetBlockIds)
-        , (150, return $ PutBlock sl $ WithOrigin.At psl)
+        , (150, return $ PutBlock sl (WithOrigin.At psl) (BL.singleton header))
         , (100, return $ GetSuccessors $ WithOrigin.At sl : (WithOrigin.At <$> possiblePredecessors))
         , (100, return $ GetPredecessor ls)
         , (100, return $ GetMaxSlotNo)
@@ -431,6 +450,7 @@ generatorImpl mkErr terminatingCmd m@Model {..} = do
         return $ At $ CmdErr cmd err
     where
         noErrorFor GetBlock {}          = False
+        noErrorFor GetHeader {}         = False
         noErrorFor GetBlockIds          = False
         noErrorFor ReOpen {}            = False
         noErrorFor IsOpen {}            = False
@@ -513,7 +533,7 @@ semanticsRestCmd hasFS env db cmd = case cmd of
         reOpenDB db
         return $ Unit ()
     DuplicateBlock _file  bid preBid -> do
-        let specialEnc = toBinary (bid, preBid)
+        let specialEnc = toBinary (bid, preBid, "a")
         SomePair stHasFS st <- getInternalState env
         let hndl = Internal._currentWriteHandle st
         _ <- hPut stHasFS hndl (BL.lazyByteString specialEnc)
@@ -529,21 +549,22 @@ mockImpl model cmdErr = At <$> return mockResp
 
 knownLimitation :: Model Symbolic -> Cmd :@ Symbolic -> Logic
 knownLimitation model (At cmd) = case cmd of
-    GetBlock bid       -> Boolean $ isLimitation (latestGarbaged $ dbModel model) (guessSlot bid)
-    GetBlockIds        -> Bot
-    GetSuccessors {}   -> Bot
-    GetPredecessor {}  -> Bot
-    GetMaxSlotNo {}    -> Bot
-    PutBlock bid _pbid -> Boolean $ isLimitation (latestGarbaged $ dbModel model) (guessSlot bid)
-    GarbageCollect _sl -> Bot
-    IsOpen             -> Bot
-    Close              -> Bot
-    ReOpen             -> Bot
-    Corrupt _          -> Bot
-    CreateFile         -> Boolean $ not $ open $ dbModel model
-    AskIfMember bids   -> exists ((\b -> isLimitation (latestGarbaged $ dbModel model) (guessSlot b)) <$> bids) Boolean
-    CreateInvalidFile  -> Boolean $ not $ open $ dbModel model
-    DuplicateBlock {}  -> Boolean $ not $ open $ dbModel model
+    GetBlock bid         -> Boolean $ isLimitation (latestGarbaged $ dbModel model) (guessSlot bid)
+    GetHeader bid        -> Boolean $ isLimitation (latestGarbaged $ dbModel model) (guessSlot bid)
+    GetBlockIds          -> Bot
+    GetSuccessors {}     -> Bot
+    GetPredecessor {}    -> Bot
+    GetMaxSlotNo {}      -> Bot
+    PutBlock bid _pbid _ -> Boolean $ isLimitation (latestGarbaged $ dbModel model) (guessSlot bid)
+    GarbageCollect _sl   -> Bot
+    IsOpen               -> Bot
+    Close                -> Bot
+    ReOpen               -> Bot
+    Corrupt _            -> Bot
+    CreateFile           -> Boolean $ not $ open $ dbModel model
+    AskIfMember bids     -> exists ((\b -> isLimitation (latestGarbaged $ dbModel model) (guessSlot b)) <$> bids) Boolean
+    CreateInvalidFile    -> Boolean $ not $ open $ dbModel model
+    DuplicateBlock {}    -> Boolean $ not $ open $ dbModel model
     where
         isLimitation :: (Ord slot) => Maybe slot -> slot -> Bool
         isLimitation Nothing _sl       = False
@@ -641,7 +662,7 @@ tag ls = C.classify
     tagGarbageCollect keep bids mgced = successful $ \ev suc ->
         if not keep then Right $ tagGarbageCollect keep bids mgced
         else case (mgced, suc, getCmd ev) of
-            (Nothing, _, PutBlock bid _pbid)
+            (Nothing, _, PutBlock bid _pbid _h)
                 -> Right $ tagGarbageCollect True (S.insert bid bids) Nothing
             (Nothing, _, GarbageCollect bid)
                 -> Right $ tagGarbageCollect True bids (Just bid)

@@ -208,7 +208,8 @@ openDBFull hasFS err errSTM parser maxBlocksPerFile = do
         closeDB        = closeDBImpl  env
       , isOpenDB       = isOpenDBImpl env
       , reOpenDB       = reOpenDBImpl env
-      , getBlock       = getBlockImpl env
+      , getBlock       = getBlockImpl env GetBlock
+      , getHeader      = getBlockImpl env GetHeader
       , putBlock       = putBlockImpl env
       , garbageCollect = garbageCollectImpl env
       , getIsMember    = getIsMemberImpl env
@@ -276,19 +277,27 @@ reOpenDBImpl VolatileDBEnv{..} =
         st <- mkInternalStateDB _dbHasFS _dbErr _parser _maxBlocksPerFile
         return (VolatileDbOpen st, ())
 
+data GetWhat = GetBlock | GetHeader
+
 getBlockImpl :: (IOLike m, Ord blockId)
              => VolatileDBEnv m blockId
+             -> GetWhat
              -> blockId
              -> m (Maybe (SlotNo, ByteString))
-getBlockImpl env@VolatileDBEnv{..} blockId =
+getBlockImpl env@VolatileDBEnv{..} getWhat blockId =
     modifyState env $ \hasFS@HasFS{..} st@InternalState{..} ->
       case Map.lookup blockId _currentRevMap of
         Nothing -> return (st, Nothing)
         Just InternalBlockInfo {..} -> do
-          let size   = unBlockSize ibBlockSize
-              offset = AbsOffset ibSlotOffset
-          bs <- withFile hasFS ibFile ReadMode $ \hndl ->
-            hGetExactlyAt hasFS hndl size offset
+          bs <- withFile hasFS ibFile ReadMode $ \hndl -> do
+            let (offset, size) = case getWhat of
+                  GetBlock ->
+                    ( ibSlotOffset
+                    , unBlockSize ibBlockSize )
+                  GetHeader ->
+                    ( ibSlotOffset + fromIntegral ibHeaderOffset
+                    , fromIntegral ibHeaderSize )
+            hGetExactlyAt hasFS hndl size (AbsOffset offset)
           return (st, Just (ibSlot, bs))
 
 -- | This function follows the approach:
@@ -338,11 +347,13 @@ putBlockImpl env@VolatileDBEnv{..} BlockInfo{..} builder =
             (FileInfo.mkFileSlotInfo (BlockSize bytesWritten) bbid) fileInfo
         currentMap' = Index.insert _currentWriteId fileInfo' _currentMap
         internalBlockInfo' = InternalBlockInfo {
-            ibFile       = _currentWritePath
-          , ibSlotOffset = _currentWriteOffset
-          , ibBlockSize  = BlockSize bytesWritten
-          , ibSlot       = bslot
-          , ibPreBid     = bpreBid
+            ibFile         = _currentWritePath
+          , ibSlotOffset   = _currentWriteOffset
+          , ibBlockSize    = BlockSize bytesWritten
+          , ibSlot         = bslot
+          , ibPreBid       = bpreBid
+          , ibHeaderOffset = bheaderOffset
+          , ibHeaderSize   = bheaderSize
           }
         currentRevMap' = Map.insert bbid internalBlockInfo' _currentRevMap
         st' = st {
@@ -730,7 +741,16 @@ reverseMap file revMap mp = foldM go revMap (Map.toList mp)
        -> (SlotOffset, (BlockSize, BlockInfo blockId))
        -> Either VolatileDBError (ReverseIndex blockId)
     go rv (offset, (size, BlockInfo {..})) = case Map.lookup bbid rv of
-      Nothing -> Right $ Map.insert
-        bbid (InternalBlockInfo file offset size bslot bpreBid) rv
-      Just blockInfo -> Left $ UnexpectedError . ParserError
-        $ DuplicatedSlot bbid file (ibFile blockInfo)
+        Nothing -> Right $ Map.insert bbid internalBlockInfo rv
+        Just blockInfo -> Left $ UnexpectedError . ParserError
+          $ DuplicatedSlot bbid file (ibFile blockInfo)
+      where
+        internalBlockInfo = InternalBlockInfo {
+            ibFile         = file
+          , ibSlotOffset   = offset
+          , ibBlockSize    = size
+          , ibSlot         = bslot
+          , ibPreBid       = bpreBid
+          , ibHeaderOffset = bheaderOffset
+          , ibHeaderSize   = bheaderSize
+          }

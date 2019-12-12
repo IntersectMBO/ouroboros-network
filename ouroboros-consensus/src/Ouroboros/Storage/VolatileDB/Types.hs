@@ -15,7 +15,7 @@ import           Control.Exception (Exception (..))
 import           Data.Map.Strict (Map)
 import           Data.Set (Set)
 import           Data.Typeable
-import           Data.Word (Word64)
+import           Data.Word (Word16, Word64)
 import           GHC.Generics (Generic)
 
 import           Cardano.Prelude (NoUnexpectedThunks, first)
@@ -64,7 +64,7 @@ instance Exception VolatileDBError where
 
 data ParserError =
       forall blockId. (Typeable blockId, Eq blockId, Show blockId) =>
-        DuplicatedSlot blockId FsPath FsPath
+      DuplicatedSlot blockId FsPath FsPath
     | InvalidFilename FsPath
 
 deriving instance Show ParserError
@@ -131,16 +131,20 @@ type ParsedInfo blockId = [(SlotOffset, (BlockSize, BlockInfo blockId))]
 
 -- | The information that the user has to provide for each new block.
 data BlockInfo blockId = BlockInfo {
-      bbid    :: !blockId
-    , bslot   :: !SlotNo
-    , bpreBid :: !(WithOrigin blockId)
+      bbid          :: !blockId
+    , bslot         :: !SlotNo
+    , bpreBid       :: !(WithOrigin blockId)
+    , bheaderOffset :: !Word16
+    , bheaderSize   :: !Word16
     } deriving (Show, Generic, NoUnexpectedThunks)
 
 -- | The internal information the db keeps for each block.
 data InternalBlockInfo blockId = InternalBlockInfo {
-      ibFile       :: !FsPath
-    , ibSlotOffset :: !SlotOffset
-    , ibBlockSize  :: !BlockSize
-    , ibSlot       :: !SlotNo
-    , ibPreBid     :: !(WithOrigin blockId)
+      ibFile         :: !FsPath
+    , ibSlotOffset   :: !SlotOffset
+    , ibBlockSize    :: !BlockSize
+    , ibSlot         :: !SlotNo
+    , ibPreBid       :: !(WithOrigin blockId)
+    , ibHeaderOffset :: !Word16
+    , ibHeaderSize   :: !Word16
     } deriving (Show, Generic, NoUnexpectedThunks)

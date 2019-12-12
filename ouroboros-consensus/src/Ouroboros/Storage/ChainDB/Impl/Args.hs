@@ -155,7 +155,7 @@ fromChainDbArgs ChainDbArgs{..} = (
         , volErr              = cdbErrVolDb
         , volErrSTM           = cdbErrVolDbSTM
         , volBlocksPerFile    = cdbBlocksPerFile
-        , volEncodeBlock      = binaryBlob <$> cdbEncodeBlock
+        , volEncodeBlock      = cdbEncodeBlock
         , volDecodeBlock      = cdbDecodeBlock
         }
     , LgrDB.LgrDbArgs {

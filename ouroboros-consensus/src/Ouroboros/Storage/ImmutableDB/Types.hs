@@ -70,20 +70,6 @@ data HashInfo hash = HashInfo
   , putHash  :: !(hash -> Put)
   }
 
--- | Information about the serialised block.
-data BinaryInfo blob = BinaryInfo
-  { binaryBlob   :: !blob
-  , headerOffset :: !Word16
-    -- ^ The offset within the 'binaryBlob' at which the header starts.
-  , headerSize   :: !Word16
-    -- ^ How many bytes the header is long. Extracting the 'headerSize' bytes
-    -- from 'binaryBlob' starting from 'headerOffset' should yield the header.
-
-    -- In the future, i.e. Shelley, we might want to extend this to include a
-    -- field to tell where the transaction body ends and where the transaction
-    -- witnesses begin so we can only extract the transaction body.
-  } deriving (Show, Generic, Functor)
-
 -- | Parse the contents of an epoch file.
 --
 -- The parsing may include validation of the contents of the epoch file.

@@ -32,6 +32,7 @@ openDBMock err maxNumPerFile = do
         , isOpenDB       = wrapModel' dbVar  $ isOpenModel
         , reOpenDB       = wrapModel' dbVar  $ reOpenModel         err'
         , getBlock       = wrapModel' dbVar  . getBlockModel       err'
+        , getHeader      = wrapModel' dbVar  . getHeaderModel      err'
         , putBlock       = wrapModel' dbVar .: putBlockModel       err' Nothing
         , garbageCollect = wrapModel' dbVar  . garbageCollectModel err' Nothing
         , getIsMember    = wrapModel  dbVar  $ getIsMemberModel    err'
