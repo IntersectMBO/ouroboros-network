@@ -23,7 +23,7 @@ import           Control.Monad.Class.MonadThrow
 import           Control.Exception (SomeException, SomeAsyncException(..))
 
 
-
+--TODO: do we want to limit concurrency at all? Could use a QSem or a queue.
 data JobPool m a = JobPool {
        jobsVar         :: !(TVar m (Map (ThreadId m) (Async m ()))),
        completionQueue :: !(TQueue m a)

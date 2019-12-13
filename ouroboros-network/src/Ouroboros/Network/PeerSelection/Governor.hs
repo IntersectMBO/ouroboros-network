@@ -674,6 +674,8 @@ invariantPeerSelectionState PeerSelectionState{..} =
                      (Map.fromSet (const ()) publicRootPeers)
                      (KnownPeers.toMap knownPeers)
 
+    --TODO: all other peers have PeerSourceGossip, so no stale source info.
+
     -- We don't want to pick local root peers to forget, so it had better be
     -- the case that there's fewer of them than our target number.
  && Map.size localRootPeers <= targetNumberOfKnownPeers targets
@@ -865,11 +867,11 @@ data TracePeerSelection peeraddr peerconn =
      | TracePromoteWarmFailed  peeraddr SomeException
      | TracePromoteWarmDone    peeraddr
      | TraceDemoteWarmPeers    Int Int (Set peeraddr) -- target, actual, selected
-     | TraceDemoteWarmFailed   (Set peeraddr) SomeException
-     | TraceDemoteWarmDone     (Set peeraddr)
+     | TraceDemoteWarmFailed   peeraddr SomeException
+     | TraceDemoteWarmDone     peeraddr
      | TraceDemoteHotPeers     Int Int (Set peeraddr)
-     | TraceDemoteHotFailed    (Set peeraddr) SomeException
-     | TraceDemoteHotDone      (Set peeraddr)
+     | TraceDemoteHotFailed    peeraddr SomeException
+     | TraceDemoteHotDone      peeraddr
      | TraceGovernorLoopDebug  (PeerSelectionState peeraddr peerconn) (Maybe DiffTime)
      | TraceGovernorWakeup
   deriving Show
@@ -1443,46 +1445,49 @@ establishedPeersAboveTarget actions
                           inProgressDemoteWarm = inProgressDemoteWarm
                                               <> selectedToDemote
                         },
-        decisionJobs  = [jobDemoteEstablishedPeers actions selectedToDemote']
+        decisionJobs  = [ jobDemoteEstablishedPeer actions peeraddr peerconn
+                        | (peeraddr, peerconn) <- Map.assocs selectedToDemote' ]
       }
 
   | otherwise
   = GuardedSkip Nothing
 
-jobDemoteEstablishedPeers :: forall peeraddr peerconn m.
-                             (Monad m, Ord peeraddr)
-                          => PeerSelectionActions peeraddr peerconn m
-                          -> Map peeraddr peerconn
-                          -> Job m (Completion m peeraddr peerconn)
-jobDemoteEstablishedPeers PeerSelectionActions{closePeerConnection}
-                          selectedToDemote =
+jobDemoteEstablishedPeer :: forall peeraddr peerconn m.
+                            (Monad m, Ord peeraddr)
+                         => PeerSelectionActions peeraddr peerconn m
+                         -> peeraddr
+                         -> peerconn
+                         -> Job m (Completion m peeraddr peerconn)
+jobDemoteEstablishedPeer PeerSelectionActions{closePeerConnection}
+                         peeraddr peerconn =
     Job job handler
   where
     handler :: SomeException -> Completion m peeraddr peerconn
     handler e =
       -- It's quite bad if closing fails, but the best we can do is revert to
-      -- the state where we believed these peers are still warm, since then we
-      -- can have another go at the ones we didn't yet try to close, or perhaps
-      -- it'll be closed for other reasons and our monitoring will notice it.
+      -- the state where we believed this peer is still warm, since then we
+      -- can have another go or perhaps it'll be closed for other reasons and
+      -- our monitoring will notice it.
       Completion $ \st _now -> Decision {
-        decisionTrace = TraceDemoteWarmFailed
-                          (Map.keysSet selectedToDemote) e,
+        decisionTrace = TraceDemoteWarmFailed peeraddr e,
         decisionState = st {
-                          inProgressDemoteWarm = inProgressDemoteWarm st
-                                          Set.\\ Map.keysSet selectedToDemote
+                          inProgressDemoteWarm = Set.delete peeraddr
+                                                   (inProgressDemoteWarm st)
                         },
         decisionJobs  = []
       }
 
     job :: m (Completion m peeraddr peerconn)
     job = do
-      mapM_ closePeerConnection selectedToDemote
-      -- We do the state updates in the monitoring when we observe the state
-      -- change. So it's actually ok if closePeerConnection is async.
+      closePeerConnection peerconn
       return $ Completion $ \st _now -> Decision {
-        decisionTrace = TraceDemoteWarmDone
-                          (Map.keysSet selectedToDemote),
-        decisionState = st,
+        decisionTrace = TraceDemoteWarmDone peeraddr,
+        decisionState = st {
+                          inProgressDemoteWarm = Set.delete peeraddr
+                                                   (inProgressDemoteWarm st),
+                          establishedPeers     = Map.delete peeraddr
+                                                   (establishedPeers st)
+                        },
         decisionJobs  = []
       }
 
@@ -1515,7 +1520,8 @@ activePeersBelowTarget actions
           -- The numPeersToPromote is positive due to the first guard.
       let availableToPromote :: Map peeraddr KnownPeerInfo
           availableToPromote = KnownPeers.toMap knownPeers
-                                 Map.\\ establishedPeers
+                                `Map.intersection` establishedPeers
+                                `Map.withoutKeys` activePeers
                                 `Map.withoutKeys` inProgressPromoteWarm
           numPeersToPromote  = targetNumberOfActivePeers
                              - numActivePeers
@@ -1580,6 +1586,8 @@ jobPromoteWarmPeer PeerSelectionActions{activatePeerConnection}
       return $ Completion $ \st _now -> Decision {
         decisionTrace = TracePromoteWarmDone peeraddr,
         decisionState = st {
+                          activePeers           = Set.insert peeraddr
+                                                    (activePeers st),
                           inProgressPromoteWarm = Set.delete peeraddr
                                                     (inProgressPromoteWarm st)
                         },
@@ -1640,19 +1648,21 @@ activePeersAboveTarget actions
                           inProgressDemoteHot = inProgressDemoteHot
                                              <> selectedToDemote
                         },
-        decisionJobs  = [jobDemoteActivePeers actions selectedToDemote']
+        decisionJobs  = [ jobDemoteActivePeer actions peeraddr peerconn
+                        | (peeraddr, peerconn) <- Map.assocs selectedToDemote' ]
       }
 
   | otherwise
   = GuardedSkip Nothing
 
-jobDemoteActivePeers :: forall peeraddr peerconn m.
-                        (Monad m, Ord peeraddr)
-                     => PeerSelectionActions peeraddr peerconn m
-                     -> Map peeraddr peerconn
-                     -> Job m (Completion m peeraddr peerconn)
-jobDemoteActivePeers PeerSelectionActions{deactivatePeerConnection}
-                     selectedToDemote =
+jobDemoteActivePeer :: forall peeraddr peerconn m.
+                       (Monad m, Ord peeraddr)
+                    => PeerSelectionActions peeraddr peerconn m
+                    -> peeraddr
+                    -> peerconn
+                    -> Job m (Completion m peeraddr peerconn)
+jobDemoteActivePeer PeerSelectionActions{deactivatePeerConnection}
+                    peeraddr peerconn =
     Job job handler
   where
     handler :: SomeException -> Completion m peeraddr peerconn
@@ -1662,38 +1672,43 @@ jobDemoteActivePeers PeerSelectionActions{deactivatePeerConnection}
       -- can have another go at the ones we didn't yet try to close, or perhaps
       -- it'll be closed for other reasons and our monitoring will notice it.
       Completion $ \st _now -> Decision {
-        decisionTrace = TraceDemoteHotFailed
-                          (Map.keysSet selectedToDemote) e,
+        decisionTrace = TraceDemoteHotFailed peeraddr e,
         decisionState = st {
-                          inProgressDemoteHot = inProgressDemoteHot st
-                                         Set.\\ Map.keysSet selectedToDemote
+                          inProgressDemoteHot = Set.delete peeraddr
+                                                  (inProgressDemoteHot st)
                         },
         decisionJobs  = []
       }
 
     job :: m (Completion m peeraddr peerconn)
     job = do
-      mapM_ deactivatePeerConnection selectedToDemote
-      -- We do the state updates in the monitoring when we observe the state
-      -- change. So it's actually ok if deactivatePeerConnection is async.
+      deactivatePeerConnection peerconn
       return $ Completion $ \st _now -> Decision {
-        decisionTrace = TraceDemoteHotDone
-                          (Map.keysSet selectedToDemote),
-        decisionState = st,
+        decisionTrace = TraceDemoteHotDone peeraddr,
+        decisionState = st {
+                          inProgressDemoteHot = Set.delete peeraddr
+                                                  (inProgressDemoteHot st),
+                          activePeers         = Set.delete peeraddr
+                                                  (activePeers st)
+                        },
         decisionJobs  = []
       }
 
 
 
-changedLocalRootPeers :: (MonadSTM m, Ord peeraddr)
+changedLocalRootPeers :: forall peeraddr peerconn m.
+                         (MonadSTM m, Ord peeraddr)
                       => PeerSelectionActions peeraddr peerconn m
                       -> PeerSelectionState peeraddr peerconn
                       -> Guarded (STM m) (Decision m peeraddr peerconn)
-changedLocalRootPeers PeerSelectionActions{readLocalRootPeers}
+changedLocalRootPeers actions@PeerSelectionActions{readLocalRootPeers}
                       st@PeerSelectionState{
                         localRootPeers,
                         publicRootPeers,
                         knownPeers,
+                        establishedPeers,
+                        activePeers,
+                        inProgressDemoteHot,
                         targets = PeerSelectionTargets{targetNumberOfKnownPeers}
                       } =
     Guarded Nothing $ do
@@ -1705,24 +1720,51 @@ changedLocalRootPeers PeerSelectionActions{readLocalRootPeers}
 
       let added       = localRootPeers' Map.\\ localRootPeers
           removed     = localRootPeers  Map.\\ localRootPeers'
+          addedSet    = Map.keysSet added
+          removedSet  = Map.keysSet removed
           knownPeers' = KnownPeers.insert PeerSourceLocalRoot
                                           (added Map.!)
-                                          (Map.keysSet added)
-                      . KnownPeers.delete (Map.keysSet removed)
+                                          addedSet
+
+                        -- We do not immediately remove old ones from the
+                        -- known peers set because we may have established
+                        -- connections, but we mark them so that policy
+                        -- functions can prioritise them to forget:
+                      . KnownPeers.insert PeerSourceStaleRoot
+                                          (const DoNotAdvertisePeer)
+                                          removedSet
                       $ knownPeers
-          -- Have to adjust the publicRootPeers to maintain the invariant that
-          -- the local and public sets are non-overlapping.
+
+          -- We have to adjust the publicRootPeers to maintain the invariant
+          -- that the local and public sets are non-overlapping.
           publicRootPeers' = publicRootPeers Set.\\ Map.keysSet localRootPeers'
-      --TODO: when we have established/active peers and they're
-      -- removed then we should disconnect from them.
+
+          -- If we are removing local roots and we have active connections to
+          -- them then things are a little more complicated. We would typically
+          -- change local roots so that we can establish new connections to
+          -- the new local roots. But since we will typically already be at our
+          -- target for active peers then that will not be possible without us
+          -- taking additional action. What we choose to do here is to demote
+          -- the peer from active to warm, which will then allow new ones to
+          -- be promoted to active.
+          selectedToDemote  :: Set peeraddr
+          selectedToDemote' :: Map peeraddr peerconn
+
+          selectedToDemote  = activePeers `Set.intersection` removedSet
+          selectedToDemote' = establishedPeers
+                               `Map.restrictKeys` selectedToDemote
       return Decision {
-        decisionTrace = TraceLocalRootPeersChanged localRootPeers localRootPeers',
+        decisionTrace = TraceLocalRootPeersChanged localRootPeers
+                                                   localRootPeers',
         decisionState = st {
-                          localRootPeers  = localRootPeers',
-                          publicRootPeers = publicRootPeers',
-                          knownPeers      = knownPeers'
+                          localRootPeers      = localRootPeers',
+                          publicRootPeers     = publicRootPeers',
+                          knownPeers          = knownPeers',
+                          inProgressDemoteHot = inProgressDemoteHot
+                                             <> selectedToDemote
                         },
-        decisionJobs  = []
+        decisionJobs  = [ jobDemoteActivePeer actions peeraddr peerconn
+                        | (peeraddr, peerconn) <- Map.assocs selectedToDemote' ]
       }
 
 

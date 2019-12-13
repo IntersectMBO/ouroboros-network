@@ -79,7 +79,9 @@ data GovernorMockEnvironment = GovernorMockEnvironment {
        publicRootPeers         :: Set PeerAddr,
        targets                 :: PeerSelectionTargets,
        pickKnownPeersForGossip :: PickScript,
-       pickColdPeersToForget   :: PickScript
+       pickColdPeersToForget   :: PickScript,
+       pickColdPeersToPromote  :: PickScript,
+       pickWarmPeersToPromote  :: PickScript
      }
   deriving Show
 
@@ -88,7 +90,8 @@ data GovernorMockEnvironment = GovernorMockEnvironment {
 newtype PeerAddr = PeerAddr Int
   deriving (Eq, Ord, Show)
 
-data PeerConn
+data PeerConn = PeerConn
+  deriving Show
 
 -- | The peer graph is the graph of all the peers in the mock p2p network, in
 -- traditional adjacency representation.
@@ -204,11 +207,12 @@ mockPeerSelectionActions GovernorMockEnvironment {
       requestPublicRootPeers   = \_ -> return (publicRootPeers, 0),
       readPeerSelectionTargets = return targets,
       requestPeerGossip,
-      establishPeerConnection  = fail "establishPeerConnection",
-      monitorPeerConnection    = fail "monitorPeerConnection",
-      activatePeerConnection   = fail "activatePeerConnection",
-      deactivatePeerConnection = fail "deactivatePeerConnection",
-      closePeerConnection      = fail "closePeerConnection"
+      --TODO: do the peer established and active model properly
+      establishPeerConnection  = \_ -> return PeerConn,
+      monitorPeerConnection    = fail "TODO: monitorPeerConnection",
+      activatePeerConnection   = \_ -> return (),
+      deactivatePeerConnection = fail "TODO: deactivatePeerConnection",
+      closePeerConnection      = fail "TODO: closePeerConnection"
     }
   where
     stepGossipScript scriptVar = do
@@ -234,17 +238,21 @@ mockPeerSelectionPolicy  :: MonadSTM m
                          -> m (PeerSelectionPolicy PeerAddr m)
 mockPeerSelectionPolicy GovernorMockEnvironment {
                           pickKnownPeersForGossip,
-                          pickColdPeersToForget
+                          pickColdPeersToForget,
+                          pickColdPeersToPromote,
+                          pickWarmPeersToPromote
                         } = do
     pickKnownPeersForGossipVar <- newTVarM pickKnownPeersForGossip
     pickColdPeersToForgetVar   <- newTVarM pickColdPeersToForget
+    pickColdPeersToPromoteVar  <- newTVarM pickColdPeersToPromote
+    pickWarmPeersToPromoteVar  <- newTVarM pickWarmPeersToPromote
     return PeerSelectionPolicy {
       policyPickKnownPeersForGossip = interpretPickScript pickKnownPeersForGossipVar,
       policyPickColdPeersToForget   = interpretPickScript pickColdPeersToForgetVar,
-      policyPickColdPeersToPromote  = fail "policyPickColdPeersToPromote",
-      policyPickWarmPeersToPromote  = fail "policyPickWarmPeersToPromote",
-      policyPickHotPeersToDemote    = fail "policyPickHotPeersToDemote",
-      policyPickWarmPeersToDemote   = fail "policyPickWarmPeersToDemote",
+      policyPickColdPeersToPromote  = interpretPickScript pickColdPeersToPromoteVar,
+      policyPickWarmPeersToPromote  = interpretPickScript pickWarmPeersToPromoteVar,
+      policyPickHotPeersToDemote    = fail "TODO: policyPickHotPeersToDemote",
+      policyPickWarmPeersToDemote   = fail "TODO: policyPickWarmPeersToDemote",
       policyFindPublicRootTimeout   = 5,    -- seconds
       policyMaxInProgressGossipReqs = 2,
       policyGossipRetryTime         = 3600, -- seconds
@@ -300,6 +308,7 @@ pickMapKeys m ns =
 -- * time to stabilise after a change is not crazy
 -- * time to find new nodes after a graph change is ok
 -- * targets or root peer set dynamic
+-- * check local root peers are what we expect
 
 
 -- | Run the governor for up to 24 hours (simulated obviously) and see if it
@@ -332,16 +341,16 @@ prop_governor_nolivelock env =
     hasOutput []    = counterexample "no trace output" $
                       property False
 
-    -- Check that events that are 100 events apart have an adequate time
-    -- between them, to indicate we're not in a busy livelock situation.
-    makesAdequateProgress :: DiffTime -> [Time] -> Bool
-    makesAdequateProgress adequate ts =
-        go ts (drop 100 ts)
-      where
-        go (a:as) (b:bs)
-          | diffTime b a < adequate = False
-          | otherwise               = go as bs
-        go _ _ = True
+-- Check that events that are 100 events apart have an adequate time
+-- between them, to indicate we're not in a busy livelock situation.
+makesAdequateProgress :: DiffTime -> [Time] -> Bool
+makesAdequateProgress adequate ts =
+    go ts (drop 100 ts)
+  where
+    go (a:as) (b:bs)
+      | diffTime b a < adequate = False
+      | otherwise               = go as bs
+    go _ _ = True
 
 -- | Run the governor for up to 1 hour (simulated obviously) and look at the
 -- set of known peers it has selected. This uses static targets and root peers.
@@ -509,6 +518,8 @@ instance Arbitrary GovernorMockEnvironment where
       targets                 <- arbitrary
       pickKnownPeersForGossip <- arbitrary
       pickColdPeersToForget   <- arbitrary
+      pickColdPeersToPromote  <- arbitrary
+      pickWarmPeersToPromote  <- arbitrary
       return GovernorMockEnvironment{..}
     where
       arbitraryRootPeers :: Set PeerAddr
