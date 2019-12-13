@@ -53,6 +53,8 @@ extra-deps:
       - .
       - test
 
+  - ../pokemon-ledger/
+
   - bimap-0.4.0
   - binary-0.8.7.0
   - generic-monoid-0.1.0.0
