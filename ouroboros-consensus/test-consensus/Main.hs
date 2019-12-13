@@ -17,6 +17,8 @@ import qualified Test.Dynamic.Praos (tests)
 import qualified Test.Dynamic.RealPBFT (tests)
 import qualified Test.Dynamic.Util.Tests (tests)
 
+import qualified Test.Util.Split (tests)
+
 main :: IO ()
 main = defaultMain tests
 
@@ -37,4 +39,5 @@ tests =
   , Test.Dynamic.PBFT.tests
   , Test.Dynamic.Praos.tests
   , Test.Dynamic.RealPBFT.tests
+  , Test.Util.Split.tests
   ]
