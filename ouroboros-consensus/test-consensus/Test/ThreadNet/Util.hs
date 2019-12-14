@@ -37,12 +37,10 @@ import           Ouroboros.Network.MockChain.Chain (Chain (..))
 import qualified Ouroboros.Network.MockChain.Chain as Chain
 
 import           Ouroboros.Consensus.BlockchainTime.Mock
-import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Node.ProtocolInfo.Abstract
                      (NumCoreNodes (..))
 import           Ouroboros.Consensus.NodeId
-import           Ouroboros.Consensus.Protocol.Abstract (NodeConfig,
-                     SecurityParam (..))
+import           Ouroboros.Consensus.Protocol.Abstract (SecurityParam (..))
 import           Ouroboros.Consensus.Protocol.LeaderSchedule
                      (LeaderSchedule (..))
 import           Ouroboros.Consensus.Util.Condense
@@ -123,10 +121,10 @@ genesisBlockInfo = BlockInfo
 
 
 blockInfo :: (HasHeader b, HasCreator b)
-          => NodeConfig (BlockProtocol b) -> b -> BlockInfo b
-blockInfo nc b = BlockInfo
+          => b -> BlockInfo b
+blockInfo b = BlockInfo
     { biSlot     = blockSlot b
-    , biCreator  = Just $ getCreator nc b
+    , biCreator  = Just $ getCreator b
     , biHash     = BlockHash $ blockHash b
     , biPrevious = Just $ blockPrevHash b
     }
@@ -166,16 +164,16 @@ tracesToDot :: forall b. (HasHeader b, HasCreator b)
             -> String
 tracesToDot traces = Text.unpack $ printDotGraph $ graphToDot quickParams graph
   where
-    chainBlockInfos :: NodeConfig (BlockProtocol b) -> Chain b
+    chainBlockInfos :: Chain b
                     -> Map (ChainHash b) (BlockInfo b)
-    chainBlockInfos nc = Chain.foldChain f (Map.singleton GenesisHash genesisBlockInfo)
+    chainBlockInfos = Chain.foldChain f (Map.singleton GenesisHash genesisBlockInfo)
       where
-        f m b = let info = blockInfo nc b
+        f m b = let info = blockInfo b
                 in  Map.insert (biHash info) info m
 
     blockInfos :: Map (ChainHash b) (BlockInfo b)
     blockInfos = Map.unions
-      [ chainBlockInfos (nodeOutputCfg no) (nodeOutputFinalChain no)
+      [ chainBlockInfos (nodeOutputFinalChain no)
       | no <- Map.elems traces
       ]
 
