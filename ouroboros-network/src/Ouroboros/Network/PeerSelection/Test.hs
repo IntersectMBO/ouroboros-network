@@ -182,6 +182,7 @@ runGovernorInMockEnvironment mockEnv =
       policy  <- mockPeerSelectionPolicy  mockEnv
       peerSelectionGovernor
         dynamicTracer
+        dynamicTracer
         actions
         policy
 
@@ -343,7 +344,18 @@ prop_governor_nolivelock env =
     hasOutput :: [a] -> Property
     hasOutput (_:_) = property True
     hasOutput []    = counterexample "no trace output" $
-                      property False
+                      property (isEmptyEnv env)
+
+isEmptyEnv :: GovernorMockEnvironment -> Bool
+isEmptyEnv GovernorMockEnvironment {
+             localRootPeers,
+             publicRootPeers,
+             targets
+           } =
+    (Map.null localRootPeers  || targetNumberOfKnownPeers targets == 0)
+ && (Set.null publicRootPeers || targetNumberOfRootPeers  targets == 0)
+ 
+
 
 -- Check that events that are 100 events apart have an adequate time
 -- between them, to indicate we're not in a busy livelock situation.
@@ -374,7 +386,7 @@ prop_governor_gossip_1hr env@GovernorMockEnvironment{
                               publicRootPeers,
                               targets
                             } =
-    let trace      = selectPeerSelectionTraceEvents $
+    let trace      = selectPeerSelectionDebugEvents $
                        runGovernorInMockEnvironment env {
                          -- This test is only about testing gossiping,
                          -- so do not try to establish connections:
@@ -389,10 +401,12 @@ prop_governor_gossip_1hr env@GovernorMockEnvironment{
      in subsetProperty    found reachable
    .&&. bigEnoughProperty found reachable
   where
+    knownPeersAfter1Hour :: [(Time, DebugPeerSelection PeerAddr PeerConn)]
+                         -> Maybe (Set PeerAddr)
     knownPeersAfter1Hour trace =
       listToMaybe
         [ Map.keysSet (KnownPeers.toMap (Governor.knownPeers st))
-        | (_, TraceGovernorLoopDebug st _) <- reverse (takeFirstNHours 1 trace) ]
+        | (_, TraceGovernorState st _) <- reverse (takeFirstNHours 1 trace) ]
 
     -- The ones we find should be a subset of the ones possible to find
     subsetProperty found reachable =
@@ -431,7 +445,7 @@ dynamicTracer :: Typeable a => Tracer (SimM s) a
 dynamicTracer = Tracer traceM
 
 selectPeerSelectionTraceEvents :: Trace a
-                               -> [(Time, TracePeerSelection PeerAddr PeerConn)]
+                               -> [(Time, TracePeerSelection PeerAddr)]
 selectPeerSelectionTraceEvents = go
   where
     go (Trace t _ _ (EventLog e) trace)
@@ -441,9 +455,18 @@ selectPeerSelectionTraceEvents = go
     go (TraceDeadlock      _   _) = [] -- expected result in many cases
     go (TraceMainReturn    _ _ _) = []
 
-takeFirstNHours :: DiffTime
-                -> [(Time, TracePeerSelection PeerAddr PeerConn)]
-                -> [(Time, TracePeerSelection PeerAddr PeerConn)]
+selectPeerSelectionDebugEvents :: Trace a
+                               -> [(Time, DebugPeerSelection PeerAddr PeerConn)]
+selectPeerSelectionDebugEvents = go
+  where
+    go (Trace t _ _ (EventLog e) trace)
+     | Just x <- fromDynamic e    = (t,x) : go trace
+    go (Trace _ _ _ _ trace)      =         go trace
+    go (TraceMainException _ e _) = throw e
+    go (TraceDeadlock      _   _) = [] -- expected result in many cases
+    go (TraceMainReturn    _ _ _) = []
+
+takeFirstNHours :: DiffTime -> [(Time, a)] -> [(Time, a)]
 takeFirstNHours h = takeWhile (\(t,_) -> t < Time (60*60*h))
 
 -- | The peers that are notionally reachable from the root set. It is notional
@@ -793,7 +816,7 @@ governorFindingPublicRoots targetNumberOfRootPeers domains =
       domains $ \requestPublicRootPeers ->
 
         peerSelectionGovernor
-          tracer
+          tracer tracer
           actions { requestPublicRootPeers }
           policy
   where

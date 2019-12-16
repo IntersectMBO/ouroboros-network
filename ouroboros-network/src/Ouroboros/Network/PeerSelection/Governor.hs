@@ -18,6 +18,7 @@ module Ouroboros.Network.PeerSelection.Governor (
     PeerSelectionTargets(..),
     PeerSelectionActions(..),
     TracePeerSelection(..),
+    DebugPeerSelection(..),
     peerSelectionGovernor,
 
     -- * Peer churn governor
@@ -25,6 +26,7 @@ module Ouroboros.Network.PeerSelection.Governor (
     peerChurnGovernor,
 
     sanePeerSelectionTargets, --TODO: perhaps better to move to Types module
+    nullPeerSelectionTargets,
     PeerSelectionState(..),
 ) where
 
@@ -705,14 +707,16 @@ invariantPeerSelectionState PeerSelectionState{..} =
 --
 peerSelectionGovernor :: (MonadAsync m, MonadMask m, MonadTime m, MonadTimer m,
                           Alternative (STM m), Ord peeraddr)
-                      => Tracer m (TracePeerSelection peeraddr peerconn)
+                      => Tracer m (TracePeerSelection peeraddr)
+                      -> Tracer m (DebugPeerSelection peeraddr peerconn)
                       -> PeerSelectionActions peeraddr peerconn m
                       -> PeerSelectionPolicy  peeraddr m
                       -> m Void
-peerSelectionGovernor tracer actions policy =
+peerSelectionGovernor tracer debugTracer actions policy =
     JobPool.withJobPool $ \jobPool ->
       peerSelectionGovernorLoop
-        tracer actions policy
+        tracer debugTracer
+        actions policy
         jobPool
         emptyPeerSelectionState
 
@@ -736,13 +740,14 @@ peerSelectionGovernorLoop :: forall m peeraddr peerconn.
                              (MonadAsync m, MonadMask m,
                               MonadTime m, MonadTimer m,
                               Alternative (STM m), Ord peeraddr)
-                          => Tracer m (TracePeerSelection peeraddr peerconn)
+                          => Tracer m (TracePeerSelection peeraddr)
+                          -> Tracer m (DebugPeerSelection peeraddr peerconn)
                           -> PeerSelectionActions peeraddr peerconn m
                           -> PeerSelectionPolicy  peeraddr m
                           -> JobPool m (Completion m peeraddr peerconn)
                           -> PeerSelectionState peeraddr peerconn
                           -> m Void
-peerSelectionGovernorLoop tracer
+peerSelectionGovernorLoop tracer debugTracer
                           actions@PeerSelectionActions{..}
                           policy@PeerSelectionPolicy{..}
                           jobPool =
@@ -771,12 +776,12 @@ peerSelectionGovernorLoop tracer
           fail "peerSelectionGovernorLoop: impossible: nothing to do"
 
         Guarded Nothing decisionAction -> do
-          traceWith tracer (TraceGovernorLoopDebug st Nothing)
+          traceWith debugTracer (TraceGovernorState st Nothing)
           atomically decisionAction
 
         Guarded (Just (Min wakeupAt)) decisionAction -> do
           let wakeupIn = diffTime wakeupAt now
-          traceWith tracer (TraceGovernorLoopDebug st (Just wakeupIn))
+          traceWith debugTracer (TraceGovernorState st (Just wakeupIn))
           wakupTimeout <- newTimeout wakeupIn
           let wakeup    = awaitTimeout wakupTimeout >> pure (wakeupDecision st)
           decision     <- atomically (decisionAction <|> wakeup)
@@ -825,7 +830,7 @@ instance Alternative m => Semigroup (Guarded m a) where
 
 data Decision m peeraddr peerconn = Decision {
          -- | A trace event to classify the decision and action
-       decisionTrace :: TracePeerSelection peeraddr peerconn,
+       decisionTrace :: TracePeerSelection peeraddr,
 
          -- | An updated state to use immediately
        decisionState :: PeerSelectionState peeraddr peerconn,
@@ -850,7 +855,7 @@ newtype Completion m peeraddr peerconn =
         Completion (PeerSelectionState peeraddr peerconn
                  -> Time -> Decision m peeraddr peerconn)
 
-data TracePeerSelection peeraddr peerconn =
+data TracePeerSelection peeraddr =
        TraceLocalRootPeersChanged (Map peeraddr PeerAdvertise)
                                   (Map peeraddr PeerAdvertise)
      | TraceTargetsChanged     PeerSelectionTargets PeerSelectionTargets
@@ -859,7 +864,7 @@ data TracePeerSelection peeraddr peerconn =
      | TracePublicRootsFailure SomeException Int DiffTime
      | TraceGossipRequests     Int Int (Set peeraddr) (Set peeraddr) -- target, actual, selected
      | TraceGossipResults      [(peeraddr, Either SomeException [peeraddr])] --TODO: classify failures
-     | TraceForgetColdPeers   Int Int (Set peeraddr) -- target, actual, selected
+     | TraceForgetColdPeers    Int Int (Set peeraddr) -- target, actual, selected
      | TracePromoteColdPeers   Int Int (Set peeraddr)
      | TracePromoteColdFailed  peeraddr SomeException
      | TracePromoteColdDone    peeraddr
@@ -872,10 +877,13 @@ data TracePeerSelection peeraddr peerconn =
      | TraceDemoteHotPeers     Int Int (Set peeraddr)
      | TraceDemoteHotFailed    peeraddr SomeException
      | TraceDemoteHotDone      peeraddr
-     | TraceGovernorLoopDebug  (PeerSelectionState peeraddr peerconn) (Maybe DiffTime)
      | TraceGovernorWakeup
   deriving Show
 
+data DebugPeerSelection peeraddr peerconn =
+       TraceGovernorState  (PeerSelectionState peeraddr peerconn)
+                           (Maybe DiffTime)
+  deriving Show
 
 rootPeersBelowTarget :: (MonadSTM m, Ord peeraddr)
                      => PeerSelectionActions peeraddr peerconn m
