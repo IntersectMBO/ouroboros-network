@@ -9,11 +9,13 @@ module Test.Dynamic.RealPBFT (
     tests
   ) where
 
+import           Data.Coerce (coerce)
 import           Data.Foldable (find)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
-import           Data.Maybe (fromJust)
+import           Data.Maybe (fromJust, mapMaybe)
 import           Data.Time (Day (..), UTCTime (..))
+import           Data.Word (Word64)
 
 import           Numeric.Search.Range (searchFromTo)
 import           Test.QuickCheck
@@ -24,18 +26,25 @@ import           Ouroboros.Network.Block (SlotNo (..))
 import           Ouroboros.Network.MockChain.Chain (Chain)
 import qualified Ouroboros.Network.MockChain.Chain as Chain
 
+import           Ouroboros.Consensus.Block (getHeader)
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.BlockchainTime.Mock
 import           Ouroboros.Consensus.Ledger.Byron (ByronBlock, forgeEBB)
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Node.ProtocolInfo.Byron (plcCoreNodeId)
+import           Ouroboros.Consensus.Node.Run.Abstract (nodeIsEBB)
 import           Ouroboros.Consensus.NodeId
 import           Ouroboros.Consensus.Protocol
+import           Ouroboros.Consensus.Util.Condense (condense)
 import           Ouroboros.Consensus.Util.Random
+
+import           Ouroboros.Storage.Common (EpochNo (..))
 
 import qualified Cardano.Chain.Common as Common
 import qualified Cardano.Chain.Delegation as Delegation
 import qualified Cardano.Chain.Genesis as Genesis
+import           Cardano.Chain.ProtocolConstants (kEpochSlots)
+import           Cardano.Chain.Slotting (unEpochSlots)
 import qualified Cardano.Chain.Update as Update
 import qualified Cardano.Crypto as Crypto
 import qualified Test.Cardano.Chain.Genesis.Dummy as Dummy
@@ -156,6 +165,7 @@ prop_simple_real_pbft_convergence
         (Just $ roundRobinLeaderSchedule numCoreNodes numSlots)
         testOutput
     .&&. not (all Chain.null finalChains)
+    .&&. conjoin (map (hasAllEBBs k numSlots) finalChains)
   where
     testOutput =
         runTestNetwork
@@ -174,6 +184,19 @@ prop_simple_real_pbft_convergence
     genesisSecrets :: Genesis.GeneratedSecrets
     (genesisConfig, genesisSecrets) = generateGenesisConfig params
 
+hasAllEBBs :: SecurityParam -> NumSlots -> Chain ByronBlock -> Property
+hasAllEBBs k (NumSlots t) c =
+    counterexample ("Missing or unexpected EBBs in " <> condense c) $
+    actual === expected
+  where
+    expected :: [EpochNo]
+    expected = coerce [0 .. hi]
+      where
+        hi :: Word64
+        hi = if t < 1 then 0 else fromIntegral (t - 1) `div` denom
+        denom = unEpochSlots $ kEpochSlots $ coerce k
+
+    actual   = mapMaybe (nodeIsEBB . getHeader) $ Chain.toOldestFirst c
 
 mkProtocolRealPBFT :: PBftParams
                    -> CoreNodeId
