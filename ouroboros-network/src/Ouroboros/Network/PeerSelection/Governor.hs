@@ -47,7 +47,7 @@ import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
 import           Control.Tracer (Tracer(..), traceWith)
 import           Control.Exception (Exception(..), assert, SomeException)
-
+import           GHC.Stack
 
 import           Ouroboros.Network.PeerSelection.Types
 import qualified Ouroboros.Network.PeerSelection.KnownPeers as KnownPeers
@@ -455,7 +455,7 @@ type PickPolicy peeraddr m = Map peeraddr KnownPeerInfo
                           -> STM m (Set peeraddr)
 
 -- | Check pre-conditions and post-conditions on the pick policies
-pickPeers :: (Ord peeraddr, Functor m)
+pickPeers :: (Ord peeraddr, Functor m, HasCallStack)
           => (Map peeraddr a -> Int -> m (Set peeraddr))
           ->  Map peeraddr a -> Int -> m (Set peeraddr)
 pickPeers pick available num =
