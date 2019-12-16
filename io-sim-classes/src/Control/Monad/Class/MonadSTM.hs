@@ -49,7 +49,9 @@ import qualified Control.Concurrent.STM.TQueue as STM
 import qualified Control.Concurrent.STM.TVar as STM
 import qualified Control.Monad.STM as STM
 
+import           Control.Applicative (Alternative (..))
 import           Control.Exception
+import           Control.Monad (MonadPlus)
 import           GHC.Stack
 import           Numeric.Natural (Natural)
 
@@ -59,7 +61,11 @@ import           Numeric.Natural (Natural)
 type LazyTVar  m = TVar m
 type LazyTMVar m = TMVar m
 
-class (Monad m, Monad (STM m)) => MonadSTM m where
+class ( Monad m
+      , Monad (STM m)
+      , Alternative (STM m)
+      , MonadPlus (STM m)
+      ) => MonadSTM m where
 
   -- STM transactions
   type STM  m = (n :: * -> *) | n -> m
