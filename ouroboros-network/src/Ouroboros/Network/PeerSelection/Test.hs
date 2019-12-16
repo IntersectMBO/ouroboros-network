@@ -187,21 +187,25 @@ runGovernorInMockEnvironment mockEnv =
 mockPeerSelectionActions :: (MonadSTM m, MonadTimer m)
                          => GovernorMockEnvironment
                          -> m (PeerSelectionActions PeerAddr PeerConn m)
-mockPeerSelectionActions GovernorMockEnvironment {
-                           peerGraph = PeerGraph adjacency,
-                           localRootPeers,
-                           publicRootPeers,
-                           targets
+mockPeerSelectionActions env@GovernorMockEnvironment {
+                           peerGraph = PeerGraph adjacency
                          } = do
-    scriptVars <-
-      Map.fromList <$>
-      sequence [ (,) addr <$> initScript script
-               | (addr, _, script) <- adjacency ]
-    let requestPeerGossip addr =
-            stepGossipScript scriptVar
-          where
-            Just scriptVar = Map.lookup addr scriptVars
-    return PeerSelectionActions {
+    gossipScripts <- Map.fromList <$>
+                       sequence [ (,) addr <$> initScript gossip
+                                | (addr, _, gossip) <- adjacency ]
+    return $ mockPeerSelectionActions' env gossipScripts
+
+mockPeerSelectionActions' :: (MonadSTM m, MonadTimer m)
+                          => GovernorMockEnvironment
+                          -> Map PeerAddr (TVar m GossipScript)
+                          -> PeerSelectionActions PeerAddr PeerConn m
+mockPeerSelectionActions' GovernorMockEnvironment {
+                            localRootPeers,
+                            publicRootPeers,
+                            targets
+                          }
+                          gossipScripts =
+    PeerSelectionActions {
       readLocalRootPeers       = return localRootPeers,
       requestPublicRootPeers   = \_ -> return (publicRootPeers, 60),
       readPeerSelectionTargets = return targets,
@@ -217,8 +221,9 @@ mockPeerSelectionActions GovernorMockEnvironment {
       closePeerConnection      = fail "TODO: closePeerConnection"
     }
   where
-    stepGossipScript scriptVar = do
-      mgossip <- stepScript scriptVar
+    requestPeerGossip addr = do
+      let Just script = Map.lookup addr gossipScripts
+      mgossip <- stepScript script
       case mgossip of
         Nothing        -> fail "no peers"
         Just (peeraddrs, time) -> do
