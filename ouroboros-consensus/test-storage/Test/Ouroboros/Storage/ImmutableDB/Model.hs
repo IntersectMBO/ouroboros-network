@@ -85,7 +85,7 @@ initDBModel epochSize = DBModel
 
 dbmCurrentEpoch :: DBModel hash -> EpochNo
 dbmCurrentEpoch dbm@DBModel{..} =
-    case fst <$> dbmTip of
+    case forgetHash <$> dbmTip of
       TipGen           -> EpochNo 0
       Tip (Block slot) -> slotToEpoch dbm slot
       Tip (EBB epoch') -> epoch'
@@ -108,7 +108,7 @@ dbmBlobs dbm@DBModel {..} = foldr add ebbs (zip (map SlotNo [0..]) dbmChain)
 
 -- TODO #1151
 dbmTipBlock :: DBModel hash -> Maybe TestBlock
-dbmTipBlock dbm = testBlockFromLazyByteString <$> case fst <$> dbmTip dbm of
+dbmTipBlock dbm = testBlockFromLazyByteString <$> case forgetHash <$> dbmTip dbm of
     TipGen            -> Nothing
     Tip (Block _slot) -> Just $ binaryBlob $ snd $ mustBeJust $ last $ dbmChain dbm
     Tip (EBB epoch)   -> Just $ binaryBlob $ snd $ dbmEBBs dbm Map.! epoch
@@ -225,9 +225,11 @@ rollBackToTip tip dbm@DBModel {..} = case tip of
     addHash :: ImmTip -> ImmTipWithHash hash
     addHash = fmap $ \case
       EBB   epoch ->
-        (EBB epoch,  fst $ dbmEBBs Map.! epoch)
+        WithHash (fst $ dbmEBBs Map.! epoch) (EBB epoch)
       Block slot  ->
-        (Block slot, fst $ fromJust $ dbmChain !! fromIntegral (unSlotNo slot))
+        WithHash
+          (fst $ fromJust $ dbmChain !! fromIntegral (unSlotNo slot))
+          (Block slot)
 
 -- | Return the filled 'EpochSlot's of the given 'EpochNo' stored in the model.
 epochSlotsInEpoch :: DBModel hash -> EpochNo -> [EpochSlot]
@@ -415,13 +417,13 @@ getBlockBinaryInfo err slot = do
     DBModel { dbmTip, dbmChain } <- get
 
     -- Check that the slot is not in the future
-    let inTheFuture = case fst <$> dbmTip of
+    let inTheFuture = case forgetHash <$> dbmTip of
           TipGen               -> True
           Tip (Block lastSlot) -> slot > lastSlot
           Tip (EBB  _ebb)      -> slot >= fromIntegral (length dbmChain)
 
     when inTheFuture $
-      throwUserError err $ ReadFutureSlotError slot (fst <$> dbmTip)
+      throwUserError err $ ReadFutureSlotError slot (forgetHash <$> dbmTip)
 
     return $ lookupBySlot slot dbmChain
 
@@ -497,13 +499,13 @@ appendBlockModel err slot hash binaryInfo = do
     dbm@DBModel {..} <- get
 
     -- Check that we're not appending to the past
-    let inThePast = case fst <$> dbmTip of
+    let inThePast = case forgetHash <$> dbmTip of
           Tip (Block lastSlot) -> slot <= lastSlot
           Tip (EBB _)          -> slot < fromIntegral (length dbmChain)
           TipGen               -> False
 
     when inThePast $
-      throwUserError err $ AppendToSlotInThePastError slot (fst <$> dbmTip)
+      throwUserError err $ AppendToSlotInThePastError slot (forgetHash <$> dbmTip)
 
     let binaryInfo' = toLazyByteString <$> binaryInfo
         toPad       = fromIntegral (unSlotNo slot) - length dbmChain
@@ -511,7 +513,7 @@ appendBlockModel err slot hash binaryInfo = do
     -- TODO snoc list?
     put dbm
       { dbmChain = dbmChain ++ replicate toPad Nothing ++ [Just (hash, binaryInfo')]
-      , dbmTip   = Tip (Block slot, hash)
+      , dbmTip   = Tip (WithHash hash (Block slot))
       }
 
 appendEBBModel :: (MonadState (DBModel hash) m)
@@ -539,7 +541,7 @@ appendEBBModel err epoch hash binaryInfo = do
 
     put dbm
       { dbmChain = dbmChain ++ replicate toPad Nothing
-      , dbmTip   = Tip (EBB epoch, hash)
+      , dbmTip   = Tip (WithHash hash (EBB epoch))
       , dbmEBBs  = Map.insert epoch (hash, binaryInfo') dbmEBBs
       }
 
@@ -553,8 +555,8 @@ streamModel
                (Iterator hash m ByteString))
 streamModel err blocksOrHeaders mbStart mbEnd = do
     dbm@DBModel {..} <- get
-    validateIteratorRange err (generalizeEpochInfo dbmEpochInfo) (fst <$> dbmTip)
-      mbStart mbEnd
+    validateIteratorRange err (generalizeEpochInfo dbmEpochInfo)
+      (forgetHash <$> dbmTip) mbStart mbEnd
     go dbm >>= \case
       Left  e       -> return $ Left e
       Right results -> Right <$> do

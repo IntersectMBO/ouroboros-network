@@ -68,7 +68,7 @@ validateAndReopen validateEnv valPol nextIteratorID =
         traceWith tracer NoValidLastLocation
         mkOpenState hasFS epoch nextIteratorID TipGen MustBeNew
       (epoch, tip)    -> do
-        traceWith tracer $ ValidatedLastLocation epoch (fst <$> tip)
+        traceWith tracer $ ValidatedLastLocation epoch (forgetHash <$> tip)
         mkOpenState hasFS epoch nextIteratorID tip    AllowExisting
   where
     ValidateEnv { hasFS, tracer } = validateEnv
@@ -126,7 +126,7 @@ validateAllEpochs validateEnv@ValidateEnv { hasFS, err, epochInfo } lastEpoch =
           Right Nothing         -> continueOrStop lastValid             epoch prevHash
           Right (Just validBlk) -> continueOrStop (epoch, Tip validBlk) epoch prevHash'
             where
-              prevHash' = At (snd validBlk)
+              prevHash' = At (theHash validBlk)
 
     -- | Validate the next epoch, unless the epoch just validated is the last
     -- epoch to validate. Cleanup files corresponding to epochs after the
@@ -245,7 +245,7 @@ validateEpoch
   -> Maybe (WithOrigin hash)
      -- ^ The hash of the last block of the previous epoch. 'Nothing' if
      -- unknown. When this is the first epoch, it should be 'Just Origin'.
-  -> ExceptT () m (Maybe (BlockOrEBB, hash))
+  -> ExceptT () m (Maybe (WithHash hash BlockOrEBB))
      -- ^ When non-empty, return the 'BlockOrEBB' and @hash@ of the last valid
      -- block in the epoch.
      --
@@ -351,8 +351,7 @@ validateEpoch ValidateEnv{..} shouldBeFinalised epoch mbPrevHash = do
         traceWith tracer $ RewritePrimaryIndex epoch
         Primary.write hasFS epoch primaryIndex
 
-      return $  (\entry -> (Secondary.blockOrEBB entry, Secondary.headerHash entry))
-            <$> lastMaybe entries
+      return $ entryToWithHash <$> lastMaybe entries
   where
     epochFile          = renderFile "epoch"     epoch
     primaryIndexFile   = renderFile "primary"   epoch
@@ -361,6 +360,10 @@ validateEpoch ValidateEnv{..} shouldBeFinalised epoch mbPrevHash = do
     HasFS { hTruncate, doesFileExist } = hasFS
 
     trace = lift . traceWith tracer
+
+    entryToWithHash :: Secondary.Entry hash -> WithHash hash BlockOrEBB
+    entryToWithHash entry =
+      WithHash (Secondary.headerHash entry) (Secondary.blockOrEBB entry)
 
     -- | Handle only 'InvalidFileError', which is the only error that can be
     -- thrown while load a primary or a secondary index file

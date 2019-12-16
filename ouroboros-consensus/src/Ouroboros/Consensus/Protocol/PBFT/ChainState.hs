@@ -353,14 +353,15 @@ append :: forall c. PBftCrypto c
        -> PBftChainState c -> PBftChainState c
 append k n signer@(PBftSigner _ gk) PBftChainState{..} =
     assertInvariant k n $
-    pruneEBBsLT $
     PBftChainState {
         preAnchor  = preAnchor'
       , postAnchor = postAnchor'
       , preWindow  = preWindow'
       , inWindow   = inWindow'
       , counts     = updateCounts counts
-      , ebbs       = ebbs   -- NB this needs to be pruned
+        -- NOTE: 'pruneEBBsLT' is inlined here to avoid a strange space leak
+        -- that also goes away with @-O0@, see #1356.
+      , ebbs       = EbbMap $ Map.filter (>= anchorSlot') (unEbbMap ebbs)
       }
   where
     (preAnchor', postAnchor') =
@@ -380,6 +381,10 @@ append k n signer@(PBftSigner _ gk) PBftChainState{..} =
           ( (preWindow, inWindow |> signer)
           , incrementKey gk
           )
+
+    anchorSlot' = case preAnchor' of
+      _ :|> anchorSigner -> At (pbftSignerSlotNo anchorSigner)
+      _otherwise         -> Origin
 
 -- | Rewind the state to the specified slot
 --

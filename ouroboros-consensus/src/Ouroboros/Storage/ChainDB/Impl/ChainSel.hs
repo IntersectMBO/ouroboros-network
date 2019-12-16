@@ -42,6 +42,8 @@ import           GHC.Stack (HasCallStack)
 import           Control.Monad.Class.MonadThrow
 import           Control.Tracer (Tracer, contramap, traceWith)
 
+import           Cardano.Prelude (forceElemsToWHNF)
+
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment (..))
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block (BlockNo, pattern BlockPoint,
@@ -188,7 +190,7 @@ addBlock cdb@CDB{..} b = do
         trace $ IgnoreBlockOlderThanK (blockPoint b)
       | isMember (blockHash b) ->
         trace $ IgnoreBlockAlreadyInVolDB (blockPoint b)
-      | Just (reason, _) <- Map.lookup (blockHash b) invalid ->
+      | Just (InvalidBlockInfo reason _) <- Map.lookup (blockHash b) invalid ->
         trace $ IgnoreInvalidBlock (blockPoint b) reason
 
       --- ### Store but schedule chain selection
@@ -215,10 +217,14 @@ addBlock cdb@CDB{..} b = do
       -> m ()
     scheduleChainSelection curSlot slot hdr = do
       nbScheduled <- atomically $ updateTVar cdbFutureBlocks $ \futureBlocks ->
-        let futureBlocks' = Map.insertWith (<>) slot (hdr NE.:| []) futureBlocks
+        let futureBlocks' = Map.insertWith strictAppend slot
+              (forceElemsToWHNF (hdr NE.:| [])) futureBlocks
             nbScheduled   = fromIntegral $ sum $ length <$> Map.elems futureBlocks
         in (futureBlocks', nbScheduled)
       trace $ ScheduledChainSelection (headerPoint hdr) curSlot nbScheduled
+
+    strictAppend :: (Semigroup (t a), Foldable t) => t a -> t a -> t a
+    strictAppend x y = forceElemsToWHNF (x <> y)
 
 -- | Trigger chain selection for the given block.
 --
@@ -296,7 +302,7 @@ chainSelectionForBlock cdb@CDB{..} hdr = do
         trace $ IgnoreBlockOlderThanK p
 
       -- We might have validated the block in the meantime
-      | Just (reason, _) <- Map.lookup (headerHash hdr) invalid ->
+      | Just (InvalidBlockInfo reason _) <- Map.lookup (headerHash hdr) invalid ->
         trace $ IgnoreInvalidBlock p reason
 
       -- The block @b@ fits onto the end of our current chain
@@ -772,9 +778,11 @@ validateCandidate lgrDB tracer cfg varInvalid
       BlockPoint slot hash -> case AF.splitAfterPoint suffix pt of
         Nothing           -> error "point not on fragment"
         Just (_, afterPt) ->
-          Map.insert hash (ValidationError e, slot) $ Map.fromList
-            [ (blockHash hdr, (InChainAfterInvalidBlock pt e, blockSlot hdr))
+          Map.insert hash (InvalidBlockInfo (ValidationError e) slot) $
+          Map.fromList
+            [ (blockHash hdr, InvalidBlockInfo reason (blockSlot hdr))
             | hdr <- AF.toOldestFirst afterPt
+            , let reason = InChainAfterInvalidBlock pt e
             ]
 
 {-------------------------------------------------------------------------------

@@ -231,7 +231,7 @@ garbageCollect CDB{..} slotNo = do
     VolDB.garbageCollect cdbVolDB slotNo
     atomically $ do
       LgrDB.garbageCollectPrevApplied cdbLgrDB slotNo
-      modifyTVar cdbInvalid $ fmap $ Map.filter ((>= slotNo) . snd)
+      modifyTVar cdbInvalid $ fmap $ Map.filter ((>= slotNo) . invalidBlockSlotNo)
     traceWith cdbTracer $ TraceGCEvent $ PerformedGC slotNo
 
 {-------------------------------------------------------------------------------
