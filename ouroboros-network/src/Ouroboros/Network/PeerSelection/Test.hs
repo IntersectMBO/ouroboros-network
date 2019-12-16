@@ -114,8 +114,7 @@ type PeerInfo = GossipScript
 --
 -- This representation was chosen because it allows easy shrinking.
 --
-newtype GossipScript = GossipScript (NonEmpty (Maybe ([PeerAddr], GossipTime)))
-  deriving (Eq, Show)
+type GossipScript = Script (Maybe ([PeerAddr], GossipTime))
 
 -- | The gossp time is our simulation of elapsed time to respond to gossip
 -- requests. This is important because the governor uses timeouts and behaves
@@ -129,8 +128,7 @@ data GossipTime = GossipTimeQuick | GossipTimeSlow | GossipTimeTimeout
 -- choices by their index (modulo the number of choices). This representation
 -- was chosen because it allows easy shrinking.
 --
-newtype PickScript = PickScript (NonEmpty (NonEmpty (NonNegative Int)))
-  deriving (Eq, Show)
+type PickScript = Script (NonEmpty (NonNegative Int))
 
 -- | Invariant. Used to check the QC generator and shrinker.
 --
@@ -155,7 +153,7 @@ validPeerGraph g@(PeerGraph adjacency) =
     and [ edgesSet  `Set.isSubsetOf` allpeersSet &&
           gossipSet `Set.isSubsetOf` edgesSet
         | let allpeersSet = allPeers g
-        , (_, outedges, GossipScript script) <- adjacency
+        , (_, outedges, Script script) <- adjacency
         , let edgesSet  = Set.fromList outedges
               gossipSet = Set.fromList
                             [ x | Just (xs, _) <- NonEmpty.toList script
@@ -197,7 +195,7 @@ mockPeerSelectionActions GovernorMockEnvironment {
                          } = do
     scriptVars <-
       Map.fromList <$>
-      sequence [ (,) addr <$> newTVarM script
+      sequence [ (,) addr <$> initScript script
                | (addr, _, script) <- adjacency ]
     let requestPeerGossip addr =
             stepGossipScript scriptVar
@@ -220,12 +218,7 @@ mockPeerSelectionActions GovernorMockEnvironment {
     }
   where
     stepGossipScript scriptVar = do
-      mgossip <- atomically $ do
-        GossipScript (mgossip :| script') <- readTVar scriptVar
-        case script' of
-          []   -> return ()
-          x:xs -> writeTVar scriptVar (GossipScript (x :| xs))
-        return mgossip
+      mgossip <- stepScript scriptVar
       case mgossip of
         Nothing        -> fail "no peers"
         Just (peeraddrs, time) -> do
@@ -246,10 +239,10 @@ mockPeerSelectionPolicy GovernorMockEnvironment {
                           pickColdPeersToPromote,
                           pickWarmPeersToPromote
                         } = do
-    pickKnownPeersForGossipVar <- newTVarM pickKnownPeersForGossip
-    pickColdPeersToForgetVar   <- newTVarM pickColdPeersToForget
-    pickColdPeersToPromoteVar  <- newTVarM pickColdPeersToPromote
-    pickWarmPeersToPromoteVar  <- newTVarM pickWarmPeersToPromote
+    pickKnownPeersForGossipVar <- initScript pickKnownPeersForGossip
+    pickColdPeersToForgetVar   <- initScript pickColdPeersToForget
+    pickColdPeersToPromoteVar  <- initScript pickColdPeersToPromote
+    pickWarmPeersToPromoteVar  <- initScript pickWarmPeersToPromote
     return PeerSelectionPolicy {
       policyPickKnownPeersForGossip = interpretPickScript pickKnownPeersForGossipVar,
       policyPickColdPeersToForget   = interpretPickScript pickColdPeersToForgetVar,
@@ -279,10 +272,7 @@ interpretPickScript scriptVar available pickNum
   = return (Map.keysSet available)
 
   | otherwise
-  = do PickScript (offsets :| script') <- readTVar scriptVar
-       case script' of
-         []   -> return ()
-         x:xs -> writeTVar scriptVar (PickScript (x :| xs))
+  = do offsets <- stepScriptSTM scriptVar
        return . pickMapKeys available
               . map getNonNegative
               . NonEmpty.take pickNum
@@ -513,7 +503,7 @@ firstGossipGraph (PeerGraph adjacency) =
         | (node, _edges, gossip) <- adjacency ]
   where
     gossipScriptEdges :: GossipScript -> [PeerAddr]
-    gossipScriptEdges (GossipScript (script :| _)) =
+    gossipScriptEdges (Script (script :| _)) =
       case script of
         Nothing                     -> []
         Just (_, GossipTimeTimeout) -> []
@@ -632,18 +622,16 @@ instance Arbitrary PeerGraph where
       [ PeerGraph (prunePeerGraphEdges graph')
       | graph' <- shrinkList shrinkNode graph ]
     where
-      shrinkNode (nodeaddr, edges, GossipScript script) =
+      shrinkNode (nodeaddr, edges, script) =
           -- shrink edges before gossip script, and addr does not shrink
-          [ (nodeaddr, edges', GossipScript script)
+          [ (nodeaddr, edges', script)
           | edges' <- shrinkList shrinkNothing edges ]
-       ++ [ (nodeaddr, edges, GossipScript script')
+       ++ [ (nodeaddr, edges, script')
           | script' <- shrink script ]
 
 arbitraryGossipScript :: [PeerAddr] -> Gen GossipScript
 arbitraryGossipScript peers =
-    sized $ \sz ->
-      (GossipScript . NonEmpty.fromList) <$>
-        vectorOf (min 5 (sz+1)) gossipResult
+    arbitraryShortScriptOf gossipResult
   where
     gossipResult :: Gen (Maybe ([PeerAddr], GossipTime))
     gossipResult =
@@ -661,9 +649,9 @@ arbitraryGossipScript peers =
 prunePeerGraphEdges :: [(PeerAddr, [PeerAddr], PeerInfo)]
                     -> [(PeerAddr, [PeerAddr], PeerInfo)]
 prunePeerGraphEdges graph =
-    [ (nodeaddr, edges', GossipScript script')
+    [ (nodeaddr, edges', Script script')
     | let nodes   = Set.fromList [ nodeaddr | (nodeaddr, _, _) <- graph ]
-    , (nodeaddr, edges, GossipScript script) <- graph
+    , (nodeaddr, edges, Script script) <- graph
     , let edges'  = pruneEdgeList nodes edges
           script' = pruneGossipScript (Set.fromList edges') script
     ]
@@ -681,11 +669,6 @@ prunePeerGraphEdges graph =
 instance Arbitrary PeerAddr where
   arbitrary = error "arbitrary: PeerAddr"
   shrink _  = []
-
-instance Arbitrary PickScript where
-  arbitrary = PickScript <$> arbitrary
-
-  shrink (PickScript xs) = map PickScript (shrink xs)
 
 instance Arbitrary a => Arbitrary (NonEmpty a) where
   arbitrary = NonEmpty.fromList <$> listOf1 arbitrary
@@ -731,6 +714,33 @@ instance Arbitrary PeerSelectionTargets where
     | (r',k',e',a') <- shrink (r,k,e,a)
     , let targets' = PeerSelectionTargets r' k' e' a'
     , sanePeerSelectionTargets targets' ]
+
+
+newtype Script a = Script (NonEmpty a)
+  deriving (Eq, Show)
+
+instance Arbitrary a => Arbitrary (Script a) where
+  arbitrary = Script <$> arbitrary
+  shrink (Script xs) = map Script (shrink xs)
+
+arbitraryShortScriptOf :: Gen a -> Gen (Script a)
+arbitraryShortScriptOf a =
+    sized $ \sz ->
+      (Script . NonEmpty.fromList) <$> vectorOf (min 5 (sz+1)) a
+
+initScript :: MonadSTM m => Script a -> m (TVar m (Script a))
+initScript = newTVarM
+
+stepScript :: MonadSTM m => TVar m (Script a) -> m a
+stepScript scriptVar = atomically (stepScriptSTM scriptVar)
+
+stepScriptSTM :: MonadSTM m => TVar m (Script a) -> STM m a
+stepScriptSTM scriptVar = do
+    Script (x :| xs) <- readTVar scriptVar
+    case xs of
+      []     -> return ()
+      x':xs' -> writeTVar scriptVar (Script (x' :| xs'))
+    return x
 
 
 --
