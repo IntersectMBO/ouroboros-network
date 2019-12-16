@@ -3,6 +3,7 @@
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE DeriveFunctor #-}
 
 
 -- | This subsystem manages the discovery and selection of /upstream/ peers.
@@ -626,7 +627,7 @@ data PeerSelectionState peeraddr peerconn = PeerSelectionState {
 --     Should also take account of DNS failures for root peer set.
 --     lastSucessfulNetworkEvent :: Time
      }
-  deriving Show
+  deriving (Show, Functor)
 
 emptyPeerSelectionState :: PeerSelectionState peeraddr peerconn
 emptyPeerSelectionState =
@@ -883,7 +884,7 @@ data TracePeerSelection peeraddr =
 data DebugPeerSelection peeraddr peerconn =
        TraceGovernorState  (PeerSelectionState peeraddr peerconn)
                            (Maybe DiffTime)
-  deriving Show
+  deriving (Show, Functor)
 
 rootPeersBelowTarget :: (MonadSTM m, Ord peeraddr)
                      => PeerSelectionActions peeraddr peerconn m

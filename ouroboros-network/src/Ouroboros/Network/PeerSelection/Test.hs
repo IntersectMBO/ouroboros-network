@@ -26,7 +26,7 @@ import qualified Data.Tree as Tree
 
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadTime
-import           Control.Tracer (Tracer(..))
+import           Control.Tracer (Tracer(..), contramap)
 import           Control.Exception (throw)
 
 import           Control.Monad.IOSim
@@ -181,8 +181,8 @@ runGovernorInMockEnvironment mockEnv =
       actions <- mockPeerSelectionActions mockEnv
       policy  <- mockPeerSelectionPolicy  mockEnv
       peerSelectionGovernor
-        dynamicTracer
-        dynamicTracer
+        tracerTracePeerSelection
+        tracerDebugPeerSelection
         actions
         policy
 
@@ -354,7 +354,6 @@ isEmptyEnv GovernorMockEnvironment {
            } =
     (Map.null localRootPeers  || targetNumberOfKnownPeers targets == 0)
  && (Set.null publicRootPeers || targetNumberOfRootPeers  targets == 0)
- 
 
 
 -- Check that events that are 100 events apart have an adequate time
@@ -386,7 +385,7 @@ prop_governor_gossip_1hr env@GovernorMockEnvironment{
                               publicRootPeers,
                               targets
                             } =
-    let trace      = selectPeerSelectionDebugEvents $
+    let trace      = selectPeerSelectionTraceEvents $
                        runGovernorInMockEnvironment env {
                          -- This test is only about testing gossiping,
                          -- so do not try to establish connections:
@@ -401,12 +400,11 @@ prop_governor_gossip_1hr env@GovernorMockEnvironment{
      in subsetProperty    found reachable
    .&&. bigEnoughProperty found reachable
   where
-    knownPeersAfter1Hour :: [(Time, DebugPeerSelection PeerAddr PeerConn)]
-                         -> Maybe (Set PeerAddr)
+    knownPeersAfter1Hour :: [(Time, TestTraceEvent)] -> Maybe (Set PeerAddr)
     knownPeersAfter1Hour trace =
       listToMaybe
         [ Map.keysSet (KnownPeers.toMap (Governor.knownPeers st))
-        | (_, TraceGovernorState st _) <- reverse (takeFirstNHours 1 trace) ]
+        | (_, GovernorDebug (TraceGovernorState st _)) <- reverse (takeFirstNHours 1 trace) ]
 
     -- The ones we find should be a subset of the ones possible to find
     subsetProperty found reachable =
@@ -441,23 +439,27 @@ prop_governor_gossip_1hr env@GovernorMockEnvironment{
 -- Utils for properties
 --
 
+data TestTraceEvent = GovernorDebug (DebugPeerSelection PeerAddr ())
+                    | GovernorEvent (TracePeerSelection PeerAddr)
+
+tracerTracePeerSelection :: Tracer (SimM s) (TracePeerSelection PeerAddr)
+tracerTracePeerSelection =
+  contramap GovernorEvent
+            tracerTestTraceEvent
+
+tracerDebugPeerSelection :: Tracer (SimM s) (DebugPeerSelection PeerAddr peerconn)
+tracerDebugPeerSelection =
+  contramap (GovernorDebug . fmap (const ()))
+            tracerTestTraceEvent
+
+tracerTestTraceEvent :: Tracer (SimM s) TestTraceEvent
+tracerTestTraceEvent = dynamicTracer
+
 dynamicTracer :: Typeable a => Tracer (SimM s) a
 dynamicTracer = Tracer traceM
 
-selectPeerSelectionTraceEvents :: Trace a
-                               -> [(Time, TracePeerSelection PeerAddr)]
+selectPeerSelectionTraceEvents :: Trace a -> [(Time, TestTraceEvent)]
 selectPeerSelectionTraceEvents = go
-  where
-    go (Trace t _ _ (EventLog e) trace)
-     | Just x <- fromDynamic e    = (t,x) : go trace
-    go (Trace _ _ _ _ trace)      =         go trace
-    go (TraceMainException _ e _) = throw e
-    go (TraceDeadlock      _   _) = [] -- expected result in many cases
-    go (TraceMainReturn    _ _ _) = []
-
-selectPeerSelectionDebugEvents :: Trace a
-                               -> [(Time, DebugPeerSelection PeerAddr PeerConn)]
-selectPeerSelectionDebugEvents = go
   where
     go (Trace t _ _ (EventLog e) trace)
      | Just x <- fromDynamic e    = (t,x) : go trace
