@@ -204,13 +204,16 @@ mockPeerSelectionActions GovernorMockEnvironment {
             Just scriptVar = Map.lookup addr scriptVars
     return PeerSelectionActions {
       readLocalRootPeers       = return localRootPeers,
-      requestPublicRootPeers   = \_ -> return (publicRootPeers, 0),
+      requestPublicRootPeers   = \_ -> return (publicRootPeers, 60),
       readPeerSelectionTargets = return targets,
       requestPeerGossip,
       --TODO: do the peer established and active model properly
-      establishPeerConnection  = \_ -> return PeerConn,
+      establishPeerConnection  = \_ -> do
+                                   threadDelay 1
+                                   return PeerConn,
       monitorPeerConnection    = fail "TODO: monitorPeerConnection",
-      activatePeerConnection   = \_ -> return (),
+      activatePeerConnection   = \PeerConn -> do
+                                   threadDelay 1,
       deactivatePeerConnection = fail "TODO: deactivatePeerConnection",
       closePeerConnection      = fail "TODO: closePeerConnection"
     }
@@ -309,6 +312,7 @@ pickMapKeys m ns =
 -- * time to find new nodes after a graph change is ok
 -- * targets or root peer set dynamic
 -- * check local root peers are what we expect
+-- * check governor view of connection status does not lag reality too much
 
 
 -- | Run the governor for up to 24 hours (simulated obviously) and see if it
@@ -332,9 +336,9 @@ prop_governor_nolivelock env =
                 selectPeerSelectionTraceEvents $
                   runGovernorInMockEnvironment env
      in      hasOutput trace
-        .&&. property (makesAdequateProgress
-                         10 -- 100 events should take longer than 10 seconds
-                         (map fst trace))
+
+             -- 200 events should take longer than 6 seconds:
+        .&&. property (makesAdequateProgress 200 6 (map fst trace))
   where
     hasOutput :: [a] -> Property
     hasOutput (_:_) = property True
@@ -343,9 +347,9 @@ prop_governor_nolivelock env =
 
 -- Check that events that are 100 events apart have an adequate time
 -- between them, to indicate we're not in a busy livelock situation.
-makesAdequateProgress :: DiffTime -> [Time] -> Bool
-makesAdequateProgress adequate ts =
-    go ts (drop 100 ts)
+makesAdequateProgress :: Int -> DiffTime -> [Time] -> Bool
+makesAdequateProgress n adequate ts =
+    go ts (drop n ts)
   where
     go (a:as) (b:bs)
       | diffTime b a < adequate = False

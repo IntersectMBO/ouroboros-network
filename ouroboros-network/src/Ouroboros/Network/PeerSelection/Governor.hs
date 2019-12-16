@@ -1218,41 +1218,48 @@ knownPeersAboveTarget PeerSelectionPolicy {
                         localRootPeers,
                         publicRootPeers,
                         knownPeers,
+                        establishedPeers,
+                        inProgressPromoteCold,
                         targets = PeerSelectionTargets {
                                     targetNumberOfKnownPeers,
                                     targetNumberOfRootPeers
                                   }
                       }
     -- Are we above the target for number of known peers?
-  | let numKnownPeers, numPeersToForget :: Int
-        numKnownPeers    = KnownPeers.size knownPeers
-        numPeersToForget = numKnownPeers - targetNumberOfKnownPeers
-  , numPeersToForget > 0
-  = Guarded Nothing $ do
-      -- We must never pick local root peers to forget as this would violate
-      -- our invariant that the localRootPeers is a subset of the knownPeers.
-      --
-      -- We also need to avoid picking public root peers if that would put us
-      -- below the target for root peers.
-      --
-      -- Since the targetNumberOfKnownPeers is at least the size of the root
-      -- peers set (another invariant) then we know that if numPeersToForget > 0
-      -- then availableToForget here is non-empty.
-      --
-      let numRootPeersCanForget = Map.size localRootPeers
-                                + Set.size publicRootPeers
-                                - targetNumberOfRootPeers
-          protectedRootPeers    = Map.keysSet localRootPeers
-                               <> Set.drop numRootPeersCanForget publicRootPeers
-          availableToForget     = KnownPeers.toMap knownPeers
-                                    `Map.withoutKeys` protectedRootPeers
+  | numKnownPeers > targetNumberOfKnownPeers
 
-      assert (not (Map.null availableToForget)) $ return ()
+    -- Are there any cold peers we could pick to forget?
+    -- As a first cheap approximation, check if there are any cold peers.
+  , numKnownPeers > numEstablishedPeers
+
+    -- Beyond this it gets more complicated, and it is not clear that there
+    -- are any precise cheap checks. So we just do the full calculation.
+    -- In particular there can be overlap between cold peers and root peers
+    -- and we have constraints on forgetting root peers.
+    --
+    -- We must never pick local root peers to forget as this would violate
+    -- our invariant that the localRootPeers is a subset of the knownPeers.
+    --
+    -- We also need to avoid picking public root peers if that would put us
+    -- below the target for root peers.
+    --
+  , let numRootPeersCanForget = Map.size localRootPeers
+                              + Set.size publicRootPeers
+                              - targetNumberOfRootPeers
+        protectedRootPeers    = Map.keysSet localRootPeers
+                             <> Set.drop numRootPeersCanForget publicRootPeers
+        availableToForget     = KnownPeers.toMap knownPeers
+                                   Map.\\ establishedPeers
+                                  `Map.withoutKeys` protectedRootPeers
+                                  `Map.withoutKeys` inProgressPromoteCold
+
+  , not (Map.null availableToForget)
+  = Guarded Nothing $ do
+      let numPeersToForget = numKnownPeers - targetNumberOfKnownPeers
       selectedToForget <- pickPeers
                             policyPickColdPeersToForget
                             availableToForget
                             numPeersToForget
-      assert (not (Set.null selectedToForget)) $ return ()
       return Decision {
         decisionTrace = TraceForgetColdPeers
                           targetNumberOfKnownPeers
@@ -1270,6 +1277,10 @@ knownPeersAboveTarget PeerSelectionPolicy {
 
   | otherwise
   = GuardedSkip Nothing
+  where
+    numKnownPeers, numEstablishedPeers :: Int
+    numKnownPeers        = KnownPeers.size knownPeers
+    numEstablishedPeers  = Map.size establishedPeers
 
 
 establishedPeersBelowTarget :: forall peeraddr peerconn m.
@@ -1399,6 +1410,7 @@ establishedPeersAboveTarget actions
                               establishedPeers,
                               activePeers,
                               inProgressDemoteWarm,
+                              inProgressPromoteWarm,
                               targets = PeerSelectionTargets {
                                           targetNumberOfEstablishedPeers
                                         }
@@ -1414,12 +1426,14 @@ establishedPeersAboveTarget actions
         -- number we have now vs the target. The other constraint is that
         -- we pick established peers that are not also active. These
         -- constraints combine by taking the minimum. We must also subtract
-        -- the number we're demoting so we don't repeat the same work.
+        -- the number we're demoting so we don't repeat the same work. And
+        -- cannot demote ones we're in the process of promoting.
         numPeersToDemote    = min (numEstablishedPeers
                                    - targetNumberOfEstablishedPeers)
                                   (numEstablishedPeers
                                    - numActivePeers)
                             - Set.size inProgressDemoteWarm
+                            - Set.size inProgressPromoteWarm
   , numPeersToDemote > 0
   = Guarded Nothing $ do
 
@@ -1428,6 +1442,7 @@ establishedPeersAboveTarget actions
                                `Map.intersection` establishedPeers
                                `Map.withoutKeys` activePeers
                                `Map.withoutKeys` inProgressDemoteWarm
+                               `Map.withoutKeys` inProgressPromoteWarm
       selectedToDemote <- pickPeers
                             policyPickWarmPeersToDemote
                             availableToDemote
