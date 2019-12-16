@@ -38,9 +38,6 @@ library
   -- At this experiment/prototype stage everything is exposed.
   -- This has to be tidied up once the design becomes clear.
   exposed-modules:     Codec.SerialiseTerm
-                       Data.FingerTree.Strict
-                       Data.Sequence.Strict
-                       Data.Semigroup.Action
                        Ouroboros.Network.AnchoredFragment
                        Ouroboros.Network.Block
                        Ouroboros.Network.BlockFetch
@@ -137,6 +134,7 @@ library
                        bytestring        >=0.10 && <0.11,
                        cardano-binary,
                        cardano-prelude,
+                       cardano-slotting,
                        cborg             >=0.2.1 && <0.3,
                        containers,
                        dns,
@@ -165,9 +163,6 @@ test-suite test-network
   hs-source-dirs:      test src
   main-is:             Main.hs
   other-modules:       Codec.SerialiseTerm
-                       Data.FingerTree.Strict
-                       Data.Sequence.Strict
-                       Data.Semigroup.Action
                        Ouroboros.Network.AnchoredFragment
                        Ouroboros.Network.Testing.ConcreteBlock
                        Ouroboros.Network.Block
@@ -260,6 +255,7 @@ test-suite test-network
                        bytestring,
                        cardano-binary,
                        cardano-prelude,
+                       cardano-slotting,
                        cborg,
                        containers,
                        contra-tracer,
@@ -302,8 +298,6 @@ test-suite cddl
   if !flag(cddl)
     buildable: False
   other-modules:       Codec.SerialiseTerm
-                       Data.FingerTree.Strict
-                       Data.Sequence.Strict
                        Ouroboros.Network.AnchoredFragment
                        Ouroboros.Network.Block
                        Ouroboros.Network.MockChain.Chain
@@ -347,7 +341,7 @@ test-suite cddl
                        Ouroboros.Network.Protocol.LocalTxSubmission.Client
                        Ouroboros.Network.Protocol.LocalTxSubmission.Direct
                        Ouroboros.Network.Protocol.LocalTxSubmission.Examples
-                       Ouroboros.Network.Protocol.LocalTxSubmission.Server                      
+                       Ouroboros.Network.Protocol.LocalTxSubmission.Server
 
                        Ouroboros.Network.Testing.ConcreteBlock
 
@@ -360,6 +354,7 @@ test-suite cddl
                        bytestring,
                        cardano-binary,
                        cardano-prelude,
+                       cardano-slotting,
                        cborg,
                        containers,
                        contra-tracer,
