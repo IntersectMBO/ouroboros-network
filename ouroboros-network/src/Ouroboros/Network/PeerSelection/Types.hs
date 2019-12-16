@@ -3,6 +3,7 @@
 module Ouroboros.Network.PeerSelection.Types (
     PeerSource(..),
     PeerAdvertise(..),
+    PeerStatus(..),
   ) where
 
 import           GHC.Generics (Generic)
@@ -26,4 +27,11 @@ data PeerSource = PeerSourceLocalRoot
 data PeerAdvertise = DoAdvertisePeer
                    | DoNotAdvertisePeer
   deriving (Eq, Show, Generic)
+
+
+data PeerStatus =
+       PeerCold
+     | PeerWarm
+     | PeerHot
+  deriving (Eq, Ord, Show)
 

@@ -561,17 +561,12 @@ data PeerSelectionActions peeraddr peerconn m = PeerSelectionActions {
        requestPeerGossip :: peeraddr -> m [peeraddr],
 
        establishPeerConnection  :: peeraddr -> m peerconn,
-       monitorPeerConnection    :: peerconn -> STM m PeerConnStatus,
+       monitorPeerConnection    :: peerconn -> STM m PeerStatus,
        activatePeerConnection   :: peerconn -> m (),
        deactivatePeerConnection :: peerconn -> m (),
        closePeerConnection      :: peerconn -> m ()
      }
 
-data PeerConnStatus =
-       PeerConnClosed
-     | PeerConnEstablished
-     | PeerConnActive
-  deriving (Eq, Ord)
 
 -- | The internal state used by the 'peerSelectionGovernor'.
 --
@@ -595,6 +590,7 @@ data PeerSelectionState peeraddr peerconn = PeerSelectionState {
        -- |
        --
        establishedPeers     :: !(Map peeraddr peerconn),
+       establishedStatus    :: !(Map peeraddr PeerStatus),
 
        -- |
        --
@@ -637,6 +633,7 @@ emptyPeerSelectionState =
       publicRootPeers      = Set.empty,
       knownPeers           = KnownPeers.empty,
       establishedPeers     = Map.empty,
+      establishedStatus    = Map.empty,
       activePeers          = Set.empty,
       publicRootBackoffs   = 0,
       publicRootRetryTime  = Time 0,
@@ -657,6 +654,7 @@ invariantPeerSelectionState PeerSelectionState{..} =
     -- which is a subset of the known peers
  && Set.isSubsetOf activePeersSet establishedPeersSet
  && Set.isSubsetOf establishedPeersSet knownPeersSet
+ && Map.keysSet establishedStatus == establishedPeersSet
 
     -- The localRootPeers and publicRootPeers must not overlap.
  && Set.null (Set.intersection localRootPeersSet publicRootPeers)
@@ -1397,6 +1395,8 @@ jobPromoteColdPeer PeerSelectionActions{establishPeerConnection} peeraddr =
         decisionState = st {
                           establishedPeers      = Map.insert peeraddr peerconn
                                                     (establishedPeers st),
+                          establishedStatus     = Map.insert peeraddr PeerWarm
+                                                    (establishedStatus st),
                           inProgressPromoteCold = Set.delete peeraddr
                                                     (inProgressPromoteCold st)
                         },
@@ -1507,10 +1507,12 @@ jobDemoteEstablishedPeer PeerSelectionActions{closePeerConnection}
       return $ Completion $ \st _now -> Decision {
         decisionTrace = TraceDemoteWarmDone peeraddr,
         decisionState = st {
-                          inProgressDemoteWarm = Set.delete peeraddr
-                                                   (inProgressDemoteWarm st),
                           establishedPeers     = Map.delete peeraddr
-                                                   (establishedPeers st)
+                                                   (establishedPeers st),
+                          establishedStatus    = Map.delete peeraddr
+                                                   (establishedStatus st),
+                          inProgressDemoteWarm = Set.delete peeraddr
+                                                   (inProgressDemoteWarm st)
                         },
         decisionJobs  = []
       }
@@ -1612,6 +1614,8 @@ jobPromoteWarmPeer PeerSelectionActions{activatePeerConnection}
         decisionState = st {
                           activePeers           = Set.insert peeraddr
                                                     (activePeers st),
+                          establishedStatus     = Map.insert peeraddr PeerHot
+                                                    (establishedStatus st),
                           inProgressPromoteWarm = Set.delete peeraddr
                                                     (inProgressPromoteWarm st)
                         },
@@ -1710,10 +1714,12 @@ jobDemoteActivePeer PeerSelectionActions{deactivatePeerConnection}
       return $ Completion $ \st _now -> Decision {
         decisionTrace = TraceDemoteHotDone peeraddr,
         decisionState = st {
-                          inProgressDemoteHot = Set.delete peeraddr
-                                                  (inProgressDemoteHot st),
                           activePeers         = Set.delete peeraddr
-                                                  (activePeers st)
+                                                  (activePeers st),
+                          establishedStatus   = Map.insert peeraddr PeerWarm
+                                                  (establishedStatus st),
+                          inProgressDemoteHot = Set.delete peeraddr
+                                                  (inProgressDemoteHot st)
                         },
         decisionJobs  = []
       }
