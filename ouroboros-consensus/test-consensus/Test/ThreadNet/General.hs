@@ -11,6 +11,7 @@ module Test.ThreadNet.General (
   , TestConfig (..)
   , TestConfigBlock (..)
   , truncateNodeJoinPlan
+  , truncateNodeRestarts
   , truncateNodeTopology
     -- * Re-exports
   , ForgeEBB
@@ -47,6 +48,7 @@ import           Test.ThreadNet.Network
 import           Test.ThreadNet.TxGen
 import           Test.ThreadNet.Util
 import           Test.ThreadNet.Util.NodeJoinPlan
+import           Test.ThreadNet.Util.NodeRestarts
 import           Test.ThreadNet.Util.NodeTopology
 
 import           Test.Util.FS.Sim.MockFS (MockFS)
@@ -68,6 +70,7 @@ data TestConfig = TestConfig
   , numSlots     :: !NumSlots
     -- ^ TODO generate in function of @k@
   , nodeJoinPlan :: !NodeJoinPlan
+  , nodeRestarts :: !NodeRestarts
   , nodeTopology :: !NodeTopology
   , slotLengths  :: !SlotLengths
   , initSeed     :: !Seed
@@ -89,6 +92,10 @@ truncateNodeTopology :: NodeTopology -> NumCoreNodes -> NodeTopology
 truncateNodeTopology (NodeTopology m) (NumCoreNodes n') =
     NodeTopology $ Map.filterWithKey (\(CoreNodeId i) _ -> i < n') m
 
+truncateNodeRestarts :: NodeRestarts -> NumSlots -> NodeRestarts
+truncateNodeRestarts (NodeRestarts m) (NumSlots t) =
+    NodeRestarts $ Map.filterWithKey (\(SlotNo s) _ -> s < fromIntegral t) m
+
 instance Arbitrary TestConfig where
   arbitrary = do
       numCoreNodes <- arbitrary
@@ -101,6 +108,8 @@ instance Arbitrary TestConfig where
         { numCoreNodes
         , numSlots
         , nodeJoinPlan
+          -- TODO how to enrich despite variable schedules?
+        , nodeRestarts = noRestarts
         , nodeTopology
         , slotLengths
         , initSeed
@@ -110,6 +119,7 @@ instance Arbitrary TestConfig where
     { numCoreNodes
     , numSlots
     , nodeJoinPlan
+    , nodeRestarts
     , nodeTopology
     , slotLengths
     , initSeed
@@ -119,6 +129,7 @@ instance Arbitrary TestConfig where
           { numCoreNodes = n'
           , numSlots     = t'
           , nodeJoinPlan = p'
+          , nodeRestarts = r'
           , nodeTopology = top'
           , slotLengths  = ls'
           , initSeed
@@ -126,8 +137,10 @@ instance Arbitrary TestConfig where
       | n'             <- andId shrink numCoreNodes
       , t'             <- andId shrink numSlots
       , let adjustedP   = truncateNodeJoinPlan nodeJoinPlan n' (numSlots, t')
+      , let adjustedR   = truncateNodeRestarts nodeRestarts t'
       , let adjustedTop = truncateNodeTopology nodeTopology n'
       , p'             <- andId shrinkNodeJoinPlan adjustedP
+      , r'             <- andId shrinkNodeRestarts adjustedR
       , top'           <- andId shrinkNodeTopology adjustedTop
       , ls'            <- andId shrink slotLengths
       ]
@@ -157,7 +170,15 @@ runTestNetwork ::
   -> TestConfigBlock blk
   -> TestOutput blk
 runTestNetwork
-  TestConfig{numCoreNodes, numSlots, nodeJoinPlan, nodeTopology, slotLengths, initSeed}
+  TestConfig
+    { numCoreNodes
+    , numSlots
+    , nodeJoinPlan
+    , nodeRestarts
+    , nodeTopology
+    , slotLengths
+    , initSeed
+    }
   TestConfigBlock{forgeEBB, nodeInfo}
   = runSimOrThrow $ runThreadNetwork ThreadNetworkArgs
       { tnaForgeEBB       = forgeEBB
@@ -166,6 +187,7 @@ runTestNetwork
       , tnaNumCoreNodes   = numCoreNodes
       , tnaNumSlots       = numSlots
       , tnaRNG            = seedToChaCha initSeed
+      , tnaRestarts       = nodeRestarts
       , tnaSlotLengths    = slotLengths
       , tnaTopology       = nodeTopology
       }
@@ -194,10 +216,11 @@ prop_general ::
   -> Maybe LeaderSchedule
   -> TestOutput blk
   -> Property
-prop_general k TestConfig{numSlots, nodeJoinPlan, nodeTopology} mbSchedule
-  TestOutput{testOutputNodes, testOutputTipBlockNos} =
+prop_general k TestConfig{numSlots, nodeJoinPlan, nodeRestarts, nodeTopology}
+  mbSchedule TestOutput{testOutputNodes, testOutputTipBlockNos} =
     counterexample ("nodeChains: " <> unlines ("" : map (\x -> "  " <> condense x) (Map.toList nodeChains))) $
     counterexample ("nodeJoinPlan: " <> condense nodeJoinPlan) $
+    counterexample ("nodeRestarts: " <> condense nodeRestarts) $
     counterexample ("nodeTopology: " <> condense nodeTopology) $
     counterexample ("slot-node-tipBlockNo: " <> condense tipBlockNos) $
     counterexample ("mbSchedule: " <> condense mbSchedule) $

@@ -13,6 +13,7 @@ import           Data.Coerce (coerce)
 import           Data.Foldable (find)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
+import qualified Data.Set as Set
 import           Data.Maybe (fromJust, mapMaybe)
 import           Data.Time (Day (..), UTCTime (..))
 import           Data.Word (Word64)
@@ -55,6 +56,7 @@ import           Test.ThreadNet.Network (NodeOutput (..))
 import qualified Test.ThreadNet.Ref.RealPBFT as Ref
 import           Test.ThreadNet.Util
 import           Test.ThreadNet.Util.NodeJoinPlan
+import           Test.ThreadNet.Util.NodeRestarts
 import           Test.ThreadNet.Util.NodeTopology
 
 import           Test.Util.Orphans.Arbitrary ()
@@ -82,6 +84,7 @@ tests = testGroup "RealPBFT" $
             { numCoreNodes = ncn
             , numSlots     = NumSlots 24
             , nodeJoinPlan = NodeJoinPlan $ Map.fromList [(CoreNodeId 0,SlotNo 0), (CoreNodeId 1,SlotNo 20), (CoreNodeId 2,SlotNo 22)]
+            , nodeRestarts = noRestarts
             , nodeTopology = meshNodeTopology ncn
             , slotLengths = defaultSlotLengths
             , initSeed     = Seed (15069526818753326002, 9758937467355895013, 16548925776947010688, 13173070736975126721, 13719483751339084974)
@@ -99,6 +102,7 @@ tests = testGroup "RealPBFT" $
             { numCoreNodes = ncn
             , numSlots     = NumSlots 2
             , nodeJoinPlan = NodeJoinPlan (Map.fromList [(CoreNodeId 0,SlotNo 0),(CoreNodeId 1,SlotNo 1)])
+            , nodeRestarts = noRestarts
             , nodeTopology = meshNodeTopology ncn
             , slotLengths  = defaultSlotLengths
             , initSeed     = Seed (15069526818753326002, 9758937467355895013, 16548925776947010688, 13173070736975126721, 13719483751339084974)
@@ -112,9 +116,26 @@ tests = testGroup "RealPBFT" $
             { numCoreNodes = ncn
             , numSlots     = NumSlots 4
             , nodeJoinPlan = NodeJoinPlan (Map.fromList [(CoreNodeId 0,SlotNo {unSlotNo = 0}),(CoreNodeId 1,SlotNo {unSlotNo = 3})])
+            , nodeRestarts = noRestarts
             , nodeTopology = meshNodeTopology ncn
             , slotLengths  = defaultSlotLengths
             , initSeed     = Seed (16817746570690588019, 3284322327197424879, 14951803542883145318, 5227823917971823767, 14093715642382269482)
+            }
+    , testProperty "one testOutputTipBlockNos update per node per slot" $
+          let ncn = NumCoreNodes 2 in
+          -- In this example, a node was forging a new block and then
+          -- restarting. Its instrumentation thread ran before and also after
+          -- the restart, which caused the 'testOutputTipBlockNos' field to
+          -- contain data from the middle of the slot (after the node lead)
+          -- instead of only from the onset of the slot.
+          prop_simple_real_pbft_convergence ProduceEBBs (SecurityParam 5) TestConfig
+            { numCoreNodes = ncn
+            , numSlots     = NumSlots 7
+            , nodeJoinPlan = NodeJoinPlan (Map.fromList [(CoreNodeId 0,SlotNo {unSlotNo = 0}),(CoreNodeId 1,SlotNo {unSlotNo = 0})])
+            , nodeRestarts = NodeRestarts (Map.fromList [(SlotNo {unSlotNo = 5},Set.fromList [CoreNodeId 1])])
+            , nodeTopology = meshNodeTopology ncn
+            , slotLengths  = defaultSlotLengths
+            , initSeed     = Seed {getSeed = (17927476716858194849,11935807562313832971,15925564353519845641,3835030747036900598,2802397826914039548)}
             }
     , testProperty "simple convergence" $
           \produceEBBs ->
@@ -411,12 +432,14 @@ genRealPBFTTestConfig k = do
 
     let params = realPBftParams k numCoreNodes
     nodeJoinPlan <- genRealPBFTNodeJoinPlan params numSlots
+    nodeRestarts <- genNodeRestarts nodeJoinPlan numSlots
     nodeTopology <- genNodeTopology numCoreNodes
 
     initSeed <- arbitrary
 
     pure TestConfig
       { nodeJoinPlan
+      , nodeRestarts
       , nodeTopology
       , numCoreNodes
       , numSlots
@@ -439,6 +462,7 @@ shrinkTestConfigSlotsOnly TestConfig
   { numCoreNodes
   , numSlots
   , nodeJoinPlan
+  , nodeRestarts
   , nodeTopology
   , slotLengths
   , initSeed
@@ -446,6 +470,7 @@ shrinkTestConfigSlotsOnly TestConfig
     dropId $
     [ TestConfig
         { nodeJoinPlan = p'
+        , nodeRestarts = r'
         , nodeTopology = top'
         , numCoreNodes
         , numSlots     = t'
@@ -454,7 +479,9 @@ shrinkTestConfigSlotsOnly TestConfig
         }
     | t'            <- andId shrink numSlots
     , let adjustedP  = truncateNodeJoinPlan nodeJoinPlan numCoreNodes (numSlots, t')
+    , let adjustedR  = truncateNodeRestarts nodeRestarts t'
     , p'            <- andId shrinkNodeJoinPlan adjustedP
+    , r'            <- andId shrinkNodeRestarts adjustedR
     , top'          <- andId shrinkNodeTopology nodeTopology
     , ls'           <- andId shrink slotLengths
     ]

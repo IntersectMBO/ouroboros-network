@@ -19,6 +19,7 @@ import           Ouroboros.Consensus.Util.Random
 import           Test.ThreadNet.General
 import           Test.ThreadNet.Util
 import           Test.ThreadNet.Util.NodeJoinPlan
+import           Test.ThreadNet.Util.NodeRestarts
 import           Test.ThreadNet.Util.NodeTopology
 
 import           Test.Util.Orphans.Arbitrary ()
@@ -43,6 +44,7 @@ tests = testGroup "Praos"
             { numCoreNodes
             , numSlots
             , nodeJoinPlan
+            , nodeRestarts = noRestarts
             , nodeTopology
             , slotLengths  = singletonSlotLengths praosSlotLength
             , initSeed
@@ -54,6 +56,7 @@ tests = testGroup "Praos"
       { numCoreNodes
       , numSlots
       , nodeJoinPlan = trivialNodeJoinPlan numCoreNodes
+      , nodeRestarts = noRestarts
       , nodeTopology = meshNodeTopology numCoreNodes
       , slotLengths  = singletonSlotLengths praosSlotLength
       , initSeed     = seed

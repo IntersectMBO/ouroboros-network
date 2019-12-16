@@ -24,6 +24,7 @@ import           Ouroboros.Consensus.Protocol
 import           Test.ThreadNet.General
 import           Test.ThreadNet.Util
 import           Test.ThreadNet.Util.NodeJoinPlan
+import           Test.ThreadNet.Util.NodeRestarts
 import           Test.ThreadNet.Util.NodeTopology
 
 import           Test.Util.Orphans.Arbitrary ()
@@ -49,6 +50,7 @@ tests = testGroup "LeaderSchedule"
             { numCoreNodes
             , numSlots
             , nodeJoinPlan
+            , nodeRestarts = noRestarts
             , nodeTopology
             , slotLengths
             , initSeed
