@@ -42,6 +42,8 @@ import           GHC.Stack (HasCallStack)
 import           Control.Monad.Class.MonadThrow
 import           Control.Tracer (Tracer, contramap, traceWith)
 
+import           Cardano.Prelude (forceElemsToWHNF)
+
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment (..))
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block (BlockNo, pattern BlockPoint,
@@ -215,10 +217,14 @@ addBlock cdb@CDB{..} b = do
       -> m ()
     scheduleChainSelection curSlot slot hdr = do
       nbScheduled <- atomically $ updateTVar cdbFutureBlocks $ \futureBlocks ->
-        let futureBlocks' = Map.insertWith (<>) slot (hdr NE.:| []) futureBlocks
+        let futureBlocks' = Map.insertWith strictAppend slot
+              (forceElemsToWHNF (hdr NE.:| [])) futureBlocks
             nbScheduled   = fromIntegral $ sum $ length <$> Map.elems futureBlocks
         in (futureBlocks', nbScheduled)
       trace $ ScheduledChainSelection (headerPoint hdr) curSlot nbScheduled
+
+    strictAppend :: (Semigroup (t a), Foldable t) => t a -> t a -> t a
+    strictAppend x y = forceElemsToWHNF (x <> y)
 
 -- | Trigger chain selection for the given block.
 --
