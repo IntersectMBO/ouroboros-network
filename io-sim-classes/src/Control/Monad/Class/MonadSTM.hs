@@ -50,8 +50,6 @@ import qualified Control.Concurrent.STM.TVar as STM
 import qualified Control.Monad.STM as STM
 
 import           Control.Exception
-import           Control.Monad.Except
-import           Control.Monad.Reader
 import           GHC.Stack
 import           Numeric.Natural (Natural)
 
@@ -118,86 +116,6 @@ class (Monad m, Monad (STM m)) => MonadSTM m where
   writeTBQueue   :: TBQueue m a -> a -> STM m ()
   isEmptyTBQueue :: TBQueue m a -> STM m Bool
   isFullTBQueue  :: TBQueue m a -> STM m Bool
-
-instance MonadSTM m => MonadSTM (ReaderT e m) where
-  type STM       (ReaderT e m) = ReaderT e (STM m)
-  type TVar      (ReaderT e m) = TVar m
-  type TMVar     (ReaderT e m) = TMVar m
-  type TQueue    (ReaderT e m) = TQueue m
-  type TBQueue   (ReaderT e m) = TBQueue m
-
-  atomically (ReaderT t) = ReaderT $ \e -> atomically (t e)
-  newTVar          = lift . newTVar
-  readTVar         = lift . readTVar
-  writeTVar t a    = lift $ writeTVar t a
-  retry            = lift retry
-  orElse a b       = ReaderT $ \e -> runReaderT a e `orElse` runReaderT b e
-
-  newTMVar         = lift . newTMVar
-  newTMVarM        = lift . newTMVarM
-  newEmptyTMVar    = lift newEmptyTMVar
-  newEmptyTMVarM   = lift newEmptyTMVarM
-  takeTMVar        = lift . takeTMVar
-  tryTakeTMVar     = lift . tryTakeTMVar
-  putTMVar   t a   = lift $ putTMVar t a
-  tryPutTMVar t a  = lift $ tryPutTMVar t a
-  readTMVar        = lift . readTMVar
-  tryReadTMVar     = lift . tryReadTMVar
-  swapTMVar t a    = lift $ swapTMVar t a
-  isEmptyTMVar     = lift . isEmptyTMVar
-
-  newTQueue        = lift $ newTQueue
-  readTQueue       = lift . readTQueue
-  tryReadTQueue    = lift . tryReadTQueue
-  writeTQueue q a  = lift $ writeTQueue q a
-  isEmptyTQueue    = lift . isEmptyTQueue
-
-  newTBQueue       = lift . newTBQueue
-  readTBQueue      = lift . readTBQueue
-  tryReadTBQueue   = lift . tryReadTBQueue
-  writeTBQueue q a = lift $ writeTBQueue q a
-  isEmptyTBQueue   = lift . isEmptyTBQueue
-  isFullTBQueue    = lift . isFullTBQueue
-
-instance (Show e, MonadSTM m) => MonadSTM (ExceptT e m) where
-  type STM       (ExceptT e m) = ExceptT e (STM m)
-  type TVar      (ExceptT e m) = TVar m
-  type TMVar     (ExceptT e m) = TMVar m
-  type TQueue    (ExceptT e m) = TQueue m
-  type TBQueue   (ExceptT e m) = TBQueue m
-
-  atomically (ExceptT t) = ExceptT $ atomically t
-  newTVar                = lift . newTVar
-  readTVar               = lift . readTVar
-  writeTVar t a          = lift $ writeTVar t a
-  retry                  = lift retry
-  orElse a b             = ExceptT $ runExceptT a `orElse` runExceptT b
-
-  newTMVar               = lift . newTMVar
-  newTMVarM              = lift . newTMVarM
-  newEmptyTMVar          = lift newEmptyTMVar
-  newEmptyTMVarM         = lift newEmptyTMVarM
-  takeTMVar              = lift . takeTMVar
-  tryTakeTMVar           = lift . tryTakeTMVar
-  putTMVar   t a         = lift $ putTMVar t a
-  tryPutTMVar t a        = lift $ tryPutTMVar t a
-  readTMVar              = lift . readTMVar
-  tryReadTMVar           = lift . tryReadTMVar
-  swapTMVar t a          = lift $ swapTMVar t a
-  isEmptyTMVar           = lift . isEmptyTMVar
-
-  newTQueue        = lift $ newTQueue
-  readTQueue       = lift . readTQueue
-  tryReadTQueue    = lift . tryReadTQueue
-  writeTQueue q a  = lift $ writeTQueue q a
-  isEmptyTQueue    = lift . isEmptyTQueue
-
-  newTBQueue       = lift . newTBQueue
-  readTBQueue      = lift . readTBQueue
-  tryReadTBQueue   = lift . tryReadTBQueue
-  writeTBQueue q a = lift $ writeTBQueue q a
-  isEmptyTBQueue   = lift . isEmptyTBQueue
-  isFullTBQueue    = lift . isFullTBQueue
 
 
 --
