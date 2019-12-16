@@ -6,7 +6,7 @@
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
-module Ouroboros.Network.PeerSelection.Test where
+module Ouroboros.Network.PeerSelection.Test (tests) where
 
 import           Data.Void (Void)
 import           Data.Typeable (Typeable)
