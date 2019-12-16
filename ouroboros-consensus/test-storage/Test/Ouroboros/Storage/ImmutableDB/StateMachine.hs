@@ -715,7 +715,7 @@ semantics errorsVar hasFS db internal (At cmdErr) =
         run (semanticsCorruption hasFS) its db internal cmd
 
       CmdErr (Just errors) cmd its -> do
-        tipBefore <- fmap fst <$> getTip db
+        tipBefore <- fmap forgetHash <$> getTip db
         res       <- withErrors errorsVar errors $ try $
           run (semanticsCorruption hasFS) its db internal cmd
         case res of
@@ -1174,6 +1174,7 @@ instance ToExpr TestHeader
 instance ToExpr TestBody
 instance ToExpr TestBlock
 instance ToExpr ImmDB.BlockOrEBB
+instance (ToExpr a, ToExpr hash) => ToExpr (ImmDB.WithHash hash a)
 instance ToExpr r => ToExpr (C.Tip r)
 instance ToExpr b => ToExpr (BinaryInfo b)
 instance ToExpr (DBModel Hash)

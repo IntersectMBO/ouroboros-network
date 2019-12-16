@@ -88,7 +88,8 @@ import           Ouroboros.Storage.FS.API (HasFS, createDirectoryIfMissing)
 import           Ouroboros.Storage.FS.API.Types (MountPoint (..), mkFsPath)
 import           Ouroboros.Storage.FS.IO (ioHasFS)
 import           Ouroboros.Storage.ImmutableDB (BinaryInfo (..), HashInfo (..),
-                     ImmutableDB, Iterator (Iterator), IteratorResult (..))
+                     ImmutableDB, Iterator (Iterator), IteratorResult (..),
+                     WithHash (..))
 import qualified Ouroboros.Storage.ImmutableDB as ImmDB
 import qualified Ouroboros.Storage.ImmutableDB.Parser as ImmDB
 import           Ouroboros.Storage.Util.ErrorHandling (ErrorHandling)
@@ -253,7 +254,7 @@ getBlockWithPoint db BlockPoint { withHash = hash, atSlot = slot } =
 
     -- | If there's an EBB at the tip of the ImmutableDB, return its 'SlotNo'.
     tipIsEBB :: m (Maybe SlotNo)
-    tipIsEBB = withDB db $ \imm -> fmap fst <$> ImmDB.getTip imm >>= \case
+    tipIsEBB = withDB db $ \imm -> fmap forgetHash <$> ImmDB.getTip imm >>= \case
       Tip (ImmDB.EBB epochNo) -> Just <$> epochInfoFirst epochNo
       Tip (ImmDB.Block _)     -> return Nothing
       TipGen                  -> return Nothing
@@ -298,7 +299,7 @@ getBlockAtTip :: (MonadCatch m, HasCallStack)
               => ImmDB m blk -> m (Maybe blk)
 getBlockAtTip db = do
     immTip <- withDB db $ \imm -> ImmDB.getTip imm
-    case fst <$> immTip of
+    case forgetHash <$> immTip of
       TipGen                   -> return Nothing
       Tip (ImmDB.EBB epochNo)  -> Just <$> getKnownBlock db (Left epochNo)
       Tip (ImmDB.Block slotNo) -> Just <$> getKnownBlock db (Right slotNo)
@@ -309,9 +310,12 @@ getPointAtTip :: forall m blk.
 getPointAtTip db = do
     immTip <- withDB db $ \imm -> ImmDB.getTip imm
     case immTip of
-      TipGen                         -> return GenesisPoint
-      Tip (ImmDB.EBB epochNo, hash)  -> (`BlockPoint` hash) <$> epochInfoFirst epochNo
-      Tip (ImmDB.Block slotNo, hash) -> return (BlockPoint slotNo hash)
+      TipGen ->
+        return GenesisPoint
+      Tip (WithHash hash (ImmDB.EBB epochNo)) ->
+        (`BlockPoint` hash) <$> epochInfoFirst epochNo
+      Tip (WithHash hash (ImmDB.Block slotNo)) ->
+        return (BlockPoint slotNo hash)
   where
     EpochInfo{..} = epochInfo db
 

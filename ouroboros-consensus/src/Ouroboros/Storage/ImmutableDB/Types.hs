@@ -1,7 +1,7 @@
 {-# LANGUAGE DataKinds                  #-}
 {-# LANGUAGE DeriveAnyClass             #-}
-{-# LANGUAGE DeriveFunctor              #-}
 {-# LANGUAGE DeriveGeneric              #-}
+{-# LANGUAGE DeriveTraversable          #-}
 {-# LANGUAGE DerivingVia                #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase                 #-}
@@ -9,6 +9,7 @@ module Ouroboros.Storage.ImmutableDB.Types
   ( SlotNo (..)
   , ImmTip
   , ImmTipWithHash
+  , WithHash (..)
   , BlockOrEBB (..)
   , HashInfo (..)
   , BinaryInfo (..)
@@ -35,10 +36,10 @@ module Ouroboros.Storage.ImmutableDB.Types
 
 import           Control.Exception (Exception (..))
 import           Data.Binary (Get, Put)
+import           Data.List.NonEmpty (NonEmpty)
 import           Data.Word
 import           GHC.Generics (Generic)
 import           GHC.Stack (CallStack, prettyCallStack)
-import           Data.List.NonEmpty (NonEmpty)
 
 import           Cardano.Prelude (NoUnexpectedThunks (..),
                      UseIsNormalFormNamed (..))
@@ -59,7 +60,12 @@ data BlockOrEBB
 type ImmTip = Tip BlockOrEBB
 
 -- TODO let this replace 'ImmTip' and integrate @hash@ in 'BlockOrEBB'?
-type ImmTipWithHash hash = Tip (BlockOrEBB, hash)
+type ImmTipWithHash hash = Tip (WithHash hash BlockOrEBB)
+
+data WithHash hash a = WithHash
+  { theHash    :: !hash
+  , forgetHash :: !a
+  } deriving (Eq, Show, Generic, NoUnexpectedThunks, Functor, Foldable, Traversable)
 
 -- | How to get/put the header hash of a block and how many bytes it occupies
 -- on-disk.
