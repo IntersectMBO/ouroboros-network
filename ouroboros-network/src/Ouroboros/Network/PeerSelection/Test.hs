@@ -96,7 +96,7 @@ data PeerConn = PeerConn
 -- | The peer graph is the graph of all the peers in the mock p2p network, in
 -- traditional adjacency representation.
 --
-newtype PeerGraph = PeerGraph [(PeerInfo, PeerAddr, [PeerAddr])]
+newtype PeerGraph = PeerGraph [(PeerAddr, [PeerAddr], PeerInfo)]
   deriving (Eq, Show)
 
 -- | For now the information associated with each node is just the gossip
@@ -155,7 +155,7 @@ validPeerGraph g@(PeerGraph adjacency) =
     and [ edgesSet  `Set.isSubsetOf` allpeersSet &&
           gossipSet `Set.isSubsetOf` edgesSet
         | let allpeersSet = allPeers g
-        , (GossipScript script, _, outedges) <- adjacency
+        , (_, outedges, GossipScript script) <- adjacency
         , let edgesSet  = Set.fromList outedges
               gossipSet = Set.fromList
                             [ x | Just (xs, _) <- NonEmpty.toList script
@@ -163,7 +163,7 @@ validPeerGraph g@(PeerGraph adjacency) =
         ]
 
 allPeers :: PeerGraph -> Set PeerAddr
-allPeers (PeerGraph g) = Set.fromList [ addr | (_, addr, _) <- g ]
+allPeers (PeerGraph g) = Set.fromList [ addr | (addr, _, _) <- g ]
 
 
 --
@@ -198,7 +198,7 @@ mockPeerSelectionActions GovernorMockEnvironment {
     scriptVars <-
       Map.fromList <$>
       sequence [ (,) addr <$> newTVarM script
-               | (script, addr, _) <- adjacency ]
+               | (addr, _, script) <- adjacency ]
     let requestPeerGossip addr =
             stepGossipScript scriptVar
           where
@@ -502,7 +502,7 @@ peerGraphAsGraph :: PeerGraph
                  -> (Graph, Graph.Vertex -> PeerAddr, PeerAddr -> Graph.Vertex)
 peerGraphAsGraph (PeerGraph adjacency) =
     simpleGraphRep $
-      Graph.graphFromEdges adjacency
+      Graph.graphFromEdges [ ((), node, edges) | (node, edges, _) <- adjacency ]
 
 firstGossipGraph :: PeerGraph
                  -> (Graph, Graph.Vertex -> PeerAddr, PeerAddr -> Graph.Vertex)
@@ -510,7 +510,7 @@ firstGossipGraph (PeerGraph adjacency) =
     simpleGraphRep $
       Graph.graphFromEdges
         [ ((), node, gossipScriptEdges gossip)
-        | (gossip, node, _edges) <- adjacency ]
+        | (node, _edges, gossip) <- adjacency ]
   where
     gossipScriptEdges :: GossipScript -> [PeerAddr]
     gossipScriptEdges (GossipScript (script :| _)) =
@@ -622,7 +622,7 @@ instance Arbitrary PeerGraph where
                         [ (from, Set.singleton (PeerAddr to))
                         | (from, to) <- edges ]
       graph <- sequence [ do node <- arbitraryGossipScript outedges
-                             return (node, PeerAddr n, outedges)
+                             return (PeerAddr n, outedges, node)
                         | n <- [0..numNodes-1]
                         , let outedges = maybe [] Set.toList
                                                (Map.lookup n adjacency) ]
@@ -632,11 +632,11 @@ instance Arbitrary PeerGraph where
       [ PeerGraph (prunePeerGraphEdges graph')
       | graph' <- shrinkList shrinkNode graph ]
     where
-      shrinkNode (GossipScript script, nodeaddr, edges) =
+      shrinkNode (nodeaddr, edges, GossipScript script) =
           -- shrink edges before gossip script, and addr does not shrink
-          [ (GossipScript script, nodeaddr, edges')
+          [ (nodeaddr, edges', GossipScript script)
           | edges' <- shrinkList shrinkNothing edges ]
-       ++ [ (GossipScript script', nodeaddr, edges)
+       ++ [ (nodeaddr, edges, GossipScript script')
           | script' <- shrink script ]
 
 arbitraryGossipScript :: [PeerAddr] -> Gen GossipScript
@@ -658,12 +658,12 @@ arbitraryGossipScript peers =
 
 -- | Remove dangling graph edges and gossip results.
 --
-prunePeerGraphEdges :: [(PeerInfo, PeerAddr, [PeerAddr])]
-                    -> [(PeerInfo, PeerAddr, [PeerAddr])]
+prunePeerGraphEdges :: [(PeerAddr, [PeerAddr], PeerInfo)]
+                    -> [(PeerAddr, [PeerAddr], PeerInfo)]
 prunePeerGraphEdges graph =
-    [ (GossipScript script', nodeaddr, edges')
-    | let nodes   = Set.fromList [ nodeaddr | (_, nodeaddr, _) <- graph ]
-    , (GossipScript script, nodeaddr, edges) <- graph
+    [ (nodeaddr, edges', GossipScript script')
+    | let nodes   = Set.fromList [ nodeaddr | (nodeaddr, _, _) <- graph ]
+    , (nodeaddr, edges, GossipScript script) <- graph
     , let edges'  = pruneEdgeList nodes edges
           script' = pruneGossipScript (Set.fromList edges') script
     ]
