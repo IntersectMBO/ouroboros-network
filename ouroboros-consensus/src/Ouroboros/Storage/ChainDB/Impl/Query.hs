@@ -160,7 +160,7 @@ getIsInvalidBlock
   => ChainDbEnv m blk
   -> STM m (WithFingerprint (HeaderHash blk -> Maybe (InvalidBlockReason blk)))
 getIsInvalidBlock CDB{..} =
-  fmap (fmap (fmap fst) . flip Map.lookup) <$> readTVar cdbInvalid
+  fmap (fmap (fmap invalidBlockReason) . flip Map.lookup) <$> readTVar cdbInvalid
 
 getMaxSlotNo
   :: forall m blk. (IOLike m, HasHeader (Header blk))

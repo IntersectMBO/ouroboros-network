@@ -26,6 +26,7 @@ module Ouroboros.Storage.ChainDB.Impl.Types (
   , readerRollStatePoint
     -- * Invalid blocks
   , InvalidBlocks
+  , InvalidBlockInfo (..)
     -- * Trace types
   , TraceEvent (..)
   , TraceAddBlockEvent (..)
@@ -294,12 +295,16 @@ readerRollStatePoint (RollForwardFrom pt) = pt
 
 -- | Hashes corresponding to invalid blocks. This is used to ignore these
 -- blocks during chain selection.
---
--- In addition to the reason why a block is invalid, the slot number of
--- the block is stored, so that whenever a garbage collection is performed
--- on the VolatileDB for some slot @s@, the hashes older or equal to @s@
--- can be removed from this map.
-type InvalidBlocks blk = Map (HeaderHash blk) (InvalidBlockReason blk, SlotNo)
+type InvalidBlocks blk = Map (HeaderHash blk) (InvalidBlockInfo blk)
+
+-- | In addition to the reason why a block is invalid, the slot number of the
+-- block is stored, so that whenever a garbage collection is performed on the
+-- VolatileDB for some slot @s@, the hashes older or equal to @s@ can be
+-- removed from this map.
+data InvalidBlockInfo blk = InvalidBlockInfo
+  { invalidBlockReason :: !(InvalidBlockReason blk)
+  , invalidBlockSlotNo :: !SlotNo
+  } deriving (Eq, Show, Generic, NoUnexpectedThunks)
 
 {-------------------------------------------------------------------------------
   Trace types
