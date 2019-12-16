@@ -455,12 +455,8 @@ ncSimpleInitiatorControl restartDelay ctrlFn = do
         atomically $ writeTBQueue q ptcl
 
     waitOnRestartQueue :: TBQueue m NodeToClientProtocols -> STM m MiniProtocolClientResult
-    waitOnRestartQueue q = do
-        ptcl <- readTBQueue q
-        return $ MpcRestart ptcl
+    waitOnRestartQueue q = MpcRestart <$> readTBQueue q
 
     waitOnMiniProtocolClientResult :: (NodeToClientProtocols, STM m a)
                                     -> STM m MiniProtocolClientResult
-    waitOnMiniProtocolClientResult (ptcl, fetchResult) = do
-        void fetchResult
-        return $ MpcResult ptcl
+    waitOnMiniProtocolClientResult (ptcl, fetchResult) = MpcResult ptcl <$ fetchResult

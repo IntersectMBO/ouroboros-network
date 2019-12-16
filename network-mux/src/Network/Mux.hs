@@ -160,8 +160,7 @@ muxStart tracer peerid app bearer = do
     setupResponderCtrlTbl :: m (MiniProtocolResponderControlTable ptcl m b)
     setupResponderCtrlTbl = MiniProtocolResponderControlTable
              . array (minBound, maxBound)
-           <$> sequence [ do q <- atomically newEmptyTMVar
-                             return (ptcl, q)
+           <$> sequence [ (ptcl,) <$> newEmptyTMVarM
                         | ptcl <- [minBound..maxBound]
                         ]
 
@@ -208,13 +207,13 @@ muxStart tracer peerid app bearer = do
                               cnt
 
         return $ case app of
-          MuxInitiatorApplication _ _ ->
+          MuxInitiatorApplication {} ->
             [ ( mpsInitiatorBrooder pmss itbl mpdId app initiatorChannel
               , show mpdId ++ " Initiator" )]
-          MuxResponderApplication _ _ ->
+          MuxResponderApplication {} ->
             [ (mpsResponderBrooder pmss rtbl mpdId app responderChannel
             , show mpdId ++ " Responder" )]
-          MuxInitiatorAndResponderApplication _ _ _ _ ->
+          MuxInitiatorAndResponderApplication {} ->
             [ ( mpsInitiatorBrooder pmss itbl mpdId app initiatorChannel
               , show mpdId ++ " Initiator" )
             , (mpsResponderBrooder pmss rtbl mpdId app responderChannel
@@ -243,7 +242,9 @@ muxStart tracer peerid app bearer = do
         -- Responder side exited, wait until we should hatch another responder
         len <- requeue pmss mpdId ModeResponder remainder
         traceWith tracer $ MuxTraceBrooderResponderDone (AppProtocolId mpdId) len
-        -- Propagate the miniprotocol result.
+        -- Propagate the miniprotocol result. The result is accesable from the STM action defined
+        -- in the MiniProtocolResponderControl field in the MuxResponderApplication or
+        -- MuxInitiatorAndResponderApplication app.
         atomically $ putTMVar (rtbl ! AppProtocolId mpdId) b
 
     -- Start and restart initiator side miniprotocols on demand.

@@ -170,9 +170,15 @@ newtype MiniProtocolDispatch ptcl m =
         MiniProtocolDispatch (Array (MiniProtocolId ptcl, MiniProtocolMode)
                                     (StrictTVar m BL.ByteString))
 
+-- | A mapping of MiniProtocolIds to STM actions that signals the start of the initiator side
+-- of the protocol and an STM action that can read the result of a miniprotocol applicaton.
+-- See 'MiniProtocolInitiatorControl'.
 newtype MiniProtocolInitiatorControlTable ptcl m a =
         MiniProtocolInitiatorControlTable (Array (MiniProtocolId ptcl)
                                                  (StrictTMVar m (), StrictTMVar m a))
+
+-- | A mapping of MiniProtocolIds to STM actions that can read the result of a miniprotocol applicaton.
+-- See 'MiniProtocolResponderControl'.
 newtype MiniProtocolResponderControlTable ptcl m b =
         MiniProtocolResponderControlTable (Array (MiniProtocolId ptcl)
                                                  (StrictTMVar m b))
