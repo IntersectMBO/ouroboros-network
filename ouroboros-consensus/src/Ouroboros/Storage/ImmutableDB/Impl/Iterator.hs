@@ -28,7 +28,7 @@ import           Data.Word (Word32, Word64)
 import           GHC.Generics (Generic)
 
 import           Cardano.Prelude (NoUnexpectedThunks (..),
-                     allNoUnexpectedThunks)
+                     allNoUnexpectedThunks, forceElemsToWHNF)
 
 import           GHC.Stack (HasCallStack)
 
@@ -96,7 +96,7 @@ data IteratorState hash h = IteratorState
     -- ^ The current epoch the iterator is streaming from.
   , itEpochHandle  :: !(Handle h)
     -- ^ A handle to the epoch file corresponding with 'itEpoch'.
-  , itEpochEntries :: !(NonEmpty (Secondary.Entry hash, Word32))
+  , itEpochEntries :: !(NonEmpty (WithBlockSize (Secondary.Entry hash)))
     -- ^ The entries from the secondary index corresponding to the current
     -- epoch. The first entry in the list is the next one to stream.
     --
@@ -105,6 +105,11 @@ data IteratorState hash h = IteratorState
     -- not included in this list.
   }
   deriving (Generic, NoUnexpectedThunks)
+
+data WithBlockSize a = WithBlockSize
+  { withoutBlockSize :: !a
+  , blockSize        :: !Word32
+  } deriving (Eq, Show, Generic, NoUnexpectedThunks)
 
 -- | Used by 'streamImpl' to choose between streaming blocks or headers.
 data BlocksOrHeaders = Blocks | Headers
@@ -354,13 +359,13 @@ iteratorNextImpl dbEnv it@IteratorHandle {itHasFS = hasFS :: HasFS m h, ..}
       IteratorStateExhausted -> return IteratorExhausted
       IteratorStateOpen iteratorState@IteratorState{..} ->
         withOpenState dbEnv $ \_ st -> do
-          let entryAndBlockSize@(entry, _) = NE.head itEpochEntries
+          let entryWithBlockSize@(WithBlockSize entry _) = NE.head itEpochEntries
               hash = Secondary.headerHash entry
               curEpochInfo = CurrentEpochInfo
                 (_currentEpoch       st)
                 (_currentEpochOffset st)
           blob <- case blocksOrHeaders of
-            Blocks  -> readNextBlock  itEpochHandle entryAndBlockSize itEpoch
+            Blocks  -> readNextBlock  itEpochHandle entryWithBlockSize itEpoch
             Headers -> readNextHeader itEpochHandle entry
           when step $ stepIterator curEpochInfo iteratorState
           return $ case Secondary.blockOrEBB entry of
@@ -372,10 +377,10 @@ iteratorNextImpl dbEnv it@IteratorHandle {itHasFS = hasFS :: HasFS m h, ..}
 
     readNextBlock
       :: Handle h
-      -> (Secondary.Entry hash, Word32)
+      -> WithBlockSize (Secondary.Entry hash)
       -> EpochNo
       -> m ByteString
-    readNextBlock eHnd (entry, size) epoch = do
+    readNextBlock eHnd (WithBlockSize entry size) epoch = do
         (bl, checksum') <- hGetExactlyAtCRC hasFS eHnd (fromIntegral size) offset
         checkChecksum _dbErr epochFile blockOrEBB checksum checksum'
         return bl
@@ -542,7 +547,7 @@ iteratorStateForEpoch hasFS err hashInfo
           "impossible: there must be entries according to the primary index"
 
         Just itEpochEntries -> do
-          let (nextEntry, _) NE.:| _ = itEpochEntries
+          let WithBlockSize nextEntry _ NE.:| _ = itEpochEntries
               offset = fromIntegral $ Secondary.unBlockOffset $
                 Secondary.blockOffset nextEntry
 
@@ -551,9 +556,10 @@ iteratorStateForEpoch hasFS err hashInfo
           hSeek eHnd AbsoluteSeek offset
 
           return IteratorState
-            { itEpoch       = epoch
-            , itEpochHandle = eHnd
-            , itEpochEntries
+            { itEpoch        = epoch
+            , itEpochHandle  = eHnd
+              -- Force so we don't store any thunks in the state
+            , itEpochEntries = forceElemsToWHNF itEpochEntries
             }
   where
     HasFS { hOpen, hClose, hSeek, hGetSize, hasFsErr } = hasFS
@@ -582,12 +588,12 @@ iteratorStateForEpoch hasFS err hashInfo
 fillInLastBlockSize
   :: Word64  -- ^ The size of the epoch file
   -> [(Secondary.Entry hash, BlockSize)]
-  -> [(Secondary.Entry hash, Word32)]
+  -> [WithBlockSize (Secondary.Entry hash)]
 fillInLastBlockSize epochFileSize = go
   where
     go [] = []
-    go [(e@Secondary.Entry { blockOffset }, LastEntry)] = [(e, sz)]
+    go [(e@Secondary.Entry { blockOffset }, LastEntry)] = [WithBlockSize e sz]
       where
         sz = fromIntegral (epochFileSize - Secondary.unBlockOffset blockOffset)
-    go ((e, BlockSize size):xs) = (e, size):go xs
+    go ((e, BlockSize size):xs) = WithBlockSize e size:go xs
     go ((_, LastEntry):_)       = error "LastEntry for entry that was not last"
