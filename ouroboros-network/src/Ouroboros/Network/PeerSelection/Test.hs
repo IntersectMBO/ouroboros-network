@@ -3,6 +3,9 @@
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE GeneralisedNewtypeDeriving #-}
+{-# LANGUAGE DeriveTraversable #-}
+
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
@@ -25,6 +28,7 @@ import qualified Data.Graph as Graph
 import           Data.Graph (Graph)
 import qualified Data.Tree as Tree
 
+import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadTime
 import           Control.Tracer (Tracer(..), contramap, traceWith)
@@ -78,11 +82,13 @@ data GovernorMockEnvironment = GovernorMockEnvironment {
        peerGraph               :: PeerGraph,
        localRootPeers          :: Map PeerAddr PeerAdvertise,
        publicRootPeers         :: Set PeerAddr,
-       targets                 :: PeerSelectionTargets,
+       targets                 :: TimedScript PeerSelectionTargets,
        pickKnownPeersForGossip :: PickScript,
-       pickColdPeersToForget   :: PickScript,
        pickColdPeersToPromote  :: PickScript,
-       pickWarmPeersToPromote  :: PickScript
+       pickWarmPeersToPromote  :: PickScript,
+       pickHotPeersToDemote    :: PickScript,
+       pickWarmPeersToDemote   :: PickScript,
+       pickColdPeersToForget   :: PickScript
      }
   deriving Show
 
@@ -142,7 +148,7 @@ validGovernorMockEnvironment GovernorMockEnvironment {
       validPeerGraph peerGraph
    && Map.keysSet localRootPeers `Set.isSubsetOf` allPeersSet
    &&            publicRootPeers `Set.isSubsetOf` allPeersSet
-   && sanePeerSelectionTargets targets
+   && all (sanePeerSelectionTargets . fst) targets
   where
     allPeersSet = allPeers peerGraph
 
@@ -185,40 +191,46 @@ runGovernorInMockEnvironment mockEnv =
         policy
 
 data TraceMockEnv = TraceEnvPeersStatus (Map PeerAddr PeerStatus)
+  deriving Show
 
-mockPeerSelectionActions :: (MonadSTM m, MonadTimer m)
+mockPeerSelectionActions :: (MonadAsync m, MonadTimer m)
                          => Tracer m TraceMockEnv
                          -> GovernorMockEnvironment
                          -> m (PeerSelectionActions PeerAddr (PeerConn m) m)
 mockPeerSelectionActions tracer
                          env@GovernorMockEnvironment {
-                           peerGraph = PeerGraph adjacency
+                           peerGraph = PeerGraph adjacency,
+                           targets
                          } = do
     gossipScripts <- Map.fromList <$>
                        sequence [ (,) addr <$> initScript gossip
                                 | (addr, _, gossip) <- adjacency ]
-    peerConns <- newTVarM Map.empty
-    return $ mockPeerSelectionActions' tracer env gossipScripts peerConns
+    targetsVar <- playTimedScript targets
+    peerConns  <- newTVarM Map.empty
+    return $ mockPeerSelectionActions'
+               tracer env
+               gossipScripts targetsVar peerConns
 
 mockPeerSelectionActions' :: forall m.
                              (MonadSTM m, MonadTimer m)
                           => Tracer m TraceMockEnv
                           -> GovernorMockEnvironment
                           -> Map PeerAddr (TVar m GossipScript)
+                          -> TVar m PeerSelectionTargets
                           -> TVar m (Map PeerAddr (TVar m PeerStatus))
                           -> PeerSelectionActions PeerAddr (PeerConn m) m
 mockPeerSelectionActions' tracer
                           GovernorMockEnvironment {
                             localRootPeers,
-                            publicRootPeers,
-                            targets
+                            publicRootPeers
                           }
                           gossipScripts
+                          targetsVar
                           connsVar =
     PeerSelectionActions {
       readLocalRootPeers       = return localRootPeers,
       requestPublicRootPeers   = \_ -> return (publicRootPeers, 60),
-      readPeerSelectionTargets = return targets,
+      readPeerSelectionTargets = readTVar targetsVar,
       requestPeerGossip,
       establishPeerConnection,
       monitorPeerConnection,
@@ -305,21 +317,25 @@ mockPeerSelectionPolicy  :: MonadSTM m
                          -> m (PeerSelectionPolicy PeerAddr m)
 mockPeerSelectionPolicy GovernorMockEnvironment {
                           pickKnownPeersForGossip,
-                          pickColdPeersToForget,
                           pickColdPeersToPromote,
-                          pickWarmPeersToPromote
+                          pickWarmPeersToPromote,
+                          pickHotPeersToDemote,
+                          pickWarmPeersToDemote,
+                          pickColdPeersToForget
                         } = do
     pickKnownPeersForGossipVar <- initScript pickKnownPeersForGossip
-    pickColdPeersToForgetVar   <- initScript pickColdPeersToForget
     pickColdPeersToPromoteVar  <- initScript pickColdPeersToPromote
     pickWarmPeersToPromoteVar  <- initScript pickWarmPeersToPromote
+    pickHotPeersToDemoteVar    <- initScript pickHotPeersToDemote
+    pickWarmPeersToDemoteVar   <- initScript pickWarmPeersToDemote
+    pickColdPeersToForgetVar   <- initScript pickColdPeersToForget
     return PeerSelectionPolicy {
       policyPickKnownPeersForGossip = interpretPickScript pickKnownPeersForGossipVar,
-      policyPickColdPeersToForget   = interpretPickScript pickColdPeersToForgetVar,
       policyPickColdPeersToPromote  = interpretPickScript pickColdPeersToPromoteVar,
       policyPickWarmPeersToPromote  = interpretPickScript pickWarmPeersToPromoteVar,
-      policyPickHotPeersToDemote    = fail "TODO: policyPickHotPeersToDemote",
-      policyPickWarmPeersToDemote   = fail "TODO: policyPickWarmPeersToDemote",
+      policyPickHotPeersToDemote    = interpretPickScript pickHotPeersToDemoteVar,
+      policyPickWarmPeersToDemote   = interpretPickScript pickWarmPeersToDemoteVar,
+      policyPickColdPeersToForget   = interpretPickScript pickColdPeersToForgetVar,
       policyFindPublicRootTimeout   = 5,    -- seconds
       policyMaxInProgressGossipReqs = 2,
       policyGossipRetryTime         = 3600, -- seconds
@@ -413,8 +429,10 @@ isEmptyEnv GovernorMockEnvironment {
              publicRootPeers,
              targets
            } =
-    (Map.null localRootPeers  || targetNumberOfKnownPeers targets == 0)
- && (Set.null publicRootPeers || targetNumberOfRootPeers  targets == 0)
+    (Map.null localRootPeers
+      || all (\(t,_) -> targetNumberOfKnownPeers t == 0) targets)
+ && (Set.null publicRootPeers
+      || all (\(t,_) -> targetNumberOfRootPeers  t == 0) targets)
 
 
 -- Check that events that are 100 events apart have an adequate time
@@ -448,12 +466,7 @@ prop_governor_gossip_1hr env@GovernorMockEnvironment{
                             } =
     let trace      = selectPeerSelectionTraceEvents $
                        runGovernorInMockEnvironment env {
-                         -- This test is only about testing gossiping,
-                         -- so do not try to establish connections:
-                         targets = targets {
-                           targetNumberOfEstablishedPeers = 0,
-                           targetNumberOfActivePeers      = 0
-                         }
+                         targets = singletonScript (targets', NoDelay)
                        }
         Just found = knownPeersAfter1Hour trace
         reachable  = firstGossipReachablePeers peerGraph
@@ -461,6 +474,14 @@ prop_governor_gossip_1hr env@GovernorMockEnvironment{
      in subsetProperty    found reachable
    .&&. bigEnoughProperty found reachable
   where
+    -- This test is only about testing gossiping,
+    -- so do not try to establish connections:
+    targets' :: PeerSelectionTargets
+    targets' = (fst (scriptHead targets)) {
+                 targetNumberOfEstablishedPeers = 0,
+                 targetNumberOfActivePeers      = 0
+               }
+
     knownPeersAfter1Hour :: [(Time, TestTraceEvent)] -> Maybe (Set PeerAddr)
     knownPeersAfter1Hour trace =
       listToMaybe
@@ -483,8 +504,8 @@ prop_governor_gossip_1hr env@GovernorMockEnvironment{
         -- incomplete, so we cannot expect to reach the usual target.
         --
         -- But we can at least expect to hit the target for root peers.
-      | Set.size publicRootPeers > targetNumberOfRootPeers targets
-      = property (Set.size found >= targetNumberOfRootPeers targets)
+      | Set.size publicRootPeers >  targetNumberOfRootPeers targets'
+      = property (Set.size found >= targetNumberOfRootPeers targets')
 
       | otherwise
       = counterexample ("reachable : " ++ show reachable ++ "\n" ++
@@ -493,7 +514,7 @@ prop_governor_gossip_1hr env@GovernorMockEnvironment{
                         "expected #: " ++ show expected) $
         property (Set.size found == expected)
       where
-        expected = Set.size reachable `min` targetNumberOfKnownPeers targets
+        expected = Set.size reachable `min` targetNumberOfKnownPeers targets'
 
 
 -- | Check the governor's view of connection status does not lag behind reality
@@ -538,6 +559,7 @@ prop_governor_connstatus env =
 data TestTraceEvent = GovernorDebug (DebugPeerSelection PeerAddr ())
                     | GovernorEvent (TracePeerSelection PeerAddr)
                     | MockEnvEvent   TraceMockEnv
+  deriving Show
 
 tracerTracePeerSelection :: Tracer (SimM s) (TracePeerSelection PeerAddr)
 tracerTracePeerSelection = contramap GovernorEvent tracerTestTraceEvent
@@ -647,9 +669,11 @@ instance Arbitrary GovernorMockEnvironment where
       -- But the others are independent
       targets                 <- arbitrary
       pickKnownPeersForGossip <- arbitrary
-      pickColdPeersToForget   <- arbitrary
       pickColdPeersToPromote  <- arbitrary
       pickWarmPeersToPromote  <- arbitrary
+      pickHotPeersToDemote    <- arbitrary
+      pickWarmPeersToDemote   <- arbitrary
+      pickColdPeersToForget   <- arbitrary
       return GovernorMockEnvironment{..}
     where
       arbitraryRootPeers :: Set PeerAddr
@@ -827,8 +851,18 @@ instance Arbitrary PeerSelectionTargets where
     , sanePeerSelectionTargets targets' ]
 
 
+--
+-- Test script abstraction
+--
+
 newtype Script a = Script (NonEmpty a)
-  deriving (Eq, Show)
+  deriving (Eq, Show, Functor, Foldable, Traversable)
+
+singletonScript :: a -> Script a
+singletonScript x = (Script (x :| []))
+
+scriptHead :: Script a -> a
+scriptHead (Script (x :| _)) = x
 
 instance Arbitrary a => Arbitrary (Script a) where
   arbitrary = Script <$> arbitrary
@@ -852,6 +886,35 @@ stepScriptSTM scriptVar = do
       []     -> return ()
       x':xs' -> writeTVar scriptVar (Script (x' :| xs'))
     return x
+
+type TimedScript a = Script (a, ScriptDelay)
+
+data ScriptDelay = NoDelay | ShortDelay | LongDelay
+  deriving (Show)
+
+instance Arbitrary ScriptDelay where
+  arbitrary = frequency [ (1, pure NoDelay)
+                        , (1, pure ShortDelay)
+                        , (4, pure LongDelay) ]
+
+  shrink LongDelay  = [NoDelay, ShortDelay]
+  shrink ShortDelay = [NoDelay]
+  shrink NoDelay    = []
+
+playTimedScript :: (MonadAsync m, MonadTimer m)
+                => TimedScript a -> m (TVar m a)
+playTimedScript (Script ((x0,d0) :| script)) = do
+    v <- newTVarM x0
+    _ <- async $ do
+           threadDelay (interpretScriptDelay d0)
+           sequence_ [ do atomically (writeTVar v x)
+                          threadDelay (interpretScriptDelay d)
+                     | (x,d) <- script ]
+    return v
+  where
+    interpretScriptDelay NoDelay    = 0
+    interpretScriptDelay ShortDelay = 1
+    interpretScriptDelay LongDelay  = 3600
 
 
 --
