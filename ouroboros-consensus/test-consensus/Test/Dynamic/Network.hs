@@ -345,6 +345,7 @@ runNodeNetwork registry testBtime numCoreNodes nodeJoinPlan nodeTopology
             , blockFetchSize      = nodeBlockFetchSize
             , blockMatchesHeader  = nodeBlockMatchesHeader
             , maxUnackTxs         = 1000 -- TODO
+            , maxBlockBodySize    = 20000 -- TODO
             , mempoolCap          = MempoolCapacity 10 -- TODO
             , chainSyncPipelining = pipelineDecisionLowHighMark 2 4
             }

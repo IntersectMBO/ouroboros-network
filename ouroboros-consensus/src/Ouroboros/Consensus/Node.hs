@@ -1,4 +1,5 @@
 {-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE NumericUnderscores  #-}
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -257,6 +258,7 @@ mkNodeArgs registry cfg initState tracers btime chainDB = NodeArgs
     , blockFetchSize      = nodeBlockFetchSize
     , blockMatchesHeader  = nodeBlockMatchesHeader
     , maxUnackTxs         = 100 -- TODO
+    , maxBlockBodySize    = 2_000_000 -- TODO
     , mempoolCap          = MempoolCapacity 1000
     , chainSyncPipelining = pipelineDecisionLowHighMark 200 300 -- TODO
     }

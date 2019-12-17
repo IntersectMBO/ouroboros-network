@@ -27,7 +27,7 @@ import           Control.Monad
 import           Crypto.Random (ChaChaDRG)
 import           Data.Map.Strict (Map)
 import           Data.Maybe (isNothing)
-import           Data.Word (Word16)
+import           Data.Word (Word16, Word32)
 
 import           Cardano.Prelude (UseIsNormalForm (..))
 import           Control.Tracer
@@ -136,6 +136,7 @@ data NodeArgs m peer blk = NodeArgs {
     , blockFetchSize      :: Header blk -> SizeInBytes
     , blockMatchesHeader  :: Header blk -> blk -> Bool
     , maxUnackTxs         :: Word16
+    , maxBlockBodySize    :: Word32
     , mempoolCap          :: MempoolCapacity
     , chainSyncPipelining :: MkPipelineDecision
     }
@@ -150,10 +151,10 @@ initNodeKernel
        )
     => NodeArgs m peer blk
     -> m (NodeKernel m peer blk)
-initNodeKernel args@NodeArgs { registry, cfg, tracers } = do
+initNodeKernel args@NodeArgs { registry, cfg, tracers, maxBlockBodySize } = do
     st <- initInternalState args
 
-    forkBlockProduction st
+    forkBlockProduction maxBlockBodySize st
 
     let IS { blockFetchInterface, fetchClientRegistry, varCandidates,
              chainDB, mempool } = st
@@ -295,9 +296,10 @@ data LeaderResult blk =
 forkBlockProduction
     :: forall m peer blk.
        (IOLike m, ProtocolLedgerView blk, ApplyTx blk)
-    => InternalState m peer blk
+    => Word32  -- ^ Max block body size
+    -> InternalState m peer blk
     -> m ()
-forkBlockProduction IS{..} =
+forkBlockProduction maxBlockBodySize IS{..} =
     onSlotChange btime $ \currentSlot -> do
       varDRG <- newTVarM =<< (PRNG <$> produceDRG)
       -- See the docstring of 'withSyncState' for why we're using it instead
@@ -306,9 +308,9 @@ forkBlockProduction IS{..} =
       let withTxs :: (MempoolSnapshot blk TicketNo -> STM m a) -> m a
           withTxs = withSyncState mempool (TxsForBlockInSlot currentSlot)
 
-      leaderResult <- withTxs $ \MempoolSnapshot{snapshotTxs} -> do
+      leaderResult <- withTxs $ \MempoolSnapshot{snapshotTxsForSize} -> do
         l@ExtLedgerState{..} <- ChainDB.getCurrentLedger chainDB
-        let txs = map fst snapshotTxs
+        let txs = map fst (snapshotTxsForSize maxBlockBodySize)
 
         case anachronisticProtocolLedgerView cfg ledgerState (At currentSlot) of
           Right ledgerView -> do

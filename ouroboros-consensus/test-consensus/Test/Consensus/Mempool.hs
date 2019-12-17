@@ -51,6 +51,8 @@ tests = testGroup "Mempool"
   [ testGroup "TxSeq"
       [ testProperty "lookupByTicketNo complete"           prop_TxSeq_lookupByTicketNo_complete
       , testProperty "lookupByTicketNo sound"              prop_TxSeq_lookupByTicketNo_sound
+      , testProperty "splitAfterTxSize"                    prop_TxSeq_splitAfterTxSize
+      , testProperty "splitAfterTxSizeSpec"                prop_TxSeq_splitAfterTxSizeSpec
       ]
   , testProperty "snapshotTxs == snapshotTxsAfter zeroIdx" prop_Mempool_snapshotTxs_snapshotTxsAfter
   , testProperty "valid added txs == getTxs"               prop_Mempool_addTxs_getTxs
@@ -802,8 +804,7 @@ prop_TxSeq_lookupByTicketNo_complete xs =
         | (tx, tn) <- TxSeq.fromTxSeq txseq ]
   where
     txseq :: TxSeq Int
-    txseq = foldl' (TxSeq.:>) TxSeq.Empty
-                   (zipWith TxTicket xs (map TicketNo [0..]))
+    txseq = TxSeq.toTxSeq $ zip3 xs (map TicketNo [0..]) (repeat 0)
 
 -- | Only finds elements in the sequence
 prop_TxSeq_lookupByTicketNo_sound ::
@@ -831,8 +832,82 @@ prop_TxSeq_lookupByTicketNo_sound smalls small =
     txseq =
         foldl' (TxSeq.:>) TxSeq.Empty $ map mkTicket haystack
 
-    mkTicket x = TxTicket x (mkTicketNo x)
+    mkTicket x = TxTicket x (mkTicketNo x) 0
     mkTicketNo = TicketNo . toEnum
+
+-- | Test that the 'fst' of the result of 'splitAfterTxSize' only contains
+-- 'TxTicket's whose summed up transaction sizes are less than or equal to
+-- that of the 'TxSizeInBytes' which the 'TxSeq' was split on.
+prop_TxSeq_splitAfterTxSize :: TxSizeSplitTestSetup -> Property
+prop_TxSeq_splitAfterTxSize tss =
+      property $ txSizeSum (txTickets before) <= tssTxSizeToSplitOn
+  where
+    TxSizeSplitTestSetup { tssTxSizeToSplitOn } = tss
+
+    (before, _after) = splitAfterTxSize txseq tssTxSizeToSplitOn
+
+    txseq :: TxSeq Int
+    txseq = txSizeSplitTestSetupToTxSeq tss
+
+    txSizeSum :: [TxTicket tx] -> TxSizeInBytes
+    txSizeSum = sum . map txTicketTxSizeInBytes
+
+
+-- | Test that the results of 'splitAfterTxSizeSpec', a specification of
+-- 'splitAfterTxSize', match those of the real 'splitAfterTxSize'
+-- implementation.
+prop_TxSeq_splitAfterTxSizeSpec :: TxSizeSplitTestSetup -> Property
+prop_TxSeq_splitAfterTxSizeSpec tss =
+         txTickets implBefore === txTickets specBefore
+    .&&. txTickets implAfter  === txTickets specAfter
+  where
+    TxSizeSplitTestSetup { tssTxSizeToSplitOn } = tss
+
+    (implBefore, implAfter) = splitAfterTxSize txseq tssTxSizeToSplitOn
+
+    (specBefore, specAfter) = splitAfterTxSizeSpec txseq tssTxSizeToSplitOn
+
+    txseq :: TxSeq Int
+    txseq = txSizeSplitTestSetupToTxSeq tss
+
+{-------------------------------------------------------------------------------
+  TxSizeSplitTestSetup
+-------------------------------------------------------------------------------}
+
+data TxSizeSplitTestSetup = TxSizeSplitTestSetup
+  { tssTxSizes         :: ![TxSizeInBytes]
+  , tssTxSizeToSplitOn :: !TxSizeInBytes
+  } deriving Show
+
+instance Arbitrary TxSizeSplitTestSetup where
+  arbitrary = do
+    let txSizeMaxBound = 10 * 1024 * 1024 -- 10MB transaction max bound
+    txSizes <- listOf $ choose (1, txSizeMaxBound)
+    let totalTxsSize = sum txSizes
+    txSizeToSplitOn <- frequency
+      [ (1, pure 0)
+      , (7, choose (0, totalTxsSize))
+      , (1, pure totalTxsSize)
+      , (1, choose (totalTxsSize + 1, totalTxsSize + 1000))
+      ]
+    pure TxSizeSplitTestSetup
+      { tssTxSizes = txSizes
+      , tssTxSizeToSplitOn = txSizeToSplitOn
+      }
+
+  shrink TxSizeSplitTestSetup { tssTxSizes, tssTxSizeToSplitOn } =
+    [ TxSizeSplitTestSetup
+        { tssTxSizes         = tssTxSizes'
+        , tssTxSizeToSplitOn = tssTxSizeToSplitOn'
+        }
+    | tssTxSizes' <- shrinkList (const []) tssTxSizes
+    , tssTxSizeToSplitOn' <- shrinkIntegral tssTxSizeToSplitOn
+    ]
+
+-- | Convert a 'TxSizeSplitTestSetup' to a 'TxSeq'.
+txSizeSplitTestSetupToTxSeq :: TxSizeSplitTestSetup -> TxSeq Int
+txSizeSplitTestSetupToTxSeq TxSizeSplitTestSetup { tssTxSizes } =
+  TxSeq.toTxSeq [(0, TicketNo 0, tssTxSize) | tssTxSize <- tssTxSizes]
 
 {-------------------------------------------------------------------------------
   TicketNo Properties
