@@ -693,6 +693,7 @@ invariantPeerSelectionState PeerSelectionState{..} =
  && Set.isSubsetOf inProgressPromoteWarm warmPeersSet
  && Set.isSubsetOf inProgressDemoteWarm  warmPeersSet
  && Set.isSubsetOf inProgressDemoteHot   hotPeersSet
+ && Set.null (Set.intersection inProgressPromoteWarm inProgressDemoteWarm)
   where
     localRootPeersSet   = Map.keysSet localRootPeers
     knownPeersSet       = Map.keysSet (KnownPeers.toMap knownPeers)
@@ -1533,6 +1534,7 @@ activePeersBelowTarget actions
                          establishedPeers,
                          activePeers,
                          inProgressPromoteWarm,
+                         inProgressDemoteWarm,
                          targets = PeerSelectionTargets {
                                      targetNumberOfActivePeers
                                    }
@@ -1541,7 +1543,8 @@ activePeersBelowTarget actions
   | numActivePeers + numPromoteInProgress < targetNumberOfActivePeers
 
     -- Are there any warm peers we could pick to promote?
-  , numEstablishedPeers - numActivePeers - numPromoteInProgress > 0
+  , numEstablishedPeers - numActivePeers
+                        - numPromoteInProgress - numDemoteInProgress > 0
   = Guarded Nothing $ do
           -- The availableToPromote is non-empty due to the second guard.
           -- The numPeersToPromote is positive due to the first guard.
@@ -1550,6 +1553,7 @@ activePeersBelowTarget actions
                                 `Map.intersection` establishedPeers
                                 `Map.withoutKeys` activePeers
                                 `Map.withoutKeys` inProgressPromoteWarm
+                                `Map.withoutKeys` inProgressDemoteWarm
           numPeersToPromote  = targetNumberOfActivePeers
                              - numActivePeers
                              - numPromoteInProgress
@@ -1580,6 +1584,7 @@ activePeersBelowTarget actions
     numEstablishedPeers  = Map.size establishedPeers
     numActivePeers       = Set.size activePeers
     numPromoteInProgress = Set.size inProgressPromoteWarm
+    numDemoteInProgress  = Set.size inProgressDemoteWarm
 
 
 jobPromoteWarmPeer :: forall peeraddr peerconn m.
@@ -1806,7 +1811,7 @@ changedTargets :: MonadSTM m
 changedTargets PeerSelectionActions{readPeerSelectionTargets}
                st@PeerSelectionState{
                  localRootPeers,
-                 targets = targets@PeerSelectionTargets{targetNumberOfKnownPeers}
+                 targets
                } =
     Guarded Nothing $ do
       targets' <- readPeerSelectionTargets
@@ -1815,7 +1820,8 @@ changedTargets PeerSelectionActions{readPeerSelectionTargets}
       -- We have to enforce the invariant that the number of root peers is
       -- not more than the target number of known peers. It's unlikely in
       -- practice so it's ok to resolve it arbitrarily using Map.take.
-      let localRootPeers' = Map.take targetNumberOfKnownPeers localRootPeers
+      let localRootPeers' = Map.take (targetNumberOfKnownPeers targets')
+                                     localRootPeers
 
       return Decision {
         decisionTrace = TraceTargetsChanged targets targets',
