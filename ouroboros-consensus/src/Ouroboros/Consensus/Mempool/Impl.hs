@@ -9,7 +9,7 @@
 module Ouroboros.Consensus.Mempool.Impl (
     openMempool
   , LedgerInterface (..)
-  , MempoolCapacity (..)
+  , MempoolCapacityBytes (..)
   , chainDBLedgerInterface
   , txsToMempoolSize
   , TicketNo
@@ -55,7 +55,7 @@ openMempool :: (IOLike m, ApplyTx blk)
             => ResourceRegistry m
             -> LedgerInterface m blk
             -> LedgerConfig blk
-            -> MempoolCapacity
+            -> MempoolCapacityBytes
             -> Tracer m (TraceEventMempool blk)
             -> m (Mempool m blk TicketNo)
 openMempool registry ledger cfg capacity tracer = do
@@ -71,7 +71,7 @@ openMempoolWithoutSyncThread
   :: (IOLike m, ApplyTx blk)
   => LedgerInterface m blk
   -> LedgerConfig blk
-  -> MempoolCapacity
+  -> MempoolCapacityBytes
   -> Tracer m (TraceEventMempool blk)
   -> m (Mempool m blk TicketNo)
 openMempoolWithoutSyncThread ledger cfg capacity tracer =
@@ -94,7 +94,7 @@ data LedgerInterface m blk = LedgerInterface
 
 -- | Represents the maximum number of bytes worth of transactions that a
 -- 'Mempool' can contain.
-newtype MempoolCapacity = MempoolCapacity Word32
+newtype MempoolCapacityBytes = MempoolCapacityBytes Word32
   deriving (Show)
 
 -- | Create a 'LedgerInterface' from a 'ChainDB'.
@@ -130,7 +130,7 @@ deriving instance ( NoUnexpectedThunks (GenTx blk)
 data MempoolEnv m blk = MempoolEnv {
       mpEnvLedger    :: LedgerInterface m blk
     , mpEnvLedgerCfg :: LedgerConfig blk
-    , mpEnvCapacity  :: !MempoolCapacity
+    , mpEnvCapacity  :: !MempoolCapacityBytes
     , mpEnvStateVar  :: StrictTVar m (InternalState blk)
     , mpEnvTracer    :: Tracer m (TraceEventMempool blk)
     }
@@ -141,7 +141,7 @@ initInternalState = IS TxSeq.Empty Block.GenesisHash zeroTicketNo
 initMempoolEnv :: (IOLike m, ApplyTx blk)
                => LedgerInterface m blk
                -> LedgerConfig blk
-               -> MempoolCapacity
+               -> MempoolCapacityBytes
                -> Tracer m (TraceEventMempool blk)
                -> m (MempoolEnv m blk)
 initMempoolEnv ledgerInterface cfg capacity tracer = do
@@ -303,7 +303,7 @@ implAddTxs mpEnv accum txs = assert (all txInvariant txs) $ do
       { mpEnvStateVar
       , mpEnvTracer
       , mpEnvLedgerCfg
-      , mpEnvCapacity = MempoolCapacity mempoolCap
+      , mpEnvCapacity = MempoolCapacityBytes mempoolCap
       } = mpEnv
 
     traceBatch mkEv size batch time
@@ -375,8 +375,8 @@ implAddTxs mpEnv accum txs = assert (all txInvariant txs) $ do
       -- Determine what the mempool size would be if we were to commit the new
       -- transactions we've validated thus far and also the next transaction
       -- to validate, 'tx'.
-      -- If this value is greater than the 'MempoolCapacity', then we know not
-      -- to continue validating at this time.
+      -- If this value is greater than the 'MempoolCapacityBytes', then we
+      -- know not to continue validating at this time.
       let newTxsBytes    = sum (txSize <$> vrNewValid vr) + txSize tx
           newSizeInBytes = curSizeInBytes + newTxsBytes
 

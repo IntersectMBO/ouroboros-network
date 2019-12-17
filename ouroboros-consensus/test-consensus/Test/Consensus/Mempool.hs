@@ -399,13 +399,13 @@ data TestSetup = TestSetup
   { testLedgerState :: LedgerState TestBlock
   , testInitialTxs  :: [TestTx]
     -- ^ These are all valid and will be the initial contents of the Mempool.
-  , testMempoolCap  :: MempoolCapacity
+  , testMempoolCap  :: MempoolCapacityBytes
   } deriving (Show)
 
 ppTestSetup :: TestSetup -> String
 ppTestSetup TestSetup { testLedgerState
                       , testInitialTxs
-                      , testMempoolCap = MempoolCapacity mpCap
+                      , testMempoolCap = MempoolCapacityBytes mpCap
                       } = unlines $
     ["Ledger/chain contains TxIds:"]         <>
     (map condense (tlTxIds testLedgerState)) <>
@@ -421,7 +421,7 @@ txSizesInBytes = foldl' (\acc tx -> acc + txSize tx) 0
 -- | Generate a 'TestSetup' and return the ledger obtained by applying all of
 -- the initial transactions.
 --
--- n.b. the generated 'MempoolCapacity' will be of the value
+-- n.b. the generated 'MempoolCapacityBytes' will be of the value
 -- @nbInitialTxs + extraCapacity@
 genTestSetupWithExtraCapacity :: Int -> Word32 -> Gen (TestSetup, LedgerState TestBlock)
 genTestSetupWithExtraCapacity maxInitialTxs extraCapacity = do
@@ -430,7 +430,7 @@ genTestSetupWithExtraCapacity maxInitialTxs extraCapacity = do
     (_txs1,  ledger1) <- genValidTxs ledgerSize testInitLedger
     ( txs2,  ledger2) <- genValidTxs nbInitialTxs ledger1
     let initTxsSizeInBytes = txSizesInBytes (map TestGenTx txs2)
-        mpCap = MempoolCapacity (initTxsSizeInBytes + extraCapacity)
+        mpCap = MempoolCapacityBytes (initTxsSizeInBytes + extraCapacity)
         testSetup = TestSetup
           { testLedgerState = ledger1
           , testInitialTxs  = txs2
@@ -449,12 +449,12 @@ instance Arbitrary TestSetup where
     fst <$> genTestSetupWithExtraCapacity n extraCapacity
   shrink TestSetup { testLedgerState
                    , testInitialTxs
-                   , testMempoolCap = MempoolCapacity mpCap
+                   , testMempoolCap = MempoolCapacityBytes mpCap
                    } =
     -- TODO we could shrink @testLedgerState@ too
     [ TestSetup { testLedgerState
                 , testInitialTxs = testInitialTxs'
-                , testMempoolCap = MempoolCapacity mpCap'
+                , testMempoolCap = MempoolCapacityBytes mpCap'
                 }
     | testInitialTxs' <- shrinkList (const []) testInitialTxs
     , mpCap' <- shrinkIntegral mpCap
@@ -583,9 +583,9 @@ instance Arbitrary TestSetupWithTxs where
     nbTxs <- choose (0, n)
     (testSetup, ledger)  <- genTestSetup n
     (txs,      _ledger') <- genTxs nbTxs ledger
-    let MempoolCapacity mpCap = testMempoolCap testSetup
+    let MempoolCapacityBytes mpCap = testMempoolCap testSetup
         testSetup' = testSetup
-          { testMempoolCap = MempoolCapacity $
+          { testMempoolCap = MempoolCapacityBytes $
               mpCap + txSizesInBytes (map (TestGenTx . fst) txs)
           }
     return TestSetupWithTxs { testSetup = testSetup', txs }
@@ -734,7 +734,7 @@ withTestMempool setup@TestSetup { testLedgerState, testInitialTxs, testMempoolCa
 data MempoolCapTestSetup = MempoolCapTestSetup
   { mctsTestSetup :: TestSetup
   , mctsValidTxs  :: [TestTx]
-  , mctsCapacity  :: MempoolCapacity
+  , mctsCapacity  :: MempoolCapacityBytes
   } deriving (Show)
 
 instance Arbitrary MempoolCapTestSetup where
@@ -778,19 +778,20 @@ instance Arbitrary MempoolCapTestSetup where
 
     -- As mentioned above, we need to adjust the originally generated mempool
     -- capacity with our newly generated one.
-    let testSetup' = testSetup { testMempoolCap = MempoolCapacity capacity }
+    let testSetup' = testSetup
+          { testMempoolCap = MempoolCapacityBytes capacity }
 
     pure MempoolCapTestSetup { mctsTestSetup = testSetup'
                              , mctsValidTxs  = vtxs
-                             , mctsCapacity  = MempoolCapacity capacity
+                             , mctsCapacity  = MempoolCapacityBytes capacity
                              }
 
 -- | Split the given transactions at the point at which those on the left-hand
 -- side would be just enough to fill the mempool to capacity.
 splitTxsUntilCap :: [GenTx TestBlock]
-                 -> MempoolCapacity
+                 -> MempoolCapacityBytes
                  -> ([GenTx TestBlock], [GenTx TestBlock])
-splitTxsUntilCap txs (MempoolCapacity mpCap) = go 0 [] txs
+splitTxsUntilCap txs (MempoolCapacityBytes mpCap) = go 0 [] txs
   where
     go :: Word32
        -> [GenTx TestBlock]
@@ -1035,7 +1036,7 @@ prop_Mempool_idx_consistency (Actions actions) =
     emptyTestSetup = TestSetup
       { testLedgerState = testInitLedger
       , testInitialTxs  = []
-      , testMempoolCap  = MempoolCapacity maxBound
+      , testMempoolCap  = MempoolCapacityBytes maxBound
       }
 
     lastOfMempoolRemoved txsInMempool = \case

@@ -138,7 +138,7 @@ data NodeArgs m peer blk = NodeArgs {
     , blockMatchesHeader  :: Header blk -> blk -> Bool
     , maxUnackTxs         :: Word16
     , maxBlockBodySize    :: Word32
-    , mempoolCap          :: MempoolCapacity
+    , mempoolCap          :: MempoolCapacityBytes
     , chainSyncPipelining :: MkPipelineDecision
     }
 
