@@ -804,7 +804,7 @@ peerSelectionGovernorLoop tracer debugTracer
       <> changedTargets                actions st
       <> changedLocalRootPeers         actions st
       <> jobCompleted                  jobPool st now
-      <> monitorConnections                    st
+      <> monitorConnections            actions st
 
       -- There is no rootPeersAboveTarget since the roots target is one sided.
 
@@ -876,6 +876,7 @@ data TracePeerSelection peeraddr =
      | TraceDemoteHotPeers     Int Int (Set peeraddr)
      | TraceDemoteHotFailed    peeraddr SomeException
      | TraceDemoteHotDone      peeraddr
+     | TraceDemoteAsynchronous (Map peeraddr PeerStatus)
      | TraceGovernorWakeup
   deriving Show
 
@@ -1840,18 +1841,61 @@ jobCompleted jobPool st now =
       return $! completion st now
 
 
-monitorConnections :: MonadSTM m
-                   => PeerSelectionState peeraddr peerconn
+monitorConnections :: forall m peeraddr peerconn.
+                      (MonadSTM m, Ord peeraddr)
+                   => PeerSelectionActions peeraddr peerconn m
+                   -> PeerSelectionState peeraddr peerconn
                    -> Guarded (STM m) (Decision m peeraddr peerconn)
-monitorConnections PeerSelectionState {
---                     establishedPeers,
---                     establishedPeersStatus
-                   } = GuardedSkip Nothing
-{-
-  Guarded Nothing $ do
-    establishedPeersStatus' <- traverse monitorPeerConnection establishedPeers
-    check (establishedPeersStatus' /= establishedPeersStatus)
--}
+monitorConnections PeerSelectionActions{monitorPeerConnection}
+                   st@PeerSelectionState {
+                     activePeers,
+                     establishedPeers,
+                     establishedStatus,
+                     inProgressDemoteHot,
+                     inProgressDemoteWarm
+                   } =
+    Guarded Nothing $ do
+      establishedStatus' <- traverse monitorPeerConnection establishedPeers
+      let demotions = asynchronousDemotions establishedStatus
+                                            establishedStatus'
+      check (not (Map.null demotions))
+      let (demotedToWarm, demotedToCold) = Map.partition (==PeerWarm) demotions
+      return Decision {
+        decisionTrace = TraceDemoteAsynchronous demotions,
+        decisionJobs  = [],
+        decisionState = st {
+                          activePeers       = activePeers
+                                                Set.\\ Map.keysSet demotedToWarm,
+                          establishedPeers  = establishedPeers
+                                                Map.\\ demotedToCold,
+
+                          -- Note that we do not use establishedStatus' which
+                          -- has the synchronous ones that are supposed to be
+                          -- handled elsewhere. We just update the async ones:
+                          establishedStatus = establishedStatus <> demotions
+                        }
+      }
+  where
+    -- Those demotions that occurred not as a result of action by the governor.
+    -- They're further classified into demotions to warm, and demotions to cold.
+    asynchronousDemotions :: Map peeraddr PeerStatus
+                          -> Map peeraddr PeerStatus
+                          -> Map peeraddr PeerStatus
+    asynchronousDemotions old new =
+      Map.mapMaybeWithKey asyncDemotion
+        (Map.filter (uncurry (>))
+           (Map.intersectionWith (,) old new))
+
+    -- The asynchronous ones, those not directed by the governor, are:
+    -- hot -> warm, warm -> cold and hot -> cold, other than the ones in the in
+    -- relevant progress set.
+    asyncDemotion :: peeraddr -> (PeerStatus, PeerStatus) -> Maybe PeerStatus
+    asyncDemotion peeraddr (PeerHot, PeerWarm)
+      | peeraddr `Set.notMember` inProgressDemoteHot  = Just PeerWarm
+    asyncDemotion peeraddr (PeerWarm, PeerCold)
+      | peeraddr `Set.notMember` inProgressDemoteWarm = Just PeerCold
+    asyncDemotion _        (PeerHot, PeerCold)        = Just PeerCold
+    asyncDemotion _        _                          = Nothing
 
 
 ------------------------
