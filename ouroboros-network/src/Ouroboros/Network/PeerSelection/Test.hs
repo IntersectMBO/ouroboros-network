@@ -64,6 +64,7 @@ tests =
     ]
   , testProperty "governor no livelock"             prop_governor_nolivelock
   , testProperty "governor gossip reachable in 1hr" prop_governor_gossip_1hr
+  , testProperty "governor connection status"       prop_governor_connstatus
   ]
 
 
@@ -599,8 +600,8 @@ takeFirstNHours h = takeWhile (\(t,_) -> t < Time (60*60*h))
 -- the 'GossipScript's which determine what subset of edges the governor
 -- actually sees when it tries to gossip.
 --
-notionallyReachablePeers :: PeerGraph -> Set PeerAddr -> Set PeerAddr
-notionallyReachablePeers pg roots =
+_notionallyReachablePeers :: PeerGraph -> Set PeerAddr -> Set PeerAddr
+_notionallyReachablePeers pg roots =
     Set.fromList
   . map vertexToAddr
   . concatMap Tree.flatten 
@@ -994,8 +995,8 @@ renderRanges r n = show lower ++ " -- " ++ show upper
 -- Live examples
 --
 
-governorFindingPublicRoots :: Int -> [Domain] -> IO Void
-governorFindingPublicRoots targetNumberOfRootPeers domains =
+_governorFindingPublicRoots :: Int -> [Domain] -> IO Void
+_governorFindingPublicRoots targetNumberOfRootPeers domains =
     publicRootPeersProvider
       tracer
       DNS.defaultResolvConf
