@@ -26,6 +26,7 @@ import qualified Data.ByteString.Lazy as Lazy
 import           Data.FingerTree.Strict (Measured (..))
 import           Data.Functor (($>))
 import           Data.Hashable
+import           Data.Int (Int64)
 import           Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
 import qualified Data.Map.Strict as Map
@@ -56,7 +57,8 @@ import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Orphans ()
 
 import           Ouroboros.Storage.Common (EpochNo (..), EpochSize (..))
-import           Ouroboros.Storage.FS.API (HasFS (..), withFile)
+import           Ouroboros.Storage.FS.API (HasFS (..), hGetExactly, hPutAll,
+                     hSeek, withFile)
 import           Ouroboros.Storage.FS.API.Types
 import           Ouroboros.Storage.ImmutableDB.Types (BinaryInfo (..),
                      HashInfo (..))
@@ -176,6 +178,13 @@ testBlockEpochNoIfEBB fixedEpochSize b = case testBlockIsEBB b of
     IsNotEBB -> Nothing
     IsEBB    -> Just $
       EpochNo (unSlotNo (blockSlot b) `div` unEpochSize fixedEpochSize)
+
+-- | Check whether the header matches its hash and whether the body matches
+-- its hash.
+testBlockIsValid :: TestBlock -> Bool
+testBlockIsValid (TestBlock hdr body) =
+  thHash     hdr == hashHeader hdr &&
+  thBodyHash hdr == hashBody   body
 
 testBlockToBuilder :: TestBlock -> Builder
 testBlockToBuilder = CBOR.toBuilder . encode
@@ -370,6 +379,9 @@ data FileCorruption
   = DeleteFile
   | DropLastBytes Word64
     -- ^ Drop the last @n@ bytes of a file.
+  | Corrupt Word64
+    -- ^ Corrupt the file by adding 1 to the byte at the given location
+    -- (modulo the file size).
   deriving (Show, Eq)
 
 -- | Returns 'True' when something was actually corrupted. For example, when
@@ -382,15 +394,31 @@ corruptFile hasFS@HasFS{..} fc file = case fc of
       let newFileSize = if n >= fileSize then 0 else fileSize - n
       hTruncate hnd newFileSize
       return $ fileSize /= newFileSize
+    Corrupt n               -> withFile hasFS file (ReadWriteMode AllowExisting) $ \hnd -> do
+      fileSize <- hGetSize hnd
+      if fileSize == 0 then
+        return False
+      else do
+        let offset :: Int64
+            offset = fromIntegral $ n `mod` fileSize
+        hSeek hnd AbsoluteSeek offset
+        bs <- hGetExactly hasFS hnd 1
+        hSeek hnd RelativeSeek (-1)
+        _ <- hPutAll hasFS hnd (Lazy.map (+ 1) bs)
+        return True
+
 
 instance Arbitrary FileCorruption where
   arbitrary = frequency
     [ (1, return DeleteFile)
     , (1, DropLastBytes . getSmall . getPositive <$> arbitrary)
+    , (1, Corrupt . getSmall . getPositive <$> arbitrary)
     ]
   shrink DeleteFile         = []
   shrink (DropLastBytes n)  =
     DropLastBytes . getSmall . getPositive <$> shrink (Positive (Small n))
+  shrink (Corrupt n) =
+    Corrupt . getSmall . getPositive <$> shrink (Positive (Small n))
 
 -- | Multiple corruptions
 type Corruptions = NonEmpty (FileCorruption, FsPath)

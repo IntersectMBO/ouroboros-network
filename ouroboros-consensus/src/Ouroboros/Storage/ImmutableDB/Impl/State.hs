@@ -33,8 +33,6 @@ import           Cardano.Prelude (NoUnexpectedThunks (..))
 
 import           Control.Monad.Class.MonadThrow hiding (onException)
 
-import           Ouroboros.Network.Point (WithOrigin)
-
 import           Ouroboros.Consensus.Util (SomePair (..))
 import           Ouroboros.Consensus.Util.IOLike
 
@@ -63,7 +61,7 @@ data ImmutableDBEnv m hash = forall h e. ImmutableDBEnv
     { _dbHasFS           :: !(HasFS m h)
     , _dbErr             :: !(ErrorHandling ImmutableDBError m)
     , _dbInternalState   :: !(StrictMVar m (InternalState hash h))
-    , _dbEpochFileParser :: !(EpochFileParser e m (Secondary.Entry hash, WithOrigin hash))
+    , _dbEpochFileParser :: !(EpochFileParser e m (Secondary.Entry hash) hash)
     , _dbEpochInfo       :: !(EpochInfo m)
     , _dbHashInfo        :: !(HashInfo hash)
     , _dbTracer          :: !(Tracer m (TraceEvent e hash))

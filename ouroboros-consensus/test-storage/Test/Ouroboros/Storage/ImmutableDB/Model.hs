@@ -342,9 +342,11 @@ findCorruptionRollBackPoint corr file dbm =
       Just ("secondary", _epoch) -> DontRollBack
       _                          -> error "Invalid file to corrupt"
 
-findEpochDropLastBytesRollBackPoint :: Word64 -> EpochNo -> DBModel hash
-                                    -> RollBackPoint
-findEpochDropLastBytesRollBackPoint n epoch dbm
+findEpochRollBackPoint :: Word64 -- ^ The number of valid bytes in the epoch,
+                                 -- the corruption happens at the first byte
+                                 -- after it.
+                       -> EpochNo -> DBModel hash -> RollBackPoint
+findEpochRollBackPoint validBytes epoch dbm
     | null epochSlots
       -- If the file is empty, no corruption happened, and we don't have to
       -- roll back
@@ -357,14 +359,9 @@ findEpochDropLastBytesRollBackPoint n epoch dbm
     = rollbackToLastFilledSlotBefore epoch dbm
   where
     blobs = blobsInEpoch dbm epoch
-    totalBytes = fromIntegral $ sum (map Lazy.length blobs)
-    validBytes :: Word64
-    validBytes
-      | n >= totalBytes
-      = 0
-      | otherwise
-      = totalBytes - n
+
     epochSlots = epochSlotsInEpoch dbm epoch
+
     mbLastValidEpochSlot :: Maybe EpochSlot
     mbLastValidEpochSlot = go 0 Nothing (zip epochSlots blobs)
       where
@@ -380,12 +377,22 @@ findEpochDropLastBytesRollBackPoint n epoch dbm
             where
               blobSize = fromIntegral $ Lazy.length blob
 
-
 findEpochCorruptionRollBackPoint :: FileCorruption -> EpochNo -> DBModel hash
                                  -> RollBackPoint
 findEpochCorruptionRollBackPoint corr epoch dbm = case corr of
-    DeleteFile      -> rollbackToLastFilledSlotBefore epoch dbm
-    DropLastBytes n -> findEpochDropLastBytesRollBackPoint n epoch dbm
+    DeleteFile      -> rollbackToLastFilledSlotBefore    epoch dbm
+
+    DropLastBytes n -> findEpochRollBackPoint validBytes epoch dbm
+      where
+        validBytes | n >= totalBytes = 0
+                   | otherwise       = totalBytes - n
+
+    Corrupt n       -> findEpochRollBackPoint validBytes epoch dbm
+      where
+        validBytes = n `mod` totalBytes
+  where
+    blobs = blobsInEpoch dbm epoch
+    totalBytes = fromIntegral $ sum (map Lazy.length blobs)
 
 rollbackToLastFilledSlotBefore :: EpochNo -> DBModel hash -> RollBackPoint
 rollbackToLastFilledSlotBefore epoch dbm = case lastMaybe beforeEpoch of

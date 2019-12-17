@@ -107,8 +107,6 @@ import           GHC.Stack (HasCallStack)
 
 import           Control.Monad.Class.MonadThrow (finally)
 
-import           Ouroboros.Network.Point (WithOrigin)
-
 import           Ouroboros.Consensus.Block (IsEBB (..))
 import           Ouroboros.Consensus.Util (SomePair (..))
 import           Ouroboros.Consensus.Util.IOLike
@@ -167,7 +165,7 @@ openDB
   -> EpochInfo m
   -> HashInfo hash
   -> ValidationPolicy
-  -> EpochFileParser e m (Secondary.Entry hash, WithOrigin hash)
+  -> EpochFileParser e m (Secondary.Entry hash) hash
   -> Tracer m (TraceEvent e hash)
   -> m (ImmutableDB hash m)
 openDB hasFS err epochInfo hashInfo valPol parser tracer =
@@ -223,7 +221,7 @@ openDBInternal
   -> EpochInfo m
   -> HashInfo hash
   -> ValidationPolicy
-  -> EpochFileParser e m (Secondary.Entry hash, WithOrigin hash)
+  -> EpochFileParser e m (Secondary.Entry hash) hash
   -> Tracer m (TraceEvent e hash)
   -> m (ImmutableDB hash m, Internal hash m)
 openDBInternal hasFS@HasFS{..} err epochInfo hashInfo valPol parser tracer = do

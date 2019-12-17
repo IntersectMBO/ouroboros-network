@@ -269,6 +269,7 @@ runNodeNetwork registry testBtime numCoreNodes nodeJoinPlan nodeTopology
         , cdbEpochInfo        = epochInfo
         , cdbHashInfo         = nodeHashInfo (Proxy @blk)
         , cdbIsEBB            = nodeIsEBB
+        , cdbCheckIntegrity   = nodeCheckIntegrity cfg
         , cdbGenesis          = return initLedger
         , cdbBlockchainTime   = btime
         -- Misc

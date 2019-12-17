@@ -41,6 +41,7 @@ library
                        Ouroboros.Consensus.Ledger.Byron.Conversions
                        Ouroboros.Consensus.Ledger.Byron.DelegationHistory
                        Ouroboros.Consensus.Ledger.Byron.Forge
+                       Ouroboros.Consensus.Ledger.Byron.Integrity
                        Ouroboros.Consensus.Ledger.Byron.Ledger
                        Ouroboros.Consensus.Ledger.Byron.Mempool
                        Ouroboros.Consensus.Ledger.Byron.Orphans
@@ -231,6 +232,7 @@ library
                        network,
                        serialise         >=0.2   && <0.3,
                        stm,
+                       streaming,
                        text              >=1.2   && <1.3,
                        time,
                        transformers,

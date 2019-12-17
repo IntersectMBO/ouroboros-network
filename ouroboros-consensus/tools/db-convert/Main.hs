@@ -18,8 +18,6 @@
 module Main where
 
 import qualified Cardano.Binary as CB
-import qualified Cardano.Chain.Block as CC
-import qualified Cardano.Chain.Common as CC
 import qualified Cardano.Chain.Epoch.File as CC
 import qualified Cardano.Chain.Genesis as CC.Genesis
 import           Cardano.Chain.Slotting (EpochSlots (..))
@@ -34,28 +32,30 @@ import           Data.Bifunctor (first)
 import qualified Data.ByteString as BS
 import           Data.Foldable (for_)
 import           Data.List (sort)
+import           Data.Proxy (Proxy (..))
 import qualified Data.Text as Text
 import           Data.Time (UTCTime)
 import           Data.Typeable (Typeable)
 import           Data.Word (Word64)
 import qualified Options.Applicative as Options
 import           Options.Generic
+import           Ouroboros.Consensus.BlockchainTime (realBlockchainTime,
+                     slotLengthFromMillisec)
 import           Ouroboros.Consensus.Ledger.Byron (ByronBlock)
 import qualified Ouroboros.Consensus.Ledger.Byron as Byron
-import           Ouroboros.Consensus.Node.ProtocolInfo.Abstract (pInfoConfig,
-                     pInfoInitLedger)
+import qualified Ouroboros.Consensus.Node as Node
+import           Ouroboros.Consensus.Node.ProtocolInfo.Abstract
+                     (ProtocolInfo (..))
 import           Ouroboros.Consensus.Node.ProtocolInfo.Byron
-import           Ouroboros.Consensus.Protocol.Abstract (SecurityParam (..))
+import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.Util.Condense (condense)
 import           Ouroboros.Consensus.Util.Orphans ()
 import           Ouroboros.Consensus.Util.ResourceRegistry
 import qualified Ouroboros.Storage.ChainDB as ChainDB
-import qualified Ouroboros.Storage.ChainDB.Impl.Args as Args
+import           Ouroboros.Storage.ChainDB.Impl.Args (fromChainDbArgs)
 import qualified Ouroboros.Storage.ChainDB.Impl.ImmDB as ImmDB
-import           Ouroboros.Storage.Common (EpochNo (..), EpochSize (..))
+import           Ouroboros.Storage.Common (EpochSize (..))
 import           Ouroboros.Storage.EpochInfo (fixedSizeEpochInfo)
-import qualified Ouroboros.Storage.LedgerDB.DiskPolicy as LgrDB
-import qualified Ouroboros.Storage.LedgerDB.InMemory as LgrDB
 import           Path
 import           Path.IO (createDirIfMissing, listDir)
 import qualified Streaming.Prelude as S
@@ -161,71 +161,51 @@ validateChainDb
   -> Bool -- Immutable DB only?
   -> Bool -- Verbose
   -> IO ()
-validateChainDb dbDir cfg onlyImmDB verbose =
-  withRegistry $ \registry ->
-    if onlyImmDB
-    then
-      let (immDBArgs, _, _, _) = Args.fromChainDbArgs $ args registry
-      in bracket
-        (ImmDB.openDB immDBArgs)
-        ImmDB.closeDB
-        (\immdb -> do
-          immDbTipBlock <- ImmDB.getBlockAtTip immdb
-          putStrLn $ "DB tip: " ++ condense immDbTipBlock
-        )
-    else bracket
-      (ChainDB.openDB $ args registry)
-        ChainDB.closeDB
-      (\chaindb -> do
-        blk <- ChainDB.getTipBlock chaindb
-        putStrLn $ "DB tip: " ++ condense blk
-      )
+validateChainDb dbDir genesisConfig onlyImmDB verbose =
+    withRegistry $ \registry -> do
+      btime <- realBlockchainTime
+        registry
+        slotLength
+        (nodeStartTime (Proxy @ByronBlock) cfg)
+      let chainDbArgs = mkChainDbArgs registry btime
+
+      if onlyImmDB then
+        bracket
+          (let (immDbArgs, _, _, _) = fromChainDbArgs chainDbArgs
+           in ImmDB.openDB immDbArgs)
+          ImmDB.closeDB
+          (\immdb -> do
+            immDbTipBlock <- ImmDB.getBlockAtTip immdb
+            putStrLn $ "DB tip: " ++ condense immDbTipBlock
+          )
+      else
+        bracket
+          (ChainDB.openDB chainDbArgs)
+          ChainDB.closeDB
+          (\chaindb -> do
+            blk <- ChainDB.getTipBlock chaindb
+            putStrLn $ "DB tip: " ++ condense blk
+          )
   where
-    byronProtocolInfo =
+    slotLength = slotLengthFromMillisec (20 * 1000)
+    ProtocolInfo { pInfoInitLedger = initLedger, pInfoConfig = cfg } =
       protocolInfoByron
-        cfg
+        genesisConfig
         (Just $ PBftSignatureThreshold 0.22) -- PBFT signature threshold
         (CC.Update.ProtocolVersion 1 0 0)
-        ( CC.Update.SoftwareVersion
-          (CC.Update.ApplicationName "Cardano SL")
-          2
-        )
+        (CC.Update.SoftwareVersion (CC.Update.ApplicationName "Cardano SL") 2)
         Nothing
-    epochSlots = CC.Genesis.configEpochSlots cfg
-    securityParam = SecurityParam $ CC.unBlockCount k
-    k = CC.Genesis.configK cfg
-    args registry =
-      (ChainDB.defaultArgs @ByronBlock (toFilePath dbDir))
-        { ChainDB.cdbGenesis = return $ pInfoInitLedger byronProtocolInfo
-        , ChainDB.cdbDecodeBlock = Byron.decodeByronBlock epochSlots
-        , ChainDB.cdbDecodeChainState = Byron.decodeByronChainState securityParam
-        , ChainDB.cdbDecodeHash = Byron.decodeByronHeaderHash
-        , ChainDB.cdbDecodeLedger = Byron.decodeByronLedgerState
-        , ChainDB.cdbEncodeBlock = Byron.encodeByronBlockWithInfo
-        , ChainDB.cdbEncodeChainState = Byron.encodeByronChainState
-        , ChainDB.cdbEncodeHash = Byron.encodeByronHeaderHash
-        , ChainDB.cdbEncodeLedger = Byron.encodeByronLedgerState
-          -- Policy
-        , ChainDB.cdbValidation = ImmDB.ValidateAllEpochs
-        , ChainDB.cdbBlocksPerFile = 10
-        , ChainDB.cdbParamsLgrDB = LgrDB.ledgerDbDefaultParams securityParam
-        , ChainDB.cdbDiskPolicy = LgrDB.defaultDiskPolicy securityParam 20000
-          -- Integration
-        , ChainDB.cdbNodeConfig = pInfoConfig byronProtocolInfo
-        , ChainDB.cdbEpochInfo = fixedSizeEpochInfo . EpochSize . unEpochSlots $ epochSlots
-        , ChainDB.cdbHashInfo = Byron.byronHashInfo
-        , ChainDB.cdbIsEBB = \blk -> case Byron.byronBlockRaw blk of
-            CC.ABOBBlock _      -> Nothing
-            CC.ABOBBoundary ebb -> Just
-                                 . EpochNo
-                                 . CC.boundaryEpoch
-                                 . CC.boundaryHeader
-                                 $ ebb
 
-          -- Misc
-        , ChainDB.cdbTracer = if verbose
-            then contramap show debugTracer
-            else nullTracer
-        , ChainDB.cdbRegistry = registry
-        , ChainDB.cdbGcDelay = 0
+    tracer
+      | verbose   = contramap show debugTracer
+      | otherwise = nullTracer
+
+    epochSlots = CC.Genesis.configEpochSlots genesisConfig
+    epochInfo = fixedSizeEpochInfo . EpochSize . unEpochSlots $ epochSlots
+
+    mkChainDbArgs registry btime =
+      let args = Node.mkChainDbArgs tracer registry btime
+            (toFilePath dbDir) cfg initLedger slotLength epochInfo
+      in args {
+          ChainDB.cdbValidation = ImmDB.ValidateAllEpochs
         }

@@ -15,6 +15,7 @@ module Ouroboros.Consensus.Util.CBOR (
   , ReadIncrementalErr(..)
   , readIncremental
   , readIncrementalOffsets
+  , withStreamIncrementalOffsets
   ) where
 
 import qualified Codec.CBOR.Decoding as CBOR (Decoder)
@@ -29,6 +30,9 @@ import qualified Data.ByteString.Lazy as LBS
 import           Data.IORef
 import           Data.Word (Word64)
 import           GHC.Stack (HasCallStack)
+import qualified Streaming as S
+import           Streaming.Prelude (Of (..), Stream)
+import qualified Streaming.Prelude as S
 
 import           Ouroboros.Consensus.Util.IOLike
 
@@ -158,42 +162,62 @@ readIncrementalOffsets
      --     (the size of @a@, and @a@ itself)),
      --     error encountered during deserialisation and the offset after
      --     which it occurred)
-readIncrementalOffsets hasFS@HasFS{..} decoder fp = withLiftST $ \liftST ->
-    withFile hasFS fp ReadMode $ \h -> do
-      fileSize <- hGetSize h
-      if fileSize == 0
-        -- If the file is empty, we will immediately get "end of input"
-        then return ([], Nothing)
-        else liftST (CBOR.deserialiseIncremental decoder) >>=
-             go liftST h 0 [] Nothing [] fileSize
+readIncrementalOffsets hasFS decoder fp =
+    withStreamIncrementalOffsets hasFS decoder fp $ \stream ->
+      (\(as :> mbErr) -> (as, mbErr)) <$> S.toList stream
+
+-- | Streaming variant of 'readIncrementalOffsets'
+--
+-- Continuation-passing style to ensure proper closure of the file.
+--
+-- NOTE: f we introduce user-facing streaming API also, the fact that we are
+-- using @streaming@ here should not dictate that we should stick with it
+-- later; rather, we should revisit this code at that point.
+withStreamIncrementalOffsets
+  :: forall m h a r. (IOLike m, HasCallStack)
+  => HasFS m h
+  -> (forall s . CBOR.Decoder s (LBS.ByteString -> a))
+  -> FsPath
+  -> (Stream (Of (Word64, (Word64, a))) m (Maybe (ReadIncrementalErr, Word64)) -> m r)
+  -> m r
+withStreamIncrementalOffsets hasFS@HasFS{..} decoder fp = \k ->
+    withLiftST $ \liftST ->
+      withFile hasFS fp ReadMode $ \h -> k $ do
+        fileSize <- S.lift $ hGetSize h
+        if fileSize == 0 then
+          -- If the file is empty, we will immediately get "end of input"
+          return Nothing
+        else
+          S.lift (liftST (CBOR.deserialiseIncremental decoder)) >>=
+            go liftST h 0 Nothing [] fileSize
   where
+    -- TODO stream from HasFS?
     go :: (forall x. ST s x -> m x)
        -> Handle h
        -> Word64                   -- ^ Offset
-       -> [(Word64, (Word64, a))]  -- ^ Already deserialised (reverse order)
        -> Maybe ByteString         -- ^ Unconsumed bytes from last time
        -> [ByteString]             -- ^ Chunks pushed for this item (rev order)
        -> Word64                   -- ^ Total file size
        -> CBOR.IDecode s (LBS.ByteString -> a)
-       -> m ([(Word64, (Word64, a))], Maybe (ReadIncrementalErr, Word64))
-    go liftST h offset deserialised mbUnconsumed bss fileSize dec = case dec of
+       -> Stream (Of (Word64, (Word64, a))) m (Maybe (ReadIncrementalErr, Word64))
+    go liftST h offset mbUnconsumed bss fileSize dec = case dec of
       CBOR.Partial k -> do
         -- First use the unconsumed bytes from a previous read before read
         -- some more bytes from the file.
         bs   <- case mbUnconsumed of
           Just unconsumed -> return unconsumed
-          Nothing         -> hGetSome h (fromIntegral defaultChunkSize)
-        dec' <- liftST $ k (checkEmpty bs)
-        go liftST h offset deserialised Nothing (bs:bss) fileSize dec'
+          Nothing         -> S.lift $ hGetSome h (fromIntegral defaultChunkSize)
+        dec' <- S.lift $ liftST $ k (checkEmpty bs)
+        go liftST h offset Nothing (bs:bss) fileSize dec'
 
-      CBOR.Done leftover size a -> do
-        let nextOffset    = offset + fromIntegral size
+      CBOR.Done leftover size mkA -> do
+        let nextOffset = offset + fromIntegral size
             -- We've been keeping track of the bytes pushed into the decoder
             -- for this item so far in bss. Now there's some trailing data to
             -- remove and we can get the whole bytes used for this item. We
             -- supply the bytes to the final decoded value. This is to support
             -- annotating values with their original input bytes.
-            aBytes        = case bss of
+            aBytes     = case bss of
                 []      -> LBS.empty
                 bs:bss' -> LBS.fromChunks (reverse (bs' : bss'))
                   where
@@ -204,23 +228,19 @@ readIncrementalOffsets hasFS@HasFS{..} decoder fp = withLiftST $ \liftST ->
             -- hash. If we don't force the value it returned here, we're just
             -- putting a thunk that references the whole block in the list
             -- instead of merely the hash.
-            !a'           = a aBytes
-            deserialised' = (offset, (fromIntegral size, a')) : deserialised
+            !a         = mkA aBytes
+        S.yield (offset, (fromIntegral size, a))
         case checkEmpty leftover of
           Nothing
             | nextOffset == fileSize
               -- We're at the end of the file, so stop
-            -> return (reverse deserialised', Nothing)
+            -> return Nothing
           -- Some more bytes, so try to read the next @a@.
-          mbLeftover -> liftST (CBOR.deserialiseIncremental decoder) >>=
-            go liftST h nextOffset deserialised' mbLeftover [] fileSize
+          mbLeftover ->
+            S.lift (liftST (CBOR.deserialiseIncremental decoder)) >>=
+            go liftST h nextOffset mbLeftover [] fileSize
 
-      CBOR.Fail _ _ err ->
-        assert
-          (case deserialised of
-             []                        -> offset == 0
-             (prevOffset, (size, _)):_ -> offset == prevOffset + size)
-          return (reverse deserialised, Just (ReadFailed err, offset))
+      CBOR.Fail _ _ err -> return $ Just (ReadFailed err, offset)
 
     checkEmpty :: ByteString -> Maybe ByteString
     checkEmpty bs | BS.null bs = Nothing

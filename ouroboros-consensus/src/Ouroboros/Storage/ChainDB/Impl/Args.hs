@@ -80,6 +80,7 @@ data ChainDbArgs m blk = forall h1 h2 h3. ChainDbArgs {
     , cdbEpochInfo        :: EpochInfo m
     , cdbHashInfo         :: HashInfo (HeaderHash blk)
     , cdbIsEBB            :: blk -> Maybe EpochNo
+    , cdbCheckIntegrity   :: blk -> Bool
     , cdbGenesis          :: m (ExtLedgerState blk)
     , cdbBlockchainTime   :: BlockchainTime m
 
@@ -147,6 +148,7 @@ fromChainDbArgs ChainDbArgs{..} = (
         , immHashInfo         = cdbHashInfo
         , immValidation       = cdbValidation
         , immIsEBB            = cdbIsEBB
+        , immCheckIntegrity   = cdbCheckIntegrity
         , immHasFS            = cdbHasFSImmDb
         , immTracer           = contramap TraceImmDBEvent cdbTracer
         }
@@ -222,6 +224,7 @@ toChainDbArgs ImmDB.ImmDbArgs{..}
     , cdbEpochInfo        = immEpochInfo
     , cdbHashInfo         = immHashInfo
     , cdbIsEBB            = immIsEBB
+    , cdbCheckIntegrity   = immCheckIntegrity
     , cdbGenesis          = lgrGenesis
     , cdbBlockchainTime   = cdbsBlockchainTime
       -- Misc

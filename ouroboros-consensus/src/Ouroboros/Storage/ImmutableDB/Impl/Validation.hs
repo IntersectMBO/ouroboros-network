@@ -16,11 +16,13 @@ import           Control.Exception (assert)
 import           Control.Monad (unless, when)
 import           Control.Monad.Except (ExceptT, lift, runExceptT, throwError)
 import           Control.Tracer (Tracer, traceWith)
+import           Data.Coerce (coerce)
 import           Data.Functor (($>))
 import           Data.Maybe (fromMaybe)
 import qualified Data.Set as Set
-
 import           GHC.Stack (HasCallStack)
+import           Streaming (Of (..))
+import qualified Streaming.Prelude as S
 
 import           Ouroboros.Network.Point (WithOrigin (..))
 
@@ -50,7 +52,7 @@ data ValidateEnv m hash h e = ValidateEnv
   , err       :: !(ErrorHandling ImmutableDBError m)
   , epochInfo :: !(EpochInfo m)
   , hashInfo  :: !(HashInfo hash)
-  , parser    :: !(EpochFileParser e m (Secondary.Entry hash, WithOrigin hash))
+  , parser    :: !(EpochFileParser e m (Secondary.Entry hash) hash)
   , tracer    :: !(Tracer m (TraceEvent e hash))
   }
 
@@ -215,6 +217,13 @@ data ShouldBeFinalised
 --   block of which its previous hash does not match the hash of the previous
 --   block.
 --
+-- * For each block, the 'EpochFileParser' checks whether the checksum (and
+--   other fields) from the secondary index file match the ones retrieved from
+--   the actual block. If they do, the block has not been corrupted. If they
+--   don't match or if the secondary index file is missing or corrupt, we have
+--   to do the expensive integrity check of the block itself to determine
+--   whether it is corrupt or not.
+--
 -- * This function checks whether the first block in the epoch fits onto the
 --   last block of the previous epoch by checking the hashes. If they do not
 --   fit, this epoch is truncated and @()@ is thrown.
@@ -226,17 +235,6 @@ data ShouldBeFinalised
 -- * All but the most recent epoch in the database should be finalised, i.e.
 --   padded to the size of the epoch.
 --
--- TODO currently, we focus on detecting partial writes, not on detecting all
--- kinds of corruptions, i.e. bitflips. In reality, the likeliness of a
--- bitflip happening in an epoch file is much larger than one happening in a
--- secondary index file. So when the checksums don't match, it will probably
--- be because the block is corrupt, not because the checksum got corrupted in
--- the secondary index file. We currently assume the epoch file is correct and
--- overwrite the secondary index file with the new checksum.
---
--- In the future, we will be able to check the integrity of a block on its own
--- so we can determine whether the block or the checksum got corrupted. See
--- #1253.
 validateEpoch
   :: forall m hash h e. (IOLike m, Eq hash, HasCallStack)
   => ValidateEnv m hash h e
@@ -258,25 +256,42 @@ validateEpoch
      -- would notice it doesn't fit anymore, and then throw.
 validateEpoch ValidateEnv{..} shouldBeFinalised epoch mbPrevHash = do
     trace $ ValidatingEpoch epoch
-    --  Parse the epoch file, return a list of 'Secondary.Entry's with one for
-    --  each block in the file. If the parser returns a deserialisation error,
-    --  truncate the epoch file. Don't truncate the database just yet, because
-    --  the deserialisation error may be due to some extra random bytes that
-    --  shouldn't have been there in the first place.
     epochFileExists <- lift $ doesFileExist epochFile
     unless epochFileExists $ do
       trace $ MissingEpochFile epoch
       throwError ()
 
-    (entriesWithPrevHashes, mbErr) <- lift $ runEpochFileParser parser epochFile
+    -- Read the entries from the secondary index file, if it exists.
+    secondaryIndexFileExists  <- lift $ doesFileExist secondaryIndexFile
+    entriesFromSecondaryIndex <- lift $ if secondaryIndexFileExists
+      then EH.try errLoad
+        (Secondary.readAllEntries hasFS err hashInfo 0 epoch (const False) IsEBB) >>= \case
+          Left _                -> do
+            traceWith tracer $ InvalidSecondaryIndex epoch
+            return []
+          Right entriesFromFile -> return $ fixupEBB entriesFromFile
+      else do
+        traceWith tracer $ MissingSecondaryIndex epoch
+        return []
 
+    -- Parse the epoch file using the checksums from the secondary index file
+    -- as input. If the checksums match, the parser doesn't have to do the
+    -- expensive integrity check of a block.
+    let expectedChecksums =
+          map (Secondary.checksum . fst) entriesFromSecondaryIndex
+    (entriesWithPrevHashes, mbErr) <- lift $
+        runEpochFileParser parser epochFile expectedChecksums $ \stream ->
+          (\(es :> mbErr) -> (es, mbErr)) <$> S.toList stream
+
+    -- Check whether the first block of this epoch fits onto the last block of
+    -- the previous epoch.
     case entriesWithPrevHashes of
       (_, actualPrevHash) : _
         | Just expectedPrevHash <- mbPrevHash
         , expectedPrevHash /= actualPrevHash
           -- The previous hash of the first block in the epoch does not match
           -- the hash of the last block of the previous epoch. There must be a
-          -- gap. This epoch should be truncated
+          -- gap. This epoch should be truncated.
         -> do
           trace $ EpochFileDoesntFit expectedPrevHash actualPrevHash
           throwError ()
@@ -284,48 +299,21 @@ validateEpoch ValidateEnv{..} shouldBeFinalised epoch mbPrevHash = do
 
     lift $ do
 
+      -- If the parser returneds a deserialisation error, truncate the epoch
+      -- file. Don't truncate the database just yet, because the
+      -- deserialisation error may be due to some extra random bytes that
+      -- shouldn't have been there in the first place.
       whenJust mbErr $ \(parseErr, endOfLastValidBlock) -> do
-        -- If there was an error parsing the epoch file, truncate it
         traceWith tracer $ InvalidEpochFile epoch parseErr
         withFile hasFS epochFile (AppendMode AllowExisting) $ \eHnd ->
           hTruncate eHnd endOfLastValidBlock
 
-      -- Read the secondary index file, if it is missing, parsing fails, or it
-      -- does not match the 'Secondary.Entry's from the epoch file, overwrite
-      -- it using those (truncate first).
+      -- If the secondary index file is missing, parsing it failed, or it does
+      -- not match the entries from the epoch file, overwrite it using those
+      -- (truncate first).
       let entries = map fst entriesWithPrevHashes
-          isEBB
-            | entry:_ <- entries, EBB _ <- Secondary.blockOrEBB entry
-            = IsEBB
-            | otherwise
-            = IsNotEBB
-
-      secondaryIndexFileExists  <- doesFileExist secondaryIndexFile
-      secondaryIndexFileMatches <- if secondaryIndexFileExists
-        then EH.try errLoad
-          (Secondary.readAllEntries hasFS err hashInfo 0 epoch (const False) isEBB) >>= \case
-            Left _                -> do
-              traceWith tracer $ InvalidSecondaryIndex epoch
-              return False
-            -- TODO what if a hash or a checksum doesn't match? Who's speaking
-            -- the truth? If the checksums match, then the hash of the epoch
-            -- file is the right one. If the checksums don't match, we'd have
-            -- to check the signature and whether the body of the block
-            -- matches the body hash in the header to know which checksum is
-            -- correct. If the signature check and so on pass, then the
-            -- checksum of the block is correct, not the checksum in the
-            -- secondary index entry. If they don't, the the block is corrupt
-            -- and we should truncate it.
-            --
-            -- CURRENT APPROACH: we assume the contents of the epoch file are
-            -- correct (however unrealistic that may be, as the chance of a
-            -- bit flip in an epoch file is much greater than in an index
-            -- file). We will do the right thing in the future.
-            Right entriesFromFile -> return $ map fst entriesFromFile == entries
-        else do
-          traceWith tracer $ MissingSecondaryIndex epoch
-          return False
-      unless secondaryIndexFileMatches $ do
+      when (map fst entriesFromSecondaryIndex /= entries ||
+            not secondaryIndexFileExists) $ do
         traceWith tracer $ RewriteSecondaryIndex epoch
         Secondary.writeAllEntries hasFS hashInfo epoch entries
 
@@ -372,6 +360,49 @@ validateEpoch ValidateEnv{..} shouldBeFinalised epoch mbPrevHash = do
       (\case
         UnexpectedError (e@InvalidFileError {}) -> Just e
         _ -> Nothing) err
+
+    -- | When reading the entries from the secondary index file, we need to
+    -- pass in a value of type 'IsEBB' so we know whether the first entry
+    -- corresponds to an EBB or a regular block. We need this information to
+    -- correctly interpret the deserialised 'Word64' as a 'BlockOrEBB': if
+    -- it's an EBB, it's the 'EpochNo' ('Word64'), if it's a regular block,
+    -- it's a 'SlotNo' ('Word64').
+    --
+    -- However, at the point we are reading the secondary index file, we don't
+    -- yet know whether the first block will be an EBB or a regular block. We
+    -- will find that out when we read the actual block from the epoch file.
+    --
+    -- Fortunately, we can make a /very/ good guess: if the 'Word64' of the
+    -- 'BlockOrEBB' matches the epoch number, it is almost certainly an EBB,
+    -- as the slot numbers increase @10k@ times faster than epoch numbers.
+    -- Property: for every epoch @e > 0@, for all slot numbers @s@ in epoch
+    -- @e@ we have @s > e@. The only exception is epoch 0, which contains a
+    -- slot number 0. From this follows that it's an EBB if and only if the
+    -- 'Word64' matches the epoch number.
+    --
+    -- E.g., the first slot number in epoch 1 will be 21600 if @k = 2160@. We
+    -- could only make the wrong guess in the first very first epoch, i.e.,
+    -- epoch 0, as the first slot number is also 0. However, we know that the
+    -- real blockchain starts with an EBB, so even in that case we're fine.
+    --
+    -- If the epoch size were 1, then we would make the wrong guess for each
+    -- epoch that contains an EBB, which is a rather unrealistic scenario.
+    --
+    -- Note that even making the wrong guess is not a problem. The (CRC)
+    -- checksums are the only thing we extract from the secondary index file.
+    -- These are passed to the 'EpochFileParser'. We then reconstruct the
+    -- secondary index using the output of the 'EpochFileParser'. If that
+    -- output doesn't match the parsed secondary index file, we will overwrite
+    -- the secondary index file.
+    --
+    -- So the only thing that wouldn't go according to plan is that we will
+    -- needlessly overwrite the secondary index file.
+    fixupEBB :: [(Secondary.Entry hash, a)] -> [(Secondary.Entry hash, a)]
+    fixupEBB = \case
+      (entry@Secondary.Entry { blockOrEBB = EBB epoch' }, a):rest
+        | epoch' /= epoch
+        -> (entry { Secondary.blockOrEBB = Block (coerce epoch') }, a):rest
+      entries -> entries
 
 -- | Reconstruct a 'PrimaryIndex' based on a list of 'Secondary.Entry's.
 reconstructPrimaryIndex
