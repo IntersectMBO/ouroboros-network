@@ -9,11 +9,12 @@
 module Ouroboros.Network.PeerSelection.Test (tests) where
 
 import           Data.Void (Void)
+import           Data.Function (on)
 import           Data.Typeable (Typeable)
 import           Data.Dynamic (fromDynamic)
 import           Data.Maybe (listToMaybe)
 import qualified Data.ByteString.Char8 as BS
-import           Data.List (nub)
+import           Data.List (nub, groupBy)
 import qualified Data.List.NonEmpty as NonEmpty
 import           Data.List.NonEmpty (NonEmpty(..))
 import qualified Data.Map.Strict as Map
@@ -26,7 +27,7 @@ import qualified Data.Tree as Tree
 
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadTime
-import           Control.Tracer (Tracer(..), contramap)
+import           Control.Tracer (Tracer(..), contramap, traceWith)
 import           Control.Exception (throw)
 
 import           Control.Monad.IOSim
@@ -90,8 +91,7 @@ data GovernorMockEnvironment = GovernorMockEnvironment {
 newtype PeerAddr = PeerAddr Int
   deriving (Eq, Ord, Show)
 
-data PeerConn = PeerConn
-  deriving Show
+data PeerConn m = PeerConn !PeerAddr !(TVar m PeerStatus)
 
 -- | The peer graph is the graph of all the peers in the mock p2p network, in
 -- traditional adjacency representation.
@@ -176,59 +176,124 @@ allPeers (PeerGraph g) = Set.fromList [ addr | (addr, _, _) <- g ]
 runGovernorInMockEnvironment :: GovernorMockEnvironment -> Trace Void
 runGovernorInMockEnvironment mockEnv =
     runSimTrace $ do
-      actions <- mockPeerSelectionActions mockEnv
-      policy  <- mockPeerSelectionPolicy  mockEnv
+      actions <- mockPeerSelectionActions tracerMockEnv mockEnv
+      policy  <- mockPeerSelectionPolicy                mockEnv
       peerSelectionGovernor
         tracerTracePeerSelection
         tracerDebugPeerSelection
         actions
         policy
 
+data TraceMockEnv = TraceEnvPeersStatus (Map PeerAddr PeerStatus)
+
 mockPeerSelectionActions :: (MonadSTM m, MonadTimer m)
-                         => GovernorMockEnvironment
-                         -> m (PeerSelectionActions PeerAddr PeerConn m)
-mockPeerSelectionActions env@GovernorMockEnvironment {
+                         => Tracer m TraceMockEnv
+                         -> GovernorMockEnvironment
+                         -> m (PeerSelectionActions PeerAddr (PeerConn m) m)
+mockPeerSelectionActions tracer
+                         env@GovernorMockEnvironment {
                            peerGraph = PeerGraph adjacency
                          } = do
     gossipScripts <- Map.fromList <$>
                        sequence [ (,) addr <$> initScript gossip
                                 | (addr, _, gossip) <- adjacency ]
-    return $ mockPeerSelectionActions' env gossipScripts
+    peerConns <- newTVarM Map.empty
+    return $ mockPeerSelectionActions' tracer env gossipScripts peerConns
 
-mockPeerSelectionActions' :: (MonadSTM m, MonadTimer m)
-                          => GovernorMockEnvironment
+mockPeerSelectionActions' :: forall m.
+                             (MonadSTM m, MonadTimer m)
+                          => Tracer m TraceMockEnv
+                          -> GovernorMockEnvironment
                           -> Map PeerAddr (TVar m GossipScript)
-                          -> PeerSelectionActions PeerAddr PeerConn m
-mockPeerSelectionActions' GovernorMockEnvironment {
+                          -> TVar m (Map PeerAddr (TVar m PeerStatus))
+                          -> PeerSelectionActions PeerAddr (PeerConn m) m
+mockPeerSelectionActions' tracer
+                          GovernorMockEnvironment {
                             localRootPeers,
                             publicRootPeers,
                             targets
                           }
-                          gossipScripts =
+                          gossipScripts
+                          connsVar =
     PeerSelectionActions {
       readLocalRootPeers       = return localRootPeers,
       requestPublicRootPeers   = \_ -> return (publicRootPeers, 60),
       readPeerSelectionTargets = return targets,
       requestPeerGossip,
-      --TODO: do the peer established and active model properly
-      establishPeerConnection  = \_ -> do
-                                   threadDelay 1
-                                   return PeerConn,
-      monitorPeerConnection    = fail "TODO: monitorPeerConnection",
-      activatePeerConnection   = \PeerConn -> do
-                                   threadDelay 1,
-      deactivatePeerConnection = fail "TODO: deactivatePeerConnection",
-      closePeerConnection      = fail "TODO: closePeerConnection"
+      establishPeerConnection,
+      monitorPeerConnection,
+      activatePeerConnection,
+      deactivatePeerConnection,
+      closePeerConnection
     }
   where
     requestPeerGossip addr = do
       let Just script = Map.lookup addr gossipScripts
       mgossip <- stepScript script
       case mgossip of
-        Nothing        -> fail "no peers"
+        Nothing                -> fail "no peers"
         Just (peeraddrs, time) -> do
           threadDelay (interpretGossipTime time)
           return peeraddrs
+
+    establishPeerConnection :: PeerAddr -> m (PeerConn m)
+    establishPeerConnection peeraddr = do
+      threadDelay 1
+      (conn, snapshot) <- atomically $ do
+        conn  <- newTVar PeerWarm
+        conns <- readTVar connsVar
+        let !conns' = Map.insert peeraddr conn conns
+        writeTVar connsVar conns'
+        snapshot <- traverse readTVar conns'
+        return (PeerConn peeraddr conn, snapshot)
+      traceWith tracer (TraceEnvPeersStatus snapshot)
+      return conn
+
+    activatePeerConnection :: PeerConn m -> m ()
+    activatePeerConnection (PeerConn _peeraddr conn) = do
+      threadDelay 1
+      snapshot <- atomically $ do
+        status <- readTVar conn
+        case status of
+          PeerHot  -> fail "activatePeerConnection of hot peer"
+          PeerWarm -> writeTVar conn PeerHot
+          --TODO: check it's just a race condition and not just wrong:
+          PeerCold -> return ()
+        conns <- readTVar connsVar
+        traverse readTVar conns
+      traceWith tracer (TraceEnvPeersStatus snapshot)
+
+    deactivatePeerConnection :: PeerConn m -> m ()
+    deactivatePeerConnection (PeerConn _peeraddr conn) = do
+      snapshot <- atomically $ do
+        status <- readTVar conn
+        case status of
+          PeerHot  -> writeTVar conn PeerWarm
+          --TODO: check it's just a race condition and not just wrong:
+          PeerWarm -> return ()
+          PeerCold -> return ()
+        conns <- readTVar connsVar
+        traverse readTVar conns
+      traceWith tracer (TraceEnvPeersStatus snapshot)
+
+    closePeerConnection :: PeerConn m -> m ()
+    closePeerConnection (PeerConn peeraddr conn) = do
+      snapshot <- atomically $ do
+        status <- readTVar conn
+        case status of
+          PeerHot  -> writeTVar conn PeerCold
+          --TODO: check it's just a race condition and not just wrong:
+          PeerWarm -> writeTVar conn PeerCold
+          PeerCold -> return ()
+        conns <- readTVar connsVar
+        let !conns' = Map.delete peeraddr conns
+        writeTVar connsVar conns'
+        traverse readTVar conns'
+      traceWith tracer (TraceEnvPeersStatus snapshot)
+
+    monitorPeerConnection :: PeerConn m -> STM m PeerStatus
+    monitorPeerConnection (PeerConn _peeraddr conn) = readTVar conn
+
 
 interpretGossipTime :: GossipTime -> DiffTime
 interpretGossipTime GossipTimeQuick   = 1
@@ -329,6 +394,7 @@ pickMapKeys m ns =
 prop_governor_nolivelock :: GovernorMockEnvironment -> Property
 prop_governor_nolivelock env =
     let trace = takeFirstNHours 24 .
+                selectGovernorEvents .
                 selectPeerSelectionTraceEvents $
                   runGovernorInMockEnvironment env
      in      hasOutput trace
@@ -336,7 +402,7 @@ prop_governor_nolivelock env =
              -- 200 events should take longer than 6 seconds:
         .&&. property (makesAdequateProgress 200 6 (map fst trace))
   where
-    hasOutput :: [a] -> Property
+    hasOutput :: [(Time, TracePeerSelection PeerAddr)] -> Property
     hasOutput (_:_) = property True
     hasOutput []    = counterexample "no trace output" $
                       property (isEmptyEnv env)
@@ -430,22 +496,58 @@ prop_governor_gossip_1hr env@GovernorMockEnvironment{
         expected = Set.size reachable `min` targetNumberOfKnownPeers targets
 
 
+-- | Check the governor's view of connection status does not lag behind reality
+-- by too much.
+--
+prop_governor_connstatus :: GovernorMockEnvironment -> Bool
+prop_governor_connstatus env =
+    let trace = takeFirstNHours 1
+              . selectPeerSelectionTraceEvents $
+                  runGovernorInMockEnvironment env
+        --TODO: check any actually get a true status output and try some deliberate bugs
+     in all ok (groupBy ((==) `on` fst) trace)
+  where
+    -- We look at events when the environment's view of the state of all the
+    -- peer connections changed, and check that before simulated time advances
+    -- the governor's view of the same state was brought in sync.
+    --
+    -- We do that by finding the env events and then looking for the last
+    -- governor state event before time moves on.
+    ok :: [(Time, TestTraceEvent)] -> Bool
+    ok trace =
+        case (lastTrueStatus, lastTestStatus) of
+          (Nothing, _)                       -> True
+          (Just trueStatus, Just testStatus) -> trueStatus == testStatus
+          (Just _,          Nothing)         -> False
+      where
+        lastTrueStatus =
+          listToMaybe
+            [ status
+            | (_, MockEnvEvent (TraceEnvPeersStatus status)) <- reverse trace ]
+
+        lastTestStatus =
+          listToMaybe
+            [ Governor.establishedStatus st
+            | (_, GovernorDebug (TraceGovernorState st _)) <- reverse trace ]
+
+
 --
 -- Utils for properties
 --
 
 data TestTraceEvent = GovernorDebug (DebugPeerSelection PeerAddr ())
                     | GovernorEvent (TracePeerSelection PeerAddr)
+                    | MockEnvEvent   TraceMockEnv
 
 tracerTracePeerSelection :: Tracer (SimM s) (TracePeerSelection PeerAddr)
-tracerTracePeerSelection =
-  contramap GovernorEvent
-            tracerTestTraceEvent
+tracerTracePeerSelection = contramap GovernorEvent tracerTestTraceEvent
 
 tracerDebugPeerSelection :: Tracer (SimM s) (DebugPeerSelection PeerAddr peerconn)
-tracerDebugPeerSelection =
-  contramap (GovernorDebug . fmap (const ()))
-            tracerTestTraceEvent
+tracerDebugPeerSelection = contramap (GovernorDebug . fmap (const ()))
+                                     tracerTestTraceEvent
+
+tracerMockEnv :: Tracer (SimM s) TraceMockEnv
+tracerMockEnv = contramap MockEnvEvent tracerTestTraceEvent
 
 tracerTestTraceEvent :: Tracer (SimM s) TestTraceEvent
 tracerTestTraceEvent = dynamicTracer
@@ -462,6 +564,10 @@ selectPeerSelectionTraceEvents = go
     go (TraceMainException _ e _) = throw e
     go (TraceDeadlock      _   _) = [] -- expected result in many cases
     go (TraceMainReturn    _ _ _) = []
+
+selectGovernorEvents :: [(Time, TestTraceEvent)]
+                     -> [(Time, TracePeerSelection PeerAddr)]
+selectGovernorEvents trace = [ (t, e) | (t, GovernorEvent e) <- trace ]
 
 takeFirstNHours :: DiffTime -> [(Time, a)] -> [(Time, a)]
 takeFirstNHours h = takeWhile (\(t,_) -> t < Time (60*60*h))
