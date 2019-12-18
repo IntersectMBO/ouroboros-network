@@ -394,18 +394,18 @@ getTipImpl dbEnv = do
     return _currentTip
 
 -- | Whether to read the whole block, its header, or the hash
-data GetWhat hash res where
-  GetBlock  :: GetWhat hash (hash, ByteString)
-  GetHeader :: GetWhat hash (hash, ByteString)
-  GetHash   :: GetWhat hash hash
+data BlockComponent hash res where
+  GetBlock  :: BlockComponent hash (hash, ByteString)
+  GetHeader :: BlockComponent hash (hash, ByteString)
+  GetHash   :: BlockComponent hash hash
 
 getBlockImpl
   :: forall m hash res. (HasCallStack, IOLike m)
   => ImmutableDBEnv m hash
-  -> GetWhat hash res
+  -> BlockComponent hash res
   -> SlotNo
   -> m (Maybe res)
-getBlockImpl dbEnv what slot =
+getBlockImpl dbEnv blockComponent slot =
     withOpenState dbEnv $ \_dbHasFS OpenState{..} -> do
       inTheFuture <- case forgetHash <$> _currentTip of
         TipGen                 -> return $ True
@@ -423,17 +423,17 @@ getBlockImpl dbEnv what slot =
 
       let curEpochInfo = CurrentEpochInfo _currentEpoch _currentEpochOffset
       epochSlot <- epochInfoBlockRelative _dbEpochInfo slot
-      getEpochSlot _dbHasFS _dbHashInfo _dbErr curEpochInfo what epochSlot
+      getEpochSlot _dbHasFS _dbHashInfo _dbErr curEpochInfo blockComponent epochSlot
   where
     ImmutableDBEnv { _dbEpochInfo, _dbErr, _dbHashInfo } = dbEnv
 
 getEBBImpl
   :: forall m hash res. (HasCallStack, IOLike m)
   => ImmutableDBEnv m hash
-  -> GetWhat hash res
+  -> BlockComponent hash res
   -> EpochNo
   -> m (Maybe res)
-getEBBImpl dbEnv what epoch =
+getEBBImpl dbEnv blockComponent epoch =
     withOpenState dbEnv $ \_dbHasFS OpenState{..} -> do
       let inTheFuture = case forgetHash <$> _currentTip of
             TipGen        -> True
@@ -444,20 +444,21 @@ getEBBImpl dbEnv what epoch =
         throwUserError _dbErr $ ReadFutureEBBError epoch _currentEpoch
 
       let curEpochInfo = CurrentEpochInfo _currentEpoch _currentEpochOffset
-      getEpochSlot _dbHasFS _dbHashInfo _dbErr curEpochInfo what (EpochSlot epoch 0)
+      getEpochSlot _dbHasFS _dbHashInfo _dbErr curEpochInfo blockComponent
+        (EpochSlot epoch 0)
   where
     ImmutableDBEnv { _dbEpochInfo, _dbErr, _dbHashInfo } = dbEnv
 
-getWhat
+getBlockComponent
   :: forall m h hash res. (HasCallStack, IOLike m)
   => HasFS m h
   -> ErrorHandling ImmutableDBError m
   -> EpochNo
   -> CurrentEpochInfo
   -> (Secondary.Entry hash, BlockSize)
-  -> GetWhat hash res
+  -> BlockComponent hash res
   -> m res
-getWhat hasFS err epoch curEpochInfo (entry, blockSize) = \case
+getBlockComponent hasFS err epoch curEpochInfo (entry, blockSize) = \case
     GetHash  -> return headerHash
 
     -- In case the requested epoch is the current epoch, we will be reading
@@ -525,11 +526,11 @@ getWhat hasFS err epoch curEpochInfo (entry, blockSize) = \case
 getBlockOrEBBImpl
   :: forall m hash. (HasCallStack, IOLike m, Eq hash)
   => ImmutableDBEnv m hash
-  -> GetWhat hash (hash, ByteString)
+  -> BlockComponent hash (hash, ByteString)
   -> SlotNo
   -> hash
   -> m (Maybe (Either EpochNo SlotNo, ByteString))
-getBlockOrEBBImpl dbEnv what slot hash =
+getBlockOrEBBImpl dbEnv blockComponent slot hash =
     withOpenState dbEnv $ \_dbHasFS OpenState{..} -> do
 
       inTheFuture <- case forgetHash <$> _currentTip of
@@ -551,14 +552,15 @@ getBlockOrEBBImpl dbEnv what slot hash =
           return Nothing
         Right (EpochSlot epoch relSlot, (entry, blockSize), _secondaryOffset) ->
             Just . (epochOrSlot, ) . snd <$>
-              getWhat _dbHasFS _dbErr epoch curEpochInfo (entry, blockSize) what
+              getBlockComponent _dbHasFS _dbErr epoch curEpochInfo
+                (entry, blockSize) blockComponent
           where
             epochOrSlot | relSlot == 0 = Left epoch
                         | otherwise    = Right slot
   where
     ImmutableDBEnv { _dbEpochInfo, _dbErr, _dbHashInfo } = dbEnv
 
--- | Get the block, header, or hash (depending on 'GetWhat') corresponding to
+-- | Get the block, header, or hash (depending on 'BlockComponent') corresponding to
 -- the given 'EpochSlot'.
 --
 -- Preconditions: the given 'EpochSlot' is in the past.
@@ -568,10 +570,10 @@ getEpochSlot
   -> HashInfo hash
   -> ErrorHandling ImmutableDBError m
   -> CurrentEpochInfo
-  -> GetWhat hash res
+  -> BlockComponent hash res
   -> EpochSlot
   -> m (Maybe res)
-getEpochSlot hasFS hashInfo err curEpochInfo what epochSlot =
+getEpochSlot hasFS hashInfo err curEpochInfo blockComponent epochSlot =
     -- Check the primary index first
     Primary.readOffset hasFS err epoch relativeSlot >>= \case
       -- Empty slot
@@ -582,7 +584,9 @@ getEpochSlot hasFS hashInfo err curEpochInfo what epochSlot =
         -- TODO only read the hash in case of 'GetHash'?
         (entry, blockSize) <-
           Secondary.readEntry hasFS err hashInfo epoch isEBB secondaryOffset
-        Just <$> getWhat hasFS err epoch curEpochInfo (entry, blockSize) what
+        Just <$>
+          getBlockComponent hasFS err epoch curEpochInfo (entry, blockSize)
+            blockComponent
   where
     EpochSlot epoch relativeSlot = epochSlot
     isEBB | relativeSlot == 0    = IsEBB
