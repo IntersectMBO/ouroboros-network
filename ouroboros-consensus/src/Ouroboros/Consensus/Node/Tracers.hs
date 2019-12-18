@@ -21,6 +21,7 @@ import           Ouroboros.Network.TxSubmission.Outbound
                      (TraceTxSubmissionOutbound)
 
 import           Ouroboros.Consensus.Block (Header)
+import           Ouroboros.Consensus.BlockchainTime (TraceBlockchainTimeEvent)
 import           Ouroboros.Consensus.BlockFetchServer
                      (TraceBlockFetchServerEvent)
 import           Ouroboros.Consensus.ChainSyncClient (InvalidBlockReason,
@@ -49,6 +50,7 @@ data Tracers' peer blk f = Tracers
   , localTxSubmissionServerTracer :: f (TraceLocalTxSubmissionServerEvent blk)
   , mempoolTracer                 :: f (TraceEventMempool blk)
   , forgeTracer                   :: f (TraceForgeEvent blk (GenTx blk))
+  , blockchainTimeTracer          :: f  TraceBlockchainTimeEvent
   }
 
 -- | A record of 'Tracer's for the node.
@@ -68,6 +70,7 @@ nullTracers = Tracers
   , localTxSubmissionServerTracer = nullTracer
   , mempoolTracer                 = nullTracer
   , forgeTracer                   = nullTracer
+  , blockchainTimeTracer          = nullTracer
   }
 
 showTracers :: ( Show blk
@@ -91,6 +94,7 @@ showTracers tr = Tracers
   , localTxSubmissionServerTracer = showTracing tr
   , mempoolTracer                 = showTracing tr
   , forgeTracer                   = showTracing tr
+  , blockchainTimeTracer          = showTracing tr
   }
 
 {-------------------------------------------------------------------------------
