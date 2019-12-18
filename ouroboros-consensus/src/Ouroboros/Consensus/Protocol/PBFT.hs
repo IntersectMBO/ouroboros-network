@@ -213,7 +213,7 @@ instance ( PBftCrypto c
       => OuroborosTag (PBft cfg c) where
   type ValidationErr (PBft cfg c) = PBftValidationErr c
   type CanValidate   (PBft cfg c) = HeaderSupportsPBft cfg c
-  type CanSelect     (PBft cfg c) = HasHeader
+  type CanSelect     (PBft cfg c) = HeaderSupportsPBft cfg c
   type NodeState     (PBft cfg c) = ()
 
   -- | We require two things from the ledger state:
@@ -275,6 +275,22 @@ instance ( PBftCrypto c
   rewindChainState cfg = flip (rewind cfg params)
     where
       params = pbftWindowParams cfg
+
+  compareCandidates PBftNodeConfig{..} lHdr rHdr =
+      -- Prefer the highest block number, as it is a proxy for chain length
+      case blockNo lHdr `compare` blockNo rHdr of
+        LT -> LT
+        GT -> GT
+        -- If the block numbers are the same, check if one of them is an EBB.
+        -- An EBB has the same block number as the block before it, so the
+        -- chain ending with an EBB is actually longer than the one ending
+        -- with a regular block. Note that 'headerPBftFields' returns
+        -- 'Nothing' for an EBB.
+        EQ ->
+          let score hdr = case headerPBftFields pbftExtConfig hdr of
+                Nothing -> 1 :: Int   -- favor EBBs
+                Just{}  -> 0
+          in score lHdr `compare` score rHdr
 
 {-------------------------------------------------------------------------------
   Internal: thin wrapper on top of 'PBftChainState'

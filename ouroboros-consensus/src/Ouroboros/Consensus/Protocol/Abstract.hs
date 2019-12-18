@@ -157,7 +157,7 @@ class ( Show (ChainState    p)
                   -> hdr      -- ^ Tip of the candidate
                   -> Bool
 
-  -- | Compare two candidates
+  -- | Compare two candidates, both of which we prefer to our own chain
   --
   -- PRECONDITION: both candidates must be preferred to our own chain
   compareCandidates :: CanSelect p hdr => NodeConfig p -> hdr -> hdr -> Ordering
