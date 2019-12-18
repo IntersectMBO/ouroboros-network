@@ -17,6 +17,7 @@ import qualified Ouroboros.Network.Protocol.BlockFetch.Test (tests)
 import qualified Ouroboros.Network.Protocol.Handshake.Test (tests)
 import qualified Ouroboros.Network.Protocol.TxSubmission.Test (tests)
 import qualified Ouroboros.Network.Protocol.LocalTxSubmission.Test (tests)
+import qualified Ouroboros.Network.PeerSelection.Test (tests)
 import qualified Test.Socket (tests)
 
 main :: IO ()
@@ -46,6 +47,7 @@ tests =
   , Test.Subscription.tests
   , Test.PeerState.tests
   , Test.Ouroboros.Network.BlockFetch.tests
+  , Ouroboros.Network.PeerSelection.Test.tests
 
     -- pseudo system-level
   , Test.Ouroboros.Network.MockNode.tests
