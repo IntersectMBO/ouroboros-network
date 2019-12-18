@@ -414,15 +414,48 @@ prop_governor_nolivelock env =
                 selectGovernorEvents .
                 selectPeerSelectionTraceEvents $
                   runGovernorInMockEnvironment env
-     in      hasOutput trace
 
-             -- 200 events should take longer than 6 seconds:
-        .&&. property (makesAdequateProgress 200 6 (map fst trace))
+     in
+{-
+       -- uncomment to check expected distribution
+       tabulate  "env size"   [renderRanges 10 envSize] $
+       tabulate  "max events" [renderRanges 10 (maxEvents 5 trace)] $
+       tabulate  "events/graph ratio"
+                 [show (maxEvents 5 trace `div` envSize)] $
+-}
+       hasOutput trace
+
+       -- Check we don't get too many events within a given time span.
+       -- How many events is too many? It scales with the graph size.
+       -- The ratio between them is from experimental evidence.
+  .&&. let maxevents = (2+envSize) * 8 -- ratio from experiments
+           timespan  = 5               -- seconds
+           actual    = maxEvents (floor timespan) trace
+        in counterexample ("Too many events in a span of time!\n"
+                        ++ "  time span:  " ++ show timespan ++ " seconds\n"
+                        ++ "  env size:   " ++ show envSize ++ "\n"
+                        ++ "  num events: " ++ show actual) $
+
+           property (makesAdequateProgress maxevents timespan
+                                           (map fst trace))
   where
     hasOutput :: [(Time, TracePeerSelection PeerAddr)] -> Property
     hasOutput (_:_) = property True
     hasOutput []    = counterexample "no trace output" $
                       property (isEmptyEnv env)
+
+    envSize         = length g + length (targets env)
+                        where PeerGraph g = peerGraph env
+    maxEvents n     = maximum
+                    . (0:)
+                    . map length
+                    . timeSpans n
+
+    timeSpans :: Int -> [(Time, a)] -> [[(Time, a)]]
+    timeSpans _ []           = []
+    timeSpans n (x@(t,_):xs) =
+      let (xs', xs'') = span (\(t',_) -> t' <= addTime (fromIntegral n) t) (x:xs)
+       in xs' : timeSpans n xs''
 
 isEmptyEnv :: GovernorMockEnvironment -> Bool
 isEmptyEnv GovernorMockEnvironment {
