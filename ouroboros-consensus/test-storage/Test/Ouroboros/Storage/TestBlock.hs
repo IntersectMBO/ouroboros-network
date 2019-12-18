@@ -123,7 +123,7 @@ data TestBody = TestBody {
 
 instance GetHeader TestBlock where
   newtype Header TestBlock = TestHeader' { unTestHeader :: TestHeader }
-    deriving newtype (Eq, Show, NoUnexpectedThunks)
+    deriving newtype (Eq, Show, NoUnexpectedThunks, Serialise)
   getHeader = TestHeader' . testHeader
 
 instance StandardHash TestBlock

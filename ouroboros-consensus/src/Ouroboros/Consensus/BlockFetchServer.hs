@@ -89,7 +89,7 @@ blockFetchServer _tracer chainDB registry = senderSide
         -- iterator is empty.
         Right it -> SendMsgStartBatch $ sendBlocks it
 
-    sendBlocks :: ChainDB.Iterator m (Deserialisable m blk)
+    sendBlocks :: ChainDB.Iterator m (Deserialisable m blk blk)
                -> m (BlockFetchSendBlocks (Serialised blk) m ())
     sendBlocks it = do
       next <- ChainDB.iteratorNext it

@@ -20,10 +20,10 @@ import           Control.Monad.Class.MonadThrow
 import           Control.Tracer
 
 import qualified Ouroboros.Network.AnchoredFragment as AF
-import           Ouroboros.Network.Block (HasHeader (..), blockPoint, castPoint,
+import           Ouroboros.Network.Block (HasHeader (..), castPoint,
                      genesisBlockNo, genesisPoint)
 
-import           Ouroboros.Consensus.Block (Header)
+import           Ouroboros.Consensus.Block (Header, headerPoint)
 import           Ouroboros.Consensus.BlockchainTime (getCurrentSlot)
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Protocol.Abstract
@@ -34,6 +34,7 @@ import           Ouroboros.Consensus.Util.ResourceRegistry
 import           Ouroboros.Storage.Common (EpochNo)
 import           Ouroboros.Storage.EpochInfo (epochInfoEpoch)
 
+import           Ouroboros.Storage.ChainDB.API (BlockOrHeader (..))
 import qualified Ouroboros.Storage.ChainDB.Impl.Background as Background
 import           Ouroboros.Storage.ChainDB.Impl.ChainSel
 import qualified Ouroboros.Storage.ChainDB.Impl.ImmDB as ImmDB
@@ -114,19 +115,19 @@ reopen (CDBHandle varState) launchBgTasks = do
         -- TODO what will actually happen if an exception is thrown? What if
         -- recovery is triggered?
 
-        let blockEpoch :: blk -> m EpochNo
+        let blockEpoch :: forall b. HasHeader b => b -> m EpochNo
             blockEpoch = epochInfoEpoch cdbEpochInfo . blockSlot
 
         ImmDB.reopen cdbImmDB
         -- In order to figure out the 'BlockNo' and 'Point' at the tip of the
-        -- ImmutableDB, we need to read the block at the tip of the ImmutableDB.
-        immDbTipBlock <- ImmDB.getBlockAtTip cdbImmDB
+        -- ImmutableDB, we need to read the header at the tip of the ImmutableDB.
+        immDbTipHeader <- ImmDB.getBlockOrHeaderAtTip cdbImmDB Header
         -- Note that 'immDbTipBlockNo' might not end up being the \"immutable\"
         -- block(no), because the current chain computed from the VolatileDB could
         -- be longer than @k@.
-        let immDbTipBlockNo = maybe genesisBlockNo blockNo    immDbTipBlock
-            immDbTipPoint   = maybe genesisPoint   blockPoint immDbTipBlock
-        immDbTipEpoch      <- maybe (return 0)     blockEpoch immDbTipBlock
+        let immDbTipBlockNo = maybe genesisBlockNo blockNo     immDbTipHeader
+            immDbTipPoint   = maybe genesisPoint   headerPoint immDbTipHeader
+        immDbTipEpoch      <- maybe (return 0)     blockEpoch  immDbTipHeader
         traceWith cdbTracer $ TraceOpenEvent $ OpenedImmDB
           { _immDbTip      = immDbTipPoint
           , _immDbTipEpoch = immDbTipEpoch

@@ -129,7 +129,7 @@ codecBlockFetchSerialised
   -> (forall s. CBOR.Decoder s (HeaderHash block))
   -> Codec (BlockFetch (Serialised block)) CBOR.DeserialiseFailure m LBS.ByteString
 codecBlockFetchSerialised =
-  codecBlockFetchUnwrapped encodeBlockWrapped decodeBlock
+  codecBlockFetchUnwrapped encodeBlockWrapped decodeBlockWrapped
  where
   -- Avoid converting to a strict ByteString, as that requires copying O(n)
   -- in case the lazy ByteString consists of more than one chunks.
@@ -141,8 +141,8 @@ codecBlockFetchSerialised =
       -- TODO can this be improved?
    <> CBOR.encodeBytes (LBS.toStrict bytes)
 
-  decodeBlock :: forall s. CBOR.Decoder s (Serialised block)
-  decodeBlock = do
+  decodeBlockWrapped :: forall s. CBOR.Decoder s (Serialised block)
+  decodeBlockWrapped = do
     --TODO: replace this with decodeEmbeddedCBOR from cborg-0.2.4 once
     -- it is available, since that will be faster.
     tag <- CBOR.decodeTag

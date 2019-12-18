@@ -16,6 +16,8 @@
 module Ouroboros.Storage.ChainDB.API (
     -- * Main ChainDB API
     ChainDB(..)
+    -- * Block or header
+  , BlockOrHeader(..)
     -- * Deserialisable block/header
   , Deserialisable(..)
   , deserialisablePoint
@@ -38,6 +40,7 @@ module Ouroboros.Storage.ChainDB.API (
     -- * Readers
   , Reader(..)
   , ReaderId
+  , deserialiseReader
     -- * Recovery
   , ChainDbFailure(..)
     -- * Exceptions
@@ -228,7 +231,7 @@ data ChainDB m blk = ChainDB {
     , streamBlocks
         :: ResourceRegistry m
         -> StreamFrom blk -> StreamTo blk
-        -> m (Either (UnknownRange blk) (Iterator m (Deserialisable m blk)))
+        -> m (Either (UnknownRange blk) (Iterator m (Deserialisable m blk blk)))
 
       -- | Chain reader
       --
@@ -245,7 +248,7 @@ data ChainDB m blk = ChainDB {
       -- Examples of users include the server side of the chain sync
       -- mini-protocol for the node-to-node protocol.
       --
-    , newHeaderReader    :: ResourceRegistry m -> m (Reader m blk (Header blk))
+    , newHeaderReader    :: ResourceRegistry m -> m (Reader m blk (Deserialisable m blk (Header blk)))
 
       -- | This is the same as the reader 'newHeaderReader' but it provides a
       -- reader for /whole blocks/ rather than headers.
@@ -253,7 +256,7 @@ data ChainDB m blk = ChainDB {
       -- Examples of users include the server side of the chain sync
       -- mini-protocol for the node-to-client protocol.
       --
-    , newBlockReader     :: ResourceRegistry m -> m (Reader m blk blk)
+    , newBlockReader     :: ResourceRegistry m -> m (Reader m blk (Deserialisable m blk blk))
 
       -- | Function to check whether a block is known to be invalid.
       --
@@ -285,22 +288,33 @@ data ChainDB m blk = ChainDB {
     }
 
 {-------------------------------------------------------------------------------
+  Block or header
+-------------------------------------------------------------------------------}
+
+-- | Either a block (@blk@) or a header (@'Header' blk@). Both have the same
+-- @HeaderHash blk@.
+data BlockOrHeader blk b where
+  Block  :: BlockOrHeader blk blk
+  Header :: BlockOrHeader blk (Header blk)
+
+{-------------------------------------------------------------------------------
   Deserialisable block/header
 -------------------------------------------------------------------------------}
 
--- | A @'Serialised' blk@ together with a monadic function to deserialise it.
-data Deserialisable m blk = Deserialisable
-   { serialised         :: !(Serialised blk)
+-- | A @'Serialised' b@ together with its slot, hash, and a monadic function
+-- to deserialise it. The @b@ will be @blk@ or @'Header' blk@.
+data Deserialisable m blk b = Deserialisable
+   { serialised         :: !(Serialised b)
    , deserialisableSlot :: !SlotNo
    , deserialisableHash :: !(HeaderHash blk)
-   , deserialise        :: !(m blk)
+   , deserialise        :: !(m b)
    }
 
-deserialisablePoint :: Deserialisable m blk -> Point blk
+deserialisablePoint :: Deserialisable m blk b -> Point blk
 deserialisablePoint d = BlockPoint (deserialisableSlot d) (deserialisableHash d)
 
-type instance HeaderHash (Deserialisable m blk) = HeaderHash blk
-instance StandardHash blk => StandardHash (Deserialisable m blk)
+type instance HeaderHash (Deserialisable m blk b) = HeaderHash blk
+instance StandardHash blk => StandardHash (Deserialisable m blk b)
 
 {-------------------------------------------------------------------------------
   Support for tests
@@ -355,7 +369,7 @@ data Iterator m blk = Iterator {
 
 -- | Deserialise the results of an iterator that yields serialised blocks.
 deserialiseIterator
-  :: Monad m => Iterator m (Deserialisable m blk) -> Iterator m blk
+  :: Monad m => Iterator m (Deserialisable m blk blk) -> Iterator m blk
 deserialiseIterator it = Iterator
     { iteratorNext  = iteratorNext  it >>= deserialiseIteratorResult
     , iteratorClose = iteratorClose it
@@ -392,7 +406,7 @@ deriving instance (Show blk, Show (HeaderHash blk)) => Show (IteratorResult blk)
 -- blocks.
 deserialiseIteratorResult
   :: Monad m
-  => IteratorResult (Deserialisable m blk) -> m (IteratorResult blk)
+  => IteratorResult (Deserialisable m blk blk) -> m (IteratorResult blk)
 deserialiseIteratorResult = \case
     IteratorExhausted      -> return $ IteratorExhausted
     IteratorBlockGCed hash -> return $ IteratorBlockGCed hash
@@ -544,6 +558,18 @@ data Reader m blk a = Reader {
 
 instance Eq (Reader m blk a) where
   (==) = (==) `on` readerId
+
+-- | Deserialise the results of a reader that yields serialised blocks or
+-- headers.
+deserialiseReader
+  :: Monad m => Reader m blk (Deserialisable m blk b) -> Reader m blk b
+deserialiseReader rdr = Reader
+    { readerInstruction         = readerInstruction         rdr >>= traverse (traverse deserialise)
+    , readerInstructionBlocking = readerInstructionBlocking rdr >>= traverse deserialise
+    , readerForward             = readerForward             rdr
+    , readerClose               = readerClose               rdr
+    , readerId                  = readerId                  rdr
+    }
 
 {-------------------------------------------------------------------------------
   Recovery

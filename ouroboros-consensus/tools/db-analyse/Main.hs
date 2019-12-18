@@ -35,7 +35,8 @@ import           Ouroboros.Consensus.Node.Run.Byron ()
 import           Ouroboros.Consensus.Protocol.Abstract (NodeConfig)
 import           Ouroboros.Consensus.Util.ResourceRegistry
 
-import           Ouroboros.Storage.ChainDB.API (StreamFrom (..))
+import           Ouroboros.Storage.ChainDB.API (BlockOrHeader (..),
+                     StreamFrom (..))
 import           Ouroboros.Storage.ChainDB.Impl.ImmDB
 import           Ouroboros.Storage.Common
 import           Ouroboros.Storage.EpochInfo
@@ -149,7 +150,7 @@ processAll :: ImmDB IO ByronBlock
            -> (Either EpochNo SlotNo -> ByronBlock -> IO ())
            -> IO ()
 processAll immDB rr callback = do
-    Right itr <- streamBlocksFrom immDB rr $ StreamFromExclusive genesisPoint
+    Right itr <- streamFrom immDB rr Block $ StreamFromExclusive genesisPoint
     go (deserialiseIterator immDB itr)
   where
     go :: Iterator ByronHash IO ByronBlock -> IO ()
@@ -251,6 +252,7 @@ openImmDB fp cfg epochInfo = openDB args
     args = (defaultArgs fp) {
           immDecodeHash     = nodeDecodeHeaderHash    (Proxy @ByronBlock)
         , immDecodeBlock    = nodeDecodeBlock         cfg
+        , immDecodeHeader   = nodeDecodeHeader        cfg
         , immEncodeHash     = nodeEncodeHeaderHash    (Proxy @ByronBlock)
         , immEncodeBlock    = nodeEncodeBlockWithInfo cfg
         , immEpochInfo      = epochInfo
@@ -258,4 +260,5 @@ openImmDB fp cfg epochInfo = openDB args
         , immValidation     = ValidateMostRecentEpoch
         , immIsEBB          = nodeIsEBB
         , immCheckIntegrity = nodeCheckIntegrity      cfg
+        , immAddHdrEnv      = nodeAddHeaderEnvelope   (Proxy @ByronBlock)
         }

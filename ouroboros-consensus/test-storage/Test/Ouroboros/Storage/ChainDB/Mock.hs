@@ -83,15 +83,18 @@ openDB cfg initLedger btime = do
         update_ :: (Model blk -> Model blk) -> m ()
         update_ f = update (\m -> ((), f m))
 
-        iterator :: IteratorId -> Iterator m (Deserialisable m blk)
+        iterator :: IteratorId -> Iterator m (Deserialisable m blk blk)
         iterator itrId = Iterator {
               iteratorNext  = update  $ Model.iteratorNextDeserialised itrId
             , iteratorClose = update_ $ Model.iteratorClose            itrId
             , iteratorId    = itrId
             }
 
-        reader :: CPS.ReaderId -> Reader m blk blk
-        reader rdrId = Reader {
+        reader :: forall b.
+                  (blk -> b)
+               -> CPS.ReaderId
+               -> Reader m blk b
+        reader toB rdrId = Reader {
               readerInstruction =
                 updateE readerInstruction'
             , readerInstructionBlocking = atomically $
@@ -104,10 +107,11 @@ openDB cfg initLedger btime = do
                 rdrId
             }
           where
-            readerInstruction' :: Model blk
-                               -> Either ChainDbError
-                                         (Maybe (ChainUpdate blk blk), Model blk)
-            readerInstruction' = Model.readerInstruction rdrId
+            readerInstruction'
+              :: Model blk
+              -> Either ChainDbError
+                        (Maybe (ChainUpdate blk b), Model blk)
+            readerInstruction' = Model.readerInstruction toB rdrId
 
     onSlotChange btime $ update_ . Model.advanceCurSlot cfg
 
@@ -124,8 +128,8 @@ openDB cfg initLedger btime = do
       , getIsInvalidBlock   = querySTM $ (fmap (fmap (fmap fst) . flip Map.lookup)) . Model.invalid
       , getMaxSlotNo        = querySTM $ Model.maxSlotNo
       , streamBlocks        = updateE  ..: const (fmap (first (fmap iterator)) ..: Model.streamBlocks k)
-      , newBlockReader      = update   .   const (first reader . Model.readBlocks)
-      , newHeaderReader     = update   .   const (first (fmap getHeader . reader) . Model.readBlocks)
+      , newBlockReader      = update   .   const (first (reader Model.toDeserialisable) . Model.readBlocks)
+      , newHeaderReader     = update   .   const (first (reader (Model.toDeserialisable . getHeader)) . Model.readBlocks)
 
       , closeDB             = atomically $ modifyTVar db Model.closeDB
       , isOpen              = Model.isOpen <$> readTVar db

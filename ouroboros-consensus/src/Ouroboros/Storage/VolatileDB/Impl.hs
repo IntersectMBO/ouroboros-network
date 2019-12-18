@@ -111,6 +111,7 @@ import           Control.Monad.Class.MonadThrow
 
 import           Ouroboros.Network.Point (WithOrigin)
 
+import           Ouroboros.Consensus.Block (IsEBB)
 import           Ouroboros.Consensus.Util (safeMaximumOn)
 import           Ouroboros.Consensus.Util.IOLike
 
@@ -277,20 +278,20 @@ reOpenDBImpl VolatileDBEnv{..} =
         st <- mkInternalStateDB _dbHasFS _dbErr _parser _maxBlocksPerFile
         return (VolatileDbOpen st, ())
 
-data GetWhat = GetBlock | GetHeader
+data BlockComponent = GetBlock | GetHeader
 
 getBlockImpl :: (IOLike m, Ord blockId)
              => VolatileDBEnv m blockId
-             -> GetWhat
+             -> BlockComponent
              -> blockId
-             -> m (Maybe (SlotNo, ByteString))
-getBlockImpl env@VolatileDBEnv{..} getWhat blockId =
+             -> m (Maybe (SlotNo, IsEBB, ByteString))
+getBlockImpl env@VolatileDBEnv{..} blockComponent blockId =
     modifyState env $ \hasFS@HasFS{..} st@InternalState{..} ->
       case Map.lookup blockId _currentRevMap of
         Nothing -> return (st, Nothing)
         Just InternalBlockInfo {..} -> do
           bs <- withFile hasFS ibFile ReadMode $ \hndl -> do
-            let (offset, size) = case getWhat of
+            let (offset, size) = case blockComponent of
                   GetBlock ->
                     ( ibSlotOffset
                     , unBlockSize ibBlockSize )
@@ -298,7 +299,7 @@ getBlockImpl env@VolatileDBEnv{..} getWhat blockId =
                     ( ibSlotOffset + fromIntegral ibHeaderOffset
                     , fromIntegral ibHeaderSize )
             hGetExactlyAt hasFS hndl size (AbsOffset offset)
-          return (st, Just (ibSlot, bs))
+          return (st, Just (ibSlot, ibIsEBB, bs))
 
 -- | This function follows the approach:
 -- (1) hPut bytes to the file
@@ -352,6 +353,7 @@ putBlockImpl env@VolatileDBEnv{..} BlockInfo{..} builder =
           , ibBlockSize    = BlockSize bytesWritten
           , ibSlot         = bslot
           , ibPreBid       = bpreBid
+          , ibIsEBB        = bisEBB
           , ibHeaderOffset = bheaderOffset
           , ibHeaderSize   = bheaderSize
           }
@@ -751,6 +753,7 @@ reverseMap file revMap mp = foldM go revMap (Map.toList mp)
           , ibBlockSize    = size
           , ibSlot         = bslot
           , ibPreBid       = bpreBid
+          , ibIsEBB        = bisEBB
           , ibHeaderOffset = bheaderOffset
           , ibHeaderSize   = bheaderSize
           }

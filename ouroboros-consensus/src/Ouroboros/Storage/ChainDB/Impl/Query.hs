@@ -18,6 +18,7 @@ module Ouroboros.Storage.ChainDB.Impl.Query
   , getMaxSlotNo
     -- * Low-level queries
   , getAnyKnownBlock
+  , getAnyKnownDeserialisableBlockOrHeader
   ) where
 
 import qualified Data.Map.Strict as Map
@@ -38,8 +39,9 @@ import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.STM (WithFingerprint)
 
-import           Ouroboros.Storage.ChainDB.API (ChainDbError (..),
-                     ChainDbFailure (..), InvalidBlockReason)
+import           Ouroboros.Storage.ChainDB.API (BlockOrHeader (..),
+                     ChainDbError (..), ChainDbFailure (..),
+                     Deserialisable (..), InvalidBlockReason)
 
 import           Ouroboros.Storage.ChainDB.Impl.ImmDB (ImmDB)
 import qualified Ouroboros.Storage.ChainDB.Impl.ImmDB as ImmDB
@@ -92,8 +94,6 @@ getTipBlock cdb@CDB{..} = do
 getTipHeader
   :: forall m blk.
      ( IOLike m
-     , GetHeader blk
-     , HasHeader blk
      , HasHeader (Header blk)
      )
   => ChainDbEnv m blk
@@ -114,11 +114,11 @@ getTipHeader CDB{..} = do
           -- Note that we can't use 'getBlockAtTip' because a block might have
           -- been appended to the ImmutableDB since we obtained 'anchorOrHdr'.
         -> anchorMustBeThere <$>
-           ImmDB.getBlockWithPoint cdbImmDB (castPoint anchor)
+           ImmDB.getBlockOrHeaderWithPoint cdbImmDB Header (castPoint anchor)
   where
-    anchorMustBeThere :: Maybe blk -> Maybe (Header blk)
+    anchorMustBeThere :: Maybe (Header blk) -> Maybe (Header blk)
     anchorMustBeThere Nothing    = error "block at tip of ImmutableDB missing"
-    anchorMustBeThere (Just blk) = Just (getHeader blk)
+    anchorMustBeThere (Just hdr) = Just hdr
 
 getTipPoint
   :: forall m blk. (IOLike m, HasHeader (Header blk))
@@ -185,9 +185,8 @@ getMaxSlotNo CDB{..} = do
   Chain DB to have been initialized.
 -------------------------------------------------------------------------------}
 
--- | Wrapper around 'getAnyBlock' for blocks we know should exist
---
--- If the block does not exist, this indicates disk failure.
+-- | Variant of 'getAnyKnownDeserialisableBlockOrHeader' that deserialies the
+-- block.
 getAnyKnownBlock
   :: forall m blk. (MonadCatch m, HasHeader blk)
   => ImmDB m blk
@@ -200,45 +199,79 @@ getAnyKnownBlock immDB volDB p = do
       Right b  -> return b
       Left err -> throwM err
 
--- | Get a block from either the immutable DB or volatile DB
+-- | Wrapper around 'getAnyDeserialisableBlockOrHeader' for blocks/headers we
+-- know should exist.
 --
--- Returns 'Nothing' if the block is unknown.
--- Throws 'NoGenesisBlockException' if the 'Point' refers to the genesis block.
+-- If the block does not exist, this indicates disk failure.
+getAnyKnownDeserialisableBlockOrHeader
+  :: forall m blk b. (MonadCatch m, HasHeader blk)
+  => ImmDB m blk
+  -> VolDB m blk
+  -> BlockOrHeader blk b
+  -> Point blk
+  -> m (Deserialisable m blk b)
+getAnyKnownDeserialisableBlockOrHeader immDB volDB blockOrHeader p = do
+    mB <- mustExist p <$>
+      getAnyDeserialisableBlockOrHeader immDB volDB blockOrHeader p
+    case mB of
+      Right b  -> return b
+      Left err -> throwM err
+
+-- | Variant of 'getAnyDeserialisableBlockOrHeader' that deserialises the
+-- block.
 getAnyBlock
   :: forall m blk. (MonadCatch m, HasHeader blk)
   => ImmDB m blk
   -> VolDB m blk
   -> Point blk
   -> m (Maybe blk)
-getAnyBlock immDB volDB p = case pointHash p of
-    GenesisHash    -> throwM NoGenesisBlock
-    BlockHash hash -> do
-      -- Note: to determine whether a block is in the ImmutableDB, we can look
-      -- at the slot of its tip, which we'll call @immTipSlot@. If the slot of
-      -- the requested point > @immTipSlot@, then the block will not be in the
-      -- ImmutableDB but in the VolatileDB. However, there is a race condition
-      -- here: if between the time we got @immTipSlot@ and the time we look up
-      -- the block in the VolatileDB the block was moved from the VolatileDB
-      -- to the ImmutableDB, and it was deleted from the VolatileDB, we won't
-      -- find the block, even though it is in the ChainDB.
-      --
-      -- Therefore, we first query the VolatileDB and if the block is not in
-      -- it, then we can get @immTipSlot@ and compare it to the slot of the
-      -- requested point. If the slot <= @immTipSlot@ it /must/ be in the
-      -- ImmutableDB (no race condition here).
-      mbVolBlock <- VolDB.getBlock volDB hash
-      case mbVolBlock of
-        Just block -> return $ Just block
-        Nothing    -> do
-          -- ImmDB will throw an exception if we ask for a block past the tip
-          immTipSlot <- ImmDB.getSlotNoAtTip immDB
-          if pointSlot p > immTipSlot
-            -- It's not supposed to be in the ImmutableDB and the VolatileDB
-            -- didn't contain it, so return 'Nothing'.
-            then return Nothing
-            else ImmDB.getBlockWithPoint immDB p
+getAnyBlock immDB volDB p =
+  traverse deserialise =<<
+  getAnyDeserialisableBlockOrHeader immDB volDB Block p
+
+-- | Get a block or header from either the immutable DB or volatile DB, but
+-- don't deserialise it yet.
+--
+-- Returns 'Nothing' if the 'Point' is unknown.
+-- Throws 'NoGenesisBlockException' if the 'Point' refers to the genesis block.
+getAnyDeserialisableBlockOrHeader
+  :: forall m blk b. (MonadCatch m, HasHeader blk)
+  => ImmDB m blk
+  -> VolDB m blk
+  -> BlockOrHeader blk b
+  -> Point blk
+  -> m (Maybe (Deserialisable m blk b))
+getAnyDeserialisableBlockOrHeader immDB volDB blockOrHeader p =
+    case pointHash p of
+      GenesisHash    -> throwM NoGenesisBlock
+      BlockHash hash -> do
+        -- Note: to determine whether a block is in the ImmutableDB, we can
+        -- look at the slot of its tip, which we'll call @immTipSlot@. If the
+        -- slot of the requested point > @immTipSlot@, then the block will not
+        -- be in the ImmutableDB but in the VolatileDB. However, there is a
+        -- race condition here: if between the time we got @immTipSlot@ and
+        -- the time we look up the block in the VolatileDB the block was moved
+        -- from the VolatileDB to the ImmutableDB, and it was deleted from the
+        -- VolatileDB, we won't find the block, even though it is in the
+        -- ChainDB.
+        --
+        -- Therefore, we first query the VolatileDB and if the block is not in
+        -- it, then we can get @immTipSlot@ and compare it to the slot of the
+        -- requested point. If the slot <= @immTipSlot@ it /must/ be in the
+        -- ImmutableDB (no race condition here).
+        mbVolB <- VolDB.getDeserialisableBlockOrHeader volDB blockOrHeader hash
+        case mbVolB of
+          Just b -> return $ Just b
+          Nothing    -> do
+            -- ImmDB will throw an exception if we ask for a block past the tip
+            immTipSlot <- ImmDB.getSlotNoAtTip immDB
+            if pointSlot p > immTipSlot
+              -- It's not supposed to be in the ImmutableDB and the VolatileDB
+              -- didn't contain it, so return 'Nothing'.
+              then return Nothing
+              else ImmDB.getDeserialisableBlockOrHeaderWithPoint immDB blockOrHeader p
 
 mustExist :: (Typeable blk, StandardHash blk)
-          => Point blk -> Maybe blk -> Either ChainDbFailure blk
+          => Point blk -> Maybe b -> Either ChainDbFailure b
 mustExist p Nothing  = Left  $ ChainDbMissingBlock p
 mustExist _ (Just b) = Right $ b

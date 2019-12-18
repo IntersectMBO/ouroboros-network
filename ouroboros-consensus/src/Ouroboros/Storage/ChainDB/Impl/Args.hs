@@ -50,12 +50,22 @@ data ChainDbArgs m blk = forall h1 h2 h3. ChainDbArgs {
       -- Decoders
       cdbDecodeHash       :: forall s. Decoder s (HeaderHash blk)
     , cdbDecodeBlock      :: forall s. Decoder s (Lazy.ByteString -> blk)
+    , cdbDecodeHeader     :: forall s. Decoder s (Lazy.ByteString -> Header blk)
+      -- ^ The given encoding will include the header envelope
+      -- ('cdbAddHdrEnv').
     , cdbDecodeLedger     :: forall s. Decoder s (LedgerState blk)
     , cdbDecodeChainState :: forall s. Decoder s (ChainState (BlockProtocol blk))
 
       -- Encoders
-    , cdbEncodeBlock      :: blk -> BinaryInfo Encoding
     , cdbEncodeHash       :: HeaderHash blk -> Encoding
+    , cdbEncodeBlock      :: blk -> BinaryInfo Encoding
+    , cdbEncodeHeader     :: Header blk -> Encoding
+      -- ^ The returned encoding must include the header envelope
+      -- ('cdbAddHdrEnv').
+      --
+      -- This should be cheap, preferably \( O(1) \), as the Readers will
+      -- often be encoding the in-memory headers. (It is cheap for Byron
+      -- headers, as we store the serialisation in the annotation.)
     , cdbEncodeLedger     :: LedgerState blk -> Encoding
     , cdbEncodeChainState :: ChainState (BlockProtocol blk) -> Encoding
 
@@ -83,6 +93,10 @@ data ChainDbArgs m blk = forall h1 h2 h3. ChainDbArgs {
     , cdbCheckIntegrity   :: blk -> Bool
     , cdbGenesis          :: m (ExtLedgerState blk)
     , cdbBlockchainTime   :: BlockchainTime m
+    , cdbAddHdrEnv        :: IsEBB -> Lazy.ByteString -> Lazy.ByteString
+      -- ^ The header envelope will only be added after extracting the binary
+      -- header from the binary block. Note that we never have to remove an
+      -- envelope.
 
       -- Misc
     , cdbTracer           :: Tracer m (TraceEvent blk)
@@ -98,6 +112,7 @@ data ChainDbSpecificArgs m blk = ChainDbSpecificArgs {
     , cdbsRegistry       :: ResourceRegistry m
     , cdbsGcDelay        :: DiffTime
     , cdbsBlockchainTime :: BlockchainTime m
+    , cdbsEncodeHeader   :: Header blk -> Encoding
     }
 
 -- | Default arguments
@@ -106,6 +121,8 @@ data ChainDbSpecificArgs m blk = ChainDbSpecificArgs {
 --
 -- * 'cdbsTracer'
 -- * 'cdbsRegistry'
+-- * 'cdbsBlockchainTime'
+-- * 'cdbsEncodeHeader'
 defaultSpecificArgs :: ChainDbSpecificArgs m blk
 defaultSpecificArgs = ChainDbSpecificArgs{
       cdbsGcDelay        = oneHour
@@ -113,6 +130,7 @@ defaultSpecificArgs = ChainDbSpecificArgs{
     , cdbsTracer         = error "no default for cdbsTracer"
     , cdbsRegistry       = error "no default for cdbsRegistry"
     , cdbsBlockchainTime = error "no default for cdbsBlockchainTime"
+    , cdbsEncodeHeader   = error "no default for cdbsEncodeHeader"
     }
   where
     oneHour = secondsToDiffTime 60 * 60
@@ -141,6 +159,7 @@ fromChainDbArgs ChainDbArgs{..} = (
       ImmDB.ImmDbArgs {
           immDecodeHash       = cdbDecodeHash
         , immDecodeBlock      = cdbDecodeBlock
+        , immDecodeHeader     = cdbDecodeHeader
         , immEncodeHash       = cdbEncodeHash
         , immEncodeBlock      = cdbEncodeBlock
         , immErr              = cdbErrImmDb
@@ -151,14 +170,20 @@ fromChainDbArgs ChainDbArgs{..} = (
         , immCheckIntegrity   = cdbCheckIntegrity
         , immHasFS            = cdbHasFSImmDb
         , immTracer           = contramap TraceImmDBEvent cdbTracer
+        , immAddHdrEnv        = cdbAddHdrEnv
         }
     , VolDB.VolDbArgs {
           volHasFS            = cdbHasFSVolDb
         , volErr              = cdbErrVolDb
         , volErrSTM           = cdbErrVolDbSTM
         , volBlocksPerFile    = cdbBlocksPerFile
-        , volEncodeBlock      = cdbEncodeBlock
+        , volDecodeHeader     = cdbDecodeHeader
         , volDecodeBlock      = cdbDecodeBlock
+        , volEncodeBlock      = cdbEncodeBlock
+        , volAddHdrEnv        = cdbAddHdrEnv
+        , volIsEBB            = \blk -> case cdbIsEBB blk of
+                                          Nothing -> IsNotEBB
+                                          Just _  -> IsEBB
         }
     , LgrDB.LgrDbArgs {
           lgrNodeConfig       = cdbNodeConfig
@@ -180,6 +205,7 @@ fromChainDbArgs ChainDbArgs{..} = (
         , cdbsRegistry        = cdbRegistry
         , cdbsGcDelay         = cdbGcDelay
         , cdbsBlockchainTime  = cdbBlockchainTime
+        , cdbsEncodeHeader    = cdbEncodeHeader
         }
     )
 
@@ -199,11 +225,13 @@ toChainDbArgs ImmDB.ImmDbArgs{..}
       -- Decoders
       cdbDecodeHash       = immDecodeHash
     , cdbDecodeBlock      = immDecodeBlock
+    , cdbDecodeHeader     = immDecodeHeader
     , cdbDecodeLedger     = lgrDecodeLedger
     , cdbDecodeChainState = lgrDecodeChainState
       -- Encoders
-    , cdbEncodeBlock      = immEncodeBlock
     , cdbEncodeHash       = immEncodeHash
+    , cdbEncodeBlock      = immEncodeBlock
+    , cdbEncodeHeader     = cdbsEncodeHeader
     , cdbEncodeLedger     = lgrEncodeLedger
     , cdbEncodeChainState = lgrEncodeChainState
       -- Error handling
@@ -227,6 +255,7 @@ toChainDbArgs ImmDB.ImmDbArgs{..}
     , cdbCheckIntegrity   = immCheckIntegrity
     , cdbGenesis          = lgrGenesis
     , cdbBlockchainTime   = cdbsBlockchainTime
+    , cdbAddHdrEnv        = immAddHdrEnv
       -- Misc
     , cdbTracer           = cdbsTracer
     , cdbTraceLedger      = lgrTraceLedger

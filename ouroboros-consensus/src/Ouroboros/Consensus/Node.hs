@@ -148,7 +148,7 @@ run tracers chainDbTracer diffusionTracers diffusionArguments networkMagic
       onNodeKernel registry nodeKernel
       let networkApps :: NetworkApplication
                            IO ConnectionId
-                           ByteString ByteString ByteString ByteString ByteString ByteString
+                           ByteString ByteString ByteString ByteString ByteString
                            ()
           networkApps = consensusNetworkApps
             nodeKernel
@@ -235,6 +235,7 @@ mkChainDbArgs tracer registry btime dbPath cfg initLedger slotLength
               epochInfo = (ChainDB.defaultArgs dbPath)
     { ChainDB.cdbBlocksPerFile    = 1000
     , ChainDB.cdbDecodeBlock      = nodeDecodeBlock         cfg
+    , ChainDB.cdbDecodeHeader     = nodeDecodeHeader        cfg
     , ChainDB.cdbDecodeChainState = nodeDecodeChainState    (Proxy @blk) cfg
     , ChainDB.cdbDecodeHash       = nodeDecodeHeaderHash    (Proxy @blk)
     , ChainDB.cdbDecodeLedger     = nodeDecodeLedgerState   cfg
@@ -245,6 +246,7 @@ mkChainDbArgs tracer registry btime dbPath cfg initLedger slotLength
     , ChainDB.cdbEpochInfo        = epochInfo
     , ChainDB.cdbHashInfo         = nodeHashInfo            (Proxy @blk)
     , ChainDB.cdbGenesis          = return initLedger
+    , ChainDB.cdbAddHdrEnv        = nodeAddHeaderEnvelope   (Proxy @blk)
     , ChainDB.cdbDiskPolicy       = defaultDiskPolicy secParam slotDiffTime
     , ChainDB.cdbIsEBB            = nodeIsEBB
     , ChainDB.cdbCheckIntegrity   = nodeCheckIntegrity      cfg

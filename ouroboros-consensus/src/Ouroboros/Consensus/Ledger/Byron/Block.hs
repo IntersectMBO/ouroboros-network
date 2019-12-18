@@ -3,8 +3,10 @@
 {-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE NamedFieldPuns             #-}
+{-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE TypeApplications           #-}
 {-# LANGUAGE TypeFamilies               #-}
@@ -29,6 +31,7 @@ module Ouroboros.Consensus.Ledger.Byron.Block (
   , decodeByronHeader
   , encodeByronHeaderHash
   , decodeByronHeaderHash
+  , byronAddHeaderEnvelope
   ) where
 
 import           Data.Binary (Get, Put)
@@ -293,3 +296,12 @@ decodeByronHeader epochSlots =
                      -> Header ByronBlock
     fillInByteString it theBytes = mkByronHeader epochSlots $
       Lazy.toStrict . slice theBytes <$> it
+
+-- | When given the raw header bytes extracted from the block, i.e. the header
+-- annotation, we still need to prepend @CBOR.encodeListLen 2@ and
+-- @CBOR.encodeWord x@ where @x@ is 0 for an EBB and 1 for a regular header.
+byronAddHeaderEnvelope
+  :: IsEBB -> Lazy.ByteString -> Lazy.ByteString
+byronAddHeaderEnvelope = mappend . \case
+    IsEBB    -> "\130\NUL"
+    IsNotEBB -> "\130\SOH"

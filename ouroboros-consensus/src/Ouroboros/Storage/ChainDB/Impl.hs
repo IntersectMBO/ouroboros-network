@@ -31,9 +31,10 @@ import           Data.Maybe (isJust)
 import           Control.Tracer
 
 import qualified Ouroboros.Network.AnchoredFragment as AF
-import           Ouroboros.Network.Block (blockNo, blockPoint, blockSlot,
-                     castPoint, genesisBlockNo, genesisPoint)
+import           Ouroboros.Network.Block (HasHeader (..), castPoint,
+                     genesisBlockNo, genesisPoint)
 
+import           Ouroboros.Consensus.Block (headerPoint)
 import           Ouroboros.Consensus.BlockchainTime (getCurrentSlot)
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Protocol.Abstract
@@ -77,14 +78,14 @@ openDBInternal
 openDBInternal args launchBgTasks = do
     immDB <- ImmDB.openDB argsImmDb
     -- In order to figure out the 'BlockNo' and 'Point' at the tip of the
-    -- ImmutableDB, we need to read the block at the tip of the ImmutableDB.
-    immDbTipBlock <- ImmDB.getBlockAtTip immDB
+    -- ImmutableDB, we need to read the header at the tip of the ImmutableDB.
+    immDbTipHeader <- ImmDB.getBlockOrHeaderAtTip immDB Header
     -- Note that 'immDbTipBlockNo' might not end up being the \"immutable\"
     -- block(no), because the current chain computed from the VolatileDB could
     -- be longer than @k@.
-    let immDbTipBlockNo = maybe genesisBlockNo blockNo    immDbTipBlock
-        immDbTipPoint   = maybe genesisPoint   blockPoint immDbTipBlock
-    immDbTipEpoch      <- maybe (return 0)     blockEpoch immDbTipBlock
+    let immDbTipBlockNo = maybe genesisBlockNo blockNo     immDbTipHeader
+        immDbTipPoint   = maybe genesisPoint   headerPoint immDbTipHeader
+    immDbTipEpoch      <- maybe (return 0)     blockEpoch  immDbTipHeader
     traceWith tracer $ TraceOpenEvent $ OpenedImmDB
       { _immDbTip      = immDbTipPoint
       , _immDbTipEpoch = immDbTipEpoch
@@ -124,7 +125,8 @@ openDBInternal args launchBgTasks = do
     varChain          <- newTVarM chain
     varImmBlockNo     <- newTVarM immBlockNo
     varIterators      <- newTVarM Map.empty
-    varReaders        <- newTVarM Map.empty
+    varBlockReaders   <- newTVarM Map.empty
+    varHeaderReaders  <- newTVarM Map.empty
     varNextIteratorId <- newTVarM (IteratorId 0)
     varNextReaderId   <- newTVarM 0
     varCopyLock       <- newMVar  ()
@@ -137,7 +139,8 @@ openDBInternal args launchBgTasks = do
                   , cdbChain          = varChain
                   , cdbImmBlockNo     = varImmBlockNo
                   , cdbIterators      = varIterators
-                  , cdbReaders        = varReaders
+                  , cdbBlockReaders   = varBlockReaders
+                  , cdbHeaderReaders  = varHeaderReaders
                   , cdbNodeConfig     = cfg
                   , cdbInvalid        = varInvalid
                   , cdbNextIteratorId = varNextIteratorId
@@ -166,8 +169,8 @@ openDBInternal args launchBgTasks = do
           , getIsFetched       = getEnvSTM  h Query.getIsFetched
           , getMaxSlotNo       = getEnvSTM  h Query.getMaxSlotNo
           , streamBlocks       = Iterator.streamBlocks  h
-          , newHeaderReader    = Reader.newHeaderReader h
-          , newBlockReader     = Reader.newBlockReader  h
+          , newHeaderReader    = Reader.newReader h (Args.cdbEncodeHeader args) Header
+          , newBlockReader     = Reader.newReader h (Args.cdbEncodeHeader args) Block
           , getIsInvalidBlock  = getEnvSTM  h Query.getIsInvalidBlock
           , closeDB            = Reopen.closeDB h
           , isOpen             = Reopen.isOpen  h
@@ -193,5 +196,5 @@ openDBInternal args launchBgTasks = do
     tracer = Args.cdbTracer args
     (argsImmDb, argsVolDb, argsLgrDb, _) = Args.fromChainDbArgs args
 
-    blockEpoch :: blk -> m EpochNo
+    blockEpoch :: forall b. HasHeader b => b -> m EpochNo
     blockEpoch = epochInfoEpoch (Args.cdbEpochInfo args) . blockSlot

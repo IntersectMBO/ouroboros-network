@@ -20,6 +20,7 @@ import           Control.Monad.Class.MonadThrow
 
 import           Ouroboros.Network.Point (WithOrigin)
 
+import           Ouroboros.Consensus.Block (IsEBB)
 import           Ouroboros.Consensus.Util.IOLike
 
 import           Ouroboros.Storage.VolatileDB.Types
@@ -39,8 +40,8 @@ data VolatileDB blockId m = VolatileDB {
       closeDB        :: HasCallStack => m ()
     , isOpenDB       :: HasCallStack => m Bool
     , reOpenDB       :: HasCallStack => m ()
-    , getBlock       :: HasCallStack => blockId -> m (Maybe (SlotNo, ByteString))
-    , getHeader      :: HasCallStack => blockId -> m (Maybe (SlotNo, ByteString))
+    , getBlock       :: HasCallStack => blockId -> m (Maybe (SlotNo, IsEBB, ByteString))
+    , getHeader      :: HasCallStack => blockId -> m (Maybe (SlotNo, IsEBB, ByteString))
     , putBlock       :: HasCallStack => BlockInfo blockId -> Builder -> m ()
     , getBlockIds    :: HasCallStack => m [blockId]
       -- | Return a function that returns the successors of the block with the

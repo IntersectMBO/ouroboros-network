@@ -49,6 +49,7 @@ import           Ouroboros.Consensus.Node.ProtocolInfo.Abstract
 import           Ouroboros.Consensus.Node.ProtocolInfo.Byron
 import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.Util.Condense (condense)
+import           Ouroboros.Consensus.Util.IOLike (atomically)
 import           Ouroboros.Consensus.Util.Orphans ()
 import           Ouroboros.Consensus.Util.ResourceRegistry
 import qualified Ouroboros.Storage.ChainDB as ChainDB
@@ -176,16 +177,16 @@ validateChainDb dbDir genesisConfig onlyImmDB verbose =
            in ImmDB.openDB immDbArgs)
           ImmDB.closeDB
           (\immdb -> do
-            immDbTipBlock <- ImmDB.getBlockAtTip immdb
-            putStrLn $ "DB tip: " ++ condense immDbTipBlock
+            immDbTipPoint <- ImmDB.getPointAtTip immdb
+            putStrLn $ "DB tip: " ++ condense immDbTipPoint
           )
       else
         bracket
           (ChainDB.openDB chainDbArgs)
           ChainDB.closeDB
           (\chaindb -> do
-            blk <- ChainDB.getTipBlock chaindb
-            putStrLn $ "DB tip: " ++ condense blk
+            chainDbTipPoint <- atomically $ ChainDB.getTipPoint chaindb
+            putStrLn $ "DB tip: " ++ condense chainDbTipPoint
           )
   where
     slotLength = slotLengthFromMillisec (20 * 1000)

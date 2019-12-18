@@ -243,13 +243,15 @@ runNodeNetwork registry testBtime numCoreNodes nodeJoinPlan nodeTopology
       nodeDBs = ChainDbArgs
         { -- Decoders
           cdbDecodeHash       = nodeDecodeHeaderHash (Proxy @blk)
-        , cdbDecodeBlock      = nodeDecodeBlock cfg
+        , cdbDecodeBlock      = nodeDecodeBlock       cfg
+        , cdbDecodeHeader     = nodeDecodeHeader      cfg
         , cdbDecodeLedger     = nodeDecodeLedgerState cfg
         , cdbDecodeChainState = nodeDecodeChainState (Proxy @blk) cfg
           -- Encoders
-        , cdbEncodeBlock      = nodeEncodeBlockWithInfo cfg
         , cdbEncodeHash       = nodeEncodeHeaderHash (Proxy @blk)
-        , cdbEncodeLedger     = nodeEncodeLedgerState cfg
+        , cdbEncodeBlock      = nodeEncodeBlockWithInfo cfg
+        , cdbEncodeHeader     = nodeEncodeHeader        cfg
+        , cdbEncodeLedger     = nodeEncodeLedgerState   cfg
         , cdbEncodeChainState = nodeEncodeChainState (Proxy @blk) cfg
           -- Error handling
         , cdbErrImmDb         = EH.monadCatch
@@ -272,6 +274,7 @@ runNodeNetwork registry testBtime numCoreNodes nodeJoinPlan nodeTopology
         , cdbCheckIntegrity   = nodeCheckIntegrity cfg
         , cdbGenesis          = return initLedger
         , cdbBlockchainTime   = btime
+        , cdbAddHdrEnv        = nodeAddHeaderEnvelope (Proxy @blk)
         -- Misc
         , cdbTracer           = Tracer $ \case
               ChainDB.TraceAddBlockEvent
@@ -377,16 +380,20 @@ runNodeNetwork registry testBtime numCoreNodes nodeJoinPlan nodeTopology
     customProtocolCodecs
       :: NodeConfig (BlockProtocol blk)
       -> ProtocolCodecs blk CodecError m
-           (AnyMessage (ChainSync (Header blk) (Tip blk)))
+           Lazy.ByteString
+           Lazy.ByteString
            Lazy.ByteString
            Lazy.ByteString
            (AnyMessage (TxSubmission (GenTxId blk) (GenTx blk)))
-           (AnyMessage (ChainSync blk (Tip blk)))
+           (AnyMessage (ChainSync (Serialised blk) (Tip blk)))
            (AnyMessage (LocalTxSubmission (GenTx blk) (ApplyTxErr blk)))
     customProtocolCodecs cfg = ProtocolCodecs
         { pcChainSyncCodec =
-            mapFailureCodec CodecIdFailure $
-            pcChainSyncCodec protocolCodecsId
+            mapFailureCodec CodecBytesFailure $
+            pcChainSyncCodec binaryProtocolCodecs
+        , pcChainSyncCodecSerialised =
+            mapFailureCodec CodecBytesFailure $
+            pcChainSyncCodecSerialised binaryProtocolCodecs
         , pcBlockFetchCodec =
             mapFailureCodec CodecBytesFailure $
             pcBlockFetchCodec binaryProtocolCodecs
@@ -738,14 +745,13 @@ data LimitedApp m peer blk =
 -- Used internal to this module, essentially as an abbreviation.
 type LimitedApp' m peer blk unused1 unused2 =
     NetworkApplication m peer
-        (AnyMessage (ChainSync (Header blk) (Tip blk)))
-        -- We can't use @AnyMessage (BlockFetch x)@ for BlockFetch, as @x =
-        -- blk@ for the client, but @x = Serialised blk@ for the server. Since
-        -- both have to match to be sent across a channel, we instead
+        -- The 'ChainSync' and 'BlockFetch' protocols use @'Serialised' x@ for
+        -- the servers and @x@ for the clients. Since both have to match to be
+        -- sent across a channel, we can't use @'AnyMessage' ..@, instead, we
         -- (de)serialise the messages so that they can be sent across the
         -- channel with the same type on both ends, i.e., 'Lazy.ByteString'.
-        Lazy.ByteString  -- BlockFetch
-        Lazy.ByteString  -- BlockFetch Serialised
+        Lazy.ByteString
+        Lazy.ByteString
         (AnyMessage (TxSubmission (GenTxId blk) (GenTx blk)))
         unused1 -- the local node-to-client channel types
         unused2

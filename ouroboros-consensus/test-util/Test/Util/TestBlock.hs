@@ -185,7 +185,7 @@ data TestBlock = TestBlock {
 instance GetHeader TestBlock where
   newtype Header TestBlock = TestHeader { testHeader :: TestBlock }
     deriving stock   (Eq, Show)
-    deriving newtype (NoUnexpectedThunks)
+    deriving newtype (NoUnexpectedThunks, Serialise)
   getHeader = TestHeader
 
 type instance HeaderHash TestBlock = TestHash

@@ -30,10 +30,10 @@ module Ouroboros.Storage.ChainDB.Impl.VolDB (
     -- * Getting and parsing blocks
   , getKnownHeader
   , getKnownBlock
-  , getKnownDeserialisableBlock
+  , getKnownDeserialisableBlockOrHeader
   , getHeader
   , getBlock
-  , getDeserialisableBlock
+  , getDeserialisableBlockOrHeader
     -- * Wrappers
   , getIsMember
   , getPredecessor
@@ -75,14 +75,13 @@ import           Ouroboros.Network.Block (pattern BlockPoint, ChainHash (..),
 import qualified Ouroboros.Network.Block as Block
 import           Ouroboros.Network.Point (WithOrigin (..))
 
-import           Ouroboros.Consensus.Block (GetHeader, Header)
-import qualified Ouroboros.Consensus.Block as Block
+import           Ouroboros.Consensus.Block (Header, IsEBB)
 import qualified Ouroboros.Consensus.Util.CBOR as Util.CBOR
 import           Ouroboros.Consensus.Util.IOLike
 
-import           Ouroboros.Storage.ChainDB.API (ChainDbError (..),
-                     ChainDbFailure (..), Deserialisable (..), StreamFrom (..),
-                     StreamTo (..))
+import           Ouroboros.Storage.ChainDB.API (BlockOrHeader (..),
+                     ChainDbError (..), ChainDbFailure (..),
+                     Deserialisable (..), StreamFrom (..), StreamTo (..))
 import           Ouroboros.Storage.Common
 import           Ouroboros.Storage.FS.API (HasFS, createDirectoryIfMissing)
 import           Ouroboros.Storage.FS.API.Types (MountPoint (..), mkFsPath)
@@ -93,18 +92,22 @@ import qualified Ouroboros.Storage.Util.ErrorHandling as EH
 import           Ouroboros.Storage.VolatileDB (VolatileDB, VolatileDBError)
 import qualified Ouroboros.Storage.VolatileDB as VolDB
 
+
 -- | Thin wrapper around the VolatileDB (opaque type)
 --
 -- The intention is that all interaction with the VolatileDB goes through this
 -- module.
 data VolDB m blk = VolDB {
-      volDB    :: VolatileDB (HeaderHash blk) m
-    , decBlock :: forall s. Decoder s (Lazy.ByteString -> blk)
+      volDB     :: VolatileDB (HeaderHash blk) m
+    , decHeader :: forall s. Decoder s (Lazy.ByteString -> Header blk)
+    , decBlock  :: forall s. Decoder s (Lazy.ByteString -> blk)
       -- ^ TODO introduce a newtype wrapper around the @s@ so we can use
       -- generics to derive the NoUnexpectedThunks instance.
-    , encBlock :: blk -> BinaryInfo Encoding
-    , err      :: ErrorHandling VolatileDBError m
-    , errSTM   :: ThrowCantCatch VolatileDBError (STM m)
+    , encBlock  :: blk -> BinaryInfo Encoding
+    , isEBB     :: blk -> IsEBB
+    , addHdrEnv :: !(IsEBB -> Lazy.ByteString -> Lazy.ByteString)
+    , err       :: ErrorHandling VolatileDBError m
+    , errSTM    :: ThrowCantCatch VolatileDBError (STM m)
     }
 
 -- Universal type; we can't use generics
@@ -112,8 +115,11 @@ instance NoUnexpectedThunks (VolDB m blk) where
   showTypeOf _ = "VolDB"
   whnfNoUnexpectedThunks ctxt VolDB {..} = allNoUnexpectedThunks
     [ noUnexpectedThunks ctxt volDB
+    , noUnexpectedThunks ctxt decHeader
     , noUnexpectedThunks ctxt decBlock
     , noUnexpectedThunks ctxt encBlock
+    , noUnexpectedThunks ctxt isEBB
+    , noUnexpectedThunks ctxt addHdrEnv
     , noUnexpectedThunks ctxt err
     , noUnexpectedThunks ctxt errSTM
     ]
@@ -127,8 +133,11 @@ data VolDbArgs m blk = forall h. VolDbArgs {
     , volErr           :: ErrorHandling VolatileDBError m
     , volErrSTM        :: ThrowCantCatch VolatileDBError (STM m)
     , volBlocksPerFile :: Int
+    , volDecodeHeader  :: forall s. Decoder s (Lazy.ByteString -> Header blk)
     , volDecodeBlock   :: forall s. Decoder s (Lazy.ByteString -> blk)
     , volEncodeBlock   :: blk -> BinaryInfo Encoding
+    , volIsEBB         :: blk -> IsEBB
+    , volAddHdrEnv     :: IsEBB -> Lazy.ByteString -> Lazy.ByteString
     }
 
 -- | Default arguments when using the 'IO' monad
@@ -136,8 +145,11 @@ data VolDbArgs m blk = forall h. VolDbArgs {
 -- The following fields must still be defined:
 --
 -- * 'volBlocksPerFile'
+-- * 'volDecodeHeader'
 -- * 'volDecodeBlock'
 -- * 'volEncodeBlock'
+-- * 'volIsEBB'
+-- * 'volAddHdrEnv'
 defaultArgs :: FilePath -> VolDbArgs IO blk
 defaultArgs fp = VolDbArgs {
       volErr    = EH.exceptions
@@ -145,8 +157,11 @@ defaultArgs fp = VolDbArgs {
     , volHasFS  = ioHasFS $ MountPoint (fp </> "volatile")
       -- Fields without a default
     , volBlocksPerFile = error "no default for volBlocksPerFile"
+    , volDecodeHeader  = error "no default for volDecodeHeader"
     , volDecodeBlock   = error "no default for volDecodeBlock"
     , volEncodeBlock   = error "no default for volEncodeBlock"
+    , volIsEBB         = error "no default for volIsEBB"
+    , volAddHdrEnv     = error "no default for volAddHdrEnv"
     }
 
 openDB :: (IOLike m, HasHeader blk) => VolDbArgs m blk -> m (VolDB m blk)
@@ -159,21 +174,27 @@ openDB args@VolDbArgs{..} = do
                (blockFileParser args)
                volBlocksPerFile
     return VolDB
-      { volDB    = volDB
-      , err      = volErr
-      , errSTM   = volErrSTM
-      , decBlock = volDecodeBlock
-      , encBlock = volEncodeBlock
+      { volDB     = volDB
+      , err       = volErr
+      , errSTM    = volErrSTM
+      , decHeader = volDecodeHeader
+      , decBlock  = volDecodeBlock
+      , encBlock  = volEncodeBlock
+      , addHdrEnv = volAddHdrEnv
+      , isEBB     = volIsEBB
       }
 
 -- | For testing purposes
 mkVolDB :: VolatileDB (HeaderHash blk) m
+        -> (forall s. Decoder s (Lazy.ByteString -> Header blk))
         -> (forall s. Decoder s (Lazy.ByteString -> blk))
         -> (blk -> BinaryInfo Encoding)
+        -> (blk -> IsEBB)
+        -> (IsEBB -> Lazy.ByteString -> Lazy.ByteString)
         -> ErrorHandling VolatileDBError m
         -> ThrowCantCatch VolatileDBError (STM m)
         -> VolDB m blk
-mkVolDB volDB decBlock encBlock err errSTM = VolDB {..}
+mkVolDB volDB decHeader decBlock encBlock isEBB addHdrEnv err errSTM = VolDB {..}
 
 {-------------------------------------------------------------------------------
   Wrappers
@@ -196,7 +217,7 @@ getMaxSlotNo db = withSTM db VolDB.getMaxSlotNo
 
 putBlock :: (MonadCatch m, HasHeader blk) => VolDB m blk -> blk -> m ()
 putBlock db@VolDB{..} b = withDB db $ \vol ->
-    VolDB.putBlock vol (extractInfo binInfo b) binaryBlob
+    VolDB.putBlock vol (extractInfo isEBB binInfo b) binaryBlob
   where
     binInfo@BinaryInfo { binaryBlob } = CBOR.toBuilder <$> encBlock b
 
@@ -414,11 +435,6 @@ deriving instance Show (HeaderHash blk) => Show (Path blk)
   Getting and parsing blocks
 -------------------------------------------------------------------------------}
 
-getKnownHeader :: (MonadCatch m, StandardHash blk, Typeable blk, GetHeader blk)
-               => VolDB m blk -> HeaderHash blk -> m (Header blk)
-getKnownHeader db@VolDB{..} hash =
-    Block.getHeader <$> getKnownBlock db hash
-
 getKnownBlock :: (MonadCatch m, StandardHash blk, Typeable blk)
               => VolDB m blk -> HeaderHash blk -> m blk
 getKnownBlock db hash = do
@@ -427,38 +443,69 @@ getKnownBlock db hash = do
       Right b  -> return b
       Left err -> throwM err
 
-getKnownDeserialisableBlock
-  :: (MonadCatch m, StandardHash blk, Typeable blk, Typeable m)
-  => VolDB m blk -> HeaderHash blk -> m (Deserialisable m blk)
-getKnownDeserialisableBlock db hash = do
-    mBlock <- mustExist hash <$> getDeserialisableBlock db hash
+getKnownHeader :: (MonadCatch m, HasHeader blk)
+               => VolDB m blk -> HeaderHash blk -> m (Header blk)
+getKnownHeader db hash = do
+    mHeader <- mustExist hash <$> getHeader db hash
+    case mHeader of
+      Right b  -> return b
+      Left err -> throwM err
+
+getKnownDeserialisableBlockOrHeader
+  :: (MonadCatch m, StandardHash blk, Typeable m, Typeable b, Typeable blk)
+  => VolDB m blk
+  -> BlockOrHeader blk b
+  -> HeaderHash blk
+  -> m (Deserialisable m blk b)
+getKnownDeserialisableBlockOrHeader db blockOrHeader hash = do
+    mBlock <- mustExist hash <$>
+      getDeserialisableBlockOrHeader db blockOrHeader hash
     case mBlock of
       Right b  -> return b
       Left err -> throwM err
 
-getHeader :: (MonadCatch m, StandardHash blk, Typeable blk, GetHeader blk)
-          => VolDB m blk -> HeaderHash blk -> m (Maybe (Header blk))
-getHeader db@VolDB{..} hash =
-    fmap Block.getHeader <$> getBlock db hash
-
 getBlock :: (MonadCatch m, StandardHash blk, Typeable blk)
          => VolDB m blk -> HeaderHash blk -> m (Maybe blk)
-getBlock db hash = traverse deserialise =<< getDeserialisableBlock db hash
+getBlock db hash =
+    traverse deserialise =<<
+    getDeserialisableBlockOrHeader db Block hash
 
-getDeserialisableBlock
+getHeader :: (MonadCatch m, StandardHash blk, Typeable blk)
+          => VolDB m blk -> HeaderHash blk -> m (Maybe (Header blk))
+getHeader db hash =
+    traverse deserialise =<<
+    getDeserialisableBlockOrHeader db Header hash
+
+getDeserialisableBlockOrHeader
   :: (MonadCatch m, StandardHash blk, Typeable blk)
-  => VolDB m blk -> HeaderHash blk -> m (Maybe (Deserialisable m blk))
-getDeserialisableBlock db hash =
-    withDB db (\vol -> VolDB.getBlock vol hash) <&> \case
+  => VolDB m blk
+  -> BlockOrHeader blk b
+  -> HeaderHash blk
+  -> m (Maybe (Deserialisable m blk b))
+getDeserialisableBlockOrHeader db blockOrHeader hash =
+    getBlob db blockOrHeader hash <&> \case
       Nothing           -> Nothing
       Just (slotNo, bs) -> Just Deserialisable
         { serialised         = Serialised bs
         , deserialisableSlot = slotNo
         , deserialisableHash = hash
-        , deserialise        = case parse (decBlock db) hash bs of
+        , deserialise        = case parse db blockOrHeader hash bs of
             Left  err -> throwM err
             Right blk -> return blk
         }
+
+getBlob
+  :: (MonadCatch m, HasCallStack)
+  => VolDB m blk
+  -> BlockOrHeader blk b
+  -> HeaderHash blk
+  -> m (Maybe (SlotNo, Lazy.ByteString))
+getBlob db@VolDB { addHdrEnv } blockOrHeader hash = withDB db $ \vol ->
+    case blockOrHeader of
+      Block  -> VolDB.getBlock  vol hash <&>
+        fmap (\(slot, _isEBB, bs) -> (slot, bs))
+      Header -> VolDB.getHeader vol hash <&>
+        fmap (\(slot,  isEBB, bs) -> (slot, addHdrEnv isEBB bs))
 
 {-------------------------------------------------------------------------------
   Auxiliary: parsing
@@ -480,7 +527,7 @@ blockFileParser VolDbArgs{..} = VolDB.Parser $
     -- confusion.
     decoder' :: forall s. Decoder s (Lazy.ByteString
              -> VolDB.BlockInfo (HeaderHash blk))
-    decoder' = ((\blk -> extractInfo (volEncodeBlock blk) blk) .)
+    decoder' = ((\blk -> extractInfo volIsEBB (volEncodeBlock blk) blk) .)
       <$> volDecodeBlock
 
 {-------------------------------------------------------------------------------
@@ -519,19 +566,25 @@ mustExist :: forall blk. (Typeable blk, StandardHash blk)
 mustExist hash Nothing  = Left  $ VolDbMissingBlock @blk hash
 mustExist _    (Just b) = Right $ b
 
-parse :: forall blk. (Typeable blk, StandardHash blk)
-      => (forall s. Decoder s (Lazy.ByteString -> blk))
+parse :: forall m blk b. (Typeable blk, StandardHash blk)
+      => VolDB m blk
+      -> BlockOrHeader blk b
       -> HeaderHash blk
       -> Lazy.ByteString
-      -> Either ChainDbFailure blk
-parse dec hash bytes =
+      -> Either ChainDbFailure b
+parse db blockOrHeader hash bytes =
     aux (CBOR.deserialiseFromBytes dec bytes)
   where
+    dec :: forall s. Decoder s (Lazy.ByteString -> b)
+    dec = case blockOrHeader of
+      Block  -> decBlock  db
+      Header -> decHeader db
+
     aux :: Either CBOR.DeserialiseFailure
-                  (Lazy.ByteString, Lazy.ByteString -> blk)
-        -> Either ChainDbFailure blk
-    aux (Right (bs, blk))
-      | Lazy.null bs = Right (blk bytes)
+                  (Lazy.ByteString, Lazy.ByteString -> b)
+        -> Either ChainDbFailure b
+    aux (Right (bs, b))
+      | Lazy.null bs = Right (b bytes)
       | otherwise    = Left $ VolDbTrailingData @blk hash bs
     aux (Left err)   = Left $ VolDbParseFailure @blk hash err
 
@@ -544,13 +597,15 @@ fromChainHash GenesisHash      = Origin
 fromChainHash (BlockHash hash) = At hash
 
 extractInfo :: HasHeader blk
-            => BinaryInfo a
+            => (blk -> IsEBB)
+            -> BinaryInfo a
             -> blk
             -> VolDB.BlockInfo (HeaderHash blk)
-extractInfo BinaryInfo{..} b = VolDB.BlockInfo {
+extractInfo isEBB BinaryInfo{..} b = VolDB.BlockInfo {
       bbid          = blockHash b
     , bslot         = blockSlot b
     , bpreBid       = fromChainHash (blockPrevHash b)
+    , bisEBB        = isEBB b
     , bheaderOffset = headerOffset
     , bheaderSize   = headerSize
     }

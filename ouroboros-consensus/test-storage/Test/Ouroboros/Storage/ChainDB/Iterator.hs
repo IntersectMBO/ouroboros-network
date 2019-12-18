@@ -9,9 +9,12 @@ module Test.Ouroboros.Storage.ChainDB.Iterator
 import           Test.Tasty
 import           Test.Tasty.QuickCheck
 
+import           Codec.CBOR.Encoding (Encoding)
+import qualified Codec.CBOR.Write as CBOR
 import           Codec.Serialise (decode, encode, serialiseIncremental)
 import           Control.Monad.Except
 import           Control.Tracer
+import qualified Data.ByteString.Lazy as Lazy
 import           Data.List (intercalate)
 import qualified Data.Map.Strict as Map
 import           Data.Word (Word64)
@@ -24,6 +27,7 @@ import           Ouroboros.Network.MockChain.Chain (Chain)
 import qualified Ouroboros.Network.MockChain.Chain as Chain
 import           Ouroboros.Network.Point (WithOrigin (..))
 
+import           Ouroboros.Consensus.Block (IsEBB (..))
 import           Ouroboros.Consensus.Util.Condense (condense)
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
@@ -37,7 +41,7 @@ import           Ouroboros.Storage.ChainDB.Impl.Iterator (IteratorEnv (..),
                      newIterator)
 import           Ouroboros.Storage.ChainDB.Impl.Types (TraceIteratorEvent (..))
 import           Ouroboros.Storage.ChainDB.Impl.VolDB (VolDB, mkVolDB)
-import           Ouroboros.Storage.Common (BinaryInfo(..), EpochSize)
+import           Ouroboros.Storage.Common (BinaryInfo (..), EpochSize)
 import           Ouroboros.Storage.EpochInfo (fixedSizeEpochInfo)
 import qualified Ouroboros.Storage.ImmutableDB as ImmDB
 import qualified Ouroboros.Storage.Util.ErrorHandling as EH
@@ -268,10 +272,14 @@ initIteratorEnv TestSetup { immutable, volatile } tracer = do
     -- | Open a mock VolatileDB and add the given blocks
     openVolDB :: [TestBlock] -> m (VolDB m TestBlock)
     openVolDB blocks = do
-      (_volDBModel, volDB) <- VolDB.openDBMock EH.throwSTM 1
-      forM_ blocks $ \block ->
-        VolDB.putBlock volDB (blockInfo block) (serialiseIncremental block)
-      return $ mkVolDB volDB (const <$> decode) (addDummyBinaryInfo . encode) EH.monadCatch EH.throwSTM
+        (_volDBModel, volDB) <- VolDB.openDBMock EH.throwSTM 1
+        forM_ blocks $ \block ->
+          VolDB.putBlock volDB (blockInfo block) (serialiseIncremental block)
+        return $ mkVolDB volDB (const <$> decode) (const <$> decode)
+          encodeWithBinaryInfo isEBB addHdrEnv
+          EH.monadCatch EH.throwSTM
+      where
+        isEBB = const IsNotEBB
 
     blockInfo :: TestBlock -> VolDB.BlockInfo (HeaderHash TestBlock)
     blockInfo tb = VolDB.BlockInfo
@@ -280,12 +288,16 @@ initIteratorEnv TestSetup { immutable, volatile } tracer = do
       , VolDB.bpreBid       = case blockPrevHash tb of
           GenesisHash -> Origin
           BlockHash h -> At h
+      , VolDB.bisEBB        = IsNotEBB
       , VolDB.bheaderOffset = 0
       , VolDB.bheaderSize   = 0
       }
 
     epochSize :: EpochSize
     epochSize = 10
+
+    addHdrEnv :: IsEBB -> Lazy.ByteString -> Lazy.ByteString
+    addHdrEnv = const id
 
     -- | Open a mock ImmutableDB and add the given chain of blocks
     openImmDB :: Chain TestBlock -> m (ImmDB m TestBlock)
@@ -294,16 +306,20 @@ initIteratorEnv TestSetup { immutable, volatile } tracer = do
         forM_ (Chain.toOldestFirst chain) $ \block ->
           ImmDB.appendBlock immDB
             (blockSlot block) (blockHash block)
-            (addDummyBinaryInfo (serialiseIncremental block))
-        return $ mkImmDB immDB (const <$> decode) (addDummyBinaryInfo . encode)
-          epochInfo isEBB EH.monadCatch
+            (CBOR.toBuilder <$> encodeWithBinaryInfo block)
+        return $ mkImmDB immDB (const <$> decode) (const <$> decode)
+          encodeWithBinaryInfo epochInfo isEBB addHdrEnv EH.monadCatch
       where
         epochInfo = fixedSizeEpochInfo epochSize
         isEBB     = const Nothing
 
-addDummyBinaryInfo :: blk -> BinaryInfo blk
-addDummyBinaryInfo blob = BinaryInfo
-  { binaryBlob   = blob
-  , headerOffset = 0
-  , headerSize   = 0
-  }
+encodeWithBinaryInfo :: TestBlock -> BinaryInfo Encoding
+encodeWithBinaryInfo blk = BinaryInfo
+    { binaryBlob   = enc
+      -- The serialised @Header TestBlock@ is the same as the serialised
+      -- @TestBlock@
+    , headerOffset = 0
+    , headerSize   = fromIntegral $ Lazy.length (CBOR.toLazyByteString enc)
+    }
+  where
+    enc = encode blk

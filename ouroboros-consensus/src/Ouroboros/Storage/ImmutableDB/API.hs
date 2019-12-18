@@ -115,11 +115,11 @@ data ImmutableDB hash m = ImmutableDB
   , getBlock
       :: HasCallStack => SlotNo -> m (Maybe (hash, ByteString))
 
-    -- | TODO
+    -- | Variant of 'getBlock' that only reads the header.
   , getBlockHeader
       :: HasCallStack => SlotNo -> m (Maybe (hash, ByteString))
 
-    -- | TODO
+    -- | Variant of 'getBlock' that only reads the hash.
   , getBlockHash
       :: HasCallStack => SlotNo -> m (Maybe hash)
 
@@ -134,13 +134,34 @@ data ImmutableDB hash m = ImmutableDB
   , getEBB
       :: HasCallStack => EpochNo -> m (Maybe (hash, ByteString))
 
-    -- | TODO
+    -- | Variant of 'getEBB' that only reads the header.
   , getEBBHeader
       :: HasCallStack => EpochNo -> m (Maybe (hash, ByteString))
 
-    -- | TODO
+    -- | Variant of 'getEBB' that only returns the hash.
   , getEBBHash
       :: HasCallStack => EpochNo -> m (Maybe hash)
+
+    -- | Get the block or EBB at the given slot with the given hash.
+    --
+    -- Also return 'EpochNo' in case of an EBB or the given 'SlotNo' in case
+    -- of a regular block.
+    --
+    -- If the slot is empty, 'Nothing' is returned. If the slot is not empty,
+    -- but the block (and or the EBB) in it doesn't have the given hash,
+    -- 'Nothing' is also returned.
+    --
+    -- Throws a 'ReadFutureSlotError' if the requested slot is in the future.
+    --
+    -- Throws a 'ClosedDBError' if the database is closed.
+  , getBlockOrEBB
+      :: HasCallStack
+      => SlotNo -> hash -> m (Maybe (Either EpochNo SlotNo, ByteString))
+
+    -- | Variant of 'getBlockOrEBB' that only returns the header.
+  , getBlockOrEBBHeader
+      :: HasCallStack
+      => SlotNo -> hash -> m (Maybe (Either EpochNo SlotNo, ByteString))
 
     -- | Appends a block at the given slot.
     --

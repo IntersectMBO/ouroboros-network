@@ -69,8 +69,8 @@ import           Ouroboros.Storage.Common (EpochNo)
 import           Ouroboros.Storage.EpochInfo (EpochInfo)
 
 import           Ouroboros.Storage.ChainDB.API (ChainDbError (..),
-                     InvalidBlockReason, IteratorId, ReaderId, StreamFrom,
-                     StreamTo, UnknownRange)
+                     Deserialisable, InvalidBlockReason, IteratorId, ReaderId,
+                     StreamFrom, StreamTo, UnknownRange)
 
 import           Ouroboros.Storage.ChainDB.Impl.ImmDB (ImmDB)
 import qualified Ouroboros.Storage.ChainDB.Impl.ImmDB as ImmDB
@@ -177,12 +177,15 @@ data ChainDbEnv m blk = CDB
     -- ChainDB: the open file handles used by iterators can be closed, and the
     -- iterators themselves are closed so that it is impossible to use an
     -- iterator after closing the ChainDB itself.
-  , cdbReaders        :: !(StrictTVar m (Map ReaderId (StrictTVar m (ReaderState m blk))))
-    -- ^ The readers.
+  , cdbBlockReaders   :: !(StrictTVar m (Map ReaderId (StrictTVar m (ReaderState m blk blk))))
+    -- ^ The (block) readers.
     --
     -- INVARIANT: the 'readerPoint' of each reader is 'withinFragmentBounds'
     -- of the current chain fragment (retrieved 'cdbGetCurrentChain', not by
     -- reading 'cdbChain' directly).
+  , cdbHeaderReaders  :: !(StrictTVar m (Map ReaderId (StrictTVar m (ReaderState m blk (Header blk)))))
+    -- ^ The header readers. Same as the block readers ('cdbBlockReaders'),
+    -- but instead of returning whole blocks, they only return the headers.
   , cdbNodeConfig     :: !(NodeConfig (BlockProtocol blk))
   , cdbInvalid        :: !(StrictTVar m (WithFingerprint (InvalidBlocks blk)))
     -- ^ See the docstring of 'InvalidBlocks'.
@@ -268,9 +271,24 @@ data Internal m blk = Internal
 -- modules depend on 'ChainDbEnv'. Also, 'ChainDbEnv.cdbReaders' depends on
 -- 'ReaderState'.
 
-data ReaderState m blk
-  = ReaderInImmDB !(ReaderRollState blk) !(ImmDB.Iterator (HeaderHash blk) m blk)
-    -- ^ The 'Reader' is reading from the ImmutableDB
+data ReaderState m blk b
+  = ReaderInit
+    -- ^ The 'Reader' is in its initial state. Its 'ReaderRollState' is
+    -- @'RollBackTo' 'genesisPoint'@.
+    --
+    -- This is equivalent to having a 'ReaderInImmDB' with the same
+    -- 'ReaderRollState' and an iterator streaming after genesis. Opening such
+    -- an iterator has a cost (index files will have to be read). However, in
+    -- most cases, right after opening a Reader, the user of the Reader will
+    -- try to move it forward, moving it from genesis to a more recent point
+    -- on the chain. So we incur the cost of opening the iterator while not
+    -- even using it.
+    --
+    -- Therefore, we have this extra initial state, that avoids this cost.
+    -- When the user doesn't move the Reader forward, an iterator is opened.
+  | ReaderInImmDB !(ReaderRollState blk)
+                  !(ImmDB.Iterator (HeaderHash blk) m (Deserialisable m blk b))
+    -- ^ The 'Reader' is reading from the ImmutableDB.
   | ReaderInMem   !(ReaderRollState blk)
     -- ^ The 'Reader' is reading from the in-memory current chain fragment.
   deriving (Generic, NoUnexpectedThunks)

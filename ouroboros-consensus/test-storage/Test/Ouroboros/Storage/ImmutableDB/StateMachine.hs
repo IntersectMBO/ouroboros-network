@@ -111,23 +111,25 @@ import           Test.Ouroboros.Storage.Util (collects)
 -- Where @m@ can be 'PureM', 'RealM', or 'RealErrM', and @r@ can be 'Symbolic'
 -- or 'Concrete'.
 data Cmd it
-  = GetBlock          SlotNo
-  | GetBlockHeader    SlotNo
-  | GetBlockHash      SlotNo
-  | GetEBB            EpochNo
-  | GetEBBHeader      EpochNo
-  | GetEBBHash        EpochNo
-  | AppendBlock       SlotNo  Hash TestBlock
-  | AppendEBB         EpochNo Hash TestBlock
-  | StreamBlocks      (Maybe (SlotNo, Hash)) (Maybe (SlotNo, Hash))
-  | StreamHeaders     (Maybe (SlotNo, Hash)) (Maybe (SlotNo, Hash))
-  | IteratorNext      it
-  | IteratorPeek      it
-  | IteratorHasNext   it
-  | IteratorClose     it
-  | Reopen            ValidationPolicy
-  | DeleteAfter       ImmTip
-  | Corruption        Corruption
+  = GetBlock            SlotNo
+  | GetBlockHeader      SlotNo
+  | GetBlockHash        SlotNo
+  | GetEBB              EpochNo
+  | GetEBBHeader        EpochNo
+  | GetEBBHash          EpochNo
+  | GetBlockOrEBB       SlotNo  Hash
+  | GetBlockOrEBBHeader SlotNo  Hash
+  | AppendBlock         SlotNo  Hash TestBlock
+  | AppendEBB           EpochNo Hash TestBlock
+  | StreamBlocks        (Maybe (SlotNo, Hash)) (Maybe (SlotNo, Hash))
+  | StreamHeaders       (Maybe (SlotNo, Hash)) (Maybe (SlotNo, Hash))
+  | IteratorNext        it
+  | IteratorPeek        it
+  | IteratorHasNext     it
+  | IteratorClose       it
+  | Reopen              ValidationPolicy
+  | DeleteAfter         ImmTip
+  | Corruption          Corruption
   deriving (Generic, Show, Functor, Foldable, Traversable)
 
 deriving instance SOP.Generic         (Cmd it)
@@ -160,18 +162,20 @@ type Hash = TestHeaderHash
 
 -- | Return type for successful database operations.
 data Success it
-  = Unit         ()
-  | Block        (Maybe (Hash, ByteString))
-  | EBB          (Maybe (Hash, ByteString))
-  | BlockHeader  (Maybe (Hash, ByteString))
-  | EBBHeader    (Maybe (Hash, ByteString))
-  | BlockHash    (Maybe Hash)
-  | EBBHash      (Maybe Hash)
-  | EpochNo      EpochNo
-  | Iter         (Either (WrongBoundError Hash) it)
-  | IterResult   (IteratorResult Hash ByteString)
-  | IterHasNext  Bool
-  | Tip          (ImmTipWithHash Hash)
+  = Unit             ()
+  | Block            (Maybe (Hash, ByteString))
+  | EBB              (Maybe (Hash, ByteString))
+  | BlockHeader      (Maybe (Hash, ByteString))
+  | EBBHeader        (Maybe (Hash, ByteString))
+  | BlockHash        (Maybe Hash)
+  | EBBHash          (Maybe Hash)
+  | BlockOrEBB       (Maybe (Either EpochNo SlotNo, ByteString))
+  | BlockOrEBBHeader (Maybe (Either EpochNo SlotNo, ByteString))
+  | EpochNo          EpochNo
+  | Iter             (Either (WrongBoundError Hash) it)
+  | IterResult       (IteratorResult Hash ByteString)
+  | IterHasNext      Bool
+  | Tip              (ImmTipWithHash Hash)
   deriving (Eq, Show, Functor, Foldable, Traversable)
 
 -- | How to run a 'Corruption' command.
@@ -190,29 +194,31 @@ run :: (HasCallStack, Monad m)
     -> Cmd (Iterator Hash m ByteString)
     -> m (Success (Iterator Hash m ByteString))
 run runCorruption its db internal cmd = case cmd of
-  GetBlock          s   -> Block       <$> getBlock       db s
-  GetEBB            e   -> EBB         <$> getEBB         db e
-  GetBlockHeader    s   -> BlockHeader <$> getBlockHeader db s
-  GetEBBHeader      e   -> EBBHeader   <$> getEBBHeader   db e
-  GetBlockHash      s   -> BlockHash   <$> getBlockHash   db s
-  GetEBBHash        e   -> EBBHash     <$> getEBBHash     db e
-  AppendBlock     s h b -> Unit        <$> appendBlock    db s h (toBuilder <$> testBlockToBinaryInfo b)
-  AppendEBB       e h b -> Unit        <$> appendEBB      db e h (toBuilder <$> testBlockToBinaryInfo b)
-  StreamBlocks    s e   -> Iter        <$> streamBlocks   db s e
-  StreamHeaders   s e   -> Iter        <$> streamHeaders  db s e
-  IteratorNext    it    -> IterResult  <$> iteratorNext    it
-  IteratorPeek    it    -> IterResult  <$> iteratorPeek    it
-  IteratorHasNext it    -> IterHasNext <$> iteratorHasNext it
-  IteratorClose   it    -> Unit        <$> iteratorClose   it
-  DeleteAfter tip       -> do
+  GetBlock            s     -> Block            <$> getBlock            db s
+  GetEBB              e     -> EBB              <$> getEBB              db e
+  GetBlockHeader      s     -> BlockHeader      <$> getBlockHeader      db s
+  GetEBBHeader        e     -> EBBHeader        <$> getEBBHeader        db e
+  GetBlockHash        s     -> BlockHash        <$> getBlockHash        db s
+  GetEBBHash          e     -> EBBHash          <$> getEBBHash          db e
+  GetBlockOrEBB       s h   -> BlockOrEBB       <$> getBlockOrEBB       db s h
+  GetBlockOrEBBHeader s h   -> BlockOrEBBHeader <$> getBlockOrEBBHeader db s h
+  AppendBlock         s h b -> Unit             <$> appendBlock         db s h (toBuilder <$> testBlockToBinaryInfo b)
+  AppendEBB           e h b -> Unit             <$> appendEBB           db e h (toBuilder <$> testBlockToBinaryInfo b)
+  StreamBlocks        s e   -> Iter             <$> streamBlocks        db s e
+  StreamHeaders       s e   -> Iter             <$> streamHeaders       db s e
+  IteratorNext        it    -> IterResult       <$> iteratorNext        it
+  IteratorPeek        it    -> IterResult       <$> iteratorPeek        it
+  IteratorHasNext     it    -> IterHasNext      <$> iteratorHasNext     it
+  IteratorClose       it    -> Unit             <$> iteratorClose       it
+  DeleteAfter tip           -> do
     mapM_ iteratorClose its
     Unit <$> deleteAfter internal tip
-  Reopen valPol         -> do
+  Reopen valPol             -> do
     mapM_ iteratorClose its
     closeDB db
     reopen db valPol
     Tip <$> getTip db
-  Corruption corr       -> do
+  Corruption corr           -> do
     mapM_ iteratorClose its
     runCorruption db internal corr
 
@@ -429,7 +435,8 @@ generateCmd Model {..} = At <$> frequency
     [ -- Block
       (1, elements [GetBlock, GetBlockHeader, GetBlockHash] <*> genGetBlockSlot)
       -- EBB
-    , (1, elements [GetEBB, GetEBBHeader, GetEBBHash] <*> genEpoch)
+    , (1, elements [GetEBB, GetEBBHeader, GetEBBHash] <*> genGetEBB)
+    , (1, (uncurry <$> elements [GetBlockOrEBB, GetBlockOrEBBHeader]) <*> genSlotAndHash)
     , (3, do
             let mbPrevBlock = dbmTipBlock dbModel
             slotNo  <- frequency
@@ -524,10 +531,11 @@ generateCmd Model {..} = At <$> frequency
       , (1,  genSlotInTheFuture)
       , (1,  genSmallSlotNo) ]
 
-    genEpoch :: Gen EpochNo
-    genEpoch = frequency
-      [ (if empty then 0 else 10, chooseEpoch (0, currentEpoch))
-      , (1, chooseEpoch (0, 5)) ]
+    genGetEBB :: Gen EpochNo
+    genGetEBB = frequency
+      [ (if noEBBs then 0 else 5, elements $ Map.keys dbmEBBs)
+      , (1, chooseEpoch (0, 5))
+      ]
 
     chooseWord64 :: Coercible a Word64 => (a, a) -> Gen a
     chooseWord64 (start, end) = coerce $ choose @Word64 (coerce start, coerce end)
@@ -543,6 +551,15 @@ generateCmd Model {..} = At <$> frequency
 
     genSlotInTheFuture :: Gen SlotNo
     genSlotInTheFuture = chooseSlot (succ lastSlot, maxBound)
+
+    genSlotAndHash :: Gen (SlotNo, Hash)
+    genSlotAndHash = frequency
+      [ (if noBlocks then 0 else 5,
+         (\b -> (blockSlot b, blockHash b)) <$> genBlockInThePast)
+      , (if noEBBs then 0 else 5,
+         (\b -> (blockSlot b, blockHash b)) <$> genEBBInThePast)
+      , (1, genRandomBound)
+      ]
 
     -- Generates random hashes, will seldomly correspond to real blocks. Used
     -- to test error handling.
@@ -615,6 +632,8 @@ shrinkCmd Model {..} (At cmd) = fmap At $ case cmd of
       [GetBlockHash slot' | slot' <- shrink slot]
     GetEBBHash epoch                  ->
       [GetEBBHash epoch' | epoch' <- shrink epoch]
+    GetBlockOrEBB _slot _hash         -> []
+    GetBlockOrEBBHeader _slot _hash   -> []
     IteratorNext    {}                -> []
     IteratorPeek    {}                -> []
     IteratorHasNext {}                -> []
