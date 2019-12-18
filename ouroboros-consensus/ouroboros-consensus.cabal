@@ -107,7 +107,6 @@ library
                        Ouroboros.Consensus.Util.RedundantConstraints
                        Ouroboros.Consensus.Util.ResourceRegistry
                        Ouroboros.Consensus.Util.Singletons
-                       Ouroboros.Consensus.Util.SlotBounded
                        Ouroboros.Consensus.Util.STM
                        Ouroboros.Consensus.Util.TraceSize
 
@@ -215,6 +214,7 @@ library
                        cardano-crypto-wrapper,
                        cardano-ledger,
                        cardano-prelude,
+                       cardano-slotting,
                        cborg             >=0.2.2 && <0.3,
                        containers        >=0.5   && <0.7,
                        cryptonite        >=0.25  && <0.26,

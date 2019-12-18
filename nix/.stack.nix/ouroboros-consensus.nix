@@ -33,6 +33,7 @@
           (hsPkgs.cardano-crypto-wrapper)
           (hsPkgs.cardano-ledger)
           (hsPkgs.cardano-prelude)
+          (hsPkgs.cardano-slotting)
           (hsPkgs.cborg)
           (hsPkgs.containers)
           (hsPkgs.cryptonite)
