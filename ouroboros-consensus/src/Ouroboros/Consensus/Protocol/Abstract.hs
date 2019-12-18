@@ -219,15 +219,12 @@ class ( Show (ChainState    p)
   --
   -- Default chain selection
   --
-  -- The default simply compares length
+  -- The default preference uses the default comparison. The default comparison
+  -- simply uses the block number.
   --
 
-  default preferCandidate :: HasHeader hdr
-                          => NodeConfig p
-                          -> hdr      -- ^ Our chain
-                          -> hdr      -- ^ Candidate
-                          -> Bool
-  preferCandidate _ ours cand = blockNo cand > blockNo ours
+  preferCandidate cfg ours cand =
+    compareCandidates cfg ours cand == LT
 
   default compareCandidates :: HasHeader hdr
                             => NodeConfig p
