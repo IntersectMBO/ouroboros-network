@@ -12,6 +12,7 @@ module Ouroboros.Consensus.Node
   ( DiffusionTracers (..)
   , DiffusionArguments (..)
   , run
+  , IsProducer (..)
     -- * Exposed by 'run'
   , RunNode (..)
   , Tracers
@@ -76,6 +77,12 @@ import           Ouroboros.Storage.ImmutableDB (ValidationPolicy (..))
 import           Ouroboros.Storage.LedgerDB.DiskPolicy (defaultDiskPolicy)
 import           Ouroboros.Storage.LedgerDB.InMemory (ledgerDbDefaultParams)
 
+-- | Whether the node produces blocks or not.
+data IsProducer
+  = IsProducer
+  | IsNotProducer
+  deriving (Eq, Show)
+
 -- | Start a node.
 --
 -- This opens the 'ChainDB', sets up the 'NodeKernel' and initialises the
@@ -92,6 +99,7 @@ run
   -> NetworkMagic
   -> FilePath                             -- ^ Database path
   -> ProtocolInfo blk
+  -> IsProducer
   -> (ChainDbArgs IO blk -> ChainDbArgs IO blk)
       -- ^ Customise the 'ChainDbArgs'
   -> (NodeArgs IO ConnectionId blk -> NodeArgs IO ConnectionId blk)
@@ -100,8 +108,9 @@ run
      -- ^ Called on the 'NodeKernel' after creating it, but before the network
      -- layer is initialised.
   -> IO ()
-run tracers chainDbTracer diffusionTracers diffusionArguments networkMagic dbPath pInfo
-    customiseChainDbArgs customiseNodeArgs onNodeKernel = do
+run tracers chainDbTracer diffusionTracers diffusionArguments networkMagic
+    dbPath pInfo isProducer customiseChainDbArgs customiseNodeArgs
+    onNodeKernel = do
     let mountPoint = MountPoint dbPath
     either throwM return =<< checkDbMarker
       (ioHasFS mountPoint)
@@ -132,6 +141,7 @@ run tracers chainDbTracer diffusionTracers diffusionArguments networkMagic dbPat
             tracers
             btime
             chainDB
+            isProducer
 
       nodeKernel <- initNodeKernel nodeArgs
       onNodeKernel registry nodeKernel
@@ -260,8 +270,9 @@ mkNodeArgs
   -> Tracers IO ConnectionId blk
   -> BlockchainTime IO
   -> ChainDB IO blk
+  -> IsProducer
   -> NodeArgs IO ConnectionId blk
-mkNodeArgs registry cfg initState tracers btime chainDB = NodeArgs
+mkNodeArgs registry cfg initState tracers btime chainDB isProducer = NodeArgs
     { tracers
     , registry
     , maxClockSkew       = ClockSkew 1
@@ -269,7 +280,7 @@ mkNodeArgs registry cfg initState tracers btime chainDB = NodeArgs
     , initState
     , btime
     , chainDB
-    , callbacks
+    , blockProduction
     , blockFetchSize      = nodeBlockFetchSize
     , blockMatchesHeader  = nodeBlockMatchesHeader
     , maxUnackTxs         = 100 -- TODO
@@ -278,10 +289,12 @@ mkNodeArgs registry cfg initState tracers btime chainDB = NodeArgs
     , chainSyncPipelining = pipelineDecisionLowHighMark 200 300 -- TODO
     }
   where
-    callbacks = NodeCallbacks
-      { produceDRG   = drgNew
-      , produceBlock = produceBlock
-      }
+    blockProduction = case isProducer of
+      IsNotProducer -> Nothing
+      IsProducer    -> Just BlockProduction
+        { produceDRG   = drgNew
+        , produceBlock = produceBlock
+        }
 
     produceBlock
       :: IsLeader (BlockProtocol blk)  -- ^ Proof we are leader

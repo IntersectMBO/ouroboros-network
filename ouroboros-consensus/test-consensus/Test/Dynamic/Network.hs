@@ -298,8 +298,8 @@ runNodeNetwork registry testBtime numCoreNodes nodeJoinPlan nodeTopology
     createNode varRNG coreNodeId = do
       let ProtocolInfo{..} = pInfo coreNodeId
 
-      let callbacks :: NodeCallbacks m blk
-          callbacks = NodeCallbacks {
+      let blockProduction :: BlockProduction m blk
+          blockProduction = BlockProduction {
               produceBlock = \proof _l slot prevPoint prevNo txs -> do
                 let curNo :: BlockNo
                     curNo = succ prevNo
@@ -342,7 +342,7 @@ runNodeNetwork registry testBtime numCoreNodes nodeJoinPlan nodeTopology
             , initState           = pInfoInitState
             , btime
             , chainDB
-            , callbacks
+            , blockProduction     = Just blockProduction
             , blockFetchSize      = nodeBlockFetchSize
             , blockMatchesHeader  = nodeBlockMatchesHeader
             , maxUnackTxs         = 1000 -- TODO
@@ -368,7 +368,7 @@ runNodeNetwork registry testBtime numCoreNodes nodeJoinPlan nodeTopology
 
       void $ forkLinkedThread registry $ txProducer
         pInfoConfig
-        (produceDRG callbacks)
+        (produceDRG blockProduction)
         (ChainDB.getCurrentLedger chainDB)
         (getMempool nodeKernel)
 

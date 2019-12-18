@@ -14,7 +14,7 @@
 module Ouroboros.Consensus.NodeKernel (
     -- * Node kernel
     NodeKernel (..)
-  , NodeCallbacks (..)
+  , BlockProduction (..)
   , NodeArgs (..)
   , TraceForgeEvent (..)
   , initNodeKernel
@@ -56,6 +56,7 @@ import           Ouroboros.Consensus.Mempool
 import           Ouroboros.Consensus.Mempool.TxSeq (TicketNo)
 import           Ouroboros.Consensus.Node.Tracers
 import           Ouroboros.Consensus.Protocol.Abstract
+import           Ouroboros.Consensus.Util (whenJust)
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.Orphans ()
 import           Ouroboros.Consensus.Util.Random
@@ -94,8 +95,8 @@ data NodeKernel m peer blk = NodeKernel {
 -- | Monad that we run protocol specific functions in
 type ProtocolM blk m = NodeStateT (BlockProtocol blk) (ChaChaT (STM m))
 
--- | Callbacks required when running the node
-data NodeCallbacks m blk = NodeCallbacks {
+-- | Callbacks required to produce blocks
+data BlockProduction m blk = BlockProduction {
       -- | Produce a block
       --
       -- The function is passed the contents of the mempool; this is a set of
@@ -132,8 +133,8 @@ data NodeArgs m peer blk = NodeArgs {
     , initState           :: NodeState (BlockProtocol blk)
     , btime               :: BlockchainTime m
     , chainDB             :: ChainDB m blk
-    , callbacks           :: NodeCallbacks m blk
     , blockFetchSize      :: Header blk -> SizeInBytes
+    , blockProduction     :: Maybe (BlockProduction m blk)
     , blockMatchesHeader  :: Header blk -> blk -> Bool
     , maxUnackTxs         :: Word16
     , maxBlockBodySize    :: Word32
@@ -151,10 +152,11 @@ initNodeKernel
        )
     => NodeArgs m peer blk
     -> m (NodeKernel m peer blk)
-initNodeKernel args@NodeArgs { registry, cfg, tracers, maxBlockBodySize } = do
+initNodeKernel args@NodeArgs { registry, cfg, tracers, maxBlockBodySize
+                             , blockProduction } = do
     st <- initInternalState args
 
-    forkBlockProduction maxBlockBodySize st
+    whenJust blockProduction $ forkBlockProduction maxBlockBodySize st
 
     let IS { blockFetchInterface, fetchClientRegistry, varCandidates,
              chainDB, mempool } = st
@@ -185,7 +187,6 @@ data InternalState m peer blk = IS {
     , cfg                 :: NodeConfig (BlockProtocol blk)
     , registry            :: ResourceRegistry m
     , btime               :: BlockchainTime m
-    , callbacks           :: NodeCallbacks m blk
     , chainDB             :: ChainDB m blk
     , blockFetchInterface :: BlockFetchConsensusInterface peer (Header blk) blk m
     , fetchClientRegistry :: FetchClientRegistry peer (Header blk) blk m
@@ -206,7 +207,7 @@ initInternalState
     -> m (InternalState m peer blk)
 initInternalState NodeArgs { tracers, chainDB, registry, cfg,
                              blockFetchSize, blockMatchesHeader, btime,
-                             callbacks, initState, mempoolCap } = do
+                             initState, mempoolCap } = do
     varCandidates  <- newTVarM mempty
     varState       <- newTVarM initState
     mempool        <- openMempool registry
@@ -298,8 +299,9 @@ forkBlockProduction
        (IOLike m, ProtocolLedgerView blk, ApplyTx blk)
     => Word32  -- ^ Max block body size
     -> InternalState m peer blk
+    -> BlockProduction m blk
     -> m ()
-forkBlockProduction maxBlockBodySize IS{..} =
+forkBlockProduction maxBlockBodySize IS{..} BlockProduction{..} =
     onSlotChange btime $ \currentSlot -> do
       varDRG <- newTVarM =<< (PRNG <$> produceDRG)
       -- See the docstring of 'withSyncState' for why we're using it instead
@@ -388,8 +390,6 @@ forkBlockProduction maxBlockBodySize IS{..} =
                 -- process.
                 removeTxs mempool (map txId txs)
   where
-    NodeCallbacks{..} = callbacks
-
     trace = traceWith (forgeTracer tracers)
 
     -- Return the point and block number of the most recent block in the
