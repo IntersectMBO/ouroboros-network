@@ -58,7 +58,8 @@ import           Cardano.Crypto.VRF.Mock (MockVRF)
 import           Cardano.Crypto.VRF.Simple (SimpleVRF)
 import           Cardano.Prelude (NoUnexpectedThunks (..))
 
-import           Ouroboros.Network.Block (HasHeader (..), SlotNo (..))
+import           Ouroboros.Network.Block (HasHeader (..), SlotNo (..),
+                     pointSlot)
 import           Ouroboros.Network.Point (WithOrigin (At))
 
 import           Ouroboros.Consensus.Block
@@ -331,7 +332,7 @@ instance ( PraosCrypto c
   -- filled; instead we roll back the the block just before it.
   rewindChainState PraosNodeConfig{..} cs rewindTo =
       -- This may drop us back to the empty list if we go back to genesis
-      Just $ dropWhile (\bi -> At (biSlot bi) > rewindTo) cs
+      Just $ dropWhile (\bi -> At (biSlot bi) > pointSlot rewindTo) cs
 
   -- (Standard) Praos uses the standard chain selection rule, so no need to
   -- override (though see note regarding clock skew).
