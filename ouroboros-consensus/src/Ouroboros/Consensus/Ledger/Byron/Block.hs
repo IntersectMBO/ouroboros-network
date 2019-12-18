@@ -50,6 +50,7 @@ import           GHC.Generics (Generic)
 import           Codec.CBOR.Decoding (Decoder)
 import           Codec.CBOR.Encoding (Encoding)
 import qualified Codec.CBOR.Encoding as CBOR
+import           Codec.Serialise (Serialise (..))
 
 import           Cardano.Binary
 import           Cardano.Prelude (NoUnexpectedThunks (..))
@@ -77,7 +78,11 @@ import           Ouroboros.Storage.ImmutableDB (BinaryInfo (..), HashInfo (..))
 newtype ByronHash = ByronHash { unByronHash :: CC.HeaderHash }
   deriving stock   (Eq, Ord, Show, Generic)
   deriving newtype (ToCBOR, FromCBOR, Condense)
-  deriving anyclass NoUnexpectedThunks
+  deriving anyclass (NoUnexpectedThunks)
+
+instance Serialise ByronHash where
+  decode = decodeByronHeaderHash
+  encode = encodeByronHeaderHash
 
 mkByronHash :: ABlockOrBoundaryHdr ByteString -> ByronHash
 mkByronHash = ByronHash . abobHdrHash
