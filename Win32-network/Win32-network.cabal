@@ -65,10 +65,12 @@ test-suite test-Win32-network
   if os(windows)
     other-modules:       Test.Generators
                          Test.Async.Handle
+                         Test.Async.Socket
     build-depends:       async,
                          base,
                          binary,
                          bytestring,
+                         network,
                          stm,
                          tasty,
                          tasty-hunit,

@@ -39,7 +39,7 @@ pipeName = "\\\\.\\pipe\\test-Win32-network-async"
 
 tests :: TestTree
 tests =
-  testGroup "Win32.Async.Handle"
+  testGroup "Async.Handle"
   [ testCase "interruptible connectNamedPipe"
       test_interruptible_connectNamedPipe
   , testCase "interruptible readHandle"
