@@ -81,6 +81,9 @@ instance Condense Int64 where
 instance Condense Word where
   condense = show
 
+instance Condense Word32 where
+  condense = show
+
 instance Condense Word64 where
   condense = show
 

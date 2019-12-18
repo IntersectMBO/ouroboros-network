@@ -56,7 +56,8 @@ import           Ouroboros.Consensus.Block (BlockProtocol)
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.ChainSyncClient (ClockSkew (..))
 import           Ouroboros.Consensus.Ledger.Extended (ExtLedgerState)
-import           Ouroboros.Consensus.Mempool (GenTx, MempoolCapacity (..))
+import           Ouroboros.Consensus.Mempool (GenTx,
+                     MempoolCapacityBytes (..))
 import           Ouroboros.Consensus.Node.DbMarker
 import           Ouroboros.Consensus.Node.ErrorPolicy
 import           Ouroboros.Consensus.Node.ProtocolInfo
@@ -288,7 +289,7 @@ mkNodeArgs registry cfg initState tracers btime chainDB isProducer = NodeArgs
     , blockMatchesHeader  = nodeBlockMatchesHeader
     , maxUnackTxs         = 100 -- TODO
     , maxBlockBodySize    = 2_000_000 -- TODO
-    , mempoolCap          = MempoolCapacity 1000
+    , mempoolCap          = MempoolCapacityBytes 128_000 -- TODO
     , chainSyncPipelining = pipelineDecisionLowHighMark 200 300 -- TODO
     }
   where

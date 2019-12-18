@@ -9,8 +9,9 @@
 module Ouroboros.Consensus.Mempool.Impl (
     openMempool
   , LedgerInterface (..)
-  , MempoolCapacity (..)
+  , MempoolCapacityBytes (..)
   , chainDBLedgerInterface
+  , txsToMempoolSize
   , TicketNo
     -- * For testing purposes
   , openMempoolWithoutSyncThread
@@ -54,7 +55,7 @@ openMempool :: (IOLike m, ApplyTx blk)
             => ResourceRegistry m
             -> LedgerInterface m blk
             -> LedgerConfig blk
-            -> MempoolCapacity
+            -> MempoolCapacityBytes
             -> Tracer m (TraceEventMempool blk)
             -> m (Mempool m blk TicketNo)
 openMempool registry ledger cfg capacity tracer = do
@@ -70,7 +71,7 @@ openMempoolWithoutSyncThread
   :: (IOLike m, ApplyTx blk)
   => LedgerInterface m blk
   -> LedgerConfig blk
-  -> MempoolCapacity
+  -> MempoolCapacityBytes
   -> Tracer m (TraceEventMempool blk)
   -> m (Mempool m blk TicketNo)
 openMempoolWithoutSyncThread ledger cfg capacity tracer =
@@ -91,9 +92,9 @@ data LedgerInterface m blk = LedgerInterface
   { getCurrentLedgerState :: STM m (LedgerState blk)
   }
 
--- | Represents the maximum number of transactions that a 'Mempool' can
--- contain.
-newtype MempoolCapacity = MempoolCapacity Word
+-- | Represents the maximum number of bytes worth of transactions that a
+-- 'Mempool' can contain.
+newtype MempoolCapacityBytes = MempoolCapacityBytes Word32
   deriving (Show)
 
 -- | Create a 'LedgerInterface' from a 'ChainDB'.
@@ -129,7 +130,7 @@ deriving instance ( NoUnexpectedThunks (GenTx blk)
 data MempoolEnv m blk = MempoolEnv {
       mpEnvLedger    :: LedgerInterface m blk
     , mpEnvLedgerCfg :: LedgerConfig blk
-    , mpEnvCapacity  :: !MempoolCapacity
+    , mpEnvCapacity  :: !MempoolCapacityBytes
     , mpEnvStateVar  :: StrictTVar m (InternalState blk)
     , mpEnvTracer    :: Tracer m (TraceEventMempool blk)
     }
@@ -140,7 +141,7 @@ initInternalState = IS TxSeq.Empty Block.GenesisHash zeroTicketNo
 initMempoolEnv :: (IOLike m, ApplyTx blk)
                => LedgerInterface m blk
                -> LedgerConfig blk
-               -> MempoolCapacity
+               -> MempoolCapacityBytes
                -> Tracer m (TraceEventMempool blk)
                -> m (MempoolEnv m blk)
 initMempoolEnv ledgerInterface cfg capacity tracer = do
@@ -236,6 +237,7 @@ implAddTxs :: forall m blk. (IOLike m, ApplyTx blk)
            -> [GenTx blk]
            -- ^ Transactions to validate and add to the mempool.
            -> m [(GenTx blk, Maybe (ApplyTxErr blk))]
+implAddTxs _     _     []  = pure []
 implAddTxs mpEnv accum txs = assert (all txInvariant txs) $ do
     (vr, removed, rejected, unvalidated, mempoolSize) <- atomically $ do
       IS{isTip = initialISTip} <- readTVar mpEnvStateVar
@@ -301,7 +303,7 @@ implAddTxs mpEnv accum txs = assert (all txInvariant txs) $ do
       { mpEnvStateVar
       , mpEnvTracer
       , mpEnvLedgerCfg
-      , mpEnvCapacity = MempoolCapacity mempoolCap
+      , mpEnvCapacity = MempoolCapacityBytes mempoolCap
       } = mpEnv
 
     traceBatch mkEv size batch time
@@ -365,19 +367,29 @@ implAddTxs mpEnv accum txs = assert (all txInvariant txs) $ do
       -> STM m (ValidationResult blk, [GenTx blk])
       -- ^ The last 'ValidationResult' along with the remaining transactions
       -- (those not yet validated due to the mempool capacity being reached).
-    validateNewUntilMempoolFull []      vr = pure (vr, [])
-    validateNewUntilMempoolFull (t:ts)  vr = do
-      mempoolSize <- getMempoolSize mpEnv
+    validateNewUntilMempoolFull []        vr = pure (vr, [])
+    validateNewUntilMempoolFull (tx:txs') vr = do
+      -- Get the current mempool size
+      MempoolSize { msNumBytes = curSizeInBytes } <- getMempoolSize mpEnv
+
+      -- Determine what the mempool size would be if we were to commit the new
+      -- transactions we've validated thus far and also the next transaction
+      -- to validate, 'tx'.
+      -- If this value is greater than the 'MempoolCapacityBytes', then we
+      -- know not to continue validating at this time.
+      let newTxsBytes    = sum (txSize <$> vrNewValid vr) + txSize tx
+          newSizeInBytes = curSizeInBytes + newTxsBytes
+
       -- The size of a mempool should never be greater than its capacity.
-      assert (mempoolSize <= mempoolCap) $
+      assert (curSizeInBytes <= mempoolCap) $
         -- Here, we check whether we're at the mempool's capacity /before/
-        -- attempting to validate another transaction.
-        if (mempoolSize + fromIntegral (length (vrNewValid vr))) < mempoolCap
-          then validateNewUntilMempoolFull ts (extendVRNew mpEnvLedgerCfg t vr)
-          else pure (vr, t:ts) -- if we're at mempool capacity, we return the
-                               -- last 'ValidationResult' as well as the
-                               -- remaining transactions (those not yet
-                               -- validated).
+        -- attempting to validate the next transaction.
+        if newSizeInBytes <= mempoolCap
+          then validateNewUntilMempoolFull txs' (extendVRNew mpEnvLedgerCfg tx vr)
+          else pure (vr, tx:txs') -- if we're at mempool capacity, we return the
+                                  -- last 'ValidationResult' as well as the
+                                  -- remaining transactions (those not yet
+                                  -- validated).
 
 implRemoveTxs
   :: (IOLike m, ApplyTx blk)
@@ -406,8 +418,7 @@ implRemoveTxs mpEnv@MempoolEnv{mpEnvTracer, mpEnvStateVar} txIds = do
         , isTip          = vrBefore
         , isLastTicketNo = vrLastTicketNo
         }
-      -- The number of transactions in the mempool /after/ manually removing
-      -- the transactions.
+      -- The size of the mempool /after/ manually removing the transactions.
       mempoolSize <- getMempoolSize mpEnv
       return (map fst vrInvalid, mempoolSize)
     unless (null txIds) $
@@ -435,8 +446,7 @@ implWithSyncState mpEnv@MempoolEnv{mpEnvTracer, mpEnvStateVar} blockSlot f = do
         , isTip          = vrBefore
         , isLastTicketNo = vrLastTicketNo
         }
-      -- The number of transactions in the mempool /after/ removing invalid
-      -- transactions.
+      -- The size of the mempool /after/ removing invalid transactions.
       mempoolSize <- getMempoolSize mpEnv
       snapshot    <- implGetSnapshot mpEnv
       res         <- f snapshot
@@ -458,10 +468,21 @@ implGetSnapshot MempoolEnv{mpEnvStateVar} = do
     , snapshotLookupTx   = implSnapshotGetTx         is
     }
 
--- | Return the number of transactions in the Mempool.
-getMempoolSize :: IOLike m => MempoolEnv m blk -> STM m Word
+-- | Return the number of transactions in the Mempool paired with their total
+-- size in bytes.
+getMempoolSize :: (IOLike m, ApplyTx blk)
+               => MempoolEnv m blk
+               -> STM m MempoolSize
 getMempoolSize MempoolEnv{mpEnvStateVar} =
-    fromIntegral . Foldable.length . isTxs <$> readTVar mpEnvStateVar
+    txsToMempoolSize . isTxs <$> readTVar mpEnvStateVar
+
+-- | Given a 'Foldable' of transactions, calculate what the 'MempoolSize'
+-- would be if a mempool were to consist /only/ of those transactions.
+txsToMempoolSize :: (Foldable t, ApplyTx blk) => t (GenTx blk) -> MempoolSize
+txsToMempoolSize = foldMap toMempoolSize
+  where
+    toMempoolSize :: ApplyTx blk => GenTx blk -> MempoolSize
+    toMempoolSize tx = MempoolSize { msNumTxs = 1, msNumBytes = txSize tx }
 
 {-------------------------------------------------------------------------------
   MempoolSnapshot Implementation

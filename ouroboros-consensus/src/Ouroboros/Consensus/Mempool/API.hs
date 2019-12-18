@@ -10,6 +10,7 @@ module Ouroboros.Consensus.Mempool.API (
   , BlockSlot(..)
   , MempoolSnapshot(..)
   , ApplyTx(..)
+  , MempoolSize (..)
   , TraceEventMempool(..)
     -- * Re-exports
   , TxSizeInBytes
@@ -282,21 +283,36 @@ data MempoolSnapshot blk idx = MempoolSnapshot {
   , snapshotLookupTx   :: idx -> Maybe (GenTx blk)
   }
 
+-- | The size of a mempool.
+data MempoolSize = MempoolSize
+  { msNumTxs   :: !Word32
+    -- ^ The number of transactions in the mempool.
+  , msNumBytes :: !Word32
+    -- ^ The summed byte size of all the transactions in the mempool.
+  } deriving (Eq, Show)
+
+instance Semigroup MempoolSize where
+  MempoolSize xt xb <> MempoolSize yt yb = MempoolSize (xt + yt) (xb + yb)
+
+instance Monoid MempoolSize where
+  mempty = MempoolSize { msNumTxs = 0, msNumBytes = 0 }
+  mappend = (<>)
+
 -- | Events traced by the Mempool.
 data TraceEventMempool blk
   = TraceMempoolAddTxs
       ![GenTx blk]
       -- ^ New, valid transaction were added to the Mempool.
-      !Word
-      -- ^ The total number of transactions now in the Mempool.
+      !MempoolSize
+      -- ^ The current size of the Mempool.
       !Time
       -- ^ The time at which the transactions were added.
   | TraceMempoolRejectedTxs
       ![(GenTx blk, ApplyTxErr blk)]
       -- ^ New, invalid transaction were rejected and thus not added to the
       -- Mempool.
-      !Word
-      -- ^ The total number of transactions now in the Mempool.
+      !MempoolSize
+      -- ^ The current size of the Mempool.
       !Time
       -- ^ The time at which the transactions were rejected.
   | TraceMempoolRemoveTxs
@@ -304,8 +320,8 @@ data TraceEventMempool blk
       -- ^ Previously valid transactions that are no longer valid because of
       -- changes in the ledger state. These transactions have been removed
       -- from the Mempool.
-      !Word
-      -- ^ The total number of transactions now in the Mempool.
+      !MempoolSize
+      -- ^ The current size of the Mempool.
       !Time
       -- ^ The time at which the transactions were removed.
   | TraceMempoolManuallyRemovedTxs
@@ -318,8 +334,8 @@ data TraceEventMempool blk
       --
       -- This list shares not transactions with the list of manually removed
       -- transactions.
-      !Word
-      -- ^ The total number of transactions now in the Mempool.
+      !MempoolSize
+      -- ^ The current size of the Mempool.
 
 deriving instance ( Eq (GenTx blk)
                   , Eq (GenTxId blk)
