@@ -112,6 +112,7 @@ run tracers chainDbTracer diffusionTracers diffusionArguments networkMagic dbPat
       lockDbMarkerFile registry dbPath
       btime <- realBlockchainTime
         registry
+        (blockchainTimeTracer tracers)
         slotLength
         (nodeStartTime (Proxy @blk) cfg)
 

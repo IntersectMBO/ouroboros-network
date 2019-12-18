@@ -21,6 +21,7 @@ module Ouroboros.Consensus.BlockchainTime (
   , fixedBlockchainTime
     -- * Real blockchain time
   , realBlockchainTime
+  , TraceBlockchainTimeEvent(..)
     -- * Time to slots and back again
   , SlotLength(..)
   , slotLengthFromSec
@@ -44,6 +45,8 @@ import           Data.Void
 import           Data.Word (Word64)
 import           GHC.Generics (Generic)
 import           GHC.Stack
+
+import           Control.Tracer (Tracer, traceWith)
 
 import           Cardano.Prelude (NoUnexpectedThunks, OnlyCheckIsWHNF (..))
 
@@ -187,6 +190,13 @@ fixedBlockchainTime slot = BlockchainTime
   "Real" blockchain time
 -------------------------------------------------------------------------------}
 
+-- | Events emitted by 'realBlockchainTime'.
+data TraceBlockchainTimeEvent
+  = TraceStartTimeInTheFuture SystemStart NominalDiffTime
+    -- ^ The start time of the blockchain time is in the future. We have to
+    -- block (for 'NominalDiffTime') until that time comes.
+  deriving (Show)
+
 -- | Real blockchain time
 --
 -- WARNING: if the start time is in the future, 'realBlockchainTime' will
@@ -197,12 +207,14 @@ fixedBlockchainTime slot = BlockchainTime
 -- through carefully.
 realBlockchainTime :: forall m. IOLike m
                    => ResourceRegistry m
+                   -> Tracer m TraceBlockchainTimeEvent
                    -> SlotLength -> SystemStart
                    -> m (BlockchainTime m)
-realBlockchainTime registry slotLen start = do
+realBlockchainTime registry tracer slotLen start = do
     now <- getCurrentTime
     when (getSystemStart start > now) $ do
       let delay = getSystemStart start `diffUTCTime` now
+      traceWith tracer $ TraceStartTimeInTheFuture start delay
       threadDelay ((realToFrac :: NominalDiffTime -> DiffTime) delay)
     first <- getCurrentSlotIO slotLen start
     slot  <- newTVarM first
