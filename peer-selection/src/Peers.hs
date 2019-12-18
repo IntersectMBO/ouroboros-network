@@ -1,0 +1,36 @@
+module Peers where
+
+-- Some peers structure P
+-- How will it be deployed in production?:
+-- 
+-- It will be informed of:
+--
+-- - Sets of cold peers. Sourced from
+--   - DNS or a known set at first
+--   - The gossip protocol from one of its hot peers later, if the deployment
+--     chooses
+-- - The DeltaQ of peers (the warm and hot peers). In practice, the peers at
+--   which DeltaQ should be computed will be determined by the _output_ P
+-- - Other observations from that particular peer. Observations like:
+--   - When a block header is received and validated from that peer, and how
+--     good the chain is
+--   - When the peer is judged to have done something dubious / suspicious
+-- - The passage of time. It must be able to respond to the _absence_ of input
+--   over a given interval
+--
+-- It will output:
+--
+-- - Promotions/demotions to/from hot/warm/cold
+--
+-- Yes that's a good starting point: it can tell you what the cold, hot, and
+-- warm peers _should be_.
+--
+--
+--
+-- Requirements:
+--
+-- - Add a set of peers, sourced in production from the network (new protocol).
+-- 
+--   > discovered :: Set peer -> P peer -> P peer
+--
+--

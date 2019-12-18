@@ -33,6 +33,7 @@ module Algebra.Graph.Labelled.AdjacencyMap.Builder
   , cylinder
 
   , Random (..)
+  , randomST
   , random
   , uniform
   , normal
@@ -85,6 +86,9 @@ instance Monad Random where
   rand >>= k = Random $ \gen -> do
     t <- runRandom rand gen
     runRandom (k t) gen
+
+randomST :: MWC.GenST s -> Random t -> ST s t
+randomST = flip runRandom
 
 -- | Uniformly-distributed pseudorandom value within the given bounds.
 uniform :: MWC.Variate t => t -> t -> Random t
@@ -182,7 +186,7 @@ type VertexLabels v = VertexRep -> Maybe v
 -- can reproduce it (using 'buildFromSeed').
 buildIO
   :: (forall s f . Builder s r f e v x)
-  -> IO ((AdjacencyMap (Last e) VertexRep, VertexLabels v), MWC.Seed)
+  -> IO ((AdjacencyMap (Last e) VertexRep, VertexLabels v, x), MWC.Seed)
 buildIO it = MWC.withSystemRandom $ \gen -> do
   seed <- MWC.save gen
   outcome <- build gen it
@@ -194,7 +198,7 @@ buildIO it = MWC.withSystemRandom $ \gen -> do
 buildFromSeed
   :: MWC.Seed
   -> (forall s f . Builder s r f e v x)
-  -> ST s (AdjacencyMap (Last e) VertexRep, VertexLabels v)
+  -> ST s (AdjacencyMap (Last e) VertexRep, VertexLabels v, x)
 buildFromSeed seed it = do
   gen <- MWC.restore seed
   build gen it
@@ -204,11 +208,11 @@ buildFromSeed seed it = do
 build
   :: MWC.Gen s
   -> (forall s f . Builder s r f e v x)
-  -> ST s (AdjacencyMap (Last e) VertexRep, VertexLabels v)
+  -> ST s (AdjacencyMap (Last e) VertexRep, VertexLabels v, x)
 build gen it = do
   let st = BuilderState 0 Map.empty GR.empty gen
-  (_, st') <- runStateT (runReaderT it noMakeEdge) st
-  pure (GR.gmap getVertexRep (builderGraph st'), flip Map.lookup (builderVertexLabels st'))
+  (x, st') <- runStateT (runReaderT it noMakeEdge) st
+  pure (GR.gmap getVertexRep (builderGraph st'), flip Map.lookup (builderVertexLabels st'), x)
 
 directed :: Builder s r Directed e v t -> Builder s r f e v t
 directed bdr = lift $ runReaderT bdr makeDirectedEdge
