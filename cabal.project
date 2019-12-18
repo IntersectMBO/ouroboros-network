@@ -9,20 +9,12 @@ packages: ./typed-protocols
           ./ntp-client
           ./Win32-network
 
-source-repository-package
-  type: git
-  location: https://github.com/input-output-hk/cardano-prelude
-  tag: 9352518fd9f957ab5e9611a2e27f495339c597d1
-  subdir: .
-
-source-repository-package
-  type: git
-  location: https://github.com/input-output-hk/cardano-prelude
-  tag: 9352518fd9f957ab5e9611a2e27f495339c597d1
-  subdir: .
-
 constraints:
-  graphviz == 2999.20.0.3
+  ip < 1.5,
+  graphviz == 2999.20.0.3,
+  hedgehog >= 1.0,
+  bimap >= 0.4.0,
+  primitive < 0.7
 
 package Win32-network
   tests: True
@@ -45,11 +37,26 @@ package ouroboros-network
 package ouroboros-consensus
   tests: True
 
+package contra-tracer
+  tests: False
+
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/iohk-monitoring-framework
   subdir:   contra-tracer
   tag: 4956b32f039579a0e7e4fd10793f65b4c77d9044
+
+source-repository-package
+  type: git
+  location: https://github.com/input-output-hk/cardano-prelude
+  tag: 9352518fd9f957ab5e9611a2e27f495339c597d1
+  subdir: .
+
+source-repository-package
+  type: git
+  location: https://github.com/input-output-hk/cardano-prelude
+  tag: 9352518fd9f957ab5e9611a2e27f495339c597d1
+  subdir: test
 
 source-repository-package
   type: git
@@ -124,26 +131,5 @@ source-repository-package
 
 source-repository-package
   type: git
-  location: https://github.com/input-output-hk/cardano-prelude
-  tag: 9352518fd9f957ab5e9611a2e27f495339c597d1
-  subdir: .
-
-source-repository-package
-  type: git
-  location: https://github.com/input-output-hk/cardano-prelude
-  tag: 9352518fd9f957ab5e9611a2e27f495339c597d1
-  subdir: test
-
-source-repository-package
-  type: git
   location: https://github.com/input-output-hk/cardano-crypto
   tag: 4590efa638397e952a51a8994b5543e4ea3c1ecd
-
-package contra-tracer
-  tests: False
-
-constraints:
-  ip < 1.5,
-  hedgehog >= 1.0,
-  bimap >= 0.4.0,
-  primitive < 0.7
