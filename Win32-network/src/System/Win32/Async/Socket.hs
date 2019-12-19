@@ -4,6 +4,7 @@
 module System.Win32.Async.Socket
   ( sendBuf
   , connect
+  , accept
   ) where
 
 
@@ -54,3 +55,25 @@ connect sock addr = do
     case r of
       Just e  -> throwIO e
       Nothing -> return ()
+
+
+-- | This is a thin wrapper around 'Network.Socket.accept'.  It's possible to
+-- 'killThread' which runs the 'accept'.  It will leave a stranded thread, but
+-- closing a socket terminates 'Network.Socket.accept' call, and thus there's
+-- not resource leak.
+--
+-- TODO: other possible approaches:
+--  * use 'WSAEventSelect' but it needs further investiation (unfortunatelly
+--    `WSAAccept` is not part of  IOCP); or
+--  * use `AcceptEx`.
+--
+accept :: Socket -> IO (Socket, SockAddr)
+accept sock = do
+    v <- newEmptyMVar
+    _ <- mask_ $ forkIOWithUnmask $ \unmask -> 
+          unmask (Socket.accept sock >>= putMVar v . Right)
+          `catch` (\(e :: IOException) -> putMVar v (Left e))
+    r <- takeMVar v
+    case r of
+      Left e  -> throwIO e
+      Right x -> return x
