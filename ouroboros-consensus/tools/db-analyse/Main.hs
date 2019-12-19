@@ -36,7 +36,7 @@ import           Ouroboros.Consensus.Protocol.Abstract (NodeConfig)
 import           Ouroboros.Consensus.Util.ResourceRegistry
 
 import           Ouroboros.Storage.ChainDB.API (BlockOrHeader (..),
-                     StreamFrom (..))
+                     StreamFrom (..), StreamTo (..))
 import           Ouroboros.Storage.ChainDB.Impl.ImmDB
 import           Ouroboros.Storage.Common
 import           Ouroboros.Storage.EpochInfo
@@ -150,7 +150,10 @@ processAll :: ImmDB IO ByronBlock
            -> (Either EpochNo SlotNo -> ByronBlock -> IO ())
            -> IO ()
 processAll immDB rr callback = do
-    Right itr <- streamFrom immDB rr Block $ StreamFromExclusive genesisPoint
+    tipPoint <- getPointAtTip immDB
+    Right itr <- stream immDB rr Block
+      (StreamFromExclusive genesisPoint)
+      (StreamToInclusive tipPoint)
     go (deserialiseIterator immDB itr)
   where
     go :: Iterator ByronHash IO ByronBlock -> IO ()
