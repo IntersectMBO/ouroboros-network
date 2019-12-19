@@ -127,20 +127,21 @@ data BlockProduction m blk = BlockProduction {
 
 -- | Arguments required when initializing a node
 data NodeArgs m peer blk = NodeArgs {
-      tracers             :: Tracers m peer blk
-    , registry            :: ResourceRegistry m
-    , maxClockSkew        :: ClockSkew
-    , cfg                 :: NodeConfig (BlockProtocol blk)
-    , initState           :: NodeState (BlockProtocol blk)
-    , btime               :: BlockchainTime m
-    , chainDB             :: ChainDB m blk
-    , blockFetchSize      :: Header blk -> SizeInBytes
-    , blockProduction     :: Maybe (BlockProduction m blk)
-    , blockMatchesHeader  :: Header blk -> blk -> Bool
-    , maxUnackTxs         :: Word16
-    , maxBlockBodySize    :: Word32
-    , mempoolCap          :: MempoolCapacityBytes
-    , chainSyncPipelining :: MkPipelineDecision
+      tracers              :: Tracers m peer blk
+    , registry             :: ResourceRegistry m
+    , maxClockSkew         :: ClockSkew
+    , cfg                  :: NodeConfig (BlockProtocol blk)
+    , initState            :: NodeState (BlockProtocol blk)
+    , btime                :: BlockchainTime m
+    , chainDB              :: ChainDB m blk
+    , blockFetchSize       :: Header blk -> SizeInBytes
+    , blockProduction      :: Maybe (BlockProduction m blk)
+    , blockMatchesHeader   :: Header blk -> blk -> Bool
+    , maxUnackTxs          :: Word16
+    , maxBlockBodySize     :: Word32
+    , mempoolCap           :: MempoolCapacityBytes
+    , chainSyncPipelining  :: MkPipelineDecision
+    , chainSyncExceptional :: Bool
     }
 
 initNodeKernel

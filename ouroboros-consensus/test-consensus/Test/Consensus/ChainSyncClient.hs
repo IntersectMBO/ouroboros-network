@@ -307,6 +307,7 @@ runChainSync securityParam maxClockSkew (ClientUpdates clientUpdates)
                    (nodeCfg clientId)
                    btime
                    maxClockSkew
+                   False
                    chainDbView
 
     -- Set up the server
@@ -358,7 +359,8 @@ runChainSync securityParam maxClockSkew (ClientUpdates clientUpdates)
       -- in the main thread), just catch the exception and store it, because
       -- we want a "regular ending".
       void $ forkThread registry $
-        bracketChainSyncClient
+        (do
+          ex <-bracketChainSyncClient
            chainSyncTracer
            chainDbView
            varCandidates
@@ -367,6 +369,8 @@ runChainSync securityParam maxClockSkew (ClientUpdates clientUpdates)
                Map.insert serverId varCandidate
              runPipelinedPeer protocolTracer codecChainSyncId serverId clientChannel $
                chainSyncClientPeerPipelined $ client varCandidate
+          atomically $ writeTVar varClientException (Just ex)
+        )
         `catch` \(e :: ChainSyncClientException) -> do
           -- TODO: Is this necessary? Wouldn't the Async's internal MVar do?
           atomically $ writeTVar varClientException (Just e)

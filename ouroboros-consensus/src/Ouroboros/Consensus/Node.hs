@@ -143,6 +143,7 @@ run tracers chainDbTracer diffusionTracers diffusionArguments networkMagic
                 btime
                 chainDB
                 isProducer
+                False
 
           nodeKernel <- initNodeKernel nodeArgs
           onNodeKernel registry nodeKernel
@@ -266,8 +267,9 @@ mkNodeArgs
   -> BlockchainTime IO
   -> ChainDB IO blk
   -> IsProducer
+  -> Bool
   -> NodeArgs IO ConnectionId blk
-mkNodeArgs registry cfg initState tracers btime chainDB isProducer = NodeArgs
+mkNodeArgs registry cfg initState tracers btime chainDB isProducer csExp = NodeArgs
     { tracers
     , registry
     , maxClockSkew       = ClockSkew 1
@@ -282,6 +284,7 @@ mkNodeArgs registry cfg initState tracers btime chainDB isProducer = NodeArgs
     , maxBlockBodySize    = 2_000_000 -- TODO
     , mempoolCap          = MempoolCapacityBytes 128_000 -- TODO
     , chainSyncPipelining = pipelineDecisionLowHighMark 200 300 -- TODO
+    , chainSyncExceptional = csExp
     }
   where
     blockProduction = case isProducer of

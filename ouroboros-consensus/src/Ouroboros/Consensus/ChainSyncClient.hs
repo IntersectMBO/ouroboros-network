@@ -76,7 +76,7 @@ newtype ClockSkew = ClockSkew { unClockSkew :: Word64 }
   deriving newtype (Enum, Bounded, Num)
 
 type Consensus (client :: * -> * -> (* -> *) -> * -> *) blk m =
-   client (Header blk) (Tip blk) m ()
+   client (Header blk) (Tip blk) m ChainSyncClientException
 
 -- | Abstract over the ChainDB
 data ChainDbView m blk = ChainDbView
@@ -229,9 +229,10 @@ instance ( ProtocolLedgerView blk
 
 -- | Chain sync client
 --
--- This never terminates. In case of a failure, a 'ChainSyncClientException'
--- is thrown. The network layer classifies exception such that the
--- corresponding peer will never be chosen again.
+-- The chainsync client may terminate by returning or throwing a 'ChainSyncClientException'.
+-- Events that indicate a malicious peer causes an exception to be trown and the bearer
+-- towards the peer will be thorn down. Events that indicate a slow peer just causes the
+-- Chain Sync client protocol to terminate and by extention the blockfetch client.
 chainSyncClient
     :: forall m blk.
        ( IOLike m
@@ -242,11 +243,13 @@ chainSyncClient
     -> NodeConfig (BlockProtocol blk)
     -> BlockchainTime m
     -> ClockSkew   -- ^ Maximum clock skew
+    -> Bool        -- ^ Should all errors cause an exception? Intended for testing
     -> ChainDbView m blk
     -> StrictTVar m (AnchoredFragment (Header blk))
     -> Consensus ChainSyncClientPipelined blk m
 chainSyncClient mkPipelineDecision0 tracer cfg btime
                 (ClockSkew maxSkew)
+                csExp
                 ChainDbView
                 { getCurrentChain
                 , getCurrentLedger
@@ -293,9 +296,13 @@ chainSyncClient mkPipelineDecision0 tracer cfg btime
             continueWithState uis $
               intersectFound (castPoint i) (Their theirTip')
         , recvMsgIntersectNotFound = \theirTip' -> do
+            let result = mkEx ourTip (Their theirTip')
             -- We're not interested in this peer at the moment. Terminate the protocol.
-            traceWith tracer $ TraceException $ mkEx ourTip (Their theirTip')
-            pure $ SendMsgDone ()
+            if csExp || chainSyncClientExceptionIsFatal result
+                then traceException $ disconnect $ mkEx ourTip (Their theirTip')
+                else do
+                    traceWith tracer $ TraceException result
+                    pure $ SendMsgDone $ mkEx ourTip (Their theirTip')
         }
 
     -- | One of the points we sent intersected our chain. This intersection
@@ -789,6 +796,17 @@ continueWithState !s (Stateful f) = checkInvariant (unsafeNoThunks s) $ f s
 {-------------------------------------------------------------------------------
   Exception
 -------------------------------------------------------------------------------}
+
+chainSyncClientExceptionIsFatal :: ChainSyncClientException -> Bool
+chainSyncClientExceptionIsFatal ForkTooDeep {}            = False
+chainSyncClientExceptionIsFatal NoMoreIntersection {}     = False
+chainSyncClientExceptionIsFatal InvalidRollForward {}     = False
+chainSyncClientExceptionIsFatal HeaderExceedsClockSkew {} = True
+chainSyncClientExceptionIsFatal ChainError  {}            = True
+chainSyncClientExceptionIsFatal InvalidRollBack {}        = True
+chainSyncClientExceptionIsFatal InvalidIntersection {}    = True
+chainSyncClientExceptionIsFatal DoesntFit {}              = True
+chainSyncClientExceptionIsFatal InvalidBlock {}           = True
 
 data ChainSyncClientException =
       -- | The header we received was for a slot too far in the future.

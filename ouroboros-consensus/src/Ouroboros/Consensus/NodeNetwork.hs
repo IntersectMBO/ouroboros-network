@@ -98,7 +98,7 @@ import qualified Ouroboros.Storage.ChainDB.API as ChainDB
 data ProtocolHandlers m peer blk = ProtocolHandlers {
       phChainSyncClient
         :: StrictTVar m (AnchoredFragment (Header blk))
-        -> ChainSyncClientPipelined (Header blk) (Tip blk) m ()
+        -> ChainSyncClientPipelined (Header blk) (Tip blk) m ChainSyncClientException
         -- TODO: we should consider either bundling these context parameters
         -- into a record, or extending the protocol handler representation
         -- to support bracket-style initialisation so that we could have the
@@ -142,20 +142,21 @@ protocolHandlers
     => NodeArgs   m peer blk  --TODO eliminate, merge relevant into NodeKernel
     -> NodeKernel m peer blk
     -> ProtocolHandlers m peer blk
-protocolHandlers NodeArgs {btime, maxClockSkew, tracers, maxUnackTxs, chainSyncPipelining}
+protocolHandlers NodeArgs {btime, maxClockSkew, tracers, maxUnackTxs, chainSyncPipelining, chainSyncExceptional}
                  NodeKernel {getChainDB, getMempool, getNodeConfig} =
     --TODO: bundle needed NodeArgs into the NodeKernel
     -- so we do not have to pass it separately
     --TODO: need to review the use of the peer id in the tracers.
     -- Curently it is not available here to use.
     ProtocolHandlers {
-      phChainSyncClient =
+      phChainSyncClient = do
         chainSyncClient
           chainSyncPipelining
           (chainSyncClientTracer tracers)
           getNodeConfig
           btime
           maxClockSkew
+          chainSyncExceptional
           (chainDbView getChainDB)
     , phChainSyncServer =
         chainSyncHeadersServer
@@ -472,13 +473,13 @@ consensusNetworkApps kernel ProtocolTracers {..} ProtocolCodecs {..} ProtocolHan
       :: peer
       -> Channel m bytesCS
       -> m ((), Maybe bytesCS)
-    naChainSyncClient them channel =
+    naChainSyncClient them channel = do
       -- Note that it is crucial that we sync with the fetch client "outside"
       -- of registering the state for the sync client. This is needed to
       -- maintain a state invariant required by the block fetch logic: that for
       -- each candidate chain there is a corresponding block fetch client that
       -- can be used to fetch blocks for that chain.
-      bracketSyncWithFetchClient
+     (_, r) <- bracketSyncWithFetchClient
         (getFetchClientRegistry kernel) them $
        bracketChainSyncClient
           (chainSyncClientTracer (getTracers kernel))
@@ -492,7 +493,7 @@ consensusNetworkApps kernel ProtocolTracers {..} ProtocolCodecs {..} ProtocolHan
           channel
           $ chainSyncClientPeerPipelined
           $ phChainSyncClient varCandidate
-
+     return ((), r)
     naChainSyncServer
       :: peer
       -> Channel m bytesCS

@@ -382,6 +382,7 @@ runNodeNetwork numCoreNodes numSlots slotLengths nodeJoinPlan nodeTopology
             , maxBlockBodySize    = 20000 -- TODO
             , mempoolCap          = MempoolCapacityBytes 3000 -- TODO
             , chainSyncPipelining = pipelineDecisionLowHighMark 2 4
+            , chainSyncExceptional = True -- Test case depends on chainsync throwing exceptions
             }
 
       nodeKernel <- initNodeKernel nodeArgs
