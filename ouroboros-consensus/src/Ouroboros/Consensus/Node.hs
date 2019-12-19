@@ -241,6 +241,7 @@ mkChainDbArgs tracer registry btime dbPath cfg initLedger slotLength
     , ChainDB.cdbDecodeHash       = nodeDecodeHeaderHash    (Proxy @blk)
     , ChainDB.cdbDecodeLedger     = nodeDecodeLedgerState   cfg
     , ChainDB.cdbEncodeBlock      = nodeEncodeBlockWithInfo cfg
+    , ChainDB.cdbEncodeHeader     = nodeEncodeHeader        cfg
     , ChainDB.cdbEncodeChainState = nodeEncodeChainState    (Proxy @blk) cfg
     , ChainDB.cdbEncodeHash       = nodeEncodeHeaderHash    (Proxy @blk)
     , ChainDB.cdbEncodeLedger     = nodeEncodeLedgerState   cfg
