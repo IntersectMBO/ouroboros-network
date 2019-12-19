@@ -11,11 +11,13 @@ module Main (main) where
 #if defined(mingw32_HOST_OS)
 import           Test.Tasty
 
+import qualified Test.Generators
 import qualified Test.Async.Handle
 
 main :: IO ()
 main = defaultMain $ testGroup "Win32"
-  [ Test.Async.Handle.tests
+  [ Test.Generators.tests
+  , Test.Async.Handle.tests
   ]
 #else
 main :: IO ()

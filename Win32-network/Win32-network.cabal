@@ -58,7 +58,8 @@ test-suite test-Win32-network
   ghc-options:         -Wall
                        -threaded
   if os(windows)
-    other-modules:       Test.Async.Handle
+    other-modules:       Test.Generators
+                         Test.Async.Handle
     build-depends:       async,
                          base,
                          binary,
