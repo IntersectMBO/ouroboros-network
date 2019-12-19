@@ -265,11 +265,16 @@ validateEpoch ValidateEnv{..} shouldBeFinalised epoch mbPrevHash = do
     secondaryIndexFileExists  <- lift $ doesFileExist secondaryIndexFile
     entriesFromSecondaryIndex <- lift $ if secondaryIndexFileExists
       then EH.try errLoad
-        (Secondary.readAllEntries hasFS err hashInfo 0 epoch (const False) IsEBB) >>= \case
+        -- Note the 'maxBound': it is used to calculate the block size for
+        -- each entry, but we don't care about block sizes here, so we use
+        -- some dummy value.
+        (Secondary.readAllEntries hasFS err hashInfo 0 epoch (const False)
+           maxBound IsEBB) >>= \case
           Left _                -> do
             traceWith tracer $ InvalidSecondaryIndex epoch
             return []
-          Right entriesFromFile -> return $ fixupEBB entriesFromFile
+          Right entriesFromFile ->
+            return $ fixupEBB (map withoutBlockSize entriesFromFile)
       else do
         traceWith tracer $ MissingSecondaryIndex epoch
         return []
@@ -277,8 +282,7 @@ validateEpoch ValidateEnv{..} shouldBeFinalised epoch mbPrevHash = do
     -- Parse the epoch file using the checksums from the secondary index file
     -- as input. If the checksums match, the parser doesn't have to do the
     -- expensive integrity check of a block.
-    let expectedChecksums =
-          map (Secondary.checksum . fst) entriesFromSecondaryIndex
+    let expectedChecksums = map Secondary.checksum entriesFromSecondaryIndex
     (entriesWithPrevHashes, mbErr) <- lift $
         runEpochFileParser parser epochFile expectedChecksums $ \stream ->
           (\(es :> mbErr) -> (es, mbErr)) <$> S.toList stream
@@ -312,7 +316,7 @@ validateEpoch ValidateEnv{..} shouldBeFinalised epoch mbPrevHash = do
       -- not match the entries from the epoch file, overwrite it using those
       -- (truncate first).
       let entries = map fst entriesWithPrevHashes
-      when (map fst entriesFromSecondaryIndex /= entries ||
+      when (entriesFromSecondaryIndex /= entries ||
             not secondaryIndexFileExists) $ do
         traceWith tracer $ RewriteSecondaryIndex epoch
         Secondary.writeAllEntries hasFS hashInfo epoch entries
@@ -397,11 +401,11 @@ validateEpoch ValidateEnv{..} shouldBeFinalised epoch mbPrevHash = do
     --
     -- So the only thing that wouldn't go according to plan is that we will
     -- needlessly overwrite the secondary index file.
-    fixupEBB :: [(Secondary.Entry hash, a)] -> [(Secondary.Entry hash, a)]
+    fixupEBB :: [Secondary.Entry hash] -> [Secondary.Entry hash]
     fixupEBB = \case
-      (entry@Secondary.Entry { blockOrEBB = EBB epoch' }, a):rest
+      entry@Secondary.Entry { blockOrEBB = EBB epoch' }:rest
         | epoch' /= epoch
-        -> (entry { Secondary.blockOrEBB = Block (coerce epoch') }, a):rest
+        -> entry { Secondary.blockOrEBB = Block (coerce epoch') }:rest
       entries -> entries
 
 -- | Reconstruct a 'PrimaryIndex' based on a list of 'Secondary.Entry's.

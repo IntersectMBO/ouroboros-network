@@ -25,7 +25,6 @@ import           Data.Foldable (find)
 import           Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
 import           Data.Maybe (isNothing)
-import           Data.Word (Word32, Word64)
 import           GHC.Generics (Generic)
 
 import           Cardano.Prelude (NoUnexpectedThunks (..),
@@ -107,11 +106,6 @@ data IteratorState hash h = IteratorState
     -- not included in this list.
   }
   deriving (Generic, NoUnexpectedThunks)
-
-data WithBlockSize a = WithBlockSize
-  { withoutBlockSize :: !a
-  , blockSize        :: !Word32
-  } deriving (Eq, Show, Generic, NoUnexpectedThunks)
 
 -- | Used by 'streamImpl' to choose between streaming blocks or headers.
 data BlocksOrHeaders = Blocks | Headers
@@ -376,7 +370,7 @@ iteratorNextImpl dbEnv it@IteratorHandle {itHasFS = hasFS :: HasFS m h, ..}
       IteratorStateExhausted -> return IteratorExhausted
       IteratorStateOpen iteratorState@IteratorState{..} ->
         withOpenState dbEnv $ \_ st -> do
-          let entryWithBlockSize@(WithBlockSize entry _) = NE.head itEpochEntries
+          let entryWithBlockSize@(WithBlockSize _ entry) = NE.head itEpochEntries
               hash = Secondary.headerHash entry
               curEpochInfo = CurrentEpochInfo
                 (_currentEpoch       st)
@@ -397,7 +391,7 @@ iteratorNextImpl dbEnv it@IteratorHandle {itHasFS = hasFS :: HasFS m h, ..}
       -> WithBlockSize (Secondary.Entry hash)
       -> EpochNo
       -> m ByteString
-    readNextBlock eHnd (WithBlockSize entry size) epoch = do
+    readNextBlock eHnd (WithBlockSize size entry) epoch = do
         (bl, checksum') <- hGetExactlyAtCRC hasFS eHnd (fromIntegral size) offset
         checkChecksum _dbErr epochFile blockOrEBB checksum checksum'
         return bl
@@ -514,9 +508,6 @@ iteratorStateForEpoch
 iteratorStateForEpoch hasFS err hashInfo
                       (CurrentEpochInfo curEpoch curEpochOffset) endHash
                       epoch secondaryOffset firstIsEBB = do
-    entries <- Secondary.readAllEntries hasFS err hashInfo secondaryOffset
-      epoch ((== endHash) . Secondary.headerHash) firstIsEBB
-
     -- Open the epoch file
     eHnd <- hOpen (renderFile "epoch" epoch) ReadMode
 
@@ -527,8 +518,7 @@ iteratorStateForEpoch hasFS err hashInfo
 
       -- If the last entry in @entries@ corresponds to the last block in the
       -- epoch, we cannot calculate the block size based on the next block.
-      -- Instead, we calculate it based on the size of the epoch file. We do
-      -- that in 'fillInLastBlockSize'.
+      -- Instead, we calculate it based on the size of the epoch file.
       --
       -- IMPORTANT: for older epochs, this is fine, as the secondary index
       -- (entries) and the epoch file (size) are immutable. However, when
@@ -556,15 +546,17 @@ iteratorStateForEpoch hasFS err hashInfo
         then return (unBlockOffset curEpochOffset)
         else hGetSize eHnd
 
+      entries <- Secondary.readAllEntries hasFS err hashInfo secondaryOffset
+        epoch ((== endHash) . Secondary.headerHash) epochFileSize firstIsEBB
 
-      case NE.nonEmpty (fillInLastBlockSize epochFileSize entries) of
+      case NE.nonEmpty entries of
         -- We still haven't encountered the end bound, so it cannot be
         -- that this non-empty epoch contains no entries <= the end bound.
         Nothing             -> error
           "impossible: there must be entries according to the primary index"
 
         Just itEpochEntries -> do
-          let WithBlockSize nextEntry _ NE.:| _ = itEpochEntries
+          let WithBlockSize _ nextEntry NE.:| _ = itEpochEntries
               offset = fromIntegral $ Secondary.unBlockOffset $
                 Secondary.blockOffset nextEntry
 
@@ -580,37 +572,3 @@ iteratorStateForEpoch hasFS err hashInfo
             }
   where
     HasFS { hOpen, hClose, hSeek, hGetSize, hasFsErr } = hasFS
-
--- | When reading the entries from the secondary index files, we can calculate
--- the block size corresponding to each entry based on the offset of the entry
--- and offset of the entry after it. We cannot do this for the last entry, as
--- there is no entry after it. We assign 'LastEntry' to that entry so that we
--- know that when we try to read the corresponding block, it is the last block
--- in the epoch file, which means we don't need to know the size of the block,
--- as we can simply read the epoch file until the end.
---
--- This works fine when we read the last block directly after obtaining its
--- corresponding entry. However, in the case of iterators, we read all
--- entries, but before we try to read the block corresponding to the last
--- entry, another block may have been appended to the same epoch file. In this
--- case, reading the epoch file until the end would mean that we read two
--- blocks instead of one!
---
--- For this reason, we try to replace the 'LastEntry' of the last block with
--- the actual block size using the current size of the epoch file.
---
--- It could be that the entry with 'LastEntry' was removed from the list
--- when dropping blocks that come after the end bound, in which case the
--- original input list is returned.
-fillInLastBlockSize
-  :: Word64  -- ^ The size of the epoch file
-  -> [(Secondary.Entry hash, BlockSize)]
-  -> [WithBlockSize (Secondary.Entry hash)]
-fillInLastBlockSize epochFileSize = go
-  where
-    go [] = []
-    go [(e@Secondary.Entry { blockOffset }, LastEntry)] = [WithBlockSize e sz]
-      where
-        sz = fromIntegral (epochFileSize - Secondary.unBlockOffset blockOffset)
-    go ((e, BlockSize size):xs) = WithBlockSize e size:go xs
-    go ((_, LastEntry):_)       = error "LastEntry for entry that was not last"
