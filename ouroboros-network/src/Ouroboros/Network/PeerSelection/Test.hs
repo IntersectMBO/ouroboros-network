@@ -17,7 +17,7 @@ import           Data.Typeable (Typeable)
 import           Data.Dynamic (fromDynamic)
 import           Data.Maybe (listToMaybe)
 import qualified Data.ByteString.Char8 as BS
-import           Data.List (nub, groupBy)
+import           Data.List (nub, groupBy, intercalate)
 import qualified Data.List.NonEmpty as NonEmpty
 import           Data.List.NonEmpty (NonEmpty(..))
 import qualified Data.Map.Strict as Map
@@ -1080,4 +1080,163 @@ _governorFindingPublicRoots targetNumberOfRootPeers domains =
               }
     pickTrivially :: Applicative m => Map IPv4 a -> Int -> m (Set IPv4)
     pickTrivially m n = pure . Set.take n . Map.keysSet $ m
+
+
+--
+-- Visualisation of examples
+--
+
+-- | Graph visualisation tool, see <https://github.com/acaudwell/Gource/>
+--
+-- It's not designed for general graphs, just file hierarchies, but it's got
+-- a very convenient input format, so not much effort to visualise.
+--
+_gourceVisualisationScript :: GovernorMockEnvironment -> String
+_gourceVisualisationScript =
+    renderGourceScript
+  . toGourceScript Map.empty
+  . visualisationTrace
+
+visualisationTrace :: GovernorMockEnvironment
+                   -> [(Time, TracePeerSelection PeerAddr)]
+visualisationTrace =
+    takeFirstNHours 24
+  . selectGovernorEvents
+  . selectPeerSelectionTraceEvents
+  . runGovernorInMockEnvironment
+
+toGourceScript :: Map PeerAddr (PeerSource, [PeerAddr])
+               -> [(Time, TracePeerSelection PeerAddr)]
+               -> [GourceEntry]
+toGourceScript peers ((ts, TraceLocalRootPeersChanged _ new):trace) =
+    -- link new root peers directly to the root as cold
+    [ GourceEntry {
+        timestamp = ts,
+        path      = peeraddr : [],
+        modtype   = NodeAdded,
+        username  = "local root"
+      }
+    | peeraddr <- Map.keys new ]
+ ++ toGourceScript peers' trace
+  where
+    peers' = Map.fromList
+               [ (peeraddr, (PeerSourceLocalRoot, []))
+               | peeraddr <- Map.keys new ]
+          <> peers
+
+toGourceScript peers ((ts, TracePublicRootsRequest _ _):trace) =
+    GourceEntry {
+      timestamp = ts,
+      path      = [],
+      modtype   = NodeModified,
+      username  = "public roots request"
+    }
+  : toGourceScript peers trace
+
+toGourceScript peers ((ts, TracePublicRootsResults new _ _):trace) =
+    -- link new root peers directly to the root as cold
+    [ GourceEntry {
+        timestamp = ts,
+        path      = peeraddr : [],
+        modtype   = NodeAdded,
+        username  = "public root"
+      }
+    | peeraddr <- Set.elems new
+    , peeraddr `Map.notMember` peers
+    ]
+ ++ toGourceScript peers' trace
+  where
+    peers' = Map.fromList
+               [ (peeraddr, (PeerSourcePublicRoot, []))
+               | peeraddr <- Set.elems new
+               , peeraddr `Map.notMember` peers
+               ]
+          <> peers
+
+toGourceScript peers ((ts, TraceGossipRequests _ _ _ gossip):trace) =
+    [ GourceEntry {
+        timestamp = ts,
+        path      = discoverypath,
+        modtype   = NodeModified,
+        username  = "gossip"
+      }
+    | peeraddr <- Set.elems gossip
+    , let Just (_, discoverypath) = Map.lookup peeraddr peers ]
+ ++ toGourceScript peers trace
+
+toGourceScript peers ((ts, TraceGossipResults results):trace) =
+    [ GourceEntry {
+        timestamp = ts,
+        path      = dstaddr : snd (peers Map.! srcaddr),
+        modtype   = NodeAdded,
+        username  = "discovered"
+      }
+    | (srcaddr, Right dstaddrs) <- results
+    , dstaddr <- dstaddrs
+    , dstaddr `Map.notMember` peers
+    ]
+ ++ toGourceScript peers' trace
+  where
+    peers' = Map.fromList
+               [ (dstaddr, (PeerSourceGossip, dstaddr : discoverypath))
+               | (srcaddr, Right dstaddrs) <- results
+               , dstaddr <- dstaddrs
+               , dstaddr `Map.notMember` peers
+               , let Just (_, discoverypath) = Map.lookup srcaddr peers ]
+          <> peers
+
+
+toGourceScript peers (_:trace) = toGourceScript peers trace
+toGourceScript _     []        = []
+
+-- | See <https://github.com/acaudwell/Gource/wiki/Custom-Log-Format>
+--
+-- * timestamp - A unix timestamp of when the update occured.
+-- * username - The name of the user who made the update.
+-- * type - initial for the update type - (A)dded, (M)odified or (D)eleted.
+-- * file - Path of the file updated.
+-- * colour - A colour for the file in hex (FFFFFF) format. Optional.
+--
+data GourceEntry = GourceEntry {
+       timestamp :: Time,
+       path      :: [PeerAddr],
+       modtype   :: NodeModification,
+       username  :: String
+--       colour    :: Colour
+     }
+
+data NodeModification = NodeAdded | NodeModified | NodeDeleted
+
+--data Colour = ColourLocalRoot
+--            | ColourPublicRoot
+
+renderGourceScript :: [GourceEntry] -> String
+renderGourceScript = unlines . map renderGourceEntry
+
+renderGourceEntry :: GourceEntry -> String
+renderGourceEntry GourceEntry {
+                    timestamp,
+                    path,
+                    modtype,
+                    username
+--                  colour
+                  } =
+    intercalate "|"
+      [ renderTime timestamp
+      , username
+      , renderModType modtype
+      , intercalate "/" ("root" : [ show addr | PeerAddr addr <- reverse path ])
+                 ++ ".node"
+--      , renderColour colour
+      ]
+  where
+    renderTime :: Time -> String
+    renderTime t = show (floor (diffTime t (Time 0)) :: Int)
+
+    renderModType NodeAdded    = "A"
+    renderModType NodeModified = "M"
+    renderModType NodeDeleted  = "D"
+
+--    renderColour ColourLocalRoot  = "FFFFFF"
+--    renderColour ColourPublicRoot = "FFFF00"
 
