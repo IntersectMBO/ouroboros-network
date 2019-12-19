@@ -23,12 +23,7 @@
 {-# OPTIONS_GHC -Wno-x-partial #-}
 #endif
 
-module Test.Ouroboros.Network.PeerSelection
-  ( tests
-  , unfHydra
-  , takeBigLedgerPeers
-  , dropBigLedgerPeers
-  ) where
+module Test.Ouroboros.Network.PeerSelection (tests) where
 
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Exception (AssertionFailed (..), catch, evaluate)
@@ -92,6 +87,7 @@ import Test.Ouroboros.Network.PeerSelection.Cardano.MockEnvironment hiding
            (tests)
 import Test.Ouroboros.Network.PeerSelection.Instances
 import Test.Ouroboros.Network.PeerSelection.PeerGraph
+import Test.Ouroboros.Network.PeerSelection.Utils
 import Test.Ouroboros.Network.Utils (disjointSetsProperty, isSubsetProperty,
            nightlyTest)
 
@@ -113,10 +109,6 @@ import Test.QuickCheck.Monoids
 import Test.Tasty
 import Test.Tasty.QuickCheck
 import Text.Pretty.Simple
-
--- Exactly as named.
-unfHydra :: Int
-unfHydra = 1
 
 tests :: TestTree
 tests =
@@ -3925,64 +3917,6 @@ prop_governor_association_mode env =
                <*> associationMode)
 
 --
--- Utils for properties
---
-
-takeFirstNHours :: DiffTime -> [(Time, a)] -> [(Time, a)]
-takeFirstNHours h = takeWhile (\(t,_) -> t < Time (60*60*h))
-
-selectEnvEvents :: Events (TestTraceEvent extraState extraFlags extraPeers extraCounters) -> Events TraceMockEnv
-selectEnvEvents = Signal.selectEvents
-                    (\case MockEnvEvent e -> Just $! e
-                           _              -> Nothing)
-
-selectGovEvents :: Events (TestTraceEvent extraState extraFlags extraPeers extracounters)
-                -> Events (TracePeerSelection extraState extraFlags extraPeers PeerAddr)
-selectGovEvents = Signal.selectEvents
-                    (\case GovernorEvent e -> Just $! e
-                           _               -> Nothing)
-
-selectGovCounters :: Events (TestTraceEvent extraState extraFlags extraPeers extraCounters)
-                  -> Events (PeerSelectionCounters extraCounters)
-selectGovCounters = Signal.selectEvents
-                      (\case GovernorCounters e -> Just $! e
-                             _                  -> Nothing)
-
-selectGovAssociationMode :: Events (TestTraceEvent extraState extraFlags extraPeers extraCounters)
-                         -> Events AssociationMode
-selectGovAssociationMode = Signal.selectEvents
-                             (\case GovernorAssociationMode e -> Just $! e
-                                    _                         -> Nothing)
-
-selectGovState :: Eq a
-               => (forall peerconn. Governor.PeerSelectionState extraState extraFlags extraPeers PeerAddr peerconn -> a)
-               -> extraState
-               -> extraPeers
-               -> Events (TestTraceEvent extraState extraFlags extraPeers extraCounters)
-               -> Signal a
-selectGovState f es ep =
-    Signal.nub
-  -- TODO: #3182 Rng seed should come from quickcheck.
-  --       and `NumberOfBigLedgerPeers`
-  . Signal.fromChangeEvents (f $! Governor.emptyPeerSelectionState (mkStdGen 42) es ep)
-  . Signal.selectEvents
-      (\case GovernorDebug (TraceGovernorState _ _ st) -> Just $! f st
-             _                                         -> Nothing)
-
-selectEnvTargets :: Eq a
-                 => (PeerSelectionTargets -> a)
-                 -> Events (TestTraceEvent extraState extraFlags extraPeers extraCounters)
-                 -> Signal a
-selectEnvTargets f =
-    Signal.nub
-  . fmap f
-  . Signal.fromChangeEvents nullPeerSelectionTargets
-  . Signal.selectEvents
-      (\case TraceEnvSetTargets targets -> Just $! targets
-             _                          -> Nothing)
-  . selectEnvEvents
-
---
 -- Live examples
 --
 
@@ -4351,7 +4285,6 @@ prop_governor_repromote_delay (MaxTime maxTime) env =
 -- Utils
 --
 
-
 -- | Max simulation time.  We start with 10hrs, and shrink it to smaller values
 -- if needed.
 --
@@ -4367,20 +4300,3 @@ instance Arbitrary MaxTime where
       [ MaxTime (Time (microsecondsAsIntToDiffTime t'))
       | t' <- shrink  (diffTimeToMicrosecondsAsInt t)
       ]
-
-
--- | filter big ledger peers
---
-takeBigLedgerPeers
-    :: (Governor.PeerSelectionState extraState extraFlags extraPeers PeerAddr peerconn -> Set PeerAddr)
-    ->  Governor.PeerSelectionState extraState extraFlags extraPeers PeerAddr peerconn -> Set PeerAddr
-takeBigLedgerPeers f =
-  \st -> f st `Set.intersection` (PublicRootPeers.getBigLedgerPeers . Governor.publicRootPeers) st
-
--- | filter out big ledger peers
---
-dropBigLedgerPeers
-    :: (Governor.PeerSelectionState extraState extraFlags extraPeers PeerAddr peerconn -> Set PeerAddr)
-    ->  Governor.PeerSelectionState extraState extraFlags extraPeers PeerAddr peerconn -> Set PeerAddr
-dropBigLedgerPeers f =
-  \st -> f st Set.\\ (PublicRootPeers.getBigLedgerPeers . Governor.publicRootPeers) st

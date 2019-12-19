@@ -382,6 +382,7 @@ library testlib
     Test.Ouroboros.Network.PeerSelection.Cardano.LocalRootPeers
     Test.Ouroboros.Network.PeerSelection.Cardano.MockEnvironment
     Test.Ouroboros.Network.PeerSelection.Cardano.PublicRootPeers
+    Test.Ouroboros.Network.PeerSelection.Gource
     Test.Ouroboros.Network.PeerSelection.Instances
     Test.Ouroboros.Network.PeerSelection.Json
     Test.Ouroboros.Network.PeerSelection.KnownPeers
@@ -389,6 +390,7 @@ library testlib
     Test.Ouroboros.Network.PeerSelection.PeerGraph
     Test.Ouroboros.Network.PeerSelection.PeerMetric
     Test.Ouroboros.Network.PeerSelection.RootPeersDNS
+    Test.Ouroboros.Network.PeerSelection.Utils
     Test.Ouroboros.Network.TxSubmission
     Test.Ouroboros.Network.Version
 
