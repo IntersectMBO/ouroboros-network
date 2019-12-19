@@ -256,7 +256,7 @@ prop_async_read_and_writes (LargeNonEmptyBS bsIn bufSizeIn) (LargeNonEmptyBS bsO
       -- fork a server
       _ <- forkIO $
         bracket
-            (createNamedPipe pipeName
+            (createNamedPipe pname
                              (pIPE_ACCESS_DUPLEX .|. fILE_FLAG_OVERLAPPED)
                              (pIPE_TYPE_BYTE .|. pIPE_READMODE_BYTE)
                              pIPE_UNLIMITED_INSTANCES
@@ -281,7 +281,7 @@ prop_async_read_and_writes (LargeNonEmptyBS bsIn bufSizeIn) (LargeNonEmptyBS bsO
       _ <- forkIO $ do
         takeMVar syncVarStart
         bracket
-          (createFile pipeName
+          (createFile pname
                       (gENERIC_READ .|. gENERIC_WRITE)
                       fILE_SHARE_NONE
                       Nothing
@@ -303,6 +303,9 @@ prop_async_read_and_writes (LargeNonEmptyBS bsIn bufSizeIn) (LargeNonEmptyBS bsO
       bsIn'  <- takeMVar serverVar
 
       pure $ bsIn == bsIn' && bsOut == bsOut'
+
+  where
+    pname = pipeName ++ "-reads-and-writes"
 
 --
 -- PingPong tests
