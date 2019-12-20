@@ -31,9 +31,9 @@ import qualified Data.Binary.Get as Get
 import qualified Data.ByteString.Lazy as Lazy
 import           Data.Set (Set)
 import qualified Data.Set as Set
+import           Data.Text (Text)
 import qualified Data.Text as T
 import           GHC.Stack (HasCallStack, callStack, popCallStack)
-import           Text.Printf (printf)
 import           Text.Read (readMaybe)
 
 import           Ouroboros.Consensus.Util (whenJust)
@@ -58,8 +58,10 @@ import           Ouroboros.Storage.ImmutableDB.Types
 data Two a = Two a a
   deriving (Functor, Foldable, Traversable)
 
-renderFile :: String -> EpochNo -> FsPath
-renderFile fileType (EpochNo epoch) = mkFsPath [printf "%05d.%s" epoch fileType]
+renderFile :: Text -> EpochNo -> FsPath
+renderFile fileType (EpochNo epoch) = fsPathFromList [name]
+  where
+    name = T.justifyRight 5 '0' (T.pack (show epoch)) <> "." <> fileType
 
 handleUser :: HasCallStack
            => ErrorHandling ImmutableDBError m
