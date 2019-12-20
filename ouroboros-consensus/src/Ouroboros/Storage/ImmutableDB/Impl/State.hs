@@ -44,9 +44,10 @@ import           Ouroboros.Storage.FS.API.Types
 import           Ouroboros.Storage.Util.ErrorHandling (ErrorHandling (..))
 import qualified Ouroboros.Storage.Util.ErrorHandling as EH
 
+import           Ouroboros.Storage.ImmutableDB.Impl.Index (Index)
+import qualified Ouroboros.Storage.ImmutableDB.Impl.Index as Index
 import           Ouroboros.Storage.ImmutableDB.Impl.Index.Primary
                      (SecondaryOffset)
-import qualified Ouroboros.Storage.ImmutableDB.Impl.Index.Primary as Primary
 import           Ouroboros.Storage.ImmutableDB.Impl.Index.Secondary
                      (BlockOffset (..))
 import qualified Ouroboros.Storage.ImmutableDB.Impl.Index.Secondary as Secondary
@@ -61,24 +62,24 @@ import           Ouroboros.Storage.ImmutableDB.Types
 data ImmutableDBEnv m hash = forall h e. ImmutableDBEnv
     { _dbHasFS           :: !(HasFS m h)
     , _dbErr             :: !(ErrorHandling ImmutableDBError m)
-    , _dbInternalState   :: !(StrictMVar m (InternalState hash h))
+    , _dbInternalState   :: !(StrictMVar m (InternalState m hash h))
     , _dbEpochFileParser :: !(EpochFileParser e m (Secondary.Entry hash) hash)
     , _dbEpochInfo       :: !(EpochInfo m)
     , _dbHashInfo        :: !(HashInfo hash)
     , _dbTracer          :: !(Tracer m (TraceEvent e hash))
     }
 
-data InternalState hash h =
+data InternalState m hash h =
     DbClosed !ClosedState
-  | DbOpen !(OpenState hash h)
+  | DbOpen !(OpenState m hash h)
   deriving (Generic, NoUnexpectedThunks)
 
-dbIsOpen :: InternalState hash h -> Bool
+dbIsOpen :: InternalState m hash h -> Bool
 dbIsOpen (DbClosed _) = False
 dbIsOpen (DbOpen _)   = True
 
 -- | Internal state when the database is open.
-data OpenState hash h = OpenState
+data OpenState m hash h = OpenState
     { _currentEpoch           :: !EpochNo
       -- ^ The current 'EpochNo' the immutable store is writing to.
     , _currentEpochOffset     :: !BlockOffset
@@ -97,6 +98,8 @@ data OpenState hash h = OpenState
       -- ^ The current tip of the database.
     , _nextIteratorID         :: !BaseIteratorID
       -- ^ The ID of the next iterator that will be created.
+    , _index                  :: !(Index m hash h)
+      -- ^ An abstraction layer on top of the indices to allow for caching.
     }
   deriving (Generic, NoUnexpectedThunks)
 
@@ -117,15 +120,16 @@ data ClosedState = ClosedState
 mkOpenState
   :: forall m hash h. (HasCallStack, MonadThrow m)
   => HasFS m h
+  -> Index m hash h
   -> EpochNo
   -> BaseIteratorID
   -> ImmTipWithHash hash
   -> AllowExisting
-  -> m (OpenState hash h)
-mkOpenState hasFS@HasFS{..} epoch nextIteratorID tip existing =
+  -> m (OpenState m hash h)
+mkOpenState HasFS{..} index epoch nextIteratorID tip existing =
     -- TODO use a ResourceRegistry for this
     closeOnException     (hOpen (renderFile "epoch" epoch)     appendMode) $ \eHnd ->
-      closeOnException   (Primary.open hasFS epoch existing)               $ \pHnd ->
+      closeOnException   (Index.openPrimaryIndex index epoch existing)     $ \pHnd ->
         closeOnException (hOpen (renderFile "secondary" epoch) appendMode) $ \sHnd -> do
           epochOffset     <- hGetSize eHnd
           secondaryOffset <- hGetSize sHnd
@@ -138,6 +142,7 @@ mkOpenState hasFS@HasFS{..} epoch nextIteratorID tip existing =
             , _currentSecondaryHandle = sHnd
             , _currentTip             = tip
             , _nextIteratorID         = nextIteratorID
+            , _index                  = index
             }
   where
     appendMode = AppendMode existing
@@ -159,7 +164,7 @@ mkOpenState hasFS@HasFS{..} epoch nextIteratorID tip existing =
 -- @h@ parameters would not be known to match.
 getOpenState :: (HasCallStack, IOLike m)
              => ImmutableDBEnv m hash
-             -> m (SomePair (HasFS m) (OpenState hash))
+             -> m (SomePair (HasFS m) (OpenState m hash))
 getOpenState ImmutableDBEnv {..} = do
     internalState <- readMVar _dbInternalState
     case internalState of
@@ -180,9 +185,9 @@ getOpenState ImmutableDBEnv {..} = do
 -- susceptible to deadlock.
 modifyOpenState :: forall m hash r. (HasCallStack, IOLike m)
                 => ImmutableDBEnv m hash
-                -> (forall h. HasFS m h -> StateT (OpenState hash h) m r)
+                -> (forall h. HasFS m h -> StateT (OpenState m hash h) m r)
                 -> m r
-modifyOpenState ImmutableDBEnv {_dbHasFS = hasFS :: HasFS m h, ..} action = do
+modifyOpenState ImmutableDBEnv { _dbHasFS = hasFS :: HasFS m h, .. } action = do
     (mr, ()) <- generalBracket open close (tryImmDB hasFsErr _dbErr . mutation)
     case mr of
       Left  e      -> throwError e
@@ -195,11 +200,11 @@ modifyOpenState ImmutableDBEnv {_dbHasFS = hasFS :: HasFS m h, ..} action = do
     -- so that 'close' knows which error is thrown (@Either e (s, r)@ vs. @(s,
     -- r)@).
 
-    open :: m (InternalState hash h)
+    open :: m (InternalState m hash h)
     open = takeMVar _dbInternalState
 
-    close :: InternalState hash h
-          -> ExitCase (Either ImmutableDBError (r, OpenState hash h))
+    close :: InternalState m hash h
+          -> ExitCase (Either ImmutableDBError (r, OpenState m hash h))
           -> m ()
     close !st ec = case ec of
       -- Restore the original state in case of an abort
@@ -223,8 +228,8 @@ modifyOpenState ImmutableDBEnv {_dbHasFS = hasFS :: HasFS m h, ..} action = do
         putMVar _dbInternalState st
 
     mutation :: HasCallStack
-             => InternalState hash h
-             -> m (r, OpenState hash h)
+             => InternalState m hash h
+             -> m (r, OpenState m hash h)
     mutation (DbClosed _) = throwUserError _dbErr ClosedDBError
     mutation (DbOpen ost) = runStateT (action hasFS) ost
 
@@ -237,9 +242,9 @@ modifyOpenState ImmutableDBEnv {_dbHasFS = hasFS :: HasFS m h, ..} action = do
 -- potentially inconsistent state.
 withOpenState :: forall m hash r. (HasCallStack, IOLike m)
               => ImmutableDBEnv m hash
-              -> (forall h. HasFS m h -> OpenState hash h -> m r)
+              -> (forall h. HasFS m h -> OpenState m hash h -> m r)
               -> m r
-withOpenState ImmutableDBEnv {_dbHasFS = hasFS :: HasFS m h, ..} action = do
+withOpenState ImmutableDBEnv { _dbHasFS = hasFS :: HasFS m h, .. } action = do
     (mr, ()) <- generalBracket open (const close) (tryImmDB hasFsErr _dbErr . access)
     case mr of
       Left  e -> throwError e
@@ -248,7 +253,7 @@ withOpenState ImmutableDBEnv {_dbHasFS = hasFS :: HasFS m h, ..} action = do
     HasFS{..}         = hasFS
     ErrorHandling{..} = _dbErr
 
-    open :: m (InternalState hash h)
+    open :: m (InternalState m hash h)
     open = readMVar _dbInternalState
 
     -- close doesn't take the state that @open@ returned, because the state
@@ -275,25 +280,25 @@ withOpenState ImmutableDBEnv {_dbHasFS = hasFS :: HasFS m h, ..} action = do
       ExitCaseSuccess (Left (UserError {})) -> return ()
 
     access :: HasCallStack
-           => InternalState hash h
+           => InternalState m hash h
            -> m r
     access (DbClosed _) = throwUserError _dbErr ClosedDBError
     access (DbOpen ost) = action hasFS ost
 
-closeOpenHandles :: Monad m => HasFS m h -> InternalState hash h -> m ()
+closeOpenHandles :: Monad m => HasFS m h -> InternalState m hash h -> m ()
 closeOpenHandles hasFS = \case
     DbClosed _       -> return ()
     DbOpen openState -> closeOpenStateHandles hasFS openState
 
 -- TODO what if this fails? Use a 'ResourceRegistry'?
-closeOpenStateHandles :: Monad m => HasFS m h -> OpenState hash h -> m ()
+closeOpenStateHandles :: Monad m => HasFS m h -> OpenState m hash h -> m ()
 closeOpenStateHandles HasFS { hClose } OpenState {..}  = do
     hClose _currentEpochHandle
     hClose _currentPrimaryHandle
     hClose _currentSecondaryHandle
 
 -- | Create a 'ClosedState' from an internal state, open or closed.
-closedStateFromInternalState :: InternalState hash h -> ClosedState
+closedStateFromInternalState :: InternalState m hash h -> ClosedState
 closedStateFromInternalState (DbClosed cst) = cst
 closedStateFromInternalState (DbOpen OpenState {..}) = ClosedState
     { _closedNextIteratorID  = _nextIteratorID

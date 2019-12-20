@@ -39,6 +39,7 @@ import           Ouroboros.Storage.Util.ErrorHandling (ErrorHandling)
 import qualified Ouroboros.Storage.Util.ErrorHandling as EH
 
 import           Ouroboros.Storage.ImmutableDB.API
+import           Ouroboros.Storage.ImmutableDB.Impl.Index (fileBackedIndex)
 import           Ouroboros.Storage.ImmutableDB.Impl.Index.Primary (PrimaryIndex,
                      SecondaryOffset)
 import qualified Ouroboros.Storage.ImmutableDB.Impl.Index.Primary as Primary
@@ -48,6 +49,10 @@ import           Ouroboros.Storage.ImmutableDB.Impl.Util
 import           Ouroboros.Storage.ImmutableDB.Layout
 
 -- | Bundle of arguments used most validation functions.
+--
+-- Note that we don't use "Ouroboros.Storage.ImmutableDB.Impl.Index" because
+-- we are reading and manipulating index files in different ways, e.g.,
+-- truncating them.
 data ValidateEnv m hash h e = ValidateEnv
   { hasFS     :: !(HasFS m h)
   , err       :: !(ErrorHandling ImmutableDBError m)
@@ -60,21 +65,23 @@ data ValidateEnv m hash h e = ValidateEnv
 -- | Perform validation as per the 'ValidationPolicy' using 'validate' and
 -- create an 'OpenState' corresponding to its outcome using 'mkOpenState'.
 validateAndReopen
-  :: forall m hash h e. (IOLike m, Eq hash, HasCallStack)
+  :: forall m hash h e. (IOLike m, Eq hash, NoUnexpectedThunks hash, HasCallStack)
   => ValidateEnv m hash h e
   -> ValidationPolicy
   -> BaseIteratorID
-  -> m (OpenState hash h)
-validateAndReopen validateEnv valPol nextIteratorID =
-    validate validateEnv valPol >>= \case
-      (epoch, TipGen) -> assert (epoch == 0) $ do
+  -> m (OpenState m hash h)
+validateAndReopen validateEnv valPol nextIteratorID = do
+    (epoch, tip) <- validate validateEnv valPol
+    case tip of
+      TipGen -> assert (epoch == 0) $ do
         traceWith tracer NoValidLastLocation
-        mkOpenState hasFS epoch nextIteratorID TipGen MustBeNew
-      (epoch, tip)    -> do
+        mkOpenState hasFS index epoch nextIteratorID TipGen MustBeNew
+      _     -> do
         traceWith tracer $ ValidatedLastLocation epoch (forgetHash <$> tip)
-        mkOpenState hasFS epoch nextIteratorID tip    AllowExisting
+        mkOpenState hasFS index epoch nextIteratorID tip    AllowExisting
   where
-    ValidateEnv { hasFS, tracer } = validateEnv
+    ValidateEnv { hasFS, err, hashInfo, tracer } = validateEnv
+    index = fileBackedIndex hasFS err hashInfo
 
 -- | Execute the 'ValidationPolicy'.
 validate

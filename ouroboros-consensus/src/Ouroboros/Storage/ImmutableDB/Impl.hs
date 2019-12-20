@@ -121,6 +121,8 @@ import           Ouroboros.Storage.FS.CRC
 import           Ouroboros.Storage.Util.ErrorHandling (ErrorHandling (..))
 
 import           Ouroboros.Storage.ImmutableDB.API
+import           Ouroboros.Storage.ImmutableDB.Impl.Index (Index)
+import qualified Ouroboros.Storage.ImmutableDB.Impl.Index as Index
 import qualified Ouroboros.Storage.ImmutableDB.Impl.Index.Primary as Primary
 import           Ouroboros.Storage.ImmutableDB.Impl.Index.Secondary
                      (BlockOffset (..), BlockSize, HeaderOffset (..),
@@ -283,7 +285,7 @@ isOpenImpl ImmutableDBEnv {..} =
     dbIsOpen <$> readMVar _dbInternalState
 
 reopenImpl
-  :: forall m hash. (HasCallStack, IOLike m, Eq hash)
+  :: forall m hash. (HasCallStack, IOLike m, Eq hash, NoUnexpectedThunks hash)
   => ImmutableDBEnv m hash
   -> ValidationPolicy
   -> m ()
@@ -320,6 +322,8 @@ deleteAfterImpl
   -> ImmTip
   -> m ()
 deleteAfterImpl dbEnv@ImmutableDBEnv { _dbTracer } newTip =
+  -- We're not using 'Index' in this function but truncating the index files
+  -- directly.
   modifyOpenState dbEnv $ \hasFS@HasFS{..} -> do
     st@OpenState {..} <- get
     currentTipEpochSlot <- lift $ mapM blockOrEBBEpochSlot (forgetHash <$> _currentTip)
@@ -335,7 +339,10 @@ deleteAfterImpl dbEnv@ImmutableDBEnv { _dbTracer } newTip =
         let (newEpoch, allowExisting) = case newTipEpochSlot of
               TipGen                  -> (0, MustBeNew)
               Tip (EpochSlot epoch _) -> (epoch, AllowExisting)
-        mkOpenState hasFS newEpoch _nextIteratorID newTipWithHash allowExisting
+        -- Reset the index, as it can contain stale information
+        Index.reset _index newEpoch
+        mkOpenState hasFS _index newEpoch _nextIteratorID newTipWithHash
+          allowExisting
       put ost
   where
     ImmutableDBEnv { _dbErr, _dbEpochInfo, _dbHashInfo } = dbEnv
@@ -348,7 +355,7 @@ deleteAfterImpl dbEnv@ImmutableDBEnv { _dbTracer } newTip =
 
     truncateTo
       :: HasFS m h
-      -> OpenState hash h
+      -> OpenState m hash h
       -> Tip EpochSlot
       -> m (ImmTipWithHash hash)
     truncateTo hasFS OpenState {} = \case
@@ -424,7 +431,7 @@ getBlockImpl dbEnv blockComponent slot =
 
       let curEpochInfo = CurrentEpochInfo _currentEpoch _currentEpochOffset
       epochSlot <- epochInfoBlockRelative _dbEpochInfo slot
-      getEpochSlot _dbHasFS _dbHashInfo _dbErr curEpochInfo blockComponent epochSlot
+      getEpochSlot _dbHasFS _dbErr _index curEpochInfo blockComponent epochSlot
   where
     ImmutableDBEnv { _dbEpochInfo, _dbErr, _dbHashInfo } = dbEnv
 
@@ -445,7 +452,7 @@ getEBBImpl dbEnv blockComponent epoch =
         throwUserError _dbErr $ ReadFutureEBBError epoch _currentEpoch
 
       let curEpochInfo = CurrentEpochInfo _currentEpoch _currentEpochOffset
-      getEpochSlot _dbHasFS _dbHashInfo _dbErr curEpochInfo blockComponent
+      getEpochSlot _dbHasFS _dbErr _index curEpochInfo blockComponent
         (EpochSlot epoch 0)
   where
     ImmutableDBEnv { _dbEpochInfo, _dbErr, _dbHashInfo } = dbEnv
@@ -547,7 +554,7 @@ getBlockOrEBBImpl dbEnv blockComponent slot hash =
       let curEpochInfo = CurrentEpochInfo _currentEpoch _currentEpochOffset
 
       errOrRes <- runExceptT $
-        getSlotInfo _dbHasFS _dbErr _dbEpochInfo _dbHashInfo (slot, hash)
+        getSlotInfo _dbEpochInfo _index (slot, hash)
       case errOrRes of
         Left _ ->
           return Nothing
@@ -568,23 +575,22 @@ getBlockOrEBBImpl dbEnv blockComponent slot hash =
 getEpochSlot
   :: forall m h hash res. (HasCallStack, IOLike m)
   => HasFS m h
-  -> HashInfo hash
   -> ErrorHandling ImmutableDBError m
+  -> Index m hash h
   -> CurrentEpochInfo
   -> BlockComponent hash res
   -> EpochSlot
   -> m (Maybe res)
-getEpochSlot hasFS hashInfo err curEpochInfo blockComponent epochSlot =
+getEpochSlot hasFS err index curEpochInfo blockComponent epochSlot =
     -- Check the primary index first
-    Primary.readOffset hasFS err epoch relativeSlot >>= \case
+    Index.readOffset index epoch relativeSlot >>= \case
       -- Empty slot
       Nothing              -> return Nothing
       -- Filled slot; read the corresponding entry from the sparse secondary
       -- index
       Just secondaryOffset -> do
         -- TODO only read the hash in case of 'GetHash'?
-        (entry, blockSize) <-
-          Secondary.readEntry hasFS err hashInfo epoch isEBB secondaryOffset
+        (entry, blockSize) <- Index.readEntry index epoch isEBB secondaryOffset
         Just <$>
           getBlockComponent hasFS err epoch curEpochInfo (entry, blockSize)
             blockComponent
@@ -602,7 +608,7 @@ appendBlockImpl
   -> m ()
 appendBlockImpl dbEnv slot headerHash binaryInfo =
     modifyOpenState dbEnv $ \_dbHasFS@HasFS{..} -> do
-      OpenState { _currentEpoch, _currentTip } <- get
+      OpenState { _currentEpoch, _currentTip, _index } <- get
 
       epochSlot@(EpochSlot epoch _) <- lift $
         epochInfoBlockRelative _dbEpochInfo slot
@@ -617,7 +623,7 @@ appendBlockImpl dbEnv slot headerHash binaryInfo =
         throwUserError _dbErr $
           AppendToSlotInThePastError slot (forgetHash <$> _currentTip)
 
-      appendEpochSlot _dbHasFS _dbErr _dbEpochInfo _dbHashInfo
+      appendEpochSlot _dbHasFS _dbErr _dbEpochInfo _index
         epochSlot (Block slot) headerHash binaryInfo
   where
     ImmutableDBEnv { _dbEpochInfo, _dbErr, _dbHashInfo } = dbEnv
@@ -631,7 +637,7 @@ appendEBBImpl
   -> m ()
 appendEBBImpl dbEnv epoch headerHash binaryInfo =
     modifyOpenState dbEnv $ \_dbHasFS@HasFS{..} -> do
-      OpenState { _currentEpoch, _currentTip } <- get
+      OpenState { _currentEpoch, _currentTip, _index } <- get
 
       -- Check that we're not appending to the past
       let inThePast = case forgetHash <$> _currentTip of
@@ -645,8 +651,8 @@ appendEBBImpl dbEnv epoch headerHash binaryInfo =
       when inThePast $ lift $ throwUserError _dbErr $
         AppendToEBBInThePastError epoch _currentEpoch
 
-      appendEpochSlot _dbHasFS _dbErr _dbEpochInfo _dbHashInfo
-        (EpochSlot epoch 0) (EBB epoch) headerHash binaryInfo
+      appendEpochSlot _dbHasFS _dbErr _dbEpochInfo _index (EpochSlot epoch 0)
+        (EBB epoch) headerHash binaryInfo
   where
     ImmutableDBEnv { _dbEpochInfo, _dbErr, _dbHashInfo } = dbEnv
 
@@ -655,14 +661,14 @@ appendEpochSlot
   => HasFS m h
   -> ErrorHandling ImmutableDBError m
   -> EpochInfo m
-  -> HashInfo hash
+  -> Index m hash h
   -> EpochSlot  -- ^ The 'EpochSlot' of the new block or EBB
   -> BlockOrEBB -- ^ Corresponds to the new block, will be installed as the
                 -- new tip
   -> hash
   -> BinaryInfo Builder
-  -> StateT (OpenState hash h) m ()
-appendEpochSlot hasFS err epochInfo hashInfo epochSlot blockOrEBB headerHash
+  -> StateT (OpenState m hash h) m ()
+appendEpochSlot hasFS err epochInfo index epochSlot blockOrEBB headerHash
                 BinaryInfo { binaryBlob, headerOffset, headerSize } = do
     OpenState { _currentEpoch = initialEpoch } <- get
 
@@ -672,7 +678,7 @@ appendEpochSlot hasFS err epochInfo hashInfo epochSlot blockOrEBB headerHash
     when (epoch > initialEpoch) $ do
       let newEpochsToStart :: Int
           newEpochsToStart = fromIntegral . unEpochNo $ epoch - initialEpoch
-      replicateM_ newEpochsToStart (startNewEpoch hasFS epochInfo)
+      replicateM_ newEpochsToStart (startNewEpoch hasFS index epochInfo)
 
     -- We may have updated the state with 'startNewEpoch', so get the
     -- (possibly) updated state, but first remember the current epoch
@@ -714,14 +720,14 @@ appendEpochSlot hasFS err epochInfo hashInfo epochSlot blockOrEBB headerHash
               , headerHash   = headerHash
               , blockOrEBB   = blockOrEBB
               }
-        entrySize <- fromIntegral <$> Secondary.appendEntry
-          hasFS _currentSecondaryHandle hashInfo entry
+        entrySize <- fromIntegral <$> Index.appendEntry index epoch
+          _currentSecondaryHandle (WithBlockSize (fromIntegral blockSize) entry)
 
         -- Write to the primary index file
         let backfillOffsets = Primary.backfill
               relSlot nextFreeRelSlot _currentSecondaryOffset
             offsets = backfillOffsets <> [_currentSecondaryOffset + entrySize]
-        Primary.appendOffsets hasFS _currentPrimaryHandle offsets
+        Index.appendOffsets index _currentPrimaryHandle offsets
 
         return (blockSize, entrySize)
 
@@ -737,9 +743,10 @@ appendEpochSlot hasFS err epochInfo hashInfo epochSlot blockOrEBB headerHash
 startNewEpoch
   :: forall m h hash. (HasCallStack, IOLike m)
   => HasFS m h
+  -> Index m hash h
   -> EpochInfo m
-  -> StateT (OpenState hash h) m ()
-startNewEpoch hasFS@HasFS{..} epochInfo = do
+  -> StateT (OpenState m hash h) m ()
+startNewEpoch hasFS@HasFS{..} index epochInfo = do
     st@OpenState {..} <- get
 
     -- Find out the size of the current epoch, so we can pad the primary
@@ -769,10 +776,10 @@ startNewEpoch hasFS@HasFS{..} epochInfo = do
           _currentSecondaryOffset
 
     lift $
-      Primary.appendOffsets hasFS _currentPrimaryHandle backfillOffsets
+      Index.appendOffsets index _currentPrimaryHandle backfillOffsets
       `finally` closeOpenStateHandles hasFS st
 
-    st' <- lift $ mkOpenState
-      hasFS (succ _currentEpoch) _nextIteratorID _currentTip MustBeNew
+    st' <- lift $ mkOpenState hasFS index (succ _currentEpoch) _nextIteratorID
+      _currentTip MustBeNew
 
     put st'

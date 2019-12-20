@@ -280,12 +280,12 @@ readAllEntries hasFS err HashInfo { getHash } secondaryOffset epoch stopAfter
 appendEntry
   :: forall m hash h. (HasCallStack, MonadThrow m)
   => HasFS m h
-  -> Handle h
   -> HashInfo hash
+  -> Handle h
   -> Entry hash
   -> m Word64
      -- ^ The number of bytes written
-appendEntry hasFS sHnd HashInfo { putHash, hashSize } entry = do
+appendEntry hasFS HashInfo { putHash, hashSize } sHnd entry = do
     bytesWritten <- hPut hasFS sHnd $ Put.execPut $ putEntry putHash entry
     return $
       assert (bytesWritten == fromIntegral (entrySize hashSize)) bytesWritten
@@ -319,7 +319,7 @@ writeAllEntries hasFS hashInfo epoch entries =
       -- First truncate the file, otherwise we might leave some old contents
       -- at the end if the new contents are smaller than the previous contents
       hTruncate sHnd 0
-      mapM_ (appendEntry hasFS sHnd hashInfo) entries
+      mapM_ (appendEntry hasFS hashInfo sHnd) entries
   where
     secondaryIndexFile  = renderFile "secondary" epoch
     HasFS { hTruncate } = hasFS

@@ -143,6 +143,7 @@ library
                        Ouroboros.Storage.ImmutableDB
                        Ouroboros.Storage.ImmutableDB.API
                        Ouroboros.Storage.ImmutableDB.Impl
+                       Ouroboros.Storage.ImmutableDB.Impl.Index
                        Ouroboros.Storage.ImmutableDB.Impl.Index.Primary
                        Ouroboros.Storage.ImmutableDB.Impl.Index.Secondary
                        Ouroboros.Storage.ImmutableDB.Impl.Iterator
