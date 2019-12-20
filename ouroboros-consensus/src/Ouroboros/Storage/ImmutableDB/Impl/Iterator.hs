@@ -23,6 +23,7 @@ import           Control.Monad.Except
 import           Control.Monad.State.Strict (state)
 import           Data.ByteString.Lazy (ByteString)
 import           Data.Foldable (find)
+import           Data.Functor ((<&>))
 import           Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
 import           Data.Maybe (isNothing)
@@ -75,10 +76,6 @@ data IteratorStateOrExhausted hash h =
     IteratorStateOpen !(IteratorState hash h)
   | IteratorStateExhausted
   deriving (Generic, NoUnexpectedThunks)
-
-iteratorStateIsOpen :: IteratorStateOrExhausted hash h -> Bool
-iteratorStateIsOpen (IteratorStateOpen _)  = True
-iteratorStateIsOpen IteratorStateExhausted = False
 
 -- Existential type; we can't use generics
 instance ( forall a. NoUnexpectedThunks (StrictTVar m a)
@@ -265,7 +262,7 @@ streamImpl dbEnv blocksOrHeaders mbStart mbEnd =
     mkEmptyIterator = withNewIteratorID $ \itID -> Iterator
       { iteratorNext    = return IteratorExhausted
       , iteratorPeek    = return IteratorExhausted
-      , iteratorHasNext = return False
+      , iteratorHasNext = return Nothing
       , iteratorClose   = return ()
       , iteratorID      = itID
       }
@@ -473,9 +470,17 @@ iteratorNextImpl dbEnv it@IteratorHandle {itHasFS = hasFS :: HasFS m h, ..}
 iteratorHasNextImpl
   :: (HasCallStack, IOLike m)
   => IteratorHandle hash m
-  -> m Bool
+  -> m (Maybe (Either EpochNo SlotNo, hash))
 iteratorHasNextImpl IteratorHandle { itState } =
-    atomically $ iteratorStateIsOpen <$> readTVar itState
+    atomically $ readTVar itState <&> \case
+      IteratorStateExhausted -> Nothing
+      IteratorStateOpen IteratorState { itEpochEntries } ->
+          Just (epochOrSlot, Secondary.headerHash nextEntry)
+        where
+          WithBlockSize _ nextEntry NE.:| _ = itEpochEntries
+          epochOrSlot = case Secondary.blockOrEBB nextEntry of
+            EBB epoch  -> Left epoch
+            Block slot -> Right slot
 
 iteratorCloseImpl
   :: (HasCallStack, IOLike m)

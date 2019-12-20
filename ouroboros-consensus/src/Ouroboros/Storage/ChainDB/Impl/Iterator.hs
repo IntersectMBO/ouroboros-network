@@ -25,6 +25,7 @@ import           Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
+import           Data.Maybe (isJust)
 import           Data.Typeable (Typeable)
 import           GHC.Generics (Generic)
 import           GHC.Stack (HasCallStack)
@@ -659,8 +660,8 @@ implIteratorNext registry varItState IteratorEnv{..} =
     selectResult :: ImmDB.Iterator (HeaderHash blk) m (Deserialisable m blk blk)
                  -> m (Done (Deserialisable m blk blk))
     selectResult immIt = do
-        itRes   <- ImmDB.iteratorNext    itImmDB immIt
-        hasNext <- ImmDB.iteratorHasNext itImmDB immIt
+        itRes   <-            ImmDB.iteratorNext    itImmDB immIt
+        hasNext <- isJust <$> ImmDB.iteratorHasNext itImmDB immIt
         case itRes of
           ImmDB.IteratorResult _ _ blk -> select blk hasNext
           ImmDB.IteratorEBB    _ _ blk -> select blk hasNext

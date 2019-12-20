@@ -595,17 +595,13 @@ stream db registry blockOrHeader from to = runExceptT $ do
       StreamToExclusive pt -> \it -> it
           { ImmDB.iteratorNext    = ignoreExclusiveBound <$> ImmDB.iteratorNext it
           , ImmDB.iteratorPeek    = ignoreExclusiveBound <$> ImmDB.iteratorPeek it
-            -- NOTE: this means 'iteratorHasNext' is more expensive when
-            -- streaming to an exclusive end bound, as the block is read.
-          , ImmDB.iteratorHasNext = ImmDB.iteratorPeek it >>= \case
-              ImmDB.IteratorExhausted -> return False
-              ImmDB.IteratorResult _slotNo hash _
+          , ImmDB.iteratorHasNext = ImmDB.iteratorHasNext it >>= \case
+              Nothing -> return Nothing
+              Just next@(_epochOrSlot, hash)
                 | isEnd hash
-                -> ImmDB.iteratorClose it $> False
-              ImmDB.IteratorEBB _epochNo hash _
-                | isEnd hash
-                -> ImmDB.iteratorClose it $> False
-              _ -> return True
+                -> ImmDB.iteratorClose it $> Nothing
+                | otherwise
+                -> return $ Just next
           }
         where
           isEnd hash = pointHash pt == BlockHash hash
@@ -785,7 +781,7 @@ iteratorNext db it = withDB db $ const $ ImmDB.iteratorNext it
 iteratorHasNext :: (HasCallStack, MonadCatch m)
                 => ImmDB m blk
                 -> ImmDB.Iterator (HeaderHash blk) m a
-                -> m Bool
+                -> m (Maybe (Either EpochNo SlotNo, HeaderHash blk))
 iteratorHasNext db it = withDB db $ const $ ImmDB.iteratorHasNext it
 
 iteratorPeek :: (HasCallStack, MonadCatch m)

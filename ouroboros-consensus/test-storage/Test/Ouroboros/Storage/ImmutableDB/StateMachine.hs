@@ -174,7 +174,7 @@ data Success it
   | EpochNo          EpochNo
   | Iter             (Either (WrongBoundError Hash) it)
   | IterResult       (IteratorResult Hash ByteString)
-  | IterHasNext      Bool
+  | IterHasNext      (Maybe (Either EpochNo SlotNo, Hash))
   | Tip              (ImmTipWithHash Hash)
   deriving (Eq, Show, Functor, Foldable, Traversable)
 

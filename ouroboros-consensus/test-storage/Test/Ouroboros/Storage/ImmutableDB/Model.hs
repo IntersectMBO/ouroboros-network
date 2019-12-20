@@ -764,12 +764,13 @@ iteratorPeekModel itID = do
 
 iteratorHasNextModel :: MonadState (DBModel hash) m
                      => IteratorID
-                     -> m Bool
+                     -> m (Maybe (Either EpochNo SlotNo, hash))
 iteratorHasNextModel itID = do
     next <- iteratorPeekModel itID
     return $ case next of
-      IteratorExhausted -> False
-      _                 -> True
+      IteratorExhausted           -> Nothing
+      IteratorEBB    epoch hash _ -> Just (Left epoch, hash)
+      IteratorResult slot  hash _ -> Just (Right slot, hash)
 
 iteratorCloseModel :: MonadState (DBModel hash) m
                    => IteratorID -> m ()
