@@ -12,17 +12,15 @@ import           Test.Tasty.QuickCheck
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Protocol
-import           Ouroboros.Consensus.Util.Random
 
 import           Test.Dynamic.General
-import           Test.Dynamic.Network (MaybeForgeEBB (..))
 import           Test.Dynamic.Util
 
 import           Test.Util.Orphans.Arbitrary ()
 
 tests :: TestTree
-tests = testGroup "Dynamic chain generation" [
-      testProperty "simple PBFT convergence" $
+tests = testGroup "PBFT" [
+      testProperty "simple convergence" $
         prop_simple_pbft_convergence k
     ]
   where
@@ -30,10 +28,9 @@ tests = testGroup "Dynamic chain generation" [
 
 prop_simple_pbft_convergence :: SecurityParam
                              -> TestConfig
-                             -> Seed
                              -> Property
 prop_simple_pbft_convergence
-  k testConfig@TestConfig{numCoreNodes, numSlots} seed =
+  k testConfig@TestConfig{numCoreNodes, numSlots} =
     prop_general k
         testConfig
         (Just $ roundRobinLeaderSchedule numCoreNodes numSlots)
@@ -45,6 +42,8 @@ prop_simple_pbft_convergence
     params = PBftParams k (fromIntegral nn) sigThd (slotLengthFromSec 20)
 
     testOutput =
-        runTestNetwork
-            (\nid -> protocolInfo (ProtocolMockPBFT numCoreNodes nid params))
-            testConfig NothingForgeEBB seed
+        runTestNetwork testConfig TestConfigBlock
+            { forgeEBB = Nothing
+            , nodeInfo = \nid -> protocolInfo $
+                ProtocolMockPBFT numCoreNodes nid params
+            }

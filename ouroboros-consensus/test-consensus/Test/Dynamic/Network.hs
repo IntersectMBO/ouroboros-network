@@ -16,7 +16,8 @@
 -- | Setup network
 module Test.Dynamic.Network (
     runNodeNetwork
-  , MaybeForgeEBB (..)
+  , ForgeEBB
+  , NodeNetworkArgs (..)
   , TracingConstraints
     -- * Tracers
   , MiniProtocolExpectedException (..)
@@ -107,13 +108,27 @@ import qualified Test.Util.FS.Sim.MockFS as Mock
 import           Test.Util.FS.Sim.STM (simHasFS)
 import           Test.Util.Tracer
 
-data MaybeForgeEBB blk
-  = NothingForgeEBB
-    -- ^ Do not forge EBBs during this test
-  | JustForgeEBB !(NodeConfig (BlockProtocol blk) ->
-                   SlotNo -> BlockNo -> ChainHash blk -> blk)
-    -- ^ Forge EBBs during this test using this function @(slot, block no,
-    -- prevHash)@
+-- | How to forge an EBB
+--
+type ForgeEBB blk =
+     NodeConfig (BlockProtocol blk)
+  -> SlotNo   -- ^ EBB slot
+  -> BlockNo   -- ^ EBB block number (i.e. that of its predecessor)
+  -> ChainHash blk   -- ^ EBB predecessor's hash
+  -> blk
+
+-- | Parameters for the test node net
+--
+data NodeNetworkArgs blk = NodeNetworkArgs
+  { nnaForgeEBB       :: Maybe (ForgeEBB blk)
+  , nnaJoinPlan       :: NodeJoinPlan
+  , nnaNodeInfo       :: CoreNodeId -> ProtocolInfo blk
+  , nnaNumCoreNodes   :: NumCoreNodes
+  , nnaNumSlots       :: NumSlots
+  , nnaRNG            :: ChaChaDRG
+  , nnaSlotLengths    :: SlotLengths
+  , nnaTopology       :: NodeTopology
+  }
 
 -- | Setup a network of core nodes, where each joins according to the node join
 -- plan and is interconnected according to the node topology
@@ -127,17 +142,17 @@ runNodeNetwork :: forall m blk.
                     , TracingConstraints blk
                     , HasCallStack
                     )
-                 => NumCoreNodes
-                 -> NumSlots
-                 -> SlotLengths
-                 -> NodeJoinPlan
-                 -> NodeTopology
-                 -> MaybeForgeEBB blk
-                 -> (CoreNodeId -> ProtocolInfo blk)
-                 -> ChaChaDRG
-                 -> m (TestOutput blk)
-runNodeNetwork numCoreNodes numSlots slotLengths nodeJoinPlan nodeTopology
-  mbForgeEBB pInfo initRNG = withRegistry $ \sharedRegistry -> do
+               => NodeNetworkArgs blk -> m (TestOutput blk)
+runNodeNetwork NodeNetworkArgs
+  { nnaForgeEBB       = mbForgeEBB
+  , nnaJoinPlan       = nodeJoinPlan
+  , nnaNodeInfo       = pInfo
+  , nnaNumCoreNodes   = numCoreNodes
+  , nnaNumSlots       = numSlots
+  , nnaRNG            = initRNG
+  , nnaSlotLengths    = slotLengths
+  , nnaTopology       = nodeTopology
+  } = withRegistry $ \sharedRegistry -> do
     -- This shared registry is used for 'newTestBlockchainTime' and the
     -- network communication threads. Each node will create its own registry
     -- for its ChainDB.
@@ -280,8 +295,8 @@ runNodeNetwork numCoreNodes numSlots slotLengths nodeJoinPlan nodeTopology
           void $ blockUntilSlot btime ebbSlotNo
 
           case mbForgeEBB of
-            NothingForgeEBB       -> pure ()
-            JustForgeEBB forgeEBB -> do
+            Nothing       -> pure ()
+            Just forgeEBB -> do
               (prevSlot, ebbBlockNo, prevHash) <- atomically $ do
                 p <- ChainDB.getTipPoint chainDB
                 let mSlot = pointSlot p

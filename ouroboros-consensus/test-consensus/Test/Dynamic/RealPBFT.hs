@@ -29,7 +29,8 @@ import qualified Ouroboros.Network.MockChain.Chain as Chain
 import           Ouroboros.Consensus.Block (getHeader)
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.BlockchainTime.Mock
-import           Ouroboros.Consensus.Ledger.Byron (ByronBlock, forgeEBB)
+import           Ouroboros.Consensus.Ledger.Byron (ByronBlock)
+import qualified Ouroboros.Consensus.Ledger.Byron as Byron
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Node.ProtocolInfo.Byron (plcCoreNodeId)
 import           Ouroboros.Consensus.Node.Run.Abstract (nodeIsEBB)
@@ -50,7 +51,7 @@ import qualified Cardano.Crypto as Crypto
 import qualified Test.Cardano.Chain.Genesis.Dummy as Dummy
 
 import           Test.Dynamic.General
-import           Test.Dynamic.Network (MaybeForgeEBB (..), NodeOutput (..))
+import           Test.Dynamic.Network (NodeOutput (..))
 import qualified Test.Dynamic.Ref.RealPBFT as Ref
 import           Test.Dynamic.Util
 import           Test.Dynamic.Util.NodeJoinPlan
@@ -60,12 +61,12 @@ import           Test.Util.Orphans.Arbitrary ()
 import           Test.Util.Shrink (andId, dropId)
 
 tests :: TestTree
-tests = testGroup "Dynamic chain generation" $
+tests = testGroup "RealPBFT" $
     [ testProperty "trivial join plan is considered deterministic" $
           prop_deterministicPlan
     , localOption (QuickCheckTests 10) $   -- each takes about 0.5 seconds!
-      testProperty "check Real PBFT setup" $
-        \numCoreNodes ->
+      testProperty "check setup"
+        $ \numCoreNodes ->
           forAll (elements (enumCoreNodes numCoreNodes)) $ \coreNodeId ->
           prop_setup_coreNodeId numCoreNodes coreNodeId
     , adjustOption (\(QuickCheckTests n) -> QuickCheckTests (1 `max` (div n 10))) $
@@ -75,55 +76,54 @@ tests = testGroup "Dynamic chain generation" $
       -- See a related discussion at
       -- https://github.com/input-output-hk/ouroboros-network/pull/773#issuecomment-522192097
       testProperty "addressed by InvalidRollForward exception (PR #773)" $
-          let ncn = NumCoreNodes 3
-          in
+          once $
+          let ncn = NumCoreNodes 3 in
           prop_simple_real_pbft_convergence (SecurityParam 10) TestConfig
             { numCoreNodes = ncn
-            , numSlots = NumSlots 24
-            , nodeJoinPlan = NodeJoinPlan $ Map.fromList
-              [ (CoreNodeId 0,SlotNo 0)
-              , (CoreNodeId 1,SlotNo 20)
-              , (CoreNodeId 2,SlotNo 22)
-              ]
+            , numSlots     = NumSlots 24
+            , nodeJoinPlan = NodeJoinPlan $ Map.fromList [(CoreNodeId 0,SlotNo 0), (CoreNodeId 1,SlotNo 20), (CoreNodeId 2,SlotNo 22)]
             , nodeTopology = meshNodeTopology ncn
             , slotLengths = defaultSlotLengths
+            , initSeed     = Seed (15069526818753326002, 9758937467355895013, 16548925776947010688, 13173070736975126721, 13719483751339084974)
             }
     , testProperty "rewind to EBB supported as of Issue #1312, #1" $
-      once $
-      let ncn = NumCoreNodes 2 in
-      -- When node 1 joins in slot 1, it leads with an empty chain and so
-      -- forges the 0-EBB again. This causes it to report slot 0 as the found
-      -- intersection point to node 0, which causes node 0 to \"rewind\" to
-      -- slot 0 (even though it's already there). That rewind fails if EBBs
-      -- don't affect the PBFT chain state, since its chain state is empty.
-      prop_simple_real_pbft_convergence
-        (SecurityParam 10)
-        TestConfig { numCoreNodes = ncn
-                   , numSlots     = NumSlots 2
-                   , nodeJoinPlan = NodeJoinPlan (Map.fromList [(CoreNodeId 0,SlotNo 0),(CoreNodeId 1,SlotNo 1)])
-                   , nodeTopology = meshNodeTopology ncn
-                   , slotLengths  = defaultSlotLengths
-                   }
-        Seed {getSeed = (15069526818753326002,9758937467355895013,16548925776947010688,13173070736975126721,13719483751339084974)}
+          once $
+          let ncn = NumCoreNodes 2 in
+          -- When node 1 joins in slot 1, it leads with an empty chain and so
+          -- forges the 0-EBB again. This causes it to report slot 0 as the
+          -- found intersection point to node 0, which causes node 0 to
+          -- \"rewind\" to slot 0 (even though it's already there). That rewind
+          -- fails if EBBs don't affect the PBFT chain state, since its chain
+          -- state is empty.
+          prop_simple_real_pbft_convergence (SecurityParam 10) TestConfig
+            { numCoreNodes = ncn
+            , numSlots     = NumSlots 2
+            , nodeJoinPlan = NodeJoinPlan (Map.fromList [(CoreNodeId 0,SlotNo 0),(CoreNodeId 1,SlotNo 1)])
+            , nodeTopology = meshNodeTopology ncn
+            , slotLengths  = defaultSlotLengths
+            , initSeed     = Seed (15069526818753326002, 9758937467355895013, 16548925776947010688, 13173070736975126721, 13719483751339084974)
+            }
     , testProperty "rewind to EBB supported as of Issue #1312, #2" $
-      once $
-      let ncn = NumCoreNodes 2 in
-      -- Same as above, except node 0 gets to forge an actual block before node
-      -- 1 tells it to rewind to the EBB.
-      prop_simple_real_pbft_convergence
-        (SecurityParam 10)
-        TestConfig { numCoreNodes = ncn
-                   , numSlots     = NumSlots 4
-                   , nodeJoinPlan = NodeJoinPlan (Map.fromList [(CoreNodeId 0,SlotNo {unSlotNo = 0}),(CoreNodeId 1,SlotNo {unSlotNo = 3})])
-                   , nodeTopology = meshNodeTopology ncn
-                   , slotLengths  = defaultSlotLengths
-                   }
-        Seed {getSeed = (16817746570690588019,3284322327197424879,14951803542883145318,5227823917971823767,14093715642382269482)}
-    , testProperty "simple Real PBFT convergence" $
-        forAll (SecurityParam <$> elements [5, 10]) $ \k ->
-        forAllShrink (genRealPBFTTestConfig k) shrinkRealPBFTTestConfig $ \testConfig ->
-        forAll arbitrary $ \seed ->
-        prop_simple_real_pbft_convergence k testConfig seed
+          once $
+          let ncn = NumCoreNodes 2 in
+          -- Same as above, except node 0 gets to forge an actual block before
+          -- node 1 tells it to rewind to the EBB.
+          prop_simple_real_pbft_convergence (SecurityParam 10) TestConfig
+            { numCoreNodes = ncn
+            , numSlots     = NumSlots 4
+            , nodeJoinPlan = NodeJoinPlan (Map.fromList [(CoreNodeId 0,SlotNo {unSlotNo = 0}),(CoreNodeId 1,SlotNo {unSlotNo = 3})])
+            , nodeTopology = meshNodeTopology ncn
+            , slotLengths  = defaultSlotLengths
+            , initSeed     = Seed (16817746570690588019, 3284322327197424879, 14951803542883145318, 5227823917971823767, 14093715642382269482)
+            }
+    , testProperty "simple convergence" $
+          forAll (SecurityParam <$> elements [5, 10])
+            $ \k ->
+          forAllShrink
+              (genRealPBFTTestConfig k)
+              shrinkRealPBFTTestConfig
+            $ \testConfig ->
+          prop_simple_real_pbft_convergence k testConfig
     ]
   where
     defaultSlotLengths :: SlotLengths
@@ -156,23 +156,22 @@ prop_setup_coreNodeId numCoreNodes coreNodeId =
 
 prop_simple_real_pbft_convergence :: SecurityParam
                                   -> TestConfig
-                                  -> Seed
                                   -> Property
 prop_simple_real_pbft_convergence
-  k testConfig@TestConfig{numCoreNodes, numSlots} seed =
+  k testConfig@TestConfig{numCoreNodes, numSlots} =
     prop_general k
         testConfig
         (Just $ roundRobinLeaderSchedule numCoreNodes numSlots)
-        testOutput
-    .&&. not (all Chain.null finalChains)
-    .&&. conjoin (map (hasAllEBBs k numSlots) finalChains)
+        testOutput .&&.
+    not (all Chain.null finalChains) .&&.
+    conjoin (map (hasAllEBBs k numSlots) finalChains)
   where
     testOutput =
-        runTestNetwork
-            (\nid -> protocolInfo
-                       (mkProtocolRealPBFT params nid
-                                           genesisConfig genesisSecrets))
-            testConfig (JustForgeEBB forgeEBB) seed
+        runTestNetwork testConfig TestConfigBlock
+            { forgeEBB = Just Byron.forgeEBB
+            , nodeInfo = \nid -> protocolInfo $
+                mkProtocolRealPBFT params nid genesisConfig genesisSecrets
+            }
 
     finalChains :: [Chain ByronBlock]
     finalChains = Map.elems $ nodeOutputFinalChain <$> testOutputNodes testOutput
@@ -386,12 +385,15 @@ genRealPBFTTestConfig k = do
     nodeJoinPlan <- genRealPBFTNodeJoinPlan params numSlots
     nodeTopology <- genNodeTopology numCoreNodes
 
+    initSeed <- arbitrary
+
     pure TestConfig
       { nodeJoinPlan
       , nodeTopology
       , numCoreNodes
       , numSlots
       , slotLengths = singletonSlotLengths (pbftSlotLength params)
+      , initSeed
       }
 
 shrinkRealPBFTTestConfig :: TestConfig -> [TestConfig]
@@ -411,6 +413,7 @@ shrinkTestConfigSlotsOnly TestConfig
   , nodeJoinPlan
   , nodeTopology
   , slotLengths
+  , initSeed
   } =
     dropId $
     [ TestConfig
@@ -419,6 +422,7 @@ shrinkTestConfigSlotsOnly TestConfig
         , numCoreNodes
         , numSlots     = t'
         , slotLengths  = ls'
+        , initSeed
         }
     | t'            <- andId shrink numSlots
     , let adjustedP  = truncateNodeJoinPlan nodeJoinPlan numCoreNodes (numSlots, t')
