@@ -302,7 +302,7 @@ load hasFS err epoch =
 -- > primaryIndex === primaryIndex'
 --
 write
-  :: MonadThrow m
+  :: (HasCallStack, MonadThrow m)
   => HasFS m h
   -> EpochNo
   -> PrimaryIndex
@@ -333,7 +333,7 @@ truncateToSlot slot primary@(MkPrimaryIndex offsets)
 -- | On-disk variant of 'truncateToSlot'. The truncation is done without
 -- reading the primary index from disk.
 truncateToSlotFS
-  :: MonadThrow m
+  :: (HasCallStack, MonadThrow m)
   => HasFS m h
   -> EpochNo
   -> RelativeSlot
@@ -353,7 +353,7 @@ truncateToSlotFS hasFS@HasFS { hTruncate, hGetSize } epoch (RelativeSlot slot) =
 -- POSTCONDITION: the last slot of the primary index file will be filled,
 -- unless the index itself is empty.
 unfinalise
-  :: MonadThrow m
+  :: (HasCallStack, MonadThrow m)
   => HasFS m h
   -> ErrorHandling ImmutableDBError m
   -> EpochNo
@@ -394,7 +394,7 @@ open hasFS@HasFS { hOpen, hClose, hasFsErr } epoch allowExisting = do
 -- | Append the given 'SecondaryOffset' to the end of the file (passed as a
 -- handle).
 appendOffsets
-  :: (Monad m, Foldable f)
+  :: (Monad m, Foldable f, HasCallStack)
   => HasFS m h
   -> Handle h
   -> f SecondaryOffset
