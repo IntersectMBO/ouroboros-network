@@ -81,6 +81,8 @@ import           Ouroboros.Storage.FS.API.Types (FsError (..), FsPath)
 import           Ouroboros.Storage.ImmutableDB hiding (BlockOrEBB (..))
 import qualified Ouroboros.Storage.ImmutableDB as ImmDB
 import qualified Ouroboros.Storage.ImmutableDB.Impl as ImmDB (Internal (..))
+import qualified Ouroboros.Storage.ImmutableDB.Impl.Index as Index
+                     (CacheConfig (..))
 import           Ouroboros.Storage.ImmutableDB.Impl.Util (renderFile, tryImmDB)
 import           Ouroboros.Storage.ImmutableDB.Layout
 import           Ouroboros.Storage.ImmutableDB.Parser (epochFileParser)
@@ -1256,8 +1258,8 @@ showLabelledExamples :: IO ()
 showLabelledExamples = showLabelledExamples' Nothing 1000 (const True) $
     sm (error "errorsVar unused") hasFsUnused dbUnused internalUnused
 
-prop_sequential :: Property
-prop_sequential = forAllCommands smUnused Nothing $ \cmds -> QC.monadicIO $ do
+prop_sequential :: Index.CacheConfig -> Property
+prop_sequential cacheConfig = forAllCommands smUnused Nothing $ \cmds -> QC.monadicIO $ do
     let test :: StrictTVar IO Mock.MockFS
              -> StrictTVar IO Errors
              -> HasFS IO h
@@ -1272,7 +1274,7 @@ prop_sequential = forAllCommands smUnused Nothing $ \cmds -> QC.monadicIO $ do
           registry <- QC.run unsafeNewRegistry
           (db, internal) <- QC.run $ openDBInternal registry hasFS
             EH.monadCatch (fixedSizeEpochInfo fixedEpochSize) testHashInfo
-            ValidateMostRecentEpoch parser tracer
+            ValidateMostRecentEpoch parser tracer cacheConfig
           let sm' = sm errorsVar hasFS db internal dbm mdb minternal
           (hist, model, res) <- runCommands sm' cmds
           trace <- QC.run getTrace
@@ -1332,3 +1334,15 @@ internalUnused = error "semantics and internal DB API used during command genera
 
 hasFsUnused :: HasFS m h
 hasFsUnused = error "HasFS only used during execution"
+
+instance Arbitrary Index.CacheConfig where
+  arbitrary = do
+    pastEpochsToCache <- frequency
+      -- Pick small values so that we exercise cache eviction
+      [ (1, return 1)
+      , (1, return 2)
+      , (1, choose (3, 10))
+      ]
+    -- TODO create a Cmd that advances time, so this is being exercised too.
+    expireUnusedAfter <- (fromIntegral :: Int -> DiffTime) <$> choose (1, 100)
+    return Index.CacheConfig {..}

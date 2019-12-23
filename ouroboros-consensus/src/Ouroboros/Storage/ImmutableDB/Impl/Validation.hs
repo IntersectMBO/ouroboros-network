@@ -16,7 +16,7 @@ module Ouroboros.Storage.ImmutableDB.Impl.Validation
 import           Control.Exception (assert)
 import           Control.Monad (unless, when)
 import           Control.Monad.Except (ExceptT, lift, runExceptT, throwError)
-import           Control.Tracer (Tracer, traceWith)
+import           Control.Tracer (Tracer, contramap, traceWith)
 import           Data.Coerce (coerce)
 import           Data.Functor (($>))
 import           Data.Maybe (fromMaybe)
@@ -40,7 +40,8 @@ import           Ouroboros.Storage.Util.ErrorHandling (ErrorHandling)
 import qualified Ouroboros.Storage.Util.ErrorHandling as EH
 
 import           Ouroboros.Storage.ImmutableDB.API
-import           Ouroboros.Storage.ImmutableDB.Impl.Index (fileBackedIndex)
+import           Ouroboros.Storage.ImmutableDB.Impl.Index (cachedIndex)
+import qualified Ouroboros.Storage.ImmutableDB.Impl.Index as Index
 import           Ouroboros.Storage.ImmutableDB.Impl.Index.Primary (PrimaryIndex,
                      SecondaryOffset)
 import qualified Ouroboros.Storage.ImmutableDB.Impl.Index.Primary as Primary
@@ -55,13 +56,14 @@ import           Ouroboros.Storage.ImmutableDB.Layout
 -- we are reading and manipulating index files in different ways, e.g.,
 -- truncating them.
 data ValidateEnv m hash h e = ValidateEnv
-  { hasFS     :: !(HasFS m h)
-  , err       :: !(ErrorHandling ImmutableDBError m)
-  , epochInfo :: !(EpochInfo m)
-  , hashInfo  :: !(HashInfo hash)
-  , parser    :: !(EpochFileParser e m (Secondary.Entry hash) hash)
-  , tracer    :: !(Tracer m (TraceEvent e hash))
-  , registry  :: !(ResourceRegistry m)
+  { hasFS       :: !(HasFS m h)
+  , err         :: !(ErrorHandling ImmutableDBError m)
+  , epochInfo   :: !(EpochInfo m)
+  , hashInfo    :: !(HashInfo hash)
+  , parser      :: !(EpochFileParser e m (Secondary.Entry hash) hash)
+  , tracer      :: !(Tracer m (TraceEvent e hash))
+  , registry    :: !(ResourceRegistry m)
+  , cacheConfig :: !Index.CacheConfig
   }
 
 -- | Perform validation as per the 'ValidationPolicy' using 'validate' and
@@ -74,6 +76,7 @@ validateAndReopen
   -> m (OpenState m hash h)
 validateAndReopen validateEnv valPol nextIteratorID = do
     (epoch, tip) <- validate validateEnv valPol
+    index        <- cachedIndex hasFS err hashInfo registry cacheTracer cacheConfig epoch
     case tip of
       TipGen -> assert (epoch == 0) $ do
         traceWith tracer NoValidLastLocation
@@ -82,8 +85,8 @@ validateAndReopen validateEnv valPol nextIteratorID = do
         traceWith tracer $ ValidatedLastLocation epoch (forgetHash <$> tip)
         mkOpenState registry hasFS err index epoch nextIteratorID tip    AllowExisting
   where
-    ValidateEnv { hasFS, err, hashInfo, tracer } = validateEnv
-    index = fileBackedIndex hasFS err hashInfo
+    ValidateEnv { hasFS, err, hashInfo, tracer, registry, cacheConfig } = validateEnv
+    cacheTracer = contramap TraceCacheEvent tracer
 
 -- | Execute the 'ValidationPolicy'.
 validate

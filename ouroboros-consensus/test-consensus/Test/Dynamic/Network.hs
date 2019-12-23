@@ -88,6 +88,7 @@ import qualified Ouroboros.Storage.ChainDB as ChainDB
 import           Ouroboros.Storage.ChainDB.Impl (ChainDbArgs (..))
 import           Ouroboros.Storage.EpochInfo (EpochInfo, newEpochInfo)
 import qualified Ouroboros.Storage.ImmutableDB as ImmDB
+import qualified Ouroboros.Storage.ImmutableDB.Impl.Index as Index
 import qualified Ouroboros.Storage.LedgerDB.DiskPolicy as LgrDB
 import qualified Ouroboros.Storage.LedgerDB.InMemory as LgrDB
 import qualified Ouroboros.Storage.Util.ErrorHandling as EH
@@ -276,6 +277,7 @@ runNodeNetwork registry testBtime numCoreNodes nodeJoinPlan nodeTopology
         , cdbGenesis          = return initLedger
         , cdbBlockchainTime   = btime
         , cdbAddHdrEnv        = nodeAddHeaderEnvelope (Proxy @blk)
+        , cdbImmDbCacheConfig = Index.CacheConfig 2 60
         -- Misc
         , cdbTracer           = Tracer $ \case
               ChainDB.TraceAddBlockEvent

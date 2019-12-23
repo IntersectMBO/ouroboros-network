@@ -52,6 +52,7 @@ module Ouroboros.Storage.ChainDB.Impl.ImmDB (
   , ImmDB.ImmutableDBError
   , ImmDB.BinaryInfo (..)
   , ImmDB.HashInfo (..)
+  , Index.CacheConfig (..)
     -- * Exported for testing purposes
   , openDB
   , mkImmDB
@@ -101,6 +102,8 @@ import           Ouroboros.Storage.ImmutableDB (BinaryInfo (..), HashInfo (..),
                      ImmutableDB, Iterator (Iterator), IteratorResult (..),
                      WithHash (..))
 import qualified Ouroboros.Storage.ImmutableDB as ImmDB
+import qualified Ouroboros.Storage.ImmutableDB.Impl.Index as Index
+                     (CacheConfig (..))
 import qualified Ouroboros.Storage.ImmutableDB.Parser as ImmDB
 import           Ouroboros.Storage.Util.ErrorHandling (ErrorHandling)
 import qualified Ouroboros.Storage.Util.ErrorHandling as EH
@@ -160,6 +163,7 @@ data ImmDbArgs m blk = forall h. ImmDbArgs {
     , immAddHdrEnv      :: IsEBB -> Lazy.ByteString -> Lazy.ByteString
     , immHasFS          :: HasFS m h
     , immTracer         :: Tracer m (TraceEvent blk)
+    , immCacheConfig    :: Index.CacheConfig
     }
 
 -- | Default arguments when using the 'IO' monad
@@ -181,6 +185,7 @@ defaultArgs :: FilePath -> ImmDbArgs IO blk
 defaultArgs fp = ImmDbArgs{
       immErr          = EH.exceptions
     , immHasFS        = ioHasFS $ MountPoint (fp </> "immutable")
+    , immCacheConfig  = cacheConfig
       -- Fields without a default
     , immDecodeHash     = error "no default for immDecodeHash"
     , immDecodeBlock    = error "no default for immDecodeBlock"
@@ -195,6 +200,18 @@ defaultArgs fp = ImmDbArgs{
     , immAddHdrEnv      = error "no default for immAddHdrEnv"
     , immTracer         = nullTracer
     }
+  where
+    -- Cache 250 past epochs by default. This will take roughly 250 MB of RAM.
+    -- At the time of writing (1/2020), there are 166 epochs, so even one year
+    -- from now, we will be able to cache all epochs' indices in the chain.
+    --
+    -- If this number were too low, i.e., less than the number of epochs that
+    -- that clients are requesting blocks from, we would constantly evict and
+    -- reparse indices, causing a much higher CPU load.
+    cacheConfig = Index.CacheConfig
+      { pastEpochsToCache = 250
+      , expireUnusedAfter = 5 * 60 -- Expire after 1 minute
+      }
 
 withImmDB :: (IOLike m, HasHeader blk)
           => ImmDbArgs m blk -> (ImmDB m blk -> m a) -> m a
@@ -217,6 +234,7 @@ openDB registry ImmDbArgs{..} = do
       immValidation
       parser
       immTracer
+      immCacheConfig
     return ImmDB
       { immDB     = immDB
       , decHeader = immDecodeHeader

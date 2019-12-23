@@ -144,6 +144,7 @@ library
                        Ouroboros.Storage.ImmutableDB.API
                        Ouroboros.Storage.ImmutableDB.Impl
                        Ouroboros.Storage.ImmutableDB.Impl.Index
+                       Ouroboros.Storage.ImmutableDB.Impl.Index.Cache
                        Ouroboros.Storage.ImmutableDB.Impl.Index.Primary
                        Ouroboros.Storage.ImmutableDB.Impl.Index.Secondary
                        Ouroboros.Storage.ImmutableDB.Impl.Iterator
@@ -236,6 +237,7 @@ library
                        mmorph            >=1.1   && <1.2,
                        mtl               >=2.2   && <2.3,
                        network,
+                       psqueues          >=0.2.3 && <0.3,
                        serialise         >=0.2   && <0.3,
                        stm,
                        streaming,

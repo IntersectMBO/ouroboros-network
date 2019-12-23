@@ -80,6 +80,7 @@ withImmDB k = do
       , immCheckIntegrity = nodeCheckIntegrity testCfg
       , immAddHdrEnv      = nodeAddHeaderEnvelope (Proxy @ByronBlock)
       , immTracer         = nullTracer
+      , immCacheConfig    = ImmDB.CacheConfig 2 60
       }
 
 testCfg :: NodeConfig (BlockProtocol ByronBlock)

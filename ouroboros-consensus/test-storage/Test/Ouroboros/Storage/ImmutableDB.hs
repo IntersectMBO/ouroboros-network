@@ -26,6 +26,7 @@ import           Ouroboros.Storage.FS.API.Types
 import           Ouroboros.Storage.Util.ErrorHandling (ErrorHandling)
 
 import           Ouroboros.Storage.ImmutableDB
+import qualified Ouroboros.Storage.ImmutableDB.Impl.Index as Index
 import           Ouroboros.Storage.ImmutableDB.Impl.Index.Primary (PrimaryIndex)
 import qualified Ouroboros.Storage.ImmutableDB.Impl.Index.Primary as Primary
 import           Ouroboros.Storage.ImmutableDB.Impl.Validation
@@ -74,6 +75,7 @@ openTestDB registry hasFS err = fst <$> openDBInternal
     ValidateMostRecentEpoch
     parser
     nullTracer
+    (Index.CacheConfig 2 60)
   where
     parser = epochFileParser hasFS (const <$> S.decode) isEBB getBinaryInfo
       testBlockIsValid

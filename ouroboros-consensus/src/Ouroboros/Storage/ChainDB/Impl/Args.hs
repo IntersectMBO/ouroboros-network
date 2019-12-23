@@ -97,6 +97,7 @@ data ChainDbArgs m blk = forall h1 h2 h3. ChainDbArgs {
       -- ^ The header envelope will only be added after extracting the binary
       -- header from the binary block. Note that we never have to remove an
       -- envelope.
+    , cdbImmDbCacheConfig :: ImmDB.CacheConfig
 
       -- Misc
     , cdbTracer           :: Tracer m (TraceEvent blk)
@@ -171,6 +172,7 @@ fromChainDbArgs ChainDbArgs{..} = (
         , immHasFS            = cdbHasFSImmDb
         , immTracer           = contramap TraceImmDBEvent cdbTracer
         , immAddHdrEnv        = cdbAddHdrEnv
+        , immCacheConfig      = cdbImmDbCacheConfig
         }
     , VolDB.VolDbArgs {
           volHasFS            = cdbHasFSVolDb
@@ -256,6 +258,7 @@ toChainDbArgs ImmDB.ImmDbArgs{..}
     , cdbGenesis          = lgrGenesis
     , cdbBlockchainTime   = cdbsBlockchainTime
     , cdbAddHdrEnv        = immAddHdrEnv
+    , cdbImmDbCacheConfig = immCacheConfig
       -- Misc
     , cdbTracer           = cdbsTracer
     , cdbTraceLedger      = lgrTraceLedger

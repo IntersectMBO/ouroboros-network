@@ -11,8 +11,12 @@ module Ouroboros.Storage.ImmutableDB.Impl.Index
   , readEntry
     -- * File-backed index
   , fileBackedIndex
+    -- * Cached index
+  , cachedIndex
+  , CacheConfig (..)
   ) where
 
+import           Control.Tracer (Tracer)
 import           Data.Functor.Identity (Identity (..))
 import           Data.Word (Word64)
 import           GHC.Stack (HasCallStack)
@@ -22,12 +26,17 @@ import           Control.Monad.Class.MonadThrow
 import           Cardano.Prelude (NoUnexpectedThunks (..), OnlyCheckIsWHNF (..))
 
 import           Ouroboros.Consensus.Block (IsEBB)
+import           Ouroboros.Consensus.Util.IOLike
+import           Ouroboros.Consensus.Util.ResourceRegistry
 
 import           Ouroboros.Storage.Common (EpochNo)
 import           Ouroboros.Storage.FS.API (HasFS)
 import           Ouroboros.Storage.FS.API.Types (AllowExisting, Handle)
 import           Ouroboros.Storage.Util.ErrorHandling (ErrorHandling)
 
+import           Ouroboros.Storage.ImmutableDB.Impl.Index.Cache
+                     (CacheConfig (..))
+import qualified Ouroboros.Storage.ImmutableDB.Impl.Index.Cache as Cache
 import           Ouroboros.Storage.ImmutableDB.Impl.Index.Primary
                      (SecondaryOffset)
 import qualified Ouroboros.Storage.ImmutableDB.Impl.Index.Primary as Primary
@@ -35,7 +44,7 @@ import           Ouroboros.Storage.ImmutableDB.Impl.Index.Secondary (BlockSize)
 import qualified Ouroboros.Storage.ImmutableDB.Impl.Index.Secondary as Secondary
 import           Ouroboros.Storage.ImmutableDB.Layout (RelativeSlot)
 import           Ouroboros.Storage.ImmutableDB.Types (HashInfo,
-                     ImmutableDBError, WithBlockSize (..))
+                     ImmutableDBError, TraceCacheEvent, WithBlockSize (..))
 
 {------------------------------------------------------------------------------
   Index
@@ -152,3 +161,35 @@ fileBackedIndex hasFS err hashInfo = Index
       -- Nothing to reset, as nothing is cached
     , reset              = \_newCurEpoch -> return ()
     }
+
+{------------------------------------------------------------------------------
+  Cached index
+------------------------------------------------------------------------------}
+
+-- | Caches the current epoch's indices as well as a number of past epochs'
+-- indices.
+--
+-- Spawns a background thread to expire past epochs from the cache that
+-- haven't been used for a while.
+cachedIndex
+  :: forall m hash h. (IOLike m, NoUnexpectedThunks hash)
+  => HasFS m h
+  -> ErrorHandling ImmutableDBError m
+  -> HashInfo hash
+  -> ResourceRegistry m
+  -> Tracer m TraceCacheEvent
+  -> CacheConfig
+  -> EpochNo  -- ^ Current epoch
+  -> m (Index m hash h)
+cachedIndex hasFS err hashInfo registry tracer cacheConfig epoch = do
+    cacheEnv <- Cache.newEnv hasFS err hashInfo registry tracer cacheConfig epoch
+    return Index
+      { readOffsets         = Cache.readOffsets         cacheEnv
+      , readFirstFilledSlot = Cache.readFirstFilledSlot cacheEnv
+      , openPrimaryIndex    = Cache.openPrimaryIndex    cacheEnv
+      , appendOffsets       = Cache.appendOffsets       cacheEnv
+      , readEntries         = Cache.readEntries         cacheEnv
+      , readAllEntries      = Cache.readAllEntries      cacheEnv
+      , appendEntry         = Cache.appendEntry         cacheEnv
+      , reset               = Cache.reset               cacheEnv
+      }

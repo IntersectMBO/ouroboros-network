@@ -67,6 +67,7 @@ data ImmutableDBEnv m hash = forall h e. ImmutableDBEnv
     , _dbHashInfo        :: !(HashInfo hash)
     , _dbTracer          :: !(Tracer m (TraceEvent e hash))
     , _dbRegistry        :: !(ResourceRegistry m)
+    , _dbCacheConfig     :: !Index.CacheConfig
     }
 
 data InternalState m hash h =

@@ -42,6 +42,7 @@ import           Ouroboros.Storage.Common (EpochSize (..))
 import           Ouroboros.Storage.EpochInfo (fixedSizeEpochInfo)
 import           Ouroboros.Storage.ImmutableDB (BinaryInfo (..), HashInfo (..),
                      ValidationPolicy (ValidateAllEpochs))
+import qualified Ouroboros.Storage.ImmutableDB.Impl.Index as Index
 import           Ouroboros.Storage.LedgerDB.DiskPolicy (defaultDiskPolicy)
 import           Ouroboros.Storage.LedgerDB.InMemory (ledgerDbDefaultParams)
 import qualified Ouroboros.Storage.Util.ErrorHandling as EH
@@ -273,6 +274,7 @@ mkArgs cfg initLedger tracer registry hashInfo
     , cdbBlockchainTime   = fixedBlockchainTime maxBound
     , cdbGenesis          = return initLedger
     , cdbAddHdrEnv        = const id
+    , cdbImmDbCacheConfig = Index.CacheConfig 2 60
 
     -- Misc
     , cdbTracer           = tracer

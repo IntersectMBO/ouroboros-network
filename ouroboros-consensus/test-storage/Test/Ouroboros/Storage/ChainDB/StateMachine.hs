@@ -87,6 +87,7 @@ import           Ouroboros.Storage.EpochInfo (fixedSizeEpochInfo)
 import           Ouroboros.Storage.ImmutableDB
                      (ValidationPolicy (ValidateAllEpochs))
 import qualified Ouroboros.Storage.ImmutableDB as ImmDB
+import qualified Ouroboros.Storage.ImmutableDB.Impl.Index as Index
 import           Ouroboros.Storage.LedgerDB.DiskPolicy (defaultDiskPolicy)
 import           Ouroboros.Storage.LedgerDB.InMemory (ledgerDbDefaultParams)
 import qualified Ouroboros.Storage.LedgerDB.OnDisk as LedgerDB
@@ -1371,6 +1372,7 @@ mkArgs cfg initLedger tracer registry varCurSlot
     , cdbGenesis          = return initLedger
     , cdbBlockchainTime   = settableBlockchainTime varCurSlot
     , cdbAddHdrEnv        = const id
+    , cdbImmDbCacheConfig = Index.CacheConfig 2 60
 
     -- Misc
     , cdbTracer           = tracer

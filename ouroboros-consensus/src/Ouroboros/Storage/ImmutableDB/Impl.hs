@@ -174,13 +174,15 @@ withDB
   -> ValidationPolicy
   -> EpochFileParser e m (Secondary.Entry hash) hash
   -> Tracer m (TraceEvent e hash)
+  -> Index.CacheConfig
   -> (ImmutableDB hash m -> m a)
   -> m a
-withDB hasFS err epochInfo hashInfo valPol parser tracer k =
+withDB hasFS err epochInfo hashInfo valPol parser tracer cacheConfig k =
     withRegistry $ \registry -> bracket (open registry) closeDB k
   where
     open registry = fst <$>
       openDBInternal registry hasFS err epochInfo hashInfo valPol parser tracer
+        cacheConfig
 
 {------------------------------------------------------------------------------
   Exposed internals and/or extra functionality for testing purposes
@@ -242,9 +244,10 @@ openDBInternal
   -> ValidationPolicy
   -> EpochFileParser e m (Secondary.Entry hash) hash
   -> Tracer m (TraceEvent e hash)
+  -> Index.CacheConfig
   -> m (ImmutableDB hash m, Internal hash m)
 openDBInternal registry hasFS@HasFS{..} err epochInfo hashInfo valPol parser
-               tracer = do
+               tracer cacheConfig = do
     let validateEnv = ValidateEnv
           { hasFS
           , err
@@ -253,6 +256,7 @@ openDBInternal registry hasFS@HasFS{..} err epochInfo hashInfo valPol parser
           , parser
           , tracer
           , registry
+          , cacheConfig
           }
     !ost  <- validateAndReopen validateEnv valPol initialIteratorID
 
@@ -267,6 +271,7 @@ openDBInternal registry hasFS@HasFS{..} err epochInfo hashInfo valPol parser
           , _dbHashInfo        = hashInfo
           , _dbTracer          = tracer
           , _dbRegistry        = registry
+          , _dbCacheConfig     = cacheConfig
           }
         db = mkDBRecord dbEnv
         internal = Internal
@@ -318,13 +323,14 @@ reopenImpl ImmutableDBEnv {..} valPol = do
         onException hasFsErr _dbErr
           (putMVar _dbInternalState internalState) $ do
             let validateEnv = ValidateEnv
-                  { hasFS     = _dbHasFS
-                  , err       = _dbErr
-                  , epochInfo = _dbEpochInfo
-                  , hashInfo  = _dbHashInfo
-                  , parser    = _dbEpochFileParser
-                  , tracer    = _dbTracer
-                  , registry  = _dbRegistry
+                  { hasFS       = _dbHasFS
+                  , err         = _dbErr
+                  , epochInfo   = _dbEpochInfo
+                  , hashInfo    = _dbHashInfo
+                  , parser      = _dbEpochFileParser
+                  , tracer      = _dbTracer
+                  , registry    = _dbRegistry
+                  , cacheConfig = _dbCacheConfig
                   }
             ost <- validateAndReopen validateEnv valPol _closedNextIteratorID
             putMVar _dbInternalState (DbOpen ost)
@@ -354,7 +360,8 @@ deleteAfterImpl dbEnv@ImmutableDBEnv { _dbTracer } newTip =
         let (newEpoch, allowExisting) = case newTipEpochSlot of
               TipGen                  -> (0, MustBeNew)
               Tip (EpochSlot epoch _) -> (epoch, AllowExisting)
-        -- Reset the index, as it can contain stale information
+        -- Reset the index, as it can contain stale information. Also restarts
+        -- the background thread expiring unused past epochs.
         Index.reset _index newEpoch
         mkOpenState _dbRegistry hasFS _dbErr _index newEpoch _nextIteratorID
           newTipWithHash allowExisting
