@@ -387,6 +387,8 @@ iteratorNextImpl dbEnv it@IteratorHandle {itHasFS = hasFS :: HasFS m h, ..}
     ImmutableDBEnv { _dbErr, _dbEpochInfo, _dbHashInfo } = dbEnv
     HasFS { hClose } = hasFS
 
+    -- | We don't rely on the position of the handle, we always use
+    -- 'hGetExactlyAtCRC', i.e. @pread@ for reading from a given offset.
     readNextBlock
       :: Handle h
       -> WithBlockSize (Secondary.Entry hash)
@@ -556,20 +558,11 @@ iteratorStateForEpoch hasFS err hashInfo
         Nothing             -> error
           "impossible: there must be entries according to the primary index"
 
-        Just itEpochEntries -> do
-          let WithBlockSize _ nextEntry NE.:| _ = itEpochEntries
-              offset = fromIntegral $ Secondary.unBlockOffset $
-                Secondary.blockOffset nextEntry
-
-          -- Seek the handle so that we can read the first block to
-          -- stream.
-          hSeek eHnd AbsoluteSeek offset
-
-          return IteratorState
-            { itEpoch        = epoch
-            , itEpochHandle  = eHnd
-              -- Force so we don't store any thunks in the state
-            , itEpochEntries = forceElemsToWHNF itEpochEntries
-            }
+        Just itEpochEntries -> return IteratorState
+          { itEpoch        = epoch
+          , itEpochHandle  = eHnd
+            -- Force so we don't store any thunks in the state
+          , itEpochEntries = forceElemsToWHNF itEpochEntries
+          }
   where
-    HasFS { hOpen, hClose, hSeek, hGetSize, hasFsErr } = hasFS
+    HasFS { hOpen, hClose, hGetSize, hasFsErr } = hasFS
