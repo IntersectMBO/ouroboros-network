@@ -159,8 +159,15 @@ alterfDelete :: Ord blockId
              -> Maybe (Set blockId)
              -> Maybe (Set blockId)
 alterfDelete successor mSet = case mSet of
-    Nothing  -> Nothing
-    Just set -> Just $ Set.delete successor set
+    Nothing
+        -> Nothing
+    Just set
+        | Set.null set'
+        -> Nothing
+        | otherwise
+        -> Just set'
+      where
+        set' = Set.delete successor set
 
 deleteMapSet :: Ord blockId
              => SuccessorsIndex blockId
