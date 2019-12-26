@@ -42,7 +42,6 @@ import           Ouroboros.Storage.EpochInfo
 import           Ouroboros.Storage.FS.API
 import           Ouroboros.Storage.FS.API.Types
 import           Ouroboros.Storage.Util.ErrorHandling (ErrorHandling (..))
-import qualified Ouroboros.Storage.Util.ErrorHandling as EH
 
 import           Ouroboros.Storage.ImmutableDB.Impl.Index (Index)
 import qualified Ouroboros.Storage.ImmutableDB.Impl.Index as Index
@@ -120,13 +119,14 @@ data ClosedState = ClosedState
 mkOpenState
   :: forall m hash h. (HasCallStack, MonadThrow m)
   => HasFS m h
+  -> ErrorHandling ImmutableDBError m
   -> Index m hash h
   -> EpochNo
   -> BaseIteratorID
   -> ImmTipWithHash hash
   -> AllowExisting
   -> m (OpenState m hash h)
-mkOpenState HasFS{..} index epoch nextIteratorID tip existing =
+mkOpenState HasFS{..} err index epoch nextIteratorID tip existing =
     -- TODO use a ResourceRegistry for this
     closeOnException     (hOpen (renderFile "epoch" epoch)     appendMode) $ \eHnd ->
       closeOnException   (Index.openPrimaryIndex index epoch existing)     $ \pHnd ->
@@ -148,10 +148,10 @@ mkOpenState HasFS{..} index epoch nextIteratorID tip existing =
     appendMode = AppendMode existing
 
     -- | Open the handle and run a function using that handle, but if it
-    -- throws an 'FsError', close the handle.
+    -- throws an 'ImmutableDBError' or 'FsError', close the handle.
     closeOnException :: m (Handle h) -> (Handle h -> m a) -> m a
     closeOnException open k = open >>= \h ->
-      EH.onException hasFsErr (k h) (hClose h)
+      onException hasFsErr err (hClose h) (k h)
 
 -- | Get the 'OpenState' of the given database, throw a 'ClosedDBError' in
 -- case it is closed.

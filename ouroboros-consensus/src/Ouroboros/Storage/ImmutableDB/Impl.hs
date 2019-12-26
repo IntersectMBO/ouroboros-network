@@ -341,7 +341,7 @@ deleteAfterImpl dbEnv@ImmutableDBEnv { _dbTracer } newTip =
               Tip (EpochSlot epoch _) -> (epoch, AllowExisting)
         -- Reset the index, as it can contain stale information
         Index.reset _index newEpoch
-        mkOpenState hasFS _index newEpoch _nextIteratorID newTipWithHash
+        mkOpenState hasFS _dbErr _index newEpoch _nextIteratorID newTipWithHash
           allowExisting
       put ost
   where
@@ -678,7 +678,7 @@ appendEpochSlot hasFS err epochInfo index epochSlot blockOrEBB headerHash
     when (epoch > initialEpoch) $ do
       let newEpochsToStart :: Int
           newEpochsToStart = fromIntegral . unEpochNo $ epoch - initialEpoch
-      replicateM_ newEpochsToStart (startNewEpoch hasFS index epochInfo)
+      replicateM_ newEpochsToStart (startNewEpoch hasFS err index epochInfo)
 
     -- We may have updated the state with 'startNewEpoch', so get the
     -- (possibly) updated state, but first remember the current epoch
@@ -743,10 +743,11 @@ appendEpochSlot hasFS err epochInfo index epochSlot blockOrEBB headerHash
 startNewEpoch
   :: forall m h hash. (HasCallStack, IOLike m)
   => HasFS m h
+  -> ErrorHandling ImmutableDBError m
   -> Index m hash h
   -> EpochInfo m
   -> StateT (OpenState m hash h) m ()
-startNewEpoch hasFS@HasFS{..} index epochInfo = do
+startNewEpoch hasFS@HasFS{..} err index epochInfo = do
     st@OpenState {..} <- get
 
     -- Find out the size of the current epoch, so we can pad the primary
@@ -779,7 +780,7 @@ startNewEpoch hasFS@HasFS{..} index epochInfo = do
       Index.appendOffsets index _currentPrimaryHandle backfillOffsets
       `finally` closeOpenStateHandles hasFS st
 
-    st' <- lift $ mkOpenState hasFS index (succ _currentEpoch) _nextIteratorID
+    st' <- lift $ mkOpenState hasFS err index (succ _currentEpoch) _nextIteratorID
       _currentTip MustBeNew
 
     put st'
