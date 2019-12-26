@@ -1277,15 +1277,19 @@ prop_sequential = forAllCommands smUnused Nothing $ \cmds -> QC.monadicIO $ do
           QC.monitor $ counterexample ("Trace: " <> unlines (map show trace))
           fsDump <- QC.run $ Mock.pretty <$> atomically (readTVar fsVar)
           QC.monitor $ counterexample ("FS: " <> fsDump)
-          QC.run $ closeDB db >> reopen db ValidateAllEpochs
-          validation <- validate model db
-          dbTip <- QC.run $ getTip db <* closeDB db
+          case res of
+            Ok -> do
+              QC.run $ closeDB db >> reopen db ValidateAllEpochs
+              validation <- validate model db
+              dbTip <- QC.run $ getTip db <* closeDB db
 
-          let modelTip = dbmTip $ dbModel model
-          QC.monitor $ counterexample ("dbTip:    " <> show dbTip)
-          QC.monitor $ counterexample ("modelTip: " <> show modelTip)
+              let modelTip = dbmTip $ dbModel model
+              QC.monitor $ counterexample ("dbTip:    " <> show dbTip)
+              QC.monitor $ counterexample ("modelTip: " <> show modelTip)
 
-          return (hist, res === Ok .&&. dbTip === modelTip .&&. validation)
+              return (hist, res === Ok .&&. dbTip === modelTip .&&. validation)
+            -- If something went wrong, don't try to reopen the database
+            _ -> return (hist, res === Ok)
 
     fsVar     <- QC.run $ uncheckedNewTVarM Mock.empty
     errorsVar <- QC.run $ uncheckedNewTVarM mempty
