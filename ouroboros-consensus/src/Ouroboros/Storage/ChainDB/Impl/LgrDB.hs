@@ -72,7 +72,7 @@ import           Control.Tracer
 
 import           Ouroboros.Network.Block (pattern BlockPoint,
                      pattern GenesisPoint, HasHeader (..), HeaderHash, Point,
-                     SlotNo, blockPoint, castPoint)
+                     SlotNo, blockPoint)
 import qualified Ouroboros.Network.Block as Block
 import           Ouroboros.Network.Point (WithOrigin (At))
 
@@ -104,6 +104,8 @@ import           Ouroboros.Storage.LedgerDB.OnDisk (DiskSnapshot,
 import qualified Ouroboros.Storage.LedgerDB.OnDisk as LedgerDB
 
 import           Ouroboros.Storage.ChainDB.API (ChainDbFailure (..))
+import           Ouroboros.Storage.ChainDB.Impl.BlockCache (BlockCache)
+import qualified Ouroboros.Storage.ChainDB.Impl.BlockCache as BlockCache
 import           Ouroboros.Storage.ChainDB.Impl.ImmDB (ImmDB)
 import qualified Ouroboros.Storage.ChainDB.Impl.ImmDB as ImmDB
 
@@ -382,10 +384,11 @@ validate :: forall m blk. (IOLike m, ProtocolLedgerView blk, HasCallStack)
          -> LedgerDB blk
             -- ^ This is used as the starting point for validation, not the one
             -- in the 'LgrDB'.
+         -> BlockCache blk
          -> Word64  -- ^ How many blocks to roll back
          -> [Header blk]
          -> m (ValidateResult blk)
-validate LgrDB{..} ledgerDB numRollbacks = \hdrs -> do
+validate LgrDB{..} ledgerDB blockCache numRollbacks = \hdrs -> do
     blocks <- toBlocks hdrs <$> atomically (readTVar varPrevApplied)
     res <- LedgerDB.ledgerDbSwitch conf numRollbacks blocks ledgerDB
     atomically $ modifyTVar varPrevApplied $
@@ -397,7 +400,7 @@ validate LgrDB{..} ledgerDB numRollbacks = \hdrs -> do
     toBlocks hdrs prevApplied =
       [ ( if Set.member (headerPoint hdr) prevApplied
           then Reapply else Apply
-        , toRefOrVal (Left hdr) )
+        , toRefOrVal $ BlockCache.toHeaderOrBlock hdr blockCache)
       | hdr <- hdrs ]
 
     -- | Based on the 'ValidateResult', return the hashes corresponding to
@@ -472,5 +475,5 @@ wrapFailure LgrDbArgs{ lgrHasFS = hasFS } k =
 
 toRefOrVal :: (HasHeader blk, HasHeader (Header blk))
            => Either (Header blk) blk -> RefOrVal (Point blk) blk
-toRefOrVal (Left  hdr) = Ref (castPoint (blockPoint hdr))
-toRefOrVal (Right blk) = Val (blockPoint blk) blk
+toRefOrVal (Left  hdr) = Ref (headerPoint hdr)
+toRefOrVal (Right blk) = Val (blockPoint  blk) blk

@@ -58,6 +58,7 @@ import           Ouroboros.Consensus.Util (whenJust)
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
 
+import qualified Ouroboros.Storage.ChainDB.Impl.BlockCache as BlockCache
 import           Ouroboros.Storage.ChainDB.Impl.ChainSel
                      (chainSelectionForBlock)
 import qualified Ouroboros.Storage.ChainDB.Impl.ImmDB as ImmDB
@@ -405,7 +406,7 @@ scheduledChainSelection cdb@CDB{..} curSlot = do
       -- which case, the ChainDB has to be (re)started, triggering a full
       -- chain selection, which would include these blocks. So there is no
       -- risk of "forgetting" to add a block.
-      mapM_ (chainSelectionForBlock cdb) hdrs
+      mapM_ (chainSelectionForBlock cdb BlockCache.empty) hdrs
 
 -- | Whenever the current slot changes, call 'scheduledChainSelection' for the
 -- (new) current slot.

@@ -43,6 +43,7 @@ import           Ouroboros.Consensus.Protocol.BFT
 import           Ouroboros.Consensus.Util ((.:))
 import           Ouroboros.Consensus.Util.IOLike
 
+import qualified Ouroboros.Storage.ChainDB.Impl.BlockCache as BlockCache
 import qualified Ouroboros.Storage.ChainDB.Impl.LedgerCursor as LedgerCursor
 import           Ouroboros.Storage.ChainDB.Impl.LgrDB (LedgerDbParams (..),
                      LgrDB, LgrDbArgs (..), mkLgrDB)
@@ -181,7 +182,7 @@ initLgrDB k chain = do
     varDB          <- newTVarM genesisLedgerDB
     varPrevApplied <- newTVarM mempty
     let lgrDB = mkLgrDB conf varDB varPrevApplied args
-    LgrDB.validate lgrDB genesisLedgerDB 0
+    LgrDB.validate lgrDB genesisLedgerDB BlockCache.empty 0
       (map getHeader (Chain.toOldestFirst chain)) >>= \case
         LgrDB.MaximumRollbackExceeded {} ->
           error "rollback was 0"
