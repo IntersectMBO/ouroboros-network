@@ -14,10 +14,10 @@
 {-# LANGUAGE UndecidableInstances #-}
 
 -- | Setup network
-module Test.Dynamic.Network (
-    runNodeNetwork
+module Test.ThreadNet.Network (
+    runThreadNetwork
   , ForgeEBB
-  , NodeNetworkArgs (..)
+  , ThreadNetworkArgs (..)
   , TracingConstraints
     -- * Tracers
   , MiniProtocolExpectedException (..)
@@ -99,9 +99,9 @@ import qualified Ouroboros.Storage.LedgerDB.DiskPolicy as LgrDB
 import qualified Ouroboros.Storage.LedgerDB.InMemory as LgrDB
 import qualified Ouroboros.Storage.Util.ErrorHandling as EH
 
-import           Test.Dynamic.TxGen
-import           Test.Dynamic.Util.NodeJoinPlan
-import           Test.Dynamic.Util.NodeTopology
+import           Test.ThreadNet.TxGen
+import           Test.ThreadNet.Util.NodeJoinPlan
+import           Test.ThreadNet.Util.NodeTopology
 
 import           Test.Util.FS.Sim.MockFS (MockFS)
 import qualified Test.Util.FS.Sim.MockFS as Mock
@@ -119,15 +119,15 @@ type ForgeEBB blk =
 
 -- | Parameters for the test node net
 --
-data NodeNetworkArgs blk = NodeNetworkArgs
-  { nnaForgeEBB       :: Maybe (ForgeEBB blk)
-  , nnaJoinPlan       :: NodeJoinPlan
-  , nnaNodeInfo       :: CoreNodeId -> ProtocolInfo blk
-  , nnaNumCoreNodes   :: NumCoreNodes
-  , nnaNumSlots       :: NumSlots
-  , nnaRNG            :: ChaChaDRG
-  , nnaSlotLengths    :: SlotLengths
-  , nnaTopology       :: NodeTopology
+data ThreadNetworkArgs blk = ThreadNetworkArgs
+  { tnaForgeEBB       :: Maybe (ForgeEBB blk)
+  , tnaJoinPlan       :: NodeJoinPlan
+  , tnaNodeInfo       :: CoreNodeId -> ProtocolInfo blk
+  , tnaNumCoreNodes   :: NumCoreNodes
+  , tnaNumSlots       :: NumSlots
+  , tnaRNG            :: ChaChaDRG
+  , tnaSlotLengths    :: SlotLengths
+  , tnaTopology       :: NodeTopology
   }
 
 -- | Setup a network of core nodes, where each joins according to the node join
@@ -135,23 +135,23 @@ data NodeNetworkArgs blk = NodeNetworkArgs
 --
 -- We run for the specified number of blocks, then return the final state of
 -- each node.
-runNodeNetwork :: forall m blk.
+runThreadNetwork :: forall m blk.
                     ( IOLike m
                     , RunNode blk
                     , TxGen blk
                     , TracingConstraints blk
                     , HasCallStack
                     )
-               => NodeNetworkArgs blk -> m (TestOutput blk)
-runNodeNetwork NodeNetworkArgs
-  { nnaForgeEBB       = mbForgeEBB
-  , nnaJoinPlan       = nodeJoinPlan
-  , nnaNodeInfo       = pInfo
-  , nnaNumCoreNodes   = numCoreNodes
-  , nnaNumSlots       = numSlots
-  , nnaRNG            = initRNG
-  , nnaSlotLengths    = slotLengths
-  , nnaTopology       = nodeTopology
+                 => ThreadNetworkArgs blk -> m (TestOutput blk)
+runThreadNetwork ThreadNetworkArgs
+  { tnaForgeEBB       = mbForgeEBB
+  , tnaJoinPlan       = nodeJoinPlan
+  , tnaNodeInfo       = pInfo
+  , tnaNumCoreNodes   = numCoreNodes
+  , tnaNumSlots       = numSlots
+  , tnaRNG            = initRNG
+  , tnaSlotLengths    = slotLengths
+  , tnaTopology       = nodeTopology
   } = withRegistry $ \sharedRegistry -> do
     -- This shared registry is used for 'newTestBlockchainTime' and the
     -- network communication threads. Each node will create its own registry

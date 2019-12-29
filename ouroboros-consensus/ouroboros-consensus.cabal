@@ -280,20 +280,20 @@ test-suite test-consensus
                     Test.Consensus.Node
                     Test.Consensus.Protocol.PBFT
                     Test.Consensus.ResourceRegistry
-                    Test.Dynamic.BFT
-                    Test.Dynamic.General
-                    Test.Dynamic.LeaderSchedule
-                    Test.Dynamic.Network
-                    Test.Dynamic.PBFT
-                    Test.Dynamic.Praos
-                    Test.Dynamic.RealPBFT
-                    Test.Dynamic.Ref.RealPBFT
-                    Test.Dynamic.TxGen
-                    Test.Dynamic.Util
-                    Test.Dynamic.Util.Expectations
-                    Test.Dynamic.Util.NodeJoinPlan
-                    Test.Dynamic.Util.NodeTopology
-                    Test.Dynamic.Util.Tests
+                    Test.ThreadNet.BFT
+                    Test.ThreadNet.General
+                    Test.ThreadNet.LeaderSchedule
+                    Test.ThreadNet.Network
+                    Test.ThreadNet.PBFT
+                    Test.ThreadNet.Praos
+                    Test.ThreadNet.RealPBFT
+                    Test.ThreadNet.Ref.RealPBFT
+                    Test.ThreadNet.TxGen
+                    Test.ThreadNet.Util
+                    Test.ThreadNet.Util.Expectations
+                    Test.ThreadNet.Util.NodeJoinPlan
+                    Test.ThreadNet.Util.NodeTopology
+                    Test.ThreadNet.Util.Tests
                     Test.Util.BlockchainTime
                     Test.Util.FS.Sim.FsTree
                     Test.Util.FS.Sim.MockFS

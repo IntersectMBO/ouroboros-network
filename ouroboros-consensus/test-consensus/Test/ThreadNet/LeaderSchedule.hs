@@ -1,7 +1,7 @@
 {-# LANGUAGE NamedFieldPuns  #-}
 {-# LANGUAGE RecordWildCards #-}
 
-module Test.Dynamic.LeaderSchedule (
+module Test.ThreadNet.LeaderSchedule (
     tests
   ) where
 
@@ -21,10 +21,10 @@ import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.NodeId
 import           Ouroboros.Consensus.Protocol
 
-import           Test.Dynamic.General
-import           Test.Dynamic.Util
-import           Test.Dynamic.Util.NodeJoinPlan
-import           Test.Dynamic.Util.NodeTopology
+import           Test.ThreadNet.General
+import           Test.ThreadNet.Util
+import           Test.ThreadNet.Util.NodeJoinPlan
+import           Test.ThreadNet.Util.NodeTopology
 
 import           Test.Util.Orphans.Arbitrary ()
 

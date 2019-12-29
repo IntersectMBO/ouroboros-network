@@ -5,7 +5,7 @@
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module Test.Dynamic.RealPBFT (
+module Test.ThreadNet.RealPBFT (
     tests
   ) where
 
@@ -50,12 +50,12 @@ import qualified Cardano.Chain.Update as Update
 import qualified Cardano.Crypto as Crypto
 import qualified Test.Cardano.Chain.Genesis.Dummy as Dummy
 
-import           Test.Dynamic.General
-import           Test.Dynamic.Network (NodeOutput (..))
-import qualified Test.Dynamic.Ref.RealPBFT as Ref
-import           Test.Dynamic.Util
-import           Test.Dynamic.Util.NodeJoinPlan
-import           Test.Dynamic.Util.NodeTopology
+import           Test.ThreadNet.General
+import           Test.ThreadNet.Network (NodeOutput (..))
+import qualified Test.ThreadNet.Ref.RealPBFT as Ref
+import           Test.ThreadNet.Util
+import           Test.ThreadNet.Util.NodeJoinPlan
+import           Test.ThreadNet.Util.NodeTopology
 
 import           Test.Util.Orphans.Arbitrary ()
 import           Test.Util.Shrink (andId, dropId)

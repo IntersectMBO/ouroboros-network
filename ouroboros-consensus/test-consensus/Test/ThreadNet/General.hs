@@ -4,7 +4,7 @@
 {-# LANGUAGE PatternSynonyms     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module Test.Dynamic.General (
+module Test.ThreadNet.General (
     prop_general
   , runTestNetwork
     -- * TestConfig
@@ -43,11 +43,11 @@ import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Orphans ()
 import           Ouroboros.Consensus.Util.Random
 
-import           Test.Dynamic.Network
-import           Test.Dynamic.TxGen
-import           Test.Dynamic.Util
-import           Test.Dynamic.Util.NodeJoinPlan
-import           Test.Dynamic.Util.NodeTopology
+import           Test.ThreadNet.Network
+import           Test.ThreadNet.TxGen
+import           Test.ThreadNet.Util
+import           Test.ThreadNet.Util.NodeJoinPlan
+import           Test.ThreadNet.Util.NodeTopology
 
 import           Test.Util.FS.Sim.MockFS (MockFS)
 import qualified Test.Util.FS.Sim.MockFS as Mock
@@ -145,7 +145,7 @@ data TestConfigBlock blk = TestConfigBlock
    Running tests
 -------------------------------------------------------------------------------}
 
--- | Thin wrapper around 'runNodeNetwork'
+-- | Thin wrapper around 'runThreadNetwork'
 --
 runTestNetwork ::
   forall blk.
@@ -159,15 +159,15 @@ runTestNetwork ::
 runTestNetwork
   TestConfig{numCoreNodes, numSlots, nodeJoinPlan, nodeTopology, slotLengths, initSeed}
   TestConfigBlock{forgeEBB, nodeInfo}
-  = runSimOrThrow $ runNodeNetwork NodeNetworkArgs
-      { nnaForgeEBB       = forgeEBB
-      , nnaJoinPlan       = nodeJoinPlan
-      , nnaNodeInfo       = nodeInfo
-      , nnaNumCoreNodes   = numCoreNodes
-      , nnaNumSlots       = numSlots
-      , nnaRNG            = seedToChaCha initSeed
-      , nnaSlotLengths    = slotLengths
-      , nnaTopology       = nodeTopology
+  = runSimOrThrow $ runThreadNetwork ThreadNetworkArgs
+      { tnaForgeEBB       = forgeEBB
+      , tnaJoinPlan       = nodeJoinPlan
+      , tnaNodeInfo       = nodeInfo
+      , tnaNumCoreNodes   = numCoreNodes
+      , tnaNumSlots       = numSlots
+      , tnaRNG            = seedToChaCha initSeed
+      , tnaSlotLengths    = slotLengths
+      , tnaTopology       = nodeTopology
       }
 
 {-------------------------------------------------------------------------------
