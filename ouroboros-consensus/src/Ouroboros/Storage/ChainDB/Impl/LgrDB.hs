@@ -424,7 +424,7 @@ streamAPI immDB = StreamAPI streamAfter
 -- previously applied points.
 garbageCollectPrevApplied :: IOLike m => LgrDB m blk -> SlotNo -> STM m ()
 garbageCollectPrevApplied LgrDB{..} slotNo = modifyTVar varPrevApplied $
-    Set.filter ((< (At slotNo)) . Block.pointSlot)
+    Set.dropWhileAntitone ((< (At slotNo)) . Block.pointSlot)
 
 {-------------------------------------------------------------------------------
   Error handling
