@@ -30,6 +30,7 @@ import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util (chunks)
+import           Ouroboros.Consensus.Util.AnchoredFragment
 import           Ouroboros.Consensus.Util.Condense (condense)
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
@@ -140,7 +141,7 @@ prop_addBlock_multiple_threads bpt =
 
     equallyPreferable :: Chain TestBlock -> Chain TestBlock -> Bool
     equallyPreferable chain1 chain2 =
-      compareCandidates cfg (Chain.toAnchoredFragment chain1) (Chain.toAnchoredFragment chain2) == EQ
+      compareAnchoredCandidates cfg (Chain.toAnchoredFragment chain1) (Chain.toAnchoredFragment chain2) == EQ
 
     cfg :: NodeConfig (BlockProtocol TestBlock)
     cfg = singleNodeTestConfig

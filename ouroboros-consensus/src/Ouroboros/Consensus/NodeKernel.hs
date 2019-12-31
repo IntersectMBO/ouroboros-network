@@ -57,6 +57,7 @@ import           Ouroboros.Consensus.Mempool.TxSeq (TicketNo)
 import           Ouroboros.Consensus.Node.Tracers
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util (whenJust)
+import           Ouroboros.Consensus.Util.AnchoredFragment
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.Orphans ()
 import           Ouroboros.Consensus.Util.Random
@@ -277,12 +278,12 @@ initBlockFetchConsensusInterface cfg chainDB getCandidates blockFetchSize
     plausibleCandidateChain :: AnchoredFragment (Header blk)
                             -> AnchoredFragment (Header blk)
                             -> Bool
-    plausibleCandidateChain = preferCandidate cfg
+    plausibleCandidateChain = preferAnchoredCandidate cfg
 
     compareCandidateChains :: AnchoredFragment (Header blk)
                            -> AnchoredFragment (Header blk)
                            -> Ordering
-    compareCandidateChains = compareCandidates cfg
+    compareCandidateChains = compareAnchoredCandidates cfg
 
 data LeaderResult blk =
     -- | We weren't the slot leader, and therefore didn't produce a block
