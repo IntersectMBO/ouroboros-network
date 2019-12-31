@@ -112,6 +112,8 @@ import           Control.Monad.Class.MonadThrow (bracket, finally)
 import           Ouroboros.Consensus.Block (IsEBB (..))
 import           Ouroboros.Consensus.Util (SomePair (..))
 import           Ouroboros.Consensus.Util.IOLike
+import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry,
+                     releaseAll, withRegistry)
 
 import           Ouroboros.Storage.Common
 import           Ouroboros.Storage.EpochInfo
@@ -174,11 +176,11 @@ withDB
   -> Tracer m (TraceEvent e hash)
   -> (ImmutableDB hash m -> m a)
   -> m a
-withDB hasFS err epochInfo hashInfo valPol parser tracer =
-    bracket open closeDB
+withDB hasFS err epochInfo hashInfo valPol parser tracer k =
+    withRegistry $ \registry -> bracket (open registry) closeDB k
   where
-    open = fst <$>
-      openDBInternal hasFS err epochInfo hashInfo valPol parser tracer
+    open registry = fst <$>
+      openDBInternal registry hasFS err epochInfo hashInfo valPol parser tracer
 
 {------------------------------------------------------------------------------
   Exposed internals and/or extra functionality for testing purposes
@@ -231,7 +233,9 @@ mkDBRecord dbEnv = ImmutableDB
 openDBInternal
   :: forall m h hash e.
      (HasCallStack, IOLike m, Eq hash, NoUnexpectedThunks hash)
-  => HasFS m h
+  => ResourceRegistry m  -- ^ The ImmutableDB will be in total control of
+                         -- this, not to be used for other resources.
+  -> HasFS m h
   -> ErrorHandling ImmutableDBError m
   -> EpochInfo m
   -> HashInfo hash
@@ -239,7 +243,8 @@ openDBInternal
   -> EpochFileParser e m (Secondary.Entry hash) hash
   -> Tracer m (TraceEvent e hash)
   -> m (ImmutableDB hash m, Internal hash m)
-openDBInternal hasFS@HasFS{..} err epochInfo hashInfo valPol parser tracer = do
+openDBInternal registry hasFS@HasFS{..} err epochInfo hashInfo valPol parser
+               tracer = do
     let validateEnv = ValidateEnv
           { hasFS
           , err
@@ -247,6 +252,7 @@ openDBInternal hasFS@HasFS{..} err epochInfo hashInfo valPol parser tracer = do
           , hashInfo
           , parser
           , tracer
+          , registry
           }
     !ost  <- validateAndReopen validateEnv valPol initialIteratorID
 
@@ -260,6 +266,7 @@ openDBInternal hasFS@HasFS{..} err epochInfo hashInfo valPol parser tracer = do
           , _dbEpochInfo       = epochInfo
           , _dbHashInfo        = hashInfo
           , _dbTracer          = tracer
+          , _dbRegistry        = registry
           }
         db = mkDBRecord dbEnv
         internal = Internal
@@ -271,7 +278,7 @@ closeDBImpl
   :: forall m hash. (HasCallStack, IOLike m)
   => ImmutableDBEnv m hash
   -> m ()
-closeDBImpl ImmutableDBEnv {..} = do
+closeDBImpl ImmutableDBEnv {..} = releaseAll _dbRegistry `finally` do
     internalState <- takeMVar _dbInternalState
     case internalState of
       -- Already closed
@@ -318,6 +325,7 @@ reopenImpl ImmutableDBEnv {..} valPol = do
                   , hashInfo  = _dbHashInfo
                   , parser    = _dbEpochFileParser
                   , tracer    = _dbTracer
+                  , registry  = _dbRegistry
                   }
             ost <- validateAndReopen validateEnv valPol _closedNextIteratorID
             putMVar _dbInternalState (DbOpen ost)

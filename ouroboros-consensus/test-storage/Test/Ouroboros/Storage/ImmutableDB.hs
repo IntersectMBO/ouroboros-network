@@ -17,6 +17,7 @@ import           Test.Tasty.HUnit
 import           Test.Tasty.QuickCheck (testProperty)
 
 import           Ouroboros.Consensus.Util.IOLike
+import           Ouroboros.Consensus.Util.ResourceRegistry
 
 import           Ouroboros.Storage.Common
 import           Ouroboros.Storage.EpochInfo
@@ -60,10 +61,12 @@ type Hash = TestHeaderHash
 
 -- Shorthand
 openTestDB :: (HasCallStack, IOLike m)
-           => HasFS m h
+           => ResourceRegistry m
+           -> HasFS m h
            -> ErrorHandling ImmutableDBError m
            -> m (ImmutableDB Hash m)
-openTestDB hasFS err = fst <$> openDBInternal
+openTestDB registry hasFS err = fst <$> openDBInternal
+    registry
     hasFS
     err
     (fixedSizeEpochInfo fixedEpochSize)
@@ -83,8 +86,8 @@ withTestDB :: (HasCallStack, IOLike m)
            -> ErrorHandling ImmutableDBError m
            -> (ImmutableDB Hash m -> m a)
            -> m a
-withTestDB hasFS err k =
-    bracket (openTestDB hasFS err) closeDB k
+withTestDB hasFS err k = withRegistry $ \registry ->
+    bracket (openTestDB registry hasFS err) closeDB k
 
 {------------------------------------------------------------------------------
   Equivalence tests between IO and MockFS
@@ -114,9 +117,9 @@ test_openDBEmptyIndexFilesEquivalence =
       withTestDB hasFS err getTip
 
 test_closeDBIdempotentEquivalence :: Assertion
-test_closeDBIdempotentEquivalence =
+test_closeDBIdempotentEquivalence = withRegistry $ \registry ->
     apiEquivalenceImmDB (expectImmDBResult (@?= ())) $ \hasFS err -> do
-      db <- openTestDB hasFS err
+      db <- openTestDB registry hasFS err
       closeDB db
       closeDB db
 

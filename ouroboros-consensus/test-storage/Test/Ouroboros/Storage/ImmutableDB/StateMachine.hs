@@ -67,6 +67,7 @@ import           Text.Show.Pretty (ppShow)
 import           Ouroboros.Consensus.Block (IsEBB (..), fromIsEBB)
 import qualified Ouroboros.Consensus.Util.Classify as C
 import           Ouroboros.Consensus.Util.IOLike
+import           Ouroboros.Consensus.Util.ResourceRegistry
 
 import           Ouroboros.Network.Block (BlockNo (..), HasHeader (..),
                      HeaderHash, SlotNo (..))
@@ -1268,8 +1269,9 @@ prop_sequential = forAllCommands smUnused Nothing $ \cmds -> QC.monadicIO $ do
           let parser = epochFileParser hasFS (const <$> decode) isEBB
                 getBinaryInfo testBlockIsValid
           (tracer, getTrace) <- QC.run recordingTracerIORef
-          (db, internal) <- QC.run $ openDBInternal hasFS EH.monadCatch
-            (fixedSizeEpochInfo fixedEpochSize) testHashInfo
+          registry <- QC.run unsafeNewRegistry
+          (db, internal) <- QC.run $ openDBInternal registry hasFS
+            EH.monadCatch (fixedSizeEpochInfo fixedEpochSize) testHashInfo
             ValidateMostRecentEpoch parser tracer
           let sm' = sm errorsVar hasFS db internal dbm mdb minternal
           (hist, model, res) <- runCommands sm' cmds
@@ -1281,7 +1283,7 @@ prop_sequential = forAllCommands smUnused Nothing $ \cmds -> QC.monadicIO $ do
             Ok -> do
               QC.run $ closeDB db >> reopen db ValidateAllEpochs
               validation <- validate model db
-              dbTip <- QC.run $ getTip db <* closeDB db
+              dbTip <- QC.run $ getTip db <* closeDB db <* closeRegistry registry
 
               let modelTip = dbmTip $ dbModel model
               QC.monitor $ counterexample ("dbTip:    " <> show dbTip)
@@ -1289,7 +1291,9 @@ prop_sequential = forAllCommands smUnused Nothing $ \cmds -> QC.monadicIO $ do
 
               return (hist, res === Ok .&&. dbTip === modelTip .&&. validation)
             -- If something went wrong, don't try to reopen the database
-            _ -> return (hist, res === Ok)
+            _ -> do
+              QC.run $ closeRegistry registry
+              return (hist, res === Ok)
 
     fsVar     <- QC.run $ uncheckedNewTVarM Mock.empty
     errorsVar <- QC.run $ uncheckedNewTVarM mempty

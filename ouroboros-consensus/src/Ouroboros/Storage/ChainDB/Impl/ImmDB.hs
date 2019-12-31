@@ -86,7 +86,7 @@ import           Ouroboros.Consensus.Block (Header, IsEBB (..))
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.Orphans ()
 import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry,
-                     allocateEither, unsafeRelease)
+                     allocateEither, unsafeRelease, withRegistry)
 
 import           Ouroboros.Storage.ChainDB.API (BlockOrHeader (..),
                      ChainDbError (..), ChainDbFailure (..),
@@ -198,16 +198,18 @@ defaultArgs fp = ImmDbArgs{
 
 withImmDB :: (IOLike m, HasHeader blk)
           => ImmDbArgs m blk -> (ImmDB m blk -> m a) -> m a
-withImmDB args k =
-    bracket (openDB args) closeDB k
+withImmDB args k = withRegistry $ \registry ->
+    bracket (openDB registry args) closeDB k
 
 -- | For testing purposes
 openDB :: (IOLike m, HasHeader blk)
-       => ImmDbArgs m blk
+       => ResourceRegistry m
+       -> ImmDbArgs m blk
        -> m (ImmDB m blk)
-openDB ImmDbArgs{..} = do
+openDB registry ImmDbArgs{..} = do
     createDirectoryIfMissing immHasFS True (mkFsPath [])
     (immDB, _internal) <- ImmDB.openDBInternal
+      registry
       immHasFS
       immErr
       immEpochInfo

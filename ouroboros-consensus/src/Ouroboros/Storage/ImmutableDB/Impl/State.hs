@@ -36,6 +36,8 @@ import           Control.Monad.Class.MonadThrow hiding (onException)
 
 import           Ouroboros.Consensus.Util (SomePair (..))
 import           Ouroboros.Consensus.Util.IOLike
+import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry,
+                     unsafeReleaseAll)
 
 import           Ouroboros.Storage.Common
 import           Ouroboros.Storage.EpochInfo
@@ -66,6 +68,7 @@ data ImmutableDBEnv m hash = forall h e. ImmutableDBEnv
     , _dbEpochInfo       :: !(EpochInfo m)
     , _dbHashInfo        :: !(HashInfo hash)
     , _dbTracer          :: !(Tracer m (TraceEvent e hash))
+    , _dbRegistry        :: !(ResourceRegistry m)
     }
 
 data InternalState m hash h =
@@ -208,24 +211,25 @@ modifyOpenState ImmutableDBEnv { _dbHasFS = hasFS :: HasFS m h, .. } action = do
           -> m ()
     close !st ec = case ec of
       -- Restore the original state in case of an abort
-      ExitCaseAbort         -> putMVar _dbInternalState st
+      ExitCaseAbort                               -> putMVar _dbInternalState st
       -- In case of an exception, close the DB for safety.
-      ExitCaseException _ex -> do
-        let !cst = closedStateFromInternalState st
-        putMVar _dbInternalState (DbClosed cst)
-        closeOpenHandles hasFS st
+      ExitCaseException _ex                       -> shutDown st
       -- In case of success, update to the newest state
-      ExitCaseSuccess (Right (_, ost)) ->
-        putMVar _dbInternalState (DbOpen ost)
-      -- In case of an error (not an exception)
-      ExitCaseSuccess (Left (UnexpectedError {})) -> do
-        -- When unexpected, close the DB for safety
+      ExitCaseSuccess (Right (_, ost))            -> putMVar _dbInternalState (DbOpen ost)
+      -- In case of an unexpected error (not an exception), close the DB for safety
+      ExitCaseSuccess (Left (UnexpectedError {})) -> shutDown st
+      -- In case a user error, just restore the previous state
+      ExitCaseSuccess (Left (UserError {}))       -> putMVar _dbInternalState st
+
+    shutDown :: InternalState m hash h -> m ()
+    shutDown st =
+      -- This function ('modifyOpenState') can be called from all threads, not
+      -- necessarily the one that opened the ImmutableDB and the registry, so
+      -- we must use 'unsafeReleaseAll' instead of 'releaseAll'.
+      unsafeReleaseAll _dbRegistry `finally` do
         let !cst = closedStateFromInternalState st
         putMVar _dbInternalState (DbClosed cst)
         closeOpenHandles hasFS st
-      ExitCaseSuccess (Left (UserError {})) ->
-        -- When a user error, just restore the previous state
-        putMVar _dbInternalState st
 
     mutation :: HasCallStack
              => InternalState m hash h
@@ -263,21 +267,25 @@ withOpenState ImmutableDBEnv { _dbHasFS = hasFS :: HasFS m h, .. } action = do
     close :: ExitCase (Either ImmutableDBError r)
           -> m ()
     close ec = case ec of
-      ExitCaseAbort         -> return ()
+      ExitCaseAbort                               -> return ()
       -- In case of an exception, close the DB for safety.
-      ExitCaseException _ex -> do
-        st <- updateMVar _dbInternalState $ \st ->
-                (DbClosed (closedStateFromInternalState st), st)
-        closeOpenHandles hasFS st
-      ExitCaseSuccess (Right _) -> return ()
+      ExitCaseException _ex                       -> shutDown
+      ExitCaseSuccess (Right _)                   -> return ()
       -- In case of an ImmutableDBError, close when unexpected
-      ExitCaseSuccess (Left (UnexpectedError {})) -> do
+      ExitCaseSuccess (Left (UnexpectedError {})) -> shutDown
+      ExitCaseSuccess (Left (UserError {}))       -> return ()
+
+    shutDown :: m ()
+    shutDown =
+      -- This function ('withOpenState') can be called from all threads, not
+      -- necessarily the one that opened the ImmutableDB and the registry, so
+      -- we must use 'unsafeReleaseAll' instead of 'releaseAll'.
+      unsafeReleaseAll _dbRegistry `finally` do
         -- We need to get the most recent state because it might have changed
         -- behind our back
         st <- updateMVar _dbInternalState $ \st ->
                 (DbClosed (closedStateFromInternalState st), st)
         closeOpenHandles hasFS st
-      ExitCaseSuccess (Left (UserError {})) -> return ()
 
     access :: HasCallStack
            => InternalState m hash h

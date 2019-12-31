@@ -30,6 +30,7 @@ import           Ouroboros.Network.Point (WithOrigin (..))
 import           Ouroboros.Consensus.Block (IsEBB (..))
 import           Ouroboros.Consensus.Util (lastMaybe, whenJust)
 import           Ouroboros.Consensus.Util.IOLike
+import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
 
 import           Ouroboros.Storage.Common
 import           Ouroboros.Storage.EpochInfo
@@ -60,6 +61,7 @@ data ValidateEnv m hash h e = ValidateEnv
   , hashInfo  :: !(HashInfo hash)
   , parser    :: !(EpochFileParser e m (Secondary.Entry hash) hash)
   , tracer    :: !(Tracer m (TraceEvent e hash))
+  , registry  :: !(ResourceRegistry m)
   }
 
 -- | Perform validation as per the 'ValidationPolicy' using 'validate' and

@@ -41,6 +41,8 @@ import           Ouroboros.Consensus.BlockchainTime (getCurrentSlot)
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util.IOLike
+import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry,
+                     withRegistry)
 import           Ouroboros.Consensus.Util.STM (Fingerprint (..),
                      WithFingerprint (..))
 
@@ -71,16 +73,17 @@ withDB
   => ChainDbArgs m blk
   -> (ChainDB m blk -> m a)
   -> m a
-withDB args k =
-    bracket (fst <$> openDBInternal args True) closeDB k
+withDB args k = withRegistry $ \registry ->
+    bracket (fst <$> openDBInternal registry args True) closeDB k
 
 openDBInternal
   :: forall m blk. (IOLike m, ProtocolLedgerView blk)
-  => ChainDbArgs m blk
+  => ResourceRegistry m  -- ^ Resource registry for the ImmutableDB
+  -> ChainDbArgs m blk
   -> Bool -- ^ 'True' = Launch background tasks
   -> m (ChainDB m blk, Internal m blk)
-openDBInternal args launchBgTasks = do
-    immDB <- ImmDB.openDB argsImmDb
+openDBInternal immRegistry args launchBgTasks = do
+    immDB <- ImmDB.openDB immRegistry argsImmDb
     -- In order to figure out the 'BlockNo' and 'Point' at the tip of the
     -- ImmutableDB, we need to read the header at the tip of the ImmutableDB.
     immDbTipHeader <- ImmDB.getBlockOrHeaderAtTip immDB Header
