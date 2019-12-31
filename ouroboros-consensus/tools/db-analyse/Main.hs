@@ -37,7 +37,8 @@ import           Ouroboros.Consensus.Util.ResourceRegistry
 
 import           Ouroboros.Storage.ChainDB.API (BlockOrHeader (..),
                      StreamFrom (..), StreamTo (..))
-import           Ouroboros.Storage.ChainDB.Impl.ImmDB
+import           Ouroboros.Storage.ChainDB.Impl.ImmDB hiding (withImmDB)
+import qualified Ouroboros.Storage.ChainDB.Impl.ImmDB as ImmDB (withImmDB)
 import           Ouroboros.Storage.Common
 import           Ouroboros.Storage.EpochInfo
 import qualified Ouroboros.Storage.ImmutableDB.API as ImmDB
@@ -49,9 +50,9 @@ main = do
     let epochSlots = Genesis.configEpochSlots genesisConfig
         epochInfo  = fixedSizeEpochInfo (coerce epochSlots)
         cfg        = mkPBftNodeConfig genesisConfig
-    immDB <- openImmDB clImmDB cfg epochInfo
-    withRegistry $ runAnalysis clAnalysis immDB epochInfo
-    putStrLn "Done"
+    withImmDB clImmDB cfg epochInfo $ \immDB -> do
+      withRegistry $ runAnalysis clAnalysis immDB epochInfo
+      putStrLn "Done"
 
 {-------------------------------------------------------------------------------
   Run the requested analysis
@@ -247,9 +248,10 @@ mkPBftNodeConfig genesisConfig = pInfoConfig $
   Interface with the ImmDB
 -------------------------------------------------------------------------------}
 
-openImmDB :: FilePath -> NodeConfig ByronConsensusProtocol -> EpochInfo IO
-          -> IO (ImmDB IO ByronBlock)
-openImmDB fp cfg epochInfo = openDB args
+withImmDB :: FilePath -> NodeConfig ByronConsensusProtocol -> EpochInfo IO
+          -> (ImmDB IO ByronBlock -> IO a)
+          -> IO a
+withImmDB fp cfg epochInfo = ImmDB.withImmDB args
   where
     args :: ImmDbArgs IO ByronBlock
     args = (defaultArgs fp) {

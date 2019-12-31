@@ -15,7 +15,7 @@ module Ouroboros.Storage.ChainDB.Impl.ImmDB (
     -- * Initialization
   , ImmDbArgs(..)
   , defaultArgs
-  , openDB
+  , withImmDB
     -- * Getting and parsing blocks
   , hasBlock
   , getBlockOrHeaderWithPoint
@@ -53,6 +53,7 @@ module Ouroboros.Storage.ChainDB.Impl.ImmDB (
   , ImmDB.BinaryInfo (..)
   , ImmDB.HashInfo (..)
     -- * Exported for testing purposes
+  , openDB
   , mkImmDB
     -- * Exported for utilities
   , ImmDB.epochFileParser
@@ -67,8 +68,7 @@ import           Control.Monad.Except
 import           Control.Tracer (Tracer, nullTracer)
 import           Data.Bifunctor (second)
 import qualified Data.ByteString.Lazy as Lazy
-import           Data.Functor ((<&>))
-import           Data.Functor (($>))
+import           Data.Functor (($>), (<&>))
 import           GHC.Stack (HasCallStack)
 import           System.FilePath ((</>))
 
@@ -196,17 +196,25 @@ defaultArgs fp = ImmDbArgs{
     , immTracer         = nullTracer
     }
 
-openDB :: (IOLike m, HasHeader blk) => ImmDbArgs m blk -> m (ImmDB m blk)
+withImmDB :: (IOLike m, HasHeader blk)
+          => ImmDbArgs m blk -> (ImmDB m blk -> m a) -> m a
+withImmDB args k =
+    bracket (openDB args) closeDB k
+
+-- | For testing purposes
+openDB :: (IOLike m, HasHeader blk)
+       => ImmDbArgs m blk
+       -> m (ImmDB m blk)
 openDB ImmDbArgs{..} = do
     createDirectoryIfMissing immHasFS True (mkFsPath [])
-    immDB <- ImmDB.openDB
-               immHasFS
-               immErr
-               immEpochInfo
-               immHashInfo
-               immValidation
-               parser
-               immTracer
+    (immDB, _internal) <- ImmDB.openDBInternal
+      immHasFS
+      immErr
+      immEpochInfo
+      immHashInfo
+      immValidation
+      parser
+      immTracer
     return ImmDB
       { immDB     = immDB
       , decHeader = immDecodeHeader

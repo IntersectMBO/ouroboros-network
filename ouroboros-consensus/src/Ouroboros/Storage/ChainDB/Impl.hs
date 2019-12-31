@@ -7,7 +7,7 @@ module Ouroboros.Storage.ChainDB.Impl (
     -- * Initialization
     ChainDbArgs(..)
   , defaultArgs
-  , openDB
+  , withDB
     -- * Trace types
   , TraceEvent (..)
   , TraceAddBlockEvent (..)
@@ -29,6 +29,8 @@ import qualified Data.Map.Strict as Map
 import           Data.Maybe (isJust)
 
 import           Control.Tracer
+
+import           Control.Monad.Class.MonadThrow (bracket)
 
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block (HasHeader (..), castPoint,
@@ -64,11 +66,13 @@ import qualified Ouroboros.Storage.ChainDB.Impl.VolDB as VolDB
   Initialization
 -------------------------------------------------------------------------------}
 
-openDB
-  :: forall m blk. (IOLike m, ProtocolLedgerView blk)
+withDB
+  :: forall m blk a. (IOLike m, ProtocolLedgerView blk)
   => ChainDbArgs m blk
-  -> m (ChainDB m blk)
-openDB args = fst <$> openDBInternal args True
+  -> (ChainDB m blk -> m a)
+  -> m a
+withDB args k =
+    bracket (fst <$> openDBInternal args True) closeDB k
 
 openDBInternal
   :: forall m blk. (IOLike m, ProtocolLedgerView blk)

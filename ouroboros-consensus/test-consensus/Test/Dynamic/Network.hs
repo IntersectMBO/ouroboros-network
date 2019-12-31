@@ -327,13 +327,14 @@ runNodeNetwork registry testBtime numCoreNodes nodeJoinPlan nodeTopology
             } = nodeInfo
 
       epochInfo <- newEpochInfo $ nodeEpochSize (Proxy @blk) pInfoConfig
-      chainDB <- ChainDB.openDB $ mkArgs
-          pInfoConfig pInfoInitLedger epochInfo
-          (nodeEventsInvalids nodeInfoEvents)
-          (Tracer $ \(p, bno) -> do
-              s <- atomically $ getCurrentSlot btime
-              traceWith (nodeEventsAdds nodeInfoEvents) (s, p, bno))
-          nodeInfoDBs
+      let chainDbArgs = mkArgs
+            pInfoConfig pInfoInitLedger epochInfo
+            (nodeEventsInvalids nodeInfoEvents)
+            (Tracer $ \(p, bno) -> do
+                s <- atomically $ getCurrentSlot btime
+                traceWith (nodeEventsAdds nodeInfoEvents) (s, p, bno))
+            nodeInfoDBs
+      (chainDB, _) <- ChainDB.openDBInternal chainDbArgs True
 
       let nodeArgs = NodeArgs
             { tracers             = nullDebugTracers

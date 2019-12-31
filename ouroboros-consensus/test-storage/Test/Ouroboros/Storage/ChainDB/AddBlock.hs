@@ -36,8 +36,7 @@ import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
 
 import           Ouroboros.Storage.ChainDB (ChainDbArgs (..),
-                     TraceAddBlockEvent (..), addBlock, closeDB, openDB,
-                     toChain)
+                     TraceAddBlockEvent (..), addBlock, toChain, withDB)
 import qualified Ouroboros.Storage.ChainDB as ChainDB
 import           Ouroboros.Storage.Common (EpochSize (..))
 import           Ouroboros.Storage.EpochInfo (fixedSizeEpochInfo)
@@ -120,14 +119,11 @@ prop_addBlock_multiple_threads bpt =
           <*> uncheckedNewTVarM Mock.empty
         withRegistry $ \registry -> do
           let args = mkArgs cfg initLedger dynamicTracer registry hashInfo fsVars
-          db <- openDB args
-          -- Add blocks concurrently
-          mapConcurrently_ (mapM_ (addBlock db)) $ blocksPerThread bpt
-          -- Obtain the actual chain
-          chain <- toChain db
-          -- Close
-          closeDB db
-          return chain
+          withDB args $ \db -> do
+            -- Add blocks concurrently
+            mapConcurrently_ (mapM_ (addBlock db)) $ blocksPerThread bpt
+            -- Obtain the actual chain
+            toChain db
 
     -- The current chain after all the given blocks were added to a fresh
     -- model.

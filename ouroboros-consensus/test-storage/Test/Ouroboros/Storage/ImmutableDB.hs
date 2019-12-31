@@ -9,6 +9,8 @@ import           Data.Coerce (coerce)
 import           Data.Functor.Identity (Identity (..))
 import           Data.Maybe (fromJust)
 
+import           Control.Monad.Class.MonadThrow (bracket)
+
 import           Test.QuickCheck
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.HUnit
@@ -61,7 +63,7 @@ openTestDB :: (HasCallStack, IOLike m)
            => HasFS m h
            -> ErrorHandling ImmutableDBError m
            -> m (ImmutableDB Hash m)
-openTestDB hasFS err = openDB
+openTestDB hasFS err = fst <$> openDBInternal
     hasFS
     err
     (fixedSizeEpochInfo fixedEpochSize)
@@ -81,7 +83,8 @@ withTestDB :: (HasCallStack, IOLike m)
            -> ErrorHandling ImmutableDBError m
            -> (ImmutableDB Hash m -> m a)
            -> m a
-withTestDB hasFS err = withDB (openTestDB hasFS err)
+withTestDB hasFS err k =
+    bracket (openTestDB hasFS err) closeDB k
 
 {------------------------------------------------------------------------------
   Equivalence tests between IO and MockFS

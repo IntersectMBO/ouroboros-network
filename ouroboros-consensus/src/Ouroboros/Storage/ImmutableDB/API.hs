@@ -5,7 +5,6 @@
 {-# LANGUAGE RankNTypes        #-}
 module Ouroboros.Storage.ImmutableDB.API
   ( ImmutableDB (..)
-  , withDB
   , Iterator (..)
   , IteratorResult (..)
   , iteratorToList
@@ -23,22 +22,9 @@ import           Data.Function (on)
 import           GHC.Generics (Generic)
 import           GHC.Stack (HasCallStack)
 
-import           Control.Monad.Class.MonadThrow
-
 import           Ouroboros.Storage.Common
 import           Ouroboros.Storage.ImmutableDB.Types
 import           Ouroboros.Storage.Util.ErrorHandling (ErrorHandling)
-
--- | Open the database using the given function, perform the given action
--- using the database. Close the database using its 'closeDB' function
--- afterwards.
-withDB :: (HasCallStack, MonadThrow m)
-       => m (ImmutableDB hash m)
-          -- ^ How to open the database
-       -> (ImmutableDB hash m -> m a)
-          -- ^ Action to perform using the database
-       -> m a
-withDB openDB = bracket openDB closeDB
 
 -- | API for the 'ImmutableDB'.
 --

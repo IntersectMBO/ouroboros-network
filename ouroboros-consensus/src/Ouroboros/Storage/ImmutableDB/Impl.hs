@@ -87,7 +87,7 @@
 --   * A \"primary index file\" that maps slots to offsets in the secondary
 --     index file.
 module Ouroboros.Storage.ImmutableDB.Impl
-  ( openDB
+  ( withDB
     -- * Internals for testing purposes
   , openDBInternal
   , Internal (..)
@@ -107,7 +107,7 @@ import           Data.Functor (($>), (<&>))
 
 import           GHC.Stack (HasCallStack)
 
-import           Control.Monad.Class.MonadThrow (finally)
+import           Control.Monad.Class.MonadThrow (bracket, finally)
 
 import           Ouroboros.Consensus.Block (IsEBB (..))
 import           Ouroboros.Consensus.Util (SomePair (..))
@@ -162,8 +162,8 @@ import           Ouroboros.Storage.ImmutableDB.Layout
 -- there is of course no block after the last one.
 --
 -- __Note__: To be used in conjunction with 'withDB'.
-openDB
-  :: forall m h hash e.
+withDB
+  :: forall m h hash e a.
      (HasCallStack, IOLike m, Eq hash, NoUnexpectedThunks hash)
   => HasFS m h
   -> ErrorHandling ImmutableDBError m
@@ -172,9 +172,13 @@ openDB
   -> ValidationPolicy
   -> EpochFileParser e m (Secondary.Entry hash) hash
   -> Tracer m (TraceEvent e hash)
-  -> m (ImmutableDB hash m)
-openDB hasFS err epochInfo hashInfo valPol parser tracer =
-    fst <$> openDBInternal hasFS err epochInfo hashInfo valPol parser tracer
+  -> (ImmutableDB hash m -> m a)
+  -> m a
+withDB hasFS err epochInfo hashInfo valPol parser tracer =
+    bracket open closeDB
+  where
+    open = fst <$>
+      openDBInternal hasFS err epochInfo hashInfo valPol parser tracer
 
 {------------------------------------------------------------------------------
   Exposed internals and/or extra functionality for testing purposes
@@ -220,6 +224,10 @@ mkDBRecord dbEnv = ImmutableDB
     , immutableDBErr      = _dbErr            dbEnv
     }
 
+-- | For testing purposes:
+--
+-- * Exposes internal via 'Internal'
+-- * Non-bracketed, as @quickcheck-state-machine@ doesn't support that.
 openDBInternal
   :: forall m h hash e.
      (HasCallStack, IOLike m, Eq hash, NoUnexpectedThunks hash)
