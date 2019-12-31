@@ -21,6 +21,8 @@ module Ouroboros.Consensus.Util.ResourceRegistry (
   , allocateEither
   , release
   , unsafeRelease
+  , releaseAll
+  , unsafeReleaseAll
     -- * Threads
   , Thread -- opaque
   , threadId
@@ -540,10 +542,22 @@ closeRegistry rr = mask_ $ do
         -- releasing its resources.)
         -- /If/ a concurrent thread does some cleanup, then some of the calls
         -- to 'release' that we do here might be no-ops.
-       exs <- forM (newToOld keys) $ try . release . ResourceKey rr
-       case prioritize exs of
-         Nothing -> return ()
-         Just e  -> throwM e
+       releaseResources rr keys release
+
+-- | Helper for 'closeRegistry', 'releaseAll', and 'unsafeReleaseAll': release
+-- the resources allocated with the given 'ResourceId's.
+releaseResources :: IOLike m
+                 => ResourceRegistry m
+                 -> Set ResourceId
+                 -> (ResourceKey m -> m ())
+                    -- ^ How to release the resource, e.g., 'release' or
+                    -- 'unsafeRelease'.
+                 ->  m ()
+releaseResources rr keys releaser = do
+    exs <- forM (newToOld keys) $ try . releaser . ResourceKey rr
+    case prioritize exs of
+      Nothing -> return ()
+      Just e  -> throwM e
   where
     newToOld :: Set ResourceId -> [ResourceId]
     newToOld = Set.toDescList -- depends on 'Ord' instance
@@ -610,7 +624,7 @@ allocateEither rr alloc free = do
     mKey <- updateState rr $ allocKey
     case mKey of
       Left closed ->
-        throwRegistryClosed context closed
+        throwRegistryClosed rr context closed
       Right key -> mask_ $ do
         ma <- alloc key
         case ma of
@@ -626,7 +640,7 @@ allocateEither rr alloc free = do
                 -- chance to register the resource. In this case, we must
                 -- deallocate the resource again before throwing the exception.
                 free a
-                throwRegistryClosed context closed
+                throwRegistryClosed rr context closed
               Right () ->
                 return $ Right (ResourceKey rr key, a)
   where
@@ -636,12 +650,16 @@ allocateEither rr alloc free = do
         , resourceRelease = Release $ free a
         }
 
-    throwRegistryClosed :: forall x. Context m -> PrettyCallStack -> m x
-    throwRegistryClosed context closed = throwM RegistryClosedException {
-          registryClosedRegistryContext = registryContext rr
-        , registryClosedCloseCallStack  = closed
-        , registryClosedAllocContext    = context
-        }
+throwRegistryClosed :: IOLike m
+                    => ResourceRegistry m
+                    -> Context m
+                    -> PrettyCallStack
+                    -> m x
+throwRegistryClosed rr context closed = throwM RegistryClosedException {
+      registryClosedRegistryContext = registryContext rr
+    , registryClosedCloseCallStack  = closed
+    , registryClosedAllocContext    = context
+    }
 
 -- | Release resource
 --
@@ -676,6 +694,40 @@ unsafeRelease (ResourceKey rr rid) = do
     mask_ $ do
       mResource <- updateState rr $ removeResource rid
       mapM_ releaseResource mResource
+
+-- | Release all resources in the 'ResourceRegistry' without closing.
+--
+-- See 'closeRegistry' for more details.
+releaseAll :: (IOLike m, HasCallStack) => ResourceRegistry m -> m ()
+releaseAll rr = do
+    context <- captureContext
+    unless (contextThreadId context == contextThreadId (registryContext rr)) $
+      throwM $ ResourceRegistryClosedFromWrongThread {
+          resourceRegistryCreatedIn = registryContext rr
+        , resourceRegistryUsedIn    = context
+        }
+    releaseAllHelper rr context release
+
+-- | This is to 'releaseAll' what 'unsafeRelease' is to 'release': we do not
+-- insist that this funciton is called from a thread that is known to the
+-- registry. See 'unsafeRelease' for why this is dangerous.
+unsafeReleaseAll :: IOLike m => ResourceRegistry m -> m ()
+unsafeReleaseAll rr = do
+    context <- captureContext
+    releaseAllHelper rr context unsafeRelease
+
+-- | Internal helper used by 'releaseAll' and 'unsafeReleaseAll'.
+releaseAllHelper :: IOLike m
+                 => ResourceRegistry m
+                 -> Context m
+                 -> (ResourceKey m -> m ())  -- ^ How to release a resource
+                 -> m ()
+releaseAllHelper rr context releaser = mask_ $ do
+    mKeys   <- updateState rr $ unlessClosed $
+      gets $ Map.keysSet . registryResources
+    case mKeys of
+      Left closed -> throwRegistryClosed rr context closed
+      Right keys  -> releaseResources rr keys releaser
 
 {-------------------------------------------------------------------------------
   Threads
