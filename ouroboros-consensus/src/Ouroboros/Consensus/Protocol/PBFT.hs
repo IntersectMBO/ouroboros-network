@@ -53,6 +53,7 @@ import           Ouroboros.Network.Block (HasHeader (..), SlotNo (..))
 import           Ouroboros.Network.Point (WithOrigin (At))
 
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Crypto.DSIGN.Cardano
 import           Ouroboros.Consensus.Ledger.Byron.Config
 import           Ouroboros.Consensus.NodeId (CoreNodeId (..))
@@ -223,8 +224,8 @@ instance ( PBftCrypto c
   type IsLeader       (PBft cfg c) = PBftIsLeader   c
   type ChainState     (PBft cfg c) = PBftChainState c
 
-  protocolSecurityParam = pbftSecurityParam . pbftParams
-  protocolSlotLength    = pbftSlotLength    . pbftParams
+  protocolSecurityParam =                        pbftSecurityParam . pbftParams
+  protocolSlotLengths   = singletonSlotLengths . pbftSlotLength    . pbftParams
 
   checkIsLeader PBftNodeConfig{pbftIsLeader, pbftParams} (SlotNo n) _l _cs =
       case pbftIsLeader of

@@ -2,7 +2,8 @@ module Main (main) where
 
 import           Test.Tasty
 
-import qualified Test.Consensus.BlockchainTime (tests)
+import qualified Test.Consensus.BlockchainTime.SlotLengths (tests)
+import qualified Test.Consensus.BlockchainTime.WallClock (tests)
 import qualified Test.Consensus.ChainSyncClient (tests)
 import qualified Test.Consensus.Ledger.Byron (tests)
 import qualified Test.Consensus.Ledger.Mock (tests)
@@ -25,7 +26,8 @@ main = defaultMain tests
 tests :: TestTree
 tests =
   testGroup "ouroboros-consensus"
-  [ Test.Consensus.BlockchainTime.tests
+  [ Test.Consensus.BlockchainTime.SlotLengths.tests
+  , Test.Consensus.BlockchainTime.WallClock.tests
   , Test.Consensus.ChainSyncClient.tests
   , Test.Consensus.Ledger.Byron.tests
   , Test.Consensus.Ledger.Mock.tests

@@ -27,9 +27,10 @@ import           Test.QuickCheck
 import           Control.Monad.IOSim (runSimOrThrow)
 
 import           Ouroboros.Network.Block (BlockNo (..), pattern BlockPoint,
-                     pattern GenesisPoint, HasHeader, Point, blockPoint)
+                     pattern GenesisPoint, HasHeader, Point, SlotNo (..),
+                     blockPoint)
 
-import           Ouroboros.Consensus.BlockchainTime
+import           Ouroboros.Consensus.BlockchainTime.Mock
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.NodeId
@@ -74,7 +75,7 @@ truncateNodeJoinPlan
   (NodeJoinPlan m) (NumCoreNodes n') (NumSlots t, NumSlots t') =
     NodeJoinPlan $
     -- scale by t' / t
-    Map.map (\(SlotNo i) -> SlotNo $ (i * toEnum t') `div` toEnum t) $
+    Map.map (\(SlotNo i) -> SlotNo $ (i * t') `div` t) $
     -- discard discarded nodes
     Map.filterWithKey (\(CoreNodeId nid) _ -> nid < n') $
     m
@@ -139,7 +140,6 @@ runTestNetwork pInfo
       nodeTopology
       pInfo
       (seedToChaCha seed)
-      slotLen
   where
     slotLen :: DiffTime
     slotLen = 100000
@@ -277,7 +277,7 @@ prop_general k TestConfig{numSlots, nodeJoinPlan, nodeTopology} mbSchedule
     -- in which quarter of the simulation does the last node join?
     lastJoinSlot :: Maybe Word64
     lastJoinSlot =
-        fmap (\(SlotNo i, _) -> (4 * i) `div` toEnum t) $
+        fmap (\(SlotNo i, _) -> (4 * i) `div` t) $
         Map.maxView m
       where
         NumSlots t = numSlots

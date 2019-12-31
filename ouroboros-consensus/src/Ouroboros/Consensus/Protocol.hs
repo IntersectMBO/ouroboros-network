@@ -18,6 +18,7 @@ module Ouroboros.Consensus.Protocol (
 import qualified Cardano.Chain.Genesis as Genesis
 import qualified Cardano.Chain.Update as Update
 
+import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Ledger.Byron
 import           Ouroboros.Consensus.Ledger.Mock
 import           Ouroboros.Consensus.Node.ProtocolInfo.Abstract (NumCoreNodes)
@@ -54,7 +55,7 @@ data Protocol blk where
     :: NumCoreNodes
     -> CoreNodeId
     -> SecurityParam
-    -> SlotLength
+    -> SlotLengths
     -> Protocol (SimpleBftBlock SimpleMockCrypto BftMockCrypto)
 
   -- | Run Praos against the mock ledger

@@ -16,6 +16,7 @@ import           Test.Tasty.QuickCheck
 import           Ouroboros.Network.Block (SlotNo (..))
 
 import           Ouroboros.Consensus.BlockchainTime
+import           Ouroboros.Consensus.BlockchainTime.Mock
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.NodeId
 import           Ouroboros.Consensus.Protocol
@@ -44,8 +45,7 @@ tests = testGroup "Dynamic chain generation"
       }
 
     numCoreNodes = NumCoreNodes 3
-    numSlots  = NumSlots $ fromEnum $
-        maxRollbacks k * praosSlotsPerEpoch * numEpochs
+    numSlots  = NumSlots $ maxRollbacks k * praosSlotsPerEpoch * numEpochs
     numEpochs = 3
 
     prop seed =
@@ -95,7 +95,7 @@ genLeaderSchedule :: SecurityParam
                   -> Gen LeaderSchedule
 genLeaderSchedule k (NumSlots numSlots) (NumCoreNodes numCoreNodes) nodeJoinPlan =
     flip suchThat (consensusExpected k nodeJoinPlan) $ do
-        leaders <- replicateM numSlots $ frequency
+        leaders <- replicateM (fromIntegral numSlots) $ frequency
             [ ( 4, pick 0)
             , ( 2, pick 1)
             , ( 1, pick 2)

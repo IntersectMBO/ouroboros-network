@@ -62,6 +62,7 @@ import           Ouroboros.Network.Block (HasHeader (..), SlotNo (..))
 import           Ouroboros.Network.Point (WithOrigin (At))
 
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.NodeId (CoreNodeId (..), NodeId (..))
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.Signed
@@ -228,8 +229,8 @@ instance ( PraosCrypto c
          , NoUnexpectedThunks cfg
          , Typeable cfg
          ) => OuroborosTag (Praos cfg c) where
-  protocolSecurityParam = praosSecurityParam . praosParams
-  protocolSlotLength    = praosSlotLength . praosParams
+  protocolSecurityParam =                        praosSecurityParam . praosParams
+  protocolSlotLengths   = singletonSlotLengths . praosSlotLength    . praosParams
 
   type NodeState     (Praos cfg c) = PraosNodeState c
   type LedgerView    (Praos cfg c) = StakeDist

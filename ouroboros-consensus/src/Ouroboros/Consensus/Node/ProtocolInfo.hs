@@ -21,8 +21,8 @@ import           Ouroboros.Consensus.Protocol
 
 -- | Data required to run the selected protocol
 protocolInfo :: Protocol blk -> ProtocolInfo blk
-protocolInfo (ProtocolMockBFT nodes nid params slotLength) =
-    protocolInfoBft nodes nid params slotLength
+protocolInfo (ProtocolMockBFT nodes nid params slotLengths) =
+    protocolInfoBft nodes nid params slotLengths
 
 protocolInfo (ProtocolMockPraos nodes nid params) =
     protocolInfoPraos nodes nid params

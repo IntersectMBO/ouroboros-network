@@ -35,7 +35,7 @@ import qualified Cardano.Chain.Genesis as Genesis
 import qualified Cardano.Chain.Update as Update
 import qualified Cardano.Crypto as Crypto
 
-import           Ouroboros.Consensus.BlockchainTime (slotLengthFromMillisec)
+import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Crypto.DSIGN.Cardano
 import           Ouroboros.Consensus.Ledger.Byron
 import qualified Ouroboros.Consensus.Ledger.Byron.DelegationHistory as History
