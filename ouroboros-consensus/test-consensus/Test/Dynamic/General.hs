@@ -66,6 +66,7 @@ import           Test.Consensus.BlockchainTime.SlotLengths ()
 data TestConfig = TestConfig
   { numCoreNodes :: !NumCoreNodes
   , numSlots     :: !NumSlots
+    -- ^ TODO generate in function of @k@
   , nodeJoinPlan :: !NodeJoinPlan
   , nodeTopology :: !NodeTopology
   , slotLengths  :: !SlotLengths
