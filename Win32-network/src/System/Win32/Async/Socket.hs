@@ -3,6 +3,7 @@
 
 module System.Win32.Async.Socket
   ( sendBuf
+  , recvBuf
   , connect
   , accept
   ) where
@@ -19,6 +20,7 @@ import           Foreign.StablePtr (StablePtr)
 import           Network.Socket (Socket, SockAddr)
 import qualified Network.Socket as Socket
 
+import           System.Win32.Types
 import           System.Win32.Async.Internal
 
 
@@ -77,3 +79,15 @@ accept sock = do
     case r of
       Left e  -> throwIO e
       Right x -> return x
+
+
+recvBuf :: Socket -> Ptr Word8 -> Int -> IO Int
+recvBuf sock buf size = Socket.withFdSocket sock $ \fd ->
+    wsaWaitForCompletion (c_recvBuf fd buf (fromIntegral size))
+
+foreign import ccall safe "HsRecvBuf"
+    c_recvBuf :: SOCKET      -- ^ socket
+              -> Ptr Word8   -- ^ buffer
+              -> ULONG       -- ^ length of the buffer
+              -> StablePtr b -- ^ stable pointer
+              -> IO ()

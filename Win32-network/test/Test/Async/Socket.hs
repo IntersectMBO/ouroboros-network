@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Test.Async.Socket (tests) where
@@ -5,14 +6,22 @@ module Test.Async.Socket (tests) where
 import           Control.Exception
 import           Control.Concurrent
 import           Data.Functor (void)
+import           Data.ByteString (ByteString)
+import qualified Data.ByteString as BS
 
-import qualified System.Win32.Async as Async
+import qualified System.Win32.Async.IOManager as Async
+import qualified System.Win32.Async.Socket as Async
+import qualified System.Win32.Async.Socket.ByteString as Async
 
-import           Network.Socket (SockAddr (..))
+import           Network.Socket (Socket, SockAddr (..))
 import qualified Network.Socket as Socket
+
+
+import           Test.Generators hiding (tests)
 
 import           Test.Tasty
 import           Test.Tasty.HUnit
+import           Test.Tasty.QuickCheck
 import           Test.QuickCheck.Instances.ByteString ()
 
 tests :: TestTree
@@ -22,6 +31,8 @@ tests =
       test_interruptible_connect
   , testCase "interruptible accept"
       test_interruptible_accept
+  , testProperty "send and recv"
+      (ioProperty . prop_send_recv)
   ]
 
 -- The stock 'connect' is not interruptible.  This tests is not reliable on
@@ -80,3 +91,47 @@ test_interruptible_accept =
         assertEqual "wrong exception"
                     (Just ThreadKilled)
                     (fromException e :: Maybe AsyncException)
+
+recvLen :: Socket -> Int -> IO ByteString
+recvLen s l0 = go l0 []
+  where
+    go !l bufs | l <= 0 = pure $ BS.concat $ reverse bufs
+               | otherwise = do
+                  buf <- Async.recv s l
+                  go (l - BS.length buf) (buf : bufs)
+
+prop_send_recv :: LargeNonEmptyBS -> IO Bool
+prop_send_recv (LargeNonEmptyBS bs _size) =
+    Async.withIOManager $ \iocp ->
+      bracket
+        ((,) <$> Socket.socket Socket.AF_INET Socket.Stream Socket.defaultProtocol
+             <*> Socket.socket Socket.AF_INET Socket.Stream Socket.defaultProtocol)
+        (\(x, y) -> Socket.close x >> Socket.close y)
+        $ \ (fd_in, fd_out) -> do
+          v <- newEmptyMVar
+          syncVar <- newEmptyMVar
+          Async.associateWithIOCompletionPort (Right fd_in)  iocp
+
+          _ <- forkIO $ do
+            let addr = SockAddrInet 0 (Socket.tupleToHostAddress (127, 0, 0, 1))
+            Socket.bind fd_out addr
+            addr' <- Socket.getSocketName fd_out
+            Socket.listen fd_out 1024
+              `catch` \(e :: IOException) -> putStrLn ("listen errored: " ++ displayException e) >> throwIO e
+            putMVar syncVar addr'
+            (fd, _) <- Async.accept fd_out
+                        `catch` \(e :: IOException) -> putStrLn ("accept errored: " ++ displayException e) >> throwIO e
+
+            Async.associateWithIOCompletionPort (Right fd) iocp
+            bs' <- recvLen fd (BS.length bs)
+            putMVar v bs'
+
+          _ <- forkIO $ do
+            -- wait for the other end to start listening
+            addr' <- takeMVar syncVar
+            Socket.connect fd_in addr'
+            Async.sendAll fd_in bs
+              `catch` \(e :: IOException) -> putStrLn ("sendAll errored: " ++ displayException e) >> throwIO e
+
+          bs' <- takeMVar v
+          pure $ bs == bs'
