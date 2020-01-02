@@ -100,7 +100,7 @@ test_interruptible_readHandle = withIOManager $ \iocp ->
                                 oPEN_EXISTING
                                 fILE_FLAG_OVERLAPPED
                                 Nothing)
-            (foldMap closeHandle)
+            (\(x, y) -> closeHandle x >> closeHandle y)
             $ \(hpipe, hpipe') -> do
                 _ <- associateWithIOCompletionPort hpipe  iocp
                 _ <- associateWithIOCompletionPort hpipe' iocp
@@ -127,7 +127,7 @@ test_interruptible_readHandle_2 = withIOManager $ \iocp -> do
                                 oPEN_EXISTING
                                 fILE_FLAG_OVERLAPPED
                                 Nothing)
-            (foldMap closeHandle)
+            (\(x, y) -> closeHandle x >> closeHandle y)
             $ \(hpipe, hpipe') -> do
               _ <- associateWithIOCompletionPort hpipe  iocp
               _ <- associateWithIOCompletionPort hpipe' iocp
@@ -160,7 +160,7 @@ test_interruptible_writeHandle = withIOManager $ \iocp -> do
                           oPEN_EXISTING
                           fILE_FLAG_OVERLAPPED
                           Nothing)
-      (foldMap closeHandle)
+      (\(x, y) -> closeHandle x >> closeHandle y)
       $ \(r, w) -> do
         _ <- associateWithIOCompletionPort r iocp
         _ <- associateWithIOCompletionPort w iocp
