@@ -2,7 +2,6 @@
 {-# LANGUAGE DeriveAnyClass            #-}
 {-# LANGUAGE DeriveGeneric             #-}
 {-# LANGUAGE ExistentialQuantification #-}
-{-# LANGUAGE LambdaCase                #-}
 {-# LANGUAGE NamedFieldPuns            #-}
 {-# LANGUAGE OverloadedStrings         #-}
 {-# LANGUAGE RankNTypes                #-}
@@ -21,7 +20,6 @@ module Ouroboros.Storage.ImmutableDB.Impl.State
   , modifyOpenState
   , withOpenState
   , closedStateFromInternalState
-  , closeOpenHandles
   , closeOpenStateHandles
   ) where
 
@@ -37,7 +35,7 @@ import           Control.Monad.Class.MonadThrow hiding (onException)
 import           Ouroboros.Consensus.Util (SomePair (..))
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry,
-                     unsafeReleaseAll)
+                     allocate, unsafeReleaseAll)
 
 import           Ouroboros.Storage.Common
 import           Ouroboros.Storage.EpochInfo
@@ -120,8 +118,9 @@ data ClosedState = ClosedState
 
 -- | Create the internal open state for the given epoch.
 mkOpenState
-  :: forall m hash h. (HasCallStack, MonadThrow m)
-  => HasFS m h
+  :: forall m hash h. (HasCallStack, IOLike m)
+  => ResourceRegistry m
+  -> HasFS m h
   -> ErrorHandling ImmutableDBError m
   -> Index m hash h
   -> EpochNo
@@ -129,32 +128,28 @@ mkOpenState
   -> ImmTipWithHash hash
   -> AllowExisting
   -> m (OpenState m hash h)
-mkOpenState HasFS{..} err index epoch nextIteratorID tip existing =
-    -- TODO use a ResourceRegistry for this
-    closeOnException     (hOpen (renderFile "epoch" epoch)     appendMode) $ \eHnd ->
-      closeOnException   (Index.openPrimaryIndex index epoch existing)     $ \pHnd ->
-        closeOnException (hOpen (renderFile "secondary" epoch) appendMode) $ \sHnd -> do
-          epochOffset     <- hGetSize eHnd
-          secondaryOffset <- hGetSize sHnd
-          return OpenState
-            { _currentEpoch           = epoch
-            , _currentEpochOffset     = BlockOffset epochOffset
-            , _currentSecondaryOffset = fromIntegral secondaryOffset
-            , _currentEpochHandle     = eHnd
-            , _currentPrimaryHandle   = pHnd
-            , _currentSecondaryHandle = sHnd
-            , _currentTip             = tip
-            , _nextIteratorID         = nextIteratorID
-            , _index                  = index
-            }
+mkOpenState registry HasFS{..} _err index epoch nextIteratorID tip existing = do
+    eHnd <- allocateHandle $ hOpen (renderFile "epoch" epoch)     appendMode
+    pHnd <- allocateHandle $ Index.openPrimaryIndex index epoch existing
+    sHnd <- allocateHandle $ hOpen (renderFile "secondary" epoch) appendMode
+    epochOffset     <- hGetSize eHnd
+    secondaryOffset <- hGetSize sHnd
+    return OpenState
+      { _currentEpoch           = epoch
+      , _currentEpochOffset     = BlockOffset epochOffset
+      , _currentSecondaryOffset = fromIntegral secondaryOffset
+      , _currentEpochHandle     = eHnd
+      , _currentPrimaryHandle   = pHnd
+      , _currentSecondaryHandle = sHnd
+      , _currentTip             = tip
+      , _nextIteratorID         = nextIteratorID
+      , _index                  = index
+      }
   where
     appendMode = AppendMode existing
 
-    -- | Open the handle and run a function using that handle, but if it
-    -- throws an 'ImmutableDBError' or 'FsError', close the handle.
-    closeOnException :: m (Handle h) -> (Handle h -> m a) -> m a
-    closeOnException open k = open >>= \h ->
-      onException hasFsErr err (hClose h) (k h)
+    allocateHandle :: m (Handle h) -> m (Handle h)
+    allocateHandle open = snd <$> allocate registry (const open) hClose
 
 -- | Get the 'OpenState' of the given database, throw a 'ClosedDBError' in
 -- case it is closed.
@@ -222,14 +217,13 @@ modifyOpenState ImmutableDBEnv { _dbHasFS = hasFS :: HasFS m h, .. } action = do
       ExitCaseSuccess (Left (UserError {}))       -> putMVar _dbInternalState st
 
     shutDown :: InternalState m hash h -> m ()
-    shutDown st =
+    shutDown st = do
+      let cst = closedStateFromInternalState st
+      putMVar _dbInternalState (DbClosed cst)
       -- This function ('modifyOpenState') can be called from all threads, not
       -- necessarily the one that opened the ImmutableDB and the registry, so
       -- we must use 'unsafeReleaseAll' instead of 'releaseAll'.
-      unsafeReleaseAll _dbRegistry `finally` do
-        let !cst = closedStateFromInternalState st
-        putMVar _dbInternalState (DbClosed cst)
-        closeOpenHandles hasFS st
+      unsafeReleaseAll _dbRegistry
 
     mutation :: HasCallStack
              => InternalState m hash h
@@ -276,16 +270,14 @@ withOpenState ImmutableDBEnv { _dbHasFS = hasFS :: HasFS m h, .. } action = do
       ExitCaseSuccess (Left (UserError {}))       -> return ()
 
     shutDown :: m ()
-    shutDown =
+    shutDown = do
+      -- We need to get the most recent state because it might have changed
+      -- behind our back
+      updateMVar_ _dbInternalState $ DbClosed . closedStateFromInternalState
       -- This function ('withOpenState') can be called from all threads, not
       -- necessarily the one that opened the ImmutableDB and the registry, so
       -- we must use 'unsafeReleaseAll' instead of 'releaseAll'.
-      unsafeReleaseAll _dbRegistry `finally` do
-        -- We need to get the most recent state because it might have changed
-        -- behind our back
-        st <- updateMVar _dbInternalState $ \st ->
-                (DbClosed (closedStateFromInternalState st), st)
-        closeOpenHandles hasFS st
+      unsafeReleaseAll _dbRegistry
 
     access :: HasCallStack
            => InternalState m hash h
@@ -293,14 +285,11 @@ withOpenState ImmutableDBEnv { _dbHasFS = hasFS :: HasFS m h, .. } action = do
     access (DbClosed _) = throwUserError _dbErr ClosedDBError
     access (DbOpen ost) = action hasFS ost
 
-closeOpenHandles :: Monad m => HasFS m h -> InternalState m hash h -> m ()
-closeOpenHandles hasFS = \case
-    DbClosed _       -> return ()
-    DbOpen openState -> closeOpenStateHandles hasFS openState
-
--- TODO what if this fails? Use a 'ResourceRegistry'?
 closeOpenStateHandles :: Monad m => HasFS m h -> OpenState m hash h -> m ()
 closeOpenStateHandles HasFS { hClose } OpenState {..}  = do
+    -- If one of the 'hClose' calls fails, the error will bubble up to the
+    -- bracketed call to 'withRegistry', which will close the
+    -- 'ResourceRegistry' and thus all the remaining handles in it.
     hClose _currentEpochHandle
     hClose _currentPrimaryHandle
     hClose _currentSecondaryHandle

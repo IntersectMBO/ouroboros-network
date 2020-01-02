@@ -77,10 +77,10 @@ validateAndReopen validateEnv valPol nextIteratorID = do
     case tip of
       TipGen -> assert (epoch == 0) $ do
         traceWith tracer NoValidLastLocation
-        mkOpenState hasFS err index epoch nextIteratorID TipGen MustBeNew
+        mkOpenState registry hasFS err index epoch nextIteratorID TipGen MustBeNew
       _     -> do
         traceWith tracer $ ValidatedLastLocation epoch (forgetHash <$> tip)
-        mkOpenState hasFS err index epoch nextIteratorID tip    AllowExisting
+        mkOpenState registry hasFS err index epoch nextIteratorID tip    AllowExisting
   where
     ValidateEnv { hasFS, err, hashInfo, tracer } = validateEnv
     index = fileBackedIndex hasFS err hashInfo

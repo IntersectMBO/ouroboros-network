@@ -285,12 +285,11 @@ closeDBImpl ImmutableDBEnv {..} = releaseAll _dbRegistry `finally` do
       DbClosed  _ -> do
         traceWith _dbTracer $ DBAlreadyClosed
         putMVar _dbInternalState internalState
-      DbOpen openState@OpenState {..} -> do
+      DbOpen OpenState {..} -> do
         let !closedState = closedStateFromInternalState internalState
         -- Close the database before doing the file-system operations so that
         -- in case these fail, we don't leave the database open.
         putMVar _dbInternalState (DbClosed closedState)
-        closeOpenStateHandles _dbHasFS openState
         traceWith _dbTracer DBClosed
   where
     HasFS{..} = _dbHasFS
@@ -348,20 +347,20 @@ deleteAfterImpl dbEnv@ImmutableDBEnv { _dbTracer } newTip =
     when (newTipEpochSlot < currentTipEpochSlot) $ do
       !ost <- lift $ do
         traceWith _dbTracer $ DeletingAfter newTip
-        -- Close the handles for the current epoch, as we might have to
-        -- remove it
-        closeOpenStateHandles hasFS st
+        -- Release the open handles and terminate the running threads, as we
+        -- might have to remove files that are currently opened.
+        releaseAll _dbRegistry
         newTipWithHash <- truncateTo hasFS st newTipEpochSlot
         let (newEpoch, allowExisting) = case newTipEpochSlot of
               TipGen                  -> (0, MustBeNew)
               Tip (EpochSlot epoch _) -> (epoch, AllowExisting)
         -- Reset the index, as it can contain stale information
         Index.reset _index newEpoch
-        mkOpenState hasFS _dbErr _index newEpoch _nextIteratorID newTipWithHash
-          allowExisting
+        mkOpenState _dbRegistry hasFS _dbErr _index newEpoch _nextIteratorID
+          newTipWithHash allowExisting
       put ost
   where
-    ImmutableDBEnv { _dbErr, _dbEpochInfo, _dbHashInfo } = dbEnv
+    ImmutableDBEnv { _dbErr, _dbEpochInfo, _dbHashInfo, _dbRegistry } = dbEnv
 
     -- | The current tip as a 'TipEpochSlot'
     blockOrEBBEpochSlot :: BlockOrEBB -> m EpochSlot
@@ -639,10 +638,10 @@ appendBlockImpl dbEnv slot headerHash binaryInfo =
         throwUserError _dbErr $
           AppendToSlotInThePastError slot (forgetHash <$> _currentTip)
 
-      appendEpochSlot _dbHasFS _dbErr _dbEpochInfo _index
+      appendEpochSlot _dbRegistry _dbHasFS _dbErr _dbEpochInfo _index
         epochSlot (Block slot) headerHash binaryInfo
   where
-    ImmutableDBEnv { _dbEpochInfo, _dbErr, _dbHashInfo } = dbEnv
+    ImmutableDBEnv { _dbEpochInfo, _dbErr, _dbHashInfo, _dbRegistry } = dbEnv
 
 appendEBBImpl
   :: forall m hash. (HasCallStack, IOLike m)
@@ -667,14 +666,15 @@ appendEBBImpl dbEnv epoch headerHash binaryInfo =
       when inThePast $ lift $ throwUserError _dbErr $
         AppendToEBBInThePastError epoch _currentEpoch
 
-      appendEpochSlot _dbHasFS _dbErr _dbEpochInfo _index (EpochSlot epoch 0)
-        (EBB epoch) headerHash binaryInfo
+      appendEpochSlot _dbRegistry _dbHasFS _dbErr _dbEpochInfo _index
+        (EpochSlot epoch 0) (EBB epoch) headerHash binaryInfo
   where
-    ImmutableDBEnv { _dbEpochInfo, _dbErr, _dbHashInfo } = dbEnv
+    ImmutableDBEnv { _dbEpochInfo, _dbErr, _dbHashInfo, _dbRegistry } = dbEnv
 
 appendEpochSlot
   :: forall m h hash. (HasCallStack, IOLike m)
-  => HasFS m h
+  => ResourceRegistry m
+  -> HasFS m h
   -> ErrorHandling ImmutableDBError m
   -> EpochInfo m
   -> Index m hash h
@@ -684,7 +684,7 @@ appendEpochSlot
   -> hash
   -> BinaryInfo Builder
   -> StateT (OpenState m hash h) m ()
-appendEpochSlot hasFS err epochInfo index epochSlot blockOrEBB headerHash
+appendEpochSlot registry hasFS err epochInfo index epochSlot blockOrEBB headerHash
                 BinaryInfo { binaryBlob, headerOffset, headerSize } = do
     OpenState { _currentEpoch = initialEpoch } <- get
 
@@ -694,11 +694,11 @@ appendEpochSlot hasFS err epochInfo index epochSlot blockOrEBB headerHash
     when (epoch > initialEpoch) $ do
       let newEpochsToStart :: Int
           newEpochsToStart = fromIntegral . unEpochNo $ epoch - initialEpoch
-      replicateM_ newEpochsToStart (startNewEpoch hasFS err index epochInfo)
+      replicateM_ newEpochsToStart (startNewEpoch registry hasFS err index epochInfo)
 
     -- We may have updated the state with 'startNewEpoch', so get the
     -- (possibly) updated state, but first remember the current epoch
-    lastState@OpenState {..} <- get
+    OpenState {..} <- get
 
     -- Compute the next empty slot @m@, if we need to write to slot @n@, we
     -- will need to backfill @n - m@ slots.
@@ -715,14 +715,7 @@ appendEpochSlot hasFS err epochInfo index epochSlot blockOrEBB headerHash
               epochInfoBlockRelative epochInfo lastSlot
 
     -- Append to the end of the epoch file.
-    (blockSize, entrySize) <- lift $ onException hasFsErr err
-      -- In 'modifyOpenState': when an exception occurs, we close the open
-      -- file handles in the initial open state. However, we might have
-      -- opened a new one when we called 'startNewEpoch', and these handles
-      -- will be different from the ones in the initial state, so
-      -- 'modifyOpenState' cannot close them in case of an exception. We
-      -- must take care closing them here.
-      (closeOpenStateHandles hasFS lastState) $ do
+    (blockSize, entrySize) <- lift $ do
 
         -- Write to the epoch file
         (blockSize, crc) <- hPutCRC hasFS _currentEpochHandle binaryBlob
@@ -754,16 +747,16 @@ appendEpochSlot hasFS err epochInfo index epochSlot blockOrEBB headerHash
       }
   where
     EpochSlot epoch relSlot = epochSlot
-    HasFS { hasFsErr } = hasFS
 
 startNewEpoch
   :: forall m h hash. (HasCallStack, IOLike m)
-  => HasFS m h
+  => ResourceRegistry m
+  -> HasFS m h
   -> ErrorHandling ImmutableDBError m
   -> Index m hash h
   -> EpochInfo m
   -> StateT (OpenState m hash h) m ()
-startNewEpoch hasFS@HasFS{..} err index epochInfo = do
+startNewEpoch registry hasFS@HasFS{..} err index epochInfo = do
     st@OpenState {..} <- get
 
     -- Find out the size of the current epoch, so we can pad the primary
@@ -796,7 +789,7 @@ startNewEpoch hasFS@HasFS{..} err index epochInfo = do
       Index.appendOffsets index _currentPrimaryHandle backfillOffsets
       `finally` closeOpenStateHandles hasFS st
 
-    st' <- lift $ mkOpenState hasFS err index (succ _currentEpoch) _nextIteratorID
-      _currentTip MustBeNew
+    st' <- lift $ mkOpenState registry hasFS err index (succ _currentEpoch)
+      _nextIteratorID _currentTip MustBeNew
 
     put st'
