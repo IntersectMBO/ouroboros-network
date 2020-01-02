@@ -14,7 +14,6 @@ module Ouroboros.Storage.VolatileDB.Util
 
       -- * Exception handling
     , fromEither
-    , modifyMVar
     , wrapFsError
     , tryVolDB
 
@@ -37,13 +36,10 @@ import           Data.Text (Text)
 import qualified Data.Text as T
 import           Text.Read (readMaybe)
 
-import           Control.Monad.Class.MonadThrow
-
 import           Ouroboros.Network.Point (WithOrigin)
 
 import           Ouroboros.Consensus.Util (lastMaybe, safeMaximum,
                      safeMaximumOn)
-import           Ouroboros.Consensus.Util.IOLike
 
 import           Ouroboros.Storage.FS.API.Types
 import           Ouroboros.Storage.Util.ErrorHandling (ErrorHandling (..))
@@ -97,18 +93,6 @@ fromEither :: Monad m
 fromEither err = \case
     Left e -> EH.throwError err e
     Right a -> return a
-
-modifyMVar :: IOLike m
-           => StrictMVar m a
-           -> (a -> m (a,b))
-           -> m b
-modifyMVar m action =
-    snd . fst <$> generalBracket (takeMVar m)
-       (\oldState ec -> case ec of
-            ExitCaseSuccess (newState,_) -> putMVar m newState
-            ExitCaseException _ex        -> putMVar m oldState
-            ExitCaseAbort                -> putMVar m oldState
-       ) action
 
 wrapFsError :: Monad m
             => ErrorHandling FsError         m
