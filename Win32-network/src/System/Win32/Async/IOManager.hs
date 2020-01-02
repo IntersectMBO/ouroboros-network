@@ -16,12 +16,16 @@ import Control.Concurrent
 import Control.Exception (Exception (..), bracket, throwIO)
 import Control.Monad (when)
 import Data.Word (Word32)
+import Foreign.C (CInt (..))
 import Foreign.Ptr (Ptr, nullPtr)
 import Foreign.StablePtr (deRefStablePtr, freeStablePtr)
 import Foreign.Marshal (alloca)
 import Foreign.Storable (Storable (..))
 
-import System.Win32.Types (HANDLE, DWORD)
+import           Network.Socket (Socket)
+import qualified Network.Socket as Socket
+
+import System.Win32.Types (BOOL, HANDLE, DWORD)
 import qualified System.Win32.Types as Win32
 import qualified System.Win32.File  as Win32 (closeHandle)
 import System.Win32.Async.ErrCode
@@ -51,10 +55,24 @@ createIOCompletionPort concurrentThreads
 foreign import ccall unsafe "windows.h CreateIoCompletionPort"
     c_CreateIoCompletionPort :: HANDLE -> HANDLE -> Ptr () -> DWORD -> IO HANDLE
 
-foreign import ccall safe "HsAssociate"
-    associateWithIOCompletionPort :: HANDLE           -- ^ handle
-                                  -> IOCompletionPort -- ^ I/O completion port
-                                  -> IO ()
+associateWithIOCompletionPort :: Either HANDLE Socket
+                              -> IOCompletionPort
+                              -> IO ()
+associateWithIOCompletionPort (Left h) iocp = do
+    Win32.failIfFalse_ "associateWithIOCompletionPort" (c_AssociateHandle h iocp)
+associateWithIOCompletionPort (Right sock) iocp =
+    Socket.withFdSocket sock $ \fd -> do
+      Win32.failIfFalse_ "associateWithIOCompletionPort" (c_AssociateSocket fd iocp)
+
+foreign import ccall safe "HsAssociateHandle"
+    c_AssociateHandle :: HANDLE           -- ^ handle
+                      -> IOCompletionPort -- ^ I/O completion port
+                      -> IO BOOL
+
+foreign import ccall safe "HsAssociateSocket"
+    c_AssociateSocket :: CInt             -- ^ Socket descriptor
+                      -> IOCompletionPort -- ^ I/O completion port
+                      -> IO BOOL
 
 -- | Create an 'IOCompletionPort' and start a I/O manager thread (bound thread).
 -- The IOManager thread will only run for the duration of the callback.

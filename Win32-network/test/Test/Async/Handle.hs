@@ -76,7 +76,7 @@ test_interruptible_connectNamedPipe = withIOManager $ \iocp ->
                              Nothing)
             closeHandle
             $ \hpipe -> do
-                _ <- associateWithIOCompletionPort hpipe iocp
+                _ <- associateWithIOCompletionPort (Left hpipe) iocp
                 tid <- forkIO (connectNamedPipe hpipe)
                 threadDelay 100
                 killThread tid
@@ -102,8 +102,8 @@ test_interruptible_readHandle = withIOManager $ \iocp ->
                                 Nothing)
             (\(x, y) -> closeHandle x >> closeHandle y)
             $ \(hpipe, hpipe') -> do
-                _ <- associateWithIOCompletionPort hpipe  iocp
-                _ <- associateWithIOCompletionPort hpipe' iocp
+                _ <- associateWithIOCompletionPort (Left hpipe)  iocp
+                _ <- associateWithIOCompletionPort (Left hpipe') iocp
                 tid <- forkIO (void $ readHandle hpipe' 1)
                 threadDelay 100
                 killThread tid
@@ -129,8 +129,8 @@ test_interruptible_readHandle_2 = withIOManager $ \iocp -> do
                                 Nothing)
             (\(x, y) -> closeHandle x >> closeHandle y)
             $ \(hpipe, hpipe') -> do
-              _ <- associateWithIOCompletionPort hpipe  iocp
-              _ <- associateWithIOCompletionPort hpipe' iocp
+              _ <- associateWithIOCompletionPort (Left hpipe)  iocp
+              _ <- associateWithIOCompletionPort (Left hpipe') iocp
               tid  <- forkIO (void $ readHandle hpipe' 1)
               tid' <- forkIO (void $ readHandle hpipe' 1)
               threadDelay 100
@@ -162,8 +162,8 @@ test_interruptible_writeHandle = withIOManager $ \iocp -> do
                           Nothing)
       (\(x, y) -> closeHandle x >> closeHandle y)
       $ \(r, w) -> do
-        _ <- associateWithIOCompletionPort r iocp
-        _ <- associateWithIOCompletionPort w iocp
+        _ <- associateWithIOCompletionPort (Left r) iocp
+        _ <- associateWithIOCompletionPort (Left w) iocp
 
         tid <- forkIOWithUnmask $ \unmask ->
           void $ do
@@ -213,7 +213,7 @@ prop_async_read_and_writes (LargeNonEmptyBS bsIn bufSizeIn) (LargeNonEmptyBS bsO
             closeHandle
             $ \h -> do
               -- associate 'h' with  I/O completion 'port'
-              _ <- associateWithIOCompletionPort h iocp
+              _ <- associateWithIOCompletionPort (Left h) iocp
               putMVar syncVarStart ()
               connectNamedPipe h
               void $ forkIO $
@@ -237,7 +237,7 @@ prop_async_read_and_writes (LargeNonEmptyBS bsIn bufSizeIn) (LargeNonEmptyBS bsO
           closeHandle
           $ \h -> do
             -- associate 'h' with  I/O completion 'port'
-            _ <- associateWithIOCompletionPort h iocp
+            _ <- associateWithIOCompletionPort (Left h) iocp
             readerAsync <- async $
               readHandle h (BS.length bsOut)
                 >>= putMVar clientVar
@@ -499,7 +499,7 @@ prop_PingPong n blocking (LargeNonEmptyBS bs bufSize) =
                            (fromIntegral bufSize)
                            0
                            Nothing
-      associateWithIOCompletionPort h iocp
+      associateWithIOCompletionPort (Left h) iocp
       let channel = handleToBinaryChannel h
       (tid, lock) <- forkPingPongServer
                         h channel
@@ -513,7 +513,7 @@ prop_PingPong n blocking (LargeNonEmptyBS bs bufSize) =
                        oPEN_EXISTING
                        fILE_FLAG_OVERLAPPED
                        Nothing
-      associateWithIOCompletionPort h' iocp
+      associateWithIOCompletionPort (Left h') iocp
       let channel' = handleToBinaryChannel h'
       res <- runPingPongClient channel' blocking tid (constPingPongClient n bs)
 
@@ -552,7 +552,7 @@ prop_PingPongPipelined blocking (Positive bufSize) (NonEmpty bss0) =
                            maxBound
                            0
                            Nothing
-      associateWithIOCompletionPort h iocp
+      associateWithIOCompletionPort (Left h) iocp
       let channel = handleToBinaryChannel h
       (tid, lock) <-
           forkPingPongServer h channel
@@ -566,7 +566,7 @@ prop_PingPongPipelined blocking (Positive bufSize) (NonEmpty bss0) =
                        oPEN_EXISTING
                        fILE_FLAG_OVERLAPPED
                        Nothing
-      associateWithIOCompletionPort h' iocp
+      associateWithIOCompletionPort (Left h') iocp
       let channel' = handleToBinaryChannel h'
       res <- runPingPongClientPipelined channel' blocking tid bss
 
