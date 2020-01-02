@@ -5,7 +5,7 @@ module Test.Dynamic.Util.Tests (
 import           Test.Tasty
 import           Test.Tasty.QuickCheck
 
-import           Ouroboros.Consensus.BlockchainTime (NumSlots (..))
+import           Ouroboros.Consensus.BlockchainTime.Mock
 import           Ouroboros.Consensus.Node.ProtocolInfo.Abstract
                      (NumCoreNodes (..))
 import           Ouroboros.Consensus.Protocol.Abstract (SecurityParam (..))

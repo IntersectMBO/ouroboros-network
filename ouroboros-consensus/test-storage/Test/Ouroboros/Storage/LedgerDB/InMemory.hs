@@ -28,6 +28,8 @@ import           Ouroboros.Storage.Common
 import           Ouroboros.Storage.LedgerDB.Conf
 import           Ouroboros.Storage.LedgerDB.InMemory
 
+import           Test.Util.QuickCheck
+
 tests :: TestTree
 tests = testGroup "InMemory" [
       testGroup "Serialisation" [
@@ -383,15 +385,3 @@ instance Arbitrary (Trivial (Tip Int)) where
                 gen <- arbitrary
                 if gen then return TipGen
                        else Tip <$> arbitrary
-
-{-------------------------------------------------------------------------------
-  Auxiliary
--------------------------------------------------------------------------------}
-
--- | Like '>=', but prints a counterexample when it fails.
-ge :: (Ord a, Show a) => a -> a -> Property
-x `ge` y = counterexample (show x ++ " < " ++ show y) $ x >= y
-
--- | Like '<', but prints a counterexample when it fails.
-lt :: (Ord a, Show a) => a -> a -> Property
-x `lt` y = counterexample (show x ++ " >= " ++ show y) $ x < y

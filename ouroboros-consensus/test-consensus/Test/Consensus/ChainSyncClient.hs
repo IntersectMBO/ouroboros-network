@@ -52,6 +52,7 @@ import           Ouroboros.Network.Protocol.ChainSync.Type (ChainSync)
 import           Cardano.Crypto.DSIGN.Mock
 
 import           Ouroboros.Consensus.BlockchainTime
+import           Ouroboros.Consensus.BlockchainTime.Mock
 import           Ouroboros.Consensus.ChainSyncClient
 import           Ouroboros.Consensus.Ledger.Extended hiding (ledgerState)
 import           Ouroboros.Consensus.NodeId
@@ -265,7 +266,7 @@ runChainSync
 runChainSync securityParam maxClockSkew (ClientUpdates clientUpdates)
     (ServerUpdates serverUpdates) startSyncingAt = withRegistry $ \registry -> do
 
-    testBtime <- newTestBlockchainTime registry numSlots slotDuration
+    testBtime <- newTestBlockchainTime registry numSlots slotLengths
     let btime = testBlockchainTime testBtime
 
     -- Set up the client
@@ -397,15 +398,15 @@ runChainSync securityParam maxClockSkew (ClientUpdates clientUpdates)
   where
     k = maxRollbacks securityParam
 
-    slotDuration :: DiffTime
-    slotDuration = 100000
+    slotLengths :: SlotLengths
+    slotLengths = singletonSlotLengths $ slotLengthFromSec 20
 
     nodeCfg :: CoreNodeId -> NodeConfig (Bft BftMockCrypto)
     nodeCfg coreNodeId = BftNodeConfig
       { bftParams   = BftParams
         { bftSecurityParam = securityParam
         , bftNumNodes      = 2
-        , bftSlotLength    = slotLengthFromSec 20
+        , bftSlotLengths   = slotLengths
         }
       , bftNodeId   = fromCoreNodeId coreNodeId
       , bftSignKey  = SignKeyMockDSIGN 0

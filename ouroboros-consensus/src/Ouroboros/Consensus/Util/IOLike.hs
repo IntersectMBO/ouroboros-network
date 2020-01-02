@@ -7,6 +7,7 @@ module Ouroboros.Consensus.Util.IOLike (
     -- *** MonadThrow
   , uninterruptibleCancel
     -- *** MonadSTM
+  , MonadSTM -- opaque
   , STM
   , atomically
   , check

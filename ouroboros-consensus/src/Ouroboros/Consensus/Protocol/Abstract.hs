@@ -17,7 +17,6 @@ module Ouroboros.Consensus.Protocol.Abstract (
     OuroborosTag(..)
   , NodeConfig
   , SecurityParam(..)
-  , SlotLength(..)
     -- * State monad for Ouroboros state
   , HasNodeState
   , HasNodeState_(..)
@@ -36,19 +35,18 @@ import           Crypto.Random (MonadRandom (..))
 import           Data.Function (on)
 import           Data.Functor.Identity
 import           Data.Kind (Constraint)
-import           Data.Time (NominalDiffTime)
 import           Data.Typeable (Typeable)
 import           Data.Word (Word64)
 import           GHC.Generics (Generic)
+import           GHC.Stack
 
 import           Cardano.Prelude (NoUnexpectedThunks)
 
 import           Ouroboros.Network.Block (HasHeader (..), SlotNo (..))
 import           Ouroboros.Network.Point (WithOrigin)
 
+import           Ouroboros.Consensus.BlockchainTime.SlotLengths
 import           Ouroboros.Consensus.Util.Random
-
-import           GHC.Stack
 
 -- | Static node configuration
 --
@@ -183,11 +181,8 @@ class ( Show (ChainState    p)
   -- | We require that protocols support a @k@ security parameter
   protocolSecurityParam :: NodeConfig p -> SecurityParam
 
-  -- | The slot length.
-  --
-  -- TODO: the 'SlotLength' will change after the hard fork, so this will need
-  -- to be modified.
-  protocolSlotLength :: NodeConfig p -> SlotLength
+  -- | The slot lengths (across all hard forks)
+  protocolSlotLengths :: NodeConfig p -> SlotLengths
 
   -- | We require that it's possible to reverse the chain state up to @k@
   -- blocks.
@@ -249,10 +244,6 @@ class ( Show (ChainState    p)
 -- NOTE: This talks about the number of /blocks/ we can roll back, not
 -- the number of /slots/.
 newtype SecurityParam = SecurityParam { maxRollbacks :: Word64 }
-  deriving (Show, Eq, Generic, NoUnexpectedThunks)
-
--- | Slot length
-newtype SlotLength = SlotLength { getSlotLength :: NominalDiffTime }
   deriving (Show, Eq, Generic, NoUnexpectedThunks)
 
 {-------------------------------------------------------------------------------

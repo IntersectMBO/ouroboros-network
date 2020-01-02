@@ -18,6 +18,7 @@ import           Test.QuickCheck hiding (Fixed (..))
 import           Ouroboros.Network.Block (SlotNo (..))
 
 import           Ouroboros.Consensus.BlockchainTime
+import           Ouroboros.Consensus.BlockchainTime.Mock
 import           Ouroboros.Consensus.ChainSyncClient (ClockSkew (..))
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Util.Random (Seed (..))
@@ -26,9 +27,11 @@ import           Ouroboros.Storage.Common (EpochNo (..), EpochSize (..))
 import           Ouroboros.Storage.ImmutableDB.Layout
 
 
-minNumCoreNodes, minNumSlots :: Int
+minNumCoreNodes :: Int
 minNumCoreNodes = 2
-minNumSlots     = 1
+
+minNumSlots :: Word64
+minNumSlots = 1
 
 instance Arbitrary NumCoreNodes where
   arbitrary = NumCoreNodes <$> choose (minNumCoreNodes, 5)
@@ -55,6 +58,10 @@ instance Arbitrary UTCTime where
 -- | Length between 0.001 and 20 seconds, millisecond granularity
 instance Arbitrary SlotLength where
   arbitrary = slotLengthFromMillisec <$> choose (1, 20 * 1_000)
+
+  -- Try to shrink the slot length to just "1", for tests where the slot length
+  -- really doesn't matter very much
+  shrink (SlotLength n) = if n /= 1 then [SlotLength 1] else []
 
 deriving via UTCTime         instance Arbitrary SystemStart
 deriving via Positive Word64 instance Arbitrary SlotNo

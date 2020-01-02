@@ -17,17 +17,9 @@
 -}
 module Main where
 
-import qualified Cardano.Binary as CB
-import qualified Cardano.Chain.Epoch.File as CC
-import qualified Cardano.Chain.Genesis as CC.Genesis
-import           Cardano.Chain.Slotting (EpochSlots (..))
-import qualified Cardano.Chain.Update as CC.Update
-import           Cardano.Crypto (Hash, RequiresNetworkMagic (..),
-                     decodeAbstractHash)
 import           Control.Exception (Exception, bracket, throwIO)
 import           Control.Monad.Except (liftIO, runExceptT)
 import           Control.Monad.Trans.Resource (runResourceT)
-import           Control.Tracer (contramap, debugTracer, nullTracer)
 import           Data.Bifunctor (first)
 import qualified Data.ByteString as BS
 import           Data.Foldable (for_)
@@ -39,8 +31,23 @@ import           Data.Typeable (Typeable)
 import           Data.Word (Word64)
 import qualified Options.Applicative as Options
 import           Options.Generic
-import           Ouroboros.Consensus.BlockchainTime (realBlockchainTime,
-                     slotLengthFromMillisec)
+import           Path
+import           Path.IO (createDirIfMissing, listDir)
+import qualified Streaming.Prelude as S
+import           System.Directory (canonicalizePath)
+import qualified System.IO as IO
+
+import           Control.Tracer (contramap, debugTracer, nullTracer)
+
+import qualified Cardano.Binary as CB
+import qualified Cardano.Chain.Epoch.File as CC
+import qualified Cardano.Chain.Genesis as CC.Genesis
+import           Cardano.Chain.Slotting (EpochSlots (..))
+import qualified Cardano.Chain.Update as CC.Update
+import           Cardano.Crypto (Hash, RequiresNetworkMagic (..),
+                     decodeAbstractHash)
+
+import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Ledger.Byron (ByronBlock)
 import qualified Ouroboros.Consensus.Ledger.Byron as Byron
 import qualified Ouroboros.Consensus.Node as Node
@@ -52,16 +59,12 @@ import           Ouroboros.Consensus.Util.Condense (condense)
 import           Ouroboros.Consensus.Util.IOLike (atomically)
 import           Ouroboros.Consensus.Util.Orphans ()
 import           Ouroboros.Consensus.Util.ResourceRegistry
+
 import qualified Ouroboros.Storage.ChainDB as ChainDB
 import           Ouroboros.Storage.ChainDB.Impl.Args (fromChainDbArgs)
 import qualified Ouroboros.Storage.ChainDB.Impl.ImmDB as ImmDB
 import           Ouroboros.Storage.Common (EpochSize (..))
 import           Ouroboros.Storage.EpochInfo (fixedSizeEpochInfo)
-import           Path
-import           Path.IO (createDirIfMissing, listDir)
-import qualified Streaming.Prelude as S
-import           System.Directory (canonicalizePath)
-import qualified System.IO as IO
 
 instance ParseField UTCTime
 
@@ -167,8 +170,8 @@ validateChainDb dbDir genesisConfig onlyImmDB verbose =
       btime <- realBlockchainTime
         registry
         nullTracer
-        slotLength
         (nodeStartTime (Proxy @ByronBlock) cfg)
+        (focusSlotLengths $ singletonSlotLengths slotLength)
       let chainDbArgs = mkChainDbArgs registry btime
 
       if onlyImmDB then
@@ -189,7 +192,8 @@ validateChainDb dbDir genesisConfig onlyImmDB verbose =
             putStrLn $ "DB tip: " ++ condense chainDbTipPoint
           )
   where
-    slotLength = slotLengthFromMillisec (20 * 1000)
+    -- This converts the old chain, which has a 20s slot length.
+    slotLength = slotLengthFromSec 20
     ProtocolInfo { pInfoInitLedger = initLedger, pInfoConfig = cfg } =
       protocolInfoByron
         genesisConfig
@@ -207,7 +211,7 @@ validateChainDb dbDir genesisConfig onlyImmDB verbose =
 
     mkChainDbArgs registry btime =
       let args = Node.mkChainDbArgs tracer registry btime
-            (toFilePath dbDir) cfg initLedger slotLength epochInfo
+            (toFilePath dbDir) cfg initLedger epochInfo
       in args {
           ChainDB.cdbValidation = ImmDB.ValidateAllEpochs
         }

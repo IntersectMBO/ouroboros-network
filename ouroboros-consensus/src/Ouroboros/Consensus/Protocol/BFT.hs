@@ -42,6 +42,7 @@ import           GHC.Generics (Generic)
 import           Ouroboros.Network.Block
 
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.NodeId (NodeId (..))
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.Signed
@@ -108,8 +109,12 @@ data BftParams = BftParams {
       -- | Number of core nodes
     , bftNumNodes      :: !Word64
 
-      -- | Slot length
-    , bftSlotLength    :: !SlotLength
+      -- | Slot lengths
+      --
+      -- Normally BFT only has a single slot length, of course. However,
+      -- in order to be able to test more easily with multiple slot lengths,
+      -- our mock BFT implementation supports multiple slot lengths.
+    , bftSlotLengths   :: !SlotLengths
     }
   deriving (Generic, NoUnexpectedThunks)
 
@@ -132,7 +137,7 @@ instance BftCrypto c => OuroborosTag (Bft c) where
   type ChainState    (Bft c) = ()
 
   protocolSecurityParam = bftSecurityParam . bftParams
-  protocolSlotLength    = bftSlotLength    . bftParams
+  protocolSlotLengths   = bftSlotLengths   . bftParams
 
   checkIsLeader BftNodeConfig{..} (SlotNo n) _l _cs = do
       return $ case bftNodeId of

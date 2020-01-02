@@ -56,8 +56,7 @@ import           Ouroboros.Consensus.Block (BlockProtocol)
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.ChainSyncClient (ClockSkew (..))
 import           Ouroboros.Consensus.Ledger.Extended (ExtLedgerState)
-import           Ouroboros.Consensus.Mempool (GenTx,
-                     MempoolCapacityBytes (..))
+import           Ouroboros.Consensus.Mempool (GenTx, MempoolCapacityBytes (..))
 import           Ouroboros.Consensus.Node.DbMarker
 import           Ouroboros.Consensus.Node.ErrorPolicy
 import           Ouroboros.Consensus.Node.ProtocolInfo
@@ -123,8 +122,8 @@ run tracers chainDbTracer diffusionTracers diffusionArguments networkMagic
       btime <- realBlockchainTime
         registry
         (blockchainTimeTracer tracers)
-        slotLength
         (nodeStartTime (Proxy @blk) cfg)
+        (focusSlotLengths slotLengths)
 
       chainDB <- initChainDB
         chainDbTracer
@@ -133,7 +132,6 @@ run tracers chainDbTracer diffusionTracers diffusionArguments networkMagic
         dbPath
         cfg
         initLedger
-        slotLength
         customiseChainDbArgs
 
       let nodeArgs = customiseNodeArgs $ mkNodeArgs
@@ -192,7 +190,7 @@ run tracers chainDbTracer diffusionTracers diffusionArguments networkMagic
       , pInfoInitState  = initState
       } = pInfo
 
-    slotLength = protocolSlotLength cfg
+    slotLengths = protocolSlotLengths cfg
 
     nodeToNodeVersionData   = NodeToNodeVersionData { networkMagic   = networkMagic }
     nodeToClientVersionData = NodeToClientVersionData { networkMagic = networkMagic }
@@ -207,15 +205,13 @@ initChainDB
   -> NodeConfig (BlockProtocol blk)
   -> ExtLedgerState blk
      -- ^ Initial ledger
-  -> SlotLength
   -> (ChainDbArgs IO blk -> ChainDbArgs IO blk)
       -- ^ Customise the 'ChainDbArgs'
   -> IO (ChainDB IO blk)
-initChainDB tracer registry btime dbPath cfg initLedger slotLength
-            customiseArgs = do
+initChainDB tracer registry btime dbPath cfg initLedger customiseArgs = do
     epochInfo <- newEpochInfo $ nodeEpochSize (Proxy @blk) cfg
     let args = customiseArgs $
-          mkChainDbArgs tracer registry btime dbPath cfg initLedger slotLength
+          mkChainDbArgs tracer registry btime dbPath cfg initLedger
           epochInfo
     ChainDB.openDB args
 
@@ -229,10 +225,9 @@ mkChainDbArgs
   -> NodeConfig (BlockProtocol blk)
   -> ExtLedgerState blk
      -- ^ Initial ledger
-  -> SlotLength
   -> EpochInfo IO
   -> ChainDbArgs IO blk
-mkChainDbArgs tracer registry btime dbPath cfg initLedger slotLength
+mkChainDbArgs tracer registry btime dbPath cfg initLedger
               epochInfo = (ChainDB.defaultArgs dbPath)
     { ChainDB.cdbBlocksPerFile    = 1000
     , ChainDB.cdbDecodeBlock      = nodeDecodeBlock         cfg
@@ -249,7 +244,7 @@ mkChainDbArgs tracer registry btime dbPath cfg initLedger slotLength
     , ChainDB.cdbHashInfo         = nodeHashInfo            (Proxy @blk)
     , ChainDB.cdbGenesis          = return initLedger
     , ChainDB.cdbAddHdrEnv        = nodeAddHeaderEnvelope   (Proxy @blk)
-    , ChainDB.cdbDiskPolicy       = defaultDiskPolicy secParam slotDiffTime
+    , ChainDB.cdbDiskPolicy       = defaultDiskPolicy secParam
     , ChainDB.cdbIsEBB            = nodeIsEBB
     , ChainDB.cdbCheckIntegrity   = nodeCheckIntegrity      cfg
     , ChainDB.cdbParamsLgrDB      = ledgerDbDefaultParams secParam
@@ -262,10 +257,6 @@ mkChainDbArgs tracer registry btime dbPath cfg initLedger slotLength
     }
   where
     secParam = protocolSecurityParam cfg
-
-    -- TODO cleaner way with subsecond precision
-    slotDiffTime = secondsToDiffTime
-      (slotLengthToMillisec slotLength `div` 1000)
 
 mkNodeArgs
   :: forall blk. RunNode blk

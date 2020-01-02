@@ -36,7 +36,7 @@ import           Ouroboros.Network.Block
 import           Ouroboros.Network.MockChain.Chain (Chain (..))
 import qualified Ouroboros.Network.MockChain.Chain as Chain
 
-import           Ouroboros.Consensus.BlockchainTime
+import           Ouroboros.Consensus.BlockchainTime.Mock
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Node.ProtocolInfo.Abstract
                      (NumCoreNodes (..))
@@ -237,13 +237,13 @@ consensusExpected k nodeJoinPlan schedule =
 emptyLeaderSchedule :: NumSlots -> LeaderSchedule
 emptyLeaderSchedule (NumSlots t) = LeaderSchedule $
     Map.fromList $
-    [ (SlotNo (toEnum i), [])
+    [ (SlotNo i, [])
     | i <- [ 0 .. t - 1 ]
     ]
 
 roundRobinLeaderSchedule :: NumCoreNodes -> NumSlots -> LeaderSchedule
 roundRobinLeaderSchedule (NumCoreNodes n) (NumSlots t) = LeaderSchedule $
     Map.fromList $
-    [ (SlotNo (toEnum i), [CoreNodeId (i `mod` n)])
+    [ (SlotNo i, [CoreNodeId (fromIntegral i `mod` n)])
     | i <- [ 0 .. t - 1 ]
     ]

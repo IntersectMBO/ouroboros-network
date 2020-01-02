@@ -20,10 +20,12 @@ import           Test.QuickCheck
 import           Test.Tasty
 import           Test.Tasty.QuickCheck
 
+import           Ouroboros.Network.Block (SlotNo (..))
 import           Ouroboros.Network.MockChain.Chain (Chain)
 import qualified Ouroboros.Network.MockChain.Chain as Chain
 
 import           Ouroboros.Consensus.BlockchainTime
+import           Ouroboros.Consensus.BlockchainTime.Mock
 import           Ouroboros.Consensus.Ledger.Byron (ByronBlock)
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Node.ProtocolInfo.Byron (plcCoreNodeId)
@@ -73,6 +75,7 @@ tests = testGroup "Dynamic chain generation"
               , (CoreNodeId 2,SlotNo 22)
               ]
             , nodeTopology = meshNodeTopology ncn
+            , slotLengths = defaultSlotLengths
             }
     , testProperty "rewind to EBB supported as of Issue #1312, #1" $
       once $
@@ -87,6 +90,7 @@ tests = testGroup "Dynamic chain generation"
                    , numSlots     = NumSlots 2
                    , nodeJoinPlan = NodeJoinPlan (Map.fromList [(CoreNodeId 0,SlotNo 0),(CoreNodeId 1,SlotNo 1)])
                    , nodeTopology = meshNodeTopology ncn
+                   , slotLengths  = defaultSlotLengths
                    }
         Seed {getSeed = (15069526818753326002,9758937467355895013,16548925776947010688,13173070736975126721,13719483751339084974)}
     , testProperty "rewind to EBB supported as of Issue #1312, #2" $
@@ -99,6 +103,7 @@ tests = testGroup "Dynamic chain generation"
                    , numSlots     = NumSlots 4
                    , nodeJoinPlan = NodeJoinPlan (Map.fromList [(CoreNodeId 0,SlotNo {unSlotNo = 0}),(CoreNodeId 1,SlotNo {unSlotNo = 3})])
                    , nodeTopology = meshNodeTopology ncn
+                   , slotLengths  = defaultSlotLengths
                    }
         Seed {getSeed = (16817746570690588019,3284322327197424879,14951803542883145318,5227823917971823767,14093715642382269482)}
     , testProperty "simple Real PBFT convergence" $
@@ -106,6 +111,9 @@ tests = testGroup "Dynamic chain generation"
         forAll arbitrary $ \seed ->
         prop_simple_real_pbft_convergence testConfig seed
     ]
+  where
+    defaultSlotLengths :: SlotLengths
+    defaultSlotLengths = singletonSlotLengths (SlotLength 1)
 
 prop_setup_coreNodeId ::
      NumCoreNodes
@@ -332,6 +340,7 @@ genRealPBFTTestConfig = do
       , nodeTopology
       , numCoreNodes
       , numSlots
+      , slotLengths = singletonSlotLengths (pbftSlotLength params)
       }
 
 shrinkRealPBFTTestConfig :: TestConfig -> [TestConfig]
@@ -350,6 +359,7 @@ shrinkTestConfigSlotsOnly TestConfig
   , numSlots
   , nodeJoinPlan
   , nodeTopology
+  , slotLengths
   } =
     dropId $
     [ TestConfig
@@ -357,9 +367,11 @@ shrinkTestConfigSlotsOnly TestConfig
         , nodeTopology = top'
         , numCoreNodes
         , numSlots     = t'
+        , slotLengths  = ls'
         }
     | t'            <- andId shrink numSlots
     , let adjustedP  = truncateNodeJoinPlan nodeJoinPlan numCoreNodes (numSlots, t')
     , p'            <- andId shrinkNodeJoinPlan adjustedP
     , top'          <- andId shrinkNodeTopology nodeTopology
+    , ls'           <- andId shrink slotLengths
     ]

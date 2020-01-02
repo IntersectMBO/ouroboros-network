@@ -55,11 +55,16 @@ data DiskPolicy m = DiskPolicy {
     }
 
 -- | Default on-disk policy
+--
+-- Right now we set this to 12 hrs, which for both Byron and for Shelley amounts
+-- to k blocks (albeit for different reasons).
+--
+-- TODO: We might want to revise this
+-- <https://github.com/input-output-hk/ouroboros-network/issues/1264> .
 defaultDiskPolicy :: IOLike m
                   => SecurityParam     -- ^ Maximum rollback
-                  -> DiffTime          -- ^ Slot length
                   -> DiskPolicy m
-defaultDiskPolicy (SecurityParam k) slotLength = DiskPolicy {
+defaultDiskPolicy _k = DiskPolicy {
       onDiskNumSnapshots  = 2
-    , onDiskWriteInterval = return (fromIntegral k * slotLength)
+    , onDiskWriteInterval = return (12 * 60 * 60)
     }

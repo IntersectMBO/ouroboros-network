@@ -11,6 +11,7 @@ import           Test.Tasty
 import           Test.Tasty.QuickCheck
 
 import           Ouroboros.Consensus.BlockchainTime
+import           Ouroboros.Consensus.BlockchainTime.Mock
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Protocol
 import           Ouroboros.Consensus.Util.Random
@@ -53,6 +54,7 @@ tests = testGroup "Dynamic chain generation"
               , numSlots
               , nodeJoinPlan
               , nodeTopology
+              , slotLengths = singletonSlotLengths praosSlotLength
               }
                 seed
     ]
@@ -63,6 +65,7 @@ tests = testGroup "Dynamic chain generation"
       , numSlots
       , nodeJoinPlan = trivialNodeJoinPlan numCoreNodes
       , nodeTopology = meshNodeTopology numCoreNodes
+      , slotLengths = singletonSlotLengths praosSlotLength
       }
 
     testPraos' :: TestConfig -> Seed -> Property

@@ -63,6 +63,7 @@ import qualified Ouroboros.Network.TxSubmission.Outbound as TxOutbound
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
+import           Ouroboros.Consensus.BlockchainTime.Mock
 import qualified Ouroboros.Consensus.BlockFetchServer as BFServer
 import           Ouroboros.Consensus.ChainSyncClient (ClockSkew (..))
 import qualified Ouroboros.Consensus.ChainSyncClient as CSClient
@@ -119,10 +120,9 @@ runNodeNetwork :: forall m blk.
                  -> NodeTopology
                  -> (CoreNodeId -> ProtocolInfo blk)
                  -> ChaChaDRG
-                 -> DiffTime
                  -> m (TestOutput blk)
 runNodeNetwork registry testBtime numCoreNodes nodeJoinPlan nodeTopology
-  pInfo initRNG slotLen = do
+  pInfo initRNG = do
     -- This function is organized around the notion of a network of nodes as a
     -- simple graph with no loops. The graph topology is determined by
     -- @nodeTopology@.
@@ -265,7 +265,7 @@ runNodeNetwork registry testBtime numCoreNodes nodeJoinPlan nodeTopology
         , cdbValidation       = ImmDB.ValidateAllEpochs
         , cdbBlocksPerFile    = 4
         , cdbParamsLgrDB      = LgrDB.ledgerDbDefaultParams (protocolSecurityParam cfg)
-        , cdbDiskPolicy       = LgrDB.defaultDiskPolicy (protocolSecurityParam cfg) slotLen
+        , cdbDiskPolicy       = LgrDB.defaultDiskPolicy (protocolSecurityParam cfg)
           -- Integration
         , cdbNodeConfig       = cfg
         , cdbEpochInfo        = epochInfo

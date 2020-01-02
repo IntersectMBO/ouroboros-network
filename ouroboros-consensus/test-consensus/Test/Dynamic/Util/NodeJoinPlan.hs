@@ -17,7 +17,9 @@ import qualified Data.Map.Strict as Map
 import           GHC.Stack (HasCallStack)
 import           Test.QuickCheck
 
-import           Ouroboros.Consensus.BlockchainTime
+import           Ouroboros.Network.Block (SlotNo (..))
+
+import           Ouroboros.Consensus.BlockchainTime.Mock
 import           Ouroboros.Consensus.Node.ProtocolInfo.Abstract
 import           Ouroboros.Consensus.NodeId
 import           Ouroboros.Consensus.Util.Condense
@@ -63,7 +65,7 @@ genNodeJoinPlan numCoreNodes@(NumCoreNodes n) numSlots@(NumSlots t)
   | otherwise = do
     let genJoinSlot = do
             let lastSlot = t - 1
-            (SlotNo . toEnum) <$> choose (0, lastSlot)
+            SlotNo <$> choose (0, lastSlot)
 
     let nids = enumCoreNodes numCoreNodes :: [CoreNodeId]
     schedules <- vectorOf n genJoinSlot

@@ -46,7 +46,7 @@ import           Ouroboros.Network.MockChain.Chain (Point)
 import qualified Ouroboros.Network.MockChain.Chain as Chain
 
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.BlockchainTime (slotLengthFromSec)
+import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.NodeId (NodeId (..))
@@ -361,7 +361,8 @@ singleNodeTestConfig :: NodeConfig (Bft BftMockCrypto)
 singleNodeTestConfig = BftNodeConfig {
       bftParams   = BftParams { bftSecurityParam = k
                               , bftNumNodes      = 1
-                              , bftSlotLength    = slotLengthFromSec 20
+                              , bftSlotLengths   = singletonSlotLengths $
+                                                     slotLengthFromSec 20
                               }
     , bftNodeId   = CoreId 0
     , bftSignKey  = SignKeyMockDSIGN 0
