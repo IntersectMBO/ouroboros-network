@@ -321,6 +321,9 @@ data Model m r = Model
     -- ^ Store a mapping between iterator references and mocked iterators.
   } deriving (Show, Generic)
 
+nbOpenIterators :: Model m r -> Int
+nbOpenIterators model = length (RE.toList (knownIters model))
+
 -- | Initial model
 initModel :: DBModel Hash -> ModelDBPure -> ModelDBInternalPure -> Model m r
 initModel dbModel mockDB mockInternal = Model
@@ -1279,7 +1282,25 @@ prop_sequential cacheConfig = forAllCommands smUnused Nothing $ \cmds -> QC.mona
           (hist, model, res) <- runCommands sm' cmds
           trace <- QC.run getTrace
           QC.monitor $ counterexample ("Trace: " <> unlines (map show trace))
-          fsDump <- QC.run $ Mock.pretty <$> atomically (readTVar fsVar)
+          fs <- QC.run $ atomically $ readTVar fsVar
+          let fsDump = Mock.pretty fs
+              openHandles = Mock.numOpenHandles fs
+              -- We're appending to the epoch, so a handle for each of the
+              -- three files, plus a handle for the epoch file (to read the
+              -- blocks) per open iterator.
+              maxExpectedOpenHandles = 1 {- epoch file -}
+                                     + 1 {- primary index file -}
+                                     + 1 {- secondary index file -}
+                                     + nbOpenIterators model
+              openHandlesProp
+                | openHandles <= maxExpectedOpenHandles
+                = property True
+                | otherwise
+                = counterexample
+                  ("open handles: " <> show openHandles <>
+                   " > max expected open handles: " <>
+                   show maxExpectedOpenHandles) False
+              prop = res === Ok .&&. openHandlesProp
           QC.monitor $ counterexample ("FS: " <> fsDump)
           case res of
             Ok -> do
@@ -1291,11 +1312,11 @@ prop_sequential cacheConfig = forAllCommands smUnused Nothing $ \cmds -> QC.mona
               QC.monitor $ counterexample ("dbTip:    " <> show dbTip)
               QC.monitor $ counterexample ("modelTip: " <> show modelTip)
 
-              return (hist, res === Ok .&&. dbTip === modelTip .&&. validation)
+              return (hist, prop .&&. dbTip === modelTip .&&. validation)
             -- If something went wrong, don't try to reopen the database
             _ -> do
               QC.run $ closeRegistry registry
-              return (hist, res === Ok)
+              return (hist, prop)
 
     fsVar     <- QC.run $ uncheckedNewTVarM Mock.empty
     errorsVar <- QC.run $ uncheckedNewTVarM mempty
