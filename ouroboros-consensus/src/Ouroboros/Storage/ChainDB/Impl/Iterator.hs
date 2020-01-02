@@ -299,14 +299,16 @@ newIterator itEnv@IteratorEnv{..} getItEnv registry from to = do
     streamFromImmDB :: ExceptT (UnknownRange blk) m (DeserialisableIterator m blk)
     streamFromImmDB = do
       lift $ trace $ StreamFromImmDB from to
-      streamFromImmDBHelper
+      streamFromImmDBHelper to
 
-    streamFromImmDBHelper :: ExceptT (UnknownRange blk) m (DeserialisableIterator m blk)
-    streamFromImmDBHelper = do
+    streamFromImmDBHelper
+      :: StreamTo blk
+      -> ExceptT (UnknownRange blk) m (DeserialisableIterator m blk)
+    streamFromImmDBHelper to' = do
         -- 'ImmDB.stream' will check the hash of the block at the
         -- start and end bounds.
-        immIt <- ExceptT $ ImmDB.stream itImmDB registry Block from to
-        lift $ createIterator $ InImmDB from immIt (StreamTo to)
+        immIt <- ExceptT $ ImmDB.stream itImmDB registry Block from to'
+        lift $ createIterator $ InImmDB from immIt (StreamTo to')
 
     -- | If we have to stream from both the ImmutableDB and the VolatileDB, we
     -- only allow the (current) tip of the ImmutableDB to be the switchover
@@ -328,11 +330,10 @@ newIterator itEnv@IteratorEnv{..} getItEnv registry from to = do
             | tipHash == predHash
             -> case NE.nonEmpty hashes of
                  Just hashes' -> stream pt hashes'
-                 -- The path is actually empty, but the exclusive upper bound was
-                 -- in the VolatileDB. Just stream from the ImmutableDB without
-                 -- checking the upper bound (which might not be in the
-                 -- ImmutableDB)
-                 Nothing      -> streamFromImmDBHelper
+                 -- The path is actually empty, but the exclusive upper bound
+                 -- was in the VolatileDB. Since there's nothing to stream,
+                 -- just return an empty iterator.
+                 Nothing      -> lift emptyIterator
             -- The incomplete path doesn't fit onto the tip of the ImmutableDB.
             -- Note that since we have constructed the incomplete path through
             -- the VolatileDB, blocks might have moved from the VolatileDB to
@@ -350,9 +351,12 @@ newIterator itEnv@IteratorEnv{..} getItEnv registry from to = do
               -- point to the current tip.
               _tipHash:hash:hashes' -> stream pt (hash NE.:| hashes')
               -- The current tip is the end of the path, this means we can
-              -- actually stream everything from just the ImmutableDB. No need
-              -- to check the hash at the upper bound again.
-              [_tipHash]            -> streamFromImmDBHelper
+              -- actually stream everything from just the ImmutableDB. It
+              -- could be that the exclusive end bound was not part of the
+              -- ImmutableDB, so stream to the current tip of the ImmutableDB
+              -- (inclusive) to avoid trying to stream (exclusive) to a block
+              -- that's not in the ImmutableDB.
+              [_tipHash]            -> streamFromImmDBHelper (StreamToInclusive pt)
       where
         stream pt hashes' = do
           let immEnd = SwitchToVolDBFrom (StreamToInclusive pt) hashes'
