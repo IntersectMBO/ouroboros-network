@@ -11,6 +11,7 @@ module Ouroboros.Consensus.BlockchainTime.SlotLengths (
   , slotLengthsToList
   , singletonSlotLengths
   , introduceHardFork
+  , tickSlotLengths
     -- * Focused slot lengths and supported conversions
   , FocusedSlotLengths(..)
   , focusSlotLengths
@@ -135,6 +136,19 @@ introduceHardFork xs n next = go xs
         case mNext of
           Just (n', next') -> SlotLengths l (Just (n' , go next'))
           Nothing          -> SlotLengths l (Just (n  ,    next ))
+
+-- | Current slot length, and 'SlotLengths' after waiting one slot
+tickSlotLengths :: SlotLengths -> (SlotLength, SlotLengths)
+tickSlotLengths SlotLengths{..} = (
+      currentSlotLength
+    , case nextSlotLengths of
+        Nothing ->
+          SlotLengths currentSlotLength Nothing
+        Just (SegmentLength 1, next) ->
+          next
+        Just (SegmentLength n, next) ->
+          SlotLengths currentSlotLength (Just (SegmentLength (n - 1), next))
+    )
 
 {-------------------------------------------------------------------------------
   Segments

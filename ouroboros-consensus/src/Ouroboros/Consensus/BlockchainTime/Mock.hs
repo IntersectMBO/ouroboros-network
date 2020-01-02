@@ -23,8 +23,7 @@ import           Cardano.Prelude (NoUnexpectedThunks)
 
 import           Ouroboros.Network.Block (SlotNo (..))
 
-import           Ouroboros.Consensus.BlockchainTime.API
-import           Ouroboros.Consensus.BlockchainTime.SlotLengths
+import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
 import           Ouroboros.Consensus.Util.STM
@@ -80,9 +79,9 @@ newTestBlockchainTime
     :: forall m. (IOLike m, HasCallStack)
     => ResourceRegistry m
     -> NumSlots           -- ^ Number of slots
-    -> DiffTime           -- ^ Slot duration
+    -> SlotLengths        -- ^ Slot duration
     -> m (TestBlockchainTime m)
-newTestBlockchainTime registry (NumSlots numSlots) slotLen = do
+newTestBlockchainTime registry (NumSlots numSlots) slotLens = do
     slotVar <- newTVarM initVal
     doneVar <- newEmptyMVar ()
 
@@ -107,15 +106,18 @@ newTestBlockchainTime registry (NumSlots numSlots) slotLen = do
       }
   where
     loop :: StrictTVar m TestClock -> StrictMVar m () -> m ()
-    loop slotVar doneVar = do
+    loop slotVar doneVar = go slotLens numSlots
+      where
         -- count off each requested slot
-        replicateM_ (fromIntegral numSlots) $ do
-          atomically $ modifyTVar slotVar $ Running . \case
-            Initializing -> SlotNo 0
-            Running slot -> succ slot
-          threadDelay slotLen
-        -- signal the end of the final slot
-        putMVar doneVar ()
+        go :: SlotLengths -> Word64 -> m ()
+        go _  0 = putMVar doneVar () -- signal the end of the final slot
+        go ls n = do
+            atomically $ modifyTVar slotVar $ Running . \case
+              Initializing -> SlotNo 0
+              Running slot -> succ slot
+            let (SlotLength delay, ls') = tickSlotLengths ls
+            threadDelay (nominalDelay delay)
+            go ls' (n - 1)
 
     initVal = Initializing
 

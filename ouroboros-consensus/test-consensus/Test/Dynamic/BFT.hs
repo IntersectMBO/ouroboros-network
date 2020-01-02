@@ -8,7 +8,6 @@ import           Test.QuickCheck
 import           Test.Tasty
 import           Test.Tasty.QuickCheck
 
-import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.BlockchainTime.Mock
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Protocol
@@ -29,12 +28,11 @@ tests = testGroup "Dynamic chain generation" [
     k = SecurityParam 5
 
 prop_simple_bft_convergence :: SecurityParam
-                            -> SlotLengths
                             -> TestConfig
                             -> Seed
                             -> Property
-prop_simple_bft_convergence k slotLengths
-  testConfig@TestConfig{numCoreNodes, numSlots} seed =
+prop_simple_bft_convergence k
+  testConfig@TestConfig{numCoreNodes, numSlots, slotLengths} seed =
     tabulate "slot length changes" [show $ countSlotLengthChanges numSlots slotLengths] $
     prop_general k
         testConfig

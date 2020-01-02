@@ -30,6 +30,7 @@ import           Ouroboros.Network.Block (BlockNo (..), pattern BlockPoint,
                      pattern GenesisPoint, HasHeader, Point, SlotNo (..),
                      blockPoint)
 
+import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.BlockchainTime.Mock
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Node.Run
@@ -38,7 +39,6 @@ import           Ouroboros.Consensus.Protocol (LeaderSchedule (..))
 import           Ouroboros.Consensus.Protocol.Abstract (SecurityParam (..))
 
 import           Ouroboros.Consensus.Util.Condense
-import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.Orphans ()
 import           Ouroboros.Consensus.Util.Random
 import           Ouroboros.Consensus.Util.ResourceRegistry
@@ -57,6 +57,8 @@ import           Test.Util.Orphans.NoUnexpectedThunks ()
 import           Test.Util.Range
 import           Test.Util.Shrink (andId, dropId)
 
+import           Test.Consensus.BlockchainTime.SlotLengths ()
+
 {-------------------------------------------------------------------------------
   Configuring tests
 -------------------------------------------------------------------------------}
@@ -66,6 +68,7 @@ data TestConfig = TestConfig
   , numSlots     :: !NumSlots
   , nodeJoinPlan :: !NodeJoinPlan
   , nodeTopology :: !NodeTopology
+  , slotLengths  :: !SlotLengths
   }
   deriving (Show)
 
@@ -90,15 +93,17 @@ instance Arbitrary TestConfig where
       numSlots     <- arbitrary
       nodeJoinPlan <- genNodeJoinPlan numCoreNodes numSlots
       nodeTopology <- genNodeTopology numCoreNodes
-      pure TestConfig{numCoreNodes, numSlots, nodeJoinPlan, nodeTopology}
+      slotLengths  <- arbitrary
+      pure TestConfig{numCoreNodes, numSlots, nodeJoinPlan, nodeTopology, slotLengths}
 
-  shrink TestConfig{numCoreNodes, numSlots, nodeJoinPlan, nodeTopology} =
+  shrink TestConfig{numCoreNodes, numSlots, nodeJoinPlan, nodeTopology, slotLengths} =
       dropId $
       [ TestConfig
           { numCoreNodes = n'
           , numSlots     = t'
           , nodeJoinPlan = p'
           , nodeTopology = top'
+          , slotLengths  = ls'
           }
       | n'             <- andId shrink numCoreNodes
       , t'             <- andId shrink numSlots
@@ -106,6 +111,7 @@ instance Arbitrary TestConfig where
       , let adjustedTop = truncateNodeTopology nodeTopology n'
       , p'             <- andId shrinkNodeJoinPlan adjustedP
       , top'           <- andId shrinkNodeTopology adjustedTop
+      , ls'            <- andId shrink slotLengths
       ]
 
 {-------------------------------------------------------------------------------
@@ -128,10 +134,10 @@ runTestNetwork ::
   -> Seed
   -> TestOutput blk
 runTestNetwork pInfo
-  TestConfig{numCoreNodes, numSlots, nodeJoinPlan, nodeTopology}
+  TestConfig{numCoreNodes, numSlots, nodeJoinPlan, nodeTopology, slotLengths}
   seed = runSimOrThrow $ do
     registry  <- unsafeNewRegistry
-    testBtime <- newTestBlockchainTime registry numSlots slotLen
+    testBtime <- newTestBlockchainTime registry numSlots slotLengths
     runNodeNetwork
       registry
       testBtime
@@ -140,9 +146,6 @@ runTestNetwork pInfo
       nodeTopology
       pInfo
       (seedToChaCha seed)
-  where
-    slotLen :: DiffTime
-    slotLen = 100000
 
 {-------------------------------------------------------------------------------
   Test properties

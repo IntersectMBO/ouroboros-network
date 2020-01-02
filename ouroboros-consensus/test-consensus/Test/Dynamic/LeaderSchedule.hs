@@ -47,6 +47,7 @@ tests = testGroup "Dynamic chain generation"
     numCoreNodes = NumCoreNodes 3
     numSlots  = NumSlots $ maxRollbacks k * praosSlotsPerEpoch * numEpochs
     numEpochs = 3
+    slotLengths = singletonSlotLengths praosSlotLength
 
     prop seed =
         forAllShrink
@@ -63,7 +64,7 @@ tests = testGroup "Dynamic chain generation"
         \schedule ->
             prop_simple_leader_schedule_convergence
                 params
-                TestConfig{numCoreNodes, numSlots, nodeJoinPlan, nodeTopology}
+                TestConfig{numCoreNodes, numSlots, nodeJoinPlan, nodeTopology, slotLengths}
                 schedule seed
 
 prop_simple_leader_schedule_convergence :: PraosParams

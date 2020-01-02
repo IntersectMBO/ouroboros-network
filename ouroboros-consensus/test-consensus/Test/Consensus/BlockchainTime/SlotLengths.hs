@@ -198,7 +198,8 @@ instance Arbitrary SlotLengths where
 
 instance Arbitrary SegmentLength where
   -- No point choosing very large segments (not interested in testing overflow)
-  arbitrary = SegmentLength <$> choose (0, 1000)
+  -- Segments of length 0 make no sense (important for 'tickSlotLengths').
+  arbitrary = SegmentLength <$> choose (1, 1000)
   shrink (SegmentLength l) = SegmentLength <$> shrink l
 
 -- | Wrapper around NominalDiffTime with custom 'Arbitrary' instance

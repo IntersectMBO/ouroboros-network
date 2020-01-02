@@ -54,6 +54,7 @@ tests = testGroup "Dynamic chain generation"
               , numSlots
               , nodeJoinPlan
               , nodeTopology
+              , slotLengths = singletonSlotLengths praosSlotLength
               }
                 seed
     ]
@@ -64,6 +65,7 @@ tests = testGroup "Dynamic chain generation"
       , numSlots
       , nodeJoinPlan = trivialNodeJoinPlan numCoreNodes
       , nodeTopology = meshNodeTopology numCoreNodes
+      , slotLengths = singletonSlotLengths praosSlotLength
       }
 
     testPraos' :: TestConfig -> Seed -> Property

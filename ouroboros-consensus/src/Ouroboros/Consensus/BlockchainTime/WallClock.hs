@@ -7,6 +7,7 @@ module Ouroboros.Consensus.BlockchainTime.WallClock (
     -- * Low-level API (exported primarily for testing)
   , getWallClockSlot
   , waitUntilNextSlot
+  , nominalDelay
   ) where
 
 import           Control.Monad
