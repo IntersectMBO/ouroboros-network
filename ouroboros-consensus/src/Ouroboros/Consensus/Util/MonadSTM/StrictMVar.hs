@@ -1,6 +1,7 @@
 {-# LANGUAGE BangPatterns      #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE NamedFieldPuns    #-}
+{-# LANGUAGE TupleSections     #-}
 
 module Ouroboros.Consensus.Util.MonadSTM.StrictMVar (
     StrictMVar(..) -- constructors exported for benefit of tests
@@ -18,6 +19,8 @@ module Ouroboros.Consensus.Util.MonadSTM.StrictMVar (
   , swapMVar
   , isEmptyMVar
   , updateMVar
+  , updateMVar_
+  , modifyMVar
   ) where
 
 import           Control.Concurrent.STM (readTVarIO)
@@ -25,6 +28,8 @@ import           Control.Monad (when)
 import           Control.Monad.Class.MonadSTM (MonadSTM (..))
 import qualified Control.Monad.Class.MonadSTM as Lazy
 import           Control.Monad.Class.MonadSTM.Strict (checkInvariant)
+import           Control.Monad.Class.MonadThrow (ExitCase (..), MonadCatch,
+                     generalBracket)
 import           GHC.Stack
 
 import           Cardano.Prelude (NoUnexpectedThunks (..))
@@ -150,7 +155,7 @@ swapMVar StrictMVar { tmvar, tvar, invariant } !a = do
 isEmptyMVar :: MonadSTM m => StrictMVar m a -> m Bool
 isEmptyMVar StrictMVar { tmvar } = atomically $ Lazy.isEmptyTMVar tmvar
 
-updateMVar :: MonadSTM m => StrictMVar m a -> (a -> (a, b)) -> m b
+updateMVar :: (MonadSTM m, HasCallStack) => StrictMVar m a -> (a -> (a, b)) -> m b
 updateMVar StrictMVar { tmvar, tvar, invariant } f = do
     (a', b) <- atomically $ do
         a <- Lazy.takeTMVar tmvar
@@ -159,6 +164,20 @@ updateMVar StrictMVar { tmvar, tvar, invariant } f = do
         Lazy.writeTVar tvar a'
         return (a', b)
     checkInvariant (invariant a') $ return b
+
+updateMVar_ :: (MonadSTM m, HasCallStack) => StrictMVar m a -> (a -> a) -> m ()
+updateMVar_ var f = updateMVar var ((, ()) . f)
+
+modifyMVar :: (MonadSTM m, MonadCatch m, HasCallStack)
+           => StrictMVar m a -> (a -> m (a, b)) -> m b
+modifyMVar var action =
+    snd . fst <$> generalBracket (takeMVar var) putBack action
+  where
+    putBack a ec = case ec of
+      ExitCaseSuccess (a', _) -> putMVar var a'
+      ExitCaseException _ex   -> putMVar var a
+      ExitCaseAbort           -> putMVar var a
+
 
 {-------------------------------------------------------------------------------
   NoUnexpectedThunks

@@ -5,7 +5,6 @@
 {-# LANGUAGE RankNTypes        #-}
 module Ouroboros.Storage.ImmutableDB.API
   ( ImmutableDB (..)
-  , withDB
   , Iterator (..)
   , IteratorResult (..)
   , iteratorToList
@@ -23,22 +22,9 @@ import           Data.Function (on)
 import           GHC.Generics (Generic)
 import           GHC.Stack (HasCallStack)
 
-import           Control.Monad.Class.MonadThrow
-
 import           Ouroboros.Storage.Common
 import           Ouroboros.Storage.ImmutableDB.Types
 import           Ouroboros.Storage.Util.ErrorHandling (ErrorHandling)
-
--- | Open the database using the given function, perform the given action
--- using the database. Close the database using its 'closeDB' function
--- afterwards.
-withDB :: (HasCallStack, MonadThrow m)
-       => m (ImmutableDB hash m)
-          -- ^ How to open the database
-       -> (ImmutableDB hash m -> m a)
-          -- ^ Action to perform using the database
-       -> m a
-withDB openDB = bracket openDB closeDB
 
 -- | API for the 'ImmutableDB'.
 --
@@ -277,11 +263,11 @@ data Iterator hash m a = Iterator
     -- Throws a 'ClosedDBError' if the database is closed.
   , iteratorPeek    :: HasCallStack => m (IteratorResult hash a)
 
-    -- | Return 'True' if there is a next blob to return. Return 'False' if
-    -- not.
+    -- | Return the epoch number (in case of an EBB) or slot number and hash
+    -- of the next blob, if there is a next. Return 'Nothing' if not.
     --
     -- This operation is idempotent.
-  , iteratorHasNext :: HasCallStack => m Bool
+  , iteratorHasNext :: HasCallStack => m (Maybe (Either EpochNo SlotNo, hash))
 
     -- | Dispose of the 'Iterator' by closing any open handles.
     --

@@ -1,6 +1,7 @@
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE MultiWayIf          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -15,7 +16,7 @@ module Ouroboros.Storage.ImmutableDB.Impl.Validation
 import           Control.Exception (assert)
 import           Control.Monad (unless, when)
 import           Control.Monad.Except (ExceptT, lift, runExceptT, throwError)
-import           Control.Tracer (Tracer, traceWith)
+import           Control.Tracer (Tracer, contramap, traceWith)
 import           Data.Coerce (coerce)
 import           Data.Functor (($>))
 import           Data.Maybe (fromMaybe)
@@ -29,6 +30,7 @@ import           Ouroboros.Network.Point (WithOrigin (..))
 import           Ouroboros.Consensus.Block (IsEBB (..))
 import           Ouroboros.Consensus.Util (lastMaybe, whenJust)
 import           Ouroboros.Consensus.Util.IOLike
+import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
 
 import           Ouroboros.Storage.Common
 import           Ouroboros.Storage.EpochInfo
@@ -38,6 +40,8 @@ import           Ouroboros.Storage.Util.ErrorHandling (ErrorHandling)
 import qualified Ouroboros.Storage.Util.ErrorHandling as EH
 
 import           Ouroboros.Storage.ImmutableDB.API
+import           Ouroboros.Storage.ImmutableDB.Impl.Index (cachedIndex)
+import qualified Ouroboros.Storage.ImmutableDB.Impl.Index as Index
 import           Ouroboros.Storage.ImmutableDB.Impl.Index.Primary (PrimaryIndex,
                      SecondaryOffset)
 import qualified Ouroboros.Storage.ImmutableDB.Impl.Index.Primary as Primary
@@ -47,33 +51,42 @@ import           Ouroboros.Storage.ImmutableDB.Impl.Util
 import           Ouroboros.Storage.ImmutableDB.Layout
 
 -- | Bundle of arguments used most validation functions.
+--
+-- Note that we don't use "Ouroboros.Storage.ImmutableDB.Impl.Index" because
+-- we are reading and manipulating index files in different ways, e.g.,
+-- truncating them.
 data ValidateEnv m hash h e = ValidateEnv
-  { hasFS     :: !(HasFS m h)
-  , err       :: !(ErrorHandling ImmutableDBError m)
-  , epochInfo :: !(EpochInfo m)
-  , hashInfo  :: !(HashInfo hash)
-  , parser    :: !(EpochFileParser e m (Secondary.Entry hash) hash)
-  , tracer    :: !(Tracer m (TraceEvent e hash))
+  { hasFS       :: !(HasFS m h)
+  , err         :: !(ErrorHandling ImmutableDBError m)
+  , epochInfo   :: !(EpochInfo m)
+  , hashInfo    :: !(HashInfo hash)
+  , parser      :: !(EpochFileParser e m (Secondary.Entry hash) hash)
+  , tracer      :: !(Tracer m (TraceEvent e hash))
+  , registry    :: !(ResourceRegistry m)
+  , cacheConfig :: !Index.CacheConfig
   }
 
 -- | Perform validation as per the 'ValidationPolicy' using 'validate' and
 -- create an 'OpenState' corresponding to its outcome using 'mkOpenState'.
 validateAndReopen
-  :: forall m hash h e. (IOLike m, Eq hash, HasCallStack)
+  :: forall m hash h e. (IOLike m, Eq hash, NoUnexpectedThunks hash, HasCallStack)
   => ValidateEnv m hash h e
   -> ValidationPolicy
   -> BaseIteratorID
-  -> m (OpenState hash h)
-validateAndReopen validateEnv valPol nextIteratorID =
-    validate validateEnv valPol >>= \case
-      (epoch, TipGen) -> assert (epoch == 0) $ do
+  -> m (OpenState m hash h)
+validateAndReopen validateEnv valPol nextIteratorID = do
+    (epoch, tip) <- validate validateEnv valPol
+    index        <- cachedIndex hasFS err hashInfo registry cacheTracer cacheConfig epoch
+    case tip of
+      TipGen -> assert (epoch == 0) $ do
         traceWith tracer NoValidLastLocation
-        mkOpenState hasFS epoch nextIteratorID TipGen MustBeNew
-      (epoch, tip)    -> do
+        mkOpenState registry hasFS err index epoch nextIteratorID TipGen MustBeNew
+      _     -> do
         traceWith tracer $ ValidatedLastLocation epoch (forgetHash <$> tip)
-        mkOpenState hasFS epoch nextIteratorID tip    AllowExisting
+        mkOpenState registry hasFS err index epoch nextIteratorID tip    AllowExisting
   where
-    ValidateEnv { hasFS, tracer } = validateEnv
+    ValidateEnv { hasFS, err, hashInfo, tracer, registry, cacheConfig } = validateEnv
+    cacheTracer = contramap TraceCacheEvent tracer
 
 -- | Execute the 'ValidationPolicy'.
 validate
@@ -265,11 +278,16 @@ validateEpoch ValidateEnv{..} shouldBeFinalised epoch mbPrevHash = do
     secondaryIndexFileExists  <- lift $ doesFileExist secondaryIndexFile
     entriesFromSecondaryIndex <- lift $ if secondaryIndexFileExists
       then EH.try errLoad
-        (Secondary.readAllEntries hasFS err hashInfo 0 epoch (const False) IsEBB) >>= \case
+        -- Note the 'maxBound': it is used to calculate the block size for
+        -- each entry, but we don't care about block sizes here, so we use
+        -- some dummy value.
+        (Secondary.readAllEntries hasFS err hashInfo 0 epoch (const False)
+           maxBound IsEBB) >>= \case
           Left _                -> do
             traceWith tracer $ InvalidSecondaryIndex epoch
             return []
-          Right entriesFromFile -> return $ fixupEBB entriesFromFile
+          Right entriesFromFile ->
+            return $ fixupEBB (map withoutBlockSize entriesFromFile)
       else do
         traceWith tracer $ MissingSecondaryIndex epoch
         return []
@@ -277,8 +295,7 @@ validateEpoch ValidateEnv{..} shouldBeFinalised epoch mbPrevHash = do
     -- Parse the epoch file using the checksums from the secondary index file
     -- as input. If the checksums match, the parser doesn't have to do the
     -- expensive integrity check of a block.
-    let expectedChecksums =
-          map (Secondary.checksum . fst) entriesFromSecondaryIndex
+    let expectedChecksums = map Secondary.checksum entriesFromSecondaryIndex
     (entriesWithPrevHashes, mbErr) <- lift $
         runEpochFileParser parser epochFile expectedChecksums $ \stream ->
           (\(es :> mbErr) -> (es, mbErr)) <$> S.toList stream
@@ -312,7 +329,7 @@ validateEpoch ValidateEnv{..} shouldBeFinalised epoch mbPrevHash = do
       -- not match the entries from the epoch file, overwrite it using those
       -- (truncate first).
       let entries = map fst entriesWithPrevHashes
-      when (map fst entriesFromSecondaryIndex /= entries ||
+      when (entriesFromSecondaryIndex /= entries ||
             not secondaryIndexFileExists) $ do
         traceWith tracer $ RewriteSecondaryIndex epoch
         Secondary.writeAllEntries hasFS hashInfo epoch entries
@@ -397,11 +414,11 @@ validateEpoch ValidateEnv{..} shouldBeFinalised epoch mbPrevHash = do
     --
     -- So the only thing that wouldn't go according to plan is that we will
     -- needlessly overwrite the secondary index file.
-    fixupEBB :: [(Secondary.Entry hash, a)] -> [(Secondary.Entry hash, a)]
+    fixupEBB :: [Secondary.Entry hash] -> [Secondary.Entry hash]
     fixupEBB = \case
-      (entry@Secondary.Entry { blockOrEBB = EBB epoch' }, a):rest
+      entry@Secondary.Entry { blockOrEBB = EBB epoch' }:rest
         | epoch' /= epoch
-        -> (entry { Secondary.blockOrEBB = Block (coerce epoch') }, a):rest
+        -> entry { Secondary.blockOrEBB = Block (coerce epoch') }:rest
       entries -> entries
 
 -- | Reconstruct a 'PrimaryIndex' based on a list of 'Secondary.Entry's.

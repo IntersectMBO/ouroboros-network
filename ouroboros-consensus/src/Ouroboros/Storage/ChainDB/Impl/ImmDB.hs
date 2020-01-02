@@ -15,7 +15,7 @@ module Ouroboros.Storage.ChainDB.Impl.ImmDB (
     -- * Initialization
   , ImmDbArgs(..)
   , defaultArgs
-  , openDB
+  , withImmDB
     -- * Getting and parsing blocks
   , hasBlock
   , getBlockOrHeaderWithPoint
@@ -30,7 +30,7 @@ module Ouroboros.Storage.ChainDB.Impl.ImmDB (
     -- * Appending a block
   , appendBlock
     -- * Streaming
-  , streamFrom
+  , stream
   , streamAfter
   , deserialiseIterator
   , deserialisableIterator
@@ -52,7 +52,9 @@ module Ouroboros.Storage.ChainDB.Impl.ImmDB (
   , ImmDB.ImmutableDBError
   , ImmDB.BinaryInfo (..)
   , ImmDB.HashInfo (..)
+  , Index.CacheConfig (..)
     -- * Exported for testing purposes
+  , openDB
   , mkImmDB
     -- * Exported for utilities
   , ImmDB.epochFileParser
@@ -67,7 +69,7 @@ import           Control.Monad.Except
 import           Control.Tracer (Tracer, nullTracer)
 import           Data.Bifunctor (second)
 import qualified Data.ByteString.Lazy as Lazy
-import           Data.Functor ((<&>))
+import           Data.Functor (($>), (<&>))
 import           GHC.Stack (HasCallStack)
 import           System.FilePath ((</>))
 
@@ -75,20 +77,22 @@ import           Cardano.Prelude (allNoUnexpectedThunks)
 
 import           Control.Monad.Class.MonadThrow
 
-import           Ouroboros.Network.Block (pattern BlockPoint,
+import           Ouroboros.Network.Block (pattern BlockPoint, ChainHash (..),
                      pattern GenesisPoint, HasHeader (..), HeaderHash, Point,
-                     Serialised (..), SlotNo, atSlot, pointSlot, withHash)
+                     Serialised (..), SlotNo, atSlot, pointHash, pointSlot,
+                     withHash)
 import           Ouroboros.Network.Point (WithOrigin (..))
 
 import           Ouroboros.Consensus.Block (Header, IsEBB (..))
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.Orphans ()
 import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry,
-                     allocateEither, unsafeRelease)
+                     allocateEither, unsafeRelease, withRegistry)
 
 import           Ouroboros.Storage.ChainDB.API (BlockOrHeader (..),
                      ChainDbError (..), ChainDbFailure (..),
-                     Deserialisable (..), StreamFrom (..), UnknownRange (..))
+                     Deserialisable (..), StreamFrom (..), StreamTo (..),
+                     UnknownRange (..))
 import           Ouroboros.Storage.Common
 import           Ouroboros.Storage.EpochInfo (EpochInfo (..))
 import           Ouroboros.Storage.FS.API (HasFS, createDirectoryIfMissing)
@@ -98,6 +102,8 @@ import           Ouroboros.Storage.ImmutableDB (BinaryInfo (..), HashInfo (..),
                      ImmutableDB, Iterator (Iterator), IteratorResult (..),
                      WithHash (..))
 import qualified Ouroboros.Storage.ImmutableDB as ImmDB
+import qualified Ouroboros.Storage.ImmutableDB.Impl.Index as Index
+                     (CacheConfig (..))
 import qualified Ouroboros.Storage.ImmutableDB.Parser as ImmDB
 import           Ouroboros.Storage.Util.ErrorHandling (ErrorHandling)
 import qualified Ouroboros.Storage.Util.ErrorHandling as EH
@@ -157,6 +163,7 @@ data ImmDbArgs m blk = forall h. ImmDbArgs {
     , immAddHdrEnv      :: IsEBB -> Lazy.ByteString -> Lazy.ByteString
     , immHasFS          :: HasFS m h
     , immTracer         :: Tracer m (TraceEvent blk)
+    , immCacheConfig    :: Index.CacheConfig
     }
 
 -- | Default arguments when using the 'IO' monad
@@ -178,6 +185,7 @@ defaultArgs :: FilePath -> ImmDbArgs IO blk
 defaultArgs fp = ImmDbArgs{
       immErr          = EH.exceptions
     , immHasFS        = ioHasFS $ MountPoint (fp </> "immutable")
+    , immCacheConfig  = cacheConfig
       -- Fields without a default
     , immDecodeHash     = error "no default for immDecodeHash"
     , immDecodeBlock    = error "no default for immDecodeBlock"
@@ -192,18 +200,41 @@ defaultArgs fp = ImmDbArgs{
     , immAddHdrEnv      = error "no default for immAddHdrEnv"
     , immTracer         = nullTracer
     }
+  where
+    -- Cache 250 past epochs by default. This will take roughly 250 MB of RAM.
+    -- At the time of writing (1/2020), there are 166 epochs, so even one year
+    -- from now, we will be able to cache all epochs' indices in the chain.
+    --
+    -- If this number were too low, i.e., less than the number of epochs that
+    -- that clients are requesting blocks from, we would constantly evict and
+    -- reparse indices, causing a much higher CPU load.
+    cacheConfig = Index.CacheConfig
+      { pastEpochsToCache = 250
+      , expireUnusedAfter = 5 * 60 -- Expire after 1 minute
+      }
 
-openDB :: (IOLike m, HasHeader blk) => ImmDbArgs m blk -> m (ImmDB m blk)
-openDB ImmDbArgs{..} = do
+withImmDB :: (IOLike m, HasHeader blk)
+          => ImmDbArgs m blk -> (ImmDB m blk -> m a) -> m a
+withImmDB args k = withRegistry $ \registry ->
+    bracket (openDB registry args) closeDB k
+
+-- | For testing purposes
+openDB :: (IOLike m, HasHeader blk)
+       => ResourceRegistry m
+       -> ImmDbArgs m blk
+       -> m (ImmDB m blk)
+openDB registry ImmDbArgs{..} = do
     createDirectoryIfMissing immHasFS True (mkFsPath [])
-    immDB <- ImmDB.openDB
-               immHasFS
-               immErr
-               immEpochInfo
-               immHashInfo
-               immValidation
-               parser
-               immTracer
+    (immDB, _internal) <- ImmDB.openDBInternal
+      registry
+      immHasFS
+      immErr
+      immEpochInfo
+      immHashInfo
+      immValidation
+      parser
+      immTracer
+      immCacheConfig
     return ImmDB
       { immDB     = immDB
       , decHeader = immDecodeHeader
@@ -482,7 +513,7 @@ registeredStream :: forall m blk b. IOLike m
                               (ImmDB.Iterator (HeaderHash blk) m Lazy.ByteString))
 registeredStream db@ImmDB { addHdrEnv } registry blockOrHeader start end = do
     errOrKeyAndIt <- allocateEither registry
-      (\_key -> withDB db $ \imm -> stream imm)
+      (\_key -> withDB db $ \imm -> go imm)
       (iteratorClose db)
     return $ case errOrKeyAndIt of
       Left e          -> Left (toUnknownRange e)
@@ -494,7 +525,7 @@ registeredStream db@ImmDB { addHdrEnv } registry blockOrHeader start end = do
       -- in the chain DB itself (throw ClosedDBError exception).
       Right (key, it) -> Right it { ImmDB.iteratorClose = unsafeRelease key }
   where
-    stream imm = case blockOrHeader of
+    go imm = case blockOrHeader of
       Block  -> ImmDB.streamBlocks  imm start end
       Header -> ImmDB.streamHeaders imm start end <&>
         fmap (traverseIterator db (traverseIteratorResult db addHdrEnvelope))
@@ -526,57 +557,90 @@ registeredStream db@ImmDB { addHdrEnv } registry blockOrHeader start end = do
       ImmDB.EmptySlotError slot     -> slot
       ImmDB.WrongHashError slot _ _ -> slot
 
--- | Stream headers/blocks from the given 'StreamFrom'.
---
--- Checks whether the block at the lower bound has the right hash. If not,
--- 'Nothing' is returned.
---
--- When the slot of the lower bound is greater than the slot at the tip in the
--- ImmutableDB, we return 'MissingBlock' (instead of throwing a
--- 'ReadFutureSlotError' or 'ReadFutureEBBError').
+-- | Stream headers/blocks from the given 'StreamFrom' to the given
+-- 'StreamTo'.
 --
 -- When passed @'StreamFromInclusive' pt@ where @pt@ refers to Genesis, a
 -- 'NoGenesisBlock' exception will be thrown.
-streamFrom
-  :: forall m blk b. IOLike m
+stream
+  :: forall m blk b. (IOLike m, HasHeader blk)
   => ImmDB m blk
   -> ResourceRegistry m
   -> BlockOrHeader blk b
   -> StreamFrom blk
+  -> StreamTo   blk
   -> m (Either (UnknownRange blk)
                (ImmDB.Iterator (HeaderHash blk) m (Deserialisable m blk b)))
-streamFrom db registry blockOrHeader from = runExceptT $ case from of
-    StreamFromExclusive pt@BlockPoint { atSlot = slot, withHash = hash } -> do
-      checkFutureSlot pt
-      it <- stream (Just (slot, hash)) Nothing
-      -- Skip the first block, as the bound is exclusive
-      void $ lift $ iteratorNext db it
-      return it
-    StreamFromExclusive    GenesisPoint ->
-      stream Nothing Nothing
-    StreamFromInclusive pt@BlockPoint { atSlot = slot, withHash = hash } -> do
-      checkFutureSlot pt
-      stream (Just (slot, hash)) Nothing
-    StreamFromInclusive GenesisPoint ->
-      throwM NoGenesisBlock
-  where
-    -- | Check if the slot of the lower bound is <= the slot of the tip. If
-    -- not, throw a 'MissingBlock' error.
+stream db registry blockOrHeader from to = runExceptT $ do
+    -- Also check if the slot of the bound is <= the slot of the tip. If not,
+    -- throw a 'MissingBlock' error.
     --
     -- Note that between this check and the actual opening of the iterator, a
     -- block may be appended to the ImmutableDB such that the requested slot
     -- is no longer in the future, but we have returned 'MissingBlock'
     -- nonetheless. This is fine, since the request to stream from the slot
     -- was made earlier, at a moment where it still was in the future.
-    checkFutureSlot :: Point blk -> ExceptT (UnknownRange blk) m ()
-    checkFutureSlot pt = do
-      slotNoAtTip <- lift $ getSlotNoAtTip db
-      when (pointSlot pt > slotNoAtTip) $
-        throwError $ MissingBlock pt
+    slotNoAtTip <- lift $ getSlotNoAtTip db
 
-    stream start end = ExceptT $
-      fmap (deserialisableIterator db blockOrHeader) <$>
+    end <- case to of
+      StreamToExclusive pt@BlockPoint { atSlot = slot, withHash = hash } -> do
+        when (pointSlot pt > slotNoAtTip) $ throwError $ MissingBlock pt
+        return $ Just (slot, hash)
+      StreamToExclusive GenesisPoint ->
+        throwM NoGenesisBlock
+      StreamToInclusive pt@BlockPoint { atSlot = slot, withHash = hash } -> do
+        when (pointSlot pt > slotNoAtTip) $ throwError $ MissingBlock pt
+        return $ Just (slot, hash)
+      StreamToInclusive GenesisPoint ->
+        throwM NoGenesisBlock
+
+    case from of
+      StreamFromExclusive pt@BlockPoint { atSlot = slot, withHash = hash } -> do
+        when (pointSlot pt > slotNoAtTip) $ throwError $ MissingBlock pt
+        it <- openRegisteredStream (Just (slot, hash)) end
+        -- Skip the first block, as the bound is exclusive
+        void $ lift $ iteratorNext db it
+        return it
+      StreamFromExclusive    GenesisPoint ->
+        openRegisteredStream Nothing end
+      StreamFromInclusive pt@BlockPoint { atSlot = slot, withHash = hash } -> do
+        when (pointSlot pt > slotNoAtTip) $ throwError $ MissingBlock pt
+        openRegisteredStream (Just (slot, hash)) end
+      StreamFromInclusive GenesisPoint ->
+        throwM NoGenesisBlock
+  where
+    openRegisteredStream start end = ExceptT $
+      fmap (deserialisableIterator db blockOrHeader . stopAt to) <$>
       registeredStream db registry blockOrHeader start end
+
+    -- | The ImmutableDB doesn't support an exclusive end bound, so we stop
+    -- the iterator when it reaches its exclusive end bound.
+    stopAt :: StreamTo blk
+           -> ImmDB.Iterator (HeaderHash blk) m a
+           -> ImmDB.Iterator (HeaderHash blk) m a
+    stopAt = \case
+      StreamToInclusive _  -> id
+      StreamToExclusive pt -> \it -> it
+          { ImmDB.iteratorNext    = ignoreExclusiveBound <$> ImmDB.iteratorNext it
+          , ImmDB.iteratorPeek    = ignoreExclusiveBound <$> ImmDB.iteratorPeek it
+          , ImmDB.iteratorHasNext = ImmDB.iteratorHasNext it >>= \case
+              Nothing -> return Nothing
+              Just next@(_epochOrSlot, hash)
+                | isEnd hash
+                -> ImmDB.iteratorClose it $> Nothing
+                | otherwise
+                -> return $ Just next
+          }
+        where
+          isEnd hash = pointHash pt == BlockHash hash
+          ignoreExclusiveBound = \case
+            ImmDB.IteratorResult _slotNo  hash _
+              | isEnd hash
+              -> ImmDB.IteratorExhausted
+            ImmDB.IteratorEBB    _epochNo hash _
+              | isEnd hash
+              -> ImmDB.IteratorExhausted
+            itRes -> itRes
 
 -- | Stream headers/blocks after the given point
 --
@@ -745,7 +809,7 @@ iteratorNext db it = withDB db $ const $ ImmDB.iteratorNext it
 iteratorHasNext :: (HasCallStack, MonadCatch m)
                 => ImmDB m blk
                 -> ImmDB.Iterator (HeaderHash blk) m a
-                -> m Bool
+                -> m (Maybe (Either EpochNo SlotNo, HeaderHash blk))
 iteratorHasNext db it = withDB db $ const $ ImmDB.iteratorHasNext it
 
 iteratorPeek :: (HasCallStack, MonadCatch m)

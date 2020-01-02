@@ -10,7 +10,6 @@ module Test.Ouroboros.Storage.ChainDB.ImmDB
 
 import           Data.Proxy (Proxy (..))
 
-import           Control.Monad.Class.MonadThrow
 import           Control.Monad.IOSim (runSimOrThrow)
 
 import           Control.Tracer (nullTracer)
@@ -64,13 +63,13 @@ withImmDB :: IOLike m => (ImmDB m ByronBlock -> m a) -> m a
 withImmDB k = do
     immDbFsVar <- uncheckedNewTVarM Mock.empty
     epochInfo  <- newEpochInfo $ nodeEpochSize (Proxy @ByronBlock) testCfg
-    bracket (ImmDB.openDB (mkArgs immDbFsVar epochInfo)) ImmDB.closeDB k
+    ImmDB.withImmDB (mkArgs immDbFsVar epochInfo) k
   where
     mkArgs immDbFsVar epochInfo = ImmDbArgs
       { immErr            = EH.monadCatch
       , immHasFS          = simHasFS EH.monadCatch immDbFsVar
       , immDecodeHash     = nodeDecodeHeaderHash (Proxy @ByronBlock)
-      , immDecodeHeader = nodeDecodeHeader testCfg
+      , immDecodeHeader   = nodeDecodeHeader testCfg
       , immDecodeBlock    = nodeDecodeBlock testCfg
       , immEncodeHash     = nodeEncodeHeaderHash (Proxy @ByronBlock)
       , immEncodeBlock    = nodeEncodeBlockWithInfo testCfg
@@ -81,6 +80,7 @@ withImmDB k = do
       , immCheckIntegrity = nodeCheckIntegrity testCfg
       , immAddHdrEnv      = nodeAddHeaderEnvelope (Proxy @ByronBlock)
       , immTracer         = nullTracer
+      , immCacheConfig    = ImmDB.CacheConfig 2 60
       }
 
 testCfg :: NodeConfig (BlockProtocol ByronBlock)

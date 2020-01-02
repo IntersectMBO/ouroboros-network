@@ -88,6 +88,7 @@ import qualified Ouroboros.Storage.ChainDB as ChainDB
 import           Ouroboros.Storage.ChainDB.Impl (ChainDbArgs (..))
 import           Ouroboros.Storage.EpochInfo (EpochInfo, newEpochInfo)
 import qualified Ouroboros.Storage.ImmutableDB as ImmDB
+import qualified Ouroboros.Storage.ImmutableDB.Impl.Index as Index
 import qualified Ouroboros.Storage.LedgerDB.DiskPolicy as LgrDB
 import qualified Ouroboros.Storage.LedgerDB.InMemory as LgrDB
 import qualified Ouroboros.Storage.Util.ErrorHandling as EH
@@ -161,12 +162,13 @@ runNodeNetwork registry testBtime numCoreNodes nodeJoinPlan nodeTopology
         error $ "unsatisfiable nodeJoinPlan: " ++ show coreNodeId
 
       -- allocate the node's internal state and spawn its internal threads
-      (node, readNodeInfo, app) <- createNode varRNG coreNodeId
+      (node, immRegistry, readNodeInfo, app) <- createNode varRNG coreNodeId
 
       -- unblock the threads of edges that involve this node
       putMVar nodeVar app
 
-      return (coreNodeId, pInfoConfig (pInfo coreNodeId), node, readNodeInfo)
+      let cfg = pInfoConfig (pInfo coreNodeId)
+      return (coreNodeId, cfg, node, immRegistry, readNodeInfo)
 
     -- Wait some extra time after the end of the test block fetch and chain
     -- sync to finish
@@ -275,6 +277,7 @@ runNodeNetwork registry testBtime numCoreNodes nodeJoinPlan nodeTopology
         , cdbGenesis          = return initLedger
         , cdbBlockchainTime   = btime
         , cdbAddHdrEnv        = nodeAddHeaderEnvelope (Proxy @blk)
+        , cdbImmDbCacheConfig = Index.CacheConfig 2 60
         -- Misc
         , cdbTracer           = Tracer $ \case
               ChainDB.TraceAddBlockEvent
@@ -295,6 +298,7 @@ runNodeNetwork registry testBtime numCoreNodes nodeJoinPlan nodeTopology
       => StrictTVar m ChaChaDRG
       -> CoreNodeId
       -> m ( NodeKernel m NodeId blk
+           , ResourceRegistry m
            , m (NodeInfo blk MockFS [])
            , LimitedApp m NodeId blk
            )
@@ -326,14 +330,16 @@ runNodeNetwork registry testBtime numCoreNodes nodeJoinPlan nodeTopology
             , nodeInfoDBs
             } = nodeInfo
 
+      immRegistry <- unsafeNewRegistry
       epochInfo <- newEpochInfo $ nodeEpochSize (Proxy @blk) pInfoConfig
-      chainDB <- ChainDB.openDB $ mkArgs
-          pInfoConfig pInfoInitLedger epochInfo
-          (nodeEventsInvalids nodeInfoEvents)
-          (Tracer $ \(p, bno) -> do
-              s <- atomically $ getCurrentSlot btime
-              traceWith (nodeEventsAdds nodeInfoEvents) (s, p, bno))
-          nodeInfoDBs
+      let chainDbArgs = mkArgs
+            pInfoConfig pInfoInitLedger epochInfo
+            (nodeEventsInvalids nodeInfoEvents)
+            (Tracer $ \(p, bno) -> do
+                s <- atomically $ getCurrentSlot btime
+                traceWith (nodeEventsAdds nodeInfoEvents) (s, p, bno))
+            nodeInfoDBs
+      (chainDB, _) <- ChainDB.openDBInternal immRegistry chainDbArgs True
 
       let nodeArgs = NodeArgs
             { tracers             = nullDebugTracers
@@ -375,7 +381,7 @@ runNodeNetwork registry testBtime numCoreNodes nodeJoinPlan nodeTopology
         (ChainDB.getCurrentLedger chainDB)
         (getMempool nodeKernel)
 
-      return (nodeKernel, readNodeInfo, LimitedApp app)
+      return (nodeKernel, immRegistry, readNodeInfo, LimitedApp app)
 
     customProtocolCodecs
       :: NodeConfig (BlockProtocol blk)
@@ -631,16 +637,18 @@ getTestOutput ::
     => [( CoreNodeId
         , NodeConfig (BlockProtocol blk)
         , NodeKernel m NodeId blk
+        , ResourceRegistry m
         , m (NodeInfo blk MockFS [])
         )]
     -> m (TestOutput blk)
 getTestOutput nodes = do
     (nodeOutputs', tipBlockNos') <- fmap unzip $ forM nodes $
-      \(cid, cfg, node, readNodeInfo) -> do
+      \(cid, cfg, node, immRegistry, readNodeInfo) -> do
         let nid = fromCoreNodeId cid
         let chainDB = getChainDB node
         ch <- ChainDB.toChain chainDB
         ChainDB.closeDB chainDB
+        closeRegistry immRegistry
         nodeInfo <- readNodeInfo
         let NodeInfo
               { nodeInfoEvents

@@ -3,8 +3,8 @@
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE NamedFieldPuns             #-}
+{-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 module Ouroboros.Storage.ImmutableDB.Impl.Index.Secondary
   ( Entry (..)
@@ -52,7 +52,7 @@ import           Ouroboros.Storage.ImmutableDB.Impl.Index.Primary
 import           Ouroboros.Storage.ImmutableDB.Impl.Util (renderFile, runGet,
                      runGetWithUnconsumed)
 import           Ouroboros.Storage.ImmutableDB.Types (BlockOrEBB (..),
-                     HashInfo (..), ImmutableDBError (..))
+                     HashInfo (..), ImmutableDBError (..), WithBlockSize (..))
 
 {------------------------------------------------------------------------------
   Types
@@ -217,30 +217,39 @@ readAllEntries
   -> SecondaryOffset       -- ^ Start from this offset
   -> EpochNo
   -> (Entry hash -> Bool)  -- ^ Stop condition: stop after this entry
+  -> Word64                -- ^ The size of the epoch file, used to compute
+                           -- the size of the last block.
   -> IsEBB                 -- ^ Is the first entry to read an EBB?
-  -> m [(Entry hash, BlockSize)]
-readAllEntries hasFS err HashInfo { getHash } secondaryOffset epoch stopAfter =
-    \isEBB -> withFile hasFS secondaryIndexFile ReadMode $ \sHnd -> do
+  -> m [WithBlockSize (Entry hash)]
+readAllEntries hasFS err HashInfo { getHash } secondaryOffset epoch stopAfter
+               epochFileSize = \isEBB ->
+    withFile hasFS secondaryIndexFile ReadMode $ \sHnd -> do
       bl <- hGetAllAt hasFS sHnd (AbsOffset (fromIntegral secondaryOffset))
-      uncurry addBlockSizes <$> go isEBB bl []
+      go isEBB bl [] Nothing
   where
     secondaryIndexFile = renderFile "secondary" epoch
 
     go :: IsEBB  -- ^ Interpret the next entry as an EBB?
        -> Lazy.ByteString
-       -> [Entry hash]
-       -> m (BlockSize, [Entry hash])
-          -- ^ Also return the 'BlockSize' of the last entry in the list, as
-          -- we can't derive it from the entry after.
-    go isEBB bl acc
-      | Lazy.null bl = return (LastEntry, reverse acc)
+       -> [WithBlockSize (Entry hash)]  -- ^ Accumulator
+       -> Maybe (Entry hash)
+          -- ^ The previous entry we read. We can only add it to the
+          -- accumulator when we know its block size, which we compute based
+          -- on the next entry's offset.
+       -> m [WithBlockSize (Entry hash)]
+    go isEBB bl acc mbPrevEntry
+      | Lazy.null bl = return $ reverse $
+        (addBlockSize epochFileSize <$> mbPrevEntry) `consMaybe` acc
       | otherwise    = do
         (remaining, entry) <- runGetWithUnconsumed err secondaryIndexFile
           (getEntry isEBB getHash) bl
+        let offsetAfterPrevBlock = unBlockOffset (blockOffset entry)
+            acc' = (addBlockSize offsetAfterPrevBlock <$> mbPrevEntry)
+              `consMaybe` acc
         if stopAfter entry then
 
           if Lazy.null remaining then
-            return (LastEntry, reverse (entry:acc))
+            return $ reverse $ addBlockSize epochFileSize entry : acc'
           else do
             -- Read the next blockOffset so we can compute the size of the
             -- last block we read.
@@ -250,36 +259,33 @@ readAllEntries hasFS err HashInfo { getHash } secondaryOffset epoch stopAfter =
             -- next entry's block offset.
             (_, nextBlockOffset) <-
               runGetWithUnconsumed err secondaryIndexFile get remaining
-            let size = nextBlockOffset - blockOffset entry
-            return (BlockSize (fromIntegral size), reverse (entry:acc))
+            return $ reverse $ addBlockSize nextBlockOffset entry : acc'
 
         else
           -- Pass 'IsNotEBB' because there can only be one EBB and that must
           -- be the first one in the file.
-          go IsNotEBB remaining (entry:acc)
+          go IsNotEBB remaining acc' (Just entry)
 
-    -- | Add the 'BlockSize' to each entry by looking at the 'blockOffset' of
-    -- the entry after it. Use the given 'BlockSize' for the last entry.
-    addBlockSizes :: BlockSize -> [Entry hash] -> [(Entry hash, BlockSize)]
-    addBlockSizes lastBlockSize = goAdd
+    -- | Add the block size to an entry, it is computed by subtracting the
+    -- entry's block offset from the offset after the entry's block, i.e.,
+    -- where the next block starts.
+    addBlockSize :: Word64 -> Entry hash -> WithBlockSize (Entry hash)
+    addBlockSize offsetAfter entry = WithBlockSize size entry
       where
-        goAdd = \case
-          []         -> []
-          [e1]       -> [(e1, lastBlockSize)]
-          (e1:e2:es) -> (e1, sz1) : goAdd (e2:es)
-            where
-              sz1 = BlockSize (fromIntegral (unBlockOffset (blockOffset e2)) -
-                               fromIntegral (unBlockOffset (blockOffset e1)))
+        size = fromIntegral $ offsetAfter - unBlockOffset (blockOffset entry)
+
+    consMaybe :: Maybe a -> [a] -> [a]
+    consMaybe = maybe id (:)
 
 appendEntry
   :: forall m hash h. (HasCallStack, MonadThrow m)
   => HasFS m h
-  -> Handle h
   -> HashInfo hash
+  -> Handle h
   -> Entry hash
   -> m Word64
      -- ^ The number of bytes written
-appendEntry hasFS sHnd HashInfo { putHash, hashSize } entry = do
+appendEntry hasFS HashInfo { putHash, hashSize } sHnd entry = do
     bytesWritten <- hPut hasFS sHnd $ Put.execPut $ putEntry putHash entry
     return $
       assert (bytesWritten == fromIntegral (entrySize hashSize)) bytesWritten
@@ -313,7 +319,7 @@ writeAllEntries hasFS hashInfo epoch entries =
       -- First truncate the file, otherwise we might leave some old contents
       -- at the end if the new contents are smaller than the previous contents
       hTruncate sHnd 0
-      mapM_ (appendEntry hasFS sHnd hashInfo) entries
+      mapM_ (appendEntry hasFS hashInfo sHnd) entries
   where
     secondaryIndexFile  = renderFile "secondary" epoch
     HasFS { hTruncate } = hasFS

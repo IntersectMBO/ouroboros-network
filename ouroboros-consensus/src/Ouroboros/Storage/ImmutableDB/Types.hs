@@ -11,6 +11,7 @@ module Ouroboros.Storage.ImmutableDB.Types
   , ImmTip
   , ImmTipWithHash
   , WithHash (..)
+  , WithBlockSize (..)
   , BlockOrEBB (..)
   , HashInfo (..)
   , BinaryInfo (..)
@@ -29,6 +30,7 @@ module Ouroboros.Storage.ImmutableDB.Types
   , sameUnexpectedError
   , prettyUnexpectedError
   , TraceEvent(..)
+  , TraceCacheEvent(..)
     -- * Current EBB
   , CurrentEBB(..)
   , hasCurrentEBB
@@ -67,6 +69,11 @@ type ImmTipWithHash hash = Tip (WithHash hash BlockOrEBB)
 data WithHash hash a = WithHash
   { theHash    :: !hash
   , forgetHash :: !a
+  } deriving (Eq, Show, Generic, NoUnexpectedThunks, Functor, Foldable, Traversable)
+
+data WithBlockSize a = WithBlockSize
+  { blockSize        :: !Word32
+  , withoutBlockSize :: !a
   } deriving (Eq, Show, Generic, NoUnexpectedThunks, Functor, Foldable, Traversable)
 
 -- | How to get/put the header hash of a block and how many bytes it occupies
@@ -315,6 +322,11 @@ prettyUnexpectedError = \case
       " but got " <> show actual <>
       prettyCallStack cs
 
+
+{------------------------------------------------------------------------------
+  Tracing
+------------------------------------------------------------------------------}
+
 data TraceEvent e hash
     = NoValidLastLocation
     | ValidatedLastLocation EpochNo ImmTip
@@ -336,6 +348,22 @@ data TraceEvent e hash
       -- Closing the DB
     | DBAlreadyClosed
     | DBClosed
+      -- Events traced by the index cache
+    | TraceCacheEvent !TraceCacheEvent
+  deriving (Eq, Generic, Show)
+
+-- | The argument with type 'Word32' is the number of past epoch currently in
+-- the cache.
+data TraceCacheEvent
+    = TraceCurrentEpochHit   !EpochNo   !Word32
+    | TracePastEpochHit      !EpochNo   !Word32
+    | TracePastEpochMiss     !EpochNo   !Word32
+    | TracePastEpochEvict    !EpochNo   !Word32
+      -- ^ The least recently used past epoch was evicted because the cache
+      -- was full.
+    | TracePastEpochsExpired ![EpochNo] !Word32
+      -- ^ Past epochs were expired from the cache because they haven't been
+      -- used for a while.
   deriving (Eq, Generic, Show)
 
 {-------------------------------------------------------------------------------

@@ -1,9 +1,10 @@
-{-# LANGUAGE DataKinds            #-}
-{-# LANGUAGE DerivingVia          #-}
-{-# LANGUAGE FlexibleContexts     #-}
-{-# LANGUAGE FlexibleInstances    #-}
-{-# LANGUAGE StandaloneDeriving   #-}
-{-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE DataKinds                  #-}
+{-# LANGUAGE DerivingVia                #-}
+{-# LANGUAGE FlexibleContexts           #-}
+{-# LANGUAGE FlexibleInstances          #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE StandaloneDeriving         #-}
+{-# LANGUAGE UndecidableInstances       #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 module Ouroboros.Consensus.Util.Orphans () where
 
@@ -15,14 +16,19 @@ import           Control.Monad.Trans
 import           Crypto.Random
 import           Data.Bimap (Bimap)
 import qualified Data.Bimap as Bimap
+import           Data.Hashable (Hashable)
+import           Data.HashPSQ (HashPSQ)
+import qualified Data.HashPSQ as PSQ
 
 import           Control.Tracer (Tracer)
+
+import           Control.Monad.Class.MonadTime (Time (..))
 
 import           Ouroboros.Consensus.Util.MonadSTM.NormalForm
 
 import           Cardano.Crypto.Hash (Hash)
 import           Cardano.Prelude (NoUnexpectedThunks (..), OnlyCheckIsWHNF (..),
-                     noUnexpectedThunksInKeysAndValues)
+                     allNoUnexpectedThunks, noUnexpectedThunksInKeysAndValues)
 
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import qualified Ouroboros.Network.AnchoredFragment as AF
@@ -84,6 +90,23 @@ instance (NoUnexpectedThunks k, NoUnexpectedThunks v)
   whnfNoUnexpectedThunks ctxt = noUnexpectedThunksInKeysAndValues ctxt
                               . Bimap.toList
 
+instance ( NoUnexpectedThunks k
+         , NoUnexpectedThunks p
+         , NoUnexpectedThunks v
+         , Hashable k
+         , Ord k
+         , Ord p
+         ) => NoUnexpectedThunks (HashPSQ k p v) where
+  showTypeOf _ = "HashPSQ"
+  whnfNoUnexpectedThunks ctxt = allNoUnexpectedThunks
+                              . concatMap (\(k, p, v) ->
+                                [ noUnexpectedThunks ctxt k
+                                , noUnexpectedThunks ctxt p
+                                , noUnexpectedThunks ctxt v])
+                              . PSQ.toList
+
 deriving via OnlyCheckIsWHNF "Decoder" (Decoder s a) instance NoUnexpectedThunks (Decoder s a)
 
 deriving via OnlyCheckIsWHNF "Tracer" (Tracer m ev) instance NoUnexpectedThunks (Tracer m ev)
+
+deriving newtype instance NoUnexpectedThunks Time

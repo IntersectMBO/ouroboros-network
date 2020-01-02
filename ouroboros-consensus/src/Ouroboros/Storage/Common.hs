@@ -26,6 +26,7 @@ import qualified Codec.CBOR.Decoding as Dec
 import           Codec.CBOR.Encoding (Encoding)
 import qualified Codec.CBOR.Encoding as Enc
 import           Codec.Serialise (Serialise (..))
+import           Data.Hashable (Hashable)
 import           Data.Word
 import           GHC.Generics
 
@@ -42,7 +43,7 @@ import           Ouroboros.Consensus.Util.Condense
 -- | An epoch, i.e. the number of the epoch.
 newtype EpochNo = EpochNo { unEpochNo :: Word64 }
   deriving stock (Eq, Ord, Show, Generic)
-  deriving newtype (Enum, Num, Serialise, ToCBOR, NoUnexpectedThunks)
+  deriving newtype (Enum, Num, Serialise, ToCBOR, NoUnexpectedThunks, Hashable)
 
 newtype EpochSize = EpochSize { unEpochSize :: Word64 }
   deriving stock (Eq, Ord, Show, Generic)

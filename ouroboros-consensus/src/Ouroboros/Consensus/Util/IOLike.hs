@@ -38,6 +38,8 @@ module Ouroboros.Consensus.Util.IOLike (
   , uncheckedNewEmptyMVar
   , uncheckedNewMVar
   , updateMVar
+  , updateMVar_
+  , modifyMVar
     -- *** MonadFork
   , ThreadId
   , myThreadId

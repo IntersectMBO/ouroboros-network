@@ -17,7 +17,7 @@
 -}
 module Main where
 
-import           Control.Exception (Exception, bracket, throwIO)
+import           Control.Exception (Exception, throwIO)
 import           Control.Monad.Except (liftIO, runExceptT)
 import           Control.Monad.Trans.Resource (runResourceT)
 import           Data.Bifunctor (first)
@@ -173,24 +173,15 @@ validateChainDb dbDir genesisConfig onlyImmDB verbose =
         (nodeStartTime (Proxy @ByronBlock) cfg)
         (focusSlotLengths $ singletonSlotLengths slotLength)
       let chainDbArgs = mkChainDbArgs registry btime
-
+          (immDbArgs, _, _, _) = fromChainDbArgs chainDbArgs
       if onlyImmDB then
-        bracket
-          (let (immDbArgs, _, _, _) = fromChainDbArgs chainDbArgs
-           in ImmDB.openDB immDbArgs)
-          ImmDB.closeDB
-          (\immdb -> do
-            immDbTipPoint <- ImmDB.getPointAtTip immdb
-            putStrLn $ "DB tip: " ++ condense immDbTipPoint
-          )
+        ImmDB.withImmDB immDbArgs $ \immDB -> do
+          immDbTipPoint <- ImmDB.getPointAtTip immDB
+          putStrLn $ "DB tip: " ++ condense immDbTipPoint
       else
-        bracket
-          (ChainDB.openDB chainDbArgs)
-          ChainDB.closeDB
-          (\chaindb -> do
-            chainDbTipPoint <- atomically $ ChainDB.getTipPoint chaindb
-            putStrLn $ "DB tip: " ++ condense chainDbTipPoint
-          )
+        ChainDB.withDB chainDbArgs $ \chainDB -> do
+          chainDbTipPoint <- atomically $ ChainDB.getTipPoint chainDB
+          putStrLn $ "DB tip: " ++ condense chainDbTipPoint
   where
     -- This converts the old chain, which has a 20s slot length.
     slotLength = slotLengthFromSec 20

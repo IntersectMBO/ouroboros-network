@@ -307,7 +307,10 @@ data Deserialisable m blk b = Deserialisable
    { serialised         :: !(Serialised b)
    , deserialisableSlot :: !SlotNo
    , deserialisableHash :: !(HeaderHash blk)
-   , deserialise        :: !(m b)
+   , deserialise        :: m b
+     -- ^ No need for a bang as it is a monadic computation. Moreover, with a
+     -- bang, we might accidentally force deserialisation, as that is
+     -- typically a pure computation that only needs @m@ to throw an error.
    }
 
 deserialisablePoint :: Deserialisable m blk b -> Point blk

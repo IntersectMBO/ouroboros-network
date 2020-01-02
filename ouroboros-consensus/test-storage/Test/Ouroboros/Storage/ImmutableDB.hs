@@ -9,12 +9,15 @@ import           Data.Coerce (coerce)
 import           Data.Functor.Identity (Identity (..))
 import           Data.Maybe (fromJust)
 
+import           Control.Monad.Class.MonadThrow (bracket)
+
 import           Test.QuickCheck
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.HUnit
 import           Test.Tasty.QuickCheck (testProperty)
 
 import           Ouroboros.Consensus.Util.IOLike
+import           Ouroboros.Consensus.Util.ResourceRegistry
 
 import           Ouroboros.Storage.Common
 import           Ouroboros.Storage.EpochInfo
@@ -23,6 +26,7 @@ import           Ouroboros.Storage.FS.API.Types
 import           Ouroboros.Storage.Util.ErrorHandling (ErrorHandling)
 
 import           Ouroboros.Storage.ImmutableDB
+import qualified Ouroboros.Storage.ImmutableDB.Impl.Index as Index
 import           Ouroboros.Storage.ImmutableDB.Impl.Index.Primary (PrimaryIndex)
 import qualified Ouroboros.Storage.ImmutableDB.Impl.Index.Primary as Primary
 import           Ouroboros.Storage.ImmutableDB.Impl.Validation
@@ -58,10 +62,12 @@ type Hash = TestHeaderHash
 
 -- Shorthand
 openTestDB :: (HasCallStack, IOLike m)
-           => HasFS m h
+           => ResourceRegistry m
+           -> HasFS m h
            -> ErrorHandling ImmutableDBError m
            -> m (ImmutableDB Hash m)
-openTestDB hasFS err = openDB
+openTestDB registry hasFS err = fst <$> openDBInternal
+    registry
     hasFS
     err
     (fixedSizeEpochInfo fixedEpochSize)
@@ -69,6 +75,7 @@ openTestDB hasFS err = openDB
     ValidateMostRecentEpoch
     parser
     nullTracer
+    (Index.CacheConfig 2 60)
   where
     parser = epochFileParser hasFS (const <$> S.decode) isEBB getBinaryInfo
       testBlockIsValid
@@ -81,7 +88,8 @@ withTestDB :: (HasCallStack, IOLike m)
            -> ErrorHandling ImmutableDBError m
            -> (ImmutableDB Hash m -> m a)
            -> m a
-withTestDB hasFS err = withDB (openTestDB hasFS err)
+withTestDB hasFS err k = withRegistry $ \registry ->
+    bracket (openTestDB registry hasFS err) closeDB k
 
 {------------------------------------------------------------------------------
   Equivalence tests between IO and MockFS
@@ -111,9 +119,9 @@ test_openDBEmptyIndexFilesEquivalence =
       withTestDB hasFS err getTip
 
 test_closeDBIdempotentEquivalence :: Assertion
-test_closeDBIdempotentEquivalence =
+test_closeDBIdempotentEquivalence = withRegistry $ \registry ->
     apiEquivalenceImmDB (expectImmDBResult (@?= ())) $ \hasFS err -> do
-      db <- openTestDB hasFS err
+      db <- openTestDB registry hasFS err
       closeDB db
       closeDB db
 

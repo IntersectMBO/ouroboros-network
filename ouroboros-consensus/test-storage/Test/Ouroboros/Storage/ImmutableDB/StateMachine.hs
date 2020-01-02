@@ -67,6 +67,7 @@ import           Text.Show.Pretty (ppShow)
 import           Ouroboros.Consensus.Block (IsEBB (..), fromIsEBB)
 import qualified Ouroboros.Consensus.Util.Classify as C
 import           Ouroboros.Consensus.Util.IOLike
+import           Ouroboros.Consensus.Util.ResourceRegistry
 
 import           Ouroboros.Network.Block (BlockNo (..), HasHeader (..),
                      HeaderHash, SlotNo (..))
@@ -80,6 +81,8 @@ import           Ouroboros.Storage.FS.API.Types (FsError (..), FsPath)
 import           Ouroboros.Storage.ImmutableDB hiding (BlockOrEBB (..))
 import qualified Ouroboros.Storage.ImmutableDB as ImmDB
 import qualified Ouroboros.Storage.ImmutableDB.Impl as ImmDB (Internal (..))
+import qualified Ouroboros.Storage.ImmutableDB.Impl.Index as Index
+                     (CacheConfig (..))
 import           Ouroboros.Storage.ImmutableDB.Impl.Util (renderFile, tryImmDB)
 import           Ouroboros.Storage.ImmutableDB.Layout
 import           Ouroboros.Storage.ImmutableDB.Parser (epochFileParser)
@@ -174,7 +177,7 @@ data Success it
   | EpochNo          EpochNo
   | Iter             (Either (WrongBoundError Hash) it)
   | IterResult       (IteratorResult Hash ByteString)
-  | IterHasNext      Bool
+  | IterHasNext      (Maybe (Either EpochNo SlotNo, Hash))
   | Tip              (ImmTipWithHash Hash)
   deriving (Eq, Show, Functor, Foldable, Traversable)
 
@@ -317,6 +320,9 @@ data Model m r = Model
   , knownIters   :: KnownIters m r
     -- ^ Store a mapping between iterator references and mocked iterators.
   } deriving (Show, Generic)
+
+nbOpenIterators :: Model m r -> Int
+nbOpenIterators model = length (RE.toList (knownIters model))
 
 -- | Initial model
 initModel :: DBModel Hash -> ModelDBPure -> ModelDBInternalPure -> Model m r
@@ -1255,8 +1261,8 @@ showLabelledExamples :: IO ()
 showLabelledExamples = showLabelledExamples' Nothing 1000 (const True) $
     sm (error "errorsVar unused") hasFsUnused dbUnused internalUnused
 
-prop_sequential :: Property
-prop_sequential = forAllCommands smUnused Nothing $ \cmds -> QC.monadicIO $ do
+prop_sequential :: Index.CacheConfig -> Property
+prop_sequential cacheConfig = forAllCommands smUnused Nothing $ \cmds -> QC.monadicIO $ do
     let test :: StrictTVar IO Mock.MockFS
              -> StrictTVar IO Errors
              -> HasFS IO h
@@ -1268,24 +1274,49 @@ prop_sequential = forAllCommands smUnused Nothing $ \cmds -> QC.monadicIO $ do
           let parser = epochFileParser hasFS (const <$> decode) isEBB
                 getBinaryInfo testBlockIsValid
           (tracer, getTrace) <- QC.run recordingTracerIORef
-          (db, internal) <- QC.run $ openDBInternal hasFS EH.monadCatch
-            (fixedSizeEpochInfo fixedEpochSize) testHashInfo
-            ValidateMostRecentEpoch parser tracer
+          registry <- QC.run unsafeNewRegistry
+          (db, internal) <- QC.run $ openDBInternal registry hasFS
+            EH.monadCatch (fixedSizeEpochInfo fixedEpochSize) testHashInfo
+            ValidateMostRecentEpoch parser tracer cacheConfig
           let sm' = sm errorsVar hasFS db internal dbm mdb minternal
           (hist, model, res) <- runCommands sm' cmds
           trace <- QC.run getTrace
           QC.monitor $ counterexample ("Trace: " <> unlines (map show trace))
-          fsDump <- QC.run $ Mock.pretty <$> atomically (readTVar fsVar)
+          fs <- QC.run $ atomically $ readTVar fsVar
+          let fsDump = Mock.pretty fs
+              openHandles = Mock.numOpenHandles fs
+              -- We're appending to the epoch, so a handle for each of the
+              -- three files, plus a handle for the epoch file (to read the
+              -- blocks) per open iterator.
+              maxExpectedOpenHandles = 1 {- epoch file -}
+                                     + 1 {- primary index file -}
+                                     + 1 {- secondary index file -}
+                                     + nbOpenIterators model
+              openHandlesProp
+                | openHandles <= maxExpectedOpenHandles
+                = property True
+                | otherwise
+                = counterexample
+                  ("open handles: " <> show openHandles <>
+                   " > max expected open handles: " <>
+                   show maxExpectedOpenHandles) False
+              prop = res === Ok .&&. openHandlesProp
           QC.monitor $ counterexample ("FS: " <> fsDump)
-          QC.run $ closeDB db >> reopen db ValidateAllEpochs
-          validation <- validate model db
-          dbTip <- QC.run $ getTip db <* closeDB db
+          case res of
+            Ok -> do
+              QC.run $ closeDB db >> reopen db ValidateAllEpochs
+              validation <- validate model db
+              dbTip <- QC.run $ getTip db <* closeDB db <* closeRegistry registry
 
-          let modelTip = dbmTip $ dbModel model
-          QC.monitor $ counterexample ("dbTip:    " <> show dbTip)
-          QC.monitor $ counterexample ("modelTip: " <> show modelTip)
+              let modelTip = dbmTip $ dbModel model
+              QC.monitor $ counterexample ("dbTip:    " <> show dbTip)
+              QC.monitor $ counterexample ("modelTip: " <> show modelTip)
 
-          return (hist, res === Ok .&&. dbTip === modelTip .&&. validation)
+              return (hist, prop .&&. dbTip === modelTip .&&. validation)
+            -- If something went wrong, don't try to reopen the database
+            _ -> do
+              QC.run $ closeRegistry registry
+              return (hist, prop)
 
     fsVar     <- QC.run $ uncheckedNewTVarM Mock.empty
     errorsVar <- QC.run $ uncheckedNewTVarM mempty
@@ -1324,3 +1355,15 @@ internalUnused = error "semantics and internal DB API used during command genera
 
 hasFsUnused :: HasFS m h
 hasFsUnused = error "HasFS only used during execution"
+
+instance Arbitrary Index.CacheConfig where
+  arbitrary = do
+    pastEpochsToCache <- frequency
+      -- Pick small values so that we exercise cache eviction
+      [ (1, return 1)
+      , (1, return 2)
+      , (1, choose (3, 10))
+      ]
+    -- TODO create a Cmd that advances time, so this is being exercised too.
+    expireUnusedAfter <- (fromIntegral :: Int -> DiffTime) <$> choose (1, 100)
+    return Index.CacheConfig {..}

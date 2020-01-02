@@ -36,8 +36,9 @@ import           Ouroboros.Consensus.Protocol.Abstract (NodeConfig)
 import           Ouroboros.Consensus.Util.ResourceRegistry
 
 import           Ouroboros.Storage.ChainDB.API (BlockOrHeader (..),
-                     StreamFrom (..))
-import           Ouroboros.Storage.ChainDB.Impl.ImmDB
+                     StreamFrom (..), StreamTo (..))
+import           Ouroboros.Storage.ChainDB.Impl.ImmDB hiding (withImmDB)
+import qualified Ouroboros.Storage.ChainDB.Impl.ImmDB as ImmDB (withImmDB)
 import           Ouroboros.Storage.Common
 import           Ouroboros.Storage.EpochInfo
 import qualified Ouroboros.Storage.ImmutableDB.API as ImmDB
@@ -49,9 +50,9 @@ main = do
     let epochSlots = Genesis.configEpochSlots genesisConfig
         epochInfo  = fixedSizeEpochInfo (coerce epochSlots)
         cfg        = mkPBftNodeConfig genesisConfig
-    immDB <- openImmDB clImmDB cfg epochInfo
-    withRegistry $ runAnalysis clAnalysis immDB epochInfo
-    putStrLn "Done"
+    withImmDB clImmDB cfg epochInfo $ \immDB -> do
+      withRegistry $ runAnalysis clAnalysis immDB epochInfo
+      putStrLn "Done"
 
 {-------------------------------------------------------------------------------
   Run the requested analysis
@@ -150,7 +151,10 @@ processAll :: ImmDB IO ByronBlock
            -> (Either EpochNo SlotNo -> ByronBlock -> IO ())
            -> IO ()
 processAll immDB rr callback = do
-    Right itr <- streamFrom immDB rr Block $ StreamFromExclusive genesisPoint
+    tipPoint <- getPointAtTip immDB
+    Right itr <- stream immDB rr Block
+      (StreamFromExclusive genesisPoint)
+      (StreamToInclusive tipPoint)
     go (deserialiseIterator immDB itr)
   where
     go :: Iterator ByronHash IO ByronBlock -> IO ()
@@ -244,9 +248,10 @@ mkPBftNodeConfig genesisConfig = pInfoConfig $
   Interface with the ImmDB
 -------------------------------------------------------------------------------}
 
-openImmDB :: FilePath -> NodeConfig ByronConsensusProtocol -> EpochInfo IO
-          -> IO (ImmDB IO ByronBlock)
-openImmDB fp cfg epochInfo = openDB args
+withImmDB :: FilePath -> NodeConfig ByronConsensusProtocol -> EpochInfo IO
+          -> (ImmDB IO ByronBlock -> IO a)
+          -> IO a
+withImmDB fp cfg epochInfo = ImmDB.withImmDB args
   where
     args :: ImmDbArgs IO ByronBlock
     args = (defaultArgs fp) {

@@ -3,6 +3,7 @@
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE LambdaCase                #-}
 {-# LANGUAGE NamedFieldPuns            #-}
+{-# LANGUAGE OverloadedStrings         #-}
 {-# LANGUAGE QuantifiedConstraints     #-}
 {-# LANGUAGE RecordWildCards           #-}
 {-# LANGUAGE ScopedTypeVariables       #-}
@@ -22,10 +23,10 @@ import           Control.Monad.Except
 import           Control.Monad.State.Strict (state)
 import           Data.ByteString.Lazy (ByteString)
 import           Data.Foldable (find)
+import           Data.Functor ((<&>))
 import           Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
 import           Data.Maybe (isNothing)
-import           Data.Word (Word32, Word64)
 import           GHC.Generics (Generic)
 
 import           Cardano.Prelude (NoUnexpectedThunks (..),
@@ -44,9 +45,10 @@ import           Ouroboros.Storage.FS.CRC
 import           Ouroboros.Storage.Util.ErrorHandling (ErrorHandling)
 
 import           Ouroboros.Storage.ImmutableDB.API
+import           Ouroboros.Storage.ImmutableDB.Impl.Index (Index)
+import qualified Ouroboros.Storage.ImmutableDB.Impl.Index as Index
 import           Ouroboros.Storage.ImmutableDB.Impl.Index.Primary
                      (SecondaryOffset)
-import qualified Ouroboros.Storage.ImmutableDB.Impl.Index.Primary as Primary
 import           Ouroboros.Storage.ImmutableDB.Impl.Index.Secondary
                      (BlockOffset (..), BlockSize (..))
 import qualified Ouroboros.Storage.ImmutableDB.Impl.Index.Secondary as Secondary
@@ -62,6 +64,8 @@ import           Ouroboros.Storage.ImmutableDB.Layout
 data IteratorHandle hash m = forall h. IteratorHandle
   { itHasFS   :: !(HasFS m h)
     -- ^ Bundled HasFS instance allows to hide type parameters
+  , itIndex   :: !(Index m hash h)
+    -- ^ Bundled Index instance allows to hide type parameters
   , itState   :: !(StrictTVar m (IteratorStateOrExhausted hash h))
     -- ^ The state of the iterator. If it is 'Nothing', the iterator is
     -- exhausted and/or closed.
@@ -76,10 +80,6 @@ data IteratorStateOrExhausted hash h =
   | IteratorStateExhausted
   deriving (Generic, NoUnexpectedThunks)
 
-iteratorStateIsOpen :: IteratorStateOrExhausted hash h -> Bool
-iteratorStateIsOpen (IteratorStateOpen _)  = True
-iteratorStateIsOpen IteratorStateExhausted = False
-
 -- Existential type; we can't use generics
 instance ( forall a. NoUnexpectedThunks (StrictTVar m a)
          , NoUnexpectedThunks hash
@@ -88,6 +88,7 @@ instance ( forall a. NoUnexpectedThunks (StrictTVar m a)
   whnfNoUnexpectedThunks ctxt IteratorHandle{..} =
       allNoUnexpectedThunks [
           noUnexpectedThunks ctxt itHasFS
+        , noUnexpectedThunks ctxt itIndex
         , noUnexpectedThunks ctxt itState
         , noUnexpectedThunks ctxt itEnd
         , noUnexpectedThunks ctxt itEndHash
@@ -107,11 +108,6 @@ data IteratorState hash h = IteratorState
     -- not included in this list.
   }
   deriving (Generic, NoUnexpectedThunks)
-
-data WithBlockSize a = WithBlockSize
-  { withoutBlockSize :: !a
-  , blockSize        :: !Word32
-  } deriving (Eq, Show, Generic, NoUnexpectedThunks)
 
 -- | Used by 'streamImpl' to choose between streaming blocks or headers.
 data BlocksOrHeaders = Blocks | Headers
@@ -146,8 +142,8 @@ streamImpl dbEnv blocksOrHeaders mbStart mbEnd =
           -- would have thrown a 'ReadFutureSlotError'.
           assert (isNothing mbStart && isNothing mbEnd) $ lift mkEmptyIterator
         Tip tip -> do
-          WithHash endHash endEpochSlot <- fillInEndBound   hasFS tip mbEnd
-          (secondaryOffset, start)      <- fillInStartBound hasFS     mbStart
+          WithHash endHash endEpochSlot <- fillInEndBound   _index tip mbEnd
+          (secondaryOffset, start)      <- fillInStartBound _index     mbStart
 
           lift $ do
             -- 'validateIteratorRange' will catch nearly all invalid ranges,
@@ -171,13 +167,14 @@ streamImpl dbEnv blocksOrHeaders mbStart mbEnd =
             -- TODO avoid rereading the indices of the start epoch. We read
             -- from both the primary and secondary index in 'fillInStartBound'
 
-            iteratorState <- iteratorStateForEpoch hasFS _dbErr _dbHashInfo
+            iteratorState <- iteratorStateForEpoch hasFS _dbErr _index
               curEpochInfo endHash startEpoch secondaryOffset startIsEBB
 
             varIteratorState <- newTVarM $ IteratorStateOpen iteratorState
 
             mkIterator IteratorHandle
               { itHasFS   = hasFS
+              , itIndex   = _index
               , itState   = varIteratorState
               , itEnd     = endEpochSlot
               , itEndHash = endHash
@@ -194,16 +191,16 @@ streamImpl dbEnv blocksOrHeaders mbStart mbEnd =
     -- PRECONDITION: the database is not empty.
     fillInEndBound
       :: HasCallStack
-      => HasFS m h
+      => Index m hash h
       -> WithHash hash BlockOrEBB  -- ^ Current tip
       -> Maybe (SlotNo, hash)      -- ^ End bound
       -> ExceptT (WrongBoundError hash) m (WithHash hash EpochSlot)
-    fillInEndBound hasFS currentTip = \case
+    fillInEndBound index currentTip = \case
       -- End bound given, check whether it corresponds to a regular block or
       -- an EBB. Convert the 'SlotNo' to an 'EpochSlot' accordingly.
       Just end -> do
         (epochSlot, (entry, _blockSize), _secondaryOffset) <-
-          getSlotInfo hasFS _dbErr _dbEpochInfo _dbHashInfo end
+          getSlotInfo _dbEpochInfo index end
         return (WithHash (Secondary.headerHash entry) epochSlot)
 
       -- No end bound given, use the current tip, but convert the 'BlockOrEBB'
@@ -221,17 +218,17 @@ streamImpl dbEnv blocksOrHeaders mbStart mbEnd =
     -- PRECONDITION: the database is not empty.
     fillInStartBound
       :: HasCallStack
-      => HasFS m h
+      => Index m hash h
       -> Maybe (SlotNo, hash)  -- ^ Start bound
       -> ExceptT (WrongBoundError hash)
                   m
                   (SecondaryOffset, WithHash hash EpochSlot)
-    fillInStartBound hasFS = \case
+    fillInStartBound index = \case
       -- Start bound given, check whether it corresponds to a regular block or
       -- an EBB. Convert the 'SlotNo' to an 'EpochSlot' accordingly.
       Just start -> do
         (epochSlot, (entry, _blockSize), secondaryOffset) <-
-          getSlotInfo hasFS _dbErr _dbEpochInfo _dbHashInfo start
+          getSlotInfo _dbEpochInfo index start
         return (secondaryOffset, WithHash (Secondary.headerHash entry) epochSlot)
 
       -- No start bound given, use the first block in the ImmutableDB as the
@@ -239,15 +236,14 @@ streamImpl dbEnv blocksOrHeaders mbStart mbEnd =
       Nothing -> lift $ findFirstFilledSlot 0
         where
           findFirstFilledSlot epoch =
-            Primary.readFirstFilledSlot hasFS _dbErr epoch >>= \case
+            Index.readFirstFilledSlot index epoch >>= \case
               -- We know the database is not empty, so this loop must end
               -- before we reach an epoch that doesn't yet exist (which would
               -- result in an error).
               Nothing      -> findFirstFilledSlot (epoch + 1)
               Just relSlot -> do
                   (Secondary.Entry { headerHash }, _) <-
-                    Secondary.readEntry hasFS _dbErr _dbHashInfo epoch isEBB
-                      secondaryOffset
+                    Index.readEntry index epoch isEBB secondaryOffset
                   return (secondaryOffset, WithHash headerHash epochSlot)
                 where
                   -- The first entry in the secondary index file (i.e. the
@@ -270,7 +266,7 @@ streamImpl dbEnv blocksOrHeaders mbStart mbEnd =
     mkEmptyIterator = withNewIteratorID $ \itID -> Iterator
       { iteratorNext    = return IteratorExhausted
       , iteratorPeek    = return IteratorExhausted
-      , iteratorHasNext = return False
+      , iteratorHasNext = return Nothing
       , iteratorClose   = return ()
       , iteratorID      = itID
       }
@@ -301,14 +297,12 @@ streamImpl dbEnv blocksOrHeaders mbStart mbEnd =
 -- PRECONDITION: the database is not empty.
 getSlotInfo
   :: (HasCallStack, IOLike m, Eq hash)
-  => HasFS m h
-  -> ErrorHandling ImmutableDBError m
-  -> EpochInfo m
-  -> HashInfo hash
+  => EpochInfo m
+  -> Index m hash h
   -> (SlotNo, hash)
   -> ExceptT (WrongBoundError hash) m
              (EpochSlot, (Secondary.Entry hash, BlockSize), SecondaryOffset)
-getSlotInfo hasFS err epochInfo hashInfo (slot, hash) = do
+getSlotInfo epochInfo index (slot, hash) = do
     epochSlot@(EpochSlot epoch relSlot) <- lift $
       epochInfoBlockRelative epochInfo slot
     -- 'epochInfoBlockRelative' always assumes the given 'SlotNo' refers to a
@@ -321,7 +315,7 @@ getSlotInfo hasFS err epochInfo hashInfo (slot, hash) = do
     -- both. We will know which one it is when we can check the hashes from
     -- the secondary index file with the hash we have.
     toRead :: NonEmpty (IsEBB, SecondaryOffset) <- if couldBeEBB then
-        lift (Primary.readOffsets hasFS err epoch (Two 0 1)) >>= \case
+        lift (Index.readOffsets index epoch (Two 0 1)) >>= \case
           Two Nothing Nothing                   ->
             throwError $ EmptySlotError slot
           Two (Just ebbOffset) (Just blkOffset) ->
@@ -331,14 +325,14 @@ getSlotInfo hasFS err epochInfo hashInfo (slot, hash) = do
           Two Nothing (Just blkOffset)          ->
             return ((IsNotEBB, blkOffset) NE.:| [])
       else
-        lift (Primary.readOffset hasFS err epoch relSlot) >>= \case
+        lift (Index.readOffset index epoch relSlot) >>= \case
           Nothing        ->
             throwError $ EmptySlotError slot
           Just blkOffset ->
             return ((IsNotEBB, blkOffset) NE.:| [])
 
     entriesWithBlockSizes :: NonEmpty (Secondary.Entry hash, BlockSize) <- lift $
-      Secondary.readEntries hasFS err hashInfo epoch toRead
+      Index.readEntries index epoch toRead
 
     -- Return the entry from the secondary index file that matches the
     -- expected hash.
@@ -365,8 +359,10 @@ iteratorNextImpl
   -> BlocksOrHeaders
   -> Bool  -- ^ Step the iterator after reading iff True
   -> m (IteratorResult hash ByteString)
-iteratorNextImpl dbEnv it@IteratorHandle {itHasFS = hasFS :: HasFS m h, ..}
-                 blocksOrHeaders step = do
+iteratorNextImpl dbEnv it@IteratorHandle
+                         { itHasFS = hasFS :: HasFS m h
+                         , itIndex = index :: Index m hash h
+                         , .. } blocksOrHeaders step = do
     -- The idea is that if the state is not 'IteratorStateExhausted, then the
     -- head of 'itEpochEntries' is always ready to be read. After reading it
     -- with 'readNextBlock' or 'readNextHeader', 'stepIterator' will advance
@@ -376,7 +372,7 @@ iteratorNextImpl dbEnv it@IteratorHandle {itHasFS = hasFS :: HasFS m h, ..}
       IteratorStateExhausted -> return IteratorExhausted
       IteratorStateOpen iteratorState@IteratorState{..} ->
         withOpenState dbEnv $ \_ st -> do
-          let entryWithBlockSize@(WithBlockSize entry _) = NE.head itEpochEntries
+          let entryWithBlockSize@(WithBlockSize _ entry) = NE.head itEpochEntries
               hash = Secondary.headerHash entry
               curEpochInfo = CurrentEpochInfo
                 (_currentEpoch       st)
@@ -392,12 +388,14 @@ iteratorNextImpl dbEnv it@IteratorHandle {itHasFS = hasFS :: HasFS m h, ..}
     ImmutableDBEnv { _dbErr, _dbEpochInfo, _dbHashInfo } = dbEnv
     HasFS { hClose } = hasFS
 
+    -- | We don't rely on the position of the handle, we always use
+    -- 'hGetExactlyAtCRC', i.e. @pread@ for reading from a given offset.
     readNextBlock
       :: Handle h
       -> WithBlockSize (Secondary.Entry hash)
       -> EpochNo
       -> m ByteString
-    readNextBlock eHnd (WithBlockSize entry size) epoch = do
+    readNextBlock eHnd (WithBlockSize size entry) epoch = do
         (bl, checksum') <- hGetExactlyAtCRC hasFS eHnd (fromIntegral size) offset
         checkChecksum _dbErr epochFile blockOrEBB checksum checksum'
         return bl
@@ -450,7 +448,7 @@ iteratorNextImpl dbEnv it@IteratorHandle {itHasFS = hasFS :: HasFS m h, ..}
       -> EpochNo    -- ^ The epoch to open
       -> m (IteratorState hash h)
     openNextEpoch curEpochInfo end epoch =
-      Primary.readFirstFilledSlot hasFS _dbErr epoch >>= \case
+      Index.readFirstFilledSlot index epoch >>= \case
         -- This epoch is empty, look in the next one.
         --
         -- We still haven't encountered the end bound, so this loop must end
@@ -470,15 +468,23 @@ iteratorNextImpl dbEnv it@IteratorHandle {itHasFS = hasFS :: HasFS m h, ..}
                          | otherwise    = IsNotEBB
               secondaryOffset = 0
 
-          iteratorStateForEpoch hasFS _dbErr _dbHashInfo curEpochInfo itEndHash
+          iteratorStateForEpoch hasFS _dbErr index curEpochInfo itEndHash
             epoch secondaryOffset firstIsEBB
 
 iteratorHasNextImpl
   :: (HasCallStack, IOLike m)
   => IteratorHandle hash m
-  -> m Bool
+  -> m (Maybe (Either EpochNo SlotNo, hash))
 iteratorHasNextImpl IteratorHandle { itState } =
-    atomically $ iteratorStateIsOpen <$> readTVar itState
+    atomically $ readTVar itState <&> \case
+      IteratorStateExhausted -> Nothing
+      IteratorStateOpen IteratorState { itEpochEntries } ->
+          Just (epochOrSlot, Secondary.headerHash nextEntry)
+        where
+          WithBlockSize _ nextEntry NE.:| _ = itEpochEntries
+          epochOrSlot = case Secondary.blockOrEBB nextEntry of
+            EBB epoch  -> Left epoch
+            Block slot -> Right slot
 
 iteratorCloseImpl
   :: (HasCallStack, IOLike m)
@@ -501,7 +507,7 @@ iteratorStateForEpoch
   :: (HasCallStack, IOLike m, Eq hash)
   => HasFS m h
   -> ErrorHandling ImmutableDBError m
-  -> HashInfo hash
+  -> Index m hash h
   -> CurrentEpochInfo
   -> hash
      -- ^ Hash of the end bound
@@ -511,12 +517,9 @@ iteratorStateForEpoch
   -> IsEBB
      -- ^ Whether the first expected block will be an EBB or not.
   -> m (IteratorState hash h)
-iteratorStateForEpoch hasFS err hashInfo
+iteratorStateForEpoch hasFS err index
                       (CurrentEpochInfo curEpoch curEpochOffset) endHash
                       epoch secondaryOffset firstIsEBB = do
-    entries <- Secondary.readAllEntries hasFS err hashInfo secondaryOffset
-      epoch ((== endHash) . Secondary.headerHash) firstIsEBB
-
     -- Open the epoch file
     eHnd <- hOpen (renderFile "epoch" epoch) ReadMode
 
@@ -527,8 +530,7 @@ iteratorStateForEpoch hasFS err hashInfo
 
       -- If the last entry in @entries@ corresponds to the last block in the
       -- epoch, we cannot calculate the block size based on the next block.
-      -- Instead, we calculate it based on the size of the epoch file. We do
-      -- that in 'fillInLastBlockSize'.
+      -- Instead, we calculate it based on the size of the epoch file.
       --
       -- IMPORTANT: for older epochs, this is fine, as the secondary index
       -- (entries) and the epoch file (size) are immutable. However, when
@@ -556,61 +558,20 @@ iteratorStateForEpoch hasFS err hashInfo
         then return (unBlockOffset curEpochOffset)
         else hGetSize eHnd
 
+      entries <- Index.readAllEntries index secondaryOffset epoch
+        ((== endHash) . Secondary.headerHash) epochFileSize firstIsEBB
 
-      case NE.nonEmpty (fillInLastBlockSize epochFileSize entries) of
+      case NE.nonEmpty entries of
         -- We still haven't encountered the end bound, so it cannot be
         -- that this non-empty epoch contains no entries <= the end bound.
         Nothing             -> error
           "impossible: there must be entries according to the primary index"
 
-        Just itEpochEntries -> do
-          let WithBlockSize nextEntry _ NE.:| _ = itEpochEntries
-              offset = fromIntegral $ Secondary.unBlockOffset $
-                Secondary.blockOffset nextEntry
-
-          -- Seek the handle so that we can read the first block to
-          -- stream.
-          hSeek eHnd AbsoluteSeek offset
-
-          return IteratorState
-            { itEpoch        = epoch
-            , itEpochHandle  = eHnd
-              -- Force so we don't store any thunks in the state
-            , itEpochEntries = forceElemsToWHNF itEpochEntries
-            }
+        Just itEpochEntries -> return IteratorState
+          { itEpoch        = epoch
+          , itEpochHandle  = eHnd
+            -- Force so we don't store any thunks in the state
+          , itEpochEntries = forceElemsToWHNF itEpochEntries
+          }
   where
-    HasFS { hOpen, hClose, hSeek, hGetSize, hasFsErr } = hasFS
-
--- | When reading the entries from the secondary index files, we can calculate
--- the block size corresponding to each entry based on the offset of the entry
--- and offset of the entry after it. We cannot do this for the last entry, as
--- there is no entry after it. We assign 'LastEntry' to that entry so that we
--- know that when we try to read the corresponding block, it is the last block
--- in the epoch file, which means we don't need to know the size of the block,
--- as we can simply read the epoch file until the end.
---
--- This works fine when we read the last block directly after obtaining its
--- corresponding entry. However, in the case of iterators, we read all
--- entries, but before we try to read the block corresponding to the last
--- entry, another block may have been appended to the same epoch file. In this
--- case, reading the epoch file until the end would mean that we read two
--- blocks instead of one!
---
--- For this reason, we try to replace the 'LastEntry' of the last block with
--- the actual block size using the current size of the epoch file.
---
--- It could be that the entry with 'LastEntry' was removed from the list
--- when dropping blocks that come after the end bound, in which case the
--- original input list is returned.
-fillInLastBlockSize
-  :: Word64  -- ^ The size of the epoch file
-  -> [(Secondary.Entry hash, BlockSize)]
-  -> [WithBlockSize (Secondary.Entry hash)]
-fillInLastBlockSize epochFileSize = go
-  where
-    go [] = []
-    go [(e@Secondary.Entry { blockOffset }, LastEntry)] = [WithBlockSize e sz]
-      where
-        sz = fromIntegral (epochFileSize - Secondary.unBlockOffset blockOffset)
-    go ((e, BlockSize size):xs) = WithBlockSize e size:go xs
-    go ((_, LastEntry):_)       = error "LastEntry for entry that was not last"
+    HasFS { hOpen, hClose, hGetSize, hasFsErr } = hasFS

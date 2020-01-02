@@ -49,6 +49,7 @@
           (hsPkgs.mmorph)
           (hsPkgs.mtl)
           (hsPkgs.network)
+          (hsPkgs.psqueues)
           (hsPkgs.serialise)
           (hsPkgs.stm)
           (hsPkgs.streaming)
