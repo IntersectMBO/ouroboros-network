@@ -6,7 +6,9 @@
 module Test.Async.PingPong where
 
 import           Control.Concurrent
+import           Control.Concurrent.Async
 import           Control.Exception
+import           Data.Functor (void)
 
 import           Test.QuickCheck
 
@@ -106,32 +108,50 @@ runPingPongClientPipelined :: BinaryChannel a
                            -> ThreadId
                            -> [a]
                            -> IO (Maybe [a])
-runPingPongClientPipelined channel blocking tid as0 = goSend as0
+runPingPongClientPipelined channel blocking tid as0 = do
+      lock <- newEmptyMVar
+      -- Receive loop.  This is done concurrently to avoid blocking when
+      -- sending to much data.  Also note that this is how pipelinging is
+      -- implemented in `typed-protocols`.
+      rcvThread <- async $ do
+        res <- goRecv [] as0
+        void $ tryPutMVar lock res
+      -- link the rcvThread just to be sure that there are no hidden dragons ;)
+      -- in the receiver loop.
+      link rcvThread
+      goSend lock rcvThread as0
+      takeMVar lock
     where
-      goSend []  = error "runPingPongClientPipelined: expected non empty list"
-      goSend [a] = do
+      -- we pass the rcvThread so that we can cancel the receive loop before
+      -- killing the remote thread, otherwise the receive loop will throw `The network
+      -- connection was aborted by the local system.` (error code 1236),
+      -- followed by #10038.
+      goSend _lock _rcvThread []  = error "runPingPongClientPipelined: expected non empty list"
+      goSend lock rcvThread [a] = do
         -- send the message, but report more bytes to the server; this makes
         -- sure that it will blocked on reading when we kill it
+        -- putStrLn $ "goSend: last: " ++ show blocking
         case blocking of
           BlockOnRead -> do
             writeChannel channel False a
             -- run the server thread now, so it blocks on reading
             yield
+            cancel rcvThread
             killThread tid
-            pure Nothing
+            void $ tryPutMVar lock Nothing
           BlockOnWrite -> do
             writeChannel channel True a
             _ <- readChannel channel False
             -- run the server thread now, so it block on writing
             yield
+            cancel rcvThread
             killThread tid
-            pure Nothing
+            void $ tryPutMVar lock Nothing
           NonBlocking -> do
-            writeChannel channel True a
-            goRecv [] as0
-      goSend (a : as) = do
+            void $ writeChannel channel True a
+      goSend lock rcvThread (a : as) = do
         writeChannel channel True a
-        goSend as
+        goSend lock rcvThread as
 
       goRecv res [] = do
         killThread tid
@@ -158,8 +178,9 @@ constPingPongServer = PingPongServer {
 runPingPongServer :: BinaryChannel a
                   -> PingPongServer a
                   -> IO ()
-runPingPongServer channel PingPongServer { recvPing } = do
-    Just a <- readChannel channel True
-    (a', server') <- recvPing a
-    writeChannel channel True a'
-    runPingPongServer channel server'
+runPingPongServer channel PingPongServer { recvPing } =
+    do
+      Just a <- readChannel channel True
+      (a', server') <- recvPing a
+      writeChannel channel True a'
+      runPingPongServer channel server'
