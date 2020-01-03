@@ -1189,7 +1189,6 @@ prop_sequential = forAllCommands smUnused Nothing $ \cmds -> QC.monadicIO $ do
     test cmds = do
       threadRegistry     <- QC.run unsafeNewRegistry
       iteratorRegistry   <- QC.run unsafeNewRegistry
-      immRegistry        <- QC.run unsafeNewRegistry
       (tracer, getTrace) <- QC.run recordingTracerIORef
       varCurSlot         <- QC.run $ uncheckedNewTVarM 0
       fsVars             <- QC.run $ (,,)
@@ -1197,7 +1196,7 @@ prop_sequential = forAllCommands smUnused Nothing $ \cmds -> QC.monadicIO $ do
         <*> uncheckedNewTVarM Mock.empty
         <*> uncheckedNewTVarM Mock.empty
       let args = mkArgs testCfg testInitExtLedger tracer threadRegistry varCurSlot fsVars
-      (db, internal)     <- QC.run $ openDBInternal immRegistry args False
+      (db, internal)     <- QC.run $ openDBInternal args False
       let sm' = sm db internal iteratorRegistry varCurSlot genBlk testCfg testInitExtLedger
       (hist, model, res) <- runCommands sm' cmds
       (realChain, realChain', trace, fses, remainingCleanups) <- QC.run $ do
@@ -1215,11 +1214,10 @@ prop_sequential = forAllCommands smUnused Nothing $ \cmds -> QC.monadicIO $ do
         -- code path differs slightly from 'openDB', we test that code path
         -- here too by simply opening the DB from scratch again and comparing
         -- the resulting chain.
-        (db', _) <- openDBInternal immRegistry args False
+        (db', _) <- openDBInternal args False
         realChain' <- toChain db'
         closeDB db'
 
-        closeRegistry immRegistry
         closeRegistry threadRegistry
 
         -- 'closeDB' should have closed all open 'Reader's and 'Iterator's,
@@ -1393,7 +1391,7 @@ tests = testGroup "ChainDB q-s-m"
 
 -- | Debugging utility: run some commands against the real implementation.
 _runCmds :: [Cmd Blk IteratorId ReaderId] -> IO [Resp Blk IteratorId ReaderId]
-_runCmds cmds = withRegistry $ \registry -> withRegistry $ \immRegistry -> do
+_runCmds cmds = withRegistry $ \registry -> do
     varCurSlot <- uncheckedNewTVarM 0
     fsVars <- (,,)
       <$> uncheckedNewTVarM Mock.empty
@@ -1406,7 +1404,7 @@ _runCmds cmds = withRegistry $ \registry -> withRegistry $ \immRegistry -> do
           registry
           varCurSlot
           fsVars
-    (db, internal) <- openDBInternal immRegistry args False
+    (db, internal) <- openDBInternal args False
     evalStateT (mapM (go db internal registry varCurSlot) cmds) emptyRunCmdState
   where
     go :: ChainDB IO Blk -> ChainDB.Internal IO Blk

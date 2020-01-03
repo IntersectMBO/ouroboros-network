@@ -114,16 +114,29 @@ runNodeNetwork :: forall m blk.
                     , TracingConstraints blk
                     , HasCallStack
                     )
-                 => ResourceRegistry m
-                 -> TestBlockchainTime m
-                 -> NumCoreNodes
+                 => NumCoreNodes
+                 -> NumSlots
+                 -> SlotLengths
                  -> NodeJoinPlan
                  -> NodeTopology
                  -> (CoreNodeId -> ProtocolInfo blk)
                  -> ChaChaDRG
                  -> m (TestOutput blk)
-runNodeNetwork registry testBtime numCoreNodes nodeJoinPlan nodeTopology
-  pInfo initRNG = do
+runNodeNetwork numCoreNodes numSlots slotLengths nodeJoinPlan nodeTopology
+  pInfo initRNG = withRegistry $ \sharedRegistry -> do
+    -- This shared registry is used for 'newTestBlockchainTime' and the
+    -- network communication threads. Each node will create its own registry
+    -- for its ChainDB.
+    -- TODO each node should run in its own thread and have its own (single
+    -- top-level, bracketed) registry used to spawn all of the node's threads,
+    -- including its own BlockchainTime. This will allow us to use
+    -- ChainDB.withDB and avoid issues with termination and using registries
+    -- from the wrong thread. To stop the network, wait for all the nodes'
+    -- blockchain times to be done and then kill the main thread of each node,
+    -- which should terminate all other threads it spawned.
+    testBtime <- newTestBlockchainTime sharedRegistry numSlots slotLengths
+    let btime = testBlockchainTime testBtime
+
     -- This function is organized around the notion of a network of nodes as a
     -- simple graph with no loops. The graph topology is determined by
     -- @nodeTopology@.
@@ -147,8 +160,11 @@ runNodeNetwork registry testBtime numCoreNodes nodeJoinPlan nodeTopology
     -- spawn threads for each undirected edge
     let edges = edgesNodeTopology nodeTopology
     forM_ edges $ \edge -> do
-      void $ forkLinkedThread registry $ do
-        undirectedEdge nullDebugTracer nodeVars edge
+      -- TODO each node's network communication threads should be spawned in
+      -- its own registry instead of a shared registry used for all network
+      -- communication threads
+      void $ forkLinkedThread sharedRegistry $ do
+        undirectedEdge btime nullDebugTracer nodeVars edge
 
     -- create nodes
     let nodesByJoinSlot =
@@ -162,13 +178,15 @@ runNodeNetwork registry testBtime numCoreNodes nodeJoinPlan nodeTopology
         error $ "unsatisfiable nodeJoinPlan: " ++ show coreNodeId
 
       -- allocate the node's internal state and spawn its internal threads
-      (node, immRegistry, readNodeInfo, app) <- createNode varRNG coreNodeId
+      -- (not the communication threads running the Mini Protocols, like the
+      -- ChainSync Client)
+      (node, registry, readNodeInfo, app) <- createNode btime varRNG coreNodeId
 
       -- unblock the threads of edges that involve this node
       putMVar nodeVar app
 
       let cfg = pInfoConfig (pInfo coreNodeId)
-      return (coreNodeId, cfg, node, immRegistry, readNodeInfo)
+      return (coreNodeId, cfg, node, registry, readNodeInfo)
 
     -- Wait some extra time after the end of the test block fetch and chain
     -- sync to finish
@@ -179,12 +197,10 @@ runNodeNetwork registry testBtime numCoreNodes nodeJoinPlan nodeTopology
     -- a node. This is important because we close the ChainDBs in
     -- 'getTestOutput' and if background threads that use the ChainDB are
     -- still running at that point, they will throw a 'CloseDBError'.
-    closeRegistry registry
+    releaseAll sharedRegistry
 
     getTestOutput nodes
   where
-    btime = testBlockchainTime testBtime
-
     coreNodeIds :: [CoreNodeId]
     coreNodeIds = enumCoreNodes numCoreNodes
 
@@ -193,11 +209,12 @@ runNodeNetwork registry testBtime numCoreNodes nodeJoinPlan nodeTopology
 
     undirectedEdge ::
          HasCallStack
-      => Tracer m (SlotNo, MiniProtocolState, MiniProtocolExpectedException)
+      => BlockchainTime m
+      -> Tracer m (SlotNo, MiniProtocolState, MiniProtocolExpectedException)
       -> Map CoreNodeId (StrictMVar m (LimitedApp m NodeId blk))
       -> (CoreNodeId, CoreNodeId)
       -> m ()
-    undirectedEdge tr nodeVars (node1, node2) = do
+    undirectedEdge btime tr nodeVars (node1, node2) = do
       -- block until both endpoints have joined the network
       (endpoint1, endpoint2) <- do
         let lu node = case Map.lookup node nodeVars of
@@ -215,14 +232,15 @@ runNodeNetwork registry testBtime numCoreNodes nodeJoinPlan nodeTopology
     -- | Produce transactions every time the slot changes and submit them to
     -- the mempool.
     txProducer :: HasCallStack
-               => NodeConfig (BlockProtocol blk)
+               => BlockchainTime m
+               -> NodeConfig (BlockProtocol blk)
                -> m ChaChaDRG
                   -- ^ How to get a DRG
                -> STM m (ExtLedgerState blk)
                   -- ^ How to get the current ledger state
                -> Mempool m blk TicketNo
                -> m ()
-    txProducer cfg produceDRG getExtLedger mempool =
+    txProducer btime cfg produceDRG getExtLedger mempool =
       void $ onSlotChange btime $ \_curSlotNo -> do
         varDRG <- uncheckedNewTVarM =<< produceDRG
         txs <- atomically $ do
@@ -230,7 +248,9 @@ runNodeNetwork registry testBtime numCoreNodes nodeJoinPlan nodeTopology
           simChaChaT varDRG id $ testGenTxs numCoreNodes cfg ledger
         void $ addTxs mempool txs
 
-    mkArgs :: NodeConfig (BlockProtocol blk)
+    mkArgs :: BlockchainTime m
+           -> ResourceRegistry m
+           -> NodeConfig (BlockProtocol blk)
            -> ExtLedgerState blk
            -> EpochInfo m
            -> Tracer m (Point blk)
@@ -240,6 +260,7 @@ runNodeNetwork registry testBtime numCoreNodes nodeJoinPlan nodeTopology
            -> NodeDBs (StrictTVar m MockFS)
            -> ChainDbArgs m blk
     mkArgs
+      btime registry
       cfg initLedger epochInfo
       invalidTracer addTracer
       nodeDBs = ChainDbArgs
@@ -295,14 +316,15 @@ runNodeNetwork registry testBtime numCoreNodes nodeJoinPlan nodeTopology
 
     createNode
       :: HasCallStack
-      => StrictTVar m ChaChaDRG
+      => BlockchainTime m
+      -> StrictTVar m ChaChaDRG
       -> CoreNodeId
       -> m ( NodeKernel m NodeId blk
            , ResourceRegistry m
            , m (NodeInfo blk MockFS [])
            , LimitedApp m NodeId blk
            )
-    createNode varRNG coreNodeId = do
+    createNode btime varRNG coreNodeId = do
       let ProtocolInfo{..} = pInfo coreNodeId
 
       let blockProduction :: BlockProduction m blk
@@ -330,16 +352,18 @@ runNodeNetwork registry testBtime numCoreNodes nodeJoinPlan nodeTopology
             , nodeInfoDBs
             } = nodeInfo
 
-      immRegistry <- unsafeNewRegistry
+      registry <- unsafeNewRegistry
       epochInfo <- newEpochInfo $ nodeEpochSize (Proxy @blk) pInfoConfig
       let chainDbArgs = mkArgs
+            btime
+            registry
             pInfoConfig pInfoInitLedger epochInfo
             (nodeEventsInvalids nodeInfoEvents)
             (Tracer $ \(p, bno) -> do
                 s <- atomically $ getCurrentSlot btime
                 traceWith (nodeEventsAdds nodeInfoEvents) (s, p, bno))
             nodeInfoDBs
-      (chainDB, _) <- ChainDB.openDBInternal immRegistry chainDbArgs True
+      (chainDB, _) <- ChainDB.openDBInternal chainDbArgs True
 
       let nodeArgs = NodeArgs
             { tracers             = nullDebugTracers
@@ -375,12 +399,13 @@ runNodeNetwork registry testBtime numCoreNodes nodeJoinPlan nodeTopology
         traceWith (nodeEventsTipBlockNos nodeInfoEvents) (s, bno)
 
       txProducer
+        btime
         pInfoConfig
         (produceDRG blockProduction)
         (ChainDB.getCurrentLedger chainDB)
         (getMempool nodeKernel)
 
-      return (nodeKernel, immRegistry, readNodeInfo, LimitedApp app)
+      return (nodeKernel, registry, readNodeInfo, LimitedApp app)
 
     customProtocolCodecs
       :: NodeConfig (BlockProtocol blk)
@@ -642,12 +667,14 @@ getTestOutput ::
     -> m (TestOutput blk)
 getTestOutput nodes = do
     (nodeOutputs', tipBlockNos') <- fmap unzip $ forM nodes $
-      \(cid, cfg, node, immRegistry, readNodeInfo) -> do
+      \(cid, cfg, node, registry, readNodeInfo) -> do
         let nid = fromCoreNodeId cid
         let chainDB = getChainDB node
         ch <- ChainDB.toChain chainDB
+        -- TODO fix this by running the ChainDB in its own thread
+        releaseAll registry
         ChainDB.closeDB chainDB
-        closeRegistry immRegistry
+        closeRegistry registry
         nodeInfo <- readNodeInfo
         let NodeInfo
               { nodeInfoEvents

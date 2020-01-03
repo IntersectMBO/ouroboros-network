@@ -113,7 +113,7 @@ import           Ouroboros.Consensus.Block (IsEBB (..))
 import           Ouroboros.Consensus.Util (SomePair (..))
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry,
-                     releaseAll, withRegistry)
+                     releaseAll)
 
 import           Ouroboros.Storage.Common
 import           Ouroboros.Storage.EpochInfo
@@ -167,7 +167,8 @@ import           Ouroboros.Storage.ImmutableDB.Layout
 withDB
   :: forall m h hash e a.
      (HasCallStack, IOLike m, Eq hash, NoUnexpectedThunks hash)
-  => HasFS m h
+  => ResourceRegistry m
+  -> HasFS m h
   -> ErrorHandling ImmutableDBError m
   -> EpochInfo m
   -> HashInfo hash
@@ -177,10 +178,10 @@ withDB
   -> Index.CacheConfig
   -> (ImmutableDB hash m -> m a)
   -> m a
-withDB hasFS err epochInfo hashInfo valPol parser tracer cacheConfig k =
-    withRegistry $ \registry -> bracket (open registry) closeDB k
+withDB registry hasFS err epochInfo hashInfo valPol parser tracer cacheConfig =
+    bracket open closeDB
   where
-    open registry = fst <$>
+    open = fst <$>
       openDBInternal registry hasFS err epochInfo hashInfo valPol parser tracer
         cacheConfig
 

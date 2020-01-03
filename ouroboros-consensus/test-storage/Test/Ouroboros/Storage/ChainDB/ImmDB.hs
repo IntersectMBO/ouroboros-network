@@ -27,6 +27,7 @@ import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Node.Run (RunNode (..))
 import           Ouroboros.Consensus.Protocol
 import           Ouroboros.Consensus.Util.IOLike
+import           Ouroboros.Consensus.Util.ResourceRegistry (withRegistry)
 
 import           Ouroboros.Storage.ChainDB.API (BlockOrHeader (..))
 import           Ouroboros.Storage.ChainDB.Impl.ImmDB (ImmDB, ImmDbArgs (..))
@@ -60,12 +61,12 @@ test_getBlockWithPoint_EBB_at_tip =
     ebb = forgeGenesisEBB testCfg (SlotNo 0)
 
 withImmDB :: IOLike m => (ImmDB m ByronBlock -> m a) -> m a
-withImmDB k = do
+withImmDB k = withRegistry $ \registry -> do
     immDbFsVar <- uncheckedNewTVarM Mock.empty
     epochInfo  <- newEpochInfo $ nodeEpochSize (Proxy @ByronBlock) testCfg
-    ImmDB.withImmDB (mkArgs immDbFsVar epochInfo) k
+    ImmDB.withImmDB (mkArgs immDbFsVar epochInfo registry) k
   where
-    mkArgs immDbFsVar epochInfo = ImmDbArgs
+    mkArgs immDbFsVar epochInfo registry = ImmDbArgs
       { immErr            = EH.monadCatch
       , immHasFS          = simHasFS EH.monadCatch immDbFsVar
       , immDecodeHash     = nodeDecodeHeaderHash (Proxy @ByronBlock)
@@ -81,6 +82,7 @@ withImmDB k = do
       , immAddHdrEnv      = nodeAddHeaderEnvelope (Proxy @ByronBlock)
       , immTracer         = nullTracer
       , immCacheConfig    = ImmDB.CacheConfig 2 60
+      , immRegistry       = registry
       }
 
 testCfg :: NodeConfig (BlockProtocol ByronBlock)

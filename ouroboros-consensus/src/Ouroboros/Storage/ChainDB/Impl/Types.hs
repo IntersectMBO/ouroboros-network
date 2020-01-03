@@ -209,8 +209,8 @@ data ChainDbEnv m blk = CDB
   , cdbGcDelay        :: !DiffTime
     -- ^ How long to wait between copying a block from the VolatileDB to
     -- ImmutableDB and garbage collecting it from the VolatileDB
-  , cdbBgThreads      :: !(StrictTVar m [Thread m ()])
-    -- ^ The background threads.
+  , cdbKillBgThreads  :: !(StrictTVar m (m ()))
+    -- ^ A handle to kill the background threads.
   , cdbEpochInfo      :: !(EpochInfo m)
   , cdbIsEBB          :: !(blk -> Bool)
   , cdbBlockchainTime :: !(BlockchainTime m)
@@ -259,8 +259,8 @@ data Internal m blk = Internal
     -- ^ Write a new LedgerDB snapshot to disk and remove the oldest one(s).
   , intScheduledChainSelection :: SlotNo -> m ()
     -- ^ Run the scheduled chain selections for the given 'SlotNo'.
-  , intBgThreads               :: StrictTVar m [Thread m ()]
-      -- ^ The background threads.
+  , intKillBgThreads           :: StrictTVar m (m ())
+      -- ^ A handle to kill the background threads.
   }
 
 {-------------------------------------------------------------------------------

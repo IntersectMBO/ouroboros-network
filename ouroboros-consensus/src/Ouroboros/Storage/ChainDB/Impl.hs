@@ -41,8 +41,6 @@ import           Ouroboros.Consensus.BlockchainTime (getCurrentSlot)
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util.IOLike
-import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry,
-                     withRegistry)
 import           Ouroboros.Consensus.Util.STM (Fingerprint (..),
                      WithFingerprint (..))
 
@@ -73,17 +71,15 @@ withDB
   => ChainDbArgs m blk
   -> (ChainDB m blk -> m a)
   -> m a
-withDB args k = withRegistry $ \registry ->
-    bracket (fst <$> openDBInternal registry args True) closeDB k
+withDB args = bracket (fst <$> openDBInternal args True) closeDB
 
 openDBInternal
   :: forall m blk. (IOLike m, ProtocolLedgerView blk)
-  => ResourceRegistry m  -- ^ Resource registry for the ImmutableDB
-  -> ChainDbArgs m blk
+  => ChainDbArgs m blk
   -> Bool -- ^ 'True' = Launch background tasks
   -> m (ChainDB m blk, Internal m blk)
-openDBInternal immRegistry args launchBgTasks = do
-    immDB <- ImmDB.openDB immRegistry argsImmDb
+openDBInternal args launchBgTasks = do
+    immDB <- ImmDB.openDB argsImmDb
     -- In order to figure out the 'BlockNo' and 'Point' at the tip of the
     -- ImmutableDB, we need to read the header at the tip of the ImmutableDB.
     immDbTipHeader <- ImmDB.getBlockOrHeaderAtTip immDB Header
@@ -137,7 +133,7 @@ openDBInternal immRegistry args launchBgTasks = do
     varNextIteratorId <- newTVarM (IteratorId 0)
     varNextReaderId   <- newTVarM 0
     varCopyLock       <- newMVar  ()
-    varBgThreads      <- newTVarM []
+    varKillBgThreads  <- newTVarM $ return ()
     varFutureBlocks   <- newTVarM Map.empty
 
     let env = CDB { cdbImmDB          = immDB
@@ -157,7 +153,7 @@ openDBInternal immRegistry args launchBgTasks = do
                   , cdbTraceLedger    = Args.cdbTraceLedger args
                   , cdbRegistry       = Args.cdbRegistry args
                   , cdbGcDelay        = Args.cdbGcDelay args
-                  , cdbBgThreads      = varBgThreads
+                  , cdbKillBgThreads  = varKillBgThreads
                   , cdbEpochInfo      = Args.cdbEpochInfo args
                   , cdbIsEBB          = isJust . Args.cdbIsEBB args
                   , cdbBlockchainTime = Args.cdbBlockchainTime args
@@ -188,7 +184,7 @@ openDBInternal immRegistry args launchBgTasks = do
           , intGarbageCollect          = getEnv1 h Background.garbageCollect
           , intUpdateLedgerSnapshots   = getEnv  h Background.updateLedgerSnapshots
           , intScheduledChainSelection = getEnv1 h Background.scheduledChainSelection
-          , intBgThreads               = varBgThreads
+          , intKillBgThreads           = varKillBgThreads
           }
 
     traceWith tracer $ TraceOpenEvent $ OpenedDB
