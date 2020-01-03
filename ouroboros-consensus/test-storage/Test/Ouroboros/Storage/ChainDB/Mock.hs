@@ -6,6 +6,7 @@ module Test.Ouroboros.Storage.ChainDB.Mock (
     openDB
   ) where
 
+import           Control.Monad (void)
 import           Data.Bifunctor (first)
 import qualified Data.Map as Map
 import           GHC.Stack (callStack)
@@ -114,7 +115,7 @@ openDB cfg initLedger btime = do
                         (Maybe (ChainUpdate blk b), Model blk)
             readerInstruction' = Model.readerInstruction toB rdrId
 
-    onSlotChange btime $ update_ . Model.advanceCurSlot cfg
+    void $ onSlotChange btime $ update_ . Model.advanceCurSlot cfg
 
     return ChainDB {
         addBlock            = update_  . Model.addBlock cfg

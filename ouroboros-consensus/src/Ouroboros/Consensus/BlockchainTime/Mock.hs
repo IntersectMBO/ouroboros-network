@@ -38,7 +38,7 @@ import           Ouroboros.Consensus.Util.STM
 fixedBlockchainTime :: MonadSTM m => SlotNo -> BlockchainTime m
 fixedBlockchainTime slot = BlockchainTime {
       getCurrentSlot = return slot
-    , onSlotChange_  = const (return ())
+    , onSlotChange_  = const (return (return ()))
     }
 
 {-------------------------------------------------------------------------------
@@ -97,7 +97,8 @@ newTestBlockchainTime registry (NumSlots numSlots) slotLens = do
         btime :: BlockchainTime m
         btime = BlockchainTime {
             getCurrentSlot = get
-          , onSlotChange_  = onEachChange registry Running (Just initVal) get
+          , onSlotChange_  = fmap cancelThread .
+              onEachChange registry Running (Just initVal) get
           }
 
     return $ TestBlockchainTime

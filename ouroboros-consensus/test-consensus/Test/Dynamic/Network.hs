@@ -223,7 +223,7 @@ runNodeNetwork registry testBtime numCoreNodes nodeJoinPlan nodeTopology
                -> Mempool m blk TicketNo
                -> m ()
     txProducer cfg produceDRG getExtLedger mempool =
-      onSlotChange btime $ \_curSlotNo -> do
+      void $ onSlotChange btime $ \_curSlotNo -> do
         varDRG <- uncheckedNewTVarM =<< produceDRG
         txs <- atomically $ do
           ledger <- ledgerState <$> getExtLedger
@@ -367,15 +367,14 @@ runNodeNetwork registry testBtime numCoreNodes nodeJoinPlan nodeTopology
                   (customProtocolCodecs pInfoConfig)
                   (protocolHandlers nodeArgs nodeKernel)
 
-      void $ forkLinkedThread registry $ do
-        -- TODO We assume this effectively runs before anything else in the
-        -- slot. With such a short transaction (read one TVar) this is likely
-        -- but not necessarily certain.
-        onSlotChange btime $ \s -> do
-          bno <- atomically $ ChainDB.getTipBlockNo chainDB
-          traceWith (nodeEventsTipBlockNos nodeInfoEvents) (s, bno)
+      -- TODO We assume this effectively runs before anything else in the
+      -- slot. With such a short transaction (read one TVar) this is likely
+      -- but not necessarily certain.
+      void $ onSlotChange btime $ \s -> do
+        bno <- atomically $ ChainDB.getTipBlockNo chainDB
+        traceWith (nodeEventsTipBlockNos nodeInfoEvents) (s, bno)
 
-      void $ forkLinkedThread registry $ txProducer
+      txProducer
         pInfoConfig
         (produceDRG blockProduction)
         (ChainDB.getCurrentLedger chainDB)

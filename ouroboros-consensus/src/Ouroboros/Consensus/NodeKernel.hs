@@ -303,7 +303,7 @@ forkBlockProduction
     -> BlockProduction m blk
     -> m ()
 forkBlockProduction maxBlockBodySize IS{..} BlockProduction{..} =
-    onSlotChange btime $ \currentSlot -> do
+    void $ onSlotChange btime $ \currentSlot -> do
       varDRG <- newTVarM =<< (PRNG <$> produceDRG)
       -- See the docstring of 'withSyncState' for why we're using it instead
       -- of 'atomically'.

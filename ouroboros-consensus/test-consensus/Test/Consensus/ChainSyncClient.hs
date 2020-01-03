@@ -316,7 +316,7 @@ runChainSync securityParam maxClockSkew (ClientUpdates clientUpdates)
 
     -- Schedule updates of the client and server chains
     varLastUpdate <- uncheckedNewTVarM 0
-    onSlotChange btime $ \slot -> do
+    void $ onSlotChange btime $ \slot -> do
       -- Stop updating the client and server chains when the chain sync client
       -- has thrown an exception, so that at the end, we can read the chains
       -- in the states they were in when the exception was thrown.
