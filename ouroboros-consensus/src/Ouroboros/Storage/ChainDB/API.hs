@@ -700,8 +700,9 @@ data ChainDbError =
     -- | The ChainDB is closed.
     --
     -- This will be thrown when performing any operation on the ChainDB except
-    -- for 'isOpen' and 'closeDB'.
-  | ClosedDBError
+    -- for 'isOpen' and 'closeDB'. The 'CallStack' of the operation on the
+    -- ChainDB is included in the error.
+  | ClosedDBError CallStack
 
     -- | The reader is closed.
     --
@@ -725,8 +726,8 @@ instance Eq ChainDbError where
   NoGenesisBlock == NoGenesisBlock = True
   NoGenesisBlock == _              = False
 
-  ClosedDBError == ClosedDBError = True
-  ClosedDBError == _             = False
+  ClosedDBError _ == ClosedDBError _ = True
+  ClosedDBError _ == _               = False
 
   ClosedReaderError rid == ClosedReaderError rid' = rid == rid'
   ClosedReaderError _   == _                      = False

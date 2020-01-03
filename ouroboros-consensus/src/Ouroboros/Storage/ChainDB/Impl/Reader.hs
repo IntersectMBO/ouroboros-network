@@ -21,7 +21,7 @@ import           Data.Functor ((<&>))
 import           Data.Functor.Identity (Identity (..))
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
-import           GHC.Stack (HasCallStack)
+import           GHC.Stack (HasCallStack, callStack)
 
 import           Control.Monad.Class.MonadThrow
 import           Control.Tracer (contramap, traceWith)
@@ -75,7 +75,7 @@ getReaderVar env blockOrHeader readerId =
 -- Otherwise, execute the given function on the 'ChainDbEnv' and 'ReaderState'
 -- 'StrictTVar'.
 getReader
-  :: forall m blk b r. IOLike m
+  :: forall m blk b r. (IOLike m, HasCallStack)
   => ChainDbHandle m blk
   -> ReaderId
   -> BlockOrHeader blk b
@@ -83,7 +83,7 @@ getReader
   -> m r
 getReader (CDBHandle varState) readerId blockOrHeader f = do
     (env, varRdr) <- atomically $ readTVar varState >>= \case
-      ChainDbClosed _env -> throwM ClosedDBError
+      ChainDbClosed _env -> throwM $ ClosedDBError callStack
       -- See the docstring of 'ChainDbReopening'
       ChainDbReopening   -> error "ChainDB used while reopening"
       ChainDbOpen    env -> getReaderVar env blockOrHeader readerId >>= \case

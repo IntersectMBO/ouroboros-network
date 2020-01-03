@@ -37,6 +37,7 @@ import           Data.Proxy
 import           Data.TreeDiff (ToExpr)
 import           Data.Typeable
 import           GHC.Generics (Generic)
+import           GHC.Stack (callStack)
 
 import qualified Generics.SOP as SOP
 
@@ -437,7 +438,7 @@ runPure cfg = \case
       | Model.isOpen m
       = first (Resp . fmap toSuccess) (f m)
       | otherwise
-      = (Resp (Left ClosedDBError), m)
+      = (Resp (Left (ClosedDBError callStack)), m)
 
     -- Executed whether the ChainDB is open or closed.
     openOrClosed f = first (Resp . Right . Unit) . f
