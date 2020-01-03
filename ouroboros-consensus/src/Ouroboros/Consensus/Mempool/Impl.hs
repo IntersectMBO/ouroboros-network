@@ -18,6 +18,7 @@ module Ouroboros.Consensus.Mempool.Impl (
   ) where
 
 import           Control.Exception (assert)
+import           Control.Monad (void)
 import           Control.Monad.Except
 import qualified Data.Foldable as Foldable
 import qualified Data.Set as Set
@@ -161,7 +162,7 @@ forkSyncStateOnTipPointChange :: forall m blk. (IOLike m, ApplyTx blk)
                               -> MempoolEnv m blk
                               -> m ()
 forkSyncStateOnTipPointChange registry menv =
-    onEachChange registry id Nothing getCurrentTip action
+    void $ onEachChange registry id Nothing getCurrentTip action
   where
     action :: Point blk -> m ()
     action _tipPoint = implWithSyncState menv TxsForUnknownBlock $ \_txs ->

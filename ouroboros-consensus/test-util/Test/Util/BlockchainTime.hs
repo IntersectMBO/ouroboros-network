@@ -20,7 +20,7 @@ onSlot btime slot k = do
     startingSlot <- atomically $ getCurrentSlot btime
     when (startingSlot >= slot) $
       throwM $ OnSlotTooLate slot startingSlot
-    onSlotChange btime $ \slot' ->
+    void $ onSlotChange btime $ \slot' ->
       when (slot == slot') k
 
 data OnSlotException =

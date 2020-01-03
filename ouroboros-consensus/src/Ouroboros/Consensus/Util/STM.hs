@@ -70,9 +70,9 @@ onEachChange :: forall m a b. (IOLike m, Eq b, HasCallStack)
                           -- immediately to obtain the initial fingerprint.
              -> STM m a
              -> (a -> m ())
-             -> m ()
-onEachChange registry f mbInitB getA notify = do
-    void $ forkLinkedThread registry body
+             -> m (Thread m Void)
+onEachChange registry f mbInitB getA notify =
+    forkLinkedThread registry body
   where
     body :: m Void
     body = do

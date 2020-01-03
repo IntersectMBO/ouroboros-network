@@ -37,6 +37,7 @@ import           Control.Monad (forM_, forever, void)
 import qualified Data.List.NonEmpty as NE
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (fromMaybe)
+import           Data.Void (Void)
 import           GHC.Stack (HasCallStack)
 
 import           Control.Monad.Class.MonadThrow
@@ -79,13 +80,12 @@ launchBgTasks cdb@CDB{..} = do
       copyToImmDBRunner cdb gcSchedule
     !lgrSnapshotThread <- launch $
       updateLedgerSnapshotsRunner cdb
-    !chainSyncThread <- launch $
-      scheduledChainSelectionRunner cdb
-    atomically $ writeTVar cdbBgThreads
-      [gcThread, copyThread, lgrSnapshotThread, chainSyncThread]
+    !chainSyncThread <- scheduledChainSelectionRunner cdb
+    atomically $ writeTVar cdbKillBgThreads $
+      sequence_ [gcThread, copyThread, lgrSnapshotThread, chainSyncThread]
   where
-    launch :: m () -> m (Thread m ())
-    launch = forkLinkedThread cdbRegistry
+    launch :: m Void -> m (m ())
+    launch = fmap cancelThread . forkLinkedThread cdbRegistry
 
 {-------------------------------------------------------------------------------
   Copying blocks from the VolatileDB to the ImmutableDB
@@ -199,7 +199,7 @@ copyToImmDBRunner
      )
   => ChainDbEnv m blk
   -> GcSchedule m
-  -> m ()
+  -> m Void
 copyToImmDBRunner cdb@CDB{..} gcSchedule = forever $ do
     atomically $ do
       curChain <- readTVar cdbChain
@@ -302,7 +302,7 @@ gcScheduleRunner
   :: forall m. IOLike m
   => GcSchedule m
   -> (SlotNo -> m ())  -- ^ GC function
-  -> m ()
+  -> m Void
 gcScheduleRunner (GcSchedule queue) runGc = forever $ do
     (timeScheduledForGC, slotNo) <- atomically $ readTQueue queue
     currentTime <- getMonotonicTime
@@ -324,7 +324,7 @@ updateLedgerSnapshots CDB{..} = do
     void $ LgrDB.trimSnapshots cdbLgrDB
 
 -- | Execute 'updateLedgerSnapshots', wait 'onDiskWriteInterval', and repeat.
-updateLedgerSnapshotsRunner :: IOLike m => ChainDbEnv m blk -> m ()
+updateLedgerSnapshotsRunner :: IOLike m => ChainDbEnv m blk -> m Void
 updateLedgerSnapshotsRunner cdb@CDB{..} = loop
   where
     LgrDB.DiskPolicy{..} = LgrDB.getDiskPolicy cdbLgrDB
@@ -378,8 +378,11 @@ scheduledChainSelection cdb@CDB{..} curSlot = do
 
 -- | Whenever the current slot changes, call 'scheduledChainSelection' for the
 -- (new) current slot.
+--
+-- This function forks of a background thread and terminates afterwards,
+-- returning a handle to kill the background thread.
 scheduledChainSelectionRunner
   :: (IOLike m, ProtocolLedgerView blk, HasCallStack)
-  => ChainDbEnv m blk -> m ()
+  => ChainDbEnv m blk -> m (m ())
 scheduledChainSelectionRunner cdb@CDB{..} =
     onSlotChange cdbBlockchainTime (scheduledChainSelection cdb)

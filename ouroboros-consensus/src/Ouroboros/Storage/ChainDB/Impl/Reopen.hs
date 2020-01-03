@@ -29,7 +29,6 @@ import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util (whenJust)
 import           Ouroboros.Consensus.Util.IOLike
-import           Ouroboros.Consensus.Util.ResourceRegistry
 
 import           Ouroboros.Storage.Common (EpochNo)
 import           Ouroboros.Storage.EpochInfo (epochInfoEpoch)
@@ -73,8 +72,8 @@ closeDB (CDBHandle varState) = do
       Reader.closeAllReaders     cdb
       Iterator.closeAllIterators cdb
 
-      bgThreads <- atomically $ readTVar cdbBgThreads
-      mapM_ cancelThread bgThreads
+      killBgThreads <- atomically $ readTVar cdbKillBgThreads
+      killBgThreads
 
       -- Write a 'LedgerDB' snapshot so that we don't have to replay too many
       -- blocks when restarting

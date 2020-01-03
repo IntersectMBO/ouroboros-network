@@ -546,7 +546,7 @@ closeRegistry rr = mask_ $ do
 
 -- | Helper for 'closeRegistry', 'releaseAll', and 'unsafeReleaseAll': release
 -- the resources allocated with the given 'ResourceId's.
-releaseResources :: IOLike m
+releaseResources :: (IOLike m, HasCallStack)
                  => ResourceRegistry m
                  -> Set ResourceId
                  -> (ResourceKey m -> m ())
@@ -573,7 +573,7 @@ releaseResources rr keys releaser = do
 -- | Create a new registry
 --
 -- See documentation of 'ResourceRegistry' for a detailed discussion.
-withRegistry :: IOLike m => (ResourceRegistry m -> m a) -> m a
+withRegistry :: (IOLike m, HasCallStack) => (ResourceRegistry m -> m a) -> m a
 withRegistry = bracket unsafeNewRegistry closeRegistry
 
 {-------------------------------------------------------------------------------
@@ -671,7 +671,7 @@ throwRegistryClosed rr context closed = throwM RegistryClosedException {
 -- guaranteed not to remove the resource from the registry without releasing it.
 --
 -- Releasing an already released resource is a no-op.
-release :: IOLike m => ResourceKey m -> m ()
+release :: (IOLike m, HasCallStack) => ResourceKey m -> m ()
 release key@(ResourceKey rr _) = do
     context <- captureContext
     ensureKnownThread rr context
@@ -711,7 +711,7 @@ releaseAll rr = do
 -- | This is to 'releaseAll' what 'unsafeRelease' is to 'release': we do not
 -- insist that this funciton is called from a thread that is known to the
 -- registry. See 'unsafeRelease' for why this is dangerous.
-unsafeReleaseAll :: IOLike m => ResourceRegistry m -> m ()
+unsafeReleaseAll :: (IOLike m, HasCallStack) => ResourceRegistry m -> m ()
 unsafeReleaseAll rr = do
     context <- captureContext
     releaseAllHelper rr context unsafeRelease
@@ -821,7 +821,8 @@ linkToRegistry t = linkTo (registryThread $ threadRegistry t) (threadAsync t)
 -- | Fork a thread and link to it to the registry.
 --
 -- This function is just a convenience.
-forkLinkedThread :: IOLike m => ResourceRegistry m -> m a -> m (Thread m a)
+forkLinkedThread :: (IOLike m, HasCallStack)
+                 => ResourceRegistry m -> m a -> m (Thread m a)
 forkLinkedThread rr body = do
     t <- forkThread rr body
     -- There is no race condition here between the new thread throwing an

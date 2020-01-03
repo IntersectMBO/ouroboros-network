@@ -111,6 +111,8 @@ data ChainDbArgs m blk = forall h1 h2 h3. ChainDbArgs {
 data ChainDbSpecificArgs m blk = ChainDbSpecificArgs {
       cdbsTracer         :: Tracer m (TraceEvent blk)
     , cdbsRegistry       :: ResourceRegistry m
+      -- ^ TODO: the ImmutableDB takes a 'ResourceRegistry' too, but we're
+      -- using it for ChainDB-specific things. Revisit these arguments.
     , cdbsGcDelay        :: DiffTime
     , cdbsBlockchainTime :: BlockchainTime m
     , cdbsEncodeHeader   :: Header blk -> Encoding
@@ -173,6 +175,7 @@ fromChainDbArgs ChainDbArgs{..} = (
         , immTracer           = contramap TraceImmDBEvent cdbTracer
         , immAddHdrEnv        = cdbAddHdrEnv
         , immCacheConfig      = cdbImmDbCacheConfig
+        , immRegistry         = cdbRegistry
         }
     , VolDB.VolDbArgs {
           volHasFS            = cdbHasFSVolDb
@@ -262,6 +265,6 @@ toChainDbArgs ImmDB.ImmDbArgs{..}
       -- Misc
     , cdbTracer           = cdbsTracer
     , cdbTraceLedger      = lgrTraceLedger
-    , cdbRegistry         = cdbsRegistry
+    , cdbRegistry         = immRegistry
     , cdbGcDelay          = cdbsGcDelay
     }

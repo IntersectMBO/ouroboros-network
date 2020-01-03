@@ -59,7 +59,8 @@ realBlockchainTime registry tracer start ls = do
     -- The API is now a simple STM one
     return BlockchainTime {
         getCurrentSlot = readTVar slot
-      , onSlotChange_  = onEachChange registry id (Just first) (readTVar slot)
+      , onSlotChange_  = fmap cancelThread .
+          onEachChange registry id (Just first) (readTVar slot)
       }
   where
     -- In each iteration of the loop, we recompute how long to wait until

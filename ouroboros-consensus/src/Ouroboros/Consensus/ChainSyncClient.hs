@@ -745,7 +745,7 @@ rejectInvalidBlocks
     -> STM m (AnchoredFragment (Header blk))
     -> m ()
 rejectInvalidBlocks tracer registry getIsInvalidBlock getCandidate =
-    onEachChange
+    void $ onEachChange
       registry
       getFingerprint
       Nothing

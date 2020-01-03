@@ -45,6 +45,7 @@ import           Data.Time.Clock (DiffTime)
 import           Data.Typeable
 import           Data.Word
 import           GHC.Generics (Generic)
+import           GHC.Stack (HasCallStack, callStack)
 
 import           Control.Monad.Class.MonadThrow
 import           Control.Tracer
@@ -83,25 +84,25 @@ newtype ChainDbHandle m blk = CDBHandle (StrictTVar m (ChainDbState m blk))
 
 -- | Check if the ChainDB is open, if so, executing the given function on the
 -- 'ChainDbEnv', otherwise, throw a 'CloseDBError'.
-getEnv :: forall m blk r. IOLike m
+getEnv :: forall m blk r. (IOLike m, HasCallStack)
        => ChainDbHandle m blk
        -> (ChainDbEnv m blk -> m r)
        -> m r
 getEnv (CDBHandle varState) f = atomically (readTVar varState) >>= \case
     ChainDbOpen    env -> f env
-    ChainDbClosed _env -> throwM ClosedDBError
+    ChainDbClosed _env -> throwM $ ClosedDBError callStack
     -- See the docstring of 'ChainDbReopening'
     ChainDbReopening   -> error "ChainDB used while reopening"
 
 -- | Variant 'of 'getEnv' for functions taking one argument.
-getEnv1 :: IOLike m
+getEnv1 :: (IOLike m, HasCallStack)
         => ChainDbHandle m blk
         -> (ChainDbEnv m blk -> a -> m r)
         -> a -> m r
 getEnv1 h f a = getEnv h (\env -> f env a)
 
 -- | Variant 'of 'getEnv' for functions taking two arguments.
-getEnv2 :: IOLike m
+getEnv2 :: (IOLike m, HasCallStack)
         => ChainDbHandle m blk
         -> (ChainDbEnv m blk -> a -> b -> m r)
         -> a -> b -> m r
@@ -109,13 +110,13 @@ getEnv2 h f a b = getEnv h (\env -> f env a b)
 
 
 -- | Variant of 'getEnv' that works in 'STM'.
-getEnvSTM :: forall m blk r. IOLike m
+getEnvSTM :: forall m blk r. (IOLike m, HasCallStack)
           => ChainDbHandle m blk
           -> (ChainDbEnv m blk -> STM m r)
           -> STM m r
 getEnvSTM (CDBHandle varState) f = readTVar varState >>= \case
     ChainDbOpen    env -> f env
-    ChainDbClosed _env -> throwM ClosedDBError
+    ChainDbClosed _env -> throwM $ ClosedDBError callStack
     -- See the docstring of 'ChainDbReopening'
     ChainDbReopening   -> error "ChainDB used while reopening"
 
@@ -208,8 +209,8 @@ data ChainDbEnv m blk = CDB
   , cdbGcDelay        :: !DiffTime
     -- ^ How long to wait between copying a block from the VolatileDB to
     -- ImmutableDB and garbage collecting it from the VolatileDB
-  , cdbBgThreads      :: !(StrictTVar m [Thread m ()])
-    -- ^ The background threads.
+  , cdbKillBgThreads  :: !(StrictTVar m (m ()))
+    -- ^ A handle to kill the background threads.
   , cdbEpochInfo      :: !(EpochInfo m)
   , cdbIsEBB          :: !(blk -> Bool)
   , cdbBlockchainTime :: !(BlockchainTime m)
@@ -258,8 +259,8 @@ data Internal m blk = Internal
     -- ^ Write a new LedgerDB snapshot to disk and remove the oldest one(s).
   , intScheduledChainSelection :: SlotNo -> m ()
     -- ^ Run the scheduled chain selections for the given 'SlotNo'.
-  , intBgThreads               :: StrictTVar m [Thread m ()]
-      -- ^ The background threads.
+  , intKillBgThreads           :: StrictTVar m (m ())
+      -- ^ A handle to kill the background threads.
   }
 
 {-------------------------------------------------------------------------------

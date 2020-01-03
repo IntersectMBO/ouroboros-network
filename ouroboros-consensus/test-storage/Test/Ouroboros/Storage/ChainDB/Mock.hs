@@ -6,8 +6,10 @@ module Test.Ouroboros.Storage.ChainDB.Mock (
     openDB
   ) where
 
+import           Control.Monad (void)
 import           Data.Bifunctor (first)
 import qualified Data.Map as Map
+import           GHC.Stack (callStack)
 
 import           Control.Monad.Class.MonadThrow
 
@@ -46,7 +48,7 @@ openDB cfg initLedger btime = do
         querySTM f = readTVar db >>= \m ->
           if Model.isOpen m
             then return (f m)
-            else throwM ClosedDBError
+            else throwM $ ClosedDBError callStack
 
         query :: (Model blk -> a) -> m a
         query = atomically . querySTM
@@ -60,7 +62,7 @@ openDB cfg initLedger btime = do
           if Model.isOpen m
             then let (a, m') = f m in writeTVar db m' >> return a
             else
-              throwM ClosedDBError
+              throwM $ ClosedDBError callStack
 
         updateSTME :: (Model blk -> Either ChainDbError (a, Model blk))
                    -> STM m a
@@ -71,7 +73,7 @@ openDB cfg initLedger btime = do
                 Left e        -> throwM e
                 Right (a, m') -> writeTVar db m' >> return a
               else
-                throwM ClosedDBError
+                throwM $ ClosedDBError callStack
 
         update :: (Model blk -> (a, Model blk)) -> m a
         update = atomically . updateSTM
@@ -113,7 +115,7 @@ openDB cfg initLedger btime = do
                         (Maybe (ChainUpdate blk b), Model blk)
             readerInstruction' = Model.readerInstruction toB rdrId
 
-    onSlotChange btime $ update_ . Model.advanceCurSlot cfg
+    void $ onSlotChange btime $ update_ . Model.advanceCurSlot cfg
 
     return ChainDB {
         addBlock            = update_  . Model.addBlock cfg

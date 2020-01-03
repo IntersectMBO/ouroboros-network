@@ -87,7 +87,7 @@ import           Ouroboros.Consensus.Block (Header, IsEBB (..))
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.Orphans ()
 import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry,
-                     allocateEither, unsafeRelease, withRegistry)
+                     allocateEither, unsafeRelease)
 
 import           Ouroboros.Storage.ChainDB.API (BlockOrHeader (..),
                      ChainDbError (..), ChainDbFailure (..),
@@ -164,6 +164,7 @@ data ImmDbArgs m blk = forall h. ImmDbArgs {
     , immHasFS          :: HasFS m h
     , immTracer         :: Tracer m (TraceEvent blk)
     , immCacheConfig    :: Index.CacheConfig
+    , immRegistry       :: ResourceRegistry m
     }
 
 -- | Default arguments when using the 'IO' monad
@@ -181,11 +182,13 @@ data ImmDbArgs m blk = forall h. ImmDbArgs {
 -- * 'immIsEBB'
 -- * 'immCheckIntegrity'
 -- * 'immAddHdrEnv'
+-- * 'immRegistry'
 defaultArgs :: FilePath -> ImmDbArgs IO blk
 defaultArgs fp = ImmDbArgs{
       immErr          = EH.exceptions
     , immHasFS        = ioHasFS $ MountPoint (fp </> "immutable")
     , immCacheConfig  = cacheConfig
+    , immTracer         = nullTracer
       -- Fields without a default
     , immDecodeHash     = error "no default for immDecodeHash"
     , immDecodeBlock    = error "no default for immDecodeBlock"
@@ -198,7 +201,7 @@ defaultArgs fp = ImmDbArgs{
     , immIsEBB          = error "no default for immIsEBB"
     , immCheckIntegrity = error "no default for immCheckIntegrity"
     , immAddHdrEnv      = error "no default for immAddHdrEnv"
-    , immTracer         = nullTracer
+    , immRegistry       = error "no default for immRegistry"
     }
   where
     -- Cache 250 past epochs by default. This will take roughly 250 MB of RAM.
@@ -215,18 +218,16 @@ defaultArgs fp = ImmDbArgs{
 
 withImmDB :: (IOLike m, HasHeader blk)
           => ImmDbArgs m blk -> (ImmDB m blk -> m a) -> m a
-withImmDB args k = withRegistry $ \registry ->
-    bracket (openDB registry args) closeDB k
+withImmDB args = bracket (openDB args) closeDB
 
 -- | For testing purposes
 openDB :: (IOLike m, HasHeader blk)
-       => ResourceRegistry m
-       -> ImmDbArgs m blk
+       => ImmDbArgs m blk
        -> m (ImmDB m blk)
-openDB registry ImmDbArgs{..} = do
+openDB ImmDbArgs{..} = do
     createDirectoryIfMissing immHasFS True (mkFsPath [])
     (immDB, _internal) <- ImmDB.openDBInternal
-      registry
+      immRegistry
       immHasFS
       immErr
       immEpochInfo

@@ -41,7 +41,6 @@ import           Ouroboros.Consensus.Protocol.Abstract (SecurityParam (..))
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Orphans ()
 import           Ouroboros.Consensus.Util.Random
-import           Ouroboros.Consensus.Util.ResourceRegistry
 
 import           Test.Dynamic.Network
 import           Test.Dynamic.TxGen
@@ -66,6 +65,7 @@ import           Test.Consensus.BlockchainTime.SlotLengths ()
 data TestConfig = TestConfig
   { numCoreNodes :: !NumCoreNodes
   , numSlots     :: !NumSlots
+    -- ^ TODO generate in function of @k@
   , nodeJoinPlan :: !NodeJoinPlan
   , nodeTopology :: !NodeTopology
   , slotLengths  :: !SlotLengths
@@ -120,8 +120,7 @@ instance Arbitrary TestConfig where
 
 -- | Thin wrapper around 'runNodeNetwork'
 --
--- Provides a 'ResourceRegistry' and 'BlockchainTime', runs in the IO sim
--- monad.
+-- Runs in the IO sim monad.
 --
 runTestNetwork ::
   forall blk.
@@ -135,13 +134,11 @@ runTestNetwork ::
   -> TestOutput blk
 runTestNetwork pInfo
   TestConfig{numCoreNodes, numSlots, nodeJoinPlan, nodeTopology, slotLengths}
-  seed = runSimOrThrow $ do
-    registry  <- unsafeNewRegistry
-    testBtime <- newTestBlockchainTime registry numSlots slotLengths
+  seed = runSimOrThrow $
     runNodeNetwork
-      registry
-      testBtime
       numCoreNodes
+      numSlots
+      slotLengths
       nodeJoinPlan
       nodeTopology
       pInfo

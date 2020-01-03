@@ -35,18 +35,21 @@ data BlockchainTime m = BlockchainTime {
 
       -- | Spawn a thread to run an action each time the slot changes
       --
+      -- Returns a handle to kill the thread.
+      --
       -- The thread will be linked to the registry in which the 'BlockchainTime'
       -- itself was created.
       --
       -- Use sites should call 'onSlotChange' rather than 'onSlotChange_'.
-    , onSlotChange_  :: HasCallStack => (SlotNo -> m ()) -> m ()
+    , onSlotChange_  :: HasCallStack => (SlotNo -> m ()) -> m (m ())
     }
   deriving NoUnexpectedThunks via OnlyCheckIsWHNF "BlockchainTime" (BlockchainTime m)
 
 -- | Wrapper around 'onSlotChange_' to ensure 'HasCallStack' constraint
 --
 -- See documentation of 'onSlotChange_'.
-onSlotChange :: HasCallStack => BlockchainTime m -> (SlotNo -> m ()) -> m ()
+onSlotChange :: HasCallStack
+             => BlockchainTime m -> (SlotNo -> m ()) -> m (m ())
 onSlotChange = onSlotChange_
 
 {-------------------------------------------------------------------------------

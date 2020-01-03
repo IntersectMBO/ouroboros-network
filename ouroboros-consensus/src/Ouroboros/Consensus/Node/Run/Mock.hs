@@ -18,6 +18,10 @@ import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Mock
 import           Ouroboros.Consensus.Ledger.Mock.Run
 import           Ouroboros.Consensus.Node.Run.Abstract
+import           Ouroboros.Consensus.Protocol.Abstract (SecurityParam (..),
+                     protocolSecurityParam)
+
+import           Ouroboros.Storage.Common (EpochSize (..))
 
 {-------------------------------------------------------------------------------
   RunNode instance for the mock ledger
@@ -38,7 +42,8 @@ instance ( ProtocolLedgerView (SimpleBlock SimpleMockCrypto ext)
   nodeBlockMatchesHeader  = matchesSimpleHeader
   nodeBlockFetchSize      = fromIntegral . simpleBlockSize . simpleHeaderStd
   nodeIsEBB               = const Nothing
-  nodeEpochSize           = \_ _ _ -> return 100
+  nodeEpochSize           = \_ cfg _ -> return $
+    EpochSize $ 10 * maxRollbacks (protocolSecurityParam cfg)
   nodeStartTime           = \_ _ -> SystemStart dummyDate
     where
       --  This doesn't matter much
