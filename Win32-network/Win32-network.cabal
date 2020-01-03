@@ -64,6 +64,7 @@ test-suite test-Win32-network
                        -threaded
   if os(windows)
     other-modules:       Test.Generators
+                         Test.Async.PingPong
                          Test.Async.Handle
                          Test.Async.Socket
     build-depends:       async,
