@@ -76,8 +76,9 @@ closeDB (CDBHandle varState) = do
       bgThreads <- atomically $ readTVar cdbBgThreads
       mapM_ cancelThread bgThreads
 
-      -- TODO Maybe write a 'LedgerDB' snapshot or wait until it is done.
-      -- See #367.
+      -- Write a 'LedgerDB' snapshot so that we don't have to replay too many
+      -- blocks when restarting
+      Background.updateLedgerSnapshots cdb
       ImmDB.closeDB cdbImmDB
       VolDB.closeDB cdbVolDB
 
