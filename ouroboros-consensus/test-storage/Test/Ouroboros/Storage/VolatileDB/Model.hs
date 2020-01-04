@@ -57,7 +57,7 @@ import           Ouroboros.Network.Point (WithOrigin)
 import           Ouroboros.Consensus.Block (IsEBB)
 import           Ouroboros.Consensus.Util (safeMaximum)
 
-import           Ouroboros.Storage.Common (BlockComponent (..))
+import           Ouroboros.Storage.Common
 import           Ouroboros.Storage.FS.API.Types
 import           Ouroboros.Storage.Util.ErrorHandling (ThrowCantCatch)
 import qualified Ouroboros.Storage.Util.ErrorHandling as EH
@@ -67,8 +67,7 @@ import           Ouroboros.Storage.VolatileDB.Util
 
 import           Test.Util.FS.Sim.Error
 
-import           Test.Ouroboros.Storage.VolatileDB.TestBlock (Corruptions,
-                     FileCorruption (..), binarySize, headerOffset, headerSize)
+import           Test.Ouroboros.Storage.VolatileDB.TestBlock
 
 type Index blockId = Map FsPath (MaxSlotNo, [(blockId, WithOrigin blockId)])
 
@@ -79,7 +78,7 @@ data DBModel blockId = DBModel {
       -- ^ An error indicates a broken db and that parsing will fail.
     , open           :: Bool
       -- ^ Indicates if the db is open.
-    , mp             :: Map blockId (SlotNo, IsEBB, ByteString)
+    , mp             :: Map blockId (SlotNo, IsEBB, BinaryInfo ByteString)
       -- ^ Superset of blocks in db. Some of them may be gced already.
     , latestGarbaged :: Maybe SlotNo
       -- ^ Last gced slot.
@@ -89,7 +88,7 @@ data DBModel blockId = DBModel {
       -- ^ Highest ever stored SlotNo.
     } deriving Show
 
-initDBModel ::Int -> DBModel blockId
+initDBModel :: Int -> DBModel blockId
 initDBModel bpf = DBModel {
       blocksPerFile  = bpf
     , parseError     = Nothing
@@ -157,6 +156,11 @@ getDBBlocksWithFiles :: DBModel blockId -> [(FsPath, blockId)]
 getDBBlocksWithFiles DBModel {..} =
   concat $ (\(f,(_, bs)) -> map ((f,) . fst) bs) <$> (Map.toList index)
 
+unsafeGetSlot :: Ord blockId => DBModel blockId -> blockId -> SlotNo
+unsafeGetSlot DBModel {..} blockId = first3 $ (Map.!) mp blockId
+  where
+    first3 (a, _, _) = a
+
 {------------------------------------------------------------------------------
   Model Api
 ------------------------------------------------------------------------------}
@@ -196,26 +200,24 @@ getBlockComponentModel err blockComponent blockId = do
 
 extractBlockComponent
   :: blockId
-  -> (SlotNo, IsEBB, ByteString)
+  -> (SlotNo, IsEBB, BinaryInfo ByteString)
   -> BlockComponent (VolatileDB blockId m) b
   -> b
 extractBlockComponent blockId info@(slot, isEBB, block) = \case
     GetBlock      -> ()
-    GetRawBlock   -> block
+    GetRawBlock   -> binaryBlob block
     GetHeader     -> ()
     GetRawHeader  -> extractHeader block
     GetHash       -> blockId
     GetSlot       -> slot
     GetIsEBB      -> isEBB
-    GetBlockSize  -> fromIntegral $ BL.length block
-    GetHeaderSize -> headerSize
+    GetBlockSize  -> fromIntegral $ BL.length $ binaryBlob block
+    GetHeaderSize -> headerSize block
     GetPure a     -> a
     GetApply f bc ->
       extractBlockComponent blockId info f $
       extractBlockComponent blockId info bc
-  where
-    extractHeader = BL.take (fromIntegral headerSize)
-                  . BL.drop (fromIntegral headerOffset)
+
 
 putBlockModel :: forall blockId m.
                  MonadState (DBModel blockId) m
@@ -225,25 +227,31 @@ putBlockModel :: forall blockId m.
               -> BlockInfo blockId
               -> Builder
               -> m ()
-putBlockModel err cmdErr BlockInfo{..} bs = do
+putBlockModel err cmdErr BlockInfo{..} builder = do
     -- This depends on the exact sequence of the operations in the real Impl.
     -- If anything changes there, then this will also need change.
     dbm@DBModel {..} <- get
     let currentFile = getCurrentFile dbm
     whenClosedUserError dbm err
     case Map.lookup bbid mp of
-      Just _bs -> return ()
+      Just _block -> return ()
       Nothing -> case managesToPut cmdErr of
         Just fsErrT -> EH.throwError' err $
           mkError fsErrT currentFile
         Nothing -> doPut dbm currentFile
   where
+    binaryInfo = BinaryInfo {
+        binaryBlob   = toLazyByteString builder
+      , headerOffset = bheaderOffset
+      , headerSize   = bheaderSize
+      }
+
     -- | Updates the Model if put succeeds.
     doPut :: DBModel blockId -> FsPath -> m ()
     doPut dbm@DBModel {..} currentFile = do
         put dbm {
-            mp = Map.insert bbid (bslot, bisEBB, toLazyByteString bs) mp
-          , index = index'
+            mp        = Map.insert bbid (bslot, bisEBB, binaryInfo) mp
+          , index     = index'
           , maxSlotNo = maxSlotNo `max` MaxSlotNo bslot
           }
         when (1 + length bids == blocksPerFile)
@@ -382,10 +390,9 @@ getMaxSlotNoModel err = do
 
 runCorruptionModel :: forall blockId m. MonadState (DBModel blockId) m
                    => Ord blockId
-                   => (blockId -> SlotNo)
-                   -> Corruptions
+                   => Corruptions
                    -> m ()
-runCorruptionModel guessSlot corrs = do
+runCorruptionModel corrs = do
     dbm <- get
     let dbm' = foldr corruptDBModel dbm corrs
     put dbm'
@@ -400,27 +407,21 @@ runCorruptionModel guessSlot corrs = do
             }
           where
             bids = unsafeGetBlocks dbm file
-        DropLastBytes n -> dbm {
+        DropLastBytes _n -> dbm {
               mp = mp'
             , index = index'
             , parseError = parseError'
             }
           where
-            fitsInBlocks = mod n (fromIntegral binarySize) == 0
-            -- This is how many bids we want to drop, not how many will actually
-            -- be dropped.
-            dropBids = div n (fromIntegral binarySize) +
-                       if fitsInBlocks then 0 else 1
             bids = unsafeGetBlocks dbm file
             -- we prepend on list of blockIds, so last bytes
             -- are actually at the head of the list.
-            (droppedBids, newBids) = splitAt (fromIntegral dropBids) bids
-            newMmax = snd <$> maxSlotList ((\(b,_) -> (b, guessSlot b)) <$> newBids)
+            (droppedBids, newBids) = splitAt 1 bids
+            newBidsWithSlots = (\(b,_) -> (b, unsafeGetSlot dbm b)) <$> newBids
+            newMmax = snd <$> maxSlotList newBidsWithSlots
             index' = Map.insert file (maxSlotNoFromMaybe newMmax, newBids) index
             mp' = Map.withoutKeys mp (Set.fromList $ fst <$> droppedBids)
-            parseError' = if (fromIntegral binarySize)*(length droppedBids) > fromIntegral n
-                             && not fitsInBlocks
-                             && isNothing parseError
+            parseError' = if isNothing parseError
                           then Nothing else parseError
         AppendBytes n ->
             -- Appending doesn't actually change anything, since additional

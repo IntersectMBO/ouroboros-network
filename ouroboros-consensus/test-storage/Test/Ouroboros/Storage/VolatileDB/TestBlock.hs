@@ -4,114 +4,65 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections       #-}
 -- | Block used for tests
-module Test.Ouroboros.Storage.VolatileDB.TestBlock where
+module Test.Ouroboros.Storage.VolatileDB.TestBlock
+  ( module TestBlock
+  , BlockId
+  , Predecessor
+  , TestBlock (..)
+  , TestHeader (..)
+  , FileCorruption (..)
+  , Corruptions
+  , corruptionFiles
+  , generateCorruptions
+  , corruptFile
+  , createFile
+  , getOrigin
+  , mkBlockInfo
+  )
+where
 
 import           Control.Monad (forM)
-import qualified Data.Binary as Binary
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Builder as BB
-import qualified Data.ByteString.Lazy as BL
 import           Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
-import           Data.Serialize
-import           Data.Word (Word16, Word64)
+import           Data.Word (Word64)
 import           Test.QuickCheck
 
 import           Control.Monad.Class.MonadThrow
 
-import           Ouroboros.Network.Point (WithOrigin, withOriginFromMaybe,
-                     withOriginToMaybe)
+import           Ouroboros.Network.Point (WithOrigin, at, origin)
 
-import           Ouroboros.Consensus.Block (IsEBB (..))
 import           Ouroboros.Consensus.Util.IOLike
 
-import           Ouroboros.Storage.FS.API (HasFS (..), hGetExactly, hPut,
-                     withFile)
+import           Ouroboros.Storage.FS.API (HasFS (..), hPut, withFile)
 import           Ouroboros.Storage.FS.API.Types
 import           Ouroboros.Storage.VolatileDB
 import qualified Ouroboros.Storage.VolatileDB.Impl as Internal hiding (openDB)
 
-type BlockId = Word
-type SerialMagic = Int
+import           Test.Ouroboros.Storage.TestBlock as TestBlock hiding
+                     (Corruptions, FileCorruption(..), corruptFile,
+                     generateCorruptions)
+
+type BlockId = TestHeaderHash
+
 type Predecessor = WithOrigin BlockId
-type BlockTestInfo = (BlockId, Predecessor, BL.ByteString)
 
-type TestBlock = (BlockId, Predecessor, BL.ByteString, SerialMagic)
+getOrigin :: ChainHash b -> WithOrigin (HeaderHash b)
+getOrigin GenesisHash            = origin
+getOrigin (BlockHash headerHash) = at headerHash
 
-toBinary :: BlockTestInfo -> BL.ByteString
-toBinary = Binary.encode . convert . toBlock
-  where
-    convert :: TestBlock -> (BlockId, Maybe BlockId, BL.ByteString, SerialMagic)
-    convert (bid, pre, h, magic) = (bid, withOriginToMaybe pre, h, magic)
-
-fromBinary :: BS.ByteString -> Either String BlockTestInfo
-fromBinary bs = do
-    block <- decode bs
-    case block of
-        (bid, predb, h, 1 :: SerialMagic) -> Right (bid, withOriginFromMaybe predb, h)
-        _                                 -> Left "wrong payload"
-
-guessSlot :: BlockId -> SlotNo
-guessSlot = SlotNo . fromIntegral
-
-toBlock :: BlockTestInfo -> TestBlock
-toBlock (b, pb, h) = (b, pb, h, 1)
-
-fromBlock :: TestBlock -> BlockTestInfo
-fromBlock (bid, pbid, h, 1) = (bid, pbid, h)
-fromBlock _                 = error "wrong payload"
-
-binarySize :: Word64
-binarySize = 34
-
-headerOffset :: Word16
-headerOffset = 25
-
-headerSize :: Word16
-headerSize = 1
-
-myParser :: (MonadThrow m)
-         => HasFS m h
-         -> Parser String m BlockId
-myParser hasFs = Parser {
-    parse = parseImpl hasFs
+mkBlockInfo :: TestBlock -> BlockInfo (BlockId)
+mkBlockInfo tb = BlockInfo {
+      bbid          = thHash
+    , bslot         = thSlotNo
+    , bpreBid       = getOrigin thPrevHash
+    , bisEBB        = thIsEBB
+    , bheaderOffset = testBlockHeaderOffset
+    , bheaderSize   = testBlockHeaderSize tb
     }
-
-parseImpl :: forall m h. (MonadThrow m)
-          => HasFS m h
-          -> FsPath
-          -> m ([(SlotOffset, (Word64, BlockInfo BlockId))], Maybe String)
-parseImpl hasFS@HasFS{..} path =
-    withFile hasFS path ReadMode $ \hndl -> do
-      fileSize <- hGetSize hndl
-      go hndl [] 0 fileSize
   where
-    go :: Handle h
-       -> [(SlotOffset, (Word64, BlockInfo BlockId))]
-       -> Word64  -- ^ Offset where we will read from next
-       -> Word64  -- ^ File size, i.e. the max offset
-       -> m ([(SlotOffset, (Word64, BlockInfo BlockId))], Maybe String)
-    go hndl ls offset maxOffset
-      | offset >= maxOffset
-      = return (reverse ls, Nothing)
-      | maxOffset - offset < binarySize
-      = return (reverse ls, Just "partial block at the end")
-      | otherwise
-      = fromBinary . BL.toStrict <$> hGetExactly hasFS hndl binarySize >>= \case
-          Left e              -> return (reverse ls, Just e)
-          Right (bid, prebid, _h) ->
-              go hndl ls' (offset + binarySize) maxOffset
-            where
-              ls' = (offset, (binarySize, blockInfo)) : ls
-              blockInfo = BlockInfo
-                { bbid          = bid
-                , bslot         = guessSlot bid
-                , bpreBid       = prebid
-                , bisEBB        = IsNotEBB
-                , bheaderOffset = headerOffset
-                , bheaderSize   = headerSize
-                }
-
+    TestHeader{..} = testHeader tb
 
 {------------------------------------------------------------------------------
   Corruption
@@ -126,7 +77,7 @@ data FileCorruption
 instance Arbitrary FileCorruption where
     arbitrary = frequency
       [ (1, return DeleteFile)
-      , (1, DropLastBytes . getSmall . getPositive <$> arbitrary)
+      , (1, DropLastBytes <$> choose (1,5)) -- should be less than size of block
       , (1, AppendBytes . getSmall . getPositive <$> arbitrary)
       ]
 

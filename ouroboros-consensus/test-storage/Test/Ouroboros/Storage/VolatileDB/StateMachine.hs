@@ -22,12 +22,11 @@ module Test.Ouroboros.Storage.VolatileDB.StateMachine
 
 import           Prelude hiding (elem)
 
+import           Codec.Serialise (decode)
 import           Control.Monad.Except
 import           Control.Monad.State
 import           Data.Bifunctor (bimap)
-import qualified Data.ByteString.Builder as BL
 import           Data.ByteString.Lazy (ByteString)
-import qualified Data.ByteString.Lazy as BL
 import           Data.Functor.Classes
 import           Data.Kind (Type)
 import qualified Data.List.NonEmpty as NE
@@ -58,7 +57,8 @@ import           Ouroboros.Consensus.Block (IsEBB (..))
 import qualified Ouroboros.Consensus.Util.Classify as C
 import           Ouroboros.Consensus.Util.IOLike
 
-import           Ouroboros.Storage.Common (BlockComponent (..))
+import           Ouroboros.Storage.ChainDB.Impl.VolDB (blockFileParser')
+import           Ouroboros.Storage.Common
 import           Ouroboros.Storage.FS.API
 import           Ouroboros.Storage.FS.API.Types
 import qualified Ouroboros.Storage.Util.ErrorHandling as EH
@@ -150,13 +150,13 @@ data Cmd
     | ReOpen
     | GetBlockComponent BlockId
     | GetBlockIds
-    | PutBlock BlockId Predecessor IsEBB ByteString -- ^ @ByteString@ is the header.
-    | GarbageCollect BlockId
+    | PutBlock TestBlock
+    | GarbageCollect SlotNo
     | AskIfMember [BlockId]
     | Corrupt Corruptions
     | CreateFile
     | CreateInvalidFile
-    | DuplicateBlock FsPath BlockId Predecessor
+    | DuplicateBlock FsPath TestBlock
     | GetSuccessors [Predecessor]
     | GetPredecessor [BlockId]
     | GetMaxSlotNo
@@ -183,13 +183,20 @@ deriving instance Show1 r => Show (Resp :@ r)
 
 deriving instance Generic (DBModel BlockId)
 deriving instance ToExpr SlotNo
-deriving instance Generic BlockId
 deriving instance ToExpr FsPath
 deriving instance ToExpr MaxSlotNo
 deriving instance ToExpr IsEBB
 deriving instance ToExpr (DBModel BlockId)
 deriving instance ToExpr (Model r)
 deriving instance ToExpr (WithOrigin BlockId)
+deriving instance ToExpr TestHeaderHash
+deriving instance ToExpr TestBodyHash
+deriving instance ToExpr TestHeader
+deriving instance ToExpr TestBody
+deriving instance ToExpr TestBlock
+deriving instance ToExpr (BinaryInfo ByteString)
+deriving instance ToExpr (ChainHash TestHeader)
+deriving instance ToExpr BlockNo
 
 instance ToExpr ParserError where
   toExpr = defaultExprViaShow
@@ -284,39 +291,31 @@ runPure dbm (CmdErr cmd err) =
     go = case cmd of
       GetBlockComponent bid  ->
         MbAllComponents <$> getBlockComponentModel tnc allComponents bid
-      GetBlockIds           -> Blocks <$> getBlockIdsModel tnc
-      PutBlock b pb e h     -> do
-        let blockInfo = BlockInfo {
-                bbid          = b
-              , bslot         = guessSlot b
-              , bpreBid       = pb
-              , bisEBB        = e
-              , bheaderOffset = headerOffset
-              , bheaderSize   = headerSize
-              }
-            blob = BL.lazyByteString $ toBinary (b, pb, h)
+      GetBlockIds            -> Blocks <$> getBlockIdsModel tnc
+      PutBlock tb            -> do
+        let blockInfo = mkBlockInfo tb
+            blob = testBlockToBuilder tb
         Unit <$> putBlockModel tnc err blockInfo blob
-      GetSuccessors bids    -> do
+      GetSuccessors bids     -> do
         successors <- getSuccessorsModel tnc
         return $ Successors $ successors <$> bids
-      GetPredecessor bids   -> do
+      GetPredecessor bids    -> do
         predecessor <- getPredecessorModel tnc
         return $ Predecessor $ predecessor <$> bids
-      GarbageCollect bid    -> 
-        Unit <$> garbageCollectModel tnc err (guessSlot bid)
-      IsOpen                -> Bl <$> isOpenModel
-      Close                 -> Unit <$> closeModel
-      ReOpen                -> Unit <$> reOpenModel tnc
-      AskIfMember bids      -> do
+      GarbageCollect slot    -> Unit <$> garbageCollectModel tnc err slot
+      IsOpen                 -> Bl <$> isOpenModel
+      Close                  -> Unit <$> closeModel
+      ReOpen                 -> Unit <$> reOpenModel tnc
+      AskIfMember bids       -> do
         isMember <- getIsMemberModel tnc
         return $ IsMember $ isMember <$> bids
-      GetMaxSlotNo          -> MaxSlot <$> getMaxSlotNoModel tnc
-      Corrupt cors          -> withClosedDB $ runCorruptionModel guessSlot cors
-      CreateFile            -> withClosedDB createFileModel
-      CreateInvalidFile     -> withClosedDB $
+      GetMaxSlotNo           -> MaxSlot <$> getMaxSlotNoModel tnc
+      Corrupt cors           -> withClosedDB $ runCorruptionModel cors
+      CreateFile             -> withClosedDB createFileModel
+      CreateInvalidFile      -> withClosedDB $
         createInvalidFileModel (mkFsPath ["invalidFileName.dat"])
-      DuplicateBlock file bid _pbid 
-                            -> withClosedDB $ duplicateBlockModel (file, bid)
+      DuplicateBlock file tb -> withClosedDB $
+        duplicateBlockModel (file, thHash $ testHeader tb)
 
     withClosedDB :: PureM () -> PureM Success
     withClosedDB act = do
@@ -368,29 +367,35 @@ preconditionImpl Model{..} (At (CmdErr cmd err)) =
     Not (Boolean shouldEnd)
     .&& compatibleWithError
     .&& case cmd of
-      GetBlockComponent bid -> Boolean $ afterGC $ guessSlot bid
-      GetPredecessor bids   ->
-        forall bids (`elem` bidsInModel)
-      PutBlock bid _ _ _    ->
-        Boolean $ afterGC $ guessSlot bid
-      AskIfMember bids      -> Boolean $ and
-        (afterGC . guessSlot <$> bids)
-      Corrupt cors          ->
-        isOpen
-        .&& forall (corruptionFiles cors) (`elem` getDBFiles dbModel)
-      CreateFile            -> isOpen
-      CreateInvalidFile     -> isOpen
-      DuplicateBlock file bid _ ->
+      GetBlockComponent bid  -> Boolean $ afterGC bid
+      GetPredecessor bids    -> forall bids (`elem` bidsInModel)
+      PutBlock tb            ->
+        Boolean $ (slotAfterGC $ Just $ thSlotNo $ testHeader tb)
+               && (not $ M.member (thHash $ testHeader tb) (mp dbModel))
+      AskIfMember bids       -> Boolean $ and (afterGC <$> bids)
+      Corrupt cors           -> isOpen .&&
+        forall (corruptionFiles cors) (`elem` getDBFiles dbModel)
+      CreateFile             -> isOpen
+      CreateInvalidFile      -> isOpen
+      DuplicateBlock file tb ->
         case fmap fst . snd <$> M.lookup file (index dbModel) of
           Nothing   -> Bot
-          Just bids -> isOpen .&& bid `elem` bids
-      _                     -> Top
+          Just bids -> isOpen .&& (thHash $ testHeader tb) `elem` bids
+      _                      -> Top
   where
+    getSlot :: BlockId -> Maybe SlotNo
+    getSlot bid = (\(a,_,_) -> a) <$> M.lookup bid (mp dbModel)
+
     -- | Checks if the given block is bigger then the biggest gced slot.
-    afterGC :: SlotNo -> Bool
-    afterGC slot = case latestGarbaged dbModel of
-      Nothing    -> True
-      Just slot' -> slot' <=  slot
+    afterGC :: BlockId -> Bool
+    afterGC = slotAfterGC . getSlot
+
+    -- | Checks if the given slot is bigger then the biggest gced slot.
+    slotAfterGC :: Maybe SlotNo -> Bool
+    slotAfterGC mSlot = case (mSlot, latestGarbaged dbModel) of
+      (Nothing, _)            -> True
+      (_, Nothing)            -> True
+      (Just slot, Just slot') -> slot > slot'
 
     -- | Is the db open?
     isOpen :: Logic
@@ -398,9 +403,7 @@ preconditionImpl Model{..} (At (CmdErr cmd err)) =
 
     -- | All the 'BlockId' in the db.
     bidsInModel :: [BlockId]
-    bidsInModel = filter (newer (latestGarbaged dbModel) . guessSlot)
-                    $ M.keys
-                    $ mp dbModel
+    bidsInModel = filter afterGC $ M.keys $ mp dbModel
 
     -- | Corruption commands are not allowed to have errors.
     compatibleWithError :: Logic
@@ -420,23 +423,29 @@ postconditionImpl model cmdErr resp =
 generatorCmdImpl :: Bool -> Model Symbolic -> Maybe (Gen (At Cmd Symbolic))
 generatorCmdImpl terminatingCmd m@Model {..} =
     if shouldEnd then Nothing else Just $ do
-    block <- blockIdGenerator m
-    pblock <- predecessorGenerator
-    blocks <- listOf $ blockIdGenerator m
-    header :: Word8 <- arbitrary
-    duplicate <- mkDuplicate' pblock
+    blockId <- blockIdGenerator m
+    pblockId <- predecessorGenerator
+    blockIds <- listOf $ blockIdGenerator m
+    slot <- arbitrary -- TODO: We may want to have more collisions.
+    isEBB <- elements [IsNotEBB, IsEBB]
+    -- Many fields of the TestBlock are never used, so we use fixed values.
+    let testBody = TestBody 0 True
+        hashBody' = hashBody testBody
+        testHeaderHash = BlockHash pblockId
+        testHeader =
+          TestHeader blockId testHeaderHash hashBody' slot (BlockNo 0) isEBB
+        testBlock = TestBlock testHeader testBody
+    duplicate <- mkDuplicate testBlock
     let allowDuplication = terminatingCmd && isJust duplicate
-        isEBB = IsNotEBB  -- TODO we need a proper TestBlock
     At <$> frequency [
-        (150, return $ GetBlockComponent block)
+        (150, return $ GetBlockComponent blockId)
       , (100, return $ GetBlockIds)
-      , (150, return $ PutBlock block (WithOrigin.At pblock) isEBB
-                                (BL.singleton header))
-      , (100, return $ GetSuccessors $ WithOrigin.At block : 
+      , (150, return $ PutBlock testBlock)
+      , (100, return $ GetSuccessors $ WithOrigin.At blockId :
           (WithOrigin.At <$> possiblePredecessors))
-      , (100, return $ GetPredecessor blocks)
+      , (100, return $ GetPredecessor blockIds)
       , (100, return $ GetMaxSlotNo)
-      , (50, return $ GarbageCollect block)
+      , (50, return $ GarbageCollect slot)
       , (50, return $ IsOpen)
       , (50, return $ Close)
       , (30, return CreateFile)
@@ -444,18 +453,20 @@ generatorCmdImpl terminatingCmd m@Model {..} =
       -- This helps minimize TagClosedError and create more
       -- interesting tests.
       , (if open dbModel then 10 else 1000, return $ ReOpen)
-      , (if null blocks then 0 else 30, return $ AskIfMember blocks)
+      , (if null blockIds then 0 else 30, return $ AskIfMember blockIds)
       , (if null dbFiles then 0 else 30, Corrupt <$> generateCorruptions dbFiles)
       , (if terminatingCmd then 1 else 0, return CreateInvalidFile)
       , (if allowDuplication then 1 else 0, return $ fromJust duplicate)
       ]
   where
     dbFiles = getDBFiles dbModel
-    mkDuplicate' pblock =
-      case mkDuplicate pblock <$> getDBBlocksWithFiles dbModel of
+    mkDuplicate tb@TestBlock{..} =
+      case getDBBlocksWithFiles dbModel of
         []   -> return Nothing
-        bids -> Just <$> elements bids
-    mkDuplicate pblock = \(f, b) -> DuplicateBlock f b $ WithOrigin.At pblock
+        bids -> do
+          (f, b) <- elements bids
+          let testHead' = testHeader{thHash = b}
+          return $ Just $ DuplicateBlock f (tb {testHeader = testHead'})
 
 generatorImpl :: Bool 
               -> Bool 
@@ -484,18 +495,14 @@ allowErrorFor _                    = True
 
 blockIdGenerator :: Model Symbolic -> Gen BlockId
 blockIdGenerator Model {..} = do
-    sl <- arbitrary
-    elements $ sl : (fst <$> getBlockId dbModel)
+    bid <- TestHeaderHash <$> arbitrary
+    elements $ bid : (fst <$> getBlockId dbModel)
 
 predecessorGenerator :: Gen BlockId
 predecessorGenerator = elements possiblePredecessors
 
 possiblePredecessors :: [BlockId]
-possiblePredecessors = [0,1,2]
-
-newer :: Ord a => Maybe a -> a -> Bool
-newer Nothing _   = True
-newer (Just a) a' = a' >= a
+possiblePredecessors = TestHeaderHash <$> [0,1,2]
 
 shrinkerImpl :: Model Symbolic -> At CmdErr Symbolic -> [At CmdErr Symbolic]
 shrinkerImpl m (At (CmdErr cmd mbErr)) = fmap At $
@@ -504,8 +511,8 @@ shrinkerImpl m (At (CmdErr cmd mbErr)) = fmap At $
 
 shrinkCmd :: Model Symbolic -> Cmd -> [Cmd]
 shrinkCmd Model{..} cmd = case cmd of
-    AskIfMember bids    -> AskIfMember <$> shrink bids
-    GetPredecessor bids -> GetPredecessor <$> shrink bids
+    AskIfMember bids    -> AskIfMember <$> shrinkList (const []) bids
+    GetPredecessor bids -> GetPredecessor <$> shrinkList (const []) bids
     Corrupt cors        -> Corrupt . NE.fromList <$>
                              shrinkList shrinkNothing (NE.toList cors)
     _                   -> []
@@ -538,16 +545,16 @@ runDB db cmd env@Internal.VolatileDBEnv{..} = case cmd of
     GetBlockComponent bid -> 
       MbAllComponents <$> getBlockComponent db allComponents bid
     GetBlockIds           -> Blocks <$> getBlockIds db
-    PutBlock b pb e h     -> Unit <$> putBlock db
-      (BlockInfo b (guessSlot b) pb e headerOffset headerSize)
-      (BL.lazyByteString $ toBinary (b, pb, h))
+    PutBlock tb           -> Unit <$> putBlock db
+      (mkBlockInfo tb)
+      (testBlockToBuilder tb)
     GetSuccessors bids    -> do
       successors <- atomically $ getSuccessors db
       return $ Successors $ successors <$> bids
     GetPredecessor bids   -> do
       predecessor <- atomically $ getPredecessor db
       return $ Predecessor $ predecessor <$> bids
-    GarbageCollect bid    -> Unit <$> garbageCollect db (guessSlot bid)
+    GarbageCollect sl     -> Unit <$> garbageCollect db sl
     IsOpen                -> Bl <$> isOpenDB db
     Close                 -> Unit <$> closeDB db
     ReOpen                -> Unit <$> reOpenDB db
@@ -566,11 +573,10 @@ runDB db cmd env@Internal.VolatileDBEnv{..} = case cmd of
       withClosedDB $
         withFile _dbHasFS (mkFsPath ["invalidFileName.dat"])
           (AppendMode MustBeNew) $ \_hndl -> return ()
-    DuplicateBlock _file  bid preBid -> do
-        let specialEnc = toBinary (bid, preBid, "a")
+    DuplicateBlock _file  tb -> do
         _ <- withDBState $ \hasFS st ->
           hPut hasFS (Internal._currentWriteHandle st)
-                          (BL.lazyByteString specialEnc)
+                          (testBlockToBuilder tb)
         withClosedDB $ return ()
   where
     withClosedDB action = do
@@ -603,8 +609,10 @@ prop_sequential =
                  -> PropertyM IO (History (At CmdErr) (At Resp), Reason)
             test errorsVar hasFS = do
               let ec = EH.throwCantCatch EH.monadCatch
+              let parser = blockFileParser' hasFS testBlockIsEBB
+                    testBlockToBinaryInfo (const <$> decode)
               (db, env) <- run $
-                Internal.openDBFull hasFS EH.monadCatch ec (myParser hasFS) 3
+                    Internal.openDBFull hasFS EH.monadCatch ec parser 3
               let sm' = sm True errorsVar db env dbm
               (hist, _model, res) <- runCommands sm' cmds
               run $ closeDB db
@@ -637,7 +645,7 @@ prop_sequential =
 
 tests :: TestTree
 tests = testGroup "VolatileDB-q-s-m" [
-      testProperty "q-s-m-Errors" $ withMaxSuccess 3000 prop_sequential
+      testProperty "q-s-m-Errors" prop_sequential
     ]
 
 {-------------------------------------------------------------------------------
@@ -693,19 +701,25 @@ tag ls = C.classify
     -- This rarely succeeds. I think this is because the last part 
     -- (get -> Nothing) rarelly succeeds. This happens because when a blockId is
     -- deleted is very unlikely to be requested.
-    tagGarbageCollect :: Bool -> Set BlockId -> Maybe BlockId -> EventPred
+    tagGarbageCollect :: Bool
+                      -> Set BlockId
+                      -> Maybe SlotNo
+                      -> EventPred
     tagGarbageCollect keep bids mgced = successful $ \ev suc ->
-        if not keep then Right $ tagGarbageCollect keep bids mgced
-        else case (mgced, suc, getCmd ev) of
-          (Nothing, _, PutBlock bid _pbid _isEBB _h)
-            -> Right $ tagGarbageCollect True (S.insert bid bids) Nothing
-          (Nothing, _, GarbageCollect bid)
-            -> Right $ tagGarbageCollect True bids (Just bid)
-          (Just _gced, MbAllComponents Nothing, GetBlockComponent bid) | (S.member bid bids)
-            -> Left TagGarbageCollect
-          (_, _, Corrupt _) 
-            -> Right $ tagGarbageCollect False bids mgced
-          _ -> Right $ tagGarbageCollect True bids mgced
+      if not keep then Right $ tagGarbageCollect keep bids mgced
+      else case (mgced, suc, getCmd ev) of
+        (Nothing, _, PutBlock TestBlock{testHeader = TestHeader{..}})
+          -> Right $ tagGarbageCollect
+                       True
+                       (S.insert thHash bids)
+                       Nothing
+        (Nothing, _, GarbageCollect sl)
+          -> Right $ tagGarbageCollect True bids (Just sl)
+        (Just _gced, MbAllComponents Nothing, GetBlockComponent bid) 
+          | (S.member bid bids) -> Left TagGarbageCollect
+        (_, _, Corrupt _) 
+          -> Right $ tagGarbageCollect False bids mgced
+        _ -> Right $ tagGarbageCollect True bids mgced
 
     tagGetJust :: Either Tag EventPred -> EventPred
     tagGetJust next = successful $ \_ev suc -> case suc of

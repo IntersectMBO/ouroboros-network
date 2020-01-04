@@ -193,9 +193,15 @@ testBlockToBuilder = CBOR.toBuilder . encode
 testBlockToBinaryInfo :: TestBlock -> BinaryInfo CBOR.Encoding
 testBlockToBinaryInfo tb = BinaryInfo
     { binaryBlob   = encode tb
-    , headerOffset = 2 -- For the 'encodeListLen'
-    , headerSize   = fromIntegral $ Lazy.length $ serialise $ testHeader tb
+    , headerOffset = testBlockHeaderOffset
+    , headerSize   = testBlockHeaderSize tb
     }
+
+testBlockHeaderOffset :: Word16
+testBlockHeaderOffset = 2 -- For the 'encodeListLen'
+
+testBlockHeaderSize :: TestBlock -> Word16
+testBlockHeaderSize = fromIntegral . Lazy.length . serialise . testHeader
 
 testBlockToLazyByteString :: TestBlock -> Lazy.ByteString
 testBlockToLazyByteString = CBOR.toLazyByteString . encode
