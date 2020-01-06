@@ -920,7 +920,7 @@ fetchRequestDecision FetchDecisionPolicy {
              inFlightBytesLowWatermark
              inFlightBytesHighWatermark
 
-  | peerFetchReqsInFlight == 0
+  | peerFetchStatus == PeerFetchStatusReady Set.empty
   , let maxConcurrentFetchPeers = case fetchMode of
                                     FetchModeBulkSync -> maxConcurrencyBulkSync
                                     FetchModeDeadline -> maxConcurrencyDeadline
