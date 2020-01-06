@@ -158,6 +158,10 @@ data PeerFetchStatus header =
        -- | Communication with the peer is in a normal state, and the peer is
        -- considered ready to accept new requests.
        --
+       -- This also has the current 'peerFetchBlocksInFlight' because changes
+       -- in this while remaining in the ready state can require re-evaluating
+       -- our fetch decision.
+       --
      | PeerFetchStatusReady (Set (Point header))
   deriving (Eq, Show)
 
