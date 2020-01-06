@@ -1,6 +1,6 @@
 { system, compiler, flags, pkgs, hsPkgs, pkgconfPkgs, ... }:
   {
-    flags = { ipv6 = false; };
+    flags = { asserts = false; ipv6 = false; };
     package = {
       specVersion = "1.10";
       identifier = { name = "network-mux"; version = "0.1.0.0"; };
