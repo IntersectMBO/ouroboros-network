@@ -1,4 +1,3 @@
-{-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE FlexibleContexts           #-}
@@ -107,7 +106,7 @@ data FetchClientStateVars m header =
 newFetchClientStateVars :: MonadSTM m => STM m (FetchClientStateVars m header)
 newFetchClientStateVars = do
     fetchClientInFlightVar <- newTVar initialPeerFetchInFlight
-    fetchClientStatusVar   <- newTVar (PeerFetchStatusReady Set.empty True)
+    fetchClientStatusVar   <- newTVar (PeerFetchStatusReady Set.empty)
     fetchClientRequestVar  <- newTFetchRequestVar
     return FetchClientStateVars {..}
 
@@ -159,8 +158,7 @@ data PeerFetchStatus header =
        -- | Communication with the peer is in a normal state, and the peer is
        -- considered ready to accept new requests.
        --
-       -- blocks in flight, whether the mini protocol is in the Idle state
-     | PeerFetchStatusReady (Set (Point header)) Bool
+     | PeerFetchStatusReady (Set (Point header))
   deriving (Eq, Show)
 
 
@@ -558,15 +556,8 @@ completeFetchBatch tracer inflightlimits range
               peerFetchReqsInFlight = peerFetchReqsInFlight inflight - 1
             }
       writeTVar fetchClientInFlightVar inflight'
-      currentStatus' <- readTVar fetchClientStatusVar >>= \case
-        PeerFetchStatusReady bs False
-          | Set.null bs
-            && 0 == peerFetchReqsInFlight inflight'
-          -> let status = (PeerFetchStatusReady Set.empty True)
-             in status <$ writeTVar fetchClientStatusVar status
-        currentStatus -> pure currentStatus
-
-      return (inflight', currentStatus')
+      currentStatus <- readTVar fetchClientStatusVar
+      return (inflight', currentStatus)
 
     traceWith tracer $
       CompletedFetchBatch
@@ -644,9 +635,7 @@ busyIfOverHighWatermark inflightlimits inflight
   | peerFetchBytesInFlight inflight >= inFlightBytesHighWatermark inflightlimits
   = PeerFetchStatusBusy
   | otherwise
-  = PeerFetchStatusReady
-      (peerFetchBlocksInFlight inflight)
-      (0 == peerFetchReqsInFlight inflight)
+  = PeerFetchStatusReady (peerFetchBlocksInFlight inflight)
 
 -- | Return 'PeerFetchStatusReady' if we're now under the low watermark.
 --
@@ -655,9 +644,7 @@ readyIfUnderLowWatermark :: PeerFetchInFlightLimits
                          -> PeerFetchStatus header
 readyIfUnderLowWatermark inflightlimits inflight
   | peerFetchBytesInFlight inflight <= inFlightBytesLowWatermark inflightlimits
-  = PeerFetchStatusReady
-      (peerFetchBlocksInFlight inflight)
-      (0 == peerFetchReqsInFlight inflight)
+  = PeerFetchStatusReady (peerFetchBlocksInFlight inflight)
   | otherwise
   = PeerFetchStatusBusy
 
