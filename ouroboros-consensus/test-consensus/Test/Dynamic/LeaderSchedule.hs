@@ -23,6 +23,7 @@ import           Ouroboros.Consensus.Protocol
 import           Ouroboros.Consensus.Util.Random
 
 import           Test.Dynamic.General
+import           Test.Dynamic.Network (MaybeForgeEBB (..))
 import           Test.Dynamic.Util
 import           Test.Dynamic.Util.NodeJoinPlan
 import           Test.Dynamic.Util.NodeTopology
@@ -83,7 +84,7 @@ prop_simple_leader_schedule_convergence
             (\nid -> protocolInfo
                        (ProtocolLeaderSchedule numCoreNodes nid
                                                params schedule))
-            testConfig seed
+            testConfig NothingForgeEBB seed
 
 {-------------------------------------------------------------------------------
   Dependent generation and shrinking of leader schedules

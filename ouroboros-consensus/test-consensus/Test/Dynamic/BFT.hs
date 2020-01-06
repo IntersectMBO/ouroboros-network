@@ -14,6 +14,7 @@ import           Ouroboros.Consensus.Protocol
 import           Ouroboros.Consensus.Util.Random
 
 import           Test.Dynamic.General
+import           Test.Dynamic.Network (MaybeForgeEBB (..))
 import           Test.Dynamic.Util
 
 import           Test.Consensus.BlockchainTime.SlotLengths ()
@@ -42,4 +43,4 @@ prop_simple_bft_convergence k
     testOutput =
         runTestNetwork
             (\nid -> protocolInfo (ProtocolMockBFT numCoreNodes nid k slotLengths))
-            testConfig seed
+            testConfig NothingForgeEBB seed

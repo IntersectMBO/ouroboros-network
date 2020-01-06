@@ -5,6 +5,7 @@
 {-# LANGUAGE LambdaCase              #-}
 {-# LANGUAGE MultiParamTypeClasses   #-}
 {-# LANGUAGE NamedFieldPuns          #-}
+{-# LANGUAGE PatternSynonyms         #-}
 {-# LANGUAGE RecordWildCards         #-}
 {-# LANGUAGE ScopedTypeVariables     #-}
 {-# LANGUAGE StandaloneDeriving      #-}
@@ -39,6 +40,7 @@ import           Control.Monad.Except
 import           Crypto.Random (MonadRandom)
 import           Data.Bimap (Bimap)
 import qualified Data.Bimap as Bimap
+import           Data.Proxy (Proxy (..))
 import qualified Data.Set as Set
 import           Data.Typeable (Typeable)
 import           Data.Word (Word64)
@@ -49,8 +51,10 @@ import qualified Cardano.Chain.Genesis as CC.Genesis
 import           Cardano.Crypto.DSIGN.Class
 import           Cardano.Prelude (NoUnexpectedThunks)
 
-import           Ouroboros.Network.Block (HasHeader (..), SlotNo (..))
-import           Ouroboros.Network.Point (WithOrigin (At))
+import           Ouroboros.Network.Block (pattern BlockPoint,
+                     pattern GenesisPoint, HasHeader (..), HeaderHash, Point,
+                     SlotNo (..))
+import           Ouroboros.Network.Point (WithOrigin (..))
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
@@ -60,6 +64,8 @@ import           Ouroboros.Consensus.NodeId (CoreNodeId (..))
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.PBFT.ChainState (PBftChainState)
 import qualified Ouroboros.Consensus.Protocol.PBFT.ChainState as CS
+import           Ouroboros.Consensus.Protocol.PBFT.ChainState.HeaderHashBytes
+                     (headerHashBytes)
 import           Ouroboros.Consensus.Protocol.PBFT.Crypto
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Orphans ()
@@ -91,6 +97,7 @@ instance (PBftCrypto c, Typeable toSign) => NoUnexpectedThunks (PBftFields c toS
 -- epoch boundary blocks (EBBs), which are unsigned. Of course the intention
 -- here is that 'headerPBftFields' will return 'Just' for regular blocks.
 class ( HasHeader hdr
+      , Serialise (HeaderHash hdr)
       , Signable (PBftDSIGN c) (OptSigned hdr)
       , BlockProtocol hdr ~ PBft cfg c
       ) => HeaderSupportsPBft cfg c hdr where
@@ -213,7 +220,7 @@ instance ( PBftCrypto c
       => OuroborosTag (PBft cfg c) where
   type ValidationErr (PBft cfg c) = PBftValidationErr c
   type CanValidate   (PBft cfg c) = HeaderSupportsPBft cfg c
-  type CanSelect     (PBft cfg c) = HasHeader
+  type CanSelect     (PBft cfg c) = HeaderSupportsPBft cfg c
   type NodeState     (PBft cfg c) = ()
 
   -- | We require two things from the ledger state:
@@ -244,7 +251,7 @@ instance ( PBftCrypto c
   applyChainState cfg@PBftNodeConfig{..} lv@(PBftLedgerView dms) (b :: hdr) chainState =
       case headerPBftFields pbftExtConfig b of
         Nothing -> do
-          return $! appendEBB cfg params (blockSlot b) chainState
+          return $! appendEBB cfg params b chainState
         Just (PBftFields{..}, signed) -> do
           -- Check that the issuer signature verifies, and that it's a delegate of a
           -- genesis key, and that genesis key hasn't voted too many times.
@@ -275,6 +282,22 @@ instance ( PBftCrypto c
   rewindChainState cfg = flip (rewind cfg params)
     where
       params = pbftWindowParams cfg
+
+  compareCandidates PBftNodeConfig{..} lHdr rHdr =
+      -- Prefer the highest block number, as it is a proxy for chain length
+      case blockNo lHdr `compare` blockNo rHdr of
+        LT -> LT
+        GT -> GT
+        -- If the block numbers are the same, check if one of them is an EBB.
+        -- An EBB has the same block number as the block before it, so the
+        -- chain ending with an EBB is actually longer than the one ending
+        -- with a regular block. Note that 'headerPBftFields' returns
+        -- 'Nothing' for an EBB.
+        EQ ->
+          let score hdr = case headerPBftFields pbftExtConfig hdr of
+                Nothing -> 1 :: Int   -- favor EBBs
+                Just{}  -> 0
+          in score lHdr `compare` score rHdr
 
 {-------------------------------------------------------------------------------
   Internal: thin wrapper on top of 'PBftChainState'
@@ -338,26 +361,32 @@ append PBftNodeConfig{..} PBftWindowParams{..} =
   where
     PBftParams{..} = pbftParams
 
-appendEBB :: PBftCrypto c
+appendEBB :: forall cfg c hdr.
+             (PBftCrypto c, HeaderSupportsPBft cfg c hdr)
           => NodeConfig (PBft cfg c)
           -> PBftWindowParams
-          -> SlotNo
+          -> hdr
           -> PBftChainState c -> PBftChainState c
-appendEBB PBftNodeConfig{..} PBftWindowParams{..} =
+appendEBB PBftNodeConfig{..} PBftWindowParams{..} b =
     CS.appendEBB pbftSecurityParam windowSize
+      (blockSlot b) (headerHashBytes (Proxy :: Proxy hdr) (blockHash b))
   where
     PBftParams{..} = pbftParams
 
-rewind :: PBftCrypto c
+rewind :: forall cfg c hdr.
+          (PBftCrypto c, HeaderSupportsPBft cfg c hdr)
        => NodeConfig (PBft cfg c)
        -> PBftWindowParams
-       -> WithOrigin SlotNo
+       -> Point hdr
        -> PBftChainState c
        -> Maybe (PBftChainState c)
-rewind PBftNodeConfig{..} PBftWindowParams{..} =
-    CS.rewind pbftSecurityParam windowSize
+rewind PBftNodeConfig{..} PBftWindowParams{..} p =
+    CS.rewind pbftSecurityParam windowSize p'
   where
     PBftParams{..} = pbftParams
+    p' = case p of
+      GenesisPoint    -> Origin
+      BlockPoint s hh -> At (s, headerHashBytes (Proxy :: Proxy hdr) hh)
 
 {-------------------------------------------------------------------------------
   Extract necessary context

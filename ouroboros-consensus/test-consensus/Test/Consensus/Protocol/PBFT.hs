@@ -2,6 +2,8 @@
 {-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE TypeFamilies               #-}
+
 module Test.Consensus.Protocol.PBFT (
     tests
     -- * Used in the roundtrip tests
@@ -12,7 +14,7 @@ import qualified Control.Exception as Exn
 import           Data.Coerce (coerce)
 import           Data.Functor ((<&>))
 import           Data.List (inits, tails)
-import qualified Data.Map.Strict as Map
+import           Data.Proxy (Proxy (..))
 import qualified Data.Sequence.Strict as Seq
 import           Data.Word
 
@@ -22,13 +24,14 @@ import           Test.Tasty.QuickCheck
 import           Cardano.Crypto.DSIGN
 import qualified Cardano.Prelude
 
-import           Ouroboros.Network.Block (SlotNo (..))
+import           Ouroboros.Network.Block (HeaderHash, SlotNo (..))
 import           Ouroboros.Network.Point (WithOrigin (..))
 
 import           Ouroboros.Consensus.Protocol.Abstract
-import           Ouroboros.Consensus.Protocol.PBFT.ChainState (EbbMap (..),
-                     PBftChainState)
+import           Ouroboros.Consensus.Protocol.PBFT.ChainState (EbbInfo (..),
+                     MaybeEbbInfo (..), PBftChainState)
 import qualified Ouroboros.Consensus.Protocol.PBFT.ChainState as CS
+import           Ouroboros.Consensus.Protocol.PBFT.ChainState.HeaderHashBytes
 import           Ouroboros.Consensus.Protocol.PBFT.Crypto
 import           Ouroboros.Consensus.Util (lastMaybe, repeatedly)
 
@@ -111,7 +114,7 @@ tests = testGroup "PBftChainState" $
 -- The test properties themselves focus on the state @csABb@ defined by:
 --
 -- > csAB       = appendInputs (inA <> inB) empty
--- > Just csABb = rewind (slotLatestInput (lastInput inA)) csAB
+-- > Just csABb = rewind (pointLatestInput (lastInput inA)) csAB
 --
 -- Segment A could be empty or have several times @k@ signed blocks interleaved
 -- with any number of EBBs. Segment B has @<= k@ signed blocks interleaved with
@@ -128,7 +131,7 @@ tests = testGroup "PBftChainState" $
 -- In particular, appending a sufficient prefix of segment C will always
 -- restore the invariants that were not ensured before PR #1307.
 --
--- * 'testChainRewind':
+-- * 'testChainRewindPoint':
 --
 -- Since @csABb@ is fully representative of a realistic state, we will test an
 -- arbitrary rewind from it.
@@ -158,9 +161,9 @@ data TestChainState = TestChainState {
     , testChainOldState      :: PBftChainState PBftMockCrypto
 
       -- | The slot of some input within segment A
-    , testChainRewind        :: WithOrigin SlotNo
+    , testChainRewindPoint   :: WithOrigin (SlotNo, HeaderHashBytes)
 
-      -- | The inputs in segment A occupying slots @> 'testChainRewind'@
+      -- | The inputs in segment A after 'testChainRewindPoint'
     , testChainRewoundInputs :: Inputs PBftMockCrypto
     }
   deriving (Show)
@@ -200,7 +203,7 @@ genTestChainState = do
     -- Generate all the inputs
 
     (inA, inB, inC) <- do
-        inA <- generateInputs genKey numSignersA (LatestInput Nothing)
+        inA <- generateInputs paramK paramN genKey numSignersA (LatestInput Nothing)
 
         -- Segment B must not begin with the same slot that A ended with,
         -- because rewinds can't split a slot and our tests focus on the result
@@ -212,8 +215,8 @@ genTestChainState = do
               where
                 tick (PBftEBB prev slot) = PBftEBB prev (succ slot)
 
-        inB <- generateInputs genKey numSignersB lastInputOfA'
-        inC <- generateInputs genKey (n + k)     (toLastInput inA)
+        inB <- generateInputs paramK paramN genKey numSignersB lastInputOfA'
+        inC <- generateInputs paramK paramN genKey (n + k)     (toLastInput inA)
 
         pure (inA, inB, inC)
 
@@ -230,7 +233,8 @@ genTestChainState = do
                    (signatureInputs inps)
                    (ebbInputs inps)
           where
-            inps = snd $ splitAtSigner (numSignersA .- ((n + k) .- numSignersB)) inA
+            inps =
+              snd $ splitAtSigner (numSignersA .- ((n + k) .- numSignersB)) inA
 
         -- the state before PR #1307 didn't retain as many signatures and
         -- didn't track EBBs at all
@@ -247,29 +251,26 @@ genTestChainState = do
       , choose (0, numSignersA) -- rollback that might fail (too far)
       ]
 
-    let (mbAPrefix, inSuffixA) = splitAtSigner (numSignersA .- numSignersSuffixA) inA
-        -- if the rollback succeeds, its new window ends with this signed slot
-        signedTarget = case mbAPrefix of
-                         Nothing     -> Origin
-                         Just (_, x) -> At $ CS.pbftSignerSlotNo x
+    let (mbAPrefix, inSuffixA) =
+          splitAtSigner (numSignersA .- numSignersSuffixA) inA
+        -- if the rollback succeeds, its new window ends with this signed point
+        signedPoint = case mbAPrefix of
+          Nothing     -> Origin
+          Just (_, x) ->
+            At (CS.pbftSignerSlotNo x, headerHashBytesInput (InputSigner x))
 
-    -- Pick a slot to rewind to
+    -- Pick a point to rewind to
     --
     -- appending the @rewoundInputs@ will undo the rewind to @rewindSlot@
-    (rewindSlot, rewoundInputs) <- elements $
+    (rewindPoint, rewoundInputs) <- elements $
         [ Exn.assert (unInputs inSuffixA == int <> tal) $
-          ( maybe signedTarget (At . slotInput) $ lastMaybe int
+          ( case lastMaybe int of
+              Nothing -> signedPoint
+              Just x  -> At (slotInput x, headerHashBytesInput x)
           , Inputs tal
           )
         | (int, tal) <-
             inits (unInputs inSuffixA) `zip` tails (unInputs inSuffixA)
-          -- this is ultimately picking a /slot/, so don't split between two
-          -- inputs that have the same slot
-        , case ( slotInput <$> lastMaybe int
-               , slotInput <$> Cardano.Prelude.head tal
-               ) of
-            (Just l, Just r) -> l /= r
-            _                -> True
         ]
 
     pure TestChainState {
@@ -281,7 +282,7 @@ genTestChainState = do
       , testChainInputsA       = inA
       , testChainInputsB       = inB
       , testChainInputsC       = inC
-      , testChainRewind        = rewindSlot
+      , testChainRewindPoint   = rewindPoint
       , testChainRewoundInputs = rewoundInputs
       }
 
@@ -296,13 +297,19 @@ genMockKey numKeys = VerKeyMockDSIGN <$> choose (1, numKeys)
 --
 -- POSTCONDITION The output contains exactly the specified number of
 -- 'InputSigner's.
+--
+-- POSTCONDITION The 'InputEBB's in the output are separated by at least @n +
+-- k@ signed blocks.
 generateInputs
   :: forall c.
-     Gen (PBftVerKeyHash c)
+     SecurityParam
+  -> CS.WindowSize
+  -> Gen (PBftVerKeyHash c)
   -> Word64
   -> LatestInput c
   -> Gen (Inputs c)
-generateInputs genKey = go []
+generateInputs paramK paramN genKey =
+    \n lastInput -> post <$> go [] n lastInput
   where
     go :: [Input c] -> Word64 -> LatestInput c -> Gen (Inputs c)
     go acc n lastInput = do
@@ -332,6 +339,23 @@ generateInputs genKey = go []
           Just inp@InputSigner{} -> succ $ slotInput inp
       key  <- genKey
       pure $ InputSigner $ CS.PBftSigner slot key
+
+    -- remove EBBs that come too soon
+    post :: Inputs c -> Inputs c
+    post = Inputs . go2 0 . unInputs
+      where
+        lim = n + k
+          where
+            CS.WindowSize n = paramN
+            SecurityParam k = paramK
+
+        go2 numSigned = \case
+          []       -> []
+          inp:inps -> case inp of
+            InputEBB{}
+              | numSigned < lim ->       go2 numSigned        inps
+              | otherwise       -> inp : go2 0                inps
+            InputSigner{}       -> inp : go2 (succ numSigned) inps
 
 {-------------------------------------------------------------------------------
   Labelling
@@ -413,7 +437,7 @@ prop_directABb TestChainState{..} =
                    (testChainInputsA <> testChainInputsB)
                    state0
         mbState2 = CS.rewind k n
-                     (slotLatestInput $ toLastInput testChainInputsA)
+                     (pointLatestInput $ toLastInput testChainInputsA)
                      state1
     in Just testChainState === mbState2
 
@@ -450,7 +474,7 @@ prop_rewindPreservesInvariant TestChainState{..} =
     let rewound = CS.rewind
                     testChainStateK
                     testChainStateN
-                    testChainRewind
+                    testChainRewindPoint
                     testChainState
     in case rewound of
          Nothing     -> label "rollback too far in the past" True
@@ -467,7 +491,7 @@ prop_rewindReappendId TestChainState{..} =
     let rewound = CS.rewind
                     testChainStateK
                     testChainStateN
-                    testChainRewind
+                    testChainRewindPoint
                     testChainState
     in case rewound of
          Nothing     -> label "rollback too far in the past" True
@@ -561,8 +585,9 @@ appendInput
   -> CS.WindowSize
   -> Input c
   -> CS.PBftChainState c -> CS.PBftChainState c
-appendInput k n = \case
-  InputEBB ebb       -> CS.appendEBB k n (pbftEbbSlotNo ebb)
+appendInput k n inp = case inp of
+  InputEBB{}         ->
+    CS.appendEBB k n (slotInput inp) (headerHashBytesInput inp)
   InputSigner signer -> CS.append k n signer
 
 appendInputs
@@ -573,7 +598,8 @@ appendInputs
   -> CS.PBftChainState c -> CS.PBftChainState c
 appendInputs k n = repeatedly (appendInput k n) . unInputs
 
-splitAtSigner :: Word64 -> Inputs c -> (Maybe (Inputs c, CS.PBftSigner c), Inputs c)
+splitAtSigner
+  :: Word64 -> Inputs c -> (Maybe (Inputs c, CS.PBftSigner c), Inputs c)
 splitAtSigner n (Inputs inps) =
     coerce $ splitAtJust prjSigner n inps
   where
@@ -607,10 +633,33 @@ fromInputs
   -> [PBftEBB]
      -- ^ determines 'CS.ebbs'
   -> CS.PBftChainState c
-fromInputs k n anchor signers ebbs =
-    CS.fromList k n (anchor, Seq.fromList signers, EbbMap m)
+fromInputs k n anchor signers ebbs0 =
+    CS.fromList k n (anchor, Seq.fromList signers, ebbs2)
   where
-    m = Map.fromList [ (slot, mSlot) | PBftEBB mSlot slot <- ebbs ]
+    ebbs1 =
+        [ mkEbbInfo slot mSlot
+        | PBftEBB mSlot slot <- ebbs0
+        , At slot == anchor || mSlot >= anchor
+        ]
+    ebbs2 = case lastMaybe ebbs1 of
+      Nothing -> NothingEbbInfo
+      Just ei -> JustEbbInfo ei
+
+    mkEbbInfo slot mSlot = EbbInfo
+      { eiSlot      = slot
+      , eiHashBytes = headerHashBytesInput $ InputEBB $ PBftEBB mSlot slot
+      , eiPrevSlot  = mSlot
+      }
+
+type instance HeaderHash (Input c) = (Bool, SlotNo)
+
+headerHashBytesInput :: forall c. Input c -> HeaderHashBytes
+headerHashBytesInput inp =
+    headerHashBytes (Proxy :: Proxy (Input c)) (flag, slotInput inp)
+  where
+    flag = case inp of
+      InputEBB{}    -> True
+      InputSigner{} -> False
 
 {-------------------------------------------------------------------------------
   "The previous input"
@@ -623,10 +672,10 @@ toLastInput :: Inputs c -> LatestInput c
 toLastInput = LatestInput . lastMaybe . unInputs
 
 -- | The slot of the latest block
-slotLatestInput :: LatestInput c -> WithOrigin SlotNo
-slotLatestInput (LatestInput mbInp) = case mbInp of
+pointLatestInput :: LatestInput c -> WithOrigin (SlotNo, HeaderHashBytes)
+pointLatestInput (LatestInput mbInp) = case mbInp of
   Nothing  -> Origin
-  Just inp -> At $ slotInput inp
+  Just inp -> At (slotInput inp, headerHashBytesInput inp)
 
 -- | The slot of the latest /signed/ block
 signedSlotLatestInput :: LatestInput c -> WithOrigin SlotNo

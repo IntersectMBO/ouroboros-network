@@ -26,6 +26,7 @@ import qualified Cardano.Crypto as Crypto
 import           Ouroboros.Network.Block (HasHeader (..), SlotNo (..),
                      genesisPoint)
 
+import           Ouroboros.Consensus.Block (getHeader)
 import           Ouroboros.Consensus.Ledger.Byron (ByronBlock,
                      ByronConsensusProtocol, ByronHash)
 import qualified Ouroboros.Consensus.Ledger.Byron as Byron
@@ -263,7 +264,7 @@ withImmDB fp cfg epochInfo = ImmDB.withImmDB args
         , immEpochInfo      = epochInfo
         , immHashInfo       = nodeHashInfo            (Proxy @ByronBlock)
         , immValidation     = ValidateMostRecentEpoch
-        , immIsEBB          = nodeIsEBB
+        , immIsEBB          = nodeIsEBB . getHeader
         , immCheckIntegrity = nodeCheckIntegrity      cfg
         , immAddHdrEnv      = nodeAddHeaderEnvelope   (Proxy @ByronBlock)
         }

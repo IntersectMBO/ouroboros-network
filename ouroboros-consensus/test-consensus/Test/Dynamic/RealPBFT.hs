@@ -9,11 +9,13 @@ module Test.Dynamic.RealPBFT (
     tests
   ) where
 
+import           Data.Coerce (coerce)
 import           Data.Foldable (find)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
-import           Data.Maybe (fromJust)
+import           Data.Maybe (fromJust, mapMaybe)
 import           Data.Time (Day (..), UTCTime (..))
+import           Data.Word (Word64)
 
 import           Numeric.Search.Range (searchFromTo)
 import           Test.QuickCheck
@@ -24,24 +26,31 @@ import           Ouroboros.Network.Block (SlotNo (..))
 import           Ouroboros.Network.MockChain.Chain (Chain)
 import qualified Ouroboros.Network.MockChain.Chain as Chain
 
+import           Ouroboros.Consensus.Block (getHeader)
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.BlockchainTime.Mock
-import           Ouroboros.Consensus.Ledger.Byron (ByronBlock)
+import           Ouroboros.Consensus.Ledger.Byron (ByronBlock, forgeEBB)
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Node.ProtocolInfo.Byron (plcCoreNodeId)
+import           Ouroboros.Consensus.Node.Run.Abstract (nodeIsEBB)
 import           Ouroboros.Consensus.NodeId
 import           Ouroboros.Consensus.Protocol
+import           Ouroboros.Consensus.Util.Condense (condense)
 import           Ouroboros.Consensus.Util.Random
+
+import           Ouroboros.Storage.Common (EpochNo (..))
 
 import qualified Cardano.Chain.Common as Common
 import qualified Cardano.Chain.Delegation as Delegation
 import qualified Cardano.Chain.Genesis as Genesis
+import           Cardano.Chain.ProtocolConstants (kEpochSlots)
+import           Cardano.Chain.Slotting (unEpochSlots)
 import qualified Cardano.Chain.Update as Update
 import qualified Cardano.Crypto as Crypto
 import qualified Test.Cardano.Chain.Genesis.Dummy as Dummy
 
 import           Test.Dynamic.General
-import           Test.Dynamic.Network (NodeOutput (..))
+import           Test.Dynamic.Network (MaybeForgeEBB (..), NodeOutput (..))
 import qualified Test.Dynamic.Ref.RealPBFT as Ref
 import           Test.Dynamic.Util
 import           Test.Dynamic.Util.NodeJoinPlan
@@ -51,8 +60,10 @@ import           Test.Util.Orphans.Arbitrary ()
 import           Test.Util.Shrink (andId, dropId)
 
 tests :: TestTree
-tests = testGroup "Dynamic chain generation"
-    [ localOption (QuickCheckTests 10) $   -- each takes about 0.5 seconds!
+tests = testGroup "Dynamic chain generation" $
+    [ testProperty "trivial join plan is considered deterministic" $
+          prop_deterministicPlan
+    , localOption (QuickCheckTests 10) $   -- each takes about 0.5 seconds!
       testProperty "check Real PBFT setup" $
         \numCoreNodes ->
           forAll (elements (enumCoreNodes numCoreNodes)) $ \coreNodeId ->
@@ -66,7 +77,7 @@ tests = testGroup "Dynamic chain generation"
       testProperty "addressed by InvalidRollForward exception (PR #773)" $
           let ncn = NumCoreNodes 3
           in
-          prop_simple_real_pbft_convergence TestConfig
+          prop_simple_real_pbft_convergence (SecurityParam 10) TestConfig
             { numCoreNodes = ncn
             , numSlots = NumSlots 24
             , nodeJoinPlan = NodeJoinPlan $ Map.fromList
@@ -86,6 +97,7 @@ tests = testGroup "Dynamic chain generation"
       -- slot 0 (even though it's already there). That rewind fails if EBBs
       -- don't affect the PBFT chain state, since its chain state is empty.
       prop_simple_real_pbft_convergence
+        (SecurityParam 10)
         TestConfig { numCoreNodes = ncn
                    , numSlots     = NumSlots 2
                    , nodeJoinPlan = NodeJoinPlan (Map.fromList [(CoreNodeId 0,SlotNo 0),(CoreNodeId 1,SlotNo 1)])
@@ -99,6 +111,7 @@ tests = testGroup "Dynamic chain generation"
       -- Same as above, except node 0 gets to forge an actual block before node
       -- 1 tells it to rewind to the EBB.
       prop_simple_real_pbft_convergence
+        (SecurityParam 10)
         TestConfig { numCoreNodes = ncn
                    , numSlots     = NumSlots 4
                    , nodeJoinPlan = NodeJoinPlan (Map.fromList [(CoreNodeId 0,SlotNo {unSlotNo = 0}),(CoreNodeId 1,SlotNo {unSlotNo = 3})])
@@ -107,67 +120,90 @@ tests = testGroup "Dynamic chain generation"
                    }
         Seed {getSeed = (16817746570690588019,3284322327197424879,14951803542883145318,5227823917971823767,14093715642382269482)}
     , testProperty "simple Real PBFT convergence" $
-        forAllShrink genRealPBFTTestConfig shrinkRealPBFTTestConfig $ \testConfig ->
+        forAll (SecurityParam <$> elements [5, 10]) $ \k ->
+        forAllShrink (genRealPBFTTestConfig k) shrinkRealPBFTTestConfig $ \testConfig ->
         forAll arbitrary $ \seed ->
-        prop_simple_real_pbft_convergence testConfig seed
+        prop_simple_real_pbft_convergence k testConfig seed
     ]
   where
     defaultSlotLengths :: SlotLengths
     defaultSlotLengths = singletonSlotLengths (SlotLength 1)
+
+prop_deterministicPlan :: NumSlots -> NumCoreNodes -> Property
+prop_deterministicPlan numSlots numCoreNodes =
+  property $
+  Ref.deterministicPlan numSlots (trivialNodeJoinPlan numCoreNodes)
 
 prop_setup_coreNodeId ::
      NumCoreNodes
   -> CoreNodeId
   -> Property
 prop_setup_coreNodeId numCoreNodes coreNodeId =
-    case mkProtocolRealPBFT numCoreNodes coreNodeId genesisConfig genesisSecrets of
+    case mkProtocolRealPBFT params coreNodeId genesisConfig genesisSecrets of
       ProtocolRealPBFT _cfg _th _pv _swv (Just plc) ->
           coreNodeId === plcCoreNodeId plc
       _ ->
           counterexample "mkProtocolRealPBFT did not use ProtocolRealPBFT" $
           property False
   where
+    params :: PBftParams
+    params = realPBftParams dummyK numCoreNodes
+    dummyK = SecurityParam 10   -- not really used
+
     genesisConfig  :: Genesis.Config
     genesisSecrets :: Genesis.GeneratedSecrets
-    (genesisConfig, genesisSecrets) = generateGenesisConfig numCoreNodes
+    (genesisConfig, genesisSecrets) = generateGenesisConfig params
 
-prop_simple_real_pbft_convergence :: TestConfig
+prop_simple_real_pbft_convergence :: SecurityParam
+                                  -> TestConfig
                                   -> Seed
                                   -> Property
 prop_simple_real_pbft_convergence
-  testConfig@TestConfig{numCoreNodes, numSlots} seed =
+  k testConfig@TestConfig{numCoreNodes, numSlots} seed =
     prop_general k
         testConfig
         (Just $ roundRobinLeaderSchedule numCoreNodes numSlots)
         testOutput
     .&&. not (all Chain.null finalChains)
+    .&&. conjoin (map (hasAllEBBs k numSlots) finalChains)
   where
-    k =
-      (SecurityParam . Common.unBlockCount) $
-      (Genesis.gdK . Genesis.configGenesisData) $
-      genesisConfig
-
     testOutput =
         runTestNetwork
             (\nid -> protocolInfo
-                       (mkProtocolRealPBFT numCoreNodes nid
+                       (mkProtocolRealPBFT params nid
                                            genesisConfig genesisSecrets))
-            testConfig seed
+            testConfig (JustForgeEBB forgeEBB) seed
 
     finalChains :: [Chain ByronBlock]
     finalChains = Map.elems $ nodeOutputFinalChain <$> testOutputNodes testOutput
 
+    params :: PBftParams
+    params = realPBftParams k numCoreNodes
+
     genesisConfig  :: Genesis.Config
     genesisSecrets :: Genesis.GeneratedSecrets
-    (genesisConfig, genesisSecrets) = generateGenesisConfig numCoreNodes
+    (genesisConfig, genesisSecrets) = generateGenesisConfig params
 
+hasAllEBBs :: SecurityParam -> NumSlots -> Chain ByronBlock -> Property
+hasAllEBBs k (NumSlots t) c =
+    counterexample ("Missing or unexpected EBBs in " <> condense c) $
+    actual === expected
+  where
+    expected :: [EpochNo]
+    expected = coerce [0 .. hi]
+      where
+        hi :: Word64
+        hi = if t < 1 then 0 else fromIntegral (t - 1) `div` denom
+        denom = unEpochSlots $ kEpochSlots $ coerce k
 
-mkProtocolRealPBFT :: NumCoreNodes
+    actual   = mapMaybe (nodeIsEBB . getHeader) $ Chain.toOldestFirst c
+
+mkProtocolRealPBFT :: PBftParams
                    -> CoreNodeId
                    -> Genesis.Config
                    -> Genesis.GeneratedSecrets
                    -> Protocol ByronBlock
-mkProtocolRealPBFT numCoreNodes (CoreNodeId i)
+mkProtocolRealPBFT params (CoreNodeId i)
                    genesisConfig genesisSecrets =
     ProtocolRealPBFT
       genesisConfig
@@ -183,7 +219,7 @@ mkProtocolRealPBFT numCoreNodes (CoreNodeId i)
           dlgKey
           dlgCert
 
-    PBftParams{pbftSignatureThreshold} = realPBftParams numCoreNodes
+    PBftParams{pbftSignatureThreshold} = params
 
     dlgKey :: Crypto.SigningKey
     dlgKey = fromJust $
@@ -202,31 +238,32 @@ mkProtocolRealPBFT numCoreNodes (CoreNodeId i)
   Generating the genesis configuration
 -------------------------------------------------------------------------------}
 
-realPBftParams :: NumCoreNodes -> PBftParams
-realPBftParams numCoreNodes = PBftParams
+realPBftParams :: SecurityParam -> NumCoreNodes -> PBftParams
+realPBftParams paramK numCoreNodes = PBftParams
   { pbftNumNodes           = n
-  , pbftSecurityParam      = SecurityParam k
-  , pbftSignatureThreshold = (1 / n) + (1 / k)
+  , pbftSecurityParam      = paramK
+  , pbftSignatureThreshold = (1 / n) + (1 / k) + epsilon
     -- crucially: @floor (k * t) >= ceil (k / n)@
   , pbftSlotLength         = slotLengthFromSec 20
   }
     where
+      epsilon = 1/10000   -- avoid problematic floating point round-off
+
       n :: Num a => a
       n = fromIntegral x where NumCoreNodes x = numCoreNodes
 
       k :: Num a => a
-      k = 10
+      k = fromIntegral x where SecurityParam x = paramK
 
 -- Instead of using 'Dummy.dummyConfig', which hard codes the number of rich
 -- men (= CoreNodes for us) to 4, we generate a dummy config with the given
 -- number of rich men.
-generateGenesisConfig :: NumCoreNodes -> (Genesis.Config, Genesis.GeneratedSecrets)
-generateGenesisConfig numCoreNodes =
+generateGenesisConfig :: PBftParams -> (Genesis.Config, Genesis.GeneratedSecrets)
+generateGenesisConfig params =
     either (error . show) id $ Genesis.generateGenesisConfig startTime spec
   where
     startTime = UTCTime (ModifiedJulianDay 0) 0
-    NumCoreNodes n = numCoreNodes
-    PBftParams{pbftSecurityParam} = realPBftParams numCoreNodes
+    PBftParams{pbftNumNodes, pbftSecurityParam} = params
 
     spec :: Genesis.GenesisSpec
     spec = Dummy.dummyGenesisSpec
@@ -234,7 +271,7 @@ generateGenesisConfig numCoreNodes =
         { Genesis.giTestBalance =
             (Genesis.giTestBalance Dummy.dummyGenesisInitializer)
               -- The nodes are the richmen
-              { Genesis.tboRichmen = fromIntegral n }
+              { Genesis.tboRichmen = fromIntegral pbftNumNodes }
         }
       , Genesis.gsK = Common.BlockCount $ maxRollbacks pbftSecurityParam
       }
@@ -258,7 +295,21 @@ genRealPBFTNodeJoinPlan :: PBftParams -> NumSlots -> Gen NodeJoinPlan
 genRealPBFTNodeJoinPlan params numSlots@(NumSlots t)
   | n < 0 || t < 1 = error $ "Cannot generate RealPBFT NodeJoinPlan: "
     ++ show (params, numSlots)
-  | otherwise      = go (NodeJoinPlan Map.empty) Ref.emptyState
+  | otherwise      =
+    go (NodeJoinPlan Map.empty) Ref.emptyState
+      `suchThat` Ref.deterministicPlan numSlots
+        -- This suchThat might loop a few times, but it should always
+        -- eventually succeed, since the plan where all nodes join immediately
+        -- satisifies it.
+        --
+        -- In a run of 7000 successful RealPBFT tests, this 'suchThat' retried:
+        --
+        -- 486 retried once
+        -- 100 retried twice
+        -- 10 retried 3 times
+        -- 4 retried 4 times
+        -- 4 retried 5 times
+        -- 1 retried 6 times
   where
     PBftParams{pbftNumNodes} = params
     n                        = fromIntegral pbftNumNodes
@@ -326,12 +377,12 @@ genRealPBFTNodeJoinPlan params numSlots@(NumSlots t)
             Nothing             -> 0
             Just (CoreNodeId h) -> succ h
 
-genRealPBFTTestConfig :: Gen TestConfig
-genRealPBFTTestConfig = do
+genRealPBFTTestConfig :: SecurityParam -> Gen TestConfig
+genRealPBFTTestConfig k = do
     numCoreNodes <- arbitrary
     numSlots     <- arbitrary
 
-    let params = realPBftParams numCoreNodes
+    let params = realPBftParams k numCoreNodes
     nodeJoinPlan <- genRealPBFTNodeJoinPlan params numSlots
     nodeTopology <- genNodeTopology numCoreNodes
 

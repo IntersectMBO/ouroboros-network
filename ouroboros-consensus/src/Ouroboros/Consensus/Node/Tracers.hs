@@ -103,8 +103,12 @@ showTracers tr = Tracers
 
 -- | Trace the forging of a block as a slot leader.
 data TraceForgeEvent blk tx
+  -- | The node will soon forge; it is about to read its transactions and
+  -- current DB.
+  = TraceForgeAboutToLead SlotNo
+
   -- | The forged block and at which slot it was forged.
-  = TraceForgeEvent SlotNo blk
+  | TraceForgeEvent SlotNo blk
 
   -- | We should have produced a block, but didn't, due to too many missing
   -- blocks between the tip of our chain and the current slot

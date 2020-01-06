@@ -329,10 +329,10 @@ chainSyncClient mkPipelineDecision0 tracer cfg btime
         -- it is followed by rolling forward again), but we need some
         -- guarantees that the ChainSync protocol /does/ in fact give us a
         -- switch-to-fork instead of a true rollback.
-        (theirFrag, theirChainState) <-
-          case (,) <$> AF.rollback (castPoint intersection) ourFrag
-                   <*> rewindChainState cfg ourChainState (pointSlot intersection)
-          of
+        (theirFrag, theirChainState) <- do
+          let i = castPoint intersection
+          case (,) <$> AF.rollback i ourFrag
+                   <*> rewindChainState cfg ourChainState i of
             Just (c, d) -> return (c, d)
             -- The @intersection@ is not on the candidate chain, even though
             -- we sent only points from the candidate chain to find an
@@ -634,10 +634,10 @@ chainSyncClient mkPipelineDecision0 tracer cfg btime
                    , theirChainState
                    , ourTip
                    } -> traceException $ do
-      (theirFrag', theirChainState') <-
-        case (,) <$> AF.rollback (castPoint intersection) theirFrag
-                 <*> rewindChainState cfg theirChainState (pointSlot intersection)
-        of
+      (theirFrag', theirChainState') <- do
+        let i = castPoint intersection
+        case (,) <$> AF.rollback i theirFrag
+                 <*> rewindChainState cfg theirChainState i of
           Just (c, d) -> return (c,d)
           -- Remember that we use our current chain fragment as the starting
           -- point for the candidate's chain. Our fragment contained @k@

@@ -17,6 +17,7 @@ import           Control.Monad.Except (runExcept)
 import qualified Data.Binary.Get as Get
 import qualified Data.Binary.Put as Put
 import qualified Data.ByteString.Lazy as Lazy
+import qualified Data.ByteString.Lazy.Char8 as Lazy8
 import qualified Data.Sequence.Strict as Seq
 
 import           Cardano.Binary (fromCBOR, toCBOR)
@@ -27,18 +28,20 @@ import           Cardano.Chain.Slotting (EpochSlots (..))
 import qualified Cardano.Chain.Update as CC.Update
 import           Cardano.Crypto (ProtocolMagicId (..))
 
-import           Ouroboros.Network.Block (HeaderHash)
+import           Ouroboros.Network.Block (HeaderHash, SlotNo)
 import           Ouroboros.Network.Point (WithOrigin (At))
 
-import           Ouroboros.Consensus.Block (Header)
+import           Ouroboros.Consensus.Block (BlockProtocol, Header)
 import           Ouroboros.Consensus.Ledger.Byron
 import           Ouroboros.Consensus.Ledger.Byron.Auxiliary
 import qualified Ouroboros.Consensus.Ledger.Byron.DelegationHistory as DH
 import           Ouroboros.Consensus.Mempool.API (ApplyTxErr)
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Protocol
-import           Ouroboros.Consensus.Protocol.Abstract (SecurityParam (..))
+import           Ouroboros.Consensus.Protocol.Abstract (ChainState,
+                     SecurityParam (..))
 import qualified Ouroboros.Consensus.Protocol.PBFT.ChainState as CS
+import           Ouroboros.Consensus.Protocol.PBFT.ChainState.HeaderHashBytes
 
 import           Ouroboros.Storage.ImmutableDB (BinaryInfo (..), HashInfo (..))
 
@@ -46,6 +49,7 @@ import           Test.QuickCheck
 import           Test.QuickCheck.Hedgehog (hedgehog)
 import           Test.Tasty
 import           Test.Tasty.Golden
+import           Test.Tasty.HUnit
 import           Test.Tasty.QuickCheck
 
 import qualified Test.Cardano.Chain.Block.Gen as CC
@@ -85,6 +89,9 @@ tests = testGroup "Byron"
       -- Note that for most Byron types, we simply wrap the en/decoders from
       -- cardano-ledger, which already has golden tests for them.
       [ test_golden_ChainState
+      , test_golden_ChainState_backwardsCompat_version0
+      , test_golden_ChainState_backwardsCompat_version1
+      , test_golden_ChainState_backwardsCompat_version2
       , test_golden_LedgerState
       , test_golden_GenTxId
       ]
@@ -219,22 +226,64 @@ prop_byronHashInfo_hashSize h =
   Golden tests
 -------------------------------------------------------------------------------}
 
+-- | Note that we must use the same value for the 'SecurityParam' as for the
+-- 'CS.WindowSize', because 'decodeByronChainState' only takes the
+-- 'SecurityParam' and uses it as the basis for the 'CS.WindowSize'.
+secParam :: SecurityParam
+secParam = SecurityParam 2
+
+windowSize :: CS.WindowSize
+windowSize = CS.WindowSize 2
+
+exampleChainStateWithoutEBB, exampleChainStateWithEBB :: ChainState (BlockProtocol ByronBlock)
+(exampleChainStateWithoutEBB, exampleChainStateWithEBB) =
+    (withoutEBB, withEBB)
+  where
+    signers = map (`CS.PBftSigner` CC.exampleKeyHash) [1..4]
+
+    withoutEBB = CS.fromList
+      secParam
+      windowSize
+      (At 2, Seq.fromList signers, CS.NothingEbbInfo)
+
+    -- info about an arbitrary hypothetical EBB
+    exampleEbbSlot            :: SlotNo
+    exampleEbbHeaderHashBytes :: HeaderHashBytes
+    exampleEbbSlot            = 6
+    exampleEbbHeaderHashBytes = mkHeaderHashBytesForTestingOnly
+                                  (Lazy8.pack "test_golden_ChainState6")
+
+    withEBB = CS.appendEBB secParam windowSize
+                exampleEbbSlot exampleEbbHeaderHashBytes
+                withoutEBB
+
 test_golden_ChainState :: TestTree
 test_golden_ChainState = goldenTestCBOR
     "ChainState"
     encodeByronChainState
-    exampleChainState
-    "test-consensus/golden/cbor/byron/ChainState"
-  where
-    exampleChainState = CS.appendEBB secParam windowSize 6 $
-      CS.fromList
-        secParam
-        windowSize
-        (At 3, Seq.fromList signers, CS.EbbMap mempty)
+    exampleChainStateWithEBB
+    "test-consensus/golden/cbor/byron/ChainState2"
 
-    secParam = SecurityParam 2
-    windowSize = CS.WindowSize 3
-    signers = map (`CS.PBftSigner` CC.exampleKeyHash) [1..5]
+test_golden_ChainState_backwardsCompat_version0 :: TestTree
+test_golden_ChainState_backwardsCompat_version0 =
+    testCase "ChainState version 0" $ goldenTestCBORBackwardsCompat
+      (decodeByronChainState secParam)
+      exampleChainStateWithoutEBB
+      "test-consensus/golden/cbor/byron/ChainState0"
+
+test_golden_ChainState_backwardsCompat_version1 :: TestTree
+test_golden_ChainState_backwardsCompat_version1 =
+    testCase "ChainState version 1" $ goldenTestCBORBackwardsCompat
+      (decodeByronChainState secParam)
+      exampleChainStateWithoutEBB
+      "test-consensus/golden/cbor/byron/ChainState1"
+
+test_golden_ChainState_backwardsCompat_version2 :: TestTree
+test_golden_ChainState_backwardsCompat_version2 =
+    testCase "ChainState version 2" $ goldenTestCBORBackwardsCompat
+      (decodeByronChainState secParam)
+      exampleChainStateWithEBB
+      "test-consensus/golden/cbor/byron/ChainState2"
 
 test_golden_LedgerState :: TestTree
 test_golden_LedgerState = goldenTestCBOR
@@ -266,6 +315,25 @@ goldenTestCBOR name enc a path =
     goldenVsString name path (return bs)
   where
     bs = toLazyByteString (enc a)
+
+-- | Check whether we can successfully decode the contents of the given file.
+-- This file will typically contain an older serialisation format.
+goldenTestCBORBackwardsCompat
+  :: (Eq a, Show a)
+  => (forall s. Decoder s a)
+  -> a
+  -> FilePath
+  -> Assertion
+goldenTestCBORBackwardsCompat dec a path = do
+    bytes <- Lazy.readFile path
+    case deserialiseFromBytes dec bytes of
+      Left failure
+        -> assertFailure (show failure)
+      Right (leftover, a')
+        | Lazy.null leftover
+        -> a' @?= a
+        | otherwise
+        -> assertFailure $ "Left-over bytes: " <> show leftover
 
 {-------------------------------------------------------------------------------
   Integrity

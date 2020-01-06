@@ -4,6 +4,7 @@
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase                 #-}
+{-# LANGUAGE MultiWayIf                 #-}
 {-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE StandaloneDeriving         #-}
@@ -26,7 +27,8 @@ module Ouroboros.Consensus.Protocol.PBFT.ChainState (
   , countSignedBy
   , lastSignedSlot
     -- * Support for tests
-  , EbbMap (..)
+  , MaybeEbbInfo (..)
+  , EbbInfo (..)
   , PBftSigner(..)
   , invariant
   , fromList
@@ -59,6 +61,7 @@ import           Ouroboros.Network.Point (WithOrigin (..), withOriginFromMaybe,
                      withOriginToMaybe)
 
 import           Ouroboros.Consensus.Protocol.Abstract
+import           Ouroboros.Consensus.Protocol.PBFT.ChainState.HeaderHashBytes
 import           Ouroboros.Consensus.Protocol.PBFT.Crypto
 import           Ouroboros.Consensus.Util (repeatedly)
 
@@ -137,34 +140,48 @@ data PBftChainState c = PBftChainState {
       -- | Cached counts of the signatures in the window
     , counts     :: !(Map (PBftVerKeyHash c) Word64)
 
-      -- | Map from slots of relevant epoch boundary blocks (EBBs) to signed
-      -- slots
+      -- | Info about a relevant EBB, if any
       --
       -- EBBs are not signed, so the 'preAnchor', 'postAnchor', 'preWindow',
       -- and 'postWindow' fields are unaffected by EBBs. However, EBBs must
-      -- also be valid targets for 'rewind', so this field maps each slot that
+      -- also be valid targets for 'rewind', so this field maps a slot that
       -- contains an EBB to the preceding signed slot, /if/ that signed slot is
       -- still a valid target for 'rewind'.
       --
-      -- See INVARIANTs on 'EbbMap'.
+      -- By assumption, there can be at most one EBB relevant to the @n + k@
+      -- window. Current choices that justify this assumption:
       --
-      -- INVARIANT For all @(ebbSlot, mSlot)@ in @'ebbs' (cs :: 'ChainState')@,
+      --   * The real nodes currently pervasively require that every chain
+      --     includes at least @k@ signed blocks in every span of @2k@ slots.
       --
-      --  * @mSlot >= anchorSlot cs@; see 'pruneEBBsLT'
+      --   * The real nodes are currently configured such that epochs to have a
+      --     duration of @10k@ slots (so EBBs are @10k@ slots apart).
       --
-      --  * @'At' ebbSlot <= tgt@ if @cs@ is the result of a 'rewind' to @tgt@;
+      --   * The PBFT window size @n@ is currently @k@.
+      --
+      --   * Thus we crucially have that @n + k < 10k@.
+      --
+      -- See INVARIANTs on 'MaybeEbbInfo'.
+      --
+      -- INVARIANT For all @EbbInfo{eiSlot, eiPrevSlot)@ in @'ebbs' (cs ::
+      -- 'ChainState')@,
+      --
+      --  * @eiPrevSlot >= anchorSlot cs@ or @At eiSlot == anchorSlot cs@; see
+      --    'pruneEBBsLT'
+      --
+      --  * @'At' eiSlot <= tgt@ if @cs@ is the result of a 'rewind' to @tgt@;
       --    see 'pruneEBBsGT'
       --
-      --  * @and [ At s <= mSlot | s <- precedingSignedSlots ]@
+      --  * @and [ At s <= eiPrevSlot | s <- precedingSignedSlots ]@
       --
-      --  * @'rewind' k n ('At' ebbSlot) cs = 'rewind' k n mSlot cs@
+      --  * @'rewind' k n ('At' eiSlot) cs = 'rewind' k n eiPrevSlot cs@
       --
       --   where
       --
-      --  * @precedingSignedSlots = filter (< ebbSlot) signedSlots@
+      --  * @precedingSignedSlots = filter (< eiSlot) signedSlots@
       --
       --  * @signedSlots = 'pbftSignerSlotNo' <$> ('preAnchor' <> 'postAnchor')@
-    , ebbs       :: !EbbMap
+    , ebbs       :: !MaybeEbbInfo
     }
   deriving (Generic)
 
@@ -210,7 +227,8 @@ invariant (SecurityParam k)
     unless (computeCounts inWindow == counts) $
       failure "Cached counts incorrect"
 
-    unless (allEbbs $ \_ mSlot -> mSlot >= anchorSlot st) $
+    unless (allEbbs $ \slot mSlot -> At slot == anchorSlot st ||
+                                     mSlot >= anchorSlot st) $
       failure "EBB mapped to slot before anchor"
 
     unless (allEbbs $ \slot mSlot ->
@@ -222,21 +240,16 @@ invariant (SecurityParam k)
            ) $
       failure "EBB does not map to the preceding signature"
 
-    -- 'EbbMap''s "Key greater"
+    -- 'MaybeEbbInfo''s "Key greater"
     unless (allEbbs $ \slot mSlot -> At slot > mSlot) $
       failure "EBB mapped to a simultaneous or future slot"
-
-    -- 'EbbMap''s "Non-descending"
-    unless (let nonDescending es = and $ zipWith (<=) es (tail es)
-            in nonDescending $ map snd $ Map.toAscList $ unEbbMap ebbs) $
-      failure $ "EBB mappings are not non-descending"
   where
     failure :: String -> Except String ()
     failure err = throwError $ err ++ ": " ++ show st
 
-    allEbbs p =
-      Map.null $
-      Map.filterWithKey (\slot mSlot -> not (p slot mSlot)) (unEbbMap ebbs)
+    allEbbs p = case ebbs of
+      NothingEbbInfo          -> True
+      JustEbbInfo EbbInfo{..} -> p eiSlot eiPrevSlot
 
 -- | The 'PBftChainState' tests don't rely on this flag but check the
 -- invariant manually. This flag is here so that the invariant checks could be
@@ -353,15 +366,15 @@ append :: forall c. PBftCrypto c
        -> PBftChainState c -> PBftChainState c
 append k n signer@(PBftSigner _ gk) PBftChainState{..} =
     assertInvariant k n $
+    pruneEBBsLT $
     PBftChainState {
         preAnchor  = preAnchor'
       , postAnchor = postAnchor'
       , preWindow  = preWindow'
       , inWindow   = inWindow'
       , counts     = updateCounts counts
-        -- NOTE: 'pruneEBBsLT' is inlined here to avoid a strange space leak
-        -- that also goes away with @-O0@, see #1356.
-      , ebbs       = EbbMap $ Map.filter (>= anchorSlot') (unEbbMap ebbs)
+        -- Will be pruned by the enclosing call to 'pruneEBBsLT'
+      , ebbs       = ebbs
       }
   where
     (preAnchor', postAnchor') =
@@ -382,19 +395,19 @@ append k n signer@(PBftSigner _ gk) PBftChainState{..} =
           , incrementKey gk
           )
 
-    anchorSlot' = case preAnchor' of
-      _ :|> anchorSigner -> At (pbftSignerSlotNo anchorSigner)
-      _otherwise         -> Origin
-
 -- | Rewind the state to the specified slot
 --
 -- This matches the semantics of 'rewindChainState' in 'OuroborosTag', in that
--- this should be the state at the /end/ of the specified slot (i.e., after the
--- block in that slot, if any, has been applied).
+-- this should be the state after the given point.
 --
--- NOTE: It only makes sense to rewind to a slot containing a block that we have
--- previously applied (the "genesis block" can be understood as having been
--- implicitly applied).
+-- NOTE: It only makes sense to rewind to a slot containing a block that we
+-- have previously applied (the "genesis block" can be understood as having
+-- been implicitly applied). HOWEVER, this function does not check this
+-- precondition: it only uses the provided header hash to check if the
+-- requested point is an EBB that was previously applied. If the header hash is
+-- just random bytes, then the function will assume the target is a signed
+-- block in the slot, without trying to confirm the signed block's header hash
+-- matches that of the request.
 --
 -- In addition to preserving the invariant, we also have the guarantee that
 -- rolling back to a point (within @k@) and then reapplying the blocks that were
@@ -402,22 +415,25 @@ append k n signer@(PBftSigner _ gk) PBftChainState{..} =
 rewind :: forall c. PBftCrypto c
        => SecurityParam
        -> WindowSize
-       -> WithOrigin SlotNo
+       -> WithOrigin (SlotNo, HeaderHashBytes)
+          -- ^ the target \"point\"; see 'EbbInfo'
        -> PBftChainState c -> Maybe (PBftChainState c)
-rewind k n mSlot cs@PBftChainState{..} =
-  case rewind_ k n mSlot cs of
-    Right mbCs' -> pruneEBBsGT mSlot <$> mbCs'
-    Left mSlot' ->
-      error $ "rewind: rollback to block not previously applied, "
-          ++ show (mSlot, mSlot', ebbs)
+rewind k n p cs@PBftChainState{..} = case p of
+    Origin               -> go Origin
+    At (slot, hashBytes) -> case ebbsLookup slot ebbs of
+      Just EbbInfo{..}
+        | hashBytes == eiHashBytes -> go eiPrevSlot
+      _                            -> go (At slot)
+  where
+    go mSlot = pruneEBBsGT (fst <$> p) <$> rewind_ k n mSlot cs
 
 -- | Internal worker for 'rewind'
 rewind_ :: forall c. PBftCrypto c
        => SecurityParam
        -> WindowSize
        -> WithOrigin SlotNo
-       -> PBftChainState c -> Either SlotNo (Maybe (PBftChainState c))
-rewind_ k n mSlot cs@PBftChainState{..} =
+       -> PBftChainState c -> Maybe (PBftChainState c)
+rewind_ k n mSlot PBftChainState{..} =
     case mSlot of
       At slot ->
         -- We scan from the right, since block to roll back to likely at end
@@ -427,7 +443,7 @@ rewind_ k n mSlot cs@PBftChainState{..} =
           -- after that slot.
           (toDiscard, toKeep@(_ :|> x)) ->
             if slot == pbftSignerSlotNo x
-              then Right $ Just $ go toDiscard toKeep
+              then Just $ go toDiscard toKeep
               else notFound slot
 
           -- The slot was not found post-anchor. If the slot matches the last
@@ -436,7 +452,7 @@ rewind_ k n mSlot cs@PBftChainState{..} =
           (toDiscard, Empty) ->
             case preAnchor of
               _ :|> x
-                | slot == pbftSignerSlotNo x -> Right $ Just $ go toDiscard Empty
+                | slot == pbftSignerSlotNo x -> Just $ go toDiscard Empty
                 | slot <  pbftSignerSlotNo x -> rollbackTooFar
                 | otherwise                  -> notFound slot
               Empty                          -> notFound slot
@@ -447,18 +463,18 @@ rewind_ k n mSlot cs@PBftChainState{..} =
       -- have more than @k@ blocks, the pre-anchor will not be empty.
       Origin ->
         case preAnchor of
-          Empty      -> Right $ Just $ go postAnchor Empty
+          Empty      -> Just $ go postAnchor Empty
           _otherwise -> rollbackTooFar
   where
     -- If we didn't find a non-EBB, check if the slot was known to have an EBB.
     -- If so, recur (just once, as long as 'ebbs' is well-formed).
-    notFound :: SlotNo -> Either SlotNo (Maybe (PBftChainState c))
-    notFound slot = case ebbsLookup slot ebbs of
-      Just mSlot' -> rewind_ k n mSlot' cs
-      Nothing     -> Left slot
+    notFound :: forall a. SlotNo -> a
+    notFound slot =
+      error $ "rewind: rollback to block not previously applied, "
+          ++ show slot
 
-    rollbackTooFar :: Either x (Maybe y)
-    rollbackTooFar = Right Nothing
+    rollbackTooFar :: Maybe y
+    rollbackTooFar = Nothing
 
     -- Construct new state, given the remaining post-anchor signatures
     --
@@ -519,7 +535,7 @@ prune (SecurityParam n) (WindowSize k) (xs, ys) =
   Conversion
 -------------------------------------------------------------------------------}
 
-toList :: PBftChainState c -> (WithOrigin SlotNo, StrictSeq (PBftSigner c), EbbMap)
+toList :: PBftChainState c -> (WithOrigin SlotNo, StrictSeq (PBftSigner c), MaybeEbbInfo)
 toList PBftChainState{..} = (
       case preAnchor of
         Empty   -> Origin
@@ -531,7 +547,7 @@ toList PBftChainState{..} = (
 fromList :: PBftCrypto c
          => SecurityParam
          -> WindowSize
-         -> (WithOrigin SlotNo, StrictSeq (PBftSigner c), EbbMap)
+         -> (WithOrigin SlotNo, StrictSeq (PBftSigner c), MaybeEbbInfo)
          -> PBftChainState c
 fromList k n (anchor, signers, ebbs) =
     assertInvariant k n $
@@ -551,18 +567,24 @@ fromList k n (anchor, signers, ebbs) =
 
 serializationFormatVersion1 :: Word8
 serializationFormatVersion1 = 1
+
+serializationFormatVersion2 :: Word8
+serializationFormatVersion2 = 2
   -- CHANGELOG
   --
   -- Version 0 is 2 fields, the anchor and the window. Note that it does not
   -- have the version marker.
   --
-  -- Version 1 has 4 fields, the version marker, anchor, window, and EbbMap.
+  -- Version 1 has 4 fields, the version marker, anchor, window, and @~(Map
+  -- SlotNo (WithOrigin SlotNo))@.
+  --
+  -- Version 2 has 4 fields, the version marker, anchor, window, and @~(Maybe EbbInfo)@.
 
 encodePBftChainState :: (PBftCrypto c, Serialise (PBftVerKeyHash c))
                      => PBftChainState c -> Encoding
 encodePBftChainState st@PBftChainState{..} = mconcat [
       Serialise.encodeListLen 4
-    , encode serializationFormatVersion1
+    , encode serializationFormatVersion2
     , encode (withOriginToMaybe anchor)
     , encode signers
     , encode ebbs'
@@ -579,14 +601,21 @@ decodePBftChainState k n = Serialise.decodeListLen >>= \case
       anchor  <- withOriginFromMaybe <$> decode
       signers <- decode
       return $ fromList k n (anchor, signers, ebbsEmpty)
-   4 -> do -- Version is >0
-      v       <- decode
-      unless (v == serializationFormatVersion1) $ error $
-        "decode list length is 4, but version is not 1: " ++ show v
-      anchor  <- withOriginFromMaybe <$> decode
-      signers <- decode
-      ebbs'   <- decode
-      return $ fromList k n (anchor, signers, ebbs')
+   4 -> decode >>= \v -> if
+      | v == serializationFormatVersion1 -> do
+        anchor  <- withOriginFromMaybe <$> decode
+        signers <- decode
+        ebbs'   <- decode
+        let _ = ebbs' :: Map SlotNo (WithOrigin SlotNo)
+        -- NB we discard ebbs'
+        return $ fromList k n (anchor, signers, ebbsEmpty)
+      | v == serializationFormatVersion2 -> do
+        anchor  <- withOriginFromMaybe <$> decode
+        signers <- decode
+        ebbs'   <- decode
+        return $ fromList k n (anchor, signers, ebbs')
+      | otherwise ->
+        error $ "unexpected serialisation format version: " <> show v
    o -> error $ "unexpected list length: " <> show o
 
 instance Serialise (PBftVerKeyHash c) => Serialise (PBftSigner c) where
@@ -609,53 +638,90 @@ appendEBB :: forall c. (PBftCrypto c, HasCallStack)
           => SecurityParam
           -> WindowSize
           -> SlotNo
+          -> HeaderHashBytes
           -> PBftChainState c -> PBftChainState c
-appendEBB k n newEbbSlot cs@PBftChainState{..} =
+appendEBB k n newEbbSlot hashBytes cs@PBftChainState{..} =
     assertInvariant k n $
     Exn.assert valid $
-    cs{ebbs = ebbsInsert newEbbSlot latestNonEbbSlot ebbs}
+    cs{ebbs = JustEbbInfo EbbInfo
+        { eiSlot      = newEbbSlot
+        , eiHashBytes = hashBytes
+        , eiPrevSlot  = latestNonEbbSlot
+        }}
   where
     latestEbbSlot    = ebbsMax ebbs
     latestNonEbbSlot = lastSignedSlot cs
 
     valid = At newEbbSlot > max latestEbbSlot latestNonEbbSlot
 
--- | Discard 'ebbs' mappings whose /value/ is before the anchor
+-- | Discard 'ebbs' mappings whose 'eiPrevSlot' is before the anchor, except
+-- if its 'eiSlot' is equal to the anchor's slot
 --
 -- Called by 'append', since 'ebbs' do not increase how far back the chain
--- state can rewind.
+-- state can rewind. However, we must retain the EBB that shares a slot with
+-- the anchor so that we can fail if we attempt to rewind to it -- if we forget
+-- about that EBB, then we won't be able to recognize its hash in the requested
+-- rewind point.
 pruneEBBsLT :: PBftChainState c -> PBftChainState c
 pruneEBBsLT cs@PBftChainState{..} =
-  cs{ebbs = EbbMap $ Map.filter (>= anchorSlot cs) (unEbbMap ebbs)}
+  cs{ ebbs = ebbsFilter ebbs $ \EbbInfo{..} ->
+        eiPrevSlot >= anchorSlot cs ||
+        At eiSlot == anchorSlot cs }
+-- NOTE: this INLINE seems redundant but we add it here to avoid a strange
+-- space leak that also goes away with @-O0@, see #1356.
+{-# INLINE pruneEBBsLT #-}
 
--- | Discard 'ebbs' mappings whose /key/ is after the given slot
+-- | Discard 'ebbs' mappings whose 'eiSlot' is after the given slot
 --
 -- Called by 'rewind', since 'rewind'ing to a slot should forget the EBBs it
 -- precedes.
 pruneEBBsGT :: WithOrigin SlotNo -> PBftChainState c -> PBftChainState c
 pruneEBBsGT mSlot cs@PBftChainState{..} =
-  cs{ ebbs =
-        EbbMap $ Map.filterWithKey (\s _ -> At s <= mSlot) (unEbbMap ebbs)
-    }
+  cs{ ebbs = ebbsFilter ebbs $ \EbbInfo{..} -> At eiSlot <= mSlot }
 
--- | A map from the slots containing an EBB to the preceding signed slot
+-- | Info about the latest EBB, if there is one recent enough to be relevant to
+-- the chain state
 --
--- INVARIANT Key greater: For all @(k, v)@, @At k > v@.
+data MaybeEbbInfo
+  = NothingEbbInfo
+  | JustEbbInfo !EbbInfo
+  deriving stock (Eq, Generic, Ord, Show)
+  deriving anyclass (NoUnexpectedThunks, Serialise)
+
+-- | Info about an EBB
 --
--- INVARIANT Non-descending: For all @(k1, v1)@ and @(k2, v2)@, @k1 < k2@
--- implies @v1 <= v2@.
-newtype EbbMap = EbbMap {unEbbMap :: Map SlotNo (WithOrigin SlotNo)}
-  deriving stock (Generic, Show)
-  deriving newtype (Eq, Ord, NoUnexpectedThunks, Serialise)
+-- The serialised bytes of the EBB's header hash and its latest previous signed
+-- slot. We use 'HeaderHashBytes' instead of the EBB's actual @HeaderHash@
+-- because the 'ChainState' type family (which we instantiate as
+-- 'PBftChainState') does not take a type argument that to which we can apply
+-- @HeaderHash@. This is a compromise.
+--
+-- INVARIANT @At 'eiSlot' > 'eiPrevSlot'@
+data EbbInfo = EbbInfo
+  { eiSlot      :: !SlotNo
+    -- ^ the slot of the EBB
+  , eiHashBytes :: !HeaderHashBytes
+    -- ^ the bytes of the serialised header hash of the EBB
+  , eiPrevSlot  :: !(WithOrigin SlotNo)
+    -- ^ the slot of the latest non-EBB that precedes the EBB
+  }
+  deriving stock (Eq, Generic, Ord, Show)
+  deriving anyclass (NoUnexpectedThunks, Serialise)
 
-ebbsEmpty :: EbbMap
-ebbsEmpty = EbbMap Map.empty
+ebbsEmpty :: MaybeEbbInfo
+ebbsEmpty = NothingEbbInfo
 
-ebbsInsert :: SlotNo -> WithOrigin SlotNo -> EbbMap -> EbbMap
-ebbsInsert k v = EbbMap . Map.insert k v . unEbbMap
+ebbsMax :: MaybeEbbInfo -> WithOrigin SlotNo
+ebbsMax = \case
+  NothingEbbInfo          -> Origin
+  JustEbbInfo EbbInfo{..} -> At eiSlot
 
-ebbsMax :: EbbMap -> WithOrigin SlotNo
-ebbsMax = maybe Origin (At . fst) . Map.lookupMax . unEbbMap
+ebbsLookup :: SlotNo -> MaybeEbbInfo -> Maybe EbbInfo
+ebbsLookup k = \case
+  NothingEbbInfo             -> Nothing
+  JustEbbInfo ei@EbbInfo{..} -> if eiSlot == k then Just ei else Nothing
 
-ebbsLookup :: SlotNo -> EbbMap -> Maybe (WithOrigin SlotNo)
-ebbsLookup k = Map.lookup k . unEbbMap
+ebbsFilter :: MaybeEbbInfo -> (EbbInfo -> Bool) -> MaybeEbbInfo
+ebbsFilter x f = case x of
+  NothingEbbInfo -> NothingEbbInfo
+  JustEbbInfo ei -> if f ei then x else NothingEbbInfo

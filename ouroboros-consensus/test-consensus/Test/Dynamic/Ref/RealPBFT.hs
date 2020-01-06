@@ -1,6 +1,7 @@
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE ViewPatterns        #-}
 
 -- | A reference simulator of the RealPBFT protocol under \"ideal
 -- circumstances\"
@@ -11,6 +12,7 @@ module Test.Dynamic.Ref.RealPBFT (
   Outcome (..),
   State (..),
   advanceUpTo,
+  deterministicPlan,
   emptyState,
   nullState,
   step,
@@ -18,12 +20,15 @@ module Test.Dynamic.Ref.RealPBFT (
   ) where
 
 import           Data.Foldable (Foldable, foldl', toList)
+import           Data.List (sortOn)
 import qualified Data.Map as Map
 import           Data.Sequence (Seq)
 import qualified Data.Sequence as Seq
+import           Data.Word (Word64)
 
 import           Ouroboros.Network.Block (SlotNo (..))
 
+import           Ouroboros.Consensus.BlockchainTime.Mock (NumSlots (..))
 import           Ouroboros.Consensus.NodeId (CoreNodeId (..))
 import           Ouroboros.Consensus.Protocol.Abstract (SecurityParam (..))
 import           Ouroboros.Consensus.Protocol.PBFT (PBftParams (..))
@@ -135,19 +140,22 @@ extendOutcome params State{forgers, nomCount, nextSlot, outs} out = State
 
 -- | @True@ if the state would violate 'pbftSignatureThreshold'
 --
-tooMany :: PBftParams -> State -> CoreNodeId -> Bool
-tooMany params State{forgers} i =
+tooMany :: PBftParams -> State -> Bool
+tooMany params st@State{forgers} =
     not $
-    Seq.length forgers < k || count i forgers <= most
+    Seq.length forgers < k || count i forgers <= pbftLimit params
   where
-    PBftParams{pbftSignatureThreshold} = params
-
     k :: forall a. Num a => a
     k = oneK params
 
-    -- how many blocks in the latest k-blocks that a single core node is
-    -- allowed to have forged
-    most = floor $ k * pbftSignatureThreshold
+    i = nextLeader params st
+
+-- | How many blocks in the latest @k@-blocks that a single core node is
+-- allowed to have signed
+pbftLimit :: Integral a => PBftParams -> a
+pbftLimit params = floor $ oneK params * pbftSignatureThreshold
+  where
+    PBftParams{pbftSignatureThreshold} = params
 
 -- | @True@ if the state resulted from a sequence of @2k@ slots that had less
 -- than @k@ 'Nominal' outcomes
@@ -186,18 +194,21 @@ saturated params State{outs} =
 --
 step :: PBftParams -> NodeJoinPlan -> State -> State
 step params nodeJoinPlan st
-  | maybe True (s <) mbJ       = stuck Absent
-  | Just s == mbJ, not isFirst = stuck Wasted
-  | tooMany params st' i       = stuck Unable
-  | otherwise                  = extendOutcome params st' Nominal
+  | maybe True (s <) mbJ  = stuck Absent
+  | joinLead, not isFirst = stuck Wasted
+  | tooMany params st'    = stuck Unable
+  | otherwise             = extendOutcome params st' Nominal
   where
     s = nextSlot st
 
     -- @s@'s scheduled leader
-    i = CoreNodeId $ fromIntegral $ unSlotNo s `mod` oneN params
+    i = nextLeader params st
 
     -- when @i@ joins the network
     mbJ = Map.lookup i m where NodeJoinPlan m = nodeJoinPlan
+
+    -- @i@ is joining and also leading
+    joinLead = Just s == mbJ
 
     -- whether @i@ would be the first to lead
     isFirst = nullState st
@@ -221,6 +232,11 @@ advanceUpTo params nodeJoinPlan = go
 {-------------------------------------------------------------------------------
   Queries
 -------------------------------------------------------------------------------}
+
+-- | The scheduled leader of 'nextSlot'
+nextLeader :: PBftParams -> State -> CoreNodeId
+nextLeader params State{nextSlot} =
+  CoreNodeId $ fromIntegral $ unSlotNo nextSlot `mod` oneN params
 
 -- | Finish an incomplete 'NodeJoinPlan': all remaining nodes join ASAP
 --
@@ -256,3 +272,67 @@ viable params lastSlot nodeJoinPlan st0 = go st0
       | otherwise              = go st'
       where
         st' = step params nodeJoinPlan' st
+
+-- | This node join plan does not introduce any ambiguity
+--
+-- There is currently only one source of ambiguity. Suppose only one slot has
+-- been lead, so the net has a single one-block chain. If the second lead slot
+-- is lead by a node that also joins in that same slot, then that node will
+-- forge its own one-block chain before it synchronizes with the net. This
+-- process may continue for the third lead slot, and so on. It necessarily
+-- stops in one of two ways:
+--
+--   * One of the competing nodes leads for a second time. Because of
+--     round-robin, this will be the first leader again.
+--
+--   * A new node leads in a slot after its join slot. It will have
+--     synchronized with the net and chosen one of the one-block chains. It
+--     will forge a block atop that, and then the whole network will choose
+--     this new longest chain. This reference simulator, in general, cannot
+--     anticipate which of the competing one-block chains this node will have
+--     selected, so this case is considered non-deterministic.
+--
+-- Once the net contains a chain with more than one-block, there will never be
+-- anymore contention. Nodes might still join and immediately forge their own
+-- one-block chain, but it will not be competitive with the net's necessarily
+-- longer chain.
+deterministicPlan :: NumSlots -> NodeJoinPlan -> Bool
+deterministicPlan (NumSlots t) (NodeJoinPlan m) =
+    (t < 1 ||) $
+    (checkFromGenesis $ sortOn (\(_, _, l1, _) -> l1) $ map mk (Map.toList m))
+  where
+    n = fromIntegral $ Map.size m :: Word64
+
+    mk (i, joinSlot) = (i, joinSlot, l1, l1 + SlotNo n)
+      where
+        l1 = lead1 (i, joinSlot)
+
+    -- the first slot this node will lead
+    lead1 (CoreNodeId (fromIntegral -> i), SlotNo joinSlot) =
+        SlotNo $ joinSlot + d'
+      where
+        l = joinSlot `mod` n
+        d' = (if l > i then n else 0) + i - l
+
+    -- the net has all empty chains
+    checkFromGenesis = \case
+      []               -> True
+      (_, _, _, l2):xs -> checkFromSingle l2 xs
+
+    -- the net has a single one-block chain
+    checkFromSingle l2 = \case
+      []                      -> True
+      (_, joinSlot, l1', _):xs
+        | l2 < l1'            -> True
+        | joinSlot < l1'      -> True
+        | otherwise           -> checkFromAtRisk l2 xs
+
+    lastSlot = SlotNo $ t - 1
+
+    -- the net has multiple one-block chains
+    checkFromAtRisk l2 = \case
+      []                       -> lastSlot >= l2
+      (_, joinSlot, l1', _):xs
+        | l2 < l1'             -> True
+        | joinSlot < l1'       -> False
+        | otherwise            -> checkFromAtRisk l2 xs

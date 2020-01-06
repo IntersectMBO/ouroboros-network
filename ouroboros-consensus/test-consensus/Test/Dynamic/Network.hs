@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns         #-}
 {-# LANGUAGE ConstraintKinds      #-}
 {-# LANGUAGE DataKinds            #-}
 {-# LANGUAGE DeriveAnyClass       #-}
@@ -15,6 +16,7 @@
 -- | Setup network
 module Test.Dynamic.Network (
     runNodeNetwork
+  , MaybeForgeEBB (..)
   , TracingConstraints
     -- * Tracers
   , MiniProtocolExpectedException (..)
@@ -51,6 +53,7 @@ import           Network.TypedProtocol.Codec (AnyMessage (..), CodecFailure,
 
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.MockChain.Chain
+import           Ouroboros.Network.Point (WithOrigin (..))
 
 import qualified Ouroboros.Network.BlockFetch.Client as BFClient
 import           Ouroboros.Network.Protocol.ChainSync.PipelineDecision
@@ -86,7 +89,9 @@ import           Ouroboros.Consensus.Util.STM
 
 import qualified Ouroboros.Storage.ChainDB as ChainDB
 import           Ouroboros.Storage.ChainDB.Impl (ChainDbArgs (..))
-import           Ouroboros.Storage.EpochInfo (EpochInfo, newEpochInfo)
+import           Ouroboros.Storage.Common (EpochNo (..))
+import           Ouroboros.Storage.EpochInfo (EpochInfo, epochInfoFirst,
+                     newEpochInfo)
 import qualified Ouroboros.Storage.ImmutableDB as ImmDB
 import qualified Ouroboros.Storage.ImmutableDB.Impl.Index as Index
 import qualified Ouroboros.Storage.LedgerDB.DiskPolicy as LgrDB
@@ -101,6 +106,14 @@ import           Test.Util.FS.Sim.MockFS (MockFS)
 import qualified Test.Util.FS.Sim.MockFS as Mock
 import           Test.Util.FS.Sim.STM (simHasFS)
 import           Test.Util.Tracer
+
+data MaybeForgeEBB blk
+  = NothingForgeEBB
+    -- ^ Do not forge EBBs during this test
+  | JustForgeEBB !(NodeConfig (BlockProtocol blk) ->
+                   SlotNo -> BlockNo -> ChainHash blk -> blk)
+    -- ^ Forge EBBs during this test using this function @(slot, block no,
+    -- prevHash)@
 
 -- | Setup a network of core nodes, where each joins according to the node join
 -- plan and is interconnected according to the node topology
@@ -119,11 +132,12 @@ runNodeNetwork :: forall m blk.
                  -> SlotLengths
                  -> NodeJoinPlan
                  -> NodeTopology
+                 -> MaybeForgeEBB blk
                  -> (CoreNodeId -> ProtocolInfo blk)
                  -> ChaChaDRG
                  -> m (TestOutput blk)
 runNodeNetwork numCoreNodes numSlots slotLengths nodeJoinPlan nodeTopology
-  pInfo initRNG = withRegistry $ \sharedRegistry -> do
+  mbForgeEBB pInfo initRNG = withRegistry $ \sharedRegistry -> do
     -- This shared registry is used for 'newTestBlockchainTime' and the
     -- network communication threads. Each node will create its own registry
     -- for its ChainDB.
@@ -248,6 +262,41 @@ runNodeNetwork numCoreNodes numSlots slotLengths nodeJoinPlan nodeTopology
           simChaChaT varDRG id $ testGenTxs numCoreNodes cfg ledger
         void $ addTxs mempool txs
 
+    ebbProducer :: HasCallStack
+                => BlockchainTime m
+                -> StrictTVar m SlotNo
+                -> NodeConfig (BlockProtocol blk)
+                -> ChainDB.ChainDB m blk
+                -> EpochInfo m
+                -> m ()
+    ebbProducer btime nextEbbSlotVar cfg chainDB epochInfo = go 0
+      where
+        go :: EpochNo -> m ()
+        go !epoch = do
+          -- The first slot in @epoch@
+          ebbSlotNo <- epochInfoFirst epochInfo epoch
+          atomically $ writeTVar nextEbbSlotVar ebbSlotNo
+
+          void $ blockUntilSlot btime ebbSlotNo
+
+          case mbForgeEBB of
+            NothingForgeEBB       -> pure ()
+            JustForgeEBB forgeEBB -> do
+              (prevSlot, ebbBlockNo, prevHash) <- atomically $ do
+                p <- ChainDB.getTipPoint chainDB
+                let mSlot = pointSlot p
+                let k = SlotNo $ maxRollbacks $ protocolSecurityParam cfg
+                check $ case mSlot of
+                  Origin -> True
+                  At s   -> s >= (ebbSlotNo - min ebbSlotNo (2 * k))
+                bno <- ChainDB.getTipBlockNo chainDB
+                pure (mSlot, bno, pointHash p)
+              when (prevSlot < At ebbSlotNo) $ do
+                let ebb = forgeEBB cfg ebbSlotNo ebbBlockNo prevHash
+                ChainDB.addBlock chainDB ebb
+
+          go (succ epoch)
+
     mkArgs :: BlockchainTime m
            -> ResourceRegistry m
            -> NodeConfig (BlockProtocol blk)
@@ -293,7 +342,7 @@ runNodeNetwork numCoreNodes numSlots slotLengths nodeJoinPlan nodeTopology
         , cdbNodeConfig       = cfg
         , cdbEpochInfo        = epochInfo
         , cdbHashInfo         = nodeHashInfo (Proxy @blk)
-        , cdbIsEBB            = nodeIsEBB
+        , cdbIsEBB            = nodeIsEBB . getHeader
         , cdbCheckIntegrity   = nodeCheckIntegrity cfg
         , cdbGenesis          = return initLedger
         , cdbBlockchainTime   = btime
@@ -365,9 +414,21 @@ runNodeNetwork numCoreNodes numSlots slotLengths nodeJoinPlan nodeTopology
             nodeInfoDBs
       (chainDB, _) <- ChainDB.openDBInternal chainDbArgs True
 
+      -- We have a thread (see below) that forges EBBs for tests that involve
+      -- them. This variable holds the slot of the next EBB to be forged.
+      --
+      -- Even if the test doesn't involve EBBs, that thread must advance this
+      -- variable in order to unblock the node's block production thread.
+      nextEbbSlotVar <- uncheckedNewTVarM 0
+
       let nodeArgs = NodeArgs
             { tracers             = nullDebugTracers
-                { forgeTracer = nodeEventsForges nodeInfoEvents
+                { forgeTracer       = Tracer $ \case
+                    TraceForgeAboutToLead s -> do
+                      atomically $ do
+                        lim <- readTVar nextEbbSlotVar
+                        check $ s < lim
+                    o -> traceWith (nodeEventsForges nodeInfoEvents) o
                 }
             , registry            = registry
             , maxClockSkew        = ClockSkew 1
@@ -404,6 +465,13 @@ runNodeNetwork numCoreNodes numSlots slotLengths nodeJoinPlan nodeTopology
         (produceDRG blockProduction)
         (ChainDB.getCurrentLedger chainDB)
         (getMempool nodeKernel)
+
+      void $ forkLinkedThread registry $ ebbProducer
+        btime
+        nextEbbSlotVar
+        pInfoConfig
+        chainDB
+        epochInfo
 
       return (nodeKernel, registry, readNodeInfo, LimitedApp app)
 
@@ -505,8 +573,10 @@ directedEdge tr btime nodeapp1 nodeapp2 =
         hUnexpected e@(Exn.SomeException e') = case fromException e of
           Just (_ :: Exn.AsyncException) -> throwM e
           Nothing                        -> throwM MiniProtocolFatalException
-            { mpfeType = Typeable.typeOf e'
-            , mpfeExn = e
+            { mpfeType   = Typeable.typeOf e'
+            , mpfeExn    = e
+            , mpfeClient = fst nodeapp1
+            , mpfeServer = fst nodeapp2
             }
 
 -- | Spawn threads for all of the mini protocols
@@ -833,9 +903,11 @@ data TraceMiniProtocolRestart peer
 -- 'MiniProtocolExpectedException'
 --
 data MiniProtocolFatalException = MiniProtocolFatalException
-  { mpfeType :: !Typeable.TypeRep
+  { mpfeType   :: !Typeable.TypeRep
     -- ^ Including the type explicitly makes it easier for a human to debug
-  , mpfeExn  :: !SomeException
+  , mpfeExn    :: !SomeException
+  , mpfeClient :: !CoreNodeId
+  , mpfeServer :: !CoreNodeId
   }
   deriving (Show)
 

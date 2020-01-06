@@ -15,6 +15,7 @@ import           Ouroboros.Consensus.Protocol
 import           Ouroboros.Consensus.Util.Random
 
 import           Test.Dynamic.General
+import           Test.Dynamic.Network (MaybeForgeEBB (..))
 import           Test.Dynamic.Util
 
 import           Test.Util.Orphans.Arbitrary ()
@@ -46,4 +47,4 @@ prop_simple_pbft_convergence
     testOutput =
         runTestNetwork
             (\nid -> protocolInfo (ProtocolMockPBFT numCoreNodes nid params))
-            testConfig seed
+            testConfig NothingForgeEBB seed

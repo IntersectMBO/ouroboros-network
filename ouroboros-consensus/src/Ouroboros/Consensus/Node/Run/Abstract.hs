@@ -45,7 +45,7 @@ class (ProtocolLedgerView blk, ApplyTx blk) => RunNode blk where
 
   nodeBlockMatchesHeader  :: Header blk -> blk -> Bool
   nodeBlockFetchSize      :: Header blk -> SizeInBytes
-  nodeIsEBB               :: blk -> Maybe EpochNo
+  nodeIsEBB               :: Header blk -> Maybe EpochNo
   nodeEpochSize           :: Monad m
                           => Proxy blk
                           -> NodeConfig (BlockProtocol blk)

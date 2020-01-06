@@ -42,8 +42,7 @@ import           GHC.Stack
 
 import           Cardano.Prelude (NoUnexpectedThunks)
 
-import           Ouroboros.Network.Block (HasHeader (..), SlotNo (..))
-import           Ouroboros.Network.Point (WithOrigin)
+import           Ouroboros.Network.Block (HasHeader (..), Point, SlotNo (..))
 
 import           Ouroboros.Consensus.BlockchainTime.SlotLengths
 import           Ouroboros.Consensus.Util.Random
@@ -157,7 +156,7 @@ class ( Show (ChainState    p)
                   -> hdr      -- ^ Tip of the candidate
                   -> Bool
 
-  -- | Compare two candidates
+  -- | Compare two candidates, both of which we prefer to our own chain
   --
   -- PRECONDITION: both candidates must be preferred to our own chain
   compareCandidates :: CanSelect p hdr => NodeConfig p -> hdr -> hdr -> Ordering
@@ -188,10 +187,10 @@ class ( Show (ChainState    p)
   -- blocks.
   --
   -- This function should attempt to rewind the chain state to the state at some
-  -- given slot, or Origin to rewind to the state with no blocks.
+  -- given point.
   --
-  -- PRECONDITION: the slot to rewind to must correspond to the slot of a
-  -- header (or 'Origin') that was previously applied to the chain state using
+  -- PRECONDITION: the point to rewind to must correspond to a header (or
+  -- 'GenesisPoint') that was previously applied to the chain state using
   -- 'applyChainState'.
   --
   -- Rewinding the chain state is intended to be used when switching to a
@@ -206,28 +205,21 @@ class ( Show (ChainState    p)
   -- state). For example, rewinding a chain state by @i@ blocks and then
   -- rewinding that chain state again by @j@ where @i + j > k@ is not possible
   -- and will yield 'Nothing'.
-  rewindChainState :: NodeConfig p
+  rewindChainState :: CanValidate p hdr
+                   => NodeConfig p
                    -> ChainState p
-                   -> WithOrigin SlotNo
-                   -- ^ Slot to rewind to
-                   --
-                   -- This should be the state at the /end/ of the specified
-                   -- slot (i.e., after the block in that slot, if any, has
-                   -- been applied).
+                   -> Point hdr    -- ^ Point to rewind to
                    -> Maybe (ChainState p)
 
   --
   -- Default chain selection
   --
-  -- The default simply compares length
+  -- The default preference uses the default comparison. The default comparison
+  -- simply uses the block number.
   --
 
-  default preferCandidate :: HasHeader hdr
-                          => NodeConfig p
-                          -> hdr      -- ^ Our chain
-                          -> hdr      -- ^ Candidate
-                          -> Bool
-  preferCandidate _ ours cand = blockNo cand > blockNo ours
+  preferCandidate cfg ours cand =
+    compareCandidates cfg ours cand == LT
 
   default compareCandidates :: HasHeader hdr
                             => NodeConfig p

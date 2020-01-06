@@ -99,6 +99,7 @@ library
                        Ouroboros.Consensus.Protocol.ModChainSel
                        Ouroboros.Consensus.Protocol.PBFT
                        Ouroboros.Consensus.Protocol.PBFT.ChainState
+                       Ouroboros.Consensus.Protocol.PBFT.ChainState.HeaderHashBytes
                        Ouroboros.Consensus.Protocol.PBFT.Crypto
                        Ouroboros.Consensus.Protocol.Praos
                        Ouroboros.Consensus.Protocol.Signed
