@@ -22,6 +22,7 @@ module Ouroboros.Consensus.Node
   , ChainDbArgs (..)
   , NodeArgs (..)
   , NodeKernel (..)
+  , MaxBlockSizeOverride (..)
   , IPSubscriptionTarget (..)
   , DnsSubscriptionTarget (..)
   , ConnectionId (..)
@@ -279,7 +280,7 @@ mkNodeArgs registry cfg initState tracers btime chainDB isProducer = NodeArgs
     , blockFetchSize      = nodeBlockFetchSize
     , blockMatchesHeader  = nodeBlockMatchesHeader
     , maxUnackTxs         = 100 -- TODO
-    , maxBlockBodySize    = 2_000_000 -- TODO
+    , maxBlockSize        = NoOverride
     , mempoolCap          = MempoolCapacityBytes 128_000 -- TODO
     , chainSyncPipelining = pipelineDecisionLowHighMark 200 300 -- TODO
     }
