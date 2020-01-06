@@ -23,6 +23,7 @@ module Ouroboros.Consensus.Ledger.Byron.Auxiliary (
     -- * Extract info from chain state
   , getDelegationMap
   , getProtocolParams
+  , getMaxBlockSize
   , getScheduledDelegations
     -- * Applying blocks
   , applyChainTick
@@ -119,6 +120,12 @@ getProtocolParams :: CC.ChainValidationState -> Update.ProtocolParameters
 getProtocolParams =
       U.Iface.adoptedProtocolParameters
     . CC.cvsUpdateState
+
+getMaxBlockSize :: CC.ChainValidationState -> Word32
+getMaxBlockSize =
+      fromIntegral
+    . Update.ppMaxBlockSize
+    . getProtocolParams
 
 getScheduledDelegations :: CC.ChainValidationState
                         -> Seq D.Sched.ScheduledDelegation

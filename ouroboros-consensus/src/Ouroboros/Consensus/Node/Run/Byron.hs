@@ -47,6 +47,9 @@ instance RunNode ByronBlock where
                               . extractGenesisData
                               $ cfg
 
+  nodeMaxBlockSize        = Aux.getMaxBlockSize . byronLedgerState
+  nodeBlockEncodingOverhead = const byronBlockEncodingOverhead
+
   -- Extract it from the 'Genesis.Config'
   nodeStartTime           = const
                           $ SystemStart

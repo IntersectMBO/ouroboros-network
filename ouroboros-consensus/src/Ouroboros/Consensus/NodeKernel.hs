@@ -302,7 +302,7 @@ forkBlockProduction
     -> InternalState m peer blk
     -> BlockProduction m blk
     -> m ()
-forkBlockProduction maxBlockBodySize IS{..} BlockProduction{..} =
+forkBlockProduction _maxBlockBodySize IS{..} BlockProduction{..} =
     void $ onSlotChange btime $ \currentSlot -> do
       varDRG <- newTVarM =<< (PRNG <$> produceDRG)
       -- See the docstring of 'withSyncState' for why we're using it instead
@@ -314,7 +314,9 @@ forkBlockProduction maxBlockBodySize IS{..} BlockProduction{..} =
       trace $ TraceForgeAboutToLead currentSlot
       leaderResult <- withTxs $ \MempoolSnapshot{snapshotTxsForSize} -> do
         l@ExtLedgerState{..} <- ChainDB.getCurrentLedger chainDB
-        let txs = map fst (snapshotTxsForSize maxBlockBodySize)
+        let maxBlockBodySize = nodeMaxBlockSize ledgerState
+                             - nodeBlockEncodingOverhead ledgerState
+            txs = map fst (snapshotTxsForSize maxBlockBodySize)
 
         case anachronisticProtocolLedgerView cfg ledgerState (At currentSlot) of
           Right ledgerView -> do
