@@ -20,7 +20,7 @@ main = defaultMain tests
 
 tests :: TestTree
 tests =
-  testGroup "ouroboros-consensus"
+  testGroup "ouroboros-consensus" $
   [ Test.Consensus.BlockchainTime.tests
   , Test.Consensus.ChainSyncClient.tests
   , Test.Consensus.Ledger.Byron.tests
@@ -33,4 +33,7 @@ tests =
   , Test.Dynamic.PBFT.tests
   , Test.Dynamic.Praos.tests
   , Test.Dynamic.RealPBFT.tests
+  ]
+  `seq`
+  [ Test.Dynamic.Praos.tests
   ]

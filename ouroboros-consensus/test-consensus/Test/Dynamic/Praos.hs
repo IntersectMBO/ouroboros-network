@@ -28,7 +28,7 @@ import           Test.Dynamic.Util.NodeTopology
 import           Test.Util.Orphans.Arbitrary ()
 
 tests :: TestTree
-tests = testGroup "Dynamic chain generation"
+tests = testGroup "Dynamic chain generation" $
     [ testProperty "simple Praos convergence - special case (issue #131)" $
         testPraos $ Seed ( 49644418094676
                          , 40315957626756
@@ -76,6 +76,21 @@ tests = testGroup "Dynamic chain generation"
               , latencySeed
               }
                 seed
+    ]
+    `seq`
+    [ testProperty "simple Praos convergence - Issue #1147" $ \w1 w2 ->
+            testPraos' TestConfig
+              { numCoreNodes
+              , numSlots
+              , nodeJoinPlan = NodeJoinPlan (Map.fromList [(CoreNodeId 0,SlotNo {unSlotNo = 24}),(CoreNodeId 1,SlotNo {unSlotNo = 29}),(CoreNodeId 2,SlotNo {unSlotNo = 29})])
+              , nodeTopology = NodeTopology (Map.fromList [(CoreNodeId 0,Set.fromList []),(CoreNodeId 1,Set.fromList [CoreNodeId 0]),(CoreNodeId 2,Set.fromList [CoreNodeId 1])])
+              , latencySeed = InjectLatencies (seedSMGen w1 w2)
+                -- ^ That seed caused a failure during work on PR 1131, which
+                -- lead to Issue 1147. Seeds are unfortunately fragile, so if
+                -- the test infrastructure has changed, the same seed might not
+                -- reproduce the failure's necessary conditions.
+              }
+                Seed {getSeed = (10580735904357354200,1771287816820322801,4449307331544544775,3207572460394768516,9310143438266696584)}
     ]
   where
     testPraos :: Seed -> Property
