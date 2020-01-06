@@ -17,6 +17,11 @@ source-repository head
   type:     git
   location: https://github.com/input-output-hk/ouroboros-network
 
+flag asserts
+  description: Enable assertions
+  manual:      False
+  default:     False
+
 library
   hs-source-dirs:      src
 
@@ -254,7 +259,8 @@ library
 
   ghc-options:         -Wall
                        -Wno-unticked-promoted-constructors
-                       -fno-ignore-asserts
+  if flag(asserts)
+    ghc-options:       -fno-ignore-asserts
 
 test-suite test-consensus
   type:             exitcode-stdio-1.0
