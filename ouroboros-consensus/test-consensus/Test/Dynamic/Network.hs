@@ -30,6 +30,7 @@ module Test.Dynamic.Network (
   , NodeDBs (..)
   ) where
 
+import           Control.Arrow ((&&&))
 import qualified Control.Exception as Exn
 import           Control.Monad
 import           Control.Tracer
@@ -54,6 +55,7 @@ import           Network.TypedProtocol.Codec (AnyMessage (..))
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.MockChain.Chain
 
+import qualified Ouroboros.Network.AnchoredFragment as AF
 import qualified Ouroboros.Network.BlockFetch.Client as BFClient
 import           Ouroboros.Network.Protocol.BlockFetch.Type
 import           Ouroboros.Network.Protocol.ChainSync.PipelineDecision
@@ -167,6 +169,7 @@ runNodeNetwork NodeNetworkArgs
       , livePipes  = Map.empty
       }
     onSlotChange btime $ \s -> do
+        traceWith debugTracer $ "TICK " <> show s
         blockUntilQuiescent livePipesVar quiescenceThreshold
         atomically $ writeTVar latestReadySlot (succ s)
 
@@ -261,7 +264,8 @@ runNodeNetwork NodeNetworkArgs
           simChaChaT varDRG id $ testGenTxs numCoreNodes cfg ledger
         void $ addTxs mempool txs
 
-    mkArgs :: NodeConfig (BlockProtocol blk)
+    mkArgs :: CoreNodeId
+           -> NodeConfig (BlockProtocol blk)
            -> ExtLedgerState blk
            -> EpochInfo m
            -> Tracer m (Point blk)
@@ -270,7 +274,7 @@ runNodeNetwork NodeNetworkArgs
               -- ^ added block tracer
            -> NodeDBs (StrictTVar m MockFS)
            -> ChainDbArgs m blk
-    mkArgs
+    mkArgs coreNodeId
       cfg initLedger epochInfo
       invalidTracer addTracer
       nodeDBs = ChainDbArgs
@@ -313,6 +317,9 @@ runNodeNetwork NodeNetworkArgs
               ChainDB.TraceAddBlockEvent
                   (ChainDB.AddedBlockToVolDB p bno IsNotEBB)
                   -> traceWith addTracer (p, bno)
+              ChainDB.TraceAddBlockEvent
+                  (ChainDB.SwitchedToChain oldC newC)
+                  -> traceWith debugTracer $ let f = AF.headBlockNo &&& AF.headPoint in show coreNodeId <> " SWITCH " <> show (f oldC, f newC)
               _   -> pure ()
         , cdbTraceLedger      = nullTracer
         , cdbRegistry         = registry
@@ -362,7 +369,7 @@ runNodeNetwork NodeNetworkArgs
             } = nodeInfo
 
       epochInfo <- newEpochInfo $ nodeEpochSize (Proxy @blk) pInfoConfig
-      chainDB <- ChainDB.openDB $ mkArgs
+      chainDB <- ChainDB.openDB $ mkArgs coreNodeId
           pInfoConfig pInfoInitLedger epochInfo
           (nodeEventsInvalids nodeInfoEvents)
           (Tracer $ \(p, bno) -> do
@@ -370,10 +377,19 @@ runNodeNetwork NodeNetworkArgs
               traceWith (nodeEventsAdds nodeInfoEvents) (s, p, bno))
           nodeInfoDBs
 
+      let tr = contramap (\s -> show coreNodeId <> " " <> s) debugTracer
+
       let nodeArgs = NodeArgs
             { tracers             = nullDebugTracers
-                { forgeTracer = nodeEventsForges nodeInfoEvents
+                { forgeTracer = nodeEventsForges nodeInfoEvents <> showTracing tr
+                , blockFetchDecisionTracer = if coreNodeId /= CoreNodeId 1 then nullTracer else showTracing tr
                 }
+{-
+  , blockFetchDecisionTracer      :: f [TraceLabelPeer peer (FetchDecision [Point (Header blk)])]
+  , blockFetchClientTracer        :: f (TraceLabelPeer peer (TraceFetchClientState (Header blk)))
+  , blockFetchServerTracer        :: f (TraceBlockFetchServerEvent blk)
+-}
+
             , registry            = registry
             , maxClockSkew        = ClockSkew 1
             , cfg                 = pInfoConfig
@@ -392,6 +408,7 @@ runNodeNetwork NodeNetworkArgs
       let app = consensusNetworkApps
                   nodeKernel
                   nullDebugProtocolTracers
+                    { ptBlockFetchTracer = if coreNodeId /= CoreNodeId 1 then nullTracer else showTracing tr }
                   protocolCodecsId
                   (protocolHandlers nodeArgs nodeKernel)
 
