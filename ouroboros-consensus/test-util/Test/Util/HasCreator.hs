@@ -19,20 +19,24 @@ class HasCreator b where
     getCreator :: b -> CoreNodeId
 
 instance HasCreator (SimpleBftBlock c BftMockCrypto) where
-    getCreator = CoreNodeId
-               . verKeyIdFromSigned
+    getCreator = coreNodeId
                . bftSignature
                . simpleBftExt
                . simpleHeaderExt
                . simpleHeader
+      where
+        coreNodeId :: SignedDSIGN MockDSIGN a -> CoreNodeId
+        coreNodeId = CoreNodeId . fromIntegral . verKeyIdFromSigned
 
 instance HasCreator (SimplePBftBlock c PBftMockCrypto) where
-    getCreator = CoreNodeId
-               . verKeyIdFromSigned
+    getCreator = coreNodeId
                . pbftSignature
                . simplePBftExt
                . simpleHeaderExt
                . simpleHeader
+      where
+        coreNodeId :: SignedDSIGN MockDSIGN a -> CoreNodeId
+        coreNodeId = CoreNodeId . fromIntegral . verKeyIdFromSigned
 
 instance HasCreator (SimplePraosBlock c PraosMockCrypto) where
     getCreator = praosCreator

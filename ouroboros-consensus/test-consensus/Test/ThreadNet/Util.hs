@@ -142,9 +142,9 @@ instance Labellable NodeLabel where
         <> maybe "" (showNodeId . fromCoreNodeId) nlCreator
         <> showNodeIds nlBelievers
       where
-        fromNodeId :: NodeId -> Maybe Int
-        fromNodeId (CoreId nid) = Just nid
-        fromNodeId (RelayId _)  = Nothing
+        fromNodeId :: NodeId -> Maybe Word64
+        fromNodeId (CoreId (CoreNodeId nid)) = Just nid
+        fromNodeId (RelayId _)               = Nothing
 
         showNodeId :: NodeId -> String
         showNodeId = maybe "" show . fromNodeId

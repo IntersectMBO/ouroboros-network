@@ -1,8 +1,14 @@
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+
 module Ouroboros.Consensus.Node.ProtocolInfo.Abstract (
     NumCoreNodes(..)
   , enumCoreNodes
   , ProtocolInfo(..)
   ) where
+
+import           Data.Word
+
+import           Cardano.Prelude (NoUnexpectedThunks)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Ledger.Extended
@@ -13,10 +19,11 @@ import           Ouroboros.Consensus.Protocol.Abstract
   Number of core nodes
 -------------------------------------------------------------------------------}
 
-newtype NumCoreNodes = NumCoreNodes Int
-  deriving (Show)
+newtype NumCoreNodes = NumCoreNodes Word64
+  deriving (Show, NoUnexpectedThunks)
 
 enumCoreNodes :: NumCoreNodes -> [CoreNodeId]
+enumCoreNodes (NumCoreNodes 0)        = []
 enumCoreNodes (NumCoreNodes numNodes) =
     [ CoreNodeId n | n <- [0 .. numNodes - 1] ]
 

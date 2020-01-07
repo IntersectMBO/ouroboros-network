@@ -19,24 +19,30 @@ protocolInfoBft :: NumCoreNodes
                 -> SecurityParam
                 -> SlotLengths
                 -> ProtocolInfo (SimpleBftBlock SimpleMockCrypto BftMockCrypto)
-protocolInfoBft (NumCoreNodes numCoreNodes) (CoreNodeId nid) securityParam slotLengths =
+protocolInfoBft numCoreNodes nid securityParam slotLengths =
     ProtocolInfo {
         pInfoConfig = BftNodeConfig {
             bftParams   = BftParams {
-                              bftNumNodes      = fromIntegral numCoreNodes
+                              bftNumNodes      = numCoreNodes
                             , bftSecurityParam = securityParam
                             , bftSlotLengths   = slotLengths
                             }
           , bftNodeId   = CoreId nid
-          , bftSignKey  = SignKeyMockDSIGN nid
+          , bftSignKey  = signKey nid
           , bftVerKeys  = Map.fromList [
-                (CoreId n, VerKeyMockDSIGN n)
-              | n <- [0 .. numCoreNodes - 1]
+                (CoreId n, verKey n)
+              | n <- enumCoreNodes numCoreNodes
               ]
           }
       , pInfoInitLedger = ExtLedgerState (genesisSimpleLedgerState addrDist) ()
       , pInfoInitState  = ()
       }
   where
+    signKey :: CoreNodeId -> SignKeyDSIGN MockDSIGN
+    signKey (CoreNodeId n) = SignKeyMockDSIGN (fromIntegral n)
+
+    verKey :: CoreNodeId -> VerKeyDSIGN MockDSIGN
+    verKey (CoreNodeId n) = VerKeyMockDSIGN (fromIntegral n)
+
     addrDist :: AddrDist
     addrDist = mkAddrDist numCoreNodes

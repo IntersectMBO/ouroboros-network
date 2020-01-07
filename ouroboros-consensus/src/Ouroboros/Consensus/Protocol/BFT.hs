@@ -36,14 +36,14 @@ import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Proxy
 import           Data.Typeable
-import           Data.Word (Word64)
 import           GHC.Generics (Generic)
 
 import           Ouroboros.Network.Block
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
-import           Ouroboros.Consensus.NodeId (NodeId (..))
+import           Ouroboros.Consensus.Node.ProtocolInfo.Abstract
+import           Ouroboros.Consensus.NodeId (CoreNodeId (..), NodeId (..))
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.Signed
 import           Ouroboros.Consensus.Util.Condense
@@ -107,7 +107,7 @@ data BftParams = BftParams {
       bftSecurityParam :: !SecurityParam
 
       -- | Number of core nodes
-    , bftNumNodes      :: !Word64
+    , bftNumNodes      :: !NumCoreNodes
 
       -- | Slot lengths
       --
@@ -141,12 +141,16 @@ instance BftCrypto c => OuroborosTag (Bft c) where
 
   checkIsLeader BftNodeConfig{..} (SlotNo n) _l _cs = do
       return $ case bftNodeId of
-                 RelayId _ -> Nothing -- relays are never leaders
-                 CoreId  i -> if n `mod` bftNumNodes == fromIntegral i
-                                then Just ()
-                                else Nothing
+                 RelayId _ ->
+                   -- Relays are never leaders
+                   Nothing
+                 CoreId (CoreNodeId i) ->
+                   if n `mod` numCoreNodes == fromIntegral i
+                     then Just ()
+                     else Nothing
     where
       BftParams{..}  = bftParams
+      NumCoreNodes numCoreNodes = bftNumNodes
 
   applyChainState cfg@BftNodeConfig{..} _l b _cs = do
       -- TODO: Should deal with unknown node IDs
@@ -161,7 +165,8 @@ instance BftCrypto c => OuroborosTag (Bft c) where
       BftParams{..}  = bftParams
       BftFields{..}  = headerBftFields cfg b
       SlotNo n       = blockSlot b
-      expectedLeader = CoreId $ fromIntegral (n `mod` bftNumNodes)
+      expectedLeader = CoreId . CoreNodeId $ fromIntegral (n `mod` numCoreNodes)
+      NumCoreNodes numCoreNodes = bftNumNodes
 
   rewindChainState _ _ _ = Just ()
 

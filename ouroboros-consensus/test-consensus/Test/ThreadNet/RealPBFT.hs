@@ -8,6 +8,11 @@
 
 module Test.ThreadNet.RealPBFT (
     tests
+    -- * To support the DualPBFT tests
+  , realPBftParams
+  , genRealPBFTNodeJoinPlan
+  , shrinkTestConfigSlotsOnly
+  , expectedBlockRejection
   ) where
 
 import           Data.Coerce (coerce)
@@ -238,7 +243,7 @@ expectedBlockRejection
   k numCoreNodes@(NumCoreNodes nn) (NodeRestarts nrs) BlockRejection
   { brBlockSlot = s
   , brReason    = err
-  , brRejector  = CoreId i
+  , brRejector  = CoreId (CoreNodeId i)
   }
   | ownBlock                   = case err of
     ExtValidationErrorOuroboros
@@ -406,7 +411,7 @@ mkProtocolRealPBFT params (CoreNodeId i)
             $ Genesis.gsRichSecrets genesisSecrets
 
     dlgCert :: Delegation.Certificate
-    dlgCert = snd $ Map.toAscList dlgMap !! i
+    dlgCert = snd $ Map.toAscList dlgMap !! (fromIntegral i)
 
     dlgMap :: Map Common.KeyHash Delegation.Certificate
     dlgMap = Genesis.unGenesisDelegation
@@ -419,7 +424,7 @@ mkProtocolRealPBFT params (CoreNodeId i)
 
 realPBftParams :: SecurityParam -> NumCoreNodes -> PBftParams
 realPBftParams paramK numCoreNodes = PBftParams
-  { pbftNumNodes           = n
+  { pbftNumNodes           = numCoreNodes
   , pbftSecurityParam      = paramK
   , pbftSignatureThreshold = (1 / n) + (1 / k) + epsilon
     -- crucially: @floor (k * t) >= ceil (k / n)@
@@ -443,6 +448,7 @@ generateGenesisConfig params =
   where
     startTime = UTCTime (ModifiedJulianDay 0) 0
     PBftParams{pbftNumNodes, pbftSecurityParam} = params
+    NumCoreNodes numCoreNodes = pbftNumNodes
 
     spec :: Genesis.GenesisSpec
     spec = Dummy.dummyGenesisSpec
@@ -450,7 +456,7 @@ generateGenesisConfig params =
         { Genesis.giTestBalance =
             (Genesis.giTestBalance Dummy.dummyGenesisInitializer)
               -- The nodes are the richmen
-              { Genesis.tboRichmen = fromIntegral pbftNumNodes }
+              { Genesis.tboRichmen = fromIntegral numCoreNodes }
         }
       , Genesis.gsK = Common.BlockCount $ maxRollbacks pbftSecurityParam
       }
@@ -491,7 +497,7 @@ genRealPBFTNodeJoinPlan params numSlots@(NumSlots t)
         -- 1 retried 6 times
   where
     PBftParams{pbftNumNodes} = params
-    n                        = fromIntegral pbftNumNodes
+    NumCoreNodes n           = pbftNumNodes
 
     lastSlot = SlotNo $ fromIntegral $ t - 1
 
@@ -670,7 +676,7 @@ genNodeRekeys params (NodeJoinPlan njp) numSlots@(NumSlots t)
     PBftParams{pbftSecurityParam} = params
     k = maxRollbacks pbftSecurityParam
     lastSlot = SlotNo $ fromIntegral $ t - 1
-    numCoreNodes = NumCoreNodes $ Map.size njp
+    numCoreNodes = NumCoreNodes $ fromIntegral (Map.size njp)
 
     twoK             = SlotNo $ 2 * k
     beginSecondEpoch = SlotNo $ 10 * k   -- c.f. Genesis.configEpochSlots

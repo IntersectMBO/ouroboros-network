@@ -54,7 +54,7 @@ instance Condense NodeTopology where
       [ (fromCoreNodeId nid, Set.map fromCoreNodeId nids)
       | (nid, nids) <- Map.toAscList m ]
     where
-      mesh = meshNodeTopology (NumCoreNodes (Map.size m))
+      mesh = meshNodeTopology (NumCoreNodes (fromIntegral (Map.size m)))
 
 -- | Connect every pair of nodes
 --
@@ -100,7 +100,7 @@ shrinkNodeTopology top@(NodeTopology m)
     | top == mesh = []
     | otherwise = [mesh]
   where
-    mesh = meshNodeTopology (NumCoreNodes (Map.size m))
+    mesh = meshNodeTopology (NumCoreNodes (fromIntegral (Map.size m)))
     -- TODO more sophisticated shrinks. I anticipate that they'll need to use
     -- 'Test.QuickCheck.Shrinking' or else risk very slow responses
 

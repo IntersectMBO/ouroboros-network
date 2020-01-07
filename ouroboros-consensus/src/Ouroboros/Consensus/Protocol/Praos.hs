@@ -38,8 +38,8 @@ import           Control.Monad (unless)
 import           Control.Monad.Except (throwError)
 import           Control.Monad.Identity (runIdentity)
 import           Crypto.Random (MonadRandom)
-import           Data.IntMap.Strict (IntMap)
-import qualified Data.IntMap.Strict as IntMap
+import           Data.Map.Strict (Map)
+import qualified Data.Map.Strict as Map
 import           Data.Proxy (Proxy (..))
 import           Data.Typeable
 import           Data.Word (Word64)
@@ -166,7 +166,7 @@ data PraosProof c = PraosProof {
 
 data PraosValidationError c =
       PraosInvalidSlot SlotNo SlotNo
-    | PraosUnknownCoreId Int
+    | PraosUnknownCoreId CoreNodeId
     | PraosInvalidSig String (VerKeyKES (PraosKES c)) Natural (SigKES (PraosKES c))
     | PraosInvalidCert (VerKeyVRF (PraosVRF c)) (Natural, SlotNo, VRFType) Natural (CertVRF (PraosVRF c))
     | PraosInsufficientStake Double Natural
@@ -221,7 +221,7 @@ data instance NodeConfig (Praos cfg c) = PraosNodeConfig
   , praosInitialStake :: !StakeDist
   , praosNodeId       :: !NodeId
   , praosSignKeyVRF   :: !(SignKeyVRF (PraosVRF c))
-  , praosVerKeys      :: !(IntMap (VerKeyKES (PraosKES c), VerKeyVRF (PraosVRF c)))
+  , praosVerKeys      :: !(Map CoreNodeId (VerKeyKES (PraosKES c), VerKeyVRF (PraosVRF c)))
   , praosExtConfig    :: !cfg
   }
   deriving (Generic)
@@ -252,7 +252,7 @@ instance ( PraosCrypto c
               then Just PraosProof {
                        praosProofRho  = rho
                      , praosProofY    = y
-                     , praosLeader    = CoreNodeId nid
+                     , praosLeader    = nid
                      , praosProofSlot = slot
                      }
               else Nothing
@@ -262,7 +262,7 @@ instance ( PraosCrypto c
         PraosExtraFields{..} = praosExtraFields
         toSign               = headerSigned b
         slot                 = blockSlot b
-        CoreNodeId nid       = praosCreator
+        nid                  = praosCreator
 
     -- check that the new block advances time
     case cs of
@@ -271,7 +271,7 @@ instance ( PraosCrypto c
         _                      -> return ()
 
     -- check that block creator is a known core node
-    (vkKES, vkVRF) <- case IntMap.lookup nid praosVerKeys of
+    (vkKES, vkVRF) <- case Map.lookup nid praosVerKeys of
         Nothing  -> throwError $ PraosUnknownCoreId nid
         Just vks -> return vks
 
@@ -398,7 +398,7 @@ leaderThreshold :: forall cfg c. PraosCrypto c
                 => NodeConfig (Praos cfg c)
                 -> [BlockInfo c]
                 -> SlotNo
-                -> Int
+                -> CoreNodeId
                 -> Double
 leaderThreshold st xs s n =
     let a = stakeWithDefault 0 n $ infosStake st xs (slotEpoch st s)
@@ -408,17 +408,17 @@ rhoYT :: PraosCrypto c
       => NodeConfig (Praos cfg c)
       -> [BlockInfo c]
       -> SlotNo
-      -> Int
+      -> CoreNodeId
       -> ( (Natural, SlotNo, VRFType)
          , (Natural, SlotNo, VRFType)
          , Double
          )
-rhoYT st xs s n =
+rhoYT st xs s nid =
     let e   = slotEpoch st s
         eta = infosEta st xs e
         rho = (eta, s, NONCE)
         y   = (eta, s, TEST)
-        t   = leaderThreshold st xs s n
+        t   = leaderThreshold st xs s nid
     in  (rho, y, t)
 
 {-------------------------------------------------------------------------------

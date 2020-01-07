@@ -68,7 +68,7 @@ genNodeJoinPlan numCoreNodes@(NumCoreNodes n) numSlots@(NumSlots t)
             SlotNo <$> choose (0, lastSlot)
 
     let nids = enumCoreNodes numCoreNodes :: [CoreNodeId]
-    schedules <- vectorOf n genJoinSlot
+    schedules <- vectorOf (fromIntegral n) genJoinSlot
     -- without loss of generality, the nodes start initializing in order of
     -- their Ids; this merely makes it easer to interpret the counterexamples
     pure $ NodeJoinPlan $ Map.fromList $ zip nids $ List.sort schedules
@@ -110,5 +110,5 @@ nodeIdJoinSlot ::
      HasCallStack
   => NodeJoinPlan -> NodeId -> SlotNo
 nodeIdJoinSlot nodeJoinPlan@(NodeJoinPlan m) ni = case ni of
-    CoreId cni -> coreNodeIdJoinSlot nodeJoinPlan (CoreNodeId cni)
+    CoreId cni -> coreNodeIdJoinSlot nodeJoinPlan cni
     _          -> error $ "not found: " <> condense (ni, Map.toList m)

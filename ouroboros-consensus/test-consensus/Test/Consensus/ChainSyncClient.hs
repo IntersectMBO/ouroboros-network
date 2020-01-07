@@ -54,6 +54,7 @@ import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.BlockchainTime.Mock
 import           Ouroboros.Consensus.ChainSyncClient
 import           Ouroboros.Consensus.Ledger.Extended hiding (ledgerState)
+import           Ouroboros.Consensus.Node.ProtocolInfo.Abstract
 import           Ouroboros.Consensus.NodeId
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.BFT
@@ -402,14 +403,14 @@ runChainSync securityParam maxClockSkew (ClientUpdates clientUpdates)
     nodeCfg coreNodeId = BftNodeConfig
       { bftParams   = BftParams
         { bftSecurityParam = securityParam
-        , bftNumNodes      = 2
+        , bftNumNodes      = NumCoreNodes 2
         , bftSlotLengths   = slotLengths
         }
       , bftNodeId   = fromCoreNodeId coreNodeId
       , bftSignKey  = SignKeyMockDSIGN 0
       , bftVerKeys  = Map.fromList
-                      [ (CoreId 0, VerKeyMockDSIGN 0)
-                      , (CoreId 1, VerKeyMockDSIGN 1)
+                      [ (CoreId (CoreNodeId 0), VerKeyMockDSIGN 0)
+                      , (CoreId (CoreNodeId 1), VerKeyMockDSIGN 1)
                       ]
       }
 

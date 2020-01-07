@@ -13,6 +13,7 @@ module Ouroboros.Consensus.Ledger.Byron.Ledger (
     -- * Ledger integration
     LedgerConfig(..)
   , LedgerState(..)
+  , initByronLedgerState
     -- * Serialisation
   , encodeByronLedgerState
   , decodeByronLedgerState
@@ -97,6 +98,15 @@ instance UpdateLedger ByronBlock where
         Right hdrHash -> Point (Point.block slot (ByronHash hdrHash))
           where
             slot = fromByronSlotNo (CC.cvsLastSlot state)
+
+initByronLedgerState :: Gen.Config -> LedgerState ByronBlock
+initByronLedgerState genesis = ByronLedgerState {
+      byronLedgerState       = initState
+    , byronDelegationHistory = History.empty
+    }
+  where
+    initState :: CC.ChainValidationState
+    Right initState = runExcept $ CC.initialChainValidationState genesis
 
 instance ConfigContainsGenesis (LedgerConfig ByronBlock) where
   getGenesisConfig = unByronLedgerConfig

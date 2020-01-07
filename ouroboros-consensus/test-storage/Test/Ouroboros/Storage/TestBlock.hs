@@ -49,7 +49,8 @@ import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
-import           Ouroboros.Consensus.NodeId (NodeId (..))
+import           Ouroboros.Consensus.Node.ProtocolInfo.Abstract
+import           Ouroboros.Consensus.NodeId
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.BFT
 import           Ouroboros.Consensus.Protocol.Signed
@@ -299,7 +300,9 @@ instance HeaderSupportsBft BftMockCrypto (Header TestBlock) where
               -> SlotNo
               -> SignKeyDSIGN MockDSIGN
       signKey BftNodeConfig{ bftParams = BftParams{..} } (SlotNo n) =
-          SignKeyMockDSIGN $ fromIntegral (n `mod` bftNumNodes)
+          SignKeyMockDSIGN $ fromIntegral (n `mod` numCoreNodes)
+        where
+          NumCoreNodes numCoreNodes = bftNumNodes
 
 data TestBlockError
   = InvalidHash
@@ -359,13 +362,13 @@ testInitExtLedger = ExtLedgerState {
 singleNodeTestConfig :: NodeConfig (Bft BftMockCrypto)
 singleNodeTestConfig = BftNodeConfig {
       bftParams   = BftParams { bftSecurityParam = k
-                              , bftNumNodes      = 1
+                              , bftNumNodes      = NumCoreNodes 1
                               , bftSlotLengths   = singletonSlotLengths $
                                                      slotLengthFromSec 20
                               }
-    , bftNodeId   = CoreId 0
+    , bftNodeId   = CoreId (CoreNodeId 0)
     , bftSignKey  = SignKeyMockDSIGN 0
-    , bftVerKeys  = Map.singleton (CoreId 0) (VerKeyMockDSIGN 0)
+    , bftVerKeys  = Map.singleton (CoreId (CoreNodeId 0)) (VerKeyMockDSIGN 0)
     }
   where
     -- We fix k at 4 for now

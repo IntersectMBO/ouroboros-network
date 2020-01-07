@@ -29,6 +29,7 @@ import           Data.Word (Word64)
 import           Ouroboros.Network.Block (SlotNo (..))
 
 import           Ouroboros.Consensus.BlockchainTime.Mock (NumSlots (..))
+import           Ouroboros.Consensus.Node.ProtocolInfo.Abstract
 import           Ouroboros.Consensus.NodeId (CoreNodeId (..))
 import           Ouroboros.Consensus.Protocol.Abstract (SecurityParam (..))
 import           Ouroboros.Consensus.Protocol.PBFT (PBftParams (..))
@@ -44,7 +45,7 @@ twoK PBftParams{pbftSecurityParam} =
     2 * fromIntegral (maxRollbacks pbftSecurityParam)
 
 oneN :: Num a => PBftParams -> a
-oneN PBftParams{pbftNumNodes} = fromIntegral pbftNumNodes
+oneN PBftParams{pbftNumNodes = NumCoreNodes n} = fromIntegral n
 
 {-------------------------------------------------------------------------------
   PBFT state

@@ -103,7 +103,7 @@ genLeaderSchedule :: SecurityParam
                   -> NumCoreNodes
                   -> NodeJoinPlan
                   -> Gen LeaderSchedule
-genLeaderSchedule k (NumSlots numSlots) (NumCoreNodes numCoreNodes) nodeJoinPlan =
+genLeaderSchedule k (NumSlots numSlots) numCoreNodes nodeJoinPlan =
     flip suchThat (consensusExpected k nodeJoinPlan) $ do
         leaders <- replicateM (fromIntegral numSlots) $ frequency
             [ ( 4, pick 0)
@@ -114,15 +114,15 @@ genLeaderSchedule k (NumSlots numSlots) (NumCoreNodes numCoreNodes) nodeJoinPlan
         return $ LeaderSchedule $ Map.fromList $ zip [0..] leaders
   where
     pick :: Int -> Gen [CoreNodeId]
-    pick = go [0 .. numCoreNodes - 1]
+    pick = go (enumCoreNodes numCoreNodes)
       where
-        go :: [Int] -> Int -> Gen [CoreNodeId]
+        go :: [CoreNodeId] -> Int -> Gen [CoreNodeId]
         go []   _ = return []
         go _    0 = return []
         go nids n = do
             nid <- elements nids
             xs  <- go (filter (/= nid) nids) (n - 1)
-            return $ CoreNodeId nid : xs
+            return $ nid : xs
 
 shrinkLeaderSchedule :: NumSlots -> LeaderSchedule -> [LeaderSchedule]
 shrinkLeaderSchedule (NumSlots numSlots) (LeaderSchedule m) =

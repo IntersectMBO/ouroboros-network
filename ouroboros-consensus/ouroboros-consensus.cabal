@@ -56,6 +56,19 @@ library
                        Ouroboros.Consensus.Ledger.Byron.Mempool
                        Ouroboros.Consensus.Ledger.Byron.Orphans
                        Ouroboros.Consensus.Ledger.Byron.PBFT
+                       Ouroboros.Consensus.Ledger.ByronSpec
+                       Ouroboros.Consensus.Ledger.ByronSpec.Block
+                       Ouroboros.Consensus.Ledger.ByronSpec.ChainState
+                       Ouroboros.Consensus.Ledger.ByronSpec.Conversions
+                       Ouroboros.Consensus.Ledger.ByronSpec.Forge
+                       Ouroboros.Consensus.Ledger.ByronSpec.Genesis
+                       Ouroboros.Consensus.Ledger.ByronSpec.GenTx
+                       Ouroboros.Consensus.Ledger.ByronSpec.Ledger
+                       Ouroboros.Consensus.Ledger.ByronSpec.Mempool
+                       Ouroboros.Consensus.Ledger.ByronSpec.Orphans
+                       Ouroboros.Consensus.Ledger.ByronSpec.Rules
+                       Ouroboros.Consensus.Ledger.Dual
+                       Ouroboros.Consensus.Ledger.Dual.Byron
                        Ouroboros.Consensus.Ledger.Extended
                        Ouroboros.Consensus.Ledger.Mock
                        Ouroboros.Consensus.Ledger.Mock.Address
@@ -86,6 +99,7 @@ library
                        Ouroboros.Consensus.Node.Run
                        Ouroboros.Consensus.Node.Run.Abstract
                        Ouroboros.Consensus.Node.Run.Byron
+                       Ouroboros.Consensus.Node.Run.DualByron
                        Ouroboros.Consensus.Node.Run.Mock
                        Ouroboros.Consensus.Node.Tracers
                        Ouroboros.Consensus.NodeId
@@ -228,11 +242,14 @@ library
                        cardano-crypto-class,
                        cardano-crypto-wrapper,
                        cardano-ledger,
+                       cardano-ledger-test,
                        cardano-prelude,
                        cardano-slotting,
                        cborg             >=0.2.2 && <0.3,
                        containers        >=0.5   && <0.7,
                        cryptonite        >=0.25  && <0.26,
+                       cs-blockchain,
+                       cs-ledger,
                        deepseq,
                        digest,
                        directory         >=1.3   && <1.4,
@@ -247,6 +264,7 @@ library
                        network           >=3.1   && <3.2,
                        psqueues          >=0.2.3 && <0.3,
                        serialise         >=0.2   && <0.3,
+                       small-steps,
                        stm,
                        streaming,
                        text              >=1.2   && <1.3,
@@ -283,6 +301,7 @@ test-suite test-consensus
                     Test.Consensus.Protocol.PBFT
                     Test.Consensus.ResourceRegistry
                     Test.ThreadNet.BFT
+                    Test.ThreadNet.DualPBFT
                     Test.ThreadNet.General
                     Test.ThreadNet.LeaderSchedule
                     Test.ThreadNet.Network
@@ -333,6 +352,12 @@ test-suite test-consensus
                     io-sim-classes,
                     io-sim,
 
+                    -- Needed for the dual ledger
+                    cs-blockchain,
+                    cs-ledger,
+                    small-steps,
+                    hedgehog-quickcheck,
+
                     binary-search,
                     cborg,
                     containers,
@@ -363,6 +388,7 @@ test-suite test-consensus
   ghc-options:      -Wall
                     -fno-ignore-asserts
                     -threaded
+                    -rtsopts
 
 test-suite test-storage
   type:             exitcode-stdio-1.0
