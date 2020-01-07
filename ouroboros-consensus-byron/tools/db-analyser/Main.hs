@@ -1,4 +1,5 @@
 {-# LANGUAGE FlexibleContexts  #-}
+{-# LANGUAGE NamedFieldPuns    #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RankNTypes        #-}
 {-# LANGUAGE RecordWildCards   #-}
@@ -7,12 +8,14 @@
 module Main (main) where
 
 import           Control.Monad.Except
+import           Data.ByteString (ByteString)
 import           Data.Coerce
 import           Data.Foldable (asum)
 import           Data.IORef
 import           Data.List (foldl', intercalate)
 import           Data.Proxy (Proxy (..))
 import           Data.Word
+import           GHC.Natural (Natural)
 import           Options.Applicative
 
 import           Cardano.Binary (unAnnotated)
@@ -70,6 +73,7 @@ main = do
 data AnalysisName =
     ShowSlotBlockNo
   | CountTxOutputs
+  | ShowBlockHeaderSize
 
 type Analysis = ImmDB IO ByronBlock
              -> EpochInfo IO
@@ -77,8 +81,9 @@ type Analysis = ImmDB IO ByronBlock
              -> IO ()
 
 runAnalysis :: AnalysisName -> Analysis
-runAnalysis ShowSlotBlockNo = showSlotBlockNo
-runAnalysis CountTxOutputs  = countTxOutputs
+runAnalysis ShowSlotBlockNo     = showSlotBlockNo
+runAnalysis CountTxOutputs      = countTxOutputs
+runAnalysis ShowBlockHeaderSize = showBlockHeaderSize
 
 {-------------------------------------------------------------------------------
   Analysis: show block and slot number for all blocks
@@ -150,6 +155,33 @@ relativeSlotNo epochInfo (SlotNo absSlot) = do
     return (epoch, absSlot - first)
 
 {-------------------------------------------------------------------------------
+  Analysis: show the block header size in bytes for all blocks
+-------------------------------------------------------------------------------}
+
+showBlockHeaderSize :: Analysis
+showBlockHeaderSize immDB epochInfo rr = do
+    maxBlockHeaderSizeRef <- newIORef 0
+    processAll immDB rr (go maxBlockHeaderSizeRef)
+    maxBlockHeaderSize <- readIORef maxBlockHeaderSizeRef
+    putStrLn ("Maximum encountered block header size = " <> show maxBlockHeaderSize)
+  where
+    go :: IORef Natural -> ByronBlock -> IO ()
+    go maxBlockHeaderSizeRef blk =
+        case blk of
+          Byron.ByronBlock (Chain.ABOBBlock regularBlk) _ _ -> do
+            let blockHdrSz = Chain.headerLength (Chain.blockHeader regularBlk)
+                slotNo = blockSlot blk
+            void $ modifyIORef' maxBlockHeaderSizeRef (max blockHdrSz)
+            epochSlot <- relativeSlotNo epochInfo slotNo
+            putStrLn $ intercalate "\t" [
+                show slotNo
+              , show epochSlot
+              , "Block header size = " <> show blockHdrSz
+              ]
+          _otherwise ->
+            return () -- Skip EBBs
+
+{-------------------------------------------------------------------------------
   Auxiliary: processing all blocks in the imm DB
 -------------------------------------------------------------------------------}
 
@@ -212,6 +244,10 @@ parseAnalysis = asum [
     , flag' CountTxOutputs $ mconcat [
           long "count-tx-outputs"
         , help "Show number of transaction outputs per block"
+        ]
+    , flag' ShowBlockHeaderSize $ mconcat [
+          long "show-block-header-size"
+        , help "Show the header sizes of all blocks"
         ]
     ]
 
