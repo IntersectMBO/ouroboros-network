@@ -5,7 +5,8 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 module Ouroboros.Consensus.Node.Run.Mock () where
 
-import           Codec.Serialise (Serialise, decode, encode)
+import           Codec.Serialise (Serialise, decode, encode, serialise)
+import qualified Data.ByteString.Lazy as Lazy
 import           Data.Time.Calendar (fromGregorian)
 import           Data.Time.Clock (UTCTime (..))
 import           Data.Typeable (Typeable)
@@ -40,8 +41,8 @@ instance ( ProtocolLedgerView (SimpleBlock SimpleMockCrypto ext)
          ) => RunNode (SimpleBlock SimpleMockCrypto ext) where
   nodeForgeBlock            = forgeSimple
   nodeBlockMatchesHeader    = matchesSimpleHeader
-  nodeBlockFetchSize        = fromIntegral . simpleBlockSize . simpleHeaderStd
   nodeIsEBB                 = const Nothing
+  nodeBlockSize             = fromIntegral . Lazy.length . serialise
   nodeEpochSize             = \_ cfg _ -> return $
     EpochSize $ 10 * maxRollbacks (protocolSecurityParam cfg)
   nodeStartTime             = \_ _ -> SystemStart dummyDate

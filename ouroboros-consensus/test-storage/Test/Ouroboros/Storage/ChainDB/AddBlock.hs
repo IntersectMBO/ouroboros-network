@@ -8,7 +8,7 @@ module Test.Ouroboros.Storage.ChainDB.AddBlock
 
 import qualified Codec.CBOR.Encoding as CBOR
 import qualified Codec.CBOR.Write as CBOR
-import           Codec.Serialise (decode, encode)
+import           Codec.Serialise (decode, encode, serialise)
 import           Control.Exception (throw)
 import           Control.Monad (void)
 import qualified Data.ByteString.Lazy as Lazy
@@ -137,8 +137,10 @@ prop_addBlock_multiple_threads bpt =
         Model.empty initLedger
 
     equallyPreferable :: Chain TestBlock -> Chain TestBlock -> Bool
-    equallyPreferable chain1 chain2 =
-      compareAnchoredCandidates cfg (Chain.toAnchoredFragment chain1) (Chain.toAnchoredFragment chain2) == EQ
+    equallyPreferable chain1 chain2 = EQ ==
+      compareAnchoredCandidates cfg id
+        (Chain.toAnchoredFragment chain1)
+        (Chain.toAnchoredFragment chain2)
 
     cfg :: NodeConfig (BlockProtocol TestBlock)
     cfg = singleNodeTestConfig
@@ -270,6 +272,7 @@ mkArgs cfg initLedger tracer registry hashInfo
     , cdbEpochInfo        = fixedSizeEpochInfo fixedEpochSize
     , cdbHashInfo         = hashInfo
     , cdbIsEBB            = const Nothing
+    , cdbBlockSize        = fromIntegral . Lazy.length . serialise
     , cdbCheckIntegrity   = const True
     , cdbBlockchainTime   = fixedBlockchainTime maxBound
     , cdbGenesis          = return initLedger

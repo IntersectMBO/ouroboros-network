@@ -28,7 +28,7 @@ import qualified Network.Mux.Bearer.Pipe as Mx
 import qualified Network.Mux.Types as Mx
 import           Ouroboros.Network.Mux
 
-import           Ouroboros.Network.Block (encodeTip, decodeTip)
+import           Ouroboros.Network.Block (decodeTip, encodeTip)
 import           Ouroboros.Network.MockChain.Chain (Chain, ChainUpdate, Point)
 import qualified Ouroboros.Network.MockChain.Chain as Chain
 import qualified Ouroboros.Network.MockChain.ProducerState as CPS
@@ -109,7 +109,8 @@ demo chain0 updates = do
         consumerApp = simpleInitiatorApplication $
           \ChainSync ->
             MuxPeer nullTracer
-                    (ChainSync.codecChainSync encode             (fmap const decode)
+                    (ChainSync.codecChainSync id                 id
+                                              encode             (fmap const decode)
                                               encode             decode
                                               (encodeTip encode) (decodeTip decode))
                     (ChainSync.chainSyncClientPeer
@@ -123,7 +124,8 @@ demo chain0 updates = do
         producerApp = simpleResponderApplication $
           \ChainSync ->
             MuxPeer nullTracer
-                    (ChainSync.codecChainSync encode             (fmap const decode)
+                    (ChainSync.codecChainSync id                 id
+                                              encode             (fmap const decode)
                                               encode             decode
                                               (encodeTip encode) (decodeTip decode))
                     (ChainSync.chainSyncServerPeer server)

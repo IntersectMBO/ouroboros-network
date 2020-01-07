@@ -48,7 +48,8 @@ import           Ouroboros.Network.AnchoredFragment (AnchoredFragment (..))
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block (BlockNo, pattern BlockPoint,
                      pattern GenesisPoint, HasHeader (..), HeaderHash, Point,
-                     SlotNo, blockPoint, castHash, castPoint, pointHash)
+                     SlotNo, WithBlockSize (..), blockPoint, castHash,
+                     castPoint, pointHash)
 import           Ouroboros.Network.Point (WithOrigin)
 
 import           Ouroboros.Consensus.Block (BlockProtocol, GetHeader (..),
@@ -57,7 +58,7 @@ import           Ouroboros.Consensus.BlockchainTime (BlockchainTime (..))
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Protocol.Abstract
-import           Ouroboros.Consensus.Util.AnchoredFragment
+import qualified Ouroboros.Consensus.Util.AnchoredFragment as AF
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.STM (WithFingerprint (..))
 
@@ -113,7 +114,7 @@ initialChainSelection immDB volDB lgrDB tracer cfg varInvalid curSlot = do
     -- the ImmutableDB.
     constructChains :: Point blk -- ^ Tip of the ImmutableDB, @i@
                     -> (WithOrigin (HeaderHash blk) -> Set (HeaderHash blk))
-                    -> m [AnchoredFragment (Header blk)]
+                    -> m [AnchoredFragment (WithBlockSize (Header blk))]
     constructChains i succsOf = flip evalStateT Map.empty $
         mapM constructChain suffixesAfterI
       where
@@ -121,9 +122,9 @@ initialChainSelection immDB volDB lgrDB tracer cfg varInvalid curSlot = do
         suffixesAfterI = VolDB.candidates succsOf i
 
         constructChain :: NonEmpty (HeaderHash blk)
-                       -> StateT (Map (HeaderHash blk) (Header blk))
+                       -> StateT (Map (HeaderHash blk) (WithBlockSize (Header blk)))
                                  m
-                                 (AnchoredFragment (Header blk))
+                                 (AnchoredFragment (WithBlockSize (Header blk)))
         constructChain hashes =
           AF.fromOldestFirst (castPoint i) .
           takeWhile ((<= curSlot) . blockSlot) <$>
@@ -139,7 +140,7 @@ initialChainSelection immDB volDB lgrDB tracer cfg varInvalid curSlot = do
                     => ChainAndLedger blk
                        -- ^ The current chain and ledger, corresponding to
                        -- @i@.
-                    -> NonEmpty (AnchoredFragment (Header blk))
+                    -> NonEmpty (AnchoredFragment (WithBlockSize (Header blk)))
                        -- ^ Candidates anchored at @i@
                     -> m (Maybe (ChainAndLedger blk))
     chainSelection' curChainAndLedger@(ChainAndLedger curChain ledger) candidates =
@@ -199,29 +200,34 @@ addBlock cdb@CDB{..} b = do
         VolDB.putBlock cdbVolDB b
         trace $ BlockInTheFuture (blockPoint b) curSlot
         trace $ AddedBlockToVolDB (blockPoint b) (blockNo b) (toIsEBB (cdbIsEBB b))
-        scheduleChainSelection curSlot (blockSlot b) (getHeader b)
+        scheduleChainSelection curSlot (blockSlot b)
 
       -- The remaining cases
       | otherwise -> do
         VolDB.putBlock cdbVolDB b
         trace $ AddedBlockToVolDB (blockPoint b) (blockNo b) (toIsEBB (cdbIsEBB b))
-        chainSelectionForBlock cdb (getHeader b)
+        chainSelectionForBlock cdb hdr
   where
     trace :: TraceAddBlockEvent blk -> m ()
     trace = traceWith (contramap TraceAddBlockEvent cdbTracer)
 
+    hdr :: WithBlockSize (Header blk)
+    hdr = WithBlockSize (cdbBlockSize b) (getHeader b)
+
     scheduleChainSelection
       :: SlotNo  -- ^ Current slot number
       -> SlotNo  -- ^ Slot number of the block
-      -> Header blk
       -> m ()
-    scheduleChainSelection curSlot slot hdr = do
-      nbScheduled <- atomically $ updateTVar cdbFutureBlocks $ \futureBlocks ->
-        let futureBlocks' = Map.insertWith strictAppend slot
-              (forceElemsToWHNF (hdr NE.:| [])) futureBlocks
-            nbScheduled   = fromIntegral $ sum $ length <$> Map.elems futureBlocks
-        in (futureBlocks', nbScheduled)
-      trace $ ScheduledChainSelection (headerPoint hdr) curSlot nbScheduled
+    scheduleChainSelection curSlot slot = do
+        nbScheduled <- atomically $ updateTVar cdbFutureBlocks $ \futureBlocks ->
+          let futureBlocks' = Map.insertWith strictAppend slot
+                (forceElemsToWHNF (hdr NE.:| [])) futureBlocks
+              nbScheduled   = fromIntegral $ sum $
+                length <$> Map.elems futureBlocks
+          in (futureBlocks', nbScheduled)
+        trace $ ScheduledChainSelection pt curSlot nbScheduled
+      where
+        pt = headerPoint (withoutBlockSize hdr)
 
     strictAppend :: (Semigroup (t a), Foldable t) => t a -> t a -> t a
     strictAppend x y = forceElemsToWHNF (x <> y)
@@ -264,7 +270,7 @@ chainSelectionForBlock
      , HasCallStack
      )
   => ChainDbEnv m blk
-  -> Header blk
+  -> WithBlockSize (Header blk)
   -> m ()
 chainSelectionForBlock cdb@CDB{..} hdr = do
     curSlot <- atomically $ getCurrentSlot cdbBlockchainTime
@@ -292,8 +298,8 @@ chainSelectionForBlock cdb@CDB{..} hdr = do
         succsOf'  = ignoreInvalidSuc cdb invalid succsOf
 
     -- The preconditions
-    assert (blockSlot hdr <= curSlot)  $ return ()
-    assert (isMember (headerHash hdr)) $ return ()
+    assert (blockSlot hdr <= curSlot) $ return ()
+    assert (isMember hash)            $ return ()
 
     if
       -- The chain might have grown since we added the block such that the
@@ -302,7 +308,7 @@ chainSelectionForBlock cdb@CDB{..} hdr = do
         trace $ IgnoreBlockOlderThanK p
 
       -- We might have validated the block in the meantime
-      | Just (InvalidBlockInfo reason _) <- Map.lookup (headerHash hdr) invalid ->
+      | Just (InvalidBlockInfo reason _) <- Map.lookup hash invalid ->
         trace $ IgnoreInvalidBlock p reason
 
       -- The block @b@ fits onto the end of our current chain
@@ -328,7 +334,10 @@ chainSelectionForBlock cdb@CDB{..} hdr = do
     secParam@(SecurityParam k) = protocolSecurityParam cdbNodeConfig
 
     p :: Point blk
-    p = headerPoint hdr
+    p = headerPoint (withoutBlockSize hdr)
+
+    hash :: HeaderHash blk
+    hash = headerHash (withoutBlockSize hdr)
 
     trace :: TraceAddBlockEvent blk -> m ()
     trace = traceWith (contramap TraceAddBlockEvent cdbTracer)
@@ -405,7 +414,7 @@ chainSelectionForBlock cdb@CDB{..} hdr = do
     switchToAFork succsOf curChainAndLedger@(ChainAndLedger curChain _) hashes
                   curSlot = do
         let suffixesAfterB = VolDB.candidates succsOf p
-            initCache      = Map.insert (headerHash hdr) hdr (cacheHeaders curChain)
+            initCache      = Map.insert (blockHash hdr) hdr (cacheHeaders curChain)
         -- Fragments that are anchored at @i@.
         candidates <- flip evalStateT initCache $
           case NE.nonEmpty suffixesAfterB of
@@ -531,8 +540,8 @@ chainSelectionForBlock cdb@CDB{..} hdr = do
         trace $ ChainChangedInBg curChain newChain
 
     -- | Build a cache from the headers in the fragment.
-    cacheHeaders :: AnchoredFragment (Header blk)
-                 -> Map (HeaderHash blk) (Header blk)
+    cacheHeaders :: AnchoredFragment (WithBlockSize (Header blk))
+                 -> Map (HeaderHash blk) (WithBlockSize (Header blk))
     cacheHeaders =
       foldl' (\m h -> Map.insert (blockHash h) h m) Map.empty .
       AF.toNewestFirst
@@ -559,9 +568,9 @@ chainSelectionForBlock cdb@CDB{..} hdr = do
       -> Point blk                  -- ^ Tip of ImmutableDB @i@
       -> NonEmpty (HeaderHash blk)  -- ^ Hashes of @(i,b]@
       -> [HeaderHash blk]           -- ^ Suffix @s@, hashes of @(b,?]@
-      -> StateT (Map (HeaderHash blk) (Header blk))
+      -> StateT (Map (HeaderHash blk) (WithBlockSize (Header blk)))
                 m
-                (AnchoredFragment (Header blk))
+                (AnchoredFragment (WithBlockSize (Header blk)))
          -- ^ Fork, anchored at @i@, contains (the header of) @b@ and ends
          -- with the suffix @s@.
     constructFork curSlot i hashes suffixHashes
@@ -579,11 +588,13 @@ getKnownHeaderThroughCache
   :: (MonadCatch m, HasHeader blk)
   => VolDB m blk
   -> HeaderHash blk
-  -> StateT (Map (HeaderHash blk) (Header blk)) m (Header blk)
+  -> StateT (Map (HeaderHash blk) (WithBlockSize (Header blk)))
+            m
+            (WithBlockSize (Header blk))
 getKnownHeaderThroughCache volDB hash = gets (Map.lookup hash) >>= \case
   Just hdr -> return hdr
   Nothing  -> do
-    hdr <- lift $ VolDB.getKnownHeader volDB hash
+    hdr <- lift $ VolDB.getKnownHeaderWithBlockSize volDB hash
     modify (Map.insert hash hdr)
     return hdr
 
@@ -752,7 +763,7 @@ validateCandidate lgrDB tracer cfg varInvalid
   where
     trace = traceWith tracer
     CandidateSuffix rollback suffix = candSuffix
-    newBlocks = AF.toOldestFirst suffix
+    newBlocks = withoutBlockSize <$> AF.toOldestFirst suffix
     candidate = fromMaybe
       (error "candidate suffix doesn't fit on the current chain") $
       fitCandidateSuffixOn curChain candSuffix
@@ -796,14 +807,15 @@ validateCandidate lgrDB tracer cfg varInvalid
 -- > for (x :: ChainAndLedger blk),
 -- >   AF.headPoint (_chain x) == LgrDB.currentPoint (_ledger x)
 data ChainAndLedger blk = ChainAndLedger
-  { clChain  :: !(AnchoredFragment (Header blk))
+  { clChain  :: !(AnchoredFragment (WithBlockSize (Header blk)))
     -- ^ Chain fragment
   , clLedger :: !(LgrDB.LedgerDB blk)
     -- ^ Ledger corresponding to '_chain'
   }
 
 mkChainAndLedger :: (HasHeader blk , UpdateLedger blk)
-                 => AnchoredFragment (Header blk) -> LgrDB.LedgerDB blk
+                 => AnchoredFragment (WithBlockSize (Header blk))
+                 -> LgrDB.LedgerDB blk
                  -> ChainAndLedger blk
 mkChainAndLedger c l =
     assert (castPoint (AF.headPoint c) == LgrDB.currentPoint l) $
@@ -815,7 +827,7 @@ mkChainAndLedger c l =
 data CandidateSuffix blk = CandidateSuffix
   { _rollback :: !Word64
     -- ^ The number of headers to roll back the current chain
-  , _suffix   :: !(AnchoredFragment (Header blk))
+  , _suffix   :: !(AnchoredFragment (WithBlockSize (Header blk)))
     -- ^ The new headers to add after rolling back the current chain.
   }
 
@@ -826,7 +838,7 @@ deriving instance (HasHeader blk, Show (Header blk))
 
 mkCandidateSuffix :: HasHeader (Header blk)
                   => Word64
-                  -> AnchoredFragment (Header blk)
+                  -> AnchoredFragment (WithBlockSize (Header blk))
                   -> CandidateSuffix blk
 mkCandidateSuffix rollback suffix =
     assert (fromIntegral (AF.length suffix) >= rollback) $
@@ -839,9 +851,9 @@ mkCandidateSuffix rollback suffix =
 -- 'Just' will be returned. The returned candidate fragment will have the same
 -- anchor point as the given chain.
 fitCandidateSuffixOn :: HasHeader (Header blk)
-                     => AnchoredFragment (Header blk)
+                     => AnchoredFragment (WithBlockSize (Header blk))
                      -> CandidateSuffix  blk
-                     -> Maybe (AnchoredFragment (Header blk))
+                     -> Maybe (AnchoredFragment (WithBlockSize (Header blk)))
 fitCandidateSuffixOn curChain (CandidateSuffix rollback suffix) =
     AF.join (AF.dropNewest (fromIntegral rollback) curChain) suffix
 
@@ -871,9 +883,9 @@ rollbackCandidateSuffix pt (CandidateSuffix rollback suffix)
 -- fragment.
 intersectCandidateSuffix
   :: (HasHeader (Header blk), HasCallStack)
-  => AnchoredFragment (Header blk)  -- ^ Current chain
-  -> AnchoredFragment (Header blk)  -- ^ Candidate chain
-  -> Maybe (CandidateSuffix   blk)  -- ^ Candidate suffix
+  => AnchoredFragment (WithBlockSize (Header blk))  -- ^ Current chain
+  -> AnchoredFragment (WithBlockSize (Header blk))  -- ^ Candidate chain
+  -> Maybe (CandidateSuffix blk)                    -- ^ Candidate suffix
 intersectCandidateSuffix curChain candChain =
   case AF.intersect curChain candChain of
     Just (_curChainPrefix, _candPrefix, curChainSuffix, candSuffix)
@@ -907,6 +919,30 @@ truncateInvalidCandidate isInvalid (CandidateSuffix rollback suffix)
   Helpers
 -------------------------------------------------------------------------------}
 
+preferAnchoredCandidate
+  :: forall blk.
+    ( OuroborosTag (BlockProtocol blk)
+    , HasHeader (Header blk)
+    , CanSelect (BlockProtocol blk) (Header blk)
+    )
+  => NodeConfig (BlockProtocol blk)
+  -> AnchoredFragment (WithBlockSize (Header blk))  -- ^ Our chain
+  -> AnchoredFragment (WithBlockSize (Header blk))  -- ^ Candidate
+  -> Bool
+preferAnchoredCandidate cfg = AF.preferAnchoredCandidate cfg withoutBlockSize
+
+compareAnchoredCandidates
+  :: forall blk.
+    ( OuroborosTag (BlockProtocol blk)
+    , HasHeader (Header blk)
+    , CanSelect (BlockProtocol blk) (Header blk)
+    , HasCallStack
+    )
+  => NodeConfig (BlockProtocol blk)
+  -> AnchoredFragment (WithBlockSize (Header blk))
+  -> AnchoredFragment (WithBlockSize (Header blk))
+  -> Ordering
+compareAnchoredCandidates cfg = AF.compareAnchoredCandidates cfg withoutBlockSize
 
 -- | Wrap an @isMember@ function so that it returns 'False' for invalid
 -- blocks.
@@ -942,9 +978,9 @@ ignoreInvalidSuc _ invalid succsOf =
 -- chain, there will be no header on the fragment @k@ blocks back, only the
 -- anchor point. In that case, the \"immutable\" block will also not change.
 getImmBlockNo
-  :: HasHeader (Header blk)
+  :: HasHeader b
   => SecurityParam
-  -> AnchoredFragment (Header blk)  -- ^ New chain
+  -> AnchoredFragment b  -- ^ New chain
   -> BlockNo  -- ^ 'BlockNo' of the previous \"immutable\" block
   -> BlockNo
 getImmBlockNo (SecurityParam k) chain prevBlockNo =

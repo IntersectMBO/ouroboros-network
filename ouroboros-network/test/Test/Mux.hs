@@ -30,7 +30,7 @@ import           Test.Tasty.QuickCheck (testProperty)
 
 import           Network.TypedProtocol.Core
 
-import           Ouroboros.Network.Block (Tip(..), encodeTip, decodeTip)
+import           Ouroboros.Network.Block (Tip (..), decodeTip, encodeTip)
 import           Ouroboros.Network.MockChain.Chain (Chain, ChainUpdate, Point)
 import qualified Ouroboros.Network.MockChain.Chain as Chain
 import qualified Ouroboros.Network.MockChain.ProducerState as CPS
@@ -113,6 +113,7 @@ demo chain0 updates delay = do
                         Mx.MuxPeer
                         nullTracer
                         (ChainSync.codecChainSync
+                        id                 id
                         encode (fmap const decode)
                         encode             decode
                         (encodeTip encode) (decodeTip decode))
@@ -125,6 +126,7 @@ demo chain0 updates delay = do
                         Mx.MuxPeer
                         nullTracer
                         (ChainSync.codecChainSync
+                        id                 id
                         encode (fmap const decode)
                         encode             decode
                         (encodeTip encode) (decodeTip decode))

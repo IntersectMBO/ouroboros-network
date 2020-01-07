@@ -77,11 +77,11 @@ newtype ClockSkew = ClockSkew { unClockSkew :: Word64 }
   deriving newtype (Enum, Bounded, Num)
 
 type Consensus (client :: * -> * -> (* -> *) -> * -> *) blk m =
-   client (Header blk) (Tip blk) m Void
+   client (WithBlockSize (Header blk)) (Tip blk) m Void
 
 -- | Abstract over the ChainDB
 data ChainDbView m blk = ChainDbView
-  { getCurrentChain   :: STM m (AnchoredFragment (Header blk))
+  { getCurrentChain   :: STM m (AnchoredFragment (WithBlockSize (Header blk)))
   , getCurrentLedger  :: STM m (ExtLedgerState blk)
   , getOurTip         :: STM m (Tip blk)
   , getIsInvalidBlock :: STM m (WithFingerprint (HeaderHash blk -> Maybe (InvalidBlockReason blk)))
@@ -104,11 +104,11 @@ bracketChainSyncClient
        )
     => Tracer m (TraceChainSyncClientEvent blk)
     -> ChainDbView m blk
-    -> StrictTVar m (Map peer (StrictTVar m (AnchoredFragment (Header blk))))
+    -> StrictTVar m (Map peer (StrictTVar m (AnchoredFragment (WithBlockSize (Header blk)))))
        -- ^ The candidate chains, we need the whole map because we
        -- (de)register nodes (@peer@).
     -> peer
-    -> (    StrictTVar m (AnchoredFragment (Header blk))
+    -> (    StrictTVar m (AnchoredFragment (WithBlockSize (Header blk)))
          -> m a
        )
     -> m a
@@ -179,7 +179,7 @@ bracketChainSyncClient tracer ChainDbView { getIsInvalidBlock } varCandidates
 -- | State used when the intersection between the candidate and the current
 -- chain is unknown.
 data UnknownIntersectionState blk = UnknownIntersectionState
-  { ourFrag       :: !(AnchoredFragment (Header blk))
+  { ourFrag       :: !(AnchoredFragment (WithBlockSize (Header blk)))
     -- ^ A view of the current chain fragment. Note that this might be
     -- temporarily out of date w.r.t. the actual current chain until we update
     -- it again.
@@ -203,12 +203,12 @@ instance ( ProtocolLedgerView blk
 -- | State used when the intersection between the candidate and the current
 -- chain is known.
 data KnownIntersectionState blk = KnownIntersectionState
-  { theirFrag       :: !(AnchoredFragment (Header blk))
+  { theirFrag       :: !(AnchoredFragment (WithBlockSize (Header blk)))
     -- ^ The candidate, the synched fragment of their chain.
   , theirChainState :: !(ChainState (BlockProtocol blk))
     -- ^ 'ChainState' corresponding to the tip (most recent block) of
     -- 'theirFrag'.
-  , ourFrag         :: !(AnchoredFragment (Header blk))
+  , ourFrag         :: !(AnchoredFragment (WithBlockSize (Header blk)))
     -- ^ A view of the current chain fragment used to maintain the invariants
     -- with. Note that this might be temporarily out of date w.r.t. the actual
     -- current chain until we update it again.
@@ -244,7 +244,7 @@ chainSyncClient
     -> BlockchainTime m
     -> ClockSkew   -- ^ Maximum clock skew
     -> ChainDbView m blk
-    -> StrictTVar m (AnchoredFragment (Header blk))
+    -> StrictTVar m (AnchoredFragment (WithBlockSize (Header blk)))
     -> Consensus ChainSyncClientPipelined blk m
 chainSyncClient mkPipelineDecision0 tracer cfg btime
                 (ClockSkew maxSkew)
@@ -330,9 +330,12 @@ chainSyncClient mkPipelineDecision0 tracer cfg btime
         -- guarantees that the ChainSync protocol /does/ in fact give us a
         -- switch-to-fork instead of a true rollback.
         (theirFrag, theirChainState) <- do
-          let i = castPoint intersection
+          let i  :: Point (WithBlockSize (Header blk))
+              i = castPoint intersection
+              i' :: Point (Header blk)
+              i' = castPoint intersection
           case (,) <$> AF.rollback i ourFrag
-                   <*> rewindChainState cfg ourChainState i of
+                   <*> rewindChainState cfg ourChainState i' of
             Just (c, d) -> return (c, d)
             -- The @intersection@ is not on the candidate chain, even though
             -- we sent only points from the candidate chain to find an
@@ -522,19 +525,20 @@ chainSyncClient mkPipelineDecision0 tracer cfg btime
 
     rollForward :: MkPipelineDecision
                 -> Nat n
-                -> Header blk
+                -> WithBlockSize (Header blk)
                 -> Their (Tip blk)
                 -> Stateful m blk
                      (KnownIntersectionState blk)
                      (ClientPipelinedStIdle n)
-    rollForward mkPipelineDecision n hdr theirTip
+    rollForward mkPipelineDecision n withBlockSize theirTip
               = Stateful $ \kis@KnownIntersectionState
                   { theirChainState
                   , theirFrag
                   , ourTip
                   } -> traceException $ do
       -- Reject the block if invalid
-      let hdrHash  = headerHash hdr
+      let WithBlockSize { withoutBlockSize = hdr } = withBlockSize
+          hdrHash  = headerHash hdr
           hdrPoint = headerPoint hdr
       isInvalidBlock <- atomically $ forgetFingerprint <$> getIsInvalidBlock
       whenJust (isInvalidBlock hdrHash) $ \reason ->
@@ -575,7 +579,7 @@ chainSyncClient mkPipelineDecision0 tracer cfg btime
             , _theirTip           = theirTip
             }
 
-      let theirFrag' = theirFrag :> hdr
+      let theirFrag' = theirFrag :> withBlockSize
           kis' = kis
             { theirFrag       = theirFrag'
             , theirChainState = theirChainState'
@@ -635,9 +639,12 @@ chainSyncClient mkPipelineDecision0 tracer cfg btime
                    , ourTip
                    } -> traceException $ do
       (theirFrag', theirChainState') <- do
-        let i = castPoint intersection
+        let i  :: Point (WithBlockSize (Header blk))
+            i = castPoint intersection
+            i' :: Point (Header blk)
+            i' = castPoint intersection
         case (,) <$> AF.rollback i theirFrag
-                 <*> rewindChainState cfg theirChainState i of
+                 <*> rewindChainState cfg theirChainState i' of
           Just (c, d) -> return (c,d)
           -- Remember that we use our current chain fragment as the starting
           -- point for the candidate's chain. Our fragment contained @k@
@@ -742,7 +749,7 @@ rejectInvalidBlocks
     -> ResourceRegistry m
     -> STM m (WithFingerprint (HeaderHash blk -> Maybe (InvalidBlockReason blk)))
        -- ^ Get the invalid block checker
-    -> STM m (AnchoredFragment (Header blk))
+    -> STM m (AnchoredFragment (WithBlockSize (Header blk)))
     -> m ()
 rejectInvalidBlocks tracer registry getIsInvalidBlock getCandidate =
     void $ onEachChange
@@ -758,7 +765,7 @@ rejectInvalidBlocks tracer registry getIsInvalidBlock getCandidate =
       -- The invalid block is likely to be a more recent block, so check from
       -- newest to oldest.
       mapM_ (uncurry disconnect) $ firstJust
-        (\hdr -> (hdr,) <$> isInvalidBlock (headerHash hdr))
+        (\(WithBlockSize _ hdr) -> (hdr,) <$> isInvalidBlock (headerHash hdr))
         (AF.toNewestFirst theirFrag)
 
     disconnect :: Header blk -> InvalidBlockReason blk -> m ()
@@ -984,7 +991,7 @@ instance Exception ChainSyncClientException
 
 -- | Events traced by the Chain Sync Client.
 data TraceChainSyncClientEvent blk
-  = TraceDownloadedHeader (Header blk)
+  = TraceDownloadedHeader (WithBlockSize (Header blk))
     -- ^ While following a candidate chain, we rolled forward by downloading a
     -- header.
   | TraceRolledBack (Point blk)

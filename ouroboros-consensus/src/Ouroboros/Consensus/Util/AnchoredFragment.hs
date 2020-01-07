@@ -1,4 +1,6 @@
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeFamilies        #-}
+{-# LANGUAGE ViewPatterns        #-}
 
 -- | Utility functions on anchored fragments
 --
@@ -18,7 +20,8 @@ import           GHC.Stack
 import           Ouroboros.Network.AnchoredFragment
                      (AnchoredFragment ((:>), Empty))
 import qualified Ouroboros.Network.AnchoredFragment as AF
-import           Ouroboros.Network.Block (HasHeader, blockPoint)
+import           Ouroboros.Network.Block (HasHeader, HeaderHash, blockPoint,
+                     castPoint)
 
 import           Ouroboros.Consensus.Protocol.Abstract
 
@@ -146,24 +149,27 @@ forksAtMostKBlocks k ours theirs = case ours `AF.intersect` theirs of
 -- fragment or the candidate fragment is empty, we can decide whether or not
 -- the candidate is preferred using only the "always extend" rule: we never
 -- need the header that corresponds to the anchor point.
-preferAnchoredCandidate :: forall p hdr. (
+preferAnchoredCandidate :: forall p hdr b. (
                              OuroborosTag p
                            , CanSelect p hdr
                            , HasHeader hdr
+                           , HasHeader b
+                           , HeaderHash b ~ HeaderHash hdr
                            )
                         => NodeConfig p
-                        -> AnchoredFragment hdr      -- ^ Our chain
-                        -> AnchoredFragment hdr      -- ^ Candidate
+                        -> (b -> hdr)
+                        -> AnchoredFragment b -- ^ Our chain
+                        -> AnchoredFragment b -- ^ Candidate
                         -> Bool
-preferAnchoredCandidate cfg ours theirs =
+preferAnchoredCandidate cfg toHdr ours theirs =
     case (ours, theirs) of
       (_, Empty _) ->
         -- Case 1 or 2
         False
-      (Empty ourAnchor, _ :> theirTip) ->
+      (Empty ourAnchor, _ :> (toHdr -> theirTip)) ->
         -- Case 3
-        blockPoint theirTip /= ourAnchor
-      (_ :> ourTip, _ :> theirTip) ->
+        blockPoint theirTip /= castPoint ourAnchor
+      (_ :> (toHdr -> ourTip), _ :> (toHdr -> theirTip)) ->
         -- Case 4
         preferCandidate cfg ourTip theirTip
 
@@ -176,16 +182,17 @@ preferAnchoredCandidate cfg ours theirs =
 -- details.
 compareAnchoredCandidates :: ( OuroborosTag p
                              , CanSelect p hdr
-                             , HasHeader hdr
+                             , HasHeader b
                              , HasCallStack
                              )
                           => NodeConfig p
-                          -> AnchoredFragment hdr
-                          -> AnchoredFragment hdr
+                          -> (b -> hdr)
+                          -> AnchoredFragment b
+                          -> AnchoredFragment b
                           -> Ordering
-compareAnchoredCandidates cfg ours theirs =
+compareAnchoredCandidates cfg toHdr ours theirs =
     case (ours, theirs) of
-      (_ :> ourTip, _ :> theirTip) ->
+      (_ :> (toHdr -> ourTip), _ :> (toHdr -> theirTip)) ->
         compareCandidates cfg ourTip theirTip
       _otherwise ->
         error "compareAnchoredCandidates: precondition violated"

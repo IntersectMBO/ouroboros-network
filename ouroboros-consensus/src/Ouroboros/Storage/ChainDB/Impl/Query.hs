@@ -32,9 +32,9 @@ import           Control.Monad.Class.MonadThrow
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment (..))
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block (BlockNo, ChainHash (..), HasHeader,
-                     HeaderHash, MaxSlotNo, Point, StandardHash, castPoint,
-                     genesisPoint, maxSlotNoFromWithOrigin, pointHash,
-                     pointSlot)
+                     HeaderHash, MaxSlotNo, Point, StandardHash,
+                     WithBlockSize (..), castPoint, genesisPoint,
+                     maxSlotNoFromWithOrigin, pointHash, pointSlot)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Ledger.Abstract
@@ -75,7 +75,7 @@ getCurrentChain
      , OuroborosTag (BlockProtocol blk)
      )
   => ChainDbEnv m blk
-  -> STM m (AnchoredFragment (Header blk))
+  -> STM m (AnchoredFragment (WithBlockSize (Header blk)))
 getCurrentChain CDB{..} =
     AF.anchorNewest k <$> readTVar cdbChain
   where
@@ -107,7 +107,8 @@ getTipHeader
   => ChainDbEnv m blk
   -> m (Maybe (Header blk))
 getTipHeader CDB{..} = do
-    anchorOrHdr <- AF.head <$> atomically (readTVar cdbChain)
+    anchorOrHdr <- fmap withoutBlockSize . AF.head <$>
+      atomically (readTVar cdbChain)
     case anchorOrHdr of
       Right hdr
         -> return $ Just hdr

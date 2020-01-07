@@ -46,7 +46,8 @@ import           Control.Tracer
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment (..))
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block (ChainHash (..), HasHeader, Point,
-                     SlotNo, pointHash, pointSlot)
+                     SlotNo, WithBlockSize (..), blockPoint, castPoint,
+                     pointHash, pointSlot)
 import           Ouroboros.Network.Point (WithOrigin (..))
 
 import           Ouroboros.Consensus.Block
@@ -125,7 +126,7 @@ copyToImmDB CDB{..} = withCopyLock $ do
       curChain <- readTVar cdbChain
       let nbToCopy = max 0 (AF.length curChain - fromIntegral k)
           toCopy :: [Point blk]
-          toCopy = map headerPoint
+          toCopy = map (castPoint . blockPoint)
                  $ AF.toOldestFirst
                  $ AF.takeOldest nbToCopy curChain
       return toCopy
@@ -169,7 +170,7 @@ copyToImmDB CDB{..} = withCopyLock $ do
       -- The chain might have been extended in the meantime.
       curChain <- readTVar cdbChain
       case curChain of
-        hdr :< curChain'
+        WithBlockSize _ hdr :< curChain'
           | headerPoint hdr == pt
           -> writeTVar cdbChain curChain'
         -- We're the only one removing things from 'curChain', so this cannot
@@ -365,9 +366,10 @@ scheduledChainSelection cdb@CDB{..} curSlot = do
     -- and then switching to a very short fork.
     whenJust (NE.reverse <$> mbHdrs) $ \hdrs -> do
       let nbScheduled = fromIntegral $ sum $ length <$> Map.elems remaining
+          pts = castPoint . blockPoint <$> hdrs
       traceWith cdbTracer $
         TraceAddBlockEvent $
-        RunningScheduledChainSelection (fmap headerPoint hdrs) curSlot nbScheduled
+        RunningScheduledChainSelection pts curSlot nbScheduled
       -- If an exception occurs during a call to 'chainSelectionForBlock',
       -- then no chain selection will be performed for the blocks after it.
       -- Only real errors that would shut down the ChainDB could be thrown. In

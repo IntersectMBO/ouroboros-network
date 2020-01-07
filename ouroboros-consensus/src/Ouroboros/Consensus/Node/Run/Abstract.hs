@@ -19,7 +19,6 @@ import           Data.Word (Word32)
 import           Cardano.Crypto (ProtocolMagicId)
 
 import           Ouroboros.Network.Block (BlockNo, HeaderHash, SlotNo)
-import           Ouroboros.Network.BlockFetch (SizeInBytes)
 import           Ouroboros.Network.Magic (NetworkMagic)
 
 import           Ouroboros.Consensus.Block
@@ -47,8 +46,8 @@ class (ProtocolLedgerView blk, ApplyTx blk) => RunNode blk where
                           -> m blk
 
   nodeBlockMatchesHeader  :: Header blk -> blk -> Bool
-  nodeBlockFetchSize      :: Header blk -> SizeInBytes
   nodeIsEBB               :: Header blk -> Maybe EpochNo
+  nodeBlockSize           :: blk -> Word32
   nodeEpochSize           :: Monad m
                           => Proxy blk
                           -> NodeConfig (BlockProtocol blk)

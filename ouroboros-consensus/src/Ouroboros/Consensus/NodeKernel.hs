@@ -87,10 +87,10 @@ data NodeKernel m peer blk = NodeKernel {
     , getNodeConfig          :: NodeConfig (BlockProtocol blk)
 
       -- | The fetch client registry, used for the block fetch clients.
-    , getFetchClientRegistry :: FetchClientRegistry peer (Header blk) blk m
+    , getFetchClientRegistry :: FetchClientRegistry peer (WithBlockSize (Header blk)) blk m
 
       -- | Read the current candidates
-    , getNodeCandidates      :: StrictTVar m (Map peer (StrictTVar m (AnchoredFragment (Header blk))))
+    , getNodeCandidates      :: StrictTVar m (Map peer (StrictTVar m (AnchoredFragment (WithBlockSize (Header blk)))))
 
       -- | The node's tracers
     , getTracers             :: Tracers m peer blk
@@ -147,9 +147,8 @@ data NodeArgs m peer blk = NodeArgs {
     , initState           :: NodeState (BlockProtocol blk)
     , btime               :: BlockchainTime m
     , chainDB             :: ChainDB m blk
-    , blockFetchSize      :: Header blk -> SizeInBytes
     , blockProduction     :: Maybe (BlockProduction m blk)
-    , blockMatchesHeader  :: Header blk -> blk -> Bool
+    , blockMatchesHeader  :: WithBlockSize (Header blk) -> blk -> Bool
     , maxUnackTxs         :: Word16
     , maxBlockSize        :: MaxBlockSizeOverride
     , mempoolCap          :: MempoolCapacityBytes
@@ -204,9 +203,9 @@ data InternalState m peer blk = IS {
     , registry            :: ResourceRegistry m
     , btime               :: BlockchainTime m
     , chainDB             :: ChainDB m blk
-    , blockFetchInterface :: BlockFetchConsensusInterface peer (Header blk) blk m
-    , fetchClientRegistry :: FetchClientRegistry peer (Header blk) blk m
-    , varCandidates       :: StrictTVar m (Map peer (StrictTVar m (AnchoredFragment (Header blk))))
+    , blockFetchInterface :: BlockFetchConsensusInterface peer (WithBlockSize (Header blk)) blk m
+    , fetchClientRegistry :: FetchClientRegistry peer (WithBlockSize (Header blk)) blk m
+    , varCandidates       :: StrictTVar m (Map peer (StrictTVar m (AnchoredFragment (WithBlockSize (Header blk)))))
     , varState            :: StrictTVar m (NodeState (BlockProtocol blk))
     , mempool             :: Mempool m blk TicketNo
     }
@@ -222,7 +221,7 @@ initInternalState
     => NodeArgs m peer blk
     -> m (InternalState m peer blk)
 initInternalState NodeArgs { tracers, chainDB, registry, cfg,
-                             blockFetchSize, blockMatchesHeader, btime,
+                             blockMatchesHeader, btime,
                              initState, mempoolCap } = do
     varCandidates  <- newTVarM mempty
     varState       <- newTVarM initState
@@ -234,12 +233,12 @@ initInternalState NodeArgs { tracers, chainDB, registry, cfg,
 
     fetchClientRegistry <- newFetchClientRegistry
 
-    let getCandidates :: STM m (Map peer (AnchoredFragment (Header blk)))
+    let getCandidates :: STM m (Map peer (AnchoredFragment (WithBlockSize (Header blk))))
         getCandidates = readTVar varCandidates >>= traverse readTVar
 
-        blockFetchInterface :: BlockFetchConsensusInterface peer (Header blk) blk m
+        blockFetchInterface :: BlockFetchConsensusInterface peer (WithBlockSize (Header blk)) blk m
         blockFetchInterface = initBlockFetchConsensusInterface
-          cfg chainDB getCandidates blockFetchSize blockMatchesHeader btime
+          cfg chainDB getCandidates blockMatchesHeader btime
 
     return IS {..}
 
@@ -247,18 +246,17 @@ initBlockFetchConsensusInterface
     :: forall m peer blk. (IOLike m, SupportedBlock blk)
     => NodeConfig (BlockProtocol blk)
     -> ChainDB m blk
-    -> STM m (Map peer (AnchoredFragment (Header blk)))
-    -> (Header blk -> SizeInBytes)
-    -> (Header blk -> blk -> Bool)
+    -> STM m (Map peer (AnchoredFragment (WithBlockSize (Header blk))))
+    -> (WithBlockSize (Header blk) -> blk -> Bool)
     -> BlockchainTime m
-    -> BlockFetchConsensusInterface peer (Header blk) blk m
-initBlockFetchConsensusInterface cfg chainDB getCandidates blockFetchSize
-    blockMatchesHeader btime = BlockFetchConsensusInterface {..}
+    -> BlockFetchConsensusInterface peer (WithBlockSize (Header blk)) blk m
+initBlockFetchConsensusInterface cfg chainDB getCandidates blockMatchesHeader btime =
+    BlockFetchConsensusInterface {..}
   where
-    readCandidateChains :: STM m (Map peer (AnchoredFragment (Header blk)))
+    readCandidateChains :: STM m (Map peer (AnchoredFragment (WithBlockSize (Header blk))))
     readCandidateChains = getCandidates
 
-    readCurrentChain :: STM m (AnchoredFragment (Header blk))
+    readCurrentChain :: STM m (AnchoredFragment (WithBlockSize (Header blk)))
     readCurrentChain = ChainDB.getCurrentChain chainDB
 
     readFetchMode :: STM m FetchMode
@@ -290,15 +288,18 @@ initBlockFetchConsensusInterface cfg chainDB getCandidates blockFetchSize
     readFetchedMaxSlotNo :: STM m MaxSlotNo
     readFetchedMaxSlotNo = ChainDB.getMaxSlotNo chainDB
 
-    plausibleCandidateChain :: AnchoredFragment (Header blk)
-                            -> AnchoredFragment (Header blk)
+    plausibleCandidateChain :: AnchoredFragment (WithBlockSize (Header blk))
+                            -> AnchoredFragment (WithBlockSize (Header blk))
                             -> Bool
-    plausibleCandidateChain = preferAnchoredCandidate cfg
+    plausibleCandidateChain = preferAnchoredCandidate cfg withoutBlockSize
 
-    compareCandidateChains :: AnchoredFragment (Header blk)
-                           -> AnchoredFragment (Header blk)
+    compareCandidateChains :: AnchoredFragment (WithBlockSize (Header blk))
+                           -> AnchoredFragment (WithBlockSize (Header blk))
                            -> Ordering
-    compareCandidateChains = compareAnchoredCandidates cfg
+    compareCandidateChains = compareAnchoredCandidates cfg withoutBlockSize
+
+    blockFetchSize :: WithBlockSize (Header blk) -> SizeInBytes
+    blockFetchSize = blockSize
 
 forkBlockProduction
     :: forall m peer blk.
@@ -460,11 +461,11 @@ forkBlockProduction maxBlockSizeOverride IS{..} BlockProduction{..} =
     -- another node was also elected leader and managed to produce a block
     -- before us, the header right before the one at the tip of the chain.
     prevPointAndBlockNo :: SlotNo
-                        -> AnchoredFragment (Header blk)
+                        -> AnchoredFragment (WithBlockSize (Header blk))
                         -> Either SlotNo (Point blk, BlockNo)
     prevPointAndBlockNo slot c = case c of
         Empty _   -> Right (genesisPoint, genesisBlockNo)
-        c' :> hdr -> case blockSlot hdr `compare` slot of
+        c' :> WithBlockSize _ hdr -> case blockSlot hdr `compare` slot of
 
           -- The block at the tip of our chain has a slot number /before/ the
           -- current slot number. This is the common case, and we just want to
@@ -500,7 +501,7 @@ forkBlockProduction maxBlockSizeOverride IS{..} BlockProduction{..} =
                -- We allow forging a block that is the successor of an EBB in
                -- the same slot.
              -> Right (headerPoint hdr, blockNo hdr)
-             | _ :> hdr' <- c'
+             | _ :> WithBlockSize _ hdr' <- c'
              -> Right (headerPoint hdr', blockNo hdr')
              | otherwise
                -- If there is no block before it, so use genesis.

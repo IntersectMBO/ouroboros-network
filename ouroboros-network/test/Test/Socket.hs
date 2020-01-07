@@ -49,7 +49,7 @@ import           Ouroboros.Network.Mux as Mx
 
 import           Ouroboros.Network.Socket
 
-import           Ouroboros.Network.Block (Tip, encodeTip, decodeTip)
+import           Ouroboros.Network.Block (Tip, decodeTip, encodeTip)
 import           Ouroboros.Network.Magic
 import           Ouroboros.Network.MockChain.Chain (Chain, ChainUpdate, Point)
 import qualified Ouroboros.Network.MockChain.Chain as Chain
@@ -59,7 +59,8 @@ import qualified Ouroboros.Network.Protocol.ChainSync.Client as ChainSync
 import qualified Ouroboros.Network.Protocol.ChainSync.Codec as ChainSync
 import qualified Ouroboros.Network.Protocol.ChainSync.Examples as ChainSync
 import qualified Ouroboros.Network.Protocol.ChainSync.Server as ChainSync
-import           Ouroboros.Network.Protocol.Handshake.Type (acceptEq, cborTermVersionDataCodec)
+import           Ouroboros.Network.Protocol.Handshake.Type (acceptEq,
+                     cborTermVersionDataCodec)
 import           Ouroboros.Network.Protocol.Handshake.Version
                      (simpleSingletonVersions)
 import           Ouroboros.Network.Testing.Serialise
@@ -403,7 +404,8 @@ demo chain0 updates = do
                     codecChainSync
                     (ChainSync.chainSyncServerPeer server)
 
-        codecChainSync = ChainSync.codecChainSync encode (fmap const decode)
+        codecChainSync = ChainSync.codecChainSync id                 id
+                                                  encode (fmap const decode)
                                                   encode             decode
                                                   (encodeTip encode) (decodeTip decode)
 

@@ -29,8 +29,8 @@ import           Control.Tracer (contramap, traceWith)
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block (ChainUpdate (..), HasHeader,
-                     HeaderHash, Point, SlotNo, blockSlot, castPoint,
-                     genesisPoint, pointHash, pointSlot)
+                     HeaderHash, Point, SlotNo, WithBlockSize (..), blockPoint,
+                     blockSlot, castPoint, genesisPoint, pointHash, pointSlot)
 import           Ouroboros.Network.Point (WithOrigin (..))
 
 import           Ouroboros.Consensus.Block (GetHeader (..), headerHash,
@@ -215,8 +215,8 @@ instructionHelper
   -> StrictTVar m (ReaderState m blk b)
   -> BlockComponent (ChainDB m blk) b
   -> (Header blk -> Encoding)
-  -> (    STM m (Maybe (ChainUpdate blk (Header blk)))
-       -> STM m (f     (ChainUpdate blk (Header blk))))
+  -> (    STM m (Maybe (ChainUpdate blk (WithBlockSize (Header blk))))
+       -> STM m (f     (ChainUpdate blk (WithBlockSize (Header blk)))))
      -- ^ How to turn a transaction that may or may not result in a new
      -- 'ChainUpdate' in one that returns the right return type: use @fmap
      -- Identity . 'blockUntilJust'@ to block or 'id' to just return the
@@ -282,7 +282,8 @@ instructionHelper registry varReader blockComponent encodeHeader fromMaybeSTM CD
     trace = traceWith (contramap TraceReaderEvent cdbTracer)
 
     headerUpdateToBlockComponentUpdate
-      :: f (ChainUpdate blk (Header blk)) -> m (f (ChainUpdate blk b))
+      :: f (ChainUpdate blk (WithBlockSize (Header blk)))
+      -> m (f (ChainUpdate blk b))
     headerUpdateToBlockComponentUpdate =
       traverse (traverse (`headerToBlockComponent` blockComponent))
 
@@ -290,16 +291,19 @@ instructionHelper registry varReader blockComponent encodeHeader fromMaybeSTM CD
     -- on the 'BlockComponent' that's requested, we might have to read the
     -- whole block.
     headerToBlockComponent
-      :: forall b'. Header blk -> BlockComponent (ChainDB m blk) b' -> m b'
-    headerToBlockComponent hdr = \case
+      :: forall b'.
+         WithBlockSize (Header blk)
+      -> BlockComponent (ChainDB m blk) b' -> m b'
+    headerToBlockComponent x@(WithBlockSize blockSize hdr) = \case
         GetBlock      -> getBlockComponent GetBlock
         GetRawBlock   -> getBlockComponent GetRawBlock
         GetHeader     -> return $ return hdr
         GetRawHeader  -> return $ toLazyByteString $ encodeHeader hdr
         GetHash       -> return $ headerHash hdr
         GetSlot       -> return $ blockSlot hdr
+        -- TODO this requires access to the in-memory indices of the VolatileDB.
         GetIsEBB      -> getBlockComponent GetIsEBB
-        GetBlockSize  -> getBlockComponent GetBlockSize
+        GetBlockSize  -> return $ blockSize
         -- We could look up the header size in the index of the VolatileDB,
         -- but getting the serialisation is cheap, the following way is less
         -- stateful
@@ -307,7 +311,7 @@ instructionHelper registry varReader blockComponent encodeHeader fromMaybeSTM CD
           fromIntegral $ Lazy.length $ toLazyByteString $ encodeHeader hdr
         GetPure a     -> return a
         GetApply f bc ->
-          headerToBlockComponent hdr f <*> headerToBlockComponent hdr bc
+          headerToBlockComponent x f <*> headerToBlockComponent x bc
       where
         -- | Use the 'ImmDB' and 'VolDB' to read the 'BlockComponent' from
         -- disk (or memory).
@@ -381,11 +385,11 @@ instructionSTM
   :: forall m blk. (IOLike m, HasHeader (Header blk))
   => ReaderRollState blk
      -- ^ The current 'ReaderRollState' of the reader
-  -> AnchoredFragment (Header blk)
+  -> AnchoredFragment (WithBlockSize (Header blk))
      -- ^ The current chain fragment
   -> (ReaderRollState blk -> STM m ())
      -- ^ How to save the updated 'ReaderRollState'
-  -> STM m (Maybe (ChainUpdate blk (Header blk)))
+  -> STM m (Maybe (ChainUpdate blk (WithBlockSize (Header blk))))
 instructionSTM rollState curChain saveRollState =
     assert (invariant curChain) $ case rollState of
       RollForwardFrom pt ->
@@ -393,7 +397,7 @@ instructionSTM rollState curChain saveRollState =
           -- There is no successor block because the reader is at the head
           Nothing  -> return Nothing
           Just hdr -> do
-            saveRollState $ RollForwardFrom $ headerPoint hdr
+            saveRollState $ RollForwardFrom $ castPoint $ blockPoint hdr
             return $ Just $ AddBlock hdr
       RollBackTo      pt -> do
         saveRollState $ RollForwardFrom pt
@@ -428,7 +432,7 @@ forward registry varReader blockComponent CDB{..} = \pts -> do
   where
     findFirstPointOnChain
       :: HasCallStack
-      => AnchoredFragment (Header blk)
+      => AnchoredFragment (WithBlockSize (Header blk))
       -> WithOrigin SlotNo
       -> [Point blk]
       -> m (Maybe (Point blk))
@@ -475,9 +479,10 @@ forward registry varReader blockComponent CDB{..} = \pts -> do
 -- PRECONDITION: the intersection point must be within the fragment bounds
 -- of the new chain
 switchFork
-  :: forall m blk b. (HasHeader blk, HasHeader (Header blk))
+  :: forall m blk b b'.
+     (HasHeader blk, HasHeader b', HeaderHash blk ~ HeaderHash b')
   => Point blk  -- ^ Intersection point between old and new chain
-  -> AnchoredFragment (Header blk)  -- ^ The new chain
+  -> AnchoredFragment b'  -- ^ The new chain
   -> ReaderState m blk b -> ReaderState m blk b
 switchFork ipoint newChain readerState =
     assert (AF.withinFragmentBounds (castPoint ipoint) newChain) $
@@ -501,7 +506,7 @@ switchFork ipoint newChain readerState =
                 | pointHash readerPoint == pointHash ipoint
                   -- The same point, so no rollback needed.
                 -> readerState
-                | Just pointAfterRollStatePoint <- headerPoint <$>
+                | Just pointAfterRollStatePoint <- castPoint . blockPoint <$>
                     AF.successorBlock (castPoint readerPoint) newChain
                 , pointAfterRollStatePoint == ipoint
                   -- The point after the reader point is the intersection

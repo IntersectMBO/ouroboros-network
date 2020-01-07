@@ -40,6 +40,7 @@ import           Data.Time.Clock (secondsToDiffTime)
 
 import           Control.Monad.Class.MonadThrow
 
+import           Ouroboros.Network.Block (WithBlockSize (..))
 import           Ouroboros.Network.Diffusion
 import           Ouroboros.Network.Magic
 import           Ouroboros.Network.NodeToClient (DictVersion (..),
@@ -244,6 +245,7 @@ mkChainDbArgs tracer registry btime dbPath cfg initLedger
     , ChainDB.cdbAddHdrEnv        = nodeAddHeaderEnvelope   (Proxy @blk)
     , ChainDB.cdbDiskPolicy       = defaultDiskPolicy secParam
     , ChainDB.cdbIsEBB            = nodeIsEBB . getHeader
+    , ChainDB.cdbBlockSize        = nodeBlockSize
     , ChainDB.cdbCheckIntegrity   = nodeCheckIntegrity      cfg
     , ChainDB.cdbParamsLgrDB      = ledgerDbDefaultParams secParam
     , ChainDB.cdbNodeConfig       = cfg
@@ -275,8 +277,7 @@ mkNodeArgs registry cfg initState tracers btime chainDB isProducer = NodeArgs
     , btime
     , chainDB
     , blockProduction
-    , blockFetchSize      = nodeBlockFetchSize
-    , blockMatchesHeader  = nodeBlockMatchesHeader
+    , blockMatchesHeader  = nodeBlockMatchesHeader . withoutBlockSize
     , maxUnackTxs         = 100 -- TODO
     , maxBlockSize        = NoOverride
     , mempoolCap          = MempoolCapacityBytes 128_000 -- TODO

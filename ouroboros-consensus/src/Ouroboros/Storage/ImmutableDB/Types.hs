@@ -48,10 +48,9 @@ import           Streaming (Of, Stream)
 import           Cardano.Prelude (NoUnexpectedThunks (..),
                      UseIsNormalFormNamed (..))
 
-import           Ouroboros.Network.Block (SlotNo (..))
+import           Ouroboros.Network.Block (SlotNo (..), WithBlockSize (..))
 import           Ouroboros.Network.Point (WithOrigin)
 
-import           Ouroboros.Consensus.Block (WithBlockSize (..))
 import           Ouroboros.Storage.Common
 import           Ouroboros.Storage.FS.API.Types (FsError, FsPath, prettyFsError,
                      sameFsError)

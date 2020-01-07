@@ -70,7 +70,7 @@ import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import           Ouroboros.Network.Block (BlockNo, pattern BlockPoint,
                      ChainUpdate, pattern GenesisPoint, HasHeader (..),
                      HeaderHash, MaxSlotNo, Point, Serialised (..), SlotNo,
-                     StandardHash, atSlot, genesisPoint)
+                     StandardHash, WithBlockSize, atSlot, genesisPoint)
 
 import           Ouroboros.Consensus.Block (GetHeader (..), IsEBB (..))
 import           Ouroboros.Consensus.Ledger.Abstract (ProtocolLedgerView)
@@ -153,7 +153,7 @@ data ChainDB m blk = ChainDB {
       --
       -- NOTE: A direct consequence of this guarantee is that the anchor of the
       -- fragment will move as the chain grows.
-    , getCurrentChain    :: STM m (AnchoredFragment (Header blk))
+    , getCurrentChain    :: STM m (AnchoredFragment (WithBlockSize (Header blk)))
 
       -- | Get current ledger
     , getCurrentLedger   :: STM m (ExtLedgerState blk)

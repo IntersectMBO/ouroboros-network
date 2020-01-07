@@ -75,7 +75,7 @@ prop_alwaysPickPreferredChain bt p =
     SecurityParam k = protocolSecurityParam singleNodeTestConfig
 
     preferCandidate' candidate =
-        AF.preferAnchoredCandidate singleNodeTestConfig curFragment candFragment &&
+        AF.preferAnchoredCandidate singleNodeTestConfig id curFragment candFragment &&
         AF.forksAtMostKBlocks k curFragment candFragment
       where
         candFragment = Chain.toAnchoredFragment candidate

@@ -4,6 +4,7 @@
 {-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE PatternSynonyms            #-}
 {-# LANGUAGE RankNTypes                 #-}
@@ -52,6 +53,10 @@ module Ouroboros.Network.Block (
   , decodeChainHash
     -- * Serialised block/header
   , Serialised(..)
+    -- * 'WithBlockSize'
+  , WithBlockSize (..)
+  , encodeWithBlockSize
+  , decodeWithBlockSize
   ) where
 
 import           Codec.CBOR.Decoding (Decoder)
@@ -60,13 +65,14 @@ import           Codec.CBOR.Encoding (Encoding)
 import qualified Codec.CBOR.Encoding as Enc
 import           Codec.Serialise (Serialise (..))
 import qualified Data.ByteString.Lazy as Lazy
-import           Data.FingerTree.Strict (Measured)
+import           Data.FingerTree.Strict (Measured (..))
 import           Data.Typeable (Typeable)
+import           Data.Word (Word32)
 import           GHC.Generics (Generic)
 
 import           Cardano.Prelude (NoUnexpectedThunks)
 import           Cardano.Slotting.Block
-import           Cardano.Slotting.Slot (SlotNo(..), genesisSlotNo)
+import           Cardano.Slotting.Slot (SlotNo (..), genesisSlotNo)
 
 import           Ouroboros.Network.Point (WithOrigin (..), block, origin,
                      withOriginToMaybe)
@@ -333,3 +339,46 @@ newtype Serialised block = Serialised
 
 type instance HeaderHash (Serialised block) = HeaderHash block
 instance StandardHash block => StandardHash (Serialised block)
+
+{-------------------------------------------------------------------------------
+  WithBlockSize
+-------------------------------------------------------------------------------}
+
+data WithBlockSize a = WithBlockSize
+  { blockSize        :: !Word32
+  , withoutBlockSize :: !a
+  } deriving (Eq, Show, Generic, NoUnexpectedThunks, Functor, Foldable, Traversable)
+
+type instance HeaderHash (WithBlockSize a) = HeaderHash a
+
+instance Measured BlockMeasure a => Measured BlockMeasure (WithBlockSize a) where
+  measure = measure . withoutBlockSize
+
+instance StandardHash a => StandardHash (WithBlockSize a)
+
+instance HasHeader a => HasHeader (WithBlockSize a) where
+  blockHash      = blockHash . withoutBlockSize
+  blockPrevHash  = castHash . blockPrevHash . withoutBlockSize
+  blockSlot      = blockSlot . withoutBlockSize
+  blockNo        = blockNo . withoutBlockSize
+  blockInvariant = blockInvariant . withoutBlockSize
+
+encodeWithBlockSize :: (a -> Encoding) -> (WithBlockSize a -> Encoding)
+encodeWithBlockSize encodeA WithBlockSize { blockSize, withoutBlockSize } =
+    mconcat
+      [ Enc.encodeListLen 2
+      , encode blockSize
+      , encodeA withoutBlockSize
+      ]
+
+decodeWithBlockSize :: (forall s. Decoder s a)
+                    -> (forall s. Decoder s (WithBlockSize a))
+decodeWithBlockSize decodeA = do
+    Dec.decodeListLenOf 2
+    blockSize <- decode
+    a         <- decodeA
+    return $ WithBlockSize blockSize a
+
+instance Serialise a => Serialise (WithBlockSize a) where
+  encode = encodeWithBlockSize encode
+  decode = decodeWithBlockSize decode

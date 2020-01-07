@@ -81,7 +81,8 @@ import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import qualified Ouroboros.Network.AnchoredFragment as Fragment
 import           Ouroboros.Network.Block (BlockNo, pattern BlockPoint,
                      ChainHash (..), pattern GenesisPoint, HasHeader,
-                     HeaderHash, MaxSlotNo (..), Point, SlotNo)
+                     HeaderHash, MaxSlotNo (..), Point, SlotNo,
+                     WithBlockSize (..))
 import qualified Ouroboros.Network.Block as Block
 import           Ouroboros.Network.MockChain.Chain (Chain (..), ChainUpdate)
 import qualified Ouroboros.Network.MockChain.Chain as Chain
@@ -202,16 +203,20 @@ tipPoint = maybe Block.genesisPoint Block.blockPoint . tipBlock
 tipBlockNo :: HasHeader blk => Model blk -> BlockNo
 tipBlockNo = maybe Block.genesisBlockNo Block.blockNo . tipBlock
 
-lastK :: HasHeader a
+lastK :: forall blk. SupportedBlock blk
       => SecurityParam
-      -> (blk -> a)  -- ^ Provided since `AnchoredFragment` is not a functor
       -> Model blk
-      -> AnchoredFragment a
-lastK (SecurityParam k) f =
+      -> AnchoredFragment (WithBlockSize (Header blk))
+lastK (SecurityParam k) =
       Fragment.anchorNewest k
     . Chain.toAnchoredFragment
-    . fmap f
+    . fmap getHeaderWithBlockSize
     . currentChain
+  where
+    getHeaderWithBlockSize :: blk -> WithBlockSize (Header blk)
+    getHeaderWithBlockSize blk = WithBlockSize
+      (fromIntegral $ Lazy.length $ serialise blk)
+      (getHeader blk)
 
 -- | The block number of the most recent \"immutable\" block, i.e. the oldest
 -- block we can roll back to. We cannot roll back the block itself.
@@ -632,7 +637,7 @@ validChains cfg initLedger bs =
     chains bs
   where
     sortChains :: [Chain blk] -> [Chain blk]
-    sortChains = sortBy (flip (Fragment.compareAnchoredCandidates cfg `on`
+    sortChains = sortBy (flip (Fragment.compareAnchoredCandidates cfg id `on`
                                  Chain.toAnchoredFragment))
 
     classify :: ValidationResult blk

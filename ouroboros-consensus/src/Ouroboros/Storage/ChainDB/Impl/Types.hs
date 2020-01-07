@@ -3,6 +3,7 @@
 {-# LANGUAGE DeriveGeneric        #-}
 {-# LANGUAGE DerivingVia          #-}
 {-# LANGUAGE FlexibleContexts     #-}
+{-# LANGUAGE GADTs                #-}
 {-# LANGUAGE LambdaCase           #-}
 {-# LANGUAGE RankNTypes           #-}
 {-# LANGUAGE ScopedTypeVariables  #-}
@@ -59,7 +60,7 @@ import           Cardano.Prelude (NoUnexpectedThunks (..), OnlyCheckIsWHNF (..))
 
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import           Ouroboros.Network.Block (BlockNo, HasHeader, HeaderHash, Point,
-                     SlotNo)
+                     SlotNo, WithBlockSize)
 import           Ouroboros.Network.Point (WithOrigin)
 
 import           Ouroboros.Consensus.Block (BlockProtocol, Header, IsEBB (..))
@@ -142,7 +143,7 @@ data ChainDbEnv m blk = CDB
   { cdbImmDB          :: !(ImmDB m blk)
   , cdbVolDB          :: !(VolDB m blk)
   , cdbLgrDB          :: !(LgrDB m blk)
-  , cdbChain          :: !(StrictTVar m (AnchoredFragment (Header blk)))
+  , cdbChain          :: !(StrictTVar m (AnchoredFragment (WithBlockSize (Header blk))))
     -- ^ Contains the current chain fragment.
     --
     -- INVARIANT: the anchor point of this fragment is the tip of the
@@ -217,8 +218,12 @@ data ChainDbEnv m blk = CDB
     -- ^ A handle to kill the background threads.
   , cdbEpochInfo      :: !(EpochInfo m)
   , cdbIsEBB          :: !(blk -> Bool)
+  , cdbBlockSize      :: !(blk -> Word32)
+    -- ^ Return the size of the block in bytes.
+    --
+    -- Should be efficient, as it is called on each incoming block.
   , cdbBlockchainTime :: !(BlockchainTime m)
-  , cdbFutureBlocks   :: !(StrictTVar m (Map SlotNo (NonEmpty (Header blk))))
+  , cdbFutureBlocks   :: !(StrictTVar m (Map SlotNo (NonEmpty (WithBlockSize (Header blk)))))
     -- ^ Scheduled chain selections for blocks with a slot in the future.
     --
     -- When a block with slot @s@, which is > the current slot is added, we
@@ -284,7 +289,8 @@ intReopen = intReopen_
 -- blk@, etc.) parameter so 'Reader's with different' @b@s can be stored
 -- together in 'cdbReaders'.
 data ReaderHandle m blk = ReaderHandle
-  { rhSwitchFork :: Point blk -> AnchoredFragment (Header blk) -> STM m ()
+  { rhSwitchFork :: forall b'. (HasHeader b', HeaderHash blk ~ HeaderHash b')
+                 => Point blk -> AnchoredFragment b' -> STM m ()
     -- ^ When we have switched to a fork, all open 'Reader's must be notified.
   , rhClose      :: m ()
     -- ^ When closing the ChainDB, we must also close all open 'Reader's, as
@@ -442,14 +448,14 @@ data TraceAddBlockEvent blk
     -- it.
 
   | SwitchedToChain
-    { _prevChain :: AnchoredFragment (Header blk)
-    , _newChain  :: AnchoredFragment (Header blk)
+    { _prevChain :: AnchoredFragment (WithBlockSize (Header blk))
+    , _newChain  :: AnchoredFragment (WithBlockSize (Header blk))
     }
     -- ^ We successfully installed a new chain.
 
   | ChainChangedInBg
-    { _prevChain :: AnchoredFragment (Header blk)
-    , _newChain  :: AnchoredFragment (Header blk)
+    { _prevChain :: AnchoredFragment (WithBlockSize (Header blk))
+    , _newChain  :: AnchoredFragment (WithBlockSize (Header blk))
     }
     -- ^ We have found a new chain, but the current chain has changed in the
     -- background such that our new chain is no longer preferable to the
@@ -488,17 +494,17 @@ data TraceValidationEvent blk
     -- ^ A point was found to be invalid.
 
   | InvalidCandidate
-    { _candidate     :: AnchoredFragment (Header blk)
+    { _candidate     :: AnchoredFragment (WithBlockSize (Header blk))
     }
     -- ^ A candidate chain was invalid.
 
-  | ValidCandidate (AnchoredFragment (Header blk))
+  | ValidCandidate (AnchoredFragment (WithBlockSize (Header blk)))
     -- ^ A candidate chain was valid.
 
   | CandidateExceedsRollback
     { _supportedRollback :: Word64
     , _candidateRollback :: Word64
-    , _candidate         :: AnchoredFragment (Header blk)
+    , _candidate         :: AnchoredFragment (WithBlockSize (Header blk))
     }
     -- ^ Candidate required rollback past what LedgerDB supported
     --

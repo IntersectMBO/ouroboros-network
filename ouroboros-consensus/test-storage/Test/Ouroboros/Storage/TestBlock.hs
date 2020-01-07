@@ -172,6 +172,9 @@ testHashInfo = HashInfo
 testBlockIsEBB :: TestBlock -> IsEBB
 testBlockIsEBB = thIsEBB . testHeader
 
+testBlockSize :: TestBlock -> Word32
+testBlockSize = fromIntegral . Lazy.length . serialise
+
 -- | Only works correctly if the epoch size is fixed
 testBlockEpochNoIfEBB :: EpochSize -> TestBlock -> Maybe EpochNo
 testBlockEpochNoIfEBB fixedEpochSize b = case testBlockIsEBB b of

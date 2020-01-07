@@ -29,7 +29,7 @@ module Ouroboros.Storage.ChainDB.Impl.VolDB (
   , computePathSTM
     -- * Getting and parsing blocks
   , getKnownBlock
-  , getKnownHeader
+  , getKnownHeaderWithBlockSize
   , getKnownBlockComponent
   , getBlockComponent
     -- * Wrappers
@@ -69,8 +69,8 @@ import           Control.Monad.Class.MonadThrow
 
 import           Ouroboros.Network.Block (pattern BlockPoint, ChainHash (..),
                      pattern GenesisPoint, HasHeader (..), HeaderHash,
-                     MaxSlotNo, Point, SlotNo, StandardHash, pointHash,
-                     withHash)
+                     MaxSlotNo, Point, SlotNo, StandardHash,
+                     WithBlockSize (..), pointHash, withHash)
 import qualified Ouroboros.Network.Block as Block
 import           Ouroboros.Network.Point (WithOrigin (..))
 
@@ -442,12 +442,15 @@ getKnownBlock
   -> m blk
 getKnownBlock volDB = join . getKnownBlockComponent volDB GetBlock
 
-getKnownHeader
+getKnownHeaderWithBlockSize
   :: (MonadCatch m, HasHeader blk)
   => VolDB m blk
   -> HeaderHash blk
-  -> m (Header blk)
-getKnownHeader volDB = join . getKnownBlockComponent volDB GetHeader
+  -> m (WithBlockSize (Header blk))
+getKnownHeaderWithBlockSize volDB pt =
+    sequence =<< getKnownBlockComponent volDB get pt
+  where
+    get = WithBlockSize <$> GetBlockSize <*> GetHeader
 
 getKnownBlockComponent
   :: (MonadCatch m, HasHeader blk)

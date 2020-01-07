@@ -94,8 +94,8 @@ import qualified Ouroboros.Storage.ChainDB.API as ChainDB
 --
 data ProtocolHandlers m peer blk = ProtocolHandlers {
       phChainSyncClient
-        :: StrictTVar m (AnchoredFragment (Header blk))
-        -> ChainSyncClientPipelined (Header blk) (Tip blk) m Void
+        :: StrictTVar m (AnchoredFragment (WithBlockSize (Header blk)))
+        -> ChainSyncClientPipelined (WithBlockSize (Header blk)) (Tip blk) m Void
         -- TODO: we should consider either bundling these context parameters
         -- into a record, or extending the protocol handler representation
         -- to support bracket-style initialisation so that we could have the
@@ -103,11 +103,11 @@ data ProtocolHandlers m peer blk = ProtocolHandlers {
 
     , phChainSyncServer
         :: ResourceRegistry m
-        -> ChainSyncServer (Serialised (Header blk)) (Tip blk) m ()
+        -> ChainSyncServer (WithBlockSize (Serialised (Header blk))) (Tip blk) m ()
 
     -- TODO block fetch client does not have GADT view of the handlers.
     , phBlockFetchClient
-        :: BlockFetchClient (Header blk) blk m ()
+        :: BlockFetchClient (WithBlockSize (Header blk)) blk m ()
 
     , phBlockFetchServer
         :: ResourceRegistry m
@@ -189,9 +189,9 @@ protocolHandlers NodeArgs {btime, maxClockSkew, tracers, maxUnackTxs, chainSyncP
 data ProtocolCodecs blk failure m
                     bytesCS bytesSCS bytesBF bytesSBF bytesTX
                     bytesLCS bytesLTX = ProtocolCodecs {
-    pcChainSyncCodec            :: Codec (ChainSync (Header blk) (Tip blk))
+    pcChainSyncCodec            :: Codec (ChainSync (WithBlockSize (Header blk)) (Tip blk))
                                          failure m bytesCS
-  , pcChainSyncCodecSerialised  :: Codec (ChainSync (Serialised (Header blk)) (Tip blk))
+  , pcChainSyncCodecSerialised  :: Codec (ChainSync (WithBlockSize (Serialised (Header blk))) (Tip blk))
                                          failure m bytesSCS
   , pcBlockFetchCodec           :: Codec (BlockFetch blk)
                                          failure m bytesBF
@@ -215,6 +215,8 @@ protocolCodecs :: forall m blk. (IOLike m, RunNode blk)
 protocolCodecs cfg = ProtocolCodecs {
       pcChainSyncCodec =
         codecChainSync
+          encodeWithBlockSize
+          decodeWithBlockSize
           (nodeEncodeHeader cfg)
           (nodeDecodeHeader cfg)
           (encodePoint (nodeEncodeHeaderHash (Proxy @blk)))
@@ -224,6 +226,8 @@ protocolCodecs cfg = ProtocolCodecs {
 
     , pcChainSyncCodecSerialised =
         codecChainSyncSerialised
+          encodeWithBlockSize
+          decodeWithBlockSize
           (encodePoint (nodeEncodeHeaderHash (Proxy @blk)))
           (decodePoint (nodeDecodeHeaderHash (Proxy @blk)))
           (encodeTip   (nodeEncodeHeaderHash (Proxy @blk)))
@@ -250,6 +254,8 @@ protocolCodecs cfg = ProtocolCodecs {
 
     , pcLocalChainSyncCodec =
         codecChainSyncSerialised
+          id
+          id
           (encodePoint (nodeEncodeHeaderHash (Proxy @blk)))
           (decodePoint (nodeDecodeHeaderHash (Proxy @blk)))
           (encodeTip   (nodeEncodeHeaderHash (Proxy @blk)))
@@ -267,8 +273,8 @@ protocolCodecs cfg = ProtocolCodecs {
 --
 protocolCodecsId :: Monad m
                  => ProtocolCodecs blk CodecFailure m
-                      (AnyMessage (ChainSync (Header blk) (Tip blk)))
-                      (AnyMessage (ChainSync (Serialised (Header blk)) (Tip blk)))
+                      (AnyMessage (ChainSync (WithBlockSize (Header blk)) (Tip blk)))
+                      (AnyMessage (ChainSync (WithBlockSize (Serialised (Header blk))) (Tip blk)))
                       (AnyMessage (BlockFetch blk))
                       (AnyMessage (BlockFetch (Serialised blk)))
                       (AnyMessage (TxSubmission (GenTxId blk) (GenTx blk)))
@@ -288,13 +294,13 @@ protocolCodecsId = ProtocolCodecs {
 type ProtocolTracers m peer blk failure = ProtocolTracers' peer blk failure (Tracer m)
 
 data ProtocolTracers' peer blk failure f = ProtocolTracers {
-    ptChainSyncTracer            :: f (TraceSendRecv (ChainSync (Header blk) (Tip blk))               peer failure)
-  , ptChainSyncSerialisedTracer  :: f (TraceSendRecv (ChainSync (Serialised (Header blk)) (Tip blk))  peer failure)
-  , ptBlockFetchTracer           :: f (TraceSendRecv (BlockFetch blk)                                 peer failure)
-  , ptBlockFetchSerialisedTracer :: f (TraceSendRecv (BlockFetch (Serialised blk))                    peer failure)
-  , ptTxSubmissionTracer         :: f (TraceSendRecv (TxSubmission (GenTxId blk) (GenTx blk))         peer failure)
-  , ptLocalChainSyncTracer       :: f (TraceSendRecv (ChainSync (Serialised blk) (Tip blk))           peer failure)
-  , ptLocalTxSubmissionTracer    :: f (TraceSendRecv (LocalTxSubmission (GenTx blk) (ApplyTxErr blk)) peer failure)
+    ptChainSyncTracer            :: f (TraceSendRecv (ChainSync (WithBlockSize (Header blk)) (Tip blk))              peer failure)
+  , ptChainSyncSerialisedTracer  :: f (TraceSendRecv (ChainSync (WithBlockSize (Serialised (Header blk))) (Tip blk)) peer failure)
+  , ptBlockFetchTracer           :: f (TraceSendRecv (BlockFetch blk)                                                peer failure)
+  , ptBlockFetchSerialisedTracer :: f (TraceSendRecv (BlockFetch (Serialised blk))                                   peer failure)
+  , ptTxSubmissionTracer         :: f (TraceSendRecv (TxSubmission (GenTxId blk) (GenTx blk))                        peer failure)
+  , ptLocalChainSyncTracer       :: f (TraceSendRecv (ChainSync (Serialised blk) (Tip blk))                          peer failure)
+  , ptLocalTxSubmissionTracer    :: f (TraceSendRecv (LocalTxSubmission (GenTx blk) (ApplyTxErr blk))                peer failure)
   }
 
 -- | Use a 'nullTracer' for each protocol.

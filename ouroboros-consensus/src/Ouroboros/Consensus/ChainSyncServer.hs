@@ -15,12 +15,13 @@ module Ouroboros.Consensus.ChainSyncServer
 import           Control.Tracer
 
 import           Ouroboros.Network.Block (ChainUpdate (..), HeaderHash,
-                     Point (..), Serialised, Tip (..), castPoint)
+                     Point (..), Serialised, Tip (..), WithBlockSize (..),
+                     castPoint)
 import           Ouroboros.Network.Protocol.ChainSync.Server
 
-import           Ouroboros.Storage.ChainDB.API (ChainDB, Reader,
-                     SerialisedWithPoint (..), getSerialisedBlockWithPoint,
-                     getSerialisedHeaderWithPoint)
+import           Ouroboros.Storage.ChainDB.API (BlockComponent (..), ChainDB,
+                     Reader, SerialisedWithPoint (..),
+                     getSerialisedBlockWithPoint, getSerialisedHeaderWithPoint)
 import qualified Ouroboros.Storage.ChainDB.API as ChainDB
 
 import           Ouroboros.Consensus.Block
@@ -34,15 +35,25 @@ import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
 --
 chainSyncHeadersServer
     :: forall m blk. IOLike m
-    => Tracer m (TraceChainSyncServerEvent blk (Header blk))
+    => Tracer m (TraceChainSyncServerEvent blk)
     -> ChainDB m blk
     -> ResourceRegistry m
-    -> ChainSyncServer (Serialised (Header blk)) (Tip blk) m ()
+    -> ChainSyncServer (WithBlockSize (Serialised (Header blk))) (Tip blk) m ()
 chainSyncHeadersServer tracer chainDB registry =
     ChainSyncServer $ do
-      rdr <- ChainDB.newReader chainDB registry getSerialisedHeaderWithPoint
-      let ChainSyncServer server = chainSyncServerForReader tracer chainDB rdr
+      rdr <- ChainDB.newReader chainDB registry
+        (WithBlockSize <$> GetBlockSize <*> getSerialisedHeaderWithPoint)
+      let ChainSyncServer server = chainSyncServerForReader
+            tracer chainDB rdr convert toPoint
       server
+  where
+    convert :: WithBlockSize (SerialisedWithPoint blk (Header blk))
+            -> WithBlockSize (Serialised (Header blk))
+    convert = fmap serialised
+
+    toPoint :: WithBlockSize (SerialisedWithPoint blk (Header blk))
+            -> Point blk
+    toPoint = point . withoutBlockSize
 
 -- | Chain Sync Server for blocks for a given a 'ChainDB'.
 --
@@ -51,16 +62,22 @@ chainSyncHeadersServer tracer chainDB registry =
 --
 chainSyncBlocksServer
     :: forall m blk. IOLike m
-    => Tracer m (TraceChainSyncServerEvent blk blk)
+    => Tracer m (TraceChainSyncServerEvent blk)
     -> ChainDB m blk
     -> ResourceRegistry m
     -> ChainSyncServer (Serialised blk) (Tip blk) m ()
 chainSyncBlocksServer tracer chainDB registry =
     ChainSyncServer $ do
       rdr <- ChainDB.newReader chainDB registry getSerialisedBlockWithPoint
-      let ChainSyncServer server = chainSyncServerForReader tracer chainDB rdr
+      let ChainSyncServer server = chainSyncServerForReader
+            tracer chainDB rdr convert toPoint
       server
+  where
+    convert :: SerialisedWithPoint blk blk -> Serialised blk
+    convert = serialised
 
+    toPoint :: SerialisedWithPoint blk blk -> Point blk
+    toPoint = point
 
 -- | A chain sync server.
 --
@@ -72,53 +89,58 @@ chainSyncBlocksServer tracer chainDB registry =
 -- All the hard work is done by the 'Reader's provided by the 'ChainDB'.
 --
 chainSyncServerForReader
-    :: forall m blk b.
+    :: forall m blk bReader bServer.
        ( IOLike m
-       , HeaderHash blk ~ HeaderHash b
+       , HeaderHash bServer ~ HeaderHash blk
        )
-    => Tracer m (TraceChainSyncServerEvent blk b)
+    => Tracer m (TraceChainSyncServerEvent blk)
     -> ChainDB m blk
-    -> Reader  m blk (SerialisedWithPoint blk b)
-    -> ChainSyncServer (Serialised b) (Tip blk) m ()
-chainSyncServerForReader tracer chainDB rdr =
+    -> Reader  m blk bReader
+    -> (bReader -> bServer)
+       -- ^ Convert a @bReader@ from the 'Reader' to a @bServer@ the
+       -- 'ChainSyncServer' will return.
+    -> (bReader -> Point blk)
+    -> ChainSyncServer bServer (Tip blk) m ()
+chainSyncServerForReader tracer chainDB rdr convert toPoint =
     idle'
   where
-    idle :: ServerStIdle (Serialised b) (Tip blk) m ()
+    idle :: ServerStIdle bServer (Tip blk) m ()
     idle = ServerStIdle {
         recvMsgRequestNext   = handleRequestNext,
         recvMsgFindIntersect = handleFindIntersect,
         recvMsgDoneClient    = ChainDB.readerClose rdr
       }
 
-    idle' :: ChainSyncServer (Serialised b) (Tip blk) m ()
+    idle' :: ChainSyncServer bServer (Tip blk) m ()
     idle' = ChainSyncServer $ return idle
 
-    handleRequestNext :: m (Either (ServerStNext (Serialised b) (Tip blk) m ())
-                                (m (ServerStNext (Serialised b) (Tip blk) m ())))
+    handleRequestNext
+      :: m (Either (ServerStNext bServer (Tip blk) m ())
+                   (m (ServerStNext bServer (Tip blk) m ())))
     handleRequestNext = ChainDB.readerInstruction rdr >>= \case
       Just update -> do
         tip <- getTip
         traceWith tracer $
-          TraceChainSyncServerRead tip (point <$> update)
-        return $ Left $ sendNext tip (serialised <$> update)
+          TraceChainSyncServerRead tip (toPoint <$> update)
+        return $ Left $ sendNext tip (convert <$> update)
       Nothing     -> return $ Right $ do
         -- Reader is at the head, we have to block and wait for the chain to
         -- change.
         update <- ChainDB.readerInstructionBlocking rdr
         tip    <- getTip
         traceWith tracer $
-          TraceChainSyncServerReadBlocked tip (point <$> update)
-        return $ sendNext tip (serialised <$> update)
+          TraceChainSyncServerReadBlocked tip (toPoint <$> update)
+        return $ sendNext tip (convert <$> update)
 
     sendNext :: Tip blk
-             -> ChainUpdate blk (Serialised b)
-             -> ServerStNext (Serialised b) (Tip blk) m ()
+             -> ChainUpdate blk bServer
+             -> ServerStNext bServer (Tip blk) m ()
     sendNext tip update = case update of
       AddBlock hdr -> SendMsgRollForward  hdr tip idle'
       RollBack pt  -> SendMsgRollBackward (castPoint pt) tip idle'
 
-    handleFindIntersect :: [Point (Serialised b)]
-                        -> m (ServerStIntersect (Serialised b) (Tip blk) m ())
+    handleFindIntersect :: [Point bServer]
+                        -> m (ServerStIntersect bServer (Tip blk) m ())
     handleFindIntersect points = do
       -- TODO guard number of points
       changed <- ChainDB.readerForward rdr (map castPoint points)
@@ -140,9 +162,8 @@ chainSyncServerForReader tracer chainDB rdr =
 -- | Events traced by the Chain Sync Server.
 --
 -- The whole headers/blocks in the traced 'ChainUpdate' are substituted with
--- their corresponding 'Point'. The @b@ parameter is left as a phantom type
--- parameter to avoid confusing header with block.
-data TraceChainSyncServerEvent blk b
+-- their corresponding 'Point'.
+data TraceChainSyncServerEvent blk
   = TraceChainSyncServerRead        (Tip blk) (ChainUpdate blk (Point blk))
   | TraceChainSyncServerReadBlocked (Tip blk) (ChainUpdate blk (Point blk))
   deriving (Eq, Show)

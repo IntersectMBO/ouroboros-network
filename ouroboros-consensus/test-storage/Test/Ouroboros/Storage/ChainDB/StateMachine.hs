@@ -62,7 +62,7 @@ import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block (BlockNo, ChainHash (..), ChainUpdate,
                      HasHeader (..), HeaderHash, MaxSlotNo, Point, SlotNo (..),
-                     StandardHash)
+                     StandardHash, WithBlockSize (..))
 import qualified Ouroboros.Network.Block as Block
 import           Ouroboros.Network.MockChain.Chain (Chain (..))
 import qualified Ouroboros.Network.MockChain.Chain as Chain
@@ -202,7 +202,7 @@ deriving instance SOP.HasDatatypeInfo (Cmd blk it rdr)
 -- | Return type for successful database operations.
 data Success blk it rdr
   = Unit                ()
-  | Chain               (AnchoredFragment (Header blk))
+  | Chain               (AnchoredFragment (WithBlockSize (Header blk)))
   | Ledger              (ExtLedgerState blk)
   | MbLedger            (Maybe (ExtLedgerState blk))
   | MbBlock             (Maybe blk)
@@ -429,7 +429,7 @@ runPure :: forall blk.
 runPure cfg = \case
     AddBlock blk             -> ok  Unit                $ update_ (advanceAndAdd (blockSlot blk) blk)
     AddFutureBlock blk s     -> ok  Unit                $ update_ (advanceAndAdd s               blk)
-    GetCurrentChain          -> ok  Chain               $ query   (Model.lastK k getHeader)
+    GetCurrentChain          -> ok  Chain               $ query   (Model.lastK k)
     GetCurrentLedger         -> ok  Ledger              $ query    Model.currentLedger
     GetPastLedger pt         -> ok  MbLedger            $ query   (Model.getPastLedger cfg pt)
     GetTipBlock              -> ok  MbBlock             $ query    Model.tipBlock
@@ -898,8 +898,8 @@ equallyPreferable :: forall blk.
                   => NodeConfig (BlockProtocol blk)
                   -> Chain blk -> Chain blk -> Bool
 equallyPreferable cfg chain1 chain2 =
-    not (preferAnchoredCandidate cfg chain1' chain2') &&
-    not (preferAnchoredCandidate cfg chain2' chain1')
+    not (preferAnchoredCandidate cfg id chain1' chain2') &&
+    not (preferAnchoredCandidate cfg id chain2' chain1')
   where
     chain1', chain2' :: AnchoredFragment blk
     chain1' = Chain.toAnchoredFragment chain1
@@ -1426,6 +1426,7 @@ mkArgs cfg initLedger tracer registry varCurSlot
     , cdbEpochInfo        = fixedSizeEpochInfo fixedEpochSize
     , cdbHashInfo         = testHashInfo
     , cdbIsEBB            = testBlockEpochNoIfEBB fixedEpochSize
+    , cdbBlockSize        = testBlockSize
     , cdbCheckIntegrity   = testBlockIsValid
     , cdbGenesis          = return initLedger
     , cdbBlockchainTime   = settableBlockchainTime varCurSlot

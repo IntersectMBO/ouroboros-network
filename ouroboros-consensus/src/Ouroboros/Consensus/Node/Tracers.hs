@@ -11,7 +11,7 @@ module Ouroboros.Consensus.Node.Tracers
 
 import           Control.Tracer (Tracer, nullTracer, showTracing)
 
-import           Ouroboros.Network.Block (Point, SlotNo)
+import           Ouroboros.Network.Block (Point, SlotNo, WithBlockSize)
 import           Ouroboros.Network.BlockFetch (FetchDecision,
                      TraceFetchClientState, TraceLabelPeer)
 import           Ouroboros.Network.TxSubmission.Inbound
@@ -39,10 +39,10 @@ import           Ouroboros.Consensus.TxSubmission
 
 data Tracers' peer blk f = Tracers
   { chainSyncClientTracer         :: f (TraceChainSyncClientEvent blk)
-  , chainSyncServerHeaderTracer   :: f (TraceChainSyncServerEvent blk (Header blk))
-  , chainSyncServerBlockTracer    :: f (TraceChainSyncServerEvent blk blk)
-  , blockFetchDecisionTracer      :: f [TraceLabelPeer peer (FetchDecision [Point (Header blk)])]
-  , blockFetchClientTracer        :: f (TraceLabelPeer peer (TraceFetchClientState (Header blk)))
+  , chainSyncServerHeaderTracer   :: f (TraceChainSyncServerEvent blk)
+  , chainSyncServerBlockTracer    :: f (TraceChainSyncServerEvent blk)
+  , blockFetchDecisionTracer      :: f [TraceLabelPeer peer (FetchDecision [Point (WithBlockSize (Header blk))])]
+  , blockFetchClientTracer        :: f (TraceLabelPeer peer (TraceFetchClientState (WithBlockSize (Header blk))))
   , blockFetchServerTracer        :: f (TraceBlockFetchServerEvent blk)
   , txInboundTracer               :: f (TraceTxSubmissionInbound  (GenTxId blk) (GenTx blk))
   , txOutboundTracer              :: f (TraceTxSubmissionOutbound (GenTxId blk) (GenTx blk))

@@ -358,6 +358,7 @@ runThreadNetwork ThreadNetworkArgs
         , cdbEpochInfo        = epochInfo
         , cdbHashInfo         = nodeHashInfo (Proxy @blk)
         , cdbIsEBB            = nodeIsEBB . getHeader
+        , cdbBlockSize        = nodeBlockSize
         , cdbCheckIntegrity   = nodeCheckIntegrity cfg
         , cdbGenesis          = return initLedger
         , cdbBlockchainTime   = btime
@@ -439,8 +440,7 @@ runThreadNetwork ThreadNetworkArgs
             , btime
             , chainDB
             , blockProduction     = Just blockProduction
-            , blockFetchSize      = nodeBlockFetchSize
-            , blockMatchesHeader  = nodeBlockMatchesHeader
+            , blockMatchesHeader  = nodeBlockMatchesHeader . withoutBlockSize
             , maxUnackTxs         = 1000 -- TODO
             , maxBlockSize        = NoOverride
             , mempoolCap          = MempoolCapacityBytes 3000 -- TODO

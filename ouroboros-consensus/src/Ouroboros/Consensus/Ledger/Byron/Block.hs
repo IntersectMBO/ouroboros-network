@@ -32,6 +32,7 @@ module Ouroboros.Consensus.Ledger.Byron.Block (
   , encodeByronHeaderHash
   , decodeByronHeaderHash
   , byronAddHeaderEnvelope
+  , byronBlockSize
   ) where
 
 import           Data.Binary (Get, Put)
@@ -310,3 +311,11 @@ byronAddHeaderEnvelope
 byronAddHeaderEnvelope = mappend . \case
     IsEBB    -> "\130\NUL"
     IsNotEBB -> "\130\SOH"
+
+-- | Return the size of a block in bytes.
+--
+-- Cheap, as the annotation (serialisation) is kept in memory.
+byronBlockSize :: ByronBlock -> Word32
+byronBlockSize blk = fromIntegral $ Strict.length $ case byronBlockRaw blk of
+    CC.ABOBBoundary b -> CC.boundaryHeaderAnnotation $ CC.boundaryHeader b
+    CC.ABOBBlock    b -> CC.headerAnnotation         $ CC.blockHeader    b

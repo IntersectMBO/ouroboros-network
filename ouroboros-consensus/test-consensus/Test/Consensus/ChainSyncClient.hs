@@ -223,7 +223,7 @@ newtype ServerUpdates =
 
 type TraceEvent = (SlotNo, Either
   (TraceChainSyncClientEvent TestBlock)
-  (TraceSendRecv (ChainSync (Header TestBlock) (Tip TestBlock))
+  (TraceSendRecv (ChainSync (WithBlockSize (Header TestBlock)) (Tip TestBlock))
                  CoreNodeId
                  CodecFailure))
 
@@ -286,7 +286,7 @@ runChainSync securityParam maxClockSkew (ClientUpdates clientUpdates)
     let chainDbView :: ChainDbView m TestBlock
         chainDbView = ChainDbView
           { getCurrentChain   =
-              AF.mapAnchoredFragment TestHeader . AF.anchorNewest k .
+              AF.mapAnchoredFragment (WithBlockSize 0 . TestHeader) . AF.anchorNewest k .
               Chain.toAnchoredFragment . fst <$>
               readTVar varClientState
           , getCurrentLedger  = snd <$> readTVar varClientState
@@ -297,7 +297,7 @@ runChainSync securityParam maxClockSkew (ClientUpdates clientUpdates)
               WithFingerprint (const Nothing) (Fingerprint 0)
           }
 
-        client :: StrictTVar m (AnchoredFragment (Header TestBlock))
+        client :: StrictTVar m (AnchoredFragment (WithBlockSize (Header TestBlock)))
                -> Consensus ChainSyncClientPipelined
                     TestBlock
                     m
@@ -311,7 +311,7 @@ runChainSync securityParam maxClockSkew (ClientUpdates clientUpdates)
 
     -- Set up the server
     varChainProducerState <- uncheckedNewTVarM $ initChainProducerState Genesis
-    let server :: ChainSyncServer (Header TestBlock) (Tip TestBlock) m ()
+    let server :: ChainSyncServer (WithBlockSize (Header TestBlock)) (Tip TestBlock) m ()
         server = chainSyncServerExample () varChainProducerState
 
     -- Schedule updates of the client and server chains
@@ -334,7 +334,9 @@ runChainSync securityParam maxClockSkew (ClientUpdates clientUpdates)
           atomically $ do
             chainProducerState <- readTVar varChainProducerState
             case CPS.applyChainUpdates
-                   (map (fmap TestHeader) (toChainUpdates chainUpdates))
+                   (map
+                     (fmap (WithBlockSize 0 . TestHeader))
+                     (toChainUpdates chainUpdates))
                    chainProducerState of
               Just chainProducerState' ->
                 writeTVar varChainProducerState chainProducerState'
@@ -390,8 +392,8 @@ runChainSync securityParam maxClockSkew (ClientUpdates clientUpdates)
       clientException   <- readTVar varClientException
       return (
           clientChain
-        , fmap testHeader serverChain
-        , AF.mapAnchoredFragment testHeader candidateFragment
+        , fmap (testHeader . withoutBlockSize) serverChain
+        , AF.mapAnchoredFragment (testHeader . withoutBlockSize) candidateFragment
         , clientException
         , trace
         )

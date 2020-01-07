@@ -120,7 +120,7 @@ openDB cfg initLedger btime = do
 
     return ChainDB {
         addBlock            = update_  . Model.addBlock cfg
-      , getCurrentChain     = querySTM $ Model.lastK k getHeader
+      , getCurrentChain     = querySTM $ Model.lastK k
       , getCurrentLedger    = querySTM $ Model.currentLedger
       , getPastLedger       = query    . Model.getPastLedger cfg
       , getBlockComponent   = queryE  .: Model.getBlockComponentByPoint

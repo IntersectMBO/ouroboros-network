@@ -15,6 +15,7 @@ import           Codec.CBOR.Decoding (Decoder)
 import           Codec.CBOR.Encoding (Encoding)
 import qualified Data.ByteString.Lazy as Lazy
 import           Data.Time.Clock (DiffTime, secondsToDiffTime)
+import           Data.Word (Word32)
 
 import           Control.Tracer (Tracer, contramap)
 
@@ -90,6 +91,7 @@ data ChainDbArgs m blk = forall h1 h2 h3. ChainDbArgs {
     , cdbEpochInfo        :: EpochInfo m
     , cdbHashInfo         :: HashInfo (HeaderHash blk)
     , cdbIsEBB            :: blk -> Maybe EpochNo
+    , cdbBlockSize        :: blk -> Word32
     , cdbCheckIntegrity   :: blk -> Bool
     , cdbGenesis          :: m (ExtLedgerState blk)
     , cdbBlockchainTime   :: BlockchainTime m
@@ -116,6 +118,7 @@ data ChainDbSpecificArgs m blk = ChainDbSpecificArgs {
     , cdbsGcDelay        :: DiffTime
     , cdbsBlockchainTime :: BlockchainTime m
     , cdbsEncodeHeader   :: Header blk -> Encoding
+    , cdbsBlockSize      :: blk -> Word32
     }
 
 -- | Default arguments
@@ -134,6 +137,7 @@ defaultSpecificArgs = ChainDbSpecificArgs{
     , cdbsRegistry       = error "no default for cdbsRegistry"
     , cdbsBlockchainTime = error "no default for cdbsBlockchainTime"
     , cdbsEncodeHeader   = error "no default for cdbsEncodeHeader"
+    , cdbsBlockSize      = error "no default for cdbsBlockSize"
     }
   where
     oneHour = secondsToDiffTime 60 * 60
@@ -211,6 +215,7 @@ fromChainDbArgs ChainDbArgs{..} = (
         , cdbsGcDelay         = cdbGcDelay
         , cdbsBlockchainTime  = cdbBlockchainTime
         , cdbsEncodeHeader    = cdbEncodeHeader
+        , cdbsBlockSize       = cdbBlockSize
         }
     )
 
@@ -257,6 +262,7 @@ toChainDbArgs ImmDB.ImmDbArgs{..}
     , cdbEpochInfo        = immEpochInfo
     , cdbHashInfo         = immHashInfo
     , cdbIsEBB            = immIsEBB
+    , cdbBlockSize        = cdbsBlockSize
     , cdbCheckIntegrity   = immCheckIntegrity
     , cdbGenesis          = lgrGenesis
     , cdbBlockchainTime   = cdbsBlockchainTime
