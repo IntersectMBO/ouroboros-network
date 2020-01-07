@@ -4,14 +4,16 @@
 {-# LANGUAGE PatternSynonyms     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module Test.Dynamic.General (
+module Test.ThreadNet.General (
     prop_general
   , runTestNetwork
     -- * TestConfig
   , TestConfig (..)
+  , TestConfigBlock (..)
   , truncateNodeJoinPlan
   , truncateNodeTopology
     -- * Re-exports
+  , ForgeEBB
   , TestOutput (..)
   ) where
 
@@ -41,11 +43,11 @@ import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Orphans ()
 import           Ouroboros.Consensus.Util.Random
 
-import           Test.Dynamic.Network
-import           Test.Dynamic.TxGen
-import           Test.Dynamic.Util
-import           Test.Dynamic.Util.NodeJoinPlan
-import           Test.Dynamic.Util.NodeTopology
+import           Test.ThreadNet.Network
+import           Test.ThreadNet.TxGen
+import           Test.ThreadNet.Util
+import           Test.ThreadNet.Util.NodeJoinPlan
+import           Test.ThreadNet.Util.NodeTopology
 
 import           Test.Util.FS.Sim.MockFS (MockFS)
 import qualified Test.Util.FS.Sim.MockFS as Mock
@@ -68,6 +70,7 @@ data TestConfig = TestConfig
   , nodeJoinPlan :: !NodeJoinPlan
   , nodeTopology :: !NodeTopology
   , slotLengths  :: !SlotLengths
+  , initSeed     :: !Seed
   }
   deriving (Show)
 
@@ -93,9 +96,24 @@ instance Arbitrary TestConfig where
       nodeJoinPlan <- genNodeJoinPlan numCoreNodes numSlots
       nodeTopology <- genNodeTopology numCoreNodes
       slotLengths  <- arbitrary
-      pure TestConfig{numCoreNodes, numSlots, nodeJoinPlan, nodeTopology, slotLengths}
+      initSeed     <- arbitrary
+      pure TestConfig
+        { numCoreNodes
+        , numSlots
+        , nodeJoinPlan
+        , nodeTopology
+        , slotLengths
+        , initSeed
+        }
 
-  shrink TestConfig{numCoreNodes, numSlots, nodeJoinPlan, nodeTopology, slotLengths} =
+  shrink TestConfig
+    { numCoreNodes
+    , numSlots
+    , nodeJoinPlan
+    , nodeTopology
+    , slotLengths
+    , initSeed
+    } =
       dropId $
       [ TestConfig
           { numCoreNodes = n'
@@ -103,6 +121,7 @@ instance Arbitrary TestConfig where
           , nodeJoinPlan = p'
           , nodeTopology = top'
           , slotLengths  = ls'
+          , initSeed
           }
       | n'             <- andId shrink numCoreNodes
       , t'             <- andId shrink numSlots
@@ -114,12 +133,19 @@ instance Arbitrary TestConfig where
       ]
 
 {-------------------------------------------------------------------------------
-  Running tests
+  Configuring tests for a specific block type
 -------------------------------------------------------------------------------}
 
--- | Thin wrapper around 'runNodeNetwork'
---
--- Runs in the IO sim monad.
+data TestConfigBlock blk = TestConfigBlock
+  { forgeEBB :: Maybe (ForgeEBB blk)
+  , nodeInfo :: CoreNodeId -> ProtocolInfo blk
+  }
+
+{-------------------------------------------------------------------------------
+   Running tests
+-------------------------------------------------------------------------------}
+
+-- | Thin wrapper around 'runThreadNetwork'
 --
 runTestNetwork ::
   forall blk.
@@ -127,24 +153,22 @@ runTestNetwork ::
      , TxGen blk
      , TracingConstraints blk
      )
-  => (CoreNodeId -> ProtocolInfo blk)
-  -> TestConfig
-  -> MaybeForgeEBB blk
-  -> Seed
+  => TestConfig
+  -> TestConfigBlock blk
   -> TestOutput blk
-runTestNetwork pInfo
-  TestConfig{numCoreNodes, numSlots, nodeJoinPlan, nodeTopology, slotLengths}
-  mbForgeEBB
-  seed = runSimOrThrow $
-    runNodeNetwork
-      numCoreNodes
-      numSlots
-      slotLengths
-      nodeJoinPlan
-      nodeTopology
-      mbForgeEBB
-      pInfo
-      (seedToChaCha seed)
+runTestNetwork
+  TestConfig{numCoreNodes, numSlots, nodeJoinPlan, nodeTopology, slotLengths, initSeed}
+  TestConfigBlock{forgeEBB, nodeInfo}
+  = runSimOrThrow $ runThreadNetwork ThreadNetworkArgs
+      { tnaForgeEBB       = forgeEBB
+      , tnaJoinPlan       = nodeJoinPlan
+      , tnaNodeInfo       = nodeInfo
+      , tnaNumCoreNodes   = numCoreNodes
+      , tnaNumSlots       = numSlots
+      , tnaRNG            = seedToChaCha initSeed
+      , tnaSlotLengths    = slotLengths
+      , tnaTopology       = nodeTopology
+      }
 
 {-------------------------------------------------------------------------------
   Test properties

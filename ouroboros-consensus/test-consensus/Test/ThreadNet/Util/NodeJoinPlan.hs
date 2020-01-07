@@ -1,7 +1,7 @@
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module Test.Dynamic.Util.NodeJoinPlan
+module Test.ThreadNet.Util.NodeJoinPlan
   ( -- * Node Join Plan
     NodeJoinPlan (..)
   , coreNodeIdJoinSlot

@@ -14,9 +14,10 @@
 {-# LANGUAGE UndecidableInstances #-}
 
 -- | Setup network
-module Test.Dynamic.Network (
-    runNodeNetwork
-  , MaybeForgeEBB (..)
+module Test.ThreadNet.Network (
+    runThreadNetwork
+  , ForgeEBB
+  , ThreadNetworkArgs (..)
   , TracingConstraints
     -- * Tracers
   , MiniProtocolExpectedException (..)
@@ -98,46 +99,60 @@ import qualified Ouroboros.Storage.LedgerDB.DiskPolicy as LgrDB
 import qualified Ouroboros.Storage.LedgerDB.InMemory as LgrDB
 import qualified Ouroboros.Storage.Util.ErrorHandling as EH
 
-import           Test.Dynamic.TxGen
-import           Test.Dynamic.Util.NodeJoinPlan
-import           Test.Dynamic.Util.NodeTopology
+import           Test.ThreadNet.TxGen
+import           Test.ThreadNet.Util.NodeJoinPlan
+import           Test.ThreadNet.Util.NodeTopology
 
 import           Test.Util.FS.Sim.MockFS (MockFS)
 import qualified Test.Util.FS.Sim.MockFS as Mock
 import           Test.Util.FS.Sim.STM (simHasFS)
 import           Test.Util.Tracer
 
-data MaybeForgeEBB blk
-  = NothingForgeEBB
-    -- ^ Do not forge EBBs during this test
-  | JustForgeEBB !(NodeConfig (BlockProtocol blk) ->
-                   SlotNo -> BlockNo -> ChainHash blk -> blk)
-    -- ^ Forge EBBs during this test using this function @(slot, block no,
-    -- prevHash)@
+-- | How to forge an EBB
+--
+type ForgeEBB blk =
+     NodeConfig (BlockProtocol blk)
+  -> SlotNo   -- ^ EBB slot
+  -> BlockNo   -- ^ EBB block number (i.e. that of its predecessor)
+  -> ChainHash blk   -- ^ EBB predecessor's hash
+  -> blk
+
+-- | Parameters for the test node net
+--
+data ThreadNetworkArgs blk = ThreadNetworkArgs
+  { tnaForgeEBB       :: Maybe (ForgeEBB blk)
+  , tnaJoinPlan       :: NodeJoinPlan
+  , tnaNodeInfo       :: CoreNodeId -> ProtocolInfo blk
+  , tnaNumCoreNodes   :: NumCoreNodes
+  , tnaNumSlots       :: NumSlots
+  , tnaRNG            :: ChaChaDRG
+  , tnaSlotLengths    :: SlotLengths
+  , tnaTopology       :: NodeTopology
+  }
 
 -- | Setup a network of core nodes, where each joins according to the node join
 -- plan and is interconnected according to the node topology
 --
 -- We run for the specified number of blocks, then return the final state of
 -- each node.
-runNodeNetwork :: forall m blk.
+runThreadNetwork :: forall m blk.
                     ( IOLike m
                     , RunNode blk
                     , TxGen blk
                     , TracingConstraints blk
                     , HasCallStack
                     )
-                 => NumCoreNodes
-                 -> NumSlots
-                 -> SlotLengths
-                 -> NodeJoinPlan
-                 -> NodeTopology
-                 -> MaybeForgeEBB blk
-                 -> (CoreNodeId -> ProtocolInfo blk)
-                 -> ChaChaDRG
-                 -> m (TestOutput blk)
-runNodeNetwork numCoreNodes numSlots slotLengths nodeJoinPlan nodeTopology
-  mbForgeEBB pInfo initRNG = withRegistry $ \sharedRegistry -> do
+                 => ThreadNetworkArgs blk -> m (TestOutput blk)
+runThreadNetwork ThreadNetworkArgs
+  { tnaForgeEBB       = mbForgeEBB
+  , tnaJoinPlan       = nodeJoinPlan
+  , tnaNodeInfo       = pInfo
+  , tnaNumCoreNodes   = numCoreNodes
+  , tnaNumSlots       = numSlots
+  , tnaRNG            = initRNG
+  , tnaSlotLengths    = slotLengths
+  , tnaTopology       = nodeTopology
+  } = withRegistry $ \sharedRegistry -> do
     -- This shared registry is used for 'newTestBlockchainTime' and the
     -- network communication threads. Each node will create its own registry
     -- for its ChainDB.
@@ -280,8 +295,8 @@ runNodeNetwork numCoreNodes numSlots slotLengths nodeJoinPlan nodeTopology
           void $ blockUntilSlot btime ebbSlotNo
 
           case mbForgeEBB of
-            NothingForgeEBB       -> pure ()
-            JustForgeEBB forgeEBB -> do
+            Nothing       -> pure ()
+            Just forgeEBB -> do
               (prevSlot, ebbBlockNo, prevHash) <- atomically $ do
                 p <- ChainDB.getTipPoint chainDB
                 let mSlot = pointSlot p

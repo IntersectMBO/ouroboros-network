@@ -1,4 +1,4 @@
-module Test.Dynamic.Util.Tests (
+module Test.ThreadNet.Util.Tests (
     tests
   ) where
 
@@ -10,13 +10,13 @@ import           Ouroboros.Consensus.Node.ProtocolInfo.Abstract
                      (NumCoreNodes (..))
 import           Ouroboros.Consensus.Protocol.Abstract (SecurityParam (..))
 
-import           Test.Dynamic.Util
-import           Test.Dynamic.Util.NodeJoinPlan (trivialNodeJoinPlan)
+import           Test.ThreadNet.Util
+import           Test.ThreadNet.Util.NodeJoinPlan (trivialNodeJoinPlan)
 
 import           Test.Util.Orphans.Arbitrary ()
 
 tests :: TestTree
-tests = testGroup "Test.Dynamic.Util.Tests" $
+tests = testGroup "Test.ThreadNet.Util.Tests" $
     [ testProperty "0 = determineForkLength roundRobinLeaderSchedule" $
           prop_roundRobin_forkLength securityParam
     ]

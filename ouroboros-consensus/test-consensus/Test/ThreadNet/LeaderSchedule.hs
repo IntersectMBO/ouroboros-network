@@ -1,7 +1,7 @@
 {-# LANGUAGE NamedFieldPuns  #-}
 {-# LANGUAGE RecordWildCards #-}
 
-module Test.Dynamic.LeaderSchedule (
+module Test.ThreadNet.LeaderSchedule (
     tests
   ) where
 
@@ -20,25 +20,44 @@ import           Ouroboros.Consensus.BlockchainTime.Mock
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.NodeId
 import           Ouroboros.Consensus.Protocol
-import           Ouroboros.Consensus.Util.Random
 
-import           Test.Dynamic.General
-import           Test.Dynamic.Network (MaybeForgeEBB (..))
-import           Test.Dynamic.Util
-import           Test.Dynamic.Util.NodeJoinPlan
-import           Test.Dynamic.Util.NodeTopology
+import           Test.ThreadNet.General
+import           Test.ThreadNet.Util
+import           Test.ThreadNet.Util.NodeJoinPlan
+import           Test.ThreadNet.Util.NodeTopology
 
 import           Test.Util.Orphans.Arbitrary ()
 
 tests :: TestTree
-tests = testGroup "Dynamic chain generation"
-    [ testProperty
-        "simple leader schedule convergence" $
-            prop
+tests = testGroup "LeaderSchedule"
+    [ testProperty "simple convergence" $
+          forAllShrink
+              (genNodeJoinPlan numCoreNodes numSlots)
+              shrinkNodeJoinPlan
+            $ \nodeJoinPlan ->
+          forAllShrink
+              (genNodeTopology numCoreNodes)
+              shrinkNodeTopology
+            $ \nodeTopology ->
+          forAllShrink
+              (genLeaderSchedule k numSlots numCoreNodes nodeJoinPlan)
+              (shrinkLeaderSchedule numSlots)
+            $ \schedule ->
+          forAll arbitrary
+            $ \initSeed ->
+          prop_simple_leader_schedule_convergence params TestConfig
+            { numCoreNodes
+            , numSlots
+            , nodeJoinPlan
+            , nodeTopology
+            , slotLengths
+            , initSeed
+            }
+              schedule
     ]
   where
-    params@PraosParams{praosSecurityParam = k, ..} = PraosParams {
-        praosSecurityParam = SecurityParam 5
+    params@PraosParams{praosSecurityParam = k, ..} = PraosParams
+      { praosSecurityParam = SecurityParam 5
       , praosSlotsPerEpoch = 3
       , praosLeaderF       = 0.5
       , praosLifetimeKES   = 1000000
@@ -46,45 +65,26 @@ tests = testGroup "Dynamic chain generation"
       }
 
     numCoreNodes = NumCoreNodes 3
-    numSlots  = NumSlots $ maxRollbacks k * praosSlotsPerEpoch * numEpochs
-    numEpochs = 3
-    slotLengths = singletonSlotLengths praosSlotLength
-
-    prop seed =
-        forAllShrink
-            (genNodeJoinPlan numCoreNodes numSlots)
-            shrinkNodeJoinPlan $
-        \nodeJoinPlan ->
-        forAllShrink
-            (genNodeTopology numCoreNodes)
-            shrinkNodeTopology $
-        \nodeTopology ->
-        forAllShrink
-            (genLeaderSchedule k numSlots numCoreNodes nodeJoinPlan)
-            (shrinkLeaderSchedule numSlots) $
-        \schedule ->
-            prop_simple_leader_schedule_convergence
-                params
-                TestConfig{numCoreNodes, numSlots, nodeJoinPlan, nodeTopology, slotLengths}
-                schedule seed
+    numSlots     = NumSlots $ maxRollbacks k * praosSlotsPerEpoch * numEpochs
+    numEpochs    = 3
+    slotLengths  = singletonSlotLengths praosSlotLength
 
 prop_simple_leader_schedule_convergence :: PraosParams
                                         -> TestConfig
                                         -> LeaderSchedule
-                                        -> Seed
                                         -> Property
 prop_simple_leader_schedule_convergence
-  params@PraosParams{praosSecurityParam = k}
-  testConfig@TestConfig{numCoreNodes} schedule seed =
+  params@PraosParams{praosSecurityParam}
+  testConfig@TestConfig{numCoreNodes} schedule =
     counterexample (tracesToDot testOutputNodes) $
-    prop_general k testConfig (Just schedule) testOutput
+    prop_general praosSecurityParam testConfig (Just schedule) testOutput
   where
     testOutput@TestOutput{testOutputNodes} =
-        runTestNetwork
-            (\nid -> protocolInfo
-                       (ProtocolLeaderSchedule numCoreNodes nid
-                                               params schedule))
-            testConfig NothingForgeEBB seed
+        runTestNetwork testConfig TestConfigBlock
+            { forgeEBB = Nothing
+            , nodeInfo = \nid -> protocolInfo $
+                ProtocolLeaderSchedule numCoreNodes nid params schedule
+            }
 
 {-------------------------------------------------------------------------------
   Dependent generation and shrinking of leader schedules

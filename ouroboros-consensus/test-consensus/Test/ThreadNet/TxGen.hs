@@ -1,7 +1,7 @@
 {-# LANGUAGE FlexibleInstances   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 -- | Transaction generator for testing
-module Test.Dynamic.TxGen
+module Test.ThreadNet.TxGen
   ( TxGen (..)
   ) where
 

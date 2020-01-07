@@ -11,12 +11,12 @@ import qualified Test.Consensus.Mempool (tests)
 import qualified Test.Consensus.Node (tests)
 import qualified Test.Consensus.Protocol.PBFT (tests)
 import qualified Test.Consensus.ResourceRegistry (tests)
-import qualified Test.Dynamic.BFT (tests)
-import qualified Test.Dynamic.LeaderSchedule (tests)
-import qualified Test.Dynamic.PBFT (tests)
-import qualified Test.Dynamic.Praos (tests)
-import qualified Test.Dynamic.RealPBFT (tests)
-import qualified Test.Dynamic.Util.Tests (tests)
+import qualified Test.ThreadNet.BFT (tests)
+import qualified Test.ThreadNet.LeaderSchedule (tests)
+import qualified Test.ThreadNet.PBFT (tests)
+import qualified Test.ThreadNet.Praos (tests)
+import qualified Test.ThreadNet.RealPBFT (tests)
+import qualified Test.ThreadNet.Util.Tests (tests)
 
 import qualified Test.Util.Split (tests)
 
@@ -35,11 +35,11 @@ tests =
   , Test.Consensus.Node.tests
   , Test.Consensus.Protocol.PBFT.tests
   , Test.Consensus.ResourceRegistry.tests
-  , Test.Dynamic.Util.Tests.tests
-  , Test.Dynamic.BFT.tests
-  , Test.Dynamic.LeaderSchedule.tests
-  , Test.Dynamic.PBFT.tests
-  , Test.Dynamic.Praos.tests
-  , Test.Dynamic.RealPBFT.tests
+  , Test.ThreadNet.Util.Tests.tests
+  , Test.ThreadNet.BFT.tests
+  , Test.ThreadNet.LeaderSchedule.tests
+  , Test.ThreadNet.PBFT.tests
+  , Test.ThreadNet.Praos.tests
+  , Test.ThreadNet.RealPBFT.tests
   , Test.Util.Split.tests
   ]

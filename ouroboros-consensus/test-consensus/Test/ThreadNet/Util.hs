@@ -4,7 +4,7 @@
 {-# LANGUAGE TupleSections       #-}
 {-# LANGUAGE TypeFamilies        #-}
 
-module Test.Dynamic.Util (
+module Test.ThreadNet.Util (
   -- * Chain properties
     prop_all_common_prefix
   , shortestLength
@@ -15,7 +15,7 @@ module Test.Dynamic.Util (
   -- * GraphViz Dot
   , tracesToDot
   -- * Re-exports
-  , module Test.Dynamic.Util.Expectations
+  , module Test.ThreadNet.Util.Expectations
   ) where
 
 import           Data.Graph.Inductive.Graph
@@ -51,10 +51,10 @@ import           Ouroboros.Consensus.Util.Orphans ()
 import           Test.Util.HasCreator
 import qualified Test.Util.MockChain as Chain
 
-import           Test.Dynamic.Network (NodeOutput (..))
-import           Test.Dynamic.Util.Expectations (NumBlocks (..),
+import           Test.ThreadNet.Network (NodeOutput (..))
+import           Test.ThreadNet.Util.Expectations (NumBlocks (..),
                      determineForkLength)
-import           Test.Dynamic.Util.NodeJoinPlan (NodeJoinPlan)
+import           Test.ThreadNet.Util.NodeJoinPlan (NodeJoinPlan)
 
 {-------------------------------------------------------------------------------
   Chain properties

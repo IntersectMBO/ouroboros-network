@@ -1,7 +1,7 @@
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module Test.Dynamic.Util.NodeTopology
+module Test.ThreadNet.Util.NodeTopology
   ( -- * Node Topology
     NodeTopology (..)
   , coreNodeIdNeighbors

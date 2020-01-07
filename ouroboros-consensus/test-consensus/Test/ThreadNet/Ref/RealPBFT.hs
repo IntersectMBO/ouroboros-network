@@ -8,7 +8,7 @@
 --
 -- See 'step'.
 --
-module Test.Dynamic.Ref.RealPBFT (
+module Test.ThreadNet.Ref.RealPBFT (
   Outcome (..),
   State (..),
   advanceUpTo,
@@ -33,7 +33,7 @@ import           Ouroboros.Consensus.NodeId (CoreNodeId (..))
 import           Ouroboros.Consensus.Protocol.Abstract (SecurityParam (..))
 import           Ouroboros.Consensus.Protocol.PBFT (PBftParams (..))
 
-import           Test.Dynamic.Util.NodeJoinPlan
+import           Test.ThreadNet.Util.NodeJoinPlan
 
 oneK :: Num a => PBftParams -> a
 oneK PBftParams{pbftSecurityParam} =

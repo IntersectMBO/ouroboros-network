@@ -1,6 +1,6 @@
 {-# LANGUAGE NamedFieldPuns #-}
 
-module Test.Dynamic.Util.Expectations
+module Test.ThreadNet.Util.Expectations
     ( NumBlocks (..)
     , determineForkLength
     ) where
@@ -16,7 +16,7 @@ import           Ouroboros.Consensus.Protocol.Abstract (SecurityParam (..))
 import           Ouroboros.Consensus.Protocol.LeaderSchedule
                      (LeaderSchedule (..))
 
-import           Test.Dynamic.Util.NodeJoinPlan
+import           Test.ThreadNet.Util.NodeJoinPlan
 
 newtype NumBlocks = NumBlocks Word64
   deriving (Eq, Show)
@@ -48,8 +48,8 @@ data Acc = Acc
 --
 -- A round-robin 'LeaderSchedule' will always reach consensus, so the fork
 -- length will be @0@. For other 'LeaderSchedule's -- whether known /a priori/
--- (see "Test.Dynamic.LeaderSchedule") or /a posteriori/ (see
--- "Test.Dynamic.Praos") -- we often will not expect consensus. The key
+-- (see "Test.ThreadNet.LeaderSchedule") or /a posteriori/ (see
+-- "Test.ThreadNet.Praos") -- we often will not expect consensus. The key
 -- difference is that a round-robin schedule always has exactly one leader per
 -- slot. Arbitrary schedules instead may have 0 or multiple leaders.
 --
