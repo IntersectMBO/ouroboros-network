@@ -7,9 +7,10 @@ import System.Win32.Types (ErrCode)
 import qualified System.Win32.Types as Win32
 import System.Win32.Async.ErrCode
 
-waitForCompletion :: (StablePtr (MVar (Either ErrCode Int)) -> IO ())
+waitForCompletion :: String
+                  -> (StablePtr (MVar (Either ErrCode Int)) -> IO ())
                   -> IO Int
-waitForCompletion asyncIO = do
+waitForCompletion errorTag asyncIO = do
     wait_var <- newEmptyMVar
     -- the pointer is freed in 'handleCompletions'
     wait_var_ptr <- newStablePtr wait_var
@@ -28,18 +29,19 @@ waitForCompletion asyncIO = do
                    -- we are treating ERROR_PIPE_LISTENING as an error at this point
                    -> pure 0
                    | otherwise
-                   -> Win32.failWith ("waitForCompletion: " ++ show e) e
+                   -> Win32.failWith ("waitForCompletion: (" ++ errorTag ++ ") " ++ show e) e
       else
         -- An error occurred.
         if   errCode == eRROR_HANDLE_EOF
           || errCode == eRROR_PIPE_CONNECTED
           then return 0
-          else Win32.failWith ("waitForCompletion: " ++ show errCode) errCode
+          else Win32.failWith ("waitForCompletion: (" ++ errorTag ++ ") " ++ show errCode) errCode
 
 
-wsaWaitForCompletion :: (StablePtr (MVar (Either WSAErrCode Int)) -> IO ())
+wsaWaitForCompletion :: String -- error tag
+                     -> (StablePtr (MVar (Either WSAErrCode Int)) -> IO ())
                      -> IO Int
-wsaWaitForCompletion asyncIO = do
+wsaWaitForCompletion errorTag asyncIO = do
     wait_var <- newEmptyMVar
     -- the pointer is freed in 'c_GetQueuedCompletionStatus'
     wait_var_ptr <- newStablePtr wait_var
@@ -53,7 +55,7 @@ wsaWaitForCompletion asyncIO = do
         case res' of
             Right num_bytes
                    -> return num_bytes
-            Left e -> wsaFailWith ("wsaWaitForCompletion: " ++ show e) e
+            Left e -> wsaFailWith ("wsaWaitForCompletion (" ++ errorTag ++ ") "  ++ show e) e
       else
         -- An error occurred.
-        wsaFailWith ("wsaWaitForCompletion: " ++ show errCode) errCode
+        wsaFailWith ("wsaWaitForCompletion (" ++ errorTag ++ ") " ++ show errCode) errCode

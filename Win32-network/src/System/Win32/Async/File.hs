@@ -37,7 +37,7 @@ readHandle :: HANDLE
 readHandle h size = BS.createAndTrim size
       (\ptr ->
           fromIntegral <$>
-            waitForCompletion (c_AsyncRead h ptr (fromIntegral size)))
+            waitForCompletion "readHandle" (c_AsyncRead h ptr (fromIntegral size)))
 
 foreign import ccall safe "HsAsyncRead"
     c_AsyncRead :: HANDLE
@@ -54,7 +54,7 @@ writeHandle :: HANDLE
             -> IO ()
 writeHandle h bs = BS.unsafeUseAsCStringLen bs $
     \(str, len) ->
-        void $ waitForCompletion (c_AsyncWrite h (castPtr str) (fromIntegral len))
+        void $ waitForCompletion "writeHandle" (c_AsyncWrite h (castPtr str) (fromIntegral len))
 
 foreign import ccall safe "HsAsyncWrite"
     c_AsyncWrite :: HANDLE
@@ -65,7 +65,7 @@ foreign import ccall safe "HsAsyncWrite"
 
 
 connectNamedPipe :: HANDLE -> IO ()
-connectNamedPipe h = void $ waitForCompletion $ \ptr -> do
+connectNamedPipe h = void $ waitForCompletion "connectNamedPipe" $ \ptr -> do
     c_ConnectNamedPipe h ptr
     errCode <- Win32.getLastError
     -- connectNamedPipe can error with:

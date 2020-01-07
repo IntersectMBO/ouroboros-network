@@ -34,7 +34,7 @@ sendBuf :: Socket
 sendBuf sock buf size = Socket.withFdSocket sock $ \fd ->
     -- on Windows sockets are Word32, GHC represents file descriptors with CInt
     -- which is Int32.
-    wsaWaitForCompletion (c_sendBuf fd buf (fromIntegral size))
+    wsaWaitForCompletion "sendBuf" (c_sendBuf fd buf (fromIntegral size))
 
 foreign import ccall safe "HsSendBuf"
     c_sendBuf :: SOCKET
@@ -83,7 +83,7 @@ accept sock = do
 
 recvBuf :: Socket -> Ptr Word8 -> Int -> IO Int
 recvBuf sock buf size = Socket.withFdSocket sock $ \fd ->
-    wsaWaitForCompletion (c_recvBuf fd buf (fromIntegral size))
+    wsaWaitForCompletion "recvBuf" (c_recvBuf fd buf (fromIntegral size))
 
 foreign import ccall safe "HsRecvBuf"
     c_recvBuf :: SOCKET      -- ^ socket
