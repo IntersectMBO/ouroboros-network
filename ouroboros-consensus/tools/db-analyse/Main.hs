@@ -51,9 +51,10 @@ main = do
     let epochSlots = Genesis.configEpochSlots genesisConfig
         epochInfo  = fixedSizeEpochInfo (coerce epochSlots)
         cfg        = mkPBftNodeConfig genesisConfig
-    withImmDB clImmDB cfg epochInfo $ \immDB -> do
-      withRegistry $ runAnalysis clAnalysis immDB epochInfo
-      putStrLn "Done"
+    withRegistry $ \registry ->
+      withImmDB clImmDB cfg epochInfo registry $ \immDB -> do
+        runAnalysis clAnalysis immDB epochInfo registry
+        putStrLn "Done"
 
 {-------------------------------------------------------------------------------
   Run the requested analysis
@@ -250,9 +251,10 @@ mkPBftNodeConfig genesisConfig = pInfoConfig $
 -------------------------------------------------------------------------------}
 
 withImmDB :: FilePath -> NodeConfig ByronConsensusProtocol -> EpochInfo IO
+          -> ResourceRegistry IO
           -> (ImmDB IO ByronBlock -> IO a)
           -> IO a
-withImmDB fp cfg epochInfo = ImmDB.withImmDB args
+withImmDB fp cfg epochInfo registry = ImmDB.withImmDB args
   where
     args :: ImmDbArgs IO ByronBlock
     args = (defaultArgs fp) {
@@ -267,4 +269,5 @@ withImmDB fp cfg epochInfo = ImmDB.withImmDB args
         , immIsEBB          = nodeIsEBB . getHeader
         , immCheckIntegrity = nodeCheckIntegrity      cfg
         , immAddHdrEnv      = nodeAddHeaderEnvelope   (Proxy @ByronBlock)
+        , immRegistry       = registry
         }
