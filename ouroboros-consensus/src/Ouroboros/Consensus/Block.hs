@@ -1,5 +1,6 @@
 {-# LANGUAGE DeriveAnyClass          #-}
 {-# LANGUAGE DeriveGeneric           #-}
+{-# LANGUAGE DeriveTraversable       #-}
 {-# LANGUAGE FlexibleContexts        #-}
 {-# LANGUAGE FlexibleInstances       #-}
 {-# LANGUAGE MultiParamTypeClasses   #-}
@@ -18,6 +19,8 @@ module Ouroboros.Consensus.Block (
   , headerPoint
     -- * Supported blocks
   , SupportedBlock
+    -- * 'WithBlockSize'
+  , WithBlockSize (..)
     -- * EBBs
   , IsEBB (..)
   , toIsEBB
@@ -25,6 +28,7 @@ module Ouroboros.Consensus.Block (
   ) where
 
 import           Codec.Serialise (Serialise)
+import           Data.Word (Word32)
 import           GHC.Generics (Generic)
 
 import           Cardano.Prelude (NoUnexpectedThunks)
@@ -94,6 +98,29 @@ class ( GetHeader blk
       , CanSelect    (BlockProtocol blk) (Header blk)
       , NoUnexpectedThunks (Header blk)
       ) => SupportedBlock blk
+
+{-------------------------------------------------------------------------------
+  WithBlockSize
+-------------------------------------------------------------------------------}
+
+data WithBlockSize a = WithBlockSize
+  { blockSize        :: !Word32
+  , withoutBlockSize :: !a
+  } deriving (Eq, Show, Generic, NoUnexpectedThunks, Functor, Foldable, Traversable)
+
+type instance HeaderHash (WithBlockSize a) = HeaderHash a
+
+instance Measured BlockMeasure a => Measured BlockMeasure (WithBlockSize a) where
+  measure = measure . withoutBlockSize
+
+instance StandardHash a => StandardHash (WithBlockSize a)
+
+instance HasHeader a => HasHeader (WithBlockSize a) where
+  blockHash      = blockHash . withoutBlockSize
+  blockPrevHash  = castHash . blockPrevHash . withoutBlockSize
+  blockSlot      = blockSlot . withoutBlockSize
+  blockNo        = blockNo . withoutBlockSize
+  blockInvariant = blockInvariant . withoutBlockSize
 
 {-------------------------------------------------------------------------------
   EBBs

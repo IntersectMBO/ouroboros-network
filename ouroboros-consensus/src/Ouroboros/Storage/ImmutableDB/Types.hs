@@ -51,6 +51,7 @@ import           Cardano.Prelude (NoUnexpectedThunks (..),
 import           Ouroboros.Network.Block (SlotNo (..))
 import           Ouroboros.Network.Point (WithOrigin)
 
+import           Ouroboros.Consensus.Block (WithBlockSize (..))
 import           Ouroboros.Storage.Common
 import           Ouroboros.Storage.FS.API.Types (FsError, FsPath, prettyFsError,
                      sameFsError)
@@ -69,11 +70,6 @@ type ImmTipWithHash hash = Tip (WithHash hash BlockOrEBB)
 data WithHash hash a = WithHash
   { theHash    :: !hash
   , forgetHash :: !a
-  } deriving (Eq, Show, Generic, NoUnexpectedThunks, Functor, Foldable, Traversable)
-
-data WithBlockSize a = WithBlockSize
-  { blockSize        :: !Word32
-  , withoutBlockSize :: !a
   } deriving (Eq, Show, Generic, NoUnexpectedThunks, Functor, Foldable, Traversable)
 
 -- | How to get/put the header hash of a block and how many bytes it occupies
