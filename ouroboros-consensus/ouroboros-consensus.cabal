@@ -465,7 +465,7 @@ executable byron-db-converter
                      , optparse-applicative
                      , optparse-generic
                      , ouroboros-consensus
-                     , path
+                     , path < 0.7
                      , path-io
                      , resourcet
                      , streaming
