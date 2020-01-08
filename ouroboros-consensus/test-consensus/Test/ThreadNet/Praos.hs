@@ -85,7 +85,12 @@ prop_simple_praos_convergence
   params@PraosParams{praosSecurityParam}
   testConfig@TestConfig{numCoreNodes} =
     counterexample (tracesToDot testOutputNodes) $
-    prop_general praosSecurityParam testConfig Nothing testOutput
+    prop_general
+      praosSecurityParam
+      testConfig
+      Nothing
+      (const False)
+      testOutput
   where
     testOutput@TestOutput{testOutputNodes} =
         runTestNetwork testConfig TestConfigBlock

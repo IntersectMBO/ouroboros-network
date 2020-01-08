@@ -469,7 +469,7 @@ runThreadNetwork ThreadNetworkArgs
            -> NodeConfig (BlockProtocol blk)
            -> ExtLedgerState blk
            -> EpochInfo m
-           -> Tracer m (Point blk)
+           -> Tracer m (Point blk, ExtValidationError blk)
               -- ^ invalid block tracer
            -> Tracer m (Point blk, BlockNo)
               -- ^ added block tracer
@@ -519,8 +519,10 @@ runThreadNetwork ThreadNetworkArgs
         , cdbTracer           = Tracer $ \case
               ChainDB.TraceAddBlockEvent
                   (ChainDB.AddBlockValidation ChainDB.InvalidBlock
-                      { _invalidPoint = p })
-                  -> traceWith invalidTracer p
+                      { _invalidPoint  = p
+                      , _validationErr = e
+                      })
+                  -> traceWith invalidTracer (p, e)
               ChainDB.TraceAddBlockEvent
                   (ChainDB.AddedBlockToVolDB p bno IsNotEBB)
                   -> traceWith addTracer (p, bno)
@@ -871,7 +873,7 @@ data NodeEvents blk ev = NodeEvents
     -- ^ every 'AddedBlockToVolDB' excluding EBBs
   , nodeEventsForges      :: ev (TraceForgeEvent blk (GenTx blk))
     -- ^ every 'TraceForgeEvent'
-  , nodeEventsInvalids    :: ev (Point blk)
+  , nodeEventsInvalids    :: ev (Point blk, ExtValidationError blk)
     -- ^ the point of every 'ChainDB.InvalidBlock' event
   , nodeEventsTipBlockNos :: ev (SlotNo, BlockNo)
     -- ^ 'ChainDB.getTipBlockNo' for each node at the onset of each slot
@@ -931,7 +933,7 @@ data NodeOutput blk = NodeOutput
   , nodeOutputFinalChain :: Chain blk
   , nodeOutputNodeDBs    :: NodeDBs MockFS
   , nodeOutputForges     :: Map SlotNo blk
-  , nodeOutputInvalids   :: Set (Point blk)
+  , nodeOutputInvalids   :: Map (Point blk) [ExtValidationError blk]
   }
 
 data TestOutput blk = TestOutput
@@ -971,7 +973,7 @@ mkTestOutput vertexInfos = do
               , nodeOutputForges     =
                   Map.fromList $
                   [ (s, b) | TraceForgedBlock s b _ <- nodeEventsForges ]
-              , nodeOutputInvalids   = Set.fromList nodeEventsInvalids
+              , nodeOutputInvalids   = (:[]) <$> Map.fromList nodeEventsInvalids
               }
 
         pure

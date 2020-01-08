@@ -32,6 +32,7 @@ import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.BlockchainTime.Mock
 import           Ouroboros.Consensus.Ledger.Byron (ByronBlock)
 import qualified Ouroboros.Consensus.Ledger.Byron as Byron
+import           Ouroboros.Consensus.Ledger.Extended (ExtValidationError (..))
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Node.ProtocolInfo.Byron (plcCoreNodeId)
 import           Ouroboros.Consensus.Node.Run.Abstract (nodeIsEBB)
@@ -176,6 +177,28 @@ prop_setup_coreNodeId numCoreNodes coreNodeId =
     genesisSecrets :: Genesis.GeneratedSecrets
     (genesisConfig, genesisSecrets) = generateGenesisConfig params
 
+expectedBlockRejection
+  :: NumCoreNodes
+  -> BlockRejection ByronBlock
+  -> Bool
+expectedBlockRejection (NumCoreNodes nn) BlockRejection
+  { brBlockSlot = s
+  , brReason    = err
+  , brRejector  = CoreId i
+  }
+  | ownBlock                   = case err of
+    ExtValidationErrorOuroboros
+      PBftExceededSignThreshold{} -> True   -- TODO validate this against Ref
+                                            -- implementation?
+    _                             -> False
+  where
+    -- Because of round-robin and the fact that the id divides slot, we know
+    -- the node lead but rejected its own block. This is the only case we
+    -- expect. (Rejecting its own block also prevents the node from propagating
+    -- that block.)
+    ownBlock = fromIntegral i == mod (unSlotNo s) (fromIntegral nn)
+expectedBlockRejection _ _ = False
+
 prop_simple_real_pbft_convergence :: ProduceEBBs
                                   -> SecurityParam
                                   -> TestConfig
@@ -186,6 +209,7 @@ prop_simple_real_pbft_convergence
     prop_general k
         testConfig
         (Just $ roundRobinLeaderSchedule numCoreNodes numSlots)
+        (expectedBlockRejection numCoreNodes)
         testOutput .&&.
     not (all Chain.null finalChains) .&&.
     conjoin (map (hasAllEBBs k numSlots produceEBBs) finalChains)

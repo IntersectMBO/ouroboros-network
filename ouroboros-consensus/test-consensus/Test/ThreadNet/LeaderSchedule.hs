@@ -79,7 +79,12 @@ prop_simple_leader_schedule_convergence
   params@PraosParams{praosSecurityParam}
   testConfig@TestConfig{numCoreNodes} schedule =
     counterexample (tracesToDot testOutputNodes) $
-    prop_general praosSecurityParam testConfig (Just schedule) testOutput
+    prop_general
+      praosSecurityParam
+      testConfig
+      (Just schedule)
+      (const False)
+      testOutput
   where
     testOutput@TestOutput{testOutputNodes} =
         runTestNetwork testConfig TestConfigBlock

@@ -35,6 +35,7 @@ prop_simple_bft_convergence k
     prop_general k
         testConfig
         (Just $ roundRobinLeaderSchedule numCoreNodes numSlots)
+        (const False)
         testOutput
   where
     testOutput =

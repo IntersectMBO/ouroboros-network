@@ -13,6 +13,8 @@ module Test.ThreadNet.General (
   , truncateNodeJoinPlan
   , truncateNodeRestarts
   , truncateNodeTopology
+    -- * Block rejections
+  , BlockRejection (..)
     -- * Re-exports
   , ForgeEBB
   , TestOutput (..)
@@ -29,11 +31,12 @@ import           Test.QuickCheck
 import           Control.Monad.IOSim (runSimOrThrow)
 
 import           Ouroboros.Network.Block (BlockNo (..), pattern BlockPoint,
-                     pattern GenesisPoint, HasHeader, Point, SlotNo (..),
-                     blockPoint)
+                     pattern GenesisPoint, HasHeader, HeaderHash, Point,
+                     SlotNo (..), blockPoint)
 
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.BlockchainTime.Mock
+import           Ouroboros.Consensus.Ledger.Extended (ExtValidationError)
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.NodeId
@@ -196,6 +199,16 @@ runTestNetwork
   Test properties
 -------------------------------------------------------------------------------}
 
+-- | Data about a node rejecting a block as invalid
+--
+data BlockRejection blk = BlockRejection
+  { brBlockHash :: !(HeaderHash blk)
+  , brBlockSlot :: !SlotNo
+  , brReason    :: !(ExtValidationError blk)
+  , brRejector  :: !NodeId
+  }
+  deriving (Show)
+
 -- | The properties always required
 --
 -- Includes:
@@ -214,10 +227,12 @@ prop_general ::
   => SecurityParam
   -> TestConfig
   -> Maybe LeaderSchedule
+  -> (BlockRejection blk -> Bool)
   -> TestOutput blk
   -> Property
 prop_general k TestConfig{numSlots, nodeJoinPlan, nodeRestarts, nodeTopology}
-  mbSchedule TestOutput{testOutputNodes, testOutputTipBlockNos} =
+  mbSchedule expectedBlockRejection
+  TestOutput{testOutputNodes, testOutputTipBlockNos} =
     counterexample ("nodeChains: " <> unlines ("" : map (\x -> "  " <> condense x) (Map.toList nodeChains))) $
     counterexample ("nodeJoinPlan: " <> condense nodeJoinPlan) $
     counterexample ("nodeRestarts: " <> condense nodeRestarts) $
@@ -231,6 +246,7 @@ prop_general k TestConfig{numSlots, nodeJoinPlan, nodeRestarts, nodeTopology}
     tabulate "shortestLength" [show (rangeK k (shortestLength nodeChains))] $
     tabulate "floor(4 * lastJoinSlot / numSlots)" [show lastJoinSlot] $
     tabulate "minimumDegreeNodeTopology" [show (minimumDegreeNodeTopology nodeTopology)] $
+    prop_no_unexpected_BlockRejections .&&.
     prop_all_common_prefix
         maxForkLength
         (Map.elems nodeChains) .&&.
@@ -240,6 +256,30 @@ prop_general k TestConfig{numSlots, nodeJoinPlan, nodeRestarts, nodeTopology}
       [ fileHandleLeakCheck nid nodeDBs
       | (nid, nodeDBs) <- Map.toList nodeOutputDBs ]
   where
+    prop_no_unexpected_BlockRejections =
+        counterexample msg $
+        Map.null blocks
+      where
+        msg = "There were unexpected block rejections: " <> show blocks
+        blocks =
+            Map.unionsWith (++) $
+            [ Map.filter (not . null) $
+              Map.mapWithKey (\p -> filter (not . ok p nid)) $
+              nodeOutputInvalids
+            | (nid, no) <- Map.toList testOutputNodes
+            , let NodeOutput{nodeOutputInvalids} = no
+            ]
+        ok p nid err = case p of
+          -- TODO The ExtValidationError data declaration imposes this case on
+          -- us but should never exercise it.
+          GenesisPoint   -> False
+          BlockPoint s h -> expectedBlockRejection BlockRejection
+            { brBlockHash = h
+            , brBlockSlot = s
+            , brReason    = err
+            , brRejector  = nid
+            }
+
     schedule = case mbSchedule of
         Nothing    -> actualLeaderSchedule
         Just sched -> sched
@@ -260,7 +300,7 @@ prop_general k TestConfig{numSlots, nodeJoinPlan, nodeRestarts, nodeTopology}
           in
           LeaderSchedule $
           Map.mapMaybeWithKey
-              (actuallyLead cid nodeOutputInvalids)
+              (actuallyLead cid (Map.keysSet nodeOutputInvalids))
               nodeOutputForges
         | (cid, no) <- Map.toList testOutputNodes
         ]
