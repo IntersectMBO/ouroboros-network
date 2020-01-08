@@ -15,6 +15,7 @@ import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as BL
 import           Data.Functor (void)
 import           Data.Foldable (foldl', traverse_)
+import           GHC.IO.Exception (IOException (..))
 
 import qualified System.Win32.Async.IOManager as Async
 import qualified System.Win32.Async.Socket as Async
@@ -116,15 +117,32 @@ test_close_accept =
       (Socket.socket Socket.AF_INET Socket.Stream Socket.defaultProtocol)
       Socket.close
       $ \fd -> do
-        v <- newEmptyMVar
+        (v :: MVar SomeException) <- newEmptyMVar
         let addr = SockAddrInet 0 (Socket.tupleToHostAddress (127, 0, 0, 1))
         Socket.bind fd addr
         Socket.listen fd 1
         _ <- forkIO $
-          void (Socket.accept fd)
-          `finally` putMVar v ()
+          void (Socket.accept fd) `catch` putMVar v
+        threadDelay 1000
+        -- THIS IS WIRED: it should block if `close` does not run!
         Socket.close fd
-        takeMVar v
+        e <- takeMVar v
+        case fromException e of
+          Nothing    -> assertFailure $ "wrong exception: " ++ show e
+          Just err -> do
+            -- `WSAEINTR` which is explained as:
+            -- ```
+            -- Interrupted function call.
+            -- A blocking operation was interrupted by a call to WSACancelBlockingCall.
+            -- ```
+            -- It might be the case that windows is using something similar to
+            -- WSACancelBlockingCall to cancel the thread which is blocked on
+            -- `accept` when the socket was closed.
+            -- 
+            -- TODO: `ioe_errno` returns `Nothing`, the wsa errors are not in
+            -- `errtable` in base/cbits/Win32Utils.c used by `failWith`.  We
+            -- should improve `wsaFailWith` and not use `failWith`.
+            "Interrupted function call (WSAEINTR)" @=? ioe_description err
 
 
 recvLen :: Socket -> Int -> IO BL.ByteString
