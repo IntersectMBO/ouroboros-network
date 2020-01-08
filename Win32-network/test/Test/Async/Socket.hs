@@ -39,6 +39,8 @@ tests =
       test_interruptible_connect
   , testCase "interruptible accept"
       test_interruptible_accept
+  , testCase "terminate accept via close"
+      test_close_accept
   , testProperty "send and recv"
       (ioProperty . prop_send_recv)
   , testProperty "PingPong test"
@@ -103,6 +105,27 @@ test_interruptible_accept =
         assertEqual "wrong exception"
                     (Just ThreadKilled)
                     (fromException e :: Maybe AsyncException)
+
+
+-- | Verify that closing a socket will terminate the `Network.Socket.accept`
+-- call.
+--
+test_close_accept :: IO ()
+test_close_accept =
+    bracket
+      (Socket.socket Socket.AF_INET Socket.Stream Socket.defaultProtocol)
+      Socket.close
+      $ \fd -> do
+        v <- newEmptyMVar
+        let addr = SockAddrInet 0 (Socket.tupleToHostAddress (127, 0, 0, 1))
+        Socket.bind fd addr
+        Socket.listen fd 1
+        _ <- forkIO $
+          void (Socket.accept fd)
+          `finally` putMVar v ()
+        Socket.close fd
+        takeMVar v
+
 
 recvLen :: Socket -> Int -> IO BL.ByteString
 recvLen sock = go []
