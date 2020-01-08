@@ -52,9 +52,9 @@ tests =
   , testProperty "async reads and writes"
       prop_async_read_and_writes
   , testProperty "PingPong test"
-      (prop_PingPong)
+      prop_PingPong
   , testProperty "PingPongPipelined test"
-      (prop_PingPongPipelined)
+      $ withMaxSuccess 50 prop_PingPongPipelined
   ]
 
 

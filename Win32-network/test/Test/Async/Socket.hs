@@ -42,9 +42,9 @@ tests =
   , testProperty "send and recv"
       (ioProperty . prop_send_recv)
   , testProperty "PingPong test"
-      prop_PingPong
+      $ withMaxSuccess 50 prop_PingPong
   , testProperty "PingPongPipelined test"
-      prop_PingPongPipelined
+      $ withMaxSuccess 50 prop_PingPongPipelined
   ]
 
 -- The stock 'connect' is not interruptible.  This tests is not reliable on
