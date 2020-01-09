@@ -266,21 +266,24 @@ data BlockSlot =
 data MempoolSnapshot blk idx = MempoolSnapshot {
     -- | Get all transactions (oldest to newest) in the mempool snapshot along
     -- with their ticket number.
-    snapshotTxs        :: [(GenTx blk, idx)]
+    snapshotTxs         :: [(GenTx blk, idx)]
 
     -- | Get all transactions (oldest to newest) in the mempool snapshot,
     -- along with their ticket number, which are associated with a ticket
     -- number greater than the one provided.
-  , snapshotTxsAfter   :: idx -> [(GenTx blk, idx)]
+  , snapshotTxsAfter    :: idx -> [(GenTx blk, idx)]
 
     -- | Get as many transactions (oldest to newest) from the mempool
     -- snapshot, along with their ticket number, such that their combined size
     -- is <= the given limit (in bytes).
-  , snapshotTxsForSize :: Word32 -> [(GenTx blk, idx)]
+  , snapshotTxsForSize  :: Word32 -> [(GenTx blk, idx)]
 
     -- | Get a specific transaction from the mempool snapshot by its ticket
     -- number, if it exists.
-  , snapshotLookupTx   :: idx -> Maybe (GenTx blk)
+  , snapshotLookupTx    :: idx -> Maybe (GenTx blk)
+
+    -- | Get the size of the mempool snapshot.
+  , snapshotMempoolSize :: MempoolSize
   }
 
 -- | The size of a mempool.

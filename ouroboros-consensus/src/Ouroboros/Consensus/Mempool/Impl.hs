@@ -457,16 +457,17 @@ implWithSyncState mpEnv@MempoolEnv{mpEnvTracer, mpEnvStateVar} blockSlot f = do
       traceWith mpEnvTracer $ TraceMempoolRemoveTxs removed mempoolSize time
     return res
 
-implGetSnapshot :: IOLike m
+implGetSnapshot :: (IOLike m, ApplyTx blk)
                 => MempoolEnv m blk
                 -> STM m (MempoolSnapshot blk TicketNo)
 implGetSnapshot MempoolEnv{mpEnvStateVar} = do
   is <- readTVar mpEnvStateVar
   pure MempoolSnapshot
-    { snapshotTxs        = implSnapshotGetTxs        is
-    , snapshotTxsAfter   = implSnapshotGetTxsAfter   is
-    , snapshotTxsForSize = implSnapshotGetTxsForSize is
-    , snapshotLookupTx   = implSnapshotGetTx         is
+    { snapshotTxs         = implSnapshotGetTxs         is
+    , snapshotTxsAfter    = implSnapshotGetTxsAfter    is
+    , snapshotTxsForSize  = implSnapshotGetTxsForSize  is
+    , snapshotLookupTx    = implSnapshotGetTx          is
+    , snapshotMempoolSize = implSnapshotGetMempoolSize is
     }
 
 -- | Return the number of transactions in the Mempool paired with their total
@@ -509,6 +510,11 @@ implSnapshotGetTx :: InternalState blk
                   -> TicketNo
                   -> Maybe (GenTx blk)
 implSnapshotGetTx IS{isTxs} tn = isTxs `lookupByTicketNo` tn
+
+implSnapshotGetMempoolSize :: ApplyTx blk
+                           => InternalState blk
+                           -> MempoolSize
+implSnapshotGetMempoolSize = txsToMempoolSize . isTxs
 
 {-------------------------------------------------------------------------------
   Validation
