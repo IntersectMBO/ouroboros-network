@@ -28,10 +28,10 @@ import           Ouroboros.Storage.Common (EpochNo (..), EpochSize (..))
 -------------------------------------------------------------------------------}
 
 instance RunNode ByronBlock where
-  nodeForgeBlock          = forgeByronBlock
-  nodeBlockMatchesHeader  = verifyBlockMatchesHeader
-  nodeBlockFetchSize      = const 2000 -- TODO #593
-  nodeIsEBB               = \hdr -> case byronHeaderRaw hdr of
+  nodeForgeBlock            = forgeByronBlock
+  nodeBlockMatchesHeader    = verifyBlockMatchesHeader
+  nodeBlockFetchSize        = const 2000 -- TODO #593
+  nodeIsEBB                 = \hdr -> case byronHeaderRaw hdr of
     Aux.ABOBBlockHdr _       -> Nothing
     Aux.ABOBBoundaryHdr bhdr -> Just
                               . EpochNo
@@ -40,49 +40,52 @@ instance RunNode ByronBlock where
 
   -- The epoch size is fixed and can be derived from @k@ by the ledger
   -- ('kEpochSlots').
-  nodeEpochSize           = \_proxy cfg _epochNo -> return
-                              . (coerce :: EpochSlots -> EpochSize)
-                              . kEpochSlots
-                              . Genesis.gdK
-                              . extractGenesisData
-                              $ cfg
+  nodeEpochSize             = \_proxy cfg _epochNo -> return
+                                . (coerce :: EpochSlots -> EpochSize)
+                                . kEpochSlots
+                                . Genesis.gdK
+                                . extractGenesisData
+                                $ cfg
+
+  nodeMaxBlockSize          = Aux.getMaxBlockSize . byronLedgerState
+  nodeBlockEncodingOverhead = const byronBlockEncodingOverhead
 
   -- Extract it from the 'Genesis.Config'
-  nodeStartTime           = const
-                          $ SystemStart
-                          . Genesis.gdStartTime
-                          . extractGenesisData
-  nodeNetworkMagic        = const
-                          $ NetworkMagic
-                          . Crypto.unProtocolMagicId
-                          . Genesis.gdProtocolMagicId
-                          . extractGenesisData
-  nodeProtocolMagicId     = const
-                          $ Genesis.gdProtocolMagicId
-                          . extractGenesisData
-  nodeHashInfo            = const byronHashInfo
-  nodeCheckIntegrity      = verifyBlockIntegrity
-  nodeAddHeaderEnvelope   = const byronAddHeaderEnvelope
+  nodeStartTime             = const
+                            $ SystemStart
+                            . Genesis.gdStartTime
+                            . extractGenesisData
+  nodeNetworkMagic          = const
+                            $ NetworkMagic
+                            . Crypto.unProtocolMagicId
+                            . Genesis.gdProtocolMagicId
+                            . extractGenesisData
+  nodeProtocolMagicId       = const
+                            $ Genesis.gdProtocolMagicId
+                            . extractGenesisData
+  nodeHashInfo              = const byronHashInfo
+  nodeCheckIntegrity        = verifyBlockIntegrity
+  nodeAddHeaderEnvelope     = const byronAddHeaderEnvelope
 
-  nodeEncodeBlockWithInfo = const encodeByronBlockWithInfo
-  nodeEncodeHeader        = const encodeByronHeader
-  nodeEncodeGenTx         = encodeByronGenTx
-  nodeEncodeGenTxId       = encodeByronGenTxId
-  nodeEncodeHeaderHash    = const encodeByronHeaderHash
-  nodeEncodeLedgerState   = const encodeByronLedgerState
-  nodeEncodeChainState    = \_proxy _cfg -> encodeByronChainState
-  nodeEncodeApplyTxError  = const encodeByronApplyTxError
+  nodeEncodeBlockWithInfo   = const encodeByronBlockWithInfo
+  nodeEncodeHeader          = const encodeByronHeader
+  nodeEncodeGenTx           = encodeByronGenTx
+  nodeEncodeGenTxId         = encodeByronGenTxId
+  nodeEncodeHeaderHash      = const encodeByronHeaderHash
+  nodeEncodeLedgerState     = const encodeByronLedgerState
+  nodeEncodeChainState      = \_proxy _cfg -> encodeByronChainState
+  nodeEncodeApplyTxError    = const encodeByronApplyTxError
 
-  nodeDecodeBlock         = decodeByronBlock  . extractEpochSlots
-  nodeDecodeHeader        = decodeByronHeader . extractEpochSlots
-  nodeDecodeGenTx         = decodeByronGenTx
-  nodeDecodeGenTxId       = decodeByronGenTxId
-  nodeDecodeHeaderHash    = const decodeByronHeaderHash
-  nodeDecodeLedgerState   = const decodeByronLedgerState
-  nodeDecodeChainState    = \_proxy cfg ->
-                               let k = pbftSecurityParam $ pbftParams cfg
-                               in decodeByronChainState k
-  nodeDecodeApplyTxError  = const decodeByronApplyTxError
+  nodeDecodeBlock           = decodeByronBlock  . extractEpochSlots
+  nodeDecodeHeader          = decodeByronHeader . extractEpochSlots
+  nodeDecodeGenTx           = decodeByronGenTx
+  nodeDecodeGenTxId         = decodeByronGenTxId
+  nodeDecodeHeaderHash      = const decodeByronHeaderHash
+  nodeDecodeLedgerState     = const decodeByronLedgerState
+  nodeDecodeChainState      = \_proxy cfg ->
+                                 let k = pbftSecurityParam $ pbftParams cfg
+                                 in decodeByronChainState k
+  nodeDecodeApplyTxError    = const decodeByronApplyTxError
 
 extractGenesisData :: NodeConfig ByronConsensusProtocol -> Genesis.GenesisData
 extractGenesisData = Genesis.configGenesisData . getGenesisConfig

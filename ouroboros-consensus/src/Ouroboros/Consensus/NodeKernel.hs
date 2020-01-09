@@ -15,6 +15,7 @@ module Ouroboros.Consensus.NodeKernel (
     -- * Node kernel
     NodeKernel (..)
   , BlockProduction (..)
+  , MaxBlockSizeOverride (..)
   , NodeArgs (..)
   , TraceForgeEvent (..)
   , initNodeKernel
@@ -126,6 +127,17 @@ data BlockProduction m blk = BlockProduction {
     , produceDRG :: m ChaChaDRG
     }
 
+-- | An override for the maximum block size from the protocol parameters in
+-- the ledger.
+data MaxBlockSizeOverride
+  = NoOverride
+    -- ^ Use the maximum block size in bytes from the protocol parameters in
+    -- the ledger.
+  | MaxBlockSize !Word32
+    -- ^ Use the following maximum size in bytes for the whole block.
+  | MaxBlockBodySize !Word32
+    -- ^ Use the following maximum size in bytes for the block body.
+
 -- | Arguments required when initializing a node
 data NodeArgs m peer blk = NodeArgs {
       tracers             :: Tracers m peer blk
@@ -139,7 +151,7 @@ data NodeArgs m peer blk = NodeArgs {
     , blockProduction     :: Maybe (BlockProduction m blk)
     , blockMatchesHeader  :: Header blk -> blk -> Bool
     , maxUnackTxs         :: Word16
-    , maxBlockBodySize    :: Word32
+    , maxBlockSize        :: MaxBlockSizeOverride
     , mempoolCap          :: MempoolCapacityBytes
     , chainSyncPipelining :: MkPipelineDecision
     }
@@ -153,11 +165,11 @@ initNodeKernel
        )
     => NodeArgs m peer blk
     -> m (NodeKernel m peer blk)
-initNodeKernel args@NodeArgs { registry, cfg, tracers, maxBlockBodySize
+initNodeKernel args@NodeArgs { registry, cfg, tracers, maxBlockSize
                              , blockProduction } = do
     st <- initInternalState args
 
-    whenJust blockProduction $ forkBlockProduction maxBlockBodySize st
+    whenJust blockProduction $ forkBlockProduction maxBlockSize st
 
     let IS { blockFetchInterface, fetchClientRegistry, varCandidates,
              chainDB, mempool } = st
@@ -298,11 +310,11 @@ data LeaderResult blk =
 forkBlockProduction
     :: forall m peer blk.
        (IOLike m, RunNode blk)
-    => Word32  -- ^ Max block body size
+    => MaxBlockSizeOverride
     -> InternalState m peer blk
     -> BlockProduction m blk
     -> m ()
-forkBlockProduction maxBlockBodySize IS{..} BlockProduction{..} =
+forkBlockProduction maxBlockSizeOverride IS{..} BlockProduction{..} =
     void $ onSlotChange btime $ \currentSlot -> do
       varDRG <- newTVarM =<< (PRNG <$> produceDRG)
       -- See the docstring of 'withSyncState' for why we're using it instead
@@ -314,7 +326,12 @@ forkBlockProduction maxBlockBodySize IS{..} BlockProduction{..} =
       trace $ TraceForgeAboutToLead currentSlot
       leaderResult <- withTxs $ \MempoolSnapshot{snapshotTxsForSize} -> do
         l@ExtLedgerState{..} <- ChainDB.getCurrentLedger chainDB
-        let txs = map fst (snapshotTxsForSize maxBlockBodySize)
+        let blockEncOverhead = nodeBlockEncodingOverhead ledgerState
+            maxBlockBodySize = case maxBlockSizeOverride of
+              NoOverride            -> nodeMaxBlockSize ledgerState - blockEncOverhead
+              MaxBlockSize mbs      -> mbs - blockEncOverhead
+              MaxBlockBodySize mbbs -> mbbs
+            txs = map fst (snapshotTxsForSize maxBlockBodySize)
 
         case anachronisticProtocolLedgerView cfg ledgerState (At currentSlot) of
           Right ledgerView -> do

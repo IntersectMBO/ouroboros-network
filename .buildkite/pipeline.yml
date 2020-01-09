@@ -7,3 +7,7 @@ steps:
     command: 'ci/check-stack2nix.sh'
     agents:
       system: x86_64-linux
+  - label: 'dependencies-in-master'
+    command: 'ci/check-dependencies-merged-in-master.sh'
+    agents:
+      system: x86_64-linux

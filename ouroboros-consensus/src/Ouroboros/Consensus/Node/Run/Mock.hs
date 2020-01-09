@@ -38,36 +38,38 @@ instance ( ProtocolLedgerView (SimpleBlock SimpleMockCrypto ext)
                         SimpleMockCrypto
                         ext
          ) => RunNode (SimpleBlock SimpleMockCrypto ext) where
-  nodeForgeBlock          = forgeSimple
-  nodeBlockMatchesHeader  = matchesSimpleHeader
-  nodeBlockFetchSize      = fromIntegral . simpleBlockSize . simpleHeaderStd
-  nodeIsEBB               = const Nothing
-  nodeEpochSize           = \_ cfg _ -> return $
+  nodeForgeBlock            = forgeSimple
+  nodeBlockMatchesHeader    = matchesSimpleHeader
+  nodeBlockFetchSize        = fromIntegral . simpleBlockSize . simpleHeaderStd
+  nodeIsEBB                 = const Nothing
+  nodeEpochSize             = \_ cfg _ -> return $
     EpochSize $ 10 * maxRollbacks (protocolSecurityParam cfg)
-  nodeStartTime           = \_ _ -> SystemStart dummyDate
+  nodeStartTime             = \_ _ -> SystemStart dummyDate
     where
       --  This doesn't matter much
       dummyDate = UTCTime (fromGregorian 2019 8 13) 0
-  nodeNetworkMagic        = \_ _ -> NetworkMagic 0x0000ffff
+  nodeNetworkMagic          = \_ _ -> NetworkMagic 0x0000ffff
 
-  nodeProtocolMagicId     = const mockProtocolMagicId
-  nodeHashInfo            = const simpleBlockHashInfo
-  nodeCheckIntegrity      = \_ _ -> True
+  nodeProtocolMagicId       = const mockProtocolMagicId
+  nodeHashInfo              = const simpleBlockHashInfo
+  nodeMaxBlockSize          = const 2000000 -- TODO
+  nodeBlockEncodingOverhead = const 1000 -- TODO
+  nodeCheckIntegrity        = \_ _ -> True
 
-  nodeEncodeBlockWithInfo = const simpleBlockBinaryInfo
-  nodeEncodeHeader        = const encode
-  nodeEncodeGenTx         =       encode
-  nodeEncodeGenTxId       =       encode
-  nodeEncodeHeaderHash    = const encode
-  nodeEncodeLedgerState   = const encode
-  nodeEncodeChainState    = const mockEncodeChainState
-  nodeEncodeApplyTxError  = const encode
+  nodeEncodeBlockWithInfo   = const simpleBlockBinaryInfo
+  nodeEncodeHeader          = const encode
+  nodeEncodeGenTx           =       encode
+  nodeEncodeGenTxId         =       encode
+  nodeEncodeHeaderHash      = const encode
+  nodeEncodeLedgerState     = const encode
+  nodeEncodeChainState      = const mockEncodeChainState
+  nodeEncodeApplyTxError    = const encode
 
-  nodeDecodeBlock         = const (const <$> decode)
-  nodeDecodeHeader        = const (const <$> decode)
-  nodeDecodeGenTx         =       decode
-  nodeDecodeGenTxId       =       decode
-  nodeDecodeHeaderHash    = const decode
-  nodeDecodeLedgerState   = const decode
-  nodeDecodeChainState    = const mockDecodeChainState
-  nodeDecodeApplyTxError  = const decode
+  nodeDecodeBlock           = const (const <$> decode)
+  nodeDecodeHeader          = const (const <$> decode)
+  nodeDecodeGenTx           =       decode
+  nodeDecodeGenTxId         =       decode
+  nodeDecodeHeaderHash      = const decode
+  nodeDecodeLedgerState     = const decode
+  nodeDecodeChainState      = const mockDecodeChainState
+  nodeDecodeApplyTxError    = const decode

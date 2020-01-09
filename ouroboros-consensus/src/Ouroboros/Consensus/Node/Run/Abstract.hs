@@ -14,6 +14,7 @@ import           Codec.CBOR.Encoding (Encoding)
 import           Crypto.Random (MonadRandom)
 import qualified Data.ByteString.Lazy as Lazy
 import           Data.Proxy (Proxy)
+import           Data.Word (Word32)
 
 import           Cardano.Crypto (ProtocolMagicId)
 
@@ -61,6 +62,18 @@ class (ProtocolLedgerView blk, ApplyTx blk) => RunNode blk where
                           -> ProtocolMagicId
   nodeHashInfo            :: Proxy blk
                           -> HashInfo (HeaderHash blk)
+
+  -- | The maximum block size in bytes according to the currently adopted
+  -- protocol parameters of the ledger state.
+  nodeMaxBlockSize :: LedgerState blk -> Word32
+
+  -- | The block encoding overhead size in bytes.
+  --
+  -- This encompasses the overhead in bytes for everything that is encoded
+  -- within a block, excluding the actual generalized transactions. Given
+  -- this, along with the 'nodeMaxBlockSize', it is possible to determine the
+  -- amount of generalized transactions that we can include in a block.
+  nodeBlockEncodingOverhead :: LedgerState blk -> Word32
 
   -- | Check the integrity of a block, i.e., that it has not been corrupted by
   -- a bitflip.
