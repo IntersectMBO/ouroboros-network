@@ -4,6 +4,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE DeriveFunctor #-}
+{-# LANGUAGE DeriveGeneric #-}
 
 
 -- | This subsystem manages the discovery and selection of /upstream/ peers.
@@ -38,6 +39,7 @@ import qualified Data.Map.Strict as Map
 import           Data.Map.Strict (Map)
 import qualified Data.Set as Set
 import           Data.Set (Set)
+import           GHC.Generics (Generic)
 
 import           Control.Applicative (Alternative((<|>)))
 import           Control.Monad.Class.MonadAsync
@@ -495,7 +497,7 @@ data PeerSelectionTargets = PeerSelectionTargets {
 --     targetChurnIntervalEstablishedPeers :: !DiffTime,
 --     targetChurnIntervalActivePeers      :: !DiffTime
      }
-  deriving (Eq, Show)
+  deriving (Eq, Show, Generic)
 
 nullPeerSelectionTargets :: PeerSelectionTargets
 nullPeerSelectionTargets =
@@ -879,7 +881,7 @@ data TracePeerSelection peeraddr =
      | TraceDemoteHotDone      peeraddr
      | TraceDemoteAsynchronous (Map peeraddr PeerStatus)
      | TraceGovernorWakeup
-  deriving Show
+  deriving (Show, Generic)
 
 data DebugPeerSelection peeraddr peerconn =
        TraceGovernorState  (PeerSelectionState peeraddr peerconn)

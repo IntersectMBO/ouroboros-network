@@ -5,11 +5,12 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE GeneralisedNewtypeDeriving #-}
 {-# LANGUAGE DeriveTraversable #-}
+{-# LANGUAGE DeriveGeneric #-}
 
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
-module Ouroboros.Network.PeerSelection.Test (tests) where
+module Ouroboros.Network.PeerSelection.Test where
 
 import           Data.Void (Void)
 import           Data.Function (on)
@@ -27,6 +28,7 @@ import           Data.Set (Set)
 import qualified Data.Graph as Graph
 import           Data.Graph (Graph)
 import qualified Data.Tree as Tree
+import           GHC.Generics (Generic)
 
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadSTM
@@ -91,12 +93,12 @@ data GovernorMockEnvironment = GovernorMockEnvironment {
        pickWarmPeersToDemote   :: PickScript,
        pickColdPeersToForget   :: PickScript
      }
-  deriving Show
+  deriving (Show, Generic)
 
 -- | Simple address representation for the tests
 --
 newtype PeerAddr = PeerAddr Int
-  deriving (Eq, Ord, Show)
+  deriving (Eq, Ord, Show, Generic)
 
 data PeerConn m = PeerConn !PeerAddr !(TVar m PeerStatus)
 
@@ -104,7 +106,7 @@ data PeerConn m = PeerConn !PeerAddr !(TVar m PeerStatus)
 -- traditional adjacency representation.
 --
 newtype PeerGraph = PeerGraph [(PeerAddr, [PeerAddr], PeerInfo)]
-  deriving (Eq, Show)
+  deriving (Eq, Show, Generic)
 
 -- | For now the information associated with each node is just the gossip
 -- script.
@@ -128,7 +130,7 @@ type GossipScript = Script (Maybe ([PeerAddr], GossipTime))
 -- differently in these three cases.
 --
 data GossipTime = GossipTimeQuick | GossipTimeSlow | GossipTimeTimeout
-  deriving (Eq, Show)
+  deriving (Eq, Show, Generic)
 
 -- | A pick script is used to interpret the 'policyPickKnownPeersForGossip' and
 -- the 'policyPickColdPeersToForget'. It selects elements from the given
@@ -625,8 +627,8 @@ selectGovernorEvents :: [(Time, TestTraceEvent)]
                      -> [(Time, TracePeerSelection PeerAddr)]
 selectGovernorEvents trace = [ (t, e) | (t, GovernorEvent e) <- trace ]
 
-takeFirstNHours :: DiffTime -> [(Time, a)] -> [(Time, a)]
-takeFirstNHours h = takeWhile (\(t,_) -> t < Time (60*60*h))
+takeFirstNHours :: Int -> [(Time, a)] -> [(Time, a)]
+takeFirstNHours h = takeWhile (\(t,_) -> t < Time (60*60* fromIntegral h))
 
 -- | The peers that are notionally reachable from the root set. It is notional
 -- in the sense that it only takes account of the connectivity graph and not
@@ -890,7 +892,7 @@ instance Arbitrary PeerSelectionTargets where
 --
 
 newtype Script a = Script (NonEmpty a)
-  deriving (Eq, Show, Functor, Foldable, Traversable)
+  deriving (Eq, Show, Functor, Foldable, Traversable, Generic)
 
 singletonScript :: a -> Script a
 singletonScript x = (Script (x :| []))
@@ -924,7 +926,7 @@ stepScriptSTM scriptVar = do
 type TimedScript a = Script (a, ScriptDelay)
 
 data ScriptDelay = NoDelay | ShortDelay | LongDelay
-  deriving (Show)
+  deriving (Show, Generic)
 
 instance Arbitrary ScriptDelay where
   arbitrary = frequency [ (1, pure NoDelay)

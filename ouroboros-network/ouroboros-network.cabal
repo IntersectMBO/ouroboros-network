@@ -410,3 +410,29 @@ executable demo-chain-sync
                        typed-protocols
   default-language:    Haskell2010
   ghc-options:         -Wall
+
+executable p2p-viz-dump
+  hs-source-dirs:      demo, src
+  main-is:             p2p-viz-dump.hs
+  other-modules:       Ouroboros.Network.PeerSelection.Types
+                       Ouroboros.Network.PeerSelection.KnownPeers
+                       Ouroboros.Network.PeerSelection.RootPeersDNS
+                       Ouroboros.Network.PeerSelection.JobPool
+                       Ouroboros.Network.PeerSelection.Governor
+                       Ouroboros.Network.PeerSelection.Test
+  build-depends:       base,
+                       bytestring,
+                       containers,
+                       psqueues,
+                       io-sim-classes,
+                       io-sim,
+                       contra-tracer,
+                       dns,
+                       iproute,
+                       aeson,
+                       optparse-applicative,
+                       QuickCheck,
+                       tasty-quickcheck,
+                       tasty
+  default-language:    Haskell2010
+  ghc-options:         -Wall

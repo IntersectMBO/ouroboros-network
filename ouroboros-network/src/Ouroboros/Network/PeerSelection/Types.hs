@@ -33,5 +33,5 @@ data PeerStatus =
        PeerCold
      | PeerWarm
      | PeerHot
-  deriving (Eq, Ord, Show)
+  deriving (Eq, Ord, Show, Generic)
 
