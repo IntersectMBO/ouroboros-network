@@ -28,6 +28,7 @@ import           Control.Monad.Class.MonadThrow
 import           Control.Tracer
 import           Data.Array
 import qualified Data.ByteString.Lazy as BL
+import           Data.Int (Int64)
 import           Data.List (lookup)
 import           Data.Maybe (fromMaybe)
 import           GHC.Stack
@@ -214,10 +215,14 @@ muxChannel
     -> StrictTVar m Int
     -> m (Channel m)
 muxChannel tracer pmss mid md cnt = do
-    w <- newEmptyTMVarM
+    w <- newTVarM BL.empty
     return $ Channel { send = send (Wanton w)
                      , recv}
   where
+    -- Limit for the message buffer between send and mux thread.
+    perMiniProtocolBufferSize :: Int64
+    perMiniProtocolBufferSize = 0x3ffff
+
     send :: Wanton m
          -> BL.ByteString
          -> m ()
@@ -232,10 +237,20 @@ muxChannel tracer pmss mid md cnt = do
                 (printf "Attempting to send a message of size %d on %s %s" (BL.length encoding)
                         (show mid) (show $ md))
                 callStack
-        atomically $ modifyTVar cnt (+ 1)
-        atomically $ putTMVar w encoding
+
         traceWith tracer $ MuxTraceChannelSendStart mid encoding
-        atomically $ writeTBQueue (tsrQueue pmss) (TLSRDemand mid md want)
+
+        atomically $ do
+            buf <- readTVar w
+            if BL.length buf < perMiniProtocolBufferSize
+               then do
+                   let wasEmpty = BL.null buf
+                   writeTVar w (BL.append buf encoding)
+                   when wasEmpty $ do
+                       modifyTVar cnt (+ 1)
+                       writeTBQueue (tsrQueue pmss) (TLSRDemand mid md want)
+               else retry
+
         traceWith tracer $ MuxTraceChannelSendEnd mid
 
     recv :: m (Maybe BL.ByteString)
