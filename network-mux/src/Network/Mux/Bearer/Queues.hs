@@ -44,7 +44,7 @@ queuesAsMuxBearer tracer writeQueue readQueue sduSize traceQueue = do
       return $ Mx.MuxBearer {
           Mx.read    = readMux,
           Mx.write   = writeMux,
-          Mx.sduSize = sduSizeMux,
+          Mx.sduSize = sduSize,
           Mx.state   = mxState
         }
     where
@@ -80,9 +80,6 @@ queuesAsMuxBearer tracer writeQueue readQueue sduSize traceQueue = do
           atomically $ writeTBQueue writeQueue buf
           traceWith tracer $ Mx.MuxTraceSendEnd
           return ts
-
-      sduSizeMux :: m Word16
-      sduSizeMux = return $ sduSize
 
 runMuxWithQueues
   :: ( MonadAsync m
