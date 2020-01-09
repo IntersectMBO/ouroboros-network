@@ -9,7 +9,6 @@ module Ouroboros.Consensus.Node.Tracers
   , TraceForgeEvent (..)
   ) where
 
-import           Control.Monad.Class.MonadTime (Time)
 import           Control.Tracer (Tracer, nullTracer, showTracing)
 
 import           Ouroboros.Network.Block (Point, SlotNo)
@@ -119,8 +118,8 @@ data TraceForgeEvent blk tx
   | TraceCouldNotForge SlotNo AnachronyFailure
 
   -- | We adopted the block we produced, we also trace the transactions
-  -- and the time the block with the transactions was adopted.
-  | TraceAdoptedBlock SlotNo blk [tx] Time
+  -- that were adopted.
+  | TraceAdoptedBlock SlotNo blk [tx]
 
   -- | We did not adopt the block we produced, but the block was valid. We
   -- must have adopted a block that another leader of the same slot produced

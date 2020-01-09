@@ -368,11 +368,7 @@ forkBlockProduction maxBlockBodySize IS{..} BlockProduction{..} =
           -- Check whether we adopted our block
           curTip <- atomically $ ChainDB.getTipPoint chainDB
           if curTip == blockPoint newBlock then do
-            -- We measure the time directly.
-            -- We could also measure it when collecting the trace events, but this
-            -- is much more precise.
-            time <- getMonotonicTime
-            trace $ TraceAdoptedBlock currentSlot newBlock txs time
+            trace $ TraceAdoptedBlock currentSlot newBlock txs
           else do
             isInvalid <- atomically $
               ($ blockHash newBlock) . forgetFingerprint <$>
@@ -392,6 +388,7 @@ forkBlockProduction maxBlockBodySize IS{..} BlockProduction{..} =
                 -- process.
                 removeTxs mempool (map txId txs)
   where
+    trace :: TraceForgeEvent blk (GenTx blk) -> m ()
     trace = traceWith (forgeTracer tracers)
 
     -- Return the point and block number of the most recent block in the
