@@ -128,11 +128,10 @@ processSingleWanton :: MonadSTM m
                     -> StrictTVar m Int
                     -> m ()
 processSingleWanton pmss mpi md wanton cnt = do
-    maxSDU <- sduSize $ bearer pmss
     blob <- atomically $ do
       -- extract next SDU
       d <- readTVar (want wanton)
-      let (frag, rest) = BL.splitAt (fromIntegral maxSDU) d
+      let (frag, rest) = BL.splitAt (fromIntegral $ sduSize $ bearer pmss) d
       -- if more to process then enqueue remaining work
       if BL.null rest
         then writeTVar (want wanton) BL.empty

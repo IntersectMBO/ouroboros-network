@@ -13,7 +13,6 @@ import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
 import           Control.Tracer
-import           Data.Word
 import qualified Data.ByteString.Lazy as BL
 import           GHC.Stack
 import           System.IO (Handle, hFlush)
@@ -42,7 +41,7 @@ pipeAsMuxBearer tracer pcRead pcWrite = do
       return $ Mx.MuxBearer {
           Mx.read = readPipe,
           Mx.write = writePipe,
-          Mx.sduSize = sduSize,
+          Mx.sduSize = 32768,
           Mx.state = mxState
         }
     where
@@ -89,9 +88,6 @@ pipeAsMuxBearer tracer pcRead pcWrite = do
           hFlush pcWrite
           traceWith tracer $ Mx.MuxTraceSendEnd
           return ts
-
-      sduSize :: IO Word16
-      sduSize = return 32768
 
 runMuxWithPipes
     :: ( Mx.ProtocolEnum ptcl, Ord ptcl, Enum ptcl, Bounded ptcl, Show ptcl

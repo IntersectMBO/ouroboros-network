@@ -253,7 +253,7 @@ data MuxBearer ptcl m = MuxBearer {
     -- | Read a MuxSDU
     , read    :: m (MuxSDU ptcl, Time)
     -- | Return a suitable MuxSDU payload size.
-    , sduSize :: m Word16
+    , sduSize :: Word16
     , state   :: StrictTVar m MuxBearerState
     }
 

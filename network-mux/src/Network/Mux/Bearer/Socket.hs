@@ -1,4 +1,3 @@
-{-# LANGUAGE CPP                 #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
@@ -11,7 +10,6 @@ import           Control.Monad (when)
 import           Control.Tracer
 import qualified Data.ByteString.Lazy as BL
 import           Data.Int
-import           Data.Word
 import           Text.Printf
 
 import           GHC.Stack
@@ -53,7 +51,7 @@ socketAsMuxBearer tracer sd = do
       return $ Mx.MuxBearer {
           Mx.read    = readSocket,
           Mx.write   = writeSocket,
-          Mx.sduSize = sduSize,
+          Mx.sduSize = 12288,
           Mx.state   = mxState
         }
     where
@@ -111,18 +109,3 @@ socketAsMuxBearer tracer sd = do
           traceWith tracer $ Mx.MuxTraceSendEnd
           return ts
 
-      sduSize :: IO Word16
-#if defined(mingw32_HOST_OS)
-      sduSize = return 13000 -- MaxSegment isn't supported on Windows
-#else
-      sduSize = do
-          -- XXX it is really not acceptable to call getSocketOption for every SDU we want to send
-          {- getSocketOption for MaxSegment is not supported for AF_UNIX sockets -}
-          addr <- Socket.getSocketName sd
-          case addr of
-               Socket.SockAddrUnix _ -> return 0xffff
-               _                     -> do
-                    mss <- Socket.getSocketOption sd Socket.MaxSegment
-                    -- 1260 = IPv6 min MTU minus TCP header, 8 = mux header size
-                    return $ fromIntegral $ max (1260 - 8) (min 0xffff (15 * mss - 8))
-#endif
