@@ -19,8 +19,10 @@
         depends = (pkgs.lib).optionals (system.isWindows) [
           (hsPkgs.base)
           (hsPkgs.bytestring)
+          (hsPkgs.network)
           (hsPkgs.Win32)
           ];
+        libs = (pkgs.lib).optional (system.isWindows) (pkgs."ws2_32");
         };
       exes = {
         "named-pipe-demo" = {
@@ -43,6 +45,7 @@
               (hsPkgs.base)
               (hsPkgs.binary)
               (hsPkgs.bytestring)
+              (hsPkgs.network)
               (hsPkgs.stm)
               (hsPkgs.tasty)
               (hsPkgs.tasty-hunit)
