@@ -297,16 +297,6 @@ initBlockFetchConsensusInterface cfg chainDB getCandidates blockFetchSize
                            -> Ordering
     compareCandidateChains = compareAnchoredCandidates cfg
 
-data LeaderResult blk =
-    -- | We weren't the slot leader, and therefore didn't produce a block
-    NotLeader
-
-    -- | We were the leader and we produced a block with the given transactions
-  | ProducedBlock blk [GenTx blk]
-
-    -- | We should have produced a block, but couldn't
-  | FailedToProduce AnachronyFailure
-
 forkBlockProduction
     :: forall m peer blk.
        (IOLike m, RunNode blk)
@@ -319,66 +309,70 @@ forkBlockProduction maxBlockSizeOverride IS{..} BlockProduction{..} =
       varDRG <- newTVarM =<< (PRNG <$> produceDRG)
 
       trace $ TraceForgeAboutToLead currentSlot
-      leaderResult <- atomically $ do
-        l@ExtLedgerState{..} <- ChainDB.getCurrentLedger chainDB
-        MempoolSnapshot{snapshotTxsForSize} <-
-          getSnapshotFor
-             mempool
-             (TxsForBlockInSlot currentSlot)
-             ledgerState
-        let blockEncOverhead = nodeBlockEncodingOverhead ledgerState
-            maxBlockBodySize = case maxBlockSizeOverride of
-              NoOverride            -> nodeMaxBlockSize ledgerState - blockEncOverhead
-              MaxBlockSize mbs      -> mbs - blockEncOverhead
-              MaxBlockBodySize mbbs -> mbbs
-            txs = map fst (snapshotTxsForSize maxBlockBodySize)
 
-        case anachronisticProtocolLedgerView cfg ledgerState (At currentSlot) of
-          Right ledgerView -> do
-            mIsLeader <- runProtocol varDRG $
-                            checkIsLeader
-                              cfg
-                              currentSlot
-                              ledgerView
-                              ouroborosChainState
+      -- Get current ledger
+      --
+      -- NOTE: This is still wrong. If we detect in 'prevPointAndBlockNo'
+      -- that we should roll back one block, we should also use a different
+      -- ledger state.
+      -- <https://github.com/input-output-hk/ouroboros-network/issues/1437>
+      (extLedger, (prevPoint, prevNo)) <- atomically $ (,)
+        <$> ChainDB.getCurrentLedger chainDB
+        <*> (prevPointAndBlockNo currentSlot <$>
+               ChainDB.getCurrentChain chainDB)
+      let ledger = ledgerState extLedger
 
-            case mIsLeader of
-              Nothing    -> return NotLeader
-              Just proof -> do
-                (prevPoint, prevNo) <- prevPointAndBlockNo currentSlot <$>
-                                         ChainDB.getCurrentChain chainDB
-                newBlock            <- runProtocol varDRG $
-                                         produceBlock
-                                           proof
-                                           l
-                                           currentSlot
-                                           prevPoint
-                                           prevNo
-                                           txs
-                return $ ProducedBlock newBlock txs
-
-          Left err ->
+      -- Check if we are the leader
+      mIsLeader <-
+        case anachronisticProtocolLedgerView cfg ledger (At currentSlot) of
+          Right ledgerView ->
+            atomically $ runProtocol varDRG $
+              checkIsLeader
+                cfg
+                currentSlot
+                ledgerView
+                (ouroborosChainState extLedger)
+          Left err -> do
             -- There are so many empty slots between the tip of our chain and
             -- the current slot that we cannot even get an accurate ledger view
             -- anymore. This is indicative of a serious problem: we are not
             -- receiving blocks. It is /possible/ it's just due to our network
             -- connectivity, and we might still get these blocks at some point;
             -- but we certainly can't produce a block of our own.
-            return $ FailedToProduce err
+            trace $ TraceCouldNotForge currentSlot err
+            return Nothing
 
-      -- Note that there is a possible race condition here: we have produced a
-      -- block containing valid transactions w.r.t. the current ledger state
-      -- (this was race-free), but the current chain might change before we
-      -- complete adding the block to the ChainDB. If the current chain has
-      -- changed to a longer chain (than the one at the time of producing the
-      -- block), chain selection will not select the block we just produced
-      -- ourselves, as it would mean switching to a shorter chain.
-      case leaderResult of
-        NotLeader ->
-          return ()
-        FailedToProduce err ->
-          trace $ TraceCouldNotForge currentSlot err
-        ProducedBlock newBlock txs -> do
+      case mIsLeader of
+        Nothing    -> return ()
+        Just proof -> do
+          -- Get a snapshot of the mempool that is consistent with the ledger
+          --
+          -- NOTE: It is possible that due to adoption of new blocks the
+          -- /current/ ledger will have changed. This doesn't matter: we will
+          -- produce a block that fits onto the ledger we got above; if the
+          -- ledger in the meantime changes, the block we produce here may or
+          -- may not be adopted, but it won't be invalid.
+          mempoolSnapshot <- atomically $ getSnapshotFor
+                                            mempool
+                                            (TxsForBlockInSlot currentSlot)
+                                            (ledgerState extLedger)
+
+          let blockEncOverhead = nodeBlockEncodingOverhead ledger
+              maxBlockBodySize = case maxBlockSizeOverride of
+                NoOverride            -> nodeMaxBlockSize ledger - blockEncOverhead
+                MaxBlockSize mbs      -> mbs - blockEncOverhead
+                MaxBlockBodySize mbbs -> mbbs
+              txs = map fst (snapshotTxsForSize mempoolSnapshot maxBlockBodySize)
+
+          newBlock <- atomically $ runProtocol varDRG $
+            produceBlock
+              proof
+              extLedger
+              currentSlot
+              prevPoint
+              prevNo
+              txs
+
           trace $ TraceForgeEvent currentSlot newBlock
           -- Adding a block is synchronous
           ChainDB.addBlock chainDB newBlock
