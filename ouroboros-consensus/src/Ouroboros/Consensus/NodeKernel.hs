@@ -297,13 +297,6 @@ initBlockFetchConsensusInterface cfg chainDB getCandidates blockFetchSize
                            -> Ordering
     compareCandidateChains = compareAnchoredCandidates cfg
 
-data LeaderResult blk =
-    -- | We weren't the slot leader, and therefore didn't produce a block
-    NotLeader
-
-    -- | We were the leader and we produced a block
-  | ProducedBlock blk
-
 forkBlockProduction
     :: forall m peer blk.
        (IOLike m, RunNode blk)
@@ -360,27 +353,21 @@ forkBlockProduction maxBlockSizeOverride IS{..} BlockProduction{..} =
             MaxBlockBodySize mbbs -> mbbs
           txs = map fst (snapshotTxsForSize mempoolSnapshot maxBlockBodySize)
 
-      leaderResult <-
-         case mIsLeader of
-           Nothing    -> return NotLeader
-           Just proof -> do
-             newBlock <- atomically $ do
-               (prevPoint, prevNo) <- prevPointAndBlockNo currentSlot <$>
-                                        ChainDB.getCurrentChain chainDB
-               runProtocol varDRG $
-                 produceBlock
-                   proof
-                   extLedger
-                   currentSlot
-                   prevPoint
-                   prevNo
-                   txs
-             return $ ProducedBlock newBlock
+      case mIsLeader of
+        Nothing    -> return ()
+        Just proof -> do
+          newBlock <- atomically $ do
+            (prevPoint, prevNo) <- prevPointAndBlockNo currentSlot <$>
+                                     ChainDB.getCurrentChain chainDB
+            runProtocol varDRG $
+              produceBlock
+                proof
+                extLedger
+                currentSlot
+                prevPoint
+                prevNo
+                txs
 
-      case leaderResult of
-        NotLeader ->
-          return ()
-        ProducedBlock newBlock -> do
           trace $ TraceForgeEvent currentSlot newBlock
           -- Adding a block is synchronous
           ChainDB.addBlock chainDB newBlock
