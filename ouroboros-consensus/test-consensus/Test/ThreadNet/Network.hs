@@ -393,17 +393,14 @@ runThreadNetwork ThreadNetworkArgs
 
       let blockProduction :: BlockProduction m blk
           blockProduction = BlockProduction {
-              produceBlock = \proof _l slot prevPoint prevNo txs -> do
+              produceBlock = \proof extLedger slot prevNo txs -> do
                 let curNo :: BlockNo
                     curNo = succ prevNo
-
-                let prevHash :: ChainHash blk
-                    prevHash = castHash (pointHash prevPoint)
 
                 nodeForgeBlock pInfoConfig
                                slot
                                curNo
-                               prevHash
+                               extLedger
                                txs
                                proof
 

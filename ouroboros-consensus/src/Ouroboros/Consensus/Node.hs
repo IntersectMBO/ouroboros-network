@@ -41,7 +41,6 @@ import           Data.Time.Clock (secondsToDiffTime)
 import           Control.Monad.Class.MonadThrow
 
 import           Ouroboros.Network.Block
-import qualified Ouroboros.Network.Block as Block
 import           Ouroboros.Network.Diffusion
 import           Ouroboros.Network.Magic
 import           Ouroboros.Network.NodeToClient (DictVersion (..),
@@ -56,7 +55,7 @@ import           Ouroboros.Network.Socket (ConnectionId)
 import           Ouroboros.Consensus.Block (BlockProtocol, getHeader)
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.ChainSyncClient (ClockSkew (..))
-import           Ouroboros.Consensus.Ledger.Extended (ExtLedgerState)
+import           Ouroboros.Consensus.Ledger.Extended (ExtLedgerState (..))
 import           Ouroboros.Consensus.Mempool (GenTx, MempoolCapacityBytes (..))
 import           Ouroboros.Consensus.Node.DbMarker
 import           Ouroboros.Consensus.Node.ErrorPolicy
@@ -292,22 +291,19 @@ mkNodeArgs registry cfg initState tracers btime chainDB isProducer = NodeArgs
         , produceBlock = produceBlock
         }
 
+    -- TODO: Bring BlockProduction in line with the node's function
     produceBlock
       :: IsLeader (BlockProtocol blk)  -- ^ Proof we are leader
       -> ExtLedgerState blk            -- ^ Current ledger state
       -> SlotNo                        -- ^ Current slot
-      -> Point blk                     -- ^ Previous point
       -> BlockNo                       -- ^ Previous block number
       -> [GenTx blk]                   -- ^ Contents of the mempool
       -> ProtocolM blk IO blk
-    produceBlock proof _l slot prevPoint prevBlockNo txs =
+    produceBlock proof extLedger slot prevBlockNo txs =
         -- The transactions we get are consistent; the only reason not to
         -- include all of them would be maximum block size, which we ignore
         -- for now.
-        nodeForgeBlock cfg slot curNo prevHash txs proof
+        nodeForgeBlock cfg slot curNo extLedger txs proof
       where
         curNo :: BlockNo
         curNo = succ prevBlockNo
-
-        prevHash :: ChainHash blk
-        prevHash = castHash (Block.pointHash prevPoint)

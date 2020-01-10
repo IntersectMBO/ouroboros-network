@@ -111,7 +111,6 @@ data BlockProduction m blk = BlockProduction {
       produceBlock :: IsLeader (BlockProtocol blk) -- Proof we are leader
                    -> ExtLedgerState blk -- Current ledger state
                    -> SlotNo             -- Current slot
-                   -> Point blk          -- Previous point
                    -> BlockNo            -- Previous block number
                    -> [GenTx blk]        -- Contents of the mempool
                    -> ProtocolM blk m blk
@@ -394,7 +393,6 @@ forkBlockProduction maxBlockSizeOverride IS{..} BlockProduction{..} =
             proof
             extLedger
             currentSlot
-            prevPoint
             prevNo
             txs
         trace $ TraceForgedBlock
