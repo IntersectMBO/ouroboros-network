@@ -1,16 +1,21 @@
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE StrictData #-}
 
 -- | Chain state for Transitional Praos
 module Ouroboros.Consensus.Protocol.TPraos.ChainState where
 
-import Cardano.Prelude (NoUnexpectedThunks(..))
-import Data.Map.Strict (Map)
+import           Cardano.Binary (FromCBOR (..), ToCBOR (..))
+import           Cardano.Ledger.Shelley.Crypto
+import           Cardano.Prelude (NoUnexpectedThunks (..))
+import qualified Codec.CBOR.Decoding as CBOR
+import qualified Codec.CBOR.Encoding as CBOR
+import           Codec.Serialise (Serialise (..))
+import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
-import GHC.Generics (Generic)
-import Ouroboros.Network.Block (SlotNo (..))
-import Ouroboros.Network.Point (WithOrigin (..))
-
+import           GHC.Generics (Generic)
+import           Ouroboros.Network.Block (SlotNo (..))
+import           Ouroboros.Network.Point (WithOrigin (..))
 import qualified STS.Prtcl as STS
 
 -- | Praos chain state.
@@ -28,7 +33,7 @@ data TPraosChainState c = TPraosChainState
     --
     -- We store this for easy computation of whether a rollback is allowed, and
     -- for sanity checking of the state.
-    anchor :: WithOrigin SlotNo
+    anchor           :: WithOrigin SlotNo
 
     -- | Historical state snapshots.
   , historicalStates :: Map (WithOrigin SlotNo) (STS.State (STS.PRTCL c))
@@ -104,3 +109,35 @@ rewind toSlot st
           newStates = maybe older (curry (flip (uncurry Map.insert) older) toSlot) mcurrent
         in newStates
       }
+
+init
+  :: WithOrigin SlotNo
+  -> STS.State (STS.PRTCL c)
+  -> TPraosChainState c
+init atSlot prtclState = TPraosChainState
+  { anchor = atSlot
+  , historicalStates = Map.singleton atSlot prtclState
+  }
+
+{-------------------------------------------------------------------------------
+  Serialisation
+-------------------------------------------------------------------------------}
+
+instance Crypto c => Serialise (TPraosChainState c) where
+  encode TPraosChainState{ anchor, historicalStates } = mconcat
+    [ CBOR.encodeListLen 2
+    , encode anchor
+    , toCBOR historicalStates
+    ]
+
+  decode = do
+    CBOR.decodeListLenOf 2
+    TPraosChainState
+      <$> decode
+      <*> fromCBOR
+
+instance Crypto c => ToCBOR (TPraosChainState c) where
+  toCBOR = encode
+
+instance Crypto c => FromCBOR (TPraosChainState c) where
+  fromCBOR = decode

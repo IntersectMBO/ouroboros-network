@@ -24,10 +24,12 @@ import           Ouroboros.Consensus.Ledger.Byron
 import           Ouroboros.Consensus.Ledger.ByronSpec
 import           Ouroboros.Consensus.Ledger.Dual.Byron
 import           Ouroboros.Consensus.Ledger.Mock
+import           Ouroboros.Consensus.Ledger.Shelley
 import           Ouroboros.Consensus.Node.ProtocolInfo.Abstract (NumCoreNodes)
 import           Ouroboros.Consensus.Node.ProtocolInfo.Byron
 import           Ouroboros.Consensus.Node.ProtocolInfo.Mock.PBFT ()
 import           Ouroboros.Consensus.Node.ProtocolInfo.Mock.Praos ()
+import           Ouroboros.Consensus.Node.ProtocolInfo.Shelley
 import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.NodeId (CoreNodeId)
 import           Ouroboros.Consensus.Protocol.Abstract as X
@@ -36,6 +38,7 @@ import           Ouroboros.Consensus.Protocol.ExtConfig as X
 import           Ouroboros.Consensus.Protocol.LeaderSchedule as X
 import           Ouroboros.Consensus.Protocol.PBFT as X
 import           Ouroboros.Consensus.Protocol.Praos as X
+import           Ouroboros.Consensus.Protocol.TPraos as X
 import           Ouroboros.Consensus.Util
 
 {-------------------------------------------------------------------------------
@@ -100,6 +103,13 @@ data Protocol blk where
     -> Maybe CoreNodeId
     -> Protocol DualByronBlock
 
+  -- | Run TPraos against the real Shelley ledger
+  ProtocolRealTPraos
+    :: ShelleyGenesis
+    -> ProtVer
+    -> Maybe (TPraosIsCoreNode TPraosStandardCrypto)
+    -> Protocol ShelleyBlock
+
 {-------------------------------------------------------------------------------
   Evidence that we can run all the supported protocols
 -------------------------------------------------------------------------------}
@@ -111,3 +121,4 @@ runProtocol ProtocolLeaderSchedule{} = Dict
 runProtocol ProtocolMockPBFT{}       = Dict
 runProtocol ProtocolRealPBFT{}       = Dict
 runProtocol ProtocolDualPBFT{}       = Dict
+runProtocol ProtocolRealTPraos{}     = Dict

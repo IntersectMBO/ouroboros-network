@@ -16,6 +16,7 @@ import           Cardano.Slotting.Slot (SlotNo)
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Byron
+import           Ouroboros.Consensus.Ledger.Shelley
 import           Ouroboros.Consensus.Ledger.Mock hiding (utxo)
 import           Ouroboros.Consensus.Node.ProtocolInfo (NumCoreNodes (..))
 import           Ouroboros.Consensus.Protocol.Abstract
@@ -95,5 +96,14 @@ genSimpleTx addrs u = do
 
 instance TxGen ByronBlock where
   testGenTx = error "TODO #855 testGenTx"
+  -- 'testGenTxs' is used by the tests, not 'testGenTx'.
+  testGenTxs _ _ _ _ = return []
+
+{-------------------------------------------------------------------------------
+  TxGen ByronBlock
+-------------------------------------------------------------------------------}
+
+instance TxGen ShelleyBlock where
+  testGenTx = error "TODO #1482 testGenTx"
   -- 'testGenTxs' is used by the tests, not 'testGenTx'.
   testGenTxs _ _ _ _ = return []

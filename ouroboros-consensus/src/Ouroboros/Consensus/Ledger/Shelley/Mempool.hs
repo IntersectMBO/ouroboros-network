@@ -1,7 +1,8 @@
-{-# LANGUAGE DeriveGeneric     #-}
-{-# LANGUAGE DerivingVia       #-}
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE TypeFamilies      #-}
+{-# LANGUAGE DeriveGeneric              #-}
+{-# LANGUAGE DerivingVia                #-}
+{-# LANGUAGE FlexibleInstances          #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE TypeFamilies               #-}
 
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
@@ -13,9 +14,12 @@ module Ouroboros.Consensus.Ledger.Shelley.Mempool
   )
 where
 
+import           Cardano.Binary (FromCBOR (..), ToCBOR (..))
 import           Cardano.Ledger.Shelley.API
 import           Cardano.Prelude (NoUnexpectedThunks (..), UseIsNormalForm (..))
 import           Cardano.Slotting.Slot
+import qualified Codec.CBOR.Decoding as CBOR
+import qualified Codec.CBOR.Encoding as CBOR
 import           Control.Monad.Except (runExcept)
 import           Data.Either (fromRight)
 import qualified Data.Sequence as Seq
@@ -39,9 +43,10 @@ instance ApplyTx ShelleyBlock where
     deriving (Eq, Generic)
     deriving (NoUnexpectedThunks) via UseIsNormalForm (GenTx ShelleyBlock)
 
-  data GenTxId ShelleyBlock
-    = ShelleyTxId !TxId
+  newtype GenTxId ShelleyBlock
+    = ShelleyTxId TxId
     deriving (Eq, Ord)
+    deriving newtype (FromCBOR, ToCBOR)
 
   type ApplyTxErr ShelleyBlock = ApplyTxError TPraosStandardCrypto
 
@@ -75,6 +80,23 @@ instance ApplyTx ShelleyBlock where
       $ applyTx cfg tx ls
     where
       err = error "reapply TX with same state failed"
+
+{-------------------------------------------------------------------------------
+  Serialisation
+-------------------------------------------------------------------------------}
+
+instance ToCBOR (GenTx ShelleyBlock) where
+  toCBOR (ShelleyTx txi tx) = mconcat
+    [ CBOR.encodeListLen 2
+    , toCBOR txi
+    , toCBOR tx
+    ]
+instance FromCBOR (GenTx ShelleyBlock) where
+  fromCBOR = do
+    CBOR.decodeListLenOf 2
+    ShelleyTx
+      <$> fromCBOR
+      <*> fromCBOR
 
 {-------------------------------------------------------------------------------
   Pretty-printing

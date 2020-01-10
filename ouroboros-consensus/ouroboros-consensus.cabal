@@ -84,6 +84,7 @@ library
                        Ouroboros.Consensus.Ledger.Mock.UTxO
                        Ouroboros.Consensus.LocalStateQueryServer
                        Ouroboros.Consensus.Ledger.Shelley
+                       Ouroboros.Consensus.Ledger.Shelley.Block
                        Ouroboros.Consensus.Ledger.Shelley.Config
                        Ouroboros.Consensus.Ledger.Shelley.Forge
                        Ouroboros.Consensus.Ledger.Shelley.History
@@ -105,11 +106,13 @@ library
                        Ouroboros.Consensus.Node.ProtocolInfo.Mock.PBFT
                        Ouroboros.Consensus.Node.ProtocolInfo.Mock.Praos
                        Ouroboros.Consensus.Node.ProtocolInfo.Mock.PraosRule
+                       Ouroboros.Consensus.Node.ProtocolInfo.Shelley
                        Ouroboros.Consensus.Node.Run
                        Ouroboros.Consensus.Node.Run.Abstract
                        Ouroboros.Consensus.Node.Run.Byron
                        Ouroboros.Consensus.Node.Run.DualByron
                        Ouroboros.Consensus.Node.Run.Mock
+                       Ouroboros.Consensus.Node.Run.Shelley
                        Ouroboros.Consensus.Node.Tracers
                        Ouroboros.Consensus.NodeId
                        Ouroboros.Consensus.NodeKernel
@@ -329,6 +332,7 @@ test-suite test-consensus
                     Test.ThreadNet.PBFT
                     Test.ThreadNet.Praos
                     Test.ThreadNet.RealPBFT
+                    Test.ThreadNet.TPraos
                     Test.ThreadNet.Ref.RealPBFT
                     Test.ThreadNet.TxGen
                     Test.ThreadNet.Util
@@ -367,6 +371,7 @@ test-suite test-consensus
                     cardano-ledger-test,
                     cardano-prelude,
                     cardano-slotting,
+                    delegation,
                     typed-protocols,
                     network-mux,
                     ouroboros-network,

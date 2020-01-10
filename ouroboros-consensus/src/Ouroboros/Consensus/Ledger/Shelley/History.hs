@@ -1,25 +1,33 @@
 {-# LANGUAGE DataKinds                  #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
+{-# OPTIONS_GHC -fno-warn-orphans #-}
+
 -- | Store the history of the Shelley ledger view in order to allow time-travel
 -- to the recent past.
 module Ouroboros.Consensus.Ledger.Shelley.History
   ( LedgerViewHistory
   , Snapshot
+  , decode
   , empty
+  , encode
   , snapOld
   , trim
   , find
   )
 where
 
+import           Cardano.Binary (FromCBOR (..), ToCBOR (..))
 import qualified Cardano.Ledger.Shelley.API as Shelley
 import           Cardano.Prelude (NoUnexpectedThunks (..))
 import           Cardano.Slotting.Slot (SlotNo (..), WithOrigin, fromWithOrigin,
                      genesisSlotNo)
 import           Cardano.Slotting.SlotBounded (Bounds (..), SlotBounded (..))
 import qualified Cardano.Slotting.SlotBounded as SB
+import           Codec.CBOR.Decoding (Decoder)
+import           Codec.CBOR.Encoding (Encoding)
 import           Data.Coerce (coerce)
+import qualified Data.Foldable as Foldable
 import           Data.Sequence.Strict (StrictSeq ((:<|), (:|>), Empty))
 import qualified Data.Sequence.Strict as Seq
 import           Data.Word (Word64)
@@ -92,3 +100,13 @@ find slot (LedgerViewHistory history) =
   where
     slot' :: SlotNo
     slot' = fromWithOrigin genesisSlotNo slot
+
+{-------------------------------------------------------------------------------
+  Serialisation
+-------------------------------------------------------------------------------}
+
+encode :: LedgerViewHistory -> Encoding
+encode = toCBOR . Foldable.toList . unLedgerViewHistory
+
+decode :: Decoder s LedgerViewHistory
+decode = LedgerViewHistory . Seq.fromList <$> fromCBOR

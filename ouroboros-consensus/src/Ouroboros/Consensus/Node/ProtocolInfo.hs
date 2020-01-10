@@ -14,6 +14,7 @@ import           Ouroboros.Consensus.Node.ProtocolInfo.Mock.BFT as X
 import           Ouroboros.Consensus.Node.ProtocolInfo.Mock.PBFT as X
 import           Ouroboros.Consensus.Node.ProtocolInfo.Mock.Praos as X
 import           Ouroboros.Consensus.Node.ProtocolInfo.Mock.PraosRule as X
+import           Ouroboros.Consensus.Node.ProtocolInfo.Shelley as X
 import           Ouroboros.Consensus.Protocol
 
 {-------------------------------------------------------------------------------
@@ -39,3 +40,6 @@ protocolInfo (ProtocolRealPBFT gc mthr prv swv mplc) =
 
 protocolInfo (ProtocolDualPBFT abstractEnv params mLeader) =
     protocolInfoDualByron abstractEnv params mLeader
+
+protocolInfo (ProtocolRealTPraos sg pv micn) =
+    protocolInfoShelley sg pv micn
