@@ -409,26 +409,17 @@ implRemoveTxs mpEnv@MempoolEnv{mpEnvTracer, mpEnvStateVar} txIds = do
 
 implSyncWithLedger :: (IOLike m, ApplyTx blk)
                    => MempoolEnv m blk -> m (MempoolSnapshot blk TicketNo)
-implSyncWithLedger menv = implWithSyncState menv TxsForUnknownBlock return
-
-implWithSyncState
-  :: (IOLike m, ApplyTx blk)
-  => MempoolEnv m blk
-  -> BlockSlot
-  -> (MempoolSnapshot blk TicketNo -> STM m a)
-  -> m a
-implWithSyncState mpEnv@MempoolEnv{mpEnvTracer, mpEnvStateVar} blockSlot f = do
-    (removed, mempoolSize, res) <- atomically $ do
-      vr <- validateIS mpEnv blockSlot
+implSyncWithLedger mpEnv@MempoolEnv{mpEnvTracer, mpEnvStateVar} = do
+    (removed, mempoolSize, snapshot) <- atomically $ do
+      vr <- validateIS mpEnv TxsForUnknownBlock
       writeTVar mpEnvStateVar (internalStateFromVR vr)
       -- The size of the mempool /after/ removing invalid transactions.
       mempoolSize <- getMempoolSize mpEnv
       snapshot    <- implGetSnapshot mpEnv
-      res         <- f snapshot
-      return (map fst (vrInvalid vr), mempoolSize, res)
+      return (map fst (vrInvalid vr), mempoolSize, snapshot)
     unless (null removed) $ do
       traceWith mpEnvTracer $ TraceMempoolRemoveTxs removed mempoolSize
-    return res
+    return snapshot
 
 implGetSnapshot :: (IOLike m, ApplyTx blk)
                 => MempoolEnv m blk
