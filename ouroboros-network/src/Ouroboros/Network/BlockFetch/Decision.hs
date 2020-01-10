@@ -42,6 +42,7 @@ import           Ouroboros.Network.BlockFetch.ClientState
                    ( FetchRequest(..)
                    , PeerFetchInFlight(..)
                    , PeerFetchStatus(..)
+                   , peerFetchStatusIsIdle
                    )
 import           Ouroboros.Network.BlockFetch.DeltaQ
                    ( PeerGSV(..), SizeInBytes
@@ -828,7 +829,7 @@ fetchRequestDecisions fetchDecisionPolicy fetchMode chains =
 
         nConcurrentFetchPeers'
           -- increment if it was idle, and now will not be
-          | peerFetchReqsInFlight inflight == 0
+          | peerFetchStatusIsIdle status
           , Right{} <- decision = nConcurrentFetchPeers + 1
           | otherwise           = nConcurrentFetchPeers
 
@@ -920,7 +921,7 @@ fetchRequestDecision FetchDecisionPolicy {
              inFlightBytesLowWatermark
              inFlightBytesHighWatermark
 
-  | peerFetchStatus == PeerFetchStatusReady Set.empty
+  | peerFetchStatusIsIdle peerFetchStatus
   , let maxConcurrentFetchPeers = case fetchMode of
                                     FetchModeBulkSync -> maxConcurrencyBulkSync
                                     FetchModeDeadline -> maxConcurrencyDeadline

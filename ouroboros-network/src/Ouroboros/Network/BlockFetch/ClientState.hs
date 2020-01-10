@@ -11,6 +11,7 @@ module Ouroboros.Network.BlockFetch.ClientState (
     newFetchClientStateVars,
     readFetchClientState,
     PeerFetchStatus(..),
+    peerFetchStatusIsIdle,
     PeerFetchInFlight(..),
     initialPeerFetchInFlight,
     FetchRequest(..),
@@ -164,6 +165,14 @@ data PeerFetchStatus header =
        --
      | PeerFetchStatusReady (Set (Point header))
   deriving (Eq, Show)
+
+
+-- | The peer status is idle if its status is ready and has no outstanding
+-- in-flight requests.
+--
+peerFetchStatusIsIdle :: PeerFetchStatus header -> Bool
+peerFetchStatusIsIdle (PeerFetchStatusReady inProgress) = Set.null inProgress
+peerFetchStatusIsIdle _                                 = False
 
 
 -- | The number of requests in-flight and the amount of data in-flight with a
