@@ -16,9 +16,8 @@ import           Control.Monad.Trans
 import           Crypto.Random
 import           Data.Bimap (Bimap)
 import qualified Data.Bimap as Bimap
-import           Data.Hashable (Hashable)
-import           Data.HashPSQ (HashPSQ)
-import qualified Data.HashPSQ as PSQ
+import           Data.IntPSQ (IntPSQ)
+import qualified Data.IntPSQ as PSQ
 
 import           Control.Tracer (Tracer)
 
@@ -90,14 +89,11 @@ instance (NoUnexpectedThunks k, NoUnexpectedThunks v)
   whnfNoUnexpectedThunks ctxt = noUnexpectedThunksInKeysAndValues ctxt
                               . Bimap.toList
 
-instance ( NoUnexpectedThunks k
-         , NoUnexpectedThunks p
+instance ( NoUnexpectedThunks p
          , NoUnexpectedThunks v
-         , Hashable k
-         , Ord k
          , Ord p
-         ) => NoUnexpectedThunks (HashPSQ k p v) where
-  showTypeOf _ = "HashPSQ"
+         ) => NoUnexpectedThunks (IntPSQ p v) where
+  showTypeOf _ = "IntPSQ"
   whnfNoUnexpectedThunks ctxt = allNoUnexpectedThunks
                               . concatMap (\(k, p, v) ->
                                 [ noUnexpectedThunks ctxt k

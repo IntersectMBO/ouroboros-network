@@ -10,6 +10,7 @@
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE ViewPatterns               #-}
 
 {-# OPTIONS_GHC -Wredundant-constraints #-}
 module Ouroboros.Storage.ImmutableDB.Impl.Index.Cache
@@ -39,8 +40,8 @@ import           Control.Monad.Except (throwError)
 import           Control.Tracer (Tracer, traceWith)
 import           Data.Foldable (toList)
 import           Data.Functor ((<&>))
-import           Data.HashPSQ (HashPSQ)
-import qualified Data.HashPSQ as PSQ
+import           Data.IntPSQ (IntPSQ)
+import qualified Data.IntPSQ as PSQ
 import           Data.Maybe (fromMaybe)
 import           Data.Sequence.Strict (StrictSeq)
 import qualified Data.Sequence.Strict as Seq
@@ -161,7 +162,18 @@ data Cached hash = Cached
     -- from the current epoch, so it is worth optimising this case.
     -- Additionally, by appending to the current epoch through the cache, we
     -- are sure the current epoch info is never stale.
-  , pastEpochsInfo   :: !(HashPSQ EpochNo LastUsed (PastEpochInfo hash))
+    --
+    -- We use an 'IntPSQ' here, where the keys are in fact epoch numbers. Since
+    -- epoch numbers are internally represented by a 'Word64', one might be worried
+    -- about a potential overflow here. While possible, it's not worth worrying about:
+    -- - Whilst guaranteed to be only at least 30 bits, in practice, 64-bit GHC has 64-bit
+    --   integers, so the conversion is bijective.
+    -- - An epoch currently lasts around a week. Systems using a smaller representation
+    --   might need to worry in a million years or so.
+    -- - In the event of running for a million years, we're unlikely to have a problem anyway,
+    --   since we only really cache _recent_ epochs. So the fact that they clash with the
+    --   epochs from a million years ago isn't likely to be an issue.
+  , pastEpochsInfo   :: !(IntPSQ LastUsed (PastEpochInfo hash))
     -- ^ Cached epochs from the past.
     --
     -- A LRU-cache (least recently used). Whenever a we get a cache hit
@@ -174,8 +186,8 @@ data Cached hash = Cached
     --
     -- INVARIANT: @'PSQ.size' 'pastEpochsInfo' <= 'pastEpochsToCache'@
   , nbPastEpochs     :: !Word32
-    -- ^ Cached size of 'pastEpochsInfo', as a 'HashPSQ' only provides a \(
-    -- O(n) \) 'PSQ.size' operation.
+    -- ^ Cached size of 'pastEpochsInfo', as an 'IntPSQ' only provides a \(O(n)
+    -- \) 'PSQ.size' operation.
     --
     -- INVARIANT: 'nbPastEpochs' == @'PSQ.size' 'pastEpochsInfo'@
   }
@@ -187,7 +199,7 @@ checkInvariants
   -> Maybe String
 checkInvariants pastEpochsToCache Cached {..} = either Just (const Nothing) $ do
     forM_ (PSQ.keys pastEpochsInfo) $ \pastEpoch ->
-      unless (pastEpoch < currentEpoch) $
+      unless (pastEpoch < currentEpochInt) $
         throwError $
           "past epoch (" <> show pastEpoch <> ") >= current epoch (" <>
           show currentEpoch <> ")"
@@ -202,6 +214,9 @@ checkInvariants pastEpochsToCache Cached {..} = either Just (const Nothing) $ do
         "nbPastEpochs (" <> show nbPastEpochs <>
         ") /= PSQ.size pastEpochsInfo (" <> show (PSQ.size pastEpochsInfo) <>
         ")"
+  where
+    EpochNo (fromIntegral -> currentEpochInt) = currentEpoch
+
 
 -- | Store the 'PastEpochInfo' for the given 'EpochNo' in 'Cached'.
 --
@@ -223,11 +238,12 @@ addPastEpochInfo epoch lastUsed pastEpochInfo cached =
     -- means the following cannot be a precondition:
     -- assert (not (PSQ.member epoch pastEpochsInfo)) $
     cached
-      { pastEpochsInfo = PSQ.insert epoch lastUsed pastEpochInfo pastEpochsInfo
+      { pastEpochsInfo = PSQ.insert epochInt lastUsed pastEpochInfo pastEpochsInfo
       , nbPastEpochs   = succ nbPastEpochs
       }
   where
     Cached { pastEpochsInfo, nbPastEpochs } = cached
+    EpochNo (fromIntegral -> epochInt) = epoch
 
 -- | Remove the least recently used past epoch from the cache when 'Cached'
 -- contains more epochs than the given maximum.
@@ -247,7 +263,8 @@ evictIfNecessary maxNbPastEpochs cached
       case PSQ.minView pastEpochsInfo of
         Nothing                                 -> error
           "nbPastEpochs > maxNbPastEpochs but pastEpochsInfo was empty"
-        Just (epochNo, _p, _v, pastEpochsInfo') -> (cached', Just epochNo)
+        Just (epochNo, _p, _v, pastEpochsInfo') ->
+            (cached', Just . EpochNo $ fromIntegral epochNo)
           where
             cached' = cached
               { nbPastEpochs   = maxNbPastEpochs
@@ -268,12 +285,13 @@ lookupPastEpochInfo
   -> Cached hash
   -> Maybe (PastEpochInfo hash, Cached hash)
 lookupPastEpochInfo epoch lastUsed cached@Cached { pastEpochsInfo } =
-    case PSQ.alter lookupAndUpdateLastUsed epoch pastEpochsInfo of
+    case PSQ.alter lookupAndUpdateLastUsed epochInt pastEpochsInfo of
       (Nothing, _) -> Nothing
       (Just pastEpochInfo, pastEpochsInfo') -> Just (pastEpochInfo, cached')
         where
           cached' = cached { pastEpochsInfo = pastEpochsInfo' }
   where
+    EpochNo (fromIntegral -> epochInt) = epoch
     lookupAndUpdateLastUsed
       :: Maybe (LastUsed, PastEpochInfo hash)
       -> (Maybe (PastEpochInfo hash), Maybe (LastUsed, PastEpochInfo hash))
@@ -302,7 +320,7 @@ openEpoch epoch lastUsed newCurrentEpochInfo cached
           -- new epoch, they might still request blocks from the previous one.
           -- So to avoid throwing away that cached information, we give it the
           -- highest priority.
-        , pastEpochsInfo   = PSQ.insert currentEpoch lastUsed
+        , pastEpochsInfo   = PSQ.insert currentEpochInt lastUsed
             (toPastEpochInfo currentEpochInfo) pastEpochsInfo
         , nbPastEpochs     = succ nbPastEpochs
         }
@@ -310,6 +328,7 @@ openEpoch epoch lastUsed newCurrentEpochInfo cached
     | otherwise
     = error $ "Going from epoch " <> show currentEpoch <> " to " <> show epoch
   where
+    EpochNo (fromIntegral -> currentEpochInt) = currentEpoch
     Cached
       { currentEpoch, currentEpochInfo, pastEpochsInfo, nbPastEpochs
       } = cached
@@ -425,7 +444,10 @@ expireUnusedEpochs CacheEnv { cacheVar, cacheConfig, tracer } =
         !traceMsg = TracePastEpochsExpired
           -- Force this list, otherwise the traced message holds onto to the
           -- past epoch indices.
-          (forceElemsToWHNF [epoch | (epoch, _, _) <- expiredPastEpochs])
+          (forceElemsToWHNF
+            [EpochNo . fromIntegral $ epoch
+            | (epoch, _, _) <- expiredPastEpochs
+            ])
           nbPastEpochs'
 
 {------------------------------------------------------------------------------
