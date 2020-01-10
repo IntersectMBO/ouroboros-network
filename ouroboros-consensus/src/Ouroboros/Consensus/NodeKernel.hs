@@ -334,28 +334,28 @@ forkBlockProduction maxBlockSizeOverride IS{..} BlockProduction{..} =
             trace $ TraceCouldNotForge currentSlot err
             return Nothing
 
-      -- Get a snapshot of the mempool that is consistent with the ledger
-      --
-      -- NOTE: It is possible that due to adoption of new blocks the /current/
-      -- ledger will have changed. This doesn't matter: we will produce a block
-      -- that fits onto the ledger we got above; if the ledger in the meantime
-      -- changes, the block we produce here may or may not be adopted, but it
-      -- won't be invalid.
-      mempoolSnapshot <- atomically $ getSnapshotFor
-                                        mempool
-                                        (TxsForBlockInSlot currentSlot)
-                                        (ledgerState extLedger)
-
-      let blockEncOverhead = nodeBlockEncodingOverhead ledger
-          maxBlockBodySize = case maxBlockSizeOverride of
-            NoOverride            -> nodeMaxBlockSize ledger - blockEncOverhead
-            MaxBlockSize mbs      -> mbs - blockEncOverhead
-            MaxBlockBodySize mbbs -> mbbs
-          txs = map fst (snapshotTxsForSize mempoolSnapshot maxBlockBodySize)
-
       case mIsLeader of
         Nothing    -> return ()
         Just proof -> do
+          -- Get a snapshot of the mempool that is consistent with the ledger
+          --
+          -- NOTE: It is possible that due to adoption of new blocks the
+          -- /current/ ledger will have changed. This doesn't matter: we will
+          -- produce a block that fits onto the ledger we got above; if the
+          -- ledger in the meantime changes, the block we produce here may or
+          -- may not be adopted, but it won't be invalid.
+          mempoolSnapshot <- atomically $ getSnapshotFor
+                                            mempool
+                                            (TxsForBlockInSlot currentSlot)
+                                            (ledgerState extLedger)
+
+          let blockEncOverhead = nodeBlockEncodingOverhead ledger
+              maxBlockBodySize = case maxBlockSizeOverride of
+                NoOverride            -> nodeMaxBlockSize ledger - blockEncOverhead
+                MaxBlockSize mbs      -> mbs - blockEncOverhead
+                MaxBlockBodySize mbbs -> mbbs
+              txs = map fst (snapshotTxsForSize mempoolSnapshot maxBlockBodySize)
+
           newBlock <- atomically $ do
             (prevPoint, prevNo) <- prevPointAndBlockNo currentSlot <$>
                                      ChainDB.getCurrentChain chainDB
