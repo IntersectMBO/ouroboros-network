@@ -304,9 +304,6 @@ data LeaderResult blk =
     -- | We were the leader and we produced a block
   | ProducedBlock blk
 
-    -- | We should have produced a block, but couldn't
-  | FailedToProduce AnachronyFailure
-
 forkBlockProduction
     :: forall m peer blk.
        (IOLike m, RunNode blk)
@@ -322,6 +319,27 @@ forkBlockProduction maxBlockSizeOverride IS{..} BlockProduction{..} =
 
       -- Get current ledger
       extLedger <- atomically $ ChainDB.getCurrentLedger chainDB
+      let ledger = ledgerState extLedger
+
+      -- Check if we are the leader
+      mIsLeader <-
+        case anachronisticProtocolLedgerView cfg ledger (At currentSlot) of
+          Right ledgerView ->
+            atomically $ runProtocol varDRG $
+              checkIsLeader
+                cfg
+                currentSlot
+                ledgerView
+                (ouroborosChainState extLedger)
+          Left err -> do
+            -- There are so many empty slots between the tip of our chain and
+            -- the current slot that we cannot even get an accurate ledger view
+            -- anymore. This is indicative of a serious problem: we are not
+            -- receiving blocks. It is /possible/ it's just due to our network
+            -- connectivity, and we might still get these blocks at some point;
+            -- but we certainly can't produce a block of our own.
+            trace $ TraceCouldNotForge currentSlot err
+            return Nothing
 
       -- Get a snapshot of the mempool that is consistent with the ledger
       --
@@ -335,53 +353,33 @@ forkBlockProduction maxBlockSizeOverride IS{..} BlockProduction{..} =
                                         (TxsForBlockInSlot currentSlot)
                                         (ledgerState extLedger)
 
-      let ledger           = ledgerState extLedger
-          blockEncOverhead = nodeBlockEncodingOverhead ledger
+      let blockEncOverhead = nodeBlockEncodingOverhead ledger
           maxBlockBodySize = case maxBlockSizeOverride of
             NoOverride            -> nodeMaxBlockSize ledger - blockEncOverhead
             MaxBlockSize mbs      -> mbs - blockEncOverhead
             MaxBlockBodySize mbbs -> mbbs
           txs = map fst (snapshotTxsForSize mempoolSnapshot maxBlockBodySize)
 
-      leaderResult <- atomically $ do
-        case anachronisticProtocolLedgerView cfg ledger (At currentSlot) of
-          Right ledgerView -> do
-            mIsLeader <- runProtocol varDRG $
-                            checkIsLeader
-                              cfg
-                              currentSlot
-                              ledgerView
-                              (ouroborosChainState extLedger)
-
-            case mIsLeader of
-              Nothing    -> return NotLeader
-              Just proof -> do
-                (prevPoint, prevNo) <- prevPointAndBlockNo currentSlot <$>
-                                         ChainDB.getCurrentChain chainDB
-                newBlock            <- runProtocol varDRG $
-                                         produceBlock
-                                           proof
-                                           extLedger
-                                           currentSlot
-                                           prevPoint
-                                           prevNo
-                                           txs
-                return $ ProducedBlock newBlock
-
-          Left err ->
-            -- There are so many empty slots between the tip of our chain and
-            -- the current slot that we cannot even get an accurate ledger view
-            -- anymore. This is indicative of a serious problem: we are not
-            -- receiving blocks. It is /possible/ it's just due to our network
-            -- connectivity, and we might still get these blocks at some point;
-            -- but we certainly can't produce a block of our own.
-            return $ FailedToProduce err
+      leaderResult <-
+         case mIsLeader of
+           Nothing    -> return NotLeader
+           Just proof -> do
+             newBlock <- atomically $ do
+               (prevPoint, prevNo) <- prevPointAndBlockNo currentSlot <$>
+                                        ChainDB.getCurrentChain chainDB
+               runProtocol varDRG $
+                 produceBlock
+                   proof
+                   extLedger
+                   currentSlot
+                   prevPoint
+                   prevNo
+                   txs
+             return $ ProducedBlock newBlock
 
       case leaderResult of
         NotLeader ->
           return ()
-        FailedToProduce err ->
-          trace $ TraceCouldNotForge currentSlot err
         ProducedBlock newBlock -> do
           trace $ TraceForgeEvent currentSlot newBlock
           -- Adding a block is synchronous
