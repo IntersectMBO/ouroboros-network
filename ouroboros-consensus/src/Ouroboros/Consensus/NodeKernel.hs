@@ -300,6 +300,7 @@ initBlockFetchConsensusInterface cfg chainDB getCandidates blockFetchSize
                            -> Ordering
     compareCandidateChains = compareAnchoredCandidates cfg
 
+
 forkBlockProduction
     :: forall m peer blk.
        (IOLike m, RunNode blk)
