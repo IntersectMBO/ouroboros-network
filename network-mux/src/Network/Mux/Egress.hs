@@ -128,19 +128,20 @@ processSingleWanton :: MonadSTM m
                     -> StrictTVar m Int
                     -> m ()
 processSingleWanton pmss mpi md wanton cnt = do
-    maxSDU <- sduSize $ bearer pmss
     blob <- atomically $ do
       -- extract next SDU
-      d <- takeTMVar (want wanton)
-      let (frag, rest) = BL.splitAt (fromIntegral maxSDU) d
+      d <- readTVar (want wanton)
+      let (frag, rest) = BL.splitAt (fromIntegral $ sduSize $ bearer pmss) d
       -- if more to process then enqueue remaining work
-      unless (BL.null rest) $
-        -- Note that to preserve bytestream ordering withing a given
-        -- miniprotocol the takeTMVar and putTMVar operations
-        -- must be inside the same STM transaction.
-        do putTMVar (want wanton) rest
-           writeTBQueue (tsrQueue pmss) (TLSRDemand mpi md wanton)
-           modifyTVar cnt (+ 1)
+      if BL.null rest
+        then writeTVar (want wanton) BL.empty
+        else do
+          -- Note that to preserve bytestream ordering withing a given
+          -- miniprotocol the readTVar and writeTVar operations
+          -- must be inside the same STM transaction.
+          writeTVar (want wanton) rest
+          writeTBQueue (tsrQueue pmss) (TLSRDemand mpi md wanton)
+          modifyTVar cnt (+ 1)
       -- return data to send
       pure frag
     let sdu = MuxSDU (RemoteClockModel 0) mpi md (fromIntegral $ BL.length blob) blob

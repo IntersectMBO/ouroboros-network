@@ -186,7 +186,7 @@ data TranslocationServiceRequest ptcl m
 -- | A Wanton represent the concrete data to be translocated, note that the
 --  TMVar becoming empty indicates -- that the last fragment of the data has
 --  been enqueued on the -- underlying bearer.
-newtype Wanton m = Wanton { want :: StrictTMVar m BL.ByteString }
+newtype Wanton m = Wanton { want :: StrictTVar m BL.ByteString }
 
 -- | Each peer's multiplexer has some state that provides both
 -- de-multiplexing details (for despatch of incoming mesages to mini
@@ -228,7 +228,7 @@ data MuxBearer ptcl m = MuxBearer {
     -- | Read a MuxSDU
     , read    :: m (MuxSDU ptcl, Time)
     -- | Return a suitable MuxSDU payload size.
-    , sduSize :: m Word16
+    , sduSize :: Word16
     , state   :: StrictTVar m MuxBearerState
     }
 
@@ -367,11 +367,12 @@ instance Show ptcl => Show (MuxTrace ptcl) where
          d sp so dqs dqvm dqvs estR sdud
     show (MuxTraceRecvStart len) = printf "Bearer Receive Start: length %d" len
     show (MuxTraceRecvEnd blob) = printf "Bearer Receive End: length %d" (BL.length blob)
-    show (MuxTraceSendStart sdu) = printf "Bearer Send Start: ts: 0x%08x %s %s length %d"
+    show (MuxTraceSendStart sdu) = printf "Bearer Send Start: ts: 0x%08x %s %s length %d chunks %d"
         (unRemoteClockModel $ msTimestamp sdu)
         (show $ msId sdu)
         (show $ msMode sdu)
         (BL.length $ msBlob sdu)
+        (length $ BL.toChunks $ msBlob sdu)
     show MuxTraceSendEnd = printf "Bearer Send End"
     show (MuxTraceStateChange old new) = printf "State Change: %s -> %s" (show old) (show new)
     show (MuxTraceCleanExit mp) = printf "Miniprotocol %s triggered clean exit" mp
