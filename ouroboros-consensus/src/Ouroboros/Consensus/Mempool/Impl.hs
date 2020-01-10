@@ -83,7 +83,7 @@ mkMempool :: (IOLike m, ApplyTx blk)
 mkMempool env = Mempool
     { addTxs         = implAddTxs         env []
     , removeTxs      = implRemoveTxs      env
-    , withSyncState  = implWithSyncState  env
+    , syncWithLedger = implSyncWithLedger env
     , getSnapshot    = implGetSnapshot    env
     , getSnapshotFor = implGetSnapshotFor env
     , zeroIdx        = zeroTicketNo
@@ -166,8 +166,7 @@ forkSyncStateOnTipPointChange registry menv =
     void $ onEachChange registry id Nothing getCurrentTip action
   where
     action :: Point blk -> m ()
-    action _tipPoint = implWithSyncState menv TxsForUnknownBlock $ \_txs ->
-                         return ()
+    action _tipPoint = void $ implSyncWithLedger menv
 
     -- Using the tip ('Point') allows for quicker equality checks
     getCurrentTip :: STM m (Point blk)
@@ -407,6 +406,10 @@ implRemoveTxs mpEnv@MempoolEnv{mpEnvTracer, mpEnvStateVar} txIds = do
         TraceMempoolManuallyRemovedTxs txIds removed mempoolSize
   where
     toRemove = Set.fromList txIds
+
+implSyncWithLedger :: (IOLike m, ApplyTx blk)
+                   => MempoolEnv m blk -> m (MempoolSnapshot blk TicketNo)
+implSyncWithLedger menv = implWithSyncState menv TxsForUnknownBlock return
 
 implWithSyncState
   :: (IOLike m, ApplyTx blk)

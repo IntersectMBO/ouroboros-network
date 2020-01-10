@@ -10,6 +10,7 @@ module Test.Consensus.Mempool (tests) where
 
 import           Control.Exception (assert)
 import           Control.Monad (foldM, forM, forM_, unless, void)
+import           Control.Monad.Class.MonadTime (Time (..))
 import           Control.Monad.Except (Except, runExcept)
 import           Control.Monad.State (State, evalState, get, modify)
 import           Data.List (find, foldl', isSuffixOf, nub, sort)
@@ -272,7 +273,7 @@ prop_Mempool_Capacity mcts = withTestMempool mctsTestSetup $
     updateLedger env testMempool txs = do
       let TestMempool{ mempool, addTxsToLedger } = testMempool
           MempoolCapTestEnv{ mctEnvRemovedTxs }  = env
-          Mempool{ getSnapshot, withSyncState }  = mempool
+          Mempool{ getSnapshot, syncWithLedger } = mempool
 
       envRemoved <- atomically (readTVar mctEnvRemovedTxs)
       assert (envRemoved <= length txs) $
@@ -291,7 +292,7 @@ prop_Mempool_Capacity mcts = withTestMempool mctsTestSetup $
           -- Sync the mempool with the ledger.
           -- Now all of the transactions in the mempool should have been
           -- removed.
-          withSyncState TxsForUnknownBlock (const (return ()))
+          void $ syncWithLedger
 
           -- Indicate that we've removed the transactions from the mempool.
           atomically $ do
@@ -366,7 +367,7 @@ prop_Mempool_TraceRemovedTxs :: TestSetup -> Property
 prop_Mempool_TraceRemovedTxs setup =
     withTestMempool setup $ \testMempool -> do
       let TestMempool { mempool, getTraceEvents, addTxsToLedger } = testMempool
-          Mempool { getSnapshot, withSyncState } = mempool
+          Mempool { getSnapshot, syncWithLedger } = mempool
       MempoolSnapshot { snapshotTxs } <- atomically getSnapshot
       -- We add all the transactions in the mempool to the ledger.
       let txsInMempool = map fst snapshotTxs
@@ -374,7 +375,7 @@ prop_Mempool_TraceRemovedTxs setup =
 
       -- Sync the mempool with the ledger. Now all of the transactions in the
       -- mempool should have been removed.
-      withSyncState TxsForUnknownBlock (const (return ()))
+      void $ syncWithLedger
 
       evs  <- getTraceEvents
       -- Also check that 'addTxsToLedger' never resulted in an error.
@@ -1092,7 +1093,7 @@ executeAction testMempool action = case action of
     RemoveTx tx -> do
       void $ atomically $ addTxsToLedger [tx]
       -- Synchronise the Mempool with the updated chain
-      withSyncState TxsForUnknownBlock $ \_snapshot -> return ()
+      void $ syncWithLedger
       expectTraceEvent $ \case
         TraceMempoolRemoveTxs [TestGenTx tx'] _
           | tx == tx'
@@ -1105,7 +1106,7 @@ executeAction testMempool action = case action of
       , getTraceEvents
       , addTxsToLedger
       } = testMempool
-    Mempool { addTxs, withSyncState } = mempool
+    Mempool { addTxs, syncWithLedger } = mempool
 
     expectTraceEvent :: (TraceEventMempool TestBlock -> Property) -> m Property
     expectTraceEvent checker = do
@@ -1118,12 +1119,12 @@ executeAction testMempool action = case action of
 
 currentTicketAssignment :: IOLike m
                         => Mempool m TestBlock TicketNo -> m TicketAssignment
-currentTicketAssignment Mempool { withSyncState } =
-    withSyncState TxsForUnknownBlock $ \MempoolSnapshot { snapshotTxs } ->
-      return $ Map.fromList
-        [ (ticketNo, testTxId (unTestGenTx tx))
-        | (tx, ticketNo) <- snapshotTxs
-        ]
+currentTicketAssignment Mempool { syncWithLedger } = do
+    MempoolSnapshot { snapshotTxs } <- syncWithLedger
+    return $ Map.fromList
+      [ (ticketNo, testTxId (unTestGenTx tx))
+      | (tx, ticketNo) <- snapshotTxs
+      ]
 
 instance Arbitrary Actions where
   arbitrary = sized $ \n -> do
