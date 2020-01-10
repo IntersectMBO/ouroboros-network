@@ -218,7 +218,17 @@ data Mempool m blk idx = Mempool {
 
       -- | Get a snapshot of the current mempool state. This allows for
       -- further pure queries on the snapshot.
+      --
+      -- This doesn't look at the ledger state at all.
     , getSnapshot   :: STM m (MempoolSnapshot blk idx)
+
+      -- | Get a snapshot of the mempool state that is valid with respect to
+      -- the given ledger state
+      --
+      -- This does not update the state of the mempool.
+    , getSnapshotFor :: BlockSlot
+                     -> LedgerState blk
+                     -> STM m (MempoolSnapshot blk idx)
 
       -- | Represents the initial value at which the transaction ticket number
       -- counter will start (i.e. the zeroth ticket number).
