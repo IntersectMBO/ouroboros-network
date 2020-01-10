@@ -9,7 +9,23 @@
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
-module Ouroboros.Network.PeerSelection.Test (tests) where
+module Ouroboros.Network.PeerSelection.Test
+  ( DebugPeerSelection (..)
+  , PeerAddr (..)
+  , PeerConn (..)
+  , PeerGraph (..)
+  , PeerInfo
+  , GossipScript
+  , GossipTime (..)
+  , GovernorMockEnvironment (..)
+  , PickScript
+  , Script (..)
+  , TestTraceEvent (..)
+  , dynamicTracer
+  , selectPeerSelectionTraceEvents
+  , takeFirstNHours
+  , tests
+  ) where
 
 import           Data.Void (Void)
 import           Data.Function (on)
