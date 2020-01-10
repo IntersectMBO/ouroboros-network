@@ -10,7 +10,6 @@ module Test.Consensus.Mempool (tests) where
 
 import           Control.Exception (assert)
 import           Control.Monad (foldM, forM, forM_, unless, void)
-import           Control.Monad.Class.MonadTime (Time (..))
 import           Control.Monad.Except (Except, runExcept)
 import           Control.Monad.State (State, evalState, get, modify)
 import           Data.List (find, foldl', isSuffixOf, nub, sort)
