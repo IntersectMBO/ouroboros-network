@@ -191,19 +191,6 @@ data Mempool m blk idx = Mempool {
       -- invalid with respect to the current ledger state, will be dropped
       -- from the mempool, whereas valid transactions will remain.
       --
-      -- The given function will be applied to a snapshot of the mempool that
-      -- is in sync with the current ledger state. This function will be
-      -- executed in the same 'STM' transaction that performs the
-      -- synchronisation. The main use case for this is a function that
-      -- produces a block containing the valid transactions in the mempool
-      -- snapshot.
-      --
-      -- Using this approach, we avoid the following race condition: the
-      -- current ledger state changes while we're producing a block, which
-      -- means that some of the transactions in the new block might no longer
-      -- be valid with respect to the current ledger state. Consequently, we
-      -- produce an invalid block, wasting our leadership slot.
-      --
       -- We keep this in @m@ instead of @STM m@ to leave open the possibility
       -- of persistence. Additionally, this makes it possible to trace the
       -- removal of invalid transactions.
@@ -211,14 +198,21 @@ data Mempool m blk idx = Mempool {
       -- n.b. in our current implementation, when one opens a mempool, we
       -- spawn a thread which performs this action whenever the 'ChainDB' tip
       -- point changes.
-    , withSyncState :: forall a.
-                       BlockSlot
-                    -> (MempoolSnapshot blk idx -> STM m a)
-                    -> m a
+    , syncWithLedger :: m (MempoolSnapshot blk idx)
 
       -- | Get a snapshot of the current mempool state. This allows for
       -- further pure queries on the snapshot.
+      --
+      -- This doesn't look at the ledger state at all.
     , getSnapshot   :: STM m (MempoolSnapshot blk idx)
+
+      -- | Get a snapshot of the mempool state that is valid with respect to
+      -- the given ledger state
+      --
+      -- This does not update the state of the mempool.
+    , getSnapshotFor :: BlockSlot
+                     -> LedgerState blk
+                     -> STM m (MempoolSnapshot blk idx)
 
       -- | Represents the initial value at which the transaction ticket number
       -- counter will start (i.e. the zeroth ticket number).

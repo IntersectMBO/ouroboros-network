@@ -317,15 +317,15 @@ forkBlockProduction
 forkBlockProduction maxBlockSizeOverride IS{..} BlockProduction{..} =
     void $ onSlotChange btime $ \currentSlot -> do
       varDRG <- newTVarM =<< (PRNG <$> produceDRG)
-      -- See the docstring of 'withSyncState' for why we're using it instead
-      -- of 'atomically'.
-
-      let withTxs :: (MempoolSnapshot blk TicketNo -> STM m a) -> m a
-          withTxs = withSyncState mempool (TxsForBlockInSlot currentSlot)
 
       trace $ TraceForgeAboutToLead currentSlot
-      leaderResult <- withTxs $ \MempoolSnapshot{snapshotTxsForSize} -> do
+      leaderResult <- atomically $ do
         l@ExtLedgerState{..} <- ChainDB.getCurrentLedger chainDB
+        MempoolSnapshot{snapshotTxsForSize} <-
+          getSnapshotFor
+             mempool
+             (TxsForBlockInSlot currentSlot)
+             ledgerState
         let blockEncOverhead = nodeBlockEncodingOverhead ledgerState
             maxBlockBodySize = case maxBlockSizeOverride of
               NoOverride            -> nodeMaxBlockSize ledgerState - blockEncOverhead

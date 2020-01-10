@@ -81,11 +81,12 @@ openMempoolWithoutSyncThread ledger cfg capacity tracer =
 mkMempool :: (IOLike m, ApplyTx blk)
           => MempoolEnv m blk -> Mempool m blk TicketNo
 mkMempool env = Mempool
-    { addTxs        = implAddTxs env []
-    , removeTxs     = implRemoveTxs env
-    , withSyncState = implWithSyncState env
-    , getSnapshot   = implGetSnapshot env
-    , zeroIdx       = zeroTicketNo
+    { addTxs         = implAddTxs         env []
+    , removeTxs      = implRemoveTxs      env
+    , syncWithLedger = implSyncWithLedger env
+    , getSnapshot    = implGetSnapshot    env
+    , getSnapshotFor = implGetSnapshotFor env
+    , zeroIdx        = zeroTicketNo
     }
 
 -- | Abstract interface needed to run a Mempool.
@@ -165,8 +166,7 @@ forkSyncStateOnTipPointChange registry menv =
     void $ onEachChange registry id Nothing getCurrentTip action
   where
     action :: Point blk -> m ()
-    action _tipPoint = implWithSyncState menv TxsForUnknownBlock $ \_txs ->
-                         return ()
+    action _tipPoint = void $ implSyncWithLedger menv
 
     -- Using the tip ('Point') allows for quicker equality checks
     getCurrentTip :: STM m (Point blk)
@@ -244,12 +244,8 @@ implAddTxs mpEnv accum txs = assert (all txInvariant txs) $ do
       IS{isTip = initialISTip} <- readTVar mpEnvStateVar
 
       -- First sync the state, which might remove some transactions
-      syncRes@ValidationResult
-        { vrBefore
-        , vrValid
-        , vrInvalid = removed
-        , vrLastTicketNo
-        } <- validateIS mpEnv TxsForUnknownBlock
+      syncRes <- validateIS mpEnv TxsForUnknownBlock
+      let removed = vrInvalid syncRes
 
       -- Determine whether the tip was updated after a call to 'validateIS'
       --
@@ -262,16 +258,13 @@ implAddTxs mpEnv accum txs = assert (all txInvariant txs) $ do
       -- about losing any changes in the event that we have to 'retry' this
       -- STM transaction. So we should continue by validating the provided new
       -- transactions.
-      if initialISTip /= vrBefore
+      if initialISTip /= vrBefore syncRes
         then do
           -- The tip changed.
           -- Because 'validateNew' can 'retry', we'll commit this STM
           -- transaction here to ensure that we don't lose any of the changes
           -- brought about by 'validateIS' thus far.
-          writeTVar mpEnvStateVar IS { isTxs          = vrValid
-                                     , isTip          = vrBefore
-                                     , isLastTicketNo = vrLastTicketNo
-                                     }
+          writeTVar mpEnvStateVar $ internalStateFromVR syncRes
           mempoolSize <- getMempoolSize mpEnv
           pure (syncRes, removed, [], txs, mempoolSize)
         else do
@@ -283,7 +276,7 @@ implAddTxs mpEnv accum txs = assert (all txInvariant txs) $ do
           mempoolSize       <- getMempoolSize mpEnv
           pure (vr, removed, vrInvalid vr, unvalidated, mempoolSize)
 
-    let ValidationResult { vrNewValid = accepted } = vr
+    let accepted = vrNewValid vr
 
     traceBatch TraceMempoolRemoveTxs   mempoolSize (map fst removed)
     traceBatch TraceMempoolAddTxs      mempoolSize accepted
@@ -403,67 +396,51 @@ implRemoveTxs mpEnv@MempoolEnv{mpEnvTracer, mpEnvStateVar} txIds = do
             (\TxTicket { txTicketTx } -> txId txTicketTx `notElem` toRemove)
             isTxs
         }
-      -- TODO some duplication with 'implWithSyncState'
-      ValidationResult
-        { vrBefore
-        , vrValid
-        , vrInvalid
-        , vrLastTicketNo
-        } <- validateIS mpEnv TxsForUnknownBlock
-      writeTVar mpEnvStateVar IS
-        { isTxs          = vrValid
-        , isTip          = vrBefore
-        , isLastTicketNo = vrLastTicketNo
-        }
+      vr <- validateIS mpEnv TxsForUnknownBlock
+      writeTVar mpEnvStateVar $ internalStateFromVR vr
       -- The size of the mempool /after/ manually removing the transactions.
       mempoolSize <- getMempoolSize mpEnv
-      return (map fst vrInvalid, mempoolSize)
+      return (map fst (vrInvalid vr), mempoolSize)
     unless (null txIds) $
       traceWith mpEnvTracer $
         TraceMempoolManuallyRemovedTxs txIds removed mempoolSize
   where
     toRemove = Set.fromList txIds
 
-implWithSyncState
-  :: (IOLike m, ApplyTx blk)
-  => MempoolEnv m blk
-  -> BlockSlot
-  -> (MempoolSnapshot blk TicketNo -> STM m a)
-  -> m a
-implWithSyncState mpEnv@MempoolEnv{mpEnvTracer, mpEnvStateVar} blockSlot f = do
-    (removed, mempoolSize, res) <- atomically $ do
-      ValidationResult
-        { vrBefore
-        , vrValid
-        , vrInvalid
-        , vrLastTicketNo
-        } <- validateIS mpEnv blockSlot
-      writeTVar mpEnvStateVar IS
-        { isTxs          = vrValid
-        , isTip          = vrBefore
-        , isLastTicketNo = vrLastTicketNo
-        }
+implSyncWithLedger :: (IOLike m, ApplyTx blk)
+                   => MempoolEnv m blk -> m (MempoolSnapshot blk TicketNo)
+implSyncWithLedger mpEnv@MempoolEnv{mpEnvTracer, mpEnvStateVar} = do
+    (removed, mempoolSize, snapshot) <- atomically $ do
+      vr <- validateIS mpEnv TxsForUnknownBlock
+      writeTVar mpEnvStateVar (internalStateFromVR vr)
       -- The size of the mempool /after/ removing invalid transactions.
       mempoolSize <- getMempoolSize mpEnv
       snapshot    <- implGetSnapshot mpEnv
-      res         <- f snapshot
-      return (map fst vrInvalid, mempoolSize, res)
+      return (map fst (vrInvalid vr), mempoolSize, snapshot)
     unless (null removed) $ do
       traceWith mpEnvTracer $ TraceMempoolRemoveTxs removed mempoolSize
-    return res
+    return snapshot
 
 implGetSnapshot :: (IOLike m, ApplyTx blk)
                 => MempoolEnv m blk
                 -> STM m (MempoolSnapshot blk TicketNo)
-implGetSnapshot MempoolEnv{mpEnvStateVar} = do
-  is <- readTVar mpEnvStateVar
-  pure MempoolSnapshot
-    { snapshotTxs         = implSnapshotGetTxs         is
-    , snapshotTxsAfter    = implSnapshotGetTxsAfter    is
-    , snapshotTxsForSize  = implSnapshotGetTxsForSize  is
-    , snapshotLookupTx    = implSnapshotGetTx          is
-    , snapshotMempoolSize = implSnapshotGetMempoolSize is
-    }
+implGetSnapshot MempoolEnv{mpEnvStateVar} =
+    implSnapshotFromIS <$> readTVar mpEnvStateVar
+
+implGetSnapshotFor :: forall m blk. (IOLike m, ApplyTx blk)
+                   => MempoolEnv m blk
+                   -> BlockSlot
+                   -> LedgerState blk
+                   -> STM m (MempoolSnapshot blk TicketNo)
+implGetSnapshotFor MempoolEnv{mpEnvStateVar, mpEnvLedgerCfg}
+                   blockSlot ledger =
+    updatedSnapshot <$> readTVar mpEnvStateVar
+  where
+    updatedSnapshot :: InternalState blk -> MempoolSnapshot blk TicketNo
+    updatedSnapshot =
+          implSnapshotFromIS
+        . internalStateFromVR
+        . validateStateFor mpEnvLedgerCfg blockSlot ledger
 
 -- | Return the number of transactions in the Mempool paired with their total
 -- size in bytes.
@@ -484,6 +461,16 @@ txsToMempoolSize = foldMap toMempoolSize
 {-------------------------------------------------------------------------------
   MempoolSnapshot Implementation
 -------------------------------------------------------------------------------}
+
+implSnapshotFromIS :: ApplyTx blk
+                   => InternalState blk -> MempoolSnapshot blk TicketNo
+implSnapshotFromIS is = MempoolSnapshot {
+      snapshotTxs         = implSnapshotGetTxs         is
+    , snapshotTxsAfter    = implSnapshotGetTxsAfter    is
+    , snapshotTxsForSize  = implSnapshotGetTxsForSize  is
+    , snapshotLookupTx    = implSnapshotGetTx          is
+    , snapshotMempoolSize = implSnapshotGetMempoolSize is
+    }
 
 implSnapshotGetTxs :: InternalState blk
                    -> [(GenTx blk, TicketNo)]
@@ -549,6 +536,19 @@ data ValidationResult blk = ValidationResult {
     -- be affected.
   , vrLastTicketNo :: TicketNo
   }
+
+-- | Construct internal state from 'ValidationResult'
+--
+-- Discards information about invalid and newly valid transactions
+internalStateFromVR :: ValidationResult blk -> InternalState blk
+internalStateFromVR ValidationResult { vrBefore
+                                     , vrValid
+                                     , vrLastTicketNo
+                                     } = IS {
+      isTxs          = vrValid
+    , isTip          = vrBefore
+    , isLastTicketNo = vrLastTicketNo
+    }
 
 -- | Initialize 'ValidationResult' from a ledger state and a list of
 -- transactions /known/ to be valid in that ledger state
@@ -622,32 +622,39 @@ extendVRNew cfg tx
 
 -- | Validate internal state
 validateIS :: forall m blk. (IOLike m, ApplyTx blk)
-           => MempoolEnv m blk -> BlockSlot -> STM m (ValidationResult blk)
+           => MempoolEnv m blk
+           -> BlockSlot
+           -> STM m (ValidationResult blk)
 validateIS MempoolEnv{mpEnvLedger, mpEnvLedgerCfg, mpEnvStateVar} blockSlot =
-    go <$> getCurrentLedgerState mpEnvLedger
-       <*> readTVar mpEnvStateVar
-  where
-    go :: LedgerState      blk
-       -> InternalState    blk
-       -> ValidationResult blk
-    go st IS{isTxs, isTip, isLastTicketNo}
-        | ledgerTipHash (getTickedLedgerState st') == isTip
-        = initVR mpEnvLedgerCfg isTxs st' isLastTicketNo
-        | otherwise
-        = repeatedly (extendVRPrevApplied mpEnvLedgerCfg) (fromTxSeq isTxs)
-        $ initVR mpEnvLedgerCfg TxSeq.Empty st' isLastTicketNo
-      where
-        st' :: TickedLedgerState blk
-        st' = applyChainTick mpEnvLedgerCfg slot st
+    validateStateFor mpEnvLedgerCfg blockSlot
+      <$> getCurrentLedgerState mpEnvLedger
+      <*> readTVar mpEnvStateVar
 
-        -- If we don't yet know the slot number, optimistically assume that they
-        -- will be included in a block in the next available slot
-        slot :: SlotNo
-        slot = case blockSlot of
-                 TxsForBlockInSlot s -> s
-                 TxsForUnknownBlock  ->
-                   case ledgerTipSlot st of
-                     -- TODO: 'genesisSlotNo' is badly named. This is the slot
-                     -- number of the first real block.
-                     Origin -> Block.genesisSlotNo
-                     At s   -> succ s
+-- | Validate internal state given specific ledger
+validateStateFor :: forall blk. ApplyTx blk
+                 => LedgerConfig     blk
+                 -> BlockSlot
+                 -> LedgerState      blk
+                 -> InternalState    blk
+                 -> ValidationResult blk
+validateStateFor cfg blockSlot st IS{isTxs, isTip, isLastTicketNo}
+  | ledgerTipHash (getTickedLedgerState st') == isTip
+  = initVR cfg isTxs st' isLastTicketNo
+  | otherwise
+  = repeatedly (extendVRPrevApplied cfg) (fromTxSeq isTxs)
+  $ initVR cfg TxSeq.Empty st' isLastTicketNo
+  where
+    st' :: TickedLedgerState blk
+    st' = applyChainTick cfg slot st
+
+    -- If we don't yet know the slot number, optimistically assume that they
+    -- will be included in a block in the next available slot
+    slot :: SlotNo
+    slot = case blockSlot of
+             TxsForBlockInSlot s -> s
+             TxsForUnknownBlock  ->
+               case ledgerTipSlot st of
+                 -- TODO: 'genesisSlotNo' is badly named. This is the slot
+                 -- number of the first real block.
+                 Origin -> Block.genesisSlotNo
+                 At s   -> succ s
