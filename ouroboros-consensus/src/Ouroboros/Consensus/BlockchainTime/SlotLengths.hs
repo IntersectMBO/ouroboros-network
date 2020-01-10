@@ -386,7 +386,8 @@ slotFromDiffTime absTime = modifySnd go . refocusAtTime absTime
 --
 -- Slots are counted from the system start.
 newtype SystemStart = SystemStart { getSystemStart :: UTCTime }
-  deriving (Show)
+  deriving (Eq, Show)
+  deriving NoUnexpectedThunks via OnlyCheckIsWHNF "SystemStart" SystemStart
 
 -- | Wrapper around 'slotToDiffTime' that takes system start into account
 slotToUTCTime :: SystemStart
