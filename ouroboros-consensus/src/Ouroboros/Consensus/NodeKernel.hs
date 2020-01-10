@@ -311,7 +311,15 @@ forkBlockProduction maxBlockSizeOverride IS{..} BlockProduction{..} =
       trace $ TraceForgeAboutToLead currentSlot
 
       -- Get current ledger
-      extLedger <- atomically $ ChainDB.getCurrentLedger chainDB
+      --
+      -- NOTE: This is still wrong. If we detect in 'prevPointAndBlockNo'
+      -- that we should roll back one block, we should also use a different
+      -- ledger state.
+      -- <https://github.com/input-output-hk/ouroboros-network/issues/1437>
+      (extLedger, (prevPoint, prevNo)) <- atomically $ (,)
+        <$> ChainDB.getCurrentLedger chainDB
+        <*> (prevPointAndBlockNo currentSlot <$>
+               ChainDB.getCurrentChain chainDB)
       let ledger = ledgerState extLedger
 
       -- Check if we are the leader
@@ -356,17 +364,14 @@ forkBlockProduction maxBlockSizeOverride IS{..} BlockProduction{..} =
                 MaxBlockBodySize mbbs -> mbbs
               txs = map fst (snapshotTxsForSize mempoolSnapshot maxBlockBodySize)
 
-          newBlock <- atomically $ do
-            (prevPoint, prevNo) <- prevPointAndBlockNo currentSlot <$>
-                                     ChainDB.getCurrentChain chainDB
-            runProtocol varDRG $
-              produceBlock
-                proof
-                extLedger
-                currentSlot
-                prevPoint
-                prevNo
-                txs
+          newBlock <- atomically $ runProtocol varDRG $
+            produceBlock
+              proof
+              extLedger
+              currentSlot
+              prevPoint
+              prevNo
+              txs
 
           trace $ TraceForgeEvent currentSlot newBlock
           -- Adding a block is synchronous
