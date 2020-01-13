@@ -656,7 +656,7 @@ streamAfter
   -> m (Iterator (HeaderHash blk) m (Deserialisable m blk b))
 streamAfter db registry blockOrHeader low =
     registeredStream db registry blockOrHeader low' Nothing >>= \case
-      Left  _   -> throwM $ ImmDbMissingBlockPoint low callStack
+      Left  err -> throwM $ ImmDbMissingBlockPoint low err callStack
       Right itr -> do
         case low of
           GenesisPoint           -> return ()
