@@ -678,12 +678,9 @@ modifyState VolatileDBEnv{_dbHasFS = hasFS :: HasFS m h, ..} action = do
       -> ExitCase (Either VolatileDBError (InternalState blockId h, r))
       -> m ()
     close mst ec = case ec of
-      -- Restore the original state in case of an abort.
+      -- If we were interrupted, restore the original state.
       ExitCaseAbort         -> putMVar _dbInternalState mst
-      -- In case of an exception, close the DB for safety.
-      ExitCaseException _ex -> do
-        putMVar _dbInternalState VolatileDbClosed
-        closeOpenHandle mst
+      ExitCaseException _ex -> putMVar _dbInternalState mst
       -- In case of success, update to the newest state.
       ExitCaseSuccess (Right (newState, _)) ->
         putMVar _dbInternalState (VolatileDbOpen newState)
