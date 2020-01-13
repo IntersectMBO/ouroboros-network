@@ -677,20 +677,21 @@ modifyState VolatileDBEnv{_dbHasFS = hasFS :: HasFS m h, ..} action = do
       :: OpenOrClosed blockId h
       -> ExitCase (Either VolatileDBError (InternalState blockId h, r))
       -> m ()
-    close mst ec = case ec of
-      -- Restore the original state in case of an abort.
-      ExitCaseAbort         -> putMVar _dbInternalState mst
-      -- In case of an exception, close the DB for safety.
-      ExitCaseException _ex -> do
-        putMVar _dbInternalState VolatileDbClosed
-        closeOpenHandle mst
-      -- In case of success, update to the newest state.
-      ExitCaseSuccess (Right (newState, _)) ->
-        putMVar _dbInternalState (VolatileDbOpen newState)
-      -- In case of an error (not an exception), close the DB for safety.
-      ExitCaseSuccess (Left _) -> do
-        putMVar _dbInternalState VolatileDbClosed
-        closeOpenHandle mst
+    close mst ec = do
+        -- It is crucial to replace the TMVar.
+        putMVar _dbInternalState mst'
+        followUp
+      where
+        (mst', followUp) = case ec of
+          -- If we were interrupted, restore the original state.
+          ExitCaseAbort                         -> (mst, return ())
+          ExitCaseException _ex                 -> (mst, return ())
+          -- In case of success, update to the newest state.
+          ExitCaseSuccess (Right (newState, _)) ->
+            (VolatileDbOpen newState, return ())
+          -- In case of an error (not an exception), close the DB for safety.
+          ExitCaseSuccess (Left _)              ->
+            (VolatileDbClosed, closeOpenHandle mst)
 
     mutation :: OpenOrClosed blockId h
              -> m (InternalState blockId h, r)

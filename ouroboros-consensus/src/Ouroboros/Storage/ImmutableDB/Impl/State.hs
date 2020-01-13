@@ -205,26 +205,29 @@ modifyOpenState ImmutableDBEnv { _dbHasFS = hasFS :: HasFS m h, .. } action = do
     close :: InternalState m hash h
           -> ExitCase (Either ImmutableDBError (r, OpenState m hash h))
           -> m ()
-    close !st ec = case ec of
-      -- Restore the original state in case of an abort
-      ExitCaseAbort                               -> putMVar _dbInternalState st
-      -- In case of an exception, close the DB for safety.
-      ExitCaseException _ex                       -> shutDown st
-      -- In case of success, update to the newest state
-      ExitCaseSuccess (Right (_, ost))            -> putMVar _dbInternalState (DbOpen ost)
-      -- In case of an unexpected error (not an exception), close the DB for safety
-      ExitCaseSuccess (Left (UnexpectedError {})) -> shutDown st
-      -- In case a user error, just restore the previous state
-      ExitCaseSuccess (Left (UserError {}))       -> putMVar _dbInternalState st
-
-    shutDown :: InternalState m hash h -> m ()
-    shutDown st = do
-      let cst = closedStateFromInternalState st
-      putMVar _dbInternalState (DbClosed cst)
-      -- This function ('modifyOpenState') can be called from all threads, not
-      -- necessarily the one that opened the ImmutableDB and the registry, so
-      -- we must use 'unsafeReleaseAll' instead of 'releaseAll'.
-      unsafeReleaseAll _dbRegistry
+    close !st ec = do
+        -- It is crucial to replace the TMVar.
+        putMVar _dbInternalState st'
+        followUp
+      where
+        (st', followUp) = case ec of
+          -- If we were interrupted, restore the original state.
+          ExitCaseAbort                               -> (st, return ())
+          ExitCaseException _ex                       -> (st, return ())
+          -- In case of success, update to the newest state
+          ExitCaseSuccess (Right (_, ost))            ->
+              (DbOpen ost, return ())
+          -- In case of an unexpected error (not an exception), close the DB
+          -- for safety
+          ExitCaseSuccess (Left (UnexpectedError {})) ->
+              -- This function ('modifyOpenState') can be called from all
+              -- threads, not necessarily the one that opened the ImmutableDB
+              -- and the registry, so we must use 'unsafeReleaseAll' instead of
+              -- 'releaseAll'.
+              ( DbClosed (closedStateFromInternalState st)
+              , unsafeReleaseAll _dbRegistry )
+          -- In case a user error, just restore the previous state
+          ExitCaseSuccess (Left (UserError {}))       -> (st, return ())
 
     mutation :: HasCallStack
              => InternalState m hash h
@@ -263,8 +266,7 @@ withOpenState ImmutableDBEnv { _dbHasFS = hasFS :: HasFS m h, .. } action = do
           -> m ()
     close ec = case ec of
       ExitCaseAbort                               -> return ()
-      -- In case of an exception, close the DB for safety.
-      ExitCaseException _ex                       -> shutDown
+      ExitCaseException _ex                       -> return ()
       ExitCaseSuccess (Right _)                   -> return ()
       -- In case of an ImmutableDBError, close when unexpected
       ExitCaseSuccess (Left (UnexpectedError {})) -> shutDown
