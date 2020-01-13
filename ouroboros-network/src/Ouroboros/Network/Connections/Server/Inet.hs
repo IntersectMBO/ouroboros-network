@@ -1,13 +1,4 @@
-{-# LANGUAGE GADTs #-}
-{-# LANGUAGE DeriveAnyClass #-}
-{-# LANGUAGE RecursiveDo #-}
-{-# LANGUAGE NamedFieldPuns #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE StandaloneDeriving #-}
-{-# LANGUAGE BangPatterns #-}
-
--- `accept` is shadowed, but so what?
-{-# OPTIONS_GHC "-fno-warn-name-shadowing" #-}
+{-# LANGUAGE DataKinds #-}
 
 module Ouroboros.Network.Connections.Server.Inet
   ( inetServer
@@ -15,6 +6,7 @@ module Ouroboros.Network.Connections.Server.Inet
 
 import Control.Exception (IOException, bracket, mask, try)
 import Control.Monad (forever)
+import Data.Void (Void)
 import Network.Socket (Family, Socket, SockAddr)
 import qualified Network.Socket as Socket
 
@@ -28,48 +20,50 @@ import Ouroboros.Network.Connections.Types
 --
 -- TODO add a tracer parameter.
 inetServer
-  :: Connections (Socket, SockAddr) reject conn IO
-  -> (IOException -> IO ()) -- What to do in case of exception on accept.
+  :: (IOException -> IO ()) -- What to do in case of exception on accept.
                             -- Re-throwing will kill the server.
   -> Family -- INET or INET6. You can run inetServer concurrently, once for each
             -- family.
   -> SockAddr -- Bind address
-  -> Server IO
-inetServer connections acceptException family bindaddr = bracket
+  -> Server SockAddr Socket reject accept IO Void
+inetServer acceptException family bindaddr k = bracket
     openSocket
     closeSocket
-    (acceptLoop connections acceptException)
+    (acceptLoop acceptException k)
   where
-  openSocket = do
-    sock <- Socket.socket family Socket.Stream Socket.defaultProtocol
+  openSocket = bracket createSocket closeSocket $ \sock -> do
     Socket.bind sock bindaddr
     Socket.listen sock 1
     return sock
+    
+  createSocket = Socket.socket family Socket.Stream Socket.defaultProtocol
+
   closeSocket = Socket.close
 
 acceptLoop
-  :: Connections (Socket, SockAddr) reject conn IO
-  -> (IOException -> IO ()) -- ^ Exception on `Socket.accept`.
+  :: (IOException -> IO ()) -- ^ Exception on `Socket.accept`.
+  -> (SockAddr -> Socket -> IO () -> IO (Decision Incoming reject acceptn))
   -> Socket
   -> IO x
-acceptLoop connections acceptException socket =
-  forever (acceptOne connections acceptException socket)
+acceptLoop acceptException k socket =
+  forever (acceptOne acceptException k socket)
 
 -- | Accepts one connection and includes it in the `Connections` term.
 acceptOne
-  :: Connections (Socket, SockAddr) reject conn IO
-  -> (IOException -> IO ()) -- ^ Exception on `Socket.accept`.
+  :: (IOException -> IO ()) -- ^ Exception on `Socket.accept`.
+  -> (SockAddr -> Socket -> IO () -> IO (Decision Incoming reject accept))
   -> Socket
   -> IO ()
-acceptOne connections acceptException socket = mask $ \restore -> do
+acceptOne acceptException k socket = mask $ \restore -> do
   acceptResult <- try (restore (Socket.accept socket))
   case acceptResult :: Either IOException (Socket, SockAddr) of
     Left ex -> restore (acceptException ex)
     Right (sock, addr) -> do
       -- OK to run under mask.
-      includeResult <- include connections Incoming (sock, addr)
+      includeResult <- k addr sock (Socket.close sock)
       -- If it was rejected, we're responsible for closing. Otherwise, there's
-      -- nothing to do now; the `Connections` is responsible for that socket.
+      -- nothing to do now; the continuation `k` has taken responsibility for
+      -- that socket.
       case includeResult of
         Rejected _ -> restore (Socket.close sock)
         Accepted _ -> pure ()

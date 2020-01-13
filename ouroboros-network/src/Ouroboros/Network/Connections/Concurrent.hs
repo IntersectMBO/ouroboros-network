@@ -1,6 +1,9 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE RecursiveDo #-}
 {-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE KindSignatures #-}
+{-# LANGUAGE GADTs #-}
 
 module Ouroboros.Network.Connections.Concurrent
   ( concurrent
@@ -8,18 +11,17 @@ module Ouroboros.Network.Connections.Concurrent
 
 import Control.Concurrent.Async
 import Control.Concurrent.MVar
-import Control.Exception (assert, finally, mask_)
+import Control.Exception (assert, bracket, finally, mask_)
 import Control.Monad (forM_)
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import Network.Socket (Socket, SockAddr)
-import qualified Network.Socket as Socket
 
 import Ouroboros.Network.Connections.Types
 
-data Reject = Duplicate
+data Reject (p :: Provenance) = Duplicate
 
-data Accept = Accept
+data Accept (p :: Provenance) = Accept
 
 data Connection
   = Remote (Async ())
@@ -32,7 +34,7 @@ data Connection
 -- one incoming. Rejects new ones only if there's already one known to it.
 concurrent
   :: (Socket -> SockAddr -> IO ())
-  -> (Connections (Socket, SockAddr) Reject Accept IO -> IO t)
+  -> (Connections SockAddr Socket Reject Accept IO -> IO t)
   -> IO t
 concurrent withSocket k = do
   -- Cannot use an IORef for state because spawned threads will modify this
@@ -43,70 +45,94 @@ concurrent withSocket k = do
 
   where
 
-  spawnOne
+  spawnIncoming
     :: MVar (Map SockAddr Connection)
-    -> Provenance
-    -> Socket
     -> SockAddr
+    -> Socket
+    -> IO ()
     -> IO (Async ())
-  spawnOne state provenance sock addr = do
+  spawnIncoming state addr sock closeSock = do
     rec let cleanup = do
-              Socket.close sock
-              removeOne state provenance addr async
+              closeSock
+              removeIncoming state addr async
         async <- asyncWithUnmask $ \unmask ->
           unmask (withSocket sock addr) `finally` cleanup
     return async
 
   -- When a spawned thread finishes, it removes itself from the shared state.
   -- See `spawnOne` where this is used in a `finally` continuation.
-  removeOne
+  removeIncoming
     :: MVar (Map SockAddr Connection)
-    -> Provenance
     -> SockAddr
     -> Async ()
     -> IO ()
-  removeOne state provenance addr x = modifyMVar state $ \cmap -> do
-    let alteration mentry = case (provenance, mentry) of
+  removeIncoming state addr x = modifyMVar state $ \cmap -> do
+    let alteration mentry = case mentry of
           -- Error cases would all be bugs in this implementation.
-          (_, Nothing) -> error "entry vanished"
-          (Incoming, Just (Local _)) -> error "mismatched entry"
-          (Outgoing, Just (Remote _)) -> error "mismatched entry"
-          (Incoming, Just (Remote y)) -> assert (x == y) Nothing
-          (Outgoing, Just (Local y)) -> assert (x == y) Nothing
-          (Incoming, Just (Both y z)) -> assert (x == y) (Just (Local z))
-          (Outgoing, Just (Both y z)) -> assert (x == z) (Just (Remote y))
+          Nothing -> error "entry vanished"
+          Just (Local _) -> error "mismatched entry"
+          Just (Remote y) -> assert (x == y) Nothing
+          Just (Both y z) -> assert (x == y) (Just (Local z))
         !cmap' = Map.alter alteration addr cmap
     pure (cmap', ())
 
+  -- FIXME should open the socket in this thread and reject if it fails?
+  spawnOutgoing
+    :: MVar (Map SockAddr Connection)
+    -> SockAddr
+    -> IO Socket
+    -> (Socket -> IO ())
+    -> IO (Async ())
+  spawnOutgoing state addr openSock closeSock = do
+    rec let cleanup = \sock -> do
+              closeSock sock
+              removeOutgoing state addr async
+        async <- asyncWithUnmask $ \unmask ->
+          bracket openSock cleanup (\sock -> unmask (withSocket sock addr))
+    return async
+
+  removeOutgoing
+    :: MVar (Map SockAddr Connection)
+    -> SockAddr
+    -> Async ()
+    -> IO ()
+  removeOutgoing state addr x = modifyMVar state $ \cmap -> do
+    let alteration mentry = case mentry of
+          -- Error cases would all be bugs in this implementation.
+          Nothing -> error "entry vanished"
+          Just (Remote _) -> error "mismatched entry"
+          Just (Local y) -> assert (x == y) Nothing
+          Just (Both y z) -> assert (x == z) (Just (Remote y))
+        !cmap' = Map.alter alteration addr cmap
+    pure (cmap', ())
 
   includeOne
     :: MVar (Map SockAddr Connection)
-    -> Provenance
-    -> (Socket, SockAddr)
-    -> IO (Decision Reject Accept)
-  includeOne state provenance (sock, addr) = mask_ $ modifyMVar state $ \cmap -> do
-    case (provenance, Map.lookup addr cmap) of
-      -- NB: it's possible to send a message on the socket at this point, in
-      -- case we wanted to inform the other end with some error code.
-      (Incoming, Just (Remote _)) -> pure (cmap, Rejected Duplicate)
-      (Outgoing, Just (Local _))  -> pure (cmap, Rejected Duplicate)
-      (Incoming, Just (Both _ _)) -> pure (cmap, Rejected Duplicate)
-      (Outgoing, Just (Both _ _)) -> pure (cmap, Rejected Duplicate)
-      (Incoming, Just (Local y)) -> do
-        x <- spawnOne state Incoming sock addr
-        let !cmap' = Map.insert addr (Both x y) cmap
+    -> SockAddr
+    -> Resource provenance IO Socket
+    -> IO (Decision provenance Reject Accept)
+  includeOne state addr resource = mask_ $ modifyMVar state $ \cmap -> case resource of
+    Existing sock closeSock -> case Map.lookup addr cmap of
+      Just (Remote _) -> pure (cmap, Rejected Duplicate)
+      Just (Both _ _) -> pure (cmap, Rejected Duplicate)
+      Just (Local outgoing) -> do
+        incoming <- spawnIncoming state addr sock closeSock
+        let !cmap' = Map.insert addr (Both incoming outgoing) cmap
         pure (cmap', Accepted Accept)
-      (Outgoing, Just (Remote x)) -> do
-        y <- spawnOne state Outgoing sock addr
-        let !cmap' = Map.insert addr (Both x y) cmap
+      Nothing -> do
+        incoming <- spawnIncoming state addr sock closeSock
+        let !cmap' = Map.insert addr (Remote incoming) cmap
         pure (cmap', Accepted Accept)
-      (Incoming, Nothing) -> do
-        x <- spawnOne state Incoming sock addr
-        let !cmap' = Map.insert addr (Local x) cmap
+    New openSock closeSock -> case Map.lookup addr cmap of
+      Just (Local _) -> pure (cmap, Rejected Duplicate)
+      Just (Both _ _) -> pure (cmap, Rejected Duplicate)
+      Just (Remote incoming) -> do
+        outgoing <- spawnOutgoing state addr openSock closeSock
+        let !cmap' = Map.insert addr (Both incoming outgoing) cmap
         pure (cmap', Accepted Accept)
-      (Outgoing, Nothing) -> do
-        x <- spawnOne state Outgoing sock addr
-        let !cmap' = Map.insert addr (Remote x) cmap
+      Nothing -> do
+        outgoing <- spawnOutgoing state addr openSock closeSock
+        let !cmap' = Map.insert addr (Local outgoing) cmap
         pure (cmap', Accepted Accept)
 
   killThreads :: MVar (Map SockAddr Connection) -> IO ()
