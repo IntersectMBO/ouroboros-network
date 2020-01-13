@@ -90,7 +90,7 @@ import           Ouroboros.Storage.ImmutableDB
 import qualified Ouroboros.Storage.ImmutableDB as ImmDB
 import qualified Ouroboros.Storage.ImmutableDB.Impl.Index as Index
 import           Ouroboros.Storage.LedgerDB.DiskPolicy (defaultDiskPolicy)
-import           Ouroboros.Storage.LedgerDB.InMemory (ledgerDbDefaultParams)
+import           Ouroboros.Storage.LedgerDB.InMemory (LedgerDbParams (..))
 import qualified Ouroboros.Storage.LedgerDB.OnDisk as LedgerDB
 import qualified Ouroboros.Storage.Util.ErrorHandling as EH
 
@@ -1359,7 +1359,12 @@ mkArgs cfg initLedger tracer registry varCurSlot
       -- Policy
     , cdbValidation       = ValidateAllEpochs
     , cdbBlocksPerFile    = 4
-    , cdbParamsLgrDB      = ledgerDbDefaultParams (protocolSecurityParam cfg)
+    , cdbParamsLgrDB      = LedgerDbParams {
+                                -- Pick a small value for 'ledgerDbSnapEvery',
+                                -- so that maximum supported rollback is limited
+                                ledgerDbSnapEvery     = 2
+                              , ledgerDbSecurityParam = protocolSecurityParam cfg
+                              }
     , cdbDiskPolicy       = defaultDiskPolicy (protocolSecurityParam cfg)
 
       -- Integration
