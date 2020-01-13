@@ -1,13 +1,15 @@
-{-# LANGUAGE FlexibleContexts    #-}
-{-# LANGUAGE LambdaCase          #-}
-{-# LANGUAGE NamedFieldPuns      #-}
-{-# LANGUAGE PatternSynonyms     #-}
-{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE FlexibleContexts          #-}
+{-# LANGUAGE LambdaCase                #-}
+{-# LANGUAGE NamedFieldPuns            #-}
+{-# LANGUAGE PatternSynonyms           #-}
+{-# LANGUAGE ScopedTypeVariables       #-}
 
 module Test.ThreadNet.General (
     prop_general
   , runTestNetwork
     -- * TestConfig
+  , Rekeying (..)
   , TestConfig (..)
   , TestConfigBlock (..)
   , truncateNodeJoinPlan
@@ -34,18 +36,23 @@ import           Ouroboros.Network.Block (BlockNo (..), pattern BlockPoint,
                      pattern GenesisPoint, HasHeader, HeaderHash, Point,
                      SlotNo (..), blockPoint)
 
+import           Ouroboros.Consensus.Block (BlockProtocol)
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.BlockchainTime.Mock
 import           Ouroboros.Consensus.Ledger.Extended (ExtValidationError)
+import           Ouroboros.Consensus.Mempool
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.NodeId
 import           Ouroboros.Consensus.Protocol (LeaderSchedule (..))
-import           Ouroboros.Consensus.Protocol.Abstract (SecurityParam (..))
+import           Ouroboros.Consensus.Protocol.Abstract (LedgerView, SecurityParam (..))
 
 import           Ouroboros.Consensus.Util.Condense
+import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.Orphans ()
 import           Ouroboros.Consensus.Util.Random
+
+import           Ouroboros.Storage.Common (EpochNo)
 
 import           Test.ThreadNet.Network
 import           Test.ThreadNet.TxGen
@@ -61,6 +68,7 @@ import           Test.Util.Orphans.IOLike ()
 import           Test.Util.Orphans.NoUnexpectedThunks ()
 import           Test.Util.Range
 import           Test.Util.Shrink (andId, dropId)
+import           Test.Util.Stream
 
 import           Test.Consensus.BlockchainTime.SlotLengths ()
 
@@ -155,6 +163,20 @@ instance Arbitrary TestConfig where
 data TestConfigBlock blk = TestConfigBlock
   { forgeEBB :: Maybe (ForgeEBB blk)
   , nodeInfo :: CoreNodeId -> ProtocolInfo blk
+  , rekeying :: Maybe (Rekeying blk)
+  }
+
+data Rekeying blk = forall opKey. Rekeying
+  { rekeyUpd ::
+         ProtocolInfo blk
+      -> EpochNo
+      -> opKey
+      -> Maybe (ProtocolInfo blk, GenTx blk)
+     -- ^ new config and any corresponding delegation certificate transactions
+  , rekeyFreshSKs :: Stream opKey
+     -- ^ a stream that only repeats itself after an *effectively* *infinite*
+     -- number of iterations and also never includes an operational key from
+     -- the genesis configuration
   }
 
 {-------------------------------------------------------------------------------
@@ -168,6 +190,7 @@ runTestNetwork ::
      ( RunNode blk
      , TxGen blk
      , TracingConstraints blk
+     , Show (LedgerView (BlockProtocol blk))
      )
   => TestConfig
   -> TestConfigBlock blk
@@ -182,18 +205,34 @@ runTestNetwork
     , slotLengths
     , initSeed
     }
-  TestConfigBlock{forgeEBB, nodeInfo}
-  = runSimOrThrow $ runThreadNetwork ThreadNetworkArgs
-      { tnaForgeEBB       = forgeEBB
-      , tnaJoinPlan       = nodeJoinPlan
-      , tnaNodeInfo       = nodeInfo
-      , tnaNumCoreNodes   = numCoreNodes
-      , tnaNumSlots       = numSlots
-      , tnaRNG            = seedToChaCha initSeed
-      , tnaRestarts       = nodeRestarts
-      , tnaSlotLengths    = slotLengths
-      , tnaTopology       = nodeTopology
-      }
+  TestConfigBlock{forgeEBB, nodeInfo, rekeying}
+  = runSimOrThrow $ do
+    let tna = ThreadNetworkArgs
+          { tnaForgeEBB       = forgeEBB
+          , tnaJoinPlan       = nodeJoinPlan
+          , tnaNodeInfo       = nodeInfo
+          , tnaNumCoreNodes   = numCoreNodes
+          , tnaNumSlots       = numSlots
+          , tnaRNG            = seedToChaCha initSeed
+          , tnaRekeyM         = Nothing
+          , tnaRestarts       = nodeRestarts
+          , tnaSlotLengths    = slotLengths
+          , tnaTopology       = nodeTopology
+          }
+
+    case rekeying of
+      Nothing                                -> runThreadNetwork tna
+      Just Rekeying{rekeyUpd, rekeyFreshSKs} -> do
+        rekeyVar <- uncheckedNewTVarM rekeyFreshSKs
+        runThreadNetwork tna
+          { tnaRekeyM = Just $ \pInfo eno -> do
+              x <- atomically $ do
+                x :< xs <- readTVar rekeyVar
+                x <$ writeTVar rekeyVar xs
+              pure $ case rekeyUpd pInfo eno x of
+                Nothing           -> (pInfo, Nothing)
+                Just (pInfo', tx) -> (pInfo', Just tx)
+          }
 
 {-------------------------------------------------------------------------------
   Test properties
@@ -223,6 +262,7 @@ prop_general ::
      , Eq blk
      , HasHeader blk
      , RunNode blk
+     , Show (LedgerView (BlockProtocol blk))
      )
   => SecurityParam
   -> TestConfig
@@ -246,6 +286,7 @@ prop_general k TestConfig{numSlots, nodeJoinPlan, nodeRestarts, nodeTopology}
     tabulate "shortestLength" [show (rangeK k (shortestLength nodeChains))] $
     tabulate "floor(4 * lastJoinSlot / numSlots)" [show lastJoinSlot] $
     tabulate "minimumDegreeNodeTopology" [show (minimumDegreeNodeTopology nodeTopology)] $
+    tabulate "involves >=1 re-delegation" [show hasNodeRekey] $
     prop_no_unexpected_BlockRejections .&&.
     prop_all_common_prefix
         maxForkLength
@@ -531,3 +572,9 @@ prop_general k TestConfig{numSlots, nodeJoinPlan, nodeRestarts, nodeTopology}
                 _            -> False
               where
                 LeaderSchedule sched = actualLeaderSchedule
+
+    hasNodeRekey :: Bool
+    hasNodeRekey =
+        NodeRekey `Set.member` (foldMap . foldMap) Set.singleton m
+      where
+        NodeRestarts m = nodeRestarts

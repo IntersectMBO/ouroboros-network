@@ -53,6 +53,7 @@ prop_simple_pbft_convergence
             { forgeEBB = Nothing
             , nodeInfo = \nid -> protocolInfo $
                 ProtocolMockPBFT numCoreNodes nid params
+            , rekeying = Nothing
             }
 
 type Blk = SimpleBlock SimpleMockCrypto

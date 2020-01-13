@@ -43,4 +43,5 @@ prop_simple_bft_convergence k
             { forgeEBB = Nothing
             , nodeInfo = \nid -> protocolInfo $
                 ProtocolMockBFT numCoreNodes nid k slotLengths
+            , rekeying = Nothing
             }

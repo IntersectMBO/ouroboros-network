@@ -1,4 +1,5 @@
 module  Test.ThreadNet.Util.NodeRestarts (
+  NodeRestart (..),
   NodeRestarts (..),
   noRestarts,
   genNodeRestarts,
@@ -7,7 +8,6 @@ module  Test.ThreadNet.Util.NodeRestarts (
 
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
-import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Traversable (forM)
 import           Test.QuickCheck
@@ -20,21 +20,31 @@ import           Ouroboros.Consensus.Util.Condense
 
 import           Test.ThreadNet.Util.NodeJoinPlan
 
+data NodeRestart
+  = NodeRekey
+    -- ^ restart the node with a fresh operational key and immediately emit a
+    -- delegation certificate transaction
+  | NodeRestart
+    -- ^ restart the node without rekeying
+  deriving (Eq, Ord, Show)
+
+instance Condense NodeRestart where
+  condense = show
 
 -- | Which nodes are scheduled to restart in each slot
 --
--- INVARIANT no 'Set' is empty
+-- INVARIANT no element 'Map' is empty
 --
-newtype NodeRestarts = NodeRestarts (Map SlotNo (Set CoreNodeId))
+newtype NodeRestarts = NodeRestarts (Map SlotNo (Map CoreNodeId NodeRestart))
   deriving (Eq, Show)
 
 instance Condense NodeRestarts where
   condense (NodeRestarts m) = condense
       [ (,) slot $
-        [ fromCoreNodeId cid
-        | cid <- Set.toAscList cids
+        [ (fromCoreNodeId cid, r)
+        | (cid, r) <- Map.toAscList m'
         ]
-      | (slot, cids) <- Map.toAscList m
+      | (slot, m') <- Map.toAscList m
       ]
 
 noRestarts :: NodeRestarts
@@ -54,7 +64,7 @@ genNodeRestarts :: NodeJoinPlan -> NumSlots -> Gen NodeRestarts
 genNodeRestarts (NodeJoinPlan m) (NumSlots t)
   | t < 1     = pure noRestarts
   | otherwise =
-  fmap (NodeRestarts . Map.filter (not . Set.null) . Map.fromList) $ do
+  fmap (NodeRestarts . Map.filter (not . Map.null) . Map.fromList) $ do
     ss <- sublistOf [0 .. SlotNo (fromIntegral t - 1)]
     forM ss $ \s ->
       fmap ((,) s) $
@@ -62,13 +72,14 @@ genNodeRestarts (NodeJoinPlan m) (NumSlots t)
           keepSome
             | Set.null alreadyJoined = id
             | otherwise              =
-              (`suchThat` \x -> not $ alreadyJoined `Set.isSubsetOf` x)
+              (`suchThat` \x -> not $ alreadyJoined `Set.isSubsetOf` Map.keysSet x)
           candidates = Map.filterWithKey (canRestartIn s) m
       in
       keepSome $
       if Map.null candidates
-      then pure Set.empty
-      else (fmap Set.fromList $ sublistOf $ Map.keys $ candidates)
+      then pure Map.empty
+      else fmap (Map.fromList . map (flip (,) NodeRestart)) $
+           sublistOf $ Map.keys $ candidates
   where
     isLeading (CoreNodeId i) s = fromIntegral i /= unSlotNo s `mod` n
       where

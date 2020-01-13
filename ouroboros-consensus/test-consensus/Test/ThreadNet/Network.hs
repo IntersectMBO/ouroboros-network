@@ -1,22 +1,23 @@
-{-# LANGUAGE BangPatterns         #-}
-{-# LANGUAGE ConstraintKinds      #-}
-{-# LANGUAGE DataKinds            #-}
-{-# LANGUAGE DeriveAnyClass       #-}
-{-# LANGUAGE FlexibleContexts     #-}
-{-# LANGUAGE GADTs                #-}
-{-# LANGUAGE LambdaCase           #-}
-{-# LANGUAGE NamedFieldPuns       #-}
-{-# LANGUAGE RankNTypes           #-}
-{-# LANGUAGE RecordWildCards      #-}
-{-# LANGUAGE ScopedTypeVariables  #-}
-{-# LANGUAGE TypeApplications     #-}
-{-# LANGUAGE TypeFamilies         #-}
-{-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE BangPatterns              #-}
+{-# LANGUAGE ConstraintKinds           #-}
+{-# LANGUAGE DataKinds                 #-}
+{-# LANGUAGE DeriveAnyClass            #-}
+{-# LANGUAGE FlexibleContexts          #-}
+{-# LANGUAGE GADTs                     #-}
+{-# LANGUAGE LambdaCase                #-}
+{-# LANGUAGE NamedFieldPuns            #-}
+{-# LANGUAGE RankNTypes                #-}
+{-# LANGUAGE RecordWildCards           #-}
+{-# LANGUAGE ScopedTypeVariables       #-}
+{-# LANGUAGE TypeApplications          #-}
+{-# LANGUAGE TypeFamilies              #-}
+{-# LANGUAGE UndecidableInstances      #-}
 
 -- | Setup network
 module Test.ThreadNet.Network (
     runThreadNetwork
   , ForgeEBB
+  , RekeyM
   , ThreadNetworkArgs (..)
   , TracingConstraints
     -- * Tracers
@@ -40,6 +41,7 @@ import qualified Data.List as List
 import qualified Data.List.NonEmpty as NE
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
+import           Data.Maybe (isNothing, maybeToList)
 import           Data.Proxy (Proxy (..))
 import           Data.Set (Set)
 import qualified Data.Set as Set
@@ -53,7 +55,7 @@ import           Network.TypedProtocol.Codec (AnyMessage (..), CodecFailure,
                      mapFailureCodec)
 
 import           Ouroboros.Network.Block
-import           Ouroboros.Network.MockChain.Chain
+import           Ouroboros.Network.MockChain.Chain (Chain (Genesis))
 import           Ouroboros.Network.Point (WithOrigin (..))
 
 import qualified Ouroboros.Network.BlockFetch.Client as BFClient
@@ -92,7 +94,7 @@ import qualified Ouroboros.Storage.ChainDB as ChainDB
 import           Ouroboros.Storage.ChainDB.Impl (ChainDbArgs (..))
 import           Ouroboros.Storage.Common (EpochNo (..))
 import           Ouroboros.Storage.EpochInfo (EpochInfo, epochInfoFirst,
-                     newEpochInfo)
+                     epochInfoEpoch, newEpochInfo)
 import qualified Ouroboros.Storage.ImmutableDB as ImmDB
 import qualified Ouroboros.Storage.ImmutableDB.Impl.Index as Index
 import qualified Ouroboros.Storage.LedgerDB.DiskPolicy as LgrDB
@@ -118,15 +120,24 @@ type ForgeEBB blk =
   -> ChainHash blk   -- ^ EBB predecessor's hash
   -> blk
 
+-- | How to rekey a node with a fresh operational key
+--
+type RekeyM m blk =
+     ProtocolInfo blk
+  -> EpochNo
+  -> m (ProtocolInfo blk, Maybe (GenTx blk))
+     -- ^ resulting config and any corresponding delegation certificate transaction
+
 -- | Parameters for the test node net
 --
-data ThreadNetworkArgs blk = ThreadNetworkArgs
+data ThreadNetworkArgs m blk = ThreadNetworkArgs
   { tnaForgeEBB     :: Maybe (ForgeEBB blk)
   , tnaJoinPlan     :: NodeJoinPlan
   , tnaNodeInfo     :: CoreNodeId -> ProtocolInfo blk
   , tnaNumCoreNodes :: NumCoreNodes
   , tnaNumSlots     :: NumSlots
   , tnaRNG          :: ChaChaDRG
+  , tnaRekeyM       :: Maybe (RekeyM m blk)
   , tnaRestarts     :: NodeRestarts
   , tnaSlotLengths  :: SlotLengths
   , tnaTopology     :: NodeTopology
@@ -197,8 +208,9 @@ runThreadNetwork :: forall m blk.
                     , TxGen blk
                     , TracingConstraints blk
                     , HasCallStack
+                    , Show (LedgerView (BlockProtocol blk))
                     )
-                 => ThreadNetworkArgs blk -> m (TestOutput blk)
+                 => ThreadNetworkArgs m blk -> m (TestOutput blk)
 runThreadNetwork ThreadNetworkArgs
   { tnaForgeEBB       = mbForgeEBB
   , tnaJoinPlan       = nodeJoinPlan
@@ -206,6 +218,7 @@ runThreadNetwork ThreadNetworkArgs
   , tnaNumCoreNodes   = numCoreNodes
   , tnaNumSlots       = numSlots
   , tnaRNG            = initRNG
+  , tnaRekeyM         = mbRekeyM
   , tnaRestarts       = nodeRestarts
   , tnaSlotLengths    = slotLengths
   , tnaTopology       = nodeTopology
@@ -351,23 +364,30 @@ runThreadNetwork ThreadNetworkArgs
       vertexStatusVar
       edgeStatusVars
       nodeInfo =
-        void $ forkLinkedThread sharedRegistry $ loop restarts0
+        void $ forkLinkedThread sharedRegistry $ do
+          loop 0 (mkProtocolInfo coreNodeId) NodeRestart restarts0
       where
-        restarts0 = Map.keysSet $ Map.filter (coreNodeId `Set.member`) m
+        restarts0 :: Map SlotNo NodeRestart
+        restarts0 = Map.mapMaybe (Map.lookup coreNodeId) m
           where
             NodeRestarts m = nodeRestarts
 
-        loop rs = case Set.minView rs of
-          Nothing       -> loopBody Nothing
-          Just (s, rs') -> do loopBody (Just s); loop rs'
-
-        loopBody mbS = do
-          -- a registry solely for the resources specific to this node instance
-          finalChain <- withRegistry $ \nodeRegistry -> do
+        loop :: SlotNo -> ProtocolInfo blk -> NodeRestart -> Map SlotNo NodeRestart -> m ()
+        loop s pInfo nr rs = do
+          -- a registry solely for the resources of this specific node instance
+          (again, finalChain) <- withRegistry $ \nodeRegistry -> do
             nodeTestBtime <- cloneTestBlockchainTime
               sharedTestBtime
               nodeRegistry
             let nodeBtime = testBlockchainTime nodeTestBtime
+
+            -- change the node's key and prepare a delegation transaction if
+            -- the node is restarting because it just rekeyed
+            (pInfo', txs0) <- case (nr, mbRekeyM) of
+              (NodeRekey, Just rekeyM) -> do
+                eno <- epochInfoEpoch epochInfo s
+                fmap maybeToList <$> rekeyM pInfo eno
+              _                        -> pure (pInfo, [])
 
             -- allocate the node's internal state and fork its internal threads
             -- (specifically not the communication threads running the Mini
@@ -377,20 +397,25 @@ runThreadNetwork ThreadNetworkArgs
               varRNG
               nodeBtime
               nodeRegistry
-              coreNodeId
+              pInfo'
               nodeInfo
+              txs0
             atomically $ writeTVar vertexStatusVar $ VUp kernel app
 
             -- wait until this node instance should stop
-            case mbS of
+            again <- case Map.minViewWithKey rs of
               -- end of test
-              Nothing -> testBlockchainTimeDone nodeTestBtime
+              Nothing               -> do
+                testBlockchainTimeDone nodeTestBtime
+                pure Nothing
               -- onset of schedule restart slot
-              Just s  -> do
-                tooLate <- blockUntilSlot nodeBtime s
+              Just ((s', nr'), rs') -> do
+                -- wait until the node should stop
+                tooLate <- blockUntilSlot nodeBtime s'
                 when tooLate $ do
                   error $ "unsatisfiable nodeRestarts: "
-                    ++ show (coreNodeId, s)
+                    ++ show (coreNodeId, s')
+                pure $ Just (s', pInfo', nr', rs')
 
             -- stop threads that depend on/stimulate the kernel
             atomically $ writeTVar vertexStatusVar VFalling
@@ -404,9 +429,13 @@ runThreadNetwork ThreadNetworkArgs
             -- TODO workaround Issue 1470
             releaseAll nodeRegistry
 
-            pure finalChain
+            pure (again, finalChain)
 
           atomically $ writeTVar vertexStatusVar $ VDown finalChain
+
+          case again of
+            Nothing                     -> pure ()
+            Just (s', pInfo', nr', rs') -> loop s' pInfo' nr' rs'
 
     -- | Produce transactions every time the slot changes and submit them to
     -- the mempool.
@@ -538,13 +567,15 @@ runThreadNetwork ThreadNetworkArgs
       -> StrictTVar m ChaChaDRG
       -> BlockchainTime m
       -> ResourceRegistry m
-      -> CoreNodeId
+      -> ProtocolInfo blk
       -> NodeInfo blk (StrictTVar m MockFS) (Tracer m)
+      -> [GenTx blk]
+         -- ^ valid transactions the node should immediately propagate
       -> m ( NodeKernel m NodeId blk
            , LimitedApp m NodeId blk
            )
-    forkNode epochInfo varRNG btime registry coreNodeId nodeInfo = do
-      let ProtocolInfo{..} = mkProtocolInfo coreNodeId
+    forkNode epochInfo varRNG btime registry pInfo nodeInfo txs0 = do
+      let ProtocolInfo{..} = pInfo
 
       let blockProduction :: BlockProduction m blk
           blockProduction = BlockProduction {
@@ -582,7 +613,8 @@ runThreadNetwork ThreadNetworkArgs
                       atomically $ do
                         lim <- readTVar nextEbbSlotVar
                         check $ s < lim
-                    o -> traceWith (nodeEventsForges nodeInfoEvents) o
+                    o                       -> do
+                      traceWith (nodeEventsForges nodeInfoEvents) o
                 }
             , registry
             , maxClockSkew        = ClockSkew 1
@@ -606,12 +638,16 @@ runThreadNetwork ThreadNetworkArgs
                   (customProtocolCodecs pInfoConfig)
                   (protocolHandlers nodeArgs nodeKernel)
 
+      let mempool = getMempool nodeKernel
+      addTxs mempool txs0 >>= \x ->
+        if length txs0 == length x && all (isNothing . snd) x then pure () else
+        fail $ "initial transactions were not valid" ++ show x
       forkTxProducer
         btime
         pInfoConfig
         (produceDRG blockProduction)
         (ChainDB.getCurrentLedger chainDB)
-        (getMempool nodeKernel)
+        mempool
 
       forkEbbProducer
         btime
@@ -996,6 +1032,7 @@ nullDebugTracer = nullTracer `asTypeOf` showTracing debugTracer
 nullDebugTracers ::
      ( Monad m
      , Show peer
+     , Show (LedgerView (BlockProtocol blk))
      , ProtocolLedgerView blk
      , TracingConstraints blk
      )

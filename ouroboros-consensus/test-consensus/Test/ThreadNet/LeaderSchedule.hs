@@ -91,6 +91,7 @@ prop_simple_leader_schedule_convergence
             { forgeEBB = Nothing
             , nodeInfo = \nid -> protocolInfo $
                 ProtocolLeaderSchedule numCoreNodes nid params schedule
+            , rekeying = Nothing
             }
 
 {-------------------------------------------------------------------------------

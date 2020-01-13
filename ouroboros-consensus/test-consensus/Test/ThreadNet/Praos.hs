@@ -97,4 +97,5 @@ prop_simple_praos_convergence
             { forgeEBB = Nothing
             , nodeInfo = \nid -> protocolInfo $
                 ProtocolMockPraos numCoreNodes nid params
+            , rekeying = Nothing
             }
