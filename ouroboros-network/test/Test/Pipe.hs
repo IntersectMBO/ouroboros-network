@@ -80,9 +80,6 @@ data DemoProtocols = ChainSync
 instance ProtocolEnum DemoProtocols where
   fromProtocolEnum ChainSync = 2
 
-  toProtocolEnum 2 = Just ChainSync
-  toProtocolEnum _ = Nothing
-
 instance Mx.MiniProtocolLimits DemoProtocols where
   maximumMessageSize ChainSync  = defaultMiniProtocolLimit
   maximumIngressQueue ChainSync = defaultMiniProtocolLimit

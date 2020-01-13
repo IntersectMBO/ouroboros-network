@@ -55,9 +55,7 @@ data OuroborosApplication (appType :: AppType) peerid ptcl m bytes a b where
 -- the simple list style that MuxApplication now uses.
 
 class ProtocolEnum ptcl where
-
     fromProtocolEnum :: ptcl -> MiniProtocolCode
-    toProtocolEnum   :: MiniProtocolCode -> Maybe ptcl
 
 toApplication :: (Enum ptcl, Bounded ptcl, ProtocolEnum ptcl)
               => OuroborosApplication appType peerid ptcl m LBS.ByteString a b

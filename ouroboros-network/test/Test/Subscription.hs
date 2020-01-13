@@ -75,9 +75,6 @@ data TestProtocols1 = ChainSyncPr
 instance ProtocolEnum TestProtocols1 where
   fromProtocolEnum ChainSyncPr = 2
 
-  toProtocolEnum 2 = Just ChainSyncPr
-  toProtocolEnum _ = Nothing
-
 instance Mx.MiniProtocolLimits TestProtocols1 where
   maximumMessageSize ChainSyncPr  = defaultMiniProtocolLimit
   maximumIngressQueue ChainSyncPr = defaultMiniProtocolLimit
@@ -90,9 +87,6 @@ data TestProtocols2 = ReqRespPr
 
 instance ProtocolEnum TestProtocols2 where
   fromProtocolEnum ReqRespPr = 4
-
-  toProtocolEnum 4 = Just ReqRespPr
-  toProtocolEnum _ = Nothing
 
 instance Mx.MiniProtocolLimits TestProtocols2 where
   maximumMessageSize ReqRespPr  = defaultMiniProtocolLimit

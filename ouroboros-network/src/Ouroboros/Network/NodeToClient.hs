@@ -109,13 +109,8 @@ data NodeToClientProtocols = ChainSyncWithBlocksPtcl
 -- wireshark plugins.
 --
 instance ProtocolEnum NodeToClientProtocols where
-
   fromProtocolEnum ChainSyncWithBlocksPtcl = 5
   fromProtocolEnum LocalTxSubmissionPtcl   = 6
-
-  toProtocolEnum 5 = Just ChainSyncWithBlocksPtcl
-  toProtocolEnum 6 = Just LocalTxSubmissionPtcl
-  toProtocolEnum _ = Nothing
 
 instance MiniProtocolLimits NodeToClientProtocols where
   -- TODO: provide sensible limits

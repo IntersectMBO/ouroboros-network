@@ -70,9 +70,6 @@ instance Mx.MiniProtocolLimits TestProtocols where
 instance Mx.ProtocolEnum TestProtocols where
   fromProtocolEnum ChainSyncPr = 2
 
-  toProtocolEnum 2 = Just ChainSyncPr
-  toProtocolEnum _ = Nothing
-
 
 demo :: forall m block.
         ( MonadAsync m
