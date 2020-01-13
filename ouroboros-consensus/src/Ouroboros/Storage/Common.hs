@@ -20,34 +20,20 @@ module Ouroboros.Storage.Common (
   , BinaryInfo (..)
   ) where
 
-import           Cardano.Binary (ToCBOR (..))
 import           Codec.CBOR.Decoding (Decoder)
 import qualified Codec.CBOR.Decoding as Dec
 import           Codec.CBOR.Encoding (Encoding)
 import qualified Codec.CBOR.Encoding as Enc
 import           Codec.Serialise (Serialise (..))
-import           Data.Hashable (Hashable)
 import           Data.Word
 import           GHC.Generics
 
 import           Cardano.Prelude (NoUnexpectedThunks)
+import           Cardano.Slotting.Slot (EpochNo (..), EpochSize (..))
 
 import           Ouroboros.Network.Block (Point, genesisPoint)
 
 import           Ouroboros.Consensus.Util.Condense
-
-{-------------------------------------------------------------------------------
-  Epochs
--------------------------------------------------------------------------------}
-
--- | An epoch, i.e. the number of the epoch.
-newtype EpochNo = EpochNo { unEpochNo :: Word64 }
-  deriving stock (Eq, Ord, Show, Generic)
-  deriving newtype (Enum, Num, Serialise, ToCBOR, NoUnexpectedThunks, Hashable)
-
-newtype EpochSize = EpochSize { unEpochSize :: Word64 }
-  deriving stock (Eq, Ord, Show, Generic)
-  deriving newtype (Enum, Num, Real, Integral, NoUnexpectedThunks)
 
 {-------------------------------------------------------------------------------
   Indexing
