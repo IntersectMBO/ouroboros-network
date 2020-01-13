@@ -13,6 +13,7 @@ module Ouroboros.Storage.Common (
   , Tip(..)
   , tipIsGenesis
   , tipToPoint
+  , tipFromPoint
     -- * Serialisation
   , encodeTip
   , decodeTip
@@ -32,7 +33,8 @@ import           GHC.Generics
 
 import           Cardano.Prelude (NoUnexpectedThunks)
 
-import           Ouroboros.Network.Block (Point, genesisPoint)
+import           Ouroboros.Network.Block (Point (..), genesisPoint)
+import           Ouroboros.Network.Point (WithOrigin (..))
 
 import           Ouroboros.Consensus.Util.Condense
 
@@ -76,6 +78,14 @@ tipIsGenesis (Tip _) = False
 tipToPoint :: Tip (Point blk) -> Point blk
 tipToPoint TipGen  = genesisPoint
 tipToPoint (Tip p) = p
+
+-- | Tip from a point
+--
+-- NOTE: We really shouldn't instantate 'Tip' with 'Point'; see
+-- <https://github.com/input-output-hk/ouroboros-network/issues/1155>
+tipFromPoint :: Point blk -> Tip (Point blk)
+tipFromPoint (Point Origin) = TipGen
+tipFromPoint p              = Tip p
 
 {-------------------------------------------------------------------------------
   Serialization

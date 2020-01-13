@@ -28,6 +28,8 @@ module Ouroboros.Storage.LedgerDB.InMemory (
      -- ** Result types
    , PushManyResult (..)
    , SwitchResult(..)
+     -- ** Past ledger states
+   , ledgerDbPast
      -- ** Updates
    , Apply(..)
    , Err
@@ -47,6 +49,7 @@ module Ouroboros.Storage.LedgerDB.InMemory (
    , ledgerDbPush'
    , ledgerDbPushMany'
    , ledgerDbSwitch'
+   , ledgerDbPast'
      -- ** Simplifying the result types
    , pushManyResultToEither
    , switchResultToEither
@@ -566,40 +569,106 @@ prune db@LedgerDB{..} =
     toPrune :: Int
     toPrune = ledgerDbCountToPrune ledgerDbParams (Seq.length ledgerDbBlocks)
 
--- | Rollback
+{-------------------------------------------------------------------------------
+  Internal: rolling back
+-------------------------------------------------------------------------------}
+
+-- | Compute ledger state after list of checkpoints
 --
--- Returns 'Nothing' if maximum rollback is exceeded.
-rollback :: forall m l r b e. Monad m
-         => LedgerDbConf m l r b e
-         -> Word64 -> LedgerDB l r -> m (Maybe (LedgerDB l r))
-rollback cfg n db@LedgerDB{..}
-  | n == 0        = return $ Just db
-  | numToKeep < 0 = return Nothing
-  | otherwise     = do
-      current' <- uncurry computeCurrent $ reapply blocks'
-      return $ Just db {
-          ledgerDbCurrent = current'
-        , ledgerDbBlocks  = blocks'
-        }
+-- Given a list of checkpoints, find the most recent checkpoint that has a
+-- associated ledger state, compute the list of blocks that should be applied
+-- on top of that ledger state, then reapply those blocks from old to new.
+ledgerAfter :: forall m l r b e. Monad m
+            => LedgerDbConf m l r b e
+            -> ChainSummary l r
+            -> StrictSeq (Checkpoint l r)
+            -> m l
+ledgerAfter cfg anchor blocks' =
+    uncurry computeCurrent $ reapply blocks'
   where
-    numToKeep :: Int
-    numToKeep = Seq.length ledgerDbBlocks - fromIntegral n
-
-    blocks' :: StrictSeq (Checkpoint l r)
-    blocks' = Seq.take numToKeep ledgerDbBlocks
-
-    -- Compute blocks to reapply, and ledger state to reapply them from
     reapply :: StrictSeq (Checkpoint l r) -> ([r], l)
     reapply = go []
       where
         go :: [r] -> StrictSeq (Checkpoint l r) -> ([r], l)
-        go acc Empty                = (acc, csLedger ledgerDbAnchor)
+        go acc Empty                = (acc, csLedger anchor)
         go acc (_  :|> CpSShot _ l) = (acc, l)
         go acc (ss :|> CpBlock r)   = go (r:acc) ss
 
     computeCurrent :: [r] -> l -> m l
     computeCurrent []     = return
     computeCurrent (r:rs) = reapplyBlock cfg (Ref r) >=> computeCurrent rs
+
+-- | Reconstruct ledger DB from a list of checkpoints
+reconstructFrom :: forall m l r b e. Monad m
+                => LedgerDbConf m l r b e
+                -> LedgerDbParams
+                -> ChainSummary l r
+                -> StrictSeq (Checkpoint l r)
+                -> m (LedgerDB l r)
+reconstructFrom cfg params anchor blocks =
+    reconstruct <$> ledgerAfter cfg anchor blocks
+  where
+    reconstruct :: l -> LedgerDB l r
+    reconstruct current = LedgerDB {
+          ledgerDbCurrent = current
+        , ledgerDbBlocks  = blocks
+        , ledgerDbParams  = params
+        , ledgerDbAnchor  = anchor
+        }
+
+-- | Generalization of rollback using a function on the checkpoints
+rollbackTo :: Monad m
+           => LedgerDbConf m l r b e
+           -> (   ChainSummary l r
+               -> StrictSeq (Checkpoint l r)
+               -> Maybe (StrictSeq (Checkpoint l r))
+              )
+           -> LedgerDB l r -> m (Maybe (LedgerDB l r))
+rollbackTo cfg f (LedgerDB _current blocks anchor params) =
+    case f anchor blocks of
+      Nothing      -> return Nothing
+      Just blocks' -> Just <$> reconstructFrom cfg params anchor blocks'
+
+-- | Rollback
+--
+-- Returns 'Nothing' if maximum rollback is exceeded.
+rollback :: forall m l r b e. Monad m
+         => LedgerDbConf m l r b e
+         -> Word64 -> LedgerDB l r -> m (Maybe (LedgerDB l r))
+rollback _   0 db = return $ Just db
+rollback cfg n db = rollbackTo cfg (\_anchor -> go) db
+  where
+    go :: StrictSeq (Checkpoint l r) -> Maybe (StrictSeq (Checkpoint l r))
+    go blocks =
+        if Seq.length blocks >= fromIntegral n
+          then Just $ Seq.take (Seq.length blocks - fromIntegral n) blocks
+          else Nothing
+
+{-------------------------------------------------------------------------------
+  Get past ledger states
+-------------------------------------------------------------------------------}
+
+-- | Get past ledger state
+--
+-- This may have to re-apply blocks, and hence read from disk.
+ledgerDbPast :: forall m l r b e. (Monad m, Eq r)
+             => LedgerDbConf m l r b e
+             -> Tip r
+             -> LedgerDB l r -> m (Maybe l)
+ledgerDbPast cfg tip db
+  | ledgerDbTip db == tip = return $ Just (ledgerDbCurrent db)
+  | otherwise             = fmap ledgerDbCurrent <$> rollbackTo cfg go db
+  where
+    go :: ChainSummary l r
+       -> StrictSeq (Checkpoint l r)
+       -> Maybe (StrictSeq (Checkpoint l r))
+    go anchor blocks =
+        case blocks' of
+          Empty | csTip anchor /= tip -> Nothing
+          _otherwise                  -> Just blocks'
+      where
+        blocks' :: StrictSeq (Checkpoint l r)
+        blocks' = Seq.dropWhileR (\cp -> Tip (cpBlock cp) /= tip) blocks
 
 {-------------------------------------------------------------------------------
   Updates
@@ -688,6 +757,9 @@ ledgerDbPushMany' cfg bs = fromPushManyResult . ledgerDbPushMany cfg (map pureBl
 
 ledgerDbSwitch' :: PureLedgerDbConf l b -> Word64 -> [b] -> LedgerDB l b -> Maybe (LedgerDB l b)
 ledgerDbSwitch' cfg n bs = fromSwitchResult . ledgerDbSwitch cfg n (map pureBlock bs)
+
+ledgerDbPast' :: Eq b => PureLedgerDbConf l b -> Tip b -> LedgerDB l b -> Maybe l
+ledgerDbPast' cfg tip = runIdentity . ledgerDbPast cfg tip
 
 {-------------------------------------------------------------------------------
   Auxiliary functions used for the pure wrappers above

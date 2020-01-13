@@ -149,6 +149,16 @@ data ChainDB m blk = ChainDB {
       -- | Get current ledger
     , getCurrentLedger   :: STM m (ExtLedgerState blk)
 
+      -- | Get past ledger
+      --
+      -- This cannot live in STM, because the ledger DB does not store all
+      -- ledger snapshots, and so getting a past ledger DB may involve reading
+      -- from disk.
+      --
+      -- Requests for ledger states for points not on the current chain, or for
+      -- points older than @k@, will return 'Nothing'.
+    , getPastLedger      :: Point blk -> m (Maybe (ExtLedgerState blk))
+
       -- | Get block at the tip of the chain, if one exists
       --
       -- Returns 'Nothing' if the database is empty.

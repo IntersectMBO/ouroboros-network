@@ -8,6 +8,7 @@ module Ouroboros.Storage.ChainDB.Impl.Query
   ( -- * Queries
     getCurrentChain
   , getCurrentLedger
+  , getPastLedger
   , getTipBlock
   , getTipHeader
   , getTipPoint
@@ -34,6 +35,7 @@ import           Ouroboros.Network.Block (BlockNo, ChainHash (..), HasHeader,
                      pointSlot)
 
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util.IOLike
@@ -80,6 +82,10 @@ getCurrentChain CDB{..} =
 
 getCurrentLedger :: IOLike m => ChainDbEnv m blk -> STM m (ExtLedgerState blk)
 getCurrentLedger CDB{..} = LgrDB.getCurrentState cdbLgrDB
+
+getPastLedger :: (IOLike m, UpdateLedger blk)
+              => ChainDbEnv m blk -> Point blk -> m (Maybe (ExtLedgerState blk))
+getPastLedger CDB{..} = LgrDB.getPastState cdbLgrDB
 
 getTipBlock
   :: forall m blk. (IOLike m, HasHeader blk, HasHeader (Header blk))

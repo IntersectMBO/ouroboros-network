@@ -31,6 +31,7 @@ module Ouroboros.Storage.ChainDB.Impl.LgrDB (
   , getCurrent
   , setCurrent
   , getCurrentState
+  , getPastState
   , currentPoint
   , takeSnapshot
   , trimSnapshots
@@ -318,6 +319,11 @@ getCurrent LgrDB{..} = readTVar varDB
 
 getCurrentState :: IOLike m => LgrDB m blk -> STM m (ExtLedgerState blk)
 getCurrentState LgrDB{..} = LedgerDB.ledgerDbCurrent <$> readTVar varDB
+
+getPastState :: (IOLike m, UpdateLedger blk)
+             => LgrDB m blk -> Point blk -> m (Maybe (ExtLedgerState blk))
+getPastState LgrDB{..} p = LedgerDB.ledgerDbPast conf (tipFromPoint p)
+                       =<< atomically (readTVar varDB)
 
 -- | PRECONDITION: The new 'LedgerDB' must be the result of calling either
 -- 'LedgerDB.ledgerDbSwitch' or 'LedgerDB.ledgerDbPushMany' on the current

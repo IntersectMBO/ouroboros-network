@@ -165,6 +165,7 @@ openDBInternal args launchBgTasks = do
           { addBlock           = getEnv1    h ChainSel.addBlock
           , getCurrentChain    = getEnvSTM  h Query.getCurrentChain
           , getCurrentLedger   = getEnvSTM  h Query.getCurrentLedger
+          , getPastLedger      = getEnv1    h Query.getPastLedger
           , getTipBlock        = getEnv     h Query.getTipBlock
           , getTipHeader       = getEnv     h Query.getTipHeader
           , getTipPoint        = getEnvSTM  h Query.getTipPoint

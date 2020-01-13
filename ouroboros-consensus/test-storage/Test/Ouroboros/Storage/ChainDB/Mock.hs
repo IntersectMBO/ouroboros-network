@@ -121,6 +121,7 @@ openDB cfg initLedger btime = do
         addBlock            = update_  . Model.addBlock cfg
       , getCurrentChain     = querySTM $ Model.lastK k getHeader
       , getCurrentLedger    = querySTM $ Model.currentLedger
+      , getPastLedger       = query    . Model.getPastLedger cfg
       , getBlock            = queryE   . Model.getBlockByPoint
       , getTipBlock         = query    $ Model.tipBlock
       , getTipHeader        = query    $ (fmap getHeader . Model.tipBlock)
