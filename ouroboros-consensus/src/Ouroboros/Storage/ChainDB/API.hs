@@ -605,7 +605,7 @@ data ChainDbFailure =
     --
     -- Same as 'ImmDbMissingBlock', but we only know the 'Point' of the block.
   | forall blk. (Typeable blk, StandardHash blk) =>
-      ImmDbMissingBlockPoint (Point blk)
+      ImmDbMissingBlockPoint (Point blk) CallStack
 
     -- | We requested an iterator that was immediately exhausted
     --

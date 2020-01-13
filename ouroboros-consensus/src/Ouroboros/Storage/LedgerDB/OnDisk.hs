@@ -73,8 +73,8 @@ data NextBlock r b = NoMoreBlocks | NextBlock (r, b)
 -- In CPS form to enable the use of 'withXYZ' style iterator init functions.
 data StreamAPI m r b = StreamAPI {
       -- | Start streaming after the specified block
-      streamAfter :: forall a.
-           Tip r
+      streamAfter :: forall a. HasCallStack
+        => Tip r
         -- Reference to the block corresponding to the snapshot we found
         -- (or 'TipGen' if we didn't find any)
 
@@ -89,7 +89,7 @@ data StreamAPI m r b = StreamAPI {
     }
 
 -- | Stream all blocks
-streamAll :: forall m r b e a. Monad m
+streamAll :: forall m r b e a. (Monad m, HasCallStack)
           => StreamAPI m r b
           -> Tip r                -- ^ Starting point for streaming
           -> (Tip r -> e)         -- ^ Error when tip not found
@@ -218,7 +218,7 @@ data InitFailure r =
 -- If the chain DB or ledger layer reports an error, the whole thing is aborted
 -- and an error is returned. This should not throw any errors itself (ignoring
 -- unexpected exceptions such as asynchronous exceptions, of course).
-initFromSnapshot :: forall m h l r b e. (IOLike m)
+initFromSnapshot :: forall m h l r b e. (IOLike m, HasCallStack)
                  => Tracer m (TraceReplayEvent r () r)
                  -> HasFS m h
                  -> (forall s. Decoder s l)
@@ -236,7 +236,7 @@ initFromSnapshot tracer hasFS decLedger decRef params conf streamAPI ss = do
     return (csTip initSS, initDB)
 
 -- | Attempt to initialize the ledger DB starting from the given ledger DB
-initStartingWith :: forall m l r b e. Monad m
+initStartingWith :: forall m l r b e. (Monad m, HasCallStack)
                  => Tracer m (TraceReplayEvent r () r)
                  -> LedgerDbConf m l r b e
                  -> StreamAPI m r b

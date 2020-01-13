@@ -70,7 +70,7 @@ import           Control.Tracer (Tracer, nullTracer)
 import           Data.Bifunctor (second)
 import qualified Data.ByteString.Lazy as Lazy
 import           Data.Functor (($>), (<&>))
-import           GHC.Stack (HasCallStack)
+import           GHC.Stack
 import           System.FilePath ((</>))
 
 import           Cardano.Prelude (allNoUnexpectedThunks)
@@ -648,7 +648,7 @@ stream db registry blockOrHeader from to = runExceptT $ do
 -- PRECONDITION: the exclusive lower bound is part of the ImmutableDB, if not,
 -- 'ImmDbMissingBlockPoint' is thrown.
 streamAfter
-  :: forall m blk b. (IOLike m, HasHeader blk)
+  :: forall m blk b. (IOLike m, HasHeader blk, HasCallStack)
   => ImmDB m blk
   -> ResourceRegistry m
   -> BlockOrHeader blk b
@@ -656,7 +656,7 @@ streamAfter
   -> m (Iterator (HeaderHash blk) m (Deserialisable m blk b))
 streamAfter db registry blockOrHeader low =
     registeredStream db registry blockOrHeader low' Nothing >>= \case
-      Left  _   -> throwM $ ImmDbMissingBlockPoint low
+      Left  _   -> throwM $ ImmDbMissingBlockPoint low callStack
       Right itr -> do
         case low of
           GenesisPoint           -> return ()

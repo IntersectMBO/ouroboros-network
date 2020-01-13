@@ -242,7 +242,7 @@ openDB args@LgrDbArgs{..} replayTracer immDB getBlock = do
       , ldbConfResolve = getBlock
       }
 
-reopen :: (IOLike m, ProtocolLedgerView blk)
+reopen :: (IOLike m, ProtocolLedgerView blk, HasCallStack)
        => LgrDB  m blk
        -> ImmDB  m blk
        -> Tracer m (TraceReplayEvent (Point blk) () (Point blk))
@@ -251,7 +251,7 @@ reopen LgrDB{..} immDB replayTracer = do
     db <- initFromDisk args replayTracer conf immDB
     atomically $ writeTVar varDB db
 
-initFromDisk :: (IOLike m, HasHeader blk)
+initFromDisk :: (IOLike m, HasHeader blk, HasCallStack)
              => LgrDbArgs m blk
              -> Tracer m (TraceReplayEvent (Point blk) () (Point blk))
              -> Conf      m blk
@@ -398,7 +398,8 @@ streamAPI :: forall m blk. (IOLike m, HasHeader blk)
           => ImmDB m blk -> StreamAPI m (Point blk) blk
 streamAPI immDB = StreamAPI streamAfter
   where
-    streamAfter :: Tip (Point blk)
+    streamAfter :: HasCallStack
+                => Tip (Point blk)
                 -> (Maybe (m (NextBlock (Point blk) blk)) -> m a)
                 -> m a
     streamAfter tip k = do

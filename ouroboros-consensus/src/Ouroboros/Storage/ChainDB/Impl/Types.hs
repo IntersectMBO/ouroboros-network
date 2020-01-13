@@ -2,6 +2,7 @@
 {-# LANGUAGE DeriveGeneric        #-}
 {-# LANGUAGE FlexibleContexts     #-}
 {-# LANGUAGE LambdaCase           #-}
+{-# LANGUAGE RankNTypes           #-}
 {-# LANGUAGE ScopedTypeVariables  #-}
 {-# LANGUAGE StandaloneDeriving   #-}
 {-# LANGUAGE TypeApplications     #-}
@@ -20,6 +21,7 @@ module Ouroboros.Storage.ChainDB.Impl.Types (
   , ChainDbEnv (..)
     -- * Exposed internals for testing purposes
   , Internal (..)
+  , intReopen
     -- * Reader-related
   , ReaderState (..)
   , ReaderRollState (..)
@@ -237,7 +239,7 @@ instance (IOLike m, ProtocolLedgerView blk)
 -------------------------------------------------------------------------------}
 
 data Internal m blk = Internal
-  { intReopen                  :: Bool -> m ()
+  { intReopen_                 :: HasCallStack => Bool -> m ()
     -- ^ Reopen a closed ChainDB.
     --
     -- A no-op if the ChainDB is still open.
@@ -262,6 +264,10 @@ data Internal m blk = Internal
   , intKillBgThreads           :: StrictTVar m (m ())
       -- ^ A handle to kill the background threads.
   }
+
+-- | Wrapper around 'intReopen_' to guarantee HasCallStack
+intReopen :: HasCallStack => Internal m blk -> Bool -> m ()
+intReopen = intReopen_
 
 {-------------------------------------------------------------------------------
   Reader-related
