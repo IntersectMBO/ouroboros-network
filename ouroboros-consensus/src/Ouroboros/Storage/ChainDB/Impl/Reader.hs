@@ -274,13 +274,13 @@ instructionHelper registry encodeHeader blockOrHeader fromMaybeSTM CDB{..} varRe
             -- 'ReaderInImmDB' state.
             Nothing    -> do
               trace $ ReaderNoLongerInMem rollState
-              ImmDB.streamAfter cdbImmDB registry blockOrHeader pt
+              ImmDB.streamAfterKnownBlock cdbImmDB registry blockOrHeader pt
           rollForwardImmDB immIt pt
         RollBackTo      pt -> do
           case mbImmIt of
             Just immIt -> ImmDB.iteratorClose cdbImmDB immIt
             Nothing    -> trace $ ReaderNoLongerInMem rollState
-          immIt' <- ImmDB.streamAfter cdbImmDB registry blockOrHeader pt
+          immIt' <- ImmDB.streamAfterKnownBlock cdbImmDB registry blockOrHeader pt
           let readerState' = ReaderInImmDB (RollForwardFrom pt) immIt'
           atomically $ writeTVar varReader readerState'
           return $ pure $ RollBack pt
@@ -358,7 +358,7 @@ instructionHelper registry encodeHeader blockOrHeader fromMaybeSTM CDB{..} varRe
           --    opened the iterator.
           _  -> do
             trace $ ReaderNewImmIterator pt slotNoAtImmDBTip
-            immIt' <- ImmDB.streamAfter cdbImmDB registry blockOrHeader pt
+            immIt' <- ImmDB.streamAfterKnownBlock cdbImmDB registry blockOrHeader pt
             -- Try again with the new iterator
             rollForwardImmDB immIt' pt
 
@@ -434,7 +434,7 @@ forward registry blockOrHeader CDB{..} varReader = \pts -> do
             else ImmDB.hasBlock cdbImmDB pt
           if inImmDB
             then do
-              immIt <- ImmDB.streamAfter cdbImmDB registry blockOrHeader pt
+              immIt <- ImmDB.streamAfterKnownBlock cdbImmDB registry blockOrHeader pt
               updateState $ ReaderInImmDB (RollBackTo pt) immIt
               return $ Just pt
             else findFirstPointOnChain curChain slotNoAtImmDBTip pts

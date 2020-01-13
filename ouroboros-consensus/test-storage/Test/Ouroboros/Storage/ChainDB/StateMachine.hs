@@ -90,7 +90,7 @@ import           Ouroboros.Storage.ImmutableDB
 import qualified Ouroboros.Storage.ImmutableDB as ImmDB
 import qualified Ouroboros.Storage.ImmutableDB.Impl.Index as Index
 import           Ouroboros.Storage.LedgerDB.DiskPolicy (defaultDiskPolicy)
-import           Ouroboros.Storage.LedgerDB.InMemory (ledgerDbDefaultParams)
+import           Ouroboros.Storage.LedgerDB.InMemory (LedgerDbParams (..))
 import qualified Ouroboros.Storage.LedgerDB.OnDisk as LedgerDB
 import qualified Ouroboros.Storage.Util.ErrorHandling as EH
 
@@ -239,7 +239,7 @@ run :: forall m blk. (IOLike m, HasHeader blk)
     -> StrictTVar m SlotNo
     ->    Cmd     blk (Iterator m blk) (Reader m blk blk)
     -> m (Success blk (Iterator m blk) (Reader m blk blk))
-run ChainDB{..} internal@ChainDB.Internal{..} registry varCurSlot = \case
+run ChainDB{..} internal registry varCurSlot = \case
     AddBlock blk          -> Unit           <$> (advanceAndAdd (blockSlot blk) blk)
     AddFutureBlock blk s  -> Unit           <$> (advanceAndAdd s               blk)
     GetCurrentChain       -> Chain          <$> atomically getCurrentChain
@@ -260,7 +260,7 @@ run ChainDB{..} internal@ChainDB.Internal{..} registry varCurSlot = \case
     ReaderForward rdr pts -> MbPoint        <$> readerForward rdr pts
     ReaderClose rdr       -> Unit           <$> readerClose rdr
     Close                 -> Unit           <$> closeDB
-    Reopen                -> Unit           <$> intReopen False
+    Reopen                -> Unit           <$> intReopen internal False
     RunBgTasks            -> ignore         <$> runBgTasks internal
   where
     mbGCedBlock = MbGCedBlock . MaybeGCedBlock True
@@ -277,7 +277,7 @@ run ChainDB{..} internal@ChainDB.Internal{..} registry varCurSlot = \case
         -- slot
         forM_ [prevCurSlot + 1..newCurSlot] $ \slot -> do
           atomically $ writeTVar varCurSlot slot
-          intScheduledChainSelection slot
+          intScheduledChainSelection internal slot
       addBlock blk
 
 runBgTasks :: IOLike m => ChainDB.Internal m blk -> m ()
@@ -1359,7 +1359,12 @@ mkArgs cfg initLedger tracer registry varCurSlot
       -- Policy
     , cdbValidation       = ValidateAllEpochs
     , cdbBlocksPerFile    = 4
-    , cdbParamsLgrDB      = ledgerDbDefaultParams (protocolSecurityParam cfg)
+    , cdbParamsLgrDB      = LedgerDbParams {
+                                -- Pick a small value for 'ledgerDbSnapEvery',
+                                -- so that maximum supported rollback is limited
+                                ledgerDbSnapEvery     = 2
+                              , ledgerDbSecurityParam = protocolSecurityParam cfg
+                              }
     , cdbDiskPolicy       = defaultDiskPolicy (protocolSecurityParam cfg)
 
       -- Integration

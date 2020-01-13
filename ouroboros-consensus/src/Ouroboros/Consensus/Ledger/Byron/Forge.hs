@@ -141,8 +141,7 @@ forgeRegularBlock cfg curSlot curNo prevHash txs isLeader = do
   where
     -- TODO: Might be sufficient to add 'ConfigContainsGenesis' constraint.
     ByronConfig
-      { pbftGenesisHash
-      , pbftEpochSlots
+      { pbftEpochSlots
       , pbftProtocolVersion
       , pbftSoftwareVersion
       , pbftProtocolMagic
@@ -191,7 +190,8 @@ forgeRegularBlock cfg curSlot curNo prevHash txs isLeader = do
 
     prevHeaderHash :: CC.Block.HeaderHash
     prevHeaderHash = case prevHash of
-      GenesisHash             -> CC.Block.genesisHeaderHash pbftGenesisHash
+      GenesisHash             -> error
+        "the first block on the Byron chain must be an EBB"
       BlockHash (ByronHash h) -> h
 
     epochAndSlotCount :: CC.Slot.EpochAndSlotCount

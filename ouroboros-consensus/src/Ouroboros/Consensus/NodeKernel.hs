@@ -166,13 +166,16 @@ initNodeKernel
     => NodeArgs m peer blk
     -> m (NodeKernel m peer blk)
 initNodeKernel args@NodeArgs { registry, cfg, tracers, maxBlockSize
-                             , blockProduction } = do
+                             , blockProduction, chainDB } = do
+
+    nodeInitChainDB cfg chainDB
+
     st <- initInternalState args
 
     whenJust blockProduction $ forkBlockProduction maxBlockSize st
 
     let IS { blockFetchInterface, fetchClientRegistry, varCandidates,
-             chainDB, mempool } = st
+             mempool } = st
 
     -- Run the block fetch logic in the background. This will call
     -- 'addFetchedBlock' whenever a new block is downloaded.

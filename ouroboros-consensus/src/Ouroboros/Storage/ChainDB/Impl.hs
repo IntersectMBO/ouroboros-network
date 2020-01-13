@@ -22,6 +22,7 @@ module Ouroboros.Storage.ChainDB.Impl (
     -- * Internals for testing purposes
   , openDBInternal
   , Internal (..)
+  , intReopen
   ) where
 
 import           Control.Monad (when)
@@ -179,7 +180,7 @@ openDBInternal args launchBgTasks = do
           , isOpen             = Reopen.isOpen  h
           }
         testing = Internal
-          { intReopen                  = Reopen.reopen  h
+          { intReopen_                 = Reopen.reopen  h
           , intCopyToImmDB             = getEnv  h Background.copyToImmDB
           , intGarbageCollect          = getEnv1 h Background.garbageCollect
           , intUpdateLedgerSnapshots   = getEnv  h Background.updateLedgerSnapshots
