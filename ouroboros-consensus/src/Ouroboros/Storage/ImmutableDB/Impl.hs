@@ -107,7 +107,7 @@ import           Data.Functor (($>), (<&>))
 
 import           GHC.Stack (HasCallStack)
 
-import           Control.Monad.Class.MonadThrow (bracket, finally)
+import           Control.Monad.Class.MonadThrow (bracket, bracketOnError, finally)
 
 import           Ouroboros.Consensus.Block (IsEBB (..))
 import           Ouroboros.Consensus.Util (SomePair (..))
@@ -289,8 +289,8 @@ closeDBImpl ImmutableDBEnv {..} = releaseAll _dbRegistry `finally` do
     case internalState of
       -- Already closed
       DbClosed  _ -> do
-        traceWith _dbTracer $ DBAlreadyClosed
         putMVar _dbInternalState internalState
+        traceWith _dbTracer $ DBAlreadyClosed
       DbOpen OpenState {..} -> do
         let !closedState = closedStateFromInternalState internalState
         -- Close the database before doing the file-system operations so that
@@ -309,20 +309,16 @@ reopenImpl
   => ImmutableDBEnv m hash
   -> ValidationPolicy
   -> m ()
-reopenImpl ImmutableDBEnv {..} valPol = do
-    internalState <- takeMVar _dbInternalState
-    case internalState of
+reopenImpl ImmutableDBEnv {..} valPol = bracketOnError
+  (takeMVar _dbInternalState)
+  -- Important: put back the state when an error is thrown, otherwise we have
+  -- an empty TMVar.
+  (putMVar _dbInternalState) $ \internalState -> case internalState of
       -- When still open,
-      DbOpen _ -> do
-        putMVar _dbInternalState internalState
-        throwUserError _dbErr OpenDBError
+      DbOpen _ -> throwUserError _dbErr OpenDBError
 
       -- Closed, so we can try to reopen
-      DbClosed ClosedState {..} ->
-        -- Important: put back the state when an error is thrown, otherwise we
-        -- have an empty TMVar.
-        onException hasFsErr _dbErr
-          (putMVar _dbInternalState internalState) $ do
+      DbClosed ClosedState {..} -> do
             let validateEnv = ValidateEnv
                   { hasFS       = _dbHasFS
                   , err         = _dbErr
