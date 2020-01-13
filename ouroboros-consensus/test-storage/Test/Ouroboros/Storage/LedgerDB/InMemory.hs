@@ -44,6 +44,7 @@ tests = testGroup "InMemory" [
         , testProperty "lengthMatchesNumBlocks" prop_lengthMatchesNumBlocks
         , testProperty "matchesPolicy"          prop_pushMatchesPolicy
         , testProperty "expectedLedger"         prop_pushExpectedLedger
+        , testProperty "pastLedger"             prop_pastLedger
         ]
     , testGroup "Rollback" [
           testProperty "maxRollbackGenesisZero" prop_maxRollbackGenesisZero
@@ -51,6 +52,7 @@ tests = testGroup "InMemory" [
         , testProperty "switchSameChain"        prop_switchSameChain
         , testProperty "switchMatchesPolicy"    prop_switchMatchesPolicy
         , testProperty "switchExpectedLedger"   prop_switchExpectedLedger
+        , testProperty "pastAfterSwitch"        prop_pastAfterSwitch
         ]
     ]
 
@@ -107,7 +109,7 @@ verifyShape snapEvery = \ss ->
 
 prop_pushIncrementsLength :: ChainSetup -> Property
 prop_pushIncrementsLength setup@ChainSetup{..} =
-    collect (chainSetupSaturated setup) $
+    classify (chainSetupSaturated setup) "saturated" $
           ledgerDbChainLength (ledgerDbPush' callbacks blockInfo csPushed)
       === ledgerDbChainLength csPushed + 1
   where
@@ -115,18 +117,18 @@ prop_pushIncrementsLength setup@ChainSetup{..} =
 
 prop_lengthMatchesNumBlocks :: ChainSetup -> Property
 prop_lengthMatchesNumBlocks setup@ChainSetup{..} =
-    collect (chainSetupSaturated setup) $
+    classify (chainSetupSaturated setup) "saturated" $
           ledgerDbChainLength csPushed
       === csNumBlocks
 
 prop_pushMatchesPolicy :: ChainSetup -> Property
 prop_pushMatchesPolicy setup@ChainSetup{..} =
-    collect (chainSetupSaturated setup) $
+    classify (chainSetupSaturated setup) "saturated" $
       verifyShape (ledgerDbSnapEvery csParams) (ledgerDbToList csPushed)
 
 prop_pushExpectedLedger :: ChainSetup -> Property
 prop_pushExpectedLedger setup@ChainSetup{..} =
-    collect (chainSetupSaturated setup) $
+    classify (chainSetupSaturated setup) "saturated" $
       conjoin [
           l === applyMany (expectedChain o) initLedger
         | (o, l) <- ledgerDbSnapshots csPushed
@@ -134,6 +136,31 @@ prop_pushExpectedLedger setup@ChainSetup{..} =
   where
     expectedChain :: Word64 -> [Block]
     expectedChain o = take (fromIntegral (csNumBlocks - o)) csChain
+
+prop_pastLedger :: ChainSetup -> Property
+prop_pastLedger setup@ChainSetup{..} =
+    classify (chainSetupSaturated setup) "saturated"    $
+    classify withinReach                 "within reach" $
+          ledgerDbPast' callbacks tip csPushed
+      === if withinReach
+            then Just (ledgerDbCurrent afterPrefix)
+            else Nothing
+  where
+    prefix :: [Block]
+    prefix = take (fromIntegral csPrefixLen) csChain
+
+    tip :: Tip Block
+    tip = case prefix of
+            []         -> TipGen
+            _otherwise -> Tip (last prefix)
+
+    afterPrefix :: LedgerDB Ledger Block
+    afterPrefix = ledgerDbPushMany' callbacks prefix csGenSnaps
+
+    -- Maximum rollback can be at most k + snapEvery
+    -- See 'prop_snapshotsMaxRollback'
+    withinReach :: Bool
+    withinReach = (csNumBlocks - csPrefixLen) <= ledgerDbMaxRollback csPushed
 
 {-------------------------------------------------------------------------------
   Rollback
@@ -146,7 +173,7 @@ prop_maxRollbackGenesisZero params =
 
 prop_snapshotsMaxRollback :: ChainSetup -> Property
 prop_snapshotsMaxRollback setup@ChainSetup{..} =
-    collect (chainSetupSaturated setup) $
+    classify (chainSetupSaturated setup) "saturated" $
       conjoin [
           if chainSetupSaturated setup
             then (ledgerDbMaxRollback csPushed) `ge` k
@@ -159,7 +186,7 @@ prop_snapshotsMaxRollback setup@ChainSetup{..} =
 
 prop_switchSameChain :: SwitchSetup -> Property
 prop_switchSameChain setup@SwitchSetup{..} =
-    collect (switchSetupSaturated setup) $
+    classify (switchSetupSaturated setup) "saturated" $
           ledgerDbSwitch' callbacks ssNumRollback blockInfo csPushed
       === Just csPushed
   where
@@ -168,14 +195,14 @@ prop_switchSameChain setup@SwitchSetup{..} =
 
 prop_switchMatchesPolicy :: SwitchSetup -> Property
 prop_switchMatchesPolicy setup@SwitchSetup{..} =
-    collect (switchSetupSaturated setup) $
+    classify (switchSetupSaturated setup) "saturated" $
       verifyShape (ledgerDbSnapEvery csParams) (ledgerDbToList ssSwitched)
   where
     ChainSetup{csParams} = ssChainSetup
 
 prop_switchExpectedLedger :: SwitchSetup -> Property
 prop_switchExpectedLedger setup@SwitchSetup{..} =
-    collect (switchSetupSaturated setup) $
+    classify (switchSetupSaturated setup) "saturated" $
       conjoin [
           l === applyMany (expectedChain o) initLedger
         | (o, l) <- ledgerDbSnapshots ssSwitched
@@ -183,6 +210,32 @@ prop_switchExpectedLedger setup@SwitchSetup{..} =
   where
     expectedChain :: Word64 -> [Block]
     expectedChain o = take (fromIntegral (ssNumBlocks - o)) ssChain
+
+-- | Check 'prop_pastLedger' still holds after switching to a fork
+prop_pastAfterSwitch :: SwitchSetup -> Property
+prop_pastAfterSwitch setup@SwitchSetup{..} =
+    classify (switchSetupSaturated setup) "saturated"    $
+    classify withinReach                  "within reach" $
+          ledgerDbPast' callbacks tip ssSwitched
+      === if withinReach
+            then Just (ledgerDbCurrent afterPrefix)
+            else Nothing
+  where
+    prefix :: [Block]
+    prefix = take (fromIntegral ssPrefixLen) ssChain
+
+    tip :: Tip Block
+    tip = case prefix of
+            []         -> TipGen
+            _otherwise -> Tip (last prefix)
+
+    afterPrefix :: LedgerDB Ledger Block
+    afterPrefix = ledgerDbPushMany' callbacks prefix (csGenSnaps ssChainSetup)
+
+    -- Maximum rollback can be at most k + snapEvery
+    -- See 'prop_snapshotsMaxRollback'
+    withinReach :: Bool
+    withinReach = (ssNumBlocks - ssPrefixLen) <= ledgerDbMaxRollback ssSwitched
 
 {-------------------------------------------------------------------------------
   Test setup
@@ -194,6 +247,14 @@ data ChainSetup = ChainSetup {
 
       -- | Number of blocks applied
     , csNumBlocks :: Word64
+
+      -- | Some prefix of the chain
+      --
+      -- Although we choose this to be less than or equal to 'csNumBlocks',
+      -- we don't guarantee this during shrinking. If 'csPrefixLen' is larger
+      -- than 'csNumBlocks', the prefix should simply be considered to be the
+      -- entire chain.
+    , csPrefixLen :: Word64
 
       -- | Derived: genesis snapshots
     , csGenSnaps  :: LedgerDB Ledger Block
@@ -219,6 +280,11 @@ data SwitchSetup = SwitchSetup {
       -- | Number of new blocks (to be applied after the rollback)
     , ssNumNew      :: Word64
 
+      -- | Prefix of the new chain
+      --
+      -- See also 'csPrefixLen'
+    , ssPrefixLen   :: Word64
+
       -- | Derived: number of blocks in the new chain
     , ssNumBlocks   :: Word64
 
@@ -239,16 +305,16 @@ data SwitchSetup = SwitchSetup {
 switchSetupSaturated :: SwitchSetup -> Bool
 switchSetupSaturated = chainSetupSaturated . ssChainSetup
 
-mkTestSetup :: LedgerDbParams -> Word64 -> ChainSetup
-mkTestSetup csParams csNumBlocks =
+mkTestSetup :: LedgerDbParams -> Word64 -> Word64 -> ChainSetup
+mkTestSetup csParams csNumBlocks csPrefixLen =
     ChainSetup {..}
   where
     csGenSnaps = ledgerDbFromGenesis csParams initLedger
     csChain    = mkChain csNumBlocks 0
     csPushed   = ledgerDbPushMany' callbacks csChain csGenSnaps
 
-mkRollbackSetup :: ChainSetup -> Word64 -> Word64 -> SwitchSetup
-mkRollbackSetup ssChainSetup ssNumRollback ssNumNew =
+mkRollbackSetup :: ChainSetup -> Word64 -> Word64 -> Word64 -> SwitchSetup
+mkRollbackSetup ssChainSetup ssNumRollback ssNumNew ssPrefixLen =
     SwitchSetup {..}
   where
     ChainSetup{..} = ssChainSetup
@@ -266,20 +332,20 @@ mkRollbackSetup ssChainSetup ssNumRollback ssNumNew =
 instance Arbitrary ChainSetup where
   arbitrary = do
       params <- arbitrary
-      let minNumBlocks = maxRollbacks (ledgerDbSecurityParam params)
-      numBlocks <- choose (minNumBlocks, minNumBlocks * 2)
-      return $ mkTestSetup params numBlocks
+      let k = maxRollbacks (ledgerDbSecurityParam params)
+      numBlocks <- choose (0, k * 2)
+      prefixLen <- choose (0, numBlocks)
+      return $ mkTestSetup params numBlocks prefixLen
 
   shrink ChainSetup{..} = concat [
-        -- If we shrink the policy, it can't be that we need /more/ blocks
-        [ mkTestSetup csParams' csNumBlocks
+        -- Shrink the policy
+        [ mkTestSetup csParams' csNumBlocks csPrefixLen
         | csParams' <- shrink csParams
         ]
-        -- Shrinking the number of blocks may make the snapshots unsaturated
-      , [ mkTestSetup csParams csNumBlocks'
+
+        -- Reduce number of blocks
+      , [ mkTestSetup csParams csNumBlocks' csPrefixLen
         | csNumBlocks' <- shrink csNumBlocks
-        , let minNumBlocks = maxRollbacks (ledgerDbSecurityParam csParams)
-        , csNumBlocks' >= minNumBlocks
         ]
       ]
 
@@ -288,21 +354,22 @@ instance Arbitrary SwitchSetup where
       chainSetup  <- arbitrary
       numRollback <- choose (0, ledgerDbMaxRollback (csPushed chainSetup))
       numNew      <- choose (numRollback, 2 * numRollback)
-      return $ mkRollbackSetup chainSetup numRollback numNew
+      prefixLen   <- choose (0, csNumBlocks chainSetup - numRollback + numNew)
+      return $ mkRollbackSetup chainSetup numRollback numNew prefixLen
 
   shrink SwitchSetup{..} = concat [
         -- If we shrink the chain setup, we might restrict max rollback
-        [ mkRollbackSetup ssChainSetup' ssNumRollback ssNumNew
+        [ mkRollbackSetup ssChainSetup' ssNumRollback ssNumNew ssPrefixLen
         | ssChainSetup' <- shrink ssChainSetup
         , ssNumRollback <= ledgerDbMaxRollback (csPushed ssChainSetup')
         ]
         -- Number of new blocks must be at least the rollback
-      , [ mkRollbackSetup ssChainSetup ssNumRollback ssNumNew'
+      , [ mkRollbackSetup ssChainSetup ssNumRollback ssNumNew' ssPrefixLen
         | ssNumNew' <- shrink ssNumNew
         , ssNumNew' >= ssNumRollback
         ]
         -- But rolling back less is always possible
-      , [ mkRollbackSetup ssChainSetup ssNumRollback' ssNumNew
+      , [ mkRollbackSetup ssChainSetup ssNumRollback' ssNumNew ssPrefixLen
         | ssNumRollback' <- shrink ssNumRollback
         ]
       ]

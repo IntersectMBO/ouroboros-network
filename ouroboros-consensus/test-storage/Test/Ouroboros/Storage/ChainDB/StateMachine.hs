@@ -74,6 +74,7 @@ import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.NodeId (NodeId (..))
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.BFT
+import           Ouroboros.Consensus.Util (takeLast)
 import           Ouroboros.Consensus.Util.AnchoredFragment
 import           Ouroboros.Consensus.Util.Condense (condense)
 import           Ouroboros.Consensus.Util.IOLike hiding (fork)
@@ -116,6 +117,7 @@ data Cmd blk it rdr
   | AddFutureBlock    blk SlotNo -- ^ The current slot number
   | GetCurrentChain
   | GetCurrentLedger
+  | GetPastLedger     (Point blk)
   | GetTipBlock
   | GetTipHeader
   | GetTipPoint
@@ -198,6 +200,7 @@ data Success blk it rdr
   = Unit           ()
   | Chain          (AnchoredFragment (Header blk))
   | Ledger         (ExtLedgerState blk)
+  | MbLedger       (Maybe (ExtLedgerState blk))
   | MbBlock        (Maybe blk)
   | MbGCedBlock    (MaybeGCedBlock blk)
   | MbHeader       (Maybe (Header blk))
@@ -244,6 +247,7 @@ run ChainDB{..} internal registry varCurSlot = \case
     AddFutureBlock blk s  -> Unit           <$> (advanceAndAdd s               blk)
     GetCurrentChain       -> Chain          <$> atomically getCurrentChain
     GetCurrentLedger      -> Ledger         <$> atomically getCurrentLedger
+    GetPastLedger pt      -> MbLedger       <$> getPastLedger pt
     GetTipBlock           -> MbBlock        <$> getTipBlock
     GetTipHeader          -> MbHeader       <$> getTipHeader
     GetTipPoint           -> Point          <$> atomically getTipPoint
@@ -394,6 +398,7 @@ runPure cfg = \case
     AddFutureBlock blk s  -> ok  Unit           $ update_ (advanceAndAdd s               blk)
     GetCurrentChain       -> ok  Chain          $ query   (Model.lastK k getHeader)
     GetCurrentLedger      -> ok  Ledger         $ query    Model.currentLedger
+    GetPastLedger pt      -> ok  MbLedger       $ query   (Model.getPastLedger cfg pt)
     GetTipBlock           -> ok  MbBlock        $ query    Model.tipBlock
     GetTipHeader          -> ok  MbHeader       $ query   (fmap getHeader . Model.tipBlock)
     GetTipPoint           -> ok  Point          $ query    Model.tipPoint
@@ -623,6 +628,7 @@ generator genBlock m@Model {..} = At <$> frequency
     , (if empty then 1 else 10, return GetTipBlockNo)
     , (10, genGetBlock)
     , (if empty then 1 else 10, return GetMaxSlotNo)
+    , (if empty then 1 else 10, genGetPastLedger)
 
     -- Iterators
     , (if empty then 1 else 10, uncurry StreamBlocks <$> genBounds)
@@ -681,6 +687,18 @@ generator genBlock m@Model {..} = At <$> frequency
       return $ if Model.garbageCollectablePoint secParam dbModel pt
         then GetGCedBlock pt
         else GetBlock     pt
+
+    genGetPastLedger :: Gen (Cmd blk it rdr)
+    genGetPastLedger = do
+        GetPastLedger <$> elements (takeLast (maxRollbacks secParam) onChain)
+      where
+        -- Non-empty list of points on our chain
+        onChain :: [Point blk]
+        onChain = (Block.genesisPoint :)
+                . map Block.blockPoint
+                . Chain.toOldestFirst
+                . Model.currentChain
+                $ dbModel
 
     genAddBlock = do
       let curSlot = Model.currentSlot dbModel

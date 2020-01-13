@@ -34,6 +34,7 @@ module Test.Ouroboros.Storage.ChainDB.Model (
   , maxSlotNo
   , isOpen
   , invalid
+  , getPastLedger
     -- * Iterators
   , streamBlocks
   , iteratorNext
@@ -224,6 +225,37 @@ immutableSlotNo (SecurityParam k) =
         Chain.headSlot
       . Chain.drop (fromIntegral k)
       . currentChain
+
+-- | Get past ledger state
+--
+-- TODO: To perfectly match the real implementation, we should only return
+-- ledger states for blocks within a certain range from the tip; unfortunately,
+-- that specific range depends currently on the ledger DB's in-memory
+-- representation. Right now we return 'Nothing' only if requesting a 'Point'
+-- that doesn't lie on the current chain
+getPastLedger :: forall blk. ProtocolLedgerView blk
+              => NodeConfig (BlockProtocol blk)
+              -> Point blk -> Model blk -> Maybe (ExtLedgerState blk)
+getPastLedger cfg p m@Model{..} =
+    case prefix of
+      [] | p /= Block.genesisPoint ->
+        Nothing
+      _otherwise ->
+        -- Re-applying previously validated blocks shouldn't result in an error
+        case runExcept $ foldExtLedgerState
+                           BlockPreviouslyApplied
+                           cfg
+                           prefix
+                           initLedger of
+          Left err -> error $ "getPastLedger: unexpected error " ++ show err
+          Right l  -> Just l
+  where
+    prefix :: [blk]
+    prefix = reverse
+           . dropWhile (\blk -> Block.blockPoint blk /= p)
+           . Chain.toNewestFirst
+           . currentChain
+           $ m
 
 {-------------------------------------------------------------------------------
   Construction
