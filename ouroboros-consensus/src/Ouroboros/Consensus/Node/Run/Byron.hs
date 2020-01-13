@@ -1,5 +1,6 @@
 {-# LANGUAGE FlexibleContexts     #-}
 {-# LANGUAGE FlexibleInstances    #-}
+{-# LANGUAGE PatternSynonyms      #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 module Ouroboros.Consensus.Node.Run.Byron () where
@@ -12,6 +13,8 @@ import           Cardano.Chain.ProtocolConstants (kEpochSlots)
 import           Cardano.Chain.Slotting (EpochSlots (..))
 import qualified Cardano.Crypto as Crypto
 
+import           Ouroboros.Network.Block (BlockNo (..), pattern BlockPoint,
+                     ChainHash (..), pattern GenesisPoint, SlotNo (..))
 import           Ouroboros.Network.Magic (NetworkMagic (..))
 
 import           Ouroboros.Consensus.BlockchainTime (SystemStart (..))
@@ -20,7 +23,9 @@ import qualified Ouroboros.Consensus.Ledger.Byron.Auxiliary as Aux
 import           Ouroboros.Consensus.Node.Run.Abstract
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.PBFT
+import           Ouroboros.Consensus.Util.IOLike
 
+import qualified Ouroboros.Storage.ChainDB as ChainDB
 import           Ouroboros.Storage.Common (EpochNo (..), EpochSize (..))
 
 {-------------------------------------------------------------------------------
@@ -49,6 +54,17 @@ instance RunNode ByronBlock where
 
   nodeMaxBlockSize          = Aux.getMaxBlockSize . byronLedgerState
   nodeBlockEncodingOverhead = const byronBlockEncodingOverhead
+
+  -- If the current chain is empty, produce a genesis EBB and add it to the
+  -- ChainDB. Only an EBB can have Genesis (= empty chain) as its predecessor.
+  nodeInitChainDB cfg chainDB = do
+    tip <- atomically $ ChainDB.getTipPoint chainDB
+    case tip of
+      -- Chain is not empty
+      BlockPoint {} -> return ()
+      GenesisPoint  -> ChainDB.addBlock chainDB genesisEBB
+        where
+          genesisEBB = forgeEBB cfg (SlotNo 0) (BlockNo 0) GenesisHash
 
   -- Extract it from the 'Genesis.Config'
   nodeStartTime             = const

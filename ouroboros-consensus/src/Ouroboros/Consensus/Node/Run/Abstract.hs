@@ -29,7 +29,9 @@ import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Byron
 import           Ouroboros.Consensus.Mempool
 import           Ouroboros.Consensus.Protocol.Abstract
+import           Ouroboros.Consensus.Util.IOLike (IOLike)
 
+import           Ouroboros.Storage.ChainDB (ChainDB)
 import           Ouroboros.Storage.Common (EpochNo, EpochSize)
 import           Ouroboros.Storage.ImmutableDB (BinaryInfo (..), HashInfo)
 
@@ -96,6 +98,20 @@ class (ProtocolLedgerView blk, ApplyTx blk) => RunNode blk where
                           -> IsEBB
                           -> Lazy.ByteString -> Lazy.ByteString
   nodeAddHeaderEnvelope _ _ = id  -- Default to no envelope
+
+
+  -- | This function is called when starting up the node, right after the
+  -- ChainDB was opened, and before we connect to other nodes and start block
+  -- production.
+  --
+  -- This function can be used to, for example, create the genesis EBB in case
+  -- the chain(DB) is empty.
+  nodeInitChainDB         :: IOLike m
+                          => NodeConfig (BlockProtocol blk)
+                          -> ChainDB m blk
+                          -> m ()
+  nodeInitChainDB _ _ = return ()
+
 
   -- Encoders
   nodeEncodeBlockWithInfo :: NodeConfig (BlockProtocol blk) -> blk -> BinaryInfo Encoding

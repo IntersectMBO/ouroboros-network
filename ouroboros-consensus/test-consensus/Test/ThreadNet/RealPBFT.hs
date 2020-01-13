@@ -78,7 +78,7 @@ tests = testGroup "RealPBFT" $
       testProperty "addressed by InvalidRollForward exception (PR #773)" $
           once $
           let ncn = NumCoreNodes 3 in
-          prop_simple_real_pbft_convergence (SecurityParam 10) TestConfig
+          prop_simple_real_pbft_convergence ProduceEBBs (SecurityParam 10) TestConfig
             { numCoreNodes = ncn
             , numSlots     = NumSlots 24
             , nodeJoinPlan = NodeJoinPlan $ Map.fromList [(CoreNodeId 0,SlotNo 0), (CoreNodeId 1,SlotNo 20), (CoreNodeId 2,SlotNo 22)]
@@ -95,7 +95,7 @@ tests = testGroup "RealPBFT" $
           -- \"rewind\" to slot 0 (even though it's already there). That rewind
           -- fails if EBBs don't affect the PBFT chain state, since its chain
           -- state is empty.
-          prop_simple_real_pbft_convergence (SecurityParam 10) TestConfig
+          prop_simple_real_pbft_convergence ProduceEBBs (SecurityParam 10) TestConfig
             { numCoreNodes = ncn
             , numSlots     = NumSlots 2
             , nodeJoinPlan = NodeJoinPlan (Map.fromList [(CoreNodeId 0,SlotNo 0),(CoreNodeId 1,SlotNo 1)])
@@ -108,7 +108,7 @@ tests = testGroup "RealPBFT" $
           let ncn = NumCoreNodes 2 in
           -- Same as above, except node 0 gets to forge an actual block before
           -- node 1 tells it to rewind to the EBB.
-          prop_simple_real_pbft_convergence (SecurityParam 10) TestConfig
+          prop_simple_real_pbft_convergence ProduceEBBs (SecurityParam 10) TestConfig
             { numCoreNodes = ncn
             , numSlots     = NumSlots 4
             , nodeJoinPlan = NodeJoinPlan (Map.fromList [(CoreNodeId 0,SlotNo {unSlotNo = 0}),(CoreNodeId 1,SlotNo {unSlotNo = 3})])
@@ -117,13 +117,14 @@ tests = testGroup "RealPBFT" $
             , initSeed     = Seed (16817746570690588019, 3284322327197424879, 14951803542883145318, 5227823917971823767, 14093715642382269482)
             }
     , testProperty "simple convergence" $
+          \produceEBBs ->
           forAll (SecurityParam <$> elements [5, 10])
             $ \k ->
           forAllShrink
               (genRealPBFTTestConfig k)
               shrinkRealPBFTTestConfig
             $ \testConfig ->
-          prop_simple_real_pbft_convergence k testConfig
+          prop_simple_real_pbft_convergence produceEBBs k testConfig
     ]
   where
     defaultSlotLengths :: SlotLengths
@@ -154,21 +155,25 @@ prop_setup_coreNodeId numCoreNodes coreNodeId =
     genesisSecrets :: Genesis.GeneratedSecrets
     (genesisConfig, genesisSecrets) = generateGenesisConfig params
 
-prop_simple_real_pbft_convergence :: SecurityParam
+prop_simple_real_pbft_convergence :: ProduceEBBs
+                                  -> SecurityParam
                                   -> TestConfig
                                   -> Property
 prop_simple_real_pbft_convergence
-  k testConfig@TestConfig{numCoreNodes, numSlots} =
+  produceEBBs k testConfig@TestConfig{numCoreNodes, numSlots} =
+    tabulate "produce EBBs" [show produceEBBs] $
     prop_general k
         testConfig
         (Just $ roundRobinLeaderSchedule numCoreNodes numSlots)
         testOutput .&&.
     not (all Chain.null finalChains) .&&.
-    conjoin (map (hasAllEBBs k numSlots) finalChains)
+    conjoin (map (hasAllEBBs k numSlots produceEBBs) finalChains)
   where
     testOutput =
         runTestNetwork testConfig TestConfigBlock
-            { forgeEBB = Just Byron.forgeEBB
+            { forgeEBB = case produceEBBs of
+                NoEBBs      -> Nothing
+                ProduceEBBs -> Just Byron.forgeEBB
             , nodeInfo = \nid -> protocolInfo $
                 mkProtocolRealPBFT params nid genesisConfig genesisSecrets
             }
@@ -183,17 +188,40 @@ prop_simple_real_pbft_convergence
     genesisSecrets :: Genesis.GeneratedSecrets
     (genesisConfig, genesisSecrets) = generateGenesisConfig params
 
-hasAllEBBs :: SecurityParam -> NumSlots -> Chain ByronBlock -> Property
-hasAllEBBs k (NumSlots t) c =
+-- | Whether to produce EBBs in the tests or not
+--
+-- TODO add a case to generate EBBs upto some epoch, like on mainnet
+data ProduceEBBs
+  = NoEBBs
+    -- ^ No EBBs are produced in the tests. The node will still automatically
+    -- produce its own genesis EBB.
+  | ProduceEBBs
+    -- ^ In addition to the genesis EBB the node generates itself, the tests
+    -- also produce an EBB at the start of each subsequent epoch.
+  deriving (Eq, Show)
+
+instance Arbitrary ProduceEBBs where
+  arbitrary = elements [NoEBBs, ProduceEBBs]
+  shrink NoEBBs      = []
+  shrink ProduceEBBs = [NoEBBs]
+
+hasAllEBBs :: SecurityParam
+           -> NumSlots
+           -> ProduceEBBs
+           -> Chain ByronBlock
+           -> Property
+hasAllEBBs k (NumSlots t) produceEBBs c =
     counterexample ("Missing or unexpected EBBs in " <> condense c) $
     actual === expected
   where
     expected :: [EpochNo]
-    expected = coerce [0 .. hi]
-      where
-        hi :: Word64
-        hi = if t < 1 then 0 else fromIntegral (t - 1) `div` denom
-        denom = unEpochSlots $ kEpochSlots $ coerce k
+    expected = case produceEBBs of
+      NoEBBs      -> [0]
+      ProduceEBBs -> coerce [0 .. hi]
+        where
+          hi :: Word64
+          hi = if t < 1 then 0 else fromIntegral (t - 1) `div` denom
+          denom = unEpochSlots $ kEpochSlots $ coerce k
 
     actual   = mapMaybe (nodeIsEBB . getHeader) $ Chain.toOldestFirst c
 
