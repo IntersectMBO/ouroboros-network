@@ -54,6 +54,10 @@ library
                        Ouroboros.Network.BlockFetch.State
                        Ouroboros.Network.ChainFragment
                        Ouroboros.Network.Channel
+                       Ouroboros.Network.Connections.Concurrent
+                       Ouroboros.Network.Connections.Types
+                       Ouroboros.Network.Connections.Client.Inet
+                       Ouroboros.Network.Connections.Server.Inet
                        Ouroboros.Network.DeltaQ
                        Ouroboros.Network.Magic
                        Ouroboros.Network.ErrorPolicy
