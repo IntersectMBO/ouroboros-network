@@ -206,10 +206,9 @@ modifyOpenState ImmutableDBEnv { _dbHasFS = hasFS :: HasFS m h, .. } action = do
           -> ExitCase (Either ImmutableDBError (r, OpenState m hash h))
           -> m ()
     close !st ec = case ec of
-      -- Restore the original state in case of an abort
+      -- If we were interrupted, restore the original state.
       ExitCaseAbort                               -> putMVar _dbInternalState st
-      -- In case of an exception, close the DB for safety.
-      ExitCaseException _ex                       -> shutDown st
+      ExitCaseException _ex                       -> putMVar _dbInternalState st
       -- In case of success, update to the newest state
       ExitCaseSuccess (Right (_, ost))            -> putMVar _dbInternalState (DbOpen ost)
       -- In case of an unexpected error (not an exception), close the DB for safety
@@ -263,8 +262,7 @@ withOpenState ImmutableDBEnv { _dbHasFS = hasFS :: HasFS m h, .. } action = do
           -> m ()
     close ec = case ec of
       ExitCaseAbort                               -> return ()
-      -- In case of an exception, close the DB for safety.
-      ExitCaseException _ex                       -> shutDown
+      ExitCaseException _ex                       -> return ()
       ExitCaseSuccess (Right _)                   -> return ()
       -- In case of an ImmutableDBError, close when unexpected
       ExitCaseSuccess (Left (UnexpectedError {})) -> shutDown
