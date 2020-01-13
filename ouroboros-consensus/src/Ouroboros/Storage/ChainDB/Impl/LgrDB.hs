@@ -406,9 +406,13 @@ streamAPI immDB = StreamAPI streamAfter
       slotNoAtTip <- ImmDB.getSlotNoAtTip immDB
       if Block.pointSlot (tipToPoint tip) > slotNoAtTip
         then k Nothing
-        else withRegistry $ \registry ->
-          ImmDB.streamAfter immDB registry Block (tipToPoint tip) >>=
-            k . Just . getNext . ImmDB.deserialiseIterator immDB
+        else withRegistry $ \registry -> do
+          mItr <- ImmDB.streamAfter immDB registry Block (tipToPoint tip)
+          case mItr of
+            Left _err ->
+              k Nothing
+            Right itr ->
+              k . Just . getNext . ImmDB.deserialiseIterator immDB $ itr
 
     getNext :: ImmDB.Iterator (HeaderHash blk) m blk
             -> m (NextBlock (Point blk) blk)

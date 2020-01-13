@@ -32,6 +32,7 @@ module Ouroboros.Storage.ChainDB.Impl.ImmDB (
     -- * Streaming
   , stream
   , streamAfter
+  , streamAfterKnownBlock
   , deserialiseIterator
   , deserialisableIterator
   , parseIterator
@@ -67,7 +68,7 @@ import qualified Codec.CBOR.Write as CBOR
 import           Control.Monad
 import           Control.Monad.Except
 import           Control.Tracer (Tracer, nullTracer)
-import           Data.Bifunctor (second)
+import           Data.Bifunctor
 import qualified Data.ByteString.Lazy as Lazy
 import           Data.Functor (($>), (<&>))
 import           GHC.Stack
@@ -510,14 +511,14 @@ registeredStream :: forall m blk b. IOLike m
                  -> BlockOrHeader blk b
                  -> Maybe (SlotNo, HeaderHash blk)
                  -> Maybe (SlotNo, HeaderHash blk)
-                 -> m (Either (UnknownRange blk)
+                 -> m (Either (ImmDB.WrongBoundError (HeaderHash blk))
                               (ImmDB.Iterator (HeaderHash blk) m Lazy.ByteString))
 registeredStream db@ImmDB { addHdrEnv } registry blockOrHeader start end = do
     errOrKeyAndIt <- allocateEither registry
       (\_key -> withDB db $ \imm -> go imm)
       (iteratorClose db)
     return $ case errOrKeyAndIt of
-      Left e          -> Left (toUnknownRange e)
+      Left e          -> Left e
       -- The iterator will be used by a thread that is unknown to the registry
       -- (which, after all, is entirely internal to the chain DB). This means
       -- that the registry cannot guarantee that the iterator will be live for
@@ -541,22 +542,6 @@ registeredStream db@ImmDB { addHdrEnv } registry blockOrHeader start end = do
         isEBB = case epochOrSlot of
           Left _epochNo -> IsEBB
           Right _slotNo -> IsNotEBB
-
-    toUnknownRange :: ImmDB.WrongBoundError (HeaderHash blk) -> UnknownRange blk
-    toUnknownRange e
-      | Just (startSlot, startHash) <- start
-      , wrongBoundErrorSlotNo e == startSlot
-      = MissingBlock (BlockPoint startSlot startHash)
-      | Just (endSlot, endHash) <- end
-      , wrongBoundErrorSlotNo e == endSlot
-      = MissingBlock (BlockPoint endSlot endHash)
-      | otherwise
-      = error "WrongBoundError for a different bound than we gave"
-
-    wrongBoundErrorSlotNo :: ImmDB.WrongBoundError (HeaderHash blk) -> SlotNo
-    wrongBoundErrorSlotNo = \case
-      ImmDB.EmptySlotError slot     -> slot
-      ImmDB.WrongHashError slot _ _ -> slot
 
 -- | Stream headers/blocks from the given 'StreamFrom' to the given
 -- 'StreamTo'.
@@ -610,9 +595,33 @@ stream db registry blockOrHeader from to = runExceptT $ do
       StreamFromInclusive GenesisPoint ->
         throwM NoGenesisBlock
   where
+    openRegisteredStream :: Maybe (SlotNo, HeaderHash blk)
+                         -> Maybe (SlotNo, HeaderHash blk)
+                         -> ExceptT
+                              (UnknownRange blk)
+                              m
+                              (Iterator (HeaderHash blk)
+                                        m
+                                        (Deserialisable m blk b))
     openRegisteredStream start end = ExceptT $
-      fmap (deserialisableIterator db blockOrHeader . stopAt to) <$>
-      registeredStream db registry blockOrHeader start end
+        bimap toUnknownRange (deserialisableIterator db blockOrHeader . stopAt to) <$>
+        registeredStream db registry blockOrHeader start end
+      where
+        toUnknownRange :: ImmDB.WrongBoundError (HeaderHash blk) -> UnknownRange blk
+        toUnknownRange e
+          | Just (startSlot, startHash) <- start
+          , wrongBoundErrorSlotNo e == startSlot
+          = MissingBlock (BlockPoint startSlot startHash)
+          | Just (endSlot, endHash) <- end
+          , wrongBoundErrorSlotNo e == endSlot
+          = MissingBlock (BlockPoint endSlot endHash)
+          | otherwise
+          = error "WrongBoundError for a different bound than we gave"
+
+        wrongBoundErrorSlotNo :: ImmDB.WrongBoundError (HeaderHash blk) -> SlotNo
+        wrongBoundErrorSlotNo = \case
+          ImmDB.EmptySlotError slot     -> slot
+          ImmDB.WrongHashError slot _ _ -> slot
 
     -- | The ImmutableDB doesn't support an exclusive end bound, so we stop
     -- the iterator when it reaches its exclusive end bound.
@@ -645,18 +654,20 @@ stream db registry blockOrHeader from to = runExceptT $ do
 
 -- | Stream headers/blocks after the given point
 --
--- PRECONDITION: the exclusive lower bound is part of the ImmutableDB, if not,
--- 'ImmDbMissingBlockPoint' is thrown.
+-- Returns 'ImmDB.WrongBoundError' if the lower bound is not part of the
+-- ImmutableDB.
 streamAfter
   :: forall m blk b. (IOLike m, HasHeader blk, HasCallStack)
   => ImmDB m blk
   -> ResourceRegistry m
   -> BlockOrHeader blk b
   -> Point blk -- ^ Exclusive lower bound
-  -> m (Iterator (HeaderHash blk) m (Deserialisable m blk b))
+  -> m (Either
+          (ImmDB.WrongBoundError (HeaderHash blk))
+          (Iterator (HeaderHash blk) m (Deserialisable m blk b)))
 streamAfter db registry blockOrHeader low =
     registeredStream db registry blockOrHeader low' Nothing >>= \case
-      Left  err -> throwM $ ImmDbMissingBlockPoint low err callStack
+      Left  err -> return $ Left err
       Right itr -> do
         case low of
           GenesisPoint           -> return ()
@@ -668,12 +679,29 @@ streamAfter db registry blockOrHeader low =
               -- already checks this.
               IteratorResult {} -> return ()
               IteratorEBB    {} -> return ()
-        return $ deserialisableIterator db blockOrHeader itr
+        return $ Right $ deserialisableIterator db blockOrHeader itr
   where
     low' :: Maybe (SlotNo, HeaderHash blk)
     low' = case low of
       GenesisPoint         -> Nothing
       BlockPoint slot hash -> Just (slot, hash)
+
+-- | Variation on 'streamAfter' that has the presence of the lower bound
+-- as a precondition
+--
+-- Throws an exception if the precondition is violated.
+streamAfterKnownBlock
+  :: forall m blk b. (IOLike m, HasHeader blk, HasCallStack)
+  => ImmDB m blk
+  -> ResourceRegistry m
+  -> BlockOrHeader blk b
+  -> Point blk -- ^ Exclusive lower bound
+  -> m (Iterator (HeaderHash blk) m (Deserialisable m blk b))
+streamAfterKnownBlock db registry blockOrHeader low = do
+    mItr <- streamAfter db registry blockOrHeader low
+    case mItr of
+      Left  err -> throwM $ ImmDbMissingBlockPoint low err callStack
+      Right itr -> return itr
 
 traverseIteratorResult
   :: Applicative m
