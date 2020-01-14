@@ -109,6 +109,7 @@ library
                        Ouroboros.Consensus.Util.CBOR
                        Ouroboros.Consensus.Util.Classify
                        Ouroboros.Consensus.Util.Condense
+                       Ouroboros.Consensus.Util.EarlyExit
                        Ouroboros.Consensus.Util.HList
                        Ouroboros.Consensus.Util.IOLike
                        Ouroboros.Consensus.Util.MonadSTM.NormalForm
