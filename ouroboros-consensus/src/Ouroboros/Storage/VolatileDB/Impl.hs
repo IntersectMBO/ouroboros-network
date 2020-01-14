@@ -671,7 +671,8 @@ modifyState VolatileDBEnv{_dbHasFS = hasFS :: HasFS m h, ..} action = do
     HasFS{..}         = hasFS
 
     open :: m (OpenOrClosed blockId h)
-    open = takeMVar _dbInternalState
+    -- TODO Is uninterruptibleMask_ absolutely necessary here?
+    open = uninterruptibleMask_ $ takeMVar _dbInternalState
 
     close
       :: OpenOrClosed blockId h

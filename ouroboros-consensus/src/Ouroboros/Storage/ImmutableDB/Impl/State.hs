@@ -200,7 +200,8 @@ modifyOpenState ImmutableDBEnv { _dbHasFS = hasFS :: HasFS m h, .. } action = do
     -- r)@).
 
     open :: m (InternalState m hash h)
-    open = takeMVar _dbInternalState
+    -- TODO Is uninterruptibleMask_ absolutely necessary here?
+    open = uninterruptibleMask_ $ takeMVar _dbInternalState
 
     close :: InternalState m hash h
           -> ExitCase (Either ImmutableDBError (r, OpenState m hash h))
