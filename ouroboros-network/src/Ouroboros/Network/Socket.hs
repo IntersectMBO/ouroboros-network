@@ -66,7 +66,7 @@ import qualified Data.ByteString.Lazy as BL
 import           Data.Int
 import           Data.Void
 
-import qualified Network.Socket as Socket hiding (recv)
+import qualified Network.Socket as Socket
 
 import           Cardano.Prelude (NoUnexpectedThunks (..), ThunkInfo (..))
 

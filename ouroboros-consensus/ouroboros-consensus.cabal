@@ -242,7 +242,7 @@ library
                        memory,
                        mmorph            >=1.1   && <1.2,
                        mtl               >=2.2   && <2.3,
-                       network,
+                       network           >=3.0   && <3.2,
                        psqueues          >=0.2.3 && <0.3,
                        serialise         >=0.2   && <0.3,
                        stm,
