@@ -60,6 +60,7 @@ import           Ouroboros.Consensus.Node.Tracers
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util (whenJust)
 import           Ouroboros.Consensus.Util.AnchoredFragment
+import           Ouroboros.Consensus.Util.EarlyExit
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.Orphans ()
 import           Ouroboros.Consensus.Util.Random
@@ -310,100 +311,150 @@ forkBlockProduction
 forkBlockProduction maxBlockSizeOverride IS{..} BlockProduction{..} =
     void $ onSlotChange btime $ \currentSlot -> do
       varDRG <- newTVarM =<< (PRNG <$> produceDRG)
-
-      trace $ TraceForgeAboutToLead currentSlot
-
-      -- Get current ledger
-      --
-      -- NOTE: This is still wrong. If we detect in 'prevPointAndBlockNo'
-      -- that we should roll back one block, we should also use a different
-      -- ledger state.
-      -- <https://github.com/input-output-hk/ouroboros-network/issues/1437>
-      (extLedger, (prevPoint, prevNo)) <- atomically $ (,)
-        <$> ChainDB.getCurrentLedger chainDB
-        <*> (prevPointAndBlockNo currentSlot <$>
-               ChainDB.getCurrentChain chainDB)
-      let ledger = ledgerState extLedger
-
-      -- Check if we are the leader
-      mIsLeader <-
-        case anachronisticProtocolLedgerView cfg ledger (At currentSlot) of
-          Right ledgerView ->
-            atomically $ runProtocol varDRG $
-              checkIsLeader
-                cfg
-                currentSlot
-                ledgerView
-                (ouroborosChainState extLedger)
-          Left err -> do
-            -- There are so many empty slots between the tip of our chain and
-            -- the current slot that we cannot even get an accurate ledger view
-            -- anymore. This is indicative of a serious problem: we are not
-            -- receiving blocks. It is /possible/ it's just due to our network
-            -- connectivity, and we might still get these blocks at some point;
-            -- but we certainly can't produce a block of our own.
-            trace $ TraceCouldNotForge currentSlot err
-            return Nothing
-
-      case mIsLeader of
-        Nothing    -> return ()
-        Just proof -> do
-          -- Get a snapshot of the mempool that is consistent with the ledger
-          --
-          -- NOTE: It is possible that due to adoption of new blocks the
-          -- /current/ ledger will have changed. This doesn't matter: we will
-          -- produce a block that fits onto the ledger we got above; if the
-          -- ledger in the meantime changes, the block we produce here may or
-          -- may not be adopted, but it won't be invalid.
-          mempoolSnapshot <- atomically $ getSnapshotFor
-                                            mempool
-                                            (TxsForBlockInSlot currentSlot)
-                                            (ledgerState extLedger)
-
-          let blockEncOverhead = nodeBlockEncodingOverhead ledger
-              maxBlockBodySize = case maxBlockSizeOverride of
-                NoOverride            -> nodeMaxBlockSize ledger - blockEncOverhead
-                MaxBlockSize mbs      -> mbs - blockEncOverhead
-                MaxBlockBodySize mbbs -> mbbs
-              txs = map fst (snapshotTxsForSize mempoolSnapshot maxBlockBodySize)
-
-          newBlock <- atomically $ runProtocol varDRG $
-            produceBlock
-              proof
-              extLedger
-              currentSlot
-              prevPoint
-              prevNo
-              txs
-
-          trace $ TraceForgeEvent currentSlot newBlock
-          -- Adding a block is synchronous
-          ChainDB.addBlock chainDB newBlock
-          -- Check whether we adopted our block
-          curTip <- atomically $ ChainDB.getTipPoint chainDB
-          if curTip == blockPoint newBlock then do
-            trace $ TraceAdoptedBlock currentSlot newBlock txs
-          else do
-            isInvalid <- atomically $
-              ($ blockHash newBlock) . forgetFingerprint <$>
-              ChainDB.getIsInvalidBlock chainDB
-            case isInvalid of
-              Nothing ->
-                trace $ TraceDidntAdoptBlock currentSlot newBlock
-              Just reason -> do
-                trace $ TraceForgedInvalidBlock currentSlot newBlock reason
-                -- We just produced a block that is invalid according to the
-                -- ledger in the ChainDB, while the mempool said it is valid.
-                -- There is an inconsistency between the two!
-                --
-                -- Remove all the transactions in that block, otherwise we'll
-                -- run the risk of forging the same invalid block again. This
-                -- means that we'll throw away some good transactions in the
-                -- process.
-                removeTxs mempool (map txId txs)
+      withEarlyExit_ $ go currentSlot varDRG
   where
-    trace :: TraceForgeEvent blk (GenTx blk) -> m ()
-    trace = traceWith (forgeTracer tracers)
+    go :: SlotNo -> StrictTVar m PRNG -> WithEarlyExit m ()
+    go currentSlot varDRG = do
+        trace $ TraceStartLeadershipCheck currentSlot
+
+        -- Figure out which block to connect to
+        --
+        -- Normally this will be the current block at the tip, but it may
+        -- be the /previous/ block, if there were multiple slot leaders
+        (prevPoint, prevNo) <- do
+          mPrev <- lift $ atomically $ prevPointAndBlockNo currentSlot <$>
+                     ChainDB.getCurrentChain chainDB
+          case mPrev of
+            Right prev       -> return prev
+            Left  futureSlot -> do
+              trace $ TraceBlockFromFuture currentSlot futureSlot
+              exitEarly
+
+        -- Get ledger state corresponding to prevPoint
+        --
+        -- This might fail if, in between choosing 'prevPoint' and this call to
+        -- 'getPastLedger', we switched to a fork where 'prevPoint' is no longer
+        -- on our chain. When that happens, we simply give up on the chance to
+        -- produce a block.
+        extLedger <- do
+          mExtLedger <- lift $ ChainDB.getPastLedger chainDB prevPoint
+          case mExtLedger of
+            Just l  -> return l
+            Nothing -> do
+              trace $ TraceNoLedgerState currentSlot prevPoint
+              exitEarly
+        let ledger = ledgerState extLedger
+
+        -- Check if we are the leader
+        proof <-
+          case anachronisticProtocolLedgerView cfg ledger (At currentSlot) of
+            Right ledgerView -> do
+              mIsLeader <- lift $ atomically $ runProtocol varDRG $
+                checkIsLeader
+                  cfg
+                  currentSlot
+                  ledgerView
+                  (ouroborosChainState extLedger)
+              case mIsLeader of
+                Just p  -> return p
+                Nothing -> do
+                  trace $ TraceNodeNotLeader currentSlot
+                  exitEarly
+            Left err -> do
+              -- There are so many empty slots between the tip of our chain and
+              -- the current slot that we cannot even get an accurate ledger
+              -- view anymore. This is indicative of a serious problem: we are
+              -- not receiving blocks. It is /possible/ it's just due to our
+              -- network connectivity, and we might still get these blocks at
+              -- some point; but we certainly can't produce a block of our own.
+              trace $ TraceNoLedgerView currentSlot err
+              exitEarly
+
+        -- At this point we have established that we are indeed slot leader
+        trace $ TraceNodeIsLeader currentSlot
+
+        -- Get a snapshot of the mempool that is consistent with the ledger
+        --
+        -- NOTE: It is possible that due to adoption of new blocks the
+        -- /current/ ledger will have changed. This doesn't matter: we will
+        -- produce a block that fits onto the ledger we got above; if the
+        -- ledger in the meantime changes, the block we produce here may or
+        -- may not be adopted, but it won't be invalid.
+        mempoolSnapshot <- lift $ atomically $ getSnapshotFor
+                                                 mempool
+                                                 (TxsForBlockInSlot currentSlot)
+                                                 (ledgerState extLedger)
+        let txs = map fst $ snapshotTxsForSize
+                              mempoolSnapshot
+                              (maxBlockBodySize ledger)
+
+        -- Actually produce the block
+        newBlock <- lift $ atomically $ runProtocol varDRG $
+          produceBlock
+            proof
+            extLedger
+            currentSlot
+            prevPoint
+            prevNo
+            txs
+        trace $ TraceForgedBlock
+                  currentSlot
+                  newBlock
+                  (snapshotMempoolSize mempoolSnapshot)
+
+        -- Add the block to the chain DB
+        lift $ ChainDB.addBlock chainDB newBlock
+
+        -- Check whether we adopted our block
+        --
+        -- addBlock is synchronous, so when it returns the block we produced
+        -- will have been considered and possibly (probably) adopted
+        --
+        -- TODO: This is wrong. Additional blocks may have been added to the
+        -- chain since.
+        -- <https://github.com/input-output-hk/ouroboros-network/issues/1463>
+        curTip <- lift $ atomically $ ChainDB.getTipPoint chainDB
+        when (curTip /= blockPoint newBlock) $ do
+          isInvalid <- lift $ atomically $
+            ($ blockHash newBlock) . forgetFingerprint <$>
+            ChainDB.getIsInvalidBlock chainDB
+          case isInvalid of
+            Nothing ->
+              trace $ TraceDidntAdoptBlock currentSlot newBlock
+            Just reason -> do
+              trace $ TraceForgedInvalidBlock currentSlot newBlock reason
+              -- We just produced a block that is invalid according to the
+              -- ledger in the ChainDB, while the mempool said it is valid.
+              -- There is an inconsistency between the two!
+              --
+              -- Remove all the transactions in that block, otherwise we'll
+              -- run the risk of forging the same invalid block again. This
+              -- means that we'll throw away some good transactions in the
+              -- process.
+              lift $ removeTxs mempool (map txId txs)
+          exitEarly
+
+        -- We successfully produced /and/ adopted a block
+        trace $ TraceAdoptedBlock currentSlot newBlock txs
+
+    trace :: TraceForgeEvent blk (GenTx blk) -> WithEarlyExit m ()
+    trace = lift . traceWith (forgeTracer tracers)
+
+    -- Compute maximum block size
+    --
+    -- We allow the overrides to /reduce/ the maximum size, but not increase it.
+    -- This is important because the maximum block size could be reduced due to
+    -- a protocol update, in which case any local configuration should not be
+    -- allowed to increase it.
+    maxBlockBodySize :: LedgerState blk -> Word32
+    maxBlockBodySize ledger =
+        min noOverride $ case maxBlockSizeOverride of
+          NoOverride            -> noOverride
+          MaxBlockSize     mbs  -> mbs - blockEncOverhead
+          MaxBlockBodySize mbbs -> mbbs
+      where
+        blockEncOverhead = nodeBlockEncodingOverhead ledger
+        noOverride       = nodeMaxBlockSize ledger - blockEncOverhead
 
     -- Return the point and block number of the most recent block in the
     -- current chain with a slot < the given slot. These will either
@@ -412,26 +463,50 @@ forkBlockProduction maxBlockSizeOverride IS{..} BlockProduction{..} =
     -- before us, the header right before the one at the tip of the chain.
     prevPointAndBlockNo :: SlotNo
                         -> AnchoredFragment (Header blk)
-                        -> (Point blk, BlockNo)
+                        -> Either SlotNo (Point blk, BlockNo)
     prevPointAndBlockNo slot c = case c of
-        Empty _   -> (genesisPoint, genesisBlockNo)
+        Empty _   -> Right (genesisPoint, genesisBlockNo)
         c' :> hdr -> case blockSlot hdr `compare` slot of
-          LT -> (headerPoint hdr, blockNo hdr)
+
+          -- The block at the tip of our chain has a slot number /before/ the
+          -- current slot number. This is the common case, and we just want to
+          -- connect our new block to the block at the tip.
+          LT -> Right (headerPoint hdr, blockNo hdr)
+
           -- The block at the tip of our chain has a slot that lies in the
-          -- future.
-          GT -> error "prevPointAndBlockNo: block in future"
+          -- future. Although the chain DB does not adopt future blocks, if the
+          -- system is under heavy load, it is possible (though unlikely) that
+          -- one or more slots have passed after @currentSlot@ that we got from
+          -- @onSlotChange@ and and before we queried the chain DB for the block
+          -- at its tip. At the moment, we simply don't produce a block if this
+          -- happens.
+
+          -- TODO: We may wish to produce a block here anyway, treating this
+          -- as similar to the @EQ@ case below, but we should be careful:
+          --
+          -- 1. We should think about what slot number to use.
+          -- 2. We should be careful to distinguish between the case where we
+          --    need to drop a block from the chain and where we don't.
+          -- 3. We should be careful about slot numbers and EBBs.
+          -- 4. We should probably not produce a block if the system is under
+          --    very heavy load (e.g., if a lot of blocks have been produced
+          --    after @currentTime@).
+          --
+          -- See <https://github.com/input-output-hk/ouroboros-network/issues/1462>
+          GT -> Left $ blockSlot hdr
+
           -- The block at the tip has the same slot as the block we're going
           -- to produce (@slot@), so look at the block before it.
           EQ
              | Just{} <- nodeIsEBB hdr
                -- We allow forging a block that is the successor of an EBB in
                -- the same slot.
-             -> (headerPoint hdr, blockNo hdr)
+             -> Right (headerPoint hdr, blockNo hdr)
              | _ :> hdr' <- c'
-             -> (headerPoint hdr', blockNo hdr')
+             -> Right (headerPoint hdr', blockNo hdr')
              | otherwise
                -- If there is no block before it, so use genesis.
-             -> (genesisPoint, genesisBlockNo)
+             -> Right (genesisPoint, genesisBlockNo)
 
     runProtocol :: StrictTVar m PRNG -> ProtocolM blk m a -> STM m a
     runProtocol varDRG = simOuroborosStateT varState

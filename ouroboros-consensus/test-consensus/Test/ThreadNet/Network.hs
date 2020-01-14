@@ -120,14 +120,14 @@ type ForgeEBB blk =
 -- | Parameters for the test node net
 --
 data ThreadNetworkArgs blk = ThreadNetworkArgs
-  { tnaForgeEBB       :: Maybe (ForgeEBB blk)
-  , tnaJoinPlan       :: NodeJoinPlan
-  , tnaNodeInfo       :: CoreNodeId -> ProtocolInfo blk
-  , tnaNumCoreNodes   :: NumCoreNodes
-  , tnaNumSlots       :: NumSlots
-  , tnaRNG            :: ChaChaDRG
-  , tnaSlotLengths    :: SlotLengths
-  , tnaTopology       :: NodeTopology
+  { tnaForgeEBB     :: Maybe (ForgeEBB blk)
+  , tnaJoinPlan     :: NodeJoinPlan
+  , tnaNodeInfo     :: CoreNodeId -> ProtocolInfo blk
+  , tnaNumCoreNodes :: NumCoreNodes
+  , tnaNumSlots     :: NumSlots
+  , tnaRNG          :: ChaChaDRG
+  , tnaSlotLengths  :: SlotLengths
+  , tnaTopology     :: NodeTopology
   }
 
 -- | Setup a network of core nodes, where each joins according to the node join
@@ -439,7 +439,7 @@ runThreadNetwork ThreadNetworkArgs
       let nodeArgs = NodeArgs
             { tracers             = nullDebugTracers
                 { forgeTracer       = Tracer $ \case
-                    TraceForgeAboutToLead s -> do
+                    TraceStartLeadershipCheck s -> do
                       atomically $ do
                         lim <- readTVar nextEbbSlotVar
                         check $ s < lim
@@ -780,7 +780,7 @@ getTestOutput nodes = do
               , nodeOutputNodeDBs    = nodeInfoDBs
               , nodeOutputForges     =
                   Map.fromList $
-                  [ (s, b) | TraceForgeEvent s b <- nodeEventsForges ]
+                  [ (s, b) | TraceForgedBlock s b _ <- nodeEventsForges ]
               , nodeOutputInvalids   = Set.fromList nodeEventsInvalids
               }
 
