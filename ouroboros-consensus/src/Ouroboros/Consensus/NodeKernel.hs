@@ -16,6 +16,7 @@ module Ouroboros.Consensus.NodeKernel (
     NodeKernel (..)
   , BlockProduction (..)
   , MaxBlockSizeOverride (..)
+  , MempoolCapacityBytesOverride (..)
   , NodeArgs (..)
   , TraceForgeEvent (..)
   , initNodeKernel
@@ -138,6 +139,15 @@ data MaxBlockSizeOverride
   | MaxBlockBodySize !Word32
     -- ^ Use the following maximum size in bytes for the block body.
 
+-- | An override for the default 'MempoolCapacityBytes' which is 2x the
+-- maximum block size from the protocol parameters in the ledger.
+data MempoolCapacityBytesOverride
+  = NoMempoolCapacityBytesOverride
+    -- ^ Use 2x the maximum block size from the protocol parameters in the
+    -- ledger.
+  | MempoolCapacityBytesOverride !MempoolCapacityBytes
+    -- ^ Use the following 'MempoolCapacityBytes'.
+
 -- | Arguments required when initializing a node
 data NodeArgs m peer blk = NodeArgs {
       tracers             :: Tracers m peer blk
@@ -152,7 +162,7 @@ data NodeArgs m peer blk = NodeArgs {
     , blockMatchesHeader  :: Header blk -> blk -> Bool
     , maxUnackTxs         :: Word16
     , maxBlockSize        :: MaxBlockSizeOverride
-    , mempoolCap          :: MempoolCapacityBytes
+    , mempoolCap          :: MempoolCapacityBytesOverride
     , chainSyncPipelining :: MkPipelineDecision
     }
 
@@ -217,7 +227,7 @@ initInternalState
        , ProtocolLedgerView blk
        , Ord peer
        , NoUnexpectedThunks peer
-       , ApplyTx blk
+       , RunNode blk
        )
     => NodeArgs m peer blk
     -> m (InternalState m peer blk)
@@ -226,10 +236,22 @@ initInternalState NodeArgs { tracers, chainDB, registry, cfg,
                              initState, mempoolCap } = do
     varCandidates  <- newTVarM mempty
     varState       <- newTVarM initState
+    mpCap          <- atomically $ do
+      -- If no override is provided, calculate the default mempool capacity as
+      -- 2x the current ledger's maximum block size.
+      --
+      -- It's worth noting that even though the ledger's maximum block size is
+      -- a dynamic value (it can be changed via an update proposal), we only
+      -- calculate the default mempool capacity once here. i.e. if the
+      -- ledger's maximum block size changes during runtime, the mempool
+      -- capacity /will not/ automatically adapt. The mempool capacity would
+      -- only be calculated again upon restarting the node.
+      ledger <- ledgerState <$> ChainDB.getCurrentLedger chainDB
+      pure (mempoolCapacity ledger)
     mempool        <- openMempool registry
                                   (chainDBLedgerInterface chainDB)
                                   (ledgerConfigView cfg)
-                                  mempoolCap
+                                  mpCap
                                   (mempoolTracer tracers)
 
     fetchClientRegistry <- newFetchClientRegistry
@@ -242,6 +264,13 @@ initInternalState NodeArgs { tracers, chainDB, registry, cfg,
           cfg chainDB getCandidates blockFetchSize blockMatchesHeader btime
 
     return IS {..}
+  where
+    mempoolCapacity :: LedgerState blk -> MempoolCapacityBytes
+    mempoolCapacity ledger = case mempoolCap of
+        NoMempoolCapacityBytesOverride   -> noOverride
+        MempoolCapacityBytesOverride mcb -> mcb
+      where
+        noOverride = MempoolCapacityBytes (nodeMaxBlockSize ledger * 2)
 
 initBlockFetchConsensusInterface
     :: forall m peer blk. (IOLike m, SupportedBlock blk)
