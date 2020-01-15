@@ -18,8 +18,7 @@ import           Data.Word (Word32)
 
 import           Cardano.Crypto (ProtocolMagicId)
 
-import           Ouroboros.Network.Block (BlockNo, ChainHash (..), HeaderHash,
-                     SlotNo)
+import           Ouroboros.Network.Block (BlockNo, HeaderHash, SlotNo)
 import           Ouroboros.Network.BlockFetch (SizeInBytes)
 import           Ouroboros.Network.Magic (NetworkMagic)
 
@@ -27,6 +26,7 @@ import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime (SystemStart)
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Byron
+import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Mempool
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util.IOLike (IOLike)
@@ -39,10 +39,10 @@ class (ProtocolLedgerView blk, ApplyTx blk) => RunNode blk where
 
   nodeForgeBlock          :: (HasNodeState (BlockProtocol blk) m, MonadRandom m)
                           => NodeConfig (BlockProtocol blk)
-                          -> SlotNo         -- ^ Current slot
-                          -> BlockNo        -- ^ Current block number
-                          -> ChainHash blk  -- ^ Previous hash
-                          -> [GenTx blk]    -- ^ Txs to add in the block
+                          -> SlotNo              -- ^ Current slot
+                          -> BlockNo             -- ^ Current block number
+                          -> ExtLedgerState blk  -- ^ Current ledger
+                          -> [GenTx blk]         -- ^ Txs to add in the block
                           -> IsLeader (BlockProtocol blk)
                           -> m blk
 
