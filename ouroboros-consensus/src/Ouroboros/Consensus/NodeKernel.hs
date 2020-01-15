@@ -108,11 +108,11 @@ data BlockProduction m blk = BlockProduction {
       -- (also provided as an argument) and with each other (when applied in
       -- order). In principle /all/ of them could be included in the block (up
       -- to maximum block size).
-      produceBlock :: IsLeader (BlockProtocol blk) -- Proof we are leader
+      produceBlock :: SlotNo             -- Current slot
+                   -> BlockNo            -- Current block number
                    -> ExtLedgerState blk -- Current ledger state
-                   -> SlotNo             -- Current slot
-                   -> BlockNo            -- Previous block number
                    -> [GenTx blk]        -- Contents of the mempool
+                   -> IsLeader (BlockProtocol blk) -- Proof we are leader
                    -> ProtocolM blk m blk
 
       -- | Produce a random seed
@@ -390,11 +390,11 @@ forkBlockProduction maxBlockSizeOverride IS{..} BlockProduction{..} =
         -- Actually produce the block
         newBlock <- lift $ atomically $ runProtocol varDRG $
           produceBlock
-            proof
-            extLedger
             currentSlot
-            prevNo
+            (succ prevNo)
+            extLedger
             txs
+            proof
         trace $ TraceForgedBlock
                   currentSlot
                   newBlock

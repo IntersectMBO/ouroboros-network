@@ -393,18 +393,8 @@ runThreadNetwork ThreadNetworkArgs
 
       let blockProduction :: BlockProduction m blk
           blockProduction = BlockProduction {
-              produceBlock = \proof extLedger slot prevNo txs -> do
-                let curNo :: BlockNo
-                    curNo = succ prevNo
-
-                nodeForgeBlock pInfoConfig
-                               slot
-                               curNo
-                               extLedger
-                               txs
-                               proof
-
-            , produceDRG      = atomically $ simChaChaT varRNG id $ drgNew
+              produceBlock = nodeForgeBlock pInfoConfig
+            , produceDRG   = atomically $ simChaChaT varRNG id $ drgNew
             }
 
       (nodeInfo, readNodeInfo) <- newNodeInfo
