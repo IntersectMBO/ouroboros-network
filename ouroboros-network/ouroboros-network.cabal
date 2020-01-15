@@ -56,8 +56,9 @@ library
                        Ouroboros.Network.Channel
                        Ouroboros.Network.Connections.Concurrent
                        Ouroboros.Network.Connections.Types
-                       Ouroboros.Network.Connections.Client.Inet
-                       Ouroboros.Network.Connections.Server.Inet
+                       Ouroboros.Network.Connections.Socket.Client
+                       Ouroboros.Network.Connections.Socket.Server
+                       Ouroboros.Network.Connections.Socket.Types
                        Ouroboros.Network.DeltaQ
                        Ouroboros.Network.Magic
                        Ouroboros.Network.ErrorPolicy

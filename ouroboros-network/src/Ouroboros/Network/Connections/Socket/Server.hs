@@ -1,59 +1,68 @@
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE GADTs #-}
 {-# LANGUAGE CPP #-}
 
-module Ouroboros.Network.Connections.Server.Inet
-  ( inetServer
+module Ouroboros.Network.Connections.Socket.Server
+  ( server
   ) where
 
 import Control.Exception (IOException, bracket, mask, try)
-import Control.Monad (forever)
+import Control.Monad (forever, when)
 import Data.Void (Void)
-import Network.Socket (Family, Socket, SockAddr (..))
+import Network.Socket (Socket)
 import qualified Network.Socket as Socket
 
+import Ouroboros.Network.Connections.Socket.Types (SockAddr (..), forgetSockType)
 import Ouroboros.Network.Connections.Types
 
 -- | Creates a socket of a given family, bound to a given address, and forever
 -- accepts connections, passing them to the `Connections` term via `include`.
 -- That determines whether they are rejected (and immediately closed by this
 -- server). Rate and resource limiting can be imposed by the `Connections`
--- term itself, and is not dealt with by this server.
+-- term itself, or by the OS/firewall; it is not dealt with by this server.
 --
 -- TODO add a tracer parameter.
-inetServer
+server
   :: (IOException -> IO ()) -- What to do in case of exception on accept.
                             -- Re-throwing will kill the server.
-  -> Family -- INET or INET6. You can run inetServer concurrently, once for each
-            -- family.
-  -> SockAddr -- Bind address
-  -> Server SockAddr Socket reject accept IO Void
-inetServer acceptException family bindaddr k = bracket
+  -> SockAddr sockType      -- Bind address
+  -> Server Socket.SockAddr Socket reject accept IO Void
+server acceptException bindaddr k = bracket
     openSocket
     closeSocket
     (acceptLoop acceptException k)
   where
   openSocket = bracket createSocket closeSocket $ \sock -> do
-    Socket.setSocketOption sock Socket.ReuseAddr 1
-    -- SO_REUSEPORT is not available on Windows.
-    -- But fortunately, SO_REUSEADDR on Windows does what SO_REUSEPORT does
-    -- on BSD-like implementations.
+    when isInet $ do
+      Socket.setSocketOption sock Socket.ReuseAddr 1
+      -- SO_REUSEPORT is not available on Windows.
+      -- But fortunately, SO_REUSEADDR on Windows does what SO_REUSEPORT does
+      -- on BSD-like implementations.
 #if !defined(mingw32_HOST_OS)
-    Socket.setSocketOption sock Socket.ReusePort 1
+      Socket.setSocketOption sock Socket.ReusePort 1
 #endif
-    case bindaddr of
-      SockAddrInet6 _ _ _ _ -> Socket.setSocketOption sock Socket.IPv6Only 1
-      _ -> pure ()
-    Socket.bind sock bindaddr
-    Socket.listen sock 1
+    when isInet6 $ Socket.setSocketOption sock Socket.IPv6Only 1
+    when isInet  $ do
+      Socket.bind sock (forgetSockType bindaddr)
+      Socket.listen sock 1
     return sock
     
+  createSocket :: IO Socket
   createSocket = Socket.socket family Socket.Stream Socket.defaultProtocol
 
+  closeSocket :: Socket -> IO ()
   closeSocket = Socket.close
+
+  isInet, isInet6 :: Bool
+  family :: Socket.Family
+  (isInet, isInet6, family) = case bindaddr of
+    SockAddrInet  _ _     -> (True,  False, Socket.AF_INET)
+    SockAddrInet6 _ _ _ _ -> (True,  True,  Socket.AF_INET6)
+    SockAddrUnix  _       -> (False, False, Socket.AF_UNIX)
 
 acceptLoop
   :: (IOException -> IO ()) -- ^ Exception on `Socket.accept`.
-  -> (SockAddr -> Socket -> IO () -> IO (Decision Incoming reject acceptn))
+  -> (Socket.SockAddr -> Socket -> IO () -> IO (Decision Incoming reject acceptn))
   -> Socket
   -> IO x
 acceptLoop acceptException k socket =
@@ -62,12 +71,12 @@ acceptLoop acceptException k socket =
 -- | Accepts one connection and includes it in the `Connections` term.
 acceptOne
   :: (IOException -> IO ()) -- ^ Exception on `Socket.accept`.
-  -> (SockAddr -> Socket -> IO () -> IO (Decision Incoming reject accept))
+  -> (Socket.SockAddr -> Socket -> IO () -> IO (Decision Incoming reject accept))
   -> Socket
   -> IO ()
 acceptOne acceptException k socket = mask $ \restore -> do
   acceptResult <- try (restore (Socket.accept socket))
-  case acceptResult :: Either IOException (Socket, SockAddr) of
+  case acceptResult :: Either IOException (Socket, Socket.SockAddr) of
     Left ex -> restore (acceptException ex)
     Right (sock, addr) -> do
       -- OK to run under mask.
