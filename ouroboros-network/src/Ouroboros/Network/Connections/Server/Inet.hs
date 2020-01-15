@@ -1,4 +1,5 @@
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE CPP #-}
 
 module Ouroboros.Network.Connections.Server.Inet
   ( inetServer
@@ -7,7 +8,7 @@ module Ouroboros.Network.Connections.Server.Inet
 import Control.Exception (IOException, bracket, mask, try)
 import Control.Monad (forever)
 import Data.Void (Void)
-import Network.Socket (Family, Socket, SockAddr)
+import Network.Socket (Family, Socket, SockAddr (..))
 import qualified Network.Socket as Socket
 
 import Ouroboros.Network.Connections.Types
@@ -32,6 +33,16 @@ inetServer acceptException family bindaddr k = bracket
     (acceptLoop acceptException k)
   where
   openSocket = bracket createSocket closeSocket $ \sock -> do
+    Socket.setSocketOption sock Socket.ReuseAddr 1
+    -- SO_REUSEPORT is not available on Windows.
+    -- But fortunately, SO_REUSEADDR on Windows does what SO_REUSEPORT does
+    -- on BSD-like implementations.
+#if !defined(mingw32_HOST_OS)
+    Socket.setSocketOption sock Socket.ReusePort 1
+#endif
+    case bindaddr of
+      SockAddrInet6 _ _ _ _ -> Socket.setSocketOption sock Socket.IPv6Only 1
+      _ -> pure ()
     Socket.bind sock bindaddr
     Socket.listen sock 1
     return sock

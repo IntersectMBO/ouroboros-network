@@ -1,11 +1,12 @@
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE CPP #-}
 
 module Ouroboros.Network.Connections.Client.Inet
   ( inetClient
   ) where
 
 import Control.Exception (bracket)
-import Network.Socket (Family, Socket, SockAddr)
+import Network.Socket (Family, Socket, SockAddr (..))
 import qualified Network.Socket as Socket
 
 import Ouroboros.Network.Connections.Types
@@ -26,6 +27,15 @@ inetClient family bindaddr sockaddr k = k sockaddr openSocket closeSocket
   -- here within openSocket, in case bind or connect fails
   openSocket :: IO Socket
   openSocket = bracket createSocket closeSocket $ \sock -> do
+    Socket.setSocketOption sock Socket.ReuseAddr 1
+#if !defined(mingw32_HOST_OS)
+    Socket.setSocketOption sock Socket.ReusePort 1
+#endif
+    case sockaddr of
+      -- TODO also check the family parameter.
+      -- Better yet, infer the family parameter from the SockAddr.
+      SockAddrInet6 _ _ _ _ -> Socket.setSocketOption sock Socket.IPv6Only 1
+      _ -> pure ()
     Socket.bind sock bindaddr
     Socket.connect sock sockaddr
     return sock
