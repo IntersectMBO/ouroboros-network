@@ -66,7 +66,7 @@ import qualified Data.ByteString.Lazy as BL
 import           Data.Int
 import           Data.Void
 
-import qualified Network.Socket as Socket hiding (recv)
+import qualified Network.Socket as Socket
 
 import           Cardano.Prelude (NoUnexpectedThunks (..), ThunkInfo (..))
 
@@ -466,8 +466,7 @@ runServerThread NetworkServerTracers { nstMuxTracer
         (beginConnection nstMuxTracer nstHandshakeTracer versionDataCodec acceptVersion (acceptConnectionTx sockAddr))
         -- register producer when application starts, it will be unregistered
         -- using 'CompleteConnection'
-        (\remoteAddr thread st -> pure $ registerProducer remoteAddr thread
-        st)
+        (\remoteAddr thread st -> pure $ registerProducer remoteAddr thread st)
         completeTx mainTx (toLazyTVar nmsPeerStates)
   where
     mainTx :: Server.Main (PeerStates IO Socket.SockAddr) Void

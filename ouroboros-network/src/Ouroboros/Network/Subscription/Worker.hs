@@ -155,7 +155,6 @@ sockAddrFamily
 sockAddrFamily (Socket.SockAddrInet  _ _    ) = Socket.AF_INET
 sockAddrFamily (Socket.SockAddrInet6 _ _ _ _) = Socket.AF_INET6
 sockAddrFamily (Socket.SockAddrUnix _       ) = Socket.AF_UNIX
-sockAddrFamily _                              = Socket.AF_UNSPEC
 
 -- | 'Socket' term instanciated with 'Network.Socket'.
 --
