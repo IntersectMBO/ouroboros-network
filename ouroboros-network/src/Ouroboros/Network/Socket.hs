@@ -297,7 +297,7 @@ beginConnection
     -> (forall vData. extra vData -> vData -> vData -> Accept)
     -> (Time -> addr -> st -> STM.STM (AcceptConnection st vNumber extra peerid ptcl IO BL.ByteString))
     -- ^ either accept or reject a connection.
-    -> Server.BeginConnection addr Socket.Socket st ()
+    -> Server.BeginConnection IO addr Socket.Socket st ()
 beginConnection muxTracer handshakeTracer versionDataCodec acceptVersion fn t addr st = do
     accept <- fn t addr st
     case accept of
@@ -357,7 +357,7 @@ mkListeningSocket addrFamily_ addr = do
 fromSocket
     :: ConnectionTable IO Socket.SockAddr
     -> Socket.Socket
-    -> Server.Socket Socket.SockAddr Socket.Socket
+    -> Server.Socket IO Socket.SockAddr Socket.Socket
 fromSocket tblVar sd = Server.Socket
     { Server.acceptConnection = do
         (sd', remoteAddr) <- Socket.accept sd
@@ -470,14 +470,14 @@ runServerThread NetworkServerTracers { nstMuxTracer
         st)
         completeTx mainTx (toLazyTVar nmsPeerStates)
   where
-    mainTx :: Server.Main (PeerStates IO Socket.SockAddr) Void
+    mainTx :: Server.Main IO (PeerStates IO Socket.SockAddr) Void
     mainTx (ThrowException e) = throwM e
     mainTx PeerStates{}       = retry
 
     -- When a connection completes, we do nothing. State is ().
     -- Crucially: we don't re-throw exceptions, because doing so would
     -- bring down the server.
-    completeTx :: Server.CompleteConnection
+    completeTx :: Server.CompleteConnection IO
                     Socket.SockAddr
                     (PeerStates IO Socket.SockAddr)
                     (WithAddr Socket.SockAddr ErrorPolicyTrace)
