@@ -16,19 +16,19 @@ import Data.Kind (Type)
 import qualified Network.Socket as Socket
 
 data SockType where
-  Inet4 :: SockType
-  Inet6 :: SockType
-  Unix  :: SockType
+  IPv4 :: SockType
+  IPv6 :: SockType
+  Unix :: SockType
 
 -- | Like `Network.Socket.SockAddr` but with a type parameter indicating which
 -- kind of address it is: IPv4, IPv6, or Unix domain.
 data SockAddr (sockType :: SockType) where
-  SockAddrInet  :: !Socket.PortNumber -> !Socket.HostAddress -> SockAddr Inet4
-  SockAddrInet6 :: !Socket.PortNumber
+  SockAddrIPv4  :: !Socket.PortNumber -> !Socket.HostAddress -> SockAddr IPv4
+  SockAddrIPv6 :: !Socket.PortNumber
                 -> !Socket.FlowInfo
                 -> !Socket.HostAddress6
                 -> !Socket.ScopeID
-                -> SockAddr Inet6
+                -> SockAddr IPv6
   SockAddrUnix  :: String -> SockAddr Unix
 
 -- | A connection is identified by a pair of addresses. For IPv* this is fine,
@@ -40,9 +40,9 @@ data SockAddr (sockType :: SockType) where
 -- `SockAddrUnix ""` term, maybe using its file descriptor.
 --
 data ConnectionId where
-  ConnectionIdIPv6 :: !(SockAddr Inet6) -> !(SockAddr Inet6) -> ConnectionId
-  ConnectionIdIPv4 :: !(SockAddr Inet4) -> !(SockAddr Inet4) -> ConnectionId
-  ConnectionIdUnix :: !(SockAddr Unix)  -> !(SockAddr Unix)  -> ConnectionId
+  ConnectionIdIPv6 :: !(SockAddr IPv6) -> !(SockAddr IPv6) -> ConnectionId
+  ConnectionIdIPv4 :: !(SockAddr IPv4) -> !(SockAddr IPv4) -> ConnectionId
+  ConnectionIdUnix :: !(SockAddr Unix) -> !(SockAddr Unix) -> ConnectionId
 
 instance Eq ConnectionId where
   ConnectionIdIPv6 a b == ConnectionIdIPv6 c d =
@@ -70,12 +70,12 @@ data Some (ty :: l -> Type) where
 
 withSockType :: Socket.SockAddr -> Some SockAddr
 withSockType sockAddr = case sockAddr of
-  Socket.SockAddrInet  pn ha       -> Some (SockAddrInet  pn ha)
-  Socket.SockAddrInet6 pn fi ha si -> Some (SockAddrInet6 pn fi ha si)
-  Socket.SockAddrUnix  st          -> Some (SockAddrUnix  st)
+  Socket.SockAddrInet  pn ha       -> Some (SockAddrIPv4 pn ha)
+  Socket.SockAddrInet6 pn fi ha si -> Some (SockAddrIPv6 pn fi ha si)
+  Socket.SockAddrUnix  st          -> Some (SockAddrUnix st)
 
 forgetSockType :: SockAddr sockType -> Socket.SockAddr
 forgetSockType sockAddr = case sockAddr of
-  SockAddrInet  pn ha       -> Socket.SockAddrInet  pn ha
-  SockAddrInet6 pn fi ha si -> Socket.SockAddrInet6 pn fi ha si
-  SockAddrUnix  st          -> Socket.SockAddrUnix  st
+  SockAddrIPv4 pn ha       -> Socket.SockAddrInet  pn ha
+  SockAddrIPv6 pn fi ha si -> Socket.SockAddrInet6 pn fi ha si
+  SockAddrUnix st          -> Socket.SockAddrUnix  st

@@ -56,9 +56,9 @@ server acceptException bindaddr k = bracket
   isInet, isInet6 :: Bool
   family :: Socket.Family
   (isInet, isInet6, family) = case bindaddr of
-    SockAddrInet  _ _     -> (True,  False, Socket.AF_INET)
-    SockAddrInet6 _ _ _ _ -> (True,  True,  Socket.AF_INET6)
-    SockAddrUnix  _       -> (False, False, Socket.AF_UNIX)
+    SockAddrIPv4 _ _     -> (True,  False, Socket.AF_INET)
+    SockAddrIPv6 _ _ _ _ -> (True,  True,  Socket.AF_INET6)
+    SockAddrUnix _       -> (False, False, Socket.AF_UNIX)
 
 acceptLoop
   :: (IOException -> IO ()) -- ^ Exception on `Socket.accept`.
