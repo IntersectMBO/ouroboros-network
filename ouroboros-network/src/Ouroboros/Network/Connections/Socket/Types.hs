@@ -7,8 +7,10 @@ module Ouroboros.Network.Connections.Socket.Types
   ( SockType (..)
   , SockAddr (..)
   , ConnectionId (..)
+  , makeConnectionId
   , Some (..)
   , withSockType
+  , matchSockType
   , forgetSockType
   ) where
 
@@ -65,6 +67,14 @@ instance Ord ConnectionId where
   ConnectionIdIPv4 _ _ `compare` _ = GT
   ConnectionIdUnix _ _ `compare` _ = LT
 
+makeConnectionId :: SockAddr sockType -> SockAddr sockType -> ConnectionId
+makeConnectionId a@(SockAddrIPv6 _ _ _ _) b@(SockAddrIPv6 _ _ _ _) =
+  ConnectionIdIPv6 a b
+makeConnectionId a@(SockAddrIPv4 _ _) b@(SockAddrIPv4 _ _) =
+  ConnectionIdIPv4 a b
+makeConnectionId a@(SockAddrUnix _) b@(SockAddrUnix _) =
+  ConnectionIdUnix a b
+
 data Some (ty :: l -> Type) where
   Some :: ty x -> Some ty
 
@@ -73,6 +83,17 @@ withSockType sockAddr = case sockAddr of
   Socket.SockAddrInet  pn ha       -> Some (SockAddrIPv4 pn ha)
   Socket.SockAddrInet6 pn fi ha si -> Some (SockAddrIPv6 pn fi ha si)
   Socket.SockAddrUnix  st          -> Some (SockAddrUnix st)
+
+-- | Gives `Just` if the second socket address is of the same type as the
+-- first one.
+matchSockType :: SockAddr sockType -> Socket.SockAddr -> Maybe (SockAddr sockType)
+matchSockType (SockAddrIPv6 _ _ _ _) (Socket.SockAddrInet6 pn fi ha si) =
+  Just (SockAddrIPv6 pn fi ha si)
+matchSockType (SockAddrIPv4 _ _) (Socket.SockAddrInet pn ha) =
+  Just (SockAddrIPv4 pn ha)
+matchSockType (SockAddrUnix _) (Socket.SockAddrUnix st) =
+  Just (SockAddrUnix st)
+matchSockType _ _ = Nothing
 
 forgetSockType :: SockAddr sockType -> Socket.SockAddr
 forgetSockType sockAddr = case sockAddr of

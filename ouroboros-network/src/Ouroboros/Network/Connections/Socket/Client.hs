@@ -11,7 +11,8 @@ import Control.Monad (when)
 import Network.Socket (Socket)
 import qualified Network.Socket as Socket
 
-import Ouroboros.Network.Connections.Socket.Types (SockAddr (..), forgetSockType)
+import Ouroboros.Network.Connections.Socket.Types (ConnectionId, SockAddr (..),
+         makeConnectionId, forgetSockType)
 import Ouroboros.Network.Connections.Types
 
 -- | Given an address to bind to, this client will attempt to connect to the
@@ -22,8 +23,8 @@ import Ouroboros.Network.Connections.Types
 client
   :: SockAddr sockType -- Our address (bind to this).
   -> SockAddr sockType -- Remote address (connect to this).
-  -> Client Socket.SockAddr Socket reject accept IO (Decision Outgoing reject accept)
-client bindaddr sockaddr k = k (forgetSockType sockaddr) openSocket closeSocket
+  -> Client ConnectionId Socket reject accept IO (Decision Outgoing reject accept)
+client bindaddr sockaddr k = k (makeConnectionId bindaddr sockaddr) openSocket closeSocket
 
   where
 

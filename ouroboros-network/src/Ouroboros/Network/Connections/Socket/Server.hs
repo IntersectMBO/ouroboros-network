@@ -6,13 +6,14 @@ module Ouroboros.Network.Connections.Socket.Server
   ( server
   ) where
 
-import Control.Exception (IOException, bracket, mask, try)
+import Control.Exception (IOException, bracket, mask, onException, try)
 import Control.Monad (forever, when)
 import Data.Void (Void)
 import Network.Socket (Socket)
 import qualified Network.Socket as Socket
 
-import Ouroboros.Network.Connections.Socket.Types (SockAddr (..), forgetSockType)
+import Ouroboros.Network.Connections.Socket.Types (ConnectionId, SockAddr (..),
+         makeConnectionId, matchSockType, forgetSockType)
 import Ouroboros.Network.Connections.Types
 
 -- | Creates a socket of a given family, bound to a given address, and forever
@@ -26,11 +27,11 @@ server
   :: (IOException -> IO ()) -- What to do in case of exception on accept.
                             -- Re-throwing will kill the server.
   -> SockAddr sockType      -- Bind address
-  -> Server Socket.SockAddr Socket reject accept IO Void
+  -> Server ConnectionId Socket reject accept IO Void
 server acceptException bindaddr k = bracket
     openSocket
     closeSocket
-    (acceptLoop acceptException k)
+    (acceptLoop acceptException k bindaddr)
   where
   openSocket = bracket createSocket closeSocket $ \sock -> do
     when isInet $ do
@@ -62,28 +63,36 @@ server acceptException bindaddr k = bracket
 
 acceptLoop
   :: (IOException -> IO ()) -- ^ Exception on `Socket.accept`.
-  -> (Socket.SockAddr -> Socket -> IO () -> IO (Decision Incoming reject acceptn))
+  -> (ConnectionId -> Socket -> IO () -> IO (Decision Incoming reject acceptn))
+  -> SockAddr sockType -- Bind address; needed to construct ConnectionId
   -> Socket
   -> IO x
-acceptLoop acceptException k socket =
-  forever (acceptOne acceptException k socket)
+acceptLoop acceptException k bindaddr socket =
+  forever (acceptOne acceptException k bindaddr socket)
 
 -- | Accepts one connection and includes it in the `Connections` term.
 acceptOne
   :: (IOException -> IO ()) -- ^ Exception on `Socket.accept`.
-  -> (Socket.SockAddr -> Socket -> IO () -> IO (Decision Incoming reject accept))
+  -> (ConnectionId -> Socket -> IO () -> IO (Decision Incoming reject accept))
+  -> SockAddr sockType -- Bind address; needed to construct ConnectionId
   -> Socket
   -> IO ()
-acceptOne acceptException k socket = mask $ \restore -> do
+acceptOne acceptException k bindaddr socket = mask $ \restore -> do
   acceptResult <- try (restore (Socket.accept socket))
   case acceptResult :: Either IOException (Socket, Socket.SockAddr) of
     Left ex -> restore (acceptException ex)
-    Right (sock, addr) -> do
-      -- OK to run under mask.
-      includeResult <- k addr sock (Socket.close sock)
-      -- If it was rejected, we're responsible for closing. Otherwise, there's
-      -- nothing to do now; the continuation `k` has taken responsibility for
-      -- that socket.
-      case includeResult of
-        Rejected _ -> restore (Socket.close sock)
-        Accepted _ -> pure ()
+    Right (sock, addr) -> case matchSockType bindaddr addr of
+      Nothing -> error "mismatched socket address types"
+      Just peeraddr -> do
+        let connId = makeConnectionId bindaddr peeraddr
+        -- Including the connection could fail exceptionally, in which case we
+        -- are still responsible for closing the socket.
+        includeResult <- restore (k connId sock (Socket.close sock))
+                         `onException`
+                         Socket.close sock
+        -- If it was rejected, we're responsible for closing. Otherwise, there's
+        -- nothing to do now; the continuation `k` has taken responsibility for
+        -- that socket.
+        case includeResult of
+          Rejected _ -> restore (Socket.close sock)
+          Accepted _ -> pure ()
