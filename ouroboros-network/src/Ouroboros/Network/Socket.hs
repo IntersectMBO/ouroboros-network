@@ -86,6 +86,7 @@ import           Ouroboros.Network.Protocol.Handshake.Type
 import           Ouroboros.Network.Protocol.Handshake.Version
 import           Ouroboros.Network.Protocol.Handshake.Codec
 import           Ouroboros.Network.Mux
+import           Ouroboros.Network.Channel
 import qualified Ouroboros.Network.Server.Socket as Server
 import           Ouroboros.Network.Server.ConnectionTable
 
@@ -232,7 +233,7 @@ connectToNode' versionDataCodec NetworkConnectTracers {nctMuxTracer, nctHandshak
               nctHandshakeTracer
               codecHandshake
               connectionId
-              (Mx.muxBearerAsControlChannel bearer Mx.ModeInitiator)
+              (fromChannel (Mx.muxBearerAsControlChannel bearer Mx.ModeInitiator))
               (handshakeClientPeer versionDataCodec versions)
     ts_end <- getMonotonicTime
     case mapp of
@@ -310,7 +311,7 @@ beginConnection muxTracer handshakeTracer versionDataCodec acceptVersion fn t ad
                 handshakeTracer
                 codecHandshake
                 peerid
-                (Mx.muxBearerAsControlChannel bearer Mx.ModeResponder)
+                (fromChannel (Mx.muxBearerAsControlChannel bearer Mx.ModeResponder))
                 (handshakeServerPeer versionDataCodec acceptVersion versions)
         case mapp of
           Left err -> do

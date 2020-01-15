@@ -34,8 +34,8 @@ import qualified Data.ByteString.Lazy as BL
 
 import           Control.Monad.Class.MonadTime
 
-import           Network.Mux.Channel (Channel)
-import qualified Network.TypedProtocol.Channel as TypedProtocol
+import           Network.Mux.Channel (Channel(..))
+
 
 newtype RemoteClockModel
   = RemoteClockModel { unRemoteClockModel :: Word32 }
@@ -186,16 +186,13 @@ data MuxBearer m = MuxBearer {
 muxBearerAsControlChannel
   :: MuxBearer IO
   -> MiniProtocolMode
-  -> TypedProtocol.Channel IO BL.ByteString
+  -> Channel IO
 muxBearerAsControlChannel bearer mode =
-      TypedProtocol.Channel {
-        TypedProtocol.send = send,
-        TypedProtocol.recv = recv
+      Channel {
+        send = \blob -> void $ write bearer (wrap blob),
+        recv = Just . msBlob . fst <$> read bearer
       }
     where
-      send blob = void $ write bearer (wrap blob)
-      recv = Just . msBlob . fst <$> read bearer
-
       -- wrap a 'ByteString' as 'MuxSDU'
       wrap :: BL.ByteString -> MuxSDU
       wrap blob = MuxSDU {
