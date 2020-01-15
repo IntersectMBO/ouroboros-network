@@ -32,6 +32,23 @@ data Resource provenance m r where
   New      :: m r -> (r -> m ()) -> Resource Outgoing m r
 
 -- | Connections identified by `id`, carried by `socket`, supported by `m`.
+--
+-- For `Existing` resources, if the decision is `Rejected`, or if the call
+-- throws an exception (`m` is IO-capable), then the caller is responsible for
+-- closing the resource. Otherwise, the `Connections` term must ensure it is
+-- closed appropriately.
+--
+-- For `New` resources, the caller does not create the resource, so the
+-- `Connections` term is responsible for creating and closing it appropriately.
+--
+-- Note on exceptions: in case `m` can throw exceptions, there's some
+-- ambiguity about when it's a good idea to do so, because it's not clear
+-- whether an exception should be caught and used to give a `Rejected` value,
+-- or simply ignore/re-thrown.
+--
+-- If the resource acquisition of a `New` connection throws an exception, that
+-- should be re-thrown. This is consistent with bracketing of the acquire and
+-- release fields of the `New` constructor, which also re-throws the exception.
 data Connections id socket reject accept m = Connections
   { include :: forall provenance . id -> Resource provenance m socket -> m (Decision provenance reject accept) }
 

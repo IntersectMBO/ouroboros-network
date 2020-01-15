@@ -6,6 +6,7 @@
 module Ouroboros.Network.Connections.Socket.Types
   ( SockType (..)
   , SockAddr (..)
+  , ConnectionId (..)
   , Some (..)
   , withSockType
   , forgetSockType
@@ -29,6 +30,40 @@ data SockAddr (sockType :: SockType) where
                 -> !Socket.ScopeID
                 -> SockAddr Inet6
   SockAddrUnix  :: String -> SockAddr Unix
+
+-- | A connection is identified by a pair of addresses. For IPv* this is fine,
+-- but not for Unix domain sockets: these can be unnamed, so that a connecting
+-- socket which does not bind will get the address `SockAddrUnix ""`.
+--
+-- How to deal with this?
+-- One obvious way is to simply make up an ephemeral identifier for any
+-- `SockAddrUnix ""` term, maybe using its file descriptor.
+--
+data ConnectionId where
+  ConnectionIdIPv6 :: !(SockAddr Inet6) -> !(SockAddr Inet6) -> ConnectionId
+  ConnectionIdIPv4 :: !(SockAddr Inet4) -> !(SockAddr Inet4) -> ConnectionId
+  ConnectionIdUnix :: !(SockAddr Unix)  -> !(SockAddr Unix)  -> ConnectionId
+
+instance Eq ConnectionId where
+  ConnectionIdIPv6 a b == ConnectionIdIPv6 c d =
+    (forgetSockType a, forgetSockType b) == (forgetSockType c, forgetSockType d)
+  ConnectionIdIPv4 a b == ConnectionIdIPv4 c d =
+    (forgetSockType a, forgetSockType b) == (forgetSockType c, forgetSockType d)
+  ConnectionIdUnix a b == ConnectionIdUnix c d =
+    (forgetSockType a, forgetSockType b) == (forgetSockType c, forgetSockType d)
+  _ == _ = False
+
+instance Ord ConnectionId where
+  ConnectionIdIPv6 a b `compare` ConnectionIdIPv6 c d =
+    (forgetSockType a, forgetSockType b) `compare` (forgetSockType c, forgetSockType d)
+  ConnectionIdIPv4 a b `compare` ConnectionIdIPv4 c d =
+    (forgetSockType a, forgetSockType b) `compare` (forgetSockType c, forgetSockType d)
+  ConnectionIdUnix a b `compare` ConnectionIdUnix c d =
+    (forgetSockType a, forgetSockType b) `compare` (forgetSockType c, forgetSockType d)
+  -- Put IPv6 above IPv4 and Unix; IPv4 above Unix, Unix at the bottom.
+  ConnectionIdIPv6 _ _ `compare` _ = GT
+  ConnectionIdIPv4 _ _ `compare` _ = GT
+  ConnectionIdUnix _ _ `compare` _ = LT
 
 data Some (ty :: l -> Type) where
   Some :: ty x -> Some ty
