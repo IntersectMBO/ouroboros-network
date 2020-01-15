@@ -157,10 +157,12 @@ instance (MiniProtocolLimits ptcl) => MiniProtocolLimits (MiniProtocolId ptcl) w
 -- | Control Interface for the Initiator side of Miniprotocols.
 -- The outer STM action is used to signal that the miniprotocol should start.
 -- The inner STM action provides the result of the miniprotocol.
-newtype MiniProtocolInitiatorControl m a = MiniProtocolInitiatorControl (STM m (STM m a))
+newtype MiniProtocolInitiatorControl m a =
+        MiniProtocolInitiatorControl { getMiniProtocolInitiatorControl :: (STM m (STM m a)) }
 
 -- | STM action for reading the result of the responder side of a Miniprotocol.
-newtype MiniProtocolResponderControl m b = MiniProtocolResponderControl (STM m b)
+newtype MiniProtocolResponderControl m b =
+        MiniProtocolResponderControl { getMiniProtocolResponderControl :: (STM m b) }
 
 --
 -- Mux internal types

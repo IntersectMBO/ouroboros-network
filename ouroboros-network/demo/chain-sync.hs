@@ -178,9 +178,7 @@ clientPingPong pipelined =
         (pingPongClientPeer (pingPongClientCount 5))
 
     clientK ctrlFn = do
-        let (MiniProtocolInitiatorControl ppRelease) = ctrlFn PingPong0
-
-        ppResult <- atomically ppRelease
+        ppResult <- atomically $ getMiniProtocolInitiatorControl $ ctrlFn PingPong0
         void $ atomically ppResult
 
 
@@ -218,10 +216,7 @@ serverPingPong = do
         codecPingPong
         (pingPongServerPeer pingPongServerStandard)
 
-    serverK rspFn = do
-        let (MiniProtocolResponderControl ppResult) = rspFn PingPong0
-
-        void $ atomically ppResult
+    serverK rspFn = void $ atomically $ getMiniProtocolResponderControl $ rspFn PingPong0
 
 pingPongServerStandard
   :: Applicative m
@@ -283,10 +278,9 @@ clientPingPong2 =
         (pingPongClientPeer (pingPongClientCount 5))
 
     clientK ctrlFn = do
-        let (MiniProtocolInitiatorControl ppRelease) = ctrlFn PingPong1
-            (MiniProtocolInitiatorControl ppRelease') = ctrlFn PingPong1'
-
-        (ppResult, ppResult') <- atomically $ (,) <$> ppRelease <*> ppRelease'
+        (ppResult, ppResult') <- atomically $ (,)
+            <$> getMiniProtocolInitiatorControl (ctrlFn PingPong1)
+            <*> getMiniProtocolInitiatorControl (ctrlFn PingPong1')
         void $ atomically $ ppResult *> ppResult'
 
 pingPongClientPipelinedMax
@@ -343,11 +337,9 @@ serverPingPong2 = do
         codecPingPong
         (pingPongServerPeer pingPongServerStandard)
 
-    serverK rspFn = do
-        let (MiniProtocolResponderControl ppResult) = rspFn PingPong1
-            (MiniProtocolResponderControl ppResult') = rspFn PingPong1'
-
-        void $ atomically $ ppResult *> ppResult'
+    serverK rspFn =
+        void $ atomically $ getMiniProtocolResponderControl (rspFn PingPong1)
+                         *> getMiniProtocolResponderControl (rspFn PingPong1')
 
 --
 -- Chain sync demo
@@ -393,9 +385,7 @@ clientChainSync sockAddrs =
         (ChainSync.chainSyncClientPeer chainSyncClient)
 
     clientK ctrlFn = do
-        let (MiniProtocolInitiatorControl csRelease) = ctrlFn ChainSync2
-
-        csResult <- atomically csRelease
+        csResult <- atomically $ getMiniProtocolInitiatorControl $ ctrlFn ChainSync2
         void $ atomically $ csResult
 
 serverChainSync :: FilePath -> IO Void
@@ -430,10 +420,8 @@ serverChainSync sockAddr = do
          codecChainSync
         (ChainSync.chainSyncServerPeer (chainSyncServer prng))
 
-    serverK rspFn = do
-        let (MiniProtocolResponderControl csResult) = rspFn ChainSync2
-
-        void $ atomically $ csResult
+    serverK rspFn =
+        void $ atomically $ getMiniProtocolResponderControl $ rspFn ChainSync2
 
 
 codecChainSync :: ( CBOR.Serialise (HeaderHash block)
@@ -576,10 +564,9 @@ clientBlockFetch sockAddrs = do
           chainSelection fingerprint'
 
         clientK ctrlFn = do
-            let (MiniProtocolInitiatorControl csRelease) = ctrlFn ChainSync3
-                (MiniProtocolInitiatorControl bfRelease) = ctrlFn BlockFetch3
-
-            (csResult, bfResult) <- atomically $ (,) <$> csRelease <*> bfRelease
+            (csResult, bfResult) <- atomically $ (,)
+                <$> getMiniProtocolInitiatorControl (ctrlFn ChainSync3)
+                <*> getMiniProtocolInitiatorControl (ctrlFn BlockFetch3)
             void $ atomically $ csResult *> bfResult
 
 
@@ -657,11 +644,9 @@ serverBlockFetch sockAddr = do
          codecBlockFetch
         (BlockFetch.blockFetchServerPeer (blockFetchServer prng))
 
-    serverK rspFn = do
-        let (MiniProtocolResponderControl csResult) = rspFn ChainSync3
-            (MiniProtocolResponderControl bfResult) = rspFn BlockFetch3
-
-        void $ atomically $ csResult *> bfResult
+    serverK rspFn =
+        void $ atomically $ getMiniProtocolResponderControl (rspFn ChainSync3)
+                         *> getMiniProtocolResponderControl (rspFn BlockFetch3)
 
 
 codecBlockFetch :: Codec (BlockFetch.BlockFetch Block)

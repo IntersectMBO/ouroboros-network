@@ -561,9 +561,7 @@ simpleResponderControl rspFn = forever $
                `orElse` fetchResponderResult TxSubmissionPtcl
   where
     fetchResponderResult :: MonadSTM m => NodeToNodeProtocols -> STM m a
-    fetchResponderResult ptcl =
-        let (MiniProtocolResponderControl action) = rspFn ptcl in
-        action
+    fetchResponderResult ptcl = getMiniProtocolResponderControl $ rspFn ptcl
 
 -- | Result of waiting on a list of miniprotocols to finish. Only used by simpleInitiatorControl
 data MiniProtocolClientResult = MpcRestart NodeToNodeProtocols
@@ -594,8 +592,7 @@ simpleInitiatorControl restartDelay ctrlFn = do
                 `orElse` foldr (orElse . waitOnMiniProtocolClientResult) retry resultActions
         case cr of
                 (MpcRestart ptcl) -> do
-                    let (MiniProtocolInitiatorControl restart) = ctrlFn ptcl
-                    resultAction <- atomically restart
+                    resultAction <- atomically $ getMiniProtocolInitiatorControl $ ctrlFn ptcl
                     clientK restartQ ((ptcl, resultAction):resultActions)
                 (MpcResult ptcl) -> do
                     -- The return type is ignored, but one could act on the result here

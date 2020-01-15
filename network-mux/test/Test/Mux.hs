@@ -485,10 +485,9 @@ prop_mux_2_minis msg0 msg1 = ioProperty $ do
         serverApp _ ReqResp3 = server_mp1
 
         clientK ctrlFn = do
-            let (Mx.MiniProtocolInitiatorControl release2) = ctrlFn ReqResp2
-                (Mx.MiniProtocolInitiatorControl release3) = ctrlFn ReqResp3
-
-            (result2, result3) <- atomically $ (,) <$> release2 <*> release3
+            (result2, result3) <- atomically $ (,)
+                <$> Mx.getMiniProtocolInitiatorControl (ctrlFn ReqResp2)
+                <*> Mx.getMiniProtocolInitiatorControl (ctrlFn ReqResp3)
             clientCtrl ctrlFn [(ReqResp2, client_q0, result2), (ReqResp3, client_q1, result3)]
 
         clientCtrl _ [] = do
@@ -509,8 +508,7 @@ prop_mux_2_minis msg0 msg1 = ioProperty $ do
                      if isEmpty
                          then clientCtrl ctrlFn $ filter (\(mp,_,_) -> mp /= ptcl) resultActions
                          else do
-                             let (Mx.MiniProtocolInitiatorControl restart) = ctrlFn ptcl
-                             void $ atomically restart
+                             void $ atomically $ Mx.getMiniProtocolInitiatorControl $ ctrlFn ptcl
                              clientCtrl ctrlFn resultActions
 
         serverK rspFn = serverCtrl (Just $ rspFn ReqResp2) (Just $ rspFn ReqResp3)
@@ -597,10 +595,9 @@ prop_mux_starvation (Uneven response0 response1) =
         serverApp _ ReqResp3 = server_long
 
         clientK ctrlFn = do
-            let (Mx.MiniProtocolInitiatorControl release2) = ctrlFn ReqResp2
-                (Mx.MiniProtocolInitiatorControl release3) = ctrlFn ReqResp3
-
-            (result2, result3) <- atomically $ (,) <$> release2 <*> release3
+            (result2, result3) <- atomically $ (,)
+                <$> Mx.getMiniProtocolInitiatorControl (ctrlFn ReqResp2)
+                <*> Mx.getMiniProtocolInitiatorControl (ctrlFn ReqResp3)
 
             atomically $ do
                 r2 <- result2
@@ -608,12 +605,9 @@ prop_mux_starvation (Uneven response0 response1) =
                 putTMVar clientResultVar $ r2 && r3
 
         serverK rspFn = do
-            let (Mx.MiniProtocolResponderControl result2) = rspFn ReqResp2
-                (Mx.MiniProtocolResponderControl result3) = rspFn ReqResp3
-
             atomically $ do
-                r2 <- result2
-                r3 <- result3
+                r2 <- Mx.getMiniProtocolResponderControl $ rspFn ReqResp2
+                r3 <- Mx.getMiniProtocolResponderControl $ rspFn ReqResp3
                 putTMVar serverResultVar $ r2 && r3
 
 
@@ -777,9 +771,7 @@ prop_demux_sdu a = do
                     Nothing -> return $ property False
             Nothing -> return $ property False
 
-    serverK ptcl rspFn = do
-        let (Mx.MiniProtocolResponderControl result) = rspFn ptcl
-        void $ atomically result
+    serverK ptcl rspFn = void $ atomically $ Mx.getMiniProtocolResponderControl $ rspFn ptcl
 
     plainServer server_mps = do
         server_w <- atomically $ newTBQueue 10

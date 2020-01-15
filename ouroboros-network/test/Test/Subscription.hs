@@ -543,20 +543,12 @@ prop_send_recv f xs first = ioProperty $ do
                                 ReqResp.codecReqResp
                                 (ReqResp.reqRespClientPeer (ReqResp.reqRespClientMap xs))
 
-        clientK ctrlFn = do
-            let (Mx.MiniProtocolInitiatorControl release) = ctrlFn ReqRespPr
+        clientK ctrlFn =
+            atomically (Mx.getMiniProtocolInitiatorControl $ ctrlFn ReqRespPr)
+                >>= \result -> atomically $ result >>= (putTMVar cv)
 
-            result <- atomically release
-            atomically $ do
-                r <- result
-                putTMVar cv r
-            return ()
-
-        serverK rspFn = do
-            let (Mx.MiniProtocolResponderControl result) = rspFn ReqRespPr
-
-            atomically $ result >>= putTMVar sv
-            return ()
+        serverK rspFn =
+            void $ atomically $ Mx.getMiniProtocolResponderControl (rspFn ReqRespPr) >>= putTMVar sv
 
     peerStatesVar <- newPeerStatesVar
     void $ withDummyServer faultyAddress $
@@ -668,22 +660,17 @@ prop_send_recv_init_and_rsp f xs = ioProperty $ do
 
 
     initiatorK ReqRspCfg {rrcClientVar} ctrlFn = do
-        let (Mx.MiniProtocolInitiatorControl intRelease) = ctrlFn ReqRespPr
-
-        intResult <- atomically intRelease
-
-        i <- atomically intResult
-        atomically $ putTMVar rrcClientVar i
+        atomically (Mx.getMiniProtocolInitiatorControl $ ctrlFn ReqRespPr)
+            >>= \result -> atomically $ result >>= (putTMVar rrcClientVar)
+        threadDelay 0xffff
 
         -- We don't wan't to restart the initiator side of the protocol so we wait until the
         -- subscriber/server thread notices that we're done.
-        threadDelay 0xffff
 
-    responderK ReqRspCfg {rrcServerVar} rspFn = do
-        let (Mx.MiniProtocolResponderControl rspResult) = rspFn ReqRespPr
-        forever $ do
-            r <- atomically rspResult
-            atomically $ putTMVar rrcServerVar r
+    responderK ReqRspCfg {rrcServerVar} rspFn =
+        forever $
+            atomically (Mx.getMiniProtocolResponderControl $ rspFn ReqRespPr)
+               >>= \result -> atomically $ putTMVar rrcServerVar result
 
     appX :: ReqRspCfg -> OuroborosApplication InitiatorAndResponderApp ConnectionId TestProtocols2 IO BL.ByteString [Int] Int
     appX rrcfg = OuroborosInitiatorAndResponderApplication

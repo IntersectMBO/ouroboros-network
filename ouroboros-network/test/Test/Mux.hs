@@ -22,6 +22,7 @@ import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
 import           Control.Monad.IOSim
 import           Control.Tracer
+import           Data.Functor (void)
 
 import           Test.ChainGenerators (TestBlockChainAndUpdates (..))
 import           Test.QuickCheck
@@ -132,19 +133,11 @@ demo chain0 updates delay = do
                         (encodeTip encode) (decodeTip decode))
                         producerPeer)
 
-        consumerK ctrlFn = do
-            let (Mx.MiniProtocolInitiatorControl release) = ctrlFn ChainSyncPr
+        consumerK ctrlFn =
+            (atomically $ Mx.getMiniProtocolInitiatorControl (ctrlFn ChainSyncPr))
+                >>= \result -> void $ atomically result
 
-            result <- atomically $ release
-
-            _ <- atomically $ result
-            return ()
-
-        producerK rspFn = do
-            let (Mx.MiniProtocolResponderControl result) = rspFn ChainSyncPr
-
-            _ <- atomically $ result
-            return ()
+        producerK rspFn = void $ atomically $ Mx.getMiniProtocolResponderControl $ rspFn ChainSyncPr
 
     clientAsync <- async $ Mx.runMuxWithQueues activeTracer "consumer" (Mx.toApplication consumerApp) client_w client_r sduLen Nothing
     serverAsync <- async $ Mx.runMuxWithQueues activeTracer "producer" (Mx.toApplication producerApp) server_w server_r sduLen Nothing

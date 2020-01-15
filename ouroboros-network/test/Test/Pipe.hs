@@ -128,19 +128,11 @@ demo chain0 updates = do
                                               (encodeTip encode) (decodeTip decode))
                     (ChainSync.chainSyncServerPeer server)
 
-        consumerK ctrlFn = do
-            let (Mx.MiniProtocolInitiatorControl release) = ctrlFn ChainSync
+        consumerK ctrlFn =
+            (atomically $ Mx.getMiniProtocolInitiatorControl (ctrlFn ChainSync))
+                >>= \result -> void $ atomically result
 
-            result <- atomically $ release
-
-            _ <- atomically $ result
-            return ()
-
-        producerK rspFn = do
-            let (Mx.MiniProtocolResponderControl result) = rspFn ChainSync
-
-            _ <- atomically $ result
-            return ()
+        producerK rspFn = void $ atomically $ Mx.getMiniProtocolResponderControl $ rspFn ChainSync
 
     _ <- async $ Mx.runMuxWithPipes activeTracer "producer" (toApplication producerApp) hndRead1 hndWrite2
     _ <- async $ Mx.runMuxWithPipes activeTracer "consumer" (toApplication consumerApp) hndRead2 hndWrite1

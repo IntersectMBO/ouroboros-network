@@ -235,19 +235,11 @@ prop_socket_send_recv initiatorAddr responderAddr f xs = do
             atomically $ putTMVar cv r
             return ((), remBytes)
 
-        clientK ctrlFn = do
-            let (Mx.MiniProtocolInitiatorControl release) = ctrlFn ReqRespPr
+        clientK ctrlFn =
+            atomically (Mx.getMiniProtocolInitiatorControl (ctrlFn ReqRespPr))
+                >>= \result -> void $ atomically result
 
-            result <- atomically $ release
-
-            _ <- atomically $ result
-            return ()
-
-        serverK rspFn = do
-            let (Mx.MiniProtocolResponderControl result) = rspFn ReqRespPr
-
-            _ <- atomically $ result
-            return ()
+        serverK rspFn = void $ atomically $ Mx.getMiniProtocolResponderControl $ rspFn ReqRespPr
 
     res <-
       withServerNode
@@ -298,11 +290,7 @@ prop_socket_recv_close f _ = ioProperty $ do
             atomically $ putTMVar sv r
             return ((), remBytes)
 
-        serverK rspFn = do
-            let (Mx.MiniProtocolResponderControl result) = rspFn ReqRespPr
-
-            _ <- atomically $ result
-            return ()
+        serverK rspFn = void $ atomically $ Mx.getMiniProtocolResponderControl $ rspFn ReqRespPr
 
     bracket
       (Socket.socket Socket.AF_INET Socket.Stream Socket.defaultProtocol)
@@ -364,14 +352,9 @@ prop_socket_client_connect_error _ xs = ioProperty $ do
                   atomically $ putTMVar cv ()
                   return ((), Nothing)
 
-        clientK ctrlFn = do
-            let (Mx.MiniProtocolInitiatorControl release) = ctrlFn ReqRespPr
-
-            result <- atomically $ release
-
-            _ <- atomically $ result
-            return ()
-
+        clientK ctrlFn =
+            atomically (Mx.getMiniProtocolInitiatorControl (ctrlFn ReqRespPr))
+                >>= \result -> void $ atomically result
 
     (res :: Either IOException Bool)
       <- try $ False <$ connectToNode
@@ -424,19 +407,11 @@ demo chain0 updates = do
                                                   encode             decode
                                                   (encodeTip encode) (decodeTip decode)
 
-        consumerK ctrlFn = do
-            let (Mx.MiniProtocolInitiatorControl release) = ctrlFn ChainSyncPr
+        consumerK ctrlFn =
+            atomically (Mx.getMiniProtocolInitiatorControl (ctrlFn ChainSyncPr))
+                >>= \result -> void $ atomically result
 
-            result <- atomically $ release
-
-            _ <- atomically $ result
-            return ()
-
-        producerK rspFn = do
-            let (Mx.MiniProtocolResponderControl result) = rspFn ChainSyncPr
-
-            _ <- atomically $ result
-            return ()
+        producerK rspFn = void $ atomically $ Mx.getMiniProtocolResponderControl $ rspFn ChainSyncPr
 
     withServerNode
       nullNetworkServerTracers
