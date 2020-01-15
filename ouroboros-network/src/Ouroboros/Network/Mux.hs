@@ -39,12 +39,18 @@ import           Ouroboros.Network.Channel
 data OuroborosApplication (appType :: AppType) peerid ptcl m bytes a b where
      OuroborosInitiatorApplication
        :: ((ptcl -> MiniProtocolInitiatorControl m a) -> m ())
+       -- ^ Used to start and fetch the result of each @ptcl@, see @MiniProtocolInitiatorControl@
+       --  and @simpleInitiatorControl@.
        -> (peerid -> ptcl -> Channel m bytes -> m (a, Maybe bytes))
+       -- ^ An initiator application per @ptcl@, see @runPeer'@.
        -> OuroborosApplication InitiatorApp peerid ptcl m bytes a Void
 
      OuroborosResponderApplication
        :: ((ptcl -> MiniProtocolResponderControl m a) -> m ())
+       -- ^ Used to fetch the result of each @ptcl@, see @MiniProtocolResponderControl@ and
+       -- @'simpleResponderControl'@.
        -> (peerid -> ptcl -> Channel m bytes -> m (a, Maybe bytes))
+       -- ^ A responder application per @ptcl@, see @runPeer'@.
        -> OuroborosApplication ResponderApp peerid ptcl m bytes Void a
 
      OuroborosInitiatorAndResponderApplication
