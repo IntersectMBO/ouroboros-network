@@ -3,6 +3,7 @@
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE FlexibleInstances #-}
 
 module Ouroboros.Network.Connections.Socket.Types
   ( SockType (..)
@@ -35,9 +36,8 @@ data SockAddr (sockType :: SockType) where
                -> SockAddr IPv6
   SockAddrUnix :: String -> SockAddr Unix
 
--- Not ideal since the host addresses for v4 and v6 use Word32 instead of
--- 4 Word8s as decimals. Oh well.
-deriving instance Show (SockAddr sockType)
+instance Show sockType where
+  show = show . forgetSockType
 
 -- | A connection is identified by a pair of addresses. For IPv* this is fine,
 -- but not for Unix domain sockets: these can be unnamed, so that a connecting
