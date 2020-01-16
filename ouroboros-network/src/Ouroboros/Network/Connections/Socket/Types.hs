@@ -36,7 +36,10 @@ data SockAddr (sockType :: SockType) where
                -> SockAddr IPv6
   SockAddrUnix :: String -> SockAddr Unix
 
-instance Show sockType where
+instance Eq (SockAddr sockType) where
+  x == y = forgetSockType x == forgetSockType y
+
+instance Show (SockAddr sockType) where
   show = show . forgetSockType
 
 -- | A connection is identified by a pair of addresses. For IPv* this is fine,
