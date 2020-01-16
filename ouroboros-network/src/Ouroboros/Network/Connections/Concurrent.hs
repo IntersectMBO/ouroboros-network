@@ -214,7 +214,18 @@ concurrent withResource k = do
           where
           h = connectionHandle (connection numConn)
 
+  -- NB: to kill the connection threads, we must not do so while holding
+  -- the MVar, because there are `finally` handlers on each thread which
+  -- attempt to get the MVar and remove themselves.
+  --
+  -- It is incorrect use to include a connection after the continuation for
+  -- this `concurrent` call has ended (user must ensure that).
+  -- TODO extend the State type to include a "closed" variant that we can
+  -- swap in here to make it more user friendly: give an informative error
+  -- when a user tries to include a connection after the manager has gone
+  -- down.
   killThreads :: MVar (State connectionId handle) -> IO ()
-  killThreads stateVar = withMVar stateVar $ \state ->
+  killThreads stateVar = do
+    state <- readMVar stateVar
     forM_ (Map.toList (connectionMap state)) $ \(_, conn) ->
       cancel (connectionThread (connection conn))
