@@ -32,6 +32,8 @@ module Ouroboros.Consensus.Protocol.PBFT (
   , ConstructContextDSIGN(..)
     -- * Type instances
   , NodeConfig(..)
+    -- * Exported for testing
+  , PBftValidationErr(..)
   ) where
 
 import           Codec.Serialise (Serialise (..))

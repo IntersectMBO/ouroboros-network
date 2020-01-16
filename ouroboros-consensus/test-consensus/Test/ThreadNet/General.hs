@@ -1,17 +1,22 @@
-{-# LANGUAGE FlexibleContexts    #-}
-{-# LANGUAGE LambdaCase          #-}
-{-# LANGUAGE NamedFieldPuns      #-}
-{-# LANGUAGE PatternSynonyms     #-}
-{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE FlexibleContexts          #-}
+{-# LANGUAGE LambdaCase                #-}
+{-# LANGUAGE NamedFieldPuns            #-}
+{-# LANGUAGE PatternSynonyms           #-}
+{-# LANGUAGE ScopedTypeVariables       #-}
 
 module Test.ThreadNet.General (
     prop_general
   , runTestNetwork
     -- * TestConfig
+  , Rekeying (..)
   , TestConfig (..)
   , TestConfigBlock (..)
   , truncateNodeJoinPlan
+  , truncateNodeRestarts
   , truncateNodeTopology
+    -- * Block rejections
+  , BlockRejection (..)
     -- * Re-exports
   , ForgeEBB
   , TestOutput (..)
@@ -28,25 +33,32 @@ import           Test.QuickCheck
 import           Control.Monad.IOSim (runSimOrThrow)
 
 import           Ouroboros.Network.Block (BlockNo (..), pattern BlockPoint,
-                     pattern GenesisPoint, HasHeader, Point, SlotNo (..),
-                     blockPoint)
+                     pattern GenesisPoint, HasHeader, HeaderHash, Point,
+                     SlotNo (..), blockPoint)
 
+import           Ouroboros.Consensus.Block (BlockProtocol)
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.BlockchainTime.Mock
+import           Ouroboros.Consensus.Ledger.Extended (ExtValidationError)
+import           Ouroboros.Consensus.Mempool
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.NodeId
 import           Ouroboros.Consensus.Protocol (LeaderSchedule (..))
-import           Ouroboros.Consensus.Protocol.Abstract (SecurityParam (..))
+import           Ouroboros.Consensus.Protocol.Abstract (LedgerView, SecurityParam (..))
 
 import           Ouroboros.Consensus.Util.Condense
+import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.Orphans ()
 import           Ouroboros.Consensus.Util.Random
+
+import           Ouroboros.Storage.Common (EpochNo)
 
 import           Test.ThreadNet.Network
 import           Test.ThreadNet.TxGen
 import           Test.ThreadNet.Util
 import           Test.ThreadNet.Util.NodeJoinPlan
+import           Test.ThreadNet.Util.NodeRestarts
 import           Test.ThreadNet.Util.NodeTopology
 
 import           Test.Util.FS.Sim.MockFS (MockFS)
@@ -56,6 +68,7 @@ import           Test.Util.Orphans.IOLike ()
 import           Test.Util.Orphans.NoUnexpectedThunks ()
 import           Test.Util.Range
 import           Test.Util.Shrink (andId, dropId)
+import           Test.Util.Stream
 
 import           Test.Consensus.BlockchainTime.SlotLengths ()
 
@@ -68,6 +81,7 @@ data TestConfig = TestConfig
   , numSlots     :: !NumSlots
     -- ^ TODO generate in function of @k@
   , nodeJoinPlan :: !NodeJoinPlan
+  , nodeRestarts :: !NodeRestarts
   , nodeTopology :: !NodeTopology
   , slotLengths  :: !SlotLengths
   , initSeed     :: !Seed
@@ -89,6 +103,10 @@ truncateNodeTopology :: NodeTopology -> NumCoreNodes -> NodeTopology
 truncateNodeTopology (NodeTopology m) (NumCoreNodes n') =
     NodeTopology $ Map.filterWithKey (\(CoreNodeId i) _ -> i < n') m
 
+truncateNodeRestarts :: NodeRestarts -> NumSlots -> NodeRestarts
+truncateNodeRestarts (NodeRestarts m) (NumSlots t) =
+    NodeRestarts $ Map.filterWithKey (\(SlotNo s) _ -> s < fromIntegral t) m
+
 instance Arbitrary TestConfig where
   arbitrary = do
       numCoreNodes <- arbitrary
@@ -101,6 +119,8 @@ instance Arbitrary TestConfig where
         { numCoreNodes
         , numSlots
         , nodeJoinPlan
+          -- TODO how to enrich despite variable schedules?
+        , nodeRestarts = noRestarts
         , nodeTopology
         , slotLengths
         , initSeed
@@ -110,6 +130,7 @@ instance Arbitrary TestConfig where
     { numCoreNodes
     , numSlots
     , nodeJoinPlan
+    , nodeRestarts
     , nodeTopology
     , slotLengths
     , initSeed
@@ -119,6 +140,7 @@ instance Arbitrary TestConfig where
           { numCoreNodes = n'
           , numSlots     = t'
           , nodeJoinPlan = p'
+          , nodeRestarts = r'
           , nodeTopology = top'
           , slotLengths  = ls'
           , initSeed
@@ -126,8 +148,10 @@ instance Arbitrary TestConfig where
       | n'             <- andId shrink numCoreNodes
       , t'             <- andId shrink numSlots
       , let adjustedP   = truncateNodeJoinPlan nodeJoinPlan n' (numSlots, t')
+      , let adjustedR   = truncateNodeRestarts nodeRestarts t'
       , let adjustedTop = truncateNodeTopology nodeTopology n'
       , p'             <- andId shrinkNodeJoinPlan adjustedP
+      , r'             <- andId shrinkNodeRestarts adjustedR
       , top'           <- andId shrinkNodeTopology adjustedTop
       , ls'            <- andId shrink slotLengths
       ]
@@ -139,6 +163,20 @@ instance Arbitrary TestConfig where
 data TestConfigBlock blk = TestConfigBlock
   { forgeEBB :: Maybe (ForgeEBB blk)
   , nodeInfo :: CoreNodeId -> ProtocolInfo blk
+  , rekeying :: Maybe (Rekeying blk)
+  }
+
+data Rekeying blk = forall opKey. Rekeying
+  { rekeyUpd ::
+         ProtocolInfo blk
+      -> EpochNo
+      -> opKey
+      -> Maybe (ProtocolInfo blk, GenTx blk)
+     -- ^ new config and any corresponding delegation certificate transactions
+  , rekeyFreshSKs :: Stream opKey
+     -- ^ a stream that only repeats itself after an *effectively* *infinite*
+     -- number of iterations and also never includes an operational key from
+     -- the genesis configuration
   }
 
 {-------------------------------------------------------------------------------
@@ -152,27 +190,63 @@ runTestNetwork ::
      ( RunNode blk
      , TxGen blk
      , TracingConstraints blk
+     , Show (LedgerView (BlockProtocol blk))
      )
   => TestConfig
   -> TestConfigBlock blk
   -> TestOutput blk
 runTestNetwork
-  TestConfig{numCoreNodes, numSlots, nodeJoinPlan, nodeTopology, slotLengths, initSeed}
-  TestConfigBlock{forgeEBB, nodeInfo}
-  = runSimOrThrow $ runThreadNetwork ThreadNetworkArgs
-      { tnaForgeEBB       = forgeEBB
-      , tnaJoinPlan       = nodeJoinPlan
-      , tnaNodeInfo       = nodeInfo
-      , tnaNumCoreNodes   = numCoreNodes
-      , tnaNumSlots       = numSlots
-      , tnaRNG            = seedToChaCha initSeed
-      , tnaSlotLengths    = slotLengths
-      , tnaTopology       = nodeTopology
-      }
+  TestConfig
+    { numCoreNodes
+    , numSlots
+    , nodeJoinPlan
+    , nodeRestarts
+    , nodeTopology
+    , slotLengths
+    , initSeed
+    }
+  TestConfigBlock{forgeEBB, nodeInfo, rekeying}
+  = runSimOrThrow $ do
+    let tna = ThreadNetworkArgs
+          { tnaForgeEBB       = forgeEBB
+          , tnaJoinPlan       = nodeJoinPlan
+          , tnaNodeInfo       = nodeInfo
+          , tnaNumCoreNodes   = numCoreNodes
+          , tnaNumSlots       = numSlots
+          , tnaRNG            = seedToChaCha initSeed
+          , tnaRekeyM         = Nothing
+          , tnaRestarts       = nodeRestarts
+          , tnaSlotLengths    = slotLengths
+          , tnaTopology       = nodeTopology
+          }
+
+    case rekeying of
+      Nothing                                -> runThreadNetwork tna
+      Just Rekeying{rekeyUpd, rekeyFreshSKs} -> do
+        rekeyVar <- uncheckedNewTVarM rekeyFreshSKs
+        runThreadNetwork tna
+          { tnaRekeyM = Just $ \pInfo eno -> do
+              x <- atomically $ do
+                x :< xs <- readTVar rekeyVar
+                x <$ writeTVar rekeyVar xs
+              pure $ case rekeyUpd pInfo eno x of
+                Nothing           -> (pInfo, Nothing)
+                Just (pInfo', tx) -> (pInfo', Just tx)
+          }
 
 {-------------------------------------------------------------------------------
   Test properties
 -------------------------------------------------------------------------------}
+
+-- | Data about a node rejecting a block as invalid
+--
+data BlockRejection blk = BlockRejection
+  { brBlockHash :: !(HeaderHash blk)
+  , brBlockSlot :: !SlotNo
+  , brReason    :: !(ExtValidationError blk)
+  , brRejector  :: !NodeId
+  }
+  deriving (Show)
 
 -- | The properties always required
 --
@@ -188,16 +262,20 @@ prop_general ::
      , Eq blk
      , HasHeader blk
      , RunNode blk
+     , Show (LedgerView (BlockProtocol blk))
      )
   => SecurityParam
   -> TestConfig
   -> Maybe LeaderSchedule
+  -> (BlockRejection blk -> Bool)
   -> TestOutput blk
   -> Property
-prop_general k TestConfig{numSlots, nodeJoinPlan, nodeTopology} mbSchedule
+prop_general k TestConfig{numSlots, nodeJoinPlan, nodeRestarts, nodeTopology}
+  mbSchedule expectedBlockRejection
   TestOutput{testOutputNodes, testOutputTipBlockNos} =
     counterexample ("nodeChains: " <> unlines ("" : map (\x -> "  " <> condense x) (Map.toList nodeChains))) $
     counterexample ("nodeJoinPlan: " <> condense nodeJoinPlan) $
+    counterexample ("nodeRestarts: " <> condense nodeRestarts) $
     counterexample ("nodeTopology: " <> condense nodeTopology) $
     counterexample ("slot-node-tipBlockNo: " <> condense tipBlockNos) $
     counterexample ("mbSchedule: " <> condense mbSchedule) $
@@ -208,6 +286,8 @@ prop_general k TestConfig{numSlots, nodeJoinPlan, nodeTopology} mbSchedule
     tabulate "shortestLength" [show (rangeK k (shortestLength nodeChains))] $
     tabulate "floor(4 * lastJoinSlot / numSlots)" [show lastJoinSlot] $
     tabulate "minimumDegreeNodeTopology" [show (minimumDegreeNodeTopology nodeTopology)] $
+    tabulate "involves >=1 re-delegation" [show hasNodeRekey] $
+    prop_no_unexpected_BlockRejections .&&.
     prop_all_common_prefix
         maxForkLength
         (Map.elems nodeChains) .&&.
@@ -217,6 +297,30 @@ prop_general k TestConfig{numSlots, nodeJoinPlan, nodeTopology} mbSchedule
       [ fileHandleLeakCheck nid nodeDBs
       | (nid, nodeDBs) <- Map.toList nodeOutputDBs ]
   where
+    prop_no_unexpected_BlockRejections =
+        counterexample msg $
+        Map.null blocks
+      where
+        msg = "There were unexpected block rejections: " <> show blocks
+        blocks =
+            Map.unionsWith (++) $
+            [ Map.filter (not . null) $
+              Map.mapWithKey (\p -> filter (not . ok p nid)) $
+              nodeOutputInvalids
+            | (nid, no) <- Map.toList testOutputNodes
+            , let NodeOutput{nodeOutputInvalids} = no
+            ]
+        ok p nid err = case p of
+          -- TODO The ExtValidationError data declaration imposes this case on
+          -- us but should never exercise it.
+          GenesisPoint   -> False
+          BlockPoint s h -> expectedBlockRejection BlockRejection
+            { brBlockHash = h
+            , brBlockSlot = s
+            , brReason    = err
+            , brRejector  = nid
+            }
+
     schedule = case mbSchedule of
         Nothing    -> actualLeaderSchedule
         Just sched -> sched
@@ -237,7 +341,7 @@ prop_general k TestConfig{numSlots, nodeJoinPlan, nodeTopology} mbSchedule
           in
           LeaderSchedule $
           Map.mapMaybeWithKey
-              (actuallyLead cid nodeOutputInvalids)
+              (actuallyLead cid (Map.keysSet nodeOutputInvalids))
               nodeOutputForges
         | (cid, no) <- Map.toList testOutputNodes
         ]
@@ -468,3 +572,9 @@ prop_general k TestConfig{numSlots, nodeJoinPlan, nodeTopology} mbSchedule
                 _            -> False
               where
                 LeaderSchedule sched = actualLeaderSchedule
+
+    hasNodeRekey :: Bool
+    hasNodeRekey =
+        NodeRekey `Set.member` (foldMap . foldMap) Set.singleton m
+      where
+        NodeRestarts m = nodeRestarts

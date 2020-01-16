@@ -24,6 +24,7 @@ import           Ouroboros.Consensus.Protocol
 import           Test.ThreadNet.General
 import           Test.ThreadNet.Util
 import           Test.ThreadNet.Util.NodeJoinPlan
+import           Test.ThreadNet.Util.NodeRestarts
 import           Test.ThreadNet.Util.NodeTopology
 
 import           Test.Util.Orphans.Arbitrary ()
@@ -49,6 +50,7 @@ tests = testGroup "LeaderSchedule"
             { numCoreNodes
             , numSlots
             , nodeJoinPlan
+            , nodeRestarts = noRestarts
             , nodeTopology
             , slotLengths
             , initSeed
@@ -77,13 +79,19 @@ prop_simple_leader_schedule_convergence
   params@PraosParams{praosSecurityParam}
   testConfig@TestConfig{numCoreNodes} schedule =
     counterexample (tracesToDot testOutputNodes) $
-    prop_general praosSecurityParam testConfig (Just schedule) testOutput
+    prop_general
+      praosSecurityParam
+      testConfig
+      (Just schedule)
+      (const False)
+      testOutput
   where
     testOutput@TestOutput{testOutputNodes} =
         runTestNetwork testConfig TestConfigBlock
             { forgeEBB = Nothing
             , nodeInfo = \nid -> protocolInfo $
                 ProtocolLeaderSchedule numCoreNodes nid params schedule
+            , rekeying = Nothing
             }
 
 {-------------------------------------------------------------------------------

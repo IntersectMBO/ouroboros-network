@@ -1,5 +1,6 @@
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE GADTs               #-}
+{-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE RankNTypes          #-}
@@ -13,9 +14,11 @@ import           Data.Coerce (coerce)
 import           Data.Foldable (find)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
-import           Data.Maybe (fromJust, mapMaybe)
+import           Data.Maybe (fromMaybe, mapMaybe)
+import qualified Data.Set as Set
 import           Data.Time (Day (..), UTCTime (..))
 import           Data.Word (Word64)
+import           GHC.Stack (HasCallStack)
 
 import           Numeric.Search.Range (searchFromTo)
 import           Test.QuickCheck
@@ -26,28 +29,33 @@ import           Ouroboros.Network.Block (SlotNo (..))
 import           Ouroboros.Network.MockChain.Chain (Chain)
 import qualified Ouroboros.Network.MockChain.Chain as Chain
 
-import           Ouroboros.Consensus.Block (getHeader)
+import           Ouroboros.Consensus.Block (BlockProtocol, getHeader)
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.BlockchainTime.Mock
+import qualified Ouroboros.Consensus.Crypto.DSIGN.Cardano as Crypto
 import           Ouroboros.Consensus.Ledger.Byron (ByronBlock)
 import qualified Ouroboros.Consensus.Ledger.Byron as Byron
+import           Ouroboros.Consensus.Ledger.Extended (ExtValidationError (..))
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Node.ProtocolInfo.Byron (plcCoreNodeId)
 import           Ouroboros.Consensus.Node.Run.Abstract (nodeIsEBB)
 import           Ouroboros.Consensus.NodeId
 import           Ouroboros.Consensus.Protocol
+import qualified Ouroboros.Consensus.Protocol.PBFT.Crypto as Crypto
 import           Ouroboros.Consensus.Util.Condense (condense)
 import           Ouroboros.Consensus.Util.Random
 
 import           Ouroboros.Storage.Common (EpochNo (..))
 
+import qualified Cardano.Binary
 import qualified Cardano.Chain.Common as Common
 import qualified Cardano.Chain.Delegation as Delegation
 import qualified Cardano.Chain.Genesis as Genesis
 import           Cardano.Chain.ProtocolConstants (kEpochSlots)
-import           Cardano.Chain.Slotting (unEpochSlots)
+import           Cardano.Chain.Slotting (EpochNumber (..), unEpochSlots)
 import qualified Cardano.Chain.Update as Update
 import qualified Cardano.Crypto as Crypto
+import qualified Cardano.Crypto.DSIGN as Crypto
 import qualified Test.Cardano.Chain.Genesis.Dummy as Dummy
 
 import           Test.ThreadNet.General
@@ -55,10 +63,12 @@ import           Test.ThreadNet.Network (NodeOutput (..))
 import qualified Test.ThreadNet.Ref.RealPBFT as Ref
 import           Test.ThreadNet.Util
 import           Test.ThreadNet.Util.NodeJoinPlan
+import           Test.ThreadNet.Util.NodeRestarts
 import           Test.ThreadNet.Util.NodeTopology
 
 import           Test.Util.Orphans.Arbitrary ()
 import           Test.Util.Shrink (andId, dropId)
+import qualified Test.Util.Stream as Stream
 
 tests :: TestTree
 tests = testGroup "RealPBFT" $
@@ -82,6 +92,7 @@ tests = testGroup "RealPBFT" $
             { numCoreNodes = ncn
             , numSlots     = NumSlots 24
             , nodeJoinPlan = NodeJoinPlan $ Map.fromList [(CoreNodeId 0,SlotNo 0), (CoreNodeId 1,SlotNo 20), (CoreNodeId 2,SlotNo 22)]
+            , nodeRestarts = noRestarts
             , nodeTopology = meshNodeTopology ncn
             , slotLengths = defaultSlotLengths
             , initSeed     = Seed (15069526818753326002, 9758937467355895013, 16548925776947010688, 13173070736975126721, 13719483751339084974)
@@ -99,6 +110,7 @@ tests = testGroup "RealPBFT" $
             { numCoreNodes = ncn
             , numSlots     = NumSlots 2
             , nodeJoinPlan = NodeJoinPlan (Map.fromList [(CoreNodeId 0,SlotNo 0),(CoreNodeId 1,SlotNo 1)])
+            , nodeRestarts = noRestarts
             , nodeTopology = meshNodeTopology ncn
             , slotLengths  = defaultSlotLengths
             , initSeed     = Seed (15069526818753326002, 9758937467355895013, 16548925776947010688, 13173070736975126721, 13719483751339084974)
@@ -112,9 +124,52 @@ tests = testGroup "RealPBFT" $
             { numCoreNodes = ncn
             , numSlots     = NumSlots 4
             , nodeJoinPlan = NodeJoinPlan (Map.fromList [(CoreNodeId 0,SlotNo {unSlotNo = 0}),(CoreNodeId 1,SlotNo {unSlotNo = 3})])
+            , nodeRestarts = noRestarts
             , nodeTopology = meshNodeTopology ncn
             , slotLengths  = defaultSlotLengths
             , initSeed     = Seed (16817746570690588019, 3284322327197424879, 14951803542883145318, 5227823917971823767, 14093715642382269482)
+            }
+    , testProperty "one testOutputTipBlockNos update per node per slot" $
+          once $
+          let ncn = NumCoreNodes 2 in
+          -- In this example, a node was forging a new block and then
+          -- restarting. Its instrumentation thread ran before and also after
+          -- the restart, which caused the 'testOutputTipBlockNos' field to
+          -- contain data from the middle of the slot (after the node lead)
+          -- instead of only from the onset of the slot.
+          prop_simple_real_pbft_convergence ProduceEBBs (SecurityParam 5) TestConfig
+            { numCoreNodes = ncn
+            , numSlots     = NumSlots 7
+            , nodeJoinPlan = NodeJoinPlan (Map.fromList [(CoreNodeId 0,SlotNo {unSlotNo = 0}),(CoreNodeId 1,SlotNo {unSlotNo = 0})])
+            , nodeRestarts = NodeRestarts (Map.fromList [(SlotNo {unSlotNo = 5},Map.fromList [(CoreNodeId 1,NodeRestart)])])
+            , nodeTopology = meshNodeTopology ncn
+            , slotLengths  = defaultSlotLengths
+            , initSeed     = Seed {getSeed = (17927476716858194849,11935807562313832971,15925564353519845641,3835030747036900598,2802397826914039548)}
+            }
+    , -- RealPBFT runs are slow, so do 10x less of this narrow test
+      adjustOption (\(QuickCheckTests i) -> QuickCheckTests $ max 1 $ i `div` 10) $
+      testProperty "re-delegation via NodeRekey" $ \seed w ->
+          let ncn = NumCoreNodes 5
+              k :: Num a => a
+              k = 5   -- small so that multiple epochs fit into a simulation
+              window :: Num a => a
+              window = 20   -- just for generality
+              slotsPerEpoch :: Num a => a
+              slotsPerEpoch = fromIntegral $ unEpochSlots $
+                              kEpochSlots $ coerce (k :: Word64)
+              slotsPerRekey :: Num a => a
+              slotsPerRekey = 2 * k    -- delegations take effect 2k slots later
+          in
+          prop_simple_real_pbft_convergence ProduceEBBs (SecurityParam k) TestConfig
+            { numCoreNodes = ncn
+            , numSlots     = NumSlots $ window + slotsPerEpoch + slotsPerRekey + window
+            , nodeJoinPlan = trivialNodeJoinPlan ncn
+            , nodeRestarts = NodeRestarts $ Map.singleton
+                (SlotNo (slotsPerEpoch + mod w window))
+                (Map.singleton (CoreNodeId 0) NodeRekey)
+            , nodeTopology = meshNodeTopology ncn
+            , slotLengths  = defaultSlotLengths
+            , initSeed     = seed
             }
     , testProperty "simple convergence" $
           \produceEBBs ->
@@ -155,16 +210,78 @@ prop_setup_coreNodeId numCoreNodes coreNodeId =
     genesisSecrets :: Genesis.GeneratedSecrets
     (genesisConfig, genesisSecrets) = generateGenesisConfig params
 
+expectedBlockRejection
+  :: SecurityParam
+  -> NumCoreNodes
+  -> NodeRestarts
+  -> BlockRejection ByronBlock
+  -> Bool
+expectedBlockRejection
+  k numCoreNodes@(NumCoreNodes nn) (NodeRestarts nrs) BlockRejection
+  { brBlockSlot = s
+  , brReason    = err
+  , brRejector  = CoreId i
+  }
+  | ownBlock                   = case err of
+    ExtValidationErrorOuroboros
+      PBftExceededSignThreshold{} -> True   -- TODO validate this against Ref
+                                            -- implementation?
+    ExtValidationErrorOuroboros
+      PBftNotGenesisDelegate{}    ->
+        -- only if it rekeyed within before a restarts latest possible
+        -- maturation
+        not $ null $
+        [ ()
+        | (restartSlot, nrs') <- Map.toList nrs
+        , restartSlot <= s
+            && s < latestPossibleDlgMaturation k numCoreNodes restartSlot
+        , (CoreNodeId i', NodeRekey) <- Map.toList nrs'
+        , i' == i
+        ]
+    _                             -> False
+  where
+    -- Because of round-robin and the fact that the id divides slot, we know
+    -- the node lead but rejected its own block. This is the only case we
+    -- expect. (Rejecting its own block also prevents the node from propagating
+    -- that block.)
+    ownBlock = fromIntegral i == mod (unSlotNo s) (fromIntegral nn)
+expectedBlockRejection _ _ _ _ = False
+
+-- | If we rekey in slot rekeySlot, it is in general possible that the leader
+-- of rekeySlot will include our delegation transaction in its new block.
+-- However, in the current test infrastructure, it will consistently have
+-- already forged its new block before receiving our new transaction.
+--
+-- Thus the first leader to forge a valid block in one of the slots rekeySlot+1
+-- through rekeySlot+N will include our new transaction in its new block. There
+-- are two reasons that those leaders (excepting the last) may fail to forge a
+-- valid block.
+--
+-- * The rekeyed node might be the scheduled leader, and so it'll immediately
+--   reject its new block as invalid (since its delegation cannot have already
+--   matured).
+--
+-- * The PBFT threshold may already be saturated for that node.
+--
+-- See @genNodeRekeys@ for the logic that ensures at least one of those slots'
+-- leaders will be able to lead.
+latestPossibleDlgMaturation
+  :: SecurityParam -> NumCoreNodes -> SlotNo -> SlotNo
+latestPossibleDlgMaturation
+  (SecurityParam k) (NumCoreNodes n) (SlotNo rekeySlot) =
+    SlotNo $ rekeySlot + fromIntegral n + 2 * k
+
 prop_simple_real_pbft_convergence :: ProduceEBBs
                                   -> SecurityParam
                                   -> TestConfig
                                   -> Property
-prop_simple_real_pbft_convergence
-  produceEBBs k testConfig@TestConfig{numCoreNodes, numSlots} =
+prop_simple_real_pbft_convergence produceEBBs k
+  testConfig@TestConfig{numCoreNodes, numSlots, nodeRestarts, initSeed} =
     tabulate "produce EBBs" [show produceEBBs] $
     prop_general k
         testConfig
         (Just $ roundRobinLeaderSchedule numCoreNodes numSlots)
+        (expectedBlockRejection k numCoreNodes nodeRestarts)
         testOutput .&&.
     not (all Chain.null finalChains) .&&.
     conjoin (map (hasAllEBBs k numSlots produceEBBs) finalChains)
@@ -176,6 +293,22 @@ prop_simple_real_pbft_convergence
                 ProduceEBBs -> Just Byron.forgeEBB
             , nodeInfo = \nid -> protocolInfo $
                 mkProtocolRealPBFT params nid genesisConfig genesisSecrets
+            , rekeying = Just Rekeying
+              { rekeyUpd      = mkRekeyUpd genesisConfig genesisSecrets
+              , rekeyFreshSKs =
+                  let prj  = Crypto.hashVerKey . Crypto.deriveVerKeyDSIGN
+                      acc0 =   -- the VKs of the operational keys at genesis
+                        Set.fromList $
+                        map (Common.hashKey . Delegation.delegateVK) $
+                        Map.elems $
+                        Genesis.unGenesisDelegation $
+                        Genesis.gdHeavyDelegation $
+                        Genesis.configGenesisData genesisConfig
+                  in
+                  Stream.nubOrdBy prj acc0 $
+                  withSeed initSeed $   -- seems fine to reuse seed for this
+                  sequence $ let ms = Crypto.genKeyDSIGN Stream.:< ms in ms
+              }
             }
 
     finalChains :: [Chain ByronBlock]
@@ -225,7 +358,8 @@ hasAllEBBs k (NumSlots t) produceEBBs c =
 
     actual   = mapMaybe (nodeIsEBB . getHeader) $ Chain.toOldestFirst c
 
-mkProtocolRealPBFT :: PBftParams
+mkProtocolRealPBFT :: HasCallStack
+                   => PBftParams
                    -> CoreNodeId
                    -> Genesis.Config
                    -> Genesis.GeneratedSecrets
@@ -249,7 +383,7 @@ mkProtocolRealPBFT params (CoreNodeId i)
     PBftParams{pbftSignatureThreshold} = params
 
     dlgKey :: Crypto.SigningKey
-    dlgKey = fromJust $
+    dlgKey = fromMaybe (error "dlgKey") $
        find (\sec -> Delegation.delegateVK dlgCert == Crypto.toVerification sec)
             $ Genesis.gsRichSecrets genesisSecrets
 
@@ -411,12 +545,15 @@ genRealPBFTTestConfig k = do
 
     let params = realPBftParams k numCoreNodes
     nodeJoinPlan <- genRealPBFTNodeJoinPlan params numSlots
+    nodeRestarts <- genNodeRestarts nodeJoinPlan numSlots >>=
+                    genNodeRekeys params nodeJoinPlan numSlots
     nodeTopology <- genNodeTopology numCoreNodes
 
     initSeed <- arbitrary
 
     pure TestConfig
       { nodeJoinPlan
+      , nodeRestarts
       , nodeTopology
       , numCoreNodes
       , numSlots
@@ -439,6 +576,7 @@ shrinkTestConfigSlotsOnly TestConfig
   { numCoreNodes
   , numSlots
   , nodeJoinPlan
+  , nodeRestarts
   , nodeTopology
   , slotLengths
   , initSeed
@@ -446,6 +584,7 @@ shrinkTestConfigSlotsOnly TestConfig
     dropId $
     [ TestConfig
         { nodeJoinPlan = p'
+        , nodeRestarts = r'
         , nodeTopology = top'
         , numCoreNodes
         , numSlots     = t'
@@ -454,7 +593,158 @@ shrinkTestConfigSlotsOnly TestConfig
         }
     | t'            <- andId shrink numSlots
     , let adjustedP  = truncateNodeJoinPlan nodeJoinPlan numCoreNodes (numSlots, t')
+    , let adjustedR  = truncateNodeRestarts nodeRestarts t'
     , p'            <- andId shrinkNodeJoinPlan adjustedP
+    , r'            <- andId shrinkNodeRestarts adjustedR
     , top'          <- andId shrinkNodeTopology nodeTopology
     , ls'           <- andId shrink slotLengths
     ]
+
+-- | Possibly promote some 'NodeRestart's to 'NodeRekey's
+--
+-- POSTCONDITION No node will rekey multiple times in a single epoch.
+-- (Ouroboros allows at most one delegation per epoch, while each rekey and
+-- also genesis itself all count as a delegation.)
+--
+-- POSTCONDITION Each rekey takes at least 2k slots, and the node can't lead
+-- until it's finished. Therefore, at most one node will be rekeying at a time,
+-- since otherwise its inability to lead may spoil the invariants established
+-- by 'genRealPBFTNodeJoinPlan'.
+--
+genNodeRekeys
+  :: PBftParams
+  -> NodeJoinPlan
+  -> NumSlots
+  -> NodeRestarts
+  -> Gen NodeRestarts
+genNodeRekeys params (NodeJoinPlan njp) numSlots@(NumSlots t)
+  nodeRestarts@(NodeRestarts nrs)
+  | t <= 0    = pure nodeRestarts
+  | otherwise =
+    -- The necessary conditions are pretty rare, so favor adding a 'NodeRekey'
+    -- when we can. But not always.
+    (\x -> frequency [(2, pure nodeRestarts), (8, x)]) $
+    -- TODO rekey nodes other than the last
+    -- TODO rekey more than one node
+    -- TODO rekey a node in a slot other than its join slot
+    case Map.lookupMax njp of
+      Just (nid, jslot)
+            -- last node joins after first epoch, ...
+          | jslot >= beginSecondEpoch
+            -- ... and could instead join unproblematically at the latest time
+            -- the delegation certificate would mature
+          , latestPossibleDlgMaturation pbftSecurityParam numCoreNodes jslot
+              <= lastSlot
+          , let nodeJoinPlan' =
+                  NodeJoinPlan $ Map.insert nid (jslot + twoK) njp
+          , Ref.viable params lastSlot nodeJoinPlan' Ref.emptyState
+          , Ref.deterministicPlan numSlots nodeJoinPlan'
+          -> pure $ NodeRestarts $
+             -- We discard any 'NodeRestart's also scheduled for this slot.
+             -- 'NodeRestart's are less interesting, so it's fine.
+             --
+             -- TODO retain those coincident node restarts as long as they
+             -- don't include every other node; that risks forgetting some
+             -- relevant blocks.
+             Map.insert jslot (Map.singleton nid NodeRekey) nrs
+      _ -> pure nodeRestarts
+  where
+    PBftParams{pbftSecurityParam} = params
+    k = maxRollbacks pbftSecurityParam
+    lastSlot = SlotNo $ fromIntegral $ t - 1
+    numCoreNodes = NumCoreNodes $ Map.size njp
+
+    twoK             = SlotNo $ 2 * k
+    beginSecondEpoch = SlotNo $ 10 * k   -- c.f. Genesis.configEpochSlots
+
+{-------------------------------------------------------------------------------
+  Updating operational keys
+-------------------------------------------------------------------------------}
+
+-- | Overwrite the 'ProtocolInfo''s operational key, if any, and provide a
+-- transaction for its new delegation certificate
+--
+mkRekeyUpd
+  :: (BlockProtocol b ~ PBft ByronConfig PBftCardanoCrypto)
+  => Genesis.Config
+  -> Genesis.GeneratedSecrets
+  -> ProtocolInfo b
+  -> EpochNo
+  -> Crypto.SignKeyDSIGN Crypto.CardanoDSIGN
+  -> Maybe (ProtocolInfo b, Byron.GenTx ByronBlock)
+mkRekeyUpd genesisConfig genesisSecrets pInfo eno newSK = case pbftIsLeader of
+    PBftIsNotALeader       -> Nothing
+    PBftIsALeader isLeader ->
+      let PBftIsLeader{pbftCoreNodeId} = isLeader
+          genSK = genesisSecretFor genesisConfig genesisSecrets pbftCoreNodeId
+          isLeader' = updSignKey genSK pbftExtConfig isLeader (coerce eno) newSK
+          pInfo' = pInfo
+            { pInfoConfig = pInfoConfig
+              { pbftIsLeader = PBftIsALeader isLeader'
+              }
+            }
+
+          PBftIsLeader{pbftDlgCert} = isLeader'
+      in Just (pInfo', dlgTx pbftDlgCert)
+  where
+    ProtocolInfo{pInfoConfig}                   = pInfo
+    PBftNodeConfig{pbftExtConfig, pbftIsLeader} = pInfoConfig
+
+-- | The secret key for a node index
+--
+genesisSecretFor
+  :: Genesis.Config
+  -> Genesis.GeneratedSecrets
+  -> CoreNodeId
+  -> Crypto.SignKeyDSIGN Crypto.CardanoDSIGN
+genesisSecretFor genesisConfig genesisSecrets cid =
+    case hits of
+        [sec] -> Crypto.SignKeyCardanoDSIGN sec
+        _     -> error $ "Not exactly one genesis key " <> show (cid, hits)
+  where
+    hits :: [Crypto.SigningKey]
+    hits =
+        filter
+            ((Just cid ==) . gkToIdx)
+            (Genesis.gsDlgIssuersSecrets genesisSecrets)
+
+    gkToIdx :: Crypto.SigningKey -> Maybe CoreNodeId
+    gkToIdx =
+        genesisKeyCoreNodeId genesisConfig
+      . Crypto.VerKeyCardanoDSIGN . Crypto.toVerification
+
+-- | Overwrite the 'PBftIsLeader''s operational key and delegation certificate
+--
+updSignKey
+  :: Crypto.SignKeyDSIGN Crypto.CardanoDSIGN
+  -> ByronConfig
+  -> PBftIsLeader PBftCardanoCrypto
+  -> EpochNumber
+  -> Crypto.SignKeyDSIGN Crypto.CardanoDSIGN
+  -> PBftIsLeader PBftCardanoCrypto
+updSignKey genSK extCfg isLeader eno newSK = isLeader
+    { pbftDlgCert = newCert
+    , pbftSignKey = newSK
+    }
+  where
+    newCert =
+        Delegation.signCertificate
+            (Byron.pbftProtocolMagicId extCfg)
+            (Crypto.toVerification sk')
+            eno
+            (Crypto.noPassSafeSigner gsk')
+      where
+        Crypto.SignKeyCardanoDSIGN gsk' = genSK
+        Crypto.SignKeyCardanoDSIGN sk'  = newSK
+
+-- | Map a delegation certificate to a delegation transaction
+--
+dlgTx :: Delegation.Certificate -> Byron.GenTx ByronBlock
+dlgTx cert =
+    let ann = Cardano.Binary.serialize' (cert :: Delegation.Certificate)
+        cert' = cert
+          { Delegation.aEpoch     =
+              Cardano.Binary.reAnnotate (Delegation.aEpoch cert)
+          , Delegation.annotation = ann
+          }
+    in Byron.ByronDlg (Delegation.recoverCertificateId cert') cert'

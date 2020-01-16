@@ -294,6 +294,7 @@ test-suite test-consensus
                     Test.ThreadNet.Util.Expectations
                     Test.ThreadNet.Util.NodeJoinPlan
                     Test.ThreadNet.Util.NodeTopology
+                    Test.ThreadNet.Util.NodeRestarts
                     Test.ThreadNet.Util.Tests
                     Test.Util.BlockchainTime
                     Test.Util.FS.Sim.FsTree
@@ -310,6 +311,7 @@ test-suite test-consensus
                     Test.Util.SOP
                     Test.Util.Shrink
                     Test.Util.Split
+                    Test.Util.Stream
                     Test.Util.TestBlock
                     Test.Util.Tracer
   build-depends:    base,
