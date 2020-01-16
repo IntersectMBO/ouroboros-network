@@ -2,6 +2,7 @@
 {-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE KindSignatures #-}
+{-# LANGUAGE StandaloneDeriving #-}
 
 module Ouroboros.Network.Connections.Socket.Types
   ( SockType (..)
@@ -11,6 +12,7 @@ module Ouroboros.Network.Connections.Socket.Types
   , Some (..)
   , withSockType
   , matchSockType
+  , matchSockAddr
   , forgetSockType
   ) where
 
@@ -25,13 +27,17 @@ data SockType where
 -- | Like `Network.Socket.SockAddr` but with a type parameter indicating which
 -- kind of address it is: IPv4, IPv6, or Unix domain.
 data SockAddr (sockType :: SockType) where
-  SockAddrIPv4  :: !Socket.PortNumber -> !Socket.HostAddress -> SockAddr IPv4
+  SockAddrIPv4 :: !Socket.PortNumber -> !Socket.HostAddress -> SockAddr IPv4
   SockAddrIPv6 :: !Socket.PortNumber
-                -> !Socket.FlowInfo
-                -> !Socket.HostAddress6
-                -> !Socket.ScopeID
-                -> SockAddr IPv6
-  SockAddrUnix  :: String -> SockAddr Unix
+               -> !Socket.FlowInfo
+               -> !Socket.HostAddress6
+               -> !Socket.ScopeID
+               -> SockAddr IPv6
+  SockAddrUnix :: String -> SockAddr Unix
+
+-- Not ideal since the host addresses for v4 and v6 use Word32 instead of
+-- 4 Word8s as decimals. Oh well.
+deriving instance Show (SockAddr sockType)
 
 -- | A connection is identified by a pair of addresses. For IPv* this is fine,
 -- but not for Unix domain sockets: these can be unnamed, so that a connecting
@@ -45,6 +51,8 @@ data ConnectionId where
   ConnectionIdIPv6 :: !(SockAddr IPv6) -> !(SockAddr IPv6) -> ConnectionId
   ConnectionIdIPv4 :: !(SockAddr IPv4) -> !(SockAddr IPv4) -> ConnectionId
   ConnectionIdUnix :: !(SockAddr Unix) -> !(SockAddr Unix) -> ConnectionId
+
+deriving instance Show ConnectionId
 
 instance Eq ConnectionId where
   ConnectionIdIPv6 a b == ConnectionIdIPv6 c d =
@@ -94,6 +102,16 @@ matchSockType (SockAddrIPv4 _ _) (Socket.SockAddrInet pn ha) =
 matchSockType (SockAddrUnix _) (Socket.SockAddrUnix st) =
   Just (SockAddrUnix st)
 matchSockType _ _ = Nothing
+
+matchSockAddr :: SockAddr sockType -> Some SockAddr -> Maybe (SockAddr sockType)
+matchSockAddr (SockAddrIPv6 _ _ _ _) (Some (SockAddrIPv6 pn fi ha si)) =
+  Just (SockAddrIPv6 pn fi ha si)
+matchSockAddr (SockAddrIPv4 _ _) (Some (SockAddrIPv4 pn ha)) =
+  Just (SockAddrIPv4 pn ha)
+matchSockAddr (SockAddrUnix _) (Some (SockAddrUnix st)) =
+  Just (SockAddrUnix st)
+matchSockAddr _ _ = Nothing
+
 
 forgetSockType :: SockAddr sockType -> Socket.SockAddr
 forgetSockType sockAddr = case sockAddr of
