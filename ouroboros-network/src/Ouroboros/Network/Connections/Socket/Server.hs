@@ -36,7 +36,18 @@ server bindaddr k = bracket
     closeSocket
     (\sock -> k (acceptOne bindaddr sock))
   where
-  openSocket = bracket createSocket closeSocket $ \sock -> do
+
+  openSocket :: IO Socket
+  openSocket = mask $ \restore -> do
+    sock <- restore createSocket
+    restore (prepareSocket sock) `onException` closeSocket sock
+    return sock
+
+  createSocket :: IO Socket
+  createSocket = Socket.socket family Socket.Stream Socket.defaultProtocol
+
+  prepareSocket :: Socket -> IO ()
+  prepareSocket sock = do
     when isInet $ do
       Socket.setSocketOption sock Socket.ReuseAddr 1
       -- SO_REUSEPORT is not available on Windows.
@@ -49,10 +60,6 @@ server bindaddr k = bracket
     when isInet  $ do
       Socket.bind sock (forgetSockType bindaddr)
       Socket.listen sock 1
-    return sock
-    
-  createSocket :: IO Socket
-  createSocket = Socket.socket family Socket.Stream Socket.defaultProtocol
 
   closeSocket :: Socket -> IO ()
   closeSocket = Socket.close
