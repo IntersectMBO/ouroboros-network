@@ -122,7 +122,7 @@ removeConnection identifier state =
 concurrent
   :: forall connectionId resource handle reason t .
      ( Ord connectionId )
-  => (connectionId -> resource -> IO (Either reason (Handler handle)))
+  => (Provenance -> connectionId -> resource -> IO (Either reason (Handler handle)))
   -- ^ A callback to run for each connection. The `handle` gives an interface
   -- to that connection, allowing for inspection and control etc. of whatever
   -- it's doing.
@@ -157,7 +157,7 @@ concurrent withResource k = do
           -- set up. It should just be creating shared state.
           -- Do not catch exceptions: the caller is responsible for closing
           -- the resource in case of exception.
-          outcome <- restore (withResource connId res)
+          outcome <- restore (withResource Incoming connId res)
           case outcome of
             Left reason -> pure (state, Rejected (DomainSpecific reason))
             Right handler -> do
@@ -182,7 +182,7 @@ concurrent withResource k = do
           -- Thus `include`ing a new resource is just like bracketing the
           -- acquire and release: any exception in acquire will be re-thrown.
           res <- restore acquire
-          outcome <- restore (withResource connId res)
+          outcome <- restore (withResource Outgoing connId res)
                        `onException`
                        release res
           case outcome of
