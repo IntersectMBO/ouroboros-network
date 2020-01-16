@@ -52,7 +52,7 @@ import           Ouroboros.Network.Block (BlockNo, pattern BlockPoint,
 import           Ouroboros.Network.Point (WithOrigin)
 
 import           Ouroboros.Consensus.Block (BlockProtocol, GetHeader (..),
-                     headerHash, headerPoint, toIsEBB)
+                     headerHash, headerPoint)
 import           Ouroboros.Consensus.BlockchainTime (BlockchainTime (..))
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
@@ -67,7 +67,6 @@ import qualified Ouroboros.Storage.ChainDB.Impl.ImmDB as ImmDB
 import           Ouroboros.Storage.ChainDB.Impl.LgrDB (LgrDB)
 import qualified Ouroboros.Storage.ChainDB.Impl.LgrDB as LgrDB
 import qualified Ouroboros.Storage.ChainDB.Impl.Query as Query
-import qualified Ouroboros.Storage.ChainDB.Impl.Reader as Reader
 import           Ouroboros.Storage.ChainDB.Impl.Types
 import           Ouroboros.Storage.ChainDB.Impl.VolDB (VolDB)
 import qualified Ouroboros.Storage.ChainDB.Impl.VolDB as VolDB
@@ -199,24 +198,26 @@ addBlock cdb@CDB{..} b = do
 
         VolDB.putBlock cdbVolDB b
         trace $ BlockInTheFuture (blockPoint b) curSlot
-        trace $ AddedBlockToVolDB (blockPoint b) (blockNo b) (toIsEBB (cdbIsEBB b))
-        scheduleChainSelection curSlot (blockSlot b) (getHeader b)
+        trace $ AddedBlockToVolDB (blockPoint b) (blockNo b) (cdbIsEBB hdr)
+        scheduleChainSelection curSlot (blockSlot b)
 
       -- The remaining cases
       | otherwise -> do
         VolDB.putBlock cdbVolDB b
-        trace $ AddedBlockToVolDB (blockPoint b) (blockNo b) (toIsEBB (cdbIsEBB b))
-        chainSelectionForBlock cdb (getHeader b)
+        trace $ AddedBlockToVolDB (blockPoint b) (blockNo b) (cdbIsEBB hdr)
+        chainSelectionForBlock cdb hdr
   where
     trace :: TraceAddBlockEvent blk -> m ()
     trace = traceWith (contramap TraceAddBlockEvent cdbTracer)
 
+    hdr :: Header blk
+    hdr = getHeader b
+
     scheduleChainSelection
       :: SlotNo  -- ^ Current slot number
       -> SlotNo  -- ^ Slot number of the block
-      -> Header blk
       -> m ()
-    scheduleChainSelection curSlot slot hdr = do
+    scheduleChainSelection curSlot slot = do
       nbScheduled <- atomically $ updateTVar cdbFutureBlocks $ \futureBlocks ->
         let futureBlocks' = Map.insertWith strictAppend slot
               (forceElemsToWHNF (hdr NE.:| [])) futureBlocks
@@ -517,12 +518,9 @@ chainSelectionForBlock cdb@CDB{..} hdr = do
               -- 'Reader.switchFork' needs to know the intersection point
               -- (@ipoint@) between the old and the current chain.
               let ipoint = castPoint $ AF.anchorPoint newChainSuffix
-              varBlockReaders <- Map.elems <$> readTVar cdbBlockReaders
-              forM_ varBlockReaders $ \varBlockReader -> modifyTVar varBlockReader $
-                Reader.switchFork ipoint newChain'
-              varHeaderReaders <- Map.elems <$> readTVar cdbHeaderReaders
-              forM_ varHeaderReaders $ \varHeaderReader -> modifyTVar varHeaderReader $
-                Reader.switchFork ipoint newChain'
+              readerHandles <- Map.elems <$> readTVar cdbReaders
+              forM_ readerHandles $ \readerHandle ->
+                rhSwitchFork readerHandle ipoint newChain'
 
               return (curChain, True)
           -- The chain must be changed in the meantime such that our chain is

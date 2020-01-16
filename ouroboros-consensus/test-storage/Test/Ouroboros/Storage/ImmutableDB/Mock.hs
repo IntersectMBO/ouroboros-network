@@ -12,7 +12,8 @@ import           Control.Monad.Class.MonadThrow
 import           Ouroboros.Consensus.Util ((..:), (.:))
 import           Ouroboros.Consensus.Util.IOLike
 
-import           Ouroboros.Storage.Common (EpochNo, EpochSize)
+import           Ouroboros.Storage.Common (EpochNo, EpochSize,
+                     castBlockComponent)
 import           Ouroboros.Storage.ImmutableDB.API
 import           Ouroboros.Storage.Util.ErrorHandling (ErrorHandling)
 import qualified Ouroboros.Storage.Util.ErrorHandling as EH
@@ -37,23 +38,17 @@ openDBMock err epochSize = do
 
     immDB :: StrictTVar m (DBModel hash) -> ImmutableDB hash m
     immDB dbVar = ImmutableDB
-        { closeDB             = wrap  $   closeDB             db
-        , isOpen              = wrap  $   isOpen              db
-        , reopen              = wrap  .   reopen              db
-        , getTip              = wrap  $   getTip              db
-        , getBlock            = wrap  .   getBlock            db
-        , getBlockHeader      = wrap  .   getBlock            db
-        , getBlockHash        = wrap  .   getBlockHash        db
-        , getEBB              = wrap  .   getEBB              db
-        , getEBBHeader        = wrap  .   getEBBHeader        db
-        , getEBBHash          = wrap  .   getEBBHash          db
-        , getBlockOrEBB       = wrap  .:  getBlockOrEBB       db
-        , getBlockOrEBBHeader = wrap  .:  getBlockOrEBBHeader db
-        , appendBlock         = wrap  ..: appendBlock         db
-        , appendEBB           = wrap  ..: appendEBB           db
-        , streamBlocks        = wrapI .:  streamBlocks        db
-        , streamHeaders       = wrapI .:  streamHeaders       db
-        , immutableDBErr      = err
+        { closeDB                = wrap  $    closeDB                db
+        , isOpen                 = wrap  $    isOpen                 db
+        , reopen                 = wrap  .    reopen                 db
+        , getTip                 = wrap  $    getTip                 db
+        , getBlockComponent      = wrap  .:  (getBlockComponent      db . castBlockComponent)
+        , getEBBComponent        = wrap  .:  (getEBBComponent        db . castBlockComponent)
+        , getBlockOrEBBComponent = wrap  ..: (getBlockOrEBBComponent db . castBlockComponent)
+        , appendBlock            = wrap  ..:  appendBlock            db
+        , appendEBB              = wrap  ..:  appendEBB              db
+        , stream                 = wrapI ..: (stream                 db . castBlockComponent)
+        , immutableDBErr         = err
         }
       where
         wrap  = wrapModel dbVar

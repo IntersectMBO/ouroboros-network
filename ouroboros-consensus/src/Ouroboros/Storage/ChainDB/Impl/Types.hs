@@ -1,5 +1,7 @@
+{-# LANGUAGE DataKinds            #-}
 {-# LANGUAGE DeriveAnyClass       #-}
 {-# LANGUAGE DeriveGeneric        #-}
+{-# LANGUAGE DerivingVia          #-}
 {-# LANGUAGE FlexibleContexts     #-}
 {-# LANGUAGE LambdaCase           #-}
 {-# LANGUAGE RankNTypes           #-}
@@ -23,6 +25,7 @@ module Ouroboros.Storage.ChainDB.Impl.Types (
   , Internal (..)
   , intReopen
     -- * Reader-related
+  , ReaderHandle (..)
   , ReaderState (..)
   , ReaderRollState (..)
   , readerRollStatePoint
@@ -52,7 +55,7 @@ import           GHC.Stack (HasCallStack, callStack)
 import           Control.Monad.Class.MonadThrow
 import           Control.Tracer
 
-import           Cardano.Prelude (NoUnexpectedThunks)
+import           Cardano.Prelude (NoUnexpectedThunks (..), OnlyCheckIsWHNF (..))
 
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import           Ouroboros.Network.Block (BlockNo, HasHeader, HeaderHash, Point,
@@ -72,8 +75,8 @@ import           Ouroboros.Storage.Common (EpochNo)
 import           Ouroboros.Storage.EpochInfo (EpochInfo)
 
 import           Ouroboros.Storage.ChainDB.API (ChainDbError (..),
-                     Deserialisable, InvalidBlockReason, IteratorId, ReaderId,
-                     StreamFrom, StreamTo, UnknownRange)
+                     InvalidBlockReason, IteratorId, ReaderId, StreamFrom,
+                     StreamTo, UnknownRange)
 
 import           Ouroboros.Storage.ChainDB.Impl.ImmDB (ImmDB)
 import qualified Ouroboros.Storage.ChainDB.Impl.ImmDB as ImmDB
@@ -180,15 +183,14 @@ data ChainDbEnv m blk = CDB
     -- ChainDB: the open file handles used by iterators can be closed, and the
     -- iterators themselves are closed so that it is impossible to use an
     -- iterator after closing the ChainDB itself.
-  , cdbBlockReaders   :: !(StrictTVar m (Map ReaderId (StrictTVar m (ReaderState m blk blk))))
-    -- ^ The (block) readers.
+  , cdbReaders        :: !(StrictTVar m (Map ReaderId (ReaderHandle m blk)))
+    -- ^ The readers.
+    --
+    -- A reader is open iff its 'ReaderId' is this 'Map'.
     --
     -- INVARIANT: the 'readerPoint' of each reader is 'withinFragmentBounds'
     -- of the current chain fragment (retrieved 'cdbGetCurrentChain', not by
     -- reading 'cdbChain' directly).
-  , cdbHeaderReaders  :: !(StrictTVar m (Map ReaderId (StrictTVar m (ReaderState m blk (Header blk)))))
-    -- ^ The header readers. Same as the block readers ('cdbBlockReaders'),
-    -- but instead of returning whole blocks, they only return the headers.
   , cdbNodeConfig     :: !(NodeConfig (BlockProtocol blk))
   , cdbInvalid        :: !(StrictTVar m (WithFingerprint (InvalidBlocks blk)))
     -- ^ See the docstring of 'InvalidBlocks'.
@@ -214,7 +216,7 @@ data ChainDbEnv m blk = CDB
   , cdbKillBgThreads  :: !(StrictTVar m (m ()))
     -- ^ A handle to kill the background threads.
   , cdbEpochInfo      :: !(EpochInfo m)
-  , cdbIsEBB          :: !(blk -> Bool)
+  , cdbIsEBB          :: !(Header blk -> IsEBB)
   , cdbBlockchainTime :: !(BlockchainTime m)
   , cdbFutureBlocks   :: !(StrictTVar m (Map SlotNo (NonEmpty (Header blk))))
     -- ^ Scheduled chain selections for blocks with a slot in the future.
@@ -278,6 +280,24 @@ intReopen = intReopen_
 -- modules depend on 'ChainDbEnv'. Also, 'ChainDbEnv.cdbReaders' depends on
 -- 'ReaderState'.
 
+-- | Internal handle to a 'Reader' without an explicit @b@ (@blk@, @'Header'
+-- blk@, etc.) parameter so 'Reader's with different' @b@s can be stored
+-- together in 'cdbReaders'.
+data ReaderHandle m blk = ReaderHandle
+  { rhSwitchFork :: Point blk -> AnchoredFragment (Header blk) -> STM m ()
+    -- ^ When we have switched to a fork, all open 'Reader's must be notified.
+  , rhClose      :: m ()
+    -- ^ When closing the ChainDB, we must also close all open 'Reader's, as
+    -- they might be holding on to resources.
+    --
+    -- Call 'rhClose' will release the resources used by the 'Reader'.
+    --
+    -- NOTE the 'Reader' is not removed from 'cdbReaders'. (That is done by
+    -- 'closeAllReaders').
+  }
+  deriving NoUnexpectedThunks via OnlyCheckIsWHNF "ReaderHandle" (ReaderHandle m blk)
+
+-- | @b@ corresponds to the 'BlockComponent' that is being read.
 data ReaderState m blk b
   = ReaderInit
     -- ^ The 'Reader' is in its initial state. Its 'ReaderRollState' is
@@ -294,8 +314,11 @@ data ReaderState m blk b
     -- Therefore, we have this extra initial state, that avoids this cost.
     -- When the user doesn't move the Reader forward, an iterator is opened.
   | ReaderInImmDB !(ReaderRollState blk)
-                  !(ImmDB.Iterator (HeaderHash blk) m (Deserialisable m blk b))
+                  !(ImmDB.Iterator (HeaderHash blk) m (Point blk, b))
     -- ^ The 'Reader' is reading from the ImmutableDB.
+    --
+    -- Note that the iterator includes 'Point blk' in addition to @b@, as it
+    -- is needed to keep track of where the iterator is.
   | ReaderInMem   !(ReaderRollState blk)
     -- ^ The 'Reader' is reading from the in-memory current chain fragment.
   deriving (Generic, NoUnexpectedThunks)

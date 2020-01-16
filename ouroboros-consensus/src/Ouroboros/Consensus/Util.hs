@@ -28,6 +28,7 @@ module Ouroboros.Consensus.Util (
   , allDisjoint
   , (.:)
   , (..:)
+  , (...:)
   , takeLast
   , dropLast
   , mustBeRight
@@ -163,6 +164,9 @@ allDisjoint = go Set.empty
 
 (..:) :: (d -> e) -> (a -> b -> c -> d) -> (a -> b -> c -> e)
 (f ..: g) a b c = f (g a b c)
+
+(...:) :: (e -> f) -> (a -> b -> c -> d -> e) -> (a -> b -> c -> d -> f)
+(f ...: g) a b c d = f (g a b c d)
 
 -- | Take the last @n@ elements
 takeLast :: Word64 -> [a] -> [a]

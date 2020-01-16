@@ -173,11 +173,11 @@ testBlockIsEBB :: TestBlock -> IsEBB
 testBlockIsEBB = thIsEBB . testHeader
 
 -- | Only works correctly if the epoch size is fixed
-testBlockEpochNoIfEBB :: EpochSize -> TestBlock -> Maybe EpochNo
-testBlockEpochNoIfEBB fixedEpochSize b = case testBlockIsEBB b of
+testHeaderEpochNoIfEBB :: EpochSize -> Header TestBlock -> Maybe EpochNo
+testHeaderEpochNoIfEBB fixedEpochSize (TestHeader' hdr) = case thIsEBB hdr of
     IsNotEBB -> Nothing
     IsEBB    -> Just $
-      EpochNo (unSlotNo (blockSlot b) `div` unEpochSize fixedEpochSize)
+      EpochNo (unSlotNo (thSlotNo hdr) `div` unEpochSize fixedEpochSize)
 
 -- | Check whether the header matches its hash and whether the body matches
 -- its hash.

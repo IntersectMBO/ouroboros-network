@@ -115,6 +115,7 @@ copyToImmDB
      ( IOLike m
      , OuroborosTag (BlockProtocol blk)
      , HasHeader blk
+     , GetHeader blk
      , HasHeader (Header blk)
      , HasCallStack
      )
@@ -195,6 +196,7 @@ copyToImmDBRunner
      ( IOLike m
      , OuroborosTag (BlockProtocol blk)
      , HasHeader blk
+     , GetHeader blk
      , HasHeader (Header blk)
      )
   => ChainDbEnv m blk

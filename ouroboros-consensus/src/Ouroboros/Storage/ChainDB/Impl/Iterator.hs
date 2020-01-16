@@ -10,7 +10,7 @@
 {-# OPTIONS_GHC -Wredundant-constraints #-}
 -- | Iterators
 module Ouroboros.Storage.ChainDB.Impl.Iterator
-  ( streamBlocks
+  ( stream
   , closeAllIterators
     -- * Exported for testing purposes
   , IteratorEnv (..)
@@ -33,20 +33,19 @@ import           GHC.Stack (HasCallStack)
 import           Control.Monad.Class.MonadThrow
 import           Control.Tracer
 
-import           Ouroboros.Network.Block (pattern BlockPoint,
+import           Ouroboros.Network.Block (pattern BlockPoint, ChainHash (..),
                      pattern GenesisPoint, HasHeader, HeaderHash, Point,
-                     SlotNo, StandardHash, atSlot, withHash)
+                     SlotNo, StandardHash, atSlot, pointHash, withHash)
 import           Ouroboros.Network.Point (WithOrigin (..))
 
 import           Ouroboros.Consensus.Block (IsEBB (..))
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
 
-import           Ouroboros.Storage.ChainDB.API (BlockOrHeader (..),
-                     ChainDbError (..), Deserialisable (..), Iterator (..),
-                     IteratorId (..), IteratorResult (..), StreamFrom (..),
-                     StreamTo (..), UnknownRange (..), deserialisablePoint,
-                     validBounds)
+import           Ouroboros.Storage.ChainDB.API (BlockComponent (..), ChainDB,
+                     ChainDbError (..), Iterator (..), IteratorId (..),
+                     IteratorResult (..), StreamFrom (..), StreamTo (..),
+                     UnknownRange (..), getPoint, validBounds)
 
 import           Ouroboros.Storage.ChainDB.Impl.ImmDB (ImmDB)
 import qualified Ouroboros.Storage.ChainDB.Impl.ImmDB as ImmDB
@@ -178,15 +177,16 @@ import qualified Ouroboros.Storage.ChainDB.Impl.VolDB as VolDB
 -- the cost of reading (but not parsing) one extra block from disk, in
 -- addition to the block(s) we are actually interested in. This can happen
 -- multiple times. See #548.
-streamBlocks
-  :: forall m blk. (IOLike m, HasHeader blk, HasCallStack)
+stream
+  :: forall m blk b. (IOLike m, HasHeader blk, HasCallStack)
   => ChainDbHandle m blk
   -> ResourceRegistry m
-  -> StreamFrom      blk
-  -> StreamTo        blk
-  -> m (Either (UnknownRange blk) (Iterator m (Deserialisable m blk blk)))
-streamBlocks h registry from to = getEnv h $ \cdb ->
-    newIterator (fromChainDbEnv cdb) getItEnv registry from to
+  -> BlockComponent (ChainDB m blk) b
+  -> StreamFrom blk
+  -> StreamTo blk
+  -> m (Either (UnknownRange blk) (Iterator m blk b))
+stream h registry blockComponent from to = getEnv h $ \cdb ->
+    newIterator (fromChainDbEnv cdb) getItEnv registry blockComponent from to
   where
     getItEnv :: forall r. (IteratorEnv m blk -> m r) -> m r
     getItEnv f = getEnv h (f . fromChainDbEnv)
@@ -218,13 +218,10 @@ fromChainDbEnv CDB{..} = IteratorEnv
   , itTracer         = contramap TraceIteratorEvent cdbTracer
   }
 
--- | Short-hand we'll use internally
-type DeserialisableIterator m blk = Iterator m (Deserialisable m blk blk)
-
 -- | See 'streamBlocks'.
 newIterator
-  :: forall m blk. (IOLike m, HasHeader blk, HasCallStack)
-  => IteratorEnv   m blk
+  :: forall m blk b. (IOLike m, HasHeader blk, HasCallStack)
+  => IteratorEnv m blk
   -> (forall r. (IteratorEnv m blk -> m r) -> m r)
      -- ^ Function with which the operations on the returned iterator should
      -- obtain their 'IteratorEnv'. This function should check whether the
@@ -232,10 +229,11 @@ newIterator
      -- that when we call 'iteratorNext', we first check whether the ChainDB
      -- is still open.
   -> ResourceRegistry m
-  -> StreamFrom      blk
-  -> StreamTo        blk
-  -> m (Either (UnknownRange blk) (DeserialisableIterator m blk))
-newIterator itEnv@IteratorEnv{..} getItEnv registry from to = do
+  -> BlockComponent (ChainDB m blk) b
+  -> StreamFrom blk
+  -> StreamTo blk
+  -> m (Either (UnknownRange blk) (Iterator m blk b))
+newIterator itEnv@IteratorEnv{..} getItEnv registry blockComponent from to = do
     unless (validBounds from to) $
       throwM $ InvalidIteratorRange from to
     res <- runExceptT start
@@ -255,7 +253,7 @@ newIterator itEnv@IteratorEnv{..} getItEnv registry from to = do
     -- in the ImmutableDB (the range is <= the tip) or first try the
     -- VolatileDB (in the other cases).
     start :: HasCallStack
-          => ExceptT (UnknownRange blk) m (DeserialisableIterator m blk)
+          => ExceptT (UnknownRange blk) m (Iterator m blk b)
     start = lift (ImmDB.getTipInfo itImmDB) >>= \case
       Origin                          -> findPathInVolDB
       At (tipSlot, tipHash, tipIsEBB) ->
@@ -322,7 +320,7 @@ newIterator itEnv@IteratorEnv{..} getItEnv registry from to = do
     -- | PRECONDITION: the upper bound >= the tip of the ImmutableDB.
     -- Greater or /equal/, because of EBBs :(
     findPathInVolDB :: HasCallStack
-                    => ExceptT (UnknownRange blk) m (DeserialisableIterator m blk)
+                    => ExceptT (UnknownRange blk) m (Iterator m blk b)
     findPathInVolDB = do
       path <- lift $ atomically $ VolDB.computePathSTM itVolDB from to
       case path of
@@ -332,23 +330,24 @@ newIterator itEnv@IteratorEnv{..} getItEnv registry from to = do
           Just hashes' -> lift $ streamFromVolDB hashes'
           Nothing      -> lift $ emptyIterator
 
-    streamFromVolDB :: NonEmpty (HeaderHash blk) -> m (DeserialisableIterator m blk)
+    streamFromVolDB :: NonEmpty (HeaderHash blk) -> m (Iterator m blk b)
     streamFromVolDB hashes = do
       trace $ StreamFromVolDB from to (NE.toList hashes)
       createIterator $ InVolDB from hashes
 
-    streamFromImmDB :: ExceptT (UnknownRange blk) m (DeserialisableIterator m blk)
+    streamFromImmDB :: ExceptT (UnknownRange blk) m (Iterator m blk b)
     streamFromImmDB = do
       lift $ trace $ StreamFromImmDB from to
       streamFromImmDBHelper to
 
     streamFromImmDBHelper
       :: StreamTo blk
-      -> ExceptT (UnknownRange blk) m (DeserialisableIterator m blk)
+      -> ExceptT (UnknownRange blk) m (Iterator m blk b)
     streamFromImmDBHelper to' = do
         -- 'ImmDB.stream' will check the hash of the block at the
         -- start and end bounds.
-        immIt <- ExceptT $ ImmDB.stream itImmDB registry Block from to'
+        immIt <- ExceptT $ ImmDB.stream itImmDB registry
+          ((,) <$> getPoint <*> blockComponent) from to'
         lift $ createIterator $ InImmDB from immIt (StreamTo to')
 
     -- | If we have to stream from both the ImmutableDB and the VolatileDB, we
@@ -360,7 +359,7 @@ newIterator itEnv@IteratorEnv{..} getItEnv registry from to = do
     streamFromBoth :: HasCallStack
                    => HeaderHash blk
                    -> [HeaderHash blk]
-                   -> ExceptT (UnknownRange blk) m (DeserialisableIterator m blk)
+                   -> ExceptT (UnknownRange blk) m (Iterator m blk b)
     streamFromBoth predHash hashes = do
         lift $ trace $ StreamFromBoth from to hashes
         lift (toPoint <$> ImmDB.getTipInfo itImmDB) >>= \case
@@ -370,7 +369,7 @@ newIterator itEnv@IteratorEnv{..} getItEnv registry from to = do
           pt@BlockPoint { withHash = tipHash }
             | tipHash == predHash
             -> case NE.nonEmpty hashes of
-                 Just hashes' -> stream pt hashes'
+                 Just hashes' -> startStream pt hashes'
                  -- The path is actually empty, but the exclusive upper bound
                  -- was in the VolatileDB. Since there's nothing to stream,
                  -- just return an empty iterator.
@@ -390,7 +389,7 @@ newIterator itEnv@IteratorEnv{..} getItEnv registry from to = do
               -- means that some blocks in our path have moved from the
               -- VolatileDB to the ImmutableDB. We can shift the switchover
               -- point to the current tip.
-              _tipHash:hash:hashes' -> stream pt (hash NE.:| hashes')
+              _tipHash:hash:hashes' -> startStream pt (hash NE.:| hashes')
               -- The current tip is the end of the path, this means we can
               -- actually stream everything from just the ImmutableDB. It
               -- could be that the exclusive end bound was not part of the
@@ -399,11 +398,12 @@ newIterator itEnv@IteratorEnv{..} getItEnv registry from to = do
               -- that's not in the ImmutableDB.
               [_tipHash]            -> streamFromImmDBHelper (StreamToInclusive pt)
       where
-        stream pt hashes' = do
+        startStream pt hashes' = do
           let immEnd = SwitchToVolDBFrom (StreamToInclusive pt) hashes'
           immTip <- lift $ ImmDB.getPointAtTip itImmDB
           immIt <- ExceptT $
-            ImmDB.stream itImmDB registry Block from (StreamToInclusive immTip)
+            ImmDB.stream itImmDB registry ((,) <$> getPoint <*> blockComponent)
+              from (StreamToInclusive immTip)
           lift $ createIterator $ InImmDB from immIt immEnd
 
         toPoint :: WithOrigin (SlotNo, HeaderHash blk, IsEBB) -> Point blk
@@ -411,8 +411,8 @@ newIterator itEnv@IteratorEnv{..} getItEnv registry from to = do
         toPoint (At (slot, hash, _isEBB)) = BlockPoint slot hash
 
     makeIterator :: Bool  -- ^ Register the iterator in 'cdbIterators'?
-                 -> IteratorState m blk
-                 -> m (DeserialisableIterator m blk)
+                 -> IteratorState m blk b
+                 -> m (Iterator m blk b)
     makeIterator register itState = do
       iteratorId <- makeNewIteratorId
       varItState <- newTVarM itState
@@ -422,16 +422,18 @@ newIterator itEnv@IteratorEnv{..} getItEnv registry from to = do
         -- probably won't be the case.
         Map.insert iteratorId (implIteratorClose varItState iteratorId itEnv)
       return Iterator {
-          iteratorNext  = getItEnv $ implIteratorNext  registry varItState
-        , iteratorClose = getItEnv $ implIteratorClose          varItState iteratorId
+          iteratorNext  = getItEnv $
+            implIteratorNext  registry varItState blockComponent
+        , iteratorClose = getItEnv $
+            implIteratorClose          varItState iteratorId
         , iteratorId    = iteratorId
         }
 
-    emptyIterator :: m (DeserialisableIterator m blk)
+    emptyIterator :: m (Iterator m blk b)
     emptyIterator = makeIterator False Closed
 
     -- | This is 'makeIterator' +  it in 'cdbIterators'.
-    createIterator :: IteratorState m blk -> m (DeserialisableIterator m blk)
+    createIterator :: IteratorState m blk b -> m (Iterator m blk b)
     createIterator = makeIterator True
 
     makeNewIteratorId :: m IteratorId
@@ -444,7 +446,7 @@ newIterator itEnv@IteratorEnv{..} getItEnv registry from to = do
 -- and thus 'cdbIterators').
 implIteratorClose
   :: IOLike m
-  => StrictTVar m (IteratorState m blk)
+  => StrictTVar m (IteratorState m blk b)
   -> IteratorId
   -> IteratorEnv m blk
   -> m ()
@@ -487,10 +489,10 @@ implIteratorClose varItState itrId IteratorEnv{..} = do
 --    block of which the hash does not match the expected hash or when the
 --    iterator is exhausted, we switch back to the 'InVolDB' state.
 --
-data IteratorState m blk
+data IteratorState m blk b
   = InImmDB
       !(StreamFrom blk)
-      !(ImmDB.Iterator (HeaderHash blk) m (Deserialisable m blk blk))
+      !(ImmDB.Iterator (HeaderHash blk) m (Point blk, b))
       !(InImmDBEnd blk)
     -- ^ Streaming from the ImmutableDB.
     --
@@ -519,7 +521,7 @@ data IteratorState m blk
     -- the current chain, in which case they will not be in the ImmutableDB.
   | InImmDBRetry
       !(StreamFrom blk)
-      !(ImmDB.Iterator (HeaderHash blk) m (Deserialisable m blk blk))
+      !(ImmDB.Iterator (HeaderHash blk) m (Point blk, b))
       !(NonEmpty (HeaderHash blk))
     -- ^ When streaming blocks (a list of hashes) from the VolatileDB, we
     -- noticed a block was missing from the VolatileDB. It may have moved to
@@ -532,13 +534,13 @@ data IteratorState m blk
   deriving (Generic)
 
 instance (Typeable blk, StandardHash blk)
-      => NoUnexpectedThunks (IteratorState m blk)
+      => NoUnexpectedThunks (IteratorState m blk b)
   -- use generic instance
 
 -- | Extract the ImmutableDB Iterator from the 'IteratorState'.
 iteratorStateImmIt
-  :: IteratorState m blk
-  -> Maybe (ImmDB.Iterator (HeaderHash blk) m (Deserialisable m blk blk))
+  :: IteratorState m blk b
+  -> Maybe (ImmDB.Iterator (HeaderHash blk) m (Point blk, b))
 iteratorStateImmIt = \case
     Closed                 -> Nothing
     InImmDB      _ immIt _ -> Just immIt
@@ -557,12 +559,13 @@ data InImmDBEnd blk
     -- second parameter) from the VolatileDB.
   deriving (Generic, NoUnexpectedThunks)
 
-implIteratorNext :: forall m blk. (IOLike m, HasHeader blk)
+implIteratorNext :: forall m blk b. (IOLike m, HasHeader blk)
                  => ResourceRegistry m
-                 -> StrictTVar m (IteratorState m blk)
+                 -> StrictTVar m (IteratorState m blk b)
+                 -> BlockComponent (ChainDB m blk) b
                  -> IteratorEnv m blk
-                 -> m (IteratorResult (Deserialisable m blk blk))
-implIteratorNext registry varItState IteratorEnv{..} =
+                 -> m (IteratorResult blk b)
+implIteratorNext registry varItState blockComponent IteratorEnv{..} =
     atomically (readTVar varItState) >>= \case
       Closed ->
         return IteratorExhausted
@@ -582,9 +585,9 @@ implIteratorNext registry varItState IteratorEnv{..} =
                    -- lower bound to try to stream it from the ImmutableDB (if
                    -- the block indeed has been moved there).
                 -> NonEmpty (HeaderHash blk)
-                -> m (IteratorResult (Deserialisable m blk blk))
+                -> m (IteratorResult blk b)
     nextInVolDB continueFrom (hash NE.:| hashes) =
-      VolDB.getDeserialisableBlockOrHeader itVolDB Block hash >>= \case
+      VolDB.getBlockComponent itVolDB ((,) <$> getPoint <*> blockComponent) hash >>= \case
         -- Block is missing
         Nothing -> do
             trace $ BlockMissingFromVolDB hash
@@ -598,43 +601,44 @@ implIteratorNext registry varItState IteratorEnv{..} =
             -- have been garbage-collected, which means that its slot was
             -- older than the slot of the tip of the ImmutableDB.
             immTip <- ImmDB.getPointAtTip itImmDB
-            ImmDB.stream itImmDB registry Block continueFrom (StreamToInclusive immTip) >>= \case
-              -- The block was not found in the ImmutableDB, it must have been
-              -- garbage-collected
-              Left   _    -> do
-                trace $ BlockGCedFromVolDB hash
-                return $ IteratorBlockGCed hash
-              Right immIt -> nextInImmDBRetry Nothing immIt (hash NE.:| hashes)
+            ImmDB.stream itImmDB registry ((,) <$> getPoint <*> blockComponent)
+               continueFrom (StreamToInclusive immTip) >>= \case
+                -- The block was not found in the ImmutableDB, it must have been
+                -- garbage-collected
+                Left   _    -> do
+                  trace $ BlockGCedFromVolDB hash
+                  return $ IteratorBlockGCed hash
+                Right immIt -> nextInImmDBRetry Nothing immIt (hash NE.:| hashes)
 
         -- Block is there
-        Just blk | Just hashes' <- NE.nonEmpty hashes -> do
-          let continueFrom' = StreamFromExclusive (deserialisablePoint blk)
+        Just (pt, b) | Just hashes' <- NE.nonEmpty hashes -> do
+          let continueFrom' = StreamFromExclusive pt
           atomically $ writeTVar varItState (InVolDB continueFrom' hashes')
-          return $ IteratorResult blk
+          return $ IteratorResult b
         -- No more hashes, so we can stop
-        Just blk -> do
+        Just (_pt, b) -> do
           atomically $ writeTVar varItState Closed
-          return $ IteratorResult blk
+          return $ IteratorResult b
 
     -- | Read the next block while in the 'InImmDB' state.
     nextInImmDB :: StreamFrom blk
-                -> ImmDB.Iterator (HeaderHash blk) m (Deserialisable m blk blk)
+                -> ImmDB.Iterator (HeaderHash blk) m (Point blk, b)
                 -> InImmDBEnd blk
-                -> m (IteratorResult (Deserialisable m blk blk))
+                -> m (IteratorResult blk b)
     nextInImmDB continueFrom immIt immEnd =
       selectResult immIt >>= \case
-        NotDone blk -> do
-          let continueFrom' = StreamFromExclusive (deserialisablePoint blk)
+        NotDone (pt, b) -> do
+          let continueFrom' = StreamFromExclusive pt
           atomically $ writeTVar varItState (InImmDB continueFrom' immIt immEnd)
-          return $ IteratorResult blk
+          return $ IteratorResult b
         -- True indicates that this is the last element in the stream
-        DoneAfter blk | SwitchToVolDBFrom _ hashes <- immEnd -> do
-          let continueFrom' = StreamFromExclusive (deserialisablePoint blk)
+        DoneAfter (pt, b) | SwitchToVolDBFrom _ hashes <- immEnd -> do
+          let continueFrom' = StreamFromExclusive pt
           atomically $ writeTVar varItState (InVolDB continueFrom' hashes)
-          return $ IteratorResult blk
-        DoneAfter blk -> do
+          return $ IteratorResult b
+        DoneAfter (_pt, b) -> do
           atomically $ writeTVar varItState Closed
-          return $ IteratorResult blk
+          return $ IteratorResult b
         Done | SwitchToVolDBFrom _ hashes <- immEnd ->
           nextInVolDB continueFrom hashes
         Done -> do
@@ -652,14 +656,14 @@ implIteratorNext registry varItState IteratorEnv{..} =
          -- ^ 'Nothing' iff the iterator was just opened and nothing has been
          -- streamed from it yet. This is used to avoid switching right back
          -- to the VolatileDB if we came from there.
-       -> ImmDB.Iterator (HeaderHash blk) m (Deserialisable m blk blk)
+       -> ImmDB.Iterator (HeaderHash blk) m (Point blk, b)
        -> NonEmpty (HeaderHash blk)
-       -> m (IteratorResult (Deserialisable m blk blk))
+       -> m (IteratorResult blk b)
     nextInImmDBRetry mbContinueFrom immIt (hash NE.:| hashes) =
       selectResult immIt >>= \case
-        NotDone blk | deserialisableHash blk == hash -> do
+        NotDone (pt, b) | pointHash pt == BlockHash hash -> do
           trace $ BlockWasCopiedToImmDB hash
-          let continueFrom' = StreamFromExclusive (deserialisablePoint blk)
+          let continueFrom' = StreamFromExclusive pt
           case NE.nonEmpty hashes of
             Nothing      -> do
               atomically $ writeTVar varItState Closed
@@ -667,19 +671,19 @@ implIteratorNext registry varItState IteratorEnv{..} =
             Just hashes' ->
               atomically $ writeTVar varItState $
                 InImmDBRetry continueFrom' immIt hashes'
-          return $ IteratorResult blk
+          return $ IteratorResult b
 
-        DoneAfter blk | deserialisableHash blk == hash -> do
+        DoneAfter (pt, b) | pointHash pt == BlockHash hash -> do
           -- 'DoneAfter': 'selectResult' will have closed the ImmDB iterator
           -- already
           trace $ BlockWasCopiedToImmDB hash
-          let continueFrom' = StreamFromExclusive (deserialisablePoint blk)
+          let continueFrom' = StreamFromExclusive pt
           case NE.nonEmpty hashes of
             Nothing      -> atomically $ writeTVar varItState Closed
             Just hashes' -> do
               atomically $ writeTVar varItState $ InVolDB continueFrom' hashes'
               trace SwitchBackToVolDB
-          return $ IteratorResult blk
+          return $ IteratorResult b
 
         -- Hash mismatch or 'Done'. Close the ImmDB Iterator (idempotent).
         _ -> ImmDB.iteratorClose itImmDB immIt *> case mbContinueFrom of
@@ -706,15 +710,14 @@ implIteratorNext registry varItState IteratorEnv{..} =
     --
     -- Note that this function closes the iterator when necessary, i.e., when
     -- the return value is 'Done' or 'DoneAfter'.
-    selectResult :: ImmDB.Iterator (HeaderHash blk) m (Deserialisable m blk blk)
-                 -> m (Done (Deserialisable m blk blk))
+    selectResult :: ImmDB.Iterator (HeaderHash blk) m (Point blk, b)
+                 -> m (Done (Point blk, b))
     selectResult immIt = do
         itRes   <-            ImmDB.iteratorNext    itImmDB immIt
         hasNext <- isJust <$> ImmDB.iteratorHasNext itImmDB immIt
         case itRes of
-          ImmDB.IteratorResult _ _ blk -> select blk hasNext
-          ImmDB.IteratorEBB    _ _ blk -> select blk hasNext
-          ImmDB.IteratorExhausted      -> return Done
+          ImmDB.IteratorResult blk -> select blk hasNext
+          ImmDB.IteratorExhausted  -> return Done
       where
         select blk hasNext
           | hasNext

@@ -1,7 +1,6 @@
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE GADTs                     #-}
 {-# LANGUAGE LambdaCase                #-}
-{-# LANGUAGE NamedFieldPuns            #-}
 {-# LANGUAGE PatternSynonyms           #-}
 {-# LANGUAGE RankNTypes                #-}
 {-# LANGUAGE RecordWildCards           #-}
@@ -18,25 +17,19 @@ module Ouroboros.Storage.ChainDB.Impl.ImmDB (
   , withImmDB
     -- * Getting and parsing blocks
   , hasBlock
-  , getBlockOrHeaderWithPoint
-  , getDeserialisableBlockOrHeaderWithPoint
-  , getBlockOrHeaderAtTip
   , getTipInfo
   , getPointAtTip
   , getSlotNoAtTip
-  , getKnownBlockOrHeader
-  , getBlockOrHeader
-  , getDeserialisableBlockOrHeader
-  , getBlob
+  , getKnownBlockComponent
+  , getBlockComponent
+  , getBlockComponentAtTip
+  , getBlockComponentWithPoint
     -- * Appending a block
   , appendBlock
     -- * Streaming
   , stream
   , streamAfter
   , streamAfterKnownBlock
-  , deserialiseIterator
-  , deserialisableIterator
-  , parseIterator
     -- * Wrappers
   , closeDB
   , reopen
@@ -48,9 +41,9 @@ module Ouroboros.Storage.ChainDB.Impl.ImmDB (
   , TraceEvent
   , ImmDB.EpochFileError
     -- * Re-exports
-  , Iterator
-  , IteratorResult(..)
-  , ImmDB.ValidationPolicy(..)
+  , ImmDB.Iterator
+  , ImmDB.IteratorResult (..)
+  , ImmDB.ValidationPolicy (..)
   , ImmDB.ImmutableDBError
   , ImmDB.BinaryInfo (..)
   , ImmDB.HashInfo (..)
@@ -81,28 +74,26 @@ import           Control.Monad.Class.MonadThrow
 
 import           Ouroboros.Network.Block (pattern BlockPoint, ChainHash (..),
                      pattern GenesisPoint, HasHeader (..), HeaderHash, Point,
-                     Serialised (..), SlotNo, atSlot, pointHash, pointSlot,
-                     withHash)
+                     SlotNo, atSlot, pointHash, pointSlot, withHash)
 import           Ouroboros.Network.Point (WithOrigin (..))
 
-import           Ouroboros.Consensus.Block (Header, IsEBB (..))
+import           Ouroboros.Consensus.Block (GetHeader (..), IsEBB (..))
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.Orphans ()
 import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry,
                      allocateEither, unsafeRelease)
 
-import           Ouroboros.Storage.ChainDB.API (BlockOrHeader (..),
-                     ChainDbError (..), ChainDbFailure (..),
-                     Deserialisable (..), StreamFrom (..), StreamTo (..),
-                     UnknownRange (..))
-import           Ouroboros.Storage.Common
+import           Ouroboros.Storage.ChainDB.API (ChainDB)
+import           Ouroboros.Storage.ChainDB.API hiding (ChainDB (..),
+                     Iterator (..), closeDB)
+import           Ouroboros.Storage.ChainDB.Impl.BlockComponent
+import           Ouroboros.Storage.Common (EpochNo, Tip (..))
 import           Ouroboros.Storage.EpochInfo (EpochInfo (..))
 import           Ouroboros.Storage.FS.API (HasFS, createDirectoryIfMissing)
 import           Ouroboros.Storage.FS.API.Types (MountPoint (..), mkFsPath)
 import           Ouroboros.Storage.FS.IO (ioHasFS)
 import           Ouroboros.Storage.ImmutableDB (BinaryInfo (..), HashInfo (..),
-                     ImmutableDB, Iterator (Iterator), IteratorResult (..),
-                     WithHash (..))
+                     ImmutableDB, WithHash (..))
 import qualified Ouroboros.Storage.ImmutableDB as ImmDB
 import qualified Ouroboros.Storage.ImmutableDB.Impl.Index as Index
                      (CacheConfig (..))
@@ -119,7 +110,7 @@ data ImmDB m blk = ImmDB {
       -- generics to derive the NoUnexpectedThunks instance.
     , encBlock  :: !(blk -> BinaryInfo Encoding)
     , epochInfo :: !(EpochInfo m)
-    , isEBB     :: !(blk -> Maybe EpochNo)
+    , isEBB     :: !(Header blk -> Maybe EpochNo)
     , addHdrEnv :: !(IsEBB -> Lazy.ByteString -> Lazy.ByteString)
     , err       :: !(ErrorHandling ImmDB.ImmutableDBError m)
     }
@@ -160,7 +151,7 @@ data ImmDbArgs m blk = forall h. ImmDbArgs {
     , immEpochInfo      :: EpochInfo m
     , immHashInfo       :: HashInfo (HeaderHash blk)
     , immValidation     :: ImmDB.ValidationPolicy
-    , immIsEBB          :: blk -> Maybe EpochNo
+    , immIsEBB          :: Header blk -> Maybe EpochNo
     , immCheckIntegrity :: blk -> Bool
     , immAddHdrEnv      :: IsEBB -> Lazy.ByteString -> Lazy.ByteString
     , immHasFS          :: HasFS m h
@@ -218,12 +209,12 @@ defaultArgs fp = ImmDbArgs{
       , expireUnusedAfter = 5 * 60 -- Expire after 1 minute
       }
 
-withImmDB :: (IOLike m, HasHeader blk)
+withImmDB :: (IOLike m, HasHeader blk, GetHeader blk)
           => ImmDbArgs m blk -> (ImmDB m blk -> m a) -> m a
 withImmDB args = bracket (openDB args) closeDB
 
 -- | For testing purposes
-openDB :: (IOLike m, HasHeader blk)
+openDB :: (IOLike m, HasHeader blk, GetHeader blk)
        => ImmDbArgs m blk
        -> m (ImmDB m blk)
 openDB ImmDbArgs{..} = do
@@ -249,7 +240,7 @@ openDB ImmDbArgs{..} = do
       , err       = immErr
       }
   where
-    parser = ImmDB.epochFileParser immHasFS immDecodeBlock immIsEBB
+    parser = ImmDB.epochFileParser immHasFS immDecodeBlock (immIsEBB . getHeader)
       -- TODO a more efficient to accomplish this?
       (void . immEncodeBlock) immCheckIntegrity
 
@@ -260,7 +251,7 @@ mkImmDB :: ImmutableDB (HeaderHash blk) m
         -> (forall s. Decoder s (Lazy.ByteString -> blk))
         -> (blk -> BinaryInfo Encoding)
         -> EpochInfo m
-        -> (blk -> Maybe EpochNo)
+        -> (Header blk -> Maybe EpochNo)
         -> (IsEBB -> Lazy.ByteString -> Lazy.ByteString)
         -> ErrorHandling ImmDB.ImmutableDBError m
         -> ImmDB m blk
@@ -299,11 +290,12 @@ hasBlock db = \case
           -- Same slot, but our tip is an EBB, so we cannot check if the
           -- regular block in that slot exists, because that's in the future.
           EQ | Just epochNo <- ebbAtTip
-             -> (== Just hash) <$> ImmDB.getEBBHash imm epochNo
+             -> (== Just hash) <$> ImmDB.getEBBComponent imm GetHash epochNo
           -- Slot in the past or equal to the tip, but the tip is a regular
           -- block.
           _ -> do
-            hasRegularBlock <- (== Just hash) <$> ImmDB.getBlockHash imm slot
+            hasRegularBlock <- (== Just hash) <$>
+              ImmDB.getBlockComponent imm GetHash slot
             if hasRegularBlock then
               return True
             else do
@@ -312,76 +304,12 @@ hasBlock db = \case
               -- If it's a slot that can also contain an EBB, check if we have
               -- an EBB
               if slot == ebbSlot then
-                (== Just hash) <$> ImmDB.getEBBHash imm epochNo
+                (== Just hash) <$>
+                  ImmDB.getEBBComponent imm GetHash epochNo
               else
                 return False
   where
     EpochInfo{..} = epochInfo db
-
--- | Return the block or header corresponding to the given point, if it is
--- part of the ImmutableDB.
---
--- If we have a block at the slot of the point, but its hash differs, we
--- return 'Nothing'.
---
--- If the point corresponds to some slot in the future, a
--- 'ReadFutureSlotError' wrapped in a 'ImmDbFailure' is thrown.
-getBlockOrHeaderWithPoint
-  :: forall m blk b. (MonadCatch m, HasCallStack)
-  => ImmDB m blk
-  -> BlockOrHeader blk b
-  -> Point blk
-  -> m (Maybe b)
-getBlockOrHeaderWithPoint db blockOrHeader pt =
-    traverse deserialise =<<
-    getDeserialisableBlockOrHeaderWithPoint db blockOrHeader pt
-
-getDeserialisableBlockOrHeaderWithPoint
-  :: (MonadCatch m, HasCallStack)
-  => ImmDB m blk
-  -> BlockOrHeader blk b
-  -> Point blk
-  -> m (Maybe (Deserialisable m blk b))
-getDeserialisableBlockOrHeaderWithPoint db@ImmDB { addHdrEnv } blockOrHeader = \case
-    GenesisPoint -> throwM NoGenesisBlock
-    BlockPoint { withHash = hash, atSlot = slot } ->
-      withDB db $ \imm -> getBlockOrHeaderBlob imm slot hash >>= \case
-        Nothing                -> return $ Nothing
-        Just (epochOrSlot, bs) -> return $ Just $ Deserialisable
-          { serialised         = Serialised bs
-          , deserialisableSlot = slot
-          , deserialisableHash = hash
-          , deserialise        = case parse db blockOrHeader epochOrSlot bs of
-              Left  err -> throwM err
-              Right blk -> return blk
-          }
-  where
-    getBlockOrHeaderBlob imm slot hash = case blockOrHeader of
-      Block  -> ImmDB.getBlockOrEBB       imm slot hash
-      Header -> ImmDB.getBlockOrEBBHeader imm slot hash <&>
-        fmap (uncurry addHdrEnvelope)
-
-    addHdrEnvelope
-      :: Either EpochNo SlotNo
-      -> Lazy.ByteString
-      -> (Either EpochNo SlotNo, Lazy.ByteString)
-    addHdrEnvelope epochOrSlot bs = (epochOrSlot, addHdrEnv isEBB bs)
-      where
-        isEBB = case epochOrSlot of
-          Left _epochNo -> IsEBB
-          Right _slotNo -> IsNotEBB
-
-getBlockOrHeaderAtTip
-  :: (MonadCatch m, HasCallStack)
-  => ImmDB m blk -> BlockOrHeader blk b -> m (Maybe b)
-getBlockOrHeaderAtTip db blockOrHeader = do
-    immTip <- withDB db $ \imm -> ImmDB.getTip imm
-    case forgetHash <$> immTip of
-      TipGen                   -> return Nothing
-      Tip (ImmDB.EBB epochNo)  ->
-        Just <$> getKnownBlockOrHeader db blockOrHeader (Left epochNo)
-      Tip (ImmDB.Block slotNo) ->
-        Just <$> getKnownBlockOrHeader db blockOrHeader (Right slotNo)
 
 getTipInfo :: forall m blk.
               (MonadCatch m, HasCallStack)
@@ -407,81 +335,64 @@ getPointAtTip db = getTipInfo db <&> \case
 getSlotNoAtTip :: MonadCatch m => ImmDB m blk -> m (WithOrigin SlotNo)
 getSlotNoAtTip db = pointSlot <$> getPointAtTip db
 
--- | Get a block or header from the ImmutableDB that we know should exist
---
--- If it does not exist, we are dealing with data corruption.
-getKnownBlockOrHeader
-  :: (MonadCatch m, HasCallStack)
-  => ImmDB m blk -> BlockOrHeader blk b -> Either EpochNo SlotNo -> m b
-getKnownBlockOrHeader db blockOrHeader epochOrSlot = do
-    mBlockOrHeader <- mustExist epochOrSlot <$>
-      getBlockOrHeader db blockOrHeader epochOrSlot
-    case mBlockOrHeader of
+getKnownBlockComponent
+  :: (MonadCatch m, HasHeader blk, HasCallStack)
+  => ImmDB m blk
+  -> BlockComponent (ChainDB m blk) b
+  -> Either EpochNo SlotNo
+  -> m b
+getKnownBlockComponent db blockComponent epochOrSlot = do
+    mBlock <- mustExist epochOrSlot <$>
+      getBlockComponent db blockComponent epochOrSlot
+    case mBlock of
       Right b  -> return b
       Left err -> throwM err
 
--- | Get a block or header from the ImmutableDB
-getBlockOrHeader
-  :: (MonadCatch m, HasCallStack)
+getBlockComponent
+  :: forall m blk b. (MonadCatch m, HasHeader blk, HasCallStack)
   => ImmDB m blk
-  -> BlockOrHeader blk b
+  -> BlockComponent (ChainDB m blk) b
   -> Either EpochNo SlotNo
   -> m (Maybe b)
-getBlockOrHeader db blockOrHeader epochOrSlot =
-    traverse deserialise =<<
-    getDeserialisableBlockOrHeader db blockOrHeader epochOrSlot
-
-getDeserialisableBlockOrHeader
-  :: (MonadCatch m, HasCallStack)
-  => ImmDB m blk
-  -> BlockOrHeader blk b
-  -> Either EpochNo SlotNo
-  -> m (Maybe (Deserialisable m blk b))
-getDeserialisableBlockOrHeader db blockOrHeader epochOrSlot =
-   getBlob db blockOrHeader epochOrSlot >>= \case
-     Nothing           -> return Nothing
-     Just (hash, blob) -> Just <$>
-       mkDeserialisable db blockOrHeader epochOrSlot hash blob
-
-mkDeserialisable
-  :: MonadThrow m
-  => ImmDB m blk
-  -> BlockOrHeader blk b
-  -> Either EpochNo SlotNo
-  -> HeaderHash blk
-  -> Lazy.ByteString
-  -> m (Deserialisable m blk b)
-mkDeserialisable db@ImmDB { epochInfo } blockOrHeader epochOrSlot hash bs = do
-    slotNo <- case epochOrSlot of
-      Left epochNo -> epochInfoFirst epochNo
-      Right slotNo -> return slotNo
-    return Deserialisable
-      { serialised         = Serialised bs
-      , deserialisableSlot = slotNo
-      , deserialisableHash = hash
-      , deserialise        = case parse db blockOrHeader epochOrSlot bs of
-          Left  err -> throwM err
-          Right blk -> return blk
-      }
+getBlockComponent db blockComponent epochOrSlot = withDB db $ \imm ->
+    case epochOrSlot of
+      Left epoch -> ImmDB.getEBBComponent   imm blockComponent' epoch
+      Right slot -> ImmDB.getBlockComponent imm blockComponent' slot
   where
-    EpochInfo { epochInfoFirst } = epochInfo
+    blockComponent' = translateToRawDB (parse db) (addHdrEnv db) blockComponent
 
-getBlob
-  :: (MonadCatch m, HasCallStack)
+getBlockComponentAtTip
+  :: (MonadCatch m, HasHeader blk, HasCallStack)
+  => ImmDB m blk -> BlockComponent (ChainDB m blk) b -> m (Maybe b)
+getBlockComponentAtTip db blockComponent = do
+    immTip <- withDB db $ \imm -> ImmDB.getTip imm
+    case forgetHash <$> immTip of
+      TipGen -> return Nothing
+      Tip (ImmDB.EBB epoch) ->
+        Just <$> getKnownBlockComponent db blockComponent (Left epoch)
+      Tip (ImmDB.Block slot) ->
+        Just <$> getKnownBlockComponent db blockComponent (Right slot)
+
+-- | Return the block component of the block corresponding to the given point,
+-- if it is part of the ImmutableDB.
+--
+-- If we have a block at the slot of the point, but its hash differs, we
+-- return 'Nothing'.
+--
+-- If the point corresponds to some slot in the future, a
+-- 'ReadFutureSlotError' wrapped in a 'ImmDbFailure' is thrown.
+getBlockComponentWithPoint
+  :: forall m blk b. (MonadCatch m, HasHeader blk, HasCallStack)
   => ImmDB m blk
-  -> BlockOrHeader blk b
-  -> Either EpochNo SlotNo
-  -> m (Maybe  (HeaderHash blk, Lazy.ByteString))
-getBlob db@ImmDB { addHdrEnv } blockOrHeader epochOrSlot = withDB db $ \imm ->
-    case blockOrHeader of
-      Block  -> case epochOrSlot of
-        Left epochNo -> ImmDB.getEBB   imm epochNo
-        Right slotNo -> ImmDB.getBlock imm slotNo
-      Header -> case epochOrSlot of
-        Left epochNo -> fmap (second (addHdrEnv IsEBB))    <$>
-          ImmDB.getEBBHeader   imm epochNo
-        Right slotNo -> fmap (second (addHdrEnv IsNotEBB)) <$>
-          ImmDB.getBlockHeader imm slotNo
+  -> BlockComponent (ChainDB m blk) b
+  -> Point blk
+  -> m (Maybe b)
+getBlockComponentWithPoint db blockComponent = \case
+    GenesisPoint -> throwM NoGenesisBlock
+    BlockPoint { withHash = hash, atSlot = slot } -> withDB db $ \imm ->
+      ImmDB.getBlockOrEBBComponent imm blockComponent' slot hash
+  where
+    blockComponent' = translateToRawDB (parse db) (addHdrEnv db) blockComponent
 
 {-------------------------------------------------------------------------------
   Appending a block
@@ -490,9 +401,9 @@ getBlob db@ImmDB { addHdrEnv } blockOrHeader epochOrSlot = withDB db $ \imm ->
 -- | Appends the given block (as a regular block or EBB) to the ImmutableDB.
 --
 -- Does not check whether the block is in the past or not.
-appendBlock :: (MonadCatch m, HasHeader blk, HasCallStack)
+appendBlock :: (MonadCatch m, HasHeader blk, GetHeader blk, HasCallStack)
             => ImmDB m blk -> blk -> m ()
-appendBlock db@ImmDB{..} b = withDB db $ \imm -> case isEBB b of
+appendBlock db@ImmDB{..} b = withDB db $ \imm -> case isEBB (getHeader b) of
     Nothing      ->
       ImmDB.appendBlock imm slotNo  hash (CBOR.toBuilder <$> encBlock b)
     Just epochNo ->
@@ -506,23 +417,26 @@ appendBlock db@ImmDB{..} b = withDB db $ \imm -> case isEBB b of
   Streaming
 -------------------------------------------------------------------------------}
 
--- | Wrapper around 'ImmDB.streamBinaryBlobs' that 'allocate's the iterator in
--- the 'ResourceRegistry' so that 'ImmDB.iteratorClose' is registered as the
--- clean-up action.
+-- | Wrapper around 'ImmDB.stream' that 'allocate's the iterator in the
+-- 'ResourceRegistry' so that 'ImmDB.iteratorClose' is registered as the
+-- clean-up action. Translates the requested 'BlockComponent' into the
+-- 'ImmDB.BlockComponent' the ImmutableDB understands.
 --
 -- When the returned iterator is closed, it will be 'release'd from the
 -- 'ResourceRegistry'.
-registeredStream :: forall m blk b. IOLike m
-                 => ImmDB m blk
-                 -> ResourceRegistry m
-                 -> BlockOrHeader blk b
-                 -> Maybe (SlotNo, HeaderHash blk)
-                 -> Maybe (SlotNo, HeaderHash blk)
-                 -> m (Either (ImmDB.WrongBoundError (HeaderHash blk))
-                              (ImmDB.Iterator (HeaderHash blk) m Lazy.ByteString))
-registeredStream db@ImmDB { addHdrEnv } registry blockOrHeader start end = do
+registeredStream
+  :: forall m blk b. (IOLike m, HasHeader blk)
+  => ImmDB m blk
+  -> ResourceRegistry m
+  -> BlockComponent (ChainDB m blk) b
+  -> Maybe (SlotNo, HeaderHash blk)
+  -> Maybe (SlotNo, HeaderHash blk)
+  -> m (Either (ImmDB.WrongBoundError (HeaderHash blk))
+               (ImmDB.Iterator (HeaderHash blk) m b))
+registeredStream db registry blockComponent start end = do
     errOrKeyAndIt <- allocateEither registry
-      (\_key -> withDB db $ \imm -> go imm)
+      (\_key -> withDB db $ \imm ->
+        ImmDB.stream imm blockComponent' start end)
       (iteratorClose db)
     return $ case errOrKeyAndIt of
       Left e          -> Left e
@@ -534,21 +448,7 @@ registeredStream db@ImmDB { addHdrEnv } registry blockOrHeader start end = do
       -- in the chain DB itself (throw ClosedDBError exception).
       Right (key, it) -> Right it { ImmDB.iteratorClose = unsafeRelease key }
   where
-    go imm = case blockOrHeader of
-      Block  -> ImmDB.streamBlocks  imm start end
-      Header -> ImmDB.streamHeaders imm start end <&>
-        fmap (traverseIterator db (traverseIteratorResult db addHdrEnvelope))
-
-    addHdrEnvelope
-      :: Either EpochNo SlotNo
-      -> HeaderHash blk
-      -> Lazy.ByteString
-      -> m Lazy.ByteString
-    addHdrEnvelope epochOrSlot _hash = return . addHdrEnv isEBB
-      where
-        isEBB = case epochOrSlot of
-          Left _epochNo -> IsEBB
-          Right _slotNo -> IsNotEBB
+    blockComponent' = translateToRawDB (parse db) (addHdrEnv db) blockComponent
 
 -- | Stream headers/blocks from the given 'StreamFrom' to the given
 -- 'StreamTo'.
@@ -559,12 +459,11 @@ stream
   :: forall m blk b. (IOLike m, HasHeader blk)
   => ImmDB m blk
   -> ResourceRegistry m
-  -> BlockOrHeader blk b
+  -> BlockComponent (ChainDB m blk) b
   -> StreamFrom blk
   -> StreamTo   blk
-  -> m (Either (UnknownRange blk)
-               (ImmDB.Iterator (HeaderHash blk) m (Deserialisable m blk b)))
-stream db registry blockOrHeader from to = runExceptT $ do
+  -> m (Either (UnknownRange blk) (ImmDB.Iterator (HeaderHash blk) m b))
+stream db registry blockComponent from to = runExceptT $ do
     -- Also check if the slot of the bound is <= the slot of the tip. If not,
     -- throw a 'MissingBlock' error.
     --
@@ -602,17 +501,17 @@ stream db registry blockOrHeader from to = runExceptT $ do
       StreamFromInclusive GenesisPoint ->
         throwM NoGenesisBlock
   where
-    openRegisteredStream :: Maybe (SlotNo, HeaderHash blk)
-                         -> Maybe (SlotNo, HeaderHash blk)
-                         -> ExceptT
-                              (UnknownRange blk)
-                              m
-                              (Iterator (HeaderHash blk)
-                                        m
-                                        (Deserialisable m blk b))
+    openRegisteredStream
+      :: Maybe (SlotNo, HeaderHash blk)
+      -> Maybe (SlotNo, HeaderHash blk)
+      -> ExceptT (UnknownRange blk)
+                 m
+                 (ImmDB.Iterator (HeaderHash blk) m b)
     openRegisteredStream start end = ExceptT $
-        bimap toUnknownRange (deserialisableIterator db blockOrHeader . stopAt to) <$>
-        registeredStream db registry blockOrHeader start end
+        bimap toUnknownRange (fmap snd . stopAt to) <$>
+      -- 'stopAt' needs to know the hash of each streamed block, so we \"Get\"
+      -- it in addition to @b@, but we drop it afterwards.
+        registeredStream db registry ((,) <$> GetHash <*> blockComponent) start end
       where
         toUnknownRange :: ImmDB.WrongBoundError (HeaderHash blk) -> UnknownRange blk
         toUnknownRange e
@@ -632,9 +531,10 @@ stream db registry blockOrHeader from to = runExceptT $ do
 
     -- | The ImmutableDB doesn't support an exclusive end bound, so we stop
     -- the iterator when it reaches its exclusive end bound.
-    stopAt :: StreamTo blk
-           -> ImmDB.Iterator (HeaderHash blk) m a
-           -> ImmDB.Iterator (HeaderHash blk) m a
+    stopAt :: forall a.
+              StreamTo blk
+           -> ImmDB.Iterator (HeaderHash blk) m (HeaderHash blk, a)
+           -> ImmDB.Iterator (HeaderHash blk) m (HeaderHash blk, a)
     stopAt = \case
       StreamToInclusive _  -> id
       StreamToExclusive pt -> \it -> it
@@ -651,10 +551,7 @@ stream db registry blockOrHeader from to = runExceptT $ do
         where
           isEnd hash = pointHash pt == BlockHash hash
           ignoreExclusiveBound = \case
-            ImmDB.IteratorResult _slotNo  hash _
-              | isEnd hash
-              -> ImmDB.IteratorExhausted
-            ImmDB.IteratorEBB    _epochNo hash _
+            ImmDB.IteratorResult (hash, _)
               | isEnd hash
               -> ImmDB.IteratorExhausted
             itRes -> itRes
@@ -667,26 +564,25 @@ streamAfter
   :: forall m blk b. (IOLike m, HasHeader blk, HasCallStack)
   => ImmDB m blk
   -> ResourceRegistry m
-  -> BlockOrHeader blk b
+  -> BlockComponent (ChainDB m blk) b
   -> Point blk -- ^ Exclusive lower bound
   -> m (Either
           (ImmDB.WrongBoundError (HeaderHash blk))
-          (Iterator (HeaderHash blk) m (Deserialisable m blk b)))
-streamAfter db registry blockOrHeader low =
-    registeredStream db registry blockOrHeader low' Nothing >>= \case
+          (ImmDB.Iterator (HeaderHash blk) m b))
+streamAfter db registry blockComponent low =
+    registeredStream db registry blockComponent low' Nothing >>= \case
       Left  err -> return $ Left err
       Right itr -> do
         case low of
           GenesisPoint           -> return ()
           -- Skip the exclusive lower bound
           BlockPoint _slot _hash -> iteratorNext db itr >>= \case
-              IteratorExhausted        ->
+              ImmDB.IteratorExhausted ->
                 throwM $ ImmDbUnexpectedIteratorExhausted low
               -- The hash must match the lower bound's hash. The ImmutableDB
               -- already checks this.
-              IteratorResult {} -> return ()
-              IteratorEBB    {} -> return ()
-        return $ Right $ deserialisableIterator db blockOrHeader itr
+              ImmDB.IteratorResult {} -> return ()
+        return $ Right itr
   where
     low' :: Maybe (SlotNo, HeaderHash blk)
     low' = case low of
@@ -701,80 +597,14 @@ streamAfterKnownBlock
   :: forall m blk b. (IOLike m, HasHeader blk, HasCallStack)
   => ImmDB m blk
   -> ResourceRegistry m
-  -> BlockOrHeader blk b
+  -> BlockComponent (ChainDB m blk) b
   -> Point blk -- ^ Exclusive lower bound
-  -> m (Iterator (HeaderHash blk) m (Deserialisable m blk b))
-streamAfterKnownBlock db registry blockOrHeader low = do
-    mItr <- streamAfter db registry blockOrHeader low
+  -> m (ImmDB.Iterator (HeaderHash blk) m b)
+streamAfterKnownBlock db registry blockComponent low = do
+    mItr <- streamAfter db registry blockComponent low
     case mItr of
       Left  err -> throwM $ ImmDbMissingBlockPoint low err callStack
       Right itr -> return itr
-
-traverseIteratorResult
-  :: Applicative m
-  => proxy blk  -- ^ Needed for 'HeaderHash'
-  -> (Either EpochNo SlotNo -> HeaderHash blk -> a -> m b)
-     -- ^ Left for an EBB, right for a regular block
-  -> IteratorResult (HeaderHash blk) a
-  -> m (IteratorResult (HeaderHash blk) b)
-traverseIteratorResult _proxy f = \case
-    IteratorExhausted              ->
-      pure IteratorExhausted
-    IteratorEBB    epochNo hash bs ->
-      IteratorEBB    epochNo hash <$> f (Left epochNo) hash bs
-    IteratorResult slotNo  hash bs ->
-      IteratorResult slotNo  hash <$> f (Right slotNo) hash bs
-
-deserialisableIteratorResult
-  :: MonadThrow m
-  => ImmDB m blk
-  -> BlockOrHeader blk b
-     -- ^ 'BlockOrHeader' must match the iterator contents
-  -> IteratorResult (HeaderHash blk) Lazy.ByteString
-  -> m (IteratorResult (HeaderHash blk) (Deserialisable m blk b))
-deserialisableIteratorResult db blockOrHeader =
-    traverseIteratorResult db (mkDeserialisable db blockOrHeader)
-
-traverseIterator
-  :: MonadCatch m
-  => ImmDB m blk
-  -> (       IteratorResult (HeaderHash blk) a
-       -> m (IteratorResult (HeaderHash blk) b)
-     )
-  -> Iterator (HeaderHash blk) m a
-  -> Iterator (HeaderHash blk) m b
-traverseIterator db f itr = Iterator {
-      iteratorNext    = iteratorNext db itr >>= f
-    , iteratorPeek    = iteratorPeek db itr >>= f
-    , iteratorHasNext = iteratorHasNext db itr
-    , iteratorClose   = iteratorClose   db itr
-    , iteratorID      = ImmDB.DerivedIteratorID $ ImmDB.iteratorID itr
-    }
-
-deserialisableIterator
-  :: MonadCatch m
-  => ImmDB m blk
-  -> BlockOrHeader blk b
-  -> Iterator (HeaderHash blk) m Lazy.ByteString
-  -> Iterator (HeaderHash blk) m (Deserialisable m blk b)
-deserialisableIterator db blockOrHeader =
-  traverseIterator db (deserialisableIteratorResult db blockOrHeader)
-
-deserialiseIterator
-  :: MonadCatch m
-  => ImmDB m blk
-  -> Iterator (HeaderHash blk) m (Deserialisable m blk b)
-  -> Iterator (HeaderHash blk) m b
-deserialiseIterator db = traverseIterator db (traverse deserialise)
-
-parseIterator
-  :: MonadCatch m
-  => ImmDB m blk
-  -> BlockOrHeader blk b
-  -> Iterator (HeaderHash blk) m Lazy.ByteString
-  -> Iterator (HeaderHash blk) m b
-parseIterator db blockOrHeader = traverseIterator db
-  (deserialisableIteratorResult db blockOrHeader >=> traverse deserialise)
 
 {-------------------------------------------------------------------------------
   Error handling
@@ -796,18 +626,19 @@ withDB ImmDB{..} k = EH.catchError err (k immDB) rethrow
     wrap ImmDB.UserError{}         = Nothing
 
 mustExist :: Either EpochNo SlotNo
-          -> Maybe blk
-          -> Either ChainDbFailure blk
+          -> Maybe b
+          -> Either ChainDbFailure b
 mustExist epochOrSlot Nothing  = Left  $ ImmDbMissingBlock epochOrSlot
 mustExist _           (Just b) = Right $ b
 
-parse :: forall m blk b.
-         ImmDB m blk
+-- TODO unify with VolDB.parse
+parse :: forall m blk b. (HasHeader blk, MonadThrow m)
+      => ImmDB m blk
       -> BlockOrHeader blk b
-      -> Either EpochNo SlotNo
+      -> BlockRef blk
       -> Lazy.ByteString
-      -> Either ChainDbFailure b
-parse db blockOrHeader epochOrSlot bytes =
+      -> m b  -- ^ Throws 'ChainDbFailure'
+parse db blockOrHeader blockRef bytes =
     aux (CBOR.deserialiseFromBytes dec bytes)
   where
     dec :: forall s. Decoder s (Lazy.ByteString -> b)
@@ -817,11 +648,11 @@ parse db blockOrHeader epochOrSlot bytes =
 
     aux :: Either CBOR.DeserialiseFailure
                   (Lazy.ByteString, Lazy.ByteString -> b)
-        -> Either ChainDbFailure b
+        -> m b
     aux (Right (bs, b))
-      | Lazy.null bs = Right (b bytes)
-      | otherwise    = Left $ ImmDbTrailingData epochOrSlot bs
-    aux (Left err)   = Left $ ImmDbParseFailure epochOrSlot err
+      | Lazy.null bs = return $ b bytes
+      | otherwise    = throwM $ ImmDbTrailingData blockRef bs
+    aux (Left err)   = throwM $ ImmDbParseFailure blockRef err
 
 {-------------------------------------------------------------------------------
   Wrappers
@@ -839,7 +670,7 @@ reopen db = withDB db $ \imm ->
 iteratorNext :: (HasCallStack, MonadCatch m)
              => ImmDB m blk
              -> ImmDB.Iterator (HeaderHash blk) m a
-             -> m (ImmDB.IteratorResult (HeaderHash blk) a)
+             -> m (ImmDB.IteratorResult a)
 iteratorNext db it = withDB db $ const $ ImmDB.iteratorNext it
 
 iteratorHasNext :: (HasCallStack, MonadCatch m)
@@ -851,7 +682,7 @@ iteratorHasNext db it = withDB db $ const $ ImmDB.iteratorHasNext it
 iteratorPeek :: (HasCallStack, MonadCatch m)
              => ImmDB m blk
              -> ImmDB.Iterator (HeaderHash blk) m a
-             -> m (ImmDB.IteratorResult (HeaderHash blk) a)
+             -> m (ImmDB.IteratorResult a)
 iteratorPeek db it = withDB db $ const $ ImmDB.iteratorPeek it
 
 iteratorClose :: (HasCallStack, MonadCatch m)
