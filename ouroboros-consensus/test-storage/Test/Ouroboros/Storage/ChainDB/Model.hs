@@ -6,6 +6,7 @@
 {-# LANGUAGE ScopedTypeVariables  #-}
 {-# LANGUAGE StandaloneDeriving   #-}
 {-# LANGUAGE TupleSections        #-}
+{-# LANGUAGE TypeApplications     #-}
 {-# LANGUAGE TypeFamilies         #-}
 {-# LANGUAGE UndecidableInstances #-}
 
@@ -28,6 +29,7 @@ module Test.Ouroboros.Storage.ChainDB.Model (
   , tipBlockNo
   , getBlock
   , getBlockByPoint
+  , getBlockComponentByPoint
   , hasBlock
   , hasBlockByPoint
   , immutableBlockNo
@@ -36,15 +38,16 @@ module Test.Ouroboros.Storage.ChainDB.Model (
   , invalid
   , getPastLedger
     -- * Iterators
-  , streamBlocks
+  , stream
   , iteratorNext
-  , iteratorNextDeserialised
   , iteratorClose
     -- * Readers
-  , readBlocks
+  , newReader
   , readerInstruction
   , readerForward
   , readerClose
+    -- * Supported block
+  , SupportedBlock (..)
     -- * Exported for testing purposes
   , between
   , blocks
@@ -57,14 +60,15 @@ module Test.Ouroboros.Storage.ChainDB.Model (
   , closeDB
   , reopen
   , advanceCurSlot
-  , toDeserialisable
   , chains
   ) where
 
+import           Codec.Serialise (Serialise, serialise)
 import           Control.Monad (unless)
 import           Control.Monad.Except (runExcept)
-import           Data.Bifunctor (first)
+import qualified Data.ByteString.Lazy as Lazy
 import           Data.Function (on)
+import           Data.Functor.Identity (Identity (..))
 import           Data.List (sortBy)
 import           Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
@@ -77,14 +81,15 @@ import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import qualified Ouroboros.Network.AnchoredFragment as Fragment
 import           Ouroboros.Network.Block (BlockNo, pattern BlockPoint,
                      ChainHash (..), pattern GenesisPoint, HasHeader,
-                     HeaderHash, MaxSlotNo (..), Point, Serialised (..),
-                     SlotNo)
+                     HeaderHash, MaxSlotNo (..), Point, SlotNo)
 import qualified Ouroboros.Network.Block as Block
 import           Ouroboros.Network.MockChain.Chain (Chain (..), ChainUpdate)
 import qualified Ouroboros.Network.MockChain.Chain as Chain
 import qualified Ouroboros.Network.MockChain.ProducerState as CPS
 import           Ouroboros.Network.Point (WithOrigin (..))
 
+import           Ouroboros.Consensus.Block (GetHeader (getHeader), Header,
+                     IsEBB (..))
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Protocol.Abstract
@@ -94,8 +99,8 @@ import qualified Ouroboros.Consensus.Util.AnchoredFragment as Fragment
 import           Ouroboros.Consensus.Util.STM (Fingerprint (..),
                      WithFingerprint (..))
 
-import           Ouroboros.Storage.ChainDB.API (ChainDbError (..),
-                     Deserialisable (..), InvalidBlockReason (..),
+import           Ouroboros.Storage.ChainDB.API (BlockComponent (..), ChainDB,
+                     ChainDbError (..), InvalidBlockReason (..),
                      IteratorId (..), IteratorResult (..), StreamFrom (..),
                      StreamTo (..), UnknownRange (..), validBounds)
 
@@ -173,6 +178,14 @@ getBlockByPoint :: HasHeader blk
 getBlockByPoint pt = case Block.pointHash pt of
     GenesisHash    -> const $ Left NoGenesisBlock
     BlockHash hash -> Right . getBlock hash
+
+getBlockComponentByPoint
+  :: forall m blk b. (SupportedBlock blk, Monad m)
+  => BlockComponent (ChainDB m blk) b
+  -> Point blk -> Model blk
+  -> Either ChainDbError (Maybe b)
+getBlockComponentByPoint blockComponent pt m =
+    fmap (`getBlockComponent` blockComponent) <$> getBlockByPoint pt m
 
 hasBlockByPoint :: HasHeader blk
                 => Point blk -> Model blk -> Bool
@@ -389,13 +402,14 @@ addBlocks cfg = repeatedly (addBlock cfg)
   Iterators
 -------------------------------------------------------------------------------}
 
-streamBlocks :: HasHeader blk
-             => SecurityParam
-             -> StreamFrom blk -> StreamTo blk
-             -> Model blk
-             -> Either ChainDbError
-                       (Either (UnknownRange blk) IteratorId, Model blk)
-streamBlocks securityParam from to m = do
+stream
+  :: HasHeader blk
+  => SecurityParam
+  -> StreamFrom blk -> StreamTo blk
+  -> Model blk
+  -> Either ChainDbError
+            (Either (UnknownRange blk) IteratorId, Model blk)
+stream securityParam from to m = do
     unless (validBounds from to) $ Left (InvalidIteratorRange from to)
     case between securityParam from to m of
       Left  e    -> return (Left e,      m)
@@ -406,39 +420,40 @@ streamBlocks securityParam from to m = do
     itrId :: IteratorId
     itrId = IteratorId (Map.size (iterators m)) -- we never delete iterators
 
-iteratorNext :: IteratorId -> Model blk -> (IteratorResult blk, Model blk)
-iteratorNext itrId m =
+iteratorNext
+  :: forall m blk b. (SupportedBlock blk, Monad m)
+  => IteratorId
+  -> BlockComponent (ChainDB m blk) b
+  -> Model blk
+  -> (IteratorResult blk b, Model blk)
+iteratorNext itrId blockComponent m =
     case Map.lookup itrId (iterators m) of
       Just []     -> ( IteratorExhausted
                      , m
                      )
-      Just (b:bs) -> ( IteratorResult b
+      Just (b:bs) -> ( IteratorResult $ getBlockComponent b blockComponent
                      , m { iterators = Map.insert itrId bs (iterators m) }
                      )
       Nothing      -> error "iteratorNext: unknown iterator ID"
 
-iteratorNextDeserialised
-  :: forall m blk. (Monad m, HasHeader blk)
-  => IteratorId -> Model blk
-  -> (IteratorResult (Deserialisable m blk blk), Model blk)
-iteratorNextDeserialised itrId m =
-    first convert $ iteratorNext itrId m
-  where
-    convert :: IteratorResult blk -> IteratorResult (Deserialisable m blk blk)
-    convert = \case
-      IteratorExhausted      -> IteratorExhausted
-      IteratorResult blk     -> IteratorResult (toDeserialisable blk)
-      IteratorBlockGCed hash -> IteratorBlockGCed hash
+getBlockComponent
+  :: (SupportedBlock blk, Monad m)
+  => blk -> BlockComponent (ChainDB m blk) b -> b
+getBlockComponent blk = \case
+    GetBlock      -> return blk
+    GetRawBlock   -> serialise blk
 
-toDeserialisable
-  :: (Monad m, HasHeader b, HeaderHash blk ~ HeaderHash b)
-  => b -> Deserialisable m blk b
-toDeserialisable b = Deserialisable
-  { serialised         = Serialised mempty -- Currently unused
-  , deserialisableSlot = Block.blockSlot b
-  , deserialisableHash = Block.blockHash b
-  , deserialise        = return b
-  }
+    GetHeader     -> return $ getHeader blk
+    GetRawHeader  -> serialise $ getHeader blk
+
+    GetHash       -> Block.blockHash blk
+    GetSlot       -> Block.blockSlot blk
+    GetIsEBB      -> isEBB (getHeader blk)
+    GetBlockSize  -> fromIntegral $ Lazy.length $ serialise blk
+    GetHeaderSize -> fromIntegral $ Lazy.length $ serialise $ getHeader blk
+
+    GetPure a     -> a
+    GetApply f bc -> getBlockComponent blk f $ getBlockComponent blk bc
 
 -- We never delete iterators such that we can use the size of the map as the
 -- next iterator id.
@@ -461,21 +476,24 @@ checkIfReaderExists rdrId m a
     | otherwise
     = Left $ ClosedReaderError rdrId
 
-readBlocks :: HasHeader blk => Model blk -> (CPS.ReaderId, Model blk)
-readBlocks m = (rdrId, m { cps = cps' })
+newReader :: HasHeader blk => Model blk -> (CPS.ReaderId, Model blk)
+newReader m = (rdrId, m { cps = cps' })
   where
     (cps', rdrId) = CPS.initReader Block.genesisPoint (cps m)
 
 readerInstruction
-  :: forall blk b. HasHeader blk
-  => (blk -> b)
-  -> CPS.ReaderId
+  :: forall m blk b. (SupportedBlock blk, Monad m)
+  => CPS.ReaderId
+  -> BlockComponent (ChainDB m blk) b
   -> Model blk
   -> Either ChainDbError
             (Maybe (ChainUpdate blk b), Model blk)
-readerInstruction toB rdrId m = checkIfReaderExists rdrId m $
+readerInstruction rdrId blockComponent m = checkIfReaderExists rdrId m $
     rewrap $ CPS.readerInstruction rdrId (cps m)
   where
+    toB :: blk -> b
+    toB blk = getBlockComponent blk blockComponent
+
     rewrap
       :: Maybe (ChainUpdate blk blk, CPS.ChainProducerState blk)
       -> (Maybe (ChainUpdate blk b), Model blk)
@@ -503,6 +521,24 @@ readerClose rdrId m
     = m { cps = CPS.deleteReader rdrId (cps m) }
     | otherwise
     = m
+
+{-------------------------------------------------------------------------------
+  SupportedBlock
+-------------------------------------------------------------------------------}
+
+-- | Functionality the block needs to support so that it can be used in the
+-- 'Model'.
+--
+-- The real ChainDB takes these as function arguments. For convenience (we
+-- don't want to pass around an environment throughout the model and the state
+-- machine tests), we bundle them in a testing-only type class.
+class ( HasHeader blk
+      , GetHeader blk
+      , HasHeader (Header blk)
+      , Serialise blk
+      , Serialise (Header blk)
+      ) => SupportedBlock blk where
+  isEBB :: Header blk -> IsEBB
 
 {-------------------------------------------------------------------------------
   Internal auxiliary
@@ -749,13 +785,13 @@ garbageCollectablePoint secParam m@Model{..} pt
 -- eligible for garbage collection, i.e. the real implementation might have
 -- garbage collected it.
 garbageCollectableIteratorNext
-  :: forall blk. HasHeader blk
+  :: forall blk. SupportedBlock blk
   => SecurityParam -> Model blk -> IteratorId -> Bool
 garbageCollectableIteratorNext secParam m itId =
-    case fst (iteratorNext itId m) of
-      IteratorExhausted    -> True -- TODO
-      IteratorBlockGCed {} -> error "model doesn't return IteratorBlockGCed"
-      IteratorResult blk   -> garbageCollectable secParam m blk
+    case fst (iteratorNext @Identity itId GetBlock m) of
+      IteratorExhausted             -> True -- TODO
+      IteratorBlockGCed {}          -> error "model doesn't return IteratorBlockGCed"
+      IteratorResult (Identity blk) -> garbageCollectable secParam m blk
 
 garbageCollect :: forall blk. HasHeader blk
                => SecurityParam -> Model blk -> Model blk

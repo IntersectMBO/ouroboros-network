@@ -129,6 +129,7 @@ library
                        Ouroboros.Storage.ChainDB.Impl
                        Ouroboros.Storage.ChainDB.Impl.Args
                        Ouroboros.Storage.ChainDB.Impl.Background
+                       Ouroboros.Storage.ChainDB.Impl.BlockComponent
                        Ouroboros.Storage.ChainDB.Impl.ChainSel
                        Ouroboros.Storage.ChainDB.Impl.ImmDB
                        Ouroboros.Storage.ChainDB.Impl.Iterator

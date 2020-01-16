@@ -67,7 +67,6 @@ import qualified Ouroboros.Storage.ChainDB.Impl.ImmDB as ImmDB
 import           Ouroboros.Storage.ChainDB.Impl.LgrDB (LgrDB)
 import qualified Ouroboros.Storage.ChainDB.Impl.LgrDB as LgrDB
 import qualified Ouroboros.Storage.ChainDB.Impl.Query as Query
-import qualified Ouroboros.Storage.ChainDB.Impl.Reader as Reader
 import           Ouroboros.Storage.ChainDB.Impl.Types
 import           Ouroboros.Storage.ChainDB.Impl.VolDB (VolDB)
 import qualified Ouroboros.Storage.ChainDB.Impl.VolDB as VolDB
@@ -517,12 +516,9 @@ chainSelectionForBlock cdb@CDB{..} hdr = do
               -- 'Reader.switchFork' needs to know the intersection point
               -- (@ipoint@) between the old and the current chain.
               let ipoint = castPoint $ AF.anchorPoint newChainSuffix
-              varBlockReaders <- Map.elems <$> readTVar cdbBlockReaders
-              forM_ varBlockReaders $ \varBlockReader -> modifyTVar varBlockReader $
-                Reader.switchFork ipoint newChain'
-              varHeaderReaders <- Map.elems <$> readTVar cdbHeaderReaders
-              forM_ varHeaderReaders $ \varHeaderReader -> modifyTVar varHeaderReader $
-                Reader.switchFork ipoint newChain'
+              readerHandles <- Map.elems <$> readTVar cdbReaders
+              forM_ readerHandles $ \readerHandle ->
+                rhSwitchFork readerHandle ipoint newChain'
 
               return (curChain, True)
           -- The chain must be changed in the meantime such that our chain is

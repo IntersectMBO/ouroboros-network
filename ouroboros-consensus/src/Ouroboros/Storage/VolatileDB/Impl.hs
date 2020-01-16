@@ -2,6 +2,7 @@
 {-# LANGUAGE DeriveGeneric             #-}
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE FlexibleContexts          #-}
+{-# LANGUAGE GADTs                     #-}
 {-# LANGUAGE LambdaCase                #-}
 {-# LANGUAGE MultiWayIf                #-}
 {-# LANGUAGE OverloadedStrings         #-}
@@ -95,7 +96,6 @@ module Ouroboros.Storage.VolatileDB.Impl
 
 import           Control.Monad
 import qualified Data.ByteString.Builder as BS
-import           Data.ByteString.Lazy (ByteString)
 import           Data.List (find, sortOn)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
@@ -111,10 +111,10 @@ import           Control.Monad.Class.MonadThrow
 
 import           Ouroboros.Network.Point (WithOrigin)
 
-import           Ouroboros.Consensus.Block (IsEBB)
 import           Ouroboros.Consensus.Util (safeMaximumOn)
 import           Ouroboros.Consensus.Util.IOLike
 
+import           Ouroboros.Storage.Common (BlockComponent (..))
 import           Ouroboros.Storage.FS.API
 import           Ouroboros.Storage.FS.API.Types
 import           Ouroboros.Storage.Util.ErrorHandling (ErrorHandling (..),
@@ -206,18 +206,17 @@ openDBFull :: ( HasCallStack
 openDBFull hasFS err errSTM parser maxBlocksPerFile = do
     env <- openDBImpl hasFS err errSTM parser maxBlocksPerFile
     return $ (, env) VolatileDB {
-        closeDB        = closeDBImpl  env
-      , isOpenDB       = isOpenDBImpl env
-      , reOpenDB       = reOpenDBImpl env
-      , getBlock       = getBlockImpl env GetBlock
-      , getHeader      = getBlockImpl env GetHeader
-      , putBlock       = putBlockImpl env
-      , garbageCollect = garbageCollectImpl env
-      , getIsMember    = getIsMemberImpl env
-      , getBlockIds    = getBlockIdsImpl env
-      , getSuccessors  = getSuccessorsImpl env
-      , getPredecessor = getPredecessorImpl env
-      , getMaxSlotNo   = getMaxSlotNoImpl env
+        closeDB           = closeDBImpl  env
+      , isOpenDB          = isOpenDBImpl env
+      , reOpenDB          = reOpenDBImpl env
+      , getBlockComponent = getBlockComponentImpl env
+      , putBlock          = putBlockImpl env
+      , garbageCollect    = garbageCollectImpl env
+      , getIsMember       = getIsMemberImpl env
+      , getBlockIds       = getBlockIdsImpl env
+      , getSuccessors     = getSuccessorsImpl env
+      , getPredecessor    = getPredecessorImpl env
+      , getMaxSlotNo      = getMaxSlotNoImpl env
       }
 
 openDBImpl :: ( HasCallStack
@@ -278,28 +277,44 @@ reOpenDBImpl VolatileDBEnv{..} =
         st <- mkInternalStateDB _dbHasFS _dbErr _parser _maxBlocksPerFile
         return (VolatileDbOpen st, ())
 
-data BlockComponent = GetBlock | GetHeader
-
-getBlockImpl :: (IOLike m, Ord blockId)
-             => VolatileDBEnv m blockId
-             -> BlockComponent
-             -> blockId
-             -> m (Maybe (SlotNo, IsEBB, ByteString))
-getBlockImpl env@VolatileDBEnv{..} blockComponent blockId =
+getBlockComponentImpl
+  :: forall m blockId b. (IOLike m, Ord blockId, HasCallStack)
+  => VolatileDBEnv m blockId
+  -> BlockComponent (VolatileDB blockId m) b
+  -> blockId
+  -> m (Maybe b)
+getBlockComponentImpl env@VolatileDBEnv{..} blockComponent blockId =
     modifyState env $ \hasFS@HasFS{..} st@InternalState{..} ->
       case Map.lookup blockId _currentRevMap of
-        Nothing -> return (st, Nothing)
-        Just InternalBlockInfo {..} -> do
-          bs <- withFile hasFS ibFile ReadMode $ \hndl -> do
-            let (offset, size) = case blockComponent of
-                  GetBlock ->
-                    ( ibSlotOffset
-                    , unBlockSize ibBlockSize )
-                  GetHeader ->
-                    ( ibSlotOffset + fromIntegral ibHeaderOffset
-                    , fromIntegral ibHeaderSize )
-            hGetExactlyAt hasFS hndl size (AbsOffset offset)
-          return (st, Just (ibSlot, ibIsEBB, bs))
+        Nothing                -> return (st, Nothing)
+        Just internalBlockInfo -> ((st, ) . Just) <$>
+          getBlockComponent hasFS internalBlockInfo blockComponent
+  where
+    getBlockComponent
+      :: forall b' h.
+         HasFS m h
+      -> InternalBlockInfo blockId
+      -> BlockComponent (VolatileDB blockId m) b'
+      -> m b'
+    getBlockComponent hasFS ib@InternalBlockInfo {..} = \case
+      GetHash         -> return blockId
+      GetSlot         -> return ibSlot
+      GetIsEBB        -> return ibIsEBB
+      GetBlockSize    -> return $ fromIntegral $ unBlockSize ibBlockSize
+      GetHeaderSize   -> return ibHeaderSize
+      GetPure a       -> return a
+      GetApply f bc   ->
+        getBlockComponent hasFS ib f <*> getBlockComponent hasFS ib bc
+      GetBlock        -> return ()
+      GetRawBlock     -> withFile hasFS ibFile ReadMode $ \hndl -> do
+        let size   = unBlockSize ibBlockSize
+            offset = ibSlotOffset
+        hGetExactlyAt hasFS hndl size (AbsOffset offset)
+      GetHeader       -> return ()
+      GetRawHeader    -> withFile hasFS ibFile ReadMode $ \hndl -> do
+        let size   = fromIntegral ibHeaderSize
+            offset = ibSlotOffset + fromIntegral ibHeaderOffset
+        hGetExactlyAt hasFS hndl size (AbsOffset offset)
 
 -- | This function follows the approach:
 -- (1) hPut bytes to the file

@@ -32,9 +32,10 @@ import           Ouroboros.Consensus.Util.Condense (condense)
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
 
-import           Ouroboros.Storage.ChainDB.API (Iterator (..), IteratorId (..),
-                     IteratorResult (..), StreamFrom (..), StreamTo (..),
-                     UnknownRange, deserialiseIterator)
+import           Ouroboros.Storage.ChainDB.API (BlockComponent (..),
+                     Iterator (..), IteratorId (..), IteratorResult (..),
+                     StreamFrom (..), StreamTo (..), UnknownRange,
+                     traverseIterator)
 import           Ouroboros.Storage.ChainDB.Impl.ImmDB (ImmDB, getPointAtTip,
                      mkImmDB)
 import           Ouroboros.Storage.ChainDB.Impl.Iterator (IteratorEnv (..),
@@ -229,13 +230,13 @@ runIterator setup from to = runSimOrThrow $ withRegistry $ \r -> do
     (tracer, getTrace) <- recordingTracerTVar
     itEnv <- initIteratorEnv setup tracer
     res <- runExceptT $ do
-      it <- ExceptT $ newIterator itEnv ($ itEnv) r from to
-      lift $ consume (deserialiseIterator it)
+      it <- ExceptT $ newIterator itEnv ($ itEnv) r GetBlock from to
+      lift $ consume (traverseIterator id it)
     trace <- getTrace
     return (trace, res)
   where
     consume :: Monad m
-            => Iterator m TestBlock
+            => Iterator m TestBlock TestBlock
             -> m [Either TestHash TestBlock]
     consume it = iteratorNext it >>= \case
       IteratorResult blk -> (Right blk :) <$> consume it

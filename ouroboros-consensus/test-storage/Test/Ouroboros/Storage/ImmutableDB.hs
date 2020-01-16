@@ -99,7 +99,7 @@ test_ReadFutureSlotErrorEquivalence :: HasCallStack => Assertion
 test_ReadFutureSlotErrorEquivalence =
     apiEquivalenceImmDB (expectUserError isReadFutureSlotError) $ \hasFS err ->
       withTestDB hasFS err $ \db -> do
-        _ <- getBlock db 0
+        _ <- getBlockComponent db GetBlock 0
         return ()
   where
     isReadFutureSlotError ReadFutureSlotError {} = True

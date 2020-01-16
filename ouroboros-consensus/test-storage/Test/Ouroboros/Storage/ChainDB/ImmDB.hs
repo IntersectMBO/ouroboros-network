@@ -30,7 +30,7 @@ import           Ouroboros.Consensus.Protocol
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry (withRegistry)
 
-import           Ouroboros.Storage.ChainDB.API (BlockOrHeader (..))
+import           Ouroboros.Storage.ChainDB.API (BlockComponent (GetBlock))
 import           Ouroboros.Storage.ChainDB.Impl.ImmDB (ImmDB, ImmDbArgs (..))
 import qualified Ouroboros.Storage.ChainDB.Impl.ImmDB as ImmDB
 import           Ouroboros.Storage.EpochInfo (newEpochInfo)
@@ -56,7 +56,8 @@ test_getBlockWithPoint_EBB_at_tip :: Assertion
 test_getBlockWithPoint_EBB_at_tip =
     runSimOrThrow $ withImmDB $ \immDB -> do
       ImmDB.appendBlock immDB ebb
-      mbEbb' <- ImmDB.getBlockOrHeaderWithPoint immDB Block (blockPoint ebb)
+      mbEbb' <- sequence =<<
+        ImmDB.getBlockComponentWithPoint immDB GetBlock (blockPoint ebb)
       return $ mbEbb' @?= Just ebb
   where
     ebb = forgeEBB testCfg (SlotNo 0) (BlockNo 0) GenesisHash

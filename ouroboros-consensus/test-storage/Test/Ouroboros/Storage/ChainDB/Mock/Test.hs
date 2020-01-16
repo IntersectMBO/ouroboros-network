@@ -1,4 +1,5 @@
 {-# LANGUAGE RankNTypes #-}
+{-# OPTIONS_GHC -Wno-orphans #-}
 
 module Test.Ouroboros.Storage.ChainDB.Mock.Test (tests) where
 
@@ -14,6 +15,7 @@ import           Control.Monad.IOSim
 import           Ouroboros.Network.MockChain.Chain (Chain (..), ChainUpdate)
 import qualified Ouroboros.Network.MockChain.Chain as Chain
 
+import           Ouroboros.Consensus.Block (IsEBB (..))
 import           Ouroboros.Consensus.BlockchainTime.Mock
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
@@ -25,6 +27,7 @@ import           Test.Util.Orphans.IOLike ()
 import           Test.Util.TestBlock
 
 import qualified Test.Ouroboros.Storage.ChainDB.Mock as Mock
+import           Test.Ouroboros.Storage.ChainDB.Model (SupportedBlock (..))
 
 tests :: TestTree
 tests = testGroup "Mock" [
@@ -49,7 +52,7 @@ prop_reader bt p = runSimOrThrow test
     test :: forall s. SimM s Property
     test = withRegistry $ \registry -> do
         db       <- openDB
-        reader   <- ChainDB.deserialiseReader <$> ChainDB.newBlockReader db registry
+        reader   <- ChainDB.newBlockReader db registry
         chainVar <- uncheckedNewTVarM Genesis
 
         -- Fork a thread that applies all instructions from the reader
@@ -92,3 +95,10 @@ openDB = Mock.openDB
     testInitExtLedger
     -- We don't care about time or future here
     (fixedBlockchainTime maxBound)
+
+{-------------------------------------------------------------------------------
+  Orphan instances
+-------------------------------------------------------------------------------}
+
+instance SupportedBlock TestBlock where
+  isEBB = const IsNotEBB

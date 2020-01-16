@@ -30,8 +30,8 @@ import           Ouroboros.Network.Protocol.BlockFetch.Type (ChainRange (..))
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
 
-import           Ouroboros.Storage.ChainDB (ChainDB, Deserialisable (..),
-                     IteratorResult (..))
+import           Ouroboros.Storage.ChainDB (ChainDB, IteratorResult (..),
+                     SerialisedWithPoint (..), getSerialisedBlockWithPoint)
 import qualified Ouroboros.Storage.ChainDB as ChainDB
 
 data BlockFetchServerException =
@@ -75,9 +75,10 @@ blockFetchServer _tracer chainDB registry = senderSide
     receiveReq :: ChainRange (Serialised blk)
                -> m (BlockFetchBlockSender (Serialised blk) m ())
     receiveReq (ChainRange start end) = do
-      errIt <- ChainDB.streamBlocks
+      errIt <- ChainDB.stream
         chainDB
         registry
+        getSerialisedBlockWithPoint
         (ChainDB.StreamFromInclusive (castPoint start))
         (ChainDB.StreamToInclusive   (castPoint end))
       return $ case errIt of
@@ -89,7 +90,7 @@ blockFetchServer _tracer chainDB registry = senderSide
         -- iterator is empty.
         Right it -> SendMsgStartBatch $ sendBlocks it
 
-    sendBlocks :: ChainDB.Iterator m (Deserialisable m blk blk)
+    sendBlocks :: ChainDB.Iterator m blk (SerialisedWithPoint blk blk)
                -> m (BlockFetchSendBlocks (Serialised blk) m ())
     sendBlocks it = do
       next <- ChainDB.iteratorNext it

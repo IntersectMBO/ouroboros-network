@@ -36,11 +36,11 @@ import           Ouroboros.Consensus.Node.Run.Byron ()
 import           Ouroboros.Consensus.Protocol.Abstract (NodeConfig)
 import           Ouroboros.Consensus.Util.ResourceRegistry
 
-import           Ouroboros.Storage.ChainDB.API (BlockOrHeader (..),
+import           Ouroboros.Storage.ChainDB.API (BlockComponent (..),
                      StreamFrom (..), StreamTo (..))
 import           Ouroboros.Storage.ChainDB.Impl.ImmDB hiding (withImmDB)
 import qualified Ouroboros.Storage.ChainDB.Impl.ImmDB as ImmDB (withImmDB)
-import           Ouroboros.Storage.Common
+import           Ouroboros.Storage.Common (EpochNo (..), EpochSize (..))
 import           Ouroboros.Storage.EpochInfo
 import qualified Ouroboros.Storage.ImmutableDB.API as ImmDB
 
@@ -81,12 +81,11 @@ showSlotBlockNo :: Analysis
 showSlotBlockNo immDB _epochInfo rr =
     processAll immDB rr go
   where
-    go :: Either EpochNo SlotNo -> ByronBlock -> IO ()
-    go isEBB blk = putStrLn $ intercalate "\t" [
-                       show isEBB
-                     , show (blockNo   blk)
-                     , show (blockSlot blk)
-                     ]
+    go :: ByronBlock -> IO ()
+    go blk = putStrLn $ intercalate "\t" [
+        show (blockNo   blk)
+      , show (blockSlot blk)
+      ]
 
 {-------------------------------------------------------------------------------
   Analysis: show total number of tx outputs per block
@@ -97,13 +96,12 @@ countTxOutputs immDB epochInfo rr = do
     cumulative <- newIORef 0
     processAll immDB rr (go cumulative)
   where
-    go :: IORef Int -> Either EpochNo SlotNo -> ByronBlock -> IO ()
-    go cumulative isEBB blk =
-        case (isEBB, blk) of
-          (Right slotNo, Byron.ByronBlock (Chain.ABOBBlock regularBlk) _ _) ->
-            go' cumulative slotNo regularBlk
-          _otherwise ->
-            return () -- Skip EBBs
+    go :: IORef Int -> ByronBlock -> IO ()
+    go cumulative blk = case blk of
+      Byron.ByronBlock (Chain.ABOBBlock regularBlk) _ _ ->
+        go' cumulative (blockSlot blk) regularBlk
+      _otherwise ->
+        return () -- Skip EBBs
 
     go' :: IORef Int -> SlotNo -> Chain.ABlock a -> IO ()
     go' cumulative slotNo Chain.ABlock{..} = do
@@ -150,22 +148,21 @@ relativeSlotNo epochInfo (SlotNo absSlot) = do
 
 processAll :: ImmDB IO ByronBlock
            -> ResourceRegistry IO
-           -> (Either EpochNo SlotNo -> ByronBlock -> IO ())
+           -> (ByronBlock -> IO ())
            -> IO ()
 processAll immDB rr callback = do
     tipPoint <- getPointAtTip immDB
-    Right itr <- stream immDB rr Block
+    Right itr <- stream immDB rr GetBlock
       (StreamFromExclusive genesisPoint)
       (StreamToInclusive tipPoint)
-    go (deserialiseIterator immDB itr)
+    go itr
   where
-    go :: Iterator ByronHash IO ByronBlock -> IO ()
+    go :: Iterator ByronHash IO (IO ByronBlock) -> IO ()
     go itr = do
         itrResult <- ImmDB.iteratorNext itr
         case itrResult of
-          IteratorExhausted                -> return ()
-          IteratorResult slotNo  _hash blk -> callback (Right slotNo) blk >> go itr
-          IteratorEBB    epochNo _hash blk -> callback (Left epochNo) blk >> go itr
+          IteratorExhausted   -> return ()
+          IteratorResult mblk -> mblk >>= \blk -> callback blk >> go itr
 
 {-------------------------------------------------------------------------------
   Command line args

@@ -83,7 +83,7 @@ openDBInternal args launchBgTasks = do
     immDB <- ImmDB.openDB argsImmDb
     -- In order to figure out the 'BlockNo' and 'Point' at the tip of the
     -- ImmutableDB, we need to read the header at the tip of the ImmutableDB.
-    immDbTipHeader <- ImmDB.getBlockOrHeaderAtTip immDB Header
+    immDbTipHeader <- sequence =<< ImmDB.getBlockComponentAtTip immDB GetHeader
     -- Note that 'immDbTipBlockNo' might not end up being the \"immutable\"
     -- block(no), because the current chain computed from the VolatileDB could
     -- be longer than @k@.
@@ -129,8 +129,7 @@ openDBInternal args launchBgTasks = do
     varChain          <- newTVarM chain
     varImmBlockNo     <- newTVarM immBlockNo
     varIterators      <- newTVarM Map.empty
-    varBlockReaders   <- newTVarM Map.empty
-    varHeaderReaders  <- newTVarM Map.empty
+    varReaders        <- newTVarM Map.empty
     varNextIteratorId <- newTVarM (IteratorId 0)
     varNextReaderId   <- newTVarM 0
     varCopyLock       <- newMVar  ()
@@ -143,8 +142,7 @@ openDBInternal args launchBgTasks = do
                   , cdbChain          = varChain
                   , cdbImmBlockNo     = varImmBlockNo
                   , cdbIterators      = varIterators
-                  , cdbBlockReaders   = varBlockReaders
-                  , cdbHeaderReaders  = varHeaderReaders
+                  , cdbReaders        = varReaders
                   , cdbNodeConfig     = cfg
                   , cdbInvalid        = varInvalid
                   , cdbNextIteratorId = varNextIteratorId
@@ -170,12 +168,11 @@ openDBInternal args launchBgTasks = do
           , getTipHeader       = getEnv     h Query.getTipHeader
           , getTipPoint        = getEnvSTM  h Query.getTipPoint
           , getTipBlockNo      = getEnvSTM  h Query.getTipBlockNo
-          , getBlock           = getEnv1    h Query.getBlock
+          , getBlockComponent  = getEnv2    h Query.getBlockComponent
           , getIsFetched       = getEnvSTM  h Query.getIsFetched
           , getMaxSlotNo       = getEnvSTM  h Query.getMaxSlotNo
-          , streamBlocks       = Iterator.streamBlocks  h
-          , newHeaderReader    = Reader.newReader h (Args.cdbEncodeHeader args) Header
-          , newBlockReader     = Reader.newReader h (Args.cdbEncodeHeader args) Block
+          , stream             = Iterator.stream  h
+          , newReader          = Reader.newReader h (Args.cdbEncodeHeader args)
           , getIsInvalidBlock  = getEnvSTM  h Query.getIsInvalidBlock
           , closeDB            = Reopen.closeDB h
           , isOpen             = Reopen.isOpen  h

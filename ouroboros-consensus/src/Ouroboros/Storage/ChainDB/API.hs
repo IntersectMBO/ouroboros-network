@@ -1,12 +1,14 @@
-{-# LANGUAGE AllowAmbiguousTypes        #-}
 {-# LANGUAGE DeriveAnyClass             #-}
-{-# LANGUAGE DeriveFunctor              #-}
 {-# LANGUAGE DeriveGeneric              #-}
+{-# LANGUAGE DeriveTraversable          #-}
 {-# LANGUAGE DerivingStrategies         #-}
+{-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE GADTs                      #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase                 #-}
+{-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE PatternSynonyms            #-}
+{-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE StandaloneDeriving         #-}
 {-# LANGUAGE TypeApplications           #-}
@@ -16,11 +18,17 @@
 module Ouroboros.Storage.ChainDB.API (
     -- * Main ChainDB API
     ChainDB(..)
-    -- * Block or header
-  , BlockOrHeader(..)
-    -- * Deserialisable block/header
-  , Deserialisable(..)
-  , deserialisablePoint
+    -- * Useful utilities
+  , getBlock
+  , streamBlocks
+  , newBlockReader
+    -- * Serialised block/header with its point
+  , SerialisedWithPoint(..)
+  , getSerialisedBlockWithPoint
+  , getSerialisedHeaderWithPoint
+  , getPoint
+    -- * BlockComponent
+  , BlockComponent(..)
     -- * Support for tests
   , toChain
   , fromChain
@@ -30,9 +38,8 @@ module Ouroboros.Storage.ChainDB.API (
   , Iterator(..)
   , IteratorId(..)
   , IteratorResult(..)
+  , traverseIterator
   , UnknownRange(..)
-  , deserialiseIterator
-  , deserialiseIteratorResult
   , validBounds
   , streamAll
     -- * Invalid block reason
@@ -40,9 +47,11 @@ module Ouroboros.Storage.ChainDB.API (
     -- * Readers
   , Reader(..)
   , ReaderId
-  , deserialiseReader
+  , traverseReader
     -- * Recovery
   , ChainDbFailure(..)
+  , BlockRef(..)
+  , IsEBB(..)
     -- * Exceptions
   , ChainDbError(..)
   ) where
@@ -60,10 +69,10 @@ import           Cardano.Prelude (NoUnexpectedThunks)
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import           Ouroboros.Network.Block (BlockNo, pattern BlockPoint,
                      ChainUpdate, pattern GenesisPoint, HasHeader (..),
-                     HeaderHash, MaxSlotNo, Point, Serialised, SlotNo,
+                     HeaderHash, MaxSlotNo, Point, Serialised (..), SlotNo,
                      StandardHash, atSlot, genesisPoint)
 
-import           Ouroboros.Consensus.Block (GetHeader (..))
+import           Ouroboros.Consensus.Block (GetHeader (..), IsEBB (..))
 import           Ouroboros.Consensus.Ledger.Abstract (ProtocolLedgerView)
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Util.IOLike
@@ -71,7 +80,7 @@ import           Ouroboros.Consensus.Util.ResourceRegistry
 import           Ouroboros.Consensus.Util.STM (WithFingerprint)
 
 import           Ouroboros.Storage.Common
-import           Ouroboros.Storage.FS.API.Types (FsError)
+import           Ouroboros.Storage.FS.API.Types (FsError, sameFsError)
 import qualified Ouroboros.Storage.ImmutableDB as ImmDB
 import qualified Ouroboros.Storage.VolatileDB as VolDB
 
@@ -185,8 +194,10 @@ data ChainDB m blk = ChainDB {
       -- Will return 'genesisBlockNo' if the database is empty.
     , getTipBlockNo      :: STM m BlockNo
 
-      -- | Get block at the specified point (if it exists)
-    , getBlock           :: Point blk -> m (Maybe blk)
+      -- | Get the given component(s) of the block at the specified point. If
+      -- there is no block at the given point, 'Nothing' is returned.
+    , getBlockComponent  :: forall b. BlockComponent (ChainDB m blk) b
+                         -> Point blk -> m (Maybe b)
 
       -- | Return membership check function for recent blocks
       --
@@ -238,10 +249,12 @@ data ChainDB m blk = ChainDB {
       --
       -- To stream all blocks from the current chain, use 'streamAll', as it
       -- correctly handles an empty ChainDB.
-    , streamBlocks
-        :: ResourceRegistry m
+    , stream
+        :: forall b.
+           ResourceRegistry m
+        -> BlockComponent (ChainDB m blk) b
         -> StreamFrom blk -> StreamTo blk
-        -> m (Either (UnknownRange blk) (Iterator m (Deserialisable m blk blk)))
+        -> m (Either (UnknownRange blk) (Iterator m blk b))
 
       -- | Chain reader
       --
@@ -255,18 +268,17 @@ data ChainDB m blk = ChainDB {
       -- This is intended for use by chain consumers to /reliably/ follow a
       -- chain, desipite the chain being volatile.
       --
-      -- Examples of users include the server side of the chain sync
-      -- mini-protocol for the node-to-node protocol.
+      -- Examples of users:
+      -- * The server side of the chain sync mini-protocol for the
+      --   node-to-node protocol using headers and the block size.
+      -- * The server side of the chain sync mini-protocol for the
+      --   node-to-client protocol using blocks.
       --
-    , newHeaderReader    :: ResourceRegistry m -> m (Reader m blk (Deserialisable m blk (Header blk)))
-
-      -- | This is the same as the reader 'newHeaderReader' but it provides a
-      -- reader for /whole blocks/ rather than headers.
-      --
-      -- Examples of users include the server side of the chain sync
-      -- mini-protocol for the node-to-client protocol.
-      --
-    , newBlockReader     :: ResourceRegistry m -> m (Reader m blk (Deserialisable m blk blk))
+    , newReader
+        :: forall b.
+           ResourceRegistry m
+        -> BlockComponent (ChainDB m blk) b
+        -> m (Reader m blk b)
 
       -- | Function to check whether a block is known to be invalid.
       --
@@ -297,37 +309,72 @@ data ChainDB m blk = ChainDB {
     , isOpen             :: STM m Bool
     }
 
-{-------------------------------------------------------------------------------
-  Block or header
--------------------------------------------------------------------------------}
-
--- | Either a block (@blk@) or a header (@'Header' blk@). Both have the same
--- @HeaderHash blk@.
-data BlockOrHeader blk b where
-  Block  :: BlockOrHeader blk blk
-  Header :: BlockOrHeader blk (Header blk)
+instance DB (ChainDB m blk) where
+  -- Returning a block or header requires parsing. In case of failure, a
+  -- 'ChainDbFailure' exception is thrown
+  type DBBlock      (ChainDB m blk) = m blk
+  type DBHeader     (ChainDB m blk) = m (Header blk)
+  type DBHeaderHash (ChainDB m blk) = HeaderHash blk
 
 {-------------------------------------------------------------------------------
-  Deserialisable block/header
+  Useful utilities
 -------------------------------------------------------------------------------}
 
--- | A @'Serialised' b@ together with its slot, hash, and a monadic function
--- to deserialise it. The @b@ will be @blk@ or @'Header' blk@.
-data Deserialisable m blk b = Deserialisable
-   { serialised         :: !(Serialised b)
-   , deserialisableSlot :: !SlotNo
-   , deserialisableHash :: !(HeaderHash blk)
-   , deserialise        :: m b
-     -- ^ No need for a bang as it is a monadic computation. Moreover, with a
-     -- bang, we might accidentally force deserialisation, as that is
-     -- typically a pure computation that only needs @m@ to throw an error.
+-- These are all variants of ChainDB methods instantiated to a specific
+-- BlockComponent.
+
+-- | Get block at the specified point (if it exists).
+getBlock :: Monad m => ChainDB m blk -> Point blk -> m (Maybe blk)
+getBlock ChainDB { getBlockComponent } pt =
+    sequence =<< getBlockComponent GetBlock pt
+
+streamBlocks
+  :: Monad m
+  => ChainDB m blk
+  -> ResourceRegistry m
+  -> StreamFrom blk
+  -> StreamTo blk
+  -> m (Either (UnknownRange blk) (Iterator m blk blk))
+streamBlocks ChainDB { stream } rr from to =
+    fmap (traverseIterator id) <$> stream rr GetBlock from to
+
+newBlockReader
+  :: Monad m
+  => ChainDB m blk
+  -> ResourceRegistry m
+  -> m (Reader m blk blk)
+newBlockReader ChainDB { newReader } rr =
+    traverseReader id <$> newReader rr GetBlock
+
+{-------------------------------------------------------------------------------
+  Serialised block/header with its point
+-------------------------------------------------------------------------------}
+
+-- | A @'Serialised' b@ together with its 'Point'.
+--
+-- The 'Point' is needed because we often need to know the hash, slot, or
+-- point itself of the block or header in question, and we don't want to
+-- deserialise the block to obtain it.
+data SerialisedWithPoint blk b = SerialisedWithPoint
+   { serialised :: !(Serialised b)
+   , point      :: !(Point blk)
    }
 
-deserialisablePoint :: Deserialisable m blk b -> Point blk
-deserialisablePoint d = BlockPoint (deserialisableSlot d) (deserialisableHash d)
+type instance HeaderHash (SerialisedWithPoint blk b) = HeaderHash blk
+instance StandardHash blk => StandardHash (SerialisedWithPoint blk b)
 
-type instance HeaderHash (Deserialisable m blk b) = HeaderHash blk
-instance StandardHash blk => StandardHash (Deserialisable m blk b)
+getPoint :: BlockComponent (ChainDB m blk) (Point blk)
+getPoint = BlockPoint <$> GetSlot <*> GetHash
+
+getSerialisedBlockWithPoint
+  :: BlockComponent (ChainDB m blk) (SerialisedWithPoint blk blk)
+getSerialisedBlockWithPoint =
+    SerialisedWithPoint <$> (Serialised <$> GetRawBlock) <*> getPoint
+
+getSerialisedHeaderWithPoint
+  :: BlockComponent (ChainDB m blk) (SerialisedWithPoint blk (Header blk))
+getSerialisedHeaderWithPoint =
+    SerialisedWithPoint <$> (Serialised <$> GetRawHeader) <*> getPoint
 
 {-------------------------------------------------------------------------------
   Support for tests
@@ -338,7 +385,7 @@ toChain :: forall m blk. (HasCallStack, IOLike m, HasHeader blk)
 toChain chainDB = withRegistry $ \registry ->
     streamAll chainDB registry >>= maybe (return Genesis) (go Genesis)
   where
-    go :: Chain blk -> Iterator m blk -> m (Chain blk)
+    go :: Chain blk -> Iterator m blk blk -> m (Chain blk)
     go chain it = do
       next <- iteratorNext it
       case next of
@@ -374,19 +421,21 @@ data StreamTo blk =
   | StreamToExclusive !(Point blk)
   deriving (Show, Eq, Generic, NoUnexpectedThunks)
 
-data Iterator m blk = Iterator {
-      iteratorNext  :: m (IteratorResult blk)
+data Iterator m blk b = Iterator {
+      iteratorNext  :: m (IteratorResult blk b)
     , iteratorClose :: m ()
     , iteratorId    :: IteratorId
-    }
+    } deriving (Functor, Foldable, Traversable)
 
--- | Deserialise the results of an iterator that yields serialised blocks.
-deserialiseIterator
-  :: Monad m => Iterator m (Deserialisable m blk blk) -> Iterator m blk
-deserialiseIterator it = Iterator
-    { iteratorNext  = iteratorNext  it >>= deserialiseIteratorResult
-    , iteratorClose = iteratorClose it
-    , iteratorId    = iteratorId    it
+-- | Variant of 'traverse' instantiated to @'Iterator' m blk@ that executes
+-- the monadic function when calling 'iteratorNext'.
+traverseIterator
+  :: Monad m
+  => (b -> m b')
+  -> Iterator m blk b
+  -> Iterator m blk b'
+traverseIterator f it = it {
+      iteratorNext = iteratorNext it >>= traverse f
     }
 
 -- | Equality instance for iterators
@@ -396,34 +445,28 @@ deserialiseIterator it = Iterator
 -- NOTE: Iterators created by /different instances of the DB/ may end up with
 -- the same ID. This should not matter in practice since there should not /be/
 -- more than one DB, but it should nonetheless be noted.
-instance Eq (Iterator m blk) where
+instance Eq (Iterator m blk b) where
   (==) = (==) `on` iteratorId
 
+-- TODO use IteratorID from ImmutableDB.Types (move that to Common)
 newtype IteratorId = IteratorId Int
   deriving stock (Show)
   deriving newtype (Eq, Ord, Enum, NoUnexpectedThunks)
 
-data IteratorResult blk =
+data IteratorResult blk b =
     IteratorExhausted
-  | IteratorResult blk
+  | IteratorResult b
   | IteratorBlockGCed (HeaderHash blk)
     -- ^ The block that was supposed to be streamed was garbage-collected from
     -- the VolatileDB, but not added to the ImmutableDB.
     --
     -- This will only happen when streaming very old forks very slowly.
+  deriving (Functor, Foldable, Traversable)
 
-deriving instance (Eq   blk, Eq   (HeaderHash blk)) => Eq   (IteratorResult blk)
-deriving instance (Show blk, Show (HeaderHash blk)) => Show (IteratorResult blk)
-
--- | Deserialise the 'IteratorResult' of an iterator that yields serialised
--- blocks.
-deserialiseIteratorResult
-  :: Monad m
-  => IteratorResult (Deserialisable m blk blk) -> m (IteratorResult blk)
-deserialiseIteratorResult = \case
-    IteratorExhausted      -> return $ IteratorExhausted
-    IteratorBlockGCed hash -> return $ IteratorBlockGCed hash
-    IteratorResult    blk  -> IteratorResult <$> deserialise blk
+deriving instance (Eq   blk, Eq   b, Eq   (HeaderHash blk))
+               => Eq   (IteratorResult blk b)
+deriving instance (Show blk, Show b, Show (HeaderHash blk))
+               => Show (IteratorResult blk b)
 
 data UnknownRange blk =
     -- | The block at the given point was not found in the ChainDB.
@@ -480,7 +523,7 @@ validBounds from to = case from of
 streamAll :: (IOLike m, StandardHash blk)
           => ChainDB m blk
           -> ResourceRegistry m
-          -> m (Maybe (Iterator m blk))
+          -> m (Maybe (Iterator m blk blk))
 streamAll chainDB registry = do
     tip <- atomically $ getTipPoint chainDB
     if tip == genesisPoint
@@ -496,7 +539,7 @@ streamAll chainDB registry = do
           -- changed significantly between getting the tip and asking for the
           -- stream.
           Left  e  -> error (show e)
-          Right it -> return $ Just $ deserialiseIterator it
+          Right it -> return $ Just it
 
 {-------------------------------------------------------------------------------
   Invalid block reason
@@ -572,13 +615,17 @@ data Reader m blk a = Reader {
 instance Eq (Reader m blk a) where
   (==) = (==) `on` readerId
 
--- | Deserialise the results of a reader that yields serialised blocks or
--- headers.
-deserialiseReader
-  :: Monad m => Reader m blk (Deserialisable m blk b) -> Reader m blk b
-deserialiseReader rdr = Reader
-    { readerInstruction         = readerInstruction         rdr >>= traverse (traverse deserialise)
-    , readerInstructionBlocking = readerInstructionBlocking rdr >>= traverse deserialise
+-- | Variant of 'traverse' instantiated to @'Reader' m blk@ that executes the
+-- monadic function when calling 'readerInstruction' and
+-- 'readerInstructionBlocking'.
+traverseReader
+  :: Monad m
+  => (b -> m b')
+  -> Reader m blk b
+  -> Reader m blk b'
+traverseReader f rdr = Reader
+    { readerInstruction         = readerInstruction         rdr >>= traverse (traverse f)
+    , readerInstructionBlocking = readerInstructionBlocking rdr >>= traverse f
     , readerForward             = readerForward             rdr
     , readerClose               = readerClose               rdr
     , readerId                  = readerId                  rdr
@@ -587,6 +634,12 @@ deserialiseReader rdr = Reader
 {-------------------------------------------------------------------------------
   Recovery
 -------------------------------------------------------------------------------}
+
+-- | Reference to a block used in 'ChainDbFailure'.
+data BlockRef blk = BlockRef
+  { blockRefPoint :: !(Point blk)
+  , blockRefIsEBB :: !IsEBB
+  } deriving (Eq, Show)
 
 -- | Database failure
 --
@@ -599,10 +652,12 @@ deserialiseReader rdr = Reader
 -- equal and all trigger the same recovery procedure.
 data ChainDbFailure =
     -- | A block in the immutable DB failed to parse
-    ImmDbParseFailure (Either EpochNo SlotNo) CBOR.DeserialiseFailure
+    forall blk. (Typeable blk, StandardHash blk) =>
+      ImmDbParseFailure (BlockRef blk) CBOR.DeserialiseFailure
 
     -- | When parsing a block from the immutable DB we got some trailing data
-  | ImmDbTrailingData (Either EpochNo SlotNo) Lazy.ByteString
+  | forall blk. (Typeable blk, StandardHash blk) =>
+      ImmDbTrailingData (BlockRef blk) Lazy.ByteString
 
     -- | Block missing from the immutable DB
     --
@@ -637,11 +692,11 @@ data ChainDbFailure =
 
     -- | A block in the volatile DB failed to parse
   | forall blk. (Typeable blk, StandardHash blk) =>
-      VolDbParseFailure (HeaderHash blk) CBOR.DeserialiseFailure
+      VolDbParseFailure (BlockRef blk) CBOR.DeserialiseFailure
 
     -- | When parsing a block from the volatile DB, we got some trailing data
   | forall blk. (Typeable blk, StandardHash blk) =>
-      VolDbTrailingData (HeaderHash blk) Lazy.ByteString
+      VolDbTrailingData (BlockRef blk) Lazy.ByteString
 
     -- | Block missing from the volatile DB
     --
@@ -649,7 +704,7 @@ data ChainDbFailure =
     -- in the DB (for example, because its hash exists in the volatile DB's
     -- successor index) nonetheless was not found
   | forall blk. (Typeable blk, StandardHash blk) =>
-      VolDbMissingBlock (HeaderHash blk)
+      VolDbMissingBlock (Proxy blk) (HeaderHash blk)
 
     -- | The volatile DB throw an "unexpected error"
     --
@@ -694,6 +749,67 @@ instance Exception ChainDbFailure where
       -- The output will be a bit too detailed, but it will be quite clear.
       fsError :: FsError -> String
       fsError = displayException
+
+instance Eq ChainDbFailure where
+  ImmDbParseFailure (a1 :: BlockRef blk) b1 == ImmDbParseFailure (a2 :: BlockRef blk') b2 =
+    case eqT @blk @blk' of
+      Nothing   -> False
+      Just Refl -> a1 == a2 && b1 == b2
+  ImmDbParseFailure {}    == _                       = False
+
+  ImmDbTrailingData (a1 :: BlockRef blk) b1 == ImmDbTrailingData (a2 :: BlockRef blk') b2 =
+    case eqT @blk @blk' of
+      Nothing   -> False
+      Just Refl -> a1 == a2 && b1 == b2
+  ImmDbTrailingData {}    == _                       = False
+
+  ImmDbMissingBlock a1 == ImmDbMissingBlock a2 = a1 == a2
+  ImmDbMissingBlock {} == _                    = False
+
+  ImmDbMissingBlockPoint (a1 :: Point blk) b1 _cs1 == ImmDbMissingBlockPoint (a2 :: Point blk') b2 _cs2 =
+    case eqT @blk @blk' of
+      Nothing   -> False
+      Just Refl -> a1 == a2 && b1 == b2
+  ImmDbMissingBlockPoint {} == _ = False
+
+  ImmDbUnexpectedIteratorExhausted (a1 :: Point blk) == ImmDbUnexpectedIteratorExhausted (a2 :: Point blk') =
+    case eqT @blk @blk' of
+      Nothing   -> False
+      Just Refl -> a1 == a2
+  ImmDbUnexpectedIteratorExhausted {} == _ = False
+
+  ImmDbFailure a1 == ImmDbFailure a2 = ImmDB.sameUnexpectedError a1 a2
+  ImmDbFailure {} == _               = False
+
+  VolDbParseFailure (a1 :: BlockRef blk) b1 == VolDbParseFailure (a2 :: BlockRef blk') b2 =
+    case eqT @blk @blk' of
+      Nothing   -> False
+      Just Refl -> a1 == a2 && b1 == b2
+  VolDbParseFailure {} == _ = False
+
+  VolDbTrailingData (a1 :: BlockRef blk) b1 == VolDbTrailingData (a2 :: BlockRef blk') b2 =
+    case eqT @blk @blk' of
+      Nothing   -> False
+      Just Refl -> a1 == a2 && b1 == b2
+  VolDbTrailingData {} == _ = False
+
+  VolDbMissingBlock (Proxy :: Proxy blk) a1 == VolDbMissingBlock (Proxy :: Proxy blk') a2 =
+    case eqT @blk @blk' of
+      Nothing   -> False
+      Just Refl -> a1 == a2
+  VolDbMissingBlock {} == _ = False
+
+  VolDbFailure a1 == VolDbFailure a2 = VolDB.sameUnexpectedError a1 a2
+  VolDbFailure {} == _               = False
+
+  LgrDbFailure a1 == LgrDbFailure a2 = sameFsError a1 a2
+  LgrDbFailure {} == _               = False
+
+  ChainDbMissingBlock (a1 :: Point blk) == ChainDbMissingBlock (a2 :: Point blk') =
+    case eqT @blk @blk' of
+      Nothing   -> False
+      Just Refl -> a1 == a2
+  ChainDbMissingBlock {} == _ = False
 
 {-------------------------------------------------------------------------------
   Exceptions

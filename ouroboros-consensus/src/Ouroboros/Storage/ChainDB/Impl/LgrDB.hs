@@ -11,7 +11,6 @@
 {-# LANGUAGE RecordWildCards           #-}
 {-# LANGUAGE ScopedTypeVariables       #-}
 {-# LANGUAGE StandaloneDeriving        #-}
-{-# LANGUAGE TypeApplications          #-}
 {-# LANGUAGE TypeFamilies              #-}
 
 {-# OPTIONS_GHC -Wredundant-constraints #-}
@@ -57,7 +56,6 @@ import           Control.Monad.Except (runExcept)
 import           Data.Bifunctor (second)
 import           Data.Bitraversable (bitraverse)
 import           Data.Foldable (foldl')
-import           Data.Functor ((<&>))
 import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Word (Word64)
@@ -103,8 +101,7 @@ import           Ouroboros.Storage.LedgerDB.OnDisk (DiskSnapshot,
                      TraceReplayEvent (..))
 import qualified Ouroboros.Storage.LedgerDB.OnDisk as LedgerDB
 
-import           Ouroboros.Storage.ChainDB.API (BlockOrHeader (..),
-                     ChainDbFailure (..))
+import           Ouroboros.Storage.ChainDB.API (ChainDbFailure (..))
 import           Ouroboros.Storage.ChainDB.Impl.ImmDB (ImmDB)
 import qualified Ouroboros.Storage.ChainDB.Impl.ImmDB as ImmDB
 
@@ -413,19 +410,18 @@ streamAPI immDB = StreamAPI streamAfter
       if Block.pointSlot (tipToPoint tip) > slotNoAtTip
         then k Nothing
         else withRegistry $ \registry -> do
-          mItr <- ImmDB.streamAfter immDB registry Block (tipToPoint tip)
+          mItr <- ImmDB.streamAfter immDB registry GetBlock (tipToPoint tip)
           case mItr of
             Left _err ->
               k Nothing
             Right itr ->
-              k . Just . getNext . ImmDB.deserialiseIterator immDB $ itr
+              k . Just . getNext $ itr
 
-    getNext :: ImmDB.Iterator (HeaderHash blk) m blk
+    getNext :: ImmDB.Iterator (HeaderHash blk) m (m blk)
             -> m (NextBlock (Point blk) blk)
-    getNext itr = ImmDB.iteratorNext immDB itr <&> \case
-      ImmDB.IteratorExhausted    -> NoMoreBlocks
-      ImmDB.IteratorResult _ _ blk -> NextBlock (Block.blockPoint blk, blk)
-      ImmDB.IteratorEBB    _ _ blk -> NextBlock (Block.blockPoint blk, blk)
+    getNext itr = ImmDB.iteratorNext immDB itr >>= \case
+      ImmDB.IteratorExhausted   -> return NoMoreBlocks
+      ImmDB.IteratorResult mblk -> (\blk -> NextBlock (Block.blockPoint blk, blk)) <$> mblk
 
 {-------------------------------------------------------------------------------
   Garbage collect points of previously applied blocks
