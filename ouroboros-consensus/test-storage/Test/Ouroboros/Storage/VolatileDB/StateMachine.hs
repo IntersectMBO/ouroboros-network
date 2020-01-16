@@ -295,14 +295,14 @@ runPure dbm (CmdErr cmd err) =
       PutBlock tb            -> do
         let blockInfo = mkBlockInfo tb
             blob = testBlockToBuilder tb
-        Unit <$> putBlockModel tnc err blockInfo blob
-      GetSuccessors bids     -> do
+        Unit <$> putBlockModel tnc blockInfo blob
+      GetSuccessors bids  -> do
         successors <- getSuccessorsModel tnc
         return $ Successors $ successors <$> bids
       GetPredecessor bids    -> do
         predecessor <- getPredecessorModel tnc
         return $ Predecessor $ predecessor <$> bids
-      GarbageCollect slot    -> Unit <$> garbageCollectModel tnc err slot
+      GarbageCollect slot    -> Unit <$> garbageCollectModel tnc slot
       IsOpen                 -> Bl <$> isOpenModel
       Close                  -> Unit <$> closeModel
       ReOpen                 -> Unit <$> reOpenModel tnc
@@ -531,10 +531,18 @@ semanticsImpl errorsVar m env (At cmderr) = At . Resp <$> case cmderr of
       case res of
         Left (UserError ClosedDBError) -> return res
         _                              -> do
+          reOpenDB m
+          restore cmd
           closeDB m
           return $ Right $ SimulatedError res
   where
     try = tryVolDB EH.monadCatch EH.monadCatch
+
+    restore (PutBlock tb) = putBlock m
+      (mkBlockInfo tb)
+      (testBlockToBuilder tb)
+    restore (GarbageCollect sl) = garbageCollect m sl
+    restore _ = return ()
 
 runDB :: forall m. (HasCallStack, IOLike m)
       => VolatileDB BlockId m

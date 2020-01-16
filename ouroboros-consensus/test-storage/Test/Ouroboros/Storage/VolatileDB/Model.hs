@@ -43,14 +43,13 @@ import           Data.ByteString.Builder
 import           Data.ByteString.Lazy (ByteString)
 import qualified Data.ByteString.Lazy as BL
 import           Data.Either
-import           Data.List (find, sortOn, splitAt, uncons)
+import           Data.List (find, sortOn, splitAt)
 import           Data.Map (Map)
 import qualified Data.Map as Map
 import           Data.Maybe (fromMaybe, isNothing, mapMaybe)
 import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Typeable
-import           GHC.Stack.Types
 
 import           Ouroboros.Network.Point (WithOrigin)
 
@@ -64,8 +63,6 @@ import qualified Ouroboros.Storage.Util.ErrorHandling as EH
 import           Ouroboros.Storage.VolatileDB.API
 import qualified Ouroboros.Storage.VolatileDB.Impl as Internal
 import           Ouroboros.Storage.VolatileDB.Util
-
-import           Test.Util.FS.Sim.Error
 
 import           Test.Ouroboros.Storage.VolatileDB.TestBlock
 
@@ -223,32 +220,27 @@ putBlockModel :: forall blockId m.
                  MonadState (DBModel blockId) m
               => Ord blockId
               => ThrowCantCatch VolatileDBError m
-              -> Maybe Errors
               -> BlockInfo blockId
               -> Builder
               -> m ()
-putBlockModel err cmdErr BlockInfo{..} builder = do
+putBlockModel err BlockInfo{..} builder = do
     -- This depends on the exact sequence of the operations in the real Impl.
     -- If anything changes there, then this will also need change.
     dbm@DBModel {..} <- get
     let currentFile = getCurrentFile dbm
+        (mbid, bids) = unsafeLookupIndex dbm currentFile
+        index' = Map.insert currentFile
+                            (max mbid (MaxSlotNo bslot), (bbid, bpreBid):bids)
+                            index
+        binaryInfo = BinaryInfo {
+            binaryBlob   = toLazyByteString builder
+          , headerOffset = bheaderOffset
+          , headerSize   = bheaderSize
+          }
     whenClosedUserError dbm err
     case Map.lookup bbid mp of
       Just _block -> return ()
-      Nothing -> case managesToPut cmdErr of
-        Just fsErrT -> EH.throwError' err $
-          mkError fsErrT currentFile
-        Nothing -> doPut dbm currentFile
-  where
-    binaryInfo = BinaryInfo {
-        binaryBlob   = toLazyByteString builder
-      , headerOffset = bheaderOffset
-      , headerSize   = bheaderSize
-      }
-
-    -- | Updates the Model if put succeeds.
-    doPut :: DBModel blockId -> FsPath -> m ()
-    doPut dbm@DBModel {..} currentFile = do
+      Nothing -> do
         put dbm {
             mp        = Map.insert bbid (bslot, bisEBB, binaryInfo) mp
           , index     = index'
@@ -256,82 +248,30 @@ putBlockModel err cmdErr BlockInfo{..} builder = do
           }
         when (1 + length bids == blocksPerFile)
           createFileModel
-      where
-        (mbid, bids) = unsafeLookupIndex dbm currentFile
-        index' = Map.insert currentFile
-                            (max mbid (MaxSlotNo bslot), (bbid, bpreBid):bids)
-                            index
-
-    -- | Given some simulated errors, it predicts if the 'hPut' will be successful.
-    managesToPut :: Maybe Errors -> Maybe FsErrorType
-    managesToPut errors = do
-      errs <- errors
-      (mErr, _rest) <- uncons $ getStream (_hPutSome errs)
-      errOrPartial <- mErr
-      case errOrPartial of
-        Left (fsErr, _mCorr) -> return fsErr
-        Right _              -> Nothing
 
 garbageCollectModel :: forall m blockId
                      . MonadState (DBModel blockId) m
                     => ThrowCantCatch VolatileDBError m
-                    -> Maybe Errors
                     -> SlotNo
                     -> m ()
-garbageCollectModel err cmdErr sl = do
+garbageCollectModel err sl = do
     dbm@DBModel {..} <- get
     whenClosedUserError dbm err
     modify $ \dbm' -> dbm' {latestGarbaged = max latestGarbaged (Just sl)}
-    -- This depends only on the exact sequence of the operations which change
-    -- the filesystem in the real Impl. If anything changes there, then this
-    -- will also need change.
     collectFiles (getCurrentFile dbm) $ sortedFilesOfIndex dbm
   where
 
     collectFiles :: FsPath -> [(FsPath, MaxSlotNo)] -> m ()
-    collectFiles currentFile = foldM_ collectFile initialRemoveErrors
+    collectFiles currentFile = mapM_ collectFile
       where
-        collectFile :: [Maybe FsErrorType]
-                    -> (FsPath, MaxSlotNo)
-                    -> m [Maybe FsErrorType]
-        collectFile removeErrors (path, msl) =
+        collectFile :: (FsPath, MaxSlotNo)
+                    -> m ()
+        collectFile (path, msl) =
           if cmpMaybe (maxSlotNoToMaybe msl) sl
-          then
-            -- Τhis file is not collected. We return the list of @removeFile@
-            -- errors unchanged, since no @removeFile@ was called.
-            return removeErrors
+          then return ()
           else if path == currentFile
-          then case truncateError of
-            Nothing -> do
-              -- If we collect the latest file, we truncate instead of removing.
-              -- So we only look at the truncate error and not the remove.
-              modifyIndex $ Map.insert path (NoMaxSlotNo,[])
-              return removeErrors
-            Just e -> EH.throwError' err $ mkError e currentFile
-          else case removeErrors of
-            [] -> do
-              -- We remove the file without any error.
-              modifyIndex $ Map.delete path
-              return []
-            Nothing : rest -> do
-              -- Same: successful removing.
-              modifyIndex $ Map.delete path
-              return rest
-            (Just e) : _ -> EH.throwError' err $ mkError e currentFile
-
-        -- | The error of the first truncate, if any. We only keep the first
-        -- and not a list, since garbage collect can truncate maximum one file.
-        truncateError :: Maybe FsErrorType
-        truncateError = do
-          cErr <- cmdErr
-          (h, _) <- uncons $ getStream . _hTruncate $ cErr
-          h
-
-        -- | The list of removeFile errors. @Nothing@ indicates that it succeeds.
-        initialRemoveErrors :: [Maybe FsErrorType]
-        initialRemoveErrors = case cmdErr of
-            Nothing   -> []
-            Just cErr -> getStream . _removeFile $ cErr
+          then modifyIndex $ Map.insert path (NoMaxSlotNo,[])
+          else modifyIndex $ Map.delete path
 
 getBlockIdsModel :: forall m blockId
                  . MonadState (DBModel blockId) m
@@ -496,17 +436,6 @@ recover err dbm@DBModel {..} =
 {------------------------------------------------------------------------------
   Utilities
 ------------------------------------------------------------------------------}
-
--- | The simulated VolatileDB error, when a fs error happens.
-mkError :: FsErrorType -> FsPath -> VolatileDBError
-mkError errType file = UnexpectedError . FileSystemError $ FsError {
-      fsErrorType   = errType
-    , fsErrorPath   = file
-    , fsErrorString = ""
-    , fsErrorNo     = Nothing
-    , fsErrorStack  = EmptyCallStack
-    , fsLimitation  = False
-    }
 
 whenClosedUserError :: Monad m
                     => DBModel blockId
