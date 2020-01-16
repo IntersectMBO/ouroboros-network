@@ -36,7 +36,7 @@ import           Data.Void (Void)
 import           Control.Monad.Class.MonadThrow
 import           Control.Tracer
 
-import           Network.Mux.Interface
+import           Network.Mux
 import           Network.TypedProtocol.Channel
 import           Network.TypedProtocol.Codec.Cbor hiding (decode, encode)
 import           Network.TypedProtocol.Driver

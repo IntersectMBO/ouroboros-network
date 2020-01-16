@@ -43,7 +43,7 @@ import qualified Network.TypedProtocol.ReqResp.Type as ReqResp
 import           Control.Tracer
 
 -- TODO: remove Mx prefixes
-import qualified Network.Mux as Mx
+import qualified Network.Mux as Mx hiding (MiniProtocolLimits(..))
 import qualified Network.Mux.Bearer.Socket as Mx
 import           Ouroboros.Network.Mux as Mx
 
@@ -116,10 +116,7 @@ data TestProtocols1 = ChainSyncPr
   deriving (Eq, Ord, Enum, Bounded, Show)
 
 instance Mx.ProtocolEnum TestProtocols1 where
-  fromProtocolEnum ChainSyncPr = 2
-
-  toProtocolEnum 2 = Just ChainSyncPr
-  toProtocolEnum _ = Nothing
+  fromProtocolEnum ChainSyncPr = MiniProtocolNum 2
 
 instance Mx.MiniProtocolLimits TestProtocols1 where
   maximumMessageSize ChainSyncPr  = defaultMiniProtocolLimit
@@ -132,10 +129,7 @@ data TestProtocols2 = ReqRespPr
   deriving (Eq, Ord, Enum, Bounded, Show)
 
 instance Mx.ProtocolEnum TestProtocols2 where
-  fromProtocolEnum ReqRespPr = 4
-
-  toProtocolEnum 4 = Just ReqRespPr
-  toProtocolEnum _ = Nothing
+  fromProtocolEnum ReqRespPr = MiniProtocolNum 4
 
 instance Mx.MiniProtocolLimits TestProtocols2 where
   maximumMessageSize ReqRespPr  = defaultMiniProtocolLimit
@@ -307,15 +301,13 @@ prop_socket_recv_close f _ = ioProperty $ do
         Socket.listen sd 1
 
         withAsync
-          (do
-              -- accept a connection and start mux on it
-              bracket
-                (Socket.accept sd)
-                (\(sd',_) -> Socket.close sd')
-                $ \(sd',_) -> do
-                  bearer <- Mx.socketAsMuxBearer nullTracer sd'
-                  Mx.muxBearerSetState nullTracer bearer Mx.Connected
-                  Mx.muxStart nullTracer () (toApplication app) bearer
+           -- accept a connection and start mux on it
+          (bracket
+             (Socket.accept sd)
+             (\(sd',_) -> Socket.close sd') $ \(sd',_) -> do
+               let bearer = Mx.socketAsMuxBearer nullTracer sd'
+               Mx.traceMuxBearerState nullTracer Mx.Connected
+               Mx.muxStart nullTracer () (toApplication app) bearer
           )
           $ \muxAsync -> do
 

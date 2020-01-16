@@ -8,21 +8,34 @@
 
 module Network.Mux (
       muxStart
-    , muxBearerSetState
-    , MuxSDU (..)
+
+      -- * Mux bearers
+    , MuxBearer
+
+    -- * Defining 'MuxApplication's
+    , AppType (..)
+    , HasInitiator
+    , HasResponder
+    , MuxApplication (..)
+    , MuxMiniProtocol (..)
+    , RunMiniProtocol (..)
+    , MiniProtocolNum (..)
     , MiniProtocolLimits (..)
-    , ProtocolEnum (..)
-    , MiniProtocolId (..)
     , MiniProtocolMode (..)
-    , MuxBearerState (..)
+
+      -- * Errors
     , MuxError (..)
     , MuxErrorType (..)
-    , RemoteClockModel (..)
+
+      -- * Tracing
+    , traceMuxBearerState
+    , MuxBearerState (..)
+    , MuxTrace (..)
+    , WithMuxBearer (..)
     ) where
 
 import           Control.Monad
 import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 import           Control.Tracer
@@ -35,10 +48,10 @@ import           GHC.Stack
 import           Text.Printf
 
 import           Network.Mux.Channel
-import           Network.Mux.Interface
-import           Network.Mux.Egress
-import           Network.Mux.Ingress
+import           Network.Mux.Egress  as Egress
+import           Network.Mux.Ingress as Ingress
 import           Network.Mux.Types
+import           Network.Mux.Trace
 
 
 -- | muxStart starts a mux bearer for the specified protocols corresponding to
@@ -75,46 +88,48 @@ import           Network.Mux.Types
 -- * at any given time each @TranslocationServiceRequest@ contains a non-empty
 -- 'Wanton'
 --
--- TODO: replace MonadSay with iohk-monitoring-framework.
---
 muxStart
-    :: forall m appType peerid ptcl a b.
+    :: forall m appType peerid a b.
        ( MonadAsync m
-       , MonadSay m
        , MonadSTM m
        , MonadThrow m
        , MonadThrow (STM m)
        , MonadMask m
-       , Ord ptcl
-       , Enum ptcl
-       , Bounded ptcl
-       , Show ptcl
-       , MiniProtocolLimits ptcl
        , Eq (Async m ())
        )
-    => Tracer m (MuxTrace ptcl)
+    => Tracer m MuxTrace
     -> peerid
-    -> MuxApplication appType peerid ptcl m a b
-    -> MuxBearer ptcl m
+    -> MuxApplication appType peerid m a b
+    -> MuxBearer m
     -> m ()
-muxStart tracer peerid app bearer = do
-    tbl <- setupTbl
+muxStart tracer peerid (MuxApplication ptcls) bearer = do
+    ctlPtclInfo <- mkMiniProtocolInfo (MiniProtocolNum 0)
+                                      (MiniProtocolLimits 0xffff 0xffff)
+    appPtclInfo <- sequence [ mkMiniProtocolInfo (miniProtocolNum ptcl)
+                                                 (miniProtocolLimits ptcl)
+                            | ptcl <- ptcls ]
+    let tbl = setupTbl (ctlPtclInfo : appPtclInfo)
     tq <- atomically $ newTBQueue 100
     cnt <- newTVarM 0
 
-    let pmss = PerMuxSS tbl tq bearer
-        jobs = [ (demux pmss, "Demuxer")
-               , (mux cnt pmss, "Muxer")
-               , (muxControl pmss ModeResponder, "MuxControl Responder")
-               , (muxControl pmss ModeInitiator, "MuxControl Initiator")
+    let jobs = [ (demux DemuxState { dispatchTable = tbl, Ingress.bearer }, "Demuxer")
+               , (mux cnt MuxState { egressQueue   = tq,  Egress.bearer }, "Muxer")
                ]
-    mjobs <- sequence [ mpsJob cnt pmss ptcl
-                      | ptcl <- [minBound..maxBound] ]
+            ++ [ (muxControl q, name)
+               | let (_,_, initQ, respQ) = ctlPtclInfo
+               , (q, name) <- [(initQ, "Initiator"), (respQ, "Responder")]
+               ]
+            ++ [ job
+               | ((mpcode, mplimits, initQ, respQ), ptcl) <- zip appPtclInfo ptcls
+               , job <- mpsJob cnt tq mpcode
+                               (maximumMessageSize mplimits)
+                               initQ respQ (miniProtocolRun ptcl)
+               ]
 
     mask $ \unmask -> do
-      aidsAndNames <- traverse (\(io, name) -> (,name) <$> async (unmask io)) (jobs ++ concat mjobs)
+      aidsAndNames <- traverse (\(io, name) -> (,name) <$> async (unmask io)) jobs
 
-      muxBearerSetState tracer bearer Mature
+      traceWith tracer (MuxTraceState Mature)
       unmask $ do
         (fa, r_e) <- waitAnyCatchCancel $ map fst aidsAndNames
         let faName = fromMaybe "Unknown Protocol" (lookup fa aidsAndNames)
@@ -124,52 +139,89 @@ muxStart tracer peerid app bearer = do
                  throwM e
              Right _                 -> traceWith tracer $ MuxTraceCleanExit faName
 
-      muxBearerSetState tracer bearer Dead
+      traceWith tracer (MuxTraceState Dead)
 
   where
+    mkMiniProtocolInfo :: MiniProtocolNum
+                       -> MiniProtocolLimits
+                       -> m ( MiniProtocolNum
+                            , MiniProtocolLimits
+                            , StrictTVar m BL.ByteString
+                            , StrictTVar m BL.ByteString
+                            )
+    mkMiniProtocolInfo mpcode mplimits = do
+        initiatorQ <- newTVarM BL.empty
+        responderQ <- newTVarM BL.empty
+        return ( mpcode
+               , mplimits
+               , initiatorQ
+               , responderQ
+               )
+
     -- Construct the array of TBQueues, one for each protocol id, and each mode
-    setupTbl :: m (MiniProtocolDispatch ptcl m)
-    setupTbl = MiniProtocolDispatch
-            -- cover full range of type (MiniProtocolId ptcl, MiniProtocolMode)
-             . array (minBound, maxBound)
-           <$> sequence [ do q <- atomically (newTVar BL.empty)
-                             return ((ptcl, mode), q)
-                        | ptcl <- [minBound..maxBound]
-                        , mode <- [ModeInitiator, ModeResponder] ]
+    setupTbl :: [( MiniProtocolNum
+                 , MiniProtocolLimits
+                 , StrictTVar m BL.ByteString
+                 , StrictTVar m BL.ByteString
+                 )]
+             -> MiniProtocolDispatch m
+    setupTbl ptclsInfo =
+        MiniProtocolDispatch
+          (array (mincode, maxcode) $
+                 [ (code, Nothing)    | code <- [mincode..maxcode] ]
+              ++ [ (code, Just pix)
+                 | (pix, (code, _, _, _)) <- zip [0..] ptclsInfo ])
+          (array ((minpix, ModeInitiator), (maxpix, ModeResponder))
+                 [ ((pix, mode), dispatchInfo)
+                 | (pix, (_mpcode, mplimits, initQ, respQ)) <- zip [0..] ptclsInfo
+                 , (mode, q) <- [ (ModeInitiator, initQ)
+                                , (ModeResponder, respQ) ]
+                 , let dispatchInfo = MiniProtocolDispatchInfo q
+                                        (maximumIngressQueue mplimits)
+                 ])
+      where
+        minpix = 0
+        maxpix = length ptclsInfo - 1
+
+        codes   = [ mc | (mc, _, _, _) <- ptclsInfo ]
+        mincode = minimum codes
+        maxcode = maximum codes
 
 
     mpsJob
       :: StrictTVar m Int
-      -> PerMuxSharedState ptcl m
-      -> ptcl
-      -> m [(m (), String)]
-    mpsJob cnt pmss mpdId = do
-
-        initiatorChannel <- muxChannel tracer
-                              pmss
-                              (AppProtocolId mpdId)
-                              ModeInitiator
-                              cnt
-
-        responderChannel <- muxChannel tracer
-                              pmss
-                              (AppProtocolId mpdId)
-                              ModeResponder
-                              cnt
-
-        return $ case app of
-          MuxInitiatorApplication initiator ->
-            [ ( initiator peerid mpdId initiatorChannel >> mpsJobExit cnt
-              , show mpdId ++ " Initiator" )]
-          MuxResponderApplication responder ->
-            [ ( responder peerid mpdId responderChannel >> mpsJobExit cnt
-              , show mpdId ++ " Responder" )]
-          MuxInitiatorAndResponderApplication initiator responder ->
-            [ ( initiator peerid mpdId initiatorChannel >> mpsJobExit cnt
-              , show mpdId ++ " Initiator" )
-            , (responder peerid mpdId responderChannel >> mpsJobExit cnt
-              , show mpdId ++ " Responder" )
+      -> EgressQueue m
+      -> MiniProtocolNum
+      -> Int64
+      -> StrictTVar m BL.ByteString
+      -> StrictTVar m BL.ByteString
+      -> RunMiniProtocol appType peerid m a b
+      -> [(m (), String)]
+    mpsJob cnt tq mc msgMax initQ respQ run =
+        case run of
+          InitiatorProtocolOnly initiator ->
+            [ ( do chan <- mkChannel ModeInitiator
+                   _    <- initiator peerid chan
+                   mpsJobExit cnt
+              , show mc ++ " Initiator" )]
+          ResponderProtocolOnly responder ->
+            [ ( do chan <- mkChannel ModeResponder
+                   _    <- responder peerid chan
+                   mpsJobExit cnt
+              , show mc ++ " Responder" )]
+          InitiatorAndResponderProtocol initiator responder ->
+            [ ( do chan <- mkChannel ModeInitiator
+                   _    <- initiator peerid chan
+                   mpsJobExit cnt
+              , show mc ++ " Initiator" )
+            , ( do chan <- mkChannel ModeResponder
+                   _    <- responder peerid chan
+                   mpsJobExit cnt
+              , show mc ++ " Responder" )
             ]
+      where
+        mkChannel ModeInitiator = muxChannel tracer tq mc ModeInitiator msgMax initQ cnt
+        mkChannel ModeResponder = muxChannel tracer tq mc ModeResponder msgMax respQ cnt
 
     -- cnt represent the number of SDUs that are queued but not yet sent.  Job
     -- threads will be prevented from exiting until all SDUs have been
@@ -177,19 +229,17 @@ muxStart tracer peerid app bearer = do
     -- jobs will be cancelled directly.
     mpsJobExit :: StrictTVar m Int -> m ()
     mpsJobExit cnt = do
-        muxBearerSetState tracer bearer Dying
+        traceWith tracer (MuxTraceState Dying)
         atomically $ do
             c <- readTVar cnt
             unless (c == 0) retry
 
-muxControl :: (HasCallStack, MonadSTM m, MonadSay m, MonadThrow m, Ord ptcl, Enum ptcl
-              , MiniProtocolLimits ptcl)
-           => PerMuxSharedState ptcl m
-           -> MiniProtocolMode
+muxControl :: (HasCallStack, MonadSTM m, MonadThrow m)
+           => StrictTVar m BL.ByteString
            -> m ()
-muxControl pmss md = do
+muxControl q = do
     _ <- atomically $ do
-        buf <- readTVar (ingressQueue (dispatchTable pmss) Muxcontrol md)
+        buf <- readTVar q
         when (buf == BL.empty)
             retry
     throwM $ MuxError MuxControlProtocolError "MuxControl message on mature MuxBearer" callStack
@@ -198,23 +248,20 @@ muxControl pmss md = do
 -- 'MiniProtocolMode'.
 --
 muxChannel
-    :: forall m ptcl.
+    :: forall m.
        ( MonadSTM m
-       , MonadSay m
        , MonadThrow m
-       , Ord ptcl
-       , Enum ptcl
-       , Show ptcl
-       , MiniProtocolLimits ptcl
        , HasCallStack
        )
-    => Tracer m (MuxTrace ptcl)
-    -> PerMuxSharedState ptcl m
-    -> MiniProtocolId ptcl
+    => Tracer m MuxTrace
+    -> EgressQueue m
+    -> MiniProtocolNum
     -> MiniProtocolMode
+    -> Int64
+    -> StrictTVar m BL.ByteString
     -> StrictTVar m Int
     -> m (Channel m)
-muxChannel tracer pmss mid md cnt = do
+muxChannel tracer tq mc md msgMax q cnt = do
     w <- newTVarM BL.empty
     return $ Channel { send = send (Wanton w)
                      , recv}
@@ -232,13 +279,13 @@ muxChannel tracer pmss mid md cnt = do
         -- This check is dependant on the good will of the sender and a receiver can't
         -- assume that it will never receive messages larger than maximumMessageSize.
         --say $ printf "send mid %s mode %s" (show mid) (show md)
-        when (BL.length encoding > maximumMessageSize mid) $
+        when (BL.length encoding > msgMax) $
             throwM $ MuxError MuxTooLargeMessage
                 (printf "Attempting to send a message of size %d on %s %s" (BL.length encoding)
-                        (show mid) (show $ md))
+                        (show mc) (show md))
                 callStack
 
-        traceWith tracer $ MuxTraceChannelSendStart mid encoding
+        traceWith tracer $ MuxTraceChannelSendStart mc encoding
 
         atomically $ do
             buf <- readTVar w
@@ -248,35 +295,25 @@ muxChannel tracer pmss mid md cnt = do
                    writeTVar w (BL.append buf encoding)
                    when wasEmpty $ do
                        modifyTVar cnt (+ 1)
-                       writeTBQueue (tsrQueue pmss) (TLSRDemand mid md want)
+                       writeTBQueue tq (TLSRDemand mc md want)
                else retry
 
-        traceWith tracer $ MuxTraceChannelSendEnd mid
+        traceWith tracer $ MuxTraceChannelSendEnd mc
 
     recv :: m (Maybe BL.ByteString)
     recv = do
         -- We receive CBOR encoded messages as ByteStrings (possibly partial) from the
         -- matching ingress queueu. This is the same queue the 'demux' thread writes to.
-        traceWith tracer $ MuxTraceChannelRecvStart mid
+        traceWith tracer $ MuxTraceChannelRecvStart mc
         blob <- atomically $ do
-            let q = ingressQueue (dispatchTable pmss) mid md
             blob <- readTVar q
             if blob == BL.empty
                 then retry
                 else writeTVar q BL.empty >> return blob
         -- say $ printf "recv mid %s mode %s blob len %d" (show mid) (show md) (BL.length blob)
-        traceWith tracer $ MuxTraceChannelRecvEnd mid blob
+        traceWith tracer $ MuxTraceChannelRecvEnd mc blob
         return $ Just blob
 
-muxBearerSetState :: (MonadSTM m, Ord ptcl, Enum ptcl, Bounded ptcl)
-                  => Tracer m (MuxTrace ptcl)
-                  -> MuxBearer ptcl m
-                  -> MuxBearerState
-                  -> m ()
-muxBearerSetState tracer bearer newState = do
-    oldState <- atomically $ do
-        -- TODO: reimplement with swapTVar once it is added to MonadSTM
-        old <- readTVar (state bearer)
-        writeTVar (state bearer) newState
-        return old
-    traceWith tracer $ MuxTraceStateChange oldState newState
+traceMuxBearerState :: Tracer m MuxTrace -> MuxBearerState -> m ()
+traceMuxBearerState tracer state =
+    traceWith tracer (MuxTraceState state)

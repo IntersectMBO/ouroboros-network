@@ -10,7 +10,7 @@ import qualified Codec.CBOR.Term as CBOR
 import           Codec.Serialise (DeserialiseFailure)
 
 import           Network.Socket (SockAddr)
-import           Network.Mux.Types
+import           Network.Mux.Trace
 
 import           Network.TypedProtocol.Driver (TraceSendRecv)
 import           Network.TypedProtocol.Driver.ByteLimit
@@ -24,7 +24,7 @@ import           Ouroboros.Network.Subscription.Dns
 -- | IP subscription tracers.
 --
 data NetworkIPSubscriptionTracers ptcl vNumber = NetworkIPSubscriptionTracers {
-      nistMuxTracer          :: Tracer IO (WithMuxBearer ConnectionId (MuxTrace ptcl)),
+      nistMuxTracer          :: Tracer IO (WithMuxBearer ConnectionId MuxTrace),
       -- ^ low level mux-network tracer, which logs mux sdu (send and received)
       -- and other low level multiplexing events.
       nistHandshakeTracer    :: Tracer IO (TraceSendRecv (Handshake vNumber CBOR.Term)
@@ -52,7 +52,7 @@ nullNetworkIPSubscriptionTracers = NetworkIPSubscriptionTracers {
 -- | DNS subscription tracers.
 --
 data NetworkDNSSubscriptionTracers ptcl vNumber peerid = NetworkDNSSubscriptionTracers {
-      ndstMuxTracer          :: Tracer IO (WithMuxBearer peerid (MuxTrace ptcl)),
+      ndstMuxTracer          :: Tracer IO (WithMuxBearer peerid MuxTrace),
       -- ^ low level mux-network tracer, which logs mux sdu (send and received)
       -- and other low level multiplexing events.
       ndstHandshakeTracer    :: Tracer IO (TraceSendRecv (Handshake vNumber CBOR.Term)

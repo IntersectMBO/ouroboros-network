@@ -40,8 +40,6 @@ import           Text.Show.Functions ()
 
 import           Test.Tasty.QuickCheck (shuffle, testProperty)
 
-import qualified Network.Mux as Mx
-import           Network.Mux.Interface
 import           Network.Mux.Time (microsecondsToDiffTime)
 
 import           Network.TypedProtocol.Driver
@@ -72,13 +70,10 @@ defaultMiniProtocolLimit = 3000000
 data TestProtocols1 = ChainSyncPr
   deriving (Eq, Ord, Enum, Bounded, Show)
 
-instance Mx.ProtocolEnum TestProtocols1 where
-  fromProtocolEnum ChainSyncPr = 2
+instance ProtocolEnum TestProtocols1 where
+  fromProtocolEnum ChainSyncPr = MiniProtocolNum 2
 
-  toProtocolEnum 2 = Just ChainSyncPr
-  toProtocolEnum _ = Nothing
-
-instance Mx.MiniProtocolLimits TestProtocols1 where
+instance MiniProtocolLimits TestProtocols1 where
   maximumMessageSize ChainSyncPr  = defaultMiniProtocolLimit
   maximumIngressQueue ChainSyncPr = defaultMiniProtocolLimit
 
@@ -88,13 +83,10 @@ instance Mx.MiniProtocolLimits TestProtocols1 where
 data TestProtocols2 = ReqRespPr
   deriving (Eq, Ord, Enum, Bounded, Show)
 
-instance Mx.ProtocolEnum TestProtocols2 where
-  fromProtocolEnum ReqRespPr = 4
+instance ProtocolEnum TestProtocols2 where
+  fromProtocolEnum ReqRespPr = MiniProtocolNum 4
 
-  toProtocolEnum 4 = Just ReqRespPr
-  toProtocolEnum _ = Nothing
-
-instance Mx.MiniProtocolLimits TestProtocols2 where
+instance MiniProtocolLimits TestProtocols2 where
   maximumMessageSize ReqRespPr  = defaultMiniProtocolLimit
   maximumIngressQueue ReqRespPr = defaultMiniProtocolLimit
 

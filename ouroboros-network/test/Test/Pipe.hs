@@ -25,7 +25,6 @@ import           Test.Tasty.QuickCheck (testProperty)
 import           Control.Tracer
 
 import qualified Network.Mux.Bearer.Pipe as Mx
-import qualified Network.Mux.Types as Mx
 import           Ouroboros.Network.Mux
 
 import           Ouroboros.Network.Block (encodeTip, decodeTip)
@@ -77,13 +76,10 @@ defaultMiniProtocolLimit = 3000000
 data DemoProtocols = ChainSync
   deriving (Eq, Ord, Enum, Bounded, Show)
 
-instance Mx.ProtocolEnum DemoProtocols where
-  fromProtocolEnum ChainSync = 2
+instance ProtocolEnum DemoProtocols where
+  fromProtocolEnum ChainSync = MiniProtocolNum 2
 
-  toProtocolEnum 2 = Just ChainSync
-  toProtocolEnum _ = Nothing
-
-instance Mx.MiniProtocolLimits DemoProtocols where
+instance MiniProtocolLimits DemoProtocols where
   maximumMessageSize ChainSync  = defaultMiniProtocolLimit
   maximumIngressQueue ChainSync = defaultMiniProtocolLimit
 

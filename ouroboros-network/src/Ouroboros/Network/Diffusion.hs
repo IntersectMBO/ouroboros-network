@@ -26,7 +26,7 @@ import           Data.ByteString.Lazy (ByteString)
 
 import           Network.TypedProtocol.Driver (TraceSendRecv (..))
 import           Network.TypedProtocol.Driver.ByteLimit (DecoderFailureOrTooMuchInput (..))
-import           Network.Mux.Types (MuxTrace (..), WithMuxBearer (..))
+import           Network.Mux (MuxTrace (..), WithMuxBearer (..))
 import           Network.Socket (SockAddr, AddrInfo)
 import qualified Network.Socket as Socket
 
@@ -61,9 +61,9 @@ data DiffusionTracers = DiffusionTracers {
       -- ^ DNS subscription tracer
     , dtDnsResolverTracer     :: Tracer IO (WithDomainName DnsTrace)
       -- ^ DNS resolver tracer
-    , dtMuxTracer             :: Tracer IO (WithMuxBearer ConnectionId (MuxTrace NodeToNodeProtocols))
+    , dtMuxTracer             :: Tracer IO (WithMuxBearer ConnectionId MuxTrace)
       -- ^ Mux tracer
-    , dtMuxLocalTracer        :: Tracer IO (WithMuxBearer ConnectionId (MuxTrace NodeToClientProtocols))
+    , dtMuxLocalTracer        :: Tracer IO (WithMuxBearer ConnectionId MuxTrace)
       -- ^ Mux tracer for local clients
     , dtHandshakeTracer       :: Tracer IO (TraceSendRecv
                                               (Handshake NodeToNodeVersion CBOR.Term)

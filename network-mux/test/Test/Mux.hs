@@ -50,7 +50,7 @@ import           Test.Mux.ReqResp
 import qualified Network.Mux as Mx
 import qualified Network.Mux.Codec as Mx
 import qualified Network.Mux.Channel as Mx
-import qualified Network.Mux.Interface as Mx
+import qualified Network.Mux.Types as Mx
 import qualified Network.Mux.Bearer.Queues as Mx
 
 tests :: TestTree
@@ -67,8 +67,22 @@ tests =
     ]
   ]
 
+defaultMiniProtocolLimits :: Mx.MiniProtocolLimits
+defaultMiniProtocolLimits =
+    Mx.MiniProtocolLimits {
+      Mx.maximumMessageSize  = defaultMiniProtocolLimit,
+      Mx.maximumIngressQueue = defaultMiniProtocolLimit
+    }
+
 defaultMiniProtocolLimit :: Int64
 defaultMiniProtocolLimit = 3000000
+
+smallMiniProtocolLimits :: Mx.MiniProtocolLimits
+smallMiniProtocolLimits =
+    Mx.MiniProtocolLimits {
+      Mx.maximumMessageSize  = smallMiniProtocolLimit,
+      Mx.maximumIngressQueue = smallMiniProtocolLimit
+    }
 
 smallMiniProtocolLimit :: Int64
 smallMiniProtocolLimit = 16*1024
@@ -79,54 +93,6 @@ activeTracer = nullTracer
 
 _sayTracer :: MonadSay m => Tracer m String
 _sayTracer = Tracer say
-
---
--- Various ProtocolEnum instances used in tests
---
-
-data TestProtocols1 = ReqResp1
-  deriving (Eq, Ord, Enum, Bounded, Show)
-
-instance Mx.ProtocolEnum TestProtocols1 where
-  fromProtocolEnum ReqResp1 = 2
-
-  toProtocolEnum 2 = Just ReqResp1
-  toProtocolEnum _ = Nothing
-
-instance Mx.MiniProtocolLimits TestProtocols1 where
-  maximumMessageSize ReqResp1  = defaultMiniProtocolLimit
-  maximumIngressQueue ReqResp1 = defaultMiniProtocolLimit
-
--- |
--- Allows to run two copies of ReqResp protocol.t
---
-data TestProtocols2 = ReqResp2 | ReqResp3
-  deriving (Eq, Ord, Enum, Bounded, Show)
-
-instance Mx.ProtocolEnum TestProtocols2 where
-  fromProtocolEnum ReqResp2 = 2
-  fromProtocolEnum ReqResp3 = 3
-
-  toProtocolEnum 2 = Just ReqResp2
-  toProtocolEnum 3 = Just ReqResp3
-  toProtocolEnum _ = Nothing
-
-instance Mx.MiniProtocolLimits TestProtocols2 where
-  maximumMessageSize _  = defaultMiniProtocolLimit
-  maximumIngressQueue _ = defaultMiniProtocolLimit
-
-data TestProtocolsSmall = ReqRespSmall
-  deriving (Eq, Ord, Enum, Bounded, Show)
-
-instance Mx.ProtocolEnum TestProtocolsSmall where
-  fromProtocolEnum ReqRespSmall = 2
-
-  toProtocolEnum 2 = Just ReqRespSmall
-  toProtocolEnum _ = Nothing
-
-instance Mx.MiniProtocolLimits TestProtocolsSmall where
-  maximumMessageSize ReqRespSmall  = smallMiniProtocolLimit
-  maximumIngressQueue ReqRespSmall = smallMiniProtocolLimit
 
 --
 -- Generators
@@ -339,15 +305,31 @@ prop_mux_snd_recv messages = ioProperty $ do
     let server_w = client_r
         server_r = client_w
 
-    (verify, clientApp, serverApp) <- setupMiniReqRsp
+    (verify, client_mp, server_mp) <- setupMiniReqRsp
                                         (return ()) endMpsVar messages
 
+    let clientApp = Mx.MuxApplication
+                      [ Mx.MuxMiniProtocol {
+                          Mx.miniProtocolNum    = Mx.MiniProtocolNum 2,
+                          Mx.miniProtocolLimits = defaultMiniProtocolLimits,
+                          Mx.miniProtocolRun    = Mx.InitiatorProtocolOnly (const client_mp)
+                        }
+                      ]
+
+        serverApp = Mx.MuxApplication
+                      [ Mx.MuxMiniProtocol {
+                          Mx.miniProtocolNum    = Mx.MiniProtocolNum 2,
+                          Mx.miniProtocolLimits = defaultMiniProtocolLimits,
+                          Mx.miniProtocolRun    = Mx.ResponderProtocolOnly (const server_mp)
+                        }
+                      ]
+
     clientAsync <-
-      async $ Mx.runMuxWithQueues activeTracer "client" (Mx.MuxInitiatorApplication
-        $ \_ ReqResp1 -> clientApp) client_w client_r sduLen Nothing
+      async $ Mx.runMuxWithQueues activeTracer "client"
+                                  clientApp client_w client_r sduLen Nothing
     serverAsync <-
-      async $ Mx.runMuxWithQueues activeTracer "server" (Mx.MuxResponderApplication
-        $ \_ ReqResp1 -> serverApp) server_w server_r sduLen Nothing
+      async $ Mx.runMuxWithQueues activeTracer "server"
+                                  serverApp server_w server_r sduLen Nothing
 
     r <- waitBoth clientAsync serverAsync
     case r of
@@ -455,14 +437,34 @@ prop_mux_2_minis msgTrace0 msgTrace1 = ioProperty $ do
     (verify_1, client_mp1, server_mp1) <-
         setupMiniReqRsp (return ()) endMpsVar msgTrace1
 
-    let clientApp _ ReqResp2 = client_mp0
-        clientApp _ ReqResp3 = client_mp1
+    let clientApp = Mx.MuxApplication
+                      [ Mx.MuxMiniProtocol {
+                          Mx.miniProtocolNum    = Mx.MiniProtocolNum 2,
+                          Mx.miniProtocolLimits = defaultMiniProtocolLimits,
+                          Mx.miniProtocolRun    = Mx.InitiatorProtocolOnly (const client_mp0)
+                        }
+                      , Mx.MuxMiniProtocol {
+                          Mx.miniProtocolNum    = Mx.MiniProtocolNum 3,
+                          Mx.miniProtocolLimits = defaultMiniProtocolLimits,
+                          Mx.miniProtocolRun    = Mx.InitiatorProtocolOnly (const client_mp1)
+                        }
+                      ]
 
-        serverApp _ ReqResp2 = server_mp0
-        serverApp _ ReqResp3 = server_mp1
+        serverApp = Mx.MuxApplication
+                      [ Mx.MuxMiniProtocol {
+                          Mx.miniProtocolNum    = Mx.MiniProtocolNum 2,
+                          Mx.miniProtocolLimits = defaultMiniProtocolLimits,
+                          Mx.miniProtocolRun    = Mx.ResponderProtocolOnly (const server_mp0)
+                        }
+                      , Mx.MuxMiniProtocol {
+                          Mx.miniProtocolNum    = Mx.MiniProtocolNum 3,
+                          Mx.miniProtocolLimits = defaultMiniProtocolLimits,
+                          Mx.miniProtocolRun    = Mx.ResponderProtocolOnly (const server_mp1)
+                        }
+                      ]
 
-    clientAsync <- async $ Mx.runMuxWithQueues activeTracer "client" (Mx.MuxInitiatorApplication clientApp) client_w client_r sduLen Nothing
-    serverAsync <- async $ Mx.runMuxWithQueues activeTracer "server" (Mx.MuxResponderApplication serverApp) server_w server_r sduLen Nothing
+    clientAsync <- async $ Mx.runMuxWithQueues activeTracer "client" clientApp client_w client_r sduLen Nothing
+    serverAsync <- async $ Mx.runMuxWithQueues activeTracer "server" serverApp server_w server_r sduLen Nothing
 
 
     r <- waitBoth clientAsync serverAsync
@@ -507,14 +509,34 @@ prop_mux_starvation (Uneven response0 response1) =
         setupMiniReqRsp (waitOnAllClients activeMpsVar 2)
                         endMpsVar $ DummyTrace [(request, response1)]
 
-    let clientApp _ ReqResp2 = client_short
-        clientApp _ ReqResp3 = client_long
+    let clientApp = Mx.MuxApplication
+                      [ Mx.MuxMiniProtocol {
+                          Mx.miniProtocolNum    = Mx.MiniProtocolNum 2,
+                          Mx.miniProtocolLimits = defaultMiniProtocolLimits,
+                          Mx.miniProtocolRun    = Mx.InitiatorProtocolOnly (const client_short)
+                        }
+                      , Mx.MuxMiniProtocol  {
+                          Mx.miniProtocolNum    = Mx.MiniProtocolNum 3,
+                          Mx.miniProtocolLimits = defaultMiniProtocolLimits,
+                          Mx.miniProtocolRun    = Mx.InitiatorProtocolOnly (const client_long)
+                        }
+                      ]
 
-        serverApp _ ReqResp2 = server_short
-        serverApp _ ReqResp3 = server_long
+        serverApp = Mx.MuxApplication
+                      [ Mx.MuxMiniProtocol {
+                          Mx.miniProtocolNum    = Mx.MiniProtocolNum 2,
+                          Mx.miniProtocolLimits = defaultMiniProtocolLimits,
+                          Mx.miniProtocolRun    = Mx.ResponderProtocolOnly (const server_short)
+                        }
+                      , Mx.MuxMiniProtocol {
+                          Mx.miniProtocolNum    = Mx.MiniProtocolNum 3,
+                          Mx.miniProtocolLimits = defaultMiniProtocolLimits,
+                          Mx.miniProtocolRun    = Mx.ResponderProtocolOnly (const server_long)
+                        }
+                      ]
 
-    clientAsync <- async $ Mx.runMuxWithQueues activeTracer "client" (Mx.MuxInitiatorApplication clientApp) client_w client_r sduLen (Just traceQueueVar)
-    serverAsync <- async $ Mx.runMuxWithQueues activeTracer "server" (Mx.MuxResponderApplication serverApp) server_w server_r sduLen Nothing
+    clientAsync <- async $ Mx.runMuxWithQueues activeTracer "client" clientApp client_w client_r sduLen (Just traceQueueVar)
+    serverAsync <- async $ Mx.runMuxWithQueues activeTracer "server" serverApp server_w server_r sduLen Nothing
 
     -- First verify that all messages where received correctly
     r <- waitBoth clientAsync serverAsync
@@ -536,7 +558,7 @@ prop_mux_starvation (Uneven response0 response1) =
    -- We can't make 100% sure that both servers start responding at the same
    -- time but once they are both up and running messages should alternate
    -- between Mx.ReqResp2 and Mx.ReqResp3
-    verifyStarvation :: [Mx.MiniProtocolId TestProtocols2] -> Property
+    verifyStarvation :: Eq a => [a] -> Property
     verifyStarvation [] = property True
     verifyStarvation ms =
       let ms' = dropWhileEnd (\e -> e == last ms)
@@ -607,7 +629,13 @@ prop_demux_sdu a = do
         -- To trigger MuxIngressQueueOverRun we use a special test protocol
         -- with an ingress queue which is less than 0xffff so that it can be
         -- triggered by a single segment.
-        let server_mps = Mx.MuxResponderApplication (\_ ReqRespSmall -> serverRsp stopVar)
+        let server_mps = Mx.MuxApplication
+                           [ Mx.MuxMiniProtocol {
+                               Mx.miniProtocolNum    = Mx.MiniProtocolNum 2,
+                               Mx.miniProtocolLimits = smallMiniProtocolLimits,
+                               Mx.miniProtocolRun    = Mx.ResponderProtocolOnly (const (serverRsp stopVar))
+                             }
+                           ]
 
         (client_w, said) <- plainServer server_mps
         setup state client_w
@@ -627,7 +655,13 @@ prop_demux_sdu a = do
     run (ArbitraryValidSDU sdu state err_m) = do
         stopVar <- newEmptyTMVarM
 
-        let server_mps = Mx.MuxResponderApplication (\_ ReqResp1 -> serverRsp stopVar)
+        let server_mps = Mx.MuxApplication
+                           [ Mx.MuxMiniProtocol {
+                               Mx.miniProtocolNum    = Mx.MiniProtocolNum 2,
+                               Mx.miniProtocolLimits = defaultMiniProtocolLimits,
+                               Mx.miniProtocolRun    = Mx.ResponderProtocolOnly (const (serverRsp stopVar))
+                             }
+                           ]
 
         (client_w, said) <- plainServer server_mps
 
@@ -649,7 +683,13 @@ prop_demux_sdu a = do
     run (ArbitraryInvalidSDU badSdu state err) = do
         stopVar <- newEmptyTMVarM
 
-        let server_mps = Mx.MuxResponderApplication (\_ ReqResp1 -> serverRsp stopVar)
+        let server_mps = Mx.MuxApplication
+                           [ Mx.MuxMiniProtocol {
+                               Mx.miniProtocolNum    = Mx.MiniProtocolNum 2,
+                               Mx.miniProtocolLimits = defaultMiniProtocolLimits,
+                               Mx.miniProtocolRun    = Mx.ResponderProtocolOnly (const (serverRsp stopVar))
+                             }
+                           ]
 
         (client_w, said) <- plainServer server_mps
 
@@ -691,10 +731,11 @@ prop_demux_sdu a = do
     writeSdu _ payload | payload == BL.empty = return ()
     writeSdu queue payload = do
         let (!frag, !rest) = BL.splitAt 0xffff payload
-            sdu' = Mx.MuxSDU (Mx.RemoteClockModel 0) (Mx.AppProtocolId ReqRespSmall)
+            sdu' = Mx.MuxSDU (Mx.RemoteClockModel 0)
+                             (Mx.MiniProtocolNum 2)
                               Mx.ModeInitiator
                              (fromIntegral $ BL.length frag) frag
-            !pkt = Mx.encodeMuxSDU (sdu' :: Mx.MuxSDU TestProtocolsSmall)
+            !pkt = Mx.encodeMuxSDU (sdu' :: Mx.MuxSDU)
 
         atomically $ writeTBQueue queue pkt
         writeSdu queue rest

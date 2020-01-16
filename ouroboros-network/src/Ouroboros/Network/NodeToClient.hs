@@ -72,8 +72,7 @@ import           Codec.Serialise (Serialise (..), DeserialiseFailure)
 import           Codec.SerialiseTerm
 import qualified Network.Socket as Socket
 
-import           Network.Mux.Types
-import           Network.Mux.Interface
+import           Network.Mux hiding (MiniProtocolLimits(..))
 import           Network.TypedProtocol.Driver.ByteLimit (DecoderFailureOrTooMuchInput)
 import           Network.TypedProtocol.Driver (TraceSendRecv (..))
 
@@ -109,13 +108,8 @@ data NodeToClientProtocols = ChainSyncWithBlocksPtcl
 -- wireshark plugins.
 --
 instance ProtocolEnum NodeToClientProtocols where
-
-  fromProtocolEnum ChainSyncWithBlocksPtcl = 5
-  fromProtocolEnum LocalTxSubmissionPtcl   = 6
-
-  toProtocolEnum 5 = Just ChainSyncWithBlocksPtcl
-  toProtocolEnum 6 = Just LocalTxSubmissionPtcl
-  toProtocolEnum _ = Nothing
+  fromProtocolEnum ChainSyncWithBlocksPtcl = MiniProtocolNum 5
+  fromProtocolEnum LocalTxSubmissionPtcl   = MiniProtocolNum 6
 
 instance MiniProtocolLimits NodeToClientProtocols where
   -- TODO: provide sensible limits
