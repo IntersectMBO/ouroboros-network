@@ -3,9 +3,10 @@
 
 import Control.Concurrent (threadDelay)
 import Control.Concurrent.Async
-import Control.Exception (SomeException, throwIO)
-import Control.Monad (forM)
-import Data.Void (Void)
+import Control.Exception (IOException, SomeException, catch, throwIO)
+import Control.Monad (forM, unless, void)
+import Data.Void (Void, absurd)
+import Data.Word (Word)
 import qualified Debug.Trace as Debug (traceM)
 import Network.Socket (Socket)
 import qualified Network.Socket as Socket
@@ -23,17 +24,17 @@ import qualified Ouroboros.Network.Connections.Socket.Server as Server
 -- localhost) with different ports. Each one brings up a concurrent
 -- Connections term and then concurrently runs
 -- - An accept loop into that Connections term
--- - Concurrent client connections to every address (including its own) into
+-- - Concurrent client connections to every address (except its own) into
 --   that same Connections term
 -- The continuation for that concurrent Connections term prints the local
 -- and remote addresses and then sleeps for a sufficiently long time.
 --
 -- What we expect to see: if we have n nodes, then for each node, we should
--- see n unique print statements, one for each of the addresses. This shows
+-- see n unique debug statements, one for each of the addresses. This shows
 -- that connection re-use is working: whether the connection is initiated from
 -- the given node or some other node, it is only brought up once.
 --
--- Better way to do it: a `TVar (Map ConnectionId Word)` which is updated
+-- TODO Better way to do it: a `TVar (Map ConnectionId Word)` which is updated
 -- by each connection callback to bump the count at that given ConnectionId.
 -- If it passes 1, throw an error. Each thread can wait until the map is
 -- 1 for every connection pair.
@@ -44,6 +45,7 @@ data Node = forall sockType . Node
   , client  :: SockAddr sockType -> Client ConnectionId Socket IO
   }
 
+-- | When the continuation goes, there is a socket listening.
 node :: Some SockAddr -> (Node -> IO t) -> IO t
 node (Some bindAddr) k = Server.server bindAddr $ \server -> do
   let client = Client.client bindAddr
@@ -52,32 +54,52 @@ node (Some bindAddr) k = Server.server bindAddr $ \server -> do
 -- | What a node does when a new connection comes up. It'll just print a
 -- debug trace (thread safe) and then wait for a very long time so that the
 -- connection does not close.
-withConnection :: ConnectionId -> Socket -> IO (Either () (Handler ()))
-withConnection connId _socket = do
-  Debug.traceM (show connId)
+withConnection :: Provenance -> ConnectionId -> Socket -> IO (Either () (Handler ()))
+withConnection provenance connId _socket = do
+  Debug.traceM $ mconcat [show provenance, " : ", show connId]
   pure $ Right (Handler () (threadDelay 1000000000))
 
 -- | For each node, we want to run its accept loop, and concurrently connect
 -- to every other address.
-nodeAction :: [Some SockAddr] -> Node -> IO Void
-nodeAction addrs (Node address server client) = concurrent withConnection $ \connections ->
-  withAsync (Server.acceptLoop handleException connections server) $ \serverThread -> do
-    forConcurrently_ addrs $ \addr -> case matchSockAddr address addr of
-      Nothing -> error "mismatched families"
-      Just peerAddr -> runClientWith connections (client peerAddr)
-    -- Never finishes.
-    wait serverThread
+nodeAction :: [Some SockAddr] -> Node -> IO ()
+nodeAction addrs (Node address server client) = concurrent withConnection $ \connections -> do
+  -- Run the server accept loop and the client threads using forConcurrently, so
+  -- that exceptions from any of them will arise here and kill the entire
+  -- program.
+  let threads = concat
+        [ [ fmap absurd (Server.acceptLoop (handleException "server") connections server) ]
+        , flip fmap addrs $ \addr -> case matchSockAddr address addr of
+            Nothing -> error "mismatched families"
+            Just peerAddr ->
+              -- Connecting to the bind address is problematic: the accept loop
+              -- has already bound to it, and the client will bind to it as
+              -- well, which seems to result in a deadlock.
+              unless (peerAddr == address) $ 
+                void (runClientWith connections (client peerAddr))
+                `catch`
+                handleException ("client " ++ show peerAddr)
+        ]
+  forConcurrently_ threads id
   where
-  -- Any exception should kill our whole demo.
-  handleException :: SomeException -> IO ()
-  handleException = throwIO
+  -- Print the exception, prefixed with the address of the server which threw
+  -- it.
+  handleException :: String -> IOException -> IO ()
+  handleException str e = do
+    putStrLn $ mconcat
+      [ str
+      , " : "
+      , show address
+      , " : "
+      , show e
+      , "\n"
+      ]
+    throwIO e
 
 -- forM but in continuation passing style.
 --
 --   Cont t = forall r . (t -> IO r) -> IO r
 --
 --   forK :: [i] -> (i -> Cont t) -> Cont [t]
---
 forK :: [i] -> (i -> ((n -> IO r) -> IO r)) -> ([n] -> IO r) -> IO r
 forK is mk k = go [] is mk k
   where
@@ -86,9 +108,21 @@ forK is mk k = go [] is mk k
 
 main :: IO ()
 main = do
-  [host] <- getArgs
+  [host, portString, howManyString] <- getArgs >>= \args -> case args of
+    [host, portString, howManyString] -> pure args
+    _ -> error "args: <host> <port> <positive integer>"
+  let port :: Word
+      port = case reads portString of
+        [(n, "")] -> n
+        _ -> error "args: <host> <port> <positive integer>"
+      howMany :: Word
+      howMany = case reads howManyString of
+        [(n, "")] -> n
+        _ -> error "args: <host> <port> <positive integer>"
+      range :: [Int]
+      range = fmap fromIntegral [port..(port + howMany - 1)]
   -- Get addresses for the same host on a bunch of different consecutive ports.
-  addrs <- forM [3000..3002] $ \port -> do
+  addrs <- forM range $ \port -> do
     (addrInfo : _) <- Socket.getAddrInfo Nothing (Just host) (Just (show port))
     pure (withSockType (Socket.addrAddress addrInfo))
   -- For each address, create servers and clients and package them up into
