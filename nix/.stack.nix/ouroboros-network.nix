@@ -65,6 +65,13 @@
             (hsPkgs.typed-protocols)
             ];
           };
+        "demo-connections" = {
+          depends = [
+            (hsPkgs.ouroboros-network)
+            (hsPkgs.async)
+            (hsPkgs.network)
+            ];
+          };
         };
       tests = {
         "test-network" = {

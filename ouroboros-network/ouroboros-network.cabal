@@ -421,3 +421,14 @@ executable demo-chain-sync
                        typed-protocols
   default-language:    Haskell2010
   ghc-options:         -Wall
+
+executable demo-connections
+    hs-source-dirs: demo-connections
+    main-is:        Main.hs
+    build-depends:  base,
+                    async,
+                    network,
+                    ouroboros-network
+    default-language: Haskell2010
+    ghc-options: -threaded
+                 -rtsopts
