@@ -1,6 +1,7 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE CPP #-}
+{-# LANGUAGE RankNTypes #-}
 
 module Ouroboros.Network.Connections.Socket.Client
   ( client
@@ -23,8 +24,8 @@ import Ouroboros.Network.Connections.Types
 client
   :: SockAddr sockType -- Our address (bind to this).
   -> SockAddr sockType -- Remote address (connect to this).
-  -> Client ConnectionId Socket reject accept IO (Decision Outgoing reject accept)
-client bindaddr sockaddr k = k (makeConnectionId bindaddr sockaddr) openSocket closeSocket
+  -> Client ConnectionId Socket IO
+client bindaddr sockaddr = \k -> k (makeConnectionId bindaddr sockaddr) openSocket closeSocket
 
   where
 

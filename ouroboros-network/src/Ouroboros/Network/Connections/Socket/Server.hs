@@ -1,13 +1,15 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE CPP #-}
+{-# LANGUAGE RankNTypes #-}
 
 module Ouroboros.Network.Connections.Socket.Server
   ( server
+  , acceptLoop
   ) where
 
-import Control.Exception (IOException, bracket, mask, onException, try)
-import Control.Monad (forever, when)
+import Control.Exception (Exception, bracket, catch, mask, onException)
+import Control.Monad (forever, when, void)
 import Data.Void (Void)
 import Network.Socket (Socket)
 import qualified Network.Socket as Socket
@@ -16,22 +18,23 @@ import Ouroboros.Network.Connections.Socket.Types (ConnectionId, SockAddr (..),
          makeConnectionId, matchSockType, forgetSockType)
 import Ouroboros.Network.Connections.Types
 
--- | Creates a socket of a given family, bound to a given address, and forever
--- accepts connections, passing them to the `Connections` term via `include`.
--- That determines whether they are rejected (and immediately closed by this
--- server). Rate and resource limiting can be imposed by the `Connections`
--- term itself, or by the OS/firewall; it is not dealt with by this server.
+-- | Creates a socket of a given family, bound to a given address, and gives
+-- a Server type which can be used to accept one connection by way of
+-- `runServerWith` in the `Types` module (requires giving a `Connections` term).
 --
--- TODO add a tracer parameter.
+-- Can also be used with `acceptLoop` to give the typical pattern of forever
+-- accepting connections, and throwing away the decisions returned by the
+-- `Connections` term.
 server
-  :: (IOException -> IO ()) -- What to do in case of exception on accept.
-                            -- Re-throwing will kill the server.
-  -> SockAddr sockType      -- Bind address
-  -> Server ConnectionId Socket reject accept IO Void
-server acceptException bindaddr k = bracket
+  :: SockAddr sockType -- Bind address
+  -> (Server ConnectionId Socket IO -> IO t)
+  -- ^ When this is called, the server is up and listening. When the callback
+  -- returns or dies exceptionally, the listening socket is closed.
+  -> IO t
+server bindaddr k = bracket
     openSocket
     closeSocket
-    (acceptLoop acceptException k bindaddr)
+    (\sock -> k (acceptOne bindaddr sock))
   where
   openSocket = bracket createSocket closeSocket $ \sock -> do
     when isInet $ do
@@ -61,38 +64,45 @@ server acceptException bindaddr k = bracket
     SockAddrIPv6 _ _ _ _ -> (True,  True,  Socket.AF_INET6)
     SockAddrUnix _       -> (False, False, Socket.AF_UNIX)
 
-acceptLoop
-  :: (IOException -> IO ()) -- ^ Exception on `Socket.accept`.
-  -> (ConnectionId -> Socket -> IO () -> IO (Decision Incoming reject acceptn))
-  -> SockAddr sockType -- Bind address; needed to construct ConnectionId
-  -> Socket
-  -> IO x
-acceptLoop acceptException k bindaddr socket =
-  forever (acceptOne acceptException k bindaddr socket)
-
--- | Accepts one connection and includes it in the `Connections` term.
+-- | Accepts one connection and include it, according to the parameter given
+-- (see the `Server` type synonym).
+-- Any exceptions thrown by accept will be re-thrown here, so be sure to
+-- handle them.
 acceptOne
-  :: (IOException -> IO ()) -- ^ Exception on `Socket.accept`.
-  -> (ConnectionId -> Socket -> IO () -> IO (Decision Incoming reject accept))
-  -> SockAddr sockType -- Bind address; needed to construct ConnectionId
+  :: SockAddr sockType -- Bind address; needed to construct ConnectionId
   -> Socket
-  -> IO ()
-acceptOne acceptException k bindaddr socket = mask $ \restore -> do
-  acceptResult <- try (restore (Socket.accept socket))
-  case acceptResult :: Either IOException (Socket, Socket.SockAddr) of
-    Left ex -> restore (acceptException ex)
-    Right (sock, addr) -> case matchSockType bindaddr addr of
-      Nothing -> error "mismatched socket address types"
-      Just peeraddr -> do
-        let connId = makeConnectionId bindaddr peeraddr
-        -- Including the connection could fail exceptionally, in which case we
-        -- are still responsible for closing the socket.
-        includeResult <- restore (k connId sock (Socket.close sock))
-                         `onException`
-                         Socket.close sock
-        -- If it was rejected, we're responsible for closing. Otherwise, there's
-        -- nothing to do now; the continuation `k` has taken responsibility for
-        -- that socket.
-        case includeResult of
-          Rejected _ -> restore (Socket.close sock)
-          Accepted _ -> pure ()
+  -> Server ConnectionId Socket IO
+acceptOne bindaddr socket = \includeConnection -> mask $ \restore -> do
+  (sock, addr) <- restore (Socket.accept socket)
+  case matchSockType bindaddr addr of
+    -- Should never happen.
+    Nothing -> error "mismatched socket address types"
+    Just peeraddr -> do
+      let connId = makeConnectionId bindaddr peeraddr
+      -- Including the connection could fail exceptionally, in which case we
+      -- are still responsible for closing the socket.
+      includeResult <- restore (includeConnection connId sock (Socket.close sock))
+                       `onException`
+                       Socket.close sock
+      -- If it was rejected, we're responsible for closing. Otherwise, there's
+      -- nothing to do now; the continuation `k` has taken responsibility for
+      -- that socket.
+      case includeResult of
+        Rejected _ -> restore (Socket.close sock)
+        Accepted _ -> pure ()
+      pure includeResult
+
+-- | A common pattern: accept in a loop, passing each connection through a
+-- Connections term, and handling exceptions without necessarily dying.
+-- The decision given by the Connections term is ignored.
+--
+-- Be prudent in choosing what to do in the exception handler.
+-- Async exceptions should be re-thrown.
+acceptLoop
+  :: ( Exception e )
+  => (e -> IO ())
+  -> Connections ConnectionId Socket accept reject IO
+  -> Server ConnectionId Socket IO
+  -> IO Void
+acceptLoop handleException connections accept = forever $
+  void (runServerWith connections accept) `catch` handleException

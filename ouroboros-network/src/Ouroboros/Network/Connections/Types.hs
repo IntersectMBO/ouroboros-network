@@ -52,20 +52,28 @@ data Resource provenance m r where
 data Connections id socket reject accept m = Connections
   { include :: forall provenance . id -> Resource provenance m socket -> m (Decision provenance reject accept) }
 
-type Client addr sock reject conn m t = (addr -> m sock -> (sock -> m ()) -> m (Decision Outgoing reject conn)) -> m t
+-- Client and Server types take any suitable Connections include callback,
+-- specialized to Outgoing or Incoming, and use it to get a decision, for any
+-- accept or reject type.
 
-type Server addr sock reject conn m t = (addr -> sock   -> m ()           -> m (Decision Incoming reject conn)) -> m t
+type Client addr sock m = forall accept reject .
+     (addr -> m sock -> (sock -> m ()) -> m (Decision Outgoing accept reject))
+  -> m (Decision Outgoing accept reject)
+
+type Server addr sock m = forall accept reject .
+     (addr -> sock -> m () -> m (Decision Incoming accept reject))
+  -> m (Decision Incoming accept reject)
 
 runClientWith
   :: Connections addr sock reject accept m
-  -> Client addr sock reject accept m t
-  -> m t
+  -> Client addr sock m
+  -> m (Decision Outgoing reject accept)
 runClientWith connections client = client $ \addr sopen sclose ->
   include connections addr (New sopen sclose)
 
 runServerWith
   :: Connections addr sock reject accept m
-  -> Server addr sock reject accept m t
-  -> m t
+  -> Server addr sock m
+  -> m (Decision Incoming reject accept)
 runServerWith connections server = server $ \addr s sclose ->
   include connections addr (Existing s sclose)
