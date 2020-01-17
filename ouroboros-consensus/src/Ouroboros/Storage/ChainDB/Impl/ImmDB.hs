@@ -21,6 +21,7 @@ module Ouroboros.Storage.ChainDB.Impl.ImmDB (
   , getBlockOrHeaderWithPoint
   , getDeserialisableBlockOrHeaderWithPoint
   , getBlockOrHeaderAtTip
+  , getTipInfo
   , getPointAtTip
   , getSlotNoAtTip
   , getKnownBlockOrHeader
@@ -382,20 +383,26 @@ getBlockOrHeaderAtTip db blockOrHeader = do
       Tip (ImmDB.Block slotNo) ->
         Just <$> getKnownBlockOrHeader db blockOrHeader (Right slotNo)
 
+getTipInfo :: forall m blk.
+              (MonadCatch m, HasCallStack)
+           => ImmDB m blk -> m (WithOrigin (SlotNo, HeaderHash blk, IsEBB))
+getTipInfo db = do
+    immTip <- withDB db $ \imm -> ImmDB.getTip imm
+    case immTip of
+      TipGen -> return Origin
+      Tip (WithHash hash (ImmDB.EBB epochNo)) ->
+        At . (, hash, IsEBB) <$> epochInfoFirst epochNo
+      Tip (WithHash hash (ImmDB.Block slotNo)) ->
+        return $ At (slotNo, hash, IsNotEBB)
+  where
+    EpochInfo{..} = epochInfo db
+
 getPointAtTip :: forall m blk.
                  (MonadCatch m, HasCallStack)
               => ImmDB m blk -> m (Point blk)
-getPointAtTip db = do
-    immTip <- withDB db $ \imm -> ImmDB.getTip imm
-    case immTip of
-      TipGen ->
-        return GenesisPoint
-      Tip (WithHash hash (ImmDB.EBB epochNo)) ->
-        (`BlockPoint` hash) <$> epochInfoFirst epochNo
-      Tip (WithHash hash (ImmDB.Block slotNo)) ->
-        return (BlockPoint slotNo hash)
-  where
-    EpochInfo{..} = epochInfo db
+getPointAtTip db = getTipInfo db <&> \case
+    Origin             -> GenesisPoint
+    At (slot, hash, _) -> BlockPoint slot hash
 
 getSlotNoAtTip :: MonadCatch m => ImmDB m blk -> m (WithOrigin SlotNo)
 getSlotNoAtTip db = pointSlot <$> getPointAtTip db

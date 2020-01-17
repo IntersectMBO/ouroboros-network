@@ -33,10 +33,10 @@ import           GHC.Stack (HasCallStack)
 import           Control.Monad.Class.MonadThrow
 import           Control.Tracer
 
-import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block (pattern BlockPoint,
                      pattern GenesisPoint, HasHeader, HeaderHash, Point,
-                     StandardHash, atSlot, castPoint, withHash)
+                     SlotNo, StandardHash, atSlot, withHash)
+import           Ouroboros.Network.Point (WithOrigin (..))
 
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
@@ -202,21 +202,16 @@ streamBlocks h registry from to = getEnv h $ \cdb ->
 data IteratorEnv m blk = IteratorEnv
   { itImmDB          :: ImmDB m blk
   , itVolDB          :: VolDB m blk
-  , itGetImmDBTip    :: m (Point blk)
-    -- ^ This should preferably be cheap.
   , itIterators      :: StrictTVar m (Map IteratorId (m ()))
   , itNextIteratorId :: StrictTVar m IteratorId
   , itTracer         :: Tracer m (TraceIteratorEvent blk)
   }
 
 -- | Obtain an 'IteratorEnv' from a 'ChainDbEnv'.
-fromChainDbEnv :: IOLike m => ChainDbEnv m blk -> IteratorEnv m blk
+fromChainDbEnv :: ChainDbEnv m blk -> IteratorEnv m blk
 fromChainDbEnv CDB{..} = IteratorEnv
   { itImmDB          = cdbImmDB
   , itVolDB          = cdbVolDB
-    -- See the invariant of 'cdbChain'.
-  , itGetImmDBTip    = castPoint . AF.anchorPoint <$>
-                       atomically (readTVar cdbChain)
   , itIterators      = cdbIterators
   , itNextIteratorId = cdbNextIteratorId
   , itTracer         = contramap TraceIteratorEvent cdbTracer
@@ -260,9 +255,9 @@ newIterator itEnv@IteratorEnv{..} getItEnv registry from to = do
     -- VolatileDB (in the other cases).
     start :: HasCallStack
           => ExceptT (UnknownRange blk) m (DeserialisableIterator m blk)
-    start = lift itGetImmDBTip >>= \case
-      GenesisPoint -> findPathInVolDB
-      BlockPoint { atSlot = tipSlot, withHash = tipHash } ->
+    start = lift (ImmDB.getTipInfo itImmDB) >>= \case
+      Origin                          -> findPathInVolDB
+      At (tipSlot, tipHash, _tipIsEBB) ->
         case atSlot endPoint `compare` tipSlot of
           -- The end point is < the tip of the ImmutableDB
           LT -> streamFromImmDB
@@ -322,7 +317,7 @@ newIterator itEnv@IteratorEnv{..} getItEnv registry from to = do
                    -> ExceptT (UnknownRange blk) m (DeserialisableIterator m blk)
     streamFromBoth predHash hashes = do
         lift $ trace $ StreamFromBoth from to hashes
-        lift itGetImmDBTip >>= \case
+        lift (toPoint <$> ImmDB.getTipInfo itImmDB) >>= \case
           -- The ImmutableDB is empty
           GenesisPoint -> throwError $ ForkTooOld from
           -- The incomplete path fits onto the tip of the ImmutableDB.
@@ -364,6 +359,10 @@ newIterator itEnv@IteratorEnv{..} getItEnv registry from to = do
           immIt <- ExceptT $
             ImmDB.stream itImmDB registry Block from (StreamToInclusive immTip)
           lift $ createIterator $ InImmDB from immIt immEnd
+
+        toPoint :: WithOrigin (SlotNo, HeaderHash blk, IsEBB) -> Point blk
+        toPoint Origin                    = GenesisPoint
+        toPoint (At (slot, hash, _isEBB)) = BlockPoint slot hash
 
     makeIterator :: Bool  -- ^ Register the iterator in 'cdbIterators'?
                  -> IteratorState m blk
