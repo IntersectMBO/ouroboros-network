@@ -55,10 +55,11 @@ library
                        Ouroboros.Network.ChainFragment
                        Ouroboros.Network.Channel
                        Ouroboros.Network.Connections.Concurrent
-                       Ouroboros.Network.Connections.Types
                        Ouroboros.Network.Connections.Socket.Client
                        Ouroboros.Network.Connections.Socket.Server
                        Ouroboros.Network.Connections.Socket.Types
+                       Ouroboros.Network.Connections.Types
+                       Ouroboros.Network.Connections.Util
                        Ouroboros.Network.DeltaQ
                        Ouroboros.Network.Magic
                        Ouroboros.Network.ErrorPolicy

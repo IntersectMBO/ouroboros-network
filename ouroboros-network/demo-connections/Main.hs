@@ -13,10 +13,13 @@ import qualified Network.Socket as Socket
 import System.Environment (getArgs)
 
 import Ouroboros.Network.Connections.Types
+import Ouroboros.Network.Connections.Util (forContinuations)
 import Ouroboros.Network.Connections.Concurrent
 import Ouroboros.Network.Connections.Socket.Types
 import qualified Ouroboros.Network.Connections.Socket.Client as Client
 import qualified Ouroboros.Network.Connections.Socket.Server as Server
+
+import System.IO.Error (isAlreadyExistsError, isAlreadyInUseError, ioeGetErrorType)
 
 -- Demo of the Connections system over sockets.
 --
@@ -47,7 +50,7 @@ data Node = forall sockType . Node
 
 -- | When the continuation goes, there is a socket listening.
 node :: Some SockAddr -> (Node -> IO t) -> IO t
-node (Some bindAddr) k = Server.server bindAddr $ \server -> do
+node addr@(Some bindAddr) k = Server.server addr $ \server -> do
   let client = Client.client bindAddr
   k (Node bindAddr server client)
 
@@ -90,21 +93,12 @@ nodeAction addrs (Node address server client) = concurrent withConnection $ \con
       , " : "
       , show address
       , " : "
+      , show (ioeGetErrorType e)
+      , " : "
       , show e
       , "\n"
       ]
     throwIO e
-
--- forM but in continuation passing style.
---
---   Cont t = forall r . (t -> IO r) -> IO r
---
---   forK :: [i] -> (i -> Cont t) -> Cont [t]
-forK :: [i] -> (i -> ((n -> IO r) -> IO r)) -> ([n] -> IO r) -> IO r
-forK is mk k = go [] is mk k
-  where
-  go acc []     mk k = k (reverse acc)
-  go acc (i:is) mk k = mk i $ \n -> go (n : acc) is mk k
 
 main :: IO ()
 main = do
@@ -128,6 +122,6 @@ main = do
   -- For each address, create servers and clients and package them up into
   -- `Node`s. Once the continuation is called, every node's server will be
   -- listening (but accept loops not running).
-  forK addrs node $ \nodes ->
+  forContinuations addrs node $ \nodes ->
     forConcurrently_ nodes (nodeAction addrs)
   return ()

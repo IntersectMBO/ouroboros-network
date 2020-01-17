@@ -6,6 +6,7 @@
 module Ouroboros.Network.Connections.Socket.Server
   ( server
   , acceptLoop
+  , acceptLoopOn
   ) where
 
 import Control.Exception (Exception, bracket, catch, mask, onException)
@@ -15,7 +16,7 @@ import Network.Socket (Socket)
 import qualified Network.Socket as Socket
 
 import Ouroboros.Network.Connections.Socket.Types (ConnectionId, SockAddr (..),
-         makeConnectionId, matchSockType, forgetSockType)
+         Some (..), makeConnectionId, matchSockType, forgetSockType)
 import Ouroboros.Network.Connections.Types
 
 -- | Creates a socket of a given family, bound to a given address, and gives
@@ -26,15 +27,15 @@ import Ouroboros.Network.Connections.Types
 -- accepting connections, and throwing away the decisions returned by the
 -- `Connections` term.
 server
-  :: SockAddr sockType -- Bind address
+  :: Some SockAddr -- Bind address
   -> (Server ConnectionId Socket IO -> IO t)
   -- ^ When this is called, the server is up and listening. When the callback
   -- returns or dies exceptionally, the listening socket is closed.
   -> IO t
-server bindaddr k = bracket
+server addr@(Some bindaddr) k = bracket
     openSocket
     closeSocket
-    (\sock -> k (acceptOne bindaddr sock))
+    (\sock -> k (acceptOne addr sock))
   where
 
   openSocket :: IO Socket
@@ -76,14 +77,17 @@ server bindaddr k = bracket
 -- Any exceptions thrown by accept will be re-thrown here, so be sure to
 -- handle them.
 acceptOne
-  :: SockAddr sockType -- Bind address; needed to construct ConnectionId
+  :: Some SockAddr -- Bind address; needed to construct ConnectionId
   -> Socket
   -> Server ConnectionId Socket IO
-acceptOne bindaddr socket = \includeConnection -> mask $ \restore -> do
+acceptOne (Some bindaddr) socket = \includeConnection -> mask $ \restore -> do
   (sock, addr) <- restore (Socket.accept socket)
   case matchSockType bindaddr addr of
     -- Should never happen.
     Nothing -> error "mismatched socket address types"
+    -- In this case, matchSockType has shown us that bindaddr and peeraddr
+    -- have the same sockType parameter, so we can make a connection ID for
+    -- the pair.
     Just peeraddr -> do
       let connId = makeConnectionId bindaddr peeraddr
       -- Including the connection could fail exceptionally, in which case we
@@ -113,3 +117,33 @@ acceptLoop
   -> IO Void
 acceptLoop handleException connections accept = forever $
   void (runServerWith connections accept) `catch` handleException
+
+-- | A convenient (and hopefully user-friendly) way to bring up a server and run
+-- an accept loop on it. It creates a socket at the given address and runs an
+-- accept loop with a given `Connections` term.
+--
+-- Here's an example of running concurrent IPv4 and IPv6 servers on a common
+-- connection manager:
+--
+-- @
+--   runServers connections = do
+--     (sockAddr4, sockAddr6) <- resolveSocketAddresses
+--     (void1, void2) <- Async.concurrently
+--       (acceptLoopOn sockAddr4 handleException connections)
+--       (acceptLoopOn sockAddr6 handleException connections)
+--     absurd void1
+--     where
+--     handleException :: IOException -> IO ()
+--     handleException _ = pure ()
+-- @
+acceptLoopOn
+  :: ( Exception e )
+  => Some SockAddr
+  -> (e -> IO ()) -- ^ Exception handling. Should not squelch async exceptions.
+                  -- Probably should recover from IOExceptions such as no more
+                  -- file descriptors. Re-throwing will bring the server accept
+                  -- loop down.
+  -> Connections ConnectionId Socket accept reject IO
+  -> IO Void
+acceptLoopOn bindAddr handleException connections = server bindAddr $ \serv ->
+  acceptLoop handleException connections serv
