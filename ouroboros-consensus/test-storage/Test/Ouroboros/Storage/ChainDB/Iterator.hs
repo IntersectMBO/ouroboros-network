@@ -2,6 +2,7 @@
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# OPTIONS_GHC -Wno-name-shadowing #-}
 module Test.Ouroboros.Storage.ChainDB.Iterator
   ( tests
   ) where
@@ -33,9 +34,8 @@ import           Ouroboros.Consensus.Util.ResourceRegistry
 
 import           Ouroboros.Storage.ChainDB.API (Iterator (..), IteratorId (..),
                      IteratorResult (..), StreamFrom (..), StreamTo (..),
-                     UnknownRange, deserialiseIterator)
-import           Ouroboros.Storage.ChainDB.Impl.ImmDB (ImmDB, getPointAtTip,
-                     mkImmDB)
+                     UnknownRange (..), deserialiseIterator)
+import           Ouroboros.Storage.ChainDB.Impl.ImmDB (ImmDB, mkImmDB)
 import           Ouroboros.Storage.ChainDB.Impl.Iterator (IteratorEnv (..),
                      newIterator)
 import           Ouroboros.Storage.ChainDB.Impl.Types (TraceIteratorEvent (..))
@@ -61,6 +61,12 @@ tests :: TestTree
 tests = testGroup "Iterator"
     [ testProperty "#773 bug in example 1"  prop_773_bug
     , testProperty "#773 correct example 2" prop_773_working
+    , testProperty "#1445 case 1" prop_1435_case1
+    , testProperty "#1445 case 2" prop_1435_case2
+    , testProperty "#1445 case 3" prop_1435_case3
+    , testProperty "#1445 case 4" prop_1435_case4
+    , testProperty "#1445 case 5" prop_1435_case5
+    , testProperty "#1445 case 6" prop_1435_case6
     ]
 
 -- These tests focus on the implementation of the ChainDB iterators, which are
@@ -141,6 +147,122 @@ prop_773_working = prop_general_test
     (StreamFromInclusive (blockPoint a))
     (StreamToInclusive   (blockPoint e))
     (Right (map Right [a, b, c, d, e]))
+
+-- | Requested stream = B' -> B' where EBB, B, and B' are all blocks in the
+-- same slot, and B' is not part of the current chain nor ChainDB.
+--
+--         ImmDB      VolDB
+-- Hash  EBB -> B
+--
+prop_1435_case1 :: Property
+prop_1435_case1 = prop_general_test
+    TestSetup
+      { immutable = Chain.fromOldestFirst [ebb, b]
+      , volatile  = []
+      }
+    (StreamFromInclusive (blockPoint b'))
+    (StreamToInclusive   (blockPoint b'))
+    (Left (ForkTooOld (StreamFromInclusive (blockPoint b'))))
+  where
+    ebb = firstEBB          TestBody { tbForkNo = 0, tbIsValid = True }
+    b   = mkNextBlock ebb 0 TestBody { tbForkNo = 0, tbIsValid = True }
+    b'  = mkNextBlock ebb 0 TestBody { tbForkNo = 1, tbIsValid = True }
+
+-- | Requested stream = EBB' -> EBB' where EBB, B, and EBB' are all blocks in
+-- the same slot, and EBB' is not part of the current chain nor ChainDB.
+--
+--         ImmDB      VolDB
+-- Hash  EBB -> B
+--
+prop_1435_case2 :: Property
+prop_1435_case2 = prop_general_test
+    TestSetup
+      { immutable = Chain.fromOldestFirst [ebb, b]
+      , volatile  = []
+      }
+    (StreamFromInclusive (blockPoint ebb'))
+    (StreamToInclusive   (blockPoint ebb'))
+    (Left (ForkTooOld (StreamFromInclusive (blockPoint ebb'))))
+  where
+    ebb  = firstEBB          TestBody { tbForkNo = 0, tbIsValid = True }
+    b    = mkNextBlock ebb 0 TestBody { tbForkNo = 0, tbIsValid = True }
+    ebb' = firstEBB          TestBody { tbForkNo = 1, tbIsValid = True }
+
+-- | Requested stream = EBB -> EBB where EBB and B are all blocks in the same
+-- slot.
+--
+--         ImmDB      VolDB
+-- Hash  EBB -> B
+--
+prop_1435_case3 :: Property
+prop_1435_case3 = prop_general_test
+    TestSetup
+      { immutable = Chain.fromOldestFirst [ebb, b]
+      , volatile  = []
+      }
+    (StreamFromInclusive (blockPoint ebb))
+    (StreamToInclusive   (blockPoint ebb))
+    (Right (map Right [ebb]))
+  where
+    ebb  = firstEBB          TestBody { tbForkNo = 0, tbIsValid = True }
+    b    = mkNextBlock ebb 0 TestBody { tbForkNo = 0, tbIsValid = True }
+
+-- | Requested stream = EBB -> EBB where EBB and B are all blocks in the same
+-- slot.
+--
+--         ImmDB      VolDB
+-- Hash     EBB         B
+--
+prop_1435_case4 :: Property
+prop_1435_case4 = prop_general_test
+    TestSetup
+      { immutable = Chain.fromOldestFirst [ebb]
+      , volatile  = [b]
+      }
+    (StreamFromInclusive (blockPoint ebb))
+    (StreamToInclusive   (blockPoint ebb))
+    (Right (map Right [ebb]))
+  where
+    ebb  = firstEBB          TestBody { tbForkNo = 0, tbIsValid = True }
+    b    = mkNextBlock ebb 0 TestBody { tbForkNo = 0, tbIsValid = True }
+
+-- | Requested stream = EBB -> EBB where EBB and B' are all blocks in the same
+-- slot, and B' is not part of the current chain nor ChainDB.
+--
+--         ImmDB      VolDB
+-- Hash     EBB
+--
+prop_1435_case5 :: Property
+prop_1435_case5 = prop_general_test
+    TestSetup
+      { immutable = Chain.fromOldestFirst [ebb]
+      , volatile  = []
+      }
+    (StreamFromInclusive (blockPoint b'))
+    (StreamToInclusive   (blockPoint b'))
+    (Left (ForkTooOld (StreamFromInclusive (blockPoint b'))))
+  where
+    ebb  = firstEBB          TestBody { tbForkNo = 0, tbIsValid = True }
+    b'   = mkNextBlock ebb 0 TestBody { tbForkNo = 1, tbIsValid = True }
+
+-- | Requested stream = EBB' -> EBB' where EBB and EBB' are all blocks in the
+-- same slot, and EBB' is not part of the current chain nor ChainDB.
+--
+--         ImmDB      VolDB
+-- Hash     EBB
+--
+prop_1435_case6 :: Property
+prop_1435_case6 = prop_general_test
+    TestSetup
+      { immutable = Chain.fromOldestFirst [ebb]
+      , volatile  = []
+      }
+    (StreamFromInclusive (blockPoint ebb'))
+    (StreamToInclusive   (blockPoint ebb'))
+    (Left (ForkTooOld (StreamFromInclusive (blockPoint ebb'))))
+  where
+    ebb  = firstEBB TestBody { tbForkNo = 0, tbIsValid = True }
+    ebb' = firstEBB TestBody { tbForkNo = 1, tbIsValid = True }
 
 -- | The general property test
 prop_general_test
@@ -256,7 +378,6 @@ initIteratorEnv TestSetup { immutable, volatile } tracer = do
     return IteratorEnv
       { itImmDB          = immDB
       , itVolDB          = volDB
-      , itGetImmDBTip    = getPointAtTip immDB
       , itIterators      = iters
       , itNextIteratorId = nextIterId
       , itTracer         = tracer

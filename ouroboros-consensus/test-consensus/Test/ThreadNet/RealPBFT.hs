@@ -146,6 +146,24 @@ tests = testGroup "RealPBFT" $
             , slotLengths  = defaultSlotLengths
             , initSeed     = Seed {getSeed = (17927476716858194849,11935807562313832971,15925564353519845641,3835030747036900598,2802397826914039548)}
             }
+    , testProperty "BlockFetch live lock due to an EBB at the ImmutableDB tip, Issue #1435" $
+          once $
+          let ncn = NumCoreNodes 4 in
+          -- c0's ImmDB is T > U > V. Note that U is an EBB and U and V are
+          -- both in slot 50. When its BlockFetchServer tries to stream T and
+          -- U using a ChainDB.Iterator, instead of looking in the
+          -- ImmutableDB, we end up looking in the VolatileDB and incorrectly
+          -- return ForkTooOld. The client keeps on requesting this block
+          -- range, resulting in a live lock.
+          prop_simple_real_pbft_convergence ProduceEBBs (SecurityParam 5) TestConfig
+            { numCoreNodes = ncn
+            , numSlots     = NumSlots 58
+            , nodeJoinPlan = NodeJoinPlan $ Map.fromList [(CoreNodeId 0,SlotNo 3),(CoreNodeId 1,SlotNo 3),(CoreNodeId 2,SlotNo 5),(CoreNodeId 3,SlotNo 57)]
+            , nodeRestarts = noRestarts
+            , nodeTopology = meshNodeTopology ncn
+            , slotLengths  = defaultSlotLengths
+            , initSeed     = Seed (11044330969750026700,14522662956180538128,9026549867550077426,3049168255170604478,643621447671665184)
+            }
     , -- RealPBFT runs are slow, so do 10x less of this narrow test
       adjustOption (\(QuickCheckTests i) -> QuickCheckTests $ max 1 $ i `div` 10) $
       testProperty "re-delegation via NodeRekey" $ \seed w ->

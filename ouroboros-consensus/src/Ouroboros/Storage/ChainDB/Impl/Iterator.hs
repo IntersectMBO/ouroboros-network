@@ -18,8 +18,8 @@ module Ouroboros.Storage.ChainDB.Impl.Iterator
   ) where
 
 import           Control.Monad (unless, when)
-import           Control.Monad.Except (ExceptT (..), lift, runExceptT,
-                     throwError)
+import           Control.Monad.Except (ExceptT (..), catchError, lift,
+                     runExceptT, throwError)
 import           Data.Functor (($>))
 import           Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
@@ -38,6 +38,7 @@ import           Ouroboros.Network.Block (pattern BlockPoint,
                      SlotNo, StandardHash, atSlot, withHash)
 import           Ouroboros.Network.Point (WithOrigin (..))
 
+import           Ouroboros.Consensus.Block (IsEBB (..))
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
 
@@ -257,24 +258,69 @@ newIterator itEnv@IteratorEnv{..} getItEnv registry from to = do
           => ExceptT (UnknownRange blk) m (DeserialisableIterator m blk)
     start = lift (ImmDB.getTipInfo itImmDB) >>= \case
       Origin                          -> findPathInVolDB
-      At (tipSlot, tipHash, _tipIsEBB) ->
+      At (tipSlot, tipHash, tipIsEBB) ->
         case atSlot endPoint `compare` tipSlot of
           -- The end point is < the tip of the ImmutableDB
           LT -> streamFromImmDB
+
           EQ | withHash endPoint == tipHash
                 -- The end point == the tip of the ImmutableDB
              -> streamFromImmDB
-             | otherwise
-                -- The end point /= the tip of the ImmutableDB. Either the
-                -- fork is too old, or the end point (or the tip of the
-                -- ImmutableDB) is an EBB. For example, the tip of the
-                -- ImmutableDB is an EBB and the end point is the regular
-                -- block after it.
+
+             -- The end point /= the tip of the ImmutableDB.
+             --
+             -- The end point can be a regular block or EBB. So can the tip of
+             -- the ImmutableDB. We distinguish the following for cases where
+             -- each block and EBB has the same slot number, and a block or
+             -- EBB /not/ on the current chain is indicated with a '.
+             --
+             -- 1. ImmutableDB: .. :> EBB :> B
+             --    end point: B'
+             --    desired outcome: ForkTooOld
+             --
+             -- 2. ImmutableDB: .. :> EBB :> B
+             --    end point: EBB'
+             --    desired outcome: ForkTooOld
+             --
+             -- 3. ImmutableDB: .. :> EBB :> B
+             --    end point: EBB
+             --    desired outcome: stream from ImmutableDB
+             --
+             -- 4. ImmutableDB: .. :> EBB
+             --    end point: B
+             --    desired outcome: find path in the VolatileDB
+             --
+             -- 5. ImmutableDB: .. :> EBB
+             --    end point: B'
+             --    desired outcome: ForkTooOld
+             --
+             -- 6. ImmutableDB: .. :> EBB
+             --    end point: EBB'
+             --    desired outcome: ForkTooOld
+             --
+             -- We don't know upfront whether the given end point refers to a
+             -- block or EBB nor whether it is part of the current chain or
+             -- not. This means we don't know yet with which case we are
+             -- dealing. The only thing we know for sure, is whether the
+             -- ImmutableDB tip ends with a regular block (1-3) or an EBB
+             -- (4-6).
+
+             | IsNotEBB <- tipIsEBB  -- Cases 1-3
+             -> streamFromImmDB `catchError`
+                -- We also use 'streamFromImmDB' to check whether the block or
+                -- EBB is in the ImmutableDB. If that's not the case,
+                -- 'streamFromImmDB' will return 'MissingBlock'. Instead of
+                -- returning that, we should return 'ForkTooOld', which is
+                -- more correct.
+                const (throwError $ ForkTooOld from)
+             | otherwise  -- Cases 4-6
              -> findPathInVolDB
+
           -- The end point is > the tip of the ImmutableDB
           GT -> findPathInVolDB
 
-    -- | PRECONDITION: the upper bound > the tip of the ImmutableDB
+    -- | PRECONDITION: the upper bound >= the tip of the ImmutableDB.
+    -- Greater or /equal/, because of EBBs :(
     findPathInVolDB :: HasCallStack
                     => ExceptT (UnknownRange blk) m (DeserialisableIterator m blk)
     findPathInVolDB = do
