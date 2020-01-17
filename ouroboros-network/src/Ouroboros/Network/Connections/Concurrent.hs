@@ -6,7 +6,8 @@
 {-# LANGUAGE GADTs #-}
 
 module Ouroboros.Network.Connections.Concurrent
-  ( Handler (..)
+  ( Decision (..)
+  , Handler (..)
   , concurrent
   ) where
 
@@ -18,7 +19,8 @@ import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import Data.Word (Word32)
 
-import Ouroboros.Network.Connections.Types
+import Ouroboros.Network.Connections.Types hiding (Decision (..))
+import qualified Ouroboros.Network.Connections.Types as Types
 
 data Reject reason (p :: Provenance) where
   -- | A remote connection may be rejected if there is already a connection
@@ -37,7 +39,15 @@ data Reject reason (p :: Provenance) where
   -- | Rejected according to the domain-specific handler routine.
   DomainSpecific :: reason -> Reject reason any
 
-data Accept handle (p :: Provenance) = Accept handle
+data Accept handle (p :: Provenance) = Accepted handle
+
+-- | Returned by the definition continuation of a `concurrent` `Connections`,
+-- this determines whether a connection is accepted or rejected.
+-- If it's accepted, a `Handler` must be constructed, with the `Async` of
+-- its own action in scope (use it only lazily).
+data Decision reason handle where
+  Reject :: reason -> Decision reason handle
+  Accept :: (Async () -> IO (Handler handle)) -> Decision reason handle
 
 -- | An action to run for each connection, and a handle giving an interface
 -- to that action, probably using STM for synchronization.
@@ -122,7 +132,7 @@ removeConnection identifier state =
 concurrent
   :: forall connectionId resource handle reason t .
      ( Ord connectionId )
-  => (Provenance -> connectionId -> resource -> IO (Either reason (Handler handle)))
+  => (Provenance -> connectionId -> resource -> IO (Decision reason handle))
   -- ^ A callback to run for each connection. The `handle` gives an interface
   -- to that connection, allowing for inspection and control etc. of whatever
   -- it's doing.
@@ -144,11 +154,14 @@ concurrent withResource k = do
 
   -- Exception handling in here should ensure that if the handler is succesfully
   -- created, then it ends up in the shared state.
+  --
+  -- FIXME this one definition is too complex. Try to factor it into simpler
+  -- pieces.
   includeOne
     :: MVar (State connectionId handle)
     -> connectionId
     -> Resource provenance IO resource
-    -> IO (Decision provenance (Reject reason) (Accept handle))
+    -> IO (Types.Decision provenance (Reject reason) (Accept handle))
   includeOne stateVar connId resource = mask $ \restore -> modifyMVar stateVar $ \state ->
     case Map.lookup connId (connectionMap state) of
       Nothing   -> case resource of
@@ -159,8 +172,8 @@ concurrent withResource k = do
           -- the resource in case of exception.
           outcome <- restore (withResource Incoming connId res)
           case outcome of
-            Left reason -> pure (state, Rejected (DomainSpecific reason))
-            Right handler -> do
+            Reject reason -> pure (state, Types.Rejected (DomainSpecific reason))
+            Accept mkhandler -> do
               -- If there was no exception, we are now responsible for closing
               -- the resource. That's done in a finally after the handler's
               -- action.
@@ -169,6 +182,7 @@ concurrent withResource k = do
                         modifyMVar_ stateVar $ \state' ->
                           let !state'' = removeConnection connId state'
                           in  pure state''
+                  handler <- mkhandler thread
                   thread <- asyncWithUnmask $ \unmask ->
                     unmask (action handler) `finally` cleanup
               let conn = Connection
@@ -176,7 +190,7 @@ concurrent withResource k = do
                     , connectionHandle = handle handler
                     }
                   !state' = insertConnection connId conn state
-              pure (state', Accepted (Accept (connectionHandle conn)))
+              pure (state', Types.Accepted (Accepted (connectionHandle conn)))
         New acquire release -> do
           -- If acquiring the resource fails, we just re-throw the exception.
           -- Thus `include`ing a new resource is just like bracketing the
@@ -186,10 +200,10 @@ concurrent withResource k = do
                        `onException`
                        release res
           case outcome of
-            Left reason -> do
+            Reject reason -> do
               release res
-              pure (state, Rejected (DomainSpecific reason))
-            Right handler -> do
+              pure (state, Types.Rejected (DomainSpecific reason))
+            Accept mkhandler -> do
               -- Just like for existing connections, the resource will be closed
               -- when the handler's action finishes.
               rec let cleanup = do
@@ -197,6 +211,7 @@ concurrent withResource k = do
                         modifyMVar_ stateVar $ \state' ->
                           let !state'' = removeConnection connId state'
                           in  pure state''
+                  handler <- mkhandler thread
                   thread <- asyncWithUnmask $ \unmask ->
                     unmask (action handler) `finally` cleanup
               let conn = Connection
@@ -204,13 +219,13 @@ concurrent withResource k = do
                     , connectionHandle = handle handler
                     }
                   !state' = insertConnection connId conn state
-              pure (state', Accepted (Accept (connectionHandle conn)))
+              pure (state', Types.Accepted (Accepted (connectionHandle conn)))
       Just numConn -> case resource of
         -- Do not call _close; the caller is responsible for that, and knows
         -- it because we give `Rejected`.
-        Existing _resource _close   -> pure (state, Rejected Duplicate)
+        Existing _resource _close   -> pure (state, Types.Rejected Duplicate)
         -- Give a handle to the existing connection.
-        New      _acquire  _release -> pure (state, Accepted (Accept h))
+        New      _acquire  _release -> pure (state, Types.Accepted (Accepted h))
           where
           h = connectionHandle (connection numConn)
 

@@ -13,8 +13,8 @@ import qualified Network.Socket as Socket
 import System.Environment (getArgs)
 
 import Ouroboros.Network.Connections.Types
-import Ouroboros.Network.Connections.Util (forContinuations)
-import Ouroboros.Network.Connections.Concurrent
+import Ouroboros.Network.Connections.Util (forContinuation)
+import Ouroboros.Network.Connections.Concurrent as Connection
 import Ouroboros.Network.Connections.Socket.Types
 import qualified Ouroboros.Network.Connections.Socket.Client as Client
 import qualified Ouroboros.Network.Connections.Socket.Server as Server
@@ -57,10 +57,14 @@ node addr@(Some bindAddr) k = Server.server addr $ \server -> do
 -- | What a node does when a new connection comes up. It'll just print a
 -- debug trace (thread safe) and then wait for a very long time so that the
 -- connection does not close.
-withConnection :: Provenance -> ConnectionId -> Socket -> IO (Either () (Handler ()))
+withConnection
+  :: Provenance
+  -> ConnectionId
+  -> Socket
+  -> IO (Connection.Decision () ())
 withConnection provenance connId _socket = do
   Debug.traceM $ mconcat [show provenance, " : ", show connId]
-  pure $ Right (Handler () (threadDelay 1000000000))
+  pure $ Connection.Accept $ \_ -> pure (Handler () (threadDelay 1000000000))
 
 -- | For each node, we want to run its accept loop, and concurrently connect
 -- to every other address.
@@ -122,6 +126,6 @@ main = do
   -- For each address, create servers and clients and package them up into
   -- `Node`s. Once the continuation is called, every node's server will be
   -- listening (but accept loops not running).
-  forContinuations addrs node $ \nodes ->
+  forContinuation addrs node $ \nodes ->
     forConcurrently_ nodes (nodeAction addrs)
   return ()
