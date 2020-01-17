@@ -10,6 +10,7 @@ module Ouroboros.Network.Connections.Socket.Types
   , SockAddr (..)
   , ConnectionId (..)
   , makeConnectionId
+  , connectionIdPair
   , Some (..)
   , withSockType
   , matchSockType
@@ -34,6 +35,7 @@ data SockAddr (sockType :: SockType) where
                -> !Socket.HostAddress6
                -> !Socket.ScopeID
                -> SockAddr IPv6
+  -- No strictness here because the Network.Socket analogue is not strict.
   SockAddrUnix :: String -> SockAddr Unix
 
 instance Eq (SockAddr sockType) where
@@ -85,6 +87,14 @@ makeConnectionId a@(SockAddrIPv4 _ _) b@(SockAddrIPv4 _ _) =
   ConnectionIdIPv4 a b
 makeConnectionId a@(SockAddrUnix _) b@(SockAddrUnix _) =
   ConnectionIdUnix a b
+
+-- | Forget the family information of the addresses.
+-- First element is the local address, second is remote.
+connectionIdPair :: ConnectionId -> (Socket.SockAddr, Socket.SockAddr)
+connectionIdPair connId = case connId of
+  ConnectionIdIPv6 x y -> (forgetSockType x, forgetSockType y)
+  ConnectionIdIPv4 x y -> (forgetSockType x, forgetSockType y)
+  ConnectionIdUnix x y -> (forgetSockType x, forgetSockType y)
 
 data Some (ty :: l -> Type) where
   Some :: ty x -> Some ty
