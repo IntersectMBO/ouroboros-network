@@ -201,7 +201,7 @@ connectTo_V1 tracers versionData application =
 withServer
   :: ( HasResponder appType ~ True )
   => NetworkServerTracers NodeToClientProtocols NodeToClientVersion
-  -> NetworkMutableState
+  -> NetworkMutableState Socket.SockAddr
   -> Socket.AddrInfo
   -> Versions NodeToClientVersion DictVersion
               (OuroborosApplication appType (ConnectionId Socket.SockAddr) NodeToClientProtocols IO BL.ByteString a b)
@@ -224,7 +224,7 @@ withServer tracers networkState addr versions errPolicies =
 withServer_V1
   :: ( HasResponder appType ~ True )
   => NetworkServerTracers NodeToClientProtocols NodeToClientVersion
-  -> NetworkMutableState
+  -> NetworkMutableState Socket.SockAddr
   -> Socket.AddrInfo
   -> NodeToClientVersionData
   -- ^ Client version data sent during initial handshake protocol.  Client and
@@ -251,7 +251,7 @@ ncSubscriptionWorker
     :: forall appType x y.
        ( HasInitiator appType ~ True )
     => NetworkIPSubscriptionTracers Socket.SockAddr NodeToClientProtocols NodeToClientVersion
-    -> NetworkMutableState
+    -> NetworkMutableState Socket.SockAddr
     -> IPSubscriptionParams ()
     -> Versions
         NodeToClientVersion
@@ -289,7 +289,7 @@ ncSubscriptionWorker_V1
     :: forall appType x y.
        ( HasInitiator appType ~ True )
     => NetworkIPSubscriptionTracers Socket.SockAddr NodeToClientProtocols NodeToClientVersion
-    -> NetworkMutableState
+    -> NetworkMutableState Socket.SockAddr
     -> IPSubscriptionParams ()
     -> NodeToClientVersionData
     -> (OuroborosApplication

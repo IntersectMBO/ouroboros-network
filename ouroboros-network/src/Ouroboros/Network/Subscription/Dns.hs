@@ -223,7 +223,7 @@ dnsSubscriptionWorker'
     :: Tracer IO (WithDomainName (SubscriptionTrace Socket.SockAddr))
     -> Tracer IO (WithDomainName DnsTrace)
     -> Tracer IO (WithAddr Socket.SockAddr ErrorPolicyTrace)
-    -> NetworkMutableState
+    -> NetworkMutableState Socket.SockAddr
     -> Resolver IO
     -> DnsSubscriptionParams a
     -> Main IO (PeerStates IO Socket.SockAddr) x
@@ -260,7 +260,7 @@ dnsSubscriptionWorker
     :: Tracer IO (WithDomainName (SubscriptionTrace Socket.SockAddr))
     -> Tracer IO (WithDomainName DnsTrace)
     -> Tracer IO (WithAddr Socket.SockAddr ErrorPolicyTrace)
-    -> NetworkMutableState
+    -> NetworkMutableState Socket.SockAddr
     -> DnsSubscriptionParams a
     -> (Socket.Socket -> IO a)
     -> IO Void
