@@ -153,10 +153,10 @@ nodeToClientCodecCBORTerm = CodecCBORTerm {encodeTerm, decodeTerm}
 -- protocol.  This is mostly useful for future enhancements.
 --
 connectTo
-  :: NetworkConnectTracers NodeToClientProtocols NodeToClientVersion
+  :: NetworkConnectTracers Socket.SockAddr NodeToClientProtocols NodeToClientVersion
   -> Versions NodeToClientVersion
               DictVersion
-              (OuroborosApplication InitiatorApp ConnectionId NodeToClientProtocols IO BL.ByteString a b)
+              (OuroborosApplication InitiatorApp (ConnectionId Socket.SockAddr) NodeToClientProtocols IO BL.ByteString a b)
   -- ^ A dictionary of protocol versions & applications to run on an established
   -- connection.  The application to run will be chosen by initial handshake
   -- protocol (the highest shared version will be chosen).
@@ -171,11 +171,11 @@ connectTo = connectToNode cborTermVersionDataCodec
 -- the 'NodeToClientV_1' version of the protocol.
 --
 connectTo_V1
-  :: NetworkConnectTracers NodeToClientProtocols NodeToClientVersion
+  :: NetworkConnectTracers Socket.SockAddr NodeToClientProtocols NodeToClientVersion
   -> NodeToClientVersionData
   -- ^ Client version data sent during initial handshake protocol.  Client and
   -- server must agree on it.
-  -> (OuroborosApplication InitiatorApp ConnectionId NodeToClientProtocols IO BL.ByteString a b)
+  -> (OuroborosApplication InitiatorApp (ConnectionId Socket.SockAddr) NodeToClientProtocols IO BL.ByteString a b)
   -- ^ 'OuroborosInitiatorApplication' which is run on an established connection
   -- using a multiplexer after the initial handshake protocol suceeds.
   -> Maybe Socket.AddrInfo
@@ -204,7 +204,7 @@ withServer
   -> NetworkMutableState
   -> Socket.AddrInfo
   -> Versions NodeToClientVersion DictVersion
-              (OuroborosApplication appType ConnectionId NodeToClientProtocols IO BL.ByteString a b)
+              (OuroborosApplication appType (ConnectionId Socket.SockAddr) NodeToClientProtocols IO BL.ByteString a b)
   -> ErrorPolicies Socket.SockAddr ()
   -> IO Void
 withServer tracers networkState addr versions errPolicies =
@@ -229,7 +229,7 @@ withServer_V1
   -> NodeToClientVersionData
   -- ^ Client version data sent during initial handshake protocol.  Client and
   -- server must agree on it.
-  -> (OuroborosApplication appType ConnectionId NodeToClientProtocols IO BL.ByteString a b)
+  -> (OuroborosApplication appType (ConnectionId Socket.SockAddr) NodeToClientProtocols IO BL.ByteString a b)
   -- ^ applications which has the reponder side, i.e.
   -- 'OuroborosResponderApplication' or
   -- 'OuroborosInitiatorAndResponderApplication'.
@@ -250,7 +250,7 @@ withServer_V1 tracers networkState addr versionData application =
 ncSubscriptionWorker
     :: forall appType x y.
        ( HasInitiator appType ~ True )
-    => NetworkIPSubscriptionTracers NodeToClientProtocols NodeToClientVersion
+    => NetworkIPSubscriptionTracers Socket.SockAddr NodeToClientProtocols NodeToClientVersion
     -> NetworkMutableState
     -> IPSubscriptionParams ()
     -> Versions
@@ -258,7 +258,7 @@ ncSubscriptionWorker
         DictVersion
         (OuroborosApplication
           appType
-          ConnectionId
+          (ConnectionId Socket.SockAddr)
           NodeToClientProtocols
           IO BL.ByteString x y)
     -> IO Void
@@ -288,13 +288,13 @@ ncSubscriptionWorker
 ncSubscriptionWorker_V1
     :: forall appType x y.
        ( HasInitiator appType ~ True )
-    => NetworkIPSubscriptionTracers NodeToClientProtocols NodeToClientVersion
+    => NetworkIPSubscriptionTracers Socket.SockAddr NodeToClientProtocols NodeToClientVersion
     -> NetworkMutableState
     -> IPSubscriptionParams ()
     -> NodeToClientVersionData
     -> (OuroborosApplication
           appType
-          ConnectionId
+          (ConnectionId Socket.SockAddr)
           NodeToClientProtocols
           IO BL.ByteString x y)
     -> IO Void
