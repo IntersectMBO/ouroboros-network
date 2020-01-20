@@ -200,7 +200,7 @@ connectTo_V1 tracers versionData application =
 --
 withServer
   :: ( HasResponder appType ~ True )
-  => NetworkServerTracers NodeToClientProtocols NodeToClientVersion
+  => NetworkServerTracers Socket.SockAddr NodeToClientProtocols NodeToClientVersion
   -> NetworkMutableState Socket.SockAddr
   -> Socket.AddrInfo
   -> Versions NodeToClientVersion DictVersion
@@ -223,7 +223,7 @@ withServer tracers networkState addr versions errPolicies =
 --
 withServer_V1
   :: ( HasResponder appType ~ True )
-  => NetworkServerTracers NodeToClientProtocols NodeToClientVersion
+  => NetworkServerTracers Socket.SockAddr NodeToClientProtocols NodeToClientVersion
   -> NetworkMutableState Socket.SockAddr
   -> Socket.AddrInfo
   -> NodeToClientVersionData

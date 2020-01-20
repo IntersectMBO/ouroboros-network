@@ -369,21 +369,21 @@ fromSocket tblVar sd = Server.Socket
 
 -- | Tracers required by a server which handles inbound connections.
 --
-data NetworkServerTracers ptcl vNumber = NetworkServerTracers {
-      nstMuxTracer         :: Tracer IO (Mx.WithMuxBearer (ConnectionId Socket.SockAddr) Mx.MuxTrace),
+data NetworkServerTracers addr ptcl vNumber = NetworkServerTracers {
+      nstMuxTracer         :: Tracer IO (Mx.WithMuxBearer (ConnectionId addr) Mx.MuxTrace),
       -- ^ low level mux-network tracer, which logs mux sdu (send and received)
       -- and other low level multiplexing events.
-      nstHandshakeTracer   :: Tracer IO (Mx.WithMuxBearer (ConnectionId Socket.SockAddr)
+      nstHandshakeTracer   :: Tracer IO (Mx.WithMuxBearer (ConnectionId addr)
                                           (TraceSendRecv (Handshake vNumber CBOR.Term))),
       -- ^ handshake protocol tracer; it is important for analysing version
       -- negotation mismatches.
-      nstErrorPolicyTracer :: Tracer IO (WithAddr Socket.SockAddr ErrorPolicyTrace)
+      nstErrorPolicyTracer :: Tracer IO (WithAddr addr ErrorPolicyTrace)
       -- ^ error policy tracer; must not be 'nullTracer', otherwise all the
       -- exceptions which are not matched by any error policy will be caught
       -- and not logged or rethrown.
     }
 
-nullNetworkServerTracers :: NetworkServerTracers ptcl vNumber
+nullNetworkServerTracers :: NetworkServerTracers addr ptcl vNumber
 nullNetworkServerTracers = NetworkServerTracers {
       nstMuxTracer         = nullTracer,
       nstHandshakeTracer   = nullTracer,
@@ -435,7 +435,7 @@ runServerThread
        , Typeable vNumber
        , Show vNumber
        )
-    => NetworkServerTracers ptcl vNumber
+    => NetworkServerTracers Socket.SockAddr ptcl vNumber
     -> NetworkMutableState Socket.SockAddr
     -> Socket.Socket
     -> VersionDataCodec extra CBOR.Term
@@ -529,7 +529,7 @@ withServerNode
        , Typeable vNumber
        , Show vNumber
        )
-    => NetworkServerTracers ptcl vNumber
+    => NetworkServerTracers Socket.SockAddr ptcl vNumber
     -> NetworkMutableState Socket.SockAddr
     -> Socket.AddrInfo
     -> VersionDataCodec extra CBOR.Term
