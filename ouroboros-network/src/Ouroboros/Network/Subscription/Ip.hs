@@ -78,7 +78,7 @@ ipSubscriptionWorker
     :: forall a.
        Tracer IO (WithIPList (SubscriptionTrace Socket.SockAddr))
     -> Tracer IO (WithAddr Socket.SockAddr ErrorPolicyTrace)
-    -> NetworkMutableState
+    -> NetworkMutableState Socket.SockAddr
     -> IPSubscriptionParams a
     -> (Socket.Socket -> IO a)
     -> IO Void
@@ -175,7 +175,7 @@ mainTx PeerStates{}       = retry
 subscriptionWorker
     :: Tracer IO (SubscriptionTrace Socket.SockAddr)
     -> Tracer IO (WithAddr Socket.SockAddr ErrorPolicyTrace)
-    -> NetworkMutableState
+    -> NetworkMutableState Socket.SockAddr
     -> WorkerParams IO Socket.SockAddr
     -> ErrorPolicies Socket.SockAddr a
     -> Main IO (PeerStates IO Socket.SockAddr) x

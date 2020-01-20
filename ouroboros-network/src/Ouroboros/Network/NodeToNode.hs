@@ -226,7 +226,7 @@ connectTo_V1 tracers versionData application localAddr remoteAddr =
 withServer
   :: ( HasResponder appType ~ True)
   => NetworkServerTracers NodeToNodeProtocols NodeToNodeVersion
-  -> NetworkMutableState
+  -> NetworkMutableState Socket.SockAddr
   -> Socket.AddrInfo
   -> Versions NodeToNodeVersion DictVersion (OuroborosApplication appType (ConnectionId Socket.SockAddr) NodeToNodeProtocols IO BL.ByteString a b)
   -> ErrorPolicies Socket.SockAddr ()
@@ -248,7 +248,7 @@ withServer tracers networkState addr versions errPolicies =
 withServer_V1
   :: ( HasResponder appType ~ True )
   => NetworkServerTracers NodeToNodeProtocols NodeToNodeVersion
-  -> NetworkMutableState
+  -> NetworkMutableState Socket.SockAddr
   -> Socket.AddrInfo
   -> NodeToNodeVersionData
   -> (OuroborosApplication appType (ConnectionId Socket.SockAddr) NodeToNodeProtocols IO BL.ByteString x y)
@@ -271,7 +271,7 @@ ipSubscriptionWorker
     :: forall appType x y.
        ( HasInitiator appType ~ True )
     => NetworkIPSubscriptionTracers Socket.SockAddr NodeToNodeProtocols NodeToNodeVersion
-    -> NetworkMutableState
+    -> NetworkMutableState Socket.SockAddr
     -> IPSubscriptionParams ()
     -> Versions
         NodeToNodeVersion
@@ -309,7 +309,7 @@ ipSubscriptionWorker_V1
     :: forall appType x y.
        ( HasInitiator appType ~ True )
     => NetworkIPSubscriptionTracers Socket.SockAddr NodeToNodeProtocols NodeToNodeVersion
-    -> NetworkMutableState
+    -> NetworkMutableState Socket.SockAddr
     -> IPSubscriptionParams ()
     -> NodeToNodeVersionData
     -> (OuroborosApplication
@@ -342,7 +342,7 @@ dnsSubscriptionWorker
     :: forall appType x y.
        ( HasInitiator appType ~ True )
     => NetworkDNSSubscriptionTracers NodeToNodeProtocols NodeToNodeVersion (ConnectionId Socket.SockAddr)
-    -> NetworkMutableState
+    -> NetworkMutableState Socket.SockAddr
     -> DnsSubscriptionParams ()
     -> Versions
         NodeToNodeVersion
@@ -382,7 +382,7 @@ dnsSubscriptionWorker_V1
     :: forall appType x y.
        ( HasInitiator appType ~ True )
     => NetworkDNSSubscriptionTracers NodeToNodeProtocols NodeToNodeVersion (ConnectionId Socket.SockAddr)
-    -> NetworkMutableState
+    -> NetworkMutableState Socket.SockAddr
     -> DnsSubscriptionParams ()
     -> NodeToNodeVersionData
     -> (OuroborosApplication
