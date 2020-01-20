@@ -207,7 +207,7 @@ runDataDiffusion tracers
     remoteErrorPolicy = NodeToNode.remoteNetworkErrorPolicy <> daErrorPolicies
     localErrorPolicy  = NodeToNode.localNetworkErrorPolicy <> daErrorPolicies
 
-    runLocalServer :: NetworkMutableState -> IO Void
+    runLocalServer :: NetworkMutableState SockAddr -> IO Void
     runLocalServer networkLocalState =
       NodeToClient.withServer
         (NetworkServerTracers
@@ -219,7 +219,7 @@ runDataDiffusion tracers
         (daLocalResponderApplication applications)
         localErrorPolicy
 
-    runServer :: NetworkMutableState -> AddrInfo -> IO Void
+    runServer :: NetworkMutableState SockAddr -> AddrInfo -> IO Void
     runServer networkState address =
       NodeToNode.withServer
         (NetworkServerTracers
@@ -231,7 +231,7 @@ runDataDiffusion tracers
         (daResponderApplication applications)
         remoteErrorPolicy
 
-    runIpSubscriptionWorker :: NetworkMutableState -> IO Void
+    runIpSubscriptionWorker :: NetworkMutableState SockAddr -> IO Void
     runIpSubscriptionWorker networkState = NodeToNode.ipSubscriptionWorker
       (NetworkIPSubscriptionTracers
         dtMuxTracer
@@ -247,7 +247,7 @@ runDataDiffusion tracers
         }
       (daInitiatorApplication applications)
 
-    runDnsSubscriptionWorker :: NetworkMutableState -> DnsSubscriptionTarget -> IO Void
+    runDnsSubscriptionWorker :: NetworkMutableState SockAddr -> DnsSubscriptionTarget -> IO Void
     runDnsSubscriptionWorker networkState dnsProducer = NodeToNode.dnsSubscriptionWorker
       (NetworkDNSSubscriptionTracers
         dtMuxTracer

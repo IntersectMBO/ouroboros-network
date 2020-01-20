@@ -393,26 +393,26 @@ nullNetworkServerTracers = NetworkServerTracers {
 
 -- | Mutable state maintained by the network component.
 --
-data NetworkMutableState = NetworkMutableState {
-    nmsConnectionTable :: ConnectionTable IO Socket.SockAddr,
+data NetworkMutableState addr = NetworkMutableState {
+    nmsConnectionTable :: ConnectionTable IO addr,
     -- ^ 'ConnectionTable' which maintains information about current upstream and
     -- downstream connections.
-    nmsPeerStates      :: StrictTVar IO (PeerStates IO Socket.SockAddr)
+    nmsPeerStates      :: StrictTVar IO (PeerStates IO addr)
     -- ^ 'PeerStates' which maintains state of each downstream / upstream peer
     -- that errored, misbehaved or was not interesting to us.
   }
 
-newNetworkMutableStateSTM :: STM.STM NetworkMutableState
+newNetworkMutableStateSTM :: STM.STM (NetworkMutableState addr)
 newNetworkMutableStateSTM =
     NetworkMutableState <$> newConnectionTableSTM
                         <*> newPeerStatesVarSTM
 
-newNetworkMutableState :: IO NetworkMutableState
+newNetworkMutableState :: IO (NetworkMutableState addr)
 newNetworkMutableState = atomically newNetworkMutableStateSTM
 
 -- | Clean 'PeerStates' within 'NetworkMutableState' every 200s
 --
-cleanNetworkMutableState :: NetworkMutableState
+cleanNetworkMutableState :: NetworkMutableState addr
                          -> IO ()
 cleanNetworkMutableState NetworkMutableState {nmsPeerStates} =
     cleanPeerStates 200 nmsPeerStates
@@ -436,7 +436,7 @@ runServerThread
        , Show vNumber
        )
     => NetworkServerTracers ptcl vNumber
-    -> NetworkMutableState
+    -> NetworkMutableState Socket.SockAddr
     -> Socket.Socket
     -> VersionDataCodec extra CBOR.Term
     -> (forall vData. extra vData -> vData -> vData -> Accept)
@@ -530,7 +530,7 @@ withServerNode
        , Show vNumber
        )
     => NetworkServerTracers ptcl vNumber
-    -> NetworkMutableState
+    -> NetworkMutableState Socket.SockAddr
     -> Socket.AddrInfo
     -> VersionDataCodec extra CBOR.Term
     -> (forall vData. extra vData -> vData -> vData -> Accept)
