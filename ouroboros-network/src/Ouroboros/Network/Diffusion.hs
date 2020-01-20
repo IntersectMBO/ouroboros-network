@@ -59,14 +59,14 @@ data DiffusionTracers = DiffusionTracers {
       -- ^ DNS subscription tracer
     , dtDnsResolverTracer     :: Tracer IO (WithDomainName DnsTrace)
       -- ^ DNS resolver tracer
-    , dtMuxTracer             :: Tracer IO (WithMuxBearer ConnectionId MuxTrace)
+    , dtMuxTracer             :: Tracer IO (WithMuxBearer (ConnectionId SockAddr) MuxTrace)
       -- ^ Mux tracer
-    , dtMuxLocalTracer        :: Tracer IO (WithMuxBearer ConnectionId MuxTrace)
+    , dtMuxLocalTracer        :: Tracer IO (WithMuxBearer (ConnectionId SockAddr) MuxTrace)
       -- ^ Mux tracer for local clients
-    , dtHandshakeTracer       :: Tracer IO (WithMuxBearer ConnectionId
+    , dtHandshakeTracer       :: Tracer IO (WithMuxBearer (ConnectionId SockAddr)
                                              (TraceSendRecv (Handshake NodeToNodeVersion CBOR.Term)))
       -- ^ Handshake protocol tracer
-    , dtHandshakeLocalTracer  :: Tracer IO (WithMuxBearer ConnectionId
+    , dtHandshakeLocalTracer  :: Tracer IO (WithMuxBearer (ConnectionId SockAddr)
                                              (TraceSendRecv (Handshake NodeToClientVersion CBOR.Term)))
       -- ^ Handshake protocol tracer for local clients
     , dtErrorPolicyTracer     :: Tracer IO (WithAddr SockAddr ErrorPolicyTrace)
@@ -93,7 +93,7 @@ data DiffusionApplications = DiffusionApplications {
                                        DictVersion
                                        (OuroborosApplication
                                          'ResponderApp
-                                         ConnectionId
+                                         (ConnectionId SockAddr)
                                          NodeToNodeProtocols
                                          IO
                                          ByteString
@@ -106,7 +106,7 @@ data DiffusionApplications = DiffusionApplications {
                                        DictVersion 
                                        (OuroborosApplication
                                          'InitiatorApp
-                                         ConnectionId
+                                         (ConnectionId SockAddr)
                                          NodeToNodeProtocols
                                          IO
                                          ByteString
@@ -118,7 +118,7 @@ data DiffusionApplications = DiffusionApplications {
                                        DictVersion
                                        (OuroborosApplication
                                           'ResponderApp
-                                          ConnectionId
+                                          (ConnectionId SockAddr)
                                           NodeToClientProtocols
                                           IO
                                           ByteString

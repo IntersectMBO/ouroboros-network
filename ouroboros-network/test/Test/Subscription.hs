@@ -524,7 +524,7 @@ prop_send_recv f xs first = ioProperty $ do
     clientTbl <- newConnectionTable
 
     let -- Server Node; only req-resp server
-        responderApp :: OuroborosApplication ResponderApp ConnectionId TestProtocols2 IO BL.ByteString Void ()
+        responderApp :: OuroborosApplication ResponderApp (ConnectionId Socket.SockAddr) TestProtocols2 IO BL.ByteString Void ()
         responderApp = OuroborosResponderApplication $
           \_peerid ReqRespPr channel -> do
             r <- runPeer (tagTrace "Responder" activeTracer)
@@ -535,7 +535,7 @@ prop_send_recv f xs first = ioProperty $ do
             waitSiblingSub siblingVar
 
         -- Client Node; only req-resp client
-        initiatorApp :: OuroborosApplication InitiatorApp ConnectionId TestProtocols2 IO BL.ByteString () Void
+        initiatorApp :: OuroborosApplication InitiatorApp (ConnectionId Socket.SockAddr) TestProtocols2 IO BL.ByteString () Void
         initiatorApp = OuroborosInitiatorApplication $
           \_peerid ReqRespPr channel -> do
             r <- runPeer (tagTrace "Initiator" activeTracer)
@@ -651,7 +651,7 @@ prop_send_recv_init_and_rsp f xs = ioProperty $ do
 
   where
 
-    appX :: ReqRspCfg -> OuroborosApplication InitiatorAndResponderApp ConnectionId TestProtocols2 IO BL.ByteString () ()
+    appX :: ReqRspCfg -> OuroborosApplication InitiatorAndResponderApp (ConnectionId Socket.SockAddr) TestProtocols2 IO BL.ByteString () ()
     appX ReqRspCfg {rrcTag, rrcServerVar, rrcClientVar, rrcSiblingVar} = OuroborosInitiatorAndResponderApplication
             -- Initiator
             (\_peerid ReqRespPr channel -> do

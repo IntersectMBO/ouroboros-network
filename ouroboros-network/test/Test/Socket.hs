@@ -214,7 +214,7 @@ prop_socket_send_recv initiatorAddr responderAddr f xs = do
     siblingVar <- newTVarM 2
 
     let -- Server Node; only req-resp server
-        responderApp :: OuroborosApplication Mx.ResponderApp ConnectionId TestProtocols2 IO BL.ByteString Void ()
+        responderApp :: OuroborosApplication Mx.ResponderApp (ConnectionId Socket.SockAddr) TestProtocols2 IO BL.ByteString Void ()
         responderApp = OuroborosResponderApplication $
           \_peerid ReqRespPr channel -> do
             r <- runPeer nullTracer
@@ -225,7 +225,7 @@ prop_socket_send_recv initiatorAddr responderAddr f xs = do
             waitSibling siblingVar
 
         -- Client Node; only req-resp client
-        initiatorApp :: OuroborosApplication Mx.InitiatorApp ConnectionId TestProtocols2 IO BL.ByteString () Void
+        initiatorApp :: OuroborosApplication Mx.InitiatorApp (ConnectionId Socket.SockAddr) TestProtocols2 IO BL.ByteString () Void
         initiatorApp = OuroborosInitiatorApplication $
           \_peerid ReqRespPr channel -> do
             r <- runPeer nullTracer
@@ -335,7 +335,7 @@ prop_socket_client_connect_error _ xs = ioProperty $ do
 
     cv <- newEmptyTMVarM
 
-    let app :: OuroborosApplication Mx.InitiatorApp ConnectionId TestProtocols2 IO BL.ByteString () Void
+    let app :: OuroborosApplication Mx.InitiatorApp (ConnectionId Socket.SockAddr) TestProtocols2 IO BL.ByteString () Void
         app = OuroborosInitiatorApplication $
                 \_peerid ReqRespPr channel -> do
                   _ <- runPeer nullTracer
@@ -374,7 +374,7 @@ demo chain0 updates = do
     let Just expectedChain = Chain.applyChainUpdates updates chain0
         target = Chain.headPoint expectedChain
 
-        initiatorApp :: OuroborosApplication Mx.InitiatorApp ConnectionId TestProtocols1 IO BL.ByteString () Void
+        initiatorApp :: OuroborosApplication Mx.InitiatorApp (ConnectionId Socket.SockAddr) TestProtocols1 IO BL.ByteString () Void
         initiatorApp = simpleInitiatorApplication $
           \ChainSyncPr ->
               MuxPeer nullTracer
@@ -386,7 +386,7 @@ demo chain0 updates = do
         server :: ChainSync.ChainSyncServer block (Tip block) IO ()
         server = ChainSync.chainSyncServerExample () producerVar
 
-        responderApp :: OuroborosApplication Mx.ResponderApp ConnectionId TestProtocols1 IO BL.ByteString Void ()
+        responderApp :: OuroborosApplication Mx.ResponderApp (ConnectionId Socket.SockAddr) TestProtocols1 IO BL.ByteString Void ()
         responderApp = simpleResponderApplication $
           \ChainSyncPr ->
             MuxPeer nullTracer

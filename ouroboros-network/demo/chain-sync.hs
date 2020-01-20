@@ -166,7 +166,7 @@ clientPingPong pipelined =
       defaultLocalSocketAddrInfo
   where
     app :: OuroborosApplication InitiatorApp
-                                ConnectionId
+                                (ConnectionId Socket.SockAddr)
                                 DemoProtocol0
                                 IO LBS.ByteString () Void
     app = simpleInitiatorApplication protocols
@@ -206,7 +206,7 @@ serverPingPong = do
         wait serverAsync   -- block until async exception
   where
     app :: OuroborosApplication ResponderApp
-                                ConnectionId
+                                (ConnectionId Socket.SockAddr)
                                 DemoProtocol0
                                 IO LBS.ByteString Void ()
     app = simpleResponderApplication protocols
@@ -255,7 +255,7 @@ clientPingPong2 =
       defaultLocalSocketAddrInfo
   where
     app :: OuroborosApplication InitiatorApp
-                                ConnectionId
+                                (ConnectionId Socket.SockAddr)
                                 DemoProtocol1
                                 IO LBS.ByteString () Void
     app = simpleInitiatorApplication protocols
@@ -308,7 +308,7 @@ serverPingPong2 = do
         wait serverAsync   -- block until async exception
   where
     app :: OuroborosApplication ResponderApp
-                                ConnectionId
+                                (ConnectionId Socket.SockAddr)
                                 DemoProtocol1
                                 IO LBS.ByteString Void ()
     app = simpleResponderApplication protocols
@@ -354,7 +354,7 @@ clientChainSync sockAddrs =
         (mkLocalSocketAddrInfo sockAddr)
   where
     app :: OuroborosApplication InitiatorApp
-                                ConnectionId
+                                (ConnectionId Socket.SockAddr)
                                 DemoProtocol2
                                 IO LBS.ByteString () Void
     app = simpleInitiatorApplication protocols
@@ -386,7 +386,7 @@ serverChainSync sockAddr = do
     prng = mkSMGen 0
 
     app :: OuroborosApplication ResponderApp
-                                ConnectionId
+                                (ConnectionId Socket.SockAddr)
                                 DemoProtocol2
                                 IO LBS.ByteString Void ()
     app = simpleResponderApplication protocols
@@ -439,12 +439,12 @@ clientBlockFetch sockAddrs = do
     currentChainVar    <- newTVarIO genesisChainFragment
 
     let app :: OuroborosApplication InitiatorApp
-                                    ConnectionId
+                                    (ConnectionId Socket.SockAddr)
                                     DemoProtocol3
                                     IO LBS.ByteString () Void
         app = OuroborosInitiatorApplication protocols
 
-        protocols :: ConnectionId
+        protocols :: ConnectionId Socket.SockAddr
                   -> DemoProtocol3
                   -> Channel IO LBS.ByteString
                   -> IO ()
@@ -475,7 +475,7 @@ clientBlockFetch sockAddrs = do
               (blockFetchClient clientCtx)
 
         blockFetchPolicy :: BlockFetchConsensusInterface
-                             ConnectionId BlockHeader Block IO
+                             (ConnectionId Socket.SockAddr) BlockHeader Block IO
         blockFetchPolicy =
             BlockFetchConsensusInterface {
               readCandidateChains    = readTVar candidateChainsVar
@@ -588,7 +588,7 @@ serverBlockFetch sockAddr = do
     prng = mkSMGen 0
 
     app :: OuroborosApplication ResponderApp
-                                ConnectionId
+                                (ConnectionId Socket.SockAddr)
                                 DemoProtocol3
                                 IO LBS.ByteString Void ()
     app = simpleResponderApplication protocols

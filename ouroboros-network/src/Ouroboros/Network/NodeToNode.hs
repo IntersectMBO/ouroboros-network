@@ -185,10 +185,10 @@ nodeToNodeCodecCBORTerm = CodecCBORTerm {encodeTerm, decodeTerm}
 -- | A specialised version of @'Ouroboros.Network.Socket.connectToNode'@.
 --
 connectTo
-  :: NetworkConnectTracers NodeToNodeProtocols NodeToNodeVersion
+  :: NetworkConnectTracers Socket.SockAddr NodeToNodeProtocols NodeToNodeVersion
   -> Versions NodeToNodeVersion
               DictVersion
-              (OuroborosApplication InitiatorApp ConnectionId NodeToNodeProtocols IO BL.ByteString a b)
+              (OuroborosApplication InitiatorApp (ConnectionId Socket.SockAddr) NodeToNodeProtocols IO BL.ByteString a b)
   -> Maybe Socket.AddrInfo
   -> Socket.AddrInfo
   -> IO ()
@@ -198,9 +198,9 @@ connectTo = connectToNode cborTermVersionDataCodec
 -- | Like 'connectTo' but specific to 'NodeToNodeV_1'.
 --
 connectTo_V1
-  :: NetworkConnectTracers NodeToNodeProtocols NodeToNodeVersion
+  :: NetworkConnectTracers Socket.SockAddr NodeToNodeProtocols NodeToNodeVersion
   -> NodeToNodeVersionData
-  -> (OuroborosApplication InitiatorApp ConnectionId NodeToNodeProtocols IO BL.ByteString a b)
+  -> (OuroborosApplication InitiatorApp (ConnectionId Socket.SockAddr) NodeToNodeProtocols IO BL.ByteString a b)
   -> Maybe Socket.AddrInfo
   -> Socket.AddrInfo
   -> IO ()
@@ -228,7 +228,7 @@ withServer
   => NetworkServerTracers NodeToNodeProtocols NodeToNodeVersion
   -> NetworkMutableState
   -> Socket.AddrInfo
-  -> Versions NodeToNodeVersion DictVersion (OuroborosApplication appType ConnectionId NodeToNodeProtocols IO BL.ByteString a b)
+  -> Versions NodeToNodeVersion DictVersion (OuroborosApplication appType (ConnectionId Socket.SockAddr) NodeToNodeProtocols IO BL.ByteString a b)
   -> ErrorPolicies Socket.SockAddr ()
   -> IO Void
 withServer tracers networkState addr versions errPolicies =
@@ -251,7 +251,7 @@ withServer_V1
   -> NetworkMutableState
   -> Socket.AddrInfo
   -> NodeToNodeVersionData
-  -> (OuroborosApplication appType ConnectionId NodeToNodeProtocols IO BL.ByteString x y)
+  -> (OuroborosApplication appType (ConnectionId Socket.SockAddr) NodeToNodeProtocols IO BL.ByteString x y)
   -> ErrorPolicies Socket.SockAddr ()
   -> IO Void
 withServer_V1 tracers networkState addr versionData application =
@@ -270,7 +270,7 @@ withServer_V1 tracers networkState addr versionData application =
 ipSubscriptionWorker
     :: forall appType x y.
        ( HasInitiator appType ~ True )
-    => NetworkIPSubscriptionTracers NodeToNodeProtocols NodeToNodeVersion
+    => NetworkIPSubscriptionTracers Socket.SockAddr NodeToNodeProtocols NodeToNodeVersion
     -> NetworkMutableState
     -> IPSubscriptionParams ()
     -> Versions
@@ -278,7 +278,7 @@ ipSubscriptionWorker
         DictVersion
         (OuroborosApplication
           appType
-          ConnectionId
+          (ConnectionId Socket.SockAddr)
           NodeToNodeProtocols
           IO BL.ByteString x y)
     -> IO Void
@@ -308,13 +308,13 @@ ipSubscriptionWorker
 ipSubscriptionWorker_V1
     :: forall appType x y.
        ( HasInitiator appType ~ True )
-    => NetworkIPSubscriptionTracers NodeToNodeProtocols NodeToNodeVersion
+    => NetworkIPSubscriptionTracers Socket.SockAddr NodeToNodeProtocols NodeToNodeVersion
     -> NetworkMutableState
     -> IPSubscriptionParams ()
     -> NodeToNodeVersionData
     -> (OuroborosApplication
           appType
-          ConnectionId
+          (ConnectionId Socket.SockAddr)
           NodeToNodeProtocols
           IO BL.ByteString x y)
     -> IO Void
@@ -341,7 +341,7 @@ ipSubscriptionWorker_V1
 dnsSubscriptionWorker
     :: forall appType x y.
        ( HasInitiator appType ~ True )
-    => NetworkDNSSubscriptionTracers NodeToNodeProtocols NodeToNodeVersion ConnectionId
+    => NetworkDNSSubscriptionTracers NodeToNodeProtocols NodeToNodeVersion (ConnectionId Socket.SockAddr)
     -> NetworkMutableState
     -> DnsSubscriptionParams ()
     -> Versions
@@ -349,7 +349,7 @@ dnsSubscriptionWorker
         DictVersion
         (OuroborosApplication
           appType
-          ConnectionId
+          (ConnectionId Socket.SockAddr)
           NodeToNodeProtocols
           IO BL.ByteString x y)
     -> IO Void
@@ -381,13 +381,13 @@ dnsSubscriptionWorker
 dnsSubscriptionWorker_V1
     :: forall appType x y.
        ( HasInitiator appType ~ True )
-    => NetworkDNSSubscriptionTracers NodeToNodeProtocols NodeToNodeVersion ConnectionId
+    => NetworkDNSSubscriptionTracers NodeToNodeProtocols NodeToNodeVersion (ConnectionId Socket.SockAddr)
     -> NetworkMutableState
     -> DnsSubscriptionParams ()
     -> NodeToNodeVersionData
     -> (OuroborosApplication
           appType
-          ConnectionId
+          (ConnectionId Socket.SockAddr)
           NodeToNodeProtocols
           IO BL.ByteString x y)
     -> IO Void
