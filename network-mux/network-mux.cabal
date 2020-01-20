@@ -111,6 +111,10 @@ test-suite test-network-mux
                        tasty-hunit,
                        time
 
+  if os(windows)
+    build-depends:     Win32           >= 2.5.4.1 && <2.9,
+                       Win32-network   >=0.1 && <0.2
+
   ghc-options:         -Wall
                        -Wno-unticked-promoted-constructors
                        -fno-ignore-asserts
