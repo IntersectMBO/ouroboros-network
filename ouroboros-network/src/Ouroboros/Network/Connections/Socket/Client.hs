@@ -24,8 +24,10 @@ import Ouroboros.Network.Connections.Types
 client
   :: SockAddr sockType -- Our address (bind to this).
   -> SockAddr sockType -- Remote address (connect to this).
-  -> Client ConnectionId Socket IO
-client bindaddr sockaddr = \k -> k (makeConnectionId bindaddr sockaddr) openSocket closeSocket
+  -> request Local
+  -> Client ConnectionId Socket IO request
+client bindaddr sockaddr request = \k ->
+  k (makeConnectionId bindaddr sockaddr) openSocket closeSocket request
 
   where
 

@@ -16,7 +16,7 @@ import Network.Socket (Socket)
 import qualified Network.Socket as Socket
 
 import Ouroboros.Network.Connections.Socket.Types (ConnectionId, SockAddr (..),
-         Some (..), makeConnectionId, matchSockType, forgetSockType)
+         makeConnectionId, matchSockType, forgetSockType)
 import Ouroboros.Network.Connections.Types
 
 -- | Creates a socket of a given family, bound to a given address, and gives
@@ -27,15 +27,16 @@ import Ouroboros.Network.Connections.Types
 -- accepting connections, and throwing away the decisions returned by the
 -- `Connections` term.
 server
-  :: Some SockAddr -- Bind address
-  -> (Server ConnectionId Socket IO -> IO t)
+  :: SockAddr addrType -- Bind address
+  -> (SockAddr addrType -> request Remote)
+  -> (Server ConnectionId Socket IO request -> IO t)
   -- ^ When this is called, the server is up and listening. When the callback
   -- returns or dies exceptionally, the listening socket is closed.
   -> IO t
-server addr@(Some bindaddr) k = bracket
+server bindaddr mkRequest k = bracket
     openSocket
     closeSocket
-    (\sock -> k (acceptOne addr sock))
+    (\sock -> k (acceptOne bindaddr sock mkRequest))
   where
 
   openSocket :: IO Socket
@@ -77,10 +78,11 @@ server addr@(Some bindaddr) k = bracket
 -- Any exceptions thrown by accept will be re-thrown here, so be sure to
 -- handle them.
 acceptOne
-  :: Some SockAddr -- Bind address; needed to construct ConnectionId
+  :: SockAddr addrType -- Bind address; needed to construct ConnectionId
   -> Socket
-  -> Server ConnectionId Socket IO
-acceptOne (Some bindaddr) socket = \includeConnection -> mask $ \restore -> do
+  -> (SockAddr addrType -> request Remote)
+  -> Server ConnectionId Socket IO request
+acceptOne bindaddr socket mkRequest = \includeConnection -> mask $ \restore -> do
   (sock, addr) <- restore (Socket.accept socket)
   case matchSockType bindaddr addr of
     -- Should never happen.
@@ -92,7 +94,7 @@ acceptOne (Some bindaddr) socket = \includeConnection -> mask $ \restore -> do
       let connId = makeConnectionId bindaddr peeraddr
       -- Including the connection could fail exceptionally, in which case we
       -- are still responsible for closing the socket.
-      includeResult <- restore (includeConnection connId sock (Socket.close sock))
+      includeResult <- restore (includeConnection connId sock (Socket.close sock) (mkRequest peeraddr))
                        `onException`
                        Socket.close sock
       -- If it was rejected, we're responsible for closing. Otherwise, there's
@@ -112,8 +114,8 @@ acceptOne (Some bindaddr) socket = \includeConnection -> mask $ \restore -> do
 acceptLoop
   :: ( Exception e )
   => (e -> IO ())
-  -> Connections ConnectionId Socket accept reject IO
-  -> Server ConnectionId Socket IO
+  -> Connections ConnectionId Socket request accept reject IO
+  -> Server ConnectionId Socket IO request
   -> IO Void
 acceptLoop handleException connections accept = forever $
   void (runServerWith connections accept) `catch` handleException
@@ -138,12 +140,14 @@ acceptLoop handleException connections accept = forever $
 -- @
 acceptLoopOn
   :: ( Exception e )
-  => Some SockAddr
+  => SockAddr sockType
+  -> (SockAddr sockType -> request Remote)
   -> (e -> IO ()) -- ^ Exception handling. Should not squelch async exceptions.
                   -- Probably should recover from IOExceptions such as no more
                   -- file descriptors. Re-throwing will bring the server accept
                   -- loop down.
-  -> Connections ConnectionId Socket accept reject IO
+  -> Connections ConnectionId Socket request accept reject IO
   -> IO Void
-acceptLoopOn bindAddr handleException connections = server bindAddr $ \serv ->
-  acceptLoop handleException connections serv
+acceptLoopOn bindAddr mkRequest handleException connections =
+  server bindAddr mkRequest $ \serv ->
+    acceptLoop handleException connections serv

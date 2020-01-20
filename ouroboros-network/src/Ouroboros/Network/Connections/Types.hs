@@ -5,6 +5,7 @@
 
 module Ouroboros.Network.Connections.Types
   ( Provenance (..)
+  , Initiated (..)
   , Decision (..)
   , Connections (..)
   , Resource (..)
@@ -15,8 +16,12 @@ module Ouroboros.Network.Connections.Types
   , runServerWith
   ) where
 
-data Provenance = Incoming | Outgoing
+data Provenance = Remote | Local
   deriving (Show)
+
+data Initiated (provenance :: Provenance) where
+  Incoming :: Initiated Remote
+  Outgoing :: Initiated Local
 
 data Decision (provenance :: Provenance) reject accept where
   Rejected :: reject provenance -> Decision provenance reject accept
@@ -26,10 +31,10 @@ data Decision (provenance :: Provenance) reject accept where
 data Resource provenance m r where
   -- | An existing resource, with a close action.
   -- Corresponds to remotely-initiated, incoming connections.
-  Existing ::   r -> m ()        -> Resource Incoming m r
+  Existing ::   r -> m ()        -> Resource Remote m r
   -- | A new resource, with create and close actions (a bracket).
   -- Corresponds to locally-initiated, outgoing connections.
-  New      :: m r -> (r -> m ()) -> Resource Outgoing m r
+  New      :: m r -> (r -> m ()) -> Resource Local m r
 
 -- | Connections identified by `id`, carried by `socket`, supported by `m`.
 --
@@ -49,31 +54,44 @@ data Resource provenance m r where
 -- If the resource acquisition of a `New` connection throws an exception, that
 -- should be re-thrown. This is consistent with bracketing of the acquire and
 -- release fields of the `New` constructor, which also re-throws the exception.
-data Connections id socket reject accept m = Connections
-  { include :: forall provenance . id -> Resource provenance m socket -> m (Decision provenance reject accept) }
+--
+-- TODO may need a way to check / be notified when there is an incoming
+-- connection at a given identifier.
+-- Could just put that on the concurrent connections: an `STM (Map id handle)`.
+-- When you get the handle back, the underlying connection and its handler
+-- thread may of course have died, but that's always a possibility even if
+-- you `include`. 
+--
+data Connections id socket request reject accept m = Connections
+  { include :: forall provenance .
+               id
+            -> Resource provenance m socket
+            -> request provenance
+            -> m (Decision provenance reject accept)
+  }
 
 -- Client and Server types take any suitable Connections include callback,
 -- specialized to Outgoing or Incoming, and use it to get a decision, for any
 -- accept or reject type.
 
-type Client addr sock m = forall accept reject .
-     (addr -> m sock -> (sock -> m ()) -> m (Decision Outgoing accept reject))
-  -> m (Decision Outgoing accept reject)
+type Client addr sock m request = forall accept reject .
+     (addr -> m sock -> (sock -> m ()) -> request Local -> m (Decision Local accept reject))
+  -> m (Decision Local accept reject)
 
-type Server addr sock m = forall accept reject .
-     (addr -> sock -> m () -> m (Decision Incoming accept reject))
-  -> m (Decision Incoming accept reject)
+type Server addr sock m request = forall accept reject .
+     (addr -> sock -> m () -> request Remote -> m (Decision Remote accept reject))
+  -> m (Decision Remote accept reject)
 
 runClientWith
-  :: Connections addr sock reject accept m
-  -> Client addr sock m
-  -> m (Decision Outgoing reject accept)
-runClientWith connections client = client $ \addr sopen sclose ->
-  include connections addr (New sopen sclose)
+  :: Connections addr sock request reject accept m
+  -> Client addr sock m request
+  -> m (Decision Local reject accept)
+runClientWith connections client = client $ \addr sopen sclose req ->
+  include connections addr (New sopen sclose) req
 
 runServerWith
-  :: Connections addr sock reject accept m
-  -> Server addr sock m
-  -> m (Decision Incoming reject accept)
-runServerWith connections server = server $ \addr s sclose ->
-  include connections addr (Existing s sclose)
+  :: Connections addr sock request reject accept m
+  -> Server addr sock m request
+  -> m (Decision Remote reject accept)
+runServerWith connections server = server $ \addr s sclose req ->
+  include connections addr (Existing s sclose) req

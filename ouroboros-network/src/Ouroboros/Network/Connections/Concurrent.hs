@@ -4,9 +4,12 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE RankNTypes #-}
 
 module Ouroboros.Network.Connections.Concurrent
-  ( Decision (..)
+  ( Accept (..)
+  , Reject (..)
+  , Decision (..)
   , Handler (..)
   , concurrent
   ) where
@@ -22,7 +25,7 @@ import Data.Word (Word32)
 import Ouroboros.Network.Connections.Types hiding (Decision (..))
 import qualified Ouroboros.Network.Connections.Types as Types
 
-data Reject reason (p :: Provenance) where
+data Reject reject (p :: Provenance) where
   -- | A remote connection may be rejected if there is already a connection
   -- established at its identifier.
   -- Locally-initiated connections cannot fail in this way, because the
@@ -35,19 +38,20 @@ data Reject reason (p :: Provenance) where
   -- Indeed, the choice of connection identifier and resource type should be
   -- done in such a way that duplicates do not arise, i.e. the identifier
   -- actually does uniquely identify the resource.
-  Duplicate      :: Reject reason Incoming
+  Duplicate      :: Reject reject Remote
   -- | Rejected according to the domain-specific handler routine.
-  DomainSpecific :: reason -> Reject reason any
+  DomainSpecific :: reject p -> Reject reject p
 
-data Accept handle (p :: Provenance) = Accepted handle
+data Accept handle (p :: Provenance) where
+  Accepted :: handle -> Accept handle p
 
 -- | Returned by the definition continuation of a `concurrent` `Connections`,
 -- this determines whether a connection is accepted or rejected.
 -- If it's accepted, a `Handler` must be constructed, with the `Async` of
 -- its own action in scope (use it only lazily).
-data Decision reason handle where
-  Reject :: reason -> Decision reason handle
-  Accept :: (Async () -> IO (Handler handle)) -> Decision reason handle
+data Decision (provenance :: Provenance) reject handle where
+  Reject :: reject provenance -> Decision provenance reject handle
+  Accept :: (Async () -> IO (Handler handle)) -> Decision provenance reject handle
 
 -- | An action to run for each connection, and a handle giving an interface
 -- to that action, probably using STM for synchronization.
@@ -130,9 +134,15 @@ removeConnection identifier state =
 -- manager with Unix domain sockets would be required to come up with unique
 -- identifiers for unnamed ones (probably by taking the file descriptor number).
 concurrent
-  :: forall connectionId resource handle reason t .
+  :: forall connectionId resource request reject handle t .
      ( Ord connectionId )
-  => (Provenance -> connectionId -> resource -> IO (Decision reason handle))
+  => (forall provenance .
+         Initiated provenance
+      -> connectionId
+      -> resource
+      -> request provenance
+      -> IO (Decision provenance reject handle)
+     )
   -- ^ A callback to run for each connection. The `handle` gives an interface
   -- to that connection, allowing for inspection and control etc. of whatever
   -- it's doing.
@@ -140,7 +150,7 @@ concurrent
   -- `include` will get them.
   -- Non-exceptional domain-specific reasons to reject a connection are given
   -- in the `Left` variant.
-  -> (Connections connectionId resource (Reject reason) (Accept handle) IO -> IO t)
+  -> (Connections connectionId resource request (Reject reject) (Accept handle) IO -> IO t)
   -> IO t
 concurrent withResource k = do
   stateVar :: MVar (State connectionId handle) <- newMVar $ State
@@ -161,8 +171,9 @@ concurrent withResource k = do
     :: MVar (State connectionId handle)
     -> connectionId
     -> Resource provenance IO resource
-    -> IO (Types.Decision provenance (Reject reason) (Accept handle))
-  includeOne stateVar connId resource = mask $ \restore -> modifyMVar stateVar $ \state ->
+    -> request provenance
+    -> IO (Types.Decision provenance (Reject reject) (Accept handle))
+  includeOne stateVar connId resource request = mask $ \restore -> modifyMVar stateVar $ \state ->
     case Map.lookup connId (connectionMap state) of
       Nothing   -> case resource of
         Existing res closeResource -> do
@@ -170,7 +181,7 @@ concurrent withResource k = do
           -- set up. It should just be creating shared state.
           -- Do not catch exceptions: the caller is responsible for closing
           -- the resource in case of exception.
-          outcome <- restore (withResource Incoming connId res)
+          outcome <- restore (withResource Incoming connId res request)
           case outcome of
             Reject reason -> pure (state, Types.Rejected (DomainSpecific reason))
             Accept mkhandler -> do
@@ -196,7 +207,7 @@ concurrent withResource k = do
           -- Thus `include`ing a new resource is just like bracketing the
           -- acquire and release: any exception in acquire will be re-thrown.
           res <- restore acquire
-          outcome <- restore (withResource Outgoing connId res)
+          outcome <- restore (withResource Outgoing connId res request)
                        `onException`
                        release res
           case outcome of
@@ -224,7 +235,6 @@ concurrent withResource k = do
         -- Do not call _close; the caller is responsible for that, and knows
         -- it because we give `Rejected`.
         Existing _resource _close   -> pure (state, Types.Rejected Duplicate)
-        -- Give a handle to the existing connection.
         New      _acquire  _release -> pure (state, Types.Accepted (Accepted h))
           where
           h = connectionHandle (connection numConn)
