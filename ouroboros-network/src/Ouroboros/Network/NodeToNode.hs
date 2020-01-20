@@ -225,7 +225,7 @@ connectTo_V1 tracers versionData application localAddr remoteAddr =
 --
 withServer
   :: ( HasResponder appType ~ True)
-  => NetworkServerTracers NodeToNodeProtocols NodeToNodeVersion
+  => NetworkServerTracers Socket.SockAddr NodeToNodeProtocols NodeToNodeVersion
   -> NetworkMutableState Socket.SockAddr
   -> Socket.AddrInfo
   -> Versions NodeToNodeVersion DictVersion (OuroborosApplication appType (ConnectionId Socket.SockAddr) NodeToNodeProtocols IO BL.ByteString a b)
@@ -247,7 +247,7 @@ withServer tracers networkState addr versions errPolicies =
 --
 withServer_V1
   :: ( HasResponder appType ~ True )
-  => NetworkServerTracers NodeToNodeProtocols NodeToNodeVersion
+  => NetworkServerTracers Socket.SockAddr NodeToNodeProtocols NodeToNodeVersion
   -> NetworkMutableState Socket.SockAddr
   -> Socket.AddrInfo
   -> NodeToNodeVersionData
