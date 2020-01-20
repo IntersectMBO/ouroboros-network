@@ -2,6 +2,7 @@
 {-# LANGUAGE CPP                 #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE DeriveGeneric       #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE RecordWildCards     #-}
@@ -64,10 +65,11 @@ import           Data.Typeable (Typeable)
 import qualified Data.ByteString.Lazy as BL
 import           Data.Int
 import           Data.Void
+import           GHC.Generics (Generic)
 
 import qualified Network.Socket as Socket
 
-import           Cardano.Prelude (NoUnexpectedThunks (..), ThunkInfo (..))
+import           Cardano.Prelude (NoUnexpectedThunks (..))
 
 import           Control.Tracer
 
@@ -94,17 +96,17 @@ import           Ouroboros.Network.Server.ConnectionTable
 -- 'Ouroboros.Network.NodeToNode.connectTo' or
 -- 'Ouroboros.Network.NodeToClient.connectTo).
 --
-data NetworkConnectTracers ptcl vNumber = NetworkConnectTracers {
-      nctMuxTracer         :: Tracer IO (Mx.WithMuxBearer ConnectionId Mx.MuxTrace),
+data NetworkConnectTracers addr ptcl vNumber = NetworkConnectTracers {
+      nctMuxTracer         :: Tracer IO (Mx.WithMuxBearer (ConnectionId addr)  Mx.MuxTrace),
       -- ^ low level mux-network tracer, which logs mux sdu (send and received)
       -- and other low level multiplexing events.
-      nctHandshakeTracer   :: Tracer IO (Mx.WithMuxBearer ConnectionId
+      nctHandshakeTracer   :: Tracer IO (Mx.WithMuxBearer (ConnectionId addr)
                                           (TraceSendRecv (Handshake vNumber CBOR.Term)))
       -- ^ handshake protocol tracer; it is important for analysing version
       -- negotation mismatches.
     }
 
-nullNetworkConnectTracers :: NetworkConnectTracers ptcl vNumber
+nullNetworkConnectTracers :: NetworkConnectTracers addr ptcl vNumber
 nullNetworkConnectTracers = NetworkConnectTracers {
       nctMuxTracer       = nullTracer,
       nctHandshakeTracer = nullTracer
@@ -116,15 +118,14 @@ nullNetworkConnectTracers = NetworkConnectTracers {
 -- TODO: the type variable which this data type fills in is called `peerid`.  We
 -- should renamed to `connectionId`.
 --
-data ConnectionId = ConnectionId {
-    localAddress  :: !Socket.SockAddr,
-    remoteAddress :: !Socket.SockAddr
+data ConnectionId addr = ConnectionId {
+    localAddress  :: !addr,
+    remoteAddress :: !addr
   }
-  deriving (Eq, Ord, Show)
+  deriving (Eq, Ord, Show, Generic)
 
-instance NoUnexpectedThunks ConnectionId where
-    showTypeOf _ = "Peer"
-    whnfNoUnexpectedThunks _ctxt _act = return NoUnexpectedThunks
+instance NoUnexpectedThunks addr => NoUnexpectedThunks (ConnectionId addr)
+
 
 -- |
 -- We assume that a TCP segment size of 1440 bytes with initial window of size
@@ -160,8 +161,8 @@ connectToNode
      , Mx.HasInitiator appType ~ True
      )
   => VersionDataCodec extra CBOR.Term
-  -> NetworkConnectTracers ptcl vNumber
-  -> Versions vNumber extra (OuroborosApplication appType ConnectionId ptcl IO BL.ByteString a b)
+  -> NetworkConnectTracers Socket.SockAddr ptcl vNumber
+  -> Versions vNumber extra (OuroborosApplication appType (ConnectionId Socket.SockAddr) ptcl IO BL.ByteString a b)
   -- ^ application to run over the connection
   -> Maybe Socket.AddrInfo
   -- ^ local address; the created socket will bind to it
@@ -213,8 +214,8 @@ connectToNode'
      , Mx.HasInitiator appType ~ True
      )
   => VersionDataCodec extra CBOR.Term
-  -> NetworkConnectTracers ptcl vNumber
-  -> Versions vNumber extra (OuroborosApplication appType ConnectionId ptcl IO BL.ByteString a b)
+  -> NetworkConnectTracers Socket.SockAddr ptcl vNumber
+  -> Versions vNumber extra (OuroborosApplication appType (ConnectionId Socket.SockAddr) ptcl IO BL.ByteString a b)
   -- ^ application to run over the connection
   -> Socket.Socket
   -> IO ()
@@ -369,10 +370,10 @@ fromSocket tblVar sd = Server.Socket
 -- | Tracers required by a server which handles inbound connections.
 --
 data NetworkServerTracers ptcl vNumber = NetworkServerTracers {
-      nstMuxTracer         :: Tracer IO (Mx.WithMuxBearer ConnectionId Mx.MuxTrace),
+      nstMuxTracer         :: Tracer IO (Mx.WithMuxBearer (ConnectionId Socket.SockAddr) Mx.MuxTrace),
       -- ^ low level mux-network tracer, which logs mux sdu (send and received)
       -- and other low level multiplexing events.
-      nstHandshakeTracer   :: Tracer IO (Mx.WithMuxBearer ConnectionId
+      nstHandshakeTracer   :: Tracer IO (Mx.WithMuxBearer (ConnectionId Socket.SockAddr)
                                           (TraceSendRecv (Handshake vNumber CBOR.Term))),
       -- ^ handshake protocol tracer; it is important for analysing version
       -- negotation mismatches.
@@ -439,7 +440,7 @@ runServerThread
     -> Socket.Socket
     -> VersionDataCodec extra CBOR.Term
     -> (forall vData. extra vData -> vData -> vData -> Accept)
-    -> Versions vNumber extra (OuroborosApplication appType ConnectionId ptcl IO BL.ByteString a b)
+    -> Versions vNumber extra (OuroborosApplication appType (ConnectionId Socket.SockAddr) ptcl IO BL.ByteString a b)
     -> ErrorPolicies Socket.SockAddr ()
     -> IO Void
 runServerThread NetworkServerTracers { nstMuxTracer
@@ -533,7 +534,7 @@ withServerNode
     -> Socket.AddrInfo
     -> VersionDataCodec extra CBOR.Term
     -> (forall vData. extra vData -> vData -> vData -> Accept)
-    -> Versions vNumber extra (OuroborosApplication appType ConnectionId ptcl IO BL.ByteString a b)
+    -> Versions vNumber extra (OuroborosApplication appType (ConnectionId Socket.SockAddr) ptcl IO BL.ByteString a b)
     -- ^ The mux application that will be run on each incoming connection from
     -- a given address.  Note that if @'MuxClientAndServerApplication'@ is
     -- returned, the connection will run a full duplex set of mini-protocols.
