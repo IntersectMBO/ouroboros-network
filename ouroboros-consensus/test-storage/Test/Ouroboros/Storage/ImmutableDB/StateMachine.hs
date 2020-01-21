@@ -6,6 +6,7 @@
 {-# LANGUAGE FlexibleInstances    #-}
 {-# LANGUAGE GADTs                #-}
 {-# LANGUAGE LambdaCase           #-}
+{-# LANGUAGE NamedFieldPuns       #-}
 {-# LANGUAGE OverloadedStrings    #-}
 {-# LANGUAGE RecordWildCards      #-}
 {-# LANGUAGE ScopedTypeVariables  #-}
@@ -24,9 +25,6 @@ import           Prelude hiding (elem, notElem)
 import           Codec.CBOR.Write (toBuilder)
 import           Codec.Serialise (decode)
 import           Control.Monad (forM_, void, when)
-import           Control.Monad.Except (ExceptT (..), runExceptT)
-import           Control.Monad.State.Strict (MonadState, State, evalState, gets,
-                     modify, put, runState)
 import           Data.Bifunctor (first)
 import           Data.ByteString.Lazy (ByteString)
 import           Data.Coerce (Coercible, coerce)
@@ -135,7 +133,7 @@ deriving instance SOP.Generic         (Cmd it)
 deriving instance SOP.HasDatatypeInfo (Cmd it)
 
 -- | Simulate corruption of some files of the database.
-newtype Corruption = MkCorruption Corruptions
+newtype Corruption = MkCorruption { getCorruptions :: Corruptions }
   deriving (Generic, Show)
 
 -- | A 'Cmd' together with 'Errors'.
@@ -250,54 +248,69 @@ instance Eq it => Eq (Resp it) where
   Resp (Right a) == Resp (Right a') = a == a'
   _              == _               = False
 
--- | The monad used to run pure model/mock implementation of the database.
-type PureM = ExceptT ImmutableDBError (State (DBModel Hash))
+-- | Run the pure command against the given database.
+runPure :: Cmd IteratorID
+        -> DBModel Hash
+        -> (Resp IteratorID, DBModel Hash)
+runPure = \case
+    GetBlockComponent      s   -> ok MbAllComponents $ queryE   (getBlockComponentModel allComponents s)
+    GetEBBComponent        e   -> ok MbAllComponents $ queryE   (getEBBComponentModel allComponents e)
+    GetBlockOrEBBComponent s h -> ok MbAllComponents $ queryE   (getBlockOrEBBComponentModel allComponents s h)
+    AppendBlock         s h b  -> ok Unit            $ updateE_ (appendBlockModel s h (toBuilder <$> testBlockToBinaryInfo b))
+    AppendEBB           e h b  -> ok Unit            $ updateE_ (appendEBBModel e h (toBuilder <$> testBlockToBinaryInfo b))
+    Stream              s e    -> ok Iter            $ updateEE (streamModel s e)
+    IteratorNext        it     -> ok IterResult      $ update   (iteratorNextModel it allComponents)
+    IteratorPeek        it     -> ok IterResult      $ query    (iteratorPeekModel it allComponents)
+    IteratorHasNext     it     -> ok IterHasNext     $ query    (iteratorHasNextModel it)
+    IteratorClose       it     -> ok Unit            $ update_  (iteratorCloseModel it)
+    DeleteAfter tip            -> ok Unit            $ update_  (deleteAfterModel tip)
+    Corruption corr            -> ok Tip             $ update   (simulateCorruptions (getCorruptions corr))
+    Reopen _                   -> ok Tip             $ update    reopenModel
+  where
+    query  f m = (Right (f m), m)
+    queryE f m = (f m, m)
 
--- | The type of the pure model/mock implementation of the database.
-type ModelDBPure = ImmutableDB Hash PureM
+    update   f m = first Right (f m)
+    update_  f m = (Right (), f m)
+    updateE_ f m = case f m of
+      Left  e  -> (Left e, m)
+      Right m' -> (Right (), m')
+    updateEE :: (DBModel Hash -> Either ImmutableDBError (Either e (a, DBModel Hash)))
+             -> DBModel Hash
+             -> (Either ImmutableDBError (Either e a), DBModel Hash)
+    updateEE f m = case f m of
+      Left e                -> (Left e, m)
+      Right (Left e)        -> (Right (Left e), m)
+      Right (Right (a, m')) -> (Right (Right a), m')
 
--- | The type of the pure model/mock implementation of the interal API of the
--- database.
-type ModelDBInternalPure = ImmDB.Internal Hash PureM
+    ok :: (a -> Success IteratorID)
+       -> (DBModel Hash -> (Either ImmutableDBError a, DBModel Hash))
+       -> DBModel Hash
+       -> (Resp IteratorID, DBModel Hash)
+    ok toSuccess f m = first (Resp . fmap toSuccess) $ f m
 
 -- | Run a command against the pure model
-runPure :: DBModel Hash
-        -> ModelDBPure
-        -> ModelDBInternalPure
-        -> CmdErr (Iterator Hash PureM AllComponents)
-        -> (Resp (Iterator Hash PureM AllComponents), DBModel Hash)
-runPure dbm mdb minternal (CmdErr mbErrors cmd its) =
-    first Resp $ flip runState dbm $ do
-      resp <- runExceptT $ run runCorruption its mdb minternal cmd
-      case (mbErrors, resp) of
-        -- No simulated errors, just step
-        (Nothing, _) -> return resp
-        -- An error will be simulated and thrown (not here, but in the real
-        -- implementation). To mimic what the implementation will do, we only
-        -- have to close the iterators, as the truncation during the reopening
-        -- of the database will erase any changes.
-        (Just _, _) -> do
-          -- We ignore the updated dbm (in the StateT), because we have to
-          -- roll back to the state before executing cmd.
-          --
-          -- As the implementation closes all iterators, we do the same.
-          put $ dbm { dbmIterators = mempty }
-          -- The only exception is the DeleteAfter cmd, in which case we have
-          -- to roll back to the requested tip.
-          case cmd of
-            DeleteAfter tip ->
-              fmap (either (error . prettyImmutableDBError) id) $
-              runExceptT $ deleteAfter minternal tip
-            _               -> return ()
-          gets (Right . Tip . dbmTip)
-  where
-    runCorruption :: ModelDBPure
-                  -> ModelDBInternalPure
-                  -> Corruption
-                  -> PureM (Success (Iterator Hash PureM AllComponents))
-    runCorruption _ _ (MkCorruption corrs) = do
-      modify $ simulateCorruptions corrs
-      gets (Tip . dbmTip)
+runPureErr :: DBModel Hash
+           -> CmdErr IteratorID
+           -> (Resp IteratorID, DBModel Hash)
+runPureErr dbm (CmdErr mbErrors cmd _its) =
+    case (mbErrors, runPure cmd dbm) of
+      -- No simulated errors, just step
+      (Nothing, (resp, dbm')) -> (resp, dbm')
+      -- An error will be simulated and thrown (not here, but in the real
+      -- implementation). To mimic what the implementation will do, we only
+      -- have to close the iterators, as the truncation during the reopening
+      -- of the database will erase any changes.
+      (Just _, (_resp, dbm')) ->
+        -- We ignore the updated @dbm'@, because we have to roll back to the
+        -- state before executing cmd. The only exception is the DeleteAfter
+        -- cmd, in which case we have to roll back to the requested tip.
+        --
+        -- As the implementation closes all iterators, we do the same.
+        let dbm'' = closeAllIterators $ case cmd of
+              DeleteAfter _ -> dbm'
+              _             -> dbm
+        in (Resp $ Right $ Tip $ dbmTip dbm'', dbm'')
 
 {-------------------------------------------------------------------------------
   Collect arguments
@@ -306,7 +319,6 @@ runPure dbm mdb minternal (CmdErr mbErrors cmd its) =
 -- | Collect all iterators created. For example, @t@ could be 'Cmd' or 'CmdErr'.
 iters :: Traversable t => t it -> [it]
 iters = toList
-
 
 {-------------------------------------------------------------------------------
   Model
@@ -317,18 +329,14 @@ type IterRef m = Reference (Opaque (Iterator Hash m AllComponents))
 
 -- | Mapping between iterator references and mocked iterators
 type KnownIters m = RefEnv (Opaque (Iterator Hash m     AllComponents))
-                                   (Iterator Hash PureM AllComponents)
+                                   IteratorID
 
 -- | Execution model
 data Model m r = Model
-  { dbModel      :: DBModel Hash
+  { dbModel    :: DBModel Hash
     -- ^ A model of the database, used as state for the 'HasImmutableDB'
     -- instance of 'ModelDB'.
-  , mockDB       :: ModelDBPure
-    -- ^ A handle to the mocked database.
-  , mockInternal :: ModelDBInternalPure
-    -- ^ A handle to the internal API of the mocked database.
-  , knownIters   :: KnownIters m r
+  , knownIters :: KnownIters m r
     -- ^ Store a mapping between iterator references and mocked iterators.
   } deriving (Show, Generic)
 
@@ -336,24 +344,20 @@ nbOpenIterators :: Model m r -> Int
 nbOpenIterators model = length (RE.toList (knownIters model))
 
 -- | Initial model
-initModel :: DBModel Hash -> ModelDBPure -> ModelDBInternalPure -> Model m r
-initModel dbModel mockDB mockInternal = Model
-    { knownIters  = RE.empty
-    , ..
-    }
+initModel :: DBModel Hash -> Model m r
+initModel dbModel = Model { knownIters  = RE.empty, dbModel }
 
 -- | Key property of the model is that we can go from real to mock responses
 toMock :: (Functor t, Eq1 r)
-       => Model m r -> At t m r -> t (Iterator Hash PureM AllComponents)
+       => Model m r -> At t m r -> t IteratorID
 toMock Model {..} (At t) = fmap (knownIters RE.!) t
 
 -- | Step the mock semantics
 step :: Eq1 r
      => Model m r
      -> At CmdErr m r
-     -> (Resp (Iterator Hash PureM AllComponents), DBModel Hash)
-step model@Model{..} cmdErr = runPure dbModel mockDB mockInternal (toMock model cmdErr)
-
+     -> (Resp IteratorID, DBModel Hash)
+step model@Model{..} cmdErr = runPureErr dbModel (toMock model cmdErr)
 
 {-------------------------------------------------------------------------------
   Wrapping in quickcheck-state-machine references
@@ -393,13 +397,13 @@ data Event m r = Event
   { eventBefore   :: Model     m r
   , eventCmdErr   :: At CmdErr m r
   , eventAfter    :: Model     m r
-  , eventMockResp :: Resp (Iterator Hash PureM AllComponents)
+  , eventMockResp :: Resp IteratorID
   } deriving (Show)
 
 eventCmd :: Event m r -> At Cmd m r
 eventCmd = At . _cmd . unAt . eventCmdErr
 
-eventMockCmd :: Eq1 r => Event m r -> Cmd (Iterator Hash PureM AllComponents)
+eventMockCmd :: Eq1 r => Event m r -> Cmd IteratorID
 eventMockCmd ev@Event {..} = toMock eventBefore (eventCmd ev)
 
 
@@ -806,11 +810,9 @@ sm :: StrictTVar IO Errors
    -> ImmutableDB    Hash IO
    -> ImmDB.Internal Hash IO
    -> DBModel Hash
-   -> ModelDBPure
-   -> ModelDBInternalPure
    -> StateMachine (Model IO) (At CmdErr IO) IO (At Resp IO)
-sm errorsVar hasFS db internal dbm mdb minternal = StateMachine
-  { initModel     = initModel dbm mdb minternal
+sm errorsVar hasFS db internal dbm = StateMachine
+  { initModel     = initModel dbm
   , transition    = transition
   , precondition  = precondition
   , postcondition = postcondition
@@ -830,22 +832,18 @@ validate :: forall m. Monad m
          => Model m Concrete -> ImmutableDB Hash m
          -> QC.PropertyM m Property
 validate Model {..} realDB = do
-    dbContents    <- QC.run   $ getDBContents realDB
-    modelContents <- runModel $ getDBContents mockDB
+    dbContents <- QC.run $ getDBContents realDB
     -- This message is clearer than the one produced by (===)
     let msg = "Mismatch between database (" <> show dbContents <>
               ") and model (" <> show modelContents <> ")"
     return $ counterexample msg (dbContents == modelContents)
   where
-    getDBContents db = stream db allComponents Nothing Nothing >>= \case
+    modelContents = dbmBlockList dbModel
+
+    getDBContents db = stream db GetRawBlock Nothing Nothing >>= \case
       -- This should never happen
       Left e   -> error (show e)
       Right it -> iteratorToList it
-
-    runModel :: PureM a -> QC.PropertyM m a
-    runModel m = case evalState (runExceptT m) dbModel of
-      Left e  -> fail $ prettyImmutableDBError e
-      Right a -> return a
 
 {-------------------------------------------------------------------------------
   Labelling
@@ -902,7 +900,7 @@ type EventPred m = C.Predicate (Event m Symbolic) Tag
 
 -- | Convenience combinator for creating classifiers for successful commands
 successful :: (    Event m Symbolic
-                -> Success (Iterator Hash PureM AllComponents)
+                -> Success IteratorID
                 -> Either Tag (EventPred m)
               )
            -> EventPred m
@@ -1027,7 +1025,7 @@ tag = C.classify
       InvalidIteratorRangeError {} -> Left TagInvalidIteratorRangeError
       _                            -> Right tagInvalidIteratorRangeError
 
-    tagIteratorStreamedN :: Map (Iterator Hash PureM AllComponents) Int
+    tagIteratorStreamedN :: Map IteratorID Int
                          -> EventPred m
     tagIteratorStreamedN streamedPerIterator = C.Predicate
       { C.predApply = \ev -> case eventMockResp ev of
@@ -1100,12 +1098,6 @@ instance CommandNames (At CmdErr m) where
 instance Show (Iterator hash m a) where
   show it = "<iterator " <> show (iteratorID it) <> ">"
 
-instance Show ModelDBPure where
-  show _ = "<ModelDB>"
-
-instance Show ModelDBInternalPure where
-  show _ = "<ModelDBInternal>"
-
 instance ToExpr SlotNo where
   toExpr (SlotNo w) = App "SlotNo" [toExpr w]
 
@@ -1141,15 +1133,6 @@ instance ToExpr (DBModel Hash)
 instance ToExpr FsError where
   toExpr fsError = App (show fsError) []
 
-instance ToExpr ModelDBPure where
-  toExpr db = App (show db) []
-
-instance ToExpr ModelDBInternalPure where
-  toExpr internal = App (show internal) []
-
-instance ToExpr (Iterator hash m a) where
-  toExpr it = App (show it) []
-
 instance ToExpr (EpochInfo Identity) where
   toExpr it = App "fixedSizeEpochInfo" [App (show (runIdentity $ epochInfoSize it 0)) []]
 
@@ -1169,8 +1152,6 @@ showLabelledExamples'
   -> (Tag -> Bool)
   -- ^ Tag filter (can be @const True@)
   -> (   DBModel Hash
-      -> ModelDBPure
-      -> ModelDBInternalPure
       -> StateMachine (Model m) (At CmdErr m) m (At Resp m)
      )
   -> IO ()
@@ -1188,8 +1169,7 @@ showLabelledExamples' mbReplay numTests focus stateMachine = do
         collects (filter focus . tag . execCmds (QSM.initModel smUnused) $ cmds) $
           property True
   where
-    (dbm, mdb, minternal) = mkDBModel
-    smUnused = stateMachine dbm mdb minternal
+    smUnused = stateMachine mkDBModel
 
 showLabelledExamples :: IO ()
 showLabelledExamples = showLabelledExamples' Nothing 1000 (const True) $
@@ -1212,7 +1192,7 @@ prop_sequential cacheConfig = forAllCommands smUnused Nothing $ \cmds -> QC.mona
           (db, internal) <- QC.run $ openDBInternal registry hasFS
             EH.monadCatch (fixedSizeEpochInfo fixedEpochSize) testHashInfo
             ValidateMostRecentEpoch parser tracer cacheConfig
-          let sm' = sm errorsVar hasFS db internal dbm mdb minternal
+          let sm' = sm errorsVar hasFS db internal dbm
           (hist, model, res) <- runCommands sm' cmds
           trace <- QC.run getTrace
           QC.monitor $ counterexample ("Trace: " <> unlines (map show trace))
@@ -1260,9 +1240,9 @@ prop_sequential cacheConfig = forAllCommands smUnused Nothing $ \cmds -> QC.mona
       $ tabulate "Tags" (map show $ tag (execCmds (QSM.initModel smUnused) cmds))
       $ prop
   where
-    (dbm, mdb, minternal) = mkDBModel
+    dbm = mkDBModel
     smUnused = sm (error "errorsVar unused") hasFsUnused dbUnused
-      internalUnused dbm mdb minternal
+      internalUnused dbm
     isEBB = testHeaderEpochNoIfEBB fixedEpochSize . getHeader
     getBinaryInfo = void . testBlockToBinaryInfo
 
@@ -1274,12 +1254,8 @@ tests = testGroup "ImmutableDB q-s-m"
 fixedEpochSize :: EpochSize
 fixedEpochSize = 10
 
-mkDBModel :: MonadState (DBModel Hash) m
-          =>  (DBModel Hash
-             , ImmutableDB    Hash (ExceptT ImmutableDBError m)
-             , ImmDB.Internal Hash (ExceptT ImmutableDBError m)
-             )
-mkDBModel = openDBModel EH.exceptT (const fixedEpochSize)
+mkDBModel :: DBModel Hash
+mkDBModel = initDBModel fixedEpochSize
 
 dbUnused :: ImmutableDB Hash m
 dbUnused = error "semantics and DB used during command generation"

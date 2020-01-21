@@ -417,7 +417,7 @@ initIteratorEnv TestSetup { immutable, volatile } tracer = do
     -- | Open a mock ImmutableDB and add the given chain of blocks
     openImmDB :: Chain TestBlock -> m (ImmDB m TestBlock)
     openImmDB chain = do
-        (_immDBModel, immDB) <- ImmDB.openDBMock EH.monadCatch (const epochSize)
+        (_immDBModel, immDB) <- ImmDB.openDBMock EH.monadCatch epochSize
         forM_ (Chain.toOldestFirst chain) $ \block -> case isEBB (getHeader block) of
           Nothing -> ImmDB.appendBlock immDB
             (blockSlot block) (blockHash block)

@@ -309,11 +309,11 @@ data IteratorResult a
 -- the 'IteratorResult's (excluding the final 'IteratorExhausted') produced by
 -- the 'Iterator' is returned.
 iteratorToList :: (HasCallStack, Monad m)
-               => Iterator hash m a -> m [IteratorResult a]
-iteratorToList it = go
+               => Iterator hash m a -> m [a]
+iteratorToList it = go []
   where
-    go = do
+    go acc = do
       next <- iteratorNext it
       case next of
-        IteratorExhausted -> return []
-        _                 -> (next:) <$> go
+        IteratorExhausted  -> return $ reverse acc
+        IteratorResult res -> go (res:acc)
