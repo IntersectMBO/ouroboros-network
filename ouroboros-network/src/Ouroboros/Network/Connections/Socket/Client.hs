@@ -7,7 +7,7 @@ module Ouroboros.Network.Connections.Socket.Client
   ( client
   ) where
 
-import Control.Exception (bracket)
+import Control.Exception (bracketOnError)
 import Control.Monad (when)
 import Network.Socket (Socket)
 import qualified Network.Socket as Socket
@@ -33,9 +33,9 @@ client bindaddr sockaddr request = \k ->
 
   -- The Connections term is expected to take care of exception handling to
   -- ensure closeSocket is always called. But we need to do bracketing even
-  -- here within openSocket, in case bind or connect fails
+  -- here within openSocket, in case bind or connect fails.
   openSocket :: IO Socket
-  openSocket = bracket createSocket closeSocket $ \sock -> do
+  openSocket = bracketOnError createSocket closeSocket $ \sock -> do
     when isInet $ do
       Socket.setSocketOption sock Socket.ReuseAddr 1
 #if !defined(mingw32_HOST_OS)
