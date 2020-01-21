@@ -34,6 +34,7 @@ import System.Win32.Async.ErrCode
 -- <https://docs.microsoft.com/en-us/windows/win32/fileio/createiocompletionport>
 --
 newtype IOCompletionPort = IOCompletionPort HANDLE
+  deriving Show
 
 closeIOCompletionPort :: IOCompletionPort -> IO ()
 closeIOCompletionPort (IOCompletionPort iocp) = Win32.closeHandle iocp
