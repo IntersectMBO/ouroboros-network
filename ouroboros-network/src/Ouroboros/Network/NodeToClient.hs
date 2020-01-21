@@ -41,6 +41,7 @@ module Ouroboros.Network.NodeToClient (
 
   -- * Re-exports
   , ConnectionId (..)
+  , LocalConnectionId
   , ErrorPolicies (..)
   , networkErrorPolicies
   , nullErrorPolicies
@@ -409,3 +410,5 @@ networkErrorPolicies = ErrorPolicies
 
     shortDelay :: DiffTime
     shortDelay = 20 -- seconds
+
+type LocalConnectionId = ConnectionId LocalAddress
