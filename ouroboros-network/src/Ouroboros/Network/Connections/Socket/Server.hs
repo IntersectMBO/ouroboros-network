@@ -53,9 +53,8 @@ server bindaddr mkRequest k = bracket openSocket closeSocket $ \sock ->
       Socket.setSocketOption sock Socket.ReusePort 1
 #endif
     when isInet6 $ Socket.setSocketOption sock Socket.IPv6Only 1
-    when isInet  $ do
-      Socket.bind sock (forgetSockType bindaddr)
-      Socket.listen sock 1
+    Socket.bind sock (forgetSockType bindaddr)
+    Socket.listen sock 1
     return sock
 
   createSocket :: IO Socket

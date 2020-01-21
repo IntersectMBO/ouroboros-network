@@ -42,7 +42,7 @@ client bindaddr sockaddr request = \k ->
       Socket.setSocketOption sock Socket.ReusePort 1
 #endif
     when isInet6 $ Socket.setSocketOption sock Socket.IPv6Only 1
-    when isInet  $ Socket.bind sock (forgetSockType bindaddr)
+    Socket.bind sock (forgetSockType bindaddr)
     Socket.connect sock (forgetSockType sockaddr)
     return sock
 
