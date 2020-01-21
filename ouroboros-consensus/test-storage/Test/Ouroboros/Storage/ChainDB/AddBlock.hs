@@ -273,7 +273,7 @@ mkArgs cfg initLedger tracer registry hashInfo
     , cdbCheckIntegrity   = const True
     , cdbBlockchainTime   = fixedBlockchainTime maxBound
     , cdbGenesis          = return initLedger
-    , cdbAddHdrEnv        = const id
+    , cdbAddHdrEnv        = \_ _ -> id
     , cdbImmDbCacheConfig = Index.CacheConfig 2 60
 
     -- Misc

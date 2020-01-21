@@ -61,9 +61,9 @@ verifyHeaderIntegrity cfg hdr =
     -- @CC.headerProtocolMagicId@ is the only field of a regular header that
     -- is not signed, so check it manually.
     case byronHeaderRaw hdr of
-        ABOBBlockHdr h    -> CC.headerProtocolMagicId h == protocolMagicId
+        ABOBBlockHdr    _ h -> CC.headerProtocolMagicId h == protocolMagicId
         -- EBB, we can't check it
-        ABOBBoundaryHdr _ -> True
+        ABOBBoundaryHdr _ _ -> True
   where
     protocolMagicId = CC.Genesis.configProtocolMagicId (getGenesisConfig cfg)
 

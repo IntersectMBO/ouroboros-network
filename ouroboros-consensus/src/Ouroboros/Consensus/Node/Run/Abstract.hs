@@ -96,8 +96,9 @@ class (ProtocolLedgerView blk, ApplyTx blk) => RunNode blk where
   -- For example, a CBOR tag may have to be added in front.
   nodeAddHeaderEnvelope   :: Proxy blk
                           -> IsEBB
+                          -> Word32  -- ^ Block size
                           -> Lazy.ByteString -> Lazy.ByteString
-  nodeAddHeaderEnvelope _ _ = id  -- Default to no envelope
+  nodeAddHeaderEnvelope _ _ _ = id  -- Default to no envelope
 
 
   -- | This function is called when starting up the node, right after the

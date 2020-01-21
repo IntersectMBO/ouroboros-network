@@ -3,7 +3,6 @@
 {-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE OverloadedStrings          #-}
@@ -23,6 +22,7 @@ module Ouroboros.Consensus.Ledger.Byron.Block (
     -- * Header
   , Header(..)
   , mkByronHeader
+  , byronBlockSizeFromHeader
     -- * Serialisation
   , encodeByronBlockWithInfo
   , encodeByronBlock
@@ -50,6 +50,7 @@ import           GHC.Generics (Generic)
 import           Codec.CBOR.Decoding (Decoder)
 import           Codec.CBOR.Encoding (Encoding)
 import qualified Codec.CBOR.Encoding as CBOR
+import qualified Codec.CBOR.Write as CBOR
 import           Codec.Serialise (Serialise (..))
 
 import           Cardano.Binary
@@ -177,6 +178,11 @@ mkByronHeader epochSlots hdr = ByronHeader {
     , byronHeaderHash   = mkByronHash hdr
     }
 
+byronBlockSizeFromHeader :: Header ByronBlock -> Word32
+byronBlockSizeFromHeader hdr = case byronHeaderRaw hdr of
+    ABOBBlockHdr    blockSize _ -> blockSize
+    ABOBBoundaryHdr blockSize _ -> blockSize
+
 {-------------------------------------------------------------------------------
   HasHeader instances
 
@@ -272,20 +278,22 @@ decodeByronBlock epochSlots =
 
 -- | Encode a header
 --
--- Should be backwards compatible with legacy (cardano-sl) nodes.
+-- Does /not/ have to backwards compatible with legacy (cardano-sl) nodes.
 --
 -- This function should be inverse to 'decodeByronHeader'
 -- (which uses 'fromCBORABlockOrBoundaryHdr').
 encodeByronHeader :: Header ByronBlock -> Encoding
 encodeByronHeader hdr = mconcat [
-      CBOR.encodeListLen 2
+      CBOR.encodeListLen 3
     , case byronHeaderRaw hdr of
-        ABOBBoundaryHdr h -> mconcat [
+        ABOBBoundaryHdr blockSize h -> mconcat [
             CBOR.encodeWord 0
+          , CBOR.encodeWord32 blockSize
           , CBOR.encodePreEncoded $ CC.boundaryHeaderAnnotation h
           ]
-        ABOBBlockHdr h -> mconcat [
+        ABOBBlockHdr blockSize h -> mconcat [
             CBOR.encodeWord 1
+          , CBOR.encodeWord32 blockSize
           , CBOR.encodePreEncoded $ CC.headerAnnotation h
           ]
     ]
@@ -302,11 +310,26 @@ decodeByronHeader epochSlots =
     fillInByteString it theBytes = mkByronHeader epochSlots $
       Lazy.toStrict . slice theBytes <$> it
 
--- | When given the raw header bytes extracted from the block, i.e. the header
--- annotation, we still need to prepend @CBOR.encodeListLen 2@ and
--- @CBOR.encodeWord x@ where @x@ is 0 for an EBB and 1 for a regular header.
+-- | When given the raw header bytes extracted from the block, i.e., the
+-- header annotation of 'CC.AHeader' or 'CC.ABoundaryHdr', we still need to
+-- prepend some bytes so that we can use 'decodeByronHeader' to decode it:
+--
+-- * @CBOR.encodeListLen 3@
+-- * @CBOR.encodeWord x@ where @x@ is 0 for an EBB and 1 for a regular header.
+-- * @CBOR.encodeWord32 blockSize@
 byronAddHeaderEnvelope
-  :: IsEBB -> Lazy.ByteString -> Lazy.ByteString
-byronAddHeaderEnvelope = mappend . \case
-    IsEBB    -> "\130\NUL"
-    IsNotEBB -> "\130\SOH"
+  :: IsEBB
+  -> Word32  -- ^ Block size
+  -> Lazy.ByteString -> Lazy.ByteString
+byronAddHeaderEnvelope isEBB blockSize bs = mconcat
+    [ encodedListLen
+    , encodedTag
+    , encodedBlockSize
+    , bs
+    ]
+  where
+    encodedListLen   = "\131"
+    encodedTag       = case isEBB of
+      IsEBB    -> "\NUL"
+      IsNotEBB -> "\SOH"
+    encodedBlockSize = CBOR.toLazyByteString (CBOR.encodeWord32 blockSize)

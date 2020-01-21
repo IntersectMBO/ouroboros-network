@@ -15,6 +15,7 @@ import           Codec.CBOR.Decoding (Decoder)
 import           Codec.CBOR.Encoding (Encoding)
 import qualified Data.ByteString.Lazy as Lazy
 import           Data.Time.Clock (DiffTime, secondsToDiffTime)
+import           Data.Word (Word32)
 
 import           Control.Tracer (Tracer, contramap)
 
@@ -93,10 +94,12 @@ data ChainDbArgs m blk = forall h1 h2 h3. ChainDbArgs {
     , cdbCheckIntegrity   :: blk -> Bool
     , cdbGenesis          :: m (ExtLedgerState blk)
     , cdbBlockchainTime   :: BlockchainTime m
-    , cdbAddHdrEnv        :: IsEBB -> Lazy.ByteString -> Lazy.ByteString
+    , cdbAddHdrEnv        :: IsEBB -> Word32 -> Lazy.ByteString -> Lazy.ByteString
       -- ^ The header envelope will only be added after extracting the binary
       -- header from the binary block. Note that we never have to remove an
       -- envelope.
+      --
+      -- The 'Word32' is the size of the block.
     , cdbImmDbCacheConfig :: ImmDB.CacheConfig
 
       -- Misc

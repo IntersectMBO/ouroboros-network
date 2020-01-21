@@ -60,6 +60,7 @@ import           Data.Proxy (Proxy (..))
 import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Typeable (Typeable)
+import           Data.Word (Word32)
 import           GHC.Stack (HasCallStack)
 import           System.FilePath ((</>))
 
@@ -105,7 +106,7 @@ data VolDB m blk = VolDB {
       -- generics to derive the NoUnexpectedThunks instance.
     , encBlock  :: blk -> BinaryInfo Encoding
     , isEBB     :: blk -> IsEBB
-    , addHdrEnv :: !(IsEBB -> Lazy.ByteString -> Lazy.ByteString)
+    , addHdrEnv :: !(IsEBB -> Word32 -> Lazy.ByteString -> Lazy.ByteString)
     , err       :: ErrorHandling VolatileDBError m
     , errSTM    :: ThrowCantCatch VolatileDBError (STM m)
     }
@@ -137,7 +138,7 @@ data VolDbArgs m blk = forall h. VolDbArgs {
     , volDecodeBlock   :: forall s. Decoder s (Lazy.ByteString -> blk)
     , volEncodeBlock   :: blk -> BinaryInfo Encoding
     , volIsEBB         :: blk -> IsEBB
-    , volAddHdrEnv     :: IsEBB -> Lazy.ByteString -> Lazy.ByteString
+    , volAddHdrEnv     :: IsEBB -> Word32 -> Lazy.ByteString -> Lazy.ByteString
     }
 
 -- | Default arguments when using the 'IO' monad
@@ -190,7 +191,7 @@ mkVolDB :: VolatileDB (HeaderHash blk) m
         -> (forall s. Decoder s (Lazy.ByteString -> blk))
         -> (blk -> BinaryInfo Encoding)
         -> (blk -> IsEBB)
-        -> (IsEBB -> Lazy.ByteString -> Lazy.ByteString)
+        -> (IsEBB -> Word32 -> Lazy.ByteString -> Lazy.ByteString)
         -> ErrorHandling VolatileDBError m
         -> ThrowCantCatch VolatileDBError (STM m)
         -> VolDB m blk

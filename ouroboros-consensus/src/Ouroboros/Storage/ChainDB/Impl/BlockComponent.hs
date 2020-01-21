@@ -11,6 +11,7 @@ module Ouroboros.Storage.ChainDB.Impl.BlockComponent
   ) where
 
 import qualified Data.ByteString.Lazy as Lazy
+import           Data.Word (Word32)
 
 import           Ouroboros.Network.Block (pattern BlockPoint, HeaderHash,
                      SlotNo)
@@ -25,7 +26,7 @@ import           Ouroboros.Storage.Common
 translateToRawDB
   :: forall m blk b db. DBHeaderHash db ~ HeaderHash blk
   => (forall b'. Parser m blk b')
-  -> (IsEBB -> Lazy.ByteString -> Lazy.ByteString)
+  -> (IsEBB -> Word32 -> Lazy.ByteString -> Lazy.ByteString)
      -- ^ Add header envelope
   -> BlockComponent (ChainDB m blk) b
   -> BlockComponent db b
@@ -34,9 +35,10 @@ translateToRawDB parse addHdrEnv = \case
       parse Block <$> getBlockRef <*> GetRawBlock
     GetRawBlock   -> GetRawBlock
     GetHeader ->
-      (\isEBB blockRef bs -> parse Header blockRef (addHdrEnv isEBB bs)) <$>
-      GetIsEBB <*> getBlockRef <*> GetRawHeader
-    GetRawHeader  -> addHdrEnv <$> GetIsEBB <*> GetRawHeader
+      (\isEBB blockSize blockRef bs ->
+        parse Header blockRef (addHdrEnv isEBB blockSize bs)) <$>
+      GetIsEBB <*> GetBlockSize <*> getBlockRef <*> GetRawHeader
+    GetRawHeader  -> addHdrEnv <$> GetIsEBB <*> GetBlockSize <*> GetRawHeader
     GetHash       -> GetHash
     GetSlot       -> GetSlot
     GetIsEBB      -> GetIsEBB

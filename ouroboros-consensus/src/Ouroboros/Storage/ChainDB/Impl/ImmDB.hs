@@ -65,6 +65,7 @@ import           Control.Tracer (Tracer, nullTracer)
 import           Data.Bifunctor
 import qualified Data.ByteString.Lazy as Lazy
 import           Data.Functor (($>), (<&>))
+import           Data.Word (Word32)
 import           GHC.Stack
 import           System.FilePath ((</>))
 
@@ -111,7 +112,7 @@ data ImmDB m blk = ImmDB {
     , encBlock  :: !(blk -> BinaryInfo Encoding)
     , epochInfo :: !(EpochInfo m)
     , isEBB     :: !(Header blk -> Maybe EpochNo)
-    , addHdrEnv :: !(IsEBB -> Lazy.ByteString -> Lazy.ByteString)
+    , addHdrEnv :: !(IsEBB -> Word32 -> Lazy.ByteString -> Lazy.ByteString)
     , err       :: !(ErrorHandling ImmDB.ImmutableDBError m)
     }
 
@@ -153,7 +154,7 @@ data ImmDbArgs m blk = forall h. ImmDbArgs {
     , immValidation     :: ImmDB.ValidationPolicy
     , immIsEBB          :: Header blk -> Maybe EpochNo
     , immCheckIntegrity :: blk -> Bool
-    , immAddHdrEnv      :: IsEBB -> Lazy.ByteString -> Lazy.ByteString
+    , immAddHdrEnv      :: IsEBB -> Word32 -> Lazy.ByteString -> Lazy.ByteString
     , immHasFS          :: HasFS m h
     , immTracer         :: Tracer m (TraceEvent blk)
     , immCacheConfig    :: Index.CacheConfig
@@ -252,7 +253,7 @@ mkImmDB :: ImmutableDB (HeaderHash blk) m
         -> (blk -> BinaryInfo Encoding)
         -> EpochInfo m
         -> (Header blk -> Maybe EpochNo)
-        -> (IsEBB -> Lazy.ByteString -> Lazy.ByteString)
+        -> (IsEBB -> Word32 -> Lazy.ByteString -> Lazy.ByteString)
         -> ErrorHandling ImmDB.ImmutableDBError m
         -> ImmDB m blk
 mkImmDB immDB decHeader decBlock encBlock epochInfo isEBB addHdrEnv err = ImmDB {..}

@@ -35,13 +35,13 @@ import           Ouroboros.Storage.Common (EpochNo (..), EpochSize (..))
 instance RunNode ByronBlock where
   nodeForgeBlock            = forgeByronBlock
   nodeBlockMatchesHeader    = verifyBlockMatchesHeader
-  nodeBlockFetchSize        = const 2000 -- TODO #593
+  nodeBlockFetchSize        = byronBlockSizeFromHeader
   nodeIsEBB                 = \hdr -> case byronHeaderRaw hdr of
-    Aux.ABOBBlockHdr _       -> Nothing
-    Aux.ABOBBoundaryHdr bhdr -> Just
-                              . EpochNo
-                              . Cardano.Block.boundaryEpoch
-                              $ bhdr
+    Aux.ABOBBlockHdr    _ _    -> Nothing
+    Aux.ABOBBoundaryHdr _ bhdr -> Just
+                               . EpochNo
+                               . Cardano.Block.boundaryEpoch
+                               $ bhdr
 
   -- The epoch size is fixed and can be derived from @k@ by the ledger
   -- ('kEpochSlots').

@@ -12,6 +12,7 @@
 {-# LANGUAGE TypeApplications    #-}
 {-# LANGUAGE TypeFamilies        #-}
 
+{-# OPTIONS_GHC -Wno-orphans #-}
 -- | Auxiliary definitions to make working with the Byron ledger easier
 --
 -- NOTE: None of these definitions depend on @ouroboros-network@ or
@@ -61,6 +62,7 @@ import           Control.Monad.Reader
 import           Data.Bimap (Bimap)
 import qualified Data.Bimap as Bimap
 import           Data.ByteString (ByteString)
+import qualified Data.ByteString as Strict
 import qualified Data.ByteString.Lazy as Lazy
 import           Data.Either (isRight)
 import qualified Data.Foldable as Foldable
@@ -608,30 +610,46 @@ reAnnotateUsing encoder decoder =
   The ledger layer defines 'ABlockOrBoundary', but no equivalent for headers.
 -------------------------------------------------------------------------------}
 
+-- | Artificial sum of 'CC.AHeader' and 'CC.ABoundaryHeader'.
+--
+-- Note that this type is /not/ serialised to disk. Either the 'CC.AHeader' or
+-- the 'CC.ABoundaryHeader' will be extracted from 'ABlockOrBoundary', which
+-- /is/ serialised to disk, but not the sum or any additional arguments.
+--
+-- Note that this type /is/ serialised and sent over the network.
 data ABlockOrBoundaryHdr a =
-    ABOBBlockHdr    !(CC.AHeader         a)
-  | ABOBBoundaryHdr !(CC.ABoundaryHeader a)
+    ABOBBlockHdr
+      !Word32  -- ^ Block size
+      !(CC.AHeader         a)
+  | ABOBBoundaryHdr
+      !Word32  -- ^ Block size
+      !(CC.ABoundaryHeader a)
   deriving (Eq, Show, Functor, Generic, NoUnexpectedThunks)
 
 fromCBORABlockOrBoundaryHdr :: CC.EpochSlots
                             -> Decoder s (ABlockOrBoundaryHdr ByteSpan)
 fromCBORABlockOrBoundaryHdr epochSlots = do
-    enforceSize "ABlockOrBoundaryHdr" 2
+    enforceSize "ABlockOrBoundaryHdr" 3
     fromCBOR @Word >>= \case
-      0 -> ABOBBoundaryHdr <$> CC.fromCBORABoundaryHeader
-      1 -> ABOBBlockHdr    <$> CC.fromCBORAHeader epochSlots
+      0 -> ABOBBoundaryHdr <$> decodeWord32 <*> CC.fromCBORABoundaryHeader
+      1 -> ABOBBlockHdr    <$> decodeWord32 <*> CC.fromCBORAHeader epochSlots
       t -> error $ "Unknown tag in encoded HeaderOrBoundary" <> show t
 
 -- | The analogue of 'Data.Either.either'
 aBlockOrBoundaryHdr :: (CC.AHeader         a -> b)
                     -> (CC.ABoundaryHeader a -> b)
                     -> ABlockOrBoundaryHdr a -> b
-aBlockOrBoundaryHdr f _ (ABOBBlockHdr    hdr) = f hdr
-aBlockOrBoundaryHdr _ g (ABOBBoundaryHdr hdr) = g hdr
+aBlockOrBoundaryHdr f _ (ABOBBlockHdr    _ hdr) = f hdr
+aBlockOrBoundaryHdr _ g (ABOBBoundaryHdr _ hdr) = g hdr
 
-abobHdrFromBlock :: CC.ABlockOrBoundary a -> ABlockOrBoundaryHdr a
-abobHdrFromBlock (CC.ABOBBlock    blk) = ABOBBlockHdr    $ CC.blockHeader    blk
-abobHdrFromBlock (CC.ABOBBoundary blk) = ABOBBoundaryHdr $ CC.boundaryHeader blk
+abobHdrFromBlock :: CC.ABlockOrBoundary ByteString
+                 -> ABlockOrBoundaryHdr ByteString
+abobHdrFromBlock = \case
+    CC.ABOBBlock    blk -> ABOBBlockHdr    (blockSize blk) (CC.blockHeader    blk)
+    CC.ABOBBoundary blk -> ABOBBoundaryHdr (blockSize blk) (CC.boundaryHeader blk)
+  where
+    blockSize :: Decoded a => a -> Word32
+    blockSize = fromIntegral . Strict.length . recoverBytes
 
 -- | Slot number of the header
 --
@@ -649,8 +667,8 @@ abobHdrChainDifficulty =
       CC.boundaryDifficulty
 
 abobHdrHash :: ABlockOrBoundaryHdr ByteString -> CC.HeaderHash
-abobHdrHash (ABOBBoundaryHdr hdr) = CC.boundaryHeaderHashAnnotated hdr
-abobHdrHash (ABOBBlockHdr    hdr) = CC.headerHashAnnotated         hdr
+abobHdrHash (ABOBBoundaryHdr _ hdr) = CC.boundaryHeaderHashAnnotated hdr
+abobHdrHash (ABOBBlockHdr    _ hdr) = CC.headerHashAnnotated         hdr
 
 abobHdrPrevHash :: ABlockOrBoundaryHdr a -> Maybe CC.HeaderHash
 abobHdrPrevHash =
@@ -669,11 +687,21 @@ abobMatchesBody :: ABlockOrBoundaryHdr ByteString
                 -> Bool
 abobMatchesBody hdr blk =
     case (hdr, blk) of
-      (ABOBBlockHdr hdr', CC.ABOBBlock blk') -> matchesBody hdr' blk'
-      (ABOBBoundaryHdr _, CC.ABOBBoundary _) -> True
-      (ABOBBlockHdr    _, CC.ABOBBoundary _) -> False
-      (ABOBBoundaryHdr _, CC.ABOBBlock    _) -> False
+      (ABOBBlockHdr _ hdr', CC.ABOBBlock  blk') -> matchesBody hdr' blk'
+      (ABOBBoundaryHdr {},  CC.ABOBBoundary {}) -> True
+      (ABOBBlockHdr    {},  CC.ABOBBoundary {}) -> False
+      (ABOBBoundaryHdr {},  CC.ABOBBlock    {}) -> False
   where
     matchesBody :: CC.AHeader ByteString -> CC.ABlock ByteString -> Bool
     matchesBody hdr' blk' = isRight $
         CC.validateHeaderMatchesBody hdr' (CC.blockBody blk')
+
+{-------------------------------------------------------------------------------
+  Orphans
+-------------------------------------------------------------------------------}
+
+-- NOTE this doesn't live in "Ouroboros.Consensus.Ledger.Byron.Orphans", as it
+-- should also be moved to cardano-ledger.
+instance Decoded (CC.ABlock ByteString) where
+  type BaseType (CC.ABlock ByteString) = CC.ABlock ()
+  recoverBytes = CC.blockAnnotation

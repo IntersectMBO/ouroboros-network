@@ -18,6 +18,7 @@ import           Control.Tracer
 import qualified Data.ByteString.Lazy as Lazy
 import           Data.List (intercalate)
 import qualified Data.Map.Strict as Map
+import           Data.Word (Word32)
 
 import           Control.Monad.IOSim (runSimOrThrow)
 
@@ -411,8 +412,8 @@ initIteratorEnv TestSetup { immutable, volatile } tracer = do
     epochSize :: EpochSize
     epochSize = 10
 
-    addHdrEnv :: IsEBB -> Lazy.ByteString -> Lazy.ByteString
-    addHdrEnv = const id
+    addHdrEnv :: IsEBB -> Word32 -> Lazy.ByteString -> Lazy.ByteString
+    addHdrEnv _ _ = id
 
     -- | Open a mock ImmutableDB and add the given chain of blocks
     openImmDB :: Chain TestBlock -> m (ImmDB m TestBlock)

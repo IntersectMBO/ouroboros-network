@@ -447,19 +447,22 @@ instance Arbitrary (Header ByronBlock) where
       ]
     where
       genHeader :: Gen (Header ByronBlock)
-      genHeader =
-        mkByronHeader epochSlots . ABOBBlockHdr .
-        reAnnotateUsing
-          (CC.Block.toCBORHeader epochSlots)
-          (CC.Block.fromCBORAHeader epochSlots) <$>
-        hedgehog (CC.genHeader protocolMagicId epochSlots)
+      genHeader = do
+        blockSize <- arbitrary
+        mkByronHeader epochSlots . ABOBBlockHdr blockSize .
+          reAnnotateUsing
+            (CC.Block.toCBORHeader epochSlots)
+            (CC.Block.fromCBORAHeader epochSlots) <$>
+          hedgehog (CC.genHeader protocolMagicId epochSlots)
+
       genBoundaryHeader :: Gen (Header ByronBlock)
-      genBoundaryHeader =
-        mkByronHeader epochSlots . ABOBBoundaryHdr .
-        reAnnotateUsing
-          (CC.Block.toCBORABoundaryHeader protocolMagicId)
-          CC.Block.fromCBORABoundaryHeader <$>
-        hedgehog CC.genBoundaryHeader
+      genBoundaryHeader = do
+        blockSize <- arbitrary
+        mkByronHeader epochSlots . ABOBBoundaryHdr blockSize .
+          reAnnotateUsing
+            (CC.Block.toCBORABoundaryHeader protocolMagicId)
+            CC.Block.fromCBORABoundaryHeader <$>
+          hedgehog CC.genBoundaryHeader
 
 instance Arbitrary ByronHash where
   arbitrary = ByronHash <$> hedgehog CC.genHeaderHash
