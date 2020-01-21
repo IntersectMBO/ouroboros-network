@@ -10,6 +10,10 @@ module Ouroboros.Network.Snocket
   , SocketSnocket
   , socketSnocket
   , rawSocketSnocket
+  , LocalSnocket
+  , localSnocket
+  , LocalAddress
+  , localAddressFromPath
   ) where
 
 import           Control.Exception
@@ -336,4 +340,30 @@ namedPipeSnocket iocp name = Snocket {
       associateWithIOCP iocp (Left hpipe)
       Win32.Async.connectNamedPipe hpipe
       return (hpipe, name, acceptNext)
+#endif
+
+-- | System dependent LocalSnocket type
+#if defined(mingw32_HOST_OS)
+type LocalSnocket = HANDLESnocket
+
+localSnocket :: AssociateWithIOCP -> FilePath -> LocalSnocket
+localSnocket = namedPipeSnocket
+#else
+type LocalSnocket = SocketSnocket
+
+localSnocket :: AssociateWithIOCP -> FilePath -> LocalSnocket
+localSnocket iocp _  = rawSocketSnocket iocp
+#endif
+
+#if defined(mingw32_HOST_OS)
+type LocalAddress = FilePath
+#else
+type LocalAddress = Socket.SockAddr
+#endif
+
+localAddressFromPath :: FilePath -> LocalAddress
+#if defined(mingw32_HOST_OS)
+localAddressFromPath = id
+#else
+localAddressFromPath = Socket.SockAddrUnix
 #endif
