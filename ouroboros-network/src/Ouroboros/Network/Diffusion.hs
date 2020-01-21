@@ -192,6 +192,9 @@ runDataDiffusion tracers
             dtErrorPolicyTracer)
           (daLocalResponderApplication applications)
 
+        -- Note-to-node connections request: for a PeerConnection we do the
+        -- responder app `daResponderApplication`, and for the others we choose
+        -- the `daInitiatorApplication`. The types leave little room for error.
         connectionRequest
           :: Request provenance
           -> SomeVersionedApplication NodeToNodeProtocols NodeToNodeVersion DictVersion provenance
@@ -222,21 +225,28 @@ runDataDiffusion tracers
         acceptException a e = do
           traceWith (WithAddr a `contramap` dtErrorPolicyTracer) $ ErrorPolicyAcceptException e
 
+        -- How to run a local server: take the `daLocalAddress` and run an
+        -- accept loop on it against the node-to-client connetions (yet to
+        -- be constructed).
         runLocalServer n2cConnections = withSockType addr $ \addr' ->
           acceptLoopOn addr' localClassifyRequest (acceptException addr)
             n2cConnections
           where
           addr = Socket.addrAddress daLocalAddress
 
+        -- A node-to-node server will be run against a common connections
+        -- manager (yet to be constructed) but on potentially many different
+        -- bind addresses. This function will be mapped over the `daAddresses`.
         runServer n2nConnections addrInfo = withSockType addr $ \addr' ->
           acceptLoopOn addr' classifyRequest (acceptException addr)
             n2nConnections
           where
           addr = Socket.addrAddress addrInfo
 
+    -- Get 2 connection managers: one for node-to-client (n2c) and one for
+    -- node-to-node (n2n).
     NodeToClient.withConnections networkLocalState localErrorPolicy localConnectionRequest $ \n2cConnections ->
       NodeToNode.withConnections networkState      errorPolicy      connectionRequest $ \n2nConnections -> 
-        -- The n2cConnection and n2nConnections 
         void $
           -- clean state thread
           Async.withAsync (cleanNetworkMutableState networkState) $ \cleanNetworkStateThread ->
