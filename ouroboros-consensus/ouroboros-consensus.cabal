@@ -413,6 +413,7 @@ test-suite test-storage
                     Test.Util.SOP
                     Test.Util.TestBlock
                     Test.Util.Tracer
+                    Test.Util.WithEq
   build-depends:    base,
                     cardano-crypto-class,
                     cardano-ledger,

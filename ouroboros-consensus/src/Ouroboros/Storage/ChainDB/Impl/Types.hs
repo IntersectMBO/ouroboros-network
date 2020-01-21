@@ -1,14 +1,15 @@
-{-# LANGUAGE DataKinds            #-}
-{-# LANGUAGE DeriveAnyClass       #-}
-{-# LANGUAGE DeriveGeneric        #-}
-{-# LANGUAGE DerivingVia          #-}
-{-# LANGUAGE FlexibleContexts     #-}
-{-# LANGUAGE LambdaCase           #-}
-{-# LANGUAGE RankNTypes           #-}
-{-# LANGUAGE ScopedTypeVariables  #-}
-{-# LANGUAGE StandaloneDeriving   #-}
-{-# LANGUAGE TypeApplications     #-}
-{-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE DataKinds                  #-}
+{-# LANGUAGE DeriveAnyClass             #-}
+{-# LANGUAGE DeriveGeneric              #-}
+{-# LANGUAGE DerivingVia                #-}
+{-# LANGUAGE FlexibleContexts           #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE LambdaCase                 #-}
+{-# LANGUAGE RankNTypes                 #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE StandaloneDeriving         #-}
+{-# LANGUAGE TypeApplications           #-}
+{-# LANGUAGE UndecidableInstances       #-}
 
 {-# OPTIONS_GHC -Wredundant-constraints #-}
 -- | Types used throughout the implementation: handle, state, environment,
@@ -24,7 +25,10 @@ module Ouroboros.Storage.ChainDB.Impl.Types (
     -- * Exposed internals for testing purposes
   , Internal (..)
   , intReopen
+    -- * Iterator-related
+  , IteratorKey (..)
     -- * Reader-related
+  , ReaderKey (..)
   , ReaderHandle (..)
   , ReaderState (..)
   , ReaderRollState (..)
@@ -75,8 +79,7 @@ import           Ouroboros.Storage.Common (EpochNo)
 import           Ouroboros.Storage.EpochInfo (EpochInfo)
 
 import           Ouroboros.Storage.ChainDB.API (ChainDbError (..),
-                     InvalidBlockReason, IteratorId, ReaderId, StreamFrom,
-                     StreamTo, UnknownRange)
+                     InvalidBlockReason, StreamFrom, StreamTo, UnknownRange)
 
 import           Ouroboros.Storage.ChainDB.Impl.ImmDB (ImmDB)
 import qualified Ouroboros.Storage.ChainDB.Impl.ImmDB as ImmDB
@@ -139,10 +142,10 @@ data ChainDbState m blk
   deriving (Generic, NoUnexpectedThunks)
 
 data ChainDbEnv m blk = CDB
-  { cdbImmDB          :: !(ImmDB m blk)
-  , cdbVolDB          :: !(VolDB m blk)
-  , cdbLgrDB          :: !(LgrDB m blk)
-  , cdbChain          :: !(StrictTVar m (AnchoredFragment (Header blk)))
+  { cdbImmDB           :: !(ImmDB m blk)
+  , cdbVolDB           :: !(VolDB m blk)
+  , cdbLgrDB           :: !(LgrDB m blk)
+  , cdbChain           :: !(StrictTVar m (AnchoredFragment (Header blk)))
     -- ^ Contains the current chain fragment.
     --
     -- INVARIANT: the anchor point of this fragment is the tip of the
@@ -155,7 +158,7 @@ data ChainDbEnv m blk = CDB
     -- Note that this fragment might also be /longer/ than @k@ headers,
     -- because the oldest blocks from the fragment might not yet have been
     -- copied from the VolatileDB to the ImmutableDB.
-  , cdbImmBlockNo     :: !(StrictTVar m BlockNo)
+  , cdbImmBlockNo      :: !(StrictTVar m BlockNo)
     -- ^ The block number corresponding to the block @k@ blocks back. This is
     -- the most recent \"immutable\" block according to the protocol, i.e., a
     -- block that cannot be rolled back.
@@ -175,50 +178,50 @@ data ChainDbEnv m blk = CDB
     --
     -- Note that the \"immutable\" block will /never/ be /more/ than @k@
     -- blocks back, as opposed to the anchor point of 'cdbChain'.
-  , cdbIterators      :: !(StrictTVar m (Map IteratorId (m ())))
+  , cdbIterators       :: !(StrictTVar m (Map IteratorKey (m ())))
     -- ^ The iterators.
     --
-    -- This maps the 'IteratorId's of each open 'Iterator' to a function that,
-    -- when called, closes the iterator. This is used when closing the
+    -- This maps the 'IteratorKey's of each open 'Iterator' to a function
+    -- that, when called, closes the iterator. This is used when closing the
     -- ChainDB: the open file handles used by iterators can be closed, and the
     -- iterators themselves are closed so that it is impossible to use an
     -- iterator after closing the ChainDB itself.
-  , cdbReaders        :: !(StrictTVar m (Map ReaderId (ReaderHandle m blk)))
+  , cdbReaders         :: !(StrictTVar m (Map ReaderKey (ReaderHandle m blk)))
     -- ^ The readers.
     --
-    -- A reader is open iff its 'ReaderId' is this 'Map'.
+    -- A reader is open iff its 'ReaderKey' is this 'Map'.
     --
     -- INVARIANT: the 'readerPoint' of each reader is 'withinFragmentBounds'
     -- of the current chain fragment (retrieved 'cdbGetCurrentChain', not by
     -- reading 'cdbChain' directly).
-  , cdbNodeConfig     :: !(NodeConfig (BlockProtocol blk))
-  , cdbInvalid        :: !(StrictTVar m (WithFingerprint (InvalidBlocks blk)))
+  , cdbNodeConfig      :: !(NodeConfig (BlockProtocol blk))
+  , cdbInvalid         :: !(StrictTVar m (WithFingerprint (InvalidBlocks blk)))
     -- ^ See the docstring of 'InvalidBlocks'.
     --
     -- The 'Fingerprint' changes every time a hash is added to the map, but
     -- not when hashes are garbage-collected from the map.
-  , cdbNextIteratorId :: !(StrictTVar m IteratorId)
-  , cdbNextReaderId   :: !(StrictTVar m ReaderId)
-  , cdbCopyLock       :: !(StrictMVar m ())
+  , cdbNextIteratorKey :: !(StrictTVar m IteratorKey)
+  , cdbNextReaderKey   :: !(StrictTVar m ReaderKey)
+  , cdbCopyLock        :: !(StrictMVar m ())
     -- ^ Lock used to ensure that 'copyToImmDB' is not executed more than
     -- once concurrently.
     --
     -- Note that 'copyToImmDB' can still be executed concurrently with all
     -- others functions, just not with itself.
-  , cdbTracer         :: !(Tracer m (TraceEvent blk))
-  , cdbTraceLedger    :: !(Tracer m (LgrDB.LedgerDB blk))
-  , cdbRegistry       :: !(ResourceRegistry m)
+  , cdbTracer          :: !(Tracer m (TraceEvent blk))
+  , cdbTraceLedger     :: !(Tracer m (LgrDB.LedgerDB blk))
+  , cdbRegistry        :: !(ResourceRegistry m)
     -- ^ Resource registry that will be used to (re)start the background
     -- threads, see 'cdbBgThreads'.
-  , cdbGcDelay        :: !DiffTime
+  , cdbGcDelay         :: !DiffTime
     -- ^ How long to wait between copying a block from the VolatileDB to
     -- ImmutableDB and garbage collecting it from the VolatileDB
-  , cdbKillBgThreads  :: !(StrictTVar m (m ()))
+  , cdbKillBgThreads   :: !(StrictTVar m (m ()))
     -- ^ A handle to kill the background threads.
-  , cdbEpochInfo      :: !(EpochInfo m)
-  , cdbIsEBB          :: !(Header blk -> IsEBB)
-  , cdbBlockchainTime :: !(BlockchainTime m)
-  , cdbFutureBlocks   :: !(StrictTVar m (Map SlotNo (NonEmpty (Header blk))))
+  , cdbEpochInfo       :: !(EpochInfo m)
+  , cdbIsEBB           :: !(Header blk -> IsEBB)
+  , cdbBlockchainTime  :: !(BlockchainTime m)
+  , cdbFutureBlocks    :: !(StrictTVar m (Map SlotNo (NonEmpty (Header blk))))
     -- ^ Scheduled chain selections for blocks with a slot in the future.
     --
     -- When a block with slot @s@, which is > the current slot is added, we
@@ -272,6 +275,20 @@ intReopen :: HasCallStack => Internal m blk -> Bool -> m ()
 intReopen = intReopen_
 
 {-------------------------------------------------------------------------------
+  Iterator-related
+-------------------------------------------------------------------------------}
+
+-- | We use this internally to track iterators in a map ('cdbIterators') in
+-- the ChainDB state so that we can remove them from the map when the iterator
+-- is closed.
+--
+-- We store them in the map so that the ChainDB can close all open iterators
+-- when it is closed itself.
+newtype IteratorKey = IteratorKey Word
+  deriving stock   (Show)
+  deriving newtype (Eq, Ord, Enum, NoUnexpectedThunks)
+
+{-------------------------------------------------------------------------------
   Reader-related
 -------------------------------------------------------------------------------}
 
@@ -279,6 +296,17 @@ intReopen = intReopen_
 -- depends on them, 'ChainDbEnv.cdbTracer' depends on 'TraceEvent', and most
 -- modules depend on 'ChainDbEnv'. Also, 'ChainDbEnv.cdbReaders' depends on
 -- 'ReaderState'.
+
+-- | We use this internally to track reader in a map ('cdbReaders') in the
+-- ChainDB state so that we can remove them from the map when the reader is
+-- closed.
+--
+-- We store them in the map so that the ChainDB can close all open readers
+-- when it is closed itself and to update the readers in case we switch to a
+-- different chain.
+newtype ReaderKey = ReaderKey Word
+  deriving stock   (Show)
+  deriving newtype (Eq, Ord, Enum, NoUnexpectedThunks)
 
 -- | Internal handle to a 'Reader' without an explicit @b@ (@blk@, @'Header'
 -- blk@, etc.) parameter so 'Reader's with different' @b@s can be stored
@@ -534,7 +562,7 @@ deriving instance
 
 
 data TraceReaderEvent blk
-  = NewReader ReaderId
+  = NewReader
     -- ^ A new reader was created.
 
   | ReaderNoLongerInMem (ReaderRollState blk)

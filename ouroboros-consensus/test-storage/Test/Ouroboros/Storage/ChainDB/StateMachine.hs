@@ -100,7 +100,8 @@ import           Ouroboros.Storage.LedgerDB.InMemory (LedgerDbParams (..))
 import qualified Ouroboros.Storage.LedgerDB.OnDisk as LedgerDB
 import qualified Ouroboros.Storage.Util.ErrorHandling as EH
 
-import           Test.Ouroboros.Storage.ChainDB.Model (ModelSupportsBlock)
+import           Test.Ouroboros.Storage.ChainDB.Model (IteratorId,
+                     ModelSupportsBlock, ReaderId)
 import qualified Test.Ouroboros.Storage.ChainDB.Model as Model
 import           Test.Ouroboros.Storage.TestBlock
 import           Test.Ouroboros.Storage.Util ((=:=))
@@ -112,6 +113,7 @@ import           Test.Util.RefEnv (RefEnv)
 import qualified Test.Util.RefEnv as RE
 import           Test.Util.SOP
 import           Test.Util.Tracer (recordingTracerIORef)
+import           Test.Util.WithEq
 
 {-------------------------------------------------------------------------------
   Abstract model
@@ -282,14 +284,20 @@ deriving instance (TestConstraints blk, Eq   it, Eq   rdr)
 deriving instance (TestConstraints blk, Show it, Show rdr)
                => Show (Success blk it rdr)
 
+-- | Short-hand
+type TestIterator m blk = WithEq (Iterator m blk (AllComponents blk))
+-- | Short-hand
+type TestReader   m blk = WithEq (Reader   m blk (AllComponents blk))
+
 run :: forall m blk. (IOLike m, HasHeader blk)
     => ChainDB          m blk
     -> ChainDB.Internal m blk
     -> ResourceRegistry m
     -> StrictTVar m SlotNo
-    ->    Cmd     blk (Iterator m blk (AllComponents blk)) (Reader m blk (AllComponents blk))
-    -> m (Success blk (Iterator m blk (AllComponents blk)) (Reader m blk (AllComponents blk)))
-run ChainDB{..} internal registry varCurSlot = \case
+    -> StrictTVar m Id
+    ->    Cmd     blk (TestIterator m blk) (TestReader m blk)
+    -> m (Success blk (TestIterator m blk) (TestReader m blk))
+run ChainDB{..} internal registry varCurSlot varNextId = \case
     AddBlock blk             -> Unit                <$> (advanceAndAdd (blockSlot blk) blk)
     AddFutureBlock blk s     -> Unit                <$> (advanceAndAdd s               blk)
     GetCurrentChain          -> Chain               <$> atomically getCurrentChain
@@ -302,14 +310,14 @@ run ChainDB{..} internal registry varCurSlot = \case
     GetBlockComponent pt     -> mbAllComponents     =<< getBlockComponent allComponents pt
     GetGCedBlockComponent pt -> mbGCedAllComponents =<< getBlockComponent allComponents pt
     GetMaxSlotNo             -> MaxSlot             <$> atomically getMaxSlotNo
-    Stream from to           -> iter                <$> stream registry allComponents from to
-    IteratorNext  it         -> IterResult          <$> iteratorNext it
-    IteratorNextGCed  it     -> iterResultGCed      <$> iteratorNext it
-    IteratorClose it         -> Unit                <$> iteratorClose it
-    NewReader                -> reader              <$> newReader registry allComponents
-    ReaderInstruction rdr    -> MbChainUpdate       <$> readerInstruction rdr
-    ReaderForward rdr pts    -> MbPoint             <$> readerForward rdr pts
-    ReaderClose rdr          -> Unit                <$> readerClose rdr
+    Stream from to           -> iter                =<< stream registry allComponents from to
+    IteratorNext  it         -> IterResult          <$> iteratorNext (unWithEq it)
+    IteratorNextGCed  it     -> iterResultGCed      <$> iteratorNext (unWithEq it)
+    IteratorClose it         -> Unit                <$> iteratorClose (unWithEq it)
+    NewReader                -> reader              =<< newReader registry allComponents
+    ReaderInstruction rdr    -> MbChainUpdate       <$> readerInstruction (unWithEq rdr)
+    ReaderForward rdr pts    -> MbPoint             <$> readerForward (unWithEq rdr) pts
+    ReaderClose rdr          -> Unit                <$> readerClose (unWithEq rdr)
     Close                    -> Unit                <$> closeDB
     Reopen                   -> Unit                <$> intReopen internal False
     RunBgTasks               -> ignore              <$> runBgTasks internal
@@ -317,8 +325,8 @@ run ChainDB{..} internal registry varCurSlot = \case
     mbAllComponents = fmap MbAllComponents . traverse runAllComponentsM
     mbGCedAllComponents = fmap (MbGCedAllComponents . MaybeGCedBlock True) . traverse runAllComponentsM
     iterResultGCed = IterResultGCed . IteratorResultGCed True
-    iter = either UnknownRange (Iter . traverseIterator runAllComponentsM)
-    reader = Rdr . traverseReader runAllComponentsM
+    iter = either (return . UnknownRange) (fmap Iter . giveWithEq . traverseIterator runAllComponentsM)
+    reader = fmap Rdr . giveWithEq . traverseReader runAllComponentsM
     ignore _ = Unit ()
 
     advanceAndAdd newCurSlot blk = do
@@ -331,6 +339,10 @@ run ChainDB{..} internal registry varCurSlot = \case
           atomically $ writeTVar varCurSlot slot
           intScheduledChainSelection internal slot
       addBlock blk
+
+    giveWithEq :: a -> m (WithEq a)
+    giveWithEq a =
+      fmap (`WithEq` a) $ atomically $ updateTVar varNextId $ \i -> (succ i, i)
 
 runBgTasks :: IOLike m => ChainDB.Internal m blk -> m ()
 runBgTasks ChainDB.Internal{..} = do
@@ -473,9 +485,9 @@ runPure cfg = \case
     advanceAndAdd slot blk =
       Model.addBlock cfg blk . Model.advanceCurSlot cfg slot
 
-    iter                 = either UnknownRange Iter
+    iter = either UnknownRange Iter
     mbGCedAllComponents = MbGCedAllComponents . MaybeGCedBlock False
-    iterResultGCed       = IterResultGCed . IteratorResultGCed False
+    iterResultGCed      = IterResultGCed . IteratorResultGCed False
 
     query   f m = (f m, m)
 
@@ -502,10 +514,11 @@ runIO :: HasHeader blk
       -> ChainDB.Internal IO blk
       -> ResourceRegistry IO
       -> StrictTVar       IO SlotNo
-      ->     Cmd  blk (Iterator IO blk (AllComponents blk)) (Reader IO blk (AllComponents blk))
-      -> IO (Resp blk (Iterator IO blk (AllComponents blk)) (Reader IO blk (AllComponents blk)))
-runIO db internal registry varCurSlot cmd =
-    Resp <$> try (run db internal registry varCurSlot cmd)
+      -> StrictTVar       IO Id
+      ->     Cmd  blk (WithEq (Iterator IO blk (AllComponents blk))) (WithEq (Reader IO blk (AllComponents blk)))
+      -> IO (Resp blk (WithEq (Iterator IO blk (AllComponents blk))) (WithEq (Reader IO blk (AllComponents blk))))
+runIO db internal registry varCurSlot varNextId cmd =
+    Resp <$> try (run db internal registry varCurSlot varNextId cmd)
 
 {-------------------------------------------------------------------------------
   Collect arguments
@@ -524,16 +537,16 @@ rdrs = bifoldMap (const []) (:[])
 -------------------------------------------------------------------------------}
 
 -- | Concrete or symbolic references to a real iterator
-type IterRef blk m r = Reference (Opaque (Iterator m blk (AllComponents blk))) r
+type IterRef blk m r = Reference (Opaque (TestIterator m blk)) r
 
 -- | Mapping between iterator references and mocked iterators
-type KnownIters blk m r = RefEnv (Opaque (Iterator m blk (AllComponents blk))) IteratorId r
+type KnownIters blk m r = RefEnv (Opaque (TestIterator m blk)) IteratorId r
 
 -- | Concrete or symbolic references to a real reader
-type ReaderRef blk m r = Reference (Opaque (Reader m blk (AllComponents blk))) r
+type ReaderRef blk m r = Reference (Opaque (TestReader m blk)) r
 
 -- | Mapping between iterator references and mocked readers
-type KnownReaders blk m r = RefEnv (Opaque (Reader m blk (AllComponents blk))) ReaderId r
+type KnownReaders blk m r = RefEnv (Opaque (TestReader m blk)) ReaderId r
 
 type DBModel blk = Model.Model blk
 
@@ -708,10 +721,10 @@ generator genBlock m@Model {..} = At <$> frequency
     secParam :: SecurityParam
     secParam = protocolSecurityParam cfg
 
-    iterators :: [Reference (Opaque (Iterator m blk (AllComponents blk))) Symbolic]
+    iterators :: [Reference (Opaque (TestIterator m blk)) Symbolic]
     iterators = RE.keys knownIters
 
-    readers :: [Reference (Opaque (Reader m blk (AllComponents blk))) Symbolic]
+    readers :: [Reference (Opaque (TestReader m blk)) Symbolic]
     readers = RE.keys knownReaders
 
     genRandomPoint :: Gen (Point blk)
@@ -945,11 +958,12 @@ semantics :: forall blk. TestConstraints blk
           -> ChainDB.Internal IO blk
           -> ResourceRegistry IO
           -> StrictTVar       IO SlotNo
+          -> StrictTVar       IO Id
           -> At Cmd blk IO Concrete
           -> IO (At Resp blk IO Concrete)
-semantics db internal registry varCurSlot (At cmd) =
+semantics db internal registry varCurSlot varNextId (At cmd) =
     At . (bimap (QSM.reference . QSM.Opaque) (QSM.reference . QSM.Opaque)) <$>
-    runIO db internal registry varCurSlot (bimap QSM.opaque QSM.opaque cmd)
+    runIO db internal registry varCurSlot varNextId (bimap QSM.opaque QSM.opaque cmd)
 
 -- | The state machine proper
 sm :: TestConstraints blk
@@ -957,6 +971,7 @@ sm :: TestConstraints blk
    -> ChainDB.Internal IO       blk
    -> ResourceRegistry IO
    -> StrictTVar       IO SlotNo
+   -> StrictTVar       IO Id
    -> BlockGen                  blk IO
    -> NodeConfig (BlockProtocol blk)
    -> ExtLedgerState            blk
@@ -964,14 +979,14 @@ sm :: TestConstraints blk
                    (At Cmd      blk IO)
                                     IO
                    (At Resp     blk IO)
-sm db internal registry varCurSlot genBlock env initLedger = StateMachine
+sm db internal registry varCurSlot varNextId genBlock env initLedger = StateMachine
   { initModel     = initModel env initLedger
   , transition    = transition
   , precondition  = precondition
   , postcondition = postcondition
   , generator     = Just . generator genBlock
   , shrinker      = shrinker
-  , semantics     = semantics db internal registry varCurSlot
+  , semantics     = semantics db internal registry varCurSlot varNextId
   , mock          = mock
   , invariant     = Nothing
   , distribution  = Nothing
@@ -1019,7 +1034,6 @@ deriving instance ToExpr Fingerprint
 deriving instance ToExpr BlockNo
 deriving instance ToExpr SlotNo
 deriving instance ToExpr ReaderNext
-deriving instance ToExpr IteratorId
 deriving instance ToExpr MaxSlotNo
 deriving instance ToExpr blk  => ToExpr (Point.WithOrigin blk)
 deriving instance ToExpr hash => ToExpr (Point.Block SlotNo hash)
@@ -1231,10 +1245,13 @@ registryUnunused = error "ResourceRegistry used during command generation"
 varCurSlotUnused :: StrictTVar m SlotNo
 varCurSlotUnused = error "StrictTVar m SlotNo used during command generation"
 
+varNextIdUnused :: StrictTVar m Id
+varNextIdUnused = error "StrictTVar m Id used during command generation"
+
 smUnused :: StateMachine (Model Blk IO) (At Cmd Blk IO) IO (At Resp Blk IO)
 smUnused =
-    sm dbUnused internalUnused registryUnunused varCurSlotUnused genBlk
-      testCfg testInitExtLedger
+    sm dbUnused internalUnused registryUnunused varCurSlotUnused varNextIdUnused
+      genBlk testCfg testInitExtLedger
 
 -- | The current slot can be changed by modifying the given 'StrictTVar'.
 -- 'onSlotChange_' is not implemented as it is currently not used by the
@@ -1261,13 +1278,14 @@ prop_sequential = forAllCommands smUnused Nothing $ \cmds -> QC.monadicIO $ do
       iteratorRegistry   <- QC.run unsafeNewRegistry
       (tracer, getTrace) <- QC.run recordingTracerIORef
       varCurSlot         <- QC.run $ uncheckedNewTVarM 0
+      varNextId          <- QC.run $ uncheckedNewTVarM 0
       fsVars             <- QC.run $ (,,)
         <$> uncheckedNewTVarM Mock.empty
         <*> uncheckedNewTVarM Mock.empty
         <*> uncheckedNewTVarM Mock.empty
       let args = mkArgs testCfg testInitExtLedger tracer threadRegistry varCurSlot fsVars
       (db, internal)     <- QC.run $ openDBInternal args False
-      let sm' = sm db internal iteratorRegistry varCurSlot genBlk testCfg testInitExtLedger
+      let sm' = sm db internal iteratorRegistry varCurSlot varNextId genBlk testCfg testInitExtLedger
       (hist, model, res) <- runCommands sm' cmds
       (realChain, realChain', trace, fses, remainingCleanups) <- QC.run $ do
         trace <- getTrace
@@ -1468,6 +1486,7 @@ tests = testGroup "ChainDB q-s-m"
 _runCmds :: [Cmd Blk IteratorId ReaderId] -> IO [Resp Blk IteratorId ReaderId]
 _runCmds cmds = withRegistry $ \registry -> do
     varCurSlot <- uncheckedNewTVarM 0
+    varNextId  <- uncheckedNewTVarM 0
     fsVars <- (,,)
       <$> uncheckedNewTVarM Mock.empty
       <*> uncheckedNewTVarM Mock.empty
@@ -1480,20 +1499,21 @@ _runCmds cmds = withRegistry $ \registry -> do
           varCurSlot
           fsVars
     (db, internal) <- openDBInternal args False
-    evalStateT (mapM (go db internal registry varCurSlot) cmds) emptyRunCmdState
+    evalStateT (mapM (go db internal registry varCurSlot varNextId) cmds) emptyRunCmdState
   where
     go :: ChainDB IO Blk -> ChainDB.Internal IO Blk
        -> ResourceRegistry IO
        -> StrictTVar IO SlotNo
+       -> StrictTVar IO Id
        -> Cmd Blk IteratorId ReaderId
        -> StateT RunCmdState
                  IO
                  (Resp Blk IteratorId ReaderId)
-    go db internal resourceRegistry varCurSlot cmd = do
+    go db internal resourceRegistry varCurSlot varNextId cmd = do
       RunCmdState { _knownIters, _knownReaders} <- get
       let cmd' = At $
             bimap (revLookup _knownIters) (revLookup _knownReaders) cmd
-      resp <- lift $ unAt <$> semantics db internal resourceRegistry varCurSlot cmd'
+      resp <- lift $ unAt <$> semantics db internal resourceRegistry varCurSlot varNextId cmd'
       newIters <- RE.fromList <$>
        mapM (\rdr -> (rdr, ) <$> newIteratorId) (iters resp)
       newReaders <- RE.fromList <$>
@@ -1531,6 +1551,6 @@ emptyRunCmdState :: RunCmdState
 emptyRunCmdState = RunCmdState
   { _knownIters     = RE.empty
   , _knownReaders   = RE.empty
-  , _nextIteratorId = IteratorId 0
+  , _nextIteratorId = 0
   , _nextReaderId   = 0
   }

@@ -253,7 +253,7 @@ openDBInternal registry hasFS@HasFS{..} err epochInfo hashInfo valPol parser
           , registry
           , cacheConfig
           }
-    !ost  <- validateAndReopen validateEnv valPol initialIteratorID
+    !ost  <- validateAndReopen validateEnv valPol
 
     stVar <- newMVar (DbOpen ost)
 
@@ -282,14 +282,13 @@ closeDBImpl ImmutableDBEnv {..} = releaseAll _dbRegistry `finally` do
     internalState <- takeMVar _dbInternalState
     case internalState of
       -- Already closed
-      DbClosed  _ -> do
+      DbClosed -> do
         putMVar _dbInternalState internalState
         traceWith _dbTracer $ DBAlreadyClosed
       DbOpen OpenState {..} -> do
-        let !closedState = closedStateFromInternalState internalState
         -- Close the database before doing the file-system operations so that
         -- in case these fail, we don't leave the database open.
-        putMVar _dbInternalState (DbClosed closedState)
+        putMVar _dbInternalState DbClosed
         traceWith _dbTracer DBClosed
   where
     HasFS{..} = _dbHasFS
@@ -312,19 +311,19 @@ reopenImpl ImmutableDBEnv {..} valPol = bracketOnError
       DbOpen _ -> throwUserError _dbErr OpenDBError
 
       -- Closed, so we can try to reopen
-      DbClosed ClosedState {..} -> do
-            let validateEnv = ValidateEnv
-                  { hasFS       = _dbHasFS
-                  , err         = _dbErr
-                  , epochInfo   = _dbEpochInfo
-                  , hashInfo    = _dbHashInfo
-                  , parser      = _dbEpochFileParser
-                  , tracer      = _dbTracer
-                  , registry    = _dbRegistry
-                  , cacheConfig = _dbCacheConfig
-                  }
-            ost <- validateAndReopen validateEnv valPol _closedNextIteratorID
-            putMVar _dbInternalState (DbOpen ost)
+      DbClosed -> do
+        let validateEnv = ValidateEnv
+              { hasFS       = _dbHasFS
+              , err         = _dbErr
+              , epochInfo   = _dbEpochInfo
+              , hashInfo    = _dbHashInfo
+              , parser      = _dbEpochFileParser
+              , tracer      = _dbTracer
+              , registry    = _dbRegistry
+              , cacheConfig = _dbCacheConfig
+              }
+        ost <- validateAndReopen validateEnv valPol
+        putMVar _dbInternalState (DbOpen ost)
   where
     HasFS{..} = _dbHasFS
 
@@ -354,8 +353,8 @@ deleteAfterImpl dbEnv@ImmutableDBEnv { _dbTracer } newTip =
         -- Reset the index, as it can contain stale information. Also restarts
         -- the background thread expiring unused past epochs.
         Index.reset _index newEpoch
-        mkOpenState _dbRegistry hasFS _dbErr _index newEpoch _nextIteratorID
-          newTipWithHash allowExisting
+        mkOpenState _dbRegistry hasFS _dbErr _index newEpoch newTipWithHash
+          allowExisting
       put ost
   where
     ImmutableDBEnv { _dbErr, _dbEpochInfo, _dbHashInfo, _dbRegistry } = dbEnv
@@ -814,6 +813,6 @@ startNewEpoch registry hasFS@HasFS{..} err index epochInfo = do
       `finally` closeOpenStateHandles hasFS st
 
     st' <- lift $ mkOpenState registry hasFS err index (succ _currentEpoch)
-      _nextIteratorID _currentTip MustBeNew
+      _currentTip MustBeNew
 
     put st'

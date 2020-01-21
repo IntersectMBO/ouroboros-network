@@ -126,37 +126,37 @@ openDBInternal args launchBgTasks = do
         immBlockNo = ChainSel.getImmBlockNo secParam chain immDbTipBlockNo
 
     atomically $ LgrDB.setCurrent lgrDB ledger
-    varChain          <- newTVarM chain
-    varImmBlockNo     <- newTVarM immBlockNo
-    varIterators      <- newTVarM Map.empty
-    varReaders        <- newTVarM Map.empty
-    varNextIteratorId <- newTVarM (IteratorId 0)
-    varNextReaderId   <- newTVarM 0
-    varCopyLock       <- newMVar  ()
-    varKillBgThreads  <- newTVarM $ return ()
-    varFutureBlocks   <- newTVarM Map.empty
+    varChain           <- newTVarM chain
+    varImmBlockNo      <- newTVarM immBlockNo
+    varIterators       <- newTVarM Map.empty
+    varReaders         <- newTVarM Map.empty
+    varNextIteratorKey <- newTVarM (IteratorKey 0)
+    varNextReaderKey   <- newTVarM (ReaderKey   0)
+    varCopyLock        <- newMVar  ()
+    varKillBgThreads   <- newTVarM $ return ()
+    varFutureBlocks    <- newTVarM Map.empty
 
-    let env = CDB { cdbImmDB          = immDB
-                  , cdbVolDB          = volDB
-                  , cdbLgrDB          = lgrDB
-                  , cdbChain          = varChain
-                  , cdbImmBlockNo     = varImmBlockNo
-                  , cdbIterators      = varIterators
-                  , cdbReaders        = varReaders
-                  , cdbNodeConfig     = cfg
-                  , cdbInvalid        = varInvalid
-                  , cdbNextIteratorId = varNextIteratorId
-                  , cdbNextReaderId   = varNextReaderId
-                  , cdbCopyLock       = varCopyLock
-                  , cdbTracer         = tracer
-                  , cdbTraceLedger    = Args.cdbTraceLedger args
-                  , cdbRegistry       = Args.cdbRegistry args
-                  , cdbGcDelay        = Args.cdbGcDelay args
-                  , cdbKillBgThreads  = varKillBgThreads
-                  , cdbEpochInfo      = Args.cdbEpochInfo args
-                  , cdbIsEBB          = toIsEBB . isJust . Args.cdbIsEBB args
-                  , cdbBlockchainTime = Args.cdbBlockchainTime args
-                  , cdbFutureBlocks   = varFutureBlocks
+    let env = CDB { cdbImmDB           = immDB
+                  , cdbVolDB           = volDB
+                  , cdbLgrDB           = lgrDB
+                  , cdbChain           = varChain
+                  , cdbImmBlockNo      = varImmBlockNo
+                  , cdbIterators       = varIterators
+                  , cdbReaders         = varReaders
+                  , cdbNodeConfig      = cfg
+                  , cdbInvalid         = varInvalid
+                  , cdbNextIteratorKey = varNextIteratorKey
+                  , cdbNextReaderKey   = varNextReaderKey
+                  , cdbCopyLock        = varCopyLock
+                  , cdbTracer          = tracer
+                  , cdbTraceLedger     = Args.cdbTraceLedger args
+                  , cdbRegistry        = Args.cdbRegistry args
+                  , cdbGcDelay         = Args.cdbGcDelay args
+                  , cdbKillBgThreads   = varKillBgThreads
+                  , cdbEpochInfo       = Args.cdbEpochInfo args
+                  , cdbIsEBB           = toIsEBB . isJust . Args.cdbIsEBB args
+                  , cdbBlockchainTime  = Args.cdbBlockchainTime args
+                  , cdbFutureBlocks    = varFutureBlocks
                   }
     h <- fmap CDBHandle $ newTVarM $ ChainDbOpen env
     let chainDB = ChainDB

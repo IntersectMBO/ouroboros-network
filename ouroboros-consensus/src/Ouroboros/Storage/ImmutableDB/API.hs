@@ -18,7 +18,6 @@ import           Cardano.Prelude (NoUnexpectedThunks (..), OnlyCheckIsWHNF (..),
                      ThunkInfo (..))
 
 import           Data.ByteString.Builder (Builder)
-import           Data.Function (on)
 
 import           GHC.Generics (Generic)
 import           GHC.Stack (HasCallStack)
@@ -254,28 +253,12 @@ data Iterator hash m a = Iterator
     --
     -- Idempotent operation.
   , iteratorClose   :: HasCallStack => m ()
-
-    -- | A identifier for the 'Iterator' that is unique for @m@.
-    --
-    -- This used for the 'Eq' instance, which is needed for testing.
-    --
-    -- TODO how can we avoid this abstraction leak?
-  , iteratorID      :: IteratorID
-  }
+  } deriving (Functor)
 
 -- | This only contains actions, we don't check anything
 instance NoUnexpectedThunks (Iterator hash m a) where
   showTypeOf _ = "Iterator"
   whnfNoUnexpectedThunks _ctxt _itr = return NoUnexpectedThunks
-
-instance Functor m => Functor (Iterator hash m) where
-  fmap f itr = Iterator{
-        iteratorNext    = fmap f <$> iteratorNext itr
-      , iteratorPeek    = fmap f <$> iteratorPeek itr
-      , iteratorHasNext = iteratorHasNext itr
-      , iteratorClose   = iteratorClose itr
-      , iteratorID      = DerivedIteratorID $ iteratorID itr
-      }
 
 -- | Variant of 'traverse' instantiated to @'Iterator' hash m@ that executes
 -- the monadic function when calling 'iteratorNext' and 'iteratorPeek'.
@@ -289,15 +272,7 @@ traverseIterator f itr = Iterator{
     , iteratorPeek    = iteratorPeek itr >>= traverse f
     , iteratorHasNext = iteratorHasNext itr
     , iteratorClose   = iteratorClose itr
-    , iteratorID      = DerivedIteratorID $ iteratorID itr
     }
-
--- | Equality based on 'iteratorID'
-instance Eq (Iterator hash m a) where
-  (==) = (==) `on` iteratorID
-
-instance Ord (Iterator hash m a) where
-  compare = compare `on` iteratorID
 
 -- | The result of stepping an 'Iterator'.
 data IteratorResult a

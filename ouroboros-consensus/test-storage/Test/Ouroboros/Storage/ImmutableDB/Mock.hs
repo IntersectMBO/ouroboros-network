@@ -46,14 +46,13 @@ openDBMock err epochSize = do
         }
       where
         iterator :: BlockComponent (ImmutableDB hash m) b
-                 -> IteratorID
+                 -> IteratorId
                  -> Iterator hash m b
-        iterator blockComponent itID = Iterator
-          { iteratorNext    = update  $ iteratorNextModel    itID blockComponent
-          , iteratorPeek    = query   $ iteratorPeekModel    itID blockComponent
-          , iteratorHasNext = query   $ iteratorHasNextModel itID
-          , iteratorClose   = update_ $ iteratorCloseModel   itID
-          , iteratorID      = itID
+        iterator blockComponent itId = Iterator
+          { iteratorNext    = update  $ iteratorNextModel    itId blockComponent
+          , iteratorPeek    = query   $ iteratorPeekModel    itId blockComponent
+          , iteratorHasNext = query   $ iteratorHasNextModel itId
+          , iteratorClose   = update_ $ iteratorCloseModel   itId
           }
 
         update_ :: (DBModel hash -> DBModel hash) -> m ()

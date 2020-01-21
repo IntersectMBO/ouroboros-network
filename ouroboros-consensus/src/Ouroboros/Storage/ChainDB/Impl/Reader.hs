@@ -40,7 +40,7 @@ import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
 import           Ouroboros.Consensus.Util.STM (blockUntilJust)
 
 import           Ouroboros.Storage.ChainDB.API (BlockComponent (..), ChainDB,
-                     ChainDbError (..), Reader (..), ReaderId, getPoint)
+                     ChainDbError (..), Reader (..), getPoint)
 import           Ouroboros.Storage.ChainDB.Impl.ImmDB (ImmDB)
 import qualified Ouroboros.Storage.ChainDB.Impl.ImmDB as ImmDB
 import qualified Ouroboros.Storage.ChainDB.Impl.Query as Query
@@ -51,35 +51,35 @@ import           Ouroboros.Storage.ChainDB.Impl.Types
 -------------------------------------------------------------------------------}
 
 -- | Check if the ChainDB is open. If not, throw a 'ClosedDBError'. Next,
--- check whether the reader with the given 'ReaderId' still exists. If not,
+-- check whether the reader with the given 'ReaderKey' still exists. If not,
 -- throw a 'ClosedReaderError'.
 --
 -- Otherwise, execute the given function on the 'ChainDbEnv'.
 getReader
   :: forall m blk r. (IOLike m, HasCallStack)
   => ChainDbHandle m blk
-  -> ReaderId
+  -> ReaderKey
   -> (ChainDbEnv m blk -> m r)
   -> m r
-getReader (CDBHandle varState) readerId f = do
+getReader (CDBHandle varState) readerKey f = do
     env <- atomically $ readTVar varState >>= \case
       ChainDbClosed _env -> throwM $ ClosedDBError callStack
       ChainDbReopening   -> error "ChainDB used while reopening"
       ChainDbOpen env    -> do
-        readerOpen <- Map.member readerId <$> readTVar (cdbReaders env)
+        readerOpen <- Map.member readerKey <$> readTVar (cdbReaders env)
         if readerOpen
           then return env
-          else throwM $ ClosedReaderError readerId
+          else throwM ClosedReaderError
     f env
 
 -- | Variant 'of 'getReader' for functions taking one argument.
 getReader1
   :: forall m blk a r. IOLike m
   => ChainDbHandle m blk
-  -> ReaderId
+  -> ReaderKey
   -> (ChainDbEnv m blk -> a -> m r)
   -> a -> m r
-getReader1 h readerId f a = getReader h readerId (\env -> f env a)
+getReader1 h readerKey f a = getReader h readerKey (\env -> f env a)
 
 {-------------------------------------------------------------------------------
   Reader
@@ -100,13 +100,13 @@ newReader
   -> m (Reader m blk b)
 newReader h encodeHeader registry blockComponent = getEnv h $ \CDB{..} -> do
     -- The following operations don't need to be done in a single transaction
-    readerId  <- atomically $ updateTVar cdbNextReaderId $ \r -> (succ r, r)
+    readerKey  <- atomically $ updateTVar cdbNextReaderKey $ \r -> (succ r, r)
     varReader <- newTVarM ReaderInit
     let readerHandle = mkReaderHandle cdbImmDB varReader
-    atomically $ modifyTVar cdbReaders $ Map.insert readerId readerHandle
-    let reader = makeNewReader h encodeHeader readerId varReader registry
+    atomically $ modifyTVar cdbReaders $ Map.insert readerKey readerHandle
+    let reader = makeNewReader h encodeHeader readerKey varReader registry
           blockComponent
-    traceWith cdbTracer $ TraceReaderEvent $ NewReader readerId
+    traceWith cdbTracer $ TraceReaderEvent NewReader
     return reader
   where
     mkReaderHandle
@@ -133,29 +133,29 @@ makeNewReader
      )
   => ChainDbHandle m blk
   -> (Header blk -> Encoding)
-  -> ReaderId
+  -> ReaderKey
   -> StrictTVar m (ReaderState m blk b)
   -> ResourceRegistry m
   -> BlockComponent (ChainDB m blk) b
   -> Reader m blk b
-makeNewReader h encodeHeader readerId varReader registry blockComponent = Reader {..}
+makeNewReader h encodeHeader readerKey varReader registry blockComponent = Reader {..}
   where
     readerInstruction :: m (Maybe (ChainUpdate blk b))
-    readerInstruction = getReader h readerId $
+    readerInstruction = getReader h readerKey $
       instructionHelper registry varReader blockComponent encodeHeader id
 
     readerInstructionBlocking :: m (ChainUpdate blk b)
     readerInstructionBlocking = fmap runIdentity $
-      getReader h readerId $
+      getReader h readerKey $
       instructionHelper registry varReader blockComponent encodeHeader
         (fmap Identity . blockUntilJust)
 
     readerForward :: [Point blk] -> m (Maybe (Point blk))
-    readerForward = getReader1 h readerId $
+    readerForward = getReader1 h readerKey $
       forward registry varReader blockComponent
 
     readerClose :: m ()
-    readerClose = getEnv h $ close readerId varReader
+    readerClose = getEnv h $ close readerKey varReader
 
 -- | Implementation of 'readerClose'.
 --
@@ -167,14 +167,14 @@ makeNewReader h encodeHeader readerId varReader registry blockComponent = Reader
 -- ChainDB.Reader.
 close
   :: forall m blk b. IOLike m
-  => ReaderId
+  => ReaderKey
   -> StrictTVar m (ReaderState m blk b)
   -> ChainDbEnv m blk
   -> m ()
-close readerId varReader CDB { cdbReaders, cdbImmDB } = do
-    -- If the ReaderId is not present in the map, the Reader must have been
+close readerKey varReader CDB { cdbReaders, cdbImmDB } = do
+    -- If the ReaderKey is not present in the map, the Reader must have been
     -- closed already.
-    atomically $ modifyTVar cdbReaders $ Map.delete readerId
+    atomically $ modifyTVar cdbReaders $ Map.delete readerKey
     readerState <- atomically $ readTVar varReader
     closeReaderState cdbImmDB readerState
 

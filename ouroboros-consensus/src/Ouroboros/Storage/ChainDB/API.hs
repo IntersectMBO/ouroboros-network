@@ -1,19 +1,18 @@
-{-# LANGUAGE DeriveAnyClass             #-}
-{-# LANGUAGE DeriveGeneric              #-}
-{-# LANGUAGE DeriveTraversable          #-}
-{-# LANGUAGE DerivingStrategies         #-}
-{-# LANGUAGE FlexibleContexts           #-}
-{-# LANGUAGE GADTs                      #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE LambdaCase                 #-}
-{-# LANGUAGE NamedFieldPuns             #-}
-{-# LANGUAGE PatternSynonyms            #-}
-{-# LANGUAGE RankNTypes                 #-}
-{-# LANGUAGE ScopedTypeVariables        #-}
-{-# LANGUAGE StandaloneDeriving         #-}
-{-# LANGUAGE TypeApplications           #-}
-{-# LANGUAGE TypeFamilies               #-}
-{-# LANGUAGE UndecidableInstances       #-}
+{-# LANGUAGE DeriveAnyClass       #-}
+{-# LANGUAGE DeriveGeneric        #-}
+{-# LANGUAGE DeriveTraversable    #-}
+{-# LANGUAGE DerivingStrategies   #-}
+{-# LANGUAGE FlexibleContexts     #-}
+{-# LANGUAGE GADTs                #-}
+{-# LANGUAGE LambdaCase           #-}
+{-# LANGUAGE NamedFieldPuns       #-}
+{-# LANGUAGE PatternSynonyms      #-}
+{-# LANGUAGE RankNTypes           #-}
+{-# LANGUAGE ScopedTypeVariables  #-}
+{-# LANGUAGE StandaloneDeriving   #-}
+{-# LANGUAGE TypeApplications     #-}
+{-# LANGUAGE TypeFamilies         #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 module Ouroboros.Storage.ChainDB.API (
     -- * Main ChainDB API
@@ -36,7 +35,6 @@ module Ouroboros.Storage.ChainDB.API (
   , StreamFrom(..)
   , StreamTo(..)
   , Iterator(..)
-  , IteratorId(..)
   , IteratorResult(..)
   , traverseIterator
   , UnknownRange(..)
@@ -46,7 +44,6 @@ module Ouroboros.Storage.ChainDB.API (
   , InvalidBlockReason(..)
     -- * Readers
   , Reader(..)
-  , ReaderId
   , traverseReader
     -- * Recovery
   , ChainDbFailure(..)
@@ -59,7 +56,6 @@ module Ouroboros.Storage.ChainDB.API (
 import qualified Codec.CBOR.Read as CBOR
 import           Control.Exception (Exception (..))
 import qualified Data.ByteString.Lazy as Lazy
-import           Data.Function (on)
 import           Data.Typeable
 import           GHC.Generics (Generic)
 import           GHC.Stack
@@ -424,7 +420,10 @@ data StreamTo blk =
 data Iterator m blk b = Iterator {
       iteratorNext  :: m (IteratorResult blk b)
     , iteratorClose :: m ()
-    , iteratorId    :: IteratorId
+      -- ^ When 'fmap'-ing or 'traverse'-ing (or using 'traverseIterator') an
+      -- 'Iterator', the resulting iterator will still refer to and use the
+      -- original one. This means that when either of them is closed, both
+      -- will be closed in practice.
     } deriving (Functor, Foldable, Traversable)
 
 -- | Variant of 'traverse' instantiated to @'Iterator' m blk@ that executes
@@ -437,20 +436,6 @@ traverseIterator
 traverseIterator f it = it {
       iteratorNext = iteratorNext it >>= traverse f
     }
-
--- | Equality instance for iterators
---
--- This relies on the iterator IDs assigned by the database.
---
--- NOTE: Iterators created by /different instances of the DB/ may end up with
--- the same ID. This should not matter in practice since there should not /be/
--- more than one DB, but it should nonetheless be noted.
-instance Eq (Iterator m blk b) where
-  (==) = (==) `on` iteratorId
-
-newtype IteratorId = IteratorId Int
-  deriving stock (Show)
-  deriving newtype (Eq, Ord, Enum, NoUnexpectedThunks)
 
 data IteratorResult blk b =
     IteratorExhausted
@@ -560,8 +545,6 @@ instance ProtocolLedgerView blk => NoUnexpectedThunks (InvalidBlockReason blk)
   Readers
 -------------------------------------------------------------------------------}
 
-type ReaderId = Int
-
 -- | Reader
 --
 -- See 'newHeaderReader' for more info.
@@ -601,18 +584,8 @@ data Reader m blk a = Reader {
       -- After closing, all other operations on the reader will throw
       -- 'ClosedReaderError'.
     , readerClose               :: m ()
-
-      -- | Per-database reader ID
-      --
-      -- Two readers with the same ID are guaranteed to be the same reader,
-      -- provided that they are constructed by the same database. (We don't
-      -- expect to have more than one instance of the 'ChainDB', however.)
-    , readerId                  :: ReaderId
     }
   deriving (Functor)
-
-instance Eq (Reader m blk a) where
-  (==) = (==) `on` readerId
 
 -- | Variant of 'traverse' instantiated to @'Reader' m blk@ that executes the
 -- monadic function when calling 'readerInstruction' and
@@ -627,7 +600,6 @@ traverseReader f rdr = Reader
     , readerInstructionBlocking = readerInstructionBlocking rdr >>= traverse f
     , readerForward             = readerForward             rdr
     , readerClose               = readerClose               rdr
-    , readerId                  = readerId                  rdr
     }
 
 {-------------------------------------------------------------------------------
@@ -836,7 +808,7 @@ data ChainDbError =
     --
     -- This will be thrown when performing any operation on a closed readers,
     -- except for 'readerClose'.
-  | ClosedReaderError ReaderId
+  | ClosedReaderError
 
     -- | When there is no chain/fork that satisfies the bounds passed to
     -- 'streamBlocks'.
@@ -857,8 +829,8 @@ instance Eq ChainDbError where
   ClosedDBError _ == ClosedDBError _ = True
   ClosedDBError _ == _               = False
 
-  ClosedReaderError rid == ClosedReaderError rid' = rid == rid'
-  ClosedReaderError _   == _                      = False
+  ClosedReaderError == ClosedReaderError = True
+  ClosedReaderError == _                 = False
 
   InvalidIteratorRange (fr :: StreamFrom blk) to == InvalidIteratorRange (fr' :: StreamFrom blk') to' =
     case eqT @blk @blk' of

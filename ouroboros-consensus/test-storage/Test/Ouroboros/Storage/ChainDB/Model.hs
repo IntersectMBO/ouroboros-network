@@ -15,6 +15,8 @@
 -- Intended for qualified import
 module Test.Ouroboros.Storage.ChainDB.Model (
     Model -- opaque
+  , IteratorId
+  , CPS.ReaderId
     -- * Construction
   , empty
   , addBlock
@@ -101,8 +103,10 @@ import           Ouroboros.Consensus.Util.STM (Fingerprint (..),
 
 import           Ouroboros.Storage.ChainDB.API (BlockComponent (..), ChainDB,
                      ChainDbError (..), InvalidBlockReason (..),
-                     IteratorId (..), IteratorResult (..), StreamFrom (..),
-                     StreamTo (..), UnknownRange (..), validBounds)
+                     IteratorResult (..), StreamFrom (..), StreamTo (..),
+                     UnknownRange (..), validBounds)
+
+type IteratorId = Int
 
 -- | Model of the chain DB
 data Model blk = Model {
@@ -418,7 +422,7 @@ stream securityParam from to m = do
         })
   where
     itrId :: IteratorId
-    itrId = IteratorId (Map.size (iterators m)) -- we never delete iterators
+    itrId = Map.size (iterators m) -- we never delete iterators
 
 iteratorNext
   :: forall m blk b. (ModelSupportsBlock blk, Monad m)
@@ -474,7 +478,7 @@ checkIfReaderExists rdrId m a
     | readerExists rdrId m
     = Right a
     | otherwise
-    = Left $ ClosedReaderError rdrId
+    = Left ClosedReaderError
 
 newReader :: HasHeader blk => Model blk -> (CPS.ReaderId, Model blk)
 newReader m = (rdrId, m { cps = cps' })

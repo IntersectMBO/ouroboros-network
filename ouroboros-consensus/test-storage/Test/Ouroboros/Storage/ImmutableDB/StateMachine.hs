@@ -95,6 +95,7 @@ import           Test.Util.RefEnv (RefEnv)
 import qualified Test.Util.RefEnv as RE
 import           Test.Util.SOP
 import           Test.Util.Tracer (recordingTracerIORef)
+import           Test.Util.WithEq
 
 import           Test.Ouroboros.Storage.ImmutableDB.Model
 import           Test.Ouroboros.Storage.TestBlock
@@ -196,43 +197,54 @@ type AllComponents =
   , Word16
   )
 
+-- | Short-hand
+type TestIterator m = WithEq (Iterator Hash m AllComponents)
+
 -- | How to run a 'Corruption' command.
 type RunCorruption m =
      ImmutableDB    Hash m
   -> ImmDB.Internal Hash m
   -> Corruption
-  -> m (Success (Iterator Hash m AllComponents))
+  -> m (Success (TestIterator m))
 
 -- | Run the command against the given database.
-run :: (HasCallStack, Monad m)
+run :: forall m. (HasCallStack, IOLike m)
     => RunCorruption m
-    -> [Iterator Hash m AllComponents]
+    -> [TestIterator m]
     -> ImmutableDB    Hash m
     -> ImmDB.Internal Hash m
-    -> Cmd (Iterator Hash m AllComponents)
-    -> m (Success (Iterator Hash m AllComponents))
-run runCorruption its db internal cmd = case cmd of
-  GetBlockComponent      s   -> MbAllComponents <$> getBlockComponent      db allComponents s
-  GetEBBComponent        e   -> MbAllComponents <$> getEBBComponent        db allComponents e
-  GetBlockOrEBBComponent s h -> MbAllComponents <$> getBlockOrEBBComponent db allComponents s h
-  AppendBlock         s h b  -> Unit            <$> appendBlock            db s h (toBuilder <$> testBlockToBinaryInfo b)
-  AppendEBB           e h b  -> Unit            <$> appendEBB              db e h (toBuilder <$> testBlockToBinaryInfo b)
-  Stream              s e    -> Iter            <$> stream                 db allComponents s e
-  IteratorNext        it     -> IterResult      <$> iteratorNext           it
-  IteratorPeek        it     -> IterResult      <$> iteratorPeek           it
-  IteratorHasNext     it     -> IterHasNext     <$> iteratorHasNext        it
-  IteratorClose       it     -> Unit            <$> iteratorClose          it
-  DeleteAfter tip            -> do
-    mapM_ iteratorClose its
-    Unit <$> deleteAfter internal tip
-  Reopen valPol              -> do
-    mapM_ iteratorClose its
-    closeDB db
-    reopen db valPol
-    Tip <$> getTip db
-  Corruption corr            -> do
-    mapM_ iteratorClose its
-    runCorruption db internal corr
+    -> StrictTVar m Id
+    -> Cmd (TestIterator m)
+    -> m (Success (TestIterator m))
+run runCorruption its db internal varNextId cmd = case cmd of
+    GetBlockComponent      s   -> MbAllComponents <$> getBlockComponent      db allComponents s
+    GetEBBComponent        e   -> MbAllComponents <$> getEBBComponent        db allComponents e
+    GetBlockOrEBBComponent s h -> MbAllComponents <$> getBlockOrEBBComponent db allComponents s h
+    AppendBlock         s h b  -> Unit            <$> appendBlock            db s h (toBuilder <$> testBlockToBinaryInfo b)
+    AppendEBB           e h b  -> Unit            <$> appendEBB              db e h (toBuilder <$> testBlockToBinaryInfo b)
+    Stream              s e    -> iter            =<< stream                 db allComponents s e
+    IteratorNext        it     -> IterResult      <$> iteratorNext           (unWithEq it)
+    IteratorPeek        it     -> IterResult      <$> iteratorPeek           (unWithEq it)
+    IteratorHasNext     it     -> IterHasNext     <$> iteratorHasNext        (unWithEq it)
+    IteratorClose       it     -> Unit            <$> iteratorClose          (unWithEq it)
+    DeleteAfter tip            -> do
+      mapM_ iteratorClose (unWithEq <$> its)
+      Unit <$> deleteAfter internal tip
+    Reopen valPol              -> do
+      mapM_ iteratorClose (unWithEq <$> its)
+      closeDB db
+      reopen db valPol
+      Tip <$> getTip db
+    Corruption corr            -> do
+      mapM_ iteratorClose (unWithEq <$> its)
+      runCorruption db internal corr
+  where
+    iter = fmap Iter . traverse giveWithEq
+
+    giveWithEq :: a -> m (WithEq a)
+    giveWithEq a =
+      fmap (`WithEq` a) $ atomically $ updateTVar varNextId $ \i -> (succ i, i)
+
 
 {-------------------------------------------------------------------------------
   Instantiating the semantics
@@ -249,9 +261,9 @@ instance Eq it => Eq (Resp it) where
   _              == _               = False
 
 -- | Run the pure command against the given database.
-runPure :: Cmd IteratorID
+runPure :: Cmd IteratorId
         -> DBModel Hash
-        -> (Resp IteratorID, DBModel Hash)
+        -> (Resp IteratorId, DBModel Hash)
 runPure = \case
     GetBlockComponent      s   -> ok MbAllComponents $ queryE   (getBlockComponentModel allComponents s)
     GetEBBComponent        e   -> ok MbAllComponents $ queryE   (getEBBComponentModel allComponents e)
@@ -283,16 +295,16 @@ runPure = \case
       Right (Left e)        -> (Right (Left e), m)
       Right (Right (a, m')) -> (Right (Right a), m')
 
-    ok :: (a -> Success IteratorID)
+    ok :: (a -> Success IteratorId)
        -> (DBModel Hash -> (Either ImmutableDBError a, DBModel Hash))
        -> DBModel Hash
-       -> (Resp IteratorID, DBModel Hash)
+       -> (Resp IteratorId, DBModel Hash)
     ok toSuccess f m = first (Resp . fmap toSuccess) $ f m
 
 -- | Run a command against the pure model
 runPureErr :: DBModel Hash
-           -> CmdErr IteratorID
-           -> (Resp IteratorID, DBModel Hash)
+           -> CmdErr IteratorId
+           -> (Resp IteratorId, DBModel Hash)
 runPureErr dbm (CmdErr mbErrors cmd _its) =
     case (mbErrors, runPure cmd dbm) of
       -- No simulated errors, just step
@@ -325,11 +337,11 @@ iters = toList
 -------------------------------------------------------------------------------}
 
 -- | Concrete or symbolic references to a real (or model) iterator
-type IterRef m = Reference (Opaque (Iterator Hash m AllComponents))
+type IterRef m = Reference (Opaque (TestIterator m))
 
 -- | Mapping between iterator references and mocked iterators
-type KnownIters m = RefEnv (Opaque (Iterator Hash m     AllComponents))
-                                   IteratorID
+type KnownIters m = RefEnv (Opaque (TestIterator m))
+                           IteratorId
 
 -- | Execution model
 data Model m r = Model
@@ -349,14 +361,14 @@ initModel dbModel = Model { knownIters  = RE.empty, dbModel }
 
 -- | Key property of the model is that we can go from real to mock responses
 toMock :: (Functor t, Eq1 r)
-       => Model m r -> At t m r -> t IteratorID
+       => Model m r -> At t m r -> t IteratorId
 toMock Model {..} (At t) = fmap (knownIters RE.!) t
 
 -- | Step the mock semantics
 step :: Eq1 r
      => Model m r
      -> At CmdErr m r
-     -> (Resp IteratorID, DBModel Hash)
+     -> (Resp IteratorId, DBModel Hash)
 step model@Model{..} cmdErr = runPureErr dbModel (toMock model cmdErr)
 
 {-------------------------------------------------------------------------------
@@ -397,13 +409,13 @@ data Event m r = Event
   { eventBefore   :: Model     m r
   , eventCmdErr   :: At CmdErr m r
   , eventAfter    :: Model     m r
-  , eventMockResp :: Resp IteratorID
+  , eventMockResp :: Resp IteratorId
   } deriving (Show)
 
 eventCmd :: Event m r -> At Cmd m r
 eventCmd = At . _cmd . unAt . eventCmdErr
 
-eventMockCmd :: Eq1 r => Event m r -> Cmd IteratorID
+eventMockCmd :: Eq1 r => Event m r -> Cmd IteratorId
 eventMockCmd ev@Event {..} = toMock eventBefore (eventCmd ev)
 
 
@@ -732,21 +744,22 @@ postcondition model cmdErr resp =
     ev = lockstep model cmdErr resp
 
 semantics :: StrictTVar IO Errors
+          -> StrictTVar IO Id
           -> HasFS IO h
           -> ImmutableDB   Hash IO
           -> ImmDB.Internal Hash IO
           -> At CmdErr IO Concrete
           -> IO (At Resp IO Concrete)
-semantics errorsVar hasFS db internal (At cmdErr) =
+semantics varErrors varNextId hasFS db internal (At cmdErr) =
     At . fmap (reference . Opaque) . Resp <$> case opaque <$> cmdErr of
 
       CmdErr Nothing       cmd its -> try $
-        run (semanticsCorruption hasFS) its db internal cmd
+        run (semanticsCorruption hasFS) its db internal varNextId cmd
 
       CmdErr (Just errors) cmd its -> do
         tipBefore <- fmap forgetHash <$> getTip db
-        res       <- withErrors errorsVar errors $ try $
-          run (semanticsCorruption hasFS) its db internal cmd
+        res       <- withErrors varErrors errors $ try $
+          run (semanticsCorruption hasFS) its db internal varNextId cmd
         case res of
           -- If the command resulted in a 'UserError', we didn't even get the
           -- chance to run into a simulated error. Note that we still
@@ -777,7 +790,7 @@ semantics errorsVar hasFS db internal (At cmdErr) =
 
     truncateAndReopen cmd its tipBefore = try $ do
       -- Close all open iterators as we will perform truncation
-      mapM_ iteratorClose its
+      mapM_ iteratorClose (unWithEq <$> its)
       -- Close the database in case no errors occurred and it wasn't
       -- closed already. This is idempotent anyway.
       closeDB db
@@ -797,7 +810,7 @@ semanticsCorruption :: MonadCatch m
                     -> ImmutableDB    Hash m
                     -> ImmDB.Internal Hash m
                     -> Corruption
-                    -> m (Success (Iterator Hash m AllComponents))
+                    -> m (Success (TestIterator m))
 semanticsCorruption hasFS db _internal (MkCorruption corrs) = do
     closeDB db
     forM_ corrs $ \(corr, file) -> corruptFile hasFS corr file
@@ -806,19 +819,20 @@ semanticsCorruption hasFS db _internal (MkCorruption corrs) = do
 
 -- | The state machine proper
 sm :: StrictTVar IO Errors
+   -> StrictTVar IO Id
    -> HasFS IO h
    -> ImmutableDB    Hash IO
    -> ImmDB.Internal Hash IO
    -> DBModel Hash
    -> StateMachine (Model IO) (At CmdErr IO) IO (At Resp IO)
-sm errorsVar hasFS db internal dbm = StateMachine
+sm varErrors varNextId hasFS db internal dbm = StateMachine
   { initModel     = initModel dbm
   , transition    = transition
   , precondition  = precondition
   , postcondition = postcondition
   , generator     = Just . generator
   , shrinker      = shrinker
-  , semantics     = semantics errorsVar hasFS db internal
+  , semantics     = semantics varErrors varNextId hasFS db internal
   , mock          = mock
   , invariant     = Nothing
   , distribution  = Nothing
@@ -900,7 +914,7 @@ type EventPred m = C.Predicate (Event m Symbolic) Tag
 
 -- | Convenience combinator for creating classifiers for successful commands
 successful :: (    Event m Symbolic
-                -> Success IteratorID
+                -> Success IteratorId
                 -> Either Tag (EventPred m)
               )
            -> EventPred m
@@ -1025,7 +1039,7 @@ tag = C.classify
       InvalidIteratorRangeError {} -> Left TagInvalidIteratorRangeError
       _                            -> Right tagInvalidIteratorRangeError
 
-    tagIteratorStreamedN :: Map IteratorID Int
+    tagIteratorStreamedN :: Map IteratorId Int
                          -> EventPred m
     tagIteratorStreamedN streamedPerIterator = C.Predicate
       { C.predApply = \ev -> case eventMockResp ev of
@@ -1095,9 +1109,6 @@ instance CommandNames (At CmdErr m) where
   cmdNames (_ :: Proxy (At CmdErr m r)) =
     constrNames (Proxy @(Cmd (IterRef m r)))
 
-instance Show (Iterator hash m a) where
-  show it = "<iterator " <> show (iteratorID it) <> ">"
-
 instance ToExpr SlotNo where
   toExpr (SlotNo w) = App "SlotNo" [toExpr w]
 
@@ -1106,8 +1117,6 @@ instance ToExpr EpochSize
 instance ToExpr EpochSlot
 instance ToExpr RelativeSlot
 instance ToExpr BlockNo
-instance ToExpr BaseIteratorID
-instance ToExpr IteratorID
 instance (ToExpr a, ToExpr b, ToExpr c, ToExpr d, ToExpr e, ToExpr f, ToExpr g,
           ToExpr h, ToExpr i)
       => ToExpr (a, b, c, d, e, f, g, h, i) where
@@ -1173,18 +1182,20 @@ showLabelledExamples' mbReplay numTests focus stateMachine = do
 
 showLabelledExamples :: IO ()
 showLabelledExamples = showLabelledExamples' Nothing 1000 (const True) $
-    sm (error "errorsVar unused") hasFsUnused dbUnused internalUnused
+    sm (error "varErrors unused") (error "varNextId unused") hasFsUnused
+      dbUnused internalUnused
 
 prop_sequential :: Index.CacheConfig -> Property
 prop_sequential cacheConfig = forAllCommands smUnused Nothing $ \cmds -> QC.monadicIO $ do
     let test :: StrictTVar IO Mock.MockFS
              -> StrictTVar IO Errors
+             -> StrictTVar IO Id
              -> HasFS IO h
              -> QC.PropertyM IO (
                     QSM.History (At CmdErr IO) (At Resp IO)
                   , Property
                   )
-        test fsVar errorsVar hasFS = do
+        test fsVar varErrors varNextId hasFS = do
           let parser = epochFileParser hasFS (const <$> decode) isEBB
                 getBinaryInfo testBlockIsValid
           (tracer, getTrace) <- QC.run recordingTracerIORef
@@ -1192,7 +1203,7 @@ prop_sequential cacheConfig = forAllCommands smUnused Nothing $ \cmds -> QC.mona
           (db, internal) <- QC.run $ openDBInternal registry hasFS
             EH.monadCatch (fixedSizeEpochInfo fixedEpochSize) testHashInfo
             ValidateMostRecentEpoch parser tracer cacheConfig
-          let sm' = sm errorsVar hasFS db internal dbm
+          let sm' = sm varErrors varNextId hasFS db internal dbm
           (hist, model, res) <- runCommands sm' cmds
           trace <- QC.run getTrace
           QC.monitor $ counterexample ("Trace: " <> unlines (map show trace))
@@ -1233,16 +1244,17 @@ prop_sequential cacheConfig = forAllCommands smUnused Nothing $ \cmds -> QC.mona
               return (hist, prop)
 
     fsVar     <- QC.run $ uncheckedNewTVarM Mock.empty
-    errorsVar <- QC.run $ uncheckedNewTVarM mempty
+    varErrors <- QC.run $ uncheckedNewTVarM mempty
+    varNextId <- QC.run $ uncheckedNewTVarM 0
     (hist, prop) <-
-      test fsVar errorsVar (mkSimErrorHasFS EH.monadCatch fsVar errorsVar)
+      test fsVar varErrors varNextId (mkSimErrorHasFS EH.monadCatch fsVar varErrors)
     prettyCommands smUnused hist
       $ tabulate "Tags" (map show $ tag (execCmds (QSM.initModel smUnused) cmds))
       $ prop
   where
     dbm = mkDBModel
-    smUnused = sm (error "errorsVar unused") hasFsUnused dbUnused
-      internalUnused dbm
+    smUnused = sm (error "varErrors unused") (error "varNextId unused")
+      hasFsUnused dbUnused internalUnused dbm
     isEBB = testHeaderEpochNoIfEBB fixedEpochSize . getHeader
     getBinaryInfo = void . testBlockToBinaryInfo
 

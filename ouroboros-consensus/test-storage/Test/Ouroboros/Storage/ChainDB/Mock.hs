@@ -14,7 +14,6 @@ import           GHC.Stack (callStack)
 import           Control.Monad.Class.MonadThrow
 
 import           Ouroboros.Network.Block (ChainUpdate)
-import qualified Ouroboros.Network.MockChain.ProducerState as CPS
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
@@ -27,8 +26,8 @@ import           Ouroboros.Consensus.Util.STM (blockUntilJust)
 
 import           Ouroboros.Storage.ChainDB.API
 
-import           Test.Ouroboros.Storage.ChainDB.Model (Model,
-                     ModelSupportsBlock)
+import           Test.Ouroboros.Storage.ChainDB.Model (IteratorId, Model,
+                     ModelSupportsBlock, ReaderId)
 import qualified Test.Ouroboros.Storage.ChainDB.Model as Model
 
 openDB :: forall m blk. (
@@ -91,12 +90,11 @@ openDB cfg initLedger btime = do
         iterator blockComponent itrId = Iterator {
               iteratorNext  = update $ Model.iteratorNext itrId blockComponent
             , iteratorClose = update_ $ Model.iteratorClose itrId
-            , iteratorId    = itrId
             }
 
         reader :: forall b.
                   BlockComponent (ChainDB m blk) b
-               -> CPS.ReaderId
+               -> ReaderId
                -> Reader m blk b
         reader blockComponent rdrId = Reader {
               readerInstruction =
@@ -107,8 +105,6 @@ openDB cfg initLedger btime = do
                 updateE $ Model.readerForward rdrId ps
             , readerClose =
                 update_ $ Model.readerClose rdrId
-            , readerId =
-                rdrId
             }
           where
             readerInstruction'

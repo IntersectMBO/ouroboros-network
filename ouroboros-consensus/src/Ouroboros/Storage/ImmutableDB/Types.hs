@@ -1,11 +1,10 @@
-{-# LANGUAGE DataKinds                  #-}
-{-# LANGUAGE DeriveAnyClass             #-}
-{-# LANGUAGE DeriveGeneric              #-}
-{-# LANGUAGE DeriveTraversable          #-}
-{-# LANGUAGE DerivingVia                #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE LambdaCase                 #-}
-{-# LANGUAGE RankNTypes                 #-}
+{-# LANGUAGE DataKinds         #-}
+{-# LANGUAGE DeriveAnyClass    #-}
+{-# LANGUAGE DeriveGeneric     #-}
+{-# LANGUAGE DeriveTraversable #-}
+{-# LANGUAGE DerivingVia       #-}
+{-# LANGUAGE LambdaCase        #-}
+{-# LANGUAGE RankNTypes        #-}
 module Ouroboros.Storage.ImmutableDB.Types
   ( SlotNo (..)
   , ImmTip
@@ -17,9 +16,6 @@ module Ouroboros.Storage.ImmutableDB.Types
   , BinaryInfo (..)
   , EpochFileParser (..)
   , ValidationPolicy (..)
-  , BaseIteratorID
-  , IteratorID(..)
-  , initialIteratorID
   , WrongBoundError (..)
   , ImmutableDBError (..)
   , sameImmutableDBError
@@ -157,20 +153,6 @@ data ValidationPolicy
     -- /open/ will throw a 'MissingFileError' or an 'InvalidFileError' in case
     -- of a missing or invalid epoch file, or an invalid index file.
   deriving (Show, Eq, Generic)
-
--- | ID of an iterator that is not derived from another iterator
-newtype BaseIteratorID = MkBaseIteratorID Int
-  deriving stock    (Show, Generic)
-  deriving newtype  (Eq, Ord, Enum)
-  deriving anyclass (NoUnexpectedThunks)
-
--- | A unique identifier for an iterator.
-data IteratorID = BaseIteratorID BaseIteratorID | DerivedIteratorID IteratorID
-  deriving (Show, Eq, Ord, Generic)
-
--- | Initial identifier number, use 'succ' to generate the next one.
-initialIteratorID :: BaseIteratorID
-initialIteratorID = MkBaseIteratorID 0
 
 -- | Returned by 'streamBlocks' and 'streamHeaders' when a bound is wrong.
 --

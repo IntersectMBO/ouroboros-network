@@ -43,9 +43,9 @@ import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
 
 import           Ouroboros.Storage.ChainDB.API (BlockComponent (..), ChainDB,
-                     ChainDbError (..), Iterator (..), IteratorId (..),
-                     IteratorResult (..), StreamFrom (..), StreamTo (..),
-                     UnknownRange (..), getPoint, validBounds)
+                     ChainDbError (..), Iterator (..), IteratorResult (..),
+                     StreamFrom (..), StreamTo (..), UnknownRange (..),
+                     getPoint, validBounds)
 
 import           Ouroboros.Storage.ChainDB.Impl.ImmDB (ImmDB)
 import qualified Ouroboros.Storage.ChainDB.Impl.ImmDB as ImmDB
@@ -201,21 +201,21 @@ stream h registry blockComponent from to = getEnv h $ \cdb ->
 -- it easier to test this code: no need to set up a whole ChainDB, just
 -- provide this record.
 data IteratorEnv m blk = IteratorEnv
-  { itImmDB          :: ImmDB m blk
-  , itVolDB          :: VolDB m blk
-  , itIterators      :: StrictTVar m (Map IteratorId (m ()))
-  , itNextIteratorId :: StrictTVar m IteratorId
-  , itTracer         :: Tracer m (TraceIteratorEvent blk)
+  { itImmDB           :: ImmDB m blk
+  , itVolDB           :: VolDB m blk
+  , itIterators       :: StrictTVar m (Map IteratorKey (m ()))
+  , itNextIteratorKey :: StrictTVar m IteratorKey
+  , itTracer          :: Tracer m (TraceIteratorEvent blk)
   }
 
 -- | Obtain an 'IteratorEnv' from a 'ChainDbEnv'.
 fromChainDbEnv :: ChainDbEnv m blk -> IteratorEnv m blk
 fromChainDbEnv CDB{..} = IteratorEnv
-  { itImmDB          = cdbImmDB
-  , itVolDB          = cdbVolDB
-  , itIterators      = cdbIterators
-  , itNextIteratorId = cdbNextIteratorId
-  , itTracer         = contramap TraceIteratorEvent cdbTracer
+  { itImmDB           = cdbImmDB
+  , itVolDB           = cdbVolDB
+  , itIterators       = cdbIterators
+  , itNextIteratorKey = cdbNextIteratorKey
+  , itTracer          = contramap TraceIteratorEvent cdbTracer
   }
 
 -- | See 'streamBlocks'.
@@ -414,19 +414,18 @@ newIterator itEnv@IteratorEnv{..} getItEnv registry blockComponent from to = do
                  -> IteratorState m blk b
                  -> m (Iterator m blk b)
     makeIterator register itState = do
-      iteratorId <- makeNewIteratorId
-      varItState <- newTVarM itState
+      iteratorKey <- makeNewIteratorKey
+      varItState  <- newTVarM itState
       when register $ atomically $ modifyTVar itIterators $
         -- Note that we don't use 'itEnv' here, because that would mean that
         -- invoking the function only works when the database is open, which
         -- probably won't be the case.
-        Map.insert iteratorId (implIteratorClose varItState iteratorId itEnv)
+        Map.insert iteratorKey (implIteratorClose varItState iteratorKey itEnv)
       return Iterator {
           iteratorNext  = getItEnv $
             implIteratorNext  registry varItState blockComponent
         , iteratorClose = getItEnv $
-            implIteratorClose          varItState iteratorId
-        , iteratorId    = iteratorId
+            implIteratorClose          varItState iteratorKey
         }
 
     emptyIterator :: m (Iterator m blk b)
@@ -436,23 +435,23 @@ newIterator itEnv@IteratorEnv{..} getItEnv registry blockComponent from to = do
     createIterator :: IteratorState m blk b -> m (Iterator m blk b)
     createIterator = makeIterator True
 
-    makeNewIteratorId :: m IteratorId
-    makeNewIteratorId = atomically $ do
-      newIteratorId <- readTVar itNextIteratorId
-      modifyTVar itNextIteratorId succ
-      return newIteratorId
+    makeNewIteratorKey :: m IteratorKey
+    makeNewIteratorKey = atomically $ do
+      newIteratorKey <- readTVar itNextIteratorKey
+      modifyTVar itNextIteratorKey succ
+      return newIteratorKey
 
 -- | Close the iterator and remove it from the map of iterators ('itIterators'
 -- and thus 'cdbIterators').
 implIteratorClose
   :: IOLike m
   => StrictTVar m (IteratorState m blk b)
-  -> IteratorId
+  -> IteratorKey
   -> IteratorEnv m blk
   -> m ()
-implIteratorClose varItState itrId IteratorEnv{..} = do
+implIteratorClose varItState itrKey IteratorEnv{..} = do
     mbImmIt <- atomically $ do
-      modifyTVar itIterators (Map.delete itrId)
+      modifyTVar itIterators (Map.delete itrKey)
       mbImmIt <- iteratorStateImmIt <$> readTVar varItState
       writeTVar varItState Closed
       return mbImmIt

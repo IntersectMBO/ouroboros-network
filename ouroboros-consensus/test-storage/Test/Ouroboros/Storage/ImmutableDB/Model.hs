@@ -19,6 +19,7 @@ module Test.Ouroboros.Storage.ImmutableDB.Model
   , dbmTipBlock
   , dbmBlockList
   , initDBModel
+  , IteratorId
   , IteratorModel
   , simulateCorruptions
   , rollBackToTip
@@ -86,8 +87,8 @@ data DBModel hash = DBModel
   , dbmEBBs         :: Map EpochNo (hash, BinaryInfo ByteString)
     -- ^ The EBB for each 'EpochNo'
   , dbmEpochInfo    :: EpochInfo Identity
-  , dbmIterators    :: Map IteratorID (IteratorModel hash)
-  , dbmNextIterator :: BaseIteratorID
+  , dbmIterators    :: Map IteratorId (IteratorModel hash)
+  , dbmNextIterator :: IteratorId
   } deriving (Show, Generic)
 
 initDBModel :: EpochSize -- ^ We assume fixed epoch size
@@ -98,7 +99,7 @@ initDBModel epochSize = DBModel
   , dbmEBBs         = Map.empty
   , dbmEpochInfo    = fixedSizeEpochInfo epochSize
   , dbmIterators    = Map.empty
-  , dbmNextIterator = initialIteratorID
+  , dbmNextIterator = 0
   }
 
 dbmCurrentEpoch :: DBModel hash -> EpochNo
@@ -138,6 +139,8 @@ dbmBlockList = fmap toBlob . Map.elems . dbmBlobs
   where
     toBlob (Left  (_hash, binaryInfo)) = binaryBlob binaryInfo
     toBlob (Right (_hash, binaryInfo)) = binaryBlob binaryInfo
+
+type IteratorId = Int
 
 -- | Model for an 'Iterator'.
 --
@@ -603,7 +606,7 @@ streamModel
   -> DBModel hash
   -> Either ImmutableDBError
             (Either (WrongBoundError hash)
-                    (IteratorID, DBModel hash))
+                    (IteratorId, DBModel hash))
 streamModel mbStart mbEnd dbm@DBModel {..} = swizzle $ do
     validateIteratorRange err (generalizeEpochInfo dbmEpochInfo)
       (forgetHash <$> dbmTip) mbStart mbEnd
@@ -626,12 +629,12 @@ streamModel mbStart mbEnd dbm@DBModel {..} = swizzle $ do
 
     let results = iteratorResults mbStart' mbEnd'
         itm     = IteratorModel results
-        itID    = BaseIteratorID dbmNextIterator
+        itId    = dbmNextIterator
         dbm'    = dbm
           { dbmNextIterator = succ dbmNextIterator
-          , dbmIterators    = Map.insert itID itm dbmIterators
+          , dbmIterators    = Map.insert itId itm dbmIterators
           }
-    return (itID, dbm')
+    return (itId, dbm')
   where
     blobs = dbmBlobs dbm
 
@@ -716,21 +719,21 @@ streamModel mbStart mbEnd dbm@DBModel {..} = swizzle $ do
         Just end -> takeWhile ((<= end) . fst . fst)
 
 iteratorNextModel
-  :: IteratorID
+  :: IteratorId
   -> BlockComponent (ImmutableDB hash m) b
   -> DBModel hash
   -> (IteratorResult b, DBModel hash)
-iteratorNextModel itID blockComponent dbm@DBModel {..} =
-    case Map.lookup itID dbmIterators of
+iteratorNextModel itId blockComponent dbm@DBModel {..} =
+    case Map.lookup itId dbmIterators of
       Nothing ->
           (IteratorExhausted, dbm)
       Just (IteratorModel []) ->
-          (IteratorExhausted, iteratorCloseModel itID dbm)
+          (IteratorExhausted, iteratorCloseModel itId dbm)
       Just (IteratorModel ((epochOrSlot, hash, bi):ress)) ->
           (res, dbm')
         where
           dbm' = dbm
-            { dbmIterators = Map.insert itID (IteratorModel ress) dbmIterators
+            { dbmIterators = Map.insert itId (IteratorModel ress) dbmIterators
             }
           res = IteratorResult $
             extractBlockComponent hash slot mbEpochNo bi blockComponent
@@ -739,12 +742,12 @@ iteratorNextModel itID blockComponent dbm@DBModel {..} =
             Right slot' -> (slot', Nothing)
 
 iteratorPeekModel
-  :: IteratorID
+  :: IteratorId
   -> BlockComponent (ImmutableDB hash m) b
   -> DBModel hash
   -> IteratorResult b
-iteratorPeekModel itID blockComponent dbm@DBModel { dbmIterators } =
-    case Map.lookup itID dbmIterators of
+iteratorPeekModel itId blockComponent dbm@DBModel { dbmIterators } =
+    case Map.lookup itId dbmIterators of
       Nothing                      -> IteratorExhausted
       Just (IteratorModel [])      -> IteratorExhausted
       Just (IteratorModel ((epochOrSlot, hash, bi):_)) ->
@@ -755,15 +758,15 @@ iteratorPeekModel itID blockComponent dbm@DBModel { dbmIterators } =
             Left epoch  -> (epochSlotToSlot dbm (EpochSlot epoch 0), Just epoch)
             Right slot' -> (slot', Nothing)
 
-iteratorHasNextModel :: IteratorID
+iteratorHasNextModel :: IteratorId
                      -> DBModel hash
                      -> Maybe (Either EpochNo SlotNo, hash)
-iteratorHasNextModel itID DBModel { dbmIterators } =
-    case Map.lookup itID dbmIterators of
+iteratorHasNextModel itId DBModel { dbmIterators } =
+    case Map.lookup itId dbmIterators of
       Nothing                                         -> Nothing
       Just (IteratorModel [])                         -> Nothing
       Just (IteratorModel ((epochOrSlot, hash, _):_)) -> Just (epochOrSlot, hash)
 
-iteratorCloseModel :: IteratorID -> DBModel hash -> DBModel hash
-iteratorCloseModel itID dbm@DBModel { dbmIterators } =
-    dbm { dbmIterators = Map.delete itID dbmIterators }
+iteratorCloseModel :: IteratorId -> DBModel hash -> DBModel hash
+iteratorCloseModel itId dbm@DBModel { dbmIterators } =
+    dbm { dbmIterators = Map.delete itId dbmIterators }

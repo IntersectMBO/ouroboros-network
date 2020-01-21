@@ -33,13 +33,13 @@ import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
 
 import           Ouroboros.Storage.ChainDB.API (BlockComponent (..),
-                     Iterator (..), IteratorId (..), IteratorResult (..),
-                     StreamFrom (..), StreamTo (..), UnknownRange,
-                     UnknownRange (..), traverseIterator)
+                     Iterator (..), IteratorResult (..), StreamFrom (..),
+                     StreamTo (..), UnknownRange (..), traverseIterator)
 import           Ouroboros.Storage.ChainDB.Impl.ImmDB (ImmDB, mkImmDB)
 import           Ouroboros.Storage.ChainDB.Impl.Iterator (IteratorEnv (..),
                      newIterator)
-import           Ouroboros.Storage.ChainDB.Impl.Types (TraceIteratorEvent (..))
+import           Ouroboros.Storage.ChainDB.Impl.Types (IteratorKey (..),
+                     TraceIteratorEvent (..))
 import           Ouroboros.Storage.ChainDB.Impl.VolDB (VolDB, mkVolDB)
 import           Ouroboros.Storage.Common (BinaryInfo (..), EpochSize)
 import           Ouroboros.Storage.EpochInfo (fixedSizeEpochInfo)
@@ -372,16 +372,16 @@ initIteratorEnv
   -> Tracer m (TraceIteratorEvent TestBlock)
   -> m (IteratorEnv m TestBlock)
 initIteratorEnv TestSetup { immutable, volatile } tracer = do
-    iters      <- uncheckedNewTVarM Map.empty
-    nextIterId <- uncheckedNewTVarM $ IteratorId 0
-    volDB      <- openVolDB volatile
-    immDB      <- openImmDB immutable
+    iters       <- uncheckedNewTVarM Map.empty
+    nextIterKey <- uncheckedNewTVarM $ IteratorKey 0
+    volDB       <- openVolDB volatile
+    immDB       <- openImmDB immutable
     return IteratorEnv
-      { itImmDB          = immDB
-      , itVolDB          = volDB
-      , itIterators      = iters
-      , itNextIteratorId = nextIterId
-      , itTracer         = tracer
+      { itImmDB           = immDB
+      , itVolDB           = volDB
+      , itIterators       = iters
+      , itNextIteratorKey = nextIterKey
+      , itTracer          = tracer
       }
   where
     -- | Open a mock VolatileDB and add the given blocks

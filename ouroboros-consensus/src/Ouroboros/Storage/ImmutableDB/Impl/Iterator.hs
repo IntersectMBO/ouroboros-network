@@ -20,7 +20,6 @@ module Ouroboros.Storage.ImmutableDB.Impl.Iterator
 import           Control.Exception (assert)
 import           Control.Monad (when)
 import           Control.Monad.Except
-import           Control.Monad.State.Strict (state)
 import           Data.ByteString.Lazy (ByteString)
 import           Data.Foldable (find)
 import           Data.Functor ((<&>))
@@ -134,7 +133,7 @@ streamImpl dbEnv blockComponent mbStart mbEnd =
         TipGen ->
           -- If any of the two bounds were specified, 'validateIteratorRange'
           -- would have thrown a 'ReadFutureSlotError'.
-          assert (isNothing mbStart && isNothing mbEnd) $ lift mkEmptyIterator
+          assert (isNothing mbStart && isNothing mbEnd) $ return mkEmptyIterator
         Tip tip -> do
           WithHash endHash endEpochSlot <- fillInEndBound   _index tip mbEnd
           (secondaryOffset, start)      <- fillInStartBound _index     mbStart
@@ -166,7 +165,7 @@ streamImpl dbEnv blockComponent mbStart mbEnd =
 
             varIteratorState <- newTVarM $ IteratorStateOpen iteratorState
 
-            mkIterator IteratorHandle
+            return $ mkIterator IteratorHandle
               { itHasFS   = hasFS
               , itIndex   = _index
               , itState   = varIteratorState
@@ -248,30 +247,20 @@ streamImpl dbEnv blockComponent mbStart mbEnd =
                         | otherwise    = IsNotEBB
                   epochSlot = EpochSlot epoch relSlot
 
-    -- TODO we're calling 'modifyOpenState' from within 'withOpenState', ok?
-    withNewIteratorID
-      :: (IteratorID -> Iterator hash m b)
-      -> m (Iterator hash m b)
-    withNewIteratorID mkIter = modifyOpenState dbEnv $ \_hasFS ->
-      state $ \st@OpenState { _nextIteratorID = itID } ->
-        (mkIter (BaseIteratorID itID), st { _nextIteratorID = succ itID })
-
-    mkEmptyIterator :: m (Iterator hash m b)
-    mkEmptyIterator = withNewIteratorID $ \itID -> Iterator
+    mkEmptyIterator :: Iterator hash m b
+    mkEmptyIterator = Iterator
       { iteratorNext    = return IteratorExhausted
       , iteratorPeek    = return IteratorExhausted
       , iteratorHasNext = return Nothing
       , iteratorClose   = return ()
-      , iteratorID      = itID
       }
 
-    mkIterator :: IteratorHandle hash m -> m (Iterator hash m b)
-    mkIterator ith = withNewIteratorID $ \itID -> Iterator
+    mkIterator :: IteratorHandle hash m -> Iterator hash m b
+    mkIterator ith = Iterator
       { iteratorNext    = iteratorNextImpl dbEnv ith blockComponent True
       , iteratorPeek    = iteratorNextImpl dbEnv ith blockComponent False
       , iteratorHasNext = iteratorHasNextImpl    ith
       , iteratorClose   = iteratorCloseImpl      ith
-      , iteratorID      = itID
       }
 
 -- | Get information about the block or EBB at the given slot with the given
