@@ -43,6 +43,7 @@ let
         packages.ouroboros-network.components.tests.cddl.build-tools = [pkgs.cddl pkgs.cbor-diag];
         packages.ouroboros-consensus.configureFlags = [ "--ghc-option=-Werror" ];
         packages.prometheus.components.library.doExactConfig = true;
+        packages.libiserv.patches = [ ./libiserv-network-3.patch ];
       }
       {
         # disable test-Win32-network tests
