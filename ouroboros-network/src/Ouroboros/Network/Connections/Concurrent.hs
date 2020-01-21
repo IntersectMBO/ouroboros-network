@@ -32,7 +32,8 @@ data Reject reject (p :: Provenance) where
   -- connection manager will use the existing remotely-initiated one.
   --
   -- For TCP sockets, and connection identified by local and remote
-  -- socket addresses, this should never happen (TCP spec sorts out crossed
+  -- socket addresses, this should never happen if you bind connecting sockets
+  -- to the same host/port as the listening socket (TCP spec sorts out crossed
   -- connections).
   --
   -- Indeed, the choice of connection identifier and resource type should be
@@ -149,7 +150,7 @@ concurrent
   -- If this throws an exception, it is re-thrown, so that calls to
   -- `include` will get them.
   -- Non-exceptional domain-specific reasons to reject a connection are given
-  -- in the `Left` variant.
+  -- in the rejection variant.
   -> (Connections connectionId resource request (Reject reject) (Accept handle) IO -> IO t)
   -> IO t
 concurrent withResource k = do
