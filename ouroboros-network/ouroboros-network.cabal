@@ -73,6 +73,7 @@ library
                        Ouroboros.Network.Server.Socket
                        Ouroboros.Network.Server.Version.CBOR
                        Ouroboros.Network.Server.Version.Protocol
+                       Ouroboros.Network.Snocket
                        Ouroboros.Network.Socket
                        Ouroboros.Network.Subscription
                        Ouroboros.Network.Subscription.Ip
