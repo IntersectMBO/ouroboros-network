@@ -33,7 +33,7 @@ module Ouroboros.Network.Socket (
     , nullNetworkServerTracers
 
     -- * Helper function for creating servers
-    , fromSocket
+    , fromSnocket
     , beginConnection
 
     -- * Re-export of PeerStates
@@ -374,13 +374,13 @@ mkListeningSocket sn addr family_ = do
 -- |
 -- Make a server-compatible socket from a network socket.
 --
-fromSocket
+fromSnocket
     :: forall fd addr. Ord addr
     => ConnectionTable IO addr
     -> Snocket IO fd addr
     -> fd -- ^ socket or handle
     -> Server.Socket addr fd
-fromSocket tblVar sn sd = go (Snocket.accept sn sd)
+fromSnocket tblVar sn sd = go (Snocket.accept sn sd)
   where
     go :: Snocket.Accept addr fd -> Server.Socket addr fd
     go (Snocket.Accept accept) = Server.Socket $ do
@@ -487,7 +487,7 @@ runServerThread NetworkServerTracers { nstMuxTracer
     sockAddr <- Snocket.getLocalAddr sn sd
     Server.run
         nstErrorPolicyTracer
-        (fromSocket nmsConnectionTable sn sd)
+        (fromSnocket nmsConnectionTable sn sd)
         (acceptException sockAddr)
         (beginConnection sn nstMuxTracer nstHandshakeTracer versionDataCodec acceptVersion (acceptConnectionTx sockAddr))
         -- register producer when application starts, it will be unregistered
