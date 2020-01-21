@@ -18,8 +18,8 @@ module Ouroboros.Storage.ChainDB.Impl.Iterator
   ) where
 
 import           Control.Monad (unless, when)
-import           Control.Monad.Except (ExceptT (..), lift, runExceptT,
-                     throwError)
+import           Control.Monad.Except (ExceptT (..), catchError, lift,
+                     runExceptT, throwError)
 import           Data.Functor (($>))
 import           Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
@@ -33,11 +33,12 @@ import           GHC.Stack (HasCallStack)
 import           Control.Monad.Class.MonadThrow
 import           Control.Tracer
 
-import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block (pattern BlockPoint,
                      pattern GenesisPoint, HasHeader, HeaderHash, Point,
-                     StandardHash, atSlot, castPoint, withHash)
+                     SlotNo, StandardHash, atSlot, withHash)
+import           Ouroboros.Network.Point (WithOrigin (..))
 
+import           Ouroboros.Consensus.Block (IsEBB (..))
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
 
@@ -202,21 +203,16 @@ streamBlocks h registry from to = getEnv h $ \cdb ->
 data IteratorEnv m blk = IteratorEnv
   { itImmDB          :: ImmDB m blk
   , itVolDB          :: VolDB m blk
-  , itGetImmDBTip    :: m (Point blk)
-    -- ^ This should preferably be cheap.
   , itIterators      :: StrictTVar m (Map IteratorId (m ()))
   , itNextIteratorId :: StrictTVar m IteratorId
   , itTracer         :: Tracer m (TraceIteratorEvent blk)
   }
 
 -- | Obtain an 'IteratorEnv' from a 'ChainDbEnv'.
-fromChainDbEnv :: IOLike m => ChainDbEnv m blk -> IteratorEnv m blk
+fromChainDbEnv :: ChainDbEnv m blk -> IteratorEnv m blk
 fromChainDbEnv CDB{..} = IteratorEnv
   { itImmDB          = cdbImmDB
   , itVolDB          = cdbVolDB
-    -- See the invariant of 'cdbChain'.
-  , itGetImmDBTip    = castPoint . AF.anchorPoint <$>
-                       atomically (readTVar cdbChain)
   , itIterators      = cdbIterators
   , itNextIteratorId = cdbNextIteratorId
   , itTracer         = contramap TraceIteratorEvent cdbTracer
@@ -260,26 +256,71 @@ newIterator itEnv@IteratorEnv{..} getItEnv registry from to = do
     -- VolatileDB (in the other cases).
     start :: HasCallStack
           => ExceptT (UnknownRange blk) m (DeserialisableIterator m blk)
-    start = lift itGetImmDBTip >>= \case
-      GenesisPoint -> findPathInVolDB
-      BlockPoint { atSlot = tipSlot, withHash = tipHash } ->
+    start = lift (ImmDB.getTipInfo itImmDB) >>= \case
+      Origin                          -> findPathInVolDB
+      At (tipSlot, tipHash, tipIsEBB) ->
         case atSlot endPoint `compare` tipSlot of
           -- The end point is < the tip of the ImmutableDB
           LT -> streamFromImmDB
+
           EQ | withHash endPoint == tipHash
                 -- The end point == the tip of the ImmutableDB
              -> streamFromImmDB
-             | otherwise
-                -- The end point /= the tip of the ImmutableDB. Either the
-                -- fork is too old, or the end point (or the tip of the
-                -- ImmutableDB) is an EBB. For example, the tip of the
-                -- ImmutableDB is an EBB and the end point is the regular
-                -- block after it.
+
+             -- The end point /= the tip of the ImmutableDB.
+             --
+             -- The end point can be a regular block or EBB. So can the tip of
+             -- the ImmutableDB. We distinguish the following for cases where
+             -- each block and EBB has the same slot number, and a block or
+             -- EBB /not/ on the current chain is indicated with a '.
+             --
+             -- 1. ImmutableDB: .. :> EBB :> B
+             --    end point: B'
+             --    desired outcome: ForkTooOld
+             --
+             -- 2. ImmutableDB: .. :> EBB :> B
+             --    end point: EBB'
+             --    desired outcome: ForkTooOld
+             --
+             -- 3. ImmutableDB: .. :> EBB :> B
+             --    end point: EBB
+             --    desired outcome: stream from ImmutableDB
+             --
+             -- 4. ImmutableDB: .. :> EBB
+             --    end point: B
+             --    desired outcome: find path in the VolatileDB
+             --
+             -- 5. ImmutableDB: .. :> EBB
+             --    end point: B'
+             --    desired outcome: ForkTooOld
+             --
+             -- 6. ImmutableDB: .. :> EBB
+             --    end point: EBB'
+             --    desired outcome: ForkTooOld
+             --
+             -- We don't know upfront whether the given end point refers to a
+             -- block or EBB nor whether it is part of the current chain or
+             -- not. This means we don't know yet with which case we are
+             -- dealing. The only thing we know for sure, is whether the
+             -- ImmutableDB tip ends with a regular block (1-3) or an EBB
+             -- (4-6).
+
+             | IsNotEBB <- tipIsEBB  -- Cases 1-3
+             -> streamFromImmDB `catchError`
+                -- We also use 'streamFromImmDB' to check whether the block or
+                -- EBB is in the ImmutableDB. If that's not the case,
+                -- 'streamFromImmDB' will return 'MissingBlock'. Instead of
+                -- returning that, we should return 'ForkTooOld', which is
+                -- more correct.
+                const (throwError $ ForkTooOld from)
+             | otherwise  -- Cases 4-6
              -> findPathInVolDB
+
           -- The end point is > the tip of the ImmutableDB
           GT -> findPathInVolDB
 
-    -- | PRECONDITION: the upper bound > the tip of the ImmutableDB
+    -- | PRECONDITION: the upper bound >= the tip of the ImmutableDB.
+    -- Greater or /equal/, because of EBBs :(
     findPathInVolDB :: HasCallStack
                     => ExceptT (UnknownRange blk) m (DeserialisableIterator m blk)
     findPathInVolDB = do
@@ -322,7 +363,7 @@ newIterator itEnv@IteratorEnv{..} getItEnv registry from to = do
                    -> ExceptT (UnknownRange blk) m (DeserialisableIterator m blk)
     streamFromBoth predHash hashes = do
         lift $ trace $ StreamFromBoth from to hashes
-        lift itGetImmDBTip >>= \case
+        lift (toPoint <$> ImmDB.getTipInfo itImmDB) >>= \case
           -- The ImmutableDB is empty
           GenesisPoint -> throwError $ ForkTooOld from
           -- The incomplete path fits onto the tip of the ImmutableDB.
@@ -364,6 +405,10 @@ newIterator itEnv@IteratorEnv{..} getItEnv registry from to = do
           immIt <- ExceptT $
             ImmDB.stream itImmDB registry Block from (StreamToInclusive immTip)
           lift $ createIterator $ InImmDB from immIt immEnd
+
+        toPoint :: WithOrigin (SlotNo, HeaderHash blk, IsEBB) -> Point blk
+        toPoint Origin                    = GenesisPoint
+        toPoint (At (slot, hash, _isEBB)) = BlockPoint slot hash
 
     makeIterator :: Bool  -- ^ Register the iterator in 'cdbIterators'?
                  -> IteratorState m blk

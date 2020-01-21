@@ -2,6 +2,7 @@
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# OPTIONS_GHC -Wno-name-shadowing #-}
 module Test.Ouroboros.Storage.ChainDB.Iterator
   ( tests
   ) where
@@ -17,12 +18,11 @@ import           Control.Tracer
 import qualified Data.ByteString.Lazy as Lazy
 import           Data.List (intercalate)
 import qualified Data.Map.Strict as Map
-import           Data.Word (Word64)
 
 import           Control.Monad.IOSim (runSimOrThrow)
 
 import           Ouroboros.Network.Block (ChainHash (..), HasHeader (..),
-                     HeaderHash, SlotNo (..), blockPoint)
+                     HeaderHash, blockPoint)
 import           Ouroboros.Network.MockChain.Chain (Chain)
 import qualified Ouroboros.Network.MockChain.Chain as Chain
 import           Ouroboros.Network.Point (WithOrigin (..))
@@ -34,9 +34,8 @@ import           Ouroboros.Consensus.Util.ResourceRegistry
 
 import           Ouroboros.Storage.ChainDB.API (Iterator (..), IteratorId (..),
                      IteratorResult (..), StreamFrom (..), StreamTo (..),
-                     UnknownRange, deserialiseIterator)
-import           Ouroboros.Storage.ChainDB.Impl.ImmDB (ImmDB, getPointAtTip,
-                     mkImmDB)
+                     UnknownRange (..), deserialiseIterator)
+import           Ouroboros.Storage.ChainDB.Impl.ImmDB (ImmDB, mkImmDB)
 import           Ouroboros.Storage.ChainDB.Impl.Iterator (IteratorEnv (..),
                      newIterator)
 import           Ouroboros.Storage.ChainDB.Impl.Types (TraceIteratorEvent (..))
@@ -48,10 +47,10 @@ import qualified Ouroboros.Storage.Util.ErrorHandling as EH
 import qualified Ouroboros.Storage.VolatileDB as VolDB
 
 import           Test.Util.Orphans.IOLike ()
-import           Test.Util.TestBlock
 import           Test.Util.Tracer (recordingTracerTVar)
 
 import qualified Test.Ouroboros.Storage.ImmutableDB.Mock as ImmDB (openDBMock)
+import           Test.Ouroboros.Storage.TestBlock
 import qualified Test.Ouroboros.Storage.VolatileDB.Mock as VolDB (openDBMock)
 
 {-------------------------------------------------------------------------------
@@ -62,6 +61,12 @@ tests :: TestTree
 tests = testGroup "Iterator"
     [ testProperty "#773 bug in example 1"  prop_773_bug
     , testProperty "#773 correct example 2" prop_773_working
+    , testProperty "#1445 case 1" prop_1435_case1
+    , testProperty "#1445 case 2" prop_1435_case2
+    , testProperty "#1445 case 3" prop_1435_case3
+    , testProperty "#1445 case 4" prop_1435_case4
+    , testProperty "#1445 case 5" prop_1435_case5
+    , testProperty "#1445 case 6" prop_1435_case6
     ]
 
 -- These tests focus on the implementation of the ChainDB iterators, which are
@@ -100,11 +105,12 @@ tests = testGroup "Iterator"
 
 -- All blocks on the same chain
 a, b, c, d, e :: TestBlock
-a = mkBlk [0]
-b = mkBlk [0,0]
-c = mkBlk [0,0,0]
-d = mkBlk [0,0,0,0]
-e = mkBlk [0,0,0,0,0]
+a = firstBlock    0 TestBody { tbForkNo = 0, tbIsValid = True }
+b = mkNextBlock a 1 TestBody { tbForkNo = 0, tbIsValid = True }
+c = mkNextBlock b 2 TestBody { tbForkNo = 0, tbIsValid = True }
+d = mkNextBlock c 3 TestBody { tbForkNo = 0, tbIsValid = True }
+e = mkNextBlock d 4 TestBody { tbForkNo = 0, tbIsValid = True }
+
 
 -- | Requested stream = A -> C
 --
@@ -142,6 +148,122 @@ prop_773_working = prop_general_test
     (StreamToInclusive   (blockPoint e))
     (Right (map Right [a, b, c, d, e]))
 
+-- | Requested stream = B' -> B' where EBB, B, and B' are all blocks in the
+-- same slot, and B' is not part of the current chain nor ChainDB.
+--
+--         ImmDB      VolDB
+-- Hash  EBB -> B
+--
+prop_1435_case1 :: Property
+prop_1435_case1 = prop_general_test
+    TestSetup
+      { immutable = Chain.fromOldestFirst [ebb, b]
+      , volatile  = []
+      }
+    (StreamFromInclusive (blockPoint b'))
+    (StreamToInclusive   (blockPoint b'))
+    (Left (ForkTooOld (StreamFromInclusive (blockPoint b'))))
+  where
+    ebb = firstEBB          TestBody { tbForkNo = 0, tbIsValid = True }
+    b   = mkNextBlock ebb 0 TestBody { tbForkNo = 0, tbIsValid = True }
+    b'  = mkNextBlock ebb 0 TestBody { tbForkNo = 1, tbIsValid = True }
+
+-- | Requested stream = EBB' -> EBB' where EBB, B, and EBB' are all blocks in
+-- the same slot, and EBB' is not part of the current chain nor ChainDB.
+--
+--         ImmDB      VolDB
+-- Hash  EBB -> B
+--
+prop_1435_case2 :: Property
+prop_1435_case2 = prop_general_test
+    TestSetup
+      { immutable = Chain.fromOldestFirst [ebb, b]
+      , volatile  = []
+      }
+    (StreamFromInclusive (blockPoint ebb'))
+    (StreamToInclusive   (blockPoint ebb'))
+    (Left (ForkTooOld (StreamFromInclusive (blockPoint ebb'))))
+  where
+    ebb  = firstEBB          TestBody { tbForkNo = 0, tbIsValid = True }
+    b    = mkNextBlock ebb 0 TestBody { tbForkNo = 0, tbIsValid = True }
+    ebb' = firstEBB          TestBody { tbForkNo = 1, tbIsValid = True }
+
+-- | Requested stream = EBB -> EBB where EBB and B are all blocks in the same
+-- slot.
+--
+--         ImmDB      VolDB
+-- Hash  EBB -> B
+--
+prop_1435_case3 :: Property
+prop_1435_case3 = prop_general_test
+    TestSetup
+      { immutable = Chain.fromOldestFirst [ebb, b]
+      , volatile  = []
+      }
+    (StreamFromInclusive (blockPoint ebb))
+    (StreamToInclusive   (blockPoint ebb))
+    (Right (map Right [ebb]))
+  where
+    ebb  = firstEBB          TestBody { tbForkNo = 0, tbIsValid = True }
+    b    = mkNextBlock ebb 0 TestBody { tbForkNo = 0, tbIsValid = True }
+
+-- | Requested stream = EBB -> EBB where EBB and B are all blocks in the same
+-- slot.
+--
+--         ImmDB      VolDB
+-- Hash     EBB         B
+--
+prop_1435_case4 :: Property
+prop_1435_case4 = prop_general_test
+    TestSetup
+      { immutable = Chain.fromOldestFirst [ebb]
+      , volatile  = [b]
+      }
+    (StreamFromInclusive (blockPoint ebb))
+    (StreamToInclusive   (blockPoint ebb))
+    (Right (map Right [ebb]))
+  where
+    ebb  = firstEBB          TestBody { tbForkNo = 0, tbIsValid = True }
+    b    = mkNextBlock ebb 0 TestBody { tbForkNo = 0, tbIsValid = True }
+
+-- | Requested stream = EBB -> EBB where EBB and B' are all blocks in the same
+-- slot, and B' is not part of the current chain nor ChainDB.
+--
+--         ImmDB      VolDB
+-- Hash     EBB
+--
+prop_1435_case5 :: Property
+prop_1435_case5 = prop_general_test
+    TestSetup
+      { immutable = Chain.fromOldestFirst [ebb]
+      , volatile  = []
+      }
+    (StreamFromInclusive (blockPoint b'))
+    (StreamToInclusive   (blockPoint b'))
+    (Left (ForkTooOld (StreamFromInclusive (blockPoint b'))))
+  where
+    ebb  = firstEBB          TestBody { tbForkNo = 0, tbIsValid = True }
+    b'   = mkNextBlock ebb 0 TestBody { tbForkNo = 1, tbIsValid = True }
+
+-- | Requested stream = EBB' -> EBB' where EBB and EBB' are all blocks in the
+-- same slot, and EBB' is not part of the current chain nor ChainDB.
+--
+--         ImmDB      VolDB
+-- Hash     EBB
+--
+prop_1435_case6 :: Property
+prop_1435_case6 = prop_general_test
+    TestSetup
+      { immutable = Chain.fromOldestFirst [ebb]
+      , volatile  = []
+      }
+    (StreamFromInclusive (blockPoint ebb'))
+    (StreamToInclusive   (blockPoint ebb'))
+    (Left (ForkTooOld (StreamFromInclusive (blockPoint ebb'))))
+  where
+    ebb  = firstEBB TestBody { tbForkNo = 0, tbIsValid = True }
+    ebb' = firstEBB TestBody { tbForkNo = 1, tbIsValid = True }
+
 -- | The general property test
 prop_general_test
   :: TestSetup
@@ -168,7 +290,7 @@ prop_general_test setup from to expected =
     failure msg = counterexample msg False
 
     ppStream :: [Either (HeaderHash TestBlock) TestBlock] -> String
-    ppStream = intercalate " :> " . map ppEBBOrBlock
+    ppStream = intercalate " :> " . map ppGCedOrBlock
 
 {-------------------------------------------------------------------------------
   Test setup
@@ -183,13 +305,6 @@ data TestSetup = TestSetup
   , volatile  :: [TestBlock]
   }
 
-mkBlk :: [Word64] -> TestBlock
-mkBlk h = TestBlock
-    { tbHash  = testHashFromList h
-    , tbSlot  = SlotNo $ fromIntegral $ 2 * length h
-    , tbValid = True
-    }
-
 -- | Human-friendly string description of the 'TestSetup' that can be used
 -- when printing a failing test.
 testSetupInfo :: TestSetup -> String
@@ -201,12 +316,12 @@ testSetupInfo TestSetup { immutable, volatile } = mconcat
     , intercalate ", " (map ppBlock volatile)
     ]
 
-ppEBBOrBlock :: Either (HeaderHash TestBlock) TestBlock -> String
-ppEBBOrBlock (Left  ebbHash) = "EBB " <> condense ebbHash
-ppEBBOrBlock (Right blk)     = ppBlock blk
+ppGCedOrBlock :: Either (HeaderHash TestBlock) TestBlock -> String
+ppGCedOrBlock (Left  gcedHash) = "GCed: " <> condense gcedHash
+ppGCedOrBlock (Right blk)      = ppBlock blk
 
 ppBlock :: TestBlock -> String
-ppBlock = condense . blockHash
+ppBlock = condense
 
 {-------------------------------------------------------------------------------
   Running an iterator test
@@ -214,7 +329,7 @@ ppBlock = condense . blockHash
 
 type IterRes = Either (UnknownRange TestBlock)
                       [Either (HeaderHash TestBlock) TestBlock]
-                      -- Left:  EBB hash
+                      -- Left:  hash of garbage collected block
                       -- Right: regular block
 
 -- | Open an iterator with the given bounds on the given 'TestSetup'. Return a
@@ -236,7 +351,7 @@ runIterator setup from to = runSimOrThrow $ withRegistry $ \r -> do
   where
     consume :: Monad m
             => Iterator m TestBlock
-            -> m [Either TestHash TestBlock]
+            -> m [Either (HeaderHash TestBlock) TestBlock]
     consume it = iteratorNext it >>= \case
       IteratorResult blk -> (Right blk :) <$> consume it
       IteratorBlockGCed hash -> do
@@ -263,7 +378,6 @@ initIteratorEnv TestSetup { immutable, volatile } tracer = do
     return IteratorEnv
       { itImmDB          = immDB
       , itVolDB          = volDB
-      , itGetImmDBTip    = getPointAtTip immDB
       , itIterators      = iters
       , itNextIteratorId = nextIterId
       , itTracer         = tracer
@@ -279,7 +393,7 @@ initIteratorEnv TestSetup { immutable, volatile } tracer = do
           encodeWithBinaryInfo isEBB addHdrEnv
           EH.monadCatch EH.throwSTM
       where
-        isEBB = const IsNotEBB
+        isEBB = testBlockIsEBB
 
     blockInfo :: TestBlock -> VolDB.BlockInfo (HeaderHash TestBlock)
     blockInfo tb = VolDB.BlockInfo
@@ -288,7 +402,7 @@ initIteratorEnv TestSetup { immutable, volatile } tracer = do
       , VolDB.bpreBid       = case blockPrevHash tb of
           GenesisHash -> Origin
           BlockHash h -> At h
-      , VolDB.bisEBB        = IsNotEBB
+      , VolDB.bisEBB        = testBlockIsEBB tb
       , VolDB.bheaderOffset = 0
       , VolDB.bheaderSize   = 0
       }
@@ -303,15 +417,18 @@ initIteratorEnv TestSetup { immutable, volatile } tracer = do
     openImmDB :: Chain TestBlock -> m (ImmDB m TestBlock)
     openImmDB chain = do
         (_immDBModel, immDB) <- ImmDB.openDBMock EH.monadCatch (const epochSize)
-        forM_ (Chain.toOldestFirst chain) $ \block ->
-          ImmDB.appendBlock immDB
+        forM_ (Chain.toOldestFirst chain) $ \block -> case isEBB block of
+          Nothing -> ImmDB.appendBlock immDB
             (blockSlot block) (blockHash block)
+            (CBOR.toBuilder <$> encodeWithBinaryInfo block)
+          Just epoch -> ImmDB.appendEBB immDB
+            epoch (blockHash block)
             (CBOR.toBuilder <$> encodeWithBinaryInfo block)
         return $ mkImmDB immDB (const <$> decode) (const <$> decode)
           encodeWithBinaryInfo epochInfo isEBB addHdrEnv EH.monadCatch
       where
         epochInfo = fixedSizeEpochInfo epochSize
-        isEBB     = const Nothing
+        isEBB     = testBlockEpochNoIfEBB epochSize
 
 encodeWithBinaryInfo :: TestBlock -> BinaryInfo Encoding
 encodeWithBinaryInfo blk = BinaryInfo
