@@ -6,16 +6,14 @@
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE KindSignatures      #-}
 
 -- |
 -- Module exports interface for running a node over a socket over TCP \/ IP.
 --
 module Ouroboros.Network.Socket (
     -- * High level socket interface
-      ConnectionTable
-    , ConnectionTableRef (..)
-    , ValencyCounter
-    , NetworkMutableState (..)
+      NetworkMutableState (..)
     , newNetworkMutableState
     , newNetworkMutableStateSTM
     , cleanNetworkMutableState
@@ -24,33 +22,32 @@ module Ouroboros.Network.Socket (
     , connectToNode
     , connectToNode'
 
+    -- * What to do with a connection to a peer
+    -- Slightly complicated by the fact that we have initiator and responder
+    -- sides to mux, some of which we may wish to disallow (note to client
+    -- server doesn't allow outgoing connections, for example).
+    -- TODO rename
+    , ConnectionData (..)
+    , SomeVersionedApplication (..)
+    , RejectConnection (..)
+    , withConnections
+    , connection
+    , incomingConnection
+    , outgoingConnection
+
     -- * Traces
     , NetworkConnectTracers (..)
     , nullNetworkConnectTracers
     , NetworkServerTracers (..)
     , nullNetworkServerTracers
 
-    -- * Helper function for creating servers
-    , fromSocket
-    , beginConnection
-
     -- * Re-export of PeerStates
     , PeerStates
 
-    -- * Re-export connection table functions
-    , newConnectionTable
-    , refConnection
-    , addConnection
-    , removeConnection
-    , newValencyCounter
-    , addValencyCounter
-    , remValencyCounter
-    , waitValencyCounter
-    , readValencyCounter
     ) where
 
 import           Control.Concurrent.Async
-import           Control.Exception (IOException, SomeException (..))
+import           Control.Exception (IOException)
 import           Control.Monad (when)
 -- TODO: remove this, it will not be needed when `orElse` PR will be merged.
 import qualified Control.Monad.STM as STM
@@ -63,8 +60,9 @@ import           Codec.CBOR.Read (DeserialiseFailure)
 import           Codec.Serialise (Serialise)
 import           Data.Typeable (Typeable)
 import qualified Data.ByteString.Lazy as BL
+import           Data.Foldable (traverse_)
 import           Data.Int
-import           Data.Void
+import           Data.Void (Void)
 
 import qualified Network.Socket as Socket
 
@@ -88,9 +86,14 @@ import           Ouroboros.Network.Protocol.Handshake.Type
 import           Ouroboros.Network.Protocol.Handshake.Version
 import           Ouroboros.Network.Protocol.Handshake.Codec
 import           Ouroboros.Network.Mux
-import qualified Ouroboros.Network.Server.Socket as Server
-import           Ouroboros.Network.Server.ConnectionTable
+import qualified Ouroboros.Network.Server.ConnectionTable as CT
 
+import           Ouroboros.Network.Connections.Concurrent hiding (Accept, Reject)
+import qualified Ouroboros.Network.Connections.Concurrent as Connection
+                   (Accept, Reject, Decision(Accept, Reject), concurrent)
+import           Ouroboros.Network.Connections.Socket.Server (acceptLoopOn)
+import qualified Ouroboros.Network.Connections.Socket.Types as Connections
+import           Ouroboros.Network.Connections.Types hiding (Decision(..))
 
 -- | Tracer used by 'connectToNode' (and derivatives, like
 -- 'Ouroboros.Network.NodeToNode.connectTo' or
@@ -148,7 +151,7 @@ maxTransmissionUnit = 4 * 1440
 --
 -- Exceptions thrown by @'MuxApplication'@ are rethrown by @'connectTo'@.
 connectToNode
-  :: forall appType ptcl vNumber extra a b.
+  :: forall appType ptcl vNumber vDataT a b.
      ( Mx.ProtocolEnum ptcl
      , Ord ptcl
      , Enum ptcl
@@ -162,9 +165,9 @@ connectToNode
      , Mx.MiniProtocolLimits ptcl
      , HasInitiator appType ~ True
      )
-  => VersionDataCodec extra CBOR.Term
+  => VersionDataCodec vDataT CBOR.Term
   -> NetworkConnectTracers ptcl vNumber
-  -> Versions vNumber extra (OuroborosApplication appType ConnectionId ptcl IO BL.ByteString a b)
+  -> Versions vNumber vDataT (OuroborosApplication appType ConnectionId ptcl IO BL.ByteString a b)
   -- ^ application to run over the connection
   -> Maybe Socket.AddrInfo
   -- ^ local address; the created socket will bind to it
@@ -201,7 +204,7 @@ connectToNode versionDataCodec tracers versions localAddr remoteAddr =
 --
 -- Exceptions thrown by @'MuxApplication'@ are rethrown by @'connectTo'@.
 connectToNode'
-  :: forall appType ptcl vNumber extra a b.
+  :: forall appType ptcl vNumber vDataT a b.
      ( Mx.ProtocolEnum ptcl
      , Ord ptcl
      , Enum ptcl
@@ -215,9 +218,9 @@ connectToNode'
      , Mx.MiniProtocolLimits ptcl
      , HasInitiator appType ~ True
      )
-  => VersionDataCodec extra CBOR.Term
+  => VersionDataCodec vDataT CBOR.Term
   -> NetworkConnectTracers ptcl vNumber
-  -> Versions vNumber extra (OuroborosApplication appType ConnectionId ptcl IO BL.ByteString a b)
+  -> Versions vNumber vDataT (OuroborosApplication appType ConnectionId ptcl IO BL.ByteString a b)
   -- ^ application to run over the connection
   -> Socket.Socket
   -> IO ()
@@ -257,119 +260,17 @@ connectToNode' versionDataCodec NetworkConnectTracers {nctMuxTracer, nctHandshak
 -- connection, the whole connection will terminate.  We might want to be more
 -- admissible in this scenario: leave the server thread running and let only
 -- the client thread to die.
-data AcceptConnection st vNumber extra peerid ptcl m bytes where
+data AcceptConnection st peerid where
 
     AcceptConnection
-      :: forall appType st vNumber extra peerid ptcl m bytes a b.
-         HasResponder appType ~ True
-      => !st
+      :: !st
       -> !peerid
-      -> Versions vNumber extra (OuroborosApplication appType peerid ptcl m bytes a b)
-      -> AcceptConnection st vNumber extra peerid ptcl m bytes
+      -> AcceptConnection st peerid
 
     RejectConnection
       :: !st
       -> !peerid
-      -> AcceptConnection st vNumber extra peerid ptcl m bytes
-
-
--- |
--- Accept or reject incoming connection based on the current state and address
--- of the incoming connection.
---
-beginConnection
-    :: forall peerid ptcl vNumber extra addr st.
-       ( Mx.ProtocolEnum ptcl
-       , Ord ptcl
-       , Enum ptcl
-       , Bounded ptcl
-       , Show ptcl
-       , Mx.MiniProtocolLimits ptcl
-       , Ord vNumber
-       , Enum vNumber
-       , Serialise vNumber
-       , Typeable vNumber
-       , Show vNumber
-       )
-    => Tracer IO (Mx.WithMuxBearer peerid (Mx.MuxTrace ptcl))
-    -> Tracer IO (TraceSendRecv (Handshake vNumber CBOR.Term) peerid (DecoderFailureOrTooMuchInput DeserialiseFailure))
-    -> VersionDataCodec extra CBOR.Term
-    -> (forall vData. extra vData -> vData -> vData -> Accept)
-    -> (Time -> addr -> st -> STM.STM (AcceptConnection st vNumber extra peerid ptcl IO BL.ByteString))
-    -- ^ either accept or reject a connection.
-    -> Server.BeginConnection addr Socket.Socket st ()
-beginConnection muxTracer handshakeTracer versionDataCodec acceptVersion fn t addr st = do
-    accept <- fn t addr st
-    case accept of
-      AcceptConnection st' peerid versions -> pure $ Server.Accept st' $ \sd -> do
-        muxTracer' <- initDeltaQTracer' $ Mx.WithMuxBearer peerid `contramap` muxTracer
-        (bearer :: MuxBearer ptcl IO) <- Mx.socketAsMuxBearer muxTracer' sd
-        Mx.muxBearerSetState muxTracer' bearer Mx.Connected
-        traceWith muxTracer' $ Mx.MuxTraceHandshakeStart
-        mapp <- runPeerWithByteLimit
-                maxTransmissionUnit
-                BL.length
-                handshakeTracer
-                codecHandshake
-                peerid
-                (Mx.muxBearerAsControlChannel bearer Mx.ModeResponder)
-                (handshakeServerPeer versionDataCodec acceptVersion versions)
-        case mapp of
-          Left err -> do
-            traceWith muxTracer' $ Mx.MuxTraceHandshakeServerError err
-            throwIO err
-          Right app -> do
-            traceWith muxTracer' $ Mx.MuxTraceHandshakeServerEnd
-            Mx.muxStart muxTracer' peerid (toApplication app) bearer
-      RejectConnection st' _peerid -> pure $ Server.Reject st'
-
-
--- Make the server listening socket
-mkListeningSocket
-    :: Socket.Family
-    -> Maybe Socket.SockAddr
-    -> IO Socket.Socket
-mkListeningSocket addrFamily_ addr = do
-    sd <- Socket.socket addrFamily_ Socket.Stream Socket.defaultProtocol
-    when (addrFamily_ == Socket.AF_INET ||
-          addrFamily_ == Socket.AF_INET6) $ do
-        Socket.setSocketOption sd Socket.ReuseAddr 1
-#if !defined(mingw32_HOST_OS)
-        Socket.setSocketOption sd Socket.ReusePort 1
-#endif
-    case addr of
-      Nothing -> pure ()
-      Just addr_ -> do
-        when (addrFamily_ == Socket.AF_INET6) $
-           -- An AF_INET6 socket can be used to talk to both IPv4 and IPv6 end points, and
-           -- it is enabled by default on some systems. Disabled here since we run a separate
-           -- IPv4 server instance if configured to use IPv4.
-           Socket.setSocketOption sd Socket.IPv6Only 1
-
-        Socket.bind sd addr_
-        Socket.listen sd 1
-    pure sd
-
-
--- |
--- Make a server-compatible socket from a network socket.
---
-fromSocket
-    :: ConnectionTable IO Socket.SockAddr
-    -> Socket.Socket
-    -> Server.Socket Socket.SockAddr Socket.Socket
-fromSocket tblVar sd = Server.Socket
-    { Server.acceptConnection = do
-        (sd', remoteAddr) <- Socket.accept sd
-        localAddr <- Socket.getSocketName sd'
-        atomically $ addConnection tblVar remoteAddr localAddr Nothing
-        pure (remoteAddr, sd', close remoteAddr localAddr sd')
-    }
-  where
-    close remoteAddr localAddr sd' = do
-        removeConnection tblVar remoteAddr localAddr
-        Socket.close sd'
-
+      -> AcceptConnection st peerid
 
 -- | Tracers required by a server which handles inbound connections.
 --
@@ -399,7 +300,7 @@ nullNetworkServerTracers = NetworkServerTracers {
 -- | Mutable state maintained by the network component.
 --
 data NetworkMutableState = NetworkMutableState {
-    nmsConnectionTable :: ConnectionTable IO Socket.SockAddr,
+    nmsConnectionTable :: CT.ConnectionTable IO Socket.SockAddr,
     -- ^ 'ConnectionTable' which maintains information about current upstream and
     -- downstream connections.
     nmsPeerStates      :: StrictTVar IO (PeerStates IO Socket.SockAddr)
@@ -409,7 +310,7 @@ data NetworkMutableState = NetworkMutableState {
 
 newNetworkMutableStateSTM :: STM.STM NetworkMutableState
 newNetworkMutableStateSTM =
-    NetworkMutableState <$> newConnectionTableSTM
+    NetworkMutableState <$> CT.newConnectionTableSTM
                         <*> newPeerStatesVarSTM
 
 newNetworkMutableState :: IO NetworkMutableState
@@ -422,11 +323,229 @@ cleanNetworkMutableState :: NetworkMutableState
 cleanNetworkMutableState NetworkMutableState {nmsPeerStates} =
     cleanPeerStates 200 nmsPeerStates
 
--- |
--- Thin wrapper around @'Server.run'@.
+-- Really the thing we want to plug is
 --
-runServerThread
-    :: forall appType ptcl vNumber extra a b.
+--   request provenance -> 
+
+-- | Domain-specific rejection type. Only incoming connections can be rejected.
+-- Outgoing connections can still fail, but there is no "normal"
+-- (non-exceptional) reason to reject one.
+--
+-- TODO constructor should include an explanation
+data RejectConnection (p :: Provenance) where
+  Rejected :: RejectConnection Remote
+
+-- TODO idea to simplify things.
+-- Let's make withConnections take everything predicated on a
+-- `request provenance`, including the tracers, etc.
+--
+--      (forall provenance . request provenance -> Requirements provenance)
+--   -> (Connections ConnectionId Socket request (Reject RejectConnection) (Accept handle) IO -> IO t)
+--   -> IO t
+--
+-- data Requirements ptcl vNumber vDataT provenance where
+--   RequirementsRemote
+--     :: NetworkServerTracers ptcl vNumber
+--     -> NetworkMutableState
+--     -> ErrorPolicies Socket.SockAddr ()
+--     -> (forall vData . vDataT vData -> vData -> vData -> Accept)
+--     -> SomeApplication ptcl vNumber vDataT Remote
+--     -> Requirements ptcl vNumber vDataT Remote
+--   RequirementsLocal
+--     :: NetworkConnectTracers ptcl vNumber
+--     -> ErrorPolicies Socket.SockAddr ()
+--     -> SomeApplication ptcl vNubmer vDataT Local
+--     -> Requirements ptcl vNumber vDataT Local
+--
+-- This way we don't have to give connect tracers for the node to client server.
+--
+-- Then the nature of the diffusion layer can be set laregely in part by
+-- the definition of the `request` type.
+-- For a typical accept loop, you pretty much have to give a constant request
+-- type for remote. Makes sense though... well, each _different_ accept loop
+-- can have a different request type. It's actually quite a slick design.
+--
+
+data SomeVersionedApplication ptcl vNumber vDataT provenance where
+  SomeVersionedResponderApp
+    :: ( HasResponder appType ~ True )
+    => NetworkServerTracers ptcl vNumber
+    -> Versions vNumber vDataT (OuroborosApplication appType ConnectionId ptcl IO BL.ByteString a b)
+    -> SomeVersionedApplication ptcl vNumber vDataT Remote
+  SomeVersionedInitiatorApp
+    :: ( HasInitiator appType ~ True )
+    => NetworkConnectTracers ptcl vNumber
+    -> Versions vNumber vDataT (OuroborosApplication appType ConnectionId ptcl IO BL.ByteString a b)
+    -> SomeVersionedApplication ptcl vNumber vDataT Local
+
+-- | Contains everything needed to run a mux'd versioned ouroboros application
+-- as initiator or responder. See use in `withConnections`. The idea is that
+-- the user will give a custom `request :: Provenance -> Type` type and must
+-- create a `ConnectionData ptcl vNumber provenance` with the same provenance
+-- as the request. In this way, the choice of `request` GADT can determine
+-- whether initiator or responder are even allowed (node-to-client server, for
+-- instance, does not allow initiation).
+data ConnectionData ptcl vNumber provenance where
+  -- | Locally-initiated connection data.
+  ConnectionDataLocal
+    :: ( HasInitiator appType ~ True )
+    => NetworkConnectTracers ptcl vNumber
+    -> NetworkMutableState
+    -> VersionDataCodec vDataT CBOR.Term
+    -> Versions vNumber vDataT (OuroborosApplication appType ConnectionId ptcl IO BL.ByteString a b)
+    -> ConnectionData ptcl vNumber Local
+  -- | Data for a remotely-initiated connection.
+  ConnectionDataRemote
+    :: ( HasResponder appType ~ True )
+    => NetworkServerTracers ptcl vNumber
+    -> NetworkMutableState
+    -> ErrorPolicies Socket.SockAddr ()
+    -> VersionDataCodec vDataT CBOR.Term
+    -> (forall vData . vDataT vData -> vData -> vData -> Accept)
+    -> Versions vNumber vDataT (OuroborosApplication appType ConnectionId ptcl IO BL.ByteString a b)
+    -> ConnectionData ptcl vNumber Remote
+
+
+-- | Get a concurrent connections manager, running `connection` for each
+-- connection (`Socket`) between two peers (`ConnectionId`).
+--
+--
+withConnections
+  :: forall ptcl vNumber request t.
+     ( Mx.ProtocolEnum ptcl
+     , Mx.MiniProtocolLimits ptcl
+     , Ord ptcl
+     , Enum ptcl
+     , Bounded ptcl
+     , Ord vNumber
+     , Enum vNumber
+     , Serialise vNumber
+     , Typeable vNumber
+     , Show vNumber
+     , Show ptcl
+     )
+  => (forall provenance. request provenance -> ConnectionData ptcl vNumber provenance)
+  -> (Connections Connections.ConnectionId Socket.Socket request (Connection.Reject RejectConnection) (Connection.Accept ()) IO -> IO t)
+  -> IO t
+withConnections mk = Connection.concurrent (connection mk)
+
+-- | Handle any connection (remotely- or locally-initiated).
+-- After filling in the first 7 parameters, you get a function that can be
+-- used to create a `Connections.Concurrent.concurrent` `Connections` term.
+--
+-- From that, you can derive a socket accept loop by using `acceptLoopOn`.
+-- Outgoing connections can be made using `runClientWith` on a pair of
+-- socket addresses, and referencing that `Connections` term.
+connection
+  :: forall ptcl vNumber provenance request.
+     ( Mx.ProtocolEnum ptcl
+     , Mx.MiniProtocolLimits ptcl
+     , Ord ptcl
+     , Enum ptcl
+     , Bounded ptcl
+     , Ord vNumber
+     , Enum vNumber
+     , Serialise vNumber
+     , Typeable vNumber
+     , Show vNumber
+     , Show ptcl
+     )
+  => (forall provenance'. request provenance' -> ConnectionData ptcl vNumber provenance')
+  -> Initiated provenance
+  -> Connections.ConnectionId
+  -> Socket.Socket
+  -> request provenance
+  -> IO (Connection.Decision provenance RejectConnection ())
+connection mk _ connid socket request = case mk request of
+
+    ConnectionDataLocal tracers state vCodec versions ->
+        bracket (addConnection state) (const (removeConnection state)) $ \_ ->
+            outgoingConnection vCodec tracers versions connid socket
+
+    ConnectionDataRemote tracers state errPolicies vCodec accept versions ->
+        bracket (addConnection state) (const (removeConnection state)) $ \_ ->
+            incomingConnection tracers state vCodec accept versions errPolicies
+                connid socket
+
+  where
+    -- FIXME may be better to only add/remove from the connection table once
+    -- the connection has been accepted. The way it is now, rejected connections
+    -- will briefly appear in the table.
+    addConnection mutableState =
+        atomically $ CT.addConnection (nmsConnectionTable mutableState) remoteAddr localAddr Nothing
+    removeConnection mutableState =
+        CT.removeConnection (nmsConnectionTable mutableState) remoteAddr localAddr
+    (localAddr, remoteAddr) = Connections.connectionIdPair connid
+ 
+
+-- | What to do for outgoing (locally-initiated) connections.
+-- Unlike `incomingConnection`, there is apparently no `NetworkMutableState`
+-- to deal with, so this is comparatively simple.
+-- FIXME _why_ though? Why would there be mutable state to update on the
+-- incoming side, but not outgoing?
+outgoingConnection
+  :: forall ptcl vNumber vDataT appType a b.
+     ( HasInitiator appType ~ True
+     , Mx.ProtocolEnum ptcl
+     , Ord ptcl
+     , Enum ptcl
+     , Bounded ptcl
+     , Ord vNumber
+     , Enum vNumber
+     , Serialise vNumber
+     , Typeable vNumber
+     , Show vNumber
+     , Show ptcl
+     , Mx.MiniProtocolLimits ptcl
+     )
+  => VersionDataCodec vDataT CBOR.Term
+  -> NetworkConnectTracers ptcl vNumber
+  -> Versions vNumber vDataT (OuroborosApplication appType ConnectionId ptcl IO BL.ByteString a b)
+  -- ^ application to run over the connection
+  -> Connections.ConnectionId
+  -> Socket.Socket       -- ^ Socket to peer; could have been established by us or them.
+  -> IO (Connection.Decision Local RejectConnection ()) -- ^ TODO better reject and accept types?
+outgoingConnection versionDataCodec NetworkConnectTracers {nctMuxTracer, nctHandshakeTracer } versions connId sd =
+    -- Always accept and run initiator mode mux on the socket.
+    pure $ Connection.Accept $ \_connThread -> do
+        let connectionHandle = ()
+            action = do
+                let (localAddr, remoteAddr) = Connections.connectionIdPair connId
+                    -- Mux uses a different connection ID type (the one from Connections
+                    -- guarantees consistent protocols).
+                    connectionId = ConnectionId localAddr remoteAddr
+                muxTracer <- initDeltaQTracer' $ Mx.WithMuxBearer connectionId `contramap` nctMuxTracer
+                bearer <- Mx.socketAsMuxBearer muxTracer sd
+                Mx.muxBearerSetState muxTracer bearer Mx.Connected
+                traceWith muxTracer $ Mx.MuxTraceHandshakeStart
+                ts_start <- getMonotonicTime
+                !mapp <- runPeerWithByteLimit
+                          maxTransmissionUnit
+                          BL.length
+                          nctHandshakeTracer
+                          codecHandshake
+                          connectionId
+                          (Mx.muxBearerAsControlChannel bearer Mx.ModeInitiator)
+                          (handshakeClientPeer versionDataCodec versions)
+                ts_end <- getMonotonicTime
+                case mapp of
+                     Left err -> do
+                         traceWith muxTracer $ Mx.MuxTraceHandshakeClientError err (diffTime ts_end ts_start)
+                         -- FIXME is it right to throw an exception here? Or would it be
+                         -- better to return Connection.Reject
+                         throwIO err
+                     Right app -> do
+                         traceWith muxTracer $ Mx.MuxTraceHandshakeClientEnd (diffTime ts_end ts_start)
+                         Mx.muxStart muxTracer connectionId (toApplication app) bearer
+        pure $ Handler { handle = connectionHandle, action = action }
+
+
+-- TODO instead of running the server thread, we want to define what to do
+-- when in `Incoming` connection is seen.
+-- Once we have that, we use it to make a `concurrent` `Connections` term, then
+-- the server accept loop is a trivial `acceptLoopOn`.
+incomingConnection
+    :: forall ptcl vNumber vDataT appType a b.
        ( HasResponder appType ~ True
        , Mx.ProtocolEnum ptcl
        , Ord ptcl
@@ -442,65 +561,130 @@ runServerThread
        )
     => NetworkServerTracers ptcl vNumber
     -> NetworkMutableState
-    -> Socket.Socket
-    -> VersionDataCodec extra CBOR.Term
-    -> (forall vData. extra vData -> vData -> vData -> Accept)
-    -> Versions vNumber extra (OuroborosApplication appType ConnectionId ptcl IO BL.ByteString a b)
+    -> VersionDataCodec vDataT CBOR.Term
+    -> (forall vData . vDataT vData -> vData -> vData -> Accept)
+    -> Versions vNumber vDataT (OuroborosApplication appType ConnectionId ptcl IO BL.ByteString a b)
     -> ErrorPolicies Socket.SockAddr ()
-    -> IO Void
-runServerThread NetworkServerTracers { nstMuxTracer
-                                     , nstHandshakeTracer
-                                     , nstErrorPolicyTracer }
-                NetworkMutableState { nmsConnectionTable
-                                    , nmsPeerStates }
-                sd
-                versionDataCodec
-                acceptVersion
-                versions
-                errorPolicies = do
-    sockAddr <- Socket.getSocketName sd
-    Server.run
-        nstErrorPolicyTracer
-        (fromSocket nmsConnectionTable sd)
-        (acceptException sockAddr)
-        (beginConnection nstMuxTracer nstHandshakeTracer versionDataCodec acceptVersion (acceptConnectionTx sockAddr))
-        -- register producer when application starts, it will be unregistered
-        -- using 'CompleteConnection'
-        (\remoteAddr thread st -> pure $ registerProducer remoteAddr thread st)
-        completeTx mainTx (toLazyTVar nmsPeerStates)
+    -> Connections.ConnectionId -- ^ Includes our address and remote address.
+    -> Socket.Socket            -- ^ Established by the remote peer.
+    -> IO (Connection.Decision Remote RejectConnection ()) -- ^ TODO give better types for reject and handle
+incomingConnection NetworkServerTracers { nstMuxTracer
+                                        , nstHandshakeTracer
+                                        , nstErrorPolicyTracer }
+                   NetworkMutableState { nmsPeerStates }
+                   versionDataCodec
+                   acceptVersion
+                   versions
+                   errorPolicies
+                   connId
+                   sd = do
+    -- Make a decision about whether to accept this connection.
+    -- We need the time, and the local and remote addresses, so that
+    -- `acceptConnectionTx` can do its thing.
+    time <- getMonotonicTime
+    let (localAddr, remoteAddr) = Connections.connectionIdPair connId
+    decision <- STM.atomically $ do
+        st <- readTVar nmsPeerStates
+        !handleConn <- acceptConnectionTx localAddr time remoteAddr st
+        case handleConn of
+            AcceptConnection !st' connId' -> do
+              writeTVar nmsPeerStates st'
+              pure $ Just connId'
+            RejectConnection !st' _connId' -> do
+              writeTVar nmsPeerStates st'
+              pure Nothing
+    case decision of
+        -- TODO better type for the reason for rejection.
+        Nothing -> pure $ Connection.Reject Rejected
+        -- To accept, we get a reference to the thread running the handler's
+        -- action, so that we can `registerProducer`, which needs it for
+        -- some reason.
+        Just peerid -> pure $ Connection.Accept $ \connThread ->
+          let -- TODO better type for a handle.
+              -- This is supposed to give a handle on the `action` defined
+              -- blow, allowing its holder to observe and to some extent control
+              -- what's going on in that action.
+              connectionHandle = ()
+              -- When a connection comes up, we must register a producer.
+              -- When it goes down, we must call some error policies thing
+              -- `completeApplicationTx` and update state to unregister the
+              -- producer.
+              --
+              -- TODO this is rather complex. Should be bottled up somewhere.
+              register = atomically $ do
+                  -- It's a StrictTVar so we read take and write I guess (no
+                  -- modifyTVar')
+                  st <- readTVar nmsPeerStates
+                  writeTVar nmsPeerStates (registerProducer remoteAddr connThread st)
+              unregister _ exitCase = do
+                  time' <- getMonotonicTime
+                  (rthreads, rtrace) <- case exitCase of
+                      ExitCaseSuccess a -> atomically $ do
+                          st <- readTVar nmsPeerStates
+                          !result <- completeApplicationTx errorPolicies (ApplicationResult time' remoteAddr a) st
+                          let !st' = unregisterProducer remoteAddr connThread (carState result)
+                          writeTVar nmsPeerStates st'
+                          return (carThreads result, carTrace result)
+                      ExitCaseException e -> atomically $ do
+                          st <- readTVar nmsPeerStates
+                          !result <- completeApplicationTx errorPolicies (ApplicationError time' remoteAddr e) st
+                          let !st' = unregisterProducer remoteAddr connThread (carState result)
+                          writeTVar nmsPeerStates st'
+                          return (carThreads result, carTrace result)
+                      ExitCaseAbort -> error "ExitCaseAbort should not exist!"
+                  -- TODO what are these threads?
+                  -- Do we need them? If the `action` defined below does proper
+                  -- threading (doesn't leave dangling threads) then this
+                  -- should not be needed.
+                  traverse_ cancel rthreads
+                  traverse_ (traceWith nstErrorPolicyTracer) rtrace
+
+              -- This is the action to run for this connection.
+              -- Does version negotiation, sets up mux, and starts it.
+              --
+              -- `fmap fst` because generalBracket gives the result of the
+              -- releaser callback as well.
+              action = fmap fst $ generalBracket register unregister $ \_ -> do
+                  muxTracer' <- initDeltaQTracer' $ Mx.WithMuxBearer peerid `contramap` nstMuxTracer
+                  (bearer :: MuxBearer ptcl IO) <- Mx.socketAsMuxBearer muxTracer' sd
+                  Mx.muxBearerSetState muxTracer' bearer Mx.Connected
+                  traceWith muxTracer' $ Mx.MuxTraceHandshakeStart
+                  mapp <- runPeerWithByteLimit
+                          maxTransmissionUnit
+                          BL.length
+                          nstHandshakeTracer
+                          codecHandshake
+                          peerid
+                          (Mx.muxBearerAsControlChannel bearer Mx.ModeResponder)
+                          (handshakeServerPeer versionDataCodec acceptVersion versions)
+                  case mapp of
+                    Left err -> do
+                      traceWith muxTracer' $ Mx.MuxTraceHandshakeServerError err
+                      throwIO err
+                    Right app -> do
+                      traceWith muxTracer' $ Mx.MuxTraceHandshakeServerEnd
+                      Mx.muxStart muxTracer' peerid (toApplication app) bearer
+          in  pure $ Handler { handle = connectionHandle, action = action }
   where
-    mainTx :: Server.Main (PeerStates IO Socket.SockAddr) Void
-    mainTx (ThrowException e) = throwM e
-    mainTx PeerStates{}       = retry
 
-    -- When a connection completes, we do nothing. State is ().
-    -- Crucially: we don't re-throw exceptions, because doing so would
-    -- bring down the server.
-    completeTx :: Server.CompleteConnection
-                    Socket.SockAddr
-                    (PeerStates IO Socket.SockAddr)
-                    (WithAddr Socket.SockAddr ErrorPolicyTrace)
-                    ()
-    completeTx result st = case result of
-
-      Server.Result thread remoteAddr t (Left (SomeException e)) ->
-        fmap (unregisterProducer remoteAddr thread)
-          <$> completeApplicationTx errorPolicies (ApplicationError t remoteAddr e) st
-
-      Server.Result thread remoteAddr t (Right r) ->
-        fmap (unregisterProducer remoteAddr thread)
-          <$> completeApplicationTx errorPolicies (ApplicationResult t remoteAddr r) st
-
-    acceptException :: Socket.SockAddr -> IOException -> IO ()
-    acceptException a e = do
-      traceWith (WithAddr a `contramap` nstErrorPolicyTracer) $ ErrorPolicyAcceptException e
-
+    -- Determines whether we should accept a connection, by using the
+    -- `PeerStates` from `NetworkMutableState`.
+    acceptConnectionTx
+      :: Socket.SockAddr
+      -> Time
+      -> Socket.SockAddr
+      -> PeerStates IO Socket.SockAddr
+      -> STM IO (AcceptConnection (PeerStates IO Socket.SockAddr) ConnectionId)
     acceptConnectionTx sockAddr t connAddr st = do
       d <- beforeConnectTx t connAddr st
       case d of
-        AllowConnection st'    -> pure $ AcceptConnection st' (ConnectionId sockAddr connAddr) versions
+        AllowConnection st'    -> pure $ AcceptConnection st' (ConnectionId sockAddr connAddr)
         DisallowConnection st' -> pure $ RejectConnection st' (ConnectionId sockAddr connAddr)
 
+-- | Connection request type for use by `withServerNode`. Only
+-- remotely-initiated requests are allowed.
+data WithServerNodeRequest (p :: Provenance) where
+    WithServerNodeRequest :: WithServerNodeRequest Remote
 
 -- |
 -- Run a server application.  It will listen on the given address for incoming
@@ -510,6 +694,9 @@ runServerThread NetworkServerTracers { nstMuxTracer
 -- TODO: we should track connections in the state and refuse connections from
 -- peers we are already connected to.  This is also the right place to ban
 -- connection from peers which missbehaved.
+-- Counter TODO: how do we identify peers which are already connected? If they
+-- have the same address, then TCP/IP wouldn't allow a duplicate connection, so
+-- this point is irrelevant... unless we have some other way of identifying?
 --
 -- The server will run handshake protocol on each incoming connection.  We
 -- assume that each versin negotiation message should fit into
@@ -518,15 +705,19 @@ runServerThread NetworkServerTracers { nstMuxTracer
 -- Note: it will open a socket in the current thread and pass it to the spawned
 -- thread which runs the server.  This makes it useful for testing, where we
 -- need to guarantee that a socket is open before we try to connect to it.
+--
+-- This is intended to be a convenient way to get a server-only application
+-- up and running. Not suitable if you want to do concurrent outgoing and
+-- incoming connections, as in a peer-to-peer node.
 withServerNode
     :: forall appType ptcl vNumber extra t a b.
        ( HasResponder appType ~ True
-       , Mx.ProtocolEnum ptcl
+       , ProtocolEnum ptcl
        , Ord ptcl
        , Enum ptcl
        , Bounded ptcl
        , Show ptcl
-       , Mx.MiniProtocolLimits ptcl
+       , MiniProtocolLimits ptcl
        , Ord vNumber
        , Enum vNumber
        , Serialise vNumber
@@ -549,15 +740,32 @@ withServerNode
     -- throws an exception.
     -> IO t
 withServerNode tracers networkState addr versionDataCodec acceptVersion versions errorPolicies k =
-    bracket (mkListeningSocket (Socket.addrFamily addr) (Just $ Socket.addrAddress addr)) Socket.close $ \sd -> do
-      addr' <- Socket.getSocketName sd
-      withAsync
-        (runServerThread
-          tracers
-          networkState
-          sd
-          versionDataCodec
-          acceptVersion
-          versions
-          errorPolicies)
-        (k addr')
+    Connections.withSockType (Socket.addrAddress addr) $ \sockAddr ->
+        withAsync (makeServer sockAddr) (k (Socket.addrAddress addr))
+
+  where
+
+    makeServer :: Connections.SockAddr addrType -> IO Void
+    makeServer sockAddr = Connection.concurrent handleConnection $ \connections ->
+      acceptLoopOn sockAddr (const WithServerNodeRequest) acceptException connections
+
+    handleConnection :: forall provenance .
+           Initiated provenance
+        -> Connections.ConnectionId
+        -> Socket.Socket
+        -> WithServerNodeRequest provenance
+        -> IO (Decision provenance RejectConnection ())
+    handleConnection _ connid socket WithServerNodeRequest = incomingConnection
+        tracers
+        networkState
+        versionDataCodec
+        acceptVersion
+        versions
+        errorPolicies
+        connid
+        socket
+
+    acceptException :: IOException -> IO ()
+    acceptException e = traceWith
+        (WithAddr (Socket.addrAddress addr) `contramap` nstErrorPolicyTracer tracers)
+        (ErrorPolicyAcceptException e)

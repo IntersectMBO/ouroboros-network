@@ -1,6 +1,8 @@
 {-# LANGUAGE DataKinds      #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE RankNTypes     #-}
+{-# LANGUAGE KindSignatures #-}
+{-# LANGUAGE GADTs          #-}
 
 module Ouroboros.Network.Diffusion
   ( DiffusionTracers (..)
@@ -17,19 +19,25 @@ module Ouroboros.Network.Diffusion
   where
 
 import qualified Control.Concurrent.Async as Async
-import           Control.Tracer (Tracer)
+import           Control.Exception (IOException)
+import           Control.Tracer (Tracer, traceWith)
 import qualified Codec.CBOR.Read as CBOR
 import qualified Codec.CBOR.Term as CBOR
 import           Data.Functor (void)
+import           Data.Functor.Contravariant (contramap)
 import           Data.Void (Void)
 import           Data.ByteString.Lazy (ByteString)
 
 import           Network.TypedProtocol.Driver (TraceSendRecv (..))
 import           Network.TypedProtocol.Driver.ByteLimit (DecoderFailureOrTooMuchInput (..))
 import           Network.Mux.Types (MuxTrace (..), WithMuxBearer (..))
-import           Network.Socket (SockAddr, AddrInfo)
+import           Network.Socket (AddrInfo)
 import qualified Network.Socket as Socket
 
+import           Ouroboros.Network.Connections.Types (Provenance (..))
+import           Ouroboros.Network.Connections.Socket.Types (SockAddr (..),
+                   withSockType)
+import           Ouroboros.Network.Connections.Socket.Server (acceptLoopOn)
 import           Ouroboros.Network.Protocol.Handshake.Type (Handshake)
 import           Ouroboros.Network.Protocol.Handshake.Version
 
@@ -48,6 +56,8 @@ import           Ouroboros.Network.Socket ( ConnectionId (..)
                                           , newNetworkMutableState
                                           , cleanNetworkMutableState
                                           , NetworkServerTracers (..)
+                                          , NetworkConnectTracers (..)
+                                          , SomeVersionedApplication (..)
                                           )
 import           Ouroboros.Network.Subscription.Ip
 import           Ouroboros.Network.Subscription.Dns
@@ -55,9 +65,9 @@ import           Ouroboros.Network.Subscription.Worker (LocalAddresses (..))
 import           Ouroboros.Network.Tracers
 
 data DiffusionTracers = DiffusionTracers {
-      dtIpSubscriptionTracer  :: Tracer IO (WithIPList (SubscriptionTrace SockAddr))
+      dtIpSubscriptionTracer  :: Tracer IO (WithIPList (SubscriptionTrace Socket.SockAddr))
        -- ^ IP subscription tracer
-    , dtDnsSubscriptionTracer :: Tracer IO (WithDomainName (SubscriptionTrace SockAddr))
+    , dtDnsSubscriptionTracer :: Tracer IO (WithDomainName (SubscriptionTrace Socket.SockAddr))
       -- ^ DNS subscription tracer
     , dtDnsResolverTracer     :: Tracer IO (WithDomainName DnsTrace)
       -- ^ DNS resolver tracer
@@ -75,7 +85,7 @@ data DiffusionTracers = DiffusionTracers {
                                               ConnectionId
                                               (DecoderFailureOrTooMuchInput CBOR.DeserialiseFailure))
       -- ^ Handshake protocol tracer for local clients
-    , dtErrorPolicyTracer     :: Tracer IO (WithAddr SockAddr ErrorPolicyTrace)
+    , dtErrorPolicyTracer     :: Tracer IO (WithAddr Socket.SockAddr ErrorPolicyTrace)
     }
 
 
@@ -132,11 +142,24 @@ data DiffusionApplications = DiffusionApplications {
                                           ())
       -- ^ NodeToClient responder applicaton (server role)
 
-    , daErrorPolicies :: ErrorPolicies SockAddr ()
+    , daErrorPolicies :: ErrorPolicies Socket.SockAddr ()
       -- ^ error policies
       --
       -- TODO: one cannot use `forall a. ErrorPolicies SockAddr a`
     }
+
+-- | The local server only accepts incoming requests (from clients in the
+-- node-to-client protocol.)
+data LocalRequest (p :: Provenance) where
+  ClientConnection :: LocalRequest Remote
+
+-- | The node-to-node server admits locally- and remotely-initiated connections.
+-- Remotely come from the server accept loops. Locally come from IP and DNS
+-- subscription systems.
+data Request (p :: Provenance) where
+  PeerConnection            :: Request Remote
+  IpSubscriptionConnection  :: Request Local
+  DnsSubscriptionConnection :: Request Local
 
 runDataDiffusion
     :: DiffusionTracers
@@ -154,28 +177,88 @@ runDataDiffusion tracers
     networkState <- newNetworkMutableState
     networkLocalState <- newNetworkMutableState
 
-    void $
-      -- clean state thread
-      Async.withAsync (cleanNetworkMutableState networkState) $ \cleanNetworkStateThread ->
+    -- Define how to fulfill node-to-client and node-to-node connection
+    -- requests. The GADTs `LocalRequest` and `Request` describe all of the
+    -- possibilities. In particular, the node-to-client protocol is restricted
+    -- to responder only, i.e. this node will never try to initiate a
+    -- node-to-client protocol.
+    let localConnectionRequest
+          :: LocalRequest provenance
+          -> SomeVersionedApplication NodeToClientProtocols NodeToClientVersion DictVersion provenance
+        localConnectionRequest ClientConnection = SomeVersionedResponderApp
+          (NetworkServerTracers
+            dtMuxLocalTracer
+            dtHandshakeLocalTracer
+            dtErrorPolicyTracer)
+          (daLocalResponderApplication applications)
 
-        -- clean local state thread
-        Async.withAsync (cleanNetworkMutableState networkLocalState) $ \cleanLocalNetworkStateThread ->
+        connectionRequest
+          :: Request provenance
+          -> SomeVersionedApplication NodeToNodeProtocols NodeToNodeVersion DictVersion provenance
+        connectionRequest PeerConnection = SomeVersionedResponderApp
+          (NetworkServerTracers
+            dtMuxTracer
+            dtHandshakeTracer
+            dtErrorPolicyTracer)
+          (daResponderApplication applications)
+        -- IP or DNS subscription requests are locally-initiated (requests
+        -- from subscribers to _us_ are `PeerConnection` above.
+        connectionRequest IpSubscriptionConnection  = SomeVersionedInitiatorApp
+          (NetworkConnectTracers dtMuxTracer dtHandshakeTracer)
+          (daInitiatorApplication applications)
+        connectionRequest DnsSubscriptionConnection = SomeVersionedInitiatorApp
+          (NetworkConnectTracers dtMuxTracer dtHandshakeTracer)
+          (daInitiatorApplication applications)
 
-          -- fork server for local clients
-          Async.withAsync (runLocalServer networkLocalState) $ \_ ->
+        -- How to make requests for the accept loops for the local and remote
+        -- server.
+        localClassifyRequest :: SockAddr sockType -> LocalRequest Remote
+        localClassifyRequest _ = ClientConnection
 
-            -- fork servers for remote peers
-            withAsyncs (runServer networkState <$> daAddresses) $ \_ ->
+        classifyRequest :: SockAddr sockType -> Request Remote
+        classifyRequest _ = PeerConnection
 
-              -- fork ip subscription
-              Async.withAsync (runIpSubscriptionWorker networkState) $ \_ ->
+        acceptException :: Socket.SockAddr -> IOException -> IO ()
+        acceptException a e = do
+          traceWith (WithAddr a `contramap` dtErrorPolicyTracer) $ ErrorPolicyAcceptException e
 
-                -- fork dns subscriptions
-                withAsyncs (runDnsSubscriptionWorker networkState <$> daDnsProducers) $ \_ ->
+        runLocalServer n2cConnections = withSockType addr $ \addr' ->
+          acceptLoopOn addr' localClassifyRequest (acceptException addr)
+            n2cConnections
+          where
+          addr = Socket.addrAddress daLocalAddress
 
-                  -- If any other threads throws 'cleanNetowrkStateThread' and
-                  -- 'cleanLocalNetworkStateThread' threads will will finish.
-                  Async.waitEither_ cleanNetworkStateThread cleanLocalNetworkStateThread
+        runServer n2nConnections addrInfo = withSockType addr $ \addr' ->
+          acceptLoopOn addr' classifyRequest (acceptException addr)
+            n2nConnections
+          where
+          addr = Socket.addrAddress addrInfo
+
+    NodeToClient.withConnections networkLocalState localErrorPolicy localConnectionRequest $ \n2cConnections ->
+      NodeToNode.withConnections networkState      errorPolicy      connectionRequest $ \n2nConnections -> 
+        -- The n2cConnection and n2nConnections 
+        void $
+          -- clean state thread
+          Async.withAsync (cleanNetworkMutableState networkState) $ \cleanNetworkStateThread ->
+
+            -- clean local state thread
+            Async.withAsync (cleanNetworkMutableState networkLocalState) $ \cleanLocalNetworkStateThread ->
+
+              -- fork server for local clients
+              Async.withAsync (runLocalServer n2cConnections) $ \_ ->
+
+                -- fork servers for remote peers
+                withAsyncs (runServer n2nConnections <$> daAddresses) $ \_ ->
+
+                  -- fork ip subscription
+                  Async.withAsync (runIpSubscriptionWorker networkState) $ \_ ->
+
+                    -- fork dns subscriptions
+                    withAsyncs (runDnsSubscriptionWorker networkState <$> daDnsProducers) $ \_ ->
+
+                      -- If any other threads throws 'cleanNetowrkStateThread' and
+                      -- 'cleanLocalNetworkStateThread' threads will will finish.
+                      Async.waitEither_ cleanNetworkStateThread cleanLocalNetworkStateThread
 
   where
 
@@ -189,7 +272,7 @@ runDataDiffusion tracers
                      , dtErrorPolicyTracer
                      } = tracers
 
-    initiatorLocalAddresses :: LocalAddresses SockAddr
+    initiatorLocalAddresses :: LocalAddresses Socket.SockAddr
     initiatorLocalAddresses = LocalAddresses
       { laIpv4 =
           -- IPv4 address
@@ -209,33 +292,12 @@ runDataDiffusion tracers
       , laUnix = Nothing
       }
 
-    remoteErrorPolicy, localErrorPolicy :: ErrorPolicies SockAddr ()
-    remoteErrorPolicy = NodeToNode.remoteNetworkErrorPolicy <> daErrorPolicies
+    errorPolicy, localErrorPolicy :: ErrorPolicies Socket.SockAddr ()
+    errorPolicy = NodeToNode.remoteNetworkErrorPolicy <> daErrorPolicies
     localErrorPolicy  = NodeToNode.localNetworkErrorPolicy <> daErrorPolicies
 
-    runLocalServer :: NetworkMutableState -> IO Void
-    runLocalServer networkLocalState =
-      NodeToClient.withServer
-        (NetworkServerTracers
-          dtMuxLocalTracer
-          dtHandshakeLocalTracer
-          dtErrorPolicyTracer)
-        networkLocalState
-        daLocalAddress
-        (daLocalResponderApplication applications)
-        localErrorPolicy
-
-    runServer :: NetworkMutableState -> AddrInfo -> IO Void
-    runServer networkState address =
-      NodeToNode.withServer
-        (NetworkServerTracers
-          dtMuxTracer
-          dtHandshakeTracer
-          dtErrorPolicyTracer)
-        networkState
-        address
-        (daResponderApplication applications)
-        remoteErrorPolicy
+    -- TODO make DNS and IP subscription workers use a Connections term to
+    -- simply initiate connections (which may already be up).
 
     runIpSubscriptionWorker :: NetworkMutableState -> IO Void
     runIpSubscriptionWorker networkState = NodeToNode.ipSubscriptionWorker
@@ -248,7 +310,7 @@ runDataDiffusion tracers
       SubscriptionParams
         { spLocalAddresses         = initiatorLocalAddresses
         , spConnectionAttemptDelay = const Nothing
-        , spErrorPolicies          = remoteErrorPolicy
+        , spErrorPolicies          = errorPolicy
         , spSubscriptionTarget     = daIpProducers
         }
       (daInitiatorApplication applications)
@@ -265,7 +327,7 @@ runDataDiffusion tracers
       SubscriptionParams
         { spLocalAddresses         = initiatorLocalAddresses
         , spConnectionAttemptDelay = const Nothing
-        , spErrorPolicies          = remoteErrorPolicy
+        , spErrorPolicies          = errorPolicy
         , spSubscriptionTarget     = dnsProducer
         }
       (daInitiatorApplication applications)

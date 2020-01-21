@@ -17,8 +17,6 @@ module Ouroboros.Network.NodeToClient (
 
   , NetworkConnectTracers (..)
   , nullNetworkConnectTracers
-  , connectTo_V1
-  , connectTo
 
   , NetworkServerTracers (..)
   , nullNetworkServerTracers
@@ -26,8 +24,8 @@ module Ouroboros.Network.NodeToClient (
   , newNetworkMutableState
   , newNetworkMutableStateSTM
   , cleanNetworkMutableState
-  , withServer_V1
-  , withServer
+
+  , withConnections
 
   , NetworkIPSubscriptionTracers (..)
   , IPSubscriptionParams
@@ -57,7 +55,6 @@ module Ouroboros.Network.NodeToClient (
   , WithIPList (..)
   ) where
 
-import qualified Control.Concurrent.Async as Async
 import           Control.Exception (IOException)
 import qualified Data.ByteString.Lazy as BL
 import           Data.Text (Text)
@@ -77,6 +74,9 @@ import           Network.Mux.Interface
 import           Network.TypedProtocol.Driver.ByteLimit (DecoderFailureOrTooMuchInput)
 import           Network.TypedProtocol.Driver (TraceSendRecv (..))
 
+import qualified Ouroboros.Network.Connections.Socket.Types as Connections (ConnectionId)
+import           Ouroboros.Network.Connections.Types (Connections)
+import qualified Ouroboros.Network.Connections.Concurrent as Connection
 import           Ouroboros.Network.Magic
 import           Ouroboros.Network.ErrorPolicy
 import           Ouroboros.Network.Tracers
@@ -85,7 +85,9 @@ import           Ouroboros.Network.Protocol.ChainSync.Client (chainSyncClientNul
 import           Ouroboros.Network.Protocol.LocalTxSubmission.Client (localTxSubmissionClientNull)
 import           Ouroboros.Network.Protocol.Handshake.Type
 import           Ouroboros.Network.Protocol.Handshake.Version
-import           Ouroboros.Network.Socket
+import           Ouroboros.Network.Socket hiding (withConnections)
+import qualified Ouroboros.Network.Socket as Socket (withConnections)
+
 import           Ouroboros.Network.Subscription.Ip (IPSubscriptionParams, SubscriptionParams (..))
 import qualified Ouroboros.Network.Subscription.Ip as Subscription
 import           Ouroboros.Network.Subscription.Ip ( IPSubscriptionTarget (..)
@@ -154,101 +156,38 @@ nodeToClientCodecCBORTerm = CodecCBORTerm {encodeTerm, decodeTerm}
                                | otherwise                 = Left $ T.pack $ "networkMagic out of bound: " <> show x
       decodeTerm t             = Left $ T.pack $ "unknown encoding: " ++ show t
 
--- | A specialised version of 'Ouroboros.Network.Socket.connectToNode'.  It is
--- a general purpose function which can connect using any version of the
--- protocol.  This is mostly useful for future enhancements.
---
-connectTo
-  :: NetworkConnectTracers NodeToClientProtocols NodeToClientVersion
-  -> Versions NodeToClientVersion
-              DictVersion
-              (OuroborosApplication InitiatorApp ConnectionId NodeToClientProtocols IO BL.ByteString a b)
-  -- ^ A dictionary of protocol versions & applications to run on an established
-  -- connection.  The application to run will be chosen by initial handshake
-  -- protocol (the highest shared version will be chosen).
-  -> Maybe Socket.AddrInfo
-  -- ^ local address; the created socket will bind to it
-  -> Socket.AddrInfo
-  -- ^ remote address
-  -> IO ()
-connectTo = connectToNode cborTermVersionDataCodec
-
--- | A version of 'Ouroboros.Network.Socket.connectToNode' which connects using
--- the 'NodeToClientV_1' version of the protocol.
---
-connectTo_V1
-  :: NetworkConnectTracers NodeToClientProtocols NodeToClientVersion
-  -> NodeToClientVersionData
-  -- ^ Client version data sent during initial handshake protocol.  Client and
-  -- server must agree on it.
-  -> (OuroborosApplication InitiatorApp ConnectionId NodeToClientProtocols IO BL.ByteString a b)
-  -- ^ 'OuroborosInitiatorApplication' which is run on an established connection
-  -- using a multiplexer after the initial handshake protocol suceeds.
-  -> Maybe Socket.AddrInfo
-  -- ^ local address; the created socket will bind to it
-  -> Socket.AddrInfo
-  -- ^ remote address
-  -> IO ()
-connectTo_V1 tracers versionData application =
-  connectTo
-    tracers
-    (simpleSingletonVersions
-      NodeToClientV_1
-      versionData
-      (DictVersion nodeToClientCodecCBORTerm)
-      application)
-
--- | A specialised version of 'Ouroboros.Network.Socket.withServerNode'; Use
--- 'withServer_V1' instead of you would like to use 'NodeToCLientV_1' version of
--- the protocols.
---
--- Comments to 'Ouroboros.Network.NodeToNode.withServer' apply here as well.
---
-withServer
-  :: ( HasResponder appType ~ True )
-  => NetworkServerTracers NodeToClientProtocols NodeToClientVersion
-  -> NetworkMutableState
-  -> Socket.AddrInfo
-  -> Versions NodeToClientVersion DictVersion
-              (OuroborosApplication appType ConnectionId NodeToClientProtocols IO BL.ByteString a b)
+-- | `Ouroboros.Network.Socket.withConnections` but with the protocol types
+-- specialized.
+withConnections
+  :: forall request t.
+     NetworkMutableState
   -> ErrorPolicies Socket.SockAddr ()
-  -> IO Void
-withServer tracers networkState addr versions errPolicies =
-  withServerNode
-    tracers
-    networkState
-    addr
-    cborTermVersionDataCodec
-    (\(DictVersion _) -> acceptEq)
-    versions
-    errPolicies
-    (\_ async -> Async.wait async)
+  -> (forall provenance . request provenance -> SomeVersionedApplication NodeToClientProtocols NodeToClientVersion DictVersion provenance)
+  -> (Connections Connections.ConnectionId Socket.Socket request (Connection.Reject RejectConnection) (Connection.Accept ()) IO -> IO t)
+  -> IO t
+withConnections mutableState errorPolicies mkApp =
+  Socket.withConnections mkConnectionData
+  where
+  -- Must give a type signature. Trying to do this in-line will confuse the
+  -- type checker.
+  mkConnectionData
+    :: request provenance
+    -> ConnectionData NodeToClientProtocols NodeToClientVersion provenance
+  mkConnectionData request = case mkApp request of
+    SomeVersionedResponderApp serverTracers versions -> ConnectionDataRemote
+      serverTracers
+      mutableState
+      errorPolicies
+      cborTermVersionDataCodec
+      (\(DictVersion _) -> acceptEq)
+      versions
+    SomeVersionedInitiatorApp connectTracers versions -> ConnectionDataLocal
+      connectTracers
+      mutableState
+      cborTermVersionDataCodec
+      versions
 
--- | A specialised version of 'withServer' which can only communicate using
--- 'NodeToClientV_1' version of the protocol.
---
-withServer_V1
-  :: ( HasResponder appType ~ True )
-  => NetworkServerTracers NodeToClientProtocols NodeToClientVersion
-  -> NetworkMutableState
-  -> Socket.AddrInfo
-  -> NodeToClientVersionData
-  -- ^ Client version data sent during initial handshake protocol.  Client and
-  -- server must agree on it.
-  -> (OuroborosApplication appType ConnectionId NodeToClientProtocols IO BL.ByteString a b)
-  -- ^ applications which has the reponder side, i.e.
-  -- 'OuroborosResponderApplication' or
-  -- 'OuroborosInitiatorAndResponderApplication'.
-  -> ErrorPolicies Socket.SockAddr ()
-  -> IO Void
-withServer_V1 tracers networkState addr versionData application =
-    withServer
-      tracers networkState addr
-      (simpleSingletonVersions
-        NodeToClientV_1
-        versionData
-        (DictVersion nodeToClientCodecCBORTerm)
-        application)
+-- TODO use the Connections term to implement subscription workers.
 
 -- | 'ncSubscriptionWorker' which starts given application versions on each
 -- established connection.

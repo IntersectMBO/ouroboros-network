@@ -5,6 +5,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE TypeFamilies        #-}
+{-# LANGUAGE GADTs               #-}
 
 -- | This is the starting point for a module that will bring together the
 -- overall node to node protocol, as a collection of mini-protocols.
@@ -18,8 +19,6 @@ module Ouroboros.Network.NodeToNode (
 
   , NetworkConnectTracers (..)
   , nullNetworkConnectTracers
-  , connectTo
-  , connectTo_V1
 
   , NetworkServerTracers (..)
   , nullNetworkServerTracers
@@ -27,8 +26,8 @@ module Ouroboros.Network.NodeToNode (
   , newNetworkMutableState
   , newNetworkMutableStateSTM
   , cleanNetworkMutableState
-  , withServer
-  , withServer_V1
+
+  , withConnections
 
   -- * Subscription Workers
   -- ** IP subscriptin worker
@@ -72,7 +71,6 @@ module Ouroboros.Network.NodeToNode (
   , WithAddr (..)
   ) where
 
-import qualified Control.Concurrent.Async as Async
 import           Control.Exception (IOException)
 import qualified Data.ByteString.Lazy as BL
 import           Data.Time.Clock (DiffTime)
@@ -92,6 +90,9 @@ import           Network.Mux.Interface
 import           Network.TypedProtocol.Driver.ByteLimit (DecoderFailureOrTooMuchInput)
 import           Network.TypedProtocol.Driver (TraceSendRecv (..))
 
+import qualified Ouroboros.Network.Connections.Socket.Types as Connections (ConnectionId)
+import           Ouroboros.Network.Connections.Types (Connections)
+import qualified Ouroboros.Network.Connections.Concurrent as Connection
 import           Ouroboros.Network.Magic
 import           Ouroboros.Network.ErrorPolicy
 import           Ouroboros.Network.Mux
@@ -100,7 +101,8 @@ import           Ouroboros.Network.Protocol.Handshake.Version
 import           Ouroboros.Network.BlockFetch.Client (BlockFetchProtocolFailure)
 import qualified Ouroboros.Network.TxSubmission.Inbound as TxInbound
 import qualified Ouroboros.Network.TxSubmission.Outbound as TxOutbound
-import           Ouroboros.Network.Socket
+import           Ouroboros.Network.Socket hiding (withConnections)
+import qualified Ouroboros.Network.Socket as Socket (withConnections)
 import           Ouroboros.Network.Tracers
 import           Ouroboros.Network.Subscription.Ip (IPSubscriptionParams, SubscriptionParams (..))
 import qualified Ouroboros.Network.Subscription.Ip as Subscription
@@ -188,88 +190,38 @@ nodeToNodeCodecCBORTerm = CodecCBORTerm {encodeTerm, decodeTerm}
                                | otherwise                 = Left $ T.pack $ "networkMagic out of bound: " <> show x
       decodeTerm t             = Left $ T.pack $ "unknown encoding: " ++ show t
 
-
--- | A specialised version of @'Ouroboros.Network.Socket.connectToNode'@.
---
-connectTo
-  :: NetworkConnectTracers NodeToNodeProtocols NodeToNodeVersion
-  -> Versions NodeToNodeVersion
-              DictVersion
-              (OuroborosApplication InitiatorApp ConnectionId NodeToNodeProtocols IO BL.ByteString a b)
-  -> Maybe Socket.AddrInfo
-  -> Socket.AddrInfo
-  -> IO ()
-connectTo = connectToNode cborTermVersionDataCodec
-
-
--- | Like 'connectTo' but specific to 'NodeToNodeV_1'.
---
-connectTo_V1
-  :: NetworkConnectTracers NodeToNodeProtocols NodeToNodeVersion
-  -> NodeToNodeVersionData
-  -> (OuroborosApplication InitiatorApp ConnectionId NodeToNodeProtocols IO BL.ByteString a b)
-  -> Maybe Socket.AddrInfo
-  -> Socket.AddrInfo
-  -> IO ()
-connectTo_V1 tracers versionData application localAddr remoteAddr =
-    connectTo
-      tracers
-      (simpleSingletonVersions
-          NodeToNodeV_1
-          versionData
-          (DictVersion nodeToNodeCodecCBORTerm)
-          application)
-      localAddr
-      remoteAddr
-
--- | A specialised version of @'Ouroboros.Network.Socket.withServerNode'@.
--- It forks a thread which runs an accept loop (server thread):
---
--- * when the server thread throws an exception the main thread rethrows
---   it (by 'Async.wait')
--- * when an async exception is thrown to kill the main thread the server thread
---   will be cancelled as well (by 'withAsync')
---
-withServer
-  :: ( HasResponder appType ~ True)
-  => NetworkServerTracers NodeToNodeProtocols NodeToNodeVersion
-  -> NetworkMutableState
-  -> Socket.AddrInfo
-  -> Versions NodeToNodeVersion DictVersion (OuroborosApplication appType ConnectionId NodeToNodeProtocols IO BL.ByteString a b)
+-- | `Ouroboros.Network.Socket.withConnections` but with the protocol types
+-- specialized. It also fills in the version data codec
+-- `cborTermVersionDataCodec` and `acceptEq` to determine when to accept a
+-- version.
+withConnections
+  :: forall request t.
+     NetworkMutableState
   -> ErrorPolicies Socket.SockAddr ()
-  -> IO Void
-withServer tracers networkState addr versions errPolicies =
-  withServerNode
-    tracers
-    networkState
-    addr
-    cborTermVersionDataCodec
-    (\(DictVersion _) -> acceptEq)
-    versions
-    errPolicies
-    (\_ async -> Async.wait async)
-
-
--- | Like 'withServer' but specific to 'NodeToNodeV_1'.
---
-withServer_V1
-  :: ( HasResponder appType ~ True )
-  => NetworkServerTracers NodeToNodeProtocols NodeToNodeVersion
-  -> NetworkMutableState
-  -> Socket.AddrInfo
-  -> NodeToNodeVersionData
-  -> (OuroborosApplication appType ConnectionId NodeToNodeProtocols IO BL.ByteString x y)
-  -> ErrorPolicies Socket.SockAddr ()
-  -> IO Void
-withServer_V1 tracers networkState addr versionData application =
-    withServer
-      tracers networkState addr
-      (simpleSingletonVersions
-          NodeToNodeV_1
-          versionData
-          (DictVersion nodeToNodeCodecCBORTerm)
-          application)
-
+  -> (forall provenance . request provenance -> SomeVersionedApplication NodeToNodeProtocols NodeToNodeVersion DictVersion provenance)
+  -> (Connections Connections.ConnectionId Socket.Socket request (Connection.Reject RejectConnection) (Connection.Accept ()) IO -> IO t)
+  -> IO t
+withConnections mutableState errorPolicies mkApp =
+  Socket.withConnections mkConnectionData
+  where
+  -- Must give a type signature. Trying to do this in-line will confuse the
+  -- type checker.
+  mkConnectionData
+    :: request provenance
+    -> ConnectionData NodeToNodeProtocols NodeToNodeVersion provenance
+  mkConnectionData request = case mkApp request of
+    SomeVersionedResponderApp serverTracers versions -> ConnectionDataRemote
+      serverTracers
+      mutableState
+      errorPolicies
+      cborTermVersionDataCodec
+      (\(DictVersion _) -> acceptEq)
+      versions
+    SomeVersionedInitiatorApp connectTracers versions -> ConnectionDataLocal
+      connectTracers
+      mutableState
+      cborTermVersionDataCodec
+      versions
 
 -- | 'ipSubscriptionWorker' which starts given application versions on each
 -- established connection.
