@@ -349,3 +349,4 @@ executable demo-chain-sync
                        typed-protocols
   default-language:    Haskell2010
   ghc-options:         -Wall
+                       -threaded

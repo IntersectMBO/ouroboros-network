@@ -51,11 +51,13 @@ import           Ouroboros.Network.Protocol.Handshake.Type (acceptEq, cborTermVe
 import           Ouroboros.Network.Protocol.Handshake.Version (simpleSingletonVersions)
 
 
+import           Ouroboros.Network.IOManager
 import           Ouroboros.Network.Magic
 import           Ouroboros.Network.Mux
 import           Ouroboros.Network.NodeToNode hiding ( ipSubscriptionWorker
                                                      , dnsSubscriptionWorker
                                                      )
+import           Ouroboros.Network.Snocket
 import           Ouroboros.Network.Socket
 import           Ouroboros.Network.Subscription
 import           Ouroboros.Network.Subscription.Ip
@@ -375,7 +377,7 @@ _prop_resolv_io lr = ioProperty $ prop_resolv lr
 
 prop_sub_io :: LookupResultIO
             -> Property
-prop_sub_io lr = ioProperty $ do
+prop_sub_io lr = ioProperty $ withIOManager $ \iocp -> do
     let serverIdsv4 = case lrioIpv4Result lr of
                            Left  _ -> []
                            Right r -> zip (repeat Socket.AF_INET) r
@@ -415,6 +417,7 @@ prop_sub_io lr = ioProperty $ do
     serverPortMap <- atomically $ readTVar serverPortMapVar
     networkState <- newNetworkMutableState
     dnsSubscriptionWorker'
+      (socketSnocket iocp)
       activeTracer
       activeTracer
       activeTracer
@@ -501,8 +504,9 @@ prop_send_recv
     -> [Int]
     -> Socket.Family
     -> Property
-prop_send_recv f xs first = ioProperty $ do
+prop_send_recv f xs _first = ioProperty $ withIOManager $ \iocp -> do
 
+    let first = Socket.AF_INET6
     let lr = LookupResultIO (Right [0]) (Right [0]) first 1
         serverPortMap = M.fromList [((Socket.AF_INET, 0), 6062), ((Socket.AF_INET6, 0), 6062)]
 
@@ -546,18 +550,20 @@ prop_send_recv f xs first = ioProperty $ do
             waitSiblingSub siblingVar
 
     peerStatesVar <- newPeerStatesVar
+    let sn = socketSnocket iocp
     withDummyServer faultyAddress $
       withServerNode
+        sn
         nullNetworkServerTracers
         (NetworkMutableState tbl peerStatesVar)
-        responderAddr
+        (Socket.addrAddress responderAddr)
         cborTermVersionDataCodec
         (\(DictVersion _) -> acceptEq)
         (simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData $ NetworkMagic 0) (DictVersion nodeToNodeCodecCBORTerm) responderApp)
         nullErrorPolicies
         $ \_ _ -> do
           dnsSubscriptionWorker'
-            activeTracer activeTracer activeTracer
+            sn activeTracer activeTracer activeTracer
             (NetworkMutableState clientTbl peerStatesVar)
             (mockResolverIO firstDoneVar serverPortMap lr)
             SubscriptionParams {
@@ -571,7 +577,8 @@ prop_send_recv f xs first = ioProperty $ do
                 spSubscriptionTarget = DnsSubscriptionTarget "shelley-0.iohk.example" 6062 1
               }
             (\_ -> waitSiblingSTM siblingVar)
-            (connectToNode'
+            (connectToNodeSocket
+                iocp
                 cborTermVersionDataCodec
                 nullNetworkConnectTracers
                 (simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData $ NetworkMagic 0)
@@ -581,6 +588,9 @@ prop_send_recv f xs first = ioProperty $ do
     return (res == mapAccumL f 0 xs)
 
   where
+    withDummyServer :: Socket.AddrInfo
+                    -> IO a
+                    -> IO a
     withDummyServer addr k =
         bracket
             (Socket.socket (Socket.addrFamily addr) Socket.Stream Socket.defaultProtocol)
@@ -610,7 +620,7 @@ prop_send_recv_init_and_rsp
     :: (Int -> Int -> (Int, Int))
     -> [Int]
     -> Property
-prop_send_recv_init_and_rsp f xs = ioProperty $ do
+prop_send_recv_init_and_rsp f xs = ioProperty $ withIOManager $ \iocp -> do
 
     responderAddr4A:_ <- Socket.getAddrInfo Nothing (Just "127.0.0.1") (Just "0")
     responderAddr4B:_ <- Socket.getAddrInfo Nothing (Just "127.0.0.1") (Just "0")
@@ -632,16 +642,18 @@ prop_send_recv_init_and_rsp f xs = ioProperty $ do
     stVar <- newPeerStatesVar
 
     a_aid <- async $ startPassiveServer
+      iocp
       tblA
       stVar
-      responderAddr4A
+      (Socket.addrAddress responderAddr4A)
       addrAVar
       rrcfgA
 
     b_aid <- async $ startActiveServer
+      iocp
       tblB
       stVar
-      responderAddr4B
+      (Socket.addrAddress responderAddr4B)
       addrBVar
       addrAVar
       rrcfgB
@@ -675,7 +687,8 @@ prop_send_recv_init_and_rsp f xs = ioProperty $ do
              waitSiblingSub rrcSiblingVar
             )
 
-    startPassiveServer tbl stVar responderAddr localAddrVar rrcfg = withServerNode
+    startPassiveServer iocp tbl stVar responderAddr localAddrVar rrcfg = withServerNode
+        (socketSnocket iocp)
         nullNetworkServerTracers
         (NetworkMutableState tbl stVar)
         responderAddr
@@ -690,38 +703,43 @@ prop_send_recv_init_and_rsp f xs = ioProperty $ do
           waitSibling (rrcSiblingVar rrcfg)
           return r
 
-    startActiveServer tbl stVar responderAddr localAddrVar remoteAddrVar rrcfg = withServerNode
-        nullNetworkServerTracers
-        (NetworkMutableState tbl stVar)
-        responderAddr
-        cborTermVersionDataCodec
-        (\(DictVersion _) -> acceptEq)
-        ((simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData $ NetworkMagic 0) (DictVersion nodeToNodeCodecCBORTerm) (appX rrcfg)))
-        nullErrorPolicies
-        $ \localAddr _ -> do
-          peerStatesVar <- newPeerStatesVar
-          atomically $ putTMVar localAddrVar localAddr
-          remoteAddr <- atomically $ takeTMVar remoteAddrVar
-          _ <- subscriptionWorker
-            activeTracer
-            activeTracer
-            (NetworkMutableState tbl peerStatesVar)
-            WorkerParams {
-                wpLocalAddresses = LocalAddresses (Just localAddr) Nothing Nothing,
-                wpConnectionAttemptDelay = \_ -> Just minConnectionAttemptDelay,
-                wpSubscriptionTarget = pure $ listSubscriptionTarget [remoteAddr],
-                wpValency = 1
-              }
-            nullErrorPolicies
-            (\_ -> waitSiblingSTM (rrcSiblingVar rrcfg))
-            (connectToNode'
-                cborTermVersionDataCodec
-                nullNetworkConnectTracers
-                (simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData $ NetworkMagic 0)
-                (DictVersion nodeToNodeCodecCBORTerm) $ appX rrcfg))
+    startActiveServer iocp tbl stVar responderAddr localAddrVar remoteAddrVar rrcfg =
+      let sn = socketSnocket iocp
+      in withServerNode
+          sn
+          nullNetworkServerTracers
+          (NetworkMutableState tbl stVar)
+          responderAddr
+          cborTermVersionDataCodec
+          (\(DictVersion _) -> acceptEq)
+          ((simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData $ NetworkMagic 0) (DictVersion nodeToNodeCodecCBORTerm) (appX rrcfg)))
+          nullErrorPolicies
+          $ \localAddr _ -> do
+            peerStatesVar <- newPeerStatesVar
+            atomically $ putTMVar localAddrVar localAddr
+            remoteAddr <- atomically $ takeTMVar remoteAddrVar
+            _ <- subscriptionWorker
+              sn
+              activeTracer
+              activeTracer
+              (NetworkMutableState tbl peerStatesVar)
+              WorkerParams {
+                  wpLocalAddresses = LocalAddresses (Just localAddr) Nothing Nothing,
+                  wpConnectionAttemptDelay = \_ -> Just minConnectionAttemptDelay,
+                  wpSubscriptionTarget = pure $ listSubscriptionTarget [remoteAddr],
+                  wpValency = 1
+                }
+              nullErrorPolicies
+              (\_ -> waitSiblingSTM (rrcSiblingVar rrcfg))
+              (connectToNodeSocket
+                  iocp
+                  cborTermVersionDataCodec
+                  nullNetworkConnectTracers
+                  (simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData $ NetworkMagic 0)
+                  (DictVersion nodeToNodeCodecCBORTerm) $ appX rrcfg))
 
-          atomically $ (,) <$> takeTMVar (rrcServerVar rrcfg)
-                           <*> takeTMVar (rrcClientVar rrcfg)
+            atomically $ (,) <$> takeTMVar (rrcServerVar rrcfg)
+                             <*> takeTMVar (rrcClientVar rrcfg)
 
 waitSiblingSub :: StrictTVar IO Int -> IO ()
 waitSiblingSub cntVar = do
@@ -751,7 +769,7 @@ local-data: "shelley-1.iohk.example. IN AAAA ::1"
 local-data: "shelley-0.iohk.example. IN AAAA ::1"
 -}
 _demo :: Property
-_demo = ioProperty $ do
+_demo = ioProperty $ withIOManager $ \iocp -> do
     server:_ <- Socket.getAddrInfo Nothing (Just "192.168.1.100") (Just "6062")
     server':_ <- Socket.getAddrInfo Nothing (Just "127.0.0.1") (Just "6062")
     server6:_ <- Socket.getAddrInfo Nothing (Just "::1") (Just "6062")
@@ -764,12 +782,13 @@ _demo = ioProperty $ do
     peerStatesVar <- newPeerStatesVar
     stVar <- newPeerStatesVar
 
-    spawnServer tbl stVar server 10000
-    spawnServer tbl stVar server' 10000
-    spawnServer tbl stVar server6 100
-    spawnServer tbl stVar server6' 45
+    spawnServer iocp tbl stVar server 10000
+    spawnServer iocp tbl stVar server' 10000
+    spawnServer iocp tbl stVar server6 100
+    spawnServer iocp tbl stVar server6' 45
 
     _ <- dnsSubscriptionWorker
+            (socketSnocket iocp)
             activeTracer activeTracer activeTracer
             (NetworkMutableState clientTbl peerStatesVar)
             SubscriptionParams {
@@ -783,7 +802,8 @@ _demo = ioProperty $ do
                 spErrorPolicies = nullErrorPolicies
 
               }
-            (connectToNode'
+            (connectToNodeSocket
+                iocp
                 cborTermVersionDataCodec
                 nullNetworkConnectTracers
                 (simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData $ NetworkMagic 0)
@@ -791,18 +811,19 @@ _demo = ioProperty $ do
 
     threadDelay 130
     -- bring the servers back again
-    spawnServer tbl stVar server6 10000
-    spawnServer tbl stVar server6' 10000
+    spawnServer iocp tbl stVar server6 10000
+    spawnServer iocp tbl stVar server6' 10000
     threadDelay 1000
     return ()
 
   where
 
-    spawnServer tbl stVar addr delay =
+    spawnServer iocp tbl stVar addr delay =
         void $ async $ withServerNode
+            (socketSnocket iocp)
             nullNetworkServerTracers
             (NetworkMutableState tbl stVar)
-            addr
+            (Socket.addrAddress addr)
             cborTermVersionDataCodec
             (\(DictVersion _) -> acceptEq)
             (simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData $ NetworkMagic 0)
