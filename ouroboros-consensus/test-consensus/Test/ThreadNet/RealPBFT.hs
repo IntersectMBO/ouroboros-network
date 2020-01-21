@@ -535,7 +535,7 @@ genRealPBFTNodeJoinPlan params numSlots@(NumSlots t)
             Just hi -> genSlot lo hi
             Nothing -> error $
                 "Cannot find viable RealPBFT NodeJoinPlan: " ++
-                show (nodeJoinPlan, st)
+                show (params, numSlots, nodeJoinPlan, st)
 
         let m'  = Map.insert nid s' m
 
