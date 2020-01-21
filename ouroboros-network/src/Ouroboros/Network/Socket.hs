@@ -323,10 +323,6 @@ cleanNetworkMutableState :: NetworkMutableState
 cleanNetworkMutableState NetworkMutableState {nmsPeerStates} =
     cleanPeerStates 200 nmsPeerStates
 
--- Really the thing we want to plug is
---
---   request provenance -> 
-
 -- | Domain-specific rejection type. Only incoming connections can be rejected.
 -- Outgoing connections can still fail, but there is no "normal"
 -- (non-exceptional) reason to reject one.
@@ -334,37 +330,6 @@ cleanNetworkMutableState NetworkMutableState {nmsPeerStates} =
 -- TODO constructor should include an explanation
 data RejectConnection (p :: Provenance) where
   Rejected :: RejectConnection Remote
-
--- TODO idea to simplify things.
--- Let's make withConnections take everything predicated on a
--- `request provenance`, including the tracers, etc.
---
---      (forall provenance . request provenance -> Requirements provenance)
---   -> (Connections ConnectionId Socket request (Reject RejectConnection) (Accept handle) IO -> IO t)
---   -> IO t
---
--- data Requirements ptcl vNumber vDataT provenance where
---   RequirementsRemote
---     :: NetworkServerTracers ptcl vNumber
---     -> NetworkMutableState
---     -> ErrorPolicies Socket.SockAddr ()
---     -> (forall vData . vDataT vData -> vData -> vData -> Accept)
---     -> SomeApplication ptcl vNumber vDataT Remote
---     -> Requirements ptcl vNumber vDataT Remote
---   RequirementsLocal
---     :: NetworkConnectTracers ptcl vNumber
---     -> ErrorPolicies Socket.SockAddr ()
---     -> SomeApplication ptcl vNubmer vDataT Local
---     -> Requirements ptcl vNumber vDataT Local
---
--- This way we don't have to give connect tracers for the node to client server.
---
--- Then the nature of the diffusion layer can be set laregely in part by
--- the definition of the `request` type.
--- For a typical accept loop, you pretty much have to give a constant request
--- type for remote. Makes sense though... well, each _different_ accept loop
--- can have a different request type. It's actually quite a slick design.
---
 
 data SomeVersionedApplication ptcl vNumber vDataT provenance where
   SomeVersionedResponderApp
@@ -539,11 +504,8 @@ outgoingConnection versionDataCodec NetworkConnectTracers {nctMuxTracer, nctHand
                          Mx.muxStart muxTracer connectionId (toApplication app) bearer
         pure $ Handler { handle = connectionHandle, action = action }
 
-
--- TODO instead of running the server thread, we want to define what to do
--- when in `Incoming` connection is seen.
--- Once we have that, we use it to make a `concurrent` `Connections` term, then
--- the server accept loop is a trivial `acceptLoopOn`.
+-- | What to do on an incoming connection: run the given versions, which is
+-- known to have a responder side.
 incomingConnection
     :: forall ptcl vNumber vDataT appType a b.
        ( HasResponder appType ~ True
