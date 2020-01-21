@@ -79,6 +79,7 @@ acceptOne
   :: SockAddr addrType -- Bind address; needed to construct ConnectionId
   -> Socket
   -> (SockAddr addrType -> request Remote)
+  -- ^ From the incoming socket address you must construct a remote request type
   -> Server ConnectionId Socket IO request
 acceptOne bindaddr socket mkRequest = \includeConnection -> mask $ \restore -> do
   (sock, addr) <- restore (Socket.accept socket)
@@ -123,14 +124,18 @@ acceptLoop handleException connections accept = forever $
 -- accept loop with a given `Connections` term.
 --
 -- Here's an example of running concurrent IPv4 and IPv6 servers on a common
--- connection manager:
+-- connection manager, using a request type to distinguish them (not necessary)
 --
 -- @
+--   data Request p where
+--     IPv6Request :: SockAddr IPv6 -> Request p
+--     IPv4Request :: SockAddr IPv4 -> Request p
+--
 --   runServers connections = do
---     (sockAddr4, sockAddr6) <- resolveSocketAddresses
+--     (sockAddr4, sockAddr6) <- resolveSocketAddresses ...
 --     (void1, void2) <- Async.concurrently
---       (acceptLoopOn sockAddr4 handleException connections)
---       (acceptLoopOn sockAddr6 handleException connections)
+--       (acceptLoopOn sockAddr4 IPv4Request handleException connections)
+--       (acceptLoopOn sockAddr6 IPv6Request handleException connections)
 --     absurd void1
 --     where
 --     handleException :: IOException -> IO ()
