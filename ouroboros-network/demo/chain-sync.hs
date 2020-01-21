@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE RecordWildCards #-}
@@ -36,14 +37,14 @@ import System.Random.SplitMix
 import           Codec.Serialise (DeserialiseFailure)
 import qualified Codec.Serialise as CBOR
 
-import qualified Network.Socket as Socket
-
 import Ouroboros.Network.Block
 import qualified Ouroboros.Network.MockChain.Chain as Chain
 import qualified Ouroboros.Network.ChainFragment as CF
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import Ouroboros.Network.Point (WithOrigin (..))
 import Ouroboros.Network.Testing.ConcreteBlock
+import Ouroboros.Network.IOManager
+import Ouroboros.Network.Snocket
 import Ouroboros.Network.Socket
 import Ouroboros.Network.Magic
 import Ouroboros.Network.Mux
@@ -106,22 +107,15 @@ usage = do
     hPutStrLn stderr "usage: demo-chain-sync [pingpong|pingpong2|chainsync|blockfetch] {client|server} [addr]"
     exitFailure
 
-mkLocalSocketAddrInfo :: FilePath -> Socket.AddrInfo
-mkLocalSocketAddrInfo socketPath =
-    Socket.AddrInfo
-      []
-      Socket.AF_UNIX
-      Socket.Stream
-      Socket.defaultProtocol
-      (Socket.SockAddrUnix socketPath)
-      Nothing
-
 defaultLocalSocketAddrPath :: FilePath
+#if defined(mingw32_HOST_OS)
+defaultLocalSocketAddrPath =  "\\\\.\\pipe\\demo-chain-sync"
+#else
 defaultLocalSocketAddrPath =  "./demo-chain-sync.sock"
+#endif
 
-defaultLocalSocketAddrInfo :: Socket.AddrInfo
-defaultLocalSocketAddrInfo =
-    mkLocalSocketAddrInfo defaultLocalSocketAddrPath
+defaultLocalSocketAddr :: ClientAddress
+defaultLocalSocketAddr = clientAddressFromPath defaultLocalSocketAddrPath
 
 rmIfExists :: FilePath -> IO ()
 rmIfExists path = do
@@ -144,16 +138,17 @@ instance MiniProtocolLimits DemoProtocol0 where
 
 
 clientPingPong :: Bool -> IO ()
-clientPingPong pipelined =
+clientPingPong pipelined = withIOManager $ \iocp -> 
     connectToNode
+      (clientSnocket iocp defaultLocalSocketAddrPath)
       cborTermVersionDataCodec
       nullNetworkConnectTracers
       (simpleSingletonVersions (0::Int) (NodeToNodeVersionData $ NetworkMagic 0) (DictVersion nodeToNodeCodecCBORTerm) app)
       Nothing
-      defaultLocalSocketAddrInfo
+      defaultLocalSocketAddr
   where
     app :: OuroborosApplication InitiatorApp
-                                (ConnectionId Socket.SockAddr)
+                                (ConnectionId ClientAddress)
                                 DemoProtocol0
                                 IO LBS.ByteString () Void
     app = simpleInitiatorApplication protocols
@@ -178,13 +173,14 @@ pingPongClientCount 0 = PingPong.SendMsgDone ()
 pingPongClientCount n = SendMsgPing (pure (pingPongClientCount (n-1)))
 
 serverPingPong :: IO Void
-serverPingPong = do
+serverPingPong = withIOManager $ \iocp -> do
     networkState <- newNetworkMutableState
     _ <- async $ cleanNetworkMutableState networkState
     withServerNode
+      (clientSnocket iocp defaultLocalSocketAddrPath)
       nullNetworkServerTracers
       networkState
-      defaultLocalSocketAddrInfo
+      defaultLocalSocketAddr
       cborTermVersionDataCodec
       (\(DictVersion _) -> acceptEq)
       (simpleSingletonVersions (0::Int) (NodeToNodeVersionData $ NetworkMagic 0) (DictVersion nodeToNodeCodecCBORTerm) app)
@@ -193,7 +189,7 @@ serverPingPong = do
         wait serverAsync   -- block until async exception
   where
     app :: OuroborosApplication ResponderApp
-                                (ConnectionId Socket.SockAddr)
+                                (ConnectionId ClientAddress)
                                 DemoProtocol0
                                 IO LBS.ByteString Void ()
     app = simpleResponderApplication protocols
@@ -233,16 +229,17 @@ instance MiniProtocolLimits DemoProtocol1 where
 
 
 clientPingPong2 :: IO ()
-clientPingPong2 =
+clientPingPong2 = withIOManager $ \iocp ->
     connectToNode
+      (clientSnocket iocp defaultLocalSocketAddrPath)
       cborTermVersionDataCodec
       nullNetworkConnectTracers
       (simpleSingletonVersions (0::Int) (NodeToNodeVersionData $ NetworkMagic 0) (DictVersion nodeToNodeCodecCBORTerm) app)
       Nothing
-      defaultLocalSocketAddrInfo
+      defaultLocalSocketAddr
   where
     app :: OuroborosApplication InitiatorApp
-                                (ConnectionId Socket.SockAddr)
+                                (ConnectionId ClientAddress)
                                 DemoProtocol1
                                 IO LBS.ByteString () Void
     app = simpleInitiatorApplication protocols
@@ -280,13 +277,14 @@ pingPongClientPipelinedMax c =
                           (\n' -> go (Right n' : acc) o n)
 
 serverPingPong2 :: IO Void
-serverPingPong2 = do
+serverPingPong2 = withIOManager $ \iocp -> do
     networkState <- newNetworkMutableState
     _ <- async $ cleanNetworkMutableState networkState
     withServerNode
+      (clientSnocket iocp defaultLocalSocketAddrPath)
       nullNetworkServerTracers
       networkState
-      defaultLocalSocketAddrInfo
+      defaultLocalSocketAddr
       cborTermVersionDataCodec
       (\(DictVersion _) -> acceptEq)
       (simpleSingletonVersions (0::Int) (NodeToNodeVersionData $ NetworkMagic 0) (DictVersion nodeToNodeCodecCBORTerm) app)
@@ -295,7 +293,7 @@ serverPingPong2 = do
         wait serverAsync   -- block until async exception
   where
     app :: OuroborosApplication ResponderApp
-                                (ConnectionId Socket.SockAddr)
+                                (ConnectionId ClientAddress)
                                 DemoProtocol1
                                 IO LBS.ByteString Void ()
     app = simpleResponderApplication protocols
@@ -331,17 +329,19 @@ instance MiniProtocolLimits DemoProtocol2 where
 
 
 clientChainSync :: [FilePath] -> IO ()
-clientChainSync sockAddrs =
-    forConcurrently_ sockAddrs $ \sockAddr ->
+clientChainSync sockPaths = withIOManager $ \iocp ->
+    forConcurrently_ sockPaths $ \sockPath ->
       connectToNode
+        (clientSnocket iocp sockPath)
         cborTermVersionDataCodec
         nullNetworkConnectTracers
         (simpleSingletonVersions (0::Int) (NodeToNodeVersionData $ NetworkMagic 0) (DictVersion nodeToNodeCodecCBORTerm) app)
         Nothing
-        (mkLocalSocketAddrInfo sockAddr)
+        (clientAddressFromPath sockPath)
+
   where
     app :: OuroborosApplication InitiatorApp
-                                (ConnectionId Socket.SockAddr)
+                                (ConnectionId ClientAddress)
                                 DemoProtocol2
                                 IO LBS.ByteString () Void
     app = simpleInitiatorApplication protocols
@@ -356,13 +356,14 @@ clientChainSync sockAddrs =
 
 
 serverChainSync :: FilePath -> IO Void
-serverChainSync sockAddr = do
+serverChainSync sockAddr = withIOManager $ \iocp -> do
     networkState <- newNetworkMutableState
     _ <- async $ cleanNetworkMutableState networkState
     withServerNode
+      (clientSnocket iocp defaultLocalSocketAddrPath)
       nullNetworkServerTracers
       networkState
-      (mkLocalSocketAddrInfo sockAddr)
+      (clientAddressFromPath sockAddr)
       cborTermVersionDataCodec
       (\(DictVersion _) -> acceptEq)
       (simpleSingletonVersions (0::Int) (NodeToNodeVersionData $ NetworkMagic 0) (DictVersion nodeToNodeCodecCBORTerm) app)
@@ -373,7 +374,7 @@ serverChainSync sockAddr = do
     prng = mkSMGen 0
 
     app :: OuroborosApplication ResponderApp
-                                (ConnectionId Socket.SockAddr)
+                                (ConnectionId ClientAddress)
                                 DemoProtocol2
                                 IO LBS.ByteString Void ()
     app = simpleResponderApplication protocols
@@ -418,7 +419,7 @@ instance MiniProtocolLimits DemoProtocol3 where
 
 
 clientBlockFetch :: [FilePath] -> IO ()
-clientBlockFetch sockAddrs = do
+clientBlockFetch sockAddrs = withIOManager $ \iocp -> do
     registry   <- newFetchClientRegistry
     blockHeap  <- mkTestFetchedBlockHeap []
 
@@ -426,12 +427,12 @@ clientBlockFetch sockAddrs = do
     currentChainVar    <- newTVarIO genesisChainFragment
 
     let app :: OuroborosApplication InitiatorApp
-                                    (ConnectionId Socket.SockAddr)
+                                    (ConnectionId ClientAddress)
                                     DemoProtocol3
                                     IO LBS.ByteString () Void
         app = OuroborosInitiatorApplication protocols
 
-        protocols :: ConnectionId Socket.SockAddr
+        protocols :: (ConnectionId ClientAddress)
                   -> DemoProtocol3
                   -> Channel IO LBS.ByteString
                   -> IO ()
@@ -462,7 +463,7 @@ clientBlockFetch sockAddrs = do
               (blockFetchClient clientCtx)
 
         blockFetchPolicy :: BlockFetchConsensusInterface
-                             (ConnectionId Socket.SockAddr) BlockHeader Block IO
+                             (ConnectionId ClientAddress) BlockHeader Block IO
         blockFetchPolicy =
             BlockFetchConsensusInterface {
               readCandidateChains    = readTVar candidateChainsVar
@@ -523,11 +524,12 @@ clientBlockFetch sockAddrs = do
     peerAsyncs <- sequence
                     [ async $
                         connectToNode
+                          (clientSnocket iocp defaultLocalSocketAddrPath)
                           cborTermVersionDataCodec
                           nullNetworkConnectTracers
                           (simpleSingletonVersions (0::Int) (NodeToNodeVersionData $ NetworkMagic 0) (DictVersion nodeToNodeCodecCBORTerm) app)
                           Nothing
-                          (mkLocalSocketAddrInfo sockAddr)
+                          (clientAddressFromPath sockAddr)
                     | sockAddr <- sockAddrs ]
 
     fetchAsync <- async $
@@ -557,13 +559,14 @@ clientBlockFetch sockAddrs = do
 
 
 serverBlockFetch :: FilePath -> IO Void
-serverBlockFetch sockAddr = do
+serverBlockFetch sockAddr = withIOManager $ \iocp -> do
     networkState <- newNetworkMutableState
     _ <- async $ cleanNetworkMutableState networkState
     withServerNode
+      (clientSnocket iocp defaultLocalSocketAddrPath)
       nullNetworkServerTracers
       networkState
-      (mkLocalSocketAddrInfo sockAddr)
+      (clientAddressFromPath sockAddr)
       cborTermVersionDataCodec
       (\(DictVersion _) -> acceptEq)
       (simpleSingletonVersions (0::Int) (NodeToNodeVersionData $ NetworkMagic 0) (DictVersion nodeToNodeCodecCBORTerm) app)
@@ -574,7 +577,7 @@ serverBlockFetch sockAddr = do
     prng = mkSMGen 0
 
     app :: OuroborosApplication ResponderApp
-                                (ConnectionId Socket.SockAddr)
+                                (ConnectionId ClientAddress)
                                 DemoProtocol3
                                 IO LBS.ByteString Void ()
     app = simpleResponderApplication protocols
@@ -825,15 +828,16 @@ bodyDataCycle :: Int
 bodyDataCycle = length doloremIpsum
 
 doloremIpsum :: String
-doloremIpsum =
-  "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Nam hendrerit\
-  \ nisi sed sollicitudin pellentesque. Nunc posuere purus rhoncus pulvinar\
-  \ aliquam. Ut aliquet tristique nisl vitae volutpat. Nulla aliquet porttitor\
-  \ venenatis. Donec a dui et dui fringilla consectetur id nec massa. Aliquam\
-  \ erat volutpat. Sed ut dui ut lacus dictum fermentum vel tincidunt neque.\
-  \ Sed sed lacinia lectus. Duis sit amet sodales felis. Duis nunc eros,\
-  \ mattis at dui ac, convallis semper risus. In adipiscing ultrices tellus,\
-  \ in suscipit massa vehicula eu."
+doloremIpsum = concat 
+  [ "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Nam hendrerit"
+  , "nisi sed sollicitudin pellentesque. Nunc posuere purus rhoncus pulvinar"
+  , "aliquam. Ut aliquet tristique nisl vitae volutpat. Nulla aliquet porttitor"
+  , "venenatis. Donec a dui et dui fringilla consectetur id nec massa. Aliquam"
+  , "erat volutpat. Sed ut dui ut lacus dictum fermentum vel tincidunt neque."
+  , "Sed sed lacinia lectus. Duis sit amet sodales felis. Duis nunc eros,"
+  , "mattis at dui ac, convallis semper risus. In adipiscing ultrices tellus,"
+  , "in suscipit massa vehicula eu."
+  ]
 
 --
 -- Mock downloaded block heap
