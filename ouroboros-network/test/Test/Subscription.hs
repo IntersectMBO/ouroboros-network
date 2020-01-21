@@ -526,10 +526,9 @@ prop_send_recv f xs first = ioProperty $ do
     let -- Server Node; only req-resp server
         responderApp :: OuroborosApplication ResponderApp ConnectionId TestProtocols2 IO BL.ByteString Void ()
         responderApp = OuroborosResponderApplication $
-          \peerid ReqRespPr channel -> do
+          \_peerid ReqRespPr channel -> do
             r <- runPeer (tagTrace "Responder" activeTracer)
                          ReqResp.codecReqResp
-                         peerid
                          channel
                          (ReqResp.reqRespServerPeer (ReqResp.reqRespServerMapAccumL (\a -> pure . f a) 0))
             atomically $ putTMVar sv r
@@ -538,10 +537,9 @@ prop_send_recv f xs first = ioProperty $ do
         -- Client Node; only req-resp client
         initiatorApp :: OuroborosApplication InitiatorApp ConnectionId TestProtocols2 IO BL.ByteString () Void
         initiatorApp = OuroborosInitiatorApplication $
-          \peerid ReqRespPr channel -> do
+          \_peerid ReqRespPr channel -> do
             r <- runPeer (tagTrace "Initiator" activeTracer)
                          ReqResp.codecReqResp
-                         peerid
                          channel
                          (ReqResp.reqRespClientPeer (ReqResp.reqRespClientMap xs))
             atomically $ putTMVar cv r
@@ -656,10 +654,9 @@ prop_send_recv_init_and_rsp f xs = ioProperty $ do
     appX :: ReqRspCfg -> OuroborosApplication InitiatorAndResponderApp ConnectionId TestProtocols2 IO BL.ByteString () ()
     appX ReqRspCfg {rrcTag, rrcServerVar, rrcClientVar, rrcSiblingVar} = OuroborosInitiatorAndResponderApplication
             -- Initiator
-            (\peerid ReqRespPr channel -> do
+            (\_peerid ReqRespPr channel -> do
              r <- runPeer (tagTrace (rrcTag ++ " Initiator") activeTracer)
                          ReqResp.codecReqResp
-                         peerid
                          channel
                          (ReqResp.reqRespClientPeer (ReqResp.reqRespClientMap xs))
              atomically $ putTMVar rrcClientVar r
@@ -667,10 +664,9 @@ prop_send_recv_init_and_rsp f xs = ioProperty $ do
              waitSiblingSub rrcSiblingVar
             )
             -- Responder
-            (\peerid ReqRespPr channel -> do
+            (\_peerid ReqRespPr channel -> do
              r <- runPeer (tagTrace (rrcTag ++ " Responder") activeTracer)
                          ReqResp.codecReqResp
-                         peerid
                          channel
                          (ReqResp.reqRespServerPeer (ReqResp.reqRespServerMapAccumL
                            (\a -> pure . f a) 0))

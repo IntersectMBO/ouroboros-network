@@ -158,8 +158,7 @@ clientPingPong pipelined =
                                 IO LBS.ByteString () Void
     app = simpleInitiatorApplication protocols
 
-    protocols :: DemoProtocol0 -> MuxPeer ConnectionId
-                                          DeserialiseFailure
+    protocols :: DemoProtocol0 -> MuxPeer DeserialiseFailure
                                           IO LBS.ByteString ()
     protocols PingPong0 | pipelined =
       MuxPeerPipelined
@@ -199,8 +198,7 @@ serverPingPong = do
                                 IO LBS.ByteString Void ()
     app = simpleResponderApplication protocols
 
-    protocols :: DemoProtocol0 -> MuxPeer ConnectionId
-                                          DeserialiseFailure
+    protocols :: DemoProtocol0 -> MuxPeer DeserialiseFailure
                                           IO LBS.ByteString ()
     protocols PingPong0 =
       MuxPeer
@@ -249,8 +247,7 @@ clientPingPong2 =
                                 IO LBS.ByteString () Void
     app = simpleInitiatorApplication protocols
 
-    protocols :: DemoProtocol1 -> MuxPeer ConnectionId
-                                          DeserialiseFailure
+    protocols :: DemoProtocol1 -> MuxPeer DeserialiseFailure
                                           IO LBS.ByteString ()
     protocols PingPong1 =
       MuxPeer
@@ -303,8 +300,7 @@ serverPingPong2 = do
                                 IO LBS.ByteString Void ()
     app = simpleResponderApplication protocols
 
-    protocols :: DemoProtocol1 -> MuxPeer ConnectionId
-                                          DeserialiseFailure
+    protocols :: DemoProtocol1 -> MuxPeer DeserialiseFailure
                                           IO LBS.ByteString ()
     protocols PingPong1 =
       MuxPeer
@@ -350,8 +346,7 @@ clientChainSync sockAddrs =
                                 IO LBS.ByteString () Void
     app = simpleInitiatorApplication protocols
 
-    protocols :: DemoProtocol2 -> MuxPeer ConnectionId
-                                          DeserialiseFailure
+    protocols :: DemoProtocol2 -> MuxPeer DeserialiseFailure
                                           IO LBS.ByteString ()
     protocols ChainSync2 =
       MuxPeer
@@ -383,8 +378,7 @@ serverChainSync sockAddr = do
                                 IO LBS.ByteString Void ()
     app = simpleResponderApplication protocols
 
-    protocols :: DemoProtocol2 -> MuxPeer ConnectionId
-                                          DeserialiseFailure
+    protocols :: DemoProtocol2 -> MuxPeer DeserialiseFailure
                                           IO LBS.ByteString ()
     protocols ChainSync2 =
       MuxPeer
@@ -446,7 +440,6 @@ clientBlockFetch sockAddrs = do
           runPeer
             nullTracer -- (contramap (show . TraceLabelPeer peerid) stdoutTracer)
             codecChainSync
-            peerid
             channel
             (ChainSync.chainSyncClientPeer
               (chainSyncClient' syncTracer currentChainVar chainVar))
@@ -465,7 +458,6 @@ clientBlockFetch sockAddrs = do
             runPipelinedPeer
               nullTracer -- (contramap (show . TraceLabelPeer peerid) stdoutTracer)
               codecBlockFetch
-              peerid
               channel
               (blockFetchClient clientCtx)
 
@@ -587,8 +579,7 @@ serverBlockFetch sockAddr = do
                                 IO LBS.ByteString Void ()
     app = simpleResponderApplication protocols
 
-    protocols :: DemoProtocol3 -> MuxPeer ConnectionId
-                                          DeserialiseFailure
+    protocols :: DemoProtocol3 -> MuxPeer DeserialiseFailure
                                           IO LBS.ByteString ()
     protocols ChainSync3 =
       MuxPeer

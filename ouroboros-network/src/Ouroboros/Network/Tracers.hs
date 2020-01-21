@@ -7,13 +7,11 @@ module Ouroboros.Network.Tracers
 
 import           Control.Tracer (Tracer, nullTracer)
 import qualified Codec.CBOR.Term as CBOR
-import           Codec.Serialise (DeserialiseFailure)
 
 import           Network.Socket (SockAddr)
 import           Network.Mux.Trace
 
 import           Network.TypedProtocol.Driver (TraceSendRecv)
-import           Network.TypedProtocol.Driver.ByteLimit
 
 import           Ouroboros.Network.ErrorPolicy
 import           Ouroboros.Network.Protocol.Handshake.Type
@@ -27,9 +25,8 @@ data NetworkIPSubscriptionTracers ptcl vNumber = NetworkIPSubscriptionTracers {
       nistMuxTracer          :: Tracer IO (WithMuxBearer ConnectionId MuxTrace),
       -- ^ low level mux-network tracer, which logs mux sdu (send and received)
       -- and other low level multiplexing events.
-      nistHandshakeTracer    :: Tracer IO (TraceSendRecv (Handshake vNumber CBOR.Term)
-                                                         ConnectionId
-                                                         (DecoderFailureOrTooMuchInput DeserialiseFailure)),
+      nistHandshakeTracer    :: Tracer IO (WithMuxBearer ConnectionId
+                                            (TraceSendRecv (Handshake vNumber CBOR.Term))),
       -- ^ handshake protocol tracer; it is important for analysing version
       -- negotation mismatches.
       nistErrorPolicyTracer  :: Tracer IO (WithAddr SockAddr ErrorPolicyTrace),
@@ -55,9 +52,8 @@ data NetworkDNSSubscriptionTracers ptcl vNumber peerid = NetworkDNSSubscriptionT
       ndstMuxTracer          :: Tracer IO (WithMuxBearer peerid MuxTrace),
       -- ^ low level mux-network tracer, which logs mux sdu (send and received)
       -- and other low level multiplexing events.
-      ndstHandshakeTracer    :: Tracer IO (TraceSendRecv (Handshake vNumber CBOR.Term)
-                                                       peerid
-                                                       (DecoderFailureOrTooMuchInput DeserialiseFailure)),
+      ndstHandshakeTracer    :: Tracer IO (WithMuxBearer peerid
+                                            (TraceSendRecv (Handshake vNumber CBOR.Term))),
       -- ^ handshake protocol tracer; it is important for analysing version
       -- negotation mismatches.
       ndstErrorPolicyTracer  :: Tracer IO (WithAddr SockAddr ErrorPolicyTrace),

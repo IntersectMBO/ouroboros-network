@@ -28,7 +28,6 @@ import           Control.Monad.Class.MonadThrow
 import           Control.Monad.IOSim (runSimOrThrow)
 
 import           Network.TypedProtocol.Channel
-import           Network.TypedProtocol.Codec (CodecFailure)
 import           Network.TypedProtocol.Driver
 
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
@@ -223,9 +222,7 @@ newtype ServerUpdates =
 
 type TraceEvent = (SlotNo, Either
   (TraceChainSyncClientEvent TestBlock)
-  (TraceSendRecv (ChainSync (Header TestBlock) (Tip TestBlock))
-                 CoreNodeId
-                 CodecFailure))
+  (TraceSendRecv (ChainSync (Header TestBlock) (Tip TestBlock))))
 
 -- | We have a client and a server chain that both start at genesis. At
 -- certain slots, we apply updates to both of these chains to simulate changes
@@ -365,7 +362,7 @@ runChainSync securityParam maxClockSkew (ClientUpdates clientUpdates)
            serverId $ \varCandidate -> do
              atomically $ modifyTVar varFinalCandidates $
                Map.insert serverId varCandidate
-             runPipelinedPeer protocolTracer codecChainSyncId serverId clientChannel $
+             runPipelinedPeer protocolTracer codecChainSyncId clientChannel $
                chainSyncClientPeerPipelined $ client varCandidate
         `catch` \(e :: ChainSyncClientException) -> do
           -- TODO: Is this necessary? Wouldn't the Async's internal MVar do?
@@ -373,7 +370,7 @@ runChainSync securityParam maxClockSkew (ClientUpdates clientUpdates)
           -- Rethrow, but it will be ignored anyway.
           throwM e
       void $ forkLinkedThread registry $
-        runPeer nullTracer codecChainSyncId clientId serverChannel
+        runPeer nullTracer codecChainSyncId serverChannel
                 (chainSyncServerPeer server)
 
     testBlockchainTimeDone testBtime

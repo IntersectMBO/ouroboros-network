@@ -270,11 +270,13 @@ prop_connect_pipelined5 choices (Positive omax) (NonNegative n) =
 -- | Run a non-pipelined client and server over a channel using a codec.
 --
 prop_channel :: (MonadSTM m, MonadAsync m, MonadCatch m)
-             => NonNegative Int -> Tracer m (TraceSendRecv PingPong String CodecFailure) -> m Bool
+             => NonNegative Int
+             -> Tracer m (PeerRole, TraceSendRecv PingPong)
+             -> m Bool
 prop_channel (NonNegative n) tr = do
     ((), n') <- runConnectedPeers createConnectedChannels
                                   tr
-                                  codecPingPong "client" "server" client server
+                                  codecPingPong client server
     return (n' == n)
   where
     client = pingPongClientPeer (pingPongClientCount n)
