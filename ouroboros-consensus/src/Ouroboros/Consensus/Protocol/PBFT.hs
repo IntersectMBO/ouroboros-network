@@ -330,15 +330,6 @@ pbftWindowParams PBftNodeConfig{..} = PBftWindowParams {
 pbftWindowSize :: SecurityParam -> CS.WindowSize
 pbftWindowSize (SecurityParam k) = CS.WindowSize k
 
--- | Should we check the threshold?
---
--- We should check only once we have a sufficient number of signatures.
---
--- This will be true unless near genesis.
-shouldCheckThreshold :: PBftWindowParams -> PBftChainState c -> Bool
-shouldCheckThreshold PBftWindowParams{..} st =
-    CS.countInWindow st >= CS.getWindowSize windowSize
-
 -- | Does the number of blocks signed by this key exceed the threshold?
 --
 -- Returns @Just@ the number of blocks signed if exceeded.
@@ -346,8 +337,8 @@ shouldCheckThreshold PBftWindowParams{..} st =
 exceedsThreshold :: PBftCrypto c
                  => PBftWindowParams
                  -> PBftChainState c -> PBftVerKeyHash c -> Maybe Word64
-exceedsThreshold params@PBftWindowParams{..} st gk =
-    if shouldCheckThreshold params st && numSigned > threshold
+exceedsThreshold PBftWindowParams{..} st gk =
+    if numSigned > threshold
       then Just numSigned
       else Nothing
   where
